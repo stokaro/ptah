@@ -28,7 +28,7 @@ type Event struct {
 }
 `
 	c := qt.New(t)
-	db := mustParseSource(c, "fixture.go", src)
+	db := mustParseSource(c.TB, "fixture.go", src)
 	c.Assert(db.Indexes, qt.HasLen, 1)
 	idx := db.Indexes[0]
 	c.Assert(idx.Name, qt.Equals, "idx_e_payload")
@@ -81,7 +81,7 @@ type User struct {
 }
 `
 	c := qt.New(t)
-	db := mustParseSource(c, "fixture.go", src)
+	db := mustParseSource(c.TB, "fixture.go", src)
 	c.Assert(db.Indexes, qt.HasLen, 1)
 	idx := db.Indexes[0]
 	c.Assert(idx.Type, qt.Equals, "")

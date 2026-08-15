@@ -18,7 +18,7 @@ func TestCompatCommand_MigrateLintDevURLReplaysMigration(t *testing.T) {
 	c := qt.New(t)
 	migrationsDir := t.TempDir()
 	devDBPath := filepath.Join(t.TempDir(), "dev.db")
-	writeAtlasLintDevURLFile(c, migrationsDir, "1_create_atlas_lint_dev_url.sql",
+	writeAtlasLintDevURLFile(c.TB, migrationsDir, "1_create_atlas_lint_dev_url.sql",
 		"CREATE TABLE atlas_lint_dev_url (id INTEGER PRIMARY KEY);\n")
 
 	cmd := atlas.NewCompatCommand("atlas")
@@ -39,7 +39,7 @@ func TestCompatCommand_MigrateLintDevURLReplaysMigration(t *testing.T) {
 	c.Assert(out.String(), qt.Contains, "Analyzing changes until version 1 (1 migration in total):")
 	c.Assert(out.String(), qt.Contains, "  -- analyzing version 1\n    -- no diagnostics found\n")
 	c.Assert(out.String(), qt.Contains, "  -- 1 version ok\n")
-	assertAtlasLintDevURLSQLiteTableCount(c, devDBPath, "atlas_lint_dev_url", 0)
+	assertAtlasLintDevURLSQLiteTableCount(c.TB, devDBPath, "atlas_lint_dev_url", 0)
 }
 
 // TestCompatCommand_MigrateLintRoutesADockerDevURLToTheProvisioner replaced a
@@ -56,7 +56,7 @@ func TestCompatCommand_MigrateLintDevURLReplaysMigration(t *testing.T) {
 func TestCompatCommand_MigrateLintRoutesADockerDevURLToTheProvisioner(t *testing.T) {
 	c := qt.New(t)
 	migrationsDir := t.TempDir()
-	writeAtlasLintDevURLFile(c, migrationsDir, "1_create_atlas_lint_dev_url.sql",
+	writeAtlasLintDevURLFile(c.TB, migrationsDir, "1_create_atlas_lint_dev_url.sql",
 		"CREATE TABLE atlas_lint_dev_url_docker (id INTEGER PRIMARY KEY);\n")
 
 	cmd := atlas.NewCompatCommand("atlas")
@@ -86,8 +86,8 @@ func TestCompatCommand_MigrateLintUsesAtlasProjectEnvPolicy(t *testing.T) {
 	dir := t.TempDir()
 	migrationsDir := filepath.Join(dir, "migrations")
 	c.Assert(os.Mkdir(migrationsDir, 0o750), qt.IsNil)
-	writeAtlasLintDevURLFile(c, migrationsDir, "1_drop_column.up.sql", "ALTER TABLE users DROP COLUMN legacy;\n")
-	writeAtlasLintDevURLFile(c, migrationsDir, "1_drop_column.down.sql", "ALTER TABLE users ADD COLUMN legacy TEXT;\n")
+	writeAtlasLintDevURLFile(c.TB, migrationsDir, "1_drop_column.up.sql", "ALTER TABLE users DROP COLUMN legacy;\n")
+	writeAtlasLintDevURLFile(c.TB, migrationsDir, "1_drop_column.down.sql", "ALTER TABLE users ADD COLUMN legacy TEXT;\n")
 	c.Assert(os.WriteFile(filepath.Join(dir, "atlas.hcl"), []byte(`env "ci" {
   migration {
     dir = "file://migrations"
@@ -124,12 +124,14 @@ func TestCompatCommand_MigrateLintUsesAtlasProjectEnvPolicy(t *testing.T) {
 	c.Assert(out.String(), qt.Contains, `"severity":"warning"`)
 }
 
-func writeAtlasLintDevURLFile(c *qt.C, dir, name, sql string) {
+func writeAtlasLintDevURLFile(tb testing.TB, dir, name, sql string) {
+	c := qt.New(tb)
 	c.Helper()
 	c.Assert(os.WriteFile(filepath.Join(dir, name), []byte(sql), 0o600), qt.IsNil)
 }
 
-func assertAtlasLintDevURLSQLiteTableCount(c *qt.C, dbPath, table string, want int) {
+func assertAtlasLintDevURLSQLiteTableCount(tb testing.TB, dbPath, table string, want int) {
+	c := qt.New(tb)
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)
 	c.Assert(err, qt.IsNil)

@@ -19,7 +19,7 @@ import (
 func TestSchemaCleanFormatDryRunJSONDoesNotApply(t *testing.T) {
 	c := qt.New(t)
 	dbPath := filepath.Join(t.TempDir(), "clean-format-dry-run.db")
-	createSQLiteSchemaCleanTable(c, dbPath, "users")
+	createSQLiteSchemaCleanTable(c.TB, dbPath, "users")
 
 	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
@@ -48,13 +48,13 @@ func TestSchemaCleanFormatDryRunJSONDoesNotApply(t *testing.T) {
 	c.Assert(got.Changes, qt.DeepEquals, []schemaCleanJSONChange{
 		{Type: "table", Name: "users", Cmd: `DROP TABLE IF EXISTS "users"`},
 	})
-	c.Assert(sqliteTableCount(c, dbPath, "users"), qt.Equals, 1)
+	c.Assert(sqliteTableCount(c.TB, dbPath, "users"), qt.Equals, 1)
 }
 
 func TestSchemaCleanFormatCustomTemplate(t *testing.T) {
 	c := qt.New(t)
 	dbPath := filepath.Join(t.TempDir(), "clean-format-template.db")
-	createSQLiteSchemaCleanTable(c, dbPath, "events")
+	createSQLiteSchemaCleanTable(c.TB, dbPath, "events")
 
 	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
@@ -71,7 +71,7 @@ func TestSchemaCleanFormatCustomTemplate(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Equals, `sqlite|1|DROP TABLE IF EXISTS "events"`)
-	c.Assert(sqliteTableCount(c, dbPath, "events"), qt.Equals, 1)
+	c.Assert(sqliteTableCount(c.TB, dbPath, "events"), qt.Equals, 1)
 }
 
 func TestSchemaCleanInvalidFormatFailsBeforeConnecting(t *testing.T) {
@@ -122,7 +122,7 @@ func TestSchemaCleanRuntimeInvalidFormatFailsBeforeConnecting(t *testing.T) {
 func TestSchemaCleanActualInvalidFormatFailsBeforeApplying(t *testing.T) {
 	c := qt.New(t)
 	dbPath := filepath.Join(t.TempDir(), "clean-format-actual-invalid.db")
-	createSQLiteSchemaCleanTable(c, dbPath, "kept_users")
+	createSQLiteSchemaCleanTable(c.TB, dbPath, "kept_users")
 
 	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
@@ -138,13 +138,13 @@ func TestSchemaCleanActualInvalidFormatFailsBeforeApplying(t *testing.T) {
 	err := cmd.Execute()
 
 	c.Assert(err, qt.ErrorMatches, `execute --format template: .*`)
-	c.Assert(sqliteTableCount(c, dbPath, "kept_users"), qt.Equals, 1)
+	c.Assert(sqliteTableCount(c.TB, dbPath, "kept_users"), qt.Equals, 1)
 }
 
 func TestSchemaCleanFormatRequiresInteractiveApproval(t *testing.T) {
 	c := qt.New(t)
 	dbPath := filepath.Join(t.TempDir(), "clean-format-prompt.db")
-	createSQLiteSchemaCleanTable(c, dbPath, "prompt_users")
+	createSQLiteSchemaCleanTable(c.TB, dbPath, "prompt_users")
 
 	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
@@ -162,13 +162,13 @@ func TestSchemaCleanFormatRequiresInteractiveApproval(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Contains, "1\nWARNING: This operation will permanently delete")
 	c.Assert(out.String(), qt.Contains, "Schema clean canceled.")
-	c.Assert(sqliteTableCount(c, dbPath, "prompt_users"), qt.Equals, 1)
+	c.Assert(sqliteTableCount(c.TB, dbPath, "prompt_users"), qt.Equals, 1)
 }
 
 func TestSchemaCleanFormatAutoApproveApplies(t *testing.T) {
 	c := qt.New(t)
 	dbPath := filepath.Join(t.TempDir(), "clean-format-apply.db")
-	createSQLiteSchemaCleanTable(c, dbPath, "applied_users")
+	createSQLiteSchemaCleanTable(c.TB, dbPath, "applied_users")
 
 	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
@@ -191,13 +191,13 @@ func TestSchemaCleanFormatAutoApproveApplies(t *testing.T) {
 	c.Assert(got.Changes, qt.DeepEquals, []schemaCleanJSONChange{
 		{Type: "table", Name: "applied_users", Cmd: `DROP TABLE IF EXISTS "applied_users"`},
 	})
-	c.Assert(sqliteTableCount(c, dbPath, "applied_users"), qt.Equals, 0)
+	c.Assert(sqliteTableCount(c.TB, dbPath, "applied_users"), qt.Equals, 0)
 }
 
 func TestSchemaCleanDefaultOutputDryRun(t *testing.T) {
 	c := qt.New(t)
 	dbPath := filepath.Join(t.TempDir(), "clean-default-dry-run.db")
-	createSQLiteSchemaCleanTable(c, dbPath, "default_users")
+	createSQLiteSchemaCleanTable(c.TB, dbPath, "default_users")
 
 	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
@@ -214,7 +214,7 @@ func TestSchemaCleanDefaultOutputDryRun(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Contains, "[DRY RUN] Would clean schema objects")
 	c.Assert(out.String(), qt.Contains, `- DROP TABLE IF EXISTS "default_users"`)
-	c.Assert(sqliteTableCount(c, dbPath, "default_users"), qt.Equals, 1)
+	c.Assert(sqliteTableCount(c.TB, dbPath, "default_users"), qt.Equals, 1)
 }
 
 func TestSchemaCleanUsesAtlasProjectEnvURLAndFormat(t *testing.T) {
@@ -222,7 +222,7 @@ func TestSchemaCleanUsesAtlasProjectEnvURLAndFormat(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 	dbPath := filepath.Join(dir, "clean-project-format.db")
-	createSQLiteSchemaCleanTable(c, dbPath, "project_users")
+	createSQLiteSchemaCleanTable(c.TB, dbPath, "project_users")
 	c.Assert(os.WriteFile("atlas.hcl", []byte(`env "local" {
   url = "sqlite://`+dbPath+`"
   format {
@@ -247,7 +247,7 @@ func TestSchemaCleanUsesAtlasProjectEnvURLAndFormat(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Equals, "sqlite:1")
-	c.Assert(sqliteTableCount(c, dbPath, "project_users"), qt.Equals, 1)
+	c.Assert(sqliteTableCount(c.TB, dbPath, "project_users"), qt.Equals, 1)
 }
 
 type schemaCleanJSONReport struct {
@@ -282,7 +282,8 @@ type schemaCleanJSONChange struct {
 	Cmd    string
 }
 
-func createSQLiteSchemaCleanTable(c *qt.C, dbPath, table string) {
+func createSQLiteSchemaCleanTable(tb testing.TB, dbPath, table string) {
+	c := qt.New(tb)
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)
 	c.Assert(err, qt.IsNil)

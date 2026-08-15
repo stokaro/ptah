@@ -41,7 +41,8 @@ import (
 // set, which is the `.up.sql` half alone, so the SAME directory read as native
 // Atlas is a checksum error. Every row below therefore turns on the layout
 // selection and nothing else, and the control row proves it.
-func compatGolangMigrateFixture(c *qt.C) (dir, target string) {
+func compatGolangMigrateFixture(tb testing.TB) (dir, target string) {
+	c := qt.New(tb)
 	c.Helper()
 	dir = filepath.Join(c.TempDir(), "migrations")
 	c.Assert(os.MkdirAll(dir, 0o755), qt.IsNil)
@@ -78,7 +79,7 @@ func compatGolangMigrateFixture(c *qt.C) (dir, target string) {
 // tools.
 func TestCompatMigrateDiff_GolangMigrateQueryWritesThatLayout(t *testing.T) {
 	c := qt.New(t)
-	dir, target := compatGolangMigrateFixture(c)
+	dir, target := compatGolangMigrateFixture(c.TB)
 
 	_, _, err := runCompat("migrate", "diff", "more",
 		"--dir", "file://"+dir+"?format=golang-migrate",
@@ -86,13 +87,13 @@ func TestCompatMigrateDiff_GolangMigrateQueryWritesThatLayout(t *testing.T) {
 		"--to", "file://"+target)
 
 	c.Assert(err, qt.IsNil)
-	names := atlasDirEntryNames(c, dir)
+	names := atlasDirEntryNames(c.TB, dir)
 	c.Assert(compatNamesWithSuffix(names, ".up.sql"), qt.HasLen, 2)
 	c.Assert(compatNamesWithSuffix(names, ".down.sql"), qt.HasLen, 2)
 	// The rollback half of the new migration is real SQL, not the empty file
 	// `migrate new` leaves. A pair whose down half is empty would satisfy the
 	// layout and still hand the operator a migration nothing can roll back.
-	written := compatNewestNameWithSuffix(c, names, ".down.sql")
+	written := compatNewestNameWithSuffix(c.TB, names, ".down.sql")
 	rollback, readErr := os.ReadFile(filepath.Join(dir, written))
 	c.Assert(readErr, qt.IsNil)
 	c.Assert(strings.ToUpper(string(rollback)), qt.Contains, "DROP TABLE",
@@ -115,8 +116,8 @@ func TestCompatMigrateDiff_GolangMigrateQueryWritesThatLayout(t *testing.T) {
 // recorded, so both tools report a checksum error and neither writes.
 func TestCompatMigrateDiff_GolangMigrateDirIsRefusedWithoutTheLayout(t *testing.T) {
 	c := qt.New(t)
-	dir, target := compatGolangMigrateFixture(c)
-	before := atlasDirEntryNames(c, dir)
+	dir, target := compatGolangMigrateFixture(c.TB)
+	before := atlasDirEntryNames(c.TB, dir)
 
 	_, _, err := runCompat("migrate", "diff", "more",
 		"--dir", "file://"+dir,
@@ -124,7 +125,7 @@ func TestCompatMigrateDiff_GolangMigrateDirIsRefusedWithoutTheLayout(t *testing.
 		"--to", "file://"+target)
 
 	c.Assert(err, qt.ErrorMatches, `checksum mismatch`)
-	c.Assert(atlasDirEntryNames(c, dir), qt.DeepEquals, before)
+	c.Assert(atlasDirEntryNames(c.TB, dir), qt.DeepEquals, before)
 }
 
 // TestCompatMigrateDiff_DirFormatFlagWritesTheSelectedLayout pins the same
@@ -136,7 +137,7 @@ func TestCompatMigrateDiff_GolangMigrateDirIsRefusedWithoutTheLayout(t *testing.
 // and this is the row that would notice if they did.
 func TestCompatMigrateDiff_DirFormatFlagWritesTheSelectedLayout(t *testing.T) {
 	c := qt.New(t)
-	dir, target := compatGolangMigrateFixture(c)
+	dir, target := compatGolangMigrateFixture(c.TB)
 
 	_, _, err := runCompat("migrate", "diff", "more",
 		"--dir", "file://"+dir,
@@ -145,7 +146,7 @@ func TestCompatMigrateDiff_DirFormatFlagWritesTheSelectedLayout(t *testing.T) {
 		"--to", "file://"+target)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(compatNamesWithSuffix(atlasDirEntryNames(c, dir), ".up.sql"), qt.HasLen, 2)
+	c.Assert(compatNamesWithSuffix(atlasDirEntryNames(c.TB, dir), ".up.sql"), qt.HasLen, 2)
 }
 
 // TestCompatMigrateDiff_ForeignLayoutComposesEachLayoutsFiles pins what each
@@ -173,7 +174,7 @@ func TestCompatMigrateDiff_ForeignLayoutComposesEachLayoutsFiles(t *testing.T) {
 			format: "golang-migrate",
 			check: func(c *qt.C, dir string, names []string) {
 				c.Assert(compatNamesWithSuffix(names, ".up.sql"), qt.HasLen, 1)
-				assertCompatRollbackSection(c, dir, compatNewestNameWithSuffix(c, names, ".down.sql"), "")
+				assertCompatRollbackSection(c.TB, dir, compatNewestNameWithSuffix(c.TB, names, ".down.sql"), "")
 			},
 		},
 		{
@@ -181,28 +182,28 @@ func TestCompatMigrateDiff_ForeignLayoutComposesEachLayoutsFiles(t *testing.T) {
 			format: "flyway",
 			check: func(c *qt.C, dir string, names []string) {
 				c.Assert(compatNamesWithPrefix(names, "V"), qt.HasLen, 1)
-				assertCompatRollbackSection(c, dir, compatNewestNameWithPrefix(c, names, "U"), "")
+				assertCompatRollbackSection(c.TB, dir, compatNewestNameWithPrefix(c.TB, names, "U"), "")
 			},
 		},
 		{
 			name:   "goose writes both halves under its directives",
 			format: "goose",
 			check: func(c *qt.C, dir string, names []string) {
-				assertCompatRollbackSection(c, dir, compatNewestNameWithSuffix(c, names, "_demo.sql"), "-- +goose Down")
+				assertCompatRollbackSection(c.TB, dir, compatNewestNameWithSuffix(c.TB, names, "_demo.sql"), "-- +goose Down")
 			},
 		},
 		{
 			name:   "dbmate writes both halves under its directives",
 			format: "dbmate",
 			check: func(c *qt.C, dir string, names []string) {
-				assertCompatRollbackSection(c, dir, compatNewestNameWithSuffix(c, names, "_demo.sql"), "-- migrate:down")
+				assertCompatRollbackSection(c.TB, dir, compatNewestNameWithSuffix(c.TB, names, "_demo.sql"), "-- migrate:down")
 			},
 		},
 		{
 			name:   "liquibase attaches the rollback to a changeset",
 			format: "liquibase",
 			check: func(c *qt.C, dir string, names []string) {
-				assertCompatRollbackSection(c, dir, compatNewestNameWithSuffix(c, names, "_demo.sql"), "--rollback: ")
+				assertCompatRollbackSection(c.TB, dir, compatNewestNameWithSuffix(c.TB, names, "_demo.sql"), "--rollback: ")
 			},
 		},
 	}
@@ -225,7 +226,7 @@ func TestCompatMigrateDiff_ForeignLayoutComposesEachLayoutsFiles(t *testing.T) {
 				"--to", "file://"+target)
 
 			c.Assert(err, qt.IsNil)
-			tt.check(c, dir, atlasDirEntryNames(c, dir))
+			tt.check(c, dir, atlasDirEntryNames(c.TB, dir))
 		})
 	}
 }
@@ -243,7 +244,8 @@ func TestCompatMigrateDiff_ForeignLayoutComposesEachLayoutsFiles(t *testing.T) {
 //
 // opener is "" for the two layouts whose rollback is a file of its own, where
 // the container IS the file.
-func assertCompatRollbackSection(c *qt.C, dir, name, opener string) {
+func assertCompatRollbackSection(tb testing.TB, dir, name, opener string) {
+	c := qt.New(tb)
 	c.Helper()
 	contents, err := os.ReadFile(filepath.Join(dir, name))
 	c.Assert(err, qt.IsNil)
@@ -272,14 +274,16 @@ func compatFilterNames(names []string, keep func(string) bool) []string {
 	})
 }
 
-func compatNewestNameWithSuffix(c *qt.C, names []string, suffix string) string {
+func compatNewestNameWithSuffix(tb testing.TB, names []string, suffix string) string {
+	c := qt.New(tb)
 	c.Helper()
 	matched := compatNamesWithSuffix(names, suffix)
 	c.Assert(len(matched) > 0, qt.IsTrue, qt.Commentf("no file ending %q in %v", suffix, names))
 	return matched[len(matched)-1]
 }
 
-func compatNewestNameWithPrefix(c *qt.C, names []string, prefix string) string {
+func compatNewestNameWithPrefix(tb testing.TB, names []string, prefix string) string {
+	c := qt.New(tb)
 	c.Helper()
 	matched := compatNamesWithPrefix(names, prefix)
 	c.Assert(len(matched) > 0, qt.IsTrue, qt.Commentf("no file starting %q in %v", prefix, names))

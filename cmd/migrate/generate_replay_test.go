@@ -49,7 +49,8 @@ func writeReplayFixture(t *testing.T) (migrationsDir, schemaPath string) {
 	return migrationsDir, schemaPath
 }
 
-func writeInterruptedReplayPublication(c *qt.C, migrationsDir string) []string {
+func writeInterruptedReplayPublication(tb testing.TB, migrationsDir string) []string {
+	c := qt.New(tb)
 	c.Helper()
 	contents := []byte("CREATE TABLE interrupted_items (id INTEGER);\n")
 	finalName := "9999999999_interrupted.up.sql"
@@ -115,7 +116,7 @@ func TestMigrateGenerateReplayDerivesCurrentStateFromDirectory(t *testing.T) {
 	// The replayed state already contains users, so only orders is created.
 	c.Assert(string(upSQL), qt.Contains, `CREATE TABLE "orders"`)
 	c.Assert(string(upSQL), qt.Not(qt.Contains), `CREATE TABLE "users"`)
-	assertGenerateReplayDevEmpty(c, devPath)
+	assertGenerateReplayDevEmpty(c.TB, devPath)
 }
 
 func TestMigrateGenerateReplayRefusesDriftBeforeConnectingToDevDatabase(t *testing.T) {
@@ -147,7 +148,7 @@ func TestMigrateGenerateReplayRecoversPendingPublicationBeforeIntegrityGate(t *t
 	migrationsDir, schemaPath := writeReplayFixture(t)
 	_, err := migratesum.WriteWithFormat(migrationsDir, "ptah")
 	c.Assert(err, qt.IsNil)
-	pendingPaths := writeInterruptedReplayPublication(c, migrationsDir)
+	pendingPaths := writeInterruptedReplayPublication(c.TB, migrationsDir)
 	devPath := filepath.Join(t.TempDir(), "dev.db")
 
 	out, err := runGenerate(
@@ -199,7 +200,7 @@ func TestMigrateGenerateReplayConnectTimeoutStartsAfterDirectoryLock(t *testing.
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 	c.Assert(<-lockResult, qt.IsNil)
 	c.Assert(out, qt.Contains, "UP:")
-	assertGenerateReplayDevEmpty(c, devPath)
+	assertGenerateReplayDevEmpty(c.TB, devPath)
 }
 
 func TestMigrateGenerateShadowRefusesDriftBeforeConnectingToTarget(t *testing.T) {
@@ -241,7 +242,7 @@ func TestMigrateGenerateShadowRecoversPendingPublicationBeforeIntegrityGate(t *t
 	migrationsDir, schemaPath := writeReplayFixture(t)
 	_, err := migratesum.WriteWithFormat(migrationsDir, "ptah")
 	c.Assert(err, qt.IsNil)
-	pendingPaths := writeInterruptedReplayPublication(c, migrationsDir)
+	pendingPaths := writeInterruptedReplayPublication(c.TB, migrationsDir)
 
 	out, err := runGenerate(
 		"--db-url", "postgres://invalid.invalid/target",
@@ -259,7 +260,8 @@ func TestMigrateGenerateShadowRecoversPendingPublicationBeforeIntegrityGate(t *t
 	}
 }
 
-func assertGenerateReplayDevEmpty(c *qt.C, path string) {
+func assertGenerateReplayDevEmpty(tb testing.TB, path string) {
+	c := qt.New(tb)
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(c.Context(), "sqlite://"+path)
 	c.Assert(err, qt.IsNil)

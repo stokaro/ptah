@@ -114,7 +114,7 @@ func TestNewRootCommand_NativeCommandTreeIsRegistered(t *testing.T) {
 func TestNewRootCommand_VersionSpellingsPrintTheSameBlock(t *testing.T) {
 	c := qt.New(t)
 
-	want := runRootCommandOutput(c, "version")
+	want := runRootCommandOutput(c.TB, "version")
 	c.Assert(want, qt.Contains, "Version: ")
 	c.Assert(want, qt.Not(qt.Contains), "ptah version")
 
@@ -127,13 +127,15 @@ func TestNewRootCommand_VersionSpellingsPrintTheSameBlock(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
-			c.Assert(runRootCommandOutput(c, tt.args...), qt.Equals, want)
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(runRootCommandOutput(c.TB, tt.args...), qt.Equals, want)
 		})
 	}
 }
 
-func runRootCommandOutput(c *qt.C, args ...string) string {
+func runRootCommandOutput(tb testing.TB, args ...string) string {
+	c := qt.New(tb)
 	c.Helper()
 	cmd := root.NewRootCommand()
 	var out bytes.Buffer
@@ -188,7 +190,7 @@ func TestNewRootCommand_PTAHAutoApproveDoesNotBypassDropAllConfirmation(t *testi
 	t.Setenv("PTAH_AUTO_APPROVE", "true")
 
 	dbURL := (&url.URL{Scheme: "sqlite", Path: filepath.Join(t.TempDir(), "ptah.db")}).String()
-	out, _, err := captureRootStdIO(c, "no\n", "db", "drop-all", "--db-url", dbURL)
+	out, _, err := captureRootStdIO(c.TB, "no\n", "db", "drop-all", "--db-url", dbURL)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(out, qt.Contains, "Type 'DELETE EVERYTHING'")
@@ -207,7 +209,8 @@ func executeRootCommand(args ...string) (stdout, stderr string, err error) {
 	return out.String(), errOut.String(), err
 }
 
-func captureRootStdIO(c *qt.C, input string, args ...string) (stdout, stderr string, err error) {
+func captureRootStdIO(tb testing.TB, input string, args ...string) (stdout, stderr string, err error) {
+	c := qt.New(tb)
 	c.Helper()
 
 	oldStdin := os.Stdin

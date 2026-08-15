@@ -20,7 +20,7 @@ func TestClient_RegistryOperationTimeout(t *testing.T) {
 		<-request.Context().Done()
 	}))
 	defer server.Close()
-	host := registryHost(c, server.URL)
+	host := registryHost(c.TB, server.URL)
 	client, err := ociartifact.NewClient(ociartifact.ClientOptions{
 		PlainHTTP:        true,
 		OperationTimeout: 50 * time.Millisecond,
@@ -45,7 +45,7 @@ func TestClient_CredentialHelperTimeout(t *testing.T) {
 		response.WriteHeader(http.StatusUnauthorized)
 	}))
 	defer server.Close()
-	host := registryHost(c, server.URL)
+	host := registryHost(c.TB, server.URL)
 	configDir := t.TempDir()
 	helperDir := t.TempDir()
 	c.Assert(
@@ -83,7 +83,8 @@ func TestClient_CredentialHelperTimeout(t *testing.T) {
 	c.Assert(time.Since(startedAt) < 2*time.Second, qt.IsTrue)
 }
 
-func registryHost(c *qt.C, rawURL string) string {
+func registryHost(tb testing.TB, rawURL string) string {
+	c := qt.New(tb)
 	parsed, err := url.Parse(rawURL)
 	c.Assert(err, qt.IsNil)
 	return parsed.Host

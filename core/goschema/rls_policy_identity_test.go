@@ -38,7 +38,7 @@ type ZetaOrder struct {
 func TestParseSource_KeepsOnePolicyNamePerTable(t *testing.T) {
 	c := qt.New(t)
 
-	database := mustParseSource(c, "fixture.go", sharedPolicyNameSource)
+	database := mustParseSource(c.TB, "fixture.go", sharedPolicyNameSource)
 
 	c.Assert(database.RLSPolicies, qt.HasLen, 2)
 	c.Assert(database.RLSPolicies[0].Name, qt.Equals, "tenant_isolation")
@@ -67,7 +67,7 @@ type AlphaOrder struct {
 }
 `
 
-	database := mustParseSource(c, "fixture.go", source)
+	database := mustParseSource(c.TB, "fixture.go", source)
 
 	c.Assert(database.RLSPolicies, qt.HasLen, 1)
 	c.Assert(database.RLSPolicies[0].Name, qt.Equals, "tenant_isolation")

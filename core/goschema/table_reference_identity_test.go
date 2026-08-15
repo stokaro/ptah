@@ -10,7 +10,6 @@ import (
 )
 
 func TestParseSource_TableDirectivePreservesReferenceIdentity(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name       string
@@ -42,7 +41,8 @@ func TestParseSource_TableDirectivePreservesReferenceIdentity(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			source := fmt.Sprintf(
 				"package models\n\n//ptah:schema:table %s\ntype Item struct{}\n",
 				tt.annotation,

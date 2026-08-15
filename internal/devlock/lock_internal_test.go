@@ -33,7 +33,6 @@ func TestFinishAcquire_CanceledContextReleasesFileLock(t *testing.T) {
 }
 
 func TestValidateLocalFileLockURL_HappyPath(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name    string
 		dialect string
@@ -67,14 +66,14 @@ func TestValidateLocalFileLockURL_HappyPath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(validateLocalFileLockURL(test.dialect, test.rawURL), qt.IsNil)
 		})
 	}
 }
 
 func TestValidateLocalFileLockURL_FailurePath(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name    string
 		dialect string
@@ -108,7 +107,8 @@ func TestValidateLocalFileLockURL_FailurePath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(
 				validateLocalFileLockURL(test.dialect, test.rawURL),
 				qt.ErrorMatches,

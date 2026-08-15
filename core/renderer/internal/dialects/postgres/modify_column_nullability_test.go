@@ -21,7 +21,6 @@ import (
 // apply failed rather than merely reading oddly. Measured live on PostgreSQL
 // 17.10 through both `ptah-compat schema apply` and `ptah schema apply`.
 func TestPostgres_ModifyColumn_KeyColumnKeepsNotNull(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name   string
@@ -44,7 +43,8 @@ func TestPostgres_ModifyColumn_KeyColumnKeepsNotNull(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t2 *testing.T) {
+			c := qt.New(t2)
 			alter := &ast.AlterTableNode{
 				Name:       "users",
 				Operations: []ast.AlterOperation{&ast.ModifyColumnOperation{Column: test.column}},
@@ -61,7 +61,6 @@ func TestPostgres_ModifyColumn_KeyColumnKeepsNotNull(t *testing.T) {
 // renderer that emits SET NOT NULL for every column, which would silently
 // re-introduce a constraint the author removed.
 func TestPostgres_ModifyColumn_OrdinaryColumnStillDropsNotNull(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name   string
@@ -84,7 +83,8 @@ func TestPostgres_ModifyColumn_OrdinaryColumnStillDropsNotNull(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t2 *testing.T) {
+			c := qt.New(t2)
 			alter := &ast.AlterTableNode{
 				Name:       "users",
 				Operations: []ast.AlterOperation{&ast.ModifyColumnOperation{Column: test.column}},

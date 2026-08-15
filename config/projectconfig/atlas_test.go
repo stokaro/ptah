@@ -78,7 +78,6 @@ func TestParseAtlasProjectConfig(t *testing.T) {
 }
 
 func TestParseAtlasProjectConfigGolden_HappyPath(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name    string
 		input   string
@@ -100,8 +99,9 @@ func TestParseAtlasProjectConfigGolden_HappyPath(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
-			raw := readAtlasProjectConfigFixture(c, tt.input)
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			raw := readAtlasProjectConfigFixture(c.TB, tt.input)
 
 			cfg, err := projectconfig.ParseAtlas(raw, "atlas.hcl", tt.envName)
 			c.Assert(err, qt.IsNil)
@@ -110,7 +110,7 @@ func TestParseAtlasProjectConfigGolden_HappyPath(t *testing.T) {
 			c.Assert(err, qt.IsNil)
 			got = append(got, '\n')
 
-			want := readAtlasProjectConfigFixture(c, tt.golden)
+			want := readAtlasProjectConfigFixture(c.TB, tt.golden)
 			c.Assert(string(got), qt.Equals, string(want))
 		})
 	}
@@ -121,7 +121,7 @@ func TestParseAtlasProjectConfigGolden_HappyPath(t *testing.T) {
 // than Atlas. The fixture is kept and asserted from the tolerant side.
 func TestParseAtlasProjectConfigGoldenUnknownAttributeIsIgnored(t *testing.T) {
 	c := qt.New(t)
-	raw := readAtlasProjectConfigFixture(c, "unsupported-attribute.hcl")
+	raw := readAtlasProjectConfigFixture(c.TB, "unsupported-attribute.hcl")
 
 	cfg, err := projectconfig.ParseAtlas(raw, "atlas.hcl", "")
 
@@ -134,7 +134,6 @@ func TestParseAtlasProjectConfigGoldenUnknownAttributeIsIgnored(t *testing.T) {
 }
 
 func TestParseAtlasProjectConfigGolden_FailurePath(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name    string
 		input   string
@@ -148,8 +147,9 @@ func TestParseAtlasProjectConfigGolden_FailurePath(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
-			raw := readAtlasProjectConfigFixture(c, tt.input)
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			raw := readAtlasProjectConfigFixture(c.TB, tt.input)
 
 			_, err := projectconfig.ParseAtlas(raw, "atlas.hcl", "")
 			c.Assert(err, qt.ErrorMatches, tt.wantErr)
@@ -157,7 +157,8 @@ func TestParseAtlasProjectConfigGolden_FailurePath(t *testing.T) {
 	}
 }
 
-func readAtlasProjectConfigFixture(c *qt.C, name string) []byte {
+func readAtlasProjectConfigFixture(tb testing.TB, name string) []byte {
+	c := qt.New(tb)
 	c.Helper()
 
 	data, err := os.ReadFile(filepath.Join("testdata", "atlas", name))
@@ -188,7 +189,6 @@ func newAtlasProjectConfigGolden(cfg projectconfig.Config) atlasProjectConfigGol
 }
 
 func TestParseAtlasProjectConfigPreservesMigrationDirURLSemantics(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name string
 		dir  string
@@ -212,7 +212,8 @@ func TestParseAtlasProjectConfigPreservesMigrationDirURLSemantics(t *testing.T) 
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			raw := fmt.Appendf(nil, `env "local" {
   migration {
     dir = %q
@@ -229,7 +230,6 @@ func TestParseAtlasProjectConfigPreservesMigrationDirURLSemantics(t *testing.T) 
 }
 
 func TestParseAtlasProjectConfigMigrationEnumIdentifiers(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name          string
 		format        string
@@ -282,7 +282,8 @@ func TestParseAtlasProjectConfigMigrationEnumIdentifiers(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			raw := fmt.Appendf(nil, `env "local" {
   migration {
     dir        = "file://migrations"
@@ -305,7 +306,6 @@ func TestParseAtlasProjectConfigMigrationEnumIdentifiers(t *testing.T) {
 }
 
 func TestParseAtlasProjectConfigMigrationEnumIdentifiersFailurePath(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name    string
 		attr    string
@@ -349,7 +349,8 @@ func TestParseAtlasProjectConfigMigrationEnumIdentifiersFailurePath(t *testing.T
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			raw := fmt.Appendf(nil, `env "local" {
   migration {
     %s
@@ -797,7 +798,8 @@ const typedVariableConsumerHCL = `env "local" {
 }
 `
 
-func assertTypedVariableConfig(c *qt.C, cfg projectconfig.Config) {
+func assertTypedVariableConfig(tb testing.TB, cfg projectconfig.Config) {
+	c := qt.New(tb)
 	c.Helper()
 	c.Assert(cfg.SchemaSources, qt.DeepEquals, []string{"file://a.hcl", "file://b.hcl"})
 	c.Assert(cfg.Exclude, qt.DeepEquals, []string{"app_*"})
@@ -834,7 +836,7 @@ variable "sources" {
 	cfg, err := projectconfig.ParseAtlas(raw, "atlas.hcl", "local")
 
 	c.Assert(err, qt.IsNil)
-	assertTypedVariableConfig(c, cfg)
+	assertTypedVariableConfig(c.TB, cfg)
 }
 
 func TestParseAtlasProjectConfigTypedVariableConvertsCompatibleDefault(t *testing.T) {
@@ -890,7 +892,7 @@ variable "sources" {
 	})
 
 	c.Assert(err, qt.IsNil)
-	assertTypedVariableConfig(c, cfg)
+	assertTypedVariableConfig(c.TB, cfg)
 }
 
 func TestParseAtlasProjectConfigTypedListVariableSingleOverride(t *testing.T) {
@@ -1249,7 +1251,6 @@ env "prod" {
 // name there is accepted -- measured: `--env dev` with an unresolvable reference
 // in `prod` exits 0.
 func TestParseAtlasProjectConfigAcceptsUnknownNamesInUnselectedEnv(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name string
 		raw  string
@@ -1293,7 +1294,8 @@ env "prod" {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			_, err := projectconfig.ParseAtlas([]byte(test.raw), "atlas.hcl", "dev")
 
 			c.Assert(err, qt.IsNil)
@@ -1302,7 +1304,6 @@ env "prod" {
 }
 
 func TestParseAtlasProjectConfigUnsupportedConstructsInUnselectedEnv(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name    string
 		raw     string
@@ -1342,7 +1343,8 @@ env "prod" {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			_, err := projectconfig.ParseAtlas([]byte(test.raw), "atlas.hcl", "dev")
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)

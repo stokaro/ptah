@@ -32,7 +32,8 @@ func fixture() *goschema.Database {
 	}
 }
 
-func renderMap(c *qt.C, opts openapirender.Options) map[string]any {
+func renderMap(tb testing.TB, opts openapirender.Options) map[string]any {
+	c := qt.New(tb)
 	res, err := openapirender.Render(fixture(), opts)
 	c.Assert(err, qt.IsNil)
 	var doc map[string]any
@@ -42,7 +43,7 @@ func renderMap(c *qt.C, opts openapirender.Options) map[string]any {
 
 func TestRenderEnvelope(t *testing.T) {
 	c := qt.New(t)
-	doc := renderMap(c, openapirender.Options{Title: "My API", Version: "2.0.0"})
+	doc := renderMap(c.TB, openapirender.Options{Title: "My API", Version: "2.0.0"})
 
 	c.Assert(doc["openapi"], qt.Equals, "3.0.3")
 	info := doc["info"].(map[string]any)
@@ -55,7 +56,7 @@ func TestRenderEnvelope(t *testing.T) {
 
 func TestRenderColumnMappings(t *testing.T) {
 	c := qt.New(t)
-	doc := renderMap(c, openapirender.Options{})
+	doc := renderMap(c.TB, openapirender.Options{})
 	schemas := doc["components"].(map[string]any)["schemas"].(map[string]any)
 
 	authors := schemas["authors"].(map[string]any)
@@ -98,7 +99,7 @@ func TestRenderUnknownTypeDiagnostic(t *testing.T) {
 	c.Assert(res.Diagnostics, qt.HasLen, 1)
 	c.Assert(res.Diagnostics[0].Path, qt.Contains, "books.properties.quirk")
 	// The unknown type still renders, as a string.
-	doc := renderMap(c, openapirender.Options{})
+	doc := renderMap(c.TB, openapirender.Options{})
 	quirk := doc["components"].(map[string]any)["schemas"].(map[string]any)["books"].(map[string]any)["properties"].(map[string]any)["quirk"].(map[string]any)
 	c.Assert(quirk["type"], qt.Equals, "string")
 }
@@ -130,7 +131,7 @@ func TestRenderArrayAndUnsigned(t *testing.T) {
 
 func TestRenderTableFilter(t *testing.T) {
 	c := qt.New(t)
-	doc := renderMap(c, openapirender.Options{IncludeTables: []string{"authors"}})
+	doc := renderMap(c.TB, openapirender.Options{IncludeTables: []string{"authors"}})
 	schemas := doc["components"].(map[string]any)["schemas"].(map[string]any)
 	c.Assert(schemas, qt.HasLen, 1)
 	_, ok := schemas["authors"]

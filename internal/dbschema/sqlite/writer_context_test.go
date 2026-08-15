@@ -157,10 +157,10 @@ func TestWriterDropAllTables_CleansOnlyConfiguredAttachedSchema(t *testing.T) {
 	err = writer.DropAllTables(t.Context())
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(sqliteConnSchemaObjectCount(c, conn, "main", "users"), qt.Equals, 1)
-	c.Assert(sqliteConnSchemaObjectCount(c, conn, "aux", "users"), qt.Equals, 0)
-	c.Assert(sqliteConnSchemaObjectCount(c, conn, "aux", "search"), qt.Equals, 0)
-	c.Assert(sqliteConnSchemaObjectCount(c, conn, "temp", "users"), qt.Equals, 1)
+	c.Assert(sqliteConnSchemaObjectCount(c.TB, conn, "main", "users"), qt.Equals, 1)
+	c.Assert(sqliteConnSchemaObjectCount(c.TB, conn, "aux", "users"), qt.Equals, 0)
+	c.Assert(sqliteConnSchemaObjectCount(c.TB, conn, "aux", "search"), qt.Equals, 0)
+	c.Assert(sqliteConnSchemaObjectCount(c.TB, conn, "temp", "users"), qt.Equals, 1)
 }
 
 func TestWriterDropAllTables_PreservesPaddedCatalogIdentifierBytes(t *testing.T) {
@@ -186,8 +186,8 @@ func TestWriterDropAllTables_PreservesPaddedCatalogIdentifierBytes(t *testing.T)
 	err = writer.DropAllTables(t.Context())
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(sqliteConnSchemaObjectCount(c, conn, " aux ", "users"), qt.Equals, 0)
-	c.Assert(sqliteConnSchemaObjectCount(c, conn, "aux", "users"), qt.Equals, 1)
+	c.Assert(sqliteConnSchemaObjectCount(c.TB, conn, " aux ", "users"), qt.Equals, 0)
+	c.Assert(sqliteConnSchemaObjectCount(c.TB, conn, "aux", "users"), qt.Equals, 1)
 }
 
 func TestWriterDropAllTables_RefusesCleanupWhenTempViewExists(t *testing.T) {
@@ -218,8 +218,8 @@ func TestWriterDropAllTables_RefusesCleanupWhenTempViewExists(t *testing.T) {
 	)
 	c.Assert(statements, qt.Not(qt.Contains), "PRAGMA foreign_keys = OFF")
 	c.Assert(strings.Join(statements, "\n"), qt.Not(qt.Contains), "DROP ")
-	c.Assert(sqliteConnSchemaObjectCount(c, conn, "main", "users"), qt.Equals, 1)
-	c.Assert(sqliteConnSchemaObjectCount(c, conn, "temp", "temp_users"), qt.Equals, 1)
+	c.Assert(sqliteConnSchemaObjectCount(c.TB, conn, "main", "users"), qt.Equals, 1)
+	c.Assert(sqliteConnSchemaObjectCount(c.TB, conn, "temp", "temp_users"), qt.Equals, 1)
 
 	var id int
 	err = conn.QueryRowContext(t.Context(), `SELECT id FROM temp_users`).Scan(&id)
@@ -288,7 +288,7 @@ func TestWriterDropDatabaseRealm_RejectsAttachedDatabase(t *testing.T) {
 	err = writer.DropDatabaseRealm(t.Context())
 
 	c.Assert(err, qt.ErrorMatches, `sqlite: refusing database-realm cleanup with attached databases: aux`)
-	c.Assert(sqliteConnSchemaObjectCount(c, conn, "main", "users"), qt.Equals, 1)
+	c.Assert(sqliteConnSchemaObjectCount(c.TB, conn, "main", "users"), qt.Equals, 1)
 }
 
 func TestWriterDropDatabaseRealm_RejectsTempObject(t *testing.T) {
@@ -306,7 +306,7 @@ func TestWriterDropDatabaseRealm_RejectsTempObject(t *testing.T) {
 	err = writer.DropDatabaseRealm(t.Context())
 
 	c.Assert(err, qt.ErrorMatches, `sqlite: refusing database-realm cleanup with TEMP objects: table:scratch`)
-	c.Assert(sqliteConnSchemaObjectCount(c, conn, "temp", "scratch"), qt.Equals, 1)
+	c.Assert(sqliteConnSchemaObjectCount(c.TB, conn, "temp", "scratch"), qt.Equals, 1)
 }
 
 func openFileSQLiteDB(t *testing.T) *sql.DB {
@@ -347,7 +347,8 @@ func openTrackedSQLiteDBWithDSN(t *testing.T, trace *sqliteCleanupTrace, dsn str
 	return db
 }
 
-func sqliteConnSchemaObjectCount(c *qt.C, conn *sql.Conn, schema, name string) int {
+func sqliteConnSchemaObjectCount(tb testing.TB, conn *sql.Conn, schema, name string) int {
+	c := qt.New(tb)
 	c.Helper()
 	var count int
 	const query = `SELECT COUNT(*) FROM pragma_table_list WHERE schema = ? AND name = ?`

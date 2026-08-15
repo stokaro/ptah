@@ -155,7 +155,7 @@ func TestCompatMigrateSet_ConfigResolvedDirRefuses(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
 	writeStatusIntegrityUnhashed(c, "migrations")
-	writeAtlasApplyProjectConfig(c, filepath.Join(root, "set.db"), "atlas", "LINEAR")
+	writeAtlasApplyProjectConfig(c.TB, filepath.Join(root, "set.db"), "atlas", "LINEAR")
 
 	stdout, stderr, err := runCompat("migrate", "set", setIntegrityVersion, "--env", "local")
 

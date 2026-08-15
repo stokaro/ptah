@@ -54,13 +54,13 @@ func TestGenerateMigration_SQLiteAddColumnHasApplicableDownMigration(t *testing.
 	mig, err := migrator.NewFSMigrator(conn, os.DirFS(migrationsDir))
 	c.Assert(err, qt.IsNil)
 	c.Assert(mig.MigrateUp(ctx), qt.IsNil)
-	c.Assert(sqliteColumnCount(c, conn, "users", "name"), qt.Equals, 1)
+	c.Assert(sqliteColumnCount(c.TB, conn, "users", "name"), qt.Equals, 1)
 
 	c.Assert(mig.MigrateDownTo(ctx, 0), qt.IsNil)
-	c.Assert(sqliteColumnCount(c, conn, "users", "name"), qt.Equals, 0)
-	c.Assert(sqliteSchemaObjectCount(c, conn, "index", "idx_users_email", "users"), qt.Equals, 1)
-	c.Assert(sqliteSchemaObjectCount(c, conn, "trigger", "trg_users_email", "users"), qt.Equals, 1)
-	c.Assert(sqliteUserEmail(c, conn), qt.Equals, "a@example.test")
+	c.Assert(sqliteColumnCount(c.TB, conn, "users", "name"), qt.Equals, 0)
+	c.Assert(sqliteSchemaObjectCount(c.TB, conn, "index", "idx_users_email", "users"), qt.Equals, 1)
+	c.Assert(sqliteSchemaObjectCount(c.TB, conn, "trigger", "trg_users_email", "users"), qt.Equals, 1)
+	c.Assert(sqliteUserEmail(c.TB, conn), qt.Equals, "a@example.test")
 }
 
 func TestGenerateMigration_SQLiteAddColumnPreservesStrictWithoutRowID(t *testing.T) {
@@ -95,9 +95,9 @@ func TestGenerateMigration_SQLiteAddColumnPreservesStrictWithoutRowID(t *testing
 	c.Assert(err, qt.IsNil)
 	c.Assert(mig.MigrateUp(ctx), qt.IsNil)
 	c.Assert(mig.MigrateDownTo(ctx, 0), qt.IsNil)
-	c.Assert(sqliteTableSQL(c, conn, "users"), qt.Contains, "WITHOUT ROWID")
-	c.Assert(sqliteTableSQL(c, conn, "users"), qt.Contains, "STRICT")
-	c.Assert(sqliteUserEmailByID(c, conn, "u1"), qt.Equals, "strict@example.test")
+	c.Assert(sqliteTableSQL(c.TB, conn, "users"), qt.Contains, "WITHOUT ROWID")
+	c.Assert(sqliteTableSQL(c.TB, conn, "users"), qt.Contains, "STRICT")
+	c.Assert(sqliteUserEmailByID(c.TB, conn, "u1"), qt.Equals, "strict@example.test")
 }
 
 func TestGenerateMigration_SQLiteAddColumnRejectsInboundForeignKeys(t *testing.T) {
@@ -277,7 +277,8 @@ type User struct {
 }
 `
 
-func sqliteColumnCount(c *qt.C, conn *dbschema.DatabaseConnection, table, column string) int {
+func sqliteColumnCount(tb testing.TB, conn *dbschema.DatabaseConnection, table, column string) int {
+	c := qt.New(tb)
 	c.Helper()
 	query := fmt.Sprintf("SELECT COUNT(*) FROM pragma_table_info(%s) WHERE name = ?", quoteSQLiteString(table))
 	var count int
@@ -286,7 +287,8 @@ func sqliteColumnCount(c *qt.C, conn *dbschema.DatabaseConnection, table, column
 	return count
 }
 
-func sqliteSchemaObjectCount(c *qt.C, conn *dbschema.DatabaseConnection, objectType, name, table string) int {
+func sqliteSchemaObjectCount(tb testing.TB, conn *dbschema.DatabaseConnection, objectType, name, table string) int {
+	c := qt.New(tb)
 	c.Helper()
 	var count int
 	err := conn.QueryRowContext(
@@ -300,7 +302,8 @@ func sqliteSchemaObjectCount(c *qt.C, conn *dbschema.DatabaseConnection, objectT
 	return count
 }
 
-func sqliteTableSQL(c *qt.C, conn *dbschema.DatabaseConnection, table string) string {
+func sqliteTableSQL(tb testing.TB, conn *dbschema.DatabaseConnection, table string) string {
+	c := qt.New(tb)
 	c.Helper()
 	var sql string
 	err := conn.QueryRowContext(context.Background(), "SELECT sql FROM sqlite_schema WHERE type = 'table' AND name = ?", table).Scan(&sql)
@@ -308,7 +311,8 @@ func sqliteTableSQL(c *qt.C, conn *dbschema.DatabaseConnection, table string) st
 	return sql
 }
 
-func sqliteUserEmail(c *qt.C, conn *dbschema.DatabaseConnection) string {
+func sqliteUserEmail(tb testing.TB, conn *dbschema.DatabaseConnection) string {
+	c := qt.New(tb)
 	c.Helper()
 	var email string
 	err := conn.QueryRowContext(context.Background(), "SELECT email FROM users WHERE id = 1").Scan(&email)
@@ -316,7 +320,8 @@ func sqliteUserEmail(c *qt.C, conn *dbschema.DatabaseConnection) string {
 	return email
 }
 
-func sqliteUserEmailByID(c *qt.C, conn *dbschema.DatabaseConnection, id string) string {
+func sqliteUserEmailByID(tb testing.TB, conn *dbschema.DatabaseConnection, id string) string {
+	c := qt.New(tb)
 	c.Helper()
 	var email string
 	err := conn.QueryRowContext(context.Background(), "SELECT email FROM users WHERE id = ?", id).Scan(&email)

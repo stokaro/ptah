@@ -21,10 +21,10 @@ import (
 // subtests, each named for its rule code and printing "value is not true" with
 // the comment "native rule PG101 prints as PG101, which resolves to []".
 func TestRules_EveryCompatibilityCodeIsSuppressibleByThatCode(t *testing.T) {
-	c := qt.New(t)
 
 	for _, rule := range lint.Rules() {
-		c.Run(rule.Code, func(c *qt.C) {
+		t.Run(rule.Code, func(t *testing.T) {
+			c := qt.New(t)
 			printed := atlaslint.RuleForNativeCode(rule.Code).Code
 			targets := atlaslint.NativeSuppressionTargets(printed)
 			suppressed := slices.ContainsFunc(targets, func(target atlaslint.Target) bool {

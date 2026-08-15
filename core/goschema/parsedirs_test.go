@@ -10,7 +10,8 @@ import (
 	"go.5x5.cz/ptah/core/goschema"
 )
 
-func writeGoFile(c *qt.C, dir, name, content string) {
+func writeGoFile(tb testing.TB, dir, name, content string) {
+	c := qt.New(tb)
 	c.Assert(os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600), qt.IsNil)
 }
 
@@ -19,8 +20,8 @@ func TestParseDirsMergesMultipleRoots(t *testing.T) {
 
 	rootA := t.TempDir()
 	rootB := t.TempDir()
-	writeGoFile(c, rootA, "users.go", usersSource)
-	writeGoFile(c, rootB, "orders.go", ordersSource)
+	writeGoFile(c.TB, rootA, "users.go", usersSource)
+	writeGoFile(c.TB, rootB, "orders.go", ordersSource)
 
 	db, err := goschema.ParseDirs(rootA, rootB)
 	c.Assert(err, qt.IsNil)
@@ -38,7 +39,7 @@ func TestParseDirsSingleRoot(t *testing.T) {
 	c := qt.New(t)
 
 	root := t.TempDir()
-	writeGoFile(c, root, "users.go", usersSource)
+	writeGoFile(c.TB, root, "users.go", usersSource)
 
 	db, err := goschema.ParseDirs(root)
 	c.Assert(err, qt.IsNil)
@@ -61,8 +62,8 @@ func TestParseDirRawFeedsMerge(t *testing.T) {
 
 	rootA := t.TempDir()
 	rootB := t.TempDir()
-	writeGoFile(c, rootA, "users.go", usersSource)
-	writeGoFile(c, rootB, "orders.go", ordersSource)
+	writeGoFile(c.TB, rootA, "users.go", usersSource)
+	writeGoFile(c.TB, rootB, "orders.go", ordersSource)
 
 	// ParseDirRaw yields un-finalized sources suitable for Merge to combine and
 	// finalize once, matching a single finalized ParseDirs over both roots.

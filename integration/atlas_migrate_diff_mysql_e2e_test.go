@@ -106,7 +106,6 @@ func TestAtlasMigrateDiffMySQLFamilyDatabaseDesiredStateE2E(t *testing.T) {
 }
 
 func TestMySQLFamilyLockedDropRejectsConcurrentDependenciesE2E(t *testing.T) {
-	c := qt.New(t)
 	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
 	defer cancel()
 
@@ -153,7 +152,8 @@ func TestMySQLFamilyLockedDropRejectsConcurrentDependenciesE2E(t *testing.T) {
 	}
 
 	for _, engine := range engines {
-		c.Run(engine.config.name, func(c *qt.C) {
+		t.Run(engine.config.name, func(t *testing.T) {
+			c := qt.New(t)
 			for _, race := range engine.races {
 				c.Run(race.name, func(c *qt.C) {
 					runMySQLLockedDropRace(c, ctx, engine.config, race)

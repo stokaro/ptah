@@ -74,25 +74,25 @@ func TestRefreshEditedCheckpointIntegrity(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			t.Run("edited checkpoint only", func(t *testing.T) {
 				c := qt.New(t)
-				dir, authorized, _, paths := prepareCheckpoint(c, fixture)
-				writer := openEditedCheckpointWriter(c, dir)
-				authorization := authorizeCheckpointEdit(c, writer, fixture, authorized, paths)
-				editCheckpoint(c, dir, fixture.editName)
+				dir, authorized, _, paths := prepareCheckpoint(c.TB, fixture)
+				writer := openEditedCheckpointWriter(c.TB, dir)
+				authorization := authorizeCheckpointEdit(c.TB, writer, fixture, authorized, paths)
+				editCheckpoint(c.TB, dir, fixture.editName)
 
 				err := migrationintegrity.RefreshEditedCheckpointIntegrity(
 					t.Context(), writer, authorization,
 				)
 
 				c.Assert(err, qt.IsNil)
-				assertMigrationIntegrity(c, dir, fixture.format, true)
+				assertMigrationIntegrity(c.TB, dir, fixture.format, true)
 			})
 
 			t.Run("concurrent prior history change", func(t *testing.T) {
 				c := qt.New(t)
-				dir, authorized, priorPath, paths := prepareCheckpoint(c, fixture)
-				writer := openEditedCheckpointWriter(c, dir)
-				authorization := authorizeCheckpointEdit(c, writer, fixture, authorized, paths)
-				editCheckpoint(c, dir, fixture.editName)
+				dir, authorized, priorPath, paths := prepareCheckpoint(c.TB, fixture)
+				writer := openEditedCheckpointWriter(c.TB, dir)
+				authorization := authorizeCheckpointEdit(c.TB, writer, fixture, authorized, paths)
+				editCheckpoint(c.TB, dir, fixture.editName)
 				c.Assert(os.WriteFile(priorPath, []byte("CREATE TABLE attacker (id INTEGER);\n"), 0o600), qt.IsNil)
 
 				err := migrationintegrity.RefreshEditedCheckpointIntegrity(
@@ -100,15 +100,15 @@ func TestRefreshEditedCheckpointIntegrity(t *testing.T) {
 				)
 
 				c.Assert(err, qt.ErrorIs, migrationintegrity.ErrAuthorizedHistoryChanged)
-				assertMigrationIntegrity(c, dir, fixture.format, false)
+				assertMigrationIntegrity(c.TB, dir, fixture.format, false)
 			})
 
 			t.Run("concurrent integrity metadata change", func(t *testing.T) {
 				c := qt.New(t)
-				dir, authorized, _, paths := prepareCheckpoint(c, fixture)
-				writer := openEditedCheckpointWriter(c, dir)
-				authorization := authorizeCheckpointEdit(c, writer, fixture, authorized, paths)
-				editCheckpoint(c, dir, fixture.editName)
+				dir, authorized, _, paths := prepareCheckpoint(c.TB, fixture)
+				writer := openEditedCheckpointWriter(c.TB, dir)
+				authorization := authorizeCheckpointEdit(c.TB, writer, fixture, authorized, paths)
+				editCheckpoint(c.TB, dir, fixture.editName)
 				sumName, err := migratesum.FileNameForFormat(fixture.format)
 				c.Assert(err, qt.IsNil)
 				sum, err := os.ReadFile(filepath.Join(dir, sumName))
@@ -118,39 +118,40 @@ func TestRefreshEditedCheckpointIntegrity(t *testing.T) {
 				index := strings.IndexByte(base64Alphabet, sum[3])
 				c.Assert(index >= 0, qt.IsTrue)
 				sum[3] = base64Alphabet[(index+1)%len(base64Alphabet)]
-				writeRootedFile(c, dir, sumName, sum)
+				writeRootedFile(c.TB, dir, sumName, sum)
 
 				err = migrationintegrity.RefreshEditedCheckpointIntegrity(
 					t.Context(), writer, authorization,
 				)
 
 				c.Assert(err, qt.ErrorIs, migrationintegrity.ErrAuthorizedHistoryChanged)
-				assertMigrationIntegrity(c, dir, fixture.format, false)
+				assertMigrationIntegrity(c.TB, dir, fixture.format, false)
 			})
 
 			t.Run("different writer", func(t *testing.T) {
 				c := qt.New(t)
-				dir, authorized, _, paths := prepareCheckpoint(c, fixture)
-				writer := openEditedCheckpointWriter(c, dir)
-				authorization := authorizeCheckpointEdit(c, writer, fixture, authorized, paths)
-				editCheckpoint(c, dir, fixture.editName)
-				otherWriter := openEditedCheckpointWriter(c, dir)
+				dir, authorized, _, paths := prepareCheckpoint(c.TB, fixture)
+				writer := openEditedCheckpointWriter(c.TB, dir)
+				authorization := authorizeCheckpointEdit(c.TB, writer, fixture, authorized, paths)
+				editCheckpoint(c.TB, dir, fixture.editName)
+				otherWriter := openEditedCheckpointWriter(c.TB, dir)
 
 				err := migrationintegrity.RefreshEditedCheckpointIntegrity(
 					t.Context(), otherWriter, authorization,
 				)
 
 				c.Assert(err, qt.ErrorMatches, "checkpoint edit authorization belongs to a different migration writer")
-				assertMigrationIntegrity(c, dir, fixture.format, false)
+				assertMigrationIntegrity(c.TB, dir, fixture.format, false)
 			})
 		})
 	}
 }
 
 func prepareCheckpoint(
-	c *qt.C,
+	tb testing.TB,
 	fixture editedCheckpointFixture,
 ) (string, fs.FS, string, []string) {
+	c := qt.New(tb)
 	c.Helper()
 	dir := c.TempDir()
 	priorPath := fixture.seed(c, dir)
@@ -165,12 +166,13 @@ func prepareCheckpoint(
 }
 
 func authorizeCheckpointEdit(
-	c *qt.C,
+	tb testing.TB,
 	writer *atlasmigrate.MigrationWriter,
 	fixture editedCheckpointFixture,
 	authorized fs.FS,
 	paths []string,
 ) migrationintegrity.CheckpointEditAuthorization {
+	c := qt.New(tb)
 	c.Helper()
 	authorization, err := migrationintegrity.AuthorizeCheckpointEdit(
 		c.Context(), writer, fixture.format, authorized, paths...,
@@ -179,16 +181,18 @@ func authorizeCheckpointEdit(
 	return authorization
 }
 
-func editCheckpoint(c *qt.C, dir, name string) {
+func editCheckpoint(tb testing.TB, dir, name string) {
+	c := qt.New(tb)
 	c.Helper()
 	editPath := filepath.Join(dir, name)
 	contents, err := os.ReadFile(editPath)
 	c.Assert(err, qt.IsNil)
 	contents = append(contents, []byte("-- edited checkpoint\n")...)
-	writeRootedFile(c, dir, name, contents)
+	writeRootedFile(c.TB, dir, name, contents)
 }
 
-func writeRootedFile(c *qt.C, dir, name string, contents []byte) {
+func writeRootedFile(tb testing.TB, dir, name string, contents []byte) {
+	c := qt.New(tb)
 	c.Helper()
 	root, err := os.OpenRoot(dir)
 	c.Assert(err, qt.IsNil)
@@ -201,7 +205,8 @@ func writeRootedFile(c *qt.C, dir, name string, contents []byte) {
 	c.Assert(root.Close(), qt.IsNil)
 }
 
-func openEditedCheckpointWriter(c *qt.C, dir string) *atlasmigrate.MigrationWriter {
+func openEditedCheckpointWriter(tb testing.TB, dir string) *atlasmigrate.MigrationWriter {
+	c := qt.New(tb)
 	c.Helper()
 	writer, err := atlasmigrate.OpenMigrationWriter(nil, dir)
 	c.Assert(err, qt.IsNil)
@@ -210,11 +215,12 @@ func openEditedCheckpointWriter(c *qt.C, dir string) *atlasmigrate.MigrationWrit
 }
 
 func assertMigrationIntegrity(
-	c *qt.C,
+	tb testing.TB,
 	dir string,
 	format migrator.MigrationDirFormat,
 	wantOK bool,
 ) {
+	c := qt.New(tb)
 	c.Helper()
 	result, hashed, err := migratesum.VerifyHashed(os.DirFS(dir), format)
 	c.Assert(err, qt.IsNil)

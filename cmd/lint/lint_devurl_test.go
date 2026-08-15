@@ -20,7 +20,7 @@ func TestRunLint_DevURLReplaysMigrationAndInfersDialect(t *testing.T) {
 	c := qt.New(t)
 	migrationsDir := t.TempDir()
 	devDBPath := filepath.Join(t.TempDir(), "dev.db")
-	writeLintDevURLFile(c, migrationsDir, "1_create_lint_dev_url.sql",
+	writeLintDevURLFile(c.TB, migrationsDir, "1_create_lint_dev_url.sql",
 		"CREATE TABLE lint_dev_url (id INTEGER PRIMARY KEY);\n")
 
 	stdout, _, err := executeLintCommand(
@@ -37,7 +37,7 @@ func TestRunLint_DevURLReplaysMigrationAndInfersDialect(t *testing.T) {
 	}
 	c.Assert(json.Unmarshal([]byte(stdout), &report), qt.IsNil)
 	c.Assert(report.Dialect, qt.Equals, "sqlite")
-	assertLintDevURLSQLiteTableCount(c, devDBPath, "lint_dev_url", 0)
+	assertLintDevURLSQLiteTableCount(c.TB, devDBPath, "lint_dev_url", 0)
 }
 
 func TestRunLint_UsesEvaluatedAtlasProjectConfigDevURL(t *testing.T) {
@@ -46,7 +46,7 @@ func TestRunLint_UsesEvaluatedAtlasProjectConfigDevURL(t *testing.T) {
 	t.Chdir(dir)
 	t.Setenv("PTAH_LINT_DEV_URL", "sqlite://"+filepath.Join(dir, "config-dev.db"))
 	c.Assert(os.Mkdir("migrations", 0o700), qt.IsNil)
-	writeLintDevURLFile(c, "migrations", "1_create_config_dev_url.sql",
+	writeLintDevURLFile(c.TB, "migrations", "1_create_config_dev_url.sql",
 		"CREATE TABLE lint_config_dev_url (id INTEGER PRIMARY KEY);\n")
 	c.Assert(os.WriteFile("atlas.hcl", []byte(`locals {
   dev_url = getenv("PTAH_LINT_DEV_URL")
@@ -72,14 +72,14 @@ env "local" {
 	}
 	c.Assert(json.Unmarshal([]byte(stdout), &report), qt.IsNil)
 	c.Assert(report.Dialect, qt.Equals, "sqlite")
-	assertLintDevURLSQLiteTableCount(c, filepath.Join(dir, "config-dev.db"), "lint_config_dev_url", 0)
+	assertLintDevURLSQLiteTableCount(c.TB, filepath.Join(dir, "config-dev.db"), "lint_config_dev_url", 0)
 }
 
 func TestRunLint_DevURLFailureExitsTwo(t *testing.T) {
 	c := qt.New(t)
 	migrationsDir := t.TempDir()
 	devDBPath := filepath.Join(t.TempDir(), "dev.db")
-	writeLintDevURLFile(c, migrationsDir, "1_bad_lint_dev_url.sql",
+	writeLintDevURLFile(c.TB, migrationsDir, "1_bad_lint_dev_url.sql",
 		"INSERT INTO missing_lint_dev_url_table (id) VALUES (1);\n")
 
 	_, stderr, err := executeLintCommand(
@@ -95,7 +95,7 @@ func TestRunLint_DevURLRejectsDialectMismatch(t *testing.T) {
 	c := qt.New(t)
 	migrationsDir := t.TempDir()
 	devDBPath := filepath.Join(t.TempDir(), "dev.db")
-	writeLintDevURLFile(c, migrationsDir, "1_create_lint_dev_url.sql",
+	writeLintDevURLFile(c.TB, migrationsDir, "1_create_lint_dev_url.sql",
 		"CREATE TABLE lint_dev_url_mismatch (id INTEGER PRIMARY KEY);\n")
 
 	_, stderr, err := executeLintCommand(
@@ -119,12 +119,14 @@ func executeLintCommand(args ...string) (stdout, stderr string, err error) {
 	return out.String(), errOut.String(), err
 }
 
-func writeLintDevURLFile(c *qt.C, dir, name, sql string) {
+func writeLintDevURLFile(tb testing.TB, dir, name, sql string) {
+	c := qt.New(tb)
 	c.Helper()
 	c.Assert(os.WriteFile(filepath.Join(dir, name), []byte(sql), 0o600), qt.IsNil)
 }
 
-func assertLintDevURLSQLiteTableCount(c *qt.C, dbPath, table string, want int) {
+func assertLintDevURLSQLiteTableCount(tb testing.TB, dbPath, table string, want int) {
+	c := qt.New(tb)
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)
 	c.Assert(err, qt.IsNil)

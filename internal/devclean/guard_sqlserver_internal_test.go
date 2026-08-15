@@ -15,7 +15,6 @@ import (
 )
 
 func TestValidateSQLServerReplayStatement_HappyPath(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name      string
@@ -142,7 +141,8 @@ func TestValidateSQLServerReplayStatement_HappyPath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			err := validateSQLServerReplayStatement(sqlServerReplayTokens(test.statement))
 			c.Assert(err, qt.IsNil)
 		})
@@ -150,7 +150,6 @@ func TestValidateSQLServerReplayStatement_HappyPath(t *testing.T) {
 }
 
 func TestValidateSQLServerReplayStatement_FailurePath(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name          string
@@ -542,7 +541,8 @@ func TestValidateSQLServerReplayStatement_FailurePath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			err := validateSQLServerReplayStatement(sqlServerReplayTokens(test.statement))
 			c.Assert(
 				err,

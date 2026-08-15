@@ -243,7 +243,7 @@ func TestParseAtlasEnvSchemasOptOut(t *testing.T) {
 
 			cfg, err := projectconfig.ParseAtlas([]byte(test.raw), "atlas.hcl", "local")
 
-			assertOptionalErrorMatches(c, err, test.err)
+			assertOptionalErrorMatches(c.TB, err, test.err)
 			c.Check(cfg.Schemas, qt.DeepEquals, test.wantSchemas)
 			c.Check(ignoredConstructContains(cfg, "schemas"), qt.Equals, test.wantIgnored)
 		})
@@ -337,7 +337,8 @@ func TestLoadAtlasEnvSchemasOptOutValidatesWithoutAConfigFile(t *testing.T) {
 // assertOptionalErrorMatches asserts the error against want, treating an empty
 // want as "no error". It is a helper rather than a branch in the test body
 // because the repository's test-style gate rejects control flow there.
-func assertOptionalErrorMatches(c *qt.C, err error, want string) {
+func assertOptionalErrorMatches(tb testing.TB, err error, want string) {
+	c := qt.New(tb)
 	c.Helper()
 	checks := map[bool]func(){
 		true:  func() { c.Assert(err, qt.IsNil) },

@@ -85,7 +85,8 @@ table "users" {
 		{name: "exclude", args: []string{"--exclude", "pg_catalog"}},
 	}
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			out, err := runCompatSchemaApply(targetURL, devURL, path, test.args...)
 			c.Assert(err, qt.ErrorMatches,
 				`.*validate --to schema:.*declares server-owned PostgreSQL schema "pg_catalog".*`)

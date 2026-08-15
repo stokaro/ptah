@@ -24,7 +24,8 @@ const futureDatedMigration = "29991231235959_future.sql"
 // hashMigrationDir writes atlas.sum over dir. A directory that already holds a
 // migration is refused by the checksum preflight without it, which would make
 // every row below fail for a reason that is not the version.
-func hashMigrationDir(c *qt.C, dir string) {
+func hashMigrationDir(tb testing.TB, dir string) {
+	c := qt.New(tb)
 	c.Helper()
 	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
@@ -36,7 +37,8 @@ func hashMigrationDir(c *qt.C, dir string) {
 }
 
 // dirEntryNames lists the base names in dir.
-func dirEntryNames(c *qt.C, dir string) []string {
+func dirEntryNames(tb testing.TB, dir string) []string {
+	c := qt.New(tb)
 	c.Helper()
 	entries, err := os.ReadDir(dir)
 	c.Assert(err, qt.IsNil)
@@ -50,9 +52,10 @@ func dirEntryNames(c *qt.C, dir string) []string {
 // runMigrateDiffInto plans one migration into dir and returns the base names
 // that were not there before, excluding atlas.sum. Comparing against a listing
 // taken first keeps the caller from having to know which files it seeded.
-func runMigrateDiffInto(c *qt.C, dir string) []string {
+func runMigrateDiffInto(tb testing.TB, dir string) []string {
+	c := qt.New(tb)
 	c.Helper()
-	before := dirEntryNames(c, dir)
+	before := dirEntryNames(c.TB, dir)
 	desiredPath := seedSQLiteDB(c.TB.(*testing.T), "CREATE TABLE desired_users (id INTEGER PRIMARY KEY)")
 	devPath := filepath.Join(c.TB.(*testing.T).TempDir(), "dev.db")
 	cmd := atlas.NewCompatCommand("atlas")
@@ -69,7 +72,7 @@ func runMigrateDiffInto(c *qt.C, dir string) []string {
 	c.Assert(cmd.Execute(), qt.IsNil, qt.Commentf("output:\n%s", out.String()))
 
 	var written []string
-	for _, name := range dirEntryNames(c, dir) {
+	for _, name := range dirEntryNames(c.TB, dir) {
 		if name == "atlas.sum" || slices.Contains(before, name) {
 			continue
 		}
@@ -109,7 +112,7 @@ func TestMigrateDiffStampsTheUTCTimestampVersion(t *testing.T) {
 					[]byte("CREATE TABLE placeholder (id INTEGER);\n"),
 					0o600,
 				), qt.IsNil)
-				hashMigrationDir(c, dir)
+				hashMigrationDir(c.TB, dir)
 			},
 		},
 	}
@@ -122,7 +125,7 @@ func TestMigrateDiffStampsTheUTCTimestampVersion(t *testing.T) {
 			test.setup(c, dir)
 			before := time.Now().UTC().Add(-time.Second)
 
-			written := runMigrateDiffInto(c, dir)
+			written := runMigrateDiffInto(c.TB, dir)
 
 			c.Assert(written, qt.HasLen, 1)
 			version, _, found := strings.Cut(written[0], "_")
@@ -154,9 +157,9 @@ func TestMigrateDiffAdvancesPastAnExistingVersionOfThisSecond(t *testing.T) {
 		[]byte("CREATE TABLE taken (id INTEGER);\n"),
 		0o600,
 	), qt.IsNil)
-	hashMigrationDir(c, dir)
+	hashMigrationDir(c.TB, dir)
 
-	written := runMigrateDiffInto(c, dir)
+	written := runMigrateDiffInto(c.TB, dir)
 
 	c.Assert(written, qt.HasLen, 1)
 	version, _, _ := strings.Cut(written[0], "_")

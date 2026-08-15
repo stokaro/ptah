@@ -44,7 +44,7 @@ func TestGenerateCommand_UsesExternalSchemaFromAtlasConfigEnv(t *testing.T) {
 		"--dialect", "postgres",
 	})
 
-	stdout, stderr, err := executeGenerate(c, cmd)
+	stdout, stderr, err := executeGenerate(c.TB, cmd)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(stdout, qt.Contains, `CREATE TABLE "configured_widgets"`)

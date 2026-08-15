@@ -127,7 +127,7 @@ func TestRenderPerTableFilesRoundTripThroughParser(t *testing.T) {
 
 	dir := t.TempDir()
 	c.Assert(goschematogo.WriteDir(dir, files), qt.IsNil)
-	orderItemSource := mustReadFile(c, filepath.Join(dir, "order_items.go"))
+	orderItemSource := mustReadFile(c.TB, filepath.Join(dir, "order_items.go"))
 	c.Assert(orderItemSource, qt.Contains, "tenantID int")
 	c.Assert(orderItemSource, qt.Contains, "`db:\"tenant_id\" json:\"tenant_id\"`")
 	c.Assert(orderItemSource, qt.Contains, "createdAt time.Time")
@@ -288,7 +288,8 @@ func fileNames(files []goschematogo.File) []string {
 	return names
 }
 
-func mustReadFile(c *qt.C, path string) string {
+func mustReadFile(tb testing.TB, path string) string {
+	c := qt.New(tb)
 	c.Helper()
 	data, err := os.ReadFile(path)
 	c.Assert(err, qt.IsNil)

@@ -11,7 +11,6 @@ import (
 )
 
 func TestNoTransactionResumeAction(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name      string
 		statement string
@@ -30,7 +29,8 @@ func TestNoTransactionResumeAction(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			got := noTransactionResumeAction(test.statement, "postgres")
 			c.Assert(got, qt.Equals, test.want)
 		})
@@ -38,7 +38,6 @@ func TestNoTransactionResumeAction(t *testing.T) {
 }
 
 func TestNoTransactionResumeAction_RejectsSQLServerTemporaryTable(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name      string
 		statement string
@@ -50,7 +49,8 @@ func TestNoTransactionResumeAction_RejectsSQLServerTemporaryTable(t *testing.T) 
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			got := noTransactionResumeAction(test.statement, "sqlserver")
 			c.Assert(got, qt.Equals, noTransactionPrefixReject)
 		})
@@ -58,7 +58,6 @@ func TestNoTransactionResumeAction_RejectsSQLServerTemporaryTable(t *testing.T) 
 }
 
 func TestIsTransactionControlStatement(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name      string
 		statement string
@@ -97,7 +96,8 @@ func TestIsTransactionControlStatement(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			got := isTransactionControlStatement(test.statement, test.dialect)
 			c.Assert(got, qt.Equals, test.want)
 		})
@@ -105,7 +105,6 @@ func TestIsTransactionControlStatement(t *testing.T) {
 }
 
 func TestIsTransactionControlStatement_MySQLFamily(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name      string
 		statement string
@@ -126,7 +125,8 @@ func TestIsTransactionControlStatement_MySQLFamily(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			got := isTransactionControlStatement(test.statement, test.dialect)
 			c.Assert(got, qt.IsTrue)
 		})
@@ -134,7 +134,6 @@ func TestIsTransactionControlStatement_MySQLFamily(t *testing.T) {
 }
 
 func TestPostgresSearchPathReplayState(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name        string
 		statement   string
@@ -154,7 +153,8 @@ func TestPostgresSearchPathReplayState(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			changed, known := postgresSearchPathReplayState(test.statement)
 			c.Assert(changed, qt.Equals, test.wantChanged)
 			c.Assert(known, qt.Equals, test.wantKnown)

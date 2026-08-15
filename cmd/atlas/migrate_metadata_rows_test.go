@@ -24,13 +24,14 @@ CREATE TABLE posts (id INTEGER PRIMARY KEY);
 DROP TABLE posts;
 `
 
-func setupMetadataRowDatabase(c *qt.C, dir string) (migrationsDir, dbPath string) {
+func setupMetadataRowDatabase(tb testing.TB, dir string) (migrationsDir, dbPath string) {
+	c := qt.New(tb)
 	c.Helper()
 	migrationsDir = filepath.Join(dir, "migrations")
-	writeAtlasApplyProjectMigration(c, migrationsDir, "20260801000001_create_users.sql",
+	writeAtlasApplyProjectMigration(c.TB, migrationsDir, "20260801000001_create_users.sql",
 		"CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT);\n")
-	writeAtlasApplyProjectMigration(c, migrationsDir, "20260801000002_create_posts.sql", compatTxtarPostsWithDown)
-	writeAtlasApplyProjectSum(c, migrationsDir)
+	writeAtlasApplyProjectMigration(c.TB, migrationsDir, "20260801000002_create_posts.sql", compatTxtarPostsWithDown)
+	writeAtlasApplyProjectSum(c.TB, migrationsDir)
 	dbPath = filepath.Join(dir, "state.db")
 
 	out, err := executeAtlasProjectCommand(
@@ -57,7 +58,7 @@ VALUES ('.atlas_cloud_identifier', '472fecf4-5a9c-431f-8ff1-8e1facd1d50b', 2, 0,
 
 func TestMigrateStatusToleratesMetadataDotRow(t *testing.T) {
 	c := qt.New(t)
-	migrationsDir, dbPath := setupMetadataRowDatabase(c, t.TempDir())
+	migrationsDir, dbPath := setupMetadataRowDatabase(c.TB, t.TempDir())
 
 	out, err := executeAtlasProjectCommand(
 		"migrate", "status",
@@ -72,14 +73,14 @@ func TestMigrateStatusToleratesMetadataDotRow(t *testing.T) {
 
 func TestMigrateApplyRefusesFlywayIdentityCollidingWithAtlasMetadata(t *testing.T) {
 	c := qt.New(t)
-	_, dbPath := setupMetadataRowDatabase(c, t.TempDir())
+	_, dbPath := setupMetadataRowDatabase(c.TB, t.TempDir())
 	// This exact Atlas bookkeeping name has four ordering components once the
 	// leading dot is counted. The Flyway adapter therefore refuses it during
 	// conversion, before opening the database or allowing the existing metadata
 	// row to satisfy migration identity. Keep the counterexample pinned so a
 	// future wider ordering projection cannot silently turn it into a skipped
 	// migration; that change must add an explicit collision gate first.
-	dir := writeHashedFlywayDir(c, []setFlywayMigration{
+	dir := writeHashedFlywayDir(c.TB, []setFlywayMigration{
 		{
 			name: "V.atlas_cloud_identifier__collision.sql",
 			body: "CREATE TABLE metadata_collision_must_not_run (id INTEGER PRIMARY KEY);\n",
@@ -93,12 +94,12 @@ func TestMigrateApplyRefusesFlywayIdentityCollidingWithAtlasMetadata(t *testing.
 	c.Assert(message, qt.Contains, `.atlas_cloud_identifier`)
 	c.Assert(message, qt.Contains,
 		`version ".atlas_cloud_identifier" with more than 3 components and cannot map to an int64 Atlas version`)
-	c.Assert(sqliteTableCount(c, dbPath, "metadata_collision_must_not_run"), qt.Equals, 0)
+	c.Assert(sqliteTableCount(c.TB, dbPath, "metadata_collision_must_not_run"), qt.Equals, 0)
 }
 
 func TestMigrateDownDryRunReadsRealVersionWithMetadataDotRow(t *testing.T) {
 	c := qt.New(t)
-	migrationsDir, dbPath := setupMetadataRowDatabase(c, t.TempDir())
+	migrationsDir, dbPath := setupMetadataRowDatabase(c.TB, t.TempDir())
 
 	// Regression (#957): before the fix, --dry-run misread an existing Atlas
 	// revision table as version 0 and reported the database as already at or
@@ -115,5 +116,5 @@ func TestMigrateDownDryRunReadsRealVersionWithMetadataDotRow(t *testing.T) {
 	c.Assert(out, qt.Contains, "Current version: 20260801000002")
 	c.Assert(out, qt.Not(qt.Contains), "already at or below target")
 	// Dry run: the schema and the metadata row are untouched.
-	c.Assert(sqliteTableCount(c, dbPath, "posts"), qt.Equals, 1)
+	c.Assert(sqliteTableCount(c.TB, dbPath, "posts"), qt.Equals, 1)
 }

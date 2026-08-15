@@ -14,7 +14,6 @@ import (
 // serves them. Every row here is a pair that a kind-by-kind emitter gets wrong
 // in one direction or the other.
 func TestUserTypesForCreate_OrdersEachKindAgainstTheOthers(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name  string
@@ -139,7 +138,8 @@ func TestUserTypesForCreate_OrdersEachKindAgainstTheOthers(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(deporder.UserTypesForCreate(test.input), qt.DeepEquals, test.want)
 		})
 	}
@@ -149,7 +149,6 @@ func TestUserTypesForCreate_OrdersEachKindAgainstTheOthers(t *testing.T) {
 // drop of a composite fails while a domain still names it, so the dependent
 // goes first.
 func TestUserTypesForDrop_ReversesTheCreateOrder(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name  string
@@ -183,14 +182,14 @@ func TestUserTypesForDrop_ReversesTheCreateOrder(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(deporder.UserTypesForDrop(test.input), qt.DeepEquals, test.want)
 		})
 	}
 }
 
 func TestNormalizeTypeReference_ReducesASpellingToItsTypeName(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name      string
@@ -209,7 +208,8 @@ func TestNormalizeTypeReference_ReducesASpellingToItsTypeName(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(deporder.NormalizeTypeReference(test.reference), qt.Equals, test.want)
 		})
 	}

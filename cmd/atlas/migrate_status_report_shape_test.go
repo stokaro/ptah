@@ -33,7 +33,7 @@ const (
 // bodies both succeed.
 func writeStatusShapeDir(c *qt.C, dir string) {
 	c.Helper()
-	writeStatusShapeFiles(c, dir, "CREATE TABLE ss_two (id INTEGER PRIMARY KEY);\n")
+	writeStatusShapeFiles(c.TB, dir, "CREATE TABLE ss_two (id INTEGER PRIMARY KEY);\n")
 }
 
 // writeStatusShapeDirtyDir writes the same directory with a second migration
@@ -41,11 +41,12 @@ func writeStatusShapeDir(c *qt.C, dir string) {
 // behind: applied=1, total=2.
 func writeStatusShapeDirtyDir(c *qt.C, dir string) {
 	c.Helper()
-	writeStatusShapeFiles(c, dir,
+	writeStatusShapeFiles(c.TB, dir,
 		"CREATE TABLE ss_two (id INTEGER PRIMARY KEY);\nCREATE TABLE ss_one (id INTEGER PRIMARY KEY);\n")
 }
 
-func writeStatusShapeFiles(c *qt.C, dir, second string) {
+func writeStatusShapeFiles(tb testing.TB, dir, second string) {
+	c := qt.New(tb)
 	c.Helper()
 	c.Assert(os.MkdirAll(dir, 0o755), qt.IsNil)
 	c.Assert(os.WriteFile(

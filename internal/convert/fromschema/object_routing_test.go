@@ -111,7 +111,7 @@ func routingFixture() goschema.Database {
 func TestFromDatabase_EveryDialectGetsEveryDeclaredObject(t *testing.T) {
 	c := qt.New(t)
 
-	spellings := acceptedSpellings(c)
+	spellings := acceptedSpellings(c.TB)
 	c.Assert(len(spellings) > 0, qt.IsTrue, qt.Commentf("the spelling extractor is broken"))
 
 	missing := missingRoutedObjects(spellings)

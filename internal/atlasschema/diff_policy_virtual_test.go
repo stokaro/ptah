@@ -72,8 +72,8 @@ func TestSchemaSeamsCarryTheDropPolicyIntoTheVirtualTableGuard(t *testing.T) {
 		t.Run(tt.name+" (apply)", func(t *testing.T) {
 			c := qt.New(t)
 			envbooltest.Unset(sqlitevirtual.AllowDropEnvVar)(t)
-			dbPath, schemaPath := virtualDropPolicyFixture(c, t.TempDir())
-			conn := connectSQLite(c, dbPath)
+			dbPath, schemaPath := virtualDropPolicyFixture(c.TB, t.TempDir())
+			conn := connectSQLite(c.TB, dbPath)
 			defer dbschema.CloseAndWarn(conn)
 
 			plan, err := atlasschema.PlanApply(t.Context(), conn, atlasschema.ApplyOptions{
@@ -91,7 +91,7 @@ func TestSchemaSeamsCarryTheDropPolicyIntoTheVirtualTableGuard(t *testing.T) {
 		t.Run(tt.name+" (diff)", func(t *testing.T) {
 			c := qt.New(t)
 			envbooltest.Unset(sqlitevirtual.AllowDropEnvVar)(t)
-			dbPath, schemaPath := virtualDropPolicyFixture(c, t.TempDir())
+			dbPath, schemaPath := virtualDropPolicyFixture(c.TB, t.TempDir())
 
 			report, err := atlasschema.Diff(context.Background(), atlasschema.DiffOptions{
 				FromURLs: []string{"sqlite://" + dbPath},
@@ -113,10 +113,11 @@ func TestSchemaSeamsCarryTheDropPolicyIntoTheVirtualTableGuard(t *testing.T) {
 // desired document naming only the ordinary one. No Ptah document can declare a
 // virtual table, so the index is undeclared on every desired side there is --
 // which is exactly the shape that plans the DROP.
-func virtualDropPolicyFixture(c *qt.C, dir string) (dbPath, schemaPath string) {
+func virtualDropPolicyFixture(tb testing.TB, dir string) (dbPath, schemaPath string) {
+	c := qt.New(tb)
 	c.Helper()
 
-	dbPath = virtualToggleFixture(c, dir, "current.db",
+	dbPath = virtualToggleFixture(c.TB, dir, "current.db",
 		`CREATE TABLE users (id INTEGER PRIMARY KEY)`,
 		`CREATE VIRTUAL TABLE docs USING fts5(title, body)`,
 	)

@@ -133,15 +133,15 @@ func TestCompatCommand_MigrateLintCondropSeverity(t *testing.T) {
 			// four rows -- which lint policy owns CD101 -- unchanged.
 			t.Setenv("PTAH_ATLAS_LINT_WITHOUT_DEV_URL", "1")
 			dir := t.TempDir()
-			writeAtlasLintFile(c, filepath.Join(dir, "migrations"), "1.sql",
+			writeAtlasLintFile(c.TB, filepath.Join(dir, "migrations"), "1.sql",
 				"CREATE TABLE pets (id int PRIMARY KEY);\n")
-			writeAtlasLintFile(c, filepath.Join(dir, "migrations"), "2.sql",
+			writeAtlasLintFile(c.TB, filepath.Join(dir, "migrations"), "2.sql",
 				"ALTER TABLE pets DROP FOREIGN KEY fk_pets_owner;\n")
 			c.Assert(os.WriteFile(filepath.Join(dir, "atlas.hcl"),
 				[]byte(atlasCondropProjectConfig), 0o600), qt.IsNil)
 			t.Chdir(dir)
 
-			stdout, _, err := runAtlasMigrateLint(c, "migrate", "lint", "--dir", "file://migrations", "--env", tt.env)
+			stdout, _, err := runAtlasMigrateLint(c.TB, "migrate", "lint", "--dir", "file://migrations", "--env", tt.env)
 
 			c.Assert(exitcode.Code(err, 0), qt.Equals, tt.code)
 			// The report body is identical in all four rows -- the diagnostic
@@ -184,13 +184,13 @@ func TestCompatCommand_MigrateLintRunsWithDropSchemaConfigured(t *testing.T) {
 	// asserts needs none. See the condrop test above for why the opt-in is set.
 	t.Setenv("PTAH_ATLAS_LINT_WITHOUT_DEV_URL", "1")
 	dir := t.TempDir()
-	writeAtlasLintFile(c, filepath.Join(dir, "migrations"), "1.sql", "CREATE TABLE users (id int);\n")
-	writeAtlasLintFile(c, filepath.Join(dir, "migrations"), "2.sql", "CREATE TABLE pets (id int);\n")
+	writeAtlasLintFile(c.TB, filepath.Join(dir, "migrations"), "1.sql", "CREATE TABLE users (id int);\n")
+	writeAtlasLintFile(c.TB, filepath.Join(dir, "migrations"), "2.sql", "CREATE TABLE pets (id int);\n")
 	c.Assert(os.WriteFile(filepath.Join(dir, "atlas.hcl"),
 		[]byte(atlasDropSchemaProjectConfig), 0o600), qt.IsNil)
 	t.Chdir(dir)
 
-	stdout, _, err := runAtlasMigrateLint(c, "migrate", "lint", "--dir", "file://migrations", "--env", "skip_drop_schema")
+	stdout, _, err := runAtlasMigrateLint(c.TB, "migrate", "lint", "--dir", "file://migrations", "--env", "skip_drop_schema")
 
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 0)
 	c.Assert(redactAtlasLintDurations(stdout), qt.Equals,
@@ -229,13 +229,13 @@ func TestCompatCommand_MigrateLintRunsWithSchemaRepoConfigured(t *testing.T) {
 	c := qt.New(t)
 	t.Setenv("PTAH_ATLAS_LINT_WITHOUT_DEV_URL", "1")
 	dir := t.TempDir()
-	writeAtlasLintFile(c, filepath.Join(dir, "migrations"), "1.sql", "CREATE TABLE users (id int);\n")
-	writeAtlasLintFile(c, filepath.Join(dir, "migrations"), "2.sql", "CREATE TABLE pets (id int);\n")
+	writeAtlasLintFile(c.TB, filepath.Join(dir, "migrations"), "1.sql", "CREATE TABLE users (id int);\n")
+	writeAtlasLintFile(c.TB, filepath.Join(dir, "migrations"), "2.sql", "CREATE TABLE pets (id int);\n")
 	c.Assert(os.WriteFile(filepath.Join(dir, "atlas.hcl"),
 		[]byte(atlasSchemaRepoProjectConfig), 0o600), qt.IsNil)
 	t.Chdir(dir)
 
-	stdout, _, err := runAtlasMigrateLint(c, "migrate", "lint", "--dir", "file://migrations", "--env", "repo")
+	stdout, _, err := runAtlasMigrateLint(c.TB, "migrate", "lint", "--dir", "file://migrations", "--env", "repo")
 
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 0)
 	c.Assert(redactAtlasLintDurations(stdout), qt.Equals,

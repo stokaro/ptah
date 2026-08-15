@@ -47,7 +47,8 @@ const retainedVersionLate = "20240102000000"
 // before it, so the same bytes hash differently depending on what precedes
 // them in the directory. That is the mechanism behind item 5 and the reason
 // these fixtures are built as whole directories rather than by editing one.
-func writeRetainedDir(c *qt.C, dir string, files map[string]string) string {
+func writeRetainedDir(tb testing.TB, dir string, files map[string]string) string {
+	c := qt.New(tb)
 	c.Helper()
 	c.Assert(os.MkdirAll(dir, 0o755), qt.IsNil)
 	for name, body := range files {
@@ -77,22 +78,22 @@ func TestCompatCommand_AnEditedAppliedFileIsRefused(t *testing.T) {
 	c := qt.New(t)
 	root := c.TempDir()
 	dbPath := filepath.Join(root, "edited.db")
-	applied := writeRetainedDir(c, filepath.Join(root, "applied"), map[string]string{
+	applied := writeRetainedDir(c.TB, filepath.Join(root, "applied"), map[string]string{
 		retainedVersionEarly + "_early.sql": retainedEarlyBody,
 	})
-	edited := writeRetainedDir(c, filepath.Join(root, "edited"), map[string]string{
+	edited := writeRetainedDir(c.TB, filepath.Join(root, "edited"), map[string]string{
 		retainedVersionEarly + "_early.sql": retainedEditedBody,
 	})
 
-	_, _, err := runCompatStreams(c,
+	_, _, err := runCompatStreams(c.TB,
 		"migrate", "apply",
 		"--url", "sqlite://"+dbPath,
 		"--dir", "file://"+applied,
 	)
 	c.Assert(err, qt.IsNil)
-	c.Assert(compatTableNames(c, dbPath), qt.Contains, "rt_early")
+	c.Assert(compatTableNames(c.TB, dbPath), qt.Contains, "rt_early")
 
-	_, _, editedErr := runCompatStreams(c,
+	_, _, editedErr := runCompatStreams(c.TB,
 		"migrate", "apply",
 		"--url", "sqlite://"+dbPath,
 		"--dir", "file://"+edited,
@@ -123,23 +124,23 @@ func TestCompatCommand_APrefixInsertionRequiresNonLinear(t *testing.T) {
 	c := qt.New(t)
 	root := c.TempDir()
 	dbPath := filepath.Join(root, "order.db")
-	lateOnly := writeRetainedDir(c, filepath.Join(root, "late"), map[string]string{
+	lateOnly := writeRetainedDir(c.TB, filepath.Join(root, "late"), map[string]string{
 		retainedVersionLate + "_late.sql": retainedLateBody,
 	})
-	bothFiles := writeRetainedDir(c, filepath.Join(root, "both"), map[string]string{
+	bothFiles := writeRetainedDir(c.TB, filepath.Join(root, "both"), map[string]string{
 		retainedVersionEarly + "_early.sql": retainedEarlyBody,
 		retainedVersionLate + "_late.sql":   retainedLateBody,
 	})
 
-	_, _, err := runCompatStreams(c,
+	_, _, err := runCompatStreams(c.TB,
 		"migrate", "apply",
 		"--url", "sqlite://"+dbPath,
 		"--dir", "file://"+lateOnly,
 	)
 	c.Assert(err, qt.IsNil)
-	c.Assert(compatTableNames(c, dbPath), qt.Contains, "rt_late")
+	c.Assert(compatTableNames(c.TB, dbPath), qt.Contains, "rt_late")
 
-	_, _, insertErr := runCompatStreams(c,
+	_, _, insertErr := runCompatStreams(c.TB,
 		"migrate", "apply",
 		"--url", "sqlite://"+dbPath,
 		"--dir", "file://"+bothFiles,
@@ -147,20 +148,20 @@ func TestCompatCommand_APrefixInsertionRequiresNonLinear(t *testing.T) {
 	c.Assert(insertErr, qt.IsNotNil)
 	c.Assert(insertErr.Error(), qt.Contains, "out-of-order pending migrations")
 	c.Assert(insertErr.Error(), qt.Contains, retainedVersionEarly)
-	c.Assert(compatTableNames(c, dbPath), qt.Not(qt.Contains), "rt_early")
-	c.Assert(sqliteAtlasRevisionVersions(c, dbPath), qt.DeepEquals, []string{retainedVersionLate})
+	c.Assert(compatTableNames(c.TB, dbPath), qt.Not(qt.Contains), "rt_early")
+	c.Assert(sqliteAtlasRevisionVersions(c.TB, dbPath), qt.DeepEquals, []string{retainedVersionLate})
 
-	_, _, nonLinearErr := runCompatStreams(c,
+	_, _, nonLinearErr := runCompatStreams(c.TB,
 		"migrate", "apply",
 		"--url", "sqlite://"+dbPath,
 		"--dir", "file://"+bothFiles,
 		"--exec-order", "non-linear",
 	)
 	c.Assert(nonLinearErr, qt.IsNil)
-	c.Assert(compatTableNames(c, dbPath), qt.Contains, "rt_early")
-	c.Assert(sqliteAtlasRevisionVersions(c, dbPath), qt.DeepEquals, []string{retainedVersionEarly, retainedVersionLate})
+	c.Assert(compatTableNames(c.TB, dbPath), qt.Contains, "rt_early")
+	c.Assert(sqliteAtlasRevisionVersions(c.TB, dbPath), qt.DeepEquals, []string{retainedVersionEarly, retainedVersionLate})
 
-	_, _, secondErr := runCompatStreams(c,
+	_, _, secondErr := runCompatStreams(c.TB,
 		"migrate", "apply",
 		"--url", "sqlite://"+dbPath,
 		"--dir", "file://"+bothFiles,
@@ -202,23 +203,23 @@ func TestCompatCommand_LinearSkipReproducesThePinnedPrefixInsertion(t *testing.T
 	c := qt.New(t)
 	root := c.TempDir()
 	dbPath := filepath.Join(root, "skip.db")
-	lateOnly := writeRetainedDir(c, filepath.Join(root, "late"), map[string]string{
+	lateOnly := writeRetainedDir(c.TB, filepath.Join(root, "late"), map[string]string{
 		retainedVersionLate + "_late.sql": retainedLateBody,
 	})
-	bothFiles := writeRetainedDir(c, filepath.Join(root, "both"), map[string]string{
+	bothFiles := writeRetainedDir(c.TB, filepath.Join(root, "both"), map[string]string{
 		retainedVersionEarly + "_early.sql": retainedEarlyBody,
 		retainedVersionLate + "_late.sql":   retainedLateBody,
 	})
 
-	_, _, err := runCompatStreams(c,
+	_, _, err := runCompatStreams(c.TB,
 		"migrate", "apply",
 		"--url", "sqlite://"+dbPath,
 		"--dir", "file://"+lateOnly,
 	)
 	c.Assert(err, qt.IsNil)
-	c.Assert(compatTableNames(c, dbPath), qt.Contains, "rt_late")
+	c.Assert(compatTableNames(c.TB, dbPath), qt.Contains, "rt_late")
 
-	_, _, skipErr := runCompatStreams(c,
+	_, _, skipErr := runCompatStreams(c.TB,
 		"migrate", "apply",
 		"--url", "sqlite://"+dbPath,
 		"--dir", "file://"+bothFiles,
@@ -227,20 +228,20 @@ func TestCompatCommand_LinearSkipReproducesThePinnedPrefixInsertion(t *testing.T
 	c.Assert(skipErr, qt.IsNil)
 	// The inserted migration is passed over rather than applied, which is what
 	// that binary's default order does with it.
-	c.Assert(compatTableNames(c, dbPath), qt.Not(qt.Contains), "rt_early")
-	c.Assert(sqliteAtlasRevisionVersions(c, dbPath), qt.DeepEquals, []string{retainedVersionLate})
+	c.Assert(compatTableNames(c.TB, dbPath), qt.Not(qt.Contains), "rt_early")
+	c.Assert(sqliteAtlasRevisionVersions(c.TB, dbPath), qt.DeepEquals, []string{retainedVersionLate})
 
 	// Repeating it is stable: skipping is not a one-shot that later promotes the
 	// migration into the applied set.
-	_, _, secondErr := runCompatStreams(c,
+	_, _, secondErr := runCompatStreams(c.TB,
 		"migrate", "apply",
 		"--url", "sqlite://"+dbPath,
 		"--dir", "file://"+bothFiles,
 		"--exec-order", "linear-skip",
 	)
 	c.Assert(secondErr, qt.IsNil)
-	c.Assert(compatTableNames(c, dbPath), qt.Not(qt.Contains), "rt_early")
-	c.Assert(sqliteAtlasRevisionVersions(c, dbPath), qt.DeepEquals, []string{retainedVersionLate})
+	c.Assert(compatTableNames(c.TB, dbPath), qt.Not(qt.Contains), "rt_early")
+	c.Assert(sqliteAtlasRevisionVersions(c.TB, dbPath), qt.DeepEquals, []string{retainedVersionLate})
 }
 
 // TestCompatCommand_LintRefusesATrailingPositional pins the fourth verb of
@@ -262,14 +263,14 @@ func TestCompatCommand_LinearSkipReproducesThePinnedPrefixInsertion(t *testing.T
 func TestCompatCommand_LintRefusesATrailingPositional(t *testing.T) {
 	c := qt.New(t)
 	root := c.TempDir()
-	migrationsDir := writeRetainedDir(c, filepath.Join(root, "migrations"), map[string]string{
+	migrationsDir := writeRetainedDir(c.TB, filepath.Join(root, "migrations"), map[string]string{
 		retainedVersionEarly + "_early.sql": retainedEarlyBody,
 	})
 
 	// The dev database is named under the temporary root rather than relatively:
 	// this test does not chdir, so a relative sqlite URL would leave the file in
 	// the package directory and the next run would find it there.
-	_, _, err := runCompatStreams(c,
+	_, _, err := runCompatStreams(c.TB,
 		"migrate", "lint",
 		"--dir", "file://"+migrationsDir,
 		"--dev-url", "sqlite://"+filepath.Join(root, "dev.db"),
@@ -289,10 +290,11 @@ const retainedZeroProgressBody = "THIS IS A FAILING STATEMENT;\n"
 
 // writeZeroProgressFixture writes a two-migration directory whose second
 // migration fails on its first statement.
-func writeZeroProgressFixture(c *qt.C) (migrationsDir, dbPath string) {
+func writeZeroProgressFixture(tb testing.TB) (migrationsDir, dbPath string) {
+	c := qt.New(tb)
 	c.Helper()
 	root := c.TempDir()
-	migrationsDir = writeRetainedDir(c, filepath.Join(root, "migrations"), map[string]string{
+	migrationsDir = writeRetainedDir(c.TB, filepath.Join(root, "migrations"), map[string]string{
 		retainedVersionEarly + "_early.sql": retainedEarlyBody,
 		retainedVersionLate + "_late.sql":   retainedZeroProgressBody,
 	})
@@ -312,9 +314,9 @@ func writeZeroProgressFixture(c *qt.C) (migrationsDir, dbPath string) {
 // test fails on the second apply with "is dirty".
 func TestCompatCommand_AZeroProgressFailureLeavesNoDirtyRowUnderTheDefaultTxMode(t *testing.T) {
 	c := qt.New(t)
-	migrationsDir, dbPath := writeZeroProgressFixture(c)
+	migrationsDir, dbPath := writeZeroProgressFixture(c.TB)
 
-	_, _, err := runCompatStreams(c,
+	_, _, err := runCompatStreams(c.TB,
 		"migrate", "apply",
 		"--url", "sqlite://"+dbPath,
 		"--dir", "file://"+migrationsDir,
@@ -322,13 +324,13 @@ func TestCompatCommand_AZeroProgressFailureLeavesNoDirtyRowUnderTheDefaultTxMode
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Contains, retainedVersionLate)
 	// The early migration committed; only the failing one left nothing.
-	c.Assert(compatTableNames(c, dbPath), qt.Contains, "rt_early")
-	c.Assert(sqliteAtlasRevisionVersions(c, dbPath), qt.DeepEquals, []string{retainedVersionEarly})
+	c.Assert(compatTableNames(c.TB, dbPath), qt.Contains, "rt_early")
+	c.Assert(sqliteAtlasRevisionVersions(c.TB, dbPath), qt.DeepEquals, []string{retainedVersionEarly})
 
 	// The next run reaches the migration again rather than being turned away by
 	// the dirty guard. It still fails, because the body is still wrong — the
 	// point is which error it is.
-	_, _, retryErr := runCompatStreams(c,
+	_, _, retryErr := runCompatStreams(c.TB,
 		"migrate", "apply",
 		"--url", "sqlite://"+dbPath,
 		"--dir", "file://"+migrationsDir,
@@ -353,21 +355,21 @@ func TestCompatCommand_AZeroProgressFailureLeavesNoDirtyRowUnderTheDefaultTxMode
 // fails: the second apply no longer says "is dirty".
 func TestCompatCommand_AZeroProgressFailureUnderTxModeNoneStillRefuses(t *testing.T) {
 	c := qt.New(t)
-	migrationsDir, dbPath := writeZeroProgressFixture(c)
+	migrationsDir, dbPath := writeZeroProgressFixture(c.TB)
 
-	_, _, err := runCompatStreams(c,
+	_, _, err := runCompatStreams(c.TB,
 		"migrate", "apply",
 		"--url", "sqlite://"+dbPath,
 		"--dir", "file://"+migrationsDir,
 		"--tx-mode", "none",
 	)
 	c.Assert(err, qt.IsNotNil)
-	c.Assert(sqliteAtlasRevisionVersions(c, dbPath), qt.DeepEquals, []string{
+	c.Assert(sqliteAtlasRevisionVersions(c.TB, dbPath), qt.DeepEquals, []string{
 		retainedVersionEarly,
 		retainedVersionLate,
 	})
 
-	_, _, retryErr := runCompatStreams(c,
+	_, _, retryErr := runCompatStreams(c.TB,
 		"migrate", "apply",
 		"--url", "sqlite://"+dbPath,
 		"--dir", "file://"+migrationsDir,
@@ -378,7 +380,7 @@ func TestCompatCommand_AZeroProgressFailureUnderTxModeNoneStillRefuses(t *testin
 	c.Assert(retryErr.Error(), qt.Contains, "applied=0/1")
 
 	// --allow-dirty is the documented way through, and it still is.
-	_, _, allowErr := runCompatStreams(c,
+	_, _, allowErr := runCompatStreams(c.TB,
 		"migrate", "apply",
 		"--url", "sqlite://"+dbPath,
 		"--dir", "file://"+migrationsDir,

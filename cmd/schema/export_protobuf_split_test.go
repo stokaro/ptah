@@ -128,15 +128,17 @@ type Order struct {
 // splitFixture writes source into a fresh directory and returns that directory
 // plus a --out path whose directory matches protoTestPackage, so no buf lint
 // advisory fires and the assertions stay about the split itself.
-func splitFixture(c *qt.C, source string) (dir, outPath string) {
+func splitFixture(tb testing.TB, source string) (dir, outPath string) {
+	c := qt.New(tb)
 	c.Helper()
-	dir = resolvedTempDir(c)
+	dir = resolvedTempDir(c.TB)
 	c.Assert(os.WriteFile(filepath.Join(dir, "model.go"), []byte(source), 0o600), qt.IsNil)
 	return dir, filepath.Join(dir, "proto", "acme", "inventory", "v1", "schema.proto")
 }
 
 // rewriteSplitModel replaces the fixture's source with another revision.
-func rewriteSplitModel(c *qt.C, dir, source string) {
+func rewriteSplitModel(tb testing.TB, dir, source string) {
+	c := qt.New(tb)
 	c.Helper()
 	c.Assert(os.WriteFile(filepath.Join(dir, "model.go"), []byte(source), 0o600), qt.IsNil)
 }
@@ -154,7 +156,8 @@ func exportSplit(dir, outPath string, extra ...string) (stdout, stderr string, e
 }
 
 // protoNames lists the .proto files in dir, sorted.
-func protoNames(c *qt.C, dir string) []string {
+func protoNames(tb testing.TB, dir string) []string {
+	c := qt.New(tb)
 	c.Helper()
 	matches, err := filepath.Glob(filepath.Join(dir, "*.proto"))
 	c.Assert(err, qt.IsNil)
@@ -167,10 +170,11 @@ func protoNames(c *qt.C, dir string) []string {
 }
 
 // readProtoSet reads every .proto in dir, keyed by base name.
-func readProtoSet(c *qt.C, dir string) map[string]string {
+func readProtoSet(tb testing.TB, dir string) map[string]string {
+	c := qt.New(tb)
 	c.Helper()
 	set := map[string]string{}
-	for _, name := range protoNames(c, dir) {
+	for _, name := range protoNames(c.TB, dir) {
 		body, err := os.ReadFile(filepath.Join(dir, name))
 		c.Assert(err, qt.IsNil)
 		set[name] = string(body)
@@ -180,19 +184,19 @@ func readProtoSet(c *qt.C, dir string) map[string]string {
 
 func TestSchemaExportProtobufSplitWritesOneFilePerTable(t *testing.T) {
 	c := qt.New(t)
-	dir, outPath := splitFixture(c, splitModelWithNickname)
+	dir, outPath := splitFixture(c.TB, splitModelWithNickname)
 	outDir := filepath.Dir(outPath)
 
 	stdout, stderr, err := exportSplit(dir, outPath)
 
 	c.Assert(err, qt.IsNil, qt.Commentf("stderr:\n%s", stderr))
-	c.Assert(protoNames(c, outDir), qt.DeepEquals, []string{"order.proto", "product.proto", "schema.proto"})
+	c.Assert(protoNames(c.TB, outDir), qt.DeepEquals, []string{"order.proto", "product.proto", "schema.proto"})
 	c.Assert(stdout, qt.Contains, "Exported Protobuf schema to "+outPath+"\n")
 	c.Assert(stdout, qt.Contains, "Exported Protobuf schema to "+filepath.Join(outDir, "order.proto")+"\n")
 	c.Assert(stdout, qt.Contains, "Exported Protobuf schema to "+filepath.Join(outDir, "product.proto")+"\n")
 	c.Assert(stdout, qt.Contains, "Exported 2 message(s), 5 field(s), 0 enum(s) across 3 file(s)\n")
 
-	first := readProtoSet(c, outDir)
+	first := readProtoSet(c.TB, outDir)
 	// Each file is a compilation unit of its own: its own generated marker, its
 	// own format version and its own digest. Only the anchor records the set.
 	for _, name := range []string{"schema.proto", "order.proto", "product.proto"} {
@@ -214,19 +218,19 @@ func TestSchemaExportProtobufSplitWritesOneFilePerTable(t *testing.T) {
 
 	c.Assert(err, qt.IsNil, qt.Commentf("stderr:\n%s", stderr))
 	c.Assert(stdout, qt.Not(qt.Contains), "bootstrapped new compatibility history")
-	c.Assert(readProtoSet(c, outDir), qt.DeepEquals, first)
-	c.Assert(leftoverTempFiles(c, outDir), qt.HasLen, 0)
+	c.Assert(readProtoSet(c.TB, outDir), qt.DeepEquals, first)
+	c.Assert(leftoverTempFiles(c.TB, outDir), qt.HasLen, 0)
 }
 
 func TestSchemaExportProtobufSplitKeepsASharedEnumInTheAnchor(t *testing.T) {
 	c := qt.New(t)
-	dir, outPath := splitFixture(c, splitModelSharedEnum)
+	dir, outPath := splitFixture(c.TB, splitModelSharedEnum)
 	outDir := filepath.Dir(outPath)
 
 	_, stderr, err := exportSplit(dir, outPath)
 	c.Assert(err, qt.IsNil, qt.Commentf("stderr:\n%s", stderr))
 
-	first := readProtoSet(c, outDir)
+	first := readProtoSet(c.TB, outDir)
 	c.Assert(first["schema.proto"], qt.Contains, "enum Visibility {\n")
 	c.Assert(first["product.proto"], qt.Not(qt.Contains), "enum Visibility {")
 	c.Assert(first["order.proto"], qt.Not(qt.Contains), "enum Visibility {")
@@ -243,12 +247,12 @@ func TestSchemaExportProtobufSplitKeepsASharedEnumInTheAnchor(t *testing.T) {
 	stdout, stderr, err := exportSplit(dir, outPath)
 
 	c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
-	c.Assert(readProtoSet(c, outDir), qt.DeepEquals, first)
+	c.Assert(readProtoSet(c.TB, outDir), qt.DeepEquals, first)
 }
 
 func TestSchemaExportProtobufSplitDigestProtectsEveryFile(t *testing.T) {
 	c := qt.New(t)
-	dir, outPath := splitFixture(c, splitModelWithNickname)
+	dir, outPath := splitFixture(c.TB, splitModelWithNickname)
 	outDir := filepath.Dir(outPath)
 
 	_, stderr, err := exportSplit(dir, outPath)
@@ -262,7 +266,7 @@ func TestSchemaExportProtobufSplitDigestProtectsEveryFile(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	//nolint:gosec // The path is this test's own t.TempDir(), not external input.
 	c.Assert(os.WriteFile(siblingPath, append(tampered, []byte("\n// hand edited\n")...), 0o600), qt.IsNil)
-	before := readProtoSet(c, outDir)
+	before := readProtoSet(c.TB, outDir)
 
 	stdout, stderr, err := exportSplit(dir, outPath)
 
@@ -270,7 +274,7 @@ func TestSchemaExportProtobufSplitDigestProtectsEveryFile(t *testing.T) {
 	c.Assert(err.Error(), qt.Contains, "product.proto: output file was modified since it was generated")
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 2)
 	c.Assert(stderr, qt.Contains, "error: product.proto: output file was modified")
-	c.Assert(readProtoSet(c, outDir), qt.DeepEquals, before)
+	c.Assert(readProtoSet(c.TB, outDir), qt.DeepEquals, before)
 }
 
 // The manifest is what a later run reads the set back through, so an edit that
@@ -281,7 +285,7 @@ func TestSchemaExportProtobufSplitDigestProtectsEveryFile(t *testing.T) {
 // not read as a smaller set.
 func TestSchemaExportProtobufSplitDigestCoversTheManifest(t *testing.T) {
 	c := qt.New(t)
-	dir, outPath := splitFixture(c, splitModelWithNickname)
+	dir, outPath := splitFixture(c.TB, splitModelWithNickname)
 	outDir := filepath.Dir(outPath)
 
 	_, stderr, err := exportSplit(dir, outPath)
@@ -295,7 +299,7 @@ func TestSchemaExportProtobufSplitDigestCoversTheManifest(t *testing.T) {
 	c.Assert(shrunk, qt.Not(qt.Equals), string(anchor))
 	//nolint:gosec // The path is this test's own t.TempDir(), not external input.
 	c.Assert(os.WriteFile(outPath, []byte(shrunk), 0o600), qt.IsNil)
-	before := readProtoSet(c, outDir)
+	before := readProtoSet(c.TB, outDir)
 
 	stdout, refusal, err := exportSplit(dir, outPath)
 
@@ -306,12 +310,12 @@ func TestSchemaExportProtobufSplitDigestCoversTheManifest(t *testing.T) {
 	// file --out already named, so there is nothing to disambiguate.
 	c.Assert(refusal, qt.Contains, "error: output file was modified since it was generated")
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 2)
-	c.Assert(readProtoSet(c, outDir), qt.DeepEquals, before)
+	c.Assert(readProtoSet(c.TB, outDir), qt.DeepEquals, before)
 }
 
 func TestSchemaExportProtobufSplitRefusesMovingATypeBetweenFiles(t *testing.T) {
 	c := qt.New(t)
-	dir, outPath := splitFixture(c, splitModelWithNickname)
+	dir, outPath := splitFixture(c.TB, splitModelWithNickname)
 	outDir := filepath.Dir(outPath)
 
 	_, stderr, err := runSchemaExport(
@@ -321,7 +325,7 @@ func TestSchemaExportProtobufSplitRefusesMovingATypeBetweenFiles(t *testing.T) {
 		"--proto-package", protoTestPackage,
 	)
 	c.Assert(err, qt.IsNil, qt.Commentf("stderr:\n%s", stderr))
-	before := readProtoSet(c, outDir)
+	before := readProtoSet(c.TB, outDir)
 
 	// Switching the split moves every message out of the anchor. Left alone that
 	// reads as "removed from schema.proto, added to product.proto", which
@@ -338,14 +342,14 @@ func TestSchemaExportProtobufSplitRefusesMovingATypeBetweenFiles(t *testing.T) {
 
 	// A refusal must leave the baseline exactly as it was, with no half-written
 	// member of the new set next to it.
-	c.Assert(readProtoSet(c, outDir), qt.DeepEquals, before)
-	c.Assert(protoNames(c, outDir), qt.DeepEquals, []string{"schema.proto"})
-	c.Assert(leftoverTempFiles(c, outDir), qt.HasLen, 0)
+	c.Assert(readProtoSet(c.TB, outDir), qt.DeepEquals, before)
+	c.Assert(protoNames(c.TB, outDir), qt.DeepEquals, []string{"schema.proto"})
+	c.Assert(leftoverTempFiles(c.TB, outDir), qt.HasLen, 0)
 }
 
 func TestSchemaExportProtobufSplitRelocateCarriesPinnedNumbering(t *testing.T) {
 	c := qt.New(t)
-	dir, outPath := splitFixture(c, splitModelWithNickname)
+	dir, outPath := splitFixture(c.TB, splitModelWithNickname)
 	outDir := filepath.Dir(outPath)
 
 	_, stderr, err := runSchemaExport(
@@ -358,7 +362,7 @@ func TestSchemaExportProtobufSplitRelocateCarriesPinnedNumbering(t *testing.T) {
 
 	// Retiring the middle column leaves 2 reserved and email pinned at 3, which
 	// is what separates a carried-over history from a restarted one.
-	rewriteSplitModel(c, dir, splitModelWithoutNickname)
+	rewriteSplitModel(c.TB, dir, splitModelWithoutNickname)
 	_, stderr, err = runSchemaExport(
 		"--to", "protobuf",
 		"--root-dir", dir,
@@ -366,7 +370,7 @@ func TestSchemaExportProtobufSplitRelocateCarriesPinnedNumbering(t *testing.T) {
 		"--proto-package", protoTestPackage,
 	)
 	c.Assert(err, qt.IsNil, qt.Commentf("stderr:\n%s", stderr))
-	c.Assert(readProtoSet(c, outDir)["schema.proto"], qt.Contains, "  string email = 3;\n")
+	c.Assert(readProtoSet(c.TB, outDir)["schema.proto"], qt.Contains, "  string email = 3;\n")
 
 	stdout, stderr, err := exportSplit(dir, outPath, "--proto-on-type-move", "relocate")
 
@@ -374,7 +378,7 @@ func TestSchemaExportProtobufSplitRelocateCarriesPinnedNumbering(t *testing.T) {
 	c.Assert(stderr, qt.Contains, `message "Product" moved from "schema.proto" to "product.proto"`)
 	c.Assert(stdout, qt.Contains, "across 3 file(s)")
 
-	moved := readProtoSet(c, outDir)["product.proto"]
+	moved := readProtoSet(c.TB, outDir)["product.proto"]
 	// The pinned numbering travelled with the message: a bootstrapped file would
 	// have numbered email 2 and carried no reservations at all.
 	c.Assert(moved, qt.Contains, "  int32 id = 1;\n")
@@ -385,21 +389,21 @@ func TestSchemaExportProtobufSplitRelocateCarriesPinnedNumbering(t *testing.T) {
 
 func TestSchemaExportProtobufSplitRemovesASupersededFile(t *testing.T) {
 	c := qt.New(t)
-	dir, outPath := splitFixture(c, splitModelWithNickname)
+	dir, outPath := splitFixture(c.TB, splitModelWithNickname)
 	outDir := filepath.Dir(outPath)
 
 	_, stderr, err := exportSplit(dir, outPath)
 	c.Assert(err, qt.IsNil, qt.Commentf("stderr:\n%s", stderr))
 
-	rewriteSplitModel(c, dir, splitModelOrdersOnly)
+	rewriteSplitModel(c.TB, dir, splitModelOrdersOnly)
 	stdout, stderr, err := exportSplit(dir, outPath, "--proto-type-removal", "drop")
 
 	c.Assert(err, qt.IsNil, qt.Commentf("stderr:\n%s", stderr))
 	c.Assert(stdout, qt.Contains, "Removed "+filepath.Join(outDir, "product.proto")+"\n")
 	// The file is gone and the anchor no longer advertises it, so the next run
 	// cannot fail looking for a member of the set that is not there.
-	c.Assert(protoNames(c, outDir), qt.DeepEquals, []string{"order.proto", "schema.proto"})
-	c.Assert(readProtoSet(c, outDir)["schema.proto"], qt.Contains, "// ptah:protobuf-export-files=order.proto\n")
+	c.Assert(protoNames(c.TB, outDir), qt.DeepEquals, []string{"order.proto", "schema.proto"})
+	c.Assert(readProtoSet(c.TB, outDir)["schema.proto"], qt.Contains, "// ptah:protobuf-export-files=order.proto\n")
 
 	_, stderr, err = exportSplit(dir, outPath)
 	c.Assert(err, qt.IsNil, qt.Commentf("stderr:\n%s", stderr))
@@ -407,7 +411,7 @@ func TestSchemaExportProtobufSplitRemovesASupersededFile(t *testing.T) {
 
 func TestSchemaExportProtobufSplitRefusesAMissingMemberOfTheSet(t *testing.T) {
 	c := qt.New(t)
-	dir, outPath := splitFixture(c, splitModelWithNickname)
+	dir, outPath := splitFixture(c.TB, splitModelWithNickname)
 	outDir := filepath.Dir(outPath)
 
 	_, stderr, err := exportSplit(dir, outPath)
@@ -423,12 +427,12 @@ func TestSchemaExportProtobufSplitRefusesAMissingMemberOfTheSet(t *testing.T) {
 	c.Assert(err.Error(), qt.Contains, "lists product.proto as part of its export set, but that file is missing")
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 2)
 	c.Assert(stderr, qt.Contains, "error: ")
-	c.Assert(protoNames(c, outDir), qt.DeepEquals, []string{"order.proto", "schema.proto"})
+	c.Assert(protoNames(c.TB, outDir), qt.DeepEquals, []string{"order.proto", "schema.proto"})
 }
 
 func TestSchemaExportProtobufSplitRefusesAFileNameThatIsAlreadyTheAnchor(t *testing.T) {
 	c := qt.New(t)
-	dir := resolvedTempDir(c)
+	dir := resolvedTempDir(c.TB)
 	c.Assert(os.WriteFile(filepath.Join(dir, "model.go"), []byte(splitModelClashingWithAnchor), 0o600), qt.IsNil)
 
 	tests := []struct {
@@ -443,7 +447,8 @@ func TestSchemaExportProtobufSplitRefusesAFileNameThatIsAlreadyTheAnchor(t *test
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			outPath := filepath.Join(append([]string{dir}, tt.out...)...)
 
 			stdout, stderr, err := exportSplit(dir, outPath)
@@ -461,7 +466,7 @@ func TestSchemaExportProtobufSplitRefusesAFileNameThatIsAlreadyTheAnchor(t *test
 
 func TestSchemaExportProtobufSplitRejectsInvalidPolicyValues(t *testing.T) {
 	c := qt.New(t)
-	dir, outPath := splitFixture(c, splitModelWithNickname)
+	dir, outPath := splitFixture(c.TB, splitModelWithNickname)
 
 	tests := []struct {
 		name    string
@@ -481,7 +486,8 @@ func TestSchemaExportProtobufSplitRejectsInvalidPolicyValues(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			args := append([]string{
 				"--to", "protobuf",
 				"--root-dir", dir,
@@ -502,7 +508,7 @@ func TestSchemaExportProtobufSplitRejectsInvalidPolicyValues(t *testing.T) {
 
 func TestSchemaExportProtobufSplitFlagsRejectedOnOtherTargets(t *testing.T) {
 	c := qt.New(t)
-	dir, _ := splitFixture(c, splitModelWithNickname)
+	dir, _ := splitFixture(c.TB, splitModelWithNickname)
 
 	tests := []struct {
 		name string
@@ -514,7 +520,8 @@ func TestSchemaExportProtobufSplitFlagsRejectedOnOtherTargets(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			args := append([]string{"--to", "graphql", "--root-dir", dir}, tt.args...)
 			wantErr := tt.flag + " is only supported with --to protobuf"
 

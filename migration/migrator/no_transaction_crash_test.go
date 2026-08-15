@@ -21,13 +21,14 @@ func TestNoTransactionCrash_PersistsProgressBeforeObserver(t *testing.T) {
 	build.Dir = "."
 	c.Assert(build.Run(), qt.IsNil)
 
-	c.Run("Ptah revision table", func(c *qt.C) {
+	t.Run("Ptah revision table", func(t *testing.T) {
+		c := qt.New(t)
 		databasePath := filepath.Join(c.TempDir(), "ptah-crash.db")
-		runNoTransactionCrashHelper(c, helperPath, databasePath, "ptah", "up", "after-checkpoint")
-		conn := openNoTransactionCrashDatabase(c, databasePath)
+		runNoTransactionCrashHelper(c.TB, helperPath, databasePath, "ptah", "up", "after-checkpoint")
+		conn := openNoTransactionCrashDatabase(c.TB, databasePath)
 		defer dbschema.CloseAndWarn(conn)
-		c.Assert(noTransactionTableExists(c, conn, "users"), qt.IsTrue)
-		c.Assert(noTransactionTableExists(c, conn, "posts"), qt.IsFalse)
+		c.Assert(noTransactionTableExists(c.TB, conn, "users"), qt.IsTrue)
+		c.Assert(noTransactionTableExists(c.TB, conn, "posts"), qt.IsFalse)
 
 		var state string
 		var applied, total int
@@ -40,13 +41,14 @@ func TestNoTransactionCrash_PersistsProgressBeforeObserver(t *testing.T) {
 		c.Assert(total, qt.Equals, 2)
 	})
 
-	c.Run("Atlas revision table", func(c *qt.C) {
+	t.Run("Atlas revision table", func(t *testing.T) {
+		c := qt.New(t)
 		databasePath := filepath.Join(c.TempDir(), "atlas-crash.db")
-		runNoTransactionCrashHelper(c, helperPath, databasePath, "atlas", "up", "after-checkpoint")
-		conn := openNoTransactionCrashDatabase(c, databasePath)
+		runNoTransactionCrashHelper(c.TB, helperPath, databasePath, "atlas", "up", "after-checkpoint")
+		conn := openNoTransactionCrashDatabase(c.TB, databasePath)
 		defer dbschema.CloseAndWarn(conn)
-		c.Assert(noTransactionTableExists(c, conn, "users"), qt.IsTrue)
-		c.Assert(noTransactionTableExists(c, conn, "posts"), qt.IsFalse)
+		c.Assert(noTransactionTableExists(c.TB, conn, "users"), qt.IsTrue)
+		c.Assert(noTransactionTableExists(c.TB, conn, "posts"), qt.IsFalse)
 
 		var applied, total int
 		var failure, partialHashes string
@@ -75,13 +77,14 @@ func TestNoTransactionCrash_PersistsProgressBeforeObserver(t *testing.T) {
 	// applied=1, total=2 -- and used to record the same state, so nothing could
 	// tell the two rows apart. The recorded state now carries the direction, and
 	// the operator can finish the interrupted rollback from where it stopped.
-	c.Run("Ptah down revision", func(c *qt.C) {
+	t.Run("Ptah down revision", func(t *testing.T) {
+		c := qt.New(t)
 		databasePath := filepath.Join(c.TempDir(), "ptah-down-crash.db")
-		runNoTransactionCrashHelper(c, helperPath, databasePath, "ptah", "down", "after-checkpoint")
-		conn := openNoTransactionCrashDatabase(c, databasePath)
+		runNoTransactionCrashHelper(c.TB, helperPath, databasePath, "ptah", "down", "after-checkpoint")
+		conn := openNoTransactionCrashDatabase(c.TB, databasePath)
 		defer dbschema.CloseAndWarn(conn)
-		c.Assert(noTransactionTableExists(c, conn, "posts"), qt.IsFalse)
-		c.Assert(noTransactionTableExists(c, conn, "users"), qt.IsTrue)
+		c.Assert(noTransactionTableExists(c.TB, conn, "posts"), qt.IsFalse)
+		c.Assert(noTransactionTableExists(c.TB, conn, "users"), qt.IsTrue)
 
 		var state string
 		var applied, total int
@@ -93,7 +96,7 @@ func TestNoTransactionCrash_PersistsProgressBeforeObserver(t *testing.T) {
 		c.Assert(applied, qt.Equals, 1)
 		c.Assert(total, qt.Equals, 2)
 
-		mig := migrator.NewMigrator(conn, noTransactionCrashProvider(c))
+		mig := migrator.NewMigrator(conn, noTransactionCrashProvider(c.TB))
 		status, err := mig.GetMigrationStatus(c.Context())
 		c.Assert(err, qt.IsNil)
 		c.Assert(status.DirtyRevision, qt.IsNotNil)
@@ -103,18 +106,19 @@ func TestNoTransactionCrash_PersistsProgressBeforeObserver(t *testing.T) {
 		// Resuming runs only the down statement the crash never reached, and the
 		// finished rollback removes the revision instead of recording it applied.
 		c.Assert(mig.RepairMigration(c.Context(), migrator.RepairMigrationOptions{Version: 1, ResumeFrom: 2}), qt.IsNil)
-		c.Assert(noTransactionTableExists(c, conn, "users"), qt.IsFalse)
-		c.Assert(noTransactionRevisionCount(c, conn), qt.Equals, int64(0))
+		c.Assert(noTransactionTableExists(c.TB, conn, "users"), qt.IsFalse)
+		c.Assert(noTransactionRevisionCount(c.TB, conn), qt.Equals, int64(0))
 	})
 
 	// A rollback interrupted between the in-flight marker and the checkpoint
 	// cannot say whether its statement committed. Recording the migration
 	// applied over that is the one thing repair must not do quietly, and
 	// resuming it would repeat SQL that may already be committed.
-	c.Run("Ptah down in-flight statement", func(c *qt.C) {
+	t.Run("Ptah down in-flight statement", func(t *testing.T) {
+		c := qt.New(t)
 		databasePath := filepath.Join(c.TempDir(), "ptah-down-in-flight.db")
-		runNoTransactionCrashHelper(c, helperPath, databasePath, "ptah", "down", "after-execution")
-		conn := openNoTransactionCrashDatabase(c, databasePath)
+		runNoTransactionCrashHelper(c.TB, helperPath, databasePath, "ptah", "down", "after-execution")
+		conn := openNoTransactionCrashDatabase(c.TB, databasePath)
 		defer dbschema.CloseAndWarn(conn)
 
 		var state, failure string
@@ -128,7 +132,7 @@ func TestNoTransactionCrash_PersistsProgressBeforeObserver(t *testing.T) {
 		c.Assert(total, qt.Equals, 2)
 		c.Assert(failure, qt.Contains, "statement execution outcome is unknown")
 
-		mig := migrator.NewMigrator(conn, noTransactionCrashProvider(c))
+		mig := migrator.NewMigrator(conn, noTransactionCrashProvider(c.TB))
 		c.Assert(
 			mig.RepairMigration(c.Context(), migrator.RepairMigrationOptions{Version: 1}),
 			qt.ErrorMatches, `migration 1 stopped while rolling back and the outcome of .* is unknown.*`,
@@ -137,16 +141,17 @@ func TestNoTransactionCrash_PersistsProgressBeforeObserver(t *testing.T) {
 			mig.RepairMigration(c.Context(), migrator.RepairMigrationOptions{Version: 1, ResumeFrom: 1}),
 			qt.ErrorMatches, `migration 1 has an unknown statement outcome.*omit --resume-from.*`,
 		)
-		c.Assert(noTransactionRevisionCount(c, conn), qt.Equals, int64(1))
+		c.Assert(noTransactionRevisionCount(c.TB, conn), qt.Equals, int64(1))
 	})
 
-	c.Run("Ptah in-flight statement", func(c *qt.C) {
+	t.Run("Ptah in-flight statement", func(t *testing.T) {
+		c := qt.New(t)
 		databasePath := filepath.Join(c.TempDir(), "ptah-in-flight.db")
-		runNoTransactionCrashHelper(c, helperPath, databasePath, "ptah", "up", "after-execution")
-		conn := openNoTransactionCrashDatabase(c, databasePath)
+		runNoTransactionCrashHelper(c.TB, helperPath, databasePath, "ptah", "up", "after-execution")
+		conn := openNoTransactionCrashDatabase(c.TB, databasePath)
 		defer dbschema.CloseAndWarn(conn)
-		c.Assert(noTransactionTableExists(c, conn, "users"), qt.IsTrue)
-		c.Assert(noTransactionTableExists(c, conn, "posts"), qt.IsFalse)
+		c.Assert(noTransactionTableExists(c.TB, conn, "users"), qt.IsTrue)
+		c.Assert(noTransactionTableExists(c.TB, conn, "posts"), qt.IsFalse)
 
 		var state, failure, failureStatement string
 		var applied, total int
@@ -160,18 +165,19 @@ func TestNoTransactionCrash_PersistsProgressBeforeObserver(t *testing.T) {
 		c.Assert(failure, qt.Contains, "statement execution outcome is unknown")
 		c.Assert(failureStatement, qt.Contains, "CREATE TABLE users")
 
-		mig := migrator.NewMigrator(conn, noTransactionCrashProvider(c))
+		mig := migrator.NewMigrator(conn, noTransactionCrashProvider(c.TB))
 		err := mig.RepairMigration(c.Context(), migrator.RepairMigrationOptions{Version: 1, ResumeFrom: 1})
 		c.Assert(err, qt.ErrorMatches, `migration 1 has an unknown statement outcome.*omit --resume-from.*`)
 	})
 
-	c.Run("Atlas in-flight statement", func(c *qt.C) {
+	t.Run("Atlas in-flight statement", func(t *testing.T) {
+		c := qt.New(t)
 		databasePath := filepath.Join(c.TempDir(), "atlas-in-flight.db")
-		runNoTransactionCrashHelper(c, helperPath, databasePath, "atlas", "up", "after-execution")
-		conn := openNoTransactionCrashDatabase(c, databasePath)
+		runNoTransactionCrashHelper(c.TB, helperPath, databasePath, "atlas", "up", "after-execution")
+		conn := openNoTransactionCrashDatabase(c.TB, databasePath)
 		defer dbschema.CloseAndWarn(conn)
-		c.Assert(noTransactionTableExists(c, conn, "users"), qt.IsTrue)
-		c.Assert(noTransactionTableExists(c, conn, "posts"), qt.IsFalse)
+		c.Assert(noTransactionTableExists(c.TB, conn, "users"), qt.IsTrue)
+		c.Assert(noTransactionTableExists(c.TB, conn, "posts"), qt.IsFalse)
 
 		var failure, failureStatement string
 		var applied, total int
@@ -184,19 +190,20 @@ func TestNoTransactionCrash_PersistsProgressBeforeObserver(t *testing.T) {
 		c.Assert(failure, qt.Contains, "statement execution outcome is unknown")
 		c.Assert(failureStatement, qt.Contains, "CREATE TABLE users")
 
-		mig := migrator.NewMigrator(conn, noTransactionCrashProvider(c)).
+		mig := migrator.NewMigrator(conn, noTransactionCrashProvider(c.TB)).
 			WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)
 		err := mig.RepairMigration(c.Context(), migrator.RepairMigrationOptions{Version: 1, ResumeFrom: 1})
 		c.Assert(err, qt.ErrorMatches, `migration 1 has an unknown statement outcome.*omit --resume-from.*`)
 	})
 
-	c.Run("Atlas down persists rollback progress", func(c *qt.C) {
+	t.Run("Atlas down persists rollback progress", func(t *testing.T) {
+		c := qt.New(t)
 		databasePath := filepath.Join(c.TempDir(), "atlas-down-crash.db")
-		runNoTransactionCrashHelper(c, helperPath, databasePath, "atlas", "down", "after-checkpoint")
-		conn := openNoTransactionCrashDatabase(c, databasePath)
+		runNoTransactionCrashHelper(c.TB, helperPath, databasePath, "atlas", "down", "after-checkpoint")
+		conn := openNoTransactionCrashDatabase(c.TB, databasePath)
 		defer dbschema.CloseAndWarn(conn)
-		c.Assert(noTransactionTableExists(c, conn, "posts"), qt.IsFalse)
-		c.Assert(noTransactionTableExists(c, conn, "users"), qt.IsTrue)
+		c.Assert(noTransactionTableExists(c.TB, conn, "posts"), qt.IsFalse)
+		c.Assert(noTransactionTableExists(c.TB, conn, "users"), qt.IsTrue)
 
 		var failure, operatorVersion string
 		var applied, total int
@@ -210,7 +217,7 @@ func TestNoTransactionCrash_PersistsProgressBeforeObserver(t *testing.T) {
 		c.Assert(failure, qt.Equals, "")
 		c.Assert(operatorVersion, qt.Equals, "Ptah/down")
 
-		mig := migrator.NewMigrator(conn, noTransactionCrashProvider(c)).
+		mig := migrator.NewMigrator(conn, noTransactionCrashProvider(c.TB)).
 			WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)
 		status, err := mig.GetMigrationStatus(c.Context())
 		c.Assert(err, qt.IsNil)
@@ -229,9 +236,10 @@ func crashCheckpointDigest(statement string) string {
 }
 
 func runNoTransactionCrashHelper(
-	c *qt.C,
+	tb testing.TB,
 	helperPath, databasePath, revisionFormat, direction, crashPoint string,
 ) {
+	c := qt.New(tb)
 	c.Helper()
 	run := exec.Command(helperPath, databasePath, revisionFormat, direction, crashPoint)
 	err := run.Run()
@@ -240,7 +248,8 @@ func runNoTransactionCrashHelper(
 	c.Assert(exitErr.ExitCode(), qt.Equals, 73)
 }
 
-func noTransactionCrashProvider(c *qt.C) migrator.MigrationProvider {
+func noTransactionCrashProvider(tb testing.TB) migrator.MigrationProvider {
+	c := qt.New(tb)
 	c.Helper()
 	provider, err := migrator.NewFSMigrationProvider(fstest.MapFS{
 		"000001_create_users.up.sql": {
@@ -254,7 +263,8 @@ func noTransactionCrashProvider(c *qt.C) migrator.MigrationProvider {
 	return provider
 }
 
-func openNoTransactionCrashDatabase(c *qt.C, databasePath string) *dbschema.DatabaseConnection {
+func openNoTransactionCrashDatabase(tb testing.TB, databasePath string) *dbschema.DatabaseConnection {
+	c := qt.New(tb)
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(c.Context(), "sqlite://"+databasePath)
 	c.Assert(err, qt.IsNil)

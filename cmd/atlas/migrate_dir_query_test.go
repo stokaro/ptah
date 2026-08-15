@@ -22,7 +22,8 @@ import (
 // returns its path. The sum is written with `migrate hash` so the directory is
 // one the integrity gate accepts, which is what lets the query rows below turn
 // on the query rather than on a checksum refusal.
-func writeQueryFixtureDir(c *qt.C) string {
+func writeQueryFixtureDir(tb testing.TB) string {
+	c := qt.New(tb)
 	c.Helper()
 	dir := filepath.Join(c.TempDir(), "migrations")
 	c.Assert(os.MkdirAll(dir, 0o755), qt.IsNil)
@@ -139,8 +140,8 @@ func TestCompatMigrateDirQuery_IgnoresUnknownKeysOnEveryVerb(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			withQuery := tt.run(c, writeQueryFixtureDir(c), "?nonsense=1")
-			control := tt.run(c, writeQueryFixtureDir(c), "")
+			withQuery := tt.run(c, writeQueryFixtureDir(c.TB), "?nonsense=1")
+			control := tt.run(c, writeQueryFixtureDir(c.TB), "")
 
 			c.Assert(control, qt.IsNil, qt.Commentf("control run without a query must succeed"))
 			c.Assert(withQuery, qt.IsNil)
@@ -204,7 +205,7 @@ func TestCompatMigrateDirQuery_RejectsUnknownFormatValue(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			err := tt.run(c, writeQueryFixtureDir(c))
+			err := tt.run(c, writeQueryFixtureDir(c.TB))
 
 			c.Assert(err, qt.ErrorMatches, want)
 		})
@@ -217,7 +218,7 @@ func TestCompatMigrateDirQuery_RejectsUnknownFormatValue(t *testing.T) {
 // the relaxation into a new divergence one character wide.
 func TestCompatMigrateDirQuery_EmptyFormatValueReadsAtlasLayout(t *testing.T) {
 	c := qt.New(t)
-	dir := writeQueryFixtureDir(c)
+	dir := writeQueryFixtureDir(c.TB)
 
 	_, _, err := runCompat("migrate", "status",
 		"--dir", "file://"+dir+"?format=",
@@ -278,7 +279,7 @@ func TestCompatMigrateDirQuery_NewAndDiffRefuseAnUnhashedDirectoryWithAQuery(t *
 			err := tt.run(c, dir)
 
 			c.Assert(err, qt.ErrorMatches, `checksum file not found`)
-			c.Assert(atlasDirEntryNames(c, dir), qt.DeepEquals, []string{"20240101000000_init.sql"})
+			c.Assert(atlasDirEntryNames(c.TB, dir), qt.DeepEquals, []string{"20240101000000_init.sql"})
 		})
 	}
 }
@@ -286,7 +287,8 @@ func TestCompatMigrateDirQuery_NewAndDiffRefuseAnUnhashedDirectoryWithAQuery(t *
 // atlasDirEntryNames lists the entries a migration directory holds, so a
 // refusal can be asserted to have written nothing rather than only to have
 // exited non-zero.
-func atlasDirEntryNames(c *qt.C, dir string) []string {
+func atlasDirEntryNames(tb testing.TB, dir string) []string {
+	c := qt.New(tb)
 	c.Helper()
 	entries, err := os.ReadDir(dir)
 	c.Assert(err, qt.IsNil)

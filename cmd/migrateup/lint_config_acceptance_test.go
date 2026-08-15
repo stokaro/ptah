@@ -21,9 +21,9 @@ func TestMigrateUp_InvalidLintConfigFailsBeforeSQLiteMigrationExecution(t *testi
 	dbURL := "sqlite://" + filepath.Join(dir, "ptah.db")
 	migrationsDir := filepath.Join(dir, "migrations")
 	c.Assert(os.MkdirAll(migrationsDir, 0o755), qt.IsNil)
-	writeLintGateMigration(c, migrationsDir, lint.ConfigFileName, "rules:\n  DS101:\n    severty: warning\n")
-	writeLintGateMigration(c, migrationsDir, "0000000001_create.up.sql", "CREATE TABLE users (id INTEGER);\n")
-	writeLintGateMigration(c, migrationsDir, "0000000001_create.down.sql", "DROP TABLE users;\n")
+	writeLintGateMigration(c.TB, migrationsDir, lint.ConfigFileName, "rules:\n  DS101:\n    severty: warning\n")
+	writeLintGateMigration(c.TB, migrationsDir, "0000000001_create.up.sql", "CREATE TABLE users (id INTEGER);\n")
+	writeLintGateMigration(c.TB, migrationsDir, "0000000001_create.down.sql", "DROP TABLE users;\n")
 
 	var stdout, stderr bytes.Buffer
 	cmd := migrateup.NewMigrateUpCommand()
@@ -55,7 +55,7 @@ func TestMigrateUp_RelativeDirectoryPrefixedExclusionMatchesLintCommand(t *testi
 	migrationsDir := filepath.Join(root, "migrations")
 	t.Chdir(root)
 
-	assertLintAndMigrateExclusionParity(c, t, root, migrationsDir, "migrations", "migrations/legacy/**")
+	assertLintAndMigrateExclusionParity(c.TB, t, root, migrationsDir, "migrations", "migrations/legacy/**")
 }
 
 func TestMigrateUp_NestedDirectoryPrefixedExclusionMatchesLintCommand(t *testing.T) {
@@ -64,7 +64,7 @@ func TestMigrateUp_NestedDirectoryPrefixedExclusionMatchesLintCommand(t *testing
 	migrationsDir := filepath.Join(root, "db", "migrations")
 	t.Chdir(root)
 
-	assertLintAndMigrateExclusionParity(c, t, root, migrationsDir, "db/migrations", "db/migrations/legacy/**")
+	assertLintAndMigrateExclusionParity(c.TB, t, root, migrationsDir, "db/migrations", "db/migrations/legacy/**")
 }
 
 func TestMigrateUp_AbsoluteDirectoryPrefixedExclusionMatchesLintCommand(t *testing.T) {
@@ -73,25 +73,26 @@ func TestMigrateUp_AbsoluteDirectoryPrefixedExclusionMatchesLintCommand(t *testi
 	migrationsDir := filepath.Join(root, "migrations")
 	pattern := filepath.ToSlash(filepath.Join(migrationsDir, "legacy", "**"))
 
-	assertLintAndMigrateExclusionParity(c, t, root, migrationsDir, migrationsDir, pattern)
+	assertLintAndMigrateExclusionParity(c.TB, t, root, migrationsDir, migrationsDir, pattern)
 }
 
 func assertLintAndMigrateExclusionParity(
-	c *qt.C,
+	tb testing.TB,
 	t *testing.T,
 	root string,
 	migrationsDir string,
 	migrationsArg string,
 	pattern string,
 ) {
+	c := qt.New(tb)
 	c.Helper()
 	legacyDir := filepath.Join(migrationsDir, "legacy")
 	c.Assert(os.MkdirAll(legacyDir, 0o755), qt.IsNil)
-	writeLintGateMigration(c, migrationsDir, lint.ConfigFileName, fmt.Sprintf("rules:\n  DS101:\n    exclude:\n      - %q\n", pattern))
-	writeLintGateMigration(c, legacyDir, "0000000001_create.up.sql", "CREATE TABLE users (id INTEGER);\n")
-	writeLintGateMigration(c, legacyDir, "0000000001_create.down.sql", "DROP TABLE users;\n")
-	writeLintGateMigration(c, legacyDir, "0000000002_drop.up.sql", "DROP TABLE users;\n")
-	writeLintGateMigration(c, legacyDir, "0000000002_drop.down.sql", "CREATE TABLE users (id INTEGER);\n")
+	writeLintGateMigration(c.TB, migrationsDir, lint.ConfigFileName, fmt.Sprintf("rules:\n  DS101:\n    exclude:\n      - %q\n", pattern))
+	writeLintGateMigration(c.TB, legacyDir, "0000000001_create.up.sql", "CREATE TABLE users (id INTEGER);\n")
+	writeLintGateMigration(c.TB, legacyDir, "0000000001_create.down.sql", "DROP TABLE users;\n")
+	writeLintGateMigration(c.TB, legacyDir, "0000000002_drop.up.sql", "DROP TABLE users;\n")
+	writeLintGateMigration(c.TB, legacyDir, "0000000002_drop.down.sql", "CREATE TABLE users (id INTEGER);\n")
 
 	var lintStdout, lintStderr bytes.Buffer
 	lintCommand := lintcmd.NewLintCommand()
@@ -132,7 +133,8 @@ func assertLintAndMigrateExclusionParity(
 	c.Assert(currentVersion, qt.Equals, int64(2))
 }
 
-func writeLintGateMigration(c *qt.C, dir, name, contents string) {
+func writeLintGateMigration(tb testing.TB, dir, name, contents string) {
+	c := qt.New(tb)
 	c.Helper()
 	c.Assert(os.WriteFile(filepath.Join(dir, name), []byte(contents), 0o600), qt.IsNil)
 }

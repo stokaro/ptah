@@ -215,7 +215,6 @@ func TestGenerateMigrationASTChecked_NilSchemaHappyPath(t *testing.T) {
 }
 
 func TestGenerateMigrationASTChecked_MissingDesiredViewRejected(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name string
 		diff *types.SchemaDiff
@@ -231,7 +230,8 @@ func TestGenerateMigrationASTChecked_MissingDesiredViewRejected(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			nodes, err := clickhouse.New().GenerateMigrationASTChecked(test.diff, &goschema.Database{})
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
@@ -241,7 +241,6 @@ func TestGenerateMigrationASTChecked_MissingDesiredViewRejected(t *testing.T) {
 }
 
 func TestGenerateMigrationASTChecked_DisabledViewsNeedNoDesiredDeclaration(t *testing.T) {
-	c := qt.New(t)
 	planner := clickhouse.NewWithCapabilities(capability.Capabilities{})
 	tests := []struct {
 		name        string
@@ -260,7 +259,8 @@ func TestGenerateMigrationASTChecked_DisabledViewsNeedNoDesiredDeclaration(t *te
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			nodes, err := planner.GenerateMigrationASTChecked(test.diff, &goschema.Database{})
 
 			c.Assert(err, qt.IsNil)
@@ -439,7 +439,6 @@ func TestGenerateMigrationASTChecked_MaterializedViewRemovalIsGuarded(t *testing
 }
 
 func TestGenerateMigrationASTChecked_MissingDesiredMaterializedViewRejected(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name string
 		diff *types.SchemaDiff
@@ -457,7 +456,8 @@ func TestGenerateMigrationASTChecked_MissingDesiredMaterializedViewRejected(t *t
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			nodes, err := clickhouse.New().GenerateMigrationASTChecked(test.diff, &goschema.Database{})
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
@@ -471,7 +471,6 @@ func TestGenerateMigrationASTChecked_MissingDesiredMaterializedViewRejected(t *t
 // materialized_views still names the object instead of failing on a desired
 // declaration it was never going to read.
 func TestGenerateMigrationASTChecked_DisabledMaterializedViewsNeedNoDeclaration(t *testing.T) {
-	c := qt.New(t)
 	planner := clickhouse.NewWithCapabilities(
 		capability.ClickHouse24().With(capability.MaterializedViews, false),
 	)
@@ -492,7 +491,8 @@ func TestGenerateMigrationASTChecked_DisabledMaterializedViewsNeedNoDeclaration(
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			nodes, err := planner.GenerateMigrationASTChecked(test.diff, &goschema.Database{})
 
 			c.Assert(err, qt.IsNil)
@@ -620,7 +620,6 @@ func TestGenerateMigrationASTChecked_UnrelatedRemovalStaysAfterTheCreates(t *tes
 }
 
 func TestGenerateMigrationASTChecked_NilDiffFailurePath(t *testing.T) {
-	c := qt.New(t)
 	p := clickhouse.New()
 	tests := []struct {
 		name      string
@@ -631,7 +630,8 @@ func TestGenerateMigrationASTChecked_NilDiffFailurePath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			nodes, err := p.GenerateMigrationASTChecked(nil, test.generated)
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)

@@ -47,7 +47,8 @@ func atlasCheckpointDirFiles() map[string]string {
 	}
 }
 
-func atlasCheckpointFS(c *qt.C, files map[string]string) fstest.MapFS {
+func atlasCheckpointFS(tb testing.TB, files map[string]string) fstest.MapFS {
+	c := qt.New(tb)
 	c.Helper()
 	fsys := fstest.MapFS{}
 	for name, content := range files {
@@ -56,7 +57,8 @@ func atlasCheckpointFS(c *qt.C, files map[string]string) fstest.MapFS {
 	return fsys
 }
 
-func newAtlasCheckpointConn(c *qt.C) *dbschema.DatabaseConnection {
+func newAtlasCheckpointConn(tb testing.TB) *dbschema.DatabaseConnection {
+	c := qt.New(tb)
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+filepath.Join(c.TempDir(), "checkpoint.db"))
 	c.Assert(err, qt.IsNil)
@@ -64,14 +66,16 @@ func newAtlasCheckpointConn(c *qt.C) *dbschema.DatabaseConnection {
 	return conn
 }
 
-func newAtlasFormatMigrator(c *qt.C, conn *dbschema.DatabaseConnection, fsys fstest.MapFS) *migrator.Migrator {
+func newAtlasFormatMigrator(tb testing.TB, conn *dbschema.DatabaseConnection, fsys fstest.MapFS) *migrator.Migrator {
+	c := qt.New(tb)
 	c.Helper()
 	m, err := migrator.NewFSMigrator(conn, fsys, migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas))
 	c.Assert(err, qt.IsNil)
 	return m
 }
 
-func sqliteHasTable(c *qt.C, conn *dbschema.DatabaseConnection, name string) bool {
+func sqliteHasTable(tb testing.TB, conn *dbschema.DatabaseConnection, name string) bool {
+	c := qt.New(tb)
 	c.Helper()
 	var count int
 	err := conn.QueryRow("SELECT count(*) FROM sqlite_master WHERE type='table' AND name = ?", name).Scan(&count)
@@ -79,7 +83,8 @@ func sqliteHasTable(c *qt.C, conn *dbschema.DatabaseConnection, name string) boo
 	return count == 1
 }
 
-func appliedPtahVersions(c *qt.C, conn *dbschema.DatabaseConnection) []int64 {
+func appliedPtahVersions(tb testing.TB, conn *dbschema.DatabaseConnection) []int64 {
+	c := qt.New(tb)
 	c.Helper()
 	rows, err := conn.Query("SELECT version FROM schema_migrations WHERE state = 'applied' ORDER BY version")
 	c.Assert(err, qt.IsNil)
@@ -95,7 +100,6 @@ func appliedPtahVersions(c *qt.C, conn *dbschema.DatabaseConnection) []int64 {
 }
 
 func TestAtlasCheckpointDirective_Detection_HappyPath(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name string
@@ -125,8 +129,9 @@ func TestAtlasCheckpointDirective_Detection_HappyPath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
-			fsys := atlasCheckpointFS(c, map[string]string{
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			fsys := atlasCheckpointFS(c.TB, map[string]string{
 				"20260801100335_checkpoint.sql": test.sql,
 			})
 			provider, err := migrator.NewFSMigrationProvider(fsys, migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas))
@@ -139,7 +144,6 @@ func TestAtlasCheckpointDirective_Detection_HappyPath(t *testing.T) {
 }
 
 func TestAtlasCheckpointDirective_NotACheckpoint(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name string
@@ -164,8 +168,9 @@ func TestAtlasCheckpointDirective_NotACheckpoint(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
-			fsys := atlasCheckpointFS(c, map[string]string{
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			fsys := atlasCheckpointFS(c.TB, map[string]string{
 				"20260801100335_checkpoint.sql": test.sql,
 			})
 			provider, err := migrator.NewFSMigrationProvider(fsys, migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas))
@@ -178,7 +183,6 @@ func TestAtlasCheckpointDirective_NotACheckpoint(t *testing.T) {
 }
 
 func TestAtlasCheckpointDirective_TxtarConflict_FailurePath(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name string
@@ -199,8 +203,9 @@ func TestAtlasCheckpointDirective_TxtarConflict_FailurePath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
-			fsys := atlasCheckpointFS(c, map[string]string{
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			fsys := atlasCheckpointFS(c.TB, map[string]string{
 				"20260801100335_checkpoint.sql": test.sql,
 			})
 			var conflict *migrator.AtlasCheckpointTxtarConflictError
@@ -216,7 +221,7 @@ func TestAtlasCheckpointDirective_TxtarSectionContentIsNotAConflict(t *testing.T
 
 	// A `-- atlas:checkpoint` line inside a txtar section is section content,
 	// not a leading directive: the file loads as an ordinary txtar migration.
-	fsys := atlasCheckpointFS(c, map[string]string{
+	fsys := atlasCheckpointFS(c.TB, map[string]string{
 		"20260801100335_widgets.sql": "-- atlas:txtar\n\n-- migration.sql --\n-- atlas:checkpoint\nCREATE TABLE widgets (id INTEGER PRIMARY KEY);\n",
 	})
 
@@ -231,24 +236,24 @@ func TestAtlasCheckpointDirective_TxtarSectionContentIsNotAConflict(t *testing.T
 func TestAtlasCheckpoint_FreshDatabaseAppliesOnlyCheckpointAndLater(t *testing.T) {
 	c := qt.New(t)
 	ctx := context.Background()
-	conn := newAtlasCheckpointConn(c)
+	conn := newAtlasCheckpointConn(c.TB)
 
 	files := atlasCheckpointDirFiles()
 	files["20260801100400_add_widgets.sql"] = "CREATE TABLE post_ran (id INTEGER PRIMARY KEY);\n"
-	m := newAtlasFormatMigrator(c, conn, atlasCheckpointFS(c, files))
+	m := newAtlasFormatMigrator(c.TB, conn, atlasCheckpointFS(c.TB, files))
 
 	c.Assert(m.MigrateUp(ctx), qt.IsNil)
 
 	// Only the checkpoint and post-checkpoint migrations executed; the
 	// squashed pre-checkpoint files never ran.
-	c.Assert(sqliteHasTable(c, conn, "pre_one_ran"), qt.IsFalse)
-	c.Assert(sqliteHasTable(c, conn, "pre_two_ran"), qt.IsFalse)
-	c.Assert(sqliteHasTable(c, conn, "checkpoint_ran"), qt.IsTrue)
-	c.Assert(sqliteHasTable(c, conn, "post_ran"), qt.IsTrue)
-	c.Assert(sqliteHasTable(c, conn, "users"), qt.IsTrue)
+	c.Assert(sqliteHasTable(c.TB, conn, "pre_one_ran"), qt.IsFalse)
+	c.Assert(sqliteHasTable(c.TB, conn, "pre_two_ran"), qt.IsFalse)
+	c.Assert(sqliteHasTable(c.TB, conn, "checkpoint_ran"), qt.IsTrue)
+	c.Assert(sqliteHasTable(c.TB, conn, "post_ran"), qt.IsTrue)
+	c.Assert(sqliteHasTable(c.TB, conn, "users"), qt.IsTrue)
 
 	// Bookkeeping records exactly the executed migrations.
-	c.Assert(appliedPtahVersions(c, conn), qt.DeepEquals, []int64{atlasCheckpointVersion, atlasCheckpointPostVersion})
+	c.Assert(appliedPtahVersions(c.TB, conn), qt.DeepEquals, []int64{atlasCheckpointVersion, atlasCheckpointPostVersion})
 
 	status, err := m.GetMigrationStatus(ctx)
 	c.Assert(err, qt.IsNil)
@@ -259,7 +264,7 @@ func TestAtlasCheckpoint_FreshDatabaseAppliesOnlyCheckpointAndLater(t *testing.T
 func TestAtlasCheckpoint_PreCheckpointDatabaseSkipsCheckpointSilently(t *testing.T) {
 	c := qt.New(t)
 	ctx := context.Background()
-	conn := newAtlasCheckpointConn(c)
+	conn := newAtlasCheckpointConn(c.TB)
 
 	// Seed the database through ordinary pre-checkpoint history, mirroring a
 	// project that migrated before the checkpoint was cut.
@@ -268,43 +273,43 @@ func TestAtlasCheckpoint_PreCheckpointDatabaseSkipsCheckpointSilently(t *testing
 		"20250801000001_create_users.sql": files["20250801000001_create_users.sql"],
 		"20250801000002_add_email.sql":    files["20250801000002_add_email.sql"],
 	}
-	c.Assert(newAtlasFormatMigrator(c, conn, atlasCheckpointFS(c, preOnly)).MigrateUp(ctx), qt.IsNil)
-	c.Assert(appliedPtahVersions(c, conn), qt.DeepEquals, []int64{atlasCheckpointPreOneVersion, atlasCheckpointPreTwoVersion})
+	c.Assert(newAtlasFormatMigrator(c.TB, conn, atlasCheckpointFS(c.TB, preOnly)).MigrateUp(ctx), qt.IsNil)
+	c.Assert(appliedPtahVersions(c.TB, conn), qt.DeepEquals, []int64{atlasCheckpointPreOneVersion, atlasCheckpointPreTwoVersion})
 
 	// The full directory now contains the checkpoint. It must be skipped
 	// silently: no execution, no bookkeeping row, clean status.
-	m := newAtlasFormatMigrator(c, conn, atlasCheckpointFS(c, files))
+	m := newAtlasFormatMigrator(c.TB, conn, atlasCheckpointFS(c.TB, files))
 	status, err := m.GetMigrationStatus(ctx)
 	c.Assert(err, qt.IsNil)
 	c.Assert(status.PendingMigrations, qt.HasLen, 0)
 	c.Assert(status.HasPendingChanges, qt.IsFalse)
 
 	c.Assert(m.MigrateUp(ctx), qt.IsNil)
-	c.Assert(sqliteHasTable(c, conn, "checkpoint_ran"), qt.IsFalse)
-	c.Assert(appliedPtahVersions(c, conn), qt.DeepEquals, []int64{atlasCheckpointPreOneVersion, atlasCheckpointPreTwoVersion})
+	c.Assert(sqliteHasTable(c.TB, conn, "checkpoint_ran"), qt.IsFalse)
+	c.Assert(appliedPtahVersions(c.TB, conn), qt.DeepEquals, []int64{atlasCheckpointPreOneVersion, atlasCheckpointPreTwoVersion})
 }
 
 func TestAtlasCheckpoint_PreCheckpointDatabaseAppliesOnlyPostCheckpointHistory(t *testing.T) {
 	c := qt.New(t)
 	ctx := context.Background()
-	conn := newAtlasCheckpointConn(c)
+	conn := newAtlasCheckpointConn(c.TB)
 
 	files := atlasCheckpointDirFiles()
 	preOnly := map[string]string{
 		"20250801000001_create_users.sql": files["20250801000001_create_users.sql"],
 		"20250801000002_add_email.sql":    files["20250801000002_add_email.sql"],
 	}
-	c.Assert(newAtlasFormatMigrator(c, conn, atlasCheckpointFS(c, preOnly)).MigrateUp(ctx), qt.IsNil)
+	c.Assert(newAtlasFormatMigrator(c.TB, conn, atlasCheckpointFS(c.TB, preOnly)).MigrateUp(ctx), qt.IsNil)
 
 	files["20260801100400_add_widgets.sql"] = "CREATE TABLE post_ran (id INTEGER PRIMARY KEY);\n"
-	m := newAtlasFormatMigrator(c, conn, atlasCheckpointFS(c, files))
+	m := newAtlasFormatMigrator(c.TB, conn, atlasCheckpointFS(c.TB, files))
 
 	c.Assert(m.MigrateUp(ctx), qt.IsNil)
 
 	// The checkpoint stays skipped; only genuinely new history runs.
-	c.Assert(sqliteHasTable(c, conn, "checkpoint_ran"), qt.IsFalse)
-	c.Assert(sqliteHasTable(c, conn, "post_ran"), qt.IsTrue)
-	c.Assert(appliedPtahVersions(c, conn), qt.DeepEquals, []int64{
+	c.Assert(sqliteHasTable(c.TB, conn, "checkpoint_ran"), qt.IsFalse)
+	c.Assert(sqliteHasTable(c.TB, conn, "post_ran"), qt.IsTrue)
+	c.Assert(appliedPtahVersions(c.TB, conn), qt.DeepEquals, []int64{
 		atlasCheckpointPreOneVersion,
 		atlasCheckpointPreTwoVersion,
 		atlasCheckpointPostVersion,
@@ -314,35 +319,35 @@ func TestAtlasCheckpoint_PreCheckpointDatabaseAppliesOnlyPostCheckpointHistory(t
 func TestAtlasCheckpoint_MultipleCheckpointsLatestWins(t *testing.T) {
 	c := qt.New(t)
 	ctx := context.Background()
-	conn := newAtlasCheckpointConn(c)
+	conn := newAtlasCheckpointConn(c.TB)
 
 	files := atlasCheckpointDirFiles()
 	files["20260801200000_checkpoint.sql"] = "-- atlas:checkpoint\n" +
 		"CREATE TABLE users (id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, email TEXT NULL);\n" +
 		"CREATE TABLE second_checkpoint_ran (id INTEGER PRIMARY KEY);\n"
-	m := newAtlasFormatMigrator(c, conn, atlasCheckpointFS(c, files))
+	m := newAtlasFormatMigrator(c.TB, conn, atlasCheckpointFS(c.TB, files))
 
 	c.Assert(m.MigrateUp(ctx), qt.IsNil)
 
 	// Only the newest checkpoint bootstraps a fresh database.
-	c.Assert(sqliteHasTable(c, conn, "checkpoint_ran"), qt.IsFalse)
-	c.Assert(sqliteHasTable(c, conn, "second_checkpoint_ran"), qt.IsTrue)
-	c.Assert(appliedPtahVersions(c, conn), qt.DeepEquals, []int64{20260801200000})
+	c.Assert(sqliteHasTable(c.TB, conn, "checkpoint_ran"), qt.IsFalse)
+	c.Assert(sqliteHasTable(c.TB, conn, "second_checkpoint_ran"), qt.IsTrue)
+	c.Assert(appliedPtahVersions(c.TB, conn), qt.DeepEquals, []int64{20260801200000})
 }
 
 func TestAtlasCheckpoint_CheckpointAsOnlyFile(t *testing.T) {
 	c := qt.New(t)
 	ctx := context.Background()
-	conn := newAtlasCheckpointConn(c)
+	conn := newAtlasCheckpointConn(c.TB)
 
-	fsys := atlasCheckpointFS(c, map[string]string{
+	fsys := atlasCheckpointFS(c.TB, map[string]string{
 		"20260801100335_checkpoint.sql": atlasCheckpointSQL,
 	})
-	m := newAtlasFormatMigrator(c, conn, fsys)
+	m := newAtlasFormatMigrator(c.TB, conn, fsys)
 
 	c.Assert(m.MigrateUp(ctx), qt.IsNil)
-	c.Assert(sqliteHasTable(c, conn, "checkpoint_ran"), qt.IsTrue)
-	c.Assert(appliedPtahVersions(c, conn), qt.DeepEquals, []int64{atlasCheckpointVersion})
+	c.Assert(sqliteHasTable(c.TB, conn, "checkpoint_ran"), qt.IsTrue)
+	c.Assert(appliedPtahVersions(c.TB, conn), qt.DeepEquals, []int64{atlasCheckpointVersion})
 
 	status, err := m.GetMigrationStatus(ctx)
 	c.Assert(err, qt.IsNil)
@@ -351,9 +356,10 @@ func TestAtlasCheckpoint_CheckpointAsOnlyFile(t *testing.T) {
 
 // newAtlasRevisionCheckpointMigrator mirrors the ptah-compat apply runtime: an
 // Atlas-format directory recorded in the Atlas revision table format.
-func newAtlasRevisionCheckpointMigrator(c *qt.C, conn *dbschema.DatabaseConnection, fsys fstest.MapFS) *migrator.Migrator {
+func newAtlasRevisionCheckpointMigrator(tb testing.TB, conn *dbschema.DatabaseConnection, fsys fstest.MapFS) *migrator.Migrator {
+	c := qt.New(tb)
 	c.Helper()
-	return newAtlasFormatMigrator(c, conn, fsys).WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)
+	return newAtlasFormatMigrator(c.TB, conn, fsys).WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)
 }
 
 type atlasRevisionRow struct {
@@ -364,7 +370,8 @@ type atlasRevisionRow struct {
 	Total       int64
 }
 
-func atlasRevisionRows(c *qt.C, conn *dbschema.DatabaseConnection) []atlasRevisionRow {
+func atlasRevisionRows(tb testing.TB, conn *dbschema.DatabaseConnection) []atlasRevisionRow {
+	c := qt.New(tb)
 	c.Helper()
 	rows, err := conn.Query("SELECT version, description, type, applied, total FROM atlas_schema_revisions ORDER BY version")
 	c.Assert(err, qt.IsNil)
@@ -382,7 +389,7 @@ func atlasRevisionRows(c *qt.C, conn *dbschema.DatabaseConnection) []atlasRevisi
 func TestAtlasCheckpoint_FreshDatabaseAtlasRevisionRowShape(t *testing.T) {
 	c := qt.New(t)
 	ctx := context.Background()
-	conn := newAtlasCheckpointConn(c)
+	conn := newAtlasCheckpointConn(c.TB)
 
 	// The checkpoint carries exactly one statement, like the measured fixture,
 	// so applied/total pin the per-statement counters to 1/1.
@@ -394,14 +401,14 @@ func TestAtlasCheckpoint_FreshDatabaseAtlasRevisionRowShape(t *testing.T) {
 		"  name TEXT NOT NULL,\n" +
 		"  email TEXT NULL\n" +
 		");\n"
-	m := newAtlasRevisionCheckpointMigrator(c, conn, atlasCheckpointFS(c, files))
+	m := newAtlasRevisionCheckpointMigrator(c.TB, conn, atlasCheckpointFS(c.TB, files))
 
 	c.Assert(m.MigrateUp(ctx), qt.IsNil)
 
 	// Measured Atlas writes exactly one revision row for a checkpoint
 	// bootstrap: `20260801100335|checkpoint|2|1|1` (stokaro/ptah#954 sqlite
 	// dump). No rows are recorded for the squashed pre-checkpoint history.
-	c.Assert(atlasRevisionRows(c, conn), qt.DeepEquals, []atlasRevisionRow{
+	c.Assert(atlasRevisionRows(c.TB, conn), qt.DeepEquals, []atlasRevisionRow{
 		{
 			Version:     atlasCheckpointVersion,
 			Description: "checkpoint",
@@ -415,25 +422,25 @@ func TestAtlasCheckpoint_FreshDatabaseAtlasRevisionRowShape(t *testing.T) {
 func TestAtlasCheckpoint_PreCheckpointAtlasRevisionsUnchanged(t *testing.T) {
 	c := qt.New(t)
 	ctx := context.Background()
-	conn := newAtlasCheckpointConn(c)
+	conn := newAtlasCheckpointConn(c.TB)
 
 	files := atlasCheckpointDirFiles()
 	preOnly := map[string]string{
 		"20250801000001_create_users.sql": files["20250801000001_create_users.sql"],
 		"20250801000002_add_email.sql":    files["20250801000002_add_email.sql"],
 	}
-	c.Assert(newAtlasRevisionCheckpointMigrator(c, conn, atlasCheckpointFS(c, preOnly)).MigrateUp(ctx), qt.IsNil)
-	seeded := atlasRevisionRows(c, conn)
+	c.Assert(newAtlasRevisionCheckpointMigrator(c.TB, conn, atlasCheckpointFS(c.TB, preOnly)).MigrateUp(ctx), qt.IsNil)
+	seeded := atlasRevisionRows(c.TB, conn)
 	c.Assert(seeded, qt.HasLen, 2)
 
 	// Measured Atlas skips the checkpoint on a pre-checkpoint database with
 	// "No migration files to execute" and writes no revision row.
-	m := newAtlasRevisionCheckpointMigrator(c, conn, atlasCheckpointFS(c, files))
+	m := newAtlasRevisionCheckpointMigrator(c.TB, conn, atlasCheckpointFS(c.TB, files))
 	status, err := m.GetMigrationStatus(ctx)
 	c.Assert(err, qt.IsNil)
 	c.Assert(status.HasPendingChanges, qt.IsFalse)
 
 	c.Assert(m.MigrateUp(ctx), qt.IsNil)
-	c.Assert(atlasRevisionRows(c, conn), qt.DeepEquals, seeded)
-	c.Assert(sqliteHasTable(c, conn, "checkpoint_ran"), qt.IsFalse)
+	c.Assert(atlasRevisionRows(c.TB, conn), qt.DeepEquals, seeded)
+	c.Assert(sqliteHasTable(c.TB, conn, "checkpoint_ran"), qt.IsFalse)
 }

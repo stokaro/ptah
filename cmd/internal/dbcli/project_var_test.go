@@ -21,7 +21,8 @@ env "local" {
 }
 `
 
-func chdirTemp(c *qt.C, files map[string]string) string {
+func chdirTemp(tb testing.TB, files map[string]string) string {
+	c := qt.New(tb)
 	dir := c.TempDir()
 	for name, content := range files {
 		c.Assert(os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600), qt.IsNil)
@@ -35,7 +36,7 @@ func chdirTemp(c *qt.C, files map[string]string) string {
 	return dir
 }
 
-func envVarCommand(c *qt.C) *cobra.Command {
+func envVarCommand(tb testing.TB) *cobra.Command {
 	cmd := &cobra.Command{Use: "test"}
 	var envName string
 	dbcli.RegisterEnvFlag(cmd.Flags(), &envName)
@@ -46,9 +47,9 @@ func envVarCommand(c *qt.C) *cobra.Command {
 // fix: the flag the diagnostic names actually supplies the value.
 func TestLoadProjectConfigHonorsPublicVarFlag(t *testing.T) {
 	c := qt.New(t)
-	chdirTemp(c, map[string]string{"atlas.hcl": atlasHCLRequiringVar})
+	chdirTemp(c.TB, map[string]string{"atlas.hcl": atlasHCLRequiringVar})
 
-	cmd := envVarCommand(c)
+	cmd := envVarCommand(c.TB)
 	c.Assert(cmd.Flags().Set(dbcli.EnvFlagName, "local"), qt.IsNil)
 	c.Assert(cmd.Flags().Set(dbcli.ProjectVarFlagName, "dburl=sqlite://file.db"), qt.IsNil)
 
@@ -63,9 +64,9 @@ func TestLoadProjectConfigHonorsPublicVarFlag(t *testing.T) {
 // the command registers.
 func TestLoadProjectConfigWithoutVarAdvisesTheFlagItAccepts(t *testing.T) {
 	c := qt.New(t)
-	chdirTemp(c, map[string]string{"atlas.hcl": atlasHCLRequiringVar})
+	chdirTemp(c.TB, map[string]string{"atlas.hcl": atlasHCLRequiringVar})
 
-	cmd := envVarCommand(c)
+	cmd := envVarCommand(c.TB)
 	c.Assert(cmd.Flags().Set(dbcli.EnvFlagName, "local"), qt.IsNil)
 
 	_, err := dbcli.LoadProjectConfig(cmd, "")
@@ -79,9 +80,9 @@ func TestLoadProjectConfigWithoutVarAdvisesTheFlagItAccepts(t *testing.T) {
 // list(string), so merging them would turn a scalar override into a list.
 func TestLoadProjectConfigPublicVarWinsOverAdapterVar(t *testing.T) {
 	c := qt.New(t)
-	chdirTemp(c, map[string]string{"atlas.hcl": atlasHCLRequiringVar})
+	chdirTemp(c.TB, map[string]string{"atlas.hcl": atlasHCLRequiringVar})
 
-	cmd := envVarCommand(c)
+	cmd := envVarCommand(c.TB)
 	dbcli.RegisterAtlasProjectInternalFlags(cmd.Flags())
 	c.Assert(cmd.Flags().Set(dbcli.EnvFlagName, "local"), qt.IsNil)
 	c.Assert(cmd.Flags().Set(dbcli.AtlasProjectVarFlagName, "dburl=sqlite://adapter.db"), qt.IsNil)
@@ -98,9 +99,9 @@ func TestLoadProjectConfigPublicVarWinsOverAdapterVar(t *testing.T) {
 // the public one is absent.
 func TestLoadProjectConfigStillHonorsAdapterVar(t *testing.T) {
 	c := qt.New(t)
-	chdirTemp(c, map[string]string{"atlas.hcl": atlasHCLRequiringVar})
+	chdirTemp(c.TB, map[string]string{"atlas.hcl": atlasHCLRequiringVar})
 
-	cmd := envVarCommand(c)
+	cmd := envVarCommand(c.TB)
 	dbcli.RegisterAtlasProjectInternalFlags(cmd.Flags())
 	c.Assert(cmd.Flags().Set(dbcli.EnvFlagName, "local"), qt.IsNil)
 	c.Assert(cmd.Flags().Set(dbcli.AtlasProjectVarFlagName, "dburl=sqlite://adapter.db"), qt.IsNil)
@@ -116,7 +117,7 @@ func TestLoadProjectConfigStillHonorsAdapterVar(t *testing.T) {
 func TestRegisterEnvFlagAnnotatesTheProjectEnvFlag(t *testing.T) {
 	c := qt.New(t)
 
-	bound := envVarCommand(c)
+	bound := envVarCommand(c.TB)
 	c.Assert(
 		bound.Flags().Lookup(dbcli.EnvFlagName).Annotations[dbcli.ProjectConfigEnvAnnotation],
 		qt.DeepEquals,
@@ -139,9 +140,9 @@ func TestRegisterEnvFlagAnnotatesTheProjectEnvFlag(t *testing.T) {
 // this is what stops the two from drifting apart.
 func TestExplicitConfigOverHCLNamesTheConfigFlag(t *testing.T) {
 	c := qt.New(t)
-	chdirTemp(c, map[string]string{"atlas.hcl": atlasHCLRequiringVar})
+	chdirTemp(c.TB, map[string]string{"atlas.hcl": atlasHCLRequiringVar})
 
-	cmd := envVarCommand(c)
+	cmd := envVarCommand(c.TB)
 	_, err := dbcli.LoadProjectConfig(cmd, "atlas.hcl")
 
 	c.Assert(err, qt.IsNotNil)

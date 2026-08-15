@@ -10,7 +10,8 @@ import (
 
 // lintPair lints one up/down pair and returns the rule code and file basename
 // of every finding, so a row can say which direction a hazard was reported in.
-func lintPair(c *qt.C, upSQL, downSQL string) []string {
+func lintPair(tb testing.TB, upSQL, downSQL string) []string {
+	c := qt.New(tb)
 	c.Helper()
 	fsys := fixture(map[string]string{
 		"0000000001_x.up.sql":   upSQL,
@@ -90,7 +91,7 @@ func TestLintFS_DownDirectionHazards(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			got := lintPair(c, tt.up, tt.down)
+			got := lintPair(c.TB, tt.up, tt.down)
 
 			c.Assert(got, qt.DeepEquals, tt.want)
 		})

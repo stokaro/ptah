@@ -115,7 +115,8 @@ type routedObjectCell struct {
 
 // routedObjectGrid renders the fixture once per dialect and classifies every
 // declared object in it.
-func routedObjectGrid(c *qt.C) []routedObjectCell {
+func routedObjectGrid(tb testing.TB) []routedObjectCell {
+	c := qt.New(tb)
 	c.Helper()
 
 	cells := make([]routedObjectCell, 0, len(routingDialects)*len(routedObjectRows))
@@ -186,7 +187,7 @@ func cellsAnswering(cells []routedObjectCell, answer string) []string {
 func TestRender_NoDialectLosesADeclaredObject(t *testing.T) {
 	c := qt.New(t)
 
-	cells := routedObjectGrid(c)
+	cells := routedObjectGrid(c.TB)
 
 	// Control: the grid really covers every dialect and every kind. A fixture or
 	// a classifier that produced no cells would satisfy the assertion below while
@@ -210,7 +211,7 @@ func TestRender_NoDialectLosesADeclaredObject(t *testing.T) {
 func TestRender_TheRoutingGridDistinguishesItsAnswers(t *testing.T) {
 	c := qt.New(t)
 
-	cells := routedObjectGrid(c)
+	cells := routedObjectGrid(c.TB)
 
 	tests := []struct {
 		name  string
@@ -307,10 +308,10 @@ func TestRender_SQLServerNamesTheSequenceWithoutClaimingItHasNone(t *testing.T) 
 // Reporting success after emitting only a comment loses declared state, so the
 // safe answer is an error before any statement is returned.
 func TestRender_MySQLFamilyRefusesRolesBeforeSQL(t *testing.T) {
-	c := qt.New(t)
 
 	for _, dialect := range []string{platform.MySQL, platform.MariaDB} {
-		c.Run(dialect, func(c *qt.C) {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
 			statements, err := renderer.GetOrderedCreateStatements(routedObjectSchema(), dialect)
 
 			c.Assert(statements, qt.HasLen, 0)

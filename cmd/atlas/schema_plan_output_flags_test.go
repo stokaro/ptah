@@ -60,13 +60,14 @@ type planFixture struct {
 	outputPath string
 }
 
-func newPlanFixture(c *qt.C, name, seedSQL, desiredSQL string) planFixture {
+func newPlanFixture(tb testing.TB, name, seedSQL, desiredSQL string) planFixture {
+	c := qt.New(tb)
 	c.Helper()
 	dir := c.TB.TempDir()
 	dbPath := filepath.Join(dir, name+".db")
 	schemaPath := filepath.Join(dir, "schema.sql")
 	if seedSQL != "" {
-		seedSQLiteSchema(c, dbPath, seedSQL)
+		seedSQLiteSchema(c.TB, dbPath, seedSQL)
 	}
 	c.Assert(os.WriteFile(schemaPath, []byte(desiredSQL), 0o600), qt.IsNil)
 	return planFixture{
@@ -88,7 +89,8 @@ func (f planFixture) args(extra ...string) []string {
 // The working directory is checked alongside dir because `--save` without
 // `--output` writes there, so a refusal that leaked would leave its artifact
 // outside any fixture directory.
-func assertNoPlanFileWritten(c *qt.C, dir string) {
+func assertNoPlanFileWritten(tb testing.TB, dir string) {
+	c := qt.New(tb)
 	c.Helper()
 	for _, base := range []string{dir, "."} {
 		for _, pattern := range []string{"*.plan.json", "*.plan.hcl"} {
@@ -118,7 +120,7 @@ func TestSchemaPlanSkipLintIsANoOp(t *testing.T) {
 	// nothing to say and the assertion passes whether the flag is honored,
 	// ignored, or absent. Dropping a table is the input a linter would speak
 	// up about, which is what makes this test able to fail.
-	fixture := newPlanFixture(c, "skiplint",
+	fixture := newPlanFixture(c.TB, "skiplint",
 		"CREATE TABLE keep_me (id INTEGER PRIMARY KEY);\nCREATE TABLE drop_me (id INTEGER);",
 		`CREATE TABLE keep_me (id INTEGER PRIMARY KEY);`)
 	// Both runs write to the same path so the "Plan saved to" line is
@@ -162,7 +164,6 @@ func TestSchemaPlanSkipLintIsANoOp(t *testing.T) {
 }
 
 func TestSchemaPlanSkipLintCombinesWithEveryOutputMode(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name string
@@ -175,9 +176,10 @@ func TestSchemaPlanSkipLintCombinesWithEveryOutputMode(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			chdirToScratch(c.TB.(*testing.T))
-			fixture := newPlanFixture(c, "combo", "", `CREATE TABLE combo_users (id INTEGER PRIMARY KEY);`)
+			fixture := newPlanFixture(c.TB, "combo", "", `CREATE TABLE combo_users (id INTEGER PRIMARY KEY);`)
 
 			out, err := runSchemaPlan(atlas.NewCompatCommand("atlas"), fixture.args(tt.args...)...)
 
@@ -192,7 +194,7 @@ func TestSchemaPlanNameFormatRendersPlanName(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	t.Chdir(dir)
-	fixture := newPlanFixture(c, "nameformat", "", `CREATE TABLE nf_users (id INTEGER PRIMARY KEY);`)
+	fixture := newPlanFixture(c.TB, "nameformat", "", `CREATE TABLE nf_users (id INTEGER PRIMARY KEY);`)
 	referencePath := filepath.Join(dir, "reference.plan.json")
 	_, err := runSchemaPlan(atlas.NewCompatCommand("atlas"), fixture.args("--output", referencePath)...)
 	c.Assert(err, qt.IsNil)
@@ -224,7 +226,7 @@ func TestSchemaPlanNameFormatDistinguishesFromHashAndToHash(t *testing.T) {
 	// The seeded table makes the current schema non-empty, so the two
 	// fingerprints differ. Without that, .FromHash and .ToHash would coincide
 	// and a template wired to the wrong one would still pass.
-	fixture := newPlanFixture(c, "hashes",
+	fixture := newPlanFixture(c.TB, "hashes",
 		`CREATE TABLE hashes_keep (id INTEGER PRIMARY KEY);`,
 		"CREATE TABLE hashes_keep (id INTEGER PRIMARY KEY);\nCREATE TABLE hashes_add (id INTEGER PRIMARY KEY);\n")
 	referencePath := filepath.Join(dir, "reference.plan.json")
@@ -251,7 +253,8 @@ func TestSchemaPlanNameFormatDistinguishesFromHashAndToHash(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			outPath := filepath.Join(c.TB.TempDir(), "named.plan.json")
 
 			out, err := runSchemaPlan(atlas.NewCompatCommand("atlas"),
@@ -267,7 +270,7 @@ func TestSchemaPlanNameFormatDistinguishesFromHashAndToHash(t *testing.T) {
 
 func TestSchemaPlanNameFormatOverridesTheJSONDefaultName(t *testing.T) {
 	c := qt.New(t)
-	fixture := newPlanFixture(c, "jsonname", "", `CREATE TABLE json_named (id INTEGER PRIMARY KEY);`)
+	fixture := newPlanFixture(c.TB, "jsonname", "", `CREATE TABLE json_named (id INTEGER PRIMARY KEY);`)
 
 	out, err := runSchemaPlan(atlas.NewCompatCommand("atlas"),
 		fixture.args("--output", fixture.outputPath, "--name-format", "templated_name")...)
@@ -283,7 +286,7 @@ func TestSchemaPlanNameFormatOverridesTheJSONDefaultName(t *testing.T) {
 
 func TestSchemaPlanNameFormatTrimsSurroundingWhitespace(t *testing.T) {
 	c := qt.New(t)
-	fixture := newPlanFixture(c, "trimmed", "", `CREATE TABLE trimmed_users (id INTEGER PRIMARY KEY);`)
+	fixture := newPlanFixture(c.TB, "trimmed", "", `CREATE TABLE trimmed_users (id INTEGER PRIMARY KEY);`)
 
 	out, err := runSchemaPlan(atlas.NewCompatCommand("atlas"),
 		fixture.args("--output", fixture.outputPath, "--name-format", "\n  spaced_name  \n")...)
@@ -295,7 +298,6 @@ func TestSchemaPlanNameFormatTrimsSurroundingWhitespace(t *testing.T) {
 }
 
 func TestSchemaPlanNameFormatAllowsPathSeparatorWithExplicitOutput(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name   string
@@ -306,8 +308,9 @@ func TestSchemaPlanNameFormatAllowsPathSeparatorWithExplicitOutput(t *testing.T)
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
-			fixture := newPlanFixture(c, "explicit-name-path", "", `CREATE TABLE explicit_name_users (id INTEGER PRIMARY KEY);`)
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			fixture := newPlanFixture(c.TB, "explicit-name-path", "", `CREATE TABLE explicit_name_users (id INTEGER PRIMARY KEY);`)
 			outputPath := filepath.Join(fixture.dir, "explicit"+test.suffix)
 
 			out, err := runSchemaPlan(atlas.NewCompatCommand("atlas"),
@@ -323,7 +326,7 @@ func TestSchemaPlanNameFormatAllowsPathSeparatorWithExplicitOutput(t *testing.T)
 
 func TestSchemaPlanNameFormatLastValueWins(t *testing.T) {
 	c := qt.New(t)
-	fixture := newPlanFixture(c, "repeated", "", `CREATE TABLE repeated_users (id INTEGER PRIMARY KEY);`)
+	fixture := newPlanFixture(c.TB, "repeated", "", `CREATE TABLE repeated_users (id INTEGER PRIMARY KEY);`)
 
 	out, err := runSchemaPlan(atlas.NewCompatCommand("atlas"),
 		fixture.args("--output", fixture.outputPath, "--name-format", "first", "--name-format", "second")...)
@@ -339,17 +342,16 @@ func TestSchemaPlanNameFormatLastValueWins(t *testing.T) {
 func TestSchemaPlanNameFormatIsMutuallyExclusiveWithName(t *testing.T) {
 	c := qt.New(t)
 	chdirToScratch(t)
-	fixture := newPlanFixture(c, "exclusive", "", `CREATE TABLE exclusive_users (id INTEGER PRIMARY KEY);`)
+	fixture := newPlanFixture(c.TB, "exclusive", "", `CREATE TABLE exclusive_users (id INTEGER PRIMARY KEY);`)
 
 	_, err := runSchemaPlan(atlas.NewCompatCommand("atlas"),
 		fixture.args("--save", "--name", "literal", "--name-format", "templated")...)
 
 	c.Assert(err, qt.ErrorMatches, `if any flags in the group \[name name-format\] are set none of the others can be.*`)
-	assertNoPlanFileWritten(c, fixture.dir)
+	assertNoPlanFileWritten(c.TB, fixture.dir)
 }
 
 func TestSchemaPlanNameFormatRejectionsWriteNothing(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name     string
@@ -409,9 +411,10 @@ func TestSchemaPlanNameFormatRejectionsWriteNothing(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			chdirToScratch(c.TB.(*testing.T))
-			fixture := newPlanFixture(c, "reject", "", `CREATE TABLE reject_users (id INTEGER PRIMARY KEY);`)
+			fixture := newPlanFixture(c.TB, "reject", "", `CREATE TABLE reject_users (id INTEGER PRIMARY KEY);`)
 
 			_, err := runSchemaPlan(atlas.NewCompatCommand("atlas"),
 				fixture.args("--save", "--name-format", tt.template)...)
@@ -420,13 +423,12 @@ func TestSchemaPlanNameFormatRejectionsWriteNothing(t *testing.T) {
 			// refusal that arrives after the plan file was written would still
 			// satisfy an error-text assertion.
 			c.Assert(err, qt.ErrorMatches, tt.want)
-			assertNoPlanFileWritten(c, fixture.dir)
+			assertNoPlanFileWritten(c.TB, fixture.dir)
 		})
 	}
 }
 
 func TestSchemaPlanNameFormatCannotCorruptThePlanBlockLabel(t *testing.T) {
-	c := qt.New(t)
 
 	// Each case names the layer that refuses it, so the test cannot pass
 	// because planning failed for some unrelated reason. Two are caught by the
@@ -462,9 +464,10 @@ func TestSchemaPlanNameFormatCannotCorruptThePlanBlockLabel(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			chdirToScratch(c.TB.(*testing.T))
-			fixture := newPlanFixture(c, "label", "", `CREATE TABLE label_users (id INTEGER PRIMARY KEY);`)
+			fixture := newPlanFixture(c.TB, "label", "", `CREATE TABLE label_users (id INTEGER PRIMARY KEY);`)
 
 			_, err := runSchemaPlan(atlas.NewCompatCommand("atlas"),
 				fixture.args("--save", "--name-format", tt.template)...)
@@ -474,7 +477,7 @@ func TestSchemaPlanNameFormatCannotCorruptThePlanBlockLabel(t *testing.T) {
 			// document that no longer parses as the plan it claims to be. The
 			// writer refuses rather than escaping, and nothing lands on disk.
 			c.Assert(err, qt.ErrorMatches, tt.want)
-			assertNoPlanFileWritten(c, fixture.dir)
+			assertNoPlanFileWritten(c.TB, fixture.dir)
 		})
 	}
 }
@@ -501,13 +504,13 @@ func TestSchemaPlanNameFormatIsParsedBeforeAnyDatabaseWork(t *testing.T) {
 	// the only observable difference — neither ordering writes a file — so it
 	// is the input that holds the rule.
 	c.Assert(err, qt.ErrorMatches, `parse --name-format template: .*`)
-	assertNoPlanFileWritten(c, dir)
+	assertNoPlanFileWritten(c.TB, dir)
 }
 
 func TestSchemaPlanNameFormatCollisionRecommendsAReachableFlag(t *testing.T) {
 	c := qt.New(t)
 	dir := chdirToScratch(t)
-	fixture := newPlanFixture(c, "collide", "", `CREATE TABLE collide_users (id INTEGER PRIMARY KEY);`)
+	fixture := newPlanFixture(c.TB, "collide", "", `CREATE TABLE collide_users (id INTEGER PRIMARY KEY);`)
 
 	out, err := runSchemaPlan(atlas.NewCompatCommand("atlas"),
 		fixture.args("--save", "--name-format", "collides")...)
@@ -527,7 +530,7 @@ func TestSchemaPlanNameFormatCollisionRecommendsAReachableFlag(t *testing.T) {
 func TestSchemaPlanNameCollisionRecommendsName(t *testing.T) {
 	c := qt.New(t)
 	chdirToScratch(t)
-	fixture := newPlanFixture(c, "collidename", "", `CREATE TABLE collidename_users (id INTEGER PRIMARY KEY);`)
+	fixture := newPlanFixture(c.TB, "collidename", "", `CREATE TABLE collidename_users (id INTEGER PRIMARY KEY);`)
 
 	out, err := runSchemaPlan(atlas.NewCompatCommand("atlas"), fixture.args("--save", "--name", "taken")...)
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
@@ -539,7 +542,7 @@ func TestSchemaPlanNameCollisionRecommendsName(t *testing.T) {
 
 func TestSchemaPlanNameFormatAcceptsAtlasTemplateHelpers(t *testing.T) {
 	c := qt.New(t)
-	fixture := newPlanFixture(c, "helpers", "", `CREATE TABLE helper_users (id INTEGER PRIMARY KEY);`)
+	fixture := newPlanFixture(c.TB, "helpers", "", `CREATE TABLE helper_users (id INTEGER PRIMARY KEY);`)
 
 	out, err := runSchemaPlan(atlas.NewCompatCommand("atlas"),
 		fixture.args("--output", fixture.outputPath, "--name-format", "plan_{{ upper (slice .ToHash 0 8) }}")...)
@@ -555,22 +558,22 @@ func TestSchemaPlanNameFormatAcceptsAtlasTemplateHelpers(t *testing.T) {
 func TestSchemaPlanNameFormatDryRunWritesNothing(t *testing.T) {
 	c := qt.New(t)
 	chdirToScratch(t)
-	fixture := newPlanFixture(c, "nfdry", "", `CREATE TABLE nfdry_users (id INTEGER PRIMARY KEY);`)
+	fixture := newPlanFixture(c.TB, "nfdry", "", `CREATE TABLE nfdry_users (id INTEGER PRIMARY KEY);`)
 
 	out, err := runSchemaPlan(atlas.NewCompatCommand("atlas"),
 		fixture.args("--dry-run", "--name-format", "dry_named")...)
 
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
-	plan := parsePlanDocumentOutput(c, out)
+	plan := parsePlanDocumentOutput(c.TB, out)
 	c.Assert(plan.Name, qt.Equals, "dry_named")
-	assertNoPlanFileWritten(c, fixture.dir)
+	assertNoPlanFileWritten(c.TB, fixture.dir)
 }
 
 func TestSchemaPlanLocalFlagsResetAcrossSuccessfulRootReuse(t *testing.T) {
 	c := qt.New(t)
 	root := atlas.NewCompatCommand("atlas")
-	first := newPlanFixture(c, "reuse-first", "", `CREATE TABLE first_users (id INTEGER PRIMARY KEY);`)
-	second := newPlanFixture(c, "reuse-second", "", `CREATE TABLE second_users (id INTEGER PRIMARY KEY);`)
+	first := newPlanFixture(c.TB, "reuse-first", "", `CREATE TABLE first_users (id INTEGER PRIMARY KEY);`)
+	second := newPlanFixture(c.TB, "reuse-second", "", `CREATE TABLE second_users (id INTEGER PRIMARY KEY);`)
 	firstPath := filepath.Join(first.dir, "first.plan.json")
 	secondPath := filepath.Join(second.dir, "second.plan.json")
 
@@ -587,8 +590,8 @@ func TestSchemaPlanLocalFlagsResetAcrossSuccessfulRootReuse(t *testing.T) {
 func TestSchemaPlanLocalFlagsResetAcrossFailedRootReuse(t *testing.T) {
 	c := qt.New(t)
 	root := atlas.NewCompatCommand("atlas")
-	first := newPlanFixture(c, "reuse-failed-first", "", `CREATE TABLE first_users (id INTEGER PRIMARY KEY);`)
-	second := newPlanFixture(c, "reuse-failed-second", "", `CREATE TABLE second_users (id INTEGER PRIMARY KEY);`)
+	first := newPlanFixture(c.TB, "reuse-failed-first", "", `CREATE TABLE first_users (id INTEGER PRIMARY KEY);`)
+	second := newPlanFixture(c.TB, "reuse-failed-second", "", `CREATE TABLE second_users (id INTEGER PRIMARY KEY);`)
 	secondPath := filepath.Join(second.dir, "second.plan.json")
 
 	_, err := runSchemaPlan(root, first.args("--dry-run", "--name-format", "{{ .Missing }}")...)
@@ -604,7 +607,7 @@ func TestSchemaPlanLocalFlagsResetAcrossFailedRootReuse(t *testing.T) {
 func TestSchemaPlanLocalFlagsResetAcrossParseFailureRootReuse(t *testing.T) {
 	c := qt.New(t)
 	root := atlas.NewCompatCommand("atlas")
-	fixture := newPlanFixture(c, "reuse-parse", "", `CREATE TABLE parse_users (id INTEGER PRIMARY KEY);`)
+	fixture := newPlanFixture(c.TB, "reuse-parse", "", `CREATE TABLE parse_users (id INTEGER PRIMARY KEY);`)
 	outputPath := filepath.Join(fixture.dir, "after-parse.plan.json")
 
 	_, err := runSchemaPlan(root, "--edit=not-a-bool")
@@ -620,7 +623,7 @@ func TestSchemaPlanLocalFlagsResetAcrossParseFailureRootReuse(t *testing.T) {
 func TestSchemaPlanLocalFlagsResetAcrossHelpRootReuse(t *testing.T) {
 	c := qt.New(t)
 	root := atlas.NewCompatCommand("atlas")
-	fixture := newPlanFixture(c, "reuse-help", "", `CREATE TABLE help_users (id INTEGER PRIMARY KEY);`)
+	fixture := newPlanFixture(c.TB, "reuse-help", "", `CREATE TABLE help_users (id INTEGER PRIMARY KEY);`)
 	outputPath := filepath.Join(fixture.dir, "after-help.plan.json")
 
 	_, err := runSchemaPlan(root, "--name-format", "sticky_name", "--help")
@@ -640,7 +643,7 @@ func TestSchemaPlanEditSavesTheEditedSQL(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 	installScriptEditor(t, `printf 'CREATE TABLE edited_table (id INTEGER PRIMARY KEY);\n' > "$1"`)
-	fixture := newPlanFixture(c, "edited", "", `CREATE TABLE original_table (id INTEGER PRIMARY KEY);`)
+	fixture := newPlanFixture(c.TB, "edited", "", `CREATE TABLE original_table (id INTEGER PRIMARY KEY);`)
 
 	out, err := runSchemaPlan(atlas.NewCompatCommand("atlas"), fixture.args("--save", "--edit")...)
 
@@ -659,7 +662,7 @@ func TestSchemaPlanEditThatChangesNothingProducesTheSamePlan(t *testing.T) {
 	c := qt.New(t)
 	// The commonest editor session: open, read, quit without typing. /bin/true
 	// leaves the file byte-for-byte as written.
-	fixture := newPlanFixture(c, "noopedit",
+	fixture := newPlanFixture(c.TB, "noopedit",
 		"CREATE TABLE keep_me (id INTEGER PRIMARY KEY);\nCREATE TABLE victim (id INTEGER);",
 		`CREATE TABLE keep_me (id INTEGER PRIMARY KEY);`)
 	planPath := filepath.Join(fixture.dir, "p.plan.hcl")
@@ -691,7 +694,7 @@ func TestSchemaPlanEditThatChangesNothingProducesTheSamePlan(t *testing.T) {
 func TestSchemaPlanEditPreservesCommentsOnEditedStatements(t *testing.T) {
 	c := qt.New(t)
 	installScriptEditor(t, `printf -- '-- reviewed by hand\nDROP TABLE victim;\n' > "$1"`)
-	fixture := newPlanFixture(c, "editcomment",
+	fixture := newPlanFixture(c.TB, "editcomment",
 		"CREATE TABLE keep_me (id INTEGER PRIMARY KEY);\nCREATE TABLE victim (id INTEGER);",
 		`CREATE TABLE keep_me (id INTEGER PRIMARY KEY);`)
 
@@ -712,7 +715,6 @@ func TestSchemaPlanEditPreservesCommentsOnEditedStatements(t *testing.T) {
 }
 
 func TestSchemaPlanEditIsNotOpenedWhenNamingFailsFirst(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name string
@@ -737,12 +739,13 @@ func TestSchemaPlanEditIsNotOpenedWhenNamingFailsFirst(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t2 *testing.T) {
+			c := qt.New(t2)
 			t := c.TB.(*testing.T)
 			dir := chdirToScratch(t)
 			marker := filepath.Join(dir, "editor-ran")
 			installScriptEditor(t, `touch "`+marker+`"`)
-			fixture := newPlanFixture(c, "preflight", "", `CREATE TABLE preflight_users (id INTEGER PRIMARY KEY);`)
+			fixture := newPlanFixture(c.TB, "preflight", "", `CREATE TABLE preflight_users (id INTEGER PRIMARY KEY);`)
 
 			_, err := runSchemaPlan(atlas.NewCompatCommand("atlas"),
 				fixture.args(append(tt.args, "--edit")...)...)
@@ -756,7 +759,7 @@ func TestSchemaPlanEditIsNotOpenedWhenNamingFailsFirst(t *testing.T) {
 			c.Assert(err, qt.ErrorMatches, tt.want)
 			_, statErr := os.Stat(marker)
 			c.Assert(os.IsNotExist(statErr), qt.IsTrue, qt.Commentf("editor must not open before a decidable refusal"))
-			assertNoPlanFileWritten(c, fixture.dir)
+			assertNoPlanFileWritten(c.TB, fixture.dir)
 		})
 	}
 }
@@ -764,7 +767,7 @@ func TestSchemaPlanEditIsNotOpenedWhenNamingFailsFirst(t *testing.T) {
 func TestSchemaPlanEditRederivesSeverityAndDestructiveMarker(t *testing.T) {
 	c := qt.New(t)
 	installScriptEditor(t, `printf 'DROP TABLE victim;\n' > "$1"`)
-	fixture := newPlanFixture(c, "rederive",
+	fixture := newPlanFixture(c.TB, "rederive",
 		`CREATE TABLE victim (id INTEGER PRIMARY KEY);`,
 		"CREATE TABLE victim (id INTEGER PRIMARY KEY);\nCREATE TABLE additive (id INTEGER PRIMARY KEY);\n")
 
@@ -789,7 +792,7 @@ func TestSchemaPlanEditRederivesSeverityAndDestructiveMarker(t *testing.T) {
 
 func TestSchemaPlanEditKeepsTheSourceFingerprint(t *testing.T) {
 	c := qt.New(t)
-	fixture := newPlanFixture(c, "fingerprint",
+	fixture := newPlanFixture(c.TB, "fingerprint",
 		`CREATE TABLE fp_users (id INTEGER PRIMARY KEY);`,
 		"CREATE TABLE fp_users (id INTEGER PRIMARY KEY);\nCREATE TABLE fp_orders (id INTEGER PRIMARY KEY);\n")
 	referencePath := filepath.Join(fixture.dir, "reference.plan.json")
@@ -814,7 +817,6 @@ func TestSchemaPlanEditKeepsTheSourceFingerprint(t *testing.T) {
 }
 
 func TestSchemaPlanEditFailuresWriteNothing(t *testing.T) {
-	c := qt.New(t)
 
 	// installEditor is a closure per case rather than a body string plus a
 	// flag, so the "no editor at all" case needs no conditional in the test.
@@ -857,12 +859,13 @@ func TestSchemaPlanEditFailuresWriteNothing(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t2 *testing.T) {
+			c := qt.New(t2)
 			t := c.TB.(*testing.T)
 			dir := t.TempDir()
 			t.Chdir(dir)
 			tt.installEditor(t)
-			fixture := newPlanFixture(c, "editfail", "", `CREATE TABLE editfail_users (id INTEGER PRIMARY KEY);`)
+			fixture := newPlanFixture(c.TB, "editfail", "", `CREATE TABLE editfail_users (id INTEGER PRIMARY KEY);`)
 
 			_, err := runSchemaPlan(atlas.NewCompatCommand("atlas"), fixture.args("--save", "--edit")...)
 
@@ -871,8 +874,8 @@ func TestSchemaPlanEditFailuresWriteNothing(t *testing.T) {
 			// and a saved-but-rejected plan is exactly the artifact an
 			// operator would later apply.
 			c.Assert(err, qt.ErrorMatches, tt.want)
-			assertNoPlanFileWritten(c, dir)
-			assertNoPlanFileWritten(c, fixture.dir)
+			assertNoPlanFileWritten(c.TB, dir)
+			assertNoPlanFileWritten(c.TB, fixture.dir)
 		})
 	}
 }
@@ -880,7 +883,7 @@ func TestSchemaPlanEditFailuresWriteNothing(t *testing.T) {
 func TestSchemaPlanEditRejectsInvalidUTF8BeforeWritingJSON(t *testing.T) {
 	c := qt.New(t)
 	installScriptEditor(t, `printf '\377' > "$1"`)
-	fixture := newPlanFixture(c, "invalid-utf8", "", `CREATE TABLE utf8_users (id INTEGER PRIMARY KEY);`)
+	fixture := newPlanFixture(c.TB, "invalid-utf8", "", `CREATE TABLE utf8_users (id INTEGER PRIMARY KEY);`)
 
 	_, err := runSchemaPlan(atlas.NewCompatCommand("atlas"),
 		fixture.args("--output", fixture.outputPath, "--edit")...)
@@ -897,7 +900,7 @@ func TestSchemaPlanEditIsNotInvokedWhenSchemaIsSynced(t *testing.T) {
 	marker := filepath.Join(dir, "editor-ran")
 	installScriptEditor(t, `touch "`+marker+`"`)
 	schemaSQL := `CREATE TABLE synced_edit_users (id INTEGER PRIMARY KEY);`
-	fixture := newPlanFixture(c, "syncededit", schemaSQL, schemaSQL)
+	fixture := newPlanFixture(c.TB, "syncededit", schemaSQL, schemaSQL)
 
 	out, err := runSchemaPlan(atlas.NewCompatCommand("atlas"), fixture.args("--save", "--edit")...)
 
@@ -907,7 +910,7 @@ func TestSchemaPlanEditIsNotInvokedWhenSchemaIsSynced(t *testing.T) {
 	c.Assert(out, qt.Contains, "Schema is synced, no changes to be made.")
 	_, statErr := os.Stat(marker)
 	c.Assert(os.IsNotExist(statErr), qt.IsTrue, qt.Commentf("editor must not run on a synced schema"))
-	assertNoPlanFileWritten(c, dir)
+	assertNoPlanFileWritten(c.TB, dir)
 }
 
 func TestSchemaPlanEditDryRunPrintsEditedDocumentWithoutSaving(t *testing.T) {
@@ -915,16 +918,16 @@ func TestSchemaPlanEditDryRunPrintsEditedDocumentWithoutSaving(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 	installScriptEditor(t, `printf 'CREATE TABLE dry_edited (id INTEGER PRIMARY KEY);\n' > "$1"`)
-	fixture := newPlanFixture(c, "dryedit", "", `CREATE TABLE dry_original (id INTEGER PRIMARY KEY);`)
+	fixture := newPlanFixture(c.TB, "dryedit", "", `CREATE TABLE dry_original (id INTEGER PRIMARY KEY);`)
 
 	out, err := runSchemaPlan(atlas.NewCompatCommand("atlas"), fixture.args("--dry-run", "--edit")...)
 
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
-	plan := parsePlanDocumentOutput(c, out)
+	plan := parsePlanDocumentOutput(c.TB, out)
 	c.Assert(plan.Statements, qt.HasLen, 1)
 	c.Assert(plan.Statements[0].SQL, qt.Contains, "dry_edited")
-	assertNoPlanFileWritten(c, dir)
-	assertNoPlanFileWritten(c, fixture.dir)
+	assertNoPlanFileWritten(c.TB, dir)
+	assertNoPlanFileWritten(c.TB, fixture.dir)
 }
 
 func TestSchemaPlanEditCombinesWithNameFormat(t *testing.T) {
@@ -932,7 +935,7 @@ func TestSchemaPlanEditCombinesWithNameFormat(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 	installScriptEditor(t, `printf 'CREATE TABLE combined_edit (id INTEGER PRIMARY KEY);\n' > "$1"`)
-	fixture := newPlanFixture(c, "combined", "", `CREATE TABLE combined_original (id INTEGER PRIMARY KEY);`)
+	fixture := newPlanFixture(c.TB, "combined", "", `CREATE TABLE combined_original (id INTEGER PRIMARY KEY);`)
 
 	out, err := runSchemaPlan(atlas.NewCompatCommand("atlas"),
 		fixture.args("--save", "--edit", "--name-format", "edited_plan")...)

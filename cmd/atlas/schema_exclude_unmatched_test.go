@@ -14,7 +14,8 @@ import (
 
 // writeUnmatchedExcludeSchema writes the one-table desired schema every case
 // below applies, and returns its path.
-func writeUnmatchedExcludeSchema(c *qt.C, dir string) string {
+func writeUnmatchedExcludeSchema(tb testing.TB, dir string) string {
+	c := qt.New(tb)
 	path := filepath.Join(dir, "schema.sql")
 	c.Assert(os.WriteFile(path, []byte(`
 CREATE TABLE exclude_keep (
@@ -40,7 +41,7 @@ func TestSchemaDiffWarnsWhenAnExcludeSelectorMatchedNothing(t *testing.T) {
 	dir := t.TempDir()
 	from := filepath.Join(dir, "from.sql")
 	c.Assert(os.WriteFile(from, []byte(""), 0o600), qt.IsNil)
-	to := writeUnmatchedExcludeSchema(c, dir)
+	to := writeUnmatchedExcludeSchema(c.TB, dir)
 	cmd := atlas.NewCompatCommand("atlas")
 	var out, stderr bytes.Buffer
 	cmd.SetOut(&out)
@@ -67,7 +68,7 @@ func TestSchemaDiffStaysQuietWhenTheExcludeSelectorMatched(t *testing.T) {
 	dir := t.TempDir()
 	from := filepath.Join(dir, "from.sql")
 	c.Assert(os.WriteFile(from, []byte(""), 0o600), qt.IsNil)
-	to := writeUnmatchedExcludeSchema(c, dir)
+	to := writeUnmatchedExcludeSchema(c.TB, dir)
 	cmd := atlas.NewCompatCommand("atlas")
 	var out, stderr bytes.Buffer
 	cmd.SetOut(&out)
@@ -97,7 +98,7 @@ func TestSchemaApplyRefusesAnExcludeSelectorThatMatchedNothing(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "apply.db")
-	schemaPath := writeUnmatchedExcludeSchema(c, dir)
+	schemaPath := writeUnmatchedExcludeSchema(c.TB, dir)
 	cmd := atlas.NewCompatCommand("atlas")
 	var out, stderr bytes.Buffer
 	cmd.SetOut(&out)
@@ -134,7 +135,7 @@ func TestSchemaApplyAcceptsAColumnSelectorUnderAnExcludedTable(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "apply.db")
-	schemaPath := writeUnmatchedExcludeSchema(c, dir)
+	schemaPath := writeUnmatchedExcludeSchema(c.TB, dir)
 	cmd := atlas.NewCompatCommand("atlas")
 	var out, stderr bytes.Buffer
 	cmd.SetOut(&out)
@@ -163,7 +164,7 @@ func TestSchemaApplyStillRefusesAColumnOfAnExcludedTableThatDoesNotExist(t *test
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "apply.db")
-	schemaPath := writeUnmatchedExcludeSchema(c, dir)
+	schemaPath := writeUnmatchedExcludeSchema(c.TB, dir)
 	cmd := atlas.NewCompatCommand("atlas")
 	var out, stderr bytes.Buffer
 	cmd.SetOut(&out)
@@ -196,7 +197,7 @@ func TestSchemaApplyKeepsThePermissiveBehaviorBehindTheOptIn(t *testing.T) {
 	t.Setenv(atlasfilter.AllowUnmatchedExcludeEnvVar, "1")
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "apply.db")
-	schemaPath := writeUnmatchedExcludeSchema(c, dir)
+	schemaPath := writeUnmatchedExcludeSchema(c.TB, dir)
 	cmd := atlas.NewCompatCommand("atlas")
 	var out, stderr bytes.Buffer
 	cmd.SetOut(&out)
@@ -224,7 +225,7 @@ func TestSchemaInspectWarnsWhenAnExcludeSelectorMatchedNothing(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "inspect.db")
-	schemaPath := writeUnmatchedExcludeSchema(c, dir)
+	schemaPath := writeUnmatchedExcludeSchema(c.TB, dir)
 	apply := atlas.NewCompatCommand("atlas")
 	apply.SetOut(&bytes.Buffer{})
 	apply.SetErr(&bytes.Buffer{})

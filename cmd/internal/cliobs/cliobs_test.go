@@ -31,7 +31,7 @@ func TestEmitterJSONModeWritesParseableJSONLines(t *testing.T) {
 	emit.Println("plain status")
 	emit.Printf("version: %d\n", 42)
 
-	for _, payload := range parseJSONLogLines(c, out.String()) {
+	for _, payload := range parseJSONLogLines(c.TB, out.String()) {
 		c.Assert(payload["msg"], qt.Not(qt.Equals), "")
 		c.Assert(payload["correlation_id"], qt.Not(qt.Equals), "")
 	}
@@ -57,7 +57,7 @@ func TestJSONOutputWriterLogsSubprocessLines(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 
 	var records int
-	for _, payload := range parseJSONLogLines(c, out.String()) {
+	for _, payload := range parseJSONLogLines(c.TB, out.String()) {
 		c.Assert(payload["msg"], qt.Equals, "hook output")
 		c.Assert(payload["output"], qt.Not(qt.Equals), "")
 		records++
@@ -93,20 +93,22 @@ func TestJSONOutputWriterFlushesPartialLine(t *testing.T) {
 }
 
 func TestStartRejectsInvalidLogOptions(t *testing.T) {
-	c := qt.New(t)
 
-	c.Run("invalid log format", func(c *qt.C) {
+	t.Run("invalid log format", func(t *testing.T) {
+		c := qt.New(t)
 		_, err := cliobs.Start(context.Background(), cliobs.Options{LogFormat: "xml"})
 		c.Assert(err, qt.IsNotNil)
 	})
 
-	c.Run("invalid log level", func(c *qt.C) {
+	t.Run("invalid log level", func(t *testing.T) {
+		c := qt.New(t)
 		_, err := cliobs.Start(context.Background(), cliobs.Options{LogLevel: "trace"})
 		c.Assert(err, qt.IsNotNil)
 	})
 }
 
-func parseJSONLogLines(c *qt.C, raw string) []map[string]any {
+func parseJSONLogLines(tb testing.TB, raw string) []map[string]any {
+	c := qt.New(tb)
 	c.Helper()
 
 	lines := strings.Split(strings.TrimSpace(raw), "\n")

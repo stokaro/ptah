@@ -33,7 +33,8 @@ type Order struct {
 
 // parseRaw parses a single Go source into a raw (un-finalized) Database, the
 // form Merge expects — the same thing ParseFS accumulates per file.
-func parseRaw(c *qt.C, filename, source string) *goschema.Database {
+func parseRaw(tb testing.TB, filename, source string) *goschema.Database {
+	c := qt.New(tb)
 	db, err := goschema.ParseSource(filename, source)
 	c.Assert(err, qt.IsNil)
 	return &db
@@ -52,8 +53,8 @@ func tableIndex(db *goschema.Database, name string) int {
 func TestMergeCombinesDistinctSourcesAndOrdersForeignKeys(t *testing.T) {
 	c := qt.New(t)
 
-	users := parseRaw(c, "users.go", usersSource)
-	orders := parseRaw(c, "orders.go", ordersSource)
+	users := parseRaw(c.TB, "users.go", usersSource)
+	orders := parseRaw(c.TB, "orders.go", ordersSource)
 
 	merged, err := goschema.Merge(users, orders)
 	c.Assert(err, qt.IsNil)
@@ -77,8 +78,8 @@ func TestMergeDeduplicatesIdenticalObjects(t *testing.T) {
 
 	// The same table defined in two sources collapses to one, as it does across
 	// files within a single ParseFS.
-	first := parseRaw(c, "users_a.go", usersSource)
-	second := parseRaw(c, "users_b.go", usersSource)
+	first := parseRaw(c.TB, "users_a.go", usersSource)
+	second := parseRaw(c.TB, "users_b.go", usersSource)
 
 	merged, err := goschema.Merge(first, second)
 	c.Assert(err, qt.IsNil)
@@ -121,7 +122,7 @@ func TestMergeIdenticalViewsAcrossSourcesDeduplicate(t *testing.T) {
 func TestMergeSkipsNilSources(t *testing.T) {
 	c := qt.New(t)
 
-	users := parseRaw(c, "users.go", usersSource)
+	users := parseRaw(c.TB, "users.go", usersSource)
 
 	merged, err := goschema.Merge(nil, users, nil)
 	c.Assert(err, qt.IsNil)
@@ -148,8 +149,8 @@ func TestParseFS_FinalizationMatchesMerge(t *testing.T) {
 	parsed, err := goschema.ParseFS(fsys, ".")
 	c.Assert(err, qt.IsNil)
 
-	users := parseRaw(c, "users.go", usersSource)
-	orders := parseRaw(c, "orders.go", ordersSource)
+	users := parseRaw(c.TB, "users.go", usersSource)
+	orders := parseRaw(c.TB, "orders.go", ordersSource)
 	merged, err := goschema.Merge(orders, users)
 	c.Assert(err, qt.IsNil)
 

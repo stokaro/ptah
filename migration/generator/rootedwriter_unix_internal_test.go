@@ -208,8 +208,8 @@ func TestMigrationPlanUsesTheHeldDirectoryForVersionAndPublication(t *testing.T)
 			files, err := plan.WriteFilesContext(t.Context())
 
 			test.check(c, files, err)
-			c.Assert(generatorDirNames(c, bound), qt.DeepEquals, test.wantBound)
-			c.Assert(generatorDirNames(c, impostor), qt.DeepEquals, test.wantImpostor)
+			c.Assert(generatorDirNames(c.TB, bound), qt.DeepEquals, test.wantBound)
+			c.Assert(generatorDirNames(c.TB, impostor), qt.DeepEquals, test.wantImpostor)
 		})
 	}
 }
@@ -233,7 +233,8 @@ func TestMigrationPlanUsesTheHeldDirectoryForVersionAndPublication(t *testing.T)
 // replaceWithSymlink renames path aside and leaves a symlink to target in its
 // place, which is what a pathname-based writer follows from here on. It returns
 // the retained original, which is where a rooted writer's files must land.
-func replaceWithSymlink(c *qt.C, path, target string) string {
+func replaceWithSymlink(tb testing.TB, path, target string) string {
+	c := qt.New(tb)
 	c.Helper()
 	retained := path + "-retained"
 	c.Assert(os.Rename(path, retained), qt.IsNil)
@@ -242,7 +243,8 @@ func replaceWithSymlink(c *qt.C, path, target string) string {
 }
 
 // generatorDirNames lists the base names in dir.
-func generatorDirNames(c *qt.C, dir string) []string {
+func generatorDirNames(tb testing.TB, dir string) []string {
+	c := qt.New(tb)
 	c.Helper()
 	entries, err := os.ReadDir(dir)
 	c.Assert(err, qt.IsNil)
@@ -289,7 +291,7 @@ func TestGenerateEmptyMigrationReplacedDirectoryCannotRedirectTheWrite(t *testin
 			dirFormat:   migrator.MigrationDirFormatAtlas,
 			stage:       stageTopLevelMigrationDir,
 			replace: func(c *qt.C, root, decoy string) string {
-				return replaceWithSymlink(c, filepath.Join(root, "migrations"), decoy)
+				return replaceWithSymlink(c.TB, filepath.Join(root, "migrations"), decoy)
 			},
 			wantFiles: 2,
 		},
@@ -299,7 +301,7 @@ func TestGenerateEmptyMigrationReplacedDirectoryCannotRedirectTheWrite(t *testin
 			dirFormat:   migrator.MigrationDirFormatAtlas,
 			stage:       stageTopLevelMigrationDir,
 			replace: func(c *qt.C, root, decoy string) string {
-				return replaceWithSymlink(c, filepath.Join(root, "migrations"), decoy)
+				return replaceWithSymlink(c.TB, filepath.Join(root, "migrations"), decoy)
 			},
 			wantFiles: 2,
 		},
@@ -309,7 +311,7 @@ func TestGenerateEmptyMigrationReplacedDirectoryCannotRedirectTheWrite(t *testin
 			dirFormat:   migrator.MigrationDirFormatPtah,
 			stage:       stageTopLevelMigrationDir,
 			replace: func(c *qt.C, root, decoy string) string {
-				return replaceWithSymlink(c, filepath.Join(root, "migrations"), decoy)
+				return replaceWithSymlink(c.TB, filepath.Join(root, "migrations"), decoy)
 			},
 			wantFiles: 2,
 		},
@@ -325,7 +327,7 @@ func TestGenerateEmptyMigrationReplacedDirectoryCannotRedirectTheWrite(t *testin
 			},
 			replace: func(c *qt.C, root, decoy string) string {
 				return filepath.Join(
-					replaceWithSymlink(c, filepath.Join(root, "nest"), decoy),
+					replaceWithSymlink(c.TB, filepath.Join(root, "nest"), decoy),
 					"migrations",
 				)
 			},
@@ -354,8 +356,8 @@ func TestGenerateEmptyMigrationReplacedDirectoryCannotRedirectTheWrite(t *testin
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(files, qt.IsNotNil)
-			c.Assert(generatorDirNames(c, retained), qt.HasLen, test.wantFiles)
-			c.Assert(generatorDirNames(c, decoy), qt.HasLen, test.wantDecoyEntries)
+			c.Assert(generatorDirNames(c.TB, retained), qt.HasLen, test.wantFiles)
+			c.Assert(generatorDirNames(c.TB, decoy), qt.HasLen, test.wantDecoyEntries)
 		})
 	}
 }
@@ -381,7 +383,7 @@ func TestGenerateEmptyMigrationCreatesMissingDirectoryThroughTheBoundParent(t *t
 
 	var retained string
 	afterMigrationWriterBound = func() {
-		retained = replaceWithSymlink(c, filepath.Join(root, "nest"), decoy)
+		retained = replaceWithSymlink(c.TB, filepath.Join(root, "nest"), decoy)
 	}
 	defer func() { afterMigrationWriterBound = nil }()
 
@@ -394,8 +396,8 @@ func TestGenerateEmptyMigrationCreatesMissingDirectoryThroughTheBoundParent(t *t
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(files, qt.IsNotNil)
-	c.Assert(generatorDirNames(c, filepath.Join(retained, "migrations")), qt.HasLen, 2)
-	c.Assert(generatorDirNames(c, decoy), qt.HasLen, 0)
+	c.Assert(generatorDirNames(c.TB, filepath.Join(retained, "migrations")), qt.HasLen, 2)
+	c.Assert(generatorDirNames(c.TB, decoy), qt.HasLen, 0)
 }
 
 // TestGenerateEmptyMigrationScansTheHeldDirectoryForItsVersion is the skeleton
@@ -538,8 +540,8 @@ func TestGenerateEmptyMigrationScansTheHeldDirectoryForItsVersion(t *testing.T) 
 			c.Assert(files, qt.IsNotNil)
 			c.Assert(files.Files, qt.HasLen, 1)
 			c.Assert(files.Files[0].Version, qt.Equals, test.wantVersion)
-			c.Assert(generatorDirNames(c, aside), qt.DeepEquals, test.wantRetained)
-			c.Assert(generatorDirNames(c, selected), qt.DeepEquals, []string{test.impostorFile})
+			c.Assert(generatorDirNames(c.TB, aside), qt.DeepEquals, test.wantRetained)
+			c.Assert(generatorDirNames(c.TB, selected), qt.DeepEquals, []string{test.impostorFile})
 			pathnameVersion, pathnameErr := test.pathnameScan(migrationDirFileNames(selected))
 			c.Assert(pathnameErr, qt.IsNil)
 			c.Assert(pathnameVersion, qt.Equals, test.wantPathnameVersion)
@@ -575,18 +577,18 @@ func TestMigrationPlanWriteFilesReplacedDirectoryCannotRedirectPublication(t *te
 	c.Assert(err, qt.IsNil)
 
 	var retained string
-	afterMigrationPublicationVerified = func() { retained = replaceWithSymlink(c, outputDir, decoy) }
+	afterMigrationPublicationVerified = func() { retained = replaceWithSymlink(c.TB, outputDir, decoy) }
 	defer func() { afterMigrationPublicationVerified = nil }()
 
 	files, err := plan.WriteFilesContext(t.Context())
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(files.Files, qt.HasLen, 1)
-	c.Assert(generatorDirNames(c, retained), qt.DeepEquals, []string{
+	c.Assert(generatorDirNames(c.TB, retained), qt.DeepEquals, []string{
 		"1700000000_create_users.down.sql",
 		"1700000000_create_users.up.sql",
 	})
-	c.Assert(generatorDirNames(c, decoy), qt.HasLen, 0)
+	c.Assert(generatorDirNames(c.TB, decoy), qt.HasLen, 0)
 }
 
 // TestMigrationPlanBindRefusesADirectoryReachedThroughAnAncestorOutsideTheRoot
@@ -631,5 +633,5 @@ func TestMigrationPlanBindRefusesADirectoryReachedThroughAnAncestorOutsideTheRoo
 
 	c.Assert(err, qt.ErrorMatches, `.*(outside allowed root|path escapes from parent).*`)
 	c.Assert(plan, qt.IsNil)
-	c.Assert(generatorDirNames(c, filepath.Join(outside, "migrations")), qt.HasLen, 0)
+	c.Assert(generatorDirNames(c.TB, filepath.Join(outside, "migrations")), qt.HasLen, 0)
 }

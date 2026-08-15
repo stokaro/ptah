@@ -56,7 +56,6 @@ func representativeSelect() *ast.SelectStatement {
 }
 
 func TestRenderSelect_Representative(t *testing.T) {
-	c := qt.New(t)
 
 	wantArgs := []any{false, "in_use", "sold", int64(10), int64(24), int64(0)}
 
@@ -88,7 +87,8 @@ func TestRenderSelect_Representative(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			sql, args, err := renderer.RenderSelect(representativeSelect(), tt.dialect)
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Equals, tt.wantSQL)
@@ -98,7 +98,6 @@ func TestRenderSelect_Representative(t *testing.T) {
 }
 
 func TestRenderSelect_DialectAliasesNormalize(t *testing.T) {
-	c := qt.New(t)
 
 	stmt := &ast.SelectStatement{
 		Columns: []ast.ResultColumn{{Star: true}},
@@ -122,7 +121,8 @@ func TestRenderSelect_DialectAliasesNormalize(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			sql, args, err := renderer.RenderSelect(stmt, tt.dialect)
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Equals, tt.wantSQL)
@@ -132,7 +132,6 @@ func TestRenderSelect_DialectAliasesNormalize(t *testing.T) {
 }
 
 func TestRenderSelect_ProjectionVariants(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name    string
@@ -157,7 +156,8 @@ func TestRenderSelect_ProjectionVariants(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			sql, args, err := renderer.RenderSelect(tt.stmt, platform.Postgres)
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Equals, tt.wantSQL)
@@ -186,7 +186,6 @@ func TestRenderSelect_LimitOffsetPlaceholderOrdering(t *testing.T) {
 }
 
 func TestRenderSelect_OffsetWithoutLimit(t *testing.T) {
-	c := qt.New(t)
 
 	// A bare OFFSET is valid on PostgreSQL, but MySQL/MariaDB/SQLite only accept
 	// OFFSET as a suffix of LIMIT, so a "no limit" sentinel is synthesized. The
@@ -203,7 +202,8 @@ func TestRenderSelect_OffsetWithoutLimit(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			offset := int64(10)
 			stmt := &ast.SelectStatement{From: "t", Offset: &offset}
 			sql, args, err := renderer.RenderSelect(stmt, tt.dialect)
@@ -215,7 +215,6 @@ func TestRenderSelect_OffsetWithoutLimit(t *testing.T) {
 }
 
 func TestRenderSelect_IdentifierQuotingAcrossClauses(t *testing.T) {
-	c := qt.New(t)
 
 	// The projection, WHERE, and ORDER BY identifiers all route through the same
 	// dialect quoting, so a quote-bearing name is escaped in every clause.
@@ -250,7 +249,8 @@ func TestRenderSelect_IdentifierQuotingAcrossClauses(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			sql, args, err := renderer.RenderSelect(tt.stmt, platform.Postgres)
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Equals, tt.wantSQL)
@@ -260,7 +260,6 @@ func TestRenderSelect_IdentifierQuotingAcrossClauses(t *testing.T) {
 }
 
 func TestRenderSelect_NullTests(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name    string
@@ -272,7 +271,8 @@ func TestRenderSelect_NullTests(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			stmt := &ast.SelectStatement{
 				From:  "t",
 				Where: &ast.NullTest{Operand: &ast.ColumnRef{Name: "deleted_at"}, Negated: tt.negated},
@@ -307,7 +307,6 @@ func TestRenderSelect_ValueNeverBecomesSQL(t *testing.T) {
 }
 
 func TestRenderSelect_IdentifierQuotingNeutralizesInjection(t *testing.T) {
-	c := qt.New(t)
 
 	// An attacker-shaped identifier cannot terminate the quoted identifier: the
 	// dialect quote character is doubled per the SQL standard.
@@ -332,7 +331,8 @@ func TestRenderSelect_IdentifierQuotingNeutralizesInjection(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			stmt := &ast.SelectStatement{
 				From: "t",
 				Where: &ast.Comparison{
@@ -349,7 +349,6 @@ func TestRenderSelect_IdentifierQuotingNeutralizesInjection(t *testing.T) {
 }
 
 func TestRenderSelect_Errors(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name        string
@@ -428,7 +427,8 @@ func TestRenderSelect_Errors(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			sql, args, err := renderer.RenderSelect(tt.stmt, tt.dialect)
 			c.Assert(err, qt.ErrorMatches, tt.wantErrLike)
 			c.Assert(sql, qt.Equals, "")

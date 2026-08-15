@@ -16,9 +16,9 @@ import (
 )
 
 func TestLoadFS_RejectsUnsupportedSourceFiles(t *testing.T) {
-	c := qt.New(t)
 
-	c.Run("Go-based Goose migration", func(c *qt.C) {
+	t.Run("Go-based Goose migration", func(t *testing.T) {
+		c := qt.New(t)
 		source := fstest.MapFS{
 			"1_init.sql": &fstest.MapFile{Data: []byte("-- +goose Up\nCREATE TABLE users (id int);\n")},
 			"2_seed.go":  &fstest.MapFile{Data: []byte("package migrations\n")},
@@ -29,7 +29,8 @@ func TestLoadFS_RejectsUnsupportedSourceFiles(t *testing.T) {
 		c.Assert(err, qt.ErrorMatches, `Go-based Goose migration "2_seed\.go" is not supported \(SQL migrations only\)`)
 	})
 
-	c.Run("Liquibase XML changelog", func(c *qt.C) {
+	t.Run("Liquibase XML changelog", func(t *testing.T) {
+		c := qt.New(t)
 		source := fstest.MapFS{
 			"1_init.sql":    &fstest.MapFile{Data: []byte("--liquibase formatted sql\n--changeset ptah:1\nCREATE TABLE users (id int);\n")},
 			"changelog.xml": &fstest.MapFile{Data: []byte("<databaseChangeLog></databaseChangeLog>\n")},
@@ -45,11 +46,11 @@ func TestImportFlywayBaselineAndUndo(t *testing.T) {
 	c := qt.New(t)
 	source := t.TempDir()
 	target := t.TempDir()
-	writeFile(c, source, "V1__initial.sql", "CREATE TABLE skipped (id int);\n")
-	writeFile(c, source, "V2__second.sql", "CREATE TABLE skipped_2 (id int);\n")
-	writeFile(c, source, "B2__baseline.sql", "CREATE TABLE baseline (id int);\n")
-	writeFile(c, source, "V3__third_migration.sql", "ALTER TABLE baseline ADD name text;\n")
-	writeFile(c, source, "U1__initial.sql", "DROP TABLE skipped;\n")
+	writeFile(c.TB, source, "V1__initial.sql", "CREATE TABLE skipped (id int);\n")
+	writeFile(c.TB, source, "V2__second.sql", "CREATE TABLE skipped_2 (id int);\n")
+	writeFile(c.TB, source, "B2__baseline.sql", "CREATE TABLE baseline (id int);\n")
+	writeFile(c.TB, source, "V3__third_migration.sql", "ALTER TABLE baseline ADD name text;\n")
+	writeFile(c.TB, source, "U1__initial.sql", "DROP TABLE skipped;\n")
 
 	result, err := atlasmigrateimport.Import(atlasmigrateimport.Options{
 		FromURL: "file://" + source + "?format=flyway",
@@ -64,17 +65,17 @@ func TestImportFlywayBaselineAndUndo(t *testing.T) {
 		"122412_baseline.sql",
 		"4611686018427551119_third_migration.sql",
 	})
-	c.Assert(readFile(c, target, "122412_baseline.sql"), qt.Equals, "CREATE TABLE baseline (id int);\n")
-	c.Assert(readFile(c, target, "4611686018427551119_third_migration.sql"), qt.Equals, "ALTER TABLE baseline ADD name text;\n")
-	assertAtlasSumOK(c, target, result.SumFile)
+	c.Assert(readFile(c.TB, target, "122412_baseline.sql"), qt.Equals, "CREATE TABLE baseline (id int);\n")
+	c.Assert(readFile(c.TB, target, "4611686018427551119_third_migration.sql"), qt.Equals, "ALTER TABLE baseline ADD name text;\n")
+	assertAtlasSumOK(c.TB, target, result.SumFile)
 }
 
 func TestImportFlywayConvertsRepeatableMigrations(t *testing.T) {
 	c := qt.New(t)
 	source := t.TempDir()
 	target := t.TempDir()
-	writeFile(c, source, "V1__initial.sql", "CREATE TABLE users (id int);\n")
-	writeFile(c, source, "R__views.sql", "CREATE VIEW users_view AS SELECT * FROM users;\n")
+	writeFile(c.TB, source, "V1__initial.sql", "CREATE TABLE users (id int);\n")
+	writeFile(c.TB, source, "R__views.sql", "CREATE VIEW users_view AS SELECT * FROM users;\n")
 
 	result, err := atlasmigrateimport.Import(atlasmigrateimport.Options{
 		FromURL: "file://" + source + "?format=flyway",
@@ -88,8 +89,8 @@ func TestImportFlywayConvertsRepeatableMigrations(t *testing.T) {
 		"4611686018427469511_initial.sql",
 		"9223372036854775807_views.sql",
 	})
-	c.Assert(readFile(c, target, "9223372036854775807_views.sql"), qt.Equals, "CREATE VIEW users_view AS SELECT * FROM users;\n")
-	assertAtlasSumOK(c, target, result.SumFile)
+	c.Assert(readFile(c.TB, target, "9223372036854775807_views.sql"), qt.Equals, "CREATE VIEW users_view AS SELECT * FROM users;\n")
+	assertAtlasSumOK(c.TB, target, result.SumFile)
 }
 
 func TestImportFlywayOrdersDottedAndUnderscoreVersions(t *testing.T) {
@@ -98,8 +99,8 @@ func TestImportFlywayOrdersDottedAndUnderscoreVersions(t *testing.T) {
 	target := t.TempDir()
 	// V1.5 must order before V2: component-wise 1.5 < 2. The old digit-stripping
 	// parser produced 15 and 2 and inverted the order.
-	writeFile(c, source, "V2__add_posts.sql", "CREATE TABLE posts (id int);\n")
-	writeFile(c, source, "V1.5__add_users.sql", "CREATE TABLE users (id int);\n")
+	writeFile(c.TB, source, "V2__add_posts.sql", "CREATE TABLE posts (id int);\n")
+	writeFile(c.TB, source, "V1.5__add_users.sql", "CREATE TABLE users (id int);\n")
 
 	result, err := atlasmigrateimport.Import(atlasmigrateimport.Options{
 		FromURL: "file://" + source + "?format=flyway",
@@ -111,18 +112,18 @@ func TestImportFlywayOrdersDottedAndUnderscoreVersions(t *testing.T) {
 		"4611686018427471935_add_users.sql",
 		"4611686018427510315_add_posts.sql",
 	})
-	c.Assert(readFile(c, target, "4611686018427471935_add_users.sql"), qt.Equals, "CREATE TABLE users (id int);\n")
-	c.Assert(readFile(c, target, "4611686018427510315_add_posts.sql"), qt.Equals, "CREATE TABLE posts (id int);\n")
-	assertAtlasSumOK(c, target, result.SumFile)
+	c.Assert(readFile(c.TB, target, "4611686018427471935_add_users.sql"), qt.Equals, "CREATE TABLE users (id int);\n")
+	c.Assert(readFile(c.TB, target, "4611686018427510315_add_posts.sql"), qt.Equals, "CREATE TABLE posts (id int);\n")
+	assertAtlasSumOK(c.TB, target, result.SumFile)
 }
 
 func TestImportGolangMigrateSkipsDownFiles(t *testing.T) {
 	c := qt.New(t)
 	source := t.TempDir()
 	target := t.TempDir()
-	writeFile(c, source, "1_initial.up.sql", "CREATE TABLE users (id int);\n")
-	writeFile(c, source, "1_initial.down.sql", "DROP TABLE users;\n")
-	writeFile(c, source, "2_second.up.sql", "ALTER TABLE users ADD name text;\n")
+	writeFile(c.TB, source, "1_initial.up.sql", "CREATE TABLE users (id int);\n")
+	writeFile(c.TB, source, "1_initial.down.sql", "DROP TABLE users;\n")
+	writeFile(c.TB, source, "2_second.up.sql", "ALTER TABLE users ADD name text;\n")
 
 	result, err := atlasmigrateimport.Import(atlasmigrateimport.Options{
 		FromURL: "file://" + source + "?format=golang-migrate",
@@ -131,9 +132,9 @@ func TestImportGolangMigrateSkipsDownFiles(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(baseNames(result.Files), qt.DeepEquals, []string{"1_initial.sql", "2_second.sql"})
-	c.Assert(readFile(c, target, "1_initial.sql"), qt.Equals, "CREATE TABLE users (id int);\n")
-	c.Assert(readFile(c, target, "2_second.sql"), qt.Equals, "ALTER TABLE users ADD name text;\n")
-	assertAtlasSumOK(c, target, result.SumFile)
+	c.Assert(readFile(c.TB, target, "1_initial.sql"), qt.Equals, "CREATE TABLE users (id int);\n")
+	c.Assert(readFile(c.TB, target, "2_second.sql"), qt.Equals, "ALTER TABLE users ADD name text;\n")
+	assertAtlasSumOK(c.TB, target, result.SumFile)
 }
 
 func TestImportGooseAndDBMateUseOnlyUpSections(t *testing.T) {
@@ -193,7 +194,7 @@ two');
 			c := qt.New(t)
 			source := t.TempDir()
 			target := t.TempDir()
-			writeFile(c, source, "1_initial.sql", tt.sql)
+			writeFile(c.TB, source, "1_initial.sql", tt.sql)
 
 			result, err := atlasmigrateimport.Import(atlasmigrateimport.Options{
 				FromURL: "file://" + source + "?format=" + tt.format,
@@ -202,8 +203,8 @@ two');
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(baseNames(result.Files), qt.DeepEquals, []string{"1_initial.sql"})
-			c.Assert(readFile(c, target, "1_initial.sql"), qt.Equals, tt.want)
-			assertAtlasSumOK(c, target, result.SumFile)
+			c.Assert(readFile(c.TB, target, "1_initial.sql"), qt.Equals, tt.want)
+			assertAtlasSumOK(c.TB, target, result.SumFile)
 		})
 	}
 }
@@ -212,7 +213,7 @@ func TestImportLiquibaseDropsRollbackDirectives(t *testing.T) {
 	c := qt.New(t)
 	source := t.TempDir()
 	target := t.TempDir()
-	writeFile(c, source, "1_initial.sql", `--liquibase formatted sql
+	writeFile(c.TB, source, "1_initial.sql", `--liquibase formatted sql
 
 --changeset atlas:1-1
 CREATE TABLE posts (id int);
@@ -226,15 +227,15 @@ CREATE TABLE posts (id int);
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(baseNames(result.Files), qt.DeepEquals, []string{"1_initial.sql"})
-	c.Assert(readFile(c, target, "1_initial.sql"), qt.Equals, "--changeset atlas:1-1\nCREATE TABLE posts (id int);\n")
-	assertAtlasSumOK(c, target, result.SumFile)
+	c.Assert(readFile(c.TB, target, "1_initial.sql"), qt.Equals, "--changeset atlas:1-1\nCREATE TABLE posts (id int);\n")
+	assertAtlasSumOK(c.TB, target, result.SumFile)
 }
 
 func TestImportLiquibaseConventionalChangelogSplitsChangesets(t *testing.T) {
 	c := qt.New(t)
 	source := t.TempDir()
 	target := t.TempDir()
-	writeFile(c, source, "changelog.sql", `--liquibase formatted sql
+	writeFile(c.TB, source, "changelog.sql", `--liquibase formatted sql
 
 --changeset alice:create-users
 CREATE TABLE users (id int);
@@ -255,20 +256,20 @@ ALTER TABLE users ADD COLUMN email text;
 		"1_alice_create_users.sql",
 		"2_bob_add_email.sql",
 	})
-	c.Assert(readFile(c, target, "1_alice_create_users.sql"), qt.Equals, "CREATE TABLE users (id int);\n")
-	c.Assert(readFile(c, target, "2_bob_add_email.sql"), qt.Equals, "ALTER TABLE users ADD COLUMN email text;\n")
-	assertAtlasSumOK(c, target, result.SumFile)
+	c.Assert(readFile(c.TB, target, "1_alice_create_users.sql"), qt.Equals, "CREATE TABLE users (id int);\n")
+	c.Assert(readFile(c.TB, target, "2_bob_add_email.sql"), qt.Equals, "ALTER TABLE users ADD COLUMN email text;\n")
+	assertAtlasSumOK(c.TB, target, result.SumFile)
 }
 
 func TestImportLiquibaseConventionalFilesUseGlobalChangesetOrder(t *testing.T) {
 	c := qt.New(t)
 	source := t.TempDir()
 	target := t.TempDir()
-	writeFile(c, source, "b.sql", `--liquibase formatted sql
+	writeFile(c.TB, source, "b.sql", `--liquibase formatted sql
 --changeset bob:third
 CREATE TABLE third_table (id int);
 `)
-	writeFile(c, source, "a.sql", `--liquibase formatted sql
+	writeFile(c.TB, source, "a.sql", `--liquibase formatted sql
 --changeset alice:first
 CREATE TABLE first_table (id int);
 --changeset alice:second
@@ -286,18 +287,18 @@ CREATE TABLE second_table (id int);
 		"2_alice_second.sql",
 		"3_bob_third.sql",
 	})
-	assertAtlasSumOK(c, target, result.SumFile)
+	assertAtlasSumOK(c.TB, target, result.SumFile)
 }
 
 func TestImportLiquibaseConventionalNameConvertsEntireCoveredSet(t *testing.T) {
 	c := qt.New(t)
 	source := t.TempDir()
 	target := t.TempDir()
-	writeFile(c, source, "1_numbered.sql", `--liquibase formatted sql
+	writeFile(c.TB, source, "1_numbered.sql", `--liquibase formatted sql
 --changeset numbered:first
 CREATE TABLE numbered_table (id int);
 `)
-	writeFile(c, source, "changelog.sql", `--liquibase formatted sql
+	writeFile(c.TB, source, "changelog.sql", `--liquibase formatted sql
 --changeset conventional:second
 CREATE TABLE conventional_table (id int);
 `)
@@ -312,9 +313,9 @@ CREATE TABLE conventional_table (id int);
 		"1_numbered_first.sql",
 		"2_conventional_second.sql",
 	})
-	c.Assert(readFile(c, target, "1_numbered_first.sql"), qt.Equals, "CREATE TABLE numbered_table (id int);\n")
-	c.Assert(readFile(c, target, "2_conventional_second.sql"), qt.Equals, "CREATE TABLE conventional_table (id int);\n")
-	assertAtlasSumOK(c, target, result.SumFile)
+	c.Assert(readFile(c.TB, target, "1_numbered_first.sql"), qt.Equals, "CREATE TABLE numbered_table (id int);\n")
+	c.Assert(readFile(c.TB, target, "2_conventional_second.sql"), qt.Equals, "CREATE TABLE conventional_table (id int);\n")
+	assertAtlasSumOK(c.TB, target, result.SumFile)
 }
 
 func TestImportLiquibaseConventionalInputRefusesBeforeCreatingTarget(t *testing.T) {
@@ -375,7 +376,7 @@ CREATE TABLE valid_table (id int);
 			target := filepath.Join(root, "target")
 			c.Assert(os.Mkdir(source, 0o700), qt.IsNil)
 			for name, content := range tt.files {
-				writeFile(c, source, name, content)
+				writeFile(c.TB, source, name, content)
 			}
 
 			_, err := atlasmigrateimport.Import(atlasmigrateimport.Options{
@@ -401,7 +402,7 @@ func TestImportRejectsRemoteSourceURL(t *testing.T) {
 func TestImportRejectsSameSourceAndTargetDirectory(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
-	writeFile(c, dir, "1_initial.sql", `-- +goose Up
+	writeFile(c.TB, dir, "1_initial.sql", `-- +goose Up
 CREATE TABLE users (id int);
 -- +goose Down
 DROP TABLE users;
@@ -413,15 +414,15 @@ DROP TABLE users;
 	})
 
 	c.Assert(err, qt.ErrorMatches, `import --to must be different from --from for format "goose"`)
-	c.Assert(readFile(c, dir, "1_initial.sql"), qt.Contains, "-- +goose Down")
+	c.Assert(readFile(c.TB, dir, "1_initial.sql"), qt.Contains, "-- +goose Down")
 }
 
 func TestImportRejectsExistingTargetFiles(t *testing.T) {
 	c := qt.New(t)
 	source := t.TempDir()
 	target := t.TempDir()
-	writeFile(c, source, "1_initial.up.sql", "CREATE TABLE users (id int);\n")
-	writeFile(c, target, "1_initial.sql", "SELECT 1;\n")
+	writeFile(c.TB, source, "1_initial.up.sql", "CREATE TABLE users (id int);\n")
+	writeFile(c.TB, target, "1_initial.sql", "SELECT 1;\n")
 
 	_, err := atlasmigrateimport.Import(atlasmigrateimport.Options{
 		FromURL: "file://" + source + "?format=golang-migrate",
@@ -429,7 +430,7 @@ func TestImportRejectsExistingTargetFiles(t *testing.T) {
 	})
 
 	c.Assert(err, qt.ErrorMatches, `target migration directory already contains SQL file: .*1_initial\.sql`)
-	c.Assert(readFile(c, target, "1_initial.sql"), qt.Equals, "SELECT 1;\n")
+	c.Assert(readFile(c.TB, target, "1_initial.sql"), qt.Equals, "SELECT 1;\n")
 }
 
 func TestImportRejectsDuplicateFlywayVersions(t *testing.T) {
@@ -438,8 +439,8 @@ func TestImportRejectsDuplicateFlywayVersions(t *testing.T) {
 	target := t.TempDir()
 	// "1" and "1" really are one version to Atlas CE, which panics rather than
 	// executing such a directory, so refusing it is the oracle's own answer.
-	writeFile(c, source, "V1__first.sql", "CREATE TABLE first (id int);\n")
-	writeFile(c, source, "V1__second.sql", "CREATE TABLE second (id int);\n")
+	writeFile(c.TB, source, "V1__first.sql", "CREATE TABLE first (id int);\n")
+	writeFile(c.TB, source, "V1__second.sql", "CREATE TABLE second (id int);\n")
 
 	_, err := atlasmigrateimport.Import(atlasmigrateimport.Options{
 		FromURL: "file://" + source + "?format=flyway",
@@ -456,8 +457,8 @@ func TestImportConvertsFlywayTokensThatOnlyOrderAlike(t *testing.T) {
 	// "1" and "01" are DIFFERENT versions to Atlas CE, which runs both in walk
 	// order. Scoring them into components merges them, and the previous
 	// implementation refused the pair on that merge.
-	writeFile(c, source, "V1__first.sql", "CREATE TABLE first (id int);\n")
-	writeFile(c, source, "V01__second.sql", "CREATE TABLE second (id int);\n")
+	writeFile(c.TB, source, "V1__first.sql", "CREATE TABLE first (id int);\n")
+	writeFile(c.TB, source, "V01__second.sql", "CREATE TABLE second (id int);\n")
 
 	result, err := atlasmigrateimport.Import(atlasmigrateimport.Options{
 		FromURL: "file://" + source + "?format=flyway",
@@ -469,15 +470,17 @@ func TestImportConvertsFlywayTokensThatOnlyOrderAlike(t *testing.T) {
 		"4611686018427469511_second.sql",
 		"4611686018427469512_first.sql",
 	})
-	assertAtlasSumOK(c, target, result.SumFile)
+	assertAtlasSumOK(c.TB, target, result.SumFile)
 }
 
-func writeFile(c *qt.C, dir, name, content string) {
+func writeFile(tb testing.TB, dir, name, content string) {
+	c := qt.New(tb)
 	c.Helper()
 	c.Assert(os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600), qt.IsNil)
 }
 
-func readFile(c *qt.C, dir, name string) string {
+func readFile(tb testing.TB, dir, name string) string {
+	c := qt.New(tb)
 	c.Helper()
 	data, err := os.ReadFile(filepath.Join(dir, name))
 	c.Assert(err, qt.IsNil)
@@ -493,7 +496,8 @@ func baseNames(paths []string) []string {
 	return names
 }
 
-func assertAtlasSumOK(c *qt.C, dir, sumFile string) {
+func assertAtlasSumOK(tb testing.TB, dir, sumFile string) {
+	c := qt.New(tb)
 	c.Helper()
 	c.Assert(filepath.Base(sumFile), qt.Equals, atlascompat.AtlasSumFileName)
 	result, err := atlascompat.VerifySumDir(dir, migrator.MigrationDirFormatAtlas)

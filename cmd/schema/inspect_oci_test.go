@@ -47,7 +47,8 @@ import (
 // `connection refused`, and one that REFUSES the scheme never dials and says so
 // in different words. The two dispositions are distinguishable in the message,
 // which is the whole discrimination this file needs.
-func closedRegistryReference(c *qt.C) string {
+func closedRegistryReference(tb testing.TB) string {
+	c := qt.New(tb)
 	c.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	c.Assert(err, qt.IsNil)
@@ -75,7 +76,7 @@ func runCommand(cmd *cobra.Command, args ...string) (string, error) {
 // "oci"`, which is the string asserted absent.
 func TestSchemaInspect_ResolvesAnOCISchemaFile(t *testing.T) {
 	c := qt.New(t)
-	reference := closedRegistryReference(c)
+	reference := closedRegistryReference(c.TB)
 
 	out, err := runCommand(schema.NewSchemaCommand(),
 		"inspect", "--schema-file", reference, "--dev-url", "sqlite://:memory:", "--plain-http")
@@ -96,7 +97,7 @@ func TestSchemaInspect_ResolvesAnOCISchemaFile(t *testing.T) {
 // a build where TLS stopped being the default would dial plain HTTP in both.
 func TestSchemaInspect_WithoutPlainHTTPUsesTLS(t *testing.T) {
 	c := qt.New(t)
-	reference := closedRegistryReference(c)
+	reference := closedRegistryReference(c.TB)
 
 	out, err := runCommand(schema.NewSchemaCommand(),
 		"inspect", "--schema-file", reference, "--dev-url", "sqlite://:memory:")
@@ -206,7 +207,7 @@ func TestSchemaInspect_AnswersLocalArgumentErrorsBeforeReachingTheRegistry(t *te
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			reference := closedRegistryReference(c)
+			reference := closedRegistryReference(c.TB)
 
 			out, err := runCommand(schema.NewSchemaCommand(), append([]string{
 				"inspect", "--schema-file", reference, "--plain-http",
@@ -246,7 +247,7 @@ func TestSchemaInspect_AnswersLocalArgumentErrorsBeforeReachingTheRegistry(t *te
 // below.
 func TestSchemaInspect_ProvisionableDockerDevURLReachesTheRegistry(t *testing.T) {
 	c := qt.New(t)
-	reference := closedRegistryReference(c)
+	reference := closedRegistryReference(c.TB)
 
 	out, err := runCommand(schema.NewSchemaCommand(),
 		"inspect", "--schema-file", reference, "--plain-http",
@@ -278,7 +279,7 @@ func TestSchemaInspect_ProvisionableDockerDevURLReachesTheRegistry(t *testing.T)
 // recognizing the unsupported-scheme verdict, and the refusal disappears.
 func TestCompatSchemaInspect_StillRefusesOCI(t *testing.T) {
 	c := qt.New(t)
-	reference := closedRegistryReference(c)
+	reference := closedRegistryReference(c.TB)
 
 	out, err := runCommand(atlas.NewCompatCommand("atlas"),
 		"schema", "inspect", "--url", reference)

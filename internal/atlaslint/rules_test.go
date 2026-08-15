@@ -9,7 +9,6 @@ import (
 )
 
 func TestRuleForNativeCode(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name string
@@ -39,7 +38,8 @@ func TestRuleForNativeCode(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			got := atlaslint.RuleForNativeCode(tt.code)
 			c.Assert(got, qt.DeepEquals, tt.want)
 		})
@@ -64,7 +64,6 @@ func TestRuleForNativeCode(t *testing.T) {
 // the code fallback Family:true and both rows silence the whole DS family,
 // which is exit 0 where the community binary exits 1.
 func TestNativeSuppressionTargets(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name     string
@@ -144,7 +143,8 @@ func TestNativeSuppressionTargets(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			got := atlaslint.NativeSuppressionTargets(tt.selector)
 			c.Assert(got, qt.DeepEquals, tt.want)
 		})
@@ -155,7 +155,6 @@ func TestNativeSuppressionTargets(t *testing.T) {
 // family target widens to every code sharing its prefix, an exact target does
 // not. Collapse the two and `-- atlas:nolint DS` starts silencing DS101.
 func TestTargetMatches(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name   string
@@ -171,7 +170,8 @@ func TestTargetMatches(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(tt.target.Matches(tt.code), qt.Equals, tt.want)
 		})
 	}
@@ -182,7 +182,6 @@ func TestTargetMatches(t *testing.T) {
 // empty must not, or a directive whose selector parsed to nothing would mark a
 // whole file ignored.
 func TestTargetMatchesEveryRule(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name   string
@@ -196,7 +195,8 @@ func TestTargetMatchesEveryRule(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(tt.target.MatchesEveryRule(), qt.Equals, tt.want)
 		})
 	}
@@ -208,7 +208,6 @@ func TestTargetMatchesEveryRule(t *testing.T) {
 // `-- atlas:nolint concurrent_index` stops silencing PG101 on
 // `ptah migrations lint`.
 func TestAnalyzerSuppressionTargets(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name     string
@@ -243,7 +242,8 @@ func TestAnalyzerSuppressionTargets(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			got, ok := atlaslint.AnalyzerSuppressionTargets(tt.selector)
 			c.Assert(ok, qt.Equals, tt.wantOK)
 			c.Assert(got, qt.DeepEquals, tt.want)

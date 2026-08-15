@@ -14,7 +14,8 @@ import (
 // renderProjection renders "SELECT <expr> FROM t" for PostgreSQL and returns the
 // observable SQL and args, so aggregate constructors can be asserted through the
 // public rendering contract rather than the internal node shape.
-func renderProjection(c *qt.C, expr ast.Expression) (string, []any) {
+func renderProjection(tb testing.TB, expr ast.Expression) (string, []any) {
+	c := qt.New(tb)
 	c.Helper()
 	stmt := query.Select().Exprs(expr).From("t").Build()
 	sql, args, err := renderer.RenderSelect(stmt, platform.Postgres)
@@ -23,7 +24,6 @@ func renderProjection(c *qt.C, expr ast.Expression) (string, []any) {
 }
 
 func TestAggregateConstructors(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name    string
@@ -40,8 +40,9 @@ func TestAggregateConstructors(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
-			sql, args := renderProjection(c, tt.expr)
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			sql, args := renderProjection(c.TB, tt.expr)
 			c.Assert(sql, qt.Equals, tt.wantSQL)
 			c.Assert(args, qt.HasLen, 0)
 		})
@@ -53,8 +54,8 @@ func TestCountStarArgumentIsCountStar(t *testing.T) {
 
 	// Count("*") is a convenience for COUNT(*): it renders identically to
 	// CountStar and never the invalid COUNT("*") over a column named "*".
-	starSQL, starArgs := renderProjection(c, query.CountStar())
-	countSQL, countArgs := renderProjection(c, query.Count("*"))
+	starSQL, starArgs := renderProjection(c.TB, query.CountStar())
+	countSQL, countArgs := renderProjection(c.TB, query.Count("*"))
 
 	c.Assert(countSQL, qt.Equals, `SELECT COUNT(*) FROM "t"`)
 	c.Assert(countSQL, qt.Equals, starSQL)
@@ -63,7 +64,6 @@ func TestCountStarArgumentIsCountStar(t *testing.T) {
 }
 
 func TestAggregateStarArgumentRejected(t *testing.T) {
-	c := qt.New(t)
 
 	// Only Count("*") maps to the star form. Every other "*" aggregate argument —
 	// a non-COUNT aggregate, COUNT(DISTINCT *), or a qualified star — has no valid
@@ -82,7 +82,8 @@ func TestAggregateStarArgumentRejected(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			stmt := query.Select().Exprs(tt.expr).From("t").Build()
 			sql, args, err := renderer.RenderSelect(stmt, platform.Postgres)
 			c.Assert(err, qt.ErrorMatches, `.*is not a valid column reference.*`)
@@ -93,7 +94,6 @@ func TestAggregateStarArgumentRejected(t *testing.T) {
 }
 
 func TestColumnAggregateMethods(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name    string
@@ -109,8 +109,9 @@ func TestColumnAggregateMethods(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
-			sql, args := renderProjection(c, tt.expr)
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			sql, args := renderProjection(c.TB, tt.expr)
 			c.Assert(sql, qt.Equals, tt.wantSQL)
 			c.Assert(args, qt.HasLen, 0)
 		})
@@ -118,7 +119,6 @@ func TestColumnAggregateMethods(t *testing.T) {
 }
 
 func TestExprComparison(t *testing.T) {
-	c := qt.New(t)
 
 	// Expr wraps an aggregate so it can be compared against a bound value, the
 	// shape of a HAVING predicate. The value is always bound, never inlined.
@@ -136,8 +136,9 @@ func TestExprComparison(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
-			sql, args := renderWhere(c, tt.expr)
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			sql, args := renderWhere(c.TB, tt.expr)
 			c.Assert(sql, qt.Equals, tt.wantSQL)
 			c.Assert(args, qt.DeepEquals, []any{int64(5)})
 		})
@@ -192,7 +193,6 @@ func TestSelectBuilder_ExprsAndExprAs(t *testing.T) {
 }
 
 func TestSelectBuilder_GroupByHavingEndToEnd(t *testing.T) {
-	c := qt.New(t)
 
 	// A grouped aggregate query with a WHERE filter, a HAVING over COUNT(*), and a
 	// LIMIT, proving the fluent API composes and placeholders order across clauses.
@@ -226,7 +226,8 @@ func TestSelectBuilder_GroupByHavingEndToEnd(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			sql, args, err := renderer.RenderSelect(stmt, tt.dialect)
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Equals, tt.wantSQL)

@@ -137,7 +137,7 @@ func TestLoadPathRefusesADirectoryThatRedeclaresAnObject(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			dir := writeSchemaDir(c, test.files)
+			dir := writeSchemaDir(c.TB, test.files)
 
 			db, err := schemafile.LoadPath(dir, schemafile.Options{Dialect: test.dialect})
 

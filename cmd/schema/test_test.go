@@ -23,7 +23,8 @@ func (failingWriter) Write([]byte) (int, error) {
 	return 0, errTestWrite
 }
 
-func writeUsersModel(c *qt.C, dir string) {
+func writeUsersModel(tb testing.TB, dir string) {
+	c := qt.New(tb)
 	c.Helper()
 	content := `package models
 
@@ -55,7 +56,7 @@ func TestSchemaTestCommand_Passes(t *testing.T) {
 	c := qt.New(t)
 	modelsDir := t.TempDir()
 	testsDir := t.TempDir()
-	writeUsersModel(c, modelsDir)
+	writeUsersModel(c.TB, modelsDir)
 	c.Assert(os.WriteFile(filepath.Join(testsDir, "users.yaml"), []byte(
 		"cases:\n"+
 			"  - name: users schema works\n"+
@@ -82,7 +83,7 @@ func TestSchemaTestCommand_DefaultSeedDirectory(t *testing.T) {
 	modelsDir := t.TempDir()
 	testsDir := t.TempDir()
 	seedsDir := t.TempDir()
-	writeUsersModel(c, modelsDir)
+	writeUsersModel(c.TB, modelsDir)
 	c.Assert(os.WriteFile(filepath.Join(seedsDir, "010_users.test.sql"),
 		[]byte("INSERT INTO users (id, name) VALUES (1, 'ada');"), 0o600), qt.IsNil)
 	c.Assert(os.WriteFile(filepath.Join(testsDir, "seed.yaml"), []byte(
@@ -108,7 +109,7 @@ func TestSchemaTestCommand_ReportWriteFailure(t *testing.T) {
 	c := qt.New(t)
 	modelsDir := t.TempDir()
 	testsDir := t.TempDir()
-	writeUsersModel(c, modelsDir)
+	writeUsersModel(c.TB, modelsDir)
 	c.Assert(os.WriteFile(filepath.Join(testsDir, "pass.yaml"), []byte(
 		"cases:\n"+
 			"  - name: passing case\n"+
@@ -129,7 +130,7 @@ func TestSchemaTestCommand_FailsWithNonZeroError(t *testing.T) {
 	c := qt.New(t)
 	modelsDir := t.TempDir()
 	testsDir := t.TempDir()
-	writeUsersModel(c, modelsDir)
+	writeUsersModel(c.TB, modelsDir)
 	c.Assert(os.WriteFile(filepath.Join(testsDir, "fail.yaml"), []byte(
 		"cases:\n"+
 			"  - name: bad expectation\n"+
@@ -149,7 +150,7 @@ func TestSchemaTestCommand_FailsWithNonZeroError(t *testing.T) {
 func TestSchemaTestCommand_NoCasesFound(t *testing.T) {
 	c := qt.New(t)
 	modelsDir := t.TempDir()
-	writeUsersModel(c, modelsDir)
+	writeUsersModel(c.TB, modelsDir)
 	_, err := runSchemaTestCommand("--dir", t.TempDir(), "--root-dir", modelsDir)
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Contains, "no test cases found")
@@ -166,7 +167,7 @@ func TestSchemaTestCommand_RunPattern(t *testing.T) {
 	c := qt.New(t)
 	modelsDir := t.TempDir()
 	testsDir := t.TempDir()
-	writeUsersModel(c, modelsDir)
+	writeUsersModel(c.TB, modelsDir)
 	c.Assert(os.WriteFile(filepath.Join(testsDir, "cases.yaml"), []byte(
 		"cases:\n"+
 			"  - name: selected case\n"+
@@ -202,7 +203,8 @@ type liveSourceFixture struct {
 // writeLiveSourceFixture builds the fixture, creating the live database by
 // executing DDL over a Ptah SQLite connection rather than committing a binary
 // database file.
-func writeLiveSourceFixture(c *qt.C) liveSourceFixture {
+func writeLiveSourceFixture(tb testing.TB) liveSourceFixture {
+	c := qt.New(tb)
 	c.Helper()
 	dir := c.TempDir()
 	modelsDir := filepath.Join(dir, "models")
@@ -272,7 +274,7 @@ func TestSchemaTestCommand_DesiredSchemaSourceKinds(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			fixture := writeLiveSourceFixture(c)
+			fixture := writeLiveSourceFixture(c.TB)
 			// Every direction gets its own throwaway database. A shared one is
 			// not reset between runs, so the control would pass against a
 			// database an earlier positive run had already populated.
@@ -317,7 +319,7 @@ func TestSchemaTestCommand_RefusesCrossDialectDatabaseSource(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			fixture := writeLiveSourceFixture(c)
+			fixture := writeLiveSourceFixture(c.TB)
 
 			out, err := runSchemaTestCommand(
 				"--dir", fixture.testsDir,
@@ -385,7 +387,7 @@ func TestSchemaTestCommand_SchemaSelectionAppliesToADatabaseSource(t *testing.T)
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			fixture := writeLiveSourceFixture(c)
+			fixture := writeLiveSourceFixture(c.TB)
 
 			out, err := runSchemaTestCommand(
 				"--dir", fixture.testsDir,

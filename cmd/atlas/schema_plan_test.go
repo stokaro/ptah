@@ -24,7 +24,8 @@ func sqliteURLFromPath(path string) string {
 
 // seedSQLiteSchema executes DDL against a SQLite database file so plan tests
 // start from a known live schema state.
-func seedSQLiteSchema(c *qt.C, dbPath, schemaSQL string) {
+func seedSQLiteSchema(tb testing.TB, dbPath, schemaSQL string) {
+	c := qt.New(tb)
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(context.Background(), sqliteURLFromPath(dbPath))
 	c.Assert(err, qt.IsNil)
@@ -50,7 +51,7 @@ func TestSchemaPlanSavesFingerprintedPlanFile(t *testing.T) {
 	dbPath := filepath.Join(dir, "plan.db")
 	schemaPath := filepath.Join(dir, "schema.sql")
 	planPath := filepath.Join(dir, "add-orders.plan.json")
-	seedSQLiteSchema(c, dbPath, `CREATE TABLE users (id INTEGER PRIMARY KEY);`)
+	seedSQLiteSchema(c.TB, dbPath, `CREATE TABLE users (id INTEGER PRIMARY KEY);`)
 	c.Assert(os.WriteFile(schemaPath, []byte(
 		"CREATE TABLE users (id INTEGER PRIMARY KEY);\nCREATE TABLE orders (id INTEGER PRIMARY KEY);\n",
 	), 0o600), qt.IsNil)
@@ -136,7 +137,7 @@ func TestSchemaPlanRecordsDestructiveStatements(t *testing.T) {
 	dbPath := filepath.Join(dir, "plan-destructive.db")
 	schemaPath := filepath.Join(dir, "schema.sql")
 	planPath := filepath.Join(dir, "drop.plan.json")
-	seedSQLiteSchema(c, dbPath,
+	seedSQLiteSchema(c.TB, dbPath,
 		"CREATE TABLE keep_me (id INTEGER PRIMARY KEY);\nCREATE TABLE drop_me (id INTEGER);")
 	c.Assert(os.WriteFile(schemaPath, []byte(`CREATE TABLE keep_me (id INTEGER PRIMARY KEY);`), 0o600), qt.IsNil)
 
@@ -174,7 +175,7 @@ func TestSchemaPlanDryRunPrintsPlanDocumentWithoutSaving(t *testing.T) {
 	// --dry-run prints exactly the plan document that --save would write —
 	// the Atlas .plan.hcl shape by default.
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
-	plan := parsePlanDocumentOutput(c, out)
+	plan := parsePlanDocumentOutput(c.TB, out)
 	c.Assert(plan.Statements, qt.HasLen, 1)
 	c.Assert(plan.Statements[0].SQL, qt.Contains, `CREATE TABLE "dry_users"`)
 	for _, pattern := range []string{"*.plan.json", "*.plan.hcl"} {
@@ -186,7 +187,8 @@ func TestSchemaPlanDryRunPrintsPlanDocumentWithoutSaving(t *testing.T) {
 
 // parsePlanDocumentOutput round-trips printed plan-document output through
 // the plan reader, asserting it is a valid Atlas-format plan document.
-func parsePlanDocumentOutput(c *qt.C, out string) atlasschema.PlanFile {
+func parsePlanDocumentOutput(tb testing.TB, out string) atlasschema.PlanFile {
+	c := qt.New(tb)
 	c.Helper()
 	path := filepath.Join(c.TB.TempDir(), "stdout.plan.hcl")
 	c.Assert(os.WriteFile(path, []byte(out), 0o600), qt.IsNil)
@@ -203,7 +205,7 @@ func TestSchemaPlanSyncedSchemaWritesNothing(t *testing.T) {
 	schemaPath := filepath.Join(dir, "schema.sql")
 	planPath := filepath.Join(dir, "synced.plan.json")
 	schemaSQL := `CREATE TABLE synced_plan_users (id INTEGER PRIMARY KEY);`
-	seedSQLiteSchema(c, dbPath, schemaSQL)
+	seedSQLiteSchema(c.TB, dbPath, schemaSQL)
 	c.Assert(os.WriteFile(schemaPath, []byte(schemaSQL), 0o600), qt.IsNil)
 
 	out, err := runSchemaPlan(atlas.NewCompatCommand("atlas"),
@@ -233,7 +235,7 @@ func TestSchemaPlanWithoutSavePrintsPlanDocument(t *testing.T) {
 	// Without --save/--output/--dry-run the plan document prints to stdout
 	// like Atlas printing the computed plan, and no file is written.
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
-	plan := parsePlanDocumentOutput(c, out)
+	plan := parsePlanDocumentOutput(c.TB, out)
 	c.Assert(plan.Statements, qt.HasLen, 1)
 	c.Assert(plan.Statements[0].SQL, qt.Contains, `CREATE TABLE "stdout_users"`)
 	for _, pattern := range []string{"*.plan.json", "*.plan.hcl"} {
@@ -353,12 +355,13 @@ func TestSchemaPlanRejectsUnusableNames(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
 			// --save without --output writes into the working directory, so a
 			// case that stopped refusing would drop its artifact into the
 			// package source tree. Pointing the working directory at a scratch
 			// dir contains that, and the no-file assertion is what proves the
 			// refusal happened before the write rather than after it.
+			c := qt.New(t)
 			scratch := chdirToScratch(c.TB.(*testing.T))
 
 			_, err := runSchemaPlan(atlas.NewCompatCommand("atlas"),
@@ -369,7 +372,7 @@ func TestSchemaPlanRejectsUnusableNames(t *testing.T) {
 			)
 
 			c.Assert(err, qt.ErrorMatches, tt.want)
-			assertNoPlanFileWritten(c, scratch)
+			assertNoPlanFileWritten(c.TB, scratch)
 		})
 	}
 }
@@ -440,12 +443,13 @@ func TestSchemaPlanRejectsUnimplementedAtlasFlags(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
 			// --save with no --output writes into the working directory, so
 			// point it at a scratch directory: a refusal that regresses must
 			// leave its artifact somewhere a test can see it, not in the
 			// package source tree. (A mutation sweep found exactly that leak.)
-			scratch := chdirToScratchC(c)
+			c := qt.New(t)
+			scratch := chdirToScratchC(c.TB)
 			args := append([]string{
 				"--from", sqliteURLFromPath(filepath.Join(dir, "plan.db")),
 				"--to", "file://" + schemaPath,
@@ -458,7 +462,7 @@ func TestSchemaPlanRejectsUnimplementedAtlasFlags(t *testing.T) {
 			// Assert the protected state, not the proxy: the thing a refusal
 			// must prevent is a plan file, and an error return alone does not
 			// prove one was not written first.
-			assertNoPlanFileWritten(c, scratch)
+			assertNoPlanFileWritten(c.TB, scratch)
 		})
 	}
 }

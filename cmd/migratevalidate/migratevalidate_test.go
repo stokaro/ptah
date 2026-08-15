@@ -38,7 +38,8 @@ func executeAtlas(args ...string) (stdout, stderr string, err error) {
 }
 
 // migrationsDir writes a clean pair plus a matching ptah.sum and returns the dir.
-func migrationsDir(c *qt.C) string {
+func migrationsDir(tb testing.TB) string {
+	c := qt.New(tb)
 	c.Helper()
 	dir := c.TempDir()
 	write := func(name, content string) {
@@ -54,7 +55,7 @@ func migrationsDir(c *qt.C) string {
 func TestValidate_CleanDirectoryExitsZero(t *testing.T) {
 	c := qt.New(t)
 
-	stdout, stderr, err := execute("--dir", migrationsDir(c))
+	stdout, stderr, err := execute("--dir", migrationsDir(c.TB))
 	c.Assert(err, qt.IsNil)
 	c.Assert(stdout, qt.Equals, "OK: migrations directory matches ptah.sum\n")
 	c.Assert(stderr, qt.Equals, "")
@@ -77,7 +78,7 @@ func TestValidate_AutoReadsAtlasSum(t *testing.T) {
 func TestValidate_EditedMigrationExitsOneWithDiff(t *testing.T) {
 	c := qt.New(t)
 
-	dir := migrationsDir(c)
+	dir := migrationsDir(c.TB)
 	// Tamper with an already-hashed migration.
 	c.Assert(os.WriteFile(filepath.Join(dir, "0000000001_init.up.sql"),
 		[]byte("CREATE TABLE t (id BIGINT);\n"), 0o600), qt.IsNil)
@@ -127,7 +128,6 @@ func TestAtlasDirectoryError_MissingStatPreservesPathCause(t *testing.T) {
 }
 
 func TestAtlasDirectoryError_NonMatchingErrorsUnchanged(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name string
@@ -170,7 +170,8 @@ func TestAtlasDirectoryError_NonMatchingErrorsUnchanged(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			got := migratevalidate.AtlasDirectoryError(test.dir, test.err)
 
 			c.Assert(got, qt.Equals, test.err)
@@ -184,7 +185,7 @@ func TestValidate_PositionalArgExitsTwoWithMessage(t *testing.T) {
 	// A stray positional (e.g. the path typed without --dir) is a usage
 	// error (exit 2 with a message), not a silent exit 1 that would look
 	// like drift.
-	_, stderr, err := execute(migrationsDir(c), "stray")
+	_, stderr, err := execute(migrationsDir(c.TB), "stray")
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 2)
 	c.Assert(stderr, qt.Contains, "unexpected positional arguments")
 }
@@ -192,7 +193,7 @@ func TestValidate_PositionalArgExitsTwoWithMessage(t *testing.T) {
 func TestValidate_CorruptSumFileExitsTwoNotOne(t *testing.T) {
 	c := qt.New(t)
 
-	dir := migrationsDir(c)
+	dir := migrationsDir(c.TB)
 	// A structurally broken ptah.sum (an h1: hash that is not valid base64)
 	// is a usage failure (exit 2), not content drift (exit 1).
 	c.Assert(os.WriteFile(filepath.Join(dir, "ptah.sum"),
@@ -223,7 +224,7 @@ func TestValidate_AtlasMalformedSumMatchesAtlasStreams(t *testing.T) {
 
 func TestValidate_AtlasCleanDirectoryIsSilent(t *testing.T) {
 	c := qt.New(t)
-	dir := cleanAtlasDirectory(c)
+	dir := cleanAtlasDirectory(c.TB)
 
 	stdout, stderr, err := executeAtlas("--dir", dir, "--dir-format", "atlas")
 
@@ -234,7 +235,7 @@ func TestValidate_AtlasCleanDirectoryIsSilent(t *testing.T) {
 
 func TestValidate_AtlasDevReplayIsSilent(t *testing.T) {
 	c := qt.New(t)
-	dir := cleanAtlasDirectory(c)
+	dir := cleanAtlasDirectory(c.TB)
 	devDBPath := filepath.Join(t.TempDir(), "dev.db")
 
 	stdout, stderr, err := executeAtlas(
@@ -250,7 +251,7 @@ func TestValidate_AtlasDevReplayIsSilent(t *testing.T) {
 
 func TestValidate_AtlasMissingSumMatchesAtlasStreams(t *testing.T) {
 	c := qt.New(t)
-	dir := atlasDirectoryWithoutSum(c)
+	dir := atlasDirectoryWithoutSum(c.TB)
 
 	stdout, stderr, err := executeAtlas("--dir", dir, "--dir-format", "atlas")
 
@@ -323,7 +324,7 @@ func TestValidate_AtlasRemovedMigrationMatchesAtlasStreams(t *testing.T) {
 
 func TestValidate_AtlasDuplicateSumEntryMatchesAtlasStreams(t *testing.T) {
 	c := qt.New(t)
-	dir := duplicateAtlasSumDirectory(c)
+	dir := duplicateAtlasSumDirectory(c.TB)
 
 	stdout, stderr, err := executeAtlas("--dir", dir, "--dir-format", "atlas")
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
@@ -335,7 +336,7 @@ func TestValidate_AtlasDuplicateSumEntryMatchesAtlasStreams(t *testing.T) {
 
 func TestValidate_NativeDuplicateSumEntryExitsTwo(t *testing.T) {
 	c := qt.New(t)
-	dir := duplicateAtlasSumDirectory(c)
+	dir := duplicateAtlasSumDirectory(c.TB)
 
 	stdout, stderr, err := execute("--dir", dir, "--dir-format", "atlas")
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 2)
@@ -346,7 +347,7 @@ func TestValidate_NativeDuplicateSumEntryExitsTwo(t *testing.T) {
 
 func TestValidate_NativeSuccessStdoutWriteFailure(t *testing.T) {
 	c := qt.New(t)
-	dir := migrationsDir(c)
+	dir := migrationsDir(c.TB)
 	cmd := migratevalidate.NewMigrateValidateCommand()
 	cmd.SetOut(failingWriter{})
 	cmd.SetArgs([]string{"--dir", dir})
@@ -360,7 +361,7 @@ func TestValidate_NativeSuccessStdoutWriteFailure(t *testing.T) {
 
 func TestValidate_AtlasChecksumStdoutWriteFailure(t *testing.T) {
 	c := qt.New(t)
-	dir := malformedAtlasDirectory(c)
+	dir := malformedAtlasDirectory(c.TB)
 	cmd := migratevalidate.NewAtlasMigrateValidateCommand()
 	var stderr bytes.Buffer
 	cmd.SetOut(failingWriter{})
@@ -376,7 +377,7 @@ func TestValidate_AtlasChecksumStdoutWriteFailure(t *testing.T) {
 
 func TestValidate_AtlasChecksumStderrWriteFailure(t *testing.T) {
 	c := qt.New(t)
-	dir := malformedAtlasDirectory(c)
+	dir := malformedAtlasDirectory(c.TB)
 	cmd := migratevalidate.NewAtlasMigrateValidateCommand()
 	var stdout bytes.Buffer
 	cmd.SetOut(&stdout)
@@ -393,7 +394,7 @@ func TestValidate_AtlasChecksumStderrWriteFailure(t *testing.T) {
 
 func TestValidate_AtlasMissingSumStdoutWriteFailure(t *testing.T) {
 	c := qt.New(t)
-	dir := atlasDirectoryWithoutSum(c)
+	dir := atlasDirectoryWithoutSum(c.TB)
 	cmd := migratevalidate.NewAtlasMigrateValidateCommand()
 	var stderr bytes.Buffer
 	cmd.SetOut(failingWriter{})
@@ -410,7 +411,7 @@ func TestValidate_AtlasMissingSumStdoutWriteFailure(t *testing.T) {
 
 func TestValidate_AtlasMissingSumStderrWriteFailure(t *testing.T) {
 	c := qt.New(t)
-	dir := atlasDirectoryWithoutSum(c)
+	dir := atlasDirectoryWithoutSum(c.TB)
 	cmd := migratevalidate.NewAtlasMigrateValidateCommand()
 	var stdout bytes.Buffer
 	cmd.SetOut(&stdout)
@@ -426,23 +427,26 @@ func TestValidate_AtlasMissingSumStderrWriteFailure(t *testing.T) {
 		"Please check your migration files and run 'atlas migrate hash' to re-hash the contents\n\n")
 }
 
-func malformedAtlasDirectory(c *qt.C) string {
+func malformedAtlasDirectory(tb testing.TB) string {
+	c := qt.New(tb)
 	c.Helper()
-	dir := atlasDirectoryWithoutSum(c)
+	dir := atlasDirectoryWithoutSum(c.TB)
 	c.Assert(os.WriteFile(filepath.Join(dir, "atlas.sum"),
 		[]byte("h1:tampered\n"), 0o600), qt.IsNil)
 	return dir
 }
 
-func cleanAtlasDirectory(c *qt.C) string {
+func cleanAtlasDirectory(tb testing.TB) string {
+	c := qt.New(tb)
 	c.Helper()
-	dir := atlasDirectoryWithoutSum(c)
+	dir := atlasDirectoryWithoutSum(c.TB)
 	_, err := migratesum.WriteWithFormat(dir, migrator.MigrationDirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 	return dir
 }
 
-func atlasDirectoryWithoutSum(c *qt.C) string {
+func atlasDirectoryWithoutSum(tb testing.TB) string {
+	c := qt.New(tb)
 	c.Helper()
 	dir := c.TempDir()
 	c.Assert(os.WriteFile(filepath.Join(dir, "1_initial.sql"),
@@ -450,7 +454,8 @@ func atlasDirectoryWithoutSum(c *qt.C) string {
 	return dir
 }
 
-func duplicateAtlasSumDirectory(c *qt.C) string {
+func duplicateAtlasSumDirectory(tb testing.TB) string {
+	c := qt.New(tb)
 	c.Helper()
 	dir := c.TempDir()
 	c.Assert(os.WriteFile(filepath.Join(dir, "1_initial.sql"),

@@ -14,7 +14,8 @@ import (
 // writeSchemaDir materializes a directory fixture from a name -> contents map.
 // A name carrying a path separator creates the parent directory too, which is
 // how the no-recursion row gets its subdirectory.
-func writeSchemaDir(c *qt.C, files map[string]string) string {
+func writeSchemaDir(tb testing.TB, files map[string]string) string {
+	c := qt.New(tb)
 	c.Helper()
 	dir := c.TempDir()
 	for name, contents := range files {
@@ -125,7 +126,7 @@ func TestLoadPathReadsSchemaDirectory(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			dir := writeSchemaDir(c, test.files)
+			dir := writeSchemaDir(c.TB, test.files)
 
 			db, err := schemafile.LoadPath(dir, schemafile.Options{Dialect: "sqlite"})
 
@@ -138,7 +139,7 @@ func TestLoadPathReadsSchemaDirectory(t *testing.T) {
 // the per-file spelling it replaces: --to may still be repeated.
 func TestLoadAllMixesDirectoriesAndFiles(t *testing.T) {
 	c := qt.New(t)
-	dir := writeSchemaDir(c, map[string]string{
+	dir := writeSchemaDir(c.TB, map[string]string{
 		"1_users.sql": "CREATE TABLE users (id INTEGER PRIMARY KEY);\n",
 	})
 	extra := filepath.Join(c.TempDir(), "extra.sql")

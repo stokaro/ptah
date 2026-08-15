@@ -32,9 +32,10 @@ func survivingSchema() *goschema.Database {
 	return oneTable(column("id", "BIGINT"))
 }
 
-func removalBaseline(c *qt.C) []byte {
+func removalBaseline(tb testing.TB) []byte {
+	c := qt.New(tb)
 	c.Helper()
-	return mustRender(c, twoTypeSchema(), baseOptions()).Data
+	return mustRender(c.TB, twoTypeSchema(), baseOptions()).Data
 }
 
 func removalOptions(previous []byte, policy protobufrender.RemovalPolicy) protobufrender.Options {
@@ -46,26 +47,26 @@ func removalOptions(previous []byte, policy protobufrender.RemovalPolicy) protob
 func TestTypeRemovalErrorIsTheDefault(t *testing.T) {
 	c := qt.New(t)
 
-	baseline := removalBaseline(c)
+	baseline := removalBaseline(c.TB)
 
 	// A table that is dropped and later recreated would otherwise restart
 	// numbering at 1 and collide with the numbers old consumers still hold, so
 	// refusing is the default.
-	message := mustFail(c, survivingSchema(), withPrevious(baseline))
+	message := mustFail(c.TB, survivingSchema(), withPrevious(baseline))
 	c.Assert(message, qt.Equals,
 		"types removed from the source schema: Order, OrderState; "+
 			"protobuf cannot reserve a top-level type name, so choose "+
 			"--proto-type-removal=tombstone to retain them for wire compatibility or =drop to abandon it")
 
-	explicit := mustFail(c, survivingSchema(), removalOptions(baseline, protobufrender.RemovalError))
+	explicit := mustFail(c.TB, survivingSchema(), removalOptions(baseline, protobufrender.RemovalError))
 	c.Assert(explicit, qt.Equals, message)
 }
 
 func TestTypeRemovalTombstoneRetainsMessageAndEnum(t *testing.T) {
 	c := qt.New(t)
 
-	baseline := removalBaseline(c)
-	res := mustRender(c, survivingSchema(), removalOptions(baseline, protobufrender.RemovalTombstone))
+	baseline := removalBaseline(c.TB)
+	res := mustRender(c.TB, survivingSchema(), removalOptions(baseline, protobufrender.RemovalTombstone))
 	text := string(res.Data)
 
 	// A message may be emptied completely.
@@ -96,32 +97,32 @@ func TestTypeRemovalTombstoneRetainsMessageAndEnum(t *testing.T) {
 func TestTypeRemovalTombstoneSurvivesRegeneration(t *testing.T) {
 	c := qt.New(t)
 
-	baseline := removalBaseline(c)
-	first := mustRender(c, survivingSchema(), removalOptions(baseline, protobufrender.RemovalTombstone))
+	baseline := removalBaseline(c.TB)
+	first := mustRender(c.TB, survivingSchema(), removalOptions(baseline, protobufrender.RemovalTombstone))
 
 	// Regenerating from unchanged input reproduces the tombstone byte for byte,
 	// adding nothing to what it already reserves.
-	second := mustRender(c, survivingSchema(), removalOptions(first.Data, protobufrender.RemovalTombstone))
+	second := mustRender(c.TB, survivingSchema(), removalOptions(first.Data, protobufrender.RemovalTombstone))
 	c.Assert(string(second.Data), qt.Equals, string(first.Data))
 
-	third := mustRender(c, survivingSchema(), removalOptions(second.Data, protobufrender.RemovalTombstone))
+	third := mustRender(c.TB, survivingSchema(), removalOptions(second.Data, protobufrender.RemovalTombstone))
 	c.Assert(string(third.Data), qt.Equals, string(first.Data))
 }
 
 func TestTypeRemovalTombstoneHonorsItsReservationsWhenTheTypeReappears(t *testing.T) {
 	c := qt.New(t)
 
-	baseline := removalBaseline(c)
-	tombstoned := mustRender(c, survivingSchema(), removalOptions(baseline, protobufrender.RemovalTombstone))
+	baseline := removalBaseline(c.TB)
+	tombstoned := mustRender(c.TB, survivingSchema(), removalOptions(baseline, protobufrender.RemovalTombstone))
 
 	// Recreating the table brings back reserved names, which is exactly what
 	// --proto-on-name-reuse governs.
-	refused := mustFail(c, twoTypeSchema(), withPrevious(tombstoned.Data))
+	refused := mustFail(c.TB, twoTypeSchema(), withPrevious(tombstoned.Data))
 	c.Assert(refused, qt.Contains, `field "id" on "Order" is reserved because it was previously removed`)
 
 	opts := withPrevious(tombstoned.Data)
 	opts.OnNameReuse = protobufrender.NameReuseRelease
-	text := mustRenderText(c, twoTypeSchema(), opts)
+	text := mustRenderText(c.TB, twoTypeSchema(), opts)
 
 	// Numbers still allocate above everything the tombstone reserved, so the
 	// recreated table can never collide with what old consumers hold.
@@ -132,8 +133,8 @@ func TestTypeRemovalTombstoneHonorsItsReservationsWhenTheTypeReappears(t *testin
 func TestTypeRemovalDropAbandonsCompatibility(t *testing.T) {
 	c := qt.New(t)
 
-	baseline := removalBaseline(c)
-	res := mustRender(c, survivingSchema(), removalOptions(baseline, protobufrender.RemovalDrop))
+	baseline := removalBaseline(c.TB)
+	res := mustRender(c.TB, survivingSchema(), removalOptions(baseline, protobufrender.RemovalDrop))
 	text := string(res.Data)
 
 	c.Assert(text, qt.Not(qt.Contains), "message Order {")
@@ -149,10 +150,10 @@ func TestNameReuseErrorIsTheDefaultForFieldsAndEnumValues(t *testing.T) {
 	c := qt.New(t)
 
 	full := oneTable(column("id", "BIGINT"), column("sku", "TEXT"))
-	shrunk := mustRender(c, oneTable(column("id", "BIGINT")),
-		withPrevious(mustRender(c, full, baseOptions()).Data))
+	shrunk := mustRender(c.TB, oneTable(column("id", "BIGINT")),
+		withPrevious(mustRender(c.TB, full, baseOptions()).Data))
 
-	message := mustFail(c, full, withPrevious(shrunk.Data))
+	message := mustFail(c.TB, full, withPrevious(shrunk.Data))
 	c.Assert(message, qt.Equals,
 		`field "sku" on "Thing" is reserved because it was previously removed, `+
 			"and protobuf refuses to reuse a reserved name; "+
@@ -160,10 +161,10 @@ func TestNameReuseErrorIsTheDefaultForFieldsAndEnumValues(t *testing.T) {
 			"and abandon JSON-name compatibility for it")
 
 	enumFull := inlineEnumTable("new", "done")
-	enumShrunk := mustRender(c, inlineEnumTable("new"),
-		withPrevious(mustRender(c, enumFull, baseOptions()).Data))
+	enumShrunk := mustRender(c.TB, inlineEnumTable("new"),
+		withPrevious(mustRender(c.TB, enumFull, baseOptions()).Data))
 
-	message = mustFail(c, enumFull, withPrevious(enumShrunk.Data))
+	message = mustFail(c.TB, enumFull, withPrevious(enumShrunk.Data))
 	c.Assert(message, qt.Contains,
 		`enum value "THING_STATE_DONE" on "ThingState" is reserved because it was previously removed`)
 }
@@ -172,12 +173,12 @@ func TestNameReuseReleaseKeepsTheNumberReserved(t *testing.T) {
 	c := qt.New(t)
 
 	full := oneTable(column("id", "BIGINT"), column("sku", "TEXT"))
-	shrunk := mustRender(c, oneTable(column("id", "BIGINT")),
-		withPrevious(mustRender(c, full, baseOptions()).Data))
+	shrunk := mustRender(c.TB, oneTable(column("id", "BIGINT")),
+		withPrevious(mustRender(c.TB, full, baseOptions()).Data))
 
 	opts := withPrevious(shrunk.Data)
 	opts.OnNameReuse = protobufrender.NameReuseRelease
-	res := mustRender(c, full, opts)
+	res := mustRender(c.TB, full, opts)
 
 	c.Assert(section(string(res.Data), "message Thing {"), qt.Equals,
 		"message Thing {\n  int64 id = 1;\n  string sku = 3;\n\n  reserved 2;\n}")
@@ -190,12 +191,12 @@ func TestNameReuseReleaseForEnumValues(t *testing.T) {
 	c := qt.New(t)
 
 	enumFull := inlineEnumTable("new", "done")
-	enumShrunk := mustRender(c, inlineEnumTable("new"),
-		withPrevious(mustRender(c, enumFull, baseOptions()).Data))
+	enumShrunk := mustRender(c.TB, inlineEnumTable("new"),
+		withPrevious(mustRender(c.TB, enumFull, baseOptions()).Data))
 
 	opts := withPrevious(enumShrunk.Data)
 	opts.OnNameReuse = protobufrender.NameReuseRelease
-	res := mustRender(c, enumFull, opts)
+	res := mustRender(c.TB, enumFull, opts)
 
 	c.Assert(section(string(res.Data), "enum ThingState {"), qt.Equals,
 		"enum ThingState {\n"+
@@ -241,23 +242,26 @@ func changeCases() []changeCase {
 	}}
 }
 
-func changeBaseline(c *qt.C) []byte {
+func changeBaseline(tb testing.TB) []byte {
+	c := qt.New(tb)
 	c.Helper()
-	return mustRender(c, oneTable(column("id", "BIGINT"), column("sku", "INTEGER")), baseOptions()).Data
+	return mustRender(c.TB, oneTable(column("id", "BIGINT"), column("sku", "INTEGER")), baseOptions()).Data
 }
 
-func assertChangeRefused(c *qt.C, cc changeCase) {
+func assertChangeRefused(tb testing.TB, cc changeCase) {
+	c := qt.New(tb)
 	c.Helper()
 	changed := oneTable(column("id", "BIGINT"), column("sku", cc.columnType))
-	c.Assert(mustFail(c, changed, withPrevious(changeBaseline(c))), qt.Equals, cc.wantRefuse)
+	c.Assert(mustFail(c.TB, changed, withPrevious(changeBaseline(c.TB))), qt.Equals, cc.wantRefuse)
 }
 
-func assertChangeRenumbered(c *qt.C, cc changeCase) {
+func assertChangeRenumbered(tb testing.TB, cc changeCase) {
+	c := qt.New(tb)
 	c.Helper()
 	changed := oneTable(column("id", "BIGINT"), column("sku", cc.columnType))
-	opts := withPrevious(changeBaseline(c))
+	opts := withPrevious(changeBaseline(c.TB))
 	opts.OnIncompatibleChange = protobufrender.ChangeRenumber
-	res := mustRender(c, changed, opts)
+	res := mustRender(c.TB, changed, opts)
 
 	// The old number is retired and a new one allocated, the wire-safe
 	// equivalent of delete plus add.
@@ -270,7 +274,7 @@ func assertChangeRenumbered(c *qt.C, cc changeCase) {
 func TestIncompatibleChangeErrorIsTheDefault(t *testing.T) {
 	for _, cc := range changeCases() {
 		t.Run(cc.name, func(t *testing.T) {
-			assertChangeRefused(qt.New(t), cc)
+			assertChangeRefused(qt.New(t).TB, cc)
 		})
 	}
 }
@@ -278,7 +282,7 @@ func TestIncompatibleChangeErrorIsTheDefault(t *testing.T) {
 func TestIncompatibleChangeRenumberReservesTheOldNumber(t *testing.T) {
 	for _, cc := range changeCases() {
 		t.Run(cc.name, func(t *testing.T) {
-			assertChangeRenumbered(qt.New(t), cc)
+			assertChangeRenumbered(qt.New(t).TB, cc)
 		})
 	}
 }
@@ -286,20 +290,20 @@ func TestIncompatibleChangeRenumberReservesTheOldNumber(t *testing.T) {
 func TestCompatibleTypeSpellingChangeKeepsTheNumber(t *testing.T) {
 	c := qt.New(t)
 
-	baseline := mustRender(c, oneTable(column("id", "BIGINT"), column("sku", "INTEGER")), baseOptions())
+	baseline := mustRender(c.TB, oneTable(column("id", "BIGINT"), column("sku", "INTEGER")), baseOptions())
 
 	// A different SQL spelling that translates to the same Protobuf type is not
 	// a change at all, so nothing moves and no policy is consulted.
-	res := mustRender(c, oneTable(column("id", "INT8"), column("sku", "MEDIUMINT")), withPrevious(baseline.Data))
+	res := mustRender(c.TB, oneTable(column("id", "INT8"), column("sku", "MEDIUMINT")), withPrevious(baseline.Data))
 	c.Assert(string(res.Data), qt.Equals, string(baseline.Data))
 }
 
 func TestScalarToEnumChangeIsRefused(t *testing.T) {
 	c := qt.New(t)
 
-	baseline := mustRender(c, oneTable(column("state", "TEXT")), baseOptions())
+	baseline := mustRender(c.TB, oneTable(column("state", "TEXT")), baseOptions())
 
-	message := mustFail(c, inlineEnumTable("new", "done"), withPrevious(baseline.Data))
+	message := mustFail(c.TB, inlineEnumTable("new", "done"), withPrevious(baseline.Data))
 	c.Assert(message, qt.Equals,
 		`field "state" on message "Thing" changed from string to ThingState, which is not wire compatible; `+
 			"pass --proto-on-incompatible-change=renumber to reserve the old number and allocate a new one")

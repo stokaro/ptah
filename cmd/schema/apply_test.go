@@ -18,7 +18,8 @@ import (
 
 // seedSQLite executes DDL against a SQLite database file so tests start from a
 // known live schema state.
-func seedSQLite(c *qt.C, dbPath, schemaSQL string) {
+func seedSQLite(tb testing.TB, dbPath, schemaSQL string) {
+	c := qt.New(tb)
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)
 	c.Assert(err, qt.IsNil)
@@ -27,7 +28,8 @@ func seedSQLite(c *qt.C, dbPath, schemaSQL string) {
 }
 
 // listSQLiteTables returns the user tables of a SQLite database file.
-func listSQLiteTables(c *qt.C, dbPath string) []string {
+func listSQLiteTables(tb testing.TB, dbPath string) []string {
+	c := qt.New(tb)
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)
 	c.Assert(err, qt.IsNil)
@@ -59,7 +61,8 @@ func runSchema(stdin string, args ...string) (string, error) {
 	return out.String(), err
 }
 
-func writeSchemaSQLFile(c *qt.C, dir, name, content string) string {
+func writeSchemaSQLFile(tb testing.TB, dir, name, content string) string {
+	c := qt.New(tb)
 	c.Helper()
 	path := filepath.Join(dir, name)
 	c.Assert(os.WriteFile(path, []byte(content), 0o600), qt.IsNil)
@@ -70,8 +73,8 @@ func TestSchemaApplyAppliesSchemaFileWithAutoApprove(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "target.db")
-	seedSQLite(c, dbPath, "CREATE TABLE users (id INTEGER PRIMARY KEY);")
-	schemaPath := writeSchemaSQLFile(c, dir, "schema.sql",
+	seedSQLite(c.TB, dbPath, "CREATE TABLE users (id INTEGER PRIMARY KEY);")
+	schemaPath := writeSchemaSQLFile(c.TB, dir, "schema.sql",
 		"CREATE TABLE users (id INTEGER PRIMARY KEY);\nCREATE TABLE orders (id INTEGER PRIMARY KEY);\n")
 
 	out, err := runSchema("", "apply",
@@ -84,15 +87,15 @@ func TestSchemaApplyAppliesSchemaFileWithAutoApprove(t *testing.T) {
 	c.Assert(out, qt.Contains, "Planned schema changes:")
 	c.Assert(out, qt.Contains, `CREATE TABLE "orders"`)
 	c.Assert(out, qt.Contains, "Schema apply completed successfully.")
-	c.Assert(listSQLiteTables(c, dbPath), qt.DeepEquals, []string{"orders", "users"})
+	c.Assert(listSQLiteTables(c.TB, dbPath), qt.DeepEquals, []string{"orders", "users"})
 }
 
 func TestSchemaApplyDeclinedConfirmationAppliesNothing(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "target.db")
-	seedSQLite(c, dbPath, "CREATE TABLE users (id INTEGER PRIMARY KEY);")
-	schemaPath := writeSchemaSQLFile(c, dir, "schema.sql",
+	seedSQLite(c.TB, dbPath, "CREATE TABLE users (id INTEGER PRIMARY KEY);")
+	schemaPath := writeSchemaSQLFile(c.TB, dir, "schema.sql",
 		"CREATE TABLE users (id INTEGER PRIMARY KEY);\nCREATE TABLE orders (id INTEGER PRIMARY KEY);\n")
 
 	out, err := runSchema("no\n", "apply",
@@ -102,15 +105,15 @@ func TestSchemaApplyDeclinedConfirmationAppliesNothing(t *testing.T) {
 
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 	c.Assert(out, qt.Contains, "Schema apply canceled.")
-	c.Assert(listSQLiteTables(c, dbPath), qt.DeepEquals, []string{"users"})
+	c.Assert(listSQLiteTables(c.TB, dbPath), qt.DeepEquals, []string{"users"})
 }
 
 func TestSchemaApplyDryRunAppliesNothing(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "target.db")
-	seedSQLite(c, dbPath, "CREATE TABLE users (id INTEGER PRIMARY KEY);")
-	schemaPath := writeSchemaSQLFile(c, dir, "schema.sql",
+	seedSQLite(c.TB, dbPath, "CREATE TABLE users (id INTEGER PRIMARY KEY);")
+	schemaPath := writeSchemaSQLFile(c.TB, dir, "schema.sql",
 		"CREATE TABLE users (id INTEGER PRIMARY KEY);\nCREATE TABLE orders (id INTEGER PRIMARY KEY);\n")
 
 	out, err := runSchema("", "apply",
@@ -121,15 +124,15 @@ func TestSchemaApplyDryRunAppliesNothing(t *testing.T) {
 
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 	c.Assert(out, qt.Contains, "Planned schema changes:")
-	c.Assert(listSQLiteTables(c, dbPath), qt.DeepEquals, []string{"users"})
+	c.Assert(listSQLiteTables(c.TB, dbPath), qt.DeepEquals, []string{"users"})
 }
 
 func TestSchemaApplySyncedSchemaReportsNoChanges(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "target.db")
-	seedSQLite(c, dbPath, "CREATE TABLE users (id INTEGER PRIMARY KEY);")
-	schemaPath := writeSchemaSQLFile(c, dir, "schema.sql", "CREATE TABLE users (id INTEGER PRIMARY KEY);\n")
+	seedSQLite(c.TB, dbPath, "CREATE TABLE users (id INTEGER PRIMARY KEY);")
+	schemaPath := writeSchemaSQLFile(c.TB, dir, "schema.sql", "CREATE TABLE users (id INTEGER PRIMARY KEY);\n")
 
 	out, err := runSchema("", "apply",
 		"--db-url", "sqlite://"+dbPath,
@@ -144,7 +147,7 @@ func TestSchemaApplyRequiresDesiredSource(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "target.db")
-	seedSQLite(c, dbPath, "CREATE TABLE users (id INTEGER PRIMARY KEY);")
+	seedSQLite(c.TB, dbPath, "CREATE TABLE users (id INTEGER PRIMARY KEY);")
 
 	out, err := runSchema("", "apply", "--db-url", "sqlite://"+dbPath)
 
@@ -212,8 +215,8 @@ func TestSchemaApplyRefusesDevURLPointingAtTarget(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "target.db")
-	seedSQLite(c, dbPath, "CREATE TABLE users (id INTEGER PRIMARY KEY);")
-	schemaPath := writeSchemaSQLFile(c, dir, "schema.sql",
+	seedSQLite(c.TB, dbPath, "CREATE TABLE users (id INTEGER PRIMARY KEY);")
+	schemaPath := writeSchemaSQLFile(c.TB, dir, "schema.sql",
 		"CREATE TABLE users (id INTEGER PRIMARY KEY);\nCREATE TABLE orders (id INTEGER PRIMARY KEY);\n")
 
 	out, err := runSchema("", "apply",
@@ -224,7 +227,7 @@ func TestSchemaApplyRefusesDevURLPointingAtTarget(t *testing.T) {
 	)
 
 	c.Assert(err, qt.ErrorMatches, ".*--dev-url must not point at the target database.*", qt.Commentf("%s", out))
-	c.Assert(listSQLiteTables(c, dbPath), qt.DeepEquals, []string{"users"})
+	c.Assert(listSQLiteTables(c.TB, dbPath), qt.DeepEquals, []string{"users"})
 }
 
 func TestSchemaApplyDevSimulationRunsBeforeTarget(t *testing.T) {
@@ -232,8 +235,8 @@ func TestSchemaApplyDevSimulationRunsBeforeTarget(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "target.db")
 	devPath := filepath.Join(dir, "dev.db")
-	seedSQLite(c, dbPath, "CREATE TABLE users (id INTEGER PRIMARY KEY);")
-	schemaPath := writeSchemaSQLFile(c, dir, "schema.sql",
+	seedSQLite(c.TB, dbPath, "CREATE TABLE users (id INTEGER PRIMARY KEY);")
+	schemaPath := writeSchemaSQLFile(c.TB, dir, "schema.sql",
 		"CREATE TABLE users (id INTEGER PRIMARY KEY);\nCREATE TABLE orders (id INTEGER PRIMARY KEY);\n")
 
 	out, err := runSchema("", "apply",
@@ -245,11 +248,11 @@ func TestSchemaApplyDevSimulationRunsBeforeTarget(t *testing.T) {
 
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 	c.Assert(out, qt.Contains, "Schema apply completed successfully.")
-	c.Assert(listSQLiteTables(c, dbPath), qt.DeepEquals, []string{"orders", "users"})
+	c.Assert(listSQLiteTables(c.TB, dbPath), qt.DeepEquals, []string{"orders", "users"})
 	// The dev database rehearsed the plan and was then handed back with
 	// nothing in it, the way the pinned community binary leaves its own dev
 	// database. A dev URL stays reusable by the next command.
-	c.Assert(listSQLiteTables(c, devPath), qt.HasLen, 0)
+	c.Assert(listSQLiteTables(c.TB, devPath), qt.HasLen, 0)
 }
 
 func TestSchemaApplyPlanFileExecutesAndRefusesStaleTarget(t *testing.T) {
@@ -257,8 +260,8 @@ func TestSchemaApplyPlanFileExecutesAndRefusesStaleTarget(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "target.db")
 	planPath := filepath.Join(dir, "add-orders.plan.json")
-	seedSQLite(c, dbPath, "CREATE TABLE users (id INTEGER PRIMARY KEY);")
-	schemaPath := writeSchemaSQLFile(c, dir, "schema.sql",
+	seedSQLite(c.TB, dbPath, "CREATE TABLE users (id INTEGER PRIMARY KEY);")
+	schemaPath := writeSchemaSQLFile(c.TB, dir, "schema.sql",
 		"CREATE TABLE users (id INTEGER PRIMARY KEY);\nCREATE TABLE orders (id INTEGER PRIMARY KEY);\n")
 
 	out, err := runSchema("", "plan",
@@ -270,7 +273,7 @@ func TestSchemaApplyPlanFileExecutesAndRefusesStaleTarget(t *testing.T) {
 
 	// Drift the target after the plan was computed: the fingerprint check must
 	// refuse execution.
-	seedSQLite(c, dbPath, "CREATE TABLE drifted (id INTEGER PRIMARY KEY);")
+	seedSQLite(c.TB, dbPath, "CREATE TABLE drifted (id INTEGER PRIMARY KEY);")
 	out, err = runSchema("", "apply",
 		"--db-url", "sqlite://"+dbPath,
 		"--plan", planPath,
@@ -291,7 +294,7 @@ func TestSchemaApplyPlanFileExecutesAndRefusesStaleTarget(t *testing.T) {
 	)
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 	c.Assert(out, qt.Contains, "Schema apply completed successfully.")
-	c.Assert(listSQLiteTables(c, dbPath), qt.DeepEquals, []string{"orders", "users"})
+	c.Assert(listSQLiteTables(c.TB, dbPath), qt.DeepEquals, []string{"orders", "users"})
 }
 
 // TestSchemaApplyPlanFileRejectsAtlasHCLPlanByName pins the native tree's
@@ -304,7 +307,7 @@ func TestSchemaApplyPlanFileRejectsAtlasHCLPlanByName(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "target.db")
 	planPath := filepath.Join(dir, "atlas.plan.hcl")
-	seedSQLite(c, dbPath, "CREATE TABLE users (id INTEGER PRIMARY KEY);")
+	seedSQLite(c.TB, dbPath, "CREATE TABLE users (id INTEGER PRIMARY KEY);")
 	c.Assert(os.WriteFile(planPath, []byte(
 		"plan \"20260801102801\" {\n"+
 			"  from      = \"2Avyplv6jw8kAsH/g2YFPkfnp+UNBpomMXPUl/4R4+Q=\"\n"+
@@ -323,14 +326,14 @@ func TestSchemaApplyPlanFileRejectsAtlasHCLPlanByName(t *testing.T) {
 			`apply it with .ptah-compat schema apply --plan file://.* --to <desired state>., `+
 			`or produce a native plan with .ptah schema plan --output <name>\.plan\.json.`)
 	c.Assert(out, qt.Not(qt.Contains), "invalid character")
-	c.Assert(listSQLiteTables(c, dbPath), qt.DeepEquals, []string{"users"})
+	c.Assert(listSQLiteTables(c.TB, dbPath), qt.DeepEquals, []string{"users"})
 }
 
 func TestSchemaApplyPlanRejectsConflictingFlags(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "target.db")
-	seedSQLite(c, dbPath, "CREATE TABLE users (id INTEGER PRIMARY KEY);")
+	seedSQLite(c.TB, dbPath, "CREATE TABLE users (id INTEGER PRIMARY KEY);")
 
 	out, err := runSchema("", "apply",
 		"--db-url", "sqlite://"+dbPath,

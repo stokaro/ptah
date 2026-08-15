@@ -51,7 +51,6 @@ func twoTableJoin() *ast.SelectStatement {
 }
 
 func TestRenderSelect_TwoTableJoin(t *testing.T) {
-	c := qt.New(t)
 
 	wantArgs := []any{"paid", true, int64(5)}
 
@@ -83,7 +82,8 @@ func TestRenderSelect_TwoTableJoin(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			sql, args, err := renderer.RenderSelect(twoTableJoin(), tt.dialect)
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Equals, tt.wantSQL)
@@ -113,7 +113,6 @@ func threeTableJoin() *ast.SelectStatement {
 }
 
 func TestRenderSelect_ThreeTableJoin(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name    string
@@ -133,7 +132,8 @@ func TestRenderSelect_ThreeTableJoin(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			sql, args, err := renderer.RenderSelect(threeTableJoin(), tt.dialect)
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Equals, tt.wantSQL)
@@ -143,7 +143,6 @@ func TestRenderSelect_ThreeTableJoin(t *testing.T) {
 }
 
 func TestRenderSelect_JoinTypeKeywords(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name     string
@@ -157,7 +156,8 @@ func TestRenderSelect_JoinTypeKeywords(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			stmt := &ast.SelectStatement{
 				From: "a",
 				Joins: []ast.JoinClause{
@@ -192,7 +192,6 @@ func TestRenderSelect_JoinWithoutAliasUsesTableNameQualifier(t *testing.T) {
 }
 
 func TestRenderSelect_JoinAliasAndQualifierQuoteEscaping(t *testing.T) {
-	c := qt.New(t)
 
 	// A quote-bearing FROM alias, join alias, and column qualifier are all
 	// escaped by doubling the dialect quote character, so none can break out.
@@ -223,7 +222,8 @@ func TestRenderSelect_JoinAliasAndQualifierQuoteEscaping(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			sql, args, err := renderer.RenderSelect(stmt, tt.dialect)
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Equals, tt.wantSQL)
@@ -248,7 +248,6 @@ func TestRenderSelect_FromAliasQuoteEscaping(t *testing.T) {
 }
 
 func TestRenderSelect_JoinPlaceholderOrderingAcrossOnWhereLimit(t *testing.T) {
-	c := qt.New(t)
 
 	// A bound value inside the JOIN ON is numbered before the WHERE value, which
 	// is numbered before the LIMIT bound, proving placeholders follow render
@@ -295,7 +294,8 @@ func TestRenderSelect_JoinPlaceholderOrderingAcrossOnWhereLimit(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			sql, args, err := renderer.RenderSelect(stmt, tt.dialect)
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Equals, tt.wantSQL)
@@ -305,7 +305,6 @@ func TestRenderSelect_JoinPlaceholderOrderingAcrossOnWhereLimit(t *testing.T) {
 }
 
 func TestRenderSelect_SQLiteAcceptsInnerAndLeftJoin(t *testing.T) {
-	c := qt.New(t)
 
 	// INNER and LEFT joins are supported by every SQLite version.
 	tests := []struct {
@@ -318,7 +317,8 @@ func TestRenderSelect_SQLiteAcceptsInnerAndLeftJoin(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			stmt := &ast.SelectStatement{
 				From:  "a",
 				Joins: []ast.JoinClause{{Type: tt.joinType, Table: "b", On: eqCols("b", "a_id", "a", "id")}},
@@ -332,7 +332,6 @@ func TestRenderSelect_SQLiteAcceptsInnerAndLeftJoin(t *testing.T) {
 }
 
 func TestRenderSelect_SQLiteRejectsRightAndFullJoin(t *testing.T) {
-	c := qt.New(t)
 
 	// SQLite gained RIGHT and FULL joins only in 3.39; the renderer rejects them
 	// rather than emit SQL that fails at execution time on an older engine.
@@ -346,7 +345,8 @@ func TestRenderSelect_SQLiteRejectsRightAndFullJoin(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			stmt := &ast.SelectStatement{
 				From:  "a",
 				Joins: []ast.JoinClause{{Type: tt.joinType, Table: "b", On: eqCols("b", "a_id", "a", "id")}},
@@ -360,7 +360,6 @@ func TestRenderSelect_SQLiteRejectsRightAndFullJoin(t *testing.T) {
 }
 
 func TestRenderSelect_MySQLLikeRejectsFullJoin(t *testing.T) {
-	c := qt.New(t)
 
 	// MySQL and MariaDB have no FULL [OUTER] JOIN in any version; the renderer
 	// rejects it rather than emit SQL the database would fail on. The error names
@@ -375,7 +374,8 @@ func TestRenderSelect_MySQLLikeRejectsFullJoin(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			stmt := &ast.SelectStatement{
 				From:  "a",
 				Joins: []ast.JoinClause{{Type: ast.JoinFull, Table: "b", On: eqCols("b", "a_id", "a", "id")}},
@@ -389,7 +389,6 @@ func TestRenderSelect_MySQLLikeRejectsFullJoin(t *testing.T) {
 }
 
 func TestRenderSelect_MySQLLikeAcceptsRightJoin(t *testing.T) {
-	c := qt.New(t)
 
 	// RIGHT JOIN is valid on MySQL and MariaDB; only FULL is blocked there.
 	tests := []struct {
@@ -401,7 +400,8 @@ func TestRenderSelect_MySQLLikeAcceptsRightJoin(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			stmt := &ast.SelectStatement{
 				From:  "a",
 				Joins: []ast.JoinClause{{Type: ast.JoinRight, Table: "b", On: eqCols("b", "a_id", "a", "id")}},
@@ -415,7 +415,6 @@ func TestRenderSelect_MySQLLikeAcceptsRightJoin(t *testing.T) {
 }
 
 func TestRenderSelect_QualifiedStar(t *testing.T) {
-	c := qt.New(t)
 
 	// A qualified star renders "u".* (not the invalid "u"."*"), and mixes with
 	// ordinary qualified columns.
@@ -449,7 +448,8 @@ func TestRenderSelect_QualifiedStar(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			sql, args, err := renderer.RenderSelect(stmt, tt.dialect)
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Equals, tt.wantSQL)
@@ -483,7 +483,6 @@ func TestRenderSelect_IdentifiersAreTrimmedBeforeQuoting(t *testing.T) {
 }
 
 func TestRenderSelect_TwoBoundJoinOnsPlaceholderOrdering(t *testing.T) {
-	c := qt.New(t)
 
 	// Two joins, each carrying a bound value in its ON, prove the exact ordering:
 	// join1 ON -> $1, join2 ON -> $2, WHERE -> $3, LIMIT -> $4.
@@ -541,7 +540,8 @@ func TestRenderSelect_TwoBoundJoinOnsPlaceholderOrdering(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			sql, args, err := renderer.RenderSelect(stmt, tt.dialect)
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Equals, tt.wantSQL)
@@ -551,7 +551,6 @@ func TestRenderSelect_TwoBoundJoinOnsPlaceholderOrdering(t *testing.T) {
 }
 
 func TestRenderSelect_JoinErrors(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name        string
@@ -576,7 +575,8 @@ func TestRenderSelect_JoinErrors(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			stmt := &ast.SelectStatement{From: "a", Joins: []ast.JoinClause{tt.join}}
 			sql, args, err := renderer.RenderSelect(stmt, platform.Postgres)
 			c.Assert(err, qt.ErrorMatches, tt.wantErrLike)

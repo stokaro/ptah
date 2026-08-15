@@ -142,7 +142,8 @@ func (s *ociMemoryStore) serveBlob(writer http.ResponseWriter, request *http.Req
 // startOCITestRegistry serves store over the read half of the OCI distribution
 // API and returns its host:port, so `ptah migrations up --plain-http` resolves
 // a real oci:// reference without a container.
-func startOCITestRegistry(c *qt.C, store *ociMemoryStore, repository string) string {
+func startOCITestRegistry(tb testing.TB, store *ociMemoryStore, repository string) string {
+	c := qt.New(tb)
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v2/", func(writer http.ResponseWriter, _ *http.Request) {
 		writer.WriteHeader(http.StatusOK)
@@ -154,7 +155,8 @@ func startOCITestRegistry(c *qt.C, store *ociMemoryStore, repository string) str
 	return strings.TrimPrefix(server.URL, "http://")
 }
 
-func writeHashedProvenanceDir(c *qt.C, table string) string {
+func writeHashedProvenanceDir(tb testing.TB, table string) string {
+	c := qt.New(tb)
 	c.Helper()
 	dir := c.TempDir()
 	files := map[string]string{
@@ -169,7 +171,8 @@ func writeHashedProvenanceDir(c *qt.C, table string) string {
 	return dir
 }
 
-func pushProvenanceArtifact(c *qt.C, store *ociMemoryStore, dir, tag string) string {
+func pushProvenanceArtifact(tb testing.TB, store *ociMemoryStore, dir, tag string) string {
+	c := qt.New(tb)
 	c.Helper()
 	result, err := migrationartifact.PushTo(
 		context.Background(),
@@ -205,8 +208,8 @@ func TestMigrateUp_OCISumProvenance(t *testing.T) {
 	c := qt.New(t)
 	const repository = "ptah/provenance"
 	store := newOCIMemoryStore()
-	host := startOCITestRegistry(c, store, repository)
-	resolved := pushProvenanceArtifact(c, store, writeHashedProvenanceDir(c, "widgets"), "release")
+	host := startOCITestRegistry(c.TB, store, repository)
+	resolved := pushProvenanceArtifact(c.TB, store, writeHashedProvenanceDir(c.TB, "widgets"), "release")
 	tagReference := "oci://" + host + "/" + repository + ":release"
 	digestReference := "oci://" + host + "/" + repository + "@" + resolved
 

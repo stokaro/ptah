@@ -122,13 +122,15 @@ func TestDialectVerbs_AreAllAccountedFor(t *testing.T) {
 	slices.Sort(accounted)
 
 	for _, verb := range walked {
-		c.Run(verb, func(c *qt.C) {
+		t.Run(verb, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(accounted, qt.Contains, verb,
 				qt.Commentf("%q registers --dialect but no row states whether it needs a server version", verb))
 		})
 	}
 	for _, verb := range accounted {
-		c.Run("still registered: "+verb, func(c *qt.C) {
+		t.Run("still registered: "+verb, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(walked, qt.Contains, verb,
 				qt.Commentf("%q is accounted for but no longer registers --dialect", verb))
 		})
@@ -145,7 +147,8 @@ func TestDialectVerbs_OfflineOnesTakeAServerVersion(t *testing.T) {
 		qt.Commentf("no row requires a server version, so this gate asserts nothing"))
 
 	for _, row := range offlineDialectVerbs() {
-		c.Run(row.verb, func(c *qt.C) {
+		t.Run(row.verb, func(t *testing.T) {
+			c := qt.New(t)
 			cmd := commands[row.verb]
 			c.Assert(cmd, qt.IsNotNil,
 				qt.Commentf("%q is not a leaf command in the built tree", row.verb))
@@ -162,12 +165,12 @@ func TestDialectVerbs_OfflineOnesTakeAServerVersion(t *testing.T) {
 // both mean something else. If serverversion.Lookup ever went back to matching
 // on the name, this test — not the one above — is what goes red.
 func TestDialectVerbs_ExemptOnesCarryNoServerVersionFlag(t *testing.T) {
-	c := qt.New(t)
 
 	commands := nativeLeafCommands(root.NewRootCommand())
 
 	for _, row := range exemptDialectVerbs() {
-		c.Run(row.verb, func(c *qt.C) {
+		t.Run(row.verb, func(t *testing.T) {
+			c := qt.New(t)
 			cmd := commands[row.verb]
 			c.Assert(cmd, qt.IsNotNil)
 			c.Assert(serverversion.Lookup(cmd), qt.IsNil,
@@ -178,7 +181,8 @@ func TestDialectVerbs_ExemptOnesCarryNoServerVersionFlag(t *testing.T) {
 	// The unrelated --version flags have to actually be there, or the
 	// assertion above is measuring an absence rather than a distinction.
 	for _, row := range unrelatedVersionFlagVerbs() {
-		c.Run("unrelated --version still present on "+row.verb, func(c *qt.C) {
+		t.Run("unrelated --version still present on "+row.verb, func(t *testing.T) {
+			c := qt.New(t)
 			cmd := commands[row.verb]
 			c.Assert(cmd, qt.IsNotNil)
 			c.Assert(cmd.Flags().Lookup("version"), qt.IsNotNil,
@@ -202,7 +206,8 @@ func TestServerVersion_EveryRegistrationSharesOneHelpString(t *testing.T) {
 		qt.Commentf("fewer than two registrations accounted for, so sharing is not being measured"))
 
 	for _, row := range offlineDialectVerbs() {
-		c.Run(row.verb, func(c *qt.C) {
+		t.Run(row.verb, func(t *testing.T) {
+			c := qt.New(t)
 			flag := serverversion.Lookup(commands[row.verb])
 			c.Assert(flag, qt.IsNotNil)
 			// Contains rather than Equals: cmdflags.InstallEnvBinding appends

@@ -48,13 +48,14 @@ type setFlywayRow struct {
 // writeHashedFlywayDir writes a Flyway directory and the atlas.sum that layout
 // covers, through the shipped `migrate hash` so the gate these tests pass is
 // the one a user's directory passes.
-func writeHashedFlywayDir(c *qt.C, migrations []setFlywayMigration) string {
+func writeHashedFlywayDir(tb testing.TB, migrations []setFlywayMigration) string {
+	c := qt.New(tb)
 	c.Helper()
 	dir := filepath.Join(c.TempDir(), "migrations")
 	for _, migration := range migrations {
-		writeAtlasApplyProjectMigration(c, dir, migration.name, migration.body)
+		writeAtlasApplyProjectMigration(c.TB, dir, migration.name, migration.body)
 	}
-	hashConvertedApplyDir(c, dir, "flyway")
+	hashConvertedApplyDir(c.TB, dir, "flyway")
 	return dir
 }
 
@@ -66,7 +67,8 @@ func writeHashedFlywayDir(c *qt.C, migrations []setFlywayMigration) string {
 // reading sqlite_master rather than by swallowing a query error, so a table
 // that exists and cannot be read still fails the test instead of reporting
 // "nothing was recorded".
-func revisionRows(c *qt.C, dbPath string) []setFlywayRow {
+func revisionRows(tb testing.TB, dbPath string) []setFlywayRow {
+	c := qt.New(tb)
 	c.Helper()
 	if _, err := os.Stat(dbPath); err != nil {
 		return nil
@@ -74,7 +76,7 @@ func revisionRows(c *qt.C, dbPath string) []setFlywayRow {
 	db, err := sql.Open("sqlite", dbPath)
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { c.Check(db.Close(), qt.IsNil) })
-	if !revisionTableExists(c, db) {
+	if !revisionTableExists(c.TB, db) {
 		return nil
 	}
 	rows, err := db.Query(`SELECT version, description FROM atlas_schema_revisions ORDER BY rowid`)
@@ -90,7 +92,8 @@ func revisionRows(c *qt.C, dbPath string) []setFlywayRow {
 	return out
 }
 
-func revisionTableExists(c *qt.C, db *sql.DB) bool {
+func revisionTableExists(tb testing.TB, db *sql.DB) bool {
+	c := qt.New(tb)
 	c.Helper()
 	var count int
 	c.Assert(db.QueryRow(
@@ -99,7 +102,8 @@ func revisionTableExists(c *qt.C, db *sql.DB) bool {
 	return count == 1
 }
 
-func flywayRevisionType(c *qt.C, dbPath, version string) int {
+func flywayRevisionType(tb testing.TB, dbPath, version string) int {
+	c := qt.New(tb)
 	c.Helper()
 	db, err := sql.Open("sqlite", dbPath)
 	c.Assert(err, qt.IsNil)
@@ -111,7 +115,8 @@ func flywayRevisionType(c *qt.C, dbPath, version string) int {
 	return revisionType
 }
 
-func sqliteTableExists(c *qt.C, dbPath, table string) bool {
+func sqliteTableExists(tb testing.TB, dbPath, table string) bool {
+	c := qt.New(tb)
 	c.Helper()
 	db, err := sql.Open("sqlite", dbPath)
 	c.Assert(err, qt.IsNil)
@@ -238,7 +243,7 @@ func TestCompatMigrateSet_ConvertedFlywayTakesTheSourceToken(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			c := qt.New(t)
-			dir := writeHashedFlywayDir(c, test.migrations)
+			dir := writeHashedFlywayDir(c.TB, test.migrations)
 			dbPath := filepath.Join(filepath.Dir(dir), "set.db")
 
 			stdout, stderr, err := runCompatExit(
@@ -250,7 +255,7 @@ func TestCompatMigrateSet_ConvertedFlywayTakesTheSourceToken(t *testing.T) {
 			c.Assert(errorText(err), qt.Equals, test.wantErr)
 			c.Assert(stdout, qt.Equals, test.wantStdout)
 			c.Assert(stderr, qt.Equals, errorLine(test.wantErr))
-			c.Assert(revisionRows(c, dbPath), qt.DeepEquals, test.wantRows)
+			c.Assert(revisionRows(c.TB, dbPath), qt.DeepEquals, test.wantRows)
 		})
 	}
 }
@@ -272,10 +277,10 @@ func TestCompatMigrateSet_PlainPrefixLayoutsAreUnchanged(t *testing.T) {
 	t.Parallel()
 	c := qt.New(t)
 	dir := filepath.Join(c.TempDir(), "migrations")
-	writeAtlasApplyProjectMigration(c, dir, "1_init.up.sql",
+	writeAtlasApplyProjectMigration(c.TB, dir, "1_init.up.sql",
 		"CREATE TABLE widgets (id INTEGER PRIMARY KEY);\n")
-	writeAtlasApplyProjectMigration(c, dir, "1_init.down.sql", "DROP TABLE widgets;\n")
-	hashConvertedApplyDir(c, dir, "golang-migrate")
+	writeAtlasApplyProjectMigration(c.TB, dir, "1_init.down.sql", "DROP TABLE widgets;\n")
+	hashConvertedApplyDir(c.TB, dir, "golang-migrate")
 	dbPath := filepath.Join(filepath.Dir(dir), "gm.db")
 
 	stdout, stderr, err := runCompatExit(
@@ -286,7 +291,7 @@ func TestCompatMigrateSet_PlainPrefixLayoutsAreUnchanged(t *testing.T) {
 
 	c.Assert(err, qt.IsNil, qt.Commentf("stderr: %s", stderr))
 	c.Assert(stdout, qt.Equals, "Current version is 1 (1 set):\n\n  + 1 (init)\n\n")
-	c.Assert(revisionRows(c, dbPath), qt.DeepEquals,
+	c.Assert(revisionRows(c.TB, dbPath), qt.DeepEquals,
 		[]setFlywayRow{{Version: "1", Description: "init"}})
 }
 
@@ -297,7 +302,7 @@ func TestCompatMigrateSet_PlainPrefixLayoutsAreUnchanged(t *testing.T) {
 func TestCompatMigrateSet_FlywayBaselineReadsSquashedExactHistory(t *testing.T) {
 	t.Parallel()
 	c := qt.New(t)
-	initialDir := writeHashedFlywayDir(c, []setFlywayMigration{
+	initialDir := writeHashedFlywayDir(c.TB, []setFlywayMigration{
 		{name: "V1.5__old.sql", body: "CREATE TABLE old_history (id INTEGER PRIMARY KEY);\n"},
 	})
 	dbPath := filepath.Join(filepath.Dir(initialDir), "baseline.db")
@@ -308,7 +313,7 @@ func TestCompatMigrateSet_FlywayBaselineReadsSquashedExactHistory(t *testing.T) 
 	)
 	c.Assert(err, qt.IsNil, qt.Commentf("apply stderr: %s", stderr))
 
-	baselineDir := writeHashedFlywayDir(c, []setFlywayMigration{
+	baselineDir := writeHashedFlywayDir(c.TB, []setFlywayMigration{
 		{name: "V1.5__old.sql", body: "CREATE TABLE old_history (id INTEGER PRIMARY KEY);\n"},
 		{name: "B2__base.sql", body: "CREATE TABLE baseline_state (id INTEGER PRIMARY KEY);\n"},
 	})
@@ -320,7 +325,7 @@ func TestCompatMigrateSet_FlywayBaselineReadsSquashedExactHistory(t *testing.T) 
 
 	c.Assert(err, qt.IsNil, qt.Commentf("set stderr: %s", stderr))
 	c.Assert(stdout, qt.Equals, "Current version is 2 (1 set):\n\n  + 2 (base)\n\n")
-	c.Assert(revisionRows(c, dbPath), qt.DeepEquals, []setFlywayRow{
+	c.Assert(revisionRows(c.TB, dbPath), qt.DeepEquals, []setFlywayRow{
 		{Version: "1.5", Description: "old"},
 		{Version: "2", Description: "base"},
 	})
@@ -342,7 +347,7 @@ func TestCompatMigrateSet_FlywayBaselineReadsSquashedExactHistory(t *testing.T) 
 func TestCompatMigrateSet_RemovesRetiredExactHistoryAboveTarget(t *testing.T) {
 	t.Parallel()
 	c := qt.New(t)
-	dir := writeHashedFlywayDir(c, []setFlywayMigration{
+	dir := writeHashedFlywayDir(c.TB, []setFlywayMigration{
 		{name: "V2__two.sql", body: "CREATE TABLE retired_v2 (id INTEGER PRIMARY KEY);\n"},
 	})
 	dbPath := filepath.Join(filepath.Dir(dir), "retired-above-target.db")
@@ -350,9 +355,9 @@ func TestCompatMigrateSet_RemovesRetiredExactHistoryAboveTarget(t *testing.T) {
 	c.Assert(err, qt.IsNil, qt.Commentf("apply stderr: %s", stderr))
 
 	c.Assert(os.Remove(filepath.Join(dir, "V2__two.sql")), qt.IsNil)
-	writeAtlasApplyProjectMigration(c, dir, "V1__one.sql",
+	writeAtlasApplyProjectMigration(c.TB, dir, "V1__one.sql",
 		"CREATE TABLE current_v1 (id INTEGER PRIMARY KEY);\n")
-	hashConvertedApplyDir(c, dir, "flyway")
+	hashConvertedApplyDir(c.TB, dir, "flyway")
 
 	stdout, stderr, err := runCompatExit(
 		"migrate", "set", "1",
@@ -363,7 +368,7 @@ func TestCompatMigrateSet_RemovesRetiredExactHistoryAboveTarget(t *testing.T) {
 	c.Assert(err, qt.IsNil, qt.Commentf("set stderr: %s", stderr))
 	c.Assert(stdout, qt.Equals,
 		"Current version is 1 (1 set, 1 removed):\n\n  + 1 (one)\n  - 2 (two)\n\n")
-	c.Assert(revisionRows(c, dbPath), qt.DeepEquals,
+	c.Assert(revisionRows(c.TB, dbPath), qt.DeepEquals,
 		[]setFlywayRow{{Version: "1", Description: "one"}})
 }
 
@@ -374,7 +379,7 @@ func TestCompatMigrateSet_RemovesRetiredExactHistoryAboveTarget(t *testing.T) {
 func TestCompatMigrateSet_KeepsRetiredExactHistoryBelowMultiDigitTarget(t *testing.T) {
 	t.Parallel()
 	c := qt.New(t)
-	dir := writeHashedFlywayDir(c, []setFlywayMigration{
+	dir := writeHashedFlywayDir(c.TB, []setFlywayMigration{
 		{name: "V9__nine.sql", body: "CREATE TABLE retired_v9 (id INTEGER PRIMARY KEY);\n"},
 	})
 	dbPath := filepath.Join(filepath.Dir(dir), "retired-below-multidigit-target.db")
@@ -382,9 +387,9 @@ func TestCompatMigrateSet_KeepsRetiredExactHistoryBelowMultiDigitTarget(t *testi
 	c.Assert(err, qt.IsNil, qt.Commentf("apply stderr: %s", stderr))
 
 	c.Assert(os.Remove(filepath.Join(dir, "V9__nine.sql")), qt.IsNil)
-	writeAtlasApplyProjectMigration(c, dir, "V10__ten.sql",
+	writeAtlasApplyProjectMigration(c.TB, dir, "V10__ten.sql",
 		"CREATE TABLE current_v10 (id INTEGER PRIMARY KEY);\n")
-	hashConvertedApplyDir(c, dir, "flyway")
+	hashConvertedApplyDir(c.TB, dir, "flyway")
 
 	stdout, stderr, err := runCompatExit(
 		"migrate", "set", "10",
@@ -395,7 +400,7 @@ func TestCompatMigrateSet_KeepsRetiredExactHistoryBelowMultiDigitTarget(t *testi
 	c.Assert(err, qt.IsNil, qt.Commentf("set stderr: %s", stderr))
 	c.Assert(stdout, qt.Equals,
 		"Current version is 10 (1 set):\n\n  + 10 (ten)\n\n")
-	c.Assert(revisionRows(c, dbPath), qt.DeepEquals, []setFlywayRow{
+	c.Assert(revisionRows(c.TB, dbPath), qt.DeepEquals, []setFlywayRow{
 		{Version: "9", Description: "nine"},
 		{Version: "10", Description: "ten"},
 	})
@@ -436,7 +441,7 @@ func TestCompatMigrateSet_OrdersRetiredHistoryByKnownFlywayRole(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			c := qt.New(t)
-			dir := writeHashedFlywayDir(c, []setFlywayMigration{{
+			dir := writeHashedFlywayDir(c.TB, []setFlywayMigration{{
 				name: test.retiredFile,
 				body: "CREATE TABLE retired_twenty (id INTEGER PRIMARY KEY);\n",
 			}})
@@ -445,9 +450,9 @@ func TestCompatMigrateSet_OrdersRetiredHistoryByKnownFlywayRole(t *testing.T) {
 			c.Assert(err, qt.IsNil, qt.Commentf("apply stderr: %s", stderr))
 
 			c.Assert(os.Remove(filepath.Join(dir, test.retiredFile)), qt.IsNil)
-			writeAtlasApplyProjectMigration(c, dir, "V10__ten.sql",
+			writeAtlasApplyProjectMigration(c.TB, dir, "V10__ten.sql",
 				"CREATE TABLE current_v10 (id INTEGER PRIMARY KEY);\n")
-			hashConvertedApplyDir(c, dir, "flyway")
+			hashConvertedApplyDir(c.TB, dir, "flyway")
 
 			stdout, stderr, err := runCompatExit(
 				"migrate", "set", "10",
@@ -457,7 +462,7 @@ func TestCompatMigrateSet_OrdersRetiredHistoryByKnownFlywayRole(t *testing.T) {
 
 			c.Assert(err, qt.IsNil, qt.Commentf("set stderr: %s", stderr))
 			c.Assert(stdout, qt.Equals, test.wantStdout)
-			c.Assert(revisionRows(c, dbPath), qt.DeepEquals, test.wantRows)
+			c.Assert(revisionRows(c.TB, dbPath), qt.DeepEquals, test.wantRows)
 		})
 	}
 }
@@ -502,7 +507,7 @@ func TestCompatMigrateSet_OrdersRetiredBaselinesByRawToken(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			c := qt.New(t)
-			dir := writeHashedFlywayDir(c, []setFlywayMigration{{
+			dir := writeHashedFlywayDir(c.TB, []setFlywayMigration{{
 				name: test.retiredFile,
 				body: "CREATE TABLE retired_baseline (id INTEGER PRIMARY KEY);\n",
 			}})
@@ -511,9 +516,9 @@ func TestCompatMigrateSet_OrdersRetiredBaselinesByRawToken(t *testing.T) {
 			c.Assert(err, qt.IsNil, qt.Commentf("apply stderr: %s", stderr))
 
 			c.Assert(os.Remove(filepath.Join(dir, test.retiredFile)), qt.IsNil)
-			writeAtlasApplyProjectMigration(c, dir, test.targetFile,
+			writeAtlasApplyProjectMigration(c.TB, dir, test.targetFile,
 				"CREATE TABLE target_baseline (id INTEGER PRIMARY KEY);\n")
-			hashConvertedApplyDir(c, dir, "flyway")
+			hashConvertedApplyDir(c.TB, dir, "flyway")
 
 			stdout, stderr, err := runCompatExit(
 				"migrate", "set", test.target,
@@ -523,9 +528,9 @@ func TestCompatMigrateSet_OrdersRetiredBaselinesByRawToken(t *testing.T) {
 
 			c.Assert(err, qt.IsNil, qt.Commentf("set stderr: %s", stderr))
 			c.Assert(stdout, qt.Equals, test.wantStdout)
-			c.Assert(revisionRows(c, dbPath), qt.DeepEquals, test.wantRows)
-			c.Assert(sqliteTableExists(c, dbPath, "retired_baseline"), qt.IsTrue)
-			c.Assert(sqliteTableExists(c, dbPath, "target_baseline"), qt.IsFalse)
+			c.Assert(revisionRows(c.TB, dbPath), qt.DeepEquals, test.wantRows)
+			c.Assert(sqliteTableExists(c.TB, dbPath, "retired_baseline"), qt.IsTrue)
+			c.Assert(sqliteTableExists(c.TB, dbPath, "target_baseline"), qt.IsFalse)
 		})
 	}
 }
@@ -538,7 +543,7 @@ func TestCompatMigrateSet_OrdersRetiredBaselinesByRawToken(t *testing.T) {
 func TestCompatMigrateSet_TargetBaselineKeepsHistoryItsRawTokenCutSquashes(t *testing.T) {
 	t.Parallel()
 	c := qt.New(t)
-	dir := writeHashedFlywayDir(c, []setFlywayMigration{{
+	dir := writeHashedFlywayDir(c.TB, []setFlywayMigration{{
 		name: "V10__ten.sql",
 		body: "CREATE TABLE retired_v10 (id INTEGER PRIMARY KEY);\n",
 	}})
@@ -547,9 +552,9 @@ func TestCompatMigrateSet_TargetBaselineKeepsHistoryItsRawTokenCutSquashes(t *te
 	c.Assert(err, qt.IsNil, qt.Commentf("apply stderr: %s", stderr))
 
 	c.Assert(os.Remove(filepath.Join(dir, "V10__ten.sql")), qt.IsNil)
-	writeAtlasApplyProjectMigration(c, dir, "B2__base.sql",
+	writeAtlasApplyProjectMigration(c.TB, dir, "B2__base.sql",
 		"CREATE TABLE target_baseline (id INTEGER PRIMARY KEY);\n")
-	hashConvertedApplyDir(c, dir, "flyway")
+	hashConvertedApplyDir(c.TB, dir, "flyway")
 
 	stdout, stderr, err := runCompatExit(
 		"migrate", "set", "2",
@@ -559,12 +564,12 @@ func TestCompatMigrateSet_TargetBaselineKeepsHistoryItsRawTokenCutSquashes(t *te
 
 	c.Assert(err, qt.IsNil, qt.Commentf("set stderr: %s", stderr))
 	c.Assert(stdout, qt.Equals, "Current version is 2 (1 set):\n\n  + 2 (base)\n\n")
-	c.Assert(revisionRows(c, dbPath), qt.DeepEquals, []setFlywayRow{
+	c.Assert(revisionRows(c.TB, dbPath), qt.DeepEquals, []setFlywayRow{
 		{Version: "10", Description: "ten"},
 		{Version: "2", Description: "base"},
 	})
-	c.Assert(sqliteTableExists(c, dbPath, "retired_v10"), qt.IsTrue)
-	c.Assert(sqliteTableExists(c, dbPath, "target_baseline"), qt.IsFalse)
+	c.Assert(sqliteTableExists(c.TB, dbPath, "retired_v10"), qt.IsTrue)
+	c.Assert(sqliteTableExists(c.TB, dbPath, "target_baseline"), qt.IsFalse)
 }
 
 // TestCompatMigrateSet_TargetRepeatableKeepsRetiredVersionedHistory proves
@@ -575,7 +580,7 @@ func TestCompatMigrateSet_TargetBaselineKeepsHistoryItsRawTokenCutSquashes(t *te
 func TestCompatMigrateSet_TargetRepeatableKeepsRetiredVersionedHistory(t *testing.T) {
 	t.Parallel()
 	c := qt.New(t)
-	dir := writeHashedFlywayDir(c, []setFlywayMigration{{
+	dir := writeHashedFlywayDir(c.TB, []setFlywayMigration{{
 		name: "V1__one.sql",
 		body: "CREATE TABLE retired_v1 (id INTEGER PRIMARY KEY);\n",
 	}})
@@ -584,9 +589,9 @@ func TestCompatMigrateSet_TargetRepeatableKeepsRetiredVersionedHistory(t *testin
 	c.Assert(err, qt.IsNil, qt.Commentf("apply stderr: %s", stderr))
 
 	c.Assert(os.Remove(filepath.Join(dir, "V1__one.sql")), qt.IsNil)
-	writeAtlasApplyProjectMigration(c, dir, "R__only.sql",
+	writeAtlasApplyProjectMigration(c.TB, dir, "R__only.sql",
 		"CREATE TABLE target_repeatable (id INTEGER PRIMARY KEY);\n")
-	hashConvertedApplyDir(c, dir, "flyway")
+	hashConvertedApplyDir(c.TB, dir, "flyway")
 
 	stdout, stderr, err := runCompatExit(
 		"migrate", "set", "",
@@ -596,12 +601,12 @@ func TestCompatMigrateSet_TargetRepeatableKeepsRetiredVersionedHistory(t *testin
 
 	c.Assert(err, qt.IsNil, qt.Commentf("set stderr: %s", stderr))
 	c.Assert(stdout, qt.Equals, "Current version is \"\" (1 set):\n\n  + \"\" (only)\n\n")
-	c.Assert(revisionRows(c, dbPath), qt.DeepEquals, []setFlywayRow{
+	c.Assert(revisionRows(c.TB, dbPath), qt.DeepEquals, []setFlywayRow{
 		{Version: "1", Description: "one"},
 		{Version: "", Description: "only"},
 	})
-	c.Assert(sqliteTableExists(c, dbPath, "retired_v1"), qt.IsTrue)
-	c.Assert(sqliteTableExists(c, dbPath, "target_repeatable"), qt.IsFalse)
+	c.Assert(sqliteTableExists(c.TB, dbPath, "retired_v1"), qt.IsTrue)
+	c.Assert(sqliteTableExists(c.TB, dbPath, "target_repeatable"), qt.IsFalse)
 }
 
 // TestCompatMigrateSet_RefusesRetiredHistoryWithoutFlywayRole covers rows
@@ -613,7 +618,7 @@ func TestCompatMigrateSet_TargetRepeatableKeepsRetiredVersionedHistory(t *testin
 func TestCompatMigrateSet_RefusesRetiredHistoryWithoutFlywayRole(t *testing.T) {
 	t.Parallel()
 	c := qt.New(t)
-	dir := writeHashedFlywayDir(c, []setFlywayMigration{{
+	dir := writeHashedFlywayDir(c.TB, []setFlywayMigration{{
 		name: "B20__twenty.sql",
 		body: "CREATE TABLE retired_ce_twenty (id INTEGER PRIMARY KEY);\n",
 	}})
@@ -629,9 +634,9 @@ func TestCompatMigrateSet_RefusesRetiredHistoryWithoutFlywayRole(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Close(), qt.IsNil)
 	c.Assert(os.Remove(filepath.Join(dir, "B20__twenty.sql")), qt.IsNil)
-	writeAtlasApplyProjectMigration(c, dir, "V10__ten.sql",
+	writeAtlasApplyProjectMigration(c.TB, dir, "V10__ten.sql",
 		"CREATE TABLE current_v10 (id INTEGER PRIMARY KEY);\n")
-	hashConvertedApplyDir(c, dir, "flyway")
+	hashConvertedApplyDir(c.TB, dir, "flyway")
 
 	stdout, stderr, err := runCompatExit(
 		"migrate", "set", "10",
@@ -643,7 +648,7 @@ func TestCompatMigrateSet_RefusesRetiredHistoryWithoutFlywayRole(t *testing.T) {
 	c.Assert(errorText(err), qt.Equals, want)
 	c.Assert(stdout, qt.Equals, "")
 	c.Assert(stderr, qt.Equals, "Error: "+want+"\n")
-	c.Assert(revisionRows(c, dbPath), qt.DeepEquals,
+	c.Assert(revisionRows(c.TB, dbPath), qt.DeepEquals,
 		[]setFlywayRow{{Version: "20", Description: "twenty"}})
 }
 
@@ -652,14 +657,14 @@ func TestCompatMigrateSet_RefusesAmbiguousRetiredSourceOrder(t *testing.T) {
 	c := qt.New(t)
 
 	assertCompatMigrateSetRetiredSourceOrderAmbiguous(
-		c,
+		c.TB,
 		"V01__old.sql",
 		"01",
 		"V1__target.sql",
 		"1",
 	)
 	assertCompatMigrateSetRetiredSourceOrderAmbiguous(
-		c,
+		c.TB,
 		"Vx__old.sql",
 		"x",
 		"Vy__target.sql",
@@ -668,11 +673,12 @@ func TestCompatMigrateSet_RefusesAmbiguousRetiredSourceOrder(t *testing.T) {
 }
 
 func assertCompatMigrateSetRetiredSourceOrderAmbiguous(
-	c *qt.C,
+	tb testing.TB,
 	retiredFile, retiredToken, targetFile, targetToken string,
 ) {
+	c := qt.New(tb)
 	c.Helper()
-	dir := writeHashedFlywayDir(c, []setFlywayMigration{
+	dir := writeHashedFlywayDir(c.TB, []setFlywayMigration{
 		{name: retiredFile, body: "CREATE TABLE retired_ambiguous (id INTEGER PRIMARY KEY);\n"},
 	})
 	dbPath := filepath.Join(filepath.Dir(dir), "retired-ambiguous.db")
@@ -680,9 +686,9 @@ func assertCompatMigrateSetRetiredSourceOrderAmbiguous(
 	c.Assert(err, qt.IsNil, qt.Commentf("apply stderr: %s", stderr))
 
 	c.Assert(os.Remove(filepath.Join(dir, retiredFile)), qt.IsNil)
-	writeAtlasApplyProjectMigration(c, dir, targetFile,
+	writeAtlasApplyProjectMigration(c.TB, dir, targetFile,
 		"CREATE TABLE current_ambiguous (id INTEGER PRIMARY KEY);\n")
-	hashConvertedApplyDir(c, dir, "flyway")
+	hashConvertedApplyDir(c.TB, dir, "flyway")
 
 	stdout, stderr, err := runCompatExit(
 		"migrate", "set", targetToken,
@@ -698,7 +704,7 @@ func assertCompatMigrateSetRetiredSourceOrderAmbiguous(
 	c.Assert(errorText(err), qt.Equals, want)
 	c.Assert(stdout, qt.Equals, "")
 	c.Assert(stderr, qt.Equals, "Error: "+want+"\n")
-	c.Assert(revisionRows(c, dbPath), qt.DeepEquals,
+	c.Assert(revisionRows(c.TB, dbPath), qt.DeepEquals,
 		[]setFlywayRow{{Version: retiredToken, Description: "old"}})
 }
 
@@ -708,7 +714,7 @@ func assertCompatMigrateSetRetiredSourceOrderAmbiguous(
 func TestCompatMigrateSet_FlywayBaselineMatchesExistingExactIdentity(t *testing.T) {
 	t.Parallel()
 	c := qt.New(t)
-	initialDir := writeHashedFlywayDir(c, []setFlywayMigration{
+	initialDir := writeHashedFlywayDir(c.TB, []setFlywayMigration{
 		{name: "V2__old.sql", body: "CREATE TABLE old_v2 (id INTEGER PRIMARY KEY);\n"},
 		{name: "V3__tail.sql", body: "CREATE TABLE tail_v3 (id INTEGER PRIMARY KEY);\n"},
 	})
@@ -720,7 +726,7 @@ func TestCompatMigrateSet_FlywayBaselineMatchesExistingExactIdentity(t *testing.
 	)
 	c.Assert(err, qt.IsNil, qt.Commentf("apply stderr: %s", stderr))
 
-	baselineDir := writeHashedFlywayDir(c, []setFlywayMigration{
+	baselineDir := writeHashedFlywayDir(c.TB, []setFlywayMigration{
 		{name: "V2__old.sql", body: "CREATE TABLE old_v2 (id INTEGER PRIMARY KEY);\n"},
 		{name: "B2__old.sql", body: "CREATE TABLE baseline_v2 (id INTEGER PRIMARY KEY);\n"},
 		{name: "V3__tail.sql", body: "CREATE TABLE tail_v3 (id INTEGER PRIMARY KEY);\n"},
@@ -733,7 +739,7 @@ func TestCompatMigrateSet_FlywayBaselineMatchesExistingExactIdentity(t *testing.
 
 	c.Assert(err, qt.IsNil, qt.Commentf("set stderr: %s", stderr))
 	c.Assert(stdout, qt.Equals, "")
-	c.Assert(revisionRows(c, dbPath), qt.DeepEquals, []setFlywayRow{
+	c.Assert(revisionRows(c.TB, dbPath), qt.DeepEquals, []setFlywayRow{
 		{Version: "2", Description: "old"},
 		{Version: "3", Description: "tail"},
 	})
@@ -751,7 +757,7 @@ func TestCompatMigrateSet_FlywayBaselineMatchesExistingExactIdentity(t *testing.
 func TestCompatMigrateSet_FlywayBaselineTargetKeepsExistingExactIdentity(t *testing.T) {
 	t.Parallel()
 	c := qt.New(t)
-	initialDir := writeHashedFlywayDir(c, []setFlywayMigration{
+	initialDir := writeHashedFlywayDir(c.TB, []setFlywayMigration{
 		{name: "V2__old.sql", body: "CREATE TABLE target_old_v2 (id INTEGER PRIMARY KEY);\n"},
 	})
 	dbPath := filepath.Join(filepath.Dir(initialDir), "target-same-token.db")
@@ -762,7 +768,7 @@ func TestCompatMigrateSet_FlywayBaselineTargetKeepsExistingExactIdentity(t *test
 	)
 	c.Assert(err, qt.IsNil, qt.Commentf("apply stderr: %s", stderr))
 
-	baselineDir := writeHashedFlywayDir(c, []setFlywayMigration{
+	baselineDir := writeHashedFlywayDir(c.TB, []setFlywayMigration{
 		{name: "V2__old.sql", body: "CREATE TABLE target_old_v2 (id INTEGER PRIMARY KEY);\n"},
 		{name: "B2__old.sql", body: "CREATE TABLE target_baseline_v2 (id INTEGER PRIMARY KEY);\n"},
 	})
@@ -774,14 +780,14 @@ func TestCompatMigrateSet_FlywayBaselineTargetKeepsExistingExactIdentity(t *test
 
 	c.Assert(err, qt.IsNil, qt.Commentf("set stderr: %s", stderr))
 	c.Assert(stdout, qt.Equals, "")
-	c.Assert(revisionRows(c, dbPath), qt.DeepEquals,
+	c.Assert(revisionRows(c.TB, dbPath), qt.DeepEquals,
 		[]setFlywayRow{{Version: "2", Description: "old"}})
 }
 
 func TestCompatMigrateSet_FlywayBaselineMarkerSettlesLaterApply(t *testing.T) {
 	t.Parallel()
 	c := qt.New(t)
-	dir := writeHashedFlywayDir(c, []setFlywayMigration{
+	dir := writeHashedFlywayDir(c.TB, []setFlywayMigration{
 		{name: "V2__base.sql", body: "CREATE TABLE set_baseline_marker (id INTEGER PRIMARY KEY);\n"},
 		{name: "B2__base.sql", body: "CREATE TABLE set_baseline_marker (id INTEGER PRIMARY KEY);\n"},
 	})
@@ -794,7 +800,7 @@ func TestCompatMigrateSet_FlywayBaselineMarkerSettlesLaterApply(t *testing.T) {
 	)
 	c.Assert(err, qt.IsNil, qt.Commentf("set stderr: %s", stderr))
 	c.Assert(stdout, qt.Equals, "Current version is 2 (1 set):\n\n  + 2 (base)\n\n")
-	c.Assert(flywayRevisionType(c, dbPath, "2"), qt.Equals, 7)
+	c.Assert(flywayRevisionType(c.TB, dbPath, "2"), qt.Equals, 7)
 
 	stdout, stderr, err = compatApplyConverted(dir, "flyway", dbPath)
 	c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))

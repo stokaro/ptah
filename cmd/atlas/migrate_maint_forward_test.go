@@ -16,7 +16,8 @@ import (
 
 // writeMigrateMaintFixture fills dir with a two-migration Atlas-format
 // directory whose atlas.sum matches the files on disk.
-func writeMigrateMaintFixture(c *qt.C, dir string) {
+func writeMigrateMaintFixture(tb testing.TB, dir string) {
+	c := qt.New(tb)
 	c.Helper()
 	c.Assert(os.WriteFile(
 		filepath.Join(dir, "1_init.sql"),
@@ -48,7 +49,8 @@ func installAppendEditor(t *testing.T, marker string) {
 
 // assertNativeValidatePasses proves the directory still verifies through the
 // native `ptah migrations validate` command after an Atlas-verb mutation.
-func assertNativeValidatePasses(c *qt.C, dir string) {
+func assertNativeValidatePasses(tb testing.TB, dir string) {
+	c := qt.New(tb)
 	c.Helper()
 	cmd := migratevalidate.NewMigrateValidateCommand()
 	var out bytes.Buffer
@@ -61,7 +63,7 @@ func assertNativeValidatePasses(c *qt.C, dir string) {
 func TestCompatCommand_MigrateEditForwardsToNative(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
-	writeMigrateMaintFixture(c, dir)
+	writeMigrateMaintFixture(c.TB, dir)
 	installAppendEditor(t, "-- edited through atlas verb")
 
 	cmd := atlas.NewCompatCommand("atlas")
@@ -81,13 +83,13 @@ func TestCompatCommand_MigrateEditForwardsToNative(t *testing.T) {
 	content, readErr := os.ReadFile(filepath.Join(dir, "1_init.sql"))
 	c.Assert(readErr, qt.IsNil)
 	c.Assert(string(content), qt.Contains, "-- edited through atlas verb")
-	assertNativeValidatePasses(c, dir)
+	assertNativeValidatePasses(c.TB, dir)
 }
 
 func TestCompatCommand_MigrateEditAcceptsMigrationFileName(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
-	writeMigrateMaintFixture(c, dir)
+	writeMigrateMaintFixture(c.TB, dir)
 	installAppendEditor(t, "-- edited by name")
 
 	cmd := atlas.NewCompatCommand("atlas")
@@ -109,7 +111,7 @@ func TestCompatCommand_MigrateEditAcceptsMigrationFileName(t *testing.T) {
 func TestCompatCommand_MigrateEditWithoutEditorFails(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
-	writeMigrateMaintFixture(c, dir)
+	writeMigrateMaintFixture(c.TB, dir)
 	t.Setenv("VISUAL", "")
 	t.Setenv("EDITOR", "")
 
@@ -210,7 +212,7 @@ func TestCompatCommand_MigrateMaintRejectsNativeOnlyFlags(t *testing.T) {
 func TestCompatCommand_MigrateRebaseForwardsToNative(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
-	writeMigrateMaintFixture(c, dir)
+	writeMigrateMaintFixture(c.TB, dir)
 
 	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
@@ -230,7 +232,7 @@ func TestCompatCommand_MigrateRebaseForwardsToNative(t *testing.T) {
 	moved, globErr := filepath.Glob(filepath.Join(dir, "*_init.sql"))
 	c.Assert(globErr, qt.IsNil)
 	c.Assert(moved, qt.HasLen, 1)
-	assertNativeValidatePasses(c, dir)
+	assertNativeValidatePasses(c.TB, dir)
 }
 
 func TestCompatCommand_MigrateRebaseRejectsMultipleVersions(t *testing.T) {
@@ -268,7 +270,7 @@ func TestCompatCommand_MigrateRebaseRejectsVersionRanges(t *testing.T) {
 func TestCompatCommand_MigrateRmForwardsToNative(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
-	writeMigrateMaintFixture(c, dir)
+	writeMigrateMaintFixture(c.TB, dir)
 
 	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
@@ -285,7 +287,7 @@ func TestCompatCommand_MigrateRmForwardsToNative(t *testing.T) {
 	c.Assert(out.String(), qt.Contains, "Wrote "+dir+"/atlas.sum")
 	_, statErr := os.Stat(filepath.Join(dir, "2_add_email.sql"))
 	c.Assert(os.IsNotExist(statErr), qt.IsTrue)
-	assertNativeValidatePasses(c, dir)
+	assertNativeValidatePasses(c.TB, dir)
 }
 
 func TestCompatCommand_MigrateRmRequiresVersionArgument(t *testing.T) {
@@ -308,7 +310,7 @@ func TestCompatCommand_MigrateEditUsesAtlasProjectConfig(t *testing.T) {
 	t.Chdir(dir)
 	migrationsDir := filepath.Join(dir, "migrations")
 	c.Assert(os.MkdirAll(migrationsDir, 0o755), qt.IsNil)
-	writeMigrateMaintFixture(c, migrationsDir)
+	writeMigrateMaintFixture(c.TB, migrationsDir)
 	installAppendEditor(t, "-- edited via project config")
 	c.Assert(os.WriteFile("atlas.hcl", []byte(`env "local" {
   migration {

@@ -139,7 +139,6 @@ func TestSchemaDiffIncludeCrossScopeDependencyFails(t *testing.T) {
 // separator. A depth check that counted characters made this selector — and
 // therefore the qualified spelling of every dotted identifier — inexpressible.
 func TestSchemaDiffIncludeSelectsQuotedDottedIdentifier(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name    string
@@ -150,7 +149,8 @@ func TestSchemaDiffIncludeSelectsQuotedDottedIdentifier(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t2 *testing.T) {
+			c := qt.New(t2)
 			dir := t.TempDir()
 			fromPath := filepath.Join(dir, "from.sql")
 			toPath := filepath.Join(dir, "to.sql")
@@ -205,9 +205,9 @@ func TestSchemaDiffIncludeMalformedSelectorFailsBeforeDevDatabase(t *testing.T) 
 }
 
 func TestSchemaDiffSchemaScopeOnSQLite(t *testing.T) {
-	c := qt.New(t)
 
-	c.Run("main selects unqualified objects", func(c *qt.C) {
+	t.Run("main selects unqualified objects", func(t2 *testing.T) {
+		c := qt.New(t2)
 		fromPath, toPath, devPath := writeScopeSchemaFiles(t)
 		cmd := atlas.NewCompatCommand("atlas")
 		var out bytes.Buffer
@@ -228,7 +228,8 @@ func TestSchemaDiffSchemaScopeOnSQLite(t *testing.T) {
 		c.Assert(out.String(), qt.Contains, "scope_archive")
 	})
 
-	c.Run("other schema selects nothing", func(c *qt.C) {
+	t.Run("other schema selects nothing", func(t2 *testing.T) {
+		c := qt.New(t2)
 		fromPath, toPath, devPath := writeScopeSchemaFiles(t)
 		cmd := atlas.NewCompatCommand("atlas")
 		var out bytes.Buffer

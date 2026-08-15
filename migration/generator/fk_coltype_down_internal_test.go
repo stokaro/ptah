@@ -57,12 +57,12 @@ func TestGenerateMigration_ForeignKeyColumnTypeChange_UpDownInverse(t *testing.T
 			up, err := generateUpMigrationSQL(upDiff, gen, tc.name)
 			c.Assert(err, qt.IsNil)
 			up = legacyRenderedSQL(up)
-			assertOrderedOnce(c, up, tc.drop, "ALTER TABLE posts MODIFY COLUMN user_slug VARCHAR(100) NOT NULL;", addStmt)
+			assertOrderedOnce(c.TB, up, tc.drop, "ALTER TABLE posts MODIFY COLUMN user_slug VARCHAR(100) NOT NULL;", addStmt)
 
 			down, err := generateDownMigrationSQL(upDiff, gen, dbSchema, tc.name)
 			c.Assert(err, qt.IsNil)
 			down = legacyRenderedSQL(down)
-			assertOrderedOnce(c, down, tc.drop, "ALTER TABLE posts MODIFY COLUMN user_slug varchar(50) NOT NULL;", addStmt)
+			assertOrderedOnce(c.TB, down, tc.drop, "ALTER TABLE posts MODIFY COLUMN user_slug varchar(50) NOT NULL;", addStmt)
 		})
 	}
 }
@@ -95,7 +95,7 @@ func TestGenerateMigration_ForeignKeyColumnTypeChange_CoincidentActionChange(t *
 			// One re-add (owned by the constraint machinery); the drop count is
 			// asserted by assertOrderedOnce against the dialect-specific spelling.
 			c.Assert(strings.Count(up, "ADD CONSTRAINT fk_posts_user_slug"), qt.Equals, 1, qt.Commentf("UP:\n%s", up))
-			assertOrderedOnce(c, up, tc.drop,
+			assertOrderedOnce(c.TB, up, tc.drop,
 				"ALTER TABLE posts MODIFY COLUMN user_slug VARCHAR(100);",
 				"ALTER TABLE posts ADD CONSTRAINT fk_posts_user_slug FOREIGN KEY (user_slug) REFERENCES users(slug) ON DELETE SET NULL;")
 
@@ -104,7 +104,7 @@ func TestGenerateMigration_ForeignKeyColumnTypeChange_CoincidentActionChange(t *
 			down = legacyRenderedSQL(down)
 			c.Assert(strings.Count(down, "ADD CONSTRAINT fk_posts_user_slug"), qt.Equals, 1, qt.Commentf("DOWN:\n%s", down))
 			// Down restores the prior CASCADE action, after its own drop and MODIFY.
-			assertOrderedOnce(c, down, tc.drop,
+			assertOrderedOnce(c.TB, down, tc.drop,
 				"ALTER TABLE posts MODIFY COLUMN user_slug varchar(50);",
 				"ALTER TABLE posts ADD CONSTRAINT fk_posts_user_slug FOREIGN KEY (user_slug) REFERENCES users(slug) ON DELETE CASCADE")
 		})
@@ -154,7 +154,8 @@ func fkColumnTypeFixtures(genOnDelete string) (*goschema.Database, *dbschematype
 
 // assertOrderedOnce asserts that drop, modify, and add each appear exactly once
 // in sql and in that order.
-func assertOrderedOnce(c *qt.C, sql, drop, modify, add string) {
+func assertOrderedOnce(tb testing.TB, sql, drop, modify, add string) {
+	c := qt.New(tb)
 	c.Helper()
 	c.Assert(strings.Count(sql, drop), qt.Equals, 1, qt.Commentf("want one %q in:\n%s", drop, sql))
 	c.Assert(strings.Count(sql, modify), qt.Equals, 1, qt.Commentf("want one %q in:\n%s", modify, sql))

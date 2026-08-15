@@ -133,7 +133,7 @@ func dirQueryVerbRows() []dirQueryVerbRow {
 				return runCompatExit("migrate", "diff", "dd",
 					"--dir", "file://"+dir+query,
 					"--dev-url", "sqlite://"+filepath.Join(c.TempDir(), "dev.db"),
-					"--to", "file://"+writeDirQueryTargetSchema(c))
+					"--to", "file://"+writeDirQueryTargetSchema(c.TB))
 			},
 		},
 	}
@@ -142,7 +142,8 @@ func dirQueryVerbRows() []dirQueryVerbRow {
 // writeDirQueryTargetSchema writes a desired state that differs from the
 // fixture directory, so `migrate diff` plans something instead of reporting the
 // directory synced.
-func writeDirQueryTargetSchema(c *qt.C) string {
+func writeDirQueryTargetSchema(tb testing.TB) string {
+	c := qt.New(tb)
 	c.Helper()
 	target := filepath.Join(c.TempDir(), "target.sql")
 	c.Assert(os.WriteFile(
@@ -162,7 +163,7 @@ func TestCompatMigrateDirQuery_ReportsIgnoredKeyOnEveryVerb(t *testing.T) {
 			unsetStrictDirQueryEnv(t)
 			c := qt.New(t)
 
-			stdout, stderr, err := tt.run(c, writeQueryFixtureDir(c), "?nonsense=1")
+			stdout, stderr, err := tt.run(c, writeQueryFixtureDir(c.TB), "?nonsense=1")
 
 			c.Assert(err, qt.IsNil, qt.Commentf("stderr: %s", stderr))
 			c.Assert(stderr, qt.Contains, ignoredDirQueryNote)
@@ -182,7 +183,7 @@ func TestCompatMigrateDirQuery_ReportKeepsMachineReadableStdoutClean(t *testing.
 	c := qt.New(t)
 
 	stdout, stderr, err := runCompatExit("migrate", "status",
-		"--dir", "file://"+writeQueryFixtureDir(c)+"?nonsense=1",
+		"--dir", "file://"+writeQueryFixtureDir(c.TB)+"?nonsense=1",
 		"--url", "sqlite://"+filepath.Join(c.TempDir(), "status.db"),
 		"--format", "{{ len .Pending }}")
 
@@ -212,7 +213,7 @@ func TestCompatMigrateDirQuery_ReportsNothingWhenEveryKeyIsMeaningful(t *testing
 			c := qt.New(t)
 
 			_, stderr, err := runCompatExit("migrate", "status",
-				"--dir", "file://"+writeQueryFixtureDir(c)+tt.query,
+				"--dir", "file://"+writeQueryFixtureDir(c.TB)+tt.query,
 				"--url", "sqlite://"+filepath.Join(c.TempDir(), "status.db"))
 
 			c.Assert(err, qt.IsNil, qt.Commentf("stderr: %s", stderr))
@@ -280,13 +281,13 @@ func TestCompatMigrateDirQuery_StrictEnvRefusesIgnoredKey_FailurePath(t *testing
 		t.Run(tt.name, func(t *testing.T) {
 			t.Setenv(strictDirQueryEnvVar, "1")
 			c := qt.New(t)
-			dir := writeQueryFixtureDir(c)
-			before := atlasDirEntryNames(c, dir)
+			dir := writeQueryFixtureDir(c.TB)
+			before := atlasDirEntryNames(c.TB, dir)
 
 			_, _, err := tt.run(c, dir, "?nonsense=1")
 
 			c.Assert(err, qt.ErrorMatches, want)
-			c.Assert(atlasDirEntryNames(c, dir), qt.DeepEquals, before)
+			c.Assert(atlasDirEntryNames(c.TB, dir), qt.DeepEquals, before)
 		})
 	}
 }
@@ -300,7 +301,7 @@ func TestCompatMigrateDirQuery_StrictEnvKeepsAMeaningfulQueryWorking(t *testing.
 	c := qt.New(t)
 
 	_, stderr, err := runCompatExit("migrate", "status",
-		"--dir", "file://"+writeQueryFixtureDir(c)+"?format=atlas",
+		"--dir", "file://"+writeQueryFixtureDir(c.TB)+"?format=atlas",
 		"--url", "sqlite://"+filepath.Join(c.TempDir(), "status.db"))
 
 	c.Assert(err, qt.IsNil, qt.Commentf("stderr: %s", stderr))
@@ -339,7 +340,7 @@ func TestCompatMigrateDirQuery_StrictEnvRejectsInvalidValue_FailurePath(t *testi
 		t.Run(tt.name, func(t *testing.T) {
 			unsetStrictDirQueryEnv(t)
 			c := qt.New(t)
-			dir := writeQueryFixtureDir(c)
+			dir := writeQueryFixtureDir(c.TB)
 			t.Setenv(strictDirQueryEnvVar, "nope")
 
 			_, _, err := runCompatExit("migrate", "status",
@@ -430,7 +431,7 @@ func TestCompatMigrateDirQuery_QueryStaysRefusedOnTheVerbsThatTakeNoQuery_Failur
 			unsetStrictDirQueryEnv(t)
 			c := qt.New(t)
 
-			_, stderr, err := tt.run(c, writeQueryFixtureDir(c), "?nonsense=1")
+			_, stderr, err := tt.run(c, writeQueryFixtureDir(c.TB), "?nonsense=1")
 
 			c.Assert(err, qt.ErrorMatches, want)
 			c.Assert(stderr, qt.Not(qt.Contains), "ignoring migration directory URL query")
@@ -493,7 +494,8 @@ func dirQueryGovernedDocPages() []dirQueryDocPage {
 }
 
 // readCompatDocPage returns a published documentation page verbatim.
-func readCompatDocPage(c *qt.C, page []string) string {
+func readCompatDocPage(tb testing.TB, page []string) string {
+	c := qt.New(tb)
 	c.Helper()
 	parts := append([]string{"..", "..", "docs", "site", "src", "content", "docs"}, page...)
 	source, err := os.ReadFile(filepath.Join(parts...))
@@ -539,7 +541,7 @@ func TestCompatMigrateDirQuery_DocsBoundTheIgnoredKeyClaim(t *testing.T) {
 	for _, tt := range dirQueryGovernedDocPages() {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			page := readCompatDocPage(c, tt.path)
+			page := readCompatDocPage(c.TB, tt.path)
 
 			c.Assert(strings.ToLower(page), qt.Contains, "ignor",
 				qt.Commentf("page no longer states the ignored-key rule, so this row proves nothing"))
@@ -552,9 +554,10 @@ func TestCompatMigrateDirQuery_DocsBoundTheIgnoredKeyClaim(t *testing.T) {
 // migrateNewReferenceSection returns the `ptah-compat migrate new` section of
 // the compat command reference: everything from its heading to the next
 // third-level heading.
-func migrateNewReferenceSection(c *qt.C) string {
+func migrateNewReferenceSection(tb testing.TB) string {
+	c := qt.New(tb)
 	c.Helper()
-	page := readCompatDocPage(c, []string{"reference", "atlas-commands.md"})
+	page := readCompatDocPage(c.TB, []string{"reference", "atlas-commands.md"})
 	_, afterHeading, found := strings.Cut(page, "### `ptah-compat migrate new`")
 	c.Assert(found, qt.IsTrue)
 	body, _, _ := strings.Cut(afterHeading, "\n### ")
@@ -587,7 +590,7 @@ func TestCompatMigrateDirQuery_MigrateNewReferenceSectionNamesBothVerbSets(t *te
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			c.Assert(migrateNewReferenceSection(c), qt.Contains, tt.want)
+			c.Assert(migrateNewReferenceSection(c.TB), qt.Contains, tt.want)
 		})
 	}
 }
@@ -601,7 +604,7 @@ func TestCompatMigrateDirQuery_RejectedFormatValueReportsOnlyItsOwnRefusal(t *te
 	c := qt.New(t)
 
 	_, stderr, err := runCompatExit("migrate", "status",
-		"--dir", "file://"+writeQueryFixtureDir(c)+"?format=totally-bogus&nonsense=1",
+		"--dir", "file://"+writeQueryFixtureDir(c.TB)+"?format=totally-bogus&nonsense=1",
 		"--url", "sqlite://"+filepath.Join(c.TempDir(), "status.db"))
 
 	c.Assert(err, qt.ErrorMatches, `unknown dir format "totally-bogus"`)

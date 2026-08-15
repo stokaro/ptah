@@ -74,7 +74,6 @@ DROP TABLE users;
 }
 
 func TestParseChecks_PostgresFamilyEscapeStringBeforeDirective(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name    string
 		dialect string
@@ -85,7 +84,8 @@ func TestParseChecks_PostgresFamilyEscapeStringBeforeDirective(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			checks, err := migrator.ParseChecks(`SELECT E'it\'s still one literal';
 -- +ptah check name="after_escape_literal" assert="SELECT 1"
 DROP TABLE users;
@@ -101,7 +101,6 @@ DROP TABLE users;
 }
 
 func TestParseChecks_HappyPath(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name string
 		sql  string
@@ -154,7 +153,8 @@ func TestParseChecks_HappyPath(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			got, err := migrator.ParseChecks(tt.sql, "")
 			c.Assert(err, qt.IsNil)
 			c.Assert(got, qt.DeepEquals, tt.want)
@@ -163,7 +163,6 @@ func TestParseChecks_HappyPath(t *testing.T) {
 }
 
 func TestParseChecks_FailurePath(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name    string
 		sql     string
@@ -202,7 +201,8 @@ func TestParseChecks_FailurePath(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			got, err := migrator.ParseChecks(tt.sql, "")
 			c.Assert(err, qt.ErrorMatches, tt.wantErr)
 			c.Assert(got, qt.IsNil)

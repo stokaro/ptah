@@ -47,7 +47,6 @@ func TestRoundTripsReturnsIsolatedMetadata(t *testing.T) {
 }
 
 func TestMigrationPath(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name          string
 		dialect       string
@@ -64,7 +63,8 @@ func TestMigrationPath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(integrationfixture.MigrationPath(test.dialect, test.migrationType), qt.Equals, test.want)
 		})
 	}

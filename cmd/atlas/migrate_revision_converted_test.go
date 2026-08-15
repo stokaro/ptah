@@ -34,12 +34,13 @@ const (
 
 // writeConvertedFlywayDir writes a two-migration Flyway directory and no
 // atlas.sum.
-func writeConvertedFlywayDir(c *qt.C) string {
+func writeConvertedFlywayDir(tb testing.TB) string {
+	c := qt.New(tb)
 	c.Helper()
 	dir := c.TempDir()
-	writeAtlasApplyProjectMigration(c, dir, revisionConvertedFirst,
+	writeAtlasApplyProjectMigration(c.TB, dir, revisionConvertedFirst,
 		"CREATE TABLE t1 (id INTEGER PRIMARY KEY);\n")
-	writeAtlasApplyProjectMigration(c, dir, revisionConvertedSecond,
+	writeAtlasApplyProjectMigration(c.TB, dir, revisionConvertedSecond,
 		"CREATE TABLE t2 (id INTEGER PRIMARY KEY);\n")
 	return dir
 }
@@ -48,7 +49,8 @@ func writeConvertedFlywayDir(c *qt.C) string {
 // the Flyway layout, over the file set that layout covers. It goes through
 // `migrate hash` rather than a helper so the sum these tests gate against is
 // the one the shipped verb produces (#984, #992).
-func hashConvertedFlywayDir(c *qt.C, dir string) {
+func hashConvertedFlywayDir(tb testing.TB, dir string) {
+	c := qt.New(tb)
 	c.Helper()
 	_, stderr, err := runCompatExit("migrate", "hash", "--dir", "file://"+dir+"?format=flyway")
 	c.Assert(err, qt.IsNil, qt.Commentf("hash stderr: %s", stderr))
@@ -56,7 +58,8 @@ func hashConvertedFlywayDir(c *qt.C, dir string) {
 
 // revisionDBURL returns a URL for a database file that does not exist yet, so
 // each row starts from an empty revision table.
-func revisionDBURL(c *qt.C) string {
+func revisionDBURL(tb testing.TB) string {
+	c := qt.New(tb)
 	c.Helper()
 	return "sqlite://" + filepath.Join(c.TempDir(), "revisions.db")
 }
@@ -87,10 +90,10 @@ func TestCompatMigrateStatus_ConvertedDirIsRead(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			c := qt.New(t)
-			dir := writeConvertedFlywayDir(c)
-			hashConvertedFlywayDir(c, dir)
+			dir := writeConvertedFlywayDir(c.TB)
+			hashConvertedFlywayDir(c.TB, dir)
 			args := append([]string{"migrate", "status"}, test.args(dir)...)
-			stdout, stderr, err := runCompatExit(append(args, "--url", revisionDBURL(c))...)
+			stdout, stderr, err := runCompatExit(append(args, "--url", revisionDBURL(c.TB))...)
 			c.Assert(err, qt.IsNil, qt.Commentf("stderr: %s", stderr))
 			c.Assert(stdout, qt.Contains, "  -- Pending Files:   2\n")
 			c.Assert(stdout, qt.Contains, "  -- Executed Files:  0\n")
@@ -122,8 +125,8 @@ func TestCompatMigrateStatus_ConvertedDirRefusesDrift(t *testing.T) {
 		{
 			name: "edited_after_hashing",
 			prepare: func(c *qt.C, dir string) {
-				hashConvertedFlywayDir(c, dir)
-				writeAtlasApplyProjectMigration(c, dir, revisionConvertedFirst,
+				hashConvertedFlywayDir(c.TB, dir)
+				writeAtlasApplyProjectMigration(c.TB, dir, revisionConvertedFirst,
 					"CREATE TABLE t1 (id INTEGER PRIMARY KEY, extra TEXT);\n")
 			},
 			want: atlasChecksumMismatchErr,
@@ -131,7 +134,7 @@ func TestCompatMigrateStatus_ConvertedDirRefusesDrift(t *testing.T) {
 		{
 			name: "covered_file_removed_after_hashing",
 			prepare: func(c *qt.C, dir string) {
-				hashConvertedFlywayDir(c, dir)
+				hashConvertedFlywayDir(c.TB, dir)
 				c.Assert(os.Remove(filepath.Join(dir, revisionConvertedSecond)), qt.IsNil)
 			},
 			want: atlasChecksumMismatchErr,
@@ -141,12 +144,12 @@ func TestCompatMigrateStatus_ConvertedDirRefusesDrift(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			c := qt.New(t)
-			dir := writeConvertedFlywayDir(c)
+			dir := writeConvertedFlywayDir(c.TB)
 			test.prepare(c, dir)
 			_, stderr, err := runCompatExit(
 				"migrate", "status",
 				"--dir", "file://"+dir+"?format=flyway",
-				"--url", revisionDBURL(c),
+				"--url", revisionDBURL(c.TB),
 			)
 			c.Assert(err, qt.IsNotNil)
 			c.Assert(stderr, qt.Equals, test.want)
@@ -173,9 +176,9 @@ func TestCompatMigrateStatus_ConvertedDirRefusesDrift(t *testing.T) {
 func TestCompatMigrateSet_ConvertedDirWritesConvertedVersion(t *testing.T) {
 	t.Parallel()
 	c := qt.New(t)
-	dir := writeConvertedFlywayDir(c)
-	hashConvertedFlywayDir(c, dir)
-	url := revisionDBURL(c)
+	dir := writeConvertedFlywayDir(c.TB)
+	hashConvertedFlywayDir(c.TB, dir)
+	url := revisionDBURL(c.TB)
 
 	stdout, stderr, err := runCompatExit(
 		"migrate", "set", revisionConvertedFirstToken,
@@ -256,10 +259,10 @@ func TestCompatMigrateRevisionVerbs_DirFormatIsVerbatim(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			c := qt.New(t)
-			dir := writeConvertedFlywayDir(c)
-			hashConvertedFlywayDir(c, dir)
+			dir := writeConvertedFlywayDir(c.TB)
+			hashConvertedFlywayDir(c.TB, dir)
 			args := append([]string{"migrate", test.verb}, test.args(dir)...)
-			args = append(args, "--url", revisionDBURL(c))
+			args = append(args, "--url", revisionDBURL(c.TB))
 			_, stderr, err := runCompatExit(append(args, revisionSetVersionArg(test.verb)...)...)
 			c.Assert(err, qt.IsNotNil)
 			// The community binary's own wording, quoting the rejected value

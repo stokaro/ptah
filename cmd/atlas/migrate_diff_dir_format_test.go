@@ -26,7 +26,8 @@ import (
 // The sum is written with `migrate hash`, so the atlas.sum gate this verb runs
 // before anything else passes and each row below turns on the layout selection
 // rather than on a checksum refusal.
-func compatDiffFixtureDir(c *qt.C) (dir, target string) {
+func compatDiffFixtureDir(tb testing.TB) (dir, target string) {
+	c := qt.New(tb)
 	c.Helper()
 	dir = filepath.Join(c.TempDir(), "migrations")
 	c.Assert(os.MkdirAll(dir, 0o755), qt.IsNil)
@@ -54,10 +55,11 @@ func compatDiffFixtureDir(c *qt.C) (dir, target string) {
 // verb that mutates: a refusal that still wrote is not a refusal, and an
 // acceptance that wrote nothing is not the acceptance the community binary
 // makes. Every row below asserts both.
-func runCompatDiff(c *qt.C, query string, dirFormat []string) (wrote bool, err error) {
+func runCompatDiff(tb testing.TB, query string, dirFormat []string) (wrote bool, err error) {
+	c := qt.New(tb)
 	c.Helper()
-	dir, target := compatDiffFixtureDir(c)
-	before := len(atlasDirEntryNames(c, dir))
+	dir, target := compatDiffFixtureDir(c.TB)
+	before := len(atlasDirEntryNames(c.TB, dir))
 	args := []string{
 		"migrate", "diff", "dd",
 		"--dir", "file://" + dir + query,
@@ -66,7 +68,7 @@ func runCompatDiff(c *qt.C, query string, dirFormat []string) (wrote bool, err e
 	}
 	args = append(args, dirFormat...)
 	_, _, err = runCompat(args...)
-	return len(atlasDirEntryNames(c, dir)) > before, err
+	return len(atlasDirEntryNames(c.TB, dir)) > before, err
 }
 
 // TestCompatMigrateDiff_DirFormatValueIsParsedVerbatim closes the forbidden
@@ -142,7 +144,7 @@ func TestCompatMigrateDiff_DirFormatValueIsParsedVerbatim(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			wrote, err := runCompatDiff(c, "", []string{"--dir-format", tt.value})
+			wrote, err := runCompatDiff(c.TB, "", []string{"--dir-format", tt.value})
 
 			tt.check(c, err, wrote)
 		})
@@ -218,7 +220,7 @@ func TestCompatMigrateDiff_DirQueryFormatOutranksDirFormatFlag(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			wrote, err := runCompatDiff(c, tt.query, []string{"--dir-format", tt.dirFormat})
+			wrote, err := runCompatDiff(c.TB, tt.query, []string{"--dir-format", tt.dirFormat})
 
 			tt.check(c, err, wrote)
 		})
@@ -298,7 +300,7 @@ func TestCompatMigrateDiff_QueryFormatDecidesHowTheDirIsRead(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			wrote, err := runCompatDiff(c, "?format="+tt.format, nil)
+			wrote, err := runCompatDiff(c.TB, "?format="+tt.format, nil)
 
 			tt.check(c, err, wrote)
 		})

@@ -43,7 +43,7 @@ func TestSchemaApplyLockTimeoutSQLiteIsExplicitNoOp(t *testing.T) {
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out.String()))
 	c.Assert(out.String(), qt.Contains, schemaApplyLockUnsupportedNote)
 	c.Assert(out.String(), qt.Contains, "Schema apply completed successfully.")
-	c.Assert(sqliteTableCount(c, dbPath, "lock_users"), qt.Equals, 1)
+	c.Assert(sqliteTableCount(c.TB, dbPath, "lock_users"), qt.Equals, 1)
 }
 
 func TestSchemaApplyWithoutLockTimeoutPrintsNoLockNote(t *testing.T) {
@@ -77,8 +77,8 @@ func TestSchemaApplyPlanFileAcceptsLockTimeout(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "lock-plan.db")
-	seedSQLiteSchema(c, dbPath, `CREATE TABLE users (id INTEGER PRIMARY KEY);`)
-	planPath := planFileFixture(c, dir, dbPath,
+	seedSQLiteSchema(c.TB, dbPath, `CREATE TABLE users (id INTEGER PRIMARY KEY);`)
+	planPath := planFileFixture(c.TB, dir, dbPath,
 		"CREATE TABLE users (id INTEGER PRIMARY KEY);\nCREATE TABLE locked_orders (id INTEGER PRIMARY KEY);\n")
 
 	out, err := runSchemaApplyPlan(atlas.NewCompatCommand("atlas"), "", dbPath, planPath,
@@ -90,7 +90,7 @@ func TestSchemaApplyPlanFileAcceptsLockTimeout(t *testing.T) {
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 	c.Assert(out, qt.Contains, schemaApplyLockUnsupportedNote)
 	c.Assert(out, qt.Contains, "Schema apply completed successfully.")
-	c.Assert(sqliteTableCount(c, dbPath, "locked_orders"), qt.Equals, 1)
+	c.Assert(sqliteTableCount(c.TB, dbPath, "locked_orders"), qt.Equals, 1)
 }
 
 func TestSchemaApplyDevSimulationRunsPlanOnDevDatabase(t *testing.T) {
@@ -99,9 +99,9 @@ func TestSchemaApplyDevSimulationRunsPlanOnDevDatabase(t *testing.T) {
 	dbPath := filepath.Join(dir, "sim-target.db")
 	devPath := filepath.Join(dir, "sim-dev.db")
 	schemaPath := filepath.Join(dir, "schema.sql")
-	seedSQLiteSchema(c, dbPath, `CREATE TABLE sim_users (id INTEGER PRIMARY KEY);`)
+	seedSQLiteSchema(c.TB, dbPath, `CREATE TABLE sim_users (id INTEGER PRIMARY KEY);`)
 	// Pre-litter the dev database: the simulation must reset it first.
-	seedSQLiteSchema(c, devPath, `CREATE TABLE sim_stale (id INTEGER PRIMARY KEY);`)
+	seedSQLiteSchema(c.TB, devPath, `CREATE TABLE sim_stale (id INTEGER PRIMARY KEY);`)
 	c.Assert(os.WriteFile(schemaPath, []byte(`
 CREATE TABLE sim_users (id INTEGER PRIMARY KEY);
 CREATE TABLE sim_orders (id INTEGER PRIMARY KEY);
@@ -127,10 +127,10 @@ CREATE TABLE sim_orders (id INTEGER PRIMARY KEY);
 	// planning it required no dev database, but reaching the apply did.
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out.String()))
 	c.Assert(out.String(), qt.Contains, "Schema apply completed successfully.")
-	c.Assert(sqliteTableCount(c, devPath, "sim_users"), qt.Equals, 0)
-	c.Assert(sqliteTableCount(c, devPath, "sim_orders"), qt.Equals, 0)
-	c.Assert(sqliteTableCount(c, devPath, "sim_stale"), qt.Equals, 0)
-	c.Assert(sqliteTableCount(c, dbPath, "sim_orders"), qt.Equals, 1)
+	c.Assert(sqliteTableCount(c.TB, devPath, "sim_users"), qt.Equals, 0)
+	c.Assert(sqliteTableCount(c.TB, devPath, "sim_orders"), qt.Equals, 0)
+	c.Assert(sqliteTableCount(c.TB, devPath, "sim_stale"), qt.Equals, 0)
+	c.Assert(sqliteTableCount(c.TB, dbPath, "sim_orders"), qt.Equals, 1)
 }
 
 func TestSchemaApplyDevSimulationFailureLeavesTargetUnchanged(t *testing.T) {
@@ -163,7 +163,7 @@ func TestSchemaApplyDevSimulationFailureLeavesTargetUnchanged(t *testing.T) {
 	// simulation refuses the apply and the target database stays unchanged.
 	c.Assert(err, qt.ErrorMatches, `(?s)dev database simulation failed during plan: .*sim_fail_users.*; the plan was not applied to the target database`)
 	c.Assert(out.String(), qt.Not(qt.Contains), "Schema apply completed successfully.")
-	c.Assert(sqliteTableCount(c, dbPath, "sim_fail_users"), qt.Equals, 0)
+	c.Assert(sqliteTableCount(c.TB, dbPath, "sim_fail_users"), qt.Equals, 0)
 }
 
 func TestSchemaApplyDevURLMustDifferFromTarget(t *testing.T) {
@@ -171,7 +171,7 @@ func TestSchemaApplyDevURLMustDifferFromTarget(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "sim-same.db")
 	schemaPath := filepath.Join(dir, "schema.sql")
-	seedSQLiteSchema(c, dbPath, `CREATE TABLE sim_same_users (id INTEGER PRIMARY KEY);`)
+	seedSQLiteSchema(c.TB, dbPath, `CREATE TABLE sim_same_users (id INTEGER PRIMARY KEY);`)
 	c.Assert(os.WriteFile(schemaPath, []byte(`
 CREATE TABLE sim_same_users (id INTEGER PRIMARY KEY);
 CREATE TABLE sim_same_orders (id INTEGER PRIMARY KEY);
@@ -194,6 +194,6 @@ CREATE TABLE sim_same_orders (id INTEGER PRIMARY KEY);
 	// Simulation resets the dev database destructively, so pointing --dev-url
 	// at the target must refuse before anything is dropped.
 	c.Assert(err, qt.ErrorMatches, `--dev-url must not point at the target database: the dev database is reset destructively before the plan is rehearsed on it`)
-	c.Assert(sqliteTableCount(c, dbPath, "sim_same_users"), qt.Equals, 1)
-	c.Assert(sqliteTableCount(c, dbPath, "sim_same_orders"), qt.Equals, 0)
+	c.Assert(sqliteTableCount(c.TB, dbPath, "sim_same_users"), qt.Equals, 1)
+	c.Assert(sqliteTableCount(c.TB, dbPath, "sim_same_orders"), qt.Equals, 0)
 }

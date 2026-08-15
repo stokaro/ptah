@@ -52,10 +52,10 @@ func TestRunPublishesUTF16DiagnosticsAndHandlesExit(t *testing.T) {
 	err := RunWithOptions(context.Background(), strings.NewReader(input), &out, ServerOptions{Version: "v-test"})
 	c.Assert(err, qt.IsNil)
 
-	messages := readFramedMessages(c, out.String())
+	messages := readFramedMessages(c.TB, out.String())
 	c.Assert(messages, qt.HasLen, 4)
 
-	initialize := decodeResult(c, messages[0])
+	initialize := decodeResult(c.TB, messages[0])
 	c.Assert(initialize["serverInfo"], qt.DeepEquals, map[string]any{
 		"name":    "ptah-ls",
 		"version": "v-test",
@@ -64,13 +64,13 @@ func TestRunPublishesUTF16DiagnosticsAndHandlesExit(t *testing.T) {
 		"triggerCharacters": []any{" "},
 	})
 
-	params := decodeDiagnostics(c, messages[1])
+	params := decodeDiagnostics(c.TB, messages[1])
 	c.Assert(params.URI, qt.Equals, uri)
 	c.Assert(params.Diagnostics, qt.HasLen, 1)
 	c.Assert(params.Diagnostics[0].Code, qt.Equals, "PTAH002")
 	c.Assert(params.Diagnostics[0].Range.Start.Character, qt.Equals, byteOffsetToUTF16(text, strings.Index(text, "defaul")))
 
-	clearParams := decodeDiagnostics(c, messages[2])
+	clearParams := decodeDiagnostics(c.TB, messages[2])
 	c.Assert(clearParams.Diagnostics, qt.HasLen, 0)
 	c.Assert(string(messages[2].Params), qt.Contains, `"diagnostics":[]`)
 }
@@ -103,7 +103,8 @@ func framedMessage(payload any) string {
 	return fmt.Sprintf("Content-Length: %d\r\n\r\n%s", len(body), body)
 }
 
-func readFramedMessages(c *qt.C, text string) []rpcMessage {
+func readFramedMessages(tb testing.TB, text string) []rpcMessage {
+	c := qt.New(tb)
 	c.Helper()
 
 	s := &server{reader: bufio.NewReader(strings.NewReader(text))}
@@ -118,7 +119,8 @@ func readFramedMessages(c *qt.C, text string) []rpcMessage {
 	}
 }
 
-func decodeResult(c *qt.C, msg rpcMessage) map[string]any {
+func decodeResult(tb testing.TB, msg rpcMessage) map[string]any {
+	c := qt.New(tb)
 	c.Helper()
 
 	raw, err := json.Marshal(msg.Result)
@@ -128,7 +130,8 @@ func decodeResult(c *qt.C, msg rpcMessage) map[string]any {
 	return result
 }
 
-func decodeDiagnostics(c *qt.C, msg rpcMessage) publishDiagnosticsParams {
+func decodeDiagnostics(tb testing.TB, msg rpcMessage) publishDiagnosticsParams {
+	c := qt.New(tb)
 	c.Helper()
 
 	var params publishDiagnosticsParams

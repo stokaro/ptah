@@ -29,7 +29,8 @@ const checkDirectiveDropUsersSQL = `-- +ptah check name="users_empty" assert="SE
 
 // hashMigrationsDirForTest hashes dir through the real `migrations hash`
 // command so --verify-sum exercises the full hash-then-load CLI flow.
-func hashMigrationsDirForTest(c *qt.C, dir string) {
+func hashMigrationsDirForTest(tb testing.TB, dir string) {
+	c := qt.New(tb)
 	c.Helper()
 	cmd := migratehash.NewMigrateHashCommand()
 	var out bytes.Buffer
@@ -39,22 +40,24 @@ func hashMigrationsDirForTest(c *qt.C, dir string) {
 	c.Assert(cmd.Execute(), qt.IsNil, qt.Commentf("hash output:\n%s", out.String()))
 }
 
-func writeCheckDirectiveMigrationsDir(c *qt.C, initUpSQL string) string {
+func writeCheckDirectiveMigrationsDir(tb testing.TB, initUpSQL string) string {
+	c := qt.New(tb)
 	c.Helper()
 	dir := c.TempDir()
-	writeMigrateUpFile(c, dir, "0000000001_init.up.sql", initUpSQL)
-	writeMigrateUpFile(c, dir, "0000000001_init.down.sql", "DROP TABLE users;\n")
-	writeMigrateUpFile(c, dir, "0000000002_drop_users.up.sql", checkDirectiveDropUsersSQL)
-	writeMigrateUpFile(c, dir, "0000000002_drop_users.down.sql", "CREATE TABLE users (id INTEGER PRIMARY KEY);\n")
-	hashMigrationsDirForTest(c, dir)
+	writeMigrateUpFile(c.TB, dir, "0000000001_init.up.sql", initUpSQL)
+	writeMigrateUpFile(c.TB, dir, "0000000001_init.down.sql", "DROP TABLE users;\n")
+	writeMigrateUpFile(c.TB, dir, "0000000002_drop_users.up.sql", checkDirectiveDropUsersSQL)
+	writeMigrateUpFile(c.TB, dir, "0000000002_drop_users.down.sql", "CREATE TABLE users (id INTEGER PRIMARY KEY);\n")
+	hashMigrationsDirForTest(c.TB, dir)
 	return dir
 }
 
-func executeCheckDirectiveMigrateUp(c *qt.C, dir, dbURL string) error {
+func executeCheckDirectiveMigrateUp(tb testing.TB, dir, dbURL string) error {
+	c := qt.New(tb)
 	c.Helper()
 	cmd := NewMigrateUpCommand()
-	resetMigrateUpCommandForTest(c, cmd)
-	c.Cleanup(func() { resetMigrateUpCommandForTest(c, cmd) })
+	resetMigrateUpCommandForTest(c.TB, cmd)
+	c.Cleanup(func() { resetMigrateUpCommandForTest(c.TB, cmd) })
 	var out, errOut bytes.Buffer // swallow command output to keep test logs quiet
 	cmd.SetOut(&out)
 	cmd.SetErr(&errOut)
@@ -72,13 +75,13 @@ func TestMigrateUpCommand_CheckDirectiveFilePassingCheckApplies(t *testing.T) {
 
 	// users is created empty, so migration 2's check passes and the guarded
 	// DROP TABLE applies.
-	dir := writeCheckDirectiveMigrationsDir(c, "CREATE TABLE users (id INTEGER PRIMARY KEY);\n")
+	dir := writeCheckDirectiveMigrationsDir(c.TB, "CREATE TABLE users (id INTEGER PRIMARY KEY);\n")
 	dbURL := (&url.URL{Scheme: "sqlite", Path: filepath.Join(t.TempDir(), "ptah.db")}).String()
 
-	err := executeCheckDirectiveMigrateUp(c, dir, dbURL)
+	err := executeCheckDirectiveMigrateUp(c.TB, dir, dbURL)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(sqliteMigrateUpTableExists(c, dbURL, "users"), qt.IsFalse)
+	c.Assert(sqliteMigrateUpTableExists(c.TB, dbURL, "users"), qt.IsFalse)
 }
 
 func TestMigrateUpCommand_CheckDirectiveFileFailingCheckAborts(t *testing.T) {
@@ -86,16 +89,16 @@ func TestMigrateUpCommand_CheckDirectiveFileFailingCheckAborts(t *testing.T) {
 
 	// users is seeded with a row, so migration 2's check must execute, fail,
 	// and abort with the guarded DROP TABLE never applied.
-	dir := writeCheckDirectiveMigrationsDir(c,
+	dir := writeCheckDirectiveMigrationsDir(c.TB,
 		"CREATE TABLE users (id INTEGER PRIMARY KEY);\nINSERT INTO users (id) VALUES (1);\n")
 	dbURL := (&url.URL{Scheme: "sqlite", Path: filepath.Join(t.TempDir(), "ptah.db")}).String()
 
-	err := executeCheckDirectiveMigrateUp(c, dir, dbURL)
+	err := executeCheckDirectiveMigrateUp(c.TB, dir, dbURL)
 
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Not(qt.Contains), "invalid +ptah directive",
 		qt.Commentf("the documented check directive must not fail file loading"))
 	c.Assert(err.Error(), qt.Contains, "pre-migration check users_empty for migration 2 was not satisfied")
 	c.Assert(err.Error(), qt.Contains, "rerun with --skip-checks")
-	c.Assert(sqliteMigrateUpTableExists(c, dbURL, "users"), qt.IsTrue)
+	c.Assert(sqliteMigrateUpTableExists(c.TB, dbURL, "users"), qt.IsTrue)
 }

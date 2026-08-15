@@ -22,7 +22,8 @@ func projectChanges(changes []lint.SchemaChange) []changeProjection {
 	return out
 }
 
-func fileByName(c *qt.C, analysis lint.Analysis, name string) lint.File {
+func fileByName(tb testing.TB, analysis lint.Analysis, name string) lint.File {
+	c := qt.New(tb)
 	c.Helper()
 	for _, f := range analysis.Files() {
 		if f.Name == name {
@@ -33,7 +34,8 @@ func fileByName(c *qt.C, analysis lint.Analysis, name string) lint.File {
 	return lint.File{}
 }
 
-func analyzeSQLite(c *qt.C, files map[string]string) lint.Analysis {
+func analyzeSQLite(tb testing.TB, files map[string]string) lint.Analysis {
+	c := qt.New(tb)
 	c.Helper()
 	analysis, err := lint.AnalyzeFS(fixture(files), lint.Options{
 		DirFormat: migrator.MigrationDirFormatAtlas,
@@ -122,8 +124,8 @@ func TestAnalyzeFS_SchemaChangeCardinality(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			c := qt.New(t)
-			analysis := analyzeSQLite(c, map[string]string{"1_change.sql": tc.sql})
-			file := fileByName(c, analysis, "1_change.sql")
+			analysis := analyzeSQLite(c.TB, map[string]string{"1_change.sql": tc.sql})
+			file := fileByName(c.TB, analysis, "1_change.sql")
 			c.Assert(projectChanges(file.Changes), qt.DeepEquals, tc.want)
 		})
 	}
@@ -134,13 +136,13 @@ func TestAnalyzeFS_SchemaChangeCardinality(t *testing.T) {
 // statements, and each change points back at its producing statement.
 func TestAnalyzeFS_MixedDDLAndNonDDLFile(t *testing.T) {
 	c := qt.New(t)
-	analysis := analyzeSQLite(c, map[string]string{
+	analysis := analyzeSQLite(c.TB, map[string]string{
 		"7_mixed.sql": "CREATE TABLE t (id INTEGER);\n" +
 			"INSERT INTO t (id) VALUES (1);\n" +
 			"ALTER TABLE t ADD COLUMN a INTEGER, ADD COLUMN b INTEGER;\n",
 	})
 
-	file := fileByName(c, analysis, "7_mixed.sql")
+	file := fileByName(c.TB, analysis, "7_mixed.sql")
 
 	c.Assert(file.Statements, qt.HasLen, 3)
 	c.Assert(file.Changes, qt.HasLen, 3)
@@ -168,8 +170,8 @@ func TestAnalyzeFS_DownMigrationHasNoChanges(t *testing.T) {
 	}), lint.Options{DirFormat: migrator.MigrationDirFormatPtah})
 	c.Assert(err, qt.IsNil)
 
-	up := fileByName(c, analysis, "0000000001_init.up.sql")
-	down := fileByName(c, analysis, "0000000001_init.down.sql")
+	up := fileByName(c.TB, analysis, "0000000001_init.up.sql")
+	down := fileByName(c.TB, analysis, "0000000001_init.down.sql")
 
 	c.Assert(projectChanges(up.Changes), qt.DeepEquals, []changeProjection{
 		{lint.SchemaChangeAdd, "users"},
@@ -184,8 +186,8 @@ func TestAnalyzeFS_SchemaChangesAreDeterministic(t *testing.T) {
 		"2_b.sql": "DROP TABLE a, b;",
 	}
 
-	first := fileByName(c, analyzeSQLite(c, files), "1_a.sql")
-	second := fileByName(c, analyzeSQLite(c, files), "1_a.sql")
+	first := fileByName(c.TB, analyzeSQLite(c.TB, files), "1_a.sql")
+	second := fileByName(c.TB, analyzeSQLite(c.TB, files), "1_a.sql")
 
 	c.Assert(second.Changes, qt.DeepEquals, first.Changes)
 }
@@ -202,7 +204,7 @@ func TestAnalyzeFS_SchemaChangesRespectDialect(t *testing.T) {
 	})
 	c.Assert(err, qt.IsNil)
 
-	file := fileByName(c, postgres, "1_change.sql")
+	file := fileByName(c.TB, postgres, "1_change.sql")
 	c.Assert(projectChanges(file.Changes), qt.DeepEquals, []changeProjection{
 		{lint.SchemaChangeAdd, "t"},
 		{lint.SchemaChangeAdd, "a"},

@@ -119,7 +119,7 @@ func TestPostgresLockWaitError_MapsQueryDeadlineToTimeout(t *testing.T) {
 func TestCloseAfterFailedAcquisition_DiscardsAmbiguousSession(t *testing.T) {
 	c := qt.New(t)
 	queryErr := errors.New("lock response lost")
-	db, tracker := openTrackingDB(c, queryErr)
+	db, tracker := openTrackingDB(c.TB, queryErr)
 	session, err := db.Conn(c.Context())
 	c.Assert(err, qt.IsNil)
 
@@ -143,7 +143,7 @@ func TestCloseAfterFailedAcquisition_DiscardsAmbiguousSession(t *testing.T) {
 func TestAcquireMySQLLock_DiscardsSessionAfterAmbiguousFailure(t *testing.T) {
 	c := qt.New(t)
 	queryErr := errors.New("GET_LOCK response lost")
-	db, tracker := openTrackingDB(c, queryErr)
+	db, tracker := openTrackingDB(c.TB, queryErr)
 	session, err := db.Conn(c.Context())
 	c.Assert(err, qt.IsNil)
 
@@ -167,7 +167,7 @@ func TestAcquireMySQLLock_DiscardsSessionAfterAmbiguousFailure(t *testing.T) {
 func TestAcquireSQLServerLock_DiscardsSessionAfterAmbiguousFailure(t *testing.T) {
 	c := qt.New(t)
 	queryErr := errors.New("sp_getapplock response lost")
-	db, tracker := openTrackingDB(c, queryErr)
+	db, tracker := openTrackingDB(c.TB, queryErr)
 	session, err := db.Conn(c.Context())
 	c.Assert(err, qt.IsNil)
 
@@ -189,7 +189,7 @@ func TestAcquireSQLServerLock_DiscardsSessionAfterAmbiguousFailure(t *testing.T)
 
 func TestCloseAfterFailedAcquisition_ReturnsDefiniteFailureSessionToPool(t *testing.T) {
 	c := qt.New(t)
-	db, tracker := openTrackingDB(c, nil)
+	db, tracker := openTrackingDB(c.TB, nil)
 	session, err := db.Conn(c.Context())
 	c.Assert(err, qt.IsNil)
 	timeoutErr := &TimeoutError{
@@ -209,7 +209,7 @@ func TestCloseAfterFailedAcquisition_ReturnsDefiniteFailureSessionToPool(t *test
 
 func TestLockRelease_DiscardsSessionAfterTimeout(t *testing.T) {
 	c := qt.New(t)
-	db, tracker := openTrackingDB(c, nil)
+	db, tracker := openTrackingDB(c.TB, nil)
 	session, err := db.Conn(c.Context())
 	c.Assert(err, qt.IsNil)
 	lock := &Lock{
@@ -230,7 +230,6 @@ func TestLockRelease_DiscardsSessionAfterTimeout(t *testing.T) {
 }
 
 func TestMySQLLockTimeoutSeconds(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name    string
@@ -245,7 +244,8 @@ func TestMySQLLockTimeoutSeconds(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(mySQLLockTimeoutSeconds(test.dialect, test.timeout), qt.Equals, test.want)
 		})
 	}
@@ -267,7 +267,8 @@ type trackingConn struct {
 
 var trackingDriverID atomic.Int64
 
-func openTrackingDB(c *qt.C, queryErr error) (*sql.DB, *trackingDB) {
+func openTrackingDB(tb testing.TB, queryErr error) (*sql.DB, *trackingDB) {
+	c := qt.New(tb)
 	c.Helper()
 	tracker := &trackingDB{queryErr: queryErr}
 	driverName := "ptah_dblock_tracking_" + strconv.FormatInt(trackingDriverID.Add(1), 10)
@@ -312,7 +313,6 @@ var (
 )
 
 func TestSQLServerLockTimeoutMilliseconds(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name    string
@@ -326,7 +326,8 @@ func TestSQLServerLockTimeoutMilliseconds(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(sqlServerLockTimeoutMilliseconds(test.timeout), qt.Equals, test.want)
 		})
 	}

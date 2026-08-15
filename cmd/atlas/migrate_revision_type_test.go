@@ -20,15 +20,15 @@ import (
 
 func TestMigrateApply_RecordsAppliedAtlasRevisionMetadata(t *testing.T) {
 	c := qt.New(t)
-	fixture := newAtlasRevisionFixture(c)
+	fixture := newAtlasRevisionFixture(c.TB)
 
-	runAtlasCommand(c,
+	runAtlasCommand(c.TB,
 		"migrate", "apply",
 		"--url", "sqlite://"+fixture.dbPath,
 		"--dir", "file://"+fixture.migrationsDir,
 	)
 
-	got := readAtlasRevision(c, fixture.dbPath, fixture.version)
+	got := readAtlasRevision(c.TB, fixture.dbPath, fixture.version)
 	c.Assert(got, qt.DeepEquals, atlasRevisionRow{
 		Version:         fixture.version,
 		Description:     "create_users",
@@ -40,7 +40,7 @@ func TestMigrateApply_RecordsAppliedAtlasRevisionMetadata(t *testing.T) {
 		OperatorVersion: "Ptah",
 	})
 	c.Assert(
-		readAtlasRevisionStorageTypes(c, fixture.dbPath, fixture.version),
+		readAtlasRevisionStorageTypes(c.TB, fixture.dbPath, fixture.version),
 		qt.DeepEquals,
 		atlasRevisionStorageTypes{
 			Error:          "text",
@@ -48,20 +48,20 @@ func TestMigrateApply_RecordsAppliedAtlasRevisionMetadata(t *testing.T) {
 			PartialHashes:  "blob",
 		},
 	)
-	_, err := time.Parse(time.RFC3339Nano, readAtlasRevisionExecutedAt(c, fixture.dbPath, fixture.version))
+	_, err := time.Parse(time.RFC3339Nano, readAtlasRevisionExecutedAt(c.TB, fixture.dbPath, fixture.version))
 	c.Assert(err, qt.IsNil)
-	c.Assert(readAtlasRevisionVersions(c, fixture.dbPath), qt.DeepEquals, []string{
+	c.Assert(readAtlasRevisionVersions(c.TB, fixture.dbPath), qt.DeepEquals, []string{
 		"20260719000000",
 		fixture.version,
 	})
-	c.Assert(renderAtlasRevisionStatus(c, fixture), qt.Equals, "applied|0")
+	c.Assert(renderAtlasRevisionStatus(c.TB, fixture), qt.Equals, "applied|0")
 }
 
 func TestMigrateSet_RecordsManuallySetAtlasRevisionMetadata(t *testing.T) {
 	c := qt.New(t)
-	fixture := newAtlasRevisionFixture(c)
+	fixture := newAtlasRevisionFixture(c.TB)
 
-	output := runAtlasCommand(c,
+	output := runAtlasCommand(c.TB,
 		"migrate", "set", fixture.version,
 		"--url", "sqlite://"+fixture.dbPath,
 		"--dir", "file://"+fixture.migrationsDir,
@@ -72,7 +72,7 @@ func TestMigrateSet_RecordsManuallySetAtlasRevisionMetadata(t *testing.T) {
 			"  + 20260719000000 (create_accounts)\n"+
 			"  + 20260719010000 (create_users)",
 	)
-	got := readAtlasRevision(c, fixture.dbPath, fixture.version)
+	got := readAtlasRevision(c.TB, fixture.dbPath, fixture.version)
 	c.Assert(got, qt.DeepEquals, atlasRevisionRow{
 		Version:         fixture.version,
 		Description:     "create_users",
@@ -83,29 +83,29 @@ func TestMigrateSet_RecordsManuallySetAtlasRevisionMetadata(t *testing.T) {
 		PartialHashes:   "null",
 		OperatorVersion: "Ptah",
 	})
-	c.Assert(readAtlasRevisionVersions(c, fixture.dbPath), qt.DeepEquals, []string{
+	c.Assert(readAtlasRevisionVersions(c.TB, fixture.dbPath), qt.DeepEquals, []string{
 		"20260719000000",
 		fixture.version,
 	})
-	c.Assert(renderAtlasRevisionStatus(c, fixture), qt.Equals, "applied + manually set|0")
+	c.Assert(renderAtlasRevisionStatus(c.TB, fixture), qt.Equals, "applied + manually set|0")
 }
 
 func TestMigrateSet_PreservesExistingAtlasRevisions(t *testing.T) {
 	c := qt.New(t)
-	fixture := newAtlasRevisionFixture(c)
+	fixture := newAtlasRevisionFixture(c.TB)
 
-	runAtlasCommand(c,
+	runAtlasCommand(c.TB,
 		"migrate", "apply", "1",
 		"--url", "sqlite://"+fixture.dbPath,
 		"--dir", "file://"+fixture.migrationsDir,
 	)
-	runAtlasCommand(c,
+	runAtlasCommand(c.TB,
 		"migrate", "set", fixture.version,
 		"--url", "sqlite://"+fixture.dbPath,
 		"--dir", "file://"+fixture.migrationsDir,
 	)
 
-	first := readAtlasRevision(c, fixture.dbPath, fixture.previousVersion)
+	first := readAtlasRevision(c.TB, fixture.dbPath, fixture.previousVersion)
 	c.Assert(first, qt.DeepEquals, atlasRevisionRow{
 		Version:         fixture.previousVersion,
 		Description:     "create_accounts",
@@ -116,7 +116,7 @@ func TestMigrateSet_PreservesExistingAtlasRevisions(t *testing.T) {
 		PartialHashes:   "null",
 		OperatorVersion: "Ptah",
 	})
-	second := readAtlasRevision(c, fixture.dbPath, fixture.version)
+	second := readAtlasRevision(c.TB, fixture.dbPath, fixture.version)
 	c.Assert(second.Type, qt.Equals, 6)
 	c.Assert(second.Applied, qt.Equals, 0)
 	c.Assert(second.Total, qt.Equals, 0)
@@ -124,38 +124,38 @@ func TestMigrateSet_PreservesExistingAtlasRevisions(t *testing.T) {
 
 func TestMigrateSet_RemovesAtlasRevisionsAboveTarget(t *testing.T) {
 	c := qt.New(t)
-	fixture := newAtlasRevisionFixture(c)
+	fixture := newAtlasRevisionFixture(c.TB)
 
-	runAtlasCommand(c,
+	runAtlasCommand(c.TB,
 		"migrate", "apply",
 		"--url", "sqlite://"+fixture.dbPath,
 		"--dir", "file://"+fixture.migrationsDir,
 	)
-	runAtlasCommand(c,
+	runAtlasCommand(c.TB,
 		"migrate", "set", fixture.previousVersion,
 		"--url", "sqlite://"+fixture.dbPath,
 		"--dir", "file://"+fixture.migrationsDir,
 	)
 
-	got := readAtlasRevision(c, fixture.dbPath, fixture.previousVersion)
+	got := readAtlasRevision(c.TB, fixture.dbPath, fixture.previousVersion)
 	c.Assert(got.Type, qt.Equals, 2)
 	c.Assert(got.Applied, qt.Equals, 1)
 	c.Assert(got.Total, qt.Equals, 1)
-	c.Assert(readAtlasRevisionVersions(c, fixture.dbPath), qt.DeepEquals, []string{fixture.previousVersion})
-	c.Assert(renderAtlasRevisionStatus(c, fixture), qt.Equals, "applied|1")
+	c.Assert(readAtlasRevisionVersions(c.TB, fixture.dbPath), qt.DeepEquals, []string{fixture.previousVersion})
+	c.Assert(renderAtlasRevisionStatus(c.TB, fixture), qt.Equals, "applied|1")
 }
 
 func TestMigrateSet_PreservesDirtyAtlasRevisionAndCombinesType(t *testing.T) {
 	c := qt.New(t)
-	fixture := newAtlasRevisionFixture(c)
+	fixture := newAtlasRevisionFixture(c.TB)
 
-	runAtlasCommand(c,
+	runAtlasCommand(c.TB,
 		"migrate", "apply",
 		"--url", "sqlite://"+fixture.dbPath,
 		"--dir", "file://"+fixture.migrationsDir,
 	)
-	markAtlasRevisionDirty(c, fixture.dbPath, fixture.version, 2)
-	output := runAtlasCommand(c,
+	markAtlasRevisionDirty(c.TB, fixture.dbPath, fixture.version, 2)
+	output := runAtlasCommand(c.TB,
 		"migrate", "set", fixture.version,
 		"--url", "sqlite://"+fixture.dbPath,
 		"--dir", "file://"+fixture.migrationsDir,
@@ -165,12 +165,12 @@ func TestMigrateSet_PreservesDirtyAtlasRevisionAndCombinesType(t *testing.T) {
 		"Current version is 20260719010000 (1 set):\n\n"+
 			"  + 20260719010000 (create_users)",
 	)
-	got := readAtlasRevision(c, fixture.dbPath, fixture.version)
+	got := readAtlasRevision(c.TB, fixture.dbPath, fixture.version)
 	c.Assert(got.Type, qt.Equals, 6)
 	c.Assert(got.Applied, qt.Equals, 0)
 	c.Assert(got.Total, qt.Equals, 1)
 	c.Assert(got.Error, qt.Equals, "broken")
-	status := runAtlasCommand(c,
+	status := runAtlasCommand(c.TB,
 		"migrate", "status",
 		"--url", "sqlite://"+fixture.dbPath,
 		"--dir", "file://"+fixture.migrationsDir,
@@ -181,58 +181,58 @@ func TestMigrateSet_PreservesDirtyAtlasRevisionAndCombinesType(t *testing.T) {
 
 func TestMigrateSet_ReplacesDirtyBaselineType(t *testing.T) {
 	c := qt.New(t)
-	fixture := newAtlasRevisionFixture(c)
+	fixture := newAtlasRevisionFixture(c.TB)
 
-	runAtlasCommand(c,
+	runAtlasCommand(c.TB,
 		"migrate", "apply",
 		"--url", "sqlite://"+fixture.dbPath,
 		"--dir", "file://"+fixture.migrationsDir,
 		"--baseline", fixture.version,
 	)
-	markAtlasRevisionDirty(c, fixture.dbPath, fixture.version, 1)
-	runAtlasCommand(c,
+	markAtlasRevisionDirty(c.TB, fixture.dbPath, fixture.version, 1)
+	runAtlasCommand(c.TB,
 		"migrate", "set", fixture.version,
 		"--url", "sqlite://"+fixture.dbPath,
 		"--dir", "file://"+fixture.migrationsDir,
 	)
 
-	got := readAtlasRevision(c, fixture.dbPath, fixture.version)
+	got := readAtlasRevision(c.TB, fixture.dbPath, fixture.version)
 	c.Assert(got.Type, qt.Equals, 6)
 	c.Assert(got.Error, qt.Equals, "broken")
 }
 
 func TestMigrateSet_ReplacesDirtyUnknownType(t *testing.T) {
 	c := qt.New(t)
-	fixture := newAtlasRevisionFixture(c)
+	fixture := newAtlasRevisionFixture(c.TB)
 
-	runAtlasCommand(c,
+	runAtlasCommand(c.TB,
 		"migrate", "set", fixture.version,
 		"--url", "sqlite://"+fixture.dbPath,
 		"--dir", "file://"+fixture.migrationsDir,
 	)
-	markAtlasRevisionDirty(c, fixture.dbPath, fixture.version, 8)
-	runAtlasCommand(c,
+	markAtlasRevisionDirty(c.TB, fixture.dbPath, fixture.version, 8)
+	runAtlasCommand(c.TB,
 		"migrate", "set", fixture.version,
 		"--url", "sqlite://"+fixture.dbPath,
 		"--dir", "file://"+fixture.migrationsDir,
 	)
 
-	got := readAtlasRevision(c, fixture.dbPath, fixture.version)
+	got := readAtlasRevision(c.TB, fixture.dbPath, fixture.version)
 	c.Assert(got.Type, qt.Equals, 6)
 	c.Assert(got.Error, qt.Equals, "broken")
 }
 
 func TestMigrateSet_ReportsSetAndRemovedRevisions(t *testing.T) {
 	c := qt.New(t)
-	fixture := newAtlasRevisionFixture(c)
+	fixture := newAtlasRevisionFixture(c.TB)
 
-	runAtlasCommand(c,
+	runAtlasCommand(c.TB,
 		"migrate", "apply",
 		"--url", "sqlite://"+fixture.dbPath,
 		"--dir", "file://"+fixture.migrationsDir,
 	)
-	markAtlasRevisionDirty(c, fixture.dbPath, fixture.previousVersion, 1)
-	output := runAtlasCommand(c,
+	markAtlasRevisionDirty(c.TB, fixture.dbPath, fixture.previousVersion, 1)
+	output := runAtlasCommand(c.TB,
 		"migrate", "set", fixture.previousVersion,
 		"--url", "sqlite://"+fixture.dbPath,
 		"--dir", "file://"+fixture.migrationsDir,
@@ -247,14 +247,14 @@ func TestMigrateSet_ReportsSetAndRemovedRevisions(t *testing.T) {
 
 func TestMigrateSet_NoChangesProducesNoOutput(t *testing.T) {
 	c := qt.New(t)
-	fixture := newAtlasRevisionFixture(c)
+	fixture := newAtlasRevisionFixture(c.TB)
 
-	runAtlasCommand(c,
+	runAtlasCommand(c.TB,
 		"migrate", "set", fixture.version,
 		"--url", "sqlite://"+fixture.dbPath,
 		"--dir", "file://"+fixture.migrationsDir,
 	)
-	output := runAtlasCommand(c,
+	output := runAtlasCommand(c.TB,
 		"migrate", "set", fixture.version,
 		"--url", "sqlite://"+fixture.dbPath,
 		"--dir", "file://"+fixture.migrationsDir,
@@ -272,9 +272,9 @@ func TestMigrateSet_VersionOnlyFileOmitsEmptyDescription(t *testing.T) {
 		os.WriteFile(filepath.Join(migrationsDir, "1.sql"), []byte("SELECT 1;\n"), 0o600),
 		qt.IsNil,
 	)
-	runAtlasCommand(c, "migrate", "hash", "--dir", "file://"+migrationsDir)
+	runAtlasCommand(c.TB, "migrate", "hash", "--dir", "file://"+migrationsDir)
 
-	output := runAtlasCommand(c,
+	output := runAtlasCommand(c.TB,
 		"migrate", "set", "1",
 		"--url", "sqlite://"+filepath.Join(root, "state.db"),
 		"--dir", "file://"+migrationsDir,
@@ -285,9 +285,9 @@ func TestMigrateSet_VersionOnlyFileOmitsEmptyDescription(t *testing.T) {
 
 func TestMigrateSet_OutputMatchesAtlasBytes(t *testing.T) {
 	c := qt.New(t)
-	fixture := newAtlasRevisionFixture(c)
+	fixture := newAtlasRevisionFixture(c.TB)
 
-	output := executeAtlasCommand(c,
+	output := executeAtlasCommand(c.TB,
 		"migrate", "set", fixture.version,
 		"--url", "sqlite://"+fixture.dbPath,
 		"--dir", "file://"+fixture.migrationsDir,
@@ -302,7 +302,7 @@ func TestMigrateSet_OutputMatchesAtlasBytes(t *testing.T) {
 
 func TestMigrateSet_OutputFailureIsReported(t *testing.T) {
 	c := qt.New(t)
-	fixture := newAtlasRevisionFixture(c)
+	fixture := newAtlasRevisionFixture(c.TB)
 	cmd := atlas.NewCompatCommand("atlas")
 	cmd.SetOut(closedWriter{})
 	var errOut bytes.Buffer
@@ -320,16 +320,16 @@ func TestMigrateSet_OutputFailureIsReported(t *testing.T) {
 
 func TestMigrateApply_BaselineRecordsAtlasRevisionMetadata(t *testing.T) {
 	c := qt.New(t)
-	fixture := newAtlasRevisionFixture(c)
+	fixture := newAtlasRevisionFixture(c.TB)
 
-	runAtlasCommand(c,
+	runAtlasCommand(c.TB,
 		"migrate", "apply",
 		"--url", "sqlite://"+fixture.dbPath,
 		"--dir", "file://"+fixture.migrationsDir,
 		"--baseline", fixture.version,
 	)
 
-	got := readAtlasRevision(c, fixture.dbPath, fixture.version)
+	got := readAtlasRevision(c.TB, fixture.dbPath, fixture.version)
 	c.Assert(got, qt.DeepEquals, atlasRevisionRow{
 		Version:         fixture.version,
 		Description:     "create_users",
@@ -340,13 +340,13 @@ func TestMigrateApply_BaselineRecordsAtlasRevisionMetadata(t *testing.T) {
 		PartialHashes:   "null",
 		OperatorVersion: "Ptah",
 	})
-	c.Assert(readAtlasRevisionVersions(c, fixture.dbPath), qt.DeepEquals, []string{fixture.version})
-	c.Assert(renderAtlasRevisionStatus(c, fixture), qt.Equals, "baseline|0")
+	c.Assert(readAtlasRevisionVersions(c.TB, fixture.dbPath), qt.DeepEquals, []string{fixture.version})
+	c.Assert(renderAtlasRevisionStatus(c.TB, fixture), qt.Equals, "baseline|0")
 }
 
 func TestMigrateApply_BaselineRejectsMissingAtlasVersion(t *testing.T) {
 	c := qt.New(t)
-	fixture := newAtlasRevisionFixture(c)
+	fixture := newAtlasRevisionFixture(c.TB)
 	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
@@ -372,7 +372,8 @@ type atlasRevisionFixture struct {
 	hash            string
 }
 
-func newAtlasRevisionFixture(c *qt.C) atlasRevisionFixture {
+func newAtlasRevisionFixture(tb testing.TB) atlasRevisionFixture {
+	c := qt.New(tb)
 	c.Helper()
 	root := c.TempDir()
 	migrationsDir := filepath.Join(root, "migrations")
@@ -387,7 +388,7 @@ func newAtlasRevisionFixture(c *qt.C) atlasRevisionFixture {
 	)
 	c.Assert(os.WriteFile(filepath.Join(migrationsDir, previousFilename), []byte(previousSQLBody), 0o600), qt.IsNil)
 	c.Assert(os.WriteFile(filepath.Join(migrationsDir, filename), []byte(sqlBody), 0o600), qt.IsNil)
-	runAtlasCommand(c, "migrate", "hash", "--dir", "file://"+migrationsDir)
+	runAtlasCommand(c.TB, "migrate", "hash", "--dir", "file://"+migrationsDir)
 
 	previousHashInput := append([]byte(previousFilename), []byte(previousSQLBody)...)
 	previousHashSum := sha256.Sum256(previousHashInput)
@@ -424,7 +425,8 @@ type atlasRevisionStorageTypes struct {
 	PartialHashes  string
 }
 
-func readAtlasRevision(c *qt.C, dbPath, version string) atlasRevisionRow {
+func readAtlasRevision(tb testing.TB, dbPath, version string) atlasRevisionRow {
+	c := qt.New(tb)
 	c.Helper()
 	db, err := sql.Open("sqlite", dbPath)
 	c.Assert(err, qt.IsNil)
@@ -453,7 +455,8 @@ WHERE version = ?
 	return got
 }
 
-func readAtlasRevisionExecutedAt(c *qt.C, dbPath, version string) string {
+func readAtlasRevisionExecutedAt(tb testing.TB, dbPath, version string) string {
+	c := qt.New(tb)
 	c.Helper()
 	db, err := sql.Open("sqlite", dbPath)
 	c.Assert(err, qt.IsNil)
@@ -470,7 +473,8 @@ func readAtlasRevisionExecutedAt(c *qt.C, dbPath, version string) string {
 	return executedAt
 }
 
-func readAtlasRevisionStorageTypes(c *qt.C, dbPath, version string) atlasRevisionStorageTypes {
+func readAtlasRevisionStorageTypes(tb testing.TB, dbPath, version string) atlasRevisionStorageTypes {
+	c := qt.New(tb)
 	c.Helper()
 	db, err := sql.Open("sqlite", dbPath)
 	c.Assert(err, qt.IsNil)
@@ -489,7 +493,8 @@ WHERE version = ?`,
 	return got
 }
 
-func markAtlasRevisionDirty(c *qt.C, dbPath, version string, revisionType int) {
+func markAtlasRevisionDirty(tb testing.TB, dbPath, version string, revisionType int) {
+	c := qt.New(tb)
 	c.Helper()
 	db, err := sql.Open("sqlite", dbPath)
 	c.Assert(err, qt.IsNil)
@@ -505,7 +510,8 @@ func markAtlasRevisionDirty(c *qt.C, dbPath, version string, revisionType int) {
 	c.Assert(err, qt.IsNil)
 }
 
-func readAtlasRevisionVersions(c *qt.C, dbPath string) []string {
+func readAtlasRevisionVersions(tb testing.TB, dbPath string) []string {
+	c := qt.New(tb)
 	c.Helper()
 	db, err := sql.Open("sqlite", dbPath)
 	c.Assert(err, qt.IsNil)
@@ -526,9 +532,10 @@ FROM (
 	return strings.Split(versions, ",")
 }
 
-func renderAtlasRevisionStatus(c *qt.C, fixture atlasRevisionFixture) string {
+func renderAtlasRevisionStatus(tb testing.TB, fixture atlasRevisionFixture) string {
+	c := qt.New(tb)
 	c.Helper()
-	return runAtlasCommand(c,
+	return runAtlasCommand(c.TB,
 		"migrate", "status",
 		"--url", "sqlite://"+fixture.dbPath,
 		"--dir", "file://"+fixture.migrationsDir,
@@ -536,12 +543,14 @@ func renderAtlasRevisionStatus(c *qt.C, fixture atlasRevisionFixture) string {
 	)
 }
 
-func runAtlasCommand(c *qt.C, args ...string) string {
+func runAtlasCommand(tb testing.TB, args ...string) string {
+	c := qt.New(tb)
 	c.Helper()
-	return strings.TrimSpace(executeAtlasCommand(c, args...))
+	return strings.TrimSpace(executeAtlasCommand(c.TB, args...))
 }
 
-func executeAtlasCommand(c *qt.C, args ...string) string {
+func executeAtlasCommand(tb testing.TB, args ...string) string {
+	c := qt.New(tb)
 	c.Helper()
 	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer

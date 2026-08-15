@@ -48,7 +48,8 @@ type User struct {
 `
 }
 
-func planRoleModel(c *qt.C, password string) string {
+func planRoleModel(tb testing.TB, password string) string {
+	c := qt.New(tb)
 	c.Helper()
 	dir := c.TempDir()
 	path := filepath.Join(dir, "model.go")
@@ -84,7 +85,7 @@ func TestCleanupDiffRedactsRolePassword(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			diff := planRoleModel(c, tt.password)
+			diff := planRoleModel(c.TB, tt.password)
 
 			// leaks() rather than qt.Not(qt.Contains): that matcher prints its
 			// argument on failure, which would put the credential in CI output.
@@ -136,7 +137,7 @@ func TestCleanupDiffRedactsUnrecognizedDirectiveSpellings(t *testing.T) {
 func TestCleanupDiffKeepsNonSensitiveAttributesReadable(t *testing.T) {
 	c := qt.New(t)
 
-	diff := planRoleModel(c, "SUPERSECRET")
+	diff := planRoleModel(c.TB, "SUPERSECRET")
 
 	// The diff must still identify the file, directive and the other
 	// attributes; only the credential is masked.

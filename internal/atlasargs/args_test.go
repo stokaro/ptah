@@ -10,7 +10,6 @@ import (
 )
 
 func TestParseLocalDir_HappyPath(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name      string
 		input     string
@@ -62,7 +61,8 @@ func TestParseLocalDir_HappyPath(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			got, err := atlasargs.ParseLocalDir(tt.input)
 
 			c.Assert(err, qt.IsNil)
@@ -73,16 +73,17 @@ func TestParseLocalDir_HappyPath(t *testing.T) {
 }
 
 func TestParseLocalDir_FailurePath(t *testing.T) {
-	c := qt.New(t)
 
-	c.Run("remote URL", func(c *qt.C) {
+	t.Run("remote URL", func(t *testing.T) {
+		c := qt.New(t)
 		got, err := atlasargs.ParseLocalDir("atlas://repo/migrations")
 
 		c.Assert(err, qt.ErrorMatches, "only local file:// migration directories are supported")
 		c.Assert(got, qt.DeepEquals, atlasargs.LocalDir{})
 	})
 
-	c.Run("malformed query", func(c *qt.C) {
+	t.Run("malformed query", func(t *testing.T) {
+		c := qt.New(t)
 		got, err := atlasargs.ParseLocalDir("file://migrations?format=%zz")
 
 		c.Assert(err, qt.ErrorMatches, `parse migration directory URL query:.*invalid URL escape.*`)
@@ -91,7 +92,6 @@ func TestParseLocalDir_FailurePath(t *testing.T) {
 }
 
 func TestLocalDirValue_FailurePathRejectsQuery(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name  string
 		query string
@@ -102,7 +102,8 @@ func TestLocalDirValue_FailurePathRejectsQuery(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			got, err := atlasargs.LocalDirValue("file://migrations?" + tt.query)
 
 			c.Assert(err, qt.ErrorMatches, "migration directory URL query parameters are not supported for this command")
@@ -112,7 +113,6 @@ func TestLocalDirValue_FailurePathRejectsQuery(t *testing.T) {
 }
 
 func TestRequireDirScheme_HappyPathLeavesNamedSchemesToTheParser(t *testing.T) {
-	c := qt.New(t)
 	values := []string{
 		"file://migrations",
 		"atlas://repo/migrations",
@@ -120,7 +120,8 @@ func TestRequireDirScheme_HappyPathLeavesNamedSchemesToTheParser(t *testing.T) {
 	}
 
 	for _, value := range values {
-		c.Run(value, func(c *qt.C) {
+		t.Run(value, func(t *testing.T) {
+			c := qt.New(t)
 			err := atlasargs.RequireDirScheme(value)
 
 			c.Assert(err, qt.IsNil)
@@ -129,7 +130,6 @@ func TestRequireDirScheme_HappyPathLeavesNamedSchemesToTheParser(t *testing.T) {
 }
 
 func TestRequireDirScheme_FailurePathMatchesAtlasBytes(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name  string
 		value string
@@ -158,7 +158,8 @@ func TestRequireDirScheme_FailurePathMatchesAtlasBytes(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			err := atlasargs.RequireDirScheme(tt.value)
 
 			c.Assert(err, qt.IsNotNil)
@@ -384,7 +385,6 @@ func TestMap_FailurePathRejectsMalformedUintEnvironment(t *testing.T) {
 }
 
 func TestMap_FailurePathUnsupportedFlagsFailExplicitly(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name string
@@ -419,7 +419,8 @@ func TestMap_FailurePathUnsupportedFlagsFailExplicitly(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			_, err := atlasargs.Map("migrate", "down", migrateDownFlags(), tt.args)
 			c.Assert(err, qt.ErrorMatches, tt.want)
 		})
@@ -427,7 +428,6 @@ func TestMap_FailurePathUnsupportedFlagsFailExplicitly(t *testing.T) {
 }
 
 func TestMap_FailurePathUnsupportedReasonFlagsCarryRationale(t *testing.T) {
-	c := qt.New(t)
 	flags := []atlasargs.Flag{
 		atlasargs.UnsupportedStringReason("to-tag", "", "Target migration tag",
 			"migration tags require a hosted registry"),
@@ -453,7 +453,8 @@ func TestMap_FailurePathUnsupportedReasonFlagsCarryRationale(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			_, err := atlasargs.Map("migrate", "down", flags, tt.args)
 			c.Assert(err, qt.ErrorMatches, tt.want)
 		})

@@ -48,7 +48,8 @@ func TestLiveCapabilityResolutionStaysOffDefaultStderrE2E(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
 	defer cancel()
 
-	c.Run("the library writes nothing at the default log level", func(c *qt.C) {
+	t.Run("the library writes nothing at the default log level", func(t *testing.T) {
+		c := qt.New(t)
 		var output bytes.Buffer
 		previousLogger := slog.Default()
 		slog.SetDefault(slog.New(slog.NewTextHandler(&output, &slog.HandlerOptions{

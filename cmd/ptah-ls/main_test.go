@@ -53,7 +53,7 @@ const commandBudget = 20 * time.Second
 // nothing and exited".
 func TestPtahLSArgumentHandling(t *testing.T) {
 	c := qt.New(t)
-	binPath := buildPtahLSBinary(c)
+	binPath := buildPtahLSBinary(c.TB)
 
 	tests := []struct {
 		name string
@@ -178,10 +178,10 @@ func TestPtahLSArgumentHandling(t *testing.T) {
 // or not at all.
 func TestPtahLSVersionSpellingsPrintIdenticalBytes(t *testing.T) {
 	c := qt.New(t)
-	binPath := buildPtahLSBinary(c)
+	binPath := buildPtahLSBinary(c.TB)
 
-	fromCommand := captureStdout(c, binPath, "version")
-	fromFlag := captureStdout(c, binPath, "--version")
+	fromCommand := captureStdout(c.TB, binPath, "version")
+	fromFlag := captureStdout(c.TB, binPath, "--version")
 
 	c.Assert(fromCommand, qt.Matches, versionBlockPattern)
 	c.Assert(fromCommand, qt.Equals, fromFlag)
@@ -229,7 +229,8 @@ func heldOpenStdin(c *qt.C) io.Reader {
 	return reader
 }
 
-func captureStdout(c *qt.C, binPath string, args ...string) string {
+func captureStdout(tb testing.TB, binPath string, args ...string) string {
+	c := qt.New(tb)
 	c.Helper()
 	ctx, cancel := context.WithTimeout(context.Background(), commandBudget)
 	c.Cleanup(cancel)
@@ -250,7 +251,8 @@ func newPtahLSProcess(ctx context.Context, binPath string, args ...string) *exec
 	return exec.CommandContext(ctx, binPath, args...)
 }
 
-func buildPtahLSBinary(c *qt.C) string {
+func buildPtahLSBinary(tb testing.TB) string {
+	c := qt.New(tb)
 	c.Helper()
 	binPath := filepath.Join(c.TempDir(), "ptah-ls")
 	build := exec.Command("go", "build", "-o", binPath, ".")

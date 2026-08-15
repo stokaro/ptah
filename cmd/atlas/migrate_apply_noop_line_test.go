@@ -29,12 +29,12 @@ func TestCompatMigrateApply_NoopLineIsByteExact(t *testing.T) {
 	tempDir := c.TempDir()
 	dir := filepath.Join(tempDir, "m_noop")
 	dbPath := filepath.Join(tempDir, "noop.db")
-	writeCoveredSetFile(c, dir, "1_a.sql", coveredSetTopLevelSQL)
-	hashCoveredSetDir(c, dir)
+	writeCoveredSetFile(c.TB, dir, "1_a.sql", coveredSetTopLevelSQL)
+	hashCoveredSetDir(c.TB, dir)
 
 	first, firstErr, err := compatApply(dir, dbPath)
 	c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", first, firstErr))
-	c.Assert(userTables(c, dbPath), qt.DeepEquals, []string{"a"})
+	c.Assert(userTables(c.TB, dbPath), qt.DeepEquals, []string{"a"})
 
 	second, secondErr, err := compatApply(dir, dbPath)
 

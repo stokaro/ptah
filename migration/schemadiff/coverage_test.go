@@ -99,10 +99,10 @@ func coverageCases() []coverageCase {
 }
 
 func TestCoverageSuppressesOnlyWhatWasNotDescribed(t *testing.T) {
-	c := qt.New(t)
 
 	for _, test := range coverageCases() {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			desired, database := test.desired(), test.database()
 			desired.NotDescribed = pickDesired(test.onDesired, test.notDescribed)
 			database.NotDescribed = pickCurrent(test.onDesired, test.notDescribed)
@@ -116,10 +116,10 @@ func TestCoverageSuppressesOnlyWhatWasNotDescribed(t *testing.T) {
 // the same schemas with the record removed. Without it a comparator that
 // planned nothing at all would pass the suppression test.
 func TestNoCoverageStillPlansTheChange(t *testing.T) {
-	c := qt.New(t)
 
 	for _, test := range coverageCases() {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			desired, database := test.desired(), test.database()
 
 			c.Assert(test.read(schemadiff.Compare(desired, database)), qt.DeepEquals, test.wantWithout)
@@ -133,9 +133,9 @@ func TestNoCoverageStillPlansTheChange(t *testing.T) {
 // describe extensions still says nothing about whether one should be CREATED,
 // and that question is the read's to answer.
 func TestCoverageOnTheWrongSideSuppressesNothing(t *testing.T) {
-	c := qt.New(t)
 
-	c.Run("a desired-state record does not suppress an addition", func(c *qt.C) {
+	t.Run("a desired-state record does not suppress an addition", func(t *testing.T) {
+		c := qt.New(t)
 		desired := &goschema.Database{Extensions: []goschema.Extension{{Name: "pgcrypto"}}}
 		desired.NotDescribed = coverage.Set{}.WithKind(coverage.Extension)
 
@@ -144,7 +144,8 @@ func TestCoverageOnTheWrongSideSuppressesNothing(t *testing.T) {
 		c.Assert(diff.ExtensionsAdded, qt.DeepEquals, []string{"pgcrypto"})
 	})
 
-	c.Run("a read record does not suppress a removal", func(c *qt.C) {
+	t.Run("a read record does not suppress a removal", func(t *testing.T) {
+		c := qt.New(t)
 		database := &types.DBSchema{Extensions: []types.DBExtension{{Name: "pgcrypto", Schema: "public"}}}
 		database.NotDescribed = coverage.Set{}.WithKind(coverage.Extension)
 
@@ -179,20 +180,21 @@ func TestCoverageNamesOneObjectOnly(t *testing.T) {
 // surface omits `policy` blocks with the same rule it omits `extension` blocks,
 // and the measured plan dropped a policy the database had.
 func TestUndescribedPolicyIsNotADroppedPolicy(t *testing.T) {
-	c := qt.New(t)
 
 	database := func() *types.DBSchema {
 		return &types.DBSchema{RLSPolicies: []types.DBRLSPolicy{{Name: "p", Table: "public.guarded"}}}
 	}
 
-	c.Run("declared: nothing is planned", func(c *qt.C) {
+	t.Run("declared: nothing is planned", func(t *testing.T) {
+		c := qt.New(t)
 		desired := &goschema.Database{}
 		desired.NotDescribed = coverage.Set{}.WithKind(coverage.Policy)
 
 		c.Assert(schemadiff.Compare(desired, database()).RLSPoliciesRemoved, qt.HasLen, 0)
 	})
 
-	c.Run("control: undeclared, the drop is still planned", func(c *qt.C) {
+	t.Run("control: undeclared, the drop is still planned", func(t *testing.T) {
+		c := qt.New(t)
 		diff := schemadiff.Compare(&goschema.Database{}, database())
 
 		c.Assert(diff.RLSPoliciesRemoved, qt.DeepEquals, []difftypes.RLSPolicyRef{

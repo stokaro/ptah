@@ -20,7 +20,8 @@ import (
 // both halves: the revision row is in the named schema, and the connection's
 // default schema has no revision table at all. Asserting only the first half
 // would pass on an implementation that wrote revisions to both.
-func writeMigrateTestRevisionsFixture(c *qt.C) (migrationsDir, casesDir string) {
+func writeMigrateTestRevisionsFixture(tb testing.TB) (migrationsDir, casesDir string) {
+	c := qt.New(tb)
 	c.Helper()
 	root := c.TempDir()
 	migrationsDir = filepath.Join(root, "migrations")
@@ -91,14 +92,14 @@ func TestCompatCommand_MigrateTestRevisionsSchema(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			migrationsDir, casesDir := writeMigrateTestRevisionsFixture(c)
+			migrationsDir, casesDir := writeMigrateTestRevisionsFixture(c.TB)
 			args := append([]string{
 				"migrate", "test",
 				"--dir", "file://" + migrationsDir,
 			}, test.flagArgs()...)
 			args = append(args, casesDir)
 
-			stdout, _, err := runCompatStreams(c, args...)
+			stdout, _, err := runCompatStreams(c.TB, args...)
 
 			test.wantErr(c, err)
 			c.Assert(stdout, qt.Contains, test.wantOut)

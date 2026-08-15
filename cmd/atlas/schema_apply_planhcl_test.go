@@ -27,21 +27,23 @@ const (
 
 func TestSchemaApplyAtlasOracleSourceFixtureMatchesSeedDDL(t *testing.T) {
 	c := qt.New(t)
-	contents, err := os.ReadFile(oracleFixturePath(c, oracleFromStateFile))
+	contents, err := os.ReadFile(oracleFixturePath(c.TB, oracleFromStateFile))
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(contents), qt.Equals, oracleFromStateSchema+"\n")
 }
 
 // oracleFixturePath returns the absolute path of a testdata fixture so plan
 // and schema URLs stay valid regardless of the working directory.
-func oracleFixturePath(c *qt.C, name string) string {
+func oracleFixturePath(tb testing.TB, name string) string {
+	c := qt.New(tb)
 	c.Helper()
 	path, err := filepath.Abs(name)
 	c.Assert(err, qt.IsNil)
 	return path
 }
 
-func sqliteColumnCount(c *qt.C, dbPath, table, column string) int {
+func sqliteColumnCount(tb testing.TB, dbPath, table, column string) int {
+	c := qt.New(tb)
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)
 	c.Assert(err, qt.IsNil)
@@ -56,7 +58,8 @@ func sqliteColumnCount(c *qt.C, dbPath, table, column string) int {
 	return count
 }
 
-func sqliteIndexCount(c *qt.C, dbPath, index string) int {
+func sqliteIndexCount(tb testing.TB, dbPath, index string) int {
+	c := qt.New(tb)
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)
 	c.Assert(err, qt.IsNil)
@@ -75,11 +78,11 @@ func TestSchemaApplyAtlasOraclePlanFileAppliesAndVerifies(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "oracle.db")
-	seedSQLiteSchema(c, dbPath, oracleFromStateSchema)
+	seedSQLiteSchema(c.TB, dbPath, oracleFromStateSchema)
 
 	out, err := runSchemaApplyPlan(atlas.NewCompatCommand("atlas"), "", dbPath,
-		oracleFixturePath(c, oracleAtlasPlanFile),
-		"--to", "file://"+oracleFixturePath(c, oracleDesiredFile),
+		oracleFixturePath(c.TB, oracleAtlasPlanFile),
+		"--to", "file://"+oracleFixturePath(c.TB, oracleDesiredFile),
 		"--auto-approve",
 	)
 
@@ -91,59 +94,59 @@ func TestSchemaApplyAtlasOraclePlanFileAppliesAndVerifies(t *testing.T) {
 	c.Assert(out, qt.Contains, "Planned schema changes:")
 	c.Assert(out, qt.Contains, "ALTER TABLE `users` ADD COLUMN `email` text NULL")
 	c.Assert(out, qt.Contains, "Schema apply completed successfully.")
-	c.Assert(sqliteTableCount(c, dbPath, "posts"), qt.Equals, 1)
-	c.Assert(sqliteColumnCount(c, dbPath, "users", "email"), qt.Equals, 1)
-	c.Assert(sqliteIndexCount(c, dbPath, "idx_posts_user_id"), qt.Equals, 1)
+	c.Assert(sqliteTableCount(c.TB, dbPath, "posts"), qt.Equals, 1)
+	c.Assert(sqliteColumnCount(c.TB, dbPath, "users", "email"), qt.Equals, 1)
+	c.Assert(sqliteIndexCount(c.TB, dbPath, "idx_posts_user_id"), qt.Equals, 1)
 }
 
 func TestSchemaApplyAtlasPlanFileWithExplicitDevURL(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "oracle-dev.db")
-	seedSQLiteSchema(c, dbPath, oracleFromStateSchema)
+	seedSQLiteSchema(c.TB, dbPath, oracleFromStateSchema)
 
 	// The exact invocation shape measured against Atlas:
 	// apply --url --to --dev-url --plan --auto-approve.
 	out, err := runSchemaApplyPlan(atlas.NewCompatCommand("atlas"), "", dbPath,
-		oracleFixturePath(c, oracleAtlasPlanFile),
-		"--to", "file://"+oracleFixturePath(c, oracleDesiredFile),
+		oracleFixturePath(c.TB, oracleAtlasPlanFile),
+		"--to", "file://"+oracleFixturePath(c.TB, oracleDesiredFile),
 		"--dev-url", "sqlite://"+filepath.Join(dir, "dev.db"),
 		"--auto-approve",
 	)
 
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 	c.Assert(out, qt.Contains, "Schema apply completed successfully.")
-	c.Assert(sqliteTableCount(c, dbPath, "posts"), qt.Equals, 1)
+	c.Assert(sqliteTableCount(c.TB, dbPath, "posts"), qt.Equals, 1)
 }
 
 func TestSchemaApplyAtlasPlanFileRequiresTo(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "oracle-noto.db")
-	seedSQLiteSchema(c, dbPath, oracleFromStateSchema)
+	seedSQLiteSchema(c.TB, dbPath, oracleFromStateSchema)
 
 	_, err := runSchemaApplyPlan(atlas.NewCompatCommand("atlas"), "", dbPath,
-		oracleFixturePath(c, oracleAtlasPlanFile),
+		oracleFixturePath(c.TB, oracleAtlasPlanFile),
 		"--auto-approve",
 	)
 
 	// Atlas's contract and error, verbatim: an Atlas plan file
 	// carries nothing Ptah can verify without the desired state.
 	c.Assert(err, qt.ErrorMatches, `the flag "to" is required to verify the provided plan`)
-	c.Assert(sqliteTableCount(c, dbPath, "posts"), qt.Equals, 0)
+	c.Assert(sqliteTableCount(c.TB, dbPath, "posts"), qt.Equals, 0)
 }
 
 func TestSchemaApplyAtlasPlanFileRefusesDriftedTarget(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "oracle-drift.db")
-	seedSQLiteSchema(c, dbPath, oracleFromStateSchema)
+	seedSQLiteSchema(c.TB, dbPath, oracleFromStateSchema)
 	// The database drifts after the plan was computed.
-	seedSQLiteSchema(c, dbPath, `CREATE TABLE drifted (id INTEGER PRIMARY KEY);`)
+	seedSQLiteSchema(c.TB, dbPath, `CREATE TABLE drifted (id INTEGER PRIMARY KEY);`)
 
 	out, err := runSchemaApplyPlan(atlas.NewCompatCommand("atlas"), "", dbPath,
-		oracleFixturePath(c, oracleAtlasPlanFile),
-		"--to", "file://"+oracleFixturePath(c, oracleDesiredFile),
+		oracleFixturePath(c.TB, oracleAtlasPlanFile),
+		"--to", "file://"+oracleFixturePath(c.TB, oracleDesiredFile),
 		"--auto-approve",
 	)
 
@@ -152,15 +155,15 @@ func TestSchemaApplyAtlasPlanFileRefusesDriftedTarget(t *testing.T) {
 	// reach --to, and the apply refuses with the target untouched.
 	c.Assert(err, qt.ErrorMatches, `(?s)pre-planned migration does not converge to the desired state:.*the plan was not applied to the target.*re-run .schema plan. against the current database and review the fresh plan`)
 	c.Assert(atlasschema.IsPlanDesiredStateFailure(err), qt.IsTrue, qt.Commentf("%s", out))
-	c.Assert(sqliteTableCount(c, dbPath, "posts"), qt.Equals, 0)
-	c.Assert(sqliteTableCount(c, dbPath, "drifted"), qt.Equals, 1)
+	c.Assert(sqliteTableCount(c.TB, dbPath, "posts"), qt.Equals, 0)
+	c.Assert(sqliteTableCount(c.TB, dbPath, "drifted"), qt.Equals, 1)
 }
 
 func TestSchemaApplyAtlasPlanFileRefusesTamperedDesiredState(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "oracle-tampered.db")
-	seedSQLiteSchema(c, dbPath, oracleFromStateSchema)
+	seedSQLiteSchema(c.TB, dbPath, oracleFromStateSchema)
 	// The desired state no longer matches what the plan was computed for:
 	// a second --to source adds a table on top of the oracle desired state.
 	extraPath := filepath.Join(dir, "tampered-extra.sql")
@@ -169,8 +172,8 @@ func TestSchemaApplyAtlasPlanFileRefusesTamperedDesiredState(t *testing.T) {
 	), 0o600), qt.IsNil)
 
 	_, err := runSchemaApplyPlan(atlas.NewCompatCommand("atlas"), "", dbPath,
-		oracleFixturePath(c, oracleAtlasPlanFile),
-		"--to", "file://"+oracleFixturePath(c, oracleDesiredFile),
+		oracleFixturePath(c.TB, oracleAtlasPlanFile),
+		"--to", "file://"+oracleFixturePath(c.TB, oracleDesiredFile),
 		"--to", "file://"+extraPath,
 		"--auto-approve",
 	)
@@ -178,13 +181,14 @@ func TestSchemaApplyAtlasPlanFileRefusesTamperedDesiredState(t *testing.T) {
 	// The rehearsed end state misses the tampered-in table, so the apply
 	// refuses before the target is touched.
 	c.Assert(err, qt.ErrorMatches, `(?s)pre-planned migration does not converge to the desired state:.*tampered_extra.*`)
-	c.Assert(sqliteTableCount(c, dbPath, "posts"), qt.Equals, 0)
-	c.Assert(sqliteTableCount(c, dbPath, "tampered_extra"), qt.Equals, 0)
+	c.Assert(sqliteTableCount(c.TB, dbPath, "posts"), qt.Equals, 0)
+	c.Assert(sqliteTableCount(c.TB, dbPath, "tampered_extra"), qt.Equals, 0)
 }
 
 // writeAtlasPlanFile writes a hand-built Atlas-format plan file carrying the
 // given migration body, the way a third party would hand one over.
-func writeAtlasPlanFile(c *qt.C, path, migration string) {
+func writeAtlasPlanFile(tb testing.TB, path, migration string) {
+	c := qt.New(tb)
 	c.Helper()
 	var body strings.Builder
 	for line := range strings.SplitSeq(strings.TrimRight(migration, "\n"), "\n") {
@@ -209,13 +213,13 @@ func TestSchemaApplyAtlasPlanFileRefusesDevDatabaseEscape(t *testing.T) {
 	dbPath := filepath.Join(dir, "escape-target.db")
 	victimPath := filepath.Join(dir, "victim.db")
 	planPath := filepath.Join(dir, "escape.plan.hcl")
-	seedSQLiteSchema(c, dbPath, oracleFromStateSchema)
-	seedSQLiteSchema(c, victimPath, `CREATE TABLE untouched (id INTEGER PRIMARY KEY);`)
-	writeAtlasPlanFile(c, planPath,
+	seedSQLiteSchema(c.TB, dbPath, oracleFromStateSchema)
+	seedSQLiteSchema(c.TB, victimPath, `CREATE TABLE untouched (id INTEGER PRIMARY KEY);`)
+	writeAtlasPlanFile(c.TB, planPath,
 		"ATTACH DATABASE '"+victimPath+"' AS victim;\nCREATE TABLE victim.pwned (id integer);")
 
 	out, err := runSchemaApplyPlan(atlas.NewCompatCommand("atlas"), "", dbPath, planPath,
-		"--to", "file://"+oracleFixturePath(c, oracleDesiredFile),
+		"--to", "file://"+oracleFixturePath(c.TB, oracleDesiredFile),
 		"--auto-approve",
 	)
 
@@ -225,10 +229,10 @@ func TestSchemaApplyAtlasPlanFileRefusesDevDatabaseEscape(t *testing.T) {
 		`pre-planned migration was refused before it reached the dev database: statement 1 uses ATTACH, which attaches another SQLite database file.*`)
 	c.Assert(err, qt.ErrorMatches, `(?s).*A dev database executes plan SQL for real.*`)
 	c.Assert(out, qt.Contains, "refused before it reached the dev database")
-	c.Assert(sqliteTableCount(c, victimPath, "pwned"), qt.Equals, 0)
-	c.Assert(sqliteTableCount(c, victimPath, "untouched"), qt.Equals, 1)
-	c.Assert(sqliteTableCount(c, dbPath, "posts"), qt.Equals, 0)
-	c.Assert(sqliteColumnCount(c, dbPath, "users", "email"), qt.Equals, 0)
+	c.Assert(sqliteTableCount(c.TB, victimPath, "pwned"), qt.Equals, 0)
+	c.Assert(sqliteTableCount(c.TB, victimPath, "untouched"), qt.Equals, 1)
+	c.Assert(sqliteTableCount(c.TB, dbPath, "posts"), qt.Equals, 0)
+	c.Assert(sqliteColumnCount(c.TB, dbPath, "users", "email"), qt.Equals, 0)
 }
 
 // TestSchemaApplyAtlasPlanFileRefusesEscapeHiddenBehindValidChanges covers the
@@ -241,43 +245,43 @@ func TestSchemaApplyAtlasPlanFileRefusesEscapeHiddenBehindValidChanges(t *testin
 	dbPath := filepath.Join(dir, "escape-hidden.db")
 	victimPath := filepath.Join(dir, "hidden-victim.db")
 	planPath := filepath.Join(dir, "hidden.plan.hcl")
-	seedSQLiteSchema(c, dbPath, oracleFromStateSchema)
-	seedSQLiteSchema(c, victimPath, `CREATE TABLE untouched (id INTEGER PRIMARY KEY);`)
-	oraclePlan, err := os.ReadFile(oracleFixturePath(c, oracleAtlasPlanFile))
+	seedSQLiteSchema(c.TB, dbPath, oracleFromStateSchema)
+	seedSQLiteSchema(c.TB, victimPath, `CREATE TABLE untouched (id INTEGER PRIMARY KEY);`)
+	oraclePlan, err := os.ReadFile(oracleFixturePath(c.TB, oracleAtlasPlanFile))
 	c.Assert(err, qt.IsNil)
 	// The real oracle migration plus a trailing escape.
 	migration := strings.SplitN(string(oraclePlan), "migration = <<-SQL\n", 2)[1]
 	migration = strings.SplitN(migration, "\n  SQL\n", 2)[0]
 	migration = strings.ReplaceAll(migration, "\n  ", "\n")
 	migration = strings.TrimPrefix(migration, "  ")
-	writeAtlasPlanFile(c, planPath, migration+
+	writeAtlasPlanFile(c.TB, planPath, migration+
 		"\nATTACH DATABASE '"+victimPath+"' AS victim;\nCREATE TABLE victim.pwned (id integer);")
 
 	_, err = runSchemaApplyPlan(atlas.NewCompatCommand("atlas"), "", dbPath, planPath,
-		"--to", "file://"+oracleFixturePath(c, oracleDesiredFile),
+		"--to", "file://"+oracleFixturePath(c.TB, oracleDesiredFile),
 		"--auto-approve",
 	)
 
 	c.Assert(err, qt.ErrorMatches, `pre-planned migration was refused before it reached the dev database: statement 4 uses ATTACH.*`)
-	c.Assert(sqliteTableCount(c, victimPath, "pwned"), qt.Equals, 0)
-	c.Assert(sqliteTableCount(c, dbPath, "posts"), qt.Equals, 0)
+	c.Assert(sqliteTableCount(c.TB, victimPath, "pwned"), qt.Equals, 0)
+	c.Assert(sqliteTableCount(c.TB, dbPath, "posts"), qt.Equals, 0)
 }
 
 func TestSchemaApplyAtlasPlanFileDryRunPrintsWithoutApplying(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "oracle-dry.db")
-	seedSQLiteSchema(c, dbPath, oracleFromStateSchema)
+	seedSQLiteSchema(c.TB, dbPath, oracleFromStateSchema)
 
 	out, err := runSchemaApplyPlan(atlas.NewCompatCommand("atlas"), "", dbPath,
-		oracleFixturePath(c, oracleAtlasPlanFile),
-		"--to", "file://"+oracleFixturePath(c, oracleDesiredFile),
+		oracleFixturePath(c.TB, oracleAtlasPlanFile),
+		"--to", "file://"+oracleFixturePath(c.TB, oracleDesiredFile),
 		"--dry-run",
 	)
 
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 	c.Assert(out, qt.Contains, "CREATE TABLE `posts`")
-	c.Assert(sqliteTableCount(c, dbPath, "posts"), qt.Equals, 0)
+	c.Assert(sqliteTableCount(c.TB, dbPath, "posts"), qt.Equals, 0)
 }
 
 // TestSchemaApplyAtlasPlanFileDryRunRefusesDevDatabaseEscape pins that
@@ -291,20 +295,20 @@ func TestSchemaApplyAtlasPlanFileDryRunRefusesDevDatabaseEscape(t *testing.T) {
 	dbPath := filepath.Join(dir, "dryrun-escape.db")
 	victimPath := filepath.Join(dir, "dryrun-victim.db")
 	planPath := filepath.Join(dir, "dryrun-escape.plan.hcl")
-	seedSQLiteSchema(c, dbPath, oracleFromStateSchema)
-	seedSQLiteSchema(c, victimPath, `CREATE TABLE untouched (id INTEGER PRIMARY KEY);`)
-	writeAtlasPlanFile(c, planPath,
+	seedSQLiteSchema(c.TB, dbPath, oracleFromStateSchema)
+	seedSQLiteSchema(c.TB, victimPath, `CREATE TABLE untouched (id INTEGER PRIMARY KEY);`)
+	writeAtlasPlanFile(c.TB, planPath,
 		"ATTACH DATABASE '"+victimPath+"' AS victim;\nCREATE TABLE victim.pwned (id integer);")
 
 	_, err := runSchemaApplyPlan(atlas.NewCompatCommand("atlas"), "", dbPath, planPath,
-		"--to", "file://"+oracleFixturePath(c, oracleDesiredFile),
+		"--to", "file://"+oracleFixturePath(c.TB, oracleDesiredFile),
 		"--dry-run",
 	)
 
 	c.Assert(err, qt.ErrorMatches,
 		`pre-planned migration was refused before it reached the dev database: statement 1 uses ATTACH.*`)
-	c.Assert(sqliteTableCount(c, victimPath, "pwned"), qt.Equals, 0)
-	c.Assert(sqliteTableCount(c, victimPath, "untouched"), qt.Equals, 1)
+	c.Assert(sqliteTableCount(c.TB, victimPath, "pwned"), qt.Equals, 0)
+	c.Assert(sqliteTableCount(c.TB, victimPath, "untouched"), qt.Equals, 1)
 }
 
 // TestSchemaApplyAtlasPlanFileDryRunRefusesNonConvergingPlan is the second
@@ -316,28 +320,28 @@ func TestSchemaApplyAtlasPlanFileDryRunRefusesNonConvergingPlan(t *testing.T) {
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "dryrun-nonconverging.db")
 	planPath := filepath.Join(dir, "dryrun-nonconverging.plan.hcl")
-	seedSQLiteSchema(c, dbPath, oracleFromStateSchema)
-	writeAtlasPlanFile(c, planPath, "CREATE TABLE unrelated (id integer NOT NULL PRIMARY KEY);")
+	seedSQLiteSchema(c.TB, dbPath, oracleFromStateSchema)
+	writeAtlasPlanFile(c.TB, planPath, "CREATE TABLE unrelated (id integer NOT NULL PRIMARY KEY);")
 
 	out, err := runSchemaApplyPlan(atlas.NewCompatCommand("atlas"), "", dbPath, planPath,
-		"--to", "file://"+oracleFixturePath(c, oracleDesiredFile),
+		"--to", "file://"+oracleFixturePath(c.TB, oracleDesiredFile),
 		"--dry-run",
 	)
 
 	c.Assert(err, qt.ErrorMatches, `(?s)pre-planned migration does not converge to the desired state.*`)
 	c.Assert(atlasschema.IsPlanDesiredStateFailure(err), qt.IsTrue, qt.Commentf("%s", out))
 	// A dry run still applies nothing to the target.
-	c.Assert(sqliteTableCount(c, dbPath, "unrelated"), qt.Equals, 0)
-	c.Assert(sqliteTableCount(c, dbPath, "posts"), qt.Equals, 0)
+	c.Assert(sqliteTableCount(c.TB, dbPath, "unrelated"), qt.Equals, 0)
+	c.Assert(sqliteTableCount(c.TB, dbPath, "posts"), qt.Equals, 0)
 }
 
 func TestSchemaApplyJSONPlanWithToVerifiesEndState(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "json-to.db")
-	seedSQLiteSchema(c, dbPath, `CREATE TABLE users (id INTEGER PRIMARY KEY);`)
+	seedSQLiteSchema(c.TB, dbPath, `CREATE TABLE users (id INTEGER PRIMARY KEY);`)
 	desiredSQL := "CREATE TABLE users (id INTEGER PRIMARY KEY);\nCREATE TABLE json_orders (id INTEGER PRIMARY KEY);\n"
-	planPath := planFileFixture(c, dir, dbPath, desiredSQL)
+	planPath := planFileFixture(c.TB, dir, dbPath, desiredSQL)
 
 	// --plan now combines with --to on the JSON path too: the plan applies
 	// and the end state is verified against the desired schema.
@@ -348,15 +352,15 @@ func TestSchemaApplyJSONPlanWithToVerifiesEndState(t *testing.T) {
 
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 	c.Assert(out, qt.Contains, "Schema apply completed successfully.")
-	c.Assert(sqliteTableCount(c, dbPath, "json_orders"), qt.Equals, 1)
+	c.Assert(sqliteTableCount(c.TB, dbPath, "json_orders"), qt.Equals, 1)
 }
 
 func TestSchemaApplyJSONPlanWithMismatchedToFailsPostApply(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "json-mismatch.db")
-	seedSQLiteSchema(c, dbPath, `CREATE TABLE users (id INTEGER PRIMARY KEY);`)
-	planPath := planFileFixture(c, dir, dbPath,
+	seedSQLiteSchema(c.TB, dbPath, `CREATE TABLE users (id INTEGER PRIMARY KEY);`)
+	planPath := planFileFixture(c.TB, dir, dbPath,
 		"CREATE TABLE users (id INTEGER PRIMARY KEY);\nCREATE TABLE planned_only (id INTEGER PRIMARY KEY);\n")
 	otherDesiredPath := filepath.Join(dir, "other-desired.sql")
 	c.Assert(os.WriteFile(otherDesiredPath, []byte(
@@ -373,7 +377,7 @@ func TestSchemaApplyJSONPlanWithMismatchedToFailsPostApply(t *testing.T) {
 	// loudly: the reached state is not the --to desired state.
 	c.Assert(err, qt.ErrorMatches, `(?s)schema apply --plan end-state verification failed: after applying the plan, the database does not match the --to desired state.*`)
 	c.Assert(atlasschema.IsPlanDesiredStateFailure(err), qt.IsTrue, qt.Commentf("%s", out))
-	c.Assert(sqliteTableCount(c, dbPath, "planned_only"), qt.Equals, 1)
+	c.Assert(sqliteTableCount(c.TB, dbPath, "planned_only"), qt.Equals, 1)
 }
 
 func TestSchemaApplyPtahWrittenHCLPlanRoundTrip(t *testing.T) {
@@ -382,7 +386,7 @@ func TestSchemaApplyPtahWrittenHCLPlanRoundTrip(t *testing.T) {
 	dbPath := filepath.Join(dir, "roundtrip.db")
 	schemaPath := filepath.Join(dir, "schema.sql")
 	planPath := filepath.Join(dir, "roundtrip.plan.hcl")
-	seedSQLiteSchema(c, dbPath, `CREATE TABLE users (id INTEGER PRIMARY KEY);`)
+	seedSQLiteSchema(c.TB, dbPath, `CREATE TABLE users (id INTEGER PRIMARY KEY);`)
 	c.Assert(os.WriteFile(schemaPath, []byte(
 		"CREATE TABLE users (id INTEGER PRIMARY KEY);\nCREATE TABLE rt_orders (id INTEGER PRIMARY KEY);\n",
 	), 0o600), qt.IsNil)
@@ -408,7 +412,7 @@ func TestSchemaApplyPtahWrittenHCLPlanRoundTrip(t *testing.T) {
 
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 	c.Assert(out, qt.Contains, "Schema apply completed successfully.")
-	c.Assert(sqliteTableCount(c, dbPath, "rt_orders"), qt.Equals, 1)
+	c.Assert(sqliteTableCount(c.TB, dbPath, "rt_orders"), qt.Equals, 1)
 }
 
 func TestSchemaApplyPtahWrittenHCLPlanRefusesStaleTarget(t *testing.T) {
@@ -417,7 +421,7 @@ func TestSchemaApplyPtahWrittenHCLPlanRefusesStaleTarget(t *testing.T) {
 	dbPath := filepath.Join(dir, "roundtrip-stale.db")
 	schemaPath := filepath.Join(dir, "schema.sql")
 	planPath := filepath.Join(dir, "stale.plan.hcl")
-	seedSQLiteSchema(c, dbPath, `CREATE TABLE users (id INTEGER PRIMARY KEY);`)
+	seedSQLiteSchema(c.TB, dbPath, `CREATE TABLE users (id INTEGER PRIMARY KEY);`)
 	c.Assert(os.WriteFile(schemaPath, []byte(
 		"CREATE TABLE users (id INTEGER PRIMARY KEY);\nCREATE TABLE stale_rt_orders (id INTEGER PRIMARY KEY);\n",
 	), 0o600), qt.IsNil)
@@ -428,7 +432,7 @@ func TestSchemaApplyPtahWrittenHCLPlanRefusesStaleTarget(t *testing.T) {
 	)
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", planOut))
 	// The database drifts after the plan was computed.
-	seedSQLiteSchema(c, dbPath, `CREATE TABLE drifted (id INTEGER PRIMARY KEY);`)
+	seedSQLiteSchema(c.TB, dbPath, `CREATE TABLE drifted (id INTEGER PRIMARY KEY);`)
 
 	_, err = runSchemaApplyPlan(atlas.NewCompatCommand("atlas"), "", dbPath, planPath,
 		"--to", "file://"+schemaPath,
@@ -438,5 +442,5 @@ func TestSchemaApplyPtahWrittenHCLPlanRefusesStaleTarget(t *testing.T) {
 	// A Ptah-written .plan.hcl keeps the native fingerprint contract: the
 	// drifted target refuses as stale before any rehearsal or execution.
 	c.Assert(err, qt.ErrorMatches, `pre-planned migration is stale: .*`)
-	c.Assert(sqliteTableCount(c, dbPath, "stale_rt_orders"), qt.Equals, 0)
+	c.Assert(sqliteTableCount(c.TB, dbPath, "stale_rt_orders"), qt.Equals, 0)
 }

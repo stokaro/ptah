@@ -39,7 +39,8 @@ type atlasPlanOracleProvenance struct {
 	Files              map[string]string `json:"files"`
 }
 
-func oracleFileSHA256(c *qt.C, path string) string {
+func oracleFileSHA256(tb testing.TB, path string) string {
+	c := qt.New(tb)
 	c.Helper()
 	contents, err := os.ReadFile(path)
 	c.Assert(err, qt.IsNil)
@@ -65,9 +66,9 @@ func TestAtlasPlanOracleProvenance(t *testing.T) {
 		"to.sql":   "4f92f0c7c2b3cef9f49c46948767abfdeacbe1a3633f7d0f2827efec8b11cfab",
 	})
 
-	c.Assert(oracleFileSHA256(c, filepath.Join(fixtureDir, "from.sql")), qt.Equals, provenance.Files["from.sql"])
-	c.Assert(oracleFileSHA256(c, filepath.Join(fixtureDir, "plan.hcl")), qt.Equals, provenance.Files["plan.hcl"])
-	c.Assert(oracleFileSHA256(c, filepath.Join(fixtureDir, "to.sql")), qt.Equals, provenance.Files["to.sql"])
+	c.Assert(oracleFileSHA256(c.TB, filepath.Join(fixtureDir, "from.sql")), qt.Equals, provenance.Files["from.sql"])
+	c.Assert(oracleFileSHA256(c.TB, filepath.Join(fixtureDir, "plan.hcl")), qt.Equals, provenance.Files["plan.hcl"])
+	c.Assert(oracleFileSHA256(c.TB, filepath.Join(fixtureDir, "to.sql")), qt.Equals, provenance.Files["to.sql"])
 }
 
 // goldenPlan is the native plan for the measured scenario (the contents of
@@ -222,13 +223,14 @@ func TestMarshalPlanFileHCLMatchesOracleShape(t *testing.T) {
 	// closing. Only the values and the SQL body differ.
 	oracle, readErr := os.ReadFile(oraclePlanPath)
 	c.Assert(readErr, qt.IsNil)
-	c.Assert(planDocumentShape(c, string(document)), qt.DeepEquals, planDocumentShape(c, string(oracle)))
+	c.Assert(planDocumentShape(c.TB, string(document)), qt.DeepEquals, planDocumentShape(c.TB, string(oracle)))
 }
 
 // planDocumentShape reduces a plan document to its structural skeleton:
 // quoted values become "V" and heredoc body lines collapse away, leaving
 // exactly the lines whose shape the Atlas format fixes.
-func planDocumentShape(c *qt.C, document string) []string {
+func planDocumentShape(tb testing.TB, document string) []string {
+	c := qt.New(tb)
 	c.Helper()
 	value := regexp.MustCompile(`"[^"]*"`)
 	var shape []string

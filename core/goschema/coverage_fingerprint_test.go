@@ -24,7 +24,6 @@ import (
 // encoded as `"NotDescribed":{"Kinds":null,"Objects":null}` on every schema,
 // live or hand-written.
 func TestDatabaseJSONEncodingIsTheFingerprint(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name        string
@@ -51,7 +50,8 @@ func TestDatabaseJSONEncodingIsTheFingerprint(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			encoded, err := json.Marshal(&test.database)
 			c.Assert(err, qt.IsNil)
 			c.Assert(strings.Contains(string(encoded), "NotDescribed"), qt.Equals, test.wantPresent)

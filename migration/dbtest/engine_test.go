@@ -42,9 +42,9 @@ func TestRunMigrationTest_AssertionsHappyPath(t *testing.T) {
 		},
 	}
 
-	c := qt.New(t)
 	for _, tc := range tests {
-		c.Run(tc.name, func(c *qt.C) {
+		t.Run(tc.name, func(t *testing.T) {
+			c := qt.New(t)
 			report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{Cases: tc.cases})
 			c.Assert(err, qt.IsNil)
 			c.Assert(report, qt.IsNotNil)
@@ -89,9 +89,9 @@ func TestRunMigrationTest_AssertionsFailurePath(t *testing.T) {
 		},
 	}
 
-	c := qt.New(t)
 	for _, tc := range tests {
-		c.Run(tc.name, func(c *qt.C) {
+		t.Run(tc.name, func(t *testing.T) {
+			c := qt.New(t)
 			report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{Cases: tc.cases})
 			c.Assert(err, qt.IsNil)
 			c.Assert(report, qt.IsNotNil)
@@ -218,7 +218,7 @@ func TestRunMigrationTest_MigrateToUsesProvidedSnapshotInsteadOfPath(t *testing.
 
 func TestRunMigrationTest_ApplySchema(t *testing.T) {
 	c := qt.New(t)
-	rootDir := writeUsersEntity(c)
+	rootDir := writeUsersEntity(c.TB)
 	cases := []dbtest.Case{{
 		Name: "desired schema applies",
 		Steps: []dbtest.Step{
@@ -244,7 +244,7 @@ func TestRunMigrationTest_ApplySchemaPreservesMigrationObjects(t *testing.T) {
 	c.Assert(os.WriteFile(
 		filepath.Join(migrationsDir, "0000000001_create_widgets.down.sql"),
 		[]byte("DROP TABLE widgets;"), 0o600), qt.IsNil)
-	rootDir := writeUsersEntity(c)
+	rootDir := writeUsersEntity(c.TB)
 
 	report, err := dbtest.RunMigrationTest(t.Context(), dbtest.Options{
 		Cases: []dbtest.Case{{

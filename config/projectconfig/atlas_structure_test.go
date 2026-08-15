@@ -9,7 +9,6 @@ import (
 )
 
 func TestParseAtlasProjectConfigRejectsUnsupportedEnvStructureRegardlessOfSelection(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name    string
@@ -118,7 +117,8 @@ func TestParseAtlasProjectConfigRejectsUnsupportedEnvStructureRegardlessOfSelect
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			raw := []byte(`env "selected" {
   url = "sqlite://selected.db"
 }
@@ -159,7 +159,6 @@ func ignoredAtlasNames(cfg projectconfig.Config) []string {
 // row of TestParseAtlasProjectConfigRefusesAtlasCEDecodedLeafValues: that
 // binary answers 1 for `format { migrate { apply = 1 } }` and so does Ptah.
 func TestParseAtlasProjectConfigAcceptsEnvStructureAtlasCEAccepts(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name    string
@@ -212,7 +211,8 @@ func TestParseAtlasProjectConfigAcceptsEnvStructureAtlasCEAccepts(t *testing.T) 
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			raw := []byte(`env "local" {
   url = "sqlite://selected.db"
   ` + test.body + `
@@ -236,7 +236,6 @@ func TestParseAtlasProjectConfigAcceptsEnvStructureAtlasCEAccepts(t *testing.T) 
 // parseLintAttr each serve a top-level block and an env block, so the scope key
 // is bare, and both spellings were measured to refuse on that binary.
 func TestParseAtlasProjectConfigRefusesAtlasCEDecodedLeafValues(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name    string
@@ -561,7 +560,8 @@ env "local" {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			_, err := projectconfig.ParseAtlas([]byte(test.raw), "atlas.hcl", "local")
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 		})
@@ -579,7 +579,6 @@ env "local" {
 // `frobnicate9` rows are the nonsense controls that keep the silences
 // meaningful.
 func TestParseAtlasProjectConfigAcceptsAtlasCEDecodedLeafValues(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name    string
@@ -959,7 +958,8 @@ env "local" {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			cfg, err := projectconfig.ParseAtlas([]byte(test.raw), "atlas.hcl", "local")
 			c.Assert(err, qt.IsNil)
 			c.Assert(ignoredAtlasNames(cfg), qt.Contains, test.ignored)
@@ -968,7 +968,6 @@ env "local" {
 }
 
 func TestParseAtlasProjectConfigSkipsIgnoredExpressionEvaluationInUnselectedEnv(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name string
@@ -987,7 +986,8 @@ func TestParseAtlasProjectConfigSkipsIgnoredExpressionEvaluationInUnselectedEnv(
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			raw := []byte(`env "selected" {
 	  url = "sqlite://selected.db"
 	}
@@ -1006,7 +1006,6 @@ func TestParseAtlasProjectConfigSkipsIgnoredExpressionEvaluationInUnselectedEnv(
 }
 
 func TestParseAtlasProjectConfigToleratesOpenEnvBodiesRegardlessOfSelection(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name string
@@ -1033,7 +1032,8 @@ func TestParseAtlasProjectConfigToleratesOpenEnvBodiesRegardlessOfSelection(t *t
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			raw := []byte(`env "selected" {
   url = "sqlite://selected.db"
 }
@@ -1054,7 +1054,6 @@ env "other" {
 }
 
 func TestParseAtlasProjectConfigToleratesUnknownLeafAttributesRegardlessOfSelection(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name string
@@ -1117,7 +1116,8 @@ func TestParseAtlasProjectConfigToleratesUnknownLeafAttributesRegardlessOfSelect
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			raw := []byte(`env "selected" {
   url = "sqlite://selected.db"
 }
@@ -1169,7 +1169,6 @@ env "other" {
 }
 
 func TestParseAtlasProjectConfigEvaluatesIgnoredExpressionsInSelectedEnv(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name    string
@@ -1218,7 +1217,8 @@ func TestParseAtlasProjectConfigEvaluatesIgnoredExpressionsInSelectedEnv(t *test
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			raw := []byte(`env "selected" {
   url = "sqlite://selected.db"
 }
@@ -1285,7 +1285,6 @@ func TestParseAtlasProjectConfigOrdersIgnoredGlobalLintAttributesDeterministical
 // two rows are the top-level scope, which reaches the block parsers rather than
 // the structure validator and was unpinned.
 func TestParseAtlasProjectConfigToleratesUnknownTopLevelNestedBlocks(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name string
@@ -1306,7 +1305,8 @@ func TestParseAtlasProjectConfigToleratesUnknownTopLevelNestedBlocks(t *testing.
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			raw := []byte(test.body + `
 env "local" {
   url = "sqlite://selected.db"
@@ -1333,7 +1333,6 @@ env "local" {
 // pins. Ptah refuses instead so that a misspelled policy body is not silently
 // dropped, and refusing can never accept a file that binary rejects.
 func TestParseAtlasProjectConfigRefusesNestedBlocksInTopLevelLeafBodies(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name string
@@ -1414,7 +1413,8 @@ func TestParseAtlasProjectConfigRefusesNestedBlocksInTopLevelLeafBodies(t *testi
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			raw := []byte(test.body + `
 env "local" {
   url = "sqlite://selected.db"
@@ -1448,7 +1448,6 @@ env "local" {
 // -- so `env.include`, `env.migration.exclude`, `env.exclude`, `env.schemas`
 // and `env.src` fed a list holding one were a rule (a) hole or a crash.
 func TestParseAtlasProjectConfigRefusesTypedNullDecodedValues(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name    string
@@ -1776,7 +1775,8 @@ env "local" {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			_, err := projectconfig.ParseAtlas([]byte(test.raw), "atlas.hcl", "local")
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 		})

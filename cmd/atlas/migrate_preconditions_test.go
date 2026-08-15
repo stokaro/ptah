@@ -27,7 +27,8 @@ import (
 
 // runAtlasPrecondition executes one compatibility invocation and returns
 // everything it wrote plus the error carrying its exit code.
-func runAtlasPrecondition(c *qt.C, args ...string) (output string, err error) {
+func runAtlasPrecondition(tb testing.TB, args ...string) (output string, err error) {
+	c := qt.New(tb)
 	c.Helper()
 	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
@@ -40,11 +41,12 @@ func runAtlasPrecondition(c *qt.C, args ...string) (output string, err error) {
 
 // seedAtlasPreconditionDir writes a two-migration Atlas directory with a valid
 // atlas.sum and returns its path.
-func seedAtlasPreconditionDir(c *qt.C, dir string) string {
+func seedAtlasPreconditionDir(tb testing.TB, dir string) string {
+	c := qt.New(tb)
 	c.Helper()
-	writeAtlasLintFile(c, dir, "20260101000000_first.sql", "CREATE TABLE users (id integer);\n")
-	writeAtlasLintFile(c, dir, "20260102000000_second.sql", "CREATE TABLE posts (id integer);\n")
-	hashMigrationDir(c, dir)
+	writeAtlasLintFile(c.TB, dir, "20260101000000_first.sql", "CREATE TABLE users (id integer);\n")
+	writeAtlasLintFile(c.TB, dir, "20260102000000_second.sql", "CREATE TABLE posts (id integer);\n")
+	hashMigrationDir(c.TB, dir)
 	return dir
 }
 
@@ -60,9 +62,9 @@ func seedAtlasPreconditionDir(c *qt.C, dir string) string {
 // gate then looks closed; the issue records that near-miss.
 func TestCompatCommand_MigrateLintRefusesWithoutDevURL(t *testing.T) {
 	c := qt.New(t)
-	dir := seedAtlasPreconditionDir(c, t.TempDir())
+	dir := seedAtlasPreconditionDir(c.TB, t.TempDir())
 
-	out, err := runAtlasPrecondition(c, "migrate", "lint", "--dir", "file://"+dir, "--latest", "1")
+	out, err := runAtlasPrecondition(c.TB, "migrate", "lint", "--dir", "file://"+dir, "--latest", "1")
 
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
 	c.Assert(out, qt.Contains, `Error: required flag(s) "dev-url" not set`)
@@ -75,10 +77,10 @@ func TestCompatCommand_MigrateLintRefusesWithoutDevURL(t *testing.T) {
 // "Ptah cannot lint without a dev database", which is false.
 func TestCompatCommand_MigrateLintWithoutDevURLOptIn(t *testing.T) {
 	c := qt.New(t)
-	dir := seedAtlasPreconditionDir(c, t.TempDir())
+	dir := seedAtlasPreconditionDir(c.TB, t.TempDir())
 	t.Setenv("PTAH_ATLAS_LINT_WITHOUT_DEV_URL", "1")
 
-	out, err := runAtlasPrecondition(c, "migrate", "lint", "--dir", "file://"+dir, "--latest", "1")
+	out, err := runAtlasPrecondition(c.TB, "migrate", "lint", "--dir", "file://"+dir, "--latest", "1")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(out, qt.Contains, "-- 1 version ok")
@@ -131,10 +133,10 @@ func TestCompatCommand_MigrateLintOptInIsABoolean(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			dir := seedAtlasPreconditionDir(c, t.TempDir())
+			dir := seedAtlasPreconditionDir(c.TB, t.TempDir())
 			test.env(t)
 
-			out, err := runAtlasPrecondition(c, "migrate", "lint", "--dir", "file://"+dir, "--latest", "1")
+			out, err := runAtlasPrecondition(c.TB, "migrate", "lint", "--dir", "file://"+dir, "--latest", "1")
 
 			c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
 			c.Assert(out, qt.Contains, test.wantErr)
@@ -177,12 +179,12 @@ func TestCompatCommand_MigrateLintAcceptsSelectorsTheBinaryAccepts(t *testing.T)
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			dir := t.TempDir()
-			migrations := seedAtlasPreconditionDir(c, filepath.Join(dir, "migrations"))
-			writeAtlasLintFile(c, dir, "atlas.hcl", test.project+"\n")
+			migrations := seedAtlasPreconditionDir(c.TB, filepath.Join(dir, "migrations"))
+			writeAtlasLintFile(c.TB, dir, "atlas.hcl", test.project+"\n")
 			devDB := "sqlite://" + filepath.Join(t.TempDir(), "dev.db")
 			args := append([]string{"migrate", "lint", "--dir", "file://" + migrations, "--dev-url", devDB}, test.args...)
 
-			out, err := runAtlasPrecondition(c, append(args, "--config", "file://"+filepath.Join(dir, "atlas.hcl"))...)
+			out, err := runAtlasPrecondition(c.TB, append(args, "--config", "file://"+filepath.Join(dir, "atlas.hcl"))...)
 
 			c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", out))
 			c.Assert(out, qt.Contains, "Analyzing changes")
@@ -209,10 +211,10 @@ func TestCompatCommand_MigrateLintAcceptsSelectorsTheBinaryAccepts(t *testing.T)
 // can Ptah.
 func TestCompatCommand_MigrateValidateRefusesReorderedChecksum(t *testing.T) {
 	c := qt.New(t)
-	dir := seedAtlasPreconditionDir(c, t.TempDir())
-	swapAtlasSumEntryLines(c, dir)
+	dir := seedAtlasPreconditionDir(c.TB, t.TempDir())
+	swapAtlasSumEntryLines(c.TB, dir)
 
-	out, err := runAtlasPrecondition(c, "migrate", "validate", "--dir", "file://"+dir)
+	out, err := runAtlasPrecondition(c.TB, "migrate", "validate", "--dir", "file://"+dir)
 
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
 	c.Assert(out, qt.Contains, "You have a checksum error in your migration directory.")
@@ -276,15 +278,15 @@ func TestCompatCommand_MigrateVerbsRefuseReorderedChecksum(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			dir := seedAtlasPreconditionDir(c, t.TempDir())
-			swapAtlasSumEntryLines(c, dir)
-			before := dirEntryNames(c, dir)
+			dir := seedAtlasPreconditionDir(c.TB, t.TempDir())
+			swapAtlasSumEntryLines(c.TB, dir)
+			before := dirEntryNames(c.TB, dir)
 
-			out, err := runAtlasPrecondition(c, test.args(t, dir)...)
+			out, err := runAtlasPrecondition(c.TB, test.args(t, dir)...)
 
 			c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
 			c.Assert(out, qt.Contains, "Error: checksum mismatch")
-			c.Assert(dirEntryNames(c, dir), qt.DeepEquals, before)
+			c.Assert(dirEntryNames(c.TB, dir), qt.DeepEquals, before)
 		})
 	}
 }
@@ -307,10 +309,10 @@ func atlasTargetURLArgs(t *testing.T) []string {
 // directory, both implementations exit 0 and print the same two lines.
 func TestCompatCommand_MigrateSetAcceptsAnUntouchedDirectory(t *testing.T) {
 	c := qt.New(t)
-	dir := seedAtlasPreconditionDir(c, t.TempDir())
+	dir := seedAtlasPreconditionDir(c.TB, t.TempDir())
 
 	args := append([]string{"migrate", "set", "20260101000000", "--dir", "file://" + dir}, atlasTargetURLArgs(t)...)
-	out, err := runAtlasPrecondition(c, args...)
+	out, err := runAtlasPrecondition(c.TB, args...)
 
 	c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", out))
 	c.Assert(out, qt.Contains, "Current version is 20260101000000")
@@ -321,9 +323,9 @@ func TestCompatCommand_MigrateSetAcceptsAnUntouchedDirectory(t *testing.T) {
 // a directory both binaries accept into a refusal.
 func TestCompatCommand_MigrateValidateAcceptsAnUntouchedDirectory(t *testing.T) {
 	c := qt.New(t)
-	dir := seedAtlasPreconditionDir(c, t.TempDir())
+	dir := seedAtlasPreconditionDir(c.TB, t.TempDir())
 
-	out, err := runAtlasPrecondition(c, "migrate", "validate", "--dir", "file://"+dir)
+	out, err := runAtlasPrecondition(c.TB, "migrate", "validate", "--dir", "file://"+dir)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(out, qt.Equals, "")
@@ -331,7 +333,8 @@ func TestCompatCommand_MigrateValidateAcceptsAnUntouchedDirectory(t *testing.T) 
 
 // swapAtlasSumEntryLines exchanges the two entry lines of a two-migration
 // atlas.sum and leaves the directory-hash line alone.
-func swapAtlasSumEntryLines(c *qt.C, dir string) {
+func swapAtlasSumEntryLines(tb testing.TB, dir string) {
+	c := qt.New(tb)
 	c.Helper()
 	path := filepath.Join(filepath.Clean(dir), "atlas.sum")
 	raw, err := os.ReadFile(path)
@@ -377,12 +380,12 @@ func TestCompatCommand_SchemaApplyRefusesDryRunWithAutoApprove(t *testing.T) {
 			c := qt.New(t)
 			dir := t.TempDir()
 			schemaPath := filepath.Join(dir, "schema.sql")
-			writeAtlasLintFile(c, dir, "schema.sql", "CREATE TABLE users (id integer);\n")
+			writeAtlasLintFile(c.TB, dir, "schema.sql", "CREATE TABLE users (id integer);\n")
 			devDB := "sqlite://" + filepath.Join(t.TempDir(), "dev.db")
 			targetDB := "sqlite://" + filepath.Join(t.TempDir(), "target.db")
 			test.setEnv(t)
 
-			out, err := runAtlasPrecondition(c,
+			out, err := runAtlasPrecondition(c.TB,
 				"schema", "apply",
 				"--url", targetDB,
 				"--to", "file://"+schemaPath,
@@ -414,11 +417,11 @@ func TestCompatCommand_SchemaApplyAcceptsEitherFlagAlone(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			dir := t.TempDir()
-			writeAtlasLintFile(c, dir, "schema.sql", "CREATE TABLE users (id integer);\n")
+			writeAtlasLintFile(c.TB, dir, "schema.sql", "CREATE TABLE users (id integer);\n")
 			devDB := "sqlite://" + filepath.Join(t.TempDir(), "dev.db")
 			targetDB := "sqlite://" + filepath.Join(t.TempDir(), "target.db")
 
-			out, err := runAtlasPrecondition(c,
+			out, err := runAtlasPrecondition(c.TB,
 				"schema", "apply",
 				"--url", targetDB,
 				"--to", "file://"+filepath.Join(dir, "schema.sql"),
@@ -465,13 +468,13 @@ func TestCompatCommand_SchemaApplyApprovalGroupReadsTheCommandLine(t *testing.T)
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			dir := t.TempDir()
-			writeAtlasLintFile(c, dir, "schema.sql", "CREATE TABLE users (id integer);\n")
+			writeAtlasLintFile(c.TB, dir, "schema.sql", "CREATE TABLE users (id integer);\n")
 			schemaURL := "file://" + filepath.Join(dir, "schema.sql")
 			devDB := "sqlite://" + filepath.Join(t.TempDir(), "dev.db")
 			targetDB := "sqlite://" + filepath.Join(t.TempDir(), "target.db")
 			t.Setenv(test.envName, test.envValue)
 
-			out, err := runAtlasPrecondition(c,
+			out, err := runAtlasPrecondition(c.TB,
 				"schema", "apply",
 				"--url", targetDB,
 				"--to", schemaURL,
@@ -487,7 +490,7 @@ func TestCompatCommand_SchemaApplyApprovalGroupReadsTheCommandLine(t *testing.T)
 			// Rendered is not applied. A second plan against the same target
 			// still has the table to create, which is only true if the run
 			// above executed nothing; an apply would leave it synced.
-			second, secondErr := runAtlasPrecondition(c,
+			second, secondErr := runAtlasPrecondition(c.TB,
 				"schema", "apply",
 				"--url", targetDB,
 				"--to", schemaURL,
@@ -508,12 +511,12 @@ func TestCompatCommand_SchemaApplyApprovalGroupReadsTheCommandLine(t *testing.T)
 func TestCompatCommand_SchemaApplyAppliesWithAutoApproveAlone(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
-	writeAtlasLintFile(c, dir, "schema.sql", "CREATE TABLE users (id integer);\n")
+	writeAtlasLintFile(c.TB, dir, "schema.sql", "CREATE TABLE users (id integer);\n")
 	schemaURL := "file://" + filepath.Join(dir, "schema.sql")
 	devDB := "sqlite://" + filepath.Join(t.TempDir(), "dev.db")
 	targetDB := "sqlite://" + filepath.Join(t.TempDir(), "target.db")
 
-	out, err := runAtlasPrecondition(c,
+	out, err := runAtlasPrecondition(c.TB,
 		"schema", "apply",
 		"--url", targetDB,
 		"--to", schemaURL,
@@ -523,7 +526,7 @@ func TestCompatCommand_SchemaApplyAppliesWithAutoApproveAlone(t *testing.T) {
 	c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", out))
 	c.Assert(out, qt.Contains, "Auto-approval enabled")
 
-	second, secondErr := runAtlasPrecondition(c,
+	second, secondErr := runAtlasPrecondition(c.TB,
 		"schema", "apply",
 		"--url", targetDB,
 		"--to", schemaURL,
@@ -571,17 +574,17 @@ func TestCompatCommand_MigrateNewRefusesPathSeparatorName(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			dir := seedAtlasPreconditionDir(c, t.TempDir())
+			dir := seedAtlasPreconditionDir(c.TB, t.TempDir())
 			test.prepare(c, dir)
-			before := dirEntryNames(c, dir)
+			before := dirEntryNames(c.TB, dir)
 
-			out, err := runAtlasPrecondition(c, "migrate", "new", "sub/dir_name", "--dir", "file://"+dir)
+			out, err := runAtlasPrecondition(c.TB, "migrate", "new", "sub/dir_name", "--dir", "file://"+dir)
 
 			c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
 			c.Assert(out, qt.Contains,
 				`Error: atlas migrate new "sub/dir_name": migration name must be a single file name element,`+
 					` without a path separator`)
-			c.Assert(dirEntryNames(c, dir), qt.DeepEquals, before)
+			c.Assert(dirEntryNames(c.TB, dir), qt.DeepEquals, before)
 		})
 	}
 }
@@ -604,13 +607,13 @@ func TestCompatCommand_MigrateNewAcceptsNamesTheBinaryAccepts(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			dir := seedAtlasPreconditionDir(c, t.TempDir())
-			before := dirEntryNames(c, dir)
+			dir := seedAtlasPreconditionDir(c.TB, t.TempDir())
+			before := dirEntryNames(c.TB, dir)
 
-			out, err := runAtlasPrecondition(c, "migrate", "new", test.given, "--dir", "file://"+dir)
+			out, err := runAtlasPrecondition(c.TB, "migrate", "new", test.given, "--dir", "file://"+dir)
 
 			c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", out))
-			c.Assert(dirEntryNames(c, dir), qt.HasLen, len(before)+1)
+			c.Assert(dirEntryNames(c.TB, dir), qt.HasLen, len(before)+1)
 		})
 	}
 }
@@ -622,12 +625,12 @@ func TestCompatCommand_MigrateNewAcceptsNamesTheBinaryAccepts(t *testing.T) {
 // open at exit 1.
 func TestCompatCommand_MigrateDiffRefusesPathSeparatorName(t *testing.T) {
 	c := qt.New(t)
-	dir := seedAtlasPreconditionDir(c, t.TempDir())
-	before := dirEntryNames(c, dir)
+	dir := seedAtlasPreconditionDir(c.TB, t.TempDir())
+	before := dirEntryNames(c.TB, dir)
 	desiredPath := seedSQLiteDB(t, "CREATE TABLE desired_users (id INTEGER PRIMARY KEY)")
 	devPath := filepath.Join(t.TempDir(), "dev.db")
 
-	out, err := runAtlasPrecondition(c,
+	out, err := runAtlasPrecondition(c.TB,
 		"migrate", "diff", "sub/name",
 		"--dir", "file://"+dir,
 		"--to", "sqlite://"+desiredPath,
@@ -638,7 +641,7 @@ func TestCompatCommand_MigrateDiffRefusesPathSeparatorName(t *testing.T) {
 	c.Assert(out, qt.Contains,
 		`Error: atlas migrate diff "sub/name": migration name must be a single file name element,`+
 			` without a path separator`)
-	c.Assert(dirEntryNames(c, dir), qt.DeepEquals, before)
+	c.Assert(dirEntryNames(c.TB, dir), qt.DeepEquals, before)
 }
 
 // TestCompatCommand_MigrateDiffIgnoresTheNameWhenNothingChanges is the
@@ -652,12 +655,12 @@ func TestCompatCommand_MigrateDiffRefusesPathSeparatorName(t *testing.T) {
 func TestCompatCommand_MigrateDiffIgnoresTheNameWhenNothingChanges(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
-	writeAtlasLintFile(c, dir, "20260101000000_first.sql", "CREATE TABLE desired_users (id INTEGER PRIMARY KEY);\n")
-	hashMigrationDir(c, dir)
+	writeAtlasLintFile(c.TB, dir, "20260101000000_first.sql", "CREATE TABLE desired_users (id INTEGER PRIMARY KEY);\n")
+	hashMigrationDir(c.TB, dir)
 	desiredPath := seedSQLiteDB(t, "CREATE TABLE desired_users (id INTEGER PRIMARY KEY)")
 	devPath := filepath.Join(t.TempDir(), "dev.db")
 
-	out, err := runAtlasPrecondition(c,
+	out, err := runAtlasPrecondition(c.TB,
 		"migrate", "diff", "sub/name",
 		"--dir", "file://"+dir,
 		"--to", "sqlite://"+desiredPath,
@@ -679,11 +682,11 @@ func TestCompatCommand_MigrateDiffIgnoresTheNameWhenNothingChanges(t *testing.T)
 // configuration assigned cmd.Args afterwards and overwrote it with nil.
 func TestCompatCommand_MigrateDiffRefusesASecondPositional(t *testing.T) {
 	c := qt.New(t)
-	dir := seedAtlasPreconditionDir(c, t.TempDir())
+	dir := seedAtlasPreconditionDir(c.TB, t.TempDir())
 	desiredPath := seedSQLiteDB(t, "CREATE TABLE desired_users (id INTEGER PRIMARY KEY)")
 	devPath := filepath.Join(t.TempDir(), "dev.db")
 
-	out, err := runAtlasPrecondition(c,
+	out, err := runAtlasPrecondition(c.TB,
 		"migrate", "diff",
 		"--dir", "file://"+dir,
 		"--to", "sqlite://"+desiredPath,
@@ -699,11 +702,11 @@ func TestCompatCommand_MigrateDiffRefusesASecondPositional(t *testing.T) {
 // positional is the migration name and must keep working.
 func TestCompatCommand_MigrateDiffAcceptsOnePositional(t *testing.T) {
 	c := qt.New(t)
-	dir := seedAtlasPreconditionDir(c, t.TempDir())
+	dir := seedAtlasPreconditionDir(c.TB, t.TempDir())
 	desiredPath := seedSQLiteDB(t, "CREATE TABLE desired_users (id INTEGER PRIMARY KEY)")
 	devPath := filepath.Join(t.TempDir(), "dev.db")
 
-	out, err := runAtlasPrecondition(c,
+	out, err := runAtlasPrecondition(c.TB,
 		"migrate", "diff", "add_desired_users",
 		"--dir", "file://"+dir,
 		"--to", "sqlite://"+desiredPath,

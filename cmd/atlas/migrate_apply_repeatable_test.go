@@ -16,9 +16,9 @@ func TestMigrateApplyExecutesAtlasRepeatableMigration(t *testing.T) {
 	dir := t.TempDir()
 	migrationsDir := filepath.Join(dir, "migrations")
 	dbPath := filepath.Join(dir, "repeatable.db")
-	writeAtlasApplyProjectMigration(c, migrationsDir, "1_users.sql", "CREATE TABLE users (id INTEGER PRIMARY KEY);\n")
-	writeAtlasApplyProjectMigration(c, migrationsDir, "2R_repeatable.sql", "CREATE TABLE active_users (id INTEGER PRIMARY KEY);\n")
-	writeAtlasApplyProjectSum(c, migrationsDir)
+	writeAtlasApplyProjectMigration(c.TB, migrationsDir, "1_users.sql", "CREATE TABLE users (id INTEGER PRIMARY KEY);\n")
+	writeAtlasApplyProjectMigration(c.TB, migrationsDir, "2R_repeatable.sql", "CREATE TABLE active_users (id INTEGER PRIMARY KEY);\n")
+	writeAtlasApplyProjectSum(c.TB, migrationsDir)
 
 	output, err := runCompatCommand(t,
 		"migrate", "apply",
@@ -29,9 +29,9 @@ func TestMigrateApplyExecutesAtlasRepeatableMigration(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(output, qt.Contains, "Migrating to version 2R from 2 pending migrations.")
 	c.Assert(output, qt.Contains, "Migration complete. Current version: 2R")
-	assertRepeatableSQLiteTableExists(c, dbPath, "users")
-	assertRepeatableSQLiteTableExists(c, dbPath, "active_users")
-	c.Assert(repeatableSQLiteAtlasAppliedVersions(c, dbPath), qt.DeepEquals, []string{"1", "2R"})
+	assertRepeatableSQLiteTableExists(c.TB, dbPath, "users")
+	assertRepeatableSQLiteTableExists(c.TB, dbPath, "active_users")
+	c.Assert(repeatableSQLiteAtlasAppliedVersions(c.TB, dbPath), qt.DeepEquals, []string{"1", "2R"})
 }
 
 func TestMigrateApplyExecutesAtlasBareRepeatableMigration(t *testing.T) {
@@ -40,8 +40,8 @@ func TestMigrateApplyExecutesAtlasBareRepeatableMigration(t *testing.T) {
 	dir := t.TempDir()
 	migrationsDir := filepath.Join(dir, "migrations")
 	dbPath := filepath.Join(dir, "bare-repeatable.db")
-	writeAtlasApplyProjectMigration(c, migrationsDir, "R__bootstrap.sql", "CREATE TABLE repeatable_bootstrap (id INTEGER PRIMARY KEY);\n")
-	writeAtlasApplyProjectSum(c, migrationsDir)
+	writeAtlasApplyProjectMigration(c.TB, migrationsDir, "R__bootstrap.sql", "CREATE TABLE repeatable_bootstrap (id INTEGER PRIMARY KEY);\n")
+	writeAtlasApplyProjectSum(c.TB, migrationsDir)
 
 	output, err := runCompatCommand(t,
 		"migrate", "apply",
@@ -52,8 +52,8 @@ func TestMigrateApplyExecutesAtlasBareRepeatableMigration(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(output, qt.Contains, "Migrating to version R from 1 pending migrations.")
 	c.Assert(output, qt.Contains, "Migration complete. Current version: R")
-	assertRepeatableSQLiteTableExists(c, dbPath, "repeatable_bootstrap")
-	c.Assert(repeatableSQLiteAtlasAppliedVersions(c, dbPath), qt.DeepEquals, []string{"R"})
+	assertRepeatableSQLiteTableExists(c.TB, dbPath, "repeatable_bootstrap")
+	c.Assert(repeatableSQLiteAtlasAppliedVersions(c.TB, dbPath), qt.DeepEquals, []string{"R"})
 }
 
 func TestMigrateApplyDoesNotReapplyAtlasRepeatableOnChecksumChange(t *testing.T) {
@@ -62,9 +62,9 @@ func TestMigrateApplyDoesNotReapplyAtlasRepeatableOnChecksumChange(t *testing.T)
 	dir := t.TempDir()
 	migrationsDir := filepath.Join(dir, "migrations")
 	dbPath := filepath.Join(dir, "repeatable-no-reapply.db")
-	writeAtlasApplyProjectMigration(c, migrationsDir, "1_users.sql", "CREATE TABLE users (id INTEGER PRIMARY KEY);\n")
-	writeAtlasApplyProjectMigration(c, migrationsDir, "2R_repeatable.sql", "CREATE TABLE repeatable_once (id INTEGER PRIMARY KEY);\n")
-	writeAtlasApplyProjectSum(c, migrationsDir)
+	writeAtlasApplyProjectMigration(c.TB, migrationsDir, "1_users.sql", "CREATE TABLE users (id INTEGER PRIMARY KEY);\n")
+	writeAtlasApplyProjectMigration(c.TB, migrationsDir, "2R_repeatable.sql", "CREATE TABLE repeatable_once (id INTEGER PRIMARY KEY);\n")
+	writeAtlasApplyProjectSum(c.TB, migrationsDir)
 
 	firstOutput, firstErr := runCompatCommand(t,
 		"migrate", "apply",
@@ -74,8 +74,8 @@ func TestMigrateApplyDoesNotReapplyAtlasRepeatableOnChecksumChange(t *testing.T)
 	c.Assert(firstErr, qt.IsNil)
 	c.Assert(firstOutput, qt.Contains, "Migration complete. Current version: 2R")
 
-	writeAtlasApplyProjectMigration(c, migrationsDir, "2R_repeatable.sql", "CREATE TABLE repeatable_changed (id INTEGER PRIMARY KEY);\n")
-	writeAtlasApplyProjectSum(c, migrationsDir)
+	writeAtlasApplyProjectMigration(c.TB, migrationsDir, "2R_repeatable.sql", "CREATE TABLE repeatable_changed (id INTEGER PRIMARY KEY);\n")
+	writeAtlasApplyProjectSum(c.TB, migrationsDir)
 
 	secondOutput, secondErr := runCompatCommand(t,
 		"migrate", "apply",
@@ -85,22 +85,25 @@ func TestMigrateApplyDoesNotReapplyAtlasRepeatableOnChecksumChange(t *testing.T)
 
 	c.Assert(secondErr, qt.IsNil)
 	c.Assert(secondOutput, qt.Contains, "No migration files to execute")
-	assertRepeatableSQLiteTableExists(c, dbPath, "repeatable_once")
-	assertRepeatableSQLiteTableMissing(c, dbPath, "repeatable_changed")
-	c.Assert(repeatableSQLiteAtlasAppliedVersions(c, dbPath), qt.DeepEquals, []string{"1", "2R"})
+	assertRepeatableSQLiteTableExists(c.TB, dbPath, "repeatable_once")
+	assertRepeatableSQLiteTableMissing(c.TB, dbPath, "repeatable_changed")
+	c.Assert(repeatableSQLiteAtlasAppliedVersions(c.TB, dbPath), qt.DeepEquals, []string{"1", "2R"})
 }
 
-func assertRepeatableSQLiteTableExists(c *qt.C, dbPath, table string) {
+func assertRepeatableSQLiteTableExists(tb testing.TB, dbPath, table string) {
+	c := qt.New(tb)
 	c.Helper()
-	c.Assert(repeatableSQLiteTableCount(c, dbPath, table), qt.Equals, 1)
+	c.Assert(repeatableSQLiteTableCount(c.TB, dbPath, table), qt.Equals, 1)
 }
 
-func assertRepeatableSQLiteTableMissing(c *qt.C, dbPath, table string) {
+func assertRepeatableSQLiteTableMissing(tb testing.TB, dbPath, table string) {
+	c := qt.New(tb)
 	c.Helper()
-	c.Assert(repeatableSQLiteTableCount(c, dbPath, table), qt.Equals, 0)
+	c.Assert(repeatableSQLiteTableCount(c.TB, dbPath, table), qt.Equals, 0)
 }
 
-func repeatableSQLiteTableCount(c *qt.C, dbPath, table string) int {
+func repeatableSQLiteTableCount(tb testing.TB, dbPath, table string) int {
+	c := qt.New(tb)
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)
 	c.Assert(err, qt.IsNil)
@@ -116,7 +119,8 @@ func repeatableSQLiteTableCount(c *qt.C, dbPath, table string) int {
 	return count
 }
 
-func repeatableSQLiteAtlasAppliedVersions(c *qt.C, dbPath string) []string {
+func repeatableSQLiteAtlasAppliedVersions(tb testing.TB, dbPath string) []string {
+	c := qt.New(tb)
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)
 	c.Assert(err, qt.IsNil)

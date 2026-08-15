@@ -14,7 +14,8 @@ import (
 // into. These tests hold every ptah.yaml diagnostic to the rule that it names
 // something the user wrote, never a symbol from this package.
 
-func chdirWith(c *qt.C, files map[string]string) {
+func chdirWith(tb testing.TB, files map[string]string) {
+	c := qt.New(tb)
 	dir := c.TempDir()
 	for name, content := range files {
 		c.Assert(os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600), qt.IsNil)
@@ -32,7 +33,7 @@ func chdirWith(c *qt.C, files map[string]string) {
 // kind the decoder found.
 func TestLoadExplicitConfigOverHCLBlamesTheFlag(t *testing.T) {
 	c := qt.New(t)
-	chdirWith(c, map[string]string{"atlas.hcl": "env \"local\" {\n  url = \"sqlite://file.db\"\n}\n"})
+	chdirWith(c.TB, map[string]string{"atlas.hcl": "env \"local\" {\n  url = \"sqlite://file.db\"\n}\n"})
 
 	_, err := projectconfig.Load(projectconfig.LoadOptions{PtahPath: "atlas.hcl", EnvName: "local"})
 
@@ -46,7 +47,7 @@ func TestLoadExplicitConfigOverHCLBlamesTheFlag(t *testing.T) {
 // --config, so the diagnostic must not blame it.
 func TestLoadDiscoveredPtahFileDoesNotBlameTheFlag(t *testing.T) {
 	c := qt.New(t)
-	chdirWith(c, map[string]string{projectconfig.PtahFileName: "- not-a-mapping\n"})
+	chdirWith(c.TB, map[string]string{projectconfig.PtahFileName: "- not-a-mapping\n"})
 
 	_, err := projectconfig.Load(projectconfig.LoadOptions{})
 
@@ -59,7 +60,7 @@ func TestLoadDiscoveredPtahFileDoesNotBlameTheFlag(t *testing.T) {
 // explicit-path branch above must not have made --config refuse real files.
 func TestLoadExplicitValidConfigStillLoads(t *testing.T) {
 	c := qt.New(t)
-	chdirWith(c, map[string]string{"custom.yaml": "url: \"sqlite://file.db\"\n"})
+	chdirWith(c.TB, map[string]string{"custom.yaml": "url: \"sqlite://file.db\"\n"})
 
 	cfg, err := projectconfig.Load(projectconfig.LoadOptions{PtahPath: "custom.yaml"})
 

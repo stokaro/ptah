@@ -16,7 +16,7 @@ func TestExport_FailurePath_OutputSymlinkAliasCannotOverwriteGoSource(t *testing
 	c := qt.New(t)
 	root := t.TempDir()
 	outside := t.TempDir()
-	source := writeSimpleModel(c, root)
+	source := writeSimpleModel(c.TB, root)
 	output := filepath.Join(outside, "schema.hcl")
 	sourceData, err := os.ReadFile(source)
 	c.Assert(err, qt.IsNil)
@@ -30,7 +30,7 @@ func TestExport_FailurePath_OutputSymlinkAliasCannotOverwriteGoSource(t *testing
 
 	c.Assert(err, qt.ErrorIs, goannotationexport.ErrOutputAliasesSource)
 	c.Assert(result, qt.DeepEquals, goannotationexport.Result{})
-	assertFileBytes(c, source, sourceData)
+	assertFileBytes(c.TB, source, sourceData)
 	info, err := os.Lstat(output)
 	c.Assert(err, qt.IsNil)
 	c.Assert(info.Mode()&os.ModeSymlink, qt.Equals, os.ModeSymlink)
@@ -40,7 +40,7 @@ func TestExport_FailurePath_OutputHardLinkAliasCannotOverwriteGoSource(t *testin
 	c := qt.New(t)
 	root := t.TempDir()
 	outside := t.TempDir()
-	source := writeSimpleModel(c, root)
+	source := writeSimpleModel(c.TB, root)
 	output := filepath.Join(outside, "schema.hcl")
 	sourceData, err := os.ReadFile(source)
 	c.Assert(err, qt.IsNil)
@@ -54,8 +54,8 @@ func TestExport_FailurePath_OutputHardLinkAliasCannotOverwriteGoSource(t *testin
 
 	c.Assert(err, qt.ErrorIs, goannotationexport.ErrOutputAliasesSource)
 	c.Assert(result, qt.DeepEquals, goannotationexport.Result{})
-	assertFileBytes(c, source, sourceData)
-	assertFileBytes(c, output, sourceData)
+	assertFileBytes(c.TB, source, sourceData)
+	assertFileBytes(c.TB, output, sourceData)
 }
 
 func TestExport_FailurePath_OutputHardLinkAliasCannotOverwriteManagedData(t *testing.T) {
@@ -86,9 +86,9 @@ type Country struct {
 
 	c.Assert(err, qt.ErrorIs, goannotationexport.ErrOutputAliasesManagedData)
 	c.Assert(result, qt.DeepEquals, goannotationexport.Result{})
-	assertFileBytes(c, source, sourceData)
-	assertFileBytes(c, dataPath, data)
-	assertFileBytes(c, output, data)
+	assertFileBytes(c.TB, source, sourceData)
+	assertFileBytes(c.TB, dataPath, data)
+	assertFileBytes(c.TB, output, data)
 }
 
 func TestExport_FailurePath_OutputSymlinkAliasCannotOverwriteManagedData(t *testing.T) {
@@ -119,8 +119,8 @@ type Country struct {
 
 	c.Assert(err, qt.ErrorIs, goannotationexport.ErrOutputAliasesManagedData)
 	c.Assert(result, qt.DeepEquals, goannotationexport.Result{})
-	assertFileBytes(c, source, sourceData)
-	assertFileBytes(c, dataPath, data)
+	assertFileBytes(c.TB, source, sourceData)
+	assertFileBytes(c.TB, dataPath, data)
 	info, err := os.Lstat(output)
 	c.Assert(err, qt.IsNil)
 	c.Assert(info.Mode()&os.ModeSymlink, qt.Equals, os.ModeSymlink)

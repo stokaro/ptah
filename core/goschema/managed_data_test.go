@@ -26,7 +26,7 @@ func TestParseManagedDataAnnotation(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			db := mustParseSource(c, "schema.go", `
+			db := mustParseSource(c.TB, "schema.go", `
 package fixture
 
 //ptah:schema:data table="countries" key="`+tt.key+`" file="countries.yaml"
@@ -52,7 +52,7 @@ type Country struct {
 func TestParseManagedDataAnnotation_Schema(t *testing.T) {
 	c := qt.New(t)
 
-	db := mustParseSource(c, "schema.go", `
+	db := mustParseSource(c.TB, "schema.go", `
 package fixture
 
 //ptah:schema:data table="countries" schema="reference" key="code" file="countries.yaml"
@@ -72,7 +72,7 @@ type Country struct {
 func TestParseManagedDataAnnotation_SchemaDefaultsEmpty(t *testing.T) {
 	c := qt.New(t)
 
-	db := mustParseSource(c, "schema.go", `
+	db := mustParseSource(c.TB, "schema.go", `
 package fixture
 
 //ptah:schema:data table="countries" key="code" file="countries.yaml"
@@ -168,7 +168,7 @@ func TestParseManagedDataAnnotation_LoadRowsAfterParseDir(t *testing.T) {
 	root := t.TempDir()
 	sub := filepath.Join(root, "reference")
 	c.Assert(os.MkdirAll(sub, 0o755), qt.IsNil)
-	writeGoFile(c, sub, "countries.go", `
+	writeGoFile(c.TB, sub, "countries.go", `
 package reference
 
 //ptah:schema:data table="countries" key="code" file="countries.yaml"
@@ -209,8 +209,8 @@ type Country struct {
 	Code string
 }
 `
-	writeGoFile(c, referenceA, "countries.go", source)
-	writeGoFile(c, referenceB, "countries.go", source)
+	writeGoFile(c.TB, referenceA, "countries.go", source)
+	writeGoFile(c.TB, referenceB, "countries.go", source)
 	c.Assert(os.WriteFile(filepath.Join(referenceA, "countries.yaml"), []byte("- code: US\n"), 0o600), qt.IsNil)
 	c.Assert(os.WriteFile(filepath.Join(referenceB, "countries.yaml"), []byte("- code: CZ\n"), 0o600), qt.IsNil)
 
@@ -236,7 +236,7 @@ func TestParseManagedDataAnnotation_AggregatesAcrossFiles(t *testing.T) {
 	c := qt.New(t)
 
 	root := t.TempDir()
-	writeGoFile(c, root, "countries.go", `
+	writeGoFile(c.TB, root, "countries.go", `
 package fixture
 
 //ptah:schema:data table="countries" key="code" file="countries.yaml"
@@ -245,7 +245,7 @@ type Country struct {
 	Code string
 }
 `)
-	writeGoFile(c, root, "currencies.go", `
+	writeGoFile(c.TB, root, "currencies.go", `
 package fixture
 
 //ptah:schema:data table="currencies" key="tenant_id,code" file="currencies.yaml"

@@ -20,7 +20,7 @@ func TestCompatCommandMigrateDownUsesPtahSafetySnapshot(t *testing.T) {
 	projectDir := filepath.Join(dir, "project")
 	migrationsDir := filepath.Join(projectDir, "migrations")
 	dbPath := filepath.Join(dir, "snapshot.db")
-	writeMigrateDownFixture(c, migrationsDir, dbPath)
+	writeMigrateDownFixture(c.TB, migrationsDir, dbPath)
 	c.Assert(os.WriteFile("ptah.yaml", []byte(`env:
   local:
     migration:
@@ -53,7 +53,7 @@ func TestCompatCommandMigrateDownUsesPtahSafetySnapshot(t *testing.T) {
 		qt.ErrorMatches,
 		"(?s).*down pre-flight custom command hook failed: exit status 8.*snapshot-hook.*",
 	)
-	c.Assert(sqliteTableCount(c, dbPath, "down_fmt_audit"), qt.Equals, 1)
+	c.Assert(sqliteTableCount(c.TB, dbPath, "down_fmt_audit"), qt.Equals, 1)
 }
 
 func TestCompatCommandMigrateDownPreservesPtahPathBase(t *testing.T) {
@@ -63,7 +63,7 @@ func TestCompatCommandMigrateDownPreservesPtahPathBase(t *testing.T) {
 	projectDir := filepath.Join(dir, "project")
 	migrationsDir := filepath.Join(dir, "migrations")
 	dbPath := filepath.Join(dir, "ptah-path.db")
-	writeMigrateDownFixture(c, migrationsDir, dbPath)
+	writeMigrateDownFixture(c.TB, migrationsDir, dbPath)
 	c.Assert(os.MkdirAll(projectDir, 0o755), qt.IsNil)
 	c.Assert(os.WriteFile("ptah.yaml", []byte(`env:
   local:
@@ -95,7 +95,7 @@ func TestCompatCommandMigrateDownPreservesPtahPathBase(t *testing.T) {
 		qt.ErrorMatches,
 		"(?s).*down pre-flight custom command hook failed: exit status 8.*ptah-path-hook.*",
 	)
-	c.Assert(sqliteTableCount(c, dbPath, "down_fmt_audit"), qt.Equals, 1)
+	c.Assert(sqliteTableCount(c.TB, dbPath, "down_fmt_audit"), qt.Equals, 1)
 }
 
 func TestCompatCommandMigrateDownEnvironmentOverridesSafetySnapshot(t *testing.T) {
@@ -104,7 +104,7 @@ func TestCompatCommandMigrateDownEnvironmentOverridesSafetySnapshot(t *testing.T
 	t.Chdir(dir)
 	migrationsDir := filepath.Join(dir, "migrations")
 	dbPath := filepath.Join(dir, "environment.db")
-	writeMigrateDownFixture(c, migrationsDir, dbPath)
+	writeMigrateDownFixture(c.TB, migrationsDir, dbPath)
 	c.Assert(os.WriteFile("ptah.yaml", []byte(`env:
   local:
     migration:
@@ -138,7 +138,7 @@ func TestCompatCommandMigrateDownEnvironmentOverridesSafetySnapshot(t *testing.T
 		qt.ErrorMatches,
 		"(?s).*down pre-flight custom command hook failed: exit status 9.*environment-hook.*",
 	)
-	c.Assert(sqliteTableCount(c, dbPath, "down_fmt_audit"), qt.Equals, 1)
+	c.Assert(sqliteTableCount(c.TB, dbPath, "down_fmt_audit"), qt.Equals, 1)
 }
 
 func TestCompatCommandMigrateDownUsesProjectDevURLForShadowVerification(t *testing.T) {
@@ -150,7 +150,7 @@ func TestCompatCommandMigrateDownUsesProjectDevURLForShadowVerification(t *testi
 	// The failing rollback is part of the hashed fixture rather than an edit
 	// made after it: the integrity gate on `migrate down` would otherwise
 	// refuse first and this test would stop measuring the dev-URL replay.
-	writeMigrateDownFixtureWithRollback(c, migrationsDir, dbPath, failingRollbackSQL)
+	writeMigrateDownFixtureWithRollback(c.TB, migrationsDir, dbPath, failingRollbackSQL)
 	c.Assert(os.WriteFile("ptah.yaml", []byte(`env:
   local:
     dev: "sqlite://`+filepath.Join(dir, "shadow.db")+`"
@@ -177,7 +177,7 @@ func TestCompatCommandMigrateDownUsesProjectDevURLForShadowVerification(t *testi
 	err := cmd.Execute()
 
 	c.Assert(err, qt.ErrorMatches, `(?s)rollback verification failed: .*no_such_table.*`)
-	c.Assert(sqliteTableCount(c, dbPath, "down_fmt_audit"), qt.Equals, 1)
+	c.Assert(sqliteTableCount(c.TB, dbPath, "down_fmt_audit"), qt.Equals, 1)
 }
 
 func TestCompatCommandMigrateDownExplicitDirectoryOverridesUnsupportedProjectPaths(t *testing.T) {
@@ -186,7 +186,7 @@ func TestCompatCommandMigrateDownExplicitDirectoryOverridesUnsupportedProjectPat
 	t.Chdir(dir)
 	migrationsDir := filepath.Join(dir, "explicit-migrations")
 	dbPath := filepath.Join(dir, "explicit-directory.db")
-	writeMigrateDownFixture(c, migrationsDir, dbPath)
+	writeMigrateDownFixture(c.TB, migrationsDir, dbPath)
 	c.Assert(os.WriteFile("project.hcl", []byte(`env "local" {
   url = "sqlite://`+dbPath+`"
   schema {
@@ -214,7 +214,7 @@ func TestCompatCommandMigrateDownExplicitDirectoryOverridesUnsupportedProjectPat
 	err := cmd.Execute()
 
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out.String()))
-	c.Assert(sqliteTableCount(c, dbPath, "down_fmt_audit"), qt.Equals, 0)
+	c.Assert(sqliteTableCount(c.TB, dbPath, "down_fmt_audit"), qt.Equals, 0)
 }
 
 func TestCompatCommandMigrateDownNativeDirectoryEnvironmentOverridesProjectConfig(t *testing.T) {
@@ -223,7 +223,7 @@ func TestCompatCommandMigrateDownNativeDirectoryEnvironmentOverridesProjectConfi
 	t.Chdir(dir)
 	migrationsDir := filepath.Join(dir, "environment-migrations")
 	dbPath := filepath.Join(dir, "native-directory-environment.db")
-	writeMigrateDownFixture(c, migrationsDir, dbPath)
+	writeMigrateDownFixture(c.TB, migrationsDir, dbPath)
 	c.Assert(os.WriteFile("ptah.yaml", []byte(`env:
   local:
     migration:
@@ -260,7 +260,7 @@ func TestCompatCommandMigrateDownNativeDirectoryEnvironmentOverridesProjectConfi
 		qt.ErrorMatches,
 		"(?s).*down pre-flight custom command hook failed: exit status 8.*native-directory-hook.*",
 	)
-	c.Assert(sqliteTableCount(c, dbPath, "down_fmt_audit"), qt.Equals, 1)
+	c.Assert(sqliteTableCount(c.TB, dbPath, "down_fmt_audit"), qt.Equals, 1)
 }
 
 func TestCompatCommandProjectConfigDefersToDirectoryEnvironment(t *testing.T) {

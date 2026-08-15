@@ -71,7 +71,7 @@ func TestMigrationStatusDistinguishesExactEmptyIdentityFromNoHistory(t *testing.
 func TestAtlasRevisionIdentityCollationRefusesAliasesBeforeMigrationSQL(t *testing.T) {
 	c := qt.New(t)
 	conn, mig := newAtlasAliasCollationMigrator(
-		c,
+		c.TB,
 		"source-aliases.sqlite",
 		fstest.MapFS{
 			"10_upper.sql": {Data: []byte("CREATE TABLE identity_upper (id INTEGER PRIMARY KEY);\n")},
@@ -82,13 +82,13 @@ func TestAtlasRevisionIdentityCollationRefusesAliasesBeforeMigrationSQL(t *testi
 
 	c.Assert(mig.MigrateUp(c.Context()), qt.ErrorMatches,
 		`failed to initialize migrations table: revision table cannot distinguish every exact Atlas identity under its configured version collation: 2 identities collapse to 1`)
-	assertAtlasAliasBodiesAbsent(c, conn)
+	assertAtlasAliasBodiesAbsent(c.TB, conn)
 }
 
 func TestAtlasRevisionIdentityCollationRefusesRecordedAliasBeforeMigrationSQL(t *testing.T) {
 	c := qt.New(t)
 	conn, mig := newAtlasAliasCollationMigrator(
-		c,
+		c.TB,
 		"recorded-alias.sqlite",
 		fstest.MapFS{
 			"10_upper.sql": {Data: []byte("CREATE TABLE identity_upper (id INTEGER PRIMARY KEY);\n")},
@@ -102,7 +102,7 @@ VALUES ('a', 'recorded alias', 2, 1, 1, CURRENT_TIMESTAMP, 0, NULL, NULL, '', NU
 
 	c.Assert(mig.MigrateUp(c.Context()), qt.ErrorMatches,
 		`failed to initialize migrations table: revision table cannot distinguish every exact Atlas identity under its configured version collation: 2 identities collapse to 1`)
-	assertAtlasAliasBodiesAbsent(c, conn)
+	assertAtlasAliasBodiesAbsent(c.TB, conn)
 }
 
 func TestAtlasRevisionIdentityCollationScalesPastSQLiteCompoundLimit(t *testing.T) {
@@ -129,11 +129,11 @@ func TestAtlasRevisionIdentityCollationScalesPastSQLiteCompoundLimit(t *testing.
 func TestAtlasRevisionIdentityCollationRefusesAliasesAcrossBlocksBeforeMigrationSQL(t *testing.T) {
 	c := qt.New(t)
 	fsys, versions := atlasIdentityCrossBlockAliasFixture(401)
-	conn, mig := newAtlasAliasCollationMigrator(c, "cross-block-aliases.sqlite", fsys, versions)
+	conn, mig := newAtlasAliasCollationMigrator(c.TB, "cross-block-aliases.sqlite", fsys, versions)
 
 	c.Assert(mig.MigrateUp(c.Context()), qt.ErrorMatches,
 		`failed to initialize migrations table: revision table cannot distinguish every exact Atlas identity under its configured version collation: 201 identities collapse to 200`)
-	assertAtlasAliasBodiesAbsent(c, conn)
+	assertAtlasAliasBodiesAbsent(c.TB, conn)
 }
 
 func atlasIdentityScaleFixture(count int) (fstest.MapFS, map[int64]string) {
@@ -169,11 +169,12 @@ func atlasIdentityCrossBlockAliasFixture(count int) (fstest.MapFS, map[int64]str
 }
 
 func newAtlasAliasCollationMigrator(
-	c *qt.C,
+	tb testing.TB,
 	database string,
 	fsys fstest.MapFS,
 	versions map[int64]string,
 ) (*dbschema.DatabaseConnection, *migrator.Migrator) {
+	c := qt.New(tb)
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(c.Context(), "sqlite://"+filepath.Join(c.TempDir(), database))
 	c.Assert(err, qt.IsNil)
@@ -203,7 +204,8 @@ func newAtlasAliasCollationMigrator(
 	return conn, mig.WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)
 }
 
-func assertAtlasAliasBodiesAbsent(c *qt.C, conn *dbschema.DatabaseConnection) {
+func assertAtlasAliasBodiesAbsent(tb testing.TB, conn *dbschema.DatabaseConnection) {
+	c := qt.New(tb)
 	c.Helper()
 	var bodyTables int
 	c.Assert(conn.QueryRowContext(c.Context(), `SELECT COUNT(*) FROM sqlite_master

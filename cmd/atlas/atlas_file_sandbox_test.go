@@ -61,7 +61,7 @@ func TestCompatCommand_AtlasHCLFileSandbox(t *testing.T) {
 			c.Assert(os.Mkdir(dir, 0o700), qt.IsNil)
 			outside := filepath.Join(base, "compat-secret.txt")
 			c.Assert(os.WriteFile(outside, []byte(compatOutsideMarker), 0o600), qt.IsNil)
-			writeCompatSandboxConfig(c, dir, tt.argument(c, dir, outside))
+			writeCompatSandboxConfig(c.TB, dir, tt.argument(c, dir, outside))
 			t.Chdir(dir)
 
 			cmd := atlas.NewCompatCommand("atlas")
@@ -91,7 +91,7 @@ func TestCompatCommand_AtlasHCLFileReadsInsideTheConfigDirectory(t *testing.T) {
 	c.Assert(os.WriteFile(filepath.Join(base, "compat-secret.txt"), []byte(compatOutsideMarker), 0o600), qt.IsNil)
 	dbPath := filepath.Join(dir, "sandbox.db")
 	c.Assert(os.WriteFile(filepath.Join(dir, "url.txt"), []byte("sqlite://"+dbPath), 0o600), qt.IsNil)
-	writeCompatSandboxConfig(c, dir, "url.txt")
+	writeCompatSandboxConfig(c.TB, dir, "url.txt")
 	t.Chdir(dir)
 
 	cmd := atlas.NewCompatCommand("atlas")
@@ -106,7 +106,8 @@ func TestCompatCommand_AtlasHCLFileReadsInsideTheConfigDirectory(t *testing.T) {
 	c.Assert(out.String(), qt.Contains, "Migration Status: OK")
 }
 
-func writeCompatSandboxConfig(c *qt.C, dir, argument string) {
+func writeCompatSandboxConfig(tb testing.TB, dir, argument string) {
+	c := qt.New(tb)
 	c.Helper()
 
 	body := "env \"local\" {\n  url = file(\"" + argument + "\")\n  migration {\n    dir = \"file://migrations\"\n  }\n}\n"

@@ -58,21 +58,21 @@ func TestCompatMigrateApplyDynamicEnvironments_HappyPath(t *testing.T) {
 	c := qt.New(t)
 	root := t.TempDir()
 	t.Chdir(root)
-	writeDynamicEnvironmentProject(c)
-	writeDynamicEnvironmentMigrations(c)
+	writeDynamicEnvironmentProject(c.TB)
+	writeDynamicEnvironmentMigrations(c.TB)
 
 	stdout, stderr, err := executeDynamicEnvironmentApply("1")
 
 	c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
 	c.Assert(stderr, qt.Equals, "")
-	c.Assert(sqliteTableCount(c, filepath.Join(root, "bar.db"), "t1"), qt.Equals, 1)
-	c.Assert(sqliteTableCount(c, filepath.Join(root, "foo.db"), "t1"), qt.Equals, 1)
-	c.Assert(sqliteIndexCount(c, filepath.Join(root, "bar.db"), "c1_unique"), qt.Equals, 0)
-	c.Assert(sqliteIndexCount(c, filepath.Join(root, "foo.db"), "c1_unique"), qt.Equals, 0)
+	c.Assert(sqliteTableCount(c.TB, filepath.Join(root, "bar.db"), "t1"), qt.Equals, 1)
+	c.Assert(sqliteTableCount(c.TB, filepath.Join(root, "foo.db"), "t1"), qt.Equals, 1)
+	c.Assert(sqliteIndexCount(c.TB, filepath.Join(root, "bar.db"), "c1_unique"), qt.Equals, 0)
+	c.Assert(sqliteIndexCount(c.TB, filepath.Join(root, "foo.db"), "c1_unique"), qt.Equals, 0)
 	c.Assert(stdout, qt.Contains, "}\n{")
 	c.Assert(bytes.Count([]byte(stdout), []byte{'\n'}), qt.Equals, 1)
 
-	reports := decodeDynamicApplyReports(c, stdout)
+	reports := decodeDynamicApplyReports(c.TB, stdout)
 	c.Assert(reports[0].URL.Host, qt.Equals, "bar.db")
 	c.Assert(reports[0].Target, qt.Equals, "20240112070806")
 	c.Assert(reports[0].Applied, qt.HasLen, 1)
@@ -85,28 +85,28 @@ func TestCompatMigrateApplyDynamicEnvironments_PartialFailureAndRetry(t *testing
 	c := qt.New(t)
 	root := t.TempDir()
 	t.Chdir(root)
-	writeDynamicEnvironmentProjectWithThirdTarget(c)
-	writeDynamicEnvironmentMigrations(c)
+	writeDynamicEnvironmentProjectWithThirdTarget(c.TB)
+	writeDynamicEnvironmentMigrations(c.TB)
 
 	initialStdout, initialStderr, initialErr := executeDynamicEnvironmentApply("1")
 	c.Assert(initialErr, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", initialStdout, initialStderr))
 	c.Assert(initialStderr, qt.Equals, "")
-	c.Assert(sqliteTableCount(c, filepath.Join(root, "qux.db"), "t1"), qt.Equals, 1)
-	insertDuplicateDynamicEnvironmentRows(c, filepath.Join(root, "foo.db"))
+	c.Assert(sqliteTableCount(c.TB, filepath.Join(root, "qux.db"), "t1"), qt.Equals, 1)
+	insertDuplicateDynamicEnvironmentRows(c.TB, filepath.Join(root, "foo.db"))
 
 	failureStdout, failureStderr, failureErr := executeDynamicEnvironmentApply()
 
 	c.Assert(failureErr, qt.ErrorMatches, `(?s).*UNIQUE constraint failed: t1.c1.*`)
 	c.Assert(failureStderr, qt.Equals, "")
-	c.Assert(sqliteIndexCount(c, filepath.Join(root, "bar.db"), "c1_unique"), qt.Equals, 1)
-	c.Assert(sqliteIndexCount(c, filepath.Join(root, "foo.db"), "c1_unique"), qt.Equals, 0)
-	c.Assert(sqliteIndexCount(c, filepath.Join(root, "qux.db"), "c1_unique"), qt.Equals, 0)
-	c.Assert(sqliteAtlasRevisionVersions(c, filepath.Join(root, "bar.db")), qt.DeepEquals, []string{"20240112070806", "20240116003831"})
-	c.Assert(sqliteAtlasRevisionVersions(c, filepath.Join(root, "foo.db")), qt.DeepEquals, []string{"20240112070806"})
-	c.Assert(sqliteAtlasRevisionVersions(c, filepath.Join(root, "qux.db")), qt.DeepEquals, []string{"20240112070806"})
+	c.Assert(sqliteIndexCount(c.TB, filepath.Join(root, "bar.db"), "c1_unique"), qt.Equals, 1)
+	c.Assert(sqliteIndexCount(c.TB, filepath.Join(root, "foo.db"), "c1_unique"), qt.Equals, 0)
+	c.Assert(sqliteIndexCount(c.TB, filepath.Join(root, "qux.db"), "c1_unique"), qt.Equals, 0)
+	c.Assert(sqliteAtlasRevisionVersions(c.TB, filepath.Join(root, "bar.db")), qt.DeepEquals, []string{"20240112070806", "20240116003831"})
+	c.Assert(sqliteAtlasRevisionVersions(c.TB, filepath.Join(root, "foo.db")), qt.DeepEquals, []string{"20240112070806"})
+	c.Assert(sqliteAtlasRevisionVersions(c.TB, filepath.Join(root, "qux.db")), qt.DeepEquals, []string{"20240112070806"})
 	c.Assert(failureStdout, qt.Contains, "}\n{")
 	c.Assert(bytes.Count([]byte(failureStdout), []byte{'\n'}), qt.Equals, 1)
-	failureReports := decodeDynamicApplyReports(c, failureStdout)
+	failureReports := decodeDynamicApplyReports(c.TB, failureStdout)
 	c.Assert(failureReports[0].URL.Host, qt.Equals, "bar.db")
 	c.Assert(failureReports[0].Target, qt.Equals, "20240116003831")
 	c.Assert(failureReports[0].Applied, qt.HasLen, 1)
@@ -122,34 +122,37 @@ func TestCompatMigrateApplyDynamicEnvironments_PartialFailureAndRetry(t *testing
 	c.Assert(retryStderr, qt.Equals, "")
 	c.Assert(retryStdout, qt.Contains, "}\n{")
 	c.Assert(bytes.Count([]byte(retryStdout), []byte{'\n'}), qt.Equals, 1)
-	retryReports := decodeDynamicApplyReports(c, retryStdout)
+	retryReports := decodeDynamicApplyReports(c.TB, retryStdout)
 	c.Assert(retryReports[0].URL.Host, qt.Equals, "bar.db")
 	c.Assert(retryReports[0].Applied, qt.HasLen, 0)
 	c.Assert(retryReports[0].Message, qt.Equals, "No migration files to execute")
 	c.Assert(retryReports[1].URL.Host, qt.Equals, "foo.db")
 	c.Assert(retryReports[1].Applied, qt.HasLen, 1, qt.Commentf("stdout:\n%s", retryStdout))
 	c.Assert(retryReports[1].Error, qt.Contains, "UNIQUE constraint failed: t1.c1")
-	c.Assert(sqliteIndexCount(c, filepath.Join(root, "qux.db"), "c1_unique"), qt.Equals, 0)
-	c.Assert(sqliteAtlasRevisionVersions(c, filepath.Join(root, "bar.db")), qt.DeepEquals, []string{"20240112070806", "20240116003831"})
-	c.Assert(sqliteAtlasRevisionVersions(c, filepath.Join(root, "foo.db")), qt.DeepEquals, []string{"20240112070806"})
-	c.Assert(sqliteAtlasRevisionVersions(c, filepath.Join(root, "qux.db")), qt.DeepEquals, []string{"20240112070806"})
+	c.Assert(sqliteIndexCount(c.TB, filepath.Join(root, "qux.db"), "c1_unique"), qt.Equals, 0)
+	c.Assert(sqliteAtlasRevisionVersions(c.TB, filepath.Join(root, "bar.db")), qt.DeepEquals, []string{"20240112070806", "20240116003831"})
+	c.Assert(sqliteAtlasRevisionVersions(c.TB, filepath.Join(root, "foo.db")), qt.DeepEquals, []string{"20240112070806"})
+	c.Assert(sqliteAtlasRevisionVersions(c.TB, filepath.Join(root, "qux.db")), qt.DeepEquals, []string{"20240112070806"})
 }
 
-func writeDynamicEnvironmentProject(c *qt.C) {
+func writeDynamicEnvironmentProject(tb testing.TB) {
+	c := qt.New(tb)
 	c.Helper()
 	c.Assert(os.WriteFile("atlas.hcl", []byte(dynamicEnvironmentProject), 0o600), qt.IsNil)
 }
 
-func writeDynamicEnvironmentProjectWithThirdTarget(c *qt.C) {
+func writeDynamicEnvironmentProjectWithThirdTarget(tb testing.TB) {
+	c := qt.New(tb)
 	c.Helper()
 	c.Assert(os.WriteFile("atlas.hcl", []byte(dynamicEnvironmentProjectWithThirdTarget), 0o600), qt.IsNil)
 }
 
-func writeDynamicEnvironmentMigrations(c *qt.C) {
+func writeDynamicEnvironmentMigrations(tb testing.TB) {
+	c := qt.New(tb)
 	c.Helper()
-	writeAtlasApplyProjectMigration(c, "migrations", "20240112070806.sql", "CREATE TABLE t1(c1 int);\n")
-	writeAtlasApplyProjectMigration(c, "migrations", "20240116003831.sql", "CREATE UNIQUE INDEX c1_unique ON t1(c1);\n")
-	writeAtlasApplyProjectSum(c, "migrations")
+	writeAtlasApplyProjectMigration(c.TB, "migrations", "20240112070806.sql", "CREATE TABLE t1(c1 int);\n")
+	writeAtlasApplyProjectMigration(c.TB, "migrations", "20240116003831.sql", "CREATE UNIQUE INDEX c1_unique ON t1(c1);\n")
+	writeAtlasApplyProjectSum(c.TB, "migrations")
 }
 
 func executeDynamicEnvironmentApply(amount ...string) (stdoutText, stderrText string, err error) {
@@ -166,7 +169,8 @@ func executeDynamicEnvironmentApply(amount ...string) (stdoutText, stderrText st
 	return stdout.String(), stderr.String(), err
 }
 
-func decodeDynamicApplyReports(c *qt.C, output string) []dynamicApplyReport {
+func decodeDynamicApplyReports(tb testing.TB, output string) []dynamicApplyReport {
+	c := qt.New(tb)
 	c.Helper()
 	decoder := json.NewDecoder(bytes.NewBufferString(output))
 	var first dynamicApplyReport
@@ -178,7 +182,8 @@ func decodeDynamicApplyReports(c *qt.C, output string) []dynamicApplyReport {
 	return []dynamicApplyReport{first, second}
 }
 
-func insertDuplicateDynamicEnvironmentRows(c *qt.C, dbPath string) {
+func insertDuplicateDynamicEnvironmentRows(tb testing.TB, dbPath string) {
+	c := qt.New(tb)
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)
 	c.Assert(err, qt.IsNil)

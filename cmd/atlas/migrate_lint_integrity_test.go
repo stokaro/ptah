@@ -52,13 +52,13 @@ func TestCompatCommand_MigrateLintIntegrityFindingIsReportContent(t *testing.T) 
 			c := qt.New(t)
 			dir := t.TempDir()
 			devDB := "sqlite://" + filepath.Join(t.TempDir(), "integrity.db")
-			writeAtlasLintFile(c, dir, "20240101000000_init.sql", "CREATE TABLE t1 (id integer);\n")
-			writeAtlasApplyProjectSum(c, dir)
+			writeAtlasLintFile(c.TB, dir, "20240101000000_init.sql", "CREATE TABLE t1 (id integer);\n")
+			writeAtlasApplyProjectSum(c.TB, dir)
 			// Edit the hashed file so the recorded sum no longer matches it.
-			writeAtlasLintFile(c, dir, "20240101000000_init.sql", "CREATE TABLE t1 (id integer, extra text);\n")
+			writeAtlasLintFile(c.TB, dir, "20240101000000_init.sql", "CREATE TABLE t1 (id integer, extra text);\n")
 
 			args := append([]string{"migrate", "lint", "--dir", "file://" + dir, "--dev-url", devDB, "--latest", "1"}, tt.formatArgs...)
-			stdout, stderr, err := runAtlasMigrateLint(c, args...)
+			stdout, stderr, err := runAtlasMigrateLint(c.TB, args...)
 
 			c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
 			c.Assert(err, qt.ErrorMatches, "checksum mismatch")

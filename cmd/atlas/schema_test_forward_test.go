@@ -16,7 +16,8 @@ import (
 
 // writeSchemaTestFixture fills modelsDir with an annotated Go entity and
 // testsDir with a passing Ptah-native YAML test case.
-func writeSchemaTestFixture(c *qt.C, modelsDir, testsDir string) {
+func writeSchemaTestFixture(tb testing.TB, modelsDir, testsDir string) {
+	c := qt.New(tb)
 	c.Helper()
 	c.Assert(os.WriteFile(filepath.Join(modelsDir, "user.go"), []byte(`package models
 
@@ -44,7 +45,7 @@ type User struct {
 func TestCompatCommand_SchemaTestForwardsToNative(t *testing.T) {
 	c := qt.New(t)
 	modelsDir, testsDir := t.TempDir(), t.TempDir()
-	writeSchemaTestFixture(c, modelsDir, testsDir)
+	writeSchemaTestFixture(c.TB, modelsDir, testsDir)
 	devDB := "sqlite://" + filepath.Join(t.TempDir(), "dev.db")
 
 	cmd := atlas.NewCompatCommand("atlas")
@@ -70,7 +71,7 @@ func TestCompatCommand_SchemaTestForwardsToNative(t *testing.T) {
 func TestCompatCommand_SchemaTestFailingCaseExits1(t *testing.T) {
 	c := qt.New(t)
 	modelsDir, testsDir := t.TempDir(), t.TempDir()
-	writeSchemaTestFixture(c, modelsDir, testsDir)
+	writeSchemaTestFixture(c.TB, modelsDir, testsDir)
 	c.Assert(os.WriteFile(filepath.Join(testsDir, "fail.yaml"), []byte(
 		"cases:\n"+
 			"  - name: failing expectation\n"+
@@ -95,7 +96,7 @@ func TestCompatCommand_SchemaTestFailingCaseExits1(t *testing.T) {
 func TestCompatCommand_SchemaTestRunFilterSelectsCases(t *testing.T) {
 	c := qt.New(t)
 	modelsDir, testsDir := t.TempDir(), t.TempDir()
-	writeSchemaTestFixture(c, modelsDir, testsDir)
+	writeSchemaTestFixture(c.TB, modelsDir, testsDir)
 
 	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
@@ -134,7 +135,7 @@ func TestCompatCommand_SchemaTestUnusableDatabaseSourceFailsLoudly(t *testing.T)
 				return []string{
 					"schema", "test", fixture.testsDir,
 					"-u", "postgres://127.0.0.1:1/nope?sslmode=disable",
-					"--dev-url", freshDevURL(c),
+					"--dev-url", freshDevURL(c.TB),
 				}
 			},
 			want: `--db-url dialect "sqlite" does not match --root-dir database dialect "postgres"`,
@@ -145,7 +146,7 @@ func TestCompatCommand_SchemaTestUnusableDatabaseSourceFailsLoudly(t *testing.T)
 				return []string{
 					"schema", "test", fixture.testsDir,
 					"-u", "sqlite://" + fixture.modelsDir,
-					"--dev-url", freshDevURL(c),
+					"--dev-url", freshDevURL(c.TB),
 				}
 			},
 			want: "connect to --root-dir database: failed to ping database: unable to open database file (14)",
@@ -154,7 +155,7 @@ func TestCompatCommand_SchemaTestUnusableDatabaseSourceFailsLoudly(t *testing.T)
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			fixture := writeCompatLiveSourceFixture(c)
+			fixture := writeCompatLiveSourceFixture(c.TB)
 
 			out, err := runCompatArgs(tt.argv(c, fixture))
 
@@ -172,7 +173,7 @@ func TestCompatCommand_SchemaTestUsesAtlasProjectConfig(t *testing.T) {
 	modelsDir := filepath.Join(dir, "models")
 	c.Assert(os.MkdirAll(modelsDir, 0o755), qt.IsNil)
 	testsDir := t.TempDir()
-	writeSchemaTestFixture(c, modelsDir, testsDir)
+	writeSchemaTestFixture(c.TB, modelsDir, testsDir)
 	c.Assert(os.WriteFile("atlas.hcl", []byte(`env "local" {
   src = "file://models"
   dev = "sqlite://`+filepath.ToSlash(filepath.Join(dir, "dev.db"))+`"
@@ -237,7 +238,8 @@ func TestNewCompatCommand_SchemaTestResolvesAtRoot(t *testing.T) {
 // The distinct table names are the point. With every source declaring the same
 // table, a run passes whether or not the source was read at all, so it would
 // not show that -u resolved anything.
-func writeDistinctSourceFixture(c *qt.C, dir, testsDir string) (sqlFile, hclFile, modelsDir string) {
+func writeDistinctSourceFixture(tb testing.TB, dir, testsDir string) (sqlFile, hclFile, modelsDir string) {
+	c := qt.New(tb)
 	c.Helper()
 	modelsDir = filepath.Join(dir, "models")
 	c.Assert(os.MkdirAll(modelsDir, 0o750), qt.IsNil)
@@ -275,7 +277,8 @@ table "widgets_from_hcl" {
 	return sqlFile, hclFile, modelsDir
 }
 
-func runCompatSchemaTest(c *qt.C, testsDir, source string) (string, error) {
+func runCompatSchemaTest(tb testing.TB, testsDir, source string) (string, error) {
+	c := qt.New(tb)
 	c.Helper()
 	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
@@ -296,13 +299,13 @@ func runCompatSchemaTest(c *qt.C, testsDir, source string) (string, error) {
 func TestCompatCommand_SchemaTestAcceptsSQLFileSource(t *testing.T) {
 	c := qt.New(t)
 	dir, testsDir := t.TempDir(), t.TempDir()
-	sqlFile, _, modelsDir := writeDistinctSourceFixture(c, dir, testsDir)
+	sqlFile, _, modelsDir := writeDistinctSourceFixture(c.TB, dir, testsDir)
 
-	out, err := runCompatSchemaTest(c, testsDir, sqlFile)
+	out, err := runCompatSchemaTest(c.TB, testsDir, sqlFile)
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 	c.Assert(out, qt.Contains, "1 cases, 1 passed, 0 failed")
 
-	controlOut, controlErr := runCompatSchemaTest(c, testsDir, modelsDir)
+	controlOut, controlErr := runCompatSchemaTest(c.TB, testsDir, modelsDir)
 	c.Assert(controlErr, qt.IsNotNil)
 	c.Assert(controlOut, qt.Contains, "no such table: orders_from_sql")
 }
@@ -311,7 +314,7 @@ func TestCompatCommand_SchemaTestAcceptsSQLFileSource(t *testing.T) {
 func TestCompatCommand_SchemaTestAcceptsHCLFileSource(t *testing.T) {
 	c := qt.New(t)
 	dir, testsDir := t.TempDir(), t.TempDir()
-	_, hclFile, _ := writeDistinctSourceFixture(c, dir, testsDir)
+	_, hclFile, _ := writeDistinctSourceFixture(c.TB, dir, testsDir)
 	c.Assert(os.Remove(filepath.Join(testsDir, "sql.yaml")), qt.IsNil)
 	c.Assert(os.WriteFile(filepath.Join(testsDir, "hcl.yaml"), []byte(`cases:
   - name: hcl-sourced table exists
@@ -321,7 +324,7 @@ func TestCompatCommand_SchemaTestAcceptsHCLFileSource(t *testing.T) {
           row_count: 1
 `), 0o600), qt.IsNil)
 
-	out, err := runCompatSchemaTest(c, testsDir, hclFile)
+	out, err := runCompatSchemaTest(c.TB, testsDir, hclFile)
 
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 	c.Assert(out, qt.Contains, "1 cases, 1 passed, 0 failed")
@@ -343,7 +346,8 @@ type compatLiveSourceFixture struct {
 // writeCompatLiveSourceFixture builds the fixture, creating the live database
 // by executing DDL over a Ptah SQLite connection rather than committing a
 // binary database file.
-func writeCompatLiveSourceFixture(c *qt.C) compatLiveSourceFixture {
+func writeCompatLiveSourceFixture(tb testing.TB) compatLiveSourceFixture {
+	c := qt.New(tb)
 	c.Helper()
 	dir := c.TempDir()
 	modelsDir := filepath.Join(dir, "models")
@@ -392,7 +396,8 @@ type User struct {
 // A shared --dev-url is not reset between invocations, so a negative source run
 // against a database an earlier positive run populated reports "1 cases,
 // 1 passed, 0 failed" and exit 0 -- the fixture would stop discriminating.
-func freshDevURL(c *qt.C) string {
+func freshDevURL(tb testing.TB) string {
+	c := qt.New(tb)
 	c.Helper()
 	return "sqlite://" + filepath.Join(c.TempDir(), "dev.db")
 }
@@ -424,7 +429,7 @@ func TestCompatCommand_SchemaTestDesiredStateSourceSpellings(t *testing.T) {
 			argv: func(c *qt.C, _ *testing.T, fixture compatLiveSourceFixture) []string {
 				return []string{
 					"schema", "test", fixture.testsDir,
-					"-u", fixture.liveURL, "--dev-url", freshDevURL(c),
+					"-u", fixture.liveURL, "--dev-url", freshDevURL(c.TB),
 				}
 			},
 			check: assertDatabaseSourcePassed,
@@ -434,7 +439,7 @@ func TestCompatCommand_SchemaTestDesiredStateSourceSpellings(t *testing.T) {
 			argv: func(c *qt.C, _ *testing.T, fixture compatLiveSourceFixture) []string {
 				return []string{
 					"schema", "test", fixture.testsDir,
-					"--url", fixture.liveURL, "--dev-url", freshDevURL(c),
+					"--url", fixture.liveURL, "--dev-url", freshDevURL(c.TB),
 				}
 			},
 			check: assertDatabaseSourcePassed,
@@ -443,7 +448,7 @@ func TestCompatCommand_SchemaTestDesiredStateSourceSpellings(t *testing.T) {
 			name: "PTAH_URL environment twin",
 			argv: func(c *qt.C, t *testing.T, fixture compatLiveSourceFixture) []string {
 				t.Setenv("PTAH_URL", fixture.liveURL)
-				return []string{"schema", "test", fixture.testsDir, "--dev-url", freshDevURL(c)}
+				return []string{"schema", "test", fixture.testsDir, "--dev-url", freshDevURL(c.TB)}
 			},
 			check: assertDatabaseSourcePassed,
 		},
@@ -454,7 +459,7 @@ func TestCompatCommand_SchemaTestDesiredStateSourceSpellings(t *testing.T) {
 				t.Chdir(dir)
 				c.Assert(os.WriteFile(filepath.Join(dir, "atlas.hcl"), []byte(`env "local" {
   src = "`+fixture.liveURL+`"
-  dev = "`+freshDevURL(c)+`"
+  dev = "`+freshDevURL(c.TB)+`"
 }
 `), 0o600), qt.IsNil)
 				return []string{"schema", "test", fixture.testsDir, "--env", "local"}
@@ -466,7 +471,7 @@ func TestCompatCommand_SchemaTestDesiredStateSourceSpellings(t *testing.T) {
 			argv: func(c *qt.C, _ *testing.T, fixture compatLiveSourceFixture) []string {
 				return []string{
 					"schema", "test", fixture.testsDir,
-					"-u", "file://" + fixture.modelsDir, "--dev-url", freshDevURL(c),
+					"-u", "file://" + fixture.modelsDir, "--dev-url", freshDevURL(c.TB),
 				}
 			},
 			check: assertDatabaseSourceNotRead,
@@ -476,7 +481,7 @@ func TestCompatCommand_SchemaTestDesiredStateSourceSpellings(t *testing.T) {
 			argv: func(c *qt.C, _ *testing.T, fixture compatLiveSourceFixture) []string {
 				return []string{
 					"schema", "test", fixture.testsDir,
-					"-u", "file://" + fixture.sqlFile, "--dev-url", freshDevURL(c),
+					"-u", "file://" + fixture.sqlFile, "--dev-url", freshDevURL(c.TB),
 				}
 			},
 			check: assertDatabaseSourceNotRead,
@@ -508,7 +513,7 @@ func TestCompatCommand_SchemaTestDesiredStateSourceSpellings(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			fixture := writeCompatLiveSourceFixture(c)
+			fixture := writeCompatLiveSourceFixture(c.TB)
 
 			out, err := runCompatArgs(tt.argv(c, t, fixture))
 

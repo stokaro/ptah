@@ -48,7 +48,8 @@ import (
 // It binds a port, reads it back and closes the listener, so the number is one
 // the kernel actually handed out rather than a guess that might collide with a
 // registry another test — or another agent on the same machine — is running.
-func closedRegistryHost(c *qt.C) string {
+func closedRegistryHost(tb testing.TB) string {
+	c := qt.New(tb)
 	c.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	c.Assert(err, qt.IsNil)
@@ -195,7 +196,8 @@ func TestOCISchemaSourceVerbs_RegisterPlainHTTP(t *testing.T) {
 	accounted = slices.Compact(accounted)
 
 	for _, verb := range registered {
-		c.Run(verb, func(c *qt.C) {
+		t.Run(verb, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(accounted, qt.Contains, verb,
 				qt.Commentf("%q registers --schema-file but no row states whether it resolves oci://", verb))
 		})
@@ -204,7 +206,8 @@ func TestOCISchemaSourceVerbs_RegisterPlainHTTP(t *testing.T) {
 	// The converse: a name that no longer registers --schema-file must not sit
 	// here claiming coverage it cannot have.
 	for _, verb := range accounted {
-		c.Run("still registered: "+verb, func(c *qt.C) {
+		t.Run("still registered: "+verb, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(registered, qt.Contains, verb,
 				qt.Commentf("%q is accounted for but no longer registers --schema-file", verb))
 		})
@@ -213,7 +216,8 @@ func TestOCISchemaSourceVerbs_RegisterPlainHTTP(t *testing.T) {
 	// Every verb that resolves oci:// must register --plain-http. This is the
 	// property stokaro/ptah#928 item 1 is about.
 	for _, row := range ociSchemaSourceVerbs() {
-		c.Run("plain-http on "+row.verb, func(c *qt.C) {
+		t.Run("plain-http on "+row.verb, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(nativeVerbsRegisteringFlag(root.NewRootCommand(), "plain-http"), qt.Contains, row.verb)
 		})
 	}
@@ -230,10 +234,11 @@ func TestOCISchemaSourceVerbs_RegisterPlainHTTP(t *testing.T) {
 // that reached the client.
 func TestOCISchemaSourceVerbs_ReachTheRegistryWithPlainHTTP(t *testing.T) {
 	c := qt.New(t)
-	reference := "oci://" + closedRegistryHost(c) + "/demo/schema:v1"
+	reference := "oci://" + closedRegistryHost(c.TB) + "/demo/schema:v1"
 
 	for _, row := range ociSchemaSourceVerbs() {
-		c.Run(row.verb, func(c *qt.C) {
+		t.Run(row.verb, func(t *testing.T) {
+			c := qt.New(t)
 			out, err := runNative(row.args(reference)...)
 			combined := out + errorText(err)
 
@@ -260,10 +265,11 @@ func TestOCISchemaSourceVerbs_ReachTheRegistryWithPlainHTTP(t *testing.T) {
 // unencrypted all along.
 func TestOCISchemaSourceVerbs_WithoutPlainHTTPUseTLS(t *testing.T) {
 	c := qt.New(t)
-	reference := "oci://" + closedRegistryHost(c) + "/demo/schema:v1"
+	reference := "oci://" + closedRegistryHost(c.TB) + "/demo/schema:v1"
 
 	for _, row := range ociSchemaSourceVerbs() {
-		c.Run(row.verb, func(c *qt.C) {
+		t.Run(row.verb, func(t *testing.T) {
+			c := qt.New(t)
 			args := slices.DeleteFunc(row.args(reference), func(arg string) bool {
 				return arg == "--plain-http"
 			})
@@ -414,20 +420,23 @@ func TestOCIMigrationDirVerbs_EveryDirectoryFlagIsAccountedFor(t *testing.T) {
 		qt.Commentf("a verb is listed twice: %q", accounted))
 
 	for _, verb := range registered {
-		c.Run(verb, func(c *qt.C) {
+		t.Run(verb, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(accounted, qt.Contains, verb,
 				qt.Commentf("%q registers a migration-directory flag but no row states whether it resolves oci://", verb))
 		})
 	}
 	for _, verb := range accounted {
-		c.Run("still registered: "+verb, func(c *qt.C) {
+		t.Run("still registered: "+verb, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(registered, qt.Contains, verb,
 				qt.Commentf("%q is accounted for but no longer registers a migration-directory flag", verb))
 		})
 	}
 
 	for _, row := range ociMigrationDirVerbs() {
-		c.Run("plain-http on "+row.verb, func(c *qt.C) {
+		t.Run("plain-http on "+row.verb, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(nativeVerbsRegisteringFlag(root.NewRootCommand(), "plain-http"), qt.Contains, row.verb)
 		})
 	}
@@ -444,10 +453,11 @@ func TestOCIMigrationDirVerbs_EveryDirectoryFlagIsAccountedFor(t *testing.T) {
 // a registry being involved.
 func TestOCIMigrationDirVerbs_ReachTheRegistryWithPlainHTTP(t *testing.T) {
 	c := qt.New(t)
-	reference := "oci://" + closedRegistryHost(c) + "/demo/migrations:v1"
+	reference := "oci://" + closedRegistryHost(c.TB) + "/demo/migrations:v1"
 
 	for _, row := range ociMigrationDirVerbs() {
-		c.Run(row.verb, func(c *qt.C) {
+		t.Run(row.verb, func(t *testing.T) {
+			c := qt.New(t)
 			out, err := runNative(row.args(reference)...)
 			combined := out + errorText(err)
 
@@ -470,10 +480,11 @@ func TestOCIMigrationDirVerbs_ReachTheRegistryWithPlainHTTP(t *testing.T) {
 // encrypted.
 func TestOCIMigrationDirVerbs_WithoutPlainHTTPUseTLS(t *testing.T) {
 	c := qt.New(t)
-	reference := "oci://" + closedRegistryHost(c) + "/demo/migrations:v1"
+	reference := "oci://" + closedRegistryHost(c.TB) + "/demo/migrations:v1"
 
 	for _, row := range ociMigrationDirVerbs() {
-		c.Run(row.verb, func(c *qt.C) {
+		t.Run(row.verb, func(t *testing.T) {
+			c := qt.New(t)
 			args := slices.DeleteFunc(row.args(reference), func(arg string) bool {
 				return arg == "--plain-http"
 			})
@@ -506,7 +517,8 @@ func ociSourceReferencePath() string {
 // It is derived from the invocation the row already builds rather than restated
 // beside it, so the census below cannot claim a pairing the driven probe does
 // not exercise.
-func ociSourceFlag(c *qt.C, row ociSourceVerb) string {
+func ociSourceFlag(tb testing.TB, row ociSourceVerb) string {
+	c := qt.New(tb)
 	c.Helper()
 	const reference = "oci://registry.invalid/demo/artifact:v1"
 	args := row.args(reference)
@@ -518,12 +530,13 @@ func ociSourceFlag(c *qt.C, row ociSourceVerb) string {
 
 // ociSourceCensus returns `<verb> <flag>` for every command the driven tables
 // above establish as resolving an `oci://` source, sorted.
-func ociSourceCensus(c *qt.C) []string {
+func ociSourceCensus(tb testing.TB) []string {
+	c := qt.New(tb)
 	c.Helper()
 	rows := slices.Concat(ociSchemaSourceVerbs(), ociMigrationDirVerbs())
 	census := make([]string, 0, len(rows))
 	for _, row := range rows {
-		census = append(census, row.verb+" "+ociSourceFlag(c, row))
+		census = append(census, row.verb+" "+ociSourceFlag(c.TB, row))
 	}
 	slices.Sort(census)
 	return census
@@ -531,7 +544,8 @@ func ociSourceCensus(c *qt.C) []string {
 
 // ociReferenceCensus returns `<verb> <flag>` for every row of the reference
 // page's table, sorted.
-func ociReferenceCensus(c *qt.C) []string {
+func ociReferenceCensus(tb testing.TB) []string {
+	c := qt.New(tb)
 	c.Helper()
 	path := ociSourceReferencePath()
 	raw, err := os.ReadFile(path)
@@ -577,11 +591,11 @@ func appendOCIReferenceRow(census []string, match []string) []string {
 func TestOCISourceVerbs_MatchTheCommandReference(t *testing.T) {
 	c := qt.New(t)
 
-	census := ociSourceCensus(c)
+	census := ociSourceCensus(c.TB)
 	c.Assert(len(census) > 0, qt.IsTrue,
 		qt.Commentf("the driven tables are empty, so this gate is measuring nothing"))
 
-	c.Assert(ociReferenceCensus(c), qt.DeepEquals, census)
+	c.Assert(ociReferenceCensus(c.TB), qt.DeepEquals, census)
 }
 
 // verifySumVerb is one command registering --verify-sum, with the reason.
@@ -646,13 +660,15 @@ func TestVerifySum_IsRegisteredExactlyWhereItIsAccountedFor(t *testing.T) {
 	slices.Sort(accounted)
 
 	for _, verb := range registered {
-		c.Run(verb, func(c *qt.C) {
+		t.Run(verb, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(accounted, qt.Contains, verb,
 				qt.Commentf("%q registers --verify-sum but no row states what the flag adds there", verb))
 		})
 	}
 	for _, verb := range accounted {
-		c.Run("still registered: "+verb, func(c *qt.C) {
+		t.Run("still registered: "+verb, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(registered, qt.Contains, verb,
 				qt.Commentf("%q is accounted for but no longer registers --verify-sum", verb))
 		})
@@ -682,7 +698,8 @@ func TestVerifySum_EveryHelpCarriesTheQualifier(t *testing.T) {
 	// qualifier is the last PROSE but never the last bytes. Asserting the
 	// suffix would be asserting the env-binding machinery, not the wording.
 	for verb, usage := range usages {
-		c.Run(verb, func(c *qt.C) {
+		t.Run(verb, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(usage, qt.Contains, migrationsource.VerifySumQualifier,
 				qt.Commentf("--verify-sum help on %q does not carry the shared qualifier", verb))
 		})

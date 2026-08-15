@@ -12,7 +12,8 @@ import (
 
 // runSchemaCleanScope runs `atlas schema clean` against dbPath with extra
 // selector arguments and returns the combined output.
-func runSchemaCleanScope(c *qt.C, dbPath string, extra ...string) (string, error) {
+func runSchemaCleanScope(tb testing.TB, dbPath string, extra ...string) (string, error) {
+	c := qt.New(tb)
 	c.Helper()
 	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
@@ -69,10 +70,10 @@ func TestSchemaCleanSelectorsNarrowThePlan(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			dbPath := filepath.Join(t.TempDir(), "clean-scope.db")
-			createSQLiteSchemaCleanTable(c, dbPath, "users")
-			createSQLiteSchemaCleanTable(c, dbPath, "audit_log")
+			createSQLiteSchemaCleanTable(c.TB, dbPath, "users")
+			createSQLiteSchemaCleanTable(c.TB, dbPath, "audit_log")
 
-			out, err := runSchemaCleanScope(c, dbPath, test.args...)
+			out, err := runSchemaCleanScope(c.TB, dbPath, test.args...)
 
 			c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 			for _, planned := range test.planned {
@@ -117,14 +118,14 @@ func TestSchemaCleanSelectorsNarrowWhatIsDestroyed(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			dbPath := filepath.Join(t.TempDir(), "clean-scope-apply.db")
-			createSQLiteSchemaCleanTable(c, dbPath, "users")
-			createSQLiteSchemaCleanTable(c, dbPath, "audit_log")
+			createSQLiteSchemaCleanTable(c.TB, dbPath, "users")
+			createSQLiteSchemaCleanTable(c.TB, dbPath, "audit_log")
 
-			out, err := runSchemaCleanScope(c, dbPath, test.args...)
+			out, err := runSchemaCleanScope(c.TB, dbPath, test.args...)
 
 			c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
-			c.Assert(sqliteTableCount(c, dbPath, test.dropped), qt.Equals, 0)
-			c.Assert(sqliteTableCount(c, dbPath, test.surviving), qt.Equals, 1)
+			c.Assert(sqliteTableCount(c.TB, dbPath, test.dropped), qt.Equals, 0)
+			c.Assert(sqliteTableCount(c.TB, dbPath, test.surviving), qt.Equals, 1)
 		})
 	}
 }
@@ -135,14 +136,14 @@ func TestSchemaCleanSelectorsNarrowWhatIsDestroyed(t *testing.T) {
 func TestSchemaCleanUnselectedRunStillDropsEverything(t *testing.T) {
 	c := qt.New(t)
 	dbPath := filepath.Join(t.TempDir(), "clean-scope-full.db")
-	createSQLiteSchemaCleanTable(c, dbPath, "users")
-	createSQLiteSchemaCleanTable(c, dbPath, "audit_log")
+	createSQLiteSchemaCleanTable(c.TB, dbPath, "users")
+	createSQLiteSchemaCleanTable(c.TB, dbPath, "audit_log")
 
-	out, err := runSchemaCleanScope(c, dbPath, "--auto-approve")
+	out, err := runSchemaCleanScope(c.TB, dbPath, "--auto-approve")
 
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
-	c.Assert(sqliteTableCount(c, dbPath, "users"), qt.Equals, 0)
-	c.Assert(sqliteTableCount(c, dbPath, "audit_log"), qt.Equals, 0)
+	c.Assert(sqliteTableCount(c.TB, dbPath, "users"), qt.Equals, 0)
+	c.Assert(sqliteTableCount(c.TB, dbPath, "audit_log"), qt.Equals, 0)
 }
 
 // TestSchemaCleanRejectsUnsupportedSelectorsBeforeConnecting checks that a
@@ -173,13 +174,13 @@ func TestSchemaCleanRejectsUnsupportedSelectorsBeforeConnecting(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			dbPath := filepath.Join(t.TempDir(), "clean-scope-invalid.db")
-			createSQLiteSchemaCleanTable(c, dbPath, "users")
+			createSQLiteSchemaCleanTable(c.TB, dbPath, "users")
 
-			out, err := runSchemaCleanScope(c, dbPath, test.args...)
+			out, err := runSchemaCleanScope(c.TB, dbPath, test.args...)
 
 			c.Assert(err, qt.IsNotNil)
 			c.Assert(out, qt.Contains, test.want)
-			c.Assert(sqliteTableCount(c, dbPath, "users"), qt.Equals, 1)
+			c.Assert(sqliteTableCount(c.TB, dbPath, "users"), qt.Equals, 1)
 		})
 	}
 }

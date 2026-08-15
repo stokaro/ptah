@@ -26,7 +26,6 @@ import (
 // two rows below are that discriminating pair, with the name as the only
 // difference (stokaro/ptah#931 item 1).
 func TestPostgres_ModifyColumn_EnumTargetGetsAUsingCast(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name   string
@@ -46,7 +45,8 @@ func TestPostgres_ModifyColumn_EnumTargetGetsAUsingCast(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t2 *testing.T) {
+			c := qt.New(t2)
 			alter := &ast.AlterTableNode{
 				Name:       "a",
 				Operations: []ast.AlterOperation{&ast.ModifyColumnOperation{Column: test.column}},

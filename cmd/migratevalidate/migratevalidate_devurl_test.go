@@ -20,7 +20,7 @@ func TestMigrateValidate_DevURLReplaysAtlasMigration(t *testing.T) {
 	c := qt.New(t)
 	migrationsDir := t.TempDir()
 	devDBPath := filepath.Join(t.TempDir(), "dev.db")
-	writeAtlasMigration(c, migrationsDir, "1_create_native_validate_table.sql",
+	writeAtlasMigration(c.TB, migrationsDir, "1_create_native_validate_table.sql",
 		"CREATE TABLE native_validate_dev_url (id INTEGER PRIMARY KEY);\n")
 
 	stdout, _, err := executeValidate(
@@ -32,14 +32,14 @@ func TestMigrateValidate_DevURLReplaysAtlasMigration(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(stdout, qt.Contains, "OK: migrations directory matches atlas.sum")
 	c.Assert(stdout, qt.Contains, "OK: migration SQL validated on dev database")
-	assertSQLiteTableCount(c, devDBPath, "native_validate_dev_url", 0)
+	assertSQLiteTableCount(c.TB, devDBPath, "native_validate_dev_url", 0)
 }
 
 func TestMigrateValidate_DevURLFailureExitsTwo(t *testing.T) {
 	c := qt.New(t)
 	migrationsDir := t.TempDir()
 	devDBPath := filepath.Join(t.TempDir(), "dev.db")
-	writeAtlasMigration(c, migrationsDir, "1_bad_statement.sql",
+	writeAtlasMigration(c.TB, migrationsDir, "1_bad_statement.sql",
 		"INSERT INTO missing_native_validate_table (id) VALUES (1);\n")
 
 	_, stderr, err := executeValidate(
@@ -80,13 +80,13 @@ func TestMigrateValidate_DevURLReplaysCheckDirectiveMigration(t *testing.T) {
 	c.Assert(stdout, qt.Contains, "OK: migration SQL validated on dev database")
 	// The replay ran both migrations: users was created empty, migration 2's
 	// check passed, and the guarded DROP TABLE applied.
-	assertSQLiteTableCount(c, devDBPath, "users", 0)
+	assertSQLiteTableCount(c.TB, devDBPath, "users", 0)
 }
 
 func TestMigrateValidate_DriftSkipsDevURL(t *testing.T) {
 	c := qt.New(t)
 	migrationsDir := t.TempDir()
-	writeAtlasMigration(c, migrationsDir, "1_create_native_validate_table.sql",
+	writeAtlasMigration(c.TB, migrationsDir, "1_create_native_validate_table.sql",
 		"CREATE TABLE native_validate_drift (id INTEGER PRIMARY KEY);\n")
 	c.Assert(os.WriteFile(filepath.Join(migrationsDir, "1_create_native_validate_table.sql"),
 		[]byte("CREATE TABLE native_validate_drift (id TEXT);\n"), 0o600), qt.IsNil)
@@ -113,14 +113,16 @@ func executeValidate(args ...string) (stdout, stderr string, err error) {
 	return out.String(), errOut.String(), err
 }
 
-func writeAtlasMigration(c *qt.C, dir, name, sql string) {
+func writeAtlasMigration(tb testing.TB, dir, name, sql string) {
+	c := qt.New(tb)
 	c.Helper()
 	c.Assert(os.WriteFile(filepath.Join(dir, name), []byte(sql), 0o600), qt.IsNil)
 	_, err := migratesum.WriteWithFormat(dir, migrator.MigrationDirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 }
 
-func assertSQLiteTableCount(c *qt.C, dbPath, table string, want int) {
+func assertSQLiteTableCount(tb testing.TB, dbPath, table string, want int) {
+	c := qt.New(tb)
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)
 	c.Assert(err, qt.IsNil)

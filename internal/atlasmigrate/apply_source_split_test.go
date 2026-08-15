@@ -22,7 +22,8 @@ import (
 //  2. conversion consumes the captured bytes, so a failure to parse the source
 //     layout is reachable only after the gate has seen those same bytes.
 
-func writeSplitFixture(c *qt.C, files map[string]string) string {
+func writeSplitFixture(tb testing.TB, files map[string]string) string {
+	c := qt.New(tb)
 	c.Helper()
 	dir := c.TempDir()
 	for name, content := range files {
@@ -33,7 +34,8 @@ func writeSplitFixture(c *qt.C, files map[string]string) string {
 	return dir
 }
 
-func snapshotPaths(c *qt.C, fsys fs.FS) []string {
+func snapshotPaths(tb testing.TB, fsys fs.FS) []string {
+	c := qt.New(tb)
 	c.Helper()
 	var names []string
 	err := fs.WalkDir(fsys, ".", func(name string, entry fs.DirEntry, err error) error {
@@ -64,7 +66,7 @@ func TestCaptureApplySourceKeepsTheIntegrityFile(t *testing.T) {
 	for _, format := range formats {
 		t.Run(string(format), func(t *testing.T) {
 			c := qt.New(t)
-			dir := writeSplitFixture(c, map[string]string{
+			dir := writeSplitFixture(c.TB, map[string]string{
 				"1_init.sql":             "-- +goose Up\nCREATE TABLE seam (id int);\n",
 				migratesum.AtlasFileName: "h1:whatever=\n",
 			})
@@ -72,7 +74,7 @@ func TestCaptureApplySourceKeepsTheIntegrityFile(t *testing.T) {
 			captured, err := atlasmigrate.CaptureApplySource(os.DirFS(dir), format)
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(snapshotPaths(c, captured), qt.Contains, migratesum.AtlasFileName)
+			c.Assert(snapshotPaths(c.TB, captured), qt.Contains, migratesum.AtlasFileName)
 		})
 	}
 }
@@ -102,7 +104,7 @@ func TestCaptureApplySourceFlywayReachesNestedFiles(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			dir := writeSplitFixture(c, map[string]string{
+			dir := writeSplitFixture(c.TB, map[string]string{
 				"V1__init.sql":       "CREATE TABLE seam (id int);\n",
 				"1_init.up.sql":      "CREATE TABLE seam2 (id int);\n",
 				"sub/V2__nested.sql": "CREATE TABLE nested (id int);\n",
@@ -111,7 +113,7 @@ func TestCaptureApplySourceFlywayReachesNestedFiles(t *testing.T) {
 			captured, err := atlasmigrate.CaptureApplySource(os.DirFS(dir), tt.format)
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(snapshotPaths(c, captured), tt.checker, "sub/V2__nested.sql")
+			c.Assert(snapshotPaths(c.TB, captured), tt.checker, "sub/V2__nested.sql")
 		})
 	}
 }
@@ -122,7 +124,7 @@ func TestCaptureApplySourceFlywayReachesNestedFiles(t *testing.T) {
 // invite a future reader to hash them.
 func TestCaptureApplySourceFlywaySkipsHiddenDirectories(t *testing.T) {
 	c := qt.New(t)
-	dir := writeSplitFixture(c, map[string]string{
+	dir := writeSplitFixture(c.TB, map[string]string{
 		"V1__init.sql":         "CREATE TABLE seam (id int);\n",
 		".archive/V1__old.sql": "CREATE TABLE old (id int);\n",
 	})
@@ -130,7 +132,7 @@ func TestCaptureApplySourceFlywaySkipsHiddenDirectories(t *testing.T) {
 	captured, err := atlasmigrate.CaptureApplySource(os.DirFS(dir), atlasmigrateimport.FormatFlyway)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(snapshotPaths(c, captured), qt.Not(qt.Contains), ".archive/V1__old.sql")
+	c.Assert(snapshotPaths(c.TB, captured), qt.Not(qt.Contains), ".archive/V1__old.sql")
 }
 
 // TestCaptureApplySourceCoversEverySumFileName is the invariant that keeps the
@@ -163,7 +165,7 @@ func TestCaptureApplySourceCoversEverySumFileName(t *testing.T) {
 	for _, format := range formats {
 		t.Run(string(format), func(t *testing.T) {
 			c := qt.New(t)
-			dir := writeSplitFixture(c, files)
+			dir := writeSplitFixture(c.TB, files)
 
 			captured, err := atlasmigrate.CaptureApplySource(os.DirFS(dir), format)
 			c.Assert(err, qt.IsNil)
@@ -196,7 +198,7 @@ func TestCaptureApplySourceCoversEverySumFileName(t *testing.T) {
 // after the gate has run cannot be executed by it.
 func TestConvertApplySourceReadsOnlyTheCapture(t *testing.T) {
 	c := qt.New(t)
-	dir := writeSplitFixture(c, map[string]string{
+	dir := writeSplitFixture(c.TB, map[string]string{
 		"1_init.sql": "-- +goose Up\nCREATE TABLE seam (id int);\n",
 	})
 
@@ -210,7 +212,7 @@ func TestConvertApplySourceReadsOnlyTheCapture(t *testing.T) {
 	converted, err := atlasmigrate.ConvertApplySource(captured, dir, atlasmigrateimport.FormatGoose)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(snapshotPaths(c, converted), qt.DeepEquals, []string{"1_init.sql"})
+	c.Assert(snapshotPaths(c.TB, converted), qt.DeepEquals, []string{"1_init.sql"})
 }
 
 // TestConvertApplySourceReportsSourceParseFailures pins that the parse failure
@@ -224,7 +226,7 @@ func TestConvertApplySourceReportsSourceParseFailures(t *testing.T) {
 	// Atlas executes such a file verbatim and so does Ptah now, so it could no
 	// longer show that conversion is where parsing happens. A broken directive
 	// ORDER still cannot be read, which is what this test needs.
-	dir := writeSplitFixture(c, map[string]string{
+	dir := writeSplitFixture(c.TB, map[string]string{
 		"1_init.sql": "-- +goose Down\nDROP TABLE seam;\n",
 	})
 
@@ -241,7 +243,7 @@ func TestConvertApplySourceReportsSourceParseFailures(t *testing.T) {
 // return exactly what capture-then-convert returns.
 func TestResolveApplySourceForFormatStillComposesTheHalves(t *testing.T) {
 	c := qt.New(t)
-	dir := writeSplitFixture(c, map[string]string{
+	dir := writeSplitFixture(c.TB, map[string]string{
 		"1_init.sql": "-- +goose Up\nCREATE TABLE seam (id int);\n",
 	})
 

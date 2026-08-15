@@ -29,14 +29,16 @@ var goschemaDatabaseFixture = goschema.Database{}
 
 // withoutPlanLint neutralizes the escape lint for one test, so anything that
 // still refuses a statement is doing so for real.
-func withoutPlanLint(c *qt.C) {
+func withoutPlanLint(tb testing.TB) {
+	c := qt.New(tb)
 	c.Helper()
 	original := checkPlanStatements
 	checkPlanStatements = func([]string, string) error { return nil }
 	c.Cleanup(func() { checkPlanStatements = original })
 }
 
-func connectSQLiteForWiring(c *qt.C, dbPath string) *dbschema.DatabaseConnection {
+func connectSQLiteForWiring(tb testing.TB, dbPath string) *dbschema.DatabaseConnection {
+	c := qt.New(tb)
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(context.Background(), atlasurl.SQLiteURLFromPath(dbPath))
 	c.Assert(err, qt.IsNil)
@@ -44,7 +46,8 @@ func connectSQLiteForWiring(c *qt.C, dbPath string) *dbschema.DatabaseConnection
 	return conn
 }
 
-func victimHasTable(c *qt.C, victimPath, table string) bool {
+func victimHasTable(tb testing.TB, victimPath, table string) bool {
+	c := qt.New(tb)
 	c.Helper()
 	db, err := sql.Open("sqlite", victimPath)
 	c.Assert(err, qt.IsNil)
@@ -64,7 +67,7 @@ func victimHasTable(c *qt.C, victimPath, table string) bool {
 // verified.
 func TestRehearsalCoreRefusesEscapeWithoutTheLint(t *testing.T) {
 	c := qt.New(t)
-	withoutPlanLint(c)
+	withoutPlanLint(c.TB)
 	dir := t.TempDir()
 	devPath := filepath.Join(dir, "dev.db")
 	victimPath := filepath.Join(dir, "victim.db")
@@ -75,8 +78,8 @@ func TestRehearsalCoreRefusesEscapeWithoutTheLint(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(victim.Close(), qt.IsNil)
 
-	devConn := connectSQLiteForWiring(c, devPath)
-	targetConn := connectSQLiteForWiring(c, filepath.Join(dir, "target.db"))
+	devConn := connectSQLiteForWiring(c.TB, devPath)
+	targetConn := connectSQLiteForWiring(c.TB, filepath.Join(dir, "target.db"))
 	statements := []string{
 		fmt.Sprintf("ATTACH DATABASE '%s' AS victim", victimPath),
 		"CREATE TABLE victim.pwned (id integer)",
@@ -88,8 +91,8 @@ func TestRehearsalCoreRefusesEscapeWithoutTheLint(t *testing.T) {
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(IsPlanEscape(err), qt.IsFalse, qt.Commentf("the lint is disabled; this refusal must come from the engine"))
 	c.Assert(err.Error(), qt.Contains, "too many attached databases")
-	c.Assert(victimHasTable(c, victimPath, "pwned"), qt.IsFalse)
-	c.Assert(victimHasTable(c, victimPath, "untouched"), qt.IsTrue)
+	c.Assert(victimHasTable(c.TB, victimPath, "pwned"), qt.IsFalse)
+	c.Assert(victimHasTable(c.TB, victimPath, "untouched"), qt.IsTrue)
 }
 
 // TestRehearsalCoreRefusesEscapeWithoutTheLintUnderEveryTxMode covers the
@@ -108,11 +111,11 @@ func TestRehearsalCoreRefusesEscapeWithoutTheLintUnderEveryTxMode(t *testing.T) 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			withoutPlanLint(c)
+			withoutPlanLint(c.TB)
 			dir := t.TempDir()
 			victimPath := filepath.Join(dir, "victim.db")
-			devConn := connectSQLiteForWiring(c, filepath.Join(dir, "dev.db"))
-			targetConn := connectSQLiteForWiring(c, filepath.Join(dir, "target.db"))
+			devConn := connectSQLiteForWiring(c.TB, filepath.Join(dir, "dev.db"))
+			targetConn := connectSQLiteForWiring(c.TB, filepath.Join(dir, "target.db"))
 
 			err := rehearseStatementsOnDev(context.Background(), targetConn, devConn, nil, tt.txMode,
 				[]string{fmt.Sprintf("ATTACH DATABASE '%s' AS victim", victimPath)})
@@ -133,8 +136,8 @@ func TestRehearsalCoreRefusesEscapeWithoutTheLintUnderEveryTxMode(t *testing.T) 
 func TestRehearsalCoreLintsStatementsTheEngineWouldAccept(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
-	devConn := connectSQLiteForWiring(c, filepath.Join(dir, "dev.db"))
-	targetConn := connectSQLiteForWiring(c, filepath.Join(dir, "target.db"))
+	devConn := connectSQLiteForWiring(c.TB, filepath.Join(dir, "dev.db"))
+	targetConn := connectSQLiteForWiring(c.TB, filepath.Join(dir, "target.db"))
 
 	err := rehearseStatementsOnDev(context.Background(), targetConn, devConn, nil, migrator.MigrationTxModeNone,
 		[]string{fmt.Sprintf("PRAGMA temp_store_directory = '%s'", dir)})

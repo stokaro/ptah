@@ -141,7 +141,7 @@ func TestReadIndexes_AssemblesKeysFromTheirParts(t *testing.T) {
 
 	for _, test := range tests {
 		c.Run(test.name, func(c *qt.C) {
-			reader := NewMySQLReader(statisticsDB(c, test.rows).SQL, "app")
+			reader := NewMySQLReader(statisticsDB(c.TB, test.rows).SQL, "app")
 
 			indexes, err := reader.readIndexes("app")
 
@@ -193,7 +193,7 @@ func TestReadIndexes_ReportsAKeyPartItCannotName(t *testing.T) {
 
 	for _, test := range tests {
 		c.Run(test.name, func(c *qt.C) {
-			reader := NewMySQLReader(statisticsDB(c, test.rows).SQL, "app")
+			reader := NewMySQLReader(statisticsDB(c.TB, test.rows).SQL, "app")
 
 			indexes, err := reader.readIndexes("app")
 
@@ -206,7 +206,8 @@ func TestReadIndexes_ReportsAKeyPartItCannotName(t *testing.T) {
 // statisticsDB answers the index query with rows and refuses every other query,
 // so a projection change that stops selecting key parts fails here rather than
 // silently reading something else.
-func statisticsDB(c *qt.C, rows [][]driver.Value) *dbtest.DB {
+func statisticsDB(tb testing.TB, rows [][]driver.Value) *dbtest.DB {
+	c := qt.New(tb)
 	return dbtest.Open(c, func(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
 		queried := strings.Contains(query, "FROM information_schema.STATISTICS") &&
 			strings.Contains(query, "s.SEQ_IN_INDEX")
@@ -221,7 +222,7 @@ func statisticsDB(c *qt.C, rows [][]driver.Value) *dbtest.DB {
 // whose privileges a replacement CREATE would use.
 func TestReadFunctionsCarriesReplacementOwnershipFacts(t *testing.T) {
 	c := qt.New(t)
-	db := functionOwnershipDB(c)
+	db := functionOwnershipDB(c.TB)
 	reader := NewMySQLReader(db.SQL, "app")
 
 	functions, err := reader.readFunctions("app")
@@ -232,7 +233,8 @@ func TestReadFunctionsCarriesReplacementOwnershipFacts(t *testing.T) {
 	c.Assert(functions[0].CurrentAccount, qt.Equals, "migrator_a@%")
 }
 
-func functionOwnershipDB(c *qt.C) *dbtest.DB {
+func functionOwnershipDB(tb testing.TB) *dbtest.DB {
+	c := qt.New(tb)
 	c.Helper()
 	return dbtest.Open(c, func(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
 		switch {

@@ -25,8 +25,8 @@ func TestDiffRefusesMaterializedViewRefreshStrategyBeforeComparing(t *testing.T)
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			dir := t.TempDir()
-			from := writeMaterializedViewSchema(c, dir, "from.hcl", test.fromStrategy)
-			to := writeMaterializedViewSchema(c, dir, "to.hcl", test.toStrategy)
+			from := writeMaterializedViewSchema(c.TB, dir, "from.hcl", test.fromStrategy)
+			to := writeMaterializedViewSchema(c.TB, dir, "to.hcl", test.toStrategy)
 
 			report, err := atlasschema.Diff(t.Context(), atlasschema.DiffOptions{
 				FromURLs: []string{"file://" + from},
@@ -44,8 +44,8 @@ func TestDiffRefusesMaterializedViewRefreshStrategyBeforeComparing(t *testing.T)
 func TestDiffValidatesMaterializedViewRefreshStrategyAfterExclusion(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
-	from := writeScopedMaterializedViewSchema(c, dir, "from.hcl")
-	to := writeScopedMaterializedViewSchema(c, dir, "to.hcl")
+	from := writeScopedMaterializedViewSchema(c.TB, dir, "from.hcl")
+	to := writeScopedMaterializedViewSchema(c.TB, dir, "to.hcl")
 
 	report, err := atlasschema.Diff(t.Context(), atlasschema.DiffOptions{
 		FromURLs: []string{"file://" + from},
@@ -58,7 +58,8 @@ func TestDiffValidatesMaterializedViewRefreshStrategyAfterExclusion(t *testing.T
 	c.Assert(report.Changes, qt.HasLen, 0)
 }
 
-func writeMaterializedViewSchema(c *qt.C, dir, name, strategy string) string {
+func writeMaterializedViewSchema(tb testing.TB, dir, name, strategy string) string {
+	c := qt.New(tb)
 	c.Helper()
 	path := filepath.Join(dir, name)
 	contents := []byte(`
@@ -71,7 +72,8 @@ materialized "user_counts" {
 	return path
 }
 
-func writeScopedMaterializedViewSchema(c *qt.C, dir, name string) string {
+func writeScopedMaterializedViewSchema(tb testing.TB, dir, name string) string {
+	c := qt.New(tb)
 	c.Helper()
 	path := filepath.Join(dir, name)
 	contents := []byte(`

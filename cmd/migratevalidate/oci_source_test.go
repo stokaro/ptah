@@ -26,7 +26,8 @@ import (
 // The port is bound, read back and released rather than guessed, so it cannot
 // collide with a registry another test — or another agent on this machine — is
 // running, which would turn a refusal into a real pull.
-func closedRegistryPort(c *qt.C) string {
+func closedRegistryPort(tb testing.TB) string {
+	c := qt.New(tb)
 	c.Helper()
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	c.Assert(err, qt.IsNil)
@@ -37,7 +38,7 @@ func closedRegistryPort(c *qt.C) string {
 
 func TestValidate_NativeResolvesTheOCISchemeRatherThanStattingIt(t *testing.T) {
 	c := qt.New(t)
-	reference := "oci://" + closedRegistryPort(c) + "/demo/migrations:v1"
+	reference := "oci://" + closedRegistryPort(c.TB) + "/demo/migrations:v1"
 
 	_, stderr, err := execute("--dir", reference, "--plain-http")
 
@@ -54,7 +55,7 @@ func TestValidate_NativeResolvesTheOCISchemeRatherThanStattingIt(t *testing.T) {
 
 func TestValidate_NativeWithoutPlainHTTPDialsTLS(t *testing.T) {
 	c := qt.New(t)
-	reference := "oci://" + closedRegistryPort(c) + "/demo/migrations:v1"
+	reference := "oci://" + closedRegistryPort(c.TB) + "/demo/migrations:v1"
 
 	_, stderr, err := execute("--dir", reference)
 
@@ -64,7 +65,7 @@ func TestValidate_NativeWithoutPlainHTTPDialsTLS(t *testing.T) {
 
 func TestValidate_AtlasSurfaceLeavesTheOCISchemeToTheFilesystem(t *testing.T) {
 	c := qt.New(t)
-	reference := "oci://" + closedRegistryPort(c) + "/demo/migrations:v1"
+	reference := "oci://" + closedRegistryPort(c.TB) + "/demo/migrations:v1"
 
 	_, stderr, err := executeAtlas("--dir", reference)
 

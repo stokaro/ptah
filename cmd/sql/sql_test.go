@@ -47,7 +47,7 @@ func TestNewSQLCommand_Creation(t *testing.T) {
 
 func TestSQLLint_FileTextOutput(t *testing.T) {
 	c := qt.New(t)
-	path := writeSQLFile(c, t.TempDir(), "schema.sql", "CREATE TABLE users (email TEXT NOT NULL);")
+	path := writeSQLFile(c.TB, t.TempDir(), "schema.sql", "CREATE TABLE users (email TEXT NOT NULL);")
 
 	stdout, stderr, err := execute("lint", "--dialect", "postgres", path)
 
@@ -60,8 +60,8 @@ func TestSQLLint_FileTextOutput(t *testing.T) {
 func TestSQLLint_MultipleFiles(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
-	first := writeSQLFile(c, dir, "users.sql", "CREATE TABLE users (email TEXT NOT NULL);")
-	second := writeSQLFile(c, dir, "accounts.sql", "CREATE TABLE accounts (name TEXT NOT NULL);")
+	first := writeSQLFile(c.TB, dir, "users.sql", "CREATE TABLE users (email TEXT NOT NULL);")
+	second := writeSQLFile(c.TB, dir, "accounts.sql", "CREATE TABLE accounts (name TEXT NOT NULL);")
 
 	stdout, stderr, err := execute("lint", "--dialect", "postgres", first, second)
 
@@ -74,7 +74,7 @@ func TestSQLLint_MultipleFiles(t *testing.T) {
 
 func TestSQLLint_DisableRule(t *testing.T) {
 	c := qt.New(t)
-	path := writeSQLFile(c, t.TempDir(), "schema.sql", "CREATE TABLE users (email TEXT NOT NULL);")
+	path := writeSQLFile(c.TB, t.TempDir(), "schema.sql", "CREATE TABLE users (email TEXT NOT NULL);")
 
 	stdout, stderr, err := execute("lint", "--dialect", "postgres", "--disable", sqllint.RuleTableWithoutPrimaryKey, path)
 
@@ -85,7 +85,7 @@ func TestSQLLint_DisableRule(t *testing.T) {
 
 func TestSQLLint_JSONOutputForUnsupportedSQLExitsOne(t *testing.T) {
 	c := qt.New(t)
-	path := writeSQLFile(c, t.TempDir(), "query.sql", "SELECT 1;")
+	path := writeSQLFile(c.TB, t.TempDir(), "query.sql", "SELECT 1;")
 
 	stdout, stderr, err := execute("lint", "--dialect", "postgres", "--format", "json", path)
 
@@ -120,7 +120,7 @@ func TestSQLLint_StdinCleanSQL(t *testing.T) {
 
 func TestSQLLint_CapabilityAwareRuleUsesVersion(t *testing.T) {
 	c := qt.New(t)
-	path := writeSQLFile(c, t.TempDir(), "index.sql", "CREATE INDEX CONCURRENTLY idx_users_email ON users (email);")
+	path := writeSQLFile(c.TB, t.TempDir(), "index.sql", "CREATE INDEX CONCURRENTLY idx_users_email ON users (email);")
 
 	_, stderr, err := execute("lint", "--dialect", "cockroachdb", "--version", "CockroachDB CCL v23.1.0", path)
 
@@ -174,7 +174,7 @@ func TestSQLLint_VersionThatNamesNoServerExitsTwo(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			path := writeSQLFile(c, t.TempDir(), "index.sql", concurrentIndexSQL)
+			path := writeSQLFile(c.TB, t.TempDir(), "index.sql", concurrentIndexSQL)
 
 			stdout, stderr, err := execute("lint", "--dialect", tt.dialect, "--version", tt.version, path)
 
@@ -193,7 +193,7 @@ func TestSQLLint_VersionThatNamesNoServerExitsTwo(t *testing.T) {
 // existed, and a consumer has no way to tell it from a real one.
 func TestSQLLint_JSONNeverReportsAVersionThatDidNotResolve(t *testing.T) {
 	c := qt.New(t)
-	path := writeSQLFile(c, t.TempDir(), "index.sql", concurrentIndexSQL)
+	path := writeSQLFile(c.TB, t.TempDir(), "index.sql", concurrentIndexSQL)
 
 	stdout, stderr, err := execute(
 		"lint", "--dialect", "postgres", "--version", "definitely-not-a-version", "--format", "json", path)
@@ -256,7 +256,7 @@ func TestSQLLint_RecognizedVersionOutcomes(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			path := writeSQLFile(c, t.TempDir(), "index.sql", concurrentIndexSQL)
+			path := writeSQLFile(c.TB, t.TempDir(), "index.sql", concurrentIndexSQL)
 
 			stdout, stderr, err := execute("lint", "--dialect", tt.dialect, "--version", tt.version, path)
 
@@ -270,7 +270,7 @@ func TestSQLLint_RecognizedVersionOutcomes(t *testing.T) {
 // version field they cannot qualify.
 func TestSQLLint_JSONCarriesTheVersionNote(t *testing.T) {
 	c := qt.New(t)
-	path := writeSQLFile(c, t.TempDir(), "index.sql", concurrentIndexSQL)
+	path := writeSQLFile(c.TB, t.TempDir(), "index.sql", concurrentIndexSQL)
 
 	stdout, _, err := execute(
 		"lint", "--dialect", "postgres", "--version", "99.0", "--format", "json", path)
@@ -334,7 +334,8 @@ func TestSQLLint_AcceptsAMatchingBanner(t *testing.T) {
 
 const concurrentIndexSQL = "CREATE INDEX CONCURRENTLY idx_users_email ON users (email);"
 
-func writeSQLFile(c *qt.C, dir, name, statement string) string {
+func writeSQLFile(tb testing.TB, dir, name, statement string) string {
+	c := qt.New(tb)
 	path := filepath.Join(dir, name)
 	c.Assert(os.WriteFile(path, []byte(statement), 0o600), qt.IsNil)
 	return path

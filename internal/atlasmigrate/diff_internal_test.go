@@ -80,7 +80,7 @@ func TestCompareReplayedState_CarriesTheDropPolicyIntoTheVirtualTableGuard(t *te
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			conn := connectDiffComparisonSQLite(c)
+			conn := connectDiffComparisonSQLite(c.TB)
 			replayed := &dbschematypes.DBSchema{
 				Tables: []dbschematypes.DBTable{
 					{Name: "docs", Type: "TABLE", VirtualModule: "fts5", VirtualArguments: "title, body"},
@@ -118,7 +118,7 @@ func errorTextOf(err error) string {
 
 func TestCompareReplayedState_PreservesDesiredCoverage(t *testing.T) {
 	c := qt.New(t)
-	conn := connectDiffComparisonSQLite(c)
+	conn := connectDiffComparisonSQLite(c.TB)
 	current := &dbschematypes.DBSchema{
 		Extensions: []dbschematypes.DBExtension{{Name: "pgcrypto"}},
 	}
@@ -147,7 +147,7 @@ func TestCompareReplayedState_PreservesDesiredCoverage(t *testing.T) {
 
 func TestCompareReplayedState_PreservesExplicitRemoval(t *testing.T) {
 	c := qt.New(t)
-	conn := connectDiffComparisonSQLite(c)
+	conn := connectDiffComparisonSQLite(c.TB)
 	current := &dbschematypes.DBSchema{
 		Extensions: []dbschematypes.DBExtension{{Name: "pgcrypto"}},
 	}
@@ -172,7 +172,7 @@ func TestCompareReplayedState_PreservesExplicitRemoval(t *testing.T) {
 
 func TestCompareReplayedState_SchemaScopeKeepsDatabaseWideExtensionSynced(t *testing.T) {
 	c := qt.New(t)
-	conn := connectDiffComparisonSQLite(c)
+	conn := connectDiffComparisonSQLite(c.TB)
 	schemas := []string{"app"}
 	current := &dbschematypes.DBSchema{
 		Extensions: []dbschematypes.DBExtension{
@@ -210,7 +210,7 @@ func TestCompareReplayedState_SchemaScopeKeepsDatabaseWideExtensionSynced(t *tes
 
 func TestCompareReplayedState_SchemaScopePreservesExplicitExtensionRemoval(t *testing.T) {
 	c := qt.New(t)
-	conn := connectDiffComparisonSQLite(c)
+	conn := connectDiffComparisonSQLite(c.TB)
 	schemas := []string{"app"}
 	current := &dbschematypes.DBSchema{
 		Extensions: []dbschematypes.DBExtension{{Name: "citext", Schema: "extensions"}},
@@ -238,7 +238,7 @@ func TestCompareReplayedState_SchemaScopePreservesExplicitExtensionRemoval(t *te
 
 func TestCompareReplayedState_ReportsUndecidedAddition(t *testing.T) {
 	c := qt.New(t)
-	conn := connectDiffComparisonSQLite(c)
+	conn := connectDiffComparisonSQLite(c.TB)
 	current := &dbschematypes.DBSchema{
 		NotDescribed: coverage.Set{}.WithKind(coverage.Sequence),
 	}
@@ -264,7 +264,8 @@ func TestCompareReplayedState_ReportsUndecidedAddition(t *testing.T) {
 	c.Assert(diagnostics.String(), qt.Equals, undecidedSequenceDiagnostic)
 }
 
-func connectDiffComparisonSQLite(c *qt.C) *dbschema.DatabaseConnection {
+func connectDiffComparisonSQLite(tb testing.TB) *dbschema.DatabaseConnection {
+	c := qt.New(tb)
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(
 		c.Context(),
@@ -292,7 +293,7 @@ func TestGenerateDiff_RoutesUndecidedAdditionDiagnostics(t *testing.T) {
 		atlassource.ProjectEnv{},
 	)
 	c.Assert(err, qt.IsNil)
-	conn := connectDiffComparisonSQLite(c)
+	conn := connectDiffComparisonSQLite(c.TB)
 	diagnostics := &bytes.Buffer{}
 
 	result, err := generateDiff(c.Context(), conn, DiffOptions{
@@ -334,7 +335,7 @@ func TestWriteMigrationFilesAt_CollisionRejectsStalePlan(t *testing.T) {
 		{NameSuffix: "_transactional", SQL: "SELECT 1;"},
 		{NameSuffix: "_concurrent_indexes", SQL: "SELECT 2;", NoTransaction: true},
 	}
-	writer := openTestWriter(c, dir)
+	writer := openTestWriter(c.TB, dir)
 
 	batch, err := stageMigrationBatchAt(writer, "add_email", 1, contents)
 	c.Assert(err, qt.IsNil)
@@ -359,7 +360,7 @@ func TestWriteMigrationFiles_FailedWriteRollsBackEarlierFiles(t *testing.T) {
 	// create fails with a non-collision error after the first file was
 	// already written; the batch rolls back completely.
 	oversizedSuffix := "_" + strings.Repeat("x", 512)
-	writer := openTestWriter(c, dir)
+	writer := openTestWriter(c.TB, dir)
 
 	batch, err := stageMigrationBatch(writer, "add_email", []MigrationFileContent{
 		{NameSuffix: "_transactional", SQL: "SELECT 1;"},
@@ -378,7 +379,7 @@ func TestWriteMigrationFiles_FailedWriteRollsBackEarlierFiles(t *testing.T) {
 func TestPublishMigrationBatch_ExclusiveCopyMode(t *testing.T) {
 	c := qt.New(t)
 	dir := c.TempDir()
-	writer := openTestWriter(c, dir)
+	writer := openTestWriter(c.TB, dir)
 	batch, err := stageMigrationBatchAt(
 		writer,
 		"copy",
@@ -408,7 +409,7 @@ func TestPublishMigrationBatch_ExclusiveCopyMode(t *testing.T) {
 func TestWritePublicationJournal_FallsBackWithoutHardLinks(t *testing.T) {
 	c := qt.New(t)
 	dir := c.TempDir()
-	writer := openTestWriter(c, dir)
+	writer := openTestWriter(c.TB, dir)
 	journal := publicationJournal{
 		Version:    publicationJournalVersion,
 		CommitMode: publicationCommitModeAtlasSum,
@@ -471,7 +472,7 @@ func TestMigrationWriterPublishArtifacts_PublishesCompleteBatch(t *testing.T) {
 	report, err := os.ReadFile(paths[2])
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(report), qt.Equals, "{}\n")
-	writer := openTestWriter(c, dir)
+	writer := openTestWriter(c.TB, dir)
 	journalPath := testJournalPath(writer)
 	_, err = os.Stat(journalPath)
 	c.Assert(err, qt.ErrorIs, os.ErrNotExist)
@@ -506,7 +507,7 @@ func TestMigrationWriterPublishArtifacts_CollisionRollsBackWholeBatch(t *testing
 	staged, err := filepath.Glob(filepath.Join(dir, stagedMigrationPattern))
 	c.Assert(err, qt.IsNil)
 	c.Assert(staged, qt.HasLen, 0)
-	writer := openTestWriter(c, dir)
+	writer := openTestWriter(c.TB, dir)
 	_, err = os.Stat(testJournalPath(writer))
 	c.Assert(err, qt.ErrorIs, os.ErrNotExist)
 }
@@ -514,7 +515,7 @@ func TestMigrationWriterPublishArtifacts_CollisionRollsBackWholeBatch(t *testing
 func TestStageMigrationBatch_FallsBackToExclusiveCopy(t *testing.T) {
 	c := qt.New(t)
 	dir := c.TempDir()
-	writer := openTestWriter(c, dir)
+	writer := openTestWriter(c.TB, dir)
 
 	batch, err := stageMigrationBatchAtWithModeDetector(
 		writer,
@@ -552,7 +553,7 @@ func TestWriteDiffArtifacts_SumPublishFailureRollsBackMigrations(t *testing.T) {
 	c.Assert(os.Mkdir(filepath.Join(dir, "atlas.sum"), 0o700), qt.IsNil)
 	baseSnapshot, err := migrationsnapshot.CaptureStable(os.DirFS(dir))
 	c.Assert(err, qt.IsNil)
-	writer := openTestWriter(c, dir)
+	writer := openTestWriter(c.TB, dir)
 
 	result, err := writeDiffArtifacts(
 		t.Context(),
@@ -587,7 +588,7 @@ func TestWriteDiffArtifacts_ReverseNoTransactionRefusesUnrepresentedForeignLayou
 			dir := c.TempDir()
 			baseSnapshot, err := migrationsnapshot.CaptureStable(os.DirFS(dir))
 			c.Assert(err, qt.IsNil)
-			writer := openTestWriter(c, dir)
+			writer := openTestWriter(c.TB, dir)
 
 			result, err := writeDiffArtifacts(
 				t.Context(),
@@ -619,7 +620,7 @@ func TestWriteDiffArtifacts_GooseNoTransactionPublishesWholeFileDirective(t *tes
 	dir := c.TempDir()
 	baseSnapshot, err := migrationsnapshot.CaptureStable(os.DirFS(dir))
 	c.Assert(err, qt.IsNil)
-	writer := openTestWriter(c, dir)
+	writer := openTestWriter(c.TB, dir)
 
 	result, err := writeDiffArtifacts(
 		t.Context(),
@@ -677,7 +678,7 @@ func TestWriteDiffArtifacts_EnumAddRefusesUnrepresentedForeignLayoutsBeforePubli
 			dir := c.TempDir()
 			baseSnapshot, err := migrationsnapshot.CaptureStable(os.DirFS(dir))
 			c.Assert(err, qt.IsNil)
-			writer := openTestWriter(c, dir)
+			writer := openTestWriter(c.TB, dir)
 
 			result, err := writeDiffArtifacts(
 				t.Context(),
@@ -707,7 +708,7 @@ func TestRecoverPendingPublication_RollsBackInterruptedBatch(t *testing.T) {
 	c.Assert(os.WriteFile(initialPath, []byte("SELECT 1;"), 0o600), qt.IsNil)
 	_, err := migratesum.WriteWithFormat(dir, migrator.MigrationDirFormatAtlas)
 	c.Assert(err, qt.IsNil)
-	writer := openTestWriter(c, dir)
+	writer := openTestWriter(c.TB, dir)
 	batch, err := stageMigrationBatchAt(
 		writer,
 		"interrupted",
@@ -716,7 +717,7 @@ func TestRecoverPendingPublication_RollsBackInterruptedBatch(t *testing.T) {
 	)
 	c.Assert(err, qt.IsNil)
 	_, _ = beginTestPublication(
-		c,
+		c.TB,
 		writer,
 		batch,
 		[]MigrationFileContent{{SQL: "SELECT 2;"}},
@@ -745,7 +746,7 @@ func TestRecoverPendingPublication_RollsBackInterruptedCopyBatch(t *testing.T) {
 	c.Assert(os.WriteFile(initialPath, []byte("SELECT 1;"), 0o600), qt.IsNil)
 	_, err := migratesum.WriteWithFormat(dir, migrator.MigrationDirFormatAtlas)
 	c.Assert(err, qt.IsNil)
-	writer := openTestWriter(c, dir)
+	writer := openTestWriter(c.TB, dir)
 	batch, err := stageMigrationBatchAt(
 		writer,
 		"interrupted_copy",
@@ -755,7 +756,7 @@ func TestRecoverPendingPublication_RollsBackInterruptedCopyBatch(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	batch.mode = publicationModeCopy
 	_, _ = beginTestPublication(
-		c,
+		c.TB,
 		writer,
 		batch,
 		[]MigrationFileContent{{SQL: "SELECT 2;"}},
@@ -781,7 +782,7 @@ func TestRecoverPendingPublication_RollsBackInterruptedCopyBatch(t *testing.T) {
 func TestRecoverPendingPublication_RollsBackInterruptedMoveBatch(t *testing.T) {
 	c := qt.New(t)
 	dir := c.TempDir()
-	writer := openTestWriter(c, dir)
+	writer := openTestWriter(c.TB, dir)
 	batch, err := stageMigrationBatchAt(
 		writer,
 		"interrupted_move",
@@ -791,7 +792,7 @@ func TestRecoverPendingPublication_RollsBackInterruptedMoveBatch(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	batch.mode = publicationModeWriteThroughMove
 	_, _ = beginTestPublication(
-		c,
+		c.TB,
 		writer,
 		batch,
 		[]MigrationFileContent{{SQL: "SELECT 1;"}},
@@ -811,7 +812,6 @@ func TestRecoverPendingPublication_RollsBackInterruptedMoveBatch(t *testing.T) {
 }
 
 func TestRecoverPendingPublication_CleansQuarantineOnlyStateForEveryMode(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name string
 		mode publicationMode
@@ -822,9 +822,10 @@ func TestRecoverPendingPublication_CleansQuarantineOnlyStateForEveryMode(t *test
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			dir := c.TempDir()
-			writer := openTestWriter(c, dir)
+			writer := openTestWriter(c.TB, dir)
 			batch, err := stageMigrationBatchAt(
 				writer,
 				"interrupted",
@@ -834,7 +835,7 @@ func TestRecoverPendingPublication_CleansQuarantineOnlyStateForEveryMode(t *test
 			c.Assert(err, qt.IsNil)
 			batch.mode = test.mode
 			_, _ = beginTestPublication(
-				c,
+				c.TB,
 				writer,
 				batch,
 				[]MigrationFileContent{{SQL: "SELECT 1;"}},
@@ -863,7 +864,7 @@ func TestRecoverPendingPublication_CleansQuarantineOnlyStateForEveryMode(t *test
 func TestRemovePublicationJournal_RetireFailurePreservesCommitMarker(t *testing.T) {
 	c := qt.New(t)
 	dir := c.TempDir()
-	writer := openTestWriter(c, dir)
+	writer := openTestWriter(c.TB, dir)
 	journalPath := testJournalPath(writer)
 	markerPath := journalPath + publicationCommitMarkerSuffix
 	c.Assert(os.WriteFile(journalPath, []byte("{}"), 0o600), qt.IsNil)
@@ -887,7 +888,7 @@ func TestRemovePublicationJournal_RetireFailurePreservesCommitMarker(t *testing.
 func TestRecoverPendingPublication_FinalizesMarkerCommittedBatch(t *testing.T) {
 	c := qt.New(t)
 	dir := c.TempDir()
-	writer := openTestWriter(c, dir)
+	writer := openTestWriter(c.TB, dir)
 	batch, err := stageArtifactBatch(
 		writer,
 		[]PublicationArtifact{
@@ -923,7 +924,7 @@ func TestRecoverPendingPublication_FinalizesMarkerCommittedBatch(t *testing.T) {
 func TestRecoverPendingPublication_FinalizesCommittedBatch(t *testing.T) {
 	c := qt.New(t)
 	dir := c.TempDir()
-	writer := openTestWriter(c, dir)
+	writer := openTestWriter(c.TB, dir)
 	batch, err := stageMigrationBatchAt(
 		writer,
 		"committed",
@@ -932,7 +933,7 @@ func TestRecoverPendingPublication_FinalizesCommittedBatch(t *testing.T) {
 	)
 	c.Assert(err, qt.IsNil)
 	journal, sum := beginTestPublication(
-		c,
+		c.TB,
 		writer,
 		batch,
 		[]MigrationFileContent{{SQL: "SELECT 1;"}},
@@ -963,7 +964,7 @@ func TestRecoverPendingPublication_FinalizesCommittedBatch(t *testing.T) {
 func TestRecoverPendingPublication_RejectsForeignCollision(t *testing.T) {
 	c := qt.New(t)
 	dir := c.TempDir()
-	writer := openTestWriter(c, dir)
+	writer := openTestWriter(c.TB, dir)
 	batch, err := stageMigrationBatchAt(
 		writer,
 		"collision",
@@ -972,7 +973,7 @@ func TestRecoverPendingPublication_RejectsForeignCollision(t *testing.T) {
 	)
 	c.Assert(err, qt.IsNil)
 	_, _ = beginTestPublication(
-		c,
+		c.TB,
 		writer,
 		batch,
 		[]MigrationFileContent{{SQL: "SELECT 1;"}},
@@ -996,7 +997,7 @@ func TestRecoverPendingPublication_RejectsForeignCollision(t *testing.T) {
 func TestAbortPendingPublication_RejectsForeignReplacement(t *testing.T) {
 	c := qt.New(t)
 	dir := c.TempDir()
-	writer := openTestWriter(c, dir)
+	writer := openTestWriter(c.TB, dir)
 	batch, err := stageMigrationBatchAt(
 		writer,
 		"collision",
@@ -1005,7 +1006,7 @@ func TestAbortPendingPublication_RejectsForeignReplacement(t *testing.T) {
 	)
 	c.Assert(err, qt.IsNil)
 	_, _ = beginTestPublication(
-		c,
+		c.TB,
 		writer,
 		batch,
 		[]MigrationFileContent{{SQL: "SELECT 1;"}},
@@ -1033,7 +1034,7 @@ func TestAbortPendingPublication_RejectsForeignReplacement(t *testing.T) {
 func TestAbortPendingPublication_RejectsInPlaceHardLinkMutation(t *testing.T) {
 	c := qt.New(t)
 	dir := c.TempDir()
-	writer := openTestWriter(c, dir)
+	writer := openTestWriter(c.TB, dir)
 	batch, err := stageMigrationBatchAt(
 		writer,
 		"mutated",
@@ -1043,7 +1044,7 @@ func TestAbortPendingPublication_RejectsInPlaceHardLinkMutation(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	batch.mode = publicationModeHardLink
 	_, _ = beginTestPublication(
-		c,
+		c.TB,
 		writer,
 		batch,
 		[]MigrationFileContent{{SQL: "SELECT 1;"}},
@@ -1073,7 +1074,7 @@ func TestWriteDiffArtifacts_CommitUncertainRetainsRecoverableBatch(t *testing.T)
 	dir := c.TempDir()
 	baseSnapshot, err := migrationsnapshot.CaptureStable(os.DirFS(dir))
 	c.Assert(err, qt.IsNil)
-	writer := openTestWriter(c, dir)
+	writer := openTestWriter(c.TB, dir)
 
 	result, err := writeDiffArtifactsWithSumWriter(
 		t.Context(),
@@ -1128,7 +1129,7 @@ func TestWriteDiffArtifacts_RejectsUnreplayedConcurrentMigration(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	foreignPath := filepath.Join(dir, "99_foreign.sql")
 	c.Assert(os.WriteFile(foreignPath, []byte("SELECT 99;"), 0o600), qt.IsNil)
-	writer := openTestWriter(c, dir)
+	writer := openTestWriter(c.TB, dir)
 
 	result, err := writeDiffArtifacts(
 		t.Context(),
@@ -1153,11 +1154,12 @@ func TestWriteDiffArtifacts_RejectsUnreplayedConcurrentMigration(t *testing.T) {
 }
 
 func beginTestPublication(
-	c *qt.C,
+	tb testing.TB,
 	writer *migrationWriterDir,
 	batch migrationBatch,
 	contents []MigrationFileContent,
 ) (publicationJournal, *migratesum.SumFile) {
+	c := qt.New(tb)
 	c.Helper()
 	fsys, err := writer.FS()
 	c.Assert(err, qt.IsNil)
@@ -1173,7 +1175,7 @@ func beginTestPublication(
 func TestRecoverPendingPublication_RemovesOrphanTemps(t *testing.T) {
 	c := qt.New(t)
 	dir := c.TempDir()
-	writer := openTestWriter(c, dir)
+	writer := openTestWriter(c.TB, dir)
 	stagedName, err := stageRootedFile(
 		writer.dir,
 		stagedMigrationPattern,
@@ -1201,7 +1203,7 @@ func TestRecoverPendingPublication_RemovesOrphanTemps(t *testing.T) {
 func TestWriteMigrationFiles_EmptySQLIsRejected(t *testing.T) {
 	c := qt.New(t)
 	dir := c.TempDir()
-	writer := openTestWriter(c, dir)
+	writer := openTestWriter(c.TB, dir)
 
 	batch, err := stageMigrationBatch(writer, "noop", []MigrationFileContent{{SQL: "   \n"}})
 
@@ -1211,7 +1213,8 @@ func TestWriteMigrationFiles_EmptySQLIsRejected(t *testing.T) {
 
 // openTestWriter binds dir the way the writer does in production: one rooted
 // handle for the migration directory and one for its parent.
-func openTestWriter(c *qt.C, dir string) *migrationWriterDir {
+func openTestWriter(tb testing.TB, dir string) *migrationWriterDir {
+	c := qt.New(tb)
 	c.Helper()
 	writer, err := createMigrationWriterDir(nil, dir)
 	c.Assert(err, qt.IsNil)
@@ -1255,7 +1258,7 @@ func rollBackUnjournaledBatch(
 
 func TestGenerateDiff_PostReplayReadFailureCleansAndReleasesLock(t *testing.T) {
 	c := qt.New(t)
-	conn, opts := prepareGenerateDiffFaultTest(c)
+	conn, opts := prepareGenerateDiffFaultTest(c.TB)
 	readErr := errors.New("injected schema read failure")
 
 	result, err := generateDiff(t.Context(), conn, opts, diffRuntime{
@@ -1271,13 +1274,13 @@ func TestGenerateDiff_PostReplayReadFailureCleansAndReleasesLock(t *testing.T) {
 
 	c.Assert(err, qt.ErrorIs, readErr)
 	c.Assert(result.MigrationPaths, qt.HasLen, 0)
-	assertSQLiteCleanupObjectCount(c, conn, 0)
-	assertDiffDirectoryReleased(c, opts.Dir)
+	assertSQLiteCleanupObjectCount(c.TB, conn, 0)
+	assertDiffDirectoryReleased(c.TB, opts.Dir)
 }
 
 func TestGenerateDiff_FinalCleanupFailureIsNotRetried(t *testing.T) {
 	c := qt.New(t)
-	conn, opts := prepareGenerateDiffFaultTest(c)
+	conn, opts := prepareGenerateDiffFaultTest(c.TB)
 	cleanupErr := errors.New("injected final cleanup failure")
 	cleanupCalls := 0
 
@@ -1301,13 +1304,13 @@ func TestGenerateDiff_FinalCleanupFailureIsNotRetried(t *testing.T) {
 	c.Assert(err, qt.ErrorIs, cleanupErr)
 	c.Assert(result.MigrationPaths, qt.HasLen, 0)
 	c.Assert(cleanupCalls, qt.Equals, 1)
-	assertSQLiteCleanupObjectCount(c, conn, 0)
-	assertDiffDirectoryReleased(c, opts.Dir)
+	assertSQLiteCleanupObjectCount(c.TB, conn, 0)
+	assertDiffDirectoryReleased(c.TB, opts.Dir)
 }
 
 func TestGenerateDiff_JoinsPostReplayFailureAndCleanupFailure(t *testing.T) {
 	c := qt.New(t)
-	conn, opts := prepareGenerateDiffFaultTest(c)
+	conn, opts := prepareGenerateDiffFaultTest(c.TB)
 	readErr := errors.New("injected schema read failure")
 	cleanupErr := errors.New("injected cleanup failure")
 	cleanupCalls := 0
@@ -1339,13 +1342,13 @@ func TestGenerateDiff_JoinsPostReplayFailureAndCleanupFailure(t *testing.T) {
 	c.Assert(err, qt.ErrorIs, cleanupErr)
 	c.Assert(result.MigrationPaths, qt.HasLen, 0)
 	c.Assert(cleanupCalls, qt.Equals, 1)
-	assertSQLiteCleanupObjectCount(c, conn, 0)
-	assertDiffDirectoryReleased(c, opts.Dir)
+	assertSQLiteCleanupObjectCount(c.TB, conn, 0)
+	assertDiffDirectoryReleased(c.TB, opts.Dir)
 }
 
 func TestGenerateDiff_CancellationDuringCleanupPreventsArtifacts(t *testing.T) {
 	c := qt.New(t)
-	conn, opts := prepareGenerateDiffFaultTest(c)
+	conn, opts := prepareGenerateDiffFaultTest(c.TB)
 	ctx, cancel := context.WithCancel(t.Context())
 	cleanupCalls := 0
 
@@ -1376,13 +1379,13 @@ func TestGenerateDiff_CancellationDuringCleanupPreventsArtifacts(t *testing.T) {
 	c.Assert(err, qt.ErrorIs, context.Canceled)
 	c.Assert(result.MigrationPaths, qt.HasLen, 0)
 	c.Assert(cleanupCalls, qt.Equals, 1)
-	assertSQLiteCleanupObjectCount(c, conn, 0)
-	assertDiffDirectoryReleased(c, opts.Dir)
+	assertSQLiteCleanupObjectCount(c.TB, conn, 0)
+	assertDiffDirectoryReleased(c.TB, opts.Dir)
 }
 
 func TestGenerateDiff_PreparePublicationFailurePreservesExistingArtifacts(t *testing.T) {
 	c := qt.New(t)
-	conn, opts := prepareGenerateDiffFaultTest(c)
+	conn, opts := prepareGenerateDiffFaultTest(c.TB)
 	previousSum, err := os.ReadFile(
 		filepath.Join(opts.Dir, migratesum.AtlasFileName),
 	)
@@ -1418,13 +1421,13 @@ func TestGenerateDiff_PreparePublicationFailurePreservesExistingArtifacts(t *tes
 	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(verification.OK(), qt.IsTrue)
-	assertSQLiteCleanupObjectCount(c, conn, 0)
-	assertDiffDirectoryLockReleased(c, opts.Dir)
+	assertSQLiteCleanupObjectCount(c.TB, conn, 0)
+	assertDiffDirectoryLockReleased(c.TB, opts.Dir)
 }
 
 func TestGenerateDiff_PreparedContentsArePublishedWithMatchingChecksum(t *testing.T) {
 	c := qt.New(t)
-	conn, opts := prepareGenerateDiffFaultTest(c)
+	conn, opts := prepareGenerateDiffFaultTest(c.TB)
 	opts.PreparePublication = func(stagedPaths []string) error {
 		return os.WriteFile(
 			stagedPaths[0],
@@ -1452,13 +1455,13 @@ func TestGenerateDiff_PreparedContentsArePublishedWithMatchingChecksum(t *testin
 	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(verification.OK(), qt.IsTrue)
-	assertSQLiteCleanupObjectCount(c, conn, 0)
-	assertDiffDirectoryLockReleased(c, opts.Dir)
+	assertSQLiteCleanupObjectCount(c.TB, conn, 0)
+	assertDiffDirectoryLockReleased(c.TB, opts.Dir)
 }
 
 func TestGenerateDiff_PreparePublicationRunsUnderDirectoryLock(t *testing.T) {
 	c := qt.New(t)
-	conn, opts := prepareGenerateDiffFaultTest(c)
+	conn, opts := prepareGenerateDiffFaultTest(c.TB)
 	var competingLock *dirLock
 	var competingErr error
 	opts.LockTimeout = time.Millisecond
@@ -1480,8 +1483,8 @@ func TestGenerateDiff_PreparePublicationRunsUnderDirectoryLock(t *testing.T) {
 	c.Assert(result.MigrationPaths, qt.HasLen, 0)
 	c.Assert(competingLock, qt.IsNil)
 	c.Assert(competingErr, qt.IsNotNil)
-	assertSQLiteCleanupObjectCount(c, conn, 0)
-	assertDiffDirectoryReleased(c, opts.Dir)
+	assertSQLiteCleanupObjectCount(c.TB, conn, 0)
+	assertDiffDirectoryReleased(c.TB, opts.Dir)
 }
 
 func TestCanonicalMigrationDirResolvesSymlinkAlias(t *testing.T) {
@@ -1520,7 +1523,7 @@ func TestTryAcquireDirLock_ReclaimsStaleFile(t *testing.T) {
 
 func TestGenerateDiff_SerializesSQLiteDevDatabaseAcrossDirectories(t *testing.T) {
 	c := qt.New(t)
-	conn, opts := prepareGenerateDiffFaultTest(c)
+	conn, opts := prepareGenerateDiffFaultTest(c.TB)
 	opts.Dir = filepath.Join(c.TempDir(), "other-migrations")
 	opts.LockTimeout = time.Millisecond
 	devLock, err := acquireDevDatabaseLock(t.Context(), conn, 0)
@@ -1540,7 +1543,8 @@ func TestGenerateDiff_SerializesSQLiteDevDatabaseAcrossDirectories(t *testing.T)
 	c.Assert(err, qt.ErrorIs, os.ErrNotExist)
 }
 
-func prepareGenerateDiffFaultTest(c *qt.C) (*dbschema.DatabaseConnection, DiffOptions) {
+func prepareGenerateDiffFaultTest(tb testing.TB) (*dbschema.DatabaseConnection, DiffOptions) {
+	c := qt.New(tb)
 	c.Helper()
 	dir := c.TempDir()
 	migrationsDir := filepath.Join(dir, "migrations")
@@ -1583,10 +1587,11 @@ CREATE VIEW replayed_user_ids AS SELECT id FROM replayed_users;
 }
 
 func assertSQLiteCleanupObjectCount(
-	c *qt.C,
+	tb testing.TB,
 	conn *dbschema.DatabaseConnection,
 	want int,
 ) {
+	c := qt.New(tb)
 	c.Helper()
 	var count int
 	err := conn.QueryRowContext(c.Context(), `
@@ -1601,15 +1606,17 @@ func assertSQLiteCleanupObjectCount(
 	c.Assert(count, qt.Equals, want)
 }
 
-func assertDiffDirectoryReleased(c *qt.C, dir string) {
+func assertDiffDirectoryReleased(tb testing.TB, dir string) {
+	c := qt.New(tb)
 	c.Helper()
 	entries, err := os.ReadDir(dir)
 	c.Assert(err, qt.IsNil)
 	c.Assert(entries, qt.HasLen, 2)
-	assertDiffDirectoryLockReleased(c, dir)
+	assertDiffDirectoryLockReleased(c.TB, dir)
 }
 
-func assertDiffDirectoryLockReleased(c *qt.C, dir string) {
+func assertDiffDirectoryLockReleased(tb testing.TB, dir string) {
+	c := qt.New(tb)
 	c.Helper()
 	lock, err := tryAcquireDirLock(migrationDirLockPath(dir))
 	c.Assert(err, qt.IsNil)

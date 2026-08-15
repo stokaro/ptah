@@ -18,7 +18,8 @@ import (
 // planFileFixture computes and saves a plan for dbPath -> desired schema SQL
 // and returns the plan-file path. The desired schema adds the named table on
 // top of the seeded users table.
-func planFileFixture(c *qt.C, dir, dbPath, desiredSQL string) string {
+func planFileFixture(tb testing.TB, dir, dbPath, desiredSQL string) string {
+	c := qt.New(tb)
 	c.Helper()
 	schemaPath := filepath.Join(dir, "desired.sql")
 	planPath := filepath.Join(dir, "fixture.plan.json")
@@ -54,8 +55,8 @@ func TestSchemaApplyPlanFileExecutesPlannedSQL(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "apply-plan.db")
-	seedSQLiteSchema(c, dbPath, `CREATE TABLE users (id INTEGER PRIMARY KEY);`)
-	planPath := planFileFixture(c, dir, dbPath,
+	seedSQLiteSchema(c.TB, dbPath, `CREATE TABLE users (id INTEGER PRIMARY KEY);`)
+	planPath := planFileFixture(c.TB, dir, dbPath,
 		"CREATE TABLE users (id INTEGER PRIMARY KEY);\nCREATE TABLE planned_orders (id INTEGER PRIMARY KEY);\n")
 
 	out, err := runSchemaApplyPlan(atlas.NewCompatCommand("atlas"), "", dbPath, planPath, "--auto-approve")
@@ -66,19 +67,19 @@ func TestSchemaApplyPlanFileExecutesPlannedSQL(t *testing.T) {
 	c.Assert(out, qt.Contains, "Planned schema changes:")
 	c.Assert(out, qt.Contains, `CREATE TABLE "planned_orders"`)
 	c.Assert(out, qt.Contains, "Schema apply completed successfully.")
-	c.Assert(sqliteTableCount(c, dbPath, "planned_orders"), qt.Equals, 1)
-	c.Assert(sqliteTableCount(c, dbPath, "users"), qt.Equals, 1)
+	c.Assert(sqliteTableCount(c.TB, dbPath, "planned_orders"), qt.Equals, 1)
+	c.Assert(sqliteTableCount(c.TB, dbPath, "users"), qt.Equals, 1)
 }
 
 func TestSchemaApplyPlanFileRefusesStaleTarget(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "apply-stale.db")
-	seedSQLiteSchema(c, dbPath, `CREATE TABLE users (id INTEGER PRIMARY KEY);`)
-	planPath := planFileFixture(c, dir, dbPath,
+	seedSQLiteSchema(c.TB, dbPath, `CREATE TABLE users (id INTEGER PRIMARY KEY);`)
+	planPath := planFileFixture(c.TB, dir, dbPath,
 		"CREATE TABLE users (id INTEGER PRIMARY KEY);\nCREATE TABLE stale_orders (id INTEGER PRIMARY KEY);\n")
 	// The database drifts after the plan was computed.
-	seedSQLiteSchema(c, dbPath, `CREATE TABLE drifted (id INTEGER PRIMARY KEY);`)
+	seedSQLiteSchema(c.TB, dbPath, `CREATE TABLE drifted (id INTEGER PRIMARY KEY);`)
 
 	out, err := runSchemaApplyPlan(atlas.NewCompatCommand("atlas"), "", dbPath, planPath, "--auto-approve")
 
@@ -89,15 +90,15 @@ func TestSchemaApplyPlanFileRefusesStaleTarget(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `pre-planned migration is stale: the target database schema does not match the plan's source fingerprint \(plan sha256:[0-9a-f]{64}, database sha256:[0-9a-f]{64}\); the database changed since the plan was computed.*`)
 	c.Assert(exitcode.Code(err, 0), qt.Not(qt.Equals), 0)
 	c.Assert(out, qt.Contains, "pre-planned migration is stale")
-	c.Assert(sqliteTableCount(c, dbPath, "stale_orders"), qt.Equals, 0)
+	c.Assert(sqliteTableCount(c.TB, dbPath, "stale_orders"), qt.Equals, 0)
 }
 
 func TestSchemaApplyPlanFileDryRunDoesNotApply(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "apply-plan-dry.db")
-	seedSQLiteSchema(c, dbPath, `CREATE TABLE users (id INTEGER PRIMARY KEY);`)
-	planPath := planFileFixture(c, dir, dbPath,
+	seedSQLiteSchema(c.TB, dbPath, `CREATE TABLE users (id INTEGER PRIMARY KEY);`)
+	planPath := planFileFixture(c.TB, dir, dbPath,
 		"CREATE TABLE users (id INTEGER PRIMARY KEY);\nCREATE TABLE dry_orders (id INTEGER PRIMARY KEY);\n")
 
 	out, err := runSchemaApplyPlan(atlas.NewCompatCommand("atlas"), "", dbPath, planPath, "--dry-run")
@@ -105,15 +106,15 @@ func TestSchemaApplyPlanFileDryRunDoesNotApply(t *testing.T) {
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 	c.Assert(out, qt.Contains, `CREATE TABLE "dry_orders"`)
 	c.Assert(out, qt.Not(qt.Contains), "Apply these schema changes?")
-	c.Assert(sqliteTableCount(c, dbPath, "dry_orders"), qt.Equals, 0)
+	c.Assert(sqliteTableCount(c.TB, dbPath, "dry_orders"), qt.Equals, 0)
 }
 
 func TestSchemaApplyPlanFileDeclinedConfirmationDoesNotApply(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "apply-plan-declined.db")
-	seedSQLiteSchema(c, dbPath, `CREATE TABLE users (id INTEGER PRIMARY KEY);`)
-	planPath := planFileFixture(c, dir, dbPath,
+	seedSQLiteSchema(c.TB, dbPath, `CREATE TABLE users (id INTEGER PRIMARY KEY);`)
+	planPath := planFileFixture(c.TB, dir, dbPath,
 		"CREATE TABLE users (id INTEGER PRIMARY KEY);\nCREATE TABLE declined_orders (id INTEGER PRIMARY KEY);\n")
 
 	out, err := runSchemaApplyPlan(atlas.NewCompatCommand("atlas"), "NO\n", dbPath, planPath)
@@ -121,30 +122,30 @@ func TestSchemaApplyPlanFileDeclinedConfirmationDoesNotApply(t *testing.T) {
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 	c.Assert(out, qt.Contains, "Apply these schema changes? Type 'YES' to confirm:")
 	c.Assert(out, qt.Contains, "Schema apply canceled.")
-	c.Assert(sqliteTableCount(c, dbPath, "declined_orders"), qt.Equals, 0)
+	c.Assert(sqliteTableCount(c.TB, dbPath, "declined_orders"), qt.Equals, 0)
 }
 
 func TestSchemaApplyPlanFileConfirmedApplies(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "apply-plan-confirmed.db")
-	seedSQLiteSchema(c, dbPath, `CREATE TABLE users (id INTEGER PRIMARY KEY);`)
-	planPath := planFileFixture(c, dir, dbPath,
+	seedSQLiteSchema(c.TB, dbPath, `CREATE TABLE users (id INTEGER PRIMARY KEY);`)
+	planPath := planFileFixture(c.TB, dir, dbPath,
 		"CREATE TABLE users (id INTEGER PRIMARY KEY);\nCREATE TABLE confirmed_orders (id INTEGER PRIMARY KEY);\n")
 
 	out, err := runSchemaApplyPlan(atlas.NewCompatCommand("atlas"), "YES\n", dbPath, planPath)
 
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 	c.Assert(out, qt.Contains, "Schema apply completed successfully.")
-	c.Assert(sqliteTableCount(c, dbPath, "confirmed_orders"), qt.Equals, 1)
+	c.Assert(sqliteTableCount(c.TB, dbPath, "confirmed_orders"), qt.Equals, 1)
 }
 
 func TestSchemaApplyPlanFileSupportsFormat(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "apply-plan-format.db")
-	seedSQLiteSchema(c, dbPath, `CREATE TABLE users (id INTEGER PRIMARY KEY);`)
-	planPath := planFileFixture(c, dir, dbPath,
+	seedSQLiteSchema(c.TB, dbPath, `CREATE TABLE users (id INTEGER PRIMARY KEY);`)
+	planPath := planFileFixture(c.TB, dir, dbPath,
 		"CREATE TABLE users (id INTEGER PRIMARY KEY);\nCREATE TABLE format_orders (id INTEGER PRIMARY KEY);\n")
 
 	out, err := runSchemaApplyPlan(atlas.NewCompatCommand("atlas"), "", dbPath, planPath,
@@ -152,7 +153,7 @@ func TestSchemaApplyPlanFileSupportsFormat(t *testing.T) {
 
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 	c.Assert(strings.TrimSpace(out), qt.Equals, "1")
-	c.Assert(sqliteTableCount(c, dbPath, "format_orders"), qt.Equals, 1)
+	c.Assert(sqliteTableCount(c.TB, dbPath, "format_orders"), qt.Equals, 1)
 }
 
 func TestSchemaApplyPlanFileRejectsCombinedPlanningFlags(t *testing.T) {
@@ -199,7 +200,8 @@ func TestSchemaApplyPlanFileRejectsCombinedPlanningFlags(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			cmd := atlas.NewCompatCommand("atlas")
 			var out bytes.Buffer
 			cmd.SetOut(&out)
@@ -221,24 +223,24 @@ func TestSchemaApplyPlanFileRejectsWrongDialect(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "apply-plan-dialect.db")
-	seedSQLiteSchema(c, dbPath, `CREATE TABLE users (id INTEGER PRIMARY KEY);`)
-	planPath := planFileFixture(c, dir, dbPath,
+	seedSQLiteSchema(c.TB, dbPath, `CREATE TABLE users (id INTEGER PRIMARY KEY);`)
+	planPath := planFileFixture(c.TB, dir, dbPath,
 		"CREATE TABLE users (id INTEGER PRIMARY KEY);\nCREATE TABLE dialect_orders (id INTEGER PRIMARY KEY);\n")
-	rewritePlanDocument(c, planPath, func(document map[string]any) {
+	rewritePlanDocument(c.TB, planPath, func(document map[string]any) {
 		document["dialect"] = "postgres"
 	})
 
 	_, err := runSchemaApplyPlan(atlas.NewCompatCommand("atlas"), "", dbPath, planPath, "--auto-approve")
 
 	c.Assert(err, qt.ErrorMatches, `plan file targets dialect "postgres", but the --url database dialect is "sqlite"`)
-	c.Assert(sqliteTableCount(c, dbPath, "dialect_orders"), qt.Equals, 0)
+	c.Assert(sqliteTableCount(c.TB, dbPath, "dialect_orders"), qt.Equals, 0)
 }
 
 func TestSchemaApplyPlanFileRejectsMalformedDocuments(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "apply-plan-malformed.db")
-	seedSQLiteSchema(c, dbPath, `CREATE TABLE users (id INTEGER PRIMARY KEY);`)
+	seedSQLiteSchema(c.TB, dbPath, `CREATE TABLE users (id INTEGER PRIMARY KEY);`)
 
 	tests := []struct {
 		name    string
@@ -268,10 +270,11 @@ func TestSchemaApplyPlanFileRejectsMalformedDocuments(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
-			planPath := planFileFixture(c, t.TempDir(), dbPath,
+		t.Run(tt.name, func(t2 *testing.T) {
+			c := qt.New(t2)
+			planPath := planFileFixture(c.TB, t.TempDir(), dbPath,
 				"CREATE TABLE users (id INTEGER PRIMARY KEY);\nCREATE TABLE malformed_orders (id INTEGER PRIMARY KEY);\n")
-			rewritePlanDocument(c, planPath, tt.rewrite)
+			rewritePlanDocument(c.TB, planPath, tt.rewrite)
 
 			_, err := runSchemaApplyPlan(atlas.NewCompatCommand("atlas"), "", dbPath, planPath, "--auto-approve")
 
@@ -284,8 +287,8 @@ func TestNewCompatCommand_SchemaApplyPlanFileResolves(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "compat-apply-plan.db")
-	seedSQLiteSchema(c, dbPath, `CREATE TABLE users (id INTEGER PRIMARY KEY);`)
-	planPath := planFileFixture(c, dir, dbPath,
+	seedSQLiteSchema(c.TB, dbPath, `CREATE TABLE users (id INTEGER PRIMARY KEY);`)
+	planPath := planFileFixture(c.TB, dir, dbPath,
 		"CREATE TABLE users (id INTEGER PRIMARY KEY);\nCREATE TABLE compat_orders (id INTEGER PRIMARY KEY);\n")
 
 	out, err := runSchemaApplyPlan(atlas.NewCompatCommand("atlas"), "", dbPath, planPath, "--auto-approve")
@@ -293,12 +296,13 @@ func TestNewCompatCommand_SchemaApplyPlanFileResolves(t *testing.T) {
 	// The plan-execution path resolves and runs under ptah-compat too.
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 	c.Assert(out, qt.Contains, "Schema apply completed successfully.")
-	c.Assert(sqliteTableCount(c, dbPath, "compat_orders"), qt.Equals, 1)
+	c.Assert(sqliteTableCount(c.TB, dbPath, "compat_orders"), qt.Equals, 1)
 }
 
 // rewritePlanDocument mutates a saved plan JSON document in place so tests can
 // produce dialect mismatches and malformed contracts from a real plan.
-func rewritePlanDocument(c *qt.C, path string, mutate func(map[string]any)) {
+func rewritePlanDocument(tb testing.TB, path string, mutate func(map[string]any)) {
+	c := qt.New(tb)
 	c.Helper()
 	contents, err := os.ReadFile(path)
 	c.Assert(err, qt.IsNil)

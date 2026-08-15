@@ -34,7 +34,7 @@ func TestMaterializedViewRefreshStrategyFailsClosedBeforeRendering(t *testing.T)
 			sql, err := renderer.RenderSQL(dialect, node)
 
 			c.Assert(sql, qt.Equals, "")
-			assertMaterializedViewRefreshStrategyError(c, err, dialect, "concurrently")
+			assertMaterializedViewRefreshStrategyError(c.TB, err, dialect, "concurrently")
 		})
 	}
 }
@@ -47,7 +47,7 @@ func TestMaterializedViewScheduledRefreshStrategyFailsClosedBeforeRendering(t *t
 			sql, err := renderer.RenderSQL(dialect, materializedViewNode("every 5 minutes"))
 
 			c.Assert(sql, qt.Equals, "")
-			assertMaterializedViewRefreshStrategyError(c, err, dialect, "every 5 minutes")
+			assertMaterializedViewRefreshStrategyError(c.TB, err, dialect, "every 5 minutes")
 		})
 	}
 }
@@ -71,7 +71,7 @@ func TestMaterializedViewRefreshStrategyFailsClosedBeforeWholeSchemaRendering(t 
 			)
 
 			c.Assert(statements, qt.IsNil)
-			assertMaterializedViewRefreshStrategyError(c, err, test.dialect, test.strategy)
+			assertMaterializedViewRefreshStrategyError(c.TB, err, test.dialect, test.strategy)
 		})
 	}
 }
@@ -85,7 +85,7 @@ func TestMaterializedViewRefreshStrategyVisitorPathFailsClosedAndResetsOutput(t 
 
 	err = materializedViewNode("concurrently").Accept(r)
 
-	assertMaterializedViewRefreshStrategyError(c, err, platform.Postgres, "concurrently")
+	assertMaterializedViewRefreshStrategyError(c.TB, err, platform.Postgres, "concurrently")
 	c.Assert(r.Output(), qt.Equals, "")
 }
 
@@ -122,11 +122,12 @@ func materializedViewDatabase(strategy string) *goschema.Database {
 }
 
 func assertMaterializedViewRefreshStrategyError(
-	c *qt.C,
+	tb testing.TB,
 	err error,
 	dialect string,
 	strategy string,
 ) {
+	c := qt.New(tb)
 	c.Helper()
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 	c.Assert(

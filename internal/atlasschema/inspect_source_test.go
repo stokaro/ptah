@@ -25,7 +25,7 @@ import (
 
 func TestInspectSource_DatabaseURL(t *testing.T) {
 	c := qt.New(t)
-	dbPath := seedInspectSQLiteDB(c)
+	dbPath := seedInspectSQLiteDB(c.TB)
 
 	rendered, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
 		URL:    "sqlite://" + dbPath,
@@ -39,7 +39,7 @@ func TestInspectSource_DatabaseURL(t *testing.T) {
 
 func TestInspectSource_DatabaseURLStillValidatesDevDialect(t *testing.T) {
 	c := qt.New(t)
-	dbPath := seedInspectSQLiteDB(c)
+	dbPath := seedInspectSQLiteDB(c.TB)
 	diagnosticCalled := false
 
 	rendered, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
@@ -76,7 +76,7 @@ func TestInspectSource_LocalSQLFileOnDev(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(rendered, qt.Contains, `table "users"`)
 	c.Assert(rendered, qt.Contains, `column "email"`)
-	assertInspectSQLiteDevEmpty(c, devPath)
+	assertInspectSQLiteDevEmpty(c.TB, devPath)
 }
 
 func TestInspectSource_LocalSQLFileWaitsForDevRealmLock(t *testing.T) {
@@ -93,7 +93,7 @@ func TestInspectSource_LocalSQLFileWaitsForDevRealmLock(t *testing.T) {
 		qt.IsNil,
 	)
 
-	lockConn := connectSQLite(c, devPath)
+	lockConn := connectSQLite(c.TB, devPath)
 	defer dbschema.CloseAndWarn(lockConn)
 	lock, err := devlock.Acquire(t.Context(), lockConn, 0)
 	c.Assert(err, qt.IsNil)
@@ -116,7 +116,7 @@ func TestInspectSource_LocalSQLFileWaitsForDevRealmLock(t *testing.T) {
 	})
 	c.Assert(err, qt.IsNil)
 	c.Assert(rendered, qt.Contains, `table "locked_inspection"`)
-	assertInspectSQLiteDevEmpty(c, devPath)
+	assertInspectSQLiteDevEmpty(c.TB, devPath)
 }
 
 // TestInspectSource_DevDatabaseIsReset proves the dev database is reset
@@ -126,7 +126,7 @@ func TestInspectSource_DevDatabaseIsReset(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	devPath := filepath.Join(dir, "dev.db")
-	devConn := connectSQLite(c, devPath)
+	devConn := connectSQLite(c.TB, devPath)
 	_, err := devConn.ExecContext(context.Background(), "CREATE TABLE stale_dev_table (id INTEGER PRIMARY KEY)")
 	c.Assert(err, qt.IsNil)
 	dbschema.CloseAndWarn(devConn)
@@ -167,12 +167,13 @@ func TestInspectSource_MigrationDirOnDev(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(rendered, qt.Contains, `table "replayed_users"`)
 	c.Assert(rendered, qt.Not(qt.Contains), "atlas_schema_revisions")
-	assertInspectSQLiteDevEmpty(c, devPath)
+	assertInspectSQLiteDevEmpty(c.TB, devPath)
 }
 
-func assertInspectSQLiteDevEmpty(c *qt.C, path string) {
+func assertInspectSQLiteDevEmpty(tb testing.TB, path string) {
+	c := qt.New(tb)
 	c.Helper()
-	conn := connectSQLite(c, path)
+	conn := connectSQLite(c.TB, path)
 	defer dbschema.CloseAndWarn(conn)
 	var count int
 	err := conn.QueryRowContext(c.Context(), `
@@ -213,7 +214,7 @@ func TestInspectSource_EnvSchemaSource(t *testing.T) {
 // loader, and together they reproduce the inspected tables.
 func TestInspectSource_SplitWriteExportReloads(t *testing.T) {
 	c := qt.New(t)
-	dbPath := seedInspectSQLiteDB(c)
+	dbPath := seedInspectSQLiteDB(c.TB)
 	outDir := filepath.Join(t.TempDir(), "schema")
 
 	rendered, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
@@ -223,7 +224,7 @@ func TestInspectSource_SplitWriteExportReloads(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(rendered, qt.Equals, "")
-	written := collectFiles(c, outDir, ".hcl")
+	written := collectFiles(c.TB, outDir, ".hcl")
 	c.Assert(written, qt.Not(qt.HasLen), 0)
 	reloaded, err := schemafile.LoadAll(written, schemafile.Options{Dialect: "sqlite"})
 	c.Assert(err, qt.IsNil)
@@ -243,7 +244,7 @@ func TestInspectSource_SQLSplitWriteExportReloads(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "inspect-sql-export.db")
-	conn := connectSQLite(c, dbPath)
+	conn := connectSQLite(c.TB, dbPath)
 	_, err := conn.ExecContext(context.Background(), `
 CREATE TABLE users (
   id INTEGER PRIMARY KEY,
@@ -268,7 +269,7 @@ CREATE TABLE sessions (
 	mainSQL, err := os.ReadFile(filepath.Join(outDir, "main.sql"))
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(mainSQL), qt.Contains, "-- atlas:import ./tables/users.sql")
-	objectFiles := collectFiles(c, filepath.Join(outDir, "tables"), ".sql")
+	objectFiles := collectFiles(c.TB, filepath.Join(outDir, "tables"), ".sql")
 	c.Assert(objectFiles, qt.Not(qt.HasLen), 0)
 	reloaded, err := schemafile.LoadAll(objectFiles, schemafile.Options{Dialect: "sqlite"})
 	c.Assert(err, qt.IsNil)
@@ -280,7 +281,7 @@ CREATE TABLE sessions (
 // database: the reloaded output must reproduce the live output.
 func TestInspectSource_FileExportThenDevInspectionRoundTrip(t *testing.T) {
 	c := qt.New(t)
-	dbPath := seedInspectSQLiteDB(c)
+	dbPath := seedInspectSQLiteDB(c.TB)
 	dir := t.TempDir()
 
 	live, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
@@ -302,9 +303,9 @@ func TestInspectSource_FileExportThenDevInspectionRoundTrip(t *testing.T) {
 }
 
 func TestInspectSource_FailurePath(t *testing.T) {
-	c := qt.New(t)
 
-	c.Run("local file requires dev url", func(c *qt.C) {
+	t.Run("local file requires dev url", func(t *testing.T) {
+		c := qt.New(t)
 		schemaPath := filepath.Join(c.TempDir(), "schema.sql")
 		c.Assert(os.WriteFile(schemaPath, []byte("CREATE TABLE t (id int);\n"), 0o600), qt.IsNil)
 
@@ -325,7 +326,8 @@ func TestInspectSource_FailurePath(t *testing.T) {
 	// measured behavior and not a shortcut: the pinned community binary v1.3.0
 	// answers `unsupported docker image "sqlite"` and exits 1 for it, so
 	// starting anything would be exiting 0 where that binary exits 1.
-	c.Run("docker dev url reaches the provisioner", func(c *qt.C) {
+	t.Run("docker dev url reaches the provisioner", func(t *testing.T) {
+		c := qt.New(t)
 		schemaPath := filepath.Join(c.TempDir(), "schema.sql")
 		c.Assert(os.WriteFile(schemaPath, []byte("CREATE TABLE t (id int);\n"), 0o600), qt.IsNil)
 
@@ -337,7 +339,8 @@ func TestInspectSource_FailurePath(t *testing.T) {
 		c.Assert(err, qt.ErrorMatches, `unsupported docker image "sqlite"`)
 	})
 
-	c.Run("unsupported source scheme", func(c *qt.C) {
+	t.Run("unsupported source scheme", func(t *testing.T) {
+		c := qt.New(t)
 		_, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
 			URL: "atlas://remote/app",
 		})
@@ -345,9 +348,10 @@ func TestInspectSource_FailurePath(t *testing.T) {
 		c.Assert(err, qt.ErrorMatches, `--url "atlas://remote/app": atlas:// registry URLs are not supported.*`)
 	})
 
-	c.Run("invalid exclude selector before any connection", func(c *qt.C) {
+	t.Run("invalid exclude selector before any connection", func(t *testing.T) {
 		// The unreachable URL proves selector validation runs pre-connect:
 		// reaching the database would produce a connection error instead.
+		c := qt.New(t)
 		_, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
 			URL:     "postgres://127.0.0.1:1/unreachable",
 			Exclude: []string{"a[type=table].b[type=column]"},
@@ -356,9 +360,10 @@ func TestInspectSource_FailurePath(t *testing.T) {
 		c.Assert(err, qt.ErrorMatches, `unsupported Atlas exclude selector .*final pattern segment only`)
 	})
 
-	c.Run("invalid include selector before any connection", func(c *qt.C) {
+	t.Run("invalid include selector before any connection", func(t *testing.T) {
 		// The unreachable URL proves selector validation runs pre-connect:
 		// reaching the database would produce a connection error instead.
+		c := qt.New(t)
 		_, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
 			URL:     "postgres://127.0.0.1:1/unreachable",
 			Include: []string{"*[type=column]"},
@@ -368,12 +373,13 @@ func TestInspectSource_FailurePath(t *testing.T) {
 			`unsupported Atlas include selector "\*\[type=column\]": column resources ride along with their parent and cannot be included on their own`)
 	})
 
-	c.Run("dotted include selector reaches the connection", func(c *qt.C) {
+	t.Run("dotted include selector reaches the connection", func(t *testing.T) {
 		// A dotted selector is no longer refused on its shape. Whether
 		// "public.users.email" names a child resource or a table literally
 		// called that is not decidable from the text, so it is carried to the
 		// projection like any other selector and the unreachable URL is what
 		// fails here.
+		c := qt.New(t)
 		_, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
 			URL:     "postgres://127.0.0.1:1/unreachable",
 			Include: []string{"public.users.email"},
@@ -382,7 +388,8 @@ func TestInspectSource_FailurePath(t *testing.T) {
 		c.Assert(err, qt.ErrorMatches, `(?s)connect to --url: .*`)
 	})
 
-	c.Run("invalid format before source resolution", func(c *qt.C) {
+	t.Run("invalid format before source resolution", func(t *testing.T) {
+		c := qt.New(t)
 		_, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
 			URL:    "sqlite://ignored.db",
 			Format: "{{ if }}",
@@ -391,8 +398,9 @@ func TestInspectSource_FailurePath(t *testing.T) {
 		c.Assert(err, qt.ErrorMatches, `parse --format template: .*`)
 	})
 
-	c.Run("write escaping the working directory", func(c *qt.C) {
-		dbPath := seedInspectSQLiteDB(c)
+	t.Run("write escaping the working directory", func(t *testing.T) {
+		c := qt.New(t)
+		dbPath := seedInspectSQLiteDB(c.TB)
 
 		_, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
 			URL:    "sqlite://" + dbPath,
@@ -402,8 +410,9 @@ func TestInspectSource_FailurePath(t *testing.T) {
 		c.Assert(err, qt.ErrorMatches, `resolve output directory: .*outside allowed root.*`)
 	})
 
-	c.Run("duplicate write targets", func(c *qt.C) {
-		dbPath := seedInspectSQLiteDB(c)
+	t.Run("duplicate write targets", func(t *testing.T) {
+		c := qt.New(t)
+		dbPath := seedInspectSQLiteDB(c.TB)
 		outDir := filepath.Join(c.TempDir(), "dup")
 
 		_, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
@@ -415,18 +424,20 @@ func TestInspectSource_FailurePath(t *testing.T) {
 	})
 }
 
-func seedInspectSQLiteDB(c *qt.C) string {
+func seedInspectSQLiteDB(tb testing.TB) string {
+	c := qt.New(tb)
 	c.Helper()
 	dbPath := filepath.Join(c.TempDir(), "inspect-source.db")
-	conn := connectSQLite(c, dbPath)
+	conn := connectSQLite(c.TB, dbPath)
 	defer dbschema.CloseAndWarn(conn)
-	createInspectSchema(c, conn)
+	createInspectSchema(c.TB, conn)
 	return dbPath
 }
 
 // collectFiles returns every file under root with the given extension, in
 // deterministic sorted order.
-func collectFiles(c *qt.C, root, extension string) []string {
+func collectFiles(tb testing.TB, root, extension string) []string {
+	c := qt.New(tb)
 	c.Helper()
 	var files []string
 	err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {

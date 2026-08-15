@@ -94,7 +94,7 @@ func TestRun_FailurePathRejectsWhiteBoxIntegrationTest(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	c.Assert(exec.Command("git", "init", dir).Run(), qt.IsNil)
-	writeIntegrationFixture(c, dir, "fixture", "fixture", "integration")
+	writeIntegrationFixture(c.TB, dir, "fixture", "fixture", "integration")
 	err := testcontour.Run(context.Background(), testcontour.Config{
 		Package: "./integration/...",
 		Tags:    []string{"integration"},
@@ -112,7 +112,7 @@ func TestRun_FailurePathRejectsUntaggedIntegrationTest(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	c.Assert(exec.Command("git", "init", dir).Run(), qt.IsNil)
-	writeIntegrationFixture(c, dir, "fixture", "fixture_test", "!windows")
+	writeIntegrationFixture(c.TB, dir, "fixture", "fixture_test", "!windows")
 	err := testcontour.Run(context.Background(), testcontour.Config{
 		Package: "./integration/...",
 		Tags:    []string{"integration"},
@@ -130,7 +130,7 @@ func TestRun_FailurePathRejectsLeakingIntegrationConstraint(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	c.Assert(exec.Command("git", "init", dir).Run(), qt.IsNil)
-	writeIntegrationFixture(c, dir, "fixture", "fixture_test", "integration || linux")
+	writeIntegrationFixture(c.TB, dir, "fixture", "fixture_test", "integration || linux")
 	err := testcontour.Run(context.Background(), testcontour.Config{
 		Package: "./integration/...",
 		Tags:    []string{"integration"},
@@ -339,7 +339,8 @@ func TestUnit(_ *testing.T) {}
 	)
 }
 
-func writeIntegrationFixture(c *qt.C, root, packageDir, packageName, buildConstraint string) {
+func writeIntegrationFixture(tb testing.TB, root, packageDir, packageName, buildConstraint string) {
+	c := qt.New(tb)
 	c.Helper()
 	c.Assert(os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/fixture\n\ngo 1.26\n"), 0o600), qt.IsNil)
 	dir := filepath.Join(root, "integration", packageDir)
@@ -360,29 +361,32 @@ func TestLive(_ *testing.T) {}
 }
 
 func TestRun_FailurePathValidatesConfiguration(t *testing.T) {
-	c := qt.New(t)
-	c.Run("package", func(c *qt.C) {
+	t.Run("package", func(t *testing.T) {
+		c := qt.New(t)
 		err := testcontour.Run(context.Background(), testcontour.Config{
 			Tags:    []string{"integration"},
 			Timeout: time.Minute,
 		})
 		c.Assert(err, qt.ErrorMatches, "test contour package is required")
 	})
-	c.Run("tags", func(c *qt.C) {
+	t.Run("tags", func(t *testing.T) {
+		c := qt.New(t)
 		err := testcontour.Run(context.Background(), testcontour.Config{
 			Package: "./testdata/pass",
 			Timeout: time.Minute,
 		})
 		c.Assert(err, qt.ErrorMatches, "test contour requires at least one build tag")
 	})
-	c.Run("timeout", func(c *qt.C) {
+	t.Run("timeout", func(t *testing.T) {
+		c := qt.New(t)
 		err := testcontour.Run(context.Background(), testcontour.Config{
 			Package: "./testdata/pass",
 			Tags:    []string{"integration"},
 		})
 		c.Assert(err, qt.ErrorMatches, "test contour timeout must be positive")
 	})
-	c.Run("invalid tag", func(c *qt.C) {
+	t.Run("invalid tag", func(t *testing.T) {
+		c := qt.New(t)
 		err := testcontour.Run(context.Background(), testcontour.Config{
 			Package: "./testdata/pass",
 			Tags:    []string{"integration,unix"},
@@ -390,7 +394,8 @@ func TestRun_FailurePathValidatesConfiguration(t *testing.T) {
 		})
 		c.Assert(err, qt.ErrorMatches, `build tag "integration,unix" is not valid`)
 	})
-	c.Run("narrow integration package", func(c *qt.C) {
+	t.Run("narrow integration package", func(t *testing.T) {
+		c := qt.New(t)
 		err := testcontour.Run(context.Background(), testcontour.Config{
 			Package: "./integration/fixture",
 			Tags:    []string{"integration"},

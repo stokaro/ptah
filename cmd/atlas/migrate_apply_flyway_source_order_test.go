@@ -90,13 +90,13 @@ func TestCompatMigrateApplyFlywaySourceVersionOrder(t *testing.T) {
 				c.Assert(out.text(), qt.Contains, `"`+source+`"`)
 			}
 			c.Assert(out.text(), qt.Not(qt.Contains), "461168")
-			c.Assert(userTables(c, dbPath), qt.DeepEquals, tables)
+			c.Assert(userTables(c.TB, dbPath), qt.DeepEquals, tables)
 		}
 	}
 	executed := func(tables ...string) func(*qt.C, string, flywaySourceOrderOutput) {
 		return func(c *qt.C, dbPath string, out flywaySourceOrderOutput) {
 			c.Assert(out.err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", out.stdout, out.stderr))
-			c.Assert(userTables(c, dbPath), qt.DeepEquals, tables)
+			c.Assert(userTables(c.TB, dbPath), qt.DeepEquals, tables)
 		}
 	}
 
@@ -184,7 +184,7 @@ func TestCompatMigrateApplyFlywaySourceVersionOrder(t *testing.T) {
 				c.Assert(out.err, qt.IsNotNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", out.stdout, out.stderr))
 				c.Assert(out.text(), qt.Contains, `"3"`)
 				c.Assert(out.text(), qt.Not(qt.Contains), "461168")
-				c.Assert(userTables(c, dbPath), qt.DeepEquals, []string{"sq10", "sq2"})
+				c.Assert(userTables(c.TB, dbPath), qt.DeepEquals, []string{"sq10", "sq2"})
 			},
 		},
 		{
@@ -247,7 +247,7 @@ func TestCompatMigrateApplyFlywaySourceVersionOrder(t *testing.T) {
 			assert: func(c *qt.C, dbPath string, out flywaySourceOrderOutput) {
 				c.Assert(out.err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", out.stdout, out.stderr))
 				c.Assert(out.stdout, qt.Contains, "No migration files to execute")
-				c.Assert(userTables(c, dbPath), qt.DeepEquals, []string{"sq2"})
+				c.Assert(userTables(c.TB, dbPath), qt.DeepEquals, []string{"sq2"})
 			},
 		},
 		{
@@ -335,7 +335,7 @@ func TestCompatMigrateApplyFlywaySourceVersionOrder(t *testing.T) {
 				c.Assert(out.err, qt.IsNotNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", out.stdout, out.stderr))
 				c.Assert(out.text(), qt.Contains, "is a Flyway baseline and this database already has migration history")
 				c.Assert(out.text(), qt.Not(qt.Contains), "out-of-order pending migrations")
-				c.Assert(userTables(c, dbPath), qt.DeepEquals, []string{"sq2"})
+				c.Assert(userTables(c.TB, dbPath), qt.DeepEquals, []string{"sq2"})
 			},
 		},
 		{
@@ -373,16 +373,16 @@ func TestCompatMigrateApplyFlywaySourceVersionOrder(t *testing.T) {
 			dbPath := filepath.Join(root, "order.db")
 
 			for _, name := range tt.applied {
-				writeAtlasApplyProjectMigration(c, dir, name, flywaySourceOrderSQL(name))
+				writeAtlasApplyProjectMigration(c.TB, dir, name, flywaySourceOrderSQL(name))
 			}
-			hashConvertedApplyDir(c, dir, "flyway")
+			hashConvertedApplyDir(c.TB, dir, "flyway")
 			_, _, err := runCompat("migrate", "apply", "--url", "sqlite://"+dbPath, "--dir", "file://"+dir+"?format=flyway")
 			c.Assert(err, qt.IsNil)
 
 			for _, name := range tt.added {
-				writeAtlasApplyProjectMigration(c, dir, name, flywaySourceOrderSQL(name))
+				writeAtlasApplyProjectMigration(c.TB, dir, name, flywaySourceOrderSQL(name))
 			}
-			hashConvertedApplyDir(c, dir, "flyway")
+			hashConvertedApplyDir(c.TB, dir, "flyway")
 			args := append([]string{
 				"migrate", "apply",
 				"--url", "sqlite://" + dbPath,

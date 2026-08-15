@@ -12,7 +12,6 @@ import (
 )
 
 func TestDialectFromURL_HappyPath(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name   string
@@ -43,7 +42,8 @@ func TestDialectFromURL_HappyPath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			got, err := atlasurl.DialectFromURL(test.rawURL)
 			c.Assert(err, qt.IsNil)
 			c.Assert(got, qt.Equals, test.want)
@@ -52,7 +52,6 @@ func TestDialectFromURL_HappyPath(t *testing.T) {
 }
 
 func TestDialectFromURL_FailurePath(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name    string
@@ -64,7 +63,8 @@ func TestDialectFromURL_FailurePath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			got, err := atlasurl.DialectFromURL(test.rawURL)
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(got, qt.Equals, "")
@@ -73,7 +73,6 @@ func TestDialectFromURL_FailurePath(t *testing.T) {
 }
 
 func TestValidateDialectMatch_HappyPath(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name          string
@@ -87,7 +86,8 @@ func TestValidateDialectMatch_HappyPath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			err := atlasurl.ValidateDialectMatch(test.rawURL, test.targetDialect)
 			c.Assert(err, qt.IsNil)
 		})
@@ -95,14 +95,15 @@ func TestValidateDialectMatch_HappyPath(t *testing.T) {
 }
 
 func TestValidateDialectMatch_FailurePath(t *testing.T) {
-	c := qt.New(t)
 
-	c.Run("unsupported dev url", func(c *qt.C) {
+	t.Run("unsupported dev url", func(t *testing.T) {
+		c := qt.New(t)
 		err := atlasurl.ValidateDialectMatch("spanner://localhost/dev", "postgres")
 		c.Assert(err, qt.ErrorMatches, `unsupported --dev-url dialect "spanner://localhost/dev"`)
 	})
 
-	c.Run("mismatched dialect", func(c *qt.C) {
+	t.Run("mismatched dialect", func(t *testing.T) {
+		c := qt.New(t)
 		err := atlasurl.ValidateDialectMatch("mysql://localhost/dev", "postgres")
 		c.Assert(err, qt.ErrorMatches, `--dev-url dialect "mysql" does not match --url dialect "postgres"`)
 	})
@@ -233,7 +234,8 @@ func TestSameDatabaseEndpoint_HappyPath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			got, err := atlasurl.SameDatabaseEndpoint(test.left, test.right)
 			c.Assert(err, qt.IsNil)
 			c.Assert(got, qt.Equals, test.want)
@@ -242,15 +244,16 @@ func TestSameDatabaseEndpoint_HappyPath(t *testing.T) {
 }
 
 func TestSameDatabaseEndpoint_FailurePath(t *testing.T) {
-	c := qt.New(t)
 
-	c.Run("unsupported dialect", func(c *qt.C) {
+	t.Run("unsupported dialect", func(t *testing.T) {
+		c := qt.New(t)
 		got, err := atlasurl.SameDatabaseEndpoint("oracle://localhost/source", "postgres://localhost/dev")
 		c.Assert(err, qt.ErrorMatches, "unsupported database URL dialect")
 		c.Assert(got, qt.IsFalse)
 	})
 
-	c.Run("invalid URL", func(c *qt.C) {
+	t.Run("invalid URL", func(t *testing.T) {
+		c := qt.New(t)
 		got, err := atlasurl.SameDatabaseEndpoint("postgres://%zz", "postgres://localhost/dev")
 		c.Assert(err, qt.ErrorMatches, "invalid database URL")
 		c.Assert(got, qt.IsFalse)
@@ -258,7 +261,6 @@ func TestSameDatabaseEndpoint_FailurePath(t *testing.T) {
 }
 
 func TestMayAddressSameDatabase_HappyPath(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name  string
@@ -299,7 +301,8 @@ func TestMayAddressSameDatabase_HappyPath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			got, err := atlasurl.MayAddressSameDatabase(test.left, test.right)
 			c.Assert(err, qt.IsNil)
 			c.Assert(got, qt.Equals, test.want)

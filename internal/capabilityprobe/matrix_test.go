@@ -40,10 +40,10 @@ func TestCIMatrix_AccountsForEveryDeclaredLine(t *testing.T) {
 // workflow cannot check for itself. A cell missing its URL or its container
 // arguments does not fail the YAML; it fails at 03:00 in one job of eighteen.
 func TestCIMatrix_RunnableCellsCarryEverythingOneJobNeeds(t *testing.T) {
-	c := qt.New(t)
 
 	for _, cell := range capabilityprobe.CIMatrix().Cells {
-		c.Run(cell.ID, func(c *qt.C) {
+		t.Run(cell.ID, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(cell.Skip, qt.Equals, "")
 			c.Assert(cell.Image, qt.Not(qt.Equals), "")
 			c.Assert(cell.URL, qt.Not(qt.Equals), "")
@@ -63,10 +63,10 @@ func TestCIMatrix_RunnableCellsCarryEverythingOneJobNeeds(t *testing.T) {
 // permission-restriction scenario meaningful. The probe needs an administrator
 // for capability discovery, but the suite reserves it for cleanup.
 func TestCIMatrix_MySQLFamilyUsesRestrictedScenarioConnections(t *testing.T) {
-	c := qt.New(t)
 
 	for _, id := range []string{"mysql-8-4", "mariadb-10-11"} {
-		c.Run(id, func(c *qt.C) {
+		t.Run(id, func(t *testing.T) {
+			c := qt.New(t)
 			cell, found := capabilityprobe.CIMatrix().Find(id)
 			c.Assert(found, qt.IsTrue)
 			c.Assert(cell.SuiteURL, qt.Contains, "ptah_user:ptah_password")
@@ -117,7 +117,8 @@ func TestCIMatrix_SkippedCellsSayWhy(t *testing.T) {
 		qt.Commentf("ClickHouse, SQL Server, SQLite and Spanner have no probe plan or no container today; "+
 			"if that changed, this test needs rewriting rather than deleting"))
 	for _, cell := range skipped {
-		c.Run(cell.ID, func(c *qt.C) {
+		t.Run(cell.ID, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(cell.Runnable, qt.IsFalse)
 			c.Assert(cell.Skip, qt.Not(qt.Equals), "")
 			c.Assert(cell.URL, qt.Equals, "")
@@ -147,7 +148,6 @@ func TestCIMatrix_MeasuredBannerLineRemainsRunnable(t *testing.T) {
 // so its line tag is a selector the driver resolves before Docker runs. Both
 // satisfy the rule; a frozen v26.2.5 or 2026.1.0.0-b118 tag would not.
 func TestCICell_TagPinsLine(t *testing.T) {
-	c := qt.New(t)
 
 	for _, tc := range []struct {
 		cell string
@@ -159,7 +159,8 @@ func TestCICell_TagPinsLine(t *testing.T) {
 		{cell: "cockroachdb-26-2", want: true},
 		{cell: "yugabytedb-2026-1", want: true},
 	} {
-		c.Run(tc.cell, func(c *qt.C) {
+		t.Run(tc.cell, func(t *testing.T) {
+			c := qt.New(t)
 			cell, found := capabilityprobe.CIMatrix().Find(tc.cell)
 			c.Assert(found, qt.IsTrue)
 			c.Assert(cell.TagPinsLine, qt.Equals, tc.want,

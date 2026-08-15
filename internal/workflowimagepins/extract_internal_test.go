@@ -16,7 +16,7 @@ import (
 
 func TestFileInventoriesOnlyExecutableContainerContexts(t *testing.T) {
 	c := qt.New(t)
-	path := writeWorkflow(c, `
+	path := writeWorkflow(c.TB, `
 jobs:
   test:
     env:
@@ -55,7 +55,7 @@ jobs:
 
 func TestFileRejectsUnknownAttachedDockerOption(t *testing.T) {
 	c := qt.New(t)
-	path := writeWorkflow(c, `
+	path := writeWorkflow(c.TB, `
 jobs:
   test:
     steps:
@@ -69,7 +69,7 @@ jobs:
 
 func TestFileIgnoresStaticallyDisabledSteps(t *testing.T) {
 	c := qt.New(t)
-	path := writeWorkflow(c, `
+	path := writeWorkflow(c.TB, `
 jobs:
   test:
     steps:
@@ -89,7 +89,7 @@ jobs:
 
 func TestFileIgnoresStaticallyDisabledJobs(t *testing.T) {
 	c := qt.New(t)
-	path := writeWorkflow(c, `
+	path := writeWorkflow(c.TB, `
 jobs:
   disabled-expression:
     if: ${{ false }}
@@ -120,7 +120,7 @@ jobs:
 
 func TestFileRejectsNonScalarJobCondition(t *testing.T) {
 	c := qt.New(t)
-	path := writeWorkflow(c, `
+	path := writeWorkflow(c.TB, `
 jobs:
   test:
     if:
@@ -135,7 +135,7 @@ jobs:
 
 func TestFileAcceptsCombinedBooleanDockerOptions(t *testing.T) {
 	c := qt.New(t)
-	path := writeWorkflow(c, `
+	path := writeWorkflow(c.TB, `
 jobs:
   test:
     steps:
@@ -154,7 +154,7 @@ jobs:
 
 func TestFileIgnoresHeredocPayloads(t *testing.T) {
 	c := qt.New(t)
-	path := writeWorkflow(c, `
+	path := writeWorkflow(c.TB, `
 jobs:
   test:
     steps:
@@ -189,7 +189,7 @@ jobs:
 
 func TestFileIgnoresHeredocPayloadOfContinuedCommand(t *testing.T) {
 	c := qt.New(t)
-	path := writeWorkflow(c, `
+	path := writeWorkflow(c.TB, `
 jobs:
   test:
     steps:
@@ -209,7 +209,7 @@ jobs:
 
 func TestFileRejectsUnterminatedHeredoc(t *testing.T) {
 	c := qt.New(t)
-	path := writeWorkflow(c, `
+	path := writeWorkflow(c.TB, `
 jobs:
   test:
     steps:
@@ -225,7 +225,7 @@ jobs:
 
 func TestFileInventoriesCommandsAfterHerestring(t *testing.T) {
 	c := qt.New(t)
-	path := writeWorkflow(c, `
+	path := writeWorkflow(c.TB, `
 jobs:
   test:
     steps:
@@ -242,7 +242,7 @@ jobs:
 
 func TestFileInventoriesCommandsAfterQuotedRedirectionText(t *testing.T) {
 	c := qt.New(t)
-	path := writeWorkflow(c, `
+	path := writeWorkflow(c.TB, `
 jobs:
   test:
     steps:
@@ -259,7 +259,7 @@ jobs:
 
 func TestFileIgnoresHeredocPayloadOpenedAfterQuotedHash(t *testing.T) {
 	c := qt.New(t)
-	path := writeWorkflow(c, `
+	path := writeWorkflow(c.TB, `
 jobs:
   test:
     steps:
@@ -278,7 +278,7 @@ jobs:
 
 func TestFileInventoriesCommandsAfterTrailingCommentRedirectionText(t *testing.T) {
 	c := qt.New(t)
-	path := writeWorkflow(c, `
+	path := writeWorkflow(c.TB, `
 jobs:
   test:
     steps:
@@ -295,7 +295,7 @@ jobs:
 
 func TestFileRejectsContinuationEndedByCommentLine(t *testing.T) {
 	c := qt.New(t)
-	path := writeWorkflow(c, `
+	path := writeWorkflow(c.TB, `
 jobs:
   test:
     steps:
@@ -313,7 +313,7 @@ jobs:
 
 func TestFileRejectsContinuationEndedByBlankLine(t *testing.T) {
 	c := qt.New(t)
-	path := writeWorkflow(c, `
+	path := writeWorkflow(c.TB, `
 jobs:
   test:
     steps:
@@ -330,7 +330,7 @@ jobs:
 
 func TestFileInventoriesCommandsAroundSkippedLines(t *testing.T) {
 	c := qt.New(t)
-	path := writeWorkflow(c, `
+	path := writeWorkflow(c.TB, `
 jobs:
   test:
     steps:
@@ -352,7 +352,7 @@ jobs:
 
 func TestFileIgnoresMultilineQuotedText(t *testing.T) {
 	c := qt.New(t)
-	path := writeWorkflow(c, `
+	path := writeWorkflow(c.TB, `
 jobs:
   test:
     steps:
@@ -372,7 +372,7 @@ jobs:
 
 func TestFileRejectsUnclosedShellQuote(t *testing.T) {
 	c := qt.New(t)
-	path := writeWorkflow(c, `
+	path := writeWorkflow(c.TB, `
 jobs:
   test:
     steps:
@@ -388,7 +388,7 @@ jobs:
 
 func TestFileRequiresAnExactHeredocTerminator(t *testing.T) {
 	c := qt.New(t)
-	path := writeWorkflow(c, `
+	path := writeWorkflow(c.TB, `
 jobs:
   test:
     steps:
@@ -411,7 +411,7 @@ func TestFileStripsTabsFromDashedHeredocTerminator(t *testing.T) {
 	// The terminator is written with a placeholder because the tab `<<-` strips
 	// is the whole point of the row and an invisible one would not survive an
 	// editor.
-	path := writeWorkflow(c, strings.ReplaceAll(`
+	path := writeWorkflow(c.TB, strings.ReplaceAll(`
 jobs:
   test:
     steps:
@@ -430,7 +430,7 @@ jobs:
 
 func TestFileIgnoresArithmeticLeftShifts(t *testing.T) {
 	c := qt.New(t)
-	path := writeWorkflow(c, `
+	path := writeWorkflow(c.TB, `
 jobs:
   test:
     steps:
@@ -447,7 +447,7 @@ jobs:
 
 func TestFileRejectsDuplicateRunKey(t *testing.T) {
 	c := qt.New(t)
-	path := writeWorkflow(c, `
+	path := writeWorkflow(c.TB, `
 jobs:
   test:
     steps:
@@ -462,7 +462,7 @@ jobs:
 
 func TestFileRejectsMergeKeys(t *testing.T) {
 	c := qt.New(t)
-	path := writeWorkflow(c, `
+	path := writeWorkflow(c.TB, `
 defaults: &defaults
   image: example/database:1.2.3
 jobs:
@@ -479,7 +479,7 @@ jobs:
 
 func TestFileRejectsServiceWithoutImageMapping(t *testing.T) {
 	c := qt.New(t)
-	path := writeWorkflow(c, `
+	path := writeWorkflow(c.TB, `
 jobs:
   test:
     services:
@@ -493,7 +493,7 @@ jobs:
 
 func TestFileRejectsDuplicateJobKey(t *testing.T) {
 	c := qt.New(t)
-	path := writeWorkflow(c, `
+	path := writeWorkflow(c.TB, `
 jobs:
   test:
     steps:
@@ -508,7 +508,8 @@ jobs:
 	c.Check(err, qt.ErrorMatches, `.*:6: duplicate test key`)
 }
 
-func writeWorkflow(c *qt.C, contents string) string {
+func writeWorkflow(tb testing.TB, contents string) string {
+	c := qt.New(tb)
 	c.Helper()
 	path := filepath.Join(c.TempDir(), "test.yml")
 	c.Assert(os.WriteFile(path, []byte(contents), 0o600), qt.IsNil)

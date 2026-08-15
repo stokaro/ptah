@@ -26,7 +26,6 @@ import (
 // some of them fails on the rows it does not cover rather than passing on the
 // strength of its neighbours.
 func TestRanges_AttributeChangesAreReported(t *testing.T) {
-	c := qt.New(t)
 
 	current := types.DBRange{
 		Name:           "audit_range",
@@ -76,7 +75,8 @@ func TestRanges_AttributeChangesAreReported(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			generated := &goschema.Database{Ranges: []goschema.Range{test.target}}
 			database := &types.DBSchema{Ranges: []types.DBRange{current}}
 			diff := &difftypes.SchemaDiff{}

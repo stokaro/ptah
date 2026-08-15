@@ -29,7 +29,8 @@ func skipPolicyFixture() (*types.SchemaDiff, *goschema.Database) {
 	return diff, generated
 }
 
-func renderPostgresSkip(c *qt.C, planner *postgres.Planner, diff *types.SchemaDiff, generated *goschema.Database) string {
+func renderPostgresSkip(tb testing.TB, planner *postgres.Planner, diff *types.SchemaDiff, generated *goschema.Database) string {
+	c := qt.New(tb)
 	nodes, err := planner.GenerateMigrationASTChecked(diff, generated)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
@@ -42,7 +43,7 @@ func TestPlanner_SkipChangeKinds(t *testing.T) {
 
 	t.Run("no policy emits every destructive statement", func(t *testing.T) {
 		c := qt.New(t)
-		sql := renderPostgresSkip(c, postgres.New(), diff, generated)
+		sql := renderPostgresSkip(c.TB, postgres.New(), diff, generated)
 		c.Assert(sql, qt.Contains, "DROP TABLE IF EXISTS \"legacy\"")
 		c.Assert(sql, qt.Contains, "DROP TYPE IF EXISTS \"legacy_status\"")
 		c.Assert(sql, qt.Contains, "DROP INDEX IF EXISTS \"idx_legacy\"")
@@ -52,7 +53,7 @@ func TestPlanner_SkipChangeKinds(t *testing.T) {
 	t.Run("skip drop_table omits the drop and comments it", func(t *testing.T) {
 		c := qt.New(t)
 		planner := postgres.New().WithSkipChangeKinds(diffpolicy.DropTable)
-		sql := renderPostgresSkip(c, planner, diff, generated)
+		sql := renderPostgresSkip(c.TB, planner, diff, generated)
 		// The DDL statement is gone; only the SKIP comment mentions the table.
 		c.Assert(sql, qt.Not(qt.Contains), "DROP TABLE IF EXISTS")
 		c.Assert(sql, qt.Contains, "SKIP: DROP TABLE of legacy omitted by diff policy (skip: drop_table)")
@@ -67,7 +68,7 @@ func TestPlanner_SkipChangeKinds(t *testing.T) {
 		planner := postgres.New().WithSkipChangeKinds(
 			diffpolicy.DropTable, diffpolicy.DropColumn, diffpolicy.DropIndex, diffpolicy.DropEnum,
 		)
-		sql := renderPostgresSkip(c, planner, diff, generated)
+		sql := renderPostgresSkip(c.TB, planner, diff, generated)
 		c.Assert(sql, qt.Not(qt.Contains), "DROP TABLE IF EXISTS")
 		c.Assert(sql, qt.Not(qt.Contains), "DROP TYPE IF EXISTS")
 		c.Assert(sql, qt.Not(qt.Contains), "DROP INDEX IF EXISTS")
@@ -83,8 +84,8 @@ func TestPlanner_SkipChangeKinds(t *testing.T) {
 		base := postgres.New()
 		derived := base.WithSkipChangeKinds(diffpolicy.DropTable)
 		// The base planner is unaffected by the derived policy.
-		c.Assert(renderPostgresSkip(c, base, diff, generated), qt.Contains, "DROP TABLE IF EXISTS")
-		c.Assert(renderPostgresSkip(c, derived, diff, generated), qt.Not(qt.Contains), "DROP TABLE IF EXISTS")
+		c.Assert(renderPostgresSkip(c.TB, base, diff, generated), qt.Contains, "DROP TABLE IF EXISTS")
+		c.Assert(renderPostgresSkip(c.TB, derived, diff, generated), qt.Not(qt.Contains), "DROP TABLE IF EXISTS")
 		// Passing no kinds returns the receiver unchanged.
 		c.Assert(base.WithSkipChangeKinds(), qt.Equals, base)
 	})

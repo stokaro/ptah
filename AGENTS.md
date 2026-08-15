@@ -884,6 +884,54 @@ along with every other finding. It is not a text scan: a comment that ends a
 sentence with the word `assert` or `require` is not a violation, and `pkg`
 matches by prefix so every testify subpackage is covered by the one entry.
 
+### Checkers Belong To The Test They Report Against
+
+An assertion reports against whichever test its checker was built from, so the
+checker a test uses has to be the one for that test. Three rules follow, and
+`make lint-qtlint` enforces them:
+
+- Assert through a receiver: `c := qt.New(t)` then `c.Assert(...)`, never
+  `qt.Assert(t, ...)`.
+- Enter a subtest with `t.Run(name, func(t *testing.T) { c := qt.New(t); ... })`,
+  never `c.Run`. A `c.Run` closure asserts through a checker bound to the
+  parent, so a failure is attributed to the parent and a `FailNow` stops the
+  parent instead of the subtest.
+- **A test helper takes the test handle, not the checker.** Write
+  `func writeFixture(tb testing.TB) string` and build `c := qt.New(tb)` inside
+  it; do not write `func writeFixture(c *qt.C) string`.
+
+The third rule is what makes the second enforceable, and the reason is worth
+knowing because the alternative fails at run time rather than at review.
+`(*qt.C).Defer` registers a cleanup that panics unless `Done()` ran. `C.Run`
+supplies that `defer c2.Done()`; a bare `qt.New(t)` does not. So when a checker
+is handed to a helper, the analyzer cannot see what the helper does with it,
+and what it could do includes `Defer` — it therefore reports the subtest and
+withholds the rewrite. A helper taking `testing.TB` has nothing to escape.
+
+`testing.TB` rather than `*testing.T` is deliberate. Inside a subtest closure
+that has not been converted yet there is no `*testing.T` to pass, but there is
+`c.TB`: quicktest's `C` embeds `testing.TB`, so the checker yields the handle it
+was built from. Converting a helper therefore leaves every caller compiling at
+every point, and the two conversions can land separately.
+
+The gate runs two invocations, and neither is redundant:
+
+```bash
+go tool qtlint -multi-module $(QTLINT_RULES) ./...
+go tool qtlint -multi-module $(QTLINT_RULES) -tags integration ./...
+```
+
+`-multi-module` is required because `go list` resolves patterns against the
+module holding the working directory, so `./testkit/...` from the root answers
+`directory prefix testkit does not contain main module or its selected
+dependencies`. Both contours are required because a build tag selects a
+different build rather than a superset: satisfying `integration` also drops
+every file a constraint excludes from that contour.
+
+`make lint-qtlint-fix` applies the rewrites. Invoking the tool directly, run the
+rules in separate passes: applied together, one rule can delete a receiver
+declaration another rule's rewrite still references.
+
 Bad:
 
 ```go

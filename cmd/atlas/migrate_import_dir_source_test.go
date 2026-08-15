@@ -29,11 +29,12 @@ type importFixture struct {
 	missing string
 }
 
-func newImportFixture(c *qt.C) importFixture {
+func newImportFixture(tb testing.TB) importFixture {
+	c := qt.New(tb)
 	c.Helper()
 	root := c.TempDir()
 	source := filepath.Join(root, "source")
-	writeMigrateImportFixture(c, source, "V1__t1.sql", flywayImportSource)
+	writeMigrateImportFixture(c.TB, source, "V1__t1.sql", flywayImportSource)
 	return importFixture{
 		source:  source,
 		target:  filepath.Join(root, "target"),
@@ -49,7 +50,8 @@ func newImportFixture(c *qt.C) importFixture {
 // (stokaro/ptah#1235 cell 8.3), and asserting the name here would write that
 // separate, still-open divergence into this file as though it were desired.
 // What these rows are about is whether anything was written at all.
-func importTargetEntryCount(c *qt.C, target string) int {
+func importTargetEntryCount(tb testing.TB, target string) int {
+	c := qt.New(tb)
 	c.Helper()
 	entries, err := os.ReadDir(target)
 	if os.IsNotExist(err) {
@@ -65,7 +67,7 @@ func importTargetEntryCount(c *qt.C, target string) int {
 // rows would prove nothing about WHICH layout won.
 func TestCompatMigrateImportRejectsTheFixtureUnderGoose(t *testing.T) {
 	c := qt.New(t)
-	fx := newImportFixture(c)
+	fx := newImportFixture(c.TB)
 
 	_, _, err := runCompatExit(
 		"migrate", "import",
@@ -75,7 +77,7 @@ func TestCompatMigrateImportRejectsTheFixtureUnderGoose(t *testing.T) {
 	)
 
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
-	c.Assert(importTargetEntryCount(c, fx.target), qt.Equals, -1)
+	c.Assert(importTargetEntryCount(c.TB, fx.target), qt.Equals, -1)
 }
 
 // TestCompatMigrateImportSourceResolutionMatchesTheOracle pins the order
@@ -103,7 +105,6 @@ func TestCompatMigrateImportRejectsTheFixtureUnderGoose(t *testing.T) {
 // report and can just as easily break the row above it, where the format value
 // still has to win — so both directions are rows, not one.
 func TestCompatMigrateImportSourceResolutionMatchesTheOracle(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name string
@@ -182,8 +183,9 @@ func TestCompatMigrateImportSourceResolutionMatchesTheOracle(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
-			fx := newImportFixture(c)
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			fx := newImportFixture(c.TB)
 			want := tt.want(fx)
 
 			stdout, stderr, err := runCompatExit(append([]string{"migrate", "import"}, tt.args(fx)...)...)
@@ -192,7 +194,7 @@ func TestCompatMigrateImportSourceResolutionMatchesTheOracle(t *testing.T) {
 			c.Assert(stdout, qt.Equals, "")
 			c.Assert(err.Error(), qt.Equals, want)
 			c.Assert(stderr, qt.Equals, "Error: "+want+"\n")
-			c.Assert(importTargetEntryCount(c, fx.target), qt.Equals, -1)
+			c.Assert(importTargetEntryCount(c.TB, fx.target), qt.Equals, -1)
 		})
 	}
 }
@@ -213,7 +215,6 @@ func TestCompatMigrateImportSourceResolutionMatchesTheOracle(t *testing.T) {
 // wrote the target would be the laundering half of the same defect: the caller
 // sees a failure and the directory is on disk anyway.
 func TestCompatMigrateImportRefusesWhatTheOracleRefuses(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name string
@@ -278,8 +279,9 @@ func TestCompatMigrateImportRefusesWhatTheOracleRefuses(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
-			fx := newImportFixture(c)
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			fx := newImportFixture(c.TB)
 
 			stdout, stderr, err := runCompatExit(append([]string{"migrate", "import"}, tt.args(fx)...)...)
 
@@ -287,7 +289,7 @@ func TestCompatMigrateImportRefusesWhatTheOracleRefuses(t *testing.T) {
 			c.Assert(stdout, qt.Equals, "")
 			c.Assert(err.Error(), qt.Equals, tt.want)
 			c.Assert(stderr, qt.Equals, "Error: "+tt.want+"\n")
-			c.Assert(importTargetEntryCount(c, fx.target), qt.Equals, -1)
+			c.Assert(importTargetEntryCount(c.TB, fx.target), qt.Equals, -1)
 		})
 	}
 }
@@ -306,7 +308,6 @@ func TestCompatMigrateImportRefusesWhatTheOracleRefuses(t *testing.T) {
 // precisely because the fixture is unreadable as Goose, so "first wins" is
 // what the exit code measures.
 func TestCompatMigrateImportKeepsAcceptingWhatTheOracleAccepts(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name string
@@ -352,8 +353,9 @@ func TestCompatMigrateImportKeepsAcceptingWhatTheOracleAccepts(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
-			fx := newImportFixture(c)
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			fx := newImportFixture(c.TB)
 
 			stdout, stderr, err := runCompatExit(append([]string{"migrate", "import"}, tt.args(fx)...)...)
 
@@ -361,7 +363,7 @@ func TestCompatMigrateImportKeepsAcceptingWhatTheOracleAccepts(t *testing.T) {
 			c.Assert(stdout, qt.Equals, "")
 			c.Assert(stderr, qt.Equals, "")
 			// One converted migration plus atlas.sum.
-			c.Assert(importTargetEntryCount(c, fx.target), qt.Equals, 2)
+			c.Assert(importTargetEntryCount(c.TB, fx.target), qt.Equals, 2)
 		})
 	}
 }

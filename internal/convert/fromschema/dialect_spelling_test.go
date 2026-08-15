@@ -31,7 +31,8 @@ var quotedLiteral = regexp.MustCompile(`"([^"]+)"`)
 //
 // The body holds no string literal other than the case spellings: the argument
 // is lowercased through strings helpers and every return is a named constant.
-func acceptedSpellings(c *qt.C) []string {
+func acceptedSpellings(tb testing.TB) []string {
+	c := qt.New(tb)
 	source, err := os.ReadFile(normalizeDialectSource)
 	c.Assert(err, qt.IsNil)
 
@@ -65,7 +66,8 @@ func convertedStatements(database goschema.Database, dialect string) []string {
 	return rendered
 }
 
-func spellingFixture(c *qt.C) goschema.Database {
+func spellingFixture(tb testing.TB) goschema.Database {
+	c := qt.New(tb)
 	database, err := goschema.ParseDir("testdata/dialectspellings")
 	c.Assert(err, qt.IsNil)
 	c.Assert(database, qt.IsNotNil)
@@ -81,7 +83,7 @@ func spellingFixture(c *qt.C) goschema.Database {
 func TestAcceptedSpellings_ExtractionControls(t *testing.T) {
 	c := qt.New(t)
 
-	spellings := acceptedSpellings(c)
+	spellings := acceptedSpellings(c.TB)
 
 	// Positive control: aliases that exist only inside the switch, one per
 	// engine family that has one.
@@ -116,8 +118,8 @@ func TestAcceptedSpellings_ExtractionControls(t *testing.T) {
 func TestFromDatabase_EveryAcceptedSpellingConvertsLikeItsCanonicalName(t *testing.T) {
 	c := qt.New(t)
 
-	database := spellingFixture(c)
-	spellings := acceptedSpellings(c)
+	database := spellingFixture(c.TB)
+	spellings := acceptedSpellings(c.TB)
 
 	divergent := slices.DeleteFunc(slices.Clone(spellings), func(spelling string) bool {
 		return slices.Equal(
@@ -165,7 +167,7 @@ func nodeKinds(database goschema.Database, dialect string) []string {
 func TestFromDatabase_PostgresFamilyEmitsTheSameObjectKinds(t *testing.T) {
 	c := qt.New(t)
 
-	database := spellingFixture(c)
+	database := spellingFixture(c.TB)
 	want := nodeKinds(database, platform.Postgres)
 
 	// The fixture has to carry PostgreSQL object kinds for this to compare
@@ -205,7 +207,7 @@ func TestFromDatabase_PostgresFamilyEmitsTheSameObjectKinds(t *testing.T) {
 func TestFromDatabase_FixtureDiscriminatesEngines(t *testing.T) {
 	c := qt.New(t)
 
-	database := spellingFixture(c)
+	database := spellingFixture(c.TB)
 	canonicals := []string{
 		platform.Postgres, platform.MySQL, platform.MariaDB, platform.ClickHouse,
 		platform.SQLite, platform.SQLServer, platform.CockroachDB, platform.YugabyteDB, platform.Spanner,

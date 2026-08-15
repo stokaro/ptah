@@ -83,11 +83,11 @@ var booleanLiterals = []string{
 // rule catches both.
 func TestNoDirectBooleanEnvironmentParsing(t *testing.T) {
 	c := qt.New(t)
-	root := repositoryRoot(c)
+	root := repositoryRoot(c.TB)
 
 	var violations []string
-	for _, path := range goSourceFiles(c, root) {
-		violations = append(violations, scanFile(c, root, path)...)
+	for _, path := range goSourceFiles(c.TB, root) {
+		violations = append(violations, scanFile(c.TB, root, path)...)
 	}
 
 	c.Assert(violations, qt.HasLen, 0, qt.Commentf(
@@ -227,9 +227,9 @@ func Configured() bool {
 			c := qt.New(t)
 			dir := t.TempDir()
 			path := filepath.Join(dir, "probe.go")
-			writeFile(c, path, test.source)
+			writeFile(c.TB, path, test.source)
 
-			got := scanFile(c, dir, path)
+			got := scanFile(c.TB, dir, path)
 
 			c.Assert(got, qt.HasLen, test.want, qt.Commentf("%v", got))
 		})
@@ -245,7 +245,7 @@ func Configured() bool {
 func TestEveryPtahVariableIsClassified(t *testing.T) {
 	c := qt.New(t)
 
-	mentioned := ptahVarNames(c, repositoryRoot(c))
+	mentioned := ptahVarNames(c.TB, repositoryRoot(c.TB))
 
 	c.Assert(len(mentioned) > 10, qt.IsTrue, qt.Commentf(
 		"found %d names; a scan that finds nothing is also green", len(mentioned)))
@@ -283,7 +283,8 @@ func TestEveryDeclaredVariableIsNamedAndDefaultedSafely(t *testing.T) {
 	c.Assert(len(registered) > 0, qt.IsTrue, qt.Commentf(
 		"the registry is empty, so every assertion over it is vacuous"))
 	for _, variable := range registered {
-		c.Run(variable.Name(), func(c *qt.C) {
+		t.Run(variable.Name(), func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(strings.HasPrefix(variable.Name(), envbool.Prefix), qt.IsTrue)
 			c.Assert(variable.Default(), qt.IsFalse, qt.Commentf(
 				"a boolean PTAH_* variable defaulting to the permissive side turns a typo"+
@@ -313,7 +314,8 @@ func TestEveryDeclaredVariableStatesAClassification(t *testing.T) {
 	c.Assert(len(registered) > 0, qt.IsTrue, qt.Commentf(
 		"the registry is empty, so every assertion over it is vacuous"))
 	for _, variable := range registered {
-		c.Run(variable.Name(), func(c *qt.C) {
+		t.Run(variable.Name(), func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(variable.Class(), qt.Not(qt.Equals), envbool.Unclassified, qt.Commentf(
 				"state envbool.Gated or envbool.Retained at the envbool.New call for %s,"+
 					" and say in a comment which capability the pinned community binary"+
@@ -412,7 +414,8 @@ func namesInBothClassifications() []string {
 
 // scanFile reports the guard violations in one Go source file, as
 // "path:line: reason" strings.
-func scanFile(c *qt.C, root, path string) []string {
+func scanFile(tb testing.TB, root, path string) []string {
+	c := qt.New(tb)
 	c.Helper()
 	fset := token.NewFileSet()
 	file, err := parser.ParseFile(fset, path, nil, 0)
@@ -580,10 +583,11 @@ func selectorName(expression ast.Expr) string {
 //
 // Only string literals count. A name in a comment is prose; a name in a literal
 // is the program naming a variable.
-func ptahVarNames(c *qt.C, root string) []string {
+func ptahVarNames(tb testing.TB, root string) []string {
+	c := qt.New(tb)
 	c.Helper()
 	var names []string
-	for _, path := range goSourceFiles(c, root) {
+	for _, path := range goSourceFiles(c.TB, root) {
 		fset := token.NewFileSet()
 		file, err := parser.ParseFile(fset, path, nil, 0)
 		c.Assert(err, qt.IsNil)
@@ -610,7 +614,8 @@ func ptahVarNames(c *qt.C, root string) []string {
 // git is the path source for the reason scripts/check-test-style.sh gives: a
 // filesystem walk descends into every linked worktree parked under the
 // repository, and judges code that is not in this working tree at all.
-func goSourceFiles(c *qt.C, root string) []string {
+func goSourceFiles(tb testing.TB, root string) []string {
+	c := qt.New(tb)
 	c.Helper()
 	cmd := exec.Command("git", "-c", "core.quotePath=false",
 		"ls-files", "--cached", "--others", "--exclude-standard", "--", "*.go")
@@ -635,7 +640,8 @@ func goSourceFiles(c *qt.C, root string) []string {
 }
 
 // repositoryRoot resolves the checkout this test belongs to.
-func repositoryRoot(c *qt.C) string {
+func repositoryRoot(tb testing.TB) string {
+	c := qt.New(tb)
 	c.Helper()
 	root, err := filepath.Abs(filepath.Join("..", "..", ".."))
 	c.Assert(err, qt.IsNil)
@@ -643,7 +649,8 @@ func repositoryRoot(c *qt.C) string {
 }
 
 // writeFile writes a fixture, failing the test rather than the scanner.
-func writeFile(c *qt.C, path, content string) {
+func writeFile(tb testing.TB, path, content string) {
+	c := qt.New(tb)
 	c.Helper()
 	c.Assert(os.WriteFile(path, []byte(content), 0o600), qt.IsNil)
 }

@@ -21,7 +21,8 @@ const composedAccent = "\u00e9"
 
 // modelWithFunctionBody writes a minimal annotated package whose function body
 // carries the given text, and returns the directory holding it.
-func modelWithFunctionBody(c *qt.C, body string) string {
+func modelWithFunctionBody(tb testing.TB, body string) string {
+	c := qt.New(tb)
 	c.Helper()
 	dir := c.TempDir()
 	source := `package models
@@ -39,7 +40,8 @@ type Item struct {
 	return dir
 }
 
-func modelWithTableName(c *qt.C, name string) string {
+func modelWithTableName(tb testing.TB, name string) string {
+	c := qt.New(tb)
 	c.Helper()
 	dir := c.TempDir()
 	source := `package models
@@ -61,7 +63,7 @@ func exportOptions(dir, out string, cleanup bool) goannotationexport.Options {
 func TestExportReportsNonNFCAttributeValue(t *testing.T) {
 	c := qt.New(t)
 
-	dir := modelWithFunctionBody(c, "Caf"+decomposedAccent)
+	dir := modelWithFunctionBody(c.TB, "Caf"+decomposedAccent)
 	out := filepath.Join(c.TempDir(), "schema.hcl")
 
 	result, err := goannotationexport.Export(exportOptions(dir, out, false))
@@ -79,7 +81,7 @@ func TestExportDetectsEscapedNonNFCCodePoint(t *testing.T) {
 	// holds only ASCII. Decoding has to unquote before checking, exactly as
 	// core/goschema does when it builds the schema; comparing the raw span
 	// would see plain ASCII and miss the loss.
-	dir := modelWithFunctionBody(c, `Cafe\u0301`)
+	dir := modelWithFunctionBody(c.TB, `Cafe\u0301`)
 	out := filepath.Join(c.TempDir(), "schema.hcl")
 
 	result, err := goannotationexport.Export(exportOptions(dir, out, false))
@@ -94,7 +96,7 @@ func TestExportNonNFCDiagnosticReportsTheSourceLine(t *testing.T) {
 	// modelWithFunctionBody puts the function annotation on line 3: line 1 is
 	// the package clause and line 2 is blank. annotationparse numbers lines from
 	// zero, so a diagnostic that forwards that number unchanged is off by one.
-	dir := modelWithFunctionBody(c, "Caf"+decomposedAccent)
+	dir := modelWithFunctionBody(c.TB, "Caf"+decomposedAccent)
 	out := filepath.Join(c.TempDir(), "schema.hcl")
 
 	result, err := goannotationexport.Export(exportOptions(dir, out, false))
@@ -135,7 +137,7 @@ type Item struct {
 func TestExportRefusesDestructiveCleanupOnNonNFCValue(t *testing.T) {
 	c := qt.New(t)
 
-	dir := modelWithTableName(c, "caf"+decomposedAccent+"_items")
+	dir := modelWithTableName(c.TB, "caf"+decomposedAccent+"_items")
 	source := filepath.Join(dir, "models.go")
 	before, err := os.ReadFile(source)
 	c.Assert(err, qt.IsNil)
@@ -198,7 +200,7 @@ func TestExportAcceptsComposedAndASCIIValues(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			dir := modelWithTableName(c, tt.body+"_items")
+			dir := modelWithTableName(c.TB, tt.body+"_items")
 			out := filepath.Join(c.TempDir(), "schema.hcl")
 
 			result, err := goannotationexport.Export(exportOptions(dir, out, true))

@@ -132,8 +132,9 @@ func countCreateSequenceNodes(statements []ast.Node) int {
 func TestFromDatabase_SequenceReachesEveryDialectsRenderer(t *testing.T) {
 	c := qt.New(t)
 
-	for _, spelling := range acceptedSpellings(c) {
-		c.Run(spelling, func(c *qt.C) {
+	for _, spelling := range acceptedSpellings(c.TB) {
+		t.Run(spelling, func(t *testing.T) {
+			c := qt.New(t)
 			database := goschema.Database{
 				Sequences: []goschema.Sequence{{Name: "order_seq"}},
 			}

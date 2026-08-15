@@ -18,7 +18,6 @@ import (
 )
 
 func TestEffectiveApplyLockName(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name  string
@@ -32,14 +31,14 @@ func TestEffectiveApplyLockName(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(atlasschema.EffectiveApplyLockName(test.value), qt.Equals, test.want)
 		})
 	}
 }
 
 func TestAcquireApplyLock_RecordsRequestedName(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name      string
@@ -52,8 +51,9 @@ func TestAcquireApplyLock_RecordsRequestedName(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
-			conn := connectSQLite(c, filepath.Join(c.TB.TempDir(), "lock-name.db"))
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			conn := connectSQLite(c.TB, filepath.Join(c.TB.TempDir(), "lock-name.db"))
 			defer dbschema.CloseAndWarn(conn)
 
 			lock, err := atlasschema.AcquireApplyLock(c.Context(), conn, test.requested, time.Second)

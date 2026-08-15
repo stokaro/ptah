@@ -14,7 +14,8 @@ import (
 
 // writeMigrateTestFixture fills migrationsDir with an Atlas-format migration
 // and testsDir with a passing Ptah-native YAML test case.
-func writeMigrateTestFixture(c *qt.C, migrationsDir, testsDir string) {
+func writeMigrateTestFixture(tb testing.TB, migrationsDir, testsDir string) {
+	c := qt.New(tb)
 	c.Helper()
 	c.Assert(os.WriteFile(
 		filepath.Join(migrationsDir, "1_init.sql"),
@@ -38,7 +39,7 @@ func writeMigrateTestFixture(c *qt.C, migrationsDir, testsDir string) {
 func TestCompatCommand_MigrateTestForwardsToNative(t *testing.T) {
 	c := qt.New(t)
 	migrationsDir, testsDir := t.TempDir(), t.TempDir()
-	writeMigrateTestFixture(c, migrationsDir, testsDir)
+	writeMigrateTestFixture(c.TB, migrationsDir, testsDir)
 	devDB := "sqlite://" + filepath.Join(t.TempDir(), "dev.db")
 
 	cmd := atlas.NewCompatCommand("atlas")
@@ -66,7 +67,7 @@ func TestCompatCommand_MigrateTestNativeDirectoryEnvironmentOverridesAtlasDefaul
 	c := qt.New(t)
 	t.Chdir(t.TempDir())
 	migrationsDir, testsDir := t.TempDir(), t.TempDir()
-	writeMigrateTestFixture(c, migrationsDir, testsDir)
+	writeMigrateTestFixture(c.TB, migrationsDir, testsDir)
 	t.Setenv("PTAH_MIGRATIONS_DIR", migrationsDir)
 
 	cmd := atlas.NewCompatCommand("atlas")
@@ -87,7 +88,7 @@ func TestCompatCommand_MigrateTestNativeDirectoryEnvironmentOverridesAtlasDefaul
 func TestCompatCommand_MigrateTestFailingCaseExits1(t *testing.T) {
 	c := qt.New(t)
 	migrationsDir, testsDir := t.TempDir(), t.TempDir()
-	writeMigrateTestFixture(c, migrationsDir, testsDir)
+	writeMigrateTestFixture(c.TB, migrationsDir, testsDir)
 	c.Assert(os.WriteFile(filepath.Join(testsDir, "fail.yaml"), []byte(
 		"cases:\n"+
 			"  - name: failing expectation\n"+
@@ -113,7 +114,7 @@ func TestCompatCommand_MigrateTestFailingCaseExits1(t *testing.T) {
 func TestCompatCommand_MigrateTestRunFilterSelectsCases(t *testing.T) {
 	c := qt.New(t)
 	migrationsDir, testsDir := t.TempDir(), t.TempDir()
-	writeMigrateTestFixture(c, migrationsDir, testsDir)
+	writeMigrateTestFixture(c.TB, migrationsDir, testsDir)
 
 	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
@@ -135,7 +136,7 @@ func TestCompatCommand_MigrateTestRunFilterSelectsCases(t *testing.T) {
 func TestCompatCommand_MigrateTestRejectsUnsupportedDirFormat(t *testing.T) {
 	c := qt.New(t)
 	migrationsDir, testsDir := t.TempDir(), t.TempDir()
-	writeMigrateTestFixture(c, migrationsDir, testsDir)
+	writeMigrateTestFixture(c.TB, migrationsDir, testsDir)
 
 	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer

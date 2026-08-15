@@ -140,7 +140,6 @@ func TestAtlasCheckFileMode(t *testing.T) {
 }
 
 func TestCheckTransactionOptions_ReadOnlyDialects(t *testing.T) {
-	c := qt.New(t)
 	dialects := []string{
 		platform.Postgres,
 		platform.CockroachDB,
@@ -151,14 +150,14 @@ func TestCheckTransactionOptions_ReadOnlyDialects(t *testing.T) {
 	}
 
 	for _, dialect := range dialects {
-		c.Run(dialect, func(c *qt.C) {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(checkTransactionOptions(dialect).ReadOnly, qt.IsTrue)
 		})
 	}
 }
 
 func TestValidateCheckAssertion_Accepted(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name          string
 		assertion     string
@@ -188,14 +187,14 @@ func TestValidateCheckAssertion_Accepted(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(validateCheckAssertion(test.assertion, test.dialect, test.serverVersion), qt.IsNil)
 		})
 	}
 }
 
 func TestValidateCheckAssertion_Rejected(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name          string
 		assertion     string
@@ -221,21 +220,22 @@ func TestValidateCheckAssertion_Rejected(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(validateCheckAssertion(test.assertion, test.dialect, test.serverVersion), qt.ErrorMatches, test.wantErr)
 		})
 	}
 }
 
 func TestContainsIdentifierSequence_SQLServerNextValueFor(t *testing.T) {
-	c := qt.New(t)
 
 	statements := []string{
 		"SELECT NEXT VALUE FOR dbo.order_sequence",
 		"SELECT next /* sequence */ value\nfor dbo.order_sequence",
 	}
 	for _, statement := range statements {
-		c.Run(statement, func(c *qt.C) {
+		t.Run(statement, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(
 				containsIdentifierSequence(statement, platform.SQLServer, "NEXT", "VALUE", "FOR"),
 				qt.IsTrue,
@@ -245,7 +245,6 @@ func TestContainsIdentifierSequence_SQLServerNextValueFor(t *testing.T) {
 }
 
 func TestContainsIdentifierSequence_IgnoresNonCodeAndBrokenSequences(t *testing.T) {
-	c := qt.New(t)
 
 	statements := []string{
 		"SELECT 'NEXT VALUE FOR dbo.order_sequence'",
@@ -253,7 +252,8 @@ func TestContainsIdentifierSequence_IgnoresNonCodeAndBrokenSequences(t *testing.
 		"SELECT NEXT + VALUE + FOR FROM counters",
 	}
 	for _, statement := range statements {
-		c.Run(statement, func(c *qt.C) {
+		t.Run(statement, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(
 				containsIdentifierSequence(statement, platform.SQLServer, "NEXT", "VALUE", "FOR"),
 				qt.IsFalse,
@@ -263,7 +263,6 @@ func TestContainsIdentifierSequence_IgnoresNonCodeAndBrokenSequences(t *testing.
 }
 
 func TestAssertionPassed_NonZeroNumericTypes(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name  string
@@ -284,14 +283,14 @@ func TestAssertionPassed_NonZeroNumericTypes(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(assertionPassed(test.value), qt.IsTrue)
 		})
 	}
 }
 
 func TestAssertionPassed_ZeroNumericTypes(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name  string
@@ -312,7 +311,8 @@ func TestAssertionPassed_ZeroNumericTypes(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(assertionPassed(test.value), qt.IsFalse)
 		})
 	}

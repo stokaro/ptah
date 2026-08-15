@@ -64,8 +64,8 @@ func TestPrepareApply_LockRequestReachesMigrator(t *testing.T) {
 			ctx := context.Background()
 			dir := t.TempDir()
 			migrationsDir := filepath.Join(dir, "migrations")
-			writeLockTestMigration(c, migrationsDir)
-			conn := connectLockTestSQLite(c, filepath.Join(dir, "apply.db"))
+			writeLockTestMigration(c.TB, migrationsDir)
+			conn := connectLockTestSQLite(c.TB, filepath.Join(dir, "apply.db"))
 			defer dbschema.CloseAndWarn(conn)
 
 			opts := ApplyOptions{
@@ -95,7 +95,8 @@ func TestPrepareApply_LockRequestReachesMigrator(t *testing.T) {
 	}
 }
 
-func writeLockTestMigration(c *qt.C, dir string) {
+func writeLockTestMigration(tb testing.TB, dir string) {
+	c := qt.New(tb)
 	c.Helper()
 	c.Assert(os.MkdirAll(dir, 0o755), qt.IsNil)
 	c.Assert(os.WriteFile(
@@ -105,7 +106,8 @@ func writeLockTestMigration(c *qt.C, dir string) {
 	), qt.IsNil)
 }
 
-func connectLockTestSQLite(c *qt.C, path string) *dbschema.DatabaseConnection {
+func connectLockTestSQLite(tb testing.TB, path string) *dbschema.DatabaseConnection {
+	c := qt.New(tb)
 	c.Helper()
 	dbURL := (&url.URL{Scheme: platform.SQLite, Path: path}).String()
 	conn, err := dbschema.ConnectToDatabase(context.Background(), dbURL)

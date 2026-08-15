@@ -11,7 +11,7 @@ import (
 func TestSchemaInspectSchemaFileNormalizedOnDevDatabase(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
-	schemaPath := writeSchemaSQLFile(c, dir, "schema.sql", "CREATE TABLE orders (id INTEGER PRIMARY KEY);\n")
+	schemaPath := writeSchemaSQLFile(c.TB, dir, "schema.sql", "CREATE TABLE orders (id INTEGER PRIMARY KEY);\n")
 
 	out, err := runSchema("", "inspect",
 		"--schema-file", schemaPath,
@@ -28,7 +28,7 @@ func TestSchemaInspectOutDirExportsFiles(t *testing.T) {
 	dir := t.TempDir()
 	outDir := filepath.Join(dir, "exported")
 	dbPath := filepath.Join(dir, "live.db")
-	seedSQLite(c, dbPath, "CREATE TABLE users (id INTEGER PRIMARY KEY);\nCREATE TABLE orders (id INTEGER PRIMARY KEY);")
+	seedSQLite(c.TB, dbPath, "CREATE TABLE users (id INTEGER PRIMARY KEY);\nCREATE TABLE orders (id INTEGER PRIMARY KEY);")
 
 	out, err := runSchema("", "inspect",
 		"--db-url", "sqlite://"+dbPath,
@@ -54,7 +54,7 @@ func TestSchemaInspectRejectsTemplateFormats(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "live.db")
-	seedSQLite(c, dbPath, "CREATE TABLE users (id INTEGER PRIMARY KEY);")
+	seedSQLite(c.TB, dbPath, "CREATE TABLE users (id INTEGER PRIMARY KEY);")
 
 	out, err := runSchema("", "inspect",
 		"--db-url", "sqlite://"+dbPath,
@@ -68,7 +68,7 @@ func TestSchemaInspectRejectsSplitWithoutOutDir(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "live.db")
-	seedSQLite(c, dbPath, "CREATE TABLE users (id INTEGER PRIMARY KEY);")
+	seedSQLite(c.TB, dbPath, "CREATE TABLE users (id INTEGER PRIMARY KEY);")
 
 	out, err := runSchema("", "inspect",
 		"--db-url", "sqlite://"+dbPath,
@@ -100,7 +100,7 @@ func TestSchemaInspectIncludeSelectsResources(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "live.db")
-	seedSQLite(c, dbPath, nativeInspectIncludeDDL)
+	seedSQLite(c.TB, dbPath, nativeInspectIncludeDDL)
 
 	out, err := runSchema("", "inspect",
 		"--db-url", "sqlite://"+dbPath,
@@ -114,7 +114,6 @@ func TestSchemaInspectIncludeSelectsResources(t *testing.T) {
 }
 
 func TestSchemaInspectIncludeValidatesSelectors(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name    string
@@ -137,9 +136,10 @@ func TestSchemaInspectIncludeValidatesSelectors(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
 			// The URL points at a closed port: reaching it would fail with a
 			// connection error instead of the selector error asserted below.
+			c := qt.New(t)
 			out, err := runSchema("", "inspect",
 				"--db-url", "postgres://127.0.0.1:1/unreachable",
 				"--include", test.pattern,

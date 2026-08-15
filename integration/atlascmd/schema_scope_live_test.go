@@ -290,11 +290,11 @@ func createScopeInspectSchema(t *testing.T, dbURL string) string {
 }
 
 func TestSchemaInspectIncludeLivePostgres(t *testing.T) {
-	c := qt.New(t)
 	dbURL := livePostgresURLForScope(t)
 	schemaName := createScopeInspectSchema(t, dbURL)
 
-	c.Run("qualified selection keeps the table and the type it uses", func(c *qt.C) {
+	t.Run("qualified selection keeps the table and the type it uses", func(t *testing.T) {
+		c := qt.New(t)
 		stdout, stderr, err := runCompatInspect(
 			"--url", dbURL, "--schema", schemaName, "--include", schemaName+".users")
 
@@ -307,7 +307,8 @@ func TestSchemaInspectIncludeLivePostgres(t *testing.T) {
 		c.Assert(stdout, qt.Not(qt.Contains), `table "posts"`)
 	})
 
-	c.Run("bare name matches inside the schema universe", func(c *qt.C) {
+	t.Run("bare name matches inside the schema universe", func(t *testing.T) {
+		c := qt.New(t)
 		stdout, stderr, err := runCompatInspect(
 			"--url", dbURL, "--schema", schemaName, "--include", "users")
 
@@ -316,7 +317,8 @@ func TestSchemaInspectIncludeLivePostgres(t *testing.T) {
 		c.Assert(stdout, qt.Not(qt.Contains), `table "archive"`)
 	})
 
-	c.Run("selection dropping a foreign key target is refused", func(c *qt.C) {
+	t.Run("selection dropping a foreign key target is refused", func(t *testing.T) {
+		c := qt.New(t)
 		stdout, _, err := runCompatInspect(
 			"--url", dbURL, "--schema", schemaName, "--include", "posts")
 
@@ -327,7 +329,8 @@ func TestSchemaInspectIncludeLivePostgres(t *testing.T) {
 		c.Assert(stdout, qt.Equals, "")
 	})
 
-	c.Run("matching everything keeps every table in the schema universe", func(c *qt.C) {
+	t.Run("matching everything keeps every table in the schema universe", func(t *testing.T) {
+		c := qt.New(t)
 		stdout, stderr, err := runCompatInspect(
 			"--url", dbURL, "--schema", schemaName, "--include", "*")
 

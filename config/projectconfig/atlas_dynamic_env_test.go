@@ -46,7 +46,6 @@ func TestParseAtlasCollectionExpandsUpstreamMultiTenantFixture(t *testing.T) {
 }
 
 func TestParseAtlasCollectionOrdersEachBindingsDeterministically(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name    string
 		prefix  string
@@ -109,7 +108,8 @@ func TestParseAtlasCollectionOrdersEachBindingsDeterministically(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			raw := []byte(test.prefix + `env {
   for_each = ` + test.forEach + `
   name     = atlas.env
@@ -408,7 +408,6 @@ func TestParseAtlasCollectionReusesRootedFileEvaluation(t *testing.T) {
 }
 
 func TestParseAtlasCollectionRejectsInvalidForEach(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name    string
 		value   string
@@ -420,7 +419,8 @@ func TestParseAtlasCollectionRejectsInvalidForEach(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			raw := []byte(`env {
   for_each = ` + test.value + `
   name     = atlas.env
@@ -536,7 +536,7 @@ func TestSingularProjectConfigAdaptersRejectMultipleSelectedInstances(t *testing
 		`atlas env "local" selected 2 project config instances; use the corresponding collection-valued API`,
 	)
 
-	chdirWith(c, map[string]string{"atlas.hcl": raw})
+	chdirWith(c.TB, map[string]string{"atlas.hcl": raw})
 	configs, err := projectconfig.LoadCollection(projectconfig.LoadOptions{EnvName: "local"})
 	c.Assert(err, qt.IsNil)
 	c.Assert(configs, qt.HasLen, 2)

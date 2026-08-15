@@ -10,7 +10,6 @@ import (
 )
 
 func TestParseOperations_HappyPath(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name   string
@@ -56,7 +55,8 @@ func TestParseOperations_HappyPath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			got, err := graphqlrender.ParseOperations(test.values)
 			c.Assert(err, qt.IsNil)
 			c.Assert(got, qt.Equals, test.want)
@@ -65,7 +65,6 @@ func TestParseOperations_HappyPath(t *testing.T) {
 }
 
 func TestParseOperations_FailurePath(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name    string
@@ -102,7 +101,8 @@ func TestParseOperations_FailurePath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			got, err := graphqlrender.ParseOperations(test.values)
 			c.Assert(err, qt.ErrorMatches, regexp.QuoteMeta(test.wantErr))
 			c.Assert(got, qt.Equals, graphqlrender.Operations{})
@@ -111,7 +111,6 @@ func TestParseOperations_FailurePath(t *testing.T) {
 }
 
 func TestOperationsPredicates(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name        string
@@ -138,7 +137,8 @@ func TestOperationsPredicates(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(test.ops.Any(), qt.Equals, test.wantAny)
 			c.Assert(test.ops.Queries(), qt.Equals, test.wantQueries)
 		})

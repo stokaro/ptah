@@ -14,7 +14,8 @@ import (
 // renderWhere renders "SELECT * FROM t WHERE <expr>" for PostgreSQL and returns
 // the WHERE-clause behavior, so constructor tests can assert the observable SQL
 // contract rather than the internal node shape.
-func renderWhere(c *qt.C, expr ast.Expression) (string, []any) {
+func renderWhere(tb testing.TB, expr ast.Expression) (string, []any) {
+	c := qt.New(tb)
 	c.Helper()
 	sql, args, err := renderer.RenderSelect(&ast.SelectStatement{From: "t", Where: expr}, platform.Postgres)
 	c.Assert(err, qt.IsNil)
@@ -22,7 +23,6 @@ func renderWhere(c *qt.C, expr ast.Expression) (string, []any) {
 }
 
 func TestExpressionConstructors(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name     string
@@ -117,8 +117,9 @@ func TestExpressionConstructors(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
-			sql, args := renderWhere(c, tt.expr)
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			sql, args := renderWhere(c.TB, tt.expr)
 			c.Assert(sql, qt.Equals, tt.wantSQL)
 			c.Assert(args, qt.DeepEquals, tt.wantArgs)
 		})
@@ -126,7 +127,6 @@ func TestExpressionConstructors(t *testing.T) {
 }
 
 func TestSelectBuilder_Projection(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name string
@@ -146,7 +146,8 @@ func TestSelectBuilder_Projection(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(tt.stmt.Columns, qt.DeepEquals, tt.want)
 		})
 	}
@@ -253,7 +254,6 @@ func TestSelectBuilder_SharedWhereFragment(t *testing.T) {
 }
 
 func TestSelectBuilder_DegenerateExpressionsErrorCleanly(t *testing.T) {
-	c := qt.New(t)
 
 	// Degenerate constructor inputs must surface a clean RenderSelect error, not
 	// a panic, when the statement is rendered.
@@ -285,7 +285,8 @@ func TestSelectBuilder_DegenerateExpressionsErrorCleanly(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			stmt := query.Select("*").From("t").Where(tt.expr).Build()
 			sql, args, err := renderer.RenderSelect(stmt, platform.Postgres)
 			c.Assert(err, qt.ErrorMatches, tt.wantErrLike)

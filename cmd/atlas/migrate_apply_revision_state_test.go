@@ -14,7 +14,8 @@ import (
 // writeTxModeAllCheckedDir writes a two-migration directory whose second
 // migration declares a pre-migration check, hashed because apply verifies
 // atlas.sum before planning (stokaro/ptah#970).
-func writeTxModeAllCheckedDir(c *qt.C, dir string) string {
+func writeTxModeAllCheckedDir(tb testing.TB, dir string) string {
+	c := qt.New(tb)
 	c.Helper()
 	migrationsDir := filepath.Join(dir, "migrations")
 	c.Assert(os.MkdirAll(migrationsDir, 0o755), qt.IsNil)
@@ -28,7 +29,7 @@ func writeTxModeAllCheckedDir(c *qt.C, dir string) string {
 		[]byte("-- +ptah check name=\"users_empty\" assert=\"SELECT count(*) = 0 FROM users\" on_fail=abort\nDROP TABLE users;\n"),
 		0o600,
 	), qt.IsNil)
-	writeAtlasApplyProjectSum(c, migrationsDir)
+	writeAtlasApplyProjectSum(c.TB, migrationsDir)
 	return migrationsDir
 }
 
@@ -75,7 +76,7 @@ func TestMigrateApplyTxModeAllChecksHonorDryRun(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			dir := t.TempDir()
-			migrationsDir := writeTxModeAllCheckedDir(c, dir)
+			migrationsDir := writeTxModeAllCheckedDir(c.TB, dir)
 
 			cmd := atlas.NewCompatCommand("atlas")
 			var output bytes.Buffer

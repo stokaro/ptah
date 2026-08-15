@@ -48,8 +48,8 @@ func TestApplyPlans_FailurePath_AncestorSwapAbortsCleanup(t *testing.T) {
 	})
 
 	c.Assert(err, qt.ErrorIs, pathguard.ErrDirectoryChanged)
-	assertInternalFileBytes(c, filepath.Join(capturedDir, "model.go"), sourceData)
-	assertInternalFileBytes(c, outsidePath, outsideData)
+	assertInternalFileBytes(c.TB, filepath.Join(capturedDir, "model.go"), sourceData)
+	assertInternalFileBytes(c.TB, outsidePath, outsideData)
 	entries, err := os.ReadDir(capturedDir)
 	c.Assert(err, qt.IsNil)
 	c.Assert(internalEntryNames(entries), qt.DeepEquals, []string{"model.go"})

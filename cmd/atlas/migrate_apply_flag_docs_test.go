@@ -78,7 +78,8 @@ var docFlagToken = regexp.MustCompile(`--[a-zA-Z][a-zA-Z0-9-]*`)
 // Local flags only: `--config`, `--env`, and `--var` are inherited from the
 // root command and belong to the project-configuration surface, so a page about
 // `migrate apply` is not required to name them.
-func compatMigrateApplyLocalFlags(c *qt.C) []string {
+func compatMigrateApplyLocalFlags(tb testing.TB) []string {
+	c := qt.New(tb)
 	c.Helper()
 	root := atlas.NewCompatCommand("atlas")
 	applyCmd, _, err := root.Find([]string{"migrate", "apply"})
@@ -162,7 +163,7 @@ func countRegisteredFlag(flag string, flags []string) int {
 // rejection sentence then contradicted.
 func TestCompatMigrateApplyFlagDocs_NameEveryRegisteredFlag(t *testing.T) {
 	c := qt.New(t)
-	flags := compatMigrateApplyLocalFlags(c)
+	flags := compatMigrateApplyLocalFlags(c.TB)
 
 	// Control: a derivation that silently returned nothing would make every row
 	// below pass while proving nothing. These three are the flags stokaro/ptah#1354
@@ -174,7 +175,7 @@ func TestCompatMigrateApplyFlagDocs_NameEveryRegisteredFlag(t *testing.T) {
 	for _, tt := range migrateApplyInventoryDocPages() {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			page := readCompatDocPage(c, tt.path)
+			page := readCompatDocPage(c.TB, tt.path)
 			missing := unnamedApplyFlags(page, flags)
 			c.Assert(missing, qt.HasLen, 0, qt.Commentf("flags the page never names: %q", missing))
 		})
@@ -186,13 +187,13 @@ func TestCompatMigrateApplyFlagDocs_NameEveryRegisteredFlag(t *testing.T) {
 // `migrate apply` registers.
 func TestCompatMigrateApplyFlagDocs_NeverCallAnImplementedFlagRejected(t *testing.T) {
 	c := qt.New(t)
-	flags := compatMigrateApplyLocalFlags(c)
+	flags := compatMigrateApplyLocalFlags(c.TB)
 	c.Assert(flags, qt.Contains, "--to-version")
 
 	for _, tt := range migrateApplyClaimDocPages() {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			page := readCompatDocPage(c, tt.path)
+			page := readCompatDocPage(c.TB, tt.path)
 			claims := staleApplyRejectionClaims(page, flags)
 			c.Assert(claims, qt.HasLen, 0, qt.Commentf("stale rejection claims: %q", claims))
 		})

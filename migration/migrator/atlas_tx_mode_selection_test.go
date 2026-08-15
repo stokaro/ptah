@@ -14,17 +14,17 @@ import (
 
 func TestAtlasTxModeValidation_SelectedFilesOnly(t *testing.T) {
 	c := qt.New(t)
-	conn, mig := newAtlasTxModeSelectionMigrator(c, migrator.MigrationTxModeFile)
+	conn, mig := newAtlasTxModeSelectionMigrator(c.TB, migrator.MigrationTxModeFile)
 
 	err := mig.MigrateUpWithOptions(c.Context(), migrator.MigrateUpOptions{Amount: 1})
 	c.Assert(err, qt.IsNil)
-	c.Assert(atlasTxModeSelectionTableExists(c, conn, "first_valid"), qt.IsTrue)
-	c.Assert(atlasTxModeSelectionRevisionCount(c, conn), qt.Equals, 1)
+	c.Assert(atlasTxModeSelectionTableExists(c.TB, conn, "first_valid"), qt.IsTrue)
+	c.Assert(atlasTxModeSelectionRevisionCount(c.TB, conn), qt.Equals, 1)
 
 	err = mig.MigrateUp(c.Context())
 	c.Assert(err, qt.ErrorMatches, `unknown txmode "bogus" found in file directive "2_invalid.sql"`)
-	c.Assert(atlasTxModeSelectionTableExists(c, conn, "second_invalid"), qt.IsFalse)
-	c.Assert(atlasTxModeSelectionRevisionCount(c, conn), qt.Equals, 1)
+	c.Assert(atlasTxModeSelectionTableExists(c.TB, conn, "second_invalid"), qt.IsFalse)
+	c.Assert(atlasTxModeSelectionRevisionCount(c.TB, conn), qt.Equals, 1)
 }
 
 func TestAtlasTxModeValidation_FirstFileErrorSkipsPreflight(t *testing.T) {
@@ -59,11 +59,10 @@ func TestAtlasTxModeValidation_FirstFileErrorSkipsPreflight(t *testing.T) {
 
 	c.Assert(err, qt.ErrorMatches, `unknown txmode "bogus" found in file directive "1_invalid.sql"`)
 	c.Assert(preflightCalled, qt.IsFalse)
-	c.Assert(atlasTxModeSelectionRevisionCount(c, conn), qt.Equals, 0)
+	c.Assert(atlasTxModeSelectionRevisionCount(c.TB, conn), qt.Equals, 0)
 }
 
 func TestAtlasTxModeValidation_PrecedenceAcrossSelectedFiles(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name          string
 		globalMode    migrator.MigrationTxMode
@@ -89,13 +88,14 @@ func TestAtlasTxModeValidation_PrecedenceAcrossSelectedFiles(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
-			conn, mig := newAtlasTxModeSelectionMigrator(c, test.globalMode)
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			conn, mig := newAtlasTxModeSelectionMigrator(c.TB, test.globalMode)
 			err := mig.MigrateUp(c.Context())
 			c.Assert(err, qt.ErrorMatches, `unknown txmode "bogus" found in file directive "2_invalid.sql"`)
-			c.Assert(atlasTxModeSelectionTableExists(c, conn, "first_valid"), qt.Equals, test.wantFirst)
-			c.Assert(atlasTxModeSelectionTableExists(c, conn, "second_invalid"), qt.IsFalse)
-			c.Assert(atlasTxModeSelectionRevisionCount(c, conn), qt.Equals, test.wantRevisions)
+			c.Assert(atlasTxModeSelectionTableExists(c.TB, conn, "first_valid"), qt.Equals, test.wantFirst)
+			c.Assert(atlasTxModeSelectionTableExists(c.TB, conn, "second_invalid"), qt.IsFalse)
+			c.Assert(atlasTxModeSelectionRevisionCount(c.TB, conn), qt.Equals, test.wantRevisions)
 		})
 	}
 }
@@ -181,8 +181,8 @@ DROP TABLE directional;
 
 	err = mig.MigrateDownTo(c.Context(), 0)
 	c.Assert(err, qt.ErrorMatches, `unknown txmode "bogus" found in file directive "1_directional.sql#down.sql"`)
-	c.Assert(atlasTxModeSelectionTableExists(c, conn, "directional"), qt.IsTrue)
-	c.Assert(atlasTxModeSelectionRevisionCount(c, conn), qt.Equals, 1)
+	c.Assert(atlasTxModeSelectionTableExists(c.TB, conn, "directional"), qt.IsTrue)
+	c.Assert(atlasTxModeSelectionRevisionCount(c.TB, conn), qt.Equals, 1)
 
 	status, err := mig.GetMigrationStatus(c.Context())
 	c.Assert(err, qt.IsNil)
@@ -191,7 +191,6 @@ DROP TABLE directional;
 }
 
 func TestAtlasTxModeProvider_RejectsMisplacedTxtarDirective(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name string
 		sql  string
@@ -222,7 +221,8 @@ CREATE TABLE down_body (id INTEGER PRIMARY KEY);
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			conn, err := dbschema.ConnectToDatabase(
 				c.Context(),
 				"sqlite://"+filepath.Join(c.TempDir(), "misplaced.sqlite"),
@@ -240,14 +240,13 @@ CREATE TABLE down_body (id INTEGER PRIMARY KEY);
 				qt.ErrorMatches,
 				`failed to load Atlas migration 1_misplaced.sql: invalid Atlas txtar migration 1_misplaced.sql: -- atlas:txtar must be the first non-empty line`,
 			)
-			c.Assert(atlasTxModeSelectionTableExists(c, conn, "up_body"), qt.IsFalse)
-			c.Assert(atlasTxModeSelectionTableExists(c, conn, "down_body"), qt.IsFalse)
+			c.Assert(atlasTxModeSelectionTableExists(c.TB, conn, "up_body"), qt.IsFalse)
+			c.Assert(atlasTxModeSelectionTableExists(c.TB, conn, "down_body"), qt.IsFalse)
 		})
 	}
 }
 
 func TestAtlasTxModeProvider_DownValidationPrecedesRollback(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name string
 		fsys fstest.MapFS
@@ -289,7 +288,8 @@ DROP TABLE second_table;
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			conn, err := dbschema.ConnectToDatabase(
 				c.Context(),
 				"sqlite://"+filepath.Join(c.TempDir(), "down-validation.sqlite"),
@@ -308,9 +308,9 @@ DROP TABLE second_table;
 
 			err = mig.MigrateDownTo(c.Context(), 0)
 			c.Assert(err, qt.ErrorMatches, `unknown txmode "bogus" found in file directive ".*"`)
-			c.Assert(atlasTxModeSelectionTableExists(c, conn, "first_table"), qt.IsTrue)
-			c.Assert(atlasTxModeSelectionTableExists(c, conn, "second_table"), qt.IsTrue)
-			c.Assert(atlasTxModeSelectionRevisionCount(c, conn), qt.Equals, 2)
+			c.Assert(atlasTxModeSelectionTableExists(c.TB, conn, "first_table"), qt.IsTrue)
+			c.Assert(atlasTxModeSelectionTableExists(c.TB, conn, "second_table"), qt.IsTrue)
+			c.Assert(atlasTxModeSelectionRevisionCount(c.TB, conn), qt.Equals, 2)
 
 			status, err := mig.GetMigrationStatus(c.Context())
 			c.Assert(err, qt.IsNil)
@@ -321,7 +321,6 @@ DROP TABLE second_table;
 }
 
 func TestNewMigrationFromSQLFiles_PreservesTxModePolicy(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name       string
 		globalMode migrator.MigrationTxMode
@@ -351,7 +350,8 @@ func TestNewMigrationFromSQLFiles_PreservesTxModePolicy(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			conn, err := dbschema.ConnectToDatabase(
 				c.Context(),
 				"sqlite://"+filepath.Join(c.TempDir(), "constructor-policy.sqlite"),
@@ -380,7 +380,7 @@ func TestNewMigrationFromSQLFiles_PreservesTxModePolicy(t *testing.T) {
 
 			err = mig.MigrateUp(c.Context())
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
-			c.Assert(atlasTxModeSelectionTableExists(c, conn, "constructor_table"), qt.Equals, test.wantTable)
+			c.Assert(atlasTxModeSelectionTableExists(c.TB, conn, "constructor_table"), qt.Equals, test.wantTable)
 		})
 	}
 }
@@ -407,8 +407,8 @@ func TestAtlasTxModeProgrammatic_InvalidParsedModeLeavesNoRevision(t *testing.T)
 
 	err = mig.MigrateUp(c.Context())
 	c.Assert(err, qt.ErrorMatches, `unknown txmode "bogus" found in file directive "programmatic.sql"`)
-	c.Assert(atlasTxModeSelectionTableExists(c, conn, "invalid_programmatic"), qt.IsFalse)
-	c.Assert(atlasTxModeSelectionRevisionCount(c, conn), qt.Equals, 0)
+	c.Assert(atlasTxModeSelectionTableExists(c.TB, conn, "invalid_programmatic"), qt.IsFalse)
+	c.Assert(atlasTxModeSelectionRevisionCount(c.TB, conn), qt.Equals, 0)
 }
 
 func TestAtlasTxModeProgrammatic_InvalidEnumLeavesNoRevision(t *testing.T) {
@@ -434,14 +434,15 @@ func TestAtlasTxModeProgrammatic_InvalidEnumLeavesNoRevision(t *testing.T) {
 
 	err = mig.MigrateUp(c.Context())
 	c.Assert(err, qt.ErrorMatches, `invalid migration file txmode "bogus": expected file, none, or empty`)
-	c.Assert(atlasTxModeSelectionTableExists(c, conn, "invalid_enum"), qt.IsFalse)
-	c.Assert(atlasTxModeSelectionRevisionCount(c, conn), qt.Equals, 0)
+	c.Assert(atlasTxModeSelectionTableExists(c.TB, conn, "invalid_enum"), qt.IsFalse)
+	c.Assert(atlasTxModeSelectionRevisionCount(c.TB, conn), qt.Equals, 0)
 }
 
 func newAtlasTxModeSelectionMigrator(
-	c *qt.C,
+	tb testing.TB,
 	globalMode migrator.MigrationTxMode,
 ) (*dbschema.DatabaseConnection, *migrator.Migrator) {
+	c := qt.New(tb)
 	conn, err := dbschema.ConnectToDatabase(
 		c.Context(),
 		"sqlite://"+filepath.Join(c.TempDir(), "atlas-tx-mode-selection.sqlite"),
@@ -468,10 +469,11 @@ func newAtlasTxModeSelectionMigrator(
 }
 
 func atlasTxModeSelectionTableExists(
-	c *qt.C,
+	tb testing.TB,
 	conn *dbschema.DatabaseConnection,
 	name string,
 ) bool {
+	c := qt.New(tb)
 	var count int
 	err := conn.QueryRowContext(
 		c.Context(),
@@ -482,7 +484,8 @@ func atlasTxModeSelectionTableExists(
 	return count == 1
 }
 
-func atlasTxModeSelectionRevisionCount(c *qt.C, conn *dbschema.DatabaseConnection) int {
+func atlasTxModeSelectionRevisionCount(tb testing.TB, conn *dbschema.DatabaseConnection) int {
+	c := qt.New(tb)
 	var count int
 	err := conn.QueryRowContext(c.Context(), "SELECT count(*) FROM atlas_schema_revisions").Scan(&count)
 	c.Assert(err, qt.IsNil)

@@ -11,7 +11,8 @@ import (
 	"go.5x5.cz/ptah/cmd/atlas"
 )
 
-func writeSchemaSourceDir(c *qt.C, files map[string]string) string {
+func writeSchemaSourceDir(tb testing.TB, files map[string]string) string {
+	c := qt.New(tb)
 	c.Helper()
 	dir := c.TempDir()
 	for name, contents := range files {
@@ -26,7 +27,7 @@ func writeSchemaSourceDir(c *qt.C, files map[string]string) string {
 // binary v1.3.0 emitted a CREATE TABLE for every file in the directory.
 func TestSchemaDiffAcceptsDirectorySource(t *testing.T) {
 	c := qt.New(t)
-	dir := writeSchemaSourceDir(c, map[string]string{
+	dir := writeSchemaSourceDir(c.TB, map[string]string{
 		"1_users.sql": "CREATE TABLE dir_users (id INTEGER PRIMARY KEY);\n",
 		"2_posts.sql": "CREATE TABLE dir_posts (id INTEGER PRIMARY KEY);\n",
 	})
@@ -57,13 +58,13 @@ func TestSchemaDiffAcceptsDirectorySource(t *testing.T) {
 func TestSchemaApplyAcceptsDirectorySource(t *testing.T) {
 	c := qt.New(t)
 	workdir := c.TempDir()
-	dir := writeSchemaSourceDir(c, map[string]string{
+	dir := writeSchemaSourceDir(c.TB, map[string]string{
 		"1_users.sql": "CREATE TABLE applied_dir_users (id INTEGER PRIMARY KEY);\n",
 		"2_posts.sql": "CREATE TABLE applied_dir_posts (id INTEGER PRIMARY KEY);\n",
 	})
 	dbPath := filepath.Join(workdir, "target.db")
 
-	out, err := runSchemaApply(c,
+	out, err := runSchemaApply(c.TB,
 		"--url", "sqlite://"+dbPath,
 		"--to", "file://"+dir,
 		"--dev-url", "sqlite://"+filepath.Join(workdir, "dev.db"),
@@ -71,6 +72,6 @@ func TestSchemaApplyAcceptsDirectorySource(t *testing.T) {
 	)
 
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
-	c.Assert(sqliteTableCount(c, dbPath, "applied_dir_users"), qt.Equals, 1)
-	c.Assert(sqliteTableCount(c, dbPath, "applied_dir_posts"), qt.Equals, 1)
+	c.Assert(sqliteTableCount(c.TB, dbPath, "applied_dir_users"), qt.Equals, 1)
+	c.Assert(sqliteTableCount(c.TB, dbPath, "applied_dir_posts"), qt.Equals, 1)
 }

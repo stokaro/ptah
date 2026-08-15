@@ -247,7 +247,6 @@ func TestLexer_NextToken_HappyPath(t *testing.T) {
 }
 
 func TestLexer_NextToken_EscapedQuotedIdentifiers(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name      string
@@ -259,7 +258,8 @@ func TestLexer_NextToken_EscapedQuotedIdentifiers(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			token := lexer.NewLexer(tt.input).NextToken()
 
 			c.Assert(token, qt.DeepEquals, lexer.Token{
@@ -297,7 +297,6 @@ func TestLexer_NextToken_BracketsRemainOperators(t *testing.T) {
 }
 
 func TestLexer_NextToken_SQLServerBracketIdentifiersStayAtomic(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name  string
@@ -310,7 +309,8 @@ func TestLexer_NextToken_SQLServerBracketIdentifiersStayAtomic(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			l := lexer.NewLexerWithOptions(tt.input, lexer.Options{
 				BracketIdentifiers: true,
 			})
@@ -879,7 +879,6 @@ func TestLexer_NextToken_MySQLDashDashWithWhitespaceIsComment(t *testing.T) {
 }
 
 func TestLexer_NextToken_ExecutableCommentStyles(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name  string
 		style lexer.ExecutableCommentStyle
@@ -902,7 +901,8 @@ func TestLexer_NextToken_ExecutableCommentStyles(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			l := lexer.NewLexerWithOptions(test.input, lexer.Options{ExecutableComments: test.style})
 			c.Assert(l.NextToken().Type, qt.Equals, test.want)
 			c.Assert(l.NextToken().Type, qt.Equals, lexer.TokenEOF)

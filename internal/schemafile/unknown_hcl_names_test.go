@@ -30,7 +30,8 @@ table "t" {
 }
 `
 
-func writeUnknownHCLNamesFixture(c *qt.C) string {
+func writeUnknownHCLNamesFixture(tb testing.TB) string {
+	c := qt.New(tb)
 	path := filepath.Join(c.TempDir(), "schema.hcl")
 	c.Assert(os.WriteFile(path, []byte(unknownHCLNamesSource), 0o600), qt.IsNil)
 	return "file://" + path
@@ -42,7 +43,7 @@ func writeUnknownHCLNamesFixture(c *qt.C) string {
 func TestLoad_RefusesUnknownHCLNamesByDefault(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := schemafile.Load(writeUnknownHCLNamesFixture(c), schemafile.Options{})
+	_, err := schemafile.Load(writeUnknownHCLNamesFixture(c.TB), schemafile.Options{})
 
 	c.Assert(err, qt.ErrorMatches, `.*unsupported top-level block "annotation".*`)
 }
@@ -55,7 +56,7 @@ func TestLoad_IgnoresUnknownHCLNamesWhenAsked(t *testing.T) {
 	c := qt.New(t)
 
 	db, err := schemafile.Load(
-		writeUnknownHCLNamesFixture(c),
+		writeUnknownHCLNamesFixture(c.TB),
 		schemafile.Options{IgnoreUnknownHCLNames: true},
 	)
 

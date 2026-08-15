@@ -38,7 +38,8 @@ func TestResolveIndexTableNames(t *testing.T) {
 		"",
 	})
 
-	c.Run("indexes-only input retains explicit owner", func(c *qt.C) {
+	t.Run("indexes-only input retains explicit owner", func(t *testing.T) {
+		c := qt.New(t)
 		got := goschema.ResolveIndexTableNames(
 			[]goschema.Index{{TableName: "external.users"}},
 			nil,

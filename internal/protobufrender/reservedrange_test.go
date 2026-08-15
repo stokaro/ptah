@@ -54,14 +54,14 @@ func TestReservedRangesSurviveRegardlessOfWidth(t *testing.T) {
 
 			// The range must come back as a range. Expanding it into individual
 			// numbers is what forced the loader to cap the width it accepts.
-			rewritten := mustRenderText(c, oneTable(column("id", "BIGINT")), withPrevious(previous))
+			rewritten := mustRenderText(c.TB, oneTable(column("id", "BIGINT")), withPrevious(previous))
 			c.Assert(section(rewritten, "message Thing {"), qt.Equals,
 				"message Thing {\n  int64 id = 1;\n\n  reserved "+rc.reserved+";\n}")
 
 			// Regenerating from the file just produced reproduces it exactly, so
 			// the range survives a full write-then-read cycle rather than only
 			// the first rewrite.
-			again := mustRenderText(c, oneTable(column("id", "BIGINT")), withPrevious([]byte(rewritten)))
+			again := mustRenderText(c.TB, oneTable(column("id", "BIGINT")), withPrevious([]byte(rewritten)))
 			c.Assert(again, qt.Equals, rewritten)
 		})
 	}
@@ -82,7 +82,7 @@ func TestReservedRangesStillGuardTheirBaseline(t *testing.T) {
 				"reserved "+rc.reserved+";", "reserved "+rc.widened+";", 1)
 			c.Assert(damaged, qt.Not(qt.Equals), string(previous))
 
-			message := mustFail(c, oneTable(column("id", "BIGINT")), withPrevious([]byte(damaged)))
+			message := mustFail(c.TB, oneTable(column("id", "BIGINT")), withPrevious([]byte(damaged)))
 			c.Assert(message, qt.Contains, "output file was modified since it was generated")
 		})
 	}
@@ -99,7 +99,7 @@ func TestReservedEnumRangesKeepTheirInclusiveEnd(t *testing.T) {
 			"enum ThingState {\n  THING_STATE_UNSPECIFIED = 0;\n  THING_STATE_NEW = 1;\n\n" +
 			"  reserved 20000 to 2100000;\n}\n")
 
-	rewritten := mustRenderText(c, inlineEnumTable("new"), withPrevious(previous))
+	rewritten := mustRenderText(c.TB, inlineEnumTable("new"), withPrevious(previous))
 	c.Assert(section(rewritten, "enum ThingState {"), qt.Equals,
 		"enum ThingState {\n"+
 			"  THING_STATE_UNSPECIFIED = 0;\n"+
@@ -117,7 +117,7 @@ func TestReservedRangeAllocationClearsTheWholeRange(t *testing.T) {
 	previous := previousExport(
 		"message Thing {\n  int64 id = 1;\n\n  reserved 20000 to 2100000;\n}\n")
 
-	grown := mustRenderText(c, oneTable(column("id", "BIGINT"), column("extra", "TEXT")),
+	grown := mustRenderText(c.TB, oneTable(column("id", "BIGINT"), column("extra", "TEXT")),
 		withPrevious(previous))
 	c.Assert(section(grown, "message Thing {"), qt.Equals,
 		"message Thing {\n  int64 id = 1;\n  string extra = 2100001;\n\n  reserved 20000 to 2100000;\n}")
@@ -133,7 +133,7 @@ func TestReservedRangesMergeWithNewlyRetiredNeighbors(t *testing.T) {
 	previous := previousExport(
 		"message Thing {\n  int64 id = 1;\n  string keep = 8;\n\n  reserved 2 to 7;\n  reserved sku;\n}\n")
 
-	shrunk := mustRenderText(c, oneTable(column("id", "BIGINT")), withPrevious(previous))
+	shrunk := mustRenderText(c.TB, oneTable(column("id", "BIGINT")), withPrevious(previous))
 	c.Assert(section(shrunk, "message Thing {"), qt.Equals,
 		"message Thing {\n  int64 id = 1;\n\n  reserved 2 to 8;\n  reserved keep, sku;\n}")
 }
@@ -147,7 +147,7 @@ func TestReservedRangeCoveringALiveNumberIsRefused(t *testing.T) {
 	previous := previousExport(
 		"message Thing {\n  int64 id = 5;\n\n  reserved 1 to 2100000;\n}\n")
 
-	message := mustFail(c, oneTable(column("id", "BIGINT")), withPrevious(previous))
+	message := mustFail(c.TB, oneTable(column("id", "BIGINT")), withPrevious(previous))
 	c.Assert(message, qt.Contains, "output file is not valid protobuf")
 	c.Assert(message, qt.Contains,
 		"message acme.inventory.v1.Thing: field id is using tag 5 which is in reserved range 1 to 2100000")
@@ -169,7 +169,7 @@ func TestReservedRangeLoadingDoesNotExpandTheRange(t *testing.T) {
 		"message Thing {\n  int64 id = 1;\n\n  reserved 20000 to 40019999;\n}\n")
 
 	before := totalAlloc()
-	rewritten := mustRenderText(c, oneTable(column("id", "BIGINT")), withPrevious(previous))
+	rewritten := mustRenderText(c.TB, oneTable(column("id", "BIGINT")), withPrevious(previous))
 	allocated := totalAlloc() - before
 
 	c.Assert(rewritten, qt.Contains, "  reserved 20000 to 40019999;\n")

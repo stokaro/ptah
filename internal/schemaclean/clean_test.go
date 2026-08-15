@@ -57,7 +57,6 @@ func TestSnapshotWithinWriterScopeKeepsOnlyPostgresSchemaOwnedExtensions(t *test
 // control: its writer drops views and materialized views but no types,
 // routines or foreign keys, so a row copied from postgres would fail too.
 func TestPlanFromSchemaNamesEveryKindTheDialectWriterDestroys(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name    string
@@ -155,7 +154,8 @@ func TestPlanFromSchemaNamesEveryKindTheDialectWriterDestroys(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			plan := schemaclean.PlanFromSchema(schemaWithEveryReportableKind(), test.dialect)
 
 			c.Assert(plan.Objects, qt.DeepEquals, test.want)
@@ -166,7 +166,6 @@ func TestPlanFromSchemaNamesEveryKindTheDialectWriterDestroys(t *testing.T) {
 // TestPlanFromObjectsRendersDialectSpecificDropCommands pins the rendered
 // report statement for every object kind a plan can name.
 func TestPlanFromObjectsRendersDialectSpecificDropCommands(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name    string
@@ -309,7 +308,8 @@ func TestPlanFromObjectsRendersDialectSpecificDropCommands(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			plan := schemaclean.PlanFromObjects([]schemaclean.Object{test.object}, test.dialect)
 
 			c.Assert(plan.Changes, qt.HasLen, 1)

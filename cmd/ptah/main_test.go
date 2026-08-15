@@ -20,7 +20,7 @@ import (
 // by cmd/ptah-compat/main_test.go.
 func TestPtahAtlasNamespaceRemoved(t *testing.T) {
 	c := qt.New(t)
-	binPath := buildPtahBinary(c)
+	binPath := buildPtahBinary(c.TB)
 
 	tests := []struct {
 		name string
@@ -32,7 +32,8 @@ func TestPtahAtlasNamespaceRemoved(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			run := newPtahProcess(binPath, tt.args...)
 			var stdout, stderr bytes.Buffer
 			run.Stdout = &stdout
@@ -50,7 +51,7 @@ func TestPtahAtlasNamespaceRemoved(t *testing.T) {
 
 func TestPtahNativeSchemaApplyHelpResolves(t *testing.T) {
 	c := qt.New(t)
-	binPath := buildPtahBinary(c)
+	binPath := buildPtahBinary(c.TB)
 
 	run := newPtahProcess(binPath, "schema", "apply", "--help")
 	var stdout, stderr bytes.Buffer
@@ -69,7 +70,7 @@ func TestPtahNativeSchemaApplyHelpResolves(t *testing.T) {
 // keeps reporting the two paths it created.
 func TestPtahNativeMigrationsCreateKeepsSuccessReport(t *testing.T) {
 	c := qt.New(t)
-	binPath := buildPtahBinary(c)
+	binPath := buildPtahBinary(c.TB)
 	dir := c.TempDir()
 	run := newPtahProcess(
 		binPath,
@@ -104,8 +105,8 @@ func TestPtahNativeMigrationsCreateKeepsSuccessReport(t *testing.T) {
 
 func TestPtahNativeMigrationsUpRejectsMalformedAtlasTxMode(t *testing.T) {
 	c := qt.New(t)
-	binPath := buildPtahBinary(c)
-	dir := malformedAtlasTxModeDir(c)
+	binPath := buildPtahBinary(c.TB)
+	dir := malformedAtlasTxModeDir(c.TB)
 	run := newPtahProcess(
 		binPath,
 		"migrations", "up",
@@ -141,9 +142,9 @@ func TestPtahNativeMigrationsUpRejectsMalformedAtlasTxMode(t *testing.T) {
 // equality, not any particular version string.
 func TestPtahVersionSpellingsPrintIdenticalBytes(t *testing.T) {
 	c := qt.New(t)
-	binPath := buildPtahBinary(c)
+	binPath := buildPtahBinary(c.TB)
 
-	want := capturePtahStdout(c, binPath, "version")
+	want := capturePtahStdout(c.TB, binPath, "version")
 	c.Assert(want, qt.Matches,
 		`Version: [^\n]+\nCommit: [^\n]+\nDate: [^\n]+\nGo: [^\n]+\nPlatform: [^\n]+\n`)
 
@@ -156,13 +157,15 @@ func TestPtahVersionSpellingsPrintIdenticalBytes(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
-			c.Assert(capturePtahStdout(c, binPath, tt.args...), qt.Equals, want)
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(capturePtahStdout(c.TB, binPath, tt.args...), qt.Equals, want)
 		})
 	}
 }
 
-func capturePtahStdout(c *qt.C, binPath string, args ...string) string {
+func capturePtahStdout(tb testing.TB, binPath string, args ...string) string {
+	c := qt.New(tb)
 	c.Helper()
 	run := newPtahProcess(binPath, args...)
 	var stdout, stderr bytes.Buffer
@@ -174,7 +177,8 @@ func capturePtahStdout(c *qt.C, binPath string, args ...string) string {
 	return stdout.String()
 }
 
-func buildPtahBinary(c *qt.C) string {
+func buildPtahBinary(tb testing.TB) string {
+	c := qt.New(tb)
 	c.Helper()
 	binPath := filepath.Join(c.TempDir(), "ptah")
 	build := exec.Command("go", "build", "-o", binPath, ".")
@@ -188,7 +192,8 @@ func newPtahProcess(binPath string, args ...string) *exec.Cmd {
 	return exec.Command(binPath, args...)
 }
 
-func malformedAtlasTxModeDir(c *qt.C) string {
+func malformedAtlasTxModeDir(tb testing.TB) string {
+	c := qt.New(tb)
 	c.Helper()
 	dir := c.TempDir()
 	c.Assert(os.WriteFile(filepath.Join(dir, "1_invalid.sql"), []byte(

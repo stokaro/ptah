@@ -28,7 +28,8 @@ func secretLeaked(text, password string) bool {
 	return strings.Contains(text, password)
 }
 
-func writeRoleModel(c *qt.C, dir, password string) string {
+func writeRoleModel(tb testing.TB, dir, password string) string {
+	c := qt.New(tb)
 	c.Helper()
 	path := filepath.Join(dir, "model.go")
 	source := `package models
@@ -46,7 +47,8 @@ type User struct {
 	return path
 }
 
-func runSchemaExportCleanup(c *qt.C, args ...string) (stdout, stderr string, err error) {
+func runSchemaExportCleanup(tb testing.TB, args ...string) (stdout, stderr string, err error) {
+	c := qt.New(tb)
 	c.Helper()
 	cmd := schema.NewSchemaCommand()
 	var out, errOut bytes.Buffer
@@ -60,10 +62,10 @@ func runSchemaExportCleanup(c *qt.C, args ...string) (stdout, stderr string, err
 func TestSchemaExportCleanupDiffRedactsRolePassword(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
-	writeRoleModel(c, dir, cliSecret)
+	writeRoleModel(c.TB, dir, cliSecret)
 	outPath := filepath.Join(dir, "schema.hcl")
 
-	stdout, stderr, err := runSchemaExportCleanup(c,
+	stdout, stderr, err := runSchemaExportCleanup(c.TB,
 		"--root-dir", dir,
 		"--out", outPath,
 		"--cleanup-go-annotations",
@@ -97,7 +99,7 @@ type User struct {
 	c.Assert(os.WriteFile(modelPath, []byte(source), 0o600), qt.IsNil)
 	outPath := filepath.Join(dir, "schema.hcl")
 
-	_, stderr, err := runSchemaExportCleanup(c,
+	_, stderr, err := runSchemaExportCleanup(c.TB,
 		"--root-dir", dir,
 		"--out", outPath,
 		"--cleanup-go-annotations",
@@ -131,7 +133,7 @@ type User struct{}
 	originalOutput := []byte("existing schema\n")
 	c.Assert(os.WriteFile(outPath, originalOutput, 0o600), qt.IsNil)
 
-	stdout, stderr, err := runSchemaExportCleanup(c,
+	stdout, stderr, err := runSchemaExportCleanup(c.TB,
 		"--root-dir", dir,
 		"--out", outPath,
 		"--cleanup-go-annotations",

@@ -77,7 +77,8 @@ type compatURLFixture struct {
 	desiredURL  string
 }
 
-func newCompatURLFixture(c *qt.C) compatURLFixture {
+func newCompatURLFixture(tb testing.TB) compatURLFixture {
+	c := qt.New(tb)
 	c.Helper()
 	root := c.TempDir()
 	dir := filepath.Join(root, "migrations")
@@ -327,10 +328,11 @@ func compatURLRows() []compatURLRow {
 func TestCompatURLDiagnostics_MatchThePinnedBinary(t *testing.T) {
 	t.Chdir(t.TempDir())
 	c := qt.New(t)
-	fx := newCompatURLFixture(c)
+	fx := newCompatURLFixture(c.TB)
 
 	for _, tt := range compatURLRows() {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			stdout, stderr, err := runCompat(tt.args(fx)...)
 
 			c.Assert(err, qt.IsNotNil, qt.Commentf("stdout=%q stderr=%q", stdout, stderr))
@@ -376,7 +378,8 @@ func TestCompatURLDiagnostics_CoverEveryVerbRegisteringTheFlag(t *testing.T) {
 	accounted = slices.Compact(accounted)
 
 	for _, verb := range registered {
-		c.Run(verb, func(c *qt.C) {
+		t.Run(verb, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(accounted, qt.Contains, verb,
 				qt.Commentf("%q registers --url but no row pins its diagnostics"+
 					" and it is not named as having no oracle row", verb))
@@ -386,7 +389,8 @@ func TestCompatURLDiagnostics_CoverEveryVerbRegisteringTheFlag(t *testing.T) {
 	// The converse: a name that no longer registers --url must not sit here
 	// claiming coverage it cannot have.
 	for _, verb := range accounted {
-		c.Run("still registered: "+verb, func(c *qt.C) {
+		t.Run("still registered: "+verb, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(registered, qt.Contains, verb,
 				qt.Commentf("%q is accounted for but no longer registers --url", verb))
 		})

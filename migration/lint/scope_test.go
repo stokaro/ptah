@@ -15,7 +15,8 @@ import (
 // exists before the analyzed statement runs. That is the only shape where an
 // out-of-scope drop is distinguishable from a same-file create-then-drop, which
 // is exempt for an unrelated reason.
-func analyzeScoped(c *qt.C, base, sql, scope string) lint.Analysis {
+func analyzeScoped(tb testing.TB, base, sql, scope string) lint.Analysis {
+	c := qt.New(tb)
 	c.Helper()
 	analysis, err := lint.AnalyzeFS(fixture(map[string]string{
 		"1.sql": base,
@@ -128,7 +129,7 @@ func TestAnalyzeFS_SchemaScopeFiltersFindings(t *testing.T) {
 			t.Parallel()
 			c := qt.New(t)
 
-			analysis := analyzeScoped(c, test.base, test.sql, test.scope)
+			analysis := analyzeScoped(c.TB, test.base, test.sql, test.scope)
 
 			c.Assert(rulesOf(analysis.Findings()), qt.DeepEquals, test.want)
 		})
@@ -214,9 +215,9 @@ func TestAnalyzeFS_SchemaScopeFiltersChanges(t *testing.T) {
 			t.Parallel()
 			c := qt.New(t)
 
-			analysis := analyzeScoped(c, test.base, test.sql, test.scope)
+			analysis := analyzeScoped(c.TB, test.base, test.sql, test.scope)
 
-			c.Assert(projectChanges(fileByName(c, analysis, "2.sql").Changes), qt.DeepEquals, test.want)
+			c.Assert(projectChanges(fileByName(c.TB, analysis, "2.sql").Changes), qt.DeepEquals, test.want)
 		})
 	}
 }
@@ -320,9 +321,9 @@ func TestAnalyzeFS_SchemaScopeDecidesOncePerStatement(t *testing.T) {
 			t.Parallel()
 			c := qt.New(t)
 
-			analysis := analyzeScoped(c, test.base, test.sql, test.scope)
+			analysis := analyzeScoped(c.TB, test.base, test.sql, test.scope)
 
-			c.Assert(projectChanges(fileByName(c, analysis, "2.sql").Changes), qt.DeepEquals, test.wantChanges)
+			c.Assert(projectChanges(fileByName(c.TB, analysis, "2.sql").Changes), qt.DeepEquals, test.wantChanges)
 			c.Assert(rulesOf(analysis.Findings()), qt.DeepEquals, test.wantFindings)
 		})
 	}
@@ -408,9 +409,9 @@ func TestAnalyzeFS_SchemaScopeRemovesOnlyStatementsNamingNothingUnderReview(t *t
 			t.Parallel()
 			c := qt.New(t)
 
-			analysis := analyzeScoped(c, base, test.sql, "public")
+			analysis := analyzeScoped(c.TB, base, test.sql, "public")
 
-			c.Assert(projectChanges(fileByName(c, analysis, "2.sql").Changes), qt.DeepEquals, test.wantChanges)
+			c.Assert(projectChanges(fileByName(c.TB, analysis, "2.sql").Changes), qt.DeepEquals, test.wantChanges)
 			c.Assert(rulesOf(analysis.Findings()), qt.DeepEquals, test.wantFindings)
 		})
 	}
@@ -469,9 +470,9 @@ func TestAnalyzeFS_SchemaScopeExcludesOnlyTheScopedOutStatement(t *testing.T) {
 			t.Parallel()
 			c := qt.New(t)
 
-			analysis := analyzeScoped(c, base, test.sql, "public")
+			analysis := analyzeScoped(c.TB, base, test.sql, "public")
 
-			c.Assert(projectChanges(fileByName(c, analysis, "2.sql").Changes), qt.DeepEquals, test.wantChanges)
+			c.Assert(projectChanges(fileByName(c.TB, analysis, "2.sql").Changes), qt.DeepEquals, test.wantChanges)
 			c.Assert(rulesOf(analysis.Findings()), qt.DeepEquals, test.wantFindings)
 		})
 	}
@@ -513,9 +514,9 @@ func TestAnalyzeFS_SchemaScopeLeavesUnmodeledStatementsAlone(t *testing.T) {
 			t.Parallel()
 			c := qt.New(t)
 
-			analysis := analyzeScoped(c, test.base, test.sql, "public")
+			analysis := analyzeScoped(c.TB, test.base, test.sql, "public")
 
-			c.Assert(projectChanges(fileByName(c, analysis, "2.sql").Changes), qt.DeepEquals, test.wantChanges)
+			c.Assert(projectChanges(fileByName(c.TB, analysis, "2.sql").Changes), qt.DeepEquals, test.wantChanges)
 			c.Assert(rulesOf(analysis.Findings()), qt.DeepEquals, test.wantFindings)
 		})
 	}
@@ -612,9 +613,9 @@ func TestAnalyzeFS_DropIndexCountsAsASchemaChange(t *testing.T) {
 			t.Parallel()
 			c := qt.New(t)
 
-			analysis := analyzeScoped(c, test.base, test.sql, "public")
+			analysis := analyzeScoped(c.TB, test.base, test.sql, "public")
 
-			c.Assert(projectChanges(fileByName(c, analysis, "2.sql").Changes), qt.DeepEquals, test.wantChanges)
+			c.Assert(projectChanges(fileByName(c.TB, analysis, "2.sql").Changes), qt.DeepEquals, test.wantChanges)
 			c.Assert(rulesOf(analysis.Findings()), qt.DeepEquals, test.wantFindings)
 		})
 	}
@@ -653,9 +654,9 @@ func TestAnalyzeFS_DropIndexOnTableFormCountsInItsTableSchema(t *testing.T) {
 			t.Parallel()
 			c := qt.New(t)
 
-			analysis := analyzeScoped(c, test.base, test.sql, "public")
+			analysis := analyzeScoped(c.TB, test.base, test.sql, "public")
 
-			c.Assert(projectChanges(fileByName(c, analysis, "2.sql").Changes), qt.DeepEquals, test.wantChanges)
+			c.Assert(projectChanges(fileByName(c.TB, analysis, "2.sql").Changes), qt.DeepEquals, test.wantChanges)
 		})
 	}
 }
@@ -694,7 +695,7 @@ func TestAnalyzeFS_SchemaScopeKeepsUnattributableFindings(t *testing.T) {
 			t.Parallel()
 			c := qt.New(t)
 
-			analysis := analyzeScoped(c, test.base, test.sql, "public")
+			analysis := analyzeScoped(c.TB, test.base, test.sql, "public")
 
 			c.Assert(rulesOf(analysis.Findings()), qt.DeepEquals, test.want)
 		})

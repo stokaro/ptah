@@ -129,7 +129,6 @@ data {
 }
 
 func TestParse_PtahParityExtensions_FailurePath(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name  string
 		hcl   string
@@ -307,7 +306,8 @@ table "users" {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			_, err := atlashcl.Parse([]byte(test.hcl), "schema.hcl")
 			c.Assert(err, qt.ErrorMatches, test.match)
 		})

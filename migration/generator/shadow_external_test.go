@@ -279,7 +279,7 @@ func TestGenerateMigration_RejectsTargetDatabaseAsShadow(t *testing.T) {
 	_, err = target.ExecContext(t.Context(), "CREATE TABLE users (id INTEGER PRIMARY KEY)")
 	c.Assert(err, qt.IsNil)
 
-	modelsDir, migrationsDir := writeShadowRealmSafetyFixture(c, dir)
+	modelsDir, migrationsDir := writeShadowRealmSafetyFixture(c.TB, dir)
 
 	files, err := generator.GenerateMigration(t.Context(), generator.GenerateMigrationOptions{
 		GoEntitiesDir:     modelsDir,
@@ -289,7 +289,7 @@ func TestGenerateMigration_RejectsTargetDatabaseAsShadow(t *testing.T) {
 		ShadowDatabaseURL: targetURL,
 	})
 
-	assertShadowRealmRejected(c, target, files, err)
+	assertShadowRealmRejected(c.TB, target, files, err)
 }
 
 func TestGenerateMigration_RejectsEquivalentTargetDatabaseAliasAsShadow(t *testing.T) {
@@ -308,7 +308,7 @@ func TestGenerateMigration_RejectsEquivalentTargetDatabaseAliasAsShadow(t *testi
 	target, err = dbschema.ConnectToDatabase(t.Context(), targetURL)
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(target)
-	modelsDir, migrationsDir := writeShadowRealmSafetyFixture(c, dir)
+	modelsDir, migrationsDir := writeShadowRealmSafetyFixture(c.TB, dir)
 
 	files, err := generator.GenerateMigration(t.Context(), generator.GenerateMigrationOptions{
 		GoEntitiesDir:     modelsDir,
@@ -318,7 +318,7 @@ func TestGenerateMigration_RejectsEquivalentTargetDatabaseAliasAsShadow(t *testi
 		ShadowDatabaseURL: "sqlite://" + aliasPath,
 	})
 
-	assertShadowRealmRejected(c, target, files, err)
+	assertShadowRealmRejected(c.TB, target, files, err)
 }
 
 func TestVerifyBaselineShadow_RejectsTargetDatabaseAsShadow(t *testing.T) {
@@ -331,7 +331,7 @@ func TestVerifyBaselineShadow_RejectsTargetDatabaseAsShadow(t *testing.T) {
 	defer dbschema.CloseAndWarn(target)
 	_, err = target.ExecContext(t.Context(), "CREATE TABLE users (id INTEGER PRIMARY KEY)")
 	c.Assert(err, qt.IsNil)
-	migrationsDir := writeBaselineShadowRealmSafetyFixture(c, dir)
+	migrationsDir := writeBaselineShadowRealmSafetyFixture(c.TB, dir)
 
 	err = generator.VerifyBaselineShadow(t.Context(), generator.BaselineShadowVerifyOptions{
 		ShadowDatabaseURL: targetURL,
@@ -341,7 +341,7 @@ func TestVerifyBaselineShadow_RejectsTargetDatabaseAsShadow(t *testing.T) {
 		Dialect:           target.Info().Dialect,
 	})
 
-	assertBaselineShadowRealmRejected(c, target, err)
+	assertBaselineShadowRealmRejected(c.TB, target, err)
 }
 
 func TestVerifyBaselineShadow_RejectsEquivalentTargetDatabaseAlias(t *testing.T) {
@@ -360,7 +360,7 @@ func TestVerifyBaselineShadow_RejectsEquivalentTargetDatabaseAlias(t *testing.T)
 	target, err = dbschema.ConnectToDatabase(t.Context(), targetURL)
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(target)
-	migrationsDir := writeBaselineShadowRealmSafetyFixture(c, dir)
+	migrationsDir := writeBaselineShadowRealmSafetyFixture(c.TB, dir)
 
 	err = generator.VerifyBaselineShadow(t.Context(), generator.BaselineShadowVerifyOptions{
 		ShadowDatabaseURL: "sqlite://" + aliasPath,
@@ -370,10 +370,11 @@ func TestVerifyBaselineShadow_RejectsEquivalentTargetDatabaseAlias(t *testing.T)
 		Dialect:           target.Info().Dialect,
 	})
 
-	assertBaselineShadowRealmRejected(c, target, err)
+	assertBaselineShadowRealmRejected(c.TB, target, err)
 }
 
-func writeShadowRealmSafetyFixture(c *qt.C, dir string) (modelsDir, migrationsDir string) {
+func writeShadowRealmSafetyFixture(tb testing.TB, dir string) (modelsDir, migrationsDir string) {
+	c := qt.New(tb)
 	c.Helper()
 	modelsDir = filepath.Join(dir, "models")
 	c.Assert(os.MkdirAll(modelsDir, 0o755), qt.IsNil)
@@ -393,11 +394,12 @@ type User struct {
 }
 
 func assertShadowRealmRejected(
-	c *qt.C,
+	tb testing.TB,
 	target *dbschema.DatabaseConnection,
 	files *generator.MigrationFiles,
 	err error,
 ) {
+	c := qt.New(tb)
 	c.Helper()
 	c.Assert(files, qt.IsNil)
 	var shadowErr *generator.ShadowVerificationError
@@ -412,7 +414,8 @@ func assertShadowRealmRejected(
 	c.Assert(tableCount, qt.Equals, int64(1))
 }
 
-func writeBaselineShadowRealmSafetyFixture(c *qt.C, dir string) string {
+func writeBaselineShadowRealmSafetyFixture(tb testing.TB, dir string) string {
+	c := qt.New(tb)
 	c.Helper()
 	migrationsDir := filepath.Join(dir, "baseline-migrations")
 	c.Assert(os.MkdirAll(migrationsDir, 0o755), qt.IsNil)
@@ -430,10 +433,11 @@ func writeBaselineShadowRealmSafetyFixture(c *qt.C, dir string) string {
 }
 
 func assertBaselineShadowRealmRejected(
-	c *qt.C,
+	tb testing.TB,
 	target *dbschema.DatabaseConnection,
 	err error,
 ) {
+	c := qt.New(tb)
 	c.Helper()
 	c.Assert(err, qt.ErrorMatches, `baseline shadow check failed: shadow database must be distinct from target database`)
 	var shadowErr *generator.ShadowVerificationError

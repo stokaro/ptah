@@ -15,7 +15,6 @@ import (
 )
 
 func TestResolveApplyDir_AtlasFormatReadsDirectoryUnchanged(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name       string
@@ -42,10 +41,11 @@ func TestResolveApplyDir_AtlasFormatReadsDirectoryUnchanged(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			dir := c.TempDir()
-			writeFormatFile(c, dir, "1_init.sql", "CREATE TABLE atlas_unchanged (id INTEGER PRIMARY KEY);\n")
-			writeFormatFile(c, dir, "1_init.down.sql", "DROP TABLE atlas_unchanged;\n")
+			writeFormatFile(c.TB, dir, "1_init.sql", "CREATE TABLE atlas_unchanged (id INTEGER PRIMARY KEY);\n")
+			writeFormatFile(c.TB, dir, "1_init.down.sql", "DROP TABLE atlas_unchanged;\n")
 
 			gotFS, err := resolveApplySource(
 				os.DirFS(dir),
@@ -55,17 +55,16 @@ func TestResolveApplyDir_AtlasFormatReadsDirectoryUnchanged(t *testing.T) {
 			)
 
 			c.Assert(err, qt.IsNil)
-			writeFormatFile(c, dir, "1_init.sql", "CREATE TABLE changed_after_capture (id INTEGER PRIMARY KEY);\n")
+			writeFormatFile(c.TB, dir, "1_init.sql", "CREATE TABLE changed_after_capture (id INTEGER PRIMARY KEY);\n")
 			// The Atlas snapshot preserves both the byte-for-byte up file and
 			// the accompanying down file after the source changes.
-			c.Assert(readFSFile(c, gotFS, "1_init.sql"), qt.Equals, "CREATE TABLE atlas_unchanged (id INTEGER PRIMARY KEY);\n")
-			c.Assert(readFSFile(c, gotFS, "1_init.down.sql"), qt.Equals, "DROP TABLE atlas_unchanged;\n")
+			c.Assert(readFSFile(c.TB, gotFS, "1_init.sql"), qt.Equals, "CREATE TABLE atlas_unchanged (id INTEGER PRIMARY KEY);\n")
+			c.Assert(readFSFile(c.TB, gotFS, "1_init.down.sql"), qt.Equals, "DROP TABLE atlas_unchanged;\n")
 		})
 	}
 }
 
 func TestResolveApplyDir_ConvertsExternalFormatsToUpOnly(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name       string
@@ -162,9 +161,10 @@ func TestResolveApplyDir_ConvertsExternalFormatsToUpOnly(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			dir := c.TempDir()
-			writeFormatFile(c, dir, tt.file, tt.source)
+			writeFormatFile(c.TB, dir, tt.file, tt.source)
 
 			gotFS, err := resolveApplySource(
 				os.DirFS(dir),
@@ -174,16 +174,15 @@ func TestResolveApplyDir_ConvertsExternalFormatsToUpOnly(t *testing.T) {
 			)
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(readFSFile(c, gotFS, tt.wantFile), qt.Equals, tt.wantSQL)
+			c.Assert(readFSFile(c.TB, gotFS, tt.wantFile), qt.Equals, tt.wantSQL)
 			// The original source file name is not carried into the converted
 			// filesystem when it differs from the Atlas single-file name.
-			c.Assert(fsFileNames(c, gotFS), qt.DeepEquals, []string{tt.wantFile})
+			c.Assert(fsFileNames(c.TB, gotFS), qt.DeepEquals, []string{tt.wantFile})
 		})
 	}
 }
 
 func TestResolveApplyDir_FailurePath(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name       string
@@ -233,7 +232,8 @@ func TestResolveApplyDir_FailurePath(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			dir := c.TempDir()
 			gotFS, err := resolveApplySource(
 				os.DirFS(dir),
@@ -249,12 +249,12 @@ func TestResolveApplyDir_FailurePath(t *testing.T) {
 }
 
 func TestResolveApplyDir_RejectsUnexecutableAndEmptyDirectories(t *testing.T) {
-	c := qt.New(t)
 
-	c.Run("flyway migrations sharing one Atlas version", func(c *qt.C) {
+	t.Run("flyway migrations sharing one Atlas version", func(t *testing.T) {
+		c := qt.New(t)
 		dir := c.TempDir()
-		writeFormatFile(c, dir, "V1__a.sql", "CREATE TABLE a (id int);\n")
-		writeFormatFile(c, dir, "V1__b.sql", "CREATE TABLE b (id int);\n")
+		writeFormatFile(c.TB, dir, "V1__a.sql", "CREATE TABLE a (id int);\n")
+		writeFormatFile(c.TB, dir, "V1__b.sql", "CREATE TABLE b (id int);\n")
 
 		gotFS, err := resolveApplySource(os.DirFS(dir), dir, "flyway", nil)
 
@@ -269,9 +269,10 @@ func TestResolveApplyDir_RejectsUnexecutableAndEmptyDirectories(t *testing.T) {
 	// here would silently skip a migration rather than diverge loudly. Its twin,
 	// the empty covered set that now converts cleanly, is
 	// TestResolveApplyDir_EmptyCoveredSetConvertsToNothingToExecute.
-	c.Run("non-empty covered set the converter cannot read", func(c *qt.C) {
+	t.Run("non-empty covered set the converter cannot read", func(t *testing.T) {
+		c := qt.New(t)
 		dir := c.TempDir()
-		writeFormatFile(c, dir, "foo.sql", "CREATE TABLE foo (id int);\n")
+		writeFormatFile(c.TB, dir, "foo.sql", "CREATE TABLE foo (id int);\n")
 
 		gotFS, err := resolveApplySource(os.DirFS(dir), dir, "goose", nil)
 
@@ -279,10 +280,11 @@ func TestResolveApplyDir_RejectsUnexecutableAndEmptyDirectories(t *testing.T) {
 		c.Assert(gotFS, qt.DeepEquals, fsnapshot.Snapshot{})
 	})
 
-	c.Run("Go-based Goose migration", func(c *qt.C) {
+	t.Run("Go-based Goose migration", func(t *testing.T) {
+		c := qt.New(t)
 		dir := c.TempDir()
-		writeFormatFile(c, dir, "1_init.sql", "-- +goose Up\nCREATE TABLE users (id int);\n")
-		writeFormatFile(c, dir, "2_seed.go", "package migrations\n")
+		writeFormatFile(c.TB, dir, "1_init.sql", "-- +goose Up\nCREATE TABLE users (id int);\n")
+		writeFormatFile(c.TB, dir, "2_seed.go", "package migrations\n")
 
 		gotFS, err := resolveApplySource(os.DirFS(dir), dir, "goose", nil)
 
@@ -290,10 +292,11 @@ func TestResolveApplyDir_RejectsUnexecutableAndEmptyDirectories(t *testing.T) {
 		c.Assert(gotFS, qt.DeepEquals, fsnapshot.Snapshot{})
 	})
 
-	c.Run("Liquibase XML changelog", func(c *qt.C) {
+	t.Run("Liquibase XML changelog", func(t *testing.T) {
+		c := qt.New(t)
 		dir := c.TempDir()
-		writeFormatFile(c, dir, "1_init.sql", "--liquibase formatted sql\n--changeset ptah:1\nCREATE TABLE users (id int);\n")
-		writeFormatFile(c, dir, "changelog.xml", "<databaseChangeLog></databaseChangeLog>\n")
+		writeFormatFile(c.TB, dir, "1_init.sql", "--liquibase formatted sql\n--changeset ptah:1\nCREATE TABLE users (id int);\n")
+		writeFormatFile(c.TB, dir, "changelog.xml", "<databaseChangeLog></databaseChangeLog>\n")
 
 		gotFS, err := resolveApplySource(os.DirFS(dir), dir, "liquibase", nil)
 
@@ -333,10 +336,10 @@ func applyDirFormatCases() []struct {
 // makes (stokaro/ptah#970): the executed filesystem and the integrity gate both
 // consume this one value.
 func TestResolveApplyDirFormat(t *testing.T) {
-	c := qt.New(t)
 
 	for _, tt := range applyDirFormatCases() {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			got, err := atlasmigrate.ResolveApplyDirFormat(tt.configured, tt.query)
 
 			c.Assert(err, qt.IsNil)
@@ -347,7 +350,8 @@ func TestResolveApplyDirFormat(t *testing.T) {
 		})
 	}
 
-	c.Run("unknown format reports the resolve error", func(c *qt.C) {
+	t.Run("unknown format reports the resolve error", func(t *testing.T) {
+		c := qt.New(t)
 		got, err := atlasmigrate.ResolveApplyDirFormat("sqitch", nil)
 		var unknownFormat *atlasmigrate.UnknownDirFormatError
 
@@ -369,7 +373,6 @@ func TestResolveApplyDirFormat(t *testing.T) {
 // is still a key that selected the layout — first-one-wins loses a VALUE, not
 // the key (stokaro/ptah#990).
 func TestIgnoredDirQueryKeys(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name  string
@@ -407,7 +410,8 @@ func TestIgnoredDirQueryKeys(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			got := atlasmigrate.IgnoredDirQueryKeys(tt.query)
 
 			c.Assert(got, qt.DeepEquals, tt.want)
@@ -428,12 +432,12 @@ func TestIgnoredDirQueryKeys(t *testing.T) {
 // the gate ever stops seeing the ?format= override (it would then verify
 // atlas.sum against a converted filesystem that has none and refuse).
 func TestResolveApplySourceForFormatReadsEachFormat(t *testing.T) {
-	c := qt.New(t)
 
 	for _, tt := range applyDirFormatCases() {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			dir := c.TempDir()
-			writeSeamFixture(c, dir, tt.format)
+			writeSeamFixture(c.TB, dir, tt.format)
 
 			format, err := atlasmigrate.ResolveApplyDirFormat(tt.configured, tt.query)
 			c.Assert(err, qt.IsNil)
@@ -441,7 +445,7 @@ func TestResolveApplySourceForFormatReadsEachFormat(t *testing.T) {
 			got, err := atlasmigrate.ResolveApplySourceForFormat(os.DirFS(dir), dir, format)
 
 			c.Assert(err, qt.IsNil)
-			names := fsFileNames(c, got)
+			names := fsFileNames(c.TB, got)
 			c.Assert(len(names) > 0, qt.IsTrue)
 			// Every format is rebuilt as up-only Atlas migrations, so a
 			// golang-migrate down file never survives into what gets executed.
@@ -449,7 +453,7 @@ func TestResolveApplySourceForFormatReadsEachFormat(t *testing.T) {
 			// true elsewhere and load-bearing for golang-migrate.
 			c.Assert(names, qt.Not(qt.Contains), "1_init.down.sql")
 			for _, name := range names {
-				c.Assert(readFSFile(c, got, name), qt.Not(qt.Equals), "")
+				c.Assert(readFSFile(c.TB, got, name), qt.Not(qt.Equals), "")
 			}
 		})
 	}
@@ -473,38 +477,42 @@ func resolveApplySource(
 }
 
 // writeSeamFixture writes the minimal directory the named format can read.
-func writeSeamFixture(c *qt.C, dir, format string) {
+func writeSeamFixture(tb testing.TB, dir, format string) {
+	c := qt.New(tb)
 	c.Helper()
 	switch format {
 	case "goose":
-		writeFormatFile(c, dir, "1_init.sql", "-- +goose Up\nCREATE TABLE seam (id int);\n")
+		writeFormatFile(c.TB, dir, "1_init.sql", "-- +goose Up\nCREATE TABLE seam (id int);\n")
 	case "dbmate":
-		writeFormatFile(c, dir, "1_init.sql", "-- migrate:up\nCREATE TABLE seam (id int);\n")
+		writeFormatFile(c.TB, dir, "1_init.sql", "-- migrate:up\nCREATE TABLE seam (id int);\n")
 	case "liquibase":
-		writeFormatFile(c, dir, "1_init.sql", "--liquibase formatted sql\n--changeset app:1\nCREATE TABLE seam (id int);\n")
+		writeFormatFile(c.TB, dir, "1_init.sql", "--liquibase formatted sql\n--changeset app:1\nCREATE TABLE seam (id int);\n")
 	case "flyway":
-		writeFormatFile(c, dir, "V1__init.sql", "CREATE TABLE seam (id int);\n")
+		writeFormatFile(c.TB, dir, "V1__init.sql", "CREATE TABLE seam (id int);\n")
 	case "golang-migrate":
-		writeFormatFile(c, dir, "1_init.up.sql", "CREATE TABLE seam (id int);\n")
-		writeFormatFile(c, dir, "1_init.down.sql", "DROP TABLE seam;\n")
+		writeFormatFile(c.TB, dir, "1_init.up.sql", "CREATE TABLE seam (id int);\n")
+		writeFormatFile(c.TB, dir, "1_init.down.sql", "DROP TABLE seam;\n")
 	default:
-		writeFormatFile(c, dir, "1_init.sql", "CREATE TABLE seam (id int);\n")
+		writeFormatFile(c.TB, dir, "1_init.sql", "CREATE TABLE seam (id int);\n")
 	}
 }
 
-func writeFormatFile(c *qt.C, dir, name, content string) {
+func writeFormatFile(tb testing.TB, dir, name, content string) {
+	c := qt.New(tb)
 	c.Helper()
 	c.Assert(os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600), qt.IsNil)
 }
 
-func readFSFile(c *qt.C, fsys fs.FS, name string) string {
+func readFSFile(tb testing.TB, fsys fs.FS, name string) string {
+	c := qt.New(tb)
 	c.Helper()
 	data, err := fs.ReadFile(fsys, name)
 	c.Assert(err, qt.IsNil)
 	return string(data)
 }
 
-func fsFileNames(c *qt.C, fsys fs.FS) []string {
+func fsFileNames(tb testing.TB, fsys fs.FS) []string {
+	c := qt.New(tb)
 	c.Helper()
 	entries, err := fs.ReadDir(fsys, ".")
 	c.Assert(err, qt.IsNil)

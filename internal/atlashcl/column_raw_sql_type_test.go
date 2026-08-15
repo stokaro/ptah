@@ -24,7 +24,6 @@ import (
 // TypeRawSQL being false while Type stays correct -- the exact split that made
 // issue #1138 look like a rendering bug rather than a parsing one.
 func TestParseMarksSQLRawExpressionColumnTypes(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name       string
@@ -137,7 +136,8 @@ table "t" {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			db, err := atlashcl.Parse([]byte(test.hcl), "schema.hcl")
 			c.Assert(err, qt.IsNil)
 			c.Assert(db.Fields, qt.HasLen, 1)

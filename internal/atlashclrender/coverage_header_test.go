@@ -34,7 +34,6 @@ import (
 // is in the table for that reason -- recording only what this render happened
 // to omit would leave a document that asserts authority it does not have.
 func TestCompatibilityRenderDeclaresWhatItDoesNotDescribe(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name string
@@ -45,7 +44,8 @@ func TestCompatibilityRenderDeclaresWhatItDoesNotDescribe(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			result, err := atlashclrender.RenderInspectedForAtlasCLI(
 				test.db(), platform.Postgres, "public",
 			)
@@ -68,7 +68,6 @@ func TestCompatibilityRenderDeclaresWhatItDoesNotDescribe(t *testing.T) {
 // claims everything, and a removal a native document asks for is still a
 // removal.
 func TestNativeRenderDeclaresNoLimits(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name   string
@@ -89,7 +88,8 @@ func TestNativeRenderDeclaresNoLimits(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			result, err := test.render()
 
 			c.Assert(err, qt.IsNil)

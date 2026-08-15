@@ -18,8 +18,8 @@ import (
 func TestResolve_LocalDirectory(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
-	writeFile(c, filepath.Join(dir, "0000000001_create_users.up.sql"), "CREATE TABLE users (id INTEGER);\n")
-	writeFile(c, filepath.Join(dir, "README.md"), "not a migration input\n")
+	writeFile(c.TB, filepath.Join(dir, "0000000001_create_users.up.sql"), "CREATE TABLE users (id INTEGER);\n")
+	writeFile(c.TB, filepath.Join(dir, "README.md"), "not a migration input\n")
 
 	source, err := migrationsource.Resolve(context.Background(), dir, migrationsource.Options{
 		DirFormat: migrator.MigrationDirFormatPtah,
@@ -69,9 +69,9 @@ func TestCaptureLocal_SnapshotIgnoresLaterPathAndFileChanges(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, "migrations")
 	c.Assert(os.Mkdir(dir, 0o700), qt.IsNil)
-	writeFile(c, filepath.Join(dir, "1_init.sql"), "CREATE TABLE original (id INTEGER);\n")
-	writeFile(c, filepath.Join(dir, "1_init.down.sql"), "DROP TABLE original;\n")
-	writeFile(c, filepath.Join(dir, "atlas.sum"), "h1:original\n")
+	writeFile(c.TB, filepath.Join(dir, "1_init.sql"), "CREATE TABLE original (id INTEGER);\n")
+	writeFile(c.TB, filepath.Join(dir, "1_init.down.sql"), "DROP TABLE original;\n")
+	writeFile(c.TB, filepath.Join(dir, "atlas.sum"), "h1:original\n")
 
 	source, err := migrationsource.CaptureLocal(
 		dir,
@@ -85,7 +85,7 @@ func TestCaptureLocal_SnapshotIgnoresLaterPathAndFileChanges(t *testing.T) {
 	)
 	c.Assert(os.Rename(dir, filepath.Join(root, "captured")), qt.IsNil)
 	c.Assert(os.Mkdir(dir, 0o700), qt.IsNil)
-	writeFile(c, filepath.Join(dir, "1_init.sql"), "CREATE TABLE replacement (id INTEGER);\n")
+	writeFile(c.TB, filepath.Join(dir, "1_init.sql"), "CREATE TABLE replacement (id INTEGER);\n")
 
 	up, err := fs.ReadFile(source.FileSystem, "1_init.sql")
 	c.Assert(err, qt.IsNil)
@@ -103,7 +103,7 @@ func TestCaptureLocal_ExecutionUsesCapturedBytesAfterPathReplacement(t *testing.
 	root := t.TempDir()
 	dir := filepath.Join(root, "migrations")
 	c.Assert(os.Mkdir(dir, 0o700), qt.IsNil)
-	writeFile(c, filepath.Join(dir, "1_init.sql"), "CREATE TABLE captured_input (id INTEGER PRIMARY KEY);\n")
+	writeFile(c.TB, filepath.Join(dir, "1_init.sql"), "CREATE TABLE captured_input (id INTEGER PRIMARY KEY);\n")
 
 	source, err := migrationsource.CaptureLocal(
 		dir,
@@ -113,7 +113,7 @@ func TestCaptureLocal_ExecutionUsesCapturedBytesAfterPathReplacement(t *testing.
 
 	c.Assert(os.Rename(dir, filepath.Join(root, "captured")), qt.IsNil)
 	c.Assert(os.Mkdir(dir, 0o700), qt.IsNil)
-	writeFile(c, filepath.Join(dir, "1_init.sql"), "CREATE TABLE replacement_input (id INTEGER PRIMARY KEY);\n")
+	writeFile(c.TB, filepath.Join(dir, "1_init.sql"), "CREATE TABLE replacement_input (id INTEGER PRIMARY KEY);\n")
 
 	conn, err := dbschema.ConnectToDatabase(c.Context(), "sqlite://"+filepath.Join(root, "apply.db"))
 	c.Assert(err, qt.IsNil)
@@ -132,11 +132,12 @@ func TestCaptureLocal_ExecutionUsesCapturedBytesAfterPathReplacement(t *testing.
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.Applied, qt.IsTrue)
-	c.Assert(sqliteTableCount(c, conn, "captured_input"), qt.Equals, 1)
-	c.Assert(sqliteTableCount(c, conn, "replacement_input"), qt.Equals, 0)
+	c.Assert(sqliteTableCount(c.TB, conn, "captured_input"), qt.Equals, 1)
+	c.Assert(sqliteTableCount(c.TB, conn, "replacement_input"), qt.Equals, 0)
 }
 
-func sqliteTableCount(c *qt.C, conn *dbschema.DatabaseConnection, table string) int {
+func sqliteTableCount(tb testing.TB, conn *dbschema.DatabaseConnection, table string) int {
+	c := qt.New(tb)
 	c.Helper()
 	var count int
 	err := conn.QueryRowContext(
@@ -148,7 +149,8 @@ func sqliteTableCount(c *qt.C, conn *dbschema.DatabaseConnection, table string) 
 	return count
 }
 
-func writeFile(c *qt.C, path, contents string) {
+func writeFile(tb testing.TB, path, contents string) {
+	c := qt.New(tb)
 	c.Helper()
 	err := os.WriteFile(path, []byte(contents), 0o600)
 	c.Assert(err, qt.IsNil)

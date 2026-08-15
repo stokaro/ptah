@@ -16,7 +16,7 @@ func TestParseSequenceAnnotation_AllOptions(t *testing.T) {
 type OrderSeq struct{}
 `
 	c := qt.New(t)
-	db := mustParseSource(c, "fixture.go", src)
+	db := mustParseSource(c.TB, "fixture.go", src)
 	c.Assert(db.Sequences, qt.HasLen, 1)
 	seq := db.Sequences[0]
 	c.Assert(seq.Name, qt.Equals, "order_seq")
@@ -40,7 +40,7 @@ func TestParseSequenceAnnotation_MinimalLeavesOptionsUnset(t *testing.T) {
 type S struct{}
 `
 	c := qt.New(t)
-	db := mustParseSource(c, "fixture.go", src)
+	db := mustParseSource(c.TB, "fixture.go", src)
 	c.Assert(db.Sequences, qt.HasLen, 1)
 	seq := db.Sequences[0]
 	c.Assert(seq.Name, qt.Equals, "s")
@@ -99,7 +99,7 @@ func TestParseSequenceAnnotation_TypeAliasNormalized(t *testing.T) {
 type S struct{}
 `
 	c := qt.New(t)
-	db := mustParseSource(c, "fixture.go", src)
+	db := mustParseSource(c.TB, "fixture.go", src)
 	c.Assert(db.Sequences, qt.HasLen, 1)
 	c.Assert(db.Sequences[0].AsType, qt.Equals, "bigint") // int8 canonicalized
 }
@@ -125,7 +125,7 @@ func TestParseGrantOnSequence(t *testing.T) {
 type Access struct{}
 `
 	c := qt.New(t)
-	db := mustParseSource(c, "fixture.go", src)
+	db := mustParseSource(c.TB, "fixture.go", src)
 	c.Assert(db.Grants, qt.HasLen, 1)
 	grant := db.Grants[0]
 	c.Assert(grant.OnSequence, qt.Equals, "order_seq")

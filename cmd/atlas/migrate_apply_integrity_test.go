@@ -26,27 +26,29 @@ const compatCheckpointVersion = "20260801100335"
 // writeCompatCheckpointDir writes the measured fixture layout: two
 // pre-checkpoint migrations and a single-statement checkpoint, hashed with
 // atlas.sum.
-func writeCompatCheckpointDir(c *qt.C, dir string) {
+func writeCompatCheckpointDir(tb testing.TB, dir string) {
+	c := qt.New(tb)
 	c.Helper()
-	writeAtlasApplyProjectMigration(c, dir, "20250801000001_create_users.sql",
+	writeAtlasApplyProjectMigration(c.TB, dir, "20250801000001_create_users.sql",
 		"-- create \"users\" table\nCREATE TABLE `users` (\n  `id` integer NOT NULL PRIMARY KEY AUTOINCREMENT,\n  `name` text NOT NULL\n);\n")
-	writeAtlasApplyProjectMigration(c, dir, "20250801000002_add_email.sql",
+	writeAtlasApplyProjectMigration(c.TB, dir, "20250801000002_add_email.sql",
 		"-- add \"email\" column to \"users\"\nALTER TABLE `users` ADD COLUMN `email` text NULL;\n")
-	writeAtlasApplyProjectMigration(c, dir, "20260801100335_checkpoint.sql",
+	writeAtlasApplyProjectMigration(c.TB, dir, "20260801100335_checkpoint.sql",
 		"-- atlas:checkpoint\n\n-- Create \"users\" table\nCREATE TABLE `users` (\n  `id` integer NOT NULL PRIMARY KEY AUTOINCREMENT,\n  `name` text NOT NULL,\n  `email` text NULL\n);\n")
-	writeAtlasApplyProjectSum(c, dir)
+	writeAtlasApplyProjectSum(c.TB, dir)
 }
 
 // writeCompatPreCheckpointDir writes only the pre-checkpoint half of the
 // fixture, hashed, for seeding a database that migrated before the checkpoint
 // was cut.
-func writeCompatPreCheckpointDir(c *qt.C, dir string) {
+func writeCompatPreCheckpointDir(tb testing.TB, dir string) {
+	c := qt.New(tb)
 	c.Helper()
-	writeAtlasApplyProjectMigration(c, dir, "20250801000001_create_users.sql",
+	writeAtlasApplyProjectMigration(c.TB, dir, "20250801000001_create_users.sql",
 		"-- create \"users\" table\nCREATE TABLE `users` (\n  `id` integer NOT NULL PRIMARY KEY AUTOINCREMENT,\n  `name` text NOT NULL\n);\n")
-	writeAtlasApplyProjectMigration(c, dir, "20250801000002_add_email.sql",
+	writeAtlasApplyProjectMigration(c.TB, dir, "20250801000002_add_email.sql",
 		"-- add \"email\" column to \"users\"\nALTER TABLE `users` ADD COLUMN `email` text NULL;\n")
-	writeAtlasApplyProjectSum(c, dir)
+	writeAtlasApplyProjectSum(c.TB, dir)
 }
 
 func runCompat(args ...string) (stdout, stderr string, err error) {
@@ -71,7 +73,8 @@ type compatRevisionRow struct {
 	Total       int64
 }
 
-func compatRevisionRows(c *qt.C, dbPath string) []compatRevisionRow {
+func compatRevisionRows(tb testing.TB, dbPath string) []compatRevisionRow {
+	c := qt.New(tb)
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)
 	c.Assert(err, qt.IsNil)
@@ -92,7 +95,7 @@ func compatRevisionRows(c *qt.C, dbPath string) []compatRevisionRow {
 func TestCompatMigrateApply_CheckpointFreshDatabase(t *testing.T) {
 	c := qt.New(t)
 	dir := filepath.Join(c.TempDir(), "m")
-	writeCompatCheckpointDir(c, dir)
+	writeCompatCheckpointDir(c.TB, dir)
 	dbPath := filepath.Join(c.TempDir(), "fresh.db")
 
 	stdout, _, err := compatApply(dir, dbPath)
@@ -101,11 +104,11 @@ func TestCompatMigrateApply_CheckpointFreshDatabase(t *testing.T) {
 	// Measured Atlas: "Migrating to version 20260801100335 (1 migrations in
 	// total)" — only the checkpoint runs on a fresh database.
 	c.Assert(stdout, qt.Contains, "Migrating to version "+compatCheckpointVersion+" from 1 pending migrations.")
-	c.Assert(sqliteTableCount(c, dbPath, "users"), qt.Equals, 1)
+	c.Assert(sqliteTableCount(c.TB, dbPath, "users"), qt.Equals, 1)
 
 	// Measured revision row: `20260801100335|checkpoint|2|1|1`, and nothing
 	// recorded for the squashed pre-checkpoint files.
-	c.Assert(compatRevisionRows(c, dbPath), qt.DeepEquals, []compatRevisionRow{
+	c.Assert(compatRevisionRows(c.TB, dbPath), qt.DeepEquals, []compatRevisionRow{
 		{Version: compatCheckpointVersion, Description: "checkpoint", Type: 2, Applied: 1, Total: 1},
 	})
 
@@ -119,15 +122,15 @@ func TestCompatMigrateApply_CheckpointPreCheckpointDatabaseSkips(t *testing.T) {
 	c := qt.New(t)
 	tempDir := c.TempDir()
 	preDir := filepath.Join(tempDir, "m_pre")
-	writeCompatPreCheckpointDir(c, preDir)
+	writeCompatPreCheckpointDir(c.TB, preDir)
 	fullDir := filepath.Join(tempDir, "m")
-	writeCompatCheckpointDir(c, fullDir)
+	writeCompatCheckpointDir(c.TB, fullDir)
 	dbPath := filepath.Join(tempDir, "pre.db")
 
 	// Seed through ordinary pre-checkpoint history.
 	stdout, _, err := compatApply(preDir, dbPath)
 	c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", stdout))
-	seeded := compatRevisionRows(c, dbPath)
+	seeded := compatRevisionRows(c.TB, dbPath)
 	c.Assert(seeded, qt.HasLen, 2)
 
 	// Measured Atlas on the checkpointed directory: "No migration files to
@@ -135,7 +138,7 @@ func TestCompatMigrateApply_CheckpointPreCheckpointDatabaseSkips(t *testing.T) {
 	stdout, _, err = compatApply(fullDir, dbPath)
 	c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", stdout))
 	c.Assert(stdout, qt.Contains, "No migration files to execute")
-	c.Assert(compatRevisionRows(c, dbPath), qt.DeepEquals, seeded)
+	c.Assert(compatRevisionRows(c.TB, dbPath), qt.DeepEquals, seeded)
 
 	statusOut, _, err := runCompat("migrate", "status", "--url", "sqlite://"+dbPath, "--dir", "file://"+fullDir)
 	c.Assert(err, qt.IsNil, qt.Commentf("status output:\n%s", statusOut))
@@ -143,7 +146,8 @@ func TestCompatMigrateApply_CheckpointPreCheckpointDatabaseSkips(t *testing.T) {
 	c.Assert(statusOut, qt.Contains, "Migration Status: OK")
 }
 
-func tamperCompatCheckpointFile(c *qt.C, dir string) {
+func tamperCompatCheckpointFile(tb testing.TB, dir string) {
+	c := qt.New(tb)
 	c.Helper()
 	path := filepath.Join(dir, "20260801100335_checkpoint.sql")
 	file, err := os.OpenFile(path, os.O_APPEND|os.O_WRONLY, 0o600)
@@ -157,8 +161,8 @@ func TestCompatMigrateApply_TamperedDirRefusesBeforeExecution(t *testing.T) {
 	c := qt.New(t)
 	tempDir := c.TempDir()
 	dir := filepath.Join(tempDir, "m_tampered")
-	writeCompatCheckpointDir(c, dir)
-	tamperCompatCheckpointFile(c, dir)
+	writeCompatCheckpointDir(c.TB, dir)
+	tamperCompatCheckpointFile(c.TB, dir)
 	dbPath := filepath.Join(tempDir, "tamper.db")
 
 	stdout, stderr, err := compatApply(dir, dbPath)
@@ -182,8 +186,8 @@ func TestCompatMigrateApply_TamperedDirMatchesValidateOutput(t *testing.T) {
 	c := qt.New(t)
 	tempDir := c.TempDir()
 	dir := filepath.Join(tempDir, "m_tampered")
-	writeCompatCheckpointDir(c, dir)
-	tamperCompatCheckpointFile(c, dir)
+	writeCompatCheckpointDir(c.TB, dir)
+	tamperCompatCheckpointFile(c.TB, dir)
 
 	applyOut, applyErrOut, applyErr := compatApply(dir, filepath.Join(tempDir, "tamper.db"))
 	validateOut, validateErrOut, validateErr := runCompat("migrate", "validate", "--dir", "file://"+dir)
@@ -199,9 +203,10 @@ func TestCompatMigrateApply_TamperedDirMatchesValidateOutput(t *testing.T) {
 
 // writeCompatUnhashedDir writes a directory that was never hashed: one Atlas
 // migration and no atlas.sum.
-func writeCompatUnhashedDir(c *qt.C, dir string) {
+func writeCompatUnhashedDir(tb testing.TB, dir string) {
+	c := qt.New(tb)
 	c.Helper()
-	writeAtlasApplyProjectMigration(c, dir, "1_create_widgets.sql",
+	writeAtlasApplyProjectMigration(c.TB, dir, "1_create_widgets.sql",
 		"CREATE TABLE widgets (id INTEGER PRIMARY KEY);\n")
 }
 
@@ -209,7 +214,7 @@ func TestCompatMigrateApply_UnhashedDirRefusesBeforeExecution(t *testing.T) {
 	c := qt.New(t)
 	tempDir := c.TempDir()
 	dir := filepath.Join(tempDir, "m_unhashed")
-	writeCompatUnhashedDir(c, dir)
+	writeCompatUnhashedDir(c.TB, dir)
 	dbPath := filepath.Join(tempDir, "unhashed.db")
 
 	stdout, stderr, err := compatApply(dir, dbPath)
@@ -233,7 +238,7 @@ func TestCompatMigrateApply_UnhashedDirRefusesDryRun(t *testing.T) {
 	c := qt.New(t)
 	tempDir := c.TempDir()
 	dir := filepath.Join(tempDir, "m_unhashed")
-	writeCompatUnhashedDir(c, dir)
+	writeCompatUnhashedDir(c.TB, dir)
 	dbPath := filepath.Join(tempDir, "unhashed-dry-run.db")
 
 	// The gate precedes the dry-run branch, so a dry run is refused too and
@@ -255,7 +260,7 @@ func TestCompatMigrateApply_UnhashedDirMatchesValidateOutput(t *testing.T) {
 	c := qt.New(t)
 	tempDir := c.TempDir()
 	dir := filepath.Join(tempDir, "m_unhashed")
-	writeCompatUnhashedDir(c, dir)
+	writeCompatUnhashedDir(c.TB, dir)
 
 	applyOut, applyErrOut, applyErr := compatApply(dir, filepath.Join(tempDir, "unhashed.db"))
 	validateOut, validateErrOut, validateErr := runCompat("migrate", "validate", "--dir", "file://"+dir)
@@ -321,7 +326,7 @@ func TestCompatMigrateApply_UnhashedDirWithNonVersionedSQLRefuses(t *testing.T) 
 	c := qt.New(t)
 	tempDir := c.TempDir()
 	dir := filepath.Join(tempDir, "m_foo")
-	writeAtlasApplyProjectMigration(c, dir, "foo.sql", "CREATE TABLE foo (id INTEGER PRIMARY KEY);\n")
+	writeAtlasApplyProjectMigration(c.TB, dir, "foo.sql", "CREATE TABLE foo (id INTEGER PRIMARY KEY);\n")
 	dbPath := filepath.Join(tempDir, "foo.db")
 
 	_, stderr, err := compatApply(dir, dbPath)
@@ -384,7 +389,7 @@ func TestCompatMigrateApply_UnhashedDirWithNestedSQLIsNothingToExecute(t *testin
 			c.Assert(stderr, qt.Equals,
 				"warning: sub/20260801100335_init.sql is not covered by atlas.sum and will not run; "+
 					"Atlas migrations are top-level files named *.sql\n")
-			c.Assert(sqliteTableCount(c, dbPath, "nested"), qt.Equals, 0)
+			c.Assert(sqliteTableCount(c.TB, dbPath, "nested"), qt.Equals, 0)
 		})
 	}
 }
@@ -393,11 +398,11 @@ func TestCompatMigrateApply_ValidHashedDirApplies(t *testing.T) {
 	c := qt.New(t)
 	tempDir := c.TempDir()
 	dir := filepath.Join(tempDir, "m_valid")
-	writeCompatCheckpointDir(c, dir)
+	writeCompatCheckpointDir(c.TB, dir)
 	dbPath := filepath.Join(tempDir, "valid.db")
 
 	stdout, _, err := compatApply(dir, dbPath)
 
 	c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", stdout))
-	c.Assert(sqliteTableCount(c, dbPath, "users"), qt.Equals, 1)
+	c.Assert(sqliteTableCount(c.TB, dbPath, "users"), qt.Equals, 1)
 }

@@ -49,12 +49,12 @@ func TestCompatMigrateDirDefaults(t *testing.T) {
 			// #1241 item 2. The headline row.
 			name: "apply defaults to file://migrations",
 			setup: func(c *qt.C, root string) {
-				writeHashedAtlasDir(c, filepath.Join(root, "migrations"), "20240101000000_init.sql", migrationSQL)
+				writeHashedAtlasDir(c.TB, filepath.Join(root, "migrations"), "20240101000000_init.sql", migrationSQL)
 			},
 			args: []string{"migrate", "apply", "--url", "sqlite://local.db?_fk=1"},
 			assert: func(c *qt.C, root string, err error, output string) {
 				c.Assert(err, qt.IsNil, qt.Commentf("%s", output))
-				assertSQLiteTablePresent(c, filepath.Join(root, "local.db"), "wanted")
+				assertSQLiteTablePresent(c.TB, filepath.Join(root, "local.db"), "wanted")
 			},
 		},
 		{
@@ -73,7 +73,7 @@ func TestCompatMigrateDirDefaults(t *testing.T) {
 				// verb that never had a directory to look for.
 				c.Assert(err.Error(), qt.Contains, "open migrations directory")
 				c.Assert(err.Error(), qt.Contains, "no such file or directory")
-				assertPathAbsent(c, filepath.Join(root, "migrations"))
+				assertPathAbsent(c.TB, filepath.Join(root, "migrations"))
 			},
 		},
 		{
@@ -82,14 +82,14 @@ func TestCompatMigrateDirDefaults(t *testing.T) {
 			// create the wrong table rather than failing visibly.
 			name: "apply --dir overrides the default",
 			setup: func(c *qt.C, root string) {
-				writeHashedAtlasDir(c, filepath.Join(root, "migrations"), "20240101000000_decoy.sql", decoySQL)
-				writeHashedAtlasDir(c, filepath.Join(root, "elsewhere"), "20240101000000_init.sql", migrationSQL)
+				writeHashedAtlasDir(c.TB, filepath.Join(root, "migrations"), "20240101000000_decoy.sql", decoySQL)
+				writeHashedAtlasDir(c.TB, filepath.Join(root, "elsewhere"), "20240101000000_init.sql", migrationSQL)
 			},
 			args: []string{"migrate", "apply", "--url", "sqlite://local.db?_fk=1", "--dir", "file://elsewhere"},
 			assert: func(c *qt.C, root string, err error, output string) {
 				c.Assert(err, qt.IsNil, qt.Commentf("%s", output))
-				assertSQLiteTablePresent(c, filepath.Join(root, "local.db"), "wanted")
-				assertSQLiteTableAbsent(c, filepath.Join(root, "local.db"), "decoy")
+				assertSQLiteTablePresent(c.TB, filepath.Join(root, "local.db"), "wanted")
+				assertSQLiteTableAbsent(c.TB, filepath.Join(root, "local.db"), "decoy")
 			},
 		},
 		{
@@ -97,13 +97,13 @@ func TestCompatMigrateDirDefaults(t *testing.T) {
 			// does; a fallback would apply the wrong directory and exit 0.
 			name: "apply --dir typo does not fall back to the default",
 			setup: func(c *qt.C, root string) {
-				writeHashedAtlasDir(c, filepath.Join(root, "migrations"), "20240101000000_decoy.sql", decoySQL)
+				writeHashedAtlasDir(c.TB, filepath.Join(root, "migrations"), "20240101000000_decoy.sql", decoySQL)
 			},
 			args: []string{"migrate", "apply", "--url", "sqlite://local.db?_fk=1", "--dir", "file://migrtions"},
 			assert: func(c *qt.C, root string, err error, output string) {
 				c.Assert(err, qt.IsNotNil, qt.Commentf("%s", output))
 				c.Assert(err.Error(), qt.Contains, "migrtions")
-				assertSQLiteTableAbsent(c, filepath.Join(root, "local.db"), "decoy")
+				assertSQLiteTableAbsent(c.TB, filepath.Join(root, "local.db"), "decoy")
 			},
 		},
 		{
@@ -113,7 +113,7 @@ func TestCompatMigrateDirDefaults(t *testing.T) {
 			name: "apply default directory is still checksum gated",
 			setup: func(c *qt.C, root string) {
 				dir := filepath.Join(root, "migrations")
-				writeHashedAtlasDir(c, dir, "20240101000000_init.sql", migrationSQL)
+				writeHashedAtlasDir(c.TB, dir, "20240101000000_init.sql", migrationSQL)
 				c.Assert(os.WriteFile(
 					filepath.Join(dir, "20240101000000_init.sql"),
 					[]byte("CREATE TABLE edited (id INTEGER PRIMARY KEY);\n"),
@@ -124,7 +124,7 @@ func TestCompatMigrateDirDefaults(t *testing.T) {
 			assert: func(c *qt.C, root string, err error, output string) {
 				c.Assert(err, qt.IsNotNil, qt.Commentf("%s", output))
 				c.Assert(err.Error(), qt.Contains, "checksum mismatch")
-				assertSQLiteTableAbsent(c, filepath.Join(root, "local.db"), "wanted")
+				assertSQLiteTableAbsent(c.TB, filepath.Join(root, "local.db"), "wanted")
 			},
 		},
 		{
@@ -135,8 +135,8 @@ func TestCompatMigrateDirDefaults(t *testing.T) {
 			args:  []string{"migrate", "new", "addcol"},
 			assert: func(c *qt.C, root string, err error, output string) {
 				c.Assert(err, qt.IsNil, qt.Commentf("%s", output))
-				assertOneMigrationNamed(c, filepath.Join(root, "migrations"), "*_addcol.sql")
-				assertPathPresent(c, filepath.Join(root, "migrations", atlascompat.AtlasSumFileName))
+				assertOneMigrationNamed(c.TB, filepath.Join(root, "migrations"), "*_addcol.sql")
+				assertPathPresent(c.TB, filepath.Join(root, "migrations", atlascompat.AtlasSumFileName))
 			},
 		},
 		{
@@ -147,8 +147,8 @@ func TestCompatMigrateDirDefaults(t *testing.T) {
 			args: []string{"migrate", "new", "addcol", "--dir", "file://elsewhere"},
 			assert: func(c *qt.C, root string, err error, output string) {
 				c.Assert(err, qt.IsNil, qt.Commentf("%s", output))
-				assertOneMigrationNamed(c, filepath.Join(root, "elsewhere"), "*_addcol.sql")
-				assertDirEmpty(c, filepath.Join(root, "migrations"))
+				assertOneMigrationNamed(c.TB, filepath.Join(root, "elsewhere"), "*_addcol.sql")
+				assertDirEmpty(c.TB, filepath.Join(root, "migrations"))
 			},
 		},
 		{
@@ -160,8 +160,8 @@ func TestCompatMigrateDirDefaults(t *testing.T) {
 			args:  []string{"migrate", "new", "addcol", "--dir", "file://a/b/c"},
 			assert: func(c *qt.C, root string, err error, output string) {
 				c.Assert(err, qt.IsNil, qt.Commentf("%s", output))
-				assertOneMigrationNamed(c, filepath.Join(root, "a", "b", "c"), "*_addcol.sql")
-				assertPathPresent(c, filepath.Join(root, "a", "b", "c", atlascompat.AtlasSumFileName))
+				assertOneMigrationNamed(c.TB, filepath.Join(root, "a", "b", "c"), "*_addcol.sql")
+				assertPathPresent(c.TB, filepath.Join(root, "a", "b", "c", atlascompat.AtlasSumFileName))
 			},
 		},
 		{
@@ -179,7 +179,7 @@ func TestCompatMigrateDirDefaults(t *testing.T) {
 				// written through it. Statting `a/b` reports ENOTDIR rather
 				// than ENOENT here, so absence is asserted on the parent's
 				// contents instead of on the child's stat error.
-				assertRegularFileContent(c, filepath.Join(root, "a"), "not a directory\n")
+				assertRegularFileContent(c.TB, filepath.Join(root, "a"), "not a directory\n")
 			},
 		},
 		{
@@ -200,7 +200,7 @@ func TestCompatMigrateDirDefaults(t *testing.T) {
 			assert: func(c *qt.C, root string, err error, output string) {
 				c.Assert(err, qt.IsNotNil, qt.Commentf("%s", output))
 				c.Assert(err.Error(), qt.Contains, "checksum file not found")
-				assertNoMigrationNamed(c, filepath.Join(root, "migrations"), "*_addcol.sql")
+				assertNoMigrationNamed(c.TB, filepath.Join(root, "migrations"), "*_addcol.sql")
 			},
 		},
 		{
@@ -209,7 +209,7 @@ func TestCompatMigrateDirDefaults(t *testing.T) {
 			// untouched.
 			name: "new atlas.hcl migration.dir outranks the default",
 			setup: func(c *qt.C, root string) {
-				writeHashedAtlasDir(c, filepath.Join(root, "migrations"), "20240101000000_decoy.sql", decoySQL)
+				writeHashedAtlasDir(c.TB, filepath.Join(root, "migrations"), "20240101000000_decoy.sql", decoySQL)
 				c.Assert(os.MkdirAll(filepath.Join(root, "mydir"), 0o755), qt.IsNil)
 				c.Assert(os.WriteFile(filepath.Join(root, "atlas.hcl"), []byte(`env "local" {
   migration {
@@ -221,8 +221,8 @@ func TestCompatMigrateDirDefaults(t *testing.T) {
 			args: []string{"migrate", "new", "addcol", "--env", "local"},
 			assert: func(c *qt.C, root string, err error, output string) {
 				c.Assert(err, qt.IsNil, qt.Commentf("%s", output))
-				assertOneMigrationNamed(c, filepath.Join(root, "mydir"), "*_addcol.sql")
-				assertNoMigrationNamed(c, filepath.Join(root, "migrations"), "*_addcol.sql")
+				assertOneMigrationNamed(c.TB, filepath.Join(root, "mydir"), "*_addcol.sql")
+				assertNoMigrationNamed(c.TB, filepath.Join(root, "migrations"), "*_addcol.sql")
 			},
 		},
 		{
@@ -239,8 +239,8 @@ func TestCompatMigrateDirDefaults(t *testing.T) {
 			args: []string{"migrate", "new", "addcol"},
 			assert: func(c *qt.C, root string, err error, output string) {
 				c.Assert(err, qt.IsNil, qt.Commentf("%s", output))
-				assertOneMigrationNamed(c, filepath.Join(root, "mydir"), "*_addcol.sql")
-				assertDirEmpty(c, filepath.Join(root, "migrations"))
+				assertOneMigrationNamed(c.TB, filepath.Join(root, "mydir"), "*_addcol.sql")
+				assertDirEmpty(c.TB, filepath.Join(root, "migrations"))
 			},
 		},
 	}
@@ -290,7 +290,8 @@ func TestCompatMigrateDirDefaultIsDocumented(t *testing.T) {
 	}
 }
 
-func writeHashedAtlasDir(c *qt.C, dir, name, body string) {
+func writeHashedAtlasDir(tb testing.TB, dir, name, body string) {
+	c := qt.New(tb)
 	c.Helper()
 	c.Assert(os.MkdirAll(dir, 0o755), qt.IsNil)
 	c.Assert(os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600), qt.IsNil)
@@ -299,40 +300,46 @@ func writeHashedAtlasDir(c *qt.C, dir, name, body string) {
 	c.Assert(os.WriteFile(filepath.Join(dir, atlascompat.AtlasSumFileName), sum.Bytes(), 0o600), qt.IsNil)
 }
 
-func assertOneMigrationNamed(c *qt.C, dir, pattern string) {
+func assertOneMigrationNamed(tb testing.TB, dir, pattern string) {
+	c := qt.New(tb)
 	c.Helper()
 	matches, err := filepath.Glob(filepath.Join(dir, pattern))
 	c.Assert(err, qt.IsNil)
 	c.Assert(matches, qt.HasLen, 1)
 }
 
-func assertNoMigrationNamed(c *qt.C, dir, pattern string) {
+func assertNoMigrationNamed(tb testing.TB, dir, pattern string) {
+	c := qt.New(tb)
 	c.Helper()
 	matches, err := filepath.Glob(filepath.Join(dir, pattern))
 	c.Assert(err, qt.IsNil)
 	c.Assert(matches, qt.HasLen, 0)
 }
 
-func assertDirEmpty(c *qt.C, dir string) {
+func assertDirEmpty(tb testing.TB, dir string) {
+	c := qt.New(tb)
 	c.Helper()
 	entries, err := os.ReadDir(dir)
 	c.Assert(err, qt.IsNil)
 	c.Assert(entries, qt.HasLen, 0)
 }
 
-func assertPathPresent(c *qt.C, path string) {
+func assertPathPresent(tb testing.TB, path string) {
+	c := qt.New(tb)
 	c.Helper()
 	_, err := os.Stat(path)
 	c.Assert(err, qt.IsNil)
 }
 
-func assertPathAbsent(c *qt.C, path string) {
+func assertPathAbsent(tb testing.TB, path string) {
+	c := qt.New(tb)
 	c.Helper()
 	_, err := os.Stat(path)
 	c.Assert(os.IsNotExist(err), qt.IsTrue, qt.Commentf("expected %s to be absent, stat error was %v", path, err))
 }
 
-func assertRegularFileContent(c *qt.C, path, want string) {
+func assertRegularFileContent(tb testing.TB, path, want string) {
+	c := qt.New(tb)
 	c.Helper()
 	info, err := os.Lstat(path)
 	c.Assert(err, qt.IsNil)
@@ -346,7 +353,8 @@ func assertRegularFileContent(c *qt.C, path, want string) {
 // assertions below name a table rather than counting revisions because the two
 // fixtures differ only in which directory was read, and the table name is the
 // only observable that says which one won.
-func sqliteTableNames(c *qt.C, dbPath string) []string {
+func sqliteTableNames(tb testing.TB, dbPath string) []string {
+	c := qt.New(tb)
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)
 	c.Assert(err, qt.IsNil)
@@ -360,12 +368,14 @@ func sqliteTableNames(c *qt.C, dbPath string) []string {
 	return names
 }
 
-func assertSQLiteTablePresent(c *qt.C, dbPath, table string) {
+func assertSQLiteTablePresent(tb testing.TB, dbPath, table string) {
+	c := qt.New(tb)
 	c.Helper()
-	c.Assert(sqliteTableNames(c, dbPath), qt.Contains, table)
+	c.Assert(sqliteTableNames(c.TB, dbPath), qt.Contains, table)
 }
 
-func assertSQLiteTableAbsent(c *qt.C, dbPath, table string) {
+func assertSQLiteTableAbsent(tb testing.TB, dbPath, table string) {
+	c := qt.New(tb)
 	c.Helper()
-	c.Assert(sqliteTableNames(c, dbPath), qt.Not(qt.Contains), table)
+	c.Assert(sqliteTableNames(c.TB, dbPath), qt.Not(qt.Contains), table)
 }

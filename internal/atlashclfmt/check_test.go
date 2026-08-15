@@ -23,8 +23,8 @@ func TestCheckPathsReportsUnformattedFilesWithoutRewriting(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(unformatted, qt.DeepEquals, []string{messy})
-	c.Assert(readFile(c, messy), qt.Equals, messyContent)
-	c.Assert(readFile(c, clean), qt.Equals, "schema \"main\" {\n}\n")
+	c.Assert(readFile(c.TB, messy), qt.Equals, messyContent)
+	c.Assert(readFile(c.TB, clean), qt.Equals, "schema \"main\" {\n}\n")
 }
 
 func TestCheckPathsPassesOnCanonicalFiles(t *testing.T) {

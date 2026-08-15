@@ -44,8 +44,8 @@ func TestMigrateUp_VerifySumAbortsOnDriftBeforeConnecting(t *testing.T) {
 	write("0000000001_init.up.sql", "CREATE TABLE t (id BIGINT);\n")
 
 	cmd := NewMigrateUpCommand()
-	resetMigrateUpCommandForTest(c, cmd)
-	t.Cleanup(func() { resetMigrateUpCommandForTest(c, cmd) })
+	resetMigrateUpCommandForTest(c.TB, cmd)
+	t.Cleanup(func() { resetMigrateUpCommandForTest(c.TB, cmd) })
 	c.Assert(cmd.Flag(migrationLockTimeoutFlag), qt.IsNotNil)
 	c.Assert(cmd.Flag(txModeFlag), qt.IsNotNil)
 	c.Assert(cmd.Flag(cliobs.LogFormatFlagName), qt.IsNotNil)
@@ -131,13 +131,13 @@ func TestMigrateUpCommandPreflightHookAbortPreventsMigration(t *testing.T) {
 	c := qt.New(t)
 
 	dir := t.TempDir()
-	writeMigrateUpFile(c, dir, "0000000001_create_guarded.up.sql", "CREATE TABLE guarded (id INTEGER PRIMARY KEY);\n")
-	writeMigrateUpFile(c, dir, "0000000001_create_guarded.down.sql", "DROP TABLE guarded;\n")
+	writeMigrateUpFile(c.TB, dir, "0000000001_create_guarded.up.sql", "CREATE TABLE guarded (id INTEGER PRIMARY KEY);\n")
+	writeMigrateUpFile(c.TB, dir, "0000000001_create_guarded.down.sql", "DROP TABLE guarded;\n")
 
 	dbURL := (&url.URL{Scheme: "sqlite", Path: filepath.Join(t.TempDir(), "ptah.db")}).String()
 	cmd := NewMigrateUpCommand()
-	resetMigrateUpCommandForTest(c, cmd)
-	t.Cleanup(func() { resetMigrateUpCommandForTest(c, cmd) })
+	resetMigrateUpCommandForTest(c.TB, cmd)
+	t.Cleanup(func() { resetMigrateUpCommandForTest(c.TB, cmd) })
 	cmd.SetArgs([]string{
 		"--db-url", dbURL,
 		"--migrations-dir", dir,
@@ -162,8 +162,8 @@ func TestMigrateUpCommandReadsPreflightHookFromConfig(t *testing.T) {
 	c := qt.New(t)
 
 	dir := t.TempDir()
-	writeMigrateUpFile(c, dir, "0000000001_create_config_guarded.up.sql", "CREATE TABLE config_guarded (id INTEGER PRIMARY KEY);\n")
-	writeMigrateUpFile(c, dir, "0000000001_create_config_guarded.down.sql", "DROP TABLE config_guarded;\n")
+	writeMigrateUpFile(c.TB, dir, "0000000001_create_config_guarded.up.sql", "CREATE TABLE config_guarded (id INTEGER PRIMARY KEY);\n")
+	writeMigrateUpFile(c.TB, dir, "0000000001_create_config_guarded.down.sql", "DROP TABLE config_guarded;\n")
 	dbURL := (&url.URL{Scheme: "sqlite", Path: filepath.Join(t.TempDir(), "ptah.db")}).String()
 	configPath := filepath.Join(t.TempDir(), "ptah.yaml")
 	config := fmt.Appendf(nil, `url: %s
@@ -174,8 +174,8 @@ migration:
 	c.Assert(os.WriteFile(configPath, config, 0o600), qt.IsNil)
 
 	cmd := NewMigrateUpCommand()
-	resetMigrateUpCommandForTest(c, cmd)
-	t.Cleanup(func() { resetMigrateUpCommandForTest(c, cmd) })
+	resetMigrateUpCommandForTest(c.TB, cmd)
+	t.Cleanup(func() { resetMigrateUpCommandForTest(c.TB, cmd) })
 	cmd.SetArgs([]string{"--config", configPath})
 
 	err := cmd.Execute()
@@ -188,10 +188,10 @@ func TestMigrateUpCommandReadsTxModeFromConfig(t *testing.T) {
 
 	dir := t.TempDir()
 	tableName := "tx_mode_config_keeps_partial_body"
-	writeMigrateUpFile(c, dir, "0000000001_partial.up.sql", fmt.Sprintf(`CREATE TABLE %s (id INTEGER PRIMARY KEY);
+	writeMigrateUpFile(c.TB, dir, "0000000001_partial.up.sql", fmt.Sprintf(`CREATE TABLE %s (id INTEGER PRIMARY KEY);
 INSERT INTO missing_tx_mode_config_table (id) VALUES (1);
 `, tableName))
-	writeMigrateUpFile(c, dir, "0000000001_partial.down.sql", fmt.Sprintf("DROP TABLE %s;\n", tableName))
+	writeMigrateUpFile(c.TB, dir, "0000000001_partial.down.sql", fmt.Sprintf("DROP TABLE %s;\n", tableName))
 	dbURL := (&url.URL{Scheme: "sqlite", Path: filepath.Join(t.TempDir(), "ptah.db")}).String()
 	configPath := filepath.Join(t.TempDir(), "ptah.yaml")
 	config := fmt.Appendf(nil, `url: %s
@@ -202,14 +202,14 @@ migration:
 	c.Assert(os.WriteFile(configPath, config, 0o600), qt.IsNil)
 
 	cmd := NewMigrateUpCommand()
-	resetMigrateUpCommandForTest(c, cmd)
-	t.Cleanup(func() { resetMigrateUpCommandForTest(c, cmd) })
+	resetMigrateUpCommandForTest(c.TB, cmd)
+	t.Cleanup(func() { resetMigrateUpCommandForTest(c.TB, cmd) })
 	cmd.SetArgs([]string{"--config", configPath})
 
 	err := cmd.Execute()
 
 	c.Assert(err, qt.IsNotNil)
-	c.Assert(sqliteMigrateUpTableExists(c, dbURL, tableName), qt.IsTrue)
+	c.Assert(sqliteMigrateUpTableExists(c.TB, dbURL, tableName), qt.IsTrue)
 }
 
 func TestMigrateUpCommandTxModeFlagOverridesConfig(t *testing.T) {
@@ -217,10 +217,10 @@ func TestMigrateUpCommandTxModeFlagOverridesConfig(t *testing.T) {
 
 	dir := t.TempDir()
 	tableName := "tx_mode_flag_rolls_back_body"
-	writeMigrateUpFile(c, dir, "0000000001_partial.up.sql", fmt.Sprintf(`CREATE TABLE %s (id INTEGER PRIMARY KEY);
+	writeMigrateUpFile(c.TB, dir, "0000000001_partial.up.sql", fmt.Sprintf(`CREATE TABLE %s (id INTEGER PRIMARY KEY);
 INSERT INTO missing_tx_mode_flag_table (id) VALUES (1);
 `, tableName))
-	writeMigrateUpFile(c, dir, "0000000001_partial.down.sql", fmt.Sprintf("DROP TABLE %s;\n", tableName))
+	writeMigrateUpFile(c.TB, dir, "0000000001_partial.down.sql", fmt.Sprintf("DROP TABLE %s;\n", tableName))
 	dbURL := (&url.URL{Scheme: "sqlite", Path: filepath.Join(t.TempDir(), "ptah.db")}).String()
 	configPath := filepath.Join(t.TempDir(), "ptah.yaml")
 	config := fmt.Appendf(nil, `url: %s
@@ -231,27 +231,27 @@ migration:
 	c.Assert(os.WriteFile(configPath, config, 0o600), qt.IsNil)
 
 	cmd := NewMigrateUpCommand()
-	resetMigrateUpCommandForTest(c, cmd)
-	t.Cleanup(func() { resetMigrateUpCommandForTest(c, cmd) })
+	resetMigrateUpCommandForTest(c.TB, cmd)
+	t.Cleanup(func() { resetMigrateUpCommandForTest(c.TB, cmd) })
 	cmd.SetArgs([]string{"--config", configPath, "--tx-mode", "file"})
 
 	err := cmd.Execute()
 
 	c.Assert(err, qt.IsNotNil)
-	c.Assert(sqliteMigrateUpTableExists(c, dbURL, tableName), qt.IsFalse)
+	c.Assert(sqliteMigrateUpTableExists(c.TB, dbURL, tableName), qt.IsFalse)
 }
 
 func TestMigrateUpCommandDryRunSkipsPreflightSideEffects(t *testing.T) {
 	c := qt.New(t)
 
 	dir := t.TempDir()
-	writeMigrateUpFile(c, dir, "0000000001_create_dry_guarded.up.sql", "CREATE TABLE dry_guarded (id INTEGER PRIMARY KEY);\n")
-	writeMigrateUpFile(c, dir, "0000000001_create_dry_guarded.down.sql", "DROP TABLE dry_guarded;\n")
+	writeMigrateUpFile(c.TB, dir, "0000000001_create_dry_guarded.up.sql", "CREATE TABLE dry_guarded (id INTEGER PRIMARY KEY);\n")
+	writeMigrateUpFile(c.TB, dir, "0000000001_create_dry_guarded.down.sql", "DROP TABLE dry_guarded;\n")
 	dbURL := (&url.URL{Scheme: "sqlite", Path: filepath.Join(t.TempDir(), "ptah.db")}).String()
 
 	cmd := NewMigrateUpCommand()
-	resetMigrateUpCommandForTest(c, cmd)
-	t.Cleanup(func() { resetMigrateUpCommandForTest(c, cmd) })
+	resetMigrateUpCommandForTest(c.TB, cmd)
+	t.Cleanup(func() { resetMigrateUpCommandForTest(c.TB, cmd) })
 	cmd.SetArgs([]string{
 		"--db-url", dbURL,
 		"--migrations-dir", dir,
@@ -276,12 +276,14 @@ func TestDatabaseURLPasswordsForTest(t *testing.T) {
 	c.Assert(databaseURLPasswordsForTest(":"), qt.IsNil)
 }
 
-func writeMigrateUpFile(c *qt.C, dir, name, content string) {
+func writeMigrateUpFile(tb testing.TB, dir, name, content string) {
+	c := qt.New(tb)
 	c.Helper()
 	c.Assert(os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600), qt.IsNil)
 }
 
-func sqliteMigrateUpTableExists(c *qt.C, dbURL string, tableName string) bool {
+func sqliteMigrateUpTableExists(tb testing.TB, dbURL string, tableName string) bool {
+	c := qt.New(tb)
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(context.Background(), dbURL)
 	c.Assert(err, qt.IsNil)
@@ -308,37 +310,39 @@ func databaseURLPasswordsForTest(dbURL string) []string {
 	return []string{password}
 }
 
-func resetMigrateUpCommandForTest(c *qt.C, cmd interface{ Flag(string) *pflag.Flag }) {
+func resetMigrateUpCommandForTest(tb testing.TB, cmd interface{ Flag(string) *pflag.Flag }) {
+	c := qt.New(tb)
 	c.Helper()
-	setMigrateUpFlagForTest(c, cmd, dbURLFlag, "")
-	setMigrateUpFlagForTest(c, cmd, migrationsFlag, "")
-	setMigrateUpFlagForTest(c, cmd, dryRunFlag, "false")
-	setMigrateUpFlagForTest(c, cmd, verboseFlag, "false")
-	setMigrateUpFlagForTest(c, cmd, verifySumFlag, "false")
-	setMigrateUpFlagForTest(c, cmd, dirFormatFlag, string(migrator.MigrationDirFormatAuto))
-	setMigrateUpFlagForTest(c, cmd, atlasEnvFlag, "")
-	setMigrateUpFlagForTest(c, cmd, execOrderFlag, string(migrator.ExecOrderLinear))
-	setMigrateUpFlagForTest(c, cmd, txModeFlag, string(migrator.MigrationTxModeFile))
-	setMigrateUpFlagForTest(c, cmd, migrationLockTimeoutFlag, "")
-	setMigrateUpFlagForTest(c, cmd, lockTimeoutFlag, "")
-	setMigrateUpFlagForTest(c, cmd, statementTimeoutFlag, "")
-	setMigrateUpFlagForTest(c, cmd, allowDestructiveFlag, "false")
-	setMigrateUpFlagForTest(c, cmd, preUpHookFlag, "")
-	setMigrateUpFlagForTest(c, cmd, pgDumpToFlag, "")
-	setMigrateUpFlagForTest(c, cmd, mySQLDumpToFlag, "")
-	setMigrateUpFlagForTest(c, cmd, webhookFlag, "")
-	setMigrateUpFlagForTest(c, cmd, cliobs.LogFormatFlagName, "text")
-	setMigrateUpFlagForTest(c, cmd, cliobs.LogLevelFlagName, "info")
-	setMigrateUpFlagForTest(c, cmd, cliobs.MetricsAddrFlagName, "")
-	setMigrateUpFlagForTest(c, cmd, dbcli.ConfigFlagName, "")
-	setMigrateUpFlagForTest(c, cmd, dbcli.EnvFlagName, "")
-	setMigrateUpFlagForTest(c, cmd, dbcli.MigrationsSchemaFlagName, "")
-	setMigrateUpFlagForTest(c, cmd, dbcli.MigrationsTableFlagName, "")
-	setMigrateUpFlagForTest(c, cmd, dbcli.RevisionTableFormatFlagName, string(migrator.RevisionTableFormatPtah))
-	setMigrateUpFlagForTest(c, cmd, dbcli.ConnectTimeoutFlagName, dbcli.DefaultConnectTimeout.String())
+	setMigrateUpFlagForTest(c.TB, cmd, dbURLFlag, "")
+	setMigrateUpFlagForTest(c.TB, cmd, migrationsFlag, "")
+	setMigrateUpFlagForTest(c.TB, cmd, dryRunFlag, "false")
+	setMigrateUpFlagForTest(c.TB, cmd, verboseFlag, "false")
+	setMigrateUpFlagForTest(c.TB, cmd, verifySumFlag, "false")
+	setMigrateUpFlagForTest(c.TB, cmd, dirFormatFlag, string(migrator.MigrationDirFormatAuto))
+	setMigrateUpFlagForTest(c.TB, cmd, atlasEnvFlag, "")
+	setMigrateUpFlagForTest(c.TB, cmd, execOrderFlag, string(migrator.ExecOrderLinear))
+	setMigrateUpFlagForTest(c.TB, cmd, txModeFlag, string(migrator.MigrationTxModeFile))
+	setMigrateUpFlagForTest(c.TB, cmd, migrationLockTimeoutFlag, "")
+	setMigrateUpFlagForTest(c.TB, cmd, lockTimeoutFlag, "")
+	setMigrateUpFlagForTest(c.TB, cmd, statementTimeoutFlag, "")
+	setMigrateUpFlagForTest(c.TB, cmd, allowDestructiveFlag, "false")
+	setMigrateUpFlagForTest(c.TB, cmd, preUpHookFlag, "")
+	setMigrateUpFlagForTest(c.TB, cmd, pgDumpToFlag, "")
+	setMigrateUpFlagForTest(c.TB, cmd, mySQLDumpToFlag, "")
+	setMigrateUpFlagForTest(c.TB, cmd, webhookFlag, "")
+	setMigrateUpFlagForTest(c.TB, cmd, cliobs.LogFormatFlagName, "text")
+	setMigrateUpFlagForTest(c.TB, cmd, cliobs.LogLevelFlagName, "info")
+	setMigrateUpFlagForTest(c.TB, cmd, cliobs.MetricsAddrFlagName, "")
+	setMigrateUpFlagForTest(c.TB, cmd, dbcli.ConfigFlagName, "")
+	setMigrateUpFlagForTest(c.TB, cmd, dbcli.EnvFlagName, "")
+	setMigrateUpFlagForTest(c.TB, cmd, dbcli.MigrationsSchemaFlagName, "")
+	setMigrateUpFlagForTest(c.TB, cmd, dbcli.MigrationsTableFlagName, "")
+	setMigrateUpFlagForTest(c.TB, cmd, dbcli.RevisionTableFormatFlagName, string(migrator.RevisionTableFormatPtah))
+	setMigrateUpFlagForTest(c.TB, cmd, dbcli.ConnectTimeoutFlagName, dbcli.DefaultConnectTimeout.String())
 }
 
-func setMigrateUpFlagForTest(c *qt.C, cmd interface{ Flag(string) *pflag.Flag }, name, value string) {
+func setMigrateUpFlagForTest(tb testing.TB, cmd interface{ Flag(string) *pflag.Flag }, name, value string) {
+	c := qt.New(tb)
 	c.Helper()
 	flag := cmd.Flag(name)
 	c.Assert(flag, qt.IsNotNil, qt.Commentf("flag %s", name))

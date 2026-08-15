@@ -124,13 +124,13 @@ func TestWriterDropDatabaseRealm_DropsPersistentObjectsInDependencyOrder(t *test
 		{sql: "DROP TABLE IF EXISTS `analytics``realm`.`events``daily` SYNC"},
 		{sql: "DROP TABLE IF EXISTS `analytics``realm`.`queue` SYNC"},
 	}
-	db := openClickHouseSQLMock(t, c, queries, execs)
+	db := openClickHouseSQLMock(t, c.TB, queries, execs)
 	writer := clickhouse.NewClickHouseWriter(db.SQL, database)
 
 	err := writer.DropDatabaseRealm(t.Context())
 
 	c.Assert(err, qt.IsNil)
-	assertClickHouseSQLMockComplete(c, db, queries, execs)
+	assertClickHouseSQLMockComplete(c.TB, db, queries, execs)
 }
 
 func TestWriterDropDatabaseRealm_UnknownObjectFailsBeforeMutation(t *testing.T) {
@@ -151,14 +151,14 @@ func TestWriterDropDatabaseRealm_UnknownObjectFailsBeforeMutation(t *testing.T) 
 			},
 		},
 	)
-	db := openClickHouseSQLMock(t, c, queries, nil)
+	db := openClickHouseSQLMock(t, c.TB, queries, nil)
 	writer := clickhouse.NewClickHouseWriter(db.SQL, database)
 
 	err := writer.DropDatabaseRealm(t.Context())
 
 	c.Assert(err, qt.ErrorMatches, `clickhouse: refusing to clean database "analytics": .*`)
 	c.Assert(err.Error(), qt.Contains, `persistent object "future_view" with engine "FutureView"`)
-	assertClickHouseSQLMockComplete(c, db, queries, nil)
+	assertClickHouseSQLMockComplete(c.TB, db, queries, nil)
 }
 
 func TestWriterDropDatabaseRealm_VerifiesPersistentObjectsAreGone(t *testing.T) {
@@ -183,7 +183,7 @@ func TestWriterDropDatabaseRealm_VerifiesPersistentObjectsAreGone(t *testing.T) 
 	execs := []sqlMockExec{
 		{sql: "DROP TABLE IF EXISTS `analytics`.`events` SYNC"},
 	}
-	db := openClickHouseSQLMock(t, c, queries, execs)
+	db := openClickHouseSQLMock(t, c.TB, queries, execs)
 	writer := clickhouse.NewClickHouseWriter(db.SQL, database)
 
 	err := writer.DropDatabaseRealm(t.Context())
@@ -193,7 +193,7 @@ func TestWriterDropDatabaseRealm_VerifiesPersistentObjectsAreGone(t *testing.T) 
 		qt.ErrorMatches,
 		`clickhouse: database-realm cleanup left persistent objects in "analytics": events \(MergeTree\)`,
 	)
-	assertClickHouseSQLMockComplete(c, db, queries, execs)
+	assertClickHouseSQLMockComplete(c.TB, db, queries, execs)
 }
 
 func TestWriterDropDatabaseRealm_CatalogErrorDoesNotMutate(t *testing.T) {
@@ -212,13 +212,13 @@ func TestWriterDropDatabaseRealm_CatalogErrorDoesNotMutate(t *testing.T) {
 			err:  catalogErr,
 		},
 	)
-	db := openClickHouseSQLMock(t, c, queries, nil)
+	db := openClickHouseSQLMock(t, c.TB, queries, nil)
 	writer := clickhouse.NewClickHouseWriter(db.SQL, database)
 
 	err := writer.DropDatabaseRealm(t.Context())
 
 	c.Assert(err, qt.ErrorIs, catalogErr)
-	assertClickHouseSQLMockComplete(c, db, queries, nil)
+	assertClickHouseSQLMockComplete(c.TB, db, queries, nil)
 }
 
 func TestWriterDropDatabaseRealm_MissingPrivilegesFailBeforeCatalogRead(t *testing.T) {
@@ -235,13 +235,13 @@ func TestWriterDropDatabaseRealm_MissingPrivilegesFailBeforeCatalogRead(t *testi
 			},
 		},
 	}
-	db := openClickHouseSQLMock(t, c, queries, nil)
+	db := openClickHouseSQLMock(t, c.TB, queries, nil)
 	writer := clickhouse.NewClickHouseWriter(db.SQL, database)
 
 	err := writer.DropDatabaseRealm(t.Context())
 
 	c.Assert(err, qt.ErrorMatches, `clickhouse: database-realm cleanup requires SHOW DATABASES, .*`)
-	assertClickHouseSQLMockComplete(c, db, queries, nil)
+	assertClickHouseSQLMockComplete(c.TB, db, queries, nil)
 }
 
 func TestWriterDropDatabaseRealm_MissingGlobalVisibilityFailsBeforeCatalogRead(
@@ -261,7 +261,7 @@ func TestWriterDropDatabaseRealm_MissingGlobalVisibilityFailsBeforeCatalogRead(
 			},
 		},
 	}
-	db := openClickHouseSQLMock(t, c, queries, nil)
+	db := openClickHouseSQLMock(t, c.TB, queries, nil)
 	writer := clickhouse.NewClickHouseWriter(db.SQL, database)
 
 	err := writer.DropDatabaseRealm(t.Context())
@@ -272,15 +272,15 @@ func TestWriterDropDatabaseRealm_MissingGlobalVisibilityFailsBeforeCatalogRead(
 		`clickhouse: database-realm cleanup requires SHOW DATABASES and SHOW TABLES on \*\.\* `+
 			`to prove that external dependencies are absent`,
 	)
-	assertClickHouseSQLMockComplete(c, db, queries, nil)
+	assertClickHouseSQLMockComplete(c.TB, db, queries, nil)
 }
 
 func TestWriterDropDatabaseRealm_UnsupportedDatabaseEngineFailsBeforeMutation(t *testing.T) {
-	c := qt.New(t)
 	engines := []string{"DataLakeCatalog", "Replicated", "Shared"}
 
 	for _, engine := range engines {
-		c.Run(engine, func(c *qt.C) {
+		t.Run(engine, func(t2 *testing.T) {
+			c := qt.New(t2)
 			database := "analytics"
 			privilegesQuery := databaseRealmPrivilegesQuery(database)
 			queries := []sqlMockQuery{
@@ -296,7 +296,7 @@ func TestWriterDropDatabaseRealm_UnsupportedDatabaseEngineFailsBeforeMutation(t 
 					},
 				},
 			}
-			db := openClickHouseSQLMock(t, c, queries, nil)
+			db := openClickHouseSQLMock(t, c.TB, queries, nil)
 			writer := clickhouse.NewClickHouseWriter(db.SQL, database)
 
 			err := writer.DropDatabaseRealm(t.Context())
@@ -307,13 +307,12 @@ func TestWriterDropDatabaseRealm_UnsupportedDatabaseEngineFailsBeforeMutation(t 
 				`clickhouse: refusing to clean database "analytics" with unsupported engine "`+
 					engine+`"`,
 			)
-			assertClickHouseSQLMockComplete(c, db, queries, nil)
+			assertClickHouseSQLMockComplete(c.TB, db, queries, nil)
 		})
 	}
 }
 
 func TestWriterDropDatabaseRealm_ExternalDependencyFailsBeforeMutation(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name       string
 		objectName string
@@ -337,7 +336,8 @@ func TestWriterDropDatabaseRealm_ExternalDependencyFailsBeforeMutation(t *testin
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t2 *testing.T) {
+			c := qt.New(t2)
 			database := "analytics"
 			privilegesQuery := databaseRealmPrivilegesQuery(database)
 			externalArgs := []driver.NamedValue{
@@ -354,7 +354,7 @@ func TestWriterDropDatabaseRealm_ExternalDependencyFailsBeforeMutation(t *testin
 					},
 				},
 			)
-			db := openClickHouseSQLMock(t, c, queries, nil)
+			db := openClickHouseSQLMock(t, c.TB, queries, nil)
 			writer := clickhouse.NewClickHouseWriter(db.SQL, database)
 
 			err := writer.DropDatabaseRealm(t.Context())
@@ -366,13 +366,12 @@ func TestWriterDropDatabaseRealm_ExternalDependencyFailsBeforeMutation(t *testin
 					"`reporting`.`"+test.objectName+"`"+` with engine "`+test.engine+
 					`" may depend on the cleanup realm`,
 			)
-			assertClickHouseSQLMockComplete(c, db, queries, nil)
+			assertClickHouseSQLMockComplete(c.TB, db, queries, nil)
 		})
 	}
 }
 
 func TestWriterDropDatabaseRealm_ProtectedDatabasesFailWithoutIO(t *testing.T) {
-	c := qt.New(t)
 	databases := []string{
 		"INFORMATION_SCHEMA",
 		"_temporary_and_external_tables",
@@ -381,14 +380,15 @@ func TestWriterDropDatabaseRealm_ProtectedDatabasesFailWithoutIO(t *testing.T) {
 	}
 
 	for _, database := range databases {
-		c.Run(database, func(c *qt.C) {
-			db := openClickHouseSQLMock(t, c, nil, nil)
+		t.Run(database, func(t2 *testing.T) {
+			c := qt.New(t2)
+			db := openClickHouseSQLMock(t, c.TB, nil, nil)
 			writer := clickhouse.NewClickHouseWriter(db.SQL, database)
 
 			err := writer.DropDatabaseRealm(t.Context())
 
 			c.Assert(err, qt.ErrorMatches, `clickhouse: refusing database-realm cleanup of protected database .*`)
-			assertClickHouseSQLMockComplete(c, db, nil, nil)
+			assertClickHouseSQLMockComplete(c.TB, db, nil, nil)
 		})
 	}
 }
@@ -417,7 +417,7 @@ func TestWriterDropDatabaseRealm_TemporaryObjectsFailBeforePersistentCatalogRead
 			},
 		},
 	}
-	db := openClickHouseSQLMock(t, c, queries, nil)
+	db := openClickHouseSQLMock(t, c.TB, queries, nil)
 	writer := clickhouse.NewClickHouseWriter(db.SQL, database)
 
 	err := writer.DropDatabaseRealm(t.Context())
@@ -427,7 +427,7 @@ func TestWriterDropDatabaseRealm_TemporaryObjectsFailBeforePersistentCatalogRead
 		qt.ErrorMatches,
 		`clickhouse: refusing database-realm cleanup while session-temporary objects exist: \["shadow_events"\]`,
 	)
-	assertClickHouseSQLMockComplete(c, db, queries, nil)
+	assertClickHouseSQLMockComplete(c.TB, db, queries, nil)
 }
 
 func TestWriterDropDatabaseRealm_PostCleanupVisibilityLossFailsClosed(t *testing.T) {
@@ -458,13 +458,13 @@ func TestWriterDropDatabaseRealm_PostCleanupVisibilityLossFailsClosed(t *testing
 	execs := []sqlMockExec{
 		{sql: "DROP TABLE IF EXISTS `analytics`.`events` SYNC"},
 	}
-	db := openClickHouseSQLMock(t, c, queries, execs)
+	db := openClickHouseSQLMock(t, c.TB, queries, execs)
 	writer := clickhouse.NewClickHouseWriter(db.SQL, database)
 
 	err := writer.DropDatabaseRealm(t.Context())
 
 	c.Assert(err, qt.ErrorMatches, `clickhouse: verify database "analytics" remains fully visible: .*`)
-	assertClickHouseSQLMockComplete(c, db, queries, execs)
+	assertClickHouseSQLMockComplete(c.TB, db, queries, execs)
 }
 
 func TestWriterDropDatabaseRealm_DropFailureStopsBeforeResidualVerification(t *testing.T) {
@@ -488,13 +488,13 @@ func TestWriterDropDatabaseRealm_DropFailureStopsBeforeResidualVerification(t *t
 	execs := []sqlMockExec{
 		{sql: "DROP TABLE IF EXISTS `analytics`.`events` SYNC", err: dropErr},
 	}
-	db := openClickHouseSQLMock(t, c, queries, execs)
+	db := openClickHouseSQLMock(t, c.TB, queries, execs)
 	writer := clickhouse.NewClickHouseWriter(db.SQL, database)
 
 	err := writer.DropDatabaseRealm(t.Context())
 
 	c.Assert(err, qt.ErrorIs, dropErr)
-	assertClickHouseSQLMockComplete(c, db, queries, execs)
+	assertClickHouseSQLMockComplete(c.TB, db, queries, execs)
 }
 
 func TestWriterDropDatabaseRealm_IsIdempotentWhenDatabaseIsEmpty(t *testing.T) {
@@ -516,7 +516,7 @@ func TestWriterDropDatabaseRealm_IsIdempotentWhenDatabaseIsEmpty(t *testing.T) {
 		emptyObjectsQuery,
 	)
 	queries := append(append([]sqlMockQuery{}, oneRun...), oneRun...)
-	db := openClickHouseSQLMock(t, c, queries, nil)
+	db := openClickHouseSQLMock(t, c.TB, queries, nil)
 	writer := clickhouse.NewClickHouseWriter(db.SQL, database)
 
 	firstErr := writer.DropDatabaseRealm(t.Context())
@@ -524,7 +524,7 @@ func TestWriterDropDatabaseRealm_IsIdempotentWhenDatabaseIsEmpty(t *testing.T) {
 
 	c.Assert(firstErr, qt.IsNil)
 	c.Assert(secondErr, qt.IsNil)
-	assertClickHouseSQLMockComplete(c, db, queries, nil)
+	assertClickHouseSQLMockComplete(c.TB, db, queries, nil)
 }
 
 func TestWriterDropDatabaseRealm_ClickHouse2410FailsClosedBeforeCatalogRead(t *testing.T) {
@@ -532,7 +532,7 @@ func TestWriterDropDatabaseRealm_ClickHouse2410FailsClosedBeforeCatalogRead(t *t
 	queries := []sqlMockQuery{
 		databaseRealmVersionResult("24.10.2.80"),
 	}
-	db := openClickHouseSQLMock(t, c, queries, nil)
+	db := openClickHouseSQLMock(t, c.TB, queries, nil)
 	writer := clickhouse.NewClickHouseWriter(db.SQL, "analytics")
 
 	err := writer.DropDatabaseRealm(t.Context())
@@ -543,7 +543,7 @@ func TestWriterDropDatabaseRealm_ClickHouse2410FailsClosedBeforeCatalogRead(t *t
 		`clickhouse: refusing database-realm cleanup on server version "24\.10\.2\.80": `+
 			`ClickHouse 24\.11 or newer is required to prove complete catalog visibility with CHECK GRANT`,
 	)
-	assertClickHouseSQLMockComplete(c, db, queries, nil)
+	assertClickHouseSQLMockComplete(c.TB, db, queries, nil)
 }
 
 func TestWriterDropDatabaseRealm_UnparseableServerVersionFailsBeforeMutation(t *testing.T) {
@@ -551,18 +551,18 @@ func TestWriterDropDatabaseRealm_UnparseableServerVersionFailsBeforeMutation(t *
 	queries := []sqlMockQuery{
 		databaseRealmVersionResult("development"),
 	}
-	db := openClickHouseSQLMock(t, c, queries, nil)
+	db := openClickHouseSQLMock(t, c.TB, queries, nil)
 	writer := clickhouse.NewClickHouseWriter(db.SQL, "analytics")
 
 	err := writer.DropDatabaseRealm(t.Context())
 
 	c.Assert(err, qt.ErrorMatches, `clickhouse: cannot parse server version "development"`)
-	assertClickHouseSQLMockComplete(c, db, queries, nil)
+	assertClickHouseSQLMockComplete(c.TB, db, queries, nil)
 }
 
 func TestWriterDropDatabaseRealm_CanceledContext(t *testing.T) {
 	c := qt.New(t)
-	db := openClickHouseSQLMock(t, c, nil, nil)
+	db := openClickHouseSQLMock(t, c.TB, nil, nil)
 	writer := clickhouse.NewClickHouseWriter(db.SQL, "analytics")
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
@@ -570,7 +570,7 @@ func TestWriterDropDatabaseRealm_CanceledContext(t *testing.T) {
 	err := writer.DropDatabaseRealm(ctx)
 
 	c.Assert(err, qt.ErrorIs, context.Canceled)
-	assertClickHouseSQLMockComplete(c, db, nil, nil)
+	assertClickHouseSQLMockComplete(c.TB, db, nil, nil)
 }
 
 func TestWriterDropDatabaseRealm_DryRunNeedsNoDatabase(t *testing.T) {
@@ -666,10 +666,11 @@ func databaseRealmTargetPreflightQueries(
 
 func openClickHouseSQLMock(
 	t *testing.T,
-	c *qt.C,
+	tb testing.TB,
 	queries []sqlMockQuery,
 	execs []sqlMockExec,
 ) *dbtest.DB {
+	c := qt.New(tb)
 	var queryIndex atomic.Int64
 	var execIndex atomic.Int64
 	return dbtest.OpenWithExec(
@@ -690,11 +691,12 @@ func openClickHouseSQLMock(
 }
 
 func assertClickHouseSQLMockComplete(
-	c *qt.C,
+	tb testing.TB,
 	db *dbtest.DB,
 	queries []sqlMockQuery,
 	execs []sqlMockExec,
 ) {
+	c := qt.New(tb)
 	c.Check(db.QueryCount(), qt.Equals, len(queries))
 	c.Check(db.ExecCount(), qt.Equals, len(execs))
 }

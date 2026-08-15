@@ -28,7 +28,8 @@ const unreadableArtifactDir = "oci://registry.invalid/demo/migrations:v1"
 
 // hashedSnapshot returns a two-file ptah directory plus the integrity file that
 // matches it, as an in-memory filesystem.
-func hashedSnapshot(c *qt.C) fstest.MapFS {
+func hashedSnapshot(tb testing.TB) fstest.MapFS {
+	c := qt.New(tb)
 	c.Helper()
 	files := fstest.MapFS{
 		"0000000001_init.up.sql":   {Data: []byte("CREATE TABLE snapshot_widgets (id INTEGER PRIMARY KEY);\n")},
@@ -45,7 +46,7 @@ func TestValidate_VerifiesTheSuppliedSnapshotRatherThanTheDirPath(t *testing.T) 
 
 	result, err := migrationvalidate.Validate(context.Background(), migrationvalidate.Options{
 		Dir:       unreadableArtifactDir,
-		FS:        hashedSnapshot(c),
+		FS:        hashedSnapshot(c.TB),
 		DirFormat: migrator.MigrationDirFormatPtah,
 	})
 
@@ -56,7 +57,7 @@ func TestValidate_VerifiesTheSuppliedSnapshotRatherThanTheDirPath(t *testing.T) 
 
 func TestValidate_ReportsDriftInsideTheSuppliedSnapshot(t *testing.T) {
 	c := qt.New(t)
-	files := hashedSnapshot(c)
+	files := hashedSnapshot(c.TB)
 	files["0000000001_init.up.sql"] = &fstest.MapFile{
 		Data: []byte("CREATE TABLE snapshot_widgets (id TEXT PRIMARY KEY);\n"),
 	}
@@ -74,7 +75,7 @@ func TestValidate_ReportsDriftInsideTheSuppliedSnapshot(t *testing.T) {
 
 func TestValidate_ReportsAMissingSumInsideTheSuppliedSnapshot(t *testing.T) {
 	c := qt.New(t)
-	files := hashedSnapshot(c)
+	files := hashedSnapshot(c.TB)
 	delete(files, migratesum.FileName)
 
 	_, err := migrationvalidate.Validate(context.Background(), migrationvalidate.Options{
@@ -98,7 +99,7 @@ func TestValidate_ReplaysTheSuppliedSnapshotOnTheDevDatabase(t *testing.T) {
 
 	result, err := migrationvalidate.Validate(context.Background(), migrationvalidate.Options{
 		Dir:       unreadableArtifactDir,
-		FS:        hashedSnapshot(c),
+		FS:        hashedSnapshot(c.TB),
 		DirFormat: migrator.MigrationDirFormatPtah,
 		DevURL:    "sqlite://" + devDBPath,
 	})
@@ -106,7 +107,7 @@ func TestValidate_ReplaysTheSuppliedSnapshotOnTheDevDatabase(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.Integrity.OK(), qt.IsTrue)
 	c.Assert(result.DevSQLValidated, qt.IsTrue)
-	assertSQLiteTableCount(c, devDBPath, "snapshot_widgets", 0)
+	assertSQLiteTableCount(c.TB, devDBPath, "snapshot_widgets", 0)
 }
 
 // TestValidate_WithoutSnapshotStillReadsTheDirPath is the non-interference
@@ -114,7 +115,7 @@ func TestValidate_ReplaysTheSuppliedSnapshotOnTheDevDatabase(t *testing.T) {
 func TestValidate_WithoutSnapshotStillReadsTheDirPath(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
-	writeSnapshotToDisk(c, dir, hashedSnapshot(c))
+	writeSnapshotToDisk(c.TB, dir, hashedSnapshot(c.TB))
 
 	result, err := migrationvalidate.Validate(context.Background(), migrationvalidate.Options{
 		Dir:       dir,
@@ -125,7 +126,8 @@ func TestValidate_WithoutSnapshotStillReadsTheDirPath(t *testing.T) {
 	c.Assert(result.Integrity.OK(), qt.IsTrue)
 }
 
-func writeSnapshotToDisk(c *qt.C, dir string, files fstest.MapFS) {
+func writeSnapshotToDisk(tb testing.TB, dir string, files fstest.MapFS) {
+	c := qt.New(tb)
 	c.Helper()
 	for name, file := range files {
 		c.Assert(os.WriteFile(filepath.Join(dir, name), file.Data, 0o600), qt.IsNil)

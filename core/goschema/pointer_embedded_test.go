@@ -69,7 +69,7 @@ type RegularPost struct {
 	c.Assert(err, qt.IsNil)
 
 	// Parse the file
-	database := mustParseFile(c, testFile)
+	database := mustParseFile(c.TB, testFile)
 
 	// Should have 2 tables
 	c.Assert(database.Tables, qt.HasLen, 2)

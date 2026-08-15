@@ -32,7 +32,8 @@ var quotedLiteral = regexp.MustCompile(`"([^"]+)"`)
 
 // acceptedSpellings returns every dialect spelling that appears as a case in
 // platform.NormalizeDialect's switch, read from the switch body itself.
-func acceptedSpellings(c *qt.C) []string {
+func acceptedSpellings(tb testing.TB) []string {
+	c := qt.New(tb)
 	source, err := os.ReadFile(normalizeDialectSource)
 	c.Assert(err, qt.IsNil)
 
@@ -53,16 +54,18 @@ func acceptedSpellings(c *qt.C) []string {
 // postgresFamilySpellings is every spelling NormalizeDialect maps onto a
 // PostgreSQL-family engine — the canonical names and their documented
 // non-canonical spellings alike.
-func postgresFamilySpellings(c *qt.C) []string {
-	return slices.DeleteFunc(acceptedSpellings(c), func(spelling string) bool {
+func postgresFamilySpellings(tb testing.TB) []string {
+	c := qt.New(tb)
+	return slices.DeleteFunc(acceptedSpellings(c.TB), func(spelling string) bool {
 		return !platform.IsPostgresFamily(spelling)
 	})
 }
 
 // nonCanonicalSpellings is every accepted spelling that is not already a
 // canonical engine name — the documented aliases, and only those.
-func nonCanonicalSpellings(c *qt.C) []string {
-	return slices.DeleteFunc(acceptedSpellings(c), func(spelling string) bool {
+func nonCanonicalSpellings(tb testing.TB) []string {
+	c := qt.New(tb)
+	return slices.DeleteFunc(acceptedSpellings(c.TB), func(spelling string) bool {
 		return spelling == platform.NormalizeDialect(spelling)
 	})
 }
@@ -150,7 +153,8 @@ func objectKindFixture() goschema.Database {
 
 // renderedSchema is what `ptah schema render --dialect <d>` produces: the
 // offline converter's AST for the whole desired schema, rendered.
-func renderedSchema(c *qt.C, database goschema.Database, dialect string) string {
+func renderedSchema(tb testing.TB, database goschema.Database, dialect string) string {
+	c := qt.New(tb)
 	nodes := fromschema.FromDatabase(database, dialect)
 	sql, err := renderer.RenderSQL(dialect, nodes.Statements...)
 	c.Assert(err, qt.IsNil, qt.Commentf("render path failed for %s", dialect))
@@ -160,7 +164,8 @@ func renderedSchema(c *qt.C, database goschema.Database, dialect string) string 
 // plannedSchema is what `ptah schema apply` plans for the same desired schema
 // against an empty database: the comparator's diff, through the dialect planner
 // and the same renderer.
-func plannedSchema(c *qt.C, database goschema.Database, dialect string) string {
+func plannedSchema(tb testing.TB, database goschema.Database, dialect string) string {
+	c := qt.New(tb)
 	diff := schemadiff.CompareWithDialect(&database, &dbschematypes.DBSchema{}, dialect)
 	sql, err := planner.GenerateSchemaDiffSQL(diff, &database, dialect)
 	c.Assert(err, qt.IsNil, qt.Commentf("plan path failed for %s", dialect))
@@ -255,9 +260,9 @@ var postgresFamily = []string{platform.Postgres, platform.CockroachDB, platform.
 func TestSpellingExtraction_Controls(t *testing.T) {
 	c := qt.New(t)
 
-	spellings := acceptedSpellings(c)
-	family := postgresFamilySpellings(c)
-	aliases := nonCanonicalSpellings(c)
+	spellings := acceptedSpellings(c.TB)
+	family := postgresFamilySpellings(c.TB)
+	aliases := nonCanonicalSpellings(c.TB)
 
 	// Positive control: spellings that exist only inside that switch, one per
 	// engine family that has one. An extractor that stopped working loses these
@@ -307,7 +312,7 @@ func TestSpellingExtraction_Controls(t *testing.T) {
 func TestEverySpelling_RendersAndPlansLikeItsCanonicalName(t *testing.T) {
 	c := qt.New(t)
 
-	aliases := nonCanonicalSpellings(c)
+	aliases := nonCanonicalSpellings(c.TB)
 	c.Assert(len(aliases) > 0, qt.IsTrue, qt.Commentf("the alias table is empty; the extractor is broken"))
 
 	for _, spelling := range aliases {
@@ -356,8 +361,8 @@ func TestObjectKinds_RenderAndPlanAgree(t *testing.T) {
 					supported := capability.ForDialect(dialect).Has(gate.key)
 					skipped := gate.skipComment(dialect)
 
-					rendered := renderedSchema(c, database, dialect)
-					planned := plannedSchema(c, database, dialect)
+					rendered := renderedSchema(c.TB, database, dialect)
+					planned := plannedSchema(c.TB, database, dialect)
 
 					c.Assert(strings.Contains(rendered, skipped), qt.Equals, !supported,
 						qt.Commentf("render path for %s:\n%s", dialect, rendered))
@@ -389,7 +394,7 @@ func TestObjectKinds_RenderAndPlanAgree(t *testing.T) {
 func TestObjectKinds_NeitherPathLosesAnObject(t *testing.T) {
 	c := qt.New(t)
 
-	cells := objectKindMatrix(c, postgresFamily)
+	cells := objectKindMatrix(c.TB, postgresFamily)
 
 	// Control: the matrix really covers every family member and every gate. A
 	// fixture or extractor that produced no cells would make the assertions
@@ -419,12 +424,13 @@ type objectKindCell struct {
 
 // objectKindMatrix classifies what each path says about each object, for each
 // dialect: one cell per (dialect, gate) pair, with no filtering.
-func objectKindMatrix(c *qt.C, dialects []string) []objectKindCell {
+func objectKindMatrix(tb testing.TB, dialects []string) []objectKindCell {
+	c := qt.New(tb)
 	cells := make([]objectKindCell, 0, len(dialects)*len(objectKindGates))
 	for _, dialect := range dialects {
 		database := objectKindFixture()
-		rendered := renderedSchema(c, database, dialect)
-		planned := plannedSchema(c, database, dialect)
+		rendered := renderedSchema(c.TB, database, dialect)
+		planned := plannedSchema(c.TB, database, dialect)
 		for _, gate := range objectKindGates {
 			cells = append(cells, objectKindCell{
 				dialect:      dialect,

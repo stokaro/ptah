@@ -100,7 +100,8 @@ type compatDockerFixture struct {
 	root string
 }
 
-func newCompatDockerFixture(c *qt.C) compatDockerFixture {
+func newCompatDockerFixture(tb testing.TB) compatDockerFixture {
+	c := qt.New(tb)
 	c.Helper()
 	root := c.TempDir()
 	dir := filepath.Join(root, "migrations")
@@ -231,7 +232,7 @@ func compatDockerRows() []compatDockerRow {
 
 func TestCompatDockerDevURL_ReachesTheProvisioner(t *testing.T) {
 	c := qt.New(t)
-	fx := newCompatDockerFixture(c)
+	fx := newCompatDockerFixture(c.TB)
 
 	for _, tt := range compatDockerRows() {
 		c.Run(tt.name, func(c *qt.C) {
@@ -270,7 +271,7 @@ func TestCompatDockerDevURL_ReachesTheProvisioner(t *testing.T) {
 // refusal is a sentence only the provisioner produces.
 func TestCompatDockerDevURL_DoesNotProvisionAValueTheBinaryCannotParse(t *testing.T) {
 	c := qt.New(t)
-	fx := newCompatDockerFixture(c)
+	fx := newCompatDockerFixture(c.TB)
 
 	for _, tt := range compatDockerRows() {
 		c.Run(tt.name, func(c *qt.C) {
@@ -326,7 +327,8 @@ func TestCompatDockerDevURL_CoversEveryVerbRegisteringTheFlag(t *testing.T) {
 	accounted = slices.Compact(accounted)
 
 	for _, verb := range registered {
-		c.Run(verb, func(c *qt.C) {
+		t.Run(verb, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(accounted, qt.Contains, verb,
 				qt.Commentf("%q registers --dev-url but no row pins how it answers a"+
 					" docker:// value and it is not named as unwired", verb))
@@ -334,7 +336,8 @@ func TestCompatDockerDevURL_CoversEveryVerbRegisteringTheFlag(t *testing.T) {
 	}
 
 	for _, verb := range accounted {
-		c.Run("still registered: "+verb, func(c *qt.C) {
+		t.Run("still registered: "+verb, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(registered, qt.Contains, verb,
 				qt.Commentf("%q is accounted for but no longer registers --dev-url", verb))
 		})

@@ -26,9 +26,9 @@ func TestNormalizeScalar(t *testing.T) {
 		{name: "time", in: time.Date(2025, 1, 15, 10, 30, 0, 0, time.UTC), want: "2025-01-15T10:30:00Z"},
 	}
 
-	c := qt.New(t)
 	for _, tc := range tests {
-		c.Run(tc.name, func(c *qt.C) {
+		t.Run(tc.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(normalizeScalar(tc.in), qt.Equals, tc.want)
 		})
 	}

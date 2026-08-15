@@ -80,7 +80,7 @@ type TestExtensions struct{}
 `
 
 			// Write to a temporary file and parse it
-			database := parseStringAsGoFile(c, content)
+			database := parseStringAsGoFile(c.TB, content)
 
 			c.Assert(database.Extensions, qt.HasLen, 1)
 			ext := database.Extensions[0]
@@ -196,7 +196,7 @@ type TestEntity struct {
 `
 
 			// Write to a temporary file and parse it
-			database := parseStringAsGoFile(c, content)
+			database := parseStringAsGoFile(c.TB, content)
 
 			c.Assert(database.Indexes, qt.HasLen, 1)
 			idx := database.Indexes[0]
@@ -296,7 +296,7 @@ type TestEntity struct {
 }
 `
 
-			database := parseStringAsGoFile(c, content)
+			database := parseStringAsGoFile(c.TB, content)
 
 			c.Assert(database.Fields, qt.HasLen, 1)
 			field := database.Fields[0]
@@ -319,7 +319,7 @@ func TestParseMultipleExtensions(t *testing.T) {
 type DatabaseExtensions struct{}
 `
 
-	database := parseStringAsGoFile(c, content)
+	database := parseStringAsGoFile(c.TB, content)
 
 	c.Assert(database.Extensions, qt.HasLen, 3)
 
@@ -375,7 +375,7 @@ type Product struct {
 }
 `
 
-	database := parseStringAsGoFile(c, content)
+	database := parseStringAsGoFile(c.TB, content)
 
 	// Check extensions (sorted alphabetically)
 	c.Assert(database.Extensions, qt.HasLen, 2)
@@ -412,14 +412,15 @@ type Product struct {
 }
 
 // Helper function to parse a string as a Go file
-func parseStringAsGoFile(c *qt.C, content string) goschema.Database {
+func parseStringAsGoFile(tb testing.TB, content string) goschema.Database {
 	// Write content to a temporary file
+	c := qt.New(tb)
 	tmpFile := c.TempDir() + "/test.go"
 	err := writeFile(tmpFile, content)
 	c.Assert(err, qt.IsNil)
 
 	// Parse the file
-	return mustParseFile(c, tmpFile)
+	return mustParseFile(c.TB, tmpFile)
 }
 
 // Helper function to write content to a file

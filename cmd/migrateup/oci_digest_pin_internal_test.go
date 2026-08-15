@@ -30,9 +30,9 @@ func TestMigrateUp_OCITagAndDigestResolvesByDigest(t *testing.T) {
 	c := qt.New(t)
 	const repository = "ptah/pinned"
 	store := newOCIMemoryStore()
-	host := startOCITestRegistry(c, store, repository)
-	reviewed := pushProvenanceArtifact(c, store, writeHashedProvenanceDir(c, "reviewed"), "release")
-	swapped := pushProvenanceArtifact(c, store, writeHashedProvenanceDir(c, "swapped"), "release")
+	host := startOCITestRegistry(c.TB, store, repository)
+	reviewed := pushProvenanceArtifact(c.TB, store, writeHashedProvenanceDir(c.TB, "reviewed"), "release")
+	swapped := pushProvenanceArtifact(c.TB, store, writeHashedProvenanceDir(c.TB, "swapped"), "release")
 	c.Assert(swapped, qt.Not(qt.Equals), reviewed,
 		qt.Commentf("the two artifacts must differ, or no row can tell the tag from the digest"))
 	base := "oci://" + host + "/" + repository
@@ -91,9 +91,9 @@ func TestMigrateUp_OCITagAndDigestResolvesByDigest(t *testing.T) {
 
 			c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 			c.Assert(out, qt.Contains, "ptah.sum verified: migrations directory is intact")
-			c.Assert(sqliteMigrateUpTableExists(c, dbURL, tt.wantTable), qt.IsTrue,
+			c.Assert(sqliteMigrateUpTableExists(c.TB, dbURL, tt.wantTable), qt.IsTrue,
 				qt.Commentf("%s", out))
-			c.Assert(sqliteMigrateUpTableExists(c, dbURL, tt.absentTable), qt.IsFalse,
+			c.Assert(sqliteMigrateUpTableExists(c.TB, dbURL, tt.absentTable), qt.IsFalse,
 				qt.Commentf("%s", out))
 			tt.verify(c, out)
 		})
@@ -109,11 +109,11 @@ func TestMigrateUp_OCIDigestNotInRegistryIsRefused(t *testing.T) {
 	c := qt.New(t)
 	const repository = "ptah/unserved"
 	store := newOCIMemoryStore()
-	host := startOCITestRegistry(c, store, repository)
-	pushProvenanceArtifact(c, store, writeHashedProvenanceDir(c, "swapped"), "release")
+	host := startOCITestRegistry(c.TB, store, repository)
+	pushProvenanceArtifact(c.TB, store, writeHashedProvenanceDir(c.TB, "swapped"), "release")
 	// Minted in a registry of its own: a well-formed artifact digest that the
 	// registry under test has never served.
-	elsewhere := pushProvenanceArtifact(c, newOCIMemoryStore(), writeHashedProvenanceDir(c, "reviewed"), "release")
+	elsewhere := pushProvenanceArtifact(c.TB, newOCIMemoryStore(), writeHashedProvenanceDir(c.TB, "reviewed"), "release")
 	dbURL := "sqlite://" + filepath.Join(c.TempDir(), "unserved.db")
 
 	out, err := runUpInternal(
@@ -129,9 +129,9 @@ func TestMigrateUp_OCIDigestNotInRegistryIsRefused(t *testing.T) {
 	c.Assert(err.Error(), qt.Contains, elsewhere,
 		qt.Commentf("the refusal must name the digest that was asked for"))
 	c.Assert(err.Error(), qt.Contains, "not found")
-	c.Assert(sqliteMigrateUpTableExists(c, dbURL, "swapped"), qt.IsFalse,
+	c.Assert(sqliteMigrateUpTableExists(c.TB, dbURL, "swapped"), qt.IsFalse,
 		qt.Commentf("the tag must not stand in for the digest: %s", out))
-	c.Assert(sqliteMigrateUpTableExists(c, dbURL, "reviewed"), qt.IsFalse)
+	c.Assert(sqliteMigrateUpTableExists(c.TB, dbURL, "reviewed"), qt.IsFalse)
 }
 
 // TestMigrateUp_OCISubstitutedManifestIsRefused answers the question a parse
@@ -141,7 +141,6 @@ func TestMigrateUp_OCIDigestNotInRegistryIsRefused(t *testing.T) {
 // refuse before any DDL runs; the second row also lies in the
 // Docker-Content-Digest header, so only hashing the body catches it.
 func TestMigrateUp_OCISubstitutedManifestIsRefused(t *testing.T) {
-	c := qt.New(t)
 	const repository = "ptah/substituted"
 
 	tests := []struct {
@@ -159,14 +158,15 @@ func TestMigrateUp_OCISubstitutedManifestIsRefused(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			store := newOCIMemoryStore()
-			host := startSubstitutingOCITestRegistry(c, store, repository, tt.header)
-			pushProvenanceArtifact(c, store, writeHashedProvenanceDir(c, "swapped"), "release")
+			host := startSubstitutingOCITestRegistry(c.TB, store, repository, tt.header)
+			pushProvenanceArtifact(c.TB, store, writeHashedProvenanceDir(c.TB, "swapped"), "release")
 			reviewed := pushProvenanceArtifact(
-				c,
+				c.TB,
 				newOCIMemoryStore(),
-				writeHashedProvenanceDir(c, "reviewed"),
+				writeHashedProvenanceDir(c.TB, "reviewed"),
 				"release",
 			)
 			dbURL := "sqlite://" + filepath.Join(c.TempDir(), "substituted.db")
@@ -183,9 +183,9 @@ func TestMigrateUp_OCISubstitutedManifestIsRefused(t *testing.T) {
 			c.Assert(err, qt.IsNotNil, qt.Commentf("%s", out))
 			c.Assert(err.Error(), qt.Contains, "mismatch",
 				qt.Commentf("the refusal must be a digest mismatch, not an unrelated failure"))
-			c.Assert(sqliteMigrateUpTableExists(c, dbURL, "swapped"), qt.IsFalse,
+			c.Assert(sqliteMigrateUpTableExists(c.TB, dbURL, "swapped"), qt.IsFalse,
 				qt.Commentf("substituted bytes must never reach the database: %s", out))
-			c.Assert(sqliteMigrateUpTableExists(c, dbURL, "reviewed"), qt.IsFalse)
+			c.Assert(sqliteMigrateUpTableExists(c.TB, dbURL, "reviewed"), qt.IsFalse)
 		})
 	}
 }
@@ -222,11 +222,12 @@ func (s *ociMemoryStore) serveSubstitutedManifest(
 // distribution API with the substituting manifest handler in place. Blobs are
 // served honestly, so a refusal can only come from the manifest the pin names.
 func startSubstitutingOCITestRegistry(
-	c *qt.C,
+	tb testing.TB,
 	store *ociMemoryStore,
 	repository string,
 	header func(served, requested string) string,
 ) string {
+	c := qt.New(tb)
 	mux := http.NewServeMux()
 	mux.HandleFunc("/v2/", func(writer http.ResponseWriter, _ *http.Request) {
 		writer.WriteHeader(http.StatusOK)

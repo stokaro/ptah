@@ -49,20 +49,21 @@ ALTER TABLE users ADD COLUMN email TEXT;
 // writeCheckedMigrationsDir seeds a users row in migration 1 so migration 2's
 // guard is unsatisfied, and hashes the directory because apply verifies
 // atlas.sum before planning (stokaro/ptah#970).
-func writeCheckedMigrationsDir(c *qt.C, dir, secondMigration string) string {
+func writeCheckedMigrationsDir(tb testing.TB, dir, secondMigration string) string {
+	c := qt.New(tb)
 	c.Helper()
 	migrationsDir := filepath.Join(dir, "migrations")
-	writeAtlasApplyProjectMigration(c, migrationsDir, "20260801000001_create_users.sql",
+	writeAtlasApplyProjectMigration(c.TB, migrationsDir, "20260801000001_create_users.sql",
 		"CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT);\nINSERT INTO users (id, name) VALUES (1, 'alice');\n")
-	writeAtlasApplyProjectMigration(c, migrationsDir, "20260801000002_add_users_email.sql", secondMigration)
-	writeAtlasApplyProjectSum(c, migrationsDir)
+	writeAtlasApplyProjectMigration(c.TB, migrationsDir, "20260801000002_add_users_email.sql", secondMigration)
+	writeAtlasApplyProjectSum(c.TB, migrationsDir)
 	return migrationsDir
 }
 
 func TestMigrateApplySkipChecksEnvBypassesFailingTxtarCheck(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
-	migrationsDir := writeCheckedMigrationsDir(c, dir, compatTxtarCheckedAddEmail)
+	migrationsDir := writeCheckedMigrationsDir(c.TB, dir, compatTxtarCheckedAddEmail)
 	dbPath := filepath.Join(dir, "apply.db")
 	t.Setenv("PTAH_SKIP_CHECKS", "1")
 
@@ -73,7 +74,7 @@ func TestMigrateApplySkipChecksEnvBypassesFailingTxtarCheck(t *testing.T) {
 	)
 
 	c.Assert(err, qt.IsNil, qt.Commentf("command output:\n%s", out))
-	c.Assert(sqliteUsersEmailColumnCount(c, dbPath), qt.Equals, 1)
+	c.Assert(sqliteUsersEmailColumnCount(c.TB, dbPath), qt.Equals, 1)
 	// The bypass is invisible in the command line, so the run has to say so.
 	c.Assert(out, qt.Contains, "warning: PTAH_SKIP_CHECKS is set")
 }
@@ -84,7 +85,7 @@ func TestMigrateApplySkipChecksEnvBypassesFailingTxtarCheck(t *testing.T) {
 func TestMigrateApplySkipChecksEnvBypassesFailingPtahCheckDirective(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
-	migrationsDir := writeCheckedMigrationsDir(c, dir, migrationWithPtahCheckDirective)
+	migrationsDir := writeCheckedMigrationsDir(c.TB, dir, migrationWithPtahCheckDirective)
 	dbPath := filepath.Join(dir, "apply.db")
 	t.Setenv("PTAH_SKIP_CHECKS", "1")
 
@@ -95,7 +96,7 @@ func TestMigrateApplySkipChecksEnvBypassesFailingPtahCheckDirective(t *testing.T
 	)
 
 	c.Assert(err, qt.IsNil, qt.Commentf("command output:\n%s", out))
-	c.Assert(sqliteUsersEmailColumnCount(c, dbPath), qt.Equals, 1)
+	c.Assert(sqliteUsersEmailColumnCount(c.TB, dbPath), qt.Equals, 1)
 }
 
 // setSkipChecksEnv returns a per-case environment setup for the tables below.
@@ -147,7 +148,7 @@ func TestMigrateApplySkipChecksEnvEnforcesChecks(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			c := qt.New(t)
 			dir := t.TempDir()
-			migrationsDir := writeCheckedMigrationsDir(c, dir, compatTxtarCheckedAddEmail)
+			migrationsDir := writeCheckedMigrationsDir(c.TB, dir, compatTxtarCheckedAddEmail)
 			dbPath := filepath.Join(dir, "apply.db")
 			tc.setEnv(t)
 
@@ -159,7 +160,7 @@ func TestMigrateApplySkipChecksEnvEnforcesChecks(t *testing.T) {
 
 			c.Assert(err, qt.IsNotNil, qt.Commentf("command output:\n%s", out))
 			c.Assert(err.Error(), qt.Contains, tc.wantErr)
-			c.Assert(sqliteUsersEmailColumnCount(c, dbPath), qt.Equals, 0)
+			c.Assert(sqliteUsersEmailColumnCount(c.TB, dbPath), qt.Equals, 0)
 		})
 	}
 }
@@ -179,7 +180,7 @@ func TestMigrateApplySkipChecksEnvBypassesChecks(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			c := qt.New(t)
 			dir := t.TempDir()
-			migrationsDir := writeCheckedMigrationsDir(c, dir, compatTxtarCheckedAddEmail)
+			migrationsDir := writeCheckedMigrationsDir(c.TB, dir, compatTxtarCheckedAddEmail)
 			dbPath := filepath.Join(dir, "apply.db")
 			t.Setenv("PTAH_SKIP_CHECKS", tc.value)
 
@@ -190,7 +191,7 @@ func TestMigrateApplySkipChecksEnvBypassesChecks(t *testing.T) {
 			)
 
 			c.Assert(err, qt.IsNil, qt.Commentf("command output:\n%s", out))
-			c.Assert(sqliteUsersEmailColumnCount(c, dbPath), qt.Equals, 1)
+			c.Assert(sqliteUsersEmailColumnCount(c.TB, dbPath), qt.Equals, 1)
 		})
 	}
 }
@@ -200,7 +201,7 @@ func TestMigrateApplySkipChecksEnvBypassesChecks(t *testing.T) {
 func TestMigrateApplySkipChecksEnvMalformedValueAppliesNothing(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
-	migrationsDir := writeCheckedMigrationsDir(c, dir, compatTxtarCheckedAddEmail)
+	migrationsDir := writeCheckedMigrationsDir(c.TB, dir, compatTxtarCheckedAddEmail)
 	dbPath := filepath.Join(dir, "apply.db")
 	t.Setenv("PTAH_SKIP_CHECKS", "notabool")
 
@@ -211,7 +212,7 @@ func TestMigrateApplySkipChecksEnvMalformedValueAppliesNothing(t *testing.T) {
 	)
 
 	c.Assert(err, qt.IsNotNil)
-	c.Assert(sqliteTableCount(c, dbPath, "users"), qt.Equals, 0)
+	c.Assert(sqliteTableCount(c.TB, dbPath, "users"), qt.Equals, 0)
 }
 
 // tx-mode all refuses a migration declaring pre-migration checks, because a
@@ -222,7 +223,7 @@ func TestMigrateApplySkipChecksEnvMalformedValueAppliesNothing(t *testing.T) {
 func TestMigrateApplySkipChecksEnvLiftsTxModeAllRefusal(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
-	migrationsDir := writeCheckedMigrationsDir(c, dir, compatTxtarCheckedAddEmail)
+	migrationsDir := writeCheckedMigrationsDir(c.TB, dir, compatTxtarCheckedAddEmail)
 
 	refusedDB := filepath.Join(dir, "refused.db")
 	_, err := executeAtlasProjectCommand(
@@ -244,7 +245,7 @@ func TestMigrateApplySkipChecksEnvLiftsTxModeAllRefusal(t *testing.T) {
 	)
 
 	c.Assert(err, qt.IsNil, qt.Commentf("command output:\n%s", out))
-	c.Assert(sqliteUsersEmailColumnCount(c, bypassedDB), qt.Equals, 1)
+	c.Assert(sqliteUsersEmailColumnCount(c.TB, bypassedDB), qt.Equals, 1)
 }
 
 // The environment gate must not reach past the checks it names. A directory
@@ -254,9 +255,9 @@ func TestMigrateApplySkipChecksEnvLiftsTxModeAllRefusal(t *testing.T) {
 func TestMigrateApplySkipChecksEnvDoesNotBypassChecksumVerification(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
-	migrationsDir := writeCheckedMigrationsDir(c, dir, compatTxtarCheckedAddEmail)
+	migrationsDir := writeCheckedMigrationsDir(c.TB, dir, compatTxtarCheckedAddEmail)
 	// Tamper after hashing.
-	writeAtlasApplyProjectMigration(c, migrationsDir, "20260801000001_create_users.sql",
+	writeAtlasApplyProjectMigration(c.TB, migrationsDir, "20260801000001_create_users.sql",
 		"CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT, tampered TEXT);\n")
 	dbPath := filepath.Join(dir, "apply.db")
 	t.Setenv("PTAH_SKIP_CHECKS", "1")
@@ -268,7 +269,7 @@ func TestMigrateApplySkipChecksEnvDoesNotBypassChecksumVerification(t *testing.T
 	)
 
 	c.Assert(err, qt.IsNotNil, qt.Commentf("command output:\n%s", out))
-	c.Assert(sqliteTableCount(c, dbPath, "users"), qt.Equals, 0)
+	c.Assert(sqliteTableCount(c.TB, dbPath, "users"), qt.Equals, 0)
 }
 
 // A directory with no checks is unaffected by the variable: nothing about
@@ -277,9 +278,9 @@ func TestMigrateApplySkipChecksEnvLeavesUncheckedDirectoryUnchanged(t *testing.T
 	c := qt.New(t)
 	dir := t.TempDir()
 	migrationsDir := filepath.Join(dir, "migrations")
-	writeAtlasApplyProjectMigration(c, migrationsDir, "20260801000001_create_users.sql",
+	writeAtlasApplyProjectMigration(c.TB, migrationsDir, "20260801000001_create_users.sql",
 		"CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT);\n")
-	writeAtlasApplyProjectSum(c, migrationsDir)
+	writeAtlasApplyProjectSum(c.TB, migrationsDir)
 	dbPath := filepath.Join(dir, "apply.db")
 	t.Setenv("PTAH_SKIP_CHECKS", "1")
 
@@ -290,7 +291,7 @@ func TestMigrateApplySkipChecksEnvLeavesUncheckedDirectoryUnchanged(t *testing.T
 	)
 
 	c.Assert(err, qt.IsNil, qt.Commentf("command output:\n%s", out))
-	c.Assert(sqliteTableCount(c, dbPath, "users"), qt.Equals, 1)
+	c.Assert(sqliteTableCount(c.TB, dbPath, "users"), qt.Equals, 1)
 }
 
 // The bypass still earns its keep in a dry run, but only where the check is
@@ -314,7 +315,7 @@ func TestMigrateApplySkipChecksEnvLeavesUncheckedDirectoryUnchanged(t *testing.T
 func TestMigrateApplySkipChecksEnvRestoresDryRunOnEvaluatedCheck(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
-	migrationsDir := writeCheckedMigrationsDir(c, dir, compatTxtarCheckedAddEmail)
+	migrationsDir := writeCheckedMigrationsDir(c.TB, dir, compatTxtarCheckedAddEmail)
 
 	unsetSkipChecksEnv(t)
 	// Apply migration 1 for real so the checked migration leads the next run.
@@ -347,7 +348,7 @@ func TestMigrateApplySkipChecksEnvRestoresDryRunOnEvaluatedCheck(t *testing.T) {
 	c.Assert(err, qt.IsNil, qt.Commentf("command output:\n%s", out))
 	c.Assert(out, qt.Contains, "Would have applied 1 migrations.")
 	// Dry run stays a dry run: the bypass must not turn a preview into an apply.
-	c.Assert(sqliteUsersEmailColumnCount(c, enforcedDB), qt.Equals, 0)
+	c.Assert(sqliteUsersEmailColumnCount(c.TB, enforcedDB), qt.Equals, 0)
 }
 
 // The warning belongs on stderr, and the shared test helper cannot show that
@@ -357,7 +358,7 @@ func TestMigrateApplySkipChecksEnvRestoresDryRunOnEvaluatedCheck(t *testing.T) {
 func TestMigrateApplySkipChecksEnvWarningStaysOffStdout(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
-	migrationsDir := writeCheckedMigrationsDir(c, dir, compatTxtarCheckedAddEmail)
+	migrationsDir := writeCheckedMigrationsDir(c.TB, dir, compatTxtarCheckedAddEmail)
 	dbPath := filepath.Join(dir, "apply.db")
 	t.Setenv("PTAH_SKIP_CHECKS", "1")
 
@@ -388,7 +389,7 @@ func TestMigrateApplySkipChecksEnvWarningStaysOffStdout(t *testing.T) {
 func TestMigrateApplySkipChecksEnvRefusesWhitespacePaddedValue(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
-	migrationsDir := writeCheckedMigrationsDir(c, dir, compatTxtarCheckedAddEmail)
+	migrationsDir := writeCheckedMigrationsDir(c.TB, dir, compatTxtarCheckedAddEmail)
 	dbPath := filepath.Join(dir, "apply.db")
 	t.Setenv("PTAH_SKIP_CHECKS", " 1")
 
@@ -404,7 +405,8 @@ func TestMigrateApplySkipChecksEnvRefusesWhitespacePaddedValue(t *testing.T) {
 
 // sqliteMigrationRowCount counts revision rows, so a bypassed run can be shown
 // to record its migrations normally rather than skipping bookkeeping too.
-func sqliteMigrationRowCount(c *qt.C, dbPath string) int {
+func sqliteMigrationRowCount(tb testing.TB, dbPath string) int {
+	c := qt.New(tb)
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)
 	c.Assert(err, qt.IsNil)
@@ -420,7 +422,7 @@ func sqliteMigrationRowCount(c *qt.C, dbPath string) int {
 func TestMigrateApplySkipChecksEnvStillRecordsRevisions(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
-	migrationsDir := writeCheckedMigrationsDir(c, dir, compatTxtarCheckedAddEmail)
+	migrationsDir := writeCheckedMigrationsDir(c.TB, dir, compatTxtarCheckedAddEmail)
 	dbPath := filepath.Join(dir, "apply.db")
 	t.Setenv("PTAH_SKIP_CHECKS", "1")
 
@@ -430,7 +432,7 @@ func TestMigrateApplySkipChecksEnvStillRecordsRevisions(t *testing.T) {
 		"--dir", "file://"+migrationsDir,
 	)
 	c.Assert(err, qt.IsNil)
-	c.Assert(sqliteMigrationRowCount(c, dbPath), qt.Equals, 2)
+	c.Assert(sqliteMigrationRowCount(c.TB, dbPath), qt.Equals, 2)
 
 	out, err := executeAtlasProjectCommand(
 		"migrate", "apply",

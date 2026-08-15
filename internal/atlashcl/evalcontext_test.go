@@ -24,7 +24,6 @@ import (
 // function call. The literal control row passes either way, which is what makes
 // the others discriminate.
 func TestParseResolvesSchemaVariablesAndLocals(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name string
@@ -140,7 +139,8 @@ table "t" {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			db, err := atlashcl.Parse([]byte(tt.hcl), "schema.hcl")
 			c.Assert(err, qt.IsNil)
 			c.Assert(db.Fields, qt.HasLen, 1)
@@ -156,7 +156,6 @@ table "t" {
 // this test fails on the value; the second row keeps the block's own default
 // and fails the same way.
 func TestParseAppliesVarOverrides(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name string
@@ -236,7 +235,8 @@ table "t" {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			db, err := atlashcl.ParseWithOptions(
 				[]byte(tt.hcl), "schema.hcl", atlashcl.Options{Vars: tt.vars},
 			)
@@ -255,7 +255,6 @@ table "t" {
 // row. Reverted, every row parses at exit 0 and this test fails on the
 // non-nil-error assertion.
 func TestParseRefusesUnresolvableExpressions(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name    string
@@ -399,7 +398,8 @@ table "t" {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			_, err := atlashcl.Parse([]byte(tt.hcl), "schema.hcl")
 			c.Assert(err, qt.ErrorMatches, tt.wantErr)
 		})

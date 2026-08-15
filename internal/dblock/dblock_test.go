@@ -13,7 +13,6 @@ import (
 )
 
 func TestSupported(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name    string
@@ -34,17 +33,18 @@ func TestSupported(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(dblock.Supported(test.dialect), qt.Equals, test.want)
 		})
 	}
 }
 
 func TestAcquire_HappyPath(t *testing.T) {
-	c := qt.New(t)
 
-	c.Run("sqlite acquires a no-op lock", func(c *qt.C) {
-		conn := openSQLite(c)
+	t.Run("sqlite acquires a no-op lock", func(t *testing.T) {
+		c := qt.New(t)
+		conn := openSQLite(c.TB)
 
 		lock, err := dblock.Acquire(c.Context(), conn, "ptah_test_lock", time.Second)
 		c.Assert(err, qt.IsNil)
@@ -52,8 +52,9 @@ func TestAcquire_HappyPath(t *testing.T) {
 		c.Assert(lock.Release(c.Context()), qt.IsNil)
 	})
 
-	c.Run("no-op lock release is idempotent", func(c *qt.C) {
-		conn := openSQLite(c)
+	t.Run("no-op lock release is idempotent", func(t *testing.T) {
+		c := qt.New(t)
+		conn := openSQLite(c.TB)
 
 		lock, err := dblock.Acquire(c.Context(), conn, "ptah_test_lock", 0)
 		c.Assert(err, qt.IsNil)
@@ -61,7 +62,8 @@ func TestAcquire_HappyPath(t *testing.T) {
 		c.Assert(lock.Release(c.Context()), qt.IsNil)
 	})
 
-	c.Run("nil and zero locks release without error", func(c *qt.C) {
+	t.Run("nil and zero locks release without error", func(t *testing.T) {
+		c := qt.New(t)
 		var lock *dblock.Lock
 		c.Assert(lock.Release(c.Context()), qt.IsNil)
 		c.Assert(lock.Supported(), qt.IsFalse)
@@ -70,10 +72,10 @@ func TestAcquire_HappyPath(t *testing.T) {
 }
 
 func TestAcquire_FailurePath(t *testing.T) {
-	c := qt.New(t)
 
-	c.Run("empty name rejected", func(c *qt.C) {
-		conn := openSQLite(c)
+	t.Run("empty name rejected", func(t *testing.T) {
+		c := qt.New(t)
+		conn := openSQLite(c.TB)
 
 		lock, err := dblock.Acquire(c.Context(), conn, "  ", time.Second)
 		c.Assert(err, qt.ErrorMatches, `advisory lock name must not be empty`)
@@ -111,7 +113,8 @@ func TestPostgresKey(t *testing.T) {
 	c.Assert(dblock.PostgresKey("custom-lock"), qt.Equals, dblock.PostgresKey("custom-lock"))
 }
 
-func openSQLite(c *qt.C) *dbschema.DatabaseConnection {
+func openSQLite(tb testing.TB) *dbschema.DatabaseConnection {
+	c := qt.New(tb)
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(c.Context(), "sqlite://"+filepath.Join(c.TB.TempDir(), "dblock.db"))
 	c.Assert(err, qt.IsNil)

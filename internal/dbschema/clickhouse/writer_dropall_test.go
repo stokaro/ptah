@@ -74,12 +74,12 @@ func TestWriterDropAllTables_DropsViewsBeforeTables(t *testing.T) {
 		{sql: "DROP VIEW IF EXISTS `v_users` SYNC"},
 		{sql: "DROP TABLE IF EXISTS `users` SYNC"},
 	}
-	db := openClickHouseSQLMock(t, c, queries, execs)
+	db := openClickHouseSQLMock(t, c.TB, queries, execs)
 
 	err := clickhouse.NewClickHouseWriter(db.SQL, "ptah_test").DropAllTables(t.Context())
 
 	c.Assert(err, qt.IsNil)
-	assertClickHouseSQLMockComplete(c, db, queries, execs)
+	assertClickHouseSQLMockComplete(c.TB, db, queries, execs)
 }
 
 // TestWriterDropAllTables_RefusesBacktickedNames keeps the identifier guard on
@@ -87,7 +87,6 @@ func TestWriterDropAllTables_DropsViewsBeforeTables(t *testing.T) {
 // is defense in depth, but a name that cannot appear in a real deployment is
 // refused rather than quoted.
 func TestWriterDropAllTables_RefusesBacktickedNames(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name    string
 		views   [][]driver.Value
@@ -109,7 +108,8 @@ func TestWriterDropAllTables_RefusesBacktickedNames(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t2 *testing.T) {
+			c := qt.New(t2)
 			queries := []sqlMockQuery{
 				{
 					sql:    cleanupViewsQuery,
@@ -120,7 +120,7 @@ func TestWriterDropAllTables_RefusesBacktickedNames(t *testing.T) {
 					result: dbtest.QueryResult{Columns: []string{"name"}, Rows: test.tables},
 				},
 			}
-			db := openClickHouseSQLMock(t, c, queries, nil)
+			db := openClickHouseSQLMock(t, c.TB, queries, nil)
 
 			err := clickhouse.NewClickHouseWriter(db.SQL, "ptah_test").DropAllTables(t.Context())
 

@@ -40,7 +40,8 @@ func directionalRepairFixture() fstest.MapFS {
 
 // directionalRepairMigrator opens a fresh SQLite database, applies the fixture,
 // and runs a rollback that fails at the third of four down statements.
-func directionalRepairMigrator(c *qt.C, name string) (*migrator.Migrator, *dbschema.DatabaseConnection) {
+func directionalRepairMigrator(tb testing.TB, name string) (*migrator.Migrator, *dbschema.DatabaseConnection) {
+	c := qt.New(tb)
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(c.Context(), "sqlite://"+filepath.Join(c.TempDir(), name))
 	c.Assert(err, qt.IsNil)
@@ -54,9 +55,10 @@ func directionalRepairMigrator(c *qt.C, name string) (*migrator.Migrator, *dbsch
 }
 
 func directionalRepairRevision(
-	c *qt.C,
+	tb testing.TB,
 	conn *dbschema.DatabaseConnection,
 ) (state string, applied int, total int) {
+	c := qt.New(tb)
 	c.Helper()
 	c.Assert(
 		conn.QueryRow("SELECT state, applied, total FROM schema_migrations WHERE version = 1").
@@ -66,7 +68,8 @@ func directionalRepairRevision(
 	return state, applied, total
 }
 
-func directionalRepairLogRows(c *qt.C, conn *dbschema.DatabaseConnection) int {
+func directionalRepairLogRows(tb testing.TB, conn *dbschema.DatabaseConnection) int {
+	c := qt.New(tb)
 	c.Helper()
 	var count int
 	c.Assert(conn.QueryRow("SELECT COUNT(*) FROM log").Scan(&count), qt.IsNil)
@@ -79,9 +82,9 @@ func directionalRepairLogRows(c *qt.C, conn *dbschema.DatabaseConnection) int {
 // got "failed" / want "failed:down".
 func TestDirectionalRepair_RecordsRollbackDirection(t *testing.T) {
 	c := qt.New(t)
-	mig, conn := directionalRepairMigrator(c, "records-direction.db")
+	mig, conn := directionalRepairMigrator(c.TB, "records-direction.db")
 
-	state, applied, total := directionalRepairRevision(c, conn)
+	state, applied, total := directionalRepairRevision(c.TB, conn)
 	c.Assert(state, qt.Equals, "failed:down")
 	c.Assert(applied, qt.Equals, 2)
 	c.Assert(total, qt.Equals, 4)
@@ -99,16 +102,16 @@ func TestDirectionalRepair_RecordsRollbackDirection(t *testing.T) {
 // state applied with applied=3 total=3 instead of being gone.
 func TestDirectionalRepair_ResumeRunsDownBodyAndDeletesRevision(t *testing.T) {
 	c := qt.New(t)
-	mig, conn := directionalRepairMigrator(c, "resume-down.db")
-	c.Assert(directionalRepairLogRows(c, conn), qt.Equals, 1)
+	mig, conn := directionalRepairMigrator(c.TB, "resume-down.db")
+	c.Assert(directionalRepairLogRows(c.TB, conn), qt.Equals, 1)
 
 	// Statement 3 is the one that failed; the operator skips it and finishes.
 	c.Assert(mig.RepairMigration(c.Context(), migrator.RepairMigrationOptions{Version: 1, ResumeFrom: 4}), qt.IsNil)
 
-	c.Assert(noTransactionTableExists(c, conn, "parent"), qt.IsFalse)
-	c.Assert(noTransactionTableExists(c, conn, "log"), qt.IsTrue)
-	c.Assert(directionalRepairLogRows(c, conn), qt.Equals, 1)
-	c.Assert(noTransactionRevisionCount(c, conn), qt.Equals, int64(0))
+	c.Assert(noTransactionTableExists(c.TB, conn, "parent"), qt.IsFalse)
+	c.Assert(noTransactionTableExists(c.TB, conn, "log"), qt.IsTrue)
+	c.Assert(directionalRepairLogRows(c.TB, conn), qt.Equals, 1)
+	c.Assert(noTransactionRevisionCount(c.TB, conn), qt.Equals, int64(0))
 
 	status, err := mig.GetMigrationStatus(c.Context())
 	c.Assert(err, qt.IsNil)
@@ -118,7 +121,7 @@ func TestDirectionalRepair_ResumeRunsDownBodyAndDeletesRevision(t *testing.T) {
 
 func TestDirectionalRepair_RefusesChangedCommittedDownPrefix(t *testing.T) {
 	c := qt.New(t)
-	_, conn := directionalRepairMigrator(c, "changed-down-prefix.db")
+	_, conn := directionalRepairMigrator(c.TB, "changed-down-prefix.db")
 	changed := directionalRepairFixture()
 	changed["000001_setup.down.sql"] = &fstest.MapFile{Data: []byte(
 		"-- +ptah no_transaction\n" +
@@ -133,13 +136,13 @@ func TestDirectionalRepair_RefusesChangedCommittedDownPrefix(t *testing.T) {
 	err = repaired.RepairMigration(c.Context(), migrator.RepairMigrationOptions{Version: 1, ResumeFrom: 4})
 
 	c.Assert(err, qt.ErrorMatches, `migration 1 cannot resume the rollback: the already committed statement prefix changed.*`)
-	c.Assert(noTransactionTableExists(c, conn, "parent"), qt.IsTrue)
-	c.Assert(noTransactionRevisionCount(c, conn), qt.Equals, int64(1))
+	c.Assert(noTransactionTableExists(c.TB, conn, "parent"), qt.IsTrue)
+	c.Assert(noTransactionRevisionCount(c.TB, conn), qt.Equals, int64(1))
 }
 
 func TestDirectionalRepair_AllowsChangedUnappliedDownSuffix(t *testing.T) {
 	c := qt.New(t)
-	_, conn := directionalRepairMigrator(c, "changed-down-suffix.db")
+	_, conn := directionalRepairMigrator(c.TB, "changed-down-suffix.db")
 	fixed := directionalRepairFixture()
 	fixed["000001_setup.down.sql"] = &fstest.MapFile{Data: []byte(
 		"-- +ptah no_transaction\n" +
@@ -152,8 +155,8 @@ func TestDirectionalRepair_AllowsChangedUnappliedDownSuffix(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(repaired.RepairMigration(c.Context(), migrator.RepairMigrationOptions{Version: 1, ResumeFrom: 3}), qt.IsNil)
-	c.Assert(noTransactionTableExists(c, conn, "parent"), qt.IsFalse)
-	c.Assert(noTransactionRevisionCount(c, conn), qt.Equals, int64(0))
+	c.Assert(noTransactionTableExists(c.TB, conn, "parent"), qt.IsFalse)
+	c.Assert(noTransactionRevisionCount(c.TB, conn), qt.Equals, int64(0))
 }
 
 // TestDirectionalRepair_ResumeBoundIsDownStatementCount covers the statement
@@ -161,8 +164,8 @@ func TestDirectionalRepair_AllowsChangedUnappliedDownSuffix(t *testing.T) {
 // the call returns "resume-from must be between 1 and 3".
 func TestDirectionalRepair_ResumeBoundIsDownStatementCount(t *testing.T) {
 	c := qt.New(t)
-	mig, conn := directionalRepairMigrator(c, "resume-bound.db")
-	_, _, total := directionalRepairRevision(c, conn)
+	mig, conn := directionalRepairMigrator(c.TB, "resume-bound.db")
+	_, _, total := directionalRepairRevision(c.TB, conn)
 	c.Assert(total, qt.Equals, 4)
 
 	err := mig.RepairMigration(c.Context(), migrator.RepairMigrationOptions{Version: 1, ResumeFrom: 5})
@@ -175,14 +178,14 @@ func TestDirectionalRepair_ResumeBoundIsDownStatementCount(t *testing.T) {
 // already dropped.
 func TestDirectionalRepair_PartialRollbackRefusesToRecordApplied(t *testing.T) {
 	c := qt.New(t)
-	mig, conn := directionalRepairMigrator(c, "refuse-applied.db")
+	mig, conn := directionalRepairMigrator(c.TB, "refuse-applied.db")
 
 	err := mig.RepairMigration(c.Context(), migrator.RepairMigrationOptions{Version: 1})
 	c.Assert(err, qt.ErrorMatches,
 		`migration 1 stopped while rolling back: 2 of 4 down statements committed; `+
 			`rerun with --resume-from 3 .*with --force to record it applied.*migrations set --version.*`)
 
-	state, applied, total := directionalRepairRevision(c, conn)
+	state, applied, total := directionalRepairRevision(c.TB, conn)
 	c.Assert(state, qt.Equals, "failed:down")
 	c.Assert(applied, qt.Equals, 2)
 	c.Assert(total, qt.Equals, 4)
@@ -193,11 +196,11 @@ func TestDirectionalRepair_PartialRollbackRefusesToRecordApplied(t *testing.T) {
 // unchanged, which is the point: --force is not what the fix took away.
 func TestDirectionalRepair_ForceRecordsPartialRollbackApplied(t *testing.T) {
 	c := qt.New(t)
-	mig, conn := directionalRepairMigrator(c, "force-applied.db")
+	mig, conn := directionalRepairMigrator(c.TB, "force-applied.db")
 
 	c.Assert(mig.RepairMigration(c.Context(), migrator.RepairMigrationOptions{Version: 1, Force: true}), qt.IsNil)
 
-	state, applied, total := directionalRepairRevision(c, conn)
+	state, applied, total := directionalRepairRevision(c.TB, conn)
 	c.Assert(state, qt.Equals, "applied")
 	c.Assert(applied, qt.Equals, 3)
 	c.Assert(total, qt.Equals, 3)
@@ -209,21 +212,21 @@ func TestDirectionalRepair_ForceRecordsPartialRollbackApplied(t *testing.T) {
 // Reverted, the first call runs the up body and this never reaches the assert.
 func TestDirectionalRepair_ResumedRollbackFailureKeepsAbsoluteProgress(t *testing.T) {
 	c := qt.New(t)
-	mig, conn := directionalRepairMigrator(c, "resume-refail.db")
+	mig, conn := directionalRepairMigrator(c.TB, "resume-refail.db")
 
 	// Resuming at the statement that failed reruns it, and it fails again.
 	err := mig.RepairMigration(c.Context(), migrator.RepairMigrationOptions{Version: 1, ResumeFrom: 3})
 	c.Assert(err, qt.ErrorMatches, `(?s)failed to resume rollback of migration 1: .*definitely_missing_table.*`)
 
-	state, applied, total := directionalRepairRevision(c, conn)
+	state, applied, total := directionalRepairRevision(c.TB, conn)
 	c.Assert(state, qt.Equals, "failed:down")
 	c.Assert(applied, qt.Equals, 2)
 	c.Assert(total, qt.Equals, 4)
 
 	// The row still describes a rollback, so the next resume finishes it.
 	c.Assert(mig.RepairMigration(c.Context(), migrator.RepairMigrationOptions{Version: 1, ResumeFrom: 4}), qt.IsNil)
-	c.Assert(noTransactionTableExists(c, conn, "parent"), qt.IsFalse)
-	c.Assert(noTransactionRevisionCount(c, conn), qt.Equals, int64(0))
+	c.Assert(noTransactionTableExists(c.TB, conn, "parent"), qt.IsFalse)
+	c.Assert(noTransactionRevisionCount(c.TB, conn), qt.Equals, int64(0))
 }
 
 // TestDirectionalRepair_UpFailureStillResumesUpBody is the non-interference
@@ -251,15 +254,15 @@ func TestDirectionalRepair_UpFailureStillResumesUpBody(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(mig.MigrateUp(c.Context()), qt.IsNotNil)
 
-	state, applied, total := directionalRepairRevision(c, conn)
+	state, applied, total := directionalRepairRevision(c.TB, conn)
 	c.Assert(state, qt.Equals, "failed")
 	c.Assert(applied, qt.Equals, 2)
 	c.Assert(total, qt.Equals, 4)
 
 	c.Assert(mig.RepairMigration(c.Context(), migrator.RepairMigrationOptions{Version: 1, ResumeFrom: 4}), qt.IsNil)
 
-	c.Assert(directionalRepairIndexExists(c, conn, "idx_child"), qt.IsTrue)
-	state, applied, total = directionalRepairRevision(c, conn)
+	c.Assert(directionalRepairIndexExists(c.TB, conn, "idx_child"), qt.IsTrue)
+	state, applied, total = directionalRepairRevision(c.TB, conn)
 	c.Assert(state, qt.Equals, "applied")
 	c.Assert(applied, qt.Equals, 4)
 	c.Assert(total, qt.Equals, 4)
@@ -272,7 +275,7 @@ func TestDirectionalRepair_UpFailureStillResumesUpBody(t *testing.T) {
 // schema.
 func TestDirectionalRepair_RefusesUpResumeOverLegacyRollbackRow(t *testing.T) {
 	c := qt.New(t)
-	mig, conn := directionalRepairMigrator(c, "legacy-row.db")
+	mig, conn := directionalRepairMigrator(c.TB, "legacy-row.db")
 
 	// Rewrite the row the way a Ptah that did not record directions or
 	// committed-prefix checksums wrote it.
@@ -288,14 +291,14 @@ func TestDirectionalRepair_RefusesUpResumeOverLegacyRollbackRow(t *testing.T) {
 	err = mig.RepairMigration(c.Context(), migrator.RepairMigrationOptions{Version: 1, ResumeFrom: 3})
 	c.Assert(err, qt.ErrorMatches,
 		`migration 1 records 4 statements, which matches its down body \(4\) and not its up body \(3\).*--force.*`)
-	c.Assert(directionalRepairLogRows(c, conn), qt.Equals, 1)
+	c.Assert(directionalRepairLogRows(c.TB, conn), qt.Equals, 1)
 
 	// --force is the documented override for a claim about the metadata.
 	c.Assert(
 		mig.RepairMigration(c.Context(), migrator.RepairMigrationOptions{Version: 1, ResumeFrom: 3, Force: true}),
 		qt.IsNil,
 	)
-	c.Assert(directionalRepairLogRows(c, conn), qt.Equals, 2)
+	c.Assert(directionalRepairLogRows(c.TB, conn), qt.Equals, 2)
 }
 
 // TestDirectionalRepair_ResumedRollbackMarksEachStatementInFlight proves the
@@ -378,14 +381,14 @@ func TestDirectionalRepair_UpResumeSurvivesEqualLengthBodies(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(mig.MigrateUp(c.Context()), qt.IsNotNil)
 
-	state, applied, total := directionalRepairRevision(c, conn)
+	state, applied, total := directionalRepairRevision(c.TB, conn)
 	c.Assert(state, qt.Equals, "failed")
 	c.Assert(applied, qt.Equals, 1)
 	c.Assert(total, qt.Equals, 3)
 
 	c.Assert(mig.RepairMigration(c.Context(), migrator.RepairMigrationOptions{Version: 1, ResumeFrom: 3}), qt.IsNil)
-	c.Assert(noTransactionTableExists(c, conn, "child"), qt.IsTrue)
-	state, applied, total = directionalRepairRevision(c, conn)
+	c.Assert(noTransactionTableExists(c.TB, conn, "child"), qt.IsTrue)
+	state, applied, total = directionalRepairRevision(c.TB, conn)
 	c.Assert(state, qt.Equals, "applied")
 	c.Assert(applied, qt.Equals, 3)
 	c.Assert(total, qt.Equals, 3)
@@ -425,19 +428,20 @@ func TestDirectionalRepair_CancelledMidRollbackResumesFromCommittedStatement(t *
 	c.Assert(migrator.NewMigrator(conn, provider).MigrateDownTo(ctx, 0), qt.ErrorIs, context.Canceled)
 
 	// The first down statement committed and survived the cancellation.
-	c.Assert(noTransactionTableExists(c, conn, "child"), qt.IsFalse)
-	c.Assert(noTransactionTableExists(c, conn, "parent"), qt.IsTrue)
-	state, applied, total := directionalRepairRevision(c, conn)
+	c.Assert(noTransactionTableExists(c.TB, conn, "child"), qt.IsFalse)
+	c.Assert(noTransactionTableExists(c.TB, conn, "parent"), qt.IsTrue)
+	state, applied, total := directionalRepairRevision(c.TB, conn)
 	c.Assert(state, qt.Equals, "failed:down")
 	c.Assert(applied, qt.Equals, 1)
 	c.Assert(total, qt.Equals, 2)
 
 	c.Assert(plain.RepairMigration(c.Context(), migrator.RepairMigrationOptions{Version: 1, ResumeFrom: 2}), qt.IsNil)
-	c.Assert(noTransactionTableExists(c, conn, "parent"), qt.IsFalse)
-	c.Assert(noTransactionRevisionCount(c, conn), qt.Equals, int64(0))
+	c.Assert(noTransactionTableExists(c.TB, conn, "parent"), qt.IsFalse)
+	c.Assert(noTransactionRevisionCount(c.TB, conn), qt.Equals, int64(0))
 }
 
-func directionalRepairIndexExists(c *qt.C, conn *dbschema.DatabaseConnection, name string) bool {
+func directionalRepairIndexExists(tb testing.TB, conn *dbschema.DatabaseConnection, name string) bool {
+	c := qt.New(tb)
 	c.Helper()
 	var count int
 	c.Assert(

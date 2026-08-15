@@ -66,7 +66,7 @@ func TestReplayCleansDevDatabaseAndIgnoresExistingRevisionRows(t *testing.T) {
 	conn, err = dbschema.ConnectToDatabase(t.Context(), "sqlite://"+devDBPath)
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(conn)
-	assertSQLiteRealmObjectCount(c, conn, 0)
+	assertSQLiteRealmObjectCount(c.TB, conn, 0)
 }
 
 func TestReplayUsesProvidedFilesystemSnapshot(t *testing.T) {
@@ -101,7 +101,7 @@ CREATE TABLE wrong_template_branch (id INTEGER PRIMARY KEY);
 	conn, err := dbschema.ConnectToDatabase(t.Context(), "sqlite://"+devDBPath)
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(conn)
-	assertSQLiteRealmObjectCount(c, conn, 0)
+	assertSQLiteRealmObjectCount(c.TB, conn, 0)
 }
 
 func TestReplayFailureNamesExactEmptyRevision(t *testing.T) {
@@ -309,7 +309,7 @@ CREATE TABLE users (id INTEGER PRIMARY KEY);
 	err = conn.QueryRowContext(ctx, "PRAGMA foreign_keys").Scan(&restoredForeignKeys)
 	c.Assert(err, qt.IsNil)
 	c.Assert(restoredForeignKeys, qt.Equals, 1)
-	assertSQLiteRealmObjectCount(c, conn, 0)
+	assertSQLiteRealmObjectCount(c.TB, conn, 0)
 }
 
 func TestWithReplayedSnapshot_CallbackFailureCleansDatabaseRealm(t *testing.T) {
@@ -336,7 +336,7 @@ func TestWithReplayedSnapshot_CallbackFailureCleansDatabaseRealm(t *testing.T) {
 	)
 
 	c.Assert(err, qt.ErrorIs, consumeErr)
-	assertSQLiteRealmObjectCount(c, conn, 0)
+	assertSQLiteRealmObjectCount(c.TB, conn, 0)
 }
 
 func TestWithReplayedSnapshot_NilCallbackPreservesDatabaseRealm(t *testing.T) {
@@ -362,7 +362,7 @@ func TestWithReplayedSnapshot_NilCallbackPreservesDatabaseRealm(t *testing.T) {
 	)
 
 	c.Assert(err, qt.ErrorMatches, `consume replayed database callback is nil`)
-	assertSQLiteRealmObjectCount(c, conn, 1)
+	assertSQLiteRealmObjectCount(c.TB, conn, 1)
 }
 
 func TestWithReplayedSnapshot_SerializesConcurrentRealmReplay(t *testing.T) {
@@ -413,14 +413,15 @@ func TestWithReplayedSnapshot_SerializesConcurrentRealmReplay(t *testing.T) {
 	c.Assert(err, qt.ErrorIs, context.DeadlineExceeded)
 	close(releaseFirst)
 	c.Assert(<-firstDone, qt.IsNil)
-	assertSQLiteRealmObjectCount(c, firstConn, 0)
+	assertSQLiteRealmObjectCount(c.TB, firstConn, 0)
 }
 
 func assertSQLiteRealmObjectCount(
-	c *qt.C,
+	tb testing.TB,
 	conn *dbschema.DatabaseConnection,
 	want int,
 ) {
+	c := qt.New(tb)
 	c.Helper()
 	var count int
 	err := conn.QueryRowContext(c.Context(), `

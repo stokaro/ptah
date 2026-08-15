@@ -27,7 +27,8 @@ const (
 // migrations, hashed, so the apply integrity gate lets it through. Each
 // migration creates its own table, which is what makes "exactly two ran"
 // observable in the database rather than only in the revision table.
-func writeToVersionFixture(c *qt.C) (migrationsDir, dbPath string) {
+func writeToVersionFixture(tb testing.TB) (migrationsDir, dbPath string) {
+	c := qt.New(tb)
 	c.Helper()
 	root := c.TempDir()
 	migrationsDir = filepath.Join(root, "migrations")
@@ -48,7 +49,8 @@ func writeToVersionFixture(c *qt.C) (migrationsDir, dbPath string) {
 // runCompatStreams runs one compat invocation with stdout and stderr captured
 // separately, because some assertions below are about which stream a line
 // landed on.
-func runCompatStreams(c *qt.C, args ...string) (stdout, stderr string, err error) {
+func runCompatStreams(tb testing.TB, args ...string) (stdout, stderr string, err error) {
+	c := qt.New(tb)
 	c.Helper()
 	cmd := atlas.NewCompatCommand("atlas")
 	var out, errOut bytes.Buffer
@@ -59,7 +61,8 @@ func runCompatStreams(c *qt.C, args ...string) (stdout, stderr string, err error
 	return out.String(), errOut.String(), err
 }
 
-func compatTableNames(c *qt.C, dbPath string) []string {
+func compatTableNames(tb testing.TB, dbPath string) []string {
+	c := qt.New(tb)
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)
 	c.Assert(err, qt.IsNil)
@@ -83,9 +86,9 @@ func compatTableNames(c *qt.C, dbPath string) []string {
 // outright.
 func TestCompatCommand_MigrateApplyToVersionAppliesBoundedPrefix(t *testing.T) {
 	c := qt.New(t)
-	migrationsDir, dbPath := writeToVersionFixture(c)
+	migrationsDir, dbPath := writeToVersionFixture(c.TB)
 
-	stdout, _, err := runCompatStreams(c,
+	stdout, _, err := runCompatStreams(c.TB,
 		"migrate", "apply",
 		"--url", "sqlite://"+dbPath,
 		"--dir", "file://"+migrationsDir,
@@ -96,13 +99,13 @@ func TestCompatCommand_MigrateApplyToVersionAppliesBoundedPrefix(t *testing.T) {
 	c.Assert(stdout, qt.Contains, "Migrating to version "+toVersionTwo+" from 2 pending migrations.")
 	c.Assert(stdout, qt.Contains, "Migration complete. Current version: "+toVersionTwo)
 	// Exactly two of the three ran: the third migration's table is absent.
-	c.Assert(compatTableNames(c, dbPath), qt.Contains, "tv_one")
-	c.Assert(compatTableNames(c, dbPath), qt.Contains, "tv_two")
-	c.Assert(compatTableNames(c, dbPath), qt.Not(qt.Contains), "tv_three")
-	c.Assert(sqliteAtlasRevisionVersions(c, dbPath), qt.DeepEquals, []string{toVersionOne, toVersionTwo})
+	c.Assert(compatTableNames(c.TB, dbPath), qt.Contains, "tv_one")
+	c.Assert(compatTableNames(c.TB, dbPath), qt.Contains, "tv_two")
+	c.Assert(compatTableNames(c.TB, dbPath), qt.Not(qt.Contains), "tv_three")
+	c.Assert(sqliteAtlasRevisionVersions(c.TB, dbPath), qt.DeepEquals, []string{toVersionOne, toVersionTwo})
 
 	// The following status must agree that one migration is still pending.
-	statusOut, _, statusErr := runCompatStreams(c,
+	statusOut, _, statusErr := runCompatStreams(c.TB,
 		"migrate", "status",
 		"--url", "sqlite://"+dbPath,
 		"--dir", "file://"+migrationsDir,
@@ -115,7 +118,7 @@ func TestCompatCommand_MigrateApplyToVersionAppliesBoundedPrefix(t *testing.T) {
 
 	// A second bounded apply finishes the directory, so the bound is a bound
 	// and not a permanent ceiling.
-	finishOut, _, finishErr := runCompatStreams(c,
+	finishOut, _, finishErr := runCompatStreams(c.TB,
 		"migrate", "apply",
 		"--url", "sqlite://"+dbPath,
 		"--dir", "file://"+migrationsDir,
@@ -123,7 +126,7 @@ func TestCompatCommand_MigrateApplyToVersionAppliesBoundedPrefix(t *testing.T) {
 	)
 	c.Assert(finishErr, qt.IsNil)
 	c.Assert(finishOut, qt.Contains, "Migration complete. Current version: "+toVersionThree)
-	c.Assert(compatTableNames(c, dbPath), qt.Contains, "tv_three")
+	c.Assert(compatTableNames(c.TB, dbPath), qt.Contains, "tv_three")
 }
 
 // TestCompatCommand_MigrateApplyToVersionDryRunPreviewsTheSamePrefix pins the
@@ -132,9 +135,9 @@ func TestCompatCommand_MigrateApplyToVersionAppliesBoundedPrefix(t *testing.T) {
 // promise three migrations and then apply two.
 func TestCompatCommand_MigrateApplyToVersionDryRunPreviewsTheSamePrefix(t *testing.T) {
 	c := qt.New(t)
-	migrationsDir, dbPath := writeToVersionFixture(c)
+	migrationsDir, dbPath := writeToVersionFixture(c.TB)
 
-	stdout, _, err := runCompatStreams(c,
+	stdout, _, err := runCompatStreams(c.TB,
 		"migrate", "apply",
 		"--url", "sqlite://"+dbPath,
 		"--dir", "file://"+migrationsDir,
@@ -145,7 +148,7 @@ func TestCompatCommand_MigrateApplyToVersionDryRunPreviewsTheSamePrefix(t *testi
 	c.Assert(err, qt.IsNil)
 	c.Assert(stdout, qt.Contains, "Dry run mode: no changes will be made.")
 	c.Assert(stdout, qt.Contains, "Would have applied 2 migrations.")
-	c.Assert(compatTableNames(c, dbPath), qt.Not(qt.Contains), "tv_one")
+	c.Assert(compatTableNames(c.TB, dbPath), qt.Not(qt.Contains), "tv_one")
 }
 
 // TestCompatCommand_MigrateApplyToVersionRefusals covers the three ways the
@@ -190,17 +193,17 @@ func TestCompatCommand_MigrateApplyToVersionRefusals(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			migrationsDir, dbPath := writeToVersionFixture(c)
+			migrationsDir, dbPath := writeToVersionFixture(c.TB)
 			args := append([]string{
 				"migrate", "apply",
 				"--url", "sqlite://" + dbPath,
 				"--dir", "file://" + migrationsDir,
 			}, test.extraArgs(migrationsDir)...)
 
-			_, _, err := runCompatStreams(c, args...)
+			_, _, err := runCompatStreams(c.TB, args...)
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
-			c.Assert(compatTableNames(c, dbPath), qt.Not(qt.Contains), "tv_one")
+			c.Assert(compatTableNames(c.TB, dbPath), qt.Not(qt.Contains), "tv_one")
 		})
 	}
 }

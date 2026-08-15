@@ -27,7 +27,7 @@ const presetSource = "../../core/platform/capability/capability.go"
 func TestCells_ClaimEveryPresetPtahShips(t *testing.T) {
 	c := qt.New(t)
 
-	shipped := presetConstructors(c)
+	shipped := presetConstructors(c.TB)
 	c.Assert(len(shipped) > 8, qt.IsTrue,
 		qt.Commentf("only %d presets were read out of %s; the parse is broken, not the matrix",
 			len(shipped), presetSource))
@@ -38,7 +38,8 @@ func TestCells_ClaimEveryPresetPtahShips(t *testing.T) {
 	}
 
 	for _, preset := range shipped {
-		c.Run(preset, func(c *qt.C) {
+		t.Run(preset, func(t *testing.T) {
+			c := qt.New(t)
 			_, excused := capabilityprobe.PresetsWithoutCell[preset]
 			c.Check(claimed[preset] || excused, qt.IsTrue,
 				qt.Commentf("preset %s has no matrix cell and no entry in PresetsWithoutCell, so nothing "+
@@ -56,10 +57,11 @@ func TestCells_ClaimEveryPresetPtahShips(t *testing.T) {
 func TestPresetsWithoutCell_NameRealPresets(t *testing.T) {
 	c := qt.New(t)
 
-	shipped := presetConstructors(c)
+	shipped := presetConstructors(c.TB)
 	c.Assert(capabilityprobe.PresetsWithoutCell, qt.Not(qt.HasLen), 0)
 	for name, reason := range capabilityprobe.PresetsWithoutCell {
-		c.Run(name, func(c *qt.C) {
+		t.Run(name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Check(shipped, qt.Contains, name,
 				qt.Commentf("%s names no preset in %s", name, presetSource))
 			c.Check(len(reason) > 20, qt.IsTrue,
@@ -71,7 +73,8 @@ func TestPresetsWithoutCell_NameRealPresets(t *testing.T) {
 // presetConstructors returns the name of every exported function in the
 // capability package that takes nothing and returns a Capabilities set, which
 // is the shape every preset has.
-func presetConstructors(c *qt.C) []string {
+func presetConstructors(tb testing.TB) []string {
+	c := qt.New(tb)
 	c.Helper()
 
 	parsed, err := parser.ParseFile(token.NewFileSet(), presetSource, nil, 0)

@@ -20,7 +20,7 @@ func TestSchemaPlanExplicitOutputReplacesSymlinkInsteadOfFollowingIt(t *testing.
 	outputPath := filepath.Join(dir, "explicit.plan.json")
 	c.Assert(os.WriteFile(victimPath, []byte("protected\n"), 0o600), qt.IsNil)
 	c.Assert(os.Symlink(victimPath, outputPath), qt.IsNil)
-	fixture := newPlanFixture(c, "atomic-explicit", "", `CREATE TABLE explicit_users (id INTEGER PRIMARY KEY);`)
+	fixture := newPlanFixture(c.TB, "atomic-explicit", "", `CREATE TABLE explicit_users (id INTEGER PRIMARY KEY);`)
 
 	_, err := runSchemaPlan(atlas.NewCompatCommand("atlas"),
 		fixture.args("--output", outputPath)...)
@@ -44,7 +44,7 @@ func TestSchemaPlanDefaultOutputRefusesSymlinkWithoutFollowingIt(t *testing.T) {
 	outputPath := filepath.Join(dir, "guarded.plan.hcl")
 	c.Assert(os.WriteFile(victimPath, []byte("protected\n"), 0o600), qt.IsNil)
 	c.Assert(os.Symlink(victimPath, outputPath), qt.IsNil)
-	fixture := newPlanFixture(c, "atomic-default", "", `CREATE TABLE guarded_users (id INTEGER PRIMARY KEY);`)
+	fixture := newPlanFixture(c.TB, "atomic-default", "", `CREATE TABLE guarded_users (id INTEGER PRIMARY KEY);`)
 
 	_, err := runSchemaPlan(atlas.NewCompatCommand("atlas"),
 		fixture.args("--save", "--name", "guarded")...)

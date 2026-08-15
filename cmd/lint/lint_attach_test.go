@@ -35,7 +35,7 @@ const testOCIReference = "oci://registry.example/acme/migrations:latest"
 
 func TestRunLint_AttachesCleanOCIReportBeforeSuccess(t *testing.T) {
 	c := qt.New(t)
-	registry := installTestRegistry(t, c, fstest.MapFS{
+	registry := installTestRegistry(t, c.TB, fstest.MapFS{
 		"0000000001_init.up.sql":   {Data: []byte("CREATE TABLE users (id INTEGER);\n")},
 		"0000000001_init.down.sql": {Data: []byte("DROP TABLE users;\n")},
 	})
@@ -58,7 +58,7 @@ func TestRunLint_AttachesCleanOCIReportBeforeSuccess(t *testing.T) {
 
 func TestRunLint_AttachesFailedOCIReportBeforeLintExit(t *testing.T) {
 	c := qt.New(t)
-	registry := installTestRegistry(t, c, fstest.MapFS{
+	registry := installTestRegistry(t, c.TB, fstest.MapFS{
 		"0000000001_drop.up.sql":   {Data: []byte("DROP TABLE users;\n")},
 		"0000000001_drop.down.sql": {Data: []byte("CREATE TABLE users (id INTEGER);\n")},
 	})
@@ -81,7 +81,7 @@ func TestRunLint_AttachesFailedOCIReportBeforeLintExit(t *testing.T) {
 
 func TestRunLint_AttachmentFailureIsCommandErrorWithCleanJSONStdout(t *testing.T) {
 	c := qt.New(t)
-	registry := installTestRegistry(t, c, fstest.MapFS{
+	registry := installTestRegistry(t, c.TB, fstest.MapFS{
 		"0000000001_init.up.sql":   {Data: []byte("CREATE TABLE users (id INTEGER);\n")},
 		"0000000001_init.down.sql": {Data: []byte("DROP TABLE users;\n")},
 	})
@@ -104,7 +104,7 @@ func TestRunLint_AttachmentFailureIsCommandErrorWithCleanJSONStdout(t *testing.T
 
 func TestRunLint_AttachesProjectConfiguredOCIReport(t *testing.T) {
 	c := qt.New(t)
-	registry := installTestRegistry(t, c, fstest.MapFS{
+	registry := installTestRegistry(t, c.TB, fstest.MapFS{
 		"0000000001_init.up.sql":   {Data: []byte("CREATE TABLE users (id INTEGER);\n")},
 		"0000000001_init.down.sql": {Data: []byte("DROP TABLE users;\n")},
 	})
@@ -130,7 +130,7 @@ func TestRunLint_AttachesProjectConfiguredOCIReport(t *testing.T) {
 
 func TestRunLint_WaitsForDelayedOCIReferrerVisibility(t *testing.T) {
 	c := qt.New(t)
-	registry := installTestRegistry(t, c, fstest.MapFS{
+	registry := installTestRegistry(t, c.TB, fstest.MapFS{
 		"0000000001_init.up.sql":   {Data: []byte("CREATE TABLE users (id INTEGER);\n")},
 		"0000000001_init.down.sql": {Data: []byte("DROP TABLE users;\n")},
 	})
@@ -167,10 +167,11 @@ type testRegistryTransport struct {
 	rejectAttachments         bool
 }
 
-func installTestRegistry(t *testing.T, c *qt.C, migrations fs.FS) *testRegistryTransport {
+func installTestRegistry(t *testing.T, tb testing.TB, migrations fs.FS) *testRegistryTransport {
+	c := qt.New(tb)
 	t.Helper()
 	t.Setenv("DOCKER_CONFIG", t.TempDir())
-	registry := newTestRegistry(c, migrations)
+	registry := newTestRegistry(c.TB, migrations)
 	previousClient := retry.DefaultClient
 	retry.DefaultClient = &http.Client{Transport: registry}
 	t.Cleanup(func() {
@@ -179,7 +180,8 @@ func installTestRegistry(t *testing.T, c *qt.C, migrations fs.FS) *testRegistryT
 	return registry
 }
 
-func newTestRegistry(c *qt.C, migrations fs.FS) *testRegistryTransport {
+func newTestRegistry(tb testing.TB, migrations fs.FS) *testRegistryTransport {
+	c := qt.New(tb)
 	c.Helper()
 	ctx := context.Background()
 	store := memory.New()

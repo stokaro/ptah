@@ -1051,7 +1051,6 @@ func TestReadIndexesForSchema_AsksTheCatalogForEveryKeyAttribute(t *testing.T) {
 // every GiST index over tsvector with a signature length -- and the failure it
 // produces is not an error but a quietly different index.
 func TestPostgresOperatorClassSpelling(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name  string
@@ -1085,7 +1084,8 @@ func TestPostgresOperatorClassSpelling(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(postgresOperatorClassSpelling(test.class), qt.Equals, test.want)
 		})
 	}
@@ -1100,7 +1100,6 @@ func TestPostgresOperatorClassSpelling(t *testing.T) {
 // document on every run, and the rebuild that difference plans would drop the
 // parameter it was meant to protect.
 func TestPostgresIndexStorageParams(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name       string
@@ -1135,7 +1134,8 @@ func TestPostgresIndexStorageParams(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			params, err := postgresIndexStorageParams(test.reloptions)
 			c.Assert(err, qt.IsNil)
 			c.Assert(params, qt.DeepEquals, test.want)
@@ -1171,7 +1171,6 @@ func indexQueryForFake(t *testing.T) string {
 // spellings of the TABLE relation are still refused, which is what keeps the
 // wrong-relation mutant red.
 func TestNamesIndexRelation(t *testing.T) {
-	c := qt.New(t)
 	query := indexQueryForFake(t)
 
 	tests := []struct {
@@ -1207,7 +1206,8 @@ func TestNamesIndexRelation(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(namesIndexRelation(query, test.expression), qt.Equals, test.want)
 		})
 	}
@@ -1225,7 +1225,6 @@ func TestNamesIndexRelation(t *testing.T) {
 // server dropped the comment; only the live guard caught it, and the live guard
 // runs only in integration-tests.
 func TestAnswerCommentProjectionReadsTheCatalogArgument(t *testing.T) {
-	c := qt.New(t)
 
 	catalog := commentedCatalog()
 
@@ -1257,7 +1256,8 @@ func TestAnswerCommentProjectionReadsTheCatalogArgument(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			query := "SELECT\n\t" + test.projection + "\nFROM pg_index ix"
 			got, err := answerCommentProjection(catalog, query)
 			c.Assert(err, qt.IsNil)

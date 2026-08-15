@@ -45,8 +45,8 @@ const (
 func writeLintGolangMigrateDir(c *qt.C) string {
 	c.Helper()
 	dir := c.TempDir()
-	writeAtlasApplyProjectMigration(c, dir, lintConvertedUp, "CREATE TABLE g1 (id INTEGER PRIMARY KEY);\n")
-	writeAtlasApplyProjectMigration(c, dir, lintConvertedDown, "DROP TABLE g1;\n")
+	writeAtlasApplyProjectMigration(c.TB, dir, lintConvertedUp, "CREATE TABLE g1 (id INTEGER PRIMARY KEY);\n")
+	writeAtlasApplyProjectMigration(c.TB, dir, lintConvertedDown, "DROP TABLE g1;\n")
 	_, stderr, err := runCompatExit("migrate", "hash", "--dir", "file://"+dir+"?format=golang-migrate")
 	c.Assert(err, qt.IsNil, qt.Commentf("hash stderr: %s", stderr))
 	return dir
@@ -61,11 +61,12 @@ func writeLintGolangMigrateDir(c *qt.C) string {
 // captured". The second reading covers V1__init.sql alone and reports
 // sub/V2__nested.sql as removed; the community binary exits 0 with two versions
 // analyzed.
-func writeLintFlywayNestedDir(c *qt.C) string {
+func writeLintFlywayNestedDir(tb testing.TB) string {
+	c := qt.New(tb)
 	c.Helper()
 	dir := c.TempDir()
-	writeAtlasApplyProjectMigration(c, dir, "V1__init.sql", "CREATE TABLE f1 (id INTEGER PRIMARY KEY);\n")
-	writeAtlasApplyProjectMigration(c, filepath.Join(dir, "sub"), "V2__nested.sql",
+	writeAtlasApplyProjectMigration(c.TB, dir, "V1__init.sql", "CREATE TABLE f1 (id INTEGER PRIMARY KEY);\n")
+	writeAtlasApplyProjectMigration(c.TB, filepath.Join(dir, "sub"), "V2__nested.sql",
 		"CREATE TABLE f2 (id INTEGER PRIMARY KEY);\n")
 	_, stderr, err := runCompatExit("migrate", "hash", "--dir", "file://"+dir+"?format=flyway")
 	c.Assert(err, qt.IsNil, qt.Commentf("hash stderr: %s", stderr))
@@ -74,30 +75,32 @@ func writeLintFlywayNestedDir(c *qt.C) string {
 
 // lintDevURL returns a dev-database URL for a file that does not exist yet, so
 // each row replays into an empty database.
-func lintDevURL(c *qt.C) string {
+func lintDevURL(tb testing.TB) string {
+	c := qt.New(tb)
 	c.Helper()
 	return "sqlite://" + filepath.Join(c.TempDir(), "dev.db")
 }
 
 // runLint invokes `migrate lint --latest 1` over dir with the extra arguments a
 // row supplies.
-func runLint(c *qt.C, dir string, extra []string, latest string) (stdout, stderr string, err error) {
+func runLint(tb testing.TB, dir string, extra []string, latest string) (stdout, stderr string, err error) {
+	c := qt.New(tb)
 	c.Helper()
 	args := append([]string{"migrate", "lint", "--dir", "file://" + dir}, extra...)
-	args = append(args, "--dev-url", lintDevURL(c), "--latest", latest)
+	args = append(args, "--dev-url", lintDevURL(c.TB), "--latest", latest)
 	return runCompatExit(args...)
 }
 
 func TestCompatMigrateLint_FlywayReportUsesExactSourceTokens(t *testing.T) {
 	t.Parallel()
 	c := qt.New(t)
-	dir := writeHashedFlywayDir(c, []setFlywayMigration{
+	dir := writeHashedFlywayDir(c.TB, []setFlywayMigration{
 		{name: "V1__a.sql", body: "CREATE TABLE a (id INTEGER PRIMARY KEY);\n"},
 		{name: "V1.5__b.sql", body: "CREATE TABLE b (id INTEGER PRIMARY KEY);\n"},
 		{name: "V2__c.sql", body: "CREATE TABLE c (id INTEGER PRIMARY KEY);\n"},
 	})
 
-	stdout, stderr, err := runLint(c, dir, []string{"--dir-format", "flyway"}, "1")
+	stdout, stderr, err := runLint(c.TB, dir, []string{"--dir-format", "flyway"}, "1")
 
 	c.Assert(err, qt.IsNil, qt.Commentf("stderr: %s", stderr))
 	c.Assert(stdout, qt.Contains, "Analyzing changes from version 1.5 to 2 (1 migration in total):")
@@ -107,17 +110,17 @@ func TestCompatMigrateLint_FlywayReportUsesExactSourceTokens(t *testing.T) {
 func TestCompatMigrateLint_FlywayReplayFailureUsesExactSourceToken(t *testing.T) {
 	t.Parallel()
 	c := qt.New(t)
-	dir := writeHashedFlywayDir(c, []setFlywayMigration{
+	dir := writeHashedFlywayDir(c.TB, []setFlywayMigration{
 		{name: "V1.5__broken.sql", body: "INSERT INTO missing_lint_table VALUES (1);\n"},
 	})
 
-	stdout, stderr, err := runLint(c, dir, []string{"--dir-format", "flyway"}, "1")
+	stdout, stderr, err := runLint(c.TB, dir, []string{"--dir-format", "flyway"}, "1")
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(stdout+stderr+errorText(err), qt.Contains, "replay migration 1.5")
 	c.Assert(stdout+stderr+errorText(err), qt.Not(qt.Contains), "4611686018427471935")
 	c.Assert(stdout+stderr+errorText(err), qt.Not(qt.Contains), "461168")
 
-	stdout, stderr, err = runLint(c, dir, []string{
+	stdout, stderr, err = runLint(c.TB, dir, []string{
 		"--dir-format", "flyway",
 		"--format", `{{ range .Steps }}{{ .Error }}{{ end }}`,
 	}, "1")
@@ -131,17 +134,17 @@ func TestCompatMigrateLint_FlywayReplayFailureUsesExactSourceToken(t *testing.T)
 func TestCompatMigrateLint_FlywayReplayFailureNamesExactEmptySourceToken(t *testing.T) {
 	t.Parallel()
 	c := qt.New(t)
-	dir := writeHashedFlywayDir(c, []setFlywayMigration{{
+	dir := writeHashedFlywayDir(c.TB, []setFlywayMigration{{
 		name: "V.sql",
 		body: "INSERT INTO missing_empty_lint_table VALUES (1);\n",
 	}})
 
-	stdout, stderr, err := runLint(c, dir, []string{"--dir-format", "flyway"}, "1")
+	stdout, stderr, err := runLint(c.TB, dir, []string{"--dir-format", "flyway"}, "1")
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(stdout+stderr+errorText(err), qt.Contains, `replay migration "" on dev database`)
 	c.Assert(stdout+stderr+errorText(err), qt.Not(qt.Contains), "replay migration  on dev database")
 
-	stdout, stderr, err = runLint(c, dir, []string{
+	stdout, stderr, err = runLint(c.TB, dir, []string{
 		"--dir-format", "flyway",
 		"--format", `{{ range .Steps }}{{ .Error }}{{ end }}`,
 	}, "1")
@@ -196,7 +199,7 @@ func TestCompatMigrateLint_ConvertedDirIsRead(t *testing.T) {
 			c := qt.New(t)
 			dir := writeLintGolangMigrateDir(c)
 
-			stdout, stderr, err := runLint(c, dir+test.suffix, test.extra, "1")
+			stdout, stderr, err := runLint(c.TB, dir+test.suffix, test.extra, "1")
 
 			test.assert(c, stdout, stderr, err)
 		})
@@ -240,7 +243,7 @@ func TestCompatMigrateLint_QueryFormatOutranksDirFormatFlag(t *testing.T) {
 			c := qt.New(t)
 			dir := test.dir(c)
 
-			stdout, stderr, err := runLint(c, dir+test.suffix, test.extra, "1")
+			stdout, stderr, err := runLint(c.TB, dir+test.suffix, test.extra, "1")
 
 			c.Assert(err, qt.IsNil, qt.Commentf("stderr: %s", stderr))
 			c.Assert(stdout, qt.Contains, "1 version ok")
@@ -254,7 +257,7 @@ func TestCompatMigrateLint_QueryFormatOutranksDirFormatFlag(t *testing.T) {
 func writeLintNativeAtlasDir(c *qt.C) string {
 	c.Helper()
 	dir := c.TempDir()
-	writeAtlasApplyProjectMigration(c, dir, "20240101000000_init.sql",
+	writeAtlasApplyProjectMigration(c.TB, dir, "20240101000000_init.sql",
 		"CREATE TABLE t1 (id INTEGER PRIMARY KEY);\n")
 	_, stderr, err := runCompatExit("migrate", "hash", "--dir", "file://"+dir)
 	c.Assert(err, qt.IsNil, qt.Commentf("hash stderr: %s", stderr))
@@ -291,7 +294,7 @@ func TestCompatMigrateLint_ConvertedIntegrityUsesTheSourceLayoutCoveredSet(t *te
 			latest: "1",
 			setup: func(c *qt.C) (string, string) {
 				dir := writeLintGolangMigrateDir(c)
-				writeAtlasApplyProjectMigration(c, dir, lintConvertedUp,
+				writeAtlasApplyProjectMigration(c.TB, dir, lintConvertedUp,
 					"CREATE TABLE g1 (id INTEGER PRIMARY KEY, extra INTEGER);\n")
 				return dir, "?format=golang-migrate"
 			},
@@ -305,7 +308,7 @@ func TestCompatMigrateLint_ConvertedIntegrityUsesTheSourceLayoutCoveredSet(t *te
 			latest: "1",
 			setup: func(c *qt.C) (string, string) {
 				dir := writeLintGolangMigrateDir(c)
-				writeAtlasApplyProjectMigration(c, dir, lintConvertedDown, "DROP TABLE IF EXISTS g1;\n")
+				writeAtlasApplyProjectMigration(c.TB, dir, lintConvertedDown, "DROP TABLE IF EXISTS g1;\n")
 				return dir, "?format=golang-migrate"
 			},
 			assert: func(c *qt.C, stdout, stderr string, err error) {
@@ -317,7 +320,7 @@ func TestCompatMigrateLint_ConvertedIntegrityUsesTheSourceLayoutCoveredSet(t *te
 			name:   "a_nested_flyway_migration_is_covered_and_analyzed",
 			latest: "2",
 			setup: func(c *qt.C) (string, string) {
-				return writeLintFlywayNestedDir(c), "?format=flyway"
+				return writeLintFlywayNestedDir(c.TB), "?format=flyway"
 			},
 			assert: func(c *qt.C, stdout, stderr string, err error) {
 				c.Assert(err, qt.IsNil, qt.Commentf("stderr: %s", stderr))
@@ -328,8 +331,8 @@ func TestCompatMigrateLint_ConvertedIntegrityUsesTheSourceLayoutCoveredSet(t *te
 			name:   "editing_a_nested_flyway_migration_is_a_mismatch",
 			latest: "2",
 			setup: func(c *qt.C) (string, string) {
-				dir := writeLintFlywayNestedDir(c)
-				writeAtlasApplyProjectMigration(c, filepath.Join(dir, "sub"), "V2__nested.sql",
+				dir := writeLintFlywayNestedDir(c.TB)
+				writeAtlasApplyProjectMigration(c.TB, filepath.Join(dir, "sub"), "V2__nested.sql",
 					"CREATE TABLE f2 (id INTEGER PRIMARY KEY, extra INTEGER);\n")
 				return dir, "?format=flyway"
 			},
@@ -358,7 +361,7 @@ func TestCompatMigrateLint_ConvertedIntegrityUsesTheSourceLayoutCoveredSet(t *te
 			c := qt.New(t)
 			dir, suffix := test.setup(c)
 
-			stdout, stderr, err := runLint(c, dir+suffix, nil, test.latest)
+			stdout, stderr, err := runLint(c.TB, dir+suffix, nil, test.latest)
 
 			test.assert(c, stdout, stderr, err)
 		})
@@ -393,7 +396,7 @@ func TestCompatMigrateLint_RejectsNonVerbatimDirFormat(t *testing.T) {
 			c := qt.New(t)
 			dir := writeLintNativeAtlasDir(c)
 
-			_, _, err := runLint(c, dir, []string{"--dir-format", test.value}, "1")
+			_, _, err := runLint(c.TB, dir, []string{"--dir-format", test.value}, "1")
 
 			c.Assert(err, qt.ErrorMatches, `unknown dir format ".*"`)
 		})
@@ -417,7 +420,7 @@ func TestCompatMigrateLint_EmptyDirFormatStillReadsAtlas(t *testing.T) {
 	c := qt.New(t)
 	dir := writeLintNativeAtlasDir(c)
 
-	stdout, stderr, err := runLint(c, dir, []string{"--dir-format", ""}, "1")
+	stdout, stderr, err := runLint(c.TB, dir, []string{"--dir-format", ""}, "1")
 
 	c.Assert(err, qt.IsNil, qt.Commentf("stderr: %s", stderr))
 	c.Assert(stdout, qt.Contains, "1 version ok")

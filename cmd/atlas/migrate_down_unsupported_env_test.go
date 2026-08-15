@@ -46,7 +46,8 @@ func noSkipChecksEnv(t *testing.T) {
 
 // sqliteUsersRowCount reports how many rows survive in the seeded table, which
 // is what separates a refused rollback from one that ran to completion.
-func sqliteUsersRowCount(c *qt.C, dbPath string) int {
+func sqliteUsersRowCount(tb testing.TB, dbPath string) int {
+	c := qt.New(tb)
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)
 	c.Assert(err, qt.IsNil)
@@ -65,10 +66,11 @@ func sqliteUsersRowCount(c *qt.C, dbPath string) int {
 // `--to-version` rollback runs; the first migration's is what an unbounded
 // rollback to version 0 runs, and it drops the table. The seeded row makes the
 // difference observable: a refusal leaves it, a full rollback destroys it.
-func writeDownableMigrationsDir(c *qt.C, dir string) string {
+func writeDownableMigrationsDir(tb testing.TB, dir string) string {
+	c := qt.New(tb)
 	c.Helper()
 	migrationsDir := filepath.Join(dir, "migrations")
-	writeAtlasApplyProjectMigration(c, migrationsDir, "20260801000001_create_users.sql",
+	writeAtlasApplyProjectMigration(c.TB, migrationsDir, "20260801000001_create_users.sql",
 		`-- atlas:txtar
 
 -- migration.sql --
@@ -78,7 +80,7 @@ INSERT INTO users (id, name) VALUES (1, 'alice');
 -- down.sql --
 DROP TABLE users;
 `)
-	writeAtlasApplyProjectMigration(c, migrationsDir, "20260801000002_add_users_email.sql",
+	writeAtlasApplyProjectMigration(c.TB, migrationsDir, "20260801000002_add_users_email.sql",
 		`-- atlas:txtar
 
 -- migration.sql --
@@ -87,7 +89,7 @@ ALTER TABLE users ADD COLUMN email TEXT;
 -- down.sql --
 ALTER TABLE users DROP COLUMN email;
 `)
-	writeAtlasApplyProjectSum(c, migrationsDir)
+	writeAtlasApplyProjectSum(c.TB, migrationsDir)
 	return migrationsDir
 }
 
@@ -108,7 +110,7 @@ func TestMigrateDownIgnoresTheSkipChecksEnvironmentTwin(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			c := qt.New(t)
 			dir := t.TempDir()
-			migrationsDir := writeDownableMigrationsDir(c, dir)
+			migrationsDir := writeDownableMigrationsDir(c.TB, dir)
 			dbPath := filepath.Join(dir, "down.db")
 
 			_, err := executeAtlasProjectCommand(
@@ -130,7 +132,7 @@ func TestMigrateDownIgnoresTheSkipChecksEnvironmentTwin(t *testing.T) {
 
 			c.Assert(err, qt.IsNil, qt.Commentf("command output:\n%s", out))
 			c.Assert(out, qt.Not(qt.Contains), downUnsupportedFlagRefusal)
-			c.Assert(sqliteUsersEmailColumnCount(c, dbPath), qt.Equals, 0)
+			c.Assert(sqliteUsersEmailColumnCount(c.TB, dbPath), qt.Equals, 0)
 		})
 	}
 }
@@ -162,7 +164,7 @@ func TestMigrateDownRefusesUnsupportedFlagEnvironmentTwins(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			c := qt.New(t)
 			dir := t.TempDir()
-			migrationsDir := writeDownableMigrationsDir(c, dir)
+			migrationsDir := writeDownableMigrationsDir(c.TB, dir)
 			dbPath := filepath.Join(dir, "down.db")
 
 			_, err := executeAtlasProjectCommand(
@@ -185,8 +187,8 @@ func TestMigrateDownRefusesUnsupportedFlagEnvironmentTwins(t *testing.T) {
 			c.Assert(err.Error(), qt.Contains, tc.wantFlag)
 			c.Assert(err.Error(), qt.Contains, downUnsupportedFlagRefusal)
 			// Nothing was rolled back: the seeded row and its table survive.
-			c.Assert(sqliteTableCount(c, dbPath, "users"), qt.Equals, 1)
-			c.Assert(sqliteUsersRowCount(c, dbPath), qt.Equals, 1)
+			c.Assert(sqliteTableCount(c.TB, dbPath, "users"), qt.Equals, 1)
+			c.Assert(sqliteUsersRowCount(c.TB, dbPath), qt.Equals, 1)
 		})
 	}
 }
@@ -195,7 +197,8 @@ func TestMigrateDownRefusesUnsupportedFlagEnvironmentTwins(t *testing.T) {
 // flag's usage line, or the empty string when it printed none. Returning the
 // annotation rather than asserting on it lets every case below make the same
 // assertion, so "advertises nothing" and "advertises PTAH_X" are one rule.
-func downHelpEnvAnnotation(c *qt.C, help, flag string) string {
+func downHelpEnvAnnotation(tb testing.TB, help, flag string) string {
+	c := qt.New(tb)
 	c.Helper()
 	for line := range strings.SplitSeq(help, "\n") {
 		trimmed := strings.TrimSpace(line)
@@ -237,7 +240,7 @@ func TestMigrateDownHelpAdvertisesOnlyLiveEnvironmentTwins(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(downHelpEnvAnnotation(c, help, tc.flag), qt.Equals, tc.want)
+			c.Assert(downHelpEnvAnnotation(c.TB, help, tc.flag), qt.Equals, tc.want)
 		})
 	}
 }
@@ -274,7 +277,7 @@ func TestMigrateDownStillRefusesExplicitUnsupportedFlags(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			c := qt.New(t)
 			dir := t.TempDir()
-			migrationsDir := writeDownableMigrationsDir(c, dir)
+			migrationsDir := writeDownableMigrationsDir(c.TB, dir)
 			dbPath := filepath.Join(dir, "down.db")
 
 			_, err := executeAtlasProjectCommand(
@@ -297,7 +300,7 @@ func TestMigrateDownStillRefusesExplicitUnsupportedFlags(t *testing.T) {
 
 			c.Assert(err, qt.IsNotNil, qt.Commentf("command output:\n%s", out))
 			c.Assert(err.Error(), qt.Contains, downUnsupportedFlagRefusal)
-			c.Assert(sqliteUsersEmailColumnCount(c, dbPath), qt.Equals, 1)
+			c.Assert(sqliteUsersEmailColumnCount(c.TB, dbPath), qt.Equals, 1)
 		})
 	}
 }

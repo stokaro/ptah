@@ -127,7 +127,7 @@ func TestCompatMigrateWrite_RefusesADirectoryNamingNoScheme(t *testing.T) {
 				// The stream split is the community binary's: one
 				// `Error: <reason>` line on stderr and nothing else.
 				c.Assert(stderr, qt.Equals, "Error: "+spelling.wantError(missing)+"\n")
-				c.Assert(atlasWriteDirFingerprint(c, missing), qt.Equals, "<absent>")
+				c.Assert(atlasWriteDirFingerprint(c.TB, missing), qt.Equals, "<absent>")
 			})
 		}
 	}
@@ -169,7 +169,7 @@ func TestCompatMigrateNew_RequiresTheSchemeOnEveryAtlasSpelling(t *testing.T) {
 
 			c.Assert(err, qt.ErrorMatches, regexpQuote(atlasMissingSchemeError(missing)))
 			c.Assert(stderr, qt.Equals, "Error: "+atlasMissingSchemeError(missing)+"\n")
-			c.Assert(atlasWriteDirFingerprint(c, missing), qt.Equals, "<absent>")
+			c.Assert(atlasWriteDirFingerprint(c.TB, missing), qt.Equals, "<absent>")
 		})
 	}
 }
@@ -243,7 +243,7 @@ func TestCompatMigrateWrite_SpellingsTheCommunityBinaryAcceptsStillWrite(t *test
 			run: func(c *qt.C) (string, error) {
 				root := c.TempDir()
 				c.Setenv("HOME", root)
-				writeAtlasMigrationDirProject(c, root, "file://mig")
+				writeAtlasMigrationDirProject(c.TB, root, "file://mig")
 				_, _, err := runCompat("migrate", "new", "demo",
 					"--config", "file://"+filepath.Join(root, "atlas.hcl"), "--env", "local")
 				return filepath.Join(root, "mig"), err
@@ -291,7 +291,7 @@ func TestCompatMigrateWrite_SpellingsTheCommunityBinaryAcceptsStillWrite(t *test
 			dir, err := tt.run(c)
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(atlasWriteDirFingerprint(c, dir), qt.Contains, "atlas.sum")
+			c.Assert(atlasWriteDirFingerprint(c.TB, dir), qt.Contains, "atlas.sum")
 		})
 	}
 }
@@ -338,7 +338,7 @@ func TestCompatMigrateRead_RequiresTheSchemeToo(t *testing.T) {
 		t.Run(verb.name, func(t *testing.T) {
 			c := qt.New(t)
 			dir := writeAtlasWriteFixture(c, c.TempDir())
-			hashAtlasWriteFixture(c, dir)
+			hashAtlasWriteFixture(c.TB, dir)
 
 			_, _, err := runCompat(verb.args(dir)...)
 
@@ -350,7 +350,7 @@ func TestCompatMigrateRead_RequiresTheSchemeToo(t *testing.T) {
 		t.Run("control: "+verb.name+" with the scheme", func(t *testing.T) {
 			c := qt.New(t)
 			dir := writeAtlasWriteFixture(c, c.TempDir())
-			hashAtlasWriteFixture(c, dir)
+			hashAtlasWriteFixture(c.TB, dir)
 
 			_, _, err := runCompat(verb.args("file://" + dir)...)
 
@@ -376,18 +376,19 @@ func TestCompatMigrateNew_LeavesTheProjectFileSpellingToIssue1186(t *testing.T) 
 	c := qt.New(t)
 	root := c.TempDir()
 	c.Setenv("HOME", root)
-	writeAtlasMigrationDirProject(c, root, "mig")
+	writeAtlasMigrationDirProject(c.TB, root, "mig")
 
 	_, _, err := runCompat("migrate", "new", "demo",
 		"--config", "file://"+filepath.Join(root, "atlas.hcl"), "--env", "local")
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(atlasWriteDirFingerprint(c, filepath.Join(root, "mig")), qt.Contains, "atlas.sum")
+	c.Assert(atlasWriteDirFingerprint(c.TB, filepath.Join(root, "mig")), qt.Contains, "atlas.sum")
 }
 
 // writeAtlasMigrationDirProject writes an atlas.hcl whose only env names the
 // migration directory with the given spelling.
-func writeAtlasMigrationDirProject(c *qt.C, root, dir string) {
+func writeAtlasMigrationDirProject(tb testing.TB, root, dir string) {
+	c := qt.New(tb)
 	c.Helper()
 	c.Assert(os.WriteFile(filepath.Join(root, "atlas.hcl"), fmt.Appendf(nil, `env "local" {
   migration {

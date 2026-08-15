@@ -52,12 +52,12 @@ func TestPlanner_ColumnTypeChange_ReferencingFKColumn_DropModifyReadd(t *testing
 				},
 			}
 
-			sql := renderMySQLFamily(c, dialect, diff, generated)
+			sql := renderMySQLFamily(c.TB, dialect, diff, generated)
 
-			assertContainsBefore(c, sql,
+			assertContainsBefore(c.TB, sql,
 				"ALTER TABLE posts DROP FOREIGN KEY fk_posts_user_id",
 				"ALTER TABLE posts MODIFY COLUMN user_id BIGINT NOT NULL;")
-			assertContainsBefore(c, sql,
+			assertContainsBefore(c.TB, sql,
 				"ALTER TABLE posts MODIFY COLUMN user_id BIGINT NOT NULL;",
 				"ALTER TABLE posts ADD CONSTRAINT fk_posts_user_id FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;")
 
@@ -88,12 +88,12 @@ func TestPlanner_ColumnTypeChange_ReferencedColumn_DropsReferencingFK(t *testing
 				},
 			}
 
-			sql := renderMySQLFamily(c, dialect, diff, generated)
+			sql := renderMySQLFamily(c.TB, dialect, diff, generated)
 
-			assertContainsBefore(c, sql,
+			assertContainsBefore(c.TB, sql,
 				"ALTER TABLE posts DROP FOREIGN KEY fk_posts_user_id",
 				"ALTER TABLE users MODIFY COLUMN id BIGINT")
-			assertContainsBefore(c, sql,
+			assertContainsBefore(c.TB, sql,
 				"ALTER TABLE users MODIFY COLUMN id BIGINT",
 				"ALTER TABLE posts ADD CONSTRAINT fk_posts_user_id FOREIGN KEY (user_id) REFERENCES users(id);")
 		})
@@ -133,12 +133,12 @@ func TestPlanner_ColumnTypeChange_DefaultSchemaQualifiedRemovalMatchesBareAdditi
 		},
 	}
 
-	sql := renderMySQLFamily(c, "mysql", diff, desired)
+	sql := renderMySQLFamily(c.TB, "mysql", diff, desired)
 
-	assertContainsBefore(c, sql,
+	assertContainsBefore(c.TB, sql,
 		"ALTER TABLE posts DROP FOREIGN KEY fk_posts_user_id",
 		"ALTER TABLE posts MODIFY COLUMN user_id BIGINT NOT NULL;")
-	assertContainsBefore(c, sql,
+	assertContainsBefore(c.TB, sql,
 		"ALTER TABLE posts MODIFY COLUMN user_id BIGINT NOT NULL;",
 		"ALTER TABLE posts ADD CONSTRAINT fk_posts_user_id FOREIGN KEY (user_id) REFERENCES users(id);")
 	c.Assert(strings.Count(sql, "DROP FOREIGN KEY fk_posts_user_id"), qt.Equals, 1)
@@ -159,7 +159,7 @@ func TestPlanner_ColumnTypeChange_IgnoresUnmatchedSupplementalForeignKeyRemoval(
 		}},
 	}
 
-	sql := renderMySQLFamily(c, "mysql", diff, desired)
+	sql := renderMySQLFamily(c.TB, "mysql", diff, desired)
 
 	c.Assert(sql, qt.Contains, "ALTER TABLE posts MODIFY COLUMN user_id BIGINT NOT NULL;")
 	c.Assert(sql, qt.Not(qt.Contains), "DROP FOREIGN KEY")
@@ -195,7 +195,7 @@ func TestPlanner_ColumnTypeChange_BothEnds_SingleDropAndReadd(t *testing.T) {
 				},
 			}
 
-			sql := renderMySQLFamily(c, dialect, diff, generated)
+			sql := renderMySQLFamily(c.TB, dialect, diff, generated)
 
 			c.Assert(strings.Count(sql, "DROP FOREIGN KEY fk_posts_user_id"), qt.Equals, 1,
 				qt.Commentf("expected exactly one drop, got:\n%s", sql))
@@ -203,10 +203,10 @@ func TestPlanner_ColumnTypeChange_BothEnds_SingleDropAndReadd(t *testing.T) {
 				qt.Commentf("expected exactly one re-add, got:\n%s", sql))
 
 			// Both column modifications sit between the single drop and re-add.
-			assertContainsBefore(c, sql, "DROP FOREIGN KEY fk_posts_user_id", "MODIFY COLUMN user_id BIGINT")
-			assertContainsBefore(c, sql, "DROP FOREIGN KEY fk_posts_user_id", "MODIFY COLUMN code BIGINT")
-			assertContainsBefore(c, sql, "MODIFY COLUMN user_id BIGINT", "ADD CONSTRAINT fk_posts_user_id")
-			assertContainsBefore(c, sql, "MODIFY COLUMN code BIGINT", "ADD CONSTRAINT fk_posts_user_id")
+			assertContainsBefore(c.TB, sql, "DROP FOREIGN KEY fk_posts_user_id", "MODIFY COLUMN user_id BIGINT")
+			assertContainsBefore(c.TB, sql, "DROP FOREIGN KEY fk_posts_user_id", "MODIFY COLUMN code BIGINT")
+			assertContainsBefore(c.TB, sql, "MODIFY COLUMN user_id BIGINT", "ADD CONSTRAINT fk_posts_user_id")
+			assertContainsBefore(c.TB, sql, "MODIFY COLUMN code BIGINT", "ADD CONSTRAINT fk_posts_user_id")
 		})
 	}
 }
@@ -241,12 +241,12 @@ func TestPlanner_ColumnTypeChange_TableLevelForeignKey(t *testing.T) {
 				},
 			}
 
-			sql := renderMySQLFamily(c, dialect, diff, generated)
+			sql := renderMySQLFamily(c.TB, dialect, diff, generated)
 
-			assertContainsBefore(c, sql,
+			assertContainsBefore(c.TB, sql,
 				"ALTER TABLE orders DROP FOREIGN KEY fk_orders_accounts",
 				"ALTER TABLE orders MODIFY COLUMN tenant_id BIGINT NOT NULL;")
-			assertContainsBefore(c, sql,
+			assertContainsBefore(c.TB, sql,
 				"ALTER TABLE orders MODIFY COLUMN tenant_id BIGINT NOT NULL;",
 				"ALTER TABLE orders ADD CONSTRAINT fk_orders_accounts FOREIGN KEY (tenant_id, owner_id) REFERENCES accounts(tenant_id, id) ON DELETE CASCADE;")
 		})
@@ -273,12 +273,12 @@ func TestPlanner_ColumnTypeChange_SelfReferencingForeignKey(t *testing.T) {
 				},
 			}
 
-			sql := renderMySQLFamily(c, dialect, diff, generated)
+			sql := renderMySQLFamily(c.TB, dialect, diff, generated)
 
-			assertContainsBefore(c, sql,
+			assertContainsBefore(c.TB, sql,
 				"ALTER TABLE categories DROP FOREIGN KEY fk_categories_parent",
 				"ALTER TABLE categories MODIFY COLUMN parent_id BIGINT;")
-			assertContainsBefore(c, sql,
+			assertContainsBefore(c.TB, sql,
 				"ALTER TABLE categories MODIFY COLUMN parent_id BIGINT;",
 				"ALTER TABLE categories ADD CONSTRAINT fk_categories_parent FOREIGN KEY (parent_id) REFERENCES categories(id) ON DELETE SET NULL;")
 		})
@@ -312,12 +312,12 @@ func TestPlanner_ColumnTypeChange_DownInverse(t *testing.T) {
 				},
 			}
 
-			sql := renderMySQLFamily(c, dialect, reverseDiff, dbAsGoSchema)
+			sql := renderMySQLFamily(c.TB, dialect, reverseDiff, dbAsGoSchema)
 
-			assertContainsBefore(c, sql,
+			assertContainsBefore(c.TB, sql,
 				"ALTER TABLE posts DROP FOREIGN KEY fk_posts_user_id",
 				"ALTER TABLE posts MODIFY COLUMN user_id INTEGER NOT NULL;")
-			assertContainsBefore(c, sql,
+			assertContainsBefore(c.TB, sql,
 				"ALTER TABLE posts MODIFY COLUMN user_id INTEGER NOT NULL;",
 				"ALTER TABLE posts ADD CONSTRAINT fk_posts_user_id FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;")
 		})
@@ -364,7 +364,7 @@ func TestPlanner_ColumnTypeChange_CoincidentFKDefinitionChange(t *testing.T) {
 				},
 			}
 
-			sql := renderMySQLFamily(c, dialect, diff, generated)
+			sql := renderMySQLFamily(c.TB, dialect, diff, generated)
 
 			// Exactly one drop and one re-add.
 			c.Assert(strings.Count(sql, "DROP FOREIGN KEY fk_posts_user_id"), qt.Equals, 1,
@@ -374,10 +374,10 @@ func TestPlanner_ColumnTypeChange_CoincidentFKDefinitionChange(t *testing.T) {
 
 			// The drop precedes the MODIFY, the re-add follows it, and the re-add
 			// carries the new ON DELETE SET NULL definition.
-			assertContainsBefore(c, sql,
+			assertContainsBefore(c.TB, sql,
 				"ALTER TABLE posts DROP FOREIGN KEY fk_posts_user_id",
 				"ALTER TABLE posts MODIFY COLUMN user_id BIGINT;")
-			assertContainsBefore(c, sql,
+			assertContainsBefore(c.TB, sql,
 				"ALTER TABLE posts MODIFY COLUMN user_id BIGINT;",
 				"ALTER TABLE posts ADD CONSTRAINT fk_posts_user_id FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE SET NULL;")
 		})
@@ -429,7 +429,7 @@ func TestPlanner_ColumnTypeChange_CoHostedSharedFKName(t *testing.T) {
 				},
 			}
 
-			sql := renderMySQLFamily(c, dialect, diff, generated)
+			sql := renderMySQLFamily(c.TB, dialect, diff, generated)
 
 			// Both hosts dropped and recreated exactly once each.
 			c.Assert(strings.Count(sql, "ALTER TABLE posts DROP FOREIGN KEY fk_shared"), qt.Equals, 1,
@@ -442,10 +442,10 @@ func TestPlanner_ColumnTypeChange_CoHostedSharedFKName(t *testing.T) {
 				qt.Commentf("comments key must be recreated once (blocker 2); got:\n%s", sql))
 
 			// Each host's drop precedes its MODIFY and its re-add follows it.
-			assertContainsBefore(c, sql, "ALTER TABLE comments DROP FOREIGN KEY fk_shared", "ALTER TABLE comments MODIFY COLUMN user_id BIGINT")
-			assertContainsBefore(c, sql, "ALTER TABLE posts DROP FOREIGN KEY fk_shared", "ALTER TABLE posts MODIFY COLUMN user_id BIGINT")
-			assertContainsBefore(c, sql, "ALTER TABLE comments MODIFY COLUMN user_id BIGINT", "ALTER TABLE comments ADD CONSTRAINT fk_shared")
-			assertContainsBefore(c, sql, "ALTER TABLE posts MODIFY COLUMN user_id BIGINT", "ALTER TABLE posts ADD CONSTRAINT fk_shared")
+			assertContainsBefore(c.TB, sql, "ALTER TABLE comments DROP FOREIGN KEY fk_shared", "ALTER TABLE comments MODIFY COLUMN user_id BIGINT")
+			assertContainsBefore(c.TB, sql, "ALTER TABLE posts DROP FOREIGN KEY fk_shared", "ALTER TABLE posts MODIFY COLUMN user_id BIGINT")
+			assertContainsBefore(c.TB, sql, "ALTER TABLE comments MODIFY COLUMN user_id BIGINT", "ALTER TABLE comments ADD CONSTRAINT fk_shared")
+			assertContainsBefore(c.TB, sql, "ALTER TABLE posts MODIFY COLUMN user_id BIGINT", "ALTER TABLE posts ADD CONSTRAINT fk_shared")
 		})
 	}
 }
@@ -482,13 +482,13 @@ func TestPlanner_ColumnTypeChange_RemovedOnlyForeignKey(t *testing.T) {
 				},
 			}
 
-			sql := renderMySQLFamily(c, dialect, diff, generated)
+			sql := renderMySQLFamily(c.TB, dialect, diff, generated)
 
 			// Dropped exactly once, before the MODIFY; never re-added.
 			c.Assert(strings.Count(sql, "DROP FOREIGN KEY fk_posts_author"), qt.Equals, 1,
 				qt.Commentf("removed-only FK must be dropped exactly once; got:\n%s", sql))
 			c.Assert(sql, qt.Not(qt.Contains), "ADD CONSTRAINT fk_posts_author")
-			assertContainsBefore(c, sql,
+			assertContainsBefore(c.TB, sql,
 				"ALTER TABLE posts DROP FOREIGN KEY fk_posts_author",
 				"ALTER TABLE posts MODIFY COLUMN author_id BIGINT;")
 		})
@@ -520,7 +520,7 @@ func TestPlanner_ColumnTypeChange_NonTypeChangeKeepsForeignKey(t *testing.T) {
 				},
 			}
 
-			sql := renderMySQLFamily(c, dialect, diff, generated)
+			sql := renderMySQLFamily(c.TB, dialect, diff, generated)
 
 			c.Assert(sql, qt.Not(qt.Contains), "DROP FOREIGN KEY")
 			c.Assert(sql, qt.Not(qt.Contains), "ADD CONSTRAINT fk_posts_user_id")
@@ -542,7 +542,7 @@ func TestPlanner_ColumnTypeChange_NoForeignKeyLeavesBareModify(t *testing.T) {
 				},
 			}
 
-			sql := renderMySQLFamily(c, dialect, diff, generated)
+			sql := renderMySQLFamily(c.TB, dialect, diff, generated)
 
 			c.Assert(sql, qt.Not(qt.Contains), "DROP FOREIGN KEY")
 			c.Assert(sql, qt.Not(qt.Contains), "ADD CONSTRAINT")

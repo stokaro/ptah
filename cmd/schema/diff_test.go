@@ -11,8 +11,8 @@ import (
 func TestSchemaDiffTwoFilesWithDevDatabase(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
-	fromPath := writeSchemaSQLFile(c, dir, "from.sql", "CREATE TABLE users (id INTEGER PRIMARY KEY);\n")
-	toPath := writeSchemaSQLFile(c, dir, "to.sql",
+	fromPath := writeSchemaSQLFile(c.TB, dir, "from.sql", "CREATE TABLE users (id INTEGER PRIMARY KEY);\n")
+	toPath := writeSchemaSQLFile(c.TB, dir, "to.sql",
 		"CREATE TABLE users (id INTEGER PRIMARY KEY);\nCREATE TABLE orders (id INTEGER PRIMARY KEY);\n")
 
 	out, err := runSchema("", "diff",
@@ -29,8 +29,8 @@ func TestSchemaDiffTwoFilesWithDevDatabase(t *testing.T) {
 func TestSchemaDiffSyncedSchemasReportNoChanges(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
-	fromPath := writeSchemaSQLFile(c, dir, "from.sql", "CREATE TABLE users (id INTEGER PRIMARY KEY);\n")
-	toPath := writeSchemaSQLFile(c, dir, "to.sql", "CREATE TABLE users (id INTEGER PRIMARY KEY);\n")
+	fromPath := writeSchemaSQLFile(c.TB, dir, "from.sql", "CREATE TABLE users (id INTEGER PRIMARY KEY);\n")
+	toPath := writeSchemaSQLFile(c.TB, dir, "to.sql", "CREATE TABLE users (id INTEGER PRIMARY KEY);\n")
 
 	out, err := runSchema("", "diff",
 		"--from", fromPath,
@@ -45,8 +45,8 @@ func TestSchemaDiffSyncedSchemasReportNoChanges(t *testing.T) {
 func TestSchemaDiffJSONFormat(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
-	fromPath := writeSchemaSQLFile(c, dir, "from.sql", "CREATE TABLE users (id INTEGER PRIMARY KEY);\n")
-	toPath := writeSchemaSQLFile(c, dir, "to.sql",
+	fromPath := writeSchemaSQLFile(c.TB, dir, "from.sql", "CREATE TABLE users (id INTEGER PRIMARY KEY);\n")
+	toPath := writeSchemaSQLFile(c.TB, dir, "to.sql",
 		"CREATE TABLE users (id INTEGER PRIMARY KEY);\nCREATE TABLE orders (id INTEGER PRIMARY KEY);\n")
 
 	out, err := runSchema("", "diff",
@@ -72,7 +72,7 @@ func TestSchemaDiffRequiresFromAndTo(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, "--from is required", qt.Commentf("%s", out))
 
 	dir := t.TempDir()
-	fromPath := writeSchemaSQLFile(c, dir, "from.sql", "CREATE TABLE users (id INTEGER PRIMARY KEY);\n")
+	fromPath := writeSchemaSQLFile(c.TB, dir, "from.sql", "CREATE TABLE users (id INTEGER PRIMARY KEY);\n")
 	out, err = runSchema("", "diff", "--from", fromPath)
 	c.Assert(err, qt.ErrorMatches, "--to is required", qt.Commentf("%s", out))
 }
@@ -80,7 +80,7 @@ func TestSchemaDiffRequiresFromAndTo(t *testing.T) {
 func TestSchemaDiffRejectsInvalidConnectTimeout(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
-	fromPath := writeSchemaSQLFile(c, dir, "from.sql", "CREATE TABLE users (id INTEGER PRIMARY KEY);\n")
+	fromPath := writeSchemaSQLFile(c.TB, dir, "from.sql", "CREATE TABLE users (id INTEGER PRIMARY KEY);\n")
 
 	out, err := runSchema("", "diff",
 		"--from", fromPath,
@@ -95,7 +95,7 @@ func TestSchemaDiffRejectsInvalidConnectTimeout(t *testing.T) {
 func TestSchemaDiffRejectsUnsupportedFormat(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
-	fromPath := writeSchemaSQLFile(c, dir, "from.sql", "CREATE TABLE users (id INTEGER PRIMARY KEY);\n")
+	fromPath := writeSchemaSQLFile(c.TB, dir, "from.sql", "CREATE TABLE users (id INTEGER PRIMARY KEY);\n")
 
 	out, err := runSchema("", "diff",
 		"--from", fromPath,

@@ -16,7 +16,7 @@ import (
 func TestCommandWritesMermaid(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
-	writeModel(c, dir)
+	writeModel(c.TB, dir)
 
 	cmd := viz.NewCommand()
 	var stdout, stderr bytes.Buffer
@@ -41,7 +41,7 @@ func TestCommandWritesMermaid(t *testing.T) {
 func TestCommandDoesNotDuplicateJSONEmbeddedColumns(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
-	writeJSONEmbeddedModel(c, dir)
+	writeJSONEmbeddedModel(c.TB, dir)
 
 	cmd := viz.NewCommand()
 	var stdout, stderr bytes.Buffer
@@ -62,7 +62,7 @@ func TestCommandDoesNotDuplicateJSONEmbeddedColumns(t *testing.T) {
 func TestCommandExcludesTables(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
-	writeModel(c, dir)
+	writeModel(c.TB, dir)
 
 	cmd := viz.NewCommand()
 	var stdout, stderr bytes.Buffer
@@ -137,7 +137,7 @@ func TestExampleArtifactsMatchGeneratedOutput(t *testing.T) {
 func TestSVGReportsFriendlyGraphvizErrorWhenDotIsMissing(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
-	writeModel(c, dir)
+	writeModel(c.TB, dir)
 	t.Setenv("PATH", t.TempDir())
 
 	cmd := viz.NewCommand()
@@ -158,7 +158,7 @@ func TestSVGReportsGraphvizStderrOnFailure(t *testing.T) {
 	skipOnWindows(t)
 	c := qt.New(t)
 	dir := t.TempDir()
-	writeModel(c, dir)
+	writeModel(c.TB, dir)
 	binDir := t.TempDir()
 	dotPath := filepath.Join(binDir, "dot")
 	c.Assert(os.WriteFile(dotPath, []byte("#!/bin/sh\necho graphviz exploded >&2\nexit 42\n"), 0o600), qt.IsNil)
@@ -187,7 +187,8 @@ func skipOnWindows(t *testing.T) {
 	}
 }
 
-func writeModel(c *qt.C, dir string) {
+func writeModel(tb testing.TB, dir string) {
+	c := qt.New(tb)
 	path := filepath.Join(dir, "model.go")
 	content := `package models
 
@@ -212,7 +213,8 @@ type Post struct {
 	c.Assert(os.WriteFile(path, []byte(content), 0o600), qt.IsNil)
 }
 
-func writeJSONEmbeddedModel(c *qt.C, dir string) {
+func writeJSONEmbeddedModel(tb testing.TB, dir string) {
+	c := qt.New(tb)
 	path := filepath.Join(dir, "model.go")
 	content := `package models
 

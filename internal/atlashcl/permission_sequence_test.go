@@ -25,7 +25,7 @@ permission {
 	c.Assert(db.Grants[0].OnTable, qt.Equals, "")
 	c.Assert(db.Grants[0].OnSchema, qt.Equals, "")
 
-	sql := legacyRenderedSQL(strings.Join(renderStatements(c, db, "postgres"), "\n"))
+	sql := legacyRenderedSQL(strings.Join(renderStatements(c.TB, db, "postgres"), "\n"))
 	c.Assert(sql, qt.Contains, `GRANT USAGE, SELECT ON SEQUENCE order_seq TO app_user;`)
 }
 

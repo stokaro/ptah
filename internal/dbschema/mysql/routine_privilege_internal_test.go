@@ -29,7 +29,6 @@ import (
 // dressing it up in a privilege message would hide a rendering regression
 // behind friendly text. Anything that is not 1419 must fall through untouched.
 func TestDescribeRoutinePrivilegeRefusal(t *testing.T) {
-	c := qt.New(t)
 
 	const statement = "CREATE FUNCTION `f1`() RETURNS int DETERMINISTIC RETURN 1"
 
@@ -61,14 +60,16 @@ func TestDescribeRoutinePrivilegeRefusal(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			got := describeRoutinePrivilegeRefusal(test.err, statement)
 
 			c.Check(got != nil, qt.Equals, test.rewrite)
 		})
 	}
 
-	c.Run("the rewritten message is actionable and keeps the cause", func(c *qt.C) {
+	t.Run("the rewritten message is actionable and keeps the cause", func(t *testing.T) {
+		c := qt.New(t)
 		got := describeRoutinePrivilegeRefusal(
 			&mysqldriver.MySQLError{Number: 1419, Message: "You do not have the SUPER privilege and binary logging is enabled"},
 			statement,

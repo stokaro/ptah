@@ -45,9 +45,9 @@ type Country struct {
 
 	c.Assert(err, qt.ErrorIs, ErrOutputAliasesManagedData)
 	c.Assert(result, qt.DeepEquals, Result{})
-	assertExportInternalFileBytes(c, source, sourceData)
-	assertExportInternalFileBytes(c, dataPath, data)
-	assertExportInternalFileBytes(c, output, data)
+	assertExportInternalFileBytes(c.TB, source, sourceData)
+	assertExportInternalFileBytes(c.TB, dataPath, data)
+	assertExportInternalFileBytes(c.TB, output, data)
 	entries, err := os.ReadDir(root)
 	c.Assert(err, qt.IsNil)
 	c.Assert(exportInternalEntryNames(entries), qt.DeepEquals, []string{

@@ -15,7 +15,8 @@ import (
 
 // checkpointFlagFixture writes a hashed two-migration Atlas directory and
 // returns it together with a fresh shadow database URL.
-func checkpointFlagFixture(c *qt.C) (migrationsDir, devURL string) {
+func checkpointFlagFixture(tb testing.TB) (migrationsDir, devURL string) {
+	c := qt.New(tb)
 	c.Helper()
 	root := c.TempDir()
 	migrationsDir = filepath.Join(root, "migrations")
@@ -38,7 +39,8 @@ func checkpointFlagFixture(c *qt.C) (migrationsDir, devURL string) {
 // writeAppendingEditor writes an editor command that appends a marker to every
 // file it is handed and exits, which is the non-interactive editor the opt-out
 // environment variable exists for.
-func writeAppendingEditor(c *qt.C, marker string) string {
+func writeAppendingEditor(tb testing.TB, marker string) string {
+	c := qt.New(tb)
 	c.Helper()
 	path := filepath.Join(c.TempDir(), "editor.sh")
 	script := "#!/bin/sh\nfor f in \"$@\"; do\n  printf '%s\\n' \"" + marker + "\" >> \"$f\"\ndone\n"
@@ -46,7 +48,8 @@ func writeAppendingEditor(c *qt.C, marker string) string {
 	return path
 }
 
-func checkpointFileNames(c *qt.C, migrationsDir string) []string {
+func checkpointFileNames(tb testing.TB, migrationsDir string) []string {
+	c := qt.New(tb)
 	c.Helper()
 	entries, err := os.ReadDir(migrationsDir)
 	c.Assert(err, qt.IsNil)
@@ -57,7 +60,8 @@ func checkpointFileNames(c *qt.C, migrationsDir string) []string {
 	return names
 }
 
-func checkpointBody(c *qt.C, migrationsDir string) string {
+func checkpointBody(tb testing.TB, migrationsDir string) string {
+	c := qt.New(tb)
 	c.Helper()
 	written, err := filepath.Glob(filepath.Join(migrationsDir, "*_checkpoint.sql"))
 	c.Assert(err, qt.IsNil)
@@ -90,7 +94,7 @@ func TestCompatCommand_MigrateCheckpointEditRefusesWhatItCannotFinish(t *testing
 			name: "an editor is configured but there is no terminal",
 			env: func(c *qt.C) {
 				c.Setenv("VISUAL", "")
-				c.Setenv("EDITOR", writeAppendingEditor(c, "-- edited"))
+				c.Setenv("EDITOR", writeAppendingEditor(c.TB, "-- edited"))
 			},
 			wantErr: `standard input is not a terminal.*set PTAH_ALLOW_NONINTERACTIVE_EDIT=1.*`,
 		},
@@ -101,9 +105,9 @@ func TestCompatCommand_MigrateCheckpointEditRefusesWhatItCannotFinish(t *testing
 			c := qt.New(t)
 			envbooltest.Unset("PTAH_ALLOW_NONINTERACTIVE_EDIT")(c)
 			test.env(c)
-			migrationsDir, devURL := checkpointFlagFixture(c)
+			migrationsDir, devURL := checkpointFlagFixture(c.TB)
 
-			_, _, err := runCompatStreams(c,
+			_, _, err := runCompatStreams(c.TB,
 				"migrate", "checkpoint",
 				"--dir", "file://"+migrationsDir,
 				"--dev-url", devURL,
@@ -111,7 +115,7 @@ func TestCompatCommand_MigrateCheckpointEditRefusesWhatItCannotFinish(t *testing
 			)
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
-			c.Assert(checkpointFileNames(c, migrationsDir), qt.HasLen, 3)
+			c.Assert(checkpointFileNames(c.TB, migrationsDir), qt.HasLen, 3)
 		})
 	}
 }
@@ -124,11 +128,11 @@ func TestCompatCommand_MigrateCheckpointEditRefusesWhatItCannotFinish(t *testing
 func TestCompatCommand_MigrateCheckpointEditRewritesAndRehashes(t *testing.T) {
 	c := qt.New(t)
 	c.Setenv("VISUAL", "")
-	c.Setenv("EDITOR", writeAppendingEditor(c, "-- edited by the test"))
+	c.Setenv("EDITOR", writeAppendingEditor(c.TB, "-- edited by the test"))
 	c.Setenv("PTAH_ALLOW_NONINTERACTIVE_EDIT", "1")
-	migrationsDir, devURL := checkpointFlagFixture(c)
+	migrationsDir, devURL := checkpointFlagFixture(c.TB)
 
-	stdout, _, err := runCompatStreams(c,
+	stdout, _, err := runCompatStreams(c.TB,
 		"migrate", "checkpoint",
 		"--dir", "file://"+migrationsDir,
 		"--dev-url", devURL,
@@ -137,11 +141,11 @@ func TestCompatCommand_MigrateCheckpointEditRewritesAndRehashes(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(stdout, qt.Contains, "Wrote checkpoint version")
-	c.Assert(checkpointBody(c, migrationsDir), qt.Contains, "-- edited by the test")
+	c.Assert(checkpointBody(c.TB, migrationsDir), qt.Contains, "-- edited by the test")
 	// The first line must still be the checkpoint directive: the editor appends.
-	c.Assert(strings.HasPrefix(checkpointBody(c, migrationsDir), "-- atlas:checkpoint\n"), qt.IsTrue)
+	c.Assert(strings.HasPrefix(checkpointBody(c.TB, migrationsDir), "-- atlas:checkpoint\n"), qt.IsTrue)
 
-	_, _, validateErr := runCompatStreams(c,
+	_, _, validateErr := runCompatStreams(c.TB,
 		"migrate", "validate",
 		"--dir", "file://"+migrationsDir,
 	)
@@ -180,7 +184,7 @@ func TestCompatCommand_MigrateCheckpointDeclaredFlagSurface(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			stdout, _, err := runCompatStreams(c, "migrate", "checkpoint", "--help")
+			stdout, _, err := runCompatStreams(c.TB, "migrate", "checkpoint", "--help")
 
 			c.Assert(err, qt.IsNil)
 			test.assert(c, stdout, test.flag)
@@ -233,9 +237,9 @@ func TestCompatCommand_MigrateCheckpointLockTimeout(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			migrationsDir, devURL := checkpointFlagFixture(c)
+			migrationsDir, devURL := checkpointFlagFixture(c.TB)
 
-			stdout, stderr, err := runCompatStreams(c,
+			stdout, stderr, err := runCompatStreams(c.TB,
 				"migrate", "checkpoint",
 				"--dir", "file://"+migrationsDir,
 				"--dev-url", devURL,
@@ -253,9 +257,9 @@ func TestCompatCommand_MigrateCheckpointLockTimeout(t *testing.T) {
 // something every SQLite checkpoint prints.
 func TestCompatCommand_MigrateCheckpointLockTimeoutStaysQuietWhenUnset(t *testing.T) {
 	c := qt.New(t)
-	migrationsDir, devURL := checkpointFlagFixture(c)
+	migrationsDir, devURL := checkpointFlagFixture(c.TB)
 
-	_, stderr, err := runCompatStreams(c,
+	_, stderr, err := runCompatStreams(c.TB,
 		"migrate", "checkpoint",
 		"--dir", "file://"+migrationsDir,
 		"--dev-url", devURL,
@@ -272,9 +276,9 @@ func TestCompatCommand_MigrateCheckpointLockTimeoutStaysQuietWhenUnset(t *testin
 // the qualifier engine, which is only reached when a qualifier is set.
 func TestCompatCommand_MigrateCheckpointQualifierReachesThePlan(t *testing.T) {
 	c := qt.New(t)
-	migrationsDir, devURL := checkpointFlagFixture(c)
+	migrationsDir, devURL := checkpointFlagFixture(c.TB)
 
-	_, _, err := runCompatStreams(c,
+	_, _, err := runCompatStreams(c.TB,
 		"migrate", "checkpoint",
 		"--dir", "file://"+migrationsDir,
 		"--dev-url", devURL,
@@ -291,9 +295,9 @@ func TestCompatCommand_MigrateCheckpointQualifierReachesThePlan(t *testing.T) {
 // fixture.
 func TestCompatCommand_MigrateCheckpointQualifierUnsetPlansCleanly(t *testing.T) {
 	c := qt.New(t)
-	migrationsDir, devURL := checkpointFlagFixture(c)
+	migrationsDir, devURL := checkpointFlagFixture(c.TB)
 
-	stdout, _, err := runCompatStreams(c,
+	stdout, _, err := runCompatStreams(c.TB,
 		"migrate", "checkpoint",
 		"--dir", "file://"+migrationsDir,
 		"--dev-url", devURL,

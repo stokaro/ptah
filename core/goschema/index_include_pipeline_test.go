@@ -12,7 +12,7 @@ import (
 func TestIndexIncludeAnnotationRendersPostgreSQLCoveringIndex(t *testing.T) {
 	c := qt.New(t)
 
-	database := mustParseSource(c, "accounts.go", `package models
+	database := mustParseSource(c.TB, "accounts.go", `package models
 
 //ptah:schema:table name="accounts"
 type Account struct {

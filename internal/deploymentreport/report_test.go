@@ -21,7 +21,6 @@ import (
 const artifactDigest = "sha256:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
 func TestAppliedVersionDelta(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name   string
@@ -50,7 +49,8 @@ func TestAppliedVersionDelta(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			got := deploymentreport.AppliedVersionDelta(tt.before, tt.after)
 			c.Assert(got, qt.DeepEquals, tt.want)
 		})
@@ -113,9 +113,9 @@ func TestNewSuccessfulReport_HappyPath(t *testing.T) {
 }
 
 func TestNewSuccessfulReport_FailurePath(t *testing.T) {
-	c := qt.New(t)
 
-	c.Run("missing before status", func(c *qt.C) {
+	t.Run("missing before status", func(t *testing.T) {
+		c := qt.New(t)
 		opts := validSuccessfulOptions()
 		opts.Before = nil
 
@@ -125,7 +125,8 @@ func TestNewSuccessfulReport_FailurePath(t *testing.T) {
 		c.Assert(report, qt.DeepEquals, deploymentreport.Report{})
 	})
 
-	c.Run("missing after status", func(c *qt.C) {
+	t.Run("missing after status", func(t *testing.T) {
+		c := qt.New(t)
 		opts := validSuccessfulOptions()
 		opts.After = nil
 
@@ -223,9 +224,9 @@ func TestNewFS_DoesNotLeakSecrets(t *testing.T) {
 }
 
 func TestNewFS_FailurePath(t *testing.T) {
-	c := qt.New(t)
 
-	c.Run("missing deployment ID", func(c *qt.C) {
+	t.Run("missing deployment ID", func(t *testing.T) {
+		c := qt.New(t)
 		report := validReport()
 		report.DeploymentID = ""
 		reportFS, err := deploymentreport.NewFS(report)
@@ -233,7 +234,8 @@ func TestNewFS_FailurePath(t *testing.T) {
 		c.Assert(reportFS, qt.IsNil)
 	})
 
-	c.Run("invalid deployment ID", func(c *qt.C) {
+	t.Run("invalid deployment ID", func(t *testing.T) {
+		c := qt.New(t)
 		report := validReport()
 		report.DeploymentID = "deployment/../../secret"
 		reportFS, err := deploymentreport.NewFS(report)
@@ -241,7 +243,8 @@ func TestNewFS_FailurePath(t *testing.T) {
 		c.Assert(reportFS, qt.IsNil)
 	})
 
-	c.Run("missing artifact digest", func(c *qt.C) {
+	t.Run("missing artifact digest", func(t *testing.T) {
+		c := qt.New(t)
 		report := validReport()
 		report.MigrationArtifactDigest = ""
 		reportFS, err := deploymentreport.NewFS(report)
@@ -249,7 +252,8 @@ func TestNewFS_FailurePath(t *testing.T) {
 		c.Assert(reportFS, qt.IsNil)
 	})
 
-	c.Run("invalid artifact digest", func(c *qt.C) {
+	t.Run("invalid artifact digest", func(t *testing.T) {
+		c := qt.New(t)
 		report := validReport()
 		report.MigrationArtifactDigest = "https://user:credential@registry.example/artifact"
 		reportFS, err := deploymentreport.NewFS(report)
@@ -257,7 +261,8 @@ func TestNewFS_FailurePath(t *testing.T) {
 		c.Assert(reportFS, qt.IsNil)
 	})
 
-	c.Run("unsupported artifact digest algorithm", func(c *qt.C) {
+	t.Run("unsupported artifact digest algorithm", func(t *testing.T) {
+		c := qt.New(t)
 		report := validReport()
 		report.MigrationArtifactDigest = "sha512:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 		reportFS, err := deploymentreport.NewFS(report)
@@ -265,7 +270,8 @@ func TestNewFS_FailurePath(t *testing.T) {
 		c.Assert(reportFS, qt.IsNil)
 	})
 
-	c.Run("missing dialect", func(c *qt.C) {
+	t.Run("missing dialect", func(t *testing.T) {
+		c := qt.New(t)
 		report := validReport()
 		report.Dialect = ""
 		reportFS, err := deploymentreport.NewFS(report)
@@ -273,7 +279,8 @@ func TestNewFS_FailurePath(t *testing.T) {
 		c.Assert(reportFS, qt.IsNil)
 	})
 
-	c.Run("invalid dialect", func(c *qt.C) {
+	t.Run("invalid dialect", func(t *testing.T) {
+		c := qt.New(t)
 		report := validReport()
 		report.Dialect = "postgres; DROP TABLE users"
 		reportFS, err := deploymentreport.NewFS(report)
@@ -281,7 +288,8 @@ func TestNewFS_FailurePath(t *testing.T) {
 		c.Assert(reportFS, qt.IsNil)
 	})
 
-	c.Run("negative from version", func(c *qt.C) {
+	t.Run("negative from version", func(t *testing.T) {
+		c := qt.New(t)
 		report := validReport()
 		report.FromVersion = -1
 		reportFS, err := deploymentreport.NewFS(report)
@@ -289,7 +297,8 @@ func TestNewFS_FailurePath(t *testing.T) {
 		c.Assert(reportFS, qt.IsNil)
 	})
 
-	c.Run("to version before from version", func(c *qt.C) {
+	t.Run("to version before from version", func(t *testing.T) {
+		c := qt.New(t)
 		report := validReport()
 		report.ToVersion = report.FromVersion - 1
 		reportFS, err := deploymentreport.NewFS(report)
@@ -297,7 +306,8 @@ func TestNewFS_FailurePath(t *testing.T) {
 		c.Assert(reportFS, qt.IsNil)
 	})
 
-	c.Run("non-positive applied version", func(c *qt.C) {
+	t.Run("non-positive applied version", func(t *testing.T) {
+		c := qt.New(t)
 		report := validReport()
 		report.AppliedVersions = []int64{0}
 		reportFS, err := deploymentreport.NewFS(report)
@@ -305,7 +315,8 @@ func TestNewFS_FailurePath(t *testing.T) {
 		c.Assert(reportFS, qt.IsNil)
 	})
 
-	c.Run("unordered applied versions", func(c *qt.C) {
+	t.Run("unordered applied versions", func(t *testing.T) {
+		c := qt.New(t)
 		report := validReport()
 		report.AppliedVersions = []int64{3, 2}
 		reportFS, err := deploymentreport.NewFS(report)
@@ -313,7 +324,8 @@ func TestNewFS_FailurePath(t *testing.T) {
 		c.Assert(reportFS, qt.IsNil)
 	})
 
-	c.Run("missing started timestamp", func(c *qt.C) {
+	t.Run("missing started timestamp", func(t *testing.T) {
+		c := qt.New(t)
 		report := validReport()
 		report.StartedAt = time.Time{}
 		reportFS, err := deploymentreport.NewFS(report)
@@ -321,7 +333,8 @@ func TestNewFS_FailurePath(t *testing.T) {
 		c.Assert(reportFS, qt.IsNil)
 	})
 
-	c.Run("missing finished timestamp", func(c *qt.C) {
+	t.Run("missing finished timestamp", func(t *testing.T) {
+		c := qt.New(t)
 		report := validReport()
 		report.FinishedAt = time.Time{}
 		reportFS, err := deploymentreport.NewFS(report)
@@ -329,7 +342,8 @@ func TestNewFS_FailurePath(t *testing.T) {
 		c.Assert(reportFS, qt.IsNil)
 	})
 
-	c.Run("finished before started", func(c *qt.C) {
+	t.Run("finished before started", func(t *testing.T) {
+		c := qt.New(t)
 		report := validReport()
 		report.FinishedAt = report.StartedAt.Add(-time.Nanosecond)
 		reportFS, err := deploymentreport.NewFS(report)
@@ -338,7 +352,8 @@ func TestNewFS_FailurePath(t *testing.T) {
 		c.Assert(reportFS, qt.IsNil)
 	})
 
-	c.Run("invalid outcome", func(c *qt.C) {
+	t.Run("invalid outcome", func(t *testing.T) {
+		c := qt.New(t)
 		report := validReport()
 		report.Outcome = deploymentreport.Outcome("failed")
 		reportFS, err := deploymentreport.NewFS(report)

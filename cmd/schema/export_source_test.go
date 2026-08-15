@@ -188,9 +188,10 @@ type AuditLog struct {
 // gridFixture writes the four source spellings into one directory and returns
 // it. The Go models live in a "models" subdirectory so a schema-file export can
 // be shown not to pick them up.
-func gridFixture(c *qt.C) string {
+func gridFixture(tb testing.TB) string {
+	c := qt.New(tb)
 	c.Helper()
-	dir := resolvedTempDir(c)
+	dir := resolvedTempDir(c.TB)
 	modelsDir := filepath.Join(dir, "models")
 	c.Assert(os.MkdirAll(modelsDir, 0o750), qt.IsNil)
 	c.Assert(os.WriteFile(filepath.Join(modelsDir, "model.go"), []byte(gridGoModels), 0o600), qt.IsNil)
@@ -269,7 +270,7 @@ func nonGoSchemaSources(dir string) []schemaSource {
 // explicit --from beside it.
 func TestSchemaExportReadsEveryNonGoSource(t *testing.T) {
 	c := qt.New(t)
-	dir := gridFixture(c)
+	dir := gridFixture(c.TB)
 	goSource := []string{"--root-dir", filepath.Join(dir, "models")}
 
 	for _, target := range apiExportTargets() {
@@ -293,7 +294,7 @@ func TestSchemaExportReadsEveryNonGoSource(t *testing.T) {
 // would be readable only by leaving --from unset.
 func TestSchemaExportAcceptsTheYamlExtensionAlias(t *testing.T) {
 	c := qt.New(t)
-	dir := gridFixture(c)
+	dir := gridFixture(c.TB)
 	aliasPath := filepath.Join(dir, "schema.yml")
 	c.Assert(os.WriteFile(aliasPath, []byte(gridYAMLSchema), 0o600), qt.IsNil)
 	target := apiExportTargets()[1]
@@ -309,7 +310,7 @@ func TestSchemaExportAcceptsTheYamlExtensionAlias(t *testing.T) {
 // "ptah schema render", which shares this resolver.
 func TestSchemaExportComposesGoRootsWithSchemaFiles(t *testing.T) {
 	c := qt.New(t)
-	dir := gridFixture(c)
+	dir := gridFixture(c.TB)
 	strayDir := filepath.Join(dir, "stray")
 	c.Assert(os.MkdirAll(strayDir, 0o750), qt.IsNil)
 	c.Assert(os.WriteFile(filepath.Join(strayDir, "stray.go"), []byte(strayGoModel), 0o600), qt.IsNil)
@@ -331,7 +332,7 @@ func TestSchemaExportComposesGoRootsWithSchemaFiles(t *testing.T) {
 // files happen to sit in the working directory into the published contract.
 func TestSchemaExportSchemaFileDoesNotAddTheWorkingDirectory(t *testing.T) {
 	c := qt.New(t)
-	dir := gridFixture(c)
+	dir := gridFixture(c.TB)
 	c.Assert(os.WriteFile(filepath.Join(dir, "stray.go"), []byte(strayGoModel), 0o600), qt.IsNil)
 	t.Chdir(dir)
 
@@ -347,7 +348,7 @@ func TestSchemaExportSchemaFileDoesNotAddTheWorkingDirectory(t *testing.T) {
 // and each way a declared --from can disagree with the file beside it.
 func TestSchemaExportRefusesSourcesItCannotRead(t *testing.T) {
 	c := qt.New(t)
-	dir := gridFixture(c)
+	dir := gridFixture(c.TB)
 	yamlPath := filepath.Join(dir, "schema.yaml")
 	sqlPath := filepath.Join(dir, "schema.sql")
 	notesPath := filepath.Join(dir, "notes.txt")
@@ -423,7 +424,8 @@ func TestSchemaExportRefusesSourcesItCannotRead(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			stdout, stderr, err := runSchemaExport(tt.args...)
 
 			c.Assert(err, qt.ErrorMatches, regexp.QuoteMeta(tt.wantErr), qt.Commentf("stdout:\n%s", stdout))

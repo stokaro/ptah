@@ -19,7 +19,7 @@ import (
 
 func TestPlanMigration_DoesNotWriteArtifacts(t *testing.T) {
 	c := qt.New(t)
-	plan, outputDir := newSQLiteMigrationPlan(c)
+	plan, outputDir := newSQLiteMigrationPlan(c.TB)
 
 	matches, err := filepath.Glob(filepath.Join(outputDir, "*.sql"))
 
@@ -34,7 +34,7 @@ func TestPlanMigration_RecoversPendingPublicationBeforePlanning(t *testing.T) {
 	pendingPaths, err := generator.WritePendingPublicationForTest(outputDir)
 	c.Assert(err, qt.IsNil)
 
-	plan := newSQLiteMigrationPlanAt(c, outputDir)
+	plan := newSQLiteMigrationPlanAt(c.TB, outputDir)
 
 	c.Assert(plan, qt.IsNotNil)
 	for _, path := range pendingPaths {
@@ -50,7 +50,7 @@ func TestPlanMigration_RecoversPendingPublicationBeforePlanning(t *testing.T) {
 
 func TestMigrationPlanWriteFiles_HappyPath(t *testing.T) {
 	c := qt.New(t)
-	plan, outputDir := newSQLiteMigrationPlan(c)
+	plan, outputDir := newSQLiteMigrationPlan(c.TB)
 
 	files, err := plan.WriteFiles()
 
@@ -64,7 +64,7 @@ func TestMigrationPlanWriteFiles_HappyPath(t *testing.T) {
 
 func TestMigrationPlanWriteFiles_FailurePath(t *testing.T) {
 	c := qt.New(t)
-	plan, _ := newSQLiteMigrationPlan(c)
+	plan, _ := newSQLiteMigrationPlan(c.TB)
 	files, err := plan.WriteFiles()
 	c.Assert(err, qt.IsNil)
 	c.Assert(files, qt.IsNotNil)
@@ -86,7 +86,7 @@ func TestMigrationPlanWriteFiles_FailurePath(t *testing.T) {
 // before the attempt, so the honest retry is a fresh PlanMigration.
 func TestMigrationPlanWriteFiles_FailedPublicationSpendsThePlan(t *testing.T) {
 	c := qt.New(t)
-	plan, outputDir := newSQLiteMigrationPlan(c)
+	plan, outputDir := newSQLiteMigrationPlan(c.TB)
 	concurrentMigration := filepath.Join(outputDir, "20000101000000_concurrent.up.sql")
 	c.Assert(os.WriteFile(concurrentMigration, []byte("SELECT 1;\n"), 0o600), qt.IsNil)
 	files, err := plan.WriteFiles()
@@ -104,7 +104,7 @@ func TestMigrationPlanWriteFiles_FailedPublicationSpendsThePlan(t *testing.T) {
 
 func TestMigrationPlanWriteFiles_RejectsChangedDirectory(t *testing.T) {
 	c := qt.New(t)
-	plan, outputDir := newSQLiteMigrationPlan(c)
+	plan, outputDir := newSQLiteMigrationPlan(c.TB)
 	concurrentMigration := filepath.Join(outputDir, "20000101000000_concurrent.up.sql")
 	c.Assert(os.WriteFile(concurrentMigration, []byte("SELECT 1;\n"), 0o600), qt.IsNil)
 
@@ -128,7 +128,7 @@ func TestMigrationPlanWriteFiles_RejectsHistoryChangedBeforePlanning(t *testing.
 	// ordinary plan-vs-publication contents check sees only the changed bytes.
 	// The authorized snapshot is the additional boundary that must reject it.
 	c.Assert(os.WriteFile(migrationPath, []byte("SELECT 2;\n"), 0o600), qt.IsNil)
-	opts := newSQLiteMigrationOptions(c, outputDir)
+	opts := newSQLiteMigrationOptions(c.TB, outputDir)
 	opts.PriorMigrationsFS = authorized
 	plan, err := generator.PlanMigration(t.Context(), opts)
 	c.Assert(err, qt.IsNil)
@@ -144,7 +144,7 @@ func TestMigrationPlanWriteFiles_RejectsHistoryChangedBeforePlanning(t *testing.
 
 func TestMigrationPlanWriteFilesContext_RejectsConcurrentUse(t *testing.T) {
 	c := qt.New(t)
-	plan, outputDir := newSQLiteMigrationPlan(c)
+	plan, outputDir := newSQLiteMigrationPlan(c.TB)
 	lockHeld := make(chan struct{})
 	releaseLock := make(chan struct{})
 	lockDone := make(chan error, 1)
@@ -186,7 +186,7 @@ func TestMigrationPlanWriteFilesContext_RejectsConcurrentUse(t *testing.T) {
 
 func TestMigrationPlanWriteFilesContext_RejectsCanceledContext(t *testing.T) {
 	c := qt.New(t)
-	plan, outputDir := newSQLiteMigrationPlan(c)
+	plan, outputDir := newSQLiteMigrationPlan(c.TB)
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 
@@ -201,7 +201,7 @@ func TestMigrationPlanWriteFilesContext_RejectsCanceledContext(t *testing.T) {
 
 func TestMigrationPlanWriteFilesContext_CancelsWhileWaitingForLock(t *testing.T) {
 	c := qt.New(t)
-	plan, outputDir := newSQLiteMigrationPlan(c)
+	plan, outputDir := newSQLiteMigrationPlan(c.TB)
 	lockHeld := make(chan struct{})
 	releaseLock := make(chan struct{})
 	lockDone := make(chan error, 1)
@@ -245,7 +245,7 @@ func TestMigrationPlanWriteFilesContext_CancelsWhileWaitingForLock(t *testing.T)
 func TestGenerateMigration_CancelsWhileWaitingForRecoveryLock(t *testing.T) {
 	c := qt.New(t)
 	outputDir := c.TempDir()
-	opts := newSQLiteMigrationOptions(c, outputDir)
+	opts := newSQLiteMigrationOptions(c.TB, outputDir)
 	lockHeld := make(chan struct{})
 	releaseLock := make(chan struct{})
 	lockDone := make(chan error, 1)
@@ -283,24 +283,27 @@ func TestGenerateMigration_CancelsWhileWaitingForRecoveryLock(t *testing.T) {
 	c.Assert(<-lockDone, qt.IsNil)
 }
 
-func newSQLiteMigrationPlan(c *qt.C) (*generator.MigrationPlan, string) {
+func newSQLiteMigrationPlan(tb testing.TB) (*generator.MigrationPlan, string) {
+	c := qt.New(tb)
 	c.Helper()
 	outputDir := c.TempDir()
-	return newSQLiteMigrationPlanAt(c, outputDir), outputDir
+	return newSQLiteMigrationPlanAt(c.TB, outputDir), outputDir
 }
 
-func newSQLiteMigrationPlanAt(c *qt.C, outputDir string) *generator.MigrationPlan {
+func newSQLiteMigrationPlanAt(tb testing.TB, outputDir string) *generator.MigrationPlan {
+	c := qt.New(tb)
 	c.Helper()
-	opts := newSQLiteMigrationOptions(c, outputDir)
+	opts := newSQLiteMigrationOptions(c.TB, outputDir)
 	plan, err := generator.PlanMigration(c.Context(), opts)
 	c.Assert(err, qt.IsNil)
 	return plan
 }
 
 func newSQLiteMigrationOptions(
-	c *qt.C,
+	tb testing.TB,
 	outputDir string,
 ) generator.GenerateMigrationOptions {
+	c := qt.New(tb)
 	c.Helper()
 	devURL := atlasurl.SQLiteURLFromPath(filepath.Join(c.TempDir(), "dev.db"))
 	conn, err := dbschema.ConnectToDatabase(c.Context(), devURL)

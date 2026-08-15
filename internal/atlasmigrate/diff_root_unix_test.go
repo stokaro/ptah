@@ -33,13 +33,15 @@ import (
 // swapMigrationSymlink replaces link so it points at target. It is the hostile
 // step every row below performs from inside a callback the run invokes while
 // holding the migration-directory lock.
-func swapMigrationSymlink(c *qt.C, link, target string) {
+func swapMigrationSymlink(tb testing.TB, link, target string) {
+	c := qt.New(tb)
 	c.Helper()
 	c.Assert(os.Remove(link), qt.IsNil)
 	c.Assert(os.Symlink(target, link), qt.IsNil)
 }
 
-func dirEntryNames(c *qt.C, dir string) []string {
+func dirEntryNames(tb testing.TB, dir string) []string {
+	c := qt.New(tb)
 	c.Helper()
 	entries, err := os.ReadDir(dir)
 	c.Assert(err, qt.IsNil)
@@ -50,7 +52,8 @@ func dirEntryNames(c *qt.C, dir string) []string {
 	return names
 }
 
-func writeDiffDesiredSchema(c *qt.C, path string) {
+func writeDiffDesiredSchema(tb testing.TB, path string) {
+	c := qt.New(tb)
 	c.Helper()
 	c.Assert(os.WriteFile(path, []byte(`
 CREATE TABLE users (
@@ -121,7 +124,7 @@ func TestGenerateDiff_ReplacedDirectoryCannotRedirectPublication(t *testing.T) {
 				return link, bound
 			},
 			swap: func(c *qt.C, root, decoy string) {
-				swapMigrationSymlink(c, filepath.Join(root, "migrations"), decoy)
+				swapMigrationSymlink(c.TB, filepath.Join(root, "migrations"), decoy)
 			},
 			hook:        verifyDirHook,
 			projectRoot: openDiffProjectRoot,
@@ -136,7 +139,7 @@ func TestGenerateDiff_ReplacedDirectoryCannotRedirectPublication(t *testing.T) {
 				return link, bound
 			},
 			swap: func(c *qt.C, root, decoy string) {
-				swapMigrationSymlink(c, filepath.Join(root, "migrations"), filepath.Join(decoy, "migrations"))
+				swapMigrationSymlink(c.TB, filepath.Join(root, "migrations"), filepath.Join(decoy, "migrations"))
 			},
 			hook:        verifyDirHook,
 			projectRoot: noProjectRoot,
@@ -158,7 +161,7 @@ func TestGenerateDiff_ReplacedDirectoryCannotRedirectPublication(t *testing.T) {
 				return filepath.Join(root, "nest", "migrations"), bound
 			},
 			swap: func(c *qt.C, root, decoy string) {
-				swapMigrationSymlink(c, filepath.Join(root, "nest"), decoy)
+				swapMigrationSymlink(c.TB, filepath.Join(root, "nest"), decoy)
 			},
 			hook:        verifyDirHook,
 			projectRoot: openDiffProjectRoot,
@@ -173,7 +176,7 @@ func TestGenerateDiff_ReplacedDirectoryCannotRedirectPublication(t *testing.T) {
 				return link, bound
 			},
 			swap: func(c *qt.C, root, decoy string) {
-				swapMigrationSymlink(c, filepath.Join(root, "migrations"), decoy)
+				swapMigrationSymlink(c.TB, filepath.Join(root, "migrations"), decoy)
 			},
 			hook:        preparePublicationHook,
 			projectRoot: openDiffProjectRoot,
@@ -187,14 +190,14 @@ func TestGenerateDiff_ReplacedDirectoryCannotRedirectPublication(t *testing.T) {
 			c.Assert(os.MkdirAll(filepath.Join(decoy, "migrations"), 0o755), qt.IsNil)
 			dirFlag, bound := test.stage(c, root, decoy)
 			schemaPath := filepath.Join(root, "schema.sql")
-			writeDiffDesiredSchema(c, schemaPath)
-			conn := connectSQLite(c, filepath.Join(root, "dev.db"))
+			writeDiffDesiredSchema(c.TB, schemaPath)
+			conn := connectSQLite(c.TB, filepath.Join(root, "dev.db"))
 			defer dbschema.CloseAndWarn(conn)
 
 			opts := atlasmigrate.DiffOptions{
 				Dir:         dirFlag,
 				Root:        test.projectRoot(c, root),
-				Desired:     localDesiredSet(c, "file://"+schemaPath),
+				Desired:     localDesiredSet(c.TB, "file://"+schemaPath),
 				Name:        "add_email",
 				LockTimeout: time.Second,
 			}
@@ -206,12 +209,12 @@ func TestGenerateDiff_ReplacedDirectoryCannotRedirectPublication(t *testing.T) {
 			c.Assert(result.MigrationPaths, qt.HasLen, 1)
 			// The run published into the object it opened, not into whatever the
 			// pathname selects now.
-			c.Assert(atlasSQLFiles(c, bound), qt.HasLen, 1)
+			c.Assert(atlasSQLFiles(c.TB, bound), qt.HasLen, 1)
 			c.Assert(fileExists(filepath.Join(bound, "atlas.sum")), qt.IsTrue)
 			// No migration file, checksum, journal, staging or recovery artifact
 			// reached the replacement.
-			c.Assert(dirEntryNames(c, decoy), qt.DeepEquals, []string{"migrations"})
-			c.Assert(dirEntryNames(c, filepath.Join(decoy, "migrations")), qt.HasLen, 0)
+			c.Assert(dirEntryNames(c.TB, decoy), qt.DeepEquals, []string{"migrations"})
+			c.Assert(dirEntryNames(c.TB, filepath.Join(decoy, "migrations")), qt.HasLen, 0)
 		})
 	}
 }
@@ -242,21 +245,21 @@ func TestGenerateDiff_AbsoluteAncestorSymlinkIsRefusedBeforePlanning(t *testing.
 	c.Assert(os.Symlink(filepath.Join(root, "realnest"), filepath.Join(root, "nest")), qt.IsNil)
 
 	schemaPath := filepath.Join(root, "schema.sql")
-	writeDiffDesiredSchema(c, schemaPath)
-	conn := connectSQLite(c, filepath.Join(root, "dev.db"))
+	writeDiffDesiredSchema(c.TB, schemaPath)
+	conn := connectSQLite(c.TB, filepath.Join(root, "dev.db"))
 	defer dbschema.CloseAndWarn(conn)
 
 	result, err := atlasmigrate.GenerateDiff(context.Background(), conn, atlasmigrate.DiffOptions{
 		Dir:         filepath.Join(root, "nest", "migrations"),
 		Root:        openDiffProjectRoot(c, root),
-		Desired:     localDesiredSet(c, "file://"+schemaPath),
+		Desired:     localDesiredSet(c.TB, "file://"+schemaPath),
 		Name:        "add_email",
 		LockTimeout: time.Second,
 	})
 
 	c.Assert(err, qt.ErrorMatches, `create migration directory parent: .*`)
 	c.Assert(result.MigrationPaths, qt.HasLen, 0)
-	c.Assert(atlasSQLFiles(c, bound), qt.HasLen, 0)
+	c.Assert(atlasSQLFiles(c.TB, bound), qt.HasLen, 0)
 	c.Assert(fileExists(filepath.Join(bound, "atlas.sum")), qt.IsFalse)
 }
 
@@ -264,8 +267,8 @@ func TestGenerateDiff_CreatesMissingMigrationDirectoryInsideOpenedRoot(t *testin
 	c := qt.New(t)
 	root := c.TempDir()
 	schemaPath := filepath.Join(root, "schema.sql")
-	writeDiffDesiredSchema(c, schemaPath)
-	conn := connectSQLite(c, filepath.Join(root, "dev.db"))
+	writeDiffDesiredSchema(c.TB, schemaPath)
+	conn := connectSQLite(c.TB, filepath.Join(root, "dev.db"))
 	defer dbschema.CloseAndWarn(conn)
 	// Neither the migration directory nor its parent exists yet, so both are
 	// materialized through the opened root rather than through a pathname.
@@ -274,14 +277,14 @@ func TestGenerateDiff_CreatesMissingMigrationDirectoryInsideOpenedRoot(t *testin
 	result, err := atlasmigrate.GenerateDiff(context.Background(), conn, atlasmigrate.DiffOptions{
 		Dir:         migrationsDir,
 		Root:        openDiffProjectRoot(c, root),
-		Desired:     localDesiredSet(c, "file://"+schemaPath),
+		Desired:     localDesiredSet(c.TB, "file://"+schemaPath),
 		Name:        "add_email",
 		LockTimeout: time.Second,
 	})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.MigrationPaths, qt.HasLen, 1)
-	c.Assert(atlasSQLFiles(c, migrationsDir), qt.HasLen, 1)
+	c.Assert(atlasSQLFiles(c.TB, migrationsDir), qt.HasLen, 1)
 	c.Assert(result.SumPath, qt.Equals, filepath.Join(migrationsDir, "atlas.sum"))
 	c.Assert(fileExists(result.SumPath), qt.IsTrue)
 }
@@ -292,19 +295,19 @@ func TestGenerateDiff_RefusesMigrationDirectoryOutsideOpenedRoot(t *testing.T) {
 	outside := c.TempDir()
 	c.Assert(os.Symlink(outside, filepath.Join(root, "migrations")), qt.IsNil)
 	schemaPath := filepath.Join(root, "schema.sql")
-	writeDiffDesiredSchema(c, schemaPath)
-	conn := connectSQLite(c, filepath.Join(root, "dev.db"))
+	writeDiffDesiredSchema(c.TB, schemaPath)
+	conn := connectSQLite(c.TB, filepath.Join(root, "dev.db"))
 	defer dbschema.CloseAndWarn(conn)
 
 	result, err := atlasmigrate.GenerateDiff(context.Background(), conn, atlasmigrate.DiffOptions{
 		Dir:         filepath.Join(root, "migrations"),
 		Root:        openDiffProjectRoot(c, root),
-		Desired:     localDesiredSet(c, "file://"+schemaPath),
+		Desired:     localDesiredSet(c.TB, "file://"+schemaPath),
 		Name:        "add_email",
 		LockTimeout: time.Second,
 	})
 
 	c.Assert(err, qt.ErrorIs, pathguard.ErrOutsideRoot)
 	c.Assert(result.MigrationPaths, qt.HasLen, 0)
-	c.Assert(dirEntryNames(c, outside), qt.HasLen, 0)
+	c.Assert(dirEntryNames(c.TB, outside), qt.HasLen, 0)
 }

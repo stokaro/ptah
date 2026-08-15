@@ -40,7 +40,8 @@ func runUp(args ...string) (string, error) {
 	return out.String(), err
 }
 
-func queryCurrentVersion(c *qt.C, dbPath string) int64 {
+func queryCurrentVersion(tb testing.TB, dbPath string) int64 {
+	c := qt.New(tb)
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)
 	c.Assert(err, qt.IsNil)
@@ -61,12 +62,12 @@ func TestMigrateUpLimitAppliesFirstNPending(t *testing.T) {
 
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 	c.Assert(out, qt.Contains, "Database is now at version: 1")
-	c.Assert(queryCurrentVersion(c, dbPath), qt.Equals, int64(1))
+	c.Assert(queryCurrentVersion(c.TB, dbPath), qt.Equals, int64(1))
 
 	// A second limited run applies the next pending migration.
 	out, err = runUp("--db-url", "sqlite://"+dbPath, "--migrations-dir", migrationsDir, "--limit", "1")
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
-	c.Assert(queryCurrentVersion(c, dbPath), qt.Equals, int64(2))
+	c.Assert(queryCurrentVersion(c.TB, dbPath), qt.Equals, int64(2))
 }
 
 func TestMigrateUpLimitDryRunReportsLimitedCount(t *testing.T) {
@@ -96,21 +97,22 @@ func TestMigrateUpDryRunUsesStoredRevisionState(t *testing.T) {
 
 	out, err := runUp("--db-url", "sqlite://"+dbPath, "--migrations-dir", migrationsDir, "--limit", "1")
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
-	c.Assert(queryCurrentVersion(c, dbPath), qt.Equals, int64(1))
+	c.Assert(queryCurrentVersion(c.TB, dbPath), qt.Equals, int64(1))
 
 	out, err = runUp("--db-url", "sqlite://"+dbPath, "--migrations-dir", migrationsDir, "--dry-run")
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 	c.Assert(out, qt.Contains, "Current version: 1")
 	c.Assert(out, qt.Contains, "Pending migrations: 1")
 	c.Assert(out, qt.Contains, "Would have applied 1 migrations")
-	c.Assert(queryCurrentVersion(c, dbPath), qt.Equals, int64(1))
+	c.Assert(queryCurrentVersion(c.TB, dbPath), qt.Equals, int64(1))
 }
 
 // insertOrphanDirtyRevision records a failed revision row for a version that
 // no migration file provides, modeling a crashed migration whose file was
 // later rebased or removed: the dirty guard trips on it, but no pending work
 // references it.
-func insertOrphanDirtyRevision(c *qt.C, dbPath string, version int64) {
+func insertOrphanDirtyRevision(tb testing.TB, dbPath string, version int64) {
+	c := qt.New(tb)
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)
 	c.Assert(err, qt.IsNil)
@@ -128,7 +130,7 @@ func TestMigrateUpAllowDirtyBypassesDirtyGuard(t *testing.T) {
 
 	out, err := runUp("--db-url", "sqlite://"+dbPath, "--migrations-dir", migrationsDir, "--limit", "1")
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
-	insertOrphanDirtyRevision(c, dbPath, 99)
+	insertOrphanDirtyRevision(c.TB, dbPath, 99)
 
 	// The default guard refuses to run over a dirty revision.
 	out, err = runUp("--db-url", "sqlite://"+dbPath, "--migrations-dir", migrationsDir)
@@ -137,5 +139,5 @@ func TestMigrateUpAllowDirtyBypassesDirtyGuard(t *testing.T) {
 	// The explicit recovery escape hatch proceeds with the pending work.
 	out, err = runUp("--db-url", "sqlite://"+dbPath, "--migrations-dir", migrationsDir, "--allow-dirty")
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
-	c.Assert(queryCurrentVersion(c, dbPath), qt.Equals, int64(2))
+	c.Assert(queryCurrentVersion(c.TB, dbPath), qt.Equals, int64(2))
 }

@@ -17,7 +17,7 @@ import (
 func TestExport_HappyPath_WritesValidatedHCLAndCleansAnnotations(t *testing.T) {
 	c := qt.New(t)
 	root := t.TempDir()
-	source := writeSimpleModel(c, root)
+	source := writeSimpleModel(c.TB, root)
 	output := filepath.Join(root, "schema.hcl")
 	c.Assert(os.WriteFile(output, []byte("old schema\n"), 0o600), qt.IsNil)
 	c.Assert(os.Chmod(output, 0o640), qt.IsNil)
@@ -84,10 +84,10 @@ func TestExport_HappyPath_UsesOneSourcePolicyForParsingAndCleanup(t *testing.T) 
 	resolvedIncluded, err := filepath.EvalSymlinks(included)
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.Cleanup[0].Path, qt.Equals, resolvedIncluded)
-	assertFileBytes(c, included, []byte("package myvendor\n\ntype Included struct{}\n"))
-	assertFileBytes(c, hidden, hiddenData)
-	assertFileBytes(c, vendored, vendoredData)
-	assertFileBytes(c, testSource, testData)
+	assertFileBytes(c.TB, included, []byte("package myvendor\n\ntype Included struct{}\n"))
+	assertFileBytes(c.TB, hidden, hiddenData)
+	assertFileBytes(c.TB, vendored, vendoredData)
+	assertFileBytes(c.TB, testSource, testData)
 	outputData, err := os.ReadFile(output)
 	c.Assert(err, qt.IsNil)
 	c.Assert(string(outputData), qt.Contains, `table "included"`)
@@ -127,7 +127,7 @@ func TestExport_HappyPath_TightensPermissionsForRolePasswords(t *testing.T) {
 func TestExport_HappyPath_DiffWritesOutputWithoutChangingSource(t *testing.T) {
 	c := qt.New(t)
 	root := t.TempDir()
-	source := writeSimpleModel(c, root)
+	source := writeSimpleModel(c.TB, root)
 	output := filepath.Join(root, "schema.hcl")
 	original, err := os.ReadFile(source)
 	c.Assert(err, qt.IsNil)
@@ -153,7 +153,7 @@ func TestExport_HappyPath_DiffWritesOutputWithoutChangingSource(t *testing.T) {
 func TestExport_HappyPath_CleanupModesReportTheSamePlan(t *testing.T) {
 	c := qt.New(t)
 	root := t.TempDir()
-	source := writeSimpleModel(c, root)
+	source := writeSimpleModel(c.TB, root)
 	output := filepath.Join(root, "schema.hcl")
 	original, err := os.ReadFile(source)
 	c.Assert(err, qt.IsNil)
@@ -165,7 +165,7 @@ func TestExport_HappyPath_CleanupModesReportTheSamePlan(t *testing.T) {
 		DryRun:     true,
 	})
 	c.Assert(err, qt.IsNil)
-	assertFileBytes(c, source, original)
+	assertFileBytes(c.TB, source, original)
 
 	diff, err := goannotationexport.Export(goannotationexport.Options{
 		RootDir:    root,
@@ -174,7 +174,7 @@ func TestExport_HappyPath_CleanupModesReportTheSamePlan(t *testing.T) {
 		Diff:       true,
 	})
 	c.Assert(err, qt.IsNil)
-	assertFileBytes(c, source, original)
+	assertFileBytes(c.TB, source, original)
 
 	write, err := goannotationexport.Export(goannotationexport.Options{
 		RootDir:    root,
@@ -198,7 +198,7 @@ func TestExport_HappyPath_CleanupModesReportTheSamePlan(t *testing.T) {
 func TestExport_HappyPath_IsDeterministicAcrossRepeatedExports(t *testing.T) {
 	c := qt.New(t)
 	root := t.TempDir()
-	writeSimpleModel(c, root)
+	writeSimpleModel(c.TB, root)
 	output := filepath.Join(root, "schema.hcl")
 
 	_, err := goannotationexport.Export(goannotationexport.Options{
@@ -264,7 +264,7 @@ type Country struct {
 func TestExport_HappyPath_NonDestructiveExportPreservesCustomSQL(t *testing.T) {
 	c := qt.New(t)
 	root := t.TempDir()
-	source := writeCustomModel(c, root)
+	source := writeCustomModel(c.TB, root)
 	output := filepath.Join(root, "schema.hcl")
 	original, err := os.ReadFile(source)
 	c.Assert(err, qt.IsNil)
@@ -305,8 +305,8 @@ func TestExport_FailurePath_RepeatCleanupPreservesExistingOutput(t *testing.T) {
 
 	c.Assert(err, qt.ErrorIs, goannotationexport.ErrNoRemovableAnnotations)
 	c.Assert(result, qt.DeepEquals, goannotationexport.Result{})
-	assertFileBytes(c, source, sourceData)
-	assertFileBytes(c, output, outputData)
+	assertFileBytes(c.TB, source, sourceData)
+	assertFileBytes(c.TB, output, outputData)
 }
 
 func TestExport_FailurePath_NoAnnotationsPreservesExistingOutput(t *testing.T) {
@@ -326,8 +326,8 @@ func TestExport_FailurePath_NoAnnotationsPreservesExistingOutput(t *testing.T) {
 
 	c.Assert(err, qt.ErrorIs, goannotationexport.ErrNoAnnotations)
 	c.Assert(result, qt.DeepEquals, goannotationexport.Result{})
-	assertFileBytes(c, source, sourceData)
-	assertFileBytes(c, output, outputData)
+	assertFileBytes(c.TB, source, sourceData)
+	assertFileBytes(c.TB, output, outputData)
 }
 
 func TestExport_FailurePath_UnattachedAnnotationPreservesExistingOutput(t *testing.T) {
@@ -351,12 +351,11 @@ const placeholder = 0
 
 	c.Assert(err, qt.ErrorIs, goannotationexport.ErrNoAnnotations)
 	c.Assert(result, qt.DeepEquals, goannotationexport.Result{})
-	assertFileBytes(c, source, sourceData)
-	assertFileBytes(c, output, outputData)
+	assertFileBytes(c.TB, source, sourceData)
+	assertFileBytes(c.TB, output, outputData)
 }
 
 func TestExport_FailurePath_CleanupRejectsDetachedRecognizedDirective(t *testing.T) {
-	c := qt.New(t)
 	sourceData := []byte(`package models
 
 //ptah:schema:table name="users"
@@ -377,7 +376,8 @@ const placeholder = 0
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			root := c.TempDir()
 			source := filepath.Join(root, "model.go")
 			output := filepath.Join(root, "schema.hcl")
@@ -395,14 +395,13 @@ const placeholder = 0
 			c.Assert(err, qt.ErrorIs, goannotationcleanup.ErrUnexportedAnnotation)
 			c.Assert(err.Error(), qt.Contains, "ptah:schema:role")
 			c.Assert(result, qt.DeepEquals, goannotationexport.Result{})
-			assertFileBytes(c, source, sourceData)
-			assertFileBytes(c, output, outputData)
+			assertFileBytes(c.TB, source, sourceData)
+			assertFileBytes(c.TB, output, outputData)
 		})
 	}
 }
 
 func TestExport_FailurePath_CleanupRejectsTableBoundAnnotationsWithoutExportedTable(t *testing.T) {
-	c := qt.New(t)
 	outputData := []byte("previous useful schema\n")
 	tests := []struct {
 		name          string
@@ -437,7 +436,8 @@ type Helper struct {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			root := c.TempDir()
 			source := filepath.Join(root, "model.go")
 			output := filepath.Join(root, "schema.hcl")
@@ -458,14 +458,13 @@ type User struct{}
 			c.Assert(err, qt.ErrorIs, goannotationcleanup.ErrUnexportedAnnotation)
 			c.Assert(err.Error(), qt.Contains, test.wantDirective)
 			c.Assert(result, qt.DeepEquals, goannotationexport.Result{})
-			assertFileBytes(c, source, sourceData)
-			assertFileBytes(c, output, outputData)
+			assertFileBytes(c.TB, source, sourceData)
+			assertFileBytes(c.TB, output, outputData)
 		})
 	}
 }
 
 func TestExport_FailurePath_CleanupRejectsLossyTableBoundAnnotationsWithoutExportedTable(t *testing.T) {
-	c := qt.New(t)
 	outputData := []byte("previous useful schema\n")
 	tests := []struct {
 		name       string
@@ -491,7 +490,8 @@ type Helper struct{}
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			root := c.TempDir()
 			source := filepath.Join(root, "model.go")
 			output := filepath.Join(root, "schema.hcl")
@@ -513,14 +513,13 @@ type User struct{}
 			c.Assert(err.Error(), qt.Contains, "lossy HCL export")
 			c.Assert(err.Error(), qt.Contains, test.wantDetail)
 			c.Assert(result, qt.DeepEquals, goannotationexport.Result{})
-			assertFileBytes(c, source, sourceData)
-			assertFileBytes(c, output, outputData)
+			assertFileBytes(c.TB, source, sourceData)
+			assertFileBytes(c.TB, output, outputData)
 		})
 	}
 }
 
 func TestExport_HappyPath_CleanupKeepsRepresentedTableBoundAnnotations(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name        string
 		annotation  string
@@ -548,7 +547,8 @@ func TestExport_HappyPath_CleanupKeepsRepresentedTableBoundAnnotations(t *testin
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			root := c.TempDir()
 			source := filepath.Join(root, "model.go")
 			output := filepath.Join(root, "schema.hcl")
@@ -606,8 +606,8 @@ const placeholder = 0
 	c.Assert(err, qt.ErrorIs, goannotationcleanup.ErrUnexportedAnnotation)
 	c.Assert(err.Error(), qt.Contains, "did not produce a schema object")
 	c.Assert(result, qt.DeepEquals, goannotationexport.Result{})
-	assertFileBytes(c, source, sourceData)
-	assertFileBytes(c, output, outputData)
+	assertFileBytes(c.TB, source, sourceData)
+	assertFileBytes(c.TB, output, outputData)
 }
 
 func TestExport_FailurePath_CleanupRejectsShadowedFileScopedRLS(t *testing.T) {
@@ -640,8 +640,8 @@ const shadowedPolicy = 0
 	c.Assert(err.Error(), qt.Contains, "did not produce a schema object")
 	c.Assert(err.Error(), qt.Contains, ":9:")
 	c.Assert(result, qt.DeepEquals, goannotationexport.Result{})
-	assertFileBytes(c, source, sourceData)
-	assertFileBytes(c, output, outputData)
+	assertFileBytes(c.TB, source, sourceData)
+	assertFileBytes(c.TB, output, outputData)
 }
 
 func TestExport_FailurePath_CleanupRejectsShadowedEnum(t *testing.T) {
@@ -674,8 +674,8 @@ type User struct{}
 	c.Assert(err.Error(), qt.Contains, "did not produce a schema object")
 	c.Assert(err.Error(), qt.Contains, ":3:")
 	c.Assert(result, qt.DeepEquals, goannotationexport.Result{})
-	assertFileBytes(c, source, sourceData)
-	assertFileBytes(c, output, outputData)
+	assertFileBytes(c.TB, source, sourceData)
+	assertFileBytes(c.TB, output, outputData)
 }
 
 func TestExport_HappyPath_NearPrefixDirectiveIsPreservedByCleanup(t *testing.T) {
@@ -787,8 +787,8 @@ type Roles struct{}
 
 	c.Assert(err, qt.ErrorIs, goannotationexport.ErrNoRemovableAnnotations)
 	c.Assert(result, qt.DeepEquals, goannotationexport.Result{})
-	assertFileBytes(c, source, sourceData)
-	assertFileBytes(c, output, outputData)
+	assertFileBytes(c.TB, source, sourceData)
+	assertFileBytes(c.TB, output, outputData)
 }
 
 func TestExport_FailurePath_FieldOnlySchemaPreservesExistingOutput(t *testing.T) {
@@ -814,8 +814,8 @@ type User struct {
 
 	c.Assert(err, qt.ErrorIs, goannotationexport.ErrNoExportableSchema)
 	c.Assert(result, qt.DeepEquals, goannotationexport.Result{})
-	assertFileBytes(c, source, sourceData)
-	assertFileBytes(c, output, outputData)
+	assertFileBytes(c.TB, source, sourceData)
+	assertFileBytes(c.TB, output, outputData)
 }
 
 func TestExport_FailurePath_FieldOnlyCleanupPreservesExistingOutput(t *testing.T) {
@@ -842,8 +842,8 @@ type User struct {
 
 	c.Assert(err, qt.ErrorIs, goannotationexport.ErrNoExportableSchema)
 	c.Assert(result, qt.DeepEquals, goannotationexport.Result{})
-	assertFileBytes(c, source, sourceData)
-	assertFileBytes(c, output, outputData)
+	assertFileBytes(c.TB, source, sourceData)
+	assertFileBytes(c.TB, output, outputData)
 }
 
 func TestExport_FailurePath_OpaqueSQLBodyRefusesCleanupAndPreservesFiles(t *testing.T) {
@@ -869,8 +869,8 @@ type SchemaObjects struct{}
 	c.Assert(err, qt.ErrorIs, goannotationexport.ErrLossyCleanup)
 	c.Assert(err.Error(), qt.Contains, "functions.app.lookup_user: raw SQL body is emitted as opaque HCL text and cannot be structurally interpreted")
 	c.Assert(result, qt.DeepEquals, goannotationexport.Result{})
-	assertFileBytes(c, source, sourceData)
-	assertFileBytes(c, output, outputData)
+	assertFileBytes(c.TB, source, sourceData)
+	assertFileBytes(c.TB, output, outputData)
 }
 
 func TestExport_HappyPath_OpaqueSQLWarningDoesNotDuplicateRendererDiagnostic(t *testing.T) {
@@ -984,7 +984,7 @@ type SchemaObjects struct{}
 func TestExport_HappyPath_CleanupPreservesCustomSQL(t *testing.T) {
 	c := qt.New(t)
 	root := t.TempDir()
-	source := writeCustomModel(c, root)
+	source := writeCustomModel(c.TB, root)
 	output := filepath.Join(root, "schema.hcl")
 
 	result, err := goannotationexport.Export(goannotationexport.Options{
@@ -1044,7 +1044,7 @@ type Measurement struct {
 func TestExport_FailurePath_OutputCannotAliasGoSource(t *testing.T) {
 	c := qt.New(t)
 	root := t.TempDir()
-	source := writeSimpleModel(c, root)
+	source := writeSimpleModel(c.TB, root)
 	sourceData, err := os.ReadFile(source)
 	c.Assert(err, qt.IsNil)
 
@@ -1056,13 +1056,13 @@ func TestExport_FailurePath_OutputCannotAliasGoSource(t *testing.T) {
 
 	c.Assert(err, qt.ErrorIs, goannotationexport.ErrOutputAliasesSource)
 	c.Assert(result, qt.DeepEquals, goannotationexport.Result{})
-	assertFileBytes(c, source, sourceData)
+	assertFileBytes(c.TB, source, sourceData)
 }
 
 func TestExport_FailurePath_OutputCannotUseExcludedGoPath(t *testing.T) {
 	c := qt.New(t)
 	root := t.TempDir()
-	source := writeSimpleModel(c, root)
+	source := writeSimpleModel(c.TB, root)
 	sourceData, err := os.ReadFile(source)
 	c.Assert(err, qt.IsNil)
 	output := filepath.Join(root, ".hidden", "schema.go")
@@ -1075,7 +1075,7 @@ func TestExport_FailurePath_OutputCannotUseExcludedGoPath(t *testing.T) {
 
 	c.Assert(err, qt.ErrorIs, goannotationexport.ErrOutputIsGoSource)
 	c.Assert(result, qt.DeepEquals, goannotationexport.Result{})
-	assertFileBytes(c, source, sourceData)
+	assertFileBytes(c.TB, source, sourceData)
 	_, err = os.Stat(output)
 	c.Assert(err, qt.ErrorIs, os.ErrNotExist)
 }
@@ -1105,14 +1105,14 @@ type Country struct {
 
 	c.Assert(err, qt.ErrorIs, goannotationexport.ErrOutputAliasesManagedData)
 	c.Assert(result, qt.DeepEquals, goannotationexport.Result{})
-	assertFileBytes(c, source, sourceData)
-	assertFileBytes(c, dataPath, data)
+	assertFileBytes(c.TB, source, sourceData)
+	assertFileBytes(c.TB, dataPath, data)
 }
 
 func TestExport_FailurePath_OutputWriteFailurePreservesSource(t *testing.T) {
 	c := qt.New(t)
 	root := t.TempDir()
-	source := writeSimpleModel(c, root)
+	source := writeSimpleModel(c.TB, root)
 	sourceData, err := os.ReadFile(source)
 	c.Assert(err, qt.IsNil)
 	parentFile := filepath.Join(root, "not-a-directory")
@@ -1127,7 +1127,7 @@ func TestExport_FailurePath_OutputWriteFailurePreservesSource(t *testing.T) {
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Contains, "output")
 	c.Assert(result, qt.DeepEquals, goannotationexport.Result{})
-	assertFileBytes(c, source, sourceData)
+	assertFileBytes(c.TB, source, sourceData)
 }
 
 func TestExport_FailurePath_RejectsRemovedIndexPlatformOverride(t *testing.T) {
@@ -1159,8 +1159,8 @@ type User struct {
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Contains, "platform.mysql.type")
 	c.Assert(result, qt.DeepEquals, goannotationexport.Result{})
-	assertFileBytes(c, source, sourceData)
-	assertFileBytes(c, output, outputData)
+	assertFileBytes(c.TB, source, sourceData)
+	assertFileBytes(c.TB, output, outputData)
 }
 
 func TestExport_FailurePath_RejectsCleanupModesWithoutCleanup(t *testing.T) {
@@ -1172,7 +1172,8 @@ func TestExport_FailurePath_RejectsCleanupModesWithoutCleanup(t *testing.T) {
 	c.Assert(result, qt.DeepEquals, goannotationexport.Result{})
 }
 
-func writeSimpleModel(c *qt.C, root string) string {
+func writeSimpleModel(tb testing.TB, root string) string {
+	c := qt.New(tb)
 	path := filepath.Join(root, "model.go")
 	data := []byte(`package models
 
@@ -1186,7 +1187,8 @@ type User struct {
 	return path
 }
 
-func writeCustomModel(c *qt.C, root string) string {
+func writeCustomModel(tb testing.TB, root string) string {
+	c := qt.New(tb)
 	path := filepath.Join(root, "model.go")
 	data := []byte(`package models
 
@@ -1200,7 +1202,8 @@ type User struct {
 	return path
 }
 
-func assertFileBytes(c *qt.C, path string, want []byte) {
+func assertFileBytes(tb testing.TB, path string, want []byte) {
+	c := qt.New(tb)
 	c.Helper()
 	got, err := os.ReadFile(path)
 	c.Assert(err, qt.IsNil)

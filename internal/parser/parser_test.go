@@ -1480,7 +1480,6 @@ func TestParser_ParseSQLServerDialectBracketIdentifiersWithSQLMarkers(t *testing
 }
 
 func TestParser_ParseSQLServerDialectUnterminatedBracketIdentifier(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []string{
 		"CREATE TABLE [name (id int);",
@@ -1488,7 +1487,8 @@ func TestParser_ParseSQLServerDialectUnterminatedBracketIdentifier(t *testing.T)
 	}
 
 	for _, sql := range tests {
-		c.Run(sql, func(c *qt.C) {
+		t.Run(sql, func(t *testing.T) {
+			c := qt.New(t)
 			_, err := parser.NewParser(sql, parser.WithDialect(platform.SQLServer)).Parse()
 
 			c.Assert(err, qt.ErrorMatches, ".*expected identifier.*")

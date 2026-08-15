@@ -19,10 +19,10 @@ import (
 // capability.DefaultDialects is the authority for "a dialect Ptah has a
 // default preset for": adding a dialect there without a class fails here.
 func TestClassOf_CoversEveryCapabilityDialect(t *testing.T) {
-	c := qt.New(t)
 
 	for _, dialect := range capability.DefaultDialects() {
-		c.Run(dialect, func(c *qt.C) {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(capability.ForDialect(dialect), qt.IsNotNil)
 			c.Assert(ddltx.ClassOf(dialect), qt.Not(qt.Equals), ddltx.Unclassified)
 		})
@@ -34,7 +34,6 @@ func TestClassOf_CoversEveryCapabilityDialect(t *testing.T) {
 // a catch-all arm that classifies everything, including targets Ptah has no
 // preset for.
 func TestClassOf_KnowsNoDialectOutsideTheCapabilityPresets(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name    string
@@ -47,7 +46,8 @@ func TestClassOf_KnowsNoDialectOutsideTheCapabilityPresets(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(capability.ForDialect(test.dialect), qt.IsNil)
 			c.Assert(ddltx.ClassOf(test.dialect), qt.Equals, ddltx.Unclassified)
 		})
@@ -55,7 +55,6 @@ func TestClassOf_KnowsNoDialectOutsideTheCapabilityPresets(t *testing.T) {
 }
 
 func TestClassOf_AssignsTheMeasuredClass(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name    string
@@ -78,14 +77,14 @@ func TestClassOf_AssignsTheMeasuredClass(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(ddltx.ClassOf(test.dialect), qt.Equals, test.want)
 		})
 	}
 }
 
 func TestBodySurvivesRevisionCompletionFailure(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name  string
@@ -99,7 +98,8 @@ func TestBodySurvivesRevisionCompletionFailure(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(ddltx.BodySurvivesRevisionCompletionFailure(test.class), qt.Equals, test.want)
 		})
 	}
@@ -110,7 +110,6 @@ func TestBodySurvivesRevisionCompletionFailure(t *testing.T) {
 // for ClickHouse and they disagree about the MySQL family, which is the whole
 // reason there are two of them.
 func TestAllStatementsDurable(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name  string
@@ -124,7 +123,8 @@ func TestAllStatementsDurable(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(ddltx.AllStatementsDurable(test.class), qt.Equals, test.want)
 		})
 	}
@@ -134,10 +134,10 @@ func TestAllStatementsDurable(t *testing.T) {
 // drifting into a contradiction: a class where every statement is durable
 // cannot be one whose body does not survive.
 func TestAllStatementsDurableImpliesBodySurvives(t *testing.T) {
-	c := qt.New(t)
 
 	for _, dialect := range capability.DefaultDialects() {
-		c.Run(dialect, func(c *qt.C) {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
 			class := ddltx.ClassOf(dialect)
 			c.Assert(
 				ddltx.AllStatementsDurable(class) && !ddltx.BodySurvivesRevisionCompletionFailure(class),
@@ -148,7 +148,6 @@ func TestAllStatementsDurableImpliesBodySurvives(t *testing.T) {
 }
 
 func TestHasCommitStep(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name  string
@@ -162,7 +161,8 @@ func TestHasCommitStep(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(ddltx.HasCommitStep(test.class), qt.Equals, test.want)
 		})
 	}

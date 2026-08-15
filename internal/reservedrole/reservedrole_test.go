@@ -19,7 +19,6 @@ import (
 // pgadmin and pgpool are ordinary user roles, and a test that treated the
 // underscore as a wildcard would refuse all three.
 func TestIsRecognizesBothSpellingsTheServerRefuses(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name string
@@ -41,7 +40,8 @@ func TestIsRecognizesBothSpellingsTheServerRefuses(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(reservedrole.Is(test.role), qt.Equals, test.want)
 		})
 	}
@@ -67,7 +67,6 @@ func TestExcludeSQLEscapesTheUnderscore(t *testing.T) {
 // A schema whose roles are ordinary is planned exactly as before, and so is one
 // declaring a reserved name for a target whose reader never excluded it.
 func TestValidateDeclaredHappyPath(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name    string
@@ -102,7 +101,8 @@ func TestValidateDeclaredHappyPath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(reservedrole.ValidateDeclared(test.dialect, test.roles), qt.IsNil)
 		})
 	}
@@ -112,7 +112,6 @@ func TestValidateDeclaredHappyPath(t *testing.T) {
 // PostgreSQL-family dialect whose reader excludes these names from both of its
 // role reads.
 func TestValidateDeclaredFailurePath(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name    string
@@ -167,7 +166,8 @@ func TestValidateDeclaredFailurePath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			err := reservedrole.ValidateDeclared(test.dialect, test.roles)
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
@@ -186,7 +186,6 @@ func TestValidateDeclaredFailurePath(t *testing.T) {
 // than "postgres", CREATE ROLE "postgres" succeeds and the role appears in
 // pg_roles. Refusing it unconditionally would take that away.
 func TestValidateDeclaredOptInRestoresTheOlderBehavior(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name  string
@@ -198,7 +197,8 @@ func TestValidateDeclaredOptInRestoresTheOlderBehavior(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Setenv(reservedrole.AllowEnvVar, test.value)
 
 			err := reservedrole.ValidateDeclared("postgres", []goschema.Role{{Name: "postgres"}})
@@ -299,7 +299,6 @@ func TestValidateDeclaredRefusesAMalformedOptInWithNoReservedRole(t *testing.T) 
 // A MySQL render declares nothing about PostgreSQL role names, so this subsystem
 // does not recognize the variable on that invocation and must not fail for it.
 func TestValidateDeclaredLeavesAnUnrelatedDialectAlone(t *testing.T) {
-	c := qt.New(t)
 	envbooltest.Set(reservedrole.AllowEnvVar, "yes please")(t)
 
 	tests := []struct {
@@ -313,7 +312,8 @@ func TestValidateDeclaredLeavesAnUnrelatedDialectAlone(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			err := reservedrole.ValidateDeclared(test.dialect, []goschema.Role{{Name: "postgres"}})
 
 			c.Assert(err, qt.IsNil)

@@ -13,7 +13,6 @@ import (
 )
 
 func TestLoadDir_ConvertsEachFormatToUpOnlyEntries(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name      string
@@ -95,10 +94,11 @@ func TestLoadDir_ConvertsEachFormatToUpOnlyEntries(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			dir := c.TempDir()
 			for name, content := range tt.files {
-				writeLoadFile(c, dir, name, content)
+				writeLoadFile(c.TB, dir, name, content)
 			}
 
 			loaded, err := atlasmigrateimport.LoadDir(dir, tt.format)
@@ -116,8 +116,8 @@ func TestLoadDir_ConvertsEachFormatToUpOnlyEntries(t *testing.T) {
 func TestLoadDir_FSConformsToStdlibAndOmitsAtlasSum(t *testing.T) {
 	c := qt.New(t)
 	dir := c.TempDir()
-	writeLoadFile(c, dir, "1_init.sql", "-- +goose Up\nCREATE TABLE fs_t (id int);\n-- +goose Down\nDROP TABLE fs_t;\n")
-	writeLoadFile(c, dir, "2_next.sql", "-- +goose Up\nALTER TABLE fs_t ADD name text;\n-- +goose Down\nALTER TABLE fs_t DROP COLUMN name;\n")
+	writeLoadFile(c.TB, dir, "1_init.sql", "-- +goose Up\nCREATE TABLE fs_t (id int);\n-- +goose Down\nDROP TABLE fs_t;\n")
+	writeLoadFile(c.TB, dir, "2_next.sql", "-- +goose Up\nALTER TABLE fs_t ADD name text;\n-- +goose Down\nALTER TABLE fs_t DROP COLUMN name;\n")
 
 	loaded, err := atlasmigrateimport.LoadDir(dir, atlasmigrateimport.FormatGoose)
 	c.Assert(err, qt.IsNil)
@@ -172,16 +172,17 @@ CREATE TABLE first_table (id int);
 }
 
 func TestLoadDir_FailurePath(t *testing.T) {
-	c := qt.New(t)
 
-	c.Run("empty directory", func(c *qt.C) {
+	t.Run("empty directory", func(t *testing.T) {
+		c := qt.New(t)
 		loaded, err := atlasmigrateimport.LoadDir(c.TempDir(), atlasmigrateimport.FormatGoose)
 
 		c.Assert(err, qt.ErrorMatches, `no importable migration files found in .* for format "goose"`)
 		c.Assert(loaded, qt.IsNil)
 	})
 
-	c.Run("missing directory", func(c *qt.C) {
+	t.Run("missing directory", func(t *testing.T) {
+		c := qt.New(t)
 		loaded, err := atlasmigrateimport.LoadDir(filepath.Join(c.TempDir(), "does-not-exist"), atlasmigrateimport.FormatGoose)
 
 		c.Assert(err, qt.ErrorMatches, `read source migration directory .*: .*`)
@@ -190,7 +191,6 @@ func TestLoadDir_FailurePath(t *testing.T) {
 }
 
 func TestLoadDir_FlywayOrdersVersionsNumerically(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name      string
@@ -225,10 +225,11 @@ func TestLoadDir_FlywayOrdersVersionsNumerically(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			dir := c.TempDir()
 			for name, content := range tt.files {
-				writeLoadFile(c, dir, name, content)
+				writeLoadFile(c.TB, dir, name, content)
 			}
 
 			loaded, err := atlasmigrateimport.LoadDir(dir, atlasmigrateimport.FormatFlyway)
@@ -242,7 +243,7 @@ func TestLoadDir_FlywayOrdersVersionsNumerically(t *testing.T) {
 func TestLoadDir_DBMateStripsDirectiveOptions(t *testing.T) {
 	c := qt.New(t)
 	dir := c.TempDir()
-	writeLoadFile(c, dir, "1_index.sql", "-- migrate:up transaction:false\nCREATE INDEX idx ON t (id);\n-- migrate:down\nDROP INDEX idx;\n")
+	writeLoadFile(c.TB, dir, "1_index.sql", "-- migrate:up transaction:false\nCREATE INDEX idx ON t (id);\n-- migrate:down\nDROP INDEX idx;\n")
 
 	loaded, err := atlasmigrateimport.LoadDir(dir, atlasmigrateimport.FormatDBMate)
 
@@ -256,7 +257,7 @@ func TestLoadDir_DBMateStripsDirectiveOptions(t *testing.T) {
 func TestLoadDir_GoosePreservesStatementBlockAndDropsDown(t *testing.T) {
 	c := qt.New(t)
 	dir := c.TempDir()
-	writeLoadFile(c, dir, "1_fn.sql", "-- +goose Up\n-- +goose StatementBegin\nCREATE FUNCTION f() RETURNS int AS $$\nBEGIN\n  RETURN 1;\nEND;\n$$ LANGUAGE plpgsql;\n-- +goose StatementEnd\n-- +goose Down\nDROP FUNCTION f();\n")
+	writeLoadFile(c.TB, dir, "1_fn.sql", "-- +goose Up\n-- +goose StatementBegin\nCREATE FUNCTION f() RETURNS int AS $$\nBEGIN\n  RETURN 1;\nEND;\n$$ LANGUAGE plpgsql;\n-- +goose StatementEnd\n-- +goose Down\nDROP FUNCTION f();\n")
 
 	loaded, err := atlasmigrateimport.LoadDir(dir, atlasmigrateimport.FormatGoose)
 
@@ -278,10 +279,10 @@ func TestLoadDir_FlywayConvertsThroughTheRealFilesystem(t *testing.T) {
 	c := qt.New(t)
 	dir := c.TempDir()
 	c.Assert(os.MkdirAll(filepath.Join(dir, "sub"), 0o750), qt.IsNil)
-	writeLoadFile(c, dir, "V1.5__a.sql", "CREATE TABLE a (id int);\n")
-	writeLoadFile(c, dir, "V1_5__b.sql", "CREATE TABLE b (id int);\n")
-	writeLoadFile(c, dir, filepath.Join("sub", "V2__nested.sql"), "CREATE TABLE n (id int);\n")
-	writeLoadFile(c, dir, "R__views.sql", "CREATE VIEW v AS SELECT 1;\n")
+	writeLoadFile(c.TB, dir, "V1.5__a.sql", "CREATE TABLE a (id int);\n")
+	writeLoadFile(c.TB, dir, "V1_5__b.sql", "CREATE TABLE b (id int);\n")
+	writeLoadFile(c.TB, dir, filepath.Join("sub", "V2__nested.sql"), "CREATE TABLE n (id int);\n")
+	writeLoadFile(c.TB, dir, "R__views.sql", "CREATE VIEW v AS SELECT 1;\n")
 
 	loaded, err := atlasmigrateimport.LoadDir(dir, atlasmigrateimport.FormatFlyway)
 
@@ -310,7 +311,6 @@ func TestLoadDir_FlywayConvertsThroughTheRealFilesystem(t *testing.T) {
 // Goose parsing — the directive-free path and the out-of-order refusals that
 // replaced this over-refusal — is pinned in goosedirectives_test.go.
 func TestLoadDir_RejectsMissingUpDirective(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name    string
@@ -325,9 +325,10 @@ func TestLoadDir_RejectsMissingUpDirective(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			dir := c.TempDir()
-			writeLoadFile(c, dir, "1_x.sql", tt.content)
+			writeLoadFile(c.TB, dir, "1_x.sql", tt.content)
 
 			loaded, err := atlasmigrateimport.LoadDir(dir, tt.format)
 
@@ -340,8 +341,8 @@ func TestLoadDir_RejectsMissingUpDirective(t *testing.T) {
 func TestLoadDir_RejectsDuplicateConvertedVersion(t *testing.T) {
 	c := qt.New(t)
 	dir := c.TempDir()
-	writeLoadFile(c, dir, "1_a.sql", "-- +goose Up\nCREATE TABLE a (id int);\n")
-	writeLoadFile(c, dir, "01_a.sql", "-- +goose Up\nCREATE TABLE b (id int);\n")
+	writeLoadFile(c.TB, dir, "1_a.sql", "-- +goose Up\nCREATE TABLE a (id int);\n")
+	writeLoadFile(c.TB, dir, "01_a.sql", "-- +goose Up\nCREATE TABLE b (id int);\n")
 
 	loaded, err := atlasmigrateimport.LoadDir(dir, atlasmigrateimport.FormatGoose)
 
@@ -349,7 +350,8 @@ func TestLoadDir_RejectsDuplicateConvertedVersion(t *testing.T) {
 	c.Assert(loaded, qt.IsNil)
 }
 
-func writeLoadFile(c *qt.C, dir, name, content string) {
+func writeLoadFile(tb testing.TB, dir, name, content string) {
+	c := qt.New(tb)
 	c.Helper()
 	c.Assert(os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600), qt.IsNil)
 }

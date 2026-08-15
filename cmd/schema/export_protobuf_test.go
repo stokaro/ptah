@@ -38,7 +38,8 @@ func runSchemaExport(args ...string) (stdout, stderr string, err error) {
 // resolved. pathguard.ResolveCLIPath resolves them before the command echoes
 // the destination back, and on macOS t.TempDir() sits under a symlinked /var,
 // so the raw path never appears in the command output.
-func resolvedTempDir(c *qt.C) string {
+func resolvedTempDir(tb testing.TB) string {
+	c := qt.New(tb)
 	c.Helper()
 	resolved, err := filepath.EvalSymlinks(c.TempDir())
 	c.Assert(err, qt.IsNil)
@@ -48,7 +49,8 @@ func resolvedTempDir(c *qt.C) string {
 // leftoverTempFiles lists the atomic-write scratch files still present in dir.
 // writeProtobufAtomically stages into ".<base>.*.tmp" before renaming, so any
 // survivor means a run left partial state behind.
-func leftoverTempFiles(c *qt.C, dir string) []string {
+func leftoverTempFiles(tb testing.TB, dir string) []string {
+	c := qt.New(tb)
 	c.Helper()
 	entries, err := os.ReadDir(dir)
 	c.Assert(err, qt.IsNil)
@@ -64,10 +66,11 @@ func leftoverTempFiles(c *qt.C, dir string) []string {
 // exportProtobufFixture writes the shared Go model into a fresh directory and
 // returns the directory plus a well-formed output path whose directory matches
 // protoTestPackage.
-func exportProtobufFixture(c *qt.C) (dir, outPath string) {
+func exportProtobufFixture(tb testing.TB) (dir, outPath string) {
+	c := qt.New(tb)
 	c.Helper()
-	dir = resolvedTempDir(c)
-	writeModel(c, dir)
+	dir = resolvedTempDir(c.TB)
+	writeModel(c.TB, dir)
 	return dir, filepath.Join(dir, "proto", "acme", "inventory", "v1", "schema.proto")
 }
 
@@ -90,7 +93,8 @@ func digestValueOf(text string) string {
 
 // writeCommentedModel writes a model carrying an internal table comment and a
 // sensitive column comment, the fixture the comment policy exists for.
-func writeCommentedModel(c *qt.C, dir string) {
+func writeCommentedModel(tb testing.TB, dir string) {
+	c := qt.New(tb)
 	c.Helper()
 	content := `package models
 
@@ -124,8 +128,8 @@ func protoCommentLines(text string) []string {
 
 func TestSchemaExportProtobufOmitsSourceCommentsUnlessAsked(t *testing.T) {
 	c := qt.New(t)
-	dir := resolvedTempDir(c)
-	writeCommentedModel(c, dir)
+	dir := resolvedTempDir(c.TB)
+	writeCommentedModel(c.TB, dir)
 	outPath := filepath.Join(dir, "proto", "acme", "inventory", "v1", "schema.proto")
 
 	exportArgs := func(extra ...string) []string {
@@ -185,7 +189,7 @@ func TestSchemaExportProtobufOmitsSourceCommentsUnlessAsked(t *testing.T) {
 
 func TestSchemaExportProtobufWritesFileAndBootstrapsHistory(t *testing.T) {
 	c := qt.New(t)
-	dir, outPath := exportProtobufFixture(c)
+	dir, outPath := exportProtobufFixture(c.TB)
 
 	stdout, stderr, err := runSchemaExport(
 		"--to", "protobuf",
@@ -239,7 +243,7 @@ func TestSchemaExportProtobufWritesFileAndBootstrapsHistory(t *testing.T) {
 
 func TestSchemaExportProtobufRegenerationIsByteIdentical(t *testing.T) {
 	c := qt.New(t)
-	dir, outPath := exportProtobufFixture(c)
+	dir, outPath := exportProtobufFixture(c.TB)
 
 	_, stderr, err := runSchemaExport(
 		"--to", "protobuf",
@@ -268,7 +272,7 @@ func TestSchemaExportProtobufRegenerationIsByteIdentical(t *testing.T) {
 
 func TestSchemaExportProtobufEmitsGoPackageOption(t *testing.T) {
 	c := qt.New(t)
-	dir, outPath := exportProtobufFixture(c)
+	dir, outPath := exportProtobufFixture(c.TB)
 
 	_, stderr, err := runSchemaExport(
 		"--to", "protobuf",
@@ -287,7 +291,7 @@ func TestSchemaExportProtobufEmitsGoPackageOption(t *testing.T) {
 
 func TestSchemaExportProtobufRejectsInvalidConfiguration(t *testing.T) {
 	c := qt.New(t)
-	dir, outPath := exportProtobufFixture(c)
+	dir, outPath := exportProtobufFixture(c.TB)
 
 	tests := []struct {
 		name    string
@@ -337,7 +341,8 @@ func TestSchemaExportProtobufRejectsInvalidConfiguration(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			args := append([]string{"--to", "protobuf", "--root-dir", dir}, tt.args...)
 
 			stdout, stderr, err := runSchemaExport(args...)
@@ -354,7 +359,7 @@ func TestSchemaExportProtobufRejectsInvalidConfiguration(t *testing.T) {
 
 func TestSchemaExportProtobufOnlyFlagsRejectedOnOtherTargets(t *testing.T) {
 	c := qt.New(t)
-	dir, _ := exportProtobufFixture(c)
+	dir, _ := exportProtobufFixture(c.TB)
 
 	tests := []struct {
 		name string
@@ -376,7 +381,8 @@ func TestSchemaExportProtobufOnlyFlagsRejectedOnOtherTargets(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			args := append([]string{"--to", "graphql", "--root-dir", dir}, tt.args...)
 			wantErr := tt.flag + " is only supported with --to protobuf"
 
@@ -393,7 +399,7 @@ func TestSchemaExportProtobufOnlyFlagsRejectedOnOtherTargets(t *testing.T) {
 
 func TestSchemaExportProtobufWarnsAboutIgnoredTitle(t *testing.T) {
 	c := qt.New(t)
-	dir, outPath := exportProtobufFixture(c)
+	dir, outPath := exportProtobufFixture(c.TB)
 
 	stdout, stderr, err := runSchemaExport(
 		"--to", "protobuf",
@@ -413,7 +419,6 @@ func TestSchemaExportProtobufWarnsAboutIgnoredTitle(t *testing.T) {
 }
 
 func TestSchemaExportProtobufReportsBufLintAdvisories(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name string
@@ -449,9 +454,10 @@ func TestSchemaExportProtobufReportsBufLintAdvisories(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
-			dir := resolvedTempDir(c)
-			writeModel(c, dir)
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			dir := resolvedTempDir(c.TB)
+			writeModel(c.TB, dir)
 			outPath := filepath.Join(append([]string{dir}, tt.out...)...)
 
 			stdout, stderr, err := runSchemaExport(
@@ -474,7 +480,7 @@ func TestSchemaExportProtobufReportsBufLintAdvisories(t *testing.T) {
 
 func TestSchemaExportProtobufRefusalPreservesPreviousFile(t *testing.T) {
 	c := qt.New(t)
-	dir, outPath := exportProtobufFixture(c)
+	dir, outPath := exportProtobufFixture(c.TB)
 
 	_, stderr, err := runSchemaExport(
 		"--to", "protobuf",
@@ -506,12 +512,12 @@ func TestSchemaExportProtobufRefusalPreservesPreviousFile(t *testing.T) {
 	after, err := os.ReadFile(outPath)
 	c.Assert(err, qt.IsNil)
 	c.Assert(after, qt.DeepEquals, before)
-	c.Assert(leftoverTempFiles(c, filepath.Dir(outPath)), qt.HasLen, 0)
+	c.Assert(leftoverTempFiles(c.TB, filepath.Dir(outPath)), qt.HasLen, 0)
 }
 
 func TestSchemaExportProtobufPublishesReadableFileAndCleansTempFiles(t *testing.T) {
 	c := qt.New(t)
-	dir, outPath := exportProtobufFixture(c)
+	dir, outPath := exportProtobufFixture(c.TB)
 
 	_, stderr, err := runSchemaExport(
 		"--to", "protobuf",
@@ -528,7 +534,7 @@ func TestSchemaExportProtobufPublishesReadableFileAndCleansTempFiles(t *testing.
 	c.Assert(info.Mode().Perm(), qt.Equals, os.FileMode(0o644))
 
 	outDir := filepath.Dir(outPath)
-	c.Assert(leftoverTempFiles(c, outDir), qt.HasLen, 0)
+	c.Assert(leftoverTempFiles(c.TB, outDir), qt.HasLen, 0)
 	entries, err := os.ReadDir(outDir)
 	c.Assert(err, qt.IsNil)
 	c.Assert(entries, qt.HasLen, 1)
@@ -544,7 +550,7 @@ func TestSchemaExportProtobufPublishesReadableFileAndCleansTempFiles(t *testing.
 	)
 
 	c.Assert(err, qt.IsNil, qt.Commentf("stderr:\n%s", stderr))
-	c.Assert(leftoverTempFiles(c, outDir), qt.HasLen, 0)
+	c.Assert(leftoverTempFiles(c.TB, outDir), qt.HasLen, 0)
 	info, err = os.Stat(outPath)
 	c.Assert(err, qt.IsNil)
 	c.Assert(info.Mode().Perm(), qt.Equals, os.FileMode(0o644))

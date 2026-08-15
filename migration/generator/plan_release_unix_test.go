@@ -28,7 +28,8 @@ import (
 // openDescriptorCount counts this process's open descriptors, including the one
 // the listing itself is using -- consistently, so a difference between two
 // counts is a difference in what the product holds.
-func openDescriptorCount(c *qt.C) int {
+func openDescriptorCount(tb testing.TB) int {
+	c := qt.New(tb)
 	c.Helper()
 	dir, err := os.Open("/dev/fd")
 	c.Assert(err, qt.IsNil)
@@ -46,7 +47,7 @@ func TestMigrationPlanWriteFiles_ReleasesTheDirectoryWhenPublicationFails(t *tes
 	c := qt.New(t)
 	outputDir := filepath.Join(t.TempDir(), "migrations")
 	c.Assert(os.MkdirAll(outputDir, 0o755), qt.IsNil)
-	beforePlanning := openDescriptorCount(c)
+	beforePlanning := openDescriptorCount(c.TB)
 
 	plan, err := generator.NewMigrationPlanForTest(
 		outputDir,
@@ -60,14 +61,14 @@ func TestMigrationPlanWriteFiles_ReleasesTheDirectoryWhenPublicationFails(t *tes
 		}},
 	)
 	c.Assert(err, qt.IsNil)
-	whileOutstanding := openDescriptorCount(c)
+	whileOutstanding := openDescriptorCount(c.TB)
 
 	// Same pathname, different filesystem object: the publication is refused.
 	c.Assert(os.RemoveAll(outputDir), qt.IsNil)
 	c.Assert(os.MkdirAll(outputDir, 0o755), qt.IsNil)
 
 	files, err := plan.WriteFilesContext(t.Context())
-	afterFailure := openDescriptorCount(c)
+	afterFailure := openDescriptorCount(c.TB)
 
 	c.Assert(err, qt.ErrorIs, generator.ErrMigrationDirectoryChanged)
 	c.Assert(files, qt.IsNil)
@@ -94,7 +95,7 @@ func TestMigrationPlanWriteFiles_ReleasesTheDirectoryWhenPublicationSucceeds(t *
 	c := qt.New(t)
 	outputDir := filepath.Join(t.TempDir(), "migrations")
 	c.Assert(os.MkdirAll(outputDir, 0o755), qt.IsNil)
-	beforePlanning := openDescriptorCount(c)
+	beforePlanning := openDescriptorCount(c.TB)
 
 	plan, err := generator.NewMigrationPlanForTest(
 		outputDir,
@@ -108,10 +109,10 @@ func TestMigrationPlanWriteFiles_ReleasesTheDirectoryWhenPublicationSucceeds(t *
 		}},
 	)
 	c.Assert(err, qt.IsNil)
-	whileOutstanding := openDescriptorCount(c)
+	whileOutstanding := openDescriptorCount(c.TB)
 
 	files, err := plan.WriteFilesContext(t.Context())
-	afterSuccess := openDescriptorCount(c)
+	afterSuccess := openDescriptorCount(c.TB)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(files.Files, qt.HasLen, 1)

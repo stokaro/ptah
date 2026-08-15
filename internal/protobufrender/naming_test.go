@@ -11,7 +11,7 @@ import (
 func TestEnumSynthesizesTheZeroValue(t *testing.T) {
 	c := qt.New(t)
 
-	text := mustRenderText(c, inlineEnumTable("draft", "live"), baseOptions())
+	text := mustRenderText(c.TB, inlineEnumTable("draft", "live"), baseOptions())
 
 	// Editions default features.enum_type to OPEN and protoc rejects an open
 	// enum whose first value is not zero, so the zero value is a language
@@ -41,7 +41,7 @@ func TestEnumValuePrefixFollowsBufsDigitRule(t *testing.T) {
 		}),
 	}
 
-	text := mustRenderText(c, db, baseOptions())
+	text := mustRenderText(c.TB, db, baseOptions())
 
 	c.Assert(section(text, "enum EnumUser2faStatus {"), qt.Equals,
 		"enum EnumUser2faStatus {\n"+
@@ -65,7 +65,7 @@ func TestEnumNamedTypeDropsThePtahPrefixAndKeepsTheDigitRule(t *testing.T) {
 		Enums:  []goschema.Enum{{Name: "enum_user_2fa_status", Values: []string{"pending", "done"}}},
 	}
 
-	text := mustRenderText(c, db, baseOptions())
+	text := mustRenderText(c.TB, db, baseOptions())
 
 	c.Assert(section(text, "enum User2faStatus {"), qt.Equals,
 		"enum User2faStatus {\n"+
@@ -91,7 +91,7 @@ func TestEnumNamedTypeSharedByTwoColumnsProducesOneEnum(t *testing.T) {
 		Enums: []goschema.Enum{{Name: "enum_account_status", Values: []string{"active", "retired"}}},
 	}
 
-	text := mustRenderText(c, db, baseOptions())
+	text := mustRenderText(c.TB, db, baseOptions())
 
 	c.Assert(text, qt.Contains, "message Admin {\n  AccountStatus status = 1;\n}")
 	c.Assert(text, qt.Contains, "message User {\n  AccountStatus status = 1;\n}")
@@ -102,7 +102,7 @@ func TestEnumNamedTypeSharedByTwoColumnsProducesOneEnum(t *testing.T) {
 func TestEnumLabelsAreSanitizedWithAWarningRatherThanRejected(t *testing.T) {
 	c := qt.New(t)
 
-	res := mustRender(c, inlineEnumTable("in-progress", "2fa"), baseOptions())
+	res := mustRender(c.TB, inlineEnumTable("in-progress", "2fa"), baseOptions())
 	text := string(res.Data)
 
 	c.Assert(section(text, "enum ThingState {"), qt.Equals,
@@ -122,7 +122,7 @@ func TestEnumLabelsAreSanitizedWithAWarningRatherThanRejected(t *testing.T) {
 func TestDigitLeadingColumnsSanitizeAndWarn(t *testing.T) {
 	c := qt.New(t)
 
-	res := mustRender(c, oneTable(
+	res := mustRender(c.TB, oneTable(
 		column("2fa_enabled", "BOOLEAN"),
 		column("3d_model_url", "TEXT"),
 		column("Mixed-Case", "TEXT"),
@@ -156,7 +156,7 @@ func TestDigitLeadingColumnsSanitizeAndWarn(t *testing.T) {
 func TestSanitizedTableNameWarns(t *testing.T) {
 	c := qt.New(t)
 
-	res := mustRender(c, &goschema.Database{
+	res := mustRender(c.TB, &goschema.Database{
 		Tables: []goschema.Table{{StructName: "S", Name: "2fa_tokens"}},
 		Fields: columns("S", column("id", "BIGINT")),
 	}, baseOptions())
@@ -172,7 +172,7 @@ func TestEnumLabelUnspecifiedCollidesWithTheSynthesizedZeroValue(t *testing.T) {
 
 	// Protobuf enum values are siblings of their type at package scope, and the
 	// synthesized zero value shares that namespace with real labels.
-	message := mustFail(c, inlineEnumTable("unspecified", "live"), baseOptions())
+	message := mustFail(c.TB, inlineEnumTable("unspecified", "live"), baseOptions())
 
 	c.Assert(message, qt.Equals,
 		"enum value names collide (protobuf enum values share their package's namespace): "+
@@ -197,7 +197,7 @@ func TestEnumValuesCollideAcrossDifferentEnums(t *testing.T) {
 		},
 	}
 
-	message := mustFail(c, db, baseOptions())
+	message := mustFail(c.TB, db, baseOptions())
 	c.Assert(message, qt.Equals,
 		"enum value names collide (protobuf enum values share their package's namespace): "+
 			`ALPHA_X_Y: label "x_y" of enum Alpha, label "y" of enum AlphaX`)
@@ -220,7 +220,7 @@ func TestEnumTypeNamesCollide(t *testing.T) {
 
 	// Two distinct Ptah enums that PascalCase to the same identifier are an
 	// error rather than an alias.
-	message := mustFail(c, db, baseOptions())
+	message := mustFail(c.TB, db, baseOptions())
 	c.Assert(message, qt.Equals,
 		`enum type name "Shared" is produced by more than one source; `+
 			`rename the enum or the column that produces it`)
@@ -229,7 +229,7 @@ func TestEnumTypeNamesCollide(t *testing.T) {
 func TestTwoColumnsSanitizingToOneFieldNameAreRejected(t *testing.T) {
 	c := qt.New(t)
 
-	message := mustFail(c, oneTable(
+	message := mustFail(c.TB, oneTable(
 		column("a-b", "TEXT"),
 		column("a_b", "TEXT"),
 	), baseOptions())
@@ -252,7 +252,7 @@ func TestTablesCollapsingToOneMessageNameAreRejected(t *testing.T) {
 		},
 	}
 
-	message := mustFail(c, db, baseOptions())
+	message := mustFail(c.TB, db, baseOptions())
 
 	// Both sources are named, and never disambiguated by ordinal: a numeric
 	// suffix would make the result depend on table order.
@@ -272,11 +272,11 @@ func TestSchemaQualifiedDisambiguationIsOrderIndependent(t *testing.T) {
 		{StructName: "OrderRow", Name: "id", Type: "BIGINT"},
 	}
 
-	forward := mustRenderText(c, &goschema.Database{
+	forward := mustRenderText(c.TB, &goschema.Database{
 		Tables: []goschema.Table{sales, rows},
 		Fields: fields,
 	}, baseOptions())
-	reversed := mustRenderText(c, &goschema.Database{
+	reversed := mustRenderText(c.TB, &goschema.Database{
 		Tables: []goschema.Table{rows, sales},
 		Fields: fields,
 	}, baseOptions())
@@ -302,7 +302,7 @@ func TestSchemaQualificationThatStillCollidesIsRejected(t *testing.T) {
 		},
 	}
 
-	message := mustFail(c, db, baseOptions())
+	message := mustFail(c.TB, db, baseOptions())
 	c.Assert(message, qt.Equals,
 		"tables map to the same protobuf message name: "+
 			"SalesOrder: sales.order (struct Order), sales.orders (struct OrderRow); "+
@@ -323,7 +323,7 @@ func TestMessagesAndEnumsAreOrderedByName(t *testing.T) {
 		},
 	}
 
-	text := mustRenderText(c, db, baseOptions())
+	text := mustRenderText(c.TB, db, baseOptions())
 
 	c.Assert(indexOf(text, "message Apple {") < indexOf(text, "message Zebra {"), qt.IsTrue)
 	c.Assert(indexOf(text, "message Zebra {") < indexOf(text, "enum AppleState {"), qt.IsTrue)

@@ -47,7 +47,7 @@ func atlasChecksumGuidanceWith(pointer string) string {
 // writeStatusIntegrityUnhashed writes one Atlas migration and no atlas.sum.
 func writeStatusIntegrityUnhashed(c *qt.C, dir string) {
 	c.Helper()
-	writeAtlasApplyProjectMigration(c, dir, statusIntegrityMigration,
+	writeAtlasApplyProjectMigration(c.TB, dir, statusIntegrityMigration,
 		"CREATE TABLE t1 (id INTEGER PRIMARY KEY);\n")
 }
 
@@ -55,7 +55,7 @@ func writeStatusIntegrityUnhashed(c *qt.C, dir string) {
 func writeStatusIntegrityHashed(c *qt.C, dir string) {
 	c.Helper()
 	writeStatusIntegrityUnhashed(c, dir)
-	writeAtlasApplyProjectSum(c, dir)
+	writeAtlasApplyProjectSum(c.TB, dir)
 }
 
 // writeStatusIntegrityEdited hashes the directory and then edits the migration,
@@ -63,7 +63,7 @@ func writeStatusIntegrityHashed(c *qt.C, dir string) {
 func writeStatusIntegrityEdited(c *qt.C, dir string) {
 	c.Helper()
 	writeStatusIntegrityHashed(c, dir)
-	writeAtlasApplyProjectMigration(c, dir, statusIntegrityMigration,
+	writeAtlasApplyProjectMigration(c.TB, dir, statusIntegrityMigration,
 		"CREATE TABLE t1 (id INTEGER PRIMARY KEY, extra TEXT);\n")
 }
 
@@ -72,7 +72,7 @@ func writeStatusIntegrityEdited(c *qt.C, dir string) {
 func writeStatusIntegrityAdded(c *qt.C, dir string) {
 	c.Helper()
 	writeStatusIntegrityHashed(c, dir)
-	writeAtlasApplyProjectMigration(c, dir, statusIntegritySecond,
+	writeAtlasApplyProjectMigration(c.TB, dir, statusIntegritySecond,
 		"CREATE TABLE t2 (id INTEGER PRIMARY KEY);\n")
 }
 
@@ -189,7 +189,7 @@ func TestCompatMigrateStatus_UnhashedDirWithNonVersionedSQLRefuses(t *testing.T)
 	c := qt.New(t)
 	tempDir := c.TempDir()
 	dir := filepath.Join(tempDir, "m_foo")
-	writeAtlasApplyProjectMigration(c, dir, "foo.sql", "CREATE TABLE foo (id INTEGER PRIMARY KEY);\n")
+	writeAtlasApplyProjectMigration(c.TB, dir, "foo.sql", "CREATE TABLE foo (id INTEGER PRIMARY KEY);\n")
 
 	stdout, stderr, err := runCompat(
 		"migrate", "status",
@@ -211,7 +211,7 @@ func TestCompatMigrateStatus_ConfigResolvedDirRefuses(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
 	writeStatusIntegrityUnhashed(c, "migrations")
-	writeAtlasApplyProjectConfig(c, filepath.Join(root, "status.db"), "atlas", "LINEAR")
+	writeAtlasApplyProjectConfig(c.TB, filepath.Join(root, "status.db"), "atlas", "LINEAR")
 
 	stdout, stderr, err := runCompat("migrate", "status", "--env", "local")
 
@@ -327,7 +327,7 @@ func TestCompatMigrateStatus_UnhashedNestedSQLReportsNothingPending(t *testing.T
 	c := qt.New(t)
 	tempDir := c.TempDir()
 	dir := filepath.Join(tempDir, "m_nested")
-	writeAtlasApplyProjectMigration(c, filepath.Join(dir, "sub"), statusIntegrityMigration,
+	writeAtlasApplyProjectMigration(c.TB, filepath.Join(dir, "sub"), statusIntegrityMigration,
 		"CREATE TABLE nested (id INTEGER PRIMARY KEY);\n")
 
 	stdout, stderr, err := runCompat(

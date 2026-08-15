@@ -122,7 +122,8 @@ func TestRevisionCompletionClasses_EveryClassIsCovered(t *testing.T) {
 	}
 
 	for _, class := range ddltx.Classes() {
-		c.Run(string(class), func(c *qt.C) {
+		t.Run(string(class), func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(covered[class], qt.Not(qt.HasLen), 0)
 		})
 	}
@@ -148,7 +149,8 @@ func TestRevisionCompletionClasses_ClassMatchesTheDialect(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(ddltx.ClassOf(test.dialect), qt.Equals, test.class)
 		})
 	}
@@ -161,7 +163,6 @@ func TestRevisionCompletionClasses_ClassMatchesTheDialect(t *testing.T) {
 // target with one would be asserting that signing off a rolled-back body is
 // fine.
 func TestRevisionCompletionRepair_CoversExactlyTheSurvivingBodyClasses(t *testing.T) {
-	c := qt.New(t)
 
 	repaired := map[string]bool{}
 	for _, target := range revisionCompletionRepairTargets() {
@@ -169,7 +170,8 @@ func TestRevisionCompletionRepair_CoversExactlyTheSurvivingBodyClasses(t *testin
 	}
 
 	for _, target := range allRevisionCompletionTargets() {
-		c.Run(target.name, func(c *qt.C) {
+		t.Run(target.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(
 				repaired[target.name],
 				qt.Equals,

@@ -43,7 +43,8 @@ type dirFormatFixture struct {
 	emptyDir string
 }
 
-func newDirFormatFixture(c *qt.C) dirFormatFixture {
+func newDirFormatFixture(tb testing.TB) dirFormatFixture {
+	c := qt.New(tb)
 	c.Helper()
 	root := c.TempDir()
 	dir := filepath.Join(root, "migrations")
@@ -89,7 +90,6 @@ func newDirFormatFixture(c *qt.C) dirFormatFixture {
 // this sandbox. The two rows below drive the same command tree in process, and
 // the tagged integration contour independently drives the built process.
 func TestCompatUnknownDirFormatIsTheSameStringOnEveryVerb(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		verb string
@@ -258,8 +258,9 @@ func TestCompatUnknownDirFormatIsTheSameStringOnEveryVerb(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.verb+" "+tt.spelling, func(c *qt.C) {
-			fx := newDirFormatFixture(c)
+		t.Run(tt.verb+" "+tt.spelling, func(t *testing.T) {
+			c := qt.New(t)
+			fx := newDirFormatFixture(c.TB)
 			var unknownFormat *atlasmigrate.UnknownDirFormatError
 
 			stdout, stderr, err := runCompatExit(tt.args(fx)...)
@@ -288,7 +289,6 @@ func TestCompatUnknownDirFormatIsTheSameStringOnEveryVerb(t *testing.T) {
 // only ran on one verb would pass while a per-verb adaptation grew too wide
 // somewhere else.
 func TestCompatUnknownDirFormatAdapterLeavesOtherRefusalsAlone(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name string
@@ -329,8 +329,9 @@ func TestCompatUnknownDirFormatAdapterLeavesOtherRefusalsAlone(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
-			fx := newDirFormatFixture(c)
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			fx := newDirFormatFixture(c.TB)
 			var unknownFormat *atlasmigrate.UnknownDirFormatError
 
 			stdout, stderr, err := runCompatExit(tt.args(fx)...)

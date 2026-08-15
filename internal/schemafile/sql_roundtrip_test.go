@@ -129,13 +129,15 @@ permission {
 }
 `
 
-func writeSchemaFile(c *qt.C, dir, name, body string) string {
+func writeSchemaFile(tb testing.TB, dir, name, body string) string {
+	c := qt.New(tb)
 	path := filepath.Join(dir, name)
 	c.Assert(os.WriteFile(path, []byte(body), 0o600), qt.IsNil)
 	return path
 }
 
-func renderPostgres(c *qt.C, db *goschema.Database) []string {
+func renderPostgres(tb testing.TB, db *goschema.Database) []string {
+	c := qt.New(tb)
 	statements, err := renderer.GetOrderedCreateStatements(db, platform.Postgres)
 	c.Assert(err, qt.IsNil)
 	return statements
@@ -168,16 +170,16 @@ func TestLoadAll_RenderedPostgresSQLReadsBackAsAFixedPoint(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 
-	hclPath := writeSchemaFile(c, dir, "schema.hcl", postgresObjectsHCL)
+	hclPath := writeSchemaFile(c.TB, dir, "schema.hcl", postgresObjectsHCL)
 	fromHCL, err := schemafile.LoadAll([]string{hclPath}, schemafile.Options{Dialect: platform.Postgres})
 	c.Assert(err, qt.IsNil)
-	first := renderPostgres(c, fromHCL)
+	first := renderPostgres(c.TB, fromHCL)
 	c.Assert(first, qt.HasLen, 16)
 
-	sqlPath := writeSchemaFile(c, dir, "first.sql", strings.Join(first, ";\n")+";\n")
+	sqlPath := writeSchemaFile(c.TB, dir, "first.sql", strings.Join(first, ";\n")+";\n")
 	fromSQL, err := schemafile.LoadAll([]string{sqlPath}, schemafile.Options{Dialect: platform.Postgres})
 	c.Assert(err, qt.IsNil)
-	second := renderPostgres(c, fromSQL)
+	second := renderPostgres(c.TB, fromSQL)
 	c.Assert(second, qt.HasLen, 16)
 
 	// Every statement comes back identical apart from the object comments that
@@ -186,10 +188,10 @@ func TestLoadAll_RenderedPostgresSQLReadsBackAsAFixedPoint(t *testing.T) {
 
 	// From the second render on, the SQL is a true fixed point: reading it and
 	// rendering it again reproduces it byte for byte.
-	secondPath := writeSchemaFile(c, dir, "second.sql", strings.Join(second, ";\n")+";\n")
+	secondPath := writeSchemaFile(c.TB, dir, "second.sql", strings.Join(second, ";\n")+";\n")
 	fromSecondSQL, err := schemafile.LoadAll([]string{secondPath}, schemafile.Options{Dialect: platform.Postgres})
 	c.Assert(err, qt.IsNil)
-	c.Assert(renderPostgres(c, fromSecondSQL), qt.DeepEquals, second)
+	c.Assert(renderPostgres(c.TB, fromSecondSQL), qt.DeepEquals, second)
 }
 
 // TestLoadAll_RenderedPostgresSQLKeepsEveryObjectKind names the objects the
@@ -199,12 +201,12 @@ func TestLoadAll_RenderedPostgresSQLKeepsEveryObjectKind(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 
-	hclPath := writeSchemaFile(c, dir, "schema.hcl", postgresObjectsHCL)
+	hclPath := writeSchemaFile(c.TB, dir, "schema.hcl", postgresObjectsHCL)
 	fromHCL, err := schemafile.LoadAll([]string{hclPath}, schemafile.Options{Dialect: platform.Postgres})
 	c.Assert(err, qt.IsNil)
-	rendered := renderPostgres(c, fromHCL)
+	rendered := renderPostgres(c.TB, fromHCL)
 
-	sqlPath := writeSchemaFile(c, dir, "schema.sql", strings.Join(rendered, ";\n")+";\n")
+	sqlPath := writeSchemaFile(c.TB, dir, "schema.sql", strings.Join(rendered, ";\n")+";\n")
 	got, err := schemafile.LoadAll([]string{sqlPath}, schemafile.Options{Dialect: platform.Postgres})
 	c.Assert(err, qt.IsNil)
 

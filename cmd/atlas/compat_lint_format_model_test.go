@@ -49,15 +49,16 @@ type lintFormatCase struct {
 // only the second is analyzed, so Current is the state the base leaves and
 // Desired is the state after the drop -- the pair cannot be the same read
 // twice.
-func writeLintFormatFixture(c *qt.C, dir string) {
+func writeLintFormatFixture(tb testing.TB, dir string) {
+	c := qt.New(tb)
 	c.Helper()
 	writeHashedAtlasDir(
-		c,
+		c.TB,
 		dir,
 		"20240101000000_base.sql",
 		"CREATE TABLE kept (id INTEGER);\nCREATE TABLE staging (id INTEGER);\n",
 	)
-	writeHashedAtlasDir(c, dir, "20240101000001_drop.sql", lintFormatDropComment+"DROP TABLE staging;\n")
+	writeHashedAtlasDir(c.TB, dir, "20240101000001_drop.sql", lintFormatDropComment+"DROP TABLE staging;\n")
 }
 
 func TestCompatMigrateLintFormatModel(t *testing.T) {
@@ -127,7 +128,7 @@ func TestCompatMigrateLintFormatModel(t *testing.T) {
 			c := qt.New(t)
 			root := t.TempDir()
 			t.Chdir(root)
-			writeLintFormatFixture(c, filepath.Join(root, "migrations"))
+			writeLintFormatFixture(c.TB, filepath.Join(root, "migrations"))
 
 			output, err := runCompatCommand(t,
 				"migrate", "lint",
@@ -173,8 +174,8 @@ func TestCompatMigrateLintFormatCleanDirectoryExitsZero(t *testing.T) {
 			root := t.TempDir()
 			t.Chdir(root)
 			dir := filepath.Join(root, "migrations")
-			writeHashedAtlasDir(c, dir, "20240101000000_base.sql", "CREATE TABLE kept (id INTEGER);\n")
-			writeHashedAtlasDir(c, dir, "20240101000001_more.sql", "CREATE TABLE also_kept (id INTEGER);\n")
+			writeHashedAtlasDir(c.TB, dir, "20240101000000_base.sql", "CREATE TABLE kept (id INTEGER);\n")
+			writeHashedAtlasDir(c.TB, dir, "20240101000001_more.sql", "CREATE TABLE also_kept (id INTEGER);\n")
 
 			output, err := runCompatCommand(t,
 				"migrate", "lint",
@@ -204,8 +205,8 @@ func TestCompatMigrateLintFormatSchemaWithoutDevDatabase(t *testing.T) {
 	t.Chdir(root)
 	t.Setenv("PTAH_ATLAS_LINT_WITHOUT_DEV_URL", "1")
 	dir := filepath.Join(root, "migrations")
-	writeHashedAtlasDir(c, dir, "20240101000000_base.sql", "CREATE TABLE kept (id INTEGER);\n")
-	writeHashedAtlasDir(c, dir, "20240101000001_more.sql", "CREATE TABLE also_kept (id INTEGER);\n")
+	writeHashedAtlasDir(c.TB, dir, "20240101000000_base.sql", "CREATE TABLE kept (id INTEGER);\n")
+	writeHashedAtlasDir(c.TB, dir, "20240101000001_more.sql", "CREATE TABLE also_kept (id INTEGER);\n")
 
 	output, err := runCompatCommand(t,
 		"migrate", "lint",
@@ -227,8 +228,8 @@ func TestCompatMigrateLintTextReportUnchangedBySchemaCapture(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
 	dir := filepath.Join(root, "migrations")
-	writeHashedAtlasDir(c, dir, "20240101000000_base.sql", "CREATE TABLE kept (id INTEGER);\n")
-	writeHashedAtlasDir(c, dir, "20240101000001_more.sql", "CREATE TABLE also_kept (id INTEGER);\n")
+	writeHashedAtlasDir(c.TB, dir, "20240101000000_base.sql", "CREATE TABLE kept (id INTEGER);\n")
+	writeHashedAtlasDir(c.TB, dir, "20240101000001_more.sql", "CREATE TABLE also_kept (id INTEGER);\n")
 
 	output, err := runCompatCommand(t,
 		"migrate", "lint",

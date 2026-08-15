@@ -87,7 +87,8 @@ func writeAtlasWriteFixture(c *qt.C, root string) string {
 
 // hashAtlasWriteFixture writes the atlas.sum the community binary would write
 // for the directory as it currently stands.
-func hashAtlasWriteFixture(c *qt.C, dir string) {
+func hashAtlasWriteFixture(tb testing.TB, dir string) {
+	c := qt.New(tb)
 	c.Helper()
 	_, _, err := runCompat("migrate", "hash", "--dir", "file://"+dir)
 	c.Assert(err, qt.IsNil)
@@ -97,7 +98,8 @@ func hashAtlasWriteFixture(c *qt.C, dir string) {
 // content hash, so "the refusal wrote nothing" is asserted on bytes rather than
 // on an exit code. An exit-code-only assertion passes just as well on a build
 // that refuses AFTER creating the migration file.
-func atlasWriteDirFingerprint(c *qt.C, dir string) string {
+func atlasWriteDirFingerprint(tb testing.TB, dir string) string {
+	c := qt.New(tb)
 	c.Helper()
 	fsys := os.DirFS(dir)
 	var lines []string
@@ -155,7 +157,7 @@ func TestCompatMigrateWrite_RefusesUnverifiedDirectoryBeforeWriting(t *testing.T
 				name: "hashed then edited",
 				build: func(c *qt.C, root string) string {
 					dir := writeAtlasWriteFixture(c, root)
-					hashAtlasWriteFixture(c, dir)
+					hashAtlasWriteFixture(c.TB, dir)
 					c.Assert(os.WriteFile(
 						filepath.Join(dir, "20240101000000_init.sql"),
 						[]byte("CREATE TABLE users (id INTEGER PRIMARY KEY);\nCREATE TABLE pwned (id INTEGER PRIMARY KEY);\n"),
@@ -172,7 +174,7 @@ func TestCompatMigrateWrite_RefusesUnverifiedDirectoryBeforeWriting(t *testing.T
 				name: "hashed then added",
 				build: func(c *qt.C, root string) string {
 					dir := writeAtlasWriteFixture(c, root)
-					hashAtlasWriteFixture(c, dir)
+					hashAtlasWriteFixture(c.TB, dir)
 					c.Assert(os.WriteFile(
 						filepath.Join(dir, "20240102000000_more.sql"),
 						[]byte("CREATE TABLE extra (id INTEGER PRIMARY KEY);\n"),
@@ -189,7 +191,7 @@ func TestCompatMigrateWrite_RefusesUnverifiedDirectoryBeforeWriting(t *testing.T
 				name: "hashed then removed",
 				build: func(c *qt.C, root string) string {
 					dir := writeAtlasWriteFixture(c, root)
-					hashAtlasWriteFixture(c, dir)
+					hashAtlasWriteFixture(c.TB, dir)
 					c.Assert(os.Remove(filepath.Join(dir, "20240101000000_init.sql")), qt.IsNil)
 					return dir
 				},
@@ -221,7 +223,7 @@ func TestCompatMigrateWrite_RefusesUnverifiedDirectoryBeforeWriting(t *testing.T
 			t.Run(verb.name+"/"+state.name, func(t *testing.T) {
 				c := qt.New(t)
 				dir := state.build(c, c.TempDir())
-				before := atlasWriteDirFingerprint(c, dir)
+				before := atlasWriteDirFingerprint(c.TB, dir)
 
 				stdout, stderr, err := verb.run(c, dir, "")
 
@@ -230,7 +232,7 @@ func TestCompatMigrateWrite_RefusesUnverifiedDirectoryBeforeWriting(t *testing.T
 				// The stream split is the community binary's: the guidance
 				// block on stdout, one `Error: <reason>` line on stderr.
 				c.Assert(stderr, qt.Equals, "Error: "+state.wantError+"\n")
-				c.Assert(atlasWriteDirFingerprint(c, dir), qt.Equals, before)
+				c.Assert(atlasWriteDirFingerprint(c.TB, dir), qt.Equals, before)
 			})
 		}
 	}
@@ -251,7 +253,7 @@ func TestCompatMigrateWrite_AcceptedDirectoriesStillWrite(t *testing.T) {
 			name: "hashed and clean",
 			build: func(c *qt.C, root string) string {
 				dir := writeAtlasWriteFixture(c, root)
-				hashAtlasWriteFixture(c, dir)
+				hashAtlasWriteFixture(c.TB, dir)
 				return dir
 			},
 		},
@@ -315,13 +317,13 @@ func TestCompatMigrateWrite_AcceptedDirectoriesStillWrite(t *testing.T) {
 			t.Run(verb.name+"/"+state.name, func(t *testing.T) {
 				c := qt.New(t)
 				dir := state.build(c, c.TempDir())
-				before := atlasWriteDirFingerprint(c, dir)
+				before := atlasWriteDirFingerprint(c.TB, dir)
 
 				stdout, _, err := verb.run(c, dir, "")
 
 				c.Assert(err, qt.IsNil, qt.Commentf("%s", stdout))
-				c.Assert(atlasWriteDirFingerprint(c, dir), qt.Not(qt.Equals), before)
-				c.Assert(atlasWriteDirFingerprint(c, dir), qt.Contains, "atlas.sum")
+				c.Assert(atlasWriteDirFingerprint(c.TB, dir), qt.Not(qt.Equals), before)
+				c.Assert(atlasWriteDirFingerprint(c.TB, dir), qt.Contains, "atlas.sum")
 			})
 		}
 	}
@@ -392,16 +394,16 @@ func TestCompatMigrateNew_GatesTheDirectoryTheForwardedCommandWillWrite(t *testi
 			c := qt.New(t)
 			dir := writeAtlasWriteFixture(c, c.TempDir())
 			hashers := map[bool]func(){
-				true:  func() { hashAtlasWriteFixture(c, dir) },
+				true:  func() { hashAtlasWriteFixture(c.TB, dir) },
 				false: func() {},
 			}
 			hashers[tt.hashed]()
 			t.Setenv(tt.envName, tt.envValue(dir))
-			before := atlasWriteDirFingerprint(c, dir)
+			before := atlasWriteDirFingerprint(c.TB, dir)
 
 			_, _, err := runCompat("migrate", "new", "demo")
 
-			outcomes[tt.hashed](c, before, atlasWriteDirFingerprint(c, dir), err)
+			outcomes[tt.hashed](c, before, atlasWriteDirFingerprint(c.TB, dir), err)
 		})
 	}
 }
@@ -435,13 +437,13 @@ func TestCompatMigrateWrite_GatesTheDirectoryNamedByAtlasProjectConfig(t *testin
   }
 }
 `, filepath.Join(root, "dev.db")), 0o600), qt.IsNil)
-			before := atlasWriteDirFingerprint(c, dir)
+			before := atlasWriteDirFingerprint(c.TB, dir)
 
 			stdout, _, err := runCompat(args...)
 
 			c.Assert(err, qt.ErrorMatches, `checksum file not found`)
 			c.Assert(stdout, qt.Contains, "You have a checksum error in your migration directory.")
-			c.Assert(atlasWriteDirFingerprint(c, dir), qt.Equals, before)
+			c.Assert(atlasWriteDirFingerprint(c.TB, dir), qt.Equals, before)
 		})
 	}
 }

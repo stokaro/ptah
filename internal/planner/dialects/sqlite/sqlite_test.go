@@ -200,7 +200,6 @@ func TestPlannerRebuildsTableWhenDroppingColumn(t *testing.T) {
 }
 
 func TestPlannerRejectsUnsafeTableRebuildPreconditions(t *testing.T) {
-	c := qt.New(t)
 
 	tests := []struct {
 		name      string
@@ -275,7 +274,8 @@ func TestPlannerRejectsUnsafeTableRebuildPreconditions(t *testing.T) {
 	}}}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			nodes, err := planner.GenerateSchemaDiffAST(diff, tt.generated, platform.SQLite)
 			c.Assert(nodes, qt.IsNil)
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
