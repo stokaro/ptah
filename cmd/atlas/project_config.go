@@ -1010,14 +1010,14 @@ type atlasProjectArgsApplier func(
 	args []string,
 	project atlasProject,
 	projectFlags atlasProjectFlagValues,
-) ([]string, error)
+) (mappedArgs []string, nativeArgs []string, err error)
 
 func applyAtlasProjectConfigToArgs(
 	flags []atlasargs.Flag,
 	args []string,
 	project atlasProject,
 	_ atlasProjectFlagValues,
-) ([]string, error) {
+) (mappedArgs []string, nativeArgs []string, err error) {
 	args = appendAtlasProjectStringArg(
 		flags,
 		args,
@@ -1064,7 +1064,7 @@ func applyAtlasProjectConfigToArgs(
 	if !cliLatest && gitDir.Value != "" {
 		args = appendAtlasProjectStringArg(flags, args, "git-dir", gitDir)
 	}
-	return args, nil
+	return args, nil, nil
 }
 
 // applyAtlasSchemaTestProjectConfig maps atlas.hcl values onto the schema test
@@ -1078,8 +1078,9 @@ func applyAtlasSchemaTestProjectConfig(
 	args []string,
 	project atlasProject,
 	projectFlags atlasProjectFlagValues,
-) ([]string, error) {
+) (mappedArgs []string, nativeArgs []string, err error) {
 	cfg := project.Config
+	nativeVars := atlasSchemaTestNativeVarArgs(projectFlags.vars)
 	args = appendAtlasProjectStringArg(
 		flags,
 		args,
@@ -1087,24 +1088,31 @@ func applyAtlasSchemaTestProjectConfig(
 		cfg.StringValue(projectconfig.StringDevURL),
 	)
 	if atlasFlagValueSet(flags, args, "url") {
-		return args, nil
+		return args, nativeVars, nil
 	}
 	// The schema test verb consumes a single local schema file as --url; an
 	// external schema program has no file spelling to map onto it.
 	if atlasExternalSchemaConfigured(cfg) {
-		return nil, fmt.Errorf(
+		return nil, nil, fmt.Errorf(
 			"atlas schema test does not support atlas.hcl data.external_schema desired state yet; pass --url explicitly",
 		)
 	}
 	sources := cfg.SchemaSourcesValue()
 	if !sources.Present {
-		return args, nil
+		return args, nativeVars, nil
 	}
 	if len(sources.Value) == 0 {
-		return nil, fmt.Errorf("atlas.hcl schema.src: desired schema source is required")
+		return nil, nil, fmt.Errorf("atlas.hcl schema.src: desired schema source is required")
 	}
 	if len(sources.Value) > 1 {
-		return nil, fmt.Errorf("atlas schema test supports one atlas.hcl schema source, got %d", len(sources.Value))
+		return nil, nil, fmt.Errorf("atlas schema test supports one atlas.hcl schema source, got %d", len(sources.Value))
+	}
+	if values, scoped := cfg.SchemaSourceVars(sources.Value[0]); scoped {
+		var err error
+		nativeVars, err = atlasSchemaTestScopedVarArgs(values)
+		if err != nil {
+			return nil, nil, err
+		}
 	}
 	// A database desired-state source has no local path to resolve against the
 	// atlas.hcl directory, and the shared local-file resolver refuses it with
@@ -1112,13 +1120,44 @@ func applyAtlasSchemaTestProjectConfig(
 	// exactly as it is because `schema diff`'s env path pins its wording; the
 	// schema-test accommodation belongs here, on the one verb that wants it.
 	if source, err := atlassource.Classify(sources.Value[0]); err == nil && source.Kind == atlassource.KindDatabase {
-		return append(args, "--url", strings.TrimSpace(sources.Value[0])), nil
+		return append(args, "--url", strings.TrimSpace(sources.Value[0])), nativeVars, nil
 	}
 	urls, err := atlasProjectConfigSchemaURLsFromFlags(projectFlags, sources.Value)
 	if err != nil {
-		return nil, fmt.Errorf("atlas.hcl schema.src: %w", err)
+		return nil, nil, fmt.Errorf("atlas.hcl schema.src: %w", err)
 	}
-	return append(args, "--url", urls[0]), nil
+	return append(args, "--url", urls[0]), nativeVars, nil
+}
+
+func atlasSchemaTestNativeVarArgs(vars []string) []string {
+	args := make([]string, 0, len(vars)*2)
+	for _, value := range vars {
+		args = append(args, "--"+dbcli.ProjectVarFlagName, value)
+	}
+	return args
+}
+
+func atlasSchemaTestScopedVarArgs(values map[string]string) ([]string, error) {
+	names := make([]string, 0, len(values))
+	for name := range values {
+		names = append(names, name)
+	}
+	slices.Sort(names)
+
+	vars := make([]string, 0, len(names))
+	for _, name := range names {
+		var encoded strings.Builder
+		writer := csv.NewWriter(&encoded)
+		if err := writer.Write([]string{name + "=" + values[name]}); err != nil {
+			return nil, fmt.Errorf("encode atlas.hcl schema variable %q: %w", name, err)
+		}
+		writer.Flush()
+		if err := writer.Error(); err != nil {
+			return nil, fmt.Errorf("encode atlas.hcl schema variable %q: %w", name, err)
+		}
+		vars = append(vars, strings.TrimSuffix(encoded.String(), "\n"))
+	}
+	return atlasSchemaTestNativeVarArgs(vars), nil
 }
 
 // atlasExternalSchemaConfigured reports whether the loaded atlas.hcl env's

@@ -369,10 +369,10 @@ fails rather than picking the flag up. A file named directly, as
 `src = "file://schema.hcl"`, is outside every data source and does take `--var`.
 
 The boundary belongs to the source the env selected, not to the file. A desired
-state the operator names on the command line — `--to`, `--from` or `--file` —
-keeps `--var` even when it is the very file a data source of the loaded env
-selects, so `schema apply --env local --to file://schema.hcl` reads
-`--var tenant=…` and fails without one.
+schema the operator names on the command line — `--to`, `--from`, `--file`, or
+schema test's `--url` — keeps `--var` even when it is the very file a data
+source of the loaded env selects. For example, `schema apply --env local --to
+file://schema.hcl` reads `--var tenant=…` and fails without one.
 
 The map takes strings, numbers and bools; each is carried as the text of the
 literal, so `tenant = 42` reaches the file as `"42"`. A name the file does not
