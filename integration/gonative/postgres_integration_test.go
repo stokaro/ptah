@@ -119,6 +119,7 @@ func TestPostgreSQLWriter_Integration(t *testing.T) {
 
 	t.Run("transaction lifecycle", func(t *testing.T) {
 		// Test successful transaction
+		c := qt.New(t)
 		tx, err := writer.BeginTransaction(t.Context())
 		c.Assert(err, qt.IsNil)
 
@@ -138,6 +139,7 @@ func TestPostgreSQLWriter_Integration(t *testing.T) {
 
 	t.Run("DropAllTables", func(t *testing.T) {
 		// Create a test table first
+		c := qt.New(t)
 		_, err := db.Exec("CREATE TABLE IF NOT EXISTS temp_test_table (id SERIAL PRIMARY KEY)")
 		c.Assert(err, qt.IsNil)
 

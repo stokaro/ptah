@@ -549,6 +549,7 @@ func TestStrictCompatRefusesExtendedMigrationContentBeforeDatabaseWork(t *testin
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			dir := c.TempDir()
 			migrationPath := filepath.Join(dir, "20260811000001_users.sql")
 			databasePath := filepath.Join(dir, "strict.db")
