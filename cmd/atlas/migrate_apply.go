@@ -498,6 +498,26 @@ func resolveAtlasMigrateApplyProjectOptions(
 		opts.execOrder,
 		projectCfg.StringValue(projectconfig.StringMigrationExecOrder),
 	)
+	// atlas.hcl `migration { baseline }` is the config spelling of --baseline,
+	// and the flag still wins when it was passed. Measured on the pinned
+	// community binary v1.3.0 with `migrate apply --env local --dry-run`
+	// against a hashed two-migration directory, exit codes read directly from
+	// unpiped invocations:
+	//
+	//	no baseline                        -> 0  "2 migrations in total"   (control)
+	//	baseline = "20260719010000"        -> 0  "from 20260719010000
+	//	                                          (1 migrations in total)"
+	//
+	// ptah-compat answered "2 pending migrations" to BOTH before this line, at
+	// exit 0, with a warning that the attribute has no effect. The control is
+	// what makes the pair discriminating: the two binaries agree when no
+	// baseline is configured, so the divergence belongs to the attribute.
+	opts.baseline = dbcli.EffectiveString(
+		cmd,
+		"baseline",
+		opts.baseline,
+		projectCfg.StringValue(projectconfig.StringMigrationBaseline),
+	)
 	opts.revisionsSchema = dbcli.EffectiveString(
 		cmd,
 		"revisions-schema",

@@ -93,6 +93,11 @@ type Source struct {
 	// sources; zero for every other kind. Its dialect hint is filled during
 	// resolution.
 	Command schemasource.Command
+	// VarValues and VarsScoped carry the variable scope an atlas.hcl
+	// `data "hcl_schema"` block puts around the files it selects. See
+	// [go.5x5.cz/ptah/internal/schemafile.Source].
+	VarValues  map[string]string
+	VarsScoped bool
 }
 
 // ProjectEnv carries the evaluated atlas.hcl environment used to expand env://
@@ -242,7 +247,7 @@ func ClassifySet(flag string, rawURLs []string, env ProjectEnv) (Set, error) {
 			return Set{}, fmt.Errorf("%s %q: %w", flag, rawURL, err)
 		}
 		if source.Kind != KindEnv {
-			set.Sources = append(set.Sources, source)
+			set.Sources = append(set.Sources, withProjectVarScope(source, env))
 			continue
 		}
 		if len(rawURLs) > 1 {
@@ -258,6 +263,35 @@ func ClassifySet(flag string, rawURLs []string, env ProjectEnv) (Set, error) {
 		return Set{}, err
 	}
 	return set, nil
+}
+
+// withProjectVarScope attaches the variable scope an atlas.hcl
+// `data "hcl_schema"` block puts around the file this source names.
+//
+// It runs for URLs that arrive already classified rather than through env://
+// expansion, because that is how most of the compatibility tree reaches a
+// project's schema sources: `schema apply`, `schema diff` and `migrate diff`
+// resolve `projectCfg.SchemaSources` against the atlas.hcl directory and pass
+// the resulting file:// URLs as --to. Only the external-schema shape reaches
+// [expandEnvSchemaSources], which attaches the same scope on its own path.
+//
+// One narrow corner is left as it is rather than papered over: a caller that
+// passes --to naming the very file a referenced data source also selects gets
+// that block's vars, where the pinned binary would pass it --var. Separating the
+// two would need this layer to know whether the URL came from the flag or from
+// the config, which is a fact only the command has, and the config's map is only
+// ever populated for a file some env's `src` expression actually selects.
+func withProjectVarScope(source Source, env ProjectEnv) Source {
+	if !env.Loaded || source.Kind != KindLocalFile {
+		return source
+	}
+	values, scoped := env.Config.SchemaSourceVars(source.Raw)
+	if !scoped {
+		return source
+	}
+	source.VarValues = values
+	source.VarsScoped = true
+	return source
 }
 
 func (s *Set) validate() error {
@@ -463,6 +497,10 @@ func expandEnvSchemaSources(source Source, env ProjectEnv) ([]Source, error) {
 		if err != nil {
 			return nil, fmt.Errorf("atlas.hcl schema source %q: %w", value, err)
 		}
+		// The scope is attached to the URL the project file minted, not to the
+		// resolved path, because the project file is the only layer that knows
+		// which data source produced which entry.
+		source.VarValues, source.VarsScoped = env.Config.SchemaSourceVars(value)
 		sources = append(sources, source)
 	}
 	return sources, nil

@@ -145,7 +145,7 @@ func (s Set) Resolve(ctx context.Context, opts ResolveOptions) (State, error) {
 func (s Set) resolve(ctx context.Context, opts ResolveOptions) (State, error) {
 	switch s.Kind {
 	case KindLocalFile:
-		schema, err := schemafile.LoadAll(s.rawURLs(), schemafile.Options{
+		schema, err := schemafile.LoadSources(s.schemaFileSources(), schemafile.Options{
 			Dialect:               opts.Dialect,
 			IgnoreUnknownHCLNames: opts.IgnoreUnknownHCLNames,
 			SchemaScope:           opts.SchemaScope,
@@ -182,12 +182,19 @@ func (s Set) resolveExternalSchema(ctx context.Context, opts ResolveOptions) (St
 	return State{Kind: s.Kind, Schema: schema}, nil
 }
 
-func (s Set) rawURLs() []string {
-	urls := make([]string, 0, len(s.Sources))
+// schemaFileSources carries each classified local-file source into the loader
+// together with its own variable scope, so a file selected by an atlas.hcl
+// `data "hcl_schema"` block sees that block's `vars` and nothing else.
+func (s Set) schemaFileSources() []schemafile.Source {
+	sources := make([]schemafile.Source, 0, len(s.Sources))
 	for _, source := range s.Sources {
-		urls = append(urls, source.Raw)
+		sources = append(sources, schemafile.Source{
+			URL:        source.Raw,
+			VarValues:  source.VarValues,
+			VarsScoped: source.VarsScoped,
+		})
 	}
-	return urls
+	return sources
 }
 
 func (s Set) resolveDatabase(ctx context.Context, opts ResolveOptions) (State, error) {

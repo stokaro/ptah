@@ -116,6 +116,7 @@ func atlasEnvBodyStructure() atlasBodyStructure {
 			"migration": {
 				body: atlasBodyStructure{
 					attributes: []string{
+						"baseline",
 						"dir",
 						"exec_order",
 						"format",
@@ -493,26 +494,18 @@ var atlasDecodedLeafAttributes = map[string]map[string]atlasLeafValueKind{
 	"lint": {
 		"review": atlasLeafString,
 	},
-	// `baseline` is the type half of stokaro/ptah#934 item 5a and nothing more.
-	// The pinned binary decodes it as a string, so a malformed value has to be
-	// refused here or Ptah exits 0 where that binary exits 1; a well-formed one
-	// is still only tolerated, because ACTING on it needs `migrate apply`, which
-	// reads --baseline into its run options before project config is merged.
-	// Type-checking it now does not stand in the way of that wiring.
+	// `baseline` is NO LONGER here. It was the type half of stokaro/ptah#934
+	// item 5a -- tolerated, type-checked, and reported as having no effect --
+	// and `migrate apply` now acts on it, so it is decoded in
+	// [atlasParser.parseMigration] instead. A decoded name must not also sit in
+	// this table: the tolerance path never reaches it, and a stale row here
+	// would state a rule nothing applies.
 	//
-	//	migration { baseline = [1,2] }              (env)        -> 1  value of attr
-	//	                                                              "baseline" cannot
-	//	                                                              be read as string
-	//	migration { baseline = "20240101000000" }   (env)        -> 0
-	//	migration { baseline = null }               (env)        -> 0
-	//	migration { skip_report = [1,2] }           (env)        -> 0  (in-block control)
-	//	migration { baseline = [1,2] }              (top level)  -> 0  }
-	//	lint       { baseline = [1,2] }                          -> 0  } scope controls
-	//	env        { baseline = [1,2] }                          -> 0  }
+	// The malformed arm keeps the same exit code and the same message, because
+	// [atlasParser.nullableStringAttr] ends in the same [wrongValueType] call
+	// this table's string kind used:
 	//
-	// The three scope controls are why the key is `env.migration` and not
-	// `migration` or a bare name: `baseline` is a real name in other scopes of
-	// this file and the binary decodes none of them.
+	//	migration { baseline = [1,2] }  (env)  binary 1, Ptah 1  must be a string
 	//
 	// `exclude` sits in the same block and is a list rather than a string. It is
 	// the sibling of `env.exclude`, which Ptah does implement; the `migration`
@@ -536,8 +529,7 @@ var atlasDecodedLeafAttributes = map[string]map[string]atlasLeafValueKind{
 	//	lint      { exclude = { k = "v" } }       (env)        -> 0  } controls
 	//	repo      { exclude = { k = "v" } }       (env.migration) -> 0  }
 	"env.migration": {
-		"baseline": atlasLeafString,
-		"exclude":  atlasLeafStringList,
+		"exclude": atlasLeafStringList,
 	},
 }
 

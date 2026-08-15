@@ -303,6 +303,7 @@ func ParseAtlasFSWithOptions(data []byte, filename string, fsys fs.FS, opts Atla
 func ParseAtlasWithOptions(data []byte, filename string, opts AtlasLoadOptions) (Config, error)
 func ParsePtah(data []byte, filename, envName string) (Config, error)
 func (c Config) LintLatestValue() Value[int]
+func (c Config) SchemaSourceVars(rawURL string) (map[string]string, bool)
 func (c Config) SchemaSourcesValue() Value[[]string]
 func (c Config) SchemasValue() Value[[]string]
 func (c Config) StringValue(field StringField) Value[string]
@@ -511,6 +512,10 @@ type MigrationConfig struct {
     PostgresDumpTo       string
     MySQLDumpTo          string
     Webhook              string
+    // Baseline is the migration version `migrate apply` marks as already
+    // applied before running the pending ones, the config spelling of its
+    // --baseline flag.
+    Baseline string
 }
     MigrationConfig is the migration section of the project config IR.
 

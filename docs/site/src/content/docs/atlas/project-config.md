@@ -101,6 +101,7 @@ env "local" {
 | `env.schema.mode.<object>` | Default object-kind exclusions for supported schema object kinds. |
 | `env.exclude` | Default Atlas-style resource exclusion filters. |
 | `env.schemas` | Restricts the schema universe that compatible `schema inspect`, `schema apply`, `schema diff`, `schema plan`, and `migrate diff` operate over. |
+| `migration.baseline` | Migration version `migrate apply` marks applied before running the pending ones; the config spelling of its `--baseline` flag, which still wins when passed. |
 | `migration.dir` | Default migration directory. |
 | `migration.format` | Default migration directory format where supported; safety gate for `migrate apply`. |
 | `migration.revisions_schema` | Default revision metadata schema. |
@@ -122,6 +123,20 @@ env "local" {
 | `diff.skip.drop_table` | Suppresses table drops in supported local diff/apply plans. |
 | `diff.concurrent_index.create` | Requests PostgreSQL concurrent index creation where transaction mode allows it. |
 | `diff.concurrent_index.drop` | Requests PostgreSQL `DROP INDEX CONCURRENTLY` for standalone index removals. |
+
+### `migration.baseline`
+
+`baseline` names the migration version `migrate apply` marks as already applied
+before it runs the pending ones — the `atlas.hcl` spelling of the command's
+`--baseline` flag. The flag still wins when it is passed, so a project file sets
+the default and a caller can override it for one run.
+
+The value is a version, resolved against the migration directory: one that the
+directory does not hold fails with
+`baseline version "20200101000000" not found`. `baseline = null` and
+`baseline = ""` are both read as "no baseline", which leaves every migration
+pending. A value that is not a string is refused with
+`atlas.hcl "baseline" at atlas.hcl:5 must be a string`.
 
 ### `env.schemas`
 
@@ -324,8 +339,44 @@ names its own rule rather than blaming the `path` key, which is supported:
 | `path = "s3://bucket/x.hcl"` | `atlas.hcl "path" at atlas.hcl:2: unsupported URL scheme: s3://bucket/x.hcl` |
 
 `paths` is refused the same way, naming `paths`. An attribute the data source
-does not have — Atlas's `vars`, for one — is a different failure and keeps the
-construct wording: `unsupported atlas.hcl construct "vars"`.
+does not have is a different failure and keeps the construct wording:
+`unsupported atlas.hcl construct "frobnicate"`.
+
+### `vars` is scoped to the files the data source selects
+
+`vars` supplies values for the `variable` blocks of the schema files this data
+source names, and only those files:
+
+```hcl
+data "hcl_schema" "app" {
+  paths = ["schema.hcl"]
+  vars = {
+    tenant = "acme"
+  }
+}
+
+env "local" {
+  url = "sqlite://app.db"
+  src = data.hcl_schema.app.url
+}
+```
+
+The scoping is the whole point, and it runs in both directions. Another data
+source's `vars` never reach these files, and the run's global `--var` does not
+cross the boundary either — a data source that declares no `vars` at all still
+closes it, so a schema file behind one with a required variable and no value
+fails rather than picking the flag up. A file named directly, as
+`src = "file://schema.hcl"`, is outside every data source and does take `--var`.
+
+The map takes strings, numbers and bools; each is carried as the text of the
+literal, so `tenant = 42` reaches the file as `"42"`. A name the file does not
+declare is ignored. `vars = null` and `vars = {}` are both read as "no values
+given", and a value that is not a map — `vars = "acme"`, `vars = [1, 2]` — is
+refused with `atlas.hcl "vars" at atlas.hcl:3 must be a map of values`.
+
+Two data sources may not both select the same file with different `vars` and
+both be referenced by one `src`: the parse refuses and names both blocks, rather
+than picking one and making the desired state depend on map order.
 
 A `null` reaching a name Ptah acts on is refused, and the refusal names the type
 the setting wants. With `variable "s" { type = string, default = null }`, both
@@ -610,7 +661,6 @@ Error: atlas.hcl "drop_column" at atlas.hcl:5 must be a bool
 | --- | --- | --- |
 | `diff.skip` and `env.diff.skip` | `add_schema`, `modify_schema`, `add_table`, `modify_table`, `add_column`, `modify_column`, `drop_column`, `add_index`, `modify_index`, `drop_index`, `add_foreign_key`, `modify_foreign_key`, `drop_foreign_key` | a bool |
 | `lint` and `env.lint` | `review` | a string |
-| `env.migration` | `baseline` | a string |
 | `env` | `include` | a list of strings |
 | `env.migration` | `exclude` | a list of strings |
 | top level | `env` written as an attribute | a block; only `null` is accepted as a value |
@@ -635,12 +685,12 @@ one step further: Atlas CE fills that field from `env` blocks and decodes no
 value spelling for it at all, so `env = {}` is refused as well. The `env` block
 spelling is untouched.
 
-`env.migration.baseline` is type-checked and still not acted on: `migrate apply`
-reads `--baseline` before project config is merged, so the `atlas.hcl` spelling
-has no effect yet and is reported as having none. `env.include` and
-`env.migration.exclude` are type-checked and not acted on for the same reason —
-neither has a Ptah setting behind it, and `env.exclude` is the separate,
-supported name.
+`env.migration.baseline` is no longer one of them. It is a supported name now:
+`migrate apply` reads it as the config spelling of `--baseline`, and the flag
+still wins when it is passed. See
+[`migration.baseline`](#migrationbaseline). `env.include` and
+`env.migration.exclude` are still type-checked and not acted on — neither has a
+Ptah setting behind it, and `env.exclude` is the separate, supported name.
 
 The scope matters throughout — a `baseline` written at `env` level, inside
 `lint`, or in a top-level `migration` block is not decoded by the community
