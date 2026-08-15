@@ -30,17 +30,27 @@ import (
 // leaving an emitted finding documented nowhere.
 var ruleCodePattern = regexp.MustCompile(`^[A-Z]+[0-9]{3}P?$`)
 
-// declaredRuleCodes reads the Go source in dir for every constant whose value
-// looks like a rule identifier.
+// declaredRuleCodes reads the Go source in dir for every string literal whose
+// value looks like a rule identifier, wherever it appears.
 //
 // The SQL linter has no registry to enumerate -- two of its identifiers are
 // produced by the parse path, before any rule object exists -- so the source is
 // the only place the full set is written down. Reading it here is what stops a
 // new identifier from being emitted by a binary and documented nowhere.
 //
+// Every literal, not only the ones in const declarations, and that is
+// deliberate. `migration/lint` writes a rule code straight into the Finding it
+// builds thirteen times over; a scan restricted to constants would read a
+// package written that way as having no rules at all and agree with an empty
+// catalog. The cost is the opposite error: a rule-shaped literal that is not a
+// rule -- a lookup key, an example -- makes this test demand a catalog entry it
+// should not. That failure names the literal and stops the build, so it is
+// found and fixed; the one a narrower scan allows is a rule reaching users with
+// no page naming it, and nothing reports that at all.
+//
 // It takes the directory rather than assuming the package's own so the scan
-// itself can be driven over a fixture, which is how the identifier shape it
-// accepts is pinned rather than asserted.
+// itself can be driven over a fixture, which is how the shapes it accepts are
+// pinned rather than asserted.
 func declaredRuleCodes(tb testing.TB, dir string) []string {
 	c := qt.New(tb)
 
@@ -89,6 +99,12 @@ func TestCatalogCoversEveryDeclaredRuleCode(t *testing.T) {
 	c.Assert(declaredRuleCodes(t, "."), qt.DeepEquals, catalogued)
 }
 
+// constFixture is a package declaring one rule identifier the way this package
+// declares its own.
+func constFixture(code string) string {
+	return "package fixture\n\nconst RuleFixture = " + strconv.Quote(code) + "\n"
+}
+
 // TestDeclaredRuleCodesReadsEveryConventionalSpelling drives the scan over a
 // fixture per identifier shape the convention allows, because a scan that
 // silently skips a shape reports the same empty disagreement as a package with
@@ -114,8 +130,50 @@ func TestDeclaredRuleCodesReadsEveryConventionalSpelling(t *testing.T) {
 			c := qt.New(t)
 
 			dir := t.TempDir()
-			source := "package fixture\n\nconst RuleFixture = " + strconv.Quote(row.code) + "\n"
-			c.Assert(os.WriteFile(filepath.Join(dir, "rules.go"), []byte(source), 0o600), qt.IsNil)
+			c.Assert(os.WriteFile(filepath.Join(dir, "rules.go"), []byte(constFixture(row.code)), 0o600), qt.IsNil)
+
+			c.Assert(declaredRuleCodes(t, dir), qt.DeepEquals, row.found)
+		})
+	}
+}
+
+// TestDeclaredRuleCodesReadsIdentifiersOutsideConstDeclarations pins the
+// breadth of the scan, not only the shape of what it matches.
+//
+// A rule code does not have to be a constant to reach a finding: the sibling
+// migration linter writes one straight into the Finding literal it returns.
+// Restricting this scan to const declarations would read a package written that
+// way as declaring nothing, which is the failure that publishes an undocumented
+// rule rather than the one that stops a build.
+func TestDeclaredRuleCodesReadsIdentifiersOutsideConstDeclarations(t *testing.T) {
+	rows := []struct {
+		name   string
+		source string
+		found  []string
+	}{
+		{
+			name:   "a code written into the finding the rule returns",
+			source: "package fixture\n\ntype finding struct{ Rule string }\n\nfunc report() finding { return finding{Rule: \"SQL003\"} }\n",
+			found:  []string{"SQL003"},
+		},
+		{
+			name:   "a code used as a map key",
+			source: "package fixture\n\nvar titles = map[string]string{\"DDL002\": \"a title\"}\n",
+			found:  []string{"DDL002"},
+		},
+		{
+			name:   "a code compared against inline",
+			source: "package fixture\n\nfunc isParse(code string) bool { return code == \"SQL004\" }\n",
+			found:  []string{"SQL004"},
+		},
+	}
+
+	for _, row := range rows {
+		t.Run(row.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			dir := t.TempDir()
+			c.Assert(os.WriteFile(filepath.Join(dir, "rules.go"), []byte(row.source), 0o600), qt.IsNil)
 
 			c.Assert(declaredRuleCodes(t, dir), qt.DeepEquals, row.found)
 		})
