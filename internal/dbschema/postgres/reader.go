@@ -2351,8 +2351,8 @@ func (r *Reader) enhanceTablesWithConstraints(tables []types.DBTable, constraint
 	// Update table columns with constraint information
 	for i := range tables {
 		for j := range tables[i].Columns {
-			col := &tables[i].Columns[j]           //nolint:gosec // G602: index bounded by `range tables[i].Columns`
-			tableName := tables[i].QualifiedName() //nolint:gosec // G602: index bounded by `range tables`
+			col := &tables[i].Columns[j]           // #nosec G602 -- index bounded by `range tables[i].Columns`
+			tableName := tables[i].QualifiedName() // #nosec G602 -- index bounded by `range tables`
 
 			if primaryKeys[tableName] != nil && primaryKeys[tableName][col.Name] {
 				col.IsPrimaryKey = true

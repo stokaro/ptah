@@ -14,7 +14,7 @@ func TestParseDatabaseURL_HappyPath(t *testing.T) {
 		url  string
 		want onlineddl.DSN
 	}{
-		//nolint:gosec // fixture URL with a made-up password, not a credential
+		// #nosec G101 -- fixture URL with a made-up password, not a credential
 		{
 			name: "plain mysql url",
 			url:  "mysql://app:secret@db.internal:3307/shop",
@@ -43,7 +43,7 @@ func TestParseDatabaseURL_HappyPath(t *testing.T) {
 			url:  "mariadb://root@localhost/inventory",
 			want: onlineddl.DSN{Host: "localhost", Port: "3306", User: "root", Database: "inventory"},
 		},
-		//nolint:gosec // fixture URL with a made-up password, not a credential
+		// #nosec G101 -- fixture URL with a made-up password, not a credential
 		{
 			name: "url-encoded password",
 			url:  "mysql://app:p%40ss%2Fword@db:3306/shop",
@@ -66,7 +66,7 @@ func TestParseDatabaseURL_FailurePath(t *testing.T) {
 		url     string
 		wantErr string
 	}{
-		//nolint:gosec // fixture URL with a made-up password, not a credential
+		// #nosec G101 -- fixture URL with a made-up password, not a credential
 		{
 			name:    "missing database name",
 			url:     "mysql://app:secret@db:3306/",

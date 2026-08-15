@@ -309,7 +309,7 @@ func fuzzSeed(c *qt.C, fallback uint64) uint64 {
 
 func newFuzzRNG(seed uint64) *rand.Rand {
 	// Reproducibility is the requirement here, not unpredictability.
-	return rand.New(rand.NewPCG(seed, 0x9E3779B97F4A7C15)) //nolint:gosec // deterministic shape generation, not security
+	return rand.New(rand.NewPCG(seed, 0x9E3779B97F4A7C15)) // #nosec G404 -- deterministic shape generation, not security
 }
 
 func requireOracle(t *testing.T) string {
@@ -321,7 +321,7 @@ func requireOracle(t *testing.T) string {
 			oracleEnv, oracleVersion)
 	}
 
-	out, err := exec.Command(oracle, "version").Output() //nolint:gosec // the oracle path is operator-provided via PTAH_ATLAS_ORACLE
+	out, err := exec.Command(oracle, "version").Output() // #nosec G204 G702 -- the oracle path is operator-provided via PTAH_ATLAS_ORACLE
 	if err != nil {
 		t.Fatalf("%s=%s is not runnable: %v", oracleEnv, oracle, err)
 	}
@@ -349,7 +349,7 @@ type oracleOutcome struct {
 func oracleHash(c *qt.C, oracle, dir, format string) oracleOutcome {
 	c.Helper()
 
-	//nolint:gosec // operator-provided oracle path, and dir is a test temp dir
+	// #nosec G204 -- operator-provided oracle path, and dir is a test temp dir
 	cmd := exec.Command(oracle, "migrate", "hash", "--dir", "file://"+dir+"?format="+format)
 	out, err := cmd.CombinedOutput()
 	sumPath := filepath.Join(dir, migratesum.AtlasFileName)

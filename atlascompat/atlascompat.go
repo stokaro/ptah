@@ -251,5 +251,5 @@ func WriteSumBytes(dir, name string, sum *SumFile) error {
 	if sum == nil {
 		return fmt.Errorf("sum file is required")
 	}
-	return os.WriteFile(filepath.Join(dir, name), sum.Bytes(), 0644) //nolint:gosec // Sum files are committed project files.
+	return os.WriteFile(filepath.Join(dir, name), sum.Bytes(), 0644) // #nosec G306 -- Sum files are committed project files.
 }

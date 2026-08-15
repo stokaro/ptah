@@ -206,7 +206,7 @@ func requireAtlasOracle(t *testing.T) string {
 			oracleEnv, oracleVersion)
 	}
 
-	out, err := exec.Command(oracle, "version").Output() //nolint:gosec // the oracle path is operator-provided via PTAH_ATLAS_ORACLE
+	out, err := exec.Command(oracle, "version").Output() // #nosec G204 G702 -- the oracle path is operator-provided via PTAH_ATLAS_ORACLE
 	if err != nil {
 		t.Fatalf("%s=%s is not runnable: %v", oracleEnv, oracle, err)
 	}
