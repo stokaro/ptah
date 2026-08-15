@@ -196,7 +196,47 @@ func (e *atlasEvaluator) resolveExpressionDependencies(expr hclsyntax.Expression
 			}
 		}
 	}
+	return e.resolveComputedDataSourceIndices(expr)
+}
+
+func (e *atlasEvaluator) resolveComputedDataSourceIndices(expr hclsyntax.Expression) error {
+	indices := make([]*hclsyntax.IndexExpr, 0, 1)
+	hclsyntax.VisitAll(expr, func(node hclsyntax.Node) hcl.Diagnostics {
+		if index, ok := node.(*hclsyntax.IndexExpr); ok {
+			indices = append(indices, index)
+		}
+		return nil
+	})
+	for _, index := range indices {
+		key, ok := computedDataSourceKey(index, e.parser.ctx)
+		if !ok {
+			continue
+		}
+		if err := e.resolveDataSource(key); err != nil {
+			return err
+		}
+	}
 	return nil
+}
+
+func computedDataSourceKey(index *hclsyntax.IndexExpr, ctx *hcl.EvalContext) (atlasDataSourceKey, bool) {
+	traversal, diags := hcl.AbsTraversalForExpr(index.Collection)
+	if diags.HasErrors() || len(traversal) != 2 || traversal.RootName() != "data" {
+		return atlasDataSourceKey{}, false
+	}
+	typ, ok := atlasTraversalAttribute(traversal, 1)
+	if !ok {
+		return atlasDataSourceKey{}, false
+	}
+	value, diags := index.Key.Value(ctx)
+	if diags.HasErrors() || !value.IsKnown() || value.IsNull() {
+		return atlasDataSourceKey{}, false
+	}
+	value, _ = value.Unmark()
+	if !value.Type().Equals(cty.String) {
+		return atlasDataSourceKey{}, false
+	}
+	return atlasDataSourceKey{typ: typ, name: value.AsString()}, true
 }
 
 func atlasTraversalAttribute(traversal hcl.Traversal, index int) (string, bool) {

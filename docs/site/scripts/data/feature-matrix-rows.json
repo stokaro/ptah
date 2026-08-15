@@ -140,8 +140,8 @@
     "ptah": "yes",
     "atlas_oss": "yes",
     "atlas_pro": "yes",
-    "note": "Executes one parameterized query and exports count, first value, and all values. One result column is required; valid unreferenced blocks stay lazy.",
-    "evidence": "integration/atlasoracle/projectdata TestProjectDataSourcesMatchPinnedAtlasOutputAndExit runs both pinned Atlas CE v1.3.0 and ptah-compat and compares process exit, stdout, stderr, and the captured SQL result. integration/atlasprojectdata TestAtlasDataSQLReturnsPinnedSingleColumnShape, TestAtlasDataSQLReturnsPinnedEmptyShape, TestAtlasDataSQLPreservesPinnedNumericTypes, and TestAtlasDataSQLRefusesUnsupportedRowShapes cover args, empty, numeric, NULL, and multi-column contours. scripts/mutations/atlas-project-data-sources.json kills a row-discarding SQL-handler mutant."
+    "note": "Runs one query and exports count, first value, and all values. Requires one column and one HCL row type. Heterogeneous rows fail explicitly; Atlas CE panics. Unreferenced blocks stay lazy.",
+    "evidence": "integration/atlasoracle/projectdata TestProjectDataSourcesMatchPinnedAtlasOutputAndExit runs both pinned Atlas CE v1.3.0 and ptah-compat and compares process exit, stdout, stderr, and the captured SQL result. integration/atlasprojectdata TestAtlasDataSQLReturnsPinnedSingleColumnShape, TestAtlasDataSQLReturnsPinnedEmptyShape, TestAtlasDataSQLPreservesPinnedNumericTypes, TestAtlasDataSQLRefusesUnsupportedRowShapes, and TestAtlasDataSQLRefusesHeterogeneousRowTypes cover args, empty, numeric, NULL, multi-column, and heterogeneous contours. Pinned Atlas CE v1.3.0 panics with `inconsistent list element types` for `SELECT 1 UNION ALL SELECT 'x'`; Ptah fails closed with a data-source diagnostic under the compatibility policy. scripts/mutations/atlas-project-data-sources.json kills a row-discarding SQL-handler mutant."
   },
   {
     "area": "Project config",

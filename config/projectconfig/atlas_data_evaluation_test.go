@@ -2,12 +2,35 @@ package projectconfig_test
 
 import (
 	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/config/projectconfig"
 )
+
+func TestParseAtlas_ResolvesComputedDataSourceIndex(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	atlasPath := filepath.Join(dir, "atlas.hcl")
+	c.Assert(os.WriteFile(atlasPath, []byte(`locals {
+  source = "selected"
+}
+data "hcl_schema" "selected" {
+  path = "schema.hcl"
+}
+env "local" {
+  src = data.hcl_schema[local.source].url
+}
+`), 0o600), qt.IsNil)
+
+	cfg, err := projectconfig.LoadAtlasFile(atlasPath, "local")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(cfg.SchemaSources, qt.DeepEquals, []string{"file://schema.hcl"})
+}
 
 func TestParseAtlas_LazilyAcceptsRecognizedUnreferencedDataSources(t *testing.T) {
 	c := qt.New(t)

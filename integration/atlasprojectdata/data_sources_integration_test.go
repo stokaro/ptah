@@ -269,6 +269,28 @@ env "local" {
 	c.Assert(cfg.DatabaseURL, qt.Equals, `{"count":2,"value":42,"values":[42,3.5]}`)
 }
 
+func TestAtlasDataSQLRefusesHeterogeneousRowTypes(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	databaseURL := "sqlite://" + filepath.ToSlash(filepath.Join(dir, "query.db"))
+	raw := fmt.Appendf(nil, `
+data "sql" "selected" {
+  url   = %s
+  query = "SELECT 1 UNION ALL SELECT 'x'"
+}
+env "local" {
+  url = jsonencode(data.sql.selected)
+}
+`, strconv.Quote(databaseURL))
+
+	_, err := projectconfig.ParseAtlasWithOptions(raw, filepath.Join(dir, "atlas.hcl"), projectconfig.AtlasLoadOptions{
+		Context: context.Background(),
+		EnvName: "local",
+	})
+
+	c.Assert(err, qt.ErrorMatches, `data\.sql\.selected: query rows have inconsistent types: number then string`)
+}
+
 func TestAtlasDataSQLUsesPinnedNumericArgumentType(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()

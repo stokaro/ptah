@@ -469,8 +469,9 @@ validation even when unreferenced.
 
 `data "sql"` runs one query against `url` and accepts optional positional
 `args` containing strings, booleans, numbers, or nulls. The query must return
-one column. Its object result has `count`, the first row as `value` (null when
-there are no rows), and every row as `values`:
+one column, and every non-null row must have the same HCL type. A heterogeneous
+result fails explicitly. Its object result has `count`, the first row as
+`value` (null when there are no rows), and every row as `values`:
 
 ```hcl
 data "sql" "tenants" {

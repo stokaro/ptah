@@ -115,7 +115,11 @@ func (p atlasParser) sqlDataSource(block *hclsyntax.Block) (_ cty.Value, resultE
 	if err := rows.Err(); err != nil {
 		return cty.NilVal, p.dataSourceError(block, "reading rows", err, rawURL, query)
 	}
-	return atlasSQLResult(values), nil
+	result, err := atlasSQLResult(values)
+	if err != nil {
+		return cty.NilVal, p.dataSourceError(block, "", err, rawURL, query)
+	}
+	return result, nil
 }
 
 func (p atlasParser) sqlDataSourceArgs(block *hclsyntax.Block) ([]any, error) {
@@ -198,10 +202,20 @@ func atlasSQLValue(value any) (cty.Value, error) {
 	}
 }
 
-func atlasSQLResult(values []cty.Value) cty.Value {
+func atlasSQLResult(values []cty.Value) (cty.Value, error) {
 	resultValues := cty.ListValEmpty(cty.NilType)
 	first := cty.NullVal(cty.DynamicPseudoType)
 	if len(values) > 0 {
+		firstType := values[0].Type()
+		for _, value := range values[1:] {
+			if !value.Type().Equals(firstType) {
+				return cty.NilVal, fmt.Errorf(
+					"query rows have inconsistent types: %s then %s",
+					firstType.FriendlyName(),
+					value.Type().FriendlyName(),
+				)
+			}
+		}
 		resultValues = cty.ListVal(values)
 		first = values[0]
 	}
@@ -209,7 +223,7 @@ func atlasSQLResult(values []cty.Value) cty.Value {
 		"count":  cty.NumberIntVal(int64(len(values))),
 		"value":  first,
 		"values": resultValues,
-	})
+	}), nil
 }
 
 func (p atlasParser) externalDataSource(block *hclsyntax.Block) (cty.Value, error) {

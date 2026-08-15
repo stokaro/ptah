@@ -442,8 +442,9 @@ locals {
 
 When no rows match, `value` is null and `values` is an empty tuple. Strings,
 booleans, integers, floating-point values, byte strings, and timestamps are
-preserved as HCL values. A null result or a query with more than one column
-fails explicitly.
+preserved as HCL values. Every non-null row must have the same HCL type; a
+heterogeneous result, a null result, or a query with more than one column fails
+explicitly.
 
 ## External data source
 

@@ -261,7 +261,7 @@ seven of them as open capabilities regardless.
 | Remote directory project data source (data "remote_dir") | 🟡 | ✅ | ✅ | A valid unreferenced declaration is accepted lazily, matching Atlas CE. Resolving the source still fails explicitly because remote directory fetching is not implemented. |
 | Remote schema project data source (data "remote_schema") | 🟡 | ✅ | ✅ | A valid unreferenced declaration is accepted lazily, matching Atlas CE. Resolving the source still fails explicitly because remote schema fetching is not implemented. |
 | Runtime variable project data source (data "runtimevar") | ✅ | ✅ | ✅ | Reads Go CDK runtime-variable URLs with byte-preserving string output and a configurable positive timeout. Constant, file, HTTP(S), AWS, and Google Cloud providers are registered. |
-| SQL project data source (data "sql") | ✅ | ✅ | ✅ | Executes one parameterized query and exports count, first value, and all values. One result column is required; valid unreferenced blocks stay lazy. |
+| SQL project data source (data "sql") | ✅ | ✅ | ✅ | Runs one query and exports count, first value, and all values. Requires one column and one HCL row type. Heterogeneous rows fail explicitly; Atlas CE panics. Unreferenced blocks stay lazy. |
 | Template directory project data source (data "template_dir") | ✅ | ✅ | ✅ | Shared Go templates emit root lowercase .sql migrations only. New and diff synchronize new files and checksum to the confined source path; hash-only stays virtual. |
 | Variables, locals, and HCL functions | 🟡 | ✅ | ✅ | file, fileset, format, getenv, jsonencode, and toset evaluate. Variables add map(string). Env `for_each` exposes atlas.env, each.key, and each.value. |
 
