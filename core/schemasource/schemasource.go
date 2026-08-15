@@ -16,6 +16,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -61,6 +62,35 @@ type Command struct {
 	// Env holds extra "KEY=VALUE" entries appended to the current environment.
 	// PATH and PWD cannot be overridden; use an explicit executable path and Dir.
 	Env []string
+}
+
+// setWorkingDirectoryEnv makes PWD name the directory the program actually runs
+// in, on every operating system.
+//
+// [Command.Env] promises that PWD cannot be overridden and that the working
+// directory is chosen with Dir, and validateEnvironment enforces the first half
+// by refusing a caller-supplied PWD. os/exec keeps only the POSIX half of the
+// bargain: it appends PWD=<abs Dir> there and documents that "Windows and Plan
+// 9 do not use the PWD variable, so we don't need to keep it accurate".
+//
+// For a shell that does use it, that is not true. Ptah started from git-bash,
+// MSYS2 or Cygwin inherits their PWD, which names Ptah's own directory rather
+// than Dir -- and the caller is forbidden from correcting it. So the loader
+// received a working directory and an environment that disagreed, with no way
+// to reconcile them.
+//
+// Appending is enough on both platforms: os/exec deduplicates the environment
+// keeping the last occurrence of each key, case-insensitively on Windows.
+func setWorkingDirectoryEnv(c *exec.Cmd) error {
+	if c.Dir == "" {
+		return nil
+	}
+	absolute, err := filepath.Abs(c.Dir)
+	if err != nil {
+		return fmt.Errorf("resolve schema command working directory: %w", err)
+	}
+	c.Env = append(c.Environ(), "PWD="+absolute)
+	return nil
 }
 
 // Run executes cmd and parses its standard output into a desired schema. It
@@ -147,6 +177,9 @@ func run(ctx context.Context, cmd Command) ([]byte, error) {
 	c.WaitDelay = waitDelay
 	if len(cmd.Env) > 0 {
 		c.Env = append(c.Environ(), cmd.Env...)
+	}
+	if err := setWorkingDirectoryEnv(c); err != nil {
+		return nil, err
 	}
 	effectiveEnv := c.Environ()
 

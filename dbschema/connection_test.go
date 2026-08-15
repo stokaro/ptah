@@ -306,10 +306,19 @@ func TestConnectToDatabase_SQLiteFile(t *testing.T) {
 	c.Assert(schema.Tables[0].Name, qt.Equals, "users")
 }
 
+// TestConnectToDatabase_SQLiteURLFromPathEscapesFilename opens a database whose
+// name carries every character the URL form would otherwise read as syntax, and
+// finds the file where it asked for it.
+//
+// The name omits "?", which Win32 reserves along with < > : " / \ | * -- a file
+// carrying one cannot be created on Windows at all, so a round trip through the
+// filesystem cannot carry that half of the guarantee everywhere.
+// TestSQLiteURLFromPath_EscapesEveryCharacterThatWouldReadAsSyntax keeps it, as
+// a string, on every platform.
 func TestConnectToDatabase_SQLiteURLFromPathEscapesFilename(t *testing.T) {
 	c := qt.New(t)
 
-	dbPath := filepath.Join(t.TempDir(), "space % question? fragment#.sqlite")
+	dbPath := filepath.Join(t.TempDir(), "space % fragment#.sqlite")
 	conn, err := dbschema.ConnectToDatabase(
 		context.Background(),
 		atlasurl.SQLiteURLFromPath(dbPath),
@@ -320,6 +329,35 @@ func TestConnectToDatabase_SQLiteURLFromPathEscapesFilename(t *testing.T) {
 	info, err := os.Stat(dbPath)
 	c.Assert(err, qt.IsNil)
 	c.Assert(info.Mode().IsRegular(), qt.IsTrue)
+}
+
+// TestSQLiteURLFromPath_EscapesEveryCharacterThatWouldReadAsSyntax keeps the
+// half the filesystem round trip above had to give up.
+//
+// A "?" starts SQLite's own query string and a "#" its fragment, so an
+// unescaped one in a filename silently truncates the path the driver opens.
+// This asserts the escaping directly, which is the only way to make the claim
+// on a platform that cannot hold such a file.
+func TestSQLiteURLFromPath_EscapesEveryCharacterThatWouldReadAsSyntax(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{name: "a question mark cannot start a query", in: "/db/a?b.sqlite", want: "sqlite:file:/db/a%3Fb.sqlite"},
+		{name: "a hash cannot start a fragment", in: "/db/a#b.sqlite", want: "sqlite:file:/db/a%23b.sqlite"},
+		{name: "a percent cannot start an escape", in: "/db/a%b.sqlite", want: "sqlite:file:/db/a%25b.sqlite"},
+		{name: "a space stays one path element", in: "/db/a b.sqlite", want: "sqlite:file:/db/a%20b.sqlite"},
+		{name: "an ordinary name is untouched", in: "/db/plain.sqlite", want: "sqlite:file:/db/plain.sqlite"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(atlasurl.SQLiteURLFromPath(test.in), qt.Equals, test.want)
+		})
+	}
 }
 
 // stuckPostgresURL spins up a local TCP listener that completes the TCP
