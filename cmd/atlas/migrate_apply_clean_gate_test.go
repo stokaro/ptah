@@ -233,40 +233,38 @@ func TestCompatCommand_MigrateApplyBaselineAndAllowDirtyAreExclusive(t *testing.
 // The states the binary calls clean. Each row is a database the gate must let
 // through, and the assertion is that the migrations really ran.
 func TestCompatCommand_MigrateApplyAcceptsCleanDatabases(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name string
-		// setup puts the database into the state under test. A nil-free
-		// signature keeps the table free of behavior switches.
-		setup func(c *qt.C, dbPath string)
+		// setupSQL puts the database into the state under test, and the run
+		// below executes it one statement at a time. An empty list therefore
+		// opens no connection at all, which is what the first row is: the
+		// database file must still not exist when the gate reads it.
+		setupSQL []string
 	}{
 		{
-			name:  "no database file at all",
-			setup: func(_ *qt.C, _ string) {},
+			name: "no database file at all",
 		},
 		{
-			name: "a view is not a table",
-			setup: func(c *qt.C, dbPath string) {
-				execCleanGateSQL(c, dbPath, "CREATE VIEW cg_view AS SELECT 1 AS one")
-			},
+			name:     "a view is not a table",
+			setupSQL: []string{"CREATE VIEW cg_view AS SELECT 1 AS one"},
 		},
 		{
 			name: "SQLite's own bookkeeping table does not count",
-			setup: func(c *qt.C, dbPath string) {
-				execCleanGateSQL(c, dbPath,
-					"CREATE TABLE cg_seq (id INTEGER PRIMARY KEY AUTOINCREMENT)",
-					"INSERT INTO cg_seq DEFAULT VALUES",
-					"DROP TABLE cg_seq",
-				)
+			setupSQL: []string{
+				"CREATE TABLE cg_seq (id INTEGER PRIMARY KEY AUTOINCREMENT)",
+				"INSERT INTO cg_seq DEFAULT VALUES",
+				"DROP TABLE cg_seq",
 			},
 		},
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			migrationsDir, dbPath := writeCleanGateFixture(c)
-			test.setup(c, dbPath)
+			for _, statement := range test.setupSQL {
+				execCleanGateSQL(c, dbPath, statement)
+			}
 
 			stdout, err := runCleanGateApply(c, migrationsDir, dbPath)
 

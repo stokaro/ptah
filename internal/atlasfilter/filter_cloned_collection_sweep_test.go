@@ -325,64 +325,30 @@ func databaseQualifiedEnumNames(enums []dbschematypes.DBEnum) []string {
 // still plan `DROP TABLE "app"."orders"` for the object the selector was
 // written to protect.
 //
-// Every expectation below is the object set the pinned community binary
-// produced for the same selector against the same fixture shape, in the
-// `-s public -s app` scope ptah-compat exposes.
+// Every row names the same schema a different way, so every row owes the same
+// object set: a spelling that dropped the schema but left a sequence inside it
+// is a partial sweep, and a partial sweep is the defect. That is why the
+// expectation is in the body rather than in the rows.
+//
+// The expectation is the object set the pinned community binary produced for
+// the same selector against the same fixture shape, in the `-s public -s app`
+// scope ptah-compat exposes.
 func TestExcludeDatabase_SchemaSelectorTakesTheSchemaContentsWithIt(t *testing.T) {
 	tests := []struct {
 		name    string
 		pattern string
-		assert  func(*qt.C, *dbschematypes.DBSchema)
 	}{
 		{
 			name:    "a schema selector removes the schema and everything in it",
 			pattern: "app",
-			assert: func(c *qt.C, got *dbschematypes.DBSchema) {
-				c.Assert(databaseSchemaNames(got.Schemas), qt.DeepEquals, []string{"public"})
-				c.Assert(databaseTableNames(got.Tables), qt.DeepEquals, []string{"users"})
-				c.Assert(databaseQualifiedEnumNames(got.Enums), qt.DeepEquals, []string{"mood"})
-				c.Assert(got.Sequences, qt.HasLen, 0)
-				c.Assert(got.Views, qt.HasLen, 0)
-				c.Assert(got.Grants, qt.HasLen, 0)
-			},
 		},
 		{
 			name:    "a glob covering the schema name reaches it the same way",
 			pattern: "ap*",
-			assert: func(c *qt.C, got *dbschematypes.DBSchema) {
-				c.Assert(databaseSchemaNames(got.Schemas), qt.DeepEquals, []string{"public"})
-				c.Assert(databaseTableNames(got.Tables), qt.DeepEquals, []string{"users"})
-			},
 		},
 		{
 			name:    "the type selector names the same schema",
 			pattern: "app[type=schema]",
-			assert: func(c *qt.C, got *dbschematypes.DBSchema) {
-				c.Assert(databaseSchemaNames(got.Schemas), qt.DeepEquals, []string{"public"})
-				c.Assert(databaseTableNames(got.Tables), qt.DeepEquals, []string{"users"})
-			},
-		},
-		{
-			// Control, and the boundary that keeps the schema reading from
-			// swallowing the two-part spelling: `app` is not a match for the
-			// glob `app.*`, so the schema entry stays and only its contents go.
-			name:    "the two-part spelling removes the contents and keeps the schema",
-			pattern: "app.*",
-			assert: func(c *qt.C, got *dbschematypes.DBSchema) {
-				c.Assert(databaseSchemaNames(got.Schemas), qt.DeepEquals, []string{"public", "app"})
-				c.Assert(databaseTableNames(got.Tables), qt.DeepEquals, []string{"users"})
-				c.Assert(databaseQualifiedEnumNames(got.Enums), qt.DeepEquals, []string{"mood"})
-			},
-		},
-		{
-			// Control: a selector naming no schema leaves every schema alone.
-			name:    "a selector naming no schema removes no schema",
-			pattern: "users",
-			assert: func(c *qt.C, got *dbschematypes.DBSchema) {
-				c.Assert(databaseSchemaNames(got.Schemas), qt.DeepEquals, []string{"public", "app"})
-				c.Assert(databaseTableNames(got.Tables), qt.DeepEquals, []string{"app.orders"})
-				c.Assert(databaseQualifiedEnumNames(got.Enums), qt.DeepEquals, []string{"mood", "app.color"})
-			},
 		},
 	}
 
@@ -394,7 +360,57 @@ func TestExcludeDatabase_SchemaSelectorTakesTheSchemaContentsWithIt(t *testing.T
 				schemaScopedFixture(), []string{test.pattern}, "public")
 
 			c.Assert(err, qt.IsNil)
-			test.assert(c, got)
+			c.Assert(databaseSchemaNames(got.Schemas), qt.DeepEquals, []string{"public"})
+			c.Assert(databaseTableNames(got.Tables), qt.DeepEquals, []string{"users"})
+			c.Assert(databaseQualifiedEnumNames(got.Enums), qt.DeepEquals, []string{"mood"})
+			c.Assert(got.Sequences, qt.HasLen, 0)
+			c.Assert(got.Views, qt.HasLen, 0)
+			c.Assert(got.Grants, qt.HasLen, 0)
+		})
+	}
+}
+
+// TestExcludeDatabase_SelectorsThatNameNoSchemaKeepEverySchema is the boundary
+// the sweep above must not cross, and the control that keeps it honest: a
+// filter that removed a schema whenever any object in it matched would satisfy
+// every row above and take the schema with it here.
+//
+// `app` is not a match for the glob `app.*`, so the two-part spelling takes the
+// contents and leaves the schema entry; a selector naming an object in the
+// default schema leaves both schemas alone. The rows differ only in what
+// survives inside the schemas, which is what the row carries.
+func TestExcludeDatabase_SelectorsThatNameNoSchemaKeepEverySchema(t *testing.T) {
+	tests := []struct {
+		name       string
+		pattern    string
+		wantTables []string
+		wantEnums  []string
+	}{
+		{
+			name:       "the two-part spelling removes the contents and keeps the schema",
+			pattern:    "app.*",
+			wantTables: []string{"users"},
+			wantEnums:  []string{"mood"},
+		},
+		{
+			name:       "a selector naming no schema removes no schema",
+			pattern:    "users",
+			wantTables: []string{"app.orders"},
+			wantEnums:  []string{"mood", "app.color"},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			got, err := atlasfilter.ExcludeDatabaseWithDefaultSchema(
+				schemaScopedFixture(), []string{test.pattern}, "public")
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(databaseSchemaNames(got.Schemas), qt.DeepEquals, []string{"public", "app"})
+			c.Assert(databaseTableNames(got.Tables), qt.DeepEquals, test.wantTables)
+			c.Assert(databaseQualifiedEnumNames(got.Enums), qt.DeepEquals, test.wantEnums)
 		})
 	}
 }

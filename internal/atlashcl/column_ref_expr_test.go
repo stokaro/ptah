@@ -13,23 +13,29 @@ import (
 // names a column names it -- not only the spellings whose source text happens to
 // be a bare traversal. This is issue #1182.
 //
-// Reverted to the source-text reader, every row here fails on `err` being
-// non-nil with `index on column contains unsupported reference "(column.n)"`
-// (and the row's own text for the others); the pinned Atlas community binary
-// v1.3.0 plans all of them at exit 0. The two `columns = [...]` rows were never
-// part of the #1182 regression -- the list reader has read source text since
-// before #1165 -- and they go red the same way, which is why they are here.
+// Reverted to the source-text reader, every row in the four tests below fails on
+// `err` being non-nil with `index on column contains unsupported reference
+// "(column.n)"` (and the row's own text for the others); the pinned Atlas
+// community binary v1.3.0 plans all of them at exit 0. The `columns = [...]`
+// rows were never part of the #1182 regression -- the list reader has read source
+// text since before #1165 -- and they go red the same way, which is why they are
+// here.
 //
-// Deleting only the ParenthesesExpr arm reddens the four parenthesised rows and
-// leaves the two conditional rows green; deleting only the ConditionalExpr arm
-// does the opposite. Neither mutation touches TestParseKeepsColumnAttributesThatNameAColumn.
-func TestParseReadsAColumnAttributeThroughTheParsedExpression(t *testing.T) {
-	c := qt.New(t)
-
+// Deleting only the ParenthesesExpr arm reddens the parenthesised rows and
+// leaves the conditional rows green; deleting only the ConditionalExpr arm does
+// the opposite. Neither mutation touches
+// TestParseKeepsColumnAttributesThatNameAColumn.
+//
+// There is one test per reader below, because there is one reader per spelling:
+// an index `on` part, an index `columns` list, a primary key and a partition
+// each land somewhere else in the parsed document, and a row that measures a
+// different field is a different test rather than a different closure.
+func TestParseReadsAnIndexOnColumnThroughTheParsedExpression(t *testing.T) {
 	tests := []struct {
-		name   string
-		hcl    string
-		assert func(c *qt.C, db *goschema.Database)
+		name string
+		hcl  string
+		// wantPart is the name of the sole part the index must be read with.
+		wantPart string
 	}{
 		{
 			name: "index on parenthesised reference",
@@ -41,7 +47,7 @@ table "t" {
   }
 }
 `,
-			assert: assertSoleIndexPart("n"),
+			wantPart: "n",
 		},
 		{
 			name: "index on parenthesised reference across newlines",
@@ -57,7 +63,7 @@ table "t" {
   }
 }
 `,
-			assert: assertSoleIndexPart("n"),
+			wantPart: "n",
 		},
 		{
 			name: "index on doubly parenthesised qualified reference",
@@ -69,7 +75,7 @@ table "t" {
   }
 }
 `,
-			assert: assertSoleIndexPart("n"),
+			wantPart: "n",
 		},
 		{
 			name: "index on conditional over a bool variable",
@@ -86,7 +92,7 @@ table "t" {
   }
 }
 `,
-			assert: assertSoleIndexPart("a"),
+			wantPart: "a",
 		},
 		{
 			name: "index on conditional that takes the false branch",
@@ -103,7 +109,7 @@ table "t" {
   }
 }
 `,
-			assert: assertSoleIndexPart("b"),
+			wantPart: "b",
 		},
 		{
 			name: "index on conditional over literals",
@@ -115,8 +121,34 @@ table "t" {
   }
 }
 `,
-			assert: assertSoleIndexPart("n"),
+			wantPart: "n",
 		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			db, err := atlashcl.Parse([]byte(test.hcl), "schema.hcl")
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(db.Indexes, qt.HasLen, 1)
+			c.Assert(db.Indexes[0].Parts, qt.HasLen, 1)
+			c.Assert(db.Indexes[0].Parts[0].Name, qt.Equals, test.wantPart)
+		})
+	}
+}
+
+// The list spelling `columns = [...]` lands in Fields, not Parts -- a different
+// reader, which is the point of covering it separately.
+func TestParseReadsAnIndexColumnsListThroughTheParsedExpression(t *testing.T) {
+	tests := []struct {
+		name string
+		hcl  string
+		// wantFields is the whole list the index must be read with, so a reader
+		// that dropped or duplicated an entry cannot pass by naming the first.
+		wantFields []string
+	}{
 		{
 			name: "index columns list holds a parenthesised reference",
 			hcl: `
@@ -127,7 +159,7 @@ table "t" {
   }
 }
 `,
-			assert: assertSoleIndexField("n"),
+			wantFields: []string{"n"},
 		},
 		{
 			name: "index columns list holds a conditional",
@@ -140,26 +172,47 @@ table "t" {
   }
 }
 `,
-			assert: assertSoleIndexField("n"),
+			wantFields: []string{"n"},
 		},
-		{
-			name: "primary key on parenthesised reference",
-			hcl: `
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			db, err := atlashcl.Parse([]byte(test.hcl), "schema.hcl")
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(db.Indexes, qt.HasLen, 1)
+			c.Assert(db.Indexes[0].Fields, qt.DeepEquals, test.wantFields)
+		})
+	}
+}
+
+// A primary key's parts are read by the same expression reader and land on the
+// table rather than on an index.
+func TestParseReadsAPrimaryKeyColumnThroughTheParsedExpression(t *testing.T) {
+	c := qt.New(t)
+
+	db, err := atlashcl.Parse([]byte(`
 table "t" {
   column "n" { type = int }
   primary_key {
     on { column = (column.n) }
   }
 }
-`,
-			assert: func(c *qt.C, db *goschema.Database) {
-				c.Assert(db.Tables, qt.HasLen, 1)
-				c.Assert(db.Tables[0].PrimaryKeyParts, qt.DeepEquals, []goschema.PrimaryKeyPart{{Name: "n"}})
-			},
-		},
-		{
-			name: "partition by parenthesised reference",
-			hcl: `
+`), "schema.hcl")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(db.Tables, qt.HasLen, 1)
+	c.Assert(db.Tables[0].PrimaryKeyParts, qt.DeepEquals, []goschema.PrimaryKeyPart{{Name: "n"}})
+}
+
+// And a partition's `by` parts, which are a third destination for the same read.
+func TestParseReadsAPartitionColumnThroughTheParsedExpression(t *testing.T) {
+	c := qt.New(t)
+
+	db, err := atlashcl.Parse([]byte(`
 table "t" {
   column "n" { type = int }
   partition {
@@ -167,41 +220,14 @@ table "t" {
     by { column = (column.n) }
   }
 }
-`,
-			assert: func(c *qt.C, db *goschema.Database) {
-				c.Assert(db.Tables, qt.HasLen, 1)
-				c.Assert(db.Tables[0].Partition, qt.DeepEquals, &goschema.PartitionSpec{
-					Type:  "RANGE",
-					Parts: []goschema.PartitionPart{{Name: "n"}},
-				})
-			},
-		},
-	}
+`), "schema.hcl")
 
-	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
-			db, err := atlashcl.Parse([]byte(test.hcl), "schema.hcl")
-			c.Assert(err, qt.IsNil)
-			test.assert(c, db)
-		})
-	}
-}
-
-func assertSoleIndexPart(name string) func(c *qt.C, db *goschema.Database) {
-	return func(c *qt.C, db *goschema.Database) {
-		c.Assert(db.Indexes, qt.HasLen, 1)
-		c.Assert(db.Indexes[0].Parts, qt.HasLen, 1)
-		c.Assert(db.Indexes[0].Parts[0].Name, qt.Equals, name)
-	}
-}
-
-// The list spelling `columns = [...]` lands in Fields, not Parts -- a different
-// reader, which is the point of covering it separately.
-func assertSoleIndexField(name string) func(c *qt.C, db *goschema.Database) {
-	return func(c *qt.C, db *goschema.Database) {
-		c.Assert(db.Indexes, qt.HasLen, 1)
-		c.Assert(db.Indexes[0].Fields, qt.DeepEquals, []string{name})
-	}
+	c.Assert(err, qt.IsNil)
+	c.Assert(db.Tables, qt.HasLen, 1)
+	c.Assert(db.Tables[0].Partition, qt.DeepEquals, &goschema.PartitionSpec{
+		Type:  "RANGE",
+		Parts: []goschema.PartitionPart{{Name: "n"}},
+	})
 }
 
 // A conditional whose condition cannot be decided is still refused, and the
@@ -212,9 +238,8 @@ func assertSoleIndexField(name string) func(c *qt.C, db *goschema.Database) {
 //
 // This is the guard's INVERSE-mutant test, and it is the only way the admission
 // rule's non-interference is provable. Each row names the part of
-// schemaVariableDefault that has to be relaxed to turn it green, and
-// TestParseReadsAColumnAttributeThroughTheParsedExpression stays green under
-// every one of those relaxations. Today each row prints
+// schemaVariableDefault that has to be relaxed to turn it green, and the four
+// reading tests above stay green under every one of those relaxations. Today each row prints
 // `index on column contains unsupported reference "<the conditional as written>"`;
 // under the mutation it is aimed at it prints nothing and the file parses.
 //

@@ -95,16 +95,19 @@ func TestPlanner_RLSPolicyRefs_CreatesThePolicyOnTheNamedTable(t *testing.T) {
 // planning contract promises an invalid schema diff is rejected with
 // ptaherr.ErrInvalidSchemaDiff. The refusal is the assertion now.
 //
-// Every reference category is covered because they fail differently: an
-// addition and a modification both build their CREATE POLICY from a
-// declaration and so need one, while a removal renders `DROP POLICY name ON
-// table` out of the reference itself and needs no declaration at all -- so it
-// must still be planned, and only its shape can be checked.
+// An addition and a modification both build their CREATE POLICY from a
+// declaration and so need one; a reference that names no table at all cannot be
+// resolved in either direction. The one category that is planned rather than
+// refused is a removal naming its table, which
+// TestPlanner_RLSPolicyRefs_PlansARemovalThatNeedsNoDeclaration measures.
 func TestPlanner_RLSPolicyRefs_RefusesAPolicyTheDesiredSchemaDoesNotHold(t *testing.T) {
 	tests := []struct {
-		name   string
-		diff   *types.SchemaDiff
-		assert func(c *qt.C, nodes []ast.Node, err error)
+		name string
+		diff *types.SchemaDiff
+		// wantErr is the whole discrimination between these rows: the category
+		// and the position have to reach the operator, or an unresolvable
+		// reference is reported as some other one.
+		wantErr string
 	}{
 		{
 			name: "an addition naming an undeclared table is refused",
@@ -113,11 +116,7 @@ func TestPlanner_RLSPolicyRefs_RefusesAPolicyTheDesiredSchemaDoesNotHold(t *test
 					{PolicyName: "tenant_isolation", TableName: "omega_orders"},
 				},
 			},
-			assert: func(c *qt.C, nodes []ast.Node, err error) {
-				c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
-				c.Assert(err, qt.ErrorMatches, `.*added RLS policy tenant_isolation on table omega_orders at position 0 is missing from the target schema`)
-				c.Assert(nodes, qt.IsNil)
-			},
+			wantErr: `.*added RLS policy tenant_isolation on table omega_orders at position 0 is missing from the target schema`,
 		},
 		{
 			name: "a modification naming an undeclared policy is refused",
@@ -128,49 +127,21 @@ func TestPlanner_RLSPolicyRefs_RefusesAPolicyTheDesiredSchemaDoesNotHold(t *test
 					Changes:    map[string]string{"using_expression": "a -> b"},
 				}},
 			},
-			assert: func(c *qt.C, nodes []ast.Node, err error) {
-				c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
-				c.Assert(err, qt.ErrorMatches, `.*modified RLS policy tenant_isolation on table omega_orders at position 0 is missing from the target schema`)
-				c.Assert(nodes, qt.IsNil)
-			},
+			wantErr: `.*modified RLS policy tenant_isolation on table omega_orders at position 0 is missing from the target schema`,
 		},
 		{
 			name: "a reference with no owning table is refused",
 			diff: &types.SchemaDiff{
 				RLSPoliciesAdded: []types.RLSPolicyRef{{PolicyName: "tenant_isolation"}},
 			},
-			assert: func(c *qt.C, nodes []ast.Node, err error) {
-				c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
-				c.Assert(err, qt.ErrorMatches, `.*added RLS policy reference at position 0 requires a policy name and owning table`)
-				c.Assert(nodes, qt.IsNil)
-			},
-		},
-		{
-			name: "a removal needs no declaration and is still planned",
-			diff: &types.SchemaDiff{
-				RLSPoliciesRemoved: []types.RLSPolicyRef{
-					{PolicyName: "tenant_isolation", TableName: "omega_orders"},
-				},
-			},
-			assert: func(c *qt.C, nodes []ast.Node, err error) {
-				c.Assert(err, qt.IsNil)
-				c.Assert(nodes, qt.HasLen, 2)
-				drop, ok := nodes[0].(*ast.DropPolicyNode)
-				c.Assert(ok, qt.IsTrue)
-				c.Assert(drop.Name, qt.Equals, "tenant_isolation")
-				c.Assert(drop.Table, qt.Equals, "omega_orders")
-			},
+			wantErr: `.*added RLS policy reference at position 0 requires a policy name and owning table`,
 		},
 		{
 			name: "a removal with no owning table is refused",
 			diff: &types.SchemaDiff{
 				RLSPoliciesRemoved: []types.RLSPolicyRef{{PolicyName: "tenant_isolation"}},
 			},
-			assert: func(c *qt.C, nodes []ast.Node, err error) {
-				c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
-				c.Assert(err, qt.ErrorMatches, `.*removed RLS policy reference at position 0 requires a policy name and owning table`)
-				c.Assert(nodes, qt.IsNil)
-			},
+			wantErr: `.*removed RLS policy reference at position 0 requires a policy name and owning table`,
 		},
 	}
 
@@ -180,9 +151,36 @@ func TestPlanner_RLSPolicyRefs_RefusesAPolicyTheDesiredSchemaDoesNotHold(t *test
 
 			nodes, err := postgres.New().GenerateMigrationASTChecked(test.diff, generatedSharedPolicyName())
 
-			test.assert(c, nodes, err)
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			c.Assert(nodes, qt.IsNil)
 		})
 	}
+}
+
+// TestPlanner_RLSPolicyRefs_PlansARemovalThatNeedsNoDeclaration is the category
+// the refusal above must not swallow.
+//
+// A removal renders `DROP POLICY name ON table` out of the reference itself, so
+// a desired schema that no longer declares the policy is exactly the state a
+// removal is planned from -- refusing it would make every dropped policy
+// unplannable. Only its shape can be checked, and that is what is checked.
+func TestPlanner_RLSPolicyRefs_PlansARemovalThatNeedsNoDeclaration(t *testing.T) {
+	c := qt.New(t)
+	diff := &types.SchemaDiff{
+		RLSPoliciesRemoved: []types.RLSPolicyRef{
+			{PolicyName: "tenant_isolation", TableName: "omega_orders"},
+		},
+	}
+
+	nodes, err := postgres.New().GenerateMigrationASTChecked(diff, generatedSharedPolicyName())
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(nodes, qt.HasLen, 2)
+	drop, ok := nodes[0].(*ast.DropPolicyNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(drop.Name, qt.Equals, "tenant_isolation")
+	c.Assert(drop.Table, qt.Equals, "omega_orders")
 }
 
 // TestPlanner_RLSPolicyRefs_ResolvesTheDefaultSchemaSpelling is the pair to the

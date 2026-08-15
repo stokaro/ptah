@@ -211,46 +211,34 @@ func TestSQLLint_JSONNeverReportsAVersionThatDidNotResolve(t *testing.T) {
 	c.Assert(report.Error, qt.Contains, "definitely-not-a-version")
 }
 
-// TestSQLLint_RecognizedVersionOutcomes pins what the three surviving
-// outcomes say. Silence belongs to the exact measured line alone: every other
-// resolution planned with a preset the operator did not name, and a run that
-// says nothing there reads as a run against the server they asked for.
-func TestSQLLint_RecognizedVersionOutcomes(t *testing.T) {
+// TestSQLLint_RecognizedVersionLintsCleanly pins what a resolved version says
+// when the lint itself finds nothing. Silence belongs to the exact measured
+// line alone: every other resolution planned with a preset the operator did not
+// name, and a run that says nothing there reads as a run against the server
+// they asked for.
+//
+// wantStderr is the WHOLE stream, so the silent row and the warning row are the
+// same measurement read at two values: a warning that grew a second line, or
+// one that stopped being printed, moves the row it belongs to.
+func TestSQLLint_RecognizedVersionLintsCleanly(t *testing.T) {
 	tests := []struct {
-		name    string
-		dialect string
-		version string
-		assert  func(c *qt.C, stdout, stderr string, err error)
+		name       string
+		dialect    string
+		version    string
+		wantStderr string
 	}{
 		{
-			name:    "exact measured line stays silent",
-			dialect: "postgres",
-			version: "17",
-			assert: func(c *qt.C, stdout, stderr string, err error) {
-				c.Assert(err, qt.IsNil)
-				c.Assert(stderr, qt.Equals, "")
-				c.Assert(stdout, qt.Contains, "No SQL lint findings.")
-			},
+			name:       "exact measured line stays silent",
+			dialect:    "postgres",
+			version:    "17",
+			wantStderr: "",
 		},
 		{
 			name:    "a server newer than the ladder names the line it planned as",
 			dialect: "postgres",
 			version: "99.0",
-			assert: func(c *qt.C, stdout, stderr string, err error) {
-				c.Assert(err, qt.IsNil)
-				c.Assert(stderr, qt.Contains, "warning: postgres 99.0 is newer than the newest measured release line 18.x")
-				c.Assert(stderr, qt.Contains, "planned as 18.x")
-				c.Assert(stdout, qt.Contains, "No SQL lint findings.")
-			},
-		},
-		{
-			name:    "a dialect with no ladder says the version changed nothing",
-			dialect: "sqlserver",
-			version: "16.0.4115.5",
-			assert: func(c *qt.C, stdout, stderr string, err error) {
-				c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
-				c.Assert(stderr, qt.Contains, "warning: the sqlserver dialect has no measured version ladder")
-			},
+			wantStderr: "warning: postgres 99.0 is newer than the newest measured release line 18.x;" +
+				" capabilities were planned as 18.x\n",
 		},
 	}
 	for _, tt := range tests {
@@ -260,9 +248,25 @@ func TestSQLLint_RecognizedVersionOutcomes(t *testing.T) {
 
 			stdout, stderr, err := execute("lint", "--dialect", tt.dialect, "--version", tt.version, path)
 
-			tt.assert(c, stdout, stderr, err)
+			c.Assert(err, qt.IsNil)
+			c.Assert(stderr, qt.Equals, tt.wantStderr)
+			c.Assert(stdout, qt.Contains, "No SQL lint findings.")
 		})
 	}
+}
+
+// TestSQLLint_DialectWithNoLadderSaysTheVersionChangedNothing is the third
+// surviving outcome, and it asserts differently from the two above: this run
+// has findings, so it exits 1 and prints them, and the warning is the only
+// thing that tells the operator their --version refined nothing.
+func TestSQLLint_DialectWithNoLadderSaysTheVersionChangedNothing(t *testing.T) {
+	c := qt.New(t)
+	path := writeSQLFile(c, t.TempDir(), "index.sql", concurrentIndexSQL)
+
+	_, stderr, err := execute("lint", "--dialect", "sqlserver", "--version", "16.0.4115.5", path)
+
+	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
+	c.Assert(stderr, qt.Contains, "warning: the sqlserver dialect has no measured version ladder")
 }
 
 // TestSQLLint_JSONCarriesTheVersionNote gives the machine the same fact the

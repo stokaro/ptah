@@ -44,17 +44,14 @@ func writeTxModeAllCheckedDir(c *qt.C, dir string) string {
 // exist.
 func TestMigrateApplyTxModeAllChecksHonorDryRun(t *testing.T) {
 	tests := []struct {
-		name   string
-		args   []string
-		assert func(c *qt.C, err error, output string)
+		name    string
+		args    []string
+		wantErr string
 	}{
 		{
-			name: "real apply refuses the checked directory",
-			args: nil,
-			assert: func(c *qt.C, err error, _ string) {
-				c.Assert(err, qt.ErrorMatches, `error applying migrations: migration 2 declares pre-migration checks, which cannot run with tx-mode all; use the default per-file transaction mode`)
-				c.Assert(err.Error(), qt.Not(qt.Contains), "--skip-checks")
-			},
+			name:    "real apply refuses the checked directory",
+			args:    nil,
+			wantErr: `error applying migrations: migration 2 declares pre-migration checks, which cannot run with tx-mode all; use the default per-file transaction mode`,
 		},
 		{
 			// The dry run refuses too, and it has to. The verdict is decidable
@@ -63,11 +60,9 @@ func TestMigrateApplyTxModeAllChecksHonorDryRun(t *testing.T) {
 			// deterministically. A preview that answered 0 here would report
 			// "Would have applied 2 migrations." with an empty stderr for a run
 			// that cannot succeed, which is worse than not previewing at all.
-			name: "dry run refuses it the same way",
-			args: []string{"--dry-run"},
-			assert: func(c *qt.C, err error, _ string) {
-				c.Assert(err, qt.ErrorMatches, `error applying migrations: migration 2 declares pre-migration checks, which cannot run with tx-mode all; use the default per-file transaction mode`)
-			},
+			name:    "dry run refuses it the same way",
+			args:    []string{"--dry-run"},
+			wantErr: `error applying migrations: migration 2 declares pre-migration checks, which cannot run with tx-mode all; use the default per-file transaction mode`,
 		},
 	}
 
@@ -88,7 +83,12 @@ func TestMigrateApplyTxModeAllChecksHonorDryRun(t *testing.T) {
 				"--tx-mode", "all",
 			}, test.args...))
 
-			test.assert(c, cmd.Execute(), output.String())
+			err := cmd.Execute()
+
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			// The flag the diagnostic must never name, asserted on both branches
+			// rather than only the one it was first written under.
+			c.Assert(err.Error(), qt.Not(qt.Contains), "--skip-checks")
 		})
 	}
 }

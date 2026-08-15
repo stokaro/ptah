@@ -1629,8 +1629,8 @@ func assertDiffDirectoryLockReleased(c *qt.C, dir string) {
 //
 // Reverting the routing -- calling verifyDirSum unconditionally -- prints
 // `got nil error but want non-nil` on the "caller's predicate refuses" row,
-// because the default accepts exactly what the caller rejects. The nil row is
-// the control: it must keep answering nil, so the seam cannot be "always
+// because the default accepts exactly what the caller rejects. The nil rows are
+// the control: they must keep answering nil, so the seam cannot be "always
 // refuse".
 func TestDiffOptionsVerifyDirRoutesThroughTheCallersPredicate(t *testing.T) {
 	errCallerRefused := errors.New("caller refused")
@@ -1639,29 +1639,22 @@ func TestDiffOptionsVerifyDirRoutesThroughTheCallersPredicate(t *testing.T) {
 		name string
 		// opts carries the hook under test.
 		opts DiffOptions
-		// check states what the returned error must be.
-		check func(c *qt.C, err error)
+		// wantErr is what the returned error must be in the chain, nil for the
+		// rows the seam has to keep accepting.
+		wantErr error
 	}{
 		{
 			name: "nil hook keeps the permissive default",
 			opts: DiffOptions{},
-			check: func(c *qt.C, err error) {
-				c.Assert(err, qt.IsNil)
-			},
 		},
 		{
-			name: "caller's predicate refuses",
-			opts: DiffOptions{VerifyDir: func(fs.FS) error { return errCallerRefused }},
-			check: func(c *qt.C, err error) {
-				c.Assert(err, qt.ErrorIs, errCallerRefused)
-			},
+			name:    "caller's predicate refuses",
+			opts:    DiffOptions{VerifyDir: func(fs.FS) error { return errCallerRefused }},
+			wantErr: errCallerRefused,
 		},
 		{
 			name: "caller's predicate accepts",
 			opts: DiffOptions{VerifyDir: func(fs.FS) error { return nil }},
-			check: func(c *qt.C, err error) {
-				c.Assert(err, qt.IsNil)
-			},
 		},
 	}
 
@@ -1679,7 +1672,7 @@ func TestDiffOptionsVerifyDirRoutesThroughTheCallersPredicate(t *testing.T) {
 			snapshot, captureErr := migrationsnapshot.CaptureStable(os.DirFS(dir))
 			c.Assert(captureErr, qt.IsNil)
 
-			tt.check(c, tt.opts.verifyDir(snapshot))
+			c.Assert(tt.opts.verifyDir(snapshot), qt.ErrorIs, tt.wantErr)
 		})
 	}
 }

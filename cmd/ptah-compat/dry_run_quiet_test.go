@@ -169,16 +169,19 @@ func TestCompatBinaryDryRunDefaultFormatKeepsStderrEmpty(t *testing.T) {
 	migrationsDir := dryRunQuietDir(c)
 
 	tests := []struct {
-		name       string
-		args       func(c *qt.C, dbPath string) []string
+		name string
+		// args builds the command line from the fixtures the loop prepares: a
+		// scratch directory for the databases, and the desired state a
+		// `schema apply` plans from. It asserts nothing.
+		args       func(dir, schemaPath string) []string
 		wantStdout string
 	}{
 		{
 			name: "migrate apply",
-			args: func(_ *qt.C, dbPath string) []string {
+			args: func(dir, _ string) []string {
 				return []string{
 					"migrate", "apply",
-					"--url", "sqlite://" + dbPath,
+					"--url", "sqlite://" + filepath.Join(dir, "quiet.db"),
 					"--dir", "file://" + migrationsDir,
 					"--dry-run",
 				}
@@ -189,16 +192,12 @@ func TestCompatBinaryDryRunDefaultFormatKeepsStderrEmpty(t *testing.T) {
 		},
 		{
 			name: "schema apply",
-			args: func(c *qt.C, dbPath string) []string {
-				c.Helper()
-				schemaPath := filepath.Join(filepath.Dir(dbPath), "schema.sql")
-				c.Assert(os.WriteFile(schemaPath,
-					[]byte("CREATE TABLE quiet_schema (id INTEGER PRIMARY KEY);\n"), 0o600), qt.IsNil)
+			args: func(dir, schemaPath string) []string {
 				return []string{
 					"schema", "apply",
-					"--url", "sqlite://" + dbPath,
+					"--url", "sqlite://" + filepath.Join(dir, "quiet.db"),
 					"--to", "file://" + schemaPath,
-					"--dev-url", "sqlite://" + filepath.Join(filepath.Dir(dbPath), "dev.db"),
+					"--dev-url", "sqlite://" + filepath.Join(dir, "dev.db"),
 					"--dry-run",
 				}
 			},
@@ -208,9 +207,10 @@ func TestCompatBinaryDryRunDefaultFormatKeepsStderrEmpty(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
-			dbPath := filepath.Join(c.TempDir(), "quiet.db")
-			run := newCompatProcess(binPath, tt.args(c, dbPath)...)
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			dir := c.TempDir()
+			run := newCompatProcess(binPath, tt.args(dir, writeQuietSchemaFixture(c, dir))...)
 			var stdout, stderr bytes.Buffer
 			run.Stdout = &stdout
 			run.Stderr = &stderr
@@ -222,6 +222,18 @@ func TestCompatBinaryDryRunDefaultFormatKeepsStderrEmpty(t *testing.T) {
 			c.Assert(stdout.String(), qt.Equals, tt.wantStdout)
 		})
 	}
+}
+
+// writeQuietSchemaFixture writes the desired state a `schema apply` row plans
+// from and returns its path. Rows that plan from a migration directory are
+// handed it too and ignore it: an unread file in a scratch directory costs
+// nothing, and it keeps the fixture out of the rows.
+func writeQuietSchemaFixture(c *qt.C, dir string) string {
+	c.Helper()
+	schemaPath := filepath.Join(dir, "schema.sql")
+	c.Assert(os.WriteFile(schemaPath,
+		[]byte("CREATE TABLE quiet_schema (id INTEGER PRIMARY KEY);\n"), 0o600), qt.IsNil)
+	return schemaPath
 }
 
 // TestCompatBinaryMigrateDownDefaultFormatKeepsStderrEmpty is the pin for
@@ -497,17 +509,21 @@ func TestCompatBinaryDryRunFailuresStillReportOnStderr(t *testing.T) {
 	binPath := buildCompatBinary(c)
 
 	tests := []struct {
-		name       string
-		args       func(c *qt.C) []string
+		name string
+		// args builds the command line from the fixtures the loop prepares: a
+		// scratch directory holding no migration directory, and a migration
+		// directory whose atlas.sum does not match its contents. It asserts
+		// nothing.
+		args       func(dir, tamperedDir string) []string
 		wantStderr string
 	}{
 		{
 			name: "missing migration directory",
-			args: func(c *qt.C) []string {
+			args: func(dir, _ string) []string {
 				return []string{
 					"migrate", "apply",
-					"--url", "sqlite://" + filepath.Join(c.TempDir(), "missing.db"),
-					"--dir", "file://" + filepath.Join(c.TempDir(), "absent"),
+					"--url", "sqlite://" + filepath.Join(dir, "missing.db"),
+					"--dir", "file://" + filepath.Join(dir, "absent"),
 					"--dry-run",
 					"--format", "{{ json . }}",
 				}
@@ -516,11 +532,11 @@ func TestCompatBinaryDryRunFailuresStillReportOnStderr(t *testing.T) {
 		},
 		{
 			name: "checksum mismatch",
-			args: func(c *qt.C) []string {
+			args: func(dir, tamperedDir string) []string {
 				return []string{
 					"migrate", "apply",
-					"--url", "sqlite://" + filepath.Join(c.TempDir(), "tampered.db"),
-					"--dir", "file://" + malformedAtlasDir(c),
+					"--url", "sqlite://" + filepath.Join(dir, "tampered.db"),
+					"--dir", "file://" + tamperedDir,
 					"--dry-run",
 				}
 			},
@@ -529,8 +545,9 @@ func TestCompatBinaryDryRunFailuresStillReportOnStderr(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
-			run := newCompatProcess(binPath, tt.args(c)...)
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			run := newCompatProcess(binPath, tt.args(c.TempDir(), malformedAtlasDir(c))...)
 			var stdout, stderr bytes.Buffer
 			run.Stdout = &stdout
 			run.Stderr = &stderr

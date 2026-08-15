@@ -1,6 +1,7 @@
 package atlashcl_test
 
 import (
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -412,12 +413,16 @@ table "t" {
 // text. Reverted to evaluating them, each row fails with an "unknown variable"
 // or "call to unknown function" error that the assertion prints.
 func TestParseKeepsReferenceFormsUnevaluated(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
-		name   string
-		hcl    string
-		assert func(c *qt.C, db *goschema.Database)
+		name string
+		hcl  string
+		// read projects the collection this row's reference form lands in into
+		// one string per element. It asserts nothing -- the projection is what
+		// makes the comparison below carry the COUNT as well as the value, so a
+		// row that stopped parsing its block fails on the length and a row that
+		// started evaluating its reference fails on the text.
+		read func(db *goschema.Database) []string
+		want []string
 	}{
 		{
 			name: "bare type keyword",
@@ -426,9 +431,8 @@ table "t" {
   column "n" { type = text }
 }
 `,
-			assert: func(c *qt.C, db *goschema.Database) {
-				c.Assert(db.Fields[0].Type, qt.Equals, "text")
-			},
+			read: fieldTypes,
+			want: []string{"text"},
 		},
 		{
 			name: "parameterized type spelled as a call",
@@ -437,9 +441,8 @@ table "t" {
   column "n" { type = varchar(255) }
 }
 `,
-			assert: func(c *qt.C, db *goschema.Database) {
-				c.Assert(db.Fields[0].Type, qt.Equals, "varchar(255)")
-			},
+			read: fieldTypes,
+			want: []string{"varchar(255)"},
 		},
 		{
 			name: "schema reference",
@@ -451,9 +454,8 @@ table "t" {
   column "n" { type = int }
 }
 `,
-			assert: func(c *qt.C, db *goschema.Database) {
-				c.Assert(db.Tables[0].Schema, qt.Equals, "app")
-			},
+			read: tableSchemas,
+			want: []string{"app"},
 		},
 		{
 			name: "column reference inside an index list",
@@ -465,10 +467,8 @@ table "t" {
   }
 }
 `,
-			assert: func(c *qt.C, db *goschema.Database) {
-				c.Assert(db.Indexes, qt.HasLen, 1)
-				c.Assert(db.Indexes[0].Fields, qt.DeepEquals, []string{"n"})
-			},
+			read: indexColumns,
+			want: []string{"n"},
 		},
 		{
 			// function.return and range.subtype hold a type the same way
@@ -483,10 +483,8 @@ function "f" {
   as     = "SELECT 'x'"
 }
 `,
-			assert: func(c *qt.C, db *goschema.Database) {
-				c.Assert(db.Functions, qt.HasLen, 1)
-				c.Assert(db.Functions[0].Returns, qt.Equals, "varchar(255)")
-			},
+			read: functionReturns,
+			want: []string{"varchar(255)"},
 		},
 		{
 			name: "parameterized subtype in a range",
@@ -498,10 +496,8 @@ range "r" {
   subtype = numeric(10, 2)
 }
 `,
-			assert: func(c *qt.C, db *goschema.Database) {
-				c.Assert(db.Ranges, qt.HasLen, 1)
-				c.Assert(db.Ranges[0].Subtype, qt.Equals, "numeric(10, 2)")
-			},
+			read: rangeSubtypes,
+			want: []string{"numeric(10, 2)"},
 		},
 		{
 			name: "enum reference as a column type",
@@ -517,17 +513,31 @@ table "t" {
   column "n" { type = enum.status }
 }
 `,
-			assert: func(c *qt.C, db *goschema.Database) {
-				c.Assert(db.Fields[0].Type, qt.Equals, "status")
-			},
+			read: fieldTypes,
+			want: []string{"status"},
 		},
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
 			db, err := atlashcl.Parse([]byte(tt.hcl), "schema.hcl")
+
 			c.Assert(err, qt.IsNil)
-			tt.assert(c, db)
+			c.Assert(tt.read(db), qt.DeepEquals, tt.want)
 		})
 	}
+}
+
+// Two more of the IR positions described above [projectStrings]. indexColumns
+// gives one entry per INDEX rather than one per column, so an index that lost a
+// column and an index that was never parsed stay different answers.
+
+func indexColumns(db *goschema.Database) []string {
+	return projectStrings(db.Indexes, func(item goschema.Index) string { return strings.Join(item.Fields, ",") })
+}
+
+func rangeSubtypes(db *goschema.Database) []string {
+	return projectStrings(db.Ranges, func(item goschema.Range) string { return item.Subtype })
 }

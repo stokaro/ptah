@@ -14,7 +14,6 @@ import (
 
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/renderer"
-
 	"go.5x5.cz/ptah/internal/dbtarget"
 )
 

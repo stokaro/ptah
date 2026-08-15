@@ -166,43 +166,33 @@ func TestCICell_TagPinsLine(t *testing.T) {
 	}
 }
 
-// TestMatrix_Validate covers the shapes a broken matrix takes, all of which a
-// workflow would report as a successful run of nothing.
-func TestMatrix_Validate(t *testing.T) {
-	c := qt.New(t)
-
+// TestMatrix_ValidateRefusesABrokenMatrix covers the shapes a broken matrix
+// takes, all of which a workflow would report as a successful run of nothing.
+func TestMatrix_ValidateRefusesABrokenMatrix(t *testing.T) {
 	runnable := capabilityprobe.CICell{ID: "postgres-17", Runnable: true, URL: "postgres://x", DockerRun: []string{"postgres:17"}}
-	for _, tc := range []struct {
-		name   string
-		matrix capabilityprobe.Matrix
-		assert func(c *qt.C, err error)
+	tests := []struct {
+		name    string
+		matrix  capabilityprobe.Matrix
+		wantErr string
 	}{{
-		name:   "an empty matrix is refused",
-		matrix: capabilityprobe.Matrix{},
-		assert: func(c *qt.C, err error) {
-			c.Assert(err, qt.ErrorMatches, "(?s).*declares no release lines.*")
-		},
+		name:    "an empty matrix is refused",
+		matrix:  capabilityprobe.Matrix{},
+		wantErr: "(?s).*declares no release lines.*",
 	}, {
-		name:   "a matrix whose every line is skipped produces no jobs",
-		matrix: capabilityprobe.Matrix{Declared: 1, Skipped: []capabilityprobe.CICell{{ID: "spanner-0", Skip: "no server"}}},
-		assert: func(c *qt.C, err error) {
-			c.Assert(err, qt.ErrorMatches, "(?s).*zero jobs.*")
-		},
+		name:    "a matrix whose every line is skipped produces no jobs",
+		matrix:  capabilityprobe.Matrix{Declared: 1, Skipped: []capabilityprobe.CICell{{ID: "spanner-0", Skip: "no server"}}},
+		wantErr: "(?s).*zero jobs.*",
 	}, {
-		name:   "a census that does not add up is refused",
-		matrix: capabilityprobe.Matrix{Declared: 9, Cells: []capabilityprobe.CICell{runnable}},
-		assert: func(c *qt.C, err error) {
-			c.Assert(err, qt.ErrorMatches, "(?s).*census does not add up: 9 declared, 1 runnable, 0 skipped.*")
-		},
+		name:    "a census that does not add up is refused",
+		matrix:  capabilityprobe.Matrix{Declared: 9, Cells: []capabilityprobe.CICell{runnable}},
+		wantErr: "(?s).*census does not add up: 9 declared, 1 runnable, 0 skipped.*",
 	}, {
 		name: "two cells with one id would collide as jobs and artifacts",
 		matrix: capabilityprobe.Matrix{
 			Declared: 2,
 			Cells:    []capabilityprobe.CICell{runnable, runnable},
 		},
-		assert: func(c *qt.C, err error) {
-			c.Assert(err, qt.ErrorMatches, `(?s).*two cells share the id "postgres-17".*`)
-		},
+		wantErr: `(?s).*two cells share the id "postgres-17".*`,
 	}, {
 		name: "a skipped cell with no reason is refused",
 		matrix: capabilityprobe.Matrix{
@@ -210,29 +200,32 @@ func TestMatrix_Validate(t *testing.T) {
 			Cells:    []capabilityprobe.CICell{runnable},
 			Skipped:  []capabilityprobe.CICell{{ID: "spanner-0"}},
 		},
-		assert: func(c *qt.C, err error) {
-			c.Assert(err, qt.ErrorMatches, "(?s).*says no reason why.*")
-		},
+		wantErr: "(?s).*says no reason why.*",
 	}, {
 		name: "a runnable cell with no server to start is refused",
 		matrix: capabilityprobe.Matrix{
 			Declared: 1,
 			Cells:    []capabilityprobe.CICell{{ID: "postgres-17", Runnable: true, URL: "postgres://x"}},
 		},
-		assert: func(c *qt.C, err error) {
-			c.Assert(err, qt.ErrorMatches, "(?s).*no way to start a server.*")
-		},
-	}, {
-		name:   "the declared matrix validates",
-		matrix: capabilityprobe.CIMatrix(),
-		assert: func(c *qt.C, err error) {
-			c.Assert(err, qt.IsNil)
-		},
-	}} {
-		c.Run(tc.name, func(c *qt.C) {
-			tc.assert(c, tc.matrix.Validate())
+		wantErr: "(?s).*no way to start a server.*",
+	}}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(tc.matrix.Validate(), qt.ErrorMatches, tc.wantErr)
 		})
 	}
+}
+
+// TestMatrix_ValidateAcceptsTheDeclaredMatrix is the control the refusals above
+// need: a validator that refused everything would satisfy every row of that
+// table and stop the pipeline dead.
+func TestMatrix_ValidateAcceptsTheDeclaredMatrix(t *testing.T) {
+	c := qt.New(t)
+
+	c.Assert(capabilityprobe.CIMatrix().Validate(), qt.IsNil)
 }
 
 // TestPresetGaps names every line that lacks a measured preset. The expected

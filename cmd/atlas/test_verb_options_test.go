@@ -127,52 +127,34 @@ func TestCompatCommand_TestVerbsForwardSeedDirectory(t *testing.T) {
 	}
 }
 
-// TestCompatCommand_TestVerbsSeedDirectoryURLForms covers the two spellings a
-// directory has on this surface. Every other Atlas-shaped directory flag takes
-// a file:// URL, so a seed directory written that way has to resolve rather
-// than reach the native runner as a path that cannot exist.
-func TestCompatCommand_TestVerbsSeedDirectoryURLForms(t *testing.T) {
+// TestCompatCommand_TestVerbsResolveSeedDirectoryURLForms covers the two
+// spellings a directory has on this surface. Every other Atlas-shaped directory
+// flag takes a file:// URL, so a seed directory written that way has to resolve
+// rather than reach the native runner as a path that cannot exist.
+func TestCompatCommand_TestVerbsResolveSeedDirectoryURLForms(t *testing.T) {
 	tests := []struct {
 		name    string
 		argv    func(workspace testVerbWorkspace) []string
 		preface string
 		seedDir func(workspace testVerbWorkspace) string
-		check   func(c *qt.C, out string, err error)
 	}{
 		{
 			name:    "migrate test file URL",
 			argv:    migrateTestArgs,
 			preface: migrateSeedPreamble,
 			seedDir: func(workspace testVerbWorkspace) string { return "file://" + workspace.seedsDir },
-			check:   assertSeedDirectoryRan,
 		},
 		{
 			name:    "schema test file URL",
 			argv:    schemaTestArgs,
 			preface: "",
 			seedDir: func(workspace testVerbWorkspace) string { return "file://" + workspace.seedsDir },
-			check:   assertSeedDirectoryRan,
 		},
 		{
 			name:    "migrate test plain path is the control",
 			argv:    migrateTestArgs,
 			preface: migrateSeedPreamble,
 			seedDir: func(workspace testVerbWorkspace) string { return workspace.seedsDir },
-			check:   assertSeedDirectoryRan,
-		},
-		{
-			name:    "schema test database URL is refused",
-			argv:    schemaTestArgs,
-			preface: "",
-			seedDir: func(workspace testVerbWorkspace) string { return "sqlite://" + workspace.seedsDir },
-			check:   assertSeedDirectoryRefused,
-		},
-		{
-			name:    "migrate test database URL is refused",
-			argv:    migrateTestArgs,
-			preface: migrateSeedPreamble,
-			seedDir: func(workspace testVerbWorkspace) string { return "sqlite://" + workspace.seedsDir },
-			check:   assertSeedDirectoryRefused,
 		},
 	}
 
@@ -184,22 +166,39 @@ func TestCompatCommand_TestVerbsSeedDirectoryURLForms(t *testing.T) {
 
 			out, err := runCompatArgs(argv)
 
-			tt.check(c, out, err)
+			c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+			c.Assert(out, qt.Contains, "seeded 1 file(s)")
 		})
 	}
 }
 
-func assertSeedDirectoryRan(c *qt.C, out string, err error) {
-	c.Helper()
-	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
-	c.Assert(out, qt.Contains, "seeded 1 file(s)")
-}
+// TestCompatCommand_TestVerbsRefuseADatabaseSeedDirectory is the other half of
+// the surface above: a directory flag that accepted a database URL would hand
+// the native runner a path that can never hold seed files, so the two verbs
+// name what a seed directory is instead.
+func TestCompatCommand_TestVerbsRefuseADatabaseSeedDirectory(t *testing.T) {
+	tests := []struct {
+		name    string
+		argv    func(workspace testVerbWorkspace) []string
+		preface string
+	}{
+		{name: "schema test", argv: schemaTestArgs, preface: ""},
+		{name: "migrate test", argv: migrateTestArgs, preface: migrateSeedPreamble},
+	}
 
-func assertSeedDirectoryRefused(c *qt.C, out string, err error) {
-	c.Helper()
-	c.Assert(err, qt.ErrorMatches,
-		`atlas (migrate|schema) test --seed-dir: a seed directory is a local path or a file:// URL`,
-		qt.Commentf("%s", out))
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			workspace := writeTestVerbWorkspace(c, tt.preface)
+			argv := append(slices.Clone(tt.argv(workspace)), "--seed-dir", "sqlite://"+workspace.seedsDir)
+
+			out, err := runCompatArgs(argv)
+
+			c.Assert(err, qt.ErrorMatches,
+				`atlas (migrate|schema) test --seed-dir: a seed directory is a local path or a file:// URL`,
+				qt.Commentf("%s", out))
+		})
+	}
 }
 
 // testVerbReport is the machine-readable report shape both native runners
@@ -260,35 +259,36 @@ func TestCompatCommand_TestVerbsForwardReportFormat(t *testing.T) {
 const dockerDevURLRefusal = `atlas (migrate|schema) test --dev-url: docker --dev-url values are accepted by Atlas,` +
 	` but Ptah requires a directly connectable dev database URL for test cases`
 
-// TestCompatCommand_TestVerbsRefuseDockerDevURL covers every route a dev
-// database URL reaches these verbs by, on both of them.
+// TestCompatCommand_TestVerbsAnswerADevURLFlag covers the --dev-url spelling on
+// both verbs, and the two boundaries that make the docker refusal a decision
+// rather than a substring match.
 //
 // Fixing only the spelling an issue happened to name would look complete while
 // the environment twin and the atlas.hcl env still reached the connector, whose
 // answer -- "unsupported database dialect: docker" -- names an internal
-// classification rather than the thing the caller has to change.
-func TestCompatCommand_TestVerbsRefuseDockerDevURL(t *testing.T) {
+// classification rather than the thing the caller has to change. Those two
+// routes have tests of their own below.
+func TestCompatCommand_TestVerbsAnswerADevURLFlag(t *testing.T) {
 	tests := []struct {
 		name    string
 		preface string
-		argv    func(c *qt.C, t *testing.T, workspace testVerbWorkspace) []string
-		check   func(c *qt.C, out string, err error)
+		argv    func(workspace testVerbWorkspace) []string
+		devURL  string
+		wantErr string
 	}{
 		{
 			name:    "migrate test --dev-url",
 			preface: migrateSeedPreamble,
-			argv: func(_ *qt.C, _ *testing.T, workspace testVerbWorkspace) []string {
-				return append(migrateTestArgs(workspace), "--dev-url", "docker://postgres/16/dev")
-			},
-			check: assertDockerDevURLRefused,
+			argv:    migrateTestArgs,
+			devURL:  "docker://postgres/16/dev",
+			wantErr: dockerDevURLRefusal,
 		},
 		{
 			name:    "schema test --dev-url",
 			preface: "",
-			argv: func(_ *qt.C, _ *testing.T, workspace testVerbWorkspace) []string {
-				return append(schemaTestArgs(workspace), "--dev-url", "docker://postgres/16/dev")
-			},
-			check: assertDockerDevURLRefused,
+			argv:    schemaTestArgs,
+			devURL:  "docker://postgres/16/dev",
+			wantErr: dockerDevURLRefusal,
 		},
 		{
 			// url.Parse lowercases a scheme, so this is the SAME dev URL, and
@@ -302,10 +302,9 @@ func TestCompatCommand_TestVerbsRefuseDockerDevURL(t *testing.T) {
 			// -- the internal classification this refusal exists to replace.
 			name:    "migrate test --dev-url with an uppercase scheme",
 			preface: migrateSeedPreamble,
-			argv: func(_ *qt.C, _ *testing.T, workspace testVerbWorkspace) []string {
-				return append(migrateTestArgs(workspace), "--dev-url", "DOCKER://postgres/16/dev")
-			},
-			check: assertDockerDevURLRefused,
+			argv:    migrateTestArgs,
+			devURL:  "DOCKER://postgres/16/dev",
+			wantErr: dockerDevURLRefusal,
 		},
 		{
 			// Both verbs share the mapper, so both had the gap; the second row
@@ -313,10 +312,9 @@ func TestCompatCommand_TestVerbsRefuseDockerDevURL(t *testing.T) {
 			// issue named and left its twin.
 			name:    "schema test --dev-url with a mixed-case scheme",
 			preface: "",
-			argv: func(_ *qt.C, _ *testing.T, workspace testVerbWorkspace) []string {
-				return append(schemaTestArgs(workspace), "--dev-url", "DoCkEr://postgres/16/dev")
-			},
-			check: assertDockerDevURLRefused,
+			argv:    schemaTestArgs,
+			devURL:  "DoCkEr://postgres/16/dev",
+			wantErr: dockerDevURLRefusal,
 		},
 		{
 			// The other direction of the same prefix match, and the reason it
@@ -328,76 +326,17 @@ func TestCompatCommand_TestVerbsRefuseDockerDevURL(t *testing.T) {
 			// failure -- the verdict `migrate diff` already gives it.
 			name:    "a leading space is not a docker dev URL",
 			preface: migrateSeedPreamble,
-			argv: func(_ *qt.C, _ *testing.T, workspace testVerbWorkspace) []string {
-				return append(migrateTestArgs(workspace), "--dev-url", " docker://postgres/16/dev")
-			},
-			check: func(c *qt.C, out string, err error) {
-				c.Helper()
-				c.Assert(err, qt.ErrorMatches,
-					`connect to test database: invalid database URL: parse " docker://postgres/16/dev":`+
-						` first path segment in URL cannot contain colon`,
-					qt.Commentf("%s", out))
-			},
-		},
-		{
-			name:    "migrate test PTAH_DEV_URL twin",
-			preface: migrateSeedPreamble,
-			argv: func(_ *qt.C, t *testing.T, workspace testVerbWorkspace) []string {
-				t.Setenv("PTAH_DEV_URL", "docker://postgres/16/dev")
-				return migrateTestArgs(workspace)
-			},
-			check: assertDockerDevURLRefused,
-		},
-		{
-			name:    "schema test PTAH_DEV_URL twin",
-			preface: "",
-			argv: func(_ *qt.C, t *testing.T, workspace testVerbWorkspace) []string {
-				t.Setenv("PTAH_DEV_URL", "docker://postgres/16/dev")
-				return schemaTestArgs(workspace)
-			},
-			check: assertDockerDevURLRefused,
-		},
-		{
-			name:    "migrate test atlas.hcl dev",
-			preface: migrateSeedPreamble,
-			argv: func(c *qt.C, t *testing.T, workspace testVerbWorkspace) []string {
-				writeDockerDevProject(c, t, workspace)
-				return []string{"migrate", "test", workspace.casesDir, "--env", "local"}
-			},
-			check: assertDockerDevURLRefused,
-		},
-		{
-			name:    "schema test atlas.hcl dev",
-			preface: "",
-			argv: func(c *qt.C, t *testing.T, workspace testVerbWorkspace) []string {
-				writeDockerDevProject(c, t, workspace)
-				return []string{"schema", "test", workspace.casesDir, "--env", "local"}
-			},
-			check: assertDockerDevURLRefused,
+			argv:    migrateTestArgs,
+			devURL:  " docker://postgres/16/dev",
+			wantErr: `connect to test database: invalid database URL: parse " docker://postgres/16/dev":` +
+				` first path segment in URL cannot contain colon`,
 		},
 		{
 			name:    "a non-docker dialect still answers at the connector",
 			preface: "",
-			argv: func(_ *qt.C, _ *testing.T, workspace testVerbWorkspace) []string {
-				return append(schemaTestArgs(workspace), "--dev-url", "oracle://host/dev")
-			},
-			check: func(c *qt.C, out string, err error) {
-				c.Helper()
-				c.Assert(err, qt.ErrorMatches, `connect to test database: unsupported database dialect: oracle`,
-					qt.Commentf("%s", out))
-			},
-		},
-		{
-			name:    "a directly connectable dev URL is the passing control",
-			preface: "",
-			argv: func(c *qt.C, _ *testing.T, workspace testVerbWorkspace) []string {
-				return append(schemaTestArgs(workspace), "--dev-url", freshDevURL(c))
-			},
-			check: func(c *qt.C, out string, err error) {
-				c.Helper()
-				c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
-				c.Assert(out, qt.Contains, "1 cases, 1 passed, 0 failed")
-			},
+			argv:    schemaTestArgs,
+			devURL:  "oracle://host/dev",
+			wantErr: `connect to test database: unsupported database dialect: oracle`,
 		},
 	}
 
@@ -410,18 +349,89 @@ func TestCompatCommand_TestVerbsRefuseDockerDevURL(t *testing.T) {
 			// consulted, and a row that never consults the dev URL cannot tell
 			// a docker refusal from its absence: the rows would stay green with
 			// the refusal removed.
-			argv := append(tt.argv(c, t, workspace), "--seed-dir", workspace.seedsDir)
+			argv := append(tt.argv(workspace),
+				"--dev-url", tt.devURL,
+				"--seed-dir", workspace.seedsDir)
 
 			out, err := runCompatArgs(argv)
 
-			tt.check(c, out, err)
+			c.Assert(err, qt.ErrorMatches, tt.wantErr, qt.Commentf("%s", out))
 		})
 	}
 }
 
-func assertDockerDevURLRefused(c *qt.C, out string, err error) {
-	c.Helper()
-	c.Assert(err, qt.ErrorMatches, dockerDevURLRefusal, qt.Commentf("%s", out))
+// TestCompatCommand_TestVerbsRefuseDockerDevURLFromTheEnvironment pins the
+// environment twin of --dev-url. It is a separate route into the same mapper,
+// and a refusal wired to the flag alone would leave it reaching the connector.
+func TestCompatCommand_TestVerbsRefuseDockerDevURLFromTheEnvironment(t *testing.T) {
+	tests := []struct {
+		name    string
+		preface string
+		argv    func(workspace testVerbWorkspace) []string
+	}{
+		{name: "migrate test", preface: migrateSeedPreamble, argv: migrateTestArgs},
+		{name: "schema test", preface: "", argv: schemaTestArgs},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			t.Setenv("PTAH_DEV_URL", "docker://postgres/16/dev")
+			workspace := writeTestVerbWorkspace(c, tt.preface)
+			argv := append(tt.argv(workspace), "--seed-dir", workspace.seedsDir)
+
+			out, err := runCompatArgs(argv)
+
+			c.Assert(err, qt.ErrorMatches, dockerDevURLRefusal, qt.Commentf("%s", out))
+		})
+	}
+}
+
+// TestCompatCommand_TestVerbsRefuseDockerDevURLFromTheProjectFile pins the
+// third route: an atlas.hcl env whose `dev` attribute carries the value. The
+// verb never sees a flag at all here, so a refusal placed on the flag path
+// would let this one through.
+func TestCompatCommand_TestVerbsRefuseDockerDevURLFromTheProjectFile(t *testing.T) {
+	tests := []struct {
+		name    string
+		preface string
+		verb    string
+	}{
+		{name: "migrate test", preface: migrateSeedPreamble, verb: "migrate"},
+		{name: "schema test", preface: "", verb: "schema"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			workspace := writeTestVerbWorkspace(c, tt.preface)
+			writeDockerDevProject(c, t, workspace)
+
+			out, err := runCompatArgs([]string{
+				tt.verb, "test", workspace.casesDir,
+				"--env", "local",
+				"--seed-dir", workspace.seedsDir,
+			})
+
+			c.Assert(err, qt.ErrorMatches, dockerDevURLRefusal, qt.Commentf("%s", out))
+		})
+	}
+}
+
+// TestCompatCommand_TestVerbsAcceptAConnectableDevURL is the passing control
+// for the three refusals above: the same workspace and the same flag run to
+// completion once the dev database URL is one the runner can connect to, so
+// each refusal is attributable to its value rather than to the fixture.
+func TestCompatCommand_TestVerbsAcceptAConnectableDevURL(t *testing.T) {
+	c := qt.New(t)
+	workspace := writeTestVerbWorkspace(c, "")
+
+	out, err := runCompatArgs(append(schemaTestArgs(workspace),
+		"--dev-url", freshDevURL(c),
+		"--seed-dir", workspace.seedsDir))
+
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+	c.Assert(out, qt.Contains, "1 cases, 1 passed, 0 failed")
 }
 
 // writeDockerDevProject writes an atlas.hcl whose env supplies the docker dev

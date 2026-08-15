@@ -78,14 +78,6 @@ func familyMembers(c *qt.C) map[string][]string {
 	return members
 }
 
-func assertCompatible(c *qt.C, compatible bool) {
-	c.Assert(compatible, qt.IsTrue)
-}
-
-func assertIncompatible(c *qt.C, compatible bool) {
-	c.Assert(compatible, qt.IsFalse)
-}
-
 // TestAcceptedSpellings_ExtractionControls proves the spelling list the sweeps
 // below iterate is really the switch's own list.
 //
@@ -206,121 +198,120 @@ func TestCompatible_HappyPath_EverySpellingMatchesItsOwnEngine(t *testing.T) {
 }
 
 func TestCompatible(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name     string
 		policy   string
 		database string
-		assert   func(c *qt.C, compatible bool)
+		want     bool
 	}{
 		{
 			name:     "an alias matches its own canonical name",
 			policy:   "pgx",
 			database: platform.Postgres,
-			assert:   assertCompatible,
+			want:     true,
 		},
 		{
 			name:     "two aliases of one engine match each other",
 			policy:   "mssql",
 			database: "tsql",
-			assert:   assertCompatible,
+			want:     true,
 		},
 		{
 			name:     "MySQL and MariaDB share a family",
 			policy:   platform.MySQL,
 			database: platform.MariaDB,
-			assert:   assertCompatible,
+			want:     true,
 		},
 		{
 			name:     "MariaDB and MySQL share a family in the other direction",
 			policy:   platform.MariaDB,
 			database: platform.MySQL,
-			assert:   assertCompatible,
+			want:     true,
 		},
 		{
 			name:     "CockroachDB rides the PostgreSQL family",
 			policy:   platform.Postgres,
 			database: platform.CockroachDB,
-			assert:   assertCompatible,
+			want:     true,
 		},
 		{
 			name:     "YugabyteDB rides the PostgreSQL family",
 			policy:   platform.Postgres,
 			database: platform.YugabyteDB,
-			assert:   assertCompatible,
+			want:     true,
 		},
 		{
 			name:     "Spanner rides the PostgreSQL family",
 			policy:   platform.Spanner,
 			database: platform.Postgres,
-			assert:   assertCompatible,
+			want:     true,
 		},
 		{
 			name:     "an empty policy asserts nothing",
 			policy:   "",
 			database: platform.MariaDB,
-			assert:   assertCompatible,
+			want:     true,
 		},
 		{
 			name:     "an empty policy asserts nothing even about an unresolvable database",
 			policy:   "",
 			database: "oracle",
-			assert:   assertCompatible,
+			want:     true,
 		},
 		{
 			name:     "an unknown database dialect constrains nothing",
 			policy:   platform.Postgres,
 			database: "",
-			assert:   assertCompatible,
+			want:     true,
 		},
 		{
 			name:     "MySQL and PostgreSQL are different families",
 			policy:   platform.MySQL,
 			database: platform.Postgres,
-			assert:   assertIncompatible,
+			want:     false,
 		},
 		{
 			name:     "MariaDB and PostgreSQL are different families",
 			policy:   platform.MariaDB,
 			database: platform.Postgres,
-			assert:   assertIncompatible,
+			want:     false,
 		},
 		{
 			name:     "SQLite stands alone",
 			policy:   platform.SQLite,
 			database: platform.MySQL,
-			assert:   assertIncompatible,
+			want:     false,
 		},
 		{
 			name:     "SQL Server stands alone",
 			policy:   platform.SQLServer,
 			database: platform.Postgres,
-			assert:   assertIncompatible,
+			want:     false,
 		},
 		{
 			name:     "ClickHouse stands alone",
 			policy:   platform.ClickHouse,
 			database: platform.MySQL,
-			assert:   assertIncompatible,
+			want:     false,
 		},
 		{
 			name:     "an unsupported policy dialect is never compatible",
 			policy:   "oracle",
 			database: platform.Postgres,
-			assert:   assertIncompatible,
+			want:     false,
 		},
 		{
 			name:     "a nonempty policy is not compatible with an unresolvable database",
 			policy:   platform.Postgres,
 			database: "oracle",
-			assert:   assertIncompatible,
+			want:     false,
 		},
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
-			test.assert(c, lintdialect.Compatible(test.policy, test.database))
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(lintdialect.Compatible(test.policy, test.database), qt.Equals, test.want)
 		})
 	}
 }

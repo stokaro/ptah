@@ -326,44 +326,48 @@ var measuredCell = Cell{
 // TestAssemble_ThreeOutcomes pins the whole verdict table, including the one
 // row a cheaper implementation folds into agreement.
 func TestAssemble_ThreeOutcomes(t *testing.T) {
-	c := qt.New(t)
-
 	const key = capability.XMLType // Postgres17 says true.
 
 	for _, tc := range []struct {
-		name   string
-		obs    observation
-		assert func(c *qt.C, row Row)
+		name        string
+		obs         observation
+		wantOutcome Outcome
+		// wantObserved is false for a row the run never decided: such a row must
+		// not carry a server answer it never obtained.
+		wantObserved   bool
+		wantServerDoes bool
+		wantReason     string
+		wantMismatch   bool
 	}{{
-		name: "the server does what the preset says",
-		obs:  decided(true),
-		assert: func(c *qt.C, row Row) {
-			c.Assert(row.Outcome, qt.Equals, Agrees)
-			c.Assert(row.Observed, qt.IsTrue)
-			c.Assert(row.Reason, qt.Equals, "")
-		},
+		name:           "the server does what the preset says",
+		obs:            decided(true),
+		wantOutcome:    Agrees,
+		wantObserved:   true,
+		wantServerDoes: true,
 	}, {
-		name: "the server does not, which is a disagreement and not a warning",
-		obs:  decided(false),
-		assert: func(c *qt.C, row Row) {
-			c.Assert(row.Outcome, qt.Equals, Disagrees)
-			c.Assert(row.Mismatch(), qt.IsTrue)
-		},
+		name:         "the server does not, which is a disagreement and not a warning",
+		obs:          decided(false),
+		wantOutcome:  Disagrees,
+		wantObserved: true,
+		wantMismatch: true,
 	}, {
-		name: "an undecided key stays undecidable and never becomes agreement",
-		obs:  cannotDecide("the precondition was refused"),
-		assert: func(c *qt.C, row Row) {
-			c.Assert(row.Outcome, qt.Equals, Undecidable)
-			c.Assert(row.Observed, qt.IsFalse,
-				qt.Commentf("an undecided row must not carry a server answer it never obtained"))
-			c.Assert(row.Reason, qt.Equals, "the precondition was refused")
-			c.Assert(row.Mismatch(), qt.IsFalse)
-		},
+		name:        "an undecided key stays undecidable and never becomes agreement",
+		obs:         cannotDecide("the precondition was refused"),
+		wantOutcome: Undecidable,
+		wantReason:  "the precondition was refused",
 	}} {
-		c.Run(tc.name, func(c *qt.C) {
+		t.Run(tc.name, func(t *testing.T) {
+			c := qt.New(t)
+
 			report := reportOn(measuredCell, true, capability.Postgres17())
 			rows := assemble(report, map[capability.Capability]observation{key: tc.obs}, nil)
-			tc.assert(c, rowFor(c, rows, key))
+
+			row := rowFor(c, rows, key)
+			c.Assert(row.Outcome, qt.Equals, tc.wantOutcome)
+			c.Assert(row.Observed, qt.Equals, tc.wantObserved)
+			c.Assert(row.ServerDoes, qt.Equals, tc.wantServerDoes)
+			c.Assert(row.Reason, qt.Equals, tc.wantReason)
+			c.Assert(row.Mismatch(), qt.Equals, tc.wantMismatch)
 		})
 	}
 }

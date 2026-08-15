@@ -134,65 +134,77 @@ func measuredChecks(cell capabilityprobe.Cell, named map[string]func() capabilit
 	}
 }
 
-func TestCellFor(t *testing.T) {
-	c := qt.New(t)
+// TestCellFor_LandsOnTheDeclaredLine covers the versions a cell claims. The
+// label and the preset name are asserted beside the line because a cell reached
+// by the right line but carrying another line's preset would certify
+// capabilities nobody measured on that server.
+func TestCellFor_LandsOnTheDeclaredLine(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		dialect        string
+		version        string
+		wantLine       string
+		wantLabel      string
+		wantPresetName string
+	}{{
+		name: "a PostgreSQL 17 patch release lands on the 17 line", dialect: platform.Postgres, version: "17.10",
+		wantLine: "17", wantPresetName: "Postgres17",
+	}, {
+		name: "a MySQL LTS line is matched on major and minor", dialect: platform.MySQL, version: "9.7.1",
+		wantLine: "9.7", wantPresetName: "MySQL84",
+	}, {
+		name:    "SQL Server matches on the product version, not the marketing year",
+		dialect: platform.SQLServer, version: "17.0.4065.4",
+		wantLine: "17.0", wantLabel: "SQL Server 2025", wantPresetName: "SQLServer2022",
+	}} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := qt.New(t)
+			version, err := capabilityprobe.ParseVersion(tc.dialect, tc.version, "")
+			c.Assert(err, qt.IsNil)
 
+			cell, found := capabilityprobe.CellFor(tc.dialect, version)
+
+			c.Assert(found, qt.IsTrue)
+			c.Assert(cell.Line, qt.Equals, tc.wantLine)
+			c.Assert(cell.Label, qt.Equals, tc.wantLabel)
+			c.Assert(cell.PresetName, qt.Equals, tc.wantPresetName)
+		})
+	}
+}
+
+// TestCellFor_FallsOffTheMatrix covers the versions no cell claims. Falling off
+// is the honest answer: a server the matrix cannot describe must not borrow a
+// neighboring line's result, so the returned cell has to stay empty rather than
+// carry the nearest match.
+func TestCellFor_FallsOffTheMatrix(t *testing.T) {
 	for _, tc := range []struct {
 		name    string
 		dialect string
 		version string
-		assert  func(c *qt.C, cell capabilityprobe.Cell, found bool)
 	}{{
-		name: "a PostgreSQL 17 patch release lands on the 17 line", dialect: platform.Postgres, version: "17.10",
-		assert: func(c *qt.C, cell capabilityprobe.Cell, found bool) {
-			c.Assert(found, qt.IsTrue)
-			c.Assert(cell.Line, qt.Equals, "17")
-			c.Assert(cell.PresetName, qt.Equals, "Postgres17")
-		},
-	}, {
-		name: "a MySQL LTS line is matched on major and minor", dialect: platform.MySQL, version: "9.7.1",
-		assert: func(c *qt.C, cell capabilityprobe.Cell, found bool) {
-			c.Assert(found, qt.IsTrue)
-			c.Assert(cell.Line, qt.Equals, "9.7")
-		},
-	}, {
-		name: "a MySQL release on no LTS line matches nothing", dialect: platform.MySQL, version: "9.6.1",
-		assert: func(c *qt.C, cell capabilityprobe.Cell, found bool) {
-			c.Assert(found, qt.IsFalse)
-			c.Assert(cell.Line, qt.Equals, "")
-		},
+		name: "a MySQL release on no LTS line", dialect: platform.MySQL, version: "9.6.1",
 	}, {
 		// The Postgres13 preset's own doc covers PostgreSQL 12 and 13, and the
 		// matrix declares only 13 because only 13 was probed. A 12 server must
 		// therefore fall off the matrix rather than borrow the 13 cell's
 		// result, or the matrix certifies a line nobody measured.
-		name: "a PostgreSQL major the matrix does not declare matches nothing", dialect: platform.Postgres, version: "12.22",
-		assert: func(c *qt.C, cell capabilityprobe.Cell, found bool) {
-			c.Assert(found, qt.IsFalse)
-		},
+		name: "a PostgreSQL major the matrix does not declare", dialect: platform.Postgres, version: "12.22",
 	}, {
-		name:    "SQL Server matches on the product version, not the marketing year",
-		dialect: platform.SQLServer, version: "17.0.4065.4",
-		assert: func(c *qt.C, cell capabilityprobe.Cell, found bool) {
-			c.Assert(found, qt.IsTrue)
-			c.Assert(cell.Label, qt.Equals, "SQL Server 2025")
-		},
+		name: "the marketing year of a SQL Server release", dialect: platform.SQLServer, version: "2025",
 	}, {
-		name: "the marketing year matches no SQL Server cell", dialect: platform.SQLServer, version: "2025",
-		assert: func(c *qt.C, cell capabilityprobe.Cell, found bool) {
-			c.Assert(found, qt.IsFalse)
-		},
-	}, {
-		name: "a dialect with no cells matches nothing", dialect: "nonsense", version: "1.2.3",
-		assert: func(c *qt.C, cell capabilityprobe.Cell, found bool) {
-			c.Assert(found, qt.IsFalse)
-		},
+		name: "a dialect with no cells at all", dialect: "nonsense", version: "1.2.3",
 	}} {
-		c.Run(tc.name, func(c *qt.C) {
+		t.Run(tc.name, func(t *testing.T) {
+			c := qt.New(t)
 			version, err := capabilityprobe.ParseVersion(tc.dialect, tc.version, "")
 			c.Assert(err, qt.IsNil)
+
 			cell, found := capabilityprobe.CellFor(tc.dialect, version)
-			tc.assert(c, cell, found)
+
+			c.Assert(found, qt.IsFalse)
+			c.Assert(cell.Line, qt.Equals, "")
+			c.Assert(cell.Label, qt.Equals, "")
+			c.Assert(cell.PresetName, qt.Equals, "")
 		})
 	}
 }

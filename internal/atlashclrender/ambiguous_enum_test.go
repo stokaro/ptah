@@ -1,6 +1,8 @@
 package atlashclrender_test
 
 import (
+	"slices"
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -29,6 +31,36 @@ func twoSchemaEnumRealm() *goschema.Database {
 	}
 }
 
+// enumBlockHeaders returns the header line of every enum block in a rendered
+// document, and enumColumnTypes every enum reference a column is typed by.
+//
+// A row states the whole set rather than probing the document with one Contains
+// after another: the claim is which labels the document carries, so a block
+// that gained a schema label it should not have is a diff here, where a
+// substring probe for the label it should have had stays green.
+//
+// Both are sorted, because the labels are the claim and the order blocks are
+// emitted in is not.
+func enumBlockHeaders(hcl string) []string {
+	return renderedLinesWithPrefix(hcl, "enum ")
+}
+
+func enumColumnTypes(hcl string) []string {
+	return renderedLinesWithPrefix(hcl, "type = enum")
+}
+
+func renderedLinesWithPrefix(hcl, prefix string) []string {
+	out := make([]string, 0)
+	for line := range strings.SplitSeq(hcl, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, prefix) {
+			out = append(out, trimmed)
+		}
+	}
+	slices.Sort(out)
+	return out
+}
+
 // TestRenderLabelsAnAmbiguousEnumWithItsSchema is the renderer half of
 // stokaro/ptah#1360.
 //
@@ -45,18 +77,20 @@ func twoSchemaEnumRealm() *goschema.Database {
 // only where the bare name is ambiguous is that binary's own rule.
 func TestRenderLabelsAnAmbiguousEnumWithItsSchema(t *testing.T) {
 	tests := []struct {
-		name   string
-		db     *goschema.Database
-		assert func(c *qt.C, hcl string)
+		name string
+		db   *goschema.Database
+		// wantBlocks is every enum block header the document must hold, and
+		// wantTypes every enum reference a column is typed by. Both are the
+		// whole set: a label the renderer added is as much a failure as one it
+		// left out.
+		wantBlocks []string
+		wantTypes  []string
 	}{
 		{
-			name: "an ambiguous name is written with its schema",
-			db:   twoSchemaEnumRealm(),
-			assert: func(c *qt.C, hcl string) {
-				c.Assert(hcl, qt.Contains, `enum "public" "mood" {`)
-				c.Assert(hcl, qt.Contains, `enum "other" "mood" {`)
-				c.Assert(hcl, qt.Not(qt.Contains), "\nenum \"mood\" {")
-			},
+			name:       "an ambiguous name is written with its schema",
+			db:         twoSchemaEnumRealm(),
+			wantBlocks: []string{`enum "other" "mood" {`, `enum "public" "mood" {`},
+			wantTypes:  []string{},
 		},
 		{
 			name: "an unambiguous name keeps one label",
@@ -66,10 +100,8 @@ func TestRenderLabelsAnAmbiguousEnumWithItsSchema(t *testing.T) {
 					{Name: "mood", Schema: "public", Values: []string{"happy", "sad"}},
 				},
 			},
-			assert: func(c *qt.C, hcl string) {
-				c.Assert(hcl, qt.Contains, `enum "mood" {`)
-				c.Assert(hcl, qt.Not(qt.Contains), `enum "public" "mood"`)
-			},
+			wantBlocks: []string{`enum "mood" {`},
+			wantTypes:  []string{},
 		},
 		{
 			// Two enums sharing a name AND a schema are one object declared
@@ -84,10 +116,8 @@ func TestRenderLabelsAnAmbiguousEnumWithItsSchema(t *testing.T) {
 					{Name: "mood", Schema: "public", Values: []string{"happy", "sad"}},
 				},
 			},
-			assert: func(c *qt.C, hcl string) {
-				c.Assert(hcl, qt.Contains, `enum "mood" {`)
-				c.Assert(hcl, qt.Not(qt.Contains), `enum "public" "mood"`)
-			},
+			wantBlocks: []string{`enum "mood" {`},
+			wantTypes:  []string{},
 		},
 		{
 			// The reference must gain the schema exactly where the block does,
@@ -104,9 +134,8 @@ func TestRenderLabelsAnAmbiguousEnumWithItsSchema(t *testing.T) {
 					{Name: "mood", Schema: "other", Values: []string{"happy", "sad"}},
 				},
 			},
-			assert: func(c *qt.C, hcl string) {
-				c.Assert(hcl, qt.Contains, `type = enum.other.mood`)
-			},
+			wantBlocks: []string{`enum "other" "mood" {`, `enum "public" "mood" {`},
+			wantTypes:  []string{`type = enum.other.mood`},
 		},
 		{
 			// One enum, one reference, one label: the shape every existing
@@ -121,9 +150,8 @@ func TestRenderLabelsAnAmbiguousEnumWithItsSchema(t *testing.T) {
 					{Name: "mood", Schema: "public", Values: []string{"happy", "sad"}},
 				},
 			},
-			assert: func(c *qt.C, hcl string) {
-				c.Assert(hcl, qt.Contains, `type = enum.mood`)
-			},
+			wantBlocks: []string{`enum "mood" {`},
+			wantTypes:  []string{`type = enum.mood`},
 		},
 	}
 
@@ -136,7 +164,8 @@ func TestRenderLabelsAnAmbiguousEnumWithItsSchema(t *testing.T) {
 			rendered, err := atlashclrender.RenderInspected(db, "postgres", "public")
 
 			c.Assert(err, qt.IsNil)
-			test.assert(c, string(rendered.Data))
+			c.Assert(enumBlockHeaders(string(rendered.Data)), qt.DeepEquals, test.wantBlocks)
+			c.Assert(enumColumnTypes(string(rendered.Data)), qt.DeepEquals, test.wantTypes)
 		})
 	}
 }

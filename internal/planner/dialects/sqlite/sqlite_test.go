@@ -419,7 +419,11 @@ func TestPlannerRebuildsTableForChangesAlterTableCannotExpress(t *testing.T) {
 		name      string
 		generated *goschema.Database
 		diff      *types.SchemaDiff
-		assert    func(c *qt.C, sql string)
+		// wantSQL is the shape-specific detail the rebuild must carry, and
+		// wantNoSQL what it must have left behind. The create/copy/drop/rename
+		// sequence every row shares is asserted once, below.
+		wantSQL   []string
+		wantNoSQL []string
 	}{
 		{
 			name: "column type change",
@@ -431,9 +435,9 @@ func TestPlannerRebuildsTableForChangesAlterTableCannotExpress(t *testing.T) {
 				TableName:       "users",
 				ColumnsModified: []types.ColumnDiff{{ColumnName: "name", Changes: map[string]string{"type": "text -> integer"}}},
 			}}},
-			assert: func(c *qt.C, sql string) {
-				c.Assert(sql, qt.Contains, `"name" INTEGER NOT NULL`)
-				c.Assert(sql, qt.Contains, `SELECT "id", "name" FROM "users";`)
+			wantSQL: []string{
+				`"name" INTEGER NOT NULL`,
+				`SELECT "id", "name" FROM "users";`,
 			},
 		},
 		{
@@ -446,10 +450,8 @@ func TestPlannerRebuildsTableForChangesAlterTableCannotExpress(t *testing.T) {
 				TableName:       "users",
 				ColumnsModified: []types.ColumnDiff{{ColumnName: "name", Changes: map[string]string{"nullable": "false -> true"}}},
 			}}},
-			assert: func(c *qt.C, sql string) {
-				c.Assert(sql, qt.Contains, `"name" TEXT`)
-				c.Assert(sql, qt.Not(qt.Contains), `"name" TEXT NOT NULL`)
-			},
+			wantSQL:   []string{`"name" TEXT`},
+			wantNoSQL: []string{`"name" TEXT NOT NULL`},
 		},
 		{
 			name: "not null default addition backfills the copy",
@@ -464,9 +466,7 @@ func TestPlannerRebuildsTableForChangesAlterTableCannotExpress(t *testing.T) {
 					Changes:    map[string]string{"nullable": "true -> false", "default": " -> 'x'"},
 				}},
 			}}},
-			assert: func(c *qt.C, sql string) {
-				c.Assert(sql, qt.Contains, `SELECT "id", IFNULL("name", 'x') AS "name" FROM "users";`)
-			},
+			wantSQL: []string{`SELECT "id", IFNULL("name", 'x') AS "name" FROM "users";`},
 		},
 		{
 			name: "table-level constraint change",
@@ -483,9 +483,7 @@ func TestPlannerRebuildsTableForChangesAlterTableCannotExpress(t *testing.T) {
 				TableName:        "users",
 				ConstraintsAdded: []string{"users_name_check"},
 			}}},
-			assert: func(c *qt.C, sql string) {
-				c.Assert(sql, qt.Contains, `CONSTRAINT "users_name_check" CHECK (length(name) > 2)`)
-			},
+			wantSQL: []string{`CONSTRAINT "users_name_check" CHECK (length(name) > 2)`},
 		},
 		{
 			name: "schema-level constraint change on an existing table",
@@ -507,9 +505,7 @@ func TestPlannerRebuildsTableForChangesAlterTableCannotExpress(t *testing.T) {
 					CheckExpression: "length(name) > 2",
 				}},
 			},
-			assert: func(c *qt.C, sql string) {
-				c.Assert(sql, qt.Contains, `CONSTRAINT "users_name_check" CHECK (length(name) > 2)`)
-			},
+			wantSQL: []string{`CONSTRAINT "users_name_check" CHECK (length(name) > 2)`},
 		},
 		{
 			name: "enum-backed check constraint change",
@@ -539,10 +535,8 @@ func TestPlannerRebuildsTableForChangesAlterTableCannotExpress(t *testing.T) {
 					Type:      "CHECK",
 				}},
 			},
-			assert: func(c *qt.C, sql string) {
-				c.Assert(sql, qt.Contains, `CHECK (status IN ('draft', 'published'))`)
-				c.Assert(sql, qt.Not(qt.Contains), "archived")
-			},
+			wantSQL:   []string{`CHECK (status IN ('draft', 'published'))`},
+			wantNoSQL: []string{"archived"},
 		},
 		{
 			name: "dropped column combined with an added column",
@@ -555,25 +549,30 @@ func TestPlannerRebuildsTableForChangesAlterTableCannotExpress(t *testing.T) {
 				ColumnsAdded:   []string{"nickname"},
 				ColumnsRemoved: []string{"email"},
 			}}},
-			assert: func(c *qt.C, sql string) {
-				c.Assert(sql, qt.Contains, `"nickname" TEXT`)
-				c.Assert(sql, qt.Contains, `INSERT INTO "__ptah_rebuild_users" ("id") SELECT "id" FROM "users";`)
+			wantSQL: []string{
+				`"nickname" TEXT`,
+				`INSERT INTO "__ptah_rebuild_users" ("id") SELECT "id" FROM "users";`,
 			},
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			sql, err := planner.GenerateSchemaDiffSQL(tt.diff, tt.generated, platform.SQLite)
+			sql, err := planner.GenerateSchemaDiffSQL(test.diff, test.generated, platform.SQLite)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Contains, `CREATE TABLE "__ptah_rebuild_users"`)
 			c.Assert(sql, qt.Contains, `INSERT INTO "__ptah_rebuild_users"`)
 			c.Assert(sql, qt.Contains, `DROP TABLE "users";`)
 			c.Assert(sql, qt.Contains, `ALTER TABLE "__ptah_rebuild_users" RENAME TO "users";`)
-			tt.assert(c, sql)
+			for _, want := range test.wantSQL {
+				c.Assert(sql, qt.Contains, want)
+			}
+			for _, unwanted := range test.wantNoSQL {
+				c.Assert(sql, qt.Not(qt.Contains), unwanted)
+			}
 		})
 	}
 }

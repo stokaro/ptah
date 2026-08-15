@@ -54,6 +54,37 @@ func defaultSchemaExtensionNames(extensions []dbschematypes.DBExtension) []strin
 	return names
 }
 
+// defaultSchemaObjects is everything the fixture holds, by kind. A row states
+// all six lists rather than only the kind its pattern names, because the two
+// ways a filter can be wrong are opposite: the reported bug is an object
+// surviving a pattern that names it, and the repair's own failure mode is a
+// pattern reaching objects it does not name.
+type defaultSchemaObjects struct {
+	Tables     []string
+	Columns    []string
+	Indexes    []string
+	Views      []string
+	MatViews   []string
+	Extensions []string
+}
+
+func defaultSchemaObjectsOf(schema *dbschematypes.DBSchema) defaultSchemaObjects {
+	columns := make([]string, 0, len(schema.Tables))
+	for _, table := range schema.Tables {
+		for _, column := range table.Columns {
+			columns = append(columns, table.QualifiedName()+"."+column.Name)
+		}
+	}
+	return defaultSchemaObjects{
+		Tables:     tableNames(schema.Tables),
+		Columns:    columns,
+		Indexes:    indexNames(schema.Indexes),
+		Views:      viewNames(schema.Views),
+		MatViews:   defaultSchemaMatViewNames(schema.MatViews),
+		Extensions: defaultSchemaExtensionNames(schema.Extensions),
+	}
+}
+
 // TestExcludeDatabaseWithDefaultSchema_QualifiedPatternsReachDefaultSchema is
 // the object-list form of the issue's completion criteria 1-4. Each row asserts
 // what survives the filter rather than an exit code: a silent no-op and a
@@ -74,69 +105,106 @@ func TestExcludeDatabaseWithDefaultSchema_QualifiedPatternsReachDefaultSchema(t 
 	tests := []struct {
 		name    string
 		pattern string
-		assert  func(*qt.C, *dbschematypes.DBSchema)
+		want    defaultSchemaObjects
 	}{
 		{
 			name:    "qualified default-schema table",
 			pattern: "public.users",
-			assert: func(c *qt.C, got *dbschematypes.DBSchema) {
-				c.Assert(tableNames(got.Tables), qt.DeepEquals, []string{"app.orders"})
-				c.Assert(indexNames(got.Indexes), qt.DeepEquals, []string{"orders_id_idx"})
+			want: defaultSchemaObjects{
+				Tables:     []string{"app.orders"},
+				Columns:    []string{"app.orders.id"},
+				Indexes:    []string{"orders_id_idx"},
+				Views:      []string{"v_users", "app.v_orders"},
+				MatViews:   []string{"mv_users", "app.mv_orders"},
+				Extensions: []string{"pgcrypto", "plpgsql"},
 			},
 		},
 		{
 			name:    "bare default-schema table stays supported",
 			pattern: "users",
-			assert: func(c *qt.C, got *dbschematypes.DBSchema) {
-				c.Assert(tableNames(got.Tables), qt.DeepEquals, []string{"app.orders"})
+			want: defaultSchemaObjects{
+				Tables:     []string{"app.orders"},
+				Columns:    []string{"app.orders.id"},
+				Indexes:    []string{"orders_id_idx"},
+				Views:      []string{"v_users", "app.v_orders"},
+				MatViews:   []string{"mv_users", "app.mv_orders"},
+				Extensions: []string{"pgcrypto", "plpgsql"},
 			},
 		},
 		{
 			name:    "qualified non-default-schema table stays supported",
 			pattern: "app.orders",
-			assert: func(c *qt.C, got *dbschematypes.DBSchema) {
-				c.Assert(tableNames(got.Tables), qt.DeepEquals, []string{"users"})
+			want: defaultSchemaObjects{
+				Tables:     []string{"users"},
+				Columns:    []string{"users.id", "users.name"},
+				Indexes:    []string{"users_name_idx"},
+				Views:      []string{"v_users", "app.v_orders"},
+				MatViews:   []string{"mv_users", "app.mv_orders"},
+				Extensions: []string{"pgcrypto", "plpgsql"},
 			},
 		},
 		{
 			name:    "qualified default-schema view",
 			pattern: "public.v_users",
-			assert: func(c *qt.C, got *dbschematypes.DBSchema) {
-				c.Assert(viewNames(got.Views), qt.DeepEquals, []string{"app.v_orders"})
+			want: defaultSchemaObjects{
+				Tables:     []string{"users", "app.orders"},
+				Columns:    []string{"users.id", "users.name", "app.orders.id"},
+				Indexes:    []string{"users_name_idx", "orders_id_idx"},
+				Views:      []string{"app.v_orders"},
+				MatViews:   []string{"mv_users", "app.mv_orders"},
+				Extensions: []string{"pgcrypto", "plpgsql"},
 			},
 		},
 		{
 			name:    "qualified default-schema materialized view",
 			pattern: "public.mv_users",
-			assert: func(c *qt.C, got *dbschematypes.DBSchema) {
-				c.Assert(defaultSchemaMatViewNames(got.MatViews), qt.DeepEquals, []string{"app.mv_orders"})
+			want: defaultSchemaObjects{
+				Tables:     []string{"users", "app.orders"},
+				Columns:    []string{"users.id", "users.name", "app.orders.id"},
+				Indexes:    []string{"users_name_idx", "orders_id_idx"},
+				Views:      []string{"v_users", "app.v_orders"},
+				MatViews:   []string{"app.mv_orders"},
+				Extensions: []string{"pgcrypto", "plpgsql"},
 			},
 		},
 		{
 			// The column the schema-relative spelling names. The qualified
 			// spelling of the same column is a depth error, not a deeper
 			// selector; see TestExcludeDatabaseWithDefaultSchema_RefusesPatternsDeeperThanTheScope.
+			// The index over the removed column leaves with it.
 			name:    "schema-relative column",
 			pattern: "users.name",
-			assert: func(c *qt.C, got *dbschematypes.DBSchema) {
-				c.Assert(tableNames(got.Tables), qt.DeepEquals, []string{"users", "app.orders"})
-				c.Assert(columnNames(got.Tables[0].Columns), qt.DeepEquals, []string{"id"})
-				c.Assert(indexNames(got.Indexes), qt.DeepEquals, []string{"orders_id_idx"})
+			want: defaultSchemaObjects{
+				Tables:     []string{"users", "app.orders"},
+				Columns:    []string{"users.id", "app.orders.id"},
+				Indexes:    []string{"orders_id_idx"},
+				Views:      []string{"v_users", "app.v_orders"},
+				MatViews:   []string{"mv_users", "app.mv_orders"},
+				Extensions: []string{"pgcrypto", "plpgsql"},
 			},
 		},
 		{
 			name:    "qualified extension stays supported",
 			pattern: "public.pgcrypto",
-			assert: func(c *qt.C, got *dbschematypes.DBSchema) {
-				c.Assert(defaultSchemaExtensionNames(got.Extensions), qt.DeepEquals, []string{"plpgsql"})
+			want: defaultSchemaObjects{
+				Tables:     []string{"users", "app.orders"},
+				Columns:    []string{"users.id", "users.name", "app.orders.id"},
+				Indexes:    []string{"users_name_idx", "orders_id_idx"},
+				Views:      []string{"v_users", "app.v_orders"},
+				MatViews:   []string{"mv_users", "app.mv_orders"},
+				Extensions: []string{"plpgsql"},
 			},
 		},
 		{
 			name:    "a different schema still matches nothing",
 			pattern: "nosuch.users",
-			assert: func(c *qt.C, got *dbschematypes.DBSchema) {
-				c.Assert(tableNames(got.Tables), qt.DeepEquals, []string{"users", "app.orders"})
-				c.Assert(viewNames(got.Views), qt.DeepEquals, []string{"v_users", "app.v_orders"})
+			want: defaultSchemaObjects{
+				Tables:     []string{"users", "app.orders"},
+				Columns:    []string{"users.id", "users.name", "app.orders.id"},
+				Indexes:    []string{"users_name_idx", "orders_id_idx"},
+				Views:      []string{"v_users", "app.v_orders"},
+				MatViews:   []string{"mv_users", "app.mv_orders"},
+				Extensions: []string{"pgcrypto", "plpgsql"},
 			},
 		},
 	}
@@ -149,7 +217,7 @@ func TestExcludeDatabaseWithDefaultSchema_QualifiedPatternsReachDefaultSchema(t 
 				defaultSchemaFixture(), []string{test.pattern}, "public")
 
 			c.Assert(err, qt.IsNil)
-			test.assert(c, got)
+			c.Assert(defaultSchemaObjectsOf(got), qt.DeepEquals, test.want)
 		})
 	}
 }
@@ -183,33 +251,37 @@ func TestExcludeDatabase_WithoutDefaultSchemaKeepsBareOnlyCandidates(t *testing.
 // Reverting the fix fails this with the table and the view still present in the
 // desired state, while the introspected side of the same pattern is empty.
 func TestExcludeGeneratedWithDefaultSchema_MatchesDatabaseSide(t *testing.T) {
+	// goschema.Finalize sorts tables by name; fields and views keep input order.
 	tests := []struct {
 		name    string
 		pattern string
-		assert  func(*qt.C, *goschema.Database)
+		want    generatedDefaultSchemaObjects
 	}{
 		{
 			name:    "qualified default-schema table",
 			pattern: "public.users",
-			assert: func(c *qt.C, got *goschema.Database) {
-				c.Assert(generatedTableNames(got.Tables), qt.DeepEquals, []string{"app.orders"})
-				c.Assert(generatedFieldNames(got.Fields), qt.DeepEquals, []string{"Order.id"})
+			want: generatedDefaultSchemaObjects{
+				Tables: []string{"app.orders"},
+				Fields: []string{"Order.id"},
+				Views:  []string{"v_users", "app.v_orders"},
 			},
 		},
 		{
 			name:    "qualified default-schema view",
 			pattern: "public.v_users",
-			assert: func(c *qt.C, got *goschema.Database) {
-				c.Assert(generatedViewNames(got.Views), qt.DeepEquals, []string{"app.v_orders"})
+			want: generatedDefaultSchemaObjects{
+				Tables: []string{"app.orders", "users"},
+				Fields: []string{"User.id", "Order.id"},
+				Views:  []string{"app.v_orders"},
 			},
 		},
 		{
 			name:    "a different schema still matches nothing",
 			pattern: "nosuch.users",
-			assert: func(c *qt.C, got *goschema.Database) {
-				// goschema.Finalize sorts tables by name; views keep input order.
-				c.Assert(generatedTableNames(got.Tables), qt.DeepEquals, []string{"app.orders", "users"})
-				c.Assert(generatedViewNames(got.Views), qt.DeepEquals, []string{"v_users", "app.v_orders"})
+			want: generatedDefaultSchemaObjects{
+				Tables: []string{"app.orders", "users"},
+				Fields: []string{"User.id", "Order.id"},
+				Views:  []string{"v_users", "app.v_orders"},
 			},
 		},
 	}
@@ -235,8 +307,24 @@ func TestExcludeGeneratedWithDefaultSchema_MatchesDatabaseSide(t *testing.T) {
 			got, err := atlasfilter.ExcludeGeneratedWithDefaultSchema(schema, []string{test.pattern}, "public")
 
 			c.Assert(err, qt.IsNil)
-			test.assert(c, got)
+			c.Assert(generatedDefaultSchemaObjectsOf(got), qt.DeepEquals, test.want)
 		})
+	}
+}
+
+// generatedDefaultSchemaObjects is the desired-side counterpart of
+// [defaultSchemaObjects], and carries every kind for the same reason.
+type generatedDefaultSchemaObjects struct {
+	Tables []string
+	Fields []string
+	Views  []string
+}
+
+func generatedDefaultSchemaObjectsOf(schema *goschema.Database) generatedDefaultSchemaObjects {
+	return generatedDefaultSchemaObjects{
+		Tables: generatedTableNames(schema.Tables),
+		Fields: generatedFieldNames(schema.Fields),
+		Views:  generatedViewNames(schema.Views),
 	}
 }
 

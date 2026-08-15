@@ -25,7 +25,6 @@ import (
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
-
 	"go.5x5.cz/ptah/internal/dbtarget"
 )
 

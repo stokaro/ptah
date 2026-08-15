@@ -73,31 +73,24 @@ table "posts" {
 // wrong, since each file there declares exactly one.
 func TestLoadRefusesMoreSchemasThanTheRunCanReach(t *testing.T) {
 	tests := []struct {
-		name   string
-		files  map[string]string
-		opts   schemafile.Options
-		assert func(c *qt.C, db *goschema.Database, err error)
+		name    string
+		files   map[string]string
+		opts    schemafile.Options
+		wantErr string
 	}{
 		{
 			name:  "two schemas under a limited run refuse and name both blocks",
 			files: map[string]string{"schema.hcl": twoSchemasHCL},
 			opts:  schemafile.Options{Dialect: "sqlite", SchemaScope: "main", SchemaScopeFlag: "dev-url"},
-			assert: func(c *qt.C, db *goschema.Database, err error) {
-				c.Assert(err, qt.ErrorMatches,
-					`cannot use HCL with more than 1 schema when dev-url is limited to schema "main": `+
-						`2 top-level schema blocks are declared: "main" at .*schema\.hcl:1, "other" at .*schema\.hcl:2`)
-				c.Assert(db, qt.IsNil)
-			},
+			wantErr: `cannot use HCL with more than 1 schema when dev-url is limited to schema "main": ` +
+				`2 top-level schema blocks are declared: "main" at .*schema\.hcl:1, "other" at .*schema\.hcl:2`,
 		},
 		{
 			name:  "the same schema declared twice is two blocks and refuses",
 			files: map[string]string{"schema.hcl": sameSchemaTwiceHCL},
 			opts:  schemafile.Options{Dialect: "sqlite", SchemaScope: "main", SchemaScopeFlag: "dev-url"},
-			assert: func(c *qt.C, db *goschema.Database, err error) {
-				c.Assert(err, qt.ErrorMatches,
-					`cannot use HCL with more than 1 schema when dev-url is limited to schema "main": `+
-						`2 top-level schema blocks are declared: "main" at .*, "main" at .*`)
-			},
+			wantErr: `cannot use HCL with more than 1 schema when dev-url is limited to schema "main": ` +
+				`2 top-level schema blocks are declared: "main" at .*, "main" at .*`,
 		},
 		{
 			name: "a directory whose files each open with a schema block refuses",
@@ -106,60 +99,14 @@ func TestLoadRefusesMoreSchemasThanTheRunCanReach(t *testing.T) {
 				"b.hcl": postsHCL,
 			},
 			opts: schemafile.Options{Dialect: "sqlite", SchemaScope: "main", SchemaScopeFlag: "dev-url"},
-			assert: func(c *qt.C, db *goschema.Database, err error) {
-				c.Assert(err, qt.ErrorMatches,
-					`cannot use HCL with more than 1 schema when dev-url is limited to schema "main": `+
-						`2 top-level schema blocks are declared: "main" at .*a\.hcl:1, "main" at .*b\.hcl:1`)
-			},
+			wantErr: `cannot use HCL with more than 1 schema when dev-url is limited to schema "main": ` +
+				`2 top-level schema blocks are declared: "main" at .*a\.hcl:1, "main" at .*b\.hcl:1`,
 		},
 		{
-			name:  "the flag the run was limited by is the one quoted",
-			files: map[string]string{"schema.hcl": twoSchemasHCL},
-			opts:  schemafile.Options{Dialect: "sqlite", SchemaScope: "public", SchemaScopeFlag: "url"},
-			assert: func(c *qt.C, db *goschema.Database, err error) {
-				c.Assert(err, qt.ErrorMatches,
-					`cannot use HCL with more than 1 schema when url is limited to schema "public": .*`)
-			},
-		},
-		{
-			name:  "two schemas on a realm-scoped run load both",
-			files: map[string]string{"schema.hcl": twoSchemasHCL},
-			opts:  schemafile.Options{Dialect: "sqlite"},
-			assert: func(c *qt.C, db *goschema.Database, err error) {
-				c.Assert(err, qt.IsNil)
-				c.Assert(schemaNames(db), qt.DeepEquals, []string{"main", "other"})
-			},
-		},
-		{
-			name:  "one schema under a limited run loads",
-			files: map[string]string{"schema.hcl": oneSchemaHCL},
-			opts:  schemafile.Options{Dialect: "sqlite", SchemaScope: "main", SchemaScopeFlag: "dev-url"},
-			assert: func(c *qt.C, db *goschema.Database, err error) {
-				c.Assert(err, qt.IsNil)
-				c.Assert(tableNames(db), qt.DeepEquals, []string{"users"})
-			},
-		},
-		{
-			name:  "a document with no schema block at all loads under a limited run",
-			files: map[string]string{"schema.hcl": postsHCL[len("schema \"main\" {}\n"):]},
-			opts:  schemafile.Options{Dialect: "sqlite", SchemaScope: "main", SchemaScopeFlag: "dev-url"},
-			assert: func(c *qt.C, db *goschema.Database, err error) {
-				c.Assert(err, qt.IsNil)
-				c.Assert(tableNames(db), qt.DeepEquals, []string{"posts"})
-			},
-		},
-		{
-			name: "a SQL directory is unaffected by the gate",
-			files: map[string]string{
-				"1_a.sql": "CREATE TABLE users (id INTEGER PRIMARY KEY);\n",
-				"2_b.sql": "CREATE TABLE posts (id INTEGER PRIMARY KEY);\n",
-			},
-			opts: schemafile.Options{Dialect: "sqlite", SchemaScope: "main", SchemaScopeFlag: "dev-url"},
-			assert: func(c *qt.C, db *goschema.Database, err error) {
-				c.Assert(err, qt.IsNil)
-				c.Assert(tableNames(db), qt.Contains, "users")
-				c.Assert(tableNames(db), qt.Contains, "posts")
-			},
+			name:    "the flag the run was limited by is the one quoted",
+			files:   map[string]string{"schema.hcl": twoSchemasHCL},
+			opts:    schemafile.Options{Dialect: "sqlite", SchemaScope: "public", SchemaScopeFlag: "url"},
+			wantErr: `cannot use HCL with more than 1 schema when url is limited to schema "public": .*`,
 		},
 	}
 
@@ -170,7 +117,75 @@ func TestLoadRefusesMoreSchemasThanTheRunCanReach(t *testing.T) {
 
 			db, err := schemafile.LoadPath(dir, test.opts)
 
-			test.assert(c, db, err)
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			// A refusal that still handed back a document would let a caller
+			// that ignores the error migrate the half the run can reach.
+			c.Assert(db, qt.IsNil)
+		})
+	}
+}
+
+// TestLoadAcceptsADocumentTheRunCanReach is the boundary of the refusal above:
+// every row here declares no more schemas than the run reaches, so the gate must
+// stay out of the way and the whole document must arrive.
+//
+// The last two rows are the ones that keep the gate from being written as "a
+// limited run refuses a document with no schema block of its own" and as "a
+// limited run refuses a directory of several files", both of which pass every
+// refusing row.
+func TestLoadAcceptsADocumentTheRunCanReach(t *testing.T) {
+	tests := []struct {
+		name        string
+		files       map[string]string
+		opts        schemafile.Options
+		wantSchemas []string
+		wantTables  []string
+	}{
+		{
+			name:        "two schemas on a realm-scoped run load both",
+			files:       map[string]string{"schema.hcl": twoSchemasHCL},
+			opts:        schemafile.Options{Dialect: "sqlite"},
+			wantSchemas: []string{"main", "other"},
+			wantTables:  []string{"users"},
+		},
+		{
+			name:        "one schema under a limited run loads",
+			files:       map[string]string{"schema.hcl": oneSchemaHCL},
+			opts:        schemafile.Options{Dialect: "sqlite", SchemaScope: "main", SchemaScopeFlag: "dev-url"},
+			wantSchemas: []string{"main"},
+			wantTables:  []string{"users"},
+		},
+		{
+			name:        "a document with no schema block at all loads under a limited run",
+			files:       map[string]string{"schema.hcl": postsHCL[len("schema \"main\" {}\n"):]},
+			opts:        schemafile.Options{Dialect: "sqlite", SchemaScope: "main", SchemaScopeFlag: "dev-url"},
+			wantSchemas: []string{},
+			wantTables:  []string{"posts"},
+		},
+		{
+			name: "a SQL directory is unaffected by the gate",
+			files: map[string]string{
+				"1_a.sql": "CREATE TABLE users (id INTEGER PRIMARY KEY);\n",
+				"2_b.sql": "CREATE TABLE posts (id INTEGER PRIMARY KEY);\n",
+			},
+			opts:        schemafile.Options{Dialect: "sqlite", SchemaScope: "main", SchemaScopeFlag: "dev-url"},
+			wantSchemas: []string{},
+			// Sorted rather than in file order: the SQL path finishes through
+			// goschema.Finalize, which orders tables by their dependencies.
+			wantTables: []string{"posts", "users"},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			dir := writeSchemaDir(c, test.files)
+
+			db, err := schemafile.LoadPath(dir, test.opts)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(schemaNames(db), qt.DeepEquals, test.wantSchemas)
+			c.Assert(tableNames(db), qt.DeepEquals, test.wantTables)
 		})
 	}
 }

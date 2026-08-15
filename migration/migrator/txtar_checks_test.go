@@ -543,14 +543,13 @@ SELECT 3;
 // newSQLiteDryRunMigrator builds a two-migration Atlas-format directory against
 // a fresh database and puts the writer in dry-run mode, which is the exact
 // configuration #1005 is about: writes are intercepted, reads are not.
-func newSQLiteDryRunMigrator(t *testing.T, first, second string) (*dbschema.DatabaseConnection, *migrator.Migrator) {
-	c := qt.New(t)
-	t.Helper()
+func newSQLiteDryRunMigrator(c *qt.C, first, second string) (*dbschema.DatabaseConnection, *migrator.Migrator) {
+	c.Helper()
 	ctx := context.Background()
-	path := filepath.Join(t.TempDir(), "dry-run-checks.db")
+	path := filepath.Join(c.TempDir(), "dry-run-checks.db")
 	conn, err := dbschema.ConnectToDatabase(ctx, "sqlite://"+path)
 	c.Assert(err, qt.IsNil)
-	t.Cleanup(func() { _ = conn.Close() })
+	c.Cleanup(func() { _ = conn.Close() })
 
 	m, err := migrator.NewFSMigrator(
 		conn,
@@ -587,76 +586,87 @@ UPDATE users SET name = 'x';
 ALTER TABLE users ADD COLUMN email TEXT;
 `
 
+// dryRunMigrateUp applies the two-migration fixture in dry-run mode and returns
+// the versions the run reported as deferred alongside its error.
+func dryRunMigrateUp(c *qt.C, first, second string) (deferred []int64, err error) {
+	c.Helper()
+	_, m := newSQLiteDryRunMigrator(c, first, second)
+	err = m.MigrateUpWithOptions(context.Background(), migrator.MigrateUpOptions{
+		ChecksDeferredObserver: func(_ context.Context, versions []int64) {
+			deferred = versions
+		},
+	})
+	return deferred, err
+}
+
 // A dry run evaluates a migration's assertions only where the state it observes
 // is the state a real apply would evaluate them against — the first migration
-// executed in the run. Later migrations' assertions are parsed and statically
-// validated but not evaluated, and the run reports which ones it deferred.
+// executed in the run. Later migrations' assertions are not evaluated, and the
+// run reports which ones it deferred.
 //
-// Without the split, the first row fails with "no such table: users" even
-// though applying the directory for real succeeds; and a fix that merely
-// skipped the checks would take the static-validation row down with it.
-func TestMigrateUp_DryRunChecksObserveApplyState(t *testing.T) {
+// Without that distinction the first row fails with "no such table: users" even
+// though applying the directory for real succeeds. The unchecked row is what
+// keeps the report honest in the other direction: a run that deferred nothing
+// must say so rather than name a version it invented.
+func TestMigrateUp_DryRunDefersALaterMigrationsChecks(t *testing.T) {
 	tests := []struct {
 		name   string
 		first  string
 		second string
-		assert func(c *qt.C, err error, deferred []int64)
+		// wantDeferred is the whole observation: the version whose assertions
+		// were parsed but not run, or nothing at all.
+		wantDeferred []int64
 	}{
 		{
-			name:   "later migration's check is deferred, not evaluated",
-			first:  dryRunCreateUsers,
-			second: txtarCheckedAddEmail,
-			assert: func(c *qt.C, err error, deferred []int64) {
-				c.Assert(err, qt.IsNil)
-				c.Assert(deferred, qt.DeepEquals, []int64{2})
-			},
+			name:         "later migration's check is deferred, not evaluated",
+			first:        dryRunCreateUsers,
+			second:       txtarCheckedAddEmail,
+			wantDeferred: []int64{2},
 		},
 		{
-			name:   "first migration's check is evaluated and can fail",
-			first:  dryRunTxtarFalseCheck,
-			second: "ALTER TABLE users ADD COLUMN email TEXT;\n",
-			assert: func(c *qt.C, err error, deferred []int64) {
-				c.Assert(err, qt.IsNotNil)
-				var checkErr *migrator.CheckFailedError
-				c.Assert(err, qt.ErrorAs, &checkErr, qt.Commentf("want CheckFailedError, got %v", err))
-				c.Assert(checkErr.Version, qt.Equals, int64(1))
-				c.Assert(deferred, qt.IsNil)
-			},
-		},
-		{
-			name:   "a deferred migration's assertion is still statically validated",
-			first:  dryRunCreateUsers,
-			second: dryRunTxtarWriteAssertion,
-			assert: func(c *qt.C, err error, deferred []int64) {
-				c.Assert(err, qt.IsNotNil)
-				c.Assert(err.Error(), qt.Contains, "check assertion must be a read-only SELECT statement")
-				c.Assert(deferred, qt.IsNil)
-			},
-		},
-		{
-			name:   "a directory without checks defers nothing",
-			first:  dryRunCreateUsers,
-			second: txtarUncheckedAddEmail,
-			assert: func(c *qt.C, err error, deferred []int64) {
-				c.Assert(err, qt.IsNil)
-				c.Assert(deferred, qt.IsNil)
-			},
+			name:         "a directory without checks defers nothing",
+			first:        dryRunCreateUsers,
+			second:       txtarUncheckedAddEmail,
+			wantDeferred: nil,
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			_, m := newSQLiteDryRunMigrator(t, test.first, test.second)
 
-			var deferred []int64
-			err := m.MigrateUpWithOptions(context.Background(), migrator.MigrateUpOptions{
-				ChecksDeferredObserver: func(_ context.Context, versions []int64) {
-					deferred = versions
-				},
-			})
+			deferred, err := dryRunMigrateUp(c, test.first, test.second)
 
-			test.assert(c, err, deferred)
+			c.Assert(err, qt.IsNil)
+			c.Assert(deferred, qt.DeepEquals, test.wantDeferred)
 		})
 	}
+}
+
+// The first migration executed in the run observes the state a real apply would
+// give it, so its assertions are evaluated for real and a false one fails the
+// dry run — naming the version that failed, not the run.
+func TestMigrateUp_DryRunEvaluatesTheFirstMigrationsCheck(t *testing.T) {
+	c := qt.New(t)
+
+	deferred, err := dryRunMigrateUp(c, dryRunTxtarFalseCheck, "ALTER TABLE users ADD COLUMN email TEXT;\n")
+
+	c.Assert(err, qt.IsNotNil)
+	var checkErr *migrator.CheckFailedError
+	c.Assert(err, qt.ErrorAs, &checkErr, qt.Commentf("want CheckFailedError, got %v", err))
+	c.Assert(checkErr.Version, qt.Equals, int64(1))
+	c.Assert(deferred, qt.IsNil)
+}
+
+// A deferred assertion is still parsed and statically validated, which is the
+// half a fix that merely skipped the later checks would take down with it: a
+// write dressed up as a check would then reach a real apply unexamined.
+func TestMigrateUp_DryRunStaticallyValidatesADeferredAssertion(t *testing.T) {
+	c := qt.New(t)
+
+	deferred, err := dryRunMigrateUp(c, dryRunCreateUsers, dryRunTxtarWriteAssertion)
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(err.Error(), qt.Contains, "check assertion must be a read-only SELECT statement")
+	c.Assert(deferred, qt.IsNil)
 }

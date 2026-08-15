@@ -205,32 +205,34 @@ func TestCompatMigrateApply_ConvertedDirDriftRefuses(t *testing.T) {
 	for _, fixture := range convertedApplyFixtures() {
 		t.Run(fixture.format, func(t *testing.T) {
 			states := []struct {
-				name   string
-				mutate func(c *qt.C, dir string)
-				line   int
-				file   string
-				reason string
+				name string
+				// writeAfterHash are files written once atlas.sum has been
+				// computed, so the sum no longer describes the directory: an
+				// existing name is an edit, a new one is an addition.
+				writeAfterHash map[string]string
+				// removeAfterHash are files deleted once atlas.sum has been
+				// computed.
+				removeAfterHash []string
+				line            int
+				file            string
+				reason          string
 			}{
 				{
 					name: "edited",
-					mutate: func(c *qt.C, dir string) {
-						appendToFile(c, filepath.Join(dir, fixture.covered), "\n-- tampered, sum not rehashed\n")
+					writeAfterHash: map[string]string{
+						fixture.covered: fixture.files[fixture.covered] + "\n-- tampered, sum not rehashed\n",
 					},
 					line: 2, file: fixture.covered, reason: "edited",
 				},
 				{
-					name: "added",
-					mutate: func(c *qt.C, dir string) {
-						writeConvertedApplyDir(c, dir, map[string]string{fixture.extra: fixture.extraBody})
-					},
-					line: 3, file: fixture.extra, reason: "added",
+					name:           "added",
+					writeAfterHash: map[string]string{fixture.extra: fixture.extraBody},
+					line:           3, file: fixture.extra, reason: "added",
 				},
 				{
-					name: "removed",
-					mutate: func(c *qt.C, dir string) {
-						c.Assert(os.Remove(filepath.Join(dir, fixture.covered)), qt.IsNil)
-					},
-					line: 2, file: fixture.covered, reason: "removed",
+					name:            "removed",
+					removeAfterHash: []string{fixture.covered},
+					line:            2, file: fixture.covered, reason: "removed",
 				},
 			}
 			for _, state := range states {
@@ -239,7 +241,10 @@ func TestCompatMigrateApply_ConvertedDirDriftRefuses(t *testing.T) {
 					tempDir := c.TempDir()
 					dir := writeConvertedApplyDir(c, filepath.Join(tempDir, "m"), fixture.files)
 					hashConvertedApplyDir(c, dir, fixture.format)
-					state.mutate(c, dir)
+					writeConvertedApplyDir(c, dir, state.writeAfterHash)
+					for _, name := range state.removeAfterHash {
+						c.Assert(os.Remove(filepath.Join(dir, name)), qt.IsNil)
+					}
 					dbPath := filepath.Join(tempDir, "converted.db")
 
 					stdout, stderr, err := compatApplyConverted(dir, fixture.format, dbPath)
@@ -726,17 +731,22 @@ func TestCompatMigrateApply_ConvertedDirMalformedSumRefuses(t *testing.T) {
 // refusal from apply is byte-identical to `migrate validate` on the same
 // directory, because both render through the same migratevalidate helpers.
 func TestCompatMigrateApply_ConvertedDirMatchesValidateOutput(t *testing.T) {
+	const upBody = "CREATE TABLE widgets (id INTEGER PRIMARY KEY);\n"
+
 	tests := []struct {
-		name    string
-		prepare func(c *qt.C, dir string)
+		name string
+		// hashFirst names the layouts atlas.sum is written for before the edit
+		// below, empty for a directory that was never hashed.
+		hashFirst []string
+		// editAfterHash rewrites files once atlas.sum has been computed, so the
+		// sum no longer describes the directory.
+		editAfterHash map[string]string
 	}{
-		{name: "unhashed", prepare: func(*qt.C, string) {}},
+		{name: "unhashed"},
 		{
-			name: "tampered",
-			prepare: func(c *qt.C, dir string) {
-				hashConvertedApplyDir(c, dir, "golang-migrate")
-				appendToFile(c, filepath.Join(dir, "1_init.up.sql"), "\n-- tampered\n")
-			},
+			name:          "tampered",
+			hashFirst:     []string{"golang-migrate"},
+			editAfterHash: map[string]string{"1_init.up.sql": upBody + "\n-- tampered\n"},
 		},
 	}
 
@@ -745,10 +755,13 @@ func TestCompatMigrateApply_ConvertedDirMatchesValidateOutput(t *testing.T) {
 			c := qt.New(t)
 			tempDir := c.TempDir()
 			dir := writeConvertedApplyDir(c, filepath.Join(tempDir, "m"), map[string]string{
-				"1_init.up.sql":   "CREATE TABLE widgets (id INTEGER PRIMARY KEY);\n",
+				"1_init.up.sql":   upBody,
 				"1_init.down.sql": "DROP TABLE widgets;\n",
 			})
-			tt.prepare(c, dir)
+			for _, format := range tt.hashFirst {
+				hashConvertedApplyDir(c, dir, format)
+			}
+			writeConvertedApplyDir(c, dir, tt.editAfterHash)
 
 			applyOut, applyErrOut, applyErr := compatApplyConverted(
 				dir, "golang-migrate", filepath.Join(tempDir, "converted.db"))
@@ -774,23 +787,27 @@ func TestCompatMigrateApply_ConvertedDirMatchesValidateOutput(t *testing.T) {
 // The clean row is TestMigrateApplyExecutesGooseProjectUpSectionOnly, which
 // hashes the same directory and applies it.
 func TestCompatMigrateApply_ConvertedDirFromProjectConfigIsGated(t *testing.T) {
+	const gooseBody = "-- +goose Up\nCREATE TABLE widgets (id INTEGER PRIMARY KEY);\n"
+
 	tests := []struct {
-		name    string
-		prepare func(c *qt.C)
-		wantErr string
+		name string
+		// hashFirst names the layouts atlas.sum is written for before the edit
+		// below, empty for a directory that was never hashed.
+		hashFirst []string
+		// editAfterHash rewrites files under migrations/ once atlas.sum has been
+		// computed, so the sum no longer describes the directory.
+		editAfterHash map[string]string
+		wantErr       string
 	}{
 		{
 			name:    "unhashed",
-			prepare: func(*qt.C) {},
 			wantErr: "Error: checksum file not found",
 		},
 		{
-			name: "tampered",
-			prepare: func(c *qt.C) {
-				hashConvertedApplyDir(c, "migrations", "goose")
-				appendToFile(c, filepath.Join("migrations", "1_create_widgets.sql"), "\n-- tampered\n")
-			},
-			wantErr: "Error: checksum mismatch",
+			name:          "tampered",
+			hashFirst:     []string{"goose"},
+			editAfterHash: map[string]string{"1_create_widgets.sql": gooseBody + "\n-- tampered\n"},
+			wantErr:       "Error: checksum mismatch",
 		},
 	}
 
@@ -799,9 +816,11 @@ func TestCompatMigrateApply_ConvertedDirFromProjectConfigIsGated(t *testing.T) {
 			c := qt.New(t)
 			root := t.TempDir()
 			t.Chdir(root)
-			writeAtlasApplyProjectMigration(c, "migrations", "1_create_widgets.sql",
-				"-- +goose Up\nCREATE TABLE widgets (id INTEGER PRIMARY KEY);\n")
-			tt.prepare(c)
+			writeAtlasApplyProjectMigration(c, "migrations", "1_create_widgets.sql", gooseBody)
+			for _, format := range tt.hashFirst {
+				hashConvertedApplyDir(c, "migrations", format)
+			}
+			writeConvertedApplyDir(c, "migrations", tt.editAfterHash)
 			dbPath := filepath.Join(root, "apply.db")
 			writeAtlasApplyProjectConfig(c, dbPath, "goose", "LINEAR")
 
@@ -835,28 +854,23 @@ func TestCompatMigrateApply_ConvertedEmptyCoveredSetReportsNothingToExecute(t *t
 		"sub/1_init.sql": "-- +goose Up\nCREATE TABLE widgets (id INTEGER PRIMARY KEY);\n",
 	}
 	readmeOnly := map[string]string{"README.md": "notes\n"}
-	// hash is the {no atlas.sum, hashed} axis, carried as per-row wiring rather
-	// than a branch in the body. The hashed rows go through the same
-	// `migrate hash` a user runs, so they exercise the hash-then-apply round
-	// trip the issue measured.
-	leaveUnhashed := func(*qt.C, string) {}
-	writeSum := func(c *qt.C, dir string) {
-		c.Helper()
-		_, _, err := runCompat("migrate", "hash", "--dir", "file://"+dir+"?format=goose")
-		c.Assert(err, qt.IsNil)
-	}
 
 	tests := []struct {
 		name  string
 		files map[string]string
-		hash  func(*qt.C, string)
+		// hashFirst is the {no atlas.sum, hashed} axis, carried as per-row data
+		// rather than a branch in the body: it names the layouts atlas.sum is
+		// written for, and the hashed rows go through the same `migrate hash` a
+		// user runs, so they exercise the hash-then-apply round trip the issue
+		// measured.
+		hashFirst []string
 	}{
-		{name: "empty directory", files: nil, hash: leaveUnhashed},
-		{name: "empty directory hashed", files: nil, hash: writeSum},
-		{name: "README only", files: readmeOnly, hash: leaveUnhashed},
-		{name: "README only hashed", files: readmeOnly, hash: writeSum},
-		{name: "SQL in a subdirectory only", files: subdirOnly, hash: leaveUnhashed},
-		{name: "SQL in a subdirectory only hashed", files: subdirOnly, hash: writeSum},
+		{name: "empty directory", files: nil},
+		{name: "empty directory hashed", files: nil, hashFirst: []string{"goose"}},
+		{name: "README only", files: readmeOnly},
+		{name: "README only hashed", files: readmeOnly, hashFirst: []string{"goose"}},
+		{name: "SQL in a subdirectory only", files: subdirOnly},
+		{name: "SQL in a subdirectory only hashed", files: subdirOnly, hashFirst: []string{"goose"}},
 	}
 
 	for _, tt := range tests {
@@ -866,7 +880,9 @@ func TestCompatMigrateApply_ConvertedEmptyCoveredSetReportsNothingToExecute(t *t
 			dir := filepath.Join(tempDir, "m")
 			c.Assert(os.MkdirAll(dir, 0o755), qt.IsNil)
 			writeConvertedApplyDir(c, dir, tt.files)
-			tt.hash(c, dir)
+			for _, format := range tt.hashFirst {
+				hashConvertedApplyDir(c, dir, format)
+			}
 			dbPath := filepath.Join(tempDir, "converted.db")
 
 			stdout, stderr, err := compatApplyConverted(dir, "goose", dbPath)

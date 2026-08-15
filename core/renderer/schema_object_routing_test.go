@@ -203,61 +203,107 @@ func TestRender_NoDialectLosesADeclaredObject(t *testing.T) {
 // above.
 //
 // "No cell is silent" is satisfied by a classifier that never returns "silent",
-// and by a renderer that answered every kind on every engine with a comment. The
-// rows here pin both edges: some cells must be executable DDL and some must be a
-// named refusal, and the PostgreSQL row must be all DDL, so the grid cannot pass
-// by refusing everything.
+// and by a renderer that answered every kind on every engine with a comment.
+// Both edges are pinned here: the assertion before the table requires a named
+// refusal to exist at all, and the rows name the cells that must be executable
+// DDL -- every kind on PostgreSQL, and the table and the view on every engine --
+// so the grid cannot pass by refusing everything.
 func TestRender_TheRoutingGridDistinguishesItsAnswers(t *testing.T) {
 	c := qt.New(t)
 
 	cells := routedObjectGrid(c)
 
+	// The floor the rows below cannot state as a slice: at least one cell has to
+	// be a named refusal, or the classifier is reading every output as DDL and
+	// the "no cell is silent" test above is measuring one answer, not three.
+	c.Assert(len(cellsAnswering(cells, "named")) > 0, qt.IsTrue,
+		qt.Commentf("no cell is a named refusal; the classifier reads everything as DDL"))
+
 	tests := []struct {
-		name  string
-		check func(*qt.C)
-	}{{
-		name: "postgres emits every kind",
-		check: func(c *qt.C) {
-			c.Assert(cellsAnswering(dialectCells(cells, platform.Postgres), "ddl"),
-				qt.HasLen, len(routedObjectRows))
+		name string
+		// cells is the slice of the grid the row is about, and want is every
+		// line in it that answers. Naming the lines rather than counting them
+		// is what makes a regression say which object moved on which engine.
+		cells  []routedObjectCell
+		answer string
+		want   []string
+	}{
+		{
+			name:   "postgres emits every kind",
+			cells:  dialectCells(cells, platform.Postgres),
+			answer: "ddl",
+			want: []string{
+				"postgres     sequence  seq_probe",
+				"postgres     domain    domain_probe",
+				"postgres     role      role_probe",
+				"postgres     table     table_probe",
+				"postgres     view      view_probe",
+				"postgres     function  func_probe",
+				"postgres     trigger   trigger_probe",
+				"postgres     grant     grant_probe",
+			},
 		},
-	}, {
-		name: "some cells are named refusals",
-		check: func(c *qt.C) {
-			c.Assert(len(cellsAnswering(cells, "named")) > 0, qt.IsTrue,
-				qt.Commentf("no cell is a named refusal; the classifier reads everything as DDL"))
-		},
-	}, {
-		name: "mysql family refuses roles",
-		check: func(c *qt.C) {
-			c.Assert(cellsAnswering(kindCells(cells, "role"), "refused"), qt.DeepEquals, []string{
+		{
+			name:   "mysql family refuses roles",
+			cells:  kindCells(cells, "role"),
+			answer: "refused",
+			want: []string{
 				"mysql        role      role_probe",
 				"mariadb      role      role_probe",
-			})
+			},
 		},
-	}, {
-		name: "the table and the view are executable everywhere",
-		check: func(c *qt.C) {
-			for _, kind := range []string{"table", "view"} {
-				c.Assert(cellsAnswering(kindCells(cells, kind), "ddl"), qt.HasLen, len(routingDialects),
-					qt.Commentf("%s is not executable on every dialect", kind))
-			}
+		{
+			name:   "the table is executable everywhere",
+			cells:  kindCells(cells, "table"),
+			answer: "ddl",
+			want: []string{
+				"postgres     table     table_probe",
+				"cockroachdb  table     table_probe",
+				"yugabytedb   table     table_probe",
+				"spanner      table     table_probe",
+				"clickhouse   table     table_probe",
+				"mysql        table     table_probe",
+				"mariadb      table     table_probe",
+				"sqlserver    table     table_probe",
+				"sqlite       table     table_probe",
+			},
 		},
-	}, {
-		name: "sqlite refuses the five kinds it has no object for",
-		check: func(c *qt.C) {
-			c.Assert(cellsAnswering(dialectCells(cells, platform.SQLite), "named"), qt.DeepEquals, []string{
+		{
+			name:   "the view is executable everywhere",
+			cells:  kindCells(cells, "view"),
+			answer: "ddl",
+			want: []string{
+				"postgres     view      view_probe",
+				"cockroachdb  view      view_probe",
+				"yugabytedb   view      view_probe",
+				"spanner      view      view_probe",
+				"clickhouse   view      view_probe",
+				"mysql        view      view_probe",
+				"mariadb      view      view_probe",
+				"sqlserver    view      view_probe",
+				"sqlite       view      view_probe",
+			},
+		},
+		{
+			name:   "sqlite refuses the five kinds it has no object for",
+			cells:  dialectCells(cells, platform.SQLite),
+			answer: "named",
+			want: []string{
 				"sqlite       sequence  seq_probe",
 				"sqlite       domain    domain_probe",
 				"sqlite       role      role_probe",
 				"sqlite       function  func_probe",
 				"sqlite       grant     grant_probe",
-			})
+			},
 		},
-	}}
+	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) { test.check(c) })
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(cellsAnswering(test.cells, test.answer), qt.DeepEquals, test.want)
+		})
 	}
 }
 

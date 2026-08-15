@@ -11,7 +11,6 @@ import (
 
 	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/dbschema/mysql"
-
 	"go.5x5.cz/ptah/internal/dbtarget"
 )
 

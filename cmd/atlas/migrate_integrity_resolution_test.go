@@ -318,9 +318,18 @@ func assertNoAtlasSum(c *qt.C, dir string) {
 	c.Assert(os.IsNotExist(statErr), qt.IsTrue, qt.Commentf("an atlas.sum was written for a refused directory"))
 }
 
-// TestCompatMigrateHashDirectoryNamedSQL pins the per-format membership rule for
-// a DIRECTORY whose name matches the layout's glob, measured against the pinned
-// community binary v1.3.0 on 2026-08-03 (stokaro/ptah#991).
+// The two bodies every directory-named-SQL fixture is built from. They are
+// package constants because the refusal and the acceptance are separate tests
+// over the same layouts.
+const (
+	directoryNamedSQLGooseBody = "-- +goose Up\nCREATE TABLE w (id int);\n"
+	directoryNamedSQLPlainBody = "CREATE TABLE w (id int);\n"
+)
+
+// TestCompatMigrateHashRefusesADirectoryItsGlobMatches pins the per-format
+// membership rule for a DIRECTORY whose name matches the layout's glob,
+// measured against the pinned community binary v1.3.0 on 2026-08-03
+// (stokaro/ptah#991).
 //
 // Atlas CE reaches every non-Flyway layout through a per-format glob, and a
 // glob matches on the name alone, so a directory called weird.sql is a member of
@@ -332,107 +341,165 @@ func assertNoAtlasSum(c *qt.C, dir string) {
 //	exit=1, no atlas.sum written
 //
 // Ptah used to skip the entry and write a sum over the remainder — a sum the
-// community binary then refused to read, which is the trap #991 reports. Every
-// row here separates the fix from a plausible alternative, so passing is
-// evidence about the RULE and not only about the headline shape:
+// community binary then refused to read, which is the trap #991 reports.
 //
-//   - goose with the directory, and goose without it. The second is what stops
-//     "always refuse" from passing.
-//   - golang-migrate beside weird.sql (accepted) and beside weird.up.sql
-//     (refused). The oracle globs *.up.sql for that format, so this pair pins
-//     that the suffix filter decides membership rather than the read.
-//   - flyway beside weird.sql, and with a migration nested inside it. The
-//     oracle WALKS a Flyway tree instead of globbing it, so a directory is a
-//     node it descends into and never reads: both tools exit 0 and produce
-//     byte-identical sums. These rows fail if the fix is applied to treeNames
-//     or expressed as "reject any .sql directory".
-func TestCompatMigrateHashDirectoryNamedSQL(t *testing.T) {
-	c := qt.New(t)
-
-	const gooseBody = "-- +goose Up\nCREATE TABLE w (id int);\n"
-	const plainBody = "CREATE TABLE w (id int);\n"
-
+// The rows a directory does NOT stop are in
+// TestCompatMigrateHashWalksPastADirectoryItsGlobMisses, and the pair is what
+// makes each row evidence about the RULE rather than about the headline shape:
+// without the accepting half, "always refuse" passes here.
+func TestCompatMigrateHashRefusesADirectoryItsGlobMatches(t *testing.T) {
 	tests := []struct {
 		name   string
 		format string
 		files  map[string]string
 		dirs   []string
-		assert func(c *qt.C, dir string, err error)
-	}{{
-		name:   "goose refuses a directory its glob matches",
-		format: "goose",
-		files:  map[string]string{"1_init.sql": gooseBody},
-		dirs:   []string{"weird.sql"},
-		assert: func(c *qt.C, dir string, err error) {
-			c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
-			c.Assert(err, qt.ErrorMatches, wantDirectoryRefusal("weird.sql"))
-			assertNoAtlasSum(c, dir)
+		// refused is the entry the oracle names, and the whole refusal is
+		// rendered from it.
+		refused string
+	}{
+		{
+			name:    "goose refuses a directory its glob matches",
+			format:  "goose",
+			files:   map[string]string{"1_init.sql": directoryNamedSQLGooseBody},
+			dirs:    []string{"weird.sql"},
+			refused: "weird.sql",
 		},
-	}, {
-		name:   "goose hashes the same layout without the directory",
-		format: "goose",
-		files:  map[string]string{"1_init.sql": gooseBody},
-		assert: func(c *qt.C, dir string, err error) {
-			c.Assert(err, qt.IsNil)
-			c.Assert(sumEntryNames(c, dir), qt.DeepEquals, []string{"1_init.sql"})
+		{
+			// The oracle globs *.up.sql for this format, so the suffix decides
+			// membership rather than the read. Its partner is the golang-migrate
+			// row beside weird.sql, which is hashed.
+			name:    "golang-migrate refuses a directory its glob matches",
+			format:  "golang-migrate",
+			files:   map[string]string{"1_init.up.sql": directoryNamedSQLPlainBody},
+			dirs:    []string{"weird.up.sql"},
+			refused: "weird.up.sql",
 		},
-	}, {
-		name:   "golang-migrate ignores a directory outside its glob",
-		format: "golang-migrate",
-		files:  map[string]string{"1_init.up.sql": plainBody},
-		dirs:   []string{"weird.sql"},
-		assert: func(c *qt.C, dir string, err error) {
-			c.Assert(err, qt.IsNil)
-			c.Assert(sumEntryNames(c, dir), qt.DeepEquals, []string{"1_init.up.sql"})
-		},
-	}, {
-		name:   "golang-migrate refuses a directory its glob matches",
-		format: "golang-migrate",
-		files:  map[string]string{"1_init.up.sql": plainBody},
-		dirs:   []string{"weird.up.sql"},
-		assert: func(c *qt.C, dir string, err error) {
-			c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
-			c.Assert(err, qt.ErrorMatches, wantDirectoryRefusal("weird.up.sql"))
-			assertNoAtlasSum(c, dir)
-		},
-	}, {
-		name:   "flyway walks past a directory named sql",
-		format: "flyway",
-		files:  map[string]string{"V1__init.sql": plainBody},
-		dirs:   []string{"weird.sql"},
-		assert: func(c *qt.C, dir string, err error) {
-			c.Assert(err, qt.IsNil)
-			c.Assert(sumEntryNames(c, dir), qt.DeepEquals, []string{"V1__init.sql"})
-		},
-	}, {
-		name:   "flyway still covers a migration nested inside one",
-		format: "flyway",
-		files: map[string]string{
-			"V1__init.sql":             plainBody,
-			"weird.sql/V2__nested.sql": "CREATE TABLE n (id int);\n",
-		},
-		assert: func(c *qt.C, dir string, err error) {
-			c.Assert(err, qt.IsNil)
-			c.Assert(sumEntryNames(c, dir), qt.DeepEquals,
-				[]string{"V1__init.sql", "weird.sql/V2__nested.sql"})
-		},
-	}}
+	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			dir := writeDirectoryNamedSQLFixture(c, tt.files, tt.dirs)
 
 			stdout, stderr, err := runCompatExit(
 				"migrate", "hash", "--dir", "file://"+dir+"?format="+tt.format)
 
 			c.Assert(stdout, qt.Equals, "", qt.Commentf("stderr:\n%s", stderr))
-			tt.assert(c, dir, err)
+			c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
+			c.Assert(err, qt.ErrorMatches, wantDirectoryRefusal(tt.refused))
+			assertNoAtlasSum(c, dir)
 		})
 	}
 }
 
-// TestCompatMigrateNativeDirectoryNamedSQL pins the four NATIVE verbs that
-// verify a captured snapshot rather than the live directory.
+// TestCompatMigrateHashWalksPastADirectoryItsGlobMisses is the accepting half
+// of the same rule, and every row here is what stops "reject any .sql
+// directory" from passing its sibling:
+//
+//   - goose without the directory at all, the plain control.
+//   - golang-migrate beside weird.sql, which its *.up.sql glob does not match.
+//   - flyway beside weird.sql, and with a migration nested inside it. The
+//     oracle WALKS a Flyway tree instead of globbing it, so a directory is a
+//     node it descends into and never reads: both tools exit 0 and produce
+//     byte-identical sums. These rows fail if the fix is applied to treeNames.
+//
+// The sum's entry list is the assertion rather than the exit code, because a
+// hash that quietly covered the wrong file set also exits 0.
+func TestCompatMigrateHashWalksPastADirectoryItsGlobMisses(t *testing.T) {
+	tests := []struct {
+		name   string
+		format string
+		files  map[string]string
+		dirs   []string
+		// wantEntries is the covered set the written atlas.sum records.
+		wantEntries []string
+	}{
+		{
+			name:        "goose hashes the same layout without the directory",
+			format:      "goose",
+			files:       map[string]string{"1_init.sql": directoryNamedSQLGooseBody},
+			wantEntries: []string{"1_init.sql"},
+		},
+		{
+			name:        "golang-migrate ignores a directory outside its glob",
+			format:      "golang-migrate",
+			files:       map[string]string{"1_init.up.sql": directoryNamedSQLPlainBody},
+			dirs:        []string{"weird.sql"},
+			wantEntries: []string{"1_init.up.sql"},
+		},
+		{
+			name:        "flyway walks past a directory named sql",
+			format:      "flyway",
+			files:       map[string]string{"V1__init.sql": directoryNamedSQLPlainBody},
+			dirs:        []string{"weird.sql"},
+			wantEntries: []string{"V1__init.sql"},
+		},
+		{
+			name:   "flyway still covers a migration nested inside one",
+			format: "flyway",
+			files: map[string]string{
+				"V1__init.sql":             directoryNamedSQLPlainBody,
+				"weird.sql/V2__nested.sql": "CREATE TABLE n (id int);\n",
+			},
+			wantEntries: []string{"V1__init.sql", "weird.sql/V2__nested.sql"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			dir := writeDirectoryNamedSQLFixture(c, tt.files, tt.dirs)
+
+			stdout, stderr, err := runCompatExit(
+				"migrate", "hash", "--dir", "file://"+dir+"?format="+tt.format)
+
+			c.Assert(stdout, qt.Equals, "", qt.Commentf("stderr:\n%s", stderr))
+			c.Assert(err, qt.IsNil, qt.Commentf("stderr:\n%s", stderr))
+			c.Assert(sumEntryNames(c, dir), qt.DeepEquals, tt.wantEntries)
+		})
+	}
+}
+
+// directoryNamedSQLShape is one way a directory named like a migration can
+// appear beside a snapshot that was captured while the tree was clean.
+//
+// The second shape is not decoration: the capture predicate admits *.sql and
+// the metadata names, so a note.txt inside is filtered out and, with nothing
+// left underneath, the directory disappears from the snapshot again.
+type directoryNamedSQLShape struct {
+	name  string
+	files map[string]string
+	dirs  []string
+}
+
+func directoryNamedSQLShapes() []directoryNamedSQLShape {
+	return []directoryNamedSQLShape{{
+		name: "empty directory",
+		dirs: []string{"2_evil.sql"},
+	}, {
+		name:  "directory holding an uncaptured file",
+		files: map[string]string{"2_evil.sql/note.txt": "hello\n"},
+	}}
+}
+
+// seedDirectoryNamedSQLSnapshot hashes a clean directory and only then lets the
+// shape appear, so the sum under test is one Atlas CE itself would have
+// written and the directory arrives after the capture.
+func seedDirectoryNamedSQLSnapshot(c *qt.C, shape directoryNamedSQLShape) string {
+	c.Helper()
+	dir := writeDirectoryNamedSQLFixture(c,
+		map[string]string{"1_init.sql": "CREATE TABLE w (id INTEGER PRIMARY KEY);\n"}, nil)
+	hashOut, _, hashErr := runCompatExit("migrate", "hash", "--dir", "file://"+dir)
+	c.Assert(hashErr, qt.IsNil, qt.Commentf("seed:\n%s", hashOut))
+	writeDirectoryNamedSQLEntries(c, dir, shape.files, shape.dirs)
+	return dir
+}
+
+// TestCompatMigrateNativeDirectoryNamedSQL pins the three NATIVE verbs that
+// verify a captured snapshot rather than the live directory and reproduce the
+// community binary's stream layout exactly. `migrate lint` reaches the same
+// state through its own integrity surface and is
+// TestCompatMigrateLintDirectoryNamedSQL.
 //
 // This is the half a fix confined to the file-set selection does not reach, and
 // it was measured to be exactly that: with the selection corrected and the
@@ -441,92 +508,69 @@ func TestCompatMigrateHashDirectoryNamedSQL(t *testing.T) {
 // captured file vanished between the capture and the check and the recomputed
 // sum still matched.
 //
-// Every row is seeded by hashing the directory while it is clean, so the sum
-// under test is one Atlas CE itself would have written; the directory appears
-// afterwards. Measured against the pinned binary v1.3.0 on 2026-08-03, that
-// binary exits 1 on all four verbs, printing the checksum preamble on stdout
-// and the read failure on stderr. Nothing unverified executes — a directory
-// holds no SQL — so this is a loss of tamper DETECTION rather than of execution
-// safety, and it is still exit 0 where the community binary exits 1.
-//
-// The second shape (a non-SQL file inside the directory) is not decoration: the
-// capture predicate admits *.sql and the metadata names, so a note.txt was
-// filtered out and, with nothing left underneath, the directory disappeared
-// again.
+// Measured against the pinned binary v1.3.0 on 2026-08-03, that binary exits 1
+// on all four verbs, printing the checksum preamble on stdout and the read
+// failure on stderr. Nothing unverified executes — a directory holds no SQL —
+// so this is a loss of tamper DETECTION rather than of execution safety, and it
+// is still exit 0 where the community binary exits 1.
 func TestCompatMigrateNativeDirectoryNamedSQL(t *testing.T) {
-	c := qt.New(t)
-
-	shapes := []struct {
-		name  string
-		files map[string]string
-		dirs  []string
-	}{{
-		name: "empty directory",
-		dirs: []string{"2_evil.sql"},
-	}, {
-		name:  "directory holding an uncaptured file",
-		files: map[string]string{"2_evil.sql/note.txt": "hello\n"},
-	}}
-
 	verbs := []struct {
 		name string
 		args func(dir, dbPath string) []string
-		// assertStreams pins where each verb writes its refusal. apply, status
-		// and set reproduce the community binary's layout exactly; lint reports
-		// through its own integrity surface, a divergence that predates #991 and
-		// shows identically on an ordinary tampered directory.
-		assertStreams func(c *qt.C, stdout, stderr string)
 	}{{
 		name: "apply",
 		args: func(dir, dbPath string) []string {
 			return []string{"migrate", "apply", "--dir", "file://" + dir, "--url", "sqlite://" + dbPath}
 		},
-		assertStreams: assertAtlasChecksumStreams,
 	}, {
 		name: "status",
 		args: func(dir, dbPath string) []string {
 			return []string{"migrate", "status", "--dir", "file://" + dir, "--url", "sqlite://" + dbPath}
 		},
-		assertStreams: assertAtlasChecksumStreams,
 	}, {
 		name: "set",
 		args: func(dir, dbPath string) []string {
 			return []string{"migrate", "set", "1", "--dir", "file://" + dir, "--url", "sqlite://" + dbPath}
 		},
-		assertStreams: assertAtlasChecksumStreams,
-	}, {
-		name: "lint",
-		args: func(dir, dbPath string) []string {
-			return []string{
-				"migrate", "lint", "--dir", "file://" + dir,
-				"--dev-url", "sqlite://" + dbPath + "?mode=memory", "--latest", "1",
-			}
-		},
-		assertStreams: func(c *qt.C, _, stderr string) {
-			c.Assert(stderr, qt.Contains, fmt.Sprintf(directoryNamedSQLRefusal, "2_evil.sql"))
-		},
 	}}
 
-	for _, shape := range shapes {
+	for _, shape := range directoryNamedSQLShapes() {
 		for _, verb := range verbs {
-			c.Run(shape.name+"/"+verb.name, func(c *qt.C) {
-				dir := writeDirectoryNamedSQLFixture(c,
-					map[string]string{"1_init.sql": "CREATE TABLE w (id INTEGER PRIMARY KEY);\n"}, nil)
-				hashOut, _, hashErr := runCompatExit("migrate", "hash", "--dir", "file://"+dir)
-				c.Assert(hashErr, qt.IsNil, qt.Commentf("seed:\n%s", hashOut))
-
-				// The sum above covers only 1_init.sql, exactly as the community
-				// binary's would; the directory appears afterwards.
-				writeDirectoryNamedSQLEntries(c, dir, shape.files, shape.dirs)
+			t.Run(shape.name+"/"+verb.name, func(t *testing.T) {
+				c := qt.New(t)
+				dir := seedDirectoryNamedSQLSnapshot(c, shape)
 
 				stdout, stderr, err := runCompatExit(
 					verb.args(dir, filepath.Join(c.TempDir(), "evil.db"))...)
 
 				c.Assert(exitcode.Code(err, 0), qt.Equals, 1,
 					qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
-				verb.assertStreams(c, stdout, stderr)
+				assertAtlasChecksumStreams(c, stdout, stderr)
 			})
 		}
+	}
+}
+
+// TestCompatMigrateLintDirectoryNamedSQL is the fourth verb of the same
+// experiment, kept apart because it reports the refusal through its own
+// integrity surface rather than in the community binary's stream layout — a
+// divergence that predates #991 and shows identically on an ordinary tampered
+// directory. What it owes here is the exit code and the reason.
+func TestCompatMigrateLintDirectoryNamedSQL(t *testing.T) {
+	for _, shape := range directoryNamedSQLShapes() {
+		t.Run(shape.name, func(t *testing.T) {
+			c := qt.New(t)
+			dir := seedDirectoryNamedSQLSnapshot(c, shape)
+			dbPath := filepath.Join(c.TempDir(), "evil.db")
+
+			stdout, stderr, err := runCompatExit(
+				"migrate", "lint", "--dir", "file://"+dir,
+				"--dev-url", "sqlite://"+dbPath+"?mode=memory", "--latest", "1")
+
+			c.Assert(exitcode.Code(err, 0), qt.Equals, 1,
+				qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
+			c.Assert(stderr, qt.Contains, fmt.Sprintf(directoryNamedSQLRefusal, "2_evil.sql"))
+		})
 	}
 }
 

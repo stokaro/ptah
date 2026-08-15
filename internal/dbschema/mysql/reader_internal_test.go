@@ -61,32 +61,35 @@ func wideKeyRows() [][]driver.Value {
 // `Error 1072 (42000): Key column 'a' doesn't exist in table` where the pinned
 // community binary v1.3.0 reported "Schema is synced".
 func TestReadIndexes_AssemblesKeysFromTheirParts(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
-		name   string
-		rows   [][]driver.Value
-		assert func(c *qt.C, indexes []types.DBIndex)
+		name string
+		rows [][]driver.Value
+		// want is the whole read rather than the one field a row is about.
+		// Assembly decides every field of every index it returns, so a row that
+		// named only its own leaves the rest free to change unobserved.
+		want []types.DBIndex
 	}{
 		{
 			name: "column name containing a comma",
 			rows: [][]driver.Value{
 				{"idx_weird", "t2", "a,b", int64(1), "BTREE"},
 			},
-			assert: func(c *qt.C, indexes []types.DBIndex) {
-				c.Assert(indexes, qt.HasLen, 1)
-				c.Assert(indexes[0].Columns, qt.DeepEquals, []string{"a,b"})
-				c.Assert(indexes[0].KeyPartsIncomplete, qt.IsFalse)
-			},
+			want: []types.DBIndex{{
+				Name:       "idx_weird",
+				TableName:  "t2",
+				Columns:    []string{"a,b"},
+				Definition: "BTREE INDEX idx_weird ON t2 (a,b)",
+			}},
 		},
 		{
 			name: "sixteen part key past group_concat_max_len",
 			rows: wideKeyRows(),
-			assert: func(c *qt.C, indexes []types.DBIndex) {
-				c.Assert(indexes, qt.HasLen, 1)
-				c.Assert(indexes[0].Columns, qt.DeepEquals, wideKeyColumnNames())
-				c.Assert(indexes[0].KeyPartsIncomplete, qt.IsFalse)
-			},
+			want: []types.DBIndex{{
+				Name:       "idx_wide",
+				TableName:  "wide",
+				Columns:    wideKeyColumnNames(),
+				Definition: "BTREE INDEX idx_wide ON wide (" + strings.Join(wideKeyColumnNames(), ",") + ")",
+			}},
 		},
 		{
 			name: "key order follows the rows",
@@ -94,10 +97,12 @@ func TestReadIndexes_AssemblesKeysFromTheirParts(t *testing.T) {
 				{"idx_pair", "t", "b", int64(1), "BTREE"},
 				{"idx_pair", "t", "a", int64(1), "BTREE"},
 			},
-			assert: func(c *qt.C, indexes []types.DBIndex) {
-				c.Assert(indexes, qt.HasLen, 1)
-				c.Assert(indexes[0].Columns, qt.DeepEquals, []string{"b", "a"})
-			},
+			want: []types.DBIndex{{
+				Name:       "idx_pair",
+				TableName:  "t",
+				Columns:    []string{"b", "a"},
+				Definition: "BTREE INDEX idx_pair ON t (b,a)",
+			}},
 		},
 		{
 			name: "one index name per owning table",
@@ -105,14 +110,20 @@ func TestReadIndexes_AssemblesKeysFromTheirParts(t *testing.T) {
 				{"idx_name", "orders", "reference", int64(1), "BTREE"},
 				{"idx_name", "users", "email", int64(0), "BTREE"},
 			},
-			assert: func(c *qt.C, indexes []types.DBIndex) {
-				c.Assert(indexes, qt.HasLen, 2)
-				c.Assert(indexes[0].TableName, qt.Equals, "orders")
-				c.Assert(indexes[0].Columns, qt.DeepEquals, []string{"reference"})
-				c.Assert(indexes[0].IsUnique, qt.IsFalse)
-				c.Assert(indexes[1].TableName, qt.Equals, "users")
-				c.Assert(indexes[1].Columns, qt.DeepEquals, []string{"email"})
-				c.Assert(indexes[1].IsUnique, qt.IsTrue)
+			want: []types.DBIndex{
+				{
+					Name:       "idx_name",
+					TableName:  "orders",
+					Columns:    []string{"reference"},
+					Definition: "BTREE INDEX idx_name ON orders (reference)",
+				},
+				{
+					Name:       "idx_name",
+					TableName:  "users",
+					Columns:    []string{"email"},
+					IsUnique:   true,
+					Definition: "BTREE INDEX idx_name ON users (email)",
+				},
 			},
 		},
 		{
@@ -120,33 +131,39 @@ func TestReadIndexes_AssemblesKeysFromTheirParts(t *testing.T) {
 			rows: [][]driver.Value{
 				{"uq_users_email", "users", "email", int64(0), "BTREE"},
 			},
-			assert: func(c *qt.C, indexes []types.DBIndex) {
-				c.Assert(indexes, qt.HasLen, 1)
-				c.Assert(indexes[0].IsUnique, qt.IsTrue)
-				c.Assert(indexes[0].IsPrimary, qt.IsFalse)
-				c.Assert(indexes[0].Definition, qt.Equals, "BTREE INDEX uq_users_email ON users (email)")
-			},
+			want: []types.DBIndex{{
+				Name:       "uq_users_email",
+				TableName:  "users",
+				Columns:    []string{"email"},
+				IsUnique:   true,
+				Definition: "BTREE INDEX uq_users_email ON users (email)",
+			}},
 		},
 		{
 			name: "primary key",
 			rows: [][]driver.Value{
 				{"PRIMARY", "users", "id", int64(0), "BTREE"},
 			},
-			assert: func(c *qt.C, indexes []types.DBIndex) {
-				c.Assert(indexes, qt.HasLen, 1)
-				c.Assert(indexes[0].IsPrimary, qt.IsTrue)
-			},
+			want: []types.DBIndex{{
+				Name:       "PRIMARY",
+				TableName:  "users",
+				Columns:    []string{"id"},
+				IsUnique:   true,
+				IsPrimary:  true,
+				Definition: "BTREE INDEX PRIMARY ON users (id)",
+			}},
 		},
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			reader := NewMySQLReader(statisticsDB(c, test.rows).SQL, "app")
 
 			indexes, err := reader.readIndexes("app")
 
 			c.Assert(err, qt.IsNil)
-			test.assert(c, indexes)
+			c.Assert(indexes, qt.DeepEquals, test.want)
 		})
 	}
 }
@@ -159,23 +176,22 @@ func TestReadIndexes_AssemblesKeysFromTheirParts(t *testing.T) {
 // missing from Columns so a comparison can decline to read a partial key as a
 // whole one.
 func TestReadIndexes_ReportsAKeyPartItCannotName(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
-		name   string
-		rows   [][]driver.Value
-		assert func(c *qt.C, indexes []types.DBIndex)
+		name string
+		rows [][]driver.Value
+		want []types.DBIndex
 	}{
 		{
 			name: "whole key is an expression",
 			rows: [][]driver.Value{
 				{"idx_expr", "t3", nil, int64(1), "BTREE"},
 			},
-			assert: func(c *qt.C, indexes []types.DBIndex) {
-				c.Assert(indexes, qt.HasLen, 1)
-				c.Assert(indexes[0].Columns, qt.HasLen, 0)
-				c.Assert(indexes[0].KeyPartsIncomplete, qt.IsTrue)
-			},
+			want: []types.DBIndex{{
+				Name:               "idx_expr",
+				TableName:          "t3",
+				Definition:         "BTREE INDEX idx_expr ON t3 ()",
+				KeyPartsIncomplete: true,
+			}},
 		},
 		{
 			name: "column beside an expression",
@@ -183,22 +199,25 @@ func TestReadIndexes_ReportsAKeyPartItCannotName(t *testing.T) {
 				{"idx_mixed", "t4", "b", int64(1), "BTREE"},
 				{"idx_mixed", "t4", nil, int64(1), "BTREE"},
 			},
-			assert: func(c *qt.C, indexes []types.DBIndex) {
-				c.Assert(indexes, qt.HasLen, 1)
-				c.Assert(indexes[0].Columns, qt.DeepEquals, []string{"b"})
-				c.Assert(indexes[0].KeyPartsIncomplete, qt.IsTrue)
-			},
+			want: []types.DBIndex{{
+				Name:               "idx_mixed",
+				TableName:          "t4",
+				Columns:            []string{"b"},
+				Definition:         "BTREE INDEX idx_mixed ON t4 (b)",
+				KeyPartsIncomplete: true,
+			}},
 		},
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			reader := NewMySQLReader(statisticsDB(c, test.rows).SQL, "app")
 
 			indexes, err := reader.readIndexes("app")
 
 			c.Assert(err, qt.IsNil)
-			test.assert(c, indexes)
+			c.Assert(indexes, qt.DeepEquals, test.want)
 		})
 	}
 }

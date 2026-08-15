@@ -800,92 +800,63 @@ func readIndexThroughFakeServer(t *testing.T, catalog pgIndexCatalog) (types.DBI
 	return indexes[0], nil
 }
 
-// TestReadIndexesForSchema_AsksTheCatalogForEveryKeyAttribute is the guard the
-// #1242 expression fix was missing and the guard its four siblings need.
+// TestReadIndexesForSchema_ReportsEveryKeyTheCatalogDescribes is the guard the
+// #1242 expression fix was missing, and the first of the seven below that the
+// reader's other projections need.
 //
 // Removing the pg_index.indkey projection from the reader's SQL -- measured on
 // PostgreSQL 17.10 to put `schema diff` back to emitting
 // CREATE INDEX "i_expr" ON "t" ("lower(name)"), which psql rejects at exit 3
 // with `column "lower(name)" does not exist` -- left `go test ./...` at exit 0
-// before this test existed. The same was true of every other projection here.
-func TestReadIndexesForSchema_AsksTheCatalogForEveryKeyAttribute(t *testing.T) {
-	c := qt.New(t)
-
+// before these tests existed. The same was true of every other projection here.
+//
+// Each test states one thing the reader must report once the fake server has
+// answered only the projections the query genuinely asks for, so a row is a
+// catalog and the value it must produce. Columns is asserted beside Parts on
+// every row because the legacy columns-only view is populated either way, which
+// is what made the expression loss invisible: only Parts separates the two.
+func TestReadIndexesForSchema_ReportsEveryKeyTheCatalogDescribes(t *testing.T) {
 	tests := []struct {
-		name    string
-		catalog func() pgIndexCatalog
-		// assert states what the reader must report once the fake server has
-		// answered only the projections the query genuinely asks for.
-		assert func(c *qt.C, index types.DBIndex)
+		name        string
+		catalog     func() pgIndexCatalog
+		wantParts   []types.DBIndexPart
+		wantColumns []string
 	}{
 		{
-			name:    "plain ascending btree key carries no extras",
-			catalog: plainCatalog,
-			assert: func(c *qt.C, index types.DBIndex) {
-				c.Assert(index.Method, qt.Equals, "btree")
-				c.Assert(index.IncludeColumns, qt.IsNil)
-				c.Assert(index.Parts, qt.DeepEquals, []types.DBIndexPart{{Name: "name"}})
-				c.Assert(index.Comment, qt.Equals, "")
-			},
-		},
-		{
-			// Nothing in the index's definition text carries it, so a reader
-			// that does not ask obj_description reports an index with no
-			// comment and the object's comment is gone at exit 0.
-			name:    "an index comment is carried",
-			catalog: commentedCatalog,
-			assert: func(c *qt.C, index types.DBIndex) {
-				c.Assert(index.Comment, qt.Equals, "keep me")
-			},
+			name:        "plain ascending btree key carries no extras",
+			catalog:     plainCatalog,
+			wantParts:   []types.DBIndexPart{{Name: "name"}},
+			wantColumns: []string{"name"},
 		},
 		{
 			// attnum 0 is PostgreSQL's marker for an expression key. Losing it
 			// makes the renderer quote the expression into a column reference
 			// that does not exist.
-			name:    "expression key is labelled an expression",
-			catalog: expressionCatalog,
-			assert: func(c *qt.C, index types.DBIndex) {
-				c.Assert(index.Parts, qt.DeepEquals, []types.DBIndexPart{{Expr: "lower(name)"}})
-				// The legacy columns-only view is populated either way, which
-				// is why the loss was invisible: only Parts separates the two.
-				c.Assert(index.Columns, qt.DeepEquals, []string{"lower(name)"})
-			},
+			name:        "expression key is labelled an expression",
+			catalog:     expressionCatalog,
+			wantParts:   []types.DBIndexPart{{Expr: "lower(name)"}},
+			wantColumns: []string{"lower(name)"},
 		},
 		{
-			name:    "column named like a call stays a column",
-			catalog: columnNamedLikeACallCatalog,
-			assert: func(c *qt.C, index types.DBIndex) {
-				c.Assert(index.Parts, qt.DeepEquals, []types.DBIndexPart{{Name: "lower(name)"}})
-				c.Assert(index.Columns, qt.DeepEquals, []string{"lower(name)"})
-			},
+			name:        "column named like a call stays a column",
+			catalog:     columnNamedLikeACallCatalog,
+			wantParts:   []types.DBIndexPart{{Name: "lower(name)"}},
+			wantColumns: []string{"lower(name)"},
 		},
 		{
-			name:    "access method is carried",
-			catalog: gistOnPointCatalog,
-			assert: func(c *qt.C, index types.DBIndex) {
-				c.Assert(index.Method, qt.Equals, "gist")
-			},
-		},
-		{
-			name:    "non-default operator class is carried",
-			catalog: opclassCatalog,
-			assert: func(c *qt.C, index types.DBIndex) {
-				c.Assert(index.Parts, qt.DeepEquals, []types.DBIndexPart{
-					{Name: "name", Operator: "text_pattern_ops"},
-				})
-			},
+			name:        "non-default operator class is carried",
+			catalog:     opclassCatalog,
+			wantParts:   []types.DBIndexPart{{Name: "name", Operator: "text_pattern_ops"}},
+			wantColumns: []string{"name"},
 		},
 		{
 			// The class is the key type's default, so a reader that stops at
 			// opcdefault reports nothing at all -- and the index it rebuilds
 			// has the 124-byte default signature instead of the 64-byte one.
-			name:    "a default operator class with parameters is carried whole",
-			catalog: parameterisedOpclassCatalog,
-			assert: func(c *qt.C, index types.DBIndex) {
-				c.Assert(index.Parts, qt.DeepEquals, []types.DBIndexPart{
-					{Name: "tsv", Operator: "tsvector_ops(siglen=64)"},
-				})
-			},
+			name:        "a default operator class with parameters is carried whole",
+			catalog:     parameterisedOpclassCatalog,
+			wantParts:   []types.DBIndexPart{{Name: "tsv", Operator: "tsvector_ops(siglen=64)"}},
+			wantColumns: []string{"tsv"},
 		},
 		{
 			// One key cannot tell a per-key correlation from a constant, and
@@ -894,149 +865,297 @@ func TestReadIndexesForSchema_AsksTheCatalogForEveryKeyAttribute(t *testing.T) {
 			// the parameters here.
 			name:    "parameters land on the key that carries them",
 			catalog: multiKeyParameterisedOpclassCatalog,
-			assert: func(c *qt.C, index types.DBIndex) {
-				c.Assert(index.Parts, qt.DeepEquals, []types.DBIndexPart{
-					{Name: "a"},
-					{Name: "b", Operator: "tsvector_ops(siglen=64)"},
-				})
+			wantParts: []types.DBIndexPart{
+				{Name: "a"},
+				{Name: "b", Operator: "tsvector_ops(siglen=64)"},
 			},
+			wantColumns: []string{"a", "b"},
 		},
 		{
 			// Both keys are parameterised and the two differ, so no constant
 			// attribute number and no reordering of the keys reports this row.
 			name:    "each key keeps its own parameters",
 			catalog: perKeyParameterisedOpclassCatalog,
-			assert: func(c *qt.C, index types.DBIndex) {
-				c.Assert(index.Parts, qt.DeepEquals, []types.DBIndexPart{
-					{Name: "a", Operator: "tsvector_ops(siglen=32)"},
-					{Name: "b", Operator: "tsvector_ops(siglen=64)"},
-				})
+			wantParts: []types.DBIndexPart{
+				{Name: "a", Operator: "tsvector_ops(siglen=32)"},
+				{Name: "b", Operator: "tsvector_ops(siglen=64)"},
 			},
+			wantColumns: []string{"a", "b"},
 		},
 		{
-			name:    "storage parameters the chain can carry are kept",
-			catalog: storageParamsCatalog,
-			assert: func(c *qt.C, index types.DBIndex) {
-				c.Assert(index.StorageParams, qt.DeepEquals, map[string]string{
-					"pages_per_range": "32",
-				})
-			},
+			// The class is the default for this key type, so it is not carried
+			// as a printed one. The extension behind it is
+			// TestReadIndexesForSchema_ReportsTheExtensionAnIndexDependsOn.
+			name:        "an implicit operator class is not printed on its key",
+			catalog:     implicitOpclassCatalog,
+			wantParts:   []types.DBIndexPart{{Name: "n"}},
+			wantColumns: []string{"n"},
 		},
 		{
-			name:    "storage parameters no surface can write are dropped",
-			catalog: unrepresentableStorageParamsCatalog,
-			assert: func(c *qt.C, index types.DBIndex) {
-				c.Assert(index.StorageParams, qt.DeepEquals, map[string]string{
-					"pages_per_range": "32",
-				}, qt.Commentf("fillfactor and autosummarize have no slot downstream"))
-			},
+			// The payload column is in neither vector, so it must appear in
+			// neither the keys nor the legacy columns view.
+			name:        "include payload columns stay out of the keys",
+			catalog:     includeCatalog,
+			wantParts:   []types.DBIndexPart{{Name: "a"}, {Name: "b"}},
+			wantColumns: []string{"a", "b"},
 		},
 		{
-			name:    "an index with no WITH clause carries no storage parameters",
-			catalog: plainCatalog,
-			assert: func(c *qt.C, index types.DBIndex) {
-				c.Assert(index.StorageParams, qt.IsNil)
-			},
+			name:        "indoption 3 is DESC with its default NULLS FIRST",
+			catalog:     sortOrderCatalog("3"),
+			wantParts:   []types.DBIndexPart{{Name: "name", Desc: true}},
+			wantColumns: []string{"name"},
 		},
 		{
-			name:    "include payload columns are carried and stay out of the keys",
-			catalog: includeCatalog,
-			assert: func(c *qt.C, index types.DBIndex) {
-				c.Assert(index.IncludeColumns, qt.DeepEquals, []string{"c"})
-				c.Assert(index.Columns, qt.DeepEquals, []string{"a", "b"})
-				c.Assert(index.Parts, qt.DeepEquals, []types.DBIndexPart{
-					{Name: "a"}, {Name: "b"},
-				})
-			},
+			name:        "indoption 1 is DESC NULLS LAST",
+			catalog:     sortOrderCatalog("1"),
+			wantParts:   []types.DBIndexPart{{Name: "name", Desc: true, NullsOrder: types.NullsOrderLast}},
+			wantColumns: []string{"name"},
 		},
 		{
-			// The dependency #1286 is about: nothing in the index's own text
-			// names btree_gin, so a reader that does not resolve indclass
-			// against pg_depend reports an index that cannot be built.
-			name:    "an implicit operator class reports the extension behind it",
-			catalog: implicitOpclassCatalog,
-			assert: func(c *qt.C, index types.DBIndex) {
-				c.Assert(index.RequiresExtensions, qt.DeepEquals, []string{"btree_gin"})
-				c.Assert(index.Parts, qt.DeepEquals, []types.DBIndexPart{{Name: "n"}},
-					qt.Commentf("the class is the default, so it is not carried as a printed one"))
-			},
+			name:        "indoption 2 is ascending NULLS FIRST",
+			catalog:     sortOrderCatalog("2"),
+			wantParts:   []types.DBIndexPart{{Name: "name", NullsOrder: types.NullsOrderFirst}},
+			wantColumns: []string{"name"},
 		},
 		{
-			name:    "a core operator class reports no extension",
-			catalog: coreOpclassCatalog,
-			assert: func(c *qt.C, index types.DBIndex) {
-				c.Assert(index.RequiresExtensions, qt.IsNil)
-				c.Assert(index.Method, qt.Equals, "gin",
-					qt.Commentf("the control has to keep the access method the other row has"))
-			},
-		},
-		{
-			name:    "an extension-supplied access method reports its extension",
-			catalog: extensionAccessMethodCatalog,
-			assert: func(c *qt.C, index types.DBIndex) {
-				c.Assert(index.RequiresExtensions, qt.DeepEquals, []string{"bloom"})
-			},
-		},
-		{
-			name:    "indoption 3 is DESC with its default NULLS FIRST",
-			catalog: sortOrderCatalog("3"),
-			assert: func(c *qt.C, index types.DBIndex) {
-				c.Assert(index.Parts, qt.DeepEquals, []types.DBIndexPart{
-					{Name: "name", Desc: true},
-				})
-			},
-		},
-		{
-			name:    "indoption 1 is DESC NULLS LAST",
-			catalog: sortOrderCatalog("1"),
-			assert: func(c *qt.C, index types.DBIndex) {
-				c.Assert(index.Parts, qt.DeepEquals, []types.DBIndexPart{
-					{Name: "name", Desc: true, NullsOrder: types.NullsOrderLast},
-				})
-			},
-		},
-		{
-			name:    "indoption 2 is ascending NULLS FIRST",
-			catalog: sortOrderCatalog("2"),
-			assert: func(c *qt.C, index types.DBIndex) {
-				c.Assert(index.Parts, qt.DeepEquals, []types.DBIndexPart{
-					{Name: "name", NullsOrder: types.NullsOrderFirst},
-				})
-			},
-		},
-		{
-			name:    "indoption 0 is ascending with its default NULLS LAST",
-			catalog: sortOrderCatalog("0"),
-			assert: func(c *qt.C, index types.DBIndex) {
-				c.Assert(index.Parts, qt.DeepEquals, []types.DBIndexPart{
-					{Name: "name"},
-				})
-			},
-		},
-		{
-			// The attachment of a partition's index copy to its parent index
-			// lives in pg_inherits and nowhere else, so a projection that reads
-			// anything else answers false here exactly as a server would.
-			name:    "a partition's copy of a parent index is reported as attached",
-			catalog: partitionAttachedCatalog,
-			assert: func(c *qt.C, index types.DBIndex) {
-				c.Assert(index.PartitionAttached, qt.IsTrue)
-			},
-		},
-		{
-			name:    "an ordinary index is not reported as attached",
-			catalog: plainCatalog,
-			assert: func(c *qt.C, index types.DBIndex) {
-				c.Assert(index.PartitionAttached, qt.IsFalse)
-			},
+			name:        "indoption 0 is ascending with its default NULLS LAST",
+			catalog:     sortOrderCatalog("0"),
+			wantParts:   []types.DBIndexPart{{Name: "name"}},
+			wantColumns: []string{"name"},
 		},
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
 			index, err := readIndexThroughFakeServer(t, test.catalog())
+
 			c.Assert(err, qt.IsNil)
-			test.assert(c, index)
+			c.Assert(index.Parts, qt.DeepEquals, test.wantParts)
+			c.Assert(index.Columns, qt.DeepEquals, test.wantColumns)
+		})
+	}
+}
+
+// TestReadIndexesForSchema_CarriesTheIndexComment pins the projection nothing
+// else can stand in for: an index's comment is in no definition text, so a
+// reader that does not ask obj_description reports an index with no comment and
+// the object's comment is gone at exit 0.
+func TestReadIndexesForSchema_CarriesTheIndexComment(t *testing.T) {
+	tests := []struct {
+		name    string
+		catalog func() pgIndexCatalog
+		want    string
+	}{
+		{
+			name:    "an index comment is carried",
+			catalog: commentedCatalog,
+			want:    "keep me",
+		},
+		{
+			// The control: an index with no comment must not acquire the
+			// table's, which the same row already joins.
+			name:    "an uncommented index reports none",
+			catalog: plainCatalog,
+			want:    "",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			index, err := readIndexThroughFakeServer(t, test.catalog())
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(index.Comment, qt.Equals, test.want)
+		})
+	}
+}
+
+// TestReadIndexesForSchema_CarriesTheAccessMethod covers pg_am.amname, whose
+// loss is not always a quiet degradation: point has no default btree operator
+// class, so an index over it does not replay without the method.
+func TestReadIndexesForSchema_CarriesTheAccessMethod(t *testing.T) {
+	tests := []struct {
+		name    string
+		catalog func() pgIndexCatalog
+		want    string
+	}{
+		{
+			name:    "the default method",
+			catalog: plainCatalog,
+			want:    "btree",
+		},
+		{
+			name:    "a method the index would not replay without",
+			catalog: gistOnPointCatalog,
+			want:    "gist",
+		},
+		{
+			// The control the extension rows below rest on: it has to keep the
+			// access method the fixture beside it has.
+			name:    "a core operator class keeps its method",
+			catalog: coreOpclassCatalog,
+			want:    "gin",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			index, err := readIndexThroughFakeServer(t, test.catalog())
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(index.Method, qt.Equals, test.want)
+		})
+	}
+}
+
+// TestReadIndexesForSchema_CarriesTheStorageParametersTheModelCanWrite pins
+// which pg_class.reloptions entries reach the model. A reader that recorded
+// every reloption would look more complete and be worse: fillfactor and
+// autosummarize have no slot downstream, so an index carrying one would differ
+// from its own inspected document on every run.
+func TestReadIndexesForSchema_CarriesTheStorageParametersTheModelCanWrite(t *testing.T) {
+	tests := []struct {
+		name    string
+		catalog func() pgIndexCatalog
+		want    map[string]string
+	}{
+		{
+			name:    "storage parameters the chain can carry are kept",
+			catalog: storageParamsCatalog,
+			want:    map[string]string{"pages_per_range": "32"},
+		},
+		{
+			name:    "storage parameters no surface can write are dropped",
+			catalog: unrepresentableStorageParamsCatalog,
+			want:    map[string]string{"pages_per_range": "32"},
+		},
+		{
+			name:    "an index with no WITH clause carries no storage parameters",
+			catalog: plainCatalog,
+			want:    nil,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			index, err := readIndexThroughFakeServer(t, test.catalog())
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(index.StorageParams, qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// TestReadIndexesForSchema_CarriesIncludePayloadColumns covers the INCLUDE
+// payload, which lives in neither of the per-key vectors and is therefore
+// reachable only by asking for it.
+func TestReadIndexesForSchema_CarriesIncludePayloadColumns(t *testing.T) {
+	tests := []struct {
+		name    string
+		catalog func() pgIndexCatalog
+		want    []string
+	}{
+		{
+			name:    "payload columns are carried",
+			catalog: includeCatalog,
+			want:    []string{"c"},
+		},
+		{
+			name:    "an index with no INCLUDE carries none",
+			catalog: plainCatalog,
+			want:    nil,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			index, err := readIndexThroughFakeServer(t, test.catalog())
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(index.IncludeColumns, qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// TestReadIndexesForSchema_ReportsTheExtensionAnIndexDependsOn is the
+// dependency #1286 is about: nothing in an index's own text names btree_gin, so
+// a reader that does not resolve indclass against pg_depend reports an index
+// that cannot be built. The two arms are separated because they reach the same
+// field through different catalog columns.
+func TestReadIndexesForSchema_ReportsTheExtensionAnIndexDependsOn(t *testing.T) {
+	tests := []struct {
+		name    string
+		catalog func() pgIndexCatalog
+		want    []string
+	}{
+		{
+			name:    "an implicit operator class reports the extension behind it",
+			catalog: implicitOpclassCatalog,
+			want:    []string{"btree_gin"},
+		},
+		{
+			name:    "a core operator class reports no extension",
+			catalog: coreOpclassCatalog,
+			want:    nil,
+		},
+		{
+			name:    "an extension-supplied access method reports its extension",
+			catalog: extensionAccessMethodCatalog,
+			want:    []string{"bloom"},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			index, err := readIndexThroughFakeServer(t, test.catalog())
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(index.RequiresExtensions, qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// TestReadIndexesForSchema_ReportsPartitionAttachment covers the fact that
+// lives in pg_inherits and nowhere else, so a projection that reads anything
+// else answers false here exactly as a server would.
+func TestReadIndexesForSchema_ReportsPartitionAttachment(t *testing.T) {
+	tests := []struct {
+		name    string
+		catalog func() pgIndexCatalog
+		want    bool
+	}{
+		{
+			name:    "a partition's copy of a parent index is attached",
+			catalog: partitionAttachedCatalog,
+			want:    true,
+		},
+		{
+			name:    "an ordinary index is not",
+			catalog: plainCatalog,
+			want:    false,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			index, err := readIndexThroughFakeServer(t, test.catalog())
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(index.PartitionAttached, qt.Equals, test.want)
 		})
 	}
 }

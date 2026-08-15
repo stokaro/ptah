@@ -9,20 +9,45 @@ import (
 	"go.5x5.cz/ptah/internal/atlashcl"
 )
 
+// The HCL a row needs twice: once for the position that must hold the reduced
+// SQL, and once for the position that must stay empty because of it.
+const (
+	sqlDefaultHCL = `
+table "t" {
+  column "n" {
+    type    = int
+    default = sql("now()")
+  }
+}
+`
+	sqlFunctionHCL = `
+function "f" {
+  lang   = SQL
+  return = sql("text")
+  as     = sql("SELECT 'x'")
+}
+`
+)
+
 // Atlas's sql("X") escape hatch must reach the IR as X. Before issue #1106 the
 // value helpers fell back to the attribute's SOURCE TEXT for every position the
 // grammar reads as a plain string, so the IR carried the literal `sql("X")` and
 // the renderer emitted DDL no engine accepts -- `CHECK (sql("n > 0"))`.
 //
 // Reverted, every row below fails on the same shape: the field holds
-// `sql("...")` where the row asserts the SQL inside it.
+// `sql("...")` where the row wants the SQL inside it.
+//
+// A row names the IR position with `read` and the whole list that position must
+// hold with `want`. The list rather than one element, because "the check
+// constraint reduced" and "exactly one check constraint exists" are the same
+// measurement: a parse that dropped the object, or invented a second one, is
+// not a parse that reduced it.
 func TestParseReducesSQLRawExpressionToItsSQL(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
-		name   string
-		hcl    string
-		assert func(c *qt.C, db *goschema.Database)
+		name string
+		hcl  string
+		read func(db *goschema.Database) []string
+		want []string
 	}{
 		{
 			name: "table check expr",
@@ -32,10 +57,8 @@ table "t" {
   check "n_positive" { expr = sql("n > 0") }
 }
 `,
-			assert: func(c *qt.C, db *goschema.Database) {
-				c.Assert(db.Constraints, qt.HasLen, 1)
-				c.Assert(db.Constraints[0].CheckExpression, qt.Equals, "n > 0")
-			},
+			read: checkExpressions,
+			want: []string{"n > 0"},
 		},
 		{
 			name: "index where",
@@ -48,10 +71,8 @@ table "t" {
   }
 }
 `,
-			assert: func(c *qt.C, db *goschema.Database) {
-				c.Assert(db.Indexes, qt.HasLen, 1)
-				c.Assert(db.Indexes[0].Condition, qt.Equals, "n > 5")
-			},
+			read: indexConditions,
+			want: []string{"n > 5"},
 		},
 		{
 			name: "index part expr",
@@ -63,11 +84,8 @@ table "t" {
   }
 }
 `,
-			assert: func(c *qt.C, db *goschema.Database) {
-				c.Assert(db.Indexes, qt.HasLen, 1)
-				c.Assert(db.Indexes[0].Parts, qt.HasLen, 1)
-				c.Assert(db.Indexes[0].Parts[0].Expr, qt.Equals, "n + 1")
-			},
+			read: indexPartExpressions,
+			want: []string{"n + 1"},
 		},
 		{
 			name: "index part prefix",
@@ -82,11 +100,8 @@ table "t" {
   }
 }
 `,
-			assert: func(c *qt.C, db *goschema.Database) {
-				c.Assert(db.Indexes, qt.HasLen, 1)
-				c.Assert(db.Indexes[0].Parts, qt.HasLen, 1)
-				c.Assert(db.Indexes[0].Parts[0].Prefix, qt.Equals, "4")
-			},
+			read: indexPartPrefixes,
+			want: []string{"4"},
 		},
 		{
 			name: "index comment",
@@ -99,10 +114,8 @@ table "t" {
   }
 }
 `,
-			assert: func(c *qt.C, db *goschema.Database) {
-				c.Assert(db.Indexes, qt.HasLen, 1)
-				c.Assert(db.Indexes[0].Comment, qt.Equals, "hello")
-			},
+			read: indexComments,
+			want: []string{"hello"},
 		},
 		{
 			name: "generated column as attribute",
@@ -115,10 +128,8 @@ table "t" {
   }
 }
 `,
-			assert: func(c *qt.C, db *goschema.Database) {
-				c.Assert(db.Fields, qt.HasLen, 2)
-				c.Assert(db.Fields[1].GeneratedExpression, qt.Equals, "n * 2")
-			},
+			read: fieldGeneratedExpressions,
+			want: []string{"", "n * 2"},
 		},
 		{
 			name: "generated column as block expr",
@@ -134,10 +145,8 @@ table "t" {
   }
 }
 `,
-			assert: func(c *qt.C, db *goschema.Database) {
-				c.Assert(db.Fields, qt.HasLen, 2)
-				c.Assert(db.Fields[1].GeneratedExpression, qt.Equals, "n * 2")
-			},
+			read: fieldGeneratedExpressions,
+			want: []string{"", "n * 2"},
 		},
 		{
 			name: "column type",
@@ -146,10 +155,8 @@ table "t" {
   column "n" { type = sql("varchar(10)") }
 }
 `,
-			assert: func(c *qt.C, db *goschema.Database) {
-				c.Assert(db.Fields, qt.HasLen, 1)
-				c.Assert(db.Fields[0].Type, qt.Equals, "varchar(10)")
-			},
+			read: fieldTypes,
+			want: []string{"varchar(10)"},
 		},
 		{
 			name: "column comment",
@@ -161,10 +168,8 @@ table "t" {
   }
 }
 `,
-			assert: func(c *qt.C, db *goschema.Database) {
-				c.Assert(db.Fields, qt.HasLen, 1)
-				c.Assert(db.Fields[0].Comment, qt.Equals, "hello")
-			},
+			read: fieldComments,
+			want: []string{"hello"},
 		},
 		{
 			name: "table comment",
@@ -174,10 +179,8 @@ table "t" {
   column "n" { type = int }
 }
 `,
-			assert: func(c *qt.C, db *goschema.Database) {
-				c.Assert(db.Tables, qt.HasLen, 1)
-				c.Assert(db.Tables[0].Comment, qt.Equals, "hello")
-			},
+			read: tableComments,
+			want: []string{"hello"},
 		},
 		{
 			name: "view body",
@@ -189,44 +192,35 @@ view "v" {
   as = sql("SELECT n FROM t")
 }
 `,
-			assert: func(c *qt.C, db *goschema.Database) {
-				c.Assert(db.Views, qt.HasLen, 1)
-				c.Assert(db.Views[0].Body, qt.Equals, "SELECT n FROM t")
-			},
+			read: viewBodies,
+			want: []string{"SELECT n FROM t"},
 		},
 		{
 			name: "function body",
-			hcl: `
-function "f" {
-  lang   = SQL
-  return = sql("text")
-  as     = sql("SELECT 'x'")
-}
-`,
-			assert: func(c *qt.C, db *goschema.Database) {
-				c.Assert(db.Functions, qt.HasLen, 1)
-				c.Assert(db.Functions[0].Body, qt.Equals, "SELECT 'x'")
-				c.Assert(db.Functions[0].Returns, qt.Equals, "text")
-			},
+			hcl:  sqlFunctionHCL,
+			read: functionBodies,
+			want: []string{"SELECT 'x'"},
+		},
+		{
+			name: "function return type",
+			hcl:  sqlFunctionHCL,
+			read: functionReturns,
+			want: []string{"text"},
 		},
 		{
 			name: "column default keeps its expression role",
-			hcl: `
-table "t" {
-  column "n" {
-    type    = int
-    default = sql("now()")
-  }
-}
-`,
-			assert: func(c *qt.C, db *goschema.Database) {
-				c.Assert(db.Fields, qt.HasLen, 1)
-				// A sql() default is an EXPRESSION, not a literal. The
-				// structural match has to keep that branch alive: a default
-				// landing in Default instead would be rendered quoted.
-				c.Assert(db.Fields[0].DefaultExpr, qt.Equals, "now()")
-				c.Assert(db.Fields[0].Default, qt.Equals, "")
-			},
+			hcl:  sqlDefaultHCL,
+			read: fieldDefaultExpressions,
+			want: []string{"now()"},
+		},
+		{
+			// A sql() default is an EXPRESSION, not a literal. The structural
+			// match has to keep that branch alive: a default landing in Default
+			// instead would be rendered quoted.
+			name: "column default is not also a literal",
+			hcl:  sqlDefaultHCL,
+			read: fieldDefaults,
+			want: []string{""},
 		},
 		{
 			// The call is matched on the parsed expression, not on the source
@@ -244,10 +238,8 @@ table "t" {
   }
 }
 `,
-			assert: func(c *qt.C, db *goschema.Database) {
-				c.Assert(db.Fields, qt.HasLen, 1)
-				c.Assert(db.Fields[0].DefaultExpr, qt.Equals, "now()")
-			},
+			read: fieldDefaultExpressions,
+			want: []string{"now()"},
 		},
 		{
 			name: "function argument type",
@@ -259,10 +251,8 @@ function "f" {
   as     = "SELECT 'x'"
 }
 `,
-			assert: func(c *qt.C, db *goschema.Database) {
-				c.Assert(db.Functions, qt.HasLen, 1)
-				c.Assert(db.Functions[0].Parameters, qt.Equals, "user_id bigint")
-			},
+			read: functionParameters,
+			want: []string{"user_id bigint"},
 		},
 		{
 			// Reference-shaped attributes read the attribute's source text by
@@ -277,10 +267,8 @@ table "t" {
   column "n" { type = int }
 }
 `,
-			assert: func(c *qt.C, db *goschema.Database) {
-				c.Assert(db.Tables, qt.HasLen, 1)
-				c.Assert(db.Tables[0].Schema, qt.Equals, "app")
-			},
+			read: tableSchemas,
+			want: []string{"app"},
 		},
 		{
 			// A heredoc is a string to HCL and to the community binary, and it
@@ -297,20 +285,105 @@ SQL
   }
 }
 `,
-			assert: func(c *qt.C, db *goschema.Database) {
-				c.Assert(db.Fields, qt.HasLen, 1)
-				c.Assert(db.Fields[0].DefaultExpr, qt.Equals, "now()\n")
-			},
+			read: fieldDefaultExpressions,
+			want: []string{"now()\n"},
 		},
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
 			db, err := atlashcl.Parse([]byte(test.hcl), "schema.hcl")
+
 			c.Assert(err, qt.IsNil)
-			test.assert(c, db)
+			c.Assert(test.read(db), qt.DeepEquals, test.want)
 		})
 	}
+}
+
+// The IR positions a sql() call can land in. Each returns what the position
+// holds across the whole parsed file, so a row names a position rather than
+// indexing into a slice that a regression may have left shorter.
+
+func projectStrings[T any](items []T, read func(item T) string) []string {
+	out := make([]string, 0, len(items))
+	for _, item := range items {
+		out = append(out, read(item))
+	}
+	return out
+}
+
+func checkExpressions(db *goschema.Database) []string {
+	return projectStrings(db.Constraints, func(item goschema.Constraint) string { return item.CheckExpression })
+}
+
+func indexConditions(db *goschema.Database) []string {
+	return projectStrings(db.Indexes, func(item goschema.Index) string { return item.Condition })
+}
+
+func indexComments(db *goschema.Database) []string {
+	return projectStrings(db.Indexes, func(item goschema.Index) string { return item.Comment })
+}
+
+func indexPartExpressions(db *goschema.Database) []string {
+	return projectStrings(indexParts(db), func(item goschema.IndexPart) string { return item.Expr })
+}
+
+func indexPartPrefixes(db *goschema.Database) []string {
+	return projectStrings(indexParts(db), func(item goschema.IndexPart) string { return item.Prefix })
+}
+
+func indexParts(db *goschema.Database) []goschema.IndexPart {
+	var parts []goschema.IndexPart
+	for _, index := range db.Indexes {
+		parts = append(parts, index.Parts...)
+	}
+	return parts
+}
+
+func fieldGeneratedExpressions(db *goschema.Database) []string {
+	return projectStrings(db.Fields, func(item goschema.Field) string { return item.GeneratedExpression })
+}
+
+func fieldTypes(db *goschema.Database) []string {
+	return projectStrings(db.Fields, func(item goschema.Field) string { return item.Type })
+}
+
+func fieldComments(db *goschema.Database) []string {
+	return projectStrings(db.Fields, func(item goschema.Field) string { return item.Comment })
+}
+
+func fieldDefaultExpressions(db *goschema.Database) []string {
+	return projectStrings(db.Fields, func(item goschema.Field) string { return item.DefaultExpr })
+}
+
+func fieldDefaults(db *goschema.Database) []string {
+	return projectStrings(db.Fields, func(item goschema.Field) string { return item.Default })
+}
+
+func tableComments(db *goschema.Database) []string {
+	return projectStrings(db.Tables, func(item goschema.Table) string { return item.Comment })
+}
+
+func tableSchemas(db *goschema.Database) []string {
+	return projectStrings(db.Tables, func(item goschema.Table) string { return item.Schema })
+}
+
+func viewBodies(db *goschema.Database) []string {
+	return projectStrings(db.Views, func(item goschema.View) string { return item.Body })
+}
+
+func functionBodies(db *goschema.Database) []string {
+	return projectStrings(db.Functions, func(item goschema.Function) string { return item.Body })
+}
+
+func functionReturns(db *goschema.Database) []string {
+	return projectStrings(db.Functions, func(item goschema.Function) string { return item.Returns })
+}
+
+func functionParameters(db *goschema.Database) []string {
+	return projectStrings(db.Functions, func(item goschema.Function) string { return item.Parameters })
 }
 
 // A sql() call Ptah cannot reduce to SQL text is refused outright rather than

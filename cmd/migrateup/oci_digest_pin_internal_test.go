@@ -42,42 +42,40 @@ func TestMigrateUp_OCITagAndDigestResolvesByDigest(t *testing.T) {
 		reference   string
 		wantTable   string
 		absentTable string
-		verify      func(c *qt.C, out string)
+		// The #1093 warning is the second observable: a reference that pinned
+		// a digest has nothing movable left to warn about, and one that did
+		// not must still say so.
+		wantInOutput    []string
+		wantNotInOutput []string
 	}{
 		{
-			name:        "bare tag follows the repoint",
-			reference:   base + ":release",
-			wantTable:   "swapped",
-			absentTable: "reviewed",
-			verify: func(c *qt.C, out string) {
-				c.Assert(out, qt.Contains, "is a movable tag")
-			},
+			name:         "bare tag follows the repoint",
+			reference:    base + ":release",
+			wantTable:    "swapped",
+			absentTable:  "reviewed",
+			wantInOutput: []string{"Warning:", "is a movable tag"},
 		},
 		{
 			name:        "tag and digest resolves by the digest",
 			reference:   base + ":release@" + reviewed,
 			wantTable:   "reviewed",
 			absentTable: "swapped",
-			verify: func(c *qt.C, out string) {
-				// #1094 definition of done: the readable pin counts as a digest
-				// reference for the #1093 warning, because a digest was pinned.
-				c.Assert(out, qt.Not(qt.Contains), "movable tag")
-				c.Assert(out, qt.Not(qt.Contains), "Warning:")
-			},
+			// #1094 definition of done: the readable pin counts as a digest
+			// reference for the #1093 warning, because a digest was pinned.
+			wantNotInOutput: []string{"movable tag", "Warning:"},
 		},
 		{
-			name:        "bare digest resolves the same bytes",
-			reference:   base + "@" + reviewed,
-			wantTable:   "reviewed",
-			absentTable: "swapped",
-			verify: func(c *qt.C, out string) {
-				c.Assert(out, qt.Not(qt.Contains), "Warning:")
-			},
+			name:            "bare digest resolves the same bytes",
+			reference:       base + "@" + reviewed,
+			wantTable:       "reviewed",
+			absentTable:     "swapped",
+			wantNotInOutput: []string{"movable tag", "Warning:"},
 		},
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			dbURL := "sqlite://" + filepath.Join(c.TempDir(), "pinned.db")
 
 			out, err := runUpInternal(
@@ -95,7 +93,12 @@ func TestMigrateUp_OCITagAndDigestResolvesByDigest(t *testing.T) {
 				qt.Commentf("%s", out))
 			c.Assert(sqliteMigrateUpTableExists(c, dbURL, tt.absentTable), qt.IsFalse,
 				qt.Commentf("%s", out))
-			tt.verify(c, out)
+			for _, want := range tt.wantInOutput {
+				c.Assert(out, qt.Contains, want, qt.Commentf("%s", out))
+			}
+			for _, unwanted := range tt.wantNotInOutput {
+				c.Assert(out, qt.Not(qt.Contains), unwanted, qt.Commentf("%s", out))
+			}
 		})
 	}
 }

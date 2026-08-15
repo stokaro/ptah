@@ -179,125 +179,119 @@ func TestRenderWritesEveryBlockBodyAsEvaluableHCL(t *testing.T) {
 // measured only against the other binary. Three of the six attributes here
 // (sequence type, policy for, and the enum schema) sit in blocks the pinned
 // binary refuses as a feature gap whatever they say, so Ptah's own parser is
-// the only thing that can tell those rows apart at all.
+// the only thing that can tell those cases apart at all.
+//
+// Each case reads back a different construct, so each states its own property
+// and none of them is a value another could carry.
 func TestEvaluableBlocksRoundTripThroughPtahsOwnParser(t *testing.T) {
-	tests := []struct {
-		name  string
-		db    func() *goschema.Database
-		check func(*qt.C, *goschema.Database)
-	}{
-		{
-			name: "a sequence keeps its type",
-			db: func() *goschema.Database {
-				db := inspectedEnumTable()
-				db.Sequences = []goschema.Sequence{{Name: "order_seq", AsType: "bigint"}}
-				return db
-			},
-			check: func(c *qt.C, parsed *goschema.Database) {
-				c.Assert(parsed.Sequences, qt.HasLen, 1)
-				c.Assert(parsed.Sequences[0].AsType, qt.Equals, "bigint")
-			},
-		},
-		{
-			name: "a function keeps all four attributes",
-			db: func() *goschema.Database {
-				db := inspectedEnumTable()
-				db.Functions = []goschema.Function{{
-					Name:       "touch_users",
-					Language:   "plpgsql",
-					Returns:    "trigger",
-					Security:   "INVOKER",
-					Volatility: "VOLATILE",
-					Body:       "BEGIN RETURN NEW; END;",
-				}}
-				return db
-			},
-			check: func(c *qt.C, parsed *goschema.Database) {
-				c.Assert(parsed.Functions, qt.HasLen, 1)
-				function := parsed.Functions[0]
-				// Canonicalize because the IR spells the language lowercase and
-				// the rendered attribute carries Atlas's mixed-case name. That
-				// detour predates this change -- the bare word was `PLpgSQL`
-				// too -- and Canonicalize is what every consumer of the IR
-				// already applies.
-				function.Canonicalize()
-				c.Assert(function.Language, qt.Equals, "plpgsql")
-				c.Assert(function.Returns, qt.Equals, "trigger")
-				c.Assert(function.Security, qt.Equals, "INVOKER")
-				c.Assert(function.Volatility, qt.Equals, "VOLATILE")
-			},
-		},
-		{
-			name: "a trigger keeps its for-each",
-			db: func() *goschema.Database {
-				db := inspectedEnumTable()
-				db.Triggers = []goschema.Trigger{{
-					Name:    "users_touch",
-					Table:   "users",
-					Timing:  "BEFORE",
-					Event:   "UPDATE",
-					ForEach: "ROW",
-					Body:    "BEGIN RETURN NEW; END;",
-				}}
-				return db
-			},
-			check: func(c *qt.C, parsed *goschema.Database) {
-				c.Assert(parsed.Triggers, qt.HasLen, 1)
-				c.Assert(parsed.Triggers[0].ForEach, qt.Equals, "ROW")
-				c.Assert(parsed.Triggers[0].Timing, qt.Equals, "BEFORE")
-			},
-		},
-		{
-			name: "a policy keeps its for",
-			db: func() *goschema.Database {
-				db := inspectedEnumTable()
-				db.Roles = []goschema.Role{{Name: "rdr"}}
-				db.RLSPolicies = []goschema.RLSPolicy{{
-					Name:            "users_read",
-					Table:           "users",
-					PolicyFor:       "ALL",
-					ToRoles:         "rdr",
-					UsingExpression: "true",
-				}}
-				return db
-			},
-			check: func(c *qt.C, parsed *goschema.Database) {
-				c.Assert(parsed.RLSPolicies, qt.HasLen, 1)
-				c.Assert(parsed.RLSPolicies[0].PolicyFor, qt.Equals, "ALL")
-				c.Assert(parsed.RLSPolicies[0].ToRoles, qt.Equals, "rdr")
-			},
-		},
-		{
-			// The reference spelling is the one the parser already understood:
-			// columnTypeName strips the `enum.` prefix to the enum's name and
-			// reports the type as NOT raw SQL, so a second render writes the
-			// reference again rather than falling back to sql().
-			name: "an enum-typed column keeps its type and stops being raw SQL",
-			db:   inspectedEnumTable,
-			check: func(c *qt.C, parsed *goschema.Database) {
-				c.Assert(parsed.Enums, qt.HasLen, 1)
-				c.Assert(parsed.Enums[0].Values, qt.DeepEquals, []string{"active", "inactive"})
-				state := fieldByName(parsed.Fields, "state")
-				c.Assert(state.Type, qt.Equals, "status")
-				c.Assert(state.TypeRawSQL, qt.IsFalse)
-			},
-		},
-	}
+	t.Run("a sequence keeps its type", func(t *testing.T) {
+		t.Parallel()
+		c := qt.New(t)
+		db := inspectedEnumTable()
+		db.Sequences = []goschema.Sequence{{Name: "order_seq", AsType: "bigint"}}
 
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			t.Parallel()
-			c := qt.New(t)
+		parsed := renderAndParse(c, db)
 
-			result, err := atlashclrender.RenderInspected(test.db(), platform.Postgres, "public")
-			c.Assert(err, qt.IsNil)
+		c.Assert(parsed.Sequences, qt.HasLen, 1)
+		c.Assert(parsed.Sequences[0].AsType, qt.Equals, "bigint")
+	})
 
-			parsed, err := atlashcl.Parse(result.Data, "rendered.hcl")
+	t.Run("a function keeps all four attributes", func(t *testing.T) {
+		t.Parallel()
+		c := qt.New(t)
+		db := inspectedEnumTable()
+		db.Functions = []goschema.Function{{
+			Name:       "touch_users",
+			Language:   "plpgsql",
+			Returns:    "trigger",
+			Security:   "INVOKER",
+			Volatility: "VOLATILE",
+			Body:       "BEGIN RETURN NEW; END;",
+		}}
 
-			c.Assert(err, qt.IsNil, qt.Commentf("rendered:\n%s", result.Data))
-			test.check(c, parsed)
-		})
-	}
+		parsed := renderAndParse(c, db)
+
+		c.Assert(parsed.Functions, qt.HasLen, 1)
+		function := parsed.Functions[0]
+		// Canonicalize because the IR spells the language lowercase and the
+		// rendered attribute carries Atlas's mixed-case name. That detour
+		// predates this change -- the bare word was `PLpgSQL` too -- and
+		// Canonicalize is what every consumer of the IR already applies.
+		function.Canonicalize()
+		c.Assert(function.Language, qt.Equals, "plpgsql")
+		c.Assert(function.Returns, qt.Equals, "trigger")
+		c.Assert(function.Security, qt.Equals, "INVOKER")
+		c.Assert(function.Volatility, qt.Equals, "VOLATILE")
+	})
+
+	t.Run("a trigger keeps its for-each", func(t *testing.T) {
+		t.Parallel()
+		c := qt.New(t)
+		db := inspectedEnumTable()
+		db.Triggers = []goschema.Trigger{{
+			Name:    "users_touch",
+			Table:   "users",
+			Timing:  "BEFORE",
+			Event:   "UPDATE",
+			ForEach: "ROW",
+			Body:    "BEGIN RETURN NEW; END;",
+		}}
+
+		parsed := renderAndParse(c, db)
+
+		c.Assert(parsed.Triggers, qt.HasLen, 1)
+		c.Assert(parsed.Triggers[0].ForEach, qt.Equals, "ROW")
+		c.Assert(parsed.Triggers[0].Timing, qt.Equals, "BEFORE")
+	})
+
+	t.Run("a policy keeps its for", func(t *testing.T) {
+		t.Parallel()
+		c := qt.New(t)
+		db := inspectedEnumTable()
+		db.Roles = []goschema.Role{{Name: "rdr"}}
+		db.RLSPolicies = []goschema.RLSPolicy{{
+			Name:            "users_read",
+			Table:           "users",
+			PolicyFor:       "ALL",
+			ToRoles:         "rdr",
+			UsingExpression: "true",
+		}}
+
+		parsed := renderAndParse(c, db)
+
+		c.Assert(parsed.RLSPolicies, qt.HasLen, 1)
+		c.Assert(parsed.RLSPolicies[0].PolicyFor, qt.Equals, "ALL")
+		c.Assert(parsed.RLSPolicies[0].ToRoles, qt.Equals, "rdr")
+	})
+
+	t.Run("an enum-typed column keeps its type and stops being raw SQL", func(t *testing.T) {
+		t.Parallel()
+		c := qt.New(t)
+
+		parsed := renderAndParse(c, inspectedEnumTable())
+
+		// The reference spelling is the one the parser already understood:
+		// columnTypeName strips the `enum.` prefix to the enum's name and
+		// reports the type as NOT raw SQL, so a second render writes the
+		// reference again rather than falling back to sql().
+		c.Assert(parsed.Enums, qt.HasLen, 1)
+		c.Assert(parsed.Enums[0].Values, qt.DeepEquals, []string{"active", "inactive"})
+		state := fieldByName(parsed.Fields, "state")
+		c.Assert(state.Type, qt.Equals, "status")
+		c.Assert(state.TypeRawSQL, qt.IsFalse)
+	})
+}
+
+// renderAndParse renders db and reads the result back with Ptah's own parser,
+// which is the round trip each case above inspects one construct of.
+func renderAndParse(c *qt.C, db *goschema.Database) *goschema.Database {
+	c.Helper()
+	result, err := atlashclrender.RenderInspected(db, platform.Postgres, "public")
+	c.Assert(err, qt.IsNil)
+
+	parsed, err := atlashcl.Parse(result.Data, "rendered.hcl")
+	c.Assert(err, qt.IsNil, qt.Commentf("rendered:\n%s", result.Data))
+	return parsed
 }
 
 // TestRenderedSchemaIsStableAcrossAParseAndRerender pins the property the
