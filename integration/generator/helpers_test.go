@@ -11,27 +11,25 @@ import (
 
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/generator"
 )
 
 var simpleRenderedIdentifierQuoteRE = regexp.MustCompile("[`\"]([a-z_][a-z0-9_]*)[`\"]")
 
-func requireGeneratorDatabaseURL(t *testing.T, envKey string) string {
-	t.Helper()
-	value := os.Getenv(envKey)
-	if value == "" {
-		t.Skipf("%s is not set", envKey)
-	}
-	return value
-}
-
+// requireGeneratorDatabaseConnection opens the live server for an engine.
+//
+// It names the engine rather than a variable: the callers used to pass
+// spellings like MYSQL_URL, so a checkout configured with the canonical
+// MYSQL_TEST_URL alone skipped every case here while internal/dbtarget
+// recognized the engine as configured -- and a skip reads as a pass.
 func requireGeneratorDatabaseConnection(
 	t *testing.T,
-	envKey string,
+	engine dbtarget.Engine,
 ) *dbschema.DatabaseConnection {
 	c := qt.New(t)
 	t.Helper()
-	conn, err := dbschema.ConnectToDatabase(t.Context(), requireGeneratorDatabaseURL(t, envKey))
+	conn, err := dbschema.ConnectToDatabase(t.Context(), dbtarget.URL(c, engine))
 	c.Assert(err, qt.IsNil)
 	t.Cleanup(func() {
 		c.Check(conn.Close(), qt.IsNil)
