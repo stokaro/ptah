@@ -60,7 +60,7 @@ jobs:
           git diff --exit-code -- schemas/ptah-annotations.schema.json
 
       - name: qtlint
-        run: scripts/check-qtlint.sh
+        run: make lint-qtlint
 
       - name: Check test style baseline
         run: scripts/check-test-style.sh

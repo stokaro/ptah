@@ -20,7 +20,7 @@ set -eu
 # ptah-managed-pre-commit-hook
 
 echo "Running qtlint..."
-scripts/check-qtlint.sh
+make lint-qtlint
 
 echo "Running test style baseline check..."
 scripts/check-test-style.sh

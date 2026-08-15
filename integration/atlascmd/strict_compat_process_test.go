@@ -225,6 +225,7 @@ func TestStrictCompatProcessRefusesMalformedDerivedEnvironmentBeforeDispatch(t *
 		"PTAH_STRICT_DIR_QUERY",
 	} {
 		t.Run(name, func(t *testing.T) {
+			c := qt.New(t)
 			stdout, stderr, code := runAtlasBinary(
 				compat,
 				[]string{
@@ -234,9 +235,9 @@ func TestStrictCompatProcessRefusesMalformedDerivedEnvironmentBeforeDispatch(t *
 				"version",
 			)
 
-			qt.Assert(t, code, qt.Equals, 1)
-			qt.Assert(t, stdout, qt.Equals, "")
-			qt.Assert(t, stderr, qt.Equals,
+			c.Assert(code, qt.Equals, 1)
+			c.Assert(stdout, qt.Equals, "")
+			c.Assert(stderr, qt.Equals,
 				`Error: invalid boolean value "maybe" for `+name+"\n")
 		})
 	}

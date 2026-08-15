@@ -165,13 +165,42 @@ lint: lint-qtlint
 	@echo "Running golangci-lint..."
 	golangci-lint run ./...
 
-lint-qtlint:
+# qtlint runs once per module and once per build contour. Neither loop is
+# optional: `./...` covers the default contour of one module only, so files
+# behind //go:build integration and everything under testkit/ and
+# examples/orm-loaders/gorm/ (separate modules) are excluded before the
+# analyzer sees them.
+#
+# The binary is built once from the root module rather than invoked with
+# `go run` per module, because only the root go.mod declares the tool. Building
+# it here keeps the version declared in exactly one place; a `go run` per module
+# would let the three resolve different versions of the same rule.
+QTLINT_MODULES := . testkit examples/orm-loaders/gorm
+QTLINT_RULES := -require-qt-c-receiver
+QTLINT_BIN := $(CURDIR)/bin/qtlint
+
+$(QTLINT_BIN):
+	@mkdir -p $(dir $@)
+	go build -o $@ github.com/go-extras/qtlint/cmd/qtlint
+
+lint-qtlint: $(QTLINT_BIN)
 	@echo "Running qtlint..."
-	scripts/check-qtlint.sh
+	@for module in $(QTLINT_MODULES); do \
+		echo "  $$module (default contour)"; \
+		(cd $$module && $(QTLINT_BIN) $(QTLINT_RULES) ./...) || exit 1; \
+		echo "  $$module (integration contour)"; \
+		(cd $$module && $(QTLINT_BIN) $(QTLINT_RULES) -tags integration ./...) || exit 1; \
+	done
+
+lint-qtlint-fix: $(QTLINT_BIN)
+	@for module in $(QTLINT_MODULES); do \
+		(cd $$module && $(QTLINT_BIN) $(QTLINT_RULES) -fix ./...) || exit 1; \
+		(cd $$module && $(QTLINT_BIN) $(QTLINT_RULES) -fix -tags integration ./...) || exit 1; \
+	done
 
 lint-fix:
 	@echo "Running auto-fixable linters..."
-	scripts/check-qtlint.sh --fix
+	$(MAKE) lint-qtlint-fix
 	golangci-lint run --fix ./...
 	$(MAKE) lint
 

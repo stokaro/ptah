@@ -140,6 +140,7 @@ func TestDropAllTablesRemovesATargetNamedLikeInnerStorageLive(t *testing.T) {
 // allow_deprecated_database_ordinary; a server that refuses the engine skips the
 // test rather than passing it.
 func openLiveClickHouseOrdinaryDatabase(t *testing.T, environmentVariable string) (*sql.DB, string) {
+	c := qt.New(t)
 	t.Helper()
 	adminURL, configured := os.LookupEnv(environmentVariable)
 	if !configured {
@@ -147,20 +148,20 @@ func openLiveClickHouseOrdinaryDatabase(t *testing.T, environmentVariable string
 	}
 
 	parsedAdmin, err := url.Parse(adminURL)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	adminQuery := parsedAdmin.Query()
 	adminQuery.Set("allow_deprecated_database_ordinary", "1")
 	parsedAdmin.RawQuery = adminQuery.Encode()
 
 	admin, err := sql.Open("clickhouse", parsedAdmin.String())
-	qt.Assert(t, err, qt.IsNil)
-	qt.Assert(t, admin.PingContext(t.Context()), qt.IsNil)
+	c.Assert(err, qt.IsNil)
+	c.Assert(admin.PingContext(t.Context()), qt.IsNil)
 
 	database := fmt.Sprintf("ptah_ordinary_%d", time.Now().UnixNano())
 	quotedDatabase := sqlident.Quote(platform.ClickHouse, database)
 	_, err = admin.ExecContext(t.Context(), "CREATE DATABASE "+quotedDatabase+" ENGINE = Ordinary")
 	if err != nil {
-		qt.Check(t, admin.Close(), qt.IsNil)
+		c.Check(admin.Close(), qt.IsNil)
 		t.Skip("server refuses the deprecated Ordinary database engine: " + err.Error())
 	}
 
@@ -168,19 +169,19 @@ func openLiveClickHouseOrdinaryDatabase(t *testing.T, environmentVariable string
 	working.Path = "/" + database
 	working.RawPath = ""
 	db, err := sql.Open("clickhouse", working.String())
-	qt.Assert(t, err, qt.IsNil)
-	qt.Assert(t, db.PingContext(t.Context()), qt.IsNil)
+	c.Assert(err, qt.IsNil)
+	c.Assert(db.PingContext(t.Context()), qt.IsNil)
 
 	t.Cleanup(func() {
-		qt.Check(t, db.Close(), qt.IsNil)
+		c.Check(db.Close(), qt.IsNil)
 		cleanupCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		_, cleanupErr := admin.ExecContext(
 			cleanupCtx,
 			"DROP DATABASE IF EXISTS "+quotedDatabase+" SYNC",
 		)
-		qt.Check(t, cleanupErr, qt.IsNil)
-		qt.Check(t, admin.Close(), qt.IsNil)
+		c.Check(cleanupErr, qt.IsNil)
+		c.Check(admin.Close(), qt.IsNil)
 	})
 	return db, database
 }
