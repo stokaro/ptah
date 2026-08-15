@@ -463,6 +463,45 @@ that asks the shared helper twice will agree with itself while one end quietly
 stops calling it, which is the state stokaro/ptah#1540 reported. Drive the
 public path that joins them.
 
+### A path is not a string, and an assertion about one is not portable
+
+`windows-latest` found 336 failing unit tests the first time it ran, and after
+the repair almost none of them were about Windows. They were four habits, each
+of which reads as correct on a Linux runner:
+
+1. **A path pasted into a language that escapes backslash.** `url =
+   "sqlite://` + dbPath + `"` inside HCL makes `\U` an invalid escape sequence
+   and the whole project file is refused; the same happens in a YAML scalar and
+   in a Go template's string literal. Wrap the interpolation in
+   `filepath.ToSlash`, or hand it over with `strconv.Quote` where the target
+   language wants a quoted literal.
+2. **A path put in a `url.URL`'s `Path` and rendered with `String()`.** That
+   escapes the separator into `%5C` and produces an address nothing reads back
+   — not even `atlasurl.Parse`, whose Windows rule looks for a separator and
+   finds a percent sign. Use `atlasurl.SQLiteURLFromPath`. The same call also
+   writes `//` before a `Path` with no leading slash, which turns a drive letter
+   into a URI authority: `file://C:/a/b.sql` names host `C:`.
+3. **An assertion on text the operating system wrote.** `no such file or
+   directory`, `connection refused` and `stat` are one platform's wording.
+   Assert with `errors.Is` where the error value is in hand, or match only the
+   Ptah-authored part of the sentence and leave the OS clause alone.
+4. **A program that has to exist to be run.** `go build -o dir/tool` writes a
+   file Windows will not execute, and a `/bin/sh` fixture has no interpreter
+   there. `internal/exeext` carries the extension for both ends — a test adds
+   it to build a runnable helper, and `ptah-compat` takes it back off so a
+   drop-in installed as `atlas.exe` still calls itself `atlas`, which is what
+   the pinned binary does regardless of its own filename.
+
+The trap underneath all four is worse than the failures: **a
+platform-conditional assertion tends to pass on the platform it cannot test.**
+A file-mode check reduces to `0o200 == 0o200` on Windows and asserts nothing
+while staying green; a suffix-trimming check written against the build-tagged
+constant trims nothing on Unix, and would keep passing if the code stopped
+trimming at all. Where the answer differs per platform, either take the varying
+part as a **parameter** so every platform can exercise every answer, or split
+the test by build tag so each half is real where it runs. Never write one
+assertion that quietly becomes a tautology on the half you are not looking at.
+
 ### Compatibility with older Ptah is a different axis, and it is not owed
 
 Everything above is about the community binary. Compatibility with **Ptah's own
