@@ -374,7 +374,7 @@ handles the two cases differently:
 - **The populated-table heuristic** excludes a partitioned parent and generates
   the plain, transactional statement. Nothing asked for a concurrent build, and
   the plain form is legal SQL that `ptah migrations lint` still reports as
-  `PG101`.
+  [`PG101`](../../reference/lint-rules/).
 - **An explicit `diff.concurrent_index.create` / `diff.concurrent_index.drop`**
   fails generation before any file is written, naming the index and the
   partitioned table. Silently downgrading an explicit request would hand a

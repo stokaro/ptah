@@ -98,7 +98,30 @@ func LintSource(source Source, opts Options) ([]Finding, error) {
 		}
 		findings = append(findings, statementFindings...)
 	}
-	return findings, nil
+	return keepEnabled(findings, opts.DisabledRules), nil
+}
+
+// keepEnabled drops the findings a --disable selector covers.
+//
+// The per-rule check inside [lintParsedStatement] cannot answer for the whole
+// command: SQL001 and SQL002 are produced by the parse path, which runs before
+// any rule object exists, so a selector naming either was accepted and silently
+// ignored -- `ptah sql lint --disable SQL001` still reported SQL001 and still
+// exited 1. Filtering once, where every finding this function returns passes
+// through, is what makes the flag mean the same thing for every identifier the
+// linter can report.
+func keepEnabled(findings []Finding, disabled []string) []Finding {
+	if len(disabled) == 0 {
+		return findings
+	}
+	kept := make([]Finding, 0, len(findings))
+	for _, finding := range findings {
+		if ruleDisabled(finding.Rule, disabled) {
+			continue
+		}
+		kept = append(kept, finding)
+	}
+	return kept
 }
 
 // effectiveCapabilities resolves once per source rather than once per
