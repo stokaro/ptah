@@ -105,6 +105,7 @@ func TestScanFileReportsExactlyTheViolations(t *testing.T) {
 				{line: 24, rule: qtshape.RuleBorrowedChecker},
 				{line: 61, rule: qtshape.RuleBorrowedChecker},
 				{line: 70, rule: qtshape.RuleBorrowedChecker},
+				{line: 82, rule: qtshape.RuleBorrowedChecker},
 			},
 		},
 		{

@@ -714,21 +714,34 @@ func (a *analysis) subtestClosure(call *ast.CallExpr) (*ast.FuncLit, bool) {
 // `callback := func(t *testing.T) { c.Assert(...) }` followed by
 // `t.Run(name, callback)` produces exactly the parent-FailNow failure R3 exists
 // to prevent, and reading only the inline spelling let it through.
+//
+// So is a callback copied into a second name. `alias := callback` binds the
+// same literal, and stopping at the one declaration that has no `lit` of its
+// own made a one-line rename an escape from the rule. The chain is followed for
+// the same reason the checker's is, and it terminates for the same reason:
+// every step resolves to a declaration written strictly earlier.
 func (a *analysis) callbackLiteral(expr ast.Expr) (*ast.FuncLit, bool) {
-	expr = ast.Unparen(expr)
-	if lit, ok := expr.(*ast.FuncLit); ok {
-		return lit, true
+	for {
+		expr = ast.Unparen(expr)
+		if lit, ok := expr.(*ast.FuncLit); ok {
+			return lit, true
+		}
+		ident, ok := expr.(*ast.Ident)
+		if !ok {
+			return nil, false
+		}
+		decl, ok := a.names.lookup(ident.Name, ident.Pos())
+		if !ok {
+			return nil, false
+		}
+		if decl.lit != nil {
+			return decl.lit, true
+		}
+		if decl.value == nil {
+			return nil, false
+		}
+		expr = decl.value
 	}
-	ident, ok := expr.(*ast.Ident)
-	if !ok {
-		return nil, false
-	}
-	decl, ok := a.names.lookup(ident.Name, ident.Pos())
-	if !ok || decl.lit == nil {
-		return nil, false
-	}
-
-	return decl.lit, true
 }
 
 // references returns, in source order, the identifiers inside a closure body

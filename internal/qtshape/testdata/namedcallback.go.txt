@@ -71,3 +71,27 @@ func FuzzNamedTarget(f *testing.F) {
 	}
 	f.Fuzz(borrows)
 }
+
+// A callback copied into a second name is the same literal. Stopping at the
+// declaration that has no literal of its own made `alias := callback` a
+// one-line rename out of the rule, on the same shape the file above catches.
+func TestAliasedNamedCallback(t *testing.T) {
+	c := qt.New(t)
+
+	borrows := func(t *testing.T) {
+		c.Assert(6, qt.Equals, 6)
+	}
+	alias := borrows
+	t.Run("the alias is the same callback", alias)
+}
+
+// And the negative: an alias of a callback that borrows nothing stays silent,
+// so following the chain cannot become a source of findings of its own.
+func TestAliasedConformingCallback(t *testing.T) {
+	owns := func(t *testing.T) {
+		c := qt.New(t)
+		c.Assert(7, qt.Equals, 7)
+	}
+	alias := owns
+	t.Run("the alias of a conforming callback is conforming", alias)
+}
