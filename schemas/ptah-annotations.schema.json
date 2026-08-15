@@ -82,6 +82,10 @@
               "description": "Composite type comment.",
               "type": "string"
             },
+            "dialects": {
+              "description": "Comma-separated target dialects this object belongs to. Omitted means every dialect; a target the scope excludes leaves the object out of its desired state entirely, so nothing compares or plans it there.",
+              "type": "string"
+            },
             "fields": {
               "description": "Comma-separated name:type field list.",
               "type": "string"
@@ -263,6 +267,10 @@
               "description": "DEFAULT expression.",
               "type": "string"
             },
+            "dialects": {
+              "description": "Comma-separated target dialects this object belongs to. Omitted means every dialect; a target the scope excludes leaves the object out of its desired state entirely, so nothing compares or plans it there.",
+              "type": "string"
+            },
             "name": {
               "description": "Domain name.",
               "type": "string"
@@ -341,6 +349,10 @@
           "properties": {
             "comment": {
               "description": "Extension comment.",
+              "type": "string"
+            },
+            "dialects": {
+              "description": "Comma-separated target dialects this object belongs to. Omitted means every dialect; a target the scope excludes leaves the object out of its desired state entirely, so nothing compares or plans it there.",
               "type": "string"
             },
             "if_not_exists": {
@@ -537,6 +549,10 @@
               "description": "Function comment.",
               "type": "string"
             },
+            "dialects": {
+              "description": "Comma-separated target dialects this object belongs to. Omitted means every dialect; a target the scope excludes leaves the object out of its desired state entirely, so nothing compares or plans it there.",
+              "type": "string"
+            },
             "language": {
               "description": "Function language.",
               "type": "string"
@@ -583,6 +599,10 @@
           "properties": {
             "comment": {
               "description": "Grant comment.",
+              "type": "string"
+            },
+            "dialects": {
+              "description": "Comma-separated target dialects this object belongs to. Omitted means every dialect; a target the scope excludes leaves the object out of its desired state entirely, so nothing compares or plans it there.",
               "type": "string"
             },
             "grant_option": {
@@ -738,6 +758,10 @@
               "description": "Materialized view comment.",
               "type": "string"
             },
+            "dialects": {
+              "description": "Comma-separated target dialects this object belongs to. Omitted means every dialect; a target the scope excludes leaves the object out of its desired state entirely, so nothing compares or plans it there.",
+              "type": "string"
+            },
             "name": {
               "description": "Materialized view name.",
               "type": "string"
@@ -780,6 +804,10 @@
             },
             "comment": {
               "description": "Range type comment.",
+              "type": "string"
+            },
+            "dialects": {
+              "description": "Comma-separated target dialects this object belongs to. Omitted means every dialect; a target the scope excludes leaves the object out of its desired state entirely, so nothing compares or plans it there.",
               "type": "string"
             },
             "name": {
@@ -830,6 +858,10 @@
               "description": "RLS enablement comment.",
               "type": "string"
             },
+            "dialects": {
+              "description": "Comma-separated target dialects this object belongs to. Omitted means every dialect; a target the scope excludes leaves the object out of its desired state entirely, so nothing compares or plans it there.",
+              "type": "string"
+            },
             "table": {
               "description": "Target table.",
               "type": "string"
@@ -856,6 +888,10 @@
           "properties": {
             "comment": {
               "description": "Policy comment.",
+              "type": "string"
+            },
+            "dialects": {
+              "description": "Comma-separated target dialects this object belongs to. Omitted means every dialect; a target the scope excludes leaves the object out of its desired state entirely, so nothing compares or plans it there.",
               "type": "string"
             },
             "for": {
@@ -938,6 +974,10 @@
                 "true",
                 "false"
               ],
+              "type": "string"
+            },
+            "dialects": {
+              "description": "Comma-separated target dialects this object belongs to. Omitted means every dialect; a target the scope excludes leaves the object out of its desired state entirely, so nothing compares or plans it there.",
               "type": "string"
             },
             "inherit": {
@@ -1049,6 +1089,10 @@
                 "true",
                 "false"
               ],
+              "type": "string"
+            },
+            "dialects": {
+              "description": "Comma-separated target dialects this object belongs to. Omitted means every dialect; a target the scope excludes leaves the object out of its desired state entirely, so nothing compares or plans it there.",
               "type": "string"
             },
             "if_not_exists": {
@@ -1172,6 +1216,10 @@
               "description": "Trigger comment.",
               "type": "string"
             },
+            "dialects": {
+              "description": "Comma-separated target dialects this object belongs to. Omitted means every dialect; a target the scope excludes leaves the object out of its desired state entirely, so nothing compares or plans it there.",
+              "type": "string"
+            },
             "event": {
               "description": "Trigger event, such as INSERT or UPDATE.",
               "type": "string"
@@ -1225,6 +1273,10 @@
             },
             "comment": {
               "description": "View comment.",
+              "type": "string"
+            },
+            "dialects": {
+              "description": "Comma-separated target dialects this object belongs to. Omitted means every dialect; a target the scope excludes leaves the object out of its desired state entirely, so nothing compares or plans it there.",
               "type": "string"
             },
             "name": {
