@@ -65,6 +65,20 @@ jobs:
       - name: qtlint
         run: make lint-qtlint
 
+      - name: nolintguard
+        run: |
+          nolintguard="$(go tool -n nolintguard)"
+          go vet -vettool="$nolintguard" -require-justification ./...
+          (cd testkit && go vet -vettool="$nolintguard" -require-justification ./...)
+          (cd examples/orm-loaders/gorm && go vet -vettool="$nolintguard" -require-justification ./...)
+
+      - name: nolintguard (integration)
+        run: |
+          nolintguard="$(go tool -n nolintguard)"
+          go vet -tags=integration -vettool="$nolintguard" -require-justification ./...
+          (cd testkit && go vet -tags=integration -vettool="$nolintguard" -require-justification ./...)
+          (cd examples/orm-loaders/gorm && go vet -tags=integration -vettool="$nolintguard" -require-justification ./...)
+
       - name: Check test style baseline
         run: scripts/check-test-style.sh
 

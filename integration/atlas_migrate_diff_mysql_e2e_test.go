@@ -377,7 +377,7 @@ func runMySQLProtectedViewDropHandoff(
 	c.Assert(waitForMySQLUnlockGate(ctx, gate.started), qt.IsNil)
 	c.Assert(waitForMySQLMetadataWait(ctx, adminDB, dropSQL), qt.IsNil)
 
-	//nolint:gosec // G201: generated catalog identifiers are emitted only through identifier quoting.
+	// #nosec G201 -- generated catalog identifiers are emitted only through identifier quoting.
 	competitorSQL := fmt.Sprintf(
 		"CREATE VIEW %s AS SELECT id FROM %s",
 		sqlident.Qualified(platform.MySQL, externalName, "competing_view"),

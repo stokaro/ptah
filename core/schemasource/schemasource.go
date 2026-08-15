@@ -139,7 +139,7 @@ func run(ctx context.Context, cmd Command) ([]byte, error) {
 	// (through --schema-cmd or ptah.yaml), analogous to git's core.editor. Ptah
 	// runs it directly with an explicit argument vector and never through a
 	// shell, so there is no shell-injection surface.
-	c := exec.Command(cmd.Args[0], cmd.Args[1:]...) //nolint:gosec // operator-provided command, run directly without a shell
+	c := exec.Command(cmd.Args[0], cmd.Args[1:]...) // #nosec G204 -- operator-provided command, run directly without a shell
 	prepareProcess(c)
 	if strings.TrimSpace(cmd.Dir) != "" {
 		c.Dir = cmd.Dir

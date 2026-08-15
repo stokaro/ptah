@@ -65,7 +65,7 @@ func TestGenerateCommand_UsesExternalSchemaFromPtahConfigEnv(t *testing.T) {
       env: ["GO_WANT_GENERATE_HELPER_PROCESS=1"]
 `, strconv.Quote(os.Args[0]))
 	// configPath is rooted in t.TempDir and is not influenced by production input.
-	c.Assert(os.WriteFile(configPath, []byte(config), 0o600), qt.IsNil) //nolint:gosec // controlled test-only path
+	c.Assert(os.WriteFile(configPath, []byte(config), 0o600), qt.IsNil) // #nosec G703 -- controlled test-only path
 
 	cmd := generate.NewGenerateCommand()
 	cmd.SetArgs([]string{
@@ -93,7 +93,7 @@ func TestGenerateCommand_RejectsImplicitExternalSchemaFromConfig(t *testing.T) {
   env: ["GO_WANT_GENERATE_HELPER_PROCESS=1"]
 `, strconv.Quote(os.Args[0]))
 	c.Assert(
-		os.WriteFile(configPath, []byte(config), 0o600), //nolint:gosec // controlled test-only path
+		os.WriteFile(configPath, []byte(config), 0o600), // #nosec G703 -- controlled test-only path
 		qt.IsNil,
 	)
 

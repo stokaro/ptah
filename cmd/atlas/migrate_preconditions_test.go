@@ -348,7 +348,7 @@ func swapAtlasSumEntryLines(c *qt.C, dir string) {
 	lines := strings.Split(strings.TrimRight(string(raw), "\n"), "\n")
 	c.Assert(lines, qt.HasLen, 3)
 	swapped := strings.Join([]string{lines[0], lines[2], lines[1]}, "\n") + "\n"
-	//nolint:gosec // the path is this test's own t.TempDir() plus a constant name
+	// #nosec G703 -- the path is this test's own t.TempDir() plus a constant name
 	c.Assert(os.WriteFile(path, []byte(swapped), 0o600), qt.IsNil)
 }
 

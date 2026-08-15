@@ -103,7 +103,7 @@ func installCreateEditor(t *testing.T, marker string) {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "editor.sh")
 	script := "#!/bin/sh\nfor f in \"$@\"; do\n  printf '%s\\n' \"" + marker + "\" >> \"$f\"\ndone\n"
-	if err := os.WriteFile(path, []byte(script), 0o700); err != nil { //nolint:gosec // test editor script must be executable
+	if err := os.WriteFile(path, []byte(script), 0o700); err != nil { // #nosec G306 -- test editor script must be executable
 		t.Fatal(err)
 	}
 	t.Setenv("VISUAL", "")
