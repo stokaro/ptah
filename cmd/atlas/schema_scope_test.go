@@ -148,8 +148,8 @@ func TestSchemaDiffIncludeSelectsQuotedDottedIdentifier(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		t.Run(test.name, func(t2 *testing.T) {
-			c := qt.New(t2)
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			dir := t.TempDir()
 			fromPath := filepath.Join(dir, "from.sql")
 			toPath := filepath.Join(dir, "to.sql")
@@ -204,8 +204,8 @@ func TestSchemaDiffIncludeMalformedSelectorFailsBeforeDevDatabase(t *testing.T) 
 }
 
 func TestSchemaDiffSchemaScopeOnSQLite(t *testing.T) {
-	t.Run("main selects unqualified objects", func(t2 *testing.T) {
-		c := qt.New(t2)
+	t.Run("main selects unqualified objects", func(t *testing.T) {
+		c := qt.New(t)
 		fromPath, toPath, devPath := writeScopeSchemaFiles(t)
 		cmd := atlas.NewCompatCommand("atlas")
 		var out bytes.Buffer
@@ -226,8 +226,8 @@ func TestSchemaDiffSchemaScopeOnSQLite(t *testing.T) {
 		c.Assert(out.String(), qt.Contains, "scope_archive")
 	})
 
-	t.Run("other schema selects nothing", func(t2 *testing.T) {
-		c := qt.New(t2)
+	t.Run("other schema selects nothing", func(t *testing.T) {
+		c := qt.New(t)
 		fromPath, toPath, devPath := writeScopeSchemaFiles(t)
 		cmd := atlas.NewCompatCommand("atlas")
 		var out bytes.Buffer

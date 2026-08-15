@@ -405,8 +405,8 @@ func TestWriterDropDatabaseRealm_RejectsProtectedDatabasesBeforeMutation(t *test
 	}
 
 	for _, test := range tests {
-		t.Run(test.name, func(t2 *testing.T) {
-			c := qt.New(t2)
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			queryHandler := &postgresRealmQuery{
 				version:  test.version,
 				database: test.database,
@@ -434,8 +434,8 @@ func TestWriterDropDatabaseRealm_PostgresAllowsOtherFamilyProtectedNames(t *test
 	tests := []string{"defaultdb", "system", "system_platform", "yugabyte"}
 
 	for _, database := range tests {
-		t.Run(database, func(t2 *testing.T) {
-			c := qt.New(t2)
+		t.Run(database, func(t *testing.T) {
+			c := qt.New(t)
 			queryHandler := newPostgresRealmMetadataQuery()
 			queryHandler.database = database
 			queryHandler.publicObjects = nil
@@ -467,8 +467,8 @@ func TestWriterDropDatabaseRealm_RejectsDatabaseScopedArtifactBeforeMutation(t *
 	}
 
 	for _, test := range tests {
-		t.Run(test.name, func(t2 *testing.T) {
-			c := qt.New(t2)
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			queryHandler := newPostgresRealmMetadataQuery()
 			queryHandler.databaseArtifacts = [][]driver.Value{{test.kind, test.item}}
 			db := dbtest.OpenWithExec(t, queryHandler.query, nil)
@@ -606,8 +606,8 @@ func TestWriterDropAllTables_RejectsCrossSchemaPartitionEdges(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		t.Run(test.name, func(t2 *testing.T) {
-			c := qt.New(t2)
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			var execQueries []string
 			db := dbtest.OpenWithExec(t, postgresPartitionEdgeQuery(test), func(
 				query string,

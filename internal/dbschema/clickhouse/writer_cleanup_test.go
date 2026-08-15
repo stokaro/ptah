@@ -279,8 +279,8 @@ func TestWriterDropDatabaseRealm_UnsupportedDatabaseEngineFailsBeforeMutation(t 
 	engines := []string{"DataLakeCatalog", "Replicated", "Shared"}
 
 	for _, engine := range engines {
-		t.Run(engine, func(t2 *testing.T) {
-			c := qt.New(t2)
+		t.Run(engine, func(t *testing.T) {
+			c := qt.New(t)
 			database := "analytics"
 			privilegesQuery := databaseRealmPrivilegesQuery(database)
 			queries := []sqlMockQuery{
@@ -336,8 +336,8 @@ func TestWriterDropDatabaseRealm_ExternalDependencyFailsBeforeMutation(t *testin
 	}
 
 	for _, test := range tests {
-		t.Run(test.name, func(t2 *testing.T) {
-			c := qt.New(t2)
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			database := "analytics"
 			privilegesQuery := databaseRealmPrivilegesQuery(database)
 			externalArgs := []driver.NamedValue{
@@ -380,8 +380,8 @@ func TestWriterDropDatabaseRealm_ProtectedDatabasesFailWithoutIO(t *testing.T) {
 	}
 
 	for _, database := range databases {
-		t.Run(database, func(t2 *testing.T) {
-			c := qt.New(t2)
+		t.Run(database, func(t *testing.T) {
+			c := qt.New(t)
 			db := openClickHouseSQLMock(t, c.TB, nil, nil)
 			writer := clickhouse.NewClickHouseWriter(db.SQL, database)
 

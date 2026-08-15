@@ -226,8 +226,8 @@ func TestResolveExternalSchema_HappyPath(t *testing.T) {
 func TestResolveExternalSchema_FailurePath(t *testing.T) {
 	t.Setenv(atlassource.AllowExternalSchemaEnvVar, "1")
 
-	t.Run("program exiting non-zero surfaces stderr", func(t2 *testing.T) {
-		c := qt.New(t2)
+	t.Run("program exiting non-zero surfaces stderr", func(t *testing.T) {
+		c := qt.New(t)
 		set, err := atlassource.ClassifySet("--to", []string{"env://src"}, externalSchemaProjectEnv("fail"))
 		c.Assert(err, qt.IsNil)
 
@@ -238,8 +238,8 @@ func TestResolveExternalSchema_FailurePath(t *testing.T) {
 		c.Assert(err.Error(), qt.Contains, "external loader blew up")
 	})
 
-	t.Run("empty stdout is rejected", func(t2 *testing.T) {
-		c := qt.New(t2)
+	t.Run("empty stdout is rejected", func(t *testing.T) {
+		c := qt.New(t)
 		set, err := atlassource.ClassifySet("--to", []string{"env://src"}, externalSchemaProjectEnv("empty"))
 		c.Assert(err, qt.IsNil)
 

@@ -108,8 +108,8 @@ func TestWriterDropAllTables_RefusesBacktickedNames(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		t.Run(test.name, func(t2 *testing.T) {
-			c := qt.New(t2)
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			queries := []sqlMockQuery{
 				{
 					sql:    cleanupViewsQuery,

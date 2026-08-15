@@ -158,8 +158,8 @@ func TestReadSequencesForSchema_DomainBackedSequenceIsStandalone(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		t.Run(test.name, func(t2 *testing.T) {
-			c := qt.New(t2)
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			catalog := test.catalog()
 			db := dbtest.Open(t, func(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
 				return serveSequenceQuery(catalog, query)

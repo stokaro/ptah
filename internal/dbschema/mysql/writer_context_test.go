@@ -130,8 +130,8 @@ func TestWriterDropDatabaseRealm_RejectsProtectedDatabasesBeforeMutation(t *test
 	}
 
 	for _, database := range tests {
-		t.Run(database, func(t2 *testing.T) {
-			c := qt.New(t2)
+		t.Run(database, func(t *testing.T) {
+			c := qt.New(t)
 			recorder := &mysqlCleanupRecorder{}
 			db := dbtest.OpenWithExec(t, recorder.query, recorder.exec)
 			writer := mysql.NewMySQLWriterWithServerVersion(
@@ -271,8 +271,8 @@ func TestWriterDropAllTables_RejectsExternalStoredProgramsBeforeMutation(t *test
 	}
 
 	for _, test := range tests {
-		t.Run(test.name, func(t2 *testing.T) {
-			c := qt.New(t2)
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			recorder := &mysqlCleanupRecorder{
 				foreignKeyChecks: 1,
 				externalStoredPrograms: [][]driver.Value{{
@@ -509,8 +509,8 @@ func TestWriterDropAllTables_DropsManagedViewsThroughProtectedHandoff(t *testing
 	}
 
 	for _, test := range tests {
-		t.Run(test.name, func(t2 *testing.T) {
-			c := qt.New(t2)
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			recorder := &mysqlCleanupRecorder{
 				foreignKeyChecks: 1,
 				viewDropStarted:  make(chan struct{}),

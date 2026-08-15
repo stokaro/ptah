@@ -81,8 +81,8 @@ func TestSchemaInspectIncludeUnionsValues(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		t.Run(test.name, func(t2 *testing.T) {
-			c := qt.New(t2)
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			dbPath := seedSQLiteDB(t, inspectIncludeDDL)
 
 			stdout, stderr, err := runCompatInspect(append([]string{"--url", "sqlite://" + dbPath}, test.args...)...)
@@ -108,8 +108,8 @@ func TestSchemaInspectIncludeAcceptsQualifiedNames(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		t.Run(test.name, func(t2 *testing.T) {
-			c := qt.New(t2)
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			dbPath := seedSQLiteDB(t, inspectIncludeDDL)
 
 			stdout, stderr, err := runCompatInspect("--url", "sqlite://"+dbPath, "--include", test.pattern)
@@ -137,8 +137,8 @@ func TestSchemaInspectIncludeSelectsQuotedDottedIdentifier(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		t.Run(test.name, func(t2 *testing.T) {
-			c := qt.New(t2)
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			dbPath := seedSQLiteDB(t,
 				"CREATE TABLE \"dotted.table\" (id INTEGER PRIMARY KEY, email TEXT);\n"+
 					"CREATE TABLE inspect_archive (id INTEGER PRIMARY KEY);")
@@ -172,8 +172,8 @@ func TestSchemaInspectIncludeComposesWithExclude(t *testing.T) {
 }
 
 func TestSchemaInspectIncludeComposesWithSchemaScope(t *testing.T) {
-	t.Run("selected schema keeps the selection", func(t2 *testing.T) {
-		c := qt.New(t2)
+	t.Run("selected schema keeps the selection", func(t *testing.T) {
+		c := qt.New(t)
 		dbPath := seedSQLiteDB(t, inspectIncludeDDL)
 
 		stdout, stderr, err := runCompatInspect(
@@ -187,8 +187,8 @@ func TestSchemaInspectIncludeComposesWithSchemaScope(t *testing.T) {
 		c.Assert(stdout, qt.Not(qt.Contains), `table "inspect_archive"`)
 	})
 
-	t.Run("unknown schema does not narrow SQLite inspection", func(t2 *testing.T) {
-		c := qt.New(t2)
+	t.Run("unknown schema does not narrow SQLite inspection", func(t *testing.T) {
+		c := qt.New(t)
 		dbPath := seedSQLiteDB(t, inspectIncludeDDL)
 
 		stdout, stderr, err := runCompatInspect(
@@ -251,8 +251,8 @@ func TestSchemaInspectIncludeDegenerateValues(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		t.Run(test.name, func(t2 *testing.T) {
-			c := qt.New(t2)
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			dbPath := seedSQLiteDB(t, inspectIncludeDDL)
 
 			stdout, stderr, err := runCompatInspect(append([]string{"--url", "sqlite://" + dbPath}, test.args...)...)
@@ -345,8 +345,8 @@ func TestSchemaInspectIncludeValidationRunsBeforeDevDatabaseReset(t *testing.T) 
 }
 
 func TestSchemaInspectIncludeAppliesToEverySourceKind(t *testing.T) {
-	t.Run("local schema file", func(t2 *testing.T) {
-		c := qt.New(t2)
+	t.Run("local schema file", func(t *testing.T) {
+		c := qt.New(t)
 		dir := t.TempDir()
 		schemaPath := filepath.Join(dir, "schema.sql")
 		c.Assert(os.WriteFile(schemaPath, []byte(inspectIncludeDDL), 0o600), qt.IsNil)
@@ -362,8 +362,8 @@ func TestSchemaInspectIncludeAppliesToEverySourceKind(t *testing.T) {
 		c.Assert(stdout, qt.Not(qt.Contains), `table "inspect_archive"`)
 	})
 
-	t.Run("migration directory", func(t2 *testing.T) {
-		c := qt.New(t2)
+	t.Run("migration directory", func(t *testing.T) {
+		c := qt.New(t)
 		migrationsDir := writeAtlasFormatMigrations(t, inspectIncludeDDL)
 
 		stdout, stderr, err := runCompatInspect(
@@ -391,8 +391,8 @@ func TestSchemaInspectIncludeAppliesToEveryOutputFormat(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		t.Run(test.name, func(t2 *testing.T) {
-			c := qt.New(t2)
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			dbPath := seedSQLiteDB(t, inspectIncludeDDL)
 
 			stdout, stderr, err := runCompatInspect(

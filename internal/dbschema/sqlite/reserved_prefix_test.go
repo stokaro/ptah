@@ -64,8 +64,8 @@ func TestWriterDropAllTables_DropsUserObjectsNamedSqliteSomething(t *testing.T) 
 	}
 
 	for _, test := range tests {
-		t.Run(test.name, func(t2 *testing.T) {
-			c := qt.New(t2)
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			db := openFileSQLiteDB(t)
 			execSQL(t, db, test.create)
 

@@ -411,8 +411,8 @@ env "dev" {
 }
 
 func TestLoadExternalSchemaPrecedence_HappyPath(t *testing.T) {
-	t.Run("atlas.hcl data source replaces ptah.yaml external_schema wholesale", func(t2 *testing.T) {
-		c := qt.New(t2)
+	t.Run("atlas.hcl data source replaces ptah.yaml external_schema wholesale", func(t *testing.T) {
+		c := qt.New(t)
 		dir := t.TempDir()
 		ptahPath := filepath.Join(dir, "ptah.yaml")
 		c.Assert(os.WriteFile(ptahPath, []byte(`external_schema:
@@ -447,8 +447,8 @@ env "dev" {
 		c.Assert(cfg.ExternalSchema.Origin, qt.Equals, projectconfig.AtlasFileName)
 	})
 
-	t.Run("ptah.yaml external_schema survives when atlas.hcl declares none", func(t2 *testing.T) {
-		c := qt.New(t2)
+	t.Run("ptah.yaml external_schema survives when atlas.hcl declares none", func(t *testing.T) {
+		c := qt.New(t)
 		dir := t.TempDir()
 		ptahPath := filepath.Join(dir, "ptah.yaml")
 		c.Assert(os.WriteFile(ptahPath, []byte(`external_schema:

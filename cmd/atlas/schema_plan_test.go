@@ -362,7 +362,7 @@ func TestSchemaPlanRejectsUnusableNames(t *testing.T) {
 			// dir contains that, and the no-file assertion is what proves the
 			// refusal happened before the write rather than after it.
 			c := qt.New(t)
-			scratch := chdirToScratch(c.TB.(*testing.T))
+			scratch := chdirToScratch(t)
 
 			_, err := runSchemaPlan(atlas.NewCompatCommand("atlas"),
 				"--from", sqliteURLFromPath(filepath.Join(dir, "plan.db")),

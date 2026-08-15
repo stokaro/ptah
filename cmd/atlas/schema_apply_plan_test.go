@@ -270,8 +270,8 @@ func TestSchemaApplyPlanFileRejectsMalformedDocuments(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t2 *testing.T) {
-			c := qt.New(t2)
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			planPath := planFileFixture(c.TB, t.TempDir(), dbPath,
 				"CREATE TABLE users (id INTEGER PRIMARY KEY);\nCREATE TABLE malformed_orders (id INTEGER PRIMARY KEY);\n")
 			rewritePlanDocument(c.TB, planPath, tt.rewrite)

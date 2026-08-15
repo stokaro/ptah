@@ -162,8 +162,8 @@ func TestSchemaPlanValidateTreatsForeignFingerprintsAsUnauthenticatedMetadata(t 
 	}
 
 	for _, test := range tests {
-		t.Run(test.name, func(t2 *testing.T) {
-			c := qt.New(t2)
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			dir := t.TempDir()
 			dbPath := filepath.Join(dir, "target.db")
 			dbURL := sqliteURLFromPath(dbPath)
@@ -212,8 +212,8 @@ func TestSchemaPlanValidateRejectsAtlasAuthoredPlanMutations(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		t.Run(test.name, func(t2 *testing.T) {
-			c := qt.New(t2)
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			dir := t.TempDir()
 			dbPath := filepath.Join(dir, "target.db")
 			dbURL := sqliteURLFromPath(dbPath)

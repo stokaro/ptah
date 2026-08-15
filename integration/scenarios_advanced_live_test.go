@@ -21,8 +21,8 @@ func TestAdvancedScenariosWithRealDatabase(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		t.Run(test.name, func(t2 *testing.T) {
-			c := qt.New(t2)
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			runner := ptahintegration.NewTestRunner(testFixtures)
 			runner.AddDatabase("advanced", requireDynamicDatabaseURL(t))
 			runner.AddScenario(requireAdvancedScenario(t, test.name))

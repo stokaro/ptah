@@ -133,14 +133,14 @@ func TestArtifactWriteToDir_HappyPath(t *testing.T) {
 }
 
 func TestArtifactWriteToDir_FailurePath(t *testing.T) {
-	t.Run("missing filesystem", func(t2 *testing.T) {
-		c := qt.New(t2)
+	t.Run("missing filesystem", func(t *testing.T) {
+		c := qt.New(t)
 		err := (ociartifact.Artifact{}).WriteToDir(filepath.Join(t.TempDir(), "output"))
 		c.Assert(err, qt.ErrorMatches, "artifact filesystem is required")
 	})
 
-	t.Run("empty directory destination", func(t2 *testing.T) {
-		c := qt.New(t2)
+	t.Run("empty directory destination", func(t *testing.T) {
+		c := qt.New(t)
 		output := t.TempDir()
 		artifact := ociartifact.Artifact{FileSystem: fstest.MapFS{
 			"migration.sql": {Data: []byte("SELECT 1;")},
@@ -150,8 +150,8 @@ func TestArtifactWriteToDir_FailurePath(t *testing.T) {
 		c.Assert(err, qt.ErrorMatches, "artifact output path already exists: .*")
 	})
 
-	t.Run("nonempty destination", func(t2 *testing.T) {
-		c := qt.New(t2)
+	t.Run("nonempty destination", func(t *testing.T) {
+		c := qt.New(t)
 		output := t.TempDir()
 		err := os.WriteFile(filepath.Join(output, "keep.txt"), []byte("keep"), 0o600)
 		c.Assert(err, qt.IsNil)
@@ -166,8 +166,8 @@ func TestArtifactWriteToDir_FailurePath(t *testing.T) {
 		c.Assert(string(contents), qt.Equals, "keep")
 	})
 
-	t.Run("file destination", func(t2 *testing.T) {
-		c := qt.New(t2)
+	t.Run("file destination", func(t *testing.T) {
+		c := qt.New(t)
 		output := filepath.Join(t.TempDir(), "output")
 		err := os.WriteFile(output, []byte("keep"), 0o600)
 		c.Assert(err, qt.IsNil)

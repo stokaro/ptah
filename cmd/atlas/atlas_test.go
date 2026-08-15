@@ -1964,8 +1964,8 @@ func TestCompatCommand_MigrateSetHelpShowsAtlasVersionArgument(t *testing.T) {
 }
 
 func TestCompatCommand_MigrateSetFailurePathVersionArgument(t *testing.T) {
-	t.Run("missing version", func(t2 *testing.T) {
-		c := qt.New(t2)
+	t.Run("missing version", func(t *testing.T) {
+		c := qt.New(t)
 		cmd := NewCompatCommand("atlas")
 		var out bytes.Buffer
 		cmd.SetOut(&out)
@@ -1981,8 +1981,8 @@ func TestCompatCommand_MigrateSetFailurePathVersionArgument(t *testing.T) {
 		c.Assert(err, qt.ErrorMatches, `accepts 1 arg\(s\), received 0`)
 	})
 
-	t.Run("multiple versions", func(t2 *testing.T) {
-		c := qt.New(t2)
+	t.Run("multiple versions", func(t *testing.T) {
+		c := qt.New(t)
 		cmd := NewCompatCommand("atlas")
 		var out bytes.Buffer
 		cmd.SetOut(&out)
@@ -1998,8 +1998,8 @@ func TestCompatCommand_MigrateSetFailurePathVersionArgument(t *testing.T) {
 		c.Assert(err, qt.ErrorMatches, `accepts 1 arg\(s\), received 2`)
 	})
 
-	t.Run("native version flag", func(t2 *testing.T) {
-		c := qt.New(t2)
+	t.Run("native version flag", func(t *testing.T) {
+		c := qt.New(t)
 		cmd := NewCompatCommand("atlas")
 		var out bytes.Buffer
 		cmd.SetOut(&out)

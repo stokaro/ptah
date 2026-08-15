@@ -177,7 +177,7 @@ func TestSchemaPlanSkipLintCombinesWithEveryOutputMode(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			chdirToScratch(c.TB.(*testing.T))
+			chdirToScratch(t)
 			fixture := newPlanFixture(c.TB, "combo", "", `CREATE TABLE combo_users (id INTEGER PRIMARY KEY);`)
 
 			out, err := runSchemaPlan(atlas.NewCompatCommand("atlas"), fixture.args(tt.args...)...)
@@ -410,7 +410,7 @@ func TestSchemaPlanNameFormatRejectionsWriteNothing(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			chdirToScratch(c.TB.(*testing.T))
+			chdirToScratch(t)
 			fixture := newPlanFixture(c.TB, "reject", "", `CREATE TABLE reject_users (id INTEGER PRIMARY KEY);`)
 
 			_, err := runSchemaPlan(atlas.NewCompatCommand("atlas"),
@@ -462,7 +462,7 @@ func TestSchemaPlanNameFormatCannotCorruptThePlanBlockLabel(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			chdirToScratch(c.TB.(*testing.T))
+			chdirToScratch(t)
 			fixture := newPlanFixture(c.TB, "label", "", `CREATE TABLE label_users (id INTEGER PRIMARY KEY);`)
 
 			_, err := runSchemaPlan(atlas.NewCompatCommand("atlas"),
@@ -734,9 +734,8 @@ func TestSchemaPlanEditIsNotOpenedWhenNamingFailsFirst(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t2 *testing.T) {
-			c := qt.New(t2)
-			t := c.TB.(*testing.T)
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			dir := chdirToScratch(t)
 			marker := filepath.Join(dir, "editor-ran")
 			installScriptEditor(t, `touch "`+marker+`"`)
@@ -853,9 +852,8 @@ func TestSchemaPlanEditFailuresWriteNothing(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run(tt.name, func(t2 *testing.T) {
-			c := qt.New(t2)
-			t := c.TB.(*testing.T)
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			dir := t.TempDir()
 			t.Chdir(dir)
 			tt.installEditor(t)

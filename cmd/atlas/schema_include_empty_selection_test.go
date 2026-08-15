@@ -49,8 +49,8 @@ var emptySelectionSpellings = []struct {
 // error and produces no diff output.
 func TestSchemaDiffIncludeEmptySelectionRefuses(t *testing.T) {
 	for _, spelling := range emptySelectionSpellings {
-		t.Run(spelling.name, func(t2 *testing.T) {
-			c := qt.New(t2)
+		t.Run(spelling.name, func(t *testing.T) {
+			c := qt.New(t)
 			dir := t.TempDir()
 			fromPath := filepath.Join(dir, "from.sql")
 			toPath := filepath.Join(dir, "to.sql")
@@ -80,8 +80,8 @@ func TestSchemaDiffIncludeEmptySelectionRefuses(t *testing.T) {
 // rendered bytes stay; only the notice is added.
 func TestSchemaInspectIncludeEmptySelectionIsReportedOnStderr(t *testing.T) {
 	for _, spelling := range emptySelectionSpellings {
-		t.Run(spelling.name, func(t2 *testing.T) {
-			c := qt.New(t2)
+		t.Run(spelling.name, func(t *testing.T) {
+			c := qt.New(t)
 			dbPath := seedSQLiteDB(t, emptySelectionDDL)
 
 			stdout, stderr, err := runCompatInspect(
@@ -110,8 +110,8 @@ func TestSchemaApplyIncludeEmptySelectionRefuses(t *testing.T) {
 	allowSchemaApplyWithoutDevURL(t)
 
 	for _, spelling := range emptySelectionSpellings {
-		t.Run(spelling.name, func(t2 *testing.T) {
-			c := qt.New(t2)
+		t.Run(spelling.name, func(t *testing.T) {
+			c := qt.New(t)
 			dbPath := seedSQLiteDB(t, "CREATE TABLE keepme (id INTEGER PRIMARY KEY);")
 			schemaPath := filepath.Join(t.TempDir(), "schema.sql")
 			c.Assert(os.WriteFile(schemaPath, []byte(emptySelectionDDL), 0o600), qt.IsNil)
@@ -156,8 +156,8 @@ func TestSchemaIncludeSelectionAcceptsBareDottedName(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		t.Run(test.name, func(t2 *testing.T) {
-			c := qt.New(t2)
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			dbPath := seedSQLiteDB(t, emptySelectionDDL)
 
 			stdout, stderr, err := runCompatInspect(

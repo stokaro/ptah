@@ -44,8 +44,8 @@ func TestPostgres_ModifyColumn_EnumTargetGetsAUsingCast(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		t.Run(test.name, func(t2 *testing.T) {
-			c := qt.New(t2)
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			alter := &ast.AlterTableNode{
 				Name:       "a",
 				Operations: []ast.AlterOperation{&ast.ModifyColumnOperation{Column: test.column}},

@@ -177,8 +177,8 @@ func TestDatabaseConnectionWithIsolatedQuerySession_RollsBackWrites(t *testing.T
 func TestDatabaseConnectionWithIsolatedQuerySession_FailurePath(t *testing.T) {
 	c := qt.New(t)
 
-	t.Run("nil receiver", func(t2 *testing.T) {
-		c := qt.New(t2)
+	t.Run("nil receiver", func(t *testing.T) {
+		c := qt.New(t)
 		var conn *dbschema.DatabaseConnection
 		err := conn.WithIsolatedQuerySession(t.Context(), nil, func(dbschema.IsolatedQueryer) error {
 			return nil
@@ -193,14 +193,14 @@ func TestDatabaseConnectionWithIsolatedQuerySession_FailurePath(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(conn)
 
-	t.Run("nil callback", func(t2 *testing.T) {
-		c := qt.New(t2)
+	t.Run("nil callback", func(t *testing.T) {
+		c := qt.New(t)
 		err := conn.WithIsolatedQuerySession(t.Context(), nil, nil)
 		c.Assert(err, qt.ErrorMatches, "isolated query session callback is nil")
 	})
 
-	t.Run("callback error", func(t2 *testing.T) {
-		c := qt.New(t2)
+	t.Run("callback error", func(t *testing.T) {
+		c := qt.New(t)
 		callbackErr := errors.New("callback failed")
 		err := conn.WithIsolatedQuerySession(t.Context(), nil, func(dbschema.IsolatedQueryer) error {
 			return callbackErr
