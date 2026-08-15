@@ -122,7 +122,7 @@ func TestRun_FailurePathRejectsUntaggedIntegrationTest(t *testing.T) {
 	c.Assert(
 		err,
 		qt.ErrorMatches,
-		`test file integration/fixture/contour_test\.go under an integration tree must require //go:build integration or !integration`,
+		`test file integration/fixture/contour_test\.go under an integration tree must require //go:build integration`,
 	)
 }
 
@@ -218,7 +218,7 @@ func TestLive(_ *testing.T) {}
 	c.Assert(
 		err,
 		qt.ErrorMatches,
-		`test file integration/fixture/contour_windows_test\.go under an integration tree must require //go:build integration or !integration`,
+		`test file integration/fixture/contour_windows_test\.go under an integration tree must require //go:build integration`,
 	)
 }
 
@@ -259,7 +259,12 @@ func TestLive(_ *testing.T) {}
 	)
 }
 
-func TestRun_HappyPathAcceptsGoBuildWhitespaceAndExcludedUnitTests(t *testing.T) {
+// TestRun_HappyPathAcceptsEveryConstraintThatRequiresIntegration is the
+// acceptance control for the constraint rule. Both fixtures genuinely require
+// the integration tag but neither spells it as a bare `//go:build integration`,
+// so an implementation that pattern-matches the constraint text instead of
+// evaluating it wrongly rejects them.
+func TestRun_HappyPathAcceptsEveryConstraintThatRequiresIntegration(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	c.Assert(exec.Command("git", "init", dir).Run(), qt.IsNil)
@@ -274,14 +279,6 @@ package fixture_test
 import "testing"
 
 func TestLive(_ *testing.T) {}
-`), 0o600), qt.IsNil)
-	c.Assert(os.WriteFile(filepath.Join(fixtureDir, "unit_windows_test.go"), []byte(`//go:build !integration && windows
-
-package fixture_test
-
-import "testing"
-
-func TestUnit(_ *testing.T) {}
 `), 0o600), qt.IsNil)
 	c.Assert(os.WriteFile(filepath.Join(fixtureDir, "logical_test.go"), []byte(`//go:build (!windows || integration) && (windows || integration)
 
@@ -301,7 +298,13 @@ func TestLogicalRequirement(_ *testing.T) {}
 	c.Assert(err, qt.IsNil)
 }
 
-func TestRun_FailurePathRejectsExcludedWhiteBoxTestInIntegrationTree(t *testing.T) {
+// TestRun_FailurePathRejectsNotIntegrationEscapeHatch pins the removal of the
+// `//go:build !integration` allowance. The fixture is a well-formed black-box
+// test file, so the white-box and leaking-constraint rules cannot fire and the
+// constraint rule is the only thing left that can refuse it. The expected
+// message is anchored, so a gate that still offered `or !integration` would not
+// match it either.
+func TestRun_FailurePathRejectsNotIntegrationEscapeHatch(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	c.Assert(exec.Command("git", "init", dir).Run(), qt.IsNil)
@@ -319,7 +322,7 @@ func TestLive(_ *testing.T) {}
 `), 0o600), qt.IsNil)
 	c.Assert(os.WriteFile(filepath.Join(fixtureDir, "unit_test.go"), []byte(`//go:build !integration
 
-package fixture
+package fixture_test
 
 import "testing"
 
@@ -335,7 +338,50 @@ func TestUnit(_ *testing.T) {}
 	c.Assert(
 		err,
 		qt.ErrorMatches,
-		`test file integration/fixture/unit_test\.go under an integration tree uses white-box package fixture; package name must end in _test`,
+		`test file integration/fixture/unit_test\.go under an integration tree must require //go:build integration`,
+	)
+}
+
+// TestRun_FailurePathRejectsNotIntegrationEscapeHatchCombinedWithPlatform
+// covers the spelling the repository actually used, where the escape hatch was
+// combined with a platform term. Evaluating the constraint is what catches it;
+// looking for the exact string `!integration` would miss the parenthesized and
+// reordered spellings of the same thing.
+func TestRun_FailurePathRejectsNotIntegrationEscapeHatchCombinedWithPlatform(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	c.Assert(exec.Command("git", "init", dir).Run(), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com/fixture\n\ngo 1.26\n"), 0o600), qt.IsNil)
+	fixtureDir := filepath.Join(dir, "integration", "fixture")
+	c.Assert(os.MkdirAll(fixtureDir, 0o750), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(fixtureDir, "doc.go"), []byte("package fixture\n"), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(fixtureDir, "contour_test.go"), []byte(`//go:build integration
+
+package fixture_test
+
+import "testing"
+
+func TestLive(_ *testing.T) {}
+`), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(fixtureDir, "unit_windows_test.go"), []byte(`//go:build !integration && windows
+
+package fixture_test
+
+import "testing"
+
+func TestUnit(_ *testing.T) {}
+`), 0o600), qt.IsNil)
+
+	err := testcontour.Run(context.Background(), testcontour.Config{
+		Package: "./integration/...",
+		Tags:    []string{"integration"},
+		Timeout: time.Minute,
+		Dir:     dir,
+	})
+	c.Assert(
+		err,
+		qt.ErrorMatches,
+		`test file integration/fixture/unit_windows_test\.go under an integration tree must require //go:build integration`,
 	)
 }
 

@@ -803,16 +803,19 @@ rules of [`docs/STYLE_GUIDE.md`](docs/STYLE_GUIDE.md) apply in spirit.
   live-database or external-process test beside production code. A test that
   does not cross a process, filesystem, network, or database boundary is a unit
   or pipeline test and belongs beside the production package instead.
-- Every integration test file uses `//go:build integration`. Build constraints
-  apply to whole files, so split mixed unit/integration files. Test-only helpers
-  used by integration tests carry the same tag. Unit tests for the integration
-  harness use `//go:build !integration` when they share a package directory, so
-  the two contours stay disjoint.
+- Every integration test file uses `//go:build integration`, without exception.
+  Build constraints apply to whole files, so split mixed unit/integration files.
+  Test-only helpers used by integration tests carry the same tag. There is no
+  `//go:build !integration` escape hatch: a test that does not require the tag
+  does not belong in an integration tree, and `internal/testcontour` refuses it.
+  An integration tree holds nothing but tagged test files — library code that
+  integration tests happen to use lives outside it, beside its own untagged unit
+  tests. `internal/integrationharness` and `internal/integrationfixture` are the
+  worked examples.
 - An integration test is never white-box. Every test file under
-  `integration/**` and `testkit/integration/**`, including harness unit tests
-  selected by `!integration`, uses `package <name>_test` and exercises only
-  exported APIs. `*_internal_test.go` and same-package tests are forbidden
-  anywhere in those trees. If a behavior can only be reached through an
+  `integration/**` and `testkit/integration/**` uses `package <name>_test` and
+  exercises only exported APIs. `*_internal_test.go` and same-package tests are
+  forbidden anywhere in those trees. If a behavior can only be reached through an
   unexported symbol, move the deterministic logic behind a package boundary and
   cover it with a black-box unit test outside the integration trees, or
   introduce the real public/application boundary the integration test should

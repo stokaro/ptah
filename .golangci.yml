@@ -287,19 +287,19 @@ linters:
       - path: 'examples/ast\_demo/.*\.go$'
         linters:
           - unused
-      - path: '(ast_demo|cmd|example[s]?|integration)/.*\.go$'
+      - path: '(ast_demo|cmd|example[s]?|integration(harness)?)/.*\.go$'
         text: 'use of `fmt\..*` forbidden by pattern'
-      - path: '(ast_demo|cmd|example[s]?|integration)/.*\.go$'
+      - path: '(ast_demo|cmd|example[s]?|integration(harness)?)/.*\.go$'
         linters:
           - gocognit
           - nestif
           - gocyclo
-      - path: '(ast_demo|cmd|example[s]?|integration)/.*\.go$'
+      - path: '(ast_demo|cmd|example[s]?|integration(harness)?)/.*\.go$'
         text: 'deep-exit:'
       - path: 'cmd/.*\.go$'
         linters:
           - gochecknoinits
-      - path: 'integration/.*\.go$'
+      - path: 'integration(harness)?/.*\.go$'
         linters:
           - unused
       - path : 'integration/fixtures/entities/.*\.go$'
