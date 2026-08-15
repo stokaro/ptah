@@ -85,6 +85,18 @@ func Parse(raw string) ([]string, error) {
 // commands refuse an unknown target with a message that names the flag; a
 // projection that quietly emptied the desired state first would replace that
 // refusal with a schema that appears already synced.
+// Both sides are normalized before they are compared. Parse canonicalizes what
+// it stores, so a scope that arrived through an annotation already holds the
+// canonical spelling; a Go caller building a goschema.Database by hand reaches
+// these fields directly, has no exported parser to canonicalize with, and
+// stores exactly the documented alias it was given. Comparing that stored
+// spelling literally scoped the object away from the very dialect it names --
+// silently, and in the direction that plans work nobody asked for.
+//
+// An entry that names no supported dialect matches nothing. Parse refuses such
+// a spelling outright; reaching here means it came from a direct caller, and a
+// scope naming a platform this build does not know does not describe any target
+// it does know.
 func Includes(scope []string, dialect string) bool {
 	if len(scope) == 0 {
 		return true
@@ -93,5 +105,7 @@ func Includes(scope []string, dialect string) bool {
 	if canonical == "" {
 		return true
 	}
-	return slices.Contains(scope, canonical)
+	return slices.ContainsFunc(scope, func(name string) bool {
+		return platform.NormalizeDialect(name) == canonical
+	})
 }

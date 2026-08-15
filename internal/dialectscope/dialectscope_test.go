@@ -191,3 +191,35 @@ func errorText(err error) string {
 	}
 	return messages[err != nil]()
 }
+
+// TestIncludes_ReadsADocumentedAliasInTheStoredScope pins the direction the
+// parser cannot cover.
+//
+// Parse canonicalizes what it stores, so a scope that came from an annotation
+// holds "postgres" whatever the author wrote. A Go caller building a
+// goschema.Database by hand reaches these fields directly and has no exported
+// parser to canonicalize with, so its scope holds exactly the spelling it was
+// given. Comparing that spelling literally against the normalized target scoped
+// the object away from the very dialect it names.
+func TestIncludes_ReadsADocumentedAliasInTheStoredScope(t *testing.T) {
+	tests := []struct {
+		name    string
+		scope   []string
+		dialect string
+		want    bool
+	}{
+		{name: "an alias in the scope against its canonical target", scope: []string{"postgresql"}, dialect: "postgres", want: true},
+		{name: "an alias on both sides", scope: []string{"postgresql"}, dialect: "postgresql", want: true},
+		{name: "a canonical scope against an alias target", scope: []string{"postgres"}, dialect: "postgresql", want: true},
+		{name: "a scope that names another dialect entirely", scope: []string{"postgresql"}, dialect: "mysql", want: false},
+		{name: "an unsupported spelling matches nothing supported", scope: []string{"pgsql"}, dialect: "postgres", want: false},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(dialectscope.Includes(test.scope, test.dialect), qt.Equals, test.want)
+		})
+	}
+}

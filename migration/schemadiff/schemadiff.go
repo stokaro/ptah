@@ -224,8 +224,14 @@ func CompareReportingUndecidedAdditions(
 		// a multi-dialect schema converge: before this, `schema apply` created
 		// nothing for such an object, exited 0, and the very next comparison
 		// asked for it again, forever.
+		// Both sides move together. Projecting only the desired state leaves
+		// the database still holding a scoped-away object, which reads as
+		// present in the target and absent from the declaration -- the shape of
+		// a drop. See suppressScopedAway.
+		omitted := goschema.OmissionsForDialect(generated, opts.Dialect)
 		generated = goschema.ScopeToDialect(generated, opts.Dialect)
 		generated = fromschema.AssignDefaultForeignKeyNames(generated, opts.Dialect)
+		database = suppressScopedAway(database, omitted)
 	}
 
 	diff := &difftypes.SchemaDiff{}
