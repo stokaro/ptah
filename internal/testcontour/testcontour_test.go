@@ -163,12 +163,20 @@ func TestLive(_ *testing.T) {}
 	c.Assert(err, qt.ErrorMatches, `integration test file product/live_test\.go must live under integration/ or testkit/integration/`)
 }
 
+// The fixture is named for plan9, not for windows.
+//
+// Go's implicit GOOS constraint excludes the file on every platform this
+// repository is ever built on, which is what these rows need: they assert that
+// the contour REFUSES a file it could not select. Named for windows, the file
+// was selected on windows-latest, no refusal came, and the tests asserted the
+// host rather than the rule.
+
 func TestRun_FailurePathRejectsPlatformExcludedWhiteBoxIntegrationTest(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	c.Assert(exec.Command("git", "init", dir).Run(), qt.IsNil)
 	c.Assert(os.MkdirAll(filepath.Join(dir, "integration", "fixture"), 0o750), qt.IsNil)
-	c.Assert(os.WriteFile(filepath.Join(dir, "integration", "fixture", "contour_windows_test.go"), []byte(`//go:build integration
+	c.Assert(os.WriteFile(filepath.Join(dir, "integration", "fixture", "contour_plan9_test.go"), []byte(`//go:build integration
 
 package fixture
 
@@ -186,7 +194,7 @@ func TestLive(_ *testing.T) {}
 	c.Assert(
 		err,
 		qt.ErrorMatches,
-		`test file integration/fixture/contour_windows_test\.go under an integration tree uses white-box package fixture; package name must end in _test`,
+		`test file integration/fixture/contour_plan9_test\.go under an integration tree uses white-box package fixture; package name must end in _test`,
 	)
 }
 
@@ -197,7 +205,7 @@ func TestRun_FailurePathRejectsPlatformExcludedTestWithoutContourTag(t *testing.
 	c.Assert(os.MkdirAll(filepath.Join(dir, "integration", "fixture"), 0o750), qt.IsNil)
 	c.Assert(os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module example.com/fixture\n\ngo 1.26\n"), 0o600), qt.IsNil)
 	c.Assert(os.WriteFile(
-		filepath.Join(dir, "integration", "fixture", "contour_windows_test.go"),
+		filepath.Join(dir, "integration", "fixture", "contour_plan9_test.go"),
 		[]byte(`//go:build windows
 
 package fixture_test
@@ -218,7 +226,7 @@ func TestLive(_ *testing.T) {}
 	c.Assert(
 		err,
 		qt.ErrorMatches,
-		`test file integration/fixture/contour_windows_test\.go under an integration tree must require //go:build integration`,
+		`test file integration/fixture/contour_plan9_test\.go under an integration tree must require //go:build integration`,
 	)
 }
 
@@ -234,7 +242,7 @@ func TestRun_FailurePathRejectsPlatformExcludedIntegrationTest(t *testing.T) {
 		0o600,
 	), qt.IsNil)
 	c.Assert(os.WriteFile(
-		filepath.Join(dir, "integration", "fixture", "contour_windows_test.go"),
+		filepath.Join(dir, "integration", "fixture", "contour_plan9_test.go"),
 		[]byte(`//go:build integration
 
 package fixture_test
@@ -255,7 +263,7 @@ func TestLive(_ *testing.T) {}
 	c.Assert(
 		err,
 		qt.ErrorMatches,
-		`complete integration contour did not select .*/integration/fixture/contour_windows_test\.go on this platform`,
+		`complete integration contour did not select .*[/\\]integration[/\\]fixture[/\\]contour_plan9_test\.go on this platform`,
 	)
 }
 

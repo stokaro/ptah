@@ -19,20 +19,37 @@ import (
 	sqlite3 "modernc.org/sqlite/lib"
 )
 
-func sqliteSession(c *qt.C) (*sql.Conn, *sql.DB) {
+// sqliteSession opens a probe database and hands back a session on it. Both
+// are closed for the caller, in the right order.
+//
+// The session has to be closed and not only the *sql.DB: sql.DB.Close() closes
+// idle connections and marks the pool closed, but a Conn already checked out
+// keeps its driver connection -- and therefore the database file -- open until
+// its own Close. Every caller here closed only the DB, so the file outlived the
+// test.
+//
+// On Unix that is invisible: an open file can be unlinked, and t.TempDir's
+// cleanup succeeded. Windows refuses to delete an open file, so it reported
+// "TempDir RemoveAll cleanup: unlinkat ...", which is how the leak was found.
+// A double Close on the session is harmless -- it returns sql.ErrConnDone --
+// so the caller that closes it deliberately keeps working.
+func sqliteSession(c *qt.C) *sql.Conn {
 	c.Helper()
 	db, err := sql.Open("sqlite", filepath.Join(c.TB.TempDir(), "probe.db"))
 	c.Assert(err, qt.IsNil)
 	db.SetMaxOpenConns(1)
 	session, err := db.Conn(context.Background())
 	c.Assert(err, qt.IsNil)
-	return session, db
+	c.Cleanup(func() {
+		_ = session.Close()
+		c.Check(db.Close(), qt.IsNil)
+	})
+	return session
 }
 
 func TestVerifyAttachRefusedAcceptsTheLimitError(t *testing.T) {
 	c := qt.New(t)
-	session, db := sqliteSession(c)
-	defer db.Close()
+	session := sqliteSession(c)
 	_, err := sqlitedriver.Limit(session, sqlite3.SQLITE_LIMIT_ATTACHED, 0)
 	c.Assert(err, qt.IsNil)
 
@@ -41,8 +58,7 @@ func TestVerifyAttachRefusedAcceptsTheLimitError(t *testing.T) {
 
 func TestVerifyAttachRefusedRejectsAnUnrestrictedSession(t *testing.T) {
 	c := qt.New(t)
-	session, db := sqliteSession(c)
-	defer db.Close()
+	session := sqliteSession(c)
 
 	// No limit applied: the ATTACH succeeds, which means the restriction is
 	// not in force and the caller must not proceed.
@@ -54,9 +70,8 @@ func TestVerifyAttachRefusedRejectsAnUnrestrictedSession(t *testing.T) {
 
 func TestVerifyAttachRefusedRejectsAnUnrelatedFailure(t *testing.T) {
 	c := qt.New(t)
-	session, db := sqliteSession(c)
+	session := sqliteSession(c)
 	c.Assert(session.Close(), qt.IsNil)
-	defer db.Close()
 
 	// The ATTACH fails, but not because of the attached-database limit. A
 	// failure for any other reason proves nothing about the restriction, so it
@@ -92,8 +107,7 @@ func TestVerifyRestrictionDefaultsToTheAttachProbe(t *testing.T) {
 // made observable here.
 func TestRestrictSessionConsultsTheVerification(t *testing.T) {
 	c := qt.New(t)
-	session, db := sqliteSession(c)
-	defer db.Close()
+	session := sqliteSession(c)
 	sentinel := errors.New("verification refused this session")
 	original := verifyRestriction
 	verifyRestriction = func(context.Context, *sql.Conn) error { return sentinel }
