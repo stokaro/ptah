@@ -382,11 +382,13 @@ refused with `atlas.hcl "vars" at atlas.hcl:3 must be a map of values`.
 
 Two data sources may not both select the same file with different `vars` and
 both be selected by one `src`: the parse refuses and names both blocks, rather
-than picking one and making the desired state depend on map order. A file that
-the `src` does not evaluate to is not part of that verdict, and neither is the
-branch a conditional did not take — `src = var.use_app ? data.hcl_schema.app.url
-: data.hcl_schema.other.url` reads the vars of the branch it takes, even when
-both blocks name the same file.
+than picking one and making the desired state depend on map order. Two spellings
+of one path — `path = "s.hcl"` in one block and `path = "./s.hcl"` in the other —
+are the same file and are refused the same way. A file that the `src` does not
+evaluate to is not part of that verdict, and neither is the branch a conditional
+did not take — `src = var.use_app ? data.hcl_schema.app.url :
+data.hcl_schema.other.url` reads the vars of the branch it takes, even when both
+blocks name the same file, and so does an index over that conditional.
 
 A `null` reaching a name Ptah acts on is refused, and the refusal names the type
 the setting wants. With `variable "s" { type = string, default = null }`, both

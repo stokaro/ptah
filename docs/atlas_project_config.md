@@ -441,9 +441,10 @@ declare is ignored. `vars = null` and `vars = {}` are both read as "no values
 given"; a value that is not a map is refused with
 `atlas.hcl "vars" at atlas.hcl:3 must be a map of values`. Two data sources may
 not both be selected by one `src` and select the same file with different
-`vars`: the parse refuses and names both blocks. A file the `src` does not
-evaluate to is not part of that verdict, and a conditional counts only the
-branch it takes.
+`vars`: the parse refuses and names both blocks, including when the two blocks
+spell that one path differently (`"s.hcl"` and `"./s.hcl"`). A file the `src`
+does not evaluate to is not part of that verdict, and a conditional — or an
+index over one — counts only the branch it takes.
 
 A `null` reaching a name Ptah acts on is refused, and the refusal names the type
 the setting wants:

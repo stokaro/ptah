@@ -49,6 +49,12 @@ type ApplyOptions struct {
 	// pre-resolver loading behavior. `schema plan` sets it because a saved
 	// plan fingerprints local desired-state files only.
 	LocalFilesOnly bool
+	// ToSources carries the same desired-state sources as ToURLs, each with the
+	// variable scope its atlas.hcl `data "hcl_schema"` block put around it. It
+	// is read only on the LocalFilesOnly path, which does not classify and so
+	// cannot pick the scope up on its own; empty means "no source carries one"
+	// and ToURLs is loaded as written.
+	ToSources []schemafile.Source
 	// Desired supplies a pre-loaded desired schema model. When set, ToURLs are
 	// not resolved: the native command tree uses it to plan from Go-annotation
 	// roots and native schema files loaded through the shared desired-source
@@ -540,7 +546,7 @@ func loadDesiredApplySchema(
 	// the target's URL is the one this connection was opened from.
 	schemaScope, schemaScopeFlag := schemafile.ScopeFromURLs(opts.DevURL, conn.Info().URL, "url")
 	if opts.LocalFilesOnly {
-		desired, err := schemafile.LoadAll(opts.ToURLs, schemafile.Options{
+		desired, err := schemafile.LoadSources(localApplySources(opts), schemafile.Options{
 			Dialect:               conn.Info().Dialect,
 			IgnoreUnknownHCLNames: opts.IgnoreUnknownHCLNames,
 			SchemaScope:           schemaScope,
@@ -580,6 +586,24 @@ func loadDesiredApplySchema(
 		return nil, err
 	}
 	return state.Schema, nil
+}
+
+// localApplySources is the desired state of the LocalFilesOnly path, as
+// sources rather than URLs.
+//
+// ToSources wins when the caller supplied it, because it is the same list with
+// each source's atlas.hcl variable scope attached; ToURLs is the fallback for
+// every caller that never had a project file. The two are never merged: a
+// caller that knows about scopes hands over the whole list.
+func localApplySources(opts ApplyOptions) []schemafile.Source {
+	if len(opts.ToSources) > 0 {
+		return opts.ToSources
+	}
+	sources := make([]schemafile.Source, 0, len(opts.ToURLs))
+	for _, rawURL := range opts.ToURLs {
+		sources = append(sources, schemafile.Source{URL: rawURL})
+	}
+	return sources
 }
 
 func loadAndValidateDesiredApplySchema(

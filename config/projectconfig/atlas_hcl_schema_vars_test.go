@@ -348,6 +348,174 @@ env "local" {
 	}
 }
 
+// TestParseAtlasHCLSchemaVarsFollowsAConditionalUnderAnIndex extends the
+// branch rule past a top-level conditional.
+//
+// `(cond ? a.url : b.url)[0]` is an index over a conditional, and an index is
+// one of the shapes that carries a selected URL through unchanged. Reading the
+// flat variable list there reports both branches again, so two blocks selecting
+// the same file with different vars were refused as ambiguous even though the
+// predicate settles which one the desired state comes from.
+//
+// This is Ptah's own spelling, like the sibling in
+// [TestParseAtlasHCLSchemaVarsRefusesOnlyEvaluatedAmbiguity]: a data source's
+// `url` is a list of file:// URLs here and can be indexed, while the pinned
+// Atlas community binary v1.3.0 mints one opaque URL per data source. The rule
+// it pins is the one that IS oracle-backed at the top level, in
+// [TestParseAtlasHCLSchemaVarsFollowsTheConditionalBranch].
+func TestParseAtlasHCLSchemaVarsFollowsAConditionalUnderAnIndex(t *testing.T) {
+	tests := []struct {
+		name       string
+		raw        string
+		wantValues map[string]string
+	}{
+		{
+			name: "a true predicate under an index takes the first branch",
+			raw: `variable "use_app" {
+  type    = bool
+  default = true
+}
+
+data "hcl_schema" "app" {
+  paths = ["s.hcl"]
+  vars = {
+    tenant = "acme"
+  }
+}
+
+data "hcl_schema" "other" {
+  paths = ["s.hcl"]
+  vars = {
+    tenant = "zzz"
+  }
+}
+
+env "local" {
+  url = "sqlite://file.db"
+  src = (var.use_app ? data.hcl_schema.app.url : data.hcl_schema.other.url)[0]
+}
+`,
+			wantValues: map[string]string{"tenant": "acme"},
+		},
+		{
+			// A literal index parses as a traversal off the parenthesized
+			// conditional; a computed one parses as an index expression. Both
+			// wrap the same conditional, and each reaches this walk through a
+			// different arm, so both are carried as rows.
+			name: "a computed index over a true predicate takes the first branch",
+			raw: `variable "use_app" {
+  type    = bool
+  default = true
+}
+
+variable "which" {
+  type    = number
+  default = 0
+}
+
+data "hcl_schema" "app" {
+  paths = ["s.hcl"]
+  vars = {
+    tenant = "acme"
+  }
+}
+
+data "hcl_schema" "other" {
+  paths = ["s.hcl"]
+  vars = {
+    tenant = "zzz"
+  }
+}
+
+env "local" {
+  url = "sqlite://file.db"
+  src = (var.use_app ? data.hcl_schema.app.url : data.hcl_schema.other.url)[var.which]
+}
+`,
+			wantValues: map[string]string{"tenant": "acme"},
+		},
+		{
+			name: "a false predicate under an index takes the second branch",
+			raw: `variable "use_app" {
+  type    = bool
+  default = false
+}
+
+data "hcl_schema" "app" {
+  paths = ["s.hcl"]
+  vars = {
+    tenant = "acme"
+  }
+}
+
+data "hcl_schema" "other" {
+  paths = ["s.hcl"]
+  vars = {
+    tenant = "zzz"
+  }
+}
+
+env "local" {
+  url = "sqlite://file.db"
+  src = (var.use_app ? data.hcl_schema.app.url : data.hcl_schema.other.url)[0]
+}
+`,
+			wantValues: map[string]string{"tenant": "zzz"},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			cfg, err := projectconfig.ParseAtlas([]byte(test.raw), "atlas.hcl", "local")
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(cfg.SchemaSources, qt.DeepEquals, []string{"file://s.hcl"})
+			values, scoped := cfg.SchemaSourceVars("file://s.hcl")
+			c.Check(scoped, qt.Equals, true)
+			c.Check(values, qt.DeepEquals, test.wantValues)
+		})
+	}
+}
+
+// TestParseAtlasHCLSchemaVarsRefusesAmbiguousOwnershipAcrossSpellings closes
+// the same ambiguity under two spellings of one path.
+//
+// `path = "s.hcl"` and `path = "./s.hcl"` are different strings and the same
+// file. The scope is filed under both the project file's spelling and the
+// base-directory resolved one, because commands ask with either; the resolved
+// key is where the two spellings meet, so it is checked for conflicts too.
+// Filing it unchecked let the second block's values replace the first's under
+// the key every command reads.
+func TestParseAtlasHCLSchemaVarsRefusesAmbiguousOwnershipAcrossSpellings(t *testing.T) {
+	c := qt.New(t)
+	raw := `data "hcl_schema" "app" {
+  path = "s.hcl"
+  vars = {
+    tenant = "acme"
+  }
+}
+
+data "hcl_schema" "other" {
+  path = "./s.hcl"
+  vars = {
+    tenant = "zzz"
+  }
+}
+
+env "local" {
+  url = "sqlite://file.db"
+  src = [data.hcl_schema.app.url, data.hcl_schema.other.url]
+}
+`
+
+	_, err := projectconfig.ParseAtlas([]byte(raw), "atlas.hcl", "local")
+
+	c.Assert(err, qt.ErrorMatches,
+		`atlas.hcl data.hcl_schema "app" and "other" both select "file://\./s\.hcl" with different vars at atlas.hcl:\d+`)
+}
+
 // TestParseAtlasHCLSchemaVarsRefusesOnlyEvaluatedAmbiguity keeps the refusal
 // scoped to the files a run actually reads.
 //

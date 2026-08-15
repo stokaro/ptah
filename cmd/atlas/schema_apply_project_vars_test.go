@@ -1,6 +1,7 @@
 package atlas_test
 
 import (
+	"fmt"
 	"os"
 	"testing"
 
@@ -132,16 +133,110 @@ func TestSchemaInspectAppliesProjectVarsThroughEnvSrc(t *testing.T) {
 	c.Check(output, qt.Contains, "acme")
 }
 
+// TestSchemaPlanScopesHCLSchemaVarsToProjectSources is the same rule on the
+// plan verbs, which load their local files directly instead of classifying
+// them and so were the last loader the scope did not reach.
+//
+// There is no oracle row here: `schema plan` is not supported by the pinned
+// Atlas community binary v1.3.0 at all, which answers `'atlas schema plan' is
+// not supported by the community version`. What this pins is that the verb
+// agrees with the verbs that DO have one. Measured on a ptah-compat built from
+// this branch, against the fixture below whose variable has a default so both
+// rows can plan:
+//
+//	schema apply --env local --dry-run   0  DEFAULT 'acme'      (the other verbs)
+//	schema plan  --env local             0  DEFAULT 'fallback'  (before)
+//	schema plan  --env local             0  DEFAULT 'acme'      (after)
+//
+// The saved plan file carried that wrong default with a fingerprint over it, at
+// exit 0, which is why the second row is the one worth a test rather than the
+// required-variable spelling that merely failed.
+func TestSchemaPlanScopesHCLSchemaVarsToProjectSources(t *testing.T) {
+	tests := []struct {
+		name        string
+		extraArgs   []string
+		wantPlanned string
+	}{
+		{
+			name:        "the env's own source takes the data source vars",
+			extraArgs:   nil,
+			wantPlanned: "DEFAULT 'acme'",
+		},
+		{
+			// The control, and the provenance rule: a --to the operator typed
+			// carries no project scope, so the file falls back to its own
+			// declared default.
+			name:        "an explicit --to keeps the file's own default",
+			extraArgs:   []string{"--to", "file://s.hcl"},
+			wantPlanned: "DEFAULT 'fallback'",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			t.Chdir(t.TempDir())
+			writeAtlasSchemaVarsProjectWithDefault(t)
+
+			output, err := executeAtlasProjectCommand(append(
+				[]string{"schema", "plan", "--env", "local", "--name", "p1", "--auto-approve", "--output", "plan.hcl"},
+				test.extraArgs...,
+			)...)
+
+			c.Assert(err, qt.IsNil, qt.Commentf("command output:\n%s", output))
+			c.Check(output, qt.Contains, test.wantPlanned)
+		})
+	}
+}
+
+// TestSchemaPlanValidateScopesHCLSchemaVarsToProjectSources covers the sibling
+// verb, which loads --to a second time to check that a saved plan still reaches
+// the desired state.
+//
+// Both loads have to read the same values or the check contradicts itself: the
+// plan is computed from the data source's `acme` and, before this wiring, the
+// validation reloaded the same env's desired state as the file's own
+// `fallback`. Measured on a ptah-compat built from this branch against the plan
+// the previous test writes, exit codes read directly from unpiped invocations:
+// exit 1, `pre-planned migration does not converge to the desired state`, with
+// the reported drift naming `DEFAULT 'fallback'`; exit 0 after.
+func TestSchemaPlanValidateScopesHCLSchemaVarsToProjectSources(t *testing.T) {
+	c := qt.New(t)
+	t.Chdir(t.TempDir())
+	writeAtlasSchemaVarsProjectWithDefault(t)
+	planOutput, err := executeAtlasProjectCommand(
+		"schema", "plan", "--env", "local", "--name", "p1", "--auto-approve", "--output", "plan.hcl")
+	c.Assert(err, qt.IsNil, qt.Commentf("command output:\n%s", planOutput))
+
+	output, err := executeAtlasProjectCommand(
+		"schema", "plan", "validate", "--env", "local", "--file", "plan.hcl")
+
+	c.Assert(err, qt.IsNil, qt.Commentf("command output:\n%s", output))
+}
+
 // writeAtlasSchemaVarsProject writes the fixture the scope tests share into the
 // current directory: one schema file whose column default is a required
 // variable, and an atlas.hcl whose env selects that file through a data source
 // carrying the value.
 func writeAtlasSchemaVarsProject(tb testing.TB) {
 	tb.Helper()
-	c := qt.New(tb)
-	c.Assert(os.WriteFile("s.hcl", []byte(`variable "tenant" {
-  type = string
+	writeAtlasSchemaVarsProjectFiles(tb, "")
 }
+
+// writeAtlasSchemaVarsProjectWithDefault writes the same fixture with a default
+// on the variable, so a run that never sees the data source's value still
+// plans -- with the wrong one, which is what makes it discriminating.
+func writeAtlasSchemaVarsProjectWithDefault(tb testing.TB) {
+	tb.Helper()
+	writeAtlasSchemaVarsProjectFiles(tb, "  default = \"fallback\"\n")
+}
+
+func writeAtlasSchemaVarsProjectFiles(tb testing.TB, variableExtra string) {
+	tb.Helper()
+	c := qt.New(tb)
+	c.Assert(os.WriteFile("s.hcl", fmt.Appendf(nil, `variable "tenant" {
+  type = string
+%s}
 
 schema "main" {
 }
@@ -156,7 +251,7 @@ table "users" {
     default = var.tenant
   }
 }
-`), 0o600), qt.IsNil)
+`, variableExtra), 0o600), qt.IsNil)
 	c.Assert(os.WriteFile("atlas.hcl", []byte(`data "hcl_schema" "app" {
   paths = ["s.hcl"]
   vars = {

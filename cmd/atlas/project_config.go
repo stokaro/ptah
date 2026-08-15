@@ -24,6 +24,7 @@ import (
 	"go.5x5.cz/ptah/internal/atlasschema"
 	"go.5x5.cz/ptah/internal/atlassource"
 	"go.5x5.cz/ptah/internal/pathguard"
+	"go.5x5.cz/ptah/internal/schemafile"
 )
 
 const (
@@ -1248,6 +1249,27 @@ func atlasProjectSourceURLs(flag string, urls []string) map[string][]string {
 		return nil
 	}
 	return map[string][]string{flag: slices.Clone(urls)}
+}
+
+// atlasProjectSchemaFileSources pairs desired-state URLs the run took from the
+// project with the variable scope the project attached to each one.
+//
+// It exists for the loaders that never classify: `schema plan` and
+// `schema plan validate` read local files directly, so
+// [go.5x5.cz/ptah/internal/atlassource.ClassifySet] -- where every other verb
+// picks the scope up -- is not on their path. The caller decides provenance by
+// where it calls this, exactly as it does for [atlasProjectSourceURLs].
+func atlasProjectSchemaFileSources(cfg projectconfig.Config, urls []string) []schemafile.Source {
+	sources := make([]schemafile.Source, 0, len(urls))
+	for _, rawURL := range urls {
+		values, scoped := cfg.SchemaSourceVars(rawURL)
+		sources = append(sources, schemafile.Source{
+			URL:        rawURL,
+			VarValues:  values,
+			VarsScoped: scoped,
+		})
+	}
+	return sources
 }
 
 func effectiveAtlasExclude(cmd *cobra.Command, flagValues []string, cfg projectconfig.Config) []string {

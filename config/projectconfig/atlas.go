@@ -2380,6 +2380,21 @@ func (p atlasParser) schemaSourceVarScopes(
 	}
 	minted := map[string]string{}
 	scopes := map[string]map[string]string{}
+	// file records one spelling of one URL under the data source that minted
+	// it, and refuses when a block already filed that spelling with different
+	// values. reported is the URL the refusal names, which is always the
+	// project file's own spelling even when the key is the resolved one.
+	file := func(key, reported, owner string, values map[string]string) error {
+		if previous, taken := minted[key]; taken && !maps.Equal(p.hclSchemaScopes[previous].values, values) {
+			return fmt.Errorf(
+				"atlas.hcl data.hcl_schema %q and %q both select %q with different vars at %s:%d",
+				previous, owner, reported, attr.NameRange.Filename, attr.NameRange.Start.Line,
+			)
+		}
+		minted[key] = owner
+		scopes[key] = values
+		return nil
+	}
 	for _, name := range referenced {
 		scope, declared := p.hclSchemaScopes[name]
 		if !declared {
@@ -2394,14 +2409,9 @@ func (p atlasParser) schemaSourceVarScopes(
 			if !slices.Contains(urls, url) {
 				continue
 			}
-			if owner, taken := minted[url]; taken && !maps.Equal(p.hclSchemaScopes[owner].values, scope.values) {
-				return nil, fmt.Errorf(
-					"atlas.hcl data.hcl_schema %q and %q both select %q with different vars at %s:%d",
-					owner, name, url, attr.NameRange.Filename, attr.NameRange.Start.Line,
-				)
+			if err := file(url, url, name, scope.values); err != nil {
+				return nil, err
 			}
-			minted[url] = name
-			scopes[url] = scope.values
 			// The same scope is filed a second time under the base-directory
 			// resolved spelling, because two consumers reach it by two different
 			// strings and both are legitimate. `env://src` expansion asks with
@@ -2412,8 +2422,20 @@ func (p atlasParser) schemaSourceVarScopes(
 			// use is what keeps the two keys from drifting -- an independent
 			// filepath.Join here would answer differently the moment a symlink
 			// or a `..` segment is involved.
-			if resolved, err := atlasprojectpath.SchemaFileURL(url, p.baseDir); err == nil {
-				scopes[resolved] = scope.values
+			//
+			// The resolved key goes through the same conflict test as the raw
+			// one, and that is not belt and braces: two blocks can select ONE
+			// file under two spellings -- `path = "s.hcl"` and
+			// `path = "./s.hcl"` -- which the raw keys cannot see, and the
+			// resolved key is the one every command asks with. Filing it
+			// unchecked let the second block's values silently replace the
+			// first's.
+			resolved, err := atlasprojectpath.SchemaFileURL(url, p.baseDir)
+			if err != nil {
+				continue
+			}
+			if err := file(resolved, url, name, scope.values); err != nil {
+				return nil, err
 			}
 		}
 	}
@@ -2455,6 +2477,14 @@ func (p atlasParser) hclSchemaReferences(expr hclsyntax.Expression) []string {
 // appendHCLSchemaReferences walks the expression shapes that can select one
 // data source out of several, and falls back to the flat variable list for
 // everything else.
+//
+// The shapes it follows are the ones that carry a selected URL through
+// unchanged: a list, a parenthesized expression, an index into one, and a
+// relative traversal off one. Each can wrap a conditional -- `(var.pick ?
+// data.hcl_schema.app.url : data.hcl_schema.other.url)[0]` is the shape that
+// motivated the index arm -- and the flat variable list would report both
+// branches again from inside them. Anything else lands in the default and stays
+// conservative.
 func (p atlasParser) appendHCLSchemaReferences(expr hclsyntax.Expression, names *[]string) {
 	switch typed := expr.(type) {
 	case *hclsyntax.ConditionalExpr:
@@ -2471,6 +2501,11 @@ func (p atlasParser) appendHCLSchemaReferences(expr hclsyntax.Expression, names 
 		for _, item := range typed.Exprs {
 			p.appendHCLSchemaReferences(item, names)
 		}
+	case *hclsyntax.IndexExpr:
+		p.appendHCLSchemaReferences(typed.Collection, names)
+		p.appendHCLSchemaReferences(typed.Key, names)
+	case *hclsyntax.RelativeTraversalExpr:
+		p.appendHCLSchemaReferences(typed.Source, names)
 	default:
 		appendHCLSchemaTraversalNames(expr.Variables(), names)
 	}
