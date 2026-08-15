@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -416,7 +417,7 @@ func TestSchemaInspectIncludeAppliesToSplitWriteExport(t *testing.T) {
 	_, stderr, err := runCompatInspect(
 		"--url", "sqlite://"+dbPath,
 		"--include", "inspect_users",
-		"--format", `{{ hcl . | split | write "`+outDir+`" }}`,
+		"--format", `{{ hcl . | split | write `+strconv.Quote(outDir)+` }}`,
 	)
 
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", stderr))

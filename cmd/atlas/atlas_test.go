@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -1307,7 +1308,7 @@ func TestCompatCommand_SchemaInspectWritesSplitSQLFiles(t *testing.T) {
 	cmd.SetArgs([]string{
 		"schema", "inspect",
 		"--url", "sqlite://" + dbPath,
-		"--format", `{{ sql . | split | write "` + outDir + `" }}`,
+		"--format", `{{ sql . | split | write ` + strconv.Quote(outDir) + ` }}`,
 	})
 
 	err := cmd.Execute()
@@ -1338,7 +1339,7 @@ func TestCompatCommand_SchemaInspectWritesSplitHCLFiles(t *testing.T) {
 	cmd.SetArgs([]string{
 		"schema", "inspect",
 		"--url", "sqlite://" + dbPath,
-		"--format", `{{ hcl . | split | write "` + outDir + `" }}`,
+		"--format", `{{ hcl . | split | write ` + strconv.Quote(outDir) + ` }}`,
 	})
 
 	err := cmd.Execute()

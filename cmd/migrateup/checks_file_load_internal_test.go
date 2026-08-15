@@ -14,13 +14,13 @@ package migrateup
 
 import (
 	"bytes"
-	"net/url"
 	"path/filepath"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/cmd/migratehash"
+	"go.5x5.cz/ptah/internal/atlasurl"
 )
 
 // checkDirectiveDropUsersSQL is the exact documented directive syntax from
@@ -73,7 +73,7 @@ func TestMigrateUpCommand_CheckDirectiveFilePassingCheckApplies(t *testing.T) {
 	// users is created empty, so migration 2's check passes and the guarded
 	// DROP TABLE applies.
 	dir := writeCheckDirectiveMigrationsDir(c, "CREATE TABLE users (id INTEGER PRIMARY KEY);\n")
-	dbURL := (&url.URL{Scheme: "sqlite", Path: filepath.Join(t.TempDir(), "ptah.db")}).String()
+	dbURL := atlasurl.SQLiteURLFromPath(filepath.Join(t.TempDir(), "ptah.db"))
 
 	err := executeCheckDirectiveMigrateUp(c, dir, dbURL)
 
@@ -88,7 +88,7 @@ func TestMigrateUpCommand_CheckDirectiveFileFailingCheckAborts(t *testing.T) {
 	// and abort with the guarded DROP TABLE never applied.
 	dir := writeCheckDirectiveMigrationsDir(c,
 		"CREATE TABLE users (id INTEGER PRIMARY KEY);\nINSERT INTO users (id) VALUES (1);\n")
-	dbURL := (&url.URL{Scheme: "sqlite", Path: filepath.Join(t.TempDir(), "ptah.db")}).String()
+	dbURL := atlasurl.SQLiteURLFromPath(filepath.Join(t.TempDir(), "ptah.db"))
 
 	err := executeCheckDirectiveMigrateUp(c, dir, dbURL)
 
