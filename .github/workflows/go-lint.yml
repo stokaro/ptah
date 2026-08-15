@@ -101,6 +101,14 @@ jobs:
     runs-on: windows-latest
 
     steps:
+      # Before the checkout, because the checkout is what would rewrite them.
+      # Git on Windows converts LF to CRLF on the way into the working tree by
+      # default, and a formatter compares bytes: with the conversion left on,
+      # gci reported every file in the repository as unformatted at 1:1,
+      # including files this branch never touched.
+      - name: Keep the line endings the repository stores
+        run: git config --global core.autocrlf false
+
       - uses: actions/checkout@v7
 
       - name: Set up Go
