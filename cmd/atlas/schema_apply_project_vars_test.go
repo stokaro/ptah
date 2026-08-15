@@ -102,6 +102,36 @@ func TestSchemaDiffScopesHCLSchemaVarsToProjectSources(t *testing.T) {
 		qt.Commentf("command output:\n%s", output))
 }
 
+// TestSchemaInspectAppliesProjectVarsThroughEnvSrc is the other half of the
+// join, on the one verb that reaches a data source through `env://src` rather
+// than through a substituted file URL.
+//
+// `schema inspect` materializes its desired state on the dev database itself
+// instead of going through the shared resolver, and it used to hand the loader
+// the URLs read back out of the classified set — which drops the scope those
+// sources carry. Measured on the pinned Atlas community binary v1.3.0,
+// `schema inspect --env local --url env://src`, exit codes read directly from
+// unpiped invocations: 0 with `default = "acme"` there, 1 with `missing value
+// for required variable "tenant"` here.
+//
+// The assertion is on the value reaching the file, not on the rendered text
+// around it: this surface prints the default as `"'acme'"`, which it also does
+// for a literal `--url file://s.hcl --var tenant=acme` that both binaries exit
+// 0 on, so the quoting is a separate pre-existing divergence and pinning it
+// here would freeze it. Without the scope the command does not render at all --
+// it exits 1 -- so the nil-error assertion is what makes this discriminating.
+func TestSchemaInspectAppliesProjectVarsThroughEnvSrc(t *testing.T) {
+	c := qt.New(t)
+	t.Chdir(t.TempDir())
+	writeAtlasSchemaVarsProject(t)
+
+	output, err := executeAtlasProjectCommand(
+		"schema", "inspect", "--env", "local", "--url", "env://src")
+
+	c.Assert(err, qt.IsNil, qt.Commentf("command output:\n%s", output))
+	c.Check(output, qt.Contains, "acme")
+}
+
 // writeAtlasSchemaVarsProject writes the fixture the scope tests share into the
 // current directory: one schema file whose column default is a required
 // variable, and an atlas.hcl whose env selects that file through a data source
