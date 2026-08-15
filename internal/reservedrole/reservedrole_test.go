@@ -207,8 +207,6 @@ func TestValidateDeclaredOptInRestoresTheOlderBehavior(t *testing.T) {
 // TestValidateDeclaredOptInKeepsTheRefusalForAValidFalse mirrors how the other
 // PTAH_ opt-ins read themselves: absence and a valid false keep the default.
 func TestValidateDeclaredOptInKeepsTheRefusalForAValidFalse(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name string
 		env  func(testing.TB)
@@ -220,7 +218,8 @@ func TestValidateDeclaredOptInKeepsTheRefusalForAValidFalse(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			test.env(c)
 
 			err := reservedrole.ValidateDeclared("postgres", []goschema.Role{{Name: "postgres"}})
@@ -238,8 +237,6 @@ func TestValidateDeclaredOptInKeepsTheRefusalForAValidFalse(t *testing.T) {
 // reserved-role refusal, which reads to the operator as "the opt-in did not
 // apply to this role" rather than "the opt-in was never read".
 func TestValidateDeclaredRefusesAMalformedOptIn(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name        string
 		env         func(testing.TB)
@@ -258,7 +255,8 @@ func TestValidateDeclaredRefusesAMalformedOptIn(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			test.env(c)
 
 			err := reservedrole.ValidateDeclared("postgres", []goschema.Role{{Name: "postgres"}})

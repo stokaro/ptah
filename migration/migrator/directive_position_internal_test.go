@@ -32,7 +32,11 @@ type internalDirectiveCase struct {
 	name      string
 	directive string
 	honored   map[string]bool
-	observe   func(c *qt.C, sql string) bool
+	// observe reports whether the directive took effect in sql. It returns an
+	// error rather than taking the checker, so the row carries a predicate and
+	// the reporting stays with the test that runs it. See AGENTS.md, "A Table
+	// Row Carries Data, Not A Checker".
+	observe func(sql string) (bool, error)
 }
 
 func TestDirectivePositionForDirectivesWithNoExportedObservable(t *testing.T) {
@@ -45,20 +49,18 @@ func TestDirectivePositionForDirectivesWithNoExportedObservable(t *testing.T) {
 			name:      "ptah lock_timeout",
 			directive: "-- +ptah lock_timeout=5s",
 			honored:   directiveplacement.BeforeTheStatement(),
-			observe: func(c *qt.C, sql string) bool {
+			observe: func(sql string) (bool, error) {
 				timeouts, err := parseMigrationTimeoutDirectives(sql)
-				c.Assert(err, qt.IsNil)
-				return timeouts.HasLockTimeout
+				return timeouts.HasLockTimeout, err
 			},
 		},
 		{
 			name:      "ptah statement_timeout",
 			directive: "-- +ptah statement_timeout=1s",
 			honored:   directiveplacement.BeforeTheStatement(),
-			observe: func(c *qt.C, sql string) bool {
+			observe: func(sql string) (bool, error) {
 				timeouts, err := parseMigrationTimeoutDirectives(sql)
-				c.Assert(err, qt.IsNil)
-				return timeouts.HasStatementTimeout
+				return timeouts.HasStatementTimeout, err
 			},
 		},
 		{
@@ -68,10 +70,8 @@ func TestDirectivePositionForDirectivesWithNoExportedObservable(t *testing.T) {
 			name:      "atlas checkpoint",
 			directive: "-- atlas:checkpoint",
 			honored:   directiveplacement.OnlyTheFirstLine(),
-			observe: func(c *qt.C, sql string) bool {
-				isCheckpoint, err := atlasCheckpointFromSQL("1_x.sql", sql)
-				c.Assert(err, qt.IsNil)
-				return isCheckpoint
+			observe: func(sql string) (bool, error) {
+				return atlasCheckpointFromSQL("1_x.sql", sql)
 			},
 		},
 		{
@@ -80,8 +80,8 @@ func TestDirectivePositionForDirectivesWithNoExportedObservable(t *testing.T) {
 			name:      "atlas assert oneof",
 			directive: "-- atlas:assert oneof",
 			honored:   directiveplacement.BeforeTheStatement(),
-			observe: func(_ *qt.C, sql string) bool {
-				return atlasCheckFileMode(sql, "") == checkGroupOneOf
+			observe: func(sql string) (bool, error) {
+				return atlasCheckFileMode(sql, "") == checkGroupOneOf, nil
 			},
 		},
 	}
@@ -93,10 +93,14 @@ func TestDirectivePositionForDirectivesWithNoExportedObservable(t *testing.T) {
 				"every placement needs an answer; a missing key reads as dropped"))
 
 			for _, placement := range directiveplacement.All {
-				c.Run(placement.Name, func(c *qt.C) {
+				t.Run(placement.Name, func(t *testing.T) {
+					c := qt.New(t)
 					sql := placement.Render(test.directive)
 
-					c.Check(test.observe(c, sql), qt.Equals, test.honored[placement.Name],
+					honored, err := test.observe(sql)
+
+					c.Assert(err, qt.IsNil, qt.Commentf("source:\n%s", sql))
+					c.Check(honored, qt.Equals, test.honored[placement.Name],
 						qt.Commentf("source:\n%s", sql))
 				})
 			}

@@ -148,7 +148,6 @@ func TestGenerateMigration_ConcurrentIndexArtifactsPassPtahLintWithRealPostgres(
 // blocking, and concurrent without the marker that lets it execute -- written
 // into the same native up/down file layout the generator publishes.
 func TestLintFS_BlockingRollbackOfAConcurrentBuildIsReported(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name string
 		down string
@@ -167,7 +166,8 @@ func TestLintFS_BlockingRollbackOfAConcurrentBuildIsReported(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			dir := c.TempDir()
 			c.Assert(os.WriteFile(
 				filepath.Join(dir, "0000000001_add_members_email_index.up.sql"),

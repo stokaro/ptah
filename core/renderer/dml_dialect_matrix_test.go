@@ -297,12 +297,40 @@ func errorText(err error) string {
 	return err.Error()
 }
 
-// placeholderRow pins how one dialect names its first bound parameter. The check
-// is a func field rather than a flag so the two outcomes — renders, or refuses —
-// each state their own expectation.
+// placeholderRow pins how one dialect names its first bound parameter.
+//
+// wantRebind carries the whole of a row's expectation: empty for a dialect the
+// DML renderer has been taught, and sqlutil.Rebind's answer for one it has not.
+// The two outcomes are still stated separately, but by two loops over the rows
+// rather than by a closure each row carries -- the split is data the row
+// declares, and the rows stay in SupportedDialects order so the completeness
+// check below can still read them as one list.
 type placeholderRow struct {
-	dialect string
-	check   func(c *qt.C, dialect string)
+	dialect    string
+	wantRebind string
+}
+
+// taughtDialects and untaughtRows partition the rows by that answer, so each
+// loop below is straight-line: the branch is taken once, here, instead of
+// inside a subtest.
+func taughtDialects(rows []placeholderRow) []string {
+	dialects := make([]string, 0, len(rows))
+	for _, row := range rows {
+		if row.wantRebind == "" {
+			dialects = append(dialects, row.dialect)
+		}
+	}
+	return dialects
+}
+
+func untaughtRows(rows []placeholderRow) []placeholderRow {
+	untaught := make([]placeholderRow, 0, len(rows))
+	for _, row := range rows {
+		if row.wantRebind != "" {
+			untaught = append(untaught, row)
+		}
+	}
+	return untaught
 }
 
 // onePlaceholderInsert is the smallest statement with exactly one bound value,
@@ -320,7 +348,8 @@ func onePlaceholderInsert() *ast.InsertStatement {
 // derived, not written out: there is no constant here to edit into agreement, so
 // a placeholder style added to selectPlaceholderStyle that disagrees with Rebind
 // fails on this line.
-func agreesWithRebind(c *qt.C, dialect string) {
+func assertAgreesWithRebind(c *qt.C, dialect string) {
+	c.Helper()
 	sql, args, err := renderer.RenderInsert(onePlaceholderInsert(), dialect)
 	c.Assert(err, qt.IsNil)
 	c.Assert(args, qt.DeepEquals, []any{int64(1)})
@@ -337,13 +366,12 @@ func agreesWithRebind(c *qt.C, dialect string) {
 // same name. wantRebind records that answer so whoever teaches the renderer this
 // dialect has the placeholder style in front of them; for SQL Server it is @p1,
 // not the ? a naive entry in selectPlaceholderStyle would emit.
-func refusesButRebindKnows(wantRebind string) func(c *qt.C, dialect string) {
-	return func(c *qt.C, dialect string) {
-		_, _, err := renderer.RenderInsert(onePlaceholderInsert(), dialect)
-		c.Assert(errorText(err), qt.Equals,
-			fmt.Sprintf("renderer: INSERT %s %q", genericRefusalMarker, dialect))
-		c.Assert(sqlutil.Rebind(dialect, "?"), qt.Equals, wantRebind)
-	}
+func assertRefusesButRebindKnows(c *qt.C, dialect, wantRebind string) {
+	c.Helper()
+	_, _, err := renderer.RenderInsert(onePlaceholderInsert(), dialect)
+	c.Assert(errorText(err), qt.Equals,
+		fmt.Sprintf("renderer: INSERT %s %q", genericRefusalMarker, dialect))
+	c.Assert(sqlutil.Rebind(dialect, "?"), qt.Equals, wantRebind)
 }
 
 // TestDMLPlaceholderAgreesWithRebind pins the DML renderer's placeholder for the
@@ -362,18 +390,18 @@ func TestDMLPlaceholderAgreesWithRebind(t *testing.T) {
 	c := qt.New(t)
 
 	rows := []placeholderRow{
-		{dialect: "postgresql", check: agreesWithRebind},
-		{dialect: "postgres", check: agreesWithRebind},
-		{dialect: "mysql", check: agreesWithRebind},
-		{dialect: "mariadb", check: agreesWithRebind},
-		{dialect: "clickhouse", check: refusesButRebindKnows("?")},
-		{dialect: "sqlite", check: agreesWithRebind},
-		{dialect: "sqlite3", check: agreesWithRebind},
-		{dialect: "sqlserver", check: refusesButRebindKnows("@p1")},
-		{dialect: "mssql", check: refusesButRebindKnows("@p1")},
-		{dialect: "cockroachdb", check: agreesWithRebind},
-		{dialect: "yugabytedb", check: agreesWithRebind},
-		{dialect: "spanner", check: agreesWithRebind},
+		{dialect: "postgresql"},
+		{dialect: "postgres"},
+		{dialect: "mysql"},
+		{dialect: "mariadb"},
+		{dialect: "clickhouse", wantRebind: "?"},
+		{dialect: "sqlite"},
+		{dialect: "sqlite3"},
+		{dialect: "sqlserver", wantRebind: "@p1"},
+		{dialect: "mssql", wantRebind: "@p1"},
+		{dialect: "cockroachdb"},
+		{dialect: "yugabytedb"},
+		{dialect: "spanner"},
 	}
 
 	names := make([]string, 0, len(rows))
@@ -382,9 +410,15 @@ func TestDMLPlaceholderAgreesWithRebind(t *testing.T) {
 	}
 	c.Assert(names, qt.DeepEquals, renderer.SupportedDialects())
 
-	for _, row := range rows {
-		c.Run(row.dialect, func(c *qt.C) {
-			row.check(c, row.dialect)
+	for _, dialect := range taughtDialects(rows) {
+		t.Run(dialect, func(t *testing.T) {
+			assertAgreesWithRebind(qt.New(t), dialect)
+		})
+	}
+
+	for _, row := range untaughtRows(rows) {
+		t.Run(row.dialect, func(t *testing.T) {
+			assertRefusesButRebindKnows(qt.New(t), row.dialect, row.wantRebind)
 		})
 	}
 }

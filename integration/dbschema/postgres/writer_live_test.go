@@ -133,7 +133,6 @@ func TestWriterDropAllTables_LiveResolvesInternalDependencies(t *testing.T) {
 }
 
 func TestWriterDropAllTables_LivePostgresFamilyResolvesReverseViewChain(t *testing.T) {
-	c := qt.New(t)
 	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
 	defer cancel()
 
@@ -143,7 +142,8 @@ func TestWriterDropAllTables_LivePostgresFamilyResolvesReverseViewChain(t *testi
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			db, err := sql.Open("pgx", requirePostgresWriterFamilyLiveURL(c, test.engine))
 			c.Assert(err, qt.IsNil)
 			defer db.Close()
@@ -179,7 +179,6 @@ func TestWriterDropAllTables_LivePostgresFamilyResolvesReverseViewChain(t *testi
 }
 
 func TestWriterDropDatabaseRealm_LivePostgresFamilyCleansCrossSchemaGraph(t *testing.T) {
-	c := qt.New(t)
 	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Minute)
 	defer cancel()
 
@@ -190,7 +189,8 @@ func TestWriterDropDatabaseRealm_LivePostgresFamilyCleansCrossSchemaGraph(t *tes
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			liveDatabase := newPostgresWriterLiveDatabase(
 				c,
 				ctx,
@@ -414,7 +414,6 @@ func TestWriterDropDatabaseRealm_LivePostgresRollsBackOnTemporaryPolicyDependenc
 }
 
 func TestWriterDropDatabaseRealm_LiveRejectsProtectedDatabase(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name     string
 		engine   dbtarget.Engine
@@ -438,7 +437,8 @@ func TestWriterDropDatabaseRealm_LiveRejectsProtectedDatabase(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			db := openPostgresWriterProtectedLiveDatabase(
 				c,
 				requirePostgresWriterFamilyLiveURL(c, test.engine),
@@ -569,7 +569,8 @@ func TestWriterDropAllTables_LiveRejectsCrossSchemaPartitionEdges(t *testing.T) 
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			suffix := time.Now().UnixNano()
 			managedSchema := fmt.Sprintf("ptah_partition_managed_%d", suffix)
 			externalSchema := fmt.Sprintf("ptah_partition_external_%d", suffix)

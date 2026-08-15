@@ -21,7 +21,8 @@ func TestAtlasProjectMigrationDirectorySymlinkConfinementE2E(t *testing.T) {
 	compatBinary := filepath.Join(t.TempDir(), "ptah-compat")
 	buildPtahCompat(c, ctx, repoRoot, compatBinary)
 
-	c.Run("project root symlink retains the real project directory", func(c *qt.C) {
+	t.Run("project root symlink retains the real project directory", func(t *testing.T) {
+		c := qt.New(t)
 		parentDir := c.TempDir()
 		projectDir := filepath.Join(parentDir, "project")
 		projectLink := filepath.Join(parentDir, "project-link")
@@ -43,7 +44,8 @@ func TestAtlasProjectMigrationDirectorySymlinkConfinementE2E(t *testing.T) {
 		c.Assert(readDirectoryNames(c, filepath.Join(projectDir, "migrations")), qt.HasLen, 2)
 	})
 
-	c.Run("migration directory symlink cannot leave project root", func(c *qt.C) {
+	t.Run("migration directory symlink cannot leave project root", func(t *testing.T) {
+		c := qt.New(t)
 		projectDir := c.TempDir()
 		outsideDir := c.TempDir()
 		c.Assert(os.Symlink(outsideDir, filepath.Join(projectDir, "migrations")), qt.IsNil)

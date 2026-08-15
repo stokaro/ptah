@@ -331,7 +331,6 @@ func TestPostgreSQLIndexAttributes_UnrepresentableStorageParameterIsDropped(t *t
 // below is part of the fixture rather than a separate one.
 func TestPostgreSQLIndexAttributes_ApplyingItsOwnDescriptionChangesNothing(t *testing.T) {
 	dsn := skipIfNoPostgreSQL(t)
-	c := qt.New(t)
 
 	tests := []struct {
 		name string
@@ -345,7 +344,8 @@ func TestPostgreSQLIndexAttributes_ApplyingItsOwnDescriptionChangesNothing(t *te
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			dbURL := newBoundaryDatabase(c, dsn, boundaryCase{
 				name:  "index_attributes_apply",
 				seed:  indexAttributeSeed(),
