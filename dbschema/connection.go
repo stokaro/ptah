@@ -193,7 +193,11 @@ func parseDatabaseURL(dbURL string) (*url.URL, error) {
 // withoutMySQLNetwork removes the network wrapper from a MySQL-family address,
 // reporting whether one was there to remove.
 func withoutMySQLNetwork(dbURL string) (string, bool) {
-	for _, network := range []string{"@tcp(", "@unix("} {
+	// Credentials are optional in the driver's grammar, so tcp(host:port)/db
+	// and unix(/path)/db are valid targets on their own. Matching only the
+	// credential-bearing spellings refused the first as an invalid URL and read
+	// the second with the socket path folded into the database name.
+	for _, network := range []string{"@tcp(", "@unix(", "://tcp(", "://unix("} {
 		start := strings.Index(dbURL, network)
 		if start < 0 {
 			continue
@@ -202,7 +206,10 @@ func withoutMySQLNetwork(dbURL string) (string, bool) {
 		if end < 0 {
 			continue
 		}
-		return dbURL[:start+1] + dbURL[start+end+1:], true
+		// Keep everything up to and including the separator the network
+		// followed -- "@" or "://" -- and drop the network with its address.
+		keep := start + strings.Index(network, "(")
+		return dbURL[:keep] + dbURL[start+end+1:], true
 	}
 	return dbURL, false
 }

@@ -56,7 +56,12 @@ func Parse(rawURL string) (*url.URL, error) {
 		return parsed, nil
 	}
 	if scheme, rest, found := strings.Cut(rawURL, "://"); found && IsWindowsPath(rest) {
-		return &url.URL{Scheme: scheme, Opaque: rest}, nil
+		// The query is split off rather than folded into the path. Carrying the
+		// whole remainder as opaque left the options inside the filename, so a
+		// caller appending its own parameter wrote a second "?" and the
+		// requested ones were silently dropped.
+		path, query, _ := strings.Cut(rest, "?")
+		return &url.URL{Scheme: scheme, Opaque: path, RawQuery: query}, nil
 	}
 	return nil, err
 }

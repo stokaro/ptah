@@ -1250,3 +1250,57 @@ func TestParseDatabaseURL_ReadsTheDatabaseOfASocketURL(t *testing.T) {
 		})
 	}
 }
+
+// TestParseDatabaseURL_KeepsTheQueryOfAWindowsPath keeps the accommodation
+// from eating the options.
+//
+// Carrying the whole remainder as opaque put the query inside the path, so
+// convertSQLiteURL saw no query and appended its pragma with a second "?" --
+// C:\tmp\app.db?mode=ro?_pragma=... The mode was silently not applied, which on
+// a read-only target means the database opens with the wrong semantics rather
+// than failing.
+func TestParseDatabaseURL_KeepsTheQueryOfAWindowsPath(t *testing.T) {
+	c := qt.New(t)
+
+	parsed, err := parseDatabaseURL(`sqlite://C:\tmp\app.db?mode=ro`)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(parsed.Opaque, qt.Equals, `C:\tmp\app.db`)
+	c.Assert(parsed.RawQuery, qt.Equals, "mode=ro")
+	// One "?" and both parameters. Their order is the package's own and not
+	// what this pins; that the requested one survives at all is.
+	dsn := convertSQLiteURL(`sqlite://C:\tmp\app.db?mode=ro`)
+	c.Assert(strings.Count(dsn, "?"), qt.Equals, 1)
+	c.Assert(dsn, qt.Contains, `C:\tmp\app.db?`)
+	c.Assert(dsn, qt.Contains, "mode=ro")
+}
+
+// TestParseDatabaseURL_ReadsANetworkDSNWithoutCredentials covers the half of
+// the grammar the first recognizer missed.
+//
+// Credentials are optional in go-sql-driver's DSN, so tcp(localhost:3306)/db
+// and unix(/tmp/mysql.sock)/db are valid targets. Matching only "@tcp(" left
+// the first refused as an invalid URL and the second parsed with the socket
+// path folded into the database name.
+func TestParseDatabaseURL_ReadsANetworkDSNWithoutCredentials(t *testing.T) {
+	tests := []struct {
+		name string
+		url  string
+		want string
+	}{
+		{name: "a TCP target with no credentials", url: "mysql://tcp(localhost:3306)/shop", want: "shop"},
+		{name: "a socket target with no credentials", url: "mysql://unix(/tmp/mysql.sock)/shop", want: "shop"},
+		{name: "credentials are still read", url: "mysql://user:pass@tcp(localhost:3306)/shop", want: "shop"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			parsed, err := parseDatabaseURL(test.url)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(strings.TrimPrefix(parsed.Path, "/"), qt.Equals, test.want)
+		})
+	}
+}
