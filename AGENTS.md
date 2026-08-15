@@ -820,6 +820,28 @@ rules of [`docs/STYLE_GUIDE.md`](docs/STYLE_GUIDE.md) apply in spirit.
   cover it with a black-box unit test outside the integration trees, or
   introduce the real public/application boundary the integration test should
   exercise. Never use white-box access as an integration shortcut.
+- **A live test asks for an engine, never for a variable.** `internal/dbtarget`
+  is the one declaration of which environment variable names which database.
+  Call `dbtarget.URL(c, dbtarget.PostgreSQL)` for the address ptah connects
+  with, or `dbtarget.DriverDSN(c, dbtarget.MySQL)` for the form a raw
+  `database/sql` driver parses; both skip with a message naming the canonical
+  variable when nothing is configured. Do not read `os.Getenv` for a database
+  address in a test, and do not invent a spelling — there is nowhere to invent
+  one, which is the point.
+
+  The two accessors are not interchangeable. `go-sql-driver/mysql` reads a
+  `mysql://` prefix as part of the username and `pgx` does not parse
+  `cockroachdb://` at all, so anything handed to `mysqldriver.ParseDSN` or
+  opened directly needs `DriverDSN`; anything handed to
+  `dbschema.ConnectToDatabase` needs `URL`. Handing a URL to the driver parser
+  does not fail loudly — it connects as a different user and reports access
+  denied, which reads as a broken CI secret rather than as a wrong call.
+
+  This exists because the alternative was measured. Before it, 129 test files
+  each decided where to look, PostgreSQL answered to three spellings and MySQL
+  to four, and one CI step set 34 variables so that whichever a test happened
+  to read would be present. A test written against a name that step did not set
+  skipped in silence, and a skip reads as a pass.
 - A missing database environment variable causes a test skip, and a skip reads
   as a pass to ordinary `go test`. CI therefore runs the complete recursive
   package contour through
@@ -890,8 +912,15 @@ matches by prefix so every testify subpackage is covered by the one entry.
 ### Checkers Belong To The Test They Report Against
 
 An assertion reports against whichever test its checker was built from, so the
-checker a test uses has to be the one for that test. Three rules follow, and
-`make lint-qtlint` enforces them:
+checker a test uses has to be the one for that test. Three rules follow. Only
+the first is enforced today — `QTLINT_RULES` in the Makefile carries
+`-require-qt-c-receiver` and nothing else, and it is the rule the tree is clean
+against. The other two are review rules for now, and the counts are written
+here rather than left to be rediscovered: `-require-testing-run` reports 70
+sites in the untagged contour and 191 in the tagged one. Adding a rule to the
+gate before the tree is clean against it turns every unrelated change red, so
+each moves into `QTLINT_RULES` when its own backlog reaches zero, and the
+number above is what says whether that has happened.
 
 - Assert through a receiver: `c := qt.New(t)` then `c.Assert(...)`, never
   `qt.Assert(t, ...)`.
@@ -899,23 +928,43 @@ checker a test uses has to be the one for that test. Three rules follow, and
   never `c.Run`. A `c.Run` closure asserts through a checker bound to the
   parent, so a failure is attributed to the parent and a `FailNow` stops the
   parent instead of the subtest.
-- **A test helper takes the test handle, not the checker.** Write
-  `func writeFixture(tb testing.TB) string` and build `c := qt.New(tb)` inside
-  it; do not write `func writeFixture(c *qt.C) string`.
+- **A test helper takes the checker.** Write `func writeFixture(c *qt.C) string`
+  and call it `writeFixture(c)`. Do not widen the parameter to `testing.TB` and
+  rebuild a checker inside, and do not reach through the checker at the call
+  site for `c.TB`.
 
-The third rule is what makes the second enforceable, and the reason is worth
-knowing because the alternative fails at run time rather than at review.
-`(*qt.C).Defer` registers a cleanup that panics unless `Done()` ran. `C.Run`
-supplies that `defer c2.Done()`; a bare `qt.New(t)` does not. So when a checker
-is handed to a helper, the analyzer cannot see what the helper does with it,
-and what it could do includes `Defer` — it therefore reports the subtest and
-withholds the rewrite. A helper taking `testing.TB` has nothing to escape.
+The subtest parameter is named `t`, and it shadows the enclosing test's `t`
+when the closure refers to one. That is the point rather than a collision to
+dodge: the body is becoming a subtest, so a `t.TempDir()` inside it should name
+the subtest's directory and a `t.Fatal` inside it should fail the subtest.
+Naming the parameter around the reference still compiles, and leaves those
+calls addressing the parent, which is how one temporary directory comes to be
+shared by every row of a table. The one shape that cannot be converted is
+a closure whose body declares `t` in its own block — Go declares parameters in
+the body block, so such a declaration collides with the new parameter rather
+than being shadowed by it. `-require-testing-run` withholds the fix there and
+says so; convert it by hand.
 
-`testing.TB` rather than `*testing.T` is deliberate. Inside a subtest closure
-that has not been converted yet there is no `*testing.T` to pass, but there is
-`c.TB`: quicktest's `C` embeds `testing.TB`, so the checker yields the handle it
-was built from. Converting a helper therefore leaves every caller compiling at
-every point, and the two conversions can land separately.
+The third rule was the other way round for one release, and the reversal is
+worth writing down so it is not rediscovered. `*qt.C` **is** a `testing.TB` — `C`
+embeds it — so a helper declared to take `testing.TB` already accepted the
+checker, and widening the signature bought nothing but a line of ceremony per
+helper and a `.TB` selector per call site that reads as though the checker were
+the wrong type to pass. Measured on this repository: 1003 helpers and 5924 call
+sites, all of it noise.
+
+What the widening appeared to buy was `-require-testing-run`'s fix. That rule
+withholds a rewrite when the checker escapes into a function, because what such
+a function can do includes `(*qt.C).Defer`, which registers a cleanup that
+panics unless `Done()` ran — `C.Run` supplies that `defer c2.Done()` and a bare
+`qt.New(t)` does not. Passing `c.TB` did not remove the hazard; it removed the
+analyzer's ability to see it, because a selector is not the bare identifier the
+escape check looks for. Prefer the honest signature and accept the withheld fix.
+
+A helper that genuinely needs a concrete `*testing.T` should take one. What it
+must never do is take a handle and assert its way to the concrete type:
+`c.TB.(*testing.T)` inside a helper declared for `testing.TB` panics the moment
+it is called from a benchmark, and the signature promises otherwise.
 
 The gate runs two invocations, and neither is redundant:
 
