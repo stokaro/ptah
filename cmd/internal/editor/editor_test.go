@@ -21,7 +21,7 @@ func writeAppendScript(t *testing.T, marker string) string {
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "editor.sh")
 	script := "#!/bin/sh\nfor f in \"$@\"; do\n  printf '%s\\n' \"" + marker + "\" >> \"$f\"\ndone\n"
-	if err := os.WriteFile(path, []byte(script), 0o700); err != nil { //nolint:gosec // test helper script must be executable
+	if err := os.WriteFile(path, []byte(script), 0o700); err != nil { // #nosec G306 -- test helper script must be executable
 		t.Fatal(err)
 	}
 	return path
@@ -88,7 +88,7 @@ func TestOpen_FailingEditorReportsCommand(t *testing.T) {
 	testutils.SkipWithoutPOSIXShell(t)
 	c := qt.New(t)
 	path := filepath.Join(t.TempDir(), "boom.sh")
-	c.Assert(os.WriteFile(path, []byte("#!/bin/sh\nexit 42\n"), 0o700), qt.IsNil) //nolint:gosec // test helper script must be executable
+	c.Assert(os.WriteFile(path, []byte("#!/bin/sh\nexit 42\n"), 0o700), qt.IsNil) // #nosec G306 -- test helper script must be executable
 
 	err := editor.Open(context.Background(), path, filepath.Join(t.TempDir(), "file.sql"))
 
@@ -101,7 +101,7 @@ func TestOpen_ParsesQuotedExecutablePathAndEmptyArgument(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "editor with spaces")
 	c.Assert(os.Mkdir(dir, 0o700), qt.IsNil)
 	script := filepath.Join(dir, "capture args.sh")
-	c.Assert(os.WriteFile(script, []byte("#!/bin/sh\nprintf '%s\\n' \"$#\" > \"$3\"\nprintf '<%s>\\n' \"$1\" \"$2\" >> \"$3\"\n"), 0o700), qt.IsNil) //nolint:gosec // test helper script must be executable
+	c.Assert(os.WriteFile(script, []byte("#!/bin/sh\nprintf '%s\\n' \"$#\" > \"$3\"\nprintf '<%s>\\n' \"$1\" \"$2\" >> \"$3\"\n"), 0o700), qt.IsNil) // #nosec G306 -- test helper script must be executable
 	target := filepath.Join(t.TempDir(), "args.txt")
 
 	err := editor.Open(context.Background(), `"`+script+`" -a ''`, target)
@@ -132,7 +132,7 @@ func TestOpen_StopsEditorWhenContextExpires(t *testing.T) {
 	testutils.SkipWithoutPOSIXShell(t)
 	c := qt.New(t)
 	path := filepath.Join(t.TempDir(), "blocking-editor.sh")
-	c.Assert(os.WriteFile(path, []byte("#!/bin/sh\nexec sleep 30\n"), 0o700), qt.IsNil) //nolint:gosec // test helper script must be executable
+	c.Assert(os.WriteFile(path, []byte("#!/bin/sh\nexec sleep 30\n"), 0o700), qt.IsNil) // #nosec G306 -- test helper script must be executable
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
 

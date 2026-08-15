@@ -392,7 +392,7 @@ func dropCleanupForeignKeys(
 	foreignKeys []cleanupForeignKey,
 ) error {
 	for _, foreignKey := range foreignKeys {
-		//nolint:gosec // G202: schema and catalog identifiers are emitted only through identifier quoting.
+		// #nosec G202 -- schema and catalog identifiers are emitted only through identifier quoting.
 		dropSQL := "ALTER TABLE " + quoteQualifiedIdent(schema, foreignKey.Table) +
 			" DROP FOREIGN KEY " + quoteIdent(foreignKey.Name)
 		if _, err := conn.ExecContext(ctx, dropSQL); err != nil {
@@ -416,7 +416,7 @@ func dropRemainingCleanupObjects(
 ) error {
 	// MySQL DDL implicitly commits, so cleanup deliberately avoids a transaction.
 	for _, object := range objects {
-		//nolint:gosec // G202: schema and object.Name are emitted only through identifier quoting.
+		// #nosec G202 -- schema and object.Name are emitted only through identifier quoting.
 		dropSQL := "DROP " + object.Kind + " IF EXISTS " + quoteQualifiedIdent(schema, object.Name)
 		if _, err := conn.ExecContext(ctx, dropSQL); err != nil {
 			return fmt.Errorf("failed to drop %s %s: SQL execution failed: %w\nSQL: %s",

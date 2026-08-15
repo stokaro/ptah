@@ -417,6 +417,52 @@ before help, version, argument handling, configuration, filesystem, or database
 work. Do not add another restrictive boolean without documenting why it cannot
 be expressed as a capability gate.
 
+### A `PTAH_*` value is consumed once, by the surface that decides with it
+
+The compatibility surface forwards to a native command, and
+`cmd/internal/cmdadapter` installs the same `PTAH_*` binding on the forwarded
+target that the adapter itself has. So a value-carrying variable is offered
+twice: once to the adapter, which reads it and decides what the native command
+should receive, and once to the target, which reads it again if nothing arrived
+explicitly.
+
+That second read is invisible whenever the adapter's decision was *nothing*. It
+is not a fallback; it is the decision being overwritten by the input the
+decision was made from. **When an adapter resolves a native flag's whole value,
+disable the environment binding for that flag on the target** with
+`cmdflags.DisableEnvBinding` — the same opt-out `schema apply` uses for
+`--auto-approve`. Nothing is lost: a run the adapter did not narrow has already
+had the value forwarded explicitly.
+
+stokaro/ptah#1535 is the shape to recognize. An `atlas.hcl` `data` block scoping
+the desired schema owns the variables that reach it, and a block declaring none
+refuses the run's `--var`. Reached through `PTAH_VAR` the same run leaked: the
+scope emptied the forwarded values, no explicit `--var` marked the flag as set,
+and the target read the variable itself. Nothing errored. The suite passed,
+against a schema nobody asked for.
+
+Two tests, not one. The refusal proves the scope closes; a control proving the
+variable still reaches an unscoped run proves the closure was not achieved by
+dropping the variable outright. Without the second, deleting the feature reads
+as a fix.
+
+### Recognition that spans two functions belongs to one of them
+
+`ConnectToDatabase` parses a database URL and then converts it to a driver DSN.
+Both ends have to know which spellings carry go-sql-driver's network wrapper,
+and each kept its own list. They agreed when the second was written and stopped
+agreeing the moment the first was extended, so a URL the parser accepted reached
+the driver with its scheme still attached — or, for a socket target, rebuilt
+around a host that was never one, failing as a DNS lookup of the socket path.
+
+**When two functions in a pipeline must recognize the same set, give them one
+predicate, and say at its declaration why it cannot become two.** The mismatch
+is not caught by testing either end: both are individually correct against their
+own list. It is caught by a control comparing their *behavior* — and a control
+that asks the shared helper twice will agree with itself while one end quietly
+stops calling it, which is the state stokaro/ptah#1540 reported. Drive the
+public path that joins them.
+
 ### Compatibility with older Ptah is a different axis, and it is not owed
 
 Everything above is about the community binary. Compatibility with **Ptah's own
@@ -792,6 +838,13 @@ The `modernize` linter is enabled. Prefer current Go idioms when writing or edit
 - Prefer clear early returns and simple control flow that satisfies `revive`, `gocognit`, `gocyclo`, `nestif`, and `funlen`.
 - Keep import aliases compliant with `importas`; for example, `github.com/frankban/quicktest` must be imported as `qt`.
 - Add `//nolint` only when necessary, always with a specific linter name and an explanation.
+  Never write `//nolint:gosec` or `//nolint:revive`: use gosec's native
+  `#nosec Gxxx -- reason` or revive's native `//revive:disable... reason`
+  directives. A `#nosec` directive must name every suppressed `Gxxx` rule;
+  never use a bare directive that suppresses all gosec findings on the line.
+  Every native suppression also needs a justification. The pinned
+  nolintguard analyzer is enforced through `go vet -vettool` across every Go
+  module in both the default and `integration` build-tag contours.
 
 When applying automatic lint fixes, run both passes:
 
@@ -903,6 +956,21 @@ logic.
 Go 1.22 and newer makes range variables per-iteration, so the historical
 `test := test` workaround is not needed when using `t.Run()` closures in
 table-driven tests unless intentionally taking the address of a loop variable.
+
+Always create the quicktest checker inside each `t.Run` closure:
+
+```go
+for _, test := range tests {
+	t.Run(test.name, func(t *testing.T) {
+		c := qt.New(t)
+		// Assertions for this case.
+	})
+}
+```
+
+Do not use `c.Run` or `qt.Run`. The standard-library `t.Run` boundary keeps the
+subtest lifecycle explicit, and `qt.New(t)` inside that boundary binds helpers,
+cleanup, failure location, and parallelism to the correct subtest.
 
 Run the test-style baseline before finishing test changes:
 
@@ -1140,11 +1208,21 @@ func TestDialectFromURL_FailurePath(t *testing.T) {
 }
 ```
 
-### Do Not Hide Conditionals In Helpers
+### Do Not Hide Conditionals In Helpers Or Table Callbacks
 
-Avoid helper functions that mask conditional logic, such as choosing between
+Do not use helper functions that mask conditional logic, such as choosing between
 `qt.ErrorIs`, `qt.ErrorMatches`, and `qt.IsNil` based on fields in a test case.
 This makes tests harder to read and review.
+
+The same prohibition applies when the hidden branch is encoded as data. Do not
+put assertion callbacks, assertion factories, comparator callbacks, or fields
+such as `assertResult func(...)` in a test-case table to choose how a case is
+verified. That is an `if` statement made less visible. If cases have different
+success/error contracts or require different comparison fidelity, split them
+into separate test functions or separate tables whose loop bodies contain one
+direct, uniform assertion sequence. A callback may represent an actual input
+behavior supplied to production code; it must not select the test's assertion
+strategy.
 
 Instead, write explicit assertions per case, even when it is a bit repetitive.
 

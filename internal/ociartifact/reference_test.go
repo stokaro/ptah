@@ -109,7 +109,7 @@ func TestParseRef_FailurePath(t *testing.T) {
 		{name: "query", raw: "oci://ghcr.io/acme/app?tag=stable"},
 		{name: "fragment", raw: "oci://ghcr.io/acme/app#stable"},
 		{name: "surrounding whitespace", raw: " oci://ghcr.io/acme/app"},
-		{name: "embedded credentials", raw: "oci://user:secret@ghcr.io/acme/app"}, //nolint:gosec // Deliberately verifies that inline credentials are rejected.
+		{name: "embedded credentials", raw: "oci://user:secret@ghcr.io/acme/app"}, // #nosec G101 -- Deliberately verifies that inline credentials are rejected.
 		{name: "encoded slash", raw: "oci://ghcr.io/acme%2fapp"},
 		{name: "encoded backslash", raw: "oci://ghcr.io/acme%5Capp"},
 		{name: "backslash", raw: `oci://ghcr.io/acme\app`},

@@ -88,6 +88,9 @@ linters:
         # the following linters are allowed without explanations because usually there's nothing to explain
         - errcheck
         - lll
+    # nolintguard v0.4.0 does not register as a golangci-lint module plugin.
+    # It is pinned as a Go tool and run through go vet's analyzer driver by the
+    # existing Make lint target and CI.
     revive:
       severity: error
       # See https://github.com/mgechev/revive/blob/master/RULES_DESCRIPTIONS.md

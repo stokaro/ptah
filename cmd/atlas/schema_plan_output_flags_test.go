@@ -33,7 +33,7 @@ func installScriptEditor(t *testing.T, body string) {
 	testutils.SkipWithoutPOSIXShell(t)
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "plan-editor.sh")
-	if err := os.WriteFile(path, []byte("#!/bin/sh\n"+body+"\n"), 0o700); err != nil { //nolint:gosec // test editor script must be executable
+	if err := os.WriteFile(path, []byte("#!/bin/sh\n"+body+"\n"), 0o700); err != nil { // #nosec G306 -- test editor script must be executable
 		t.Fatal(err)
 	}
 	t.Setenv("VISUAL", "")

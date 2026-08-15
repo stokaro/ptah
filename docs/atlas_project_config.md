@@ -434,8 +434,9 @@ Another data source's `vars` never reach these files, and the run's global
 `--var` does not cross the boundary either — a data source that declares no
 `vars` still closes it. A file named directly, as `src = "file://schema.hcl"`,
 is outside every data source and does take `--var`. So is a desired state the
-operator names on the command line: `--to`, `--from` and `--file` keep `--var`
-even when they name the very file a data source of the loaded env selects.
+operator names on the command line: `--to`, `--from`, `--file`, and schema
+test's `--url` keep `--var` even when they name the very file a data source of
+the loaded env selects.
 
 The map takes strings, numbers and bools, each carried as the text of the
 literal, so `tenant = 42` reaches the file as `"42"`. A name the file does not

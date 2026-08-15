@@ -225,7 +225,7 @@ func resolveSSHDestination(ctx context.Context, endpoint dockerEndpoint) (docker
 	if !endpoint.ssh {
 		return endpoint, nil
 	}
-	//nolint:gosec // G204: the host is the operator's own DOCKER_HOST, is refused above if it could read as an option, and -G resolves configuration without connecting
+	// #nosec G204 -- the host is the operator's own DOCKER_HOST, is refused above if it could read as an option, and -G resolves configuration without connecting
 	out, err := exec.CommandContext(ctx, "ssh", "-G", endpoint.host).Output()
 	if err != nil {
 		// An ssh client that cannot be asked is not a reason to refuse: the

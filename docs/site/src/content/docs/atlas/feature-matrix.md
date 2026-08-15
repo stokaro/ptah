@@ -234,12 +234,12 @@ seven of them as open capabilities regardless.
 | --- | :-: | :-: | :-: | --- |
 | Atlas `.test.hcl` ingestion | ✅ | ❌ | ✅ | Implemented: `.test.hcl` is read alongside native YAML by `schema test` and `migrate test`. Adding `output` to an `exec` makes it an assertion; step order is preserved and cases are selected by kind. |
 | Atlas CE strict oracle profile | ✅ | ➖ | ➖ | Strict mode builds the CE tree and refuses unsafe sources, migration extensions, and catalog-only live objects before output, comparison, or mutation. Default retains the full surface. |
-| Atlas-shaped migrate test / schema test verbs | 🟡 | ❌ | ✅ | Both verbs expose reports, seed directories, and named docker:// refusal. schema test accepts `-s/--schema`, Go, SQL/HCL, or database sources; scopes retain database-wide extensions; env:// refuses. |
+| Atlas-shaped migrate test / schema test verbs | 🟡 | ❌ | ✅ | Reports and seed directories are exposed. schema test accepts `-s/--schema`, Go, SQL/HCL, or database sources; `--var` and isolated `data.hcl_schema.vars` reach HCL files; env:// refuses. |
 | Dev / shadow database verification | 🟡 | ✅ | ✅ | `--shadow-db` on generate, checkpoint, baseline and down; the replay path provisions a docker:// dev database. schema apply `--dry-run` runs the same rehearsal the real apply does. |
 | Embeddable test runner (Go package) | ✅ | ❔ | ❌ | migration/dbtest exports RunMigrationTest and RunSchemaTest. CE stays unknown: a CLI probe cannot see a Go API; an Atlas-side source naming a test-runner entry point would settle it. |
 | Exit-code contract for CI gates | ✅ | ✅ | ➖ | Native 0/1/2 separates expected negative results from command errors; ptah-compat collapses to Atlas CE 0/1, recovered panics still exit 2. |
 | Migration test framework (`ptah migrations test`) | ✅ | ❌ | ✅ | Declarative YAML cases: migrate_to, apply_schema, seed, exec, assert. Fresh ephemeral SQLite per case unless `--db-url` is set. |
-| Schema test framework (`ptah schema test`) | ✅ | ❌ | ✅ | Desired schema from Go annotations converges before steps; migrate_to is rejected. Atlas CE v1.2.0 registers no schema test verb. |
+| Schema test framework (`ptah schema test`) | ✅ | ❌ | ✅ | Desired schema from Go annotations, SQL or HCL files, or a live database converges before steps. HCL sources take repeatable `--var`; migrate_to is rejected. |
 
 ## Configuration and dev databases
 

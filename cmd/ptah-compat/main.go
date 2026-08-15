@@ -18,7 +18,7 @@ func main() {
 	}
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error: %s\n", err)
-		os.Exit(1) //revive:disable-line:deep-exit // main owns the process-level compatibility contract.
+		os.Exit(1) //revive:disable-line:deep-exit main owns the process-level compatibility contract
 	}
 	// The Atlas-compatible surface is quiet by construction: Atlas CE writes
 	// nothing to stderr for a clean run of the commands this binary mirrors,

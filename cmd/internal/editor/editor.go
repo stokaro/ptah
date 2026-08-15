@@ -126,7 +126,7 @@ func Open(ctx context.Context, editorCmd string, paths ...string) error {
 		return fmt.Errorf("parse editor command %q: command has no executable", editorCmd)
 	}
 	args := append(append([]string{}, fields[1:]...), nonEmpty(paths)...)
-	c := exec.CommandContext(ctx, fields[0], args...) //nolint:gosec // the editor is operator-provided and runs directly without a shell
+	c := exec.CommandContext(ctx, fields[0], args...) // #nosec G204 -- the editor is operator-provided and runs directly without a shell
 	c.Stdin, c.Stdout, c.Stderr = os.Stdin, os.Stdout, os.Stderr
 	if err := c.Run(); err != nil {
 		if contextErr := ctx.Err(); contextErr != nil {

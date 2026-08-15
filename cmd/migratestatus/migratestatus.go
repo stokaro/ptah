@@ -344,7 +344,7 @@ func outputJSON(w io.Writer, status *migrator.MigrationStatus) error {
 	return encoder.Encode(status)
 }
 
-func outputHuman(emit cliobs.Emitter, status *migrator.MigrationStatus, conn *dbschema.DatabaseConnection, verbose bool) error { //revive:disable-line:flag-parameter // it's ok here
+func outputHuman(emit cliobs.Emitter, status *migrator.MigrationStatus, conn *dbschema.DatabaseConnection, verbose bool) error { //revive:disable-line:flag-parameter output mode is caller-owned command state
 	emit.Println("=== MIGRATION STATUS ===")
 	emit.Printf("Database: %s\n", dbschema.FormatDatabaseURL("***"))
 	emit.Printf("Dialect: %s\n", conn.Info().Dialect)

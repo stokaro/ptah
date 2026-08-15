@@ -87,7 +87,7 @@ func ExecuteCommand(cmd *cobra.Command, args ...string) {
 
 	err := executeWithRecovery(cmd)
 	if err != nil {
-		os.Exit(exitcode.Code(err, 2)) //revive:disable-line:deep-exit
+		os.Exit(exitcode.Code(err, 2)) //revive:disable-line:deep-exit root owns the process exit contract
 	}
 }
 

@@ -98,6 +98,11 @@ Native Ptah equivalent: ptah migrations up.`,
 	flags.BoolVar(&opts.dryRun, "dry-run", false, "Show migrations without applying them")
 	flags.StringVar(&opts.txMode, "tx-mode", opts.txMode, "Transaction mode: file, all, or none")
 	flags.StringVar(&opts.execOrder, "exec-order", opts.execOrder, "Execution order: linear, linear-skip, or non-linear")
+	// The Atlas meaning: the connected SCHEMA is not empty, adopt it anyway.
+	// Native `ptah migrations up` registers the same spelling for the other
+	// kind of dirty -- a revision ROW left behind by a body that failed
+	// part-way -- and the two share no meaning. See the note at that
+	// declaration in cmd/migrateup/migrateup.go, and stokaro/ptah#1253.
 	flags.BoolVar(&opts.allowDirty, "allow-dirty", false, "Allow applying migrations when the revision table is dirty")
 	flags.StringVar(&opts.baseline, "baseline", "", "Baseline version to mark applied before running pending migrations")
 	// The wider Atlas distribution documents --to-version as a string
