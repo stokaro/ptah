@@ -1,18 +1,16 @@
-//go:build !integration
-
-package integration_test
+package integrationharness_test
 
 import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/integration"
+	"go.5x5.cz/ptah/internal/integrationharness"
 )
 
 func TestTestRunnerAddDatabaseWithCleanup_HappyPath(t *testing.T) {
 	c := qt.New(t)
-	runner := integration.NewTestRunner(nil)
+	runner := integrationharness.NewTestRunner(nil)
 
 	err := runner.AddDatabaseWithCleanup(
 		"mysql",
@@ -25,7 +23,7 @@ func TestTestRunnerAddDatabaseWithCleanup_HappyPath(t *testing.T) {
 
 func TestTestRunnerAddDatabaseWithCleanup_FailurePath(t *testing.T) {
 	c := qt.New(t)
-	runner := integration.NewTestRunner(nil)
+	runner := integrationharness.NewTestRunner(nil)
 
 	err := runner.AddDatabaseWithCleanup(
 		"mysql",

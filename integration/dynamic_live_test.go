@@ -10,7 +10,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/goschema"
-	ptahintegration "go.5x5.cz/ptah/integration"
+	ptahintegration "go.5x5.cz/ptah/internal/integrationharness"
 )
 
 //go:embed fixtures

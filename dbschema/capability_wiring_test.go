@@ -32,7 +32,7 @@ func TestLiveCapabilityPathsAvoidVersionBlindFactories(t *testing.T) {
 		filepath.Join("..", "cmd", "readdb", "readdb.go"): {
 			`renderer\.GetOrderedCreateStatements\([^)]*(conn\.Info\(\)|info)\.Dialect`,
 		},
-		filepath.Join("..", "integration", "framework.go"): {
+		filepath.Join("..", "internal", "integrationharness", "framework.go"): {
 			`planner\.GenerateSchemaDiff(AST|SQL|SQLStatements)\([^)]*(conn\.Info\(\)|info)\.Dialect`,
 		},
 	}

@@ -24,14 +24,14 @@ This document summarizes the complete implementation of the integration test sui
 
 ### 🧪 Test Framework
 
-- **Core Framework** (`integration/framework.go`)
+- **Core Framework** (`internal/integrationharness/framework.go`)
   - `TestRunner` for orchestrating test execution
   - `DatabaseHelper` for common database operations
   - `TestResult` and `TestReport` structures
   - Concurrent test execution with proper isolation
   - Database cleanup between tests
 
-- **Report Generation** (`integration/reporter.go`)
+- **Report Generation** (`internal/integrationharness/reporter.go`)
   - Multiple output formats: TXT, JSON, HTML
   - Rich HTML reports with interactive features
   - Detailed error reporting and statistics
