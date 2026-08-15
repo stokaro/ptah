@@ -28,7 +28,7 @@ env "verified" {
 }
 `, strconv.Quote(os.Args[0]))
 	// The config path is rooted in t.TempDir and not influenced by production input.
-	c.Assert(os.WriteFile(filepath.Join(dir, "atlas.hcl"), []byte(config), 0o600), qt.IsNil) // #nosec -- controlled test-only path
+	c.Assert(os.WriteFile(filepath.Join(dir, "atlas.hcl"), []byte(config), 0o600), qt.IsNil) // #nosec G703 -- controlled test-only path
 }
 
 func TestGenerateCommand_UsesExternalSchemaFromAtlasConfigEnv(t *testing.T) {

@@ -293,7 +293,7 @@ func requireTypeOracle(t *testing.T) string {
 			oracleEnv, oracleVersion)
 	}
 
-	out, err := exec.Command(oracle, "version").Output() // #nosec -- the oracle path is operator-provided via PTAH_ATLAS_ORACLE
+	out, err := exec.Command(oracle, "version").Output() // #nosec G204 G702 -- the oracle path is operator-provided via PTAH_ATLAS_ORACLE
 	if err != nil {
 		t.Fatalf("%s=%s is not runnable: %v", oracleEnv, oracle, err)
 	}
@@ -358,7 +358,7 @@ table "probe" {
 		path := filepath.Join(c.TempDir(), "warmup.hcl")
 		//nolint:errcheck // this run exists only to spend the notice
 		_ = os.WriteFile(path, []byte(source), 0o600)
-		// #nosec -- operator-provided oracle path, and path is a test temp dir
+		// #nosec G204 -- operator-provided oracle path, and path is a test temp dir
 		cmd := exec.Command(oracle, "schema", "inspect", "-u", "file://"+path, "--dev-url", devURL)
 		//nolint:errcheck // output and status are both discarded
 		_, _ = cmd.CombinedOutput()
@@ -367,7 +367,7 @@ table "probe" {
 	path := filepath.Join(c.TempDir(), "probe.hcl")
 	c.Assert(os.WriteFile(path, []byte(source), 0o600), qt.IsNil)
 
-	// #nosec -- operator-provided oracle path, and path is a test temp dir
+	// #nosec G204 -- operator-provided oracle path, and path is a test temp dir
 	cmd := exec.Command(oracle, "schema", "inspect", "-u", "file://"+path, "--dev-url", devURL)
 	// The error is the exit status, which is the measurement; a process that
 	// never started leaves ProcessState nil and fails the assertion instead.

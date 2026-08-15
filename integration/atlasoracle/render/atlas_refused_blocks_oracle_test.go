@@ -209,7 +209,7 @@ table "probe" {
 	path := filepath.Join(c.TempDir(), "blocks.hcl")
 	c.Assert(os.WriteFile(path, []byte(source), 0o600), qt.IsNil)
 
-	// #nosec -- operator-provided oracle path, and path is a test temp dir
+	// #nosec G204 -- operator-provided oracle path, and path is a test temp dir
 	cmd := exec.Command(oracle, "schema", "inspect", "-u", "file://"+path, "--dev-url", devURL)
 	// The error is the exit status, which is the measurement; a process that
 	// never started leaves ProcessState nil and fails the assertion instead.

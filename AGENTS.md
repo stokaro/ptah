@@ -793,8 +793,10 @@ The `modernize` linter is enabled. Prefer current Go idioms when writing or edit
 - Keep import aliases compliant with `importas`; for example, `github.com/frankban/quicktest` must be imported as `qt`.
 - Add `//nolint` only when necessary, always with a specific linter name and an explanation.
   Never write `//nolint:gosec` or `//nolint:revive`: use gosec's native
-  `#nosec RULE -- reason` or revive's native `//revive:disable... reason`
-  directives. Every native suppression also needs a justification. The pinned
+  `#nosec Gxxx -- reason` or revive's native `//revive:disable... reason`
+  directives. A `#nosec` directive must name every suppressed `Gxxx` rule;
+  never use a bare directive that suppresses all gosec findings on the line.
+  Every native suppression also needs a justification. The pinned
   nolintguard analyzer is enforced through `go vet -vettool` in both the
   default and `integration` build-tag contours.
 

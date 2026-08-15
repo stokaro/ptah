@@ -134,7 +134,7 @@ func Emit(outDir string, migrations []SourceMigration, opts Options) (*EmitResul
 	written := make([]string, 0, len(planned))
 	for _, file := range planned {
 		path := filepath.Join(outDir, file.name)
-		if err := os.WriteFile(path, file.content, 0o644); err != nil { // #nosec -- migration files are shared, 0644 like the rest
+		if err := os.WriteFile(path, file.content, 0o644); err != nil { // #nosec G306 -- migration files are shared, 0644 like the rest
 			cleanupFiles(outDir, written)
 			return nil, fmt.Errorf("write %q: %w", file.name, err)
 		}

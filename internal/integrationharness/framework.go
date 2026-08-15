@@ -489,7 +489,7 @@ func (vem *VersionedEntityManager) LoadEntityVersion(versionDir string) error {
 
 		// Write to temp entities directory
 		destPath := path.Join(vem.entitiesDir, entry.Name())
-		if err := os.WriteFile(destPath, content, 0644); err != nil { // #nosec -- 0644 is fine
+		if err := os.WriteFile(destPath, content, 0644); err != nil { // #nosec G306 -- 0644 is fine
 			return fmt.Errorf("failed to write entity file %s: %w", destPath, err)
 		}
 	}

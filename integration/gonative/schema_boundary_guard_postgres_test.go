@@ -568,7 +568,7 @@ func boundaryDocumentFile(c *qt.C, document string) string {
 
 	path := filepath.Join(c.TempDir(), "inspected.hcl")
 	// c.TempDir returns a test-owned directory; the fixed basename cannot escape it.
-	c.Assert(os.WriteFile(path, []byte(document), 0o600), qt.IsNil) // #nosec -- The path is confined to c.TempDir.
+	c.Assert(os.WriteFile(path, []byte(document), 0o600), qt.IsNil) // #nosec G703 -- The path is confined to c.TempDir.
 	return path
 }
 

@@ -260,7 +260,7 @@ func TestSchemaExportProtobufSplitDigestProtectsEveryFile(t *testing.T) {
 	siblingPath := filepath.Join(outDir, "product.proto")
 	tampered, err := os.ReadFile(siblingPath)
 	c.Assert(err, qt.IsNil)
-	// #nosec -- The path is this test's own t.TempDir(), not external input.
+	// #nosec G703 -- The path is this test's own t.TempDir(), not external input.
 	c.Assert(os.WriteFile(siblingPath, append(tampered, []byte("\n// hand edited\n")...), 0o600), qt.IsNil)
 	before := readProtoSet(c, outDir)
 
@@ -293,7 +293,7 @@ func TestSchemaExportProtobufSplitDigestCoversTheManifest(t *testing.T) {
 		"// ptah:protobuf-export-files=order.proto,product.proto\n",
 		"// ptah:protobuf-export-files=order.proto\n", 1)
 	c.Assert(shrunk, qt.Not(qt.Equals), string(anchor))
-	// #nosec -- The path is this test's own t.TempDir(), not external input.
+	// #nosec G703 -- The path is this test's own t.TempDir(), not external input.
 	c.Assert(os.WriteFile(outPath, []byte(shrunk), 0o600), qt.IsNil)
 	before := readProtoSet(c, outDir)
 

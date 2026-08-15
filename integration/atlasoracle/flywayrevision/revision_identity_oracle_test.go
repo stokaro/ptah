@@ -1011,7 +1011,7 @@ func requireAtlasOracle(t *testing.T) string {
 	if oracle == "" {
 		t.Skipf("SKIPPED: set %s to the pinned Atlas CE binary (%s)", oracleEnv, oracleVersion)
 	}
-	out, err := exec.Command(oracle, "version").Output() // #nosec -- operator-provided pinned oracle path
+	out, err := exec.Command(oracle, "version").Output() // #nosec G204 G702 -- operator-provided pinned oracle path
 	if err != nil {
 		t.Fatalf("%s=%s is not runnable: %v", oracleEnv, oracle, err)
 	}
