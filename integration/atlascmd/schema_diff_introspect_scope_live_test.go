@@ -16,6 +16,7 @@ import (
 
 	"go.5x5.cz/ptah/cmd/atlas"
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/internal/migratesum"
 	"go.5x5.cz/ptah/migration/migrator"
 )
@@ -97,7 +98,7 @@ func executeCompatSchemaDiff(c *qt.C, args ...string) (string, error) {
 // `relation "users" already exists`.
 func TestSchemaDiffIntrospectsRequestedSchemaLivePostgres(t *testing.T) {
 	c := qt.New(t)
-	dbURL := livePostgresURLForScope(t)
+	dbURL := dbtarget.URL(t, dbtarget.PostgreSQL)
 	suffix := uniqueScopeSuffix()
 	scoped := "ptah_diff_scope_" + suffix
 	defaultTable := "ptah_diff_default_" + suffix
@@ -177,7 +178,7 @@ func TestSchemaDiffIntrospectsRequestedSchemaLivePostgres(t *testing.T) {
 // databases that plainly differ.
 func TestSchemaDiffDatabaseToDatabaseIntrospectsRequestedSchemaLivePostgres(t *testing.T) {
 	c := qt.New(t)
-	dbURL := livePostgresURLForScope(t)
+	dbURL := dbtarget.URL(t, dbtarget.PostgreSQL)
 	suffix := uniqueScopeSuffix()
 	scoped := "ptah_dbdiff_scope_" + suffix
 	fromURL := createDisposableDatabase(c, dbURL, "ptah_dbdiff_from_"+suffix)
@@ -212,7 +213,7 @@ func TestSchemaDiffDatabaseToDatabaseIntrospectsRequestedSchemaLivePostgres(t *t
 // `extensions.pgcrypto` objects on both sides look like empty selections.
 func TestSchemaDiffIncludeMatchesLiveExtensionOutsideTheDefaultSchemaPostgres(t *testing.T) {
 	c := qt.New(t)
-	dbURL := livePostgresURLForScope(t)
+	dbURL := dbtarget.URL(t, dbtarget.PostgreSQL)
 	suffix := uniqueScopeSuffix()
 	fromURL := createDisposableDatabase(c, dbURL, "ptah_extdiff_from_"+suffix)
 	toURL := createDisposableDatabase(c, dbURL, "ptah_extdiff_to_"+suffix)
@@ -240,7 +241,7 @@ func TestSchemaDiffIncludeMatchesLiveExtensionOutsideTheDefaultSchemaPostgres(t 
 // desired side and emit a DROP FUNCTION.
 func TestSchemaDiffIncludeMatchesQualifiedLiveFunctionPostgres(t *testing.T) {
 	c := qt.New(t)
-	dbURL := livePostgresURLForScope(t)
+	dbURL := dbtarget.URL(t, dbtarget.PostgreSQL)
 	suffix := uniqueScopeSuffix()
 	fromURL := createDisposableDatabase(c, dbURL, "ptah_fndiff_from_"+suffix)
 	toURL := createDisposableDatabase(c, dbURL, "ptah_fndiff_to_"+suffix)
@@ -280,7 +281,7 @@ func TestSchemaDiffIncludeMatchesQualifiedLiveFunctionPostgres(t *testing.T) {
 // reintroducing the enum as generated-only CREATE TYPE SQL.
 func TestSchemaDiffIncludeThenExcludeQualifiedLiveEnumPostgres(t *testing.T) {
 	c := qt.New(t)
-	dbURL := livePostgresURLForScope(t)
+	dbURL := dbtarget.URL(t, dbtarget.PostgreSQL)
 	suffix := uniqueScopeSuffix()
 	fromURL := createDisposableDatabase(c, dbURL, "ptah_enumdiff_from_"+suffix)
 	toURL := createDisposableDatabase(c, dbURL, "ptah_enumdiff_to_"+suffix)
@@ -308,7 +309,7 @@ func TestSchemaDiffIncludeThenExcludeQualifiedLiveEnumPostgres(t *testing.T) {
 // EXTENSION SET SCHEMA; removal is independent of placement.
 func TestSchemaDiffIncludePlansLiveExtensionPlacementPostgres(t *testing.T) {
 	c := qt.New(t)
-	dbURL := livePostgresURLForScope(t)
+	dbURL := dbtarget.URL(t, dbtarget.PostgreSQL)
 	suffix := uniqueScopeSuffix()
 	emptyURL := createDisposableDatabase(c, dbURL, "ptah_extplace_empty_"+suffix)
 	defaultURL := createDisposableDatabase(c, dbURL, "ptah_extplace_default_"+suffix)
@@ -359,7 +360,7 @@ func TestSchemaDiffIncludePlansLiveExtensionPlacementPostgres(t *testing.T) {
 // ignored extension must not turn the diff into a refusal or extension DDL.
 func TestSchemaDiffLocalToPostgresIgnoresPreinstalledExtensions(t *testing.T) {
 	c := qt.New(t)
-	dbURL := livePostgresURLForScope(t)
+	dbURL := dbtarget.URL(t, dbtarget.PostgreSQL)
 	suffix := uniqueScopeSuffix()
 	currentURL := createDisposableDatabase(c, dbURL, "ptah_extignore_current_"+suffix)
 	devURL := createDisposableDatabase(c, dbURL, "ptah_extignore_dev_"+suffix)
@@ -388,7 +389,7 @@ func TestSchemaDiffLocalToPostgresIgnoresPreinstalledExtensions(t *testing.T) {
 // Atlas revision table into the comparison.
 func TestSchemaDiffMigrationDirReplayIntrospectsRequestedSchemaLivePostgres(t *testing.T) {
 	c := qt.New(t)
-	dbURL := livePostgresURLForScope(t)
+	dbURL := dbtarget.URL(t, dbtarget.PostgreSQL)
 	suffix := uniqueScopeSuffix()
 	scoped := "ptah_replay_scope_" + suffix
 	fromURL := createDisposableDatabase(c, dbURL, "ptah_replay_from_"+suffix)

@@ -5,7 +5,6 @@ package dbschema_test
 import (
 	"fmt"
 	"net/url"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -17,11 +16,12 @@ import (
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/dbschema"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
 
 func TestSQLServerLiveReadSchema(t *testing.T) {
-	dbURL := requireSQLServerSchemaTestURL(t)
+	dbURL := dbtarget.URL(t, dbtarget.SQLServer)
 	c := qt.New(t)
 	ctx := t.Context()
 
@@ -124,7 +124,7 @@ func TestSQLServerLiveReadSchema(t *testing.T) {
 }
 
 func TestSQLServerLiveDropAllTablesDropsForeignKeys(t *testing.T) {
-	dbURL := requireSQLServerSchemaTestURL(t)
+	dbURL := dbtarget.URL(t, dbtarget.SQLServer)
 	c := qt.New(t)
 	ctx := t.Context()
 
@@ -169,7 +169,7 @@ func TestSQLServerLiveDropAllTablesDropsForeignKeys(t *testing.T) {
 }
 
 func TestSQLServerLiveRenderedUpsertMerge(t *testing.T) {
-	dbURL := requireSQLServerSchemaTestURL(t)
+	dbURL := dbtarget.URL(t, dbtarget.SQLServer)
 	c := qt.New(t)
 	ctx := t.Context()
 
@@ -216,7 +216,7 @@ func TestSQLServerLiveRenderedUpsertMerge(t *testing.T) {
 }
 
 func TestSQLServerLiveComputedColumnZeroDiff(t *testing.T) {
-	dbURL := requireSQLServerSchemaTestURL(t)
+	dbURL := dbtarget.URL(t, dbtarget.SQLServer)
 	c := qt.New(t)
 	ctx := t.Context()
 
@@ -266,7 +266,7 @@ func TestSQLServerLiveComputedColumnZeroDiff(t *testing.T) {
 }
 
 func TestSQLServerLiveDropAllTablesRejectsExternalForeignKeys(t *testing.T) {
-	dbURL := requireSQLServerSchemaTestURL(t)
+	dbURL := dbtarget.URL(t, dbtarget.SQLServer)
 	c := qt.New(t)
 	ctx := t.Context()
 
@@ -322,15 +322,6 @@ func TestSQLServerLiveDropAllTablesRejectsExternalForeignKeys(t *testing.T) {
 	c.Assert(*externalFK.ForeignTable, qt.Equals, "parent")
 }
 
-func requireSQLServerSchemaTestURL(t *testing.T) string {
-	t.Helper()
-	dbURL := os.Getenv("PTAH_SQLSERVER_TEST_URL")
-	if dbURL == "" {
-		t.Skip("set PTAH_SQLSERVER_TEST_URL to run SQL Server live schema tests")
-	}
-	return dbURL
-}
-
 func sqlServerURLWithSchema(dbURL, schemaName string) string {
 	parsed, err := url.Parse(dbURL)
 	if err != nil {
@@ -347,6 +338,7 @@ func quoteSQLServerIdentifier(identifier string) string {
 }
 
 func sqlServerLiveTableExists(t *testing.T, conn *dbschema.DatabaseConnection, schemaName, tableName string) bool {
+	c := qt.New(t)
 	t.Helper()
 
 	var count int
@@ -356,7 +348,7 @@ FROM sys.tables AS t
 JOIN sys.schemas AS s ON s.schema_id = t.schema_id
 WHERE s.name = @p1 AND t.name = @p2
 `, schemaName, tableName).Scan(&count)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	return count > 0
 }
 

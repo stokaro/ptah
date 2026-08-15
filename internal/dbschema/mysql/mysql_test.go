@@ -376,16 +376,17 @@ func TestNewMySQLWriter(t *testing.T) {
 }
 
 func TestMySQLWriter_TransactionMethods_NoConnection(t *testing.T) {
-	c := qt.New(t)
 	writer := NewMySQLWriter(nil, "test", platform.MySQL)
 
 	t.Run("ExecuteSQL with no connection", func(t *testing.T) {
+		c := qt.New(t)
 		err := writer.ExecuteSQL(context.Background(), "SELECT 1")
 		c.Assert(err, qt.IsNotNil)
 		c.Assert(err.Error(), qt.Equals, "no database connection")
 	})
 
 	t.Run("BeginTransaction with no connection", func(t *testing.T) {
+		c := qt.New(t)
 		tx, err := writer.BeginTransaction(context.Background())
 		c.Assert(err, qt.IsNotNil)
 		c.Assert(err.Error(), qt.Equals, "no database connection")
@@ -393,6 +394,7 @@ func TestMySQLWriter_TransactionMethods_NoConnection(t *testing.T) {
 	})
 
 	t.Run("dry-run transaction", func(t *testing.T) {
+		c := qt.New(t)
 		writer.SetDryRun(true)
 		tx, err := writer.BeginTransaction(context.Background())
 		c.Assert(err, qt.IsNil)
@@ -446,7 +448,6 @@ func TestMySQLWriterConcurrentTransactions(t *testing.T) {
 }
 
 func TestMySQLWriter_UtilityMethods(t *testing.T) {
-	c := qt.New(t)
 	writer := NewMySQLWriter(nil, "test", platform.MySQL)
 
 	t.Run("splitSQLStatements", func(t *testing.T) {
@@ -479,6 +480,7 @@ func TestMySQLWriter_UtilityMethods(t *testing.T) {
 
 		for _, test := range tests {
 			t.Run(test.name, func(t *testing.T) {
+				c := qt.New(t)
 				result := sqlutil.SplitSQLStatements(test.input)
 				c.Assert(result, qt.DeepEquals, test.expected)
 			})
@@ -515,6 +517,7 @@ func TestMySQLWriter_UtilityMethods(t *testing.T) {
 
 		for _, test := range tests {
 			t.Run(test.name, func(t *testing.T) {
+				c := qt.New(t)
 				result := writer.isCreateTableStatement(test.sql)
 				c.Assert(result, qt.Equals, test.expected)
 			})
@@ -551,6 +554,7 @@ func TestMySQLWriter_UtilityMethods(t *testing.T) {
 
 		for _, test := range tests {
 			t.Run(test.name, func(t *testing.T) {
+				c := qt.New(t)
 				result := writer.isCreateIndexStatement(test.sql)
 				c.Assert(result, qt.Equals, test.expected)
 			})
@@ -582,6 +586,7 @@ func TestMySQLWriter_UtilityMethods(t *testing.T) {
 
 		for _, test := range tests {
 			t.Run(test.name, func(t *testing.T) {
+				c := qt.New(t)
 				result := writer.extractTableNameFromCreateTable(test.sql)
 				c.Assert(result, qt.Equals, test.expected)
 			})
@@ -613,6 +618,7 @@ func TestMySQLWriter_UtilityMethods(t *testing.T) {
 
 		for _, test := range tests {
 			t.Run(test.name, func(t *testing.T) {
+				c := qt.New(t)
 				result := writer.extractTableNameFromCreateIndex(test.sql)
 				c.Assert(result, qt.Equals, test.expected)
 			})

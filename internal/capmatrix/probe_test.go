@@ -2,6 +2,7 @@ package capmatrix_test
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -12,15 +13,23 @@ import (
 	"go.5x5.cz/ptah/internal/integrationharness"
 )
 
-// writeSuiteReport writes the JSON report the integration runner produces,
-// under the timestamped name the runner gives it.
-func writeSuiteReport(c *qt.C, dir string, report integrationharness.TestReport) {
+// writeSuiteReports writes the JSON reports the integration runner produces,
+// under the timestamped names the runner gives them.
+//
+// The directory is created whether or not a report lands in it, because a run
+// that wrote none still leaves the directory behind -- which is the state the
+// missing-report row measures, and it is not the same state as a directory that
+// was never created.
+func writeSuiteReports(c *qt.C, dir string, reports ...integrationharness.TestReport) {
 	c.Helper()
 
-	body, err := json.Marshal(report)
-	c.Assert(err, qt.IsNil)
 	c.Assert(os.MkdirAll(dir, 0o755), qt.IsNil)
-	c.Assert(os.WriteFile(filepath.Join(dir, "20260812-030000-report.json"), body, 0o600), qt.IsNil)
+	for i, report := range reports {
+		body, err := json.Marshal(report)
+		c.Assert(err, qt.IsNil)
+		name := fmt.Sprintf("20260812-0300%02d-report.json", i)
+		c.Assert(os.WriteFile(filepath.Join(dir, name), body, 0o600), qt.IsNil)
+	}
 }
 
 // TestRecordSuite_HappyPath folds a clean suite run into a probed cell.
@@ -28,7 +37,7 @@ func TestRecordSuite_HappyPath(t *testing.T) {
 	c := qt.New(t)
 
 	dir := c.TempDir()
-	writeSuiteReport(c, dir, integrationharness.TestReport{TotalTests: 40, PassedTests: 38, SkippedTests: 2})
+	writeSuiteReports(c, dir, integrationharness.TestReport{TotalTests: 40, PassedTests: 38, SkippedTests: 2})
 
 	recorded, err := capmatrix.RecordSuite(capmatrix.CellResult{
 		Cell: "postgres-17", Probe: capmatrix.ProbeOutcome{OK: true},
@@ -49,44 +58,39 @@ func TestRecordSuite_HappyPath(t *testing.T) {
 // returns success — so a cell whose URL never reached the runner would
 // otherwise be recorded as a nightly pass having executed no test at all.
 func TestRecordSuite_FailurePath(t *testing.T) {
-	c := qt.New(t)
-
 	for _, tc := range []struct {
 		name     string
 		exitCode int
-		report   integrationharness.TestReport
-		write    func(c *qt.C, dir string, report integrationharness.TestReport)
-		expect   string
+		// reports is what the runner left in the directory. The last row leaves
+		// it empty, which is the one shape no exit code and no report field can
+		// stand in for.
+		reports []integrationharness.TestReport
+		expect  string
 	}{{
 		name:     "the runner exited non-zero",
 		exitCode: 1,
-		report:   integrationharness.TestReport{TotalTests: 40, PassedTests: 33, FailedTests: 7},
-		write:    writeSuiteReport,
+		reports:  []integrationharness.TestReport{{TotalTests: 40, PassedTests: 33, FailedTests: 7}},
 		expect:   "the integration suite exited 1 with 7 failures out of 40 tests",
 	}, {
 		name:     "the runner exited zero and reported failures anyway",
 		exitCode: 0,
-		report:   integrationharness.TestReport{TotalTests: 40, PassedTests: 39, FailedTests: 1},
-		write:    writeSuiteReport,
+		reports:  []integrationharness.TestReport{{TotalTests: 40, PassedTests: 39, FailedTests: 1}},
 		expect:   "the integration suite exited 0 and reported 1 failures out of 40 tests",
 	}, {
 		name:     "every scenario skipped, which the runner calls success",
 		exitCode: 0,
-		report:   integrationharness.TestReport{TotalTests: 12, SkippedTests: 12},
-		write:    writeSuiteReport,
+		reports:  []integrationharness.TestReport{{TotalTests: 12, SkippedTests: 12}},
 		expect:   "the integration suite executed no test at all \\(12 skipped of 12\\); .*",
 	}, {
 		name:     "the runner wrote no report, so nothing counted what ran",
 		exitCode: 0,
-		report:   integrationharness.TestReport{},
-		write: func(c *qt.C, dir string, _ integrationharness.TestReport) {
-			c.Assert(os.MkdirAll(dir, 0o755), qt.IsNil)
-		},
-		expect: "expected exactly one \\*-report.json under .* and found 0, .*",
+		expect:   "expected exactly one \\*-report.json under .* and found 0, .*",
 	}} {
-		c.Run(tc.name, func(c *qt.C) {
+		t.Run(tc.name, func(t *testing.T) {
+			c := qt.New(t)
+
 			dir := filepath.Join(c.TempDir(), "reports")
-			tc.write(c, dir, tc.report)
+			writeSuiteReports(c, dir, tc.reports...)
 
 			recorded, err := capmatrix.RecordSuite(capmatrix.CellResult{
 				Cell: "postgres-17", Probe: capmatrix.ProbeOutcome{OK: true},

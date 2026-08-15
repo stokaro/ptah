@@ -443,7 +443,8 @@ func TestSchemaExportProtobufSplitRefusesAFileNameThatIsAlreadyTheAnchor(t *test
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			outPath := filepath.Join(append([]string{dir}, tt.out...)...)
 
 			stdout, stderr, err := exportSplit(dir, outPath)
@@ -481,7 +482,8 @@ func TestSchemaExportProtobufSplitRejectsInvalidPolicyValues(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			args := append([]string{
 				"--to", "protobuf",
 				"--root-dir", dir,
@@ -514,7 +516,8 @@ func TestSchemaExportProtobufSplitFlagsRejectedOnOtherTargets(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			args := append([]string{"--to", "graphql", "--root-dir", dir}, tt.args...)
 			wantErr := tt.flag + " is only supported with --to protobuf"
 

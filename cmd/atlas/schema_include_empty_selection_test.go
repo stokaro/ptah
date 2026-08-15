@@ -48,10 +48,9 @@ var emptySelectionSpellings = []struct {
 // selector green-light a CI check, so a selector that met neither side is an
 // error and produces no diff output.
 func TestSchemaDiffIncludeEmptySelectionRefuses(t *testing.T) {
-	c := qt.New(t)
-
 	for _, spelling := range emptySelectionSpellings {
-		c.Run(spelling.name, func(c *qt.C) {
+		t.Run(spelling.name, func(t *testing.T) {
+			c := qt.New(t)
 			dir := t.TempDir()
 			fromPath := filepath.Join(dir, "from.sql")
 			toPath := filepath.Join(dir, "to.sql")
@@ -80,11 +79,10 @@ func TestSchemaDiffIncludeEmptySelectionRefuses(t *testing.T) {
 // legitimate answer and its documented contract says so, so exit 0 and the
 // rendered bytes stay; only the notice is added.
 func TestSchemaInspectIncludeEmptySelectionIsReportedOnStderr(t *testing.T) {
-	c := qt.New(t)
-
 	for _, spelling := range emptySelectionSpellings {
-		c.Run(spelling.name, func(c *qt.C) {
-			dbPath := seedSQLiteDB(t, emptySelectionDDL)
+		t.Run(spelling.name, func(t *testing.T) {
+			c := qt.New(t)
+			dbPath := seedSQLiteDB(c, emptySelectionDDL)
 
 			stdout, stderr, err := runCompatInspect(
 				"--url", "sqlite://"+dbPath,
@@ -110,11 +108,11 @@ func TestSchemaInspectIncludeEmptySelectionIsReportedOnStderr(t *testing.T) {
 // is no oracle to copy here, so the better behavior was taken instead.
 func TestSchemaApplyIncludeEmptySelectionRefuses(t *testing.T) {
 	allowSchemaApplyWithoutDevURL(t)
-	c := qt.New(t)
 
 	for _, spelling := range emptySelectionSpellings {
-		c.Run(spelling.name, func(c *qt.C) {
-			dbPath := seedSQLiteDB(t, "CREATE TABLE keepme (id INTEGER PRIMARY KEY);")
+		t.Run(spelling.name, func(t *testing.T) {
+			c := qt.New(t)
+			dbPath := seedSQLiteDB(c, "CREATE TABLE keepme (id INTEGER PRIMARY KEY);")
 			schemaPath := filepath.Join(t.TempDir(), "schema.sql")
 			c.Assert(os.WriteFile(schemaPath, []byte(emptySelectionDDL), 0o600), qt.IsNil)
 
@@ -145,8 +143,6 @@ func TestSchemaApplyIncludeEmptySelectionRefuses(t *testing.T) {
 // named "a.b.c" is selected by the bare selector `a.b.c`, which the old rule
 // refused before any database was contacted.
 func TestSchemaIncludeSelectionAcceptsBareDottedName(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name string
 		// selector is a spelling of the same dotted table name. All three must
@@ -160,8 +156,9 @@ func TestSchemaIncludeSelectionAcceptsBareDottedName(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
-			dbPath := seedSQLiteDB(t, emptySelectionDDL)
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			dbPath := seedSQLiteDB(c, emptySelectionDDL)
 
 			stdout, stderr, err := runCompatInspect(
 				"--url", "sqlite://"+dbPath,

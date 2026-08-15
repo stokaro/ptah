@@ -232,11 +232,11 @@ func dmlGenericRefusalQuarantine() []string {
 // "table covers exactly SupportedDialects" subtest prints the two lists side by
 // side with the difference marked.
 func TestDMLDialectMatrix(t *testing.T) {
-	c := qt.New(t)
 	rows := dmlMatrixRows()
 	verbs := dmlVerbs()
 
-	c.Run("table covers exactly SupportedDialects", func(c *qt.C) {
+	t.Run("table covers exactly SupportedDialects", func(t *testing.T) {
+		c := qt.New(t)
 		names := make([]string, 0, len(rows))
 		for _, row := range rows {
 			names = append(names, row.dialect)
@@ -247,7 +247,8 @@ func TestDMLDialectMatrix(t *testing.T) {
 	for _, row := range rows {
 		cells := row.cells()
 		for i, verb := range verbs {
-			c.Run(row.dialect+"/"+verb.name, func(c *qt.C) {
+			t.Run(row.dialect+"/"+verb.name, func(t *testing.T) {
+				c := qt.New(t)
 				sql, args, err := verb.render(row.dialect)
 				want := cells[i]
 				c.Assert(errorText(err), qt.Equals, want.err)

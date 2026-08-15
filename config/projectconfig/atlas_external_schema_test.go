@@ -12,9 +12,8 @@ import (
 )
 
 func TestParseAtlasExternalSchemaDataSource_HappyPath(t *testing.T) {
-	c := qt.New(t)
-
-	c.Run("program only defaults format to sql", func(c *qt.C) {
+	t.Run("program only defaults format to sql", func(t *testing.T) {
+		c := qt.New(t)
 		raw := []byte(`data "external_schema" "app" {
   program = ["./gen.sh"]
 }
@@ -36,7 +35,8 @@ env "dev" {
 		c.Assert(cfg.SchemaSourcesValue().Present, qt.IsFalse)
 	})
 
-	c.Run("all attributes", func(c *qt.C) {
+	t.Run("all attributes", func(t *testing.T) {
+		c := qt.New(t)
 		raw := []byte(`data "external_schema" "app" {
   program     = ["python3", "export.py", "--dialect", "postgres"]
   format      = "yaml"
@@ -59,7 +59,8 @@ env "dev" {
 		c.Assert(cfg.ExternalSchema.Origin, qt.Equals, projectconfig.AtlasFileName)
 	})
 
-	c.Run("yml format normalizes to yaml", func(c *qt.C) {
+	t.Run("yml format normalizes to yaml", func(t *testing.T) {
+		c := qt.New(t)
 		raw := []byte(`data "external_schema" "app" {
   program = ["./gen.sh"]
   format  = "yml"
@@ -76,7 +77,8 @@ env "dev" {
 		c.Assert(cfg.ExternalSchema.Format, qt.Equals, "yaml")
 	})
 
-	c.Run("schema block src spelling", func(c *qt.C) {
+	t.Run("schema block src spelling", func(t *testing.T) {
+		c := qt.New(t)
 		raw := []byte(`data "external_schema" "app" {
   program = ["./gen.sh"]
 }
@@ -97,8 +99,6 @@ env "dev" {
 }
 
 func TestParseAtlasExternalSchemaDataSource_FailurePath(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name    string
 		raw     string
@@ -298,7 +298,8 @@ env "dev" {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			_, err := projectconfig.ParseAtlas([]byte(test.raw), "atlas.hcl", "dev")
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 		})
@@ -306,7 +307,6 @@ env "dev" {
 }
 
 func TestParseAtlasExternalSchemaCoexistsWithHCLSchema(t *testing.T) {
-	c := qt.New(t)
 	raw := []byte(`data "hcl_schema" "declared" {
   path = "schema.hcl"
 }
@@ -324,7 +324,8 @@ env "program" {
 }
 `)
 
-	c.Run("env selecting the hcl_schema source", func(c *qt.C) {
+	t.Run("env selecting the hcl_schema source", func(t *testing.T) {
+		c := qt.New(t)
 		cfg, err := projectconfig.ParseAtlas(raw, "atlas.hcl", "files")
 
 		c.Assert(err, qt.IsNil)
@@ -332,7 +333,8 @@ env "program" {
 		c.Assert(cfg.ExternalSchema.Program, qt.IsNil)
 	})
 
-	c.Run("env selecting the external_schema source", func(c *qt.C) {
+	t.Run("env selecting the external_schema source", func(t *testing.T) {
+		c := qt.New(t)
 		cfg, err := projectconfig.ParseAtlas(raw, "atlas.hcl", "program")
 
 		c.Assert(err, qt.IsNil)
@@ -409,9 +411,8 @@ env "dev" {
 }
 
 func TestLoadExternalSchemaPrecedence_HappyPath(t *testing.T) {
-	c := qt.New(t)
-
-	c.Run("atlas.hcl data source replaces ptah.yaml external_schema wholesale", func(c *qt.C) {
+	t.Run("atlas.hcl data source replaces ptah.yaml external_schema wholesale", func(t *testing.T) {
+		c := qt.New(t)
 		dir := t.TempDir()
 		ptahPath := filepath.Join(dir, "ptah.yaml")
 		c.Assert(os.WriteFile(ptahPath, []byte(`external_schema:
@@ -446,7 +447,8 @@ env "dev" {
 		c.Assert(cfg.ExternalSchema.Origin, qt.Equals, projectconfig.AtlasFileName)
 	})
 
-	c.Run("ptah.yaml external_schema survives when atlas.hcl declares none", func(c *qt.C) {
+	t.Run("ptah.yaml external_schema survives when atlas.hcl declares none", func(t *testing.T) {
+		c := qt.New(t)
 		dir := t.TempDir()
 		ptahPath := filepath.Join(dir, "ptah.yaml")
 		c.Assert(os.WriteFile(ptahPath, []byte(`external_schema:

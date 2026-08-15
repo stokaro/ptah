@@ -852,8 +852,6 @@ func TestCompareWithDialect_SQLiteInlineEnumsMatchGeneratedEnumFields(t *testing
 }
 
 func TestCompareWithDialect_SQLiteRenderedColumnTypesMatchCatalogReadback(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name          string
 		generatedType string
@@ -868,7 +866,8 @@ func TestCompareWithDialect_SQLiteRenderedColumnTypesMatchCatalogReadback(t *tes
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			diff := schemadiff.CompareWithDialect(
 				sqliteColumnGeneratedSchema(tt.generatedType),
 				sqliteColumnDatabaseSchema(tt.databaseType),
@@ -894,8 +893,6 @@ func TestCompareWithDialect_SQLiteDistinctColumnTypesStillDiff(t *testing.T) {
 }
 
 func TestCompareWithDialect_SQLiteDeclaredTypeDriftStillDiffs(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name          string
 		generatedType string
@@ -908,7 +905,8 @@ func TestCompareWithDialect_SQLiteDeclaredTypeDriftStillDiffs(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			diff := schemadiff.CompareWithDialect(
 				sqliteColumnGeneratedSchema(tt.generatedType),
 				sqliteColumnDatabaseSchema(tt.databaseType),
@@ -1172,8 +1170,6 @@ func TestCompareWithOptions_NilOptions(t *testing.T) {
 }
 
 func TestLibraryUsageExamples(t *testing.T) {
-	c := qt.New(t)
-
 	// Example data
 	generated := &goschema.Database{
 		Extensions: []goschema.Extension{
@@ -1190,6 +1186,7 @@ func TestLibraryUsageExamples(t *testing.T) {
 
 	t.Run("simple usage with defaults", func(t *testing.T) {
 		// Most common usage - just compare with defaults
+		c := qt.New(t)
 		diff := schemadiff.Compare(generated, database)
 
 		c.Assert(diff.ExtensionsAdded, qt.DeepEquals, []string{"btree_gin"})
@@ -1198,6 +1195,7 @@ func TestLibraryUsageExamples(t *testing.T) {
 
 	t.Run("custom ignore list", func(t *testing.T) {
 		// User wants to ignore specific extensions
+		c := qt.New(t)
 		opts := config.WithIgnoredExtensions("plpgsql", "adminpack")
 		diff := schemadiff.CompareWithOptions(generated, database, opts)
 
@@ -1207,6 +1205,7 @@ func TestLibraryUsageExamples(t *testing.T) {
 
 	t.Run("manage all extensions", func(t *testing.T) {
 		// User wants to manage all extensions (no ignoring)
+		c := qt.New(t)
 		opts := config.WithIgnoredExtensions()
 		diff := schemadiff.CompareWithOptions(generated, database, opts)
 
@@ -1216,6 +1215,7 @@ func TestLibraryUsageExamples(t *testing.T) {
 
 	t.Run("add to default ignore list", func(t *testing.T) {
 		// User wants defaults plus additional ignored extensions
+		c := qt.New(t)
 		opts := config.WithAdditionalIgnoredExtensions("uuid-ossp")
 		diff := schemadiff.CompareWithOptions(generated, database, opts)
 

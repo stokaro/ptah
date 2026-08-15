@@ -121,14 +121,14 @@ sequence "order_seq" {
 // document that declares it does not describe extensions still does not ask for
 // one to be dropped.
 func TestDiffStillSuppressesARemovalTheDesiredDocumentDoesNotDescribe(t *testing.T) {
-	c := qt.New(t)
 	from := coverageDiffFrom + `
 extension "pgcrypto" {
   if_not_exists = true
 }
 `
 
-	c.Run("--to records that it does not describe extensions", func(c *qt.C) {
+	t.Run("--to records that it does not describe extensions", func(t *testing.T) {
+		c := qt.New(t)
 		var diagnostics bytes.Buffer
 
 		report, err := atlasschema.Diff(c.Context(), coverageDiffOptions(c, from,
@@ -139,7 +139,8 @@ extension "pgcrypto" {
 		c.Assert(diagnostics.String(), qt.Equals, "")
 	})
 
-	c.Run("control: --to with the record stripped", func(c *qt.C) {
+	t.Run("control: --to with the record stripped", func(t *testing.T) {
+		c := qt.New(t)
 		var diagnostics bytes.Buffer
 
 		report, err := atlasschema.Diff(c.Context(), coverageDiffOptions(c, from, coverageDiffFrom, &diagnostics))

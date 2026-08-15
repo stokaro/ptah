@@ -96,45 +96,47 @@ func TestCompatMigrateDiff_DirFormatValueIsParsedVerbatim(t *testing.T) {
 	tests := []struct {
 		name  string
 		value string
-		// check asserts the outcome for this row. It carries the assertion
-		// because the accepted spelling and the refused ones assert opposite
-		// things about both the error and the directory.
-		check func(c *qt.C, err error, wrote bool)
+		// wantErr is the refusal this spelling must produce, as a regular
+		// expression, and empty for a spelling that must be accepted.
+		wantErr string
+		// wantWrote is whether the directory grew a migration file, which is
+		// what makes the exit code mean something on a verb that mutates.
+		wantWrote bool
 	}{
 		{
-			name:  "uppercase",
-			value: "ATLAS",
-			check: refusedWithoutWriting(want),
+			name:    "uppercase",
+			value:   "ATLAS",
+			wantErr: want,
 		},
 		{
-			name:  "capitalized",
-			value: "Atlas",
-			check: refusedWithoutWriting(want),
+			name:    "capitalized",
+			value:   "Atlas",
+			wantErr: want,
 		},
 		{
-			name:  "padded",
-			value: " atlas ",
-			check: refusedWithoutWriting(want),
+			name:    "padded",
+			value:   " atlas ",
+			wantErr: want,
 		},
 		{
 			// Not an Atlas directory format at all. Ptah's own native
 			// `migrations checkpoint` accepts this spelling; the community
 			// binary answers `unknown dir format "ptah"`, so the compat surface
 			// must too.
-			name:  "native ptah layout",
-			value: "ptah",
-			check: refusedWithoutWriting(want),
+			name:    "native ptah layout",
+			value:   "ptah",
+			wantErr: want,
 		},
 		{
-			name:  "verbatim atlas",
-			value: "atlas",
-			check: acceptedAndWrote,
+			name:      "verbatim atlas",
+			value:     "atlas",
+			wantWrote: true,
 		},
 		{
 			// An empty value selects the native Atlas layout on both binaries.
-			name:  "empty",
-			value: "",
-			check: acceptedAndWrote,
+			name:      "empty",
+			value:     "",
+			wantWrote: true,
 		},
 	}
 
@@ -144,7 +146,7 @@ func TestCompatMigrateDiff_DirFormatValueIsParsedVerbatim(t *testing.T) {
 
 			wrote, err := runCompatDiff(c, "", []string{"--dir-format", tt.value})
 
-			tt.check(c, err, wrote)
+			assertDiffOutcome(c, err, wrote, tt.wantErr, tt.wantWrote)
 		})
 	}
 }
@@ -180,37 +182,38 @@ func TestCompatMigrateDiff_DirQueryFormatOutranksDirFormatFlag(t *testing.T) {
 		name      string
 		query     string
 		dirFormat string
-		check     func(c *qt.C, err error, wrote bool)
+		wantErr   string
+		wantWrote bool
 	}{
 		{
 			name:      "query names atlas over a foreign flag",
 			query:     "?format=atlas",
 			dirFormat: "golang-migrate",
-			check:     acceptedAndWrote,
+			wantWrote: true,
 		},
 		{
 			name:      "empty query value names atlas over a foreign flag",
 			query:     "?format=",
 			dirFormat: "golang-migrate",
-			check:     acceptedAndWrote,
+			wantWrote: true,
 		},
 		{
 			name:      "query names atlas over a second foreign flag",
 			query:     "?format=atlas",
 			dirFormat: "goose",
-			check:     acceptedAndWrote,
+			wantWrote: true,
 		},
 		{
 			name:      "ignored key leaves the flag deciding",
 			query:     "?nonsense=1",
 			dirFormat: "golang-migrate",
-			check:     refusedWithoutWriting(refused),
+			wantErr:   refused,
 		},
 		{
 			name:      "no query leaves the flag deciding",
 			query:     "",
 			dirFormat: "golang-migrate",
-			check:     refusedWithoutWriting(refused),
+			wantErr:   refused,
 		},
 	}
 
@@ -220,7 +223,7 @@ func TestCompatMigrateDiff_DirQueryFormatOutranksDirFormatFlag(t *testing.T) {
 
 			wrote, err := runCompatDiff(c, tt.query, []string{"--dir-format", tt.dirFormat})
 
-			tt.check(c, err, wrote)
+			assertDiffOutcome(c, err, wrote, tt.wantErr, tt.wantWrote)
 		})
 	}
 }
@@ -256,41 +259,40 @@ func TestCompatMigrateDiff_DirQueryFormatOutranksDirFormatFlag(t *testing.T) {
 // layout and not on the query's presence.
 func TestCompatMigrateDiff_QueryFormatDecidesHowTheDirIsRead(t *testing.T) {
 	tests := []struct {
-		name   string
-		format string
-		check  func(c *qt.C, err error, wrote bool)
+		name      string
+		format    string
+		wantErr   string
+		wantWrote bool
 	}{
 		{
-			name:   "golang-migrate covers no file here",
-			format: "golang-migrate",
-			check:  refusedWithoutWriting(`checksum mismatch`),
+			name:    "golang-migrate covers no file here",
+			format:  "golang-migrate",
+			wantErr: `checksum mismatch`,
 		},
 		{
-			name:   "flyway covers no file here",
-			format: "flyway",
-			check:  refusedWithoutWriting(`checksum mismatch`),
+			name:    "flyway covers no file here",
+			format:  "flyway",
+			wantErr: `checksum mismatch`,
 		},
 		{
-			name:   "goose reads the file and writes",
-			format: "goose",
-			check:  acceptedAndWrote,
+			name:      "goose reads the file and writes",
+			format:    "goose",
+			wantWrote: true,
 		},
 		{
-			name:   "liquibase reads the file and writes",
-			format: "liquibase",
-			check:  acceptedAndWrote,
+			name:      "liquibase reads the file and writes",
+			format:    "liquibase",
+			wantWrote: true,
 		},
 		{
-			name:   "dbmate refuses a file its directives do not cover",
-			format: "dbmate",
-			check: refusedWithoutWriting(
-				`read migration directory as dbmate: migration file [^ ]+ carries no "-- migrate:up" directive.*`,
-			),
+			name:    "dbmate refuses a file its directives do not cover",
+			format:  "dbmate",
+			wantErr: `read migration directory as dbmate: migration file [^ ]+ carries no "-- migrate:up" directive.*`,
 		},
 		{
-			name:   "atlas",
-			format: "atlas",
-			check:  acceptedAndWrote,
+			name:      "atlas",
+			format:    "atlas",
+			wantWrote: true,
 		},
 	}
 
@@ -300,22 +302,20 @@ func TestCompatMigrateDiff_QueryFormatDecidesHowTheDirIsRead(t *testing.T) {
 
 			wrote, err := runCompatDiff(c, "?format="+tt.format, nil)
 
-			tt.check(c, err, wrote)
+			assertDiffOutcome(c, err, wrote, tt.wantErr, tt.wantWrote)
 		})
 	}
 }
 
-// refusedWithoutWriting builds the assertion for a row the compat surface must
-// refuse: the error matches, and the migration directory is untouched.
-func refusedWithoutWriting(want string) func(c *qt.C, err error, wrote bool) {
-	return func(c *qt.C, err error, wrote bool) {
-		c.Assert(err, qt.ErrorMatches, want)
-		c.Assert(wrote, qt.IsFalse, qt.Commentf("a refused run must write nothing"))
-	}
-}
-
-// acceptedAndWrote is the assertion for a row the compat surface must accept.
-func acceptedAndWrote(c *qt.C, err error, wrote bool) {
-	c.Assert(err, qt.IsNil)
-	c.Assert(wrote, qt.IsTrue, qt.Commentf("an accepted run must write the migration"))
+// assertDiffOutcome states one row's measured cell: the refusal wantErr matches,
+// as a regular expression an accepted row spells as the empty string, and the
+// directory either grew a migration or did not.
+//
+// Both halves are asserted for every row because neither alone is the outcome:
+// a refusal that still wrote is not a refusal, and an acceptance that wrote
+// nothing is not the acceptance the community binary makes.
+func assertDiffOutcome(c *qt.C, err error, wrote bool, wantErr string, wantWrote bool) {
+	c.Helper()
+	c.Assert(errorText(err), qt.Matches, wantErr)
+	c.Assert(wrote, qt.Equals, wantWrote)
 }

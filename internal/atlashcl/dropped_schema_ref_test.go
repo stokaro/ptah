@@ -25,8 +25,6 @@ import (
 // the one the native `ptah schema` commands use -- still refuses, because the
 // tolerance is opt-in and widening it here would weaken Ptah's own surface.
 func TestParseIgnoreUnknownNamesResolvesDeclaredSchemaRefs(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name       string
 		hcl        string
@@ -111,7 +109,8 @@ table "t" {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			_, strictErr := atlashcl.Parse([]byte(tt.hcl), "schema.hcl")
 			c.Assert(strictErr, qt.ErrorMatches, tt.strictErr)
 
@@ -146,8 +145,6 @@ table "t" {
 // A root bound to [cty.DynamicVal], or one that carries a wildcard name, exits
 // 0 on all three and reddens every row here.
 func TestParseIgnoreUnknownNamesRefusesUndeclaredSchemaRefs(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name    string
 		hcl     string
@@ -206,7 +203,8 @@ procedure "p" {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			_, err := atlashcl.ParseWithOptions(
 				[]byte(tt.hcl),
 				"schema.hcl",

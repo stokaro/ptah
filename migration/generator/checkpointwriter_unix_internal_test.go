@@ -294,8 +294,8 @@ func TestMigrationWritersRefuseADestinationTakenAfterTheNameWasChosen(t *testing
 		occupy func(names []string) string
 		// write runs the exported writer against the selected directory.
 		write func(dir string) error
-		// check asserts what the writer's one attempt returned.
-		check func(c *qt.C, err error)
+		// wantErr is what the writer's one attempt returned.
+		wantErr string
 		// wantDir is the directory afterwards, including the intruder's file.
 		wantDir []string
 	}{
@@ -306,9 +306,7 @@ func TestMigrationWritersRefuseADestinationTakenAfterTheNameWasChosen(t *testing
 				_, err := WriteAtlasCheckpointFile(dir, atlasCheckpointWriterVersion, "squash", "CREATE TABLE users (id integer);")
 				return err
 			},
-			check: func(c *qt.C, err error) {
-				c.Assert(err, qt.ErrorMatches, `.*checkpoint file .*20990101000000_squash\.sql already exists`)
-			},
+			wantErr: `.*checkpoint file .*20990101000000_squash\.sql already exists`,
 			wantDir: []string{"20990101000000_squash.sql"},
 		},
 		{
@@ -318,9 +316,7 @@ func TestMigrationWritersRefuseADestinationTakenAfterTheNameWasChosen(t *testing
 				_, _, err := WriteCheckpointFiles(dir, checkpointWriterVersion, "squash", "CREATE TABLE users (id integer);\n", "DROP TABLE users;\n")
 				return err
 			},
-			check: func(c *qt.C, err error) {
-				c.Assert(err, qt.ErrorMatches, `checkpoint files for version 2099010100 already exist`)
-			},
+			wantErr: `checkpoint files for version 2099010100 already exist`,
 			wantDir: []string{"2099010100_squash.checkpoint.up.sql"},
 		},
 		{
@@ -333,9 +329,7 @@ func TestMigrationWritersRefuseADestinationTakenAfterTheNameWasChosen(t *testing
 				_, _, err := WriteDataMigrationFiles(dir, checkpointWriterVersion, "seed", "INSERT INTO users VALUES (1);\n", "DELETE FROM users;\n")
 				return err
 			},
-			check: func(c *qt.C, err error) {
-				c.Assert(err, qt.ErrorMatches, `migration files for version 2099010100 already exist`)
-			},
+			wantErr: `migration files for version 2099010100 already exist`,
 			wantDir: []string{"2099010100_seed.down.sql"},
 		},
 	}
@@ -357,7 +351,7 @@ func TestMigrationWritersRefuseADestinationTakenAfterTheNameWasChosen(t *testing
 
 			err := test.write(selected)
 
-			test.check(c, err)
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(generatorDirNames(c, selected), qt.DeepEquals, test.wantDir)
 			// The protected state, not the message: the intruder's bytes survive.
 			body, readErr := os.ReadFile(filepath.Join(selected, occupied))

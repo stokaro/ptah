@@ -53,60 +53,30 @@ func renderFixture(c *qt.C, args ...string) (stdoutText, stderrText string, exec
 	return executeGenerate(c, cmd)
 }
 
-// TestGenerateCommand_ServerVersionPinsTheCapabilityPreset is the measurement
-// the flag is for.
+// TestGenerateCommand_ServerVersionRefusesTheFixture and
+// TestGenerateCommand_ServerVersionRendersTheFixture are the measurement the
+// flag is for, and neither half means anything without the other: it is the
+// same fixture and the same command, refused under the presets that require a
+// unique reference and rendered under the ones that do not.
 //
-// Each row drives the real command over the same fixture and reads the exit
-// code, because the defect is not that a preset was selected wrongly in a unit
-// — it is that the command had no spelling at all for saying which server it
-// was rendering for.
-func TestGenerateCommand_ServerVersionPinsTheCapabilityPreset(t *testing.T) {
+// Each row drives the real command and reads the exit code, because the defect
+// is not that a preset was selected wrongly in a unit — it is that the command
+// had no spelling at all for saying which server it was rendering for.
+func TestGenerateCommand_ServerVersionRefusesTheFixture(t *testing.T) {
 	tests := []struct {
-		name   string
-		args   func(dir string) []string
-		assert func(c *qt.C, stdout string, err error)
+		name string
+		args func(dir string) []string
 	}{
 		{
 			name: "mysql without a version refuses the fixture",
 			args: func(dir string) []string {
 				return []string{"--root-dir", dir, "--dialect", "mysql"}
 			},
-			assert: func(c *qt.C, stdout string, err error) {
-				c.Assert(err, qt.IsNotNil)
-				c.Assert(exitcode.Code(err, 0), qt.Equals, 2)
-				c.Assert(err.Error(), qt.Contains, "to be declared unique")
-				c.Assert(stdout, qt.Equals, "")
-			},
-		},
-		{
-			name: "mysql 8.0.42 renders it",
-			args: func(dir string) []string {
-				return []string{"--root-dir", dir, "--dialect", "mysql", "--server-version", "8.0.42"}
-			},
-			assert: func(c *qt.C, stdout string, err error) {
-				c.Assert(err, qt.IsNil)
-				c.Assert(stdout, qt.Contains, "fk_child_parent_code")
-			},
 		},
 		{
 			name: "mysql 8.4.0 still refuses it",
 			args: func(dir string) []string {
 				return []string{"--root-dir", dir, "--dialect", "mysql", "--server-version", "8.4.0"}
-			},
-			assert: func(c *qt.C, stdout string, err error) {
-				c.Assert(err, qt.IsNotNil)
-				c.Assert(exitcode.Code(err, 0), qt.Equals, 2)
-				c.Assert(err.Error(), qt.Contains, "to be declared unique")
-			},
-		},
-		{
-			name: "mariadb without a version keeps rendering it",
-			args: func(dir string) []string {
-				return []string{"--root-dir", dir, "--dialect", "mariadb"}
-			},
-			assert: func(c *qt.C, stdout string, err error) {
-				c.Assert(err, qt.IsNil)
-				c.Assert(stdout, qt.Contains, "fk_child_parent_code")
 			},
 		},
 	}
@@ -118,7 +88,43 @@ func TestGenerateCommand_ServerVersionPinsTheCapabilityPreset(t *testing.T) {
 
 			stdout, _, err := renderFixture(c, test.args(dir)...)
 
-			test.assert(c, stdout, err)
+			c.Assert(err, qt.IsNotNil)
+			c.Assert(exitcode.Code(err, 0), qt.Equals, 2)
+			c.Assert(err.Error(), qt.Contains, "to be declared unique")
+			c.Assert(stdout, qt.Equals, "")
+		})
+	}
+}
+
+// The rendering half of the pair documented above.
+func TestGenerateCommand_ServerVersionRendersTheFixture(t *testing.T) {
+	tests := []struct {
+		name string
+		args func(dir string) []string
+	}{
+		{
+			name: "mysql 8.0.42 renders it",
+			args: func(dir string) []string {
+				return []string{"--root-dir", dir, "--dialect", "mysql", "--server-version", "8.0.42"}
+			},
+		},
+		{
+			name: "mariadb without a version keeps rendering it",
+			args: func(dir string) []string {
+				return []string{"--root-dir", dir, "--dialect", "mariadb"}
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			dir := unevenlyReferencedFixture(c)
+
+			stdout, _, err := renderFixture(c, test.args(dir)...)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(stdout, qt.Contains, "fk_child_parent_code")
 		})
 	}
 }

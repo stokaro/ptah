@@ -266,7 +266,6 @@ func TestFinalize_DeduplicatesEquivalentNormalizedUnnamedForeignKeys(t *testing.
 }
 
 func TestFinalize_OrdersStronglyConnectedComponentsDeterministically(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name   string
 		tables []goschema.Table
@@ -298,7 +297,8 @@ func TestFinalize_OrdersStronglyConnectedComponentsDeterministically(t *testing.
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			database := &goschema.Database{
 				Tables: test.tables,
 				Fields: []goschema.Field{

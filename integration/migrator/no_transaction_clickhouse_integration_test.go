@@ -4,13 +4,13 @@ package migrator_test
 
 import (
 	"context"
-	"os"
 	"testing"
 	"testing/fstest"
 
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -110,13 +110,10 @@ func TestNoTransactionRepair_ClickHouseAtlasRevisionAfterManualReconciliation(t 
 }
 
 func openNoTransactionClickHouse(t *testing.T) *dbschema.DatabaseConnection {
+	c := qt.New(t)
 	t.Helper()
-	dbURL := os.Getenv("CLICKHOUSE_URL")
-	if dbURL == "" {
-		t.Skip("CLICKHOUSE_URL not set")
-	}
-	conn, err := dbschema.ConnectToDatabase(t.Context(), dbURL)
-	qt.Assert(t, err, qt.IsNil)
+	conn, err := dbschema.ConnectToDatabase(t.Context(), dbtarget.URL(t, dbtarget.ClickHouse))
+	c.Assert(err, qt.IsNil)
 	return conn
 }
 

@@ -370,16 +370,17 @@ func TestNewPostgreSQLWriter(t *testing.T) {
 }
 
 func TestPostgreSQLWriter_TransactionMethods_NoConnection(t *testing.T) {
-	c := qt.New(t)
 	writer := NewPostgreSQLWriter(nil, "public")
 
 	t.Run("ExecuteSQL with no connection", func(t *testing.T) {
+		c := qt.New(t)
 		err := writer.ExecuteSQL(context.Background(), "SELECT 1")
 		c.Assert(err, qt.IsNotNil)
 		c.Assert(err.Error(), qt.Equals, "no database connection")
 	})
 
 	t.Run("BeginTransaction with no connection", func(t *testing.T) {
+		c := qt.New(t)
 		tx, err := writer.BeginTransaction(context.Background())
 		c.Assert(err, qt.IsNotNil)
 		c.Assert(err.Error(), qt.Equals, "no database connection")
@@ -387,6 +388,7 @@ func TestPostgreSQLWriter_TransactionMethods_NoConnection(t *testing.T) {
 	})
 
 	t.Run("dry-run transaction", func(t *testing.T) {
+		c := qt.New(t)
 		writer.SetDryRun(true)
 		tx, err := writer.BeginTransaction(context.Background())
 		c.Assert(err, qt.IsNil)

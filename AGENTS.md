@@ -417,6 +417,52 @@ before help, version, argument handling, configuration, filesystem, or database
 work. Do not add another restrictive boolean without documenting why it cannot
 be expressed as a capability gate.
 
+### A `PTAH_*` value is consumed once, by the surface that decides with it
+
+The compatibility surface forwards to a native command, and
+`cmd/internal/cmdadapter` installs the same `PTAH_*` binding on the forwarded
+target that the adapter itself has. So a value-carrying variable is offered
+twice: once to the adapter, which reads it and decides what the native command
+should receive, and once to the target, which reads it again if nothing arrived
+explicitly.
+
+That second read is invisible whenever the adapter's decision was *nothing*. It
+is not a fallback; it is the decision being overwritten by the input the
+decision was made from. **When an adapter resolves a native flag's whole value,
+disable the environment binding for that flag on the target** with
+`cmdflags.DisableEnvBinding` — the same opt-out `schema apply` uses for
+`--auto-approve`. Nothing is lost: a run the adapter did not narrow has already
+had the value forwarded explicitly.
+
+stokaro/ptah#1535 is the shape to recognize. An `atlas.hcl` `data` block scoping
+the desired schema owns the variables that reach it, and a block declaring none
+refuses the run's `--var`. Reached through `PTAH_VAR` the same run leaked: the
+scope emptied the forwarded values, no explicit `--var` marked the flag as set,
+and the target read the variable itself. Nothing errored. The suite passed,
+against a schema nobody asked for.
+
+Two tests, not one. The refusal proves the scope closes; a control proving the
+variable still reaches an unscoped run proves the closure was not achieved by
+dropping the variable outright. Without the second, deleting the feature reads
+as a fix.
+
+### Recognition that spans two functions belongs to one of them
+
+`ConnectToDatabase` parses a database URL and then converts it to a driver DSN.
+Both ends have to know which spellings carry go-sql-driver's network wrapper,
+and each kept its own list. They agreed when the second was written and stopped
+agreeing the moment the first was extended, so a URL the parser accepted reached
+the driver with its scheme still attached — or, for a socket target, rebuilt
+around a host that was never one, failing as a DNS lookup of the socket path.
+
+**When two functions in a pipeline must recognize the same set, give them one
+predicate, and say at its declaration why it cannot become two.** The mismatch
+is not caught by testing either end: both are individually correct against their
+own list. It is caught by a control comparing their *behavior* — and a control
+that asks the shared helper twice will agree with itself while one end quietly
+stops calling it, which is the state stokaro/ptah#1540 reported. Drive the
+public path that joins them.
+
 ### Compatibility with older Ptah is a different axis, and it is not owed
 
 Everything above is about the community binary. Compatibility with **Ptah's own
@@ -853,6 +899,28 @@ rules of [`docs/STYLE_GUIDE.md`](docs/STYLE_GUIDE.md) apply in spirit.
   cover it with a black-box unit test outside the integration trees, or
   introduce the real public/application boundary the integration test should
   exercise. Never use white-box access as an integration shortcut.
+- **A live test asks for an engine, never for a variable.** `internal/dbtarget`
+  is the one declaration of which environment variable names which database.
+  Call `dbtarget.URL(c, dbtarget.PostgreSQL)` for the address ptah connects
+  with, or `dbtarget.DriverDSN(c, dbtarget.MySQL)` for the form a raw
+  `database/sql` driver parses; both skip with a message naming the canonical
+  variable when nothing is configured. Do not read `os.Getenv` for a database
+  address in a test, and do not invent a spelling — there is nowhere to invent
+  one, which is the point.
+
+  The two accessors are not interchangeable. `go-sql-driver/mysql` reads a
+  `mysql://` prefix as part of the username and `pgx` does not parse
+  `cockroachdb://` at all, so anything handed to `mysqldriver.ParseDSN` or
+  opened directly needs `DriverDSN`; anything handed to
+  `dbschema.ConnectToDatabase` needs `URL`. Handing a URL to the driver parser
+  does not fail loudly — it connects as a different user and reports access
+  denied, which reads as a broken CI secret rather than as a wrong call.
+
+  This exists because the alternative was measured. Before it, 129 test files
+  each decided where to look, PostgreSQL answered to three spellings and MySQL
+  to four, and one CI step set 34 variables so that whichever a test happened
+  to read would be present. A test written against a name that step did not set
+  skipped in silence, and a skip reads as a pass.
 - A missing database environment variable causes a test skip, and a skip reads
   as a pass to ordinary `go test`. CI therefore runs the complete recursive
   package contour through
@@ -934,6 +1002,150 @@ fires on the import declaration and is reported by `golangci-lint run ./...`
 along with every other finding. It is not a text scan: a comment that ends a
 sentence with the word `assert` or `require` is not a violation, and `pkg`
 matches by prefix so every testify subpackage is covered by the one entry.
+
+### Checkers Belong To The Test They Report Against
+
+An assertion reports against whichever test its checker was built from, so the
+checker a test uses has to be the one for that test. Three rules follow. Only
+the first is enforced today — `QTLINT_RULES` in the Makefile carries
+`-require-qt-c-receiver` and `-require-data-rows`, and the tree is clean against
+both. `-require-testing-run` is a review rule for now, and the counts are
+written
+here rather than left to be rediscovered: `-require-testing-run` reports 27
+sites in the untagged contour and 148 in the tagged one. Adding a rule to the
+gate before the tree is clean against it turns every unrelated change red, so
+each moves into `QTLINT_RULES` when its own backlog reaches zero, and the
+number above is what says whether that has happened.
+
+- Assert through a receiver: `c := qt.New(t)` then `c.Assert(...)`, never
+  `qt.Assert(t, ...)`.
+- Enter a subtest with `t.Run(name, func(t *testing.T) { c := qt.New(t); ... })`,
+  never `c.Run`. A `c.Run` closure asserts through a checker bound to the
+  parent, so a failure is attributed to the parent and a `FailNow` stops the
+  parent instead of the subtest.
+- **A test helper takes the checker.** Write `func writeFixture(c *qt.C) string`
+  and call it `writeFixture(c)`. Do not widen the parameter to `testing.TB` and
+  rebuild a checker inside, and do not reach through the checker at the call
+  site for `c.TB`.
+
+The subtest parameter is named `t`, and it shadows the enclosing test's `t`
+when the closure refers to one. That is the point rather than a collision to
+dodge: the body is becoming a subtest, so a `t.TempDir()` inside it should name
+the subtest's directory and a `t.Fatal` inside it should fail the subtest.
+Naming the parameter around the reference still compiles, and leaves those
+calls addressing the parent, which is how one temporary directory comes to be
+shared by every row of a table. The one shape that cannot be converted is
+a closure whose body declares `t` in its own block — Go declares parameters in
+the body block, so such a declaration collides with the new parameter rather
+than being shadowed by it. `-require-testing-run` withholds the fix there and
+says so; convert it by hand.
+
+The third rule was the other way round for one release, and the reversal is
+worth writing down so it is not rediscovered. `*qt.C` **is** a `testing.TB` — `C`
+embeds it — so a helper declared to take `testing.TB` already accepted the
+checker, and widening the signature bought nothing but a line of ceremony per
+helper and a `.TB` selector per call site that reads as though the checker were
+the wrong type to pass. Measured on this repository: 1003 helpers and 5924 call
+sites, all of it noise.
+
+What the widening appeared to buy was `-require-testing-run`'s fix. That rule
+withholds a rewrite when the checker escapes into a function, because what such
+a function can do includes `(*qt.C).Defer`, which registers a cleanup that
+panics unless `Done()` ran — `C.Run` supplies that `defer c2.Done()` and a bare
+`qt.New(t)` does not. Passing `c.TB` did not remove the hazard; it removed the
+analyzer's ability to see it, because a selector is not the bare identifier the
+escape check looks for. Prefer the honest signature and accept the withheld fix.
+
+A helper that genuinely needs a concrete `*testing.T` should take one. What it
+must never do is take a handle and assert its way to the concrete type:
+`c.TB.(*testing.T)` inside a helper declared for `testing.TB` panics the moment
+it is called from a benchmark, and the signature promises otherwise.
+
+### A Table Row Carries Data, Not A Checker
+
+A table-driven test that forbids conditionals in its body pushes the varying
+part into the rows. When the varying part is a value, the row carries a value.
+Reaching for a closure instead brings the branch back one row at a time:
+
+```go
+tests := []struct {
+	name   string
+	assert func(c *qt.C, err error)   // the branch, spelled out per row
+}{
+	{name: "duplicate table", assert: func(c *qt.C, err error) {
+		c.Assert(err, qt.ErrorMatches, `table "public.users" is declared more than once;.*`)
+	}},
+	// fifty more, each three lines carrying one string
+}
+```
+
+As data that row is `wantErr: "…"`, and the table reads as a table again.
+
+`-require-data-rows` reports the shape. It matches the field's TYPE, never its
+name, so a row carrying the means to assert is reported whatever it is called.
+The rule suggests no fix, because the repair is a decision:
+
+- Every row's assertions are the same shape — give the row **the value that
+  varies**. The closure was encoding data as code.
+- The shapes differ — **split the table** along the difference, then apply the
+  rule above to each half. Rows that assert differently are two tests wearing
+  one table, and the style rule that forbids the conditional already asks for
+  the happy path and the failure path to be separate tests.
+- A row field holding a function that asserts nothing — `args func(dir string)
+  []string` — is data the test builds with. It is not reported, deliberately.
+
+**A rewritten table that still passes proves nothing.** Disable the defect its
+rows exist to catch, once, and watch the table redden; then restore it. A
+conversion that quietly drops a row's discrimination is worse than the shape it
+replaced, because the shape was visible and the missing coverage is not.
+
+Both contours report 0, so `-require-data-rows` is in `QTLINT_RULES` and the
+shape cannot come back. Reintroducing a `func(c *qt.C)` field in a table row
+turns `make lint-qtlint` red.
+
+Retiring this shape is what unblocks the other rule, and the chain is measured
+rather than argued. `-require-testing-run` withholds a fix when the checker
+escapes into a function, because what such a function can do includes
+`(*qt.C).Defer`. A checker handed into a table row's field escapes into
+something with no declaration to read and no statically known value, so the fix
+was withheld for almost every subtest in the untagged contour. Converting the
+rows took that rule from 70 sites to 27 there, and from 191 to 148 in the
+tagged one, without touching a single `c.Run`.
+
+The gate runs two invocations, and neither is redundant:
+
+```bash
+go tool qtlint -multi-module $(QTLINT_RULES) ./...
+go tool qtlint -multi-module $(QTLINT_RULES) -tags integration ./...
+```
+
+`-multi-module` is required because `go list` resolves patterns against the
+module holding the working directory, so `./testkit/...` from the root answers
+`directory prefix testkit does not contain main module or its selected
+dependencies`. Both contours are required because a build tag selects a
+different build rather than a superset: satisfying `integration` also drops
+every file a constraint excludes from that contour.
+
+Those two run again on a Windows runner, as the `ptah-go-lint-windows` job. A
+build tag cannot reach a file the target operating system excludes -- `go help
+buildconstraint` puts that under `GOOS` -- so every `_windows_test.go` file in
+the repository is outside both Ubuntu contours. Measured: with
+`qt.Assert(t, ...)` introduced in `internal/fsdurable/root_replace_windows_test.go`,
+the Windows contour exits 3 and names it while the Linux contour exits 0. Two
+real violations were sitting in those files when the job was added.
+
+The Windows job runs `make lint-qtlint` rather than repeating its arguments, so
+a rule added to `QTLINT_RULES` reaches every contour without a second list to
+keep in step. It also runs `go vet`, `golangci-lint` and the unit tests, because
+qtlint is not the only gate a Linux runner cannot point at Windows-only code:
+four gosec G115 findings were sitting in Windows-only source when the job was
+added, every one of them an unchecked narrowing into a structure the Windows
+API reads. Windows-only source is not merely unanalyzed without this job, it is
+unrun -- a `_windows_test.go` file exercises code no other runner compiles.
+
+`make lint-qtlint-fix` applies the rewrites. Invoking the tool directly, run the
+rules in separate passes: applied together, one rule can delete a receiver
+declaration another rule's rewrite still references.
 
 Bad:
 

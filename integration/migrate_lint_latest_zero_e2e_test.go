@@ -100,7 +100,8 @@ env "ci" {
 		c.Assert(stderr, qt.Equals, "Error: --git-base \"-unsafe\" is not a safe Git ref\n")
 	})
 
-	c.Run("positive latest still selects a version", func(c *qt.C) {
+	t.Run("positive latest still selects a version", func(t *testing.T) {
+		c := qt.New(t)
 		stdout, stderr, err := runLatestZeroCompatProcess(
 			ctx,
 			"",
@@ -133,7 +134,8 @@ env "ci" {
 		c.Assert(stderr, qt.Equals, "Error: --latest and --git-base are mutually exclusive\n")
 	})
 
-	c.Run("all-versions opt-in remains usable with zero", func(c *qt.C) {
+	t.Run("all-versions opt-in remains usable with zero", func(t *testing.T) {
+		c := qt.New(t)
 		c.Setenv("PTAH_ATLAS_LINT_ALL_VERSIONS", "1")
 		stdout, stderr, err := runLatestZeroCompatProcess(
 			ctx,

@@ -47,7 +47,6 @@ type unresolvedIdentityCase struct {
 // objects; conflict detection still lumps them together, because the target's
 // collation has not spoken and either may collide with anything.
 func TestSemantics_UnresolvedNamesKeepTheirIdentity(t *testing.T) {
-	c := qt.New(t)
 	semantics := catalogResolvedSemantics()
 
 	tests := []unresolvedIdentityCase{
@@ -87,7 +86,8 @@ func TestSemantics_UnresolvedNamesKeepTheirIdentity(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			sameID := semantics.TableIdentityKey(test.left) == semantics.TableIdentityKey(test.right)
 			c.Assert(sameID, qt.Equals, test.wantSameID,
 				qt.Commentf("identity keys: %q -> %q, %q -> %q",
@@ -117,7 +117,6 @@ type qualifiedUnresolvedCase struct {
 // schema.table separately, so the collapse reached tables in different schemas
 // as well as tables in one.
 func TestSemantics_QualifiedUnresolvedNamesKeepTheirIdentity(t *testing.T) {
-	c := qt.New(t)
 	semantics := catalogResolvedSemantics()
 
 	tests := []qualifiedUnresolvedCase{
@@ -151,7 +150,8 @@ func TestSemantics_QualifiedUnresolvedNamesKeepTheirIdentity(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			left := semantics.QualifiedTableIdentityKey(test.left)
 			right := semantics.QualifiedTableIdentityKey(test.right)
 			c.Assert(left == right, qt.Equals, test.wantSameID,

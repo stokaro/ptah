@@ -36,40 +36,85 @@ const (
 	lintConvertedDown = "1_init.down.sql"
 )
 
-// writeLintGolangMigrateDir writes a golang-migrate pair and the atlas.sum that
-// layout covers — the up file only.
+// The layout names a row selects a directory with, in the spelling both the
+// `?format=` query and `--dir-format` take.
+const (
+	lintFormatGolangMigrate = "golang-migrate"
+	lintFormatFlyway        = "flyway"
+	lintFormatAtlas         = "atlas"
+)
+
+// lintSourceFixtures is the migration set each fixture holds, keyed by the
+// layout its atlas.sum is written for. A row names a layout and gets both, so
+// what a fixture contains stays readable as data instead of living in a builder
+// per layout.
+//
+// The golang-migrate pair is the one whose atlas.sum covers the up file only,
+// which is what makes the down file the uncovered half.
+//
+// The Flyway fixture puts its second migration one level down. Flyway is the
+// only layout whose atlas.sum reaches below the top level, so it separates "the
+// covered set is resolved for the SOURCE layout" from "the covered set is the
+// Atlas top-level rule applied to whatever was captured". The second reading
+// covers V1__init.sql alone and reports sub/V2__nested.sql as removed; the
+// community binary exits 0 with two versions analyzed.
+//
+// The native Atlas fixture read as golang-migrate has an empty covered set,
+// which is what makes it the half of the precedence pair that can only pass if
+// `?format=atlas` won.
+var lintSourceFixtures = map[string]map[string]string{
+	lintFormatGolangMigrate: {
+		lintConvertedUp:   "CREATE TABLE g1 (id INTEGER PRIMARY KEY);\n",
+		lintConvertedDown: "DROP TABLE g1;\n",
+	},
+	lintFormatFlyway: {
+		"V1__init.sql":       "CREATE TABLE f1 (id INTEGER PRIMARY KEY);\n",
+		"sub/V2__nested.sql": "CREATE TABLE f2 (id INTEGER PRIMARY KEY);\n",
+	},
+	lintFormatAtlas: {
+		"20240101000000_init.sql": "CREATE TABLE t1 (id INTEGER PRIMARY KEY);\n",
+	},
+}
+
+// writeHashedLintDir writes the fixture for format and hashes it AS that
+// layout, which is what makes its covered set the source layout's own.
 //
 // The sum goes through `migrate hash` rather than a helper so the bytes these
 // rows verify against are the ones the shipped verb writes (#984, #992), and so
 // a change to the covered set shows up here rather than being encoded twice.
-func writeLintGolangMigrateDir(c *qt.C) string {
+func writeHashedLintDir(c *qt.C, format string) string {
 	c.Helper()
 	dir := c.TempDir()
-	writeAtlasApplyProjectMigration(c, dir, lintConvertedUp, "CREATE TABLE g1 (id INTEGER PRIMARY KEY);\n")
-	writeAtlasApplyProjectMigration(c, dir, lintConvertedDown, "DROP TABLE g1;\n")
-	_, stderr, err := runCompatExit("migrate", "hash", "--dir", "file://"+dir+"?format=golang-migrate")
+	writeLintMigrations(c, dir, lintSourceFixtures[format])
+	_, stderr, err := runCompatExit("migrate", "hash", "--dir", "file://"+dir+"?format="+format)
 	c.Assert(err, qt.IsNil, qt.Commentf("hash stderr: %s", stderr))
 	return dir
 }
 
-// writeLintFlywayNestedDir writes a Flyway directory whose second migration sits
-// one level down, and hashes it for the Flyway layout.
-//
-// Flyway is the only layout whose atlas.sum reaches below the top level, so this
-// fixture separates "the covered set is resolved for the SOURCE layout" from
-// "the covered set is the Atlas top-level rule applied to whatever was
-// captured". The second reading covers V1__init.sql alone and reports
-// sub/V2__nested.sql as removed; the community binary exits 0 with two versions
-// analyzed.
-func writeLintFlywayNestedDir(c *qt.C) string {
+// writeLintMigrations writes each migration at its own path below dir, so a
+// fixture can name the nested file only the Flyway layout has.
+func writeLintMigrations(c *qt.C, dir string, files map[string]string) {
 	c.Helper()
-	dir := c.TempDir()
-	writeAtlasApplyProjectMigration(c, dir, "V1__init.sql", "CREATE TABLE f1 (id INTEGER PRIMARY KEY);\n")
-	writeAtlasApplyProjectMigration(c, filepath.Join(dir, "sub"), "V2__nested.sql",
-		"CREATE TABLE f2 (id INTEGER PRIMARY KEY);\n")
-	_, stderr, err := runCompatExit("migrate", "hash", "--dir", "file://"+dir+"?format=flyway")
-	c.Assert(err, qt.IsNil, qt.Commentf("hash stderr: %s", stderr))
-	return dir
+	for name, body := range files {
+		writeAtlasApplyProjectMigration(c, filepath.Join(dir, filepath.Dir(name)), filepath.Base(name), body)
+	}
+}
+
+// editLintDir rewrites and removes files after the directory was hashed, which
+// is how a row moves a file out from under the checksum that covered it.
+func editLintDir(c *qt.C, dir string, edits map[string]string, removed []string) {
+	c.Helper()
+	writeLintMigrations(c, dir, edits)
+	for _, name := range removed {
+		c.Assert(os.Remove(filepath.Join(dir, filepath.FromSlash(name))), qt.IsNil)
+	}
+}
+
+// writeLintGolangMigrateDir is the golang-migrate fixture other files reach for
+// by name.
+func writeLintGolangMigrateDir(c *qt.C) string {
+	c.Helper()
+	return writeHashedLintDir(c, lintFormatGolangMigrate)
 }
 
 // lintDevURL returns a dev-database URL for a file that does not exist yet, so
@@ -153,41 +198,28 @@ func TestCompatMigrateLint_FlywayReplayFailureNamesExactEmptySourceToken(t *test
 
 // TestCompatMigrateLint_ConvertedDirIsRead is the discriminator for #1013
 // section 1: both spellings that select a foreign layout make lint analyze the
-// converted directory, and the no-selection control shows the outcome genuinely
-// flips rather than the directory having been lintable all along.
+// converted directory.
 //
-// Reverted, the two selection rows print `Ptah does not implement that directory
-// format`; the control row prints `checksum mismatch` before and after.
+// The no-selection control is
+// [TestCompatMigrateLint_UnselectedForeignDirIsAChecksumMismatch]: it asserts a
+// refusal rather than a report, so it is a test of its own.
+//
+// Reverted, the two rows here print `Ptah does not implement that directory
+// format`; the control prints `checksum mismatch` before and after.
 func TestCompatMigrateLint_ConvertedDirIsRead(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name   string
 		suffix string
 		extra  []string
-		assert func(c *qt.C, stdout, stderr string, err error)
 	}{
 		{
 			name:   "dir_query",
 			suffix: "?format=golang-migrate",
-			assert: func(c *qt.C, stdout, stderr string, err error) {
-				c.Assert(err, qt.IsNil, qt.Commentf("stderr: %s", stderr))
-				c.Assert(stdout, qt.Contains, "1 version ok")
-			},
 		},
 		{
 			name:  "dir_format_flag",
 			extra: []string{"--dir-format", "golang-migrate"},
-			assert: func(c *qt.C, stdout, stderr string, err error) {
-				c.Assert(err, qt.IsNil, qt.Commentf("stderr: %s", stderr))
-				c.Assert(stdout, qt.Contains, "1 version ok")
-			},
-		},
-		{
-			name: "control_no_selection_is_a_checksum_mismatch",
-			assert: func(c *qt.C, _, stderr string, err error) {
-				c.Assert(err, qt.IsNotNil)
-				c.Assert(stderr, qt.Contains, "checksum mismatch")
-			},
 		},
 	}
 	for _, test := range tests {
@@ -198,9 +230,26 @@ func TestCompatMigrateLint_ConvertedDirIsRead(t *testing.T) {
 
 			stdout, stderr, err := runLint(c, dir+test.suffix, test.extra, "1")
 
-			test.assert(c, stdout, stderr, err)
+			c.Assert(err, qt.IsNil, qt.Commentf("stderr: %s", stderr))
+			c.Assert(stdout, qt.Contains, "1 version ok")
 		})
 	}
+}
+
+// TestCompatMigrateLint_UnselectedForeignDirIsAChecksumMismatch is the control
+// for the test above: with no layout selected, the same directory is read as a
+// native Atlas one, and the atlas.sum written for the golang-migrate layout
+// does not describe it. Without this, "lint exits 0 on the converted directory"
+// would also be satisfied by a directory that was lintable all along.
+func TestCompatMigrateLint_UnselectedForeignDirIsAChecksumMismatch(t *testing.T) {
+	t.Parallel()
+	c := qt.New(t)
+	dir := writeLintGolangMigrateDir(c)
+
+	_, stderr, err := runLint(c, dir, nil, "1")
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(stderr, qt.Contains, "checksum mismatch")
 }
 
 // TestCompatMigrateLint_QueryFormatOutranksDirFormatFlag pins the precedence the
@@ -216,29 +265,32 @@ func TestCompatMigrateLint_ConvertedDirIsRead(t *testing.T) {
 func TestCompatMigrateLint_QueryFormatOutranksDirFormatFlag(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		name   string
-		suffix string
-		extra  []string
-		dir    func(c *qt.C) string
+		name string
+		// fixture is the layout the directory is written and hashed as. The
+		// query names it and the flag contradicts it, so the row passes only if
+		// the query decided.
+		fixture string
+		suffix  string
+		extra   []string
 	}{
 		{
-			name:   "query_golang_migrate_beats_flag_atlas",
-			suffix: "?format=golang-migrate",
-			extra:  []string{"--dir-format", "atlas"},
-			dir:    writeLintGolangMigrateDir,
+			name:    "query_golang_migrate_beats_flag_atlas",
+			fixture: lintFormatGolangMigrate,
+			suffix:  "?format=golang-migrate",
+			extra:   []string{"--dir-format", "atlas"},
 		},
 		{
-			name:   "query_atlas_beats_flag_golang_migrate",
-			suffix: "?format=atlas",
-			extra:  []string{"--dir-format", "golang-migrate"},
-			dir:    writeLintNativeAtlasDir,
+			name:    "query_atlas_beats_flag_golang_migrate",
+			fixture: lintFormatAtlas,
+			suffix:  "?format=atlas",
+			extra:   []string{"--dir-format", "golang-migrate"},
 		},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			c := qt.New(t)
-			dir := test.dir(c)
+			dir := writeHashedLintDir(c, test.fixture)
 
 			stdout, stderr, err := runLint(c, dir+test.suffix, test.extra, "1")
 
@@ -248,25 +300,22 @@ func TestCompatMigrateLint_QueryFormatOutranksDirFormatFlag(t *testing.T) {
 	}
 }
 
-// writeLintNativeAtlasDir writes a one-migration native Atlas directory and its
-// atlas.sum. Read as golang-migrate its covered set is empty, so it is the half
-// of the precedence pair that can only pass if `?format=atlas` won.
+// writeLintNativeAtlasDir is the native Atlas fixture, hashed for its own
+// layout.
 func writeLintNativeAtlasDir(c *qt.C) string {
 	c.Helper()
-	dir := c.TempDir()
-	writeAtlasApplyProjectMigration(c, dir, "20240101000000_init.sql",
-		"CREATE TABLE t1 (id INTEGER PRIMARY KEY);\n")
-	_, stderr, err := runCompatExit("migrate", "hash", "--dir", "file://"+dir)
-	c.Assert(err, qt.IsNil, qt.Commentf("hash stderr: %s", stderr))
-	return dir
+	return writeHashedLintDir(c, lintFormatAtlas)
 }
 
-// TestCompatMigrateLint_ConvertedIntegrityUsesTheSourceLayoutCoveredSet pins
-// which files lint's checksum step hashes once a foreign layout is selected.
+// TestCompatMigrateLint_ConvertedIntegrityRefusesAnEditedCoveredFile pins which
+// files lint's checksum step hashes once a foreign layout is selected, from the
+// side where the answer is a refusal. The other side -- what the covered set
+// leaves out, which must still analyze clean -- is
+// [TestCompatMigrateLint_ConvertedIntegrityAnalyzesWhatTheCoveredSetLeavesOut].
 //
-// This is the row set that separates the fix from two cheaper ones that would
-// also make the flip test above pass. Both were run as mutants against this
-// file, and each row named below is one that went red:
+// The two together are the row set that separates the fix from two cheaper ones
+// that would also make the flip test above pass. Both were run as mutants
+// against this file, and each row named below is one that went red:
 //
 //   - Resolving the covered set under the Atlas rule instead of the source
 //     layout's — SumFileNames(gateFS, FormatAtlas) — takes down
@@ -277,78 +326,32 @@ func writeLintNativeAtlasDir(c *qt.C) string {
 //     editing_a_covered_up_file_is_a_mismatch and
 //     editing_a_nested_flyway_migration_is_a_mismatch.
 //
-// Reverted, every row prints `Ptah does not implement that directory format`.
-func TestCompatMigrateLint_ConvertedIntegrityUsesTheSourceLayoutCoveredSet(t *testing.T) {
+// Reverted, every row of both tests prints `Ptah does not implement that
+// directory format`.
+func TestCompatMigrateLint_ConvertedIntegrityRefusesAnEditedCoveredFile(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name   string
+		format string
 		latest string
-		setup  func(c *qt.C) (dir, suffix string)
-		assert func(c *qt.C, stdout, stderr string, err error)
+		// edits are written after the directory was hashed, which is what moves
+		// a covered file out from under the checksum that covered it.
+		edits map[string]string
 	}{
 		{
 			name:   "editing_a_covered_up_file_is_a_mismatch",
+			format: lintFormatGolangMigrate,
 			latest: "1",
-			setup: func(c *qt.C) (string, string) {
-				dir := writeLintGolangMigrateDir(c)
-				writeAtlasApplyProjectMigration(c, dir, lintConvertedUp,
-					"CREATE TABLE g1 (id INTEGER PRIMARY KEY, extra INTEGER);\n")
-				return dir, "?format=golang-migrate"
-			},
-			assert: func(c *qt.C, _, stderr string, err error) {
-				c.Assert(err, qt.IsNotNil)
-				c.Assert(stderr, qt.Contains, "checksum mismatch")
-			},
-		},
-		{
-			name:   "editing_an_uncovered_down_file_is_not",
-			latest: "1",
-			setup: func(c *qt.C) (string, string) {
-				dir := writeLintGolangMigrateDir(c)
-				writeAtlasApplyProjectMigration(c, dir, lintConvertedDown, "DROP TABLE IF EXISTS g1;\n")
-				return dir, "?format=golang-migrate"
-			},
-			assert: func(c *qt.C, stdout, stderr string, err error) {
-				c.Assert(err, qt.IsNil, qt.Commentf("stderr: %s", stderr))
-				c.Assert(stdout, qt.Contains, "1 version ok")
-			},
-		},
-		{
-			name:   "a_nested_flyway_migration_is_covered_and_analyzed",
-			latest: "2",
-			setup: func(c *qt.C) (string, string) {
-				return writeLintFlywayNestedDir(c), "?format=flyway"
-			},
-			assert: func(c *qt.C, stdout, stderr string, err error) {
-				c.Assert(err, qt.IsNil, qt.Commentf("stderr: %s", stderr))
-				c.Assert(stdout, qt.Contains, "2 versions ok")
+			edits: map[string]string{
+				lintConvertedUp: "CREATE TABLE g1 (id INTEGER PRIMARY KEY, extra INTEGER);\n",
 			},
 		},
 		{
 			name:   "editing_a_nested_flyway_migration_is_a_mismatch",
+			format: lintFormatFlyway,
 			latest: "2",
-			setup: func(c *qt.C) (string, string) {
-				dir := writeLintFlywayNestedDir(c)
-				writeAtlasApplyProjectMigration(c, filepath.Join(dir, "sub"), "V2__nested.sql",
-					"CREATE TABLE f2 (id INTEGER PRIMARY KEY, extra INTEGER);\n")
-				return dir, "?format=flyway"
-			},
-			assert: func(c *qt.C, _, stderr string, err error) {
-				c.Assert(err, qt.IsNotNil)
-				c.Assert(stderr, qt.Contains, "checksum mismatch")
-			},
-		},
-		{
-			name:   "an_unhashed_converted_directory_is_analyzed",
-			latest: "1",
-			setup: func(c *qt.C) (string, string) {
-				dir := writeLintGolangMigrateDir(c)
-				c.Assert(os.Remove(filepath.Join(dir, "atlas.sum")), qt.IsNil)
-				return dir, "?format=golang-migrate"
-			},
-			assert: func(c *qt.C, stdout, stderr string, err error) {
-				c.Assert(err, qt.IsNil, qt.Commentf("stderr: %s", stderr))
-				c.Assert(stdout, qt.Contains, "1 version ok")
+			edits: map[string]string{
+				"sub/V2__nested.sql": "CREATE TABLE f2 (id INTEGER PRIMARY KEY, extra INTEGER);\n",
 			},
 		},
 	}
@@ -356,11 +359,68 @@ func TestCompatMigrateLint_ConvertedIntegrityUsesTheSourceLayoutCoveredSet(t *te
 		t.Run(test.name, func(t *testing.T) {
 			t.Parallel()
 			c := qt.New(t)
-			dir, suffix := test.setup(c)
+			dir := writeHashedLintDir(c, test.format)
+			editLintDir(c, dir, test.edits, nil)
 
-			stdout, stderr, err := runLint(c, dir+suffix, nil, test.latest)
+			_, stderr, err := runLint(c, dir+"?format="+test.format, nil, test.latest)
 
-			test.assert(c, stdout, stderr, err)
+			c.Assert(err, qt.IsNotNil)
+			c.Assert(stderr, qt.Contains, "checksum mismatch")
+		})
+	}
+}
+
+// TestCompatMigrateLint_ConvertedIntegrityAnalyzesWhatTheCoveredSetLeavesOut is
+// the accepting half of
+// [TestCompatMigrateLint_ConvertedIntegrityRefusesAnEditedCoveredFile]: a file
+// the source layout's covered set does not name may change, and a directory
+// with no atlas.sum at all is still analyzed, because neither is a checksum
+// this command is entitled to refuse.
+func TestCompatMigrateLint_ConvertedIntegrityAnalyzesWhatTheCoveredSetLeavesOut(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name    string
+		format  string
+		latest  string
+		edits   map[string]string
+		removed []string
+		// wantAnalyzed also pins HOW MANY versions were read, which is what
+		// separates a nested migration that is analyzed from one that is
+		// silently left out of the report.
+		wantAnalyzed string
+	}{
+		{
+			name:         "editing_an_uncovered_down_file_is_not",
+			format:       lintFormatGolangMigrate,
+			latest:       "1",
+			edits:        map[string]string{lintConvertedDown: "DROP TABLE IF EXISTS g1;\n"},
+			wantAnalyzed: "1 version ok",
+		},
+		{
+			name:         "a_nested_flyway_migration_is_covered_and_analyzed",
+			format:       lintFormatFlyway,
+			latest:       "2",
+			wantAnalyzed: "2 versions ok",
+		},
+		{
+			name:         "an_unhashed_converted_directory_is_analyzed",
+			format:       lintFormatGolangMigrate,
+			latest:       "1",
+			removed:      []string{"atlas.sum"},
+			wantAnalyzed: "1 version ok",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			t.Parallel()
+			c := qt.New(t)
+			dir := writeHashedLintDir(c, test.format)
+			editLintDir(c, dir, test.edits, test.removed)
+
+			stdout, stderr, err := runLint(c, dir+"?format="+test.format, nil, test.latest)
+
+			c.Assert(err, qt.IsNil, qt.Commentf("stderr: %s", stderr))
+			c.Assert(stdout, qt.Contains, test.wantAnalyzed)
 		})
 	}
 }

@@ -5,7 +5,6 @@ package mysql_test
 import (
 	"database/sql"
 	"fmt"
-	"os"
 	"testing"
 	"time"
 
@@ -16,6 +15,7 @@ import (
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/internal/sqlident"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
@@ -28,17 +28,20 @@ func TestForeignDefinerReplacementRefusal_Live(t *testing.T) {
 	tests := []struct {
 		name    string
 		dialect string
-		dsnEnv  string
+		engine  dbtarget.Engine
 	}{
-		{name: "mysql", dialect: platform.MySQL, dsnEnv: "MYSQL_ADMIN_TEST_DSN"},
-		{name: "mariadb", dialect: platform.MariaDB, dsnEnv: "MARIADB_ADMIN_TEST_DSN"},
+		{name: "mysql", dialect: platform.MySQL, engine: dbtarget.MySQLAdmin},
+		{name: "mariadb", dialect: platform.MariaDB, engine: dbtarget.MariaDBAdmin},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			adminDSN := requireMySQLAdminDSN(c, test.dsnEnv)
-			adminDB := openMySQLWriterLiveDatabase(c, test.dsnEnv)
+			// DriverDSN rather than URL: every consumer below hands this to
+			// go-sql-driver's ParseDSN, which reads a mysql:// prefix as part
+			// of the username. The scheme is added back where a URL is wanted.
+			adminDSN := dbtarget.DriverDSN(c, test.engine)
+			adminDB := openMySQLWriterLiveDatabase(c, test.engine)
 			c.Cleanup(func() { c.Check(adminDB.Close(), qt.IsNil) })
 
 			suffix := time.Now().UnixNano()
@@ -95,15 +98,6 @@ func TestForeignDefinerReplacementRefusal_Live(t *testing.T) {
 			c.Assert(ownerDiff.FunctionsModified, qt.HasLen, 1)
 		})
 	}
-}
-
-func requireMySQLAdminDSN(c *qt.C, dsnEnv string) string {
-	c.Helper()
-	dsn := os.Getenv(dsnEnv)
-	if dsn == "" {
-		c.Skipf("%s is not set", dsnEnv)
-	}
-	return dsn
 }
 
 func grantRoutineOwner(c *qt.C, db *sql.DB, dialect, databaseName, owner string) {

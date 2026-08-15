@@ -33,40 +33,50 @@ import (
 // variable had been read would pass with an opt-in wired to nothing, so each
 // row asserts the blocks themselves.
 func TestAtlasInspectRefusedBlockGate(t *testing.T) {
+	// The blocks the pinned binary refuses, the block it reads either way, and
+	// the notice that has to travel with an omission. A row states all four
+	// lists, so "false" is measured against the same document as "unset"
+	// instead of against a shorter claim that would also hold for a gate stuck
+	// half-open.
+	refusedBlocks := []string{"extension \"pgcrypto\"", "sequence \"lonely_seq\""}
+	readEitherWay := []string{"table \"accounts\""}
+	omissionNotice := []string{
+		"extensions.pgcrypto",
+		"omitted from Atlas-compatible",
+		"set PTAH_ATLAS_INSPECT_ALL_BLOCKS=1 to keep every block Ptah models",
+	}
+
 	tests := []struct {
-		name   string
-		env    func(testing.TB)
-		assert func(c *qt.C, hcl, diagnostics string)
+		name                  string
+		env                   func(testing.TB)
+		wantHCL               []string
+		wantHCLAbsent         []string
+		wantDiagnostics       []string
+		wantDiagnosticsAbsent []string
 	}{
 		{
-			name: "unset omits the blocks the pinned binary refuses",
-			env:  envbooltest.Unset(atlashclrender.KeepAtlasRefusedBlocksEnvVar),
-			assert: func(c *qt.C, hcl, diagnostics string) {
-				c.Assert(hcl, qt.Not(qt.Contains), "extension \"pgcrypto\"")
-				c.Assert(hcl, qt.Not(qt.Contains), "sequence \"lonely_seq\"")
-				c.Assert(hcl, qt.Contains, "table \"accounts\"")
-				c.Assert(diagnostics, qt.Contains, "extensions.pgcrypto")
-				c.Assert(diagnostics, qt.Contains,
-					"set PTAH_ATLAS_INSPECT_ALL_BLOCKS=1 to keep every block Ptah models")
-			},
+			name:            "unset omits the blocks the pinned binary refuses",
+			env:             envbooltest.Unset(atlashclrender.KeepAtlasRefusedBlocksEnvVar),
+			wantHCL:         readEitherWay,
+			wantHCLAbsent:   refusedBlocks,
+			wantDiagnostics: omissionNotice,
 		},
 		{
 			name: "the opt-in puts every block back",
 			env:  envbooltest.Set(atlashclrender.KeepAtlasRefusedBlocksEnvVar, "1"),
-			assert: func(c *qt.C, hcl, diagnostics string) {
-				c.Assert(hcl, qt.Contains, "extension \"pgcrypto\"")
-				c.Assert(hcl, qt.Contains, "sequence \"lonely_seq\"")
-				c.Assert(hcl, qt.Contains, "table \"accounts\"")
-				c.Assert(diagnostics, qt.Not(qt.Contains), "omitted from Atlas-compatible")
+			wantHCL: []string{
+				"extension \"pgcrypto\"",
+				"sequence \"lonely_seq\"",
+				"table \"accounts\"",
 			},
+			wantDiagnosticsAbsent: omissionNotice,
 		},
 		{
-			name: "a false value keeps the compatible default",
-			env:  envbooltest.Set(atlashclrender.KeepAtlasRefusedBlocksEnvVar, "false"),
-			assert: func(c *qt.C, hcl, diagnostics string) {
-				c.Assert(hcl, qt.Not(qt.Contains), "extension \"pgcrypto\"")
-				c.Assert(diagnostics, qt.Contains, "omitted from Atlas-compatible")
-			},
+			name:            "a false value keeps the compatible default",
+			env:             envbooltest.Set(atlashclrender.KeepAtlasRefusedBlocksEnvVar, "false"),
+			wantHCL:         readEitherWay,
+			wantHCLAbsent:   refusedBlocks,
+			wantDiagnostics: omissionNotice,
 		},
 	}
 
@@ -92,8 +102,25 @@ func TestAtlasInspectRefusedBlockGate(t *testing.T) {
 			hcl, err := report.MarshalHCL()
 
 			c.Assert(err, qt.IsNil)
-			test.assert(c, hcl, diagnostics.String())
+			assertRefusedBlockText(c, hcl, test.wantHCL, test.wantHCLAbsent)
+			assertRefusedBlockText(c, diagnostics.String(),
+				test.wantDiagnostics, test.wantDiagnosticsAbsent)
 		})
+	}
+}
+
+// assertRefusedBlockText pins what a rendered document says and what it must
+// not say. Both directions matter to this gate: a document that names a block
+// it did not render, and one that omits a block without saying so, are the two
+// ways the capability goes missing quietly.
+func assertRefusedBlockText(c *qt.C, got string, want, absent []string) {
+	c.Helper()
+
+	for _, fragment := range want {
+		c.Assert(got, qt.Contains, fragment)
+	}
+	for _, fragment := range absent {
+		c.Assert(got, qt.Not(qt.Contains), fragment)
 	}
 }
 

@@ -97,7 +97,6 @@ func TestCapture_IncludesOnlyMigrationInputs(t *testing.T) {
 }
 
 func TestCapture_FailurePathRejectsNoncanonicalMetadataNames(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name      string
 		filename  string
@@ -109,7 +108,8 @@ func TestCapture_FailurePathRejectsNoncanonicalMetadataNames(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			source := fstest.MapFS{
 				test.filename: {Data: []byte("metadata\n")},
 			}

@@ -4,20 +4,17 @@ package generator_test
 
 import (
 	"net/url"
-	"os"
 	"strconv"
 
 	qt "github.com/frankban/quicktest"
 	"github.com/jackc/pgx/v5"
+
+	"go.5x5.cz/ptah/internal/dbtarget"
 )
 
 func requireRollbackPostgresURL(c *qt.C) string {
 	c.Helper()
-	rawURL := os.Getenv("POSTGRES_TEST_DSN")
-	if rawURL == "" {
-		c.Skip("POSTGRES_TEST_DSN is not set")
-	}
-	return rawURL
+	return dbtarget.URL(c, dbtarget.PostgreSQL)
 }
 
 func rollbackPostgresDatabaseURL(c *qt.C, rawURL, database string) string {

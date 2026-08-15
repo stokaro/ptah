@@ -16,6 +16,7 @@ import (
 
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/internal/sqlident"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff/types"
@@ -26,10 +27,7 @@ import (
 // the planner and catalog assertions run through the derived database URL.
 func liveMySQLAdminURLForPrimaryKeyIdentity(t *testing.T) string {
 	t.Helper()
-	dbURL := os.Getenv("MYSQL_ADMIN_TEST_URL")
-	if dbURL == "" {
-		t.Skip("MYSQL_ADMIN_TEST_URL not set")
-	}
+	dbURL := dbtarget.URL(t, dbtarget.MySQLAdmin)
 	if !strings.HasPrefix(dbURL, "mysql://") {
 		t.Skip("MySQL URL required for live planner test")
 	}

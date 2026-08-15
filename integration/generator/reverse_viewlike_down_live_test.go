@@ -6,7 +6,6 @@ import (
 	"cmp"
 	"context"
 	"fmt"
-	"os"
 	"slices"
 	"sort"
 	"strings"
@@ -17,6 +16,7 @@ import (
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/dbschema"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
 
@@ -258,11 +258,7 @@ func TestReverseViewLikeObjects_DownRoundTrip_Integration(t *testing.T) {
 // facts, not branches of the behavior under test.
 func revIntRequireURL(t *testing.T) string {
 	t.Helper()
-	url := os.Getenv("POSTGRES_URL")
-	if url == "" {
-		t.Skip("skipping reverse view-like down round trip: POSTGRES_URL not set")
-	}
-	return url
+	return dbtarget.URL(t, dbtarget.PostgreSQL)
 }
 
 func revIntConnect(t *testing.T, url string) *dbschema.DatabaseConnection {

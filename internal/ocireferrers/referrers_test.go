@@ -13,7 +13,6 @@ import (
 )
 
 func TestArtifactType_HappyPath(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name   string
 		filter string
@@ -26,7 +25,8 @@ func TestArtifactType_HappyPath(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			got, err := ocireferrers.ArtifactType(tt.filter)
 			c.Assert(err, qt.IsNil)
 			c.Assert(got, qt.Equals, tt.want)

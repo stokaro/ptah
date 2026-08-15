@@ -48,9 +48,12 @@ func TestOracleReadsFilesOutsideTheAtlasHCLDirectory(t *testing.T) {
 
 	tests := []struct {
 		name string
-		// argument is the file() argument, planted relative to the config
-		// directory in dir, aimed at the file outside.
-		argument func(c *qt.C, dir, outside string) string
+		// argument plants whatever the escape needs inside the config directory
+		// dir and returns the file() argument aimed at the file outside. The
+		// error is its own arrangement's, returned rather than asserted so that
+		// a failure to plant is reported at the row's call site, alongside the
+		// verdicts the measurement depends on.
+		argument func(dir, outside string) (string, error)
 		// ptahErr is what Ptah says about the identical config.
 		ptahErr string
 	}{
@@ -84,7 +87,9 @@ func TestOracleReadsFilesOutsideTheAtlasHCLDirectory(t *testing.T) {
 			dir := filepath.Join(base, "project")
 			c.Assert(os.Mkdir(dir, 0o700), qt.IsNil)
 			outside := plantOracleSecret(c, base)
-			path := writeOracleFileConfig(c, dir, tt.argument(c, dir, outside))
+			argument, plantErr := tt.argument(dir, outside)
+			c.Assert(plantErr, qt.IsNil)
+			path := writeOracleFileConfig(c, dir, argument)
 
 			out, code := runFileOracle(c, oracle, dir)
 
@@ -162,26 +167,24 @@ func quoteHCL(value string) string {
 	return `"` + value + `"`
 }
 
-func escapeAbsolutePath(c *qt.C, _, outside string) string {
-	c.Helper()
-	return outside
+// The escapes below plant nothing, or one symbolic link, and report only
+// whether that arrangement succeeded. None of them judges the binaries under
+// measurement; the verdicts all live in the test bodies.
+
+func escapeAbsolutePath(_, outside string) (string, error) {
+	return outside, nil
 }
 
-func escapeParentTraversal(c *qt.C, _, outside string) string {
-	c.Helper()
-	return "../" + filepath.Base(outside)
+func escapeParentTraversal(_, outside string) (string, error) {
+	return "../" + filepath.Base(outside), nil
 }
 
-func escapeSymlinkedFile(c *qt.C, dir, outside string) string {
-	c.Helper()
-	c.Assert(os.Symlink(outside, filepath.Join(dir, "link.txt")), qt.IsNil)
-	return "link.txt"
+func escapeSymlinkedFile(dir, outside string) (string, error) {
+	return "link.txt", os.Symlink(outside, filepath.Join(dir, "link.txt"))
 }
 
-func escapeSymlinkedDirectory(c *qt.C, dir, outside string) string {
-	c.Helper()
-	c.Assert(os.Symlink(filepath.Dir(outside), filepath.Join(dir, "outdir")), qt.IsNil)
-	return "outdir/" + filepath.Base(outside)
+func escapeSymlinkedDirectory(dir, outside string) (string, error) {
+	return "outdir/" + filepath.Base(outside), os.Symlink(filepath.Dir(outside), filepath.Join(dir, "outdir"))
 }
 
 // writeOracleFileConfig puts the file() call in a position whose value is

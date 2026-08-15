@@ -48,6 +48,15 @@ func seedAtlasPreconditionDir(c *qt.C, dir string) string {
 	return dir
 }
 
+// makeMigrationSubdirs creates subdirectories inside a migration directory, so
+// a row can say which of them are already there before the verb runs.
+func makeMigrationSubdirs(c *qt.C, dir string, subdirs []string) {
+	c.Helper()
+	for _, subdir := range subdirs {
+		c.Assert(os.MkdirAll(filepath.Join(filepath.Clean(dir), subdir), 0o750), qt.IsNil)
+	}
+}
+
 // TestCompatCommand_MigrateLintRefusesWithoutDevURL covers stokaro/ptah#1231
 // case 2.
 //
@@ -261,7 +270,7 @@ func TestCompatCommand_MigrateVerbsRefuseReorderedChecksum(t *testing.T) {
 			return []string{
 				"migrate", "diff", "third",
 				"--dir", "file://" + dir,
-				"--to", "sqlite://" + seedSQLiteDB(t, "CREATE TABLE desired_users (id INTEGER PRIMARY KEY)"),
+				"--to", "sqlite://" + seedSQLiteDB(qt.New(t), "CREATE TABLE desired_users (id INTEGER PRIMARY KEY)"),
 				"--dev-url", "sqlite://" + filepath.Join(t.TempDir(), "dev.db"),
 			}
 		}},
@@ -558,21 +567,20 @@ func TestCompatCommand_SchemaApplyAppliesWithAutoApproveAlone(t *testing.T) {
 // exits 1, which is the violation this cell is about.
 func TestCompatCommand_MigrateNewRefusesPathSeparatorName(t *testing.T) {
 	tests := []struct {
-		name    string
-		prepare func(c *qt.C, dir string)
+		name string
+		// existing names the subdirectories that are already there when the
+		// verb runs. That is the whole difference between the two rows.
+		existing []string
 	}{
-		{name: "no such subdirectory", prepare: func(_ *qt.C, _ string) {}},
-		{name: "subdirectory already exists", prepare: func(c *qt.C, dir string) {
-			c.Helper()
-			c.Assert(os.MkdirAll(filepath.Join(filepath.Clean(dir), "sub"), 0o750), qt.IsNil)
-		}},
+		{name: "no such subdirectory"},
+		{name: "subdirectory already exists", existing: []string{"sub"}},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			dir := seedAtlasPreconditionDir(c, t.TempDir())
-			test.prepare(c, dir)
+			makeMigrationSubdirs(c, dir, test.existing)
 			before := dirEntryNames(c, dir)
 
 			out, err := runAtlasPrecondition(c, "migrate", "new", "sub/dir_name", "--dir", "file://"+dir)
@@ -624,7 +632,7 @@ func TestCompatCommand_MigrateDiffRefusesPathSeparatorName(t *testing.T) {
 	c := qt.New(t)
 	dir := seedAtlasPreconditionDir(c, t.TempDir())
 	before := dirEntryNames(c, dir)
-	desiredPath := seedSQLiteDB(t, "CREATE TABLE desired_users (id INTEGER PRIMARY KEY)")
+	desiredPath := seedSQLiteDB(c, "CREATE TABLE desired_users (id INTEGER PRIMARY KEY)")
 	devPath := filepath.Join(t.TempDir(), "dev.db")
 
 	out, err := runAtlasPrecondition(c,
@@ -654,7 +662,7 @@ func TestCompatCommand_MigrateDiffIgnoresTheNameWhenNothingChanges(t *testing.T)
 	dir := t.TempDir()
 	writeAtlasLintFile(c, dir, "20260101000000_first.sql", "CREATE TABLE desired_users (id INTEGER PRIMARY KEY);\n")
 	hashMigrationDir(c, dir)
-	desiredPath := seedSQLiteDB(t, "CREATE TABLE desired_users (id INTEGER PRIMARY KEY)")
+	desiredPath := seedSQLiteDB(c, "CREATE TABLE desired_users (id INTEGER PRIMARY KEY)")
 	devPath := filepath.Join(t.TempDir(), "dev.db")
 
 	out, err := runAtlasPrecondition(c,
@@ -680,7 +688,7 @@ func TestCompatCommand_MigrateDiffIgnoresTheNameWhenNothingChanges(t *testing.T)
 func TestCompatCommand_MigrateDiffRefusesASecondPositional(t *testing.T) {
 	c := qt.New(t)
 	dir := seedAtlasPreconditionDir(c, t.TempDir())
-	desiredPath := seedSQLiteDB(t, "CREATE TABLE desired_users (id INTEGER PRIMARY KEY)")
+	desiredPath := seedSQLiteDB(c, "CREATE TABLE desired_users (id INTEGER PRIMARY KEY)")
 	devPath := filepath.Join(t.TempDir(), "dev.db")
 
 	out, err := runAtlasPrecondition(c,
@@ -700,7 +708,7 @@ func TestCompatCommand_MigrateDiffRefusesASecondPositional(t *testing.T) {
 func TestCompatCommand_MigrateDiffAcceptsOnePositional(t *testing.T) {
 	c := qt.New(t)
 	dir := seedAtlasPreconditionDir(c, t.TempDir())
-	desiredPath := seedSQLiteDB(t, "CREATE TABLE desired_users (id INTEGER PRIMARY KEY)")
+	desiredPath := seedSQLiteDB(c, "CREATE TABLE desired_users (id INTEGER PRIMARY KEY)")
 	devPath := filepath.Join(t.TempDir(), "dev.db")
 
 	out, err := runAtlasPrecondition(c,

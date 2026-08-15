@@ -241,49 +241,53 @@ type User struct {
 	}
 }
 
-// TestSchemaTestCommand_DesiredSchemaSourceKinds covers the third source kind:
-// a database URL whose live schema becomes the desired state. The Go-annotation
-// directory is the control and must keep reaching the annotation scan.
-func TestSchemaTestCommand_DesiredSchemaSourceKinds(t *testing.T) {
-	tests := []struct {
-		name   string
-		source func(f liveSourceFixture) string
-		check  func(c *qt.C, out string, err error)
-	}{
-		{
-			name:   "database URL is introspected",
-			source: func(f liveSourceFixture) string { return f.liveURL },
-			check: func(c *qt.C, out string, err error) {
-				c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
-				c.Assert(out, qt.Contains, `PASS  case "db-sourced table exists"`)
-				c.Assert(out, qt.Contains, "1 cases, 1 passed, 0 failed")
-			},
-		},
-		{
-			name:   "Go annotation directory is the control",
-			source: func(f liveSourceFixture) string { return f.modelsDir },
-			check: func(c *qt.C, out string, err error) {
-				c.Assert(err, qt.IsNotNil)
-				c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
-				c.Assert(out, qt.Contains, "no such table: orders_from_db")
-			},
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			c := qt.New(t)
-			fixture := writeLiveSourceFixture(c)
-			// Every direction gets its own throwaway database. A shared one is
-			// not reset between runs, so the control would pass against a
-			// database an earlier positive run had already populated.
-			out, err := runSchemaTestCommand(
-				"--dir", fixture.testsDir,
-				"--root-dir", tt.source(fixture),
-				"--db-url", "sqlite://"+filepath.Join(c.TempDir(), "dev.db"),
-			)
-			tt.check(c, out, err)
-		})
-	}
+// runFixtureCases runs the fixture's case file against one desired-state
+// source.
+//
+// Every direction gets its own throwaway database. A shared one is not reset
+// between runs, so the control below would pass against a database an earlier
+// positive run had already populated.
+func runFixtureCases(c *qt.C, fixture liveSourceFixture, source string) (string, error) {
+	c.Helper()
+	return runSchemaTestCommand(
+		"--dir", fixture.testsDir,
+		"--root-dir", source,
+		"--db-url", "sqlite://"+filepath.Join(c.TempDir(), "dev.db"),
+	)
+}
+
+// TestSchemaTestCommand_DatabaseURLIsIntrospected covers the third source kind:
+// a database URL whose live schema becomes the desired state.
+//
+// The asserted table exists only in the live database, so a pass here can come
+// from nothing but having introspected it.
+func TestSchemaTestCommand_DatabaseURLIsIntrospected(t *testing.T) {
+	c := qt.New(t)
+	fixture := writeLiveSourceFixture(c)
+
+	out, err := runFixtureCases(c, fixture, fixture.liveURL)
+
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+	c.Assert(out, qt.Contains, `PASS  case "db-sourced table exists"`)
+	c.Assert(out, qt.Contains, "1 cases, 1 passed, 0 failed")
+}
+
+// TestSchemaTestCommand_GoAnnotationDirectoryIsTheControl is the counterpart of
+// the introspection above: the same case file, pointed at the Go-annotation
+// directory, must keep reaching the annotation scan and therefore must NOT find
+// the database-only table.
+//
+// Without it, a source resolver that quietly introspected the live database
+// whatever it was handed would pass the test above.
+func TestSchemaTestCommand_GoAnnotationDirectoryIsTheControl(t *testing.T) {
+	c := qt.New(t)
+	fixture := writeLiveSourceFixture(c)
+
+	out, err := runFixtureCases(c, fixture, fixture.modelsDir)
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
+	c.Assert(out, qt.Contains, "no such table: orders_from_db")
 }
 
 // TestSchemaTestCommand_RefusesCrossDialectDatabaseSource pins the dialect gate.
@@ -297,19 +301,23 @@ func TestSchemaTestCommand_RefusesCrossDialectDatabaseSource(t *testing.T) {
 	// No credentials in the URL: the gate reads the scheme only, and a
 	// password-shaped literal is a hardcoded-credential lint finding.
 	const source = "postgres://127.0.0.1:1/nope?sslmode=disable"
+	// The throwaway database of the first row, named before the table so the row
+	// can carry the value rather than the means of producing it. It is a path
+	// that is never created: the gate refuses ahead of every connection.
+	sqliteDevURL := "sqlite://" + filepath.Join(t.TempDir(), "dev.db")
 	tests := []struct {
 		name   string
-		devURL func(c *qt.C) string
+		devURL string
 		want   string
 	}{
 		{
 			name:   "explicit SQLite throwaway database",
-			devURL: func(c *qt.C) string { return "sqlite://" + filepath.Join(c.TempDir(), "dev.db") },
+			devURL: sqliteDevURL,
 			want:   `--db-url dialect "sqlite" does not match --root-dir database dialect "postgres"`,
 		},
 		{
 			name:   "ephemeral SQLite default",
-			devURL: func(*qt.C) string { return "" },
+			devURL: "",
 			want: `--root-dir database dialect "postgres" requires an explicit --db-url throwaway database` +
 				` of the same dialect, because the default ephemeral test database is SQLite`,
 		},
@@ -322,7 +330,7 @@ func TestSchemaTestCommand_RefusesCrossDialectDatabaseSource(t *testing.T) {
 			out, err := runSchemaTestCommand(
 				"--dir", fixture.testsDir,
 				"--root-dir", source,
-				"--db-url", tt.devURL(c),
+				"--db-url", tt.devURL,
 			)
 
 			c.Assert(err, qt.IsNotNil, qt.Commentf("%s", out))
@@ -345,7 +353,19 @@ func TestSchemaTestCommand_RunPatternNoMatches(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `no test cases match --run "\^missing\$"`)
 }
 
-// TestSchemaTestCommand_SchemaSelectionAppliesToADatabaseSource pins that
+// runScopedFixtureCases runs the fixture's case file against its live database
+// source, restricted to one schema.
+func runScopedFixtureCases(c *qt.C, fixture liveSourceFixture, schemaName string) (string, error) {
+	c.Helper()
+	return runSchemaTestCommand(
+		"--dir", fixture.testsDir,
+		"--root-dir", fixture.liveURL,
+		"--schema", schemaName,
+		"--db-url", "sqlite://"+filepath.Join(c.TempDir(), "dev.db"),
+	)
+}
+
+// TestSchemaTestCommand_SchemaSelectionRefusesADatabaseSourceItEmpties pins that
 // --schema restricts a desired schema that came from a database URL, and not
 // only one parsed from a directory or a schema file.
 //
@@ -356,45 +376,95 @@ func TestSchemaTestCommand_RunPatternNoMatches(t *testing.T) {
 // would leave a database source silently unscoped -- the accept-and-ignore
 // shape this flag exists to prevent -- and no test covered that combination.
 //
-// The zero-match row is the discriminating one. An unscoped database source
-// keeps its table and the run passes, so the refusal is reachable only when the
-// selection actually reached the database branch.
-func TestSchemaTestCommand_SchemaSelectionAppliesToADatabaseSource(t *testing.T) {
+// This is the discriminating direction. An unscoped database source keeps its
+// table and the run passes, so the refusal is reachable only when the selection
+// actually reached the database branch. The control lives in
+// TestSchemaTestCommand_SchemaSelectionKeepsTheSchemaHoldingTheTable, and
+// without it "refuse every --schema against a database" would pass here.
+func TestSchemaTestCommand_SchemaSelectionRefusesADatabaseSourceItEmpties(t *testing.T) {
+	c := qt.New(t)
+	fixture := writeLiveSourceFixture(c)
+
+	_, err := runScopedFixtureCases(c, fixture, "nosuch")
+
+	c.Assert(err, qt.ErrorMatches, `--schema nosuch selects no tables out of the desired schema`)
+}
+
+// TestSchemaTestCommand_SchemaSelectionKeepsTheSchemaHoldingTheTable is the
+// control for the refusal above: naming the schema the table really lives in
+// leaves the run passing.
+func TestSchemaTestCommand_SchemaSelectionKeepsTheSchemaHoldingTheTable(t *testing.T) {
+	c := qt.New(t)
+	fixture := writeLiveSourceFixture(c)
+
+	out, err := runScopedFixtureCases(c, fixture, "main")
+
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+	c.Assert(out, qt.Contains, "1 cases, 1 passed, 0 failed")
+}
+
+// TestSchemaTestCommand_VarReachesAnHCLSchema pins the gap stokaro/ptah#1533
+// records, at the surface the issue measured it on.
+//
+// The desired schema declares a variable and uses it as a column default. Until
+// schemaload could carry variable values, the file was read with its declared
+// default whatever the caller passed, so a suite ran green or red against a
+// schema the operator did not describe -- the worst shape for a test command to
+// be wrong in, because the run still reports a verdict.
+func TestSchemaTestCommand_VarReachesAnHCLSchema(t *testing.T) {
 	tests := []struct {
-		name   string
-		schema string
-		check  func(c *qt.C, out string, err error)
+		name       string
+		args       []string
+		wantScalar string
 	}{
-		{
-			name:   "the schema holding the table is kept",
-			schema: "main",
-			check: func(c *qt.C, out string, err error) {
-				c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
-				c.Assert(out, qt.Contains, "1 cases, 1 passed, 0 failed")
-			},
-		},
-		{
-			name:   "a selection that keeps nothing is refused",
-			schema: "nosuch",
-			check: func(c *qt.C, out string, err error) {
-				c.Assert(err, qt.IsNotNil)
-				c.Assert(err, qt.ErrorMatches, `--schema nosuch selects no tables out of the desired schema`)
-			},
-		},
+		{name: "a value supplied on the command line", args: []string{"--var", "tenant=acme"}, wantScalar: "acme"},
+		{name: "no value falls back to the declared default", args: nil, wantScalar: "fallback"},
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			fixture := writeLiveSourceFixture(c)
+			dir := t.TempDir()
+			testsDir := t.TempDir()
+			schemaPath := filepath.Join(dir, "s.hcl")
+			c.Assert(os.WriteFile(schemaPath, []byte(`variable "tenant" {
+  type    = string
+  default = "fallback"
+}
 
-			out, err := runSchemaTestCommand(
-				"--dir", fixture.testsDir,
-				"--root-dir", fixture.liveURL,
-				"--schema", tt.schema,
-				"--db-url", "sqlite://"+filepath.Join(c.TempDir(), "dev.db"),
-			)
+schema "main" {
+}
 
-			tt.check(c, out, err)
+table "users" {
+  schema = schema.main
+  column "id" {
+    type = int
+  }
+  column "tenant" {
+    type    = text
+    default = var.tenant
+  }
+  primary_key {
+    columns = [column.id]
+  }
+}
+`), 0o600), qt.IsNil)
+			c.Assert(os.WriteFile(filepath.Join(testsDir, "tenant.yaml"), []byte(
+				"cases:\n"+
+					"  - name: the column default came from the variable\n"+
+					"    steps:\n"+
+					"      - name: insert\n"+
+					"        exec: INSERT INTO users (id) VALUES (1)\n"+
+					"      - name: read it back\n"+
+					"        assert:\n"+
+					"          query: SELECT tenant FROM users\n"+
+					"          scalar: \""+test.wantScalar+"\"\n"), 0o600), qt.IsNil)
+
+			args := append([]string{"--dir", testsDir, "--root-dir", schemaPath}, test.args...)
+			out, err := runSchemaTestCommand(args...)
+
+			c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+			c.Assert(out, qt.Contains, "1 cases, 1 passed, 0 failed")
 		})
 	}
 }

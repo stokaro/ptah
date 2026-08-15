@@ -25,7 +25,6 @@ import (
 // control: that half normalized the readback already, so a row where only the
 // materialized half moves is the whole finding.
 func TestCompareWithDialect_MaterializedViewBodyMatchesCatalogReadback(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name    string
 		dialect string
@@ -36,7 +35,8 @@ func TestCompareWithDialect_MaterializedViewBodyMatchesCatalogReadback(t *testin
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			generated, database := materializedViewReadbackFixtures(test.schema, test.schema)
 
 			diff := schemadiff.CompareWithDialect(generated, database, test.dialect)
@@ -53,7 +53,6 @@ func TestCompareWithDialect_MaterializedViewBodyMatchesCatalogReadback(t *testin
 // relation in some other schema is a different body, and a normalization that
 // stripped every qualifier instead of that one would report these two as equal.
 func TestCompareWithDialect_MaterializedViewWrongSchemaRelationStillDiffs(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name    string
 		dialect string
@@ -64,7 +63,8 @@ func TestCompareWithDialect_MaterializedViewWrongSchemaRelationStillDiffs(t *tes
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			generated, database := materializedViewReadbackFixtures(test.schema, "archive")
 
 			diff := schemadiff.CompareWithDialect(generated, database, test.dialect)

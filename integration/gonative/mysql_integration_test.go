@@ -11,18 +11,19 @@ import (
 
 	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/dbschema/mysql"
+	"go.5x5.cz/ptah/internal/dbtarget"
 )
 
 // skipIfNoMySQL skips only when MYSQL_TEST_DSN is absent; a bad configured DSN fails.
 func skipIfNoMySQL(t *testing.T) string {
 	t.Helper()
-	return requireReachableTestDSN(t, "MYSQL_TEST_DSN", "mysql", "MySQL")
+	return requireReachableEngine(t, dbtarget.MySQL, "mysql", "MySQL")
 }
 
 // skipIfNoMariaDB skips only when MARIADB_TEST_DSN is absent; a bad configured DSN fails.
 func skipIfNoMariaDB(t *testing.T) string {
 	t.Helper()
-	return requireReachableTestDSN(t, "MARIADB_TEST_DSN", "mysql", "MariaDB")
+	return requireReachableEngine(t, dbtarget.MariaDB, "mysql", "MariaDB")
 }
 
 // Helper function to find a column by name

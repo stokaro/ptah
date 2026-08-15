@@ -127,8 +127,6 @@ func TestAtlasDirectoryError_MissingStatPreservesPathCause(t *testing.T) {
 }
 
 func TestAtlasDirectoryError_NonMatchingErrorsUnchanged(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name string
 		dir  string
@@ -170,7 +168,8 @@ func TestAtlasDirectoryError_NonMatchingErrorsUnchanged(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			got := migratevalidate.AtlasDirectoryError(test.dir, test.err)
 
 			c.Assert(got, qt.Equals, test.err)

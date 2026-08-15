@@ -9,7 +9,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 
@@ -18,25 +17,9 @@ import (
 	"go.5x5.cz/ptah/cmd/atlas"
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/internal/schemaload"
 )
-
-// livePostgresURLForRLSSpelling gates these tests on the same environment
-// variable as the other live PostgreSQL compatibility tests.
-func livePostgresURLForRLSSpelling(t *testing.T) string {
-	t.Helper()
-	dbURL := os.Getenv("POSTGRES_TEST_DSN")
-	if dbURL == "" {
-		dbURL = os.Getenv("TEST_DATABASE_URL")
-	}
-	if dbURL == "" {
-		t.Skip("POSTGRES_TEST_DSN or TEST_DATABASE_URL not set")
-	}
-	if !strings.HasPrefix(dbURL, "postgres://") && !strings.HasPrefix(dbURL, "postgresql://") {
-		t.Skip("PostgreSQL URL required for RLS table spelling live tests")
-	}
-	return dbURL
-}
 
 // createRLSSpellingDatabases provisions an empty target database and a separate
 // empty dev database, and registers their removal.
@@ -165,7 +148,7 @@ func runCompatSchemaApply(targetURL, devURL, schemaPath string, extra ...string)
 // no policy at all — a silently relocated access-control declaration.
 func TestSchemaApplyRLSReferenceToUndeclaredRelationRefusedLivePostgres(t *testing.T) {
 	c := qt.New(t)
-	adminURL := livePostgresURLForRLSSpelling(t)
+	adminURL := dbtarget.URL(t, dbtarget.PostgreSQL)
 	targetURL, devURL := createRLSSpellingDatabases(t, adminURL)
 	schemaPath := filepath.Join(t.TempDir(), "schema.sql")
 	c.Assert(os.WriteFile(schemaPath, []byte(
@@ -195,7 +178,7 @@ CREATE POLICY p ON orders FOR ALL TO PUBLIC USING (tenant_id = 1);
 // exits 0 with both policies in pg_policy.
 func TestSchemaApplyRLSDeclaredRelationAcceptedLivePostgres(t *testing.T) {
 	c := qt.New(t)
-	adminURL := livePostgresURLForRLSSpelling(t)
+	adminURL := dbtarget.URL(t, dbtarget.PostgreSQL)
 	targetURL, devURL := createRLSSpellingDatabases(t, adminURL)
 	schemaPath := filepath.Join(t.TempDir(), "schema.sql")
 	c.Assert(os.WriteFile(schemaPath, []byte(
@@ -238,7 +221,7 @@ CREATE POLICY tenant_isolation ON shipments FOR ALL TO PUBLIC USING (tenant_id =
 // when the alternative is guessing which relation was meant.
 func TestSchemaApplyRLSQuotedReferenceRefusedLivePostgres(t *testing.T) {
 	c := qt.New(t)
-	adminURL := livePostgresURLForRLSSpelling(t)
+	adminURL := dbtarget.URL(t, dbtarget.PostgreSQL)
 	targetURL, devURL := createRLSSpellingDatabases(t, adminURL)
 	schemaPath := filepath.Join(t.TempDir(), "schema.sql")
 	c.Assert(os.WriteFile(schemaPath, []byte(
@@ -305,7 +288,7 @@ func executeRenderedSchema(t *testing.T, dbURL, schemaPath string) error {
 // recorded rather than worked around.
 func TestRenderedRLSQualifiedMixedCaseReferenceLandsOnTheNamedRelationLivePostgres(t *testing.T) {
 	c := qt.New(t)
-	adminURL := livePostgresURLForRLSSpelling(t)
+	adminURL := dbtarget.URL(t, dbtarget.PostgreSQL)
 	targetURL, _ := createRLSSpellingDatabases(t, adminURL)
 	schemaPath := filepath.Join(t.TempDir(), "schema.sql")
 	c.Assert(os.WriteFile(schemaPath, []byte(
@@ -331,7 +314,7 @@ CREATE POLICY tenant_isolation ON "App".ORDERS FOR ALL TO PUBLIC USING (tenant_i
 // the catalog rather than in a string comparison.
 func TestRenderedRLSQuotedReferenceIsRefusedByPostgres(t *testing.T) {
 	c := qt.New(t)
-	adminURL := livePostgresURLForRLSSpelling(t)
+	adminURL := dbtarget.URL(t, dbtarget.PostgreSQL)
 	targetURL, _ := createRLSSpellingDatabases(t, adminURL)
 	schemaPath := filepath.Join(t.TempDir(), "schema.sql")
 	c.Assert(os.WriteFile(schemaPath, []byte(

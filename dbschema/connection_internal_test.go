@@ -10,6 +10,7 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"log/slog"
+	"regexp"
 	"strings"
 	"testing"
 	"time"
@@ -1099,4 +1100,229 @@ func TestRemovePostgresPoolParams_EdgeCases(t *testing.T) {
 			c.Assert(result, qt.Equals, tt.expected, qt.Commentf("removePostgresPoolParams(%q) = %q, want %q", tt.input, result, tt.expected))
 		})
 	}
+}
+
+// TestConvertMySQLURL_KeepsAUnixSocketTarget pins the network form the TCP
+// branch already had.
+//
+// go-sql-driver takes tcp(...) and unix(...) as two spellings of one thing: the
+// network and the address to reach it on. Only the first was recognized here
+// and in the scheme detection above it, so a valid socket address was parsed as
+// a host called "unix(" with the socket path folded into the database name.
+// Nothing about that failure named the socket.
+func TestConvertMySQLURL_KeepsAUnixSocketTarget(t *testing.T) {
+	tests := []struct {
+		name string
+		url  string
+		want string
+	}{
+		{
+			name: "a socket target keeps its network",
+			url:  "mysql://user:pass@unix(/tmp/mysql.sock)/db",
+			want: "user:pass@unix(/tmp/mysql.sock)/db",
+		},
+		{
+			name: "a mariadb socket target too",
+			url:  "mariadb://user:pass@unix(/var/run/mysqld/mysqld.sock)/db",
+			want: "user:pass@unix(/var/run/mysqld/mysqld.sock)/db",
+		},
+		{
+			name: "the TCP spelling is unchanged",
+			url:  "mysql://user:pass@tcp(127.0.0.1:3306)/db",
+			want: "user:pass@tcp(127.0.0.1:3306)/db",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(convertMySQLURL(test.url), qt.Equals, test.want)
+		})
+	}
+}
+
+// TestConnectToDatabase_ReadsTheDialectOfASocketURL is the other half: the
+// scheme detection has to recognize the same shape, or the URL never reaches
+// the converter as MySQL at all.
+//
+// The connection itself is expected to fail — no socket is listening — but the
+// error has to be about reaching the database rather than about parsing what
+// was asked for.
+func TestConnectToDatabase_ReadsTheDialectOfASocketURL(t *testing.T) {
+	c := qt.New(t)
+
+	_, err := ConnectToDatabase(context.Background(), "mysql://user:pass@unix(/tmp/ptah-absent.sock)/db")
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(err.Error(), qt.Not(qt.Contains), "invalid database URL")
+	c.Assert(err.Error(), qt.Not(qt.Contains), "unsupported database dialect")
+}
+
+// TestParseDatabaseURL_AcceptsAWindowsPath pins the shape that made ptah
+// unusable on Windows.
+//
+// A drive letter's colon is not a port separator, but net/url reads it as one
+// and refuses the whole URL, so every command that provisions a local database
+// failed: 1014 tests across more than thirty packages, 1382 of them reporting
+// "invalid database URL". The path is carried as opaque, which is the shape
+// convertSQLiteURL reads first, so what the driver receives is the path itself.
+//
+// The rows run on every operating system because this is string handling, not
+// a filesystem call -- which is the only reason the fix is testable from a
+// machine that is not the one it is for.
+func TestParseDatabaseURL_AcceptsAWindowsPath(t *testing.T) {
+	tests := []struct {
+		name string
+		url  string
+		want string
+	}{
+		{
+			name: "a backslash path",
+			url:  `sqlite://C:\Users\runner\AppData\Local\Temp\shadow.db`,
+			want: `C:\Users\runner\AppData\Local\Temp\shadow.db`,
+		},
+		{
+			name: "a forward-slash path with a drive",
+			url:  "sqlite://D:/data/app.db",
+			want: "D:/data/app.db",
+		},
+		{
+			name: "a lowercase drive letter",
+			url:  `sqlite://c:\tmp\app.db`,
+			want: `c:\tmp\app.db`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			parsed, err := parseDatabaseURL(test.url)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(parsed.Scheme, qt.Equals, "sqlite")
+			// The DSN carries the pragma this package appends to every SQLite
+			// address, so the path is matched as a prefix rather than whole.
+			c.Assert(convertSQLiteURL(test.url), qt.Matches, regexp.QuoteMeta(test.want)+`(\?.*)?`)
+		})
+	}
+}
+
+// TestParseDatabaseURL_StillRefusesAnAddressThatIsNotOne is the control that
+// keeps the Windows accommodation from swallowing real errors. A colon that is
+// a malformed port stays a malformed port.
+func TestParseDatabaseURL_StillRefusesAnAddressThatIsNotOne(t *testing.T) {
+	c := qt.New(t)
+
+	_, err := parseDatabaseURL("postgres://host:notaport/db")
+
+	c.Assert(err, qt.IsNotNil)
+}
+
+// TestParseDatabaseURL_ReadsTheDatabaseOfASocketURL checks what the parse is
+// used for rather than only that it succeeded.
+//
+// The parsed URL does not only carry the scheme: its path is where the MySQL
+// branch of getDatabaseInfo reads the database name, so recognizing only @tcp(
+// left a socket address parsed as a host called "unix(" with the socket path
+// folded into the name, and readers and writers targeted a database called
+// tmp/mysql.sock)/db.
+func TestParseDatabaseURL_ReadsTheDatabaseOfASocketURL(t *testing.T) {
+	tests := []struct {
+		name string
+		url  string
+		want string
+	}{
+		{name: "a socket target names its database", url: "mysql://user:pass@unix(/tmp/mysql.sock)/shop", want: "shop"},
+		{name: "a mariadb socket target too", url: "mariadb://u:p@unix(/var/run/mysqld/mysqld.sock)/shop", want: "shop"},
+		{name: "the TCP spelling is unchanged", url: "mysql://user:pass@tcp(127.0.0.1:3306)/shop", want: "shop"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			parsed, err := parseDatabaseURL(test.url)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(strings.TrimPrefix(parsed.Path, "/"), qt.Equals, test.want)
+		})
+	}
+}
+
+// TestParseDatabaseURL_KeepsTheQueryOfAWindowsPath keeps the accommodation
+// from eating the options.
+//
+// Carrying the whole remainder as opaque put the query inside the path, so
+// convertSQLiteURL saw no query and appended its pragma with a second "?" --
+// C:\tmp\app.db?mode=ro?_pragma=... The mode was silently not applied, which on
+// a read-only target means the database opens with the wrong semantics rather
+// than failing.
+func TestParseDatabaseURL_KeepsTheQueryOfAWindowsPath(t *testing.T) {
+	c := qt.New(t)
+
+	parsed, err := parseDatabaseURL(`sqlite://C:\tmp\app.db?mode=ro`)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(parsed.Opaque, qt.Equals, `C:\tmp\app.db`)
+	c.Assert(parsed.RawQuery, qt.Equals, "mode=ro")
+	// One "?" and both parameters. Their order is the package's own and not
+	// what this pins; that the requested one survives at all is.
+	dsn := convertSQLiteURL(`sqlite://C:\tmp\app.db?mode=ro`)
+	c.Assert(strings.Count(dsn, "?"), qt.Equals, 1)
+	c.Assert(dsn, qt.Contains, `C:\tmp\app.db?`)
+	c.Assert(dsn, qt.Contains, "mode=ro")
+}
+
+// TestParseDatabaseURL_ReadsANetworkDSNWithoutCredentials covers the half of
+// the grammar the first recognizer missed.
+//
+// Credentials are optional in go-sql-driver's DSN, so tcp(localhost:3306)/db
+// and unix(/tmp/mysql.sock)/db are valid targets. Matching only "@tcp(" left
+// the first refused as an invalid URL and the second parsed with the socket
+// path folded into the database name.
+func TestParseDatabaseURL_ReadsANetworkDSNWithoutCredentials(t *testing.T) {
+	tests := []struct {
+		name string
+		url  string
+		want string
+	}{
+		{name: "a TCP target with no credentials", url: "mysql://tcp(localhost:3306)/shop", want: "shop"},
+		{name: "a socket target with no credentials", url: "mysql://unix(/tmp/mysql.sock)/shop", want: "shop"},
+		{name: "credentials are still read", url: "mysql://user:pass@tcp(localhost:3306)/shop", want: "shop"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			parsed, err := parseDatabaseURL(test.url)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(strings.TrimPrefix(parsed.Path, "/"), qt.Equals, test.want)
+		})
+	}
+}
+
+// TestParseDatabaseURL_RefusesAMalformedQueryOnAWindowsPath keeps the Windows
+// accommodation from turning every parse error into success.
+//
+// The fallback exists for one reason: a drive letter's colon is not a port
+// separator. It is not a licence to accept anything else net/url refused. A
+// malformed escape in the query is a real error, and admitting it means
+// Query() silently drops the pair -- so an attempted mode=ro restriction
+// disappears and the database opens writable, which is the failure this whole
+// area keeps producing when something is dropped instead of refused.
+func TestParseDatabaseURL_RefusesAMalformedQueryOnAWindowsPath(t *testing.T) {
+	c := qt.New(t)
+
+	_, err := parseDatabaseURL(`sqlite://C:\tmp\app.db?mode=%zz`)
+
+	c.Assert(err, qt.IsNotNil)
+	// The refusal has to name the query. Passing on the parse error that got
+	// here would tell an operator whose address has no port that the port is
+	// invalid, which is the diagnostic this whole path exists to remove.
+	c.Assert(err.Error(), qt.Contains, "query")
+	c.Assert(err.Error(), qt.Not(qt.Contains), "port")
 }

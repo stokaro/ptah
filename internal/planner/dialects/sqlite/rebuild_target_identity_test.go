@@ -22,8 +22,6 @@ import (
 // at all -- the column type change the rebuild exists for is silently not
 // planned.
 func TestRebuildResolvesTheRetainedTableAcrossSchemaSpellings(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name          string
 		tableSchema   string
@@ -54,7 +52,8 @@ func TestRebuildResolvesTheRetainedTableAcrossSchemaSpellings(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			diff := &types.SchemaDiff{TablesModified: []types.TableDiff{{
 				TableName: test.diffTableName,
 				ColumnsModified: []types.ColumnDiff{{
@@ -89,8 +88,6 @@ func TestRebuildResolvesTheRetainedTableAcrossSchemaSpellings(t *testing.T) {
 // Reverting `target` to `r.targets[tableName]` leaves the whole planner and
 // migration suite green, which is why this pin is here rather than assumed.
 func TestRebuiltTableDoesNotAlsoGetItsIndexAndTriggerRecreated(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name          string
 		tableSchema   string
@@ -125,7 +122,8 @@ func TestRebuiltTableDoesNotAlsoGetItsIndexAndTriggerRecreated(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			generated := identityRebuildSchema(test.tableSchema)
 			generated.Indexes = []goschema.Index{{
 				StructName: "Note",

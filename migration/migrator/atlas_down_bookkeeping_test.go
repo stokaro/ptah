@@ -63,10 +63,11 @@ THIS IS A FAILING STATEMENT;
 `
 
 func newAtlasDownMigrator(t *testing.T, secondMigration string) (*dbschema.DatabaseConnection, *migrator.Migrator) {
+	c := qt.New(t)
 	t.Helper()
 	ctx := context.Background()
 	conn, err := dbschema.ConnectToDatabase(ctx, "sqlite://"+filepath.Join(t.TempDir(), "down.db"))
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	t.Cleanup(func() { _ = conn.Close() })
 
 	m, err := migrator.NewFSMigrator(
@@ -77,9 +78,9 @@ func newAtlasDownMigrator(t *testing.T, secondMigration string) (*dbschema.Datab
 		},
 		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
 	)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	m = m.WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)
-	qt.Assert(t, m.MigrateUp(ctx), qt.IsNil)
+	c.Assert(m.MigrateUp(ctx), qt.IsNil)
 	return conn, m
 }
 
@@ -87,6 +88,7 @@ func newAtlasDownMigrator(t *testing.T, secondMigration string) (*dbschema.Datab
 // so a comparison is byte-precise, including NULL versus the empty string and
 // unchanged execution_time values.
 func atlasRevisionTuples(t *testing.T, conn *dbschema.DatabaseConnection) []string {
+	c := qt.New(t)
 	t.Helper()
 	rows, err := conn.Query(
 		`SELECT quote(version) || '|' || quote(description) || '|' || quote(type) || '|' ||
@@ -94,15 +96,15 @@ quote(applied) || '|' || quote(total) || '|' || quote(executed_at) || '|' ||
 quote(execution_time) || '|' || quote(error) || '|' || quote(error_stmt) || '|' ||
 quote(hash) || '|' || quote(partial_hashes) || '|' || quote(operator_version)
 FROM atlas_schema_revisions ORDER BY version`)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	defer func() { _ = rows.Close() }()
 	var tuples []string
 	for rows.Next() {
 		var tuple string
-		qt.Assert(t, rows.Scan(&tuple), qt.IsNil)
+		c.Assert(rows.Scan(&tuple), qt.IsNil)
 		tuples = append(tuples, tuple)
 	}
-	qt.Assert(t, rows.Err(), qt.IsNil)
+	c.Assert(rows.Err(), qt.IsNil)
 	return tuples
 }
 
@@ -201,11 +203,12 @@ END`)
 }
 
 func sqliteTableExists(t *testing.T, conn *dbschema.DatabaseConnection, table string) bool {
+	c := qt.New(t)
 	t.Helper()
 	var count int
 	err := conn.QueryRow(
 		"SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = ?", table).Scan(&count)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	return count == 1
 }
 

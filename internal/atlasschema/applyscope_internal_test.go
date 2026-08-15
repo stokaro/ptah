@@ -29,8 +29,6 @@ import (
 )
 
 func TestApplyReadScope(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name      string
 		requested []string
@@ -117,7 +115,8 @@ func TestApplyReadScope(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(applyReadScope(tt.requested, tt.base, tt.desired), qt.DeepEquals, tt.want)
 		})
 	}

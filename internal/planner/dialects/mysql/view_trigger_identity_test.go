@@ -20,8 +20,6 @@ import (
 // missing statement here, it is a wrong one: `reporting.v`'s body rendered under
 // the name `app.v`.
 func TestViewAndTriggerLookupsDoNotCrossDatabases(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name        string
 		generated   *goschema.Database
@@ -65,7 +63,8 @@ func TestViewAndTriggerLookupsDoNotCrossDatabases(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			statements, err := planner.GenerateSchemaDiffSQLStatements(test.diff, test.generated, "mysql")
 			c.Assert(err, qt.IsNil)
 			plan := strings.Join(statements, "\n")
@@ -79,8 +78,6 @@ func TestViewAndTriggerLookupsDoNotCrossDatabases(t *testing.T) {
 // annotation leaves it bare, which is the case that made objectlookup exist
 // (stokaro/ptah#1287) and the one no static default schema can answer.
 func TestViewAndTriggerLookupsResolveAcrossDatabaseSpellings(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name      string
 		generated *goschema.Database
@@ -124,7 +121,8 @@ func TestViewAndTriggerLookupsResolveAcrossDatabaseSpellings(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			statements, err := planner.GenerateSchemaDiffSQLStatements(test.diff, test.generated, "mysql")
 			c.Assert(err, qt.IsNil)
 			plan := strings.Join(statements, "\n")

@@ -15,16 +15,17 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/generator"
 )
 
 func TestShadowIdentifierSemanticsMatch_SQLServerLive(t *testing.T) {
 	c := qt.New(t)
-	targetURL := provisionShadowCollationDatabase(t, "Turkish_100_CI_AS")
-	matchingShadowURL := provisionShadowCollationDatabase(t, "Turkish_100_CI_AS")
-	mismatchedShadowURL := provisionShadowCollationDatabase(t, "SQL_Latin1_General_CP1_CI_AS")
-	target := connectShadowCollationDatabase(t, targetURL)
-	mismatchedShadow := connectShadowCollationDatabase(t, mismatchedShadowURL)
+	targetURL := provisionShadowCollationDatabase(c, "Turkish_100_CI_AS")
+	matchingShadowURL := provisionShadowCollationDatabase(c, "Turkish_100_CI_AS")
+	mismatchedShadowURL := provisionShadowCollationDatabase(c, "SQL_Latin1_General_CP1_CI_AS")
+	target := connectShadowCollationDatabase(c, targetURL)
+	mismatchedShadow := connectShadowCollationDatabase(c, mismatchedShadowURL)
 
 	migrationSQL := `CREATE TABLE ptah_shadow_semantics (
 	id INT NOT NULL,
@@ -78,20 +79,19 @@ CREATE TABLE [ptah_shadow_i] (id INT NOT NULL);
 	c.Assert(sqlServerShadowTableExists(c, mismatchedShadow, "preserve_before_semantics_check"), qt.IsTrue)
 }
 
-func provisionShadowCollationDatabase(t testing.TB, collation string) string {
-	t.Helper()
-	c := qt.New(t)
-	adminURL := sqlServerAdminTestURL(t)
+func provisionShadowCollationDatabase(c *qt.C, collation string) string {
+	c.Helper()
+	adminURL := sqlServerAdminTestURL(c)
 	databaseName := fmt.Sprintf("ptah_777_shadow_%d", time.Now().UnixNano())
-	admin := connectShadowCollationDatabase(t, adminURL)
+	admin := connectShadowCollationDatabase(c, adminURL)
 	_, err := admin.ExecContext(
-		t.Context(),
+		c.Context(),
 		"CREATE DATABASE "+quoteShadowIdentifier(databaseName)+
 			" COLLATE "+collation,
 	)
 	c.Assert(err, qt.IsNil)
 
-	t.Cleanup(func() {
+	c.Cleanup(func() {
 		cleanupCtx, cancelCleanup := context.WithTimeout(
 			context.Background(),
 			30*time.Second,
@@ -131,22 +131,17 @@ func sqlServerShadowTableExists(c *qt.C, conn *dbschema.DatabaseConnection, tabl
 
 func sqlServerAdminTestURL(t testing.TB) string {
 	t.Helper()
-	adminURL := os.Getenv("PTAH_SQLSERVER_TEST_URL")
-	if adminURL == "" {
-		t.Skip("set PTAH_SQLSERVER_TEST_URL to run SQL Server live generator tests")
-	}
-	return adminURL
+	return dbtarget.URL(t, dbtarget.SQLServer)
 }
 
 func connectShadowCollationDatabase(
-	t testing.TB,
+	c *qt.C,
 	databaseURL string,
 ) *dbschema.DatabaseConnection {
-	t.Helper()
-	c := qt.New(t)
-	conn, err := dbschema.ConnectToDatabase(t.Context(), databaseURL)
+	c.Helper()
+	conn, err := dbschema.ConnectToDatabase(c.Context(), databaseURL)
 	c.Assert(err, qt.IsNil)
-	t.Cleanup(func() {
+	c.Cleanup(func() {
 		dbschema.CloseAndWarn(conn)
 	})
 	return conn

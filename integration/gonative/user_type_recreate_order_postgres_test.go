@@ -51,7 +51,6 @@ import (
 //     two cannot be had by giving this one up.
 func TestPostgreSQLUserTypeRecreate_DropsAgainstTheCurrentShape(t *testing.T) {
 	dsn := skipIfNoPostgreSQL(t)
-	c := qt.New(t)
 
 	tests := []struct {
 		name             string
@@ -110,27 +109,11 @@ func TestPostgreSQLUserTypeRecreate_DropsAgainstTheCurrentShape(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
-			desiredURL := newBoundaryDatabase(c, dsn, boundaryCase{
-				name:  "user_type_recreate_desired",
-				seed:  test.desired,
-				query: "search_path=public",
-			})
-			currentURL := newBoundaryDatabase(c, dsn, boundaryCase{
-				name:  "user_type_recreate_current",
-				seed:  test.current,
-				query: "search_path=public",
-			})
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			target, desiredURL := newUserTypeRecreateTarget(c, dsn, "user_type_recreate", test.current, test.desired)
 
-			target, err := dbschema.ConnectToDatabase(c.Context(), currentURL)
-			c.Assert(err, qt.IsNil)
-			c.Cleanup(func() { dbschema.CloseAndWarn(target) })
-
-			plan, err := atlasschema.PrepareApply(c.Context(), target, atlasschema.ApplyRuntimeOptions{
-				ToURLs: []string{desiredURL},
-				TxMode: migrator.MigrationTxModeFile,
-			})
-			c.Assert(err, qt.IsNil)
+			plan := prepareUserTypeRecreatePlan(c, target, desiredURL)
 			// Without this the row would pass on a planner that emitted
 			// nothing, which is the cheapest way to make a drop order look
 			// correct.
@@ -147,39 +130,37 @@ func TestPostgreSQLUserTypeRecreate_DropsAgainstTheCurrentShape(t *testing.T) {
 			// The other direction: the converged database plans nothing
 			// against the same target, so the plan above was not a churn that
 			// happens to be executable.
-			settled, err := atlasschema.PrepareApply(c.Context(), target, atlasschema.ApplyRuntimeOptions{
-				ToURLs: []string{desiredURL},
-				TxMode: migrator.MigrationTxModeFile,
-			})
-			c.Assert(err, qt.IsNil)
+			settled := prepareUserTypeRecreatePlan(c, target, desiredURL)
 			c.Assert(settled.HasChanges(), qt.IsFalse, qt.Commentf("second plan:\n%s", settled.SQL()))
 		})
 	}
 }
 
-// TestPostgreSQLUserTypeRecreate_DropsAgainstTheCurrentShapeWithinOneKind is the
-// same live guard for a dependent pair of the SAME kind, which is where no order
-// of kinds can help at all.
+// TestPostgreSQLUserTypeRecreate_DropsADomainBeforeTheDomainItNames is the same
+// live guard for a dependent pair of the SAME kind, which is where no order of
+// kinds can help at all.
 //
 // Every row of the table above pairs a domain with a composite, so a rule as
-// crude as "composites before domains" would pass all three. Here the two types
-// are both domains, or both composites, and the reference between them lives
-// inside one kind. The comparator hands the planner each modified list sorted by
-// name, and both rows are named so that order is the failing one: the base type
-// comes first alphabetically, and dropping it while its dependent still stands
-// draws `cannot drop type ... because other objects depend on it`.
+// crude as "composites before domains" would pass all three. Here both types
+// are domains and the reference between them lives inside one kind. The
+// comparator hands the planner each modified list sorted by name, and the row
+// is named so that order is the failing one: d_base comes first alphabetically,
+// and dropping it while d_over still stands draws `cannot drop type d_base
+// because other objects depend on it`.
 //
-// Neither desired side names the other type, so the desired graph is empty here
-// as well. Only the current definitions can place these statements.
-func TestPostgreSQLUserTypeRecreate_DropsAgainstTheCurrentShapeWithinOneKind(t *testing.T) {
+// The desired side puts d_over on a built-in instead, so the desired graph is
+// empty here as well. Only the current definitions can place these statements.
+func TestPostgreSQLUserTypeRecreate_DropsADomainBeforeTheDomainItNames(t *testing.T) {
 	dsn := skipIfNoPostgreSQL(t)
-	c := qt.New(t)
 
 	tests := []struct {
-		name            string
-		current         []string
-		desired         []string
-		assertConverged func(c *qt.C, applied *dbschematypes.DBSchema)
+		name              string
+		current           []string
+		desired           []string
+		wantBase          string
+		wantBaseType      string
+		wantDependent     string
+		wantDependentType string
 	}{
 		{
 			name: "both types are domains",
@@ -191,11 +172,54 @@ func TestPostgreSQLUserTypeRecreate_DropsAgainstTheCurrentShapeWithinOneKind(t *
 				"CREATE DOMAIN d_base AS text",
 				"CREATE DOMAIN d_over AS text",
 			},
-			assertConverged: func(c *qt.C, applied *dbschematypes.DBSchema) {
-				c.Assert(findLiveDomain(c, applied.Domains, "d_base").BaseType, qt.Equals, "text")
-				c.Assert(findLiveDomain(c, applied.Domains, "d_over").BaseType, qt.Equals, "text")
-			},
+			wantBase:          "d_base",
+			wantBaseType:      "text",
+			wantDependent:     "d_over",
+			wantDependentType: "text",
 		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			target, desiredURL := newUserTypeRecreateTarget(c, dsn, "user_type_one_kind", test.current, test.desired)
+
+			plan := prepareUserTypeRecreatePlan(c, target, desiredURL)
+			c.Assert(plan.HasChanges(), qt.IsTrue)
+			c.Assert(plan.Execute(c.Context()), qt.IsNil, qt.Commentf("emitted script:\n%s", plan.SQL()))
+
+			applied, err := dbschema.ReadSchemaWithSchemas(target, nil)
+			c.Assert(err, qt.IsNil)
+			c.Assert(findLiveDomain(c, applied.Domains, test.wantBase).BaseType, qt.Equals, test.wantBaseType)
+			c.Assert(findLiveDomain(c, applied.Domains, test.wantDependent).BaseType, qt.Equals, test.wantDependentType)
+
+			settled := prepareUserTypeRecreatePlan(c, target, desiredURL)
+			c.Assert(settled.HasChanges(), qt.IsFalse, qt.Commentf("second plan:\n%s", settled.SQL()))
+		})
+	}
+}
+
+// TestPostgreSQLUserTypeRecreate_DropsACompositeBeforeTheCompositeItNames is
+// the composite half of the same-kind guard: c_over carries a field of type
+// c_base, so the two are ordered by a reference no kind ordering can see.
+//
+// Sorted by name, c_base comes first, and dropping it while c_over still holds
+// a field of that type draws `cannot drop type c_base because other objects
+// depend on it`. The desired side gives c_over a built-in field type, so the
+// desired graph is empty and only the current definitions can place these
+// statements.
+func TestPostgreSQLUserTypeRecreate_DropsACompositeBeforeTheCompositeItNames(t *testing.T) {
+	dsn := skipIfNoPostgreSQL(t)
+
+	tests := []struct {
+		name                  string
+		current               []string
+		desired               []string
+		wantBase              string
+		wantBaseFieldSQL      []string
+		wantDependent         string
+		wantDependentFieldSQL []string
+	}{
 		{
 			name: "both types are composites",
 			current: []string{
@@ -206,50 +230,84 @@ func TestPostgreSQLUserTypeRecreate_DropsAgainstTheCurrentShapeWithinOneKind(t *
 				"CREATE TYPE c_base AS (f text)",
 				"CREATE TYPE c_over AS (g text)",
 			},
-			assertConverged: func(c *qt.C, applied *dbschematypes.DBSchema) {
-				c.Assert(liveCompositeFieldTypes(c, applied.Composites, "c_base"), qt.DeepEquals, []string{"text"})
-				c.Assert(liveCompositeFieldTypes(c, applied.Composites, "c_over"), qt.DeepEquals, []string{"text"})
-			},
+			wantBase:              "c_base",
+			wantBaseFieldSQL:      []string{"text"},
+			wantDependent:         "c_over",
+			wantDependentFieldSQL: []string{"text"},
 		},
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
-			desiredURL := newBoundaryDatabase(c, dsn, boundaryCase{
-				name:  "user_type_one_kind_desired",
-				seed:  test.desired,
-				query: "search_path=public",
-			})
-			currentURL := newBoundaryDatabase(c, dsn, boundaryCase{
-				name:  "user_type_one_kind_current",
-				seed:  test.current,
-				query: "search_path=public",
-			})
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			target, desiredURL := newUserTypeRecreateTarget(c, dsn, "user_type_one_kind", test.current, test.desired)
 
-			target, err := dbschema.ConnectToDatabase(c.Context(), currentURL)
-			c.Assert(err, qt.IsNil)
-			c.Cleanup(func() { dbschema.CloseAndWarn(target) })
-
-			plan, err := atlasschema.PrepareApply(c.Context(), target, atlasschema.ApplyRuntimeOptions{
-				ToURLs: []string{desiredURL},
-				TxMode: migrator.MigrationTxModeFile,
-			})
-			c.Assert(err, qt.IsNil)
+			plan := prepareUserTypeRecreatePlan(c, target, desiredURL)
 			c.Assert(plan.HasChanges(), qt.IsTrue)
 			c.Assert(plan.Execute(c.Context()), qt.IsNil, qt.Commentf("emitted script:\n%s", plan.SQL()))
 
 			applied, err := dbschema.ReadSchemaWithSchemas(target, nil)
 			c.Assert(err, qt.IsNil)
-			test.assertConverged(c, applied)
+			c.Assert(liveCompositeFieldTypes(c, applied.Composites, test.wantBase), qt.DeepEquals, test.wantBaseFieldSQL)
+			c.Assert(liveCompositeFieldTypes(c, applied.Composites, test.wantDependent), qt.DeepEquals, test.wantDependentFieldSQL)
 
-			settled, err := atlasschema.PrepareApply(c.Context(), target, atlasschema.ApplyRuntimeOptions{
-				ToURLs: []string{desiredURL},
-				TxMode: migrator.MigrationTxModeFile,
-			})
-			c.Assert(err, qt.IsNil)
+			settled := prepareUserTypeRecreatePlan(c, target, desiredURL)
 			c.Assert(settled.HasChanges(), qt.IsFalse, qt.Commentf("second plan:\n%s", settled.SQL()))
 		})
 	}
+}
+
+// newUserTypeRecreateTarget seeds the desired shape into one throwaway database
+// and the current shape into another, and returns an open connection to the
+// current one together with the URL of the desired one. Both carry the same
+// search_path, so the reconciliation compares public against public.
+//
+// name reaches the database name, which is how a leaked database says which
+// case leaked it. Keep it short: the server truncates an identifier past 63
+// bytes, and a truncated name loses its trailing timestamp -- the part that
+// keeps this run's databases apart from a previous run's leftovers.
+func newUserTypeRecreateTarget(
+	c *qt.C,
+	dsn, name string,
+	current, desired []string,
+) (*dbschema.DatabaseConnection, string) {
+	c.Helper()
+
+	desiredURL := newBoundaryDatabase(c, dsn, boundaryCase{
+		name:  name + "_desired",
+		seed:  desired,
+		query: "search_path=public",
+	})
+	currentURL := newBoundaryDatabase(c, dsn, boundaryCase{
+		name:  name + "_current",
+		seed:  current,
+		query: "search_path=public",
+	})
+
+	target, err := dbschema.ConnectToDatabase(c.Context(), currentURL)
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { dbschema.CloseAndWarn(target) })
+
+	return target, desiredURL
+}
+
+// prepareUserTypeRecreatePlan plans target against desiredURL and asserts only
+// that planning itself got that far. What each caller judges is what the plan
+// then does to a live server, so that assertion stays in the test.
+func prepareUserTypeRecreatePlan(
+	c *qt.C,
+	target *dbschema.DatabaseConnection,
+	desiredURL string,
+) atlasschema.ApplyRuntimePlan {
+	c.Helper()
+
+	plan, err := atlasschema.PrepareApply(c.Context(), target, atlasschema.ApplyRuntimeOptions{
+		ToURLs: []string{desiredURL},
+		TxMode: migrator.MigrationTxModeFile,
+	})
+	c.Assert(err, qt.IsNil)
+
+	return plan
 }
 
 func findLiveDomain(c *qt.C, domains []dbschematypes.DBDomain, name string) dbschematypes.DBDomain {

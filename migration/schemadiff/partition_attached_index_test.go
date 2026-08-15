@@ -64,7 +64,12 @@ func TestCompareWithDialect_PartitionAttachedIndexIsNeverPlanned(t *testing.T) {
 		name      string
 		generated *goschema.Database
 		database  *types.DBSchema
-		assert    func(c *qt.C, diff *difftypes.SchemaDiff)
+		// wantRemovals and wantAdditions are the whole plan for indexes, so a
+		// row that stops dropping one index cannot pass by staying silent about
+		// the others. Every row states both, including the rows that first
+		// asked only about removals.
+		wantRemovals  []difftypes.IndexRef
+		wantAdditions []difftypes.IndexRef
 	}{
 		{
 			name:      "the partition copy of a declared parent index is not dropped",
@@ -84,10 +89,6 @@ func TestCompareWithDialect_PartitionAttachedIndexIsNeverPlanned(t *testing.T) {
 						PartitionAttached: true,
 					},
 				},
-			},
-			assert: func(c *qt.C, diff *difftypes.SchemaDiff) {
-				c.Assert(diff.IndexRemovals(), qt.HasLen, 0)
-				c.Assert(diff.IndexAdditions(), qt.HasLen, 0)
 			},
 		},
 		{
@@ -114,10 +115,8 @@ func TestCompareWithDialect_PartitionAttachedIndexIsNeverPlanned(t *testing.T) {
 					},
 				},
 			},
-			assert: func(c *qt.C, diff *difftypes.SchemaDiff) {
-				c.Assert(diff.IndexRemovals(), qt.DeepEquals, []difftypes.IndexRef{
-					{Name: "idx_events_2026_local", TableName: "events_2026"},
-				})
+			wantRemovals: []difftypes.IndexRef{
+				{Name: "idx_events_2026_local", TableName: "events_2026"},
 			},
 		},
 		{
@@ -138,10 +137,8 @@ func TestCompareWithDialect_PartitionAttachedIndexIsNeverPlanned(t *testing.T) {
 					},
 				},
 			},
-			assert: func(c *qt.C, diff *difftypes.SchemaDiff) {
-				c.Assert(diff.IndexRemovals(), qt.DeepEquals, []difftypes.IndexRef{
-					{Name: "events_2026_id_idx", TableName: "events_2026"},
-				})
+			wantRemovals: []difftypes.IndexRef{
+				{Name: "events_2026_id_idx", TableName: "events_2026"},
 			},
 		},
 		{
@@ -162,9 +159,6 @@ func TestCompareWithDialect_PartitionAttachedIndexIsNeverPlanned(t *testing.T) {
 						PartitionAttached: true,
 					},
 				},
-			},
-			assert: func(c *qt.C, diff *difftypes.SchemaDiff) {
-				c.Assert(diff.IndexRemovals(), qt.HasLen, 0)
 			},
 		},
 		{
@@ -200,10 +194,6 @@ func TestCompareWithDialect_PartitionAttachedIndexIsNeverPlanned(t *testing.T) {
 					},
 				},
 			},
-			assert: func(c *qt.C, diff *difftypes.SchemaDiff) {
-				c.Assert(diff.IndexRemovals(), qt.HasLen, 0)
-				c.Assert(diff.IndexAdditions(), qt.HasLen, 0)
-			},
 		},
 		{
 			name:      "control: an ordinary undeclared index on an ordinary table is dropped",
@@ -226,21 +216,20 @@ func TestCompareWithDialect_PartitionAttachedIndexIsNeverPlanned(t *testing.T) {
 					},
 				},
 			},
-			assert: func(c *qt.C, diff *difftypes.SchemaDiff) {
-				c.Assert(diff.IndexRemovals(), qt.DeepEquals, []difftypes.IndexRef{
-					{Name: "idx_members_email", TableName: "members"},
-				})
+			wantRemovals: []difftypes.IndexRef{
+				{Name: "idx_members_email", TableName: "members"},
 			},
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			diff := schemadiff.CompareWithDialect(tt.generated, tt.database, "postgres")
+			diff := schemadiff.CompareWithDialect(test.generated, test.database, "postgres")
 
-			tt.assert(c, diff)
+			c.Assert(diff.IndexRemovals(), qt.DeepEquals, test.wantRemovals)
+			c.Assert(diff.IndexAdditions(), qt.DeepEquals, test.wantAdditions)
 		})
 	}
 }

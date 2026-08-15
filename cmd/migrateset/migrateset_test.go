@@ -18,6 +18,7 @@ import (
 
 // writePtahMigrations writes a two-migration ptah-format directory.
 func writePtahMigrations(t *testing.T) string {
+	c := qt.New(t)
 	t.Helper()
 	dir := t.TempDir()
 	files := map[string]string{
@@ -27,7 +28,7 @@ func writePtahMigrations(t *testing.T) string {
 		"0000000002_orders.down.sql": "DROP TABLE orders;\n",
 	}
 	for name, content := range files {
-		qt.Assert(t, os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600), qt.IsNil)
+		c.Assert(os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600), qt.IsNil)
 	}
 	return dir
 }
@@ -39,6 +40,7 @@ func writePtahMigrations(t *testing.T) string {
 // the community binary refuses one. Hashing the fixture is the fix; weakening
 // the gate to accept it would re-open the bug.
 func writeAtlasMigrations(t *testing.T) string {
+	c := qt.New(t)
 	t.Helper()
 	dir := t.TempDir()
 	files := map[string]string{
@@ -46,11 +48,11 @@ func writeAtlasMigrations(t *testing.T) string {
 		"2_orders.sql": "CREATE TABLE orders (id INTEGER PRIMARY KEY);\n",
 	}
 	for name, content := range files {
-		qt.Assert(t, os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600), qt.IsNil)
+		c.Assert(os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600), qt.IsNil)
 	}
 	sum, err := atlascompat.ComputeSum(os.DirFS(dir), migrator.MigrationDirFormatAtlas)
-	qt.Assert(t, err, qt.IsNil)
-	qt.Assert(t, os.WriteFile(filepath.Join(dir, atlascompat.AtlasSumFileName), sum.Bytes(), 0o600), qt.IsNil)
+	c.Assert(err, qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(dir, atlascompat.AtlasSumFileName), sum.Bytes(), 0o600), qt.IsNil)
 	return dir
 }
 

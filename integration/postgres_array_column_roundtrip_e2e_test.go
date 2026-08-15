@@ -15,6 +15,7 @@ import (
 	"go.5x5.cz/ptah/dbschema"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
+	"go.5x5.cz/ptah/internal/dbtarget"
 )
 
 // TestPostgresArrayColumnSurvivesAReadE2E is the round trip stokaro/ptah#1138
@@ -36,7 +37,7 @@ import (
 // Reverted, the type reads back as "ARRAY" and the last step fails to create
 // the table.
 func TestPostgresArrayColumnSurvivesAReadE2E(t *testing.T) {
-	dbURL := requirePostgresE2EDatabaseURL(t)
+	dbURL := dbtarget.URL(t, dbtarget.PostgreSQL)
 
 	tests := []struct {
 		name     string

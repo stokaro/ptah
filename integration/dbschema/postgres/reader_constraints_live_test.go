@@ -6,7 +6,6 @@ import (
 	"cmp"
 	"context"
 	"fmt"
-	"os"
 	"slices"
 	"strings"
 	"testing"
@@ -17,6 +16,7 @@ import (
 
 	"go.5x5.cz/ptah/dbschema"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/dbtarget"
 )
 
 type observedConstraint struct {
@@ -34,24 +34,24 @@ type observedConstraint struct {
 func TestReaderConstraints_LiveKeepsSameNamedConstraintsTableQualified(t *testing.T) {
 	c := qt.New(t)
 	tests := []struct {
-		name           string
-		environmentKey string
-		want           []observedConstraint
+		name   string
+		engine dbtarget.Engine
+		want   []observedConstraint
 	}{
 		{
-			name:           "PostgreSQL",
-			environmentKey: "POSTGRES_URL",
-			want:           expectedConstraints([]string{"amount"}),
+			name:   "PostgreSQL",
+			engine: dbtarget.PostgreSQL,
+			want:   expectedConstraints([]string{"amount"}),
 		},
 		{
-			name:           "CockroachDB",
-			environmentKey: "COCKROACHDB_URL",
-			want:           expectedConstraints([]string{"amount"}),
+			name:   "CockroachDB",
+			engine: dbtarget.CockroachDB,
+			want:   expectedConstraints([]string{"amount"}),
 		},
 		{
-			name:           "YugabyteDB",
-			environmentKey: "YUGABYTEDB_URL",
-			want:           expectedConstraints([]string{"amount"}),
+			name:   "YugabyteDB",
+			engine: dbtarget.YugabyteDB,
+			want:   expectedConstraints([]string{"amount"}),
 		},
 	}
 
@@ -59,7 +59,7 @@ func TestReaderConstraints_LiveKeepsSameNamedConstraintsTableQualified(t *testin
 		c.Run(test.name, func(c *qt.C) {
 			ctx, cancel := context.WithTimeout(c.Context(), time.Minute)
 			defer cancel()
-			conn, schemaName := prepareConstraintIdentityFixture(c, ctx, test.environmentKey)
+			conn, schemaName := prepareConstraintIdentityFixture(c, ctx, test.engine)
 			gotSchema, err := dbschema.ReadSchemaWithSchemas(conn, []string{schemaName})
 			c.Assert(err, qt.IsNil)
 			c.Assert(observeConstraints(gotSchema.Constraints), qt.DeepEquals, test.want)
@@ -67,12 +67,9 @@ func TestReaderConstraints_LiveKeepsSameNamedConstraintsTableQualified(t *testin
 	}
 }
 
-func prepareConstraintIdentityFixture(c *qt.C, ctx context.Context, environmentKey string) (*dbschema.DatabaseConnection, string) {
+func prepareConstraintIdentityFixture(c *qt.C, ctx context.Context, engine dbtarget.Engine) (*dbschema.DatabaseConnection, string) {
 	c.Helper()
-	rawURL := os.Getenv(environmentKey)
-	if rawURL == "" {
-		c.Skipf("%s is not set", environmentKey)
-	}
+	rawURL := dbtarget.URL(c, engine)
 	conn, err := dbschema.ConnectToDatabase(ctx, rawURL)
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() {

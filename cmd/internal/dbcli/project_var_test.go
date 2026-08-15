@@ -35,7 +35,7 @@ func chdirTemp(c *qt.C, files map[string]string) string {
 	return dir
 }
 
-func envVarCommand(c *qt.C) *cobra.Command {
+func envVarCommand(tb testing.TB) *cobra.Command {
 	cmd := &cobra.Command{Use: "test"}
 	var envName string
 	dbcli.RegisterEnvFlag(cmd.Flags(), &envName)

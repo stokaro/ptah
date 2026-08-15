@@ -10,8 +10,6 @@ package atlasschema_test
 import (
 	"context"
 	"database/sql"
-	"os"
-	"strings"
 	"testing"
 	"time"
 
@@ -20,6 +18,7 @@ import (
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasschema"
 	"go.5x5.cz/ptah/internal/dblock"
+	"go.5x5.cz/ptah/internal/dbtarget"
 )
 
 func TestAcquireApplyLock_PostgresTimeoutLive(t *testing.T) {
@@ -101,17 +100,7 @@ func TestAcquireApplyLock_PostgresSerializesRunsLive(t *testing.T) {
 // variables as the migrator's PostgreSQL lock integration tests.
 func livePostgresURLForLock(t *testing.T) string {
 	t.Helper()
-	dbURL := os.Getenv("POSTGRES_TEST_DSN")
-	if dbURL == "" {
-		dbURL = os.Getenv("TEST_DATABASE_URL")
-	}
-	if dbURL == "" {
-		t.Skip("POSTGRES_TEST_DSN or TEST_DATABASE_URL not set")
-	}
-	if !strings.HasPrefix(dbURL, "postgres://") && !strings.HasPrefix(dbURL, "postgresql://") {
-		t.Skip("PostgreSQL URL required for schema apply lock live tests")
-	}
-	return dbURL
+	return dbtarget.URL(t, dbtarget.PostgreSQL)
 }
 
 func connectPostgresForLock(c *qt.C, dbURL string) *dbschema.DatabaseConnection {

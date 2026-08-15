@@ -135,8 +135,6 @@ env:
 }
 
 func TestParsePtahOnlineDDLValidationFailures(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name     string
 		raw      string
@@ -181,7 +179,8 @@ env:
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			_, err := projectconfig.ParsePtah(
 				[]byte(test.raw),
 				test.filename,
@@ -202,7 +201,6 @@ func TestOnlineDDLConfigConstants(t *testing.T) {
 }
 
 func TestOnlineDDLConfigEnabled(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name string
 		cfg  projectconfig.OnlineDDLConfig
@@ -228,7 +226,8 @@ func TestOnlineDDLConfigEnabled(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(test.cfg.Enabled(), qt.Equals, test.want)
 		})
 	}

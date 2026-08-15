@@ -42,6 +42,17 @@ func qualifiedKindsFixture() *dbschematypes.DBSchema {
 	}
 }
 
+// The fixture's four object lists as they stand before any selector runs. A row
+// names the list its selector changed and repeats these for the three it did
+// not, so "the selector reached one object" and "the selector reached one KIND"
+// are separate claims rather than one assertion's silence.
+var (
+	allFixtureEnums     = []string{"mood", "app.color"}
+	allFixtureFunctions = []string{"fn_audit", "app.fn_app"}
+	allFixtureTables    = []string{"users", "app.orders"}
+	allFixtureViews     = []string{"v_users", "app.v_orders"}
+)
+
 func qualifiedEnumNames(enums []dbschematypes.DBEnum) []string {
 	names := make([]string, 0, len(enums))
 	for _, enum := range enums {
@@ -73,105 +84,118 @@ func qualifiedFunctionNames(functions []dbschematypes.DBFunction) []string {
 // by removing an object no selector named.
 func TestExcludeDatabaseWithDefaultSchema_QualifiedSelectorsReachEnumsAndFunctions(t *testing.T) {
 	tests := []struct {
-		name    string
-		pattern string
-		assert  func(*qt.C, *dbschematypes.DBSchema)
+		name          string
+		pattern       string
+		wantEnums     []string
+		wantFunctions []string
+		wantTables    []string
+		wantViews     []string
 	}{
 		{
-			name:    "enum, qualified with the default schema",
-			pattern: "public.mood",
-			assert: func(c *qt.C, got *dbschematypes.DBSchema) {
-				c.Assert(qualifiedEnumNames(got.Enums), qt.DeepEquals, []string{"app.color"})
-			},
+			name:          "enum, qualified with the default schema",
+			pattern:       "public.mood",
+			wantEnums:     []string{"app.color"},
+			wantFunctions: allFixtureFunctions,
+			wantTables:    allFixtureTables,
+			wantViews:     allFixtureViews,
 		},
 		{
-			name:    "enum, qualified with a non-default schema",
-			pattern: "app.color",
-			assert: func(c *qt.C, got *dbschematypes.DBSchema) {
-				c.Assert(qualifiedEnumNames(got.Enums), qt.DeepEquals, []string{"mood"})
-			},
+			name:          "enum, qualified with a non-default schema",
+			pattern:       "app.color",
+			wantEnums:     []string{"mood"},
+			wantFunctions: allFixtureFunctions,
+			wantTables:    allFixtureTables,
+			wantViews:     allFixtureViews,
 		},
 		{
-			name:    "enum, bare name stays supported",
-			pattern: "mood",
-			assert: func(c *qt.C, got *dbschematypes.DBSchema) {
-				c.Assert(qualifiedEnumNames(got.Enums), qt.DeepEquals, []string{"app.color"})
-			},
+			name:          "enum, bare name stays supported",
+			pattern:       "mood",
+			wantEnums:     []string{"app.color"},
+			wantFunctions: allFixtureFunctions,
+			wantTables:    allFixtureTables,
+			wantViews:     allFixtureViews,
 		},
 		{
-			name:    "enum, qualified with the wrong schema matches nothing",
-			pattern: "app.mood",
-			assert: func(c *qt.C, got *dbschematypes.DBSchema) {
-				c.Assert(qualifiedEnumNames(got.Enums), qt.DeepEquals, []string{"mood", "app.color"})
-			},
+			name:          "enum, qualified with the wrong schema matches nothing",
+			pattern:       "app.mood",
+			wantEnums:     allFixtureEnums,
+			wantFunctions: allFixtureFunctions,
+			wantTables:    allFixtureTables,
+			wantViews:     allFixtureViews,
 		},
 		{
-			name:    "enum, qualified with an absent schema matches nothing",
-			pattern: "nosuch.color",
-			assert: func(c *qt.C, got *dbschematypes.DBSchema) {
-				c.Assert(qualifiedEnumNames(got.Enums), qt.DeepEquals, []string{"mood", "app.color"})
-			},
+			name:          "enum, qualified with an absent schema matches nothing",
+			pattern:       "nosuch.color",
+			wantEnums:     allFixtureEnums,
+			wantFunctions: allFixtureFunctions,
+			wantTables:    allFixtureTables,
+			wantViews:     allFixtureViews,
 		},
 		{
-			name:    "function, qualified with the default schema",
-			pattern: "public.fn_audit",
-			assert: func(c *qt.C, got *dbschematypes.DBSchema) {
-				c.Assert(qualifiedFunctionNames(got.Functions), qt.DeepEquals, []string{"app.fn_app"})
-			},
+			name:          "function, qualified with the default schema",
+			pattern:       "public.fn_audit",
+			wantEnums:     allFixtureEnums,
+			wantFunctions: []string{"app.fn_app"},
+			wantTables:    allFixtureTables,
+			wantViews:     allFixtureViews,
 		},
 		{
-			name:    "function, qualified with a non-default schema",
-			pattern: "app.fn_app",
-			assert: func(c *qt.C, got *dbschematypes.DBSchema) {
-				c.Assert(qualifiedFunctionNames(got.Functions), qt.DeepEquals, []string{"fn_audit"})
-			},
+			name:          "function, qualified with a non-default schema",
+			pattern:       "app.fn_app",
+			wantEnums:     allFixtureEnums,
+			wantFunctions: []string{"fn_audit"},
+			wantTables:    allFixtureTables,
+			wantViews:     allFixtureViews,
 		},
 		{
-			name:    "function, bare name stays supported",
-			pattern: "fn_app",
-			assert: func(c *qt.C, got *dbschematypes.DBSchema) {
-				c.Assert(qualifiedFunctionNames(got.Functions), qt.DeepEquals, []string{"fn_audit"})
-			},
+			name:          "function, bare name stays supported",
+			pattern:       "fn_app",
+			wantEnums:     allFixtureEnums,
+			wantFunctions: []string{"fn_audit"},
+			wantTables:    allFixtureTables,
+			wantViews:     allFixtureViews,
 		},
 		{
-			name:    "function, qualified with the wrong schema matches nothing",
-			pattern: "public.fn_app",
-			assert: func(c *qt.C, got *dbschematypes.DBSchema) {
-				c.Assert(qualifiedFunctionNames(got.Functions), qt.DeepEquals, []string{"fn_audit", "app.fn_app"})
-			},
+			name:          "function, qualified with the wrong schema matches nothing",
+			pattern:       "public.fn_app",
+			wantEnums:     allFixtureEnums,
+			wantFunctions: allFixtureFunctions,
+			wantTables:    allFixtureTables,
+			wantViews:     allFixtureViews,
 		},
 		{
-			name:    "function, qualified with an absent schema matches nothing",
-			pattern: "nosuch.fn_app",
-			assert: func(c *qt.C, got *dbschematypes.DBSchema) {
-				c.Assert(qualifiedFunctionNames(got.Functions), qt.DeepEquals, []string{"fn_audit", "app.fn_app"})
-			},
+			name:          "function, qualified with an absent schema matches nothing",
+			pattern:       "nosuch.fn_app",
+			wantEnums:     allFixtureEnums,
+			wantFunctions: allFixtureFunctions,
+			wantTables:    allFixtureTables,
+			wantViews:     allFixtureViews,
 		},
 		{
 			// The qualified spelling must not widen what a type selector
 			// narrows: this pattern names every enum and nothing else.
-			name:    "type selector still narrows to one kind",
-			pattern: "*[type=enum]",
-			assert: func(c *qt.C, got *dbschematypes.DBSchema) {
-				c.Assert(qualifiedEnumNames(got.Enums), qt.HasLen, 0)
-				c.Assert(qualifiedFunctionNames(got.Functions), qt.DeepEquals, []string{"fn_audit", "app.fn_app"})
-				c.Assert(tableNames(got.Tables), qt.DeepEquals, []string{"users", "app.orders"})
-			},
+			name:          "type selector still narrows to one kind",
+			pattern:       "*[type=enum]",
+			wantEnums:     []string{},
+			wantFunctions: allFixtureFunctions,
+			wantTables:    allFixtureTables,
+			wantViews:     allFixtureViews,
 		},
 		{
-			name:    "table control, unchanged by this fix",
-			pattern: "public.users",
-			assert: func(c *qt.C, got *dbschematypes.DBSchema) {
-				c.Assert(tableNames(got.Tables), qt.DeepEquals, []string{"app.orders"})
-				c.Assert(qualifiedEnumNames(got.Enums), qt.DeepEquals, []string{"mood", "app.color"})
-			},
+			name:          "table control, unchanged by this fix",
+			pattern:       "public.users",
+			wantEnums:     allFixtureEnums,
+			wantFunctions: allFixtureFunctions,
+			wantTables:    []string{"app.orders"},
+			wantViews:     allFixtureViews,
 		},
 		{
-			name:    "view control, unchanged by this fix",
-			pattern: "public.v_users",
-			assert: func(c *qt.C, got *dbschematypes.DBSchema) {
-				c.Assert(viewNames(got.Views), qt.DeepEquals, []string{"app.v_orders"})
-			},
+			name:          "view control, unchanged by this fix",
+			pattern:       "public.v_users",
+			wantEnums:     allFixtureEnums,
+			wantFunctions: allFixtureFunctions,
+			wantTables:    allFixtureTables,
+			wantViews:     []string{"app.v_orders"},
 		},
 	}
 
@@ -183,7 +207,10 @@ func TestExcludeDatabaseWithDefaultSchema_QualifiedSelectorsReachEnumsAndFunctio
 				qualifiedKindsFixture(), []string{test.pattern}, "public")
 
 			c.Assert(err, qt.IsNil)
-			test.assert(c, got)
+			c.Assert(qualifiedEnumNames(got.Enums), qt.DeepEquals, test.wantEnums)
+			c.Assert(qualifiedFunctionNames(got.Functions), qt.DeepEquals, test.wantFunctions)
+			c.Assert(tableNames(got.Tables), qt.DeepEquals, test.wantTables)
+			c.Assert(viewNames(got.Views), qt.DeepEquals, test.wantViews)
 		})
 	}
 }
@@ -235,6 +262,15 @@ func generatedQualifiedKindsFixture() *goschema.Database {
 	}
 }
 
+// The desired-side lists before any selector runs, in the order
+// [goschema.Finalize] leaves them: it sorts functions and extensions and leaves
+// enums in declaration order.
+var (
+	allGeneratedFixtureEnums      = []string{"mood", "app.color"}
+	allGeneratedFixtureFunctions  = []string{"app.fn_app", "fn_audit"}
+	allGeneratedFixtureExtensions = []string{"pgcrypto", "app.postgis"}
+)
+
 func generatedFunctionNames(functions []goschema.Function) []string {
 	names := make([]string, 0, len(functions))
 	for _, function := range functions {
@@ -265,80 +301,81 @@ func generatedExtensionNames(extensions []goschema.Extension) []string {
 // "matches nothing" rows redden if the candidate set is widened too far.
 func TestExcludeGeneratedWithDefaultSchema_QualifiedSelectorsMatchDatabaseSide(t *testing.T) {
 	tests := []struct {
-		name    string
-		pattern string
-		assert  func(*qt.C, *goschema.Database)
+		name           string
+		pattern        string
+		wantEnums      []string
+		wantFunctions  []string
+		wantExtensions []string
 	}{
 		{
-			name:    "enum, qualified with the default schema",
-			pattern: "public.mood",
-			assert: func(c *qt.C, got *goschema.Database) {
-				c.Assert(generatedEnumNames(got.Enums), qt.DeepEquals, []string{"app.color"})
-			},
+			name:           "enum, qualified with the default schema",
+			pattern:        "public.mood",
+			wantEnums:      []string{"app.color"},
+			wantFunctions:  allGeneratedFixtureFunctions,
+			wantExtensions: allGeneratedFixtureExtensions,
 		},
 		{
-			name:    "enum, qualified with a non-default schema",
-			pattern: "app.color",
-			assert: func(c *qt.C, got *goschema.Database) {
-				c.Assert(generatedEnumNames(got.Enums), qt.DeepEquals, []string{"mood"})
-			},
+			name:           "enum, qualified with a non-default schema",
+			pattern:        "app.color",
+			wantEnums:      []string{"mood"},
+			wantFunctions:  allGeneratedFixtureFunctions,
+			wantExtensions: allGeneratedFixtureExtensions,
 		},
 		{
-			name:    "enum, qualified with an absent schema matches nothing",
-			pattern: "nosuch.mood",
-			assert: func(c *qt.C, got *goschema.Database) {
-				c.Assert(generatedEnumNames(got.Enums), qt.DeepEquals, []string{"mood", "app.color"})
-			},
+			name:           "enum, qualified with an absent schema matches nothing",
+			pattern:        "nosuch.mood",
+			wantEnums:      allGeneratedFixtureEnums,
+			wantFunctions:  allGeneratedFixtureFunctions,
+			wantExtensions: allGeneratedFixtureExtensions,
 		},
 		{
-			name:    "function, qualified with the default schema",
-			pattern: "public.fn_audit",
-			assert: func(c *qt.C, got *goschema.Database) {
-				c.Assert(generatedFunctionNames(got.Functions), qt.DeepEquals, []string{"app.fn_app"})
-			},
+			name:           "function, qualified with the default schema",
+			pattern:        "public.fn_audit",
+			wantEnums:      allGeneratedFixtureEnums,
+			wantFunctions:  []string{"app.fn_app"},
+			wantExtensions: allGeneratedFixtureExtensions,
 		},
 		{
-			name:    "function, qualified with a non-default schema",
-			pattern: "app.fn_app",
-			assert: func(c *qt.C, got *goschema.Database) {
-				c.Assert(generatedFunctionNames(got.Functions), qt.DeepEquals, []string{"fn_audit"})
-			},
+			name:           "function, qualified with a non-default schema",
+			pattern:        "app.fn_app",
+			wantEnums:      allGeneratedFixtureEnums,
+			wantFunctions:  []string{"fn_audit"},
+			wantExtensions: allGeneratedFixtureExtensions,
 		},
 		{
-			name:    "function, qualified with an absent schema matches nothing",
-			pattern: "nosuch.fn_app",
-			assert: func(c *qt.C, got *goschema.Database) {
-				// goschema.Finalize sorts the desired-side function list.
-				c.Assert(generatedFunctionNames(got.Functions), qt.DeepEquals, []string{"app.fn_app", "fn_audit"})
-			},
+			name:           "function, qualified with an absent schema matches nothing",
+			pattern:        "nosuch.fn_app",
+			wantEnums:      allGeneratedFixtureEnums,
+			wantFunctions:  allGeneratedFixtureFunctions,
+			wantExtensions: allGeneratedFixtureExtensions,
 		},
 		{
-			name:    "extension, qualified with the default schema",
-			pattern: "public.pgcrypto",
-			assert: func(c *qt.C, got *goschema.Database) {
-				c.Assert(generatedExtensionNames(got.Extensions), qt.DeepEquals, []string{"app.postgis"})
-			},
+			name:           "extension, qualified with the default schema",
+			pattern:        "public.pgcrypto",
+			wantEnums:      allGeneratedFixtureEnums,
+			wantFunctions:  allGeneratedFixtureFunctions,
+			wantExtensions: []string{"app.postgis"},
 		},
 		{
-			name:    "extension, qualified with a non-default schema",
-			pattern: "app.postgis",
-			assert: func(c *qt.C, got *goschema.Database) {
-				c.Assert(generatedExtensionNames(got.Extensions), qt.DeepEquals, []string{"pgcrypto"})
-			},
+			name:           "extension, qualified with a non-default schema",
+			pattern:        "app.postgis",
+			wantEnums:      allGeneratedFixtureEnums,
+			wantFunctions:  allGeneratedFixtureFunctions,
+			wantExtensions: []string{"pgcrypto"},
 		},
 		{
-			name:    "extension, bare name stays supported",
-			pattern: "pgcrypto",
-			assert: func(c *qt.C, got *goschema.Database) {
-				c.Assert(generatedExtensionNames(got.Extensions), qt.DeepEquals, []string{"app.postgis"})
-			},
+			name:           "extension, bare name stays supported",
+			pattern:        "pgcrypto",
+			wantEnums:      allGeneratedFixtureEnums,
+			wantFunctions:  allGeneratedFixtureFunctions,
+			wantExtensions: []string{"app.postgis"},
 		},
 		{
-			name:    "extension, qualified with an absent schema matches nothing",
-			pattern: "nosuch.postgis",
-			assert: func(c *qt.C, got *goschema.Database) {
-				c.Assert(generatedExtensionNames(got.Extensions), qt.DeepEquals, []string{"pgcrypto", "app.postgis"})
-			},
+			name:           "extension, qualified with an absent schema matches nothing",
+			pattern:        "nosuch.postgis",
+			wantEnums:      allGeneratedFixtureEnums,
+			wantFunctions:  allGeneratedFixtureFunctions,
+			wantExtensions: allGeneratedFixtureExtensions,
 		},
 	}
 
@@ -350,7 +387,9 @@ func TestExcludeGeneratedWithDefaultSchema_QualifiedSelectorsMatchDatabaseSide(t
 				generatedQualifiedKindsFixture(), []string{test.pattern}, "public")
 
 			c.Assert(err, qt.IsNil)
-			test.assert(c, got)
+			c.Assert(generatedEnumNames(got.Enums), qt.DeepEquals, test.wantEnums)
+			c.Assert(generatedFunctionNames(got.Functions), qt.DeepEquals, test.wantFunctions)
+			c.Assert(generatedExtensionNames(got.Extensions), qt.DeepEquals, test.wantExtensions)
 		})
 	}
 }

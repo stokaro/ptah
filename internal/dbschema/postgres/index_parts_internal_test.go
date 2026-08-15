@@ -16,8 +16,6 @@ import (
 )
 
 func TestParsePostgresIndexParts_HappyPath(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name     string
 		columns  []string
@@ -59,7 +57,8 @@ func TestParsePostgresIndexParts_HappyPath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			parts, err := parsePostgresIndexParts(test.columns, test.attnums)
 			c.Assert(err, qt.IsNil)
 			c.Assert(parts, qt.DeepEquals, test.expected)
@@ -68,8 +67,6 @@ func TestParsePostgresIndexParts_HappyPath(t *testing.T) {
 }
 
 func TestParsePostgresIndexParts_FallsBackToColumnsOnly(t *testing.T) {
-	c := qt.New(t)
-
 	// Returning nil leaves DBIndex.Parts empty, which the rest of the pipeline
 	// reads as "this reader supplied only the legacy Columns form" rather than
 	// as "this index has no keys".
@@ -85,7 +82,8 @@ func TestParsePostgresIndexParts_FallsBackToColumnsOnly(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			parts, err := parsePostgresIndexParts(test.columns, test.attnums)
 			c.Assert(err, qt.IsNil)
 			c.Assert(parts, qt.IsNil)
@@ -94,9 +92,8 @@ func TestParsePostgresIndexParts_FallsBackToColumnsOnly(t *testing.T) {
 }
 
 func TestParsePostgresIndexParts_FailurePath(t *testing.T) {
-	c := qt.New(t)
-
-	c.Run("attnum text is not json", func(c *qt.C) {
+	t.Run("attnum text is not json", func(t *testing.T) {
+		c := qt.New(t)
 		parts, err := parsePostgresIndexParts([]string{"a"}, "{not json}")
 		c.Assert(err, qt.IsNotNil)
 		c.Assert(parts, qt.IsNil)

@@ -9,7 +9,6 @@ import (
 )
 
 func TestParseSource_FailurePath_RejectsRemovedBarewordAttributes(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name   string
 		source string
@@ -69,7 +68,8 @@ type Account struct{}
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			_, err := goschema.ParseSource("models.go", test.source)
 			c.Assert(err, qt.ErrorMatches, test.match)
 		})

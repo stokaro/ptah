@@ -40,10 +40,9 @@ func TestCIMatrix_AccountsForEveryDeclaredLine(t *testing.T) {
 // workflow cannot check for itself. A cell missing its URL or its container
 // arguments does not fail the YAML; it fails at 03:00 in one job of eighteen.
 func TestCIMatrix_RunnableCellsCarryEverythingOneJobNeeds(t *testing.T) {
-	c := qt.New(t)
-
 	for _, cell := range capabilityprobe.CIMatrix().Cells {
-		c.Run(cell.ID, func(c *qt.C) {
+		t.Run(cell.ID, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(cell.Skip, qt.Equals, "")
 			c.Assert(cell.Image, qt.Not(qt.Equals), "")
 			c.Assert(cell.URL, qt.Not(qt.Equals), "")
@@ -63,10 +62,9 @@ func TestCIMatrix_RunnableCellsCarryEverythingOneJobNeeds(t *testing.T) {
 // permission-restriction scenario meaningful. The probe needs an administrator
 // for capability discovery, but the suite reserves it for cleanup.
 func TestCIMatrix_MySQLFamilyUsesRestrictedScenarioConnections(t *testing.T) {
-	c := qt.New(t)
-
 	for _, id := range []string{"mysql-8-4", "mariadb-10-11"} {
-		c.Run(id, func(c *qt.C) {
+		t.Run(id, func(t *testing.T) {
+			c := qt.New(t)
 			cell, found := capabilityprobe.CIMatrix().Find(id)
 			c.Assert(found, qt.IsTrue)
 			c.Assert(cell.SuiteURL, qt.Contains, "ptah_user:ptah_password")
@@ -117,7 +115,8 @@ func TestCIMatrix_SkippedCellsSayWhy(t *testing.T) {
 		qt.Commentf("ClickHouse, SQL Server, SQLite and Spanner have no probe plan or no container today; "+
 			"if that changed, this test needs rewriting rather than deleting"))
 	for _, cell := range skipped {
-		c.Run(cell.ID, func(c *qt.C) {
+		t.Run(cell.ID, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(cell.Runnable, qt.IsFalse)
 			c.Assert(cell.Skip, qt.Not(qt.Equals), "")
 			c.Assert(cell.URL, qt.Equals, "")
@@ -147,8 +146,6 @@ func TestCIMatrix_MeasuredBannerLineRemainsRunnable(t *testing.T) {
 // so its line tag is a selector the driver resolves before Docker runs. Both
 // satisfy the rule; a frozen v26.2.5 or 2026.1.0.0-b118 tag would not.
 func TestCICell_TagPinsLine(t *testing.T) {
-	c := qt.New(t)
-
 	for _, tc := range []struct {
 		cell string
 		want bool
@@ -159,7 +156,8 @@ func TestCICell_TagPinsLine(t *testing.T) {
 		{cell: "cockroachdb-26-2", want: true},
 		{cell: "yugabytedb-2026-1", want: true},
 	} {
-		c.Run(tc.cell, func(c *qt.C) {
+		t.Run(tc.cell, func(t *testing.T) {
+			c := qt.New(t)
 			cell, found := capabilityprobe.CIMatrix().Find(tc.cell)
 			c.Assert(found, qt.IsTrue)
 			c.Assert(cell.TagPinsLine, qt.Equals, tc.want,
@@ -168,43 +166,33 @@ func TestCICell_TagPinsLine(t *testing.T) {
 	}
 }
 
-// TestMatrix_Validate covers the shapes a broken matrix takes, all of which a
-// workflow would report as a successful run of nothing.
-func TestMatrix_Validate(t *testing.T) {
-	c := qt.New(t)
-
+// TestMatrix_ValidateRefusesABrokenMatrix covers the shapes a broken matrix
+// takes, all of which a workflow would report as a successful run of nothing.
+func TestMatrix_ValidateRefusesABrokenMatrix(t *testing.T) {
 	runnable := capabilityprobe.CICell{ID: "postgres-17", Runnable: true, URL: "postgres://x", DockerRun: []string{"postgres:17"}}
-	for _, tc := range []struct {
-		name   string
-		matrix capabilityprobe.Matrix
-		assert func(c *qt.C, err error)
+	tests := []struct {
+		name    string
+		matrix  capabilityprobe.Matrix
+		wantErr string
 	}{{
-		name:   "an empty matrix is refused",
-		matrix: capabilityprobe.Matrix{},
-		assert: func(c *qt.C, err error) {
-			c.Assert(err, qt.ErrorMatches, "(?s).*declares no release lines.*")
-		},
+		name:    "an empty matrix is refused",
+		matrix:  capabilityprobe.Matrix{},
+		wantErr: "(?s).*declares no release lines.*",
 	}, {
-		name:   "a matrix whose every line is skipped produces no jobs",
-		matrix: capabilityprobe.Matrix{Declared: 1, Skipped: []capabilityprobe.CICell{{ID: "spanner-0", Skip: "no server"}}},
-		assert: func(c *qt.C, err error) {
-			c.Assert(err, qt.ErrorMatches, "(?s).*zero jobs.*")
-		},
+		name:    "a matrix whose every line is skipped produces no jobs",
+		matrix:  capabilityprobe.Matrix{Declared: 1, Skipped: []capabilityprobe.CICell{{ID: "spanner-0", Skip: "no server"}}},
+		wantErr: "(?s).*zero jobs.*",
 	}, {
-		name:   "a census that does not add up is refused",
-		matrix: capabilityprobe.Matrix{Declared: 9, Cells: []capabilityprobe.CICell{runnable}},
-		assert: func(c *qt.C, err error) {
-			c.Assert(err, qt.ErrorMatches, "(?s).*census does not add up: 9 declared, 1 runnable, 0 skipped.*")
-		},
+		name:    "a census that does not add up is refused",
+		matrix:  capabilityprobe.Matrix{Declared: 9, Cells: []capabilityprobe.CICell{runnable}},
+		wantErr: "(?s).*census does not add up: 9 declared, 1 runnable, 0 skipped.*",
 	}, {
 		name: "two cells with one id would collide as jobs and artifacts",
 		matrix: capabilityprobe.Matrix{
 			Declared: 2,
 			Cells:    []capabilityprobe.CICell{runnable, runnable},
 		},
-		assert: func(c *qt.C, err error) {
-			c.Assert(err, qt.ErrorMatches, `(?s).*two cells share the id "postgres-17".*`)
-		},
+		wantErr: `(?s).*two cells share the id "postgres-17".*`,
 	}, {
 		name: "a skipped cell with no reason is refused",
 		matrix: capabilityprobe.Matrix{
@@ -212,29 +200,32 @@ func TestMatrix_Validate(t *testing.T) {
 			Cells:    []capabilityprobe.CICell{runnable},
 			Skipped:  []capabilityprobe.CICell{{ID: "spanner-0"}},
 		},
-		assert: func(c *qt.C, err error) {
-			c.Assert(err, qt.ErrorMatches, "(?s).*says no reason why.*")
-		},
+		wantErr: "(?s).*says no reason why.*",
 	}, {
 		name: "a runnable cell with no server to start is refused",
 		matrix: capabilityprobe.Matrix{
 			Declared: 1,
 			Cells:    []capabilityprobe.CICell{{ID: "postgres-17", Runnable: true, URL: "postgres://x"}},
 		},
-		assert: func(c *qt.C, err error) {
-			c.Assert(err, qt.ErrorMatches, "(?s).*no way to start a server.*")
-		},
-	}, {
-		name:   "the declared matrix validates",
-		matrix: capabilityprobe.CIMatrix(),
-		assert: func(c *qt.C, err error) {
-			c.Assert(err, qt.IsNil)
-		},
-	}} {
-		c.Run(tc.name, func(c *qt.C) {
-			tc.assert(c, tc.matrix.Validate())
+		wantErr: "(?s).*no way to start a server.*",
+	}}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(tc.matrix.Validate(), qt.ErrorMatches, tc.wantErr)
 		})
 	}
+}
+
+// TestMatrix_ValidateAcceptsTheDeclaredMatrix is the control the refusals above
+// need: a validator that refused everything would satisfy every row of that
+// table and stop the pipeline dead.
+func TestMatrix_ValidateAcceptsTheDeclaredMatrix(t *testing.T) {
+	c := qt.New(t)
+
+	c.Assert(capabilityprobe.CIMatrix().Validate(), qt.IsNil)
 }
 
 // TestPresetGaps names every line that lacks a measured preset. The expected

@@ -63,7 +63,7 @@ jobs:
           git diff --exit-code -- schemas/ptah-annotations.schema.json
 
       - name: qtlint
-        run: go tool qtlint ./...
+        run: make lint-qtlint
 
       - name: nolintguard
         run: |
@@ -100,3 +100,65 @@ jobs:
         with:
           args: --timeout=30m
           version: v2.12.2
+
+  go-lint-windows:
+    # The Ubuntu job's two contours differ by build tag, and a build tag cannot
+    # reach a file the target operating system excludes: `go help
+    # buildconstraint` puts that under GOOS. Every _windows_test.go file in the
+    # repository is therefore outside both of them, analyzed by nothing, and
+    # free to carry the violations this gate exists to refuse.
+    #
+    # Running the gate on a Windows runner is what reads them, and it reads
+    # them the same way the Ubuntu job does rather than through a flag that
+    # would have to be kept in step with it.
+    name: ptah-go-lint-windows
+    runs-on: windows-latest
+
+    steps:
+      # Before the checkout, because the checkout is what would rewrite them.
+      # Git on Windows converts LF to CRLF on the way into the working tree by
+      # default, and a formatter compares bytes: with the conversion left on,
+      # gci reported every file in the repository as unformatted at 1:1,
+      # including files this branch never touched.
+      - name: Keep the line endings the repository stores
+        run: git config --global core.autocrlf false
+
+      - uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: Install dependencies
+        run: go mod download
+
+      # The same recipe the Ubuntu job runs, not a copy of its arguments: a
+      # rule added to QTLINT_RULES has to reach every contour, and a second
+      # spelling of the list is a second thing to keep in step.
+      - name: qtlint
+        run: make lint-qtlint
+
+      # golangci-lint finds what qtlint cannot, go vet among them: govet is in
+      # .golangci.yml, so a separate step would only run it twice. Four gosec
+      # G115 findings were sitting in Windows-only source when this step was
+      # added, every one an unchecked narrowing into a structure the Windows
+      # API reads.
+      - name: Golint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          args: --timeout=30m
+          version: v2.12.2
+
+      # Windows-only source is not only unanalyzed without this job, it is
+      # unrun: a _windows_test.go file exercises code no other runner compiles.
+      #
+      # Turning this on for the first time reported 1014 failures across more
+      # than thirty packages, 1382 of them one root cause -- a Windows absolute
+      # path inside a sqlite:// URL, refused because the drive letter's colon
+      # reads as a port separator. That is fixed in this branch, so the step
+      # gates rather than documents.
+      - name: Unit tests
+        run: go test ./... -count=1

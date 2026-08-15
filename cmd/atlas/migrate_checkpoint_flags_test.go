@@ -73,25 +73,26 @@ func checkpointBody(c *qt.C, migrationsDir string) string {
 // to prevent, and a run that blocks on an editor with no terminal is worse than
 // either.
 func TestCompatCommand_MigrateCheckpointEditRefusesWhatItCannotFinish(t *testing.T) {
+	c := qt.New(t)
+	// Written once, outside the table, so the row can carry the editor as the
+	// value it is: what separates the two refusals is whether $EDITOR names a
+	// command at all, and the second row needs a real one to get past the first
+	// refusal and reach the terminal check.
+	editor := writeAppendingEditor(c, "-- edited")
+
 	tests := []struct {
 		name    string
-		env     func(c *qt.C)
+		editor  string
 		wantErr string
 	}{
 		{
-			name: "no editor is configured",
-			env: func(c *qt.C) {
-				c.Setenv("VISUAL", "")
-				c.Setenv("EDITOR", "")
-			},
+			name:    "no editor is configured",
+			editor:  "",
 			wantErr: `no editor configured: set \$EDITOR or \$VISUAL, or pass --editor`,
 		},
 		{
-			name: "an editor is configured but there is no terminal",
-			env: func(c *qt.C) {
-				c.Setenv("VISUAL", "")
-				c.Setenv("EDITOR", writeAppendingEditor(c, "-- edited"))
-			},
+			name:    "an editor is configured but there is no terminal",
+			editor:  editor,
 			wantErr: `standard input is not a terminal.*set PTAH_ALLOW_NONINTERACTIVE_EDIT=1.*`,
 		},
 	}
@@ -100,7 +101,8 @@ func TestCompatCommand_MigrateCheckpointEditRefusesWhatItCannotFinish(t *testing
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			envbooltest.Unset("PTAH_ALLOW_NONINTERACTIVE_EDIT")(c)
-			test.env(c)
+			c.Setenv("VISUAL", "")
+			c.Setenv("EDITOR", test.editor)
 			migrationsDir, devURL := checkpointFlagFixture(c)
 
 			_, _, err := runCompatStreams(c,
@@ -148,32 +150,22 @@ func TestCompatCommand_MigrateCheckpointEditRewritesAndRehashes(t *testing.T) {
 	c.Assert(validateErr, qt.IsNil)
 }
 
-// TestCompatCommand_MigrateCheckpointDeclaredFlagSurface pins what this verb
+// TestCompatCommand_MigrateCheckpointDeclaresItsAtlasFlags pins what this verb
 // advertises, because that is the surface the conformance CLI tier compares.
 //
 // Atlas's published reference registers --dev-url, --dir, --dir-format,
 // -s/--schema, --lock-timeout, --format, --qualifier, --edit and --lock-name on
-// `migrate checkpoint`. Everything declared here is on that list, and the
-// native-only editor selection (--editor) is deliberately NOT declared: it has
-// no Atlas spelling, so it must not appear on this help surface.
-//
-// --format and --lock-name are absent on purpose too: --lock-name belongs to
-// the named-lock family landing separately, and --format needs the compat
-// Go-template report path this change does not build.
-func TestCompatCommand_MigrateCheckpointDeclaredFlagSurface(t *testing.T) {
+// `migrate checkpoint`. Every flag below is on that list.
+func TestCompatCommand_MigrateCheckpointDeclaresItsAtlasFlags(t *testing.T) {
 	tests := []struct {
-		name   string
-		flag   string
-		assert func(c *qt.C, help, flag string)
+		name string
+		flag string
 	}{
-		{name: "edit is declared", flag: "--edit", assert: assertHelpDeclaresFlag},
-		{name: "qualifier is declared", flag: "--qualifier", assert: assertHelpDeclaresFlag},
-		{name: "lock-timeout is declared", flag: "--lock-timeout", assert: assertHelpDeclaresFlag},
-		{name: "schema is declared", flag: "--schema", assert: assertHelpDeclaresFlag},
-		{name: "dir-format is still declared", flag: "--dir-format", assert: assertHelpDeclaresFlag},
-		{name: "editor is native-only", flag: "--editor", assert: assertHelpOmitsFlag},
-		{name: "format is not declared", flag: "--format", assert: assertHelpOmitsFlag},
-		{name: "lock-name is not declared", flag: "--lock-name", assert: assertHelpOmitsFlag},
+		{name: "edit is declared", flag: "--edit"},
+		{name: "qualifier is declared", flag: "--qualifier"},
+		{name: "lock-timeout is declared", flag: "--lock-timeout"},
+		{name: "schema is declared", flag: "--schema"},
+		{name: "dir-format is still declared", flag: "--dir-format"},
 	}
 
 	for _, test := range tests {
@@ -183,69 +175,82 @@ func TestCompatCommand_MigrateCheckpointDeclaredFlagSurface(t *testing.T) {
 			stdout, _, err := runCompatStreams(c, "migrate", "checkpoint", "--help")
 
 			c.Assert(err, qt.IsNil)
-			test.assert(c, stdout, test.flag)
+			c.Assert(stdout, qt.Contains, test.flag+" ")
 		})
 	}
 }
 
-func assertHelpDeclaresFlag(c *qt.C, help, flag string) {
-	c.Helper()
-	c.Assert(help, qt.Contains, flag+" ")
-}
-
-func assertHelpOmitsFlag(c *qt.C, help, flag string) {
-	c.Helper()
-	c.Assert(help, qt.Not(qt.Contains), flag+" ")
-}
-
-// TestCompatCommand_MigrateCheckpointLockTimeout covers both halves of the
-// flag: a value that cannot be a duration stops the run, and a value that can
-// says so when the dev database's dialect implements no advisory locking, so a
-// bound that cannot bind is never silently accepted.
-func TestCompatCommand_MigrateCheckpointLockTimeout(t *testing.T) {
+// TestCompatCommand_MigrateCheckpointOmitsWhatItDoesNotAdvertise is the other
+// half of the surface above, and the half a conformance comparison notices: a
+// flag that appears here without an Atlas spelling behind it advertises a
+// compatibility this verb does not have.
+//
+// --editor is native-only. --format and --lock-name are absent on purpose too:
+// --lock-name belongs to the named-lock family landing separately, and --format
+// needs the compat Go-template report path this change does not build.
+func TestCompatCommand_MigrateCheckpointOmitsWhatItDoesNotAdvertise(t *testing.T) {
 	tests := []struct {
-		name   string
-		value  string
-		assert func(c *qt.C, stdout, stderr string, err error)
+		name string
+		flag string
 	}{
-		{
-			name:  "a value that is not a duration",
-			value: "not-a-duration",
-			assert: func(c *qt.C, _, _ string, err error) {
-				c.Assert(err, qt.ErrorMatches, `invalid migration lock timeout: .*`)
-			},
-		},
-		{
-			name:  "a valid value on a dialect with no advisory lock",
-			value: "10s",
-			assert: func(c *qt.C, stdout, stderr string, err error) {
-				c.Assert(err, qt.IsNil)
-				c.Assert(stderr, qt.Contains,
-					`note: migration locking is not supported for dialect "sqlite"; --migration-lock-timeout is ignored`)
-				// The note goes to stderr so it cannot contaminate the SQL a
-				// dry run writes to stdout.
-				c.Assert(stdout, qt.Not(qt.Contains), "note: migration locking")
-				c.Assert(stdout, qt.Contains, "CREATE TABLE")
-			},
-		},
+		{name: "editor is native-only", flag: "--editor"},
+		{name: "format is not declared", flag: "--format"},
+		{name: "lock-name is not declared", flag: "--lock-name"},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			migrationsDir, devURL := checkpointFlagFixture(c)
 
-			stdout, stderr, err := runCompatStreams(c,
-				"migrate", "checkpoint",
-				"--dir", "file://"+migrationsDir,
-				"--dev-url", devURL,
-				"--lock-timeout", test.value,
-				"--dry-run",
-			)
+			stdout, _, err := runCompatStreams(c, "migrate", "checkpoint", "--help")
 
-			test.assert(c, stdout, stderr, err)
+			c.Assert(err, qt.IsNil)
+			c.Assert(stdout, qt.Not(qt.Contains), test.flag+" ")
 		})
 	}
+}
+
+// TestCompatCommand_MigrateCheckpointLockTimeoutRefusesANonDuration is the
+// first half of the flag: a value that cannot be a duration stops the run
+// rather than being read as no bound at all.
+func TestCompatCommand_MigrateCheckpointLockTimeoutRefusesANonDuration(t *testing.T) {
+	c := qt.New(t)
+	migrationsDir, devURL := checkpointFlagFixture(c)
+
+	_, _, err := runCompatStreams(c,
+		"migrate", "checkpoint",
+		"--dir", "file://"+migrationsDir,
+		"--dev-url", devURL,
+		"--lock-timeout", "not-a-duration",
+		"--dry-run",
+	)
+
+	c.Assert(err, qt.ErrorMatches, `invalid migration lock timeout: .*`)
+}
+
+// TestCompatCommand_MigrateCheckpointLockTimeoutSaysWhenItCannotBind is the
+// second half: a value that IS a duration says so when the dev database's
+// dialect implements no advisory locking, so a bound that cannot bind is never
+// silently accepted.
+func TestCompatCommand_MigrateCheckpointLockTimeoutSaysWhenItCannotBind(t *testing.T) {
+	c := qt.New(t)
+	migrationsDir, devURL := checkpointFlagFixture(c)
+
+	stdout, stderr, err := runCompatStreams(c,
+		"migrate", "checkpoint",
+		"--dir", "file://"+migrationsDir,
+		"--dev-url", devURL,
+		"--lock-timeout", "10s",
+		"--dry-run",
+	)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(stderr, qt.Contains,
+		`note: migration locking is not supported for dialect "sqlite"; --migration-lock-timeout is ignored`)
+	// The note goes to stderr so it cannot contaminate the SQL a dry run
+	// writes to stdout.
+	c.Assert(stdout, qt.Not(qt.Contains), "note: migration locking")
+	c.Assert(stdout, qt.Contains, "CREATE TABLE")
 }
 
 // TestCompatCommand_MigrateCheckpointLockTimeoutStaysQuietWhenUnset is the

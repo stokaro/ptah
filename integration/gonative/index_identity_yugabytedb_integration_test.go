@@ -13,6 +13,7 @@ import (
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/dbschema"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
 	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
@@ -25,7 +26,7 @@ const (
 )
 
 func TestYugabyteDBSchemaScopedIndexIdentity_RoundTrip(t *testing.T) {
-	dsn := requireReachableTestDSN(t, "YUGABYTEDB_TEST_DSN", "pgx", "YugabyteDB")
+	dsn := requireReachableEngine(t, dbtarget.YugabyteDB, "pgx", "YugabyteDB")
 	c := qt.New(t)
 	db, err := sql.Open("pgx", dsn)
 	c.Assert(err, qt.IsNil)

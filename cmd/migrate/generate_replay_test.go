@@ -32,6 +32,7 @@ func runGenerate(args ...string) (string, error) {
 // writeReplayFixture writes a ptah-format migration directory plus a desired
 // schema file that adds one table on top of the replayed history.
 func writeReplayFixture(t *testing.T) (migrationsDir, schemaPath string) {
+	c := qt.New(t)
 	t.Helper()
 	migrationsDir = t.TempDir()
 	files := map[string]string{
@@ -39,10 +40,10 @@ func writeReplayFixture(t *testing.T) (migrationsDir, schemaPath string) {
 		"0000000001_users.down.sql": "DROP TABLE users;\n",
 	}
 	for name, content := range files {
-		qt.Assert(t, os.WriteFile(filepath.Join(migrationsDir, name), []byte(content), 0o600), qt.IsNil)
+		c.Assert(os.WriteFile(filepath.Join(migrationsDir, name), []byte(content), 0o600), qt.IsNil)
 	}
 	schemaPath = filepath.Join(t.TempDir(), "schema.sql")
-	qt.Assert(t, os.WriteFile(schemaPath, []byte(
+	c.Assert(os.WriteFile(schemaPath, []byte(
 		"CREATE TABLE users (id INTEGER PRIMARY KEY);\nCREATE TABLE orders (id INTEGER PRIMARY KEY);\n",
 	), 0o600), qt.IsNil)
 	return migrationsDir, schemaPath

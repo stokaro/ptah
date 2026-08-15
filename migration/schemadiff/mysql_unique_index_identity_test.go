@@ -81,7 +81,6 @@ func mysqlUniqueKeyGeneratedSchema() *goschema.Database {
 // INDEX plus ALTER TABLE DROP INDEX for the same object, where the pinned
 // community binary v1.3.0 reported "Schema is synced".
 func TestCompareWithDialect_MySQLUnchangedUniqueIndexIsSynced(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name    string
 		dialect string
@@ -91,7 +90,8 @@ func TestCompareWithDialect_MySQLUnchangedUniqueIndexIsSynced(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			diff := schemadiff.CompareWithDialect(
 				mysqlUniqueKeyGeneratedSchema(),
 				mysqlUniqueKeyDatabaseSchema(),
@@ -109,7 +109,6 @@ func TestCompareWithDialect_MySQLUnchangedUniqueIndexIsSynced(t *testing.T) {
 // says both cannot be applied -- MySQL answers the CREATE with
 // "Error 1061 (42000): Duplicate key name".
 func TestCompareWithDialect_NoObjectIsBothAddedAndRemoved(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name    string
 		dialect string
@@ -122,7 +121,8 @@ func TestCompareWithDialect_NoObjectIsBothAddedAndRemoved(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			diff := schemadiff.CompareWithDialect(
 				mysqlUniqueKeyGeneratedSchema(),
 				mysqlUniqueKeyDatabaseSchema(),
@@ -148,7 +148,6 @@ func TestCompareWithDialect_NoObjectIsBothAddedAndRemoved(t *testing.T) {
 // ALTER TABLE DROP INDEX where the pinned community binary v1.3.0 reported
 // "Schema is synced".
 func TestCompareWithDialect_NameHeuristicUniqueKeyIsSynced(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name      string
 		indexName string
@@ -158,7 +157,8 @@ func TestCompareWithDialect_NameHeuristicUniqueKeyIsSynced(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			generated := mysqlUniqueKeyGeneratedSchema()
 			generated.Indexes[0].Name = test.indexName
 			database := mysqlUniqueKeyDatabaseSchema()
@@ -178,7 +178,6 @@ func TestCompareWithDialect_NameHeuristicUniqueKeyIsSynced(t *testing.T) {
 // constraint must still be reported removed, or #1245 would have been "fixed"
 // by making constraint removals disappear.
 func TestCompareWithDialect_UndeclaredUniqueKeyIsStillRemoved(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name    string
 		dialect string
@@ -189,7 +188,8 @@ func TestCompareWithDialect_UndeclaredUniqueKeyIsStillRemoved(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			generated := mysqlUniqueKeyGeneratedSchema()
 			generated.Indexes = nil
 
@@ -214,7 +214,6 @@ func TestCompareWithDialect_UndeclaredUniqueKeyIsStillRemoved(t *testing.T) {
 // carries the owning table, so a unique key named uq_users_email on users and
 // an index of that name declared on orders are two objects and must stay two.
 func TestCompareWithDialect_UniqueKeyOnAnotherTableIsNotTheSameObject(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name    string
 		dialect string
@@ -225,7 +224,8 @@ func TestCompareWithDialect_UniqueKeyOnAnotherTableIsNotTheSameObject(t *testing
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			generated := mysqlUniqueKeyGeneratedSchema()
 			generated.Tables = append(generated.Tables, goschema.Table{
 				Name:       "orders",
@@ -275,7 +275,6 @@ func TestCompareWithDialect_UniqueKeyOnAnotherTableIsNotTheSameObject(t *testing
 // Measured on MySQL 9.7.1, the pinned community binary v1.3.0 plans
 // DROP INDEX followed by ADD INDEX for exactly this pair.
 func TestCompareWithDialect_DeclaredIndexUniquenessStillCompared(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name    string
 		dialect string
@@ -286,7 +285,8 @@ func TestCompareWithDialect_DeclaredIndexUniquenessStillCompared(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			generated := mysqlUniqueKeyGeneratedSchema()
 			generated.Indexes[0].Unique = false
 
@@ -314,7 +314,6 @@ func TestCompareWithDialect_DeclaredIndexUniquenessStillCompared(t *testing.T) {
 // 9.7.1, the pinned community binary v1.3.0 plans DROP INDEX followed by
 // ADD UNIQUE INDEX uq_users_email (name) for this pair.
 func TestCompareWithDialect_DeclaredIndexColumnsStillCompared(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name    string
 		dialect string
@@ -325,7 +324,8 @@ func TestCompareWithDialect_DeclaredIndexColumnsStillCompared(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			generated := mysqlUniqueKeyGeneratedSchema()
 			generated.Fields = append(generated.Fields, goschema.Field{
 				StructName: "User",
@@ -363,7 +363,6 @@ func TestCompareWithDialect_DeclaredIndexColumnsStillCompared(t *testing.T) {
 // database's backing index stays filtered out rather than being reported
 // removed.
 func TestCompareWithDialect_DeclaredUniqueConstraintKeepsConstraintOwnership(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name    string
 		dialect string
@@ -374,7 +373,8 @@ func TestCompareWithDialect_DeclaredUniqueConstraintKeepsConstraintOwnership(t *
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			generated := mysqlUniqueKeyGeneratedSchema()
 			generated.Indexes = nil
 			generated.Constraints = []goschema.Constraint{{
@@ -414,7 +414,6 @@ func TestCompareWithDialect_DeclaredUniqueConstraintKeepsConstraintOwnership(t *
 // the down direction reads it on every engine, because a rollback that puts an
 // index back where a UNIQUE constraint was restores the wrong object.
 func TestCompareWithDialect_ConstraintBackedIndexRemovalIsRecordedEverywhere(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name    string
 		dialect string
@@ -425,7 +424,8 @@ func TestCompareWithDialect_ConstraintBackedIndexRemovalIsRecordedEverywhere(t *
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			generated := mysqlUniqueKeyGeneratedSchema()
 			generated.Indexes[0].Unique = false
 
@@ -452,9 +452,8 @@ func TestCompareWithDialect_ConstraintBackedIndexRemovalIsRecordedEverywhere(t *
 // PostgreSQL as everywhere else. Marking every removal would turn this one into
 // an ALTER TABLE DROP CONSTRAINT for a constraint that does not exist.
 func TestCompareWithDialect_PlainIndexRemovalIsNotConstraintBacked(t *testing.T) {
-	c := qt.New(t)
-
-	c.Run("postgres", func(c *qt.C) {
+	t.Run("postgres", func(t *testing.T) {
+		c := qt.New(t)
 		generated := mysqlUniqueKeyGeneratedSchema()
 		generated.Indexes = nil
 		database := mysqlUniqueKeyDatabaseSchema()
@@ -483,7 +482,6 @@ func TestCompareWithDialect_PlainIndexRemovalIsNotConstraintBacked(t *testing.T)
 // here is the desired key's own, so nothing is contradicted and nothing is
 // planned.
 func TestCompareWithDialect_MySQLKeyWithAnUnreadablePartDoesNotChurn(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name    string
 		dialect string
@@ -493,7 +491,8 @@ func TestCompareWithDialect_MySQLKeyWithAnUnreadablePartDoesNotChurn(t *testing.
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			diff := schemadiff.CompareWithDialect(
 				expressionKeyGeneratedSchema(),
 				expressionKeyDatabaseSchema(true),
@@ -510,7 +509,6 @@ func TestCompareWithDialect_MySQLKeyWithAnUnreadablePartDoesNotChurn(t *testing.
 // key columns in general. The same pair with every part named is a genuine
 // difference and stays one.
 func TestCompareWithDialect_MySQLKeyReadWholeIsStillCompared(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name    string
 		dialect string
@@ -520,7 +518,8 @@ func TestCompareWithDialect_MySQLKeyReadWholeIsStillCompared(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			diff := schemadiff.CompareWithDialect(
 				expressionKeyGeneratedSchema(),
 				expressionKeyDatabaseSchema(false),
@@ -550,7 +549,6 @@ func TestCompareWithDialect_MySQLKeyReadWholeIsStillCompared(t *testing.T) {
 // It was reported synchronized. The named part is compared now, so the
 // difference is stated as the replacement it is.
 func TestCompareWithDialect_MySQLUnreadablePartDoesNotHideANamedDifference(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name    string
 		dialect string
@@ -560,7 +558,8 @@ func TestCompareWithDialect_MySQLUnreadablePartDoesNotHideANamedDifference(t *te
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			generated := expressionKeyGeneratedSchema()
 			generated.Fields = append(generated.Fields, goschema.Field{
 				StructName: "T4",

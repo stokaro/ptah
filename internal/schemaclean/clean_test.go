@@ -34,6 +34,7 @@ func schemaWithEveryReportableKind() *dbschematypes.DBSchema {
 }
 
 func TestSnapshotWithinWriterScopeKeepsOnlyPostgresSchemaOwnedExtensions(t *testing.T) {
+	c := qt.New(t)
 	schema := &dbschematypes.DBSchema{Extensions: []dbschematypes.DBExtension{
 		{Name: "plpgsql", Schema: "pg_catalog"},
 		{Name: "pgcrypto", Schema: "app"},
@@ -41,10 +42,10 @@ func TestSnapshotWithinWriterScopeKeepsOnlyPostgresSchemaOwnedExtensions(t *test
 
 	got := schemaclean.SnapshotWithinWriterScope(schema, "postgres", "app")
 
-	qt.Assert(t, got.Extensions, qt.DeepEquals, []dbschematypes.DBExtension{
+	c.Assert(got.Extensions, qt.DeepEquals, []dbschematypes.DBExtension{
 		{Name: "pgcrypto", Schema: "app"},
 	})
-	qt.Assert(t, schema.Extensions, qt.HasLen, 2)
+	c.Assert(schema.Extensions, qt.HasLen, 2)
 }
 
 // TestPlanFromSchemaNamesEveryKindTheDialectWriterDestroys pins each dialect's
@@ -56,8 +57,6 @@ func TestSnapshotWithinWriterScopeKeepsOnlyPostgresSchemaOwnedExtensions(t *test
 // control: its writer drops views and materialized views but no types,
 // routines or foreign keys, so a row copied from postgres would fail too.
 func TestPlanFromSchemaNamesEveryKindTheDialectWriterDestroys(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name    string
 		dialect string
@@ -154,7 +153,8 @@ func TestPlanFromSchemaNamesEveryKindTheDialectWriterDestroys(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			plan := schemaclean.PlanFromSchema(schemaWithEveryReportableKind(), test.dialect)
 
 			c.Assert(plan.Objects, qt.DeepEquals, test.want)
@@ -165,8 +165,6 @@ func TestPlanFromSchemaNamesEveryKindTheDialectWriterDestroys(t *testing.T) {
 // TestPlanFromObjectsRendersDialectSpecificDropCommands pins the rendered
 // report statement for every object kind a plan can name.
 func TestPlanFromObjectsRendersDialectSpecificDropCommands(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name    string
 		dialect string
@@ -308,7 +306,8 @@ func TestPlanFromObjectsRendersDialectSpecificDropCommands(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			plan := schemaclean.PlanFromObjects([]schemaclean.Object{test.object}, test.dialect)
 
 			c.Assert(plan.Changes, qt.HasLen, 1)

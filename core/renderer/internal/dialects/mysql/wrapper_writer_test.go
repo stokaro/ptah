@@ -23,8 +23,6 @@ import (
 // length check passes on garbage, and the orphaned-buffer defect is exactly the
 // kind that a length check would have kept reporting green.
 func TestMySQLRenderer_WrapperVisitorsReachTheSharedBuffer(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name   string
 		render func(*mysql.Renderer) error
@@ -64,7 +62,8 @@ func TestMySQLRenderer_WrapperVisitorsReachTheSharedBuffer(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			renderer := mysql.New()
 			renderer.Reset()
 

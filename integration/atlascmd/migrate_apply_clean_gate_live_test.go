@@ -18,6 +18,7 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 
 	"go.5x5.cz/ptah/cmd/atlas"
+	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/internal/migratesum"
 	"go.5x5.cz/ptah/migration/migrator"
 )
@@ -37,23 +38,6 @@ import (
 //
 // Every expected string was produced by that binary against PostgreSQL 17 on
 // 2026-08-07, one throwaway database per cell.
-
-// livePostgresURLForCleanGate gates these cases on the same environment
-// variables as the other PostgreSQL live tests in this package.
-func livePostgresURLForCleanGate(t *testing.T) string {
-	t.Helper()
-	dbURL := os.Getenv("POSTGRES_TEST_DSN")
-	if dbURL == "" {
-		dbURL = os.Getenv("TEST_DATABASE_URL")
-	}
-	if dbURL == "" {
-		t.Skip("POSTGRES_TEST_DSN or TEST_DATABASE_URL not set")
-	}
-	if !strings.HasPrefix(dbURL, "postgres://") && !strings.HasPrefix(dbURL, "postgresql://") {
-		t.Skip("PostgreSQL URL required for the clean gate live tests")
-	}
-	return dbURL
-}
 
 // newCleanGateDatabase creates a throwaway database in the state the case is
 // about and returns its plain URL, so no two cases can see each other's schemas.
@@ -104,9 +88,37 @@ func writeCleanGatePostgresFixture(c *qt.C) string {
 	return dir
 }
 
-func TestMigrateApplyCleanGateRealmScopeLivePostgres(t *testing.T) {
-	c := qt.New(t)
-	adminURL := livePostgresURLForCleanGate(t)
+// runCleanGateApply applies the one-migration fixture to a throwaway database
+// seeded with setup, reached through the plain URL when query is empty, and
+// returns everything the command wrote together with its error. query is
+// appended to the database's own URL, so an empty query is the spelling that
+// selects realm scope. It asserts only that its own arrangement stood up; what
+// the command did is the caller's to judge.
+func runCleanGateApply(c *qt.C, adminURL, query string, setup []string, flags ...string) (string, error) {
+	c.Helper()
+	dir := writeCleanGatePostgresFixture(c)
+	dbURL := newCleanGateDatabase(c, adminURL, setup)
+	cmd := atlas.NewCompatCommand("atlas")
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs(append([]string{
+		"migrate", "apply", "--dir", "file://" + dir, "--url", withCleanGateQuery(dbURL, query),
+	}, flags...))
+
+	err := cmd.Execute()
+
+	return out.String(), err
+}
+
+// TestMigrateApplyCleanGateAppliesLivePostgres pins the databases the gate lets
+// through. The empty one is the regression this file exists for: the binary
+// applies against nothing but an empty `public`, and so must this, which it
+// cannot do if the gate reads the catalog after its own revision table lands
+// there. The other two keep stokaro/ptah#1252 where it was — the same database
+// through a URL that pins a schema stays in schema scope and applies.
+func TestMigrateApplyCleanGateAppliesLivePostgres(t *testing.T) {
+	adminURL := dbtarget.URL(t, dbtarget.PostgreSQL)
 
 	tests := []struct {
 		name string
@@ -114,75 +126,14 @@ func TestMigrateApplyCleanGateRealmScopeLivePostgres(t *testing.T) {
 		// plain URL, which is what selects realm scope.
 		query string
 		setup []string
-		// assert names the outcome so the table carries no branch.
-		assert func(c *qt.C, err error, out string)
 	}{
 		{
-			// The regression this file exists for. Nothing but an empty
-			// `public`: the binary applies, and so must this, which it cannot
-			// do if the gate reads the catalog after its own revision table
-			// lands in `public`.
 			name: "an empty database applies",
-			assert: func(c *qt.C, err error, out string) {
-				c.Assert(err, qt.IsNil)
-				c.Assert(out, qt.Contains, "20240101000000")
-			},
 		},
 		{
-			name:  "an empty extra schema refuses",
-			setup: []string{"CREATE SCHEMA extra"},
-			assert: func(c *qt.C, err error, _ string) {
-				c.Assert(err, qt.IsNotNil)
-				c.Assert(err.Error(), qt.Equals,
-					`sql/migrate: connected database is not clean: found schema "extra". `+
-						`baseline version or allow-dirty is required`)
-			},
-		},
-		{
-			name: "a table living only in another schema refuses",
-			setup: []string{
-				"CREATE SCHEMA extra",
-				"CREATE TABLE extra.legacy_stuff (id integer PRIMARY KEY)",
-			},
-			assert: func(c *qt.C, err error, _ string) {
-				c.Assert(err, qt.IsNotNil)
-				c.Assert(err.Error(), qt.Equals,
-					`sql/migrate: connected database is not clean: found schema "extra". `+
-						`baseline version or allow-dirty is required`)
-			},
-		},
-		{
-			name:  "a table in public refuses by schema, not by table",
-			setup: []string{"CREATE TABLE legacy_stuff (id integer PRIMARY KEY)"},
-			assert: func(c *qt.C, err error, _ string) {
-				c.Assert(err, qt.IsNotNil)
-				c.Assert(err.Error(), qt.Equals,
-					`sql/migrate: connected database is not clean: found schema "public". `+
-						`baseline version or allow-dirty is required`)
-			},
-		},
-		{
-			// A dry run refuses too, which is only possible because the gate
-			// runs before execution rather than inside it.
-			name:  "a dry run refuses",
-			query: "",
-			setup: []string{"CREATE SCHEMA extra"},
-			assert: func(c *qt.C, err error, _ string) {
-				c.Assert(err, qt.IsNotNil)
-				c.Assert(err.Error(), qt.Contains, `found schema "extra"`)
-			},
-		},
-		{
-			// The control that keeps stokaro/ptah#1252 where it was: the same
-			// database through a URL that pins a schema stays in schema scope
-			// and applies.
 			name:  "an empty extra schema applies when the URL pins a schema",
 			query: "search_path=public",
 			setup: []string{"CREATE SCHEMA extra"},
-			assert: func(c *qt.C, err error, out string) {
-				c.Assert(err, qt.IsNil)
-				c.Assert(out, qt.Contains, "20240101000000")
-			},
 		},
 		{
 			name:  "a table in another schema applies when the URL pins a schema",
@@ -191,37 +142,90 @@ func TestMigrateApplyCleanGateRealmScopeLivePostgres(t *testing.T) {
 				"CREATE SCHEMA extra",
 				"CREATE TABLE extra.legacy_stuff (id integer PRIMARY KEY)",
 			},
-			assert: func(c *qt.C, err error, out string) {
-				c.Assert(err, qt.IsNil)
-				c.Assert(out, qt.Contains, "20240101000000")
-			},
 		},
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
-			dir := writeCleanGatePostgresFixture(c)
-			dbURL := newCleanGateDatabase(c, adminURL, test.setup)
-			args := []string{"migrate", "apply", "--dir", "file://" + dir, "--url", withCleanGateQuery(dbURL, test.query)}
-			cmd := atlas.NewCompatCommand("atlas")
-			var out bytes.Buffer
-			cmd.SetOut(&out)
-			cmd.SetErr(&out)
-			cmd.SetArgs(args)
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 
-			err := cmd.Execute()
+			out, err := runCleanGateApply(c, adminURL, test.query, test.setup)
 
-			test.assert(c, err, out.String())
+			c.Assert(err, qt.IsNil)
+			c.Assert(out, qt.Contains, "20240101000000")
 		})
 	}
+}
+
+// TestMigrateApplyCleanGateRealmScopeRefusesLivePostgres pins the message the
+// binary produced for each database it refuses at realm scope, where the
+// operand is schemas: a schema is enough on its own, and a table in `public`
+// is reported as its schema rather than as the table.
+func TestMigrateApplyCleanGateRealmScopeRefusesLivePostgres(t *testing.T) {
+	adminURL := dbtarget.URL(t, dbtarget.PostgreSQL)
+
+	tests := []struct {
+		name    string
+		setup   []string
+		wantErr string
+	}{
+		{
+			name:  "an empty extra schema refuses",
+			setup: []string{"CREATE SCHEMA extra"},
+			wantErr: `sql/migrate: connected database is not clean: found schema "extra". ` +
+				`baseline version or allow-dirty is required`,
+		},
+		{
+			name: "a table living only in another schema refuses",
+			setup: []string{
+				"CREATE SCHEMA extra",
+				"CREATE TABLE extra.legacy_stuff (id integer PRIMARY KEY)",
+			},
+			wantErr: `sql/migrate: connected database is not clean: found schema "extra". ` +
+				`baseline version or allow-dirty is required`,
+		},
+		{
+			name:  "a table in public refuses by schema, not by table",
+			setup: []string{"CREATE TABLE legacy_stuff (id integer PRIMARY KEY)"},
+			wantErr: `sql/migrate: connected database is not clean: found schema "public". ` +
+				`baseline version or allow-dirty is required`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			_, err := runCleanGateApply(c, adminURL, "", test.setup)
+
+			c.Assert(err, qt.IsNotNil)
+			c.Assert(err.Error(), qt.Equals, test.wantErr)
+		})
+	}
+}
+
+// TestMigrateApplyCleanGateRealmScopeDryRunRefusesLivePostgres pins that a dry
+// run refuses too, which is only possible because the gate runs before
+// execution rather than inside it.
+//
+// The flag is the whole test. Without it this ran the same command as the
+// plain refusal above and asserted a weaker thing about it, so the name was
+// the only place the dry run existed.
+func TestMigrateApplyCleanGateRealmScopeDryRunRefusesLivePostgres(t *testing.T) {
+	c := qt.New(t)
+	adminURL := dbtarget.URL(t, dbtarget.PostgreSQL)
+
+	_, err := runCleanGateApply(c, adminURL, "", []string{"CREATE SCHEMA extra"}, "--dry-run")
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(err.Error(), qt.Contains, `found schema "extra"`)
 }
 
 // TestMigrateApplyCleanGateRealmScopeOptOutsLivePostgres pins the two documented
 // opt-ins at realm scope. Measured: either one makes the binary apply against
 // the same database it otherwise refuses.
 func TestMigrateApplyCleanGateRealmScopeOptOutsLivePostgres(t *testing.T) {
-	c := qt.New(t)
-	adminURL := livePostgresURLForCleanGate(t)
+	adminURL := dbtarget.URL(t, dbtarget.PostgreSQL)
 
 	tests := []struct {
 		name  string
@@ -232,18 +236,10 @@ func TestMigrateApplyCleanGateRealmScopeOptOutsLivePostgres(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
-			dir := writeCleanGatePostgresFixture(c)
-			dbURL := newCleanGateDatabase(c, adminURL, []string{"CREATE SCHEMA extra"})
-			cmd := atlas.NewCompatCommand("atlas")
-			var out bytes.Buffer
-			cmd.SetOut(&out)
-			cmd.SetErr(&out)
-			cmd.SetArgs(append([]string{
-				"migrate", "apply", "--dir", "file://" + dir, "--url", dbURL,
-			}, test.flags...))
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 
-			err := cmd.Execute()
+			_, err := runCleanGateApply(c, adminURL, "", []string{"CREATE SCHEMA extra"}, test.flags...)
 
 			c.Assert(err, qt.IsNil)
 		})

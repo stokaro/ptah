@@ -352,22 +352,26 @@ func TestPostgreSQLSchemaBoundaryGuardIntegration(t *testing.T) {
 			c := qt.New(t)
 			observed := observeBoundaryCase(c, dsn, tc)
 
-			c.Run("scope: reader and document agree on which schemas exist", func(c *qt.C) {
+			t.Run("scope: reader and document agree on which schemas exist", func(t *testing.T) {
+				c := qt.New(t)
 				c.Assert(boundarySchemaNames(observed.document), qt.DeepEquals, tc.wantDescribedSchemas)
 				c.Assert(boundarySchemaNames(observed.live), qt.DeepEquals, tc.wantReadSchemas)
 			})
 
-			c.Run("property 1: inspect then parse back describes the same objects", func(c *qt.C) {
+			t.Run("property 1: inspect then parse back describes the same objects", func(t *testing.T) {
+				c := qt.New(t)
 				documentOnly, databaseOnly := boundaryObjectDifference(observed.document, observed.live, observed.defaultSchema)
 				c.Assert(documentOnly, qt.DeepEquals, tc.wantDocumentOnly)
 				c.Assert(databaseOnly, qt.DeepEquals, tc.wantDatabaseOnly)
 			})
 
-			c.Run("property 2: inspect then apply back is a no-op on the native surface", func(c *qt.C) {
+			t.Run("property 2: inspect then apply back is a no-op on the native surface", func(t *testing.T) {
+				c := qt.New(t)
 				c.Assert(observed.nativePlan, qt.DeepEquals, tc.wantNativePlan(observed.role))
 			})
 
-			c.Run("property 2: inspect then apply back is a no-op on the compatibility surface", func(c *qt.C) {
+			t.Run("property 2: inspect then apply back is a no-op on the compatibility surface", func(t *testing.T) {
+				c := qt.New(t)
 				c.Assert(observed.compatPlan, qt.DeepEquals, tc.wantCompatPlan(observed.role))
 			})
 		})

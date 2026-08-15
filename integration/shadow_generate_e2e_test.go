@@ -17,13 +17,12 @@ import (
 
 	qt "github.com/frankban/quicktest"
 	_ "github.com/jackc/pgx/v5/stdlib"
+
+	"go.5x5.cz/ptah/internal/dbtarget"
 )
 
 func TestMigrateGenerateShadowDatabaseE2E(t *testing.T) {
-	dbURL := postgresE2EDatabaseURL(t)
-	if dbURL == "" {
-		t.Skip("POSTGRES_TEST_DSN or POSTGRES_URL is not set")
-	}
+	dbURL := dbtarget.URL(t, dbtarget.PostgreSQL)
 
 	c := qt.New(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
@@ -104,16 +103,6 @@ func TestMigrateGenerateShadowDatabaseE2E(t *testing.T) {
 		c.Assert(matches, qt.HasLen, 4)
 		c.Assert(readFirstMatchingFile(c, migrationsDir, "*_add_email.up.sql"), qt.Contains, "email")
 	})
-}
-
-func postgresE2EDatabaseURL(t *testing.T) string {
-	t.Helper()
-	for _, name := range []string{"POSTGRES_TEST_DSN", "POSTGRES_URL", "TEST_DATABASE_URL"} {
-		if value := os.Getenv(name); value != "" {
-			return value
-		}
-	}
-	return ""
 }
 
 func e2eRepoRoot(t *testing.T) string {

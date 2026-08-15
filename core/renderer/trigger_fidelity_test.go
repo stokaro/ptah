@@ -48,8 +48,6 @@ func beforeTrigger() *ast.CreateTriggerNode {
 // the body from ahead of the write to behind it. SQLite already refused the same
 // input, and that is the answer the other two now give (stokaro/ptah#931 item 4).
 func TestRenderTrigger_LevelAndTimingAreRefusedNotDowngraded(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name    string
 		dialect string
@@ -63,7 +61,8 @@ func TestRenderTrigger_LevelAndTimingAreRefusedNotDowngraded(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			sql, err := renderer.RenderSQL(test.dialect, test.node)
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
@@ -78,8 +77,6 @@ func TestRenderTrigger_LevelAndTimingAreRefusedNotDowngraded(t *testing.T) {
 // still render unchanged. Without this row, deleting trigger rendering entirely
 // would pass the test above.
 func TestRenderTrigger_PostgreSQLKeepsWhatTheAuthorDeclared(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name string
 		node *ast.CreateTriggerNode
@@ -90,7 +87,8 @@ func TestRenderTrigger_PostgreSQLKeepsWhatTheAuthorDeclared(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			sql, err := renderer.RenderSQL("postgres", test.node)
 
 			c.Assert(err, qt.IsNil)
@@ -106,10 +104,9 @@ func TestRenderTrigger_PostgreSQLKeepsWhatTheAuthorDeclared(t *testing.T) {
 // the natural spelling of a body produced `... VALUES (1);;`
 // (stokaro/ptah#931 item 6).
 func TestRenderTrigger_BodyEndingInSemicolonGetsExactlyOne(t *testing.T) {
-	c := qt.New(t)
-
 	for _, dialect := range []string{"mysql", "mariadb", "sqlserver"} {
-		c.Run(dialect, func(c *qt.C) {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
 			sql, err := renderer.RenderSQL(dialect, rowTrigger())
 
 			c.Assert(err, qt.IsNil)
@@ -123,8 +120,6 @@ func TestRenderTrigger_BodyEndingInSemicolonGetsExactlyOne(t *testing.T) {
 // terminator is added when the body lacks it, so the fix above is a conditional
 // and not a deletion.
 func TestRenderTrigger_BodyWithoutSemicolonStillGetsOne(t *testing.T) {
-	c := qt.New(t)
-
 	node := ast.NewCreateTrigger("row_trg", "t1").
 		SetTiming("AFTER").
 		SetEvent("INSERT").
@@ -132,7 +127,8 @@ func TestRenderTrigger_BodyWithoutSemicolonStillGetsOne(t *testing.T) {
 		SetBody("INSERT INTO audit VALUES (1)")
 
 	for _, dialect := range []string{"mysql", "mariadb", "sqlserver"} {
-		c.Run(dialect, func(c *qt.C) {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
 			sql, err := renderer.RenderSQL(dialect, node)
 
 			c.Assert(err, qt.IsNil)

@@ -5,7 +5,6 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/internal/atlashcl"
 )
 
@@ -26,58 +25,38 @@ import (
 // two-name row alone.
 func TestRecordSchemaBlockReportsBlocksNotSchemas(t *testing.T) {
 	tests := []struct {
-		name   string
-		source string
-		assert func(c *qt.C, blocks []atlashcl.SchemaBlock, db *goschema.Database, err error)
+		name        string
+		source      string
+		wantBlocks  []atlashcl.SchemaBlock
+		wantSchemas int
 	}{
 		{
 			name: "two names are two blocks",
 			source: `schema "main" {}
 schema "other" {}
 `,
-			assert: func(c *qt.C, blocks []atlashcl.SchemaBlock, db *goschema.Database, err error) {
-				c.Assert(err, qt.IsNil)
-				c.Assert(blocks, qt.DeepEquals, []atlashcl.SchemaBlock{
-					{Name: "main", Filename: "schema.hcl", Line: 1},
-					{Name: "other", Filename: "schema.hcl", Line: 2},
-				})
-				c.Assert(db.Schemas, qt.HasLen, 2)
+			wantBlocks: []atlashcl.SchemaBlock{
+				{Name: "main", Filename: "schema.hcl", Line: 1},
+				{Name: "other", Filename: "schema.hcl", Line: 2},
 			},
+			wantSchemas: 2,
 		},
 		{
 			name: "one name declared twice is two blocks and one schema",
 			source: `schema "main" {}
 schema "main" {}
 `,
-			assert: func(c *qt.C, blocks []atlashcl.SchemaBlock, db *goschema.Database, err error) {
-				c.Assert(err, qt.IsNil)
-				c.Assert(blocks, qt.DeepEquals, []atlashcl.SchemaBlock{
-					{Name: "main", Filename: "schema.hcl", Line: 1},
-					{Name: "main", Filename: "schema.hcl", Line: 2},
-				})
-				c.Assert(db.Schemas, qt.HasLen, 1)
+			wantBlocks: []atlashcl.SchemaBlock{
+				{Name: "main", Filename: "schema.hcl", Line: 1},
+				{Name: "main", Filename: "schema.hcl", Line: 2},
 			},
+			wantSchemas: 1,
 		},
 		{
-			name:   "a document with no schema block records nothing",
-			source: "table \"users\" {\n  column \"id\" {\n    type = int\n  }\n}\n",
-			assert: func(c *qt.C, blocks []atlashcl.SchemaBlock, db *goschema.Database, err error) {
-				c.Assert(err, qt.IsNil)
-				c.Assert(blocks, qt.HasLen, 0)
-				c.Assert(db.Schemas, qt.HasLen, 0)
-			},
-		},
-		{
-			name: "a project file records nothing, because it is not a schema file",
-			source: `schema "main" {}
-env "local" {
-  url = "postgres://localhost/x"
-}
-`,
-			assert: func(c *qt.C, blocks []atlashcl.SchemaBlock, _ *goschema.Database, err error) {
-				c.Assert(err, qt.ErrorMatches, `cannot parse project file "schema.hcl" as a schema file: .*`)
-				c.Assert(blocks, qt.HasLen, 0)
-			},
+			name:        "a document with no schema block records nothing",
+			source:      "table \"users\" {\n  column \"id\" {\n    type = int\n  }\n}\n",
+			wantBlocks:  nil,
+			wantSchemas: 0,
 		},
 	}
 
@@ -90,7 +69,33 @@ env "local" {
 				RecordSchemaBlock: func(block atlashcl.SchemaBlock) { recorded = append(recorded, block) },
 			})
 
-			test.assert(c, recorded, db, err)
+			c.Assert(err, qt.IsNil)
+			c.Assert(recorded, qt.DeepEquals, test.wantBlocks)
+			c.Assert(db.Schemas, qt.HasLen, test.wantSchemas)
 		})
 	}
+}
+
+// TestRecordSchemaBlockRecordsNothingForAProjectFile is the refusing half of
+// the recorder's contract, and it asserts about a document that never becomes a
+// schema at all -- so there is no schema count to compare and nothing the table
+// above could state as a row.
+//
+// A recorder that ran before the parse decided what the document is would hand
+// the gate a block from a file the parse then refused.
+func TestRecordSchemaBlockRecordsNothingForAProjectFile(t *testing.T) {
+	c := qt.New(t)
+	source := `schema "main" {}
+env "local" {
+  url = "postgres://localhost/x"
+}
+`
+	var recorded []atlashcl.SchemaBlock
+
+	_, err := atlashcl.ParseWithOptions([]byte(source), "schema.hcl", atlashcl.Options{
+		RecordSchemaBlock: func(block atlashcl.SchemaBlock) { recorded = append(recorded, block) },
+	})
+
+	c.Assert(err, qt.ErrorMatches, `cannot parse project file "schema.hcl" as a schema file: .*`)
+	c.Assert(recorded, qt.HasLen, 0)
 }

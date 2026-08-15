@@ -10,7 +10,6 @@ import (
 )
 
 func TestParseRef_HappyPath(t *testing.T) {
-	c := qt.New(t)
 	digest := "sha256:" + strings.Repeat("a", 64)
 	tests := []struct {
 		name       string
@@ -75,7 +74,8 @@ func TestParseRef_HappyPath(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			got, err := ociartifact.ParseRef(tt.raw)
 			c.Assert(err, qt.IsNil)
 			c.Assert(got.Registry(), qt.Equals, tt.registry)
@@ -98,7 +98,6 @@ func TestParseRef_HappyPath(t *testing.T) {
 }
 
 func TestParseRef_FailurePath(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name string
 		raw  string
@@ -123,7 +122,8 @@ func TestParseRef_FailurePath(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			_, err := ociartifact.ParseRef(tt.raw)
 			c.Assert(err, qt.ErrorIs, ociartifact.ErrInvalidReference)
 		})

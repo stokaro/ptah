@@ -14,7 +14,6 @@ import (
 )
 
 func TestRLSFixturePipeline(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name                  string
 		fixture               string
@@ -28,7 +27,8 @@ func TestRLSFixturePipeline(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			fixtureDir := filepath.Join("..", "..", "integration", "fixtures", "entities", test.fixture)
 			generated, err := goschema.ParseDir(fixtureDir)
 			c.Assert(err, qt.IsNil)

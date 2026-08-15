@@ -13,6 +13,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 	_ "github.com/jackc/pgx/v5/stdlib"
+
+	"go.5x5.cz/ptah/internal/dbtarget"
 )
 
 // extensionOwnedTypeCase is one database shape and the type blocks its
@@ -100,7 +102,7 @@ type extensionOwnedTypeCase struct {
 // written against is not a regression test; it is a second finding, and it is
 // reported as one rather than pinned here.
 func TestAtlasCompatExtensionOwnedTypesE2E(t *testing.T) {
-	adminURL := requirePostgresE2EDatabaseURL(t)
+	adminURL := dbtarget.URL(t, dbtarget.PostgreSQL)
 
 	tests := []extensionOwnedTypeCase{
 		{

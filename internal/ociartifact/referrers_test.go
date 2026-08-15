@@ -63,9 +63,8 @@ func TestAttachTo_CreatesSubjectManifest(t *testing.T) {
 }
 
 func TestAttachTo_FailurePath(t *testing.T) {
-	c := qt.New(t)
-
-	c.Run("missing subject", func(c *qt.C) {
+	t.Run("missing subject", func(t *testing.T) {
+		c := qt.New(t)
 		_, err := ociartifact.AttachTo(
 			context.Background(),
 			memory.New(),
@@ -123,9 +122,8 @@ func TestListReferrersFrom_CollectsPagesAndClonesAnnotations(t *testing.T) {
 }
 
 func TestListReferrersFrom_FailurePath(t *testing.T) {
-	c := qt.New(t)
-
-	c.Run("missing lister", func(c *qt.C) {
+	t.Run("missing lister", func(t *testing.T) {
+		c := qt.New(t)
 		_, err := ociartifact.ListReferrersFrom(
 			context.Background(),
 			nil,
@@ -135,7 +133,8 @@ func TestListReferrersFrom_FailurePath(t *testing.T) {
 		c.Assert(err, qt.ErrorMatches, "OCI referrer lister is required")
 	})
 
-	c.Run("missing subject", func(c *qt.C) {
+	t.Run("missing subject", func(t *testing.T) {
+		c := qt.New(t)
 		_, err := ociartifact.ListReferrersFrom(
 			context.Background(),
 			&referrerLister{},
@@ -145,7 +144,8 @@ func TestListReferrersFrom_FailurePath(t *testing.T) {
 		c.Assert(err, qt.ErrorMatches, "referrer subject digest is required")
 	})
 
-	c.Run("lister error", func(c *qt.C) {
+	t.Run("lister error", func(t *testing.T) {
+		c := qt.New(t)
 		_, err := ociartifact.ListReferrersFrom(
 			context.Background(),
 			&referrerLister{err: context.DeadlineExceeded},
@@ -155,7 +155,8 @@ func TestListReferrersFrom_FailurePath(t *testing.T) {
 		c.Assert(err, qt.ErrorIs, context.DeadlineExceeded)
 	})
 
-	c.Run("referrer limit", func(c *qt.C) {
+	t.Run("referrer limit", func(t *testing.T) {
+		c := qt.New(t)
 		_, err := ociartifact.ListReferrersFrom(
 			context.Background(),
 			&referrerLister{pages: [][]ocispec.Descriptor{make([]ocispec.Descriptor, 1001)}},

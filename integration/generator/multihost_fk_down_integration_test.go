@@ -11,6 +11,7 @@ import (
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/dbschema"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
 
@@ -43,17 +44,17 @@ import (
 func TestMultiHostMixinFKModify_DownRoundTrip_Integration(t *testing.T) {
 	cases := []struct {
 		dialect string
-		envKey  string
+		engine  dbtarget.Engine
 	}{
-		{"postgres", "POSTGRES_URL"},
-		{"mysql", "MYSQL_URL"},
-		{"mariadb", "MARIADB_URL"},
+		{"postgres", dbtarget.PostgreSQL},
+		{"mysql", dbtarget.MySQL},
+		{"mariadb", dbtarget.MariaDB},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.dialect, func(t *testing.T) {
 			c := qt.New(t)
-			conn := requireGeneratorDatabaseConnection(t, tc.envKey)
+			conn := requireGeneratorDatabaseConnection(t, tc.engine)
 
 			dialect := conn.Info().Dialect
 			hosts := []string{"ptah_loc", "ptah_area", "ptah_comm"}

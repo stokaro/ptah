@@ -217,12 +217,6 @@
       "count": 3
     },
     {
-      "path": "integration/atlas_project_config_e2e_test.go",
-      "function": "TestAtlasProjectConfigMigrateStatusAndUpE2E",
-      "kind": "if",
-      "count": 2
-    },
-    {
       "path": "integration/gonative/check_constraint_integration_test.go",
       "function": "TestFieldLevelCheckConstraint_Removal_Integration",
       "kind": "if",
@@ -250,13 +244,13 @@
       "path": "integration/gonative/driver_validation_test.go",
       "function": "TestDriverMigrationCompleteness",
       "kind": "if",
-      "count": 2
+      "count": 1
     },
     {
       "path": "integration/gonative/driver_validation_test.go",
       "function": "TestPgxDriverValidation",
       "kind": "if",
-      "count": 2
+      "count": 1
     },
     {
       "path": "integration/gonative/exclude_constraints_integration_test.go",
@@ -317,12 +311,6 @@
       "function": "TestRenderer_DialectSpecificSQL",
       "kind": "if",
       "count": 2
-    },
-    {
-      "path": "integration/shadow_generate_e2e_test.go",
-      "function": "TestMigrateGenerateShadowDatabaseE2E",
-      "kind": "if",
-      "count": 1
     },
     {
       "path": "internal/annotationmeta/meta_test.go",

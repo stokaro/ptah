@@ -31,9 +31,17 @@ func writeSchemaSourceDir(c *qt.C, files map[string]string) string {
 	return dir
 }
 
-// TestOracleAgreesOnADirectoryThatRedeclaresAnObject is the oracle row for the
-// shape a merge cannot represent: a schema DIRECTORY whose files declare the
-// same object twice.
+// writeEmptySchemaHCL writes the empty `--from` state both verbs are measured
+// against, so every fixture is diffed from the same nothing.
+func writeEmptySchemaHCL(c *qt.C) string {
+	c.Helper()
+	path := filepath.Join(c.TempDir(), "empty.hcl")
+	c.Assert(os.WriteFile(path, []byte("schema \"main\" {}\n"), 0o600), qt.IsNil)
+	return path
+}
+
+// TestOracleAgreesOnSQLSchemaDirectories holds the shape a merge cannot
+// represent: a schema DIRECTORY whose files declare the same object twice.
 //
 // The pinned binary reads such a directory by executing every file in filename
 // order against the dev database, so the second declaration is an engine error:
@@ -43,7 +51,7 @@ func writeSchemaSourceDir(c *qt.C, files map[string]string) string {
 //
 // The first cut of Ptah's directory source merged the parsed files instead. It
 // exited 0 on `schema diff` with a table that appears in NEITHER file, and
-// exited 0 on `schema apply` having really written it. The rule this row holds
+// exited 0 on `schema apply` having really written it. The rule these rows hold
 // is the compatibility rule itself: ptah-compat must never exit 0 where the
 // pinned community binary exits 1.
 //
@@ -52,20 +60,20 @@ func writeSchemaSourceDir(c *qt.C, files map[string]string) string {
 // are the two layouts that binary accepts, and they are what says the refusal
 // separates a conflict from a multi-file schema and from an idempotent script.
 //
-// The `hcl redeclared` row records the ONE deliberate divergence, with the
-// measurement that justifies it in the same place: that binary renders two
-// `CREATE TABLE users` statements and exits 0 on `schema diff`, then exits 1 on
-// `schema apply` executing the plan it just printed. Ptah refuses at read time
-// on both verbs, which can never accept a source that binary rejects.
-func TestOracleAgreesOnADirectoryThatRedeclaresAnObject(t *testing.T) {
+// Every row here claims Ptah's exit code IS the oracle's. The one layout where
+// it deliberately is not lives in
+// TestPtahRefusesAnHCLDirectoryThatRedeclaresATable, because a row asserting
+// divergence would read as agreement in this matrix.
+func TestOracleAgreesOnSQLSchemaDirectories(t *testing.T) {
 	oracle := requireAtlasOracle(t)
 	c := qt.New(t)
 	compat := buildCompatBinary(c)
 
 	tests := []struct {
-		name   string
-		files  map[string]string
-		assert func(c *qt.C, verdict dirVerdict)
+		name      string
+		files     map[string]string
+		wantDiff  int
+		wantApply int
 	}{
 		{
 			name: "redeclared",
@@ -73,12 +81,8 @@ func TestOracleAgreesOnADirectoryThatRedeclaresAnObject(t *testing.T) {
 				"1_a.sql": "CREATE TABLE users (id INTEGER PRIMARY KEY);\n",
 				"2_b.sql": "CREATE TABLE users (id INTEGER PRIMARY KEY, extra TEXT);\n",
 			},
-			assert: func(c *qt.C, verdict dirVerdict) {
-				c.Assert(verdict.oracleDiff, qt.Equals, 1)
-				c.Assert(verdict.ptahDiff, qt.Equals, verdict.oracleDiff)
-				c.Assert(verdict.oracleApply, qt.Equals, 1)
-				c.Assert(verdict.ptahApply, qt.Equals, verdict.oracleApply)
-			},
+			wantDiff:  1,
+			wantApply: 1,
 		},
 		{
 			name: "distinct",
@@ -86,12 +90,8 @@ func TestOracleAgreesOnADirectoryThatRedeclaresAnObject(t *testing.T) {
 				"1_a.sql": "CREATE TABLE users (id INTEGER PRIMARY KEY);\n",
 				"2_b.sql": "CREATE TABLE posts (id INTEGER PRIMARY KEY);\n",
 			},
-			assert: func(c *qt.C, verdict dirVerdict) {
-				c.Assert(verdict.oracleDiff, qt.Equals, 0)
-				c.Assert(verdict.ptahDiff, qt.Equals, verdict.oracleDiff)
-				c.Assert(verdict.oracleApply, qt.Equals, 0)
-				c.Assert(verdict.ptahApply, qt.Equals, verdict.oracleApply)
-			},
+			wantDiff:  0,
+			wantApply: 0,
 		},
 		{
 			name: "guarded",
@@ -99,41 +99,53 @@ func TestOracleAgreesOnADirectoryThatRedeclaresAnObject(t *testing.T) {
 				"1_a.sql": "CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY);\n",
 				"2_b.sql": "CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, extra TEXT);\n",
 			},
-			assert: func(c *qt.C, verdict dirVerdict) {
-				c.Assert(verdict.oracleDiff, qt.Equals, 0)
-				c.Assert(verdict.ptahDiff, qt.Equals, verdict.oracleDiff)
-				c.Assert(verdict.oracleApply, qt.Equals, 0)
-				c.Assert(verdict.ptahApply, qt.Equals, verdict.oracleApply)
-			},
-		},
-		{
-			name: "hcl redeclared",
-			files: map[string]string{
-				"a.hcl": "schema \"main\" {}\ntable \"users\" {\n  schema = schema.main\n  column \"id\" {\n    type = int\n  }\n}\n",
-				"b.hcl": "table \"users\" {\n  schema = schema.main\n  column \"id\" {\n    type = int\n  }\n}\n",
-			},
-			assert: func(c *qt.C, verdict dirVerdict) {
-				// The divergence, and the reason it is safe: the plan that
-				// binary prints at exit 0 is the plan it then fails to apply.
-				c.Assert(verdict.oracleDiff, qt.Equals, 0)
-				c.Assert(verdict.oracleApply, qt.Equals, 1)
-				c.Assert(verdict.ptahDiff, qt.Equals, 1)
-				c.Assert(verdict.ptahApply, qt.Equals, 1)
-			},
+			wantDiff:  0,
+			wantApply: 0,
 		},
 	}
-	c.Assert(tests, qt.HasLen, 4,
-		qt.Commentf("all measured directory layouts must remain in the oracle matrix"))
+	c.Assert(tests, qt.HasLen, 3,
+		qt.Commentf("all measured SQL directory layouts must remain in the oracle matrix"))
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			dir := writeSchemaSourceDir(c, test.files)
-			emptyHCL := filepath.Join(c.TempDir(), "empty.hcl")
-			c.Assert(os.WriteFile(emptyHCL, []byte("schema \"main\" {}\n"), 0o600), qt.IsNil)
+			verdict := measureDirVerdict(c, oracle, compat, dir, writeEmptySchemaHCL(c))
 
-			test.assert(c, measureDirVerdict(c, oracle, compat, dir, emptyHCL))
+			c.Assert(verdict.oracleDiff, qt.Equals, test.wantDiff)
+			c.Assert(verdict.ptahDiff, qt.Equals, verdict.oracleDiff)
+			c.Assert(verdict.oracleApply, qt.Equals, test.wantApply)
+			c.Assert(verdict.ptahApply, qt.Equals, verdict.oracleApply)
 		})
 	}
+}
+
+// TestPtahRefusesAnHCLDirectoryThatRedeclaresATable records the ONE deliberate
+// divergence, with the measurement that justifies it in the same place: the
+// pinned binary renders two `CREATE TABLE users` statements and exits 0 on
+// `schema diff`, then exits 1 on `schema apply` executing the plan it just
+// printed. Ptah refuses at read time on both verbs, which can never accept a
+// source that binary rejects.
+func TestPtahRefusesAnHCLDirectoryThatRedeclaresATable(t *testing.T) {
+	oracle := requireAtlasOracle(t)
+	c := qt.New(t)
+	compat := buildCompatBinary(c)
+
+	t.Run("hcl redeclared", func(t *testing.T) {
+		c := qt.New(t)
+		dir := writeSchemaSourceDir(c, map[string]string{
+			"a.hcl": "schema \"main\" {}\ntable \"users\" {\n  schema = schema.main\n  column \"id\" {\n    type = int\n  }\n}\n",
+			"b.hcl": "table \"users\" {\n  schema = schema.main\n  column \"id\" {\n    type = int\n  }\n}\n",
+		})
+		verdict := measureDirVerdict(c, oracle, compat, dir, writeEmptySchemaHCL(c))
+
+		// The divergence, and the reason it is safe: the plan that binary
+		// prints at exit 0 is the plan it then fails to apply.
+		c.Assert(verdict.oracleDiff, qt.Equals, 0)
+		c.Assert(verdict.oracleApply, qt.Equals, 1)
+		c.Assert(verdict.ptahDiff, qt.Equals, 1)
+		c.Assert(verdict.ptahApply, qt.Equals, 1)
+	})
 }
 
 // dirVerdict is one fixture's four exit codes: two binaries times two verbs.

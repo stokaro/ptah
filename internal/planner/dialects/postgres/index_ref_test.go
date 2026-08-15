@@ -210,7 +210,8 @@ func TestPlanner_IndexRefs_UsesCanonicalOwnerAcrossPostgresFamily(t *testing.T) 
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			nodes, err := postgres.NewForDialect(test.dialect, test.caps).
 				GenerateMigrationASTChecked(diff, generated)
 			c.Assert(err, qt.IsNil)

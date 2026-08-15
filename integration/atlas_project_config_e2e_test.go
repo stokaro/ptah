@@ -16,6 +16,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 	_ "github.com/jackc/pgx/v5/stdlib"
+
+	"go.5x5.cz/ptah/internal/dbtarget"
 )
 
 const (
@@ -44,13 +46,7 @@ type atlasProjectConfigRevisionTiming struct {
 }
 
 func TestAtlasProjectConfigMigrateStatusAndUpE2E(t *testing.T) {
-	dbURL := postgresE2EDatabaseURL(t)
-	if dbURL == "" {
-		t.Skip("POSTGRES_TEST_DSN, POSTGRES_URL, or TEST_DATABASE_URL is not set")
-	}
-	if !strings.HasPrefix(dbURL, "postgres://") && !strings.HasPrefix(dbURL, "postgresql://") {
-		t.Skip("PostgreSQL URL required for atlas.hcl project config e2e test")
-	}
+	dbURL := requireAtlasProjectConfigPostgresURL(t)
 
 	c := qt.New(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
@@ -100,6 +96,22 @@ func TestAtlasProjectConfigMigrateStatusAndUpE2E(t *testing.T) {
 	c.Assert(readStatusField(c, output, "has_pending_changes"), qt.Equals, false)
 
 	verifyAtlasProjectConfigDatabaseState(c, ctx, testDBURL, applyStarted, applyFinished)
+}
+
+// requireAtlasProjectConfigPostgresURL returns a live PostgreSQL address in URL
+// form.
+//
+// dbtarget refuses an address carrying another engine's scheme, but it admits a
+// schemeless driver DSN on purpose. This test rewrites the database name
+// through net/url, so the URL shape is its own requirement and the check
+// survives the move to dbtarget.
+func requireAtlasProjectConfigPostgresURL(t *testing.T) string {
+	t.Helper()
+	dbURL := dbtarget.URL(t, dbtarget.PostgreSQL)
+	if !strings.HasPrefix(dbURL, "postgres://") && !strings.HasPrefix(dbURL, "postgresql://") {
+		t.Skip("PostgreSQL URL required for atlas.hcl project config e2e test")
+	}
+	return dbURL
 }
 
 func writeAtlasProjectConfigFixture(c *qt.C, repoRoot, workDir string) {

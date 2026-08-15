@@ -19,8 +19,6 @@ import (
 // table whose row-level security was turned off in the database produced no
 // statement even though the comparator had recorded the difference.
 func TestPlannerRendersRLSEnablementFromDiff(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name      string
 		diff      *types.SchemaDiff
@@ -178,7 +176,8 @@ func TestPlannerRendersRLSEnablementFromDiff(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			nodes, err := postgres.New().GenerateMigrationASTChecked(test.diff, test.generated)
 			c.Assert(err, qt.IsNil)
 

@@ -39,8 +39,6 @@ func scopedEnumSchema(enumName string) *goschema.Database {
 // The two rows are the discriminating pair: identical schemas whose enum names
 // differ only by the historical prefix (stokaro/ptah#931 item 1).
 func TestFilterGeneratedWithDefaultSchema_KeepsAnEnumWhateverItIsCalled(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name string
 		enum string
@@ -50,7 +48,8 @@ func TestFilterGeneratedWithDefaultSchema_KeepsAnEnumWhateverItIsCalled(t *testi
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			got := schemascope.FilterGeneratedWithDefaultSchema(scopedEnumSchema(test.enum), []string{"public"}, "public")
 
 			c.Assert(got.Enums, qt.HasLen, 1)

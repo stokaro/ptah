@@ -116,12 +116,13 @@ func TestParseAcceptsTheURLFormsTheCommunityBinaryProvisions(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			c := qt.New(t)
 			t.Parallel()
 			spec, err := devdocker.Parse(tc.rawURL)
-			qt.Assert(t, err, qt.IsNil)
-			qt.Check(t, spec.Image, qt.Equals, tc.wantImage)
-			qt.Check(t, spec.Database, qt.Equals, tc.wantDatabase)
-			qt.Check(t, spec.Dialect, qt.Equals, tc.wantDialect)
+			c.Assert(err, qt.IsNil)
+			c.Check(spec.Image, qt.Equals, tc.wantImage)
+			c.Check(spec.Database, qt.Equals, tc.wantDatabase)
+			c.Check(spec.Dialect, qt.Equals, tc.wantDialect)
 		})
 	}
 }
@@ -204,10 +205,11 @@ func TestParseRefusesTheURLFormsTheCommunityBinaryRefuses(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			c := qt.New(t)
 			t.Parallel()
 			_, err := devdocker.Parse(tc.rawURL)
-			qt.Assert(t, err, qt.IsNotNil)
-			qt.Check(t, err.Error(), qt.Equals, tc.wantErr)
+			c.Assert(err, qt.IsNotNil)
+			c.Check(err.Error(), qt.Equals, tc.wantErr)
 		})
 	}
 }
@@ -279,96 +281,102 @@ var errNotListening = errors.New("connection refused")
 func neverReady(context.Context, string) error { return errNotListening }
 
 func TestResolveLeavesANonDockerURLAloneAndStartsNothing(t *testing.T) {
+	c := qt.New(t)
 	runner := &fakeRunner{hostPort: "127.0.0.1:15432"}
 	resolved, release, err := devdocker.Resolve(t.Context(), "postgres://u:p@localhost:5432/db", devdocker.Options{
 		Runner: runner,
 		Ready:  alwaysReady,
 	})
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	t.Cleanup(release)
 
-	qt.Check(t, resolved, qt.Equals, "postgres://u:p@localhost:5432/db")
+	c.Check(resolved, qt.Equals, "postgres://u:p@localhost:5432/db")
 	started, removed := runner.calls()
 	// Both halves matter. A build that provisioned for every dev URL would pass
 	// the URL assertion above by accident whenever the fake handed back the
 	// same string, and would still be starting a container per invocation.
-	qt.Check(t, started, qt.HasLen, 0)
-	qt.Check(t, removed, qt.HasLen, 0)
+	c.Check(started, qt.HasLen, 0)
+	c.Check(removed, qt.HasLen, 0)
 }
 
 func TestResolveProvisionsADockerURLAndReleaseRemovesTheContainer(t *testing.T) {
+	c := qt.New(t)
 	runner := &fakeRunner{hostPort: "127.0.0.1:15432"}
 	resolved, release, err := devdocker.Resolve(t.Context(), "docker://postgres/16/dev", devdocker.Options{
 		Runner: runner,
 		Ready:  alwaysReady,
 	})
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 
 	// The password is generated per instance, so the shape is asserted and the
 	// secret is not. Its per-instance-ness has its own test below.
-	qt.Check(t, resolved, qt.Matches, `postgres://postgres:[0-9a-f]{48}@127\.0\.0\.1:15432/dev\?sslmode=disable`)
+	c.Check(resolved, qt.Matches, `postgres://postgres:[0-9a-f]{48}@127\.0\.0\.1:15432/dev\?sslmode=disable`)
 	started, removed := runner.calls()
-	qt.Assert(t, started, qt.HasLen, 1)
+	c.Assert(started, qt.HasLen, 1)
 	// Nothing is removed until the caller releases: a release that removed
 	// eagerly would hand back a URL to a container that is already gone.
-	qt.Check(t, removed, qt.HasLen, 0)
+	c.Check(removed, qt.HasLen, 0)
 
 	release()
 	started, removed = runner.calls()
-	qt.Check(t, removed, qt.DeepEquals, started)
+	c.Check(removed, qt.DeepEquals, started)
 }
 
 func TestResolveRemovesTheContainerWhenTheServerNeverBecomesReady(t *testing.T) {
+	c := qt.New(t)
 	runner := &fakeRunner{hostPort: "127.0.0.1:15432"}
 	_, release, err := devdocker.Resolve(t.Context(), "docker://postgres/16/dev", devdocker.Options{
 		Runner:       runner,
 		Ready:        neverReady,
 		ReadyTimeout: 10 * time.Millisecond,
 	})
-	qt.Assert(t, err, qt.IsNotNil)
+	c.Assert(err, qt.IsNotNil)
 	t.Cleanup(release)
 
-	qt.Check(t, err, qt.ErrorIs, errNotListening)
-	qt.Check(t, err.Error(), qt.Contains, "did not become ready")
+	c.Check(err, qt.ErrorIs, errNotListening)
+	c.Check(err.Error(), qt.Contains, "did not become ready")
 	started, removed := runner.calls()
 	// The whole point of this row: a failed wait must not leave the container
 	// behind, and the caller is handed an error rather than a releasable
 	// instance, so nothing else can remove it.
-	qt.Assert(t, started, qt.HasLen, 1)
-	qt.Check(t, removed, qt.DeepEquals, started)
+	c.Assert(started, qt.HasLen, 1)
+	c.Check(removed, qt.DeepEquals, started)
 }
 
 func TestResolveRemovesTheContainerWhenTheRuntimeFailsToStartIt(t *testing.T) {
+	c := qt.New(t)
 	runner := &fakeRunner{startErr: errors.New("no such image")}
 	_, release, err := devdocker.Resolve(t.Context(), "docker://postgres/16/dev", devdocker.Options{
 		Runner: runner,
 		Ready:  alwaysReady,
 	})
-	qt.Assert(t, err, qt.IsNotNil)
+	c.Assert(err, qt.IsNotNil)
 	t.Cleanup(release)
 
 	started, removed := runner.calls()
 	// A `docker run` that fails after creating the container leaves one behind,
 	// so removal is attempted on this path too rather than assumed unnecessary.
-	qt.Assert(t, started, qt.HasLen, 1)
-	qt.Check(t, removed, qt.DeepEquals, started)
+	c.Assert(started, qt.HasLen, 1)
+	c.Check(removed, qt.DeepEquals, started)
 }
 
 func TestResolveReportsAnUnavailableRuntimeWithoutStartingAnything(t *testing.T) {
+	c := qt.New(t)
 	runner := &fakeRunner{availableErr: errors.New("docker daemon is not running")}
 	_, release, err := devdocker.Resolve(t.Context(), "docker://postgres/16/dev", devdocker.Options{
 		Runner: runner,
 		Ready:  alwaysReady,
 	})
-	qt.Assert(t, err, qt.IsNotNil)
+	c.Assert(err, qt.IsNotNil)
 	t.Cleanup(release)
 
-	qt.Check(t, err.Error(), qt.Equals, "docker daemon is not running")
+	c.Check(err.Error(), qt.Equals, "docker daemon is not running")
 	started, _ := runner.calls()
-	qt.Check(t, started, qt.HasLen, 0)
+	c.Check(started, qt.HasLen, 0)
 }
 
 func TestConcurrentProvisioningPicksDistinctContainerNames(t *testing.T) {
+	c := qt.New(t)
 	runner := &fakeRunner{hostPort: "127.0.0.1:15432"}
 	const parallel = 8
 
@@ -388,10 +396,10 @@ func TestConcurrentProvisioningPicksDistinctContainerNames(t *testing.T) {
 	for _, release := range releases {
 		t.Cleanup(release)
 	}
-	qt.Assert(t, errors.Join(errs...), qt.IsNil)
+	c.Assert(errors.Join(errs...), qt.IsNil)
 
 	started, _ := runner.calls()
-	qt.Assert(t, started, qt.HasLen, parallel)
+	c.Assert(started, qt.HasLen, parallel)
 	unique := make(map[string]struct{}, parallel)
 	for _, name := range started {
 		unique[name] = struct{}{}
@@ -399,16 +407,17 @@ func TestConcurrentProvisioningPicksDistinctContainerNames(t *testing.T) {
 	// A name derived from the URL rather than from randomness would collide on
 	// every one of these, and two concurrent runs would fight over one
 	// container -- the "parallel invocations do not collide" half of #844.
-	qt.Check(t, unique, qt.HasLen, parallel)
+	c.Check(unique, qt.HasLen, parallel)
 }
 
 func TestReleaseIsSafeToCallTwice(t *testing.T) {
+	c := qt.New(t)
 	runner := &fakeRunner{hostPort: "127.0.0.1:15432"}
 	_, release, err := devdocker.Resolve(t.Context(), "docker://postgres/16/dev", devdocker.Options{
 		Runner: runner,
 		Ready:  alwaysReady,
 	})
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 
 	release()
 	release()
@@ -416,7 +425,7 @@ func TestReleaseIsSafeToCallTwice(t *testing.T) {
 	// Consumers defer the release and some also call it on an early return, so
 	// a second call must not issue a second removal against a name the daemon
 	// may by then have given to nobody.
-	qt.Check(t, removed, qt.HasLen, 1)
+	c.Check(removed, qt.HasLen, 1)
 }
 
 // The rows below pin that connection parameters written on a docker dev URL
@@ -507,32 +516,35 @@ func TestParseCarriesConnectionParametersIntoTheProvisionedURL(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			c := qt.New(t)
 			t.Parallel()
 			spec, err := devdocker.Parse(tc.rawURL)
-			qt.Assert(t, err, qt.IsNil)
-			qt.Check(t, spec.URL("127.0.0.1:15432", testPassword), qt.Equals, tc.wantURL)
+			c.Assert(err, qt.IsNil)
+			c.Check(spec.URL("127.0.0.1:15432", testPassword), qt.Equals, tc.wantURL)
 		})
 	}
 }
 
 func TestReadyURLProbesTheServerWithoutTheOperatorParameters(t *testing.T) {
+	c := qt.New(t)
 	spec, err := devdocker.Parse("docker://postgres/16/dev?search_path=app")
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 
 	// The readiness wait asks whether the CONTAINER is up. Probing with
 	// `search_path=app` cannot answer that: a fresh container never has the
 	// schema, so every attempt fails and the wait burns its whole budget before
 	// reporting a deterministic error. Measured before this split, that cost
 	// two minutes; after it the same run refuses in about five seconds.
-	qt.Check(t, spec.ReadyURL("127.0.0.1:15432", testPassword), qt.Equals,
+	c.Check(spec.ReadyURL("127.0.0.1:15432", testPassword), qt.Equals,
 		"postgres://postgres:testpw@127.0.0.1:15432/dev?sslmode=disable")
 	// The engine's own defaults are still on the probe URL: dropping sslmode
 	// here would make the probe fail against a container that speaks no TLS.
-	qt.Check(t, spec.URL("127.0.0.1:15432", testPassword), qt.Equals,
+	c.Check(spec.URL("127.0.0.1:15432", testPassword), qt.Equals,
 		"postgres://postgres:testpw@127.0.0.1:15432/dev?search_path=app&sslmode=disable")
 }
 
 func TestCloseStaysRetryableUntilRemovalSucceeds(t *testing.T) {
+	c := qt.New(t)
 	removeFailed := errors.New("Error response from daemon: removal already in progress")
 	runner := &fakeRunner{hostPort: "127.0.0.1:15432", removeFailures: []error{removeFailed}}
 
@@ -540,31 +552,32 @@ func TestCloseStaysRetryableUntilRemovalSucceeds(t *testing.T) {
 		Runner: runner,
 		Ready:  alwaysReady,
 	})
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 
 	// First removal is refused, the way a busy or briefly unreachable daemon
 	// refuses one.
 	first := instance.Close()
-	qt.Assert(t, first, qt.IsNotNil)
-	qt.Check(t, first, qt.ErrorIs, removeFailed)
-	qt.Check(t, first.Error(), qt.Contains, instance.Container())
+	c.Assert(first, qt.IsNotNil)
+	c.Check(first, qt.ErrorIs, removeFailed)
+	c.Check(first.Error(), qt.Contains, instance.Container())
 
 	// The second call must RETRY. Marking the instance closed before the
 	// removal succeeded is the obvious spelling and it leaks: the container
 	// keeps running while every later Close reports success, and the deferred
 	// release consumers use is exactly such a later call.
 	second := instance.Close()
-	qt.Check(t, second, qt.IsNil)
+	c.Check(second, qt.IsNil)
 	_, removed := runner.calls()
-	qt.Assert(t, removed, qt.HasLen, 2)
+	c.Assert(removed, qt.HasLen, 2)
 
 	// Only once it has actually succeeded does a further call stop asking.
-	qt.Check(t, instance.Close(), qt.IsNil)
+	c.Check(instance.Close(), qt.IsNil)
 	_, removed = runner.calls()
-	qt.Check(t, removed, qt.HasLen, 2)
+	c.Check(removed, qt.HasLen, 2)
 }
 
 func TestProvisionRemovesTheContainerWhenReadinessAndTheFirstRemovalBothFail(t *testing.T) {
+	c := qt.New(t)
 	removeFailed := errors.New("Error response from daemon: removal already in progress")
 	runner := &fakeRunner{
 		hostPort:       "127.0.0.1:15432",
@@ -577,7 +590,7 @@ func TestProvisionRemovesTheContainerWhenReadinessAndTheFirstRemovalBothFail(t *
 		ReadyTimeout:      10 * time.Millisecond,
 		ReleaseRetryDelay: time.Millisecond,
 	})
-	qt.Assert(t, err, qt.IsNotNil)
+	c.Assert(err, qt.IsNotNil)
 	t.Cleanup(release)
 
 	// The readiness-failure path is the one branch that hands the caller no
@@ -586,12 +599,12 @@ func TestProvisionRemovesTheContainerWhenReadinessAndTheFirstRemovalBothFail(t *
 	// since become -- the retry has to be ON this branch, not merely available
 	// to a caller that does not exist.
 	started, removed := runner.calls()
-	qt.Assert(t, started, qt.HasLen, 1)
+	c.Assert(started, qt.HasLen, 1)
 	// Asserted as a whole rather than by index: a Check records its verdict and
 	// lets the test continue, so indexing after a failed length check panics and
 	// takes the whole test binary -- and every later test -- with it. Comparing
 	// the slice covers the count and the identity in one verdict that cannot.
-	qt.Check(t, removed, qt.DeepEquals, []string{started[0], started[0]})
+	c.Check(removed, qt.DeepEquals, []string{started[0], started[0]})
 }
 
 // TestProvisionGeneratesADistinctPasswordPerInstance pins the credential that a
@@ -606,24 +619,26 @@ func TestProvisionRemovesTheContainerWhenReadinessAndTheFirstRemovalBothFail(t *
 // owns, and the one this process must reach is not that host's loopback -- so
 // the credential is what has to change.
 func TestProvisionGeneratesADistinctPasswordPerInstance(t *testing.T) {
+	c := qt.New(t)
 	runner := &fakeRunner{hostPort: "127.0.0.1:15432"}
 	options := devdocker.Options{Runner: runner, Ready: alwaysReady}
 
 	first, releaseFirst, err := devdocker.Resolve(t.Context(), "docker://postgres/16/dev", options)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	t.Cleanup(releaseFirst)
 	second, releaseSecond, err := devdocker.Resolve(t.Context(), "docker://postgres/16/dev", options)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	t.Cleanup(releaseSecond)
 
-	qt.Check(t, first, qt.Not(qt.Equals), second)
+	c.Check(first, qt.Not(qt.Equals), second)
 	// And neither carries the constant this replaced, which is the string an
 	// operator's old notes or a copied script would still be holding.
-	qt.Check(t, first, qt.Not(qt.Contains), "ptah-dev@")
-	qt.Check(t, second, qt.Not(qt.Contains), "ptah-dev@")
+	c.Check(first, qt.Not(qt.Contains), "ptah-dev@")
+	c.Check(second, qt.Not(qt.Contains), "ptah-dev@")
 }
 
 func TestProvisionRemovesTheContainerWhenStartFailsAfterCreatingIt(t *testing.T) {
+	c := qt.New(t)
 	removeFailed := errors.New("Error response from daemon: removal already in progress")
 	runner := &fakeRunner{
 		// `docker run` succeeded and reading the published port failed, which
@@ -637,15 +652,15 @@ func TestProvisionRemovesTheContainerWhenStartFailsAfterCreatingIt(t *testing.T)
 		Ready:             alwaysReady,
 		ReleaseRetryDelay: time.Millisecond,
 	})
-	qt.Assert(t, err, qt.IsNotNil)
+	c.Assert(err, qt.IsNotNil)
 	t.Cleanup(release)
 
 	// The third branch that hands the caller no instance. Like the
 	// readiness-failure one, a removal refused here has no later caller to
 	// retry it, so the retry has to be on the branch.
 	started, removed := runner.calls()
-	qt.Assert(t, started, qt.HasLen, 1)
-	qt.Check(t, removed, qt.DeepEquals, []string{started[0], started[0]})
+	c.Assert(started, qt.HasLen, 1)
+	c.Check(removed, qt.DeepEquals, []string{started[0], started[0]})
 }
 
 // stallingReady blocks until its context ends, which is what a probe caught
@@ -656,6 +671,7 @@ func stallingReady(ctx context.Context, _ string) error {
 }
 
 func TestWaitReadyBoundsAProbeThatStalls(t *testing.T) {
+	c := qt.New(t)
 	runner := &fakeRunner{hostPort: "127.0.0.1:15432"}
 
 	// The caller's context is deliberately unbounded, which is what a command
@@ -670,20 +686,21 @@ func TestWaitReadyBoundsAProbeThatStalls(t *testing.T) {
 		ReleaseRetryDelay: time.Millisecond,
 	})
 	elapsed := time.Since(started)
-	qt.Assert(t, err, qt.IsNotNil)
+	c.Assert(err, qt.IsNotNil)
 	t.Cleanup(release)
 
-	qt.Check(t, err.Error(), qt.Contains, "did not become ready")
+	c.Check(err.Error(), qt.Contains, "did not become ready")
 	// Generous enough not to flake, tight enough that an unbounded probe cannot
 	// pass: without the deadline on the probe context this never returns.
-	qt.Check(t, elapsed < 30*time.Second, qt.IsTrue, qt.Commentf("elapsed=%s", elapsed))
+	c.Check(elapsed < 30*time.Second, qt.IsTrue, qt.Commentf("elapsed=%s", elapsed))
 	// And the container is still cleaned up on the way out.
 	started2, removed := runner.calls()
-	qt.Assert(t, started2, qt.HasLen, 1)
-	qt.Check(t, removed, qt.DeepEquals, started2)
+	c.Assert(started2, qt.HasLen, 1)
+	c.Check(removed, qt.DeepEquals, started2)
 }
 
 func TestResolveReleaseRetriesARefusedRemoval(t *testing.T) {
+	c := qt.New(t)
 	removeFailed := errors.New("Error response from daemon: removal already in progress")
 	runner := &fakeRunner{
 		hostPort:       "127.0.0.1:15432",
@@ -695,7 +712,7 @@ func TestResolveReleaseRetriesARefusedRemoval(t *testing.T) {
 		Ready:             alwaysReady,
 		ReleaseRetryDelay: time.Millisecond,
 	})
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 
 	// Consumers call the release exactly once, from a defer. A removal refused
 	// there has no later caller to retry it, so the retry has to live inside
@@ -703,8 +720,8 @@ func TestResolveReleaseRetriesARefusedRemoval(t *testing.T) {
 	release()
 
 	started, removed := runner.calls()
-	qt.Assert(t, started, qt.HasLen, 1)
-	qt.Check(t, removed, qt.HasLen, 3)
+	c.Assert(started, qt.HasLen, 1)
+	c.Check(removed, qt.HasLen, 3)
 }
 
 // TestDockerCLIRemoveReportsAnUnreachableDaemon is what makes the retry above
@@ -722,11 +739,12 @@ func TestResolveReleaseRetriesARefusedRemoval(t *testing.T) {
 //	failed to connect to the docker API at unix:///tmp/…sock; check if the
 //	path is correct and if the daemon is running: … : exit status 1
 func TestDockerCLIRemoveReportsAnUnreachableDaemon(t *testing.T) {
+	c := qt.New(t)
 	t.Setenv("DOCKER_HOST", "unix:///tmp/ptah-devdocker-no-such-socket.sock")
 
 	err := devdocker.DockerCLI{}.Remove(t.Context(), "ptah-dev-doesnotexist")
 
-	qt.Assert(t, err, qt.IsNotNil)
+	c.Assert(err, qt.IsNotNil)
 }
 
 func TestIsURLAnswersOnTheSchemeAlone(t *testing.T) {
@@ -776,8 +794,9 @@ func TestIsURLAnswersOnTheSchemeAlone(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			c := qt.New(t)
 			t.Parallel()
-			qt.Check(t, devdocker.IsURL(tc.rawURL), qt.Equals, tc.want)
+			c.Check(devdocker.IsURL(tc.rawURL), qt.Equals, tc.want)
 		})
 	}
 }
@@ -820,9 +839,10 @@ func TestIsURLAndParseAgreeOnTheScheme(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			c := qt.New(t)
 			t.Parallel()
 			_, err := devdocker.Parse(tc.rawURL)
-			qt.Check(t, devdocker.IsURL(tc.rawURL), qt.Equals,
+			c.Check(devdocker.IsURL(tc.rawURL), qt.Equals,
 				!parseRefusedTheValueAsNotADockerURL(err, tc.rawURL))
 		})
 	}

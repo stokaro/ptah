@@ -1,7 +1,6 @@
 package atlas_test
 
 import (
-	"os"
 	"path/filepath"
 	"testing"
 
@@ -22,54 +21,17 @@ const setIntegrityVersion = "20260101000000"
 
 // TestCompatMigrateSet_DriftedDirRefuses is the discriminator for the set half.
 //
-// Pre-change every row exits 0 and prints `Current version is 20260101000000
-// (1 set):` (the removed row prints a removal summary instead), leaving
-// revision rows behind. Post-change every row exits 1 before the connection, so
-// the database is never even created.
+// Pre-change every drift state exits 0 and prints `Current version is
+// 20260101000000 (1 set):` (the removed state prints a removal summary
+// instead), leaving revision rows behind. Post-change every one of them exits 1
+// before the connection, so the database is never even created.
 func TestCompatMigrateSet_DriftedDirRefuses(t *testing.T) {
-	tests := []struct {
-		name       string
-		writeDir   func(*qt.C, string)
-		wantStdout string
-		wantStderr string
-		wantErr    string
-	}{
-		{
-			name:       "never hashed",
-			writeDir:   writeStatusIntegrityUnhashed,
-			wantStdout: atlasChecksumGuidance,
-			wantStderr: atlasChecksumNotFoundErr,
-			wantErr:    "checksum file not found",
-		},
-		{
-			name:       "hashed then edited",
-			writeDir:   writeStatusIntegrityEdited,
-			wantStdout: atlasChecksumGuidanceWith("L2: " + statusIntegrityMigration + " was edited"),
-			wantStderr: atlasChecksumMismatchErr,
-			wantErr:    "checksum mismatch",
-		},
-		{
-			name:       "hashed then added",
-			writeDir:   writeStatusIntegrityAdded,
-			wantStdout: atlasChecksumGuidanceWith("L3: " + statusIntegritySecond + " was added"),
-			wantStderr: atlasChecksumMismatchErr,
-			wantErr:    "checksum mismatch",
-		},
-		{
-			name:       "hashed then removed",
-			writeDir:   writeStatusIntegrityRemoved,
-			wantStdout: atlasChecksumGuidanceWith("L2: " + statusIntegrityMigration + " was removed"),
-			wantStderr: atlasChecksumMismatchErr,
-			wantErr:    "checksum mismatch",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+	for _, drift := range statusIntegrityDrifts() {
+		t.Run(drift.name, func(t *testing.T) {
 			c := qt.New(t)
 			tempDir := c.TempDir()
 			dir := filepath.Join(tempDir, "m")
-			tt.writeDir(c, dir)
+			writeStatusIntegrityDrifted(c, dir, drift)
 			dbPath := filepath.Join(tempDir, "set.db")
 
 			stdout, stderr, err := runCompat(
@@ -79,15 +41,37 @@ func TestCompatMigrateSet_DriftedDirRefuses(t *testing.T) {
 			)
 
 			c.Assert(err, qt.IsNotNil)
-			c.Assert(err.Error(), qt.Equals, tt.wantErr)
-			c.Assert(stdout, qt.Equals, tt.wantStdout)
-			c.Assert(stderr, qt.Equals, tt.wantStderr)
+			c.Assert(err.Error(), qt.Equals, "checksum mismatch")
+			c.Assert(stdout, qt.Equals, drift.wantStdout)
+			c.Assert(stderr, qt.Equals, atlasChecksumMismatchErr)
 			// Nothing was written: the refusal precedes the connection, so no
 			// revision table and no database file exist.
-			_, statErr := os.Stat(dbPath)
-			c.Assert(os.IsNotExist(statErr), qt.IsTrue)
+			assertIntegrityTargetUntouched(c, dbPath)
 		})
 	}
+}
+
+// TestCompatMigrateSet_NeverHashedDirRefuses is the set counterpart of the
+// missing-sum refusal, which is a different message from the drift states above
+// and reaches the gate on a directory nothing ever hashed.
+func TestCompatMigrateSet_NeverHashedDirRefuses(t *testing.T) {
+	c := qt.New(t)
+	tempDir := c.TempDir()
+	dir := filepath.Join(tempDir, "m")
+	writeStatusIntegrityUnhashed(c, dir)
+	dbPath := filepath.Join(tempDir, "set.db")
+
+	stdout, stderr, err := runCompat(
+		"migrate", "set", setIntegrityVersion,
+		"--url", "sqlite://"+dbPath,
+		"--dir", "file://"+dir,
+	)
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(err.Error(), qt.Equals, "checksum file not found")
+	c.Assert(stdout, qt.Equals, atlasChecksumGuidance)
+	c.Assert(stderr, qt.Equals, atlasChecksumNotFoundErr)
+	assertIntegrityTargetUntouched(c, dbPath)
 }
 
 // TestCompatMigrateSet_RefusalPrecedesArityCheck pins the diagnostic ORDER the
