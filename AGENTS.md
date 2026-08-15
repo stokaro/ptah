@@ -417,6 +417,52 @@ before help, version, argument handling, configuration, filesystem, or database
 work. Do not add another restrictive boolean without documenting why it cannot
 be expressed as a capability gate.
 
+### A `PTAH_*` value is consumed once, by the surface that decides with it
+
+The compatibility surface forwards to a native command, and
+`cmd/internal/cmdadapter` installs the same `PTAH_*` binding on the forwarded
+target that the adapter itself has. So a value-carrying variable is offered
+twice: once to the adapter, which reads it and decides what the native command
+should receive, and once to the target, which reads it again if nothing arrived
+explicitly.
+
+That second read is invisible whenever the adapter's decision was *nothing*. It
+is not a fallback; it is the decision being overwritten by the input the
+decision was made from. **When an adapter resolves a native flag's whole value,
+disable the environment binding for that flag on the target** with
+`cmdflags.DisableEnvBinding` — the same opt-out `schema apply` uses for
+`--auto-approve`. Nothing is lost: a run the adapter did not narrow has already
+had the value forwarded explicitly.
+
+stokaro/ptah#1535 is the shape to recognize. An `atlas.hcl` `data` block scoping
+the desired schema owns the variables that reach it, and a block declaring none
+refuses the run's `--var`. Reached through `PTAH_VAR` the same run leaked: the
+scope emptied the forwarded values, no explicit `--var` marked the flag as set,
+and the target read the variable itself. Nothing errored. The suite passed,
+against a schema nobody asked for.
+
+Two tests, not one. The refusal proves the scope closes; a control proving the
+variable still reaches an unscoped run proves the closure was not achieved by
+dropping the variable outright. Without the second, deleting the feature reads
+as a fix.
+
+### Recognition that spans two functions belongs to one of them
+
+`ConnectToDatabase` parses a database URL and then converts it to a driver DSN.
+Both ends have to know which spellings carry go-sql-driver's network wrapper,
+and each kept its own list. They agreed when the second was written and stopped
+agreeing the moment the first was extended, so a URL the parser accepted reached
+the driver with its scheme still attached — or, for a socket target, rebuilt
+around a host that was never one, failing as a DNS lookup of the socket path.
+
+**When two functions in a pipeline must recognize the same set, give them one
+predicate, and say at its declaration why it cannot become two.** The mismatch
+is not caught by testing either end: both are individually correct against their
+own list. It is caught by a control comparing their *behavior* — and a control
+that asks the shared helper twice will agree with itself while one end quietly
+stops calling it, which is the state stokaro/ptah#1540 reported. Drive the
+public path that joins them.
+
 ### Compatibility with older Ptah is a different axis, and it is not owed
 
 Everything above is about the community binary. Compatibility with **Ptah's own

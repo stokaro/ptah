@@ -25,7 +25,7 @@ Use `ptah <command> --help` for the exact flag set in an installed binary.
 | `ptah schema export` | Export a schema to HCL, an OpenAPI 3.0 component schema, a GraphQL SDL, or a Protobuf Edition 2023 definition. |
 | `ptah schema push` | Publish a lossless canonical desired schema to an OCI registry. |
 | `ptah schema pull` | Pull a canonical desired schema from an OCI registry. |
-| `ptah schema test` | Apply a desired schema (from Go annotations) to a throwaway database and run declarative seed/SQL/assert YAML cases against it. |
+| `ptah schema test` | Apply a desired schema from Go annotations, a SQL or HCL file, or a live database to a throwaway database and run declarative seed/SQL/assert cases against it. |
 
 Pass an explicit `--dialect` when the output must be executable by one target.
 Without it, `schema render` attempts the built-in review targets and emits

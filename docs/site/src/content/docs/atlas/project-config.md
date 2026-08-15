@@ -369,10 +369,10 @@ fails rather than picking the flag up. A file named directly, as
 `src = "file://schema.hcl"`, is outside every data source and does take `--var`.
 
 The boundary belongs to the source the env selected, not to the file. A desired
-state the operator names on the command line — `--to`, `--from` or `--file` —
-keeps `--var` even when it is the very file a data source of the loaded env
-selects, so `schema apply --env local --to file://schema.hcl` reads
-`--var tenant=…` and fails without one.
+schema the operator names on the command line — `--to`, `--from`, `--file`, or
+schema test's `--url` — keeps `--var` even when it is the very file a data
+source of the loaded env selects. For example, `schema apply --env local --to
+file://schema.hcl` reads `--var tenant=…` and fails without one.
 
 The map takes strings, numbers and bools; each is carried as the text of the
 literal, so `tenant = 42` reaches the file as `"42"`. A name the file does not
@@ -526,6 +526,14 @@ the same check:
 ```text
 Error: invalid argument "novalue" for "--var" flag: variables must be format as key=value, got: "novalue"
 ```
+
+It also carries the same scope. `schema test` forwards to a native runner, and
+a `data.hcl_schema` block that declares no `vars` refuses the run's values
+whether they were spelled `--var` or `PTAH_VAR` — the variable is read once, by
+this surface, and the native command receives only what the scope decided. A
+scope closed against the flag but open to the environment would be no scope at
+all, and the leak would be silent: the run still passes, against a schema
+nobody asked for.
 
 Variable blocks accept the `type` constraints `string`, `number`, `bool`,
 `list(string)`, and `map(string)`. `--var` overrides convert to scalar types,

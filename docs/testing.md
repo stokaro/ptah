@@ -151,14 +151,22 @@ ptah schema test \
 | Flag | Default | Purpose |
 | --- | --- | --- |
 | `--dir` | `./tests` | Directory containing test-case YAML files. |
-| `--root-dir` | `./models` | Go annotation root applied before test steps. |
+| `--root-dir` | `./models` | Go annotations, a SQL or HCL schema file, or a live database applied before test steps. |
 | `--seed-dir` | Empty | Default directory for seed steps that omit `dir`. |
 | `--db-url` | Empty | Explicit throwaway database URL. |
+| `--var` | Empty | Repeatable `name=value` override for an HCL desired-schema file. |
 | `--run` | Empty | Run only case names matching a Go regular expression. |
 | `--report` | `text` | Report format: `text`, `json`, or `html`. |
 
 A `migrate_to` step fails in a schema test because that surface has no migration
 history.
+
+The Atlas-compatible `schema test` adapter forwards an explicit source's
+`--var` values. A project source selected through `data.hcl_schema` uses that
+block's `vars` instead, including an explicitly empty scope. `PTAH_VAR` is
+inside that scope rather than around it: the adapter reads the variable itself
+and forwards only what the scope decided, so an empty scope refuses an
+environment value exactly as it refuses a flag.
 
 ## Database Isolation
 
