@@ -1,6 +1,7 @@
 package atlas
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"os"
@@ -133,7 +134,7 @@ func runAtlasMigrateDownFormat(
 	if err != nil {
 		return err
 	}
-	loadedProject, err := applyAtlasMigrateDownFormatProjectConfig(cmd.ErrOrStderr(), opts, project)
+	loadedProject, err := applyAtlasMigrateDownFormatProjectConfig(cmd.Context(), cmd.ErrOrStderr(), opts, project)
 	if err != nil {
 		return err
 	}
@@ -158,7 +159,12 @@ func runAtlasMigrateDownFormat(
 	if err != nil {
 		return err
 	}
-	source, err := migrationsource.CaptureLocal(opts.dir, opts.dirOptions)
+	var source migrationsource.LocalSource
+	if loadedProject.isVirtualMigrationDir(loadedProject.migrationDir) {
+		source, err = loadedProject.captureLocal(loadedProject.migrationDir)
+	} else {
+		source, err = migrationsource.CaptureLocal(opts.dir, opts.dirOptions)
+	}
 	if err != nil {
 		return fmt.Errorf("atlas migrate down --dir: %w", err)
 	}
@@ -399,6 +405,7 @@ func atlasVerbFlag(verb atlasVerb, name string) (atlasargs.Flag, bool) {
 // commands use: an explicitly changed flag wins, an unset flag falls back to
 // the selected env.
 func applyAtlasMigrateDownFormatProjectConfig(
+	ctx context.Context,
 	diagnostics io.Writer,
 	opts *atlasMigrateDownFormatOptions,
 	projectArgs atlasProjectArgValues,
@@ -416,7 +423,7 @@ func applyAtlasMigrateDownFormatProjectConfig(
 		}
 		requirement = optionalAtlasProject
 	}
-	project, loaded, err := openAtlasProject(projectArgs.flags, requirement)
+	project, loaded, err := openAtlasProject(ctx, projectArgs.flags, requirement)
 	if err != nil {
 		return atlasProject{}, err
 	}
@@ -462,7 +469,7 @@ func applyAtlasMigrateDownFormatProjectConfig(
 	}
 	migrationDir := cfg.StringValue(projectconfig.StringMigrationDir)
 	if !opts.flagSet.Changed("dir") && migrationDir.Present {
-		dir, err := project.localDirWithQuery(migrationDir.Value)
+		dir, err := project.resolveProjectMigrationDir(migrationDir.Value)
 		if err != nil {
 			return project, fmt.Errorf("atlas.hcl migration.dir: %w", err)
 		}

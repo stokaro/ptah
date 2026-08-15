@@ -1,6 +1,6 @@
 //go:build aix || darwin || dragonfly || freebsd || illumos || linux || netbsd || openbsd || solaris
 
-package schemasource
+package processcapture
 
 import (
 	"errors"
@@ -8,8 +8,6 @@ import (
 	"syscall"
 )
 
-// prepareProcess starts the loader in a new process group so cancellation can
-// terminate descendants as well as the direct child.
 func prepareProcess(cmd *exec.Cmd) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 }

@@ -10,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
+	"go.5x5.cz/ptah/cmd/internal/migrationsource"
 	"go.5x5.cz/ptah/config/projectconfig"
 	"go.5x5.cz/ptah/core/schemasource"
 	"go.5x5.cz/ptah/internal/pathguard"
@@ -144,7 +145,9 @@ func RegisterAtlasProjectInternalFlags(flags *pflag.FlagSet) {
 // avoids reopening project files during the forwarded execution.
 func LoadProjectConfig(cmd *cobra.Command, ptahConfigPath string) (projectconfig.Config, error) {
 	if config, ok := projectConfigFromContext(cmd.Context()); ok {
-		return cloneProjectConfig(config), nil
+		config = cloneProjectConfig(config)
+		bindProjectMigrationDirectory(cmd, config)
+		return config, nil
 	}
 	envName, err := stringFlag(cmd, EnvFlagName)
 	if err != nil {
@@ -159,6 +162,7 @@ func LoadProjectConfig(cmd *cobra.Command, ptahConfigPath string) (projectconfig
 		return projectconfig.Config{}, err
 	}
 	config, err := projectconfig.Load(projectconfig.LoadOptions{
+		Context:   cmd.Context(),
 		PtahPath:  ptahConfigPath,
 		AtlasPath: atlasPath,
 		EnvName:   envName,
@@ -170,7 +174,20 @@ func LoadProjectConfig(cmd *cobra.Command, ptahConfigPath string) (projectconfig
 	if err := ReportIgnoredAtlasConstructs(cmd.ErrOrStderr(), config); err != nil {
 		return projectconfig.Config{}, err
 	}
+	bindProjectMigrationDirectory(cmd, config)
 	return config, nil
+}
+
+func bindProjectMigrationDirectory(cmd *cobra.Command, config projectconfig.Config) {
+	dir := config.StringValue(projectconfig.StringMigrationDir)
+	if !dir.Present {
+		return
+	}
+	fsys, ok := config.MigrationDirectoryFS(dir.Value)
+	if !ok {
+		return
+	}
+	cmd.SetContext(migrationsource.WithVirtual(cmd.Context(), dir.Value, fsys, dir.Value))
 }
 
 // ReportIgnoredAtlasConstructs writes one warning for every atlas.hcl name

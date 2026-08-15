@@ -1221,6 +1221,7 @@ func resolveAtlasVerbProject(
 
 	compatibilityPolicy := atlasCompatibilityPolicy(cmd)
 	selected, err := loadAtlasAdapterProjectConfig(
+		resolved.context,
 		verb,
 		project.flags,
 		requirement,
@@ -1281,6 +1282,14 @@ func withAtlasProjectMigrationRoot(
 	if group != "migrate" || !project.migrationDirResolved {
 		return ctx
 	}
+	if project.migrationFS != nil {
+		return migrationsource.WithVirtual(
+			ctx,
+			project.migrationDir.Path,
+			project.migrationFS,
+			project.migrationDisplay,
+		)
+	}
 	localOptions := project.localOptions(project.migrationDir)
 	if localOptions.Root != nil {
 		return migrationsource.WithRootedLocal(ctx, project.migrationDir.Path, localOptions.Root)
@@ -1298,24 +1307,25 @@ type selectedAtlasProject struct {
 }
 
 func loadAtlasAdapterProjectConfig(
+	ctx context.Context,
 	verb atlasVerb,
 	flags atlasProjectFlagValues,
 	requirement atlasProjectRequirement,
 	policy atlascompatpolicy.Policy,
 ) (selectedAtlasProject, error) {
 	if !verb.nativeProjectConfig {
-		project, loaded, err := openAtlasProjectWithPolicy(flags, requirement, policy)
+		project, loaded, err := openAtlasProjectWithPolicy(ctx, flags, requirement, policy)
 		return selectedAtlasProject{project: project, loaded: loaded}, err
 	}
 	if requirement == requiredAtlasProject {
-		project, targetConfig, err := openRequiredMergedProjectConfigWithPolicy(flags, policy)
+		project, targetConfig, err := openRequiredMergedProjectConfigWithPolicy(ctx, flags, policy)
 		return selectedAtlasProject{
 			project:      project,
 			targetConfig: targetConfig,
 			loaded:       err == nil,
 		}, err
 	}
-	project, loaded, err := openAtlasProjectWithPolicy(flags, optionalAtlasProject, policy)
+	project, loaded, err := openAtlasProjectWithPolicy(ctx, flags, optionalAtlasProject, policy)
 	if err != nil || !loaded {
 		return selectedAtlasProject{}, err
 	}

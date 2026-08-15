@@ -1,6 +1,8 @@
 package atlas
 
 import (
+	"context"
+	"crypto/sha256"
 	"encoding/csv"
 	"errors"
 	"fmt"
@@ -56,6 +58,10 @@ type atlasProject struct {
 	projectconfig.Config
 	root                 *pathguard.OpenedDirectory
 	migrationDir         atlasargs.LocalDir
+	migrationWriteDir    atlasargs.LocalDir
+	migrationFS          fs.FS
+	migrationDisplay     string
+	migrationVirtual     bool
 	migrationDirResolved bool
 }
 
@@ -116,10 +122,52 @@ func closeAtlasProjectSet(projects *atlasProjectSet, runErr *error) {
 }
 
 func (p atlasProject) localDirWithQuery(raw string) (atlasargs.LocalDir, error) {
+	if p.migrationVirtual && p.migrationFS != nil && raw == p.migrationDisplay {
+		return p.migrationDir, nil
+	}
 	if p.root == nil {
 		return atlasargs.LocalDir{}, fmt.Errorf("atlas project root is unavailable")
 	}
 	return atlasProjectConfigLocalDirWithQueryFromBaseDir(raw, p.root.Path())
+}
+
+// resolveProjectMigrationDir resolves a migration.dir selected from atlas.hcl
+// and records that it, rather than an explicit --dir, owns the command's
+// migration source. The recorded identity is what lets data.template_dir use
+// its immutable rendered filesystem without making an explicit CLI override
+// virtual merely because it happens to have the same path spelling.
+func (p *atlasProject) resolveProjectMigrationDir(raw string) (atlasargs.LocalDir, error) {
+	dir, err := p.localDirWithQuery(raw)
+	if err != nil {
+		return atlasargs.LocalDir{}, err
+	}
+	p.migrationDir = dir
+	p.migrationDirResolved = true
+	return dir, nil
+}
+
+func newAtlasProject(cfg projectconfig.Config, root *pathguard.OpenedDirectory) atlasProject {
+	project := atlasProject{Config: cfg, root: root}
+	migrationDir := cfg.StringValue(projectconfig.StringMigrationDir)
+	if !migrationDir.Present {
+		return project
+	}
+	virtual, ok := cfg.MigrationDirectorySource(migrationDir.Value)
+	if !ok {
+		return project
+	}
+	digest := sha256.Sum256([]byte(migrationDir.Value))
+	project.migrationDir = atlasargs.LocalDir{Path: fmt.Sprintf(".ptah-template-dir-%x", digest)}
+	writePath := virtual.Path
+	if root != nil {
+		writePath = filepath.Join(root.Path(), filepath.FromSlash(virtual.Path))
+		project.migrationWriteDir.AllowedRoot = root.Path()
+	}
+	project.migrationWriteDir.Path = writePath
+	project.migrationFS = virtual.FileSystem
+	project.migrationDisplay = migrationDir.Value
+	project.migrationVirtual = true
+	return project
 }
 
 func (p *atlasProject) resolveMigrationDirForArgs(
@@ -132,15 +180,13 @@ func (p *atlasProject) resolveMigrationDirForArgs(
 		atlasFlagValueSet(flags, args, "dir") {
 		return nil
 	}
-	dir, err := p.localDirWithQuery(migrationDir.Value)
+	dir, err := p.resolveProjectMigrationDir(migrationDir.Value)
 	if err != nil {
 		return fmt.Errorf("atlas.hcl migration.dir: %w", err)
 	}
 	if len(dir.Query) > 0 {
 		return fmt.Errorf("atlas.hcl migration.dir: migration directory URL query parameters are not supported yet")
 	}
-	p.migrationDir = dir
-	p.migrationDirResolved = true
 	return nil
 }
 
@@ -152,14 +198,23 @@ func (p atlasProject) localOptions(dir atlasargs.LocalDir) migrationsource.Local
 }
 
 func (p atlasProject) captureLocal(dir atlasargs.LocalDir) (migrationsource.LocalSource, error) {
+	if p.isVirtualMigrationDir(dir) {
+		return migrationsource.CaptureVirtual(p.migrationFS, p.migrationDisplay)
+	}
 	return migrationsource.CaptureLocal(dir.Path, p.localOptions(dir))
 }
 
 func (p atlasProject) openLocal(dir atlasargs.LocalDir) (*migrationsource.LocalDirectory, error) {
+	if p.isVirtualMigrationDir(dir) {
+		return migrationsource.OpenVirtual(p.migrationFS, p.migrationDisplay), nil
+	}
 	return migrationsource.OpenLocal(dir.Path, p.localOptions(dir))
 }
 
 func (p atlasProject) statLocalDir(dir atlasargs.LocalDir) (fs.FileInfo, error) {
+	if p.isVirtualMigrationDir(dir) {
+		return fs.Stat(p.migrationFS, ".")
+	}
 	if dir.AllowedRoot == "" || p.root == nil {
 		return os.Stat(dir.Path)
 	}
@@ -170,6 +225,27 @@ func (p atlasProject) statLocalDir(dir atlasargs.LocalDir) (fs.FileInfo, error) 
 	info, statErr := opened.Stat(".")
 	closeErr := opened.Close()
 	return info, errors.Join(statErr, closeErr)
+}
+
+func (p atlasProject) isVirtualMigrationDir(dir atlasargs.LocalDir) bool {
+	return p.migrationDirResolved &&
+		p.migrationVirtual &&
+		p.migrationFS != nil &&
+		dir.Path == p.migrationDir.Path
+}
+
+func (p atlasProject) writeLocalDir(dir atlasargs.LocalDir) atlasargs.LocalDir {
+	if p.isVirtualMigrationDir(dir) && p.migrationWriteDir.Path != "" {
+		return p.migrationWriteDir
+	}
+	return dir
+}
+
+func (p atlasProject) replaySource(dir atlasargs.LocalDir) fs.FS {
+	if p.isVirtualMigrationDir(dir) {
+		return p.migrationFS
+	}
+	return nil
 }
 
 func registerAtlasProjectFlags(flags *pflag.FlagSet, target *atlasProjectFlagValues) {
@@ -195,13 +271,15 @@ func registerAtlasProjectFlags(flags *pflag.FlagSet, target *atlasProjectFlagVal
 }
 
 func openAtlasProject(
+	ctx context.Context,
 	flags atlasProjectFlagValues,
 	requirement atlasProjectRequirement,
 ) (atlasProject, bool, error) {
-	return openAtlasProjectWithPolicy(flags, requirement, atlascompatpolicy.Full())
+	return openAtlasProjectWithPolicy(ctx, flags, requirement, atlascompatpolicy.Full())
 }
 
 func openAtlasProjectWithPolicy(
+	ctx context.Context,
 	flags atlasProjectFlagValues,
 	requirement atlasProjectRequirement,
 	policy atlascompatpolicy.Policy,
@@ -214,17 +292,18 @@ func openAtlasProjectWithPolicy(
 		source.raw,
 		source.path,
 		source.root.FS(),
-		atlasProjectLoadOptions(flags, policy),
+		atlasProjectLoadOptions(ctx, flags, policy),
 	)
 	if err != nil {
 		return atlasProject{}, false, errors.Join(err, source.Close())
 	}
 	root := source.root
 	source.root = nil
-	return atlasProject{Config: cfg, root: root}, true, nil
+	return newAtlasProject(cfg, root), true, nil
 }
 
 func openAtlasProjectsWithPolicy(
+	ctx context.Context,
 	flags atlasProjectFlagValues,
 	requirement atlasProjectRequirement,
 	policy atlascompatpolicy.Policy,
@@ -237,14 +316,14 @@ func openAtlasProjectsWithPolicy(
 		source.raw,
 		source.path,
 		source.root.FS(),
-		atlasProjectLoadOptions(flags, policy),
+		atlasProjectLoadOptions(ctx, flags, policy),
 	)
 	if err != nil {
 		return atlasProjectSet{}, false, errors.Join(err, source.Close())
 	}
 	projects := make([]atlasProject, 0, len(configs))
 	for _, cfg := range configs {
-		projects = append(projects, atlasProject{Config: cfg, root: source.root})
+		projects = append(projects, newAtlasProject(cfg, source.root))
 	}
 	root := source.root
 	source.root = nil
@@ -252,10 +331,12 @@ func openAtlasProjectsWithPolicy(
 }
 
 func atlasProjectLoadOptions(
+	ctx context.Context,
 	flags atlasProjectFlagValues,
 	policy atlascompatpolicy.Policy,
 ) projectconfig.AtlasLoadOptions {
 	return projectconfig.AtlasLoadOptions{
+		Context:              ctx,
 		EnvName:              flags.envName,
 		Vars:                 flags.vars,
 		RejectListMapForEach: policy.IsStrictCE(),
@@ -313,10 +394,11 @@ func openAtlasProjectSource(
 }
 
 func openRequiredMergedProjectConfigWithPolicy(
+	ctx context.Context,
 	flags atlasProjectFlagValues,
 	policy atlascompatpolicy.Policy,
 ) (project atlasProject, mergedConfig projectconfig.Config, err error) {
-	project, _, err = openAtlasProjectWithPolicy(flags, requiredAtlasProject, policy)
+	project, _, err = openAtlasProjectWithPolicy(ctx, flags, requiredAtlasProject, policy)
 	if err != nil {
 		return atlasProject{}, projectconfig.Config{}, err
 	}
@@ -422,6 +504,7 @@ func openAtlasProjectForCommand(
 		requirement = requiredAtlasProject
 	}
 	project, loaded, err := openAtlasProjectWithPolicy(
+		cmd.Context(),
 		flags,
 		requirement,
 		atlasCompatibilityPolicy(cmd),
@@ -456,6 +539,7 @@ func openAtlasProjectsForCommand(
 		requirement = requiredAtlasProject
 	}
 	projects, loaded, err := openAtlasProjectsWithPolicy(
+		cmd.Context(),
 		flags,
 		requirement,
 		atlasCompatibilityPolicy(cmd),

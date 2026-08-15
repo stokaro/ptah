@@ -9,7 +9,9 @@ invocations in this document run the separate `ptah-compat` drop-in binary.
 ## Supported subset
 
 Ptah accepts top-level `variable`, `locals`, `data "hcl_schema"`,
-`data "external_schema"`, `env`, `lint`, and `diff` blocks. `env` blocks may have either one label or no label:
+`data "external_schema"`, `data "sql"`, `data "external"`,
+`data "runtimevar"`, `data "template_dir"`, `env`, `lint`, and `diff`
+blocks. `env` blocks may have either one label or no label:
 
 ```hcl
 lint {
@@ -376,8 +378,12 @@ config workflows:
   `for_each`.
 - `data "hcl_schema" "name"` blocks with either `path` or `paths`, exposed as
   `data.hcl_schema.<name>.url`.
-- `format(format_string, values...)` and `jsonencode(value)` for Atlas-style
-  local project-config string construction.
+- `data "sql"`, `data "external"`, `data "runtimevar"`, and
+  `data "template_dir"` blocks, with the Atlas-compatible result shapes
+  described below.
+- `format(format_string, values...)`, `jsondecode(value)`,
+  `jsonencode(value)`, and `tolist(value)` for Atlas-style local project-config
+  value construction.
 
 Example:
 
@@ -448,6 +454,66 @@ not both be selected by one `src` and select the same file with different
 spell that one path differently (`"s.hcl"` and `"./s.hcl"`). A file the `src`
 does not evaluate to is not part of that verdict, and a conditional — or an
 index over one — counts only the branch it takes.
+
+### SQL, external, runtime variable, and template directory data sources
+
+The four project data sources are evaluated only when a selected environment,
+a global `lint` or `diff` block, a top-level attribute, or a `locals` value
+references them. Dependencies between locals and data sources are evaluated
+first. A declared but unreferenced recognized source is not opened or executed.
+This lazy behavior also applies to `hcl_schema`, `external_schema`,
+`remote_dir`, `remote_schema`, `aws_rds_token`, and `gcp_cloudsql_token`; the
+last four still fail explicitly when a selected expression references them. An
+unknown source type, including `composite_schema`, fails during structural
+validation even when unreferenced.
+
+`data "sql"` runs one query against `url` and accepts optional positional
+`args` containing strings, booleans, numbers, or nulls. The query must return
+one column. Its object result has `count`, the first row as `value` (null when
+there are no rows), and every row as `values`:
+
+```hcl
+data "sql" "tenants" {
+  url   = "sqlite://app.db"
+  query = "SELECT name FROM tenant WHERE active = ? ORDER BY name"
+  args  = [true]
+}
+```
+
+`data "external"` runs the required `program` argv directly, without a shell,
+and returns standard output as a string without trimming it. An optional
+`working_dir` resolves relative to the process working directory when absent
+and relative to the `atlas.hcl` directory when supplied as a relative path.
+The caller's cancellation applies, execution is capped at 60 seconds, standard
+output is capped at 64 MiB, and failures include a sanitized bounded tail of
+standard error.
+
+`data "runtimevar"` reads the required `url` through Go CDK runtime variables.
+Ptah registers `constant`, `file`, `http`, `https`, AWS Parameter Store and Secrets
+Manager, Google Cloud Runtime Config and Secret Manager URL schemes. The
+result is a string and preserves bytes exactly. An optional `timeout` query
+parameter, such as `file://value.txt?timeout=2s`, overrides the 10-second
+default and is removed before the provider opens the URL.
+
+`data "template_dir"` parses every file below `path` into one shared Go
+`text/template` set with an optional `vars` object. A root migration can
+therefore invoke a definition declared in a nested shared file. Only root-level
+files whose names end in lowercase `.sql` are executed and emitted as
+migrations; nested files, uppercase `.SQL` files, and other extensions provide
+templates but are not emitted themselves. Missing template keys fail. Each
+`vars` value must be a string, number, boolean, or homogeneous list of those
+types produced with `tolist`; numbers reach templates as `float64` values.
+
+Ptah computes `atlas.sum`, captures an immutable rendered migration directory,
+and exposes its URL as `data.template_dir.<name>.url`. `migrate new` and a
+writing `migrate diff` synchronize their new root SQL files and the resulting
+`atlas.sum` back to the source `path`; existing template files are not
+rewritten. A hash-only run keeps the computed checksum in the rendered view and
+does not create `atlas.sum` in the source directory. `path` resolves relative
+to the directory containing `atlas.hcl` and is confined to that directory,
+including after symbolic-link resolution. The URL retains the source path form:
+`path = "templates"` produces `mem://templates/<name>`, while an absolute path
+produces `mem:///absolute/path/<name>`.
 
 A `null` reaching a name Ptah acts on is refused, and the refusal names the type
 the setting wants:
@@ -572,8 +638,9 @@ matching `--var name=value`. Variable blocks accept the `type` constraints
   print that URL or path.
 - `validation` blocks are not accepted until Ptah implements their semantics.
 
-Unsupported dynamic data sources such as SQL data sources, registry-backed
-sources, and Cloud-specific sources still fail explicitly.
+Referenced `remote_dir`, `remote_schema`, `aws_rds_token`, and
+`gcp_cloudsql_token` sources, registry-backed sources, and Cloud-specific
+sources outside the recognized lazy set still fail explicitly.
 
 ## Env selection
 

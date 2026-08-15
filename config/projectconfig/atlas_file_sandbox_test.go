@@ -103,6 +103,72 @@ func symlink(c *qt.C, target, link string) {
 	c.Assert(os.Symlink(target, link), qt.IsNil)
 }
 
+func TestAtlasTemplateDirectorySandboxRefusesSymlinkEscape(t *testing.T) {
+	for _, loader := range atlasFileLoaders() {
+		t.Run(loader.name, func(t *testing.T) {
+			c := qt.New(t)
+			base := c.TempDir()
+			projectDir := filepath.Join(base, "project")
+			outsideDir := filepath.Join(base, "outside")
+			c.Assert(os.Mkdir(projectDir, 0o700), qt.IsNil)
+			c.Assert(os.Mkdir(outsideDir, 0o700), qt.IsNil)
+			c.Assert(os.WriteFile(
+				filepath.Join(outsideDir, "1_leaked.sql"),
+				[]byte("CREATE TABLE leaked (id INTEGER);\n"),
+				0o600,
+			), qt.IsNil)
+			symlink(c, outsideDir, filepath.Join(projectDir, "templates"))
+			configPath := filepath.Join(projectDir, "atlas.hcl")
+			c.Assert(os.WriteFile(configPath, []byte(`
+data "template_dir" "selected" {
+  path = "templates"
+}
+env "local" {
+  migration {
+    dir = data.template_dir.selected.url
+  }
+}
+`), 0o600), qt.IsNil)
+
+			_, err := loader.load(c, configPath)
+
+			c.Assert(err, qt.ErrorMatches, `data\.template_dir\.selected: reading template directory: .*path escapes atlas\.hcl directory: templates: templates is a symbolic link pointing outside it.*`)
+			c.Assert(err, qt.Not(qt.ErrorMatches), `.*CREATE TABLE leaked.*`)
+		})
+	}
+}
+
+func TestAtlasTemplateDirectorySandboxRefusesSymlinkedTemplateEscape(t *testing.T) {
+	for _, loader := range atlasFileLoaders() {
+		t.Run(loader.name, func(t *testing.T) {
+			c := qt.New(t)
+			base := c.TempDir()
+			projectDir := filepath.Join(base, "project")
+			templateDir := filepath.Join(projectDir, "templates")
+			outsidePath := filepath.Join(base, "1_leaked.sql")
+			c.Assert(os.MkdirAll(templateDir, 0o700), qt.IsNil)
+			c.Assert(os.WriteFile(outsidePath, []byte("CREATE TABLE leaked (id INTEGER);\n"), 0o600), qt.IsNil)
+			symlink(c, outsidePath, filepath.Join(templateDir, "1_leaked.sql"))
+			configPath := filepath.Join(projectDir, "atlas.hcl")
+			c.Assert(os.WriteFile(configPath, []byte(`
+data "template_dir" "selected" {
+  path = "templates"
+}
+env "local" {
+  migration {
+    dir = data.template_dir.selected.url
+  }
+}
+`), 0o600), qt.IsNil)
+
+			_, err := loader.load(c, configPath)
+
+			c.Assert(err, qt.ErrorMatches, `data\.template_dir\.selected: rendering template directory: read 1_leaked\.sql: .*path escapes atlas\.hcl directory: templates/1_leaked\.sql: templates/1_leaked\.sql is a symbolic link pointing outside it.*`)
+			c.Assert(err, qt.Not(qt.ErrorMatches), `.*CREATE TABLE leaked.*`)
+		})
+	}
+}
+
 // The escape shapes. Each plants what its shape needs in the config directory
 // and returns the argument to hand file(), plus the error the planting failed
 // with. The caller asserts that error, so a row carries the fixture it needs

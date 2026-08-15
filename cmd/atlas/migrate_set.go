@@ -233,7 +233,7 @@ func prepareAtlasMigrateSet(
 	if loaded &&
 		!cmd.Flags().Changed("dir") &&
 		projectCfg.StringValue(projectconfig.StringMigrationDir).Present {
-		localDir, err = project.localDirWithQuery(opts.dir)
+		localDir, err = prepared.project.resolveProjectMigrationDir(opts.dir)
 	} else {
 		localDir, err = atlasargs.ParseLocalDir(opts.dir)
 	}
@@ -247,7 +247,7 @@ func prepareAtlasMigrateSet(
 	// Preserve Atlas-compatible directory diagnostics; the subsequent
 	// CaptureLocal call remains the authoritative rooted read and rejects any
 	// path changed after this check.
-	info, err := project.statLocalDir(localDir)
+	info, err := prepared.project.statLocalDir(localDir)
 	if err != nil {
 		return prepared, fmt.Errorf("sql/migrate: %w", err)
 	}

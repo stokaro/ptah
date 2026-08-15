@@ -4,6 +4,7 @@ package projectconfig
 
 import (
 	"fmt"
+	"io/fs"
 	"maps"
 	"slices"
 	"strings"
@@ -79,7 +80,8 @@ type Config struct {
 	// schemaSourceVars maps a SchemaSources entry to the variable values the
 	// atlas.hcl `data "hcl_schema"` block that minted it scopes to its files.
 	// Read through [Config.SchemaSourceVars]; see there for the rule it carries.
-	schemaSourceVars map[string]map[string]string
+	schemaSourceVars     map[string]map[string]string
+	migrationDirectories map[string]MigrationDirectorySource
 }
 
 // SchemaSourceVars reports the variable values scoped to one desired-state
@@ -114,6 +116,40 @@ func (c Config) SchemaSourceVars(rawURL string) (map[string]string, bool) {
 		return nil, false
 	}
 	return maps.Clone(values), true
+}
+
+// MigrationDirectorySource is the rendered filesystem and source path behind
+// one data.template_dir URL. FileSystem is the immutable view commands read;
+// Path is relative to the atlas.hcl root and is where writing migration verbs
+// synchronize newly created files.
+type MigrationDirectorySource struct {
+	FileSystem fs.FS
+	Path       string
+}
+
+// MigrationDirectoryFS returns the immutable filesystem produced for a
+// data.template_dir URL. The boolean is false for ordinary file:// and remote
+// migration directories.
+func (c Config) MigrationDirectoryFS(rawURL string) (fs.FS, bool) {
+	source, ok := c.migrationDirectories[rawURL]
+	return source.FileSystem, ok
+}
+
+// MigrationDirectorySource returns the rendered filesystem and sandboxed
+// backing path produced for a data.template_dir URL. The boolean is false for
+// ordinary file:// and remote migration directories.
+func (c Config) MigrationDirectorySource(rawURL string) (MigrationDirectorySource, bool) {
+	source, ok := c.migrationDirectories[rawURL]
+	return source, ok
+}
+
+func cloneMigrationDirectories(
+	source map[string]MigrationDirectorySource,
+) map[string]MigrationDirectorySource {
+	if len(source) == 0 {
+		return nil
+	}
+	return maps.Clone(source)
 }
 
 // Value carries a project-config value together with whether a source or
@@ -741,6 +777,13 @@ func appendDisabledMode(patterns []string, option ConfigBool, pattern string) []
 // non-zero programmatic values from override.
 func Merge(base, override Config) Config {
 	result := base
+	result.migrationDirectories = cloneMigrationDirectories(base.migrationDirectories)
+	if len(override.migrationDirectories) > 0 {
+		if result.migrationDirectories == nil {
+			result.migrationDirectories = map[string]MigrationDirectorySource{}
+		}
+		maps.Copy(result.migrationDirectories, override.migrationDirectories)
+	}
 	result.IgnoredConstructs = slices.Concat(base.IgnoredConstructs, override.IgnoredConstructs)
 	result.presence = base.presence.clone()
 	result.EnvName = mergeStringValue(

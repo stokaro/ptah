@@ -1,0 +1,35 @@
+{
+  "packages": [
+    "./config/projectconfig/",
+    "./integration/atlasprojectdata/"
+  ],
+  "env": {
+    "GOFLAGS": "-tags=integration"
+  },
+  "mutations": [
+    {
+      "name": "the SQL source discards every returned row",
+      "file": "config/projectconfig/atlas_data_sources.go",
+      "old": "\treturn atlasSQLResult(values), nil",
+      "new": "\treturn atlasSQLResult(nil), nil"
+    },
+    {
+      "name": "the external source discards program output",
+      "file": "config/projectconfig/atlas_data_sources.go",
+      "old": "\treturn cty.StringVal(string(result.Stdout)), nil",
+      "new": "\treturn cty.StringVal(string(result.Stdout[:0])), nil"
+    },
+    {
+      "name": "the runtime variable source discards byte snapshots",
+      "file": "config/projectconfig/atlas_data_sources.go",
+      "old": "\tswitch value := snapshot.Value.(type) {\n\tcase []byte:\n\t\treturn cty.StringVal(string(value)), nil",
+      "new": "\tswitch value := snapshot.Value.(type) {\n\tcase []byte:\n\t\treturn cty.StringVal(\"\"), nil"
+    },
+    {
+      "name": "the template directory source returns the wrong virtual URL",
+      "file": "config/projectconfig/atlas_data_sources.go",
+      "old": "\t\tPath:   filepath.ToSlash(filepath.Join(memPath, name)),",
+      "new": "\t\tPath:   filepath.ToSlash(filepath.Join(memPath, name, \"mutation\")),"
+    }
+  ]
+}

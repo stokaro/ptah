@@ -1,7 +1,12 @@
 package projectconfig
 
+import "context"
+
 // LoadOptions selects project config files and the Atlas env.
 type LoadOptions struct {
+	// Context governs Atlas data-source evaluation. A nil context uses
+	// context.Background.
+	Context   context.Context
 	PtahPath  string
 	AtlasPath string
 	EnvName   string
@@ -42,6 +47,7 @@ func LoadCollection(opts LoadOptions) ([]Config, error) {
 		return nil, err
 	}
 	atlas, err := LoadAtlasFileCollectionWithOptions(atlasPath, AtlasLoadOptions{
+		Context: opts.Context,
 		EnvName: opts.EnvName,
 		Vars:    opts.AtlasVars,
 	})
