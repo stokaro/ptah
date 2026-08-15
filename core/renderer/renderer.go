@@ -55,6 +55,7 @@ import (
 	"go.5x5.cz/ptah/core/renderer/internal/dialects/postgres"
 	"go.5x5.cz/ptah/core/renderer/internal/dialects/sqlite"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
+	"go.5x5.cz/ptah/internal/matviewrefresh"
 	"go.5x5.cz/ptah/internal/mysqlroutine"
 	"go.5x5.cz/ptah/internal/planner/tablelookup"
 	"go.5x5.cz/ptah/internal/reservedrole"
@@ -261,6 +262,19 @@ func (r *validatingRenderer) VisitExtension(node *ast.ExtensionNode) error {
 	return nil
 }
 
+func (r *validatingRenderer) VisitCreateMaterializedView(node *ast.CreateMaterializedViewNode) error {
+	prepared, err := prepareCreateMaterializedViewNode(r.dialect, node)
+	if err != nil {
+		r.Reset()
+		return err
+	}
+	if err := r.RenderVisitor.VisitCreateMaterializedView(prepared); err != nil {
+		r.Reset()
+		return err
+	}
+	return nil
+}
+
 // RenderSQL is a convenience function that creates a renderer and renders an AST node in one call.
 //
 // This function is useful for one-off SQL generation where you don't need to reuse the renderer.
@@ -348,12 +362,32 @@ func prepareASTNodeForRendering(
 		return prepareIndexNode(dialect, caps, typed)
 	case *ast.ExtensionNode:
 		return prepareExtensionNode(dialect, typed)
+	case *ast.CreateMaterializedViewNode:
+		return prepareCreateMaterializedViewNode(dialect, typed)
 	default:
 		if isNilInterface(node) {
 			return nil, invalidASTForeignKeyError(dialect, "AST node is nil")
 		}
 		return node, nil
 	}
+}
+
+func prepareCreateMaterializedViewNode(
+	dialect string,
+	node *ast.CreateMaterializedViewNode,
+) (*ast.CreateMaterializedViewNode, error) {
+	if node == nil {
+		return nil, &ptaherr.RenderError{
+			Dialect: dialect,
+			Err:     ptaherr.ErrInvalidSchemaDiff,
+			Message: "materialized view node is nil",
+		}
+	}
+	if err := matviewrefresh.Validate(dialect, node.Name, node.RefreshStrategy); err != nil {
+		return nil, err
+	}
+	cloned := *node
+	return &cloned, nil
 }
 
 func prepareExtensionNode(dialect string, node *ast.ExtensionNode) (*ast.ExtensionNode, error) {
@@ -941,6 +975,9 @@ func validateDatabaseDeclarations(
 	caps capability.Capabilities,
 	database *goschema.Database,
 ) error {
+	if err := matviewrefresh.ValidateDeclared(dialect, database.MaterializedViews); err != nil {
+		return err
+	}
 	if err := schemaselection.ValidateDeclaredPostgresSystemSchemas(dialect, database.Schemas); err != nil {
 		return err
 	}

@@ -13,6 +13,7 @@ import (
 	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
+	"go.5x5.cz/ptah/internal/matviewrefresh"
 	"go.5x5.cz/ptah/internal/reservedrole"
 	"go.5x5.cz/ptah/internal/schemaselection"
 	"go.5x5.cz/ptah/internal/sqlitevirtual"
@@ -79,6 +80,9 @@ func compareWithDatabaseInfoReportingUndecidedAdditions(
 	// plan a CREATE ROLE the server always refuses. Refuse the declaration
 	// here instead, before anything is compared (stokaro/ptah#1312).
 	if generated != nil {
+		if err := matviewrefresh.ValidateDeclared(info.Dialect, generated.MaterializedViews); err != nil {
+			return nil, nil, err
+		}
 		if err := reservedrole.ValidateDeclared(info.Dialect, generated.Roles); err != nil {
 			return nil, nil, err
 		}

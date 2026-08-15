@@ -298,9 +298,10 @@ Top-level constraints also require `table`. `condition` is supported for
 
 ## Schema Objects
 
-YAML input supports these schema objects. Extensions, functions, materialized
-views, RLS, roles, and grants are PostgreSQL-specific; views and triggers are
-also rendered for MySQL/MariaDB with dialect-specific trigger bodies.
+YAML input supports these schema objects. Extensions, functions, RLS, roles,
+and grants are PostgreSQL-specific. Materialized views also render on
+ClickHouse; views and triggers are also rendered for MySQL/MariaDB with
+dialect-specific trigger bodies.
 
 - `extensions`: `name`, `schema`, `if_not_exists`, `version`, `comment`
 - `functions`: `name`, `params` or `parameters`, `returns`, `language`,
@@ -317,9 +318,13 @@ also rendered for MySQL/MariaDB with dialect-specific trigger bodies.
 - `grants`: `role`, `privilege` or `privileges`, `on_table`, `on_schema`,
   `with_option`, `comment`
 
-`matviews.refresh_strategy` is retained as authoring metadata for future
-refresh workflows. It is not drift-compared because PostgreSQL does not persist
-that policy in `pg_class`/`information_schema`.
+`matviews.refresh_strategy` defaults to `manual`, which means Ptah emits no
+separate refresh operation. It is the only currently supported value. After a
+target dialect is selected, any other value is refused before rendering or
+comparison, and the error names the dialect, materialized view, and value.
+Catalog readers report `manual` because databases do not persist a Ptah-managed
+refresh policy. Target validation runs before comparison, so an unsupported
+authored value cannot be mistaken for a synchronized schema.
 
 ## Validation
 

@@ -371,7 +371,11 @@ Declares a materialized view.
 | `body` | Yes | Materialized view SELECT body. |
 | `comment` | No | Materialized view comment. |
 | `name` | Yes | Materialized view name. |
-| `refresh_strategy` | No | Refresh strategy; defaults to manual. |
+| `refresh_strategy` | No | Ptah-managed refresh strategy. Defaults to `manual`, the only currently supported value. |
+
+`manual` means Ptah emits no separate refresh operation. After a target dialect
+is selected, another value is refused before rendering or comparison, and the
+error names the dialect, materialized view, and value.
 
 ## Security
 
