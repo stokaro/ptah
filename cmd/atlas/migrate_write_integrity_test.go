@@ -434,7 +434,7 @@ func TestCompatMigrateWrite_GatesTheDirectoryNamedByAtlasProjectConfig(t *testin
     dir = "file://migrations"
   }
 }
-`, filepath.Join(root, "dev.db")), 0o600), qt.IsNil)
+`, filepath.ToSlash(filepath.Join(root, "dev.db"))), 0o600), qt.IsNil)
 			before := atlasWriteDirFingerprint(c, dir)
 
 			stdout, _, err := runCompat(args...)
