@@ -26,7 +26,8 @@ func TestGenerateMigrationShadowVerificationWithRealDB(t *testing.T) {
 		c.Assert(conn.SchemaWriter().DropAllTables(ctx), qt.IsNil)
 	}()
 
-	c.Run("broken prior migration aborts with missing column", func(c *qt.C) {
+	t.Run("broken prior migration aborts with missing column", func(t *testing.T) {
+		c := qt.New(t)
 		dir := c.TempDir()
 		entitiesDir := writeShadowEntities(c, dir)
 		migrationsDir := filepath.Join(dir, "migrations")
@@ -56,7 +57,8 @@ func TestGenerateMigrationShadowVerificationWithRealDB(t *testing.T) {
 		c.Assert(matches, qt.HasLen, 2)
 	})
 
-	c.Run("correct prior migration passes and writes files", func(c *qt.C) {
+	t.Run("correct prior migration passes and writes files", func(t *testing.T) {
+		c := qt.New(t)
 		dir := c.TempDir()
 		entitiesDir := writeShadowEntities(c, dir)
 		migrationsDir := filepath.Join(dir, "migrations")

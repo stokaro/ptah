@@ -60,7 +60,8 @@ func TestFlywayRevisionIdentityMatchesAtlasCE(t *testing.T) {
 	compat := buildCompatBinary(c)
 
 	for _, test := range identityCases() {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			dir := writeHashedFlywayDir(c, oracle, test.files)
 			oracleDB := filepath.Join(c.TempDir(), "oracle.db")
 			compatDB := filepath.Join(c.TempDir(), "compat.db")
@@ -293,7 +294,8 @@ func TestFlywayCrossToolReuseKeepsIdentityAndRefusesChecksumEncoding(t *testing.
 	compat := buildCompatBinary(c)
 
 	for _, test := range interoperableIdentityCases() {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			dir := writeHashedFlywayDir(c, oracle, test.files)
 			for _, direction := range []struct {
 				name   string
@@ -303,7 +305,8 @@ func TestFlywayCrossToolReuseKeepsIdentityAndRefusesChecksumEncoding(t *testing.
 				{name: "Atlas CE then Ptah", first: oracle, second: compat},
 				{name: "Ptah then Atlas CE", first: compat, second: oracle},
 			} {
-				c.Run(direction.name, func(c *qt.C) {
+				t.Run(direction.name, func(t *testing.T) {
+					c := qt.New(t)
 					dbPath := filepath.Join(c.TempDir(), "interop.db")
 					assertSQLiteApplyIdentity(c, direction.first, dir, dbPath, test.wantRows)
 					before := readSQLiteRevisionRows(c, dbPath)
@@ -333,7 +336,8 @@ func TestFlywayOnlyRepeatableCrossToolReuseMatchesExactEmptyIdentity(t *testing.
 		{name: "Atlas CE then Ptah", first: oracle, second: compat},
 		{name: "Ptah then Atlas CE", first: compat, second: oracle},
 	} {
-		c.Run(direction.name, func(c *qt.C) {
+		t.Run(direction.name, func(t *testing.T) {
+			c := qt.New(t)
 			dbPath := filepath.Join(c.TempDir(), "only-repeatable.db")
 			assertSQLiteApplyIdentity(c, direction.first, dir, dbPath, want)
 			before := readSQLiteRevisionRows(c, dbPath)
@@ -448,7 +452,8 @@ func TestFlywayMigrateSetMatchesAtlasCE(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			dir := writeHashedFlywayDir(c, oracle, test.files)
 			oracleDB := filepath.Join(c.TempDir(), "oracle-set.db")
 			compatDB := filepath.Join(c.TempDir(), "compat-set.db")
@@ -512,7 +517,8 @@ func TestFlywayMigrateSetOrdersRetiredBaselinesLikeAtlasCE(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			for _, binary := range []string{oracle, compat} {
 				dir := writeHashedFlywayDir(c, oracle, []migrationFile{test.retiredFile})
 				dbPath := filepath.Join(c.TempDir(), "baseline-rotation.db")

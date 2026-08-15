@@ -35,8 +35,6 @@ func TestSameRealm_PostgresDriverURLOverridesLive(t *testing.T) {
 }
 
 func TestSameRealm_NetworkDatabasesLive(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name   string
 		engine dbtarget.Engine
@@ -51,7 +49,8 @@ func TestSameRealm_NetworkDatabasesLive(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			databaseURL := dbtarget.URL(c, test.engine)
 			firstConn, err := dbschema.ConnectToDatabase(c.Context(), databaseURL)
 			c.Assert(err, qt.IsNil)

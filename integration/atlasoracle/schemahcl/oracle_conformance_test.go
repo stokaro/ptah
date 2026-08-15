@@ -50,7 +50,6 @@ const oracleDevURL = "sqlite://file?mode=memory"
 // for any particular name.
 func TestOracleAcceptsAndDropsUnknownSchemaHCLNames(t *testing.T) {
 	oracle := requireSchemaOracle(t)
-	c := qt.New(t)
 
 	tests := []struct {
 		name       string
@@ -319,7 +318,8 @@ table "t" {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			withDDL, withCode := runSchemaOracle(c, oracle, tt.hcl)
 			withoutDDL, withoutCode := runSchemaOracle(c, oracle, tt.equivalent)
 			c.Assert(withCode, qt.Equals, 0, qt.Commentf("oracle output: %s", withDDL))
@@ -357,7 +357,6 @@ table "t" {
 // stayed invisible while accepting all twelve of these.
 func TestOracleRefusesUnevaluableDroppedBodies(t *testing.T) {
 	oracle := requireSchemaOracle(t)
-	c := qt.New(t)
 
 	tests := []struct {
 		name string
@@ -694,7 +693,8 @@ table "t" {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			out, code := runSchemaOracle(c, oracle, tt.hcl)
 			c.Assert(code, qt.Not(qt.Equals), 0, qt.Commentf("oracle output: %s", out))
 
@@ -738,7 +738,6 @@ table "t" {
 // blocks — the thing every attempt so far has had to guess a member of.
 func TestOracleAcceptsReferencesPtahRefuses(t *testing.T) {
 	oracle := requireSchemaOracle(t)
-	c := qt.New(t)
 
 	tests := []struct {
 		name string
@@ -796,7 +795,8 @@ table "t" {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			out, code := runSchemaOracle(c, oracle, tt.hcl)
 			c.Assert(code, qt.Equals, 0, qt.Commentf("oracle output: %s", out))
 

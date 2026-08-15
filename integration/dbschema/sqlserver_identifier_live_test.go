@@ -482,7 +482,6 @@ CREATE TABLE [dbo].[users] (
 }
 
 func TestSQLServerLiveIdentifierSemantics_CatalogEquivalenceMatrix(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name      string
 		collation string
@@ -528,7 +527,8 @@ func TestSQLServerLiveIdentifierSemantics_CatalogEquivalenceMatrix(t *testing.T)
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			dbURL := provisionSQLServerCollationDatabase(c, test.collation)
 			conn := connectSQLServerCollationDatabase(c, dbURL)
 			semantics, err := conn.ResolveIdentifierSemantics(

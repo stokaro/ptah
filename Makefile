@@ -181,12 +181,20 @@ lint: lint-qtlint
 # -fix they can collide: one rule deletes a receiver declaration the other
 # rule's rewrite still references. See go-extras/qtlint#65.
 #
-# -require-testing-run is not in this set yet. 70 sites across 49 files still
-# hold a table row whose function field is typed func(c *qt.C, ...), where the
-# type is written somewhere the rule does not reach
-# reaches. A gate carrying known violations is either red or lying, so the rule
-# joins this list when those are converted rather than before.
-QTLINT_RULES := -require-qt-c-receiver -require-data-rows
+# -require-testing-run joined this set once both contours reached zero: 27
+# untagged and 139 tagged reports at the start, none now. Most were rewritten
+# by the rule itself; the rest were tables holding a func field typed
+# func(c *qt.C, ...), which is the shape that leaves the rule unable to bound
+# what a subtest closure reaches, and they carry data now.
+#
+# Nineteen were converted by hand after the rule withheld its own fix. The
+# withholding is right in general -- a *qt.C handed to a field could reach
+# (*qt.C).Defer, and a rewrite that stops a deferred function running does not
+# fail, it just stops cleaning up. It does not apply here, and that is checked
+# rather than assumed: no test in this repository calls Defer or Done at all.
+# If one ever does, this rule reports its subtest and the fix is withheld
+# again, which is the outcome to want.
+QTLINT_RULES := -require-qt-c-receiver -require-data-rows -require-testing-run
 
 lint-qtlint:
 	@echo "Running qtlint..."

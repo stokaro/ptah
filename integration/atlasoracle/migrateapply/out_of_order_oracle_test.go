@@ -43,7 +43,8 @@ func TestOracleDistinguishesPrefixAndIntervalInsertions(t *testing.T) {
 	c := qt.New(t)
 	compat := buildCompatBinary(c)
 
-	c.Run("prefix insertion is the retained divergence", func(c *qt.C) {
+	t.Run("prefix insertion is the retained divergence", func(t *testing.T) {
+		c := qt.New(t)
 		lateOnly := writeOracleMigrationDir(c, oracle, map[string]string{
 			lateVersion + "_late.sql": lateBody,
 		})
@@ -69,7 +70,8 @@ func TestOracleDistinguishesPrefixAndIntervalInsertions(t *testing.T) {
 		assertMigrationState(c, compatDB, []string{"oracle_late"}, []string{lateVersion})
 	})
 
-	c.Run("interval insertion is parity", func(c *qt.C) {
+	t.Run("interval insertion is parity", func(t *testing.T) {
+		c := qt.New(t)
 		initial := writeOracleMigrationDir(c, oracle, map[string]string{
 			earlyVersion + "_early.sql": earlyBody,
 			lateVersion + "_late.sql":   lateBody,

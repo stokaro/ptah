@@ -89,8 +89,6 @@ func TestCells_AreWellFormed(t *testing.T) {
 // cannot verify by eye: that PresetName describes the set Preset returns, and
 // that the set is one the registry accepts.
 func TestCells_MeasuredCellsNameAValidPreset(t *testing.T) {
-	c := qt.New(t)
-
 	named := map[string]func() capability.Capabilities{
 		"Postgres17":      capability.Postgres17,
 		"Postgres16":      capability.Postgres16,
@@ -107,31 +105,31 @@ func TestCells_MeasuredCellsNameAValidPreset(t *testing.T) {
 		"SpannerPostgres": capability.SpannerPostgres,
 	}
 	for _, cell := range capabilityprobe.Cells {
-		c.Run(cell.String(), func(c *qt.C) {
+		t.Run(cell.String(), func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(cell.Measured(), qt.Equals, cell.PresetName != "",
 				qt.Commentf("a cell either names a preset and has one, or names neither"))
-			for _, check := range measuredChecks(cell, named) {
-				check(c)
-			}
+			assertMeasuredCell(c, cell, named)
 		})
 	}
 }
 
-// measuredChecks returns the assertions that only apply to a cell that names a
-// preset, so the loop body above stays free of a conditional.
-func measuredChecks(cell capabilityprobe.Cell, named map[string]func() capability.Capabilities) []func(*qt.C) {
+// assertMeasuredCell checks what only applies to a cell that names a preset.
+//
+// The conditional lives here rather than in the loop body above, which is why
+// this is a helper at all -- it used to be a helper returning a slice of
+// closures, which is the same thing with a checker handed through an extra
+// indirection nothing needed.
+func assertMeasuredCell(c *qt.C, cell capabilityprobe.Cell, named map[string]func() capability.Capabilities) {
+	c.Helper()
 	if !cell.Measured() {
-		return nil
+		return
 	}
-	return []func(*qt.C){
-		func(c *qt.C) {
-			build, known := named[cell.PresetName]
-			c.Assert(known, qt.IsTrue, qt.Commentf("cell names preset %q, which this test does not know", cell.PresetName))
-			c.Assert(cell.Preset(), qt.DeepEquals, build(),
-				qt.Commentf("cell names preset %q but carries a different set", cell.PresetName))
-			c.Assert(cell.Preset().Validate(), qt.IsNil)
-		},
-	}
+	build, known := named[cell.PresetName]
+	c.Assert(known, qt.IsTrue, qt.Commentf("cell names preset %q, which this test does not know", cell.PresetName))
+	c.Assert(cell.Preset(), qt.DeepEquals, build(),
+		qt.Commentf("cell names preset %q but carries a different set", cell.PresetName))
+	c.Assert(cell.Preset().Validate(), qt.IsNil)
 }
 
 // TestCellFor_LandsOnTheDeclaredLine covers the versions a cell claims. The
@@ -295,10 +293,8 @@ func TestCells_DeclareEveryDatabaseContainerThisRepositoryStarts(t *testing.T) {
 	assertThePinnedListHasDatabasesInIt(c, pinned)
 
 	for _, ref := range pinned {
-		c.Run(ref, func(c *qt.C) {
-			for _, check := range checksForPinnedImage(ref) {
-				check(c)
-			}
+		t.Run(ref, func(t *testing.T) {
+			assertPinnedImageIsClassified(qt.New(t), ref)
 		})
 	}
 }
@@ -349,33 +345,34 @@ func assertThePinnedListHasDatabasesInIt(c *qt.C, pinned []string) {
 	}
 }
 
-// checksForPinnedImage returns the assertions for one image reference, so the
-// loop body stays free of a conditional.
-func checksForPinnedImage(ref string) []func(*qt.C) {
+// assertPinnedImageIsClassified checks one image reference against the matrix.
+//
+// The three answers -- not a database, unclassified, or a database that needs a
+// cell -- are branches, and they live here so the loop body does not carry
+// them. This used to return a slice of closures per branch, which handed the
+// checker through an indirection that bought nothing.
+func assertPinnedImageIsClassified(c *qt.C, ref string) {
+	c.Helper()
 	repository, tag := splitImageRef(ref)
 	if notADatabase[repository] {
-		return []func(*qt.C){func(c *qt.C) {
-			c.Assert(cellsDeclaring(repository, tag), qt.HasLen, 0,
-				qt.Commentf("%s is listed as not a database, yet a matrix cell claims it", ref))
-		}}
+		c.Assert(cellsDeclaring(repository, tag), qt.HasLen, 0,
+			qt.Commentf("%s is listed as not a database, yet a matrix cell claims it", ref))
+		return
 	}
 	dialect, known := databaseImages[repository]
 	if !known {
-		return []func(*qt.C){func(c *qt.C) {
-			c.Fatalf("image %q is started by %v and appears in neither databaseImages nor notADatabase; "+
-				"classify it rather than letting it through unexamined", ref, pinnedImageFiles)
-		}}
+		c.Fatalf("image %q is started by %v and appears in neither databaseImages nor notADatabase; "+
+			"classify it rather than letting it through unexamined", ref, pinnedImageFiles)
+		return
 	}
-	return []func(*qt.C){func(c *qt.C) {
-		declaring := cellsDeclaring(repository, tag)
-		c.Assert(len(declaring) > 0, qt.IsTrue,
-			qt.Commentf("this repository starts %s and no matrix cell declares it, so nothing here can "+
-				"describe the capabilities of the server it runs (add a cell in cells.go)", ref))
-		for _, cell := range declaring {
-			c.Check(cell.Dialect, qt.Equals, dialect,
-				qt.Commentf("cell %s declares image %q, whose repository speaks %s", cell, cell.Image, dialect))
-		}
-	}}
+	declaring := cellsDeclaring(repository, tag)
+	c.Assert(len(declaring) > 0, qt.IsTrue,
+		qt.Commentf("this repository starts %s and no matrix cell declares it, so nothing here can "+
+			"describe the capabilities of the server it runs (add a cell in cells.go)", ref))
+	for _, cell := range declaring {
+		c.Check(cell.Dialect, qt.Equals, dialect,
+			qt.Commentf("cell %s declares image %q, whose repository speaks %s", cell, cell.Image, dialect))
+	}
 }
 
 // cellsDeclaring returns the cells whose Image covers a pinned reference.

@@ -123,7 +123,6 @@ func primaryKeyColumns(c *qt.C, dbURL, database, table string) []string {
 // Only the catalog settles it: this row applies the plan and asks
 // information_schema.KEY_COLUMN_USAGE what the table ended up with.
 func TestPrimaryKeyIsPlannedOnceLiveMySQL(t *testing.T) {
-	c := qt.New(t)
 	adminURL := liveMySQLAdminURLForPrimaryKeyIdentity(t)
 
 	tests := []struct {
@@ -154,7 +153,8 @@ func TestPrimaryKeyIsPlannedOnceLiveMySQL(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			dbURL, database := createPrimaryKeyIdentityDatabase(c, adminURL)
 			executeMySQL(c, dbURL, []string{
 				"CREATE TABLE `orders` (`id` INT NOT NULL, `note` TEXT)",

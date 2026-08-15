@@ -60,7 +60,6 @@ const migratecleanRevisionColumns = `(
 // databases are refusals through a URL that pins nothing, and the fix must not
 // move them here.
 func TestInspectLive_SchemaScopeClean(t *testing.T) {
-	c := qt.New(t)
 	ctx := context.Background()
 
 	tests := []struct {
@@ -91,7 +90,8 @@ func TestInspectLive_SchemaScopeClean(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			conn := newMigratecleanLiveConnection(c, ctx, "search_path=public", test.setup)
 
 			scope, err := migrateclean.Inspect(ctx, conn)
@@ -107,7 +107,6 @@ func TestInspectLive_SchemaScopeClean(t *testing.T) {
 // TestInspectLive_SchemaScopeUnclean walks the states the binary refuses in
 // schema scope, and checks the refusal names the table the binary names.
 func TestInspectLive_SchemaScopeUnclean(t *testing.T) {
-	c := qt.New(t)
 	ctx := context.Background()
 
 	tests := []struct {
@@ -161,7 +160,8 @@ func TestInspectLive_SchemaScopeUnclean(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			conn := newMigratecleanLiveConnection(c, ctx, "search_path=public", test.setup)
 
 			scope, err := migrateclean.Inspect(ctx, conn)
@@ -180,7 +180,6 @@ func TestInspectLive_SchemaScopeUnclean(t *testing.T) {
 // through a PLAIN URL — the spelling the compatibility documentation uses, with
 // no search_path on it at all.
 func TestInspectLive_RealmScopeClean(t *testing.T) {
-	c := qt.New(t)
 	ctx := context.Background()
 
 	tests := []struct {
@@ -235,7 +234,8 @@ func TestInspectLive_RealmScopeClean(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			conn := newMigratecleanLiveConnection(c, ctx, "", test.setup)
 
 			scope, err := migrateclean.Inspect(ctx, conn)
@@ -254,7 +254,6 @@ func TestInspectLive_RealmScopeClean(t *testing.T) {
 // every row is a database the pinned binary refuses through the plain URL and
 // the gate applied to before this change.
 func TestInspectLive_RealmScopeUnclean(t *testing.T) {
-	c := qt.New(t)
 	ctx := context.Background()
 
 	tests := []struct {
@@ -367,7 +366,8 @@ func TestInspectLive_RealmScopeUnclean(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			conn := newMigratecleanLiveConnection(c, ctx, "", test.setup)
 
 			scope, err := migrateclean.Inspect(ctx, conn)
@@ -385,7 +385,6 @@ func TestInspectLive_RealmScopeUnclean(t *testing.T) {
 // and not the session. A `search_path` set through libpq's `options` moves
 // `current_schema()` without moving the binary out of realm scope.
 func TestInspectLive_ScopeSelection(t *testing.T) {
-	c := qt.New(t)
 	ctx := context.Background()
 
 	tests := []struct {
@@ -412,7 +411,8 @@ func TestInspectLive_ScopeSelection(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			conn := newMigratecleanLiveConnection(c, ctx, test.query, []string{"CREATE SCHEMA extra"})
 
 			scope, err := migrateclean.Inspect(ctx, conn)

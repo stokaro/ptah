@@ -132,7 +132,8 @@ func TestAtlasMigrateLintMultiTargetDropE2E(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			testDBName := fmt.Sprintf("ptah_lint_mt_e2e_%d", time.Now().UnixNano())
 			createE2EDatabase(c, ctx, adminDB, testDBName)
 			defer dropE2EDatabase(c, context.Background(), adminDB, testDBName)

@@ -90,7 +90,8 @@ func TestMigrateLintMissingDirectoryDiagnosticsE2E(t *testing.T) {
 	}
 
 	for _, test := range compatCases {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			root := c.TempDir()
 			test.setup(c, root)
 
@@ -104,7 +105,8 @@ func TestMigrateLintMissingDirectoryDiagnosticsE2E(t *testing.T) {
 		})
 	}
 
-	c.Run("native missing directory keeps native diagnostic", func(c *qt.C) {
+	t.Run("native missing directory keeps native diagnostic", func(t *testing.T) {
+		c := qt.New(t)
 		stdout, stderr, err := runCLIProcess(ctx, c.TempDir(), nativeBinary,
 			"migrations", "lint", "--dir", "nope",
 		)

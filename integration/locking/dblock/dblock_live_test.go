@@ -15,8 +15,6 @@ import (
 )
 
 func TestAdvisoryLock_PostgresFamilyLive(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name    string
 		engine  dbtarget.Engine
@@ -27,7 +25,8 @@ func TestAdvisoryLock_PostgresFamilyLive(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			databaseURL := dbtarget.URL(c, test.engine)
 			first, err := dbschema.ConnectToDatabase(c.Context(), databaseURL)
 			c.Assert(err, qt.IsNil)

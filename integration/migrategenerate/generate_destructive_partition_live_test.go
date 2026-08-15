@@ -64,7 +64,8 @@ func TestMigrateGenerateWritesTheUndeclaredPartitionDropUnlessAskedToCheck(t *te
 
 	entitiesDir := writeMigrateGenerateParentOnlyEntities(c, c.TempDir())
 
-	c.Run("--check-destructive refuses before anything is written", func(c *qt.C) {
+	t.Run("--check-destructive refuses before anything is written", func(t *testing.T) {
+		c := qt.New(t)
 		migrationsDir := filepath.Join(c.TempDir(), "migrations")
 		c.Assert(os.MkdirAll(migrationsDir, 0o755), qt.IsNil)
 
@@ -80,7 +81,8 @@ func TestMigrateGenerateWritesTheUndeclaredPartitionDropUnlessAskedToCheck(t *te
 		c.Assert(migrateGenerateSQLFiles(c, migrationsDir), qt.HasLen, 0)
 	})
 
-	c.Run("the default writes the DROP TABLE and reports success", func(c *qt.C) {
+	t.Run("the default writes the DROP TABLE and reports success", func(t *testing.T) {
+		c := qt.New(t)
 		migrationsDir := filepath.Join(c.TempDir(), "migrations")
 		c.Assert(os.MkdirAll(migrationsDir, 0o755), qt.IsNil)
 
@@ -99,7 +101,8 @@ func TestMigrateGenerateWritesTheUndeclaredPartitionDropUnlessAskedToCheck(t *te
 		c.Assert(upSQL, qt.Contains, `CREATE INDEX IF NOT EXISTS "idx_events_tenant" ON "events" ("tenant");`)
 	})
 
-	c.Run("--check-destructive with --allow-destructive writes it too", func(c *qt.C) {
+	t.Run("--check-destructive with --allow-destructive writes it too", func(t *testing.T) {
+		c := qt.New(t)
 		migrationsDir := filepath.Join(c.TempDir(), "migrations")
 		c.Assert(os.MkdirAll(migrationsDir, 0o755), qt.IsNil)
 

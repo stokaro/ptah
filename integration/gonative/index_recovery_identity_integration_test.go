@@ -112,7 +112,6 @@ func TestPostgreSQLCreateIndexRefusesNameOwnedByNonIndexRelationIntegration(t *t
 
 func TestPostgreSQLDropCreateResolvesMixedQualificationIntegration(t *testing.T) {
 	dsn := skipIfNoPostgreSQL(t)
-	c := qt.New(t)
 	tests := []struct {
 		name    string
 		tracker string
@@ -145,7 +144,8 @@ func TestPostgreSQLDropCreateResolvesMixedQualificationIntegration(t *testing.T)
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			db := openIndexRecoveryIdentityDB(c, dsn)
 			seedIndexRecoveryIdentitySchema(c, db, test.tracker)
 			leaveIndexRecoveryIdentityInvalid(c, db)
@@ -234,7 +234,6 @@ func TestPostgreSQLUnconditionalCreateMayBeDroppedLaterIntegration(t *testing.T)
 
 func TestPostgreSQLRollbackChecksConditionalIndexResultIntegration(t *testing.T) {
 	dsn := skipIfNoPostgreSQL(t)
-	c := qt.New(t)
 	tests := []struct {
 		name       string
 		tracker    string
@@ -257,7 +256,8 @@ func TestPostgreSQLRollbackChecksConditionalIndexResultIntegration(t *testing.T)
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			db := openIndexRecoveryIdentityDB(c, dsn)
 			seedIndexRecoveryIdentityPublicTables(c, db)
 			conn, err := dbschema.ConnectToDatabase(c.Context(), dsn)
@@ -298,7 +298,6 @@ func TestPostgreSQLRollbackChecksConditionalIndexResultIntegration(t *testing.T)
 
 func TestPostgreSQLRollbackResolvesEachConditionalIndexAtStatementSearchPathIntegration(t *testing.T) {
 	dsn := skipIfNoPostgreSQL(t)
-	c := qt.New(t)
 	tests := []struct {
 		name       string
 		tracker    string
@@ -320,7 +319,8 @@ func TestPostgreSQLRollbackResolvesEachConditionalIndexAtStatementSearchPathInte
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			db := openIndexRecoveryIdentityDB(c, dsn)
 			seedIndexRecoveryIdentitySearchPathSchemas(c, db, test.tracker)
 			conn, err := dbschema.ConnectToDatabase(c.Context(), dsn)

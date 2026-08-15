@@ -87,7 +87,8 @@ func TestPostgresConnectionResolvesTheSearchPathSchemaE2E(t *testing.T) {
 	}}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			conn, err := dbschema.ConnectToDatabase(ctx, withDevSearchPath(c, scopedURL, test.searchPath))
 			c.Assert(err, qt.IsNil)
 			defer dbschema.CloseAndWarn(conn)
@@ -105,7 +106,8 @@ func TestPostgresConnectionResolvesTheSearchPathSchemaE2E(t *testing.T) {
 	// The message has to name the schema. Without it the run reaches the replay
 	// and dies on a CREATE TABLE with "no schema has been selected to create in",
 	// which sends the operator to their migration instead of their URL.
-	c.Run("a search_path naming no existing schema is refused", func(c *qt.C) {
+	t.Run("a search_path naming no existing schema is refused", func(t *testing.T) {
+		c := qt.New(t)
 		_, err := dbschema.ConnectToDatabase(ctx, withDevSearchPath(c, scopedURL, "nosuchschema"))
 
 		c.Assert(err, qt.ErrorMatches,

@@ -177,7 +177,8 @@ func TestSchemaRenderAndPlanCatalogAgreementE2E(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			runRenderPlanCatalogCase(c, ctx, binaryPath, test)
 		})
 	}
