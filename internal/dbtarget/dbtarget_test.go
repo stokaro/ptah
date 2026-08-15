@@ -300,6 +300,15 @@ func TestLookupDriverDSN_RendersTheNetworkFormTheDriverParses(t *testing.T) {
 			want:   "root:pass@tcp(localhost:3307)/db",
 		},
 		{
+			// go-sql-driver's grammar keeps the database separator even when
+			// the name after it is empty, so a server URL naming no database
+			// still ends in a slash.
+			name:   "a URL naming no database keeps the separator",
+			engine: dbtarget.MySQL,
+			set:    func(t *testing.T) { t.Setenv("MYSQL_TEST_URL", "mysql://user:pass@host:3306") },
+			want:   "user:pass@tcp(host:3306)/",
+		},
+		{
 			name:   "a host with no port keeps the driver's default",
 			engine: dbtarget.MySQL,
 			set:    func(t *testing.T) { t.Setenv("MYSQL_TEST_URL", "mysql://root@localhost/db") },

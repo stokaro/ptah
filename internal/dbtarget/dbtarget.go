@@ -62,8 +62,13 @@ type source struct {
 var sources = map[Engine]source{
 	PostgreSQL: {
 		canonical: "POSTGRES_TEST_DSN",
-		synonyms:  []string{"POSTGRES_URL", "POSTGRES_TEST_URL", "TEST_DATABASE_URL"},
-		scheme:    []string{"postgres", "postgresql"},
+		// TEST_DB_URL was honored by two integration helpers and by nothing
+		// else, so a checkout configured with it alone ran those two tests and
+		// skipped every other PostgreSQL one -- silently, because a skip reads
+		// as a pass. It is listed here so the spelling is known to every test
+		// rather than to the two that happened to spell it out.
+		synonyms: []string{"POSTGRES_URL", "POSTGRES_TEST_URL", "TEST_DATABASE_URL", "TEST_DB_URL"},
+		scheme:   []string{"postgres", "postgresql"},
 	},
 	// The MySQL family declares its schemes because the two engines speak one
 	// wire protocol: a MariaDB address left in a MySQL variable connects, and
@@ -373,7 +378,15 @@ func mysqlNetworkDSN(address string) string {
 		host += ":3306"
 	}
 
-	rendered := credentialsOf(parsed.User) + "@tcp(" + host + ")" + parsed.Path
+	// The database separator survives an empty name. go-sql-driver's grammar
+	// requires it, so a server URL naming no database still ends in a slash;
+	// dropping it left an otherwise valid address the driver refuses to parse.
+	path := parsed.Path
+	if path == "" {
+		path = "/"
+	}
+
+	rendered := credentialsOf(parsed.User) + "@tcp(" + host + ")" + path
 	if parsed.RawQuery != "" {
 		rendered += "?" + parsed.RawQuery
 	}
