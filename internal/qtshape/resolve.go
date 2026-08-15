@@ -382,10 +382,16 @@ func (b *bindings) declareRange(stmt *ast.RangeStmt, sc span) {
 	}
 }
 
-// forgetReassigned drops the function value remembered for any name that is also
+// forgetReassigned drops the value remembered for any name that is also
 // assigned to. A callback rebound after its declaration has no single known
 // value, and reporting the first literal at a call site that may receive a
 // different one is a guess this gate does not make.
+//
+// The initializer goes with the signature and the literal, not just those two.
+// Every rule that follows a declaration's value -- the callback chain, the
+// alias propagation, the testing.TB walk -- would otherwise read the
+// initializer that the assignment replaced, and a name cleared here would be
+// resolved right back to the value it no longer holds.
 func (b *bindings) forgetReassigned(file *ast.File) {
 	ast.Inspect(file, func(node ast.Node) bool {
 		assign, ok := node.(*ast.AssignStmt)
@@ -403,8 +409,8 @@ func (b *bindings) forgetReassigned(file *ast.File) {
 	})
 }
 
-// forget clears the remembered function value of every declaration of a name
-// whose block contains the assignment.
+// forget clears the remembered value of every declaration of a name whose block
+// contains the assignment.
 func (b *bindings) forget(ident *ast.Ident) {
 	for _, d := range b.decls[ident.Name] {
 		if !d.scope.contains(ident.Pos()) {
@@ -412,6 +418,7 @@ func (b *bindings) forget(ident *ast.Ident) {
 		}
 		d.sig = nil
 		d.lit = nil
+		d.value = nil
 	}
 }
 

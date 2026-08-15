@@ -95,3 +95,36 @@ func TestAliasedConformingCallback(t *testing.T) {
 	alias := owns
 	t.Run("the alias of a conforming callback is conforming", alias)
 }
+
+// A callback rebound before the call has no single known value, so the literal
+// its declaration was given is not what the call receives. Following the
+// initializer anyway reports a subtest that is conforming at the only place it
+// is used, which is the direction a gate with no baseline may not fail in.
+func TestReassignedCallbackIsNotItsFirstLiteral(t *testing.T) {
+	c := qt.New(t)
+
+	cb := func(t *testing.T) {
+		c.Assert(8, qt.Equals, 8)
+	}
+	cb = func(t *testing.T) {
+		inner := qt.New(t)
+		inner.Assert(9, qt.Equals, 9)
+	}
+	t.Run("the callback the call receives is conforming", cb)
+}
+
+// And the same thing one alias further out, where the name the call names was
+// rebound and the name it was copied from was not.
+func TestReassignedAliasIsNotItsFirstLiteral(t *testing.T) {
+	c := qt.New(t)
+
+	borrows := func(t *testing.T) {
+		c.Assert(10, qt.Equals, 10)
+	}
+	alias := borrows
+	alias = func(t *testing.T) {
+		inner := qt.New(t)
+		inner.Assert(11, qt.Equals, 11)
+	}
+	t.Run("the alias the call receives is conforming", alias)
+}

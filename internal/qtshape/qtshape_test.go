@@ -98,6 +98,11 @@ func TestScanFileReportsExactlyTheViolations(t *testing.T) {
 			// subtest here is handed a func(*testing.T) that was bound to a name
 			// first, which is the same object graph as the inline spelling and
 			// the same parent-FailNow failure.
+			//
+			// The last two functions are the other direction: a callback rebound
+			// before the call has no single known value, and reading the literal
+			// its declaration was given reports a subtest that is conforming
+			// where it is actually used.
 			name:    "a subtest callback named elsewhere still borrows what it borrows",
 			fixture: "namedcallback.go.txt",
 			want: []wantFinding{
