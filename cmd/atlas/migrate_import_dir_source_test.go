@@ -3,12 +3,12 @@ package atlas_test
 import (
 	"os"
 	"path/filepath"
-	"syscall"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/cmd/internal/exitcode"
+	"go.5x5.cz/ptah/internal/testutils"
 )
 
 // flywayImportSource is a source directory only the Flyway layout can read.
@@ -129,7 +129,7 @@ func TestCompatMigrateImportSourceResolutionMatchesTheOracle(t *testing.T) {
 		{
 			name: "a missing source is reported as a missing source",
 			want: func(fx importFixture) string {
-				return "sql/migrate: stat " + fx.missing + ": " + syscall.ENOENT.Error()
+				return "sql/migrate: " + testutils.StatMissingText(fx.missing)
 			},
 			args: func(fx importFixture) []string {
 				return []string{
@@ -142,7 +142,7 @@ func TestCompatMigrateImportSourceResolutionMatchesTheOracle(t *testing.T) {
 		{
 			name: "a missing source under the default layout is still a missing source",
 			want: func(fx importFixture) string {
-				return "sql/migrate: stat " + fx.missing + ": " + syscall.ENOENT.Error()
+				return "sql/migrate: " + testutils.StatMissingText(fx.missing)
 			},
 			args: func(fx importFixture) []string {
 				return []string{
