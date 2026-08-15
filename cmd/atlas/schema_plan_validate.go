@@ -156,7 +156,10 @@ func runAtlasSchemaPlanValidate(cmd *cobra.Command, opts atlasSchemaPlanValidate
 		return cmdutil.Fail(cmd, err)
 	}
 	schemaScope, schemaScopeFlag := schemafile.ScopeFromURLs(opts.devURL, opts.fromURLs[0], "from")
-	desired, err := schemafile.LoadAll(opts.toURLs, schemafile.Options{
+	// The sources rather than the URLs: a desired state the env selected
+	// through `data "hcl_schema"` carries that block's vars, and this verb
+	// loads local files directly instead of classifying them.
+	desired, err := schemafile.LoadSources(atlasSchemaPlanSources(opts.atlasSchemaPlanTransitionFlags), schemafile.Options{
 		Dialect:               conn.Info().Dialect,
 		IgnoreUnknownHCLNames: true,
 		SchemaScope:           schemaScope,

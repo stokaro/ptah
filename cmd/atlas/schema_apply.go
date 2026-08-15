@@ -60,6 +60,12 @@ type atlasSchemaApplyOptions struct {
 	// both which rules the plan is linted against and whether there is a lint
 	// pass at all.
 	lintPolicy projectconfig.LintConfig
+	// toSources is toURLs with the variable scope each one carries, filled only
+	// when the desired state came from the project's own schema sources. The
+	// saved-plan path loads local files directly instead of classifying them,
+	// so this is the only way an atlas.hcl `data "hcl_schema" { vars }` reaches
+	// it.
+	toSources []schemafile.Source
 }
 
 type atlasSchemaApplyDisplayError struct {
@@ -416,14 +422,23 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 			return cmdutil.Fail(cmd, err)
 		}
 	}
+	// projectToURLs is the desired-state URL list this run took from the
+	// project's schema sources, and stays nil when --to or --file supplied it.
+	// See [atlasProjectSourceURLs].
+	//
+	// It is resolved BEFORE the saved-plan branch below, and the two arms after
+	// it are not: `--plan` verifies the plan against this same desired state,
+	// so it needs these resolved URLs and their variable scope, while env://src
+	// is a desired state that path has never expanded and an empty --to there
+	// means "verify nothing", which is a capability rather than an oversight.
+	if loaded {
+		opts.toURLs, opts.toSources, err = atlasSchemaApplyProjectFileSources(cmd, opts, projectCfg)
+		if err != nil {
+			return cmdutil.Fail(cmd, err)
+		}
+	}
 	if strings.TrimSpace(opts.planURL) != "" {
 		return runAtlasSchemaApplyPlanFile(cmd, opts)
-	}
-	if loaded && !cmd.Flags().Changed("to") && !cmd.Flags().Changed(atlasFileFlagName) && len(projectCfg.SchemaSources) > 0 {
-		opts.toURLs, err = atlasProjectConfigSchemaURLs(cmd, opts.toURLs)
-		if err != nil {
-			return cmdutil.Fail(cmd, fmt.Errorf("atlas.hcl schema.src: %w", err))
-		}
 	}
 	if loaded && !cmd.Flags().Changed("to") && !cmd.Flags().Changed(atlasFileFlagName) &&
 		atlasExternalSchemaConfigured(projectCfg) {
@@ -447,6 +462,7 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 		if err != nil {
 			return cmdutil.Fail(cmd, err)
 		}
+		projectEnv.ProjectSourceURLs = atlasProjectSourceURLs("--to", atlasSchemaFileSourceURLs(opts.toSources))
 	}
 	if err := validateAtlasSchemaApplyOptions(cmd, opts, projectEnv); err != nil {
 		return cmdutil.Fail(cmd, err)
@@ -664,6 +680,66 @@ func needsAtlasSchemaApplyConfig(cmd *cobra.Command) bool {
 	return !cmd.Flags().Changed("to") && !cmd.Flags().Changed(atlasFileFlagName)
 }
 
+// atlasSchemaApplyDesiredSources is the desired state of a run, as sources.
+//
+// toSources when the project supplied it, so each file sees its own
+// `data "hcl_schema" { vars }`; the plain URLs otherwise, which keep the run's
+// --var. Same rule, same reason as
+// [go.5x5.cz/ptah/internal/atlassource.ProjectEnv.SuppliedSource].
+func atlasSchemaApplyDesiredSources(opts atlasSchemaApplyOptions) []schemafile.Source {
+	if len(opts.toSources) > 0 {
+		return opts.toSources
+	}
+	sources := make([]schemafile.Source, 0, len(opts.toURLs))
+	for _, rawURL := range opts.toURLs {
+		sources = append(sources, schemafile.Source{URL: rawURL})
+	}
+	return sources
+}
+
+// atlasSchemaApplyProjectFileURLs resolves the desired state a run took from
+// the project's own schema FILES, and reports it a second time as the
+// provenance record.
+//
+// The provenance is a return value rather than the same condition re-tested at
+// the classification site, because the two spellings would drift: a URL the
+// operator typed on --to or --file keeps flag-variable precedence, and a URL
+// this function substituted from the env carries that env's
+// `data "hcl_schema" { vars }` scope. See [atlasProjectSourceURLs].
+//
+// An env whose desired state is an external schema program is NOT resolved
+// here. That shape is spelled env://src and expanded during classification,
+// which attaches its own scope, and the caller substitutes it after the
+// saved-plan branch because a saved plan verifies against local files only.
+func atlasSchemaApplyProjectFileSources(
+	cmd *cobra.Command,
+	opts atlasSchemaApplyOptions,
+	projectCfg projectconfig.Config,
+) (toURLs []string, toSources []schemafile.Source, err error) {
+	if cmd.Flags().Changed("to") || cmd.Flags().Changed(atlasFileFlagName) {
+		return opts.toURLs, nil, nil
+	}
+	if len(projectCfg.SchemaSources) == 0 {
+		return opts.toURLs, nil, nil
+	}
+	urls, err := atlasProjectConfigSchemaURLs(cmd, opts.toURLs)
+	if err != nil {
+		return nil, nil, fmt.Errorf("atlas.hcl schema.src: %w", err)
+	}
+	return urls, atlasProjectSchemaFileSources(projectCfg, urls), nil
+}
+
+// atlasSchemaFileSourceURLs reads the URL back out of each source, for the one
+// consumer that wants the plain list: the classification-time provenance
+// record. See [atlasProjectSourceURLs].
+func atlasSchemaFileSourceURLs(sources []schemafile.Source) []string {
+	urls := make([]string, 0, len(sources))
+	for _, source := range sources {
+		urls = append(urls, source.URL)
+	}
+	return urls
+}
+
 // runAtlasSchemaApplyPlanFile executes a pre-approved local plan file instead
 // of re-planning. A native JSON plan is verified against its recorded source
 // fingerprint: a drifted target refuses to execute, which is the entire value
@@ -732,7 +808,10 @@ func runAtlasSchemaApplyPlanFile(cmd *cobra.Command, opts atlasSchemaApplyOption
 	var desired *goschema.Database
 	if len(opts.toURLs) > 0 {
 		schemaScope, schemaScopeFlag := schemafile.ScopeFromURLs(opts.devURL, opts.url, "url")
-		desired, err = schemafile.LoadAll(opts.toURLs, schemafile.Options{
+		// The sources, so a desired state the env selected through
+		// `data "hcl_schema"` is verified against the values that block
+		// supplies. The plan itself was computed from them.
+		desired, err = schemafile.LoadSources(atlasSchemaApplyDesiredSources(opts), schemafile.Options{
 			Dialect:               conn.Info().Dialect,
 			IgnoreUnknownHCLNames: opts.policy.IgnoreUnknownHCLNames(),
 			SchemaScope:           schemaScope,

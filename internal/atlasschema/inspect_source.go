@@ -297,7 +297,14 @@ func inspectOnDev(
 		// The source URL is the file itself, so --dev-url is the only URL that
 		// can limit this run to a schema.
 		schemaScope, schemaScopeFlag := schemafile.ScopeFromURLs(devURL, "", "")
-		desired, err = schemafile.LoadAll(sourceRawURLs(set), schemafile.Options{
+		// LoadSources rather than the URL list: a source that came from an
+		// atlas.hcl `data "hcl_schema"` block carries that block's `vars`, and
+		// reading the raw URLs back out of the set would drop them. Measured on
+		// the pinned Atlas community binary v1.3.0, `schema inspect --env local
+		// --url env://src` against a file with a required variable the block
+		// supplies is exit 0 there and was exit 1 here, `missing value for
+		// required variable "tenant"`.
+		desired, err = schemafile.LoadSources(set.SchemaFileSources(), schemafile.Options{
 			Dialect:               dialect,
 			IgnoreUnknownHCLNames: opts.IgnoreUnknownHCLNames,
 			SchemaScope:           schemaScope,
@@ -599,14 +606,6 @@ func readValidatedInspectDevSchema(
 	validatedOpts.PrepareSchema = nil
 	validatedOpts.ValidateSchema = nil
 	return schema, validatedOpts, nil
-}
-
-func sourceRawURLs(set atlassource.Set) []string {
-	urls := make([]string, 0, len(set.Sources))
-	for _, source := range set.Sources {
-		urls = append(urls, source.Raw)
-	}
-	return urls
 }
 
 // connectInspectSource opens one source connection, bounding only the initial

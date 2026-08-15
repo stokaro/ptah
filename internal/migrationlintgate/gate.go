@@ -5,12 +5,38 @@ package migrationlintgate
 import (
 	"fmt"
 	"io/fs"
+	"slices"
 	"strings"
 
 	"go.5x5.cz/ptah/internal/lintdialect"
 	"go.5x5.cz/ptah/migration/lint"
 	"go.5x5.cz/ptah/migration/risk"
 )
+
+// ReportedFamily is the only identifier family this gate ever blocks on.
+//
+// The apply gate is a data-safety stop, not the lint pass. A finding outside
+// this family is dropped even when the rule that produced it ran, so an
+// operator reading the rule tables must not assume that reaching an apply
+// means every rule was consulted. The reference page's generated section
+// renders this constant, and a test pins the one hand-written cell that names
+// it, so narrowing or widening the gate fails the documentation gate rather
+// than leaving a stale promise on the page.
+const ReportedFamily = "DS"
+
+// disabledFamilies are the families the gate turns off before analysis.
+//
+// They are the advisory ones: migration-file form, backward compatibility, and
+// the two engine-specific locking families. Running them here would refuse an
+// apply over findings that are not about the data already in the tables.
+var disabledFamilies = []string{"MF", "BC", "PG", "MY"}
+
+// DisabledFamilies returns the identifier families this gate disables, in the
+// order it disables them. The slice is a copy: a caller that appended to a
+// shared one would grow the gate's own policy.
+func DisabledFamilies() []string {
+	return slices.Clone(disabledFamilies)
+}
 
 // Policy is a validated apply-time lint policy resolved for a live database.
 type Policy struct {
@@ -50,7 +76,7 @@ func LoadPolicy(fsys fs.FS, databaseDialect string) (Policy, error) {
 	}
 	policy := Policy{
 		dialect:  databaseDialect,
-		disabled: append([]string{"MF", "BC", "PG", "MY"}, cfg.DisabledRules...),
+		disabled: append(DisabledFamilies(), cfg.DisabledRules...),
 		rules:    cfg.Rules,
 	}
 	if err := lint.ValidateOptions(policy.options("")); err != nil {
@@ -93,7 +119,7 @@ func AnalyzeWithPolicy(
 	}
 	blocking := make([]lint.Finding, 0, len(findings))
 	for _, finding := range findings {
-		if strings.HasPrefix(finding.Rule, "DS") && risk.IsBlocking(finding.Severity) {
+		if strings.HasPrefix(finding.Rule, ReportedFamily) && risk.IsBlocking(finding.Severity) {
 			blocking = append(blocking, finding)
 		}
 	}

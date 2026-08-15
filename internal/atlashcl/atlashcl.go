@@ -65,6 +65,21 @@ type Options struct {
 	// `variable "v"` still fails with `missing value for required variable
 	// "v"` rather than complaining about the unused override.
 	Vars []string
+
+	// VarValues supplies the same overrides already decoded, for a caller that
+	// holds structured values rather than flag text.
+	//
+	// It exists because [Options.Vars] carries the `--var` GRAMMAR, not just its
+	// data: one entry is read as a CSV record, so a value containing a comma
+	// comes back split in two. The atlas.hcl `data "hcl_schema" { vars }` map is
+	// already decoded when Ptah reaches it, and re-spelling it as flag text to
+	// have this package parse it again would corrupt exactly those values.
+	//
+	// An entry here wins over the same name in Vars. Nothing in Ptah sets both
+	// today -- a schema file selected by a data source takes that block's vars
+	// and no `--var` at all, which is what the pinned community binary v1.3.0
+	// does -- but the rule has to be stated for the field to mean anything.
+	VarValues map[string]string
 }
 
 // ParseFile parses an HCL schema file into the same Database IR used by
@@ -133,7 +148,7 @@ func ParseWithOptions(data []byte, filename string, opts Options) (*goschema.Dat
 	// The evaluation context is built from the file's own variable and locals
 	// blocks, so it has to exist before any attribute is read -- including the
 	// sql() arguments the next guard evaluates.
-	ctx, err := newEvalContext(body, opts.Vars)
+	ctx, err := newEvalContext(body, opts.Vars, opts.VarValues)
 	if err != nil {
 		return nil, err
 	}

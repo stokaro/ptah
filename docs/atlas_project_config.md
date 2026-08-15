@@ -87,6 +87,7 @@ The supported attributes map to Ptah settings as follows:
 | `env.schema.src` | `ptah-compat schema apply --to`, `ptah-compat schema diff --to`, or `ptah-compat migrate diff --to` default |
 | `env.schema.mode.<object>` | Atlas-style exclusion defaults for supported object kinds |
 | `env.exclude` | `ptah-compat schema inspect --exclude`, `ptah-compat schema apply --exclude`, or `ptah-compat schema diff --exclude` default |
+| `migration.baseline` | `ptah-compat migrate apply --baseline` default; the flag still wins when passed |
 | `migration.dir` | `--migrations-dir` or `--dir` default |
 | `migration.format` | `--dir-format` default where the command exposes that flag; safety gate for `ptah-compat migrate apply` |
 | `migration.revisions_schema` | `--migrations-schema` default |
@@ -291,7 +292,9 @@ The supported mappings are `destructive` to the `DS` family, `data_depend` to
 the `DD` family, `incompatible` to the `BC` family, `concurrent_index` to
 `PG101` and `PG103`, `nestedtx` to `TX201`, and `condrop` to the `CD` family
 plus `DS105`. Atlas `check` blocks are rejected for now because Atlas check IDs
-and Ptah rule IDs are not a stable one-to-one namespace.
+and Ptah rule IDs are not a stable one-to-one namespace; which identifier means
+what in each namespace is enumerated in
+[Lint rules](./site/src/content/docs/reference/lint-rules.md).
 
 `condrop` is a separate analyzer from `destructive` and from `data_depend`, not
 an alias for either. On the community binary, a migration dropping a foreign key
@@ -413,7 +416,37 @@ error: atlas.hcl "path" at atlas.hcl:2: unsupported URL scheme: s3://bucket/x.hc
 ```
 
 An attribute the data source does not have keeps the construct wording:
-`unsupported atlas.hcl construct "vars"`.
+`unsupported atlas.hcl construct "frobnicate"`.
+
+`vars` supplies values for the `variable` blocks of the schema files this data
+source names, and only those files:
+
+```hcl
+data "hcl_schema" "app" {
+  paths = ["schema.hcl"]
+  vars = {
+    tenant = "acme"
+  }
+}
+```
+
+Another data source's `vars` never reach these files, and the run's global
+`--var` does not cross the boundary either — a data source that declares no
+`vars` still closes it. A file named directly, as `src = "file://schema.hcl"`,
+is outside every data source and does take `--var`. So is a desired state the
+operator names on the command line: `--to`, `--from` and `--file` keep `--var`
+even when they name the very file a data source of the loaded env selects.
+
+The map takes strings, numbers and bools, each carried as the text of the
+literal, so `tenant = 42` reaches the file as `"42"`. A name the file does not
+declare is ignored. `vars = null` and `vars = {}` are both read as "no values
+given"; a value that is not a map is refused with
+`atlas.hcl "vars" at atlas.hcl:3 must be a map of values`. Two data sources may
+not both be selected by one `src` and select the same file with different
+`vars`: the parse refuses and names both blocks, including when the two blocks
+spell that one path differently (`"s.hcl"` and `"./s.hcl"`). A file the `src`
+does not evaluate to is not part of that verdict, and a conditional — or an
+index over one — counts only the branch it takes.
 
 A `null` reaching a name Ptah acts on is refused, and the refusal names the type
 the setting wants:
@@ -768,7 +801,6 @@ atlas.hcl "drop_column" at atlas.hcl:5 must be a bool
 | --- | --- | --- |
 | `diff.skip` and `env.diff.skip` | `add_schema`, `modify_schema`, `add_table`, `modify_table`, `add_column`, `modify_column`, `drop_column`, `add_index`, `modify_index`, `drop_index`, `add_foreign_key`, `modify_foreign_key`, `drop_foreign_key` | a bool |
 | `lint` and `env.lint` | `review` | a string |
-| `env.migration` | `baseline` | a string |
 | `env` | `include` | a list of strings |
 | `env.migration` | `exclude` | a list of strings |
 | top level | `env` written as an attribute | a block; only `null` is accepted as a value |
@@ -797,12 +829,11 @@ fills that field from `env` blocks and decodes no value spelling for it at all,
 so `env = {}` is refused where an empty object satisfies every name in the block
 rule above. The `env` block spelling is untouched.
 
-`env.migration.baseline` is type-checked and still not acted on: `migrate apply`
-reads `--baseline` into its run options before project config is merged, so the
-`atlas.hcl` spelling has no effect yet and is reported as having none.
-`env.include` and `env.migration.exclude` are type-checked and not acted on for
-the same reason — neither has a Ptah setting behind it, and `env.exclude` is the
-separate, supported name.
+`env.migration.baseline` is no longer one of them. It is a supported name now:
+`migrate apply` reads it as the config spelling of `--baseline`, and the flag
+still wins when it is passed. `env.include` and `env.migration.exclude` are
+still type-checked and not acted on — neither has a Ptah setting behind it, and
+`env.exclude` is the separate, supported name.
 
 The scope matters throughout. A `baseline` written at `env` level, inside `lint`,
 or in a top-level `migration` block is not decoded by the community binary, and

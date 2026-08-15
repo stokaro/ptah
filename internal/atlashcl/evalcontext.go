@@ -37,10 +37,20 @@ const (
 // Before this existed every attribute was evaluated against a nil context, so
 // `var.status` could not resolve and the raw source text "var.status" was
 // written into the schema IR and out as DDL -- issue #926.
-func newEvalContext(body *hclsyntax.Body, vars []string) (*hcl.EvalContext, error) {
+func newEvalContext(
+	body *hclsyntax.Body,
+	vars []string,
+	varValues map[string]string,
+) (*hcl.EvalContext, error) {
 	overrides, err := parseVarOverrides(vars)
 	if err != nil {
 		return nil, err
+	}
+	// Applied after the flag text, per [Options.VarValues]: a decoded value is
+	// the more specific statement of the two, and it must not be appended to an
+	// existing entry the way a repeated --var occurrence is.
+	for name, value := range varValues {
+		overrides[name] = cty.StringVal(value)
 	}
 	ctx := &hcl.EvalContext{
 		Variables: map[string]cty.Value{},

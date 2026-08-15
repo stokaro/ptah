@@ -5,6 +5,8 @@ import (
 	"slices"
 	"sort"
 	"strings"
+
+	"go.5x5.cz/ptah/internal/dialectscope"
 )
 
 // Scope describes where a directive is valid in Go source.
@@ -439,6 +441,7 @@ var directives = []Directive{
 			attr("if_not_exists", "Adds IF NOT EXISTS where supported.", valueBoolean, false, false),
 			attr("version", "Extension version.", valueString, false, false),
 			attr("comment", "Extension comment.", valueString, false, false),
+			dialectsAttr(),
 		},
 	},
 	{
@@ -454,6 +457,7 @@ var directives = []Directive{
 			attr("volatility", "Volatility class.", valueString, false, false),
 			attr("body", "Function body SQL.", valueSQL, false, false),
 			attr("comment", "Function comment.", valueString, false, false),
+			dialectsAttr(),
 		},
 	},
 	{
@@ -473,6 +477,7 @@ var directives = []Directive{
 			attr("owned_by", "Owning table.column association (OWNED BY).", valueString, false, false),
 			attr("if_not_exists", "Adds IF NOT EXISTS where supported.", valueBoolean, false, false),
 			attr("comment", "Sequence comment.", valueString, false, false),
+			dialectsAttr(),
 		},
 	},
 	{
@@ -488,6 +493,7 @@ var directives = []Directive{
 			attr("default_expr", "DEFAULT expression.", valueSQL, false, false),
 			attr("check", "CHECK constraint expression (uses VALUE).", valueSQL, false, false),
 			attr("comment", "Domain comment.", valueString, false, false),
+			dialectsAttr(),
 		},
 	},
 	{
@@ -499,6 +505,7 @@ var directives = []Directive{
 			attr("schema", "Target schema/namespace.", valueString, false, false),
 			attr("fields", "Comma-separated name:type field list.", valueString, true, false),
 			attr("comment", "Composite type comment.", valueString, false, false),
+			dialectsAttr(),
 		},
 	},
 	{
@@ -514,6 +521,7 @@ var directives = []Directive{
 			attr("canonical", "Canonicalization function.", valueString, false, false),
 			attr("subtype_diff", "Subtype difference function.", valueString, false, false),
 			attr("comment", "Range type comment.", valueString, false, false),
+			dialectsAttr(),
 		},
 	},
 	{
@@ -525,6 +533,7 @@ var directives = []Directive{
 			attr("body", "View SELECT body.", valueSQL, true, false),
 			attr("with_check", "Controls WITH CHECK OPTION where supported.", valueBoolean, false, false),
 			attr("comment", "View comment.", valueString, false, false),
+			dialectsAttr(),
 		},
 	},
 	{
@@ -536,6 +545,7 @@ var directives = []Directive{
 			attr("body", "Materialized view SELECT body.", valueSQL, true, false),
 			attr("refresh_strategy", "Ptah-managed refresh strategy; only manual is currently supported.", valueString, false, false),
 			attr("comment", "Materialized view comment.", valueString, false, false),
+			dialectsAttr(),
 		},
 	},
 	{
@@ -550,6 +560,7 @@ var directives = []Directive{
 			attr("for", "Trigger granularity; defaults to ROW.", valueString, false, false),
 			attr("body", "Trigger body SQL.", valueSQL, true, false),
 			attr("comment", "Trigger comment.", valueString, false, false),
+			dialectsAttr(),
 		},
 	},
 	{
@@ -564,6 +575,7 @@ var directives = []Directive{
 			attr("using", "USING expression.", valueSQL, false, false),
 			attr("with_check", "WITH CHECK expression.", valueSQL, false, false),
 			attr("comment", "Policy comment.", valueString, false, false),
+			dialectsAttr(),
 		},
 	},
 	{
@@ -573,6 +585,7 @@ var directives = []Directive{
 		Attributes: []Attribute{
 			attr("table", "Target table.", valueString, false, false),
 			attr("comment", "RLS enablement comment.", valueString, false, false),
+			dialectsAttr(),
 		},
 	},
 	{
@@ -591,6 +604,7 @@ var directives = []Directive{
 			attr("inherit", "Controls role inheritance; defaults to true.", valueBoolean, false, false),
 			attr("replication", "Allows replication.", valueBoolean, false, false),
 			attr("comment", "Role comment.", valueString, false, false),
+			dialectsAttr(),
 		},
 	},
 	{
@@ -607,6 +621,7 @@ var directives = []Directive{
 			attr("with_option", "Adds WITH GRANT OPTION where supported.", valueBoolean, false, false),
 			alias("grant_option", "with_option", "Alias for with_option.", valueBoolean, false),
 			attr("comment", "Grant comment.", valueString, false, false),
+			dialectsAttr(),
 		},
 	},
 	{
@@ -620,6 +635,31 @@ var directives = []Directive{
 			attr("file", "Path to the YAML row-data file, relative to the Go source file.", valueString, true, false),
 		},
 	},
+}
+
+// dialectsAttr is the `dialects=` scope every directive declaring a standalone
+// schema object accepts.
+//
+// It is one constructor rather than thirteen literals because the spelling, the
+// value kind and the description are the contract: a directive that described
+// the same attribute differently would document a second, imaginary feature,
+// and the JSON Schema generated from this table would disagree with itself.
+//
+// Directives that describe TABLE STRUCTURE -- table, field, index, constraint,
+// embedded, enum, schema -- deliberately do not take it. Omitting a column or
+// the table that holds it raises a question a scope cannot answer on its own:
+// what happens to the objects that reference what left. Those are their own
+// design decision, not a line in this table.
+func dialectsAttr() Attribute {
+	return attr(
+		dialectscope.Attribute,
+		"Comma-separated target dialects this object belongs to. Omitted means "+
+			"every dialect; a target the scope excludes leaves the object out of "+
+			"its desired state entirely, so nothing compares or plans it there.",
+		valueList,
+		false,
+		false,
+	)
 }
 
 func attr(name, description, value string, required, boolean bool) Attribute {

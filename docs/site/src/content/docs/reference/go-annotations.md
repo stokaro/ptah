@@ -100,6 +100,49 @@ standalone directive that does not meet those conditions. Directive names use an
 exact token boundary: `//ptah:schema:tableau` is an ordinary comment, not a table
 directive.
 
+## Scoping an object to dialects
+
+Every directive that declares a standalone database object accepts `dialects`, a
+comma-separated list of the targets the object belongs to:
+
+```go
+//ptah:schema:function name="get_current_tenant_id" returns="TEXT" language="plpgsql" dialects="postgres,cockroachdb,yugabytedb" body="BEGIN RETURN current_setting('app.tenant_id', true); END;"
+type CurrentTenant struct{}
+```
+
+An object whose `dialects` excludes the target is **absent** from that target's
+desired state. It is not skipped and not refused: nothing compares it, nothing
+plans it, and `ptah schema render` prints a note on stderr naming what was left
+out and which dialects it was declared for.
+
+Absence is what makes a shared schema converge. Without a scope, a
+PostgreSQL-only object on a MySQL target is either passed over with a comment —
+in which case `schema apply` exits 0 having created nothing and the next
+comparison asks for the same object again, forever — or refused outright, which
+makes one schema across `postgres`, `mysql` and `mariadb` impossible.
+
+Rules:
+
+- **Omitting `dialects` means every dialect.** Declarations written before this
+  attribute existed are unaffected, and a scope can only narrow an object, never
+  widen one.
+- **Every accepted spelling resolves to the same target.** `dialects="postgresql"`
+  and `dialects="postgres"` select the same dialect.
+- **A dialect family is not implied.** `dialects="postgres"` does not include
+  `cockroachdb`, `yugabytedb` or `spanner`; name each target you mean.
+- **A scope that names no supported dialect is a parse error**, including an
+  empty `dialects=""`. Reading a typo as "belongs to nothing" would drop the
+  object from every target with every command still exiting 0.
+- **`ptah schema export --to hcl` reports the scope as an export loss.** Atlas
+  HCL cannot carry it, so `--cleanup-go-annotations` refuses to delete an
+  annotation whose scope the exported file would not preserve.
+
+`dialects` is accepted on `extension`, `sequence`, `domain`, `composite`,
+`range`, `function`, `trigger`, `view`, `matview`, `role`, `grant`,
+`rls:enable` and `rls:policy`. Directives that describe table structure —
+`table`, `field`, `index`, `constraint`, `embedded`, `enum` and `schema` — do
+not accept it.
+
 ## Tables and columns
 
 ### `//ptah:schema:table`
@@ -249,6 +292,7 @@ Declares a PostgreSQL domain type.
 | `comment` | No | Domain comment. |
 | `default` | No | Literal DEFAULT value. |
 | `default_expr` | No | DEFAULT expression. |
+| `dialects` | No | Comma-separated target dialects this object belongs to; omitted means every dialect. See [Scoping an object to dialects](#scoping-an-object-to-dialects). |
 | `name` | Yes | Domain name. |
 | `not_null` | No | Marks the domain NOT NULL. `true`/`false`. |
 | `schema` | No | Target schema/namespace. |
@@ -261,6 +305,7 @@ Declares a PostgreSQL composite type.
 | Attribute | Required | Description |
 | --- | --- | --- |
 | `comment` | No | Composite type comment. |
+| `dialects` | No | Comma-separated target dialects this object belongs to; omitted means every dialect. See [Scoping an object to dialects](#scoping-an-object-to-dialects). |
 | `fields` | Yes | Comma-separated name:type field list. |
 | `name` | Yes | Composite type name. |
 | `schema` | No | Target schema/namespace. |
@@ -274,6 +319,7 @@ Declares a PostgreSQL range type.
 | `canonical` | No | Canonicalization function. |
 | `collation` | No | Collation for the subtype. |
 | `comment` | No | Range type comment. |
+| `dialects` | No | Comma-separated target dialects this object belongs to; omitted means every dialect. See [Scoping an object to dialects](#scoping-an-object-to-dialects). |
 | `name` | Yes | Range type name. |
 | `schema` | No | Target schema/namespace. |
 | `subtype` | Yes | Element subtype the range is built over. |
@@ -298,6 +344,7 @@ Declares a PostgreSQL extension.
 | Attribute | Required | Description |
 | --- | --- | --- |
 | `comment` | No | Extension comment. |
+| `dialects` | No | Comma-separated target dialects this object belongs to; omitted means every dialect. See [Scoping an object to dialects](#scoping-an-object-to-dialects). |
 | `if_not_exists` | No | Adds IF NOT EXISTS where supported. `true`/`false`. |
 | `name` | No | Extension name. |
 | `schema` | No | PostgreSQL installation schema. Empty means the target's default schema. |
@@ -313,6 +360,7 @@ Declares a standalone PostgreSQL sequence.
 | `cache` | No | CACHE size. |
 | `comment` | No | Sequence comment. |
 | `cycle` | No | Enables CYCLE wrap-around. `true`/`false`. |
+| `dialects` | No | Comma-separated target dialects this object belongs to; omitted means every dialect. See [Scoping an object to dialects](#scoping-an-object-to-dialects). |
 | `if_not_exists` | No | Adds IF NOT EXISTS where supported. `true`/`false`. |
 | `increment` | No | INCREMENT BY value; must be non-zero. |
 | `maxvalue` | No | MAXVALUE bound. |
@@ -330,6 +378,7 @@ Declares a database function.
 | --- | --- | --- |
 | `body` | No | Function body SQL. |
 | `comment` | No | Function comment. |
+| `dialects` | No | Comma-separated target dialects this object belongs to; omitted means every dialect. See [Scoping an object to dialects](#scoping-an-object-to-dialects). |
 | `language` | No | Function language. |
 | `name` | No | Function name. |
 | `params` | No | Function parameter list. |
@@ -345,6 +394,7 @@ Declares a database trigger.
 | --- | --- | --- |
 | `body` | Yes | Trigger body SQL. |
 | `comment` | No | Trigger comment. |
+| `dialects` | No | Comma-separated target dialects this object belongs to; omitted means every dialect. See [Scoping an object to dialects](#scoping-an-object-to-dialects). |
 | `event` | Yes | Trigger event, such as INSERT or UPDATE. |
 | `for` | No | Trigger granularity; defaults to ROW. |
 | `name` | Yes | Trigger name. |
@@ -359,6 +409,7 @@ Declares a database view.
 | --- | --- | --- |
 | `body` | Yes | View SELECT body. |
 | `comment` | No | View comment. |
+| `dialects` | No | Comma-separated target dialects this object belongs to; omitted means every dialect. See [Scoping an object to dialects](#scoping-an-object-to-dialects). |
 | `name` | Yes | View name. |
 | `with_check` | No | Controls WITH CHECK OPTION where supported. `true`/`false`. |
 
@@ -370,6 +421,7 @@ Declares a materialized view.
 | --- | --- | --- |
 | `body` | Yes | Materialized view SELECT body. |
 | `comment` | No | Materialized view comment. |
+| `dialects` | No | Comma-separated target dialects this object belongs to; omitted means every dialect. See [Scoping an object to dialects](#scoping-an-object-to-dialects). |
 | `name` | Yes | Materialized view name. |
 | `refresh_strategy` | No | Ptah-managed refresh strategy. Defaults to `manual`, the only currently supported value. |
 
@@ -390,6 +442,7 @@ Declares a database role.
 | `create_role` | No | Alias for `createrole`. `true`/`false`. |
 | `createdb` | No | Allows database creation. `true`/`false`. |
 | `createrole` | No | Allows role creation. `true`/`false`. |
+| `dialects` | No | Comma-separated target dialects this object belongs to; omitted means every dialect. See [Scoping an object to dialects](#scoping-an-object-to-dialects). |
 | `inherit` | No | Controls role inheritance; defaults to true. `true`/`false`. |
 | `login` | No | Creates the role with LOGIN. `true`/`false`. |
 | `name` | No | Role name. |
@@ -404,6 +457,7 @@ Declares database grants.
 | Attribute | Required | Description |
 | --- | --- | --- |
 | `comment` | No | Grant comment. |
+| `dialects` | No | Comma-separated target dialects this object belongs to; omitted means every dialect. See [Scoping an object to dialects](#scoping-an-object-to-dialects). |
 | `grant_option` | No | Alias for `with_option`. `true`/`false`. |
 | `on_schema` | No | Target schema. |
 | `on_sequence` | No | Target sequence. |
@@ -420,6 +474,7 @@ Enables row-level security on a table.
 | Attribute | Required | Description |
 | --- | --- | --- |
 | `comment` | No | RLS enablement comment. |
+| `dialects` | No | Comma-separated target dialects this object belongs to; omitted means every dialect. See [Scoping an object to dialects](#scoping-an-object-to-dialects). |
 | `table` | No | Target table. |
 
 ### `//ptah:schema:rls:policy`
@@ -429,6 +484,7 @@ Declares a row-level security policy.
 | Attribute | Required | Description |
 | --- | --- | --- |
 | `comment` | No | Policy comment. |
+| `dialects` | No | Comma-separated target dialects this object belongs to; omitted means every dialect. See [Scoping an object to dialects](#scoping-an-object-to-dialects). |
 | `for` | No | Policy command, such as ALL or SELECT. |
 | `name` | No | Policy name. |
 | `table` | No | Target table. |

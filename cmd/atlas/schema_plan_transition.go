@@ -10,6 +10,7 @@ import (
 	"go.5x5.cz/ptah/cmd/internal/dbcli"
 	"go.5x5.cz/ptah/config/projectconfig"
 	"go.5x5.cz/ptah/internal/atlasschema"
+	"go.5x5.cz/ptah/internal/schemafile"
 )
 
 // The Atlas command names these verbs answer to. They appear verbatim in
@@ -39,6 +40,30 @@ type atlasSchemaPlanTransitionFlags struct {
 	devURL   string
 	exclude  []string
 	schemas  []string
+	// toSources is toURLs with the variable scope each one carries, filled only
+	// when the desired state came from the project's own schema sources. The
+	// plan verbs load local files directly instead of classifying, so this is
+	// the only way an atlas.hcl `data "hcl_schema" { vars }` reaches them; a
+	// --to the operator typed leaves it empty and keeps flag-variable
+	// precedence, exactly as on `schema apply`.
+	toSources []schemafile.Source
+}
+
+// atlasSchemaPlanSources is the desired state of a plan verb, as sources.
+//
+// toSources when the project supplied the desired state, so each file sees its
+// own `data "hcl_schema" { vars }`; the plain URLs otherwise, which keep the
+// run's --var. Same rule, same reason as
+// [go.5x5.cz/ptah/internal/atlassource.ProjectEnv.SuppliedSource].
+func atlasSchemaPlanSources(in atlasSchemaPlanTransitionFlags) []schemafile.Source {
+	if len(in.toSources) > 0 {
+		return in.toSources
+	}
+	sources := make([]schemafile.Source, 0, len(in.toURLs))
+	for _, rawURL := range in.toURLs {
+		sources = append(sources, schemafile.Source{URL: rawURL})
+	}
+	return sources
 }
 
 // registerAtlasSchemaPlanTransitionFlags registers the transition flag set
@@ -105,6 +130,7 @@ func resolveAtlasSchemaPlanTransitionConfig(
 		if err != nil {
 			return in, policy, fmt.Errorf("atlas.hcl schema.src: %w", err)
 		}
+		in.toSources = atlasProjectSchemaFileSources(projectCfg, in.toURLs)
 	}
 	// Schema plan resolves local schema files only (LocalFilesOnly), so an env
 	// whose desired state is an external schema program cannot feed it yet.

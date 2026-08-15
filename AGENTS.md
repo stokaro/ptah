@@ -222,6 +222,32 @@ integration suite over the same cells on a schedule. Both read the declaration
 through `capmatrix matrix`, so adding a release line is a data change: one
 literal in `cells.go`, then `scripts/check-version-matrix.sh --write`.
 
+### The lint rule enumeration
+
+Every rule identifier either linter can report is enumerated on one page,
+`docs/site/src/content/docs/reference/lint-rules.md`, and the page is generated
+from the registries rather than written by hand.
+
+```bash
+# What the page says, rendered from migration/lint and internal/sqllint
+go run ./internal/cmd/lintrules markdown
+
+# Fail when the catalog and the registries disagree, without rendering
+go run ./internal/cmd/lintrules check
+
+# Keep the page tied to the registries
+scripts/check-lint-rules.sh
+scripts/check-lint-rules.sh --write
+```
+
+Adding a lint rule is therefore two edits: the rule itself, and its one-line
+meaning in `internal/lintcatalog`. Skipping the second fails the check rather
+than shipping a rule no page names. `internal/lintcatalog` also holds the
+identifier convention — an Atlas check keeps the Atlas identifier, a rule of
+ours inside an Atlas family adds a trailing `P`, a rule inside a family of ours
+is left unmarked — and the identifiers that predate it, a list that may shrink
+and must not grow.
+
 Prefer `go test ./... -count=1` over `test-ptah.sh` for a local unit run. The
 script is committed without an executable bit, so `./test-ptah.sh` cannot be
 invoked directly, and it exports `POSTGRES_TEST_DSN`, `MYSQL_TEST_DSN` and
