@@ -2994,7 +2994,11 @@ func TestCompatCommand_MigrateApplyFormatsJSONResult(t *testing.T) {
 CREATE TABLE format_json_users (id INTEGER PRIMARY KEY);
 CREATE TABLE format_json_posts (id INTEGER PRIMARY KEY);
 `)
-	dbURL := "sqlite://user:secret@" + dbPath + "?password=hidden"
+	// No userinfo: a SQLite URL carries none in practice, nothing here asserted
+	// it, and the shape is unparseable on Windows -- atlasurl.Parse's fallback
+	// looks for a drive letter immediately after "://", which credentials
+	// displace. The redaction this row is about is the query.
+	dbURL := "sqlite://" + dbPath + "?password=hidden"
 
 	cmd := NewCompatCommand("atlas")
 	var out bytes.Buffer
@@ -3017,7 +3021,7 @@ CREATE TABLE format_json_posts (id INTEGER PRIMARY KEY);
 	c.Assert(json.Unmarshal(out.Bytes(), &result), qt.IsNil)
 	c.Assert(result.Driver, qt.Equals, "sqlite")
 	c.Assert(result.URL.Scheme, qt.Equals, "sqlite")
-	c.Assert(result.URL.Path, qt.Equals, dbPath)
+	c.Assert(testutils.URLDatabasePath(result.URL.Opaque, result.URL.Path), qt.Equals, dbPath)
 	c.Assert(result.URL.RawQuery, qt.Equals, "password=xxxxx")
 	c.Assert(result.URL.Schema, qt.Equals, "main")
 	c.Assert(result.Current, qt.Equals, "")

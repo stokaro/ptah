@@ -69,7 +69,9 @@ func TestValidate_AtlasSurfaceLeavesTheOCISchemeToTheFilesystem(t *testing.T) {
 
 	_, stderr, err := executeAtlas("--dir", reference)
 
-	c.Assert(stderr, qt.Contains, "stat "+reference)
+	// Derived: os.Stat renders "stat <ref>: ..." here and names a different
+	// call on Windows, so the Op belongs to the platform rather than to Ptah.
+	c.Assert(stderr, qt.Contains, testutils.StatMissingText(reference))
 	c.Assert(stderr, qt.Not(qt.Contains), testutils.RefusedConnection)
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 2)
 }

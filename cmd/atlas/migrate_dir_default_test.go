@@ -3,9 +3,9 @@ package atlas_test
 import (
 	"bytes"
 	"context"
+	"io/fs"
 	"os"
 	"path/filepath"
-	"syscall"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -73,7 +73,11 @@ func TestCompatMigrateDirDefaults(t *testing.T) {
 				// distinguish a default that resolved and found nothing from a
 				// verb that never had a directory to look for.
 				c.Assert(err.Error(), qt.Contains, "open migrations directory")
-				c.Assert(err.Error(), qt.Contains, syscall.ENOENT.Error())
+				// The sentinel, not a rendering of it. This failure is an open,
+				// not a stat, and the two carry different syscall errors whose
+				// texts also differ per platform -- so spelling either one asserts
+				// a coincidence.
+				c.Assert(err, qt.ErrorIs, fs.ErrNotExist)
 				assertPathAbsent(c, filepath.Join(root, "migrations"))
 			},
 		},
