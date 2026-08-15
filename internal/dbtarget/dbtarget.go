@@ -332,16 +332,6 @@ func postgresWireURL(address string) string {
 	return address
 }
 
-// mysqlFamily reports whether an engine is served by go-sql-driver/mysql,
-// which is the one driver here that wants a network form rather than a host.
-func mysqlFamily(engine Engine) bool {
-	switch engine {
-	case MySQL, MySQLAdmin, MariaDB, MariaDBAdmin:
-		return true
-	}
-	return false
-}
-
 // mysqlNetworkDSN renders a MySQL-family address in the form
 // go-sql-driver/mysql parses: user:pass@tcp(host:port)/db.
 //
