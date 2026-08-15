@@ -20,31 +20,31 @@ func TestEnvNameNormalizesFlagName(t *testing.T) {
 }
 
 func TestEnvBindingNameSkipsExplicitOnlyFlags(t *testing.T) {
+	c := qt.New(t)
 	flags := pflag.NewFlagSet("test", pflag.ContinueOnError)
 	flags.String("url", "", "Database URL")
 	flags.Bool("auto-approve", false, "Skip approval")
-	qt.Assert(t, cmdflags.DisableEnvBinding(flags, "auto-approve"), qt.IsNil)
+	c.Assert(cmdflags.DisableEnvBinding(flags, "auto-approve"), qt.IsNil)
 
 	name, ok := cmdflags.EnvBindingName("PTAH", flags.Lookup("url"))
-	qt.Assert(t, ok, qt.IsTrue)
-	qt.Assert(t, name, qt.Equals, "PTAH_URL")
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(name, qt.Equals, "PTAH_URL")
 	name, ok = cmdflags.EnvBindingName("PTAH", flags.Lookup("auto-approve"))
-	qt.Assert(t, ok, qt.IsFalse)
-	qt.Assert(t, name, qt.Equals, "")
+	c.Assert(ok, qt.IsFalse)
+	c.Assert(name, qt.Equals, "")
 }
 
 func TestForwardedEnvBindingsRemainVisibleForExplicitAdapterFlags(t *testing.T) {
+	c := qt.New(t)
 	cmd := &cobra.Command{Use: "adapter"}
 	flags := cmd.Flags()
 	flags.String("dir", "", "")
-	qt.Assert(t,
-		cmdflags.AddForwardedEnvBinding(flags, "dir", "PTAH_MIGRATIONS_DIR"),
+	c.Assert(cmdflags.AddForwardedEnvBinding(flags, "dir", "PTAH_MIGRATIONS_DIR"),
 		qt.IsNil,
 	)
-	qt.Assert(t, cmdflags.DisableEnvBinding(flags, "dir"), qt.IsNil)
+	c.Assert(cmdflags.DisableEnvBinding(flags, "dir"), qt.IsNil)
 
-	qt.Assert(t,
-		cmdflags.ForwardedEnvBindings(flags.Lookup("dir")),
+	c.Assert(cmdflags.ForwardedEnvBindings(flags.Lookup("dir")),
 		qt.DeepEquals,
 		[]string{"PTAH_MIGRATIONS_DIR"},
 	)

@@ -139,8 +139,6 @@ func TestSchemaDiffIncludeCrossScopeDependencyFails(t *testing.T) {
 // separator. A depth check that counted characters made this selector — and
 // therefore the qualified spelling of every dotted identifier — inexpressible.
 func TestSchemaDiffIncludeSelectsQuotedDottedIdentifier(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name    string
 		pattern string
@@ -150,7 +148,8 @@ func TestSchemaDiffIncludeSelectsQuotedDottedIdentifier(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			dir := t.TempDir()
 			fromPath := filepath.Join(dir, "from.sql")
 			toPath := filepath.Join(dir, "to.sql")
@@ -205,9 +204,8 @@ func TestSchemaDiffIncludeMalformedSelectorFailsBeforeDevDatabase(t *testing.T) 
 }
 
 func TestSchemaDiffSchemaScopeOnSQLite(t *testing.T) {
-	c := qt.New(t)
-
-	c.Run("main selects unqualified objects", func(c *qt.C) {
+	t.Run("main selects unqualified objects", func(t *testing.T) {
+		c := qt.New(t)
 		fromPath, toPath, devPath := writeScopeSchemaFiles(t)
 		cmd := atlas.NewCompatCommand("atlas")
 		var out bytes.Buffer
@@ -228,7 +226,8 @@ func TestSchemaDiffSchemaScopeOnSQLite(t *testing.T) {
 		c.Assert(out.String(), qt.Contains, "scope_archive")
 	})
 
-	c.Run("other schema selects nothing", func(c *qt.C) {
+	t.Run("other schema selects nothing", func(t *testing.T) {
+		c := qt.New(t)
 		fromPath, toPath, devPath := writeScopeSchemaFiles(t)
 		cmd := atlas.NewCompatCommand("atlas")
 		var out bytes.Buffer
@@ -286,7 +285,7 @@ func TestSchemaApplyIncludeEndToEndOnSQLite(t *testing.T) {
 	c := qt.New(t)
 	// The target already contains an out-of-scope table that the scoped apply
 	// must leave untouched.
-	dbPath := seedSQLiteDB(t, "CREATE TABLE scope_keepme (id INTEGER PRIMARY KEY)")
+	dbPath := seedSQLiteDB(c, "CREATE TABLE scope_keepme (id INTEGER PRIMARY KEY)")
 	schemaPath := filepath.Join(t.TempDir(), "schema.sql")
 	c.Assert(os.WriteFile(schemaPath, []byte(scopeTestSchemaSQL), 0o600), qt.IsNil)
 	cmd := atlas.NewCompatCommand("atlas")

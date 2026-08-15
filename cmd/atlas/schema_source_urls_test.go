@@ -17,10 +17,9 @@ import (
 
 // seedSQLiteDB creates a SQLite database with the given DDL and returns its
 // path.
-func seedSQLiteDB(t *testing.T, ddl string) string {
-	t.Helper()
-	c := qt.New(t)
-	dbPath := filepath.Join(t.TempDir(), "seed.db")
+func seedSQLiteDB(c *qt.C, ddl string) string {
+	c.Helper()
+	dbPath := filepath.Join(c.TempDir(), "seed.db")
 	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(conn)
@@ -54,7 +53,7 @@ func writeAtlasFormatMigrations(t *testing.T, ddl string) string {
 
 func TestSchemaApplyDatabaseURLSource(t *testing.T) {
 	c := qt.New(t)
-	sourcePath := seedSQLiteDB(t, "CREATE TABLE mirrored_users (id INTEGER PRIMARY KEY)")
+	sourcePath := seedSQLiteDB(c, "CREATE TABLE mirrored_users (id INTEGER PRIMARY KEY)")
 	targetPath := filepath.Join(t.TempDir(), "target.db")
 	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
@@ -171,7 +170,7 @@ func TestSchemaApplyMixedSourceKindsFailBeforeTarget(t *testing.T) {
 
 func TestSchemaDiffDatabaseURLFromSource(t *testing.T) {
 	c := qt.New(t)
-	sourcePath := seedSQLiteDB(t, "CREATE TABLE users (id INTEGER PRIMARY KEY)")
+	sourcePath := seedSQLiteDB(c, "CREATE TABLE users (id INTEGER PRIMARY KEY)")
 	dir := t.TempDir()
 	to := filepath.Join(dir, "to.sql")
 	c.Assert(os.WriteFile(to, []byte(`

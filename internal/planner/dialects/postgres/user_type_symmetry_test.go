@@ -21,8 +21,6 @@ import (
 // did not, the plan dropped the type and put nothing back -- and that is not a
 // migration that fails, it is one that succeeds having deleted a type.
 func TestModifiedUserTypeNeverDropsWhatItCannotRecreate(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name        string
 		generated   *goschema.Database
@@ -108,7 +106,8 @@ func TestModifiedUserTypeNeverDropsWhatItCannotRecreate(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			statements, err := planner.GenerateSchemaDiffSQLStatements(test.diff, test.generated, "postgres")
 			c.Assert(err, qt.IsNil)
 			plan := strings.Join(statements, "\n")

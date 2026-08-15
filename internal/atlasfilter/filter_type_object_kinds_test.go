@@ -64,6 +64,29 @@ func databaseRangeNames(ranges []dbschematypes.DBRange) []string {
 	return names
 }
 
+// typeObjectSurvivors is every kind the fixture holds. A row states all five
+// rather than only the kind its selector names, because the arm being added can
+// fail in both directions: the reported bug is an object that survives its own
+// selector, and an arm that dropped by kind instead of by name would take every
+// object of the kind with it.
+type typeObjectSurvivors struct {
+	Tables     []string
+	Sequences  []string
+	Domains    []string
+	Composites []string
+	Ranges     []string
+}
+
+func typeObjectSurvivorsOf(schema *dbschematypes.DBSchema) typeObjectSurvivors {
+	return typeObjectSurvivors{
+		Tables:     tableNames(schema.Tables),
+		Sequences:  databaseSequenceNames(schema.Sequences),
+		Domains:    databaseDomainNames(schema.Domains),
+		Composites: databaseCompositeNames(schema.Composites),
+		Ranges:     databaseRangeNames(schema.Ranges),
+	}
+}
+
 // TestExcludeDatabase_SubtractsSequencesDomainsCompositesAndRanges closes the
 // gap that made the unmatched-selector refusal lie.
 //
@@ -82,76 +105,116 @@ func TestExcludeDatabase_SubtractsSequencesDomainsCompositesAndRanges(t *testing
 	tests := []struct {
 		name    string
 		pattern string
-		assert  func(*qt.C, *dbschematypes.DBSchema)
+		want    typeObjectSurvivors
 	}{
 		{
 			name:    "sequence, bare name in the default schema",
 			pattern: "order_seq",
-			assert: func(c *qt.C, got *dbschematypes.DBSchema) {
-				c.Assert(databaseSequenceNames(got.Sequences), qt.DeepEquals, []string{"app.app_seq"})
+			want: typeObjectSurvivors{
+				Tables:     []string{"users"},
+				Sequences:  []string{"app.app_seq"},
+				Domains:    []string{"positive_int", "app.app_int"},
+				Composites: []string{"addr", "app.app_addr"},
+				Ranges:     []string{"intrange", "app.app_range"},
 			},
 		},
 		{
 			name:    "sequence, qualified with the default schema",
 			pattern: "public.order_seq",
-			assert: func(c *qt.C, got *dbschematypes.DBSchema) {
-				c.Assert(databaseSequenceNames(got.Sequences), qt.DeepEquals, []string{"app.app_seq"})
+			want: typeObjectSurvivors{
+				Tables:     []string{"users"},
+				Sequences:  []string{"app.app_seq"},
+				Domains:    []string{"positive_int", "app.app_int"},
+				Composites: []string{"addr", "app.app_addr"},
+				Ranges:     []string{"intrange", "app.app_range"},
 			},
 		},
 		{
 			name:    "sequence, qualified with a non-default schema",
 			pattern: "app.app_seq",
-			assert: func(c *qt.C, got *dbschematypes.DBSchema) {
-				c.Assert(databaseSequenceNames(got.Sequences), qt.DeepEquals, []string{"order_seq"})
+			want: typeObjectSurvivors{
+				Tables:     []string{"users"},
+				Sequences:  []string{"order_seq"},
+				Domains:    []string{"positive_int", "app.app_int"},
+				Composites: []string{"addr", "app.app_addr"},
+				Ranges:     []string{"intrange", "app.app_range"},
 			},
 		},
 		{
 			name:    "domain, bare name in the default schema",
 			pattern: "positive_int",
-			assert: func(c *qt.C, got *dbschematypes.DBSchema) {
-				c.Assert(databaseDomainNames(got.Domains), qt.DeepEquals, []string{"app.app_int"})
+			want: typeObjectSurvivors{
+				Tables:     []string{"users"},
+				Sequences:  []string{"order_seq", "app.app_seq"},
+				Domains:    []string{"app.app_int"},
+				Composites: []string{"addr", "app.app_addr"},
+				Ranges:     []string{"intrange", "app.app_range"},
 			},
 		},
 		{
 			name:    "domain, qualified with the default schema",
 			pattern: "public.positive_int",
-			assert: func(c *qt.C, got *dbschematypes.DBSchema) {
-				c.Assert(databaseDomainNames(got.Domains), qt.DeepEquals, []string{"app.app_int"})
+			want: typeObjectSurvivors{
+				Tables:     []string{"users"},
+				Sequences:  []string{"order_seq", "app.app_seq"},
+				Domains:    []string{"app.app_int"},
+				Composites: []string{"addr", "app.app_addr"},
+				Ranges:     []string{"intrange", "app.app_range"},
 			},
 		},
 		{
 			name:    "domain, qualified with a non-default schema",
 			pattern: "app.app_int",
-			assert: func(c *qt.C, got *dbschematypes.DBSchema) {
-				c.Assert(databaseDomainNames(got.Domains), qt.DeepEquals, []string{"positive_int"})
+			want: typeObjectSurvivors{
+				Tables:     []string{"users"},
+				Sequences:  []string{"order_seq", "app.app_seq"},
+				Domains:    []string{"positive_int"},
+				Composites: []string{"addr", "app.app_addr"},
+				Ranges:     []string{"intrange", "app.app_range"},
 			},
 		},
 		{
 			name:    "composite type, bare name in the default schema",
 			pattern: "addr",
-			assert: func(c *qt.C, got *dbschematypes.DBSchema) {
-				c.Assert(databaseCompositeNames(got.Composites), qt.DeepEquals, []string{"app.app_addr"})
+			want: typeObjectSurvivors{
+				Tables:     []string{"users"},
+				Sequences:  []string{"order_seq", "app.app_seq"},
+				Domains:    []string{"positive_int", "app.app_int"},
+				Composites: []string{"app.app_addr"},
+				Ranges:     []string{"intrange", "app.app_range"},
 			},
 		},
 		{
 			name:    "composite type, qualified with a non-default schema",
 			pattern: "app.app_addr",
-			assert: func(c *qt.C, got *dbschematypes.DBSchema) {
-				c.Assert(databaseCompositeNames(got.Composites), qt.DeepEquals, []string{"addr"})
+			want: typeObjectSurvivors{
+				Tables:     []string{"users"},
+				Sequences:  []string{"order_seq", "app.app_seq"},
+				Domains:    []string{"positive_int", "app.app_int"},
+				Composites: []string{"addr"},
+				Ranges:     []string{"intrange", "app.app_range"},
 			},
 		},
 		{
 			name:    "range type, bare name in the default schema",
 			pattern: "intrange",
-			assert: func(c *qt.C, got *dbschematypes.DBSchema) {
-				c.Assert(databaseRangeNames(got.Ranges), qt.DeepEquals, []string{"app.app_range"})
+			want: typeObjectSurvivors{
+				Tables:     []string{"users"},
+				Sequences:  []string{"order_seq", "app.app_seq"},
+				Domains:    []string{"positive_int", "app.app_int"},
+				Composites: []string{"addr", "app.app_addr"},
+				Ranges:     []string{"app.app_range"},
 			},
 		},
 		{
 			name:    "range type, qualified with a non-default schema",
 			pattern: "app.app_range",
-			assert: func(c *qt.C, got *dbschematypes.DBSchema) {
-				c.Assert(databaseRangeNames(got.Ranges), qt.DeepEquals, []string{"intrange"})
+			want: typeObjectSurvivors{
+				Tables:     []string{"users"},
+				Sequences:  []string{"order_seq", "app.app_seq"},
+				Domains:    []string{"positive_int", "app.app_int"},
+				Composites: []string{"addr", "app.app_addr"},
+				Ranges:     []string{"intrange"},
 			},
 		},
 		{
@@ -159,11 +222,12 @@ func TestExcludeDatabase_SubtractsSequencesDomainsCompositesAndRanges(t *testing
 			// would take every object of the kind with it.
 			name:    "a selector naming none of them removes none of them",
 			pattern: "nosuchobject",
-			assert: func(c *qt.C, got *dbschematypes.DBSchema) {
-				c.Assert(databaseSequenceNames(got.Sequences), qt.DeepEquals, []string{"order_seq", "app.app_seq"})
-				c.Assert(databaseDomainNames(got.Domains), qt.DeepEquals, []string{"positive_int", "app.app_int"})
-				c.Assert(databaseCompositeNames(got.Composites), qt.DeepEquals, []string{"addr", "app.app_addr"})
-				c.Assert(databaseRangeNames(got.Ranges), qt.DeepEquals, []string{"intrange", "app.app_range"})
+			want: typeObjectSurvivors{
+				Tables:     []string{"users"},
+				Sequences:  []string{"order_seq", "app.app_seq"},
+				Domains:    []string{"positive_int", "app.app_int"},
+				Composites: []string{"addr", "app.app_addr"},
+				Ranges:     []string{"intrange", "app.app_range"},
 			},
 		},
 		{
@@ -171,9 +235,12 @@ func TestExcludeDatabase_SubtractsSequencesDomainsCompositesAndRanges(t *testing
 			// new arms do not take it with them.
 			name:    "the table control is unaffected",
 			pattern: "users",
-			assert: func(c *qt.C, got *dbschematypes.DBSchema) {
-				c.Assert(got.Tables, qt.HasLen, 0)
-				c.Assert(databaseDomainNames(got.Domains), qt.DeepEquals, []string{"positive_int", "app.app_int"})
+			want: typeObjectSurvivors{
+				Tables:     []string{},
+				Sequences:  []string{"order_seq", "app.app_seq"},
+				Domains:    []string{"positive_int", "app.app_int"},
+				Composites: []string{"addr", "app.app_addr"},
+				Ranges:     []string{"intrange", "app.app_range"},
 			},
 		},
 	}
@@ -186,7 +253,7 @@ func TestExcludeDatabase_SubtractsSequencesDomainsCompositesAndRanges(t *testing
 				typeObjectKindsFixture(), []string{test.pattern}, "public")
 
 			c.Assert(err, qt.IsNil)
-			test.assert(c, got)
+			c.Assert(typeObjectSurvivorsOf(got), qt.DeepEquals, test.want)
 		})
 	}
 }

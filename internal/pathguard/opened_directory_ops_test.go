@@ -202,7 +202,8 @@ func TestOpenedDirectoryCreateTempRejectsPathComponents(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			file, name, err := opened.CreateTemp(test.pattern)
 			c.Assert(err, qt.ErrorIs, fs.ErrInvalid)
 			var pathErr *fs.PathError

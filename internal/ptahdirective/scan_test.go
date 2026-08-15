@@ -51,17 +51,19 @@ func TestHasMarkerDistinguishesDirectiveCommentsFromSQLLookalikes(t *testing.T) 
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			got := ptahdirective.HasMarker(test.sql, lexer.Options{StandardStrings: true})
 
-			qt.Assert(t, got, qt.Equals, test.want)
+			c.Assert(got, qt.Equals, test.want)
 		})
 	}
 }
 
 func TestConservativeBodiesKeepsOnlyCrossDialectMarkers(t *testing.T) {
+	c := qt.New(t)
 	sql := "SELECT 'prefix \\'\n-- +ptah check name=\"fake\"\nsuffix';\n"
 
 	got := slices.Collect(ptahdirective.ConservativeBodies(sql))
 
-	qt.Assert(t, got, qt.HasLen, 0)
+	c.Assert(got, qt.HasLen, 0)
 }

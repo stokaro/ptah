@@ -550,9 +550,8 @@ func TestGenerateDiff_InvalidMigrationSnapshotDoesNotResetDevDatabase(t *testing
 }
 
 func TestGenerateDiff_FailurePath(t *testing.T) {
-	c := qt.New(t)
-
-	c.Run("nil dev database connection", func(c *qt.C) {
+	t.Run("nil dev database connection", func(t *testing.T) {
+		c := qt.New(t)
 		result, err := atlasmigrate.GenerateDiff(context.Background(), nil, atlasmigrate.DiffOptions{
 			Dir:     c.TempDir(),
 			Desired: localDesiredSet(c, "file://schema.sql"),
@@ -561,7 +560,8 @@ func TestGenerateDiff_FailurePath(t *testing.T) {
 		c.Assert(result.Synced, qt.IsFalse)
 	})
 
-	c.Run("missing migration directory", func(c *qt.C) {
+	t.Run("missing migration directory", func(t *testing.T) {
+		c := qt.New(t)
 		conn := connectSQLite(c, filepath.Join(c.TempDir(), "dev.db"))
 		defer dbschema.CloseAndWarn(conn)
 
@@ -572,7 +572,8 @@ func TestGenerateDiff_FailurePath(t *testing.T) {
 		c.Assert(result.Synced, qt.IsFalse)
 	})
 
-	c.Run("missing desired schema URLs", func(c *qt.C) {
+	t.Run("missing desired schema URLs", func(t *testing.T) {
+		c := qt.New(t)
 		conn := connectSQLite(c, filepath.Join(c.TempDir(), "dev.db"))
 		defer dbschema.CloseAndWarn(conn)
 

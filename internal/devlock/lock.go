@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"net"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,6 +16,7 @@ import (
 
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/internal/dblock"
 )
 
@@ -197,7 +197,7 @@ func sqliteIdentity(
 }
 
 func validateLocalFileLockURL(dialect, rawURL string) error {
-	parsed, err := url.Parse(rawURL)
+	parsed, err := atlasurl.Parse(rawURL)
 	if err != nil {
 		return fmt.Errorf("parse %s dev database URL for local locking: %w", dialect, err)
 	}

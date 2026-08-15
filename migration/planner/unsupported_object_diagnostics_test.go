@@ -129,7 +129,8 @@ func TestPlan_ClickHouseRendersViewsAndNamesUnsupportedObjects(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(planned, qt.Contains, test.want)
 		})
 	}
@@ -213,7 +214,8 @@ func TestPlan_ClickHouseNamesRemovedObjectsToo(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(planned, qt.Contains, test.want)
 		})
 	}
@@ -246,12 +248,14 @@ func TestPlan_PostgreSQLStillPlansTheObjects(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(planned, qt.Contains, test.want)
 		})
 	}
 
-	c.Run("no diagnostics", func(c *qt.C) {
+	t.Run("no diagnostics", func(t *testing.T) {
+		c := qt.New(t)
 		c.Assert(diagnosticLines(planStatements(c, unhostableCreationDiff(), unhostableSchema(), platform.Postgres)),
 			qt.HasLen, 0)
 	})
@@ -284,8 +288,6 @@ func mysqlFamilyCreationDiff() *types.SchemaDiff {
 // objects, while `schema apply --dry-run` against live MySQL 9.7 and live
 // MariaDB 10.11.18 planned the CREATE TABLE and said nothing about either.
 func TestPlan_MySQLFamilyNamesTheExtensionAndSequenceItCannotHost(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		dialect       string
 		wantExtension string
@@ -304,7 +306,8 @@ func TestPlan_MySQLFamilyNamesTheExtensionAndSequenceItCannotHost(t *testing.T) 
 	}
 
 	for _, test := range tests {
-		c.Run(test.dialect, func(c *qt.C) {
+		t.Run(test.dialect, func(t *testing.T) {
+			c := qt.New(t)
 			planned := strings.Join(planStatements(c, mysqlFamilyCreationDiff(), mysqlFamilySchema(), test.dialect), "\n")
 			rendered := strings.Join(renderStatements(c, mysqlFamilySchema(), test.dialect), "\n")
 
@@ -317,7 +320,6 @@ func TestPlan_MySQLFamilyNamesTheExtensionAndSequenceItCannotHost(t *testing.T) 
 }
 
 func TestPlan_NonPostgreSQLTargetsDoNotLoseExtensionPlacementDrift(t *testing.T) {
-	c := qt.New(t)
 	diff := &types.SchemaDiff{ExtensionsModified: []types.ExtensionDiff{{
 		Name: "pgcrypto", FromSchema: "public", ToSchema: "extensions",
 	}}}
@@ -332,7 +334,8 @@ func TestPlan_NonPostgreSQLTargetsDoNotLoseExtensionPlacementDrift(t *testing.T)
 	}
 
 	for _, test := range tests {
-		c.Run(test.dialect, func(c *qt.C) {
+		t.Run(test.dialect, func(t *testing.T) {
+			c := qt.New(t)
 			planned := strings.Join(planStatements(c, diff, &goschema.Database{}, test.dialect), "\n")
 			c.Assert(planned, qt.Contains, test.want)
 		})
@@ -340,14 +343,14 @@ func TestPlan_NonPostgreSQLTargetsDoNotLoseExtensionPlacementDrift(t *testing.T)
 }
 
 func TestPlan_ExtensionInstallationSchemaSupportedTargets(t *testing.T) {
-	c := qt.New(t)
 	diff := &types.SchemaDiff{ExtensionsAdded: []string{"pgcrypto"}}
 	generated := &goschema.Database{
 		Extensions: []goschema.Extension{{Name: "pgcrypto", Schema: "extensions"}},
 	}
 
 	for _, dialect := range []string{platform.Postgres, platform.YugabyteDB} {
-		c.Run(dialect, func(c *qt.C) {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
 			statements, err := planner.GenerateSchemaDiffSQLStatements(diff, generated, dialect)
 
 			c.Assert(err, qt.IsNil)
@@ -360,14 +363,14 @@ func TestPlan_ExtensionInstallationSchemaSupportedTargets(t *testing.T) {
 }
 
 func TestPlan_ExtensionInstallationSchemaUnsupportedTargetsFailBeforeAST(t *testing.T) {
-	c := qt.New(t)
 	diff := &types.SchemaDiff{ExtensionsAdded: []string{"pgcrypto"}}
 	generated := &goschema.Database{
 		Extensions: []goschema.Extension{{Name: "pgcrypto", Schema: "extensions"}},
 	}
 
 	for _, dialect := range []string{platform.CockroachDB, platform.Spanner} {
-		c.Run(dialect, func(c *qt.C) {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
 			nodes, err := planner.GenerateSchemaDiffAST(diff, generated, dialect)
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
@@ -378,14 +381,14 @@ func TestPlan_ExtensionInstallationSchemaUnsupportedTargetsFailBeforeAST(t *test
 }
 
 func TestPlan_WhitespaceOnlyExtensionInstallationSchemaUnsupportedTargetsFailBeforeAST(t *testing.T) {
-	c := qt.New(t)
 	diff := &types.SchemaDiff{ExtensionsAdded: []string{"pgcrypto"}}
 	generated := &goschema.Database{
 		Extensions: []goschema.Extension{{Name: "pgcrypto", Schema: " "}},
 	}
 
 	for _, dialect := range []string{platform.CockroachDB, platform.Spanner} {
-		c.Run(dialect, func(c *qt.C) {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
 			nodes, err := planner.GenerateSchemaDiffAST(diff, generated, dialect)
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
@@ -426,7 +429,8 @@ func TestPlan_SQLServerNamesTheSequenceItDoesNotGenerate(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(planned, qt.Contains, test.want)
 			c.Assert(rendered, qt.Contains, test.want)
 		})

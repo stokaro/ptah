@@ -12,7 +12,6 @@ import (
 )
 
 func TestValidatePostgresReplayStatement_HappyPath(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name      string
 		dialect   string
@@ -61,7 +60,8 @@ func TestValidatePostgresReplayStatement_HappyPath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			tokens := significantTokens(test.statement, replayLexerOptions(test.dialect))
 			err := validatePostgresReplayStatement(test.dialect, tokens)
 			c.Assert(err, qt.IsNil)
@@ -70,7 +70,6 @@ func TestValidatePostgresReplayStatement_HappyPath(t *testing.T) {
 }
 
 func TestValidatePostgresReplayStatement_FailurePath(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name      string
 		dialect   string
@@ -398,7 +397,8 @@ func TestValidatePostgresReplayStatement_FailurePath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			tokens := significantTokens(test.statement, replayLexerOptions(test.dialect))
 			err := validatePostgresReplayStatement(test.dialect, tokens)
 			c.Assert(err, qt.ErrorMatches, test.wantErr)

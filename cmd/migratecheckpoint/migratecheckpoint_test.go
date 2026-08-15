@@ -16,14 +16,37 @@ import (
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
+// ptahMigrationFiles is the two-migration history in the ptah convention, as
+// file names and bodies rather than as a writer, so a table can carry the
+// directory a row starts from as data.
+func ptahMigrationFiles() map[string]string {
+	return map[string]string{
+		"0000000001_init.up.sql":    "CREATE TABLE users (id INTEGER PRIMARY KEY);\n",
+		"0000000001_init.down.sql":  "DROP TABLE users;\n",
+		"0000000002_email.up.sql":   "ALTER TABLE users ADD COLUMN email TEXT;\n",
+		"0000000002_email.down.sql": "ALTER TABLE users DROP COLUMN email;\n",
+	}
+}
+
+// atlasMigrationFiles is the same history in the atlas convention: one file per
+// migration, versioned by timestamp.
+func atlasMigrationFiles() map[string]string {
+	return map[string]string{
+		"20250801000001_init.sql":  "CREATE TABLE users (id INTEGER PRIMARY KEY);\n",
+		"20250801000002_email.sql": "ALTER TABLE users ADD COLUMN email TEXT;\n",
+	}
+}
+
+func writeMigrationFiles(c *qt.C, dir string, files map[string]string) {
+	c.Helper()
+	for name, body := range files {
+		c.Assert(os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600), qt.IsNil)
+	}
+}
+
 func seedMigrations(c *qt.C, dir string) {
 	c.Helper()
-	writePair := func(name, up, down string) {
-		c.Assert(os.WriteFile(filepath.Join(dir, name+".up.sql"), []byte(up), 0o600), qt.IsNil)
-		c.Assert(os.WriteFile(filepath.Join(dir, name+".down.sql"), []byte(down), 0o600), qt.IsNil)
-	}
-	writePair("0000000001_init", "CREATE TABLE users (id INTEGER PRIMARY KEY);\n", "DROP TABLE users;\n")
-	writePair("0000000002_email", "ALTER TABLE users ADD COLUMN email TEXT;\n", "ALTER TABLE users DROP COLUMN email;\n")
+	writeMigrationFiles(c, dir, ptahMigrationFiles())
 }
 
 func runCheckpoint(args ...string) (string, error) {
@@ -182,10 +205,7 @@ func TestMigrateCheckpointCommand_RejectsVersionAtOrBelowHistory(t *testing.T) {
 // tolerates.
 func seedAtlasMigrations(c *qt.C, dir string) {
 	c.Helper()
-	c.Assert(os.WriteFile(filepath.Join(dir, "20250801000001_init.sql"),
-		[]byte("CREATE TABLE users (id INTEGER PRIMARY KEY);\n"), 0o600), qt.IsNil)
-	c.Assert(os.WriteFile(filepath.Join(dir, "20250801000002_email.sql"),
-		[]byte("ALTER TABLE users ADD COLUMN email TEXT;\n"), 0o600), qt.IsNil)
+	writeMigrationFiles(c, dir, atlasMigrationFiles())
 }
 
 func TestMigrateCheckpointCommand_RefusesAtlasIntoUnhashedPtahDirectory(t *testing.T) {
@@ -508,9 +528,11 @@ func TestMigrateCheckpointCommand_PtahKeepsTenDigitCeiling(t *testing.T) {
 
 func TestMigrateCheckpointCommand_RefusesToAddASecondIntegrityFile(t *testing.T) {
 	tests := []struct {
-		name       string
-		dirFormat  string
-		seed       func(*qt.C, string)
+		name      string
+		dirFormat string
+		// files is the directory the row starts from: a history in the OTHER
+		// convention, so the run's own integrity file would be the second one.
+		files      map[string]string
 		foreignSum string
 	}{
 		{
@@ -518,27 +540,27 @@ func TestMigrateCheckpointCommand_RefusesToAddASecondIntegrityFile(t *testing.T)
 			// existing ptah directory checkpointed under the atlas convention.
 			name:       "atlas checkpoint into a ptah.sum directory",
 			dirFormat:  "atlas",
-			seed:       seedMigrations,
+			files:      ptahMigrationFiles(),
 			foreignSum: "ptah.sum",
 		},
 		{
 			name:       "ptah checkpoint into an atlas.sum directory",
 			dirFormat:  "ptah",
-			seed:       seedAtlasMigrations,
+			files:      atlasMigrationFiles(),
 			foreignSum: "atlas.sum",
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			dir := t.TempDir()
-			tt.seed(c, dir)
-			c.Assert(os.WriteFile(filepath.Join(dir, tt.foreignSum), []byte("h1:seeded\n"), 0o600), qt.IsNil)
+			writeMigrationFiles(c, dir, test.files)
+			c.Assert(os.WriteFile(filepath.Join(dir, test.foreignSum), []byte("h1:seeded\n"), 0o600), qt.IsNil)
 			shadow := "sqlite://" + filepath.Join(t.TempDir(), "shadow.db")
 
 			out, err := runCheckpoint("--shadow-db", shadow, "--migrations-dir", dir, "--dialect", "sqlite",
-				"--dir-format", tt.dirFormat)
+				"--dir-format", test.dirFormat)
 			c.Assert(err, qt.IsNotNil)
 			c.Assert(out, qt.Contains, "it would leave both")
 
@@ -552,7 +574,7 @@ func TestMigrateCheckpointCommand_RefusesToAddASecondIntegrityFile(t *testing.T)
 			c.Assert(globErr, qt.IsNil)
 			c.Assert(sums, qt.HasLen, 1)
 			// The pre-existing sum is untouched, not rewritten.
-			body, readErr := os.ReadFile(filepath.Join(dir, tt.foreignSum))
+			body, readErr := os.ReadFile(filepath.Join(dir, test.foreignSum))
 			c.Assert(readErr, qt.IsNil)
 			c.Assert(string(body), qt.Equals, "h1:seeded\n")
 		})

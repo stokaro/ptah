@@ -13,7 +13,6 @@ import (
 )
 
 func Test_parseAtlasFileTxMode_HappyPath(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name string
 		sql  string
@@ -69,7 +68,8 @@ func Test_parseAtlasFileTxMode_HappyPath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			mode, found, err := parseAtlasFileTxMode("001_create_users.sql", test.sql)
 			c.Assert(err, qt.IsNil)
 			c.Assert(found, qt.IsTrue)
@@ -79,7 +79,6 @@ func Test_parseAtlasFileTxMode_HappyPath(t *testing.T) {
 }
 
 func Test_parseAtlasFileTxMode_FailurePath(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name    string
 		sql     string
@@ -128,7 +127,8 @@ func Test_parseAtlasFileTxMode_FailurePath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			mode, found, err := parseAtlasFileTxMode("001_create_users.sql", test.sql)
 			c.Assert(err, qt.IsNotNil)
 			c.Assert(err.Error(), qt.Equals, test.wantErr)
@@ -139,7 +139,6 @@ func Test_parseAtlasFileTxMode_FailurePath(t *testing.T) {
 }
 
 func Test_parseAtlasFileTxMode_Ignored(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name string
 		sql  string
@@ -183,7 +182,8 @@ func Test_parseAtlasFileTxMode_Ignored(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			mode, found, err := parseAtlasFileTxMode("001_create_users.sql", test.sql)
 			c.Assert(err, qt.IsNil)
 			c.Assert(found, qt.IsFalse)
@@ -220,7 +220,6 @@ DROP TABLE users;
 }
 
 func Test_classifyAtlasTxtarDirective_FailurePath(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name string
 		sql  string
@@ -236,7 +235,8 @@ func Test_classifyAtlasTxtarDirective_FailurePath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			isTxtar, misplaced := classifyAtlasTxtarDirective(test.sql)
 			c.Assert(isTxtar, qt.IsFalse)
 			c.Assert(misplaced, qt.IsTrue)
@@ -245,7 +245,6 @@ func Test_classifyAtlasTxtarDirective_FailurePath(t *testing.T) {
 }
 
 func Test_parseMigrationFileTxMode_CoexistenceHappyPath(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name       string
 		sql        string
@@ -273,7 +272,8 @@ func Test_parseMigrationFileTxMode_CoexistenceHappyPath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			got := parseMigrationFileTxMode("1_coexist.sql", test.sql)
 			c.Assert(got.err, qt.IsNil)
 			c.Assert(got.mode, qt.Equals, test.wantMode)
@@ -283,7 +283,6 @@ func Test_parseMigrationFileTxMode_CoexistenceHappyPath(t *testing.T) {
 }
 
 func Test_parseMigrationFileTxMode_CoexistenceFailurePath(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name       string
 		sql        string
@@ -305,7 +304,8 @@ func Test_parseMigrationFileTxMode_CoexistenceFailurePath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			got := parseMigrationFileTxMode("1_coexist.sql", test.sql)
 			c.Assert(got.err, qt.ErrorMatches, test.wantErr)
 			c.Assert(got.mode, qt.Equals, MigrationFileTxModeUnspecified)

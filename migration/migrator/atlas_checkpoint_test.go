@@ -95,8 +95,6 @@ func appliedPtahVersions(c *qt.C, conn *dbschema.DatabaseConnection) []int64 {
 }
 
 func TestAtlasCheckpointDirective_Detection_HappyPath(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name string
 		sql  string
@@ -125,7 +123,8 @@ func TestAtlasCheckpointDirective_Detection_HappyPath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			fsys := atlasCheckpointFS(c, map[string]string{
 				"20260801100335_checkpoint.sql": test.sql,
 			})
@@ -139,8 +138,6 @@ func TestAtlasCheckpointDirective_Detection_HappyPath(t *testing.T) {
 }
 
 func TestAtlasCheckpointDirective_NotACheckpoint(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name string
 		sql  string
@@ -164,7 +161,8 @@ func TestAtlasCheckpointDirective_NotACheckpoint(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			fsys := atlasCheckpointFS(c, map[string]string{
 				"20260801100335_checkpoint.sql": test.sql,
 			})
@@ -178,8 +176,6 @@ func TestAtlasCheckpointDirective_NotACheckpoint(t *testing.T) {
 }
 
 func TestAtlasCheckpointDirective_TxtarConflict_FailurePath(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name string
 		sql  string
@@ -199,7 +195,8 @@ func TestAtlasCheckpointDirective_TxtarConflict_FailurePath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			fsys := atlasCheckpointFS(c, map[string]string{
 				"20260801100335_checkpoint.sql": test.sql,
 			})

@@ -22,6 +22,7 @@ func execute(args ...string) (stdout string, err error) {
 }
 
 func writeGolangMigrateSource(t *testing.T) string {
+	c := qt.New(t)
 	t.Helper()
 	dir := t.TempDir()
 	files := map[string]string{
@@ -31,7 +32,7 @@ func writeGolangMigrateSource(t *testing.T) string {
 		"README.md":       "# migrations\n",
 	}
 	for name, content := range files {
-		qt.Assert(t, os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600), qt.IsNil)
+		c.Assert(os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600), qt.IsNil)
 	}
 	return dir
 }

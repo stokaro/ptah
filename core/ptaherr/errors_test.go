@@ -145,8 +145,6 @@ func TestCapabilityErrorFallbackMessages(t *testing.T) {
 }
 
 func TestSentinelErrorsMatchThemselves(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name string
 		err  error
@@ -160,15 +158,14 @@ func TestSentinelErrorsMatchThemselves(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(tt.err, qt.ErrorIs, tt.err)
 		})
 	}
 }
 
 func TestSentinelErrorsAreDistinct(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name  string
 		left  error
@@ -192,7 +189,8 @@ func TestSentinelErrorsAreDistinct(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(tt.left, qt.Not(qt.ErrorIs), tt.right)
 			c.Assert(tt.right, qt.Not(qt.ErrorIs), tt.left)
 		})

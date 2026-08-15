@@ -14,6 +14,7 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/dbtarget"
 )
 
 // withDevSearchPath returns dbURL carrying a search_path query parameter.
@@ -50,7 +51,7 @@ func countDevSchema(c *qt.C, ctx context.Context, db *sql.DB, name string) int {
 //
 // The rows are a pair plus the fallback: only the search_path moves.
 func TestPostgresConnectionResolvesTheSearchPathSchemaE2E(t *testing.T) {
-	dbURL := requirePostgresE2EDatabaseURL(t)
+	dbURL := dbtarget.URL(t, dbtarget.PostgreSQL)
 
 	c := qt.New(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
@@ -138,7 +139,7 @@ func TestPostgresConnectionResolvesTheSearchPathSchemaE2E(t *testing.T) {
 // verification reachable; the count below restates the outcome for a reader
 // rather than adding coverage the error check does not already have.
 func TestPostgresRealmCleanupKeepsTheSelectedSchemaE2E(t *testing.T) {
-	dbURL := requirePostgresE2EDatabaseURL(t)
+	dbURL := dbtarget.URL(t, dbtarget.PostgreSQL)
 
 	c := qt.New(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)

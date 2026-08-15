@@ -13,11 +13,12 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/dbtarget"
 )
 
 func TestSchemaCleanScopeRefusesUnselectedPostgresDependents(t *testing.T) {
 	c := qt.New(t)
-	dbURL := strictCompatPostgresTestURL(t)
+	dbURL := dbtarget.URL(t, dbtarget.PostgreSQL)
 	schemaName := fmt.Sprintf("ptah_clean_dependency_%d_%d", os.Getpid(), time.Now().UnixNano()%1_000_000)
 	admin, err := dbschema.ConnectToDatabase(t.Context(), dbURL)
 	c.Assert(err, qt.IsNil)
@@ -118,7 +119,7 @@ func TestSchemaCleanScopeRollsBackPostgresPlanWhenRestrictRefuses(t *testing.T) 
 func postgresCleanupDependencySchema(t *testing.T, suffix string) string {
 	t.Helper()
 	c := qt.New(t)
-	dbURL := strictCompatPostgresTestURL(t)
+	dbURL := dbtarget.URL(t, dbtarget.PostgreSQL)
 	schemaName := fmt.Sprintf(
 		"ptah_clean_%s_%d_%d",
 		suffix,

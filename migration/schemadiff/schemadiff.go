@@ -69,6 +69,12 @@ func compareWithDatabaseInfoReportingUndecidedAdditions(
 		merged.IgnoredExtensions = slices.Clone(opts.IgnoredExtensions)
 	}
 	merged.Dialect = info.Dialect
+	// Projected here as well as in the funnel below, because the refusals
+	// between this line and that one read the desired state directly. A role
+	// scoped away from this target must not be checked against this target's
+	// reserved names: it is not being declared here at all. The projection is
+	// idempotent, so applying it twice is the same schema.
+	generated = goschema.ScopeToDialect(generated, info.Dialect)
 	// Resolved before any of the validations below can return, so a malformed
 	// drop toggle is reported on every SQLite comparison rather than only the
 	// ones that get far enough to classify a virtual table (stokaro/ptah#1028).
@@ -215,7 +221,21 @@ func CompareReportingUndecidedAdditions(
 		opts = config.DefaultCompareOptions()
 	}
 	if opts.Dialect != "" {
+		// The declared scope resolves first, so every later step -- coverage,
+		// identifier validation, each per-kind comparison -- sees the desired
+		// state this target actually has. An object scoped away from this
+		// dialect is absent rather than reported as added, which is what makes
+		// a multi-dialect schema converge: before this, `schema apply` created
+		// nothing for such an object, exited 0, and the very next comparison
+		// asked for it again, forever.
+		// Both sides move together. Projecting only the desired state leaves
+		// the database still holding a scoped-away object, which reads as
+		// present in the target and absent from the declaration -- the shape of
+		// a drop. See suppressScopedAway.
+		omitted := goschema.OmissionsForDialect(generated, opts.Dialect)
+		generated = goschema.ScopeToDialect(generated, opts.Dialect)
 		generated = fromschema.AssignDefaultForeignKeyNames(generated, opts.Dialect)
+		database = suppressScopedAway(database, omitted)
 	}
 
 	diff := &difftypes.SchemaDiff{}

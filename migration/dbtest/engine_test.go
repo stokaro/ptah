@@ -42,9 +42,9 @@ func TestRunMigrationTest_AssertionsHappyPath(t *testing.T) {
 		},
 	}
 
-	c := qt.New(t)
 	for _, tc := range tests {
-		c.Run(tc.name, func(c *qt.C) {
+		t.Run(tc.name, func(t *testing.T) {
+			c := qt.New(t)
 			report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{Cases: tc.cases})
 			c.Assert(err, qt.IsNil)
 			c.Assert(report, qt.IsNotNil)
@@ -89,9 +89,9 @@ func TestRunMigrationTest_AssertionsFailurePath(t *testing.T) {
 		},
 	}
 
-	c := qt.New(t)
 	for _, tc := range tests {
-		c.Run(tc.name, func(c *qt.C) {
+		t.Run(tc.name, func(t *testing.T) {
+			c := qt.New(t)
 			report, err := dbtest.RunMigrationTest(context.Background(), dbtest.Options{Cases: tc.cases})
 			c.Assert(err, qt.IsNil)
 			c.Assert(report, qt.IsNotNil)

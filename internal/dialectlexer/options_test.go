@@ -10,8 +10,6 @@ import (
 )
 
 func TestOptions_HappyPath(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name    string
 		dialect string
@@ -57,7 +55,8 @@ func TestOptions_HappyPath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			got := dialectlexer.Options(test.dialect)
 			c.Assert(got, qt.DeepEquals, test.want)
 		})

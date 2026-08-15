@@ -91,8 +91,6 @@ func containsStatement(statements []string, fragment string) bool {
 // field, and emitted no statement at all. The rollback said nothing was needed
 // and the column stayed dropped.
 func TestDownMigrationRestoresDroppedColumnAcrossSchemaSpellings(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name         string
 		targetSchema string
@@ -128,7 +126,8 @@ func TestDownMigrationRestoresDroppedColumnAcrossSchemaSpellings(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			statements := planDownStatements(
 				c,
 				downColumnTarget(test.targetSchema),
@@ -156,9 +155,8 @@ func TestDownMigrationRestoresDroppedColumnAcrossSchemaSpellings(t *testing.T) {
 // relations, and putting a column on the wrong one is the mistake the resolver
 // exists to prevent.
 func TestPlannerColumnLookupDoesNotGuessBetweenSchemas(t *testing.T) {
-	c := qt.New(t)
-
-	c.Run("a named non-default schema selects its own table", func(c *qt.C) {
+	t.Run("a named non-default schema selects its own table", func(t *testing.T) {
+		c := qt.New(t)
 		generated := &goschema.Database{
 			Tables: []goschema.Table{
 				{StructName: "PublicUser", Name: "users", Schema: "public"},
@@ -201,7 +199,8 @@ func TestPlannerColumnLookupDoesNotGuessBetweenSchemas(t *testing.T) {
 		)
 	})
 
-	c.Run("a table the schema does not declare gets no column DDL", func(c *qt.C) {
+	t.Run("a table the schema does not declare gets no column DDL", func(t *testing.T) {
+		c := qt.New(t)
 		generated := &goschema.Database{
 			Tables: []goschema.Table{{StructName: "Other", Name: "other", Schema: "public"}},
 			Fields: []goschema.Field{{StructName: "Other", Name: "id", Type: "INTEGER", Primary: true}},

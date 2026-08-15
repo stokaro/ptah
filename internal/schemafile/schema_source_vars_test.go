@@ -11,10 +11,11 @@ import (
 	"go.5x5.cz/ptah/internal/schemafile"
 )
 
-// TestLoadSourcesScopesVarsPerSource pins the boundary stokaro/ptah#934 item 4
-// turns on: a source that carries its own variable scope sees that scope and
-// nothing else, and an unscoped source in the SAME load still sees the run's
-// `--var` values.
+// TestLoadSourcesScopesVarsPerSource pins the half of the boundary
+// stokaro/ptah#934 item 4 turns on that RESOLVES: a source carrying its own
+// variable scope loads with that scope's values, and an unscoped source in the
+// SAME load still sees the run's `--var` values. The refusals that make the
+// scope a scope are in TestLoadSourcesRefusesValuesFromOutsideTheScope.
 //
 // The rule is the pinned Atlas community binary v1.3.0's, measured with
 // `schema apply --env local --dry-run` against a schema file declaring
@@ -34,7 +35,9 @@ func TestLoadSourcesScopesVarsPerSource(t *testing.T) {
 		name    string
 		sources func(dir string) []schemafile.Source
 		opts    schemafile.Options
-		assert  func(c *qt.C, db *goschema.Database, err error)
+		// wantDefaults is the column default each variable ended up as, which
+		// is where the value a source resolved is readable off the parse.
+		wantDefaults map[string]string
 	}{
 		{
 			name: "a scoped source uses its own values",
@@ -45,24 +48,7 @@ func TestLoadSourcesScopesVarsPerSource(t *testing.T) {
 					VarsScoped: true,
 				}}
 			},
-			assert: func(c *qt.C, db *goschema.Database, err error) {
-				c.Assert(err, qt.IsNil)
-				c.Assert(columnDefault(db, "tenant"), qt.Equals, "acme")
-			},
-		},
-		{
-			name: "a scoped source with no values refuses the run's --var",
-			sources: func(dir string) []schemafile.Source {
-				return []schemafile.Source{{
-					URL:        filepath.Join(dir, "tenant.hcl"),
-					VarsScoped: true,
-				}}
-			},
-			opts: schemafile.Options{Vars: []string{"tenant=acme"}},
-			assert: func(c *qt.C, db *goschema.Database, err error) {
-				c.Assert(err, qt.ErrorMatches, `.*missing value for required variable "tenant".*`)
-				c.Assert(db, qt.IsNil)
-			},
+			wantDefaults: map[string]string{"tenant": "acme"},
 		},
 		{
 			// The control. Same file, same flag, unscoped source.
@@ -70,11 +56,8 @@ func TestLoadSourcesScopesVarsPerSource(t *testing.T) {
 			sources: func(dir string) []schemafile.Source {
 				return []schemafile.Source{{URL: filepath.Join(dir, "tenant.hcl")}}
 			},
-			opts: schemafile.Options{Vars: []string{"tenant=acme"}},
-			assert: func(c *qt.C, db *goschema.Database, err error) {
-				c.Assert(err, qt.IsNil)
-				c.Assert(columnDefault(db, "tenant"), qt.Equals, "acme")
-			},
+			opts:         schemafile.Options{Vars: []string{"tenant=acme"}},
+			wantDefaults: map[string]string{"tenant": "acme"},
 		},
 		{
 			// Both shapes in ONE load, which is what a parallel Vars field on
@@ -90,12 +73,68 @@ func TestLoadSourcesScopesVarsPerSource(t *testing.T) {
 					{URL: filepath.Join(dir, "region.hcl")},
 				}
 			},
-			opts: schemafile.Options{Vars: []string{"region=global"}},
-			assert: func(c *qt.C, db *goschema.Database, err error) {
-				c.Assert(err, qt.IsNil)
-				c.Assert(columnDefault(db, "tenant"), qt.Equals, "scoped")
-				c.Assert(columnDefault(db, "region"), qt.Equals, "global")
+			opts:         schemafile.Options{Vars: []string{"region=global"}},
+			wantDefaults: map[string]string{"tenant": "scoped", "region": "global"},
+		},
+		{
+			// A comma is the reason VarValues is a decoded map rather than
+			// `--var` text: the flag grammar reads one occurrence as a CSV
+			// record, so this value would come back cut in half.
+			name: "a value containing a comma survives whole",
+			sources: func(dir string) []schemafile.Source {
+				return []schemafile.Source{{
+					URL:        filepath.Join(dir, "tenant.hcl"),
+					VarValues:  map[string]string{"tenant": "acme,inc"},
+					VarsScoped: true,
+				}}
 			},
+			wantDefaults: map[string]string{"tenant": "acme,inc"},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			dir := writeSchemaVarFixtures(c)
+
+			db, err := schemafile.LoadSources(test.sources(dir), test.opts)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(test.wantDefaults, qt.Not(qt.HasLen), 0,
+				qt.Commentf("a row asserting no default would pass over any value at all"))
+			for column, want := range test.wantDefaults {
+				c.Check(columnDefault(db, column), qt.Equals, want,
+					qt.Commentf("column %q", column))
+			}
+		})
+	}
+}
+
+// TestLoadSourcesRefusesValuesFromOutsideTheScope is the other half of the
+// boundary: a scoped source sees its OWN values and nothing else, in both
+// directions. The run's `--var` does not reach in, and the source's VarValues
+// do not reach out to an unscoped sibling in the same load.
+//
+// Both rows fail on the variable the leaking values would have satisfied, so a
+// scope that stopped holding turns each of them green — which is what makes
+// them measurements rather than the absence of a feature.
+func TestLoadSourcesRefusesValuesFromOutsideTheScope(t *testing.T) {
+	tests := []struct {
+		name    string
+		sources func(dir string) []schemafile.Source
+		opts    schemafile.Options
+		wantErr string
+	}{
+		{
+			name: "a scoped source with no values refuses the run's --var",
+			sources: func(dir string) []schemafile.Source {
+				return []schemafile.Source{{
+					URL:        filepath.Join(dir, "tenant.hcl"),
+					VarsScoped: true,
+				}}
+			},
+			opts:    schemafile.Options{Vars: []string{"tenant=acme"}},
+			wantErr: `.*missing value for required variable "tenant".*`,
 		},
 		{
 			// The scoped source's values must not leak the other way either.
@@ -110,27 +149,7 @@ func TestLoadSourcesScopesVarsPerSource(t *testing.T) {
 					{URL: filepath.Join(dir, "region.hcl")},
 				}
 			},
-			assert: func(c *qt.C, db *goschema.Database, err error) {
-				c.Assert(err, qt.ErrorMatches, `.*missing value for required variable "region".*`)
-				c.Assert(db, qt.IsNil)
-			},
-		},
-		{
-			// A comma is the reason VarValues is a decoded map rather than
-			// `--var` text: the flag grammar reads one occurrence as a CSV
-			// record, so this value would come back cut in half.
-			name: "a value containing a comma survives whole",
-			sources: func(dir string) []schemafile.Source {
-				return []schemafile.Source{{
-					URL:        filepath.Join(dir, "tenant.hcl"),
-					VarValues:  map[string]string{"tenant": "acme,inc"},
-					VarsScoped: true,
-				}}
-			},
-			assert: func(c *qt.C, db *goschema.Database, err error) {
-				c.Assert(err, qt.IsNil)
-				c.Assert(columnDefault(db, "tenant"), qt.Equals, "acme,inc")
-			},
+			wantErr: `.*missing value for required variable "region".*`,
 		},
 	}
 
@@ -141,7 +160,8 @@ func TestLoadSourcesScopesVarsPerSource(t *testing.T) {
 
 			db, err := schemafile.LoadSources(test.sources(dir), test.opts)
 
-			test.assert(c, db, err)
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			c.Assert(db, qt.IsNil)
 		})
 	}
 }

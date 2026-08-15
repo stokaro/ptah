@@ -154,7 +154,7 @@ func FromURL(rawURL string) Selection {
 	if err != nil || !platform.IsPostgresFamily(dialect) {
 		return Selection{}
 	}
-	parsed, err := url.Parse(rawURL)
+	parsed, err := atlasurl.Parse(rawURL)
 	if err != nil {
 		return Selection{}
 	}

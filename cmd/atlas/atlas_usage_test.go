@@ -15,8 +15,6 @@ import (
 )
 
 func TestNewCompatCommandNamedAtlas_UsageMatchesAtlasCE(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name      string
 		args      []string
@@ -60,7 +58,8 @@ func TestNewCompatCommandNamedAtlas_UsageMatchesAtlasCE(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			out, err := executeAtlasUsageTestCommand(atlas.NewCompatCommand("atlas"), tt.args)
 
 			c.Assert(err, qt.IsNil)
@@ -93,8 +92,6 @@ func TestCompatCommand_ForwardedNativeFailureExits1(t *testing.T) {
 }
 
 func TestAtlasCompatibilityRoots_UnknownCommandMatchesAtlasCE(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name string
 		cmd  *cobra.Command
@@ -113,7 +110,8 @@ func TestAtlasCompatibilityRoots_UnknownCommandMatchesAtlasCE(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			var stdout, stderr bytes.Buffer
 			tt.cmd.SetOut(&stdout)
 			tt.cmd.SetErr(&stderr)
@@ -168,8 +166,6 @@ func TestAtlasCompatibilityRoot_UnknownCommandSuggestsAtlasVerb(t *testing.T) {
 }
 
 func TestAtlasCompatibilityDiagnostics_WriterFailure(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name    string
 		args    []string
@@ -188,7 +184,8 @@ func TestAtlasCompatibilityDiagnostics_WriterFailure(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			cmd := atlas.NewCompatCommand("atlas")
 			var stdout bytes.Buffer
 			cmd.SetOut(&stdout)
@@ -206,8 +203,6 @@ func TestAtlasCompatibilityDiagnostics_WriterFailure(t *testing.T) {
 }
 
 func TestAtlasCompatibilityGroups_ExtraTokenMatchesAtlasCEHelp(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name      string
 		args      []string
@@ -231,7 +226,8 @@ func TestAtlasCompatibilityGroups_ExtraTokenMatchesAtlasCEHelp(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			cmd := atlas.NewCompatCommand("atlas")
 			var stdout, stderr bytes.Buffer
 			cmd.SetOut(&stdout)
@@ -248,8 +244,6 @@ func TestAtlasCompatibilityGroups_ExtraTokenMatchesAtlasCEHelp(t *testing.T) {
 }
 
 func TestAtlasCompatibilityGroups_HelpWriterFailure(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name string
 		args []string
@@ -269,7 +263,8 @@ func TestAtlasCompatibilityGroups_HelpWriterFailure(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			cmd := atlas.NewCompatCommand("atlas")
 			var stderr bytes.Buffer
 			cmd.SetOut(atlasFailingWriter{})
@@ -286,8 +281,6 @@ func TestAtlasCompatibilityGroups_HelpWriterFailure(t *testing.T) {
 }
 
 func TestAtlasCompatibilityCompletion_ExtraTokenMatchesAtlasCE(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name string
 		cmd  *cobra.Command
@@ -306,7 +299,8 @@ func TestAtlasCompatibilityCompletion_ExtraTokenMatchesAtlasCE(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			var stdout, stderr bytes.Buffer
 			tt.cmd.SetOut(&stdout)
 			tt.cmd.SetErr(&stderr)

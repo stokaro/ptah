@@ -136,7 +136,8 @@ func TestSchemaExportGraphQLOperationProfiles(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			stdout, stderr, err := runSchemaExport(
 				"--to", "graphql", "--root-dir", dir, "--graphql-operations", test.profile)
 
@@ -214,7 +215,8 @@ func TestSchemaExportGraphQLOperationsFailurePath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			stdout, stderr, err := runSchemaExport(
 				"--to", "graphql", "--root-dir", dir, "--graphql-operations", test.value)
 
@@ -250,7 +252,8 @@ func TestSchemaExportGraphQLOperationsRejectedOnOtherTargets(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			args := append(append([]string{}, test.args...), "--graphql-operations", "list")
 
 			stdout, stderr, err := runSchemaExport(args...)

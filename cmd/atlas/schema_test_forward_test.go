@@ -125,30 +125,20 @@ func TestCompatCommand_SchemaTestRunFilterSelectsCases(t *testing.T) {
 func TestCompatCommand_SchemaTestUnusableDatabaseSourceFailsLoudly(t *testing.T) {
 	tests := []struct {
 		name string
-		argv func(c *qt.C, fixture compatLiveSourceFixture) []string
-		want string
+		// The source is built from the fixture because its paths exist only
+		// once the fixture is written; the closure asserts nothing.
+		source func(fixture compatLiveSourceFixture) string
+		want   string
 	}{
 		{
-			name: "dialect mismatch is named before anything is contacted",
-			argv: func(c *qt.C, fixture compatLiveSourceFixture) []string {
-				return []string{
-					"schema", "test", fixture.testsDir,
-					"-u", "postgres://127.0.0.1:1/nope?sslmode=disable",
-					"--dev-url", freshDevURL(c),
-				}
-			},
-			want: `--db-url dialect "sqlite" does not match --root-dir database dialect "postgres"`,
+			name:   "dialect mismatch is named before anything is contacted",
+			source: func(compatLiveSourceFixture) string { return "postgres://127.0.0.1:1/nope?sslmode=disable" },
+			want:   `--db-url dialect "sqlite" does not match --root-dir database dialect "postgres"`,
 		},
 		{
-			name: "an unopenable database of the matching dialect fails on the connection",
-			argv: func(c *qt.C, fixture compatLiveSourceFixture) []string {
-				return []string{
-					"schema", "test", fixture.testsDir,
-					"-u", "sqlite://" + fixture.modelsDir,
-					"--dev-url", freshDevURL(c),
-				}
-			},
-			want: "connect to --root-dir database: failed to ping database: unable to open database file (14)",
+			name:   "an unopenable database of the matching dialect fails on the connection",
+			source: func(fixture compatLiveSourceFixture) string { return "sqlite://" + fixture.modelsDir },
+			want:   "connect to --root-dir database: failed to ping database: unable to open database file (14)",
 		},
 	}
 	for _, tt := range tests {
@@ -156,7 +146,11 @@ func TestCompatCommand_SchemaTestUnusableDatabaseSourceFailsLoudly(t *testing.T)
 			c := qt.New(t)
 			fixture := writeCompatLiveSourceFixture(c)
 
-			out, err := runCompatArgs(tt.argv(c, fixture))
+			out, err := runCompatArgs([]string{
+				"schema", "test", fixture.testsDir,
+				"-u", tt.source(fixture),
+				"--dev-url", freshDevURL(c),
+			})
 
 			c.Assert(err, qt.IsNotNil, qt.Commentf("%s", out))
 			c.Assert(err.Error(), qt.Equals, tt.want)
@@ -407,102 +401,83 @@ func runCompatArgs(args []string) (string, error) {
 	return out.String(), err
 }
 
-// TestCompatCommand_SchemaTestDesiredStateSourceSpellings covers every spelling
-// that reaches the desired-state source, because the refusal had three
-// reachable gate branches with two different messages: -u and --url share the
-// flag mapper, and an atlas.hcl env src goes through a different site
+// The four tests below cover every spelling that reaches the desired-state
+// source, because the refusal they replace had three reachable gate branches
+// with two different messages: -u and --url share the flag mapper, PTAH_URL is
+// read before them, and an atlas.hcl env src goes through a different site
 // altogether. Fixing one branch would look complete while leaving the others
-// refusing.
-func TestCompatCommand_SchemaTestDesiredStateSourceSpellings(t *testing.T) {
+// refusing, so each spelling is measured on its own.
+//
+// TestCompatCommand_SchemaTestFileSourcesStillResolveToThemselves is the
+// control for all four: the asserted table exists only in the live database, so
+// a source that resolved to anything else fails the same case.
+func TestCompatCommand_SchemaTestFlagSpellingsAcceptADatabaseSource(t *testing.T) {
 	tests := []struct {
-		name  string
-		argv  func(c *qt.C, t *testing.T, fixture compatLiveSourceFixture) []string
-		check func(c *qt.C, out string, err error)
+		name string
+		flag string
 	}{
-		{
-			name: "-u shorthand with a database URL",
-			argv: func(c *qt.C, _ *testing.T, fixture compatLiveSourceFixture) []string {
-				return []string{
-					"schema", "test", fixture.testsDir,
-					"-u", fixture.liveURL, "--dev-url", freshDevURL(c),
-				}
-			},
-			check: assertDatabaseSourcePassed,
-		},
-		{
-			name: "--url long spelling with a database URL",
-			argv: func(c *qt.C, _ *testing.T, fixture compatLiveSourceFixture) []string {
-				return []string{
-					"schema", "test", fixture.testsDir,
-					"--url", fixture.liveURL, "--dev-url", freshDevURL(c),
-				}
-			},
-			check: assertDatabaseSourcePassed,
-		},
-		{
-			name: "PTAH_URL environment twin",
-			argv: func(c *qt.C, t *testing.T, fixture compatLiveSourceFixture) []string {
-				t.Setenv("PTAH_URL", fixture.liveURL)
-				return []string{"schema", "test", fixture.testsDir, "--dev-url", freshDevURL(c)}
-			},
-			check: assertDatabaseSourcePassed,
-		},
-		{
-			name: "atlas.hcl env src",
-			argv: func(c *qt.C, t *testing.T, fixture compatLiveSourceFixture) []string {
-				dir := c.TempDir()
-				t.Chdir(dir)
-				c.Assert(os.WriteFile(filepath.Join(dir, "atlas.hcl"), []byte(`env "local" {
+		{name: "-u shorthand with a database URL", flag: "-u"},
+		{name: "--url long spelling with a database URL", flag: "--url"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			fixture := writeCompatLiveSourceFixture(c)
+
+			out, err := runCompatArgs([]string{
+				"schema", "test", fixture.testsDir,
+				tt.flag, fixture.liveURL, "--dev-url", freshDevURL(c),
+			})
+
+			assertDatabaseSourcePassed(c, out, err)
+		})
+	}
+}
+
+func TestCompatCommand_SchemaTestEnvironmentTwinAcceptsADatabaseSource(t *testing.T) {
+	c := qt.New(t)
+	fixture := writeCompatLiveSourceFixture(c)
+	t.Setenv("PTAH_URL", fixture.liveURL)
+
+	out, err := runCompatArgs([]string{"schema", "test", fixture.testsDir, "--dev-url", freshDevURL(c)})
+
+	assertDatabaseSourcePassed(c, out, err)
+}
+
+func TestCompatCommand_SchemaTestProjectFileSrcAcceptsADatabaseSource(t *testing.T) {
+	c := qt.New(t)
+	fixture := writeCompatLiveSourceFixture(c)
+	dir := c.TempDir()
+	t.Chdir(dir)
+	c.Assert(os.WriteFile(filepath.Join(dir, "atlas.hcl"), []byte(`env "local" {
   src = "`+fixture.liveURL+`"
   dev = "`+freshDevURL(c)+`"
 }
 `), 0o600), qt.IsNil)
-				return []string{"schema", "test", fixture.testsDir, "--env", "local"}
-			},
-			check: assertDatabaseSourcePassed,
+
+	out, err := runCompatArgs([]string{"schema", "test", fixture.testsDir, "--env", "local"})
+
+	assertDatabaseSourcePassed(c, out, err)
+}
+
+// TestCompatCommand_SchemaTestFileSourcesStillResolveToThemselves keeps the
+// database source from becoming the answer to every -u: a file source still
+// describes the schema in the file, which is the case the live-database tests
+// above would pass even if the flag resolved to nothing at all.
+func TestCompatCommand_SchemaTestFileSourcesStillResolveToThemselves(t *testing.T) {
+	tests := []struct {
+		name string
+		// The path exists only once the fixture is written, so the row names
+		// the field rather than the path. The closure asserts nothing.
+		source func(fixture compatLiveSourceFixture) string
+	}{
+		{
+			name:   "Go annotation directory",
+			source: func(fixture compatLiveSourceFixture) string { return fixture.modelsDir },
 		},
 		{
-			name: "Go annotation directory is the control",
-			argv: func(c *qt.C, _ *testing.T, fixture compatLiveSourceFixture) []string {
-				return []string{
-					"schema", "test", fixture.testsDir,
-					"-u", "file://" + fixture.modelsDir, "--dev-url", freshDevURL(c),
-				}
-			},
-			check: assertDatabaseSourceNotRead,
-		},
-		{
-			name: "SQL schema file is the second control",
-			argv: func(c *qt.C, _ *testing.T, fixture compatLiveSourceFixture) []string {
-				return []string{
-					"schema", "test", fixture.testsDir,
-					"-u", "file://" + fixture.sqlFile, "--dev-url", freshDevURL(c),
-				}
-			},
-			check: assertDatabaseSourceNotRead,
-		},
-		{
-			name: "atlas:// registry URLs stay refused",
-			argv: func(_ *qt.C, _ *testing.T, fixture compatLiveSourceFixture) []string {
-				return []string{"schema", "test", fixture.testsDir, "-u", "atlas://myschema"}
-			},
-			check: func(c *qt.C, out string, err error) {
-				c.Assert(err, qt.IsNotNil, qt.Commentf("%s", out))
-				c.Assert(err.Error(), qt.Contains, "atlas:// registry URLs are not supported")
-				c.Assert(err.Error(), qt.Not(qt.Contains), "migration directories")
-			},
-		},
-		{
-			name: "docker:// as desired state stays refused",
-			argv: func(_ *qt.C, _ *testing.T, fixture compatLiveSourceFixture) []string {
-				return []string{"schema", "test", fixture.testsDir, "-u", "docker://postgres/16/dev"}
-			},
-			check: func(c *qt.C, out string, err error) {
-				c.Assert(err, qt.IsNotNil, qt.Commentf("%s", out))
-				c.Assert(err.Error(), qt.Contains,
-					"docker:// URLs provision Atlas dev databases and cannot be used as a desired-state source")
-				c.Assert(err.Error(), qt.Not(qt.Contains), "migration directories")
-			},
+			name:   "SQL schema file",
+			source: func(fixture compatLiveSourceFixture) string { return fixture.sqlFile },
 		},
 	}
 	for _, tt := range tests {
@@ -510,9 +485,48 @@ func TestCompatCommand_SchemaTestDesiredStateSourceSpellings(t *testing.T) {
 			c := qt.New(t)
 			fixture := writeCompatLiveSourceFixture(c)
 
-			out, err := runCompatArgs(tt.argv(c, t, fixture))
+			out, err := runCompatArgs([]string{
+				"schema", "test", fixture.testsDir,
+				"-u", "file://" + tt.source(fixture), "--dev-url", freshDevURL(c),
+			})
 
-			tt.check(c, out, err)
+			assertDatabaseSourceNotRead(c, out, err)
+		})
+	}
+}
+
+// TestCompatCommand_SchemaTestRefusesURLsThatAreNotADesiredState pins the two
+// URL schemes that stay refused now that a database URL is accepted, each with
+// its own reason. Neither refusal may fall back to the removed message about
+// migration directories, which would send an operator to fix a flag that is not
+// the problem.
+func TestCompatCommand_SchemaTestRefusesURLsThatAreNotADesiredState(t *testing.T) {
+	tests := []struct {
+		name string
+		url  string
+		want string
+	}{
+		{
+			name: "atlas:// registry URLs stay refused",
+			url:  "atlas://myschema",
+			want: "atlas:// registry URLs are not supported",
+		},
+		{
+			name: "docker:// as desired state stays refused",
+			url:  "docker://postgres/16/dev",
+			want: "docker:// URLs provision Atlas dev databases and cannot be used as a desired-state source",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			fixture := writeCompatLiveSourceFixture(c)
+
+			out, err := runCompatArgs([]string{"schema", "test", fixture.testsDir, "-u", tt.url})
+
+			c.Assert(err, qt.IsNotNil, qt.Commentf("%s", out))
+			c.Assert(err.Error(), qt.Contains, tt.want)
+			c.Assert(err.Error(), qt.Not(qt.Contains), "migration directories")
 		})
 	}
 }

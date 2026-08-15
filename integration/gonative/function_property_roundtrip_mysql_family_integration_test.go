@@ -540,7 +540,7 @@ func TestFunctionSkippedLanguageNeverDropsTheLiveRoutine_Integration(t *testing.
 	}{
 		{
 			// The realistic one: no language written at all.
-			name: "omitted language canonicalizes to plpgsql",
+			name:     "omitted language canonicalizes to plpgsql",
 			language: "",
 		},
 		{

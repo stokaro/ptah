@@ -253,8 +253,12 @@ func TestParseAtlasSchemaRepo(t *testing.T) {
 		name string
 		raw  string
 		want string
-		// assert carries any per-row expectation beyond the repo name.
-		assert func(c *qt.C, cfg projectconfig.Config)
+		// wantSources is the schema src list the same block must still yield,
+		// and wantIgnored the atlas.hcl names accepted and not acted on. Both
+		// are asserted on every row, because the failure the repo arm risks is
+		// shadowing a sibling attribute rather than misreading its own.
+		wantSources []string
+		wantIgnored []string
 	}{
 		{
 			name: "name is decoded",
@@ -267,8 +271,9 @@ func TestParseAtlasSchemaRepo(t *testing.T) {
   }
 }
 `,
-			want:   "myapp",
-			assert: func(*qt.C, projectconfig.Config) {},
+			want:        "myapp",
+			wantSources: nil,
+			wantIgnored: []string{},
 		},
 		{
 			// The community binary accepts an empty repo block -- measured at
@@ -282,8 +287,9 @@ func TestParseAtlasSchemaRepo(t *testing.T) {
   }
 }
 `,
-			want:   "",
-			assert: func(*qt.C, projectconfig.Config) {},
+			want:        "",
+			wantSources: nil,
+			wantIgnored: []string{},
 		},
 		{
 			// src still parses beside it; adding the repo arm must not shadow
@@ -299,10 +305,9 @@ func TestParseAtlasSchemaRepo(t *testing.T) {
   }
 }
 `,
-			want: "myapp",
-			assert: func(c *qt.C, cfg projectconfig.Config) {
-				c.Assert(cfg.SchemaSources, qt.DeepEquals, []string{"file://schema.hcl"})
-			},
+			want:        "myapp",
+			wantSources: []string{"file://schema.hcl"},
+			wantIgnored: []string{},
 		},
 		{
 			// An unrecognized attribute inside repo is tolerated, matching the
@@ -319,14 +324,9 @@ func TestParseAtlasSchemaRepo(t *testing.T) {
   }
 }
 `,
-			want: "myapp",
-			assert: func(c *qt.C, cfg projectconfig.Config) {
-				names := make([]string, 0, len(cfg.IgnoredConstructs))
-				for _, ignored := range cfg.IgnoredConstructs {
-					names = append(names, ignored.Name)
-				}
-				c.Assert(names, qt.Contains, "frobnicate")
-			},
+			want:        "myapp",
+			wantSources: nil,
+			wantIgnored: []string{"frobnicate"},
 		},
 	}
 
@@ -338,7 +338,8 @@ func TestParseAtlasSchemaRepo(t *testing.T) {
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(cfg.Schema.Repo.Name, qt.Equals, tt.want)
-			tt.assert(c, cfg)
+			c.Assert(cfg.SchemaSources, qt.DeepEquals, tt.wantSources)
+			c.Assert(ignoredConstructNames(cfg), qt.DeepEquals, tt.wantIgnored)
 		})
 	}
 }

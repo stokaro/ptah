@@ -156,7 +156,6 @@ func TestPlanFileMarshalReadRoundTrip(t *testing.T) {
 }
 
 func TestReadPlanFileValidatesContract(t *testing.T) {
-	c := qt.New(t)
 	dir := t.TempDir()
 
 	tests := []struct {
@@ -210,7 +209,8 @@ func TestReadPlanFileValidatesContract(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			path := filepath.Join(dir, tt.name+".plan.json")
 			c.Assert(os.WriteFile(path, []byte(tt.contents), 0o600), qt.IsNil)
 

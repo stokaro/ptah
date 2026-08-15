@@ -6,7 +6,6 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/goschema"
-	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlasfilter"
 )
 
@@ -170,42 +169,52 @@ func TestExcludeDatabase_RealmRelativeDepthStaysAddressable(t *testing.T) {
 // — turns every row red with `too many parts in pattern: "public.users.name"`
 // and its siblings.
 func TestExcludeDatabaseWithDefaultSchema_SchemaRelativeChildrenStayAddressable(t *testing.T) {
+	// The fixture's untouched values. Every row states all three, so a pattern
+	// that reaches a child it was not aimed at fails the row that names the
+	// child it was aimed at.
+	allColumns := []string{"id", "name"}
+	allIndexes := []string{"users_name_idx", "orders_id_idx"}
+	// extensionVersions renders "name:version", so an empty tail is a cleared
+	// version rather than a dropped extension.
+	allExtensions := []string{"pgcrypto:1.3", "plpgsql:1.0"}
+
 	tests := []struct {
-		name    string
-		pattern string
-		assert  func(*qt.C, *dbschematypes.DBSchema)
+		name           string
+		pattern        string
+		wantColumns    []string
+		wantIndexes    []string
+		wantExtensions []string
 	}{
 		{
-			name:    "column",
-			pattern: "users.name",
-			assert: func(c *qt.C, got *dbschematypes.DBSchema) {
-				c.Assert(columnNames(got.Tables[0].Columns), qt.DeepEquals, []string{"id"})
-			},
+			// users_name_idx indexes the excluded column, and an index left
+			// behind by the column it covers would not exist on the filtered
+			// side of the comparison either.
+			name:           "column",
+			pattern:        "users.name",
+			wantColumns:    []string{"id"},
+			wantIndexes:    []string{"orders_id_idx"},
+			wantExtensions: allExtensions,
 		},
 		{
-			name:    "every column of a table",
-			pattern: "users.*",
-			assert: func(c *qt.C, got *dbschematypes.DBSchema) {
-				c.Assert(columnNames(got.Tables[0].Columns), qt.HasLen, 0)
-			},
+			name:           "every column of a table",
+			pattern:        "users.*",
+			wantColumns:    []string{},
+			wantIndexes:    []string{"orders_id_idx"},
+			wantExtensions: allExtensions,
 		},
 		{
-			name:    "index",
-			pattern: "users.users_name_idx",
-			assert: func(c *qt.C, got *dbschematypes.DBSchema) {
-				c.Assert(columnNames(got.Tables[0].Columns), qt.DeepEquals, []string{"id", "name"})
-				c.Assert(indexNames(got.Indexes), qt.DeepEquals, []string{"orders_id_idx"})
-			},
+			name:           "index",
+			pattern:        "users.users_name_idx",
+			wantColumns:    allColumns,
+			wantIndexes:    []string{"orders_id_idx"},
+			wantExtensions: allExtensions,
 		},
 		{
-			// extensionVersions renders "name:version", so the empty tails are
-			// cleared versions rather than dropped extensions — the fixture
-			// carries "pgcrypto:1.3" and "plpgsql:1.0" before the filter.
-			name:    "extension field selector",
-			pattern: "*[type=extension].version",
-			assert: func(c *qt.C, got *dbschematypes.DBSchema) {
-				c.Assert(extensionVersions(got.Extensions), qt.DeepEquals, []string{"pgcrypto:", "plpgsql:"})
-			},
+			name:           "extension field selector",
+			pattern:        "*[type=extension].version",
+			wantColumns:    allColumns,
+			wantIndexes:    allIndexes,
+			wantExtensions: []string{"pgcrypto:", "plpgsql:"},
 		},
 	}
 
@@ -218,7 +227,9 @@ func TestExcludeDatabaseWithDefaultSchema_SchemaRelativeChildrenStayAddressable(
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(tableNames(got.Tables), qt.DeepEquals, []string{"users", "app.orders"})
-			test.assert(c, got)
+			c.Assert(columnNames(got.Tables[0].Columns), qt.DeepEquals, test.wantColumns)
+			c.Assert(indexNames(got.Indexes), qt.DeepEquals, test.wantIndexes)
+			c.Assert(extensionVersions(got.Extensions), qt.DeepEquals, test.wantExtensions)
 		})
 	}
 }

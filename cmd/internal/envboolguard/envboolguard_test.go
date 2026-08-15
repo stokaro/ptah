@@ -47,17 +47,18 @@ import (
 // not, because the scan skips `_test.go` files: an entry for one would be a
 // claim about the tree that nothing checks.
 var nonBooleanPtahVars = []string{
-	"PTAH_CURRENT_VERSION", // migration version, passed to preflight hooks
-	"PTAH_DB_URL",          // database URL
-	"PTAH_DIALECT",         // dialect name
-	"PTAH_DIR",             // migration directory URL
-	"PTAH_FORMAT",          // Go template
-	"PTAH_LOG_FORMAT",      // log format name
-	"PTAH_MIGRATIONS_DIR",  // native migration directory path
-	"PTAH_PLAN",            // plan name, an Atlas capability Ptah refuses
-	"PTAH_TARGET_VERSION",  // migration version, passed to preflight hooks
-	"PTAH_TO_TAG",          // tag name, an Atlas capability Ptah refuses
-	"PTAH_VAR",             // repeatable name=value assignment
+	"PTAH_CURRENT_VERSION",    // migration version, passed to preflight hooks
+	"PTAH_DB_URL",             // database URL
+	"PTAH_DIALECT",            // dialect name
+	"PTAH_DIR",                // migration directory URL
+	"PTAH_FORMAT",             // Go template
+	"PTAH_LOG_FORMAT",         // log format name
+	"PTAH_MIGRATIONS_DIR",     // native migration directory path
+	"PTAH_PLAN",               // plan name, an Atlas capability Ptah refuses
+	"PTAH_SQLSERVER_TEST_URL", // SQL Server address for the live test contour
+	"PTAH_TARGET_VERSION",     // migration version, passed to preflight hooks
+	"PTAH_TO_TAG",             // tag name, an Atlas capability Ptah refuses
+	"PTAH_VAR",                // repeatable name=value assignment
 }
 
 // ptahVarPattern finds a variable name anywhere inside a string literal, so
@@ -283,7 +284,8 @@ func TestEveryDeclaredVariableIsNamedAndDefaultedSafely(t *testing.T) {
 	c.Assert(len(registered) > 0, qt.IsTrue, qt.Commentf(
 		"the registry is empty, so every assertion over it is vacuous"))
 	for _, variable := range registered {
-		c.Run(variable.Name(), func(c *qt.C) {
+		t.Run(variable.Name(), func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(strings.HasPrefix(variable.Name(), envbool.Prefix), qt.IsTrue)
 			c.Assert(variable.Default(), qt.IsFalse, qt.Commentf(
 				"a boolean PTAH_* variable defaulting to the permissive side turns a typo"+
@@ -313,7 +315,8 @@ func TestEveryDeclaredVariableStatesAClassification(t *testing.T) {
 	c.Assert(len(registered) > 0, qt.IsTrue, qt.Commentf(
 		"the registry is empty, so every assertion over it is vacuous"))
 	for _, variable := range registered {
-		c.Run(variable.Name(), func(c *qt.C) {
+		t.Run(variable.Name(), func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(variable.Class(), qt.Not(qt.Equals), envbool.Unclassified, qt.Commentf(
 				"state envbool.Gated or envbool.Retained at the envbool.New call for %s,"+
 					" and say in a comment which capability the pinned community binary"+

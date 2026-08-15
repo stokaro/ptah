@@ -34,8 +34,6 @@ func functionSchema(fn goschema.Function) *goschema.Database {
 // engine will not accept, and no offline test that only checks "a
 // characteristic is present" would notice.
 func TestRender_MySQLFamilyEmitsTheCharacteristicTheEngineDemands(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name       string
 		volatility string
@@ -49,7 +47,8 @@ func TestRender_MySQLFamilyEmitsTheCharacteristicTheEngineDemands(t *testing.T) 
 
 	for _, dialect := range []string{platform.MySQL, platform.MariaDB} {
 		for _, test := range tests {
-			c.Run(dialect+"/"+test.name, func(c *qt.C) {
+			t.Run(dialect+"/"+test.name, func(t *testing.T) {
+				c := qt.New(t)
 				sql, err := renderer.GetOrderedCreateStatements(functionSchema(goschema.Function{
 					Name: "func_probe", Returns: "integer", Language: "sql",
 					Volatility: test.volatility, Body: "RETURN 1",
@@ -85,8 +84,6 @@ func TestRender_MySQLFamilyEmitsTheCharacteristicTheEngineDemands(t *testing.T) 
 // the dialect-blind validator: folding there would refuse a schema PostgreSQL
 // hosts perfectly well.
 func TestRender_MySQLFamilyRefusesCaseCollidingFunctionNames(t *testing.T) {
-	c := qt.New(t)
-
 	colliding := &goschema.Database{Functions: []goschema.Function{
 		{
 			Name: "Ptah_Dup_Fn", Returns: "int", Language: "sql",
@@ -109,7 +106,8 @@ func TestRender_MySQLFamilyRefusesCaseCollidingFunctionNames(t *testing.T) {
 	}}
 
 	for _, dialect := range []string{platform.MySQL, platform.MariaDB} {
-		c.Run(dialect+"/colliding is refused", func(c *qt.C) {
+		t.Run(dialect+"/colliding is refused", func(t *testing.T) {
+			c := qt.New(t)
 			_, err := renderer.GetOrderedCreateStatements(colliding, dialect)
 
 			c.Assert(err, qt.IsNotNil)
@@ -117,7 +115,8 @@ func TestRender_MySQLFamilyRefusesCaseCollidingFunctionNames(t *testing.T) {
 			c.Check(err.Error(), qt.Contains, "ptah_dup_fn")
 			c.Check(err.Error(), qt.Contains, "case")
 		})
-		c.Run(dialect+"/two distinct names are fine", func(c *qt.C) {
+		t.Run(dialect+"/two distinct names are fine", func(t *testing.T) {
+			c := qt.New(t)
 			statements, err := renderer.GetOrderedCreateStatements(distinct, dialect)
 
 			c.Assert(err, qt.IsNil)
@@ -127,7 +126,8 @@ func TestRender_MySQLFamilyRefusesCaseCollidingFunctionNames(t *testing.T) {
 
 	// Control: PostgreSQL routine names are case-sensitive, so the same schema
 	// is legitimate there and must still render both functions.
-	c.Run("postgres hosts both spellings", func(c *qt.C) {
+	t.Run("postgres hosts both spellings", func(t *testing.T) {
+		c := qt.New(t)
 		statements, err := renderer.GetOrderedCreateStatements(colliding, platform.Postgres)
 
 		c.Assert(err, qt.IsNil)
@@ -152,10 +152,9 @@ func TestRender_MySQLFamilyRefusesCaseCollidingFunctionNames(t *testing.T) {
 // FUNCTION` is still never rendered -- it is Error 1064 on MySQL 26.7.0 -- so
 // the family still shares one shape.
 func TestRender_MySQLFamilyRendersOneStatementPerElement(t *testing.T) {
-	c := qt.New(t)
-
 	for _, dialect := range []string{platform.MySQL, platform.MariaDB} {
-		c.Run(dialect, func(c *qt.C) {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
 			sql, err := renderer.GetOrderedCreateStatements(functionSchema(goschema.Function{
 				Name: "func_probe", Returns: "integer", Language: "sql", Body: "RETURN 1",
 			}), dialect)
@@ -177,10 +176,9 @@ func TestRender_MySQLFamilyRendersOneStatementPerElement(t *testing.T) {
 // ACCEPTED on MySQL 26.7.0 and MariaDB 10.11.18. An operator who read the old
 // sentence concluded their database could not host a function.
 func TestRender_MySQLFamilyNoLongerBlamesTheEngine(t *testing.T) {
-	c := qt.New(t)
-
 	for _, dialect := range []string{platform.MySQL, platform.MariaDB} {
-		c.Run(dialect, func(c *qt.C) {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
 			sql, err := renderer.GetOrderedCreateStatements(functionSchema(goschema.Function{
 				Name: "func_probe", Returns: "integer", Language: "sql", Body: "RETURN 1",
 			}), dialect)

@@ -25,8 +25,8 @@ type concurrentIndexOutcome struct {
 	dropErr   error
 }
 
-// TestConcurrentIndexSelectors_ResolveTheTableTheRefNames pins the identity the
-// partitioned rule is keyed on.
+// TestConcurrentIndexSelectors_ResolveARefToTheOrdinaryTableItNames pins the
+// identity the partitioned rule is keyed on.
 //
 // A read schema can hold two different tables with the same bare name, one per
 // schema, and an index ref carries whichever spelling the side of the diff it
@@ -38,17 +38,22 @@ type concurrentIndexOutcome struct {
 // diff.concurrent_index request is refused with a diagnostic naming a table
 // that is not partitioned at all.
 //
-// The rows below separate that pooling from the rule in four directions: a
-// qualified ref must still find its own partitioned parent, a bare ref must
-// prefer the table that answers to it exactly, a bare ref every candidate
-// answers as partitioned must still be refused, and a bare ref reaching a
-// single schema-qualified parent must still be refused.
-func TestConcurrentIndexSelectors_ResolveTheTableTheRefNames(t *testing.T) {
+// The rows here are the refs that must still reach an ordinary table. The refs
+// that must still be refused live in
+// [TestConcurrentIndexSelectors_RefuseARefNamingAPartitionedParent]: resolving
+// and refusing are two different measurements, and a pooled set gets one of
+// them right whichever way it errs.
+func TestConcurrentIndexSelectors_ResolveARefToTheOrdinaryTableItNames(t *testing.T) {
 	tests := []struct {
 		name   string
 		tables []dbschematypes.DBTable
 		ref    types.IndexRef
-		assert func(c *qt.C, got concurrentIndexOutcome)
+		// One want per selector. The heuristic reads EstimatedRows and the two
+		// policy selectors are explicit requests, so a single expectation would
+		// let one selector stop answering behind another that still does.
+		wantHeuristic []types.IndexRef
+		wantPolicy    []types.IndexRef
+		wantDropRefs  []types.IndexRef
 	}{
 		{
 			// One partitioned table must not poison every ordinary table that
@@ -58,20 +63,10 @@ func TestConcurrentIndexSelectors_ResolveTheTableTheRefNames(t *testing.T) {
 				{Name: "events", Schema: "app", Partitioned: true, EstimatedRows: 5000},
 				{Name: "events", Schema: "public", EstimatedRows: 5000},
 			},
-			ref: types.IndexRef{Name: "idx_events_tenant", TableName: "events"},
-			assert: func(c *qt.C, got concurrentIndexOutcome) {
-				c.Assert(got.policyErr, qt.IsNil)
-				c.Assert(got.dropErr, qt.IsNil)
-				c.Assert(got.heuristic, qt.DeepEquals, []types.IndexRef{
-					{Name: "idx_events_tenant", TableName: "events"},
-				})
-				c.Assert(got.policy, qt.DeepEquals, []types.IndexRef{
-					{Name: "idx_events_tenant", TableName: "events"},
-				})
-				c.Assert(got.dropRefs, qt.DeepEquals, []types.IndexRef{
-					{Name: "idx_events_tenant", TableName: "events"},
-				})
-			},
+			ref:           types.IndexRef{Name: "idx_events_tenant", TableName: "events"},
+			wantHeuristic: []types.IndexRef{{Name: "idx_events_tenant", TableName: "events"}},
+			wantPolicy:    []types.IndexRef{{Name: "idx_events_tenant", TableName: "events"}},
+			wantDropRefs:  []types.IndexRef{{Name: "idx_events_tenant", TableName: "events"}},
 		},
 		{
 			// The shape the PostgreSQL reader actually produces: it blanks the
@@ -82,84 +77,20 @@ func TestConcurrentIndexSelectors_ResolveTheTableTheRefNames(t *testing.T) {
 				{Name: "events", EstimatedRows: 5000},
 				{Name: "events", Schema: "app", Partitioned: true, EstimatedRows: 5000},
 			},
-			ref: types.IndexRef{Name: "idx_events_tenant", TableName: "events"},
-			assert: func(c *qt.C, got concurrentIndexOutcome) {
-				c.Assert(got.policyErr, qt.IsNil)
-				c.Assert(got.dropErr, qt.IsNil)
-				c.Assert(got.heuristic, qt.DeepEquals, []types.IndexRef{
-					{Name: "idx_events_tenant", TableName: "events"},
-				})
-				c.Assert(got.policy, qt.DeepEquals, []types.IndexRef{
-					{Name: "idx_events_tenant", TableName: "events"},
-				})
-			},
-		},
-		{
-			// The other direction: resolving by bare name only would lose the
-			// parent this ref names exactly, and publish a statement the server
-			// answers with SQLSTATE 0A000.
-			name: "a qualified ref finds its own partitioned parent",
-			tables: []dbschematypes.DBTable{
-				{Name: "events", EstimatedRows: 5000},
-				{Name: "events", Schema: "app", Partitioned: true, EstimatedRows: 5000},
-			},
-			ref: types.IndexRef{Name: "idx_events_tenant", TableName: "app.events"},
-			assert: func(c *qt.C, got concurrentIndexOutcome) {
-				c.Assert(got.heuristic, qt.IsNil)
-				c.Assert(got.policy, qt.IsNil)
-				c.Assert(got.policyErr, qt.IsNotNil)
-				c.Assert(got.policyErr.Error(), qt.Contains, `"idx_events_tenant" on "app.events"`)
-				c.Assert(got.dropRefs, qt.IsNil)
-				c.Assert(got.dropErr, qt.IsNotNil)
-				c.Assert(got.dropErr.Error(), qt.Contains, `"idx_events_tenant" on "app.events"`)
-			},
-		},
-		{
-			// Ambiguity is not a licence to publish. When every table the bare
-			// spelling can name is a partitioned parent, the statement is
-			// unexecutable whichever one it meant.
-			name: "a bare ref every candidate answers as partitioned is still refused",
-			tables: []dbschematypes.DBTable{
-				{Name: "events", Schema: "app", Partitioned: true, EstimatedRows: 5000},
-				{Name: "events", Schema: "reporting", Partitioned: true, EstimatedRows: 5000},
-			},
-			ref: types.IndexRef{Name: "idx_events_tenant", TableName: "events"},
-			assert: func(c *qt.C, got concurrentIndexOutcome) {
-				c.Assert(got.heuristic, qt.IsNil)
-				c.Assert(got.policy, qt.IsNil)
-				c.Assert(got.policyErr, qt.IsNotNil)
-				c.Assert(got.dropRefs, qt.IsNil)
-				c.Assert(got.dropErr, qt.IsNotNil)
-			},
-		},
-		{
-			// The bare fallback still has to reach a schema-qualified table --
-			// the two sides of a diff do not have to agree on the spelling.
-			name: "a bare ref reaching one schema-qualified parent is refused",
-			tables: []dbschematypes.DBTable{
-				{Name: "events", Schema: "app", Partitioned: true, EstimatedRows: 5000},
-			},
-			ref: types.IndexRef{Name: "idx_events_tenant", TableName: "events"},
-			assert: func(c *qt.C, got concurrentIndexOutcome) {
-				c.Assert(got.heuristic, qt.IsNil)
-				c.Assert(got.policy, qt.IsNil)
-				c.Assert(got.policyErr, qt.IsNotNil)
-				c.Assert(got.dropRefs, qt.IsNil)
-				c.Assert(got.dropErr, qt.IsNotNil)
-			},
+			ref:           types.IndexRef{Name: "idx_events_tenant", TableName: "events"},
+			wantHeuristic: []types.IndexRef{{Name: "idx_events_tenant", TableName: "events"}},
+			wantPolicy:    []types.IndexRef{{Name: "idx_events_tenant", TableName: "events"}},
+			wantDropRefs:  []types.IndexRef{{Name: "idx_events_tenant", TableName: "events"}},
 		},
 		{
 			name: "a bare ref reaching one ordinary schema-qualified table builds concurrently",
 			tables: []dbschematypes.DBTable{
 				{Name: "events", Schema: "app", EstimatedRows: 5000},
 			},
-			ref: types.IndexRef{Name: "idx_events_tenant", TableName: "events"},
-			assert: func(c *qt.C, got concurrentIndexOutcome) {
-				c.Assert(got.policyErr, qt.IsNil)
-				c.Assert(got.heuristic, qt.DeepEquals, []types.IndexRef{
-					{Name: "idx_events_tenant", TableName: "events"},
-				})
-			},
+			ref:           types.IndexRef{Name: "idx_events_tenant", TableName: "events"},
+			wantHeuristic: []types.IndexRef{{Name: "idx_events_tenant", TableName: "events"}},
+			wantPolicy:    []types.IndexRef{{Name: "idx_events_tenant", TableName: "events"}},
+			wantDropRefs:  []types.IndexRef{{Name: "idx_events_tenant", TableName: "events"}},
 		},
 		{
 			// One populated candidate is enough to prefer the concurrent build:
@@ -170,19 +101,100 @@ func TestConcurrentIndexSelectors_ResolveTheTableTheRefNames(t *testing.T) {
 				{Name: "events", Schema: "app", EstimatedRows: 0},
 				{Name: "events", Schema: "reporting", EstimatedRows: 5000},
 			},
-			ref: types.IndexRef{Name: "idx_events_tenant", TableName: "events"},
-			assert: func(c *qt.C, got concurrentIndexOutcome) {
-				c.Assert(got.heuristic, qt.DeepEquals, []types.IndexRef{
-					{Name: "idx_events_tenant", TableName: "events"},
-				})
-			},
+			ref:           types.IndexRef{Name: "idx_events_tenant", TableName: "events"},
+			wantHeuristic: []types.IndexRef{{Name: "idx_events_tenant", TableName: "events"}},
+			wantPolicy:    []types.IndexRef{{Name: "idx_events_tenant", TableName: "events"}},
+			wantDropRefs:  []types.IndexRef{{Name: "idx_events_tenant", TableName: "events"}},
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			tt.assert(c, runConcurrentIndexSelectors(tt.tables, tt.ref))
+
+			got := runConcurrentIndexSelectors(test.tables, test.ref)
+
+			c.Assert(got.policyErr, qt.IsNil)
+			c.Assert(got.dropErr, qt.IsNil)
+			c.Assert(got.heuristic, qt.DeepEquals, test.wantHeuristic)
+			c.Assert(got.policy, qt.DeepEquals, test.wantPolicy)
+			c.Assert(got.dropRefs, qt.DeepEquals, test.wantDropRefs)
+		})
+	}
+}
+
+// TestConcurrentIndexSelectors_RefuseARefNamingAPartitionedParent is the other
+// half of [TestConcurrentIndexSelectors_ResolveARefToTheOrdinaryTableItNames]:
+// the refs that do reach a partitioned parent, in each spelling that can reach
+// one. PostgreSQL answers a concurrent index statement on relkind 'p' with
+// SQLSTATE 0A000, so publishing one writes a plan that fails against the
+// production database instead of against the developer who generated it.
+//
+// Each row pins the table the diagnostic names, not just that one was raised.
+// A pooled lookup refuses these rows too -- naming a table that is not
+// partitioned at all -- so "refused" alone cannot tell the two apart.
+func TestConcurrentIndexSelectors_RefuseARefNamingAPartitionedParent(t *testing.T) {
+	tests := []struct {
+		name   string
+		tables []dbschematypes.DBTable
+		ref    types.IndexRef
+		// wantOffending is the offending entry the refusal lists, which is the
+		// ref's own spelling of the table it resolved to.
+		wantOffending string
+	}{
+		{
+			// The other direction: resolving by bare name only would lose the
+			// parent this ref names exactly, and publish a statement the server
+			// answers with SQLSTATE 0A000.
+			name: "a qualified ref finds its own partitioned parent",
+			tables: []dbschematypes.DBTable{
+				{Name: "events", EstimatedRows: 5000},
+				{Name: "events", Schema: "app", Partitioned: true, EstimatedRows: 5000},
+			},
+			ref:           types.IndexRef{Name: "idx_events_tenant", TableName: "app.events"},
+			wantOffending: `"idx_events_tenant" on "app.events"`,
+		},
+		{
+			// Ambiguity is not a licence to publish. When every table the bare
+			// spelling can name is a partitioned parent, the statement is
+			// unexecutable whichever one it meant.
+			name: "a bare ref every candidate answers as partitioned is still refused",
+			tables: []dbschematypes.DBTable{
+				{Name: "events", Schema: "app", Partitioned: true, EstimatedRows: 5000},
+				{Name: "events", Schema: "reporting", Partitioned: true, EstimatedRows: 5000},
+			},
+			ref:           types.IndexRef{Name: "idx_events_tenant", TableName: "events"},
+			wantOffending: `"idx_events_tenant" on "events"`,
+		},
+		{
+			// The bare fallback still has to reach a schema-qualified table --
+			// the two sides of a diff do not have to agree on the spelling.
+			name: "a bare ref reaching one schema-qualified parent is refused",
+			tables: []dbschematypes.DBTable{
+				{Name: "events", Schema: "app", Partitioned: true, EstimatedRows: 5000},
+			},
+			ref:           types.IndexRef{Name: "idx_events_tenant", TableName: "events"},
+			wantOffending: `"idx_events_tenant" on "events"`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			got := runConcurrentIndexSelectors(test.tables, test.ref)
+
+			c.Assert(got.heuristic, qt.IsNil)
+			c.Assert(got.policy, qt.IsNil)
+			c.Assert(got.dropRefs, qt.IsNil)
+			c.Assert(got.policyErr, qt.IsNotNil)
+			c.Assert(got.policyErr.Error(), qt.Contains,
+				"CREATE INDEX CONCURRENTLY requested by diff.concurrent_index.create "+
+					"cannot be generated for partitioned table(s): "+test.wantOffending)
+			c.Assert(got.dropErr, qt.IsNotNil)
+			c.Assert(got.dropErr.Error(), qt.Contains,
+				"DROP INDEX CONCURRENTLY requested by diff.concurrent_index.drop "+
+					"cannot be generated for partitioned table(s): "+test.wantOffending)
 		})
 	}
 }

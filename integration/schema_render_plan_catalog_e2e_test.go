@@ -18,11 +18,13 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 
 	"go.5x5.cz/ptah/core/sqlutil"
+	"go.5x5.cz/ptah/internal/dbtarget"
 )
 
 // renderPlanCatalogCase is one PostgreSQL-family target this measurement can
-// reach: the dialect `schema render` is asked for, and the environment variable
-// holding a URL for a live server of that engine.
+// reach: the dialect `schema render` is asked for, and the engine whose live
+// server the run needs. The engine is a dbtarget.Engine rather than a variable
+// name so this table cannot spell an address variable a CI step does not set.
 //
 // Spanner is absent because it has no live server here. Issue stokaro/ptah#942
 // records that it has no live coverage at all, and the pinned community binary
@@ -32,7 +34,7 @@ import (
 type renderPlanCatalogCase struct {
 	name    string
 	dialect string
-	urlEnv  string
+	engine  dbtarget.Engine
 }
 
 // catalogProbe asks the live catalog whether one declared object exists. The
@@ -169,9 +171,9 @@ func TestSchemaRenderAndPlanCatalogAgreementE2E(t *testing.T) {
 	buildPtah(c, ctx, repoRoot, binaryPath)
 
 	tests := []renderPlanCatalogCase{
-		{name: "postgres", dialect: "postgres", urlEnv: "POSTGRES_URL"},
-		{name: "cockroachdb", dialect: "cockroachdb", urlEnv: "COCKROACHDB_URL"},
-		{name: "yugabytedb", dialect: "yugabytedb", urlEnv: "YUGABYTEDB_URL"},
+		{name: "postgres", dialect: "postgres", engine: dbtarget.PostgreSQL},
+		{name: "cockroachdb", dialect: "cockroachdb", engine: dbtarget.CockroachDB},
+		{name: "yugabytedb", dialect: "yugabytedb", engine: dbtarget.YugabyteDB},
 	}
 
 	for _, test := range tests {
@@ -189,7 +191,7 @@ func runRenderPlanCatalogCase(
 ) {
 	c.Helper()
 
-	adminURL := requireIntegrationEnvironment(c, test.urlEnv)
+	adminURL := dbtarget.URL(c, test.engine)
 	adminDB, err := sql.Open("pgx", postgresFamilyDriverURL(c, adminURL))
 	c.Assert(err, qt.IsNil)
 	// Registered before the drops below so it runs after them: cleanups are

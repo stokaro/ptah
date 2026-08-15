@@ -212,104 +212,62 @@ func TestMisplacedDirectivesAreReportedNotDropped(t *testing.T) {
 }
 
 // TestMalformedDirectiveValueIsRefusedWhereverItSits is the severity half of
-// the rule, and the half the two families answer differently.
+// the rule.
 //
 // Position and value are independent facts. A recognized `-- +ptah` key with a
 // value nobody can read is a typo the operator wants to hear about, and
 // demoting it to a position warning would let two failures mask each other.
 //
-// The `atlas:` spelling gets no equivalent, by measurement rather than by
-// preference: on the pinned community binary, `migrate apply` over a SQLite
-// directory carrying `-- atlas:txmode bogus` exits 1 when the line is the
-// header and 0 when it sits below the statement. Refusing the second here would
-// exit non-zero where the binary accepts.
+// TestMisplacedDirectiveErrorFindsNothingToRefuse carries the other side, and
+// the two are one rule: what this function refuses is exactly what that one
+// leaves alone.
 func TestMalformedDirectiveValueIsRefusedWhereverItSits(t *testing.T) {
 	tests := []struct {
-		name   string
-		sql    string
-		assert func(c *qt.C, err error)
+		name    string
+		sql     string
+		wantErr string
 	}{
 		{
-			name:   "malformed bool below the statement",
-			sql:    directiveStatement + "-- +ptah no_transaction=maybe\n",
-			assert: refusedWith(`invalid \+ptah no_transaction value "maybe": expected true or false \(on line 2, .*\)`),
+			name:    "malformed bool below the statement",
+			sql:     directiveStatement + "-- +ptah no_transaction=maybe\n",
+			wantErr: `invalid \+ptah no_transaction value "maybe": expected true or false \(on line 2, .*\)`,
 		},
 		{
-			name:   "malformed lock timeout below the statement",
-			sql:    directiveStatement + "-- +ptah lock_timeout=soon\n",
-			assert: refusedWith(`invalid \+ptah lock_timeout value: .* \(on line 2, .*\)`),
+			name:    "malformed lock timeout below the statement",
+			sql:     directiveStatement + "-- +ptah lock_timeout=soon\n",
+			wantErr: `invalid \+ptah lock_timeout value: .* \(on line 2, .*\)`,
 		},
 		{
-			name:   "malformed statement timeout below the statement",
-			sql:    directiveStatement + "-- +ptah statement_timeout=0s\n",
-			assert: refusedWith(`invalid \+ptah statement_timeout value: .* \(on line 2, .*\)`),
+			name:    "malformed statement timeout below the statement",
+			sql:     directiveStatement + "-- +ptah statement_timeout=0s\n",
+			wantErr: `invalid \+ptah statement_timeout value: .* \(on line 2, .*\)`,
 		},
 		{
-			name:   "bare lock timeout below the statement",
-			sql:    directiveStatement + "-- +ptah lock_timeout\n",
-			assert: refusedWith(`invalid \+ptah directive "lock_timeout" \(on line 2, .*\)`),
+			name:    "bare lock timeout below the statement",
+			sql:     directiveStatement + "-- +ptah lock_timeout\n",
+			wantErr: `invalid \+ptah directive "lock_timeout" \(on line 2, .*\)`,
 		},
 		{
-			name:   "bare statement timeout below the statement",
-			sql:    directiveStatement + "-- +ptah statement-timeout\n",
-			assert: refusedWith(`invalid \+ptah directive "statement-timeout" \(on line 2, .*\)`),
+			name:    "bare statement timeout below the statement",
+			sql:     directiveStatement + "-- +ptah statement-timeout\n",
+			wantErr: `invalid \+ptah directive "statement-timeout" \(on line 2, .*\)`,
 		},
 		{
 			// A bare timeout does not stop being malformed because a field the
 			// merged parser CAN read shares its line. The same two fields in
 			// the header are refused by parseTimeoutDirectiveFields, which
 			// walks every field rather than giving up once one parsed.
-			name:   "bare lock timeout beside a recognized field below the statement",
-			sql:    directiveStatement + "-- +ptah no_transaction lock_timeout\n",
-			assert: refusedWith(`invalid \+ptah directive "lock_timeout" \(on line 2, .*\)`),
+			name:    "bare lock timeout beside a recognized field below the statement",
+			sql:     directiveStatement + "-- +ptah no_transaction lock_timeout\n",
+			wantErr: `invalid \+ptah directive "lock_timeout" \(on line 2, .*\)`,
 		},
 		{
 			// The neighbor here is a key nobody reads, which is the shape that
 			// makes the dependence on a SEPARATE field clearest: it changes
 			// nothing about whether `statement_timeout` has a value.
-			name:   "bare statement timeout beside an unknown key below the statement",
-			sql:    directiveStatement + "-- +ptah online_ddl_tool=ghost statement_timeout\n",
-			assert: refusedWith(`invalid \+ptah directive "statement_timeout" \(on line 2, .*\)`),
-		},
-		{
-			// An ordered check's arguments are ParseChecks' grammar, not
-			// field-split pairs, and the header parser skips the body whole.
-			// Field-splitting it here would refuse below the statement exactly
-			// what the header accepts.
-			name:   "a timeout word inside an ordered check below the statement is not an error",
-			sql:    directiveStatement + `-- +ptah check assert="SELECT 1" lock_timeout` + "\n",
-			assert: notRefused,
-		},
-		{
-			name:   "a well-formed directive below the statement is not an error",
-			sql:    directiveStatement + "-- +ptah no_transaction\n",
-			assert: notRefused,
-		},
-		{
-			// The merged parser does not recognize a bare token that is not
-			// no_transaction, so there is no grammar for it to be wrong
-			// against. Refusing it would turn every `-- +ptah TODO` note below
-			// a statement into a failed migration.
-			name:   "an unrecognized bare token below the statement is not an error",
-			sql:    directiveStatement + "-- +ptah revisit_this\n",
-			assert: notRefused,
-		},
-		{
-			// Nothing consumes an unknown key=value pair, so nothing can say
-			// its value is malformed.
-			name:   "an unknown key below the statement is not an error",
-			sql:    directiveStatement + "-- +ptah future_knob=whatever\n",
-			assert: notRefused,
-		},
-		{
-			name:   "the atlas spelling below the statement is reported, not refused",
-			sql:    directiveStatement + "-- atlas:txmode bogus\n",
-			assert: notRefused,
-		},
-		{
-			name:   "a malformed value in the header is not this function's finding",
-			sql:    "-- +ptah no_transaction=maybe\n\n" + directiveStatement,
-			assert: notRefused,
+			name:    "bare statement timeout beside an unknown key below the statement",
+			sql:     directiveStatement + "-- +ptah online_ddl_tool=ghost statement_timeout\n",
+			wantErr: `invalid \+ptah directive "statement_timeout" \(on line 2, .*\)`,
 		},
 	}
 
@@ -317,7 +275,66 @@ func TestMalformedDirectiveValueIsRefusedWhereverItSits(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			test.assert(c, misplacedDirectiveError(test.sql, ""))
+			c.Check(misplacedDirectiveError(test.sql, ""), qt.ErrorMatches, test.wantErr)
+		})
+	}
+}
+
+// TestMisplacedDirectiveErrorFindsNothingToRefuse is the boundary of the
+// refusal above: a line this function has no grammar to judge, or whose value
+// another parser owns, must pass through it silently.
+//
+// The `atlas:` row is measurement rather than preference: on the pinned
+// community binary, `migrate apply` over a SQLite directory carrying
+// `-- atlas:txmode bogus` exits 1 when the line is the header and 0 when it
+// sits below the statement. Refusing the second here would exit non-zero where
+// the binary accepts.
+func TestMisplacedDirectiveErrorFindsNothingToRefuse(t *testing.T) {
+	tests := []struct {
+		name string
+		sql  string
+	}{
+		{
+			// An ordered check's arguments are ParseChecks' grammar, not
+			// field-split pairs, and the header parser skips the body whole.
+			// Field-splitting it here would refuse below the statement exactly
+			// what the header accepts.
+			name: "a timeout word inside an ordered check below the statement",
+			sql:  directiveStatement + `-- +ptah check assert="SELECT 1" lock_timeout` + "\n",
+		},
+		{
+			name: "a well-formed directive below the statement",
+			sql:  directiveStatement + "-- +ptah no_transaction\n",
+		},
+		{
+			// The merged parser does not recognize a bare token that is not
+			// no_transaction, so there is no grammar for it to be wrong
+			// against. Refusing it would turn every `-- +ptah TODO` note below
+			// a statement into a failed migration.
+			name: "an unrecognized bare token below the statement",
+			sql:  directiveStatement + "-- +ptah revisit_this\n",
+		},
+		{
+			// Nothing consumes an unknown key=value pair, so nothing can say
+			// its value is malformed.
+			name: "an unknown key below the statement",
+			sql:  directiveStatement + "-- +ptah future_knob=whatever\n",
+		},
+		{
+			name: "the atlas spelling below the statement, which is reported instead",
+			sql:  directiveStatement + "-- atlas:txmode bogus\n",
+		},
+		{
+			name: "a malformed value in the header, which is its own parser's finding",
+			sql:  "-- +ptah no_transaction=maybe\n\n" + directiveStatement,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Check(misplacedDirectiveError(test.sql, ""), qt.IsNil)
 		})
 	}
 }
@@ -597,21 +614,10 @@ func TestHashCommentDoesNotWidenTheAtlasHeader(t *testing.T) {
 	}
 }
 
-// refusedWith and notRefused are the two verdicts a row can carry, so the table
-// body needs no branch of its own.
-func refusedWith(pattern string) func(c *qt.C, err error) {
-	return func(c *qt.C, err error) {
-		c.Check(err, qt.ErrorMatches, pattern)
-	}
-}
-
-func notRefused(c *qt.C, err error) {
-	c.Check(err, qt.IsNil)
-}
-
-// TestMalformedHeaderDirectiveKeepsItsOwnDiagnosis proves the row above does
-// not mean "a malformed header value is fine": it is refused by the parser that
-// honors it, with no position clause, because its position is correct.
+// TestMalformedHeaderDirectiveKeepsItsOwnDiagnosis proves that the header row
+// of TestMisplacedDirectiveErrorFindsNothingToRefuse does not mean "a malformed
+// header value is fine": it is refused by the parser that honors it, with no
+// position clause, because its position is correct.
 func TestMalformedHeaderDirectiveKeepsItsOwnDiagnosis(t *testing.T) {
 	c := qt.New(t)
 
@@ -622,7 +628,8 @@ func TestMalformedHeaderDirectiveKeepsItsOwnDiagnosis(t *testing.T) {
 }
 
 // TestBareTimeoutBesideAnotherFieldIsRefusedInTheHeaderToo is the other half of
-// the three rows above.
+// the two beside-another-field rows in
+// TestMalformedDirectiveValueIsRefusedWhereverItSits.
 //
 // "Refused wherever it sits" is a claim about two parsers, and asserting only
 // the below-the-statement half would leave the gap open in the direction it was
@@ -631,24 +638,19 @@ func TestMalformedHeaderDirectiveKeepsItsOwnDiagnosis(t *testing.T) {
 // same bytes so a change to either side reddens.
 func TestBareTimeoutBesideAnotherFieldIsRefusedInTheHeaderToo(t *testing.T) {
 	tests := []struct {
-		name   string
-		line   string
-		assert func(c *qt.C, err error)
+		name    string
+		line    string
+		wantErr string
 	}{
 		{
-			name:   "bare lock timeout beside a recognized field",
-			line:   "-- +ptah no_transaction lock_timeout",
-			assert: refusedWith(`invalid \+ptah directive "lock_timeout"`),
+			name:    "bare lock timeout beside a recognized field",
+			line:    "-- +ptah no_transaction lock_timeout",
+			wantErr: `invalid \+ptah directive "lock_timeout"`,
 		},
 		{
-			name:   "bare statement timeout beside an unknown key",
-			line:   "-- +ptah online_ddl_tool=ghost statement_timeout",
-			assert: refusedWith(`invalid \+ptah directive "statement_timeout"`),
-		},
-		{
-			name:   "a timeout word inside an ordered check",
-			line:   `-- +ptah check assert="SELECT 1" lock_timeout`,
-			assert: notRefused,
+			name:    "bare statement timeout beside an unknown key",
+			line:    "-- +ptah online_ddl_tool=ghost statement_timeout",
+			wantErr: `invalid \+ptah directive "statement_timeout"`,
 		},
 	}
 
@@ -658,9 +660,23 @@ func TestBareTimeoutBesideAnotherFieldIsRefusedInTheHeaderToo(t *testing.T) {
 
 			_, err := parseMigrationTimeoutDirectives(test.line + "\n\n" + directiveStatement)
 
-			test.assert(c, err)
+			c.Check(err, qt.ErrorMatches, test.wantErr)
 		})
 	}
+}
+
+// TestTimeoutWordInsideAnOrderedCheckIsNotAFieldInTheHeaderEither is the
+// control for the two rows above, and the reason the header parser cannot be
+// written as "any bare timeout word is an error": an ordered check's arguments
+// are ParseChecks' grammar, so a word that looks like a timeout key inside one
+// is not a field at all.
+func TestTimeoutWordInsideAnOrderedCheckIsNotAFieldInTheHeaderEither(t *testing.T) {
+	c := qt.New(t)
+
+	_, err := parseMigrationTimeoutDirectives(
+		`-- +ptah check assert="SELECT 1" lock_timeout` + "\n\n" + directiveStatement)
+
+	c.Check(err, qt.IsNil)
 }
 
 func misplacedLines(found []misplacedDirective) []int {

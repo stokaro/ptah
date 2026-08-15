@@ -15,7 +15,6 @@ import (
 )
 
 func TestGenerateSchemaDiffAST_NilDiffRejected(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name    string
 		dialect string
@@ -32,7 +31,8 @@ func TestGenerateSchemaDiffAST_NilDiffRejected(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			nodes, err := planner.GenerateSchemaDiffAST(nil, &goschema.Database{}, test.dialect)
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
@@ -42,7 +42,6 @@ func TestGenerateSchemaDiffAST_NilDiffRejected(t *testing.T) {
 }
 
 func TestGenerateSchemaDiffAST_RemovalDoesNotRequireTargetSchema(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name    string
 		dialect string
@@ -64,7 +63,8 @@ func TestGenerateSchemaDiffAST_RemovalDoesNotRequireTargetSchema(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			nodes, err := planner.GenerateSchemaDiffAST(diff, nil, test.dialect)
 
 			c.Assert(err, qt.IsNil)
@@ -114,7 +114,6 @@ func TestGenerateSchemaDiffAST_AmbiguousStructOwnerRejected(t *testing.T) {
 }
 
 func TestGenerateSchemaDiffAST_SchemaScopedDuplicateAdditionsRejected(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name    string
 		dialect string
@@ -125,7 +124,8 @@ func TestGenerateSchemaDiffAST_SchemaScopedDuplicateAdditionsRejected(t *testing
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			diff := &types.SchemaDiff{
 				IndexesAdded: []types.IndexRef{
 					{Name: "idx_shared", TableName: "users"},
@@ -143,7 +143,6 @@ func TestGenerateSchemaDiffAST_SchemaScopedDuplicateAdditionsRejected(t *testing
 }
 
 func TestGenerateSchemaDiffAST_UnchangedTargetIndexConflictRejected(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name          string
 		dialect       string
@@ -189,7 +188,8 @@ func TestGenerateSchemaDiffAST_UnchangedTargetIndexConflictRejected(t *testing.T
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			diff := &types.SchemaDiff{
 				IndexesAdded: []types.IndexRef{
 					{Name: "idx_shared", TableName: test.addedTable},
@@ -246,7 +246,6 @@ func TestGenerateSchemaDiffAST_UnknownQualifiedTargetOwnerRejected(t *testing.T)
 }
 
 func TestGenerateSchemaDiffAST_TableScopedDuplicateAdditionsAccepted(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name    string
 		dialect string
@@ -257,7 +256,8 @@ func TestGenerateSchemaDiffAST_TableScopedDuplicateAdditionsAccepted(t *testing.
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			diff := &types.SchemaDiff{
 				IndexesAdded: []types.IndexRef{
 					{Name: "idx_shared", TableName: "users"},

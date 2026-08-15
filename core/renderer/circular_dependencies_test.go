@@ -14,12 +14,12 @@ import (
 )
 
 func TestGetOrderedCreateStatements_MutualForeignKeysUseTwoPhases(t *testing.T) {
-	c := qt.New(t)
 	database := mutualForeignKeyDatabase()
 
 	dialects := []string{"postgres", "cockroachdb", "yugabytedb", "mysql", "mariadb", "sqlserver"}
 	for _, dialect := range dialects {
-		c.Run(dialect, func(c *qt.C) {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
 			statements, err := renderer.GetOrderedCreateStatements(database, dialect)
 			c.Assert(err, qt.IsNil)
 
@@ -125,7 +125,6 @@ func TestGetOrderedCreateStatements_CompositeSelfForeignKeyIsEmittedOnce(t *test
 }
 
 func TestGetOrderedCreateStatements_ForeignKeysDisabled_FailurePath(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name    string
 		dialect string
@@ -140,7 +139,8 @@ func TestGetOrderedCreateStatements_ForeignKeysDisabled_FailurePath(t *testing.T
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			statements, err := renderer.GetOrderedCreateStatementsWithCapabilities(mutualForeignKeyDatabase(), test.dialect, test.caps)
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 			c.Assert(err, qt.ErrorMatches, test.dialect+` does not support foreign keys`)
@@ -179,20 +179,21 @@ func TestValidateSchemaWithCapabilities_HappyPath(t *testing.T) {
 }
 
 func TestValidateSchema_FailurePath(t *testing.T) {
-	c := qt.New(t)
-
-	c.Run("nil database", func(c *qt.C) {
+	t.Run("nil database", func(t *testing.T) {
+		c := qt.New(t)
 		err := renderer.ValidateSchema(nil, "postgres")
 		c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
 		c.Assert(err, qt.ErrorMatches, "cannot validate a nil database schema")
 	})
 
-	c.Run("unsupported dialect", func(c *qt.C) {
+	t.Run("unsupported dialect", func(t *testing.T) {
+		c := qt.New(t)
 		err := renderer.ValidateSchema(mutualForeignKeyDatabase(), "oracle")
 		c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedDialect)
 	})
 
-	c.Run("foreign keys disabled", func(c *qt.C) {
+	t.Run("foreign keys disabled", func(t *testing.T) {
+		c := qt.New(t)
 		err := renderer.ValidateSchemaWithCapabilities(
 			mutualForeignKeyDatabase(),
 			"postgres",
@@ -205,7 +206,6 @@ func TestValidateSchema_FailurePath(t *testing.T) {
 }
 
 func TestGetOrderedCreateStatements_CompositeForeignKeyCardinalityMismatch_FailurePath(t *testing.T) {
-	c := qt.New(t)
 	database := &goschema.Database{
 		Tables: []goschema.Table{
 			{StructName: "Parent", Name: "parents"},
@@ -222,7 +222,8 @@ func TestGetOrderedCreateStatements_CompositeForeignKeyCardinalityMismatch_Failu
 	}
 
 	for _, dialect := range []string{"postgres", "cockroachdb", "yugabytedb", "mysql", "mariadb", "sqlite", "sqlserver", "spanner"} {
-		c.Run(dialect, func(c *qt.C) {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
 			statements, err := renderer.GetOrderedCreateStatements(database, dialect)
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
 			c.Assert(err, qt.ErrorMatches, `invalid foreign key constraint "fk_children_parents": 2 local columns and 1 referenced columns`)
@@ -232,7 +233,6 @@ func TestGetOrderedCreateStatements_CompositeForeignKeyCardinalityMismatch_Failu
 }
 
 func TestGetOrderedCreateStatements_ReferentialAction_FailurePath(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name     string
 		dialect  string
@@ -248,7 +248,8 @@ func TestGetOrderedCreateStatements_ReferentialAction_FailurePath(t *testing.T) 
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			database := foreignKeyActionDatabase(test.onDelete, test.onUpdate)
 			statements, err := renderer.GetOrderedCreateStatements(database, test.dialect)
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
@@ -299,10 +300,9 @@ func TestGetOrderedCreateStatements_NormalizesAtlasActionTokens(t *testing.T) {
 // accepts, which is why the assertion is on the emitted keywords and not merely
 // on a successful render.
 func TestGetOrderedCreateStatements_NormalizesAtlasActionTokensEveryDialect(t *testing.T) {
-	c := qt.New(t)
-
 	for _, dialect := range []string{"postgres", "cockroachdb", "yugabytedb", "mysql", "mariadb", "sqlite", "sqlserver"} {
-		c.Run(dialect, func(c *qt.C) {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
 			statements, err := renderer.GetOrderedCreateStatements(
 				foreignKeyActionDatabase("SET_NULL", "NO_ACTION"),
 				dialect,
@@ -329,7 +329,6 @@ func TestGetOrderedCreateStatements_NormalizesAtlasActionTokensEveryDialect(t *t
 // spelling that no server parses reaches a server that would have refused the
 // action even spelled correctly.
 func TestGetOrderedCreateStatements_UnderscoreActionReachesDialectGate_FailurePath(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name     string
 		dialect  string
@@ -345,7 +344,8 @@ func TestGetOrderedCreateStatements_UnderscoreActionReachesDialectGate_FailurePa
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			database := foreignKeyActionDatabase(test.onDelete, test.onUpdate)
 
 			statements, err := renderer.GetOrderedCreateStatements(database, test.dialect)
@@ -404,7 +404,6 @@ func TestGetOrderedCreateStatements_UnnamedForeignKeyNamesAreUnique(t *testing.T
 }
 
 func TestGetOrderedCreateStatements_MySQLFamilyIndexesPrecedeForeignKeys(t *testing.T) {
-	c := qt.New(t)
 	database := indexedForeignKeyDatabase()
 	tests := []struct {
 		name    string
@@ -416,7 +415,8 @@ func TestGetOrderedCreateStatements_MySQLFamilyIndexesPrecedeForeignKeys(t *test
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			statements, err := renderer.GetOrderedCreateStatementsWithCapabilities(database, test.dialect, test.caps)
 			c.Assert(err, qt.IsNil)
 
@@ -444,7 +444,6 @@ func TestGetOrderedCreateStatements_MySQL84RejectsNonuniqueReferencedKey(t *test
 }
 
 func TestRenderSQLWithCapabilities_DirectASTForeignKeysDisabled_FailurePath(t *testing.T) {
-	c := qt.New(t)
 	node := foreignKeyAlterNode("CASCADE", "")
 	tests := []struct {
 		name    string
@@ -473,7 +472,8 @@ func TestRenderSQLWithCapabilities_DirectASTForeignKeysDisabled_FailurePath(t *t
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			sql, err := renderer.RenderSQLWithCapabilities(test.dialect, test.caps, node)
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 			c.Assert(err, qt.ErrorMatches, test.dialect+` does not support foreign keys`)
@@ -601,7 +601,6 @@ func TestStatementList_DirectAcceptNormalizesCloneOnly(t *testing.T) {
 }
 
 func TestRenderSQL_TypedNilForeignKeyContainers_FailurePath(t *testing.T) {
-	c := qt.New(t)
 	var createTable *ast.CreateTableNode
 	var alterTable *ast.AlterTableNode
 	var column *ast.ColumnNode
@@ -618,7 +617,8 @@ func TestRenderSQL_TypedNilForeignKeyContainers_FailurePath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			sql, err := renderer.RenderSQL("postgres", test.node)
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
@@ -661,7 +661,6 @@ func TestRenderSQL_NilAlterOperation_FailurePath(t *testing.T) {
 }
 
 func TestRenderSQL_TypedNilAlterOperations_FailurePath(t *testing.T) {
-	c := qt.New(t)
 	var dropColumn *ast.DropColumnOperation
 	var alterGenerated *ast.AlterGeneratedColumnExpressionOperation
 	var dropConstraint *ast.DropConstraintOperation
@@ -683,7 +682,8 @@ func TestRenderSQL_TypedNilAlterOperations_FailurePath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			node := &ast.AlterTableNode{Name: "children", Operations: []ast.AlterOperation{test.operation}}
 			sql, err := renderer.RenderSQL("postgres", node)
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
@@ -824,7 +824,6 @@ func TestGetOrderedCreateStatements_MariaDBAllowsIndexedLeftPrefix(t *testing.T)
 }
 
 func TestGetOrderedCreateStatements_DuplicateForeignKeyNamesRespectDialectScope_FailurePath(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name    string
 		dialect string
@@ -836,7 +835,8 @@ func TestGetOrderedCreateStatements_DuplicateForeignKeyNamesRespectDialectScope_
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			statements, err := renderer.GetOrderedCreateStatements(
 				duplicateForeignKeyNameDatabase(),
 				test.dialect,
@@ -858,7 +858,6 @@ func TestGetOrderedCreateStatements_PostgresAllowsForeignKeyNamesRepeatedAcrossT
 }
 
 func TestGetOrderedCreateStatements_MySQLFamilyRejectsUnsuitableReferencedIndexes_FailurePath(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name      string
 		dialect   string
@@ -874,7 +873,8 @@ func TestGetOrderedCreateStatements_MySQLFamilyRejectsUnsuitableReferencedIndexe
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			database := indexedForeignKeyDatabase()
 			database.Indexes[0].Type = test.indexType
 			database.Indexes[0].Parser = test.parser
@@ -936,7 +936,6 @@ func TestGetOrderedCreateStatements_SQLiteAcceptsInlineUniqueReferencedColumn(t 
 }
 
 func TestGetOrderedCreateStatements_IncompatibleForeignKeyTypes_FailurePath(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name    string
 		dialect string
@@ -949,7 +948,8 @@ func TestGetOrderedCreateStatements_IncompatibleForeignKeyTypes_FailurePath(t *t
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			statements, err := renderer.GetOrderedCreateStatements(
 				simpleForeignKeyDatabase("INTEGER", "BIGINT"),
 				test.dialect,
@@ -1091,7 +1091,6 @@ func TestGetOrderedCreateStatements_MySQLUnindexableForeignKeyType_FailurePath(t
 }
 
 func TestGetOrderedCreateStatements_MySQLFamilyNonInnoDB_FailurePath(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name    string
 		dialect string
@@ -1102,7 +1101,8 @@ func TestGetOrderedCreateStatements_MySQLFamilyNonInnoDB_FailurePath(t *testing.
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			database := simpleForeignKeyDatabase("INTEGER", "INTEGER")
 			database.Tables[0].Engine = test.engine
 			statements, err := renderer.GetOrderedCreateStatements(database, test.dialect)
@@ -1114,7 +1114,6 @@ func TestGetOrderedCreateStatements_MySQLFamilyNonInnoDB_FailurePath(t *testing.
 }
 
 func TestGetOrderedCreateStatements_MySQLFamilyEmitsExplicitInnoDB(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name    string
 		dialect string
@@ -1124,7 +1123,8 @@ func TestGetOrderedCreateStatements_MySQLFamilyEmitsExplicitInnoDB(t *testing.T)
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			database := simpleForeignKeyDatabase("INTEGER", "INTEGER")
 			database.Tables[0].Overrides = map[string]map[string]string{
 				test.dialect: {"engine": ""},
@@ -1150,7 +1150,6 @@ func TestRenderSQL_MySQLFamilyInlineForeignKeyEmitsExplicitInnoDB(t *testing.T) 
 }
 
 func TestRenderSQL_MySQLFamilyInlineForeignKeyNonInnoDB_FailurePath(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name    string
 		dialect string
@@ -1161,7 +1160,8 @@ func TestRenderSQL_MySQLFamilyInlineForeignKeyNonInnoDB_FailurePath(t *testing.T
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			table := ast.NewCreateTable("children").
 				AddColumn(ast.NewColumn("parent_id", "INTEGER").SetForeignKey("parents", "id", "fk_parent")).
 				SetOption("engine", test.engine)
@@ -1174,7 +1174,6 @@ func TestRenderSQL_MySQLFamilyInlineForeignKeyNonInnoDB_FailurePath(t *testing.T
 }
 
 func TestGetOrderedCreateStatements_SetNullRequiresNullableLocalColumns_FailurePath(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name     string
 		dialect  string
@@ -1189,7 +1188,8 @@ func TestGetOrderedCreateStatements_SetNullRequiresNullableLocalColumns_FailureP
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			database := foreignKeyActionDatabase(test.onDelete, test.onUpdate)
 			database.Fields[1].Nullable = false
 			statements, err := renderer.GetOrderedCreateStatements(database, test.dialect)
@@ -1214,7 +1214,6 @@ func TestGetOrderedCreateStatements_CompositeSetNullRequiresAllLocalColumnsNulla
 }
 
 func TestGetOrderedCreateStatements_ExplicitForeignKeyIdentifierLimit_FailurePath(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name    string
 		dialect string
@@ -1232,7 +1231,8 @@ func TestGetOrderedCreateStatements_ExplicitForeignKeyIdentifierLimit_FailurePat
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			database := simpleForeignKeyDatabase("INTEGER", "INTEGER")
 			database.Fields[1].ForeignKeyName = test.fkName
 			statements, err := renderer.GetOrderedCreateStatements(database, test.dialect)
@@ -1244,7 +1244,6 @@ func TestGetOrderedCreateStatements_ExplicitForeignKeyIdentifierLimit_FailurePat
 }
 
 func TestGetOrderedCreateStatements_SchemaScopedForeignKeyNamesTreatDefaultSchemaAsExplicit_FailurePath(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name          string
 		dialect       string
@@ -1255,7 +1254,8 @@ func TestGetOrderedCreateStatements_SchemaScopedForeignKeyNamesTreatDefaultSchem
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			database := &goschema.Database{
 				Tables: []goschema.Table{
 					{StructName: "Parent", Name: "parents"},

@@ -133,7 +133,8 @@ func TestFromDatabase_SequenceReachesEveryDialectsRenderer(t *testing.T) {
 	c := qt.New(t)
 
 	for _, spelling := range acceptedSpellings(c) {
-		c.Run(spelling, func(c *qt.C) {
+		t.Run(spelling, func(t *testing.T) {
+			c := qt.New(t)
 			database := goschema.Database{
 				Sequences: []goschema.Sequence{{Name: "order_seq"}},
 			}

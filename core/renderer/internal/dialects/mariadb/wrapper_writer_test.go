@@ -13,8 +13,6 @@ import (
 // the MySQL test of the same name; see that file for why an orphaned buffer made
 // all five visitors render nothing (stokaro/ptah#931 item 5).
 func TestMariaDBRenderer_WrapperVisitorsReachTheSharedBuffer(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name   string
 		render func(*mariadb.Renderer) error
@@ -54,7 +52,8 @@ func TestMariaDBRenderer_WrapperVisitorsReachTheSharedBuffer(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			renderer := mariadb.New()
 			renderer.Reset()
 

@@ -11,6 +11,61 @@ import (
 	"go.5x5.cz/ptah/internal/fsdurable"
 )
 
+// rivalPublicationBytes is what a concurrent writer leaves at the destination.
+// It is never what this test publishes, so finding it afterwards is what tells
+// a refusal apart from an overwrite.
+const rivalPublicationBytes = "concurrent writer bytes\n"
+
+// The functions below are the fixture each row publishes over and the rival
+// write that follows it. None of them takes a checker, because none of them
+// asserts anything: they report their own failure to the loop, which is where
+// the assertions live.
+
+func expectExistingPublication(publishedPath string) (fsdurable.Destination, error) {
+	if err := os.WriteFile(publishedPath, []byte("old"), 0o600); err != nil {
+		return fsdurable.Destination{}, err
+	}
+	info, err := os.Stat(publishedPath)
+	if err != nil {
+		return fsdurable.Destination{}, err
+	}
+	return fsdurable.ExpectFile(info), nil
+}
+
+func expectAbsentPublication(string) (fsdurable.Destination, error) {
+	return fsdurable.ExpectAbsent(), nil
+}
+
+// stateNoPublicationExpectation seeds the rival bytes itself, because a
+// publication that states no expectation has no window to lose: the row exists
+// to show that omission is refused rather than treated as "publish over
+// anything".
+func stateNoPublicationExpectation(publishedPath string) (fsdurable.Destination, error) {
+	return fsdurable.Destination{},
+		os.WriteFile(publishedPath, []byte(rivalPublicationBytes), 0o600)
+}
+
+func editPublicationInPlace(publishedPath string) error {
+	return os.WriteFile(publishedPath, []byte(rivalPublicationBytes), 0o600)
+}
+
+func replacePublicationByRename(publishedPath string) error {
+	replacement := publishedPath + ".rival"
+	if err := os.WriteFile(replacement, []byte(rivalPublicationBytes), 0o600); err != nil {
+		return err
+	}
+	return os.Rename(replacement, publishedPath)
+}
+
+func recreatePublication(publishedPath string) error {
+	if err := os.Remove(publishedPath); err != nil {
+		return err
+	}
+	return os.WriteFile(publishedPath, []byte(rivalPublicationBytes), 0o600)
+}
+
+func leavePublicationAlone(string) error { return nil }
+
 // TestPublishFileAt_FailurePath_RefusesChangedDestination covers the guarantee
 // the callers cannot provide for themselves: their own destination checks are a
 // separate, earlier syscall, so only the commit primitive can bind what it
@@ -18,91 +73,60 @@ import (
 // captured and asserts the rival's bytes, not just the exit status, because a
 // silent overwrite and a refusal both leave a file at the target name.
 func TestPublishFileAt_FailurePath_RefusesChangedDestination(t *testing.T) {
-	c := qt.New(t)
-	rival := "concurrent writer bytes\n"
 	tests := []struct {
 		name        string
-		prepare     func(c *qt.C, publishedPath string) fsdurable.Destination
-		mutate      func(c *qt.C, publishedPath string)
+		prepare     func(publishedPath string) (fsdurable.Destination, error)
+		mutate      func(publishedPath string) error
 		wantErrorIs error
 	}{
 		{
-			name: "expected file edited in place",
-			prepare: func(c *qt.C, publishedPath string) fsdurable.Destination {
-				c.Assert(os.WriteFile(publishedPath, []byte("old"), 0o600), qt.IsNil)
-				info, err := os.Stat(publishedPath)
-				c.Assert(err, qt.IsNil)
-				return fsdurable.ExpectFile(info)
-			},
-			mutate: func(c *qt.C, publishedPath string) {
-				c.Assert(os.WriteFile(publishedPath, []byte(rival), 0o600), qt.IsNil)
-			},
+			name:        "expected file edited in place",
+			prepare:     expectExistingPublication,
+			mutate:      editPublicationInPlace,
 			wantErrorIs: fsdurable.ErrDestinationChanged,
 		},
 		{
-			name: "expected file replaced by rename",
-			prepare: func(c *qt.C, publishedPath string) fsdurable.Destination {
-				c.Assert(os.WriteFile(publishedPath, []byte("old"), 0o600), qt.IsNil)
-				info, err := os.Stat(publishedPath)
-				c.Assert(err, qt.IsNil)
-				return fsdurable.ExpectFile(info)
-			},
-			mutate: func(c *qt.C, publishedPath string) {
-				replacement := publishedPath + ".rival"
-				c.Assert(os.WriteFile(replacement, []byte(rival), 0o600), qt.IsNil)
-				c.Assert(os.Rename(replacement, publishedPath), qt.IsNil)
-			},
+			name:        "expected file replaced by rename",
+			prepare:     expectExistingPublication,
+			mutate:      replacePublicationByRename,
 			wantErrorIs: fsdurable.ErrDestinationChanged,
 		},
 		{
-			name: "expected file removed and recreated",
-			prepare: func(c *qt.C, publishedPath string) fsdurable.Destination {
-				c.Assert(os.WriteFile(publishedPath, []byte("old"), 0o600), qt.IsNil)
-				info, err := os.Stat(publishedPath)
-				c.Assert(err, qt.IsNil)
-				return fsdurable.ExpectFile(info)
-			},
-			mutate: func(c *qt.C, publishedPath string) {
-				c.Assert(os.Remove(publishedPath), qt.IsNil)
-				c.Assert(os.WriteFile(publishedPath, []byte(rival), 0o600), qt.IsNil)
-			},
+			name:        "expected file removed and recreated",
+			prepare:     expectExistingPublication,
+			mutate:      recreatePublication,
 			wantErrorIs: fsdurable.ErrDestinationChanged,
 		},
 		{
-			name: "expected absent destination created",
-			prepare: func(*qt.C, string) fsdurable.Destination {
-				return fsdurable.ExpectAbsent()
-			},
-			mutate: func(c *qt.C, publishedPath string) {
-				c.Assert(os.WriteFile(publishedPath, []byte(rival), 0o600), qt.IsNil)
-			},
+			name:        "expected absent destination created",
+			prepare:     expectAbsentPublication,
+			mutate:      editPublicationInPlace,
 			wantErrorIs: fsdurable.ErrDestinationChanged,
 		},
 		{
-			name: "unstated destination expectation",
-			prepare: func(c *qt.C, publishedPath string) fsdurable.Destination {
-				c.Assert(os.WriteFile(publishedPath, []byte(rival), 0o600), qt.IsNil)
-				return fsdurable.Destination{}
-			},
-			mutate:      func(*qt.C, string) {},
+			name:        "unstated destination expectation",
+			prepare:     stateNoPublicationExpectation,
+			mutate:      leavePublicationAlone,
 			wantErrorIs: fsdurable.ErrDestinationChanged,
 		},
 	}
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			dir := c.TempDir()
 			stagedPath := filepath.Join(dir, "staged")
 			publishedPath := filepath.Join(dir, "published")
 			c.Assert(os.WriteFile(stagedPath, []byte("new"), 0o600), qt.IsNil)
 			stagedInfo, err := os.Stat(stagedPath)
 			c.Assert(err, qt.IsNil)
-			dest := test.prepare(c, publishedPath)
+			dest, err := test.prepare(publishedPath)
+			c.Assert(err, qt.IsNil)
 			root, err := os.OpenRoot(dir)
 			c.Assert(err, qt.IsNil)
 			c.Cleanup(func() {
 				c.Check(root.Close(), qt.IsNil)
 			})
-			test.mutate(c, publishedPath)
+			c.Assert(test.mutate(publishedPath), qt.IsNil)
 
 			err = fsdurable.PublishFileAt(
 				root,
@@ -115,7 +139,7 @@ func TestPublishFileAt_FailurePath_RefusesChangedDestination(t *testing.T) {
 
 			c.Assert(err, qt.ErrorIs, test.wantErrorIs)
 			c.Assert(err, qt.Not(qt.ErrorIs), fsdurable.ErrReplacementCommitted)
-			assertPublicationBytes(c, publishedPath, rival)
+			assertPublicationBytes(c, publishedPath, rivalPublicationBytes)
 			assertPublicationBytes(c, stagedPath, "new")
 		})
 	}

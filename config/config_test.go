@@ -184,10 +184,9 @@ func TestCompareOptions_FilterIgnoredExtensions(t *testing.T) {
 }
 
 func TestLibraryUsageExamples(t *testing.T) {
-	c := qt.New(t)
-
 	t.Run("default usage", func(t *testing.T) {
 		// User wants default behavior (ignore plpgsql)
+		c := qt.New(t)
 		opts := config.DefaultCompareOptions()
 		c.Assert(opts.IsExtensionIgnored("plpgsql"), qt.IsTrue)
 		c.Assert(opts.IsExtensionIgnored("pg_trgm"), qt.IsFalse)
@@ -195,6 +194,7 @@ func TestLibraryUsageExamples(t *testing.T) {
 
 	t.Run("custom ignore list", func(t *testing.T) {
 		// User wants to ignore specific extensions only
+		c := qt.New(t)
 		opts := config.WithIgnoredExtensions("plpgsql", "adminpack")
 		c.Assert(opts.IsExtensionIgnored("plpgsql"), qt.IsTrue)
 		c.Assert(opts.IsExtensionIgnored("adminpack"), qt.IsTrue)
@@ -203,6 +203,7 @@ func TestLibraryUsageExamples(t *testing.T) {
 
 	t.Run("additional ignored extensions", func(t *testing.T) {
 		// User wants defaults plus additional extensions
+		c := qt.New(t)
 		opts := config.WithAdditionalIgnoredExtensions("adminpack", "pg_stat_statements")
 		c.Assert(opts.IsExtensionIgnored("plpgsql"), qt.IsTrue)            // default
 		c.Assert(opts.IsExtensionIgnored("adminpack"), qt.IsTrue)          // additional
@@ -212,6 +213,7 @@ func TestLibraryUsageExamples(t *testing.T) {
 
 	t.Run("no ignored extensions", func(t *testing.T) {
 		// User wants to manage all extensions
+		c := qt.New(t)
 		opts := config.WithIgnoredExtensions()
 		c.Assert(opts.IsExtensionIgnored("plpgsql"), qt.IsFalse)
 		c.Assert(opts.IsExtensionIgnored("pg_trgm"), qt.IsFalse)

@@ -105,7 +105,7 @@ type revisionCompletionFixture struct {
 
 func newRevisionCompletionFixture(
 	t *testing.T,
-	c *qt.C,
+	tb testing.TB,
 	target revisionCompletionTarget,
 	shape string,
 ) revisionCompletionFixture {

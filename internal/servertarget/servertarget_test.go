@@ -23,109 +23,37 @@ const (
 	clickHouseBanner = "ClickHouse 26.7.3.19"
 )
 
-// TestResolve covers the four outcomes an operator-supplied version can have,
-// because they are four different things to tell the person who typed it and
-// only one of them is silence.
-//
-// Row three is the defect this exists for: before capability.VersionResolution
-// published Recognized, "not-a-version" resolved to the dialect default and the
-// caller reported it as the version it had applied.
-func TestResolve(t *testing.T) {
+// TestResolve_ResolvesSilently covers the outcomes that owe the operator
+// nothing: the version named a measured release line, or there was no version
+// to resolve at all. Silence is the claim here, not the absence of one — a note
+// on these rows would describe a plan nobody departed from.
+func TestResolve_ResolvesSilently(t *testing.T) {
 	tests := []struct {
 		name    string
 		dialect string
 		version string
-		assert  func(c *qt.C, target servertarget.Target, err error)
+		want    capability.Capabilities
 	}{
 		{
-			name:    "measured release line resolves silently",
+			name:    "a measured release line",
 			dialect: platform.Postgres,
 			version: "PostgreSQL 16.3 (Debian)",
-			assert: func(c *qt.C, target servertarget.Target, err error) {
-				c.Assert(err, qt.IsNil)
-				c.Assert(target.Note, qt.Equals, "")
-				c.Assert(target.Capabilities, qt.DeepEquals, capability.Postgres16())
-			},
+			want:    capability.Postgres16(),
 		},
 		{
-			name:    "no version resolves to the dialect default, silently",
+			name:    "no version at all resolves to the dialect default",
 			dialect: platform.Postgres,
 			version: "",
-			assert: func(c *qt.C, target servertarget.Target, err error) {
-				c.Assert(err, qt.IsNil)
-				c.Assert(target.Note, qt.Equals, "")
-				c.Assert(target.Capabilities, qt.DeepEquals, capability.ForDialect(platform.Postgres))
-			},
+			want:    capability.ForDialect(platform.Postgres),
 		},
 		{
-			name:    "a string that names no server is refused",
-			dialect: platform.Postgres,
-			version: "not-a-version",
-			assert: func(c *qt.C, target servertarget.Target, err error) {
-				c.Assert(err, qt.IsNotNil)
-				c.Assert(target.Capabilities, qt.IsNil)
-				var unrecognized *servertarget.UnrecognizedVersionError
-				c.Assert(err, qt.ErrorAs, &unrecognized)
-				c.Assert(unrecognized.Version, qt.Equals, "not-a-version")
-				c.Assert(unrecognized.Dialect, qt.Equals, platform.Postgres)
-				c.Assert(err.Error(), qt.Contains, "not-a-version")
-				c.Assert(err.Error(), qt.Contains, "10.11.6-MariaDB")
-			},
-		},
-		{
-			name:    "a version above the ladder succeeds and names the line it planned as",
-			dialect: platform.Postgres,
-			version: "99.0",
-			assert: func(c *qt.C, target servertarget.Target, err error) {
-				c.Assert(err, qt.IsNil)
-				c.Assert(target.Capabilities, qt.DeepEquals, capability.Postgres17())
-				c.Assert(target.Note, qt.Contains, "newer than the newest measured release line 18.x")
-				c.Assert(target.Note, qt.Contains, "planned as 18.x")
-			},
-		},
-		{
-			name:    "a version between measured lines succeeds and says so",
-			dialect: platform.MySQL,
-			version: "8.0.42-log",
-			assert: func(c *qt.C, target servertarget.Target, err error) {
-				c.Assert(err, qt.IsNil)
-				c.Assert(target.Capabilities, qt.DeepEquals, capability.MySQL8019())
-				c.Assert(target.Note, qt.Contains, "is not a measured release line")
-				c.Assert(target.Note, qt.Contains, "newest measured line: 26.7")
-			},
-		},
-		{
-			name:    "a good version for a dialect with no ladder says it changed nothing",
-			dialect: platform.SQLite,
-			version: "3.53.0",
-			assert: func(c *qt.C, target servertarget.Target, err error) {
-				c.Assert(err, qt.IsNil)
-				c.Assert(target.Capabilities, qt.DeepEquals, capability.SQLite3())
-				c.Assert(target.Note, qt.Contains, "no measured version ladder")
-			},
-		},
-		{
-			// The note above is the one CockroachDB used to receive for a
-			// dotted version, and it was false: the ladder existed and the
-			// string simply never reached it.
-			name:    "a dotted CockroachDB version selects a measured line silently",
+			// The no-ladder note in TestResolve_SaysWhatItPlannedInstead is the
+			// one CockroachDB used to receive for a dotted version, and it was
+			// false: the ladder existed and the string simply never reached it.
+			name:    "a dotted CockroachDB version selects a measured line",
 			dialect: platform.CockroachDB,
 			version: "25.4.5",
-			assert: func(c *qt.C, target servertarget.Target, err error) {
-				c.Assert(err, qt.IsNil)
-				c.Assert(target.Capabilities, qt.DeepEquals, capability.CockroachDB25())
-				c.Assert(target.Note, qt.Equals, "")
-			},
-		},
-		{
-			name:    "a MariaDB banner carrying no version is refused",
-			dialect: platform.MariaDB,
-			version: "MariaDB something",
-			assert: func(c *qt.C, target servertarget.Target, err error) {
-				c.Assert(err, qt.IsNotNil)
-				var unrecognized *servertarget.UnrecognizedVersionError
-				c.Assert(err, qt.ErrorAs, &unrecognized)
-			},
+			want:    capability.CockroachDB25(),
 		},
 	}
 	for _, tt := range tests {
@@ -134,7 +62,101 @@ func TestResolve(t *testing.T) {
 
 			target, err := servertarget.Resolve(tt.dialect, tt.version)
 
-			tt.assert(c, target, err)
+			c.Assert(err, qt.IsNil)
+			c.Assert(target.Note, qt.Equals, "")
+			c.Assert(target.Capabilities, qt.DeepEquals, tt.want)
+		})
+	}
+}
+
+// TestResolve_SaysWhatItPlannedInstead covers the three ways a recognized
+// version can succeed without naming a measured release line. Each one plans
+// with capabilities the operator did not ask for, so each one says so, and the
+// whole note is pinned rather than a fragment of it: the sentence is what the
+// person typing the version reads, and a wording that drifts is a wording that
+// stops matching the remedy it names.
+func TestResolve_SaysWhatItPlannedInstead(t *testing.T) {
+	tests := []struct {
+		name     string
+		dialect  string
+		version  string
+		want     capability.Capabilities
+		wantNote string
+	}{
+		{
+			name:    "a version above the ladder names the line it planned as",
+			dialect: platform.Postgres,
+			version: "99.0",
+			want:    capability.Postgres17(),
+			wantNote: "postgres 99.0 is newer than the newest measured release line 18.x; " +
+				"capabilities were planned as 18.x",
+		},
+		{
+			name:    "a version between measured lines",
+			dialect: platform.MySQL,
+			version: "8.0.42-log",
+			want:    capability.MySQL8019(),
+			wantNote: "mysql 8.0.42-log is not a measured release line; " +
+				"capabilities fall back to the preset its ladder assigns (newest measured line: 26.7)",
+		},
+		{
+			name:     "a good version for a dialect with no ladder changed nothing",
+			dialect:  platform.SQLite,
+			version:  "3.53.0",
+			want:     capability.SQLite3(),
+			wantNote: "the sqlite dialect has no measured version ladder; the version did not refine capabilities",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			target, err := servertarget.Resolve(tt.dialect, tt.version)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(target.Capabilities, qt.DeepEquals, tt.want)
+			c.Assert(target.Note, qt.Equals, tt.wantNote)
+		})
+	}
+}
+
+// TestResolve_RefusesAVersionThatNamesNoServer is the defect this package
+// exists for: before capability.VersionResolution published Recognized,
+// "not-a-version" resolved to the dialect default and the caller reported the
+// result as the version it had applied.
+//
+// The refusal carries the shapes it would have accepted, which is the only part
+// of it a person can act on, so every row asserts that they are there.
+func TestResolve_RefusesAVersionThatNamesNoServer(t *testing.T) {
+	tests := []struct {
+		name    string
+		dialect string
+		version string
+	}{
+		{
+			name:    "a string that names no server",
+			dialect: platform.Postgres,
+			version: "not-a-version",
+		},
+		{
+			name:    "a MariaDB banner carrying no version",
+			dialect: platform.MariaDB,
+			version: "MariaDB something",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			target, err := servertarget.Resolve(tt.dialect, tt.version)
+
+			c.Assert(target.Capabilities, qt.IsNil)
+			var unrecognized *servertarget.UnrecognizedVersionError
+			c.Assert(err, qt.ErrorAs, &unrecognized)
+			c.Assert(unrecognized.Version, qt.Equals, tt.version)
+			c.Assert(unrecognized.Dialect, qt.Equals, tt.dialect)
+			c.Assert(err.Error(), qt.Contains, tt.version)
+			c.Assert(err.Error(), qt.Contains, "10.11.6-MariaDB")
 		})
 	}
 }

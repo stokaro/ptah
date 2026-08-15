@@ -55,7 +55,8 @@ func TestWriteComparisonReportsEveryDiffCategory(t *testing.T) {
 	c.Assert(len(fields) > 20, qt.IsTrue, qt.Commentf("only %d categories discovered; reflection is not seeing SchemaDiff", len(fields)))
 
 	for _, field := range fields {
-		c.Run(field.Name, func(c *qt.C) {
+		t.Run(field.Name, func(t *testing.T) {
+			c := qt.New(t)
 			diff := diffWithOnlyCategory(field)
 			stdout := &bytes.Buffer{}
 			stderr := &bytes.Buffer{}
@@ -80,7 +81,8 @@ func TestSchemaDiffNonCategoryFieldsAreDocumented(t *testing.T) {
 	c.Assert(names, qt.Not(qt.HasLen), 0)
 
 	for _, name := range names {
-		c.Run(name, func(c *qt.C) {
+		t.Run(name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(
 				nonCategoryFields[name],
 				qt.Not(qt.Equals),

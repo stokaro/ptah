@@ -14,8 +14,6 @@ import (
 )
 
 func TestParseQualifier_HappyPath(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name string
 		raw  string
@@ -29,7 +27,8 @@ func TestParseQualifier_HappyPath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			qualifier, err := atlasmigrate.ParseQualifier(test.raw)
 			c.Assert(err, qt.IsNil)
 			c.Assert(qualifier.Name(), qt.Equals, test.want)
@@ -39,8 +38,6 @@ func TestParseQualifier_HappyPath(t *testing.T) {
 }
 
 func TestParseQualifier_FailurePath(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name    string
 		raw     string
@@ -69,7 +66,8 @@ func TestParseQualifier_FailurePath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			qualifier, err := atlasmigrate.ParseQualifier(test.raw)
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(qualifier.IsZero(), qt.IsTrue)
@@ -78,8 +76,6 @@ func TestParseQualifier_FailurePath(t *testing.T) {
 }
 
 func TestQualifierValidateScope_HappyPath(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name    string
 		dialect string
@@ -92,7 +88,8 @@ func TestQualifierValidateScope_HappyPath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			qualifier, err := atlasmigrate.ParseQualifier("tenant")
 			c.Assert(err, qt.IsNil)
 			c.Assert(qualifier.ValidateScope(test.dialect, test.schemas), qt.IsNil)
@@ -101,23 +98,24 @@ func TestQualifierValidateScope_HappyPath(t *testing.T) {
 }
 
 func TestQualifierValidateScope_FailurePath(t *testing.T) {
-	c := qt.New(t)
-
-	c.Run("unsupported dialect", func(c *qt.C) {
+	t.Run("unsupported dialect", func(t *testing.T) {
+		c := qt.New(t)
 		qualifier, err := atlasmigrate.ParseQualifier("tenant")
 		c.Assert(err, qt.IsNil)
 		c.Assert(qualifier.ValidateScope(platform.SQLite, nil), qt.ErrorMatches,
 			`atlas migrate diff --qualifier is not supported for dialect "sqlite"`)
 	})
 
-	c.Run("multiple schema scope", func(c *qt.C) {
+	t.Run("multiple schema scope", func(t *testing.T) {
+		c := qt.New(t)
 		qualifier, err := atlasmigrate.ParseQualifier("tenant")
 		c.Assert(err, qt.IsNil)
 		c.Assert(qualifier.ValidateScope(platform.Postgres, []string{"app", "audit"}), qt.ErrorMatches,
 			`atlas migrate diff --qualifier "tenant" requires a single schema scope, got --schema "app,audit"`)
 	})
 
-	c.Run("zero qualifier skips validation", func(c *qt.C) {
+	t.Run("zero qualifier skips validation", func(t *testing.T) {
+		c := qt.New(t)
 		c.Assert(atlasmigrate.Qualifier{}.ValidateScope(platform.SQLite, []string{"a", "b"}), qt.IsNil)
 	})
 }
@@ -137,9 +135,8 @@ func renderQualified(c *qt.C, dialect string, nodes ...ast.Node) string {
 }
 
 func TestQualifierApplyToPlan_HappyPath(t *testing.T) {
-	c := qt.New(t)
-
-	c.Run("postgres create table with foreign key", func(c *qt.C) {
+	t.Run("postgres create table with foreign key", func(t *testing.T) {
+		c := qt.New(t)
 		table := ast.NewCreateTable("users").
 			AddColumn(ast.NewColumn("id", "SERIAL").SetPrimary()).
 			AddColumn(ast.NewColumn("org_id", "INTEGER").SetForeignKey("orgs", "id", "fk_users_org"))
@@ -153,7 +150,8 @@ func TestQualifierApplyToPlan_HappyPath(t *testing.T) {
 		c.Assert(sql, qt.Contains, `REFERENCES "tenant"."orgs"`)
 	})
 
-	c.Run("postgres alter table add constraint and index", func(c *qt.C) {
+	t.Run("postgres alter table add constraint and index", func(t *testing.T) {
+		c := qt.New(t)
 		alter := &ast.AlterTableNode{
 			Name: "users",
 			Operations: []ast.AlterOperation{
@@ -180,7 +178,8 @@ func TestQualifierApplyToPlan_HappyPath(t *testing.T) {
 		c.Assert(sql, qt.Contains, `CREATE INDEX "idx_users_email" ON "tenant"."users"`)
 	})
 
-	c.Run("postgres drop index and drop table", func(c *qt.C) {
+	t.Run("postgres drop index and drop table", func(t *testing.T) {
+		c := qt.New(t)
 		dropIndex := ast.NewDropIndex("idx_users_email").SetTable("users")
 		dropTable := ast.NewDropTable("orders")
 		qualifier := mustParseQualifier(c, "tenant")
@@ -193,7 +192,8 @@ func TestQualifierApplyToPlan_HappyPath(t *testing.T) {
 		c.Assert(sql, qt.Contains, `DROP TABLE "tenant"."orders"`)
 	})
 
-	c.Run("existing single schema qualification is replaced", func(c *qt.C) {
+	t.Run("existing single schema qualification is replaced", func(t *testing.T) {
+		c := qt.New(t)
 		table := ast.NewCreateTable("app.users").
 			AddColumn(ast.NewColumn("id", "SERIAL").SetPrimary())
 		qualifier := mustParseQualifier(c, "tenant")
@@ -205,7 +205,8 @@ func TestQualifierApplyToPlan_HappyPath(t *testing.T) {
 		c.Assert(sql, qt.Contains, `CREATE TABLE "tenant"."users"`)
 	})
 
-	c.Run("mysql create index uses backtick quoting", func(c *qt.C) {
+	t.Run("mysql create index uses backtick quoting", func(t *testing.T) {
+		c := qt.New(t)
 		index := &ast.IndexNode{Name: "idx_users_email", Table: "users", Columns: []string{"email"}}
 		qualifier := mustParseQualifier(c, "market")
 
@@ -216,7 +217,8 @@ func TestQualifierApplyToPlan_HappyPath(t *testing.T) {
 		c.Assert(sql, qt.Contains, "ON `market`.`users`")
 	})
 
-	c.Run("comments pass through untouched", func(c *qt.C) {
+	t.Run("comments pass through untouched", func(t *testing.T) {
+		c := qt.New(t)
 		comment := ast.NewComment("WARNING: destructive operation")
 		qualifier := mustParseQualifier(c, "tenant")
 
@@ -226,7 +228,8 @@ func TestQualifierApplyToPlan_HappyPath(t *testing.T) {
 		c.Assert(comment.Text, qt.Equals, "WARNING: destructive operation")
 	})
 
-	c.Run("zero qualifier leaves nodes untouched", func(c *qt.C) {
+	t.Run("zero qualifier leaves nodes untouched", func(t *testing.T) {
+		c := qt.New(t)
 		table := ast.NewCreateTable("users")
 
 		err := atlasmigrate.Qualifier{}.ApplyToPlan(platform.Postgres, &goschema.Database{}, []ast.Node{table})
@@ -237,21 +240,22 @@ func TestQualifierApplyToPlan_HappyPath(t *testing.T) {
 }
 
 func TestQualifierApplyToPlan_FailurePath(t *testing.T) {
-	c := qt.New(t)
-
-	c.Run("unsupported dialect", func(c *qt.C) {
+	t.Run("unsupported dialect", func(t *testing.T) {
+		c := qt.New(t)
 		qualifier := mustParseQualifier(c, "tenant")
 		err := qualifier.ApplyToPlan(platform.SQLite, &goschema.Database{}, []ast.Node{ast.NewCreateTable("users")})
 		c.Assert(err, qt.ErrorMatches, `atlas migrate diff --qualifier is not supported for dialect "sqlite"`)
 	})
 
-	c.Run("unsupported statement kind", func(c *qt.C) {
+	t.Run("unsupported statement kind", func(t *testing.T) {
+		c := qt.New(t)
 		qualifier := mustParseQualifier(c, "tenant")
 		err := qualifier.ApplyToPlan(platform.Postgres, &goschema.Database{}, []ast.Node{ast.NewEnum("status", "a", "b")})
 		c.Assert(err, qt.ErrorMatches, `atlas migrate diff --qualifier "tenant" does not support \*ast\.EnumNode statements yet`)
 	})
 
-	c.Run("unsupported alter operation kind", func(c *qt.C) {
+	t.Run("unsupported alter operation kind", func(t *testing.T) {
+		c := qt.New(t)
 		qualifier := mustParseQualifier(c, "tenant")
 		alter := &ast.AlterTableNode{
 			Name:       "users",
@@ -261,7 +265,8 @@ func TestQualifierApplyToPlan_FailurePath(t *testing.T) {
 		c.Assert(err, qt.ErrorMatches, `atlas migrate diff --qualifier "tenant" does not support \*ast\.RenameTableOperation alter operations yet`)
 	})
 
-	c.Run("plan spanning several schemas", func(c *qt.C) {
+	t.Run("plan spanning several schemas", func(t *testing.T) {
+		c := qt.New(t)
 		qualifier := mustParseQualifier(c, "tenant")
 		nodes := []ast.Node{
 			ast.NewCreateTable("app.users"),
@@ -271,7 +276,8 @@ func TestQualifierApplyToPlan_FailurePath(t *testing.T) {
 		c.Assert(err, qt.ErrorMatches, `found 2 schemas when migration plan is scoped to one: \["app" "audit"\]`)
 	})
 
-	c.Run("enum typed column", func(c *qt.C) {
+	t.Run("enum typed column", func(t *testing.T) {
+		c := qt.New(t)
 		qualifier := mustParseQualifier(c, "tenant")
 		desired := &goschema.Database{Enums: []goschema.Enum{{Name: "enum_user_status"}}}
 		table := ast.NewCreateTable("users").
@@ -281,7 +287,8 @@ func TestQualifierApplyToPlan_FailurePath(t *testing.T) {
 			`atlas migrate diff --qualifier "tenant": table "users" column "status" uses enum type "enum_user_status"; qualifying enum type references is not supported yet`)
 	})
 
-	c.Run("drop index without owning table", func(c *qt.C) {
+	t.Run("drop index without owning table", func(t *testing.T) {
+		c := qt.New(t)
 		qualifier := mustParseQualifier(c, "tenant")
 		err := qualifier.ApplyToPlan(platform.Postgres, &goschema.Database{}, []ast.Node{ast.NewDropIndex("idx_orphan")})
 		c.Assert(err, qt.ErrorMatches,

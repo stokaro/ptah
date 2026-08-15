@@ -132,7 +132,6 @@ func TestPlanner_GenerateMigrationAST_RejectsMaterializedViews(t *testing.T) {
 }
 
 func TestPlanner_GenerateMigrationAST_RoutesEveryRoleChangeToARefusal(t *testing.T) {
-	c := qt.New(t)
 	planner := mysql.New()
 
 	tests := []struct {
@@ -165,14 +164,16 @@ func TestPlanner_GenerateMigrationAST_RoutesEveryRoleChangeToARefusal(t *testing
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			nodes, err := planner.GenerateMigrationASTChecked(test.diff, &goschema.Database{})
 			c.Assert(err, qt.IsNil)
 			c.Assert(nodes, qt.HasLen, 1)
 			c.Check(fmt.Sprintf("%T", nodes[0]), qt.Equals, test.wantNode)
 
 			for _, dialect := range []string{"mysql", "mariadb"} {
-				c.Run(dialect, func(c *qt.C) {
+				t.Run(dialect, func(t *testing.T) {
+					c := qt.New(t)
 					sql, err := renderer.RenderSQL(dialect, nodes...)
 					c.Check(sql, qt.Equals, "")
 					c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)

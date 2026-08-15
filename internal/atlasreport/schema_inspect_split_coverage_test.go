@@ -42,8 +42,6 @@ import (
 // members on the filesystem and the next process is handed one of them by path,
 // so a record carried by a sibling is a record that is not there.
 func TestSplitCarriesTheCoverageRecordIntoEveryMember(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name      string
 		format    string
@@ -67,7 +65,8 @@ func TestSplitCarriesTheCoverageRecordIntoEveryMember(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			output, err := atlasreport.RenderSchemaInspect(test.format, coverageSplitReport())
 
 			c.Assert(err, qt.IsNil)
@@ -105,7 +104,8 @@ func TestSplitMembersDecodeBackToTheRecordTheDocumentDeclared(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 
 	for path, data := range txtarMembers(split.Text) {
-		c.Run(path, func(c *qt.C) {
+		t.Run(path, func(t *testing.T) {
+			c := qt.New(t)
 			got, err := coverage.DecodeHeader(data)
 			c.Assert(err, qt.IsNil)
 			c.Assert(got, qt.DeepEquals, wantSet)
@@ -128,7 +128,8 @@ func TestSplitWritePlansTheRecordIntoEveryExportedFile(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(len(output.Files) >= 2, qt.IsTrue)
 	for _, file := range output.Files {
-		c.Run(file.Path, func(c *qt.C) {
+		t.Run(file.Path, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(file.Dir, qt.Equals, "out")
 			got, err := coverage.DecodeHeader(file.Data)
 			c.Assert(err, qt.IsNil)

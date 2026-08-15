@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io/fs"
 	"iter"
-	"net/url"
 	"os"
 	"path"
 	"path/filepath"
@@ -365,7 +364,7 @@ func (p Policy) ValidateLocalSchemaSource(source string) error {
 		if end := strings.IndexAny(cleaned, "?#"); end >= 0 {
 			cleaned = cleaned[:end]
 		}
-	} else if parsed, err := url.Parse(cleaned); err == nil && parsed.Scheme != "" {
+	} else if parsed, err := atlasurl.Parse(cleaned); err == nil && parsed.Scheme != "" {
 		if parsed.Scheme != "file" {
 			return nil
 		}
@@ -389,7 +388,7 @@ func (p Policy) ValidateURL(rawURL string) error {
 	if !p.strictCE {
 		return nil
 	}
-	parsed, err := url.Parse(strings.TrimSpace(rawURL))
+	parsed, err := atlasurl.Parse(strings.TrimSpace(rawURL))
 	if err != nil {
 		return nil
 	}

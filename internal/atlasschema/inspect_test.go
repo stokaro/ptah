@@ -58,9 +58,8 @@ func TestInspect_ExcludeFilter(t *testing.T) {
 }
 
 func TestInspect_IncludeSelection(t *testing.T) {
-	c := qt.New(t)
-
-	c.Run("selects the named table and its children", func(c *qt.C) {
+	t.Run("selects the named table and its children", func(t *testing.T) {
+		c := qt.New(t)
 		conn := connectSQLite(c, filepath.Join(c.TempDir(), "inspect-include.db"))
 		defer dbschema.CloseAndWarn(conn)
 		createInspectSchema(c, conn)
@@ -77,7 +76,8 @@ func TestInspect_IncludeSelection(t *testing.T) {
 		c.Assert(rendered, qt.Not(qt.Contains), `table "posts"`)
 	})
 
-	c.Run("refuses a selection that drops a dependency", func(c *qt.C) {
+	t.Run("refuses a selection that drops a dependency", func(t *testing.T) {
+		c := qt.New(t)
 		conn := connectSQLite(c, filepath.Join(c.TempDir(), "inspect-include-dep.db"))
 		defer dbschema.CloseAndWarn(conn)
 		createInspectSchema(c, conn)
@@ -91,7 +91,8 @@ func TestInspect_IncludeSelection(t *testing.T) {
 		c.Assert(rendered, qt.Equals, "")
 	})
 
-	c.Run("exclusion-only inspection is unchanged", func(c *qt.C) {
+	t.Run("exclusion-only inspection is unchanged", func(t *testing.T) {
+		c := qt.New(t)
 		conn := connectSQLite(c, filepath.Join(c.TempDir(), "inspect-include-none.db"))
 		defer dbschema.CloseAndWarn(conn)
 		createInspectSchema(c, conn)
@@ -116,9 +117,8 @@ func TestInspect_IncludeSelection(t *testing.T) {
 }
 
 func TestInspect_FailurePath(t *testing.T) {
-	c := qt.New(t)
-
-	c.Run("invalid format before connection", func(c *qt.C) {
+	t.Run("invalid format before connection", func(t *testing.T) {
+		c := qt.New(t)
 		rendered, err := atlasschema.Inspect(context.Background(), nil, atlasschema.InspectOptions{
 			Format: "{{ if }}",
 		})
@@ -126,13 +126,15 @@ func TestInspect_FailurePath(t *testing.T) {
 		c.Assert(rendered, qt.Equals, "")
 	})
 
-	c.Run("nil connection", func(c *qt.C) {
+	t.Run("nil connection", func(t *testing.T) {
+		c := qt.New(t)
 		rendered, err := atlasschema.Inspect(context.Background(), nil, atlasschema.InspectOptions{})
 		c.Assert(err, qt.ErrorMatches, "schema inspect requires database connection")
 		c.Assert(rendered, qt.Equals, "")
 	})
 
-	c.Run("dev url dialect mismatch", func(c *qt.C) {
+	t.Run("dev url dialect mismatch", func(t *testing.T) {
+		c := qt.New(t)
 		conn := connectSQLite(c, filepath.Join(c.TempDir(), "inspect-mismatch.db"))
 		defer dbschema.CloseAndWarn(conn)
 

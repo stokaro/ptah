@@ -107,52 +107,50 @@ func TestConcurrentIndexRefsForPopulatedTables_PartitionedAndUnknownStats(t *tes
 // the answer PostgreSQL gives cannot be honored -- so generation fails here,
 // before a migration file, its checksum, and its commit exist.
 func TestConcurrentIndexPolicy_RefusesPartitionedParent(t *testing.T) {
+	c := qt.New(t)
+	diff := &types.SchemaDiff{}
+	diff.SetIndexAdditions([]types.IndexRef{
+		{Name: "idx_events_tenant", TableName: "events"},
+	})
+
+	refs, err := concurrentIndexRefsForPolicy(
+		diff,
+		&dbschematypes.DBSchema{Tables: []dbschematypes.DBTable{{Name: "events", Partitioned: true}}},
+		postgresIndexDBInfo(),
+		DiffPolicy{ConcurrentIndex: true},
+	)
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(err.Error(), qt.Contains, "CREATE INDEX CONCURRENTLY")
+	c.Assert(err.Error(), qt.Contains, "diff.concurrent_index.create")
+	c.Assert(err.Error(), qt.Contains, `"idx_events_tenant" on "events"`)
+	c.Assert(err.Error(), qt.Contains, "0A000")
+	c.Assert(refs, qt.IsNil)
+}
+
+// TestConcurrentIndexPolicy_HonorsATableTheBuildIsLegalOn is what keeps the
+// refusal next door a statement about the index rather than about the schema.
+func TestConcurrentIndexPolicy_HonorsATableTheBuildIsLegalOn(t *testing.T) {
 	tests := []struct {
 		name   string
-		policy DiffPolicy
 		tables []dbschematypes.DBTable
-		assert func(c *qt.C, refs []types.IndexRef, err error)
+		want   []types.IndexRef
 	}{
 		{
-			name:   "create over a partitioned parent is refused",
-			policy: DiffPolicy{ConcurrentIndex: true},
-			tables: []dbschematypes.DBTable{{Name: "events", Partitioned: true}},
-			assert: func(c *qt.C, refs []types.IndexRef, err error) {
-				c.Assert(err, qt.IsNotNil)
-				c.Assert(err.Error(), qt.Contains, "CREATE INDEX CONCURRENTLY")
-				c.Assert(err.Error(), qt.Contains, "diff.concurrent_index.create")
-				c.Assert(err.Error(), qt.Contains, `"idx_events_tenant" on "events"`)
-				c.Assert(err.Error(), qt.Contains, "0A000")
-				c.Assert(refs, qt.IsNil)
-			},
-		},
-		{
 			name:   "create over an ordinary table is honored",
-			policy: DiffPolicy{ConcurrentIndex: true},
 			tables: []dbschematypes.DBTable{{Name: "events"}},
-			assert: func(c *qt.C, refs []types.IndexRef, err error) {
-				c.Assert(err, qt.IsNil)
-				c.Assert(refs, qt.DeepEquals, []types.IndexRef{
-					{Name: "idx_events_tenant", TableName: "events"},
-				})
-			},
+			want:   []types.IndexRef{{Name: "idx_events_tenant", TableName: "events"}},
 		},
 		{
 			// The discriminating row: a refusal keyed on "the schema contains a
 			// partitioned table" rather than on "this index names one" passes
-			// every row above and fails here.
-			name:   "an unrelated partitioned table does not refuse the run",
-			policy: DiffPolicy{ConcurrentIndex: true},
+			// the refusal test and fails here.
+			name: "an unrelated partitioned table does not refuse the run",
 			tables: []dbschematypes.DBTable{
 				{Name: "events"},
 				{Name: "measurements", Partitioned: true},
 			},
-			assert: func(c *qt.C, refs []types.IndexRef, err error) {
-				c.Assert(err, qt.IsNil)
-				c.Assert(refs, qt.DeepEquals, []types.IndexRef{
-					{Name: "idx_events_tenant", TableName: "events"},
-				})
-			},
+			want: []types.IndexRef{{Name: "idx_events_tenant", TableName: "events"}},
 		},
 	}
 
@@ -168,10 +166,11 @@ func TestConcurrentIndexPolicy_RefusesPartitionedParent(t *testing.T) {
 				diff,
 				&dbschematypes.DBSchema{Tables: tt.tables},
 				postgresIndexDBInfo(),
-				tt.policy,
+				DiffPolicy{ConcurrentIndex: true},
 			)
 
-			tt.assert(c, refs, err)
+			c.Assert(err, qt.IsNil)
+			c.Assert(refs, qt.DeepEquals, tt.want)
 		})
 	}
 }
@@ -182,31 +181,39 @@ func TestConcurrentIndexPolicy_RefusesPartitionedParent(t *testing.T) {
 // rollback of a partitioned build is unexecutable in exactly the same way the
 // build is -- and a rollback nobody ran is where that goes unnoticed.
 func TestConcurrentIndexDropPolicy_RefusesPartitionedParent(t *testing.T) {
+	c := qt.New(t)
+	diff := &types.SchemaDiff{}
+	diff.SetIndexRemovals([]types.IndexRef{
+		{Name: "idx_events_tenant", TableName: "events"},
+	})
+
+	refs, err := concurrentIndexDropRefsForPolicy(
+		diff,
+		&dbschematypes.DBSchema{Tables: []dbschematypes.DBTable{{Name: "events", Partitioned: true}}},
+		postgresIndexDBInfo(),
+		DiffPolicy{ConcurrentIndexDrop: true},
+	)
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(err.Error(), qt.Contains, "DROP INDEX CONCURRENTLY")
+	c.Assert(err.Error(), qt.Contains, "diff.concurrent_index.drop")
+	c.Assert(err.Error(), qt.Contains, `"idx_events_tenant" on "events"`)
+	c.Assert(refs, qt.IsNil)
+}
+
+// TestConcurrentIndexDropPolicy_HonorsATableTheDropIsLegalOn is the drop half's
+// counterpart to TestConcurrentIndexPolicy_HonorsATableTheBuildIsLegalOn, and
+// carries the same discriminating row.
+func TestConcurrentIndexDropPolicy_HonorsATableTheDropIsLegalOn(t *testing.T) {
 	tests := []struct {
 		name   string
 		tables []dbschematypes.DBTable
-		assert func(c *qt.C, refs []types.IndexRef, err error)
+		want   []types.IndexRef
 	}{
-		{
-			name:   "drop over a partitioned parent is refused",
-			tables: []dbschematypes.DBTable{{Name: "events", Partitioned: true}},
-			assert: func(c *qt.C, refs []types.IndexRef, err error) {
-				c.Assert(err, qt.IsNotNil)
-				c.Assert(err.Error(), qt.Contains, "DROP INDEX CONCURRENTLY")
-				c.Assert(err.Error(), qt.Contains, "diff.concurrent_index.drop")
-				c.Assert(err.Error(), qt.Contains, `"idx_events_tenant" on "events"`)
-				c.Assert(refs, qt.IsNil)
-			},
-		},
 		{
 			name:   "drop over an ordinary table is honored",
 			tables: []dbschematypes.DBTable{{Name: "events"}},
-			assert: func(c *qt.C, refs []types.IndexRef, err error) {
-				c.Assert(err, qt.IsNil)
-				c.Assert(refs, qt.DeepEquals, []types.IndexRef{
-					{Name: "idx_events_tenant", TableName: "events"},
-				})
-			},
+			want:   []types.IndexRef{{Name: "idx_events_tenant", TableName: "events"}},
 		},
 		{
 			name: "an unrelated partitioned table does not refuse the run",
@@ -214,12 +221,7 @@ func TestConcurrentIndexDropPolicy_RefusesPartitionedParent(t *testing.T) {
 				{Name: "events"},
 				{Name: "measurements", Partitioned: true},
 			},
-			assert: func(c *qt.C, refs []types.IndexRef, err error) {
-				c.Assert(err, qt.IsNil)
-				c.Assert(refs, qt.DeepEquals, []types.IndexRef{
-					{Name: "idx_events_tenant", TableName: "events"},
-				})
-			},
+			want: []types.IndexRef{{Name: "idx_events_tenant", TableName: "events"}},
 		},
 	}
 
@@ -238,7 +240,8 @@ func TestConcurrentIndexDropPolicy_RefusesPartitionedParent(t *testing.T) {
 				DiffPolicy{ConcurrentIndexDrop: true},
 			)
 
-			tt.assert(c, refs, err)
+			c.Assert(err, qt.IsNil)
+			c.Assert(refs, qt.DeepEquals, tt.want)
 		})
 	}
 }

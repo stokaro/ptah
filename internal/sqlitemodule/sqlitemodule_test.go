@@ -78,6 +78,7 @@ func TestRegisteredExcludesPragmaFunctions(t *testing.T) {
 // The non-ASCII row is the other half. SQLite folds ASCII only, so a Unicode
 // fold here would answer for a module the engine would not resolve.
 func TestRegistersFoldsASCIICase(t *testing.T) {
+	c := qt.New(t)
 	tests := []struct {
 		name   string
 		module string
@@ -100,11 +101,12 @@ func TestRegistersFoldsASCIICase(t *testing.T) {
 	}
 
 	registered, err := sqlitemodule.Registered()
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			qt.Assert(t, registered.Registers(tt.module), qt.Equals, tt.want)
+			c := qt.New(t)
+			c.Assert(registered.Registers(tt.module), qt.Equals, tt.want)
 		})
 	}
 }

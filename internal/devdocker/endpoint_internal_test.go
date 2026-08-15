@@ -128,16 +128,17 @@ func TestParseDockerEndpointClassifiesTheDaemonLocation(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			c := qt.New(t)
 			t.Parallel()
 			endpoint, err := parseDockerEndpoint(tc.raw)
-			qt.Assert(t, err, qt.IsNil)
-			qt.Check(t, endpoint.remote, qt.Equals, tc.wantRemote)
+			c.Assert(err, qt.IsNil)
+			c.Check(endpoint.remote, qt.Equals, tc.wantRemote)
 			// Both halves are asserted on every row. A build that got the bind
 			// address right and the connect host wrong would publish where the
 			// port is reachable and then dial somewhere else, which is the
 			// original defect wearing a different hat.
-			qt.Check(t, endpoint.bindAddress(), qt.Equals, tc.wantBindAddress)
-			qt.Check(t, endpoint.connectHost(), qt.Equals, tc.wantConnectHost)
+			c.Check(endpoint.bindAddress(), qt.Equals, tc.wantBindAddress)
+			c.Check(endpoint.connectHost(), qt.Equals, tc.wantConnectHost)
 		})
 	}
 }
@@ -213,18 +214,20 @@ func TestParseSSHConfigReadsTheEffectiveDestination(t *testing.T) {
 	}
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
+			c := qt.New(t)
 			t.Parallel()
 			hostname, proxy := parseSSHConfig(tc.out)
-			qt.Check(t, hostname, qt.Equals, tc.wantHostname)
-			qt.Check(t, proxy, qt.Equals, tc.wantProxy)
+			c.Check(hostname, qt.Equals, tc.wantHostname)
+			c.Check(proxy, qt.Equals, tc.wantProxy)
 		})
 	}
 }
 
 func TestParseDockerEndpointRefusesAnEndpointNamingNoHost(t *testing.T) {
+	c := qt.New(t)
 	_, err := parseDockerEndpoint("tcp://")
-	qt.Assert(t, err, qt.IsNotNil)
-	qt.Check(t, err.Error(), qt.Contains, "names no host")
+	c.Assert(err, qt.IsNotNil)
+	c.Check(err.Error(), qt.Contains, "names no host")
 }
 
 // TestParseDockerEndpointRefusesAHostThatReadsAsAnSSHOption closes the one way
@@ -234,7 +237,8 @@ func TestParseDockerEndpointRefusesAnEndpointNamingNoHost(t *testing.T) {
 // a leading dash as a hostname, so `ssh://-oProxyCommand=…` would arrive as an
 // option rather than a destination.
 func TestParseDockerEndpointRefusesAHostThatReadsAsAnSSHOption(t *testing.T) {
+	c := qt.New(t)
 	_, err := parseDockerEndpoint("ssh://-lroot")
-	qt.Assert(t, err, qt.IsNotNil)
-	qt.Check(t, err.Error(), qt.Contains, "beginning with a dash")
+	c.Assert(err, qt.IsNotNil)
+	c.Check(err.Error(), qt.Contains, "beginning with a dash")
 }

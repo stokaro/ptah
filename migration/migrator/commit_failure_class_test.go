@@ -46,7 +46,8 @@ func TestCommitFailure_OnlyTheTransactionalClassHasACommitStep(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(ddltx.HasCommitStep(test.class), qt.Equals, test.want)
 		})
 	}

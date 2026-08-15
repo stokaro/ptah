@@ -13,6 +13,7 @@ import (
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/dbschema"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
 	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
@@ -106,7 +107,7 @@ func TestCockroachDBTableQualifiedIndexIdentity_RoundTrip(t *testing.T) {
 
 func skipIfNoCockroachDB(t *testing.T) string {
 	t.Helper()
-	return requireReachableTestDSN(t, "COCKROACHDB_TEST_DSN", "pgx", "CockroachDB")
+	return requireReachableEngine(t, dbtarget.CockroachDB, "pgx", "CockroachDB")
 }
 
 func cleanupCockroachIndexIdentity(db *sql.DB) {

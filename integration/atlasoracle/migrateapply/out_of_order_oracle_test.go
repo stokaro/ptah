@@ -156,7 +156,10 @@ func assertMigrationState(c *qt.C, dbPath string, wantTables, wantVersions []str
 	c.Helper()
 	db, err := sql.Open("sqlite", dbPath)
 	c.Assert(err, qt.IsNil)
-	c.Defer(func() { c.Assert(db.Close(), qt.IsNil) })
+	// tb.Cleanup rather than c.Defer: (*qt.C).Defer registers a cleanup that
+	// panics unless Done() ran, and C.Run supplies that Done while a checker
+	// built here does not. Cleanup is what Defer wraps, and it needs no pair.
+	c.Cleanup(func() { c.Assert(db.Close(), qt.IsNil) })
 
 	rows, err := db.Query("SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
 	c.Assert(err, qt.IsNil)

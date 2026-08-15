@@ -302,9 +302,8 @@ func TestInspectSource_FileExportThenDevInspectionRoundTrip(t *testing.T) {
 }
 
 func TestInspectSource_FailurePath(t *testing.T) {
-	c := qt.New(t)
-
-	c.Run("local file requires dev url", func(c *qt.C) {
+	t.Run("local file requires dev url", func(t *testing.T) {
+		c := qt.New(t)
 		schemaPath := filepath.Join(c.TempDir(), "schema.sql")
 		c.Assert(os.WriteFile(schemaPath, []byte("CREATE TABLE t (id int);\n"), 0o600), qt.IsNil)
 
@@ -325,7 +324,8 @@ func TestInspectSource_FailurePath(t *testing.T) {
 	// measured behavior and not a shortcut: the pinned community binary v1.3.0
 	// answers `unsupported docker image "sqlite"` and exits 1 for it, so
 	// starting anything would be exiting 0 where that binary exits 1.
-	c.Run("docker dev url reaches the provisioner", func(c *qt.C) {
+	t.Run("docker dev url reaches the provisioner", func(t *testing.T) {
+		c := qt.New(t)
 		schemaPath := filepath.Join(c.TempDir(), "schema.sql")
 		c.Assert(os.WriteFile(schemaPath, []byte("CREATE TABLE t (id int);\n"), 0o600), qt.IsNil)
 
@@ -337,7 +337,8 @@ func TestInspectSource_FailurePath(t *testing.T) {
 		c.Assert(err, qt.ErrorMatches, `unsupported docker image "sqlite"`)
 	})
 
-	c.Run("unsupported source scheme", func(c *qt.C) {
+	t.Run("unsupported source scheme", func(t *testing.T) {
+		c := qt.New(t)
 		_, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
 			URL: "atlas://remote/app",
 		})
@@ -345,9 +346,10 @@ func TestInspectSource_FailurePath(t *testing.T) {
 		c.Assert(err, qt.ErrorMatches, `--url "atlas://remote/app": atlas:// registry URLs are not supported.*`)
 	})
 
-	c.Run("invalid exclude selector before any connection", func(c *qt.C) {
+	t.Run("invalid exclude selector before any connection", func(t *testing.T) {
 		// The unreachable URL proves selector validation runs pre-connect:
 		// reaching the database would produce a connection error instead.
+		c := qt.New(t)
 		_, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
 			URL:     "postgres://127.0.0.1:1/unreachable",
 			Exclude: []string{"a[type=table].b[type=column]"},
@@ -356,9 +358,10 @@ func TestInspectSource_FailurePath(t *testing.T) {
 		c.Assert(err, qt.ErrorMatches, `unsupported Atlas exclude selector .*final pattern segment only`)
 	})
 
-	c.Run("invalid include selector before any connection", func(c *qt.C) {
+	t.Run("invalid include selector before any connection", func(t *testing.T) {
 		// The unreachable URL proves selector validation runs pre-connect:
 		// reaching the database would produce a connection error instead.
+		c := qt.New(t)
 		_, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
 			URL:     "postgres://127.0.0.1:1/unreachable",
 			Include: []string{"*[type=column]"},
@@ -368,12 +371,13 @@ func TestInspectSource_FailurePath(t *testing.T) {
 			`unsupported Atlas include selector "\*\[type=column\]": column resources ride along with their parent and cannot be included on their own`)
 	})
 
-	c.Run("dotted include selector reaches the connection", func(c *qt.C) {
+	t.Run("dotted include selector reaches the connection", func(t *testing.T) {
 		// A dotted selector is no longer refused on its shape. Whether
 		// "public.users.email" names a child resource or a table literally
 		// called that is not decidable from the text, so it is carried to the
 		// projection like any other selector and the unreachable URL is what
 		// fails here.
+		c := qt.New(t)
 		_, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
 			URL:     "postgres://127.0.0.1:1/unreachable",
 			Include: []string{"public.users.email"},
@@ -382,7 +386,8 @@ func TestInspectSource_FailurePath(t *testing.T) {
 		c.Assert(err, qt.ErrorMatches, `(?s)connect to --url: .*`)
 	})
 
-	c.Run("invalid format before source resolution", func(c *qt.C) {
+	t.Run("invalid format before source resolution", func(t *testing.T) {
+		c := qt.New(t)
 		_, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
 			URL:    "sqlite://ignored.db",
 			Format: "{{ if }}",
@@ -391,7 +396,8 @@ func TestInspectSource_FailurePath(t *testing.T) {
 		c.Assert(err, qt.ErrorMatches, `parse --format template: .*`)
 	})
 
-	c.Run("write escaping the working directory", func(c *qt.C) {
+	t.Run("write escaping the working directory", func(t *testing.T) {
+		c := qt.New(t)
 		dbPath := seedInspectSQLiteDB(c)
 
 		_, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
@@ -402,7 +408,8 @@ func TestInspectSource_FailurePath(t *testing.T) {
 		c.Assert(err, qt.ErrorMatches, `resolve output directory: .*outside allowed root.*`)
 	})
 
-	c.Run("duplicate write targets", func(c *qt.C) {
+	t.Run("duplicate write targets", func(t *testing.T) {
+		c := qt.New(t)
 		dbPath := seedInspectSQLiteDB(c)
 		outDir := filepath.Join(c.TempDir(), "dup")
 

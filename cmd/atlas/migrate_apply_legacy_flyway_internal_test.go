@@ -24,13 +24,13 @@ import (
 // --revisions-schema is pointed at the table that actually holds their rows
 // rather than at the default one.
 func TestLegacyFlywayRefusalRendersRecoverySQL(t *testing.T) {
-	c := qt.New(t)
 	stale := []legacyFlywayRevision{
 		{source: "V1__init.sql", recorded: "10000", target: "1"},
 		{source: "V2__seed.sql", recorded: "20000", target: "2"},
 	}
 
-	c.Run("default schema", func(c *qt.C) {
+	t.Run("default schema", func(t *testing.T) {
+		c := qt.New(t)
 		got := legacyFlywayRefusal(stale, "", "sqlite")
 
 		c.Assert(got, qt.Contains, "2 obsolete revision row(s)")
@@ -41,7 +41,8 @@ func TestLegacyFlywayRefusalRendersRecoverySQL(t *testing.T) {
 			"UPDATE atlas_schema_revisions SET version = '2' WHERE version = '20000';")
 	})
 
-	c.Run("explicit revisions schema", func(c *qt.C) {
+	t.Run("explicit revisions schema", func(t *testing.T) {
+		c := qt.New(t)
 		got := legacyFlywayRefusal(stale, `"reporting"."atlas_schema_revisions"`, "postgres")
 
 		c.Assert(got, qt.Contains,
@@ -49,7 +50,8 @@ func TestLegacyFlywayRefusalRendersRecoverySQL(t *testing.T) {
 		c.Assert(got, qt.Not(qt.Contains), "UPDATE atlas_schema_revisions")
 	})
 
-	c.Run("dialect-quoted table identifiers are used verbatim", func(c *qt.C) {
+	t.Run("dialect-quoted table identifiers are used verbatim", func(t *testing.T) {
+		c := qt.New(t)
 		for _, test := range []struct {
 			identifier string
 			dialect    string
@@ -64,7 +66,8 @@ func TestLegacyFlywayRefusalRendersRecoverySQL(t *testing.T) {
 		}
 	})
 
-	c.Run("exact tokens are escaped and duplicate obsolete rows are deleted", func(c *qt.C) {
+	t.Run("exact tokens are escaped and duplicate obsolete rows are deleted", func(t *testing.T) {
+		c := qt.New(t)
 		got := legacyFlywayRefusal([]legacyFlywayRevision{
 			{source: "Vx__quote.sql", recorded: "461", target: "x'y"},
 			{source: "R__repeat.sql", recorded: "922", target: "", delete: true},
@@ -76,7 +79,8 @@ func TestLegacyFlywayRefusalRendersRecoverySQL(t *testing.T) {
 			"DELETE FROM atlas_schema_revisions WHERE version = '922';")
 	})
 
-	c.Run("mysql family uses mode-independent hexadecimal literals", func(c *qt.C) {
+	t.Run("mysql family uses mode-independent hexadecimal literals", func(t *testing.T) {
+		c := qt.New(t)
 		for _, dialect := range []string{"mysql", "mariadb"} {
 			got := legacyFlywayRefusal([]legacyFlywayRevision{
 				{source: "Vx__escaped.sql", recorded: `old\key`, target: `x\'y`},
@@ -87,7 +91,8 @@ func TestLegacyFlywayRefusalRendersRecoverySQL(t *testing.T) {
 		}
 	})
 
-	c.Run("postgres family uses mode-independent dollar quotes", func(c *qt.C) {
+	t.Run("postgres family uses mode-independent dollar quotes", func(t *testing.T) {
+		c := qt.New(t)
 		for _, dialect := range []string{"postgres", "cockroachdb", "yugabytedb", "spanner"} {
 			got := legacyFlywayRefusal([]legacyFlywayRevision{
 				{source: "Vx__escaped.sql", recorded: `old\key`, target: `x\'y`},
@@ -98,7 +103,8 @@ func TestLegacyFlywayRefusalRendersRecoverySQL(t *testing.T) {
 		}
 	})
 
-	c.Run("clickhouse escapes backslashes", func(c *qt.C) {
+	t.Run("clickhouse escapes backslashes", func(t *testing.T) {
+		c := qt.New(t)
 		got := legacyFlywayRefusal([]legacyFlywayRevision{
 			{source: "Vx__escaped.sql", recorded: `old\key`, target: `x\'y`},
 		}, "", "clickhouse")
@@ -107,7 +113,8 @@ func TestLegacyFlywayRefusalRendersRecoverySQL(t *testing.T) {
 			`UPDATE atlas_schema_revisions SET version = 'x\\''y' WHERE version = 'old\\key';`)
 	})
 
-	c.Run("mysql empty identity stays explicitly present", func(c *qt.C) {
+	t.Run("mysql empty identity stays explicitly present", func(t *testing.T) {
+		c := qt.New(t)
 		got := legacyFlywayRefusal([]legacyFlywayRevision{
 			{source: "V.sql", recorded: "10000", target: ""},
 		}, "", "mysql")
@@ -116,7 +123,8 @@ func TestLegacyFlywayRefusalRendersRecoverySQL(t *testing.T) {
 			`UPDATE atlas_schema_revisions SET version = X'' WHERE version = X'3130303030';`)
 	})
 
-	c.Run("sqlserver preserves unicode identity", func(c *qt.C) {
+	t.Run("sqlserver preserves unicode identity", func(t *testing.T) {
+		c := qt.New(t)
 		got := legacyFlywayRefusal([]legacyFlywayRevision{
 			{source: "V猫__unicode.sql", recorded: "10000", target: "猫"},
 		}, "", "sqlserver")

@@ -13,7 +13,6 @@ import (
 )
 
 func Test_migrationTablePresenceQuery_HappyPath(t *testing.T) {
-	c := qt.New(t)
 	quote := func(value string) string { return `"` + value + `"` }
 	tests := []struct {
 		name             string
@@ -58,7 +57,8 @@ func Test_migrationTablePresenceQuery_HappyPath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			query, args, err := migrationTablePresenceQuery(
 				test.dialect,
 				test.configuredSchema,

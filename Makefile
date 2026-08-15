@@ -165,13 +165,43 @@ lint: lint-qtlint
 	@echo "Running golangci-lint..."
 	golangci-lint run ./...
 
+# Both invocations are required, and neither is redundant.
+#
+# -multi-module discovers the modules under the directory operands, so testkit/
+# and examples/orm-loaders/gorm/ are covered from here. `go list` otherwise
+# resolves patterns against the module holding the working directory, and
+# ./testkit/... answers "directory prefix testkit does not contain main module
+# or its selected dependencies".
+#
+# The two contours are two different builds, not a subset and a superset:
+# satisfying `integration` also drops every file a constraint excludes from
+# that contour.
+#
+# lint-qtlint-fix runs the rules in separate passes. Applied together with
+# -fix they can collide: one rule deletes a receiver declaration the other
+# rule's rewrite still references. See go-extras/qtlint#65.
+#
+# -require-testing-run is not in this set yet. 70 sites across 49 files still
+# hold a table row whose function field is typed func(c *qt.C, ...), where the
+# type is written somewhere the rule does not reach
+# reaches. A gate carrying known violations is either red or lying, so the rule
+# joins this list when those are converted rather than before.
+QTLINT_RULES := -require-qt-c-receiver -require-data-rows
+
 lint-qtlint:
 	@echo "Running qtlint..."
-	go tool qtlint ./...
+	go tool qtlint -multi-module $(QTLINT_RULES) ./...
+	go tool qtlint -multi-module $(QTLINT_RULES) -tags integration ./...
+
+lint-qtlint-fix:
+	@for rule in $(QTLINT_RULES); do \
+		go tool qtlint -multi-module $$rule -fix ./... || exit 1; \
+		go tool qtlint -multi-module $$rule -fix -tags integration ./... || exit 1; \
+	done
 
 lint-fix:
 	@echo "Running auto-fixable linters..."
-	go tool qtlint -fix ./...
+	$(MAKE) lint-qtlint-fix
 	golangci-lint run --fix ./...
 	$(MAKE) lint
 

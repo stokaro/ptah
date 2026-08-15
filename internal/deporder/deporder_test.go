@@ -194,7 +194,6 @@ func TestViewLikesForCreate_MatchesSchemaQualifiedReferences(t *testing.T) {
 }
 
 func TestViewLikesForCreateForDialect_ClickHouseCanonicalReferences(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name string
 		body string
@@ -204,7 +203,8 @@ func TestViewLikesForCreateForDialect_ClickHouseCanonicalReferences(t *testing.T
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			objects := deporder.ViewLikesForCreateForDialect([]deporder.ViewLike{
 				{Name: "analytics.a_report", Body: test.body},
 				{Name: "analytics.z_base", Body: "SELECT id FROM users"},
@@ -231,7 +231,6 @@ func TestViewLikesForCreateForDialect_ClickHouseIgnoresMaskedCanonicalReferences
 }
 
 func TestViewLikesForCreateForDialect_ClickHouseLineCommentsDoNotCreateFalseCycles(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name    string
 		comment string
@@ -242,7 +241,8 @@ func TestViewLikesForCreateForDialect_ClickHouseLineCommentsDoNotCreateFalseCycl
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			objects := deporder.ViewLikesForCreateForDialect([]deporder.ViewLike{
 				{
 					Name: "analytics.a_report",
@@ -260,7 +260,6 @@ func TestViewLikesForCreateForDialect_ClickHouseLineCommentsDoNotCreateFalseCycl
 }
 
 func TestViewLikesForCreateForDialect_ClickHouseEscapesDoNotCreateFalseCycles(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name string
 		body string
@@ -271,7 +270,8 @@ func TestViewLikesForCreateForDialect_ClickHouseEscapesDoNotCreateFalseCycles(t 
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			objects := deporder.ViewLikesForCreateForDialect([]deporder.ViewLike{
 				{
 					Name: "analytics.a_report",

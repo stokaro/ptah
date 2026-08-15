@@ -22,8 +22,6 @@ func renderWhere(c *qt.C, expr ast.Expression) (string, []any) {
 }
 
 func TestExpressionConstructors(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name     string
 		expr     ast.Expression
@@ -117,7 +115,8 @@ func TestExpressionConstructors(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			sql, args := renderWhere(c, tt.expr)
 			c.Assert(sql, qt.Equals, tt.wantSQL)
 			c.Assert(args, qt.DeepEquals, tt.wantArgs)
@@ -126,8 +125,6 @@ func TestExpressionConstructors(t *testing.T) {
 }
 
 func TestSelectBuilder_Projection(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name string
 		stmt *ast.SelectStatement
@@ -146,7 +143,8 @@ func TestSelectBuilder_Projection(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(tt.stmt.Columns, qt.DeepEquals, tt.want)
 		})
 	}
@@ -253,8 +251,6 @@ func TestSelectBuilder_SharedWhereFragment(t *testing.T) {
 }
 
 func TestSelectBuilder_DegenerateExpressionsErrorCleanly(t *testing.T) {
-	c := qt.New(t)
-
 	// Degenerate constructor inputs must surface a clean RenderSelect error, not
 	// a panic, when the statement is rendered.
 	tests := []struct {
@@ -285,7 +281,8 @@ func TestSelectBuilder_DegenerateExpressionsErrorCleanly(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			stmt := query.Select("*").From("t").Where(tt.expr).Build()
 			sql, args, err := renderer.RenderSelect(stmt, platform.Postgres)
 			c.Assert(err, qt.ErrorMatches, tt.wantErrLike)

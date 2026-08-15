@@ -12,6 +12,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 	_ "github.com/jackc/pgx/v5/stdlib"
+
+	"go.5x5.cz/ptah/internal/dbtarget"
 )
 
 // TestAtlasMigrateLintRenameAddSideE2E covers the last open scenario of
@@ -40,7 +42,7 @@ import (
 // A rule that reported the add side of every rename would pass the first row and
 // fail all four; a rule that reported none of them would fail only the first.
 func TestAtlasMigrateLintRenameAddSideE2E(t *testing.T) {
-	dbURL := requirePostgresE2EDatabaseURL(t)
+	dbURL := dbtarget.URL(t, dbtarget.PostgreSQL)
 
 	c := qt.New(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
@@ -326,7 +328,7 @@ func TestAtlasMigrateLintRenameAddSideE2E(t *testing.T) {
 // Dropping the profile gate on the rename's add side leaves every other test in
 // the repository green, so without this row the split is unpinned.
 func TestNativeMigrationsLintRenameHasNoAddSideE2E(t *testing.T) {
-	dbURL := requirePostgresE2EDatabaseURL(t)
+	dbURL := dbtarget.URL(t, dbtarget.PostgreSQL)
 
 	c := qt.New(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)

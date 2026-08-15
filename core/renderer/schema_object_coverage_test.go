@@ -43,10 +43,9 @@ func enumSchema(enumName string) *goschema.Database {
 // substituted out, which is stronger than asserting a fixed string: it cannot
 // pass by both sides being equally wrong in some new way.
 func TestRender_EnumIdentityIsTheDeclarationNotTheNamePrefix(t *testing.T) {
-	c := qt.New(t)
-
 	for _, dialect := range []string{"mysql", "mariadb", "sqlite", "sqlserver"} {
-		c.Run(dialect, func(c *qt.C) {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
 			plain, err := renderer.GetOrderedCreateStatements(enumSchema("status_kind"), dialect)
 			c.Assert(err, qt.IsNil)
 			prefixed, err := renderer.GetOrderedCreateStatements(enumSchema("enum_status"), dialect)
@@ -63,8 +62,6 @@ func TestRender_EnumIdentityIsTheDeclarationNotTheNamePrefix(t *testing.T) {
 // dialect that models enums as standalone types: it was already correct on the
 // CREATE path under both spellings and must stay so.
 func TestRender_PostgreSQLEmitsTheEnumTypeUnderEitherName(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name string
 		want string
@@ -74,7 +71,8 @@ func TestRender_PostgreSQLEmitsTheEnumTypeUnderEitherName(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			statements, err := renderer.GetOrderedCreateStatements(enumSchema(test.name), platform.Postgres)
 
 			c.Assert(err, qt.IsNil)
@@ -104,10 +102,9 @@ func matviewSchema() *goschema.Database {
 // documented workflow, so the silent side was the one that had to move
 // (stokaro/ptah#931 item 3).
 func TestRender_MaterializedViewIsRefusedWhereApplyRefusesIt(t *testing.T) {
-	c := qt.New(t)
-
 	for _, dialect := range []string{"mysql", "mariadb", "sqlite", "sqlserver"} {
-		c.Run(dialect, func(c *qt.C) {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
 			statements, err := renderer.GetOrderedCreateStatements(matviewSchema(), dialect)
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
@@ -215,13 +212,13 @@ func TestRender_PostgreSQLExtensionDoesNotCreateSystemInstallationSchema(t *test
 }
 
 func TestRender_ExtensionInstallationSchemaSupportedTargets(t *testing.T) {
-	c := qt.New(t)
 	database := &goschema.Database{
 		Extensions: []goschema.Extension{{Name: "pgcrypto", Schema: "extensions"}},
 	}
 
 	for _, dialect := range []string{platform.Postgres, platform.YugabyteDB} {
-		c.Run(dialect, func(c *qt.C) {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
 			statements, err := renderer.GetOrderedCreateStatements(database, dialect)
 
 			c.Assert(err, qt.IsNil)
@@ -234,14 +231,14 @@ func TestRender_ExtensionInstallationSchemaSupportedTargets(t *testing.T) {
 }
 
 func TestRender_ExtensionInstallationSchemaUnsupportedTargetsFailBeforeSQL(t *testing.T) {
-	c := qt.New(t)
 	database := &goschema.Database{
 		Extensions: []goschema.Extension{{Name: "pgcrypto", Schema: "extensions"}},
 	}
 	node := &ast.ExtensionNode{Name: "pgcrypto", Schema: "extensions"}
 
 	for _, dialect := range []string{platform.CockroachDB, platform.Spanner} {
-		c.Run(dialect, func(c *qt.C) {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
 			statements, err := renderer.GetOrderedCreateStatements(database, dialect)
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
@@ -256,14 +253,14 @@ func TestRender_ExtensionInstallationSchemaUnsupportedTargetsFailBeforeSQL(t *te
 }
 
 func TestRender_WhitespaceOnlyExtensionInstallationSchemaUnsupportedTargetsFailBeforeSQL(t *testing.T) {
-	c := qt.New(t)
 	database := &goschema.Database{
 		Extensions: []goschema.Extension{{Name: "pgcrypto", Schema: " "}},
 	}
 	node := &ast.ExtensionNode{Name: "pgcrypto", Schema: " "}
 
 	for _, dialect := range []string{platform.CockroachDB, platform.Spanner} {
-		c.Run(dialect, func(c *qt.C) {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
 			statements, err := renderer.GetOrderedCreateStatements(database, dialect)
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
@@ -340,7 +337,8 @@ func TestRender_ClickHouseRendersViewsAndNamesUnsupportedObjects(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(rendered, qt.Contains, test.want)
 		})
 	}
@@ -395,15 +393,14 @@ var sequenceStart = int64(1000)
 // rendering a declared sequence for that dialect produces an actual
 // CREATE SEQUENCE statement.
 func TestRender_SequencesCapabilityAgreesWithTheGenerator(t *testing.T) {
-	c := qt.New(t)
-
 	dialects := []string{
 		platform.Postgres, platform.MySQL, platform.MariaDB, platform.ClickHouse,
 		platform.SQLite, platform.SQLServer, platform.CockroachDB, platform.YugabyteDB, platform.Spanner,
 	}
 
 	for _, dialect := range dialects {
-		c.Run(dialect, func(c *qt.C) {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
 			statements, err := renderer.GetOrderedCreateStatements(sequenceSchema(), dialect)
 			c.Assert(err, qt.IsNil)
 
@@ -434,10 +431,9 @@ func emitsExecutableCreateSequence(statements []string) bool {
 // TestRender_MariaDBReportsTheSequenceItCannotGenerate is the other half of item
 // 8: the flag being false must not mean the declared object vanishes.
 func TestRender_MariaDBReportsTheSequenceItCannotGenerate(t *testing.T) {
-	c := qt.New(t)
-
 	for _, dialect := range []string{platform.MySQL, platform.MariaDB} {
-		c.Run(dialect, func(c *qt.C) {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
 			statements, err := renderer.GetOrderedCreateStatements(sequenceSchema(), dialect)
 
 			c.Assert(err, qt.IsNil)

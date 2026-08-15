@@ -11,6 +11,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/internal/migratesum"
 	"go.5x5.cz/ptah/migration/migrator"
 )
@@ -20,7 +21,7 @@ import (
 // capability. Strict CE policy remains covered by its separate refusal suite.
 func TestCompatSchemaApplyCreatesExtensionInDeclaredSchemaPostgres(t *testing.T) {
 	c := qt.New(t)
-	dsn := livePostgresURLForRLSSpelling(t)
+	dsn := dbtarget.URL(t, dbtarget.PostgreSQL)
 	targetURL, devURL := createRLSSpellingDatabases(t, dsn)
 	path := filepath.Join(t.TempDir(), "schema.hcl")
 	c.Assert(os.WriteFile(path, []byte(`
@@ -45,7 +46,7 @@ extension "pgcrypto" {
 // fail before schema apply reports a synced state or emits SQL.
 func TestCompatSchemaApplyRefusesDeclaredSystemSchemaBeforePlanningPostgres(t *testing.T) {
 	c := qt.New(t)
-	dsn := livePostgresURLForRLSSpelling(t)
+	dsn := dbtarget.URL(t, dbtarget.PostgreSQL)
 	targetURL, devURL := createRLSSpellingDatabases(t, dsn)
 	path := filepath.Join(t.TempDir(), "schema.hcl")
 	c.Assert(os.WriteFile(path, []byte(`schema "pg_catalog" {}`), 0o600), qt.IsNil)
@@ -62,7 +63,7 @@ func TestCompatSchemaApplyRefusesDeclaredSystemSchemaBeforePlanningPostgres(t *t
 // without the pre-scope validation each case plans that table successfully.
 func TestCompatSchemaApplyScopeCannotHideDeclaredSystemSchemaPostgres(t *testing.T) {
 	c := qt.New(t)
-	dsn := livePostgresURLForRLSSpelling(t)
+	dsn := dbtarget.URL(t, dbtarget.PostgreSQL)
 	targetURL, devURL := createRLSSpellingDatabases(t, dsn)
 	path := filepath.Join(t.TempDir(), "schema.hcl")
 	c.Assert(os.WriteFile(path, []byte(`
@@ -85,7 +86,8 @@ table "users" {
 		{name: "exclude", args: []string{"--exclude", "pg_catalog"}},
 	}
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			out, err := runCompatSchemaApply(targetURL, devURL, path, test.args...)
 			c.Assert(err, qt.ErrorMatches,
 				`.*validate --to schema:.*declares server-owned PostgreSQL schema "pg_catalog".*`)
@@ -146,7 +148,7 @@ func TestCompatSchemaDiffRefusesDeclaredSystemSchemaBeforePlanningPostgres(t *te
 // closed before SQL: catalog objects cannot round-trip through migration IR.
 func TestCompatSchemaDiffRefusesUnsafeIntrospectedSystemSchemasPostgres(t *testing.T) {
 	c := qt.New(t)
-	dbURL := livePostgresURLForScope(t)
+	dbURL := dbtarget.URL(t, dbtarget.PostgreSQL)
 	targetURL := createDisposableDatabase(c, dbURL, "ptah_system_diff_"+uniqueScopeSuffix())
 
 	for _, schema := range []string{"pg_catalog", "information_schema"} {
@@ -174,7 +176,7 @@ func TestCompatSchemaDiffRefusesUnsafeIntrospectedSystemSchemasPostgres(t *testi
 // invalid CREATE SCHEMA must still fail during replay.
 func TestCompatSchemaDiffMigrationReplayRefusesAuthoredSystemSchemaPostgres(t *testing.T) {
 	c := qt.New(t)
-	dbURL := livePostgresURLForScope(t)
+	dbURL := dbtarget.URL(t, dbtarget.PostgreSQL)
 	suffix := uniqueScopeSuffix()
 	currentURL := createDisposableDatabase(c, dbURL, "ptah_system_replay_current_"+suffix)
 	devURL := createDisposableDatabase(c, dbURL, "ptah_system_replay_dev_"+suffix)

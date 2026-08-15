@@ -84,32 +84,33 @@ func TestScopeResourcesKeepsWriterOnlyKindsSelectable(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			got, err := atlasfilter.ScopeResources(resources, test.scope)
 
-			qt.Assert(t, err, qt.IsNil)
-			qt.Assert(t, got, qt.DeepEquals, test.want)
+			c.Assert(err, qt.IsNil)
+			c.Assert(got, qt.DeepEquals, test.want)
 		})
 	}
 }
 
 func TestDatabaseIncludeValidationDoesNotClaimWriterOnlyKinds(t *testing.T) {
+	c := qt.New(t)
 	err := atlasfilter.ValidateIncludeSelectors([]string{"refresh_users[type=procedure]"})
 
-	qt.Assert(t, err, qt.ErrorMatches,
+	c.Assert(err, qt.ErrorMatches,
 		`unsupported Atlas include resource type "procedure" in selector "refresh_users\[type=procedure\]"`)
 }
 
 func TestValidateResourceIncludeSelectorsAcceptsWriterOnlyKinds(t *testing.T) {
-	qt.Assert(t,
-		atlasfilter.ValidateResourceIncludeSelectors([]string{
-			"refresh_users[type=procedure]",
-			"archive_users[type=foreign_table]",
-			"*[type=default_privilege]",
-		}),
+	c := qt.New(t)
+	c.Assert(atlasfilter.ValidateResourceIncludeSelectors([]string{
+		"refresh_users[type=procedure]",
+		"archive_users[type=foreign_table]",
+		"*[type=default_privilege]",
+	}),
 		qt.IsNil,
 	)
-	qt.Assert(t,
-		atlasfilter.ValidateResourceIncludeSelectors([]string{"users[type=widget]"}),
+	c.Assert(atlasfilter.ValidateResourceIncludeSelectors([]string{"users[type=widget]"}),
 		qt.ErrorMatches,
 		`unsupported Atlas include resource type "widget" in selector "users\[type=widget\]"`,
 	)

@@ -45,7 +45,6 @@ func TestAtlasMigrateLintDirCaptureError_RootedPathUsesObservedSpelling(t *testi
 }
 
 func TestAtlasMigrateLintDirCaptureError_PreservesNonmatchingErrors(t *testing.T) {
-	c := qt.New(t)
 	missingOpen := &os.PathError{Op: "openat", Path: "missing", Err: syscall.ENOENT}
 
 	tests := []struct {
@@ -101,7 +100,8 @@ func TestAtlasMigrateLintDirCaptureError_PreservesNonmatchingErrors(t *testing.T
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			got := atlasMigrateLintDirCaptureError("missing", "", test.err)
 
 			c.Assert(got.Error(), qt.Equals, "atlas migrate lint --dir: "+test.err.Error())
@@ -112,8 +112,6 @@ func TestAtlasMigrateLintDirCaptureError_PreservesNonmatchingErrors(t *testing.T
 }
 
 func TestAtlasMigrateLintPathErrorMatches_SymmetricRootedPaths(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name        string
 		path        string
@@ -152,7 +150,8 @@ func TestAtlasMigrateLintPathErrorMatches_SymmetricRootedPaths(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(
 				atlasMigrateLintPathErrorMatches(test.path, test.allowedRoot, test.errorPath),
 				qt.Equals,

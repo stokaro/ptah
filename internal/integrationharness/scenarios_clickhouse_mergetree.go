@@ -4,12 +4,12 @@ import (
 	"context"
 	"fmt"
 	"io/fs"
-	"os"
 	"strings"
 
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/dbtarget"
 )
 
 // testClickHouseMergeTreeEngine is the ClickHouse-only counterpart to the
@@ -32,7 +32,15 @@ func testClickHouseMergeTreeEngine(ctx context.Context, conn *dbschema.DatabaseC
 			return nil
 		})
 	}
-	if os.Getenv("CLICKHOUSE_URL") == "" {
+	// dbtarget.Lookup rather than a direct read: the variable naming a live
+	// ClickHouse is declared once, in internal/dbtarget, and a value carrying
+	// another engine's scheme is an error here rather than a silent skip that
+	// would report ClickHouse coverage nobody configured.
+	address, err := dbtarget.Lookup(dbtarget.ClickHouse)
+	if err != nil {
+		return err
+	}
+	if address == "" {
 		return recorder.RecordStep("Skip No CLICKHOUSE_URL", "CLICKHOUSE_URL not set; ClickHouse integration is opt-in", func() error {
 			return nil
 		})

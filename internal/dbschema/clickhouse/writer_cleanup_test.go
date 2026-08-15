@@ -276,11 +276,11 @@ func TestWriterDropDatabaseRealm_MissingGlobalVisibilityFailsBeforeCatalogRead(
 }
 
 func TestWriterDropDatabaseRealm_UnsupportedDatabaseEngineFailsBeforeMutation(t *testing.T) {
-	c := qt.New(t)
 	engines := []string{"DataLakeCatalog", "Replicated", "Shared"}
 
 	for _, engine := range engines {
-		c.Run(engine, func(c *qt.C) {
+		t.Run(engine, func(t *testing.T) {
+			c := qt.New(t)
 			database := "analytics"
 			privilegesQuery := databaseRealmPrivilegesQuery(database)
 			queries := []sqlMockQuery{
@@ -313,7 +313,6 @@ func TestWriterDropDatabaseRealm_UnsupportedDatabaseEngineFailsBeforeMutation(t 
 }
 
 func TestWriterDropDatabaseRealm_ExternalDependencyFailsBeforeMutation(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name       string
 		objectName string
@@ -337,7 +336,8 @@ func TestWriterDropDatabaseRealm_ExternalDependencyFailsBeforeMutation(t *testin
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			database := "analytics"
 			privilegesQuery := databaseRealmPrivilegesQuery(database)
 			externalArgs := []driver.NamedValue{
@@ -372,7 +372,6 @@ func TestWriterDropDatabaseRealm_ExternalDependencyFailsBeforeMutation(t *testin
 }
 
 func TestWriterDropDatabaseRealm_ProtectedDatabasesFailWithoutIO(t *testing.T) {
-	c := qt.New(t)
 	databases := []string{
 		"INFORMATION_SCHEMA",
 		"_temporary_and_external_tables",
@@ -381,7 +380,8 @@ func TestWriterDropDatabaseRealm_ProtectedDatabasesFailWithoutIO(t *testing.T) {
 	}
 
 	for _, database := range databases {
-		c.Run(database, func(c *qt.C) {
+		t.Run(database, func(t *testing.T) {
+			c := qt.New(t)
 			db := openClickHouseSQLMock(t, c, nil, nil)
 			writer := clickhouse.NewClickHouseWriter(db.SQL, database)
 

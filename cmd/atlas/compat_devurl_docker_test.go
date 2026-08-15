@@ -326,7 +326,8 @@ func TestCompatDockerDevURL_CoversEveryVerbRegisteringTheFlag(t *testing.T) {
 	accounted = slices.Compact(accounted)
 
 	for _, verb := range registered {
-		c.Run(verb, func(c *qt.C) {
+		t.Run(verb, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(accounted, qt.Contains, verb,
 				qt.Commentf("%q registers --dev-url but no row pins how it answers a"+
 					" docker:// value and it is not named as unwired", verb))
@@ -334,7 +335,8 @@ func TestCompatDockerDevURL_CoversEveryVerbRegisteringTheFlag(t *testing.T) {
 	}
 
 	for _, verb := range accounted {
-		c.Run("still registered: "+verb, func(c *qt.C) {
+		t.Run("still registered: "+verb, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(registered, qt.Contains, verb,
 				qt.Commentf("%q is accounted for but no longer registers --dev-url", verb))
 		})
