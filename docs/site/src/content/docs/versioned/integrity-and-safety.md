@@ -616,6 +616,10 @@ migrations/0000000003_drop_users.up.sql:1 [error] DS101: DROP TABLE permanently 
 
 A clean run prints `No lint findings.` and exits `0`.
 
+Every rule identifier, with its one-line meaning, the dialects it applies to,
+the surface that reports it, and whether the name is Atlas's or Ptah's, is
+enumerated in [Lint rules](../../reference/lint-rules/).
+
 ### Which direction each rule reads
 
 Most rules describe a forward schema change, so they read the `.up.sql` half

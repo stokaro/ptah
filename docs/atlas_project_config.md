@@ -291,7 +291,9 @@ The supported mappings are `destructive` to the `DS` family, `data_depend` to
 the `DD` family, `incompatible` to the `BC` family, `concurrent_index` to
 `PG101` and `PG103`, `nestedtx` to `TX201`, and `condrop` to the `CD` family
 plus `DS105`. Atlas `check` blocks are rejected for now because Atlas check IDs
-and Ptah rule IDs are not a stable one-to-one namespace.
+and Ptah rule IDs are not a stable one-to-one namespace; which identifier means
+what in each namespace is enumerated in
+[Lint rules](./site/src/content/docs/reference/lint-rules.md).
 
 `condrop` is a separate analyzer from `destructive` and from `data_depend`, not
 an alias for either. On the community binary, a migration dropping a foreign key

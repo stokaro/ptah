@@ -45,6 +45,9 @@ jobs:
           scripts/check-compose-image-pins.sh
           scripts/check-compose-image-pins-selftest.sh
 
+      - name: Check documented lint rules
+        run: scripts/check-lint-rules.sh
+
       - name: Check public Go API ledger
         run: scripts/check-public-api.sh
 

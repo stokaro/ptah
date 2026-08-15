@@ -155,8 +155,8 @@ sections carry the detail.
 | [Pre-approved declarative plans](#pre-approved-declarative-plans) | Same engine as `schema apply` | `schema plan` aborts |
 
 This is a workflow-parity record, not a claim of full Atlas Pro compatibility.
-For the code-by-code audit of the analyzer checks Atlas marks as Pro, see
-[Comparison: Atlas Pro analyzer coverage](../comparison/#atlas-pro-analyzer-coverage).
+For the code-by-code status of the analyzer checks Atlas marks as Pro, see
+[Lint rules](../../reference/lint-rules/).
 The `atlas migrate ls`, `migrate show`, `schema stats`, and
 `schema validate` verbs are absent from the pinned Atlas CE v1.3.0 binary and
 are triaged in the comparison gap register rather than measured here.
