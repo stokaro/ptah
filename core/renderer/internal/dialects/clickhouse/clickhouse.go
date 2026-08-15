@@ -1055,9 +1055,9 @@ const materializedViewEngineClause = "ENGINE = MergeTree ORDER BY tuple()"
 // report byte-identical as_select in system.tables, so nothing Ptah reads back
 // could tell them apart or diff them.
 //
-// RefreshStrategy is not read here, exactly as the PostgreSQL renderer does not
-// read it in its own create arm; it describes a REFRESH that ClickHouse has no
-// statement for, and VisitRefreshMaterializedView says so.
+// The public renderer validates RefreshStrategy before this dialect visitor is
+// called. Only the manual strategy reaches this method; it asks Ptah to emit no
+// separate refresh operation and does not alter the CREATE statement.
 func (r *Renderer) VisitCreateMaterializedView(node *ast.CreateMaterializedViewNode) error {
 	if !r.capabilities().Has(capability.MaterializedViews) {
 		r.notSupported("CREATE MATERIALIZED VIEW", node.Name)

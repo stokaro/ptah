@@ -7,6 +7,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
 	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
@@ -548,7 +549,7 @@ func TestPlanner_GenerateMigrationAST_DuplicateTriggerNamesUseDistinctFunctions(
 	c.Assert(sql, qt.Contains, "CREATE TRIGGER set_updated_at BEFORE UPDATE ON posts FOR EACH ROW EXECUTE FUNCTION ptah_trigger_posts_set_updated_at();")
 }
 
-func TestPlanner_GenerateMigrationAST_MaterializedViewRefreshStrategyDoesNotAutoRefresh(t *testing.T) {
+func TestPlanner_GenerateMigrationAST_MaterializedViewRefreshStrategyFailsBeforeSQL(t *testing.T) {
 	c := qt.New(t)
 	planner := postgres.New()
 
@@ -566,10 +567,9 @@ func TestPlanner_GenerateMigrationAST_MaterializedViewRefreshStrategyDoesNotAuto
 	nodes, err := planner.GenerateMigrationASTChecked(diff, generated)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
-	c.Assert(err, qt.IsNil)
-	sql = legacyRenderedSQL(sql)
-	c.Assert(sql, qt.Contains, "CREATE MATERIALIZED VIEW user_stats AS")
-	c.Assert(sql, qt.Not(qt.Contains), "REFRESH MATERIALIZED VIEW CONCURRENTLY")
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(err, qt.ErrorMatches, `postgres cannot represent materialized view "user_stats" refresh strategy "concurrently"; only "manual" is currently supported`)
+	c.Assert(sql, qt.Equals, "")
 }
 
 func TestPlanner_GenerateMigrationAST_OrdersFunctionsByDependencies(t *testing.T) {

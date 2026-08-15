@@ -164,14 +164,6 @@ func TestMaterializedViewDDL_HappyPath(t *testing.T) {
 				"ENGINE = MergeTree ORDER BY tuple() AS\n" + viewBody + "\n;\n",
 		},
 		{
-			name: "create ignores the refresh strategy the target has no statement for",
-			node: ast.NewCreateMaterializedView("analytics.user_counts").
-				SetBody(viewBody).
-				SetRefreshStrategy("concurrently"),
-			want: "CREATE MATERIALIZED VIEW `analytics`.`user_counts` " +
-				"ENGINE = MergeTree ORDER BY tuple() AS\n" + viewBody + "\n;\n",
-		},
-		{
 			name: "drop uses the DROP VIEW spelling",
 			node: ast.NewDropMaterializedView("analytics.user_counts"),
 			want: "DROP VIEW `analytics`.`user_counts`;\n",

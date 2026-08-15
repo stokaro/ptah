@@ -895,7 +895,7 @@ type MaterializedView struct {
 	StructName      string // Name of the Go struct this materialized view is associated with
 	Name            string // Materialized view name
 	Body            string // SELECT query used as the materialized view body
-	RefreshStrategy string // manual, concurrently, or future scheduled variants
+	RefreshStrategy string // Ptah refresh workflow; manual emits no separate refresh operation
 	Comment         string // Optional comment for documentation
 }
 
