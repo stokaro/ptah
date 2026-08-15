@@ -14,24 +14,26 @@ import (
 
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/renderer"
+
+	"go.5x5.cz/ptah/internal/dbtarget"
 )
 
 // skipIfNoPostgreSQLRenderer skips only when POSTGRES_TEST_DSN is absent; a bad configured DSN fails.
 func skipIfNoPostgreSQLRenderer(t *testing.T) string {
 	t.Helper()
-	return requireReachableTestDSN(t, "POSTGRES_TEST_DSN", "pgx", "PostgreSQL")
+	return requireReachableEngine(t, dbtarget.PostgreSQL, "pgx", "PostgreSQL")
 }
 
 // skipIfNoMySQLRenderer skips only when MYSQL_TEST_DSN is absent; a bad configured DSN fails.
 func skipIfNoMySQLRenderer(t *testing.T) string {
 	t.Helper()
-	return requireReachableTestDSN(t, "MYSQL_TEST_DSN", "mysql", "MySQL")
+	return requireReachableEngine(t, dbtarget.MySQL, "mysql", "MySQL")
 }
 
 // skipIfNoMariaDBRenderer skips only when MARIADB_TEST_DSN is absent; a bad configured DSN fails.
 func skipIfNoMariaDBRenderer(t *testing.T) string {
 	t.Helper()
-	return requireReachableTestDSN(t, "MARIADB_TEST_DSN", "mysql", "MariaDB")
+	return requireReachableEngine(t, dbtarget.MariaDB, "mysql", "MariaDB")
 }
 
 func TestPostgreSQLRenderer_Integration(t *testing.T) {

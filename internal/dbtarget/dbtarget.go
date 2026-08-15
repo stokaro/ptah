@@ -64,21 +64,31 @@ var sources = map[Engine]source{
 		synonyms:  []string{"POSTGRES_URL", "POSTGRES_TEST_URL", "TEST_DATABASE_URL"},
 		scheme:    []string{"postgres", "postgresql"},
 	},
+	// The MySQL family declares its schemes because the two engines speak one
+	// wire protocol: a MariaDB address left in a MySQL variable connects, and
+	// the run reports MySQL coverage it never had. MariaDB also accepts the
+	// mysql spelling, which is how its address is routinely written and which
+	// says nothing false -- only the reverse direction is a lie about which
+	// engine was covered.
 	MySQL: {
 		canonical: "MYSQL_TEST_URL",
 		synonyms:  []string{"MYSQL_URL", "MYSQL_TEST_DSN"},
+		scheme:    []string{"mysql"},
 	},
 	MySQLAdmin: {
 		canonical: "MYSQL_ADMIN_TEST_URL",
 		synonyms:  []string{"MYSQL_ADMIN_TEST_DSN"},
+		scheme:    []string{"mysql"},
 	},
 	MariaDB: {
 		canonical: "MARIADB_TEST_URL",
 		synonyms:  []string{"MARIADB_URL", "MARIADB_TEST_DSN"},
+		scheme:    []string{"mariadb", "mysql"},
 	},
 	MariaDBAdmin: {
 		canonical: "MARIADB_ADMIN_TEST_URL",
 		synonyms:  []string{"MARIADB_ADMIN_TEST_DSN"},
+		scheme:    []string{"mariadb", "mysql"},
 	},
 	ClickHouse: {
 		canonical: "CLICKHOUSE_URL",
@@ -86,6 +96,7 @@ var sources = map[Engine]source{
 	},
 	SQLServer: {
 		canonical: "PTAH_SQLSERVER_TEST_URL",
+		synonyms:  []string{"SQLSERVER_TEST_DSN"},
 		scheme:    []string{"sqlserver"},
 	},
 	CockroachDB: {
@@ -149,9 +160,23 @@ func Lookup(engine Engine) (string, error) {
 		if err := checkScheme(src, name, value); err != nil {
 			return "", err
 		}
-		return value, nil
+		return withScheme(src, value), nil
 	}
 	return "", nil
+}
+
+// withScheme adds the engine's own scheme to an address that carries none.
+//
+// A synonym spelled _DSN holds the driver form, and this function's callers
+// hand what they get to dbschema.ConnectToDatabase, which refuses a schemeless
+// address. Returning the raw value made a supported legacy spelling fail the
+// run instead of connecting. The first declared scheme is the engine's own;
+// the rest are spellings it also answers to.
+func withScheme(src source, value string) string {
+	if len(src.scheme) == 0 || strings.Contains(value, "://") {
+		return value
+	}
+	return src.scheme[0] + "://" + value
 }
 
 // checkScheme refuses an address whose scheme is not one the engine speaks.
@@ -247,7 +272,56 @@ func LookupDriverDSN(engine Engine) (string, error) {
 	if err != nil || address == "" {
 		return "", err
 	}
+	if mysqlFamily(engine) {
+		return mysqlNetworkDSN(address), nil
+	}
 	return stripScheme(address), nil
+}
+
+// mysqlFamily reports whether an engine is served by go-sql-driver/mysql,
+// which is the one driver here that wants a network form rather than a host.
+func mysqlFamily(engine Engine) bool {
+	switch engine {
+	case MySQL, MySQLAdmin, MariaDB, MariaDBAdmin:
+		return true
+	}
+	return false
+}
+
+// mysqlNetworkDSN renders a MySQL-family address in the form
+// go-sql-driver/mysql parses: user:pass@tcp(host:port)/db.
+//
+// Removing the scheme is not enough. A conventional mysql://root:pass@host/db
+// becomes root:pass@host/db, which that driver does not accept, so an address
+// Ptah itself resolves failed to open unless the operator happened to have
+// written the driver's own network form already. An address that carries one
+// is returned as it stands, because it is already what the driver wants and
+// re-rendering it would only be a chance to lose a parameter.
+func mysqlNetworkDSN(address string) string {
+	_, rest, found := strings.Cut(address, "://")
+	if !found {
+		rest = address
+	}
+	if strings.Contains(rest, "@tcp(") || strings.Contains(rest, "@unix(") {
+		return rest
+	}
+	credentials, remainder, found := strings.Cut(rest, "@")
+	if !found {
+		return rest
+	}
+	host, path, hasPath := strings.Cut(remainder, "/")
+	if host == "" {
+		return rest
+	}
+	if !strings.Contains(host, ":") {
+		// The driver's own default, which a URL omitting the port means.
+		host += ":3306"
+	}
+	rendered := credentials + "@tcp(" + host + ")"
+	if hasPath {
+		rendered += "/" + path
+	}
+	return rendered
 }
 
 // stripScheme removes a URL scheme, leaving what a raw driver parses.

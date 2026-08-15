@@ -12,12 +12,14 @@ import (
 	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/dbschema/postgres"
 	"go.5x5.cz/ptah/internal/testutils"
+
+	"go.5x5.cz/ptah/internal/dbtarget"
 )
 
 // skipIfNoPostgreSQL skips only when POSTGRES_TEST_DSN is absent; a bad configured DSN fails.
 func skipIfNoPostgreSQL(t *testing.T) string {
 	t.Helper()
-	return requireReachableTestDSN(t, "POSTGRES_TEST_DSN", "pgx", "PostgreSQL")
+	return requireReachableEngine(t, dbtarget.PostgreSQL, "pgx", "PostgreSQL")
 }
 
 func TestPostgreSQLReader_ReadSchema_Integration(t *testing.T) {

@@ -25,6 +25,8 @@ import (
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
+
+	"go.5x5.cz/ptah/internal/dbtarget"
 )
 
 func TestPostgreSQLSchemaRenderCircularForeignKeysApplyIntegration(t *testing.T) {
@@ -172,7 +174,7 @@ func TestCockroachDBMutualForeignKeysApplyIntegration(t *testing.T) {
 }
 
 func TestYugabyteDBMutualForeignKeysApplyIntegration(t *testing.T) {
-	dsn := requireReachableTestDSN(t, "YUGABYTEDB_TEST_DSN", "pgx", "YugabyteDB")
+	dsn := requireReachableEngine(t, dbtarget.YugabyteDB, "pgx", "YugabyteDB")
 	testPostgreSQLFamilyMutualForeignKeys(t, "YugabyteDB", "yugabytedb", dsn)
 }
 
@@ -321,7 +323,7 @@ func TestMariaDBAllowsNonuniqueReferencedKeyIntegration(t *testing.T) {
 
 func TestSQLServerMutualForeignKeysApplyIntegration(t *testing.T) {
 	c := qt.New(t)
-	dsn := requireReachableTestDSN(t, "SQLSERVER_TEST_DSN", "sqlserver", "SQL Server")
+	dsn := requireReachableEngine(t, dbtarget.SQLServer, "sqlserver", "SQL Server")
 	db, err := sql.Open("sqlserver", dsn)
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { c.Check(db.Close(), qt.IsNil) })

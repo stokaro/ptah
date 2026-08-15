@@ -34,10 +34,13 @@ func TestLookup_HappyPath(t *testing.T) {
 			want:   "clickhouse://localhost/c",
 		},
 		{
-			name:   "a driver DSN carrying no scheme is accepted",
+			// Accepted, and given the engine's scheme on the way out: this
+			// accessor's consumers connect through dbschema.ConnectToDatabase,
+			// which refuses an address that carries none.
+			name:   "a driver DSN carrying no scheme gains one",
 			engine: dbtarget.MySQL,
 			set:    func(t *testing.T) { t.Setenv("MYSQL_TEST_URL", "user:pass@tcp(127.0.0.1:3306)/db") },
-			want:   "user:pass@tcp(127.0.0.1:3306)/db",
+			want:   "mysql://user:pass@tcp(127.0.0.1:3306)/db",
 		},
 	}
 
@@ -213,4 +216,137 @@ func clearAll(t *testing.T) {
 			t.Setenv(name, "")
 		}
 	}
+}
+
+// TestURL_AlwaysCarriesAScheme pins the half of the contract the name states.
+//
+// A legacy synonym spelled _DSN holds a driver-form value with no scheme, and
+// URL forwards what it finds. Its consumers hand the result to
+// dbschema.ConnectToDatabase, which refuses a schemeless address, so a
+// supported spelling made the run fail instead of connecting.
+func TestURL_AlwaysCarriesAScheme(t *testing.T) {
+	tests := []struct {
+		name   string
+		engine dbtarget.Engine
+		set    func(t *testing.T)
+		want   string
+	}{
+		{
+			name:   "a driver DSN in a synonym gains the engine's scheme",
+			engine: dbtarget.MySQL,
+			set:    func(t *testing.T) { t.Setenv("MYSQL_TEST_DSN", "user:pass@tcp(127.0.0.1:3306)/db") },
+			want:   "mysql://user:pass@tcp(127.0.0.1:3306)/db",
+		},
+		{
+			name:   "a value that already carries one is unchanged",
+			engine: dbtarget.MySQL,
+			set:    func(t *testing.T) { t.Setenv("MYSQL_TEST_URL", "mysql://user:pass@tcp(127.0.0.1:3306)/db") },
+			want:   "mysql://user:pass@tcp(127.0.0.1:3306)/db",
+		},
+		{
+			name:   "the admin engine names its own scheme",
+			engine: dbtarget.MariaDBAdmin,
+			set:    func(t *testing.T) { t.Setenv("MARIADB_ADMIN_TEST_DSN", "root:pass@tcp(127.0.0.1:3307)/mysql") },
+			want:   "mariadb://root:pass@tcp(127.0.0.1:3307)/mysql",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			clearAll(t)
+			test.set(t)
+
+			got, err := dbtarget.Lookup(test.engine)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(got, qt.Equals, test.want)
+		})
+	}
+}
+
+// TestLookupDriverDSN_RendersTheNetworkFormTheDriverParses pins the other half.
+//
+// go-sql-driver/mysql wants user:pass@tcp(host:port)/db. Removing the scheme
+// from a conventional mysql://user:pass@host:port/db leaves
+// user:pass@host:port/db, which that driver does not accept, so a URL Ptah
+// itself accepts failed to open unless the operator happened to spell the
+// address in the driver's own network form already.
+func TestLookupDriverDSN_RendersTheNetworkFormTheDriverParses(t *testing.T) {
+	tests := []struct {
+		name   string
+		engine dbtarget.Engine
+		set    func(t *testing.T)
+		want   string
+	}{
+		{
+			name:   "a conventional URL becomes a network DSN",
+			engine: dbtarget.MySQLAdmin,
+			set:    func(t *testing.T) { t.Setenv("MYSQL_ADMIN_TEST_URL", "mysql://root:pass@localhost:3306/mysql") },
+			want:   "root:pass@tcp(localhost:3306)/mysql",
+		},
+		{
+			name:   "a URL already in network form is left alone",
+			engine: dbtarget.MySQL,
+			set:    func(t *testing.T) { t.Setenv("MYSQL_TEST_URL", "mysql://user:pass@tcp(127.0.0.1:3306)/db") },
+			want:   "user:pass@tcp(127.0.0.1:3306)/db",
+		},
+		{
+			name:   "a MariaDB URL renders the same way",
+			engine: dbtarget.MariaDB,
+			set:    func(t *testing.T) { t.Setenv("MARIADB_TEST_URL", "mariadb://root:pass@localhost:3307/db") },
+			want:   "root:pass@tcp(localhost:3307)/db",
+		},
+		{
+			name:   "a host with no port keeps the driver's default",
+			engine: dbtarget.MySQL,
+			set:    func(t *testing.T) { t.Setenv("MYSQL_TEST_URL", "mysql://root@localhost/db") },
+			want:   "root@tcp(localhost:3306)/db",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			clearAll(t)
+			test.set(t)
+
+			got, err := dbtarget.LookupDriverDSN(test.engine)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(got, qt.Equals, test.want)
+		})
+	}
+}
+
+// TestLookup_RefusesASiblingEngineURL keeps a MySQL-family variable from
+// answering for its sibling.
+//
+// The two speak one wire protocol, so a MariaDB address in MYSQL_TEST_URL
+// connects and the suite reports MySQL coverage it never had. The scheme is the
+// only thing that distinguishes them, and these entries declared none.
+func TestLookup_RefusesASiblingEngineURL(t *testing.T) {
+	c := qt.New(t)
+	clearAll(t)
+	t.Setenv("MYSQL_TEST_URL", "mariadb://root@localhost:3307/db")
+
+	got, err := dbtarget.Lookup(dbtarget.MySQL)
+
+	c.Assert(err, qt.ErrorMatches, `MYSQL_TEST_URL carries scheme "mariadb".*`)
+	c.Assert(got, qt.Equals, "")
+}
+
+// TestLookup_AcceptsTheMySQLSpellingOfAMariaDBAddress is the control the rule
+// above needs. MariaDB speaks the MySQL protocol and its address is routinely
+// written mysql://, so refusing that spelling would break working setups; only
+// the reverse direction is a lie about which engine was covered.
+func TestLookup_AcceptsTheMySQLSpellingOfAMariaDBAddress(t *testing.T) {
+	c := qt.New(t)
+	clearAll(t)
+	t.Setenv("MARIADB_TEST_URL", "mysql://root@localhost:3307/db")
+
+	got, err := dbtarget.Lookup(dbtarget.MariaDB)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(got, qt.Equals, "mysql://root@localhost:3307/db")
 }

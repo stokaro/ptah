@@ -15,6 +15,8 @@ import (
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
 	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
+
+	"go.5x5.cz/ptah/internal/dbtarget"
 )
 
 const (
@@ -25,7 +27,7 @@ const (
 )
 
 func TestSQLServerTableQualifiedIndexIdentity_RoundTrip(t *testing.T) {
-	dsn := requireReachableTestDSN(t, "SQLSERVER_TEST_DSN", "sqlserver", "SQL Server")
+	dsn := requireReachableEngine(t, dbtarget.SQLServer, "sqlserver", "SQL Server")
 	c := qt.New(t)
 	db, err := sql.Open("sqlserver", dsn)
 	c.Assert(err, qt.IsNil)

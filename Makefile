@@ -183,7 +183,7 @@ lint: lint-qtlint
 #
 # -require-testing-run is not in this set yet. 70 sites across 49 files still
 # hold a table row whose function field is typed func(c *qt.C, ...), where the
-# type is written somewhere neither the rule nor -require-testing-handle
+# type is written somewhere the rule does not reach
 # reaches. A gate carrying known violations is either red or lying, so the rule
 # joins this list when those are converted rather than before.
 QTLINT_RULES := -require-qt-c-receiver

@@ -19,7 +19,7 @@ import (
 
 func TestPostgresFamilyReader_CockroachDBCatalogObjects(t *testing.T) {
 	c := qt.New(t)
-	dsn := requireReachableTestDSN(t, "COCKROACHDB_TEST_DSN", "pgx", "CockroachDB")
+	dsn := requireReachableEngine(t, dbtarget.CockroachDB, "pgx", "CockroachDB")
 	sourceURL := dbtarget.URL(t, dbtarget.CockroachDB)
 	fixture := cockroachReaderFixture()
 
@@ -31,7 +31,7 @@ func TestPostgresFamilyReader_CockroachDBCatalogObjects(t *testing.T) {
 
 func TestPostgresFamilyReader_YugabyteDBCatalogObjects(t *testing.T) {
 	c := qt.New(t)
-	dsn := requireReachableTestDSN(t, "YUGABYTEDB_TEST_DSN", "pgx", "YugabyteDB")
+	dsn := requireReachableEngine(t, dbtarget.YugabyteDB, "pgx", "YugabyteDB")
 	sourceURL := dbtarget.URL(t, dbtarget.YugabyteDB)
 	fixture := yugabyteReaderFixture()
 
