@@ -14,7 +14,7 @@ import (
 // a boolean instead, so a regression reports "value is not false" rather than
 // printing the password into CI logs.
 //
-//nolint:gosec // G101: fixture password, deliberately fake.
+// #nosec G101 -- fixture password, deliberately fake.
 const secretValue = `p@ss w"rd\ń`
 
 // leaks reports whether text still contains the credential. It exists so the
@@ -62,7 +62,7 @@ func planRoleModel(c *qt.C, password string) string {
 }
 
 func TestCleanupDiffRedactsRolePassword(t *testing.T) {
-	//nolint:gosec // G101: fixture passwords, deliberately fake, never real credentials.
+	// #nosec G101 -- fixture passwords, deliberately fake, never real credentials.
 	tests := []struct {
 		name     string
 		password string

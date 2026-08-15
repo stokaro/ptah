@@ -282,7 +282,7 @@ func addRange(res *reservations, start, end int64) error {
 	if start < 0 || end > maxFieldNumber {
 		return fmt.Errorf("reserved range %d to %d is outside Ptah's supported numbering space", start, end)
 	}
-	//nolint:gosec // Both conversions are guarded by the supported-numbering-space check.
+	// #nosec G115 -- Both conversions are guarded by the supported-numbering-space check.
 	res.addRange(int32(start), int32(end))
 	return nil
 }

@@ -477,7 +477,7 @@ type Product struct {
 	// Write to temporary file
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "product.go")
-	err := os.WriteFile(testFile, []byte(content), 0644) //nolint:gosec // 0644 is fine
+	err := os.WriteFile(testFile, []byte(content), 0644) // #nosec G306 -- 0644 is fine
 	c.Assert(err, qt.IsNil)
 
 	// Parse the file
@@ -826,7 +826,7 @@ func TestParseFunctionComment(t *testing.T) {
 			// take and is what TestParseRLSPolicyComment also does.
 			src := "package p\n" + tt.comment + "\ntype TestStruct struct {}\n"
 			tmp := t.TempDir() + "/fn.go"
-			c.Assert(os.WriteFile(tmp, []byte(src), 0o644), qt.IsNil) //nolint:gosec // 0644 is fine for a test fixture
+			c.Assert(os.WriteFile(tmp, []byte(src), 0o644), qt.IsNil) // #nosec G306 -- 0644 is fine for a test fixture
 
 			db := mustParseFile(c, tmp)
 			c.Assert(db.Functions, qt.HasLen, 1)
@@ -1113,7 +1113,7 @@ type Widget struct {
 `
 			tmpDir := t.TempDir()
 			testFile := filepath.Join(tmpDir, "widget.go")
-			err := os.WriteFile(testFile, []byte(content), 0644) //nolint:gosec // 0644 is fine for tests
+			err := os.WriteFile(testFile, []byte(content), 0644) // #nosec G306 -- 0644 is fine for tests
 			c.Assert(err, qt.IsNil)
 
 			_, err = goschema.ParseFile(testFile)
@@ -1145,7 +1145,7 @@ type Widget struct {
 `
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "widget.go")
-	err := os.WriteFile(testFile, []byte(content), 0644) //nolint:gosec // 0644 is fine for tests
+	err := os.WriteFile(testFile, []byte(content), 0644) // #nosec G306 -- 0644 is fine for tests
 	c.Assert(err, qt.IsNil)
 
 	database := mustParseFile(c, testFile)
@@ -1179,7 +1179,7 @@ type CommodityService struct {
 
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "service.go")
-	err := os.WriteFile(testFile, []byte(content), 0644) //nolint:gosec // 0644 is fine for tests
+	err := os.WriteFile(testFile, []byte(content), 0644) // #nosec G306 -- 0644 is fine for tests
 	c.Assert(err, qt.IsNil)
 
 	database := mustParseFile(c, testFile)
@@ -1227,7 +1227,7 @@ type Post struct {
 
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "entities.go")
-	err := os.WriteFile(testFile, []byte(content), 0644) //nolint:gosec // 0644 is fine for tests
+	err := os.WriteFile(testFile, []byte(content), 0644) // #nosec G306 -- 0644 is fine for tests
 	c.Assert(err, qt.IsNil)
 
 	database, err := goschema.ParseDir(tmpDir)
@@ -1271,7 +1271,7 @@ type File struct {
 
 	tmpDir := t.TempDir()
 	testFile := filepath.Join(tmpDir, "file.go")
-	err := os.WriteFile(testFile, []byte(content), 0644) //nolint:gosec // 0644 is fine for tests
+	err := os.WriteFile(testFile, []byte(content), 0644) // #nosec G306 -- 0644 is fine for tests
 	c.Assert(err, qt.IsNil)
 
 	database := mustParseFile(c, testFile)

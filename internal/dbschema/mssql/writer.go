@@ -386,7 +386,7 @@ func executeRealmCleanupPlan(ctx context.Context, tx *sql.Tx, plan realmCleanupP
 	for _, fk := range plan.foreignKeys {
 		qualifiedTable := quoteQualified(fk.Schema, fk.Table)
 		constraint := quoteIdent(fk.Name)
-		//nolint:gosec // G202: catalog identifiers are emitted only through SQL Server identifier quoting.
+		// #nosec G202 -- catalog identifiers are emitted only through SQL Server identifier quoting.
 		dropSQL := "ALTER TABLE " + qualifiedTable + " DROP CONSTRAINT " + constraint
 		if _, err := tx.ExecContext(ctx, dropSQL); err != nil {
 			return fmt.Errorf(
@@ -469,7 +469,7 @@ func dropRealmObject(ctx context.Context, tx *sql.Tx, object realmObject) error 
 	}
 	qualified := quoteQualified(object.Schema, object.Name)
 	if object.TemporalType == 2 {
-		//nolint:gosec // G202: catalog identifiers are emitted only through SQL Server identifier quoting.
+		// #nosec G202 -- catalog identifiers are emitted only through SQL Server identifier quoting.
 		disableSQL := "ALTER TABLE " + qualified + " SET (SYSTEM_VERSIONING = OFF)"
 		if _, err := tx.ExecContext(ctx, disableSQL); err != nil {
 			return fmt.Errorf(
@@ -479,7 +479,7 @@ func dropRealmObject(ctx context.Context, tx *sql.Tx, object realmObject) error 
 			)
 		}
 	}
-	//nolint:gosec // G202: the fixed drop prefix is selected by type and catalog identifiers are safely quoted.
+	// #nosec G202 -- the fixed drop prefix is selected by type and catalog identifiers are safely quoted.
 	dropSQL := prefix + qualified
 	if _, err := tx.ExecContext(ctx, dropSQL); err != nil {
 		return fmt.Errorf(

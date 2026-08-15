@@ -10,6 +10,7 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"log/slog"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -1303,6 +1304,102 @@ func TestParseDatabaseURL_ReadsANetworkDSNWithoutCredentials(t *testing.T) {
 			c.Assert(strings.TrimPrefix(parsed.Path, "/"), qt.Equals, test.want)
 		})
 	}
+}
+
+// TestConvertMySQLURL_ConvertsANetworkDSNWithoutCredentials pins the other
+// half of stokaro/ptah#1540: the parser above accepted these two targets while
+// the converter did not recognize them, and ConnectToDatabase calls both in
+// sequence.
+//
+// What the caller saw was not a refusal. The TCP target reached the driver
+// with "mysql://" still attached, and the socket target reached it as
+// ":@tcp(unix()/tmp/mysql.sock)/shop" -- an address assembled out of a host
+// that was never a host. Both fail at the driver, naming a DSN the caller
+// never wrote.
+func TestConvertMySQLURL_ConvertsANetworkDSNWithoutCredentials(t *testing.T) {
+	tests := []struct {
+		name string
+		url  string
+		want string
+	}{
+		{name: "a TCP target with no credentials", url: "mysql://tcp(localhost:3306)/shop", want: "tcp(localhost:3306)/shop"},
+		{name: "a socket target with no credentials", url: "mysql://unix(/tmp/mysql.sock)/shop", want: "unix(/tmp/mysql.sock)/shop"},
+		{name: "the MariaDB scheme reads the same", url: "mariadb://tcp(localhost:3306)/shop", want: "tcp(localhost:3306)/shop"},
+		{name: "credentials are still carried", url: "mysql://user:pass@tcp(localhost:3306)/shop", want: "user:pass@tcp(localhost:3306)/shop"},
+		{name: "a driver DSN with no scheme is left alone", url: "tcp(localhost:3306)/shop", want: "tcp(localhost:3306)/shop"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(convertMySQLURL(test.url), qt.Equals, test.want)
+		})
+	}
+}
+
+// TestMySQLNetworkRecognitionAgreesBetweenParserAndConverter is the control
+// that keeps the two ends of [ConnectToDatabase] from drifting apart again.
+//
+// It compares behavior, not the shared list. A control that asked the same
+// helper twice would agree with itself and stay green while the converter
+// stopped calling it -- which is precisely the state stokaro/ptah#1540
+// reported, so a control that cannot see it is no control.
+//
+// The equivalence is: the parser finds a network wrapper exactly when the
+// converter hands the address to the driver with only its scheme removed.
+// Where there is no wrapper the converter assembles a DSN instead, and the
+// result differs from the address by more than the scheme.
+func TestMySQLNetworkRecognitionAgreesBetweenParserAndConverter(t *testing.T) {
+	addresses := []string{
+		"mysql://tcp(localhost:3306)/shop",
+		"mysql://unix(/tmp/mysql.sock)/shop",
+		"mysql://user:pass@tcp(localhost:3306)/shop",
+		"mysql://user:pass@unix(/tmp/mysql.sock)/shop",
+		"mariadb://tcp(localhost:3306)/shop",
+		"mysql://user:pass@localhost:3306/shop",
+	}
+
+	for _, address := range addresses {
+		t.Run(address, func(t *testing.T) {
+			c := qt.New(t)
+
+			_, parserFoundNetwork := withoutMySQLNetwork(address)
+			convertedIsAddressWithoutScheme := convertMySQLURL(address) == withoutMySQLScheme(address)
+
+			c.Assert(convertedIsAddressWithoutScheme, qt.Equals, parserFoundNetwork)
+		})
+	}
+}
+
+// TestConnectToDatabase_ReachesTheDriverForACredentialFreeSocketTarget is the
+// public-path control stokaro/ptah#1540 asked for: the two halves are wired
+// together by ConnectToDatabase, and a unit test of either half alone cannot
+// see them disagree.
+//
+// The socket is chosen because it needs no network and no database. A target
+// the driver understood fails at dial, naming the path as a file that is not
+// there. A target it did not understand fails earlier and differently -- with
+// the converter's old recognition the path became a hostname and the failure
+// was a DNS lookup of "unix()/tmp/...", which is both wrong and a name no
+// caller wrote.
+func TestConnectToDatabase_ReachesTheDriverForACredentialFreeSocketTarget(t *testing.T) {
+	c := qt.New(t)
+	socket := filepath.Join(c.TempDir(), "absent.sock")
+
+	_, err := ConnectToDatabase(t.Context(), "mysql://unix("+socket+")/shop")
+
+	c.Assert(err, qt.ErrorMatches, `.*dial unix `+regexp.QuoteMeta(socket)+`.*`)
+}
+
+// withoutMySQLScheme removes whichever MySQL-family scheme an address carries.
+func withoutMySQLScheme(address string) string {
+	for _, scheme := range []string{"mysql://", "mariadb://"} {
+		if after, ok := strings.CutPrefix(address, scheme); ok {
+			return after
+		}
+	}
+	return address
 }
 
 // TestParseDatabaseURL_RefusesAMalformedQueryOnAWindowsPath keeps the Windows

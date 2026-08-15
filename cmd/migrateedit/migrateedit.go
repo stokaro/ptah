@@ -102,7 +102,7 @@ func replaceFrom(target, src, direction string) error {
 	if err != nil {
 		return fmt.Errorf("read %s: %w", src, err)
 	}
-	if err := os.WriteFile(target, data, 0o600); err != nil { //nolint:gosec // migration files are shared, 0600 is fine here
+	if err := os.WriteFile(target, data, 0o600); err != nil { // #nosec G703 -- migration files are shared, 0600 is fine here
 		return fmt.Errorf("write %s: %w", target, err)
 	}
 	return nil

@@ -345,6 +345,30 @@ people and pipelines share a directory:
 See [Configuration](../../reference/configuration/) for the `ptah.yaml`
 equivalents of every control.
 
+### `--allow-dirty` means two different things
+
+One spelling, two surfaces, two unrelated safety questions. The collision is
+permanent — the compatibility surface registers the flag Atlas registers, and
+the native surface registers the one Ptah has always had — so read the flag
+against the command it was typed after:
+
+| command | what is dirty | what the flag asks for |
+| --- | --- | --- |
+| `ptah migrations up` | a **revision row**, left by a migration body that failed part-way | a verified retry of that body, skipping only an unchanged committed prefix |
+| `ptah-compat migrate apply` | the **schema**, which already holds objects this history did not create | adopt that database anyway and apply into it |
+
+Neither can be expressed in terms of the other, and neither implies the other.
+Measured against the pinned community binary, its `--allow-dirty` releases no
+dirty-revision guard at all: an operator who passes it there has said nothing
+about revision rows, and one who passes it to `ptah migrations up` has said
+nothing about adopting a populated database.
+
+Native `ptah migrations up` has no adoption gate, so nothing refuses a database
+it did not create; running it against one fails on the first object that
+already exists. `ptah migrations baseline` is the native way to adopt an
+existing database, and `--shadow-db` verifies that the baselined history
+reproduces the schema it was pointed at.
+
 ## Operational hooks
 
 Production-like runs should be configured, not wrapped in ad hoc shell

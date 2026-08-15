@@ -57,7 +57,7 @@ func TestClient_CredentialHelperTimeout(t *testing.T) {
 		qt.IsNil,
 	)
 	c.Assert(
-		os.WriteFile( //nolint:gosec // Docker credential helpers must be executable.
+		os.WriteFile( // #nosec G306 -- Docker credential helpers must be executable.
 			filepath.Join(helperDir, "docker-credential-ptahhang"),
 			[]byte("#!/bin/sh\nexec sleep 10\n"),
 			0o700,

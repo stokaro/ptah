@@ -852,13 +852,39 @@ func atlasMigrateVersionValue(value string) (string, error) {
 // it as a repeatable `strings` flag (atlasgo.io/cli-reference); the arg mapper
 // rewrites every occurrence, and the native flag is a string array, so repeated
 // values accumulate instead of the last one winning.
+// atlasSchemaTestNativeCommand builds the native `schema test` this verb
+// forwards to, with --var made explicit-only on the target.
+//
+// PTAH_VAR belongs to this surface. refreshAtlasProjectFlagEnvironment lifts it
+// into the adapter's own --var before the verb runs, and what the native
+// command receives afterwards is whatever the adapter decided from it: the
+// run's values, the values of the data block that scoped the desired schema, or
+// none at all. The forwarded target has the same env binding installed, so
+// leaving it in place turns that last answer back into the first -- with no
+// explicit --var to mark the flag as set, the target reads PTAH_VAR itself, and
+// a scope declaring no vars silently inherits the run-wide value it exists to
+// refuse. The test then passes against a schema nobody asked for.
+//
+// The opt-out loses nothing, because a run the adapter did not scope has
+// already had the variable's value forwarded explicitly. It is scoped to this
+// verb because this is the only one that decides a native flag's whole value
+// and can decide it to be empty; a verb that grows the same shape needs the
+// same opt-out, and for the same reason.
+func atlasSchemaTestNativeCommand() *cobra.Command {
+	cmd := schema.NewSchemaTestCommand()
+	if err := cmdflags.DisableEnvBinding(cmd.Flags(), atlasVarFlagName); err != nil {
+		panic(err)
+	}
+	return cmd
+}
+
 func atlasSchemaTestVerb() atlasVerb {
 	return atlasVerb{
 		use:                "test",
 		displayUse:         "test [flags] [paths]",
 		short:              "Run declarative schema tests against a dev database",
 		native:             "schema test",
-		factory:            schema.NewSchemaTestCommand,
+		factory:            atlasSchemaTestNativeCommand,
 		positionals:        []atlasPositionalArg{{name: "paths", nativeName: "dir"}},
 		positionalOptional: true,
 		projectConfig:      applyAtlasSchemaTestProjectConfig,
@@ -1151,6 +1177,7 @@ func atlasArgMapper(group string, verb atlasVerb) cmdadapter.ArgMapper {
 			return nil, nil, err
 		}
 		mapped = append(quietingLogLevelArgs(verb, args), mapped...)
+		mapped = append(mapped, project.nativeArgs...)
 		return append(mapped, nativeTail...), project.context, nil
 	}
 }
@@ -1163,6 +1190,10 @@ type atlasVerbArgs struct {
 	// removed and the project's values appended: exactly what atlasargs.Map
 	// receives.
 	args []string
+	// nativeArgs bypass the Atlas flag mapper and are appended directly to the
+	// forwarded native command. They carry adapter-derived values without
+	// registering a duplicate Atlas-facing flag.
+	nativeArgs []string
 	// context carries the project's rooted migration directory and, for verbs
 	// that ask for it, the merged native project config.
 	context context.Context
@@ -1231,6 +1262,18 @@ func resolveAtlasVerbProject(
 		return atlasVerbArgs{}, err
 	}
 	if !selected.loaded {
+		if verb.projectConfig == nil {
+			return resolved, nil
+		}
+		resolved.args, resolved.nativeArgs, err = verb.projectConfig(
+			verb.flags,
+			resolved.args,
+			atlasProject{},
+			project.flags,
+		)
+		if err != nil {
+			return atlasVerbArgs{}, err
+		}
 		return resolved, nil
 	}
 	loadedProject, targetCfg := selected.project, selected.targetConfig
@@ -1246,7 +1289,12 @@ func resolveAtlasVerbProject(
 	if applyProjectConfig == nil {
 		applyProjectConfig = applyAtlasProjectConfigToArgs
 	}
-	resolved.args, err = applyProjectConfig(verb.flags, resolved.args, loadedProject, project.flags)
+	resolved.args, resolved.nativeArgs, err = applyProjectConfig(
+		verb.flags,
+		resolved.args,
+		loadedProject,
+		project.flags,
+	)
 	if err != nil {
 		return atlasVerbArgs{}, err
 	}

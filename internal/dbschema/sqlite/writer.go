@@ -341,7 +341,7 @@ func listAuxiliaryDatabases(ctx context.Context, conn *sql.Conn) ([]string, erro
 }
 
 func listSchemaObjects(ctx context.Context, conn *sql.Conn, schema string) ([]string, error) {
-	//nolint:gosec // G202: schema is an identifier quoted by sqlident, not an SQL value.
+	// #nosec G202 -- schema is an identifier quoted by sqlident, not an SQL value.
 	query := "SELECT type || ':' || name FROM " + quoteQualifiedIdent(schema, "sqlite_schema") + `
 		-- Escaped: LIKE reads a bare _ as a single-character wildcard, so
 		-- 'sqlite_%' also matches user objects such as sqlitedata. SQLite

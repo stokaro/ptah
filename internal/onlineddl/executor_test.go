@@ -30,7 +30,7 @@ func (f fakeConn) QueryRowContext(_ context.Context, _ string, _ ...any) *sql.Ro
 }
 
 func mysqlConn() fakeConn {
-	//nolint:gosec // fixture URL with a made-up password, not a credential
+	// #nosec G101 -- fixture URL with a made-up password, not a credential
 	return fakeConn{info: types.DBInfo{Dialect: "mysql", URL: "mysql://app:secret@db.internal:3307/shop"}}
 }
 
@@ -82,7 +82,7 @@ func requireArgPrefix(t *testing.T, args []string, prefix string) string {
 
 func requireCredentialFileRemoved(t *testing.T, path string) {
 	t.Helper()
-	//nolint:gosec // test helper verifies cleanup of a path created by the code under test
+	// #nosec G703 -- test helper verifies cleanup of a path created by the code under test
 	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("credential file %s still exists or stat failed unexpectedly: %v", path, err)
 	}
@@ -259,7 +259,7 @@ func TestExecuteStatement_UserPTOSCCredentialsSuppressGeneratedCredential(t *tes
 			c := qt.New(t)
 			var ran []invocation
 			e := testExecutor(Config{Args: tt.args}, &ran, nil, 0, nil)
-			//nolint:gosec // fixture URL with a made-up password, not a credential
+			// #nosec G101 -- fixture URL with a made-up password, not a credential
 			conn := fakeConn{info: types.DBInfo{Dialect: "mysql", URL: "mysql://app:ptah-password@db:3306/shop"}}
 
 			handled, err := e.executeStatement(context.Background(), conn,
@@ -651,7 +651,7 @@ func TestExecuteStatement_DryRunHandlesWithoutRunning(t *testing.T) {
 func TestMySQLDefaultsFileContent(t *testing.T) {
 	c := qt.New(t)
 
-	//nolint:gosec // fixture password exercises escaping, not a credential
+	// #nosec G101 -- fixture password exercises escaping, not a credential
 	content, err := mysqlDefaultsFileContent(DSN{User: `app"user`, Password: `sec\ret"`})
 
 	c.Assert(err, qt.IsNil)

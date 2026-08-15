@@ -190,28 +190,51 @@ func parseDatabaseURL(dbURL string) (*url.URL, error) {
 	return atlasurl.Parse(dbURL)
 }
 
+// mysqlNetworkMarkers are the spellings by which a MySQL-family address
+// introduces go-sql-driver's own network wrapper.
+//
+// Credentials are optional in that grammar, so tcp(host:port)/db and
+// unix(/path)/db are valid targets on their own and follow the scheme directly
+// rather than an "@". tcp and unix are two spellings of one thing to the
+// driver -- the network and the address to reach it on -- so recognizing one
+// without the other reads a socket address as a host called "unix(" with the
+// path folded into the database name.
+//
+// There is one list because the parser and the converter have to recognize
+// exactly the same set, and [ConnectToDatabase] calls them in sequence.
+// stokaro/ptah#1540 is what a second list costs: the parser accepted both
+// credential-free targets while the converter recognized neither, so a valid
+// URL reached the driver either with its scheme still attached or rebuilt
+// around a host that was never one.
+var mysqlNetworkMarkers = []string{"@tcp(", "@unix(", "://tcp(", "://unix("}
+
+// mysqlNetworkMarker returns the marker a MySQL-family address carries and the
+// index it starts at, reporting false when the address names no network
+// wrapper at all.
+func mysqlNetworkMarker(dbURL string) (marker string, start int, ok bool) {
+	for _, candidate := range mysqlNetworkMarkers {
+		if index := strings.Index(dbURL, candidate); index >= 0 {
+			return candidate, index, true
+		}
+	}
+	return "", 0, false
+}
+
 // withoutMySQLNetwork removes the network wrapper from a MySQL-family address,
 // reporting whether one was there to remove.
 func withoutMySQLNetwork(dbURL string) (string, bool) {
-	// Credentials are optional in the driver's grammar, so tcp(host:port)/db
-	// and unix(/path)/db are valid targets on their own. Matching only the
-	// credential-bearing spellings refused the first as an invalid URL and read
-	// the second with the socket path folded into the database name.
-	for _, network := range []string{"@tcp(", "@unix(", "://tcp(", "://unix("} {
-		start := strings.Index(dbURL, network)
-		if start < 0 {
-			continue
-		}
-		end := strings.Index(dbURL[start:], ")")
-		if end < 0 {
-			continue
-		}
-		// Keep everything up to and including the separator the network
-		// followed -- "@" or "://" -- and drop the network with its address.
-		keep := start + strings.Index(network, "(")
-		return dbURL[:keep] + dbURL[start+end+1:], true
+	marker, start, ok := mysqlNetworkMarker(dbURL)
+	if !ok {
+		return dbURL, false
 	}
-	return dbURL, false
+	end := strings.Index(dbURL[start:], ")")
+	if end < 0 {
+		return dbURL, false
+	}
+	// Keep everything up to and including the separator the network followed
+	// -- "@" or "://" -- and drop the network with its address.
+	keep := start + strings.Index(marker, "(")
+	return dbURL[:keep] + dbURL[start+end+1:], true
 }
 
 func getDatabaseInfoWithCapabilities(
@@ -1030,11 +1053,10 @@ func detectMySQLWireDialect(declaredDialect, version string) string {
 // convertMySQLURL converts a MySQL/MariaDB URL from standard format to Go driver format
 func convertMySQLURL(dbURL string) string {
 	// Already in the driver's own form, so it is returned with only the scheme
-	// removed. tcp(...) and unix(...) are two spellings of one thing to
-	// go-sql-driver -- the network and the address to reach it on -- and
-	// recognizing only the first parsed a valid socket address as a host called
-	// "unix(" with the socket path folded into the database name.
-	if strings.Contains(dbURL, "@tcp(") || strings.Contains(dbURL, "@unix(") {
+	// removed. The recognition is [mysqlNetworkMarker]'s, which is the same one
+	// parseDatabaseURL uses -- see the note there for why it cannot be a second
+	// list that happens to agree.
+	if _, _, ok := mysqlNetworkMarker(dbURL); ok {
 		// Remove the mysql:// or mariadb:// prefix if present
 		if after, ok := strings.CutPrefix(dbURL, "mysql://"); ok {
 			return after

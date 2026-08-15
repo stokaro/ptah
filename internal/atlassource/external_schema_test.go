@@ -19,14 +19,14 @@ import (
 var externalHelperModes = map[string]func(){
 	"sql": func() {
 		fmt.Fprint(os.Stdout, "CREATE TABLE ext_users (\n  id INTEGER PRIMARY KEY,\n  email TEXT NOT NULL\n);\n")
-		os.Exit(0) //nolint:revive // subprocess fixture must terminate before the test runner writes to stdout
+		os.Exit(0) //revive:disable-line:deep-exit subprocess fixture must terminate before the test runner writes to stdout
 	},
 	"fail": func() {
 		fmt.Fprintln(os.Stderr, "external loader blew up")
-		os.Exit(3) //nolint:revive // subprocess fixture must terminate with the tested failure code
+		os.Exit(3) //revive:disable-line:deep-exit subprocess fixture must terminate with the tested failure code
 	},
 	"empty": func() {
-		os.Exit(0) //nolint:revive // subprocess fixture must terminate before the test runner writes to stdout
+		os.Exit(0) //revive:disable-line:deep-exit subprocess fixture must terminate before the test runner writes to stdout
 	},
 }
 
@@ -44,7 +44,7 @@ func runExternalSchemaHelperProcess() {
 	emit, ok := externalHelperModes[os.Getenv("ATLASSOURCE_HELPER_MODE")]
 	if !ok {
 		fmt.Fprintln(os.Stderr, "unknown helper mode")
-		os.Exit(1) //nolint:revive // subprocess fixture must terminate on bad wiring
+		os.Exit(1) //revive:disable-line:deep-exit subprocess fixture must terminate on bad wiring
 	}
 	emit()
 }
@@ -186,7 +186,7 @@ func TestClassifySetExternalSchemaGateDoesNotExecuteProgram(t *testing.T) {
 	sentinel := filepath.Join(dir, "executed.sentinel")
 	script := filepath.Join(dir, "gen.sh")
 	// The script would create the sentinel file if anything ran it.
-	c.Assert(os.WriteFile(script, []byte("#!/bin/sh\ntouch "+sentinel+"\n"), 0o700), qt.IsNil) //nolint:gosec // executable test fixture in a private temp dir
+	c.Assert(os.WriteFile(script, []byte("#!/bin/sh\ntouch "+sentinel+"\n"), 0o700), qt.IsNil) // #nosec G306 -- executable test fixture in a private temp dir
 	env := atlassource.ProjectEnv{
 		Loaded: true,
 		Config: projectconfig.Config{

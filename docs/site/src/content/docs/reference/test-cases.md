@@ -23,7 +23,8 @@ render a report, and return a non-zero status when any case fails.
 | `--seed-dir` | Default for seed steps | Default for seed steps | No default |
 | `--dir-format` | `auto`, `ptah`, or `atlas` | No | `ptah` |
 | `--db-url` | Optional explicit throwaway database | Optional explicit throwaway database | Ephemeral SQLite |
-| `--schema` | No | Repeatable schema allow-list for desired tables and their schema-owned objects; database-wide extensions remain in the provisioned desired state regardless of installation placement | All schemas |
+| `--schema` | No | Repeatable desired-schema allow-list; database-wide extensions remain regardless of installation placement | All schemas |
+| `--var` | No | Repeatable `name=value` override for an HCL desired-schema file | No overrides |
 | `--run` | Go regular expression matched against case names | Go regular expression matched against case names | All cases |
 | `--report` | `text`, `json`, or `html` | `text`, `json`, or `html` | `text` |
 

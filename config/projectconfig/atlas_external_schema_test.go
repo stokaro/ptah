@@ -390,7 +390,7 @@ func TestLoadAtlasExternalSchemaUnreferencedSourceIsNotExecuted(t *testing.T) {
 	sentinel := filepath.Join(dir, "executed.sentinel")
 	script := filepath.Join(dir, "gen.sh")
 	// The script would create the sentinel file if anything ran it.
-	c.Assert(os.WriteFile(script, []byte("#!/bin/sh\ntouch "+sentinel+"\n"), 0o700), qt.IsNil) //nolint:gosec // executable test fixture in a private temp dir
+	c.Assert(os.WriteFile(script, []byte("#!/bin/sh\ntouch "+sentinel+"\n"), 0o700), qt.IsNil) // #nosec G306 -- executable test fixture in a private temp dir
 	atlasPath := filepath.Join(dir, "atlas.hcl")
 	c.Assert(os.WriteFile(atlasPath, []byte(`data "external_schema" "unused" {
   program = [`+strconvQuoteForHCL(script)+`]

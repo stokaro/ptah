@@ -228,7 +228,7 @@ type launcher struct {
 // with, three lines above the URL that uses it, on a server that exists for
 // the length of one job and listens only on the runner's own loopback.
 //
-//nolint:gosec // G101: these are the container's own throwaway credentials, created on the line above and thrown away with the job
+// #nosec G101 -- these are the container's own throwaway credentials, created on the line above and thrown away with the job
 var launchers = map[string]launcher{
 	platform.Postgres: {
 		flags: []string{

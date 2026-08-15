@@ -179,6 +179,8 @@ One `--var` occurrence carries comma-separated `name=value` assignments, and the
 flag may be repeated. A variable that ends with no value fails with
 `missing value for required variable "status"`. `--var` does not require an
 `atlas.hcl`; when one is present it also supplies that file's variables.
+`ptah schema test --root-dir schema.hcl --var status=live` applies the same
+override before it provisions the throwaway database.
 
 Attribute values are evaluated. A function call resolves against the function
 set, a `var.` or `local.` reference resolves against the blocks above, and
