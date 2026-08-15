@@ -374,7 +374,10 @@ type User struct {
 	c.Assert(err, qt.IsNil)
 
 	return compatLiveSourceFixture{
-		liveURL:   "sqlite://" + livePath,
+		// Slashed: this URL is interpolated into an atlas.hcl double-quoted
+		// string, where a Windows separator makes \U an invalid escape and the
+		// whole project file is refused.
+		liveURL:   "sqlite://" + filepath.ToSlash(livePath),
 		modelsDir: modelsDir,
 		sqlFile:   sqlFile,
 		testsDir:  testsDir,

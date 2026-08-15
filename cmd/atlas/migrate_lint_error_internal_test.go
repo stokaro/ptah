@@ -20,14 +20,14 @@ func TestAtlasMigrateLintDirCaptureError_AdaptsMissingOpen(t *testing.T) {
 
 	got := atlasMigrateLintDirCaptureError("nested/../missing", "", captureErr)
 
-	c.Assert(got.Error(), qt.Equals, "sql/migrate: stat missing: no such file or directory")
+	c.Assert(got.Error(), qt.Equals, "sql/migrate: stat missing: "+syscall.ENOENT.Error())
 	c.Assert(got, qt.ErrorIs, captureErr)
 	c.Assert(got, qt.ErrorIs, syscall.ENOENT)
 	var gotPathErr *os.PathError
 	c.Assert(got, qt.ErrorAs, &gotPathErr)
 	c.Assert(gotPathErr, qt.Equals, pathErr)
 	c.Assert(errors.Unwrap(got).Error(), qt.Equals,
-		"atlas migrate lint --dir: open migrations directory: openat missing: no such file or directory")
+		"atlas migrate lint --dir: open migrations directory: openat missing: "+syscall.ENOENT.Error())
 }
 
 func TestAtlasMigrateLintDirCaptureError_RootedPathUsesObservedSpelling(t *testing.T) {
@@ -37,7 +37,7 @@ func TestAtlasMigrateLintDirCaptureError_RootedPathUsesObservedSpelling(t *testi
 
 	got := atlasMigrateLintDirCaptureError("/project/missing", "/project", captureErr)
 
-	c.Assert(got.Error(), qt.Equals, "sql/migrate: stat missing: no such file or directory")
+	c.Assert(got.Error(), qt.Equals, "sql/migrate: stat missing: "+syscall.ENOENT.Error())
 	c.Assert(got, qt.ErrorIs, captureErr)
 	var gotPathErr *os.PathError
 	c.Assert(got, qt.ErrorAs, &gotPathErr)

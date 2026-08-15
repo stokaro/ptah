@@ -3,6 +3,7 @@ package atlas_test
 import (
 	"os"
 	"path/filepath"
+	"syscall"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -128,7 +129,7 @@ func TestCompatMigrateImportSourceResolutionMatchesTheOracle(t *testing.T) {
 		{
 			name: "a missing source is reported as a missing source",
 			want: func(fx importFixture) string {
-				return "sql/migrate: stat " + fx.missing + ": no such file or directory"
+				return "sql/migrate: stat " + fx.missing + ": " + syscall.ENOENT.Error()
 			},
 			args: func(fx importFixture) []string {
 				return []string{
@@ -141,7 +142,7 @@ func TestCompatMigrateImportSourceResolutionMatchesTheOracle(t *testing.T) {
 		{
 			name: "a missing source under the default layout is still a missing source",
 			want: func(fx importFixture) string {
-				return "sql/migrate: stat " + fx.missing + ": no such file or directory"
+				return "sql/migrate: stat " + fx.missing + ": " + syscall.ENOENT.Error()
 			},
 			args: func(fx importFixture) []string {
 				return []string{

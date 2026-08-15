@@ -596,18 +596,26 @@ func TestCompatCommand_MigrateNewRefusesPathSeparatorName(t *testing.T) {
 
 // TestCompatCommand_MigrateNewAcceptsNamesTheBinaryAccepts pins the other side
 // of the same rule. Each row was run against the pinned binary, which wrote a
-// file and exited 0 for all three: a space, a backslash on this platform, and
-// `..`. Refusing any of them here would be a new violation in the opposite
-// direction.
+// file and exited 0: a space, `..`, and -- where a backslash is an ordinary
+// character -- `a\b`. Refusing any of them here would be a new violation in
+// the opposite direction.
+//
+// The backslash row carries acceptedBackslashNames, which is empty on Windows.
+// The measurement behind it was taken where `\` is not a path separator, and
+// on Windows it is: the name rule refuses it there as a path, which is the
+// same rule this file's other half exists to enforce. Asserting acceptance
+// there would assert something the oracle never said.
+type acceptedNameCase struct {
+	name  string
+	given string
+}
+
 func TestCompatCommand_MigrateNewAcceptsNamesTheBinaryAccepts(t *testing.T) {
-	tests := []struct {
-		name  string
-		given string
-	}{
+	tests := []acceptedNameCase{
 		{name: "space", given: "a b"},
-		{name: "backslash", given: `a\b`},
 		{name: "dot dot", given: ".."},
 	}
+	tests = append(tests, acceptedBackslashNames()...)
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

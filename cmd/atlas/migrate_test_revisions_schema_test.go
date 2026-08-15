@@ -35,7 +35,10 @@ func writeMigrateTestRevisionsFixture(c *qt.C) (migrationsDir, casesDir string) 
 	_, err := migratesum.WriteWithFormat(migrationsDir, migrator.MigrationDirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 
-	attached := filepath.Join(root, "attached.db")
+	// Slashed: this path is interpolated into a double-quoted YAML scalar,
+	// where a Windows separator makes \U an escape sequence and the whole
+	// test-case file fails to parse. SQLite reads either separator.
+	attached := filepath.ToSlash(filepath.Join(root, "attached.db"))
 	cases := `cases:
   - name: revisions land in the named schema
     steps:

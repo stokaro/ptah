@@ -122,7 +122,7 @@ func TestCompatBinaryCommandFailuresExit1(t *testing.T) {
 		{
 			name:       "forwarded native target failure",
 			args:       []string{"migrate", "rm", "20990101000000"},
-			wantStderr: "Error: migrations directory migrations: stat migrations: no such file or directory\n",
+			wantStderr: "Error: migrations directory migrations: " + testutils.StatMissingText("migrations") + "\n",
 		},
 		// Reaches the compat-local printers.
 		{
@@ -382,7 +382,7 @@ func TestCompatBinaryAtlasFailurePaths(t *testing.T) {
 		c.Assert(err, qt.ErrorAs, &exitErr)
 		c.Assert(exitErr.ExitCode(), qt.Equals, 1)
 		c.Assert(stdout.String(), qt.Equals, "")
-		c.Assert(stderr.String(), qt.Equals, "Error: sql/migrate: stat migrations: no such file or directory\n")
+		c.Assert(stderr.String(), qt.Equals, "Error: sql/migrate: "+testutils.StatMissingText("migrations")+"\n")
 	})
 
 	t.Run("migrate set missing driver precedes version", func(t *testing.T) {

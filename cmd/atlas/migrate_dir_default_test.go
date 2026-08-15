@@ -5,6 +5,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"syscall"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -72,7 +73,7 @@ func TestCompatMigrateDirDefaults(t *testing.T) {
 				// distinguish a default that resolved and found nothing from a
 				// verb that never had a directory to look for.
 				c.Assert(err.Error(), qt.Contains, "open migrations directory")
-				c.Assert(err.Error(), qt.Contains, "no such file or directory")
+				c.Assert(err.Error(), qt.Contains, syscall.ENOENT.Error())
 				assertPathAbsent(c, filepath.Join(root, "migrations"))
 			},
 		},
