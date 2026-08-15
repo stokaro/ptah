@@ -1238,9 +1238,26 @@ func sarifArtifactURI(file string) string {
 				return filepath.ToSlash(rel)
 			}
 		}
-		return (&url.URL{Scheme: "file", Path: filepath.ToSlash(cleaned)}).String()
+		return fileURI(filepath.ToSlash(cleaned))
 	}
 	return path.Clean(filepath.ToSlash(file))
+}
+
+// fileURI renders an absolute, already-slashed path as a file: URI.
+//
+// The leading slash is not decoration. A Windows absolute path slashes to
+// "C:/a/b.sql", which has no leading "/", and url.URL.String() writes "//"
+// before such a Path -- so the result is "file://C:/a/b.sql", where every SARIF
+// consumer reads "C:" as the authority and the drive letter becomes a
+// hostname. Unix paths already begin with a slash and were therefore correct by
+// accident, which is why no runner noticed.
+//
+// It takes the slashed path rather than reading the caller's filepath, so the
+// Windows answer is reachable from a test on any operating system: the branch
+// above only runs for a path filepath.IsAbs accepts, and a drive path is not
+// absolute on a Unix runner.
+func fileURI(slashed string) string {
+	return (&url.URL{Scheme: "file", Path: "/" + strings.TrimPrefix(slashed, "/")}).String()
 }
 
 func isRelativeURI(uri string) bool {

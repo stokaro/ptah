@@ -8,7 +8,6 @@ package atlasmigrate
 
 import (
 	"context"
-	"net/url"
 	"os"
 	"path/filepath"
 	"testing"
@@ -16,8 +15,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -107,7 +106,7 @@ func writeLockTestMigration(c *qt.C, dir string) {
 
 func connectLockTestSQLite(c *qt.C, path string) *dbschema.DatabaseConnection {
 	c.Helper()
-	dbURL := (&url.URL{Scheme: platform.SQLite, Path: path}).String()
+	dbURL := atlasurl.SQLiteURLFromPath(path)
 	conn, err := dbschema.ConnectToDatabase(context.Background(), dbURL)
 	c.Assert(err, qt.IsNil)
 	return conn
