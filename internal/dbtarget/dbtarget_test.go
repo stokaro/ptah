@@ -170,10 +170,12 @@ func TestLookupDriverDSN_HappyPath(t *testing.T) {
 			want:   "user:pass@tcp(127.0.0.1:3307)/db",
 		},
 		{
-			name:   "a distributed SQL scheme is removed for pgx",
+			// Rewritten, not removed. pgx accepts a PostgreSQL URL or a
+			// keyword/value DSN, and a bare root@host:26257/db is neither.
+			name:   "a distributed SQL scheme is rewritten for pgx",
 			engine: dbtarget.CockroachDB,
 			set:    func(t *testing.T) { t.Setenv("COCKROACHDB_URL", "cockroachdb://root@localhost:26257/db") },
-			want:   "root@localhost:26257/db",
+			want:   "postgres://root@localhost:26257/db",
 		},
 	}
 
@@ -349,4 +351,71 @@ func TestLookup_AcceptsTheMySQLSpellingOfAMariaDBAddress(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(got, qt.Equals, "mysql://root@localhost:3307/db")
+}
+
+// TestLookupDriverDSN_RewritesAPostgresFamilyAlias keeps pgx given something it
+// parses.
+//
+// pgx accepts a PostgreSQL URL or a keyword/value DSN. Removing the scheme from
+// cockroachdb://root@host:26257/db leaves root@host:26257/db, which is neither,
+// so a probe that dbtarget.URL connects with fine failed on the driver path.
+// The alias is rewritten rather than removed, which is what
+// dbschema.convertPostgresWireURL already does for the same reason.
+func TestLookupDriverDSN_RewritesAPostgresFamilyAlias(t *testing.T) {
+	tests := []struct {
+		name   string
+		engine dbtarget.Engine
+		set    func(t *testing.T)
+		want   string
+	}{
+		{
+			name:   "a cockroachdb alias becomes a postgres URL",
+			engine: dbtarget.CockroachDB,
+			set:    func(t *testing.T) { t.Setenv("COCKROACHDB_URL", "cockroachdb://root@localhost:26257/db") },
+			want:   "postgres://root@localhost:26257/db",
+		},
+		{
+			name:   "a yugabytedb alias becomes a postgres URL",
+			engine: dbtarget.YugabyteDB,
+			set:    func(t *testing.T) { t.Setenv("YUGABYTEDB_URL", "yugabytedb://root@localhost:5433/db") },
+			want:   "postgres://root@localhost:5433/db",
+		},
+		{
+			name:   "a postgres URL is already what pgx wants",
+			engine: dbtarget.CockroachDB,
+			set:    func(t *testing.T) { t.Setenv("COCKROACHDB_URL", "postgres://root@localhost:26257/db") },
+			want:   "postgres://root@localhost:26257/db",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			clearAll(t)
+			test.set(t)
+
+			got, err := dbtarget.LookupDriverDSN(test.engine)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(got, qt.Equals, test.want)
+		})
+	}
+}
+
+// TestLookupDriverDSN_DecodesEscapedCredentials keeps the two paths agreeing on
+// what the password is.
+//
+// A URL carries credentials percent-escaped, and net/url decodes them for every
+// consumer that connects through a URL. Splicing the string instead hands the
+// driver the literal escapes, so the raw-driver tests authenticate with a
+// different password from the URL consumers reading the same variable.
+func TestLookupDriverDSN_DecodesEscapedCredentials(t *testing.T) {
+	c := qt.New(t)
+	clearAll(t)
+	t.Setenv("MYSQL_TEST_URL", "mysql://app:p%40ss%2Fword@db:3306/shop")
+
+	got, err := dbtarget.LookupDriverDSN(dbtarget.MySQL)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(got, qt.Equals, "app:p@ss/word@tcp(db:3306)/shop")
 }

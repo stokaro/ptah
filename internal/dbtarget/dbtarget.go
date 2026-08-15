@@ -16,6 +16,7 @@ package dbtarget
 
 import (
 	"fmt"
+	"net/url"
 	"os"
 	"slices"
 	"strings"
@@ -298,37 +299,60 @@ func mysqlFamily(engine Engine) bool {
 // is returned as it stands, because it is already what the driver wants and
 // re-rendering it would only be a chance to lose a parameter.
 func mysqlNetworkDSN(address string) string {
-	_, rest, found := strings.Cut(address, "://")
+	scheme, rest, found := strings.Cut(address, "://")
 	if !found {
-		rest = address
+		return address
 	}
 	if strings.Contains(rest, "@tcp(") || strings.Contains(rest, "@unix(") {
+		// Already the driver's own form. It is returned verbatim rather than
+		// re-rendered, because a DSN carries parameters no URL parser models
+		// and round-tripping it is only a chance to lose one.
 		return rest
 	}
-	credentials, remainder, found := strings.Cut(rest, "@")
-	if !found {
+
+	// Parsed rather than spliced. A URL carries credentials percent-escaped,
+	// and every consumer that connects through one decodes them; splicing the
+	// string hands the driver the literal escapes, so the raw-driver tests
+	// would authenticate with a different password from the URL consumers
+	// reading the same variable.
+	parsed, err := url.Parse(scheme + "://" + rest)
+	if err != nil || parsed.Host == "" {
 		return rest
 	}
-	host, path, hasPath := strings.Cut(remainder, "/")
-	if host == "" {
-		return rest
-	}
-	if !strings.Contains(host, ":") {
+	host := parsed.Host
+	if parsed.Port() == "" {
 		// The driver's own default, which a URL omitting the port means.
 		host += ":3306"
 	}
-	rendered := credentials + "@tcp(" + host + ")"
-	if hasPath {
-		rendered += "/" + path
+
+	rendered := credentialsOf(parsed.User) + "@tcp(" + host + ")" + parsed.Path
+	if parsed.RawQuery != "" {
+		rendered += "?" + parsed.RawQuery
 	}
 	return rendered
 }
 
-// stripScheme removes a URL scheme, leaving what a raw driver parses.
+// credentialsOf renders a URL's userinfo in the driver's grammar, decoded.
+func credentialsOf(user *url.Userinfo) string {
+	if user == nil {
+		return ""
+	}
+	if password, set := user.Password(); set {
+		return user.Username() + ":" + password
+	}
+	return user.Username()
+}
+
+// stripScheme renders an address in the form a raw driver parses.
 //
-// A value with no scheme is already in driver form and is returned unchanged;
-// PostgreSQL is left alone whatever its scheme, because pgx parses postgres://
-// and postgresql:// and stripping either would break it.
+// A value with no scheme is already in driver form and is returned unchanged.
+//
+// The PostgreSQL family is rewritten rather than stripped. pgx accepts a
+// PostgreSQL URL or a keyword/value DSN and neither postgres:// nor a bare
+// root@host:26257/db is optional -- removing the scheme from a cockroachdb://
+// or yugabytedb:// address leaves something pgx cannot parse at all, so a
+// target dbtarget.URL connects with failed on the driver path. Rewriting the
+// alias to postgres:// is what dbschema does for the same reason.
 func stripScheme(address string) string {
 	scheme, rest, found := strings.Cut(address, "://")
 	if !found {
@@ -337,6 +361,8 @@ func stripScheme(address string) string {
 	switch scheme {
 	case "postgres", "postgresql":
 		return address
+	case "cockroachdb", "yugabytedb", "spanner":
+		return "postgres://" + rest
 	}
 	return rest
 }
