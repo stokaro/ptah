@@ -1048,6 +1048,23 @@ dependencies`. Both contours are required because a build tag selects a
 different build rather than a superset: satisfying `integration` also drops
 every file a constraint excludes from that contour.
 
+Those two run again on a Windows runner, as the `ptah-go-lint-windows` job. A
+build tag cannot reach a file the target operating system excludes -- `go help
+buildconstraint` puts that under `GOOS` -- so every `_windows_test.go` file in
+the repository is outside both Ubuntu contours. Measured: with
+`qt.Assert(t, ...)` introduced in `internal/fsdurable/root_replace_windows_test.go`,
+the Windows contour exits 3 and names it while the Linux contour exits 0. Two
+real violations were sitting in those files when the job was added.
+
+The Windows job runs `make lint-qtlint` rather than repeating its arguments, so
+a rule added to `QTLINT_RULES` reaches every contour without a second list to
+keep in step. It also runs `go vet`, `golangci-lint` and the unit tests, because
+qtlint is not the only gate a Linux runner cannot point at Windows-only code:
+four gosec G115 findings were sitting in Windows-only source when the job was
+added, every one of them an unchecked narrowing into a structure the Windows
+API reads. Windows-only source is not merely unanalyzed without this job, it is
+unrun -- a `_windows_test.go` file exercises code no other runner compiles.
+
 `make lint-qtlint-fix` applies the rewrites. Invoking the tool directly, run the
 rules in separate passes: applied together, one rule can delete a receiver
 declaration another rule's rewrite still references.

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"math"
 	"os"
 	"unsafe"
 
@@ -168,6 +169,10 @@ func replaceVerifiedDestination(
 	)
 }
 
+// errRenameRequestTooLarge refuses a name whose rename request cannot be
+// described in the length field the kernel reads.
+var errRenameRequestTooLarge = errors.New("rename request exceeds the length this interface can describe")
+
 // renameFileHandle renames the object behind file to newName inside root
 // without replacing an existing entry. Replacement is never requested: every
 // destination this package replaces is moved aside first, so a collision here
@@ -187,12 +192,27 @@ func renameFileHandle(root *os.Root, file *os.File, oldName, newName string) err
 	nameLength := (len(targetUTF16) - 1) * 2
 	var layout fileRenameInformationEx
 	bufferSize := int(unsafe.Offsetof(layout.fileName)) + nameLength
+	if nameLength < 0 || nameLength > math.MaxUint32 || bufferSize > math.MaxUint32 {
+		// Both lengths below are written into a structure the kernel reads.
+		// A silent narrowing would hand it a length shorter than the buffer it
+		// describes, which is a memory-safety hazard rather than a wrong
+		// answer, so a name this long is refused instead.
+		return errors.Join(
+			&os.LinkError{Op: "renameat", Old: oldName, New: newName, Err: errRenameRequestTooLarge},
+			rootDir.Close(),
+		)
+	}
+	// Narrowed here, immediately after the bounds that make it safe, so the
+	// check and the conversions cannot drift apart.
+	fileNameLength := uint32(nameLength)
+	requestSize := uint32(bufferSize)
+
 	buffer := make([]byte, bufferSize)
 	info := (*fileRenameInformationEx)(unsafe.Pointer(&buffer[0]))
 	info.flags = windows.FILE_RENAME_POSIX_SEMANTICS |
 		windows.FILE_RENAME_IGNORE_READONLY_ATTRIBUTE
 	info.rootDirectory = windows.Handle(rootDir.Fd())
-	info.fileNameLength = uint32(nameLength)
+	info.fileNameLength = fileNameLength
 	copy(
 		unsafe.Slice(&info.fileName[0], nameLength/2),
 		targetUTF16[:len(targetUTF16)-1],
@@ -202,7 +222,7 @@ func renameFileHandle(root *os.Root, file *os.File, oldName, newName string) err
 		windows.Handle(file.Fd()),
 		&ioStatus,
 		&buffer[0],
-		uint32(bufferSize),
+		requestSize,
 		fileRenameInformationExClass,
 	)
 	closeErr := rootDir.Close()

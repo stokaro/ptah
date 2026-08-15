@@ -86,3 +86,52 @@ jobs:
         with:
           args: --timeout=30m
           version: v2.12.2
+
+  qtlint-windows:
+    # The Ubuntu job's two contours differ by build tag, and a build tag cannot
+    # reach a file the target operating system excludes: `go help
+    # buildconstraint` puts that under GOOS. Every _windows_test.go file in the
+    # repository is therefore outside both of them, analyzed by nothing, and
+    # free to carry the violations this gate exists to refuse.
+    #
+    # Running the gate on a Windows runner is what reads them, and it reads
+    # them the same way the Ubuntu job does rather than through a flag that
+    # would have to be kept in step with it.
+    name: ptah-go-lint-windows
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: go.sum
+
+      - name: Install dependencies
+        run: go mod download
+
+      # The same recipe the Ubuntu job runs, not a copy of its arguments: a
+      # rule added to QTLINT_RULES has to reach every contour, and a second
+      # spelling of the list is a second thing to keep in step.
+      - name: qtlint
+        run: make lint-qtlint
+
+      - name: go vet
+        run: go vet ./...
+
+      # golangci-lint finds what qtlint cannot. Four gosec G115 findings were
+      # sitting in Windows-only source when this step was added, all of them
+      # unchecked narrowings into structures the Windows API reads.
+      - name: Golint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          args: --timeout=30m
+          version: v2.12.2
+
+      # Windows-only source is not only unanalyzed without this job, it is
+      # unrun: a _windows_test.go file exercises code no other runner compiles.
+      - name: Unit tests
+        run: go test ./... -count=1

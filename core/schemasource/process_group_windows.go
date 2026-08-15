@@ -5,6 +5,7 @@ package schemasource
 import (
 	"errors"
 	"fmt"
+	"math"
 	"os/exec"
 	"syscall"
 	"unsafe"
@@ -42,10 +43,14 @@ func attachProcessTree(cmd *exec.Cmd) (processTree, error) {
 		return nil, tree.closeWithError(fmt.Errorf("configure Job Object: %w", err))
 	}
 
+	pid, err := windowsProcessID(cmd.Process.Pid)
+	if err != nil {
+		return nil, tree.closeWithError(err)
+	}
 	process, err := windows.OpenProcess(
 		windows.PROCESS_SET_QUOTA|windows.PROCESS_TERMINATE,
 		false,
-		uint32(cmd.Process.Pid),
+		pid,
 	)
 	if err != nil {
 		return nil, tree.closeWithError(fmt.Errorf("open schema command process: %w", err))
@@ -59,7 +64,7 @@ func attachProcessTree(cmd *exec.Cmd) (processTree, error) {
 		}
 		return nil, tree.closeWithError(errors.Join(assignErr, closeProcessErr))
 	}
-	if err := resumeProcessThreads(uint32(cmd.Process.Pid)); err != nil {
+	if err := resumeProcessThreads(pid); err != nil {
 		return nil, tree.closeWithError(err)
 	}
 
@@ -110,4 +115,17 @@ func (tree windowsProcessTree) close() error {
 
 func (tree windowsProcessTree) closeWithError(err error) error {
 	return errors.Join(err, tree.terminate(), tree.close())
+}
+
+// windowsProcessID narrows a process id to the DWORD the Windows API takes.
+//
+// os.Process.Pid is an int because the type is shared with platforms whose
+// process ids are signed. A Windows process id is a DWORD, so a value outside
+// that range did not come from a process this program started, and narrowing
+// it silently would name a different process to a call that terminates one.
+func windowsProcessID(pid int) (uint32, error) {
+	if pid < 0 || int64(pid) > math.MaxUint32 {
+		return 0, fmt.Errorf("process id %d is not a Windows process id", pid)
+	}
+	return uint32(pid), nil
 }
