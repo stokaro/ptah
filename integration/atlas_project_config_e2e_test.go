@@ -54,29 +54,29 @@ func TestAtlasProjectConfigMigrateStatusAndUpE2E(t *testing.T) {
 
 	repoRoot := e2eRepoRoot(t)
 	binaryPath := filepath.Join(t.TempDir(), "ptah")
-	buildPtah(c, ctx, repoRoot, binaryPath)
+	buildPtah(c.TB, ctx, repoRoot, binaryPath)
 
 	adminDB, err := sql.Open("pgx", dbURL)
 	c.Assert(err, qt.IsNil)
 	defer adminDB.Close()
 
 	testDBName := fmt.Sprintf("ptah_atlas_project_config_%d", time.Now().UnixNano())
-	createE2EDatabase(c, ctx, adminDB, testDBName)
-	defer dropE2EDatabase(c, context.Background(), adminDB, testDBName)
+	createE2EDatabase(c.TB, ctx, adminDB, testDBName)
+	defer dropE2EDatabase(c.TB, context.Background(), adminDB, testDBName)
 
 	workDir := t.TempDir()
-	testDBURL := replaceDatabaseName(c, dbURL, testDBName)
+	testDBURL := replaceDatabaseName(c.TB, dbURL, testDBName)
 	t.Setenv("PTAH_ATLAS_PROJECT_CONFIG_E2E_URL", testDBURL)
-	writeAtlasProjectConfigFixture(c, repoRoot, workDir)
-	seedAtlasProjectConfigDatabaseState(c, ctx, testDBURL)
+	writeAtlasProjectConfigFixture(c.TB, repoRoot, workDir)
+	seedAtlasProjectConfigDatabaseState(c.TB, ctx, testDBURL)
 
 	output, err := runPtahInDir(ctx, workDir, binaryPath, "migrations", "status", "--env", "local", "--json")
 	c.Assert(err, qt.IsNil, qt.Commentf("migrations status output:\n%s", output))
-	c.Assert(readStatusField(c, output, "total_migrations"), qt.Equals, float64(2))
-	c.Assert(readStatusField(c, output, "current_version"), qt.Equals, float64(20260719010000))
-	c.Assert(readStatusField(c, output, "applied_migrations"), qt.DeepEquals, []any{float64(20260719010000)})
-	c.Assert(readStatusField(c, output, "pending_migrations"), qt.DeepEquals, []any{float64(20260719010101)})
-	c.Assert(readStatusField(c, output, "has_pending_changes"), qt.Equals, true)
+	c.Assert(readStatusField(c.TB, output, "total_migrations"), qt.Equals, float64(2))
+	c.Assert(readStatusField(c.TB, output, "current_version"), qt.Equals, float64(20260719010000))
+	c.Assert(readStatusField(c.TB, output, "applied_migrations"), qt.DeepEquals, []any{float64(20260719010000)})
+	c.Assert(readStatusField(c.TB, output, "pending_migrations"), qt.DeepEquals, []any{float64(20260719010101)})
+	c.Assert(readStatusField(c.TB, output, "has_pending_changes"), qt.Equals, true)
 
 	applyStarted := time.Now()
 	output, err = runPtahInDir(ctx, workDir, binaryPath, "migrations", "up", "--env", "local", "--verify-sum")
@@ -87,15 +87,15 @@ func TestAtlasProjectConfigMigrateStatusAndUpE2E(t *testing.T) {
 
 	output, err = runPtahInDir(ctx, workDir, binaryPath, "migrations", "status", "--env", "local", "--json")
 	c.Assert(err, qt.IsNil, qt.Commentf("final migrations status output:\n%s", output))
-	c.Assert(readStatusField(c, output, "current_version"), qt.Equals, float64(20260719010101))
-	c.Assert(readStatusField(c, output, "applied_migrations"), qt.DeepEquals, []any{
+	c.Assert(readStatusField(c.TB, output, "current_version"), qt.Equals, float64(20260719010101))
+	c.Assert(readStatusField(c.TB, output, "applied_migrations"), qt.DeepEquals, []any{
 		float64(20260719010000),
 		float64(20260719010101),
 	})
-	c.Assert(readStatusField(c, output, "pending_migrations"), qt.DeepEquals, []any{})
-	c.Assert(readStatusField(c, output, "has_pending_changes"), qt.Equals, false)
+	c.Assert(readStatusField(c.TB, output, "pending_migrations"), qt.DeepEquals, []any{})
+	c.Assert(readStatusField(c.TB, output, "has_pending_changes"), qt.Equals, false)
 
-	verifyAtlasProjectConfigDatabaseState(c, ctx, testDBURL, applyStarted, applyFinished)
+	verifyAtlasProjectConfigDatabaseState(c.TB, ctx, testDBURL, applyStarted, applyFinished)
 }
 
 // requireAtlasProjectConfigPostgresURL returns a live PostgreSQL address in URL
@@ -114,12 +114,14 @@ func requireAtlasProjectConfigPostgresURL(t *testing.T) string {
 	return dbURL
 }
 
-func writeAtlasProjectConfigFixture(c *qt.C, repoRoot, workDir string) {
+func writeAtlasProjectConfigFixture(tb testing.TB, repoRoot, workDir string) {
+	c := qt.New(tb)
 	fixtureRoot := filepath.Join(repoRoot, "integration", "testdata", "atlas-project-config")
 	c.Assert(os.CopyFS(workDir, os.DirFS(fixtureRoot)), qt.IsNil)
 }
 
-func seedAtlasProjectConfigDatabaseState(c *qt.C, ctx context.Context, dbURL string) {
+func seedAtlasProjectConfigDatabaseState(tb testing.TB, ctx context.Context, dbURL string) {
+	c := qt.New(tb)
 	db, err := sql.Open("pgx", dbURL)
 	c.Assert(err, qt.IsNil)
 	defer db.Close()
@@ -162,19 +164,21 @@ func runPtahInDir(ctx context.Context, dir, binaryPath string, args ...string) (
 	return string(output), err
 }
 
-func readStatusField(c *qt.C, output, field string) any {
+func readStatusField(tb testing.TB, output, field string) any {
+	c := qt.New(tb)
 	var payload map[string]any
 	c.Assert(json.Unmarshal([]byte(output), &payload), qt.IsNil, qt.Commentf("status output:\n%s", output))
 	return payload[field]
 }
 
 func verifyAtlasProjectConfigDatabaseState(
-	c *qt.C,
+	tb testing.TB,
 	ctx context.Context,
 	dbURL string,
 	applyStarted time.Time,
 	applyFinished time.Time,
 ) {
+	c := qt.New(tb)
 	db, err := sql.Open("pgx", dbURL)
 	c.Assert(err, qt.IsNil)
 	defer db.Close()
@@ -199,7 +203,7 @@ WHERE schemaname = 'public' AND indexname = 'idx_ptah_issue_276_seed_id'`).Scan(
 	c.Assert(err, qt.IsNil)
 	c.Assert(indexName, qt.Equals, "idx_ptah_issue_276_seed_id")
 
-	seedRevision, seedTiming := readAtlasProjectConfigRevision(c, ctx, db, atlasProjectConfigSeedVersion)
+	seedRevision, seedTiming := readAtlasProjectConfigRevision(c.TB, ctx, db, atlasProjectConfigSeedVersion)
 	c.Assert(seedRevision, qt.DeepEquals, atlasProjectConfigRevision{
 		Version:         atlasProjectConfigSeedVersion,
 		Description:     "Seed project config",
@@ -212,7 +216,7 @@ WHERE schemaname = 'public' AND indexname = 'idx_ptah_issue_276_seed_id'`).Scan(
 	c.Assert(seedTiming.ExecutedAt.IsZero(), qt.IsFalse)
 	c.Assert(seedTiming.ExecutionTime, qt.Equals, int64(100))
 
-	pendingRevision, pendingTiming := readAtlasProjectConfigRevision(c, ctx, db, atlasProjectConfigPendingVersion)
+	pendingRevision, pendingTiming := readAtlasProjectConfigRevision(c.TB, ctx, db, atlasProjectConfigPendingVersion)
 	c.Assert(pendingRevision, qt.DeepEquals, atlasProjectConfigRevision{
 		Version:         atlasProjectConfigPendingVersion,
 		Description:     "create_project_config_widgets",
@@ -243,11 +247,12 @@ WHERE schemaname = 'public' AND indexname = 'idx_ptah_issue_276_seed_id'`).Scan(
 }
 
 func readAtlasProjectConfigRevision(
-	c *qt.C,
+	tb testing.TB,
 	ctx context.Context,
 	db *sql.DB,
 	version string,
 ) (atlasProjectConfigRevision, atlasProjectConfigRevisionTiming) {
+	c := qt.New(tb)
 	c.Helper()
 
 	var revision atlasProjectConfigRevision

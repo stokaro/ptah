@@ -41,10 +41,10 @@ func TestGenerateMigration_PartitionedParentShadowRoundTripWithRealPostgres(t *t
 	defer dbschema.CloseAndWarn(admin)
 	c.Assert(platform.NormalizeDialect(admin.Info().Dialect), qt.Equals, platform.Postgres)
 
-	targetURL, targetDatabase := createGeneratorTestPostgres(c, admin, adminURL, "ptah_generator_partition_shadow_target")
-	defer dropGeneratorTestPostgres(c, admin, targetDatabase)
-	shadowURL, shadowDatabase := createGeneratorTestPostgres(c, admin, adminURL, "ptah_generator_partition_shadow_db")
-	defer dropGeneratorTestPostgres(c, admin, shadowDatabase)
+	targetURL, targetDatabase := createGeneratorTestPostgres(c.TB, admin, adminURL, "ptah_generator_partition_shadow_target")
+	defer dropGeneratorTestPostgres(c.TB, admin, targetDatabase)
+	shadowURL, shadowDatabase := createGeneratorTestPostgres(c.TB, admin, adminURL, "ptah_generator_partition_shadow_db")
+	defer dropGeneratorTestPostgres(c.TB, admin, shadowDatabase)
 
 	target, err := dbschema.ConnectToDatabase(ctx, targetURL)
 	c.Assert(err, qt.IsNil)
@@ -84,7 +84,7 @@ func TestGenerateMigration_PartitionedParentShadowRoundTripWithRealPostgres(t *t
 	`)
 	c.Assert(err, qt.IsNil)
 	c.Assert(
-		readPartitionedIndexCatalog(c, target),
+		readPartitionedIndexCatalog(c.TB, target),
 		qt.DeepEquals,
 		[]partitionedIndexRow{
 			{Name: "events_2026_tenant_idx", RelKind: "i", Valid: true, Ready: true, Attached: true},
@@ -103,13 +103,13 @@ func TestGenerateMigration_PartitionedParentShadowRoundTripWithRealPostgres(t *t
 	})
 	c.Assert(err, qt.IsNil)
 	c.Assert(second, qt.IsNil)
-	c.Assert(readGeneratedMigrationFilenames(c, migrationsDir), qt.HasLen, 2)
+	c.Assert(readGeneratedMigrationFilenames(c.TB, migrationsDir), qt.HasLen, 2)
 
 	replay, err := migrator.NewFSMigrationProvider(os.DirFS(migrationsDir))
 	c.Assert(err, qt.IsNil)
 	c.Assert(migrator.NewMigrator(target, replay).MigrateUp(ctx), qt.IsNil)
 	c.Assert(
-		readPartitionedIndexCatalog(c, target),
+		readPartitionedIndexCatalog(c.TB, target),
 		qt.DeepEquals,
 		[]partitionedIndexRow{
 			{Name: "events_2026_tenant_idx", RelKind: "i", Valid: true, Ready: true, Attached: true},

@@ -38,7 +38,8 @@ func liveMySQLAdminURLForPrimaryKeyIdentity(t *testing.T) string {
 // again afterwards. The shared development server is dirty, and a row that asks
 // information_schema which columns carry the primary key needs a table nothing
 // else touched.
-func createPrimaryKeyIdentityDatabase(c *qt.C, adminURL string) (dbURL, database string) {
+func createPrimaryKeyIdentityDatabase(tb testing.TB, adminURL string) (dbURL, database string) {
+	c := qt.New(tb)
 	c.Helper()
 	name := fmt.Sprintf("ptah_pkident_%d_%d", os.Getpid(), time.Now().UnixNano())
 	admin, err := dbschema.ConnectToDatabase(context.Background(), adminURL)
@@ -53,10 +54,11 @@ func createPrimaryKeyIdentityDatabase(c *qt.C, adminURL string) (dbURL, database
 		c.Check(cleanupErr, qt.IsNil)
 	})
 
-	return mySQLURLWithDatabase(c, adminURL, name), name
+	return mySQLURLWithDatabase(c.TB, adminURL, name), name
 }
 
-func mySQLURLWithDatabase(c *qt.C, rawURL, database string) string {
+func mySQLURLWithDatabase(tb testing.TB, rawURL, database string) string {
+	c := qt.New(tb)
 	c.Helper()
 
 	if strings.Contains(rawURL, "@tcp(") {
@@ -75,7 +77,8 @@ func mySQLURLWithDatabase(c *qt.C, rawURL, database string) string {
 }
 
 // executeMySQL runs every statement in order and fails on the first error.
-func executeMySQL(c *qt.C, dbURL string, statements []string) {
+func executeMySQL(tb testing.TB, dbURL string, statements []string) {
+	c := qt.New(tb)
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(context.Background(), dbURL)
 	c.Assert(err, qt.IsNil)
@@ -88,7 +91,8 @@ func executeMySQL(c *qt.C, dbURL string, statements []string) {
 
 // primaryKeyColumns reports the columns information_schema attributes to the
 // table's PRIMARY KEY, in key order.
-func primaryKeyColumns(c *qt.C, dbURL, database, table string) []string {
+func primaryKeyColumns(tb testing.TB, dbURL, database, table string) []string {
+	c := qt.New(tb)
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(context.Background(), dbURL)
 	c.Assert(err, qt.IsNil)
@@ -155,11 +159,11 @@ func TestPrimaryKeyIsPlannedOnceLiveMySQL(t *testing.T) {
 
 	for _, test := range tests {
 		c.Run(test.name, func(c *qt.C) {
-			dbURL, database := createPrimaryKeyIdentityDatabase(c, adminURL)
-			executeMySQL(c, dbURL, []string{
+			dbURL, database := createPrimaryKeyIdentityDatabase(c.TB, adminURL)
+			executeMySQL(c.TB, dbURL, []string{
 				"CREATE TABLE `orders` (`id` INT NOT NULL, `note` TEXT)",
 			})
-			c.Assert(primaryKeyColumns(c, dbURL, database, "orders"), qt.DeepEquals, []string{})
+			c.Assert(primaryKeyColumns(c.TB, dbURL, database, "orders"), qt.DeepEquals, []string{})
 
 			generated := &goschema.Database{
 				Tables: []goschema.Table{{StructName: "Order", Name: "orders", Schema: database}},
@@ -188,9 +192,9 @@ func TestPrimaryKeyIsPlannedOnceLiveMySQL(t *testing.T) {
 			statements, err := planner.GenerateSchemaDiffSQLStatements(diff, generated, "mysql")
 			c.Assert(err, qt.IsNil)
 			c.Logf("plan:\n%s", strings.Join(statements, "\n"))
-			executeMySQL(c, dbURL, statements)
+			executeMySQL(c.TB, dbURL, statements)
 
-			c.Assert(primaryKeyColumns(c, dbURL, database, "orders"), qt.DeepEquals, []string{"id"})
+			c.Assert(primaryKeyColumns(c.TB, dbURL, database, "orders"), qt.DeepEquals, []string{"id"})
 		})
 	}
 }

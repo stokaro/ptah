@@ -85,7 +85,7 @@ func TestPostgreSQLIndexAttributes_SurviveTheRead(t *testing.T) {
 	dsn := skipIfNoPostgreSQL(t)
 	c := qt.New(t)
 
-	dbURL := newBoundaryDatabase(c, dsn, boundaryCase{
+	dbURL := newBoundaryDatabase(c.TB, dsn, boundaryCase{
 		name:  "index_attributes",
 		seed:  indexAttributeSeed(),
 		query: "search_path=public",
@@ -250,7 +250,7 @@ func TestPostgreSQLIndexAttributes_SurviveTheRead(t *testing.T) {
 
 	for _, test := range tests {
 		c.Run(test.name, func(c *qt.C) {
-			test.assert(c, findLiveIndex(c, live.Indexes, test.index))
+			test.assert(c, findLiveIndex(c.TB, live.Indexes, test.index))
 		})
 	}
 }
@@ -286,7 +286,7 @@ func TestPostgreSQLIndexAttributes_ApplyingItsOwnDescriptionChangesNothing(t *te
 
 	for _, test := range tests {
 		c.Run(test.name, func(c *qt.C) {
-			dbURL := newBoundaryDatabase(c, dsn, boundaryCase{
+			dbURL := newBoundaryDatabase(c.TB, dsn, boundaryCase{
 				name:  "index_attributes_apply",
 				seed:  indexAttributeSeed(),
 				query: "search_path=public",
@@ -295,7 +295,7 @@ func TestPostgreSQLIndexAttributes_ApplyingItsOwnDescriptionChangesNothing(t *te
 			c.Assert(err, qt.IsNil)
 			c.Cleanup(func() { dbschema.CloseAndWarn(conn) })
 
-			document := boundaryInspect(c, dbURL, test.compatibility)
+			document := boundaryInspect(c.TB, dbURL, test.compatibility)
 			c.Assert(document, qt.Contains, `ops = "tsvector_ops(siglen=64)"`)
 			// The per-key spelling. It is asserted separately from the one
 			// above because a converter that forwarded the first key's class
@@ -304,7 +304,7 @@ func TestPostgreSQLIndexAttributes_ApplyingItsOwnDescriptionChangesNothing(t *te
 			c.Assert(document, qt.Contains, "page_per_range = 32")
 			c.Assert(document, qt.Contains, `comment = "keep me"`)
 
-			plan := boundaryApplyBack(c, conn, document, test.compatibility)
+			plan := boundaryApplyBack(c.TB, conn, document, test.compatibility)
 
 			c.Assert(indexStatements(plan), qt.DeepEquals, []string(nil))
 		})
@@ -325,7 +325,8 @@ func indexStatements(statements []string) []string {
 	return out
 }
 
-func findLiveIndex(c *qt.C, indexes []dbschematypes.DBIndex, name string) dbschematypes.DBIndex {
+func findLiveIndex(tb testing.TB, indexes []dbschematypes.DBIndex, name string) dbschematypes.DBIndex {
+	c := qt.New(tb)
 	c.Helper()
 
 	for _, index := range indexes {

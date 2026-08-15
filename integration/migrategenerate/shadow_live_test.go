@@ -26,9 +26,9 @@ func TestMigrateGenerateShadowVerificationWithRealDB(t *testing.T) {
 	ctx := t.Context()
 	dbURL, conn := requireMigrateGeneratePostgresTestConnection(t, ctx)
 	defer dbschema.CloseAndWarn(conn)
-	shadowURL, shadowDatabase := createMigrateGenerateShadowDatabase(c, ctx, conn, dbURL)
-	defer dropMigrateGenerateShadowDatabase(c, conn, shadowDatabase)
-	releaseLock := acquireMigrateGenerateTestLock(c, ctx, conn)
+	shadowURL, shadowDatabase := createMigrateGenerateShadowDatabase(c.TB, ctx, conn, dbURL)
+	defer dropMigrateGenerateShadowDatabase(c.TB, conn, shadowDatabase)
+	releaseLock := acquireMigrateGenerateTestLock(c.TB, ctx, conn)
 	defer releaseLock()
 	defer func() {
 		c.Assert(conn.SchemaWriter().DropAllTables(ctx), qt.IsNil)
@@ -36,11 +36,11 @@ func TestMigrateGenerateShadowVerificationWithRealDB(t *testing.T) {
 
 	c.Run("broken prior migration aborts before writing candidate files", func(c *qt.C) {
 		dir := c.TempDir()
-		entitiesDir := writeMigrateGenerateShadowEntities(c, dir)
+		entitiesDir := writeMigrateGenerateShadowEntities(c.TB, dir)
 		migrationsDir := filepath.Join(dir, "migrations")
 		c.Assert(os.MkdirAll(migrationsDir, 0o755), qt.IsNil)
-		writeMigrateGeneratePriorMigration(c, migrationsDir, "CREATE TABLE users (id SERIAL PRIMARY KEY);\n")
-		prepareMigrateGenerateTargetDB(c, ctx, conn)
+		writeMigrateGeneratePriorMigration(c.TB, migrationsDir, "CREATE TABLE users (id SERIAL PRIMARY KEY);\n")
+		prepareMigrateGenerateTargetDB(c.TB, ctx, conn)
 
 		var out bytes.Buffer
 		cmd := migrate.NewMigrateGenerateCommand()
@@ -69,11 +69,11 @@ func TestMigrateGenerateShadowVerificationWithRealDB(t *testing.T) {
 
 	c.Run("correct prior migration writes candidate files", func(c *qt.C) {
 		dir := c.TempDir()
-		entitiesDir := writeMigrateGenerateShadowEntities(c, dir)
+		entitiesDir := writeMigrateGenerateShadowEntities(c.TB, dir)
 		migrationsDir := filepath.Join(dir, "migrations")
 		c.Assert(os.MkdirAll(migrationsDir, 0o755), qt.IsNil)
-		writeMigrateGeneratePriorMigration(c, migrationsDir, "CREATE TABLE users (id SERIAL PRIMARY KEY, name TEXT NOT NULL);\n")
-		prepareMigrateGenerateTargetDB(c, ctx, conn)
+		writeMigrateGeneratePriorMigration(c.TB, migrationsDir, "CREATE TABLE users (id SERIAL PRIMARY KEY, name TEXT NOT NULL);\n")
+		prepareMigrateGenerateTargetDB(c.TB, ctx, conn)
 
 		var out bytes.Buffer
 		cmd := migrate.NewMigrateGenerateCommand()
@@ -94,11 +94,12 @@ func TestMigrateGenerateShadowVerificationWithRealDB(t *testing.T) {
 }
 
 func createMigrateGenerateShadowDatabase(
-	c *qt.C,
+	tb testing.TB,
 	ctx context.Context,
 	admin *dbschema.DatabaseConnection,
 	baseURL string,
 ) (shadowURL, database string) {
+	c := qt.New(tb)
 	c.Helper()
 	database = fmt.Sprintf("ptah_migrate_generate_shadow_%d", time.Now().UnixNano())
 	_, err := admin.ExecContext(ctx, "CREATE DATABASE "+sqlident.Quote(platform.Postgres, database))
@@ -111,10 +112,11 @@ func createMigrateGenerateShadowDatabase(
 }
 
 func dropMigrateGenerateShadowDatabase(
-	c *qt.C,
+	tb testing.TB,
 	admin *dbschema.DatabaseConnection,
 	database string,
 ) {
+	c := qt.New(tb)
 	c.Helper()
 	_, _ = admin.ExecContext(
 		context.Background(),
@@ -150,7 +152,8 @@ func requireMigrateGeneratePostgresTestConnection(
 	return dbURL, conn
 }
 
-func acquireMigrateGenerateTestLock(c *qt.C, ctx context.Context, conn *dbschema.DatabaseConnection) func() {
+func acquireMigrateGenerateTestLock(tb testing.TB, ctx context.Context, conn *dbschema.DatabaseConnection) func() {
+	c := qt.New(tb)
 	_, err := conn.ExecContext(ctx, "SELECT pg_advisory_lock(156156156)")
 	c.Assert(err, qt.IsNil)
 	return func() {
@@ -159,7 +162,8 @@ func acquireMigrateGenerateTestLock(c *qt.C, ctx context.Context, conn *dbschema
 	}
 }
 
-func writeMigrateGenerateShadowEntities(c *qt.C, dir string) string {
+func writeMigrateGenerateShadowEntities(tb testing.TB, dir string) string {
+	c := qt.New(tb)
 	entitiesDir := filepath.Join(dir, "entities")
 	c.Assert(os.MkdirAll(entitiesDir, 0o755), qt.IsNil)
 	content := `package entities
@@ -180,12 +184,14 @@ type User struct {
 	return entitiesDir
 }
 
-func writeMigrateGeneratePriorMigration(c *qt.C, dir, upSQL string) {
+func writeMigrateGeneratePriorMigration(tb testing.TB, dir, upSQL string) {
+	c := qt.New(tb)
 	c.Assert(os.WriteFile(filepath.Join(dir, "0000000001_init.up.sql"), []byte(upSQL), 0o600), qt.IsNil)
 	c.Assert(os.WriteFile(filepath.Join(dir, "0000000001_init.down.sql"), []byte("DROP TABLE IF EXISTS users;\n"), 0o600), qt.IsNil)
 }
 
-func prepareMigrateGenerateTargetDB(c *qt.C, ctx context.Context, conn *dbschema.DatabaseConnection) {
+func prepareMigrateGenerateTargetDB(tb testing.TB, ctx context.Context, conn *dbschema.DatabaseConnection) {
+	c := qt.New(tb)
 	c.Assert(conn.SchemaWriter().DropAllTables(ctx), qt.IsNil)
 	_, err := conn.ExecContext(ctx, "CREATE TABLE users (id SERIAL PRIMARY KEY, name TEXT NOT NULL)")
 	c.Assert(err, qt.IsNil)

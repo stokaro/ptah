@@ -15,7 +15,7 @@ import (
 
 func TestVerifyRollbackFromShadow_FailurePathRejectsLiveDialectMismatch(t *testing.T) {
 	c := qt.New(t)
-	targetConn := openRollbackTarget(c, requireRollbackPostgresURL(c))
+	targetConn := openRollbackTarget(c.TB, requireRollbackPostgresURL(c))
 
 	err := generator.VerifyRollbackFromShadow(c.Context(), generator.RollbackFromShadowOptions{
 		TargetConnection:  targetConn,
@@ -38,7 +38,7 @@ func TestVerifyRollbackFromShadow_FailurePathRejectsDriverOverrideAliasLive(t *t
 		"postgres",
 	)
 	shadowURL := rollbackPostgresDriverOverrideURL(c, targetURL)
-	targetConn := openRollbackTarget(c, targetURL)
+	targetConn := openRollbackTarget(c.TB, targetURL)
 	fastPathSame, err := atlasurl.SameDatabaseEndpoint(targetURL, shadowURL)
 	c.Assert(err, qt.IsNil)
 	c.Assert(fastPathSame, qt.IsTrue)

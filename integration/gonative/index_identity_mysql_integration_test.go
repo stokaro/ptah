@@ -62,14 +62,14 @@ func testMySQLFamilyTableQualifiedIndexIdentityRoundTrip(t *testing.T, dsn, dial
 	c.Assert(err, qt.IsNil)
 
 	target := tableQualifiedIndexTarget()
-	live := readMySQLFamilyIndexIdentitySchema(c, db)
+	live := readMySQLFamilyIndexIdentitySchema(c.TB, db)
 	initialDiff := schemadiff.CompareWithDialect(target, live, dialect)
 	c.Assert(initialDiff.IndexAdditions(), qt.HasLen, 0)
 	c.Assert(initialDiff.IndexRemovals(), qt.HasLen, 0)
 
 	_, err = db.Exec("DROP INDEX " + indexIdentityName + " ON " + indexIdentityOrdersTable)
 	c.Assert(err, qt.IsNil)
-	live = readMySQLFamilyIndexIdentitySchema(c, db)
+	live = readMySQLFamilyIndexIdentitySchema(c.TB, db)
 	additionDiff := schemadiff.CompareWithDialect(target, live, dialect)
 	c.Assert(additionDiff.IndexAdditions(), qt.DeepEquals, []difftypes.IndexRef{
 		{Name: indexIdentityName, TableName: indexIdentityOrdersTable},
@@ -85,7 +85,7 @@ func testMySQLFamilyTableQualifiedIndexIdentityRoundTrip(t *testing.T, dsn, dial
 	c.Assert(err, qt.IsNil, qt.Commentf("apply exact index addition: %s", addStatements[0]))
 
 	target = tableQualifiedIndexTargetWithoutOrdersIndex()
-	live = readMySQLFamilyIndexIdentitySchema(c, db)
+	live = readMySQLFamilyIndexIdentitySchema(c.TB, db)
 	removalDiff := schemadiff.CompareWithDialect(target, live, dialect)
 	c.Assert(removalDiff.IndexAdditions(), qt.HasLen, 0)
 	c.Assert(removalDiff.IndexRemovals(), qt.DeepEquals, []difftypes.IndexRef{
@@ -100,13 +100,14 @@ func testMySQLFamilyTableQualifiedIndexIdentityRoundTrip(t *testing.T, dsn, dial
 	_, err = db.Exec(removeStatements[0])
 	c.Assert(err, qt.IsNil, qt.Commentf("apply exact index removal: %s", removeStatements[0]))
 
-	live = readMySQLFamilyIndexIdentitySchema(c, db)
+	live = readMySQLFamilyIndexIdentitySchema(c.TB, db)
 	finalDiff := schemadiff.CompareWithDialect(target, live, dialect)
 	c.Assert(finalDiff.IndexAdditions(), qt.HasLen, 0)
 	c.Assert(finalDiff.IndexRemovals(), qt.HasLen, 0)
 }
 
-func readMySQLFamilyIndexIdentitySchema(c *qt.C, db *sql.DB) *dbschematypes.DBSchema {
+func readMySQLFamilyIndexIdentitySchema(tb testing.TB, db *sql.DB) *dbschematypes.DBSchema {
+	c := qt.New(tb)
 	c.Helper()
 	live, err := mysql.NewMySQLReader(db, "").ReadSchema()
 	c.Assert(err, qt.IsNil)

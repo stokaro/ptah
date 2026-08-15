@@ -44,12 +44,13 @@ func createRLSSpellingDatabases(t *testing.T, adminURL string) (targetURL, devUR
 		_, err := conn.ExecContext(context.Background(), "CREATE DATABASE "+name)
 		c.Assert(err, qt.IsNil)
 	}
-	return databaseURL(c, adminURL, targetName), databaseURL(c, adminURL, devName)
+	return databaseURL(c.TB, adminURL, targetName), databaseURL(c.TB, adminURL, devName)
 }
 
 // databaseURL rewrites the database component of a PostgreSQL URL, keeping
 // credentials, host and query parameters.
-func databaseURL(c *qt.C, adminURL, database string) string {
+func databaseURL(tb testing.TB, adminURL, database string) string {
+	c := qt.New(tb)
 	c.Helper()
 	parsed, err := url.Parse(adminURL)
 	c.Assert(err, qt.IsNil)

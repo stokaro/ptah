@@ -59,7 +59,7 @@ func TestReaderConstraints_LiveKeepsSameNamedConstraintsTableQualified(t *testin
 		c.Run(test.name, func(c *qt.C) {
 			ctx, cancel := context.WithTimeout(c.Context(), time.Minute)
 			defer cancel()
-			conn, schemaName := prepareConstraintIdentityFixture(c, ctx, test.engine)
+			conn, schemaName := prepareConstraintIdentityFixture(c.TB, ctx, test.engine)
 			gotSchema, err := dbschema.ReadSchemaWithSchemas(conn, []string{schemaName})
 			c.Assert(err, qt.IsNil)
 			c.Assert(observeConstraints(gotSchema.Constraints), qt.DeepEquals, test.want)
@@ -67,7 +67,8 @@ func TestReaderConstraints_LiveKeepsSameNamedConstraintsTableQualified(t *testin
 	}
 }
 
-func prepareConstraintIdentityFixture(c *qt.C, ctx context.Context, engine dbtarget.Engine) (*dbschema.DatabaseConnection, string) {
+func prepareConstraintIdentityFixture(tb testing.TB, ctx context.Context, engine dbtarget.Engine) (*dbschema.DatabaseConnection, string) {
+	c := qt.New(tb)
 	c.Helper()
 	rawURL := dbtarget.URL(c, engine)
 	conn, err := dbschema.ConnectToDatabase(ctx, rawURL)
@@ -78,9 +79,9 @@ func prepareConstraintIdentityFixture(c *qt.C, ctx context.Context, engine dbtar
 
 	schemaName := fmt.Sprintf("ptah_constraint_identity_%d", time.Now().UnixNano())
 	schemaIdent := pgx.Identifier{schemaName}.Sanitize()
-	dropConstraintIdentityFixture(c, context.Background(), conn, schemaIdent)
+	dropConstraintIdentityFixture(c.TB, context.Background(), conn, schemaIdent)
 	c.Cleanup(func() {
-		dropConstraintIdentityFixture(c, context.Background(), conn, schemaIdent)
+		dropConstraintIdentityFixture(c.TB, context.Background(), conn, schemaIdent)
 	})
 
 	statements := []string{
@@ -117,11 +118,12 @@ func constraintIdentityChildTableSQL(schemaIdent, table, deleteRule string) stri
 }
 
 func dropConstraintIdentityFixture(
-	c *qt.C,
+	tb testing.TB,
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	schemaIdent string,
 ) {
+	c := qt.New(tb)
 	c.Helper()
 	_, err := conn.ExecContext(ctx, fmt.Sprintf("DROP SCHEMA IF EXISTS %s CASCADE", schemaIdent))
 	c.Check(err, qt.IsNil)

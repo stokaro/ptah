@@ -41,7 +41,7 @@ func TestPostgreSQLCoverageStillPlansAGenuineRemovalIntegration(t *testing.T) {
 	dsn := skipIfNoPostgreSQL(t)
 
 	c := qt.New(t)
-	dbURL := newBoundaryDatabase(c, dsn, boundaryCase{
+	dbURL := newBoundaryDatabase(c.TB, dsn, boundaryCase{
 		name: "coverage_removal",
 		seed: coverageRemovalSeed,
 	})
@@ -49,7 +49,7 @@ func TestPostgreSQLCoverageStillPlansAGenuineRemovalIntegration(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { dbschema.CloseAndWarn(conn) })
 
-	inspected := boundaryInspect(c, dbURL, true)
+	inspected := boundaryInspect(c.TB, dbURL, true)
 	authored := coverageStripDirectives(inspected)
 
 	t.Run("the document declares the three kinds it does not describe", func(t *testing.T) {
@@ -62,11 +62,11 @@ func TestPostgreSQLCoverageStillPlansAGenuineRemovalIntegration(t *testing.T) {
 	})
 
 	c.Run("as inspected, applying it back plans nothing", func(c *qt.C) {
-		c.Assert(boundaryApplyBack(c, conn, inspected, true), qt.HasLen, 0)
+		c.Assert(boundaryApplyBack(c.TB, conn, inspected, true), qt.HasLen, 0)
 	})
 
 	c.Run("with the header removed, the same document drops all three", func(c *qt.C) {
-		c.Assert(boundaryApplyBack(c, conn, authored, true), qt.DeepEquals, []string{
+		c.Assert(boundaryApplyBack(c.TB, conn, authored, true), qt.DeepEquals, []string{
 			`DROP POLICY IF EXISTS "p" ON "guarded"`,
 			`DROP SEQUENCE IF EXISTS "order_seq"`,
 			`DROP EXTENSION IF EXISTS "pgcrypto"`,

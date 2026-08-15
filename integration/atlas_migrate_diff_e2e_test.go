@@ -33,17 +33,17 @@ func TestAtlasMigrateDiffConcurrentIndexAndQualifierE2E(t *testing.T) {
 
 	repoRoot := e2eRepoRoot(t)
 	binaryPath := filepath.Join(t.TempDir(), "atlas")
-	buildPtahCompat(c, ctx, repoRoot, binaryPath)
+	buildPtahCompat(c.TB, ctx, repoRoot, binaryPath)
 
 	adminDB, err := sql.Open("pgx", dbURL)
 	c.Assert(err, qt.IsNil)
 	defer adminDB.Close()
 
 	testDBName := fmt.Sprintf("ptah_diff_e2e_%d", time.Now().UnixNano())
-	createE2EDatabase(c, ctx, adminDB, testDBName)
-	defer dropE2EDatabase(c, context.Background(), adminDB, testDBName)
+	createE2EDatabase(c.TB, ctx, adminDB, testDBName)
+	defer dropE2EDatabase(c.TB, context.Background(), adminDB, testDBName)
 
-	testDBURL := replaceDatabaseName(c, dbURL, testDBName)
+	testDBURL := replaceDatabaseName(c.TB, dbURL, testDBName)
 	devDB, err := sql.Open("pgx", testDBURL)
 	c.Assert(err, qt.IsNil)
 	defer devDB.Close()
@@ -126,7 +126,7 @@ WHERE nspname = 'audit'
 		c.Assert(err, qt.IsNil)
 		c.Assert(auditSchemaCount, qt.Equals, 0)
 		migrationSQL := readFirstMatchingFile(
-			c,
+			c.TB,
 			migrationsDir,
 			"*_database_realm_dependencies.sql",
 		)
@@ -134,10 +134,10 @@ WHERE nspname = 'audit'
 		c.Assert(migrationSQL, qt.Contains, "desired_items")
 	})
 	desiredDBName := testDBName + "_desired"
-	createE2EDatabase(c, ctx, adminDB, desiredDBName)
-	defer dropE2EDatabase(c, context.Background(), adminDB, desiredDBName)
+	createE2EDatabase(c.TB, ctx, adminDB, desiredDBName)
+	defer dropE2EDatabase(c.TB, context.Background(), adminDB, desiredDBName)
 
-	desiredDBURL := replaceDatabaseName(c, dbURL, desiredDBName)
+	desiredDBURL := replaceDatabaseName(c.TB, dbURL, desiredDBName)
 	desiredDB, err := sql.Open("pgx", desiredDBURL)
 	c.Assert(err, qt.IsNil)
 	defer desiredDB.Close()
@@ -180,7 +180,7 @@ env "dev" {
 			"add_database_items")
 
 		c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", output))
-		migrationSQL := readFirstMatchingFile(c, migrationsDir, "*_add_database_items.sql")
+		migrationSQL := readFirstMatchingFile(c.TB, migrationsDir, "*_add_database_items.sql")
 		c.Assert(migrationSQL, qt.Contains, "CREATE TABLE")
 		c.Assert(migrationSQL, qt.Contains, "desired_database_items")
 		c.Assert(migrationSQL, qt.Contains, "BIGSERIAL")
@@ -193,20 +193,20 @@ env "dev" {
 			Scan(&sourceTableCount)
 		c.Assert(queryErr, qt.IsNil)
 		c.Assert(sourceTableCount, qt.Equals, 1)
-		c.Assert(e2eUserTableCount(c, ctx, testDBURL), qt.Equals, 0)
-		c.Assert(e2eStaleObjectCount(c, ctx, testDBURL), qt.Equals, 0)
+		c.Assert(e2eUserTableCount(c.TB, ctx, testDBURL), qt.Equals, 0)
+		c.Assert(e2eStaleObjectCount(c.TB, ctx, testDBURL), qt.Equals, 0)
 
 		applyDBName := testDBName + "_env_apply"
-		createE2EDatabase(c, ctx, adminDB, applyDBName)
-		defer dropE2EDatabase(c, context.Background(), adminDB, applyDBName)
-		applyDBURL := replaceDatabaseName(c, dbURL, applyDBName)
+		createE2EDatabase(c.TB, ctx, adminDB, applyDBName)
+		defer dropE2EDatabase(c.TB, context.Background(), adminDB, applyDBName)
+		applyDBURL := replaceDatabaseName(c.TB, dbURL, applyDBName)
 		output, err = runPtah(ctx, t.TempDir(), binaryPath,
 			"migrate", "apply",
 			"--url", applyDBURL,
 			"--dir", "file://"+migrationsDir)
 		c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", output))
-		c.Assert(e2eTableCount(c, ctx, applyDBURL, "desired_database_items"), qt.Equals, 1)
-		c.Assert(e2eTableCount(c, ctx, applyDBURL, "desired_shared_sequence_items"), qt.Equals, 1)
+		c.Assert(e2eTableCount(c.TB, ctx, applyDBURL, "desired_database_items"), qt.Equals, 1)
+		c.Assert(e2eTableCount(c.TB, ctx, applyDBURL, "desired_shared_sequence_items"), qt.Equals, 1)
 
 		applyDB, err := sql.Open("pgx", applyDBURL)
 		c.Assert(err, qt.IsNil)
@@ -277,11 +277,11 @@ CREATE INDEX idx_users_email ON users (email);
 		output, err := runPtah(ctx, dir, binaryPath, "migrate", "diff", "--env", "dev", "add_email_index")
 
 		c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", output))
-		transactionalSQL := readFirstMatchingFile(c, migrationsDir, "*_add_email_index_transactional.sql")
+		transactionalSQL := readFirstMatchingFile(c.TB, migrationsDir, "*_add_email_index_transactional.sql")
 		c.Assert(transactionalSQL, qt.Contains, "ADD COLUMN")
 		c.Assert(transactionalSQL, qt.Not(qt.Contains), "atlas:txmode")
 		c.Assert(transactionalSQL, qt.Not(qt.Contains), "CONCURRENTLY")
-		concurrentSQL := readFirstMatchingFile(c, migrationsDir, "*_add_email_index_concurrent_indexes.sql")
+		concurrentSQL := readFirstMatchingFile(c.TB, migrationsDir, "*_add_email_index_concurrent_indexes.sql")
 		c.Assert(strings.HasPrefix(concurrentSQL, "-- atlas:txmode none\n\n"), qt.IsTrue,
 			qt.Commentf("concurrent file:\n%s", concurrentSQL))
 		c.Assert(concurrentSQL, qt.Contains, "CREATE INDEX CONCURRENTLY")
@@ -299,18 +299,18 @@ CREATE INDEX idx_users_email ON users (email);
 
 		c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", output))
 		c.Assert(output, qt.Contains, "The migration directory is synced with the desired state")
-		c.Assert(e2eUserTableCount(c, ctx, testDBURL), qt.Equals, 0)
+		c.Assert(e2eUserTableCount(c.TB, ctx, testDBURL), qt.Equals, 0)
 
 		applyDBName := testDBName + "_concurrent_apply"
-		createE2EDatabase(c, ctx, adminDB, applyDBName)
-		defer dropE2EDatabase(c, context.Background(), adminDB, applyDBName)
-		applyDBURL := replaceDatabaseName(c, dbURL, applyDBName)
+		createE2EDatabase(c.TB, ctx, adminDB, applyDBName)
+		defer dropE2EDatabase(c.TB, context.Background(), adminDB, applyDBName)
+		applyDBURL := replaceDatabaseName(c.TB, dbURL, applyDBName)
 		output, err = runPtah(ctx, dir, binaryPath,
 			"migrate", "apply",
 			"--url", applyDBURL,
 			"--dir", "file://"+migrationsDir)
 		c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", output))
-		c.Assert(e2eIndexIsValid(c, ctx, applyDBURL, "idx_users_email"), qt.IsTrue)
+		c.Assert(e2eIndexIsValid(c.TB, ctx, applyDBURL, "idx_users_email"), qt.IsTrue)
 	})
 
 	t.Run("qualifier prefixes generated statements and artifacts apply cleanly", func(t *testing.T) {
@@ -333,7 +333,7 @@ CREATE INDEX idx_users_email ON users (email);
 			"add_items")
 
 		c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", output))
-		migrationSQL := readFirstMatchingFile(c, migrationsDir, "*_add_items.sql")
+		migrationSQL := readFirstMatchingFile(c.TB, migrationsDir, "*_add_items.sql")
 		c.Assert(migrationSQL, qt.Contains, `CREATE TABLE "tenant"."items"`)
 
 		// The generated artifact applies cleanly to a database that has the
@@ -376,7 +376,8 @@ CREATE INDEX idx_users_email ON users (email);
 	})
 }
 
-func e2eUserTableCount(c *qt.C, ctx context.Context, dbURL string) int {
+func e2eUserTableCount(tb testing.TB, ctx context.Context, dbURL string) int {
+	c := qt.New(tb)
 	c.Helper()
 	db, err := sql.Open("pgx", dbURL)
 	c.Assert(err, qt.IsNil)
@@ -390,7 +391,8 @@ WHERE table_schema NOT IN ('pg_catalog', 'information_schema')`).Scan(&count)
 	return count
 }
 
-func e2eTableCount(c *qt.C, ctx context.Context, dbURL, tableName string) int {
+func e2eTableCount(tb testing.TB, ctx context.Context, dbURL, tableName string) int {
+	c := qt.New(tb)
 	c.Helper()
 	db, err := sql.Open("pgx", dbURL)
 	c.Assert(err, qt.IsNil)
@@ -404,7 +406,8 @@ WHERE table_schema = 'public' AND table_name = $1`, tableName).Scan(&count)
 	return count
 }
 
-func e2eStaleObjectCount(c *qt.C, ctx context.Context, dbURL string) int {
+func e2eStaleObjectCount(tb testing.TB, ctx context.Context, dbURL string) int {
+	c := qt.New(tb)
 	c.Helper()
 	db, err := sql.Open("pgx", dbURL)
 	c.Assert(err, qt.IsNil)
@@ -432,7 +435,8 @@ SELECT
 	return count
 }
 
-func e2eIndexIsValid(c *qt.C, ctx context.Context, dbURL, indexName string) bool {
+func e2eIndexIsValid(tb testing.TB, ctx context.Context, dbURL, indexName string) bool {
+	c := qt.New(tb)
 	c.Helper()
 	db, err := sql.Open("pgx", dbURL)
 	c.Assert(err, qt.IsNil)

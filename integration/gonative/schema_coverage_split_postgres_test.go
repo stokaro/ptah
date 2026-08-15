@@ -45,7 +45,7 @@ func TestPostgreSQLCoverageSurvivesSplitWriteIntegration(t *testing.T) {
 	dsn := skipIfNoPostgreSQL(t)
 
 	c := qt.New(t)
-	dbURL := newBoundaryDatabase(c, dsn, boundaryCase{
+	dbURL := newBoundaryDatabase(c.TB, dsn, boundaryCase{
 		name: "coverage_split",
 		seed: coverageRemovalSeed,
 	})
@@ -71,7 +71,7 @@ func TestPostgreSQLCoverageSurvivesSplitWriteIntegration(t *testing.T) {
 
 	for _, mode := range modes {
 		c.Run(mode.name, func(c *qt.C) {
-			members := coverageSplitInspect(c, dbURL, mode.split)
+			members := coverageSplitInspect(c.TB, dbURL, mode.split)
 			c.Assert(len(members) > 0, qt.IsTrue)
 
 			for _, member := range members {
@@ -88,7 +88,7 @@ func TestPostgreSQLCoverageSurvivesSplitWriteIntegration(t *testing.T) {
 					// legitimately plan to drop what a sibling holds; what it
 					// must never plan is a drop of the three kinds it declared
 					// it does not describe.
-					planned := boundaryApplyBack(c, conn, string(document), true)
+					planned := boundaryApplyBack(c.TB, conn, string(document), true)
 					for _, drop := range wantDrops {
 						c.Assert(planned, qt.Not(qt.Contains), drop)
 					}
@@ -103,7 +103,7 @@ func TestPostgreSQLCoverageSurvivesSplitWriteIntegration(t *testing.T) {
 	// are satisfied by a comparator that can no longer remove anything, which is
 	// the worse defect.
 	c.Run("with the header removed, a split member drops all three", func(c *qt.C) {
-		members := coverageSplitInspect(c, dbURL, `split "schema"`)
+		members := coverageSplitInspect(c.TB, dbURL, `split "schema"`)
 		c.Assert(members, qt.HasLen, 1)
 		document, readErr := os.ReadFile(members[0])
 		c.Assert(readErr, qt.IsNil)
@@ -112,13 +112,14 @@ func TestPostgreSQLCoverageSurvivesSplitWriteIntegration(t *testing.T) {
 		stripped := coverageStripDirectives(string(document))
 		c.Assert(coverageDirectiveLines(stripped), qt.HasLen, 0)
 
-		c.Assert(boundaryApplyBack(c, conn, stripped, true), qt.DeepEquals, wantDrops)
+		c.Assert(boundaryApplyBack(c.TB, conn, stripped, true), qt.DeepEquals, wantDrops)
 	})
 }
 
 // coverageSplitInspect runs `schema inspect` through the split/write export and
 // returns the absolute path of every file it wrote, sorted.
-func coverageSplitInspect(c *qt.C, dbURL, split string) []string {
+func coverageSplitInspect(tb testing.TB, dbURL, split string) []string {
+	c := qt.New(tb)
 	c.Helper()
 
 	root := c.TempDir()

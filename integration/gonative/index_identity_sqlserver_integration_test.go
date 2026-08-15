@@ -50,7 +50,7 @@ func TestSQLServerTableQualifiedIndexIdentity_RoundTrip(t *testing.T) {
 	}
 
 	ordersTarget := sqlServerIndexIdentityOrdersTarget()
-	_, diff := compareSQLServerIndexIdentitySchema(c, t, dsn, ordersTarget)
+	_, diff := compareSQLServerIndexIdentitySchema(c.TB, t, dsn, ordersTarget)
 	c.Assert(diff.IndexAdditions(), qt.HasLen, 0)
 	c.Assert(diff.IndexRemovals(), qt.DeepEquals, []difftypes.IndexRef{
 		{Name: sqlServerIndexIdentityName, TableName: sqlServerIndexIdentitySchema + ".users"},
@@ -73,13 +73,13 @@ func TestSQLServerTableQualifiedIndexIdentity_RoundTrip(t *testing.T) {
 	_, err = db.Exec(planned[0])
 	c.Assert(err, qt.IsNil, qt.Commentf("apply SQL Server index removal: %s", planned[0]))
 
-	live, removedDiff := compareSQLServerIndexIdentitySchema(c, t, dsn, ordersTarget)
+	live, removedDiff := compareSQLServerIndexIdentitySchema(c.TB, t, dsn, ordersTarget)
 	c.Assert(removedDiff.IndexAdditions(), qt.HasLen, 0)
 	c.Assert(removedDiff.IndexRemovals(), qt.HasLen, 0)
 	c.Assert(live.Indexes, qt.HasLen, 1)
 
 	bothTarget := sqlServerIndexIdentityBothTarget()
-	_, addDiff := compareSQLServerIndexIdentitySchema(c, t, dsn, bothTarget)
+	_, addDiff := compareSQLServerIndexIdentitySchema(c.TB, t, dsn, bothTarget)
 	c.Assert(addDiff.IndexAdditions(), qt.DeepEquals, []difftypes.IndexRef{
 		{Name: sqlServerIndexIdentityName, TableName: sqlServerIndexIdentitySchema + ".users"},
 	})
@@ -102,7 +102,7 @@ func TestSQLServerTableQualifiedIndexIdentity_RoundTrip(t *testing.T) {
 	_, err = db.Exec(planned[0])
 	c.Assert(err, qt.IsNil, qt.Commentf("apply SQL Server index addition: %s", planned[0]))
 
-	live, finalDiff := compareSQLServerIndexIdentitySchema(c, t, dsn, bothTarget)
+	live, finalDiff := compareSQLServerIndexIdentitySchema(c.TB, t, dsn, bothTarget)
 	c.Assert(finalDiff.IndexAdditions(), qt.HasLen, 0)
 	c.Assert(finalDiff.IndexRemovals(), qt.HasLen, 0)
 	c.Assert(live.Indexes, qt.HasLen, 2)
@@ -119,11 +119,12 @@ func cleanupSQLServerIndexIdentity(db *sql.DB) {
 }
 
 func compareSQLServerIndexIdentitySchema(
-	c *qt.C,
+	tb testing.TB,
 	t *testing.T,
 	dsn string,
 	target *goschema.Database,
 ) (*dbschematypes.DBSchema, *difftypes.SchemaDiff) {
+	c := qt.New(tb)
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(t.Context(), dsn)
 	c.Assert(err, qt.IsNil)

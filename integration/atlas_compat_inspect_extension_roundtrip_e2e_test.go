@@ -439,17 +439,17 @@ func TestAtlasCompatInspectExtensionRoundTripE2E(t *testing.T) {
 			stamp := time.Now().UnixNano()
 			sourceName := fmt.Sprintf("ptah_ext_rt_src_%d", stamp)
 			devName := fmt.Sprintf("ptah_ext_rt_dev_%d", stamp)
-			createE2EDatabase(c, ctx, adminDB, sourceName)
-			defer dropE2EDatabase(c, context.Background(), adminDB, sourceName)
-			createE2EDatabase(c, ctx, adminDB, devName)
-			defer dropE2EDatabase(c, context.Background(), adminDB, devName)
+			createE2EDatabase(c.TB, ctx, adminDB, sourceName)
+			defer dropE2EDatabase(c.TB, context.Background(), adminDB, sourceName)
+			createE2EDatabase(c.TB, ctx, adminDB, devName)
+			defer dropE2EDatabase(c.TB, context.Background(), adminDB, devName)
 
-			sourceURL := replaceDatabaseName(c, adminURL, sourceName)
-			devURL := replaceDatabaseName(c, adminURL, devName)
+			sourceURL := replaceDatabaseName(c.TB, adminURL, sourceName)
+			devURL := replaceDatabaseName(c.TB, adminURL, devName)
 
-			seedAtlasCompatExtensionDB(c, ctx, sourceURL, test.extension, test.seed)
+			seedAtlasCompatExtensionDB(c.TB, ctx, sourceURL, test.extension, test.seed)
 
-			rendered := runAtlasCompatInspect(c, sourceURL, "")
+			rendered := runAtlasCompatInspect(c.TB, sourceURL, "")
 			c.Assert(
 				strings.Contains(rendered, fmt.Sprintf("extension %q", test.extension)),
 				qt.Equals, test.wantBlock,
@@ -459,7 +459,7 @@ func TestAtlasCompatInspectExtensionRoundTripE2E(t *testing.T) {
 			// The round trip. A fresh dev database has none of these
 			// extensions, so materializing the document is what proves it
 			// carries everything it depends on.
-			assertAtlasCompatRoundTrip(c, test, rendered, devURL)
+			assertAtlasCompatRoundTrip(c.TB, test, rendered, devURL)
 		})
 	}
 }
@@ -473,7 +473,8 @@ func TestAtlasCompatInspectExtensionRoundTripE2E(t *testing.T) {
 // different findings and only the first is about Ptah. Every row that builds
 // its extension from an install script is asserted, which is all of them but
 // one.
-func assertAtlasCompatRoundTrip(c *qt.C, test atlasCompatExtensionRoundTripCase, rendered, devURL string) {
+func assertAtlasCompatRoundTrip(tb testing.TB, test atlasCompatExtensionRoundTripCase, rendered, devURL string) {
+	c := qt.New(tb)
 	c.Helper()
 
 	if test.unreplayable != "" {
@@ -483,7 +484,7 @@ func assertAtlasCompatRoundTrip(c *qt.C, test atlasCompatExtensionRoundTripCase,
 
 	documentPath := filepath.Join(c.TempDir(), "inspected.hcl")
 	c.Assert(os.WriteFile(documentPath, []byte(rendered), 0o600), qt.IsNil)
-	readBack := runAtlasCompatInspect(c, "file://"+documentPath, devURL)
+	readBack := runAtlasCompatInspect(c.TB, "file://"+documentPath, devURL)
 	c.Assert(readBack, qt.Not(qt.Equals), "",
 		qt.Commentf("the round trip produced an empty document"))
 }
@@ -491,7 +492,8 @@ func assertAtlasCompatRoundTrip(c *qt.C, test atlasCompatExtensionRoundTripCase,
 // seedAtlasCompatExtensionDB installs the extension and runs the shape's DDL,
 // then verifies through the catalog that both actually landed rather than
 // trusting that the statements returned without error.
-func seedAtlasCompatExtensionDB(c *qt.C, ctx context.Context, dbURL, extension, seed string) {
+func seedAtlasCompatExtensionDB(tb testing.TB, ctx context.Context, dbURL, extension, seed string) {
+	c := qt.New(tb)
 	c.Helper()
 
 	db, err := sql.Open("pgx", dbURL)
@@ -531,7 +533,8 @@ func seedAtlasCompatExtensionDB(c *qt.C, ctx context.Context, dbURL, extension, 
 // any other database on the same server has ever created is visible here, and
 // replaying a document that declares them dies on "role already exists" before
 // reaching the extension question this test is about.
-func runAtlasCompatInspect(c *qt.C, sourceURL, devURL string) string {
+func runAtlasCompatInspect(tb testing.TB, sourceURL, devURL string) string {
+	c := qt.New(tb)
 	c.Helper()
 
 	args := []string{

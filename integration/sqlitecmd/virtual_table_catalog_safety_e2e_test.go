@@ -17,7 +17,7 @@ import (
 func TestSchemaInspectRefusesExplicitIndexOnVirtualTableShadowStorage(t *testing.T) {
 	c := qt.New(t)
 	dbPath := filepath.Join(t.TempDir(), "shadow-index.db")
-	seedSQLite(c, dbPath, `
+	seedSQLite(c.TB, dbPath, `
 CREATE VIRTUAL TABLE docs USING fts5(title, body);
 CREATE INDEX my_idx ON docs_content(c0);
 `)
@@ -35,7 +35,7 @@ func TestSchemaApplyDryRunPreservesExactVirtualTableRemovalIdentity(t *testing.T
 	t.Setenv(sqlitevirtual.AllowDropEnvVar, "1")
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "virtual.db")
-	seedSQLite(c, dbPath, `
+	seedSQLite(c.TB, dbPath, `
 CREATE TABLE docs (id INTEGER PRIMARY KEY);
 CREATE VIRTUAL TABLE " docs " USING fts5(body);
 `)

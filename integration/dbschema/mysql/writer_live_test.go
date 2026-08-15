@@ -39,7 +39,7 @@ func TestWriterDropDatabaseRealm_LiveRejectsProtectedDatabase(t *testing.T) {
 
 	for _, test := range tests {
 		c.Run(test.name, func(c *qt.C) {
-			db := openMySQLWriterLiveDatabase(c, test.engine)
+			db := openMySQLWriterLiveDatabase(c.TB, test.engine)
 			c.Cleanup(func() {
 				c.Check(db.Close(), qt.IsNil)
 			})
@@ -73,7 +73,7 @@ func TestWriterDropDatabaseRealm_LiveRejectsExternalStoredProgram(t *testing.T) 
 
 	for _, test := range tests {
 		c.Run(test.name, func(c *qt.C) {
-			db := openMySQLWriterLiveDatabase(c, test.engine)
+			db := openMySQLWriterLiveDatabase(c.TB, test.engine)
 			c.Cleanup(func() {
 				c.Check(db.Close(), qt.IsNil)
 			})
@@ -141,7 +141,7 @@ func TestWriterDropDatabaseRealm_LiveRejectsExternalStoredProgram(t *testing.T) 
 
 func TestWriterDropDatabaseRealm_LiveRejectsMissingTriggerPrivilege(t *testing.T) {
 	c := qt.New(t)
-	adminDB := openMySQLWriterLiveDatabase(c, dbtarget.MySQLAdmin)
+	adminDB := openMySQLWriterLiveDatabase(c.TB, dbtarget.MySQLAdmin)
 	c.Cleanup(func() {
 		c.Check(adminDB.Close(), qt.IsNil)
 	})
@@ -151,13 +151,13 @@ func TestWriterDropDatabaseRealm_LiveRejectsMissingTriggerPrivilege(t *testing.T
 	external := fmt.Sprintf("ptah_trigger_external_%d", suffix)
 	username := fmt.Sprintf("ptah_no_trigger_%d", suffix)
 	password := fmt.Sprintf("Ptah-test-%d!", suffix)
-	createMySQLWriterLiveDatabase(c, adminDB, target)
+	createMySQLWriterLiveDatabase(c.TB, adminDB, target)
 	c.Cleanup(func() {
-		dropMySQLWriterLiveDatabase(c, adminDB, target)
+		dropMySQLWriterLiveDatabase(c.TB, adminDB, target)
 	})
-	createMySQLWriterLiveDatabase(c, adminDB, external)
+	createMySQLWriterLiveDatabase(c.TB, adminDB, external)
 	c.Cleanup(func() {
-		dropMySQLWriterLiveDatabase(c, adminDB, external)
+		dropMySQLWriterLiveDatabase(c.TB, adminDB, external)
 	})
 	_, err := adminDB.ExecContext(
 		c.Context(),
@@ -179,11 +179,11 @@ func TestWriterDropDatabaseRealm_LiveRejectsMissingTriggerPrivilege(t *testing.T
 			" (id) VALUES (NEW.id)",
 	)
 	c.Assert(err, qt.IsNil)
-	createMySQLWriterLiveUser(c, adminDB, username, password)
+	createMySQLWriterLiveUser(c.TB, adminDB, username, password)
 	c.Cleanup(func() {
-		dropMySQLWriterLiveUser(c, adminDB, username)
+		dropMySQLWriterLiveUser(c.TB, adminDB, username)
 	})
-	grantMySQLWriterLivePrivilegesWithoutTrigger(c, adminDB, username)
+	grantMySQLWriterLivePrivilegesWithoutTrigger(c.TB, adminDB, username)
 
 	config, err := mysqldriver.ParseDSN(dbtarget.URL(c, dbtarget.MySQLAdmin))
 	c.Assert(err, qt.IsNil)
@@ -213,7 +213,8 @@ func TestWriterDropDatabaseRealm_LiveRejectsMissingTriggerPrivilege(t *testing.T
 	c.Assert(tableCount, qt.Equals, 1)
 }
 
-func openMySQLWriterLiveDatabase(c *qt.C, engine dbtarget.Engine) *sql.DB {
+func openMySQLWriterLiveDatabase(tb testing.TB, engine dbtarget.Engine) *sql.DB {
+	c := qt.New(tb)
 	c.Helper()
 	db, err := sql.Open("mysql", dbtarget.URL(c, engine))
 	c.Assert(err, qt.IsNil)
@@ -221,7 +222,8 @@ func openMySQLWriterLiveDatabase(c *qt.C, engine dbtarget.Engine) *sql.DB {
 	return db
 }
 
-func createMySQLWriterLiveDatabase(c *qt.C, db *sql.DB, name string) {
+func createMySQLWriterLiveDatabase(tb testing.TB, db *sql.DB, name string) {
+	c := qt.New(tb)
 	c.Helper()
 	_, err := db.ExecContext(
 		c.Context(),
@@ -230,7 +232,8 @@ func createMySQLWriterLiveDatabase(c *qt.C, db *sql.DB, name string) {
 	c.Assert(err, qt.IsNil)
 }
 
-func dropMySQLWriterLiveDatabase(c *qt.C, db *sql.DB, name string) {
+func dropMySQLWriterLiveDatabase(tb testing.TB, db *sql.DB, name string) {
+	c := qt.New(tb)
 	c.Helper()
 	cleanupCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -241,14 +244,16 @@ func dropMySQLWriterLiveDatabase(c *qt.C, db *sql.DB, name string) {
 	c.Check(err, qt.IsNil)
 }
 
-func createMySQLWriterLiveUser(c *qt.C, db *sql.DB, username, password string) {
+func createMySQLWriterLiveUser(tb testing.TB, db *sql.DB, username, password string) {
+	c := qt.New(tb)
 	c.Helper()
 	query := fmt.Sprintf("CREATE USER '%s'@'%%' IDENTIFIED BY '%s'", username, password)
 	_, err := db.ExecContext(c.Context(), query)
 	c.Assert(err, qt.IsNil)
 }
 
-func dropMySQLWriterLiveUser(c *qt.C, db *sql.DB, username string) {
+func dropMySQLWriterLiveUser(tb testing.TB, db *sql.DB, username string) {
+	c := qt.New(tb)
 	c.Helper()
 	cleanupCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -257,7 +262,8 @@ func dropMySQLWriterLiveUser(c *qt.C, db *sql.DB, username string) {
 	c.Check(err, qt.IsNil)
 }
 
-func grantMySQLWriterLivePrivilegesWithoutTrigger(c *qt.C, db *sql.DB, username string) {
+func grantMySQLWriterLivePrivilegesWithoutTrigger(tb testing.TB, db *sql.DB, username string) {
+	c := qt.New(tb)
 	c.Helper()
 	query := fmt.Sprintf(
 		"GRANT SELECT, DROP, ALTER, ALTER ROUTINE, EVENT, LOCK TABLES, PROCESS, SHOW_ROUTINE "+

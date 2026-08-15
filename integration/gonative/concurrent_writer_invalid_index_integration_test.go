@@ -51,8 +51,8 @@ func TestPostgreSQLConcurrentWriterLeavesInvalidUniqueIndexIntegration(t *testin
 	c := qt.New(t)
 	ctx := t.Context()
 
-	db := openConcurrentWriterDB(c, dsn)
-	seedConcurrentWriterTable(c, db)
+	db := openConcurrentWriterDB(c.TB, dsn)
+	seedConcurrentWriterTable(c.TB, db)
 
 	conn, err := dbschema.ConnectToDatabase(ctx, dsn)
 	c.Assert(err, qt.IsNil)
@@ -60,8 +60,8 @@ func TestPostgreSQLConcurrentWriterLeavesInvalidUniqueIndexIntegration(t *testin
 	mig := concurrentWriterMigrator(conn)
 
 	// The rival holds its INSERT open, so the build cannot get past its wait.
-	writer := beginConcurrentWriter(c, db)
-	writerPID := concurrentWriterBackendPID(c, ctx, writer)
+	writer := beginConcurrentWriter(c.TB, db)
+	writerPID := concurrentWriterBackendPID(c.TB, ctx, writer)
 
 	// The channel is closed after the send so the cleanup below can wait for
 	// the build on the path where an assertion fails before it is read, and
@@ -77,7 +77,7 @@ func TestPostgreSQLConcurrentWriterLeavesInvalidUniqueIndexIntegration(t *testin
 	})
 
 	// The build is waiting, and it is waiting on this writer.
-	progress := awaitConcurrentIndexLocker(c, db)
+	progress := awaitConcurrentIndexLocker(c.TB, db)
 	c.Assert(progress.currentLockerPID, qt.Equals, writerPID)
 	c.Assert(progress.phase, qt.Contains, "waiting for writers")
 	c.Assert(progress.lockersTotal, qt.Equals, int64(1))
@@ -89,7 +89,7 @@ func TestPostgreSQLConcurrentWriterLeavesInvalidUniqueIndexIntegration(t *testin
 	c.Assert(err, qt.IsNil)
 	c.Assert(<-migrated, qt.ErrorMatches, "(?s).*could not create unique index.*")
 
-	valid, ready := concurrentWriterIndexFlags(c, db)
+	valid, ready := concurrentWriterIndexFlags(c.TB, db)
 	c.Assert(valid, qt.IsFalse)
 	c.Assert(ready, qt.IsFalse)
 	c.Assert(concurrentWriterDuplicateInsert(ctx, db), qt.IsNil)
@@ -115,7 +115,7 @@ func TestPostgreSQLConcurrentWriterLeavesInvalidUniqueIndexIntegration(t *testin
 	// The escape hatch the refusal names is the one that works.
 	_, err = db.ExecContext(ctx, `REINDEX INDEX CONCURRENTLY "public"."`+concurrentWriterIndex+`"`)
 	c.Assert(err, qt.IsNil)
-	valid, ready = concurrentWriterIndexFlags(c, db)
+	valid, ready = concurrentWriterIndexFlags(c.TB, db)
 	c.Assert(valid, qt.IsTrue)
 	c.Assert(ready, qt.IsTrue)
 
@@ -144,7 +144,8 @@ type concurrentIndexProgress struct {
 // It returns the zero value rather than failing on its own, so a build that
 // never waits is reported by the caller's assertions -- which name the values
 // they wanted -- instead of by a bare timeout message.
-func awaitConcurrentIndexLocker(c *qt.C, db *sql.DB) concurrentIndexProgress {
+func awaitConcurrentIndexLocker(tb testing.TB, db *sql.DB) concurrentIndexProgress {
+	c := qt.New(tb)
 	c.Helper()
 	deadline := time.Now().Add(60 * time.Second)
 	for time.Now().Before(deadline) {
@@ -181,7 +182,8 @@ func awaitConcurrentIndexLocker(c *qt.C, db *sql.DB) concurrentIndexProgress {
 // arrangement depends on one backend holding one transaction open: a pool is
 // free to run the COMMIT on a different connection from the INSERT, which
 // would release nothing and leave the build waiting forever.
-func beginConcurrentWriter(c *qt.C, db *sql.DB) *sql.Conn {
+func beginConcurrentWriter(tb testing.TB, db *sql.DB) *sql.Conn {
+	c := qt.New(tb)
 	c.Helper()
 	conn, err := db.Conn(c.Context())
 	c.Assert(err, qt.IsNil)
@@ -196,7 +198,8 @@ func beginConcurrentWriter(c *qt.C, db *sql.DB) *sql.Conn {
 	return conn
 }
 
-func concurrentWriterBackendPID(c *qt.C, ctx context.Context, writer *sql.Conn) int64 {
+func concurrentWriterBackendPID(tb testing.TB, ctx context.Context, writer *sql.Conn) int64 {
+	c := qt.New(tb)
 	c.Helper()
 	var pid int64
 	c.Assert(writer.QueryRowContext(ctx, "SELECT pg_backend_pid()").Scan(&pid), qt.IsNil)
@@ -214,7 +217,8 @@ func concurrentWriterMigrator(conn *dbschema.DatabaseConnection) *migrator.Migra
 		WithMigrationsTable("", concurrentWriterTracker)
 }
 
-func openConcurrentWriterDB(c *qt.C, dsn string) *sql.DB {
+func openConcurrentWriterDB(tb testing.TB, dsn string) *sql.DB {
+	c := qt.New(tb)
 	c.Helper()
 	db, err := sql.Open("pgx", dsn)
 	c.Assert(err, qt.IsNil)
@@ -226,7 +230,8 @@ func openConcurrentWriterDB(c *qt.C, dsn string) *sql.DB {
 // build would succeed if nothing else wrote to the table. Every seeded address
 // is distinct, so the only duplicate in the run is the one the rival session
 // contributes while the build waits.
-func seedConcurrentWriterTable(c *qt.C, db *sql.DB) {
+func seedConcurrentWriterTable(tb testing.TB, db *sql.DB) {
+	c := qt.New(tb)
 	c.Helper()
 	cleanup := func() {
 		_, err := db.Exec("DROP TABLE IF EXISTS " + concurrentWriterTable + " CASCADE")
@@ -255,7 +260,8 @@ func seedConcurrentWriterTable(c *qt.C, db *sql.DB) {
 	c.Assert(err, qt.IsNil)
 }
 
-func concurrentWriterIndexFlags(c *qt.C, db *sql.DB) (valid, ready bool) {
+func concurrentWriterIndexFlags(tb testing.TB, db *sql.DB) (valid, ready bool) {
+	c := qt.New(tb)
 	c.Helper()
 	err := db.QueryRow(`
 		SELECT ix.indisvalid, ix.indisready

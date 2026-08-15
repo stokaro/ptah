@@ -41,62 +41,62 @@ const (
 func TestOracleDistinguishesPrefixAndIntervalInsertions(t *testing.T) {
 	oracle := requireAtlasOracle(t)
 	c := qt.New(t)
-	compat := buildCompatBinary(c)
+	compat := buildCompatBinary(c.TB)
 
 	c.Run("prefix insertion is the retained divergence", func(c *qt.C) {
-		lateOnly := writeOracleMigrationDir(c, oracle, map[string]string{
+		lateOnly := writeOracleMigrationDir(c.TB, oracle, map[string]string{
 			lateVersion + "_late.sql": lateBody,
 		})
-		prefixed := writeOracleMigrationDir(c, oracle, map[string]string{
+		prefixed := writeOracleMigrationDir(c.TB, oracle, map[string]string{
 			earlyVersion + "_early.sql": earlyBody,
 			lateVersion + "_late.sql":   lateBody,
 		})
 
 		oracleDB := filepath.Join(c.TempDir(), "oracle.db")
-		firstOracle := runApply(c, oracle, oracleDB, lateOnly)
+		firstOracle := runApply(c.TB, oracle, oracleDB, lateOnly)
 		c.Assert(firstOracle.code, qt.Equals, 0, qt.Commentf("oracle output: %s", firstOracle.output))
-		secondOracle := runApply(c, oracle, oracleDB, prefixed)
+		secondOracle := runApply(c.TB, oracle, oracleDB, prefixed)
 		c.Assert(secondOracle.code, qt.Equals, 0, qt.Commentf("oracle output: %s", secondOracle.output))
 		c.Assert(secondOracle.output, qt.Contains, "No migration files to execute")
-		assertMigrationState(c, oracleDB, []string{"oracle_late"}, []string{lateVersion})
+		assertMigrationState(c.TB, oracleDB, []string{"oracle_late"}, []string{lateVersion})
 
 		compatDB := filepath.Join(c.TempDir(), "compat.db")
-		firstCompat := runApply(c, compat, compatDB, lateOnly)
+		firstCompat := runApply(c.TB, compat, compatDB, lateOnly)
 		c.Assert(firstCompat.code, qt.Equals, 0, qt.Commentf("ptah-compat output: %s", firstCompat.output))
-		secondCompat := runApply(c, compat, compatDB, prefixed)
+		secondCompat := runApply(c.TB, compat, compatDB, prefixed)
 		c.Assert(secondCompat.code, qt.Equals, 1, qt.Commentf("ptah-compat output: %s", secondCompat.output))
 		c.Assert(secondCompat.output, qt.Contains, "out-of-order pending migrations")
-		assertMigrationState(c, compatDB, []string{"oracle_late"}, []string{lateVersion})
+		assertMigrationState(c.TB, compatDB, []string{"oracle_late"}, []string{lateVersion})
 	})
 
 	c.Run("interval insertion is parity", func(c *qt.C) {
-		initial := writeOracleMigrationDir(c, oracle, map[string]string{
+		initial := writeOracleMigrationDir(c.TB, oracle, map[string]string{
 			earlyVersion + "_early.sql": earlyBody,
 			lateVersion + "_late.sql":   lateBody,
 		})
-		withMiddle := writeOracleMigrationDir(c, oracle, map[string]string{
+		withMiddle := writeOracleMigrationDir(c.TB, oracle, map[string]string{
 			earlyVersion + "_early.sql":   earlyBody,
 			middleVersion + "_middle.sql": middleBody,
 			lateVersion + "_late.sql":     lateBody,
 		})
 
 		oracleDB := filepath.Join(c.TempDir(), "oracle.db")
-		firstOracle := runApply(c, oracle, oracleDB, initial)
+		firstOracle := runApply(c.TB, oracle, oracleDB, initial)
 		c.Assert(firstOracle.code, qt.Equals, 0, qt.Commentf("oracle output: %s", firstOracle.output))
-		secondOracle := runApply(c, oracle, oracleDB, withMiddle)
+		secondOracle := runApply(c.TB, oracle, oracleDB, withMiddle)
 		c.Assert(secondOracle.code, qt.Equals, 1, qt.Commentf("oracle output: %s", secondOracle.output))
 		c.Assert(secondOracle.output, qt.Contains, "out of order")
-		assertMigrationState(c, oracleDB,
+		assertMigrationState(c.TB, oracleDB,
 			[]string{"oracle_early", "oracle_late"},
 			[]string{earlyVersion, lateVersion})
 
 		compatDB := filepath.Join(c.TempDir(), "compat.db")
-		firstCompat := runApply(c, compat, compatDB, initial)
+		firstCompat := runApply(c.TB, compat, compatDB, initial)
 		c.Assert(firstCompat.code, qt.Equals, 0, qt.Commentf("ptah-compat output: %s", firstCompat.output))
-		secondCompat := runApply(c, compat, compatDB, withMiddle)
+		secondCompat := runApply(c.TB, compat, compatDB, withMiddle)
 		c.Assert(secondCompat.code, qt.Equals, 1, qt.Commentf("ptah-compat output: %s", secondCompat.output))
 		c.Assert(secondCompat.output, qt.Contains, "out-of-order pending migrations")
-		assertMigrationState(c, compatDB,
+		assertMigrationState(c.TB, compatDB,
 			[]string{"oracle_early", "oracle_late"},
 			[]string{earlyVersion, lateVersion})
 	})
@@ -107,27 +107,30 @@ type commandResult struct {
 	output string
 }
 
-func writeOracleMigrationDir(c *qt.C, oracle string, files map[string]string) string {
+func writeOracleMigrationDir(tb testing.TB, oracle string, files map[string]string) string {
+	c := qt.New(tb)
 	c.Helper()
 	dir := c.TempDir()
 	for name, body := range files {
 		c.Assert(os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600), qt.IsNil)
 	}
-	result := runCommand(c, oracle, "migrate", "hash", "--dir", "file://"+dir)
+	result := runCommand(c.TB, oracle, "migrate", "hash", "--dir", "file://"+dir)
 	c.Assert(result.code, qt.Equals, 0, qt.Commentf("oracle hash output: %s", result.output))
 	return dir
 }
 
-func runApply(c *qt.C, binary, dbPath, dir string) commandResult {
+func runApply(tb testing.TB, binary, dbPath, dir string) commandResult {
+	c := qt.New(tb)
 	c.Helper()
-	return runCommand(c, binary,
+	return runCommand(c.TB, binary,
 		"migrate", "apply",
 		"--url", "sqlite://"+dbPath,
 		"--dir", "file://"+dir,
 	)
 }
 
-func runCommand(c *qt.C, binary string, args ...string) commandResult {
+func runCommand(tb testing.TB, binary string, args ...string) commandResult {
+	c := qt.New(tb)
 	c.Helper()
 	cmd := exec.Command(binary, args...)
 	cmd.Env = commandEnvironmentWithoutPtahVariables(os.Environ())
@@ -152,7 +155,8 @@ func commandEnvironmentWithoutPtahVariables(environment []string) []string {
 	return filtered
 }
 
-func assertMigrationState(c *qt.C, dbPath string, wantTables, wantVersions []string) {
+func assertMigrationState(tb testing.TB, dbPath string, wantTables, wantVersions []string) {
+	c := qt.New(tb)
 	c.Helper()
 	db, err := sql.Open("sqlite", dbPath)
 	c.Assert(err, qt.IsNil)
@@ -187,7 +191,8 @@ func assertMigrationState(c *qt.C, dbPath string, wantTables, wantVersions []str
 	c.Assert(versions, qt.DeepEquals, wantVersions)
 }
 
-func buildCompatBinary(c *qt.C) string {
+func buildCompatBinary(tb testing.TB) string {
+	c := qt.New(tb)
 	c.Helper()
 	path := filepath.Join(c.TempDir(), "ptah-compat")
 	out, err := exec.Command("go", "build", "-o", path, "go.5x5.cz/ptah/cmd/ptah-compat").CombinedOutput()

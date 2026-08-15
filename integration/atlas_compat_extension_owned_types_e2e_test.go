@@ -155,17 +155,17 @@ func TestAtlasCompatExtensionOwnedTypesE2E(t *testing.T) {
 			stamp := time.Now().UnixNano()
 			sourceName := fmt.Sprintf("ptah_ext_type_src_%d", stamp)
 			devName := fmt.Sprintf("ptah_ext_type_dev_%d", stamp)
-			createE2EDatabase(c, ctx, adminDB, sourceName)
-			defer dropE2EDatabase(c, context.Background(), adminDB, sourceName)
-			createE2EDatabase(c, ctx, adminDB, devName)
-			defer dropE2EDatabase(c, context.Background(), adminDB, devName)
+			createE2EDatabase(c.TB, ctx, adminDB, sourceName)
+			defer dropE2EDatabase(c.TB, context.Background(), adminDB, sourceName)
+			createE2EDatabase(c.TB, ctx, adminDB, devName)
+			defer dropE2EDatabase(c.TB, context.Background(), adminDB, devName)
 
-			sourceURL := replaceDatabaseName(c, adminURL, sourceName)
-			devURL := replaceDatabaseName(c, adminURL, devName)
+			sourceURL := replaceDatabaseName(c.TB, adminURL, sourceName)
+			devURL := replaceDatabaseName(c.TB, adminURL, devName)
 
-			seedExtensionOwnedTypeDB(c, ctx, sourceURL, test)
+			seedExtensionOwnedTypeDB(c.TB, ctx, sourceURL, test)
 
-			rendered := runAtlasCompatInspect(c, sourceURL, "")
+			rendered := runAtlasCompatInspect(c.TB, sourceURL, "")
 
 			for _, block := range test.presentBlocks {
 				c.Assert(rendered, qt.Contains, block, qt.Commentf("%s", test.why))
@@ -175,7 +175,7 @@ func TestAtlasCompatExtensionOwnedTypesE2E(t *testing.T) {
 					qt.Commentf("the document declares a type CREATE EXTENSION already makes: %s", test.why))
 			}
 
-			assertExtensionOwnedTypeRoundTrip(c, test, rendered, devURL)
+			assertExtensionOwnedTypeRoundTrip(c.TB, test, rendered, devURL)
 		})
 	}
 }
@@ -184,7 +184,8 @@ func TestAtlasCompatExtensionOwnedTypesE2E(t *testing.T) {
 // verifies through pg_depend that an extension really does own a domain,
 // composite or range type here. Without that check a row whose membership never
 // landed would assert the absence of a block that was never going to be there.
-func seedExtensionOwnedTypeDB(c *qt.C, ctx context.Context, dbURL string, test extensionOwnedTypeCase) {
+func seedExtensionOwnedTypeDB(tb testing.TB, ctx context.Context, dbURL string, test extensionOwnedTypeCase) {
+	c := qt.New(tb)
 	c.Helper()
 
 	db, err := sql.Open("pgx", dbURL)
@@ -216,7 +217,8 @@ func seedExtensionOwnedTypeDB(c *qt.C, ctx context.Context, dbURL string, test e
 // assertExtensionOwnedTypeRoundTrip materializes the description on a fresh dev
 // database, unless the row recorded a reason its fixture can never be
 // materialized at all.
-func assertExtensionOwnedTypeRoundTrip(c *qt.C, test extensionOwnedTypeCase, rendered, devURL string) {
+func assertExtensionOwnedTypeRoundTrip(tb testing.TB, test extensionOwnedTypeCase, rendered, devURL string) {
+	c := qt.New(tb)
 	c.Helper()
 
 	if test.unreplayable != "" {
@@ -226,7 +228,7 @@ func assertExtensionOwnedTypeRoundTrip(c *qt.C, test extensionOwnedTypeCase, ren
 
 	documentPath := filepath.Join(c.TempDir(), "inspected.hcl")
 	c.Assert(os.WriteFile(documentPath, []byte(rendered), 0o600), qt.IsNil)
-	readBack := runAtlasCompatInspect(c, "file://"+documentPath, devURL)
+	readBack := runAtlasCompatInspect(c.TB, "file://"+documentPath, devURL)
 	c.Assert(readBack, qt.Not(qt.Equals), "",
 		qt.Commentf("the round trip produced an empty document"))
 }

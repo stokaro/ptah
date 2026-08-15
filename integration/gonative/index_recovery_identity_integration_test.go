@@ -44,8 +44,8 @@ const (
 func TestPostgreSQLCreateIndexRefusesIndexNameOwnedByAnotherTableIntegration(t *testing.T) {
 	dsn := skipIfNoPostgreSQL(t)
 	c := qt.New(t)
-	db := openIndexRecoveryIdentityDB(c, dsn)
-	seedIndexRecoveryIdentityPublicTables(c, db)
+	db := openIndexRecoveryIdentityDB(c.TB, dsn)
+	seedIndexRecoveryIdentityPublicTables(c.TB, db)
 
 	_, err := db.Exec(fmt.Sprintf(
 		`CREATE INDEX %q ON %q (email)`,
@@ -68,7 +68,7 @@ func TestPostgreSQLCreateIndexRefusesIndexNameOwnedByAnotherTableIntegration(t *
 	c.Assert(err.Error(), qt.Contains, `"public"."`+indexRecoveryIdentityName+`"`)
 	c.Assert(err.Error(), qt.Contains, `is an index on "public"."`+indexRecoveryIdentityLegacy+`"`)
 	c.Assert(err.Error(), qt.Contains, `instead of target table "public"."`+indexRecoveryIdentityTable+`"`)
-	assertIndexRecoveryIdentityNeverStarted(c, mig)
+	assertIndexRecoveryIdentityNeverStarted(c.TB, mig)
 	err = mig.RepairMigration(c.Context(), migrator.RepairMigrationOptions{
 		Version: indexRecoveryIdentityVersion,
 		Force:   true,
@@ -81,8 +81,8 @@ func TestPostgreSQLCreateIndexRefusesIndexNameOwnedByAnotherTableIntegration(t *
 func TestPostgreSQLCreateIndexRefusesNameOwnedByNonIndexRelationIntegration(t *testing.T) {
 	dsn := skipIfNoPostgreSQL(t)
 	c := qt.New(t)
-	db := openIndexRecoveryIdentityDB(c, dsn)
-	seedIndexRecoveryIdentityPublicTables(c, db)
+	db := openIndexRecoveryIdentityDB(c.TB, dsn)
+	seedIndexRecoveryIdentityPublicTables(c.TB, db)
 
 	_, err := db.Exec(fmt.Sprintf(`CREATE TABLE %q (id INTEGER PRIMARY KEY)`, indexRecoveryIdentityName))
 	c.Assert(err, qt.IsNil)
@@ -100,7 +100,7 @@ func TestPostgreSQLCreateIndexRefusesNameOwnedByNonIndexRelationIntegration(t *t
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Contains, `relation "public"."`+indexRecoveryIdentityName+`" has relkind="r"`)
 	c.Assert(err.Error(), qt.Contains, `instead of being an index on target table "public"."`+indexRecoveryIdentityTable+`"`)
-	assertIndexRecoveryIdentityNeverStarted(c, mig)
+	assertIndexRecoveryIdentityNeverStarted(c.TB, mig)
 	err = mig.RepairMigration(c.Context(), migrator.RepairMigrationOptions{
 		Version: indexRecoveryIdentityVersion,
 		Force:   true,
@@ -146,9 +146,9 @@ func TestPostgreSQLDropCreateResolvesMixedQualificationIntegration(t *testing.T)
 
 	for _, test := range tests {
 		c.Run(test.name, func(c *qt.C) {
-			db := openIndexRecoveryIdentityDB(c, dsn)
-			seedIndexRecoveryIdentitySchema(c, db, test.tracker)
-			leaveIndexRecoveryIdentityInvalid(c, db)
+			db := openIndexRecoveryIdentityDB(c.TB, dsn)
+			seedIndexRecoveryIdentitySchema(c.TB, db, test.tracker)
+			leaveIndexRecoveryIdentityInvalid(c.TB, db)
 			_, err := db.Exec(fmt.Sprintf(
 				`DELETE FROM %q.%q WHERE id > 1`,
 				indexRecoveryIdentitySchema,
@@ -156,13 +156,13 @@ func TestPostgreSQLDropCreateResolvesMixedQualificationIntegration(t *testing.T)
 			))
 			c.Assert(err, qt.IsNil)
 
-			conn, err := dbschema.ConnectToDatabase(c.Context(), indexRecoveryIdentitySearchPathDSN(c, dsn))
+			conn, err := dbschema.ConnectToDatabase(c.Context(), indexRecoveryIdentitySearchPathDSN(c.TB, dsn))
 			c.Assert(err, qt.IsNil)
 			c.Cleanup(func() { c.Check(conn.Close(), qt.IsNil) })
 			mig := indexRecoveryIdentityMigrator(conn, test.tracker, test.up)
 
 			c.Assert(mig.MigrateUp(c.Context()), qt.IsNil)
-			valid, ready := indexRecoveryIdentityFlags(c, db)
+			valid, ready := indexRecoveryIdentityFlags(c.TB, db)
 			c.Assert(valid, qt.IsTrue)
 			c.Assert(ready, qt.IsTrue)
 			status, err := mig.GetMigrationStatus(c.Context())
@@ -176,8 +176,8 @@ func TestPostgreSQLDropCreateResolvesMixedQualificationIntegration(t *testing.T)
 func TestPostgreSQLPostCheckRequiresCreatedIndexOnTargetIntegration(t *testing.T) {
 	dsn := skipIfNoPostgreSQL(t)
 	c := qt.New(t)
-	db := openIndexRecoveryIdentityDB(c, dsn)
-	seedIndexRecoveryIdentityPublicTables(c, db)
+	db := openIndexRecoveryIdentityDB(c.TB, dsn)
+	seedIndexRecoveryIdentityPublicTables(c.TB, db)
 
 	conn, err := dbschema.ConnectToDatabase(c.Context(), dsn)
 	c.Assert(err, qt.IsNil)
@@ -211,8 +211,8 @@ func TestPostgreSQLPostCheckRequiresCreatedIndexOnTargetIntegration(t *testing.T
 func TestPostgreSQLUnconditionalCreateMayBeDroppedLaterIntegration(t *testing.T) {
 	dsn := skipIfNoPostgreSQL(t)
 	c := qt.New(t)
-	db := openIndexRecoveryIdentityDB(c, dsn)
-	seedIndexRecoveryIdentityPublicTables(c, db)
+	db := openIndexRecoveryIdentityDB(c.TB, dsn)
+	seedIndexRecoveryIdentityPublicTables(c.TB, db)
 
 	conn, err := dbschema.ConnectToDatabase(c.Context(), dsn)
 	c.Assert(err, qt.IsNil)
@@ -258,8 +258,8 @@ func TestPostgreSQLRollbackChecksConditionalIndexResultIntegration(t *testing.T)
 
 	for _, test := range tests {
 		c.Run(test.name, func(c *qt.C) {
-			db := openIndexRecoveryIdentityDB(c, dsn)
-			seedIndexRecoveryIdentityPublicTables(c, db)
+			db := openIndexRecoveryIdentityDB(c.TB, dsn)
+			seedIndexRecoveryIdentityPublicTables(c.TB, db)
 			conn, err := dbschema.ConnectToDatabase(c.Context(), dsn)
 			c.Assert(err, qt.IsNil)
 			c.Cleanup(func() { c.Check(conn.Close(), qt.IsNil) })
@@ -321,8 +321,8 @@ func TestPostgreSQLRollbackResolvesEachConditionalIndexAtStatementSearchPathInte
 
 	for _, test := range tests {
 		c.Run(test.name, func(c *qt.C) {
-			db := openIndexRecoveryIdentityDB(c, dsn)
-			seedIndexRecoveryIdentitySearchPathSchemas(c, db, test.tracker)
+			db := openIndexRecoveryIdentityDB(c.TB, dsn)
+			seedIndexRecoveryIdentitySearchPathSchemas(c.TB, db, test.tracker)
 			conn, err := dbschema.ConnectToDatabase(c.Context(), dsn)
 			c.Assert(err, qt.IsNil)
 			c.Cleanup(func() { c.Check(conn.Close(), qt.IsNil) })
@@ -365,8 +365,8 @@ func TestPostgreSQLRollbackResolvesEachConditionalIndexAtStatementSearchPathInte
 func TestPostgreSQLRepairChecksAllAmbientSearchPathCandidatesIntegration(t *testing.T) {
 	dsn := skipIfNoPostgreSQL(t)
 	c := qt.New(t)
-	db := openIndexRecoveryIdentityDB(c, dsn)
-	seedIndexRecoveryIdentitySearchPathSchemas(c, db, indexRecoveryIdentityTrackerM)
+	db := openIndexRecoveryIdentityDB(c.TB, dsn)
+	seedIndexRecoveryIdentitySearchPathSchemas(c.TB, db, indexRecoveryIdentityTrackerM)
 	_, err := db.Exec(fmt.Sprintf(
 		`DROP TABLE %q.%q`,
 		indexRecoveryIdentityPathA,
@@ -397,7 +397,7 @@ func TestPostgreSQLRepairChecksAllAmbientSearchPathCandidatesIntegration(t *test
 		}),
 	))
 	c.Assert(err, qt.IsNil)
-	pathAConn, err := dbschema.ConnectToDatabase(c.Context(), indexRecoveryIdentityDSNWithSearchPath(c, dsn, indexRecoveryIdentityPathA))
+	pathAConn, err := dbschema.ConnectToDatabase(c.Context(), indexRecoveryIdentityDSNWithSearchPath(c.TB, dsn, indexRecoveryIdentityPathA))
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { c.Check(pathAConn.Close(), qt.IsNil) })
 	initial := migrator.NewMigrator(pathAConn, provider).
@@ -418,7 +418,7 @@ func TestPostgreSQLRepairChecksAllAmbientSearchPathCandidatesIntegration(t *test
 
 	repairProvider, err := migrator.NewFSMigrationProvider(fsys)
 	c.Assert(err, qt.IsNil)
-	pathBConn, err := dbschema.ConnectToDatabase(c.Context(), indexRecoveryIdentityDSNWithSearchPath(c, dsn, indexRecoveryIdentityPathB))
+	pathBConn, err := dbschema.ConnectToDatabase(c.Context(), indexRecoveryIdentityDSNWithSearchPath(c.TB, dsn, indexRecoveryIdentityPathB))
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { c.Check(pathBConn.Close(), qt.IsNil) })
 	repair := migrator.NewMigrator(pathBConn, repairProvider).
@@ -450,8 +450,8 @@ func TestPostgreSQLRepairChecksAllAmbientSearchPathCandidatesIntegration(t *test
 func TestPostgreSQLIndexPreflightReplaysStatementSearchPathIntegration(t *testing.T) {
 	dsn := skipIfNoPostgreSQL(t)
 	c := qt.New(t)
-	db := openIndexRecoveryIdentityDB(c, dsn)
-	seedIndexRecoveryIdentitySearchPathSchemas(c, db, indexRecoveryIdentityTrackerN)
+	db := openIndexRecoveryIdentityDB(c.TB, dsn)
+	seedIndexRecoveryIdentitySearchPathSchemas(c.TB, db, indexRecoveryIdentityTrackerN)
 	conn, err := dbschema.ConnectToDatabase(c.Context(), dsn)
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { c.Check(conn.Close(), qt.IsNil) })
@@ -473,16 +473,16 @@ func TestPostgreSQLIndexPreflightReplaysStatementSearchPathIntegration(t *testin
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Contains, `relation "`+indexRecoveryIdentityPathA+`"."`+indexRecoveryIdentityName+`" has relkind="r"`)
 	c.Assert(err.Error(), qt.Contains, `target table "`+indexRecoveryIdentityPathA+`"."`+indexRecoveryIdentityTable+`"`)
-	assertIndexRecoveryIdentityNeverStarted(c, mig)
+	assertIndexRecoveryIdentityNeverStarted(c.TB, mig)
 }
 
 func TestPostgreSQLCompletedUpRepairRestoresSessionPrefixIntegration(t *testing.T) {
 	dsn := skipIfNoPostgreSQL(t)
 	c := qt.New(t)
-	db := openIndexRecoveryIdentityDB(c, dsn)
-	seedIndexRecoveryIdentityPublicTables(c, db)
-	seedIndexRecoveryIdentitySchema(c, db, indexRecoveryIdentityTrackerI)
-	removeIndexRecoveryIdentityDuplicate(c, db)
+	db := openIndexRecoveryIdentityDB(c.TB, dsn)
+	seedIndexRecoveryIdentityPublicTables(c.TB, db)
+	seedIndexRecoveryIdentitySchema(c.TB, db, indexRecoveryIdentityTrackerI)
+	removeIndexRecoveryIdentityDuplicate(c.TB, db)
 	conn, err := dbschema.ConnectToDatabase(c.Context(), dsn)
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { c.Check(conn.Close(), qt.IsNil) })
@@ -506,8 +506,8 @@ func TestPostgreSQLCompletedUpRepairRestoresSessionPrefixIntegration(t *testing.
 	c.Assert(status.DirtyRevision, qt.IsNotNil)
 	c.Assert(status.DirtyRevision.Applied, qt.Equals, 4)
 	c.Assert(status.DirtyRevision.Total, qt.Equals, 4)
-	repairIndexRecoveryIdentityAppRelation(c, db)
-	createIndexRecoveryIdentityPublicConflict(c, db)
+	repairIndexRecoveryIdentityAppRelation(c.TB, db)
+	createIndexRecoveryIdentityPublicConflict(c.TB, db)
 
 	c.Assert(mig.RepairMigration(c.Context(), migrator.RepairMigrationOptions{Version: indexRecoveryIdentityVersion}), qt.IsNil)
 	status, err = mig.GetMigrationStatus(c.Context())
@@ -519,10 +519,10 @@ func TestPostgreSQLCompletedUpRepairRestoresSessionPrefixIntegration(t *testing.
 func TestPostgreSQLCompletedDownRepairRestoresSessionPrefixIntegration(t *testing.T) {
 	dsn := skipIfNoPostgreSQL(t)
 	c := qt.New(t)
-	db := openIndexRecoveryIdentityDB(c, dsn)
-	seedIndexRecoveryIdentityPublicTables(c, db)
-	seedIndexRecoveryIdentitySchema(c, db, indexRecoveryIdentityTrackerJ)
-	removeIndexRecoveryIdentityDuplicate(c, db)
+	db := openIndexRecoveryIdentityDB(c.TB, dsn)
+	seedIndexRecoveryIdentityPublicTables(c.TB, db)
+	seedIndexRecoveryIdentitySchema(c.TB, db, indexRecoveryIdentityTrackerJ)
+	removeIndexRecoveryIdentityDuplicate(c.TB, db)
 	conn, err := dbschema.ConnectToDatabase(c.Context(), dsn)
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { c.Check(conn.Close(), qt.IsNil) })
@@ -550,8 +550,8 @@ func TestPostgreSQLCompletedDownRepairRestoresSessionPrefixIntegration(t *testin
 	c.Assert(status.DirtyRevision.Direction, qt.Equals, migrator.MigrationDirectionDown)
 	c.Assert(status.DirtyRevision.Applied, qt.Equals, 4)
 	c.Assert(status.DirtyRevision.Total, qt.Equals, 4)
-	repairIndexRecoveryIdentityAppRelation(c, db)
-	createIndexRecoveryIdentityPublicConflict(c, db)
+	repairIndexRecoveryIdentityAppRelation(c.TB, db)
+	createIndexRecoveryIdentityPublicConflict(c.TB, db)
 
 	c.Assert(mig.RepairMigration(c.Context(), migrator.RepairMigrationOptions{Version: indexRecoveryIdentityVersion}), qt.IsNil)
 	status, err = mig.GetMigrationStatus(c.Context())
@@ -560,7 +560,8 @@ func TestPostgreSQLCompletedDownRepairRestoresSessionPrefixIntegration(t *testin
 	c.Assert(status.AppliedMigrations, qt.HasLen, 0)
 }
 
-func openIndexRecoveryIdentityDB(c *qt.C, dsn string) *sql.DB {
+func openIndexRecoveryIdentityDB(tb testing.TB, dsn string) *sql.DB {
+	c := qt.New(tb)
 	c.Helper()
 	db, err := sql.Open("pgx", dsn)
 	c.Assert(err, qt.IsNil)
@@ -568,7 +569,8 @@ func openIndexRecoveryIdentityDB(c *qt.C, dsn string) *sql.DB {
 	return db
 }
 
-func seedIndexRecoveryIdentityPublicTables(c *qt.C, db *sql.DB) {
+func seedIndexRecoveryIdentityPublicTables(tb testing.TB, db *sql.DB) {
+	c := qt.New(tb)
 	c.Helper()
 	cleanup := func() {
 		_, err := db.Exec("DROP TABLE IF EXISTS " + indexRecoveryIdentityTable + " CASCADE")
@@ -603,7 +605,8 @@ func seedIndexRecoveryIdentityPublicTables(c *qt.C, db *sql.DB) {
 	c.Assert(err, qt.IsNil)
 }
 
-func seedIndexRecoveryIdentitySearchPathSchemas(c *qt.C, db *sql.DB, tracker string) {
+func seedIndexRecoveryIdentitySearchPathSchemas(tb testing.TB, db *sql.DB, tracker string) {
+	c := qt.New(tb)
 	c.Helper()
 	c.Cleanup(func() {
 		_, err := db.Exec("DROP SCHEMA IF EXISTS " + indexRecoveryIdentityPathA + " CASCADE")
@@ -643,7 +646,8 @@ func seedIndexRecoveryIdentitySearchPathSchemas(c *qt.C, db *sql.DB, tracker str
 	c.Assert(err, qt.IsNil)
 }
 
-func removeIndexRecoveryIdentityDuplicate(c *qt.C, db *sql.DB) {
+func removeIndexRecoveryIdentityDuplicate(tb testing.TB, db *sql.DB) {
+	c := qt.New(tb)
 	c.Helper()
 	_, err := db.Exec(fmt.Sprintf(
 		`DELETE FROM %q.%q WHERE id > 1`,
@@ -653,7 +657,8 @@ func removeIndexRecoveryIdentityDuplicate(c *qt.C, db *sql.DB) {
 	c.Assert(err, qt.IsNil)
 }
 
-func repairIndexRecoveryIdentityAppRelation(c *qt.C, db *sql.DB) {
+func repairIndexRecoveryIdentityAppRelation(tb testing.TB, db *sql.DB) {
+	c := qt.New(tb)
 	c.Helper()
 	_, err := db.Exec(fmt.Sprintf(
 		`DROP TABLE %q.%q`,
@@ -670,7 +675,8 @@ func repairIndexRecoveryIdentityAppRelation(c *qt.C, db *sql.DB) {
 	c.Assert(err, qt.IsNil)
 }
 
-func createIndexRecoveryIdentityPublicConflict(c *qt.C, db *sql.DB) {
+func createIndexRecoveryIdentityPublicConflict(tb testing.TB, db *sql.DB) {
+	c := qt.New(tb)
 	c.Helper()
 	_, err := db.Exec(fmt.Sprintf(
 		`CREATE INDEX %q ON %q (email)`,
@@ -680,7 +686,8 @@ func createIndexRecoveryIdentityPublicConflict(c *qt.C, db *sql.DB) {
 	c.Assert(err, qt.IsNil)
 }
 
-func seedIndexRecoveryIdentitySchema(c *qt.C, db *sql.DB, tracker string) {
+func seedIndexRecoveryIdentitySchema(tb testing.TB, db *sql.DB, tracker string) {
+	c := qt.New(tb)
 	c.Helper()
 	cleanup := func() {
 		_, err := db.Exec(`DROP SCHEMA IF EXISTS "` + indexRecoveryIdentitySchema + `" CASCADE`)
@@ -707,7 +714,8 @@ func seedIndexRecoveryIdentitySchema(c *qt.C, db *sql.DB, tracker string) {
 	c.Assert(err, qt.IsNil)
 }
 
-func leaveIndexRecoveryIdentityInvalid(c *qt.C, db *sql.DB) {
+func leaveIndexRecoveryIdentityInvalid(tb testing.TB, db *sql.DB) {
+	c := qt.New(tb)
 	c.Helper()
 	_, err := db.Exec(fmt.Sprintf(
 		`CREATE UNIQUE INDEX CONCURRENTLY %q ON %q.%q (email)`,
@@ -716,12 +724,13 @@ func leaveIndexRecoveryIdentityInvalid(c *qt.C, db *sql.DB) {
 		indexRecoveryIdentityTable,
 	))
 	c.Assert(err, qt.IsNotNil)
-	valid, ready := indexRecoveryIdentityFlags(c, db)
+	valid, ready := indexRecoveryIdentityFlags(c.TB, db)
 	c.Assert(valid, qt.IsFalse)
 	c.Assert(ready, qt.IsFalse)
 }
 
-func indexRecoveryIdentityFlags(c *qt.C, db *sql.DB) (valid, ready bool) {
+func indexRecoveryIdentityFlags(tb testing.TB, db *sql.DB) (valid, ready bool) {
+	c := qt.New(tb)
 	c.Helper()
 	err := db.QueryRow(`
 		SELECT ix.indisvalid, ix.indisready
@@ -736,11 +745,13 @@ func indexRecoveryIdentityFlags(c *qt.C, db *sql.DB) (valid, ready bool) {
 	return valid, ready
 }
 
-func indexRecoveryIdentitySearchPathDSN(c *qt.C, dsn string) string {
-	return indexRecoveryIdentityDSNWithSearchPath(c, dsn, indexRecoveryIdentitySchema+",public")
+func indexRecoveryIdentitySearchPathDSN(tb testing.TB, dsn string) string {
+	c := qt.New(tb)
+	return indexRecoveryIdentityDSNWithSearchPath(c.TB, dsn, indexRecoveryIdentitySchema+",public")
 }
 
-func indexRecoveryIdentityDSNWithSearchPath(c *qt.C, dsn, searchPath string) string {
+func indexRecoveryIdentityDSNWithSearchPath(tb testing.TB, dsn, searchPath string) string {
+	c := qt.New(tb)
 	c.Helper()
 	parsed, err := url.Parse(dsn)
 	c.Assert(err, qt.IsNil)
@@ -760,7 +771,8 @@ func indexRecoveryIdentityMigrator(
 	return migrator.NewMigrator(conn, migrator.NewRegisteredMigrationProvider(migration)).WithMigrationsTable("", tracker)
 }
 
-func assertIndexRecoveryIdentityNeverStarted(c *qt.C, mig *migrator.Migrator) {
+func assertIndexRecoveryIdentityNeverStarted(tb testing.TB, mig *migrator.Migrator) {
+	c := qt.New(tb)
 	c.Helper()
 	status, err := mig.GetMigrationStatus(c.Context())
 	c.Assert(err, qt.IsNil)

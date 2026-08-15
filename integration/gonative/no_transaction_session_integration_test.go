@@ -27,8 +27,8 @@ const (
 func TestPostgreSQLNoTransactionPinsSessionIntegration(t *testing.T) {
 	dsn := skipIfNoPostgreSQL(t)
 	c := qt.New(t)
-	db := openNoTransactionSessionDB(c, dsn)
-	resetNoTransactionSessionFixtures(c, db)
+	db := openNoTransactionSessionDB(c.TB, dsn)
+	resetNoTransactionSessionFixtures(c.TB, db)
 	conn, err := dbschema.ConnectToDatabase(c.Context(), dsn)
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { c.Check(conn.Close(), qt.IsNil) })
@@ -67,15 +67,15 @@ func TestPostgreSQLNoTransactionPinsSessionIntegration(t *testing.T) {
 	c.Assert(held, qt.IsNotNil)
 	c.Assert(held.Close(), qt.IsNil)
 	c.Assert(migrationErr, qt.IsNil)
-	c.Assert(noTransactionSessionRelationCount(c, db, noTransactionSessionSchema, noTransactionSessionTable), qt.Equals, 1)
-	c.Assert(noTransactionSessionRelationCount(c, db, "public", noTransactionSessionTable), qt.Equals, 0)
+	c.Assert(noTransactionSessionRelationCount(c.TB, db, noTransactionSessionSchema, noTransactionSessionTable), qt.Equals, 1)
+	c.Assert(noTransactionSessionRelationCount(c.TB, db, "public", noTransactionSessionTable), qt.Equals, 0)
 }
 
 func TestPostgreSQLNoTransactionResumeRestoresSessionPrefixIntegration(t *testing.T) {
 	dsn := skipIfNoPostgreSQL(t)
 	c := qt.New(t)
-	db := openNoTransactionSessionDB(c, dsn)
-	resetNoTransactionSessionFixtures(c, db)
+	db := openNoTransactionSessionDB(c.TB, dsn)
+	resetNoTransactionSessionFixtures(c.TB, db)
 	conn, err := dbschema.ConnectToDatabase(c.Context(), dsn)
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { c.Check(conn.Close(), qt.IsNil) })
@@ -126,8 +126,8 @@ func TestPostgreSQLNoTransactionResumeRestoresSessionPrefixIntegration(t *testin
 		qt.IsNil,
 	)
 	c.Assert(held.Close(), qt.IsNil)
-	c.Assert(noTransactionSessionRelationCount(c, db, noTransactionSessionSchema, noTransactionSessionRetryTable), qt.Equals, 1)
-	c.Assert(noTransactionSessionRelationCount(c, db, "public", noTransactionSessionRetryTable), qt.Equals, 0)
+	c.Assert(noTransactionSessionRelationCount(c.TB, db, noTransactionSessionSchema, noTransactionSessionRetryTable), qt.Equals, 1)
+	c.Assert(noTransactionSessionRelationCount(c.TB, db, "public", noTransactionSessionRetryTable), qt.Equals, 0)
 
 	var rows int
 	err = db.QueryRow(fmt.Sprintf(
@@ -139,7 +139,8 @@ func TestPostgreSQLNoTransactionResumeRestoresSessionPrefixIntegration(t *testin
 	c.Assert(rows, qt.Equals, 1)
 }
 
-func openNoTransactionSessionDB(c *qt.C, dsn string) *sql.DB {
+func openNoTransactionSessionDB(tb testing.TB, dsn string) *sql.DB {
+	c := qt.New(tb)
 	c.Helper()
 	db, err := sql.Open("pgx", dsn)
 	c.Assert(err, qt.IsNil)
@@ -147,7 +148,8 @@ func openNoTransactionSessionDB(c *qt.C, dsn string) *sql.DB {
 	return db
 }
 
-func resetNoTransactionSessionFixtures(c *qt.C, db *sql.DB) {
+func resetNoTransactionSessionFixtures(tb testing.TB, db *sql.DB) {
+	c := qt.New(tb)
 	c.Helper()
 	reset := func() {
 		_, err := db.Exec("DROP SCHEMA IF EXISTS " + noTransactionSessionSchema + " CASCADE")
@@ -167,7 +169,8 @@ func resetNoTransactionSessionFixtures(c *qt.C, db *sql.DB) {
 	c.Assert(err, qt.IsNil)
 }
 
-func noTransactionSessionRelationCount(c *qt.C, db *sql.DB, schema, name string) int {
+func noTransactionSessionRelationCount(tb testing.TB, db *sql.DB, schema, name string) int {
+	c := qt.New(tb)
 	c.Helper()
 	var count int
 	err := db.QueryRow(`

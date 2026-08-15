@@ -111,12 +111,12 @@ func TestPostgreSQLUserTypeRecreate_DropsAgainstTheCurrentShape(t *testing.T) {
 
 	for _, test := range tests {
 		c.Run(test.name, func(c *qt.C) {
-			desiredURL := newBoundaryDatabase(c, dsn, boundaryCase{
+			desiredURL := newBoundaryDatabase(c.TB, dsn, boundaryCase{
 				name:  "user_type_recreate_desired",
 				seed:  test.desired,
 				query: "search_path=public",
 			})
-			currentURL := newBoundaryDatabase(c, dsn, boundaryCase{
+			currentURL := newBoundaryDatabase(c.TB, dsn, boundaryCase{
 				name:  "user_type_recreate_current",
 				seed:  test.current,
 				query: "search_path=public",
@@ -141,8 +141,8 @@ func TestPostgreSQLUserTypeRecreate_DropsAgainstTheCurrentShape(t *testing.T) {
 			// the types on their old shape.
 			applied, err := dbschema.ReadSchemaWithSchemas(target, nil)
 			c.Assert(err, qt.IsNil)
-			c.Assert(findLiveDomain(c, applied.Domains, test.wantDomain).BaseType, qt.Equals, test.wantBaseType)
-			c.Assert(liveCompositeFieldTypes(c, applied.Composites, test.wantComposite), qt.DeepEquals, test.wantCompositeSQL)
+			c.Assert(findLiveDomain(c.TB, applied.Domains, test.wantDomain).BaseType, qt.Equals, test.wantBaseType)
+			c.Assert(liveCompositeFieldTypes(c.TB, applied.Composites, test.wantComposite), qt.DeepEquals, test.wantCompositeSQL)
 
 			// The other direction: the converged database plans nothing
 			// against the same target, so the plan above was not a churn that
@@ -192,8 +192,8 @@ func TestPostgreSQLUserTypeRecreate_DropsAgainstTheCurrentShapeWithinOneKind(t *
 				"CREATE DOMAIN d_over AS text",
 			},
 			assertConverged: func(c *qt.C, applied *dbschematypes.DBSchema) {
-				c.Assert(findLiveDomain(c, applied.Domains, "d_base").BaseType, qt.Equals, "text")
-				c.Assert(findLiveDomain(c, applied.Domains, "d_over").BaseType, qt.Equals, "text")
+				c.Assert(findLiveDomain(c.TB, applied.Domains, "d_base").BaseType, qt.Equals, "text")
+				c.Assert(findLiveDomain(c.TB, applied.Domains, "d_over").BaseType, qt.Equals, "text")
 			},
 		},
 		{
@@ -207,20 +207,20 @@ func TestPostgreSQLUserTypeRecreate_DropsAgainstTheCurrentShapeWithinOneKind(t *
 				"CREATE TYPE c_over AS (g text)",
 			},
 			assertConverged: func(c *qt.C, applied *dbschematypes.DBSchema) {
-				c.Assert(liveCompositeFieldTypes(c, applied.Composites, "c_base"), qt.DeepEquals, []string{"text"})
-				c.Assert(liveCompositeFieldTypes(c, applied.Composites, "c_over"), qt.DeepEquals, []string{"text"})
+				c.Assert(liveCompositeFieldTypes(c.TB, applied.Composites, "c_base"), qt.DeepEquals, []string{"text"})
+				c.Assert(liveCompositeFieldTypes(c.TB, applied.Composites, "c_over"), qt.DeepEquals, []string{"text"})
 			},
 		},
 	}
 
 	for _, test := range tests {
 		c.Run(test.name, func(c *qt.C) {
-			desiredURL := newBoundaryDatabase(c, dsn, boundaryCase{
+			desiredURL := newBoundaryDatabase(c.TB, dsn, boundaryCase{
 				name:  "user_type_one_kind_desired",
 				seed:  test.desired,
 				query: "search_path=public",
 			})
-			currentURL := newBoundaryDatabase(c, dsn, boundaryCase{
+			currentURL := newBoundaryDatabase(c.TB, dsn, boundaryCase{
 				name:  "user_type_one_kind_current",
 				seed:  test.current,
 				query: "search_path=public",
@@ -252,7 +252,8 @@ func TestPostgreSQLUserTypeRecreate_DropsAgainstTheCurrentShapeWithinOneKind(t *
 	}
 }
 
-func findLiveDomain(c *qt.C, domains []dbschematypes.DBDomain, name string) dbschematypes.DBDomain {
+func findLiveDomain(tb testing.TB, domains []dbschematypes.DBDomain, name string) dbschematypes.DBDomain {
+	c := qt.New(tb)
 	c.Helper()
 
 	for _, candidate := range domains {
@@ -264,7 +265,8 @@ func findLiveDomain(c *qt.C, domains []dbschematypes.DBDomain, name string) dbsc
 	return dbschematypes.DBDomain{}
 }
 
-func liveCompositeFieldTypes(c *qt.C, composites []dbschematypes.DBComposite, name string) []string {
+func liveCompositeFieldTypes(tb testing.TB, composites []dbschematypes.DBComposite, name string) []string {
+	c := qt.New(tb)
 	c.Helper()
 
 	for _, candidate := range composites {

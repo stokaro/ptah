@@ -34,11 +34,11 @@ CREATE TABLE [dbo].[users] (
 );
 CREATE INDEX [idx_users_status] ON [dbo].[users] ([status] ASC);`)
 	c.Assert(err, qt.IsNil)
-	c.Assert(readSQLServerGeneratorIndexDirection(c, target), qt.IsFalse)
+	c.Assert(readSQLServerGeneratorIndexDirection(c.TB, target), qt.IsFalse)
 
 	migrationsDir := filepath.Join(t.TempDir(), "migrations")
 	c.Assert(os.MkdirAll(migrationsDir, 0755), qt.IsNil)
-	writeSQLServerGeneratorInitialMigration(c, migrationsDir)
+	writeSQLServerGeneratorInitialMigration(c.TB, migrationsDir)
 	targetSchema := sqlServerGeneratorTargetSchema()
 
 	files, err := generator.GenerateMigration(ctx, generator.GenerateMigrationOptions{
@@ -63,15 +63,15 @@ CREATE INDEX [idx_users_status] ON [dbo].[users] ([status] ASC);`)
 
 	_, err = target.ExecContext(ctx, string(upSQL))
 	c.Assert(err, qt.IsNil)
-	c.Assert(readSQLServerGeneratorIndexDirection(c, target), qt.IsTrue)
+	c.Assert(readSQLServerGeneratorIndexDirection(c.TB, target), qt.IsTrue)
 
 	_, err = target.ExecContext(ctx, string(downSQL))
 	c.Assert(err, qt.IsNil)
-	c.Assert(readSQLServerGeneratorIndexDirection(c, target), qt.IsFalse)
+	c.Assert(readSQLServerGeneratorIndexDirection(c.TB, target), qt.IsFalse)
 
 	_, err = target.ExecContext(ctx, string(upSQL))
 	c.Assert(err, qt.IsNil)
-	c.Assert(readSQLServerGeneratorIndexDirection(c, target), qt.IsTrue)
+	c.Assert(readSQLServerGeneratorIndexDirection(c.TB, target), qt.IsTrue)
 }
 
 func sqlServerGeneratorTargetSchema() *goschema.Database {
@@ -97,9 +97,10 @@ func sqlServerGeneratorTargetSchema() *goschema.Database {
 }
 
 func readSQLServerGeneratorIndexDirection(
-	c *qt.C,
+	tb testing.TB,
 	conn *dbschema.DatabaseConnection,
 ) bool {
+	c := qt.New(tb)
 	c.Helper()
 	schema, err := dbschema.ReadSchemaWithSchemas(conn, []string{"dbo"})
 	c.Assert(err, qt.IsNil)
@@ -114,7 +115,8 @@ func readSQLServerGeneratorIndexDirection(
 	return indexes[0].Parts[0].Desc
 }
 
-func writeSQLServerGeneratorInitialMigration(c *qt.C, dir string) {
+func writeSQLServerGeneratorInitialMigration(tb testing.TB, dir string) {
+	c := qt.New(tb)
 	c.Helper()
 	upSQL := `
 CREATE TABLE [dbo].[users] (

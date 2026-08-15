@@ -19,7 +19,7 @@ func installPostgresDeferredCommitFault(
 	names revisionCompletionNames,
 ) {
 	c.Helper()
-	execRevisionCompletionSQL(c, conn, fmt.Sprintf(`CREATE FUNCTION %s() RETURNS trigger AS $fault$
+	execRevisionCompletionSQL(c.TB, conn, fmt.Sprintf(`CREATE FUNCTION %s() RETURNS trigger AS $fault$
 BEGIN
 	IF NEW.state = 'applied' THEN
 		RAISE EXCEPTION 'reject applied revision at commit';
@@ -27,7 +27,7 @@ BEGIN
 	RETURN NEW;
 END;
 $fault$ LANGUAGE plpgsql`, names.fault))
-	execRevisionCompletionSQL(c, conn, fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
+	execRevisionCompletionSQL(c.TB, conn, fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s (
     version BIGINT PRIMARY KEY,
     description TEXT NOT NULL,
     applied_at TIMESTAMP NOT NULL,
@@ -39,7 +39,7 @@ $fault$ LANGUAGE plpgsql`, names.fault))
     execution_time_ms BIGINT NOT NULL DEFAULT 0,
     checksum VARCHAR(64) NOT NULL DEFAULT ''
 )`, names.revisions))
-	execRevisionCompletionSQL(c, conn, fmt.Sprintf(
+	execRevisionCompletionSQL(c.TB, conn, fmt.Sprintf(
 		`CREATE CONSTRAINT TRIGGER %s AFTER UPDATE ON %s
 DEFERRABLE INITIALLY DEFERRED
 FOR EACH ROW EXECUTE FUNCTION %s()`,
@@ -55,5 +55,5 @@ func removePostgresDeferredCommitFault(
 	names revisionCompletionNames,
 ) {
 	c.Helper()
-	execRevisionCompletionSQL(c, conn, fmt.Sprintf("DROP TRIGGER %s ON %s", names.fault, names.revisions))
+	execRevisionCompletionSQL(c.TB, conn, fmt.Sprintf("DROP TRIGGER %s ON %s", names.fault, names.revisions))
 }

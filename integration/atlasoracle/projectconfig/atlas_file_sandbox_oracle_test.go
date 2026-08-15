@@ -83,10 +83,10 @@ func TestOracleReadsFilesOutsideTheAtlasHCLDirectory(t *testing.T) {
 			base := t.TempDir()
 			dir := filepath.Join(base, "project")
 			c.Assert(os.Mkdir(dir, 0o700), qt.IsNil)
-			outside := plantOracleSecret(c, base)
-			path := writeOracleFileConfig(c, dir, tt.argument(c, dir, outside))
+			outside := plantOracleSecret(c.TB, base)
+			path := writeOracleFileConfig(c.TB, dir, tt.argument(c, dir, outside))
 
-			out, code := runFileOracle(c, oracle, dir)
+			out, code := runFileOracle(c.TB, oracle, dir)
 
 			// The community binary reads it. Exit 0 on a config whose only
 			// unusual content is the file() call is the whole claim.
@@ -109,9 +109,9 @@ func TestOracleEvaluatesTheFileCallItIsGiven(t *testing.T) {
 	base := t.TempDir()
 	dir := filepath.Join(base, "project")
 	c.Assert(os.Mkdir(dir, 0o700), qt.IsNil)
-	path := writeOracleFileConfig(c, dir, "no-such-file.txt")
+	path := writeOracleFileConfig(c.TB, dir, "no-such-file.txt")
 
-	out, code := runFileOracle(c, oracle, dir)
+	out, code := runFileOracle(c.TB, oracle, dir)
 
 	c.Assert(code, qt.Equals, 1, qt.Commentf("oracle output: %s", out))
 	c.Assert(out, qt.Contains, "no-such-file.txt")
@@ -134,10 +134,10 @@ func TestOraclePlacesOutsideFileContentsWhereTheCallerCanSeeThem(t *testing.T) {
 	base := t.TempDir()
 	dir := filepath.Join(base, "project")
 	c.Assert(os.Mkdir(dir, 0o700), qt.IsNil)
-	outside := plantOracleSecret(c, base)
-	path := writeOracleURLConfig(c, dir, outside)
+	outside := plantOracleSecret(c.TB, base)
+	path := writeOracleURLConfig(c.TB, dir, outside)
 
-	out, code := runFileOracle(c, oracle, dir)
+	out, code := runFileOracle(c.TB, oracle, dir)
 
 	c.Assert(code, qt.Equals, 1, qt.Commentf("oracle output: %s", out))
 	// The binary lowercases the scheme before reporting it, so the comparison
@@ -150,7 +150,8 @@ func TestOraclePlacesOutsideFileContentsWhereTheCallerCanSeeThem(t *testing.T) {
 	c.Assert(err.Error(), qt.Not(qt.Contains), "ptahsecret1042")
 }
 
-func plantOracleSecret(c *qt.C, base string) string {
+func plantOracleSecret(tb testing.TB, base string) string {
+	c := qt.New(tb)
 	c.Helper()
 
 	path := filepath.Join(base, "secret.txt")
@@ -188,7 +189,8 @@ func escapeSymlinkedDirectory(c *qt.C, dir, outside string) string {
 // discarded: an unknown top-level attribute, which both the community binary
 // and Ptah evaluate and then ignore. That isolates the read from everything a
 // URL would then do with the value.
-func writeOracleFileConfig(c *qt.C, dir, argument string) string {
+func writeOracleFileConfig(tb testing.TB, dir, argument string) string {
+	c := qt.New(tb)
 	c.Helper()
 
 	path := filepath.Join(dir, "atlas.hcl")
@@ -201,7 +203,8 @@ func writeOracleFileConfig(c *qt.C, dir, argument string) string {
 
 // writeOracleURLConfig puts the same read in the env URL, where the value is
 // used and therefore visible.
-func writeOracleURLConfig(c *qt.C, dir, argument string) string {
+func writeOracleURLConfig(tb testing.TB, dir, argument string) string {
+	c := qt.New(tb)
 	c.Helper()
 
 	path := filepath.Join(dir, "atlas.hcl")
@@ -215,10 +218,11 @@ func writeOracleURLConfig(c *qt.C, dir, argument string) string {
 // runFileOracle runs `migrate status --env local` in dir and returns its
 // combined output and exit code. The verb needs no database of its own beyond
 // the in-memory SQLite the config names, so the whole measurement is local.
-func runFileOracle(c *qt.C, oracle, dir string) (string, int) {
+func runFileOracle(tb testing.TB, oracle, dir string) (string, int) {
+	c := qt.New(tb)
 	c.Helper()
 
-	warmUpFileOracle(c, oracle)
+	warmUpFileOracle(c.TB, oracle)
 
 	cmd := exec.Command(oracle, "migrate", "status", "--env", "local")
 	cmd.Dir = dir
@@ -240,7 +244,8 @@ func asExitError(err error, target **exec.ExitError) bool {
 // otherwise attaches itself to whichever measurement happens to run first.
 var fileOracleWarmup sync.Once
 
-func warmUpFileOracle(c *qt.C, oracle string) {
+func warmUpFileOracle(tb testing.TB, oracle string) {
+	c := qt.New(tb)
 	c.Helper()
 
 	fileOracleWarmup.Do(func() {

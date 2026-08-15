@@ -47,7 +47,7 @@ func TestSchemaCleanScopeRefusesUnselectedPostgresDependents(t *testing.T) {
 	}
 	dbschema.CloseAndWarn(conn)
 
-	compat := buildSchemaInspectBinary(c, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
+	compat := buildSchemaInspectBinary(c.TB, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
 	stdout, stderr, code := runAtlasBinary(
 		compat,
 		nil,
@@ -72,7 +72,7 @@ func TestSchemaCleanScopeOrdersSelectedPostgresViewDependencies(t *testing.T) {
 		"CREATE VIEW z_child AS SELECT id FROM a_base",
 	)
 
-	compat := buildSchemaInspectBinary(c, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
+	compat := buildSchemaInspectBinary(c.TB, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
 	stdout, stderr, code := runAtlasBinary(
 		compat,
 		nil,
@@ -99,7 +99,7 @@ func TestSchemaCleanScopeRollsBackPostgresPlanWhenRestrictRefuses(t *testing.T) 
 		"CREATE VIEW hidden_blocker AS SELECT id FROM z_blocked",
 	)
 
-	compat := buildSchemaInspectBinary(c, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
+	compat := buildSchemaInspectBinary(c.TB, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
 	stdout, stderr, code := runAtlasBinary(
 		compat,
 		nil,

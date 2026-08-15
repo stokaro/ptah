@@ -76,7 +76,7 @@ CREATE TABLE [ptah_shadow_i] (id INT NOT NULL);
 		Kind:    "identifier_semantics_mismatch",
 		Message: "shadow database identifier semantics do not match target sqlserver catalog semantics",
 	}})
-	c.Assert(sqlServerShadowTableExists(c, mismatchedShadow, "preserve_before_semantics_check"), qt.IsTrue)
+	c.Assert(sqlServerShadowTableExists(c.TB, mismatchedShadow, "preserve_before_semantics_check"), qt.IsTrue)
 }
 
 func provisionShadowCollationDatabase(t testing.TB, collation string) string {
@@ -118,7 +118,8 @@ func provisionShadowCollationDatabase(t testing.TB, collation string) string {
 	return parsed.String()
 }
 
-func sqlServerShadowTableExists(c *qt.C, conn *dbschema.DatabaseConnection, tableName string) bool {
+func sqlServerShadowTableExists(tb testing.TB, conn *dbschema.DatabaseConnection, tableName string) bool {
+	c := qt.New(tb)
 	c.Helper()
 	var count int
 	err := conn.QueryRowContext(

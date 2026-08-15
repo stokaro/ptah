@@ -14,7 +14,8 @@ import (
 	"go.5x5.cz/ptah/migration/generator"
 )
 
-func writeRollbackShadowMigrations(c *qt.C, dir string, downSQL string) {
+func writeRollbackShadowMigrations(tb testing.TB, dir string, downSQL string) {
+	c := qt.New(tb)
 	c.Helper()
 	write := func(name, body string) {
 		c.Assert(os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600), qt.IsNil)
@@ -25,7 +26,8 @@ func writeRollbackShadowMigrations(c *qt.C, dir string, downSQL string) {
 	write("0000000002_add_email.down.sql", downSQL)
 }
 
-func openRollbackTarget(c *qt.C, rawURL string) *dbschema.DatabaseConnection {
+func openRollbackTarget(tb testing.TB, rawURL string) *dbschema.DatabaseConnection {
+	c := qt.New(tb)
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(c.Context(), rawURL)
 	c.Assert(err, qt.IsNil)
@@ -38,9 +40,9 @@ func openRollbackTarget(c *qt.C, rawURL string) *dbschema.DatabaseConnection {
 func TestVerifyRollbackFromShadow_HappyPathReplaysUpThenDown(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
-	writeRollbackShadowMigrations(c, dir, "ALTER TABLE users DROP COLUMN email;\n")
+	writeRollbackShadowMigrations(c.TB, dir, "ALTER TABLE users DROP COLUMN email;\n")
 	targetConn := openRollbackTarget(
-		c,
+		c.TB,
 		"sqlite://"+filepath.Join(t.TempDir(), "target.db"),
 	)
 
@@ -58,9 +60,9 @@ func TestVerifyRollbackFromShadow_HappyPathReplaysUpThenDown(t *testing.T) {
 func TestVerifyRollbackFromShadow_FailurePathBrokenDownMigrationReported(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
-	writeRollbackShadowMigrations(c, dir, "ALTER TABLE users DROP COLUMN no_such_column;\n")
+	writeRollbackShadowMigrations(c.TB, dir, "ALTER TABLE users DROP COLUMN no_such_column;\n")
 	targetConn := openRollbackTarget(
-		c,
+		c.TB,
 		"sqlite://"+filepath.Join(t.TempDir(), "target.db"),
 	)
 
@@ -79,7 +81,7 @@ func TestVerifyRollbackFromShadow_FailurePathBrokenDownMigrationReported(t *test
 
 func TestVerifyRollbackFromShadow_FailurePathValidatesInputs(t *testing.T) {
 	c := qt.New(t)
-	targetConn := openRollbackTarget(c, "sqlite://"+filepath.Join(t.TempDir(), "target.db"))
+	targetConn := openRollbackTarget(c.TB, "sqlite://"+filepath.Join(t.TempDir(), "target.db"))
 
 	err := generator.VerifyRollbackFromShadow(context.Background(), generator.RollbackFromShadowOptions{
 		TargetConnection: targetConn,

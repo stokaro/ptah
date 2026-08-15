@@ -31,7 +31,8 @@ func uniqueScopeSuffix() string {
 // registers its removal, and returns a URL pointing at it. `schema diff`
 // introspects whole databases, so the fixtures below need databases of their
 // own rather than schemas inside the shared test database.
-func createDisposableDatabase(c *qt.C, dbURL, name string) string {
+func createDisposableDatabase(tb testing.TB, dbURL, name string) string {
+	c := qt.New(tb)
 	c.Helper()
 
 	admin, err := dbschema.ConnectToDatabase(context.Background(), dbURL)
@@ -50,7 +51,8 @@ func createDisposableDatabase(c *qt.C, dbURL, name string) string {
 }
 
 // seedDatabase runs setup DDL against one disposable database.
-func seedDatabase(c *qt.C, dbURL string, statements ...string) {
+func seedDatabase(tb testing.TB, dbURL string, statements ...string) {
+	c := qt.New(tb)
 	c.Helper()
 
 	conn, err := dbschema.ConnectToDatabase(context.Background(), dbURL)
@@ -66,14 +68,16 @@ func seedDatabase(c *qt.C, dbURL string, statements ...string) {
 // returns the bytes it wrote, so assertions can pin output rather than exit
 // status: a diff that reports "synced" and a diff that found nothing share an
 // exit code.
-func runCompatSchemaDiff(c *qt.C, args ...string) string {
+func runCompatSchemaDiff(tb testing.TB, args ...string) string {
+	c := qt.New(tb)
 	c.Helper()
-	out, err := executeCompatSchemaDiff(c, args...)
+	out, err := executeCompatSchemaDiff(c.TB, args...)
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 	return out
 }
 
-func executeCompatSchemaDiff(c *qt.C, args ...string) (string, error) {
+func executeCompatSchemaDiff(tb testing.TB, args ...string) (string, error) {
+	c := qt.New(tb)
 	c.Helper()
 
 	cmd := atlas.NewCompatCommand("atlas")
@@ -102,8 +106,8 @@ func TestSchemaDiffIntrospectsRequestedSchemaLivePostgres(t *testing.T) {
 	suffix := uniqueScopeSuffix()
 	scoped := "ptah_diff_scope_" + suffix
 	defaultTable := "ptah_diff_default_" + suffix
-	targetURL := createDisposableDatabase(c, dbURL, "ptah_diff_from_"+suffix)
-	seedDatabase(c, targetURL,
+	targetURL := createDisposableDatabase(c.TB, dbURL, "ptah_diff_from_"+suffix)
+	seedDatabase(c.TB, targetURL,
 		"CREATE SCHEMA "+scoped,
 		"CREATE TABLE "+scoped+".users (id SERIAL PRIMARY KEY, email TEXT)",
 		"CREATE TABLE "+defaultTable+" (id SERIAL PRIMARY KEY, email TEXT)",
@@ -153,7 +157,7 @@ func TestSchemaDiffIntrospectsRequestedSchemaLivePostgres(t *testing.T) {
 
 	for _, test := range tests {
 		c.Run(test.name, func(c *qt.C) {
-			out := runCompatSchemaDiff(c,
+			out := runCompatSchemaDiff(c.TB,
 				"--from", targetURL,
 				"--to", "file://"+desiredPath,
 				"--dev-url", targetURL,
@@ -181,19 +185,19 @@ func TestSchemaDiffDatabaseToDatabaseIntrospectsRequestedSchemaLivePostgres(t *t
 	dbURL := dbtarget.URL(t, dbtarget.PostgreSQL)
 	suffix := uniqueScopeSuffix()
 	scoped := "ptah_dbdiff_scope_" + suffix
-	fromURL := createDisposableDatabase(c, dbURL, "ptah_dbdiff_from_"+suffix)
-	toURL := createDisposableDatabase(c, dbURL, "ptah_dbdiff_to_"+suffix)
-	seedDatabase(c, fromURL,
+	fromURL := createDisposableDatabase(c.TB, dbURL, "ptah_dbdiff_from_"+suffix)
+	toURL := createDisposableDatabase(c.TB, dbURL, "ptah_dbdiff_to_"+suffix)
+	seedDatabase(c.TB, fromURL,
 		"CREATE SCHEMA "+scoped,
 		"CREATE TABLE "+scoped+".users (id SERIAL PRIMARY KEY, email TEXT)",
 	)
-	seedDatabase(c, toURL,
+	seedDatabase(c.TB, toURL,
 		"CREATE SCHEMA "+scoped,
 		"CREATE TABLE "+scoped+".users (id SERIAL PRIMARY KEY, email TEXT, extra TEXT)",
 		"CREATE TABLE "+scoped+".blatant (id SERIAL PRIMARY KEY)",
 	)
 
-	out := runCompatSchemaDiff(c,
+	out := runCompatSchemaDiff(c.TB,
 		"--from", fromURL,
 		"--to", toURL,
 		"--dev-url", fromURL,
@@ -215,16 +219,16 @@ func TestSchemaDiffIncludeMatchesLiveExtensionOutsideTheDefaultSchemaPostgres(t 
 	c := qt.New(t)
 	dbURL := dbtarget.URL(t, dbtarget.PostgreSQL)
 	suffix := uniqueScopeSuffix()
-	fromURL := createDisposableDatabase(c, dbURL, "ptah_extdiff_from_"+suffix)
-	toURL := createDisposableDatabase(c, dbURL, "ptah_extdiff_to_"+suffix)
+	fromURL := createDisposableDatabase(c.TB, dbURL, "ptah_extdiff_from_"+suffix)
+	toURL := createDisposableDatabase(c.TB, dbURL, "ptah_extdiff_to_"+suffix)
 	for _, targetURL := range []string{fromURL, toURL} {
-		seedDatabase(c, targetURL,
+		seedDatabase(c.TB, targetURL,
 			"CREATE SCHEMA extensions",
 			"CREATE EXTENSION pgcrypto WITH SCHEMA extensions",
 		)
 	}
 
-	out := runCompatSchemaDiff(c,
+	out := runCompatSchemaDiff(c.TB,
 		"--from", fromURL,
 		"--to", toURL,
 		"--include", "extensions.pgcrypto",
@@ -243,19 +247,19 @@ func TestSchemaDiffIncludeMatchesQualifiedLiveFunctionPostgres(t *testing.T) {
 	c := qt.New(t)
 	dbURL := dbtarget.URL(t, dbtarget.PostgreSQL)
 	suffix := uniqueScopeSuffix()
-	fromURL := createDisposableDatabase(c, dbURL, "ptah_fndiff_from_"+suffix)
-	toURL := createDisposableDatabase(c, dbURL, "ptah_fndiff_to_"+suffix)
-	devURL := createDisposableDatabase(c, dbURL, "ptah_fndiff_dev_"+suffix)
+	fromURL := createDisposableDatabase(c.TB, dbURL, "ptah_fndiff_from_"+suffix)
+	toURL := createDisposableDatabase(c.TB, dbURL, "ptah_fndiff_to_"+suffix)
+	devURL := createDisposableDatabase(c.TB, dbURL, "ptah_fndiff_dev_"+suffix)
 	functionDDL := "CREATE SCHEMA extra;\n" +
 		"CREATE FUNCTION extra.fn() RETURNS integer LANGUAGE sql AS $$ SELECT 1 $$;\n"
 	for _, targetURL := range []string{fromURL, toURL} {
-		seedDatabase(c, targetURL,
+		seedDatabase(c.TB, targetURL,
 			"CREATE SCHEMA extra",
 			"CREATE FUNCTION extra.fn() RETURNS integer LANGUAGE sql AS $$ SELECT 1 $$",
 		)
 	}
 
-	synced := runCompatSchemaDiff(c,
+	synced := runCompatSchemaDiff(c.TB,
 		"--from", fromURL,
 		"--to", toURL,
 		"--include", "extra.fn",
@@ -265,7 +269,7 @@ func TestSchemaDiffIncludeMatchesQualifiedLiveFunctionPostgres(t *testing.T) {
 
 	localPath := filepath.Join(t.TempDir(), "function.sql")
 	c.Assert(os.WriteFile(localPath, []byte(functionDDL), 0o600), qt.IsNil)
-	localToLive := runCompatSchemaDiff(c,
+	localToLive := runCompatSchemaDiff(c.TB,
 		"--from", "file://"+localPath,
 		"--to", toURL,
 		"--dev-url", devURL,
@@ -283,16 +287,16 @@ func TestSchemaDiffIncludeThenExcludeQualifiedLiveEnumPostgres(t *testing.T) {
 	c := qt.New(t)
 	dbURL := dbtarget.URL(t, dbtarget.PostgreSQL)
 	suffix := uniqueScopeSuffix()
-	fromURL := createDisposableDatabase(c, dbURL, "ptah_enumdiff_from_"+suffix)
-	toURL := createDisposableDatabase(c, dbURL, "ptah_enumdiff_to_"+suffix)
+	fromURL := createDisposableDatabase(c.TB, dbURL, "ptah_enumdiff_from_"+suffix)
+	toURL := createDisposableDatabase(c.TB, dbURL, "ptah_enumdiff_to_"+suffix)
 	for _, targetURL := range []string{fromURL, toURL} {
-		seedDatabase(c, targetURL,
+		seedDatabase(c.TB, targetURL,
 			"CREATE SCHEMA app",
 			"CREATE TYPE app.color AS ENUM ('red')",
 		)
 	}
 
-	out := runCompatSchemaDiff(c,
+	out := runCompatSchemaDiff(c.TB,
 		"--from", fromURL,
 		"--to", toURL,
 		"--include", "app.color",
@@ -311,16 +315,16 @@ func TestSchemaDiffIncludePlansLiveExtensionPlacementPostgres(t *testing.T) {
 	c := qt.New(t)
 	dbURL := dbtarget.URL(t, dbtarget.PostgreSQL)
 	suffix := uniqueScopeSuffix()
-	emptyURL := createDisposableDatabase(c, dbURL, "ptah_extplace_empty_"+suffix)
-	defaultURL := createDisposableDatabase(c, dbURL, "ptah_extplace_default_"+suffix)
-	scopedURL := createDisposableDatabase(c, dbURL, "ptah_extplace_scoped_"+suffix)
-	seedDatabase(c, defaultURL, "CREATE EXTENSION pgcrypto")
-	seedDatabase(c, scopedURL,
+	emptyURL := createDisposableDatabase(c.TB, dbURL, "ptah_extplace_empty_"+suffix)
+	defaultURL := createDisposableDatabase(c.TB, dbURL, "ptah_extplace_default_"+suffix)
+	scopedURL := createDisposableDatabase(c.TB, dbURL, "ptah_extplace_scoped_"+suffix)
+	seedDatabase(c.TB, defaultURL, "CREATE EXTENSION pgcrypto")
+	seedDatabase(c.TB, scopedURL,
 		"CREATE SCHEMA extensions",
 		"CREATE EXTENSION pgcrypto WITH SCHEMA extensions",
 	)
 
-	createdNonDefault := runCompatSchemaDiff(c,
+	createdNonDefault := runCompatSchemaDiff(c.TB,
 		"--from", emptyURL,
 		"--to", scopedURL,
 		"--include", "extensions.pgcrypto",
@@ -328,7 +332,7 @@ func TestSchemaDiffIncludePlansLiveExtensionPlacementPostgres(t *testing.T) {
 	c.Assert(createdNonDefault, qt.Contains, `CREATE SCHEMA IF NOT EXISTS "extensions";`)
 	c.Assert(createdNonDefault, qt.Contains, `CREATE EXTENSION IF NOT EXISTS "pgcrypto" WITH SCHEMA "extensions"`)
 
-	moved, err := executeCompatSchemaDiff(c,
+	moved, err := executeCompatSchemaDiff(c.TB,
 		"--from", defaultURL,
 		"--to", scopedURL,
 		"--include", "*.pgcrypto",
@@ -338,14 +342,14 @@ func TestSchemaDiffIncludePlansLiveExtensionPlacementPostgres(t *testing.T) {
 	c.Assert(moved, qt.Not(qt.Contains), "DROP EXTENSION")
 	c.Assert(moved, qt.Not(qt.Contains), "Atlas")
 
-	created := runCompatSchemaDiff(c,
+	created := runCompatSchemaDiff(c.TB,
 		"--from", emptyURL,
 		"--to", defaultURL,
 		"--include", "public.pgcrypto",
 	)
 	c.Assert(created, qt.Contains, `CREATE EXTENSION IF NOT EXISTS "pgcrypto"`)
 
-	dropped := runCompatSchemaDiff(c,
+	dropped := runCompatSchemaDiff(c.TB,
 		"--from", scopedURL,
 		"--to", emptyURL,
 		"--include", "extensions.pgcrypto",
@@ -362,13 +366,13 @@ func TestSchemaDiffLocalToPostgresIgnoresPreinstalledExtensions(t *testing.T) {
 	c := qt.New(t)
 	dbURL := dbtarget.URL(t, dbtarget.PostgreSQL)
 	suffix := uniqueScopeSuffix()
-	currentURL := createDisposableDatabase(c, dbURL, "ptah_extignore_current_"+suffix)
-	devURL := createDisposableDatabase(c, dbURL, "ptah_extignore_dev_"+suffix)
-	seedDatabase(c, currentURL, "CREATE TABLE users (id INTEGER)")
+	currentURL := createDisposableDatabase(c.TB, dbURL, "ptah_extignore_current_"+suffix)
+	devURL := createDisposableDatabase(c.TB, dbURL, "ptah_extignore_dev_"+suffix)
+	seedDatabase(c.TB, currentURL, "CREATE TABLE users (id INTEGER)")
 
 	currentPath := filepath.Join(t.TempDir(), "current.sql")
 	c.Assert(os.WriteFile(currentPath, []byte("CREATE TABLE users (id INTEGER);\n"), 0o600), qt.IsNil)
-	out := runCompatSchemaDiff(c,
+	out := runCompatSchemaDiff(c.TB,
 		"--from", "file://"+currentPath,
 		"--to", currentURL,
 		"--dev-url", devURL,
@@ -392,9 +396,9 @@ func TestSchemaDiffMigrationDirReplayIntrospectsRequestedSchemaLivePostgres(t *t
 	dbURL := dbtarget.URL(t, dbtarget.PostgreSQL)
 	suffix := uniqueScopeSuffix()
 	scoped := "ptah_replay_scope_" + suffix
-	fromURL := createDisposableDatabase(c, dbURL, "ptah_replay_from_"+suffix)
-	devURL := createDisposableDatabase(c, dbURL, "ptah_replay_dev_"+suffix)
-	seedDatabase(c, fromURL,
+	fromURL := createDisposableDatabase(c.TB, dbURL, "ptah_replay_from_"+suffix)
+	devURL := createDisposableDatabase(c.TB, dbURL, "ptah_replay_dev_"+suffix)
+	seedDatabase(c.TB, fromURL,
 		"CREATE SCHEMA "+scoped,
 		"CREATE TABLE "+scoped+".users (id SERIAL PRIMARY KEY, email TEXT)",
 	)
@@ -428,7 +432,7 @@ func TestSchemaDiffMigrationDirReplayIntrospectsRequestedSchemaLivePostgres(t *t
 
 	for _, test := range tests {
 		c.Run(test.name, func(c *qt.C) {
-			out := runCompatSchemaDiff(c,
+			out := runCompatSchemaDiff(c.TB,
 				"--from", fromURL,
 				"--to", "file://"+migrationsDir,
 				"--dev-url", devURL,

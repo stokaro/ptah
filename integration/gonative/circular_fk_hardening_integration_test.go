@@ -33,8 +33,8 @@ func TestPostgreSQLSchemaRenderCircularForeignKeysApplyIntegration(t *testing.T)
 	db, err := sql.Open("pgx", dsn)
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { c.Check(db.Close(), qt.IsNil) })
-	cleanupPostgreSQLCycleSchema(c, db)
-	c.Cleanup(func() { cleanupPostgreSQLCycleSchema(c, db) })
+	cleanupPostgreSQLCycleSchema(c.TB, db)
+	c.Cleanup(func() { cleanupPostgreSQLCycleSchema(c.TB, db) })
 	_, err = db.Exec(`CREATE SCHEMA ptah_cycle_137`)
 	c.Assert(err, qt.IsNil)
 
@@ -94,8 +94,8 @@ func TestPostgreSQLDBReadCircularForeignKeysRoundTripIntegration(t *testing.T) {
 	db, err := sql.Open("pgx", dsn)
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { c.Check(db.Close(), qt.IsNil) })
-	cleanupPostgreSQLReadCycleSchema(c, db)
-	c.Cleanup(func() { cleanupPostgreSQLReadCycleSchema(c, db) })
+	cleanupPostgreSQLReadCycleSchema(c.TB, db)
+	c.Cleanup(func() { cleanupPostgreSQLReadCycleSchema(c.TB, db) })
 
 	_, err = db.Exec(`
 CREATE SCHEMA ptah_cycle_read_137;
@@ -150,7 +150,7 @@ ALTER TABLE ptah_cycle_read_137.right_nodes
 	c.Assert(err, qt.IsNil)
 	replaySQL := strings.Join(statements, "\n\n")
 
-	cleanupPostgreSQLReadCycleSchema(c, db)
+	cleanupPostgreSQLReadCycleSchema(c.TB, db)
 	_, err = db.Exec(replaySQL)
 	c.Assert(err, qt.IsNil, qt.Commentf("schema-local db read SQL:\n%s", replaySQL))
 
@@ -186,8 +186,8 @@ func TestMySQLForeignKeysOverrideMyISAMSessionDefaultIntegration(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { c.Check(conn.Close(), qt.IsNil) })
 	prefix := "ptah_cycle_137_mysql_engine"
-	cleanupMySQLFamilyCycleTablesWithConnection(c, conn, prefix)
-	c.Cleanup(func() { cleanupMySQLFamilyCycleTablesWithConnection(c, conn, prefix) })
+	cleanupMySQLFamilyCycleTablesWithConnection(c.TB, conn, prefix)
+	c.Cleanup(func() { cleanupMySQLFamilyCycleTablesWithConnection(c.TB, conn, prefix) })
 
 	err = conn.WithSession(t.Context(), func(session *dbschema.DatabaseConnection) error {
 		_, setErr := session.ExecContext(t.Context(), "SET SESSION default_storage_engine = MyISAM")
@@ -200,7 +200,7 @@ func TestMySQLForeignKeysOverrideMyISAMSessionDefaultIntegration(t *testing.T) {
 		)
 		c.Assert(renderErr, qt.IsNil)
 		c.Assert(strings.Count(strings.Join(statements, "\n"), "ENGINE=InnoDB"), qt.Equals, 2)
-		execConnectionStatements(c, session, statements)
+		execConnectionStatements(c.TB, session, statements)
 
 		var innoDBTableCount int
 		engineErr := session.QueryRow(`
@@ -262,8 +262,8 @@ func TestMySQLSessionOverrideAllowsNonuniqueReferencedKeyIntegration(t *testing.
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { c.Check(conn.Close(), qt.IsNil) })
 	prefix := "ptah_indexed_137_mysql_override"
-	cleanupMySQLFamilyIndexedTables(c, conn, prefix)
-	c.Cleanup(func() { cleanupMySQLFamilyIndexedTables(c, conn, prefix) })
+	cleanupMySQLFamilyIndexedTables(c.TB, conn, prefix)
+	c.Cleanup(func() { cleanupMySQLFamilyIndexedTables(c.TB, conn, prefix) })
 	rootInfo := conn.Info()
 	c.Assert(rootInfo.Capabilities.Has(capability.ForeignKeysRequireUniqueReference), qt.IsTrue)
 	c.Assert(rootInfo.Capabilities.Has(capability.ForeignKeysRequireIndexedReference), qt.IsFalse)
@@ -278,7 +278,7 @@ func TestMySQLSessionOverrideAllowsNonuniqueReferencedKeyIntegration(t *testing.
 		c.Assert(renderErr, qt.IsNil)
 		c.Assert(info.Capabilities.Has(capability.ForeignKeysRequireUniqueReference), qt.IsFalse)
 		c.Assert(info.Capabilities.Has(capability.ForeignKeysRequireIndexedReference), qt.IsTrue)
-		execConnectionStatements(c, session, statements)
+		execConnectionStatements(c.TB, session, statements)
 
 		var foreignKeyCount int
 		queryErr := session.QueryRow(`SELECT COUNT(*) FROM information_schema.referential_constraints WHERE constraint_schema = DATABASE() AND constraint_name = ?`,
@@ -299,8 +299,8 @@ func TestMariaDBAllowsNonuniqueReferencedKeyIntegration(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { c.Check(conn.Close(), qt.IsNil) })
 	prefix := "ptah_indexed_137_mariadb"
-	cleanupMySQLFamilyIndexedTables(c, conn, prefix)
-	c.Cleanup(func() { cleanupMySQLFamilyIndexedTables(c, conn, prefix) })
+	cleanupMySQLFamilyIndexedTables(c.TB, conn, prefix)
+	c.Cleanup(func() { cleanupMySQLFamilyIndexedTables(c.TB, conn, prefix) })
 	info := conn.Info()
 
 	statements, err := renderer.GetOrderedCreateStatementsWithCapabilities(
@@ -310,7 +310,7 @@ func TestMariaDBAllowsNonuniqueReferencedKeyIntegration(t *testing.T) {
 	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(info.Capabilities.Has(capability.ForeignKeysRequireIndexedReference), qt.IsTrue)
-	execConnectionStatements(c, conn, statements)
+	execConnectionStatements(c.TB, conn, statements)
 
 	var foreignKeyCount int
 	err = conn.QueryRow(`SELECT COUNT(*) FROM information_schema.referential_constraints WHERE constraint_schema = DATABASE() AND constraint_name = ?`,
@@ -325,13 +325,13 @@ func TestSQLServerMutualForeignKeysApplyIntegration(t *testing.T) {
 	db, err := sql.Open("sqlserver", dsn)
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { c.Check(db.Close(), qt.IsNil) })
-	cleanupSQLServerCycleTables(c, db)
-	c.Cleanup(func() { cleanupSQLServerCycleTables(c, db) })
+	cleanupSQLServerCycleTables(c.TB, db)
+	c.Cleanup(func() { cleanupSQLServerCycleTables(c.TB, db) })
 
 	statements, err := renderer.GetOrderedCreateStatements(mutualLiveForeignKeyDatabase("ptah_cycle_137_mssql"), "sqlserver")
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.HasLen, 4)
-	execStatements(c, db, statements)
+	execStatements(c.TB, db, statements)
 
 	var foreignKeyCount int
 	err = db.QueryRow(`SELECT COUNT(*) FROM sys.foreign_keys WHERE name IN ('fk_ptah_cycle_137_mssql_left_right', 'fk_ptah_cycle_137_mssql_right_left')`).Scan(&foreignKeyCount)
@@ -346,8 +346,8 @@ func testPostgreSQLFamilyMutualForeignKeys(t *testing.T, databaseName, dialect, 
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { c.Check(db.Close(), qt.IsNil) })
 	prefix := "ptah_cycle_137_" + strings.ToLower(databaseName)
-	cleanupPostgreSQLFamilyCycleTables(c, db, prefix)
-	c.Cleanup(func() { cleanupPostgreSQLFamilyCycleTables(c, db, prefix) })
+	cleanupPostgreSQLFamilyCycleTables(c.TB, db, prefix)
+	c.Cleanup(func() { cleanupPostgreSQLFamilyCycleTables(c.TB, db, prefix) })
 
 	var version string
 	err = db.QueryRow(`SELECT version()`).Scan(&version)
@@ -356,7 +356,7 @@ func testPostgreSQLFamilyMutualForeignKeys(t *testing.T, databaseName, dialect, 
 	statements, err := renderer.GetOrderedCreateStatementsWithCapabilities(mutualLiveForeignKeyDatabase(prefix), dialect, caps)
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.HasLen, 4)
-	execStatements(c, db, statements)
+	execStatements(c.TB, db, statements)
 
 	var foreignKeyCount int
 	err = db.QueryRow(`SELECT COUNT(*) FROM information_schema.table_constraints WHERE constraint_type = 'FOREIGN KEY' AND constraint_name IN ($1, $2)`,
@@ -372,8 +372,8 @@ func testMySQLFamilyMutualForeignKeys(t *testing.T, databaseName, dsn string) {
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { c.Check(db.Close(), qt.IsNil) })
 	prefix := "ptah_cycle_137_" + strings.ToLower(databaseName)
-	cleanupMySQLFamilyCycleTables(c, db, prefix)
-	c.Cleanup(func() { cleanupMySQLFamilyCycleTables(c, db, prefix) })
+	cleanupMySQLFamilyCycleTables(c.TB, db, prefix)
+	c.Cleanup(func() { cleanupMySQLFamilyCycleTables(c.TB, db, prefix) })
 
 	var version string
 	err = db.QueryRow(`SELECT VERSION()`).Scan(&version)
@@ -382,7 +382,7 @@ func testMySQLFamilyMutualForeignKeys(t *testing.T, databaseName, dsn string) {
 	statements, err := renderer.GetOrderedCreateStatementsWithCapabilities(mutualLiveForeignKeyDatabase(prefix), strings.ToLower(databaseName), caps)
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.HasLen, 4)
-	execStatements(c, db, statements)
+	execStatements(c.TB, db, statements)
 
 	var foreignKeyCount int
 	err = db.QueryRow(`SELECT COUNT(*) FROM information_schema.referential_constraints WHERE constraint_schema = DATABASE() AND constraint_name IN (?, ?)`,
@@ -438,7 +438,8 @@ func indexedLiveForeignKeyDatabase(prefix string) *goschema.Database {
 	}
 }
 
-func execStatements(c *qt.C, db *sql.DB, statements []string) {
+func execStatements(tb testing.TB, db *sql.DB, statements []string) {
+	c := qt.New(tb)
 	c.Helper()
 	for _, statement := range statements {
 		_, err := db.Exec(statement)
@@ -446,7 +447,8 @@ func execStatements(c *qt.C, db *sql.DB, statements []string) {
 	}
 }
 
-func execConnectionStatements(c *qt.C, conn *dbschema.DatabaseConnection, statements []string) {
+func execConnectionStatements(tb testing.TB, conn *dbschema.DatabaseConnection, statements []string) {
+	c := qt.New(tb)
 	c.Helper()
 	for _, statement := range statements {
 		_, err := conn.Exec(statement)
@@ -454,25 +456,29 @@ func execConnectionStatements(c *qt.C, conn *dbschema.DatabaseConnection, statem
 	}
 }
 
-func cleanupPostgreSQLCycleSchema(c *qt.C, db *sql.DB) {
+func cleanupPostgreSQLCycleSchema(tb testing.TB, db *sql.DB) {
+	c := qt.New(tb)
 	c.Helper()
 	_, err := db.Exec(`DROP SCHEMA IF EXISTS ptah_cycle_137 CASCADE`)
 	c.Assert(err, qt.IsNil)
 }
 
-func cleanupPostgreSQLReadCycleSchema(c *qt.C, db *sql.DB) {
+func cleanupPostgreSQLReadCycleSchema(tb testing.TB, db *sql.DB) {
+	c := qt.New(tb)
 	c.Helper()
 	_, err := db.Exec(`DROP SCHEMA IF EXISTS ptah_cycle_read_137 CASCADE`)
 	c.Assert(err, qt.IsNil)
 }
 
-func cleanupPostgreSQLFamilyCycleTables(c *qt.C, db *sql.DB, prefix string) {
+func cleanupPostgreSQLFamilyCycleTables(tb testing.TB, db *sql.DB, prefix string) {
+	c := qt.New(tb)
 	c.Helper()
 	_, err := db.Exec(`DROP TABLE IF EXISTS "` + prefix + `_left", "` + prefix + `_right" CASCADE`)
 	c.Assert(err, qt.IsNil)
 }
 
-func cleanupMySQLFamilyCycleTables(c *qt.C, db *sql.DB, prefix string) {
+func cleanupMySQLFamilyCycleTables(tb testing.TB, db *sql.DB, prefix string) {
+	c := qt.New(tb)
 	c.Helper()
 	ctx := context.Background()
 	session, err := db.Conn(ctx)
@@ -492,7 +498,8 @@ func cleanupMySQLFamilyCycleTables(c *qt.C, db *sql.DB, prefix string) {
 	c.Check(err, qt.IsNil)
 }
 
-func cleanupMySQLFamilyIndexedTables(c *qt.C, conn *dbschema.DatabaseConnection, prefix string) {
+func cleanupMySQLFamilyIndexedTables(tb testing.TB, conn *dbschema.DatabaseConnection, prefix string) {
+	c := qt.New(tb)
 	c.Helper()
 	err := conn.WithSession(context.Background(), func(session *dbschema.DatabaseConnection) error {
 		_, disableErr := session.ExecContext(context.Background(), `SET FOREIGN_KEY_CHECKS = 0`)
@@ -510,7 +517,8 @@ func cleanupMySQLFamilyIndexedTables(c *qt.C, conn *dbschema.DatabaseConnection,
 	c.Check(err, qt.IsNil)
 }
 
-func cleanupMySQLFamilyCycleTablesWithConnection(c *qt.C, conn *dbschema.DatabaseConnection, prefix string) {
+func cleanupMySQLFamilyCycleTablesWithConnection(tb testing.TB, conn *dbschema.DatabaseConnection, prefix string) {
+	c := qt.New(tb)
 	c.Helper()
 	err := conn.WithSession(context.Background(), func(session *dbschema.DatabaseConnection) error {
 		_, disableErr := session.ExecContext(context.Background(), `SET FOREIGN_KEY_CHECKS = 0`)
@@ -528,7 +536,8 @@ func cleanupMySQLFamilyCycleTablesWithConnection(c *qt.C, conn *dbschema.Databas
 	c.Check(err, qt.IsNil)
 }
 
-func cleanupSQLServerCycleTables(c *qt.C, db *sql.DB) {
+func cleanupSQLServerCycleTables(tb testing.TB, db *sql.DB) {
+	c := qt.New(tb)
 	c.Helper()
 	_, err := db.Exec(`
 IF OBJECT_ID(N'ptah_cycle_137_mssql_left', N'U') IS NOT NULL

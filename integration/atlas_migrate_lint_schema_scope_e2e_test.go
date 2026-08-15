@@ -19,7 +19,8 @@ import (
 
 // withLintE2ESearchPath returns dbURL carrying a `search_path` query parameter,
 // which is how a dev URL declares the one schema a lint run reviews.
-func withLintE2ESearchPath(c *qt.C, dbURL, schema string) string {
+func withLintE2ESearchPath(tb testing.TB, dbURL, schema string) string {
+	c := qt.New(tb)
 	c.Helper()
 	parsed, err := url.Parse(dbURL)
 	c.Assert(err, qt.IsNil)
@@ -69,7 +70,7 @@ func TestAtlasMigrateLintSchemaScopeE2E(t *testing.T) {
 
 	repoRoot := e2eRepoRoot(t)
 	binaryPath := filepath.Join(t.TempDir(), "ptah-compat")
-	buildPtahCompat(c, ctx, repoRoot, binaryPath)
+	buildPtahCompat(c.TB, ctx, repoRoot, binaryPath)
 
 	adminDB, err := sql.Open("pgx", dbURL)
 	c.Assert(err, qt.IsNil)
@@ -272,17 +273,17 @@ func TestAtlasMigrateLintSchemaScopeE2E(t *testing.T) {
 	for _, test := range tests {
 		c.Run(test.name, func(c *qt.C) {
 			testDBName := fmt.Sprintf("ptah_lint_scope_e2e_%d", time.Now().UnixNano())
-			createE2EDatabase(c, ctx, adminDB, testDBName)
-			defer dropE2EDatabase(c, context.Background(), adminDB, testDBName)
-			runLintE2ESetupSQL(c, ctx, dbURL, testDBName, test.setupSQL)
+			createE2EDatabase(c.TB, ctx, adminDB, testDBName)
+			defer dropE2EDatabase(c.TB, context.Background(), adminDB, testDBName)
+			runLintE2ESetupSQL(c.TB, ctx, dbURL, testDBName, test.setupSQL)
 
 			migrationsDir := c.TempDir()
-			writeLintE2EFile(c, migrationsDir, "1.sql", test.base)
-			writeLintE2EFile(c, migrationsDir, "2.sql", test.next)
+			writeLintE2EFile(c.TB, migrationsDir, "1.sql", test.base)
+			writeLintE2EFile(c.TB, migrationsDir, "2.sql", test.next)
 
-			devURL := replaceDatabaseName(c, dbURL, testDBName)
-			assertLintE2EScopedReport(c, ctx, binaryPath, migrationsDir,
-				scopedLintE2EDevURL(c, devURL, test.searchPath), test.wantExitOne, test.want)
+			devURL := replaceDatabaseName(c.TB, dbURL, testDBName)
+			assertLintE2EScopedReport(c.TB, ctx, binaryPath, migrationsDir,
+				scopedLintE2EDevURL(c.TB, devURL, test.searchPath), test.wantExitOne, test.want)
 		})
 	}
 }
@@ -290,12 +291,13 @@ func TestAtlasMigrateLintSchemaScopeE2E(t *testing.T) {
 // runLintE2ESetupSQL runs a row's setup statement on its own fresh database. A
 // row that names no setup is a no-op, so the ordinary rows keep meeting an
 // untouched database.
-func runLintE2ESetupSQL(c *qt.C, ctx context.Context, dbURL, testDBName, statement string) {
+func runLintE2ESetupSQL(tb testing.TB, ctx context.Context, dbURL, testDBName, statement string) {
+	c := qt.New(tb)
 	c.Helper()
 	if statement == "" {
 		return
 	}
-	db, err := sql.Open("pgx", replaceDatabaseName(c, dbURL, testDBName))
+	db, err := sql.Open("pgx", replaceDatabaseName(c.TB, dbURL, testDBName))
 	c.Assert(err, qt.IsNil)
 	defer db.Close()
 	_, err = db.ExecContext(ctx, statement)
@@ -303,11 +305,12 @@ func runLintE2ESetupSQL(c *qt.C, ctx context.Context, dbURL, testDBName, stateme
 }
 
 // scopedLintE2EDevURL applies the row's search_path, if it names one.
-func scopedLintE2EDevURL(c *qt.C, devURL, searchPath string) string {
+func scopedLintE2EDevURL(tb testing.TB, devURL, searchPath string) string {
+	c := qt.New(tb)
 	c.Helper()
 	scoped := map[bool]func() string{
 		true:  func() string { return devURL },
-		false: func() string { return withLintE2ESearchPath(c, devURL, searchPath) },
+		false: func() string { return withLintE2ESearchPath(c.TB, devURL, searchPath) },
 	}
 	return scoped[searchPath == ""]()
 }
@@ -316,12 +319,13 @@ func scopedLintE2EDevURL(c *qt.C, devURL, searchPath string) string {
 // report and exit status together, so a matching report cannot hide a
 // divergent exit code.
 func assertLintE2EScopedReport(
-	c *qt.C,
+	tb testing.TB,
 	ctx context.Context,
 	binaryPath, migrationsDir, devURL string,
 	wantExitOne bool,
 	want string,
 ) {
+	c := qt.New(tb)
 	c.Helper()
 	stdout, stderr, err := runLintE2EBinary(ctx, binaryPath,
 		"migrate", "lint",
@@ -362,22 +366,22 @@ func TestNativeMigrationsLintIgnoresTheDevURLSchemaScopeE2E(t *testing.T) {
 
 	repoRoot := e2eRepoRoot(t)
 	nativeBinary := filepath.Join(t.TempDir(), "ptah")
-	buildPtah(c, ctx, repoRoot, nativeBinary)
+	buildPtah(c.TB, ctx, repoRoot, nativeBinary)
 
 	adminDB, err := sql.Open("pgx", dbURL)
 	c.Assert(err, qt.IsNil)
 	defer adminDB.Close()
 
 	testDBName := fmt.Sprintf("ptah_lint_native_scope_e2e_%d", time.Now().UnixNano())
-	createE2EDatabase(c, ctx, adminDB, testDBName)
-	defer dropE2EDatabase(c, context.Background(), adminDB, testDBName)
+	createE2EDatabase(c.TB, ctx, adminDB, testDBName)
+	defer dropE2EDatabase(c.TB, context.Background(), adminDB, testDBName)
 
 	migrationsDir := c.TempDir()
-	writeLintE2EFile(c, migrationsDir, "1.sql",
+	writeLintE2EFile(c.TB, migrationsDir, "1.sql",
 		"CREATE SCHEMA app;\nCREATE TABLE app.\"Users\" (id int);\nCREATE TABLE app.audit_log (id int);\n")
-	writeLintE2EFile(c, migrationsDir, "2.sql", "DROP TABLE app.\"Users\", app.audit_log;\n")
+	writeLintE2EFile(c.TB, migrationsDir, "2.sql", "DROP TABLE app.\"Users\", app.audit_log;\n")
 
-	devURL := withLintE2ESearchPath(c, replaceDatabaseName(c, dbURL, testDBName), "public")
+	devURL := withLintE2ESearchPath(c.TB, replaceDatabaseName(c.TB, dbURL, testDBName), "public")
 
 	// The same directory and the same dev URL the compatibility surface answers
 	// with "no diagnostics found" and exit 0.

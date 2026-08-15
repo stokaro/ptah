@@ -62,7 +62,7 @@ func TestAtlasMigrateDiffMySQLFamilyDatabaseDesiredStateE2E(t *testing.T) {
 
 	repoRoot := e2eRepoRoot(t)
 	binaryPath := filepath.Join(t.TempDir(), "atlas")
-	buildPtahCompat(c, ctx, repoRoot, binaryPath)
+	buildPtahCompat(c.TB, ctx, repoRoot, binaryPath)
 
 	tests := []mySQLMigrateDiffCase{
 		{
@@ -100,7 +100,7 @@ func TestAtlasMigrateDiffMySQLFamilyDatabaseDesiredStateE2E(t *testing.T) {
 
 	for _, test := range tests {
 		c.Run(test.name, func(c *qt.C) {
-			runMySQLMigrateDiffCase(c, ctx, binaryPath, test)
+			runMySQLMigrateDiffCase(c.TB, ctx, binaryPath, test)
 		})
 	}
 }
@@ -156,7 +156,7 @@ func TestMySQLFamilyLockedDropRejectsConcurrentDependenciesE2E(t *testing.T) {
 			c := qt.New(t)
 			for _, race := range engine.races {
 				c.Run(race.name, func(c *qt.C) {
-					runMySQLLockedDropRace(c, ctx, engine.config, race)
+					runMySQLLockedDropRace(c.TB, ctx, engine.config, race)
 				})
 			}
 		})
@@ -168,7 +168,7 @@ func TestMariaDBLockedDropFailsClosedForConcurrentForeignKeyE2E(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
 	defer cancel()
 
-	runMariaDBLockedDropForeignKeyFailClosed(c, ctx)
+	runMariaDBLockedDropForeignKeyFailClosed(c.TB, ctx)
 }
 
 func TestMySQLFamilyDropViewUnderExplicitLockIsRejectedE2E(t *testing.T) {
@@ -189,7 +189,7 @@ func TestMySQLFamilyDropViewUnderExplicitLockIsRejectedE2E(t *testing.T) {
 
 	for _, engine := range engines {
 		c.Run(engine.name, func(c *qt.C) {
-			runMySQLLockedViewDrop(c, ctx, engine)
+			runMySQLLockedViewDrop(c.TB, ctx, engine)
 		})
 	}
 }
@@ -214,19 +214,20 @@ func TestMySQLFamilyProtectedViewDropWinsMetadataLockHandoffE2E(t *testing.T) {
 
 	for _, engine := range engines {
 		c.Run(engine.name, func(c *qt.C) {
-			runMySQLProtectedViewDropHandoff(c, ctx, engine)
+			runMySQLProtectedViewDropHandoff(c.TB, ctx, engine)
 		})
 	}
 }
 
 func runMySQLLockedDropRace(
-	c *qt.C,
+	tb testing.TB,
 	ctx context.Context,
 	engine mySQLMigrateDiffCase,
 	race mySQLCleanupRaceCase,
 ) {
+	c := qt.New(tb)
 	c.Helper()
-	adminDSN := requireIntegrationEnvironment(c, engine.adminDSNEnv)
+	adminDSN := requireIntegrationEnvironment(c.TB, engine.adminDSNEnv)
 	adminDB, err := sql.Open("mysql", adminDSN)
 	c.Assert(err, qt.IsNil)
 	defer adminDB.Close()
@@ -235,10 +236,10 @@ func runMySQLLockedDropRace(
 	suffix := time.Now().UnixNano()
 	devName := fmt.Sprintf("ptah_cleanup_race_dev_%d", suffix)
 	externalName := fmt.Sprintf("ptah_cleanup_race_external_%d", suffix)
-	createMySQLDatabase(c, ctx, adminDB, devName)
-	defer dropMySQLDatabase(c, context.Background(), adminDB, devName)
-	createMySQLDatabase(c, ctx, adminDB, externalName)
-	defer dropMySQLDatabase(c, context.Background(), adminDB, externalName)
+	createMySQLDatabase(c.TB, ctx, adminDB, devName)
+	defer dropMySQLDatabase(c.TB, context.Background(), adminDB, devName)
+	createMySQLDatabase(c.TB, ctx, adminDB, externalName)
+	defer dropMySQLDatabase(c.TB, context.Background(), adminDB, externalName)
 
 	_, err = adminDB.ExecContext(ctx, fmt.Sprintf(
 		"CREATE TABLE `%s`.`dependency_parent` (id BIGINT PRIMARY KEY)",
@@ -272,25 +273,26 @@ func runMySQLLockedDropRace(
 	_, err = lockConn.ExecContext(ctx, "UNLOCK TABLES")
 	c.Assert(err, qt.IsNil)
 	c.Assert(<-externalDone, qt.IsNotNil)
-	c.Assert(mySQLTableCount(c, ctx, adminDB, devName, "dependency_parent"), qt.Equals, 0)
-	c.Assert(mySQLTableCount(c, ctx, adminDB, externalName, race.externalObjectName), qt.Equals, 0)
+	c.Assert(mySQLTableCount(c.TB, ctx, adminDB, devName, "dependency_parent"), qt.Equals, 0)
+	c.Assert(mySQLTableCount(c.TB, ctx, adminDB, externalName, race.externalObjectName), qt.Equals, 0)
 }
 
 func runMySQLLockedViewDrop(
-	c *qt.C,
+	tb testing.TB,
 	ctx context.Context,
 	engine mySQLMigrateDiffCase,
 ) {
+	c := qt.New(tb)
 	c.Helper()
-	adminDSN := requireIntegrationEnvironment(c, engine.adminDSNEnv)
+	adminDSN := requireIntegrationEnvironment(c.TB, engine.adminDSNEnv)
 	adminDB, err := sql.Open("mysql", adminDSN)
 	c.Assert(err, qt.IsNil)
 	defer adminDB.Close()
 	c.Assert(adminDB.PingContext(ctx), qt.IsNil)
 
 	database := fmt.Sprintf("ptah_locked_view_drop_%d", time.Now().UnixNano())
-	createMySQLDatabase(c, ctx, adminDB, database)
-	defer dropMySQLDatabase(c, context.Background(), adminDB, database)
+	createMySQLDatabase(c.TB, ctx, adminDB, database)
+	defer dropMySQLDatabase(c.TB, context.Background(), adminDB, database)
 	_, err = adminDB.ExecContext(ctx, fmt.Sprintf(
 		"CREATE TABLE `%s`.`source_table` (id BIGINT PRIMARY KEY)",
 		database,
@@ -319,16 +321,17 @@ func runMySQLLockedViewDrop(
 	c.Assert(err.Error(), qt.Contains, "active locked tables")
 	_, err = lockConn.ExecContext(ctx, "UNLOCK TABLES")
 	c.Assert(err, qt.IsNil)
-	c.Assert(mySQLTableCount(c, ctx, adminDB, database, "managed_view"), qt.Equals, 1)
+	c.Assert(mySQLTableCount(c.TB, ctx, adminDB, database, "managed_view"), qt.Equals, 1)
 }
 
 func runMySQLProtectedViewDropHandoff(
-	c *qt.C,
+	tb testing.TB,
 	ctx context.Context,
 	engine mySQLMigrateDiffCase,
 ) {
+	c := qt.New(tb)
 	c.Helper()
-	adminDSN := requireIntegrationEnvironment(c, engine.adminDSNEnv)
+	adminDSN := requireIntegrationEnvironment(c.TB, engine.adminDSNEnv)
 	adminDB, err := sql.Open("mysql", adminDSN)
 	c.Assert(err, qt.IsNil)
 	defer adminDB.Close()
@@ -337,10 +340,10 @@ func runMySQLProtectedViewDropHandoff(
 	suffix := time.Now().UnixNano()
 	devName := fmt.Sprintf("ptah_view_handoff_dev_%d", suffix)
 	externalName := fmt.Sprintf("ptah_view_handoff_external_%d", suffix)
-	createMySQLDatabase(c, ctx, adminDB, devName)
-	defer dropMySQLDatabase(c, context.Background(), adminDB, devName)
-	createMySQLDatabase(c, ctx, adminDB, externalName)
-	defer dropMySQLDatabase(c, context.Background(), adminDB, externalName)
+	createMySQLDatabase(c.TB, ctx, adminDB, devName)
+	defer dropMySQLDatabase(c.TB, context.Background(), adminDB, devName)
+	createMySQLDatabase(c.TB, ctx, adminDB, externalName)
+	defer dropMySQLDatabase(c.TB, context.Background(), adminDB, externalName)
 	_, err = adminDB.ExecContext(ctx, fmt.Sprintf(
 		"CREATE TABLE `%s`.`source_table` (id BIGINT PRIMARY KEY)",
 		devName,
@@ -391,13 +394,14 @@ func runMySQLProtectedViewDropHandoff(
 	gate.releaseUnlock()
 	c.Assert(<-cleanupDone, qt.IsNil)
 	c.Assert(<-competitorDone, qt.IsNotNil)
-	c.Assert(mySQLUserObjectCount(c, ctx, adminDB, devName), qt.Equals, 0)
-	c.Assert(mySQLTableCount(c, ctx, adminDB, externalName, "competing_view"), qt.Equals, 0)
+	c.Assert(mySQLUserObjectCount(c.TB, ctx, adminDB, devName), qt.Equals, 0)
+	c.Assert(mySQLTableCount(c.TB, ctx, adminDB, externalName, "competing_view"), qt.Equals, 0)
 }
 
-func runMariaDBLockedDropForeignKeyFailClosed(c *qt.C, ctx context.Context) {
+func runMariaDBLockedDropForeignKeyFailClosed(tb testing.TB, ctx context.Context) {
+	c := qt.New(tb)
 	c.Helper()
-	adminDSN := requireIntegrationEnvironment(c, "MARIADB_ADMIN_TEST_DSN")
+	adminDSN := requireIntegrationEnvironment(c.TB, "MARIADB_ADMIN_TEST_DSN")
 	adminDB, err := sql.Open("mysql", adminDSN)
 	c.Assert(err, qt.IsNil)
 	defer adminDB.Close()
@@ -406,10 +410,10 @@ func runMariaDBLockedDropForeignKeyFailClosed(c *qt.C, ctx context.Context) {
 	suffix := time.Now().UnixNano()
 	devName := fmt.Sprintf("ptah_locked_fk_dev_%d", suffix)
 	externalName := fmt.Sprintf("ptah_locked_fk_external_%d", suffix)
-	createMySQLDatabase(c, ctx, adminDB, devName)
-	defer dropMySQLDatabase(c, context.Background(), adminDB, devName)
-	createMySQLDatabase(c, ctx, adminDB, externalName)
-	defer dropMySQLDatabase(c, context.Background(), adminDB, externalName)
+	createMySQLDatabase(c.TB, ctx, adminDB, devName)
+	defer dropMySQLDatabase(c.TB, context.Background(), adminDB, devName)
+	createMySQLDatabase(c.TB, ctx, adminDB, externalName)
+	defer dropMySQLDatabase(c.TB, context.Background(), adminDB, externalName)
 	_, err = adminDB.ExecContext(ctx, fmt.Sprintf(
 		"CREATE TABLE `%s`.`dependency_parent` (id BIGINT PRIMARY KEY)",
 		devName,
@@ -442,9 +446,9 @@ func runMariaDBLockedDropForeignKeyFailClosed(c *qt.C, ctx context.Context) {
 	c.Assert(err.Error(), qt.Contains, "foreign key constraint fails")
 	_, err = lockConn.ExecContext(ctx, "UNLOCK TABLES")
 	c.Assert(err, qt.IsNil)
-	c.Assert(mySQLTableCount(c, ctx, adminDB, devName, "dependency_parent"), qt.Equals, 1)
-	c.Assert(mySQLTableCount(c, ctx, adminDB, externalName, "racing_child"), qt.Equals, 1)
-	c.Assert(mySQLForeignKeyCount(c, ctx, adminDB, externalName, "fk_racing_parent"), qt.Equals, 1)
+	c.Assert(mySQLTableCount(c.TB, ctx, adminDB, devName, "dependency_parent"), qt.Equals, 1)
+	c.Assert(mySQLTableCount(c.TB, ctx, adminDB, externalName, "racing_child"), qt.Equals, 1)
+	c.Assert(mySQLForeignKeyCount(c.TB, ctx, adminDB, externalName, "fk_racing_parent"), qt.Equals, 1)
 }
 
 func waitForMySQLMetadataWait(
@@ -545,14 +549,15 @@ func waitForMySQLUnlockGate(ctx context.Context, started <-chan struct{}) error 
 }
 
 func runMySQLMigrateDiffCase(
-	c *qt.C,
+	tb testing.TB,
 	ctx context.Context,
 	binaryPath string,
 	test mySQLMigrateDiffCase,
 ) {
+	c := qt.New(tb)
 	c.Helper()
-	adminDSN := requireIntegrationEnvironment(c, test.adminDSNEnv)
-	adminURL := requireIntegrationEnvironment(c, test.adminURLEnv)
+	adminDSN := requireIntegrationEnvironment(c.TB, test.adminDSNEnv)
+	adminURL := requireIntegrationEnvironment(c.TB, test.adminURLEnv)
 	adminDB, err := sql.Open("mysql", adminDSN)
 	c.Assert(err, qt.IsNil)
 	defer adminDB.Close()
@@ -563,14 +568,14 @@ func runMySQLMigrateDiffCase(
 	devName := fmt.Sprintf("ptah_diff_dev_%d", suffix)
 	applyName := fmt.Sprintf("ptah_diff_apply_%d", suffix)
 	externalName := fmt.Sprintf("ptah_diff_external_%d", suffix)
-	createMySQLDatabase(c, ctx, adminDB, desiredName)
-	defer dropMySQLDatabase(c, context.Background(), adminDB, desiredName)
-	createMySQLDatabase(c, ctx, adminDB, devName)
-	defer dropMySQLDatabase(c, context.Background(), adminDB, devName)
-	createMySQLDatabase(c, ctx, adminDB, applyName)
-	defer dropMySQLDatabase(c, context.Background(), adminDB, applyName)
-	createMySQLDatabase(c, ctx, adminDB, externalName)
-	defer dropMySQLDatabase(c, context.Background(), adminDB, externalName)
+	createMySQLDatabase(c.TB, ctx, adminDB, desiredName)
+	defer dropMySQLDatabase(c.TB, context.Background(), adminDB, desiredName)
+	createMySQLDatabase(c.TB, ctx, adminDB, devName)
+	defer dropMySQLDatabase(c.TB, context.Background(), adminDB, devName)
+	createMySQLDatabase(c.TB, ctx, adminDB, applyName)
+	defer dropMySQLDatabase(c.TB, context.Background(), adminDB, applyName)
+	createMySQLDatabase(c.TB, ctx, adminDB, externalName)
+	defer dropMySQLDatabase(c.TB, context.Background(), adminDB, externalName)
 
 	_, err = adminDB.ExecContext(ctx, fmt.Sprintf(
 		"CREATE TABLE `%s`.`desired_database_items` (id BIGINT PRIMARY KEY, name VARCHAR(255) NOT NULL)",
@@ -578,8 +583,8 @@ func runMySQLMigrateDiffCase(
 	))
 	c.Assert(err, qt.IsNil)
 
-	desiredURL := replaceMySQLDatabaseName(c, adminURL, desiredName)
-	devURL := replaceMySQLDatabaseName(c, adminURL, devName)
+	desiredURL := replaceMySQLDatabaseName(c.TB, adminURL, desiredName)
+	devURL := replaceMySQLDatabaseName(c.TB, adminURL, devName)
 	publicConnection, err := dbschema.ConnectToDatabase(ctx, asMySQLURL(desiredURL))
 	c.Assert(err, qt.IsNil)
 	defer publicConnection.Close()
@@ -597,8 +602,8 @@ func runMySQLMigrateDiffCase(
 
 	limitedUser := fmt.Sprintf("ptah_limited_%d", suffix)
 	const limitedPassword = "Ptah842!Limited"
-	createMySQLUser(c, ctx, adminDB, limitedUser, limitedPassword)
-	defer dropMySQLUser(c, context.Background(), adminDB, limitedUser)
+	createMySQLUser(c.TB, ctx, adminDB, limitedUser, limitedPassword)
+	defer dropMySQLUser(c.TB, context.Background(), adminDB, limitedUser)
 	_, err = adminDB.ExecContext(ctx, fmt.Sprintf(
 		"GRANT ALL PRIVILEGES ON `%s`.* TO '%s'@'%%'",
 		devName,
@@ -609,7 +614,7 @@ func runMySQLMigrateDiffCase(
 	limitedRejectionDir := c.TempDir()
 	limitedMigrationsDir := filepath.Join(limitedRejectionDir, "migrations")
 	limitedDevURL := replaceMySQLCredentials(
-		c,
+		c.TB,
 		devURL,
 		limitedUser,
 		limitedPassword,
@@ -624,7 +629,7 @@ func runMySQLMigrateDiffCase(
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(output, qt.Contains, "global SELECT")
 	c.Assert(output, qt.Contains, "complete metadata visibility")
-	c.Assert(mySQLTableCount(c, ctx, adminDB, devName, "dependency_parent"), qt.Equals, 1)
+	c.Assert(mySQLTableCount(c.TB, ctx, adminDB, devName, "dependency_parent"), qt.Equals, 1)
 
 	_, err = adminDB.ExecContext(ctx, fmt.Sprintf(
 		"CREATE VIEW `%s`.`external_parent_view` AS SELECT id FROM `%s`.`dependency_parent`",
@@ -643,8 +648,8 @@ func runMySQLMigrateDiffCase(
 	)
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(output, qt.Contains, "views from other databases reference it")
-	c.Assert(mySQLTableCount(c, ctx, adminDB, devName, "dependency_parent"), qt.Equals, 1)
-	c.Assert(mySQLTableCount(c, ctx, adminDB, externalName, "external_parent_view"), qt.Equals, 1)
+	c.Assert(mySQLTableCount(c.TB, ctx, adminDB, devName, "dependency_parent"), qt.Equals, 1)
+	c.Assert(mySQLTableCount(c.TB, ctx, adminDB, externalName, "external_parent_view"), qt.Equals, 1)
 	_, err = adminDB.ExecContext(ctx, fmt.Sprintf("DROP VIEW `%s`.`external_parent_view`", externalName))
 	c.Assert(err, qt.IsNil)
 
@@ -668,8 +673,8 @@ CREATE TABLE %[1]s.external_child (
 	)
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(output, qt.Contains, "foreign key constraints from other databases reference it")
-	c.Assert(mySQLTableCount(c, ctx, adminDB, devName, "dependency_parent"), qt.Equals, 1)
-	c.Assert(mySQLTableCount(c, ctx, adminDB, externalName, "external_child"), qt.Equals, 1)
+	c.Assert(mySQLTableCount(c.TB, ctx, adminDB, devName, "dependency_parent"), qt.Equals, 1)
+	c.Assert(mySQLTableCount(c.TB, ctx, adminDB, externalName, "external_child"), qt.Equals, 1)
 
 	_, err = adminDB.ExecContext(ctx, fmt.Sprintf("DROP DATABASE `%s`", externalName))
 	c.Assert(err, qt.IsNil)
@@ -684,7 +689,7 @@ CREATE TABLE %[1]s.external_child (
 		"clean_managed_view",
 	)
 	c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", output))
-	c.Assert(mySQLUserObjectCount(c, ctx, adminDB, devName), qt.Equals, 0)
+	c.Assert(mySQLUserObjectCount(c.TB, ctx, adminDB, devName), qt.Equals, 0)
 
 	workDir := c.TempDir()
 	migrationsDir := filepath.Join(workDir, "migrations")
@@ -696,19 +701,19 @@ CREATE TABLE %[1]s.external_child (
 		"add_database_items",
 	)
 	c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", output))
-	migrationSQL := readFirstMatchingFile(c, migrationsDir, "*_add_database_items.sql")
+	migrationSQL := readFirstMatchingFile(c.TB, migrationsDir, "*_add_database_items.sql")
 	c.Assert(migrationSQL, qt.Contains, "CREATE TABLE")
 	c.Assert(migrationSQL, qt.Contains, "desired_database_items")
-	c.Assert(mySQLUserObjectCount(c, ctx, adminDB, devName), qt.Equals, 0)
+	c.Assert(mySQLUserObjectCount(c.TB, ctx, adminDB, devName), qt.Equals, 0)
 
-	applyURL := replaceMySQLDatabaseName(c, adminURL, applyName)
+	applyURL := replaceMySQLDatabaseName(c.TB, adminURL, applyName)
 	output, err = runPtah(ctx, workDir, binaryPath,
 		"migrate", "apply",
 		"--url", applyURL,
 		"--dir", "file://"+migrationsDir,
 	)
 	c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", output))
-	c.Assert(mySQLTableCount(c, ctx, adminDB, applyName, "desired_database_items"), qt.Equals, 1)
+	c.Assert(mySQLTableCount(c.TB, ctx, adminDB, applyName, "desired_database_items"), qt.Equals, 1)
 
 	output, err = runPtah(ctx, workDir, binaryPath,
 		"migrate", "diff",
@@ -719,8 +724,8 @@ CREATE TABLE %[1]s.external_child (
 	)
 	c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", output))
 	c.Assert(output, qt.Contains, "The migration directory is synced with the desired state")
-	c.Assert(mySQLTableCount(c, ctx, adminDB, desiredName, "desired_database_items"), qt.Equals, 1)
-	c.Assert(mySQLUserObjectCount(c, ctx, adminDB, devName), qt.Equals, 0)
+	c.Assert(mySQLTableCount(c.TB, ctx, adminDB, desiredName, "desired_database_items"), qt.Equals, 1)
+	c.Assert(mySQLUserObjectCount(c.TB, ctx, adminDB, devName), qt.Equals, 0)
 }
 
 func asMySQLURL(rawURL string) string {
@@ -728,7 +733,8 @@ func asMySQLURL(rawURL string) string {
 	return "mysql://" + withoutScheme
 }
 
-func requireIntegrationEnvironment(c *qt.C, name string) string {
+func requireIntegrationEnvironment(tb testing.TB, name string) string {
+	c := qt.New(tb)
 	c.Helper()
 	value := os.Getenv(name)
 	if value == "" {
@@ -737,7 +743,8 @@ func requireIntegrationEnvironment(c *qt.C, name string) string {
 	return value
 }
 
-func replaceMySQLDatabaseName(c *qt.C, rawURL, database string) string {
+func replaceMySQLDatabaseName(tb testing.TB, rawURL, database string) string {
+	c := qt.New(tb)
 	c.Helper()
 	base, query, hasQuery := strings.Cut(rawURL, "?")
 	slash := strings.LastIndex(base, "/")
@@ -750,11 +757,12 @@ func replaceMySQLDatabaseName(c *qt.C, rawURL, database string) string {
 }
 
 func replaceMySQLCredentials(
-	c *qt.C,
+	tb testing.TB,
 	rawURL,
 	username,
 	password string,
 ) string {
+	c := qt.New(tb)
 	c.Helper()
 	schemeEnd := strings.Index(rawURL, "://")
 	c.Assert(schemeEnd >= 0, qt.IsTrue)
@@ -773,12 +781,13 @@ func replaceMySQLCredentials(
 }
 
 func createMySQLUser(
-	c *qt.C,
+	tb testing.TB,
 	ctx context.Context,
 	db *sql.DB,
 	username,
 	password string,
 ) {
+	c := qt.New(tb)
 	c.Helper()
 	_, err := db.ExecContext(ctx, fmt.Sprintf(
 		"CREATE USER '%s'@'%%' IDENTIFIED BY '%s'",
@@ -788,31 +797,35 @@ func createMySQLUser(
 	c.Assert(err, qt.IsNil)
 }
 
-func dropMySQLUser(c *qt.C, ctx context.Context, db *sql.DB, username string) {
+func dropMySQLUser(tb testing.TB, ctx context.Context, db *sql.DB, username string) {
+	c := qt.New(tb)
 	c.Helper()
 	_, err := db.ExecContext(ctx, fmt.Sprintf("DROP USER IF EXISTS '%s'@'%%'", username))
 	c.Check(err, qt.IsNil)
 }
 
-func createMySQLDatabase(c *qt.C, ctx context.Context, db *sql.DB, name string) {
+func createMySQLDatabase(tb testing.TB, ctx context.Context, db *sql.DB, name string) {
+	c := qt.New(tb)
 	c.Helper()
 	_, err := db.ExecContext(ctx, fmt.Sprintf("CREATE DATABASE `%s`", name))
 	c.Assert(err, qt.IsNil)
 }
 
-func dropMySQLDatabase(c *qt.C, ctx context.Context, db *sql.DB, name string) {
+func dropMySQLDatabase(tb testing.TB, ctx context.Context, db *sql.DB, name string) {
+	c := qt.New(tb)
 	c.Helper()
 	_, err := db.ExecContext(ctx, fmt.Sprintf("DROP DATABASE IF EXISTS `%s`", name))
 	c.Check(err, qt.IsNil)
 }
 
 func mySQLTableCount(
-	c *qt.C,
+	tb testing.TB,
 	ctx context.Context,
 	db *sql.DB,
 	database string,
 	table string,
 ) int {
+	c := qt.New(tb)
 	c.Helper()
 	var count int
 	err := db.QueryRowContext(
@@ -826,12 +839,13 @@ func mySQLTableCount(
 }
 
 func mySQLForeignKeyCount(
-	c *qt.C,
+	tb testing.TB,
 	ctx context.Context,
 	db *sql.DB,
 	database,
 	constraint string,
 ) int {
+	c := qt.New(tb)
 	c.Helper()
 	var count int
 	err := db.QueryRowContext(
@@ -848,11 +862,12 @@ func mySQLForeignKeyCount(
 }
 
 func mySQLUserObjectCount(
-	c *qt.C,
+	tb testing.TB,
 	ctx context.Context,
 	db *sql.DB,
 	database string,
 ) int {
+	c := qt.New(tb)
 	c.Helper()
 	var count int
 	err := db.QueryRowContext(

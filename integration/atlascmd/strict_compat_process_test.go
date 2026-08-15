@@ -34,7 +34,7 @@ Unset PTAH_ATLAS_STRICT_COMPAT to use Ptah's full compatibility surface.
 
 func TestStrictCompatProcessUsesPtahGateDiagnostics(t *testing.T) {
 	c := qt.New(t)
-	compat := buildSchemaInspectBinary(c, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
+	compat := buildSchemaInspectBinary(c.TB, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
 	tests := []struct {
 		name       string
 		args       []string
@@ -108,7 +108,7 @@ func TestStrictCompatProcessUsesPtahGateDiagnostics(t *testing.T) {
 
 func TestFullCompatProcessRetainsExtensionsByDefault(t *testing.T) {
 	c := qt.New(t)
-	compat := buildSchemaInspectBinary(c, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
+	compat := buildSchemaInspectBinary(c.TB, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
 
 	tests := []struct {
 		name string
@@ -132,7 +132,7 @@ func TestFullCompatProcessRetainsExtensionsByDefault(t *testing.T) {
 
 func TestStrictCompatProcessRejectsInvalidPolicyBeforeDispatch(t *testing.T) {
 	c := qt.New(t)
-	compat := buildSchemaInspectBinary(c, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
+	compat := buildSchemaInspectBinary(c.TB, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
 	tests := [][]string{{"--help"}, {"version"}, {"unknown-command"}}
 
 	for _, args := range tests {
@@ -154,7 +154,7 @@ func TestStrictCompatProcessRejectsInvalidPolicyBeforeDispatch(t *testing.T) {
 
 func TestStrictCompatProcessRejectsExtensionEnvironmentBeforeDispatch(t *testing.T) {
 	c := qt.New(t)
-	compat := buildSchemaInspectBinary(c, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
+	compat := buildSchemaInspectBinary(c.TB, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
 	for _, assignment := range []string{
 		"PTAH_ATLAS_INSPECT_ALL_BLOCKS=1",
 		"PTAH_MIGRATIONS_DIR=/must-not-be-read",
@@ -191,7 +191,7 @@ func TestStrictCompatProcessRejectsExtensionEnvironmentBeforeDispatch(t *testing
 
 func TestStrictCompatProcessValidatesRetainedEnvironmentBeforeDispatch(t *testing.T) {
 	c := qt.New(t)
-	compat := buildSchemaInspectBinary(c, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
+	compat := buildSchemaInspectBinary(c.TB, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
 
 	stdout, stderr, code := runAtlasBinary(
 		compat,
@@ -218,7 +218,7 @@ func TestStrictCompatProcessValidatesRetainedEnvironmentBeforeDispatch(t *testin
 // redden here rather than pass. See stokaro/ptah#1476.
 func TestStrictCompatProcessRefusesMalformedDerivedEnvironmentBeforeDispatch(t *testing.T) {
 	c := qt.New(t)
-	compat := buildSchemaInspectBinary(c, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
+	compat := buildSchemaInspectBinary(c.TB, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
 
 	for _, name := range []string{
 		"PTAH_ATLAS_IGNORE_ENV_SCHEMAS",
@@ -246,7 +246,7 @@ func TestStrictCompatProcessRefusesMalformedDerivedEnvironmentBeforeDispatch(t *
 
 func TestNativeProcessIgnoresStrictCompatEnvironment(t *testing.T) {
 	c := qt.New(t)
-	native := buildSchemaInspectBinary(c, "ptah", "go.5x5.cz/ptah/cmd/ptah")
+	native := buildSchemaInspectBinary(c.TB, "ptah", "go.5x5.cz/ptah/cmd/ptah")
 
 	stdout, stderr, code := runAtlasBinary(
 		native,
@@ -261,7 +261,7 @@ func TestNativeProcessIgnoresStrictCompatEnvironment(t *testing.T) {
 
 func TestStrictCompatRefusesProDesiredObjectsWhileFullModeRetainsThem(t *testing.T) {
 	c := qt.New(t)
-	compat := buildSchemaInspectBinary(c, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
+	compat := buildSchemaInspectBinary(c.TB, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
 	dir := c.TempDir()
 	fromPath := filepath.Join(dir, "from.sql")
 	toPath := filepath.Join(dir, "to.sql")
@@ -296,7 +296,7 @@ func TestStrictCompatRefusesProDesiredObjectsWhileFullModeRetainsThem(t *testing
 
 func TestStrictCompatRefusesProInspectTemplateFunctionsBeforeSourceWork(t *testing.T) {
 	c := qt.New(t)
-	compat := buildSchemaInspectBinary(c, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
+	compat := buildSchemaInspectBinary(c.TB, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
 	for _, function := range []string{"hcl", "split", "write"} {
 		t.Run(function, func(t *testing.T) {
 			c := qt.New(t)
@@ -320,7 +320,7 @@ func TestStrictCompatRefusesProInspectTemplateFunctionsBeforeSourceWork(t *testi
 
 func TestStrictCompatRefusesAuthoredInspectExtensionsBeforeDevReset(t *testing.T) {
 	c := qt.New(t)
-	compat := buildSchemaInspectBinary(c, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
+	compat := buildSchemaInspectBinary(c.TB, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
 	dir := c.TempDir()
 	schemaPath := filepath.Join(dir, "schema.sql")
 	devPath := filepath.Join(dir, "dev.db")
@@ -347,7 +347,7 @@ func TestStrictCompatRefusesAuthoredInspectExtensionsBeforeDevReset(t *testing.T
 
 func TestStrictCompatRefusesUnknownAuthoredInspectHCL(t *testing.T) {
 	c := qt.New(t)
-	compat := buildSchemaInspectBinary(c, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
+	compat := buildSchemaInspectBinary(c.TB, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
 	dir := c.TempDir()
 	schemaPath := filepath.Join(dir, "schema.hcl")
 	devPath := filepath.Join(dir, "dev.db")
@@ -370,7 +370,7 @@ func TestStrictCompatRefusesUnknownAuthoredInspectHCL(t *testing.T) {
 
 func TestStrictCompatRefusesYAMLSchemaWhileFullModeRetainsIt(t *testing.T) {
 	c := qt.New(t)
-	compat := buildSchemaInspectBinary(c, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
+	compat := buildSchemaInspectBinary(c.TB, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
 	dir := c.TempDir()
 	schemaPath := filepath.Join(dir, "schema.yaml")
 	devPath := filepath.Join(dir, "dev.db")
@@ -407,7 +407,7 @@ func TestStrictCompatRefusesYAMLSchemaWhileFullModeRetainsIt(t *testing.T) {
 
 func TestStrictCompatRefusesIgnoredProjectConfigConstructs(t *testing.T) {
 	c := qt.New(t)
-	compat := buildSchemaInspectBinary(c, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
+	compat := buildSchemaInspectBinary(c.TB, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
 	configPath := filepath.Join(c.TempDir(), "atlas.hcl")
 	c.Assert(os.WriteFile(configPath, []byte(`env "local" {
   url = "sqlite://file?mode=memory&_fk=1"
@@ -431,7 +431,7 @@ func TestStrictCompatRefusesIgnoredProjectConfigConstructs(t *testing.T) {
 
 func TestStrictCompatMatchesCommunityDynamicEnvTypeBoundary(t *testing.T) {
 	c := qt.New(t)
-	compat := buildSchemaInspectBinary(c, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
+	compat := buildSchemaInspectBinary(c.TB, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
 	dir := c.TempDir()
 	configPath := filepath.Join(dir, "atlas.hcl")
 	databasePath := filepath.Join(dir, "database.db")
@@ -472,7 +472,7 @@ env {
 
 func TestStrictCompatValidatesEveryDynamicEnvironmentBeforeApply(t *testing.T) {
 	c := qt.New(t)
-	compat := buildSchemaInspectBinary(c, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
+	compat := buildSchemaInspectBinary(c.TB, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
 	dir := c.TempDir()
 	configPath := filepath.Join(dir, "atlas.hcl")
 	migrationsDir := filepath.Join(dir, "migrations")
@@ -512,7 +512,7 @@ func TestStrictCompatValidatesEveryDynamicEnvironmentBeforeApply(t *testing.T) {
 
 func TestStrictCompatRefusesExtendedMigrationContentBeforeDatabaseWork(t *testing.T) {
 	c := qt.New(t)
-	compat := buildSchemaInspectBinary(c, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
+	compat := buildSchemaInspectBinary(c.TB, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
 	tests := []struct {
 		name       string
 		migration  string
@@ -638,7 +638,7 @@ func TestStrictCompatRefusesExtendedMigrationContentBeforeDatabaseWork(t *testin
 
 func TestStrictCompatPreflightsSourcesBeforeDatabaseAndLockArtifacts(t *testing.T) {
 	c := qt.New(t)
-	compat := buildSchemaInspectBinary(c, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
+	compat := buildSchemaInspectBinary(c.TB, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
 	strictEnv := []string{"PTAH_ATLAS_STRICT_COMPAT=1"}
 
 	t.Run("schema apply YAML before target connection", func(t *testing.T) {
@@ -752,7 +752,7 @@ func TestStrictCompatPreflightsSourcesBeforeDatabaseAndLockArtifacts(t *testing.
 
 func TestStrictCompatPreflightsMigrationDesiredSourcesBeforeWork(t *testing.T) {
 	c := qt.New(t)
-	compat := buildSchemaInspectBinary(c, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
+	compat := buildSchemaInspectBinary(c.TB, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
 	tests := []struct {
 		name string
 		args func(strictMigrationPreflightFixture) []string
@@ -819,7 +819,7 @@ func TestStrictCompatPreflightsMigrationDesiredSourcesBeforeWork(t *testing.T) {
 
 func TestFullCompatDoesNotPreflightMigrationDesiredSources(t *testing.T) {
 	c := qt.New(t)
-	compat := buildSchemaInspectBinary(c, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
+	compat := buildSchemaInspectBinary(c.TB, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
 	dir := t.TempDir()
 	targetPath := filepath.Join(dir, "target.db")
 
@@ -885,7 +885,7 @@ func assertPathsDoNotExist(t *testing.T, paths ...string) {
 
 func TestStrictCompatRefusesExtendedMigrationContentBeforeImportWrites(t *testing.T) {
 	c := qt.New(t)
-	compat := buildSchemaInspectBinary(c, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
+	compat := buildSchemaInspectBinary(c.TB, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
 	dir := c.TempDir()
 	sourceDir := filepath.Join(dir, "source")
 	destinationDir := filepath.Join(dir, "destination")
@@ -926,7 +926,7 @@ func TestStrictCompatRefusesExtendedMigrationContentBeforeImportWrites(t *testin
 
 func TestStrictCompatRefusesUnenforceableSchemaApplyLintPolicy(t *testing.T) {
 	c := qt.New(t)
-	compat := buildSchemaInspectBinary(c, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
+	compat := buildSchemaInspectBinary(c.TB, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
 	dir := c.TempDir()
 	targetPath := filepath.Join(dir, "target.db")
 	devPath := filepath.Join(dir, "dev.db")
@@ -980,7 +980,7 @@ func TestStrictCompatRefusesUnenforceableSchemaApplyLintPolicy(t *testing.T) {
 
 func TestStrictCompatAllowsAtlasProjectGetenvInputs(t *testing.T) {
 	c := qt.New(t)
-	compat := buildSchemaInspectBinary(c, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
+	compat := buildSchemaInspectBinary(c.TB, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
 	dir := c.TempDir()
 	databasePath := filepath.Join(dir, "project.db")
 	configPath := filepath.Join(dir, "atlas.hcl")
@@ -1007,7 +1007,7 @@ func TestStrictCompatAllowsAtlasProjectGetenvInputs(t *testing.T) {
 
 func TestStrictCompatSchemaCleanRefusesProObjectsBeforeDestruction(t *testing.T) {
 	c := qt.New(t)
-	compat := buildSchemaInspectBinary(c, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
+	compat := buildSchemaInspectBinary(c.TB, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
 	databasePath := filepath.Join(c.TempDir(), "clean.db")
 	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+databasePath)
 	c.Assert(err, qt.IsNil)
@@ -1078,7 +1078,7 @@ func TestStrictCompatSchemaCleanRefusesProObjectsBeforeDestruction(t *testing.T)
 
 func TestStrictCompatSchemaCleanRefusesCollateralTriggerDeletion(t *testing.T) {
 	c := qt.New(t)
-	compat := buildSchemaInspectBinary(c, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
+	compat := buildSchemaInspectBinary(c.TB, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
 	databasePath := filepath.Join(c.TempDir(), "clean-trigger.db")
 	conn, err := dbschema.ConnectToDatabase(t.Context(), "sqlite://"+databasePath)
 	c.Assert(err, qt.IsNil)
@@ -1154,7 +1154,7 @@ func TestStrictCompatSchemaInspectAndCleanRefusePostgresWriterOnlyObjects(t *tes
 	c.Assert(err, qt.IsNil)
 	dbschema.CloseAndWarn(conn)
 
-	compat := buildSchemaInspectBinary(c, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
+	compat := buildSchemaInspectBinary(c.TB, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
 	inspectArgs := []string{"schema", "inspect", "--url", scopedURL, "--format", "{{ json . }}"}
 	stdout, stderr, code := runAtlasBinary(
 		compat,
@@ -1230,11 +1230,11 @@ func TestStrictCompatSchemaInspectAndCleanRefusePostgresWriterOnlyObjects(t *tes
 func TestStrictCompatSchemaInspectOmitsPostgresSystemBaselines(t *testing.T) {
 	c := qt.New(t)
 	dbURL := createDisposableDatabase(
-		c,
+		c.TB,
 		dbtarget.URL(t, dbtarget.PostgreSQL),
 		fmt.Sprintf("ptah_strict_baseline_%d_%d", os.Getpid(), time.Now().UnixNano()%1_000_000),
 	)
-	compat := buildSchemaInspectBinary(c, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
+	compat := buildSchemaInspectBinary(c.TB, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
 	args := []string{"schema", "inspect", "--url", dbURL}
 
 	stdout, stderr, code := runAtlasBinary(
@@ -1261,18 +1261,18 @@ func TestStrictCompatSchemaInspectOmitsPostgresSystemBaselines(t *testing.T) {
 func TestStrictCompatSchemaCleanRevalidatesConfirmedSnapshotUnderRelationLock(t *testing.T) {
 	c := qt.New(t)
 	dbURL := createDisposableDatabase(
-		c,
+		c.TB,
 		dbtarget.URL(t, dbtarget.PostgreSQL),
 		fmt.Sprintf("ptah_strict_clean_snapshot_%d_%d", os.Getpid(), time.Now().UnixNano()%1_000_000),
 	)
-	seedDatabase(c, dbURL, "CREATE TABLE users (id integer PRIMARY KEY)")
+	seedDatabase(c.TB, dbURL, "CREATE TABLE users (id integer PRIMARY KEY)")
 	commandURL, err := url.Parse(dbURL)
 	c.Assert(err, qt.IsNil)
 	query := commandURL.Query()
 	query.Set("lock_timeout", "5s")
 	query.Set("statement_timeout", "10s")
 	commandURL.RawQuery = query.Encode()
-	compat := buildSchemaInspectBinary(c, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
+	compat := buildSchemaInspectBinary(c.TB, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
 	stdoutPath := filepath.Join(c.TempDir(), "stdout.txt")
 	stdoutFile, err := os.Create(stdoutPath)
 	c.Assert(err, qt.IsNil)
@@ -1291,7 +1291,7 @@ func TestStrictCompatSchemaCleanRevalidatesConfirmedSnapshotUnderRelationLock(t 
 	command.Stderr = &stderr
 	c.Assert(command.Start(), qt.IsNil)
 	waitForFileContains(t, stdoutPath, "Type 'DELETE EVERYTHING'")
-	seedDatabase(c, dbURL, "CREATE VIEW late_view AS SELECT id FROM users")
+	seedDatabase(c.TB, dbURL, "CREATE VIEW late_view AS SELECT id FROM users")
 	_, err = io.WriteString(stdinWriter, "DELETE EVERYTHING\nYES I AM SURE\n")
 	c.Assert(err, qt.IsNil)
 	// os/exec waits for its stdin-copy goroutine. Close the pipe after the two
@@ -1326,7 +1326,7 @@ func TestStrictCompatSchemaApplyAndDiffRefusePostgresWriterOnlyObjects(t *testin
 	c := qt.New(t)
 	dbURL := dbtarget.URL(t, dbtarget.PostgreSQL)
 	prefix := fmt.Sprintf("ptah_strict_sources_%d_%d", os.Getpid(), time.Now().UnixNano()%1_000_000)
-	dbURL = createDisposableDatabase(c, dbURL, prefix+"_target")
+	dbURL = createDisposableDatabase(c.TB, dbURL, prefix+"_target")
 	procedureSchema := prefix + "_procedure"
 	emptySchema := prefix + "_empty"
 
@@ -1352,7 +1352,7 @@ func TestStrictCompatSchemaApplyAndDiffRefusePostgresWriterOnlyObjects(t *testin
 	c.Assert(err, qt.IsNil)
 	dbschema.CloseAndWarn(conn)
 
-	compat := buildSchemaInspectBinary(c, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
+	compat := buildSchemaInspectBinary(c.TB, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
 	wantPolicyError := `Atlas Community Edition strict compatibility does not support inspecting live schema procedure "refresh_users()"`
 
 	t.Run("apply target before desired replay", func(t *testing.T) {
@@ -1774,7 +1774,7 @@ func postgresViewExists(t *testing.T, dbURL, view string) bool {
 
 func TestStrictCompatSchemaInspectValidatesMigrationBeforeDevReset(t *testing.T) {
 	c := qt.New(t)
-	compat := buildSchemaInspectBinary(c, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
+	compat := buildSchemaInspectBinary(c.TB, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
 	dir := c.TempDir()
 	migrationsDir := filepath.Join(dir, "migrations")
 	c.Assert(os.MkdirAll(migrationsDir, 0o755), qt.IsNil)

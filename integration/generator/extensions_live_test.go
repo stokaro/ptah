@@ -20,8 +20,8 @@ func TestGenerateMigration_ExtensionsWithRealPostgres(t *testing.T) {
 	admin, err := dbschema.ConnectToDatabase(ctx, adminURL)
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(admin)
-	targetURL, targetDatabase := createGeneratorTestPostgres(c, admin, adminURL, "ptah_extensions")
-	defer dropGeneratorTestPostgres(c, admin, targetDatabase)
+	targetURL, targetDatabase := createGeneratorTestPostgres(c.TB, admin, adminURL, "ptah_extensions")
+	defer dropGeneratorTestPostgres(c.TB, admin, targetDatabase)
 
 	root := c.TempDir()
 	c.Assert(os.WriteFile(filepath.Join(root, "schema.go"), []byte(`package testschema

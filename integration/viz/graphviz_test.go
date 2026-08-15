@@ -17,7 +17,7 @@ import (
 func TestDOTParsesWithGraphviz(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
-	writeGraphvizModel(c, dir)
+	writeGraphvizModel(c.TB, dir)
 
 	cmd := viz.NewCommand()
 	var stdout, stderr bytes.Buffer
@@ -43,7 +43,7 @@ func TestDOTParsesWithGraphviz(t *testing.T) {
 func TestCommandWritesSVGWithGraphviz(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
-	writeGraphvizModel(c, dir)
+	writeGraphvizModel(c.TB, dir)
 
 	cmd := viz.NewCommand()
 	var stdout, stderr bytes.Buffer
@@ -59,7 +59,8 @@ func TestCommandWritesSVGWithGraphviz(t *testing.T) {
 	c.Assert(stdout.String(), qt.Contains, "#111827")
 }
 
-func writeGraphvizModel(c *qt.C, dir string) {
+func writeGraphvizModel(tb testing.TB, dir string) {
+	c := qt.New(tb)
 	path := filepath.Join(dir, "model.go")
 	content := `package models
 

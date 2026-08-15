@@ -26,8 +26,8 @@ func TestAcquireApplyLock_PostgresTimeoutLive(t *testing.T) {
 	c := qt.New(t)
 	ctx := context.Background()
 
-	holderSession := holdApplyLockSession(c, dbURL)
-	blocked := connectPostgresForLock(c, dbURL)
+	holderSession := holdApplyLockSession(c.TB, dbURL)
+	blocked := connectPostgresForLock(c.TB, dbURL)
 
 	start := time.Now()
 	lock, err := atlasschema.AcquireApplyLock(ctx, blocked, "", 200*time.Millisecond)
@@ -40,7 +40,7 @@ func TestAcquireApplyLock_PostgresTimeoutLive(t *testing.T) {
 
 	// Releasing the competing session unblocks a bounded retry, proving the
 	// lock is real, released, and re-acquirable.
-	releaseApplyLockSession(c, holderSession)
+	releaseApplyLockSession(c.TB, holderSession)
 	lock, err = atlasschema.AcquireApplyLock(ctx, blocked, "", 5*time.Second)
 	c.Assert(err, qt.IsNil)
 	c.Assert(lock.Supported(), qt.IsTrue)
@@ -51,9 +51,9 @@ func TestAcquireApplyLock_PostgresCancellationLive(t *testing.T) {
 	dbURL := livePostgresURLForLock(t)
 	c := qt.New(t)
 
-	holderSession := holdApplyLockSession(c, dbURL)
-	defer releaseApplyLockSession(c, holderSession)
-	blocked := connectPostgresForLock(c, dbURL)
+	holderSession := holdApplyLockSession(c.TB, dbURL)
+	defer releaseApplyLockSession(c.TB, holderSession)
+	blocked := connectPostgresForLock(c.TB, dbURL)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -78,8 +78,8 @@ func TestAcquireApplyLock_PostgresSerializesRunsLive(t *testing.T) {
 	c := qt.New(t)
 	ctx := context.Background()
 
-	first := connectPostgresForLock(c, dbURL)
-	second := connectPostgresForLock(c, dbURL)
+	first := connectPostgresForLock(c.TB, dbURL)
+	second := connectPostgresForLock(c.TB, dbURL)
 
 	firstLock, err := atlasschema.AcquireApplyLock(ctx, first, "", 5*time.Second)
 	c.Assert(err, qt.IsNil)
@@ -103,7 +103,8 @@ func livePostgresURLForLock(t *testing.T) string {
 	return dbtarget.URL(t, dbtarget.PostgreSQL)
 }
 
-func connectPostgresForLock(c *qt.C, dbURL string) *dbschema.DatabaseConnection {
+func connectPostgresForLock(tb testing.TB, dbURL string) *dbschema.DatabaseConnection {
+	c := qt.New(tb)
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(context.Background(), dbURL)
 	c.Assert(err, qt.IsNil)
@@ -113,10 +114,11 @@ func connectPostgresForLock(c *qt.C, dbURL string) *dbschema.DatabaseConnection 
 
 // holdApplyLockSession takes the schema apply advisory lock from a competing
 // session, so AcquireApplyLock calls in the test must wait.
-func holdApplyLockSession(c *qt.C, dbURL string) *sql.Conn {
+func holdApplyLockSession(tb testing.TB, dbURL string) *sql.Conn {
+	c := qt.New(tb)
 	c.Helper()
 	ctx := context.Background()
-	holder := connectPostgresForLock(c, dbURL)
+	holder := connectPostgresForLock(c.TB, dbURL)
 	session, err := holder.Conn(ctx)
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { _ = session.Close() })
@@ -125,7 +127,8 @@ func holdApplyLockSession(c *qt.C, dbURL string) *sql.Conn {
 	return session
 }
 
-func releaseApplyLockSession(c *qt.C, session *sql.Conn) {
+func releaseApplyLockSession(tb testing.TB, session *sql.Conn) {
+	c := qt.New(tb)
 	c.Helper()
 	_, _ = session.ExecContext(context.Background(), "SELECT pg_advisory_unlock($1)", dblock.PostgresKey(atlasschema.ApplyLockName))
 }

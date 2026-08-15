@@ -48,7 +48,7 @@ func TestReverseRecreatedTable_DropTableRollbackApplies_Integration(t *testing.T
 	// 1. The pre-up state, installed through Ptah so the catalog holds what
 	//    Ptah writes rather than a hand-typed approximation of it.
 	prior := rrtPriorSchema()
-	seedSQL, _ := generateLiveMigrationSQL(c, conn, prior)
+	seedSQL, _ := generateLiveMigrationSQL(c.TB, conn, prior)
 	execScript(c, conn, seedSQL, "SEED")
 
 	dbPrior, err := conn.Reader().ReadSchema()
@@ -62,7 +62,7 @@ func TestReverseRecreatedTable_DropTableRollbackApplies_Integration(t *testing.T
 	upDiff := schemadiff.CompareWithDialect(target, dbPrior, "postgres")
 	c.Assert(upDiff.TablesRemoved, qt.DeepEquals, []string{rrtGadgets})
 
-	upSQL, downSQL := generateLiveMigrationSQL(c, conn, target)
+	upSQL, downSQL := generateLiveMigrationSQL(c.TB, conn, target)
 	execScript(c, conn, upSQL, "UP")
 
 	dbAfterUp, err := conn.Reader().ReadSchema()

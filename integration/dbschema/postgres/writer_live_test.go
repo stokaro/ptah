@@ -82,8 +82,8 @@ func TestWriterDropAllTables_LiveRejectsExternalPolicyDependency(t *testing.T) {
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Contains, fmt.Sprintf(`refusing to clean schema %q`, managedSchema))
 	c.Assert(err.Error(), qt.Contains, "because other objects depend on it")
-	c.Assert(postgresWriterLiveObjectCount(c, ctx, db, managedSchema, "stale_items"), qt.Equals, 1)
-	c.Assert(postgresWriterLivePolicyCount(c, ctx, db, externalSchema, "audit_items_policy"), qt.Equals, 1)
+	c.Assert(postgresWriterLiveObjectCount(c.TB, ctx, db, managedSchema, "stale_items"), qt.Equals, 1)
+	c.Assert(postgresWriterLivePolicyCount(c.TB, ctx, db, externalSchema, "audit_items_policy"), qt.Equals, 1)
 }
 
 func TestWriterDropAllTables_LiveResolvesInternalDependencies(t *testing.T) {
@@ -129,7 +129,7 @@ func TestWriterDropAllTables_LiveResolvesInternalDependencies(t *testing.T) {
 	err = writer.DropAllTables(ctx)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(postgresWriterLiveRelationCount(c, ctx, db, schema), qt.Equals, 0)
+	c.Assert(postgresWriterLiveRelationCount(c.TB, ctx, db, schema), qt.Equals, 0)
 }
 
 func TestWriterDropAllTables_LivePostgresFamilyResolvesReverseViewChain(t *testing.T) {
@@ -144,7 +144,7 @@ func TestWriterDropAllTables_LivePostgresFamilyResolvesReverseViewChain(t *testi
 
 	for _, test := range tests {
 		c.Run(test.name, func(c *qt.C) {
-			db, err := sql.Open("pgx", requirePostgresWriterFamilyLiveURL(c, test.engine))
+			db, err := sql.Open("pgx", requirePostgresWriterFamilyLiveURL(c.TB, test.engine))
 			c.Assert(err, qt.IsNil)
 			defer db.Close()
 			c.Assert(db.PingContext(ctx), qt.IsNil)
@@ -167,13 +167,13 @@ func TestWriterDropAllTables_LivePostgresFamilyResolvesReverseViewChain(t *testi
 				)
 				c.Check(cleanupErr, qt.IsNil)
 			}()
-			c.Assert(postgresWriterLiveRelationCount(c, ctx, db, schema), qt.Equals, 3)
+			c.Assert(postgresWriterLiveRelationCount(c.TB, ctx, db, schema), qt.Equals, 3)
 
 			writer := postgres.NewPostgreSQLWriter(db, schema)
 			err = writer.DropAllTables(ctx)
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(postgresWriterLiveRelationCount(c, ctx, db, schema), qt.Equals, 0)
+			c.Assert(postgresWriterLiveRelationCount(c.TB, ctx, db, schema), qt.Equals, 0)
 		})
 	}
 }
@@ -192,14 +192,14 @@ func TestWriterDropDatabaseRealm_LivePostgresFamilyCleansCrossSchemaGraph(t *tes
 	for _, test := range tests {
 		c.Run(test.name, func(c *qt.C) {
 			liveDatabase := newPostgresWriterLiveDatabase(
-				c,
+				c.TB,
 				ctx,
-				requirePostgresWriterFamilyLiveURL(c, test.engine),
+				requirePostgresWriterFamilyLiveURL(c.TB, test.engine),
 			)
 			defer liveDatabase.cleanup()
 			db := liveDatabase.db
-			rootMetadata := loadPostgresWriterLiveSchemaMetadata(c, ctx, db, "public")
-			systemExtensions := postgresWriterLiveExtensionNames(c, ctx, db)
+			rootMetadata := loadPostgresWriterLiveSchemaMetadata(c.TB, ctx, db, "public")
+			systemExtensions := postgresWriterLiveExtensionNames(c.TB, ctx, db)
 
 			suffix := time.Now().UnixNano()
 			parentSchema := fmt.Sprintf("ptah_realm_parent_%d", suffix)
@@ -235,28 +235,28 @@ func TestWriterDropDatabaseRealm_LivePostgresFamilyCleansCrossSchemaGraph(t *tes
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(writer.DropDatabaseRealm(ctx), qt.IsNil)
-			c.Assert(postgresWriterLiveSchemaCount(c, ctx, db, parentSchema), qt.Equals, 0)
-			c.Assert(postgresWriterLiveSchemaCount(c, ctx, db, childSchema), qt.Equals, 0)
-			c.Assert(postgresWriterLiveSchemaCount(c, ctx, db, ybPrefixedSchema), qt.Equals, 0)
-			c.Assert(postgresWriterLiveSchemaCount(c, ctx, db, "public"), qt.Equals, 1)
-			c.Assert(postgresWriterLiveRelationCount(c, ctx, db, "public"), qt.Equals, 0)
+			c.Assert(postgresWriterLiveSchemaCount(c.TB, ctx, db, parentSchema), qt.Equals, 0)
+			c.Assert(postgresWriterLiveSchemaCount(c.TB, ctx, db, childSchema), qt.Equals, 0)
+			c.Assert(postgresWriterLiveSchemaCount(c.TB, ctx, db, ybPrefixedSchema), qt.Equals, 0)
+			c.Assert(postgresWriterLiveSchemaCount(c.TB, ctx, db, "public"), qt.Equals, 1)
+			c.Assert(postgresWriterLiveRelationCount(c.TB, ctx, db, "public"), qt.Equals, 0)
 			c.Assert(
-				postgresWriterLiveNamedTypeCount(c, ctx, db, "public", "ptah_root_status"),
+				postgresWriterLiveNamedTypeCount(c.TB, ctx, db, "public", "ptah_root_status"),
 				qt.Equals,
 				0,
 			)
 			c.Assert(
-				postgresWriterLiveRoutineCount(c, ctx, db, "public", "ptah_root_answer"),
+				postgresWriterLiveRoutineCount(c.TB, ctx, db, "public", "ptah_root_answer"),
 				qt.Equals,
 				0,
 			)
 			c.Assert(
-				loadPostgresWriterLiveSchemaMetadata(c, ctx, db, "public"),
+				loadPostgresWriterLiveSchemaMetadata(c.TB, ctx, db, "public"),
 				qt.DeepEquals,
 				rootMetadata,
 			)
-			c.Assert(postgresWriterLiveExtensionNames(c, ctx, db), qt.DeepEquals, systemExtensions)
-			c.Assert(postgresWriterLiveCurrentDatabase(c, ctx, db), qt.Equals, liveDatabase.name)
+			c.Assert(postgresWriterLiveExtensionNames(c.TB, ctx, db), qt.DeepEquals, systemExtensions)
+			c.Assert(postgresWriterLiveCurrentDatabase(c.TB, ctx, db), qt.Equals, liveDatabase.name)
 		})
 	}
 }
@@ -267,9 +267,9 @@ func TestWriterDropDatabaseRealm_LivePostgresCleansToastTable(t *testing.T) {
 	defer cancel()
 
 	liveDatabase := newPostgresWriterLiveDatabase(
-		c,
+		c.TB,
 		ctx,
-		requirePostgresWriterFamilyLiveURL(c, dbtarget.PostgreSQL),
+		requirePostgresWriterFamilyLiveURL(c.TB, dbtarget.PostgreSQL),
 	)
 	defer liveDatabase.cleanup()
 	db := liveDatabase.db
@@ -284,15 +284,15 @@ func TestWriterDropDatabaseRealm_LivePostgresCleansToastTable(t *testing.T) {
 		FROM generate_series(1, 20000) AS value;
 	`)
 	c.Assert(err, qt.IsNil)
-	c.Assert(postgresWriterLiveToastOID(c, ctx, db, "public", "ptah_toast_items"), qt.Not(qt.Equals), 0)
-	c.Assert(postgresWriterLiveStoredColumnSize(c, ctx, db), qt.Not(qt.Equals), 0)
+	c.Assert(postgresWriterLiveToastOID(c.TB, ctx, db, "public", "ptah_toast_items"), qt.Not(qt.Equals), 0)
+	c.Assert(postgresWriterLiveStoredColumnSize(c.TB, ctx, db), qt.Not(qt.Equals), 0)
 
 	writer := postgres.NewPostgreSQLWriter(db, "public")
 	err = writer.DropDatabaseRealm(ctx)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(postgresWriterLiveRelationCount(c, ctx, db, "public"), qt.Equals, 0)
-	c.Assert(postgresWriterLiveSchemaCount(c, ctx, db, "public"), qt.Equals, 1)
+	c.Assert(postgresWriterLiveRelationCount(c.TB, ctx, db, "public"), qt.Equals, 0)
+	c.Assert(postgresWriterLiveSchemaCount(c.TB, ctx, db, "public"), qt.Equals, 1)
 }
 
 func TestWriterDropDatabaseRealm_LivePostgresCleansLargeObjects(t *testing.T) {
@@ -301,9 +301,9 @@ func TestWriterDropDatabaseRealm_LivePostgresCleansLargeObjects(t *testing.T) {
 	defer cancel()
 
 	liveDatabase := newPostgresWriterLiveDatabase(
-		c,
+		c.TB,
 		ctx,
-		requirePostgresWriterFamilyLiveURL(c, dbtarget.PostgreSQL),
+		requirePostgresWriterFamilyLiveURL(c.TB, dbtarget.PostgreSQL),
 	)
 	defer liveDatabase.cleanup()
 	db := liveDatabase.db
@@ -329,9 +329,9 @@ func TestWriterDropDatabaseRealm_LivePostgresRejectsPublication(t *testing.T) {
 	defer cancel()
 
 	liveDatabase := newPostgresWriterLiveDatabase(
-		c,
+		c.TB,
 		ctx,
-		requirePostgresWriterFamilyLiveURL(c, dbtarget.PostgreSQL),
+		requirePostgresWriterFamilyLiveURL(c.TB, dbtarget.PostgreSQL),
 	)
 	defer liveDatabase.cleanup()
 	db := liveDatabase.db
@@ -353,7 +353,7 @@ func TestWriterDropDatabaseRealm_LivePostgresRejectsPublication(t *testing.T) {
 			`publication "ptah_events_publication"`,
 	)
 	c.Assert(
-		postgresWriterLiveObjectCount(c, ctx, db, "public", "ptah_published_events"),
+		postgresWriterLiveObjectCount(c.TB, ctx, db, "public", "ptah_published_events"),
 		qt.Equals,
 		1,
 	)
@@ -374,9 +374,9 @@ func TestWriterDropDatabaseRealm_LivePostgresRollsBackOnTemporaryPolicyDependenc
 	defer cancel()
 
 	liveDatabase := newPostgresWriterLiveDatabase(
-		c,
+		c.TB,
 		ctx,
-		requirePostgresWriterFamilyLiveURL(c, dbtarget.PostgreSQL),
+		requirePostgresWriterFamilyLiveURL(c.TB, dbtarget.PostgreSQL),
 	)
 	defer liveDatabase.cleanup()
 	db := liveDatabase.db
@@ -404,13 +404,13 @@ func TestWriterDropDatabaseRealm_LivePostgresRollsBackOnTemporaryPolicyDependenc
 
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Contains, "because other objects depend on it")
-	c.Assert(postgresWriterLiveObjectCount(c, ctx, db, "public", "ptah_realm_items"), qt.Equals, 1)
+	c.Assert(postgresWriterLiveObjectCount(c.TB, ctx, db, "public", "ptah_realm_items"), qt.Equals, 1)
 	c.Assert(
-		postgresWriterLiveRoutineCount(c, ctx, db, "public", "ptah_policy_guard"),
+		postgresWriterLiveRoutineCount(c.TB, ctx, db, "public", "ptah_policy_guard"),
 		qt.Equals,
 		1,
 	)
-	c.Assert(postgresWriterLiveTemporaryPolicyCount(c, ctx, conn), qt.Equals, 1)
+	c.Assert(postgresWriterLiveTemporaryPolicyCount(c.TB, ctx, conn), qt.Equals, 1)
 }
 
 func TestWriterDropDatabaseRealm_LiveRejectsProtectedDatabase(t *testing.T) {
@@ -440,8 +440,8 @@ func TestWriterDropDatabaseRealm_LiveRejectsProtectedDatabase(t *testing.T) {
 	for _, test := range tests {
 		c.Run(test.name, func(c *qt.C) {
 			db := openPostgresWriterProtectedLiveDatabase(
-				c,
-				requirePostgresWriterFamilyLiveURL(c, test.engine),
+				c.TB,
+				requirePostgresWriterFamilyLiveURL(c.TB, test.engine),
 				test.database,
 			)
 			writer := postgres.NewPostgreSQLWriter(db, "public")
@@ -463,9 +463,9 @@ func TestWriterDropDatabaseRealm_LivePostgresRestoresRootMetadata(t *testing.T) 
 	defer cancel()
 
 	liveDatabase := newPostgresWriterLiveDatabase(
-		c,
+		c.TB,
 		ctx,
-		requirePostgresWriterFamilyLiveURL(c, dbtarget.PostgreSQL),
+		requirePostgresWriterFamilyLiveURL(c.TB, dbtarget.PostgreSQL),
 	)
 	defer liveDatabase.cleanup()
 	db := liveDatabase.db
@@ -481,19 +481,19 @@ func TestWriterDropDatabaseRealm_LivePostgresRestoresRootMetadata(t *testing.T) 
 		CREATE TABLE public.stale_items (id bigint PRIMARY KEY);
 	`)
 	c.Assert(err, qt.IsNil)
-	beforeOID := postgresWriterLiveSchemaOID(c, ctx, db, "public")
-	beforeMetadata := loadPostgresWriterLiveSchemaMetadata(c, ctx, db, "public")
+	beforeOID := postgresWriterLiveSchemaOID(c.TB, ctx, db, "public")
+	beforeMetadata := loadPostgresWriterLiveSchemaMetadata(c.TB, ctx, db, "public")
 
 	writer := postgres.NewPostgreSQLWriter(db, "public")
 	err = writer.DropDatabaseRealm(ctx)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(postgresWriterLiveSchemaOID(c, ctx, db, "public"), qt.Not(qt.Equals), beforeOID)
-	c.Assert(loadPostgresWriterLiveSchemaMetadata(c, ctx, db, "public"), qt.DeepEquals, beforeMetadata)
-	c.Assert(postgresWriterLiveCollationCount(c, ctx, db, "public"), qt.Equals, 0)
-	c.Assert(postgresWriterLiveExtensionCount(c, ctx, db, "hstore"), qt.Equals, 0)
-	c.Assert(postgresWriterLiveRelationCount(c, ctx, db, "public"), qt.Equals, 0)
-	c.Assert(postgresWriterLiveCurrentDatabase(c, ctx, db), qt.Equals, liveDatabase.name)
+	c.Assert(postgresWriterLiveSchemaOID(c.TB, ctx, db, "public"), qt.Not(qt.Equals), beforeOID)
+	c.Assert(loadPostgresWriterLiveSchemaMetadata(c.TB, ctx, db, "public"), qt.DeepEquals, beforeMetadata)
+	c.Assert(postgresWriterLiveCollationCount(c.TB, ctx, db, "public"), qt.Equals, 0)
+	c.Assert(postgresWriterLiveExtensionCount(c.TB, ctx, db, "hstore"), qt.Equals, 0)
+	c.Assert(postgresWriterLiveRelationCount(c.TB, ctx, db, "public"), qt.Equals, 0)
+	c.Assert(postgresWriterLiveCurrentDatabase(c.TB, ctx, db), qt.Equals, liveDatabase.name)
 }
 
 func TestWriterDropDatabaseRealm_LivePostgresCreatesAbsentRoot(t *testing.T) {
@@ -502,9 +502,9 @@ func TestWriterDropDatabaseRealm_LivePostgresCreatesAbsentRoot(t *testing.T) {
 	defer cancel()
 
 	liveDatabase := newPostgresWriterLiveDatabase(
-		c,
+		c.TB,
 		ctx,
-		requirePostgresWriterFamilyLiveURL(c, dbtarget.PostgreSQL),
+		requirePostgresWriterFamilyLiveURL(c.TB, dbtarget.PostgreSQL),
 	)
 	defer liveDatabase.cleanup()
 
@@ -513,10 +513,10 @@ func TestWriterDropDatabaseRealm_LivePostgresCreatesAbsentRoot(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(writer.DropDatabaseRealm(ctx), qt.IsNil)
-	c.Assert(postgresWriterLiveSchemaCount(c, ctx, liveDatabase.db, "public"), qt.Equals, 1)
-	c.Assert(postgresWriterLiveSchemaCount(c, ctx, liveDatabase.db, "shadow"), qt.Equals, 1)
+	c.Assert(postgresWriterLiveSchemaCount(c.TB, ctx, liveDatabase.db, "public"), qt.Equals, 1)
+	c.Assert(postgresWriterLiveSchemaCount(c.TB, ctx, liveDatabase.db, "shadow"), qt.Equals, 1)
 	c.Assert(
-		postgresWriterLiveCurrentDatabase(c, ctx, liveDatabase.db),
+		postgresWriterLiveCurrentDatabase(c.TB, ctx, liveDatabase.db),
 		qt.Equals,
 		liveDatabase.name,
 	)
@@ -597,12 +597,12 @@ func TestWriterDropAllTables_LiveRejectsCrossSchemaPartitionEdges(t *testing.T) 
 			c.Assert(err.Error(), qt.Contains, fmt.Sprintf(`refusing to clean schema %q`, managedSchema))
 			c.Assert(err.Error(), qt.Contains, "across the schema boundary")
 			c.Assert(
-				postgresWriterLiveObjectCount(c, ctx, db, managedSchema, test.managedRelationName),
+				postgresWriterLiveObjectCount(c.TB, ctx, db, managedSchema, test.managedRelationName),
 				qt.Equals,
 				1,
 			)
 			c.Assert(
-				postgresWriterLiveObjectCount(c, ctx, db, externalSchema, test.externalRelation),
+				postgresWriterLiveObjectCount(c.TB, ctx, db, externalSchema, test.externalRelation),
 				qt.Equals,
 				1,
 			)
@@ -611,10 +611,11 @@ func TestWriterDropAllTables_LiveRejectsCrossSchemaPartitionEdges(t *testing.T) 
 }
 
 func newPostgresWriterLiveDatabase(
-	c *qt.C,
+	tb testing.TB,
 	ctx context.Context,
 	rawURL string,
 ) postgresWriterLiveDatabase {
+	c := qt.New(tb)
 	c.Helper()
 	admin, err := sql.Open("pgx", rawURL)
 	c.Assert(err, qt.IsNil)
@@ -652,7 +653,8 @@ func newPostgresWriterLiveDatabase(
 // its scheme to postgres, which is not about finding the address: the pgx stdlib
 // driver registered above is opened by name, and a CockroachDB or YugabyteDB
 // address may carry its own scheme, which url.Parse keeps and the driver rejects.
-func requirePostgresWriterFamilyLiveURL(c *qt.C, engine dbtarget.Engine) string {
+func requirePostgresWriterFamilyLiveURL(tb testing.TB, engine dbtarget.Engine) string {
+	c := qt.New(tb)
 	c.Helper()
 	parsed, err := url.Parse(dbtarget.URL(c, engine))
 	c.Assert(err, qt.IsNil)
@@ -660,7 +662,8 @@ func requirePostgresWriterFamilyLiveURL(c *qt.C, engine dbtarget.Engine) string 
 	return parsed.String()
 }
 
-func openPostgresWriterProtectedLiveDatabase(c *qt.C, rawURL, database string) *sql.DB {
+func openPostgresWriterProtectedLiveDatabase(tb testing.TB, rawURL, database string) *sql.DB {
+	c := qt.New(tb)
 	c.Helper()
 	parsed, err := url.Parse(rawURL)
 	c.Assert(err, qt.IsNil)
@@ -675,7 +678,8 @@ func openPostgresWriterProtectedLiveDatabase(c *qt.C, rawURL, database string) *
 	return db
 }
 
-func postgresWriterLiveCurrentDatabase(c *qt.C, ctx context.Context, db *sql.DB) string {
+func postgresWriterLiveCurrentDatabase(tb testing.TB, ctx context.Context, db *sql.DB) string {
+	c := qt.New(tb)
 	c.Helper()
 	var name string
 	err := db.QueryRowContext(ctx, "SELECT current_database()").Scan(&name)
@@ -684,11 +688,12 @@ func postgresWriterLiveCurrentDatabase(c *qt.C, ctx context.Context, db *sql.DB)
 }
 
 func postgresWriterLiveSchemaOID(
-	c *qt.C,
+	tb testing.TB,
 	ctx context.Context,
 	db *sql.DB,
 	schema string,
 ) int64 {
+	c := qt.New(tb)
 	c.Helper()
 	var oid int64
 	err := db.QueryRowContext(
@@ -701,11 +706,12 @@ func postgresWriterLiveSchemaOID(
 }
 
 func loadPostgresWriterLiveSchemaMetadata(
-	c *qt.C,
+	tb testing.TB,
 	ctx context.Context,
 	db *sql.DB,
 	schema string,
 ) postgresWriterLiveSchemaMetadata {
+	c := qt.New(tb)
 	c.Helper()
 	var metadata postgresWriterLiveSchemaMetadata
 	err := db.QueryRowContext(ctx, `
@@ -750,11 +756,12 @@ func loadPostgresWriterLiveSchemaMetadata(
 }
 
 func postgresWriterLiveCollationCount(
-	c *qt.C,
+	tb testing.TB,
 	ctx context.Context,
 	db *sql.DB,
 	schema string,
 ) int {
+	c := qt.New(tb)
 	c.Helper()
 	var count int
 	err := db.QueryRowContext(ctx, `
@@ -768,11 +775,12 @@ func postgresWriterLiveCollationCount(
 }
 
 func postgresWriterLiveExtensionCount(
-	c *qt.C,
+	tb testing.TB,
 	ctx context.Context,
 	db *sql.DB,
 	name string,
 ) int {
+	c := qt.New(tb)
 	c.Helper()
 	var count int
 	err := db.QueryRowContext(
@@ -785,10 +793,11 @@ func postgresWriterLiveExtensionCount(
 }
 
 func postgresWriterLiveExtensionNames(
-	c *qt.C,
+	tb testing.TB,
 	ctx context.Context,
 	db *sql.DB,
 ) []string {
+	c := qt.New(tb)
 	c.Helper()
 	rows, err := db.QueryContext(ctx, "SELECT extname FROM pg_extension ORDER BY extname")
 	c.Assert(err, qt.IsNil)
@@ -805,12 +814,13 @@ func postgresWriterLiveExtensionNames(
 }
 
 func postgresWriterLiveObjectCount(
-	c *qt.C,
+	tb testing.TB,
 	ctx context.Context,
 	db *sql.DB,
 	schema string,
 	name string,
 ) int {
+	c := qt.New(tb)
 	c.Helper()
 	var count int
 	err := db.QueryRowContext(ctx, `
@@ -825,12 +835,13 @@ func postgresWriterLiveObjectCount(
 }
 
 func postgresWriterLivePolicyCount(
-	c *qt.C,
+	tb testing.TB,
 	ctx context.Context,
 	db *sql.DB,
 	schema string,
 	name string,
 ) int {
+	c := qt.New(tb)
 	c.Helper()
 	var count int
 	err := db.QueryRowContext(ctx, `
@@ -846,11 +857,12 @@ func postgresWriterLivePolicyCount(
 }
 
 func postgresWriterLiveRelationCount(
-	c *qt.C,
+	tb testing.TB,
 	ctx context.Context,
 	db *sql.DB,
 	schema string,
 ) int {
+	c := qt.New(tb)
 	c.Helper()
 	var count int
 	err := db.QueryRowContext(ctx, `
@@ -865,12 +877,13 @@ func postgresWriterLiveRelationCount(
 }
 
 func postgresWriterLiveNamedTypeCount(
-	c *qt.C,
+	tb testing.TB,
 	ctx context.Context,
 	db *sql.DB,
 	schema string,
 	name string,
 ) int {
+	c := qt.New(tb)
 	c.Helper()
 	var count int
 	err := db.QueryRowContext(ctx, `
@@ -885,12 +898,13 @@ func postgresWriterLiveNamedTypeCount(
 }
 
 func postgresWriterLiveRoutineCount(
-	c *qt.C,
+	tb testing.TB,
 	ctx context.Context,
 	db *sql.DB,
 	schema string,
 	name string,
 ) int {
+	c := qt.New(tb)
 	c.Helper()
 	var count int
 	err := db.QueryRowContext(ctx, `
@@ -905,12 +919,13 @@ func postgresWriterLiveRoutineCount(
 }
 
 func postgresWriterLiveToastOID(
-	c *qt.C,
+	tb testing.TB,
 	ctx context.Context,
 	db *sql.DB,
 	schema string,
 	table string,
 ) int64 {
+	c := qt.New(tb)
 	c.Helper()
 	var oid int64
 	err := db.QueryRowContext(ctx, `
@@ -924,7 +939,8 @@ func postgresWriterLiveToastOID(
 	return oid
 }
 
-func postgresWriterLiveStoredColumnSize(c *qt.C, ctx context.Context, db *sql.DB) int {
+func postgresWriterLiveStoredColumnSize(tb testing.TB, ctx context.Context, db *sql.DB) int {
+	c := qt.New(tb)
 	c.Helper()
 	var size int
 	err := db.QueryRowContext(
@@ -936,10 +952,11 @@ func postgresWriterLiveStoredColumnSize(c *qt.C, ctx context.Context, db *sql.DB
 }
 
 func postgresWriterLiveTemporaryPolicyCount(
-	c *qt.C,
+	tb testing.TB,
 	ctx context.Context,
 	conn *sql.Conn,
 ) int {
+	c := qt.New(tb)
 	c.Helper()
 	var count int
 	err := conn.QueryRowContext(ctx, `
@@ -954,11 +971,12 @@ func postgresWriterLiveTemporaryPolicyCount(
 }
 
 func postgresWriterLiveSchemaCount(
-	c *qt.C,
+	tb testing.TB,
 	ctx context.Context,
 	db *sql.DB,
 	schema string,
 ) int {
+	c := qt.New(tb)
 	c.Helper()
 	var count int
 	err := db.QueryRowContext(

@@ -41,7 +41,7 @@ func TestMaterializedViewReadback_LiveUnqualifiedBodyRoundTrips(t *testing.T) {
 	c := qt.New(t)
 	ctx, cancel := context.WithTimeout(c.Context(), time.Minute)
 	defer cancel()
-	conn, schemaName := prepareMaterializedViewReadbackFixture(c, ctx, dbtarget.PostgreSQL)
+	conn, schemaName := prepareMaterializedViewReadbackFixture(c.TB, ctx, dbtarget.PostgreSQL)
 
 	live, err := dbschema.ReadSchemaWithSchemas(conn, []string{schemaName})
 	c.Assert(err, qt.IsNil)
@@ -93,10 +93,11 @@ func TestMaterializedViewReadback_LiveUnqualifiedBodyRoundTrips(t *testing.T) {
 // only way to author an unqualified relation in a schema of its own, and returns
 // a reading connection that does NOT carry that search_path.
 func prepareMaterializedViewReadbackFixture(
-	c *qt.C,
+	tb testing.TB,
 	ctx context.Context,
 	engine dbtarget.Engine,
 ) (*dbschema.DatabaseConnection, string) {
+	c := qt.New(tb)
 	c.Helper()
 	rawURL := dbtarget.URL(c, engine)
 
@@ -123,18 +124,19 @@ func prepareMaterializedViewReadbackFixture(
 	conn, err := dbschema.ConnectToDatabase(ctx, rawURL)
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() {
-		dropMaterializedViewReadbackFixture(c, context.Background(), conn, schemaIdent)
+		dropMaterializedViewReadbackFixture(c.TB, context.Background(), conn, schemaIdent)
 		c.Check(conn.Close(), qt.IsNil)
 	})
 	return conn, schemaName
 }
 
 func dropMaterializedViewReadbackFixture(
-	c *qt.C,
+	tb testing.TB,
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	schemaIdent string,
 ) {
+	c := qt.New(tb)
 	c.Helper()
 	_, err := conn.ExecContext(ctx, "DROP SCHEMA IF EXISTS "+schemaIdent+" CASCADE")
 	c.Check(err, qt.IsNil)

@@ -142,18 +142,18 @@ func TestAtlasCompatExcludeUnmatchedE2E(t *testing.T) {
 			stamp := time.Now().UnixNano()
 			sourceName := fmt.Sprintf("ptah_excl_src_%d", stamp)
 			devName := fmt.Sprintf("ptah_excl_dev_%d", stamp)
-			createE2EDatabase(c, ctx, adminDB, sourceName)
-			defer dropE2EDatabase(c, context.Background(), adminDB, sourceName)
-			createE2EDatabase(c, ctx, adminDB, devName)
-			defer dropE2EDatabase(c, context.Background(), adminDB, devName)
+			createE2EDatabase(c.TB, ctx, adminDB, sourceName)
+			defer dropE2EDatabase(c.TB, context.Background(), adminDB, sourceName)
+			createE2EDatabase(c.TB, ctx, adminDB, devName)
+			defer dropE2EDatabase(c.TB, context.Background(), adminDB, devName)
 
-			sourceURL := replaceDatabaseName(c, adminURL, sourceName)
-			devURL := replaceDatabaseName(c, adminURL, devName)
-			seedExcludeUnmatchedDB(c, ctx, sourceURL)
+			sourceURL := replaceDatabaseName(c.TB, adminURL, sourceName)
+			devURL := replaceDatabaseName(c.TB, adminURL, devName)
+			seedExcludeUnmatchedDB(c.TB, ctx, sourceURL)
 
-			err = runExcludeUnmatchedApply(c, sourceURL, devURL, test.exclude)
+			err = runExcludeUnmatchedApply(c.TB, sourceURL, devURL, test.exclude)
 
-			assertExcludeUnmatchedOutcome(c, test, err)
+			assertExcludeUnmatchedOutcome(c.TB, test, err)
 		})
 	}
 }
@@ -177,16 +177,16 @@ func TestAtlasCompatExcludeProtectsATypeObjectE2E(t *testing.T) {
 	stamp := time.Now().UnixNano()
 	sourceName := fmt.Sprintf("ptah_exclp_src_%d", stamp)
 	devName := fmt.Sprintf("ptah_exclp_dev_%d", stamp)
-	createE2EDatabase(c, ctx, adminDB, sourceName)
-	defer dropE2EDatabase(c, context.Background(), adminDB, sourceName)
-	createE2EDatabase(c, ctx, adminDB, devName)
-	defer dropE2EDatabase(c, context.Background(), adminDB, devName)
+	createE2EDatabase(c.TB, ctx, adminDB, sourceName)
+	defer dropE2EDatabase(c.TB, context.Background(), adminDB, sourceName)
+	createE2EDatabase(c.TB, ctx, adminDB, devName)
+	defer dropE2EDatabase(c.TB, context.Background(), adminDB, devName)
 
-	sourceURL := replaceDatabaseName(c, adminURL, sourceName)
-	devURL := replaceDatabaseName(c, adminURL, devName)
-	seedExcludeUnmatchedDB(c, ctx, sourceURL)
+	sourceURL := replaceDatabaseName(c.TB, adminURL, sourceName)
+	devURL := replaceDatabaseName(c.TB, adminURL, devName)
+	seedExcludeUnmatchedDB(c.TB, ctx, sourceURL)
 
-	plan := runExcludeUnmatchedDiff(c, sourceURL, devURL,
+	plan := runExcludeUnmatchedDiff(c.TB, sourceURL, devURL,
 		[]string{"positive_int", "order_seq", "addr", "intrange"})
 
 	c.Assert(plan, qt.Not(qt.Contains), `DROP DOMAIN IF EXISTS "positive_int"`)
@@ -237,25 +237,25 @@ func TestAtlasCompatExcludeSchemaSelectorE2E(t *testing.T) {
 	stamp := time.Now().UnixNano()
 	sourceName := fmt.Sprintf("ptah_exclsch_src_%d", stamp)
 	devName := fmt.Sprintf("ptah_exclsch_dev_%d", stamp)
-	createE2EDatabase(c, ctx, adminDB, sourceName)
-	defer dropE2EDatabase(c, context.Background(), adminDB, sourceName)
-	createE2EDatabase(c, ctx, adminDB, devName)
-	defer dropE2EDatabase(c, context.Background(), adminDB, devName)
+	createE2EDatabase(c.TB, ctx, adminDB, sourceName)
+	defer dropE2EDatabase(c.TB, context.Background(), adminDB, sourceName)
+	createE2EDatabase(c.TB, ctx, adminDB, devName)
+	defer dropE2EDatabase(c.TB, context.Background(), adminDB, devName)
 
-	sourceURL := replaceDatabaseName(c, adminURL, sourceName)
-	devURL := replaceDatabaseName(c, adminURL, devName)
-	seedExcludeUnmatchedDB(c, ctx, sourceURL)
-	seedExcludeSchemaDB(c, ctx, sourceURL)
+	sourceURL := replaceDatabaseName(c.TB, adminURL, sourceName)
+	devURL := replaceDatabaseName(c.TB, adminURL, devName)
+	seedExcludeUnmatchedDB(c.TB, ctx, sourceURL)
+	seedExcludeSchemaDB(c.TB, ctx, sourceURL)
 
 	scope := []string{"public", "app"}
 
 	// The report half: the selector names a schema the description renders, so
 	// the executing verb must not refuse it.
-	c.Assert(runExcludeScopedApply(c, sourceURL, devURL, scope, []string{"app"}), qt.IsNil)
+	c.Assert(runExcludeScopedApply(c.TB, sourceURL, devURL, scope, []string{"app"}), qt.IsNil)
 
 	// The protection half: the plan must leave the excluded schema's objects
 	// alone.
-	plan := runExcludeScopedDiff(c, sourceURL, devURL, scope, []string{"app"})
+	plan := runExcludeScopedDiff(c.TB, sourceURL, devURL, scope, []string{"app"})
 	c.Assert(plan, qt.Not(qt.Contains), `"app"."orders"`)
 	c.Assert(plan, qt.Not(qt.Contains), `DROP TYPE IF EXISTS "color"`)
 	// Controls in the same run: objects no selector named are still planned for
@@ -267,11 +267,12 @@ func TestAtlasCompatExcludeSchemaSelectorE2E(t *testing.T) {
 	// The negative direction, in the same scope: a selector naming no schema and
 	// no object still refuses, so "ask the schemas" did not become "mark
 	// everything".
-	c.Assert(runExcludeScopedApply(c, sourceURL, devURL, scope, []string{"nosuchschema_zzz"}),
+	c.Assert(runExcludeScopedApply(c.TB, sourceURL, devURL, scope, []string{"nosuchschema_zzz"}),
 		qt.ErrorMatches, `the --exclude selection matched no objects:.*`)
 }
 
-func seedExcludeSchemaDB(c *qt.C, ctx context.Context, dbURL string) {
+func seedExcludeSchemaDB(tb testing.TB, ctx context.Context, dbURL string) {
+	c := qt.New(tb)
 	c.Helper()
 
 	db, err := sql.Open("pgx", dbURL)
@@ -292,7 +293,8 @@ func seedExcludeSchemaDB(c *qt.C, ctx context.Context, dbURL string) {
 		qt.Commentf("the seed did not create app.orders, so the protection assertions measure nothing"))
 }
 
-func seedExcludeUnmatchedDB(c *qt.C, ctx context.Context, dbURL string) {
+func seedExcludeUnmatchedDB(tb testing.TB, ctx context.Context, dbURL string) {
+	c := qt.New(tb)
 	c.Helper()
 
 	db, err := sql.Open("pgx", dbURL)
@@ -317,22 +319,24 @@ func seedExcludeUnmatchedDB(c *qt.C, ctx context.Context, dbURL string) {
 // runExcludeUnmatchedApply runs `schema apply --dry-run` against an empty
 // desired schema and returns the command's error, which is the exit status the
 // blocker is about.
-func runExcludeUnmatchedApply(c *qt.C, sourceURL, devURL string, exclude []string) error {
+func runExcludeUnmatchedApply(tb testing.TB, sourceURL, devURL string, exclude []string) error {
+	c := qt.New(tb)
 	c.Helper()
 
-	return runExcludeScopedApply(c, sourceURL, devURL, []string{"public"}, exclude)
+	return runExcludeScopedApply(c.TB, sourceURL, devURL, []string{"public"}, exclude)
 }
 
 // runExcludeScopedApply is runExcludeUnmatchedApply with the schema universe
 // spelled out, so a row can run in the multi-schema scope where a one-part
 // selector names a schema.
-func runExcludeScopedApply(c *qt.C, sourceURL, devURL string, schemas, exclude []string) error {
+func runExcludeScopedApply(tb testing.TB, sourceURL, devURL string, schemas, exclude []string) error {
+	c := qt.New(tb)
 	c.Helper()
 
 	args := []string{
 		"schema", "apply",
 		"--url", sourceURL,
-		"--to", "file://" + writeExcludeUnmatchedEmptySchema(c),
+		"--to", "file://" + writeExcludeUnmatchedEmptySchema(c.TB),
 		"--dev-url", devURL,
 		"--dry-run",
 	}
@@ -350,21 +354,23 @@ func runExcludeScopedApply(c *qt.C, sourceURL, devURL string, schemas, exclude [
 // runExcludeUnmatchedDiff returns the planned statements for the same
 // comparison, so the exclusion can be measured on what it protects rather than
 // only on what it reports.
-func runExcludeUnmatchedDiff(c *qt.C, sourceURL, devURL string, exclude []string) string {
+func runExcludeUnmatchedDiff(tb testing.TB, sourceURL, devURL string, exclude []string) string {
+	c := qt.New(tb)
 	c.Helper()
 
-	return runExcludeScopedDiff(c, sourceURL, devURL, []string{"public"}, exclude)
+	return runExcludeScopedDiff(c.TB, sourceURL, devURL, []string{"public"}, exclude)
 }
 
 // runExcludeScopedDiff is runExcludeUnmatchedDiff with the schema universe
 // spelled out.
-func runExcludeScopedDiff(c *qt.C, sourceURL, devURL string, schemas, exclude []string) string {
+func runExcludeScopedDiff(tb testing.TB, sourceURL, devURL string, schemas, exclude []string) string {
+	c := qt.New(tb)
 	c.Helper()
 
 	args := []string{
 		"schema", "diff",
 		"--from", sourceURL,
-		"--to", "file://" + writeExcludeUnmatchedEmptySchema(c),
+		"--to", "file://" + writeExcludeUnmatchedEmptySchema(c.TB),
 		"--dev-url", devURL,
 	}
 	args = append(args, schemaArgs(schemas)...)
@@ -380,7 +386,8 @@ func runExcludeScopedDiff(c *qt.C, sourceURL, devURL string, schemas, exclude []
 	return out.String()
 }
 
-func writeExcludeUnmatchedEmptySchema(c *qt.C) string {
+func writeExcludeUnmatchedEmptySchema(tb testing.TB) string {
+	c := qt.New(tb)
 	c.Helper()
 
 	path := filepath.Join(c.TempDir(), "empty.sql")
@@ -410,7 +417,8 @@ func schemaArgs(schemas []string) []string {
 
 // assertExcludeUnmatchedOutcome turns the row's expectation into the assertion,
 // so the loop body carries no branch.
-func assertExcludeUnmatchedOutcome(c *qt.C, test excludeUnmatchedCase, err error) {
+func assertExcludeUnmatchedOutcome(tb testing.TB, test excludeUnmatchedCase, err error) {
+	c := qt.New(tb)
 	c.Helper()
 
 	if test.accepted {

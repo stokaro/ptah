@@ -35,8 +35,8 @@ func TestPostgreSQLRolesGrantsRoundTripAndBehaviorIntegration(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { c.Check(db.Close(), qt.IsNil) })
 
-	cleanupRolesGrantsIntegration(c, db)
-	c.Cleanup(func() { cleanupRolesGrantsIntegration(c, db) })
+	cleanupRolesGrantsIntegration(c.TB, db)
+	c.Cleanup(func() { cleanupRolesGrantsIntegration(c.TB, db) })
 
 	target := rolesGrantsTarget()
 	diff := schemadiff.Compare(target, &dbschematypes.DBSchema{})
@@ -79,8 +79,8 @@ func TestPostgreSQLDBReadRoleCommentReplayIntegration(t *testing.T) {
 	db, err := sql.Open("pgx", dsn)
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { c.Check(db.Close(), qt.IsNil) })
-	cleanupDBReadRoleIntegration(c, db)
-	c.Cleanup(func() { cleanupDBReadRoleIntegration(c, db) })
+	cleanupDBReadRoleIntegration(c.TB, db)
+	c.Cleanup(func() { cleanupDBReadRoleIntegration(c.TB, db) })
 
 	// The described role holds a privilege on the schema being read, which is
 	// why the read describes it, and the GRANT that says so is emitted beside
@@ -128,7 +128,7 @@ GRANT USAGE ON SCHEMA ptah_db_read_empty_schema_137 TO ptah_db_read_role_137;`)
 
 	// Drop the roles but keep the schema: the grant among the replayed
 	// statements has to have somewhere to land.
-	cleanupDBReadRolesOnly(c, db)
+	cleanupDBReadRolesOnly(c.TB, db)
 	for _, statement := range roleStatements {
 		_, replayErr := db.Exec(statement)
 		c.Assert(replayErr, qt.IsNil, qt.Commentf("role restore failed: %s", statement))
@@ -231,7 +231,8 @@ func assertWriterRoleBehavior(t *testing.T, db *sql.DB) {
 	c.Assert(err, qt.IsNotNil)
 }
 
-func cleanupRolesGrantsIntegration(c *qt.C, db *sql.DB) {
+func cleanupRolesGrantsIntegration(tb testing.TB, db *sql.DB) {
+	c := qt.New(tb)
 	c.Helper()
 	_, err := db.Exec("DROP TABLE IF EXISTS ptah_grants_audit_log CASCADE")
 	c.Check(err, qt.IsNil)
@@ -254,14 +255,16 @@ $ptah_cleanup_roles$;`)
 	c.Check(err, qt.IsNil)
 }
 
-func cleanupDBReadRoleIntegration(c *qt.C, db *sql.DB) {
+func cleanupDBReadRoleIntegration(tb testing.TB, db *sql.DB) {
+	c := qt.New(tb)
 	c.Helper()
-	cleanupDBReadRolesOnly(c, db)
+	cleanupDBReadRolesOnly(c.TB, db)
 	_, err := db.Exec("DROP SCHEMA IF EXISTS ptah_db_read_empty_schema_137 CASCADE")
 	c.Check(err, qt.IsNil)
 }
 
-func cleanupDBReadRolesOnly(c *qt.C, db *sql.DB) {
+func cleanupDBReadRolesOnly(tb testing.TB, db *sql.DB) {
+	c := qt.New(tb)
 	c.Helper()
 	_, err := db.Exec(`
 DO $ptah_cleanup_role$
@@ -394,8 +397,8 @@ func TestPostgreSQLDescribedRolesCoverEveryRoleTheDescriptionNamesIntegration(t 
 	db, err := sql.Open("pgx", dsn)
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { c.Check(db.Close(), qt.IsNil) })
-	cleanupDescribedRolesIntegration(c, db)
-	c.Cleanup(func() { cleanupDescribedRolesIntegration(c, db) })
+	cleanupDescribedRolesIntegration(c.TB, db)
+	c.Cleanup(func() { cleanupDescribedRolesIntegration(c.TB, db) })
 
 	_, err = db.Exec(`
 CREATE ROLE ptah_ref_granted_137;
@@ -500,8 +503,8 @@ func TestPostgreSQLRoleOutOfScopeIsPresentNotAbsentIntegration(t *testing.T) {
 	db, err := sql.Open("pgx", dsn)
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { c.Check(db.Close(), qt.IsNil) })
-	cleanupScopedRolePresenceIntegration(c, db)
-	c.Cleanup(func() { cleanupScopedRolePresenceIntegration(c, db) })
+	cleanupScopedRolePresenceIntegration(c.TB, db)
+	c.Cleanup(func() { cleanupScopedRolePresenceIntegration(c.TB, db) })
 
 	// A role the cluster has and the inspected schema does not use: nothing
 	// grants it anything and no policy names it.
@@ -555,7 +558,8 @@ func integrationRoleNames(roles []dbschematypes.DBRole) []string {
 	return names
 }
 
-func cleanupScopedRolePresenceIntegration(c *qt.C, db *sql.DB) {
+func cleanupScopedRolePresenceIntegration(tb testing.TB, db *sql.DB) {
+	c := qt.New(tb)
 	c.Helper()
 	_, err := db.Exec(`
 DO $ptah_cleanup_scope_roles$
@@ -574,7 +578,8 @@ $ptah_cleanup_scope_roles$;`)
 	c.Check(err, qt.IsNil)
 }
 
-func cleanupDescribedRolesIntegration(c *qt.C, db *sql.DB) {
+func cleanupDescribedRolesIntegration(tb testing.TB, db *sql.DB) {
+	c := qt.New(tb)
 	c.Helper()
 	_, err := db.Exec("DROP TABLE IF EXISTS ptah_ref_granted_tbl_137 CASCADE")
 	c.Check(err, qt.IsNil)
@@ -625,8 +630,8 @@ func TestPostgreSQLUndescribedRolesAreReportedAndRecoverableIntegration(t *testi
 	db, err := sql.Open("pgx", dsn)
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { c.Check(db.Close(), qt.IsNil) })
-	cleanupUndescribedRolesIntegration(c, db)
-	c.Cleanup(func() { cleanupUndescribedRolesIntegration(c, db) })
+	cleanupUndescribedRolesIntegration(c.TB, db)
+	c.Cleanup(func() { cleanupUndescribedRolesIntegration(c.TB, db) })
 
 	// A role the cluster has and the inspected schema does not use, plus a
 	// pg-prefixed ordinary role: the reserved-prefix pattern is escaped, so
@@ -720,7 +725,8 @@ CREATE ROLE pgbouncer_undescribed_137 LOGIN;`)
 	c.Assert(diff.RolesAdded, qt.DeepEquals, []string{"ptah_undescribed_absent_137"})
 }
 
-func cleanupUndescribedRolesIntegration(c *qt.C, db *sql.DB) {
+func cleanupUndescribedRolesIntegration(tb testing.TB, db *sql.DB) {
+	c := qt.New(tb)
 	c.Helper()
 	_, err := db.Exec("DROP SCHEMA IF EXISTS ptah_undescribed_schema_137 CASCADE")
 	c.Check(err, qt.IsNil)

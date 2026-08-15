@@ -33,7 +33,8 @@ import (
 // cannot delete each other's objects if they ever run concurrently.
 const propertyRoundTripDatabase = "ptah_rt_fnprops"
 
-func newPropertyDatabase(c *qt.C, dsn string) *sql.DB {
+func newPropertyDatabase(tb testing.TB, dsn string) *sql.DB {
+	c := qt.New(tb)
 	c.Helper()
 
 	admin, err := sql.Open("mysql", dsn)
@@ -55,7 +56,7 @@ func newPropertyDatabase(c *qt.C, dsn string) *sql.DB {
 	// Registered first so it runs LAST: c.Cleanup is LIFO, and the drop
 	// registered below must still have a usable connection.
 	c.Cleanup(func() { _ = db.Close() })
-	c.Cleanup(func() { dropPropertyDatabase(c, dsn) })
+	c.Cleanup(func() { dropPropertyDatabase(c.TB, dsn) })
 
 	return db
 }
@@ -64,7 +65,8 @@ func newPropertyDatabase(c *qt.C, dsn string) *sql.DB {
 // agrees it is gone. The verification is the point: a cleanup whose error is
 // discarded is indistinguishable from one that worked, and it runs on the
 // failure path too, where leaks actually happen.
-func dropPropertyDatabase(c *qt.C, dsn string) {
+func dropPropertyDatabase(tb testing.TB, dsn string) {
+	c := qt.New(tb)
 	c.Helper()
 
 	admin, err := sql.Open("mysql", dsn)
@@ -93,7 +95,8 @@ func propertyFunction(fn goschema.Function) *goschema.Database {
 	return &goschema.Database{Functions: []goschema.Function{fn}}
 }
 
-func applyPropertySQL(c *qt.C, db *sql.DB, dialect string, desired *goschema.Database) []string {
+func applyPropertySQL(tb testing.TB, db *sql.DB, dialect string, desired *goschema.Database) []string {
+	c := qt.New(tb)
 	c.Helper()
 
 	reader := mysql.NewMySQLReader(db, "")
@@ -115,7 +118,8 @@ func applyPropertySQL(c *qt.C, db *sql.DB, dialect string, desired *goschema.Dat
 	return statements
 }
 
-func propertyDiff(c *qt.C, db *sql.DB, dialect string, desired *goschema.Database) *difftypes.SchemaDiff {
+func propertyDiff(tb testing.TB, db *sql.DB, dialect string, desired *goschema.Database) *difftypes.SchemaDiff {
+	c := qt.New(tb)
 	c.Helper()
 
 	reader := mysql.NewMySQLReader(db, "")
@@ -270,12 +274,12 @@ func TestFunctionPropertyRoundTrip_MySQLFamily_Integration(t *testing.T) {
 			t.Run(target.name+"/"+test.name, func(t *testing.T) {
 				dsn := target.dsn(t)
 				c := qt.New(t)
-				db := newPropertyDatabase(c, dsn)
+				db := newPropertyDatabase(c.TB, dsn)
 
 				desired := propertyFunction(test.declared)
 
 				// 1. The plan carries the function.
-				created := applyPropertySQL(c, db, target.dialect, desired)
+				created := applyPropertySQL(c.TB, db, target.dialect, desired)
 				c.Assert(created, qt.Not(qt.HasLen), 0)
 
 				// 2. The server really hosts it: the catalog answering, not
@@ -286,18 +290,18 @@ func TestFunctionPropertyRoundTrip_MySQLFamily_Integration(t *testing.T) {
 				c.Check(value, qt.Equals, 42)
 
 				// 3. Round trip: reading it back and diffing yields nothing.
-				c.Check(propertyDiff(c, db, target.dialect, desired).HasChanges(), qt.IsFalse)
+				c.Check(propertyDiff(c.TB, db, target.dialect, desired).HasChanges(), qt.IsFalse)
 
 				// 4. And it still yields nothing after a second apply. This is
 				//    the row that fails when a property cannot survive a read:
 				//    the diff is not merely non-empty, it is PERMANENT.
-				applyPropertySQL(c, db, target.dialect, desired)
-				c.Check(propertyDiff(c, db, target.dialect, desired).HasChanges(), qt.IsFalse)
+				applyPropertySQL(c.TB, db, target.dialect, desired)
+				c.Check(propertyDiff(c.TB, db, target.dialect, desired).HasChanges(), qt.IsFalse)
 
 				// 5. Changing exactly that property is exactly one change,
 				//    named. A comparator that reported nothing would pass 3
 				//    and 4 and fail here.
-				changedDiff := propertyDiff(c, db, target.dialect, propertyFunction(test.changed))
+				changedDiff := propertyDiff(c.TB, db, target.dialect, propertyFunction(test.changed))
 				c.Assert(changedDiff.FunctionsModified, qt.HasLen, 1)
 				c.Check(changedDiff.FunctionsModified[0].FunctionName, qt.Equals, "ptah_prop_fn")
 				c.Check(changedDiff.FunctionsModified[0].Changes, qt.HasLen, 1)
@@ -306,8 +310,8 @@ func TestFunctionPropertyRoundTrip_MySQLFamily_Integration(t *testing.T) {
 				c.Check(changedDiff.FunctionsRemoved, qt.HasLen, 0)
 
 				// 6. Planning that change converges again.
-				applyPropertySQL(c, db, target.dialect, propertyFunction(test.changed))
-				c.Check(propertyDiff(c, db, target.dialect, propertyFunction(test.changed)).HasChanges(), qt.IsFalse)
+				applyPropertySQL(c.TB, db, target.dialect, propertyFunction(test.changed))
+				c.Check(propertyDiff(c.TB, db, target.dialect, propertyFunction(test.changed)).HasChanges(), qt.IsFalse)
 			})
 		}
 	}
@@ -333,7 +337,7 @@ func TestFunctionOrderedCreateStatements_ExecuteOneByOne_Integration(t *testing.
 		t.Run(target.name, func(t *testing.T) {
 			dsn := target.dsn(t)
 			c := qt.New(t)
-			newPropertyDatabase(c, dsn)
+			newPropertyDatabase(c.TB, dsn)
 
 			desired := propertyFunction(goschema.Function{
 				Name: "ptah_prop_fn", Parameters: "a INT", Returns: "int",
@@ -360,12 +364,13 @@ func TestFunctionOrderedCreateStatements_ExecuteOneByOne_Integration(t *testing.
 
 			// The function is really there, so the loop above was not vacuous:
 			// a renderer that emitted nothing would also pass every ExecuteSQL.
-			c.Assert(queryRoutineCount(c, dsn, "ptah_prop_fn"), qt.Equals, 1)
+			c.Assert(queryRoutineCount(c.TB, dsn, "ptah_prop_fn"), qt.Equals, 1)
 		})
 	}
 }
 
-func queryRoutineCount(c *qt.C, dsn, name string) int {
+func queryRoutineCount(tb testing.TB, dsn, name string) int {
+	c := qt.New(tb)
 	c.Helper()
 
 	admin, err := sql.Open("mysql", dsn)
@@ -432,21 +437,21 @@ func TestFunctionCaseOnlySpelling_MySQLFamily_Integration(t *testing.T) {
 			t.Run(target.name+"/"+test.name, func(t *testing.T) {
 				dsn := target.dsn(t)
 				c := qt.New(t)
-				db := newPropertyDatabase(c, dsn)
+				db := newPropertyDatabase(c.TB, dsn)
 
-				applyPropertySQL(c, db, target.dialect, makeFunction(test.live))
-				c.Assert(queryRoutineCount(c, dsn, test.live), qt.Equals, 1)
+				applyPropertySQL(c.TB, db, target.dialect, makeFunction(test.live))
+				c.Assert(queryRoutineCount(c.TB, dsn, test.live), qt.Equals, 1)
 
 				// The two spellings are one routine, so there is nothing to do.
-				caseDiff := propertyDiff(c, db, target.dialect, makeFunction(test.desired))
+				caseDiff := propertyDiff(c.TB, db, target.dialect, makeFunction(test.desired))
 				c.Check(caseDiff.FunctionsAdded, qt.HasLen, 0)
 				c.Check(caseDiff.FunctionsRemoved, qt.HasLen, 0)
 				c.Check(caseDiff.FunctionsModified, qt.HasLen, 0)
 
 				// And applying it plans nothing and destroys nothing.
-				applied := applyPropertySQL(c, db, target.dialect, makeFunction(test.desired))
+				applied := applyPropertySQL(c.TB, db, target.dialect, makeFunction(test.desired))
 				c.Check(applied, qt.HasLen, 0)
-				c.Check(queryRoutineCount(c, dsn, test.live), qt.Equals, 1,
+				c.Check(queryRoutineCount(c.TB, dsn, test.live), qt.Equals, 1,
 					qt.Commentf("a successful apply left no function of that name"))
 
 				var value int
@@ -477,14 +482,14 @@ func TestFunctionParametersIgnoreASameNamedProcedure_Integration(t *testing.T) {
 		t.Run(target.name, func(t *testing.T) {
 			dsn := target.dsn(t)
 			c := qt.New(t)
-			db := newPropertyDatabase(c, dsn)
+			db := newPropertyDatabase(c.TB, dsn)
 
 			desired := propertyFunction(goschema.Function{
 				Name: "ptah_prop_fn", Parameters: "a INT", Returns: "int",
 				Language: "sql", Volatility: "IMMUTABLE", Security: "INVOKER", Body: "RETURN a + 1",
 			})
-			applyPropertySQL(c, db, target.dialect, desired)
-			c.Check(propertyDiff(c, db, target.dialect, desired).HasChanges(), qt.IsFalse)
+			applyPropertySQL(c.TB, db, target.dialect, desired)
+			c.Check(propertyDiff(c.TB, db, target.dialect, desired).HasChanges(), qt.IsFalse)
 
 			_, err := db.Exec(
 				"CREATE PROCEDURE ptah_prop_fn(IN p_x VARCHAR(50), IN p_y DECIMAL(10,2)) SELECT 1")
@@ -500,7 +505,7 @@ func TestFunctionParametersIgnoreASameNamedProcedure_Integration(t *testing.T) {
 			c.Check(live.Functions[0].Parameters, qt.Not(qt.Contains), "p_y")
 
 			// So the schema still converges with the procedure sitting there.
-			c.Check(propertyDiff(c, db, target.dialect, desired).HasChanges(), qt.IsFalse)
+			c.Check(propertyDiff(c.TB, db, target.dialect, desired).HasChanges(), qt.IsFalse)
 
 			// The procedure is this test's own object; take it away explicitly
 			// so the owned-database drop is not the only thing standing between
@@ -540,7 +545,7 @@ func TestFunctionSkippedLanguageNeverDropsTheLiveRoutine_Integration(t *testing.
 	}{
 		{
 			// The realistic one: no language written at all.
-			name: "omitted language canonicalizes to plpgsql",
+			name:     "omitted language canonicalizes to plpgsql",
 			language: "",
 		},
 		{
@@ -554,15 +559,15 @@ func TestFunctionSkippedLanguageNeverDropsTheLiveRoutine_Integration(t *testing.
 			t.Run(target.name+"/"+test.name, func(t *testing.T) {
 				dsn := target.dsn(t)
 				c := qt.New(t)
-				db := newPropertyDatabase(c, dsn)
+				db := newPropertyDatabase(c.TB, dsn)
 
 				live := propertyFunction(goschema.Function{
 					Name: "ptah_prop_fn", Parameters: "a INT", Returns: "int",
 					Language: "sql", Volatility: "IMMUTABLE", Security: "INVOKER",
 					Body: "RETURN a + 1",
 				})
-				applyPropertySQL(c, db, target.dialect, live)
-				c.Assert(queryRoutineCount(c, dsn, "ptah_prop_fn"), qt.Equals, 1)
+				applyPropertySQL(c.TB, db, target.dialect, live)
+				c.Assert(queryRoutineCount(c.TB, dsn, "ptah_prop_fn"), qt.Equals, 1)
 
 				// Same function, but declared in a language this target cannot
 				// run. Canonicalize is called explicitly because the annotation
@@ -579,7 +584,7 @@ func TestFunctionSkippedLanguageNeverDropsTheLiveRoutine_Integration(t *testing.
 				c.Assert(declared.Language, qt.Equals, "plpgsql")
 				desired := propertyFunction(declared)
 
-				statements := applyPropertySQL(c, db, target.dialect, desired)
+				statements := applyPropertySQL(c.TB, db, target.dialect, desired)
 
 				// Nothing executable may be planned for a replacement whose
 				// CREATE half cannot render.
@@ -589,7 +594,7 @@ func TestFunctionSkippedLanguageNeverDropsTheLiveRoutine_Integration(t *testing.
 				}
 
 				// The live routine is still there, and still works.
-				c.Check(queryRoutineCount(c, dsn, "ptah_prop_fn"), qt.Equals, 1,
+				c.Check(queryRoutineCount(c.TB, dsn, "ptah_prop_fn"), qt.Equals, 1,
 					qt.Commentf("the apply succeeded and deleted the live function"))
 				var value int
 				c.Assert(db.QueryRow("SELECT ptah_prop_fn(41)").Scan(&value), qt.IsNil)
@@ -617,7 +622,7 @@ func TestFunctionCaseCollidingDeclarationsAreRefused_Integration(t *testing.T) {
 		t.Run(target.name, func(t *testing.T) {
 			dsn := target.dsn(t)
 			c := qt.New(t)
-			db := newPropertyDatabase(c, dsn)
+			db := newPropertyDatabase(c.TB, dsn)
 
 			colliding := &goschema.Database{Functions: []goschema.Function{
 				{
@@ -645,7 +650,7 @@ func TestFunctionCaseCollidingDeclarationsAreRefused_Integration(t *testing.T) {
 			c.Check(planErr.Error(), qt.Contains, "ptah_dup_fn")
 
 			// Nothing was created, because nothing was planned.
-			c.Check(queryRoutineCount(c, dsn, "ptah_dup_fn"), qt.Equals, 0)
+			c.Check(queryRoutineCount(c.TB, dsn, "ptah_dup_fn"), qt.Equals, 0)
 
 			// The control: the SAME two bodies under names that do not collide
 			// still plan and apply as two separate functions, so the refusal is
@@ -662,9 +667,9 @@ func TestFunctionCaseCollidingDeclarationsAreRefused_Integration(t *testing.T) {
 					Body: "RETURN a + 2",
 				},
 			}}
-			applyPropertySQL(c, db, target.dialect, distinct)
-			c.Check(queryRoutineCount(c, dsn, "ptah_dup_one"), qt.Equals, 1)
-			c.Check(queryRoutineCount(c, dsn, "ptah_dup_two"), qt.Equals, 1)
+			applyPropertySQL(c.TB, db, target.dialect, distinct)
+			c.Check(queryRoutineCount(c.TB, dsn, "ptah_dup_one"), qt.Equals, 1)
+			c.Check(queryRoutineCount(c.TB, dsn, "ptah_dup_two"), qt.Equals, 1)
 		})
 	}
 }
@@ -681,13 +686,13 @@ func TestFunctionReplacementIsTwoStatements_Integration(t *testing.T) {
 		t.Run(target.name, func(t *testing.T) {
 			dsn := target.dsn(t)
 			c := qt.New(t)
-			db := newPropertyDatabase(c, dsn)
+			db := newPropertyDatabase(c.TB, dsn)
 
 			first := propertyFunction(goschema.Function{
 				Name: "ptah_prop_fn", Parameters: "a INT", Returns: "int",
 				Language: "sql", Volatility: "IMMUTABLE", Security: "INVOKER", Body: "RETURN a + 1",
 			})
-			created := applyPropertySQL(c, db, target.dialect, first)
+			created := applyPropertySQL(c.TB, db, target.dialect, first)
 			// An ADDED function needs no drop: nothing of that name is there.
 			c.Assert(created, qt.HasLen, 1)
 			c.Check(created[0], qt.Contains, "CREATE FUNCTION")
@@ -697,7 +702,7 @@ func TestFunctionReplacementIsTwoStatements_Integration(t *testing.T) {
 				Name: "ptah_prop_fn", Parameters: "a INT", Returns: "int",
 				Language: "sql", Volatility: "IMMUTABLE", Security: "INVOKER", Body: "RETURN a + 2",
 			})
-			replaced := applyPropertySQL(c, db, target.dialect, second)
+			replaced := applyPropertySQL(c.TB, db, target.dialect, second)
 			c.Assert(replaced, qt.HasLen, 2)
 			c.Check(replaced[0], qt.Contains, "DROP FUNCTION IF EXISTS")
 			c.Check(replaced[1], qt.Contains, "CREATE FUNCTION")
@@ -707,7 +712,7 @@ func TestFunctionReplacementIsTwoStatements_Integration(t *testing.T) {
 					qt.Commentf("element %d ends without a terminator: %s", i+1, statement))
 			}
 
-			c.Check(propertyDiff(c, db, target.dialect, second).HasChanges(), qt.IsFalse)
+			c.Check(propertyDiff(c.TB, db, target.dialect, second).HasChanges(), qt.IsFalse)
 			var value int
 			c.Assert(db.QueryRow("SELECT ptah_prop_fn(40)").Scan(&value), qt.IsNil)
 			c.Check(value, qt.Equals, 42)

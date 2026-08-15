@@ -30,16 +30,17 @@ func TestDatabaseTestRunnersPostgresE2E(t *testing.T) {
 
 	migrationDBName := fmt.Sprintf("ptah_migration_test_e2e_%d", time.Now().UnixNano())
 	schemaDBName := fmt.Sprintf("ptah_schema_test_e2e_%d", time.Now().UnixNano())
-	createE2EDatabase(c, ctx, adminDB, migrationDBName)
-	defer dropE2EDatabase(c, context.Background(), adminDB, migrationDBName)
-	createE2EDatabase(c, ctx, adminDB, schemaDBName)
-	defer dropE2EDatabase(c, context.Background(), adminDB, schemaDBName)
+	createE2EDatabase(c.TB, ctx, adminDB, migrationDBName)
+	defer dropE2EDatabase(c.TB, context.Background(), adminDB, migrationDBName)
+	createE2EDatabase(c.TB, ctx, adminDB, schemaDBName)
+	defer dropE2EDatabase(c.TB, context.Background(), adminDB, schemaDBName)
 
-	runLiveMigrationTest(c, ctx, replaceDatabaseName(c, adminURL, migrationDBName))
-	runLiveSchemaTest(c, ctx, replaceDatabaseName(c, adminURL, schemaDBName))
+	runLiveMigrationTest(c.TB, ctx, replaceDatabaseName(c.TB, adminURL, migrationDBName))
+	runLiveSchemaTest(c.TB, ctx, replaceDatabaseName(c.TB, adminURL, schemaDBName))
 }
 
-func runLiveMigrationTest(c *qt.C, ctx context.Context, databaseURL string) {
+func runLiveMigrationTest(tb testing.TB, ctx context.Context, databaseURL string) {
+	c := qt.New(tb)
 	c.Helper()
 	migrationsDir := c.TempDir()
 	c.Assert(os.WriteFile(
@@ -61,15 +62,15 @@ DROP TYPE status_type;
 	), qt.IsNil)
 
 	rootDir := c.TempDir()
-	writeLiveTestEntity(c, rootDir, "audit_events")
-	writeLiveTestEnum(c, rootDir)
+	writeLiveTestEntity(c.TB, rootDir, "audit_events")
+	writeLiveTestEnum(c.TB, rootDir)
 	seedDir := c.TempDir()
 	c.Assert(os.WriteFile(
 		filepath.Join(seedDir, "010_widgets.test.sql"),
 		[]byte("INSERT INTO widgets (name) VALUES ('gear');\n"),
 		0o600,
 	), qt.IsNil)
-	testDir := writeLiveTestCases(c, `cases:
+	testDir := writeLiveTestCases(c.TB, `cases:
   - name: live migration and schema steps
     steps:
       - name: migrate
@@ -92,7 +93,7 @@ DROP TYPE status_type;
           query: SELECT status FROM legacy_records
           scalar: legacy
 `)
-	output := runLivePtahCommand(c, ctx,
+	output := runLivePtahCommand(c.TB, ctx,
 		"migrations", "test",
 		"--dir", testDir,
 		"--migrations-dir", migrationsDir,
@@ -104,17 +105,18 @@ DROP TYPE status_type;
 	c.Assert(output, qt.Contains, `PASS  case "live migration and schema steps"`)
 }
 
-func runLiveSchemaTest(c *qt.C, ctx context.Context, databaseURL string) {
+func runLiveSchemaTest(tb testing.TB, ctx context.Context, databaseURL string) {
+	c := qt.New(tb)
 	c.Helper()
 	rootDir := c.TempDir()
-	writeLiveTestEntity(c, rootDir, "users")
+	writeLiveTestEntity(c.TB, rootDir, "users")
 	seedDir := c.TempDir()
 	c.Assert(os.WriteFile(
 		filepath.Join(seedDir, "010_users.test.sql"),
 		[]byte("INSERT INTO users (name) VALUES ('ada');\n"),
 		0o600,
 	), qt.IsNil)
-	testDir := writeLiveTestCases(c, `cases:
+	testDir := writeLiveTestCases(c.TB, `cases:
   - name: live desired schema
     steps:
       - name: schema is provisioned
@@ -135,7 +137,7 @@ func runLiveSchemaTest(c *qt.C, ctx context.Context, databaseURL string) {
           query: SELECT id FROM users
           row_count: 0
 `)
-	output := runLivePtahCommand(c, ctx,
+	output := runLivePtahCommand(c.TB, ctx,
 		"schema", "test",
 		"--dir", testDir,
 		"--root-dir", rootDir,
@@ -145,14 +147,16 @@ func runLiveSchemaTest(c *qt.C, ctx context.Context, databaseURL string) {
 	c.Assert(output, qt.Contains, `PASS  case "live desired schema"`)
 }
 
-func writeLiveTestCases(c *qt.C, contents string) string {
+func writeLiveTestCases(tb testing.TB, contents string) string {
+	c := qt.New(tb)
 	c.Helper()
 	testDir := c.TempDir()
 	c.Assert(os.WriteFile(filepath.Join(testDir, "cases.yaml"), []byte(contents), 0o600), qt.IsNil)
 	return testDir
 }
 
-func runLivePtahCommand(c *qt.C, ctx context.Context, args ...string) string {
+func runLivePtahCommand(tb testing.TB, ctx context.Context, args ...string) string {
+	c := qt.New(tb)
 	c.Helper()
 	cmd := root.NewRootCommand()
 	var output bytes.Buffer
@@ -164,7 +168,8 @@ func runLivePtahCommand(c *qt.C, ctx context.Context, args ...string) string {
 	return output.String()
 }
 
-func writeLiveTestEntity(c *qt.C, dir, table string) {
+func writeLiveTestEntity(tb testing.TB, dir, table string) {
+	c := qt.New(tb)
 	c.Helper()
 	content := fmt.Sprintf(`package models
 
@@ -180,7 +185,8 @@ type Entity struct {
 	c.Assert(os.WriteFile(filepath.Join(dir, "entity.go"), []byte(content), 0o600), qt.IsNil)
 }
 
-func writeLiveTestEnum(c *qt.C, dir string) {
+func writeLiveTestEnum(tb testing.TB, dir string) {
+	c := qt.New(tb)
 	c.Helper()
 	content := `package models
 

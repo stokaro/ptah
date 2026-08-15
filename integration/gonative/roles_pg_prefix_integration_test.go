@@ -50,8 +50,8 @@ func TestPostgreSQLReaderDescribesRolesNamedPgSomething(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { c.Check(db.Close(), qt.IsNil) })
 
-	dropPgPrefixFixture(c, db)
-	c.Cleanup(func() { dropPgPrefixFixture(c, db) })
+	dropPgPrefixFixture(c.TB, db)
+	c.Cleanup(func() { dropPgPrefixFixture(c.TB, db) })
 
 	_, err = db.Exec(fmt.Sprintf("CREATE ROLE %q", pgPrefixRole))
 	c.Assert(err, qt.IsNil)
@@ -102,7 +102,8 @@ func TestPostgreSQLReaderDescribesRolesNamedPgSomething(t *testing.T) {
 // IF EXISTS form and fails outright on a role that is not there, which is the
 // ordinary state on the first run. Every statement here is unconditional from
 // the caller's side, so a failure is a real failure.
-func dropPgPrefixFixture(c *qt.C, db *sql.DB) {
+func dropPgPrefixFixture(tb testing.TB, db *sql.DB) {
+	c := qt.New(tb)
 	c.Helper()
 
 	_, err := db.Exec(fmt.Sprintf("DROP TABLE IF EXISTS %q", pgPrefixTable))

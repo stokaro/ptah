@@ -87,7 +87,7 @@ func TestPostgreSQLDomainColumn_ReaderKeepsTheDomain(t *testing.T) {
 	dsn := skipIfNoPostgreSQL(t)
 	c := qt.New(t)
 
-	dbURL := newBoundaryDatabase(c, dsn, boundaryCase{
+	dbURL := newBoundaryDatabase(c.TB, dsn, boundaryCase{
 		name:  "domain_reader",
 		seed:  domainColumnSeed(),
 		query: "search_path=public",
@@ -126,13 +126,13 @@ func TestPostgreSQLDomainColumn_ReaderKeepsTheDomain(t *testing.T) {
 
 	for _, test := range tests {
 		c.Run(test.name, func(c *qt.C) {
-			column := findLiveColumn(c, live.Tables, "t", test.column)
+			column := findLiveColumn(c.TB, live.Tables, "t", test.column)
 			c.Assert(column.DomainName, qt.Equals, test.wantDomain)
 			// The base type stays available either way: the read adds a
 			// spelling rather than replacing one.
 			c.Assert(column.DataType, qt.Equals, "integer")
 
-			field := findConvertedField(c, converted, test.column)
+			field := findConvertedField(c.TB, converted, test.column)
 			c.Assert(field.Type, qt.Equals, test.wantFieldType)
 		})
 	}
@@ -169,7 +169,7 @@ func TestPostgreSQLDomainColumn_ApplyingItsOwnDescriptionChangesNothing(t *testi
 
 	for _, test := range tests {
 		c.Run(test.name, func(c *qt.C) {
-			dbURL := newBoundaryDatabase(c, dsn, boundaryCase{
+			dbURL := newBoundaryDatabase(c.TB, dsn, boundaryCase{
 				name:  "domain_apply",
 				seed:  domainColumnSeed(),
 				query: "search_path=public",
@@ -178,10 +178,10 @@ func TestPostgreSQLDomainColumn_ApplyingItsOwnDescriptionChangesNothing(t *testi
 			c.Assert(err, qt.IsNil)
 			c.Cleanup(func() { dbschema.CloseAndWarn(conn) })
 
-			document := boundaryInspect(c, dbURL, test.compatibility)
+			document := boundaryInspect(c.TB, dbURL, test.compatibility)
 			c.Assert(document, qt.Contains, `type = sql("positive")`)
 
-			plan := boundaryApplyBack(c, conn, document, test.compatibility)
+			plan := boundaryApplyBack(c.TB, conn, document, test.compatibility)
 
 			c.Assert(columnStatements(plan, "qty"), qt.DeepEquals, []string(nil))
 		})
@@ -206,7 +206,7 @@ func TestPostgreSQLDomainColumn_OverUserDefinedBaseTypeKeepsTheDomain(t *testing
 	dsn := skipIfNoPostgreSQL(t)
 	c := qt.New(t)
 
-	dbURL := newBoundaryDatabase(c, dsn, boundaryCase{
+	dbURL := newBoundaryDatabase(c.TB, dsn, boundaryCase{
 		name:  "domain_over_user_defined_reader",
 		seed:  domainOverUserDefinedSeed(),
 		query: "search_path=public",
@@ -265,14 +265,14 @@ func TestPostgreSQLDomainColumn_OverUserDefinedBaseTypeKeepsTheDomain(t *testing
 
 	for _, test := range tests {
 		c.Run(test.name, func(c *qt.C) {
-			column := findLiveColumn(c, live.Tables, "t", test.column)
+			column := findLiveColumn(c.TB, live.Tables, "t", test.column)
 			c.Assert(column.DomainName, qt.Equals, test.wantDomain)
 			c.Assert(column.UDTName, qt.Equals, test.wantUDTName)
 			// The catalog reports the same data_type for all four, which is
 			// why nothing downstream can separate them without the domain.
 			c.Assert(column.DataType, qt.Equals, "USER-DEFINED")
 
-			field := findConvertedField(c, converted, test.column)
+			field := findConvertedField(c.TB, converted, test.column)
 			c.Assert(field.Type, qt.Equals, test.wantFieldType)
 		})
 	}
@@ -299,7 +299,7 @@ func TestPostgreSQLDomainColumn_OverUserDefinedBaseTypeApplyingItsOwnDescription
 
 	for _, test := range tests {
 		c.Run(test.name, func(c *qt.C) {
-			dbURL := newBoundaryDatabase(c, dsn, boundaryCase{
+			dbURL := newBoundaryDatabase(c.TB, dsn, boundaryCase{
 				name:  "domain_over_user_defined_apply",
 				seed:  domainOverUserDefinedSeed(),
 				query: "search_path=public",
@@ -308,14 +308,14 @@ func TestPostgreSQLDomainColumn_OverUserDefinedBaseTypeApplyingItsOwnDescription
 			c.Assert(err, qt.IsNil)
 			c.Cleanup(func() { dbschema.CloseAndWarn(conn) })
 
-			document := boundaryInspect(c, dbURL, test.compatibility)
+			document := boundaryInspect(c.TB, dbURL, test.compatibility)
 			c.Assert(document, qt.Contains, `type = sql("d_enum")`)
 			// The control's spelling is asserted too, so a change that made
 			// every USER-DEFINED column print sql(...) would not read as a
 			// pass here.
 			c.Assert(document, qt.Contains, `type = enum.color`)
 
-			plan := boundaryApplyBack(c, conn, document, test.compatibility)
+			plan := boundaryApplyBack(c.TB, conn, document, test.compatibility)
 
 			c.Assert(columnStatements(plan, "c"), qt.DeepEquals, []string(nil))
 			c.Assert(columnStatements(plan, "a"), qt.DeepEquals, []string(nil))
@@ -347,12 +347,12 @@ func TestPostgreSQLDomainColumn_OverUserDefinedBaseTypeDescriptionReplaysOnAnEmp
 	dsn := skipIfNoPostgreSQL(t)
 	c := qt.New(t)
 
-	sourceURL := newBoundaryDatabase(c, dsn, boundaryCase{
+	sourceURL := newBoundaryDatabase(c.TB, dsn, boundaryCase{
 		name:  "domain_over_user_defined_replay_source",
 		seed:  domainOverUserDefinedSeed(),
 		query: "search_path=public",
 	})
-	targetURL := newBoundaryDatabase(c, dsn, boundaryCase{
+	targetURL := newBoundaryDatabase(c.TB, dsn, boundaryCase{
 		name:  "domain_over_user_defined_replay_target",
 		query: "search_path=public",
 	})
@@ -388,7 +388,7 @@ func TestPostgreSQLDomainColumn_OverUserDefinedBaseTypeDescriptionReplaysOnAnEmp
 
 	for _, test := range tests {
 		c.Run(test.name, func(c *qt.C) {
-			c.Assert(findLiveColumn(c, replayed.Tables, "t", test.column).DomainName, qt.Equals, test.wantDomain)
+			c.Assert(findLiveColumn(c.TB, replayed.Tables, "t", test.column).DomainName, qt.Equals, test.wantDomain)
 		})
 	}
 }
@@ -406,7 +406,8 @@ func columnStatements(statements []string, column string) []string {
 	return out
 }
 
-func findLiveColumn(c *qt.C, tables []dbschematypes.DBTable, table, column string) dbschematypes.DBColumn {
+func findLiveColumn(tb testing.TB, tables []dbschematypes.DBTable, table, column string) dbschematypes.DBColumn {
+	c := qt.New(tb)
 	c.Helper()
 
 	for _, candidate := range tables {
@@ -420,7 +421,8 @@ func findLiveColumn(c *qt.C, tables []dbschematypes.DBTable, table, column strin
 	return dbschematypes.DBColumn{}
 }
 
-func findConvertedField(c *qt.C, converted *goschema.Database, column string) goschema.Field {
+func findConvertedField(tb testing.TB, converted *goschema.Database, column string) goschema.Field {
+	c := qt.New(tb)
 	c.Helper()
 
 	for _, field := range converted.Fields {

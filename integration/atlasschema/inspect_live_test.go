@@ -116,7 +116,7 @@ func TestInspectLive_ScopeSelectsSchemas(t *testing.T) {
 
 	for _, test := range tests {
 		c.Run(test.name, func(c *qt.C) {
-			conn := newInspectLiveConnection(c, ctx, test.query, test.setup)
+			conn := newInspectLiveConnection(c.TB, ctx, test.query, test.setup)
 
 			rendered, err := atlasschema.Inspect(ctx, conn, atlasschema.InspectOptions{
 				Format:  "json",
@@ -195,7 +195,7 @@ func TestInspectLive_SQLSchemaStatements(t *testing.T) {
 
 	for _, test := range tests {
 		c.Run(test.name, func(c *qt.C) {
-			conn := newInspectLiveConnection(c, ctx, test.query, inspectLiveMultiSchema)
+			conn := newInspectLiveConnection(c.TB, ctx, test.query, inspectLiveMultiSchema)
 
 			rendered, err := atlasschema.Inspect(ctx, conn, atlasschema.InspectOptions{
 				Format:  "sql",
@@ -261,7 +261,7 @@ func TestInspectLive_HCLRealmScope(t *testing.T) {
 
 	for _, test := range tests {
 		c.Run(test.name, func(c *qt.C) {
-			conn := newInspectLiveConnection(c, ctx, test.query, inspectLiveMultiSchema)
+			conn := newInspectLiveConnection(c.TB, ctx, test.query, inspectLiveMultiSchema)
 
 			rendered, err := atlasschema.Inspect(ctx, conn, atlasschema.InspectOptions{Format: "hcl"})
 
@@ -288,13 +288,14 @@ func TestInspectLive_HCLRealmScope(t *testing.T) {
 // connection under test is opened, which is the real order: the database is
 // already in that state when a run reaches it.
 func newInspectLiveConnection(
-	c *qt.C,
+	tb testing.TB,
 	ctx context.Context,
 	query string,
 	setup []string,
 ) *dbschema.DatabaseConnection {
+	c := qt.New(tb)
 	c.Helper()
-	adminURL := requireInspectLiveURL(c)
+	adminURL := requireInspectLiveURL(c.TB)
 	admin, err := sql.Open("pgx", adminURL)
 	c.Assert(err, qt.IsNil)
 	c.Assert(admin.PingContext(ctx), qt.IsNil)
@@ -316,7 +317,7 @@ func newInspectLiveConnection(
 	c.Assert(err, qt.IsNil)
 	parsed.Path = "/" + name
 	parsed.RawPath = ""
-	applyInspectLiveFixture(c, ctx, parsed.String(), setup)
+	applyInspectLiveFixture(c.TB, ctx, parsed.String(), setup)
 
 	parsed.RawQuery = inspectLiveQuery(parsed.RawQuery, query)
 	conn, err := dbschema.ConnectToDatabase(ctx, parsed.String())
@@ -327,7 +328,8 @@ func newInspectLiveConnection(
 
 // applyInspectLiveFixture puts the throwaway database into the state under test
 // through a connection of its own.
-func applyInspectLiveFixture(c *qt.C, ctx context.Context, dbURL string, statements []string) {
+func applyInspectLiveFixture(tb testing.TB, ctx context.Context, dbURL string, statements []string) {
+	c := qt.New(tb)
 	c.Helper()
 	if len(statements) == 0 {
 		return
@@ -354,7 +356,8 @@ func inspectLiveQuery(base, extra string) string {
 	}
 }
 
-func requireInspectLiveURL(c *qt.C) string {
+func requireInspectLiveURL(tb testing.TB) string {
+	c := qt.New(tb)
 	c.Helper()
 	for _, name := range []string{"POSTGRES_TEST_DSN", "POSTGRES_URL", "TEST_DATABASE_URL"} {
 		raw := os.Getenv(name)

@@ -65,26 +65,26 @@ func TestAtlasCompatInspectRoleReplayE2E(t *testing.T) {
 	// The role is cluster-scoped, so it outlives both databases and PostgreSQL
 	// refuses to drop it while a grant in either still depends on it. Its
 	// cleanup is registered FIRST so that it runs LAST.
-	createReplayRole(c, ctx, adminDB, roleName)
-	defer dropReplayRole(c, context.Background(), adminDB, roleName)
-	createE2EDatabase(c, ctx, adminDB, sourceName)
-	defer dropE2EDatabase(c, context.Background(), adminDB, sourceName)
-	createE2EDatabase(c, ctx, adminDB, devName)
-	defer dropE2EDatabase(c, context.Background(), adminDB, devName)
+	createReplayRole(c.TB, ctx, adminDB, roleName)
+	defer dropReplayRole(c.TB, context.Background(), adminDB, roleName)
+	createE2EDatabase(c.TB, ctx, adminDB, sourceName)
+	defer dropE2EDatabase(c.TB, context.Background(), adminDB, sourceName)
+	createE2EDatabase(c.TB, ctx, adminDB, devName)
+	defer dropE2EDatabase(c.TB, context.Background(), adminDB, devName)
 
-	sourceURL := replaceDatabaseName(c, adminURL, sourceName)
-	devURL := replaceDatabaseName(c, adminURL, devName)
+	sourceURL := replaceDatabaseName(c.TB, adminURL, sourceName)
+	devURL := replaceDatabaseName(c.TB, adminURL, devName)
 
-	seedRoleReplayDB(c, ctx, sourceURL, roleName)
+	seedRoleReplayDB(c.TB, ctx, sourceURL, roleName)
 
-	inspected, _ := runRoleAwareCompatInspect(c, sourceURL, "")
+	inspected, _ := runRoleAwareCompatInspect(c.TB, sourceURL, "")
 	c.Assert(inspected, qt.Contains, fmt.Sprintf("role %q", roleName),
 		qt.Commentf("the fixture's own grantee is missing, so the replay would prove nothing"))
 
 	documentPath := filepath.Join(t.TempDir(), "inspected.hcl")
 	c.Assert(os.WriteFile(documentPath, []byte(inspected), 0o600), qt.IsNil)
 
-	replayed, diagnostics := runRoleAwareCompatInspect(c, "file://"+documentPath, devURL)
+	replayed, diagnostics := runRoleAwareCompatInspect(c.TB, "file://"+documentPath, devURL)
 
 	// The note is the disclosure half: a role the dev database was not given is
 	// described as the server has it, and an operator is told which.
@@ -119,13 +119,13 @@ func TestAtlasCompatInspectCreatesARoleTheServerLacksE2E(t *testing.T) {
 	devName := fmt.Sprintf("ptah_role_new_dev_%d", stamp)
 	roleName := fmt.Sprintf("ptah_role_new_reader_%d", stamp)
 
-	createE2EDatabase(c, ctx, adminDB, devName)
-	defer dropE2EDatabase(c, context.Background(), adminDB, devName)
-	defer dropReplayRole(c, context.Background(), adminDB, roleName)
+	createE2EDatabase(c.TB, ctx, adminDB, devName)
+	defer dropE2EDatabase(c.TB, context.Background(), adminDB, devName)
+	defer dropReplayRole(c.TB, context.Background(), adminDB, roleName)
 
-	devURL := replaceDatabaseName(c, adminURL, devName)
+	devURL := replaceDatabaseName(c.TB, adminURL, devName)
 
-	assertRoleAbsent(c, ctx, adminDB, roleName)
+	assertRoleAbsent(c.TB, ctx, adminDB, roleName)
 
 	document := fmt.Sprintf(`schema "public" {
 }
@@ -154,15 +154,16 @@ permission {
 	documentPath := filepath.Join(t.TempDir(), "declared.hcl")
 	c.Assert(os.WriteFile(documentPath, []byte(document), 0o600), qt.IsNil)
 
-	rendered, diagnostics := runRoleAwareCompatInspect(c, "file://"+documentPath, devURL)
+	rendered, diagnostics := runRoleAwareCompatInspect(c.TB, "file://"+documentPath, devURL)
 
 	c.Assert(rendered, qt.Contains, fmt.Sprintf("role %q", roleName))
 	c.Assert(diagnostics, qt.Not(qt.Contains), "already exist on the server hosting the dev database")
-	assertRolePresent(c, ctx, adminDB, roleName)
+	assertRolePresent(c.TB, ctx, adminDB, roleName)
 }
 
 // createReplayRole creates the cluster-scoped role the fixture grants to.
-func createReplayRole(c *qt.C, ctx context.Context, adminDB *sql.DB, roleName string) {
+func createReplayRole(tb testing.TB, ctx context.Context, adminDB *sql.DB, roleName string) {
+	c := qt.New(tb)
 	c.Helper()
 
 	_, err := adminDB.ExecContext(ctx, "CREATE ROLE "+quoteE2EIdent(roleName)+" NOLOGIN")
@@ -172,7 +173,8 @@ func createReplayRole(c *qt.C, ctx context.Context, adminDB *sql.DB, roleName st
 // seedRoleReplayDB creates the one table that grants to the fixture's role,
 // then verifies through the catalog that the grant landed. A fixture whose
 // GRANT silently did nothing would make the whole replay vacuous.
-func seedRoleReplayDB(c *qt.C, ctx context.Context, dbURL, roleName string) {
+func seedRoleReplayDB(tb testing.TB, ctx context.Context, dbURL, roleName string) {
+	c := qt.New(tb)
 	c.Helper()
 
 	db, err := sql.Open("pgx", dbURL)
@@ -195,7 +197,8 @@ func seedRoleReplayDB(c *qt.C, ctx context.Context, dbURL, roleName string) {
 
 // dropReplayRole removes the cluster-scoped role the fixture created. It runs
 // after both databases are dropped, so nothing depends on the role any more.
-func dropReplayRole(c *qt.C, ctx context.Context, adminDB *sql.DB, roleName string) {
+func dropReplayRole(tb testing.TB, ctx context.Context, adminDB *sql.DB, roleName string) {
+	c := qt.New(tb)
 	c.Helper()
 
 	_, err := adminDB.ExecContext(ctx, "DROP ROLE IF EXISTS "+quoteE2EIdent(roleName))
@@ -204,7 +207,8 @@ func dropReplayRole(c *qt.C, ctx context.Context, adminDB *sql.DB, roleName stri
 
 // assertRoleAbsent is the precondition of the control: a role the server
 // already had would make "it was created" unfalsifiable.
-func assertRoleAbsent(c *qt.C, ctx context.Context, adminDB *sql.DB, roleName string) {
+func assertRoleAbsent(tb testing.TB, ctx context.Context, adminDB *sql.DB, roleName string) {
+	c := qt.New(tb)
 	c.Helper()
 
 	var present int
@@ -217,7 +221,8 @@ func assertRoleAbsent(c *qt.C, ctx context.Context, adminDB *sql.DB, roleName st
 // assertRolePresent reads the catalog rather than the rendered document.
 // Rendered is not applied: a document naming the role proves only that the
 // renderer wrote it down.
-func assertRolePresent(c *qt.C, ctx context.Context, adminDB *sql.DB, roleName string) {
+func assertRolePresent(tb testing.TB, ctx context.Context, adminDB *sql.DB, roleName string) {
+	c := qt.New(tb)
 	c.Helper()
 
 	var present int
@@ -230,7 +235,8 @@ func assertRolePresent(c *qt.C, ctx context.Context, adminDB *sql.DB, roleName s
 // runRoleAwareCompatInspect runs `schema inspect` on the compatibility surface
 // and returns the rendered document and the diagnostics stream, failing the
 // test on a non-nil error.
-func runRoleAwareCompatInspect(c *qt.C, sourceURL, devURL string) (rendered, diagnostics string) {
+func runRoleAwareCompatInspect(tb testing.TB, sourceURL, devURL string) (rendered, diagnostics string) {
+	c := qt.New(tb)
 	c.Helper()
 
 	args := []string{

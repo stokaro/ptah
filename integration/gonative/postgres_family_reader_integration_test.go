@@ -23,9 +23,9 @@ func TestPostgresFamilyReader_CockroachDBCatalogObjects(t *testing.T) {
 	sourceURL := dbtarget.URL(t, dbtarget.CockroachDB)
 	fixture := cockroachReaderFixture()
 
-	result := exercisePostgresFamilyReader(c, t, dsn, sourceURL, fixture)
+	result := exercisePostgresFamilyReader(c.TB, t, dsn, sourceURL, fixture)
 
-	assertPostgresFamilyReaderCatalog(c, result.schema, fixture)
+	assertPostgresFamilyReaderCatalog(c.TB, result.schema, fixture)
 	c.Assert(postgresFamilyCatalogHasSequence(result.schema, fixture.catalogSchema, fixture.sequence), qt.IsTrue)
 }
 
@@ -35,9 +35,9 @@ func TestPostgresFamilyReader_YugabyteDBCatalogObjects(t *testing.T) {
 	sourceURL := dbtarget.URL(t, dbtarget.YugabyteDB)
 	fixture := yugabyteReaderFixture()
 
-	result := exercisePostgresFamilyReader(c, t, dsn, sourceURL, fixture)
+	result := exercisePostgresFamilyReader(c.TB, t, dsn, sourceURL, fixture)
 
-	assertPostgresFamilyReaderCatalog(c, result.schema, fixture)
+	assertPostgresFamilyReaderCatalog(c.TB, result.schema, fixture)
 	c.Assert(postgresFamilyCatalogHasSequence(result.schema, fixture.catalogSchema, fixture.sequence), qt.IsTrue)
 }
 
@@ -145,34 +145,36 @@ func yugabyteReaderFixture() postgresFamilyReaderFixture {
 }
 
 func exercisePostgresFamilyReader(
-	c *qt.C,
+	tb testing.TB,
 	t *testing.T,
 	dsn string,
 	sourceURL string,
 	fixture postgresFamilyReaderFixture,
 ) postgresFamilyReaderResult {
+	c := qt.New(tb)
 	c.Helper()
 	t.Setenv("PTAH_ATLAS_INSPECT_ALL_BLOCKS", "1")
 
 	db, err := sql.Open("pgx", dsn)
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { c.Check(db.Close(), qt.IsNil) })
-	executePostgresFamilyReaderStatements(c, db, fixture.cleanup, "cleanup "+fixture.databaseName+" reader fixture")
+	executePostgresFamilyReaderStatements(c.TB, db, fixture.cleanup, "cleanup "+fixture.databaseName+" reader fixture")
 	c.Cleanup(func() {
-		executePostgresFamilyReaderStatements(c, db, fixture.cleanup, "cleanup "+fixture.databaseName+" reader fixture")
+		executePostgresFamilyReaderStatements(c.TB, db, fixture.cleanup, "cleanup "+fixture.databaseName+" reader fixture")
 	})
-	executePostgresFamilyReaderStatements(c, db, fixture.setup, "setup "+fixture.databaseName+" reader fixture")
+	executePostgresFamilyReaderStatements(c.TB, db, fixture.setup, "setup "+fixture.databaseName+" reader fixture")
 
-	live := readPostgresFamilyReaderSchema(c, t, sourceURL, fixture.schema)
-	nativeSQL := runPostgresFamilyReadDB(c, t, sourceURL, fixture)
-	compatHCL := runPostgresFamilyCompatInspect(c, t, sourceURL, fixture)
-	assertPostgresFamilyReaderOutput(c, nativeSQL, fixture)
-	assertPostgresFamilyReaderOutput(c, compatHCL, fixture)
+	live := readPostgresFamilyReaderSchema(c.TB, t, sourceURL, fixture.schema)
+	nativeSQL := runPostgresFamilyReadDB(c.TB, t, sourceURL, fixture)
+	compatHCL := runPostgresFamilyCompatInspect(c.TB, t, sourceURL, fixture)
+	assertPostgresFamilyReaderOutput(c.TB, nativeSQL, fixture)
+	assertPostgresFamilyReaderOutput(c.TB, compatHCL, fixture)
 
 	return postgresFamilyReaderResult{schema: live}
 }
 
-func executePostgresFamilyReaderStatements(c *qt.C, db *sql.DB, statements []string, label string) {
+func executePostgresFamilyReaderStatements(tb testing.TB, db *sql.DB, statements []string, label string) {
+	c := qt.New(tb)
 	c.Helper()
 	for _, statement := range statements {
 		_, err := db.Exec(statement)
@@ -181,11 +183,12 @@ func executePostgresFamilyReaderStatements(c *qt.C, db *sql.DB, statements []str
 }
 
 func readPostgresFamilyReaderSchema(
-	c *qt.C,
+	tb testing.TB,
 	t *testing.T,
 	sourceURL string,
 	schema string,
 ) *dbschematypes.DBSchema {
+	c := qt.New(tb)
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(t.Context(), sourceURL)
 	c.Assert(err, qt.IsNil)
@@ -195,7 +198,8 @@ func readPostgresFamilyReaderSchema(
 	return live
 }
 
-func runPostgresFamilyReadDB(c *qt.C, t *testing.T, sourceURL string, fixture postgresFamilyReaderFixture) string {
+func runPostgresFamilyReadDB(tb testing.TB, t *testing.T, sourceURL string, fixture postgresFamilyReaderFixture) string {
+	c := qt.New(tb)
 	c.Helper()
 	cmd := readdb.NewReadDBCommand()
 	cmd.SetContext(t.Context())
@@ -210,11 +214,12 @@ func runPostgresFamilyReadDB(c *qt.C, t *testing.T, sourceURL string, fixture po
 }
 
 func runPostgresFamilyCompatInspect(
-	c *qt.C,
+	tb testing.TB,
 	t *testing.T,
 	sourceURL string,
 	fixture postgresFamilyReaderFixture,
 ) string {
+	c := qt.New(tb)
 	c.Helper()
 	cmd := atlas.NewCompatCommand("ptah-compat")
 	cmd.SetContext(t.Context())
@@ -235,10 +240,11 @@ func runPostgresFamilyCompatInspect(
 }
 
 func assertPostgresFamilyReaderCatalog(
-	c *qt.C,
+	tb testing.TB,
 	schema *dbschematypes.DBSchema,
 	fixture postgresFamilyReaderFixture,
 ) {
+	c := qt.New(tb)
 	c.Helper()
 	c.Assert(postgresFamilyCatalogHasTable(schema, fixture.catalogSchema, fixture.table), qt.IsTrue)
 	c.Assert(postgresFamilyCatalogHasTable(schema, fixture.catalogSchema, fixture.view), qt.IsFalse)
@@ -250,7 +256,8 @@ func assertPostgresFamilyReaderCatalog(
 	c.Assert(postgresFamilyCatalogHasRLSPolicy(schema, fixture.catalogSchema, fixture.table, fixture.policy), qt.IsTrue)
 }
 
-func assertPostgresFamilyReaderOutput(c *qt.C, output string, fixture postgresFamilyReaderFixture) {
+func assertPostgresFamilyReaderOutput(tb testing.TB, output string, fixture postgresFamilyReaderFixture) {
+	c := qt.New(tb)
 	c.Helper()
 	c.Assert(output, qt.Contains, fixture.table)
 	c.Assert(output, qt.Contains, fixture.index)

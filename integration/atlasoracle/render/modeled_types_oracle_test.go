@@ -114,7 +114,7 @@ func TestOracleModeledColumnTypesMatchTheBinary(t *testing.T) {
 				t.Run("modeled/"+name, func(t *testing.T) {
 					c := qt.New(t)
 
-					out, code := runTypeOracle(c, oracle, devURL, dialect, name)
+					out, code := runTypeOracle(c.TB, oracle, devURL, dialect, name)
 					c.Assert(code, qt.Equals, 0,
 						qt.Commentf("the binary refuses `type = %s` on %s, so rendering it bare emits unreadable HCL: %s",
 							name, dialect, out))
@@ -128,7 +128,7 @@ func TestOracleModeledColumnTypesMatchTheBinary(t *testing.T) {
 					c.Assert(atlashclrender.IsModeledColumnType(dialect, name), qt.IsFalse,
 						qt.Commentf("%q is a control: it must stay absent from the modeled set", name))
 
-					out, code := runTypeOracle(c, oracle, devURL, dialect, name)
+					out, code := runTypeOracle(c.TB, oracle, devURL, dialect, name)
 					c.Assert(code, qt.Not(qt.Equals), 0,
 						qt.Commentf("the binary now accepts `type = %s` on %s; the control has stopped controlling anything: %s",
 							name, dialect, out))
@@ -211,7 +211,7 @@ func TestOracleAcceptsWrappedTypeExpressions(t *testing.T) {
 			c := qt.New(t)
 			devURL := requireDevURL(t, test.dialect)
 
-			out, code := runTypeOracle(c, oracle, devURL, test.dialect, test.expr)
+			out, code := runTypeOracle(c.TB, oracle, devURL, test.dialect, test.expr)
 			c.Assert(code, qt.Equals, 0,
 				qt.Commentf("`type = %s` on %s exited %d: %s", test.expr, test.dialect, code, out))
 		})
@@ -271,7 +271,7 @@ func TestOracleRefusesUnsupportedTypeExpressions(t *testing.T) {
 			c := qt.New(t)
 			devURL := requireDevURL(t, test.dialect)
 
-			out, code := runTypeOracle(c, oracle, devURL, test.dialect, test.expr)
+			out, code := runTypeOracle(c.TB, oracle, devURL, test.dialect, test.expr)
 			c.Assert(code, qt.Not(qt.Equals), 0,
 				qt.Commentf("`type = %s` on %s exited %d: %s", test.expr, test.dialect, code, out))
 		})
@@ -337,7 +337,8 @@ func requireDevURL(t *testing.T, dialect string) string {
 // the first subtest is not the one paying for it in an otherwise parallel run.
 var typeOracleWarmup sync.Once
 
-func runTypeOracle(c *qt.C, oracle, devURL, dialect, typeExpression string) (string, int) {
+func runTypeOracle(tb testing.TB, oracle, devURL, dialect, typeExpression string) (string, int) {
+	c := qt.New(tb)
 	c.Helper()
 
 	schema := schemaNameByDialect[dialect]

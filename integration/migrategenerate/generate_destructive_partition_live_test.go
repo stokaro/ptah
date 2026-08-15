@@ -41,7 +41,7 @@ func TestMigrateGenerateWritesTheUndeclaredPartitionDropUnlessAskedToCheck(t *te
 
 	dbURL, conn := requireMigrateGeneratePostgresTestConnection(t, ctx)
 	defer dbschema.CloseAndWarn(conn)
-	releaseLock := acquireMigrateGenerateTestLock(c, ctx, conn)
+	releaseLock := acquireMigrateGenerateTestLock(c.TB, ctx, conn)
 	defer releaseLock()
 	defer func() {
 		c.Assert(conn.SchemaWriter().DropAllTables(ctx), qt.IsNil)
@@ -62,13 +62,13 @@ func TestMigrateGenerateWritesTheUndeclaredPartitionDropUnlessAskedToCheck(t *te
 	`)
 	c.Assert(err, qt.IsNil)
 
-	entitiesDir := writeMigrateGenerateParentOnlyEntities(c, c.TempDir())
+	entitiesDir := writeMigrateGenerateParentOnlyEntities(c.TB, c.TempDir())
 
 	c.Run("--check-destructive refuses before anything is written", func(c *qt.C) {
 		migrationsDir := filepath.Join(c.TempDir(), "migrations")
 		c.Assert(os.MkdirAll(migrationsDir, 0o755), qt.IsNil)
 
-		err := runMigrateGenerate(c, []string{
+		err := runMigrateGenerate(c.TB, []string{
 			"--root-dir", entitiesDir,
 			"--db-url", dbURL,
 			"--migrations-dir", migrationsDir,
@@ -77,14 +77,14 @@ func TestMigrateGenerateWritesTheUndeclaredPartitionDropUnlessAskedToCheck(t *te
 		})
 
 		c.Assert(err, qt.ErrorMatches, "destructive migration statements require AllowDestructive")
-		c.Assert(migrateGenerateSQLFiles(c, migrationsDir), qt.HasLen, 0)
+		c.Assert(migrateGenerateSQLFiles(c.TB, migrationsDir), qt.HasLen, 0)
 	})
 
 	c.Run("the default writes the DROP TABLE and reports success", func(c *qt.C) {
 		migrationsDir := filepath.Join(c.TempDir(), "migrations")
 		c.Assert(os.MkdirAll(migrationsDir, 0o755), qt.IsNil)
 
-		err := runMigrateGenerate(c, []string{
+		err := runMigrateGenerate(c.TB, []string{
 			"--root-dir", entitiesDir,
 			"--db-url", dbURL,
 			"--migrations-dir", migrationsDir,
@@ -92,7 +92,7 @@ func TestMigrateGenerateWritesTheUndeclaredPartitionDropUnlessAskedToCheck(t *te
 		})
 
 		c.Assert(err, qt.IsNil)
-		upSQL := migrateGenerateUpSQL(c, migrationsDir)
+		upSQL := migrateGenerateUpSQL(c.TB, migrationsDir)
 		c.Assert(upSQL, qt.Contains, `DROP TABLE IF EXISTS "events_2026" CASCADE;`)
 		// The declared half of the plan is here too, so the row above reports
 		// the destructive gate rather than a plan that came out empty.
@@ -103,7 +103,7 @@ func TestMigrateGenerateWritesTheUndeclaredPartitionDropUnlessAskedToCheck(t *te
 		migrationsDir := filepath.Join(c.TempDir(), "migrations")
 		c.Assert(os.MkdirAll(migrationsDir, 0o755), qt.IsNil)
 
-		err := runMigrateGenerate(c, []string{
+		err := runMigrateGenerate(c.TB, []string{
 			"--root-dir", entitiesDir,
 			"--db-url", dbURL,
 			"--migrations-dir", migrationsDir,
@@ -114,7 +114,7 @@ func TestMigrateGenerateWritesTheUndeclaredPartitionDropUnlessAskedToCheck(t *te
 
 		c.Assert(err, qt.IsNil)
 		c.Assert(
-			migrateGenerateUpSQL(c, migrationsDir),
+			migrateGenerateUpSQL(c.TB, migrationsDir),
 			qt.Contains,
 			`DROP TABLE IF EXISTS "events_2026" CASCADE;`,
 		)
@@ -124,7 +124,8 @@ func TestMigrateGenerateWritesTheUndeclaredPartitionDropUnlessAskedToCheck(t *te
 // runMigrateGenerate executes one `migrations generate` invocation and returns
 // its error, with stdout and stderr captured so a failure reports what the
 // command said.
-func runMigrateGenerate(c *qt.C, args []string) error {
+func runMigrateGenerate(tb testing.TB, args []string) error {
+	c := qt.New(tb)
 	c.Helper()
 	var stdout, stderr bytes.Buffer
 	cmd := migrate.NewMigrateGenerateCommand()
@@ -138,7 +139,8 @@ func runMigrateGenerate(c *qt.C, args []string) error {
 
 // migrateGenerateSQLFiles lists the .sql files a generate invocation left in a
 // directory, so "nothing was written" is measured against the directory.
-func migrateGenerateSQLFiles(c *qt.C, dir string) []string {
+func migrateGenerateSQLFiles(tb testing.TB, dir string) []string {
+	c := qt.New(tb)
 	c.Helper()
 	matches, err := filepath.Glob(filepath.Join(dir, "*.sql"))
 	c.Assert(err, qt.IsNil)
@@ -148,7 +150,8 @@ func migrateGenerateSQLFiles(c *qt.C, dir string) []string {
 // migrateGenerateUpSQL reads the one generated up file in a directory. It
 // asserts there is exactly one, so a row that reads the wrong migration says so
 // rather than matching against whichever file the glob happened to order first.
-func migrateGenerateUpSQL(c *qt.C, dir string) string {
+func migrateGenerateUpSQL(tb testing.TB, dir string) string {
+	c := qt.New(tb)
 	c.Helper()
 	matches, err := filepath.Glob(filepath.Join(dir, "*.up.sql"))
 	c.Assert(err, qt.IsNil)
@@ -158,7 +161,8 @@ func migrateGenerateUpSQL(c *qt.C, dir string) string {
 	return string(content)
 }
 
-func writeMigrateGenerateParentOnlyEntities(c *qt.C, dir string) string {
+func writeMigrateGenerateParentOnlyEntities(tb testing.TB, dir string) string {
+	c := qt.New(tb)
 	c.Helper()
 	entitiesDir := filepath.Join(dir, "entities")
 	c.Assert(os.MkdirAll(entitiesDir, 0o755), qt.IsNil)

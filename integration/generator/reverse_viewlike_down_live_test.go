@@ -197,7 +197,7 @@ func TestReverseViewLikeObjects_DownRoundTrip_Integration(t *testing.T) {
 			//    in the catalog are the ones Ptah writes rather than a hand-typed
 			//    approximation of them.
 			prior := tc.prior()
-			seedSQL, _ := generateLiveMigrationSQL(c, conn, prior)
+			seedSQL, _ := generateLiveMigrationSQL(c.TB, conn, prior)
 			execScript(c, conn, seedSQL, "SEED")
 
 			dbPrior, err := conn.Reader().ReadSchema()
@@ -209,7 +209,7 @@ func TestReverseViewLikeObjects_DownRoundTrip_Integration(t *testing.T) {
 			upDiff := schemadiff.CompareWithDialect(target, dbPrior, "postgres")
 			c.Assert(upDiff.HasChanges(), qt.IsTrue, qt.Commentf("the up migration must have something to do"))
 
-			upSQL, downSQL := generateLiveMigrationSQL(c, conn, target)
+			upSQL, downSQL := generateLiveMigrationSQL(c.TB, conn, target)
 			unquotedUp := legacyRenderedSQL(upSQL)
 			for _, fragment := range tc.upLacks {
 				c.Assert(unquotedUp, qt.Not(qt.Contains), fragment, qt.Commentf("up SQL:\n%s", upSQL))

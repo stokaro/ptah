@@ -46,7 +46,7 @@ func TestOracleKeepsTheIndexStorageParameterPtahRenders(t *testing.T) {
 	t.Run("rendered", func(t *testing.T) {
 		c := qt.New(t)
 
-		out, code := runReferenceOracle(c, oracle, devURL, rendered)
+		out, code := runReferenceOracle(c.TB, oracle, devURL, rendered)
 
 		c.Assert(code, qt.Equals, 0,
 			qt.Commentf("the binary refuses the document ptah-compat renders: %s\n%s", out, rendered))
@@ -62,7 +62,7 @@ func TestOracleKeepsTheIndexStorageParameterPtahRenders(t *testing.T) {
 		c.Assert(mutated, qt.Not(qt.Equals), rendered,
 			qt.Commentf("substituting the attribute changed nothing, so this row measures nothing"))
 
-		out, code := runReferenceOracle(c, oracle, devURL, mutated)
+		out, code := runReferenceOracle(c.TB, oracle, devURL, mutated)
 
 		c.Assert(code, qt.Equals, 0,
 			qt.Commentf("the plural spelling is now refused rather than ignored,"+

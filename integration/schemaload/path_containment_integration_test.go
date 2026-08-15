@@ -33,7 +33,8 @@ type containmentFixture struct {
 //	    link      -> ../outside, a symlink whose target leaves the root
 //	  outside/
 //	    schema.sql   destination outside the root: table outside_target
-func newContainmentFixture(t *testing.T, c *qt.C) containmentFixture {
+func newContainmentFixture(t *testing.T, tb testing.TB) containmentFixture {
+	c := qt.New(tb)
 	t.Helper()
 	parent := t.TempDir()
 	root := filepath.Join(parent, "root")
@@ -49,7 +50,8 @@ func newContainmentFixture(t *testing.T, c *qt.C) containmentFixture {
 	return containmentFixture{root: root, outside: outside}
 }
 
-func assertReachedTable(c *qt.C, database *goschema.Database, err error, name string) {
+func assertReachedTable(tb testing.TB, database *goschema.Database, err error, name string) {
+	c := qt.New(tb)
 	c.Assert(err, qt.IsNil)
 	c.Assert(database, qt.IsNotNil)
 	c.Assert(database.Tables, qt.HasLen, 1)
@@ -90,7 +92,7 @@ func TestLoad_SchemaFileContainmentRefusesEscapes(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			c := qt.New(t)
-			fixture := newContainmentFixture(t, c)
+			fixture := newContainmentFixture(t, c.TB)
 
 			database, err := schemaload.Load(schemaload.Options{
 				SchemaFiles: []string{tc.spelling(fixture)},
@@ -128,14 +130,14 @@ func TestLoad_SchemaFileContainmentAllowsContainedDestinations(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			c := qt.New(t)
-			fixture := newContainmentFixture(t, c)
+			fixture := newContainmentFixture(t, c.TB)
 
 			database, err := schemaload.Load(schemaload.Options{
 				SchemaFiles: []string{tc.spelling(fixture)},
 				Dialect:     "sqlite",
 			})
 
-			assertReachedTable(c, database, err, "inside_target")
+			assertReachedTable(c.TB, database, err, "inside_target")
 		})
 	}
 }
@@ -153,12 +155,12 @@ func TestLoad_SchemaFileContainmentAllowsContainedDestinations(t *testing.T) {
 // loud.
 func TestLoad_AbsoluteSchemaFileOutsideTheRootIsStillAccepted(t *testing.T) {
 	c := qt.New(t)
-	fixture := newContainmentFixture(t, c)
+	fixture := newContainmentFixture(t, c.TB)
 
 	database, err := schemaload.Load(schemaload.Options{
 		SchemaFiles: []string{filepath.Join(fixture.outside, "schema.sql")},
 		Dialect:     "sqlite",
 	})
 
-	assertReachedTable(c, database, err, "outside_target")
+	assertReachedTable(c.TB, database, err, "outside_target")
 }

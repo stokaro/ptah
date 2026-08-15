@@ -33,7 +33,7 @@ func TestAtlasMigrateDiffPostgresFamilyDevCleanupE2E(t *testing.T) {
 
 	repoRoot := e2eRepoRoot(t)
 	binaryPath := filepath.Join(t.TempDir(), "ptah-compat")
-	buildPtahCompat(c, ctx, repoRoot, binaryPath)
+	buildPtahCompat(c.TB, ctx, repoRoot, binaryPath)
 
 	tests := []postgresFamilyMigrateDiffCase{
 		{name: "cockroachdb", engine: dbtarget.CockroachDB},
@@ -42,20 +42,21 @@ func TestAtlasMigrateDiffPostgresFamilyDevCleanupE2E(t *testing.T) {
 
 	for _, test := range tests {
 		c.Run(test.name, func(c *qt.C) {
-			runPostgresFamilyMigrateDiffCase(c, ctx, binaryPath, test)
+			runPostgresFamilyMigrateDiffCase(c.TB, ctx, binaryPath, test)
 		})
 	}
 }
 
 func runPostgresFamilyMigrateDiffCase(
-	c *qt.C,
+	tb testing.TB,
 	ctx context.Context,
 	binaryPath string,
 	test postgresFamilyMigrateDiffCase,
 ) {
+	c := qt.New(tb)
 	c.Helper()
 	adminURL := dbtarget.URL(c, test.engine)
-	adminDB, err := sql.Open("pgx", postgresFamilyDriverURL(c, adminURL))
+	adminDB, err := sql.Open("pgx", postgresFamilyDriverURL(c.TB, adminURL))
 	c.Assert(err, qt.IsNil)
 	defer adminDB.Close()
 	c.Assert(adminDB.PingContext(ctx), qt.IsNil)
@@ -64,22 +65,22 @@ func runPostgresFamilyMigrateDiffCase(
 	desiredName := fmt.Sprintf("ptah_diff_desired_%d", suffix)
 	devName := fmt.Sprintf("ptah_diff_dev_%d", suffix)
 	applyName := fmt.Sprintf("ptah_diff_apply_%d", suffix)
-	createE2EDatabase(c, ctx, adminDB, desiredName)
-	defer dropPostgresFamilyE2EDatabase(c, adminDB, desiredName)
-	createE2EDatabase(c, ctx, adminDB, devName)
-	defer dropPostgresFamilyE2EDatabase(c, adminDB, devName)
-	createE2EDatabase(c, ctx, adminDB, applyName)
-	defer dropPostgresFamilyE2EDatabase(c, adminDB, applyName)
+	createE2EDatabase(c.TB, ctx, adminDB, desiredName)
+	defer dropPostgresFamilyE2EDatabase(c.TB, adminDB, desiredName)
+	createE2EDatabase(c.TB, ctx, adminDB, devName)
+	defer dropPostgresFamilyE2EDatabase(c.TB, adminDB, devName)
+	createE2EDatabase(c.TB, ctx, adminDB, applyName)
+	defer dropPostgresFamilyE2EDatabase(c.TB, adminDB, applyName)
 
-	desiredURL := replaceDatabaseName(c, adminURL, desiredName)
-	devURL := replaceDatabaseName(c, adminURL, devName)
-	applyURL := replaceDatabaseName(c, adminURL, applyName)
-	execPostgresFamilySQL(c, ctx, desiredURL, `
+	desiredURL := replaceDatabaseName(c.TB, adminURL, desiredName)
+	devURL := replaceDatabaseName(c.TB, adminURL, devName)
+	applyURL := replaceDatabaseName(c.TB, adminURL, applyName)
+	execPostgresFamilySQL(c.TB, ctx, desiredURL, `
 		CREATE TABLE desired_items (
 			id BIGINT PRIMARY KEY,
 			name TEXT NOT NULL
 		)`)
-	execPostgresFamilySQL(c, ctx, devURL, `
+	execPostgresFamilySQL(c.TB, ctx, devURL, `
 		CREATE TABLE stale_parent (id BIGINT PRIMARY KEY);
 		CREATE VIEW stale_parent_view AS SELECT id FROM stale_parent`)
 
@@ -94,21 +95,22 @@ func runPostgresFamilyMigrateDiffCase(
 		"add_items")
 
 	c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", output))
-	migrationSQL := readFirstMatchingFile(c, migrationsDir, "*_add_items.sql")
+	migrationSQL := readFirstMatchingFile(c.TB, migrationsDir, "*_add_items.sql")
 	c.Assert(migrationSQL, qt.Contains, "CREATE TABLE")
 	c.Assert(migrationSQL, qt.Contains, "desired_items")
-	c.Assert(postgresFamilyObjectCount(c, ctx, desiredURL), qt.Equals, 1)
-	c.Assert(postgresFamilyObjectCount(c, ctx, devURL), qt.Equals, 0)
+	c.Assert(postgresFamilyObjectCount(c.TB, ctx, desiredURL), qt.Equals, 1)
+	c.Assert(postgresFamilyObjectCount(c.TB, ctx, devURL), qt.Equals, 0)
 
 	output, err = runPtah(ctx, c.TempDir(), binaryPath,
 		"migrate", "apply",
 		"--url", applyURL,
 		"--dir", "file://"+migrationsDir)
 	c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", output))
-	c.Assert(e2eTableCount(c, ctx, postgresFamilyDriverURL(c, applyURL), "desired_items"), qt.Equals, 1)
+	c.Assert(e2eTableCount(c.TB, ctx, postgresFamilyDriverURL(c.TB, applyURL), "desired_items"), qt.Equals, 1)
 }
 
-func postgresFamilyDriverURL(c *qt.C, rawURL string) string {
+func postgresFamilyDriverURL(tb testing.TB, rawURL string) string {
+	c := qt.New(tb)
 	c.Helper()
 	parsed, err := url.Parse(rawURL)
 	c.Assert(err, qt.IsNil)
@@ -116,18 +118,20 @@ func postgresFamilyDriverURL(c *qt.C, rawURL string) string {
 	return parsed.String()
 }
 
-func execPostgresFamilySQL(c *qt.C, ctx context.Context, dbURL, sqlExpr string) {
+func execPostgresFamilySQL(tb testing.TB, ctx context.Context, dbURL, sqlExpr string) {
+	c := qt.New(tb)
 	c.Helper()
-	db, err := sql.Open("pgx", postgresFamilyDriverURL(c, dbURL))
+	db, err := sql.Open("pgx", postgresFamilyDriverURL(c.TB, dbURL))
 	c.Assert(err, qt.IsNil)
 	defer db.Close()
 	_, err = db.ExecContext(ctx, sqlExpr)
 	c.Assert(err, qt.IsNil)
 }
 
-func postgresFamilyObjectCount(c *qt.C, ctx context.Context, dbURL string) int {
+func postgresFamilyObjectCount(tb testing.TB, ctx context.Context, dbURL string) int {
+	c := qt.New(tb)
 	c.Helper()
-	db, err := sql.Open("pgx", postgresFamilyDriverURL(c, dbURL))
+	db, err := sql.Open("pgx", postgresFamilyDriverURL(c.TB, dbURL))
 	c.Assert(err, qt.IsNil)
 	defer db.Close()
 
@@ -143,7 +147,8 @@ func postgresFamilyObjectCount(c *qt.C, ctx context.Context, dbURL string) int {
 	return count
 }
 
-func dropPostgresFamilyE2EDatabase(c *qt.C, adminDB *sql.DB, name string) {
+func dropPostgresFamilyE2EDatabase(tb testing.TB, adminDB *sql.DB, name string) {
+	c := qt.New(tb)
 	c.Helper()
 	cleanupCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()

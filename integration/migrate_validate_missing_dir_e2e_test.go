@@ -20,8 +20,8 @@ func TestMigrateValidateDirectoryDiagnosticsE2E(t *testing.T) {
 	repoRoot := e2eRepoRoot(t)
 	compatBinary := filepath.Join(t.TempDir(), "ptah-compat")
 	nativeBinary := filepath.Join(t.TempDir(), "ptah")
-	buildPtahCompat(c, ctx, repoRoot, compatBinary)
-	buildPtah(c, ctx, repoRoot, nativeBinary)
+	buildPtahCompat(c.TB, ctx, repoRoot, compatBinary)
+	buildPtah(c.TB, ctx, repoRoot, nativeBinary)
 
 	compatCases := []struct {
 		name       string
@@ -63,7 +63,7 @@ func TestMigrateValidateDirectoryDiagnosticsE2E(t *testing.T) {
 
 			stdout, stderr, err := runCLIProcess(ctx, dir, compatBinary, test.args...)
 
-			c.Assert(exitStatusOf(c, err), qt.Equals, 1)
+			c.Assert(exitStatusOf(c.TB, err), qt.Equals, 1)
 			c.Assert(stdout, qt.Equals, "")
 			c.Assert(stderr, qt.Equals, test.wantStderr)
 		})
@@ -77,7 +77,7 @@ func TestMigrateValidateDirectoryDiagnosticsE2E(t *testing.T) {
 			"migrate", "validate", "--dir", "file://migration.sql",
 		)
 
-		c.Assert(exitStatusOf(c, err), qt.Equals, 1)
+		c.Assert(exitStatusOf(c.TB, err), qt.Equals, 1)
 		c.Assert(stdout, qt.Equals, "")
 		c.Assert(stderr, qt.Equals,
 			"Error: migrations directory migration.sql: not a directory\n")
@@ -90,7 +90,7 @@ func TestMigrateValidateDirectoryDiagnosticsE2E(t *testing.T) {
 			"migrations", "validate", "--dir", "migrations",
 		)
 
-		c.Assert(exitStatusOf(c, err), qt.Equals, 2)
+		c.Assert(exitStatusOf(c.TB, err), qt.Equals, 2)
 		c.Assert(stdout, qt.Equals, "")
 		c.Assert(stderr, qt.Equals,
 			"error: migrations directory migrations: stat migrations: no such file or directory\n")

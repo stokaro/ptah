@@ -92,7 +92,7 @@ func TestInspectLive_SchemaScopeClean(t *testing.T) {
 
 	for _, test := range tests {
 		c.Run(test.name, func(c *qt.C) {
-			conn := newMigratecleanLiveConnection(c, ctx, "search_path=public", test.setup)
+			conn := newMigratecleanLiveConnection(c.TB, ctx, "search_path=public", test.setup)
 
 			scope, err := migrateclean.Inspect(ctx, conn)
 
@@ -162,7 +162,7 @@ func TestInspectLive_SchemaScopeUnclean(t *testing.T) {
 
 	for _, test := range tests {
 		c.Run(test.name, func(c *qt.C) {
-			conn := newMigratecleanLiveConnection(c, ctx, "search_path=public", test.setup)
+			conn := newMigratecleanLiveConnection(c.TB, ctx, "search_path=public", test.setup)
 
 			scope, err := migrateclean.Inspect(ctx, conn)
 
@@ -236,7 +236,7 @@ func TestInspectLive_RealmScopeClean(t *testing.T) {
 
 	for _, test := range tests {
 		c.Run(test.name, func(c *qt.C) {
-			conn := newMigratecleanLiveConnection(c, ctx, "", test.setup)
+			conn := newMigratecleanLiveConnection(c.TB, ctx, "", test.setup)
 
 			scope, err := migrateclean.Inspect(ctx, conn)
 
@@ -368,7 +368,7 @@ func TestInspectLive_RealmScopeUnclean(t *testing.T) {
 
 	for _, test := range tests {
 		c.Run(test.name, func(c *qt.C) {
-			conn := newMigratecleanLiveConnection(c, ctx, "", test.setup)
+			conn := newMigratecleanLiveConnection(c.TB, ctx, "", test.setup)
 
 			scope, err := migrateclean.Inspect(ctx, conn)
 
@@ -413,7 +413,7 @@ func TestInspectLive_ScopeSelection(t *testing.T) {
 
 	for _, test := range tests {
 		c.Run(test.name, func(c *qt.C) {
-			conn := newMigratecleanLiveConnection(c, ctx, test.query, []string{"CREATE SCHEMA extra"})
+			conn := newMigratecleanLiveConnection(c.TB, ctx, test.query, []string{"CREATE SCHEMA extra"})
 
 			scope, err := migrateclean.Inspect(ctx, conn)
 
@@ -437,13 +437,14 @@ func TestInspectLive_ScopeSelection(t *testing.T) {
 // URL carrying `options=-c search_path=extra` cannot be opened at all until
 // `extra` exists.
 func newMigratecleanLiveConnection(
-	c *qt.C,
+	tb testing.TB,
 	ctx context.Context,
 	query string,
 	setup []string,
 ) *dbschema.DatabaseConnection {
+	c := qt.New(tb)
 	c.Helper()
-	adminURL := requireMigratecleanLiveURL(c)
+	adminURL := requireMigratecleanLiveURL(c.TB)
 	admin, err := sql.Open("pgx", adminURL)
 	c.Assert(err, qt.IsNil)
 	c.Assert(admin.PingContext(ctx), qt.IsNil)
@@ -466,7 +467,7 @@ func newMigratecleanLiveConnection(
 	parsed.Path = "/" + name
 	parsed.RawPath = ""
 	plainURL := parsed.String()
-	applyMigratecleanFixture(c, ctx, plainURL, setup)
+	applyMigratecleanFixture(c.TB, ctx, plainURL, setup)
 
 	// RawQuery is assigned rather than built through url.Values so a fixture
 	// can spell an already-encoded parameter such as `options=-c%20…` exactly
@@ -480,7 +481,8 @@ func newMigratecleanLiveConnection(
 
 // applyMigratecleanFixture puts the throwaway database into the state under
 // test through a connection of its own.
-func applyMigratecleanFixture(c *qt.C, ctx context.Context, dbURL string, statements []string) {
+func applyMigratecleanFixture(tb testing.TB, ctx context.Context, dbURL string, statements []string) {
+	c := qt.New(tb)
 	c.Helper()
 	if len(statements) == 0 {
 		return
@@ -507,7 +509,8 @@ func migratecleanQuery(base, extra string) string {
 	}
 }
 
-func requireMigratecleanLiveURL(c *qt.C) string {
+func requireMigratecleanLiveURL(tb testing.TB) string {
+	c := qt.New(tb)
 	c.Helper()
 	for _, name := range []string{"POSTGRES_TEST_DSN", "POSTGRES_URL", "TEST_DATABASE_URL"} {
 		raw := os.Getenv(name)

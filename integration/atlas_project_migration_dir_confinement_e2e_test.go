@@ -24,7 +24,7 @@ func TestAtlasProjectMigrationDirectoryConfinementE2E(t *testing.T) {
 
 	repoRoot := e2eRepoRoot(t)
 	compatBinary := filepath.Join(t.TempDir(), "ptah-compat")
-	buildPtahCompat(c, ctx, repoRoot, compatBinary)
+	buildPtahCompat(c.TB, ctx, repoRoot, compatBinary)
 
 	escapeCases := []struct {
 		name   string
@@ -51,7 +51,7 @@ func TestAtlasProjectMigrationDirectoryConfinementE2E(t *testing.T) {
 			outsideDir := filepath.Join(parentDir, "outside")
 			c.Assert(os.Mkdir(projectDir, 0o700), qt.IsNil)
 			c.Assert(os.Mkdir(outsideDir, 0o700), qt.IsNil)
-			writeAtlasProjectMigrateDiffFixture(c, projectDir, test.dirURL(projectDir, outsideDir))
+			writeAtlasProjectMigrateDiffFixture(c.TB, projectDir, test.dirURL(projectDir, outsideDir))
 
 			stdout, stderr, err := runCLIProcess(ctx, projectDir, compatBinary,
 				"migrate", "diff", "confined",
@@ -59,10 +59,10 @@ func TestAtlasProjectMigrationDirectoryConfinementE2E(t *testing.T) {
 				"--env", "local",
 			)
 
-			c.Assert(exitStatusOf(c, err), qt.Equals, 1)
+			c.Assert(exitStatusOf(c.TB, err), qt.Equals, 1)
 			c.Assert(stdout, qt.Equals, "")
 			c.Assert(stderr, qt.Contains, "outside allowed root")
-			c.Assert(readDirectoryNames(c, outsideDir), qt.HasLen, 0)
+			c.Assert(readDirectoryNames(c.TB, outsideDir), qt.HasLen, 0)
 		})
 	}
 
@@ -88,7 +88,7 @@ func TestAtlasProjectMigrationDirectoryConfinementE2E(t *testing.T) {
 		c.Run(test.name, func(c *qt.C) {
 			projectDir := c.TempDir()
 			migrationsDir := filepath.Join(projectDir, "migrations")
-			writeAtlasProjectMigrateDiffFixture(c, projectDir, test.dirURL(projectDir, migrationsDir))
+			writeAtlasProjectMigrateDiffFixture(c.TB, projectDir, test.dirURL(projectDir, migrationsDir))
 
 			stdout, stderr, err := runCLIProcess(ctx, projectDir, compatBinary,
 				"migrate", "diff", "inside",
@@ -101,7 +101,7 @@ func TestAtlasProjectMigrationDirectoryConfinementE2E(t *testing.T) {
 			matches, globErr := filepath.Glob(filepath.Join(migrationsDir, "*_inside.sql"))
 			c.Assert(globErr, qt.IsNil)
 			c.Assert(matches, qt.HasLen, 1)
-			c.Assert(readDirectoryNames(c, migrationsDir), qt.HasLen, 2)
+			c.Assert(readDirectoryNames(c.TB, migrationsDir), qt.HasLen, 2)
 		})
 	}
 
@@ -111,7 +111,7 @@ func TestAtlasProjectMigrationDirectoryConfinementE2E(t *testing.T) {
 		outsideDir := filepath.Join(parentDir, "outside")
 		c.Assert(os.Mkdir(projectDir, 0o700), qt.IsNil)
 		c.Assert(os.Mkdir(outsideDir, 0o700), qt.IsNil)
-		writeAtlasProjectMigrateDiffFixture(c, projectDir, "file://../blocked-by-cli-override")
+		writeAtlasProjectMigrateDiffFixture(c.TB, projectDir, "file://../blocked-by-cli-override")
 
 		stdout, stderr, err := runCLIProcess(ctx, projectDir, compatBinary,
 			"migrate", "diff", "explicit",
@@ -125,11 +125,12 @@ func TestAtlasProjectMigrationDirectoryConfinementE2E(t *testing.T) {
 		matches, globErr := filepath.Glob(filepath.Join(outsideDir, "*_explicit.sql"))
 		c.Assert(globErr, qt.IsNil)
 		c.Assert(matches, qt.HasLen, 1)
-		c.Assert(readDirectoryNames(c, outsideDir), qt.HasLen, 2)
+		c.Assert(readDirectoryNames(c.TB, outsideDir), qt.HasLen, 2)
 	})
 }
 
-func writeAtlasProjectMigrateDiffFixture(c *qt.C, projectDir, migrationDirURL string) {
+func writeAtlasProjectMigrateDiffFixture(tb testing.TB, projectDir, migrationDirURL string) {
+	c := qt.New(tb)
 	c.Helper()
 	c.Assert(os.WriteFile(
 		filepath.Join(projectDir, "schema.sql"),

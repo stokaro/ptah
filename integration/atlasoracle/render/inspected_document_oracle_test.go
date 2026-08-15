@@ -74,7 +74,7 @@ func TestOracleReadsTheInspectedDocumentPtahRenders(t *testing.T) {
 					t.Run("rendered", func(t *testing.T) {
 						c := qt.New(t)
 
-						out, code := runReferenceOracle(c, oracle, devURL, rendered)
+						out, code := runReferenceOracle(c.TB, oracle, devURL, rendered)
 
 						c.Assert(code, qt.Equals, 0,
 							qt.Commentf("the binary refuses the document ptah-compat renders on %s: %s\n%s",
@@ -89,7 +89,7 @@ func TestOracleReadsTheInspectedDocumentPtahRenders(t *testing.T) {
 							c.Assert(mutated, qt.Not(qt.Equals), rendered,
 								qt.Commentf("substituting %q changed nothing, so this row measures nothing", mutation.from))
 
-							out, code := runReferenceOracle(c, oracle, devURL, mutated)
+							out, code := runReferenceOracle(c.TB, oracle, devURL, mutated)
 
 							c.Assert(code, qt.Not(qt.Equals), 0,
 								qt.Commentf("the binary now reads %s on %s; the rule this row guards can go: %s",
@@ -165,7 +165,7 @@ func TestOracleReadsTheTwoSchemaRelationDocumentPtahRenders(t *testing.T) {
 	t.Run("rendered", func(t *testing.T) {
 		c := qt.New(t)
 
-		out, code := runReferenceOracle(c, oracle, devURL, rendered)
+		out, code := runReferenceOracle(c.TB, oracle, devURL, rendered)
 
 		c.Assert(code, qt.Equals, 0,
 			qt.Commentf("the binary refuses the two-schema document ptah-compat renders: %s\n%s", out, rendered))
@@ -182,7 +182,7 @@ func TestOracleReadsTheTwoSchemaRelationDocumentPtahRenders(t *testing.T) {
 			c.Assert(mutated, qt.Not(qt.Equals), rendered,
 				qt.Commentf("substituting %q changed nothing, so this row measures nothing", mutation.from))
 
-			out, code := runReferenceOracle(c, oracle, devURL, mutated)
+			out, code := runReferenceOracle(c.TB, oracle, devURL, mutated)
 
 			c.Assert(code, qt.Not(qt.Equals), 0,
 				qt.Commentf("the binary now reads %s; the rule this row guards can go: %s", mutation.name, out))

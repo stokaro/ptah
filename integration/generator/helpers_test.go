@@ -44,10 +44,11 @@ func legacyRenderedSQL(sql string) string {
 }
 
 func generateLiveMigrationSQL(
-	c *qt.C,
+	tb testing.TB,
 	conn *dbschema.DatabaseConnection,
 	desired *goschema.Database,
 ) (upSQL, downSQL string) {
+	c := qt.New(tb)
 	c.Helper()
 	outputDir := c.TempDir()
 	files, err := generator.GenerateMigration(c.Context(), generator.GenerateMigrationOptions{

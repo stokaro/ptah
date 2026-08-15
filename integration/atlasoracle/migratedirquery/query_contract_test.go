@@ -42,12 +42,12 @@ type verbRow struct {
 func TestDirQueryContract_IgnoresUnknownKeysOnEveryCEVerb(t *testing.T) {
 	oracle := requireAtlasOracle(t)
 	c := qt.New(t)
-	compat := buildCompatBinary(c)
+	compat := buildCompatBinary(c.TB)
 
 	for _, row := range verbRows() {
 		c.Run(row.name, func(c *qt.C) {
-			assertUnknownKeyParity(c, row, oracle, oracle)
-			assertUnknownKeyParity(c, row, compat, oracle)
+			assertUnknownKeyParity(c.TB, row, oracle, oracle)
+			assertUnknownKeyParity(c.TB, row, compat, oracle)
 		})
 	}
 }
@@ -55,12 +55,12 @@ func TestDirQueryContract_IgnoresUnknownKeysOnEveryCEVerb(t *testing.T) {
 func TestDirQueryContract_FormatSelectsTheLayoutOnEveryCEVerb(t *testing.T) {
 	oracle := requireAtlasOracle(t)
 	c := qt.New(t)
-	compat := buildCompatBinary(c)
+	compat := buildCompatBinary(c.TB)
 
 	for _, row := range verbRows() {
 		c.Run(row.name, func(c *qt.C) {
-			assertFormatSelection(c, row, oracle, oracle)
-			assertFormatSelection(c, row, compat, oracle)
+			assertFormatSelection(c.TB, row, oracle, oracle)
+			assertFormatSelection(c.TB, row, compat, oracle)
 		})
 	}
 }
@@ -68,12 +68,12 @@ func TestDirQueryContract_FormatSelectsTheLayoutOnEveryCEVerb(t *testing.T) {
 func TestDirQueryContract_UnknownFormatFailsOnEveryCEVerb(t *testing.T) {
 	oracle := requireAtlasOracle(t)
 	c := qt.New(t)
-	compat := buildCompatBinary(c)
+	compat := buildCompatBinary(c.TB)
 
 	for _, row := range verbRows() {
 		c.Run(row.name, func(c *qt.C) {
-			assertUnknownFormat(c, row, oracle, oracle)
-			assertUnknownFormat(c, row, compat, oracle)
+			assertUnknownFormat(c.TB, row, oracle, oracle)
+			assertUnknownFormat(c.TB, row, compat, oracle)
 		})
 	}
 }
@@ -81,12 +81,12 @@ func TestDirQueryContract_UnknownFormatFailsOnEveryCEVerb(t *testing.T) {
 func TestDirQueryContract_QueryOutranksTheFlag(t *testing.T) {
 	oracle := requireAtlasOracle(t)
 	c := qt.New(t)
-	compat := buildCompatBinary(c)
+	compat := buildCompatBinary(c.TB)
 
 	for _, row := range flagVerbRows() {
 		c.Run(row.name, func(c *qt.C) {
-			assertQueryPrecedence(c, row, oracle, oracle)
-			assertQueryPrecedence(c, row, compat, oracle)
+			assertQueryPrecedence(c.TB, row, oracle, oracle)
+			assertQueryPrecedence(c.TB, row, compat, oracle)
 		})
 	}
 }
@@ -94,12 +94,12 @@ func TestDirQueryContract_QueryOutranksTheFlag(t *testing.T) {
 func TestDirQueryContract_KeepsExtensionOnlyVerbsFailClosed(t *testing.T) {
 	oracle := requireAtlasOracle(t)
 	c := qt.New(t)
-	compat := buildCompatBinary(c)
+	compat := buildCompatBinary(c.TB)
 
 	for _, row := range extensionOnlyVerbRows() {
 		c.Run(row.name, func(c *qt.C) {
-			dir := writeNativeDir(c, oracle)
-			result := runCommand(c, compat, row.args(c, dir, "?format=atlas&nonsense=1")...)
+			dir := writeNativeDir(c.TB, oracle)
+			result := runCommand(c.TB, compat, row.args(c, dir, "?format=atlas&nonsense=1")...)
 
 			c.Assert(result.code, qt.Equals, 1, qt.Commentf("stdout: %s\nstderr: %s", result.stdout, result.stderr))
 			c.Assert(result.stderr, qt.Contains, "migration directory URL query parameters are not supported for this command")
@@ -126,19 +126,20 @@ func TestWithoutPtahEnvironment(t *testing.T) {
 	})
 }
 
-func assertUnknownKeyParity(c *qt.C, row verbRow, binary, oracle string) {
+func assertUnknownKeyParity(tb testing.TB, row verbRow, binary, oracle string) {
+	c := qt.New(tb)
 	c.Helper()
-	queriedDir := writeNativeDir(c, oracle)
-	before := directoryEntries(c, queriedDir)
-	queried := runCommand(c, binary, row.args(c, queriedDir, "?nonsense=1")...)
+	queriedDir := writeNativeDir(c.TB, oracle)
+	before := directoryEntries(c.TB, queriedDir)
+	queried := runCommand(c.TB, binary, row.args(c, queriedDir, "?nonsense=1")...)
 
 	c.Assert(queried.code, qt.Equals, 0, qt.Commentf("stdout: %s\nstderr: %s", queried.stdout, queried.stderr))
-	assertWriterChangedDirectory(c, row, before, directoryEntries(c, queriedDir))
+	assertWriterChangedDirectory(c.TB, row, before, directoryEntries(c.TB, queriedDir))
 	row.assertNative(c, queriedDir)
-	assertIgnoredKeyReport(c, binary, queried.stderr)
+	assertIgnoredKeyReport(c.TB, binary, queried.stderr)
 
-	controlDir := writeNativeDir(c, oracle)
-	control := runCommand(c, binary, row.args(c, controlDir, "")...)
+	controlDir := writeNativeDir(c.TB, oracle)
+	control := runCommand(c.TB, binary, row.args(c, controlDir, "")...)
 	c.Assert(control.code, qt.Equals, 0,
 		qt.Commentf("control stdout: %s\ncontrol stderr: %s", control.stdout, control.stderr))
 	row.assertNative(c, controlDir)
@@ -148,7 +149,7 @@ func assertUnknownKeyParity(c *qt.C, row verbRow, binary, oracle string) {
 		normalizeQueryRunOutput(control.stdout, filepath.Dir(controlDir)),
 	)
 	c.Assert(
-		stderrWithoutIgnoredKeyReport(c, binary, row.name, queried.stderr),
+		stderrWithoutIgnoredKeyReport(c.TB, binary, row.name, queried.stderr),
 		qt.Equals,
 		control.stderr,
 	)
@@ -159,60 +160,63 @@ func assertUnknownKeyParity(c *qt.C, row verbRow, binary, oracle string) {
 	)
 }
 
-func assertFormatSelection(c *qt.C, row verbRow, binary, oracle string) {
+func assertFormatSelection(tb testing.TB, row verbRow, binary, oracle string) {
+	c := qt.New(tb)
 	c.Helper()
-	dir := writeGolangMigrateDir(c, oracle)
-	before := directoryEntries(c, dir)
-	selected := runCommand(c, binary, row.args(c, dir, "?format=golang-migrate&nonsense=1")...)
+	dir := writeGolangMigrateDir(c.TB, oracle)
+	before := directoryEntries(c.TB, dir)
+	selected := runCommand(c.TB, binary, row.args(c, dir, "?format=golang-migrate&nonsense=1")...)
 
 	c.Assert(selected.code, qt.Equals, 0, qt.Commentf("stdout: %s\nstderr: %s", selected.stdout, selected.stderr))
-	assertWriterChangedDirectory(c, row, before, directoryEntries(c, dir))
+	assertWriterChangedDirectory(c.TB, row, before, directoryEntries(c.TB, dir))
 	row.assertSelected(c, dir)
-	assertIgnoredKeyReport(c, binary, selected.stderr)
+	assertIgnoredKeyReport(c.TB, binary, selected.stderr)
 
-	controlDir := writeGolangMigrateDir(c, oracle)
-	control := runCommand(c, binary, row.args(c, controlDir, "")...)
+	controlDir := writeGolangMigrateDir(c.TB, oracle)
+	control := runCommand(c.TB, binary, row.args(c, controlDir, "")...)
 	c.Assert(control.code, qt.Equals, row.controlCode,
 		qt.Commentf("control stdout: %s\ncontrol stderr: %s", control.stdout, control.stderr))
 	row.assertControl(c, controlDir)
 }
 
-func assertUnknownFormat(c *qt.C, row verbRow, binary, oracle string) {
+func assertUnknownFormat(tb testing.TB, row verbRow, binary, oracle string) {
+	c := qt.New(tb)
 	c.Helper()
-	dir := writeNativeDir(c, oracle)
-	before := directoryContents(c, dir)
-	result := runCommand(c, binary, row.args(c, dir, "?format=bogus&nonsense=1")...)
+	dir := writeNativeDir(c.TB, oracle)
+	before := directoryContents(c.TB, dir)
+	result := runCommand(c.TB, binary, row.args(c, dir, "?format=bogus&nonsense=1")...)
 
 	c.Assert(result.code, qt.Equals, 1, qt.Commentf("stdout: %s\nstderr: %s", result.stdout, result.stderr))
 	c.Assert(result.stdout, qt.Equals, "")
 	c.Assert(result.stderr, qt.Equals, "Error: unknown dir format \"bogus\"\n")
-	c.Assert(directoryContents(c, dir), qt.DeepEquals, before)
+	c.Assert(directoryContents(c.TB, dir), qt.DeepEquals, before)
 }
 
-func assertQueryPrecedence(c *qt.C, row verbRow, binary, oracle string) {
+func assertQueryPrecedence(tb testing.TB, row verbRow, binary, oracle string) {
+	c := qt.New(tb)
 	c.Helper()
 
-	golangMigrateDir := writeGolangMigrateDir(c, oracle)
-	queryWins := runCommand(c, binary,
+	golangMigrateDir := writeGolangMigrateDir(c.TB, oracle)
+	queryWins := runCommand(c.TB, binary,
 		append(row.args(c, golangMigrateDir, "?format=golang-migrate"), "--dir-format", "atlas")...)
 	c.Assert(queryWins.code, qt.Equals, 0,
 		qt.Commentf("query-wins stdout: %s\nquery-wins stderr: %s", queryWins.stdout, queryWins.stderr))
 	row.assertSelected(c, golangMigrateDir)
 
-	nativeDir := writeNativeDir(c, oracle)
-	emptyQueryWins := runCommand(c, binary,
+	nativeDir := writeNativeDir(c.TB, oracle)
+	emptyQueryWins := runCommand(c.TB, binary,
 		append(row.args(c, nativeDir, "?format="), "--dir-format", "golang-migrate")...)
 	c.Assert(emptyQueryWins.code, qt.Equals, 0,
 		qt.Commentf("empty-query stdout: %s\nempty-query stderr: %s", emptyQueryWins.stdout, emptyQueryWins.stderr))
 	row.assertNative(c, nativeDir)
 
-	flagDir := writeGolangMigrateDir(c, oracle)
-	ignoredKeyLeavesFlag := runCommand(c, binary,
+	flagDir := writeGolangMigrateDir(c.TB, oracle)
+	ignoredKeyLeavesFlag := runCommand(c.TB, binary,
 		append(row.args(c, flagDir, "?nonsense=1"), "--dir-format", "golang-migrate")...)
 	c.Assert(ignoredKeyLeavesFlag.code, qt.Equals, 0,
 		qt.Commentf("flag stdout: %s\nflag stderr: %s", ignoredKeyLeavesFlag.stdout, ignoredKeyLeavesFlag.stderr))
 	row.assertSelected(c, flagDir)
-	assertIgnoredKeyReport(c, binary, ignoredKeyLeavesFlag.stderr)
+	assertIgnoredKeyReport(c.TB, binary, ignoredKeyLeavesFlag.stderr)
 }
 
 func verbRows() []verbRow {
@@ -297,7 +301,7 @@ func verbRows() []verbRow {
 			name: "diff",
 			args: func(c *qt.C, dir, query string) []string {
 				return []string{"migrate", "diff", "query_contract", "--dir", fileURL(dir, query),
-					"--dev-url", sqliteURL(dir, "diff.db"), "--to", "file://" + writeTarget(c, dir)}
+					"--dev-url", sqliteURL(dir, "diff.db"), "--to", "file://" + writeTarget(c.TB, dir)}
 			},
 			writesDirectory: true,
 			assertSelected:  noAssertion,
@@ -341,18 +345,20 @@ func extensionOnlyVerbRows() []extensionVerbRow {
 	}
 }
 
-func writeNativeDir(c *qt.C, binary string) string {
+func writeNativeDir(tb testing.TB, binary string) string {
+	c := qt.New(tb)
 	c.Helper()
 	dir := filepath.Join(c.TempDir(), "migrations")
 	c.Assert(os.Mkdir(dir, 0o755), qt.IsNil)
 	c.Assert(os.WriteFile(filepath.Join(dir, "1_init.sql"),
 		[]byte("CREATE TABLE widgets (id INTEGER PRIMARY KEY);\n"), 0o600), qt.IsNil)
-	result := runCommand(c, binary, "migrate", "hash", "--dir", "file://"+dir)
+	result := runCommand(c.TB, binary, "migrate", "hash", "--dir", "file://"+dir)
 	c.Assert(result.code, qt.Equals, 0, qt.Commentf("hash stdout: %s\nhash stderr: %s", result.stdout, result.stderr))
 	return dir
 }
 
-func writeGolangMigrateDir(c *qt.C, binary string) string {
+func writeGolangMigrateDir(tb testing.TB, binary string) string {
+	c := qt.New(tb)
 	c.Helper()
 	dir := filepath.Join(c.TempDir(), "migrations")
 	c.Assert(os.Mkdir(dir, 0o755), qt.IsNil)
@@ -360,12 +366,13 @@ func writeGolangMigrateDir(c *qt.C, binary string) string {
 		[]byte("CREATE TABLE widgets (id INTEGER PRIMARY KEY);\n"), 0o600), qt.IsNil)
 	c.Assert(os.WriteFile(filepath.Join(dir, "1_init.down.sql"),
 		[]byte("DROP TABLE widgets;\n"), 0o600), qt.IsNil)
-	result := runCommand(c, binary, "migrate", "hash", "--dir", "file://"+dir+"?format=golang-migrate")
+	result := runCommand(c.TB, binary, "migrate", "hash", "--dir", "file://"+dir+"?format=golang-migrate")
 	c.Assert(result.code, qt.Equals, 0, qt.Commentf("hash stdout: %s\nhash stderr: %s", result.stdout, result.stderr))
 	return dir
 }
 
-func writeTarget(c *qt.C, dir string) string {
+func writeTarget(tb testing.TB, dir string) string {
+	c := qt.New(tb)
 	c.Helper()
 	path := filepath.Join(filepath.Dir(dir), "target.sql")
 	c.Assert(os.WriteFile(path, []byte(
@@ -382,7 +389,8 @@ func sqliteURL(dir, name string) string {
 	return "sqlite://" + filepath.Join(filepath.Dir(dir), name)
 }
 
-func directoryEntries(c *qt.C, dir string) []string {
+func directoryEntries(tb testing.TB, dir string) []string {
+	c := qt.New(tb)
 	c.Helper()
 	entries, err := os.ReadDir(dir)
 	c.Assert(err, qt.IsNil)
@@ -393,7 +401,8 @@ func directoryEntries(c *qt.C, dir string) []string {
 	return names
 }
 
-func directoryContents(c *qt.C, dir string) map[string]string {
+func directoryContents(tb testing.TB, dir string) map[string]string {
+	c := qt.New(tb)
 	c.Helper()
 	contents := make(map[string]string)
 	root, err := os.OpenRoot(dir)
@@ -421,7 +430,8 @@ func directoryContents(c *qt.C, dir string) map[string]string {
 	return contents
 }
 
-func assertWriterChangedDirectory(c *qt.C, row verbRow, before, after []string) {
+func assertWriterChangedDirectory(tb testing.TB, row verbRow, before, after []string) {
+	c := qt.New(tb)
 	c.Helper()
 	if row.writesDirectory {
 		c.Assert(len(after) > len(before), qt.IsTrue,
@@ -429,7 +439,8 @@ func assertWriterChangedDirectory(c *qt.C, row verbRow, before, after []string) 
 	}
 }
 
-func assertIgnoredKeyReport(c *qt.C, binary, stderr string) {
+func assertIgnoredKeyReport(tb testing.TB, binary, stderr string) {
+	c := qt.New(tb)
 	c.Helper()
 	if strings.HasSuffix(binary, "ptah-compat") {
 		c.Assert(stderr, qt.Contains, ignoredKey)
@@ -440,7 +451,8 @@ func assertIgnoredKeyReport(c *qt.C, binary, stderr string) {
 // diagnostic that differs from the pinned community binary. Everything else
 // remains byte-for-byte comparable with the no-query control, so an ignored
 // key cannot smuggle an additional warning or error through this oracle.
-func stderrWithoutIgnoredKeyReport(c *qt.C, binary, verb, stderr string) string {
+func stderrWithoutIgnoredKeyReport(tb testing.TB, binary, verb, stderr string) string {
+	c := qt.New(tb)
 	c.Helper()
 	if !strings.HasSuffix(binary, "ptah-compat") {
 		c.Assert(stderr, qt.Not(qt.Contains), ignoredKey)
@@ -477,7 +489,8 @@ func assertNativeSum(c *qt.C, dir string) {
 	c.Assert(string(sum), qt.Contains, "1_init.down.sql")
 }
 
-func runCommand(c *qt.C, binary string, args ...string) commandResult {
+func runCommand(tb testing.TB, binary string, args ...string) commandResult {
+	c := qt.New(tb)
 	c.Helper()
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -511,7 +524,8 @@ func withoutPtahEnvironment(environment []string) []string {
 	return result
 }
 
-func buildCompatBinary(c *qt.C) string {
+func buildCompatBinary(tb testing.TB) string {
+	c := qt.New(tb)
 	c.Helper()
 	path := filepath.Join(c.TempDir(), "ptah-compat")
 	out, err := exec.Command("go", "build", "-o", path, "go.5x5.cz/ptah/cmd/ptah-compat").CombinedOutput()

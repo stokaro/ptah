@@ -37,7 +37,7 @@ func TestMySQLFamilyForeignKeyBackingIndexDownRoundTripIntegration(t *testing.T)
 			for _, test := range tests {
 				t.Run(test.name, func(t *testing.T) {
 					c := qt.New(t)
-					runForeignKeyBackingIndexRoundTrip(c, conn, test.indexName)
+					runForeignKeyBackingIndexRoundTrip(c.TB, conn, test.indexName)
 				})
 			}
 		})
@@ -57,15 +57,16 @@ func TestMySQLFamilySameNamedNonCoveringIndexRefusesForeignKeyIntegration(t *tes
 		t.Run(engine.name, func(t *testing.T) {
 			c := qt.New(t)
 			conn := requireGeneratorDatabaseConnection(t, engine.envKey)
-			assertSameNamedNonCoveringIndexRefusesForeignKey(c, conn)
+			assertSameNamedNonCoveringIndexRefusesForeignKey(c.TB, conn)
 		})
 	}
 }
 
 func assertSameNamedNonCoveringIndexRefusesForeignKey(
-	c *qt.C,
+	tb testing.TB,
 	conn *dbschema.DatabaseConnection,
 ) {
+	c := qt.New(tb)
 	c.Helper()
 	const (
 		parentTable = "ptah_fk_collision_parents"
@@ -109,7 +110,7 @@ func TestMySQLFamilyAddedForeignKeyColumnDownRoundTripIntegration(t *testing.T) 
 		t.Run(engine.name, func(t *testing.T) {
 			c := qt.New(t)
 			conn := requireGeneratorDatabaseConnection(t, engine.envKey)
-			runAddedForeignKeyColumnRoundTrip(c, conn)
+			runAddedForeignKeyColumnRoundTrip(c.TB, conn)
 		})
 	}
 }
@@ -127,12 +128,13 @@ func TestMySQLFamilyAddedReferencedColumnDownRoundTripIntegration(t *testing.T) 
 		t.Run(engine.name, func(t *testing.T) {
 			c := qt.New(t)
 			conn := requireGeneratorDatabaseConnection(t, engine.envKey)
-			runAddedReferencedColumnRoundTrip(c, conn)
+			runAddedReferencedColumnRoundTrip(c.TB, conn)
 		})
 	}
 }
 
-func runAddedReferencedColumnRoundTrip(c *qt.C, conn *dbschema.DatabaseConnection) {
+func runAddedReferencedColumnRoundTrip(tb testing.TB, conn *dbschema.DatabaseConnection) {
+	c := qt.New(tb)
 	c.Helper()
 	const (
 		parentTable = "ptah_fk_ref_column_parents"
@@ -148,11 +150,11 @@ func runAddedReferencedColumnRoundTrip(c *qt.C, conn *dbschema.DatabaseConnectio
 	c.Cleanup(cleanup)
 
 	prior := addedReferencedColumnSchema(false)
-	setupSQL, _ := generateLiveMigrationSQL(c, conn, prior)
+	setupSQL, _ := generateLiveMigrationSQL(c.TB, conn, prior)
 	execScript(c, conn, setupSQL, "SETUP")
 
 	target := addedReferencedColumnSchema(true)
-	upSQL, downSQL := generateLiveMigrationSQL(c, conn, target)
+	upSQL, downSQL := generateLiveMigrationSQL(c.TB, conn, target)
 	execScript(c, conn, upSQL, "UP")
 
 	afterUp, err := conn.Reader().ReadSchema()
@@ -202,7 +204,8 @@ func addedReferencedColumnSchema(withReference bool) *goschema.Database {
 	return database
 }
 
-func runAddedForeignKeyColumnRoundTrip(c *qt.C, conn *dbschema.DatabaseConnection) {
+func runAddedForeignKeyColumnRoundTrip(tb testing.TB, conn *dbschema.DatabaseConnection) {
+	c := qt.New(tb)
 	c.Helper()
 	const (
 		parentTable = "ptah_fk_column_parents"
@@ -218,11 +221,11 @@ func runAddedForeignKeyColumnRoundTrip(c *qt.C, conn *dbschema.DatabaseConnectio
 	c.Cleanup(cleanup)
 
 	prior := addedForeignKeyColumnSchema(false)
-	setupSQL, _ := generateLiveMigrationSQL(c, conn, prior)
+	setupSQL, _ := generateLiveMigrationSQL(c.TB, conn, prior)
 	execScript(c, conn, setupSQL, "SETUP")
 
 	target := addedForeignKeyColumnSchema(true)
-	upSQL, downSQL := generateLiveMigrationSQL(c, conn, target)
+	upSQL, downSQL := generateLiveMigrationSQL(c.TB, conn, target)
 	execScript(c, conn, upSQL, "UP")
 
 	afterUp, err := conn.Reader().ReadSchema()
@@ -274,10 +277,11 @@ func addedForeignKeyColumnSchema(withForeignKeyColumn bool) *goschema.Database {
 }
 
 func runForeignKeyBackingIndexRoundTrip(
-	c *qt.C,
+	tb testing.TB,
 	conn *dbschema.DatabaseConnection,
 	preexistingIndexName string,
 ) {
+	c := qt.New(tb)
 	c.Helper()
 	const (
 		parentTable = "ptah_fk_backing_parents"
@@ -293,11 +297,11 @@ func runForeignKeyBackingIndexRoundTrip(
 	c.Cleanup(cleanup)
 
 	prior := foreignKeyBackingSchema(false, preexistingIndexName)
-	setupSQL, _ := generateLiveMigrationSQL(c, conn, prior)
+	setupSQL, _ := generateLiveMigrationSQL(c.TB, conn, prior)
 	execScript(c, conn, setupSQL, "SETUP")
 
 	target := foreignKeyBackingSchema(true, preexistingIndexName)
-	upSQL, downSQL := generateLiveMigrationSQL(c, conn, target)
+	upSQL, downSQL := generateLiveMigrationSQL(c.TB, conn, target)
 	c.Assert(upSQL, qt.Contains, foreignKey)
 	execScript(c, conn, upSQL, "UP")
 

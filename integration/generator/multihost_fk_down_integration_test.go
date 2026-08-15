@@ -74,7 +74,7 @@ func TestMultiHostMixinFKModify_DownRoundTrip_Integration(t *testing.T) {
 			//    CREATE-TABLE FK) because the MySQL renderer omits field-level
 			//    inline FKs — the ALTER form is dialect-portable.
 			genPrior := roundTripSchema(dialect, "", hosts...)
-			applyTablesOnly(c, conn, dialect, genPrior)
+			applyTablesOnly(c.TB, conn, dialect, genPrior)
 			for _, h := range hosts {
 				_, err := conn.Exec("ALTER TABLE " + h + " ADD CONSTRAINT " + tenantFKName(dialect, h) +
 					" FOREIGN KEY (tenant_id) REFERENCES ptah_tenants(id)")
@@ -91,7 +91,7 @@ func TestMultiHostMixinFKModify_DownRoundTrip_Integration(t *testing.T) {
 			genCascade := roundTripSchema(dialect, "CASCADE", hosts...)
 
 			// 3. Generate + apply the UP (the multi-host modify).
-			upSQL, downSQL := generateLiveMigrationSQL(c, conn, genCascade)
+			upSQL, downSQL := generateLiveMigrationSQL(c.TB, conn, genCascade)
 			c.Assert(upSQL, qt.Not(qt.Equals), "")
 			execScript(c, conn, upSQL, "UP")
 
@@ -203,7 +203,8 @@ func tenantDeleteRules(dialect string, db *dbschematypes.DBSchema, hosts []strin
 // but no FK yet. The named prior FK is then added explicitly by the caller (the
 // renderer's inline FK emission is dialect-asymmetric — MySQL omits field-level
 // inline FKs — so we keep setup engine-agnostic).
-func applyTablesOnly(c *qt.C, conn *dbschema.DatabaseConnection, dialect string, gen *goschema.Database) {
+func applyTablesOnly(tb testing.TB, conn *dbschema.DatabaseConnection, dialect string, gen *goschema.Database) {
+	c := qt.New(tb)
 	c.Helper()
 	bare := *gen
 	bare.Fields = make([]goschema.Field, 0, len(gen.Fields))
@@ -214,7 +215,7 @@ func applyTablesOnly(c *qt.C, conn *dbschema.DatabaseConnection, dialect string,
 		f.OnUpdate = ""
 		bare.Fields = append(bare.Fields, f)
 	}
-	upSQL, _ := generateLiveMigrationSQL(c, conn, &bare)
+	upSQL, _ := generateLiveMigrationSQL(c.TB, conn, &bare)
 	execScript(c, conn, upSQL, "SETUP")
 }
 

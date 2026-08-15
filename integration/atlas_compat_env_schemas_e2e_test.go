@@ -136,10 +136,10 @@ func TestAtlasCompatEnvSchemasRestrictsTheInspectedUniverseE2E(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			envbooltest.Unset(projectconfig.IgnoreEnvSchemasEnvVar)(t)
-			sourceURL := newAtlasCompatEnvSchemasDatabase(c, adminURL)
-			configPath := writeAtlasCompatEnvSchemasConfig(c, sourceURL, test.attribute)
+			sourceURL := newAtlasCompatEnvSchemasDatabase(c.TB, adminURL)
+			configPath := writeAtlasCompatEnvSchemasConfig(c.TB, sourceURL, test.attribute)
 
-			rendered := runAtlasCompatEnvSchemasInspect(c, configPath, test.flagSchemas)
+			rendered := runAtlasCompatEnvSchemasInspect(c.TB, configPath, test.flagSchemas)
 
 			c.Check(
 				atlasCompatRenderedSchemaNames(rendered), qt.ContentEquals, test.wantSchemas,
@@ -187,10 +187,10 @@ func TestAtlasCompatEnvSchemasOptOutRestoresTheRealmDescriptionE2E(t *testing.T)
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			test.env(t)
-			sourceURL := newAtlasCompatEnvSchemasDatabase(c, adminURL)
-			configPath := writeAtlasCompatEnvSchemasConfig(c, sourceURL, `schemas = ["one"]`)
+			sourceURL := newAtlasCompatEnvSchemasDatabase(c.TB, adminURL)
+			configPath := writeAtlasCompatEnvSchemasConfig(c.TB, sourceURL, `schemas = ["one"]`)
 
-			rendered := runAtlasCompatEnvSchemasInspect(c, configPath, nil)
+			rendered := runAtlasCompatEnvSchemasInspect(c.TB, configPath, nil)
 
 			c.Check(atlasCompatRenderedSchemaNames(rendered), qt.ContentEquals, test.wantSchemas)
 		})
@@ -225,8 +225,8 @@ func TestAtlasCompatEnvSchemasRefusesAValueTheFieldCannotHoldE2E(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			test.env(t)
-			sourceURL := newAtlasCompatEnvSchemasDatabase(c, adminURL)
-			configPath := writeAtlasCompatEnvSchemasConfig(c, sourceURL, `schemas = "one"`)
+			sourceURL := newAtlasCompatEnvSchemasDatabase(c.TB, adminURL)
+			configPath := writeAtlasCompatEnvSchemasConfig(c.TB, sourceURL, `schemas = "one"`)
 
 			cmd := atlas.NewCompatCommand("atlas")
 			var out, errOut bytes.Buffer
@@ -245,7 +245,8 @@ func TestAtlasCompatEnvSchemasRefusesAValueTheFieldCannotHoldE2E(t *testing.T) {
 
 // newAtlasCompatEnvSchemasDatabase creates a throwaway database holding one
 // table in each of `one`, `two` and `public`, and returns its URL.
-func newAtlasCompatEnvSchemasDatabase(c *qt.C, adminURL string) string {
+func newAtlasCompatEnvSchemasDatabase(tb testing.TB, adminURL string) string {
+	c := qt.New(tb)
 	c.Helper()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
@@ -256,10 +257,10 @@ func newAtlasCompatEnvSchemasDatabase(c *qt.C, adminURL string) string {
 	c.Cleanup(func() { _ = adminDB.Close() })
 
 	name := fmt.Sprintf("ptah_env_schemas_%d", time.Now().UnixNano())
-	createE2EDatabase(c, ctx, adminDB, name)
-	c.Cleanup(func() { dropE2EDatabase(c, context.Background(), adminDB, name) })
+	createE2EDatabase(c.TB, ctx, adminDB, name)
+	c.Cleanup(func() { dropE2EDatabase(c.TB, context.Background(), adminDB, name) })
 
-	sourceURL := replaceDatabaseName(c, adminURL, name)
+	sourceURL := replaceDatabaseName(c.TB, adminURL, name)
 	db, err := sql.Open("pgx", sourceURL)
 	c.Assert(err, qt.IsNil)
 	defer db.Close()
@@ -292,7 +293,8 @@ func newAtlasCompatEnvSchemasDatabase(c *qt.C, adminURL string) string {
 
 // writeAtlasCompatEnvSchemasConfig writes an atlas.hcl carrying one env block
 // and returns its path. An empty attribute writes an env block without one.
-func writeAtlasCompatEnvSchemasConfig(c *qt.C, sourceURL, attribute string) string {
+func writeAtlasCompatEnvSchemasConfig(tb testing.TB, sourceURL, attribute string) string {
+	c := qt.New(tb)
 	c.Helper()
 
 	body := fmt.Sprintf("env \"local\" {\n  url = %q\n", sourceURL)
@@ -311,7 +313,8 @@ func writeAtlasCompatEnvSchemasConfig(c *qt.C, sourceURL, attribute string) stri
 // roles are cluster-scoped, so every role any database on this server ever
 // created would otherwise ride along and drown the schema blocks this test
 // counts.
-func runAtlasCompatEnvSchemasInspect(c *qt.C, configPath string, flagSchemas []string) string {
+func runAtlasCompatEnvSchemasInspect(tb testing.TB, configPath string, flagSchemas []string) string {
+	c := qt.New(tb)
 	c.Helper()
 
 	args := []string{

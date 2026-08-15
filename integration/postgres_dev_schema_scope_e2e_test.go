@@ -18,7 +18,8 @@ import (
 )
 
 // withDevSearchPath returns dbURL carrying a search_path query parameter.
-func withDevSearchPath(c *qt.C, dbURL, schema string) string {
+func withDevSearchPath(tb testing.TB, dbURL, schema string) string {
+	c := qt.New(tb)
 	c.Helper()
 	parsed, err := url.Parse(dbURL)
 	c.Assert(err, qt.IsNil)
@@ -29,7 +30,8 @@ func withDevSearchPath(c *qt.C, dbURL, schema string) string {
 }
 
 // countDevSchema returns how many namespaces of the given name exist.
-func countDevSchema(c *qt.C, ctx context.Context, db *sql.DB, name string) int {
+func countDevSchema(tb testing.TB, ctx context.Context, db *sql.DB, name string) int {
+	c := qt.New(tb)
 	c.Helper()
 	var count int
 	err := db.QueryRowContext(ctx,
@@ -62,10 +64,10 @@ func TestPostgresConnectionResolvesTheSearchPathSchemaE2E(t *testing.T) {
 	defer adminDB.Close()
 
 	testDBName := fmt.Sprintf("ptah_dev_schema_scope_e2e_%d", time.Now().UnixNano())
-	createE2EDatabase(c, ctx, adminDB, testDBName)
-	defer dropE2EDatabase(c, context.Background(), adminDB, testDBName)
+	createE2EDatabase(c.TB, ctx, adminDB, testDBName)
+	defer dropE2EDatabase(c.TB, context.Background(), adminDB, testDBName)
 
-	scopedURL := replaceDatabaseName(c, dbURL, testDBName)
+	scopedURL := replaceDatabaseName(c.TB, dbURL, testDBName)
 	setupDB, err := sql.Open("pgx", scopedURL)
 	c.Assert(err, qt.IsNil)
 	defer setupDB.Close()
@@ -88,7 +90,7 @@ func TestPostgresConnectionResolvesTheSearchPathSchemaE2E(t *testing.T) {
 
 	for _, test := range tests {
 		c.Run(test.name, func(c *qt.C) {
-			conn, err := dbschema.ConnectToDatabase(ctx, withDevSearchPath(c, scopedURL, test.searchPath))
+			conn, err := dbschema.ConnectToDatabase(ctx, withDevSearchPath(c.TB, scopedURL, test.searchPath))
 			c.Assert(err, qt.IsNil)
 			defer dbschema.CloseAndWarn(conn)
 
@@ -106,7 +108,7 @@ func TestPostgresConnectionResolvesTheSearchPathSchemaE2E(t *testing.T) {
 	// and dies on a CREATE TABLE with "no schema has been selected to create in",
 	// which sends the operator to their migration instead of their URL.
 	c.Run("a search_path naming no existing schema is refused", func(c *qt.C) {
-		_, err := dbschema.ConnectToDatabase(ctx, withDevSearchPath(c, scopedURL, "nosuchschema"))
+		_, err := dbschema.ConnectToDatabase(ctx, withDevSearchPath(c.TB, scopedURL, "nosuchschema"))
 
 		c.Assert(err, qt.ErrorMatches,
 			`.*database URL selects schema "nosuchschema", which does not exist in this database.*`)
@@ -150,10 +152,10 @@ func TestPostgresRealmCleanupKeepsTheSelectedSchemaE2E(t *testing.T) {
 	defer adminDB.Close()
 
 	testDBName := fmt.Sprintf("ptah_dev_realm_keep_e2e_%d", time.Now().UnixNano())
-	createE2EDatabase(c, ctx, adminDB, testDBName)
-	defer dropE2EDatabase(c, context.Background(), adminDB, testDBName)
+	createE2EDatabase(c.TB, ctx, adminDB, testDBName)
+	defer dropE2EDatabase(c.TB, context.Background(), adminDB, testDBName)
 
-	scopedURL := replaceDatabaseName(c, dbURL, testDBName)
+	scopedURL := replaceDatabaseName(c.TB, dbURL, testDBName)
 	setupDB, err := sql.Open("pgx", scopedURL)
 	c.Assert(err, qt.IsNil)
 	defer setupDB.Close()
@@ -162,7 +164,7 @@ func TestPostgresRealmCleanupKeepsTheSelectedSchemaE2E(t *testing.T) {
 		c.Assert(err, qt.IsNil)
 	}
 
-	conn, err := dbschema.ConnectToDatabase(ctx, withDevSearchPath(c, scopedURL, "app"))
+	conn, err := dbschema.ConnectToDatabase(ctx, withDevSearchPath(c.TB, scopedURL, "app"))
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(conn)
 
@@ -170,7 +172,7 @@ func TestPostgresRealmCleanupKeepsTheSelectedSchemaE2E(t *testing.T) {
 	c.Assert(ok, qt.IsTrue)
 	c.Assert(writer.DropDatabaseRealm(ctx), qt.IsNil)
 
-	c.Assert(countDevSchema(c, ctx, setupDB, "app"), qt.Equals, 1)
-	c.Assert(countDevSchema(c, ctx, setupDB, "bystander"), qt.Equals, 0)
-	c.Assert(countDevSchema(c, ctx, setupDB, "public"), qt.Equals, 1)
+	c.Assert(countDevSchema(c.TB, ctx, setupDB, "app"), qt.Equals, 1)
+	c.Assert(countDevSchema(c.TB, ctx, setupDB, "bystander"), qt.Equals, 0)
+	c.Assert(countDevSchema(c.TB, ctx, setupDB, "public"), qt.Equals, 1)
 }

@@ -50,7 +50,7 @@ func TestAtlasMigrateLintRenameAddSideE2E(t *testing.T) {
 
 	repoRoot := e2eRepoRoot(t)
 	binaryPath := filepath.Join(t.TempDir(), "ptah-compat")
-	buildPtahCompat(c, ctx, repoRoot, binaryPath)
+	buildPtahCompat(c.TB, ctx, repoRoot, binaryPath)
 
 	adminDB, err := sql.Open("pgx", dbURL)
 	c.Assert(err, qt.IsNil)
@@ -295,21 +295,21 @@ func TestAtlasMigrateLintRenameAddSideE2E(t *testing.T) {
 	for _, test := range tests {
 		c.Run(test.name, func(c *qt.C) {
 			testDBName := fmt.Sprintf("ptah_lint_rename_add_e2e_%d", time.Now().UnixNano())
-			createE2EDatabase(c, ctx, adminDB, testDBName)
-			defer dropE2EDatabase(c, context.Background(), adminDB, testDBName)
+			createE2EDatabase(c.TB, ctx, adminDB, testDBName)
+			defer dropE2EDatabase(c.TB, context.Background(), adminDB, testDBName)
 
 			migrationsDir := c.TempDir()
-			writeLintE2EFile(c, migrationsDir, "1.sql", test.base)
-			writeLintE2EFile(c, migrationsDir, "2.sql", test.rename)
+			writeLintE2EFile(c.TB, migrationsDir, "1.sql", test.base)
+			writeLintE2EFile(c.TB, migrationsDir, "2.sql", test.rename)
 
 			stdout, stderr, err := runLintE2EBinary(ctx, binaryPath,
 				"migrate", "lint",
 				"--dir", "file://"+migrationsDir,
-				"--dev-url", replaceDatabaseName(c, dbURL, testDBName),
+				"--dev-url", replaceDatabaseName(c.TB, dbURL, testDBName),
 				"--latest", "1",
 			)
 
-			c.Assert(exitStatusOf(c, err), qt.Equals, test.exitCode)
+			c.Assert(exitStatusOf(c.TB, err), qt.Equals, test.exitCode)
 			c.Assert(stderr, qt.Equals, "")
 			c.Assert(redactLintE2EDurations(stdout), qt.Equals, test.want)
 		})
@@ -336,19 +336,19 @@ func TestNativeMigrationsLintRenameHasNoAddSideE2E(t *testing.T) {
 
 	repoRoot := e2eRepoRoot(t)
 	nativeBinary := filepath.Join(t.TempDir(), "ptah")
-	buildPtah(c, ctx, repoRoot, nativeBinary)
+	buildPtah(c.TB, ctx, repoRoot, nativeBinary)
 
 	adminDB, err := sql.Open("pgx", dbURL)
 	c.Assert(err, qt.IsNil)
 	defer adminDB.Close()
 
 	testDBName := fmt.Sprintf("ptah_lint_native_rename_e2e_%d", time.Now().UnixNano())
-	createE2EDatabase(c, ctx, adminDB, testDBName)
-	defer dropE2EDatabase(c, context.Background(), adminDB, testDBName)
+	createE2EDatabase(c.TB, ctx, adminDB, testDBName)
+	defer dropE2EDatabase(c.TB, context.Background(), adminDB, testDBName)
 
 	migrationsDir := c.TempDir()
-	writeLintE2EFile(c, migrationsDir, "1.sql", "CREATE TABLE users (id int NOT NULL);\n")
-	writeLintE2EFile(c, migrationsDir, "2.sql", "ALTER TABLE users RENAME COLUMN id TO oid;\n")
+	writeLintE2EFile(c.TB, migrationsDir, "1.sql", "CREATE TABLE users (id int NOT NULL);\n")
+	writeLintE2EFile(c.TB, migrationsDir, "2.sql", "ALTER TABLE users RENAME COLUMN id TO oid;\n")
 
 	// The same directory and the same dev database the compatibility surface
 	// answers with two diagnostics.
@@ -356,7 +356,7 @@ func TestNativeMigrationsLintRenameHasNoAddSideE2E(t *testing.T) {
 		"migrations", "lint",
 		"--dir", migrationsDir,
 		"--dir-format", "atlas",
-		"--dev-url", replaceDatabaseName(c, dbURL, testDBName),
+		"--dev-url", replaceDatabaseName(c.TB, dbURL, testDBName),
 		"--latest", "1",
 	)
 
@@ -365,7 +365,7 @@ func TestNativeMigrationsLintRenameHasNoAddSideE2E(t *testing.T) {
 	// against an empty string.
 	report := stdout + stderr
 
-	c.Assert(exitStatusOf(c, err), qt.Equals, 0)
+	c.Assert(exitStatusOf(c.TB, err), qt.Equals, 0)
 	c.Assert(report, qt.Contains, "BC101: renames are not backwards compatible")
 	c.Assert(report, qt.Contains, "1 finding(s).")
 	c.Assert(report, qt.Not(qt.Contains), "without a DEFAULT")
