@@ -200,23 +200,21 @@ the source file and transaction-mode details in its message.
 
 `migration/migrator.ParseFileDirectives` reads the file's directive header —
 the run of blank lines and line comments before the first executable statement
-— rather than the whole file. Both directive families answer to that one rule,
-so a `-- +ptah` line written below the statements it claims to govern is no
-longer honored, matching what `-- atlas:txmode` already did and what Atlas CE
-does. A directive outside its region is reported at `WARN` by the migrator
-rather than dropped in silence. `PTAH_DIRECTIVES_ANYWHERE=1` restores the
-earlier file-wide scope for `-- +ptah` directives; `ParseFileDirectives`
-reports no error, so a malformed value for that variable fails the migration
-run instead and this function keeps the header rule. Ordered
-`-- +ptah check` directives are unaffected: they are position-insensitive by
-design and `ParseChecks` still reads the whole file.
+— rather than the whole file. A `-- +ptah` line written below the statements it
+claims to govern is not honored. Atlas transaction mode keeps the stricter
+initial column-1 comment-block rule measured from Atlas CE. A directive outside
+its region is reported at `WARN` by the migrator
+rather than dropped in silence. Ordered `-- +ptah check` directives are
+unaffected: they are position-insensitive by design and `ParseChecks` still
+reads the whole file. Atlas directives retain their stricter individual header
+rules; for example, `atlas:txmode` must be in the unbroken column-1 comment
+block at the start of the file.
 
 Position and value stay separate verdicts. A `-- +ptah` directive whose key is
 recognized but whose value cannot be read fails `ParseMigrationUp`, `Migration.Up`
 and `Migration.Down` wherever the line sits, and the error names the line, so a
-typo is never demoted to a position warning and the verdict does not depend on
-`PTAH_DIRECTIVES_ANYWHERE`. An unrecognized bare token and an unknown
-`key=value` pair are not directives and produce neither. The `-- atlas:txmode`
+typo is never demoted to a position warning. An unrecognized bare token and an
+unknown `key=value` pair are not directives and produce neither. The `-- atlas:txmode`
 spelling is reported but not refused outside its block, because Atlas CE applies
 such a directory.
 

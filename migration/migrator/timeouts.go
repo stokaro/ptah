@@ -64,16 +64,17 @@ func (t MigrationTimeouts) IsZero() bool {
 // [ParseFileDirectives] scanned the whole file, so two `+ptah` keys written on
 // one misplaced line had different fates -- the timeout was dropped and the
 // transaction mode was honored. One region is what keeps them the same fact.
-func parseMigrationTimeoutDirectives(sql string, scope directiveScope) (MigrationTimeouts, error) {
+func parseMigrationTimeoutDirectives(sql string) (MigrationTimeouts, error) {
+	return parseMigrationTimeoutDirectivesForDialect(sql, "")
+}
+
+func parseMigrationTimeoutDirectivesForDialect(sql, dialect string) (MigrationTimeouts, error) {
 	var timeouts MigrationTimeouts
 
-	for line := range strings.SplitSeq(directiveRegion(sql, scope), "\n") {
+	for line := range strings.SplitSeq(directiveRegion(sql, dialect), "\n") {
 		trimmed := strings.TrimSpace(line)
 		if trimmed == "" {
 			continue
-		}
-		if !strings.HasPrefix(trimmed, "--") {
-			break
 		}
 		directive, ok := strings.CutPrefix(trimmed, ptahDirectivePrefix)
 		if !ok {

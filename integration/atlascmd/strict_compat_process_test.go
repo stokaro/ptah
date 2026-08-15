@@ -154,13 +154,15 @@ func TestStrictCompatProcessRejectsExtensionEnvironmentBeforeDispatch(t *testing
 		"PTAH_ATLAS_INSPECT_ALL_BLOCKS=1",
 		"PTAH_MIGRATIONS_DIR=/must-not-be-read",
 		"PTAH_URL=sqlite://must-not-be-ignored",
-		// The three the hand-written lists had lost, measured at the process
-		// rather than at Resolve: each was declared through envbool and so
-		// satisfied cmd/internal/envboolguard, while strict mode exited 0 for
-		// both an enabled and a malformed value. See stokaro/ptah#1476.
+		// Two of the three the hand-written lists had lost, measured at the
+		// process rather than at Resolve: each was declared through envbool and
+		// so satisfied cmd/internal/envboolguard, while strict mode exited 0
+		// for both an enabled and a malformed value. See stokaro/ptah#1476.
+		// The third, PTAH_DIRECTIVES_ANYWHERE, no longer exists: the pre-v1
+		// fallback it opened was removed, so there is no declaration left to
+		// classify or to probe here.
 		"PTAH_ATLAS_IGNORE_ENV_SCHEMAS=1",
 		"PTAH_ALLOW_UNVERIFIED_MIGRATION_DIR=1",
-		"PTAH_DIRECTIVES_ANYWHERE=1",
 	} {
 		t.Run(strings.SplitN(assignment, "=", 2)[0], func(t *testing.T) {
 			name := strings.SplitN(assignment, "=", 2)[0]
@@ -215,7 +217,6 @@ func TestStrictCompatProcessRefusesMalformedDerivedEnvironmentBeforeDispatch(t *
 	for _, name := range []string{
 		"PTAH_ATLAS_IGNORE_ENV_SCHEMAS",
 		"PTAH_ALLOW_UNVERIFIED_MIGRATION_DIR",
-		"PTAH_DIRECTIVES_ANYWHERE",
 		"PTAH_STRICT_DIR_QUERY",
 	} {
 		t.Run(name, func(t *testing.T) {

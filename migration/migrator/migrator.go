@@ -1960,17 +1960,13 @@ func (m *Migrator) applyUpMigrations(ctx context.Context, migrations []*Migratio
 // A migration whose directives are all honored produces nothing, which keeps a
 // clean run silent on stderr the way Atlas is.
 func (m *Migrator) reportMisplacedDirectives(migrations []*Migration, direction MigrationDirection) error {
-	scope, err := resolveDirectiveScope()
-	if err != nil {
-		return err
-	}
 	dialect := m.connectionDialect()
 	for _, migration := range migrations {
 		source, sourcePath := migration.UpSQL, migration.upSourcePath
 		if direction == MigrationDirectionDown {
 			source, sourcePath = migration.DownSQL, migration.downSourcePath
 		}
-		for _, misplaced := range misplacedDirectives(source, dialect, scope) {
+		for _, misplaced := range misplacedDirectives(source, dialect) {
 			if misplaced.err != nil {
 				// Reported as the run's refusal by [misplacedDirectiveError],
 				// which names the line too. Warning about it here as well would
@@ -2096,6 +2092,14 @@ func (m *Migrator) runBatchPreMigrationChecks(ctx context.Context, migrations []
 }
 
 func (m *Migrator) validateUpTransactionMode(migrations []*Migration) error {
+	resolvedTimeouts := make(map[*Migration]MigrationTimeouts, len(migrations))
+	for _, migration := range migrations {
+		timeouts, err := m.effectiveUpTimeouts(migration)
+		if err != nil {
+			return err
+		}
+		resolvedTimeouts[migration] = timeouts
+	}
 	if len(migrations) > 0 && m.txMode != MigrationTxModeAll {
 		if _, err := m.resolveUpMigrationTxMode(migrations[0]); err != nil {
 			return err
@@ -2111,7 +2115,7 @@ func (m *Migrator) validateUpTransactionMode(migrations []*Migration) error {
 			if _, err := m.resolveUpMigrationTxMode(migration); err != nil {
 				return err
 			}
-			if !mergeMigrationTimeouts(m.defaultTimeouts, migration.UpTimeouts).IsZero() {
+			if !resolvedTimeouts[migration].IsZero() {
 				return fmt.Errorf("migration %d has timeouts and cannot run with tx-mode all", migration.Version)
 			}
 			if err := m.rejectChecksUnderTxModeAll(migration); err != nil {
@@ -2124,12 +2128,36 @@ func (m *Migrator) validateUpTransactionMode(migrations []*Migration) error {
 			if fileMode.mode == MigrationFileTxModeFile || fileMode.err != nil {
 				continue
 			}
-			if !mergeMigrationTimeouts(m.defaultTimeouts, migration.UpTimeouts).IsZero() {
+			if !resolvedTimeouts[migration].IsZero() {
 				return fmt.Errorf("migration %d has timeouts and cannot run with tx-mode none", migration.Version)
 			}
 		}
 	}
 	return nil
+}
+
+func (m *Migrator) effectiveUpTimeouts(migration *Migration) (MigrationTimeouts, error) {
+	timeouts, err := migration.upTimeoutsForDialect(m.connectionDialect())
+	if err != nil {
+		return MigrationTimeouts{}, fmt.Errorf(
+			"migration %d has invalid timeout directives: %w",
+			migration.Version,
+			err,
+		)
+	}
+	return mergeMigrationTimeouts(m.defaultTimeouts, timeouts), nil
+}
+
+func (m *Migrator) effectiveDownTimeouts(migration *Migration) (MigrationTimeouts, error) {
+	timeouts, err := migration.downTimeoutsForDialect(m.connectionDialect())
+	if err != nil {
+		return MigrationTimeouts{}, fmt.Errorf(
+			"migration %d has invalid timeout directives: %w",
+			migration.Version,
+			err,
+		)
+	}
+	return mergeMigrationTimeouts(m.defaultTimeouts, timeouts), nil
 }
 
 func (m *Migrator) validateTxModeAllDialect() error {
@@ -2165,9 +2193,13 @@ func (m *Migrator) applyUpMigrationObserved(
 
 	m.logger.Info("Applying migration", "version", migration.Version, "description", migration.Description)
 	if txMode == MigrationTxModeNone {
+		timeouts, timeoutErr := m.effectiveUpTimeouts(migration)
+		if timeoutErr != nil {
+			return false, timeoutErr
+		}
 		if err := ensureNoTransactionHasNoTimeouts(
 			migration.Version,
-			mergeMigrationTimeouts(m.defaultTimeouts, migration.UpTimeouts),
+			timeouts,
 		); err != nil {
 			return false, err
 		}
@@ -2284,7 +2316,11 @@ func (m *Migrator) applyUpMigrationInExistingTransaction(
 	// validateUpTransactionMode, because a check on the pool connection cannot
 	// observe earlier batched migrations' uncommitted changes and would evaluate
 	// against stale state. Nothing to run here.
-	restoreTimeouts, err := m.applyTimeoutsWithRestore(ctx, txConn, mergeMigrationTimeouts(m.defaultTimeouts, migration.UpTimeouts))
+	timeouts, err := m.effectiveUpTimeouts(migration)
+	if err != nil {
+		return err
+	}
+	restoreTimeouts, err := m.applyTimeoutsWithRestore(ctx, txConn, timeouts)
 	if err != nil {
 		return fmt.Errorf("failed to apply timeouts for migration %d: %w", migration.Version, err)
 	}
@@ -2378,6 +2414,10 @@ func (m *Migrator) applyUpMigrationTransactionalOnSession(
 	startedAt time.Time,
 ) error {
 	scoped := *m
+	timeouts, err := m.effectiveUpTimeouts(migration)
+	if err != nil {
+		return err
+	}
 	// Pre-migration checks already ran in runPreMigrationChecks, before this
 	// migration had any revision row: they read committed state on the pool, so
 	// they cannot execute inside this transaction (the schema executor exposes no
@@ -2396,7 +2436,7 @@ func (m *Migrator) applyUpMigrationTransactionalOnSession(
 	}
 	txConn := m.conn.WithExecutor(tx)
 
-	restoreTimeouts, err := m.applyTimeoutsWithRestore(ctx, txConn, mergeMigrationTimeouts(m.defaultTimeouts, migration.UpTimeouts))
+	restoreTimeouts, err := m.applyTimeoutsWithRestore(ctx, txConn, timeouts)
 	if err != nil {
 		err = migrationFailureAfterRollback(migration.Version, err, tx.Rollback())
 		return m.failMigrationWithDirtyState(
@@ -2720,6 +2760,10 @@ func (m *Migrator) rollbackMigrationTransactionalOnSession(
 	deleteSQL string,
 ) error {
 	scoped := *m
+	timeouts, err := m.effectiveDownTimeouts(migration)
+	if err != nil {
+		return err
+	}
 	tx, err := m.conn.SchemaWriter().BeginTransaction(ctx)
 	if err != nil {
 		return m.failRollbackWithDirtyState(
@@ -2733,7 +2777,7 @@ func (m *Migrator) rollbackMigrationTransactionalOnSession(
 	}
 	txConn := m.conn.WithExecutor(tx)
 
-	restoreTimeouts, err := m.applyTimeoutsWithRestore(ctx, txConn, mergeMigrationTimeouts(m.defaultTimeouts, migration.DownTimeouts))
+	restoreTimeouts, err := m.applyTimeoutsWithRestore(ctx, txConn, timeouts)
 	if err != nil {
 		err = migrationFailureAfterRollback(migration.Version, err, tx.Rollback())
 		return m.failRollbackWithDirtyState(
@@ -3200,6 +3244,10 @@ func (m *Migrator) validateDownMigrations(migrations []*Migration) error {
 		return err
 	}
 	for _, migration := range migrations {
+		timeouts, err := m.effectiveDownTimeouts(migration)
+		if err != nil {
+			return err
+		}
 		if migration.downUnavailable {
 			return &AtlasDownNotImplementedError{
 				Version:     migration.Version,
@@ -3213,7 +3261,7 @@ func (m *Migrator) validateDownMigrations(migrations []*Migration) error {
 		if txMode == MigrationTxModeNone {
 			if err := ensureNoTransactionHasNoTimeouts(
 				migration.Version,
-				mergeMigrationTimeouts(m.defaultTimeouts, migration.DownTimeouts),
+				timeouts,
 			); err != nil {
 				return err
 			}

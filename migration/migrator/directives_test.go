@@ -78,23 +78,43 @@ func TestParseFileDirectives(t *testing.T) {
 	}
 }
 
-// Test_parseFileDirectivesForDialect_KeepsMySQLStringOpaque exercises the
-// dialect-specific string rules on the only scope that can still reach a string
-// literal.
+// TestParseFileDirectivesTreatsHashCommentsAsHeaderComments keeps the header
+// boundary on the same dialect rules as execution.
 //
-// Under the default header scope the region handed to the lexer is blank lines
-// and line comments by construction, so no string literal can open inside it
-// and the dialect can change nothing. The scope opt-in is where a MySQL
-// backslash escape can still swallow a directive-looking line, so that is where
-// the guarantee has to be measured; the header-scope row is the control that
-// says the same file is inert there.
-func Test_parseFileDirectivesForDialect_KeepsMySQLStringOpaque(t *testing.T) {
-	c := qt.New(t)
-	sql := "SELECT 'prefix \\'\n-- +ptah no_transaction\nsuffix';\n" +
-		"-- +ptah online_ddl_tool=ghost\nSELECT 1;\n"
+// Which dialects those are is not restated here, and that is the point: the
+// answer comes from the lexer options the file will be read with, so this table
+// is a reading of that one authority rather than a second list beside it. SQL
+// Server is the live negative control -- it is the one target whose options
+// disable hash comments, and its row is what keeps every other row from being
+// vacuously true.
+func TestParseFileDirectivesTreatsHashCommentsAsHeaderComments(t *testing.T) {
+	sql := "# ordinary hash comment\n-- +ptah no_transaction\nSELECT 1;\n"
 
-	c.Check(parseFileDirectivesForDialectInScope(sql, platform.MySQL, directiveScopeFile),
-		qt.DeepEquals, map[string]string{"online_ddl_tool": "ghost"})
-	c.Check(parseFileDirectivesForDialectInScope(sql, platform.MySQL, directiveScopeHeader),
-		qt.DeepEquals, map[string]string{})
+	tests := []struct {
+		name    string
+		dialect string
+		want    map[string]string
+	}{
+		{
+			// Load time has no connection yet, so it must not read a header
+			// SHORTER than the dialect that will execute the file would.
+			name:    "unresolved dialect",
+			dialect: "",
+			want:    map[string]string{"no_transaction": "true"},
+		},
+		{name: "mysql", dialect: platform.MySQL, want: map[string]string{"no_transaction": "true"}},
+		{name: "mariadb", dialect: platform.MariaDB, want: map[string]string{"no_transaction": "true"}},
+		{name: "clickhouse", dialect: platform.ClickHouse, want: map[string]string{"no_transaction": "true"}},
+		{name: "postgres", dialect: platform.Postgres, want: map[string]string{"no_transaction": "true"}},
+		{name: "sqlite", dialect: platform.SQLite, want: map[string]string{"no_transaction": "true"}},
+		{name: "sqlserver", dialect: platform.SQLServer, want: map[string]string{}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Check(parseFileDirectivesForDialect(sql, test.dialect), qt.DeepEquals, test.want)
+		})
+	}
 }
