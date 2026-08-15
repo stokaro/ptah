@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"syscall"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -86,7 +87,9 @@ func TestGenerateEmptyMigrationRefusesParentThatIsAFile(t *testing.T) {
 		MigrationName: "init",
 		OutputDir:     filepath.Join(blocker, "b"),
 	})
-	c.Assert(err, qt.ErrorMatches, `.*not a directory`)
+	// The sentinel, not its wording: "not a directory" is the Unix rendering of
+	// ENOTDIR, and Windows answers the same condition in its own words.
+	c.Assert(err, qt.ErrorIs, syscall.ENOTDIR)
 
 	blockerBytes, err := os.ReadFile(blocker)
 	c.Assert(err, qt.IsNil)

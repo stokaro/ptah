@@ -15,6 +15,7 @@ import (
 
 	"go.5x5.cz/ptah/cmd/internal/migrationsource"
 	"go.5x5.cz/ptah/cmd/root"
+	"go.5x5.cz/ptah/internal/testutils"
 )
 
 // This file is the LIVE ENUMERATION of Ptah's OCI command surface.
@@ -244,7 +245,7 @@ func TestOCISchemaSourceVerbs_ReachTheRegistryWithPlainHTTP(t *testing.T) {
 			// The flag parsed.
 			c.Check(combined, qt.Not(qt.Contains), "unknown flag: --plain-http")
 			// The value reached the OCI client, which dialed and failed.
-			c.Check(combined, qt.Contains, "connection refused",
+			c.Check(combined, qt.Contains, testutils.RefusedConnection,
 				qt.Commentf("output:\n%s", combined))
 			// It dialed plain HTTP, not HTTPS: --plain-http did the work
 			// rather than being accepted and dropped.
@@ -465,7 +466,7 @@ func TestOCIMigrationDirVerbs_ReachTheRegistryWithPlainHTTP(t *testing.T) {
 			// that stats the reference never dials, so this and the dial
 			// assertion below cannot both hold.
 			c.Check(combined, qt.Not(qt.Contains), "no such file or directory")
-			c.Check(combined, qt.Contains, "connection refused",
+			c.Check(combined, qt.Contains, testutils.RefusedConnection,
 				qt.Commentf("output:\n%s", combined))
 			c.Check(combined, qt.Contains, "http://",
 				qt.Commentf("output:\n%s", combined))

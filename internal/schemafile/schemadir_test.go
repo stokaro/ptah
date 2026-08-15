@@ -121,7 +121,7 @@ func TestLoadPathRefusesAnUnusableSchemaDirectory(t *testing.T) {
 				"1_users.sql": "CREATE TABLE users (id INTEGER PRIMARY KEY);\n",
 				"sub/x.sql":   "CREATE TABLE nope (id INTEGER PRIMARY KEY);\n",
 			},
-			wantErr: `read [^/]+/sub: is a directory`,
+			wantErr: `read [^/\\]+[/\\]sub: is a directory`,
 		},
 		{
 			name:    "an empty directory refuses",

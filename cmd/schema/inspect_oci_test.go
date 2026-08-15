@@ -10,6 +10,7 @@ import (
 
 	"go.5x5.cz/ptah/cmd/atlas"
 	"go.5x5.cz/ptah/cmd/schema"
+	"go.5x5.cz/ptah/internal/testutils"
 )
 
 // This file pins the DECISION behind stokaro/ptah#928 item 2, not merely its
@@ -84,7 +85,7 @@ func TestSchemaInspect_ResolvesAnOCISchemaFile(t *testing.T) {
 	c.Assert(err, qt.IsNotNil, qt.Commentf("output:\n%s", combined))
 	c.Check(combined, qt.Not(qt.Contains), `unsupported desired-state URL scheme "oci"`)
 	c.Check(combined, qt.Not(qt.Contains), "unknown flag: --plain-http")
-	c.Check(combined, qt.Contains, "connection refused", qt.Commentf("output:\n%s", combined))
+	c.Check(combined, qt.Contains, testutils.RefusedConnection, qt.Commentf("output:\n%s", combined))
 	// --plain-http reached the OCI client rather than being parsed and
 	// dropped: the dial that failed was plain HTTP.
 	c.Check(combined, qt.Contains, "http://", qt.Commentf("output:\n%s", combined))
@@ -216,7 +217,7 @@ func TestSchemaInspect_AnswersLocalArgumentErrorsBeforeReachingTheRegistry(t *te
 			c.Assert(err, qt.IsNotNil, qt.Commentf("output:\n%s", combined))
 			c.Check(combined, qt.Contains, tt.want, qt.Commentf("output:\n%s", combined))
 			// Nothing was dialed: the local error came first.
-			c.Check(combined, qt.Not(qt.Contains), "connection refused")
+			c.Check(combined, qt.Not(qt.Contains), testutils.RefusedConnection)
 			c.Check(combined, qt.Not(qt.Contains), "fetch OCI manifest")
 		})
 	}
@@ -254,7 +255,7 @@ func TestSchemaInspect_ProvisionableDockerDevURLReachesTheRegistry(t *testing.T)
 	combined := out + errorText(err)
 
 	c.Assert(err, qt.IsNotNil, qt.Commentf("output:\n%s", combined))
-	c.Check(combined, qt.Contains, "connection refused", qt.Commentf("output:\n%s", combined))
+	c.Check(combined, qt.Contains, testutils.RefusedConnection, qt.Commentf("output:\n%s", combined))
 	// The value was carried, not refused: none of the dev-URL verdicts fired.
 	c.Check(combined, qt.Not(qt.Contains), "directly connectable dev database URL")
 	c.Check(combined, qt.Not(qt.Contains), "unsupported docker")
@@ -289,7 +290,7 @@ func TestCompatSchemaInspect_StillRefusesOCI(t *testing.T) {
 		qt.Commentf("output:\n%s", combined))
 	// It refused rather than dialing: no socket was opened for a scheme this
 	// surface does not implement.
-	c.Check(combined, qt.Not(qt.Contains), "connection refused")
+	c.Check(combined, qt.Not(qt.Contains), testutils.RefusedConnection)
 }
 
 // TestCompatSchemaInspect_RegistersNoPlainHTTP pins the other half of the

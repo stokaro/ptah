@@ -20,14 +20,14 @@ func TestAtlasMigrateLintDirCaptureError_AdaptsMissingOpen(t *testing.T) {
 
 	got := atlasMigrateLintDirCaptureError("nested/../missing", "", captureErr)
 
-	c.Assert(got.Error(), qt.Equals, "sql/migrate: stat missing: no such file or directory")
+	c.Assert(got.Error(), qt.Equals, "sql/migrate: stat missing: "+syscall.ENOENT.Error())
 	c.Assert(got, qt.ErrorIs, captureErr)
 	c.Assert(got, qt.ErrorIs, syscall.ENOENT)
 	var gotPathErr *os.PathError
 	c.Assert(got, qt.ErrorAs, &gotPathErr)
 	c.Assert(gotPathErr, qt.Equals, pathErr)
 	c.Assert(errors.Unwrap(got).Error(), qt.Equals,
-		"atlas migrate lint --dir: open migrations directory: openat missing: no such file or directory")
+		"atlas migrate lint --dir: open migrations directory: openat missing: "+syscall.ENOENT.Error())
 }
 
 func TestAtlasMigrateLintDirCaptureError_RootedPathUsesObservedSpelling(t *testing.T) {
@@ -35,9 +35,9 @@ func TestAtlasMigrateLintDirCaptureError_RootedPathUsesObservedSpelling(t *testi
 	pathErr := &os.PathError{Op: "openat", Path: "missing", Err: syscall.ENOENT}
 	captureErr := fmt.Errorf("open migrations directory: %w", pathErr)
 
-	got := atlasMigrateLintDirCaptureError("/project/missing", "/project", captureErr)
+	got := atlasMigrateLintDirCaptureError(rootedFixturePath("project", "missing"), rootedFixturePath("project"), captureErr)
 
-	c.Assert(got.Error(), qt.Equals, "sql/migrate: stat missing: no such file or directory")
+	c.Assert(got.Error(), qt.Equals, "sql/migrate: stat missing: "+syscall.ENOENT.Error())
 	c.Assert(got, qt.ErrorIs, captureErr)
 	var gotPathErr *os.PathError
 	c.Assert(got, qt.ErrorAs, &gotPathErr)
@@ -122,29 +122,29 @@ func TestAtlasMigrateLintPathErrorMatches_SymmetricRootedPaths(t *testing.T) {
 		{
 			name:        "both relative",
 			path:        "nested/../missing",
-			allowedRoot: "/project",
+			allowedRoot: rootedFixturePath("project"),
 			errorPath:   "missing",
 			want:        true,
 		},
 		{
 			name:        "requested absolute and error relative",
-			path:        "/project/missing",
-			allowedRoot: "/project",
+			path:        rootedFixturePath("project", "missing"),
+			allowedRoot: rootedFixturePath("project"),
 			errorPath:   "missing",
 			want:        true,
 		},
 		{
 			name:        "requested relative and error absolute",
 			path:        "missing",
-			allowedRoot: "/project",
-			errorPath:   "/project/missing",
+			allowedRoot: rootedFixturePath("project"),
+			errorPath:   rootedFixturePath("project", "missing"),
 			want:        true,
 		},
 		{
 			name:        "different rooted path",
 			path:        "missing",
-			allowedRoot: "/project",
-			errorPath:   "/other/missing",
+			allowedRoot: rootedFixturePath("project"),
+			errorPath:   rootedFixturePath("other", "missing"),
 			want:        false,
 		},
 	}

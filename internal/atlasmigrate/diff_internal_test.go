@@ -993,41 +993,93 @@ func TestRecoverPendingPublication_RejectsForeignCollision(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 }
 
+// TestAbortPendingPublication_RejectsForeignReplacement runs every publication
+// mode, because the platform picks one and the refusal has to hold under all
+// three.
+//
+// It used to let platformPublicationMode choose, which made it a test of the
+// host: Unix detects hard links and publishes by adding a second name, so the
+// staging entry survives, while Windows publishes by an atomic rename that
+// consumes it. Only the last assertion depended on that, and it was the one
+// that reddened -- the refusal, the preserved foreign bytes and the retained
+// journal are identical in all three modes.
+//
+// Pinning one mode instead would have been the smaller change and the worse
+// one: it would have retired the mode Windows actually uses from the test that
+// covers this path.
+// retainedStagingEntries reports how many staging entries a published batch
+// leaves behind, from the mode the journal recorded for it.
+//
+// Publishing by rename consumes the staging entry; publishing by hard link or
+// by copy adds a second name and leaves it. The journal is the only place a
+// test can learn which happened when the batch was staged inside the code
+// under test.
+func retainedStagingEntries(c *qt.C, writer *migrationWriterDir) int {
+	c.Helper()
+	journal, err := readPublicationJournal(writer)
+	c.Assert(err, qt.IsNil)
+	c.Assert(journal.Entries, qt.Not(qt.HasLen), 0)
+	retained := 0
+	for _, entry := range journal.Entries {
+		if publicationMode(entry.Mode) != publicationModeWriteThroughMove {
+			retained++
+		}
+	}
+	return retained
+}
+
 func TestAbortPendingPublication_RejectsForeignReplacement(t *testing.T) {
-	c := qt.New(t)
-	dir := c.TempDir()
-	writer := openTestWriter(c, dir)
-	batch, err := stageMigrationBatchAt(
-		writer,
-		"collision",
-		1,
-		[]MigrationFileContent{{SQL: "SELECT 1;"}},
-	)
-	c.Assert(err, qt.IsNil)
-	_, _ = beginTestPublication(
-		c,
-		writer,
-		batch,
-		[]MigrationFileContent{{SQL: "SELECT 1;"}},
-	)
-	published, err := publishMigrationBatch(writer, batch)
-	c.Assert(err, qt.IsNil)
-	c.Assert(published, qt.Equals, 1)
-	c.Assert(os.Remove(batch.paths[0]), qt.IsNil)
-	c.Assert(os.WriteFile(batch.paths[0], []byte("foreign"), 0o600), qt.IsNil)
+	tests := []struct {
+		name string
+		mode publicationMode
+		// stagedSurvives records whether publication leaves the staging entry
+		// behind. A rename consumes it; a link or a copy does not.
+		stagedSurvives bool
+	}{
+		{name: "hard link", mode: publicationModeHardLink, stagedSurvives: true},
+		{name: "copy", mode: publicationModeCopy, stagedSurvives: true},
+		{name: "write-through move", mode: publicationModeWriteThroughMove, stagedSurvives: false},
+	}
 
-	err = abortPendingPublication(writer, batch, published)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			dir := c.TempDir()
+			writer := openTestWriter(c, dir)
+			batch, err := stageMigrationBatchAt(
+				writer,
+				"collision",
+				1,
+				[]MigrationFileContent{{SQL: "SELECT 1;"}},
+			)
+			c.Assert(err, qt.IsNil)
+			batch.mode = test.mode
+			_, _ = beginTestPublication(
+				c,
+				writer,
+				batch,
+				[]MigrationFileContent{{SQL: "SELECT 1;"}},
+			)
+			published, err := publishMigrationBatch(writer, batch)
+			c.Assert(err, qt.IsNil)
+			c.Assert(published, qt.Equals, 1)
+			c.Assert(os.Remove(batch.paths[0]), qt.IsNil)
+			c.Assert(os.WriteFile(batch.paths[0], []byte("foreign"), 0o600), qt.IsNil)
 
-	c.Assert(err, qt.ErrorMatches, `roll back published migration files: cannot safely recover migration publication: .* content changed; preserved at .*`)
-	_, err = os.Stat(batch.paths[0])
-	c.Assert(err, qt.ErrorIs, os.ErrNotExist)
-	contents, err := os.ReadFile(stagedPath(writer, batch, 0) + publicationRollbackSuffix)
-	c.Assert(err, qt.IsNil)
-	c.Assert(string(contents), qt.Equals, "foreign")
-	_, err = os.Stat(stagedPath(writer, batch, 0))
-	c.Assert(err, qt.IsNil)
-	_, err = os.Stat(testJournalPath(writer))
-	c.Assert(err, qt.IsNil)
+			err = abortPendingPublication(writer, batch, published)
+
+			c.Assert(err, qt.ErrorMatches, `roll back published migration files: cannot safely recover migration publication: .* content changed; preserved at .*`)
+			_, err = os.Stat(batch.paths[0])
+			c.Assert(err, qt.ErrorIs, os.ErrNotExist)
+			contents, err := os.ReadFile(stagedPath(writer, batch, 0) + publicationRollbackSuffix)
+			c.Assert(err, qt.IsNil)
+			c.Assert(string(contents), qt.Equals, "foreign")
+			_, err = os.Stat(stagedPath(writer, batch, 0))
+			c.Assert(err == nil, qt.Equals, test.stagedSurvives)
+			_, err = os.Stat(testJournalPath(writer))
+			c.Assert(err, qt.IsNil)
+		})
+	}
 }
 
 func TestAbortPendingPublication_RejectsInPlaceHardLinkMutation(t *testing.T) {
@@ -1099,7 +1151,12 @@ func TestWriteDiffArtifacts_CommitUncertainRetainsRecoverableBatch(t *testing.T)
 	c.Assert(sqlFiles, qt.HasLen, 1)
 	stagedFiles, err := filepath.Glob(filepath.Join(dir, stagedMigrationPattern))
 	c.Assert(err, qt.IsNil)
-	c.Assert(stagedFiles, qt.HasLen, 1)
+	// How many staging entries survive publication is the publication mode's
+	// answer, not this test's: a rename consumes the entry, a link or a copy
+	// leaves it. The count is read from the journal rather than assumed,
+	// because the platform chooses the mode -- Unix detects hard links, Windows
+	// always moves -- and a fixed 1 here asserted the host.
+	c.Assert(stagedFiles, qt.HasLen, retainedStagingEntries(c, writer))
 	journalPath := testJournalPath(writer)
 	_, err = os.Stat(journalPath)
 	c.Assert(err, qt.IsNil)

@@ -382,7 +382,16 @@ func rebaseManagedDataFiles(values []goschema.ManagedData, outputPath string) er
 		}
 		relativePath, err := filepath.Rel(outputDir, sourcePath)
 		if err != nil {
-			return fmt.Errorf("rebase managed data file %q: %w", values[i].File, err)
+			// The usual cause is two volumes: no relative path exists from
+			// C:\out to D:\project, so this is not a failure to compute one
+			// but the absence of one. Say that, because Go's own wording
+			// ("Rel: can't make X relative to Y") reads like an internal
+			// error and leaves the operator without the one fact that would
+			// let them fix it.
+			return fmt.Errorf(
+				"rebase managed data file %q: no path from the export output %s to the file %s: %w",
+				values[i].File, outputDir, sourcePath, err,
+			)
 		}
 		values[i].File = filepath.ToSlash(relativePath)
 		values[i].SourceDir = outputDir

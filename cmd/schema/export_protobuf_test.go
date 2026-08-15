@@ -526,7 +526,12 @@ func TestSchemaExportProtobufPublishesReadableFileAndCleansTempFiles(t *testing.
 	c.Assert(err, qt.IsNil)
 	// The file is committed alongside the schema, so it carries the same 0644
 	// permissions as other generated artifacts rather than os.CreateTemp's 0600.
-	c.Assert(info.Mode().Perm(), qt.Equals, os.FileMode(0o644))
+	assertPublishedMode(c, info.Mode())
+	// The portable half, and the one this test is named for: whatever the
+	// platform reports as a mode, the published file has to be readable.
+	published, err := os.ReadFile(outPath)
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(published), qt.Contains, "package "+protoTestPackage+";")
 
 	outDir := filepath.Dir(outPath)
 	c.Assert(leftoverTempFiles(c, outDir), qt.HasLen, 0)
@@ -548,5 +553,8 @@ func TestSchemaExportProtobufPublishesReadableFileAndCleansTempFiles(t *testing.
 	c.Assert(leftoverTempFiles(c, outDir), qt.HasLen, 0)
 	info, err = os.Stat(outPath)
 	c.Assert(err, qt.IsNil)
-	c.Assert(info.Mode().Perm(), qt.Equals, os.FileMode(0o644))
+	assertPublishedMode(c, info.Mode())
+	republished, err := os.ReadFile(outPath)
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(republished), qt.Contains, "package "+protoTestPackage+";")
 }

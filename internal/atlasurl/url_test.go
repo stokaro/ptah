@@ -303,3 +303,60 @@ func TestMayAddressSameDatabase_HappyPath(t *testing.T) {
 		})
 	}
 }
+
+// TestDatabaseIdentity_ReadsAWindowsAddressEverywhereThisPackageParsesOne pins
+// that the Windows rule this package exports applies to the addresses it reads
+// itself.
+//
+// [Parse] carries a drive letter's colon as opaque because net/url reads it as
+// a port separator and refuses the whole address. The endpoint comparison
+// reached for net/url directly, so it refused every Windows SQLite address it
+// was given -- and the callers that ask it whether two URLs address one
+// database reported that refusal as `invalid database URL` from `schema
+// apply`, `migrate diff` and the rollback verification alike. 46 unit tests
+// answered that on windows-latest, for paths the operating system they ran on
+// considers ordinary.
+//
+// The rows run on every operating system because the defect is in string
+// parsing: nothing here opens the path.
+func TestDatabaseIdentity_ReadsAWindowsAddressEverywhereThisPackageParsesOne(t *testing.T) {
+	tests := []struct {
+		name  string
+		left  string
+		right string
+		same  bool
+	}{
+		{
+			name:  "one drive path is the same database as itself",
+			left:  `sqlite://C:\Users\runner\AppData\Local\Temp\dev.db`,
+			right: `sqlite://C:\Users\runner\AppData\Local\Temp\dev.db`,
+			same:  true,
+		},
+		{
+			name:  "connection options do not change which database it is",
+			left:  `sqlite://C:\Users\runner\AppData\Local\Temp\dev.db`,
+			right: `sqlite://C:\Users\runner\AppData\Local\Temp\dev.db?_fk=1`,
+			same:  true,
+		},
+		{
+			name:  "two drive paths are still told apart",
+			left:  `sqlite://C:\Users\runner\AppData\Local\Temp\dev.db`,
+			right: `sqlite://C:\Users\runner\AppData\Local\Temp\other.db`,
+			same:  false,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			same, sameErr := atlasurl.SameDatabaseEndpoint(test.left, test.right)
+			may, mayErr := atlasurl.MayAddressSameDatabase(test.left, test.right)
+
+			c.Assert(sameErr, qt.IsNil)
+			c.Assert(mayErr, qt.IsNil)
+			c.Assert(same, qt.Equals, test.same)
+			c.Assert(may, qt.Equals, test.same)
+		})
+	}
+}

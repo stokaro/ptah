@@ -3,7 +3,6 @@ package migratedown_test
 import (
 	"context"
 	"io"
-	"net/url"
 	"os"
 	"path/filepath"
 	"testing"
@@ -14,6 +13,8 @@ import (
 	"go.5x5.cz/ptah/cmd/internal/cliobs"
 	"go.5x5.cz/ptah/cmd/migratedown"
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/atlasurl"
+	"go.5x5.cz/ptah/internal/testutils"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -38,7 +39,7 @@ func TestMigrateDownCommandPreflightHookAbortPreventsRollback(t *testing.T) {
 	c.Assert(os.WriteFile(filepath.Join(tempDir, "000001_create_guarded.up.sql"), []byte("CREATE TABLE guarded_down (id INTEGER PRIMARY KEY);"), 0o600), qt.IsNil)
 	c.Assert(os.WriteFile(filepath.Join(tempDir, "000001_create_guarded.down.sql"), []byte("DROP TABLE guarded_down;"), 0o600), qt.IsNil)
 
-	dbURL := (&url.URL{Scheme: "sqlite", Path: filepath.Join(t.TempDir(), "ptah.db")}).String()
+	dbURL := atlasurl.SQLiteURLFromPath(filepath.Join(t.TempDir(), "ptah.db"))
 	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(conn)
@@ -54,7 +55,7 @@ func TestMigrateDownCommandPreflightHookAbortPreventsRollback(t *testing.T) {
 		"--migrations-dir", tempDir,
 		"--target", "0",
 		"--confirm",
-		"--pre-down-hook", "echo rollback backup refused; exit 8",
+		"--pre-down-hook", testutils.FailingHookCommand("rollback backup refused", 8),
 	})
 
 	err = cmd.Execute()
@@ -79,7 +80,7 @@ func TestMigrateDownCommandDeclinedConfirmationPrintsCanceled(t *testing.T) {
 	c.Assert(os.WriteFile(filepath.Join(tempDir, "000001_create_declined.up.sql"), []byte("CREATE TABLE declined_down (id INTEGER PRIMARY KEY);"), 0o600), qt.IsNil)
 	c.Assert(os.WriteFile(filepath.Join(tempDir, "000001_create_declined.down.sql"), []byte("DROP TABLE declined_down;"), 0o600), qt.IsNil)
 
-	dbURL := (&url.URL{Scheme: "sqlite", Path: filepath.Join(t.TempDir(), "ptah.db")}).String()
+	dbURL := atlasurl.SQLiteURLFromPath(filepath.Join(t.TempDir(), "ptah.db"))
 	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(conn)
@@ -114,7 +115,7 @@ func TestMigrateDownCommandShadowDBVerifiesRollbackBeforeApplying(t *testing.T) 
 	c.Assert(os.WriteFile(filepath.Join(tempDir, "000001_create_verified.up.sql"), []byte("CREATE TABLE verified_down (id INTEGER PRIMARY KEY);"), 0o600), qt.IsNil)
 	c.Assert(os.WriteFile(filepath.Join(tempDir, "000001_create_verified.down.sql"), []byte("DROP TABLE verified_down;"), 0o600), qt.IsNil)
 
-	dbURL := (&url.URL{Scheme: "sqlite", Path: filepath.Join(t.TempDir(), "ptah.db")}).String()
+	dbURL := atlasurl.SQLiteURLFromPath(filepath.Join(t.TempDir(), "ptah.db"))
 	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(conn)
@@ -129,7 +130,7 @@ func TestMigrateDownCommandShadowDBVerifiesRollbackBeforeApplying(t *testing.T) 
 		"--db-url", dbURL,
 		"--migrations-dir", tempDir,
 		"--target", "0",
-		"--shadow-db", (&url.URL{Scheme: "sqlite", Path: filepath.Join(t.TempDir(), "shadow.db")}).String(),
+		"--shadow-db", atlasurl.SQLiteURLFromPath(filepath.Join(t.TempDir(), "shadow.db")),
 		"--confirm",
 	})
 
@@ -153,7 +154,7 @@ func TestMigrateDownCommandShadowDBFailureAbortsBeforeTouchingTarget(t *testing.
 	// must keep both its schema and a clean (non-dirty) revision state.
 	c.Assert(os.WriteFile(filepath.Join(tempDir, "000001_create_guarded.down.sql"), []byte("DROP TABLE no_such_table;"), 0o600), qt.IsNil)
 
-	dbURL := (&url.URL{Scheme: "sqlite", Path: filepath.Join(t.TempDir(), "ptah.db")}).String()
+	dbURL := atlasurl.SQLiteURLFromPath(filepath.Join(t.TempDir(), "ptah.db"))
 	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(conn)
@@ -168,7 +169,7 @@ func TestMigrateDownCommandShadowDBFailureAbortsBeforeTouchingTarget(t *testing.
 		"--db-url", dbURL,
 		"--migrations-dir", tempDir,
 		"--target", "0",
-		"--shadow-db", (&url.URL{Scheme: "sqlite", Path: filepath.Join(t.TempDir(), "shadow.db")}).String(),
+		"--shadow-db", atlasurl.SQLiteURLFromPath(filepath.Join(t.TempDir(), "shadow.db")),
 		"--confirm",
 	})
 

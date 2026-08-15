@@ -11,6 +11,8 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
+
+	"go.5x5.cz/ptah/internal/testutils"
 )
 
 // These tests build the ptah-ls binary at run time and exercise it as a
@@ -248,7 +250,7 @@ func newPtahLSProcess(ctx context.Context, binPath string, args ...string) *exec
 
 func buildPtahLSBinary(c *qt.C) string {
 	c.Helper()
-	binPath := filepath.Join(c.TempDir(), "ptah-ls")
+	binPath := filepath.Join(c.TempDir(), "ptah-ls"+testutils.ExecutableSuffix)
 	build := exec.Command("go", "build", "-o", binPath, ".")
 	build.Env = append(os.Environ(), "GOWORK=off")
 	buildOut, err := build.CombinedOutput()

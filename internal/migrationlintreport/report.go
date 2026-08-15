@@ -27,6 +27,7 @@ import (
 	"go.5x5.cz/ptah/internal/lintdialect"
 	"go.5x5.cz/ptah/internal/migrationreplay"
 	"go.5x5.cz/ptah/internal/migrationsnapshot"
+	"go.5x5.cz/ptah/internal/pathguard"
 	"go.5x5.cz/ptah/internal/schemaselection"
 	"go.5x5.cz/ptah/migration/lint"
 	"go.5x5.cz/ptah/migration/migrator"
@@ -851,18 +852,34 @@ func gitChangedMigrationSelection(
 	if err != nil {
 		return lintVersionSelection{}, fmt.Errorf("find git repository root: %w", err)
 	}
-	migrationsAbs, err := filepath.Abs(migrationsDir)
+	// Both sides are canonicalized before they are compared, because git and
+	// the process answer with different spellings of the same directory and
+	// filepath.Rel reconciles none of it.
+	//
+	// A repository reached through a symlink is the portable case: git reports
+	// the real path while filepath.Abs keeps the link, so Rel returns
+	// "../../link/migrations" and a directory plainly inside the repository is
+	// declared outside it. On Windows the same thing arrives as the 8.3 short
+	// name -- the process cwd is C:\Users\RUNNER~1\... while git returns
+	// C:/Users/runneradmin/... -- which is what windows-latest reported.
+	// ResolveWithinRoot with no root is the house Abs+Clean+EvalSymlinks, and
+	// on Windows its EvalSymlinks also expands the short name.
+	migrationsAbs, err := pathguard.ResolveWithinRoot(migrationsDir, "")
 	if err != nil {
 		return lintVersionSelection{}, fmt.Errorf("resolve migrations directory: %w", err)
 	}
-	relDir, err := filepath.Rel(repoRoot, migrationsAbs)
+	repoRootPath, err := pathguard.ResolveWithinRoot(repoRoot, "")
+	if err != nil {
+		return lintVersionSelection{}, fmt.Errorf("resolve git repository root: %w", err)
+	}
+	relDir, err := filepath.Rel(repoRootPath, migrationsAbs)
 	if err != nil {
 		return lintVersionSelection{}, fmt.Errorf("resolve migrations directory relative to git repository: %w", err)
 	}
 	if strings.HasPrefix(relDir, ".."+string(filepath.Separator)) || relDir == ".." || filepath.IsAbs(relDir) {
-		return lintVersionSelection{}, fmt.Errorf("migrations directory %s is outside git repository %s", migrationsAbs, repoRoot)
+		return lintVersionSelection{}, fmt.Errorf("migrations directory %s is outside git repository %s", migrationsAbs, repoRootPath)
 	}
-	changed, err := gitOutput(ctx, repoRoot,
+	changed, err := gitOutput(ctx, repoRootPath,
 		"diff",
 		"--name-only",
 		"--diff-filter=ACMR",
@@ -1238,9 +1255,26 @@ func sarifArtifactURI(file string) string {
 				return filepath.ToSlash(rel)
 			}
 		}
-		return (&url.URL{Scheme: "file", Path: filepath.ToSlash(cleaned)}).String()
+		return fileURI(filepath.ToSlash(cleaned))
 	}
 	return path.Clean(filepath.ToSlash(file))
+}
+
+// fileURI renders an absolute, already-slashed path as a file: URI.
+//
+// The leading slash is not decoration. A Windows absolute path slashes to
+// "C:/a/b.sql", which has no leading "/", and url.URL.String() writes "//"
+// before such a Path -- so the result is "file://C:/a/b.sql", where every SARIF
+// consumer reads "C:" as the authority and the drive letter becomes a
+// hostname. Unix paths already begin with a slash and were therefore correct by
+// accident, which is why no runner noticed.
+//
+// It takes the slashed path rather than reading the caller's filepath, so the
+// Windows answer is reachable from a test on any operating system: the branch
+// above only runs for a path filepath.IsAbs accepts, and a drive path is not
+// absolute on a Unix runner.
+func fileURI(slashed string) string {
+	return (&url.URL{Scheme: "file", Path: "/" + strings.TrimPrefix(slashed, "/")}).String()
 }
 
 func isRelativeURI(uri string) bool {

@@ -211,10 +211,18 @@ func runAtlasValidate(cmd *cobra.Command, src *source) error {
 // The display wrapper unwraps to the complete original error rather than only
 // the extracted [os.PathError], so callers retain every contextual layer for
 // errors.Is and errors.As while the compatibility surface prints Atlas's text.
+//
+// The [os.PathError] Op is deliberately not compared. os.Stat names it "stat"
+// on Unix and "GetFileAttributesEx" on Windows, so a literal made this whole
+// adaptation Unix-only: `ptah-compat migrate validate` and `migrate import`
+// printed Go's native wording on Windows, which is a compatibility divergence
+// rather than a cosmetic one. Nothing is lost by dropping it, because the
+// remaining clauses are stricter than the Op ever was -- the error text has to
+// equal StatDir's own formatting around this very PathError, and the only two
+// places in the repository that produce that text wrap an os.Stat.
 func AtlasDirectoryError(dir string, err error) error {
 	var pathErr *os.PathError
 	if !errors.As(err, &pathErr) ||
-		pathErr.Op != "stat" ||
 		pathErr.Path != dir ||
 		!errors.Is(pathErr, fs.ErrNotExist) ||
 		err.Error() != "migrations directory "+dir+": "+pathErr.Error() {

@@ -15,6 +15,7 @@ import (
 	"go.5x5.cz/ptah/cmd/internal/cmdadapter"
 	"go.5x5.cz/ptah/cmd/internal/dbcli"
 	"go.5x5.cz/ptah/config/projectconfig"
+	"go.5x5.cz/ptah/internal/testutils"
 )
 
 type testContextKey struct{}
@@ -253,7 +254,7 @@ func TestForwardCommandPassesProjectConfigSnapshotWithoutReloading(t *testing.T)
 	c := qt.New(t)
 	snapshot := projectconfig.Config{
 		Migration: projectconfig.MigrationConfig{
-			PreDownHook: "echo snapshot-hook; exit 8",
+			PreDownHook: testutils.FailingHookCommand("snapshot-hook", 8),
 		},
 	}
 	var loaded projectconfig.Config
@@ -290,13 +291,13 @@ func TestForwardCommandPassesProjectConfigSnapshotWithoutReloading(t *testing.T)
 	err := cmd.Execute()
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(loaded.Migration.PreDownHook, qt.Equals, "echo snapshot-hook; exit 8")
-	snapshot.Migration.PreDownHook = "echo second-snapshot-hook; exit 9"
+	c.Assert(loaded.Migration.PreDownHook, qt.Equals, testutils.FailingHookCommand("snapshot-hook", 8))
+	snapshot.Migration.PreDownHook = testutils.FailingHookCommand("second-snapshot-hook", 9)
 
 	err = cmd.Execute()
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(loaded.Migration.PreDownHook, qt.Equals, "echo second-snapshot-hook; exit 9")
+	c.Assert(loaded.Migration.PreDownHook, qt.Equals, testutils.FailingHookCommand("second-snapshot-hook", 9))
 	c.Assert(target.Context(), qt.IsNil)
 }
 

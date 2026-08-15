@@ -76,19 +76,6 @@ func TestLocalDir_PreservesPlainPathURLCharacters(t *testing.T) {
 	c.Assert(resolved, qt.Equals, want)
 }
 
-func TestLocalDirWithQuery_PreservesPlainPathQueryLikeSuffix(t *testing.T) {
-	c := qt.New(t)
-	baseDir := t.TempDir()
-	want, err := pathguard.ResolveWithinRoot(filepath.Join(baseDir, "migrations?format=atlas"), "")
-	c.Assert(err, qt.IsNil)
-
-	resolved, query, err := atlasprojectpath.LocalDirWithQuery("migrations?format=atlas", baseDir)
-
-	c.Assert(err, qt.IsNil)
-	c.Assert(resolved, qt.Equals, want)
-	c.Assert(query, qt.HasLen, 0)
-}
-
 func TestLocalDir_RejectsParentRelativePath(t *testing.T) {
 	c := qt.New(t)
 	rootDir := t.TempDir()

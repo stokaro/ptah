@@ -26,6 +26,7 @@ import (
 	"go.5x5.cz/ptah/core/sqlutil"
 	"go.5x5.cz/ptah/dbschema"
 	dbtypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -145,7 +146,7 @@ func StartSQLite(t testing.TB, opts ...Option) *dbschema.DatabaseConnection {
 		dbPath = filepath.Join(t.TempDir(), "ptah-test.sqlite")
 	}
 
-	dbURL := (&url.URL{Scheme: platform.SQLite, Path: dbPath}).String()
+	dbURL := atlasurl.SQLiteURLFromPath(dbPath)
 	conn := connectForTest(t, cfg.ctx, dbURL)
 	t.Cleanup(func() {
 		requireNoError(t, conn.Close(), "close SQLite connection")

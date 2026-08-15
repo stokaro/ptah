@@ -271,18 +271,23 @@ func TestMigrateCheckpointCommand_AtlasGuardDoesNotOverfire(t *testing.T) {
 
 func TestMigrateCheckpointCommand_SurfacesUnreadableDirectory(t *testing.T) {
 	c := qt.New(t)
-	// A regular file where the migrations directory should be: stat of
-	// <file>/ptah.sum fails with ENOTDIR, which is deterministic on every
-	// platform and — unlike a chmod-based setup — needs no privilege check.
-	// Go does not fold ENOTDIR into fs.ErrNotExist, so this reaches the branch.
-	notADir := filepath.Join(t.TempDir(), "migrations")
-	c.Assert(os.WriteFile(notADir, []byte("not a directory\n"), 0o600), qt.IsNil)
+	// A NUL in the path. os.Stat refuses it with EINVAL before it reaches any
+	// syscall, on every operating system, and Go does not fold EINVAL into
+	// fs.ErrNotExist -- so the branch under test is reached identically
+	// everywhere and no privilege check is needed.
+	//
+	// The earlier fixture was a regular file where the directory should be,
+	// relying on ENOTDIR from stat of <file>/ptah.sum. That is deterministic on
+	// Unix only: Windows answers ERROR_PATH_NOT_FOUND, which Go maps to
+	// fs.ErrNotExist, so the run took the "no conflict" branch and the test
+	// asserted nothing it was written for.
+	unreadable := filepath.Join(t.TempDir(), "migrations\x00hidden")
 
 	// A stat failure that is not ErrNotExist means we could not determine
 	// whether the conflict exists. Treating that as "no conflict" would write
 	// into a directory whose state is unknown, so it must surface instead.
 	out, err := runCheckpoint("--shadow-db", "sqlite://"+filepath.Join(t.TempDir(), "shadow.db"),
-		"--migrations-dir", notADir, "--dialect", "sqlite", "--dir-format", "atlas")
+		"--migrations-dir", unreadable, "--dialect", "sqlite", "--dir-format", "atlas")
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(out, qt.Contains, "failed to inspect migrations directory")
 }

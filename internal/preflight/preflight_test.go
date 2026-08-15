@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -57,8 +58,12 @@ func TestExecuteCommandHookSetsRequiredEnvironment(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(results, qt.DeepEquals, []Result{{Name: "custom command"}})
 	c.Assert(runner.calls, qt.HasLen, 1)
-	c.Assert(runner.calls[0].Name, qt.Equals, "/bin/sh")
-	c.Assert(runner.calls[0].Args, qt.DeepEquals, []string{"-c", "backup --before-migration"})
+	// The shell is the platform's, and shellCommand is what picks it. Spelling
+	// /bin/sh here asserted the host rather than the wiring: on Windows the
+	// same code correctly reaches cmd /C.
+	wantShell, wantArgs := shellCommand("backup --before-migration")
+	c.Assert(runner.calls[0].Name, qt.Equals, wantShell)
+	c.Assert(runner.calls[0].Args, qt.DeepEquals, wantArgs)
 	c.Assert(runner.calls[0].Env, qt.Contains, "PTAH_DB_URL=postgres://app@db/prod")
 	c.Assert(runner.calls[0].Env, qt.Contains, "PTAH_DIALECT=postgres")
 	c.Assert(runner.calls[0].Env, qt.Contains, "PTAH_CURRENT_VERSION=7")
@@ -143,7 +148,8 @@ func TestPostgresDumpUsesCustomFormatAndStableFilename(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(results, qt.HasLen, 1)
 	c.Assert(results[0].Name, qt.Equals, "pg_dump")
-	c.Assert(results[0].Artifact, qt.Matches, `.*/ptah_pre_v1_to_v3_20260721T101314\.000000000Z\.dump`)
+	c.Assert(results[0].Artifact, qt.Equals,
+		filepath.Join(dir, "ptah_pre_v1_to_v3_20260721T101314.000000000Z.dump"))
 	c.Assert(runner.calls, qt.HasLen, 1)
 	c.Assert(runner.calls[0].Name, qt.Equals, "pg_dump")
 	c.Assert(runner.calls[0].Args, qt.DeepEquals, []string{
@@ -172,6 +178,7 @@ func TestPostgresDumpRejectsNonPostgresDialect(t *testing.T) {
 func TestMySQLDumpParsesTCPURLAndKeepsPasswordOutOfArgs(t *testing.T) {
 	c := qt.New(t)
 	runner := &fakeCommandRunner{}
+	dumpDir := t.TempDir()
 
 	results, err := Runner{
 		CommandRunner: runner,
@@ -182,11 +189,12 @@ func TestMySQLDumpParsesTCPURLAndKeepsPasswordOutOfArgs(t *testing.T) {
 		Dialect:        "mysql",
 		CurrentVersion: 2,
 		TargetVersion:  5,
-		MySQLDumpDir:   t.TempDir(),
+		MySQLDumpDir:   dumpDir,
 	})
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(results[0].Artifact, qt.Matches, `.*/ptah_pre_v2_to_v5_20260721T000000\.000000000Z\.sql`)
+	c.Assert(results[0].Artifact, qt.Equals,
+		filepath.Join(dumpDir, "ptah_pre_v2_to_v5_20260721T000000.000000000Z.sql"))
 	c.Assert(runner.calls, qt.HasLen, 1)
 	c.Assert(runner.calls[0].Name, qt.Equals, "mysqldump")
 	c.Assert(runner.calls[0].Args, qt.DeepEquals, []string{

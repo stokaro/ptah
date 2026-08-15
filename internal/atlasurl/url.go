@@ -326,7 +326,13 @@ func normalizedDatabaseHost(host string) string {
 
 func parseDatabaseURL(rawURL string) (*url.URL, string, error) {
 	normalized := normalizeMySQLTCPURL(strings.TrimSpace(rawURL))
-	parsed, err := url.Parse(normalized)
+	// [Parse], not url.Parse. This package exports the Windows rule and then
+	// has to obey it: reaching for the standard parser here refused every
+	// Windows SQLite address the endpoint comparison was given, so `schema
+	// apply`, `migrate diff` and the rollback verification all answered
+	// "invalid database URL" for a path that is perfectly valid on the
+	// operating system they were running on.
+	parsed, err := Parse(normalized)
 	if err != nil {
 		return nil, "", errors.New("invalid database URL")
 	}

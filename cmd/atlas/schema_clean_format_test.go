@@ -13,6 +13,7 @@ import (
 	"go.5x5.cz/ptah/cmd/atlas"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasschema"
+	"go.5x5.cz/ptah/internal/testutils"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -39,7 +40,7 @@ func TestSchemaCleanFormatDryRunJSONDoesNotApply(t *testing.T) {
 	c.Assert(json.Unmarshal(out.Bytes(), &got), qt.IsNil)
 	c.Assert(got.Env.Driver, qt.Equals, "sqlite")
 	c.Assert(got.Env.URL.Scheme, qt.Equals, "sqlite")
-	c.Assert(got.Env.URL.Path, qt.Equals, dbPath)
+	c.Assert(testutils.URLDatabasePath(got.Env.URL.Opaque, got.Env.URL.Path), qt.Equals, dbPath)
 	c.Assert(got.Env.URL.RawQuery, qt.Equals, "password=xxxxx")
 	c.Assert(got.Env.URL.Schema, qt.Equals, "main")
 	c.Assert(got.DryRun, qt.Equals, true)
@@ -224,7 +225,7 @@ func TestSchemaCleanUsesAtlasProjectEnvURLAndFormat(t *testing.T) {
 	dbPath := filepath.Join(dir, "clean-project-format.db")
 	createSQLiteSchemaCleanTable(c, dbPath, "project_users")
 	c.Assert(os.WriteFile("atlas.hcl", []byte(`env "local" {
-  url = "sqlite://`+dbPath+`"
+  url = "sqlite://`+filepath.ToSlash(dbPath)+`"
   format {
     schema {
       clean = "{{ .Env.Driver }}:{{ len .Changes }}"
@@ -262,7 +263,9 @@ type schemaCleanJSONReport struct {
 }
 
 type schemaCleanJSONURL struct {
-	Scheme   string
+	Scheme string
+	// Opaque carries a Windows drive path; see jsonURLDatabasePath.
+	Opaque   string
 	Host     string
 	Path     string
 	RawQuery string

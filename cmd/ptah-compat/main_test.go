@@ -10,6 +10,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/internal/migratesum"
+	"go.5x5.cz/ptah/internal/testutils"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -121,7 +122,7 @@ func TestCompatBinaryCommandFailuresExit1(t *testing.T) {
 		{
 			name:       "forwarded native target failure",
 			args:       []string{"migrate", "rm", "20990101000000"},
-			wantStderr: "Error: migrations directory migrations: stat migrations: no such file or directory\n",
+			wantStderr: "Error: migrations directory migrations: " + testutils.StatMissingText("migrations") + "\n",
 		},
 		// Reaches the compat-local printers.
 		{
@@ -222,8 +223,8 @@ func TestCompatBinaryAtlasSuccessPaths(t *testing.T) {
 		err := run.Run()
 
 		c.Assert(err, qt.IsNil)
-		c.Assert(stdout.String(), qt.Contains, "# bash completion V2 for atlas")
-		c.Assert(stdout.String(), qt.Contains, "__start_atlas")
+		c.Assert(stdout.String(), qt.Contains, "# bash completion V2 for atlas ")
+		c.Assert(stdout.String(), qt.Contains, "__start_atlas()\n")
 		c.Assert(stderr.String(), qt.Equals, "")
 	})
 }
@@ -381,7 +382,7 @@ func TestCompatBinaryAtlasFailurePaths(t *testing.T) {
 		c.Assert(err, qt.ErrorAs, &exitErr)
 		c.Assert(exitErr.ExitCode(), qt.Equals, 1)
 		c.Assert(stdout.String(), qt.Equals, "")
-		c.Assert(stderr.String(), qt.Equals, "Error: sql/migrate: stat migrations: no such file or directory\n")
+		c.Assert(stderr.String(), qt.Equals, "Error: sql/migrate: "+testutils.StatMissingText("migrations")+"\n")
 	})
 
 	t.Run("migrate set missing driver precedes version", func(t *testing.T) {
@@ -540,7 +541,7 @@ func TestCompatBinaryMigrateApplyRejectsMalformedAtlasTxMode(t *testing.T) {
 
 func buildCompatBinary(c *qt.C) string {
 	c.Helper()
-	binPath := filepath.Join(c.TempDir(), "atlas")
+	binPath := filepath.Join(c.TempDir(), "atlas"+testutils.ExecutableSuffix)
 	build := exec.Command("go", "build", "-o", binPath, ".")
 	build.Env = append(os.Environ(), "GOWORK=off")
 	buildOut, err := build.CombinedOutput()

@@ -11,6 +11,7 @@ import (
 	"go.5x5.cz/ptah/cmd/atlas"
 	"go.5x5.cz/ptah/cmd/migratevalidate"
 	"go.5x5.cz/ptah/internal/migratesum"
+	"go.5x5.cz/ptah/internal/testutils"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -36,6 +37,7 @@ func writeMigrateMaintFixture(c *qt.C, dir string) {
 // every file it receives, so editor-driven paths stay hermetic and never spawn
 // an interactive editor.
 func installAppendEditor(t *testing.T, marker string) {
+	testutils.SkipWithoutPOSIXShell(t)
 	t.Helper()
 	path := filepath.Join(t.TempDir(), "editor.sh")
 	script := "#!/bin/sh\nfor f in \"$@\"; do\n  printf '%s\\n' \"" + marker + "\" >> \"$f\"\ndone\n"
