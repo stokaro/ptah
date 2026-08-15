@@ -368,6 +368,12 @@ closes it, so a schema file behind one with a required variable and no value
 fails rather than picking the flag up. A file named directly, as
 `src = "file://schema.hcl"`, is outside every data source and does take `--var`.
 
+The boundary belongs to the source the env selected, not to the file. A desired
+state the operator names on the command line — `--to`, `--from` or `--file` —
+keeps `--var` even when it is the very file a data source of the loaded env
+selects, so `schema apply --env local --to file://schema.hcl` reads
+`--var tenant=…` and fails without one.
+
 The map takes strings, numbers and bools; each is carried as the text of the
 literal, so `tenant = 42` reaches the file as `"42"`. A name the file does not
 declare is ignored. `vars = null` and `vars = {}` are both read as "no values
@@ -375,8 +381,12 @@ given", and a value that is not a map — `vars = "acme"`, `vars = [1, 2]` — i
 refused with `atlas.hcl "vars" at atlas.hcl:3 must be a map of values`.
 
 Two data sources may not both select the same file with different `vars` and
-both be referenced by one `src`: the parse refuses and names both blocks, rather
-than picking one and making the desired state depend on map order.
+both be selected by one `src`: the parse refuses and names both blocks, rather
+than picking one and making the desired state depend on map order. A file that
+the `src` does not evaluate to is not part of that verdict, and neither is the
+branch a conditional did not take — `src = var.use_app ? data.hcl_schema.app.url
+: data.hcl_schema.other.url` reads the vars of the branch it takes, even when
+both blocks name the same file.
 
 A `null` reaching a name Ptah acts on is refused, and the refusal names the type
 the setting wants. With `variable "s" { type = string, default = null }`, both

@@ -2347,7 +2347,8 @@ func (p atlasParser) parseSchemaSources(attr *hclsyntax.Attribute, cfg *Config) 
 // Attribution is the intersection of two facts, and needs both:
 //
 //   - which data sources the src EXPRESSION references, read off
-//     [hclsyntax.Expression.Variables] as `data.hcl_schema.<name>` traversals;
+//     `data.hcl_schema.<name>` traversals by [atlasParser.hclSchemaReferences],
+//     which follows the branch a conditional takes rather than both;
 //   - which URLs each of those data sources minted.
 //
 // The expression half is what keeps a declared-but-unreferenced data source out
@@ -2360,7 +2361,9 @@ func (p atlasParser) parseSchemaSources(attr *hclsyntax.Attribute, cfg *Config) 
 // The URL half is what keeps two referenced data sources apart. When two of
 // them mint the SAME url with different values there is no honest answer, so
 // this refuses rather than picking one -- silently choosing would make the
-// desired state depend on map order.
+// desired state depend on map order. That verdict is reached over the URLs the
+// src EVALUATED to and no others: a URL no evaluated source names carries no
+// scope, so two blocks minting it disagree about nothing.
 //
 // One case stays approximate and is called out rather than hidden: a src
 // expression that references a data source AND repeats one of that source's own
@@ -2371,7 +2374,7 @@ func (p atlasParser) schemaSourceVarScopes(
 	attr *hclsyntax.Attribute,
 	urls []string,
 ) (map[string]map[string]string, error) {
-	referenced := hclSchemaReferences(attr.Expr)
+	referenced := p.hclSchemaReferences(attr.Expr)
 	if len(referenced) == 0 {
 		return nil, nil
 	}
@@ -2383,6 +2386,14 @@ func (p atlasParser) schemaSourceVarScopes(
 			continue
 		}
 		for _, url := range scope.urls {
+			// Ambiguity is decided among the URLs this src EVALUATED to, not
+			// among every URL the referenced blocks could mint. A URL no
+			// evaluated source names carries no scope, so two blocks minting it
+			// have nothing to disagree about, and refusing on it would reject a
+			// project whose desired state is perfectly determined.
+			if !slices.Contains(urls, url) {
+				continue
+			}
 			if owner, taken := minted[url]; taken && !maps.Equal(p.hclSchemaScopes[owner].values, scope.values) {
 				return nil, fmt.Errorf(
 					"atlas.hcl data.hcl_schema %q and %q both select %q with different vars at %s:%d",
@@ -2390,9 +2401,6 @@ func (p atlasParser) schemaSourceVarScopes(
 				)
 			}
 			minted[url] = name
-			if !slices.Contains(urls, url) {
-				continue
-			}
 			scopes[url] = scope.values
 			// The same scope is filed a second time under the base-directory
 			// resolved spelling, because two consumers reach it by two different
@@ -2417,9 +2425,79 @@ func (p atlasParser) schemaSourceVarScopes(
 
 // hclSchemaReferences reports the data "hcl_schema" names an expression reads,
 // in a stable order so a refusal names the same pair on every run.
-func hclSchemaReferences(expr hclsyntax.Expression) []string {
+//
+// A conditional is read as the branch it takes. [hclsyntax.Expression.Variables]
+// reports both branches of `src = var.use_app ? data.hcl_schema.app.url :
+// data.hcl_schema.other.url`, but the attribute evaluates to exactly one of
+// them, and the pinned Atlas community binary v1.3.0 hands that block's vars to
+// the file it names. Measured with two blocks selecting the same s.hcl with
+// different vars, `schema apply --env local --dry-run`, exit codes read
+// directly from unpiped invocations:
+//
+//	predicate true   0  DEFAULT 'acme'
+//	predicate false  0  DEFAULT 'zzz'
+//
+// Reading both branches made every such project ambiguous, so this side refused
+// both rows at exit 1 where that binary exits 0.
+//
+// The predicate is decided with the very context the attribute is evaluated
+// with, including the `each` of a dynamic env instance, so nothing is settled
+// here that HCL settles differently one step later. An undecidable predicate
+// keeps both branches: that reading can only add a name, never drop one, so an
+// expression this walk does not follow stays as conservative as it was.
+func (p atlasParser) hclSchemaReferences(expr hclsyntax.Expression) []string {
 	names := make([]string, 0, 1)
-	for _, traversal := range expr.Variables() {
+	p.appendHCLSchemaReferences(expr, &names)
+	slices.Sort(names)
+	return names
+}
+
+// appendHCLSchemaReferences walks the expression shapes that can select one
+// data source out of several, and falls back to the flat variable list for
+// everything else.
+func (p atlasParser) appendHCLSchemaReferences(expr hclsyntax.Expression, names *[]string) {
+	switch typed := expr.(type) {
+	case *hclsyntax.ConditionalExpr:
+		// The predicate's own references are kept. A data source read there
+		// contributes no URL, but dropping it would narrow a refusal this
+		// change is not measuring.
+		p.appendHCLSchemaReferences(typed.Condition, names)
+		for _, branch := range p.conditionalBranches(typed) {
+			p.appendHCLSchemaReferences(branch, names)
+		}
+	case *hclsyntax.ParenthesesExpr:
+		p.appendHCLSchemaReferences(typed.Expression, names)
+	case *hclsyntax.TupleConsExpr:
+		for _, item := range typed.Exprs {
+			p.appendHCLSchemaReferences(item, names)
+		}
+	default:
+		appendHCLSchemaTraversalNames(expr.Variables(), names)
+	}
+}
+
+// conditionalBranches returns the branch a conditional takes, or both branches
+// when the predicate cannot be decided while the project file is parsed.
+func (p atlasParser) conditionalBranches(expr *hclsyntax.ConditionalExpr) []hclsyntax.Expression {
+	both := []hclsyntax.Expression{expr.TrueResult, expr.FalseResult}
+	value, diags := expr.Condition.Value(p.ctx)
+	if diags.HasErrors() {
+		return both
+	}
+	decided, err := convert.Convert(value, cty.Bool)
+	if err != nil || decided.IsNull() || !decided.IsKnown() {
+		return both
+	}
+	if decided.True() {
+		return []hclsyntax.Expression{expr.TrueResult}
+	}
+	return []hclsyntax.Expression{expr.FalseResult}
+}
+
+// appendHCLSchemaTraversalNames collects the data "hcl_schema" names of a flat
+// traversal list, skipping duplicates.
+func appendHCLSchemaTraversalNames(traversals []hcl.Traversal, names *[]string) {
+	for _, traversal := range traversals {
 		if len(traversal) < 3 || traversal.RootName() != "data" {
 			continue
 		}
@@ -2428,13 +2506,11 @@ func hclSchemaReferences(expr hclsyntax.Expression) []string {
 			continue
 		}
 		name, ok := traversal[2].(hcl.TraverseAttr)
-		if !ok || slices.Contains(names, name.Name) {
+		if !ok || slices.Contains(*names, name.Name) {
 			continue
 		}
-		names = append(names, name.Name)
+		*names = append(*names, name.Name)
 	}
-	slices.Sort(names)
-	return names
 }
 
 // hclSchemaVarsAttr decodes `data "hcl_schema" { vars }` into the variable

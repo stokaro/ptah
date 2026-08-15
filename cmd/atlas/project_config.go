@@ -1232,6 +1232,24 @@ func atlasSourceProjectEnv(
 	return atlassource.ProjectEnv{Loaded: true, Config: cfg, BaseDir: baseDir}, nil
 }
 
+// atlasProjectSourceURLs records the desired-state URLs a run took from the
+// project's schema sources, under the flag they stand in for.
+//
+// Only these carry an atlas.hcl `data "hcl_schema"` variable scope. A URL the
+// operator typed keeps flag-variable precedence even when it names the same
+// file, because that is what the pinned Atlas community binary v1.3.0 does:
+// `schema apply --env local --to file://s.hcl --dry-run` exits 1 with `missing
+// value for required variable "tenant"` where the same env with no --to exits 0
+// and plans `DEFAULT 'acme'`. See [go.5x5.cz/ptah/internal/atlassource.ProjectEnv.SuppliedSource].
+//
+// nil for an empty list, so a run that substituted nothing scopes nothing.
+func atlasProjectSourceURLs(flag string, urls []string) map[string][]string {
+	if len(urls) == 0 {
+		return nil
+	}
+	return map[string][]string{flag: slices.Clone(urls)}
+}
+
 func effectiveAtlasExclude(cmd *cobra.Command, flagValues []string, cfg projectconfig.Config) []string {
 	values := effectiveStringArray(cmd, "exclude", flagValues, cfg.Exclude)
 	return append(slices.Clone(values), cfg.Schema.Mode.ExcludePatterns()...)

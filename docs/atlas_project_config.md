@@ -431,15 +431,19 @@ data "hcl_schema" "app" {
 Another data source's `vars` never reach these files, and the run's global
 `--var` does not cross the boundary either — a data source that declares no
 `vars` still closes it. A file named directly, as `src = "file://schema.hcl"`,
-is outside every data source and does take `--var`.
+is outside every data source and does take `--var`. So is a desired state the
+operator names on the command line: `--to`, `--from` and `--file` keep `--var`
+even when they name the very file a data source of the loaded env selects.
 
 The map takes strings, numbers and bools, each carried as the text of the
 literal, so `tenant = 42` reaches the file as `"42"`. A name the file does not
 declare is ignored. `vars = null` and `vars = {}` are both read as "no values
 given"; a value that is not a map is refused with
-`atlas.hcl "vars" at atlas.hcl:3 must be a map of values`. Two referenced data
-sources may not select the same file with different `vars`: the parse refuses
-and names both blocks.
+`atlas.hcl "vars" at atlas.hcl:3 must be a map of values`. Two data sources may
+not both be selected by one `src` and select the same file with different
+`vars`: the parse refuses and names both blocks. A file the `src` does not
+evaluate to is not part of that verdict, and a conditional counts only the
+branch it takes.
 
 A `null` reaching a name Ptah acts on is refused, and the refusal names the type
 the setting wants:

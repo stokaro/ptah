@@ -419,18 +419,18 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 	if strings.TrimSpace(opts.planURL) != "" {
 		return runAtlasSchemaApplyPlanFile(cmd, opts)
 	}
-	if loaded && !cmd.Flags().Changed("to") && !cmd.Flags().Changed(atlasFileFlagName) && len(projectCfg.SchemaSources) > 0 {
-		opts.toURLs, err = atlasProjectConfigSchemaURLs(cmd, opts.toURLs)
-		if err != nil {
-			return cmdutil.Fail(cmd, fmt.Errorf("atlas.hcl schema.src: %w", err))
-		}
-	}
-	if loaded && !cmd.Flags().Changed("to") && !cmd.Flags().Changed(atlasFileFlagName) &&
-		atlasExternalSchemaConfigured(projectCfg) {
-		opts.toURLs = []string{"env://src"}
-	}
-	if cmd.Flags().Changed(atlasFileFlagName) {
+	// projectToURLs is the desired-state URL list this run took from the
+	// project's schema sources, and stays nil when --to or --file supplied it.
+	// See [atlasProjectSourceURLs].
+	var projectToURLs []string
+	switch {
+	case cmd.Flags().Changed(atlasFileFlagName):
 		opts.toURLs = opts.filePaths
+	case loaded:
+		opts.toURLs, projectToURLs, err = atlasSchemaApplyProjectURLs(cmd, opts, projectCfg)
+		if err != nil {
+			return cmdutil.Fail(cmd, err)
+		}
 	}
 	if formatOutput && strings.TrimSpace(opts.format) == "" {
 		return cmdutil.Fail(cmd, fmt.Errorf("--format must not be empty"))
@@ -447,6 +447,7 @@ func runAtlasSchemaApply(cmd *cobra.Command, opts atlasSchemaApplyOptions) error
 		if err != nil {
 			return cmdutil.Fail(cmd, err)
 		}
+		projectEnv.ProjectSourceURLs = atlasProjectSourceURLs("--to", projectToURLs)
 	}
 	if err := validateAtlasSchemaApplyOptions(cmd, opts, projectEnv); err != nil {
 		return cmdutil.Fail(cmd, err)
@@ -662,6 +663,40 @@ func needsAtlasSchemaApplyConfig(cmd *cobra.Command) bool {
 		return false
 	}
 	return !cmd.Flags().Changed("to") && !cmd.Flags().Changed(atlasFileFlagName)
+}
+
+// atlasSchemaApplyProjectURLs resolves the desired state of a run that loaded
+// an atlas.hcl, and reports which of the URLs came from the project's own
+// schema sources.
+//
+// The provenance is a return value rather than the same condition re-tested at
+// the classification site, because the two spellings would drift: a URL the
+// operator typed on --to keeps flag-variable precedence, and a URL this
+// function substituted from the env carries that env's
+// `data "hcl_schema" { vars }` scope. See [atlasProjectSourceURLs].
+//
+// An env whose desired state is an external schema program is spelled env://src
+// and expanded during classification, so it is substituted but not recorded:
+// that path attaches its own scope.
+func atlasSchemaApplyProjectURLs(
+	cmd *cobra.Command,
+	opts atlasSchemaApplyOptions,
+	projectCfg projectconfig.Config,
+) (toURLs, projectToURLs []string, err error) {
+	if cmd.Flags().Changed("to") {
+		return opts.toURLs, nil, nil
+	}
+	if atlasExternalSchemaConfigured(projectCfg) {
+		return []string{"env://src"}, nil, nil
+	}
+	if len(projectCfg.SchemaSources) == 0 {
+		return opts.toURLs, nil, nil
+	}
+	urls, err := atlasProjectConfigSchemaURLs(cmd, opts.toURLs)
+	if err != nil {
+		return nil, nil, fmt.Errorf("atlas.hcl schema.src: %w", err)
+	}
+	return urls, urls, nil
 }
 
 // runAtlasSchemaApplyPlanFile executes a pre-approved local plan file instead

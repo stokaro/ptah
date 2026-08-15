@@ -19,12 +19,22 @@ import (
 // resolve the project's schema sources against the atlas.hcl directory and hand
 // the resulting file:// URLs to --to, so a scope attached only on the env://
 // path would never reach them.
+//
+// The scope reaches those URLs and no others. Which URLs a run took from the
+// project is a fact only the command has, so it arrives as
+// [atlassource.ProjectEnv.ProjectSourceURLs] and the last two rows are what
+// keeps the join from widening into "any URL that happens to match a file some
+// data source selects" -- measured on the pinned Atlas community binary v1.3.0,
+// `schema apply --env local --to file://s.hcl --dry-run` is exit 1 there while
+// the same env with no --to is exit 0.
 func TestClassifySetCarriesTheProjectVariableScope(t *testing.T) {
 	tests := []struct {
-		name       string
-		raw        string
-		wantValues map[string]string
-		wantScoped bool
+		name           string
+		raw            string
+		flag           string
+		projectSources map[string][]string
+		wantValues     map[string]string
+		wantScoped     bool
 	}{
 		{
 			name: "a data source's vars reach the source it selects",
@@ -40,8 +50,10 @@ env "local" {
   src = data.hcl_schema.app.url
 }
 `,
-			wantValues: map[string]string{"tenant": "acme"},
-			wantScoped: true,
+			flag:           "--to",
+			projectSources: map[string][]string{"--to": {"file://s.hcl"}},
+			wantValues:     map[string]string{"tenant": "acme"},
+			wantScoped:     true,
 		},
 		{
 			// The rule (a) half. A data source with no vars closes the boundary,
@@ -59,8 +71,10 @@ env "local" {
   src = data.hcl_schema.app.url
 }
 `,
-			wantValues: nil,
-			wantScoped: true,
+			flag:           "--to",
+			projectSources: map[string][]string{"--to": {"file://s.hcl"}},
+			wantValues:     nil,
+			wantScoped:     true,
 		},
 		{
 			// The control. The same file reached without a data source keeps the
@@ -72,8 +86,53 @@ env "local" {
   src = "file://s.hcl"
 }
 `,
-			wantValues: nil,
-			wantScoped: false,
+			flag:           "--to",
+			projectSources: map[string][]string{"--to": {"file://s.hcl"}},
+			wantValues:     nil,
+			wantScoped:     false,
+		},
+		{
+			// Same config as the first row, and the same URL, but this run took
+			// it from --to rather than from the env. The operator's --var owns
+			// it, so the block's values must not be attached.
+			name: "a URL the flag supplied is left unscoped",
+			raw: `data "hcl_schema" "app" {
+  paths = ["s.hcl"]
+  vars = {
+    tenant = "acme"
+  }
+}
+
+env "local" {
+  url = "sqlite://file.db"
+  src = data.hcl_schema.app.url
+}
+`,
+			flag:           "--to",
+			projectSources: nil,
+			wantValues:     nil,
+			wantScoped:     false,
+		},
+		{
+			// Provenance is per flag, not per run: a run whose --from came from
+			// the project does not thereby scope a --to naming the same file.
+			name: "a URL recorded for another flag is left unscoped",
+			raw: `data "hcl_schema" "app" {
+  paths = ["s.hcl"]
+  vars = {
+    tenant = "acme"
+  }
+}
+
+env "local" {
+  url = "sqlite://file.db"
+  src = data.hcl_schema.app.url
+}
+`,
+			flag:           "--to",
+			projectSources: map[string][]string{"--from": {"file://s.hcl"}},
+			wantValues:     nil,
+			wantScoped:     false,
 		},
 	}
 
@@ -82,9 +141,14 @@ env "local" {
 			c := qt.New(t)
 			cfg, err := projectconfig.ParseAtlas([]byte(test.raw), "atlas.hcl", "local")
 			c.Assert(err, qt.IsNil)
-			env := atlassource.ProjectEnv{Loaded: true, Config: cfg, BaseDir: "."}
+			env := atlassource.ProjectEnv{
+				Loaded:            true,
+				Config:            cfg,
+				BaseDir:           ".",
+				ProjectSourceURLs: test.projectSources,
+			}
 
-			set, err := atlassource.ClassifySet("--to", cfg.SchemaSources, env)
+			set, err := atlassource.ClassifySet(test.flag, cfg.SchemaSources, env)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(set.Sources, qt.HasLen, 1)

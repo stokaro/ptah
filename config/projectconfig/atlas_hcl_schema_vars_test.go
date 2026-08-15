@@ -250,6 +250,153 @@ func TestParseAtlasHCLSchemaVarsFailurePath(t *testing.T) {
 	}
 }
 
+// TestParseAtlasHCLSchemaVarsFollowsTheConditionalBranch pins which data source
+// owns a file when the `src` expression names two and takes one.
+//
+// A conditional evaluates to exactly one branch, so the desired state is
+// determined even though both blocks appear in the expression. Measured on the
+// pinned Atlas community binary v1.3.0 with both blocks selecting the same
+// s.hcl and `schema apply --env local --dry-run`, exit codes read directly from
+// unpiped invocations:
+//
+//	default = true   -> 0  DEFAULT 'acme'
+//	default = false  -> 0  DEFAULT 'zzz'
+//
+// Reading the branch not taken as a reference made ptah-compat refuse both rows
+// at exit 1, `both select "file://s.hcl" with different vars`.
+//
+// The two rows are the discriminating pair: one fixture, one file, one env, and
+// only the predicate differs. An implementation that picked a branch by name
+// order would answer 'acme' twice, and one that ignored the vars would fail
+// both for want of a value.
+func TestParseAtlasHCLSchemaVarsFollowsTheConditionalBranch(t *testing.T) {
+	tests := []struct {
+		name       string
+		raw        string
+		wantValues map[string]string
+	}{
+		{
+			name: "a true predicate takes the first branch's data source",
+			raw: `variable "use_app" {
+  type    = bool
+  default = true
+}
+
+data "hcl_schema" "app" {
+  path = "s.hcl"
+  vars = {
+    tenant = "acme"
+  }
+}
+
+data "hcl_schema" "other" {
+  path = "s.hcl"
+  vars = {
+    tenant = "zzz"
+  }
+}
+
+env "local" {
+  url = "sqlite://file.db"
+  src = var.use_app ? data.hcl_schema.app.url : data.hcl_schema.other.url
+}
+`,
+			wantValues: map[string]string{"tenant": "acme"},
+		},
+		{
+			name: "a false predicate takes the second branch's data source",
+			raw: `variable "use_app" {
+  type    = bool
+  default = false
+}
+
+data "hcl_schema" "app" {
+  path = "s.hcl"
+  vars = {
+    tenant = "acme"
+  }
+}
+
+data "hcl_schema" "other" {
+  path = "s.hcl"
+  vars = {
+    tenant = "zzz"
+  }
+}
+
+env "local" {
+  url = "sqlite://file.db"
+  src = var.use_app ? data.hcl_schema.app.url : data.hcl_schema.other.url
+}
+`,
+			wantValues: map[string]string{"tenant": "zzz"},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			cfg, err := projectconfig.ParseAtlas([]byte(test.raw), "atlas.hcl", "local")
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(cfg.SchemaSources, qt.DeepEquals, []string{"file://s.hcl"})
+			values, scoped := cfg.SchemaSourceVars("file://s.hcl")
+			c.Check(scoped, qt.Equals, true)
+			c.Check(values, qt.DeepEquals, test.wantValues)
+		})
+	}
+}
+
+// TestParseAtlasHCLSchemaVarsRefusesOnlyEvaluatedAmbiguity keeps the refusal
+// scoped to the files a run actually reads.
+//
+// Both blocks below select shared.hcl, but the env selects one path out of each
+// block and shared.hcl is not among them: no source carries a scope for it, so
+// the two blocks have nothing to disagree about and the project is determined.
+// The refusal used to be decided over every URL a referenced block could mint,
+// which rejected this file.
+//
+// This arm is Ptah's own spelling rather than a parity row: a data source's
+// `url` is a list of file:// URLs here, so it can be indexed, while the pinned
+// binary mints one opaque URL per data source and has no `url[0]`. The rule it
+// pins is internal: a URL that scopes nothing cannot make a project ambiguous.
+// The genuine collision stays refused in
+// [TestParseAtlasHCLSchemaVarsRefusesAmbiguousOwnership].
+func TestParseAtlasHCLSchemaVarsRefusesOnlyEvaluatedAmbiguity(t *testing.T) {
+	c := qt.New(t)
+	raw := `data "hcl_schema" "app" {
+  paths = ["a.hcl", "shared.hcl"]
+  vars = {
+    tenant = "acme"
+  }
+}
+
+data "hcl_schema" "other" {
+  paths = ["b.hcl", "shared.hcl"]
+  vars = {
+    tenant = "zzz"
+  }
+}
+
+env "local" {
+  url = "sqlite://file.db"
+  src = [data.hcl_schema.app.url[0], data.hcl_schema.other.url[0]]
+}
+`
+
+	cfg, err := projectconfig.ParseAtlas([]byte(raw), "atlas.hcl", "local")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(cfg.SchemaSources, qt.DeepEquals, []string{"file://a.hcl", "file://b.hcl"})
+	appValues, appScoped := cfg.SchemaSourceVars("file://a.hcl")
+	c.Check(appScoped, qt.Equals, true)
+	c.Check(appValues, qt.DeepEquals, map[string]string{"tenant": "acme"})
+	otherValues, otherScoped := cfg.SchemaSourceVars("file://b.hcl")
+	c.Check(otherScoped, qt.Equals, true)
+	c.Check(otherValues, qt.DeepEquals, map[string]string{"tenant": "zzz"})
+}
+
 // TestParseAtlasHCLSchemaVarsRefusesAmbiguousOwnership keeps the one shape that
 // has no honest answer: two referenced data sources selecting the same file
 // with different values. Picking one would make the desired state depend on map
