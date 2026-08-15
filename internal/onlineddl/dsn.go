@@ -1,8 +1,9 @@
 package onlineddl
 
 import (
+	"go.5x5.cz/ptah/internal/atlasurl"
+
 	"fmt"
-	"net/url"
 	"strings"
 )
 
@@ -55,7 +56,7 @@ func ParseDatabaseURL(dbURL string) (DSN, error) {
 // parseURLForm parses the plain mysql://user:pass@host:port/db form, which
 // net/url percent-decodes exactly as dbschema.convertMySQLURL does.
 func parseURLForm(dbURL string) (DSN, error) {
-	parsed, err := url.Parse(dbURL)
+	parsed, err := atlasurl.Parse(dbURL)
 	if err != nil {
 		return DSN{}, fmt.Errorf("failed to parse database URL: %w", err)
 	}

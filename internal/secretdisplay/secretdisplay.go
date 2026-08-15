@@ -2,6 +2,8 @@
 package secretdisplay
 
 import (
+	"go.5x5.cz/ptah/internal/atlasurl"
+
 	"fmt"
 	"net/url"
 	"slices"
@@ -131,7 +133,7 @@ func addURLSecrets(values map[string]struct{}, raw string) {
 	if !strings.Contains(raw, "://") {
 		return
 	}
-	parsed, err := url.Parse(raw)
+	parsed, err := atlasurl.Parse(raw)
 	if err == nil && parsed.Scheme != "" && parsed.User != nil {
 		if password, ok := parsed.User.Password(); ok {
 			addSecret(values, password)

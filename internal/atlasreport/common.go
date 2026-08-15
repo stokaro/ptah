@@ -1,6 +1,8 @@
 package atlasreport
 
 import (
+	"go.5x5.cz/ptah/internal/atlasurl"
+
 	"net/url"
 	"path"
 	"strings"
@@ -26,7 +28,7 @@ func (u atlasTemplateURL) IsZero() bool {
 }
 
 func atlasRedactedURL(raw string) atlasTemplateURL {
-	parsed, err := url.Parse(raw)
+	parsed, err := atlasurl.Parse(raw)
 	if err != nil {
 		return atlasTemplateURL{}
 	}

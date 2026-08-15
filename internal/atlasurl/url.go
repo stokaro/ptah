@@ -40,12 +40,46 @@ func SQLiteURLFromPath(path string) string {
 	return "sqlite:file:" + escaped
 }
 
+// Parse parses a database URL, accepting the one shape net/url refuses.
+//
+// A Windows absolute path is not an authority: sqlite://C:\dir\app.db makes
+// net/url read the drive letter's colon as a port separator and refuse the
+// whole address. The path is carried as opaque instead.
+//
+// This is the shared half. What each caller does about a MySQL address is its
+// own, and deliberately so: this package keeps the host because it compares
+// endpoints, while dbschema drops it because it reads the database name from
+// the path. Only the Windows rule is one rule.
+func Parse(rawURL string) (*url.URL, error) {
+	parsed, err := url.Parse(rawURL)
+	if err == nil {
+		return parsed, nil
+	}
+	if scheme, rest, found := strings.Cut(rawURL, "://"); found && IsWindowsPath(rest) {
+		return &url.URL{Scheme: scheme, Opaque: rest}, nil
+	}
+	return nil, err
+}
+
+// IsWindowsPath reports whether a URL's remainder is a Windows absolute path,
+// which is the one shape whose colon is not a port separator.
+func IsWindowsPath(rest string) bool {
+	if len(rest) < 3 || rest[1] != ':' {
+		return false
+	}
+	drive := rest[0]
+	if (drive < 'A' || drive > 'Z') && (drive < 'a' || drive > 'z') {
+		return false
+	}
+	return rest[2] == '\\' || rest[2] == '/'
+}
+
 func DialectFromURL(rawURL string) (string, error) {
 	rawURL = strings.TrimSpace(rawURL)
 	if rawURL == "" {
 		return "", nil
 	}
-	parsed, err := url.Parse(normalizeMySQLTCPURL(rawURL))
+	parsed, err := Parse(normalizeMySQLTCPURL(rawURL))
 	if err != nil {
 		return "", fmt.Errorf("parse --dev-url: %w", err)
 	}

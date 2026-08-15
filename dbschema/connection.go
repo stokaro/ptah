@@ -18,6 +18,7 @@ import (
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/internal/dbschema/clickhouse"
 	"go.5x5.cz/ptah/internal/dbschema/mssql"
 	"go.5x5.cz/ptah/internal/dbschema/mysql"
@@ -181,14 +182,12 @@ func parseDatabaseURL(dbURL string) (*url.URL, error) {
 		}
 	}
 
-	parsed, err := url.Parse(dbURL)
-	if err == nil {
-		return parsed, nil
-	}
-	if scheme, rest, found := strings.Cut(dbURL, "://"); found && isWindowsPath(rest) {
-		return &url.URL{Scheme: scheme, Opaque: rest}, nil
-	}
-	return nil, err
+	// The Windows rule lives in atlasurl, which is where the other database-URL
+	// parser already knew it. What each parser does about a MySQL address is
+	// its own and stays so: that one keeps the host because it compares
+	// endpoints, this one drops it because getDatabaseInfo reads the database
+	// name from the path.
+	return atlasurl.Parse(dbURL)
 }
 
 // withoutMySQLNetwork removes the network wrapper from a MySQL-family address,
@@ -206,19 +205,6 @@ func withoutMySQLNetwork(dbURL string) (string, bool) {
 		return dbURL[:start+1] + dbURL[start+end+1:], true
 	}
 	return dbURL, false
-}
-
-// isWindowsPath reports whether a URL's remainder is a Windows absolute path,
-// which is the one shape whose colon is not a port separator.
-func isWindowsPath(rest string) bool {
-	if len(rest) < 3 || rest[1] != ':' {
-		return false
-	}
-	drive := rest[0]
-	if (drive < 'A' || drive > 'Z') && (drive < 'a' || drive > 'z') {
-		return false
-	}
-	return rest[2] == '\\' || rest[2] == '/'
 }
 
 func getDatabaseInfoWithCapabilities(
