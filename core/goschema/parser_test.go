@@ -28,8 +28,6 @@ func mustParseFile(c *qt.C, filename string) goschema.Database {
 }
 
 func TestParseKeyValueComment_SimplifiedSyntax(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name     string
 		comment  string
@@ -126,6 +124,7 @@ func TestParseKeyValueComment_SimplifiedSyntax(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			result := parseutils.ParseKeyValueComment(tt.comment)
 			c.Assert(result, qt.DeepEquals, tt.expected)
 		})
@@ -318,8 +317,6 @@ type User struct {
 }
 
 func TestParseSchemaObjectAnnotations_RejectsInvalidAttributes(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name       string
 		annotation string
@@ -349,6 +346,7 @@ func TestParseSchemaObjectAnnotations_RejectsInvalidAttributes(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			_, err := goschema.ParseSource("schema_object_invalid.go", `
 package test
 `+tt.annotation+`
@@ -371,8 +369,6 @@ func TestTrigger_FunctionNameIsTableScoped(t *testing.T) {
 }
 
 func TestParseKeyValueComment_BooleanPatterns(t *testing.T) {
-	c := qt.New(t)
-
 	// Test that only known boolean attributes are treated as booleans
 	tests := []struct {
 		name     string
@@ -420,6 +416,7 @@ func TestParseKeyValueComment_BooleanPatterns(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			result := parseutils.ParseKeyValueComment(tt.comment)
 			c.Assert(result[tt.attr], qt.Equals, tt.expected)
 		})
@@ -1086,8 +1083,6 @@ type SchemaObjects struct{}
 // `default_fn`-vs-`default_expr` at parse time instead of silently dropping
 // them and producing wrong SQL.
 func TestParseField_UnknownAttributePanics(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name        string
 		annotation  string
@@ -1107,6 +1102,7 @@ func TestParseField_UnknownAttributePanics(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			content := `package entities
 
 //ptah:schema:table name="widgets"

@@ -25,8 +25,6 @@ func fixedZeroClock() func() time.Time {
 }
 
 func TestWrapContent_AtlasWidthBoundary(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name string
 		text string
@@ -50,14 +48,14 @@ func TestWrapContent_AtlasWidthBoundary(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(wrapContent(test.text, lintWrapWidth), qt.DeepEquals, test.want)
 		})
 	}
 }
 
 func TestAtlasDiagnosticText_FallsBackForUnmeasuredSubjects(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name    string
 		code    string
@@ -80,7 +78,8 @@ func TestAtlasDiagnosticText_FallsBackForUnmeasuredSubjects(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			diagnostic, mapped := atlasDiagnosticText(test.code, migrationlint.Finding{
 				Context: &migrationlint.FindingContext{Subjects: []migrationlint.Subject{test.subject}},
 			})
@@ -99,7 +98,6 @@ func TestAtlasDiagnosticText_FallsBackForUnmeasuredSubjects(t *testing.T) {
 // went missing: narrowing a destructive finding to one of its objects reads as
 // complete output and is not.
 func TestAtlasDiagnosticText_FallsBackForMultiSubjectSingleObjectCodes(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name     string
 		code     string
@@ -124,7 +122,8 @@ func TestAtlasDiagnosticText_FallsBackForMultiSubjectSingleObjectCodes(t *testin
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			diagnostic, mapped := atlasDiagnosticText(test.code, migrationlint.Finding{
 				Context: &migrationlint.FindingContext{Subjects: test.subjects},
 			})
@@ -153,13 +152,14 @@ func analyzeMigrationsWithBaseline(
 	latest int,
 	baseline []migrationlint.BaselineColumn,
 ) migrationlint.Analysis {
+	c := qt.New(t)
 	t.Helper()
 	fsys := fstest.MapFS{}
 	for name, body := range files {
 		fsys[name] = &fstest.MapFile{Data: []byte(body)}
 	}
 	discovery, err := migrationlint.AnalyzeFS(fsys, migrationlint.Options{DirFormat: migrator.MigrationDirFormatAtlas})
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	seen := map[int64]struct{}{}
 	for _, file := range discovery.Files() {
 		if file.Direction == "up" && !file.Repeatable && file.Version > 0 {
@@ -183,7 +183,7 @@ func analyzeMigrationsWithBaseline(
 		Selection:     migrationlint.VersionSelection{Versions: versions, Restricted: true},
 		Baseline:      baseline,
 	})
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	return analysis
 }
 

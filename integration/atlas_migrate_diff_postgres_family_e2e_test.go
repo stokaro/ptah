@@ -14,11 +14,16 @@ import (
 
 	qt "github.com/frankban/quicktest"
 	_ "github.com/jackc/pgx/v5/stdlib"
+
+	"go.5x5.cz/ptah/internal/dbtarget"
 )
 
+// postgresFamilyMigrateDiffCase is one PostgreSQL-family target. The engine is
+// a dbtarget.Engine rather than a variable name so this table cannot spell an
+// address variable a CI step does not set.
 type postgresFamilyMigrateDiffCase struct {
 	name   string
-	urlEnv string
+	engine dbtarget.Engine
 }
 
 func TestAtlasMigrateDiffPostgresFamilyDevCleanupE2E(t *testing.T) {
@@ -31,8 +36,8 @@ func TestAtlasMigrateDiffPostgresFamilyDevCleanupE2E(t *testing.T) {
 	buildPtahCompat(c, ctx, repoRoot, binaryPath)
 
 	tests := []postgresFamilyMigrateDiffCase{
-		{name: "cockroachdb", urlEnv: "COCKROACHDB_URL"},
-		{name: "yugabytedb", urlEnv: "YUGABYTEDB_URL"},
+		{name: "cockroachdb", engine: dbtarget.CockroachDB},
+		{name: "yugabytedb", engine: dbtarget.YugabyteDB},
 	}
 
 	for _, test := range tests {
@@ -49,7 +54,7 @@ func runPostgresFamilyMigrateDiffCase(
 	test postgresFamilyMigrateDiffCase,
 ) {
 	c.Helper()
-	adminURL := requireIntegrationEnvironment(c, test.urlEnv)
+	adminURL := dbtarget.URL(c, test.engine)
 	adminDB, err := sql.Open("pgx", postgresFamilyDriverURL(c, adminURL))
 	c.Assert(err, qt.IsNil)
 	defer adminDB.Close()

@@ -9,7 +9,6 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net/url"
-	"os"
 	"slices"
 	"strconv"
 	"strings"
@@ -21,6 +20,7 @@ import (
 
 	"go.5x5.cz/ptah/core/sqlutil"
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -49,11 +49,11 @@ func TestAtlasExactRevisionIdentityCollation_ExistingMariaDBTableRefusesAliasesI
 }
 
 func TestAtlasExactRevisionIdentityCollation_SQLServerIntegration(t *testing.T) {
-	runAtlasExactRevisionIdentityCollationIntegration(t, sqlServerAtlasTestURL(t))
+	runAtlasExactRevisionIdentityCollationIntegration(t, sqlServerTestURL(t))
 }
 
 func TestAtlasExactRevisionIdentityCollation_ExistingSQLServerTableRefusesAliasesIntegration(t *testing.T) {
-	runAtlasRevisionIdentityCollationSQLServerRefusalIntegration(t, sqlServerAtlasTestURL(t))
+	runAtlasRevisionIdentityCollationSQLServerRefusalIntegration(t, sqlServerTestURL(t))
 }
 
 func TestAtlasTxtarDown_PostgresIntegration(t *testing.T) {
@@ -203,15 +203,15 @@ func TestAtlasTxtarChecks_MariaDBShortNumericPrefixRejectsNonSelectIntegration(t
 // selects, so the row stayed green while the Atlas revision path was completely
 // broken on this dialect (#950).
 func TestAtlasTxtarChecks_ClickHouseIntegration(t *testing.T) {
-	runAtlasTxtarChecksIntegration(t, clickHouseAtlasTestURL(t), migrator.RevisionTableFormatAtlas)
+	runAtlasTxtarChecksIntegration(t, dbtarget.URL(t, dbtarget.ClickHouse), migrator.RevisionTableFormatAtlas)
 }
 
 func TestAtlasTxtarChecks_SQLServerIntegration(t *testing.T) {
-	runAtlasTxtarChecksIntegration(t, sqlServerAtlasTestURL(t), migrator.RevisionTableFormatAtlas)
+	runAtlasTxtarChecksIntegration(t, sqlServerTestURL(t), migrator.RevisionTableFormatAtlas)
 }
 
 func TestAtlasTxtarChecks_SQLServerSequenceDoesNotAdvanceIntegration(t *testing.T) {
-	runAtlasTxtarChecksSQLServerSequenceIntegration(t, sqlServerAtlasTestURL(t))
+	runAtlasTxtarChecksSQLServerSequenceIntegration(t, sqlServerTestURL(t))
 }
 
 func TestAtlasTxtarChecks_CockroachDBIntegration(t *testing.T) {
@@ -227,7 +227,7 @@ func TestAtlasRevisionMetadata_MariaDBIntegration(t *testing.T) {
 }
 
 func TestAtlasRevisionMetadata_SQLServerIntegration(t *testing.T) {
-	runAtlasRevisionMetadataIntegration(t, sqlServerAtlasTestURL(t))
+	runAtlasRevisionMetadataIntegration(t, sqlServerTestURL(t))
 }
 
 func TestAtlasRevisionMetadata_CockroachDBIntegration(t *testing.T) {
@@ -404,7 +404,7 @@ func TestDryRunRevisionState_MariaDBIntegration(t *testing.T) {
 }
 
 func TestDryRunRevisionState_SQLServerIntegration(t *testing.T) {
-	runDryRunRevisionStateIntegration(t, sqlServerAtlasTestURL(t), migrator.RevisionTableFormatAtlas)
+	runDryRunRevisionStateIntegration(t, sqlServerTestURL(t), migrator.RevisionTableFormatAtlas)
 }
 
 func TestDryRunRevisionState_CockroachDBIntegration(t *testing.T) {
@@ -419,7 +419,7 @@ func TestDryRunRevisionState_YugabyteDBIntegration(t *testing.T) {
 // RevisionTableFormatPtah, so it never exercised the Atlas revision DDL the
 // failure lives in; it now measures the same format as every other dialect.
 func TestDryRunRevisionState_ClickHouseIntegration(t *testing.T) {
-	runDryRunRevisionStateIntegration(t, clickHouseAtlasTestURL(t), migrator.RevisionTableFormatAtlas)
+	runDryRunRevisionStateIntegration(t, dbtarget.URL(t, dbtarget.ClickHouse), migrator.RevisionTableFormatAtlas)
 }
 
 func runDryRunRevisionStateIntegration(
@@ -585,7 +585,7 @@ VALUES ('3', 'external', 2, 1, 1, NOW(), 0, NULL, NULL, 'external', 'null'::json
 func TestAtlasRevisionMetadata_ClickHouseIntegration(t *testing.T) {
 	c := qt.New(t)
 	ctx := t.Context()
-	conn, err := dbschema.ConnectToDatabase(ctx, clickHouseAtlasTestURL(t))
+	conn, err := dbschema.ConnectToDatabase(ctx, dbtarget.URL(t, dbtarget.ClickHouse))
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(conn)
 
@@ -631,7 +631,7 @@ func TestAtlasRevisionMetadata_ClickHouseIntegration(t *testing.T) {
 
 func TestAtlasRevisionMetadata_ClickHouseRejectsSetIntegration(t *testing.T) {
 	c := qt.New(t)
-	conn, err := dbschema.ConnectToDatabase(t.Context(), clickHouseAtlasTestURL(t))
+	conn, err := dbschema.ConnectToDatabase(t.Context(), dbtarget.URL(t, dbtarget.ClickHouse))
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(conn)
 
@@ -1944,104 +1944,62 @@ func markIssue819RevisionDirty(c *qt.C, conn *dbschema.DatabaseConnection, versi
 	c.Assert(err, qt.IsNil)
 }
 
+// mysqlAtlasTestURL and mariaDBAtlasTestURL keep the scheme work dbtarget does
+// not do for this family: it declares no scheme for MySQL or MariaDB, because a
+// MySQL address is often a driver DSN carrying none, so a bare DSN still has to
+// be given one and an address of the sibling engine still has to be refused.
 func mysqlAtlasTestURL(t *testing.T) string {
 	t.Helper()
 
-	dbURL := os.Getenv("MYSQL_TEST_DSN")
-	if dbURL == "" {
-		dbURL = os.Getenv("MYSQL_TEST_URL")
-	}
-	if dbURL == "" {
-		t.Skip("MYSQL_TEST_DSN or MYSQL_TEST_URL not set")
-	}
-	if strings.Contains(dbURL, "@tcp(") && !strings.HasPrefix(dbURL, "mysql://") {
-		dbURL = "mysql://" + dbURL
-	}
-	if !strings.HasPrefix(dbURL, "mysql://") {
-		t.Skip("MySQL URL required for Atlas migration integration test")
-	}
-	return dbURL
+	return mySQLFamilyAtlasURL(t, dbtarget.MySQL, "mysql")
 }
 
 func mariaDBAtlasTestURL(t *testing.T) string {
 	t.Helper()
 
-	dbURL := os.Getenv("MARIADB_TEST_DSN")
-	if dbURL == "" {
-		dbURL = os.Getenv("MARIADB_TEST_URL")
-	}
-	if dbURL == "" {
-		t.Skip("MARIADB_TEST_DSN or MARIADB_TEST_URL not set")
-	}
-	if strings.Contains(dbURL, "@tcp(") && !strings.HasPrefix(dbURL, "mariadb://") {
-		dbURL = "mariadb://" + dbURL
-	}
-	if !strings.HasPrefix(dbURL, "mariadb://") {
-		t.Skip("MariaDB URL required for Atlas migration integration test")
-	}
-	return dbURL
+	return mySQLFamilyAtlasURL(t, dbtarget.MariaDB, "mariadb")
 }
 
-func sqlServerAtlasTestURL(t *testing.T) string {
+func mySQLFamilyAtlasURL(t *testing.T, engine dbtarget.Engine, dialect string) string {
 	t.Helper()
 
-	dbURL := os.Getenv("PTAH_SQLSERVER_TEST_URL")
-	if dbURL == "" {
-		t.Skip("PTAH_SQLSERVER_TEST_URL not set")
+	dbURL := dbtarget.URL(t, engine)
+	if strings.Contains(dbURL, "@tcp(") && !strings.HasPrefix(dbURL, dialect+"://") {
+		dbURL = dialect + "://" + dbURL
+	}
+	if !strings.HasPrefix(dbURL, dialect+"://") {
+		t.Skipf("%s URL required for Atlas migration integration test", dialect)
 	}
 	return dbURL
 }
 
-func clickHouseAtlasTestURL(t *testing.T) string {
-	t.Helper()
-
-	dbURL := os.Getenv("CLICKHOUSE_URL")
-	if dbURL == "" {
-		t.Skip("CLICKHOUSE_URL not set")
-	}
-	return dbURL
-}
-
+// cockroachDBAtlasTestURL and yugabyteDBAtlasTestURL keep the rewrite dbtarget
+// deliberately does not do: both engines accept a postgres:// address, and the
+// migrator has to be told which family member it is talking to.
 func cockroachDBAtlasTestURL(t *testing.T) string {
 	t.Helper()
 
-	dbURL := os.Getenv("COCKROACHDB_TEST_DSN")
-	if dbURL == "" {
-		dbURL = os.Getenv("COCKROACHDB_URL")
-	}
-	if dbURL == "" {
-		t.Skip("COCKROACHDB_TEST_DSN or COCKROACHDB_URL not set")
-	}
-	if rest, ok := strings.CutPrefix(dbURL, "postgresql://"); ok {
-		dbURL = "cockroachdb://" + rest
-	}
-	if rest, ok := strings.CutPrefix(dbURL, "postgres://"); ok {
-		dbURL = "cockroachdb://" + rest
-	}
-	if !strings.HasPrefix(dbURL, "cockroachdb://") {
-		t.Skip("CockroachDB URL required for Atlas migration integration test")
-	}
-	return dbURL
+	return postgresFamilyAtlasURL(t, dbtarget.CockroachDB, "cockroachdb")
 }
 
 func yugabyteDBAtlasTestURL(t *testing.T) string {
 	t.Helper()
 
-	dbURL := os.Getenv("YUGABYTEDB_TEST_DSN")
-	if dbURL == "" {
-		dbURL = os.Getenv("YUGABYTEDB_URL")
-	}
-	if dbURL == "" {
-		t.Skip("YUGABYTEDB_TEST_DSN or YUGABYTEDB_URL not set")
-	}
+	return postgresFamilyAtlasURL(t, dbtarget.YugabyteDB, "yugabytedb")
+}
+
+func postgresFamilyAtlasURL(t *testing.T, engine dbtarget.Engine, dialect string) string {
+	t.Helper()
+
+	dbURL := dbtarget.URL(t, engine)
 	if rest, ok := strings.CutPrefix(dbURL, "postgresql://"); ok {
-		dbURL = "yugabytedb://" + rest
+		dbURL = dialect + "://" + rest
 	}
 	if rest, ok := strings.CutPrefix(dbURL, "postgres://"); ok {
-		dbURL = "yugabytedb://" + rest
+		dbURL = dialect + "://" + rest
 	}
-	if !strings.HasPrefix(dbURL, "yugabytedb://") {
-		t.Skip("YugabyteDB URL required for Atlas migration integration test")
+	if !strings.HasPrefix(dbURL, dialect+"://") {
+		t.Skipf("%s URL required for Atlas migration integration test", dialect)
 	}
 	return dbURL
 }
@@ -2110,6 +2068,7 @@ func cleanupIssue937(t *testing.T, conn *dbschema.DatabaseConnection) {
 }
 
 func createLegacyIssue273MetadataTable(t *testing.T, conn *dbschema.DatabaseConnection) {
+	c := qt.New(t)
 	t.Helper()
 
 	_, err := conn.ExecContext(
@@ -2120,75 +2079,80 @@ func createLegacyIssue273MetadataTable(t *testing.T, conn *dbschema.DatabaseConn
 			applied_at TIMESTAMP NOT NULL
 		)`,
 	)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 }
 
 func issue273UsersCount(t *testing.T, conn *dbschema.DatabaseConnection) int {
+	c := qt.New(t)
 	t.Helper()
 
 	var count int
 	err := conn.QueryRowContext(context.Background(), "SELECT COUNT(*) FROM ptah_issue_273_users").Scan(&count)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	return count
 }
 
 func issue273Versions(t *testing.T, conn *dbschema.DatabaseConnection) []int64 {
+	c := qt.New(t)
 	t.Helper()
 
 	rows, err := conn.Query("SELECT version FROM schema_migrations_issue_273 ORDER BY version")
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	defer rows.Close()
 
 	var versions []int64
 	for rows.Next() {
 		var version int64
-		qt.Assert(t, rows.Scan(&version), qt.IsNil)
+		c.Assert(rows.Scan(&version), qt.IsNil)
 		versions = append(versions, version)
 	}
-	qt.Assert(t, rows.Err(), qt.IsNil)
+	c.Assert(rows.Err(), qt.IsNil)
 	return versions
 }
 
 func issue290WidgetsCount(t *testing.T, conn *dbschema.DatabaseConnection) int {
+	c := qt.New(t)
 	t.Helper()
 
 	var count int
 	err := conn.QueryRowContext(context.Background(), "SELECT COUNT(*) FROM ptah_issue_290_widgets").Scan(&count)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	return count
 }
 
 func issue290Versions(t *testing.T, conn *dbschema.DatabaseConnection) []int64 {
+	c := qt.New(t)
 	t.Helper()
 
 	rows, err := conn.Query("SELECT version FROM schema_migrations_issue_290 ORDER BY version")
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	defer rows.Close()
 
 	var versions []int64
 	for rows.Next() {
 		var version int64
-		qt.Assert(t, rows.Scan(&version), qt.IsNil)
+		c.Assert(rows.Scan(&version), qt.IsNil)
 		versions = append(versions, version)
 	}
-	qt.Assert(t, rows.Err(), qt.IsNil)
+	c.Assert(rows.Err(), qt.IsNil)
 	return versions
 }
 
 func issue299Versions(t *testing.T, conn *dbschema.DatabaseConnection) []int64 {
+	c := qt.New(t)
 	t.Helper()
 
 	rows, err := conn.Query("SELECT version FROM schema_migrations_issue_299 ORDER BY version")
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	defer rows.Close()
 
 	var versions []int64
 	for rows.Next() {
 		var version int64
-		qt.Assert(t, rows.Scan(&version), qt.IsNil)
+		c.Assert(rows.Scan(&version), qt.IsNil)
 		versions = append(versions, version)
 	}
-	qt.Assert(t, rows.Err(), qt.IsNil)
+	c.Assert(rows.Err(), qt.IsNil)
 	return versions
 }
 
@@ -2203,18 +2167,19 @@ type issue275Revision struct {
 }
 
 func issue275Revisions(t *testing.T, conn *dbschema.DatabaseConnection) []issue275Revision {
+	c := qt.New(t)
 	t.Helper()
 
 	rows, err := conn.Query(`SELECT version, description, type, applied, total, hash, operator_version
 FROM atlas_schema_revisions
 ORDER BY CAST(version AS BIGINT)`)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 	defer rows.Close()
 
 	var revisions []issue275Revision
 	for rows.Next() {
 		var revision issue275Revision
-		qt.Assert(t, rows.Scan(
+		c.Assert(rows.Scan(
 			&revision.Version,
 			&revision.Description,
 			&revision.RevisionType,
@@ -2225,7 +2190,7 @@ ORDER BY CAST(version AS BIGINT)`)
 		), qt.IsNil)
 		revisions = append(revisions, revision)
 	}
-	qt.Assert(t, rows.Err(), qt.IsNil)
+	c.Assert(rows.Err(), qt.IsNil)
 	return revisions
 }
 

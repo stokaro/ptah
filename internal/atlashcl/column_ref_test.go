@@ -23,8 +23,6 @@ import (
 // at render time and without naming the attribute. The pinned Atlas community
 // binary v1.3.0 exits 1 on all five.
 func TestParseRefusesAColumnAttributeThatCannotNameAColumn(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name  string
 		hcl   string
@@ -97,7 +95,8 @@ table "t" {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			_, err := atlashcl.Parse([]byte(test.hcl), "schema.hcl")
 			c.Assert(err, qt.ErrorMatches, test.match)
 		})
@@ -116,12 +115,15 @@ table "t" {
 // every value -- which is the only way a guard's non-interference is provable.
 // Measured under that mutant: all five rows fail on `err` being non-nil.
 func TestParseKeepsColumnAttributesThatNameAColumn(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
-		name   string
-		hcl    string
-		assert func(c *qt.C, db *goschema.Database)
+		name string
+		hcl  string
+		// All three positions are stated by every row, so a row that names a
+		// column in one of them also says the other two stayed empty: a
+		// refusal replaced by a silent relocation would otherwise pass.
+		wantIndexParts      [][]goschema.IndexPart
+		wantPrimaryKeyParts []goschema.PrimaryKeyPart
+		wantPartition       *goschema.PartitionSpec
 	}{
 		{
 			name: "index on column reference",
@@ -133,11 +135,7 @@ table "t" {
   }
 }
 `,
-			assert: func(c *qt.C, db *goschema.Database) {
-				c.Assert(db.Indexes, qt.HasLen, 1)
-				c.Assert(db.Indexes[0].Parts, qt.HasLen, 1)
-				c.Assert(db.Indexes[0].Parts[0].Name, qt.Equals, "n")
-			},
+			wantIndexParts: [][]goschema.IndexPart{{{Name: "n"}}},
 		},
 		{
 			name: "index on qualified table reference",
@@ -149,11 +147,7 @@ table "t" {
   }
 }
 `,
-			assert: func(c *qt.C, db *goschema.Database) {
-				c.Assert(db.Indexes, qt.HasLen, 1)
-				c.Assert(db.Indexes[0].Parts, qt.HasLen, 1)
-				c.Assert(db.Indexes[0].Parts[0].Name, qt.Equals, "n")
-			},
+			wantIndexParts: [][]goschema.IndexPart{{{Name: "n"}}},
 		},
 		{
 			name: "primary key on column reference",
@@ -165,10 +159,7 @@ table "t" {
   }
 }
 `,
-			assert: func(c *qt.C, db *goschema.Database) {
-				c.Assert(db.Tables, qt.HasLen, 1)
-				c.Assert(db.Tables[0].PrimaryKeyParts, qt.DeepEquals, []goschema.PrimaryKeyPart{{Name: "n"}})
-			},
+			wantPrimaryKeyParts: []goschema.PrimaryKeyPart{{Name: "n"}},
 		},
 		{
 			name: "partition by column reference",
@@ -181,12 +172,9 @@ table "t" {
   }
 }
 `,
-			assert: func(c *qt.C, db *goschema.Database) {
-				c.Assert(db.Tables, qt.HasLen, 1)
-				c.Assert(db.Tables[0].Partition, qt.DeepEquals, &goschema.PartitionSpec{
-					Type:  "RANGE",
-					Parts: []goschema.PartitionPart{{Name: "n"}},
-				})
+			wantPartition: &goschema.PartitionSpec{
+				Type:  "RANGE",
+				Parts: []goschema.PartitionPart{{Name: "n"}},
 			},
 		},
 		{
@@ -199,21 +187,34 @@ table "t" {
   }
 }
 `,
-			assert: func(c *qt.C, db *goschema.Database) {
-				c.Assert(db.Indexes, qt.HasLen, 1)
-				c.Assert(db.Indexes[0].Parts, qt.HasLen, 1)
-				c.Assert(db.Indexes[0].Parts[0].Name, qt.Equals, "n")
-			},
+			wantIndexParts: [][]goschema.IndexPart{{{Name: "n"}}},
 		},
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
 			db, err := atlashcl.Parse([]byte(test.hcl), "schema.hcl")
+
 			c.Assert(err, qt.IsNil)
-			test.assert(c, db)
+			c.Assert(db.Tables, qt.HasLen, 1)
+			c.Assert(indexPartsPerIndex(db), qt.DeepEquals, test.wantIndexParts)
+			c.Assert(db.Tables[0].PrimaryKeyParts, qt.DeepEquals, test.wantPrimaryKeyParts)
+			c.Assert(db.Tables[0].Partition, qt.DeepEquals, test.wantPartition)
 		})
 	}
+}
+
+// indexPartsPerIndex returns the parts of every index in the document, one
+// slice per index. The nesting is what lets a row state the index COUNT as well
+// as what each index covers, which a flat list of parts would lose.
+func indexPartsPerIndex(db *goschema.Database) [][]goschema.IndexPart {
+	var parts [][]goschema.IndexPart
+	for _, index := range db.Indexes {
+		parts = append(parts, index.Parts)
+	}
+	return parts
 }
 
 // Raw SQL in an index part is not lost by the refusal -- it has its own

@@ -15,6 +15,7 @@ import (
 
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff/types"
 )
@@ -23,17 +24,7 @@ import (
 // variables as the other live PostgreSQL tests.
 func livePostgresURLForRLSEnable(t *testing.T) string {
 	t.Helper()
-	dbURL := os.Getenv("POSTGRES_TEST_DSN")
-	if dbURL == "" {
-		dbURL = os.Getenv("TEST_DATABASE_URL")
-	}
-	if dbURL == "" {
-		t.Skip("POSTGRES_TEST_DSN or TEST_DATABASE_URL not set")
-	}
-	if !strings.HasPrefix(dbURL, "postgres://") && !strings.HasPrefix(dbURL, "postgresql://") {
-		t.Skip("PostgreSQL URL required for RLS enablement live tests")
-	}
-	return dbURL
+	return dbtarget.URL(t, dbtarget.PostgreSQL)
 }
 
 // createRLSEnableDatabase provisions one empty database per row and registers
@@ -167,7 +158,6 @@ func ordersSchema(tableSchema, policyTable string) *goschema.Database {
 // does not enforce the policy" are different claims and only the second one
 // matters.
 func TestPlannerEnablesRowSecurityForANewTableWhoseSpellingDiffersLivePostgres(t *testing.T) {
-	c := qt.New(t)
 	adminURL := livePostgresURLForRLSEnable(t)
 
 	tests := []struct {
@@ -177,7 +167,12 @@ func TestPlannerEnablesRowSecurityForANewTableWhoseSpellingDiffersLivePostgres(t
 		seed      []string
 		diff      *types.SchemaDiff
 		generated *goschema.Database
-		assert    func(c *qt.C, dbURL string)
+		// wantPolicies and wantRowSecurity are the catalog after the plan ran.
+		// A row that expects neither spells `[]string{}` rather than leaving the
+		// field out, because qt.DeepEquals separates an empty slice from a nil
+		// one and queryStrings never returns nil.
+		wantPolicies    []string
+		wantRowSecurity []string
 	}{
 		{
 			name: "the diff creates orders and the policy names public.orders",
@@ -187,11 +182,9 @@ func TestPlannerEnablesRowSecurityForANewTableWhoseSpellingDiffersLivePostgres(t
 					{PolicyName: "tenant_isolation", TableName: "public.orders"},
 				},
 			},
-			generated: ordersSchema("", "public.orders"),
-			assert: func(c *qt.C, dbURL string) {
-				c.Assert(rlsPolicyRelations(c, dbURL), qt.DeepEquals, []string{"public/orders/tenant_isolation"})
-				c.Assert(rowSecurityRelations(c, dbURL), qt.DeepEquals, []string{"public/orders"})
-			},
+			generated:       ordersSchema("", "public.orders"),
+			wantPolicies:    []string{"public/orders/tenant_isolation"},
+			wantRowSecurity: []string{"public/orders"},
 		},
 		{
 			name: "the diff creates public.orders and the policy names orders",
@@ -201,11 +194,9 @@ func TestPlannerEnablesRowSecurityForANewTableWhoseSpellingDiffersLivePostgres(t
 					{PolicyName: "tenant_isolation", TableName: "orders"},
 				},
 			},
-			generated: ordersSchema("public", "orders"),
-			assert: func(c *qt.C, dbURL string) {
-				c.Assert(rlsPolicyRelations(c, dbURL), qt.DeepEquals, []string{"public/orders/tenant_isolation"})
-				c.Assert(rowSecurityRelations(c, dbURL), qt.DeepEquals, []string{"public/orders"})
-			},
+			generated:       ordersSchema("public", "orders"),
+			wantPolicies:    []string{"public/orders/tenant_isolation"},
+			wantRowSecurity: []string{"public/orders"},
 		},
 		{
 			name: "both sides spell the table the same way",
@@ -215,11 +206,9 @@ func TestPlannerEnablesRowSecurityForANewTableWhoseSpellingDiffersLivePostgres(t
 					{PolicyName: "tenant_isolation", TableName: "orders"},
 				},
 			},
-			generated: ordersSchema("", "orders"),
-			assert: func(c *qt.C, dbURL string) {
-				c.Assert(rlsPolicyRelations(c, dbURL), qt.DeepEquals, []string{"public/orders/tenant_isolation"})
-				c.Assert(rowSecurityRelations(c, dbURL), qt.DeepEquals, []string{"public/orders"})
-			},
+			generated:       ordersSchema("", "orders"),
+			wantPolicies:    []string{"public/orders/tenant_isolation"},
+			wantRowSecurity: []string{"public/orders"},
 		},
 		{
 			// The control the widened match must not swallow. `legacy` already
@@ -251,19 +240,19 @@ func TestPlannerEnablesRowSecurityForANewTableWhoseSpellingDiffersLivePostgres(t
 					UsingExpression: "tenant_id = 1",
 				}},
 			},
-			assert: func(c *qt.C, dbURL string) {
-				c.Assert(rlsPolicyRelations(c, dbURL), qt.DeepEquals, []string{})
-				c.Assert(rowSecurityRelations(c, dbURL), qt.DeepEquals, []string{})
-			},
+			wantPolicies:    []string{},
+			wantRowSecurity: []string{},
 		},
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			dbURL := createRLSEnableDatabase(c, adminURL)
 			executeSQL(c, dbURL, test.seed)
 			planAndApply(c, dbURL, test.diff, test.generated)
-			test.assert(c, dbURL)
+			c.Assert(rlsPolicyRelations(c, dbURL), qt.DeepEquals, test.wantPolicies)
+			c.Assert(rowSecurityRelations(c, dbURL), qt.DeepEquals, test.wantRowSecurity)
 		})
 	}
 }

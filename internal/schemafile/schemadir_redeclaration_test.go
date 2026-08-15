@@ -1,6 +1,7 @@
 package schemafile_test
 
 import (
+	"slices"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -22,19 +23,16 @@ import (
 //
 // because it executes the files in filename order against the dev database.
 //
-// Every admitting row is a control the refusing rows need, and each is a
-// separate measurement on that binary rather than a restatement of this
-// implementation: a guarded redeclaration, a same-named table in two schemas,
-// an index that belongs to a table an earlier file created, and an HCL
-// directory whose files each open with the schema block are all exit 0 there.
-// Without them, "refuse a directory whose files mention the same word twice"
-// would pass this table while breaking every one of those layouts.
+// The layouts this refusal must NOT reach are the control set, and they live in
+// TestLoadPathAdmitsADirectoryThatBuildsOnEarlierFiles. Without them, "refuse a
+// directory whose files mention the same word twice" would pass this test while
+// breaking every one of them.
 func TestLoadPathRefusesADirectoryThatRedeclaresAnObject(t *testing.T) {
 	tests := []struct {
 		name    string
 		dialect string
 		files   map[string]string
-		assert  func(c *qt.C, db *goschema.Database, err error)
+		wantErr string
 	}{
 		{
 			name:    "a later file that declares the same table refuses",
@@ -43,10 +41,7 @@ func TestLoadPathRefusesADirectoryThatRedeclaresAnObject(t *testing.T) {
 				"1_a.sql": "CREATE TABLE users (id INTEGER PRIMARY KEY);\n",
 				"2_b.sql": "CREATE TABLE users (id INTEGER PRIMARY KEY, extra TEXT);\n",
 			},
-			assert: func(c *qt.C, db *goschema.Database, err error) {
-				c.Assert(err, qt.ErrorMatches, `read state from "2_b.sql": table "users" already exists`)
-				c.Assert(db, qt.IsNil)
-			},
+			wantErr: `read state from "2_b.sql": table "users" already exists`,
 		},
 		{
 			name:    "a later file that declares the same index refuses",
@@ -56,57 +51,7 @@ func TestLoadPathRefusesADirectoryThatRedeclaresAnObject(t *testing.T) {
 					"CREATE INDEX idx_users_email ON users (email);\n",
 				"2_b.sql": "CREATE INDEX idx_users_email ON users (email);\n",
 			},
-			assert: func(c *qt.C, db *goschema.Database, err error) {
-				c.Assert(err, qt.ErrorMatches, `read state from "2_b.sql": index "users.idx_users_email" already exists`)
-			},
-		},
-		{
-			name:    "a guarded redeclaration is admitted",
-			dialect: "sqlite",
-			files: map[string]string{
-				"1_a.sql": "CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY);\n",
-				"2_b.sql": "CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, extra TEXT);\n",
-			},
-			assert: func(c *qt.C, db *goschema.Database, err error) {
-				c.Assert(err, qt.IsNil)
-				c.Assert(tableNames(db), qt.Contains, "users")
-			},
-		},
-		{
-			name:    "the same table name in two schemas is not a redeclaration",
-			dialect: "postgres",
-			files: map[string]string{
-				"1_a.sql": "CREATE TABLE app.users (id INTEGER PRIMARY KEY);\n",
-				"2_b.sql": "CREATE TABLE other.users (id INTEGER PRIMARY KEY);\n",
-			},
-			assert: func(c *qt.C, db *goschema.Database, err error) {
-				c.Assert(err, qt.IsNil)
-				c.Assert(db.Tables, qt.HasLen, 2)
-			},
-		},
-		{
-			name:    "an index on a table an earlier file created is not a redeclaration",
-			dialect: "sqlite",
-			files: map[string]string{
-				"1_a.sql": "CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT);\n",
-				"2_b.sql": "CREATE INDEX idx_users_email ON users (email);\n",
-			},
-			assert: func(c *qt.C, db *goschema.Database, err error) {
-				c.Assert(err, qt.IsNil)
-				c.Assert(db.Indexes, qt.HasLen, 1)
-			},
-		},
-		{
-			name:    "an ALTER of a table an earlier file created is not a redeclaration",
-			dialect: "sqlite",
-			files: map[string]string{
-				"1_a.sql": "CREATE TABLE users (id INTEGER PRIMARY KEY);\n",
-				"2_b.sql": "ALTER TABLE users ADD COLUMN extra TEXT;\n",
-			},
-			assert: func(c *qt.C, db *goschema.Database, err error) {
-				c.Assert(err, qt.IsNil)
-				c.Assert(tableNames(db), qt.DeepEquals, []string{"users"})
-			},
+			wantErr: `read state from "2_b.sql": index "users.idx_users_email" already exists`,
 		},
 		{
 			name:    "a later HCL file that declares the same table refuses",
@@ -115,22 +60,7 @@ func TestLoadPathRefusesADirectoryThatRedeclaresAnObject(t *testing.T) {
 				"a.hcl": "schema \"main\" {}\ntable \"users\" {\n  schema = schema.main\n  column \"id\" {\n    type = int\n  }\n}\n",
 				"b.hcl": "table \"users\" {\n  schema = schema.main\n  column \"id\" {\n    type = int\n  }\n}\n",
 			},
-			assert: func(c *qt.C, db *goschema.Database, err error) {
-				c.Assert(err, qt.ErrorMatches, `read state from "b.hcl": table "main.users" already exists`)
-			},
-		},
-		{
-			name:    "HCL files that each repeat the schema block are admitted",
-			dialect: "sqlite",
-			files: map[string]string{
-				"a.hcl": "schema \"main\" {}\ntable \"users\" {\n  schema = schema.main\n  column \"id\" {\n    type = int\n  }\n}\n",
-				"b.hcl": "schema \"main\" {}\ntable \"posts\" {\n  schema = schema.main\n  column \"id\" {\n    type = int\n  }\n}\n",
-			},
-			assert: func(c *qt.C, db *goschema.Database, err error) {
-				c.Assert(err, qt.IsNil)
-				c.Assert(tableNames(db), qt.Contains, "users")
-				c.Assert(tableNames(db), qt.Contains, "posts")
-			},
+			wantErr: `read state from "b.hcl": table "main.users" already exists`,
 		},
 	}
 
@@ -141,7 +71,99 @@ func TestLoadPathRefusesADirectoryThatRedeclaresAnObject(t *testing.T) {
 
 			db, err := schemafile.LoadPath(dir, schemafile.Options{Dialect: test.dialect})
 
-			test.assert(c, db, err)
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			// A refused directory hands back no desired state: a caller that
+			// ignored the error would otherwise apply the half-read merge this
+			// refusal exists to prevent.
+			c.Assert(db, qt.IsNil)
 		})
 	}
+}
+
+// TestLoadPathAdmitsADirectoryThatBuildsOnEarlierFiles is the control set the
+// refusal above needs, and each row is a separate measurement on the pinned
+// Atlas community binary v1.3.0 rather than a restatement of this
+// implementation: a guarded redeclaration, a same-named table in two schemas, an
+// index that belongs to a table an earlier file created, an ALTER of such a
+// table, and an HCL directory whose files each open with the schema block are
+// all exit 0 there.
+//
+// Each row states the whole desired state the directory produced, because "the
+// load returned no error" is also what a reader that dropped the later file
+// answers, and that reader loses the second file's declarations.
+func TestLoadPathAdmitsADirectoryThatBuildsOnEarlierFiles(t *testing.T) {
+	tests := []struct {
+		name       string
+		dialect    string
+		files      map[string]string
+		wantTables []string
+		wantIndex  int
+	}{
+		{
+			name:    "a guarded redeclaration is admitted",
+			dialect: "sqlite",
+			files: map[string]string{
+				"1_a.sql": "CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY);\n",
+				"2_b.sql": "CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY, extra TEXT);\n",
+			},
+			wantTables: []string{"users"},
+		},
+		{
+			name:    "the same table name in two schemas is not a redeclaration",
+			dialect: "postgres",
+			files: map[string]string{
+				"1_a.sql": "CREATE TABLE app.users (id INTEGER PRIMARY KEY);\n",
+				"2_b.sql": "CREATE TABLE other.users (id INTEGER PRIMARY KEY);\n",
+			},
+			wantTables: []string{"users", "users"},
+		},
+		{
+			name:    "an index on a table an earlier file created is not a redeclaration",
+			dialect: "sqlite",
+			files: map[string]string{
+				"1_a.sql": "CREATE TABLE users (id INTEGER PRIMARY KEY, email TEXT);\n",
+				"2_b.sql": "CREATE INDEX idx_users_email ON users (email);\n",
+			},
+			wantTables: []string{"users"},
+			wantIndex:  1,
+		},
+		{
+			name:    "an ALTER of a table an earlier file created is not a redeclaration",
+			dialect: "sqlite",
+			files: map[string]string{
+				"1_a.sql": "CREATE TABLE users (id INTEGER PRIMARY KEY);\n",
+				"2_b.sql": "ALTER TABLE users ADD COLUMN extra TEXT;\n",
+			},
+			wantTables: []string{"users"},
+		},
+		{
+			name:    "HCL files that each repeat the schema block are admitted",
+			dialect: "sqlite",
+			files: map[string]string{
+				"a.hcl": "schema \"main\" {}\ntable \"users\" {\n  schema = schema.main\n  column \"id\" {\n    type = int\n  }\n}\n",
+				"b.hcl": "schema \"main\" {}\ntable \"posts\" {\n  schema = schema.main\n  column \"id\" {\n    type = int\n  }\n}\n",
+			},
+			wantTables: []string{"posts", "users"},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			dir := writeSchemaDir(c, test.files)
+
+			db, err := schemafile.LoadPath(dir, schemafile.Options{Dialect: test.dialect})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(sortedTableNames(db), qt.DeepEquals, test.wantTables)
+			c.Assert(db.Indexes, qt.HasLen, test.wantIndex)
+		})
+	}
+}
+
+// sortedTableNames answers what the directory declared as a set, so a row states
+// its expectation without depending on the order the files happened to be read
+// in.
+func sortedTableNames(db *goschema.Database) []string {
+	return slices.Sorted(slices.Values(tableNames(db)))
 }

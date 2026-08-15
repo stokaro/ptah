@@ -26,8 +26,6 @@ import (
 // stated and disagree. Every `wantNil: true` row below resolves without the
 // gate, and every `wantNil: false` row is the capability the gate must keep.
 func TestUnqualifiedTierOnlySuppliesAnUnstatedSchema(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name      string
 		tables    []goschema.Table
@@ -104,7 +102,8 @@ func TestUnqualifiedTierOnlySuppliesAnUnstatedSchema(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			got := objectlookup.Qualified(test.tables, test.lookup, test.semantics)
 			c.Assert(got == nil, qt.Equals, test.wantNil, qt.Commentf("got: %+v", got))
 			c.Assert(namedTable(got), qt.Equals, test.wantName)
@@ -127,8 +126,6 @@ func namedTable(table *goschema.Table) string {
 // one name on each side -- a constraint's owning table against the table a
 // TableDiff names -- asks the identity question rather than a string question.
 func TestSame(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name      string
 		reference string
@@ -197,7 +194,8 @@ func TestSame(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(objectlookup.Same(test.reference, test.candidate, test.semantics), qt.Equals, test.want)
 		})
 	}

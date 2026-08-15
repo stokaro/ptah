@@ -79,139 +79,125 @@ func TestNextAvailableMigrationVersionReadsTheHeldDirectory(t *testing.T) {
 	c.Assert(pathnameVersion, qt.Equals, int64(901))
 }
 
-// TestMigrationPlanUsesTheHeldDirectoryForVersionAndPublication carries the row
-// above through to publication, on the shape an operator can picture: no
-// symlink anywhere, just a directory renamed aside while a plan holds it and a
-// different directory taking the pathname it was selected by.
+// heldDirectoryPlan stages the shape the two publication tests below measure
+// and stops where they diverge: a plan that has bound, captured and scanned a
+// migration directory which a different one, carrying a higher version, has
+// since taken the pathname of. It returns the plan and the three paths, with
+// the bound directory living at aside and the impostor at selected.
 //
-// The scan row next door stops at the number. The number is only half of what
-// the binding claims, because a version chosen from the held directory and then
-// published somewhere else would be no better than a version chosen from the
-// pathname. Both halves are asserted here against the same plan, in the order
-// PlanMigration runs them: bind, capture, scan, publish.
-//
-// The impostor at the pathname carries a *higher* version than the directory
-// the plan holds, so the two readings cannot agree by accident -- 106 beside
-// the 105 the plan bound, against 901 beside the 900 the impostor holds. The
-// third assertion after the scan is what proves the fixture separates them.
-//
-// The two rows differ in what the pathname names by publication time, and they
-// fail in opposite ways:
-//
-//   - impostor still there: the batch must be refused outright, and the
-//     impostor must not receive one byte of it. This is the row a plan that
-//     revalidated by pathname would pass while publishing into the impostor.
-//   - pathname handed back: the batch must land in the retained object under
-//     the number the scan chose. This is the row that fails if the plan gave
-//     up its claim, or renumbered against the impostor.
+// The shape is the one an operator can picture: no symlink anywhere, just a
+// directory renamed aside while a plan holds it. The scan is asserted here
+// because it is the same measurement in both tests, in the order PlanMigration
+// runs it: bind, capture, scan, publish. The impostor carries a *higher*
+// version than the directory the plan holds, so the two readings cannot agree
+// by accident -- 106 beside the 105 the plan bound, against 901 beside the 900
+// the impostor holds, and the last assertion here is what proves the fixture
+// separates them.
+func heldDirectoryPlan(c *qt.C) (plan *MigrationPlan, root, selected, aside string) {
+	c.Helper()
+	const upSQL = "CREATE TABLE users (id INTEGER);\n"
+	const downSQL = "DROP TABLE users;\n"
+	root = c.TempDir()
+	selected = filepath.Join(root, "migrations")
+	c.Assert(os.MkdirAll(selected, 0o755), qt.IsNil)
+	c.Assert(os.WriteFile(
+		filepath.Join(selected, migrator.GenerateMigrationFileName(105, "add_email", "up")),
+		[]byte(upSQL), 0o600,
+	), qt.IsNil)
+
+	writer, err := bindPlannedMigrationDir("", selected)
+	c.Assert(err, qt.IsNil)
+	plannedContents, err := captureMigrationDirectoryContents(writer)
+	c.Assert(err, qt.IsNil)
+
+	// The hostile step: the bound directory is renamed aside and a different
+	// one, holding a higher version, takes the pathname.
+	aside = filepath.Join(root, "renamed-aside")
+	c.Assert(os.Rename(selected, aside), qt.IsNil)
+	c.Assert(os.MkdirAll(selected, 0o755), qt.IsNil)
+	c.Assert(os.WriteFile(
+		filepath.Join(selected, migrator.GenerateMigrationFileName(900, "decoy", "up")),
+		[]byte(upSQL), 0o600,
+	), qt.IsNil)
+
+	version, err := nextAvailableMigrationVersion(writer, 100, "add_email")
+	c.Assert(err, qt.IsNil)
+	c.Assert(version, qt.Equals, int64(106))
+	pathnameVersion, pathnameErr := nextAvailablePtahVersion(
+		migrationDirFileNames(writer.Path()), 100, "add_email",
+	)
+	c.Assert(pathnameErr, qt.IsNil)
+	c.Assert(pathnameVersion, qt.Equals, int64(901))
+
+	plan = &MigrationPlan{
+		outputDir:       selected,
+		dir:             writer,
+		plannedContents: plannedContents,
+		specs: []generatedMigrationSpec{{
+			Version: version,
+			Name:    "add_email",
+			UpSQL:   upSQL,
+			DownSQL: downSQL,
+		}},
+	}
+	c.Cleanup(plan.release)
+	return plan, root, selected, aside
+}
+
+// TestMigrationPlanRefusesPublicationWhileTheImpostorHoldsThePathname carries
+// the scan next door through to publication, in the state a plan that
+// revalidated by pathname would pass while publishing into the impostor: the
+// batch must be refused outright, and the impostor must not receive one byte of
+// it.
 //
 // //go:build unix because the hostile step is a rename of a directory the run
 // holds open, which Win32 refuses without FILE_SHARE_DELETE -- on Windows there
 // would be no step to perform rather than a step expected to fail.
-func TestMigrationPlanUsesTheHeldDirectoryForVersionAndPublication(t *testing.T) {
-	const upSQL = "CREATE TABLE users (id INTEGER);\n"
-	const downSQL = "DROP TABLE users;\n"
-	boundFile := migrator.GenerateMigrationFileName(105, "add_email", "up")
-	impostorFile := migrator.GenerateMigrationFileName(900, "decoy", "up")
-	publishedUp := migrator.GenerateMigrationFileName(106, "add_email", "up")
-	publishedDown := migrator.GenerateMigrationFileName(106, "add_email", "down")
+func TestMigrationPlanRefusesPublicationWhileTheImpostorHoldsThePathname(t *testing.T) {
+	c := qt.New(t)
+	plan, _, selected, aside := heldDirectoryPlan(c)
 
-	tests := []struct {
-		name string
-		// settle runs after the version has been chosen and before publication,
-		// and reports where the bound object and the impostor live by then.
-		settle func(c *qt.C, root, selected, aside string) (bound, impostor string)
-		// check asserts what the plan's one publication attempt returned.
-		check func(c *qt.C, files *MigrationFiles, err error)
-		// wantBound and wantImpostor are the two directories afterwards.
-		wantBound    []string
-		wantImpostor []string
-	}{
-		{
-			name: "the impostor still holds the pathname at publication",
-			settle: func(_ *qt.C, _, selected, aside string) (string, string) {
-				return aside, selected
-			},
-			check: func(c *qt.C, files *MigrationFiles, err error) {
-				c.Assert(err, qt.ErrorIs, ErrMigrationDirectoryChanged)
-				c.Assert(files, qt.IsNil)
-			},
-			wantBound:    []string{boundFile},
-			wantImpostor: []string{impostorFile},
-		},
-		{
-			name: "the pathname names the bound directory again at publication",
-			settle: func(c *qt.C, root, selected, aside string) (string, string) {
-				impostor := filepath.Join(root, "impostor")
-				c.Assert(os.Rename(selected, impostor), qt.IsNil)
-				c.Assert(os.Rename(aside, selected), qt.IsNil)
-				return selected, impostor
-			},
-			check: func(c *qt.C, files *MigrationFiles, err error) {
-				c.Assert(err, qt.IsNil)
-				c.Assert(files.Files, qt.HasLen, 1)
-				c.Assert(files.Files[0].Version, qt.Equals, int64(106))
-			},
-			wantBound:    []string{boundFile, publishedDown, publishedUp},
-			wantImpostor: []string{impostorFile},
-		},
-	}
+	files, err := plan.WriteFilesContext(t.Context())
 
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-			root := t.TempDir()
-			selected := filepath.Join(root, "migrations")
-			c.Assert(os.MkdirAll(selected, 0o755), qt.IsNil)
-			c.Assert(os.WriteFile(
-				filepath.Join(selected, boundFile), []byte(upSQL), 0o600,
-			), qt.IsNil)
+	c.Assert(err, qt.ErrorIs, ErrMigrationDirectoryChanged)
+	c.Assert(files, qt.IsNil)
+	c.Assert(generatorDirNames(c, aside), qt.DeepEquals, []string{
+		migrator.GenerateMigrationFileName(105, "add_email", "up"),
+	})
+	c.Assert(generatorDirNames(c, selected), qt.DeepEquals, []string{
+		migrator.GenerateMigrationFileName(900, "decoy", "up"),
+	})
+}
 
-			writer, err := bindPlannedMigrationDir("", selected)
-			c.Assert(err, qt.IsNil)
-			plannedContents, err := captureMigrationDirectoryContents(writer)
-			c.Assert(err, qt.IsNil)
+// TestMigrationPlanPublishesIntoTheHeldDirectoryWhenThePathnameReturns is the
+// other half of the same claim, and it is the half the number alone does not
+// carry: a version chosen from the held directory and then published somewhere
+// else would be no better than a version chosen from the pathname.
+//
+// The pathname is handed back before publication, so the batch must land in the
+// retained object under the number the scan chose. This fails if the plan gave
+// up its claim, or renumbered against the impostor.
+func TestMigrationPlanPublishesIntoTheHeldDirectoryWhenThePathnameReturns(t *testing.T) {
+	c := qt.New(t)
+	plan, root, selected, aside := heldDirectoryPlan(c)
 
-			// The hostile step: the bound directory is renamed aside and a
-			// different one, holding a higher version, takes the pathname.
-			aside := filepath.Join(root, "renamed-aside")
-			c.Assert(os.Rename(selected, aside), qt.IsNil)
-			c.Assert(os.MkdirAll(selected, 0o755), qt.IsNil)
-			c.Assert(os.WriteFile(
-				filepath.Join(selected, impostorFile), []byte(upSQL), 0o600,
-			), qt.IsNil)
+	impostor := filepath.Join(root, "impostor")
+	c.Assert(os.Rename(selected, impostor), qt.IsNil)
+	c.Assert(os.Rename(aside, selected), qt.IsNil)
 
-			version, err := nextAvailableMigrationVersion(writer, 100, "add_email")
-			c.Assert(err, qt.IsNil)
-			c.Assert(version, qt.Equals, int64(106))
-			pathnameVersion, pathnameErr := nextAvailablePtahVersion(
-				migrationDirFileNames(writer.Path()), 100, "add_email",
-			)
-			c.Assert(pathnameErr, qt.IsNil)
-			c.Assert(pathnameVersion, qt.Equals, int64(901))
+	files, err := plan.WriteFilesContext(t.Context())
 
-			plan := &MigrationPlan{
-				outputDir:       selected,
-				dir:             writer,
-				plannedContents: plannedContents,
-				specs: []generatedMigrationSpec{{
-					Version: version,
-					Name:    "add_email",
-					UpSQL:   upSQL,
-					DownSQL: downSQL,
-				}},
-			}
-			defer plan.release()
-
-			bound, impostor := test.settle(c, root, selected, aside)
-
-			files, err := plan.WriteFilesContext(t.Context())
-
-			test.check(c, files, err)
-			c.Assert(generatorDirNames(c, bound), qt.DeepEquals, test.wantBound)
-			c.Assert(generatorDirNames(c, impostor), qt.DeepEquals, test.wantImpostor)
-		})
-	}
+	c.Assert(err, qt.IsNil)
+	c.Assert(files.Files, qt.HasLen, 1)
+	c.Assert(files.Files[0].Version, qt.Equals, int64(106))
+	c.Assert(generatorDirNames(c, selected), qt.DeepEquals, []string{
+		migrator.GenerateMigrationFileName(105, "add_email", "up"),
+		migrator.GenerateMigrationFileName(106, "add_email", "down"),
+		migrator.GenerateMigrationFileName(106, "add_email", "up"),
+	})
+	c.Assert(generatorDirNames(c, impostor), qt.DeepEquals, []string{
+		migrator.GenerateMigrationFileName(900, "decoy", "up"),
+	})
 }
 
 // These are the `migration/generator` half of the rooted-writer regressions
@@ -269,66 +255,60 @@ func TestGenerateEmptyMigrationReplacedDirectoryCannotRedirectTheWrite(t *testin
 		// choice of destination.
 		allowedRoot func(root string) string
 		dirFormat   migrator.MigrationDirFormat
-		// stage builds the tree and returns the directory the run selects.
-		stage func(c *qt.C, root, decoy string) string
-		// replace performs the swap once the directory is bound and returns the
-		// directory the bound handle still points at.
-		replace func(c *qt.C, root, decoy string) string
+		// selectedDir is the directory the run is pointed at, relative to the
+		// temporary root, and it is staged before the run.
+		selectedDir string
+		// replacedDir is what the swap replaces once the directory is bound,
+		// relative to the same root: the migration directory itself, or an
+		// ancestor of it. retainedSubdir is what stands between that directory
+		// and the migration directory, so the row names where the files must
+		// land when the swap happens above the bound handle.
+		replacedDir    string
+		retainedSubdir string
+		// decoySubdir is what the row stages inside the decoy: nothing, except
+		// the ancestor row, which needs a migrations directory for the swapped
+		// symlink to resolve through at all.
+		decoySubdir string
 		// wantFiles is how many files the layout writes: two for the Atlas
 		// layout (the migration and atlas.sum) and two for the paired layout
 		// (the up and down halves).
 		wantFiles int
-		// wantDecoyEntries is what the row staged in the decoy before the run:
-		// nothing, except the ancestor row, which needs a migrations directory
-		// for the swapped symlink to resolve through at all.
+		// wantDecoyEntries is what the decoy must still hold afterwards, which
+		// is exactly what the row staged in it and nothing the run added.
 		wantDecoyEntries int
 	}{
 		{
 			name:        "the migration directory is replaced, under an allowed root",
 			allowedRoot: func(root string) string { return root },
 			dirFormat:   migrator.MigrationDirFormatAtlas,
-			stage:       stageTopLevelMigrationDir,
-			replace: func(c *qt.C, root, decoy string) string {
-				return replaceWithSymlink(c, filepath.Join(root, "migrations"), decoy)
-			},
-			wantFiles: 2,
+			selectedDir: "migrations",
+			replacedDir: "migrations",
+			wantFiles:   2,
 		},
 		{
 			name:        "the migration directory is replaced, with no allowed root",
 			allowedRoot: func(string) string { return "" },
 			dirFormat:   migrator.MigrationDirFormatAtlas,
-			stage:       stageTopLevelMigrationDir,
-			replace: func(c *qt.C, root, decoy string) string {
-				return replaceWithSymlink(c, filepath.Join(root, "migrations"), decoy)
-			},
-			wantFiles: 2,
+			selectedDir: "migrations",
+			replacedDir: "migrations",
+			wantFiles:   2,
 		},
 		{
 			name:        "the migration directory is replaced, paired layout",
 			allowedRoot: func(root string) string { return root },
 			dirFormat:   migrator.MigrationDirFormatPtah,
-			stage:       stageTopLevelMigrationDir,
-			replace: func(c *qt.C, root, decoy string) string {
-				return replaceWithSymlink(c, filepath.Join(root, "migrations"), decoy)
-			},
-			wantFiles: 2,
+			selectedDir: "migrations",
+			replacedDir: "migrations",
+			wantFiles:   2,
 		},
 		{
-			name:        "an ancestor directory is replaced",
-			allowedRoot: func(root string) string { return root },
-			dirFormat:   migrator.MigrationDirFormatAtlas,
-			stage: func(c *qt.C, root, decoy string) string {
-				c.Helper()
-				c.Assert(os.MkdirAll(filepath.Join(root, "nest", "migrations"), 0o755), qt.IsNil)
-				c.Assert(os.MkdirAll(filepath.Join(decoy, "migrations"), 0o755), qt.IsNil)
-				return filepath.Join(root, "nest", "migrations")
-			},
-			replace: func(c *qt.C, root, decoy string) string {
-				return filepath.Join(
-					replaceWithSymlink(c, filepath.Join(root, "nest"), decoy),
-					"migrations",
-				)
-			},
+			name:             "an ancestor directory is replaced",
+			allowedRoot:      func(root string) string { return root },
+			dirFormat:        migrator.MigrationDirFormatAtlas,
+			selectedDir:      filepath.Join("nest", "migrations"),
+			replacedDir:      "nest",
+			retainedSubdir:   "migrations",
+			decoySubdir:      "migrations",
 			wantFiles:        2,
 			wantDecoyEntries: 1,
 		},
@@ -339,10 +319,17 @@ func TestGenerateEmptyMigrationReplacedDirectoryCannotRedirectTheWrite(t *testin
 			c := qt.New(t)
 			root := t.TempDir()
 			decoy := t.TempDir()
-			selected := test.stage(c, root, decoy)
+			selected := filepath.Join(root, test.selectedDir)
+			c.Assert(os.MkdirAll(selected, 0o755), qt.IsNil)
+			c.Assert(os.MkdirAll(filepath.Join(decoy, test.decoySubdir), 0o755), qt.IsNil)
 
 			var retained string
-			afterMigrationWriterBound = func() { retained = test.replace(c, root, decoy) }
+			afterMigrationWriterBound = func() {
+				retained = filepath.Join(
+					replaceWithSymlink(c, filepath.Join(root, test.replacedDir), decoy),
+					test.retainedSubdir,
+				)
+			}
 			defer func() { afterMigrationWriterBound = nil }()
 
 			files, err := GenerateEmptyMigration(EmptyMigrationOptions{
@@ -358,14 +345,6 @@ func TestGenerateEmptyMigrationReplacedDirectoryCannotRedirectTheWrite(t *testin
 			c.Assert(generatorDirNames(c, decoy), qt.HasLen, test.wantDecoyEntries)
 		})
 	}
-}
-
-// stageTopLevelMigrationDir prepares root/migrations as the selected directory.
-func stageTopLevelMigrationDir(c *qt.C, root, _ string) string {
-	c.Helper()
-	selected := filepath.Join(root, "migrations")
-	c.Assert(os.MkdirAll(selected, 0o755), qt.IsNil)
-	return selected
 }
 
 // TestGenerateEmptyMigrationCreatesMissingDirectoryThroughTheBoundParent covers

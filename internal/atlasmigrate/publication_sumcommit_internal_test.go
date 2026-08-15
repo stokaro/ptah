@@ -47,41 +47,34 @@ func TestPublishDirSum_RefusesADestinationReplacedInsideTheCommitWindow(t *testi
 		name    string
 		format  migrator.MigrationDirFormat
 		sumName string
-		// seed writes whatever checksum the directory already carries, so the
-		// commit captures ExpectAbsent or ExpectFile.
-		seed func(c *qt.C, dir, sumName string)
+		// existingSums is what the directory already holds at sumName when the
+		// commit captures its destination, and it decides which branch runs: no
+		// entry captures ExpectAbsent, one entry captures ExpectFile. It is a
+		// slice rather than a string because "no checksum yet" and "an empty
+		// checksum file" are different states on disk.
+		existingSums []string
 	}{
 		{
 			name:    "atlas.sum, absent when the commit captured its destination",
 			format:  migrator.MigrationDirFormatAtlas,
 			sumName: migratesum.AtlasFileName,
-			seed:    func(*qt.C, string, string) {},
 		},
 		{
-			name:    "atlas.sum, present when the commit captured its destination",
-			format:  migrator.MigrationDirFormatAtlas,
-			sumName: migratesum.AtlasFileName,
-			seed: func(c *qt.C, dir, sumName string) {
-				c.Assert(os.WriteFile(
-					filepath.Join(dir, sumName), []byte("h1:stale=\n"), 0o600,
-				), qt.IsNil)
-			},
+			name:         "atlas.sum, present when the commit captured its destination",
+			format:       migrator.MigrationDirFormatAtlas,
+			sumName:      migratesum.AtlasFileName,
+			existingSums: []string{"h1:stale=\n"},
 		},
 		{
 			name:    "ptah.sum, absent when the commit captured its destination",
 			format:  migrator.MigrationDirFormatPtah,
 			sumName: migratesum.FileName,
-			seed:    func(*qt.C, string, string) {},
 		},
 		{
-			name:    "ptah.sum, present when the commit captured its destination",
-			format:  migrator.MigrationDirFormatPtah,
-			sumName: migratesum.FileName,
-			seed: func(c *qt.C, dir, sumName string) {
-				c.Assert(os.WriteFile(
-					filepath.Join(dir, sumName), []byte("h1:stale=\n"), 0o600,
-				), qt.IsNil)
-			},
+			name:         "ptah.sum, present when the commit captured its destination",
+			format:       migrator.MigrationDirFormatPtah,
+			sumName:      migratesum.FileName,
+			existingSums: []string{"h1:stale=\n"},
 		},
 	}
 
@@ -89,7 +82,11 @@ func TestPublishDirSum_RefusesADestinationReplacedInsideTheCommitWindow(t *testi
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			dir := c.TempDir()
-			test.seed(c, dir, test.sumName)
+			for _, existing := range test.existingSums {
+				c.Assert(os.WriteFile(
+					filepath.Join(dir, test.sumName), []byte(existing), 0o600,
+				), qt.IsNil)
+			}
 			writer := openTestWriter(c, dir)
 			sum, err := migratesum.ComputeWithFormat(os.DirFS(dir), test.format)
 			c.Assert(err, qt.IsNil)

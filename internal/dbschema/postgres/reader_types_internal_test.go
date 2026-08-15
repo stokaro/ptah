@@ -289,8 +289,6 @@ var (
 )
 
 func TestReadTypesLeavesExtensionOwnedTypesToTheExtension(t *testing.T) {
-	c := qt.New(t)
-
 	// The headline of stokaro/ptah#1294. CREATE EXTENSION creates these types,
 	// so a description that declares both the extension and the type cannot be
 	// replayed -- the second declaration collides with what the first already
@@ -313,8 +311,9 @@ func TestReadTypesLeavesExtensionOwnedTypesToTheExtension(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
-			reader := newTypesServer(c.TB, mixedCatalog())
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			reader := newTypesServer(c, mixedCatalog())
 
 			names, err := test.read(reader)
 
@@ -325,8 +324,6 @@ func TestReadTypesLeavesExtensionOwnedTypesToTheExtension(t *testing.T) {
 }
 
 func TestReadTypesStillDescribesWhatTheUserDeclared(t *testing.T) {
-	c := qt.New(t)
-
 	// The control in the other direction, and the reason the exclusion is a fix
 	// rather than a deletion. A server whose types are all the user's own must
 	// be described in full, whatever else is installed alongside -- including
@@ -358,8 +355,9 @@ func TestReadTypesStillDescribesWhatTheUserDeclared(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
-			reader := newTypesServer(c.TB, userDeclared)
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			reader := newTypesServer(c, userDeclared)
 
 			names, err := test.read(reader)
 
@@ -370,8 +368,6 @@ func TestReadTypesStillDescribesWhatTheUserDeclared(t *testing.T) {
 }
 
 func TestReadTypesAsksPgDependRatherThanTheName(t *testing.T) {
-	c := qt.New(t)
-
 	// The property of the three STATEMENTS, which is where the defect would
 	// live, stated separately from the property of the answers. A read that
 	// excluded by name -- `NOT LIKE 'lo\_%'`, an allow-list of contrib type
@@ -390,9 +386,10 @@ func TestReadTypesAsksPgDependRatherThanTheName(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			var sent []string
-			db := dbtest.Open(c.TB, func(query string, args []driver.NamedValue) (dbtest.QueryResult, error) {
+			db := dbtest.Open(c, func(query string, args []driver.NamedValue) (dbtest.QueryResult, error) {
 				sent = append(sent, query)
 				return answerTypes(query, args, mixedCatalog())
 			})

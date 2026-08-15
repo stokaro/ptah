@@ -97,7 +97,8 @@ func TestSchemaPlanNewHonorsOutputPathAndFormat(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			path := filepath.Join(dir, test.file)
 
 			out, err := runSchemaPlanSubverb(atlas.NewCompatCommand("atlas"), "new",
@@ -116,9 +117,8 @@ func TestSchemaPlanNewHonorsOutputPathAndFormat(t *testing.T) {
 // and the --name case are separated by asserting the FILE NAME, not just that
 // some plan file exists: a `new` that ignored --name would still write a plan.
 func TestSchemaPlanNewNamingFlagsBehaveAsOnTheParent(t *testing.T) {
-	c := qt.New(t)
-
-	c.Run("name", func(c *qt.C) {
+	t.Run("name", func(t *testing.T) {
+		c := qt.New(t)
 		dir := chdirToScratchC(c)
 		fixture := newSubverbFixture(c, "new-name")
 
@@ -130,7 +130,8 @@ func TestSchemaPlanNewNamingFlagsBehaveAsOnTheParent(t *testing.T) {
 		c.Assert(statErr, qt.IsNil)
 	})
 
-	c.Run("name_format", func(c *qt.C) {
+	t.Run("name_format", func(t *testing.T) {
+		c := qt.New(t)
 		dir := chdirToScratchC(c)
 		fixture := newSubverbFixture(c, "new-name-format")
 
@@ -144,7 +145,8 @@ func TestSchemaPlanNewNamingFlagsBehaveAsOnTheParent(t *testing.T) {
 		c.Assert(filepath.Base(matches[0]), qt.Matches, `plan_.{6}\.plan\.hcl`)
 	})
 
-	c.Run("name_and_name_format_are_mutually_exclusive", func(c *qt.C) {
+	t.Run("name_and_name_format_are_mutually_exclusive", func(t *testing.T) {
+		c := qt.New(t)
 		dir := chdirToScratchC(c)
 		fixture := newSubverbFixture(c, "new-name-both")
 
@@ -157,7 +159,8 @@ func TestSchemaPlanNewNamingFlagsBehaveAsOnTheParent(t *testing.T) {
 		assertNoPlanFileWritten(c, dir)
 	})
 
-	c.Run("malformed_name_format_writes_nothing", func(c *qt.C) {
+	t.Run("malformed_name_format_writes_nothing", func(t *testing.T) {
+		c := qt.New(t)
 		dir := chdirToScratchC(c)
 		fixture := newSubverbFixture(c, "new-name-bad")
 
@@ -219,8 +222,6 @@ func TestSchemaPlanNewOnASyncedSchemaWritesNoPlan(t *testing.T) {
 // it: a diagnostic that says `atlas schema plan` after the operator typed
 // `atlas schema plan new` sends them to the wrong command's help.
 func TestSchemaPlanNewRefusesUnimplementedTransitionFlags(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name string
 		args []string
@@ -234,7 +235,8 @@ func TestSchemaPlanNewRefusesUnimplementedTransitionFlags(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			dir := chdirToScratchC(c)
 			fixture := newSubverbFixture(c, "new-reject")
 

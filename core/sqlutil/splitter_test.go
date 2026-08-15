@@ -228,39 +228,44 @@ func TestSplitSQLStatementsForDialect_StringEscaping(t *testing.T) {
 }
 
 func TestStripCommentsForDialect_MySQLPreservesSemanticSyntax(t *testing.T) {
-	c := qt.New(t)
-
-	c.Run("dash dash without whitespace is arithmetic", func(c *qt.C) {
+	t.Run("dash dash without whitespace is arithmetic", func(t *testing.T) {
+		c := qt.New(t)
 		got := sqlutil.StripCommentsForDialect("SELECT -1--1", "mysql")
 		c.Assert(got, qt.Equals, "SELECT -1--1")
 	})
 
-	c.Run("executable comment", func(c *qt.C) {
+	t.Run("executable comment", func(t *testing.T) {
+		c := qt.New(t)
 		got := sqlutil.StripCommentsForDialect("SELECT 0 /*! + 1 */", "mysql")
 		c.Assert(got, qt.Equals, "SELECT 0 /*! + 1 */")
 	})
 
-	c.Run("MariaDB executable comment", func(c *qt.C) {
+	t.Run("MariaDB executable comment", func(t *testing.T) {
+		c := qt.New(t)
 		got := sqlutil.StripCommentsForDialect("SELECT 0 /*M! + 1 */", "mariadb")
 		c.Assert(got, qt.Equals, "SELECT 0 /*M! + 1 */")
 	})
 
-	c.Run("MySQL removes MariaDB executable comment", func(c *qt.C) {
+	t.Run("MySQL removes MariaDB executable comment", func(t *testing.T) {
+		c := qt.New(t)
 		got := sqlutil.StripCommentsForDialect("/*M! SELECT 0 */ SELECT 1", "mysql")
 		c.Assert(got, qt.Equals, " SELECT 1")
 	})
 
-	c.Run("MariaDB removes ignored MySQL 50700 comment", func(c *qt.C) {
+	t.Run("MariaDB removes ignored MySQL 50700 comment", func(t *testing.T) {
+		c := qt.New(t)
 		got := sqlutil.StripCommentsForDialect("/*!50700 SELECT 0 */ SELECT 1", "mariadb")
 		c.Assert(got, qt.Equals, " SELECT 1")
 	})
 
-	c.Run("optimizer hint remains non-executable comment syntax", func(c *qt.C) {
+	t.Run("optimizer hint remains non-executable comment syntax", func(t *testing.T) {
+		c := qt.New(t)
 		got := sqlutil.StripCommentsForDialect("SELECT /*+ MAX_EXECUTION_TIME(10) */ 1", "mysql")
 		c.Assert(got, qt.Equals, "SELECT  1")
 	})
 
-	c.Run("ordinary comments are removed", func(c *qt.C) {
+	t.Run("ordinary comments are removed", func(t *testing.T) {
+		c := qt.New(t)
 		got := sqlutil.StripCommentsForDialect("SELECT 1 -- comment\n", "mysql")
 		c.Assert(got, qt.Equals, "SELECT 1 \n")
 	})

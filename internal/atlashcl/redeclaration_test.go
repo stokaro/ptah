@@ -87,12 +87,57 @@ table "users" {
   column "id" { type = integer }
 }
 `
+
+	twoUnlabeledChecksSource = `schema "public" {}
+table "users" {
+  schema = schema.public
+  column "id" { type = integer }
+  check {
+    expr = "id > 0"
+  }
+  check {
+    expr = "id < 100"
+  }
+}
+`
 )
 
-// TestParse_RefusesARedeclaredObject pins the DEFAULT verdict for every object
-// kind an HCL document can declare.
+// documentCounts is how many objects of each kind a document reads as. It is
+// the accepted rows' `want`, and it is a whole vector rather than the one number
+// each row first asked about: a parser that stopped reading views could
+// otherwise pass every row that counts tables.
+type documentCounts struct {
+	Schemas           int
+	Tables            int
+	Fields            int
+	Constraints       int
+	Enums             int
+	Views             int
+	MaterializedViews int
+	Roles             int
+	Functions         int
+}
+
+// countDocument projects a parsed document onto the kinds these fixtures
+// declare. It asserts nothing; it is how a row states its verdict as data.
+func countDocument(db *goschema.Database) documentCounts {
+	return documentCounts{
+		Schemas:           len(db.Schemas),
+		Tables:            len(db.Tables),
+		Fields:            len(db.Fields),
+		Constraints:       len(db.Constraints),
+		Enums:             len(db.Enums),
+		Views:             len(db.Views),
+		MaterializedViews: len(db.MaterializedViews),
+		Roles:             len(db.Roles),
+		Functions:         len(db.Functions),
+	}
+}
+
+// TestParse_RefusesARedeclaredObject pins the DEFAULT refusal for every object
+// kind an HCL document can declare twice.
 //
-// One rule decides which rows refuse, and it is measured rather than chosen: a
+// One rule decides which kinds refuse, and it is measured rather than chosen: a
 // repeat is refused by default exactly where the pinned Atlas community binary
 // v1.3.0 refuses the same document. Measured on PostgreSQL 17.10 with a
 // throwaway dev database dropped and recreated between runs,
@@ -101,25 +146,19 @@ table "users" {
 // `enum`, `index`, `column`, named `check` and `foreign_key` fixtures while Ptah
 // exited 0 and rendered one of each.
 //
-// The parsing rows are what keeps the refusal from being a cheaper, wronger
-// rule. Each is a document with two declarations that are NOT the same object,
-// or one whose repeat that binary reads at exit 0: schemas repeat legitimately,
-// `users` and `Users` reach DDL quoted and are two relations, one name in two
-// schemas is two tables, a column, index or constraint name belongs to its
-// table, and `view`, `materialized`, `role`, `unique`, `primary_key`,
-// `row_security` and `variable` are all exit 0 on that binary.
+// The documents that must NOT refuse are the other half of the same rule, and
+// they live in TestParse_ReadsADocumentTheBinaryReadsAtExitZero. Without them
+// this test is passed by a parser that refuses everything.
 func TestParse_RefusesARedeclaredObject(t *testing.T) {
 	tests := []struct {
-		name   string
-		source string
-		assert func(c *qt.C, db *goschema.Database, err error)
+		name    string
+		source  string
+		wantErr string
 	}{
 		{
-			name:   "a table declared twice",
-			source: tableTwiceSource,
-			assert: func(c *qt.C, _ *goschema.Database, err error) {
-				c.Assert(err, qt.ErrorMatches, `parse HCL schema schema.hcl: table "public.users" is declared more than once;.*`)
-			},
+			name:    "a table declared twice",
+			source:  tableTwiceSource,
+			wantErr: `parse HCL schema schema.hcl: table "public.users" is declared more than once;.*`,
 		},
 		{
 			name: "an enum declared twice",
@@ -133,9 +172,7 @@ enum "mood" {
   values = ["happy", "sad"]
 }
 `,
-			assert: func(c *qt.C, _ *goschema.Database, err error) {
-				c.Assert(err, qt.ErrorMatches, `parse HCL schema schema.hcl: enum "mood" is declared more than once;.*`)
-			},
+			wantErr: `parse HCL schema schema.hcl: enum "mood" is declared more than once;.*`,
 		},
 		{
 			// One enum name in two schemas is one enum by DEFAULT, because that is
@@ -149,13 +186,10 @@ enum "mood" {
 			// here would answer a lossless question with a lossy answer.
 			name:   "an enum name declared in two schemas",
 			source: enumInTwoSchemasSource,
-			assert: func(c *qt.C, _ *goschema.Database, err error) {
-				c.Assert(err, qt.ErrorMatches,
-					`parse HCL schema schema.hcl: enum "mood" is declared more than once; `+
-						`"public.mood" and "other.mood" are two objects Ptah models and one object `+
-						`on the Atlas-compatible surface, which keys this kind by its bare name `+
-						`\(set PTAH_HCL_SCHEMA_SCOPED_ENUMS=1 to read them as two\)`)
-			},
+			wantErr: `parse HCL schema schema.hcl: enum "mood" is declared more than once; ` +
+				`"public.mood" and "other.mood" are two objects Ptah models and one object ` +
+				`on the Atlas-compatible surface, which keys this kind by its bare name ` +
+				`\(set PTAH_HCL_SCHEMA_SCOPED_ENUMS=1 to read them as two\)`,
 		},
 		{
 			name: "a column declared twice in one table",
@@ -166,9 +200,7 @@ table "users" {
   column "id" { type = integer }
 }
 `,
-			assert: func(c *qt.C, _ *goschema.Database, err error) {
-				c.Assert(err, qt.ErrorMatches, `parse HCL schema schema.hcl: column "users.id" is declared more than once;.*`)
-			},
+			wantErr: `parse HCL schema schema.hcl: column "users.id" is declared more than once;.*`,
 		},
 		{
 			name: "an index declared twice in one table",
@@ -184,9 +216,7 @@ table "users" {
   }
 }
 `,
-			assert: func(c *qt.C, _ *goschema.Database, err error) {
-				c.Assert(err, qt.ErrorMatches, `parse HCL schema schema.hcl: index "public.users.idx_users_id" is declared more than once;.*`)
-			},
+			wantErr: `parse HCL schema schema.hcl: index "public.users.idx_users_id" is declared more than once;.*`,
 		},
 		{
 			name: "a named check constraint declared twice in one table",
@@ -202,9 +232,7 @@ table "users" {
   }
 }
 `,
-			assert: func(c *qt.C, _ *goschema.Database, err error) {
-				c.Assert(err, qt.ErrorMatches, `parse HCL schema schema.hcl: constraint "public.users.id_positive" is declared more than once;.*`)
-			},
+			wantErr: `parse HCL schema schema.hcl: constraint "public.users.id_positive" is declared more than once;.*`,
 		},
 		{
 			// The member the class fix missed. A SINGLE-column foreign key is not
@@ -234,9 +262,7 @@ table "posts" {
   }
 }
 `,
-			assert: func(c *qt.C, _ *goschema.Database, err error) {
-				c.Assert(err, qt.ErrorMatches, `parse HCL schema schema.hcl: foreign key "public.posts.posts_author_fk" is declared more than once;.*`)
-			},
+			wantErr: `parse HCL schema schema.hcl: foreign key "public.posts.posts_author_fk" is declared more than once;.*`,
 		},
 		{
 			// The other shape of the same block. A multi-column key DOES become a
@@ -264,9 +290,7 @@ table "posts" {
   }
 }
 `,
-			assert: func(c *qt.C, _ *goschema.Database, err error) {
-				c.Assert(err, qt.ErrorMatches, `parse HCL schema schema.hcl: foreign key "public.posts.posts_author_fk" is declared more than once;.*`)
-			},
+			wantErr: `parse HCL schema schema.hcl: foreign key "public.posts.posts_author_fk" is declared more than once;.*`,
 		},
 		{
 			name: "a named constraint block declared twice in one table",
@@ -286,9 +310,7 @@ table "users" {
   }
 }
 `,
-			assert: func(c *qt.C, _ *goschema.Database, err error) {
-				c.Assert(err, qt.ErrorMatches, `parse HCL schema schema.hcl: constraint "public.users.users_id_excl" is declared more than once;.*`)
-			},
+			wantErr: `parse HCL schema schema.hcl: constraint "public.users.users_id_excl" is declared more than once;.*`,
 		},
 		{
 			name: "a sequence declared twice",
@@ -302,9 +324,7 @@ sequence "order_seq" {
   start  = 1000
 }
 `,
-			assert: func(c *qt.C, _ *goschema.Database, err error) {
-				c.Assert(err, qt.ErrorMatches, `parse HCL schema schema.hcl: sequence "public.order_seq" is declared more than once;.*`)
-			},
+			wantErr: `parse HCL schema schema.hcl: sequence "public.order_seq" is declared more than once;.*`,
 		},
 		{
 			name: "a domain declared twice",
@@ -318,9 +338,7 @@ domain "email" {
   type   = text
 }
 `,
-			assert: func(c *qt.C, _ *goschema.Database, err error) {
-				c.Assert(err, qt.ErrorMatches, `parse HCL schema schema.hcl: domain "public.email" is declared more than once;.*`)
-			},
+			wantErr: `parse HCL schema schema.hcl: domain "public.email" is declared more than once;.*`,
 		},
 		{
 			name: "a composite type declared twice",
@@ -338,9 +356,7 @@ composite "address" {
   }
 }
 `,
-			assert: func(c *qt.C, _ *goschema.Database, err error) {
-				c.Assert(err, qt.ErrorMatches, `parse HCL schema schema.hcl: composite type "public.address" is declared more than once;.*`)
-			},
+			wantErr: `parse HCL schema schema.hcl: composite type "public.address" is declared more than once;.*`,
 		},
 		{
 			name: "a range declared twice",
@@ -354,9 +370,7 @@ range "floatrange" {
   subtype = float8
 }
 `,
-			assert: func(c *qt.C, _ *goschema.Database, err error) {
-				c.Assert(err, qt.ErrorMatches, `parse HCL schema schema.hcl: range "public.floatrange" is declared more than once;.*`)
-			},
+			wantErr: `parse HCL schema schema.hcl: range "public.floatrange" is declared more than once;.*`,
 		},
 		{
 			name: "an extension declared twice",
@@ -368,9 +382,7 @@ extension "pg_trgm" {
   version = "1.6"
 }
 `,
-			assert: func(c *qt.C, _ *goschema.Database, err error) {
-				c.Assert(err, qt.ErrorMatches, `parse HCL schema schema.hcl: extension "pg_trgm" is declared more than once;.*`)
-			},
+			wantErr: `parse HCL schema schema.hcl: extension "pg_trgm" is declared more than once;.*`,
 		},
 		{
 			name: "a trigger declared twice",
@@ -396,9 +408,7 @@ trigger "users_touch" {
   as  = "RETURN NEW;"
 }
 `,
-			assert: func(c *qt.C, _ *goschema.Database, err error) {
-				c.Assert(err, qt.ErrorMatches, `parse HCL schema schema.hcl: trigger "users.users_touch" is declared more than once;.*`)
-			},
+			wantErr: `parse HCL schema schema.hcl: trigger "users.users_touch" is declared more than once;.*`,
 		},
 		{
 			name: "a row-level security policy declared twice",
@@ -420,10 +430,40 @@ policy "users_tenant" {
   using = "true"
 }
 `,
-			assert: func(c *qt.C, _ *goschema.Database, err error) {
-				c.Assert(err, qt.ErrorMatches, `parse HCL schema schema.hcl: policy "users.users_tenant" is declared more than once;.*`)
-			},
+			wantErr: `parse HCL schema schema.hcl: policy "users.users_tenant" is declared more than once;.*`,
 		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			_, err := atlashcl.Parse([]byte(test.source), "schema.hcl")
+
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+		})
+	}
+}
+
+// TestParse_ReadsADocumentTheBinaryReadsAtExitZero is what keeps the refusal in
+// TestParse_RefusesARedeclaredObject from being a cheaper, wronger rule. Each
+// row is a document with two declarations that are NOT the same object, or one
+// whose repeat the pinned Atlas community binary v1.3.0 reads at exit 0:
+// schemas repeat legitimately, `users` and `Users` reach DDL quoted and are two
+// relations, one name in two schemas is two tables, a column, index or
+// constraint name belongs to its table, and `view`, `materialized`, `role`,
+// `unique`, `primary_key`, `row_security` and `variable` are all exit 0 on that
+// binary.
+//
+// Every row states the whole count vector rather than the single number it was
+// first written with, so a row cannot go on passing while the parser stops
+// reading a kind it does not name.
+func TestParse_ReadsADocumentTheBinaryReadsAtExitZero(t *testing.T) {
+	tests := []struct {
+		name   string
+		source string
+		want   documentCounts
+	}{
 		{
 			// Measured on the pinned binary: exit 0, the repeated block dropped
 			// unread, its inspect output holding neither the object nor a
@@ -431,26 +471,17 @@ policy "users_tenant" {
 			// behind StrictRedeclarationsEnvVar.
 			name:   "a view declared twice is read at exit 0 like the binary reads it",
 			source: viewTwiceSource,
-			assert: func(c *qt.C, db *goschema.Database, err error) {
-				c.Assert(err, qt.IsNil)
-				c.Assert(db.Views, qt.HasLen, 1)
-			},
+			want:   documentCounts{Schemas: 1, Tables: 1, Fields: 1, Views: 1},
 		},
 		{
 			name:   "a materialized view declared twice is read at exit 0 like the binary reads it",
 			source: materializedTwiceSource,
-			assert: func(c *qt.C, db *goschema.Database, err error) {
-				c.Assert(err, qt.IsNil)
-				c.Assert(db.MaterializedViews, qt.HasLen, 1)
-			},
+			want:   documentCounts{Schemas: 1, Tables: 1, Fields: 1, MaterializedViews: 1},
 		},
 		{
 			name:   "a role declared twice is read at exit 0 like the binary reads it",
 			source: roleTwiceSource,
-			assert: func(c *qt.C, db *goschema.Database, err error) {
-				c.Assert(err, qt.IsNil)
-				c.Assert(db.Roles, qt.HasLen, 1)
-			},
+			want:   documentCounts{Schemas: 1, Roles: 1},
 		},
 		{
 			// Measured on the pinned binary: exit 0, the two blocks merged into
@@ -459,10 +490,7 @@ policy "users_tenant" {
 			// so the two constraint kinds cannot share one verdict.
 			name:   "a unique constraint declared twice is read at exit 0 like the binary reads it",
 			source: uniqueTwiceSource,
-			assert: func(c *qt.C, db *goschema.Database, err error) {
-				c.Assert(err, qt.IsNil)
-				c.Assert(db.Constraints, qt.HasLen, 1)
-			},
+			want:   documentCounts{Schemas: 1, Tables: 1, Fields: 2, Constraints: 1},
 		},
 		{
 			// Measured on the pinned binary: exit 0, one primary_key in its
@@ -477,10 +505,7 @@ table "users" {
   primary_key { columns = [column.id] }
 }
 `,
-			assert: func(c *qt.C, db *goschema.Database, err error) {
-				c.Assert(err, qt.IsNil)
-				c.Assert(db.Tables, qt.HasLen, 1)
-			},
+			want: documentCounts{Schemas: 1, Tables: 1, Fields: 1},
 		},
 		{
 			// Measured on the pinned binary: exit 0, the block dropped unread.
@@ -494,10 +519,7 @@ table "users" {
   row_security { enabled = true }
 }
 `,
-			assert: func(c *qt.C, db *goschema.Database, err error) {
-				c.Assert(err, qt.IsNil)
-				c.Assert(db.Tables, qt.HasLen, 1)
-			},
+			want: documentCounts{Schemas: 1, Tables: 1, Fields: 1},
 		},
 		{
 			// Measured on the pinned binary: exit 0, the default substituted into
@@ -519,10 +541,7 @@ table "users" {
   }
 }
 `,
-			assert: func(c *qt.C, db *goschema.Database, err error) {
-				c.Assert(err, qt.IsNil)
-				c.Assert(db.Tables, qt.HasLen, 1)
-			},
+			want: documentCounts{Schemas: 1, Tables: 1, Fields: 1},
 		},
 		{
 			// The pinned binary reads this document at exit 0, measured, and it is
@@ -537,11 +556,7 @@ table "users" {
   column "id" { type = integer }
 }
 `,
-			assert: func(c *qt.C, db *goschema.Database, err error) {
-				c.Assert(err, qt.IsNil)
-				c.Assert(db.Schemas, qt.HasLen, 1)
-				c.Assert(db.Tables, qt.HasLen, 1)
-			},
+			want: documentCounts{Schemas: 1, Tables: 1, Fields: 1},
 		},
 		{
 			// Measured: the pinned binary reads this document at exit 0 and its
@@ -558,10 +573,7 @@ table "Users" {
   column "id" { type = integer }
 }
 `,
-			assert: func(c *qt.C, db *goschema.Database, err error) {
-				c.Assert(err, qt.IsNil)
-				c.Assert(db.Tables, qt.HasLen, 2)
-			},
+			want: documentCounts{Schemas: 1, Tables: 2, Fields: 2},
 		},
 		{
 			name: "one table name in two schemas is two tables",
@@ -576,10 +588,7 @@ table "users" {
   column "id" { type = integer }
 }
 `,
-			assert: func(c *qt.C, db *goschema.Database, err error) {
-				c.Assert(err, qt.IsNil)
-				c.Assert(db.Tables, qt.HasLen, 2)
-			},
+			want: documentCounts{Schemas: 2, Tables: 2, Fields: 2},
 		},
 		{
 			name: "one column name in two tables is two columns",
@@ -593,10 +602,7 @@ table "orders" {
   column "id" { type = integer }
 }
 `,
-			assert: func(c *qt.C, db *goschema.Database, err error) {
-				c.Assert(err, qt.IsNil)
-				c.Assert(db.Fields, qt.HasLen, 2)
-			},
+			want: documentCounts{Schemas: 1, Tables: 2, Fields: 2},
 		},
 		{
 			// A constraint name is scoped to its table on every engine Ptah
@@ -626,39 +632,30 @@ table "comments" {
   }
 }
 `,
-			assert: func(c *qt.C, db *goschema.Database, err error) {
-				c.Assert(err, qt.IsNil)
-				c.Assert(db.Tables, qt.HasLen, 3)
-			},
+			want: documentCounts{Schemas: 1, Tables: 3, Fields: 3},
 		},
 		{
 			// An unlabeled check block is named after its table and its ordinal, so
 			// two of them are two constraints rather than one declared twice. This
 			// row is what stops the refusal from resting on a name the parser
-			// synthesizes identically for every unlabeled block.
-			name: "two unlabeled check constraints in one table",
-			source: `schema "public" {}
-table "users" {
-  schema = schema.public
-  column "id" { type = integer }
-  check {
-    expr = "id > 0"
-  }
-  check {
-    expr = "id < 100"
-  }
-}
-`,
-			assert: func(c *qt.C, db *goschema.Database, err error) {
-				c.Assert(err, qt.IsNil)
-				c.Assert(db.Constraints, qt.HasLen, 2)
-				c.Assert(db.Constraints[0].Name, qt.Not(qt.Equals), db.Constraints[1].Name)
-			},
+			// synthesizes identically for every unlabeled block; the names
+			// themselves are pinned by
+			// TestParse_UnlabeledCheckConstraintsAreNamedApart.
+			name:   "two unlabeled check constraints in one table",
+			source: twoUnlabeledChecksSource,
+			want:   documentCounts{Schemas: 1, Tables: 1, Fields: 1, Constraints: 2},
 		},
 		{
 			// A PostgreSQL function's identity includes its argument types, so two
 			// blocks sharing a name can be two legal overloads. Refusing them by
 			// name would refuse a document PostgreSQL accepts.
+			//
+			// Functions is 1, and that is the measured value rather than the
+			// intended one: the document is READ rather than refused, which is
+			// what this row is here for, but the overload is not modeled
+			// separately. Stating the count is how that stops being invisible --
+			// the row asserted only "no error" before, so nothing said which of
+			// the two blocks survived.
 			name: "two function blocks sharing a name are not a redeclaration",
 			source: `schema "public" {}
 function "get_tenant" {
@@ -675,9 +672,7 @@ function "get_tenant" {
   as     = "SELECT 'y'"
 }
 `,
-			assert: func(c *qt.C, _ *goschema.Database, err error) {
-				c.Assert(err, qt.IsNil)
-			},
+			want: documentCounts{Schemas: 1, Functions: 1},
 		},
 	}
 
@@ -687,9 +682,24 @@ function "get_tenant" {
 
 			db, err := atlashcl.Parse([]byte(test.source), "schema.hcl")
 
-			test.assert(c, db, err)
+			c.Assert(err, qt.IsNil)
+			c.Assert(countDocument(db), qt.DeepEquals, test.want)
 		})
 	}
+}
+
+// TestParse_UnlabeledCheckConstraintsAreNamedApart is the half of the unlabeled
+// check row that a count cannot state: the two constraints must carry DIFFERENT
+// synthesized names. Two constraints named identically would collide in the
+// redeclaration ledger the moment either gained a name of its own.
+func TestParse_UnlabeledCheckConstraintsAreNamedApart(t *testing.T) {
+	c := qt.New(t)
+
+	db, err := atlashcl.Parse([]byte(twoUnlabeledChecksSource), "schema.hcl")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(db.Constraints, qt.HasLen, 2)
+	c.Assert(db.Constraints[0].Name, qt.Not(qt.Equals), db.Constraints[1].Name)
 }
 
 // TestParse_StrictRedeclarationsEnvVarRefusesWhatTheBinaryReads covers the four
@@ -701,68 +711,42 @@ function "get_tenant" {
 // repeat of each across files, so an operator can ask for the same answer within
 // one file.
 //
-// The rows that must NOT refuse are the point of the test as much as the ones
-// that must. A variable that also reached `table` would be a second name for the
-// default rule rather than an extension of it.
+// The document that must NOT refuse under the variable is the point of the
+// setting as much as these are, and it is
+// TestParse_StrictRedeclarationsEnvVarStillReadsARepeatedSchemaBlock. A variable
+// that also reached `schema` would be a second name for "refuse everything".
 func TestParse_StrictRedeclarationsEnvVarRefusesWhatTheBinaryReads(t *testing.T) {
 	tests := []struct {
-		name   string
-		source string
-		assert func(c *qt.C, db *goschema.Database, err error)
+		name    string
+		source  string
+		wantErr string
 	}{
 		{
-			name:   "a view declared twice",
-			source: viewTwiceSource,
-			assert: func(c *qt.C, _ *goschema.Database, err error) {
-				c.Assert(err, qt.ErrorMatches, `parse HCL schema schema.hcl: view "public.active_users" is declared more than once;.*`)
-			},
+			name:    "a view declared twice",
+			source:  viewTwiceSource,
+			wantErr: `parse HCL schema schema.hcl: view "public.active_users" is declared more than once;.*`,
 		},
 		{
-			name:   "a materialized view declared twice",
-			source: materializedTwiceSource,
-			assert: func(c *qt.C, _ *goschema.Database, err error) {
-				c.Assert(err, qt.ErrorMatches, `parse HCL schema schema.hcl: materialized view "public.user_stats" is declared more than once;.*`)
-			},
+			name:    "a materialized view declared twice",
+			source:  materializedTwiceSource,
+			wantErr: `parse HCL schema schema.hcl: materialized view "public.user_stats" is declared more than once;.*`,
 		},
 		{
-			name:   "a role declared twice",
-			source: roleTwiceSource,
-			assert: func(c *qt.C, _ *goschema.Database, err error) {
-				c.Assert(err, qt.ErrorMatches, `parse HCL schema schema.hcl: role "app_user" is declared more than once;.*`)
-			},
+			name:    "a role declared twice",
+			source:  roleTwiceSource,
+			wantErr: `parse HCL schema schema.hcl: role "app_user" is declared more than once;.*`,
 		},
 		{
-			name:   "a unique constraint declared twice",
-			source: uniqueTwiceSource,
-			assert: func(c *qt.C, _ *goschema.Database, err error) {
-				c.Assert(err, qt.ErrorMatches, `parse HCL schema schema.hcl: unique constraint "public.users.users_email_key" is declared more than once;.*`)
-			},
+			name:    "a unique constraint declared twice",
+			source:  uniqueTwiceSource,
+			wantErr: `parse HCL schema schema.hcl: unique constraint "public.users.users_email_key" is declared more than once;.*`,
 		},
 		{
 			// Above the floor, not instead of it: the default rule keeps working
 			// with the variable set.
-			name:   "a table declared twice still refuses",
-			source: tableTwiceSource,
-			assert: func(c *qt.C, _ *goschema.Database, err error) {
-				c.Assert(err, qt.ErrorMatches, `parse HCL schema schema.hcl: table "public.users" is declared more than once;.*`)
-			},
-		},
-		{
-			// The exemptions are exemptions under every setting. A repeated
-			// `schema` block is the layout of an HCL schema directory, and
-			// stokaro/ptah#1231 decides how many schemas a run may reach.
-			name: "a schema declared twice is still not a redeclaration",
-			source: `schema "public" {}
-schema "public" {}
-table "users" {
-  schema = schema.public
-  column "id" { type = integer }
-}
-`,
-			assert: func(c *qt.C, db *goschema.Database, err error) {
-				c.Assert(err, qt.IsNil)
-				c.Assert(db.Schemas, qt.HasLen, 1)
-			},
+			name:    "a table declared twice still refuses",
+			source:  tableTwiceSource,
+			wantErr: `parse HCL schema schema.hcl: table "public.users" is declared more than once;.*`,
 		},
 	}
 
@@ -771,11 +755,31 @@ table "users" {
 			c := qt.New(t)
 			t.Setenv(atlashcl.StrictRedeclarationsEnvVar, "1")
 
-			db, err := atlashcl.Parse([]byte(test.source), "schema.hcl")
+			_, err := atlashcl.Parse([]byte(test.source), "schema.hcl")
 
-			test.assert(c, db, err)
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
 		})
 	}
+}
+
+// TestParse_StrictRedeclarationsEnvVarStillReadsARepeatedSchemaBlock pins the
+// exemption that holds under every setting. A repeated `schema` block is the
+// layout of an HCL schema directory, and stokaro/ptah#1231 decides how many
+// schemas a run may reach.
+func TestParse_StrictRedeclarationsEnvVarStillReadsARepeatedSchemaBlock(t *testing.T) {
+	c := qt.New(t)
+	t.Setenv(atlashcl.StrictRedeclarationsEnvVar, "1")
+
+	db, err := atlashcl.Parse([]byte(`schema "public" {}
+schema "public" {}
+table "users" {
+  schema = schema.public
+  column "id" { type = integer }
+}
+`), "schema.hcl")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(db.Schemas, qt.HasLen, 1)
 }
 
 // TestParse_SchemaScopedEnumsEnvVarReadsTwoSchemasAsTwoEnums covers the enum
@@ -795,22 +799,14 @@ table "users" {
 func TestParse_SchemaScopedEnumsEnvVarReadsTwoSchemasAsTwoEnums(t *testing.T) {
 	tests := []struct {
 		name   string
-		value  string
 		source string
-		assert func(c *qt.C, db *goschema.Database, err error)
 	}{
 		{
 			name:   "one label per schema is two enums",
-			value:  "1",
 			source: enumInTwoSchemasSource,
-			assert: func(c *qt.C, db *goschema.Database, err error) {
-				c.Assert(err, qt.IsNil)
-				c.Assert(db.Enums, qt.HasLen, 2)
-			},
 		},
 		{
-			name:  "the two-label spelling is two enums",
-			value: "1",
+			name: "the two-label spelling is two enums",
 			source: `schema "public" {}
 schema "other" {}
 enum "public" "mood" {
@@ -820,15 +816,34 @@ enum "other" "mood" {
   values = ["happy", "sad"]
 }
 `,
-			assert: func(c *qt.C, db *goschema.Database, err error) {
-				c.Assert(err, qt.IsNil)
-				c.Assert(db.Enums, qt.HasLen, 2)
-			},
 		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			t.Setenv(atlashcl.SchemaScopedEnumsEnvVar, "1")
+
+			db, err := atlashcl.Parse([]byte(test.source), "schema.hcl")
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(db.Enums, qt.HasLen, 2)
+		})
+	}
+}
+
+// TestParse_SchemaScopedEnumsEnvVarStillRefusesARedeclaredEnum is what keeps the
+// variable from being read as "stop checking enums". The same schema twice is
+// one object declared twice whatever the identity rule is, and the setting's
+// off spelling has to leave the bare-name identity the pinned binary uses.
+func TestParse_SchemaScopedEnumsEnvVarStillRefusesARedeclaredEnum(t *testing.T) {
+	tests := []struct {
+		name    string
+		value   string
+		source  string
+		wantErr string
+	}{
 		{
-			// The same schema twice is still one object declared twice, whatever
-			// the identity rule is. Without this row the variable could be read
-			// as "stop checking enums".
 			name:  "the same schema twice still refuses",
 			value: "1",
 			source: `schema "public" {}
@@ -841,25 +856,13 @@ enum "mood" {
   values = ["happy", "sad"]
 }
 `,
-			assert: func(c *qt.C, _ *goschema.Database, err error) {
-				c.Assert(err, qt.ErrorMatches, `.*enum "public.mood" is declared more than once;.*`)
-			},
+			wantErr: `.*enum "public.mood" is declared more than once;.*`,
 		},
 		{
-			name:   "0 keeps the bare-name identity the binary uses",
-			value:  "0",
-			source: enumInTwoSchemasSource,
-			assert: func(c *qt.C, _ *goschema.Database, err error) {
-				c.Assert(err, qt.ErrorMatches, `.*enum "mood" is declared more than once;.*`)
-			},
-		},
-		{
-			name:   "an unparsable value is a configuration error",
-			value:  "yes-please",
-			source: enumInTwoSchemasSource,
-			assert: func(c *qt.C, _ *goschema.Database, err error) {
-				c.Assert(err, qt.ErrorMatches, `invalid boolean value "yes-please" for PTAH_HCL_SCHEMA_SCOPED_ENUMS`)
-			},
+			name:    "0 keeps the bare-name identity the binary uses",
+			value:   "0",
+			source:  enumInTwoSchemasSource,
+			wantErr: `.*enum "mood" is declared more than once;.*`,
 		},
 	}
 
@@ -868,11 +871,24 @@ enum "mood" {
 			c := qt.New(t)
 			t.Setenv(atlashcl.SchemaScopedEnumsEnvVar, test.value)
 
-			db, err := atlashcl.Parse([]byte(test.source), "schema.hcl")
+			_, err := atlashcl.Parse([]byte(test.source), "schema.hcl")
 
-			test.assert(c, db, err)
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
 		})
 	}
+}
+
+// TestParse_SchemaScopedEnumsEnvVarRefusesAnUnparsableValue is the strict-grammar
+// rule every boolean PTAH_* variable follows (stokaro/ptah#1334): an unreadable
+// value is a configuration error naming the variable, not a silent false, so a
+// typo in a CI environment file cannot look like it worked.
+func TestParse_SchemaScopedEnumsEnvVarRefusesAnUnparsableValue(t *testing.T) {
+	c := qt.New(t)
+	t.Setenv(atlashcl.SchemaScopedEnumsEnvVar, "yes-please")
+
+	_, err := atlashcl.Parse([]byte(enumInTwoSchemasSource), "schema.hcl")
+
+	c.Assert(err, qt.ErrorMatches, `invalid boolean value "yes-please" for PTAH_HCL_SCHEMA_SCOPED_ENUMS`)
 }
 
 // TestParse_AcceptsATwoLabelEnumBlock pins the spelling the pinned Atlas
@@ -883,11 +899,15 @@ enum "mood" {
 // `enum "public" "mood"`, and it reads a document holding one such block at
 // exit 0. Ptah refused that document with "enum block requires exactly one
 // label", so a file that binary wrote could not be read here at all.
+//
+// Each row states the enum's whole identity -- name and schema -- rather than
+// the half it was first written to check.
 func TestParse_AcceptsATwoLabelEnumBlock(t *testing.T) {
 	tests := []struct {
-		name   string
-		source string
-		assert func(c *qt.C, db *goschema.Database, err error)
+		name       string
+		source     string
+		wantName   string
+		wantSchema string
 	}{
 		{
 			name: "the schema label names the enum's schema",
@@ -896,12 +916,8 @@ enum "public" "mood" {
   values = ["happy", "sad"]
 }
 `,
-			assert: func(c *qt.C, db *goschema.Database, err error) {
-				c.Assert(err, qt.IsNil)
-				c.Assert(db.Enums, qt.HasLen, 1)
-				c.Assert(db.Enums[0].Name, qt.Equals, "mood")
-				c.Assert(db.Enums[0].Schema, qt.Equals, "public")
-			},
+			wantName:   "mood",
+			wantSchema: "public",
 		},
 		{
 			name: "one label still means the schema attribute",
@@ -911,11 +927,8 @@ enum "mood" {
   values = ["happy", "sad"]
 }
 `,
-			assert: func(c *qt.C, db *goschema.Database, err error) {
-				c.Assert(err, qt.IsNil)
-				c.Assert(db.Enums, qt.HasLen, 1)
-				c.Assert(db.Enums[0].Schema, qt.Equals, "other")
-			},
+			wantName:   "mood",
+			wantSchema: "other",
 		},
 		{
 			// Agreeing with the attribute is what the binary's own output does,
@@ -927,34 +940,8 @@ enum "other" "mood" {
   values = ["happy", "sad"]
 }
 `,
-			assert: func(c *qt.C, db *goschema.Database, err error) {
-				c.Assert(err, qt.IsNil)
-				c.Assert(db.Enums[0].Schema, qt.Equals, "other")
-			},
-		},
-		{
-			name: "a schema label contradicting the attribute is refused",
-			source: `schema "public" {}
-schema "other" {}
-enum "other" "mood" {
-  schema = schema.public
-  values = ["happy", "sad"]
-}
-`,
-			assert: func(c *qt.C, _ *goschema.Database, err error) {
-				c.Assert(err, qt.ErrorMatches, `.*enum "mood" schema label conflicts with schema attribute "public".*`)
-			},
-		},
-		{
-			name: "three labels are refused",
-			source: `schema "public" {}
-enum "a" "b" "c" {
-  values = ["happy"]
-}
-`,
-			assert: func(c *qt.C, _ *goschema.Database, err error) {
-				c.Assert(err, qt.ErrorMatches, `.*enum block requires one or two labels.*`)
-			},
+			wantName:   "mood",
+			wantSchema: "other",
 		},
 	}
 
@@ -964,7 +951,52 @@ enum "a" "b" "c" {
 
 			db, err := atlashcl.Parse([]byte(test.source), "schema.hcl")
 
-			test.assert(c, db, err)
+			c.Assert(err, qt.IsNil)
+			c.Assert(db.Enums, qt.HasLen, 1)
+			c.Assert(db.Enums[0].Name, qt.Equals, test.wantName)
+			c.Assert(db.Enums[0].Schema, qt.Equals, test.wantSchema)
+		})
+	}
+}
+
+// TestParse_RefusesAnEnumBlockWhoseLabelsDoNotNameOneEnum is the boundary of the
+// two-label spelling: labels that contradict the schema attribute name two
+// different enums, and three labels name none.
+func TestParse_RefusesAnEnumBlockWhoseLabelsDoNotNameOneEnum(t *testing.T) {
+	tests := []struct {
+		name    string
+		source  string
+		wantErr string
+	}{
+		{
+			name: "a schema label contradicting the attribute is refused",
+			source: `schema "public" {}
+schema "other" {}
+enum "other" "mood" {
+  schema = schema.public
+  values = ["happy", "sad"]
+}
+`,
+			wantErr: `.*enum "mood" schema label conflicts with schema attribute "public".*`,
+		},
+		{
+			name: "three labels are refused",
+			source: `schema "public" {}
+enum "a" "b" "c" {
+  values = ["happy"]
+}
+`,
+			wantErr: `.*enum block requires one or two labels.*`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			_, err := atlashcl.Parse([]byte(test.source), "schema.hcl")
+
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
 		})
 	}
 }
@@ -974,56 +1006,13 @@ enum "a" "b" "c" {
 // removed, only defaulted away from. The merge is how one entity seen twice
 // becomes one object, and setting the variable brings it back on this same
 // surface.
-//
-// The false row exists because the variable's whole job is to be an opt-in: a
-// false spelling must leave the refusal in place. The unparsable and empty rows
-// are the strict-grammar rule every boolean PTAH_* variable now follows
-// (stokaro/ptah#1334): they are configuration errors naming the variable, not
-// silently-false values, so a typo in a CI environment file cannot look like it
-// worked.
 func TestParse_MergeRedeclarationsEnvVarRestoresTheMerge(t *testing.T) {
 	tests := []struct {
-		name   string
-		value  string
-		assert func(c *qt.C, db *goschema.Database, err error)
+		name  string
+		value string
 	}{
-		{
-			name:  "1 merges the redeclaration",
-			value: "1",
-			assert: func(c *qt.C, db *goschema.Database, err error) {
-				c.Assert(err, qt.IsNil)
-				c.Assert(db.Tables, qt.HasLen, 1)
-			},
-		},
-		{
-			name:  "true merges the redeclaration",
-			value: "true",
-			assert: func(c *qt.C, db *goschema.Database, err error) {
-				c.Assert(err, qt.IsNil)
-				c.Assert(db.Tables, qt.HasLen, 1)
-			},
-		},
-		{
-			name:  "0 keeps the refusal",
-			value: "0",
-			assert: func(c *qt.C, _ *goschema.Database, err error) {
-				c.Assert(err, qt.ErrorMatches, `.*table "public.users" is declared more than once;.*`)
-			},
-		},
-		{
-			name:  "an unparsable value is a configuration error",
-			value: "yes-please",
-			assert: func(c *qt.C, _ *goschema.Database, err error) {
-				c.Assert(err, qt.ErrorMatches, `invalid boolean value "yes-please" for PTAH_HCL_MERGE_REDECLARATIONS`)
-			},
-		},
-		{
-			name:  "an empty value is a configuration error",
-			value: "",
-			assert: func(c *qt.C, _ *goschema.Database, err error) {
-				c.Assert(err, qt.ErrorMatches, `invalid boolean value "" for PTAH_HCL_MERGE_REDECLARATIONS`)
-			},
-		},
+		{name: "1 merges the redeclaration", value: "1"},
+		{name: "true merges the redeclaration", value: "true"},
 	}
 
 	for _, test := range tests {
@@ -1033,7 +1022,52 @@ func TestParse_MergeRedeclarationsEnvVarRestoresTheMerge(t *testing.T) {
 
 			db, err := atlashcl.Parse([]byte(tableTwiceSource), "schema.hcl")
 
-			test.assert(c, db, err)
+			c.Assert(err, qt.IsNil)
+			c.Assert(db.Tables, qt.HasLen, 1)
+		})
+	}
+}
+
+// TestParse_MergeRedeclarationsEnvVarLeavesTheDocumentRefused is the other half
+// of the same variable.
+//
+// The false row exists because the variable's whole job is to be an opt-in: a
+// false spelling must leave the refusal in place. The unparsable and empty rows
+// are the strict-grammar rule every boolean PTAH_* variable now follows
+// (stokaro/ptah#1334): they are configuration errors naming the variable, not
+// silently-false values, so a typo in a CI environment file cannot look like it
+// worked.
+func TestParse_MergeRedeclarationsEnvVarLeavesTheDocumentRefused(t *testing.T) {
+	tests := []struct {
+		name    string
+		value   string
+		wantErr string
+	}{
+		{
+			name:    "0 keeps the refusal",
+			value:   "0",
+			wantErr: `.*table "public.users" is declared more than once;.*`,
+		},
+		{
+			name:    "an unparsable value is a configuration error",
+			value:   "yes-please",
+			wantErr: `invalid boolean value "yes-please" for PTAH_HCL_MERGE_REDECLARATIONS`,
+		},
+		{
+			name:    "an empty value is a configuration error",
+			value:   "",
+			wantErr: `invalid boolean value "" for PTAH_HCL_MERGE_REDECLARATIONS`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			t.Setenv(atlashcl.MergeRedeclarationsEnvVar, test.value)
+
+			_, err := atlashcl.Parse([]byte(tableTwiceSource), "schema.hcl")
+
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
 		})
 	}
 }

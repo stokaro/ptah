@@ -38,8 +38,6 @@ func emptyPostgresDatabase() *types.DBSchema {
 // name is in DBSchema.Roles or DBSchema.RolesOutOfScope, because the reader
 // excludes both from both reads, so the comparison read them as absent.
 func TestCompareWithDatabaseInfoRefusesAReservedRole(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name    string
 		roles   []goschema.Role
@@ -66,7 +64,8 @@ func TestCompareWithDatabaseInfoRefusesAReservedRole(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			diff, err := schemadiff.CompareWithDatabaseInfo(
 				&goschema.Database{Roles: test.roles},
 				emptyPostgresDatabase(),
@@ -86,8 +85,6 @@ func TestCompareWithDatabaseInfoRefusesAReservedRole(t *testing.T) {
 // a name that merely starts like a reserved one is an ordinary role
 // (stokaro/ptah#1291).
 func TestCompareWithDatabaseInfoStillComparesAnOrdinaryRole(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name       string
 		roles      []goschema.Role
@@ -118,7 +115,8 @@ func TestCompareWithDatabaseInfoStillComparesAnOrdinaryRole(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			diff, err := schemadiff.CompareWithDatabaseInfo(
 				&goschema.Database{Roles: test.roles},
 				emptyPostgresDatabase(),

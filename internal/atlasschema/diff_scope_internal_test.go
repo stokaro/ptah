@@ -417,7 +417,6 @@ func TestExtensionOnlyScopeStillRemovesSelectedExtension(t *testing.T) {
 }
 
 func TestValidateDiffSystemSchemaStatesRefusesAuthoredStates(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name      string
 		dialect   string
@@ -459,7 +458,8 @@ func TestValidateDiffSystemSchemaStatesRefusesAuthoredStates(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			err := validateDiffSystemSchemaStates(test.fromState, test.toState, test.dialect)
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
@@ -471,7 +471,6 @@ func TestValidateDiffSystemSchemaStatesRefusesAuthoredStates(t *testing.T) {
 }
 
 func TestValidateDiffSystemSchemaStatesRefusesUnsafeObservedStates(t *testing.T) {
-	c := qt.New(t)
 	pgCatalog := diffDatabaseState(&types.DBSchema{Schemas: []types.DBSchemaInfo{{Name: "pg_catalog"}}})
 	pgCatalog.Kind = atlassource.KindDatabase
 	informationSchema := diffDatabaseState(&types.DBSchema{Schemas: []types.DBSchemaInfo{{Name: "information_schema"}}})
@@ -496,7 +495,8 @@ func TestValidateDiffSystemSchemaStatesRefusesUnsafeObservedStates(t *testing.T)
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			err := validateDiffSystemSchemaStates(test.fromState, test.toState, test.dialect)
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
@@ -508,7 +508,6 @@ func TestValidateDiffSystemSchemaStatesRefusesUnsafeObservedStates(t *testing.T)
 }
 
 func TestValidateDiffSystemSchemaStatesAllowsOrdinaryObservedStates(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name    string
 		kind    atlassource.Kind
@@ -522,7 +521,8 @@ func TestValidateDiffSystemSchemaStatesAllowsOrdinaryObservedStates(t *testing.T
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			database := &types.DBSchema{Schemas: []types.DBSchemaInfo{{Name: test.schema}}}
 			state := diffDatabaseState(database)
 			state.Kind = test.kind

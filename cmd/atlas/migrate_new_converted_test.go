@@ -298,7 +298,9 @@ func TestCompatMigrateNewConverted_CreatedDirectoryVerifies(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name string
-		seed func(c *qt.C, dir string)
+		// seed is the layout's own spelling of one existing migration, written
+		// before the directory is hashed.
+		seed []newConvertedFile
 		// count is what `migrate status` must report as PENDING afterwards: the
 		// seeded migration plus the one this verb just created. It is read off
 		// the Atlas-mirrored report shape that #1102 landed on this verb,
@@ -308,24 +310,23 @@ func TestCompatMigrateNewConverted_CreatedDirectoryVerifies(t *testing.T) {
 	}{
 		{
 			name: "golang-migrate",
-			seed: func(c *qt.C, dir string) {
-				writeAtlasApplyProjectMigration(c, dir, "1_init.up.sql", "CREATE TABLE n1 (id INTEGER PRIMARY KEY);\n")
-				writeAtlasApplyProjectMigration(c, dir, "1_init.down.sql", "DROP TABLE n1;\n")
+			seed: []newConvertedFile{
+				{name: "1_init.up.sql", sql: "CREATE TABLE n1 (id INTEGER PRIMARY KEY);\n"},
+				{name: "1_init.down.sql", sql: "DROP TABLE n1;\n"},
 			},
 			count: "2",
 		},
 		{
 			name: "flyway",
-			seed: func(c *qt.C, dir string) {
-				writeAtlasApplyProjectMigration(c, dir, "V1__init.sql", "CREATE TABLE n2 (id INTEGER PRIMARY KEY);\n")
+			seed: []newConvertedFile{
+				{name: "V1__init.sql", sql: "CREATE TABLE n2 (id INTEGER PRIMARY KEY);\n"},
 			},
 			count: "2",
 		},
 		{
 			name: "goose",
-			seed: func(c *qt.C, dir string) {
-				writeAtlasApplyProjectMigration(c, dir, "1_init.sql",
-					"-- +goose Up\nCREATE TABLE n3 (id INTEGER PRIMARY KEY);\n-- +goose Down\nDROP TABLE n3;\n")
+			seed: []newConvertedFile{
+				{name: "1_init.sql", sql: "-- +goose Up\nCREATE TABLE n3 (id INTEGER PRIMARY KEY);\n-- +goose Down\nDROP TABLE n3;\n"},
 			},
 			count: "2",
 		},
@@ -336,7 +337,9 @@ func TestCompatMigrateNewConverted_CreatedDirectoryVerifies(t *testing.T) {
 			t.Parallel()
 			c := qt.New(t)
 			dir := c.TempDir()
-			tt.seed(c, dir)
+			for _, file := range tt.seed {
+				writeAtlasApplyProjectMigration(c, dir, file.name, file.sql)
+			}
 			_, stderr, err := runCompatExit("migrate", "hash", "--dir", "file://"+dir, "--dir-format", tt.name)
 			c.Assert(err, qt.IsNil, qt.Commentf("hash stderr: %s", stderr))
 
@@ -356,73 +359,65 @@ func TestCompatMigrateNewConverted_CreatedDirectoryVerifies(t *testing.T) {
 	}
 }
 
-// TestCompatMigrateNewConverted_GateRefusesBeforeWriting pins the ordering
-// stokaro/ptah#1086 established, now over the covered set of the SELECTED
-// layout: a directory whose integrity does not hold is refused, and nothing is
-// created.
+// TestCompatMigrateNewConverted_UnhashedDirRefusedBeforeWriting pins the
+// ordering stokaro/ptah#1086 established, now over the covered set of the
+// SELECTED layout: a directory carrying no atlas.sum at all is refused, and
+// nothing is created.
 //
-// The fixture is what makes the layout-specific half visible. A golang-migrate
-// pair hashed for the golang-migrate layout has an atlas.sum covering only the
-// up file; the drift row edits that up file, so the mismatch exists for the
-// golang-migrate covered set. The unhashed row carries no sum at all.
-//
-// Reverted, both rows still exit 1 — but with `Ptah does not implement that
+// Reverted, this still exits 1 — but with `Ptah does not implement that
 // directory format yet` instead of the checksum refusal, which is the reason
 // the assertion names the checksum text rather than only the exit code.
-func TestCompatMigrateNewConverted_GateRefusesBeforeWriting(t *testing.T) {
+func TestCompatMigrateNewConverted_UnhashedDirRefusedBeforeWriting(t *testing.T) {
 	t.Parallel()
-	tests := []struct {
-		name    string
-		tamper  func(c *qt.C, dir string)
-		hash    bool
-		wantErr string
-	}{
-		{
-			name:    "unhashed",
-			tamper:  func(_ *qt.C, _ string) {},
-			hash:    false,
-			wantErr: "checksum file not found",
-		},
-		{
-			name: "edited_covered_file",
-			tamper: func(c *qt.C, dir string) {
-				writeAtlasApplyProjectMigration(c, dir, "1_init.up.sql", "CREATE TABLE drift (id INTEGER PRIMARY KEY);\n")
-			},
-			hash:    true,
-			wantErr: "checksum mismatch",
-		},
-	}
+	c := qt.New(t)
+	dir := c.TempDir()
+	writeGolangMigrateInitPair(c, dir)
+	before := newConvertedNames(c, dir)
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			c := qt.New(t)
-			dir := c.TempDir()
-			writeAtlasApplyProjectMigration(c, dir, "1_init.up.sql", "CREATE TABLE g1 (id INTEGER PRIMARY KEY);\n")
-			writeAtlasApplyProjectMigration(c, dir, "1_init.down.sql", "DROP TABLE g1;\n")
-			hashIfRequested(c, dir, tt.hash)
-			tt.tamper(c, dir)
-			before := newConvertedNames(c, dir)
+	_, _, err := runCompatExit("migrate", "new", "addcol",
+		"--dir", "file://"+dir, "--dir-format", "golang-migrate")
 
-			_, _, err := runCompatExit("migrate", "new", "addcol",
-				"--dir", "file://"+dir, "--dir-format", "golang-migrate")
-
-			c.Assert(err, qt.ErrorMatches, tt.wantErr)
-			c.Assert(newConvertedNames(c, dir), qt.DeepEquals, before)
-		})
-	}
+	c.Assert(err, qt.ErrorMatches, "checksum file not found")
+	c.Assert(newConvertedNames(c, dir), qt.DeepEquals, before)
 }
 
-func hashIfRequested(c *qt.C, dir string, hash bool) {
+// TestCompatMigrateNewConverted_DriftedDirRefusedBeforeWriting is the same
+// ordering reached through a sum that exists and no longer holds, which is the
+// half that makes the layout specific: a golang-migrate pair hashed for the
+// golang-migrate layout has an atlas.sum covering only the up file, so editing
+// that up file puts the mismatch inside the golang-migrate covered set.
+//
+// Hashing is what separates this from the unhashed refusal above, so it is
+// spelled out here rather than selected by a row.
+func TestCompatMigrateNewConverted_DriftedDirRefusedBeforeWriting(t *testing.T) {
+	t.Parallel()
+	c := qt.New(t)
+	dir := c.TempDir()
+	writeGolangMigrateInitPair(c, dir)
+	_, stderr, err := runCompatExit("migrate", "hash", "--dir", "file://"+dir, "--dir-format", "golang-migrate")
+	c.Assert(err, qt.IsNil, qt.Commentf("hash stderr: %s", stderr))
+	writeAtlasApplyProjectMigration(c, dir, "1_init.up.sql", "CREATE TABLE drift (id INTEGER PRIMARY KEY);\n")
+	before := newConvertedNames(c, dir)
+
+	_, _, err = runCompatExit("migrate", "new", "addcol",
+		"--dir", "file://"+dir, "--dir-format", "golang-migrate")
+
+	c.Assert(err, qt.ErrorMatches, "checksum mismatch")
+	c.Assert(newConvertedNames(c, dir), qt.DeepEquals, before)
+}
+
+// writeGolangMigrateInitPair writes the up/down pair both refusals start from.
+func writeGolangMigrateInitPair(c *qt.C, dir string) {
 	c.Helper()
-	tests := map[bool]func(){
-		false: func() {},
-		true: func() {
-			_, stderr, err := runCompatExit("migrate", "hash", "--dir", "file://"+dir, "--dir-format", "golang-migrate")
-			c.Assert(err, qt.IsNil, qt.Commentf("hash stderr: %s", stderr))
-		},
-	}
-	tests[hash]()
+	writeAtlasApplyProjectMigration(c, dir, "1_init.up.sql", "CREATE TABLE g1 (id INTEGER PRIMARY KEY);\n")
+	writeAtlasApplyProjectMigration(c, dir, "1_init.down.sql", "DROP TABLE g1;\n")
+}
+
+// newConvertedFile is one migration file a fixture writes, in the layout's own
+// spelling.
+type newConvertedFile struct {
+	name string
+	sql  string
 }
 
 // TestCompatMigrateNewConverted_RefusesWhatItCannotReadBack pins the two

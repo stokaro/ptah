@@ -47,8 +47,6 @@ func ordersTableOneColumn(tableSchema string) *goschema.Database {
 // `modifyExistingColumns` degrades to an `ERROR: Could not find field
 // definition` comment that applies cleanly and changes nothing.
 func TestColumnDDLResolvesTheTableAcrossSchemaSpellings(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name      string
 		dialect   string
@@ -102,7 +100,8 @@ func TestColumnDDLResolvesTheTableAcrossSchemaSpellings(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			added, err := planner.GenerateSchemaDiffSQLStatements(
 				&types.SchemaDiff{TablesModified: []types.TableDiff{{
 					TableName:    test.diffName,
@@ -168,8 +167,6 @@ func TestColumnDDLDoesNotGuessBetweenSchemas(t *testing.T) {
 // fails with `ERROR 1068 (42000): Multiple primary key defined` and the
 // migration aborts partway through.
 func TestPrimaryKeyIsPlannedOnceAcrossSchemaSpellings(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name            string
 		tableSchema     string
@@ -199,7 +196,8 @@ func TestPrimaryKeyIsPlannedOnceAcrossSchemaSpellings(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			diff := &types.SchemaDiff{
 				TablesModified: []types.TableDiff{{
 					TableName: test.diffTableName,

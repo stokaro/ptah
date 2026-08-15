@@ -41,7 +41,8 @@ func TestMigrateLintGitBaseE2E(t *testing.T) {
 
 	dir := newGitFixtureRepository(c, ctx, compatBinary)
 
-	c.Run("a resolvable --git-base analyzes the changeset", func(c *qt.C) {
+	t.Run("a resolvable --git-base analyzes the changeset", func(t *testing.T) {
+		c := qt.New(t)
 		stdout, stderr, err := runCLIProcess(ctx, dir, compatBinary,
 			"migrate", "lint",
 			"--dir", "file://migrations",

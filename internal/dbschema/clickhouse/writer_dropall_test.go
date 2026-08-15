@@ -87,7 +87,6 @@ func TestWriterDropAllTables_DropsViewsBeforeTables(t *testing.T) {
 // is defense in depth, but a name that cannot appear in a real deployment is
 // refused rather than quoted.
 func TestWriterDropAllTables_RefusesBacktickedNames(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name    string
 		views   [][]driver.Value
@@ -109,7 +108,8 @@ func TestWriterDropAllTables_RefusesBacktickedNames(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			queries := []sqlMockQuery{
 				{
 					sql:    cleanupViewsQuery,

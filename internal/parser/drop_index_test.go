@@ -340,50 +340,60 @@ func TestParser_ParseDropIndexRefusesShapesItCannotRecord(t *testing.T) {
 // there -- which is what every other dialect's grammar means -- would measure
 // the drop against a schema nobody wrote and render the name back as the single
 // identifier "t.idx". Ptah never renders that spelling, so refusing it costs
-// only the schema change count of a statement it does not emit, and the control
-// row proves the refusal is scoped to the dialect rather than to the shape.
+// only the schema change count of a statement it does not emit.
+//
+// TestParser_ParseDropIndexAcceptsWhatTheSQLServerRefusalMustNotReach is the
+// control that keeps these rows honest: it proves the refusal is scoped to the
+// dialect rather than to the shape.
 func TestParser_ParseDropIndexRefusesSQLServerTableQualifiedName(t *testing.T) {
+	tests := []struct {
+		name string
+		sql  string
+		want string
+	}{
+		{
+			name: "sqlserver two-part name without ON",
+			sql:  "DROP INDEX t.idx;",
+			want: `unsupported SQL Server DROP INDEX "t.idx" without ON: a qualified name there is table.index, not schema.index`,
+		},
+		{
+			name: "sqlserver three-part name without ON",
+			sql:  "DROP INDEX dbo.t.idx;",
+			want: `unsupported SQL Server DROP INDEX "dbo.t.idx" without ON: a qualified name there is table.index, not schema.index`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			_, err := parser.NewParser(test.sql, parser.WithDialect(platform.SQLServer)).Parse()
+
+			c.Assert(err, qt.IsNotNil)
+			c.Assert(err.Error(), qt.Equals, test.want)
+		})
+	}
+}
+
+// TestParser_ParseDropIndexAcceptsWhatTheSQLServerRefusalMustNotReach is the
+// control for the refusal above. Both boundaries have to hold: an unqualified
+// SQL Server name is still an ordinary drop, and the very text SQL Server
+// refuses is a schema-qualified index everywhere else.
+func TestParser_ParseDropIndexAcceptsWhatTheSQLServerRefusalMustNotReach(t *testing.T) {
 	tests := []struct {
 		name    string
 		dialect string
 		sql     string
-		check   func(c *qt.C, err error)
 	}{
-		{
-			name:    "sqlserver two-part name without ON",
-			dialect: platform.SQLServer,
-			sql:     "DROP INDEX t.idx;",
-			check: func(c *qt.C, err error) {
-				c.Assert(err, qt.IsNotNil)
-				c.Assert(err.Error(), qt.Equals,
-					`unsupported SQL Server DROP INDEX "t.idx" without ON: a qualified name there is table.index, not schema.index`)
-			},
-		},
-		{
-			name:    "sqlserver three-part name without ON",
-			dialect: platform.SQLServer,
-			sql:     "DROP INDEX dbo.t.idx;",
-			check: func(c *qt.C, err error) {
-				c.Assert(err, qt.IsNotNil)
-				c.Assert(err.Error(), qt.Equals,
-					`unsupported SQL Server DROP INDEX "dbo.t.idx" without ON: a qualified name there is table.index, not schema.index`)
-			},
-		},
 		{
 			name:    "sqlserver bare name without ON is accepted",
 			dialect: platform.SQLServer,
 			sql:     "DROP INDEX idx;",
-			check: func(c *qt.C, err error) {
-				c.Assert(err, qt.IsNil)
-			},
 		},
 		{
 			name:    "postgres reads the same text as a schema-qualified index",
 			dialect: platform.Postgres,
 			sql:     "DROP INDEX t.idx;",
-			check: func(c *qt.C, err error) {
-				c.Assert(err, qt.IsNil)
-			},
 		},
 	}
 
@@ -393,7 +403,7 @@ func TestParser_ParseDropIndexRefusesSQLServerTableQualifiedName(t *testing.T) {
 
 			_, err := parser.NewParser(test.sql, parser.WithDialect(test.dialect)).Parse()
 
-			test.check(c, err)
+			c.Assert(err, qt.IsNil)
 		})
 	}
 }

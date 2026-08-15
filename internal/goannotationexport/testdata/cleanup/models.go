@@ -9,6 +9,7 @@ type Audit struct {
 }
 
 // User is the application user.
+//
 //ptah:schema:table name="users" schema="app" primary_key="id"
 type User struct {
 	//ptah:schema:field name="id" type="BIGINT" not_null="true"

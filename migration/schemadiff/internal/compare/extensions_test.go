@@ -195,7 +195,12 @@ func TestExtensions_RealWorldScenarios(t *testing.T) {
 		name        string
 		description string
 		setup       func() (*goschema.Database, *types.DBSchema)
-		verify      func(c *qt.C, diff *difftypes.SchemaDiff)
+		// The whole sorted set is expected, not a membership sample: an
+		// extension the comparison invents on top of the ones a row names is a
+		// CREATE EXTENSION nobody asked for, and a "contains" claim cannot see
+		// it.
+		wantAdded   []string
+		wantRemoved []string
 	}{
 		{
 			name:        "fresh database setup",
@@ -213,13 +218,8 @@ func TestExtensions_RealWorldScenarios(t *testing.T) {
 				}
 				return generated, database
 			},
-			verify: func(c *qt.C, diff *difftypes.SchemaDiff) {
-				c.Assert(diff.ExtensionsAdded, qt.HasLen, 3)
-				c.Assert(diff.ExtensionsAdded, qt.Contains, "pg_trgm")
-				c.Assert(diff.ExtensionsAdded, qt.Contains, "btree_gin")
-				c.Assert(diff.ExtensionsAdded, qt.Contains, "postgis")
-				c.Assert(diff.ExtensionsRemoved, qt.HasLen, 0)
-			},
+			wantAdded:   []string{"btree_gin", "pg_trgm", "postgis"},
+			wantRemoved: []string{},
 		},
 		{
 			name:        "production database cleanup",
@@ -240,13 +240,8 @@ func TestExtensions_RealWorldScenarios(t *testing.T) {
 				}
 				return generated, database
 			},
-			verify: func(c *qt.C, diff *difftypes.SchemaDiff) {
-				c.Assert(diff.ExtensionsAdded, qt.HasLen, 0)
-				c.Assert(diff.ExtensionsRemoved, qt.HasLen, 3)
-				c.Assert(diff.ExtensionsRemoved, qt.Contains, "uuid-ossp")
-				c.Assert(diff.ExtensionsRemoved, qt.Contains, "postgis")
-				c.Assert(diff.ExtensionsRemoved, qt.Contains, "btree_gin")
-			},
+			wantAdded:   []string{},
+			wantRemoved: []string{"btree_gin", "postgis", "uuid-ossp"},
 		},
 		{
 			name:        "incremental extension addition",
@@ -268,12 +263,8 @@ func TestExtensions_RealWorldScenarios(t *testing.T) {
 				}
 				return generated, database
 			},
-			verify: func(c *qt.C, diff *difftypes.SchemaDiff) {
-				c.Assert(diff.ExtensionsAdded, qt.HasLen, 2)
-				c.Assert(diff.ExtensionsAdded, qt.Contains, "postgis")
-				c.Assert(diff.ExtensionsAdded, qt.Contains, "uuid-ossp")
-				c.Assert(diff.ExtensionsRemoved, qt.HasLen, 0)
-			},
+			wantAdded:   []string{"postgis", "uuid-ossp"},
+			wantRemoved: []string{},
 		},
 	}
 
@@ -281,17 +272,13 @@ func TestExtensions_RealWorldScenarios(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			// Setup test scenario
 			generated, database := tt.setup()
-
-			// Create empty diff to populate
 			diff := &difftypes.SchemaDiff{}
 
-			// Run the comparison
 			compare.Extensions(generated, database, diff, nil, compare.CoverageOf(generated, database))
 
-			// Verify results using custom verification function
-			tt.verify(c, diff)
+			c.Assert(diff.ExtensionsAdded, qt.DeepEquals, tt.wantAdded)
+			c.Assert(diff.ExtensionsRemoved, qt.DeepEquals, tt.wantRemoved)
 		})
 	}
 }

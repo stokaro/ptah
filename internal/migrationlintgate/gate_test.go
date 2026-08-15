@@ -64,7 +64,6 @@ func TestAnalyze_FailurePath_InvalidPolicy(t *testing.T) {
 }
 
 func TestLoadPolicy_FailurePath_UnregisteredRuleSelectors(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name   string
 		config string
@@ -80,7 +79,8 @@ func TestLoadPolicy_FailurePath_UnregisteredRuleSelectors(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			fsys := fstest.MapFS{
 				lint.ConfigFileName: {Data: []byte(test.config)},
 			}

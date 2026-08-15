@@ -37,8 +37,6 @@ func roleNames(roles []goschema.Role) []string {
 // cluster or an empty CI catalog is, and it never produced the error in the
 // first place.
 func TestRolesToCreateOnDevSkipsWhatTheServerAlreadyHas(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name             string
 		declared         []goschema.Role
@@ -91,7 +89,8 @@ func TestRolesToCreateOnDevSkipsWhatTheServerAlreadyHas(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			create, alreadyThere := rolescope.RolesToCreateOnDev(test.declared, test.present)
 
 			c.Assert(roleNames(create), qt.DeepEquals, test.wantCreate)
@@ -130,8 +129,6 @@ func TestRolesToCreateOnDevKeepsTheDeclaredAttributes(t *testing.T) {
 // Naming them is not the disclosure [rolescope.ReportUndescribed] withholds.
 // Every name here came out of the caller's own document.
 func TestReportNotCreatedOnDevNamesEveryRoleItSkipped(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name            string
 		alreadyOnServer []goschema.Role
@@ -156,7 +153,8 @@ func TestReportNotCreatedOnDevNamesEveryRoleItSkipped(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			var out bytes.Buffer
 
 			rolescope.ReportNotCreatedOnDev(&out, test.alreadyOnServer)
@@ -174,8 +172,6 @@ func TestReportNotCreatedOnDevNamesEveryRoleItSkipped(t *testing.T) {
 // inspect surfaces' spelling of "no diagnostics stream", and a note that
 // panicked there would fail a materialization that succeeded.
 func TestReportNotCreatedOnDevStaysSilentWhenItCreatedEverything(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name   string
 		report func(*bytes.Buffer)
@@ -201,7 +197,8 @@ func TestReportNotCreatedOnDevStaysSilentWhenItCreatedEverything(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			var out bytes.Buffer
 
 			test.report(&out)

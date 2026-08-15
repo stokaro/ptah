@@ -70,7 +70,8 @@ func TestSchemaApplyHCLDiagnosticsE2E(t *testing.T) {
 	// Cell 9.13's second half. The pinned community binary v1.3.0 echoes the
 	// --to path in the form it was given, and every form above is absolute, so
 	// the rows here are the ones the absolute cases cannot see.
-	c.Run("compat relative --to reports the relative path", func(c *qt.C) {
+	t.Run("compat relative --to reports the relative path", func(t *testing.T) {
+		c := qt.New(t)
 		dir := c.TempDir()
 		c.Assert(os.MkdirAll(filepath.Join(dir, "fx", "sub"), 0o750), qt.IsNil)
 		relatives := []struct {

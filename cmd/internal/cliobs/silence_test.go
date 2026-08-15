@@ -16,7 +16,6 @@ import (
 // other channel. The process-level contract is pinned by the subprocess tests
 // in cmd/ptah-compat; this holds the level split those rest on.
 func TestQuietDefaultLoggerDropsNarrationAndKeepsDiagnostics(t *testing.T) {
-	c := qt.New(t)
 	previous := slog.Default()
 	t.Cleanup(func() { slog.SetDefault(previous) })
 
@@ -35,7 +34,8 @@ func TestQuietDefaultLoggerDropsNarrationAndKeepsDiagnostics(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(slog.Default().Enabled(ctx, tt.level), qt.Equals, tt.escapes)
 		})
 	}

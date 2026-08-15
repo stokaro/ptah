@@ -233,8 +233,6 @@ func flywayCovered(c *qt.C, fsys fs.FS) []string {
 // scripts/probe-atlas-apply-gate.sh section 9a reproduces the comparison
 // against the binary.
 func TestLoadFSFlywayConsumesExactlyTheCoveredSet(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name  string
 		files []string
@@ -336,7 +334,8 @@ func TestLoadFSFlywayConsumesExactlyTheCoveredSet(t *testing.T) {
 	}}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			source := flywaySource(tt.files...)
 
 			consumed := flywayConsumed(c, source)
@@ -386,9 +385,8 @@ func TestLoadFSFlywayCoveredSetIsNotEmptyForTheseShapes(t *testing.T) {
 // verify clean under `migrate validate` on both tools, so a coverage assertion
 // alone would not have caught either.
 func TestLoadFSFlywayStopsExecutingUncoveredFiles(t *testing.T) {
-	c := qt.New(t)
-
-	c.Run("a superseded baseline does not execute", func(c *qt.C) {
+	t.Run("a superseded baseline does not execute", func(t *testing.T) {
+		c := qt.New(t)
 		source := flywaySource("B1__one.sql", "B2__two.sql", "V3__three.sql")
 
 		consumed := flywayConsumed(c, source)
@@ -397,7 +395,8 @@ func TestLoadFSFlywayStopsExecutingUncoveredFiles(t *testing.T) {
 		c.Assert(consumed, qt.Not(qt.Contains), "B1__one.sql")
 	})
 
-	c.Run("a lowercase-prefixed file does not execute", func(c *qt.C) {
+	t.Run("a lowercase-prefixed file does not execute", func(t *testing.T) {
+		c := qt.New(t)
 		source := flywaySource("V1__init.sql", "v2__evil.sql")
 
 		consumed := flywayConsumed(c, source)
@@ -417,8 +416,6 @@ func TestLoadFSFlywayStopsExecutingUncoveredFiles(t *testing.T) {
 // contract — they end up in the file names `migrate import` writes and in the
 // revisions `migrate apply` records.
 func TestLoadFSFlywayAtlasVersions(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name  string
 		files []string
@@ -476,7 +473,8 @@ func TestLoadFSFlywayAtlasVersions(t *testing.T) {
 	}}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			loaded, err := atlasmigrateimport.LoadFS(flywaySource(tt.files...), "migrations", atlasmigrateimport.FormatFlyway)
 
 			c.Assert(err, qt.IsNil)
@@ -529,8 +527,6 @@ func TestLoadFSFlywayBaselineDoesNotShiftSurvivorVersions(t *testing.T) {
 // duplicate version rather than reporting anything, so refusing is a refusal
 // toward the oracle rather than past it.
 func TestLoadFSFlywayRefusesVersionsAtlasCECannotExecute(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name  string
 		files []string
@@ -552,7 +548,8 @@ func TestLoadFSFlywayRefusesVersionsAtlasCECannotExecute(t *testing.T) {
 	}}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			loaded, err := atlasmigrateimport.LoadFS(flywaySource(tt.files...), "migrations", atlasmigrateimport.FormatFlyway)
 
 			c.Assert(err, qt.ErrorMatches, tt.want)
@@ -570,8 +567,6 @@ func TestLoadFSFlywayRefusesVersionsAtlasCECannotExecute(t *testing.T) {
 // Closing these means giving the migrator a version that is not an int64, which
 // is a change to revision tracking rather than to this importer.
 func TestLoadFSFlywayRefusesUnrepresentableVersions_KnownDivergence(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name  string
 		files []string
@@ -597,7 +592,8 @@ func TestLoadFSFlywayRefusesUnrepresentableVersions_KnownDivergence(t *testing.T
 	}}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			loaded, err := atlasmigrateimport.LoadFS(flywaySource(tt.files...), "migrations", atlasmigrateimport.FormatFlyway)
 
 			c.Assert(err, qt.ErrorMatches, tt.want)
@@ -620,9 +616,8 @@ func TestLoadFSFlywayRefusesUnrepresentableVersions_KnownDivergence(t *testing.T
 // version is positive and below the reserved repeatable slot is what makes the
 // row a bound rather than a spot check.
 func TestLoadFSFlywayLeadingComponentBound(t *testing.T) {
-	c := qt.New(t)
-
-	c.Run("the largest representable version converts", func(c *qt.C) {
+	t.Run("the largest representable version converts", func(t *testing.T) {
+		c := qt.New(t)
 		loaded, err := atlasmigrateimport.LoadFS(
 			flywaySource("V113020439624235.99.99__x.sql"), "migrations", atlasmigrateimport.FormatFlyway)
 
@@ -630,7 +625,8 @@ func TestLoadFSFlywayLeadingComponentBound(t *testing.T) {
 		c.Assert(entryNames(loaded), qt.DeepEquals, []string{"9223372036854754447_x.sql"})
 	})
 
-	c.Run("one past it is refused", func(c *qt.C) {
+	t.Run("one past it is refused", func(t *testing.T) {
+		c := qt.New(t)
 		loaded, err := atlasmigrateimport.LoadFS(
 			flywaySource("V113020439624236__x.sql"), "migrations", atlasmigrateimport.FormatFlyway)
 

@@ -162,13 +162,15 @@ func statementIndexContaining(statements []string, fragments ...string) int {
 }
 
 func cleanupMutualForeignKeyTables(t *testing.T, db *sql.DB) {
+	c := qt.New(t)
 	t.Helper()
 	_, err := db.Exec(`DROP TABLE IF EXISTS "left_nodes", "right_nodes" CASCADE`)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 }
 
 func cleanupUniqueIndexForeignKeyTables(t *testing.T, db *sql.DB) {
+	c := qt.New(t)
 	t.Helper()
 	_, err := db.Exec(`DROP TABLE IF EXISTS "ptah_fk_unique_children", "ptah_fk_unique_parents" CASCADE`)
-	qt.Assert(t, err, qt.IsNil)
+	c.Assert(err, qt.IsNil)
 }

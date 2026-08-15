@@ -38,7 +38,8 @@ func TestCells_ClaimEveryPresetPtahShips(t *testing.T) {
 	}
 
 	for _, preset := range shipped {
-		c.Run(preset, func(c *qt.C) {
+		t.Run(preset, func(t *testing.T) {
+			c := qt.New(t)
 			_, excused := capabilityprobe.PresetsWithoutCell[preset]
 			c.Check(claimed[preset] || excused, qt.IsTrue,
 				qt.Commentf("preset %s has no matrix cell and no entry in PresetsWithoutCell, so nothing "+
@@ -59,7 +60,8 @@ func TestPresetsWithoutCell_NameRealPresets(t *testing.T) {
 	shipped := presetConstructors(c)
 	c.Assert(capabilityprobe.PresetsWithoutCell, qt.Not(qt.HasLen), 0)
 	for name, reason := range capabilityprobe.PresetsWithoutCell {
-		c.Run(name, func(c *qt.C) {
+		t.Run(name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Check(shipped, qt.Contains, name,
 				qt.Commentf("%s names no preset in %s", name, presetSource))
 			c.Check(len(reason) > 20, qt.IsTrue,

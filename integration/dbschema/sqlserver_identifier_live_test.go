@@ -6,7 +6,6 @@ import (
 	"context"
 	"fmt"
 	"net/url"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -18,6 +17,7 @@ import (
 	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/dbschema"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
 	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
@@ -35,9 +35,9 @@ const (
 
 func TestSQLServerLiveIdentifierSemantics_CaseInsensitiveCaseOnlyRename(t *testing.T) {
 	c := qt.New(t)
-	dbURL := provisionSQLServerCollationDatabase(t, sqlServerCICollation)
+	dbURL := provisionSQLServerCollationDatabase(c, sqlServerCICollation)
 	dbURL = withSQLServerDefaultSchema(t, dbURL, "audit")
-	conn := connectSQLServerCollationDatabase(t, dbURL)
+	conn := connectSQLServerCollationDatabase(c, dbURL)
 	ctx := t.Context()
 
 	info := conn.Info()
@@ -114,8 +114,8 @@ CREATE TABLE [dbo].[users] (
 
 func TestSQLServerLiveIdentifierSemantics_CaseInsensitiveDefinitionReplacement(t *testing.T) {
 	c := qt.New(t)
-	dbURL := provisionSQLServerCollationDatabase(t, sqlServerCICollation)
-	conn := connectSQLServerCollationDatabase(t, dbURL)
+	dbURL := provisionSQLServerCollationDatabase(c, sqlServerCICollation)
+	conn := connectSQLServerCollationDatabase(c, dbURL)
 	ctx := t.Context()
 	info := conn.Info()
 
@@ -186,8 +186,8 @@ CREATE TABLE [dbo].[users] (
 
 func TestSQLServerLiveIdentifierSemantics_IndexPartDirectionReplacement(t *testing.T) {
 	c := qt.New(t)
-	dbURL := provisionSQLServerCollationDatabase(t, sqlServerCICollation)
-	conn := connectSQLServerCollationDatabase(t, dbURL)
+	dbURL := provisionSQLServerCollationDatabase(c, sqlServerCICollation)
+	conn := connectSQLServerCollationDatabase(c, dbURL)
 	ctx := t.Context()
 	info := conn.Info()
 
@@ -275,8 +275,8 @@ CREATE TABLE [dbo].[users] (
 
 func TestSQLServerLiveIdentifierSemantics_FilteredIndexReplacement(t *testing.T) {
 	c := qt.New(t)
-	dbURL := provisionSQLServerCollationDatabase(t, sqlServerCICollation)
-	conn := connectSQLServerCollationDatabase(t, dbURL)
+	dbURL := provisionSQLServerCollationDatabase(c, sqlServerCICollation)
+	conn := connectSQLServerCollationDatabase(c, dbURL)
 	ctx := t.Context()
 	info := conn.Info()
 
@@ -355,8 +355,8 @@ CREATE TABLE [dbo].[users] (
 // sys.indexes.filter_definition spelling reports zero diff.
 func TestSQLServerLiveIdentifierSemantics_FilteredIndexCreateRoundTrip(t *testing.T) {
 	c := qt.New(t)
-	dbURL := provisionSQLServerCollationDatabase(t, sqlServerCICollation)
-	conn := connectSQLServerCollationDatabase(t, dbURL)
+	dbURL := provisionSQLServerCollationDatabase(c, sqlServerCICollation)
+	conn := connectSQLServerCollationDatabase(c, dbURL)
 	ctx := t.Context()
 	info := conn.Info()
 
@@ -420,8 +420,8 @@ CREATE TABLE [dbo].[users] (
 
 func TestSQLServerLiveIdentifierSemantics_CaseSensitiveVariantsCoexist(t *testing.T) {
 	c := qt.New(t)
-	dbURL := provisionSQLServerCollationDatabase(t, sqlServerCSCollation)
-	conn := connectSQLServerCollationDatabase(t, dbURL)
+	dbURL := provisionSQLServerCollationDatabase(c, sqlServerCSCollation)
+	conn := connectSQLServerCollationDatabase(c, dbURL)
 	ctx := t.Context()
 
 	info := conn.Info()
@@ -566,7 +566,7 @@ func TestSQLServerLiveIdentifierSemantics_TurkishDistinctPair(t *testing.T) {
 
 func TestSQLServerLiveIdentifierSemantics_OversizedIdentifier_FailurePath(t *testing.T) {
 	c := qt.New(t)
-	conn := connectSQLServerCollationDatabase(c, sqlServerTestURL(t))
+	conn := connectSQLServerCollationDatabase(c, dbtarget.URL(t, dbtarget.SQLServer))
 
 	_, err := conn.ResolveIdentifierSemantics(
 		t.Context(),
@@ -640,10 +640,9 @@ func TestSQLServerLiveIdentifierSemantics_EmbeddedColumnCollision_FailurePath(t 
 	)
 }
 
-func provisionSQLServerCollationDatabase(t testing.TB, collation string) string {
-	t.Helper()
-	c := qt.New(t)
-	adminURL := sqlServerTestURL(t)
+func provisionSQLServerCollationDatabase(c *qt.C, collation string) string {
+	c.Helper()
+	adminURL := dbtarget.URL(c, dbtarget.SQLServer)
 	c.Assert(
 		collation,
 		qt.Matches,
@@ -651,16 +650,16 @@ func provisionSQLServerCollationDatabase(t testing.TB, collation string) string 
 	)
 
 	databaseName := fmt.Sprintf("ptah_777_%d", time.Now().UnixNano())
-	admin, err := dbschema.ConnectToDatabase(t.Context(), adminURL)
+	admin, err := dbschema.ConnectToDatabase(c.Context(), adminURL)
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(admin)
 	_, err = admin.ExecContext(
-		t.Context(),
+		c.Context(),
 		"CREATE DATABASE "+quoteSQLServerIdentifier(databaseName)+" COLLATE "+collation,
 	)
 	c.Assert(err, qt.IsNil)
 
-	t.Cleanup(func() {
+	c.Cleanup(func() {
 		cleanupCtx, cancelCleanup := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancelCleanup()
 		cleanup, cleanupErr := dbschema.ConnectToDatabase(cleanupCtx, adminURL)
@@ -691,24 +690,14 @@ func provisionSQLServerCollationDatabase(t testing.TB, collation string) string 
 	return parsed.String()
 }
 
-func sqlServerTestURL(t testing.TB) string {
-	t.Helper()
-	adminURL := os.Getenv("PTAH_SQLSERVER_TEST_URL")
-	if adminURL == "" {
-		t.Skip("set PTAH_SQLSERVER_TEST_URL to run SQL Server live schema tests")
-	}
-	return adminURL
-}
-
 func connectSQLServerCollationDatabase(
-	t testing.TB,
+	c *qt.C,
 	dbURL string,
 ) *dbschema.DatabaseConnection {
-	t.Helper()
-	c := qt.New(t)
-	conn, err := dbschema.ConnectToDatabase(t.Context(), dbURL)
+	c.Helper()
+	conn, err := dbschema.ConnectToDatabase(c.Context(), dbURL)
 	c.Assert(err, qt.IsNil)
-	t.Cleanup(func() {
+	c.Cleanup(func() {
 		dbschema.CloseAndWarn(conn)
 	})
 	return conn

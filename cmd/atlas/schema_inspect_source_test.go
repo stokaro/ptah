@@ -95,7 +95,7 @@ func TestSchemaInspectMigrationDirWithDevURL(t *testing.T) {
 func TestSchemaInspectFileExportRoundTrip(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
-	dbPath := seedSQLiteDB(t, inspectSourceFixtureDDL)
+	dbPath := seedSQLiteDB(c, inspectSourceFixtureDDL)
 
 	liveCmd := atlas.NewCompatCommand("atlas")
 	var live bytes.Buffer
@@ -125,7 +125,7 @@ func TestSchemaInspectFileExportRoundTrip(t *testing.T) {
 func TestSchemaInspectSplitTypeModeWritesGroupedFiles(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
-	dbPath := seedSQLiteDB(t, inspectSourceFixtureDDL)
+	dbPath := seedSQLiteDB(c, inspectSourceFixtureDDL)
 	outDir := filepath.Join(dir, "schema")
 	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer

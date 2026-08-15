@@ -211,10 +211,9 @@ func TestResolveAtlasSchemaApplyPlanRehearsalRequiresDevDatabase(t *testing.T) {
 // derivation is public, so a forged "Ptah-written" plan must not be able to
 // switch the verification off.
 func TestResolveAtlasSchemaApplyPlanRehearsalIgnoresFingerprintShape(t *testing.T) {
-	c := qt.New(t)
-
 	for _, dialect := range []string{"postgres", "mysql", "sqlserver", "clickhouse"} {
-		c.Run(dialect, func(c *qt.C) {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
 			_, err := resolveAtlasSchemaApplyPlanRehearsal(
 				rehearseWhenUnverified, atlasschema.PlanFormatHCL, dialect, "", desiredFixture())
 

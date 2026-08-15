@@ -162,8 +162,6 @@ func TestSchemaPlanSkipLintIsANoOp(t *testing.T) {
 }
 
 func TestSchemaPlanSkipLintCombinesWithEveryOutputMode(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name string
 		args []string
@@ -175,8 +173,9 @@ func TestSchemaPlanSkipLintCombinesWithEveryOutputMode(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
-			chdirToScratch(c.TB.(*testing.T))
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			chdirToScratch(t)
 			fixture := newPlanFixture(c, "combo", "", `CREATE TABLE combo_users (id INTEGER PRIMARY KEY);`)
 
 			out, err := runSchemaPlan(atlas.NewCompatCommand("atlas"), fixture.args(tt.args...)...)
@@ -251,7 +250,8 @@ func TestSchemaPlanNameFormatDistinguishesFromHashAndToHash(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			outPath := filepath.Join(c.TB.TempDir(), "named.plan.json")
 
 			out, err := runSchemaPlan(atlas.NewCompatCommand("atlas"),
@@ -295,8 +295,6 @@ func TestSchemaPlanNameFormatTrimsSurroundingWhitespace(t *testing.T) {
 }
 
 func TestSchemaPlanNameFormatAllowsPathSeparatorWithExplicitOutput(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name   string
 		suffix string
@@ -306,7 +304,8 @@ func TestSchemaPlanNameFormatAllowsPathSeparatorWithExplicitOutput(t *testing.T)
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			fixture := newPlanFixture(c, "explicit-name-path", "", `CREATE TABLE explicit_name_users (id INTEGER PRIMARY KEY);`)
 			outputPath := filepath.Join(fixture.dir, "explicit"+test.suffix)
 
@@ -349,8 +348,6 @@ func TestSchemaPlanNameFormatIsMutuallyExclusiveWithName(t *testing.T) {
 }
 
 func TestSchemaPlanNameFormatRejectionsWriteNothing(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name     string
 		template string
@@ -409,8 +406,9 @@ func TestSchemaPlanNameFormatRejectionsWriteNothing(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
-			chdirToScratch(c.TB.(*testing.T))
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			chdirToScratch(t)
 			fixture := newPlanFixture(c, "reject", "", `CREATE TABLE reject_users (id INTEGER PRIMARY KEY);`)
 
 			_, err := runSchemaPlan(atlas.NewCompatCommand("atlas"),
@@ -426,8 +424,6 @@ func TestSchemaPlanNameFormatRejectionsWriteNothing(t *testing.T) {
 }
 
 func TestSchemaPlanNameFormatCannotCorruptThePlanBlockLabel(t *testing.T) {
-	c := qt.New(t)
-
 	// Each case names the layer that refuses it, so the test cannot pass
 	// because planning failed for some unrelated reason. Two are caught by the
 	// name rules before the writer ever sees them — a backslash is a path
@@ -462,8 +458,9 @@ func TestSchemaPlanNameFormatCannotCorruptThePlanBlockLabel(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
-			chdirToScratch(c.TB.(*testing.T))
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			chdirToScratch(t)
 			fixture := newPlanFixture(c, "label", "", `CREATE TABLE label_users (id INTEGER PRIMARY KEY);`)
 
 			_, err := runSchemaPlan(atlas.NewCompatCommand("atlas"),
@@ -712,8 +709,6 @@ func TestSchemaPlanEditPreservesCommentsOnEditedStatements(t *testing.T) {
 }
 
 func TestSchemaPlanEditIsNotOpenedWhenNamingFailsFirst(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name string
 		args []string
@@ -737,8 +732,8 @@ func TestSchemaPlanEditIsNotOpenedWhenNamingFailsFirst(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
-			t := c.TB.(*testing.T)
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			dir := chdirToScratch(t)
 			marker := filepath.Join(dir, "editor-ran")
 			installScriptEditor(t, `touch "`+marker+`"`)
@@ -814,8 +809,6 @@ func TestSchemaPlanEditKeepsTheSourceFingerprint(t *testing.T) {
 }
 
 func TestSchemaPlanEditFailuresWriteNothing(t *testing.T) {
-	c := qt.New(t)
-
 	// installEditor is a closure per case rather than a body string plus a
 	// flag, so the "no editor at all" case needs no conditional in the test.
 	withBody := func(body string) func(*testing.T) {
@@ -857,8 +850,8 @@ func TestSchemaPlanEditFailuresWriteNothing(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		c.Run(tt.name, func(c *qt.C) {
-			t := c.TB.(*testing.T)
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			dir := t.TempDir()
 			t.Chdir(dir)
 			tt.installEditor(t)

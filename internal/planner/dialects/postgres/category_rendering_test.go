@@ -42,7 +42,8 @@ func TestEveryDiffCategoryRendersSQL(t *testing.T) {
 	c.Assert(uncoveredDiffCategories(fixtures), qt.HasLen, 0)
 
 	for _, fixture := range fixtures {
-		c.Run(fixture.field, func(c *qt.C) {
+		t.Run(fixture.field, func(t *testing.T) {
+			c := qt.New(t)
 			nodes, err := postgres.New().GenerateMigrationASTChecked(fixture.diff, fixture.generated)
 
 			c.Assert(err, qt.IsNil)

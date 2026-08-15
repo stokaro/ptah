@@ -15,23 +15,12 @@ import (
 
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/dbtarget"
 )
-
-func shadowTestDatabaseURL() string {
-	for _, name := range []string{"TEST_DATABASE_URL", "TEST_DB_URL", "POSTGRES_TEST_DSN", "POSTGRES_URL"} {
-		if value := os.Getenv(name); value != "" {
-			return value
-		}
-	}
-	return ""
-}
 
 func openShadowTestPostgres(c *qt.C) (string, *dbschema.DatabaseConnection) {
 	c.Helper()
-	dbURL := shadowTestDatabaseURL()
-	if dbURL == "" {
-		c.Skip("PostgreSQL test database URL is not set")
-	}
+	dbURL := dbtarget.URL(c, dbtarget.PostgreSQL)
 	conn, err := dbschema.ConnectToDatabase(c.Context(), dbURL)
 	c.Assert(err, qt.IsNil)
 	c.Assert(platform.NormalizeDialect(conn.Info().Dialect), qt.Equals, platform.Postgres)

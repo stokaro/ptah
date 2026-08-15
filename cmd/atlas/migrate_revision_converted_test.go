@@ -110,31 +110,32 @@ func TestCompatMigrateStatus_ConvertedDirIsRead(t *testing.T) {
 func TestCompatMigrateStatus_ConvertedDirRefusesDrift(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		name    string
-		prepare func(c *qt.C, dir string)
-		want    string
+		name string
+		// rewritten replaces a covered file's body once the directory has been
+		// hashed, and removed deletes entries from it. The no-sum row names
+		// atlas.sum itself: the state the verb has to answer for is a directory
+		// carrying no sum, and reaching it by deletion is what lets all three
+		// rows share one body.
+		rewritten map[string]string
+		removed   []string
+		want      string
 	}{
 		{
-			name:    "unhashed",
-			prepare: func(*qt.C, string) {},
+			name:    "no_atlas_sum",
+			removed: []string{"atlas.sum"},
 			want:    atlasChecksumNotFoundErr,
 		},
 		{
 			name: "edited_after_hashing",
-			prepare: func(c *qt.C, dir string) {
-				hashConvertedFlywayDir(c, dir)
-				writeAtlasApplyProjectMigration(c, dir, revisionConvertedFirst,
-					"CREATE TABLE t1 (id INTEGER PRIMARY KEY, extra TEXT);\n")
+			rewritten: map[string]string{
+				revisionConvertedFirst: "CREATE TABLE t1 (id INTEGER PRIMARY KEY, extra TEXT);\n",
 			},
 			want: atlasChecksumMismatchErr,
 		},
 		{
-			name: "covered_file_removed_after_hashing",
-			prepare: func(c *qt.C, dir string) {
-				hashConvertedFlywayDir(c, dir)
-				c.Assert(os.Remove(filepath.Join(dir, revisionConvertedSecond)), qt.IsNil)
-			},
-			want: atlasChecksumMismatchErr,
+			name:    "covered_file_removed_after_hashing",
+			removed: []string{revisionConvertedSecond},
+			want:    atlasChecksumMismatchErr,
 		},
 	}
 	for _, test := range tests {
@@ -142,7 +143,13 @@ func TestCompatMigrateStatus_ConvertedDirRefusesDrift(t *testing.T) {
 			t.Parallel()
 			c := qt.New(t)
 			dir := writeConvertedFlywayDir(c)
-			test.prepare(c, dir)
+			hashConvertedFlywayDir(c, dir)
+			for name, body := range test.rewritten {
+				writeAtlasApplyProjectMigration(c, dir, name, body)
+			}
+			for _, name := range test.removed {
+				c.Assert(os.Remove(filepath.Join(dir, name)), qt.IsNil)
+			}
 			_, stderr, err := runCompatExit(
 				"migrate", "status",
 				"--dir", "file://"+dir+"?format=flyway",

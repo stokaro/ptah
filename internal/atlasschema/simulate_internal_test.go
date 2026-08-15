@@ -15,8 +15,6 @@ import (
 )
 
 func TestNextvalSequenceName(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name        string
 		defaultExpr string
@@ -33,16 +31,16 @@ func TestNextvalSequenceName(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(nextvalSequenceName(test.defaultExpr), qt.Equals, test.want)
 		})
 	}
 }
 
 func TestNormalizeBaselineSerialColumns(t *testing.T) {
-	c := qt.New(t)
-
-	c.Run("implicit serial sequence becomes SERIAL", func(c *qt.C) {
+	t.Run("implicit serial sequence becomes SERIAL", func(t *testing.T) {
+		c := qt.New(t)
 		baseline := &goschema.Database{Fields: []goschema.Field{
 			{Name: "id", Type: "integer", DefaultExpr: `nextval('users_id_seq'::regclass)`},
 			{Name: "big_id", Type: "bigint", DefaultExpr: `nextval('users_big_id_seq'::regclass)`},
@@ -57,7 +55,8 @@ func TestNormalizeBaselineSerialColumns(t *testing.T) {
 		c.Assert(baseline.Fields[2].Type, qt.Equals, "SMALLSERIAL")
 	})
 
-	c.Run("explicitly introspected sequence keeps its default", func(c *qt.C) {
+	t.Run("explicitly introspected sequence keeps its default", func(t *testing.T) {
+		c := qt.New(t)
 		baseline := &goschema.Database{
 			Sequences: []goschema.Sequence{{Name: "order_number_seq"}},
 			Fields: []goschema.Field{
@@ -71,7 +70,8 @@ func TestNormalizeBaselineSerialColumns(t *testing.T) {
 		c.Assert(baseline.Fields[0].DefaultExpr, qt.Equals, `nextval('order_number_seq'::regclass)`)
 	})
 
-	c.Run("non integer type keeps its default", func(c *qt.C) {
+	t.Run("non integer type keeps its default", func(t *testing.T) {
+		c := qt.New(t)
 		baseline := &goschema.Database{Fields: []goschema.Field{
 			{Name: "label", Type: "text", DefaultExpr: `nextval('labels_seq'::regclass)`},
 		}}
@@ -82,7 +82,8 @@ func TestNormalizeBaselineSerialColumns(t *testing.T) {
 		c.Assert(baseline.Fields[0].DefaultExpr, qt.Equals, `nextval('labels_seq'::regclass)`)
 	})
 
-	c.Run("non postgres dialect is untouched", func(c *qt.C) {
+	t.Run("non postgres dialect is untouched", func(t *testing.T) {
+		c := qt.New(t)
 		baseline := &goschema.Database{Fields: []goschema.Field{
 			{Name: "id", Type: "integer", DefaultExpr: `nextval('users_id_seq'::regclass)`},
 		}}

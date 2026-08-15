@@ -46,7 +46,6 @@ func TestParseAtlasCollectionExpandsUpstreamMultiTenantFixture(t *testing.T) {
 }
 
 func TestParseAtlasCollectionOrdersEachBindingsDeterministically(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name    string
 		prefix  string
@@ -109,7 +108,8 @@ func TestParseAtlasCollectionOrdersEachBindingsDeterministically(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			raw := []byte(test.prefix + `env {
   for_each = ` + test.forEach + `
   name     = atlas.env
@@ -159,6 +159,7 @@ func TestParseAtlasCollectionCanRejectListAndMapForEach(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			raw := []byte(test.prefix + `env {
   for_each = ` + test.forEach + `
   name     = atlas.env
@@ -175,14 +176,14 @@ func TestParseAtlasCollectionCanRejectListAndMapForEach(t *testing.T) {
 				},
 			)
 
-			qt.Assert(t, err, qt.ErrorMatches, test.wantErr)
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			configs, err := projectconfig.ParseAtlasCollectionWithOptions(
 				raw,
 				"atlas.hcl",
 				projectconfig.AtlasLoadOptions{EnvName: "local"},
 			)
-			qt.Assert(t, err, qt.IsNil)
-			qt.Assert(t, configs, qt.HasLen, 1)
+			c.Assert(err, qt.IsNil)
+			c.Assert(configs, qt.HasLen, 1)
 		})
 	}
 }
@@ -407,7 +408,6 @@ func TestParseAtlasCollectionReusesRootedFileEvaluation(t *testing.T) {
 }
 
 func TestParseAtlasCollectionRejectsInvalidForEach(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name    string
 		value   string
@@ -419,7 +419,8 @@ func TestParseAtlasCollectionRejectsInvalidForEach(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			raw := []byte(`env {
   for_each = ` + test.value + `
   name     = atlas.env

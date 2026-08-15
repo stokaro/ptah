@@ -16,14 +16,15 @@ import (
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/dbschema"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/generator"
 )
 
 func TestGenerateMigration_SQLServerIndexDirectionRoundTrip(t *testing.T) {
 	c := qt.New(t)
-	targetURL := provisionSQLServerGeneratorDatabase(t, "target")
-	shadowURL := provisionSQLServerGeneratorDatabase(t, "shadow")
-	target := connectSQLServerGeneratorDatabase(t, targetURL)
+	targetURL := provisionSQLServerGeneratorDatabase(c, "target")
+	shadowURL := provisionSQLServerGeneratorDatabase(c, "shadow")
+	target := connectSQLServerGeneratorDatabase(c, targetURL)
 	ctx := t.Context()
 
 	_, err := target.ExecContext(ctx, `
@@ -141,21 +142,20 @@ CREATE INDEX [idx_users_status] ON [dbo].[users] ([status] ASC);
 	)
 }
 
-func provisionSQLServerGeneratorDatabase(t testing.TB, role string) string {
-	t.Helper()
-	c := qt.New(t)
-	adminURL := sqlServerGeneratorAdminURL(t)
+func provisionSQLServerGeneratorDatabase(c *qt.C, role string) string {
+	c.Helper()
+	adminURL := sqlServerGeneratorAdminURL(c)
 	databaseName := "ptah_777_" + role + "_" +
 		time.Now().UTC().Format("20060102150405.000000000")
-	admin := connectSQLServerGeneratorDatabase(t, adminURL)
+	admin := connectSQLServerGeneratorDatabase(c, adminURL)
 	_, err := admin.ExecContext(
-		t.Context(),
+		c.Context(),
 		"CREATE DATABASE "+quoteSQLServerGeneratorIdentifier(databaseName)+
 			" COLLATE SQL_Latin1_General_CP1_CI_AS",
 	)
 	c.Assert(err, qt.IsNil)
 
-	t.Cleanup(func() {
+	c.Cleanup(func() {
 		cleanupCtx, cancelCleanup := context.WithTimeout(
 			context.Background(),
 			30*time.Second,
@@ -183,22 +183,17 @@ func provisionSQLServerGeneratorDatabase(t testing.TB, role string) string {
 
 func sqlServerGeneratorAdminURL(t testing.TB) string {
 	t.Helper()
-	adminURL := os.Getenv("PTAH_SQLSERVER_TEST_URL")
-	if adminURL == "" {
-		t.Skip("set PTAH_SQLSERVER_TEST_URL to run SQL Server live generator tests")
-	}
-	return adminURL
+	return dbtarget.URL(t, dbtarget.SQLServer)
 }
 
 func connectSQLServerGeneratorDatabase(
-	t testing.TB,
+	c *qt.C,
 	databaseURL string,
 ) *dbschema.DatabaseConnection {
-	t.Helper()
-	c := qt.New(t)
-	conn, err := dbschema.ConnectToDatabase(t.Context(), databaseURL)
+	c.Helper()
+	conn, err := dbschema.ConnectToDatabase(c.Context(), databaseURL)
 	c.Assert(err, qt.IsNil)
-	t.Cleanup(func() {
+	c.Cleanup(func() {
 		dbschema.CloseAndWarn(conn)
 	})
 	return conn

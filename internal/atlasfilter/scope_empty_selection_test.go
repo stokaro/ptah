@@ -103,8 +103,6 @@ func errorText(err error) string {
 // quoting. Each of those spellings has a row here, because a rule whose
 // escapes were sampled rather than enumerated is how the last one shipped.
 func TestIncludeSelectionOutcome(t *testing.T) {
-	c := qt.New(t)
-
 	projections := []struct {
 		name string
 		// project runs one side's projection and returns the surviving
@@ -225,7 +223,8 @@ func TestIncludeSelectionOutcome(t *testing.T) {
 
 	for _, projection := range projections {
 		for _, test := range tests {
-			c.Run(projection.name+"/"+test.name, func(c *qt.C) {
+			t.Run(projection.name+"/"+test.name, func(t *testing.T) {
+				c := qt.New(t)
 				names, err := projection.project(test.include)
 
 				c.Assert(names, qt.DeepEquals, test.wantTables)
@@ -245,8 +244,6 @@ func TestIncludeSelectionOutcome(t *testing.T) {
 // and silent on every verb. Narrowing to a schema that holds nothing stays an
 // ordinary answer here; only --include, which has no such oracle, reports.
 func TestSchemaScopeAloneNeverReportsEmptySelection(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name string
 		// project runs one side's projection under a schema-only scope.
@@ -275,7 +272,8 @@ func TestSchemaScopeAloneNeverReportsEmptySelection(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			names, err := test.project([]string{"no_such_schema"})
 
 			c.Assert(err, qt.IsNil)

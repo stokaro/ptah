@@ -11,13 +11,14 @@ import (
 
 	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/dbschema/postgres"
+	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/internal/testutils"
 )
 
 // skipIfNoPostgreSQL skips only when POSTGRES_TEST_DSN is absent; a bad configured DSN fails.
 func skipIfNoPostgreSQL(t *testing.T) string {
 	t.Helper()
-	return requireReachableTestDSN(t, "POSTGRES_TEST_DSN", "pgx", "PostgreSQL")
+	return requireReachableEngine(t, dbtarget.PostgreSQL, "pgx", "PostgreSQL")
 }
 
 func TestPostgreSQLReader_ReadSchema_Integration(t *testing.T) {
@@ -119,6 +120,7 @@ func TestPostgreSQLWriter_Integration(t *testing.T) {
 
 	t.Run("transaction lifecycle", func(t *testing.T) {
 		// Test successful transaction
+		c := qt.New(t)
 		tx, err := writer.BeginTransaction(t.Context())
 		c.Assert(err, qt.IsNil)
 
@@ -138,6 +140,7 @@ func TestPostgreSQLWriter_Integration(t *testing.T) {
 
 	t.Run("DropAllTables", func(t *testing.T) {
 		// Create a test table first
+		c := qt.New(t)
 		_, err := db.Exec("CREATE TABLE IF NOT EXISTS temp_test_table (id SERIAL PRIMARY KEY)")
 		c.Assert(err, qt.IsNil)
 

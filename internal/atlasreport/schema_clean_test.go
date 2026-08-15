@@ -57,6 +57,7 @@ func TestSchemaCleanFormatRendersCustomTemplate(t *testing.T) {
 }
 
 func TestSchemaCleanFormatPreservesFunctionParameters(t *testing.T) {
+	c := qt.New(t)
 	report := atlasreport.NewSchemaClean(atlasreport.SchemaCleanOptions{
 		Driver: "postgres",
 		Plan: schemaclean.Plan{
@@ -75,8 +76,8 @@ func TestSchemaCleanFormatPreservesFunctionParameters(t *testing.T) {
 		},
 	})
 
-	qt.Assert(t, report.Objects[0].Parameters, qt.Equals, "integer")
-	qt.Assert(t, report.Changes[0].Parameters, qt.Equals, "integer")
+	c.Assert(report.Objects[0].Parameters, qt.Equals, "integer")
+	c.Assert(report.Changes[0].Parameters, qt.Equals, "integer")
 }
 
 func TestSchemaCleanFormatRendersURLAsStringInCustomTemplate(t *testing.T) {

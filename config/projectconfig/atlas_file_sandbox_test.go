@@ -6,6 +6,7 @@
 package projectconfig_test
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -102,63 +103,53 @@ func symlink(c *qt.C, target, link string) {
 	c.Assert(os.Symlink(target, link), qt.IsNil)
 }
 
-// The escape shapes. Each returns the argument to hand file(), after planting
-// whatever the shape needs in the config directory.
+// The escape shapes. Each plants what its shape needs in the config directory
+// and returns the argument to hand file(), plus the error the planting failed
+// with. The caller asserts that error, so a row carries the fixture it needs
+// rather than the means to judge one.
 
-func escapeAbsolutePath(c *qt.C, _, outside string) string {
-	c.Helper()
-
-	return outside
+func escapeAbsolutePath(_, outside string) (string, error) {
+	return outside, nil
 }
 
-func escapeParentTraversal(c *qt.C, _, outside string) string {
-	c.Helper()
-
-	return "../" + filepath.Base(outside)
+func escapeParentTraversal(_, outside string) (string, error) {
+	return "../" + filepath.Base(outside), nil
 }
 
-func escapeSymlinkedFile(c *qt.C, dir, outside string) string {
-	c.Helper()
-
-	symlink(c, outside, filepath.Join(dir, "link.txt"))
-	return "link.txt"
+func escapeSymlinkedFile(dir, outside string) (string, error) {
+	return "link.txt", os.Symlink(outside, filepath.Join(dir, "link.txt"))
 }
 
-func escapeSymlinkedRelativeFile(c *qt.C, dir, outside string) string {
-	c.Helper()
-
-	symlink(c, filepath.Join("..", filepath.Base(outside)), filepath.Join(dir, "relative.link"))
-	return "relative.link"
+func escapeSymlinkedRelativeFile(dir, outside string) (string, error) {
+	return "relative.link", os.Symlink(
+		filepath.Join("..", filepath.Base(outside)), filepath.Join(dir, "relative.link"))
 }
 
-func escapeSymlinkedDirectory(c *qt.C, dir, outside string) string {
-	c.Helper()
-
-	symlink(c, filepath.Dir(outside), filepath.Join(dir, "outdir"))
-	return "outdir/" + filepath.Base(outside)
+func escapeSymlinkedDirectory(dir, outside string) (string, error) {
+	return "outdir/" + filepath.Base(outside), os.Symlink(filepath.Dir(outside), filepath.Join(dir, "outdir"))
 }
 
-func escapeSymlinkChain(c *qt.C, dir, outside string) string {
-	c.Helper()
-
-	symlink(c, filepath.Join("..", filepath.Base(outside)), filepath.Join(dir, "second.link"))
-	symlink(c, "second.link", filepath.Join(dir, "first.link"))
-	return "first.link"
+func escapeSymlinkChain(dir, outside string) (string, error) {
+	return "first.link", errors.Join(
+		os.Symlink(filepath.Join("..", filepath.Base(outside)), filepath.Join(dir, "second.link")),
+		os.Symlink("second.link", filepath.Join(dir, "first.link")),
+	)
 }
 
 // escapeLongSymlinkChain builds hop0 -> hop1 -> ... -> the outside file, longer
 // than the sandbox's own resolution and well short of any operating system's
 // limit on chained links, so the read is attempted rather than refused as a
 // loop.
-func escapeLongSymlinkChain(c *qt.C, dir, outside string) string {
-	c.Helper()
-
+func escapeLongSymlinkChain(dir, outside string) (string, error) {
 	const hops = 6
+
+	planted := make([]error, 0, hops)
 	for hop := range hops - 1 {
-		symlink(c, hopLinkName(hop+1), filepath.Join(dir, hopLinkName(hop)))
+		planted = append(planted, os.Symlink(hopLinkName(hop+1), filepath.Join(dir, hopLinkName(hop))))
 	}
-	symlink(c, filepath.Join("..", filepath.Base(outside)), filepath.Join(dir, hopLinkName(hops-1)))
-	return hopLinkName(0)
+	planted = append(planted, os.Symlink(
+		filepath.Join("..", filepath.Base(outside)), filepath.Join(dir, hopLinkName(hops-1))))
+	return hopLinkName(0), errors.Join(planted...)
 }
 
 func hopLinkName(hop int) string {
@@ -169,19 +160,17 @@ func hopLinkName(hop int) string {
 // It reads nothing an author could not have named directly, and it is refused
 // anyway: the rule is about where the path goes, not about what it ends up on,
 // and a rooted filesystem refuses it for exactly the same reason.
-func escapeSymlinkReentry(c *qt.C, dir, _ string) string {
-	c.Helper()
-
-	inside := filepath.Join(dir, "inside.txt")
-	c.Assert(os.WriteFile(inside, []byte(insideFileMarker), 0o600), qt.IsNil)
-	symlink(c, filepath.Join("..", filepath.Base(dir), "inside.txt"), filepath.Join(dir, "reentry.link"))
-	return "reentry.link"
+func escapeSymlinkReentry(dir, _ string) (string, error) {
+	return "reentry.link", errors.Join(
+		os.WriteFile(filepath.Join(dir, "inside.txt"), []byte(insideFileMarker), 0o600),
+		os.Symlink(filepath.Join("..", filepath.Base(dir), "inside.txt"), filepath.Join(dir, "reentry.link")),
+	)
 }
 
 func TestAtlasFileSandboxRefusesReadsOutsideTheConfigDirectory(t *testing.T) {
 	tests := []struct {
 		name  string
-		plant func(c *qt.C, dir, outside string) string
+		plant func(dir, outside string) (string, error)
 		err   string
 	}{
 		{
@@ -241,7 +230,9 @@ func TestAtlasFileSandboxRefusesReadsOutsideTheConfigDirectory(t *testing.T) {
 				dir := filepath.Join(base, "project")
 				c.Assert(os.Mkdir(dir, 0o700), qt.IsNil)
 				outside := plantOutsideSecret(c, base)
-				path := writeAtlasFileConfig(c, dir, tt.plant(c, dir, outside))
+				argument, plantErr := tt.plant(dir, outside)
+				c.Assert(plantErr, qt.IsNil)
+				path := writeAtlasFileConfig(c, dir, argument)
 
 				cfg, err := loader.load(c, path)
 
@@ -261,7 +252,7 @@ func TestAtlasFileSandboxRefusesReadsOutsideTheConfigDirectory(t *testing.T) {
 func TestAtlasFileSandboxReadsInsideTheConfigDirectory(t *testing.T) {
 	tests := []struct {
 		name  string
-		plant func(c *qt.C, dir string) string
+		plant func(dir string) (string, error)
 	}{
 		{
 			name:  "plain file",
@@ -294,7 +285,9 @@ func TestAtlasFileSandboxReadsInsideTheConfigDirectory(t *testing.T) {
 				dir := filepath.Join(base, "project")
 				c.Assert(os.Mkdir(dir, 0o700), qt.IsNil)
 				plantOutsideSecret(c, base)
-				path := writeAtlasFileConfig(c, dir, tt.plant(c, dir))
+				argument, plantErr := tt.plant(dir)
+				c.Assert(plantErr, qt.IsNil)
+				path := writeAtlasFileConfig(c, dir, argument)
 
 				cfg, err := loader.load(c, path)
 
@@ -305,43 +298,34 @@ func TestAtlasFileSandboxReadsInsideTheConfigDirectory(t *testing.T) {
 	}
 }
 
-func insidePlainFile(c *qt.C, dir string) string {
-	c.Helper()
-
-	c.Assert(os.WriteFile(filepath.Join(dir, "url.txt"), []byte(insideFileMarker), 0o600), qt.IsNil)
-	return "url.txt"
+func insidePlainFile(dir string) (string, error) {
+	return "url.txt", os.WriteFile(filepath.Join(dir, "url.txt"), []byte(insideFileMarker), 0o600)
 }
 
-func insideDotSlashFile(c *qt.C, dir string) string {
-	c.Helper()
-
-	c.Assert(os.WriteFile(filepath.Join(dir, "url.txt"), []byte(insideFileMarker), 0o600), qt.IsNil)
-	return "./url.txt"
+func insideDotSlashFile(dir string) (string, error) {
+	return "./url.txt", os.WriteFile(filepath.Join(dir, "url.txt"), []byte(insideFileMarker), 0o600)
 }
 
-func insideSubdirectoryFile(c *qt.C, dir string) string {
-	c.Helper()
-
-	c.Assert(os.Mkdir(filepath.Join(dir, "conf"), 0o700), qt.IsNil)
-	c.Assert(os.WriteFile(filepath.Join(dir, "conf", "url.txt"), []byte(insideFileMarker), 0o600), qt.IsNil)
-	return "conf/url.txt"
+func insideSubdirectoryFile(dir string) (string, error) {
+	return "conf/url.txt", errors.Join(
+		os.Mkdir(filepath.Join(dir, "conf"), 0o700),
+		os.WriteFile(filepath.Join(dir, "conf", "url.txt"), []byte(insideFileMarker), 0o600),
+	)
 }
 
-func insideSiblingSymlink(c *qt.C, dir string) string {
-	c.Helper()
-
-	c.Assert(os.WriteFile(filepath.Join(dir, "url.txt"), []byte(insideFileMarker), 0o600), qt.IsNil)
-	symlink(c, "url.txt", filepath.Join(dir, "url.link"))
-	return "url.link"
+func insideSiblingSymlink(dir string) (string, error) {
+	return "url.link", errors.Join(
+		os.WriteFile(filepath.Join(dir, "url.txt"), []byte(insideFileMarker), 0o600),
+		os.Symlink("url.txt", filepath.Join(dir, "url.link")),
+	)
 }
 
-func insideUpwardSymlink(c *qt.C, dir string) string {
-	c.Helper()
-
-	c.Assert(os.WriteFile(filepath.Join(dir, "url.txt"), []byte(insideFileMarker), 0o600), qt.IsNil)
-	c.Assert(os.Mkdir(filepath.Join(dir, "conf"), 0o700), qt.IsNil)
-	symlink(c, filepath.Join("..", "url.txt"), filepath.Join(dir, "conf", "url.link"))
-	return "conf/url.link"
+func insideUpwardSymlink(dir string) (string, error) {
+	return "conf/url.link", errors.Join(
+		os.WriteFile(filepath.Join(dir, "url.txt"), []byte(insideFileMarker), 0o600),
+		os.Mkdir(filepath.Join(dir, "conf"), 0o700),
+		os.Symlink(filepath.Join("..", "url.txt"), filepath.Join(dir, "conf", "url.link")),
+	)
 }
 
 // writeAtlasFilesetConfig writes an atlas.hcl whose schema sources are a
@@ -365,7 +349,7 @@ func TestAtlasFilesetSandboxRefusesEscapingEntries(t *testing.T) {
 	tests := []struct {
 		name  string
 		glob  string
-		plant func(c *qt.C, dir, outside string)
+		plant func(dir, outside string) error
 		err   string
 	}{
 		{
@@ -396,7 +380,7 @@ func TestAtlasFilesetSandboxRefusesEscapingEntries(t *testing.T) {
 			dir := filepath.Join(base, "project")
 			c.Assert(os.Mkdir(dir, 0o700), qt.IsNil)
 			outside := plantOutsideSchema(c, base)
-			tt.plant(c, dir, outside)
+			c.Assert(tt.plant(dir, outside), qt.IsNil)
 			path := writeAtlasFilesetConfig(c, dir, tt.glob)
 
 			cfg, err := projectconfig.LoadAtlasFile(path, "local")
@@ -435,19 +419,21 @@ func plantOutsideSchema(c *qt.C, base string) string {
 	return path
 }
 
-func plantEscapingFilesetEntry(c *qt.C, dir, outside string) {
-	c.Helper()
-
-	symlink(c, outside, filepath.Join(dir, "leaked.hcl"))
+func plantEscapingFilesetEntry(dir, outside string) error {
+	return os.Symlink(outside, filepath.Join(dir, "leaked.hcl"))
 }
 
-func plantEscapingNestedFilesetEntry(c *qt.C, dir, outside string) {
-	c.Helper()
-
-	c.Assert(os.Mkdir(filepath.Join(dir, "nested"), 0o700), qt.IsNil)
-	symlink(c, outside, filepath.Join(dir, "nested", "leaked.hcl"))
+func plantEscapingNestedFilesetEntry(dir, outside string) error {
+	return errors.Join(
+		os.Mkdir(filepath.Join(dir, "nested"), 0o700),
+		os.Symlink(outside, filepath.Join(dir, "nested", "leaked.hcl")),
+	)
 }
 
-func plantSiblingSchema(c *qt.C, _, _ string) {
-	c.Helper()
+// plantSiblingSchema plants nothing: the schema the parent-traversal glob would
+// reach is the one plantOutsideSchema already wrote beside the config
+// directory. The row still names it, so the fixture it rests on is written
+// where the other two rows write theirs.
+func plantSiblingSchema(_, _ string) error {
+	return nil
 }

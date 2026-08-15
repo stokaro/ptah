@@ -271,8 +271,6 @@ func TestColumnBuilder_MultipleColumns(t *testing.T) {
 // PostgreSQL and MySQL and wrong on SQLite, where a rowid key column is
 // nullable, so the dialect settles it and the builder records what was asked.
 func TestColumnBuilder_PrimaryKeyKeepsNullable(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name         string
 		build        func() *astbuilder.TableBuilder
@@ -296,7 +294,8 @@ func TestColumnBuilder_PrimaryKeyKeepsNullable(t *testing.T) {
 		},
 	}
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			result := test.build().Build()
 
 			c.Assert(result.Columns, qt.HasLen, 1)

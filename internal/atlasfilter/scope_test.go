@@ -11,8 +11,6 @@ import (
 )
 
 func TestScopePositive(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name  string
 		scope atlasfilter.Scope
@@ -26,15 +24,14 @@ func TestScopePositive(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(test.scope.Positive(), qt.Equals, test.want)
 		})
 	}
 }
 
 func TestValidateIncludeSelectors_HappyPath(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name   string
 		values []string
@@ -80,15 +77,14 @@ func TestValidateIncludeSelectors_HappyPath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(atlasfilter.ValidateIncludeSelectors(test.values), qt.IsNil)
 		})
 	}
 }
 
 func TestValidateIncludeSelectors_FailurePath(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name    string
 		values  []string
@@ -142,7 +138,8 @@ func TestValidateIncludeSelectors_FailurePath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(atlasfilter.ValidateIncludeSelectors(test.values), qt.ErrorMatches, test.wantErr)
 		})
 	}
@@ -157,8 +154,6 @@ func TestValidateIncludeSelectors_FailurePath(t *testing.T) {
 // refused there — see
 // TestExcludeDatabaseWithDefaultSchema_RefusesPatternsDeeperThanTheScope.
 func TestExcludeSelectorsReachChildResources(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name   string
 		values []string
@@ -170,7 +165,8 @@ func TestExcludeSelectorsReachChildResources(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(atlasfilter.ValidateExcludeSelectors(test.values), qt.IsNil)
 		})
 	}
@@ -273,9 +269,8 @@ func TestScopeGenerated_IncludeTableRideAlongs(t *testing.T) {
 }
 
 func TestScopeGenerated_IncludeSelectsInsideSchemaUniverse(t *testing.T) {
-	c := qt.New(t)
-
-	c.Run("selector inside the universe matches", func(c *qt.C) {
+	t.Run("selector inside the universe matches", func(t *testing.T) {
+		c := qt.New(t)
 		got, err := atlasfilter.ScopeGenerated(scopeGeneratedFixture(), atlasfilter.Scope{
 			Schemas:       []string{"app"},
 			Include:       []string{"users"},
@@ -285,7 +280,8 @@ func TestScopeGenerated_IncludeSelectsInsideSchemaUniverse(t *testing.T) {
 		c.Assert(generatedTableNames(got.Tables), qt.DeepEquals, []string{"app.users"})
 	})
 
-	c.Run("selector outside the universe matches nothing", func(c *qt.C) {
+	t.Run("selector outside the universe matches nothing", func(t *testing.T) {
+		c := qt.New(t)
 		got, err := atlasfilter.ScopeGenerated(scopeGeneratedFixture(), atlasfilter.Scope{
 			Schemas:       []string{"app"},
 			Include:       []string{"invoices"},
@@ -364,9 +360,8 @@ func TestScopeGenerated_NonPositiveDelegatesToExclude(t *testing.T) {
 }
 
 func TestScopeGenerated_FailurePath(t *testing.T) {
-	c := qt.New(t)
-
-	c.Run("foreign key to unselected table", func(c *qt.C) {
+	t.Run("foreign key to unselected table", func(t *testing.T) {
+		c := qt.New(t)
 		got, err := atlasfilter.ScopeGenerated(scopeGeneratedFixture(), atlasfilter.Scope{
 			Include:       []string{"audit_log"},
 			DefaultSchema: "public",
@@ -379,7 +374,8 @@ func TestScopeGenerated_FailurePath(t *testing.T) {
 		})
 	})
 
-	c.Run("constraint foreign key to unselected table", func(c *qt.C) {
+	t.Run("constraint foreign key to unselected table", func(t *testing.T) {
+		c := qt.New(t)
 		schema := &goschema.Database{
 			Tables: []goschema.Table{
 				{StructName: "Order", Name: "orders"},
@@ -401,7 +397,8 @@ func TestScopeGenerated_FailurePath(t *testing.T) {
 		})
 	})
 
-	c.Run("function depending on unselected function", func(c *qt.C) {
+	t.Run("function depending on unselected function", func(t *testing.T) {
+		c := qt.New(t)
 		schema := &goschema.Database{
 			Functions: []goschema.Function{
 				{Name: "outer_fn"},
@@ -419,7 +416,8 @@ func TestScopeGenerated_FailurePath(t *testing.T) {
 		})
 	})
 
-	c.Run("view referencing unselected table", func(c *qt.C) {
+	t.Run("view referencing unselected table", func(t *testing.T) {
+		c := qt.New(t)
 		schema := &goschema.Database{
 			Tables: []goschema.Table{{StructName: "User", Name: "users"}},
 			Fields: []goschema.Field{{StructName: "User", Name: "id", Type: "INTEGER"}},
@@ -433,7 +431,8 @@ func TestScopeGenerated_FailurePath(t *testing.T) {
 		})
 	})
 
-	c.Run("excluded enum still used by selected table", func(c *qt.C) {
+	t.Run("excluded enum still used by selected table", func(t *testing.T) {
+		c := qt.New(t)
 		_, err := atlasfilter.ScopeGenerated(scopeGeneratedFixture(), atlasfilter.Scope{
 			Include:       []string{"users"},
 			Exclude:       []string{"user_status"},
@@ -446,7 +445,8 @@ func TestScopeGenerated_FailurePath(t *testing.T) {
 		})
 	})
 
-	c.Run("excluded enum keeps schema identity in dependency diagnostics", func(c *qt.C) {
+	t.Run("excluded enum keeps schema identity in dependency diagnostics", func(t *testing.T) {
+		c := qt.New(t)
 		schema := &goschema.Database{
 			Schemas: []goschema.Schema{{Name: "app"}, {Name: "public"}},
 			Tables:  []goschema.Table{{StructName: "User", Schema: "app", Name: "users"}},
@@ -753,9 +753,8 @@ func TestScopeDatabase_NonPositiveDelegatesToExclude(t *testing.T) {
 }
 
 func TestScopeDatabase_FailurePath(t *testing.T) {
-	c := qt.New(t)
-
-	c.Run("foreign key to unselected table", func(c *qt.C) {
+	t.Run("foreign key to unselected table", func(t *testing.T) {
+		c := qt.New(t)
 		got, err := atlasfilter.ScopeDatabase(scopeDatabaseFixture(), atlasfilter.Scope{
 			Include:       []string{"audit_log"},
 			DefaultSchema: "public",
@@ -768,7 +767,8 @@ func TestScopeDatabase_FailurePath(t *testing.T) {
 		})
 	})
 
-	c.Run("excluded enum still used by selected table", func(c *qt.C) {
+	t.Run("excluded enum still used by selected table", func(t *testing.T) {
+		c := qt.New(t)
 		_, err := atlasfilter.ScopeDatabase(scopeDatabaseFixture(), atlasfilter.Scope{
 			Include:       []string{"users"},
 			Exclude:       []string{"user_status"},
@@ -781,7 +781,8 @@ func TestScopeDatabase_FailurePath(t *testing.T) {
 		})
 	})
 
-	c.Run("database enum validation does not collide across schemas", func(c *qt.C) {
+	t.Run("database enum validation does not collide across schemas", func(t *testing.T) {
+		c := qt.New(t)
 		schema := &dbschematypes.DBSchema{
 			Schemas: []dbschematypes.DBSchemaInfo{{Name: "app"}, {Name: "public"}},
 			Tables: []dbschematypes.DBTable{{

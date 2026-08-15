@@ -17,6 +17,7 @@ import (
 	_ "github.com/jackc/pgx/v5/stdlib"
 
 	"go.5x5.cz/ptah/cmd/atlas"
+	"go.5x5.cz/ptah/internal/dbtarget"
 )
 
 // atlasCompatExtensionRoundTripCase is one extension shape, its seed DDL, and
@@ -181,7 +182,7 @@ type atlasCompatExtensionRoundTripCase struct {
 // this version`, exit 1, where the same document without the block is read at
 // exit 0 -- and both apply at exit 0, so the block bought nothing at all.
 func TestAtlasCompatInspectExtensionRoundTripE2E(t *testing.T) {
-	adminURL := requirePostgresE2EDatabaseURL(t)
+	adminURL := dbtarget.URL(t, dbtarget.PostgreSQL)
 
 	tests := []atlasCompatExtensionRoundTripCase{
 		{

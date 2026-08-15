@@ -39,8 +39,6 @@ import (
 // coverage rule independently of extensions, whose installation schema makes
 // an IF NOT EXISTS no-op insufficient to converge an unknown current state.
 func TestAGuardedNonExtensionCreationSurvivesAReadThatDidNotLook(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name        string
 		desired     func() *goschema.Database
@@ -60,7 +58,8 @@ func TestAGuardedNonExtensionCreationSurvivesAReadThatDidNotLook(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			database := &types.DBSchema{}
 			database.NotDescribed = coverage.Set{}.WithKind(
 				coverage.Extension, coverage.Policy, coverage.Sequence,
@@ -75,10 +74,9 @@ func TestAGuardedNonExtensionCreationSurvivesAReadThatDidNotLook(t *testing.T) {
 }
 
 func TestUnknownCurrentExtensionIsWithheldRegardlessOfCreationGuard(t *testing.T) {
-	c := qt.New(t)
-
 	for _, ifNotExists := range []bool{false, true} {
-		c.Run(map[bool]string{false: "unguarded", true: "guarded"}[ifNotExists], func(c *qt.C) {
+		t.Run(map[bool]string{false: "unguarded", true: "guarded"}[ifNotExists], func(t *testing.T) {
+			c := qt.New(t)
 			desired := &goschema.Database{Extensions: []goschema.Extension{{
 				Name:        "citext",
 				Schema:      "extensions",
@@ -128,8 +126,6 @@ func TestAPolicyAdditionSurvivesAReadThatDidNotLook(t *testing.T) {
 // migration -- but withholding it in silence is not, so the comparison reports
 // what it held back and the surface reads it out.
 func TestAnUnguardedCreationIsWithheldAndNamed(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name         string
 		desired      func() *goschema.Database
@@ -178,7 +174,8 @@ func TestAnUnguardedCreationIsWithheldAndNamed(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			database := &types.DBSchema{}
 			database.NotDescribed = test.notDescribed
 
@@ -195,8 +192,6 @@ func TestAnUnguardedCreationIsWithheldAndNamed(t *testing.T) {
 // it a comparator that planned nothing at all, or one that named every addition
 // as withheld, would pass the rows above.
 func TestAnUndeclaredReadPlansEveryAdditionAndWithholdsNothing(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name        string
 		desired     func() *goschema.Database
@@ -240,7 +235,8 @@ func TestAnUndeclaredReadPlansEveryAdditionAndWithholdsNothing(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			diff, undecided := schemadiff.CompareReportingUndecidedAdditions(test.desired(), &types.DBSchema{}, nil)
 
 			c.Assert(test.read(diff), qt.DeepEquals, test.wantPlanned)

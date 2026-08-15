@@ -14,6 +14,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -182,12 +183,12 @@ func TestMigrationPreflightHookRunsInsidePostgresAdvisoryLock(t *testing.T) {
 }
 
 func TestMigrationAdvisoryLock_MySQLDefaultTimeoutIntegration(t *testing.T) {
-	dbURL := mySQLFamilyTestURL(t, "mysql", "MYSQL_TEST_URL", "MYSQL_URL")
+	dbURL := mySQLFamilyTestURL(t, "mysql", dbtarget.MySQL)
 	runIssue124AdvisoryLockDefaultTimeoutIntegration(t, dbURL)
 }
 
 func TestMigrationAdvisoryLock_MariaDBDefaultTimeoutIntegration(t *testing.T) {
-	dbURL := mySQLFamilyTestURL(t, "mariadb", "MARIADB_TEST_URL", "MARIADB_URL")
+	dbURL := mySQLFamilyTestURL(t, "mariadb", dbtarget.MariaDB)
 	runIssue124AdvisoryLockDefaultTimeoutIntegration(t, dbURL)
 }
 
@@ -316,21 +317,22 @@ func assertIssue124State(
 	wantMigrations int,
 	wantLogRows int,
 ) {
+	c := qt.New(t)
 	t.Helper()
 
 	var migrationRows int
 	err := conn.QueryRowContext(context.Background(), fmt.Sprintf("SELECT COUNT(*) FROM %s", names.migrationsTable)).
 		Scan(&migrationRows)
-	qt.Assert(t, err, qt.IsNil)
-	qt.Assert(t, migrationRows, qt.Equals, wantMigrations)
+	c.Assert(err, qt.IsNil)
+	c.Assert(migrationRows, qt.Equals, wantMigrations)
 
 	var logRows int
 	if wantLogRows > 0 {
 		err = conn.QueryRowContext(context.Background(), fmt.Sprintf("SELECT COUNT(*) FROM %s", names.logTable)).
 			Scan(&logRows)
-		qt.Assert(t, err, qt.IsNil)
+		c.Assert(err, qt.IsNil)
 	}
-	qt.Assert(t, logRows, qt.Equals, wantLogRows)
+	c.Assert(logRows, qt.Equals, wantLogRows)
 }
 
 func cleanupIssue124(t *testing.T, conn *dbschema.DatabaseConnection, names issue124TestNames) {

@@ -27,7 +27,8 @@ func TestGenerateMigration_CompareOptionsWithRealPostgres(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	defer dbschema.CloseAndWarn(target)
 
-	c.Run("default options ignore plpgsql", func(c *qt.C) {
+	t.Run("default options ignore plpgsql", func(t *testing.T) {
+		c := qt.New(t)
 		files, err := generator.GenerateMigration(ctx, generator.GenerateMigrationOptions{
 			Generated:     &goschema.Database{},
 			DBConn:        target,
@@ -38,7 +39,8 @@ func TestGenerateMigration_CompareOptionsWithRealPostgres(t *testing.T) {
 		c.Assert(files, qt.IsNil)
 	})
 
-	c.Run("custom options ignore plpgsql", func(c *qt.C) {
+	t.Run("custom options ignore plpgsql", func(t *testing.T) {
+		c := qt.New(t)
 		files, err := generator.GenerateMigration(ctx, generator.GenerateMigrationOptions{
 			Generated:      &goschema.Database{},
 			DBConn:         target,
@@ -50,7 +52,8 @@ func TestGenerateMigration_CompareOptionsWithRealPostgres(t *testing.T) {
 		c.Assert(files, qt.IsNil)
 	})
 
-	c.Run("empty ignore list manages plpgsql", func(c *qt.C) {
+	t.Run("empty ignore list manages plpgsql", func(t *testing.T) {
+		c := qt.New(t)
 		files, err := generator.GenerateMigration(ctx, generator.GenerateMigrationOptions{
 			Generated:      &goschema.Database{},
 			DBConn:         target,
@@ -67,7 +70,8 @@ func TestGenerateMigration_CompareOptionsWithRealPostgres(t *testing.T) {
 		c.Assert(string(upSQL), qt.Contains, "plpgsql")
 	})
 
-	c.Run("desired extension is added while plpgsql is ignored", func(c *qt.C) {
+	t.Run("desired extension is added while plpgsql is ignored", func(t *testing.T) {
+		c := qt.New(t)
 		files, err := generator.GenerateMigration(ctx, generator.GenerateMigrationOptions{
 			Generated: &goschema.Database{
 				Extensions: []goschema.Extension{{Name: "pg_trgm", IfNotExists: true}},

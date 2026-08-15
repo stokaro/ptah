@@ -553,7 +553,6 @@ CREATE TABLE pets (id INTEGER PRIMARY KEY);
 }
 
 func TestMigrateUp_AllowDirtyRefusesChangedCommittedPrefix(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name   string
 		format migrator.RevisionTableFormat
@@ -563,7 +562,8 @@ func TestMigrateUp_AllowDirtyRefusesChangedCommittedPrefix(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			dbPath := filepath.Join(c.TempDir(), "changed-prefix.db")
 			conn, initial := newDirtyRetryMigrator(c, dbPath, dirtyRetryFailingUp, migrator.MigrationTxModeNone, test.format)
 			c.Assert(initial.MigrateUp(c.Context()), qt.IsNotNil)
@@ -666,7 +666,6 @@ func TestMigrateUp_AtlasDirtyContradictoryPartialHashesRefused(t *testing.T) {
 }
 
 func TestMigrateUp_AllowDirtyRefusesInvalidRevisionProgress(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name      string
 		format    migrator.RevisionTableFormat
@@ -712,7 +711,8 @@ func TestMigrateUp_AllowDirtyRefusesInvalidRevisionProgress(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			dbPath := filepath.Join(c.TempDir(), "invalid-progress.db")
 			conn, initial := newDirtyRetryMigrator(c, dbPath, dirtyRetryFailingUp, migrator.MigrationTxModeNone, test.format)
 			c.Assert(initial.MigrateUp(c.Context()), qt.IsNotNil)
@@ -730,7 +730,6 @@ func TestMigrateUp_AllowDirtyRefusesInvalidRevisionProgress(t *testing.T) {
 }
 
 func TestGetRevisions_AcceptsCanonicalNativeStates(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name      string
 		stored    string
@@ -746,7 +745,8 @@ func TestGetRevisions_AcceptsCanonicalNativeStates(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			dbPath := filepath.Join(c.TempDir(), "canonical-native-state.db")
 			conn, m := newDirtyRetryMigrator(c, dbPath, dirtyRetryFixedUp, migrator.MigrationTxModeNone, migrator.RevisionTableFormatPtah)
 			c.Assert(m.MigrateUp(c.Context()), qt.IsNil)
@@ -764,7 +764,6 @@ func TestGetRevisions_AcceptsCanonicalNativeStates(t *testing.T) {
 }
 
 func TestRevisionReaders_RefuseInvalidMetadata(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name      string
 		format    migrator.RevisionTableFormat
@@ -822,7 +821,8 @@ func TestRevisionReaders_RefuseInvalidMetadata(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			dbPath := filepath.Join(c.TempDir(), "invalid-revision-metadata.db")
 			conn, m := newDirtyRetryMigrator(c, dbPath, dirtyRetryFixedUp, migrator.MigrationTxModeNone, test.format)
 			c.Assert(m.MigrateUp(c.Context()), qt.IsNil)
@@ -955,7 +955,6 @@ func TestMigrateUp_TxModeAllAllowDirtyRetryReusesTheDirtyRevisionRow(t *testing.
 }
 
 func TestMigrateUp_RetryFailurePreservesCommittedAppliedFloor(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name string
 		mode migrator.MigrationTxMode
@@ -965,7 +964,8 @@ func TestMigrateUp_RetryFailurePreservesCommittedAppliedFloor(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			dbPath := filepath.Join(c.TempDir(), "applied-floor.db")
 			conn, initial := newDirtyRetryMigrator(c, dbPath, dirtyRetryFailingUp, migrator.MigrationTxModeNone, migrator.RevisionTableFormatPtah)
 			c.Assert(initial.MigrateUp(c.Context()), qt.IsNotNil)

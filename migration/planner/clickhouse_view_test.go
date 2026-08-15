@@ -13,7 +13,6 @@ import (
 )
 
 func TestGenerateSchemaDiffSQLStatements_ClickHouseViewLifecycle(t *testing.T) {
-	c := qt.New(t)
 	viewBody := "SELECT id\nFROM `analytics`.`users`"
 	generated := &goschema.Database{Views: []goschema.View{{
 		StructName: "ActiveUsers",
@@ -50,7 +49,8 @@ func TestGenerateSchemaDiffSQLStatements_ClickHouseViewLifecycle(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			statements, err := planner.GenerateSchemaDiffSQLStatements(
 				test.diff,
 				test.generated,
@@ -65,7 +65,6 @@ func TestGenerateSchemaDiffSQLStatements_ClickHouseViewLifecycle(t *testing.T) {
 }
 
 func TestGenerateSchemaDiffSQLStatements_ClickHouseViewCapabilityDisabled(t *testing.T) {
-	c := qt.New(t)
 	generated := &goschema.Database{Views: []goschema.View{{
 		StructName: "ActiveUsers",
 		Name:       "analytics.active_users",
@@ -100,7 +99,8 @@ func TestGenerateSchemaDiffSQLStatements_ClickHouseViewCapabilityDisabled(t *tes
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			statements, err := planner.GenerateSchemaDiffSQLStatementsWithCapabilities(
 				test.diff,
 				generated,
@@ -134,7 +134,6 @@ func TestGenerateSchemaDiffSQLStatements_ClickHouseDropsViewBeforeSourceTable(t 
 }
 
 func TestGenerateSchemaDiffSQLStatements_ClickHouseOrdersAddedViewDependencies(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name          string
 		dependentBody string
@@ -150,7 +149,8 @@ func TestGenerateSchemaDiffSQLStatements_ClickHouseOrdersAddedViewDependencies(t
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			statements, err := planner.GenerateSchemaDiffSQLStatements(
 				&types.SchemaDiff{ViewsAdded: []string{"analytics.a_dep", "analytics.z_base"}},
 				clickHouseDependentViews(test.dependentBody),
@@ -166,7 +166,6 @@ func TestGenerateSchemaDiffSQLStatements_ClickHouseOrdersAddedViewDependencies(t
 }
 
 func TestGenerateSchemaDiffSQLStatements_ClickHouseOrdersReplacementDependencies(t *testing.T) {
-	c := qt.New(t)
 	generated := clickHouseDependentViews("SELECT n FROM `analytics`.`z_base`")
 	tests := []struct {
 		name       string
@@ -198,7 +197,8 @@ func TestGenerateSchemaDiffSQLStatements_ClickHouseOrdersReplacementDependencies
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			statements, err := planner.GenerateSchemaDiffSQLStatements(
 				test.diff,
 				generated,

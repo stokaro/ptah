@@ -100,108 +100,99 @@ func lintRefuses(c *qt.C, fsys fstest.MapFS, databaseDialect string) bool {
 // expected one. Agreement alone would be satisfied by both commands refusing
 // everything, so each row also pins which way they agree.
 func TestLintAndUpAgree_OnEveryPolicyShape(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name     string
 		policy   string
 		database string
-		assert   func(c *qt.C, refused bool)
+		// wantRefused is the verdict both commands have to reach. Agreement
+		// alone would be satisfied by both refusing everything.
+		wantRefused bool
 	}{
 		{
 			name:     "no policy file dialect",
 			policy:   "disabled-rules:\n  - DS102\n",
 			database: "mariadb",
-			assert:   assertAccepted,
 		},
 		{
 			name:     "canonical dialect naming the database exactly",
 			policy:   "dialect: mariadb\n",
 			database: "mariadb",
-			assert:   assertAccepted,
 		},
 		{
 			name:     "documented alias of the database dialect",
 			policy:   "dialect: pgx\n",
 			database: "postgres",
-			assert:   assertAccepted,
 		},
 		{
 			name:     "second documented alias of the database dialect",
 			policy:   "dialect: postgresql\n",
 			database: "postgres",
-			assert:   assertAccepted,
 		},
 		{
 			name:     "MySQL policy on a MariaDB database",
 			policy:   "dialect: mysql\n",
 			database: "mariadb",
-			assert:   assertAccepted,
 		},
 		{
 			name:     "MariaDB policy on a MySQL database",
 			policy:   "dialect: mariadb\n",
 			database: "mysql",
-			assert:   assertAccepted,
 		},
 		{
 			name:     "PostgreSQL policy on a CockroachDB database",
 			policy:   "dialect: postgres\n",
 			database: "cockroachdb",
-			assert:   assertAccepted,
 		},
 		{
 			name:     "CockroachDB alias on a CockroachDB database",
 			policy:   "dialect: crdb\n",
 			database: "cockroachdb",
-			assert:   assertAccepted,
 		},
 		{
 			name:     "SQL Server policy on a SQL Server database",
 			policy:   "dialect: sqlserver\n",
 			database: "sqlserver",
-			assert:   assertAccepted,
 		},
 		{
 			name:     "SQL Server alias on a SQL Server database",
 			policy:   "dialect: mssql\n",
 			database: "sqlserver",
-			assert:   assertAccepted,
 		},
 		{
-			name:     "cross-family SQL Server policy on a PostgreSQL database",
-			policy:   "dialect: sqlserver\n",
-			database: "postgres",
-			assert:   assertRefused,
+			name:        "cross-family SQL Server policy on a PostgreSQL database",
+			policy:      "dialect: sqlserver\n",
+			database:    "postgres",
+			wantRefused: true,
 		},
 		{
-			name:     "cross-family PostgreSQL policy on a MariaDB database",
-			policy:   "dialect: postgres\n",
-			database: "mariadb",
-			assert:   assertRefused,
+			name:        "cross-family PostgreSQL policy on a MariaDB database",
+			policy:      "dialect: postgres\n",
+			database:    "mariadb",
+			wantRefused: true,
 		},
 		{
-			name:     "cross-family MySQL policy on a PostgreSQL database",
-			policy:   "dialect: mysql\n",
-			database: "postgres",
-			assert:   assertRefused,
+			name:        "cross-family MySQL policy on a PostgreSQL database",
+			policy:      "dialect: mysql\n",
+			database:    "postgres",
+			wantRefused: true,
 		},
 		{
-			name:     "cross-family SQLite policy on a MariaDB database",
-			policy:   "dialect: sqlite\n",
-			database: "mariadb",
-			assert:   assertRefused,
+			name:        "cross-family SQLite policy on a MariaDB database",
+			policy:      "dialect: sqlite\n",
+			database:    "mariadb",
+			wantRefused: true,
 		},
 		{
-			name:     "unsupported dialect spelling",
-			policy:   "dialect: oracle\n",
-			database: "postgres",
-			assert:   assertRefused,
+			name:        "unsupported dialect spelling",
+			policy:      "dialect: oracle\n",
+			database:    "postgres",
+			wantRefused: true,
 		},
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			fsys := policyDirectory(test.policy)
 
 			up := upRefuses(fsys, test.database)
@@ -211,15 +202,7 @@ func TestLintAndUpAgree_OnEveryPolicyShape(t *testing.T) {
 				"migrations up refused=%v but migrations lint refused=%v for policy %q against %s",
 				up, lintVerdict, test.policy, test.database,
 			))
-			test.assert(c, up)
+			c.Assert(up, qt.Equals, test.wantRefused)
 		})
 	}
-}
-
-func assertAccepted(c *qt.C, refused bool) {
-	c.Assert(refused, qt.IsFalse)
-}
-
-func assertRefused(c *qt.C, refused bool) {
-	c.Assert(refused, qt.IsTrue)
 }

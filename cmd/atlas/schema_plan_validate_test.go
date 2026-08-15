@@ -158,7 +158,8 @@ func TestSchemaPlanValidateTreatsForeignFingerprintsAsUnauthenticatedMetadata(t 
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			dir := t.TempDir()
 			dbPath := filepath.Join(dir, "target.db")
 			dbURL := sqliteURLFromPath(dbPath)
@@ -207,7 +208,8 @@ func TestSchemaPlanValidateRejectsAtlasAuthoredPlanMutations(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			dir := t.TempDir()
 			dbPath := filepath.Join(dir, "target.db")
 			dbURL := sqliteURLFromPath(dbPath)
@@ -328,7 +330,8 @@ func TestSchemaPlanValidateLeavesTheTargetDatabaseUnchanged(t *testing.T) {
 	// newSeededFixture builds the fixture and puts rows in the target, so the
 	// assertions can speak about data and not only about table names. A
 	// destructive dev reset takes the rows with it.
-	newSeededFixture := func(c *qt.C, name string) validateFixture {
+	newSeededFixture := func(tb testing.TB, name string) validateFixture {
+		c := qt.New(tb)
 		c.Helper()
 		fixture := newValidateFixture(c, name,
 			`CREATE TABLE keep_me (id INTEGER PRIMARY KEY);`,
@@ -496,7 +499,8 @@ func TestSchemaPlanValidateRefusesAPlanWhoseSourceStateMovedOn(t *testing.T) {
 
 	// idempotentPlan rewrites a fixture's plan file so its statements can run
 	// against a target that already has the planned table.
-	idempotentPlan := func(c *qt.C, fixture validateFixture) {
+	idempotentPlan := func(tb testing.TB, fixture validateFixture) {
+		c := qt.New(tb)
 		c.Helper()
 		plan, _, err := atlasschema.ReadPlanDocument(fixture.planPath)
 		c.Assert(err, qt.IsNil)
@@ -507,7 +511,8 @@ func TestSchemaPlanValidateRefusesAPlanWhoseSourceStateMovedOn(t *testing.T) {
 		c.Assert(err, qt.IsNil)
 		c.Assert(os.WriteFile(fixture.planPath, document, 0o600), qt.IsNil)
 	}
-	newFixture := func(c *qt.C, name string) validateFixture {
+	newFixture := func(tb testing.TB, name string) validateFixture {
+		c := qt.New(tb)
 		c.Helper()
 		return newValidateFixture(c, name,
 			`CREATE TABLE keep_me (id INTEGER PRIMARY KEY);`,
@@ -709,7 +714,8 @@ func TestSchemaPlanValidateRequiredInputs(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			out, err := runSchemaPlanSubverb(atlas.NewCompatCommand("atlas"), "validate", test.args...)
 
 			c.Assert(err, qt.IsNotNil)
@@ -743,7 +749,8 @@ func TestSchemaPlanValidateRefusesUnimplementedTransitionFlags(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			out, err := runSchemaPlanSubverb(atlas.NewCompatCommand("atlas"), "validate",
 				fixture.validateArgs(test.args...)...)
 

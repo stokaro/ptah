@@ -13,6 +13,7 @@ import (
 
 	"go.5x5.cz/ptah/cmd/migratedown"
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -59,9 +60,5 @@ func TestMigrateDownCommand_Integration(t *testing.T) {
 
 func requiredMigrateDownDatabaseURL(t *testing.T) string {
 	t.Helper()
-	dbURL := os.Getenv("TEST_DATABASE_URL")
-	if dbURL == "" {
-		t.Skip("TEST_DATABASE_URL is not set")
-	}
-	return dbURL
+	return dbtarget.URL(t, dbtarget.PostgreSQL)
 }

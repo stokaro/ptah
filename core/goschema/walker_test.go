@@ -885,7 +885,6 @@ func TestParseFS_HappyPath_ParsesCapturedSourceBytes(t *testing.T) {
 }
 
 func TestParseFS_FailurePath_RejectsSelectedNonRegularSources(t *testing.T) {
-	c := qt.New(t)
 	tests := []struct {
 		name    string
 		mode    fs.FileMode
@@ -903,7 +902,8 @@ func TestParseFS_FailurePath_RejectsSelectedNonRegularSources(t *testing.T) {
 		},
 	}
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			fsys := fstest.MapFS{
 				"model.go": &fstest.MapFile{Mode: test.mode},
 			}
@@ -1589,7 +1589,8 @@ func TestParseDir_AllIntegrationFixturesRemainParsable(t *testing.T) {
 	c.Assert(fixtureDirs, qt.Not(qt.HasLen), 0)
 
 	for _, fixtureDir := range fixtureDirs {
-		c.Run(filepath.Base(fixtureDir), func(c *qt.C) {
+		t.Run(filepath.Base(fixtureDir), func(t *testing.T) {
+			c := qt.New(t)
 			result, err := goschema.ParseDir(fixtureDir)
 			c.Assert(err, qt.IsNil)
 			c.Assert(result, qt.IsNotNil)

@@ -142,20 +142,24 @@ func TestCompatMigrateWrite_RefusesADirectoryNamingNoScheme(t *testing.T) {
 func TestCompatMigrateNew_RequiresTheSchemeOnEveryAtlasSpelling(t *testing.T) {
 	layers := []struct {
 		name string
-		// run invokes `migrate new` with the directory named through this layer.
-		run func(c *qt.C, dir string) (stdout, stderr string, err error)
+		// invocation renders the environment and the command line that name the
+		// directory through this layer. It builds the invocation and checks
+		// nothing: what a layer varies is the spelling, not the assertion.
+		invocation func(dir string) atlasWriteInvocation
 	}{
 		{
 			name: "the --dir flag",
-			run: func(_ *qt.C, dir string) (string, string, error) {
-				return runCompat("migrate", "new", "demo", "--dir", dir)
+			invocation: func(dir string) atlasWriteInvocation {
+				return atlasWriteInvocation{args: []string{"migrate", "new", "demo", "--dir", dir}}
 			},
 		},
 		{
 			name: "the PTAH_DIR environment twin",
-			run: func(c *qt.C, dir string) (string, string, error) {
-				c.Setenv("PTAH_DIR", dir)
-				return runCompat("migrate", "new", "demo")
+			invocation: func(dir string) atlasWriteInvocation {
+				return atlasWriteInvocation{
+					env:  map[string]string{"PTAH_DIR": dir},
+					args: []string{"migrate", "new", "demo"},
+				}
 			},
 		},
 	}
@@ -164,8 +168,12 @@ func TestCompatMigrateNew_RequiresTheSchemeOnEveryAtlasSpelling(t *testing.T) {
 		t.Run(layer.name, func(t *testing.T) {
 			c := qt.New(t)
 			missing := filepath.Join(c.TempDir(), "mig")
+			invocation := layer.invocation(missing)
+			for name, value := range invocation.env {
+				c.Setenv(name, value)
+			}
 
-			_, stderr, err := layer.run(c, missing)
+			_, stderr, err := runCompat(invocation.args...)
 
 			c.Assert(err, qt.ErrorMatches, regexpQuote(atlasMissingSchemeError(missing)))
 			c.Assert(stderr, qt.Equals, "Error: "+atlasMissingSchemeError(missing)+"\n")
@@ -187,42 +195,53 @@ func TestCompatMigrateNew_RequiresTheSchemeOnEveryAtlasSpelling(t *testing.T) {
 func TestCompatMigrateWrite_SpellingsTheCommunityBinaryAcceptsStillWrite(t *testing.T) {
 	cases := []struct {
 		name string
-		// run prepares the invocation and returns the directory it must have
-		// written into.
-		run func(c *qt.C) (dir string, err error)
+		// spell renders the invocation against the root directory the row is
+		// given, which is the only part of it that is not known until the test
+		// runs.
+		spell func(root string) atlasWriteInvocation
 	}{
 		{
 			name: "new names the directory as a file:// URL",
-			run: func(c *qt.C) (string, error) {
-				dir := filepath.Join(c.TempDir(), "mig")
-				_, _, err := runCompat("migrate", "new", "demo", "--dir", "file://"+dir)
-				return dir, err
+			spell: func(root string) atlasWriteInvocation {
+				dir := filepath.Join(root, "mig")
+				return atlasWriteInvocation{
+					args: []string{"migrate", "new", "demo", "--dir", "file://" + dir},
+					dir:  dir,
+				}
 			},
 		},
 		{
 			name: "new names an external layout through the format query",
-			run: func(c *qt.C) (string, error) {
-				dir := filepath.Join(c.TempDir(), "mig")
-				_, _, err := runCompat("migrate", "new", "demo", "--dir", "file://"+dir+"?format=goose")
-				return dir, err
+			spell: func(root string) atlasWriteInvocation {
+				dir := filepath.Join(root, "mig")
+				return atlasWriteInvocation{
+					args: []string{"migrate", "new", "demo", "--dir", "file://" + dir + "?format=goose"},
+					dir:  dir,
+				}
 			},
 		},
 		{
 			name: "new names an external layout through --dir-format",
-			run: func(c *qt.C) (string, error) {
-				dir := filepath.Join(c.TempDir(), "mig")
-				_, _, err := runCompat("migrate", "new", "demo",
-					"--dir", "file://"+dir, "--dir-format", "golang-migrate")
-				return dir, err
+			spell: func(root string) atlasWriteInvocation {
+				dir := filepath.Join(root, "mig")
+				return atlasWriteInvocation{
+					args: []string{
+						"migrate", "new", "demo",
+						"--dir", "file://" + dir, "--dir-format", "golang-migrate",
+					},
+					dir: dir,
+				}
 			},
 		},
 		{
 			name: "PTAH_DIR carries the scheme",
-			run: func(c *qt.C) (string, error) {
-				dir := filepath.Join(c.TempDir(), "mig")
-				c.Setenv("PTAH_DIR", "file://"+dir)
-				_, _, err := runCompat("migrate", "new", "demo")
-				return dir, err
+			spell: func(root string) atlasWriteInvocation {
+				dir := filepath.Join(root, "mig")
+				return atlasWriteInvocation{
+					env:  map[string]string{"PTAH_DIR": "file://" + dir},
+					args: []string{"migrate", "new", "demo"},
+					dir:  dir,
+				}
 			},
 		},
 		{
@@ -231,68 +250,107 @@ func TestCompatMigrateWrite_SpellingsTheCommunityBinaryAcceptsStillWrite(t *test
 			// takes a plain path and the community binary has no spelling for it
 			// at all, so a rule read off that binary must not reach it.
 			name: "PTAH_MIGRATIONS_DIR carries a bare path",
-			run: func(c *qt.C) (string, error) {
-				dir := filepath.Join(c.TempDir(), "mig")
-				c.Setenv("PTAH_MIGRATIONS_DIR", dir)
-				_, _, err := runCompat("migrate", "new", "demo")
-				return dir, err
+			spell: func(root string) atlasWriteInvocation {
+				dir := filepath.Join(root, "mig")
+				return atlasWriteInvocation{
+					env:  map[string]string{"PTAH_MIGRATIONS_DIR": dir},
+					args: []string{"migrate", "new", "demo"},
+					dir:  dir,
+				}
 			},
 		},
 		{
 			name: "atlas.hcl names the directory as a file:// URL",
-			run: func(c *qt.C) (string, error) {
-				root := c.TempDir()
-				c.Setenv("HOME", root)
-				writeAtlasMigrationDirProject(c, root, "file://mig")
-				_, _, err := runCompat("migrate", "new", "demo",
-					"--config", "file://"+filepath.Join(root, "atlas.hcl"), "--env", "local")
-				return filepath.Join(root, "mig"), err
+			spell: func(root string) atlasWriteInvocation {
+				return atlasWriteInvocation{
+					files: map[string]string{"atlas.hcl": atlasMigrationDirProject("file://mig")},
+					env:   map[string]string{"HOME": root},
+					args: []string{
+						"migrate", "new", "demo",
+						"--config", "file://" + filepath.Join(root, "atlas.hcl"), "--env", "local",
+					},
+					dir: filepath.Join(root, "mig"),
+				}
 			},
 		},
 		{
 			name: "diff names the directory as a file:// URL",
-			run: func(c *qt.C) (string, error) {
-				dir := filepath.Join(c.TempDir(), "mig")
-				target := filepath.Join(c.TempDir(), "target.sql")
-				c.Assert(os.WriteFile(target, []byte(
-					"CREATE TABLE users (id INTEGER PRIMARY KEY);\n",
-				), 0o600), qt.IsNil)
-				_, _, err := runCompat("migrate", "diff", "demo",
-					"--dir", "file://"+dir,
-					"--dev-url", "sqlite://"+filepath.Join(c.TempDir(), "dev.db"),
-					"--to", "file://"+target)
-				return dir, err
+			spell: func(root string) atlasWriteInvocation {
+				dir := filepath.Join(root, "mig")
+				return atlasWriteInvocation{
+					files: map[string]string{"target.sql": atlasWriteTargetSchema},
+					args: []string{
+						"migrate", "diff", "demo",
+						"--dir", "file://" + dir,
+						"--dev-url", "sqlite://" + filepath.Join(root, "dev.db"),
+						"--to", "file://" + filepath.Join(root, "target.sql"),
+					},
+					dir: dir,
+				}
 			},
 		},
 		{
 			// The --dir default on this verb is `file://migrations`, so an
 			// omitted flag must still pass a requirement read off the flag layer.
 			name: "diff omits --dir and takes the flag default",
-			run: func(c *qt.C) (string, error) {
-				root := c.TempDir()
-				c.Setenv("HOME", root)
-				target := filepath.Join(c.TempDir(), "target.sql")
-				c.Assert(os.WriteFile(target, []byte(
-					"CREATE TABLE users (id INTEGER PRIMARY KEY);\n",
-				), 0o600), qt.IsNil)
-				c.Chdir(root)
-				_, _, err := runCompat("migrate", "diff", "demo",
-					"--dev-url", "sqlite://"+filepath.Join(c.TempDir(), "dev.db"),
-					"--to", "file://"+target)
-				return filepath.Join(root, "migrations"), err
+			spell: func(root string) atlasWriteInvocation {
+				return atlasWriteInvocation{
+					files: map[string]string{"target.sql": atlasWriteTargetSchema},
+					env:   map[string]string{"HOME": root},
+					args: []string{
+						"migrate", "diff", "demo",
+						"--dev-url", "sqlite://" + filepath.Join(root, "dev.db"),
+						"--to", "file://" + filepath.Join(root, "target.sql"),
+					},
+					dir: filepath.Join(root, "migrations"),
+				}
 			},
 		},
 	}
 
-	for _, tt := range cases {
-		t.Run(tt.name, func(t *testing.T) {
+	for _, test := range cases {
+		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
+			root := c.TempDir()
+			invocation := test.spell(root)
+			writeAtlasWriteInvocationFiles(c, root, invocation.files)
+			for name, value := range invocation.env {
+				c.Setenv(name, value)
+			}
+			// Every row runs from its own root, because the last one takes the
+			// `file://migrations` flag default, which resolves against the
+			// working directory.
+			c.Chdir(root)
 
-			dir, err := tt.run(c)
+			_, _, err := runCompat(invocation.args...)
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(atlasWriteDirFingerprint(c, dir), qt.Contains, "atlas.sum")
+			c.Assert(atlasWriteDirFingerprint(c, invocation.dir), qt.Contains, "atlas.sum")
 		})
+	}
+}
+
+// atlasWriteTargetSchema is the desired schema the `migrate diff` rows compare
+// an empty dev database against.
+const atlasWriteTargetSchema = "CREATE TABLE users (id INTEGER PRIMARY KEY);\n"
+
+// atlasWriteInvocation is one compatibility invocation, spelled as the data it
+// is made of rather than as a closure that runs it: the fixture files under the
+// row's root, the environment it exports, the command line, and the directory
+// the command has to have written into.
+type atlasWriteInvocation struct {
+	files map[string]string
+	env   map[string]string
+	args  []string
+	dir   string
+}
+
+// writeAtlasWriteInvocationFiles materializes the fixture files a row names,
+// relative to the root it was rendered against.
+func writeAtlasWriteInvocationFiles(c *qt.C, root string, files map[string]string) {
+	c.Helper()
+	for name, body := range files {
+		c.Assert(os.WriteFile(filepath.Join(root, name), []byte(body), 0o600), qt.IsNil)
 	}
 }
 
@@ -389,10 +447,20 @@ func TestCompatMigrateNew_LeavesTheProjectFileSpellingToIssue1186(t *testing.T) 
 // migration directory with the given spelling.
 func writeAtlasMigrationDirProject(c *qt.C, root, dir string) {
 	c.Helper()
-	c.Assert(os.WriteFile(filepath.Join(root, "atlas.hcl"), fmt.Appendf(nil, `env "local" {
+	c.Assert(os.WriteFile(
+		filepath.Join(root, "atlas.hcl"),
+		[]byte(atlasMigrationDirProject(dir)),
+		0o600,
+	), qt.IsNil)
+}
+
+// atlasMigrationDirProject renders that project file, so a table row can carry
+// it as content instead of as a call.
+func atlasMigrationDirProject(dir string) string {
+	return fmt.Sprintf(`env "local" {
   migration {
     dir = %q
   }
 }
-`, dir), 0o600), qt.IsNil)
+`, dir)
 }

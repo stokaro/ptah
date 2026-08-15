@@ -26,84 +26,171 @@ func TestZeroSetDescribesEverything(t *testing.T) {
 	c.Assert(set.DescribesIn(coverage.Sequence, "extra", "extra.order_seq"), qt.IsTrue)
 }
 
-func TestSetDescribes_HappyPath(t *testing.T) {
-	c := qt.New(t)
+// mergedPolicyAndAdminUser is one description assembled from two, so the rows
+// below can ask what a merge kept from each half.
+var mergedPolicyAndAdminUser = coverage.Set{}.WithKind(coverage.Policy).
+	Merge(coverage.Set{}.WithObject(coverage.Role, "admin_user"))
 
+// TestSetDescribes asks one question per row. Both answers are load-bearing:
+// false is the record doing its job, and true is the authority the record must
+// not widen past, which is the direction that turns an unread object into a
+// removal.
+func TestSetDescribes(t *testing.T) {
 	tests := []struct {
 		name  string
 		set   coverage.Set
-		check func(c *qt.C, set coverage.Set)
+		kind  coverage.Kind
+		names []string
+		want  bool
 	}{
 		{
-			name: "a whole undescribed kind hides every object of it",
-			set:  coverage.Set{}.WithKind(coverage.Extension),
-			check: func(c *qt.C, set coverage.Set) {
-				c.Assert(set.Describes(coverage.Extension, "pgcrypto"), qt.IsFalse)
-				c.Assert(set.Describes(coverage.Extension, "postgis"), qt.IsFalse)
-			},
+			name:  "a whole undescribed kind hides every object of it",
+			set:   coverage.Set{}.WithKind(coverage.Extension),
+			kind:  coverage.Extension,
+			names: []string{"pgcrypto"},
+			want:  false,
 		},
 		{
-			name: "an undescribed kind leaves every other kind authoritative",
-			set:  coverage.Set{}.WithKind(coverage.Extension),
-			check: func(c *qt.C, set coverage.Set) {
-				c.Assert(set.Describes(coverage.Sequence, "order_seq"), qt.IsTrue)
-				c.Assert(set.Describes(coverage.Role, "pgcrypto"), qt.IsTrue)
-			},
+			name:  "a whole undescribed kind hides an object nobody named",
+			set:   coverage.Set{}.WithKind(coverage.Extension),
+			kind:  coverage.Extension,
+			names: []string{"postgis"},
+			want:  false,
 		},
 		{
-			name: "an undescribed object hides only itself",
-			set:  coverage.Set{}.WithObject(coverage.Role, "admin_user"),
-			check: func(c *qt.C, set coverage.Set) {
-				c.Assert(set.Describes(coverage.Role, "admin_user"), qt.IsFalse)
-				c.Assert(set.Describes(coverage.Role, "app_user"), qt.IsTrue)
-			},
+			name:  "an undescribed kind leaves every other kind authoritative",
+			set:   coverage.Set{}.WithKind(coverage.Extension),
+			kind:  coverage.Sequence,
+			names: []string{"order_seq"},
+			want:  true,
 		},
 		{
-			name: "any offered spelling of an undescribed object matches",
-			set:  coverage.Set{}.WithObject(coverage.Sequence, "extra.order_seq"),
-			check: func(c *qt.C, set coverage.Set) {
-				c.Assert(set.Describes(coverage.Sequence, "extra.order_seq", "order_seq"), qt.IsFalse)
-				c.Assert(set.Describes(coverage.Sequence, "order_seq"), qt.IsTrue)
-			},
+			// The same name under a different kind: the record is keyed on both.
+			name:  "an undescribed kind does not hide that name under another kind",
+			set:   coverage.Set{}.WithKind(coverage.Extension),
+			kind:  coverage.Role,
+			names: []string{"pgcrypto"},
+			want:  true,
 		},
 		{
-			name: "matching is case-insensitive, as unquoted identifiers are",
-			set:  coverage.Set{}.WithObject(coverage.Extension, "PgCrypto"),
-			check: func(c *qt.C, set coverage.Set) {
-				c.Assert(set.Describes(coverage.Extension, "pgcrypto"), qt.IsFalse)
-			},
+			name:  "an undescribed object hides itself",
+			set:   coverage.Set{}.WithObject(coverage.Role, "admin_user"),
+			kind:  coverage.Role,
+			names: []string{"admin_user"},
+			want:  false,
 		},
 		{
-			name: "an undescribed schema hides everything in it",
-			set:  coverage.Set{}.WithObject(coverage.Schema, "extra"),
-			check: func(c *qt.C, set coverage.Set) {
-				c.Assert(set.DescribesSchema("extra"), qt.IsFalse)
-				c.Assert(set.DescribesIn(coverage.Sequence, "extra", "extra.order_seq"), qt.IsFalse)
-				c.Assert(set.DescribesIn(coverage.Sequence, "public", "public.order_seq"), qt.IsTrue)
-			},
+			name:  "an undescribed object hides only itself",
+			set:   coverage.Set{}.WithObject(coverage.Role, "admin_user"),
+			kind:  coverage.Role,
+			names: []string{"app_user"},
+			want:  true,
 		},
 		{
-			name: "an object with no owning schema is not hidden by a schema record",
-			set:  coverage.Set{}.WithObject(coverage.Schema, "extra"),
-			check: func(c *qt.C, set coverage.Set) {
-				c.Assert(set.DescribesIn(coverage.Extension, "", "pgcrypto"), qt.IsTrue)
-			},
+			name:  "any offered spelling of an undescribed object matches",
+			set:   coverage.Set{}.WithObject(coverage.Sequence, "extra.order_seq"),
+			kind:  coverage.Sequence,
+			names: []string{"extra.order_seq", "order_seq"},
+			want:  false,
 		},
 		{
-			name: "merging unions both descriptions' limits",
-			set: coverage.Set{}.WithKind(coverage.Policy).
-				Merge(coverage.Set{}.WithObject(coverage.Role, "admin_user")),
-			check: func(c *qt.C, set coverage.Set) {
-				c.Assert(set.Describes(coverage.Policy, "p"), qt.IsFalse)
-				c.Assert(set.Describes(coverage.Role, "admin_user"), qt.IsFalse)
-				c.Assert(set.Describes(coverage.Extension, "pgcrypto"), qt.IsTrue)
-			},
+			name:  "a spelling the record does not carry stays authoritative",
+			set:   coverage.Set{}.WithObject(coverage.Sequence, "extra.order_seq"),
+			kind:  coverage.Sequence,
+			names: []string{"order_seq"},
+			want:  true,
+		},
+		{
+			name:  "matching is case-insensitive, as unquoted identifiers are",
+			set:   coverage.Set{}.WithObject(coverage.Extension, "PgCrypto"),
+			kind:  coverage.Extension,
+			names: []string{"pgcrypto"},
+			want:  false,
+		},
+		{
+			name:  "merging keeps the kind the first half undescribed",
+			set:   mergedPolicyAndAdminUser,
+			kind:  coverage.Policy,
+			names: []string{"p"},
+			want:  false,
+		},
+		{
+			name:  "merging keeps the object the second half undescribed",
+			set:   mergedPolicyAndAdminUser,
+			kind:  coverage.Role,
+			names: []string{"admin_user"},
+			want:  false,
+		},
+		{
+			name:  "merging widens nothing beyond what its halves named",
+			set:   mergedPolicyAndAdminUser,
+			kind:  coverage.Extension,
+			names: []string{"pgcrypto"},
+			want:  true,
 		},
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
-			test.check(c, test.set)
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(test.set.Describes(test.kind, test.names...), qt.Equals, test.want)
+		})
+	}
+}
+
+// TestSetDescribesSchemaHidesTheSchemaItself is the first half of what an
+// undescribed schema costs: the schema's own absence stops being authoritative.
+// The second half -- everything owned by it -- is TestSetDescribesIn.
+func TestSetDescribesSchemaHidesTheSchemaItself(t *testing.T) {
+	c := qt.New(t)
+
+	set := coverage.Set{}.WithObject(coverage.Schema, "extra")
+
+	c.Assert(set.DescribesSchema("extra"), qt.IsFalse)
+	c.Assert(set.DescribesSchema("public"), qt.IsTrue)
+}
+
+// TestSetDescribesIn pins the owning-schema rule: an object in a schema nobody
+// read is not described whatever its own kind says.
+func TestSetDescribesIn(t *testing.T) {
+	tests := []struct {
+		name   string
+		set    coverage.Set
+		kind   coverage.Kind
+		schema string
+		names  []string
+		want   bool
+	}{
+		{
+			name:   "an undescribed schema hides everything in it",
+			set:    coverage.Set{}.WithObject(coverage.Schema, "extra"),
+			kind:   coverage.Sequence,
+			schema: "extra",
+			names:  []string{"extra.order_seq"},
+			want:   false,
+		},
+		{
+			name:   "an undescribed schema hides nothing in another schema",
+			set:    coverage.Set{}.WithObject(coverage.Schema, "extra"),
+			kind:   coverage.Sequence,
+			schema: "public",
+			names:  []string{"public.order_seq"},
+			want:   true,
+		},
+		{
+			name:   "an object with no owning schema is not hidden by a schema record",
+			set:    coverage.Set{}.WithObject(coverage.Schema, "extra"),
+			kind:   coverage.Extension,
+			schema: "",
+			names:  []string{"pgcrypto"},
+			want:   true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(test.set.DescribesIn(test.kind, test.schema, test.names...), qt.Equals, test.want)
 		})
 	}
 }
@@ -133,8 +220,6 @@ func TestNormalizeIsDeterministic(t *testing.T) {
 }
 
 func TestDirectivesRoundTrip_HappyPath(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name string
 		set  coverage.Set
@@ -164,7 +249,8 @@ func TestDirectivesRoundTrip_HappyPath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(test.set.Directives(), qt.DeepEquals, test.want)
 
 			// The directive lines are the only channel between the process that
@@ -193,8 +279,6 @@ func TestDirectivesRoundTrip_HappyPath(t *testing.T) {
 // the other half of the contract: the encoding is line-based, so a name must
 // never be able to end its own comment.
 func TestDirectivesRoundTripAdversarialNames(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name  string
 		given string
@@ -216,7 +300,8 @@ func TestDirectivesRoundTripAdversarialNames(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			set := coverage.Set{}.WithObject(coverage.Schema, test.given)
 
 			directives := set.Directives()
@@ -251,8 +336,6 @@ func TestDirectivesRoundTripAdversarialNames(t *testing.T) {
 // the conservative superset, written into the document where a reader can see
 // it.
 func TestDirectivesNeverWriteALineDecodeRefuses(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name string
 		set  coverage.Set
@@ -272,7 +355,8 @@ func TestDirectivesNeverWriteALineDecodeRefuses(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			var document strings.Builder
 			for _, directive := range test.set.Directives() {
 				fmt.Fprintf(&document, "// %s\n", directive)
@@ -288,8 +372,6 @@ func TestDirectivesNeverWriteALineDecodeRefuses(t *testing.T) {
 }
 
 func TestDecodeHeader_HappyPath(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name     string
 		document string
@@ -337,7 +419,8 @@ func TestDecodeHeader_HappyPath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			got, err := coverage.DecodeHeader(test.document)
 			c.Assert(err, qt.IsNil)
 			c.Assert(got, qt.DeepEquals, test.want)
@@ -350,8 +433,6 @@ func TestDecodeHeader_HappyPath(t *testing.T) {
 // exists to prevent: an unread record reads as no record, and the absence it was
 // protecting becomes a removal.
 func TestDecodeHeader_FailurePath(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name     string
 		document string
@@ -400,7 +481,8 @@ func TestDecodeHeader_FailurePath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			got, err := coverage.DecodeHeader(test.document)
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(got.IsZero(), qt.IsTrue)

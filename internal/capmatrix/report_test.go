@@ -75,29 +75,29 @@ func TestAggregate_HappyPath(t *testing.T) {
 // the exact shape a paths filter, a cancelled matrix leg, or a fan-out that
 // produced zero jobs takes in this repository's CI.
 func TestAggregate_FailurePath(t *testing.T) {
-	c := qt.New(t)
-
 	for _, tc := range []struct {
 		name    string
 		tier    int
 		results []capmatrix.CellResult
-		assert  func(c *qt.C, aggregate capmatrix.Aggregate)
+		// wantVerdict and wantCount pin the census, so a row cannot pass on the
+		// error text alone while the cell was classified as something else.
+		wantVerdict capmatrix.Verdict
+		wantCount   int
+		wantErr     string
 	}{{
-		name:    "a cell that produced no result fails the tier",
-		tier:    2,
-		results: []capmatrix.CellResult{passing("postgres-17")},
-		assert: func(c *qt.C, aggregate capmatrix.Aggregate) {
-			c.Assert(aggregate.Count(capmatrix.Missing), qt.Equals, 1)
-			c.Assert(aggregate.Err(), qt.ErrorMatches, "(?s).*mariadb-11-4 \\[MISSING\\]: no result was uploaded.*")
-		},
+		name:        "a cell that produced no result fails the tier",
+		tier:        2,
+		results:     []capmatrix.CellResult{passing("postgres-17")},
+		wantVerdict: capmatrix.Missing,
+		wantCount:   1,
+		wantErr:     "(?s).*mariadb-11-4 \\[MISSING\\]: no result was uploaded.*",
 	}, {
-		name:    "no results at all fails the tier",
-		tier:    2,
-		results: nil,
-		assert: func(c *qt.C, aggregate capmatrix.Aggregate) {
-			c.Assert(aggregate.Count(capmatrix.Missing), qt.Equals, 2)
-			c.Assert(aggregate.Err(), qt.ErrorMatches, "(?s).*postgres-17 \\[MISSING\\].*mariadb-11-4 \\[MISSING\\].*")
-		},
+		name:        "no results at all fails the tier",
+		tier:        2,
+		results:     nil,
+		wantVerdict: capmatrix.Missing,
+		wantCount:   2,
+		wantErr:     "(?s).*postgres-17 \\[MISSING\\].*mariadb-11-4 \\[MISSING\\].*",
 	}, {
 		name: "a capability disagreement fails the tier and names the row",
 		tier: 2,
@@ -105,10 +105,9 @@ func TestAggregate_FailurePath(t *testing.T) {
 			Cell: "mariadb-11-4", Tier: 2,
 			Probe: capmatrix.ProbeOutcome{Mismatches: []string{"advisory_locks: preset says true, server does false [DISAGREES]"}},
 		}},
-		assert: func(c *qt.C, aggregate capmatrix.Aggregate) {
-			c.Assert(aggregate.Count(capmatrix.CapabilityDisagreement), qt.Equals, 1)
-			c.Assert(aggregate.Err(), qt.ErrorMatches, "(?s).*mariadb-11-4 \\[CAPABILITY\\]: advisory_locks: preset says true.*")
-		},
+		wantVerdict: capmatrix.CapabilityDisagreement,
+		wantCount:   1,
+		wantErr:     "(?s).*mariadb-11-4 \\[CAPABILITY\\]: advisory_locks: preset says true.*",
 	}, {
 		name: "a suite failure under an agreeing preset is attributed to the suite",
 		tier: 3,
@@ -117,10 +116,9 @@ func TestAggregate_FailurePath(t *testing.T) {
 			Probe: capmatrix.ProbeOutcome{OK: true, Decided: 25, Floor: 25},
 			Suite: &capmatrix.SuiteOutcome{ExitCode: 1, Total: 40, Failed: 2, Error: "the integration suite exited 1 with 2 failures out of 40 tests"},
 		}},
-		assert: func(c *qt.C, aggregate capmatrix.Aggregate) {
-			c.Assert(aggregate.Count(capmatrix.SuiteFailure), qt.Equals, 1)
-			c.Assert(aggregate.Err(), qt.ErrorMatches, "(?s).*mariadb-11-4 \\[SUITE\\]: the integration suite exited 1.*")
-		},
+		wantVerdict: capmatrix.SuiteFailure,
+		wantCount:   1,
+		wantErr:     "(?s).*mariadb-11-4 \\[SUITE\\]: the integration suite exited 1.*",
 	}, {
 		name: "a result written for another tier fails the requested tier",
 		tier: 3,
@@ -131,23 +129,27 @@ func TestAggregate_FailurePath(t *testing.T) {
 				Probe: capmatrix.ProbeOutcome{OK: true}, Suite: &capmatrix.SuiteOutcome{OK: true},
 			},
 		},
-		assert: func(c *qt.C, aggregate capmatrix.Aggregate) {
-			c.Assert(aggregate.Count(capmatrix.Missing), qt.Equals, 1)
-			c.Assert(aggregate.Err(), qt.ErrorMatches,
-				"(?s).*postgres-17 \\[MISSING\\]: result reports tier 2; this aggregate requires tier 3.*")
-		},
+		wantVerdict: capmatrix.Missing,
+		wantCount:   1,
+		wantErr:     "(?s).*postgres-17 \\[MISSING\\]: result reports tier 2; this aggregate requires tier 3.*",
 	}, {
+		// The declared cells all passed here, so the census is the control: the
+		// tier fails on the extra result alone, not on a cell it demoted.
 		name: "a result for a line the matrix does not declare is reported",
 		tier: 2,
 		results: []capmatrix.CellResult{
 			passing("postgres-17"), passing("mariadb-11-4"), passing("clickhouse-25-8"),
 		},
-		assert: func(c *qt.C, aggregate capmatrix.Aggregate) {
-			c.Assert(aggregate.Err(), qt.ErrorMatches, `(?s).*a result arrived for cell "clickhouse-25-8".*`)
-		},
+		wantVerdict: capmatrix.Passed,
+		wantCount:   2,
+		wantErr:     `(?s).*a result arrived for cell "clickhouse-25-8".*`,
 	}} {
-		c.Run(tc.name, func(c *qt.C) {
-			tc.assert(c, capmatrix.Aggregate{Tier: tc.tier, Matrix: twoCellMatrix(), Results: tc.results})
+		t.Run(tc.name, func(t *testing.T) {
+			c := qt.New(t)
+			aggregate := capmatrix.Aggregate{Tier: tc.tier, Matrix: twoCellMatrix(), Results: tc.results}
+
+			c.Assert(aggregate.Count(tc.wantVerdict), qt.Equals, tc.wantCount)
+			c.Assert(aggregate.Err(), qt.ErrorMatches, tc.wantErr)
 		})
 	}
 }
@@ -164,49 +166,46 @@ func TestAggregate_RefusesAMatrixThatWouldRunNothing(t *testing.T) {
 	c.Assert(aggregate.Verdicts(), qt.HasLen, 0)
 }
 
-// TestWriteAggregate_TierThreeDefersToTierTwo covers the attributability
+// disagreeingReport renders one tier's report over a matrix whose mariadb cell
+// disagreed on a capability and whose suite then failed underneath it -- the
+// state the deferral rule exists for.
+func disagreeingReport(tier int) string {
+	var out strings.Builder
+	capmatrix.WriteAggregate(&out, capmatrix.Aggregate{
+		Tier:   tier,
+		Matrix: twoCellMatrix(),
+		Results: []capmatrix.CellResult{passingAtTier("postgres-17", tier), {
+			Cell: "mariadb-11-4", Tier: tier,
+			Probe: capmatrix.ProbeOutcome{Mismatches: []string{"sequences: preset says false, server does true [DISAGREES]"}},
+			Suite: &capmatrix.SuiteOutcome{ExitCode: 1, Total: 40, Failed: 7},
+		}},
+	})
+	return out.String()
+}
+
+// TestWriteAggregate_TierThreeNamesTheTierTwoJob covers the attributability
 // requirement: a nightly capability failure has to send the reader to the row
 // that already says so instead of to eighteen suite logs.
-func TestWriteAggregate_TierThreeDefersToTierTwo(t *testing.T) {
+func TestWriteAggregate_TierThreeNamesTheTierTwoJob(t *testing.T) {
 	c := qt.New(t)
 
-	disagreeing := capmatrix.CellResult{
-		Cell: "mariadb-11-4", Tier: 3,
-		Probe: capmatrix.ProbeOutcome{Mismatches: []string{"sequences: preset says false, server does true [DISAGREES]"}},
-		Suite: &capmatrix.SuiteOutcome{ExitCode: 1, Total: 40, Failed: 7},
-	}
+	report := disagreeingReport(3)
 
-	for _, tc := range []struct {
-		name   string
-		tier   int
-		assert func(c *qt.C, report string)
-	}{{
-		name: "tier 3 names the tier 2 job",
-		tier: 3,
-		assert: func(c *qt.C, report string) {
-			c.Assert(report, qt.Contains, "the tier 2 job `mariadb-11-4`")
-			c.Assert(report, qt.Contains, "sequences: preset says false, server does true")
-		},
-	}, {
-		name: "tier 2 does not defer to itself",
-		tier: 2,
-		assert: func(c *qt.C, report string) {
-			c.Assert(report, qt.Not(qt.Contains), "the tier 2 job `mariadb-11-4`")
-			c.Assert(report, qt.Contains, "sequences: preset says false, server does true")
-		},
-	}} {
-		c.Run(tc.name, func(c *qt.C) {
-			tierDisagreement := disagreeing
-			tierDisagreement.Tier = tc.tier
-			var out strings.Builder
-			capmatrix.WriteAggregate(&out, capmatrix.Aggregate{
-				Tier:    tc.tier,
-				Matrix:  twoCellMatrix(),
-				Results: []capmatrix.CellResult{passingAtTier("postgres-17", tc.tier), tierDisagreement},
-			})
-			tc.assert(c, out.String())
-		})
-	}
+	c.Assert(report, qt.Contains, "the tier 2 job `mariadb-11-4`")
+	c.Assert(report, qt.Contains, "sequences: preset says false, server does true")
+}
+
+// TestWriteAggregate_TierTwoDoesNotDeferToItself is the other half of the same
+// rule, and the one that keeps the deferral from becoming an unconditional
+// line: tier 2 IS the job that says so, so pointing at it would send a reader
+// back to the report they are already reading.
+func TestWriteAggregate_TierTwoDoesNotDeferToItself(t *testing.T) {
+	c := qt.New(t)
+
+	report := disagreeingReport(2)
+
+	c.Assert(report, qt.Not(qt.Contains), "the tier 2 job `mariadb-11-4`")
+	c.Assert(report, qt.Contains, "sequences: preset says false, server does true")
 }
 
 // TestCellResult_Verdict pins the classification a tier 3 report attributes
@@ -245,7 +244,8 @@ func TestCellResult_Verdict(t *testing.T) {
 		result: capmatrix.CellResult{Probe: capmatrix.ProbeOutcome{OK: true}, Suite: &capmatrix.SuiteOutcome{}},
 		want:   capmatrix.SuiteFailure,
 	}} {
-		c.Run(tc.name, func(c *qt.C) {
+		t.Run(tc.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Assert(tc.result.Verdict(), qt.Equals, tc.want)
 		})
 	}

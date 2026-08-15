@@ -33,16 +33,17 @@ import (
 // Everything asserted below is otherwise observable — the files on disk and the
 // contents of the decoy directory.
 
-// openSkeletonProjectRoot confines the run to root.
-func openSkeletonProjectRoot(c *qt.C, root string) *pathguard.OpenedDirectory {
-	c.Helper()
-	opened, err := pathguard.OpenCLIDirectory(root)
-	c.Assert(err, qt.IsNil)
-	return opened
-}
+// noSkeletonProjectRoot is the direct-CLI shape: no project root is opened, so
+// the run is confined by nothing but the --dir the operator named.
+func noSkeletonProjectRoot(string) (*pathguard.OpenedDirectory, error) { return nil, nil }
 
-// noSkeletonProjectRoot is the direct-CLI shape.
-func noSkeletonProjectRoot(*qt.C, string) *pathguard.OpenedDirectory { return nil }
+// makeSkeletonDirs creates each path a row stages, relative to base.
+func makeSkeletonDirs(c *qt.C, base string, dirs []string) {
+	c.Helper()
+	for _, dir := range dirs {
+		c.Assert(os.MkdirAll(filepath.Join(base, dir), 0o755), qt.IsNil)
+	}
+}
 
 // closeOpenedRoot tolerates the nil handle noSkeletonProjectRoot returns.
 func closeOpenedRoot(opened *pathguard.OpenedDirectory) error {
@@ -81,55 +82,61 @@ func skeletonDirNames(c *qt.C, dir string) []string {
 func TestWriteSkeletonMigration_ReplacedDirectoryCannotRedirectTheWrite(t *testing.T) {
 	tests := []struct {
 		name string
-		// openRoot returns the project root the run is confined to, or nil for
-		// the direct-CLI shape where an explicit --dir is the operator's own
-		// choice of destination.
-		openRoot func(c *qt.C, root string) *pathguard.OpenedDirectory
-		stage    func(c *qt.C, root, decoy string) (selected, bound string)
-		swapTo   func(root, decoy string) (link, target string)
-		// wantDecoyEntries is what the row staged in the decoy before the run:
-		// nothing, except the ancestor row, which needs a migrations directory
-		// for the swapped symlink to resolve to at all.
+		// openRoot opens the project root the run is confined to, or answers a
+		// nil handle for the direct-CLI shape where an explicit --dir is the
+		// operator's own choice of destination.
+		openRoot func(root string) (*pathguard.OpenedDirectory, error)
+		// dirs and decoyDirs are the directories the row stages before the run,
+		// relative to the temporary root and to the decoy. Only the ancestor row
+		// stages anything in the decoy, and it does so because the swapped
+		// symlink has to resolve to a migrations directory at all.
+		dirs      []string
+		decoyDirs []string
+		// link is a symlink staged under the root, pointing at linkTarget; both
+		// are relative to the root, as are selected -- the --dir the run is
+		// given -- and bound, where the migration has to land.
+		link       string
+		linkTarget string
+		selected   string
+		bound      string
+		swapTo     func(root, decoy string) (link, target string)
+		// wantDecoyEntries is what the row staged in the decoy before the run,
+		// and therefore all the decoy may hold after it.
 		wantDecoyEntries int
 	}{
 		{
-			name:     "the migration directory symlink is swapped, under a project root",
-			openRoot: openSkeletonProjectRoot,
-			stage: func(c *qt.C, root, _ string) (string, string) {
-				bound := filepath.Join(root, "real")
-				c.Assert(os.MkdirAll(bound, 0o755), qt.IsNil)
-				link := filepath.Join(root, "migrations")
-				c.Assert(os.Symlink(bound, link), qt.IsNil)
-				return link, bound
-			},
+			name:       "the migration directory symlink is swapped, under a project root",
+			openRoot:   pathguard.OpenCLIDirectory,
+			dirs:       []string{"real"},
+			link:       "migrations",
+			linkTarget: "real",
+			selected:   "migrations",
+			bound:      "real",
 			swapTo: func(root, decoy string) (string, string) {
 				return filepath.Join(root, "migrations"), decoy
 			},
 		},
 		{
-			name:     "the migration directory symlink is swapped, with no project root",
-			openRoot: noSkeletonProjectRoot,
-			stage: func(c *qt.C, root, _ string) (string, string) {
-				bound := filepath.Join(root, "real")
-				c.Assert(os.MkdirAll(bound, 0o755), qt.IsNil)
-				link := filepath.Join(root, "migrations")
-				c.Assert(os.Symlink(bound, link), qt.IsNil)
-				return link, bound
-			},
+			name:       "the migration directory symlink is swapped, with no project root",
+			openRoot:   noSkeletonProjectRoot,
+			dirs:       []string{"real"},
+			link:       "migrations",
+			linkTarget: "real",
+			selected:   "migrations",
+			bound:      "real",
 			swapTo: func(root, decoy string) (string, string) {
 				return filepath.Join(root, "migrations"), decoy
 			},
 		},
 		{
-			name:     "an ancestor symlink is swapped",
-			openRoot: openSkeletonProjectRoot,
-			stage: func(c *qt.C, root, decoy string) (string, string) {
-				bound := filepath.Join(root, "realnest", "migrations")
-				c.Assert(os.MkdirAll(bound, 0o755), qt.IsNil)
-				c.Assert(os.MkdirAll(filepath.Join(decoy, "migrations"), 0o755), qt.IsNil)
-				c.Assert(os.Symlink(filepath.Join(root, "realnest"), filepath.Join(root, "nest")), qt.IsNil)
-				return filepath.Join(root, "nest", "migrations"), bound
-			},
+			name:       "an ancestor symlink is swapped",
+			openRoot:   pathguard.OpenCLIDirectory,
+			dirs:       []string{"realnest/migrations"},
+			decoyDirs:  []string{"migrations"},
+			link:       "nest",
+			linkTarget: "realnest",
+			selected:   "nest/migrations",
+			bound:      "realnest/migrations",
 			swapTo: func(root, decoy string) (string, string) {
 				return filepath.Join(root, "nest"), decoy
 			},
@@ -142,22 +149,26 @@ func TestWriteSkeletonMigration_ReplacedDirectoryCannotRedirectTheWrite(t *testi
 			c := qt.New(t)
 			root := t.TempDir()
 			decoy := t.TempDir()
-			selected, bound := test.stage(c, root, decoy)
+			makeSkeletonDirs(c, root, test.dirs)
+			makeSkeletonDirs(c, decoy, test.decoyDirs)
+			c.Assert(os.Symlink(filepath.Join(root, test.linkTarget), filepath.Join(root, test.link)), qt.IsNil)
 
-			opened := test.openRoot(c, root)
+			opened, openErr := test.openRoot(root)
+			c.Assert(openErr, qt.IsNil)
 			defer func() { _ = closeOpenedRoot(opened) }()
 
 			link, target := test.swapTo(root, decoy)
 			afterSkeletonDirBound = func() { swapSkeletonSymlink(c, link, target) }
 			defer func() { afterSkeletonDirBound = nil }()
 
-			written, err := WriteSkeletonMigration(opened, selected, atlasmigrateimport.FormatGolangMigrate, "added")
+			written, err := WriteSkeletonMigration(
+				opened, filepath.Join(root, test.selected), atlasmigrateimport.FormatGolangMigrate, "added")
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(written, qt.HasLen, 2)
 			// The bound directory holds the pair plus atlas.sum, and the decoy
 			// holds nothing this run put there.
-			c.Assert(skeletonDirNames(c, bound), qt.HasLen, 3)
+			c.Assert(skeletonDirNames(c, filepath.Join(root, test.bound)), qt.HasLen, 3)
 			c.Assert(skeletonDirNames(c, decoy), qt.HasLen, test.wantDecoyEntries)
 		})
 	}

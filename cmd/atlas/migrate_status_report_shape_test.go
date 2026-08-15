@@ -27,22 +27,21 @@ import (
 const (
 	statusShapeVersionOne = "20240401000001"
 	statusShapeVersionTwo = "20240401000002"
+
+	// statusShapeSecondClean is a second migration that succeeds.
+	statusShapeSecondClean = "CREATE TABLE ss_two (id INTEGER PRIMARY KEY);\n"
+	// statusShapeSecondFailing repeats the first migration's CREATE as its
+	// SECOND statement, so an apply commits statement one and fails statement
+	// two, leaving a half-applied revision row behind: applied=1, total=2.
+	statusShapeSecondFailing = "CREATE TABLE ss_two (id INTEGER PRIMARY KEY);\n" +
+		"CREATE TABLE ss_one (id INTEGER PRIMARY KEY);\n"
 )
 
-// writeStatusShapeDir writes a hashed two-migration Atlas directory whose
-// bodies both succeed.
-func writeStatusShapeDir(c *qt.C, dir string) {
-	c.Helper()
-	writeStatusShapeFiles(c, dir, "CREATE TABLE ss_two (id INTEGER PRIMARY KEY);\n")
-}
-
-// writeStatusShapeDirtyDir writes the same directory with a second migration
-// whose SECOND statement fails, so an apply leaves a half-applied revision row
-// behind: applied=1, total=2.
+// writeStatusShapeDirtyDir writes the hashed two-migration Atlas directory whose
+// second migration fails halfway.
 func writeStatusShapeDirtyDir(c *qt.C, dir string) {
 	c.Helper()
-	writeStatusShapeFiles(c, dir,
-		"CREATE TABLE ss_two (id INTEGER PRIMARY KEY);\nCREATE TABLE ss_one (id INTEGER PRIMARY KEY);\n")
+	writeStatusShapeFiles(c, dir, statusShapeSecondFailing)
 }
 
 func writeStatusShapeFiles(c *qt.C, dir, second string) {
@@ -82,15 +81,26 @@ func writeStatusShapeFiles(c *qt.C, dir, second string) {
 //     `Error Statement:` / `Error:`.
 func TestCompatMigrateStatus_MirrorsTheAtlasReportShape(t *testing.T) {
 	tests := []struct {
-		name       string
-		writeDir   func(*qt.C, string)
-		seed       func(*qt.C, string, string)
-		wantStdout string
+		name string
+		// second is the body of the second migration file.
+		second string
+		// seeds are the compat invocations that put the database into the state
+		// this row's report describes, run before the status under test. An
+		// empty list is a database nothing has been applied to; --url and --dir
+		// are appended, because they name a directory only the run knows.
+		seeds [][]string
+		// wantSeedErr is the whole-string pattern a seeding invocation's error
+		// must match, empty for the seeds that must succeed. The half-applied
+		// row's apply is EXPECTED to fail, and that failure is what leaves the
+		// revision row saying applied=1 of 2 for the report to describe. It is
+		// matched loosely on purpose: the wording is Ptah's own migration error,
+		// which this file deliberately does not pin as a mirrored literal.
+		wantSeedErr string
+		wantStdout  string
 	}{
 		{
-			name:     "nothing applied",
-			writeDir: writeStatusShapeDir,
-			seed:     func(*qt.C, string, string) {},
+			name:   "nothing applied",
+			second: statusShapeSecondClean,
 			wantStdout: "Migration Status: PENDING\n" +
 				"  -- Current Version: No migration applied yet\n" +
 				"  -- Next Version:    " + statusShapeVersionOne + "\n" +
@@ -98,9 +108,9 @@ func TestCompatMigrateStatus_MirrorsTheAtlasReportShape(t *testing.T) {
 				"  -- Pending Files:   2\n",
 		},
 		{
-			name:     "one of two applied",
-			writeDir: writeStatusShapeDir,
-			seed:     seedStatusShapeBounded,
+			name:   "one of two applied",
+			second: statusShapeSecondClean,
+			seeds:  [][]string{{"migrate", "apply", "1"}},
 			wantStdout: "Migration Status: PENDING\n" +
 				"  -- Current Version: " + statusShapeVersionOne + "\n" +
 				"  -- Next Version:    " + statusShapeVersionTwo + "\n" +
@@ -108,9 +118,9 @@ func TestCompatMigrateStatus_MirrorsTheAtlasReportShape(t *testing.T) {
 				"  -- Pending Files:   1\n",
 		},
 		{
-			name:     "all applied",
-			writeDir: writeStatusShapeDir,
-			seed:     seedStatusShapeAll,
+			name:   "all applied",
+			second: statusShapeSecondClean,
+			seeds:  [][]string{{"migrate", "apply"}},
 			wantStdout: "Migration Status: OK\n" +
 				"  -- Current Version: " + statusShapeVersionTwo + "\n" +
 				"  -- Next Version:    Already at latest version\n" +
@@ -118,9 +128,13 @@ func TestCompatMigrateStatus_MirrorsTheAtlasReportShape(t *testing.T) {
 				"  -- Pending Files:   0\n",
 		},
 		{
-			name:     "half-applied second migration",
-			writeDir: writeStatusShapeDirtyDir,
-			seed:     seedStatusShapeFailing,
+			// --tx-mode none is what makes the first statement of the second
+			// migration commit, so the revision row records applied=1 of 2.
+			name:   "half-applied second migration",
+			second: statusShapeSecondFailing,
+			seeds:  [][]string{{"migrate", "apply", "--tx-mode", "none"}},
+			wantSeedErr: `(?s)error applying migrations: failed to apply migration ` +
+				statusShapeVersionTwo + `: .*table ss_one already exists.*`,
 			wantStdout: "Migration Status: PENDING\n" +
 				"  -- Current Version: " + statusShapeVersionTwo + " (1 statements applied)\n" +
 				"  -- Next Version:    " + statusShapeVersionTwo + " (1 statements left)\n" +
@@ -135,8 +149,14 @@ func TestCompatMigrateStatus_MirrorsTheAtlasReportShape(t *testing.T) {
 			root := c.TempDir()
 			dir := filepath.Join(root, "migrations")
 			dbPath := filepath.Join(root, "shape.db")
-			tt.writeDir(c, dir)
-			tt.seed(c, dir, dbPath)
+			writeStatusShapeFiles(c, dir, tt.second)
+			for _, seed := range tt.seeds {
+				args := append([]string{}, seed...)
+				args = append(args, "--url", "sqlite://"+dbPath, "--dir", "file://"+dir)
+				_, seedStderr, seedErr := runCompat(args...)
+				c.Assert(errorText(seedErr), qt.Matches, tt.wantSeedErr,
+					qt.Commentf("stderr:\n%s", seedStderr))
+			}
 
 			stdout, stderr, err := runCompat(
 				"migrate", "status",
@@ -191,26 +211,6 @@ func TestCompatMigrateStatus_HalfAppliedFailureBlock(t *testing.T) {
 	// a driver is still free to produce one and a parser keying on `  -- `
 	// would lose the tail of the message to a line with no prefix.
 	c.Assert(strings.Count(stdout, "\n"), qt.Equals, 9)
-}
-
-func seedStatusShapeBounded(c *qt.C, dir, dbPath string) {
-	c.Helper()
-	_, stderr, err := runCompat(
-		"migrate", "apply", "1",
-		"--url", "sqlite://"+dbPath,
-		"--dir", "file://"+dir,
-	)
-	c.Assert(err, qt.IsNil, qt.Commentf("stderr:\n%s", stderr))
-}
-
-func seedStatusShapeAll(c *qt.C, dir, dbPath string) {
-	c.Helper()
-	_, stderr, err := runCompat(
-		"migrate", "apply",
-		"--url", "sqlite://"+dbPath,
-		"--dir", "file://"+dir,
-	)
-	c.Assert(err, qt.IsNil, qt.Commentf("stderr:\n%s", stderr))
 }
 
 // seedStatusShapeFailing runs the apply that is EXPECTED to fail, under
