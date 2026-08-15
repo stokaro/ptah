@@ -398,3 +398,69 @@ func TestSchemaTestCommand_SchemaSelectionAppliesToADatabaseSource(t *testing.T)
 		})
 	}
 }
+
+// TestSchemaTestCommand_VarReachesAnHCLSchema pins the gap stokaro/ptah#1533
+// records, at the surface the issue measured it on.
+//
+// The desired schema declares a variable and uses it as a column default. Until
+// schemaload could carry variable values, the file was read with its declared
+// default whatever the caller passed, so a suite ran green or red against a
+// schema the operator did not describe -- the worst shape for a test command to
+// be wrong in, because the run still reports a verdict.
+func TestSchemaTestCommand_VarReachesAnHCLSchema(t *testing.T) {
+	tests := []struct {
+		name       string
+		args       []string
+		wantScalar string
+	}{
+		{name: "a value supplied on the command line", args: []string{"--var", "tenant=acme"}, wantScalar: "acme"},
+		{name: "no value falls back to the declared default", args: nil, wantScalar: "fallback"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			dir := t.TempDir()
+			testsDir := t.TempDir()
+			schemaPath := filepath.Join(dir, "s.hcl")
+			c.Assert(os.WriteFile(schemaPath, []byte(`variable "tenant" {
+  type    = string
+  default = "fallback"
+}
+
+schema "main" {
+}
+
+table "users" {
+  schema = schema.main
+  column "id" {
+    type = int
+  }
+  column "tenant" {
+    type    = text
+    default = var.tenant
+  }
+  primary_key {
+    columns = [column.id]
+  }
+}
+`), 0o600), qt.IsNil)
+			c.Assert(os.WriteFile(filepath.Join(testsDir, "tenant.yaml"), []byte(
+				"cases:\n"+
+					"  - name: the column default came from the variable\n"+
+					"    steps:\n"+
+					"      - name: insert\n"+
+					"        exec: INSERT INTO users (id) VALUES (1)\n"+
+					"      - name: read it back\n"+
+					"        assert:\n"+
+					"          query: SELECT tenant FROM users\n"+
+					"          scalar: \""+test.wantScalar+"\"\n"), 0o600), qt.IsNil)
+
+			args := append([]string{"--dir", testsDir, "--root-dir", schemaPath}, test.args...)
+			out, err := runSchemaTestCommand(args...)
+
+			c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+			c.Assert(out, qt.Contains, "1 cases, 1 passed, 0 failed")
+		})
+	}
+}
