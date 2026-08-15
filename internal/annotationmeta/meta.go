@@ -534,7 +534,7 @@ var directives = []Directive{
 		Attributes: []Attribute{
 			attr("name", "Materialized view name.", valueString, true, false),
 			attr("body", "Materialized view SELECT body.", valueSQL, true, false),
-			attr("refresh_strategy", "Refresh strategy; defaults to manual.", valueString, false, false),
+			attr("refresh_strategy", "Ptah-managed refresh strategy; only manual is currently supported.", valueString, false, false),
 			attr("comment", "Materialized view comment.", valueString, false, false),
 		},
 	},

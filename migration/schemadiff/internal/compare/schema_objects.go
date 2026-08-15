@@ -9,6 +9,7 @@ import (
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/matviewrefresh"
 	"go.5x5.cz/ptah/internal/mysqlroutine"
 	"go.5x5.cz/ptah/internal/tableref"
 	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
@@ -783,6 +784,12 @@ func MaterializedViewDefinitions(genView goschema.MaterializedView, dbView types
 // added is stripped before the two are compared. Without it a no-op comparison
 // reported a body change and the planner answered with a drop and a create,
 // which on ClickHouse destroys the accumulated rows of a view nobody changed.
+//
+// RefreshStrategy is not catalog state. The error-returning comparison entry
+// point validates the desired strategy before calling this comparator. The
+// low-level, no-error comparator still records a mismatch as drift, so an
+// unsupported declaration cannot be reported as synchronized merely because a
+// reader defaults the field to manual.
 func MaterializedViewDefinitionsWithDialect(
 	genView goschema.MaterializedView,
 	dbView types.DBMatView,
@@ -795,6 +802,11 @@ func MaterializedViewDefinitionsWithDialect(
 
 	if !schemaObjectBodiesEqual(genView.Body, dbView.Body, dialect, dbView.Schema) {
 		viewDiff.Changes["body"] = fmt.Sprintf("%s -> %s", strings.TrimSpace(dbView.Body), strings.TrimSpace(genView.Body))
+	}
+	generatedStrategy := matviewrefresh.Canonical(genView.RefreshStrategy)
+	databaseStrategy := matviewrefresh.Canonical(dbView.RefreshStrategy)
+	if generatedStrategy != databaseStrategy {
+		viewDiff.Changes["refresh_strategy"] = fmt.Sprintf("%s -> %s", databaseStrategy, generatedStrategy)
 	}
 
 	return viewDiff

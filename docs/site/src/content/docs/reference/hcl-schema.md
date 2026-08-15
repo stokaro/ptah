@@ -96,7 +96,7 @@ for the message and the flag it names.
 | `role` | PostgreSQL role attributes, including `password`. |
 | `permission` | PostgreSQL table, schema, and sequence permissions. |
 | `function` | PostgreSQL metadata and raw body, with Atlas-style `arg` blocks or a Ptah raw `params` string. |
-| `view` / `materialized` | SQL body plus schema and comments; `materialized` also supports `refresh_strategy`. |
+| `view` / `materialized` | SQL body plus schema and comments; `materialized` also parses `refresh_strategy`. |
 | `trigger` | Trigger timing, target, execution mode, function body, and comments. |
 | `policy` | PostgreSQL RLS policy fields. |
 | `sequence` | PostgreSQL `type`, `start`, `increment`, `min_value`, `max_value`, `cache`, `cycle`, `owned_by`, and `if_not_exists`. |
@@ -104,6 +104,13 @@ for the message and the flag it names.
 | `composite` | PostgreSQL composite type with ordered `field` sub-blocks. |
 | `range` | PostgreSQL `subtype`, `subtype_opclass`, `collation`, `canonical`, and `subtype_diff`. |
 | `data` | Ptah managed-data declaration with a table reference, key columns, and a file path relative to the HCL file. |
+
+`refresh_strategy` defaults to `manual`, which means Ptah emits no separate
+refresh operation. It is the only currently supported value. After a target
+dialect is selected, another value is refused before rendering or comparison;
+the error names the dialect, materialized view, and value. The HCL codec keeps
+the attribute so target validation can diagnose it instead of silently
+dismissing it.
 
 Every `schema "pg_catalog" {}` or `schema "information_schema" {}` block is an
 explicit schema declaration, even when an extension also refers to it, and is

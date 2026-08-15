@@ -96,7 +96,7 @@ view "active_users" {
 materialized "user_stats" {
   schema           = schema.public
   as               = "SELECT count(*) FROM users"
-  refresh_strategy = "concurrently"
+  refresh_strategy = "manual"
 }
 
 trigger "users_set_updated_at" {

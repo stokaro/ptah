@@ -278,7 +278,7 @@ seven of them as open capabilities regardless.
 | Standalone sequences | 🟡 | ❌ | ✅ | PostgreSQL, CockroachDB and YugabyteDB emit CREATE SEQUENCE. MySQL, MariaDB, ClickHouse and Spanner name it as skipped; SQLite and SQL Server still drop it silently. |
 | TiDB and LibSQL | ❌ | ✅ | ✅ | Both names fail dialect normalization: "unsupported database dialect: tidb" / "...: libsql". No renderer, planner or driver entry. |
 | Triggers | 🟡 | ❌ | ✅ | Every accepted spelling of an engine renders the same trigger DDL; Spanner names it skipped. MySQL/MariaDB refuse FOR EACH STATEMENT and SQL Server refuses BEFORE instead of downgrading it. |
-| Views and materialized views | 🟡 | ❌ | ✅ | Plain views render and plan on every dialect. Materialized views render on PostgreSQL, CockroachDB and YugabyteDB; other targets refuse or name them. |
+| Views and materialized views | 🟡 | ❌ | ✅ | Plain views work on every dialect. Materialized views render on PostgreSQL, CockroachDB, YugabyteDB, and ClickHouse. Only manual refresh is supported; other targets or strategies fail closed. |
 | YugabyteDB (yugabytedb, ysql) | 🟡 | ❌ | ✅ | Roles, grants, RLS, sequences, domains, views, matviews, functions, triggers and CREATE INDEX CONCURRENTLY are enabled. Only DROP INDEX CONCURRENTLY is gated off on measured 2026.1. |
 
 ## Go embedding and developer tooling

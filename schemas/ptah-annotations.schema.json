@@ -743,7 +743,7 @@
               "type": "string"
             },
             "refresh_strategy": {
-              "description": "Refresh strategy; defaults to manual.",
+              "description": "Ptah-managed refresh strategy; only manual is currently supported.",
               "type": "string"
             }
           },

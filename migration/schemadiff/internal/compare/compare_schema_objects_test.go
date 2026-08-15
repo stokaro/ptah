@@ -162,10 +162,10 @@ func TestMaterializedViews_DetectsBodyChange(t *testing.T) {
 
 	c.Assert(diff.MaterializedViewsModified, qt.HasLen, 1)
 	c.Assert(diff.MaterializedViewsModified[0].Changes["body"], qt.Not(qt.Equals), "")
-	c.Assert(diff.MaterializedViewsModified[0].Changes["refresh_strategy"], qt.Equals, "")
+	c.Assert(diff.MaterializedViewsModified[0].Changes["refresh_strategy"], qt.Equals, "manual -> concurrently")
 }
 
-func TestMaterializedViews_IgnoresRefreshStrategyDrift(t *testing.T) {
+func TestMaterializedViews_ReportsUnvalidatedRefreshStrategyDrift(t *testing.T) {
 	c := qt.New(t)
 	diff := &difftypes.SchemaDiff{}
 
@@ -183,7 +183,8 @@ func TestMaterializedViews_IgnoresRefreshStrategyDrift(t *testing.T) {
 		}},
 	}, diff)
 
-	c.Assert(diff.MaterializedViewsModified, qt.HasLen, 0)
+	c.Assert(diff.MaterializedViewsModified, qt.HasLen, 1)
+	c.Assert(diff.MaterializedViewsModified[0].Changes["refresh_strategy"], qt.Equals, "manual -> concurrently")
 }
 
 func TestMaterializedViews_IgnoresPostgreSQLDefaultAggregateAlias(t *testing.T) {
