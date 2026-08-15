@@ -185,7 +185,7 @@ func TestWriterDropDatabaseRealm_LiveRejectsMissingTriggerPrivilege(t *testing.T
 	})
 	grantMySQLWriterLivePrivilegesWithoutTrigger(c.TB, adminDB, username)
 
-	config, err := mysqldriver.ParseDSN(dbtarget.URL(c, dbtarget.MySQLAdmin))
+	config, err := mysqldriver.ParseDSN(dbtarget.DriverDSN(c, dbtarget.MySQLAdmin))
 	c.Assert(err, qt.IsNil)
 	config.User = username
 	config.Passwd = password
@@ -216,7 +216,7 @@ func TestWriterDropDatabaseRealm_LiveRejectsMissingTriggerPrivilege(t *testing.T
 func openMySQLWriterLiveDatabase(tb testing.TB, engine dbtarget.Engine) *sql.DB {
 	c := qt.New(tb)
 	c.Helper()
-	db, err := sql.Open("mysql", dbtarget.URL(c, engine))
+	db, err := sql.Open("mysql", dbtarget.DriverDSN(c, engine))
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.PingContext(c.Context()), qt.IsNil)
 	return db

@@ -60,7 +60,7 @@ type source struct {
 var sources = map[Engine]source{
 	PostgreSQL: {
 		canonical: "POSTGRES_TEST_DSN",
-		synonyms:  []string{"POSTGRES_URL", "TEST_DATABASE_URL"},
+		synonyms:  []string{"POSTGRES_URL", "POSTGRES_TEST_URL", "TEST_DATABASE_URL"},
 		scheme:    []string{"postgres", "postgresql"},
 	},
 	MySQL: {
@@ -197,6 +197,75 @@ func engineName(engine Engine) string {
 		return "YugabyteDB"
 	}
 	return engine.String()
+}
+
+// DriverDSN returns the address in the form a raw database/sql driver parses,
+// and skips the test when none is configured.
+//
+// It exists because two different consumers want two different strings for the
+// same server. Ptah connects through a URL carrying the engine's scheme, and
+// that is what URL answers with. go-sql-driver/mysql reads a mysql:// prefix
+// as part of the username, and pgx does not parse cockroachdb:// at all, so a
+// test opening the driver directly needs the scheme gone.
+//
+// The DSN spelling of a variable is preferred when one is set, because that is
+// a value someone wrote in driver form deliberately. Otherwise the scheme is
+// removed from the URL form, which is exactly the transformation the two
+// spellings differ by.
+func DriverDSN(tb testing.TB, engine Engine) string {
+	tb.Helper()
+
+	address, err := LookupDriverDSN(engine)
+	if err != nil {
+		tb.Fatalf("dbtarget: %v", err)
+	}
+	if address == "" {
+		tb.Skipf("dbtarget: set %s to run this test against a live %s", engine, engineName(engine))
+	}
+	return address
+}
+
+// LookupDriverDSN returns the driver-form address, or the empty string when
+// none is configured.
+func LookupDriverDSN(engine Engine) (string, error) {
+	src, ok := sources[engine]
+	if !ok {
+		return "", fmt.Errorf("unknown engine %d", int(engine))
+	}
+
+	// A variable whose name ends in _DSN holds a value someone wrote for the
+	// driver. Prefer it over deriving one.
+	for _, name := range append([]string{src.canonical}, src.synonyms...) {
+		if !strings.HasSuffix(name, "_DSN") {
+			continue
+		}
+		if value := strings.TrimSpace(os.Getenv(name)); value != "" {
+			return value, nil
+		}
+	}
+
+	address, err := Lookup(engine)
+	if err != nil || address == "" {
+		return "", err
+	}
+	return stripScheme(address), nil
+}
+
+// stripScheme removes a URL scheme, leaving what a raw driver parses.
+//
+// A value with no scheme is already in driver form and is returned unchanged;
+// PostgreSQL is left alone whatever its scheme, because pgx parses postgres://
+// and postgresql:// and stripping either would break it.
+func stripScheme(address string) string {
+	scheme, rest, found := strings.Cut(address, "://")
+	if !found {
+		return address
+	}
+	switch scheme {
+	case "postgres", "postgresql":
+		return address
+	}
+	return rest
 }
 
 // Engines returns every engine this package knows, in declaration order, so a

@@ -135,6 +135,75 @@ func TestEnginesDeclareDistinctCanonicalVariables(t *testing.T) {
 	}
 }
 
+// A raw database/sql driver needs a different string from the one ptah
+// connects with: go-sql-driver/mysql reads a mysql:// prefix as part of the
+// username, and pgx does not parse cockroachdb:// at all.
+func TestLookupDriverDSN_HappyPath(t *testing.T) {
+	tests := []struct {
+		name   string
+		engine dbtarget.Engine
+		set    func(t *testing.T)
+		want   string
+	}{
+		{
+			name:   "the DSN spelling is preferred when one is set",
+			engine: dbtarget.MySQL,
+			set: func(t *testing.T) {
+				t.Setenv("MYSQL_TEST_URL", "mysql://user:pass@tcp(127.0.0.1:3306)/db")
+				t.Setenv("MYSQL_TEST_DSN", "user:pass@tcp(127.0.0.1:3306)/db")
+			},
+			want: "user:pass@tcp(127.0.0.1:3306)/db",
+		},
+		{
+			name:   "the scheme is removed when only a URL is set",
+			engine: dbtarget.MySQL,
+			set:    func(t *testing.T) { t.Setenv("MYSQL_TEST_URL", "mysql://user:pass@tcp(127.0.0.1:3306)/db") },
+			want:   "user:pass@tcp(127.0.0.1:3306)/db",
+		},
+		{
+			name:   "a value already in driver form is unchanged",
+			engine: dbtarget.MariaDB,
+			set:    func(t *testing.T) { t.Setenv("MARIADB_TEST_URL", "user:pass@tcp(127.0.0.1:3307)/db") },
+			want:   "user:pass@tcp(127.0.0.1:3307)/db",
+		},
+		{
+			name:   "a distributed SQL scheme is removed for pgx",
+			engine: dbtarget.CockroachDB,
+			set:    func(t *testing.T) { t.Setenv("COCKROACHDB_URL", "cockroachdb://root@localhost:26257/db") },
+			want:   "root@localhost:26257/db",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			clearAll(t)
+			test.set(t)
+
+			got, err := dbtarget.LookupDriverDSN(test.engine)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(got, qt.Equals, test.want)
+		})
+	}
+}
+
+// PostgreSQL is left alone: pgx parses both spellings of its scheme, and
+// stripping either would hand it a string it cannot open.
+func TestLookupDriverDSN_KeepsThePostgresScheme(t *testing.T) {
+	c := qt.New(t)
+	clearAll(t)
+	// POSTGRES_URL rather than POSTGRES_TEST_DSN: a name ending in _DSN is
+	// returned verbatim before the scheme is ever looked at, so setting that
+	// one would test the preference and not the stripping.
+	t.Setenv("POSTGRES_URL", "postgres://user@localhost/db")
+
+	got, err := dbtarget.LookupDriverDSN(dbtarget.PostgreSQL)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(got, qt.Equals, "postgres://user@localhost/db")
+}
+
 // clearAll unsets every variable the package reads, so one test's environment
 // cannot answer another's lookup.
 func clearAll(t *testing.T) {

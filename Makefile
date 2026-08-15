@@ -199,8 +199,6 @@ lint-qtlint-fix:
 		go tool qtlint -multi-module $$rule -fix -tags integration ./... || exit 1; \
 	done
 
-	done
-
 lint-fix:
 	@echo "Running auto-fixable linters..."
 	$(MAKE) lint-qtlint-fix
