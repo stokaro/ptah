@@ -11,6 +11,7 @@ import (
 	"go.5x5.cz/ptah/core/sqlutil"
 	"go.5x5.cz/ptah/internal/lexer"
 	"go.5x5.cz/ptah/internal/parser"
+	"go.5x5.cz/ptah/internal/servertarget"
 )
 
 const (
@@ -107,7 +108,7 @@ func effectiveCapabilities(opts Options) (capability.Capabilities, error) {
 	if opts.Capabilities != nil {
 		return opts.Capabilities, nil
 	}
-	target, err := ResolveTargetVersion(opts.Dialect, opts.Version)
+	target, err := servertarget.Resolve(opts.Dialect, opts.Version)
 	if err != nil {
 		return nil, err
 	}

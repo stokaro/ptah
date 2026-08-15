@@ -266,6 +266,54 @@ exits 0.
 
 See [SQLite](../../databases/sqlite/) for the whole picture.
 
+**`PTAH_SQLITE_ALLOW_UNREGISTERED_VIRTUAL_MODULE`** — by default, a comparison
+whose database side holds a virtual table using a module this build does not
+register is refused before anything is compared, naming the table, the module,
+and the modules this build does register. SQLite marks a module's shadow tables
+as `shadow` only while the module is loaded, so without it that module's private
+storage is described as ordinary user tables — and a desired state that does not
+name them reads as a request to drop them. Measured on `fts3` and `fts4`:
+excluding the virtual table left the storage in the comparison and
+`ptah schema apply` dropped all of it at exit 0, after which `MATCH` answered
+`SQL logic error`. The `fts5` control, whose module this build does register,
+reported a synced schema and changed nothing.
+
+- Set it to `1` and the comparison proceeds against the module's storage as the
+  ordinary tables it appears to be, accepting those drops. This is what Ptah did
+  before the refusal existed.
+- Excluding the virtual table is **not** an escape here and is not suggested:
+  the tables at risk are the module's own storage, not the table an operator
+  would name, and Ptah cannot list them without the module.
+- It is separate from `PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP`, which permits
+  dropping a virtual table Ptah can see. Neither implies the other.
+- Adding such a table has no opt-in. A plan carrying
+  `CREATE VIRTUAL TABLE ... USING fts4` fails on this build with
+  `no such module: fts4`, and no value of a variable makes a module exist. This
+  fires only where that statement would actually be planned — virtual on the
+  desired side, absent from the database — so two databases that both already
+  hold the same `fts4` index compare normally under the opt-in.
+- A read is never refused. `ptah db read` and `schema inspect` print a note
+  naming the table and module, and leave standard output and the exit code
+  alone.
+- A project that skips table drops is not asked for it. With
+  `diff { skip { drop_table = true } }` in the project file — or
+  `diff.skip: [drop_table]` in `ptah.yaml` — every table drop and the dependent
+  removals it carries are deleted from the diff before any SQL is rendered, so
+  the refusal, which is a claim about a `DROP TABLE`, does not fire. What still
+  fires is a rebuild: a desired state that NAMES one of the module's storage
+  tables and describes it differently is refused under the policy too, because
+  `skip drop_table` filters removals rather than modifications and SQLite
+  converges a modification by dropping and recreating the table.
+- A change SQLite can make in place is not asked for it either. A table whose
+  only change is a column the desired state adds is planned as
+  `ALTER TABLE ... ADD COLUMN`, which drops and rebuilds nothing, so a narrowed
+  comparison such as `--include users` against a database holding an `fts4`
+  index runs at exit 0 and prints that one statement. Remove or change a column
+  on the same table, or change a constraint, and it is a rebuild again and
+  refused again.
+
+See [SQLite](../../databases/sqlite/) for the whole picture.
+
 **`PTAH_ALLOW_EXTERNAL_SCHEMA`** — by default, `atlas.hcl`
 `data "external_schema"` is not evaluated, because it runs a
 repository-controlled program. Set it to `1` and the data source is evaluated,

@@ -51,6 +51,7 @@ import (
 	"go.5x5.cz/ptah/core/renderer/internal/dialects/mariadb"
 	"go.5x5.cz/ptah/core/renderer/internal/dialects/mssql"
 	"go.5x5.cz/ptah/core/renderer/internal/dialects/mysql"
+	"go.5x5.cz/ptah/core/renderer/internal/dialects/mysqllike"
 	"go.5x5.cz/ptah/core/renderer/internal/dialects/postgres"
 	"go.5x5.cz/ptah/core/renderer/internal/dialects/sqlite"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
@@ -956,6 +957,9 @@ func validateDatabaseDeclarations(
 			Err:     err,
 			Message: err.Error(),
 		}
+	}
+	if err := mysqllike.ValidateDeclaredRoles(dialect, database.Roles); err != nil {
+		return err
 	}
 	if err := validateRoutineIdentityCollisions(dialect, database.Functions); err != nil {
 		return err

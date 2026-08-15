@@ -10,7 +10,6 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/internal/envbool/envbooltest"
 )
 
 func Test_parseAtlasFileTxMode_HappyPath(t *testing.T) {
@@ -325,9 +324,9 @@ func Test_parseMigrationFileTxMode_CoexistenceFailurePath(t *testing.T) {
 //
 // The line can only sit below executable SQL -- a string literal is executable
 // SQL, and a marker inside one has to follow the statement that opens it. Under
-// the default header rule it is therefore inert on every dialect, which is the
-// stronger property and the one asserted first. The dialect still decides under
-// the scope opt-in, and for ordered checks, which are file-wide by design.
+// the header rule it is therefore inert on every dialect, which is the stronger
+// property and the one asserted first. The dialect still decides for ordered
+// checks, which are file-wide by design.
 func dialectAmbiguousMarker(body string) string {
 	return "SELECT 'prefix \\'\n-- +ptah " + body + "\nsuffix';\n"
 }
@@ -340,7 +339,6 @@ func dialectAmbiguousMarker(body string) string {
 // the next test is refused. Both are reported.
 func TestWellFormedDirectiveBelowTheStatementIsInertOnEveryDialect(t *testing.T) {
 	c := qt.New(t)
-	envbooltest.Unset(directivesAnywhereEnvVar)(t)
 	wellFormed := dialectAmbiguousMarker("no_transaction")
 
 	loaded, err := migrationFuncFromSQLStringWithMetadata("1_ambiguous.sql", wellFormed, statementExecutionHooks{})
@@ -360,8 +358,8 @@ func TestWellFormedDirectiveBelowTheStatementIsInertOnEveryDialect(t *testing.T)
 
 	// It is a directive a reader would recognize, so it is reported rather than
 	// dropped -- but only on the dialect that sees it outside a string.
-	c.Check(misplacedDirectives(wellFormed, platform.Postgres, directiveScopeHeader), qt.HasLen, 1)
-	c.Check(misplacedDirectives(wellFormed, platform.MySQL, directiveScopeHeader), qt.HasLen, 0)
+	c.Check(misplacedDirectives(wellFormed, platform.Postgres), qt.HasLen, 1)
+	c.Check(misplacedDirectives(wellFormed, platform.MySQL), qt.HasLen, 0)
 }
 
 // TestMigrationTxModeParsingDefersDialectSpecificStringsToTarget is the
@@ -373,7 +371,6 @@ func TestWellFormedDirectiveBelowTheStatementIsInertOnEveryDialect(t *testing.T)
 // is why load time defers rather than refuses.
 func TestMigrationTxModeParsingDefersDialectSpecificStringsToTarget(t *testing.T) {
 	c := qt.New(t)
-	envbooltest.Unset(directivesAnywhereEnvVar)(t)
 	invalidForPostgres := dialectAmbiguousMarker("no_transaction=maybe")
 
 	loaded, err := migrationFuncFromSQLStringWithMetadata("1_ambiguous.sql", invalidForPostgres, statementExecutionHooks{})
@@ -397,9 +394,8 @@ func TestMigrationTxModeParsingDefersDialectSpecificStringsToTarget(t *testing.T
 	c.Assert(parsed.TxMode, qt.Equals, MigrationFileTxModeUnspecified)
 }
 
-func TestMigrationTxModeParsingUsesTargetDialectForActualMarker(t *testing.T) {
+func TestMigrationTxModeParsingKeepsMisplacedMarkerInertForTargetDialect(t *testing.T) {
 	c := qt.New(t)
-	envbooltest.Set(directivesAnywhereEnvVar, "1")(t)
 	markerForPostgres := dialectAmbiguousMarker("no_transaction")
 	migration := CreateMigrationFromSQL(1, "target-aware", markerForPostgres, markerForPostgres)
 
@@ -408,14 +404,13 @@ func TestMigrationTxModeParsingUsesTargetDialectForActualMarker(t *testing.T) {
 	c.Assert(mysqlMode.mode, qt.Equals, MigrationFileTxModeUnspecified)
 	postgresMode := migration.parsedUpTxModeForDialect(platform.Postgres)
 	c.Assert(postgresMode.err, qt.IsNil)
-	c.Assert(postgresMode.mode, qt.Equals, MigrationFileTxModeNone)
-	c.Assert(postgresMode.source, qt.Equals, migrationFileTxModeSourcePtah)
+	c.Assert(postgresMode.mode, qt.Equals, MigrationFileTxModeUnspecified)
 	mysqlDownMode := migration.parsedDownTxModeForDialect(platform.MySQL)
 	c.Assert(mysqlDownMode.err, qt.IsNil)
 	c.Assert(mysqlDownMode.mode, qt.Equals, MigrationFileTxModeUnspecified)
 	postgresDownMode := migration.parsedDownTxModeForDialect(platform.Postgres)
 	c.Assert(postgresDownMode.err, qt.IsNil)
-	c.Assert(postgresDownMode.mode, qt.Equals, MigrationFileTxModeNone)
+	c.Assert(postgresDownMode.mode, qt.Equals, MigrationFileTxModeUnspecified)
 
 	migration.UpTxMode = MigrationFileTxModeFile
 	migration.DownTxMode = MigrationFileTxModeFile

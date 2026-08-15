@@ -5,9 +5,10 @@ import (
 	"iter"
 	"slices"
 	"strings"
+	"unicode"
 
 	"go.5x5.cz/ptah/internal/dialectlexer"
-	"go.5x5.cz/ptah/internal/envbool"
+	"go.5x5.cz/ptah/internal/lexer"
 	"go.5x5.cz/ptah/internal/ptahdirective"
 )
 
@@ -45,62 +46,10 @@ import (
 // [atlasDirectiveHeaderLength] describes -- because compatibility pins it there
 // and because a directive Atlas would not honor must not be honored here.
 
-// directivesAnywhereEnvVar restores the scope the merged `-- +ptah` directive
-// map had before the position rule was unified: significant anywhere in the
-// file, including below the statements it governs.
-//
-// It exists because that scope is behavior this tree shipped, and narrowing it
-// silently would break a directory that works today. It restores exactly what
-// was there and nothing more, so the timeout keys stay header-scoped under it:
-// they were never file-wide, and widening them here would be adding a
-// capability behind a variable whose job is to keep an old one.
-//
-// The variable does NOT touch the `atlas:` spelling, which stays exactly what
-// the pinned community binary does in every mode -- an operator restoring their
-// own directive convention must not also move ptah-compat off Atlas parity.
-const directivesAnywhereEnvVar = "PTAH_DIRECTIVES_ANYWHERE"
-
-// directivesAnywhere is the declaration of the variable, made once, in the
-// package that owns it. See [go.5x5.cz/ptah/internal/envbool].
-var directivesAnywhere = envbool.New(directivesAnywhereEnvVar, false)
-
-// directiveScope selects the region of a migration file in which a `-- +ptah`
-// directive is significant.
-type directiveScope uint8
-
-const (
-	// directiveScopeHeader honors directives only before the first executable
-	// SQL statement. It is the default and the rule both families share.
-	directiveScopeHeader directiveScope = iota
-	// directiveScopeFile honors directives anywhere in the file. It is reached
-	// only through directivesAnywhereEnvVar.
-	directiveScopeFile
-)
-
-// resolveDirectiveScope reads the opt-in.
-//
-// Unset keeps the header rule and a valid false spelling keeps it too; an empty
-// or unparsable value is a configuration error rather than a silent fall back
-// to the default, because an operator who wrote the variable to keep their
-// files working must not be told nothing when the value is a typo.
-func resolveDirectiveScope() (directiveScope, error) {
-	anywhere, err := directivesAnywhere.Resolve()
-	if err != nil {
-		return directiveScopeHeader, err
-	}
-	if anywhere {
-		return directiveScopeFile, nil
-	}
-	return directiveScopeHeader, nil
-}
-
 // directiveRegion returns the part of sql in which a directive is significant
-// under scope.
-func directiveRegion(sql string, scope directiveScope) string {
-	if scope == directiveScopeFile {
-		return sql
-	}
-	return sql[:directiveHeaderLength(sql)]
+// for dialect.
+func directiveRegion(sql, dialect string) string {
+	return sql[:directiveHeaderLength(sql, dialect)]
 }
 
 // directiveHeaderLength returns the byte length of sql's directive header: the
@@ -117,21 +66,73 @@ func directiveRegion(sql string, scope directiveScope) string {
 // lines and line comments cannot open a string literal, so truncating to it can
 // never split a token. A file that opens with a block comment has a zero-length
 // header, which is the conservative answer.
-func directiveHeaderLength(sql string) int {
+func directiveHeaderLength(sql, dialect string) int {
 	offset := 0
 	for rest := sql; rest != ""; {
 		line, tail, hasNewline := strings.Cut(rest, "\n")
-		trimmed := strings.TrimSpace(line)
-		if trimmed != "" && !strings.HasPrefix(trimmed, "--") {
+		length := len(line)
+		if hasNewline {
+			length++
+		}
+		// The line is handed on WITH the terminator Cut removed, because in
+		// MySQL and MariaDB that byte can be what makes the line a comment.
+		if !directiveHeaderLine(rest[:length], dialect) {
 			return offset
 		}
-		offset += len(line)
-		if hasNewline {
-			offset++
-		}
+		offset += length
 		rest = tail
 	}
 	return len(sql)
+}
+
+// directiveHeaderLine reports whether line is blank or an ordinary line comment
+// in dialect. It is the physical line INCLUDING its terminator, for the reason
+// spelled out at the end of this comment.
+//
+// Which openers a comment may use is decided by exactly one authority --
+// [dialectlexer.Options], the options the lexer this file will be split with is
+// built from -- so the boundary a directive is judged against cannot drift from
+// the one the file is read with. A second, hand-written list of the dialects
+// that accept `#` had already drifted from it: naming MySQL and MariaDB left
+// out ClickHouse, whose options leave hash comments enabled, so a ClickHouse
+// file opening with `#` ended its header on line 1 and dropped the directive
+// underneath it.
+//
+// With no dialect resolved the answer has to be the PERMISSIVE one, and the
+// no-dialect options are exactly that: they accept `#`, and they accept `--`
+// with no space after it, so the unresolved header is never shorter than any
+// resolved dialect's. That direction is the safe one because load time runs
+// before a connection exists. A header cut short there reports a directive
+// sitting on line 2 of its own header as "below the first SQL statement",
+// refuses the file, and hands the operator a remedy -- move it up -- that the
+// line already satisfies; the execution dialect never gets to overturn it,
+// because the file never loads.
+//
+// Only LINE comments extend the header, and that test stays a prefix check
+// rather than a lexer question: a line-based scan cannot see where a block
+// comment ends, so a file opening with one keeps its zero-length header.
+//
+// The lexer is handed the line with its TRAILING bytes intact, terminator
+// included, and that is not tidiness. MySQL and MariaDB start a `--` comment
+// only when a whitespace or control character follows the second dash, so on a
+// separator line -- `-- `, `-- \r\n`, `--\t`, or `--` with nothing but its
+// newline -- the character that makes the line a comment at all is exactly the
+// one a right-hand trim removes. Trimming both sides, as this once did, handed
+// those two dialects a bare `--`, which their own options classify as SQL: the
+// header ended on line 1, and the `no_transaction` or timeout written under it
+// was reported as misplaced and silently never honored. Only the LEFT side is
+// trimmed, because indentation is allowed before a header comment and the lexer
+// would otherwise answer about the leading whitespace token.
+func directiveHeaderLine(line, dialect string) bool {
+	if strings.TrimSpace(line) == "" {
+		return true
+	}
+	trimmed := strings.TrimLeftFunc(line, unicode.IsSpace)
+	if !strings.HasPrefix(trimmed, "--") && !strings.HasPrefix(trimmed, "#") {
+		return false
+	}
+	token := lexer.NewLexerWithOptions(trimmed, dialectlexer.Options(dialect)).NextToken()
+	return token.Type == lexer.TokenComment
 }
 
 // atlasDirectiveHeaderLength returns the byte length of the block Atlas reads a
@@ -216,9 +217,7 @@ func validateRecognizedDirectives(directives map[string]string) error {
 // is that position and value are independent facts. Demoting a typo to a
 // position warning lets two failures mask each other: the operator is told the
 // line is in the wrong place, moves it into the header, and only then learns
-// the value was nonsense all along. Worse, the verdict would depend on
-// PTAH_DIRECTIVES_ANYWHERE -- the same file accepted in one mode and refused in
-// the other -- when whether `maybe` is a boolean is a property of the file.
+// the value was nonsense all along.
 //
 // The `atlas:` family deliberately gets no equivalent. Measured on the pinned
 // community binary, `-- atlas:txmode bogus` in the header exits 1 and the same
@@ -226,8 +225,8 @@ func validateRecognizedDirectives(directives map[string]string) error {
 // where the binary accepts, which the compatibility policy forbids by default.
 // That divergence in SEVERITY between the families is real, measured, and loud
 // on both sides: the `atlas:` line is still reported, just not fatal.
-func misplacedDirectiveError(sql, dialect string, scope directiveScope) error {
-	for _, misplaced := range misplacedDirectives(sql, dialect, scope) {
+func misplacedDirectiveError(sql, dialect string) error {
+	for _, misplaced := range misplacedDirectives(sql, dialect) {
 		if misplaced.err == nil {
 			continue
 		}
@@ -265,27 +264,26 @@ func misplacedDirectiveMarkers(sql, dialect string) iter.Seq[ptahdirective.Marke
 // would bury the real finding. And a `-- +ptah check` line is significant
 // wherever it appears: checks are an ordered list that always runs before the
 // first body statement, so its position never decided anything.
-func misplacedDirectives(sql, dialect string, scope directiveScope) []misplacedDirective {
+func misplacedDirectives(sql, dialect string) []misplacedDirective {
 	options := dialectlexer.Options(dialect)
 	var found []misplacedDirective
 
-	if scope == directiveScopeHeader {
-		headerLength := directiveHeaderLength(sql)
-		for marker := range misplacedDirectiveMarkers(sql, dialect) {
-			if marker.Start < headerLength {
-				continue
-			}
-			directives := parseFileDirectives(slices.Values([]string{marker.Body}))
-			if len(directives) == 0 {
-				continue // a marker the merged parser would have ignored anyway
-			}
-			found = append(found, misplacedDirective{
-				line:   lineNumberAt(sql, marker.Start),
-				text:   directiveLineAt(sql, marker.Start),
-				remedy: "move it above the first SQL statement, or set " + directivesAnywhereEnvVar + "=1",
-				err:    validateRecognizedDirectives(directives),
-			})
+	headerLength := directiveHeaderLength(sql, dialect)
+	for marker := range misplacedDirectiveMarkers(sql, dialect) {
+		if marker.Start < headerLength {
+			continue
 		}
+		directives := parseFileDirectives(slices.Values([]string{marker.Body}))
+		err := misplacedDirectiveValueError(directives, marker.Body)
+		if len(directives) == 0 && err == nil {
+			continue // a marker every directive parser would have ignored
+		}
+		found = append(found, misplacedDirective{
+			line:   lineNumberAt(sql, marker.Start),
+			text:   directiveLineAt(sql, marker.Start),
+			remedy: "move it above the first SQL statement",
+			err:    err,
+		})
 	}
 
 	atlasHeaderLength := atlasDirectiveHeaderLength(sql)
@@ -305,6 +303,48 @@ func misplacedDirectives(sql, dialect string, scope directiveScope) []misplacedD
 
 	slices.SortFunc(found, func(a, b misplacedDirective) int { return a.line - b.line })
 	return found
+}
+
+// misplacedDirectiveValueError reports the first value a misplaced `-- +ptah`
+// line carries that no parser could read.
+//
+// Both halves run on every line, and that is the point. The bare-timeout half
+// used to run only when the merged parser had extracted nothing at all, so
+// whether `-- +ptah no_transaction lock_timeout` was refused depended on a
+// SEPARATE field on the same line being parsable -- while the identical line
+// written in the header was refused by [parseTimeoutDirectiveFields] either
+// way. Position and value are independent facts, and so are the fields of one
+// directive line.
+func misplacedDirectiveValueError(directives map[string]string, body string) error {
+	if err := validateRecognizedDirectives(directives); err != nil {
+		return err
+	}
+	return validateMisplacedBareTimeout(body)
+}
+
+// validateMisplacedBareTimeout reports a timeout key written with no value.
+//
+// The header parser refuses one through [parseTimeoutDirectiveFields], where a
+// bare field that is not no_transaction has no reading at all. The merged
+// directive map is the looser of the two -- it drops such a token -- so a line
+// below the statement needs this scan to reach the same verdict.
+//
+// An ordered `-- +ptah check` body is exempt for the reason every other parser
+// in this package exempts it: its quoted arguments are ParseChecks' grammar,
+// not field-split key=value pairs, and the header parser skips it whole. Field-
+// splitting one here would refuse below the statement exactly what the header
+// accepts, which is the asymmetry this function exists to close.
+func validateMisplacedBareTimeout(body string) error {
+	if isCheckDirectiveBody(body) {
+		return nil
+	}
+	for field := range strings.FieldsSeq(body) {
+		switch field {
+		case "lock_timeout", "lock-timeout", "statement_timeout", "statement-timeout":
+			return fmt.Errorf("invalid +ptah directive %q", field)
+		}
+	}
+	return nil
 }
 
 // lineNumberAt returns the 1-based line number of the byte at offset.

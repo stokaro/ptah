@@ -173,6 +173,21 @@ func clonedCollectionRows() []clonedCollectionRow {
 				s.RolesOutOfScope = append(s.RolesOutOfScope, dbschematypes.DBRole{Name: "cluster_role"})
 			},
 		},
+		{
+			// Not filtered either, and for a sharper reason than the roles
+			// above: this list is what the SQLite comparison refusal reads, and
+			// the whole point is that it survives the exclusion of the table it
+			// names. Narrowing it would remove the refusal on precisely the run
+			// that plans DROP TABLE for a module's storage
+			// (stokaro/ptah#1028). It is still ASKED, so `--exclude docs` is
+			// not reported as protecting nothing while the run is refused over
+			// the object `docs` names.
+			field: "UnregisteredVirtualTables", present: "legacy_docs", absent: "nosuch_virtual_table",
+			seed: func(s *dbschematypes.DBSchema) {
+				s.UnregisteredVirtualTables = append(s.UnregisteredVirtualTables,
+					dbschematypes.DBVirtualTable{Name: "legacy_docs", Module: "fts4"})
+			},
+		},
 	}
 }
 

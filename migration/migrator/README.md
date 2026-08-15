@@ -146,12 +146,60 @@ Go.
 Atlas revision mode uses `atlas_schema_revisions` by default, stores string
 migration versions, reads the Atlas `applied`/`total` and `error` state
 fields, and writes the Atlas `hash` value from `atlas.sum` when it is
-available. Successful rows created by migration execution use the migration
-filename description, store empty `error` and `error_stmt` values, and
-identify Ptah as the operator. Dot-prefixed versions — such as the
-`.atlas_cloud_identifier` row Atlas's `migrate down` writes even in local
-mode — are metadata, not migrations: Ptah skips them in version, status, and
-pending calculations and never rewrites or deletes them.
+available. A revision identity can be an exact opaque token separate from the
+numeric execution-order key. `WithAtlasRevisionVersions` supplies that mapping;
+a present empty value is an owned empty identity, not a numeric fallback. A
+non-nil map also selects exact-history mode: mappings may include squashed
+history, and a persisted identity whose source file has since been removed
+remains readable at a history-only runtime without becoming pending work. The
+persisted exact key still participates in source-order checks. Only migrations
+loaded from the filesystem own pending work.
+
+`MigrationStatus` JSON includes `current_version_key` whenever an exact current
+identity is present, including the empty identity. It omits the member for an
+ordinary numeric status without an exact key. JSON round trips preserve that
+presence distinction through `CurrentVersionKeySet` without serializing the
+presence bit as a separate member. The presence bit is authoritative: a stale
+key value with the bit unset remains absent from JSON.
+
+Before migration SQL, Atlas revision mode checks the complete mapped identity
+set against the configured version-column collation. A table that treats two
+distinct source tokens as equal is refused. Ptah-created MySQL, MariaDB, and SQL
+Server Atlas tables use binary version collations so case-distinct tokens remain
+addressable.
+
+Successful rows created by migration execution use the migration filename
+description and store empty `error` and `error_stmt` values. Ordinary rows use
+the generic `Ptah` operator value; a mapped exact source identity uses
+`Ptah/source-identity`, so compatibility recovery can distinguish a numeric
+source token from an internal order key written by an older Ptah build.
+
+`WithAtlasRevisionTypes` can preserve source-format metadata lost during
+conversion. The Atlas compatibility adapter marks a surviving Flyway baseline
+with the combined baseline-and-applied bits, which distinguishes an
+already-settled baseline from an older versioned migration carrying the same
+exact token. The combined value still renders as `applied` and does not create
+the implicit lower-history boundary of a pure baseline row. A metadata-only set
+adds the manually-set bit to that marker; it renders as `manually set` while
+retaining the settled-baseline discriminator.
+
+When `BaselineWithOptions` selects one of those source baselines, the revision
+keeps Atlas's pure baseline type and records `Ptah/source-baseline` in
+`operator_version`. That marker proves which source the boundary selected.
+Baselining an ordinary mapped source migration keeps the source-identity marker,
+not the source-baseline marker, so a same-token baseline introduced later is
+still ambiguous rather than skipped.
+
+`WithAtlasRepeatableVersions` preserves which converted order keys came from
+source repeatables when conversion renders ordinary numeric Atlas filenames.
+The role is explicit rather than inferred from the revision identity because a
+source versioned migration and a repeatable can both own an exact empty token.
+
+Without exact-history mode, dot-prefixed versions are Atlas metadata and stay
+out of version, status, and pending calculations. In exact-history mode,
+Flyway's `.foo` remains a migration after a baseline squashes it or its source
+file is removed. The measured `.atlas_cloud_identifier` row written by Atlas
+`migrate down` remains excluded and is never rewritten or deleted.
 
 Ptah records a coherent timing interval for executed SQL: `executed_at` is the
 migration lifecycle start and `execution_time` is the full elapsed duration in
@@ -349,12 +397,17 @@ reconciliation that needs two or more row updates before changing either row.
 - **`WithExecOrder(policy)`**: Configures out-of-order migration handling
 - **`WithMigrationDirFormat(format)`**: Selects `auto`, `ptah`, or `atlas` filesystem discovery
 - **`WithAtlasTemplateData(data)`**: Supplies data, including `.Env`, for Atlas SQL template migrations
+- **`WithAtlasRevisionVersions(versions)`**: Maps numeric execution-order keys to exact Atlas revision identities; a present empty value is exact, and a non-nil map keeps squashed or source-removed history readable without creating pending migrations
+- **`WithAtlasRevisionVersionComparator(compare)`**: Supplies the source format's relationship between a retired exact identity and the selected target during metadata-only set operations; each `AtlasRevisionOrderIdentity` carries the exact key, Atlas row type, operator marker, and provider-owned repeatable role, and an unavailable comparison fails closed before metadata changes
+- **`WithAtlasRevisionTypes(types)`**: Preserves source-format Atlas revision metadata, such as the surviving Flyway baseline marker, across filename conversion
+- **`WithAtlasRepeatableVersions(versions)`**: Preserves the repeatable role for converted numeric Atlas filenames without inferring it from an empty revision identity
 - **`WithStatementInterceptor(interceptor)`**: Lets an external executor take over selected statements
 - **`WithStatementValidator(validator)`**: Validates every statement before the migration executes its first statement
 - **`WithStatementObserver(observer)`**: Reports each statement after successful execution without replacing the execution path
 - **`WithRevisionTableFormat(format)`**: Selects Ptah's native `schema_migrations` layout or the Atlas-compatible `atlas_schema_revisions` layout; both retain Ptah's recoverable dirty-state protection
+- **`MigrateUpWithOptions(ctx, opts)`**: Applies the selected up plan; `AllowDirty` authorizes a verified retry only while the current provider still owns the dirty exact identity and body, so a dirty source-retired history row remains blocking
 - **`Baseline(ctx, version)` / `BaselineWithOptions(ctx, opts)`**: Records provider migrations without executing their SQL bodies; Atlas metadata records only the exact baseline revision
-- **`SetAtlasRevision(ctx, version)`**: Moves Atlas metadata to an exact version and returns version-and-description `AtlasRevisionChange` entries in an `AtlasRevisionSetResult`; it preserves clean rows through the target, adds missing manually-set rows, converts dirty rows to the combined applied and manually-set type without discarding diagnostics, and removes rows above it
+- **`SetAtlasRevision(ctx, version)`**: Moves Atlas metadata to an exact version and returns numeric order keys, exact revision identities, and descriptions as `AtlasRevisionChange` entries in an `AtlasRevisionSetResult`; it preserves clean rows through the target, adds missing manually-set rows, converts dirty rows to the combined applied and manually-set type without discarding diagnostics, and removes source-retired exact identities only when the configured source comparator places them above the selected target
 - **`GetMigrationStatusSnapshot(ctx)`**: Returns migration status and the exact revision rows used to derive it from one metadata query
 
 ## Programmatic Usage
@@ -652,6 +705,22 @@ Override those defaults in a specific migration file with top-of-file directives
 
 ALTER TABLE users ADD COLUMN email TEXT;
 ```
+
+The header follows the target database's line-comment grammar, read from the
+same lexer options the file's statements are split with rather than from a
+separate list of dialects. A leading `#` comment therefore stays in the header
+wherever that reader treats it as a comment — every supported target except SQL
+Server, whose options disable hash comments — so it does not hide the timeout
+directives that follow it. Until a connection exists the dialect is unresolved,
+and the header is read the widest way any target would, so loading a file never
+refuses a correctly placed directive as misplaced. The migrator resolves the
+effective timeouts with the execution dialect before validation and execution.
+
+The same grammar decides where a `--` comment begins. MySQL and MariaDB start
+one only when a whitespace or control character follows the second dash, so a
+`-- ` separator line stays in the header — including its `-- \r\n` form and a
+`--` line carrying nothing but its line terminator — while `--x`, which those
+two read as SQL rather than as a comment, ends the header there.
 
 PostgreSQL runs `SET LOCAL lock_timeout` and `SET LOCAL statement_timeout` inside the migration transaction. MySQL and MariaDB run `SET SESSION innodb_lock_wait_timeout`; statement timeouts use MySQL `max_execution_time` and MariaDB `max_statement_time`.
 

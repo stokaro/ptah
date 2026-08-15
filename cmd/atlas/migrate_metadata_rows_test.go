@@ -70,6 +70,32 @@ func TestMigrateStatusToleratesMetadataDotRow(t *testing.T) {
 	c.Assert(out, qt.Not(qt.Contains), ".atlas_cloud_identifier")
 }
 
+func TestMigrateApplyRefusesFlywayIdentityCollidingWithAtlasMetadata(t *testing.T) {
+	c := qt.New(t)
+	_, dbPath := setupMetadataRowDatabase(c, t.TempDir())
+	// This exact Atlas bookkeeping name has four ordering components once the
+	// leading dot is counted. The Flyway adapter therefore refuses it during
+	// conversion, before opening the database or allowing the existing metadata
+	// row to satisfy migration identity. Keep the counterexample pinned so a
+	// future wider ordering projection cannot silently turn it into a skipped
+	// migration; that change must add an explicit collision gate first.
+	dir := writeHashedFlywayDir(c, []setFlywayMigration{
+		{
+			name: "V.atlas_cloud_identifier__collision.sql",
+			body: "CREATE TABLE metadata_collision_must_not_run (id INTEGER PRIMARY KEY);\n",
+		},
+	})
+
+	stdout, stderr, err := compatApplyConverted(dir, "flyway", dbPath)
+
+	c.Assert(err, qt.IsNotNil)
+	message := stdout + stderr + errorText(err)
+	c.Assert(message, qt.Contains, `.atlas_cloud_identifier`)
+	c.Assert(message, qt.Contains,
+		`version ".atlas_cloud_identifier" with more than 3 components and cannot map to an int64 Atlas version`)
+	c.Assert(sqliteTableCount(c, dbPath, "metadata_collision_must_not_run"), qt.Equals, 0)
+}
+
 func TestMigrateDownDryRunReadsRealVersionWithMetadataDotRow(t *testing.T) {
 	c := qt.New(t)
 	migrationsDir, dbPath := setupMetadataRowDatabase(c, t.TempDir())

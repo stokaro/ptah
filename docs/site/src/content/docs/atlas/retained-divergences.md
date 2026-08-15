@@ -224,7 +224,10 @@ which cannot run inside a transaction can run, and on PostgreSQL a failed
 counts as not applied. Ptah already refuses to record a migration over such an
 index. Discarding the row automatically in that mode would hand the next run a
 clean slate over a database that is not clean. `--allow-dirty` remains the way
-through, and the operator, unlike the tool, can look first.
+through while the same migration body remains in the directory, and the
+operator, unlike the tool, can look first. If that source file is removed,
+Ptah refuses the now-unowned dirty exact identity even with `--allow-dirty`;
+there is no body or verified prefix to resume.
 
 ## A project migration directory outside its root
 

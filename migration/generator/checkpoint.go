@@ -3,6 +3,7 @@ package generator
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"strings"
 	"time"
 
@@ -131,7 +132,37 @@ func generateCheckpointFromDiff(
 // the caller resolves a version above the existing history — and returns the
 // two written paths.
 func WriteCheckpointFiles(outputDir string, version int64, description, upSQL, downSQL string) (upPath, downPath string, err error) {
-	return writeMigrationPair(outputDir, version, description, upSQL, downSQL, "checkpoint", migrator.GenerateCheckpointMigrationFileName)
+	return WriteCheckpointFilesWithOptions(outputDir, version, description, upSQL, downSQL, CheckpointWriteOptions{})
+}
+
+// CheckpointWriteOptions supplies the state a checkpoint writer must preserve
+// while it adds the checkpoint and refreshes the directory integrity file.
+type CheckpointWriteOptions struct {
+	// AuthorizedMigrationsFS is the immutable migration history that produced
+	// the checkpoint body. When non-nil, the writer refuses if the bound output
+	// directory no longer contains exactly that history before publication.
+	AuthorizedMigrationsFS fs.FS
+}
+
+// WriteCheckpointFilesWithOptions writes a checkpoint migration pair while
+// enforcing opts against the same rooted directory handle used for the files
+// and ptah.sum publication.
+func WriteCheckpointFilesWithOptions(
+	outputDir string,
+	version int64,
+	description, upSQL, downSQL string,
+	opts CheckpointWriteOptions,
+) (upPath, downPath string, err error) {
+	return writeMigrationPairAuthorized(
+		outputDir,
+		version,
+		description,
+		upSQL,
+		downSQL,
+		"checkpoint",
+		migrator.GenerateCheckpointMigrationFileName,
+		opts.AuthorizedMigrationsFS,
+	)
 }
 
 // AtlasCheckpointDirective is the file directive that marks an Atlas-format
@@ -198,10 +229,22 @@ func ResolveAtlasCheckpointVersion(outputDir string) int64 {
 // the checksum are committed to the same filesystem object even if the pathname
 // is replaced mid-call (stokaro/ptah#1118).
 func WriteAtlasCheckpointFile(outputDir string, version int64, description, upSQL string) (path string, err error) {
+	return WriteAtlasCheckpointFileWithOptions(outputDir, version, description, upSQL, CheckpointWriteOptions{})
+}
+
+// WriteAtlasCheckpointFileWithOptions writes an Atlas-format checkpoint while
+// enforcing opts against the same rooted directory handle used for the file
+// and atlas.sum publication.
+func WriteAtlasCheckpointFileWithOptions(
+	outputDir string,
+	version int64,
+	description, upSQL string,
+	opts CheckpointWriteOptions,
+) (path string, err error) {
 	if version <= 0 {
 		return "", fmt.Errorf("checkpoint version must be greater than zero, got %d", version)
 	}
-	return writeRootedAtlasCheckpoint(outputDir, version, description, upSQL)
+	return writeRootedAtlasCheckpoint(outputDir, version, description, upSQL, opts.AuthorizedMigrationsFS)
 }
 
 // AtlasCheckpointArtifact returns the file name and contents that
@@ -235,6 +278,9 @@ type CheckpointFromShadowOptions struct {
 	ShadowDatabaseURL string
 	// MigrationsDir is the directory whose entire history is replayed.
 	MigrationsDir string
+	// MigrationsFS is the immutable migration history to replay. When nil,
+	// MigrationsDir is opened for compatibility with existing embedders.
+	MigrationsFS fs.FS
 	// Dialect, when set, must match the shadow database dialect. When empty the
 	// shadow database's dialect is used.
 	Dialect string
@@ -305,7 +351,7 @@ func generateCheckpointFromConn(ctx context.Context, shadowConn *dbschema.Databa
 		return "", "", err
 	}
 
-	migrations, err := loadPriorMigrations(opts.MigrationsDir, opts.ProviderOptions...)
+	migrations, err := loadPriorMigrationsFS(opts.MigrationsFS, opts.MigrationsDir, opts.ProviderOptions...)
 	if err != nil {
 		return "", "", fmt.Errorf("checkpoint generation failed: load migrations: %w", err)
 	}

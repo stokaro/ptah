@@ -47,9 +47,10 @@ import (
 
 var (
 	// ErrMigrationDirectoryChanged reports that migration artifacts changed
-	// between planning and publication.
+	// after the history used for planning or replay was captured and before
+	// publication.
 	ErrMigrationDirectoryChanged = errors.New(
-		"migration directory changed after migration planning",
+		"migration directory changed before publication",
 	)
 	// ErrMigrationPlanInUse reports concurrent publication through one plan.
 	ErrMigrationPlanInUse = errors.New("migration plan is already being written")
@@ -95,6 +96,12 @@ type GenerateMigrationOptions struct {
 	// migrations from OutputDir, applies the candidate migration, re-introspects
 	// the result, and aborts if it differs from the Go schema.
 	ShadowDatabaseURL string
+	// PriorMigrationsFS supplies the immutable, already-authorized migration
+	// history used by shadow verification or another replay-based caller. When
+	// set, publication also refuses if OutputDir no longer matches this snapshot,
+	// so generating a fresh checksum cannot legitimize history that changed
+	// after the caller's integrity decision.
+	PriorMigrationsFS fs.FS
 	// DiffPolicy controls which changes the planner emits: destructive change
 	// kinds to skip and whether to create new indexes concurrently. The zero
 	// value applies no policy. Skipping a destructive change omits it from the
@@ -171,9 +178,14 @@ type MigrationPlan struct {
 	// now lives in dir, which is a handle rather than a detached fs.FileInfo the
 	// operating system is free to reissue to a replacement.
 	plannedContents fsnapshot.Snapshot
-	reportFormat    string
-	specs           []generatedMigrationSpec
-	written         bool
+	// authorizedPriorMigrations is the migration-only snapshot whose SQL was
+	// authorized for replay. A zero value with the boolean false means the
+	// caller did not supply a prior snapshot.
+	authorizedPriorMigrations    fsnapshot.Snapshot
+	hasAuthorizedPriorMigrations bool
+	reportFormat                 string
+	specs                        []generatedMigrationSpec
+	written                      bool
 }
 
 // EmptyMigrationOptions contains options for skeleton migration creation.
@@ -509,6 +521,10 @@ func PlanMigration(ctx context.Context, opts GenerateMigrationOptions) (*Migrati
 	if err != nil {
 		return nil, err
 	}
+	authorizedPriorMigrations, err := captureAuthorizedPriorMigrations(opts.PriorMigrationsFS)
+	if err != nil {
+		return nil, err
+	}
 
 	// 1. Determine the desired schema: use a pre-merged one when provided (for a
 	// composite desired-state assembled from several sources), otherwise parse the
@@ -519,15 +535,11 @@ func PlanMigration(ctx context.Context, opts GenerateMigrationOptions) (*Migrati
 	}
 
 	// 2. Connect to database and read current schema
-	var conn *dbschema.DatabaseConnection
-
-	if opts.DBConn != nil {
-		conn = opts.DBConn
-	} else {
-		conn, err = dbschema.ConnectToDatabase(ctx, opts.DatabaseURL)
-		if err != nil {
-			return nil, fmt.Errorf("error connecting to database: %w", err)
-		}
+	conn, ownedConnection, err := resolvePlanDatabaseConnection(ctx, opts)
+	if err != nil {
+		return nil, err
+	}
+	if ownedConnection {
 		defer dbschema.CloseAndWarn(conn)
 	}
 
@@ -566,7 +578,7 @@ func PlanMigration(ctx context.Context, opts GenerateMigrationOptions) (*Migrati
 		conn,
 		generated,
 		dbSchema,
-		opts.CompareOptions,
+		compareOptionsWithDiffPolicy(opts.CompareOptions, opts.DiffPolicy),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("error comparing generated and database schemas: %w", err)
@@ -608,33 +620,74 @@ func PlanMigration(ctx context.Context, opts GenerateMigrationOptions) (*Migrati
 		return nil, err
 	}
 
-	if opts.ShadowDatabaseURL != "" {
-		if err := verifyShadowMigration(ctx, shadowMigrationOptions{
-			DatabaseURL:      opts.ShadowDatabaseURL,
-			TargetConnection: conn,
-			MigrationsDir:    opts.OutputDir,
-			Dialect:          info.Dialect,
-			Capabilities:     info.Capabilities,
-			IdentifierSemantics: cloneIdentifierSemanticsValue(
-				diff.IdentifierSemantics,
-			),
-			Candidates:  shadowCandidatesFromSpecs(specs),
-			Generated:   generated,
-			CompareOpts: opts.CompareOptions,
-			Schemas:     opts.Schemas,
-		}); err != nil {
-			return nil, err
-		}
+	if err := verifyPlannedShadowMigration(ctx, opts, conn, info, diff, specs, generated); err != nil {
+		return nil, err
 	}
 
 	planned = true
 	return &MigrationPlan{
-		outputDir:       opts.OutputDir,
-		dir:             writer,
-		plannedContents: plannedContents,
-		reportFormat:    opts.ReportFormat,
-		specs:           specs,
+		outputDir:                    opts.OutputDir,
+		dir:                          writer,
+		plannedContents:              plannedContents,
+		authorizedPriorMigrations:    authorizedPriorMigrations,
+		hasAuthorizedPriorMigrations: opts.PriorMigrationsFS != nil,
+		reportFormat:                 opts.ReportFormat,
+		specs:                        specs,
 	}, nil
+}
+
+func verifyPlannedShadowMigration(
+	ctx context.Context,
+	opts GenerateMigrationOptions,
+	conn *dbschema.DatabaseConnection,
+	info dbschematypes.DBInfo,
+	diff *types.SchemaDiff,
+	specs []generatedMigrationSpec,
+	generated *goschema.Database,
+) error {
+	if opts.ShadowDatabaseURL == "" {
+		return nil
+	}
+	return verifyShadowMigration(ctx, shadowMigrationOptions{
+		DatabaseURL:      opts.ShadowDatabaseURL,
+		TargetConnection: conn,
+		MigrationsDir:    opts.OutputDir,
+		MigrationsFS:     opts.PriorMigrationsFS,
+		Dialect:          info.Dialect,
+		Capabilities:     info.Capabilities,
+		IdentifierSemantics: cloneIdentifierSemanticsValue(
+			diff.IdentifierSemantics,
+		),
+		Candidates:  shadowCandidatesFromSpecs(specs),
+		Generated:   generated,
+		CompareOpts: opts.CompareOptions,
+		Schemas:     opts.Schemas,
+	})
+}
+
+func captureAuthorizedPriorMigrations(fsys fs.FS) (fsnapshot.Snapshot, error) {
+	if fsys == nil {
+		return fsnapshot.Snapshot{}, nil
+	}
+	snapshot, err := migrationsnapshot.Capture(fsys)
+	if err != nil {
+		return fsnapshot.Snapshot{}, fmt.Errorf("capture authorized prior migrations: %w", err)
+	}
+	return snapshot, nil
+}
+
+func resolvePlanDatabaseConnection(
+	ctx context.Context,
+	opts GenerateMigrationOptions,
+) (*dbschema.DatabaseConnection, bool, error) {
+	if opts.DBConn != nil {
+		return opts.DBConn, false, nil
+	}
+	conn, err := dbschema.ConnectToDatabase(ctx, opts.DatabaseURL)
+	if err != nil {
+		return nil, false, fmt.Errorf("error connecting to database: %w", err)
+	}
+	return conn, true, nil
 }
 
 // resolveDesiredSchema answers what the migration should bring the database to:
@@ -788,6 +841,9 @@ func (p *MigrationPlan) publishLocked(ctx context.Context) (*MigrationFiles, err
 	if !p.plannedContents.Equal(currentContents) {
 		return nil, ErrMigrationDirectoryChanged
 	}
+	if err := p.verifyAuthorizedPriorMigrations(); err != nil {
+		return nil, err
+	}
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
@@ -798,6 +854,27 @@ func (p *MigrationPlan) publishLocked(ctx context.Context) (*MigrationFiles, err
 	}
 	p.written = true
 	return files, nil
+}
+
+func (p *MigrationPlan) verifyAuthorizedPriorMigrations() error {
+	if !p.hasAuthorizedPriorMigrations {
+		return nil
+	}
+	var currentMigrations fsnapshot.Snapshot
+	if p.dir.Exists() {
+		fsys, err := p.dir.FS()
+		if err != nil {
+			return fmt.Errorf("open migration directory before publication: %w", err)
+		}
+		currentMigrations, err = migrationsnapshot.Capture(fsys)
+		if err != nil {
+			return fmt.Errorf("capture migration directory before publication: %w", err)
+		}
+	}
+	if !p.authorizedPriorMigrations.Equal(currentMigrations) {
+		return ErrMigrationDirectoryChanged
+	}
+	return nil
 }
 
 // captureMigrationDirectoryContents reads the migration directory through the
@@ -905,6 +982,39 @@ func checkDestructiveAllowed(opts GenerateMigrationOptions, assessments []safety
 		return fmt.Errorf("destructive migration statements require AllowDestructive")
 	}
 	return nil
+}
+
+// compareOptionsWithDiffPolicy tells the comparison what
+// [planGeneratedMigrationSpecs] will do to its answer.
+//
+// The SQLite virtual-table guard runs inside the comparison and refuses on the
+// statements it predicts, while the skip filter that deletes those statements
+// runs afterwards, here. Without this the comparison refused a plan the policy
+// had already emptied (stokaro/ptah#1028). The caller's options are copied
+// rather than written through: GenerateMigrationOptions is a value the caller
+// may reuse for another run.
+//
+// Every skip kind the guard can read is forwarded, not only the table drop.
+// `drop_column` empties a table diff's ColumnsRemoved, which is one of the
+// fields the rebuild predicate reads, and `drop_index` empties the standalone
+// index removals the guard counts the owning table for; forwarding one of the
+// three left the other two refusing plans this function had already emptied.
+// diffpolicy.DropEnum is the one kind deliberately not forwarded: SQLite has no
+// enum type and the guard reads no enum field, and the census in
+// internal/sqlitevirtual fails if a new kind appears unclassified.
+func compareOptionsWithDiffPolicy(
+	opts *config.CompareOptions,
+	policy DiffPolicy,
+) *config.CompareOptions {
+	merged := config.DefaultCompareOptions()
+	if opts != nil {
+		*merged = *opts
+		merged.IgnoredExtensions = slices.Clone(opts.IgnoredExtensions)
+	}
+	merged.SkipTableDrops = slices.Contains(policy.SkipChangeKinds, diffpolicy.DropTable)
+	merged.SkipColumnDrops = slices.Contains(policy.SkipChangeKinds, diffpolicy.DropColumn)
+	merged.SkipIndexDrops = slices.Contains(policy.SkipChangeKinds, diffpolicy.DropIndex)
+	return merged
 }
 
 type generatedMigrationSpec struct {

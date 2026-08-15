@@ -214,3 +214,48 @@ func statisticsDB(c *qt.C, rows [][]driver.Value) *dbtest.DB {
 		return dbtest.QueryResult{Columns: statisticsColumns, Rows: rows}, nil
 	})
 }
+
+// TestReadFunctionsCarriesReplacementOwnershipFacts pins the two catalog facts
+// the comparator needs before it may replace a SQL SECURITY DEFINER routine.
+// DEFINER names the existing routine owner; CURRENT_USER() names the account
+// whose privileges a replacement CREATE would use.
+func TestReadFunctionsCarriesReplacementOwnershipFacts(t *testing.T) {
+	c := qt.New(t)
+	db := functionOwnershipDB(c)
+	reader := NewMySQLReader(db.SQL, "app")
+
+	functions, err := reader.readFunctions("app")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(functions, qt.HasLen, 1)
+	c.Assert(functions[0].Definer, qt.Equals, "owner_a@%")
+	c.Assert(functions[0].CurrentAccount, qt.Equals, "migrator_a@%")
+}
+
+func functionOwnershipDB(c *qt.C) *dbtest.DB {
+	c.Helper()
+	return dbtest.Open(c, func(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
+		switch {
+		case strings.Contains(query, "FROM information_schema.PARAMETERS"):
+			return dbtest.QueryResult{
+				Columns: []string{"SPECIFIC_NAME", "PARAMETER_NAME", "DTD_IDENTIFIER"},
+			}, nil
+		case strings.Contains(query, "FROM information_schema.ROUTINES"):
+			c.Assert(query, qt.Contains, "DEFINER")
+			c.Assert(query, qt.Contains, "CURRENT_USER()")
+			return dbtest.QueryResult{
+				Columns: []string{
+					"ROUTINE_NAME", "DTD_IDENTIFIER", "IS_DETERMINISTIC",
+					"SQL_DATA_ACCESS", "SECURITY_TYPE", "DEFINER", "CURRENT_USER()",
+					"ROUTINE_DEFINITION", "ROUTINE_COMMENT",
+				},
+				Rows: [][]driver.Value{{
+					"f", "int", "YES", "NO SQL", "DEFINER", "owner_a@%",
+					"migrator_a@%", "RETURN 1", "owned function",
+				}},
+			}, nil
+		default:
+			return dbtest.QueryResult{}, fmt.Errorf("unexpected query: %s", query)
+		}
+	})
+}

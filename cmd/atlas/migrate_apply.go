@@ -48,10 +48,17 @@ type atlasMigrateApplyOptions struct {
 type atlasMigrateApplyRunOptions struct {
 	amount          uint64
 	baselineVersion int64
+	baselineLabel   string
+	baselineSource  atlasMigrateApplyOperandSource
 	toVersion       int64
+	toVersionSource atlasMigrateApplyOperandSource
 	lockRequest     atlasLockRequest
 	skipChecks      bool
 }
+
+type atlasMigrateApplyOperandSource uint8
+
+const atlasMigrateApplyOperandExplicit atlasMigrateApplyOperandSource = 1
 
 func newAtlasMigrateApplyCommand(policy atlascompatpolicy.Policy) *cobra.Command {
 	opts := atlasMigrateApplyOptions{
@@ -93,11 +100,10 @@ Native Ptah equivalent: ptah migrations up.`,
 	flags.StringVar(&opts.execOrder, "exec-order", opts.execOrder, "Execution order: linear, linear-skip, or non-linear")
 	flags.BoolVar(&opts.allowDirty, "allow-dirty", false, "Allow applying migrations when the revision table is dirty")
 	flags.StringVar(&opts.baseline, "baseline", "", "Baseline version to mark applied before running pending migrations")
-	// Atlas registers --to-version on `migrate apply` as a string
-	// ("migrate to this version, if set"), so the value is carried as text and
-	// parsed like --baseline instead of as a typed integer flag: a
-	// non-numeric value must fail with Ptah's version diagnostic, not with
-	// pflag's "invalid argument" for an int flag.
+	// The wider Atlas distribution documents --to-version as a string
+	// ("migrate to this version, if set"). The pinned CE binary does not
+	// register it, so strict CE mode omits it while the complete compatibility
+	// surface retains the documented extension.
 	flags.StringVar(&opts.revisionsSchema, "revisions-schema", "", "Schema for the Atlas revisions table")
 	flags.StringVar(&opts.lockTimeout, "lock-timeout", "", "Timeout for acquiring the migration lock, such as 10s or 2m")
 	if !policy.IsStrictCE() {
@@ -168,14 +174,6 @@ func runAtlasMigrateApply(
 	if err != nil {
 		return err
 	}
-	baselineVersion, err := atlasmigrate.ParseMigrationVersionFlag("baseline", opts.baseline)
-	if err != nil {
-		return err
-	}
-	toVersion, err := atlasmigrate.ParseMigrationVersionFlag("to-version", opts.toVersion)
-	if err != nil {
-		return err
-	}
 	lockRequest, err := resolveAtlasLockRequest(cmd, opts.lock)
 	if err != nil {
 		return err
@@ -186,8 +184,8 @@ func runAtlasMigrateApply(
 	}
 	runOpts := atlasMigrateApplyRunOptions{
 		amount:          amount,
-		baselineVersion: baselineVersion,
-		toVersion:       toVersion,
+		baselineSource:  atlasMigrateApplyFlagSource(cmd, "baseline"),
+		toVersionSource: atlasMigrateApplyFlagSource(cmd, "to-version"),
 		lockRequest:     lockRequest,
 		skipChecks:      skipChecks,
 	}
@@ -215,6 +213,14 @@ func runAtlasMigrateApply(
 	return nil
 }
 
+func atlasMigrateApplyFlagSource(cmd *cobra.Command, name string) atlasMigrateApplyOperandSource {
+	flag := cmd.Flags().Lookup(name)
+	if flag != nil && flag.Changed {
+		return atlasMigrateApplyOperandExplicit
+	}
+	return 0
+}
+
 func runAtlasMigrateApplyTarget(
 	cmd *cobra.Command,
 	policy atlascompatpolicy.Policy,
@@ -222,54 +228,9 @@ func runAtlasMigrateApplyTarget(
 	opts atlasMigrateApplyOptions,
 	runOpts atlasMigrateApplyRunOptions,
 ) (bool, error) {
-	formatOutput := cmd.Flags().Changed("format")
+	opts, formatOutput := resolveAtlasMigrateApplyProjectOptions(cmd, project, opts)
 	loaded := project.root != nil
 	projectCfg := project.Config
-	if loaded {
-		opts.url = dbcli.EffectiveString(
-			cmd,
-			"url",
-			opts.url,
-			projectCfg.StringValue(projectconfig.StringDatabaseURL),
-		)
-		opts.dir = dbcli.EffectiveString(
-			cmd,
-			"dir",
-			opts.dir,
-			projectCfg.StringValue(projectconfig.StringMigrationDir),
-		)
-		dirFormat := projectCfg.StringValue(projectconfig.StringMigrationFormat)
-		if dirFormat.Present {
-			opts.dirFormat = dirFormat.Value
-		}
-		opts.txMode = dbcli.EffectiveString(
-			cmd,
-			"tx-mode",
-			opts.txMode,
-			projectCfg.StringValue(projectconfig.StringMigrationTxMode),
-		)
-		opts.execOrder = dbcli.EffectiveString(
-			cmd,
-			"exec-order",
-			opts.execOrder,
-			projectCfg.StringValue(projectconfig.StringMigrationExecOrder),
-		)
-		opts.revisionsSchema = dbcli.EffectiveString(
-			cmd,
-			"revisions-schema",
-			opts.revisionsSchema,
-			projectCfg.StringValue(projectconfig.StringMigrationRevisionsSchema),
-		)
-		opts.lockTimeout = dbcli.EffectiveString(
-			cmd,
-			"lock-timeout",
-			opts.lockTimeout,
-			projectCfg.StringValue(projectconfig.StringMigrationLockTimeout),
-		)
-		formatValue := projectCfg.StringValue(projectconfig.StringFormatMigrateApply)
-		opts.format = dbcli.EffectiveString(cmd, "format", opts.format, formatValue)
-		formatOutput = formatOutput || formatValue.Present
-	}
 	if formatOutput && strings.TrimSpace(opts.format) == "" {
 		return formatOutput, fmt.Errorf("--format must not be empty")
 	}
@@ -328,6 +289,13 @@ func runAtlasMigrateApplyTarget(
 	if err != nil {
 		return formatOutput, err
 	}
+	if err := resolveAtlasMigrateApplyNumericVersions(
+		resolvedDirFormat,
+		opts,
+		&runOpts,
+	); err != nil {
+		return formatOutput, err
+	}
 
 	source, err := project.openLocal(localDir)
 	if err != nil {
@@ -370,6 +338,14 @@ func runAtlasMigrateApplyTarget(
 	if err != nil {
 		return formatOutput, fmt.Errorf("atlas migrate apply --dir: %w", err)
 	}
+	if err := resolveAtlasMigrateApplyFlywayVersions(
+		captured,
+		resolvedDirFormat,
+		opts,
+		&runOpts,
+	); err != nil {
+		return formatOutput, err
+	}
 
 	if err := atlasDatabaseURLDiagnostic(opts.url); err != nil {
 		return formatOutput, err
@@ -392,6 +368,9 @@ func runAtlasMigrateApplyTarget(
 		ExecOrder:                execOrder,
 		OutOfOrderExempt:         linearity.outOfOrderExempt,
 		SourceVersions:           linearity.sourceVersions,
+		RevisionVersions:         linearity.sourceVersions,
+		RevisionTypes:            linearity.revisionTypes,
+		RepeatableVersions:       linearity.repeatableVersions,
 		TxMode:                   txMode,
 		RevisionsSchema:          opts.revisionsSchema,
 		MigrationLockTimeout:     migrationLockTimeout,
@@ -405,7 +384,7 @@ func runAtlasMigrateApplyTarget(
 		SkipChecks:               runOpts.skipChecks,
 	})
 	if err != nil {
-		return formatOutput, err
+		return formatOutput, remapAtlasExactIdentityError(err, linearity.sourceVersions)
 	}
 	if err := runAtlasMigrateApplyRefusals(cmd.Context(), atlasMigrateApplyRefusalOperands{
 		conn:            conn,
@@ -414,7 +393,6 @@ func runAtlasMigrateApplyTarget(
 		dirFormat:       resolvedDirFormat,
 		linearity:       linearity,
 		execOrder:       execOrder,
-		revisionsSchema: opts.revisionsSchema,
 		allowDirty:      opts.allowDirty,
 		baselineVersion: runOpts.baselineVersion,
 		cleanScope:      cleanScope,
@@ -428,7 +406,14 @@ func runAtlasMigrateApplyTarget(
 	emitApplyStart := func([]int64, []string) {}
 	if !formatOutput {
 		emitApplyStart = func(selectedVersions []int64, selectedKeys []string) {
-			emitAtlasMigrateApplyStart(out, opts, runOpts.baselineVersion, selectedVersions, selectedKeys)
+			emitAtlasMigrateApplyStart(
+				out,
+				opts,
+				runOpts.baselineVersion,
+				runOpts.baselineLabel,
+				selectedVersions,
+				selectedKeys,
+			)
 		}
 	}
 	result, err := plan.ExecuteWithPreflight(
@@ -449,14 +434,19 @@ func runAtlasMigrateApplyTarget(
 			// bypasses the generic command diagnostic without losing exit status.
 			return formatOutput, exitcode.New(atlasErrorExitCode, err)
 		}
-		return formatOutput, err
+		return formatOutput, atlasMigrateApplyExactIdentityError(
+			err,
+			result.SelectedVersions,
+			result.SelectedKeys,
+			result.Migrations,
+		)
 	}
 	if handled, err := finishAtlasMigrateApplyFreshNoop(cmd, opts, migrationFS, conn, result); handled || err != nil {
 		return formatOutput, err
 	}
 
 	if opts.dryRun {
-		emitAtlasMigrateApplyDeferredChecks(cmd, result.ChecksDeferred)
+		emitAtlasMigrateApplyDeferredChecks(cmd, result.ChecksDeferred, result.ChecksDeferredKeys)
 		if formatOutput {
 			return formatOutput, writeAtlasMigrateApplyFormat(cmd, opts, migrationFS, conn, result)
 		}
@@ -468,6 +458,73 @@ func runAtlasMigrateApplyTarget(
 	}
 	fmt.Fprintf(out, "Migration complete. Current version: %s\n", atlasApplyCurrentVersionLabel(result.FinalStatus))
 	return formatOutput, nil
+}
+
+func resolveAtlasMigrateApplyProjectOptions(
+	cmd *cobra.Command,
+	project atlasProject,
+	opts atlasMigrateApplyOptions,
+) (atlasMigrateApplyOptions, bool) {
+	formatOutput := cmd.Flags().Changed("format")
+	if project.root == nil {
+		return opts, formatOutput
+	}
+	projectCfg := project.Config
+	opts.url = dbcli.EffectiveString(
+		cmd,
+		"url",
+		opts.url,
+		projectCfg.StringValue(projectconfig.StringDatabaseURL),
+	)
+	opts.dir = dbcli.EffectiveString(
+		cmd,
+		"dir",
+		opts.dir,
+		projectCfg.StringValue(projectconfig.StringMigrationDir),
+	)
+	dirFormat := projectCfg.StringValue(projectconfig.StringMigrationFormat)
+	if dirFormat.Present {
+		opts.dirFormat = dirFormat.Value
+	}
+	opts.txMode = dbcli.EffectiveString(
+		cmd,
+		"tx-mode",
+		opts.txMode,
+		projectCfg.StringValue(projectconfig.StringMigrationTxMode),
+	)
+	opts.execOrder = dbcli.EffectiveString(
+		cmd,
+		"exec-order",
+		opts.execOrder,
+		projectCfg.StringValue(projectconfig.StringMigrationExecOrder),
+	)
+	opts.revisionsSchema = dbcli.EffectiveString(
+		cmd,
+		"revisions-schema",
+		opts.revisionsSchema,
+		projectCfg.StringValue(projectconfig.StringMigrationRevisionsSchema),
+	)
+	opts.lockTimeout = dbcli.EffectiveString(
+		cmd,
+		"lock-timeout",
+		opts.lockTimeout,
+		projectCfg.StringValue(projectconfig.StringMigrationLockTimeout),
+	)
+	formatValue := projectCfg.StringValue(projectconfig.StringFormatMigrateApply)
+	opts.format = dbcli.EffectiveString(cmd, "format", opts.format, formatValue)
+	return opts, formatOutput || formatValue.Present
+}
+
+func atlasMigrateApplyExactIdentityError(
+	err error,
+	versions []int64,
+	keys []string,
+	migrations []*migrator.Migration,
+) error {
+	return remapAtlasExactIdentityError(
+		err,
+		atlasMigrateApplyRevisionIdentities(versions, keys, migrations),
+	)
 }
 
 func atlasMigrateApplyOutputNeedsSeparator(output []byte) bool {
@@ -510,13 +567,13 @@ func noteAtlasMigrateApplyLockUnsupported(
 // It writes to stderr on purpose. Stdout carries the machine-readable --format
 // document, and Atlas emits no field for this, so putting the note there would
 // invent one and corrupt a caller's parse.
-func emitAtlasMigrateApplyDeferredChecks(cmd *cobra.Command, versions []int64) {
+func emitAtlasMigrateApplyDeferredChecks(cmd *cobra.Command, versions []int64, keys []string) {
 	if len(versions) == 0 {
 		return
 	}
 	labels := make([]string, 0, len(versions))
-	for _, version := range versions {
-		labels = append(labels, strconv.FormatInt(version, 10))
+	for index := range versions {
+		labels = append(labels, atlasApplyVersionKeyAt(versions, keys, index))
 	}
 	noun := "migrations"
 	if len(versions) == 1 {
@@ -558,6 +615,7 @@ func emitAtlasMigrateApplyStart(
 	out io.Writer,
 	opts atlasMigrateApplyOptions,
 	baselineVersion int64,
+	baselineLabel string,
 	selectedVersions []int64,
 	selectedKeys []string,
 ) {
@@ -565,7 +623,7 @@ func emitAtlasMigrateApplyStart(
 		fmt.Fprintln(out, "Dry run mode: no changes will be made.")
 	}
 	if opts.dryRun && baselineVersion > 0 {
-		fmt.Fprintf(out, "Would baseline migrations at version %d.\n", baselineVersion)
+		fmt.Fprintf(out, "Would baseline migrations at version %s.\n", baselineLabel)
 	}
 	if len(selectedVersions) > 0 {
 		fmt.Fprintf(out, "Migrating to version %s from %d pending migrations.\n",
@@ -575,16 +633,115 @@ func emitAtlasMigrateApplyStart(
 	}
 }
 
+func newAtlasMigrateApplyVersionTokens(
+	captured fs.FS,
+	format atlasmigrateimport.Format,
+) (flywayVersionTokens, error) {
+	covered, err := atlasmigrateimport.FlywayCoveredSourceVersions(captured, format)
+	if err != nil {
+		return flywayVersionTokens{}, err
+	}
+	return newFlywayVersionTokens(covered), nil
+}
+
+func resolveAtlasMigrateApplyNumericVersions(
+	format atlasmigrateimport.Format,
+	opts atlasMigrateApplyOptions,
+	runOpts *atlasMigrateApplyRunOptions,
+) error {
+	// Native Atlas and every numeric-prefix foreign layout validate version
+	// operands before touching the directory. Preserve that precedence. Flyway
+	// is the one exception because the opaque token can only be resolved from
+	// the captured source itself.
+	if format == atlasmigrateimport.FormatFlyway {
+		return nil
+	}
+	var err error
+	runOpts.baselineVersion, runOpts.baselineLabel, err = resolveAtlasMigrateApplyVersion(
+		"baseline",
+		opts.baseline,
+		runOpts.baselineSource,
+		flywayVersionTokens{},
+	)
+	if err != nil {
+		return err
+	}
+	runOpts.toVersion, _, err = resolveAtlasMigrateApplyVersion(
+		"to-version",
+		opts.toVersion,
+		runOpts.toVersionSource,
+		flywayVersionTokens{},
+	)
+	return err
+}
+
+func resolveAtlasMigrateApplyFlywayVersions(
+	captured fs.FS,
+	format atlasmigrateimport.Format,
+	opts atlasMigrateApplyOptions,
+	runOpts *atlasMigrateApplyRunOptions,
+) error {
+	if format != atlasmigrateimport.FormatFlyway {
+		return nil
+	}
+	versionTokens, err := newAtlasMigrateApplyVersionTokens(captured, format)
+	if err != nil {
+		return fmt.Errorf("atlas migrate apply --dir: %w", err)
+	}
+	runOpts.baselineVersion, runOpts.baselineLabel, err = resolveAtlasMigrateApplyVersion(
+		"baseline",
+		opts.baseline,
+		runOpts.baselineSource,
+		versionTokens,
+	)
+	if err != nil {
+		return err
+	}
+	runOpts.toVersion, _, err = resolveAtlasMigrateApplyVersion(
+		"to-version",
+		opts.toVersion,
+		runOpts.toVersionSource,
+		versionTokens,
+	)
+	return err
+}
+
+func resolveAtlasMigrateApplyVersion(
+	name string,
+	value string,
+	source atlasMigrateApplyOperandSource,
+	tokens flywayVersionTokens,
+) (int64, string, error) {
+	if value == "" && (source != atlasMigrateApplyOperandExplicit || !tokens.translates()) {
+		return 0, "", nil
+	}
+	if tokens.translates() {
+		version, ok := tokens.resolve(value)
+		if !ok {
+			if name == "baseline" {
+				return 0, "", fmt.Errorf("baseline version %q not found", value)
+			}
+			return 0, "", fmt.Errorf("target version %q was not found in the migration provider", value)
+		}
+		return version, value, nil
+	}
+	version, err := atlasmigrate.ParseMigrationVersionFlag(name, value)
+	if err != nil {
+		return 0, "", err
+	}
+	return version, strconv.FormatInt(version, 10), nil
+}
+
 func atlasApplyVersionKeyAt(versions []int64, keys []string, index int) string {
-	if index < len(keys) && keys[index] != "" {
+	if index < len(keys) {
 		return keys[index]
 	}
 	return strconv.FormatInt(versions[index], 10)
 }
 
 func atlasApplyCurrentVersionLabel(status *migrator.MigrationStatus) string {
-	if status.CurrentVersionKey != "" {
-		return status.CurrentVersionKey
+	if status.CurrentVersionKeySet {
+		return atlasExactIdentityLabel(status.CurrentVersionKey)
 	}
 	return strconv.FormatInt(status.CurrentVersion, 10)
 }
@@ -684,7 +841,11 @@ func atlasApplySkipChecksFromEnv() (bool, error) {
 // `PTAH_SKIP_CHECKS=` left behind by a broken shell expansion into "checks
 // enforced" without a word. Absence still selects the default; a present value
 // has to parse.
-var applySkipChecks = envbool.New(applySkipChecksEnvVar, false)
+// It is [go.5x5.cz/ptah/internal/envbool.Gated]: bypassing `-- +ptah check`
+// directives is a Ptah-only capability the pinned community binary has no
+// spelling for, so strict compatibility must refuse an enabled value rather
+// than run a migration set the oracle would have enforced.
+var applySkipChecks = envbool.New(applySkipChecksEnvVar, false, envbool.Gated)
 
 // resolveAtlasApplySkipChecks resolves the bypass and announces an active one.
 //
@@ -717,6 +878,14 @@ func writeAtlasMigrateApplyFormat(
 	conn *dbschema.DatabaseConnection,
 	result atlasmigrate.ApplyResult,
 ) error {
+	if result.ErrorText != "" {
+		result.ErrorText = atlasMigrateApplyExactIdentityError(
+			errors.New(result.ErrorText),
+			result.SelectedVersions,
+			result.SelectedKeys,
+			result.Migrations,
+		).Error()
+	}
 	return atlasmigratereport.WriteApplyFormat(cmd.OutOrStdout(), opts.format, atlasmigratereport.ApplyFormatOptions{
 		Conn:   conn,
 		FS:     migrationFS,
@@ -756,9 +925,11 @@ func writeAtlasMigrateApplyFormat(
 // migrator reads there, so a concurrent writer cannot move the mark between the
 // check and the run.
 type flywayLinearity struct {
-	baseline         *atlasmigrateimport.FlywayBaseline
-	outOfOrderExempt []int64
-	sourceVersions   map[int64]string
+	baseline           *atlasmigrateimport.FlywayBaseline
+	outOfOrderExempt   []int64
+	sourceVersions     map[int64]string
+	revisionTypes      map[int64]migrator.AtlasRevisionType
+	repeatableVersions []int64
 }
 
 func flywayLinearityOperands(
@@ -772,8 +943,15 @@ func flywayLinearityOperands(
 	operands := flywayLinearity{baseline: baseline}
 	if baseline != nil {
 		operands.outOfOrderExempt = []int64{baseline.AtlasVersion}
+		operands.revisionTypes = map[int64]migrator.AtlasRevisionType{
+			baseline.AtlasVersion: migrator.AtlasRevisionTypeBaseline | migrator.AtlasRevisionTypeApplied,
+		}
 	}
 	operands.sourceVersions, err = atlasmigrateimport.FlywaySourceVersions(captured, format)
+	if err != nil {
+		return flywayLinearity{}, err
+	}
+	operands.repeatableVersions, err = atlasmigrateimport.FlywayCoveredRepeatableVersions(captured, format)
 	if err != nil {
 		return flywayLinearity{}, err
 	}

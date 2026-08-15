@@ -77,6 +77,17 @@ noticed:
 | `baseline` | the baselined history, against `--shadow-db` |
 | `lint` | the whole history, against `--dev-url` |
 | `repair --resume-from` | the remaining statements of the body that failed |
+| `generate --replay` | the current schema history, against `--dev-url` |
+| `generate --shadow-db` | prior history before candidate verification |
+
+Each replaying command captures the migration directory once, verifies that
+snapshot, and executes those same bytes. A generation or checkpoint writer
+also compares the directory it is about to update with the authorized snapshot
+before it adds files, and a checkpoint writer compares the expected
+snapshot-plus-checkpoint again before publishing the sum. The sum is computed
+from that authorized expected state rather than from a newly reopened path. A
+change during the run is refused; the new checksum cannot legitimize history
+the command did not verify and replay.
 
 `repair` is on that list only in its `--resume-from` spelling, and the
 distinction is deliberate. A plain `repair` rewrites revision metadata and
@@ -117,6 +128,12 @@ It is an environment variable rather than a flag because the Atlas-compatible
 surface asserts flag parity with the community binary, the same reason
 `PTAH_SKIP_CHECKS` is spelled that way.
 
+The command that owns a replay gate parses this variable at entry, before
+argument validation, directory access, or a database connection. A present
+empty value or another invalid boolean is therefore always an error; it cannot
+hide behind a dry run, a missing required flag, or a branch that happens not to
+reach the integrity check.
+
 Using it is never silent. A run that overrides a real refusal says so on stderr
 and names what it accepted:
 
@@ -147,6 +164,13 @@ inside a directory that verifies clean — the laundering shape recorded for
 `migrate import` in [#1095](https://github.com/stokaro/ptah/issues/1095). All
 six verbs refuse before anything is written, which is what the pinned Atlas
 community binary v1.3.0 does on the same directory.
+
+The fuller compatibility surface also gates formatted `migrate down`. Its
+default policy matches native Ptah: an unhashed directory is allowed, a stale
+sum is refused, and `PTAH_ALLOW_UNVERIFIED_MIGRATION_DIR=1` permits an explicit
+recovery with the warning above. Strict CE mode rejects the extension variable
+and does not expose a successful `down` implementation, so the escape hatch
+cannot make the strict surface more permissive than Atlas CE.
 
 ### The sum file has to agree with itself, too
 
@@ -212,11 +236,34 @@ before the upload; that command reports the tag it pushed and the resulting
 digest as separate fields and constructs no pinned reference, because there is
 no tag-resolved provenance to qualify yet.
 
-The three consuming verbs are what matters most for a registry source.
-`ptah migrations validate` asks the same question, but it takes a local `--dir`
-only and answers an `oci://` reference with
-`stat oci://...: no such file or directory`, so for an artifact `--verify-sum`
-is the only spelling there is.
+`ptah migrations validate` asks the same question without executing anything,
+and it takes an `oci://` reference too:
+
+```bash
+ptah migrations validate \
+  --dir oci://registry.example.com/acme/app-migrations:v1
+```
+
+It exits 0 when the artifact matches the sum it carries, 1 when a migration was
+added, removed or edited out of band, and 2 when the artifact carries no sum at
+all. Earlier releases answered `stat oci://...: no such file or directory`
+here, which left the read-only integrity question answerable only by a verb
+that writes.
+
+HTTPS is the default here as everywhere else. `--plain-http` is registered on
+this verb too, and like every other registration it is only for an explicitly
+trusted local registry — never for a reference that looks like the one above.
+
+Because the reference above is a tag, a successful run also prints the
+movable-tag qualifier described below, naming the digest the tag resolved to. A
+digest-pinned reference prints nothing extra.
+
+That does not retire `--verify-sum` on the consuming verbs, and the reason is
+timing rather than coverage. `validate` resolves the reference in its own
+process; the consuming verb resolves it again in the next one. A movable tag
+can select different bytes in between, so only the flag verifies the artifact
+the same invocation is about to execute. Pin a digest, or pass the flag, or
+both.
 
 `status` is the one verb that runs no gate without the flag. It executes none
 of the directory's SQL, so it is outside the always-on class below, and it is
@@ -452,135 +499,70 @@ directory both tools apply — Atlas CE reports it as `Migrating to version 2 fr
 02`.
 :::
 
-:::danger[Upgrading a Flyway directory applied by Ptah v0.1.0–v0.1.2]
-Converging the importer changed the Atlas version each Flyway file converts
-to, and that version is the key `atlas_schema_revisions` stores. A database
-migrated through `?format=flyway` by any of those releases therefore records
-migrations under versions this release matches to no file, so **every migration
-in the directory reads as pending**.
+:::danger[Upgrading a Flyway directory applied by an older Ptah build]
+Direct Flyway apply, status, lint, and set now use the exact source token as the
+Atlas revision identity. The numeric projection still exists, but only as the
+execution-order and linearity key. A pre-#1206 revision table may therefore
+contain the current numeric ordering key, while a pre-#982 table may contain an
+even older numeric encoding. Either obsolete row would otherwise leave the
+corresponding migration pending.
 
-`ptah-compat migrate apply` refuses such a database before executing anything
-and prints the `UPDATE` statements that migrate the recorded versions forward:
+`ptah-compat migrate apply` refuses before executing anything and prints the
+one-way repair to the exact token. For example, the old `V1` key `10000` becomes
+`1`, and the pre-#1206 `V2` ordering key becomes `2`:
 
-```text
-error: this database was migrated by a Ptah build older than the one that fixed
-stokaro/ptah#982 ... 2 already-applied migration(s) would run a second time and
-nothing has been applied
-
-recorded version -> version this build uses:
-  10000                -> 4611686018427469511  V1__init.sql
-  20000                -> 4611686018427510315  V2__seed.sql
-
-to adopt the new encoding, migrate the recorded versions forward and re-run:
-  UPDATE atlas_schema_revisions SET version = '4611686018427469511' WHERE version = '10000';
-  UPDATE atlas_schema_revisions SET version = '4611686018427510315' WHERE version = '20000';
+```sql
+UPDATE atlas_schema_revisions SET version = '1' WHERE version = '10000';
+UPDATE atlas_schema_revisions SET version = '2'
+  WHERE version = '4611686018427510315';
 ```
 
-Run them against the schema `--revisions-schema` selects, then re-run the
-apply. Rewriting the version column is enough on its own: the recorded hash
-covers the converted SQL body, which this change does not touch.
+Run the statements against the schema selected by `--revisions-schema`, then
+re-run apply. If the exact token row already exists, the repair deletes the
+duplicate obsolete row instead of updating onto an occupied primary key. New
+exact-source rows carry `operator_version='Ptah/source-identity'`; only the
+generic `Ptah` marker written by older builds proves that a numeric candidate is
+an internal ordering key. A numeric candidate that is another covered or
+retired exact token, or that belongs to another writer, is ambiguous and is
+never rewritten automatically.
 
-`--baseline` refuses once the revision table is non-empty, so the rewrite is the
-route for this case. Both encodings are Ptah's own, which is what makes moving
-the version column sufficient.
-
-Without the refusal this is not reliably loud: re-running a `CREATE TABLE`
-fails and leaves a dirty revision, but re-running a backfill or a seed
-succeeds, exits 0, and duplicates the rows.
+This recovery is intentionally one way. Ptah is pre-v1, so the retired internal
+key is not retained as a second readable identity. Rewriting the version column
+is sufficient because the recorded hash still covers the same converted SQL
+body.
 :::
 
-:::danger[A revision table written by another Atlas implementation]
-The two implementations record a **converted** Flyway migration under different
-versions. Atlas CE identifies a migration by an opaque version string and stores
-the Flyway token verbatim; Ptah's migrator identifies one by an `int64`, so the
-importer projects the token onto a number. Measured on Atlas CE v1.3.0 against
-sqlite, on a directory holding `V1__a.sql` and `V2__b.sql`:
+:::note[Flyway revision identity matches Atlas CE]
+For direct Flyway directories, `migrate apply`, `migrate set`, `migrate status`,
+and `migrate lint` preserve exact plain, dotted, dot-prefixed, zero-padded,
+nonnumeric, token-ending-`R`, baseline, and empty repeatable tokens. Revision
+metadata therefore interoperates with the pinned Atlas CE identity contract.
+The internal numeric projection decides order and linearity only; normal direct
+operations do not expose it as the active migration identity.
 
-| Applied by | Versions recorded in `atlas_schema_revisions` |
-| --- | --- |
-| Atlas CE | `1`, `2` |
-| `ptah-compat` | `4611686018427469511`, `4611686018427510315` |
+The configured revision column must keep every covered token distinct. New
+MySQL and MariaDB revision tables use a binary version collation, as do new SQL
+Server tables. If an existing table's collation aliases two source tokens,
+Ptah refuses before migration SQL instead of allowing the primary key or a
+version lookup to choose one identity for both.
 
-One direction is harmless. Atlas CE reads a table `ptah-compat` wrote as already
-ahead of the directory and prints `No migration files to execute` at exit 0. The
-other is not: every converted file matches no row, the whole directory reads as
-pending, and the migrations run a second time.
+Persisted exact tokens remain migrations after their Flyway source file is
+removed. They stay visible in status and source-order checks without becoming
+pending work; this includes a retired dot-prefixed token such as `.foo`.
+Atlas's measured `.atlas_cloud_identifier` bookkeeping row remains excluded
+from status, version math, and mutation. The compatibility status report
+selects Current by the same textual token rule as the pinned binary while
+execution keeps its separate numeric high-water mark.
 
-That second run is not reliably loud either. A `CREATE TABLE` fails and strands
-a dirty revision, but `CREATE TABLE IF NOT EXISTS` followed by a seed re-runs at
-exit 0 and inserts the row twice, with nothing in the exit status, on stdout, or
-in `migrate status` saying so.
+`migrate import` deliberately keeps its fixed-width numeric output filenames.
+Those names preserve the safe order Ptah computed, whereas Atlas CE's imported
+token filenames can order `1.5`, `10`, and `2` lexically. Import naming is a
+separate artifact-safety contract from direct revision identity.
 
-`migrate apply` — and `--dry-run`, which previewed the same re-run — refuses that
-database before executing anything
-([#1100](https://github.com/stokaro/ptah/issues/1100)):
-
-```text
-error: this database records converted Flyway migrations under their SOURCE
-version token, which is how another Atlas implementation identifies them ...
-2 already-applied migration(s) read as pending here and would run a second
-time. Nothing has been applied
-
-recorded version -> version this build uses:
-  1                    -> 4611686018427469511  V1__init.sql
-  2                    -> 4611686018427510315  V2__seed.sql
-```
-
-Two ways forward, both measured. They are **alternatives, not steps** — taking
-the second closes the first:
-
-- Keep applying that database with the implementation that wrote its revision
-  table. It reads its own versions and is unaffected.
-- Adopt the versions this build uses. The refusal prints
-  `migrate set <head version>`; run it with the same `--dir` and `--url`.
-
-`migrate set` records this build's versions and does **not** remove the source
-tool's, so the revision table then carries both spellings. Measured on
-`V1__a.sql` and `V2__b.sql` recorded by Atlas CE as `1` and `2`: right after the
-route, Atlas CE v1.3.0 still prints `No migration files to execute` at exit 0 —
-but add `V3__c.sql` and it prints
-`migration file V3__c.sql was added out of order` at exit 1, while `ptah-compat`
-applies it at exit 0. The controls separate that from the added file: the same
-three-file directory on a fresh database, and on a database carrying only CE's
-`1`,`2`, both apply at exit 0 on Atlas CE. So the switch is one way, and the
-refusal says so rather than calling the result up to date.
-
-The second route is withdrawn, by name, on the two shapes where `migrate set`
-is not a no-op. It moves the database to exactly the version given, which both
-**removes** the revisions above it and **records** every covered migration below
-it, run or not:
-
-- A converted baseline lands in a low band, so a directory whose head is a
-  baseline can have real revisions above it. The refusal names the rows the
-  command would have deleted.
-- The head is the largest version among the migrations the other implementation
-  *ran*, and the covered migrations below it need not all be among them.
-  Measured on `V1__g1.sql` and `V3__g3.sql` recorded as `1` and `3` with
-  `V2__g2.sql` added afterwards: `migrate set 4611686018427551119` reports
-  `(3 set)`, the next apply prints `No migration files to execute` at exit 0,
-  and table `g2` is absent with its version recorded — it can never run again.
-  The refusal names that file and the version the command would assert, so
-  nothing is lost by following the printed instruction.
-
-A baseline added to a directory another implementation has already applied is
-covered by the same refusal, and it is not the same defect: nothing re-runs, a
-squashed schema executes on top of the history it squashes. Measured, Atlas CE
-prints `No migration files to execute` there while `ptah-compat` created the
-table.
-
-Rewriting the version column by hand is **not** enough here, unlike the upgrade
-above. The two implementations also record the migration checksum differently —
-a base64 `h1` digest against a hex SHA-256 — so a bare version rewrite fails the
-next apply with `checksum mismatch`. `migrate set` writes the whole revision row.
-
-`migrate status` is deliberately left alone. Its counts run over three different
-sets on a mismatched revision table, so they can sum above the total, and
-measured, Atlas CE reports the equivalent input the same way.
-
-Only Flyway is affected, measured across all five converted layouts. Goose
-records `00001` where Ptah records `1`, and those meet when the revision reader
-parses them; golang-migrate, dbmate and liquibase record identical versions on
-both tools.
+Cross-tool application can still fail closed on a checksum mismatch because
+the two implementations may encode the same migration digest differently.
+That checksum boundary does not change the exact version-token match and never
+causes an already-applied migration to be treated as pending.
 :::
 
 ## Replay on a dev database

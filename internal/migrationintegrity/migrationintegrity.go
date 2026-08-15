@@ -69,14 +69,38 @@
 package migrationintegrity
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
+	"path/filepath"
+	"slices"
 
+	"go.5x5.cz/ptah/internal/atlasmigrate"
 	"go.5x5.cz/ptah/internal/envbool"
+	"go.5x5.cz/ptah/internal/fsnapshot"
 	"go.5x5.cz/ptah/internal/migratesum"
+	"go.5x5.cz/ptah/internal/migrationsnapshot"
 	"go.5x5.cz/ptah/migration/migrator"
 )
+
+// ErrAuthorizedHistoryChanged reports that migration history changed after a
+// checkpoint body was derived from it. The edited checkpoint is allowed to
+// change; every preexisting migration and metadata file remains bound to the
+// snapshot that was replayed.
+var ErrAuthorizedHistoryChanged = errors.New("migration history changed while editing checkpoint")
+
+// CheckpointEditAuthorization is the exact post-write state an interactive
+// checkpoint edit may change. Its fields are private so callers can obtain one
+// only by verifying a bound migration directory through
+// [AuthorizeCheckpointEdit].
+type CheckpointEditAuthorization struct {
+	snapshot    fsnapshot.Snapshot
+	editedNames []string
+	format      migrator.MigrationDirFormat
+	writer      *atlasmigrate.MigrationWriter
+}
 
 // AllowUnverifiedEnvVar is the escape hatch: set it to a true value and a
 // hashed directory that does NOT match its integrity file is executed anyway.
@@ -105,7 +129,15 @@ const AllowUnverifiedEnvVar = "PTAH_ALLOW_UNVERIFIED_MIGRATION_DIR"
 // The default is false, which is the strict side. Every boolean `PTAH_*` in
 // this tree opts IN to the more permissive behavior, so a typo lands on the
 // strict default and fails closed.
-var allowUnverified = envbool.New(AllowUnverifiedEnvVar, false)
+//
+// It is [go.5x5.cz/ptah/internal/envbool.Gated]. The pinned community binary
+// has no spelling that executes a hashed directory whose integrity file does
+// not match: `atlas.sum` mismatch is a refusal there with `migrate hash` as the
+// only way out. A true value therefore runs migrations that binary would not
+// have run, which is a capability it lacks rather than one Ptah is restoring,
+// and a conformance run that executed under it would be measuring a different
+// program. Strict mode refuses it; the default surface keeps the escape hatch.
+var allowUnverified = envbool.New(AllowUnverifiedEnvVar, false, envbool.Gated)
 
 // Options selects how strict one gate call is.
 type Options struct {
@@ -125,16 +157,41 @@ type Options struct {
 	RequireSum bool
 }
 
-// Gate verifies fsys against the integrity file it carries under the default
-// contract: a hashed directory must match, an unhashed one passes.
-//
-// It is [GateWith] with zero Options; see there for the full contract.
-func Gate(notice io.Writer, fsys fs.FS, format migrator.MigrationDirFormat) (string, error) {
-	return GateWith(notice, fsys, format, Options{})
+// Policy is the process-boundary decision for the migration-directory
+// integrity escape hatch. Commands resolve it before validating their own
+// arguments, then carry the value to every integrity check they perform.
+// Keeping the decision explicit prevents an invalid environment value from
+// hiding behind an early command return and prevents one invocation from
+// observing different values at different gates.
+type Policy struct {
+	allowUnverified bool
 }
 
-// GateWith verifies fsys against the integrity file it carries and reports
-// which file verified, or the empty string when nothing was checked.
+// Resolve reads the integrity escape hatch once. Callers that own migration
+// directory execution resolve it at their command boundary, before any other
+// validation or external work.
+//
+// The environment variable is resolved BEFORE the directory is read, so an
+// unparseable value refuses the command whatever state the directory is in. A
+// value that only fails the run on already-drifted directories would let
+// `PTAH_ALLOW_UNVERIFIED_MIGRATION_DIR=yes` sit unnoticed in a CI environment
+// file until the day it was load-bearing, which is the reverse of what the
+// envbool contract is for. Resolving at the command boundary rather than inside
+// the gate is also what covers [Options.RequireSum], which does not honor the
+// variable: a typo is refused there too, instead of reaching a branch that
+// happens not to read it.
+func Resolve() (Policy, error) {
+	allow, err := allowUnverified.Resolve()
+	if err != nil {
+		return Policy{}, err
+	}
+	return Policy{allowUnverified: allow}, nil
+}
+
+// GateWithPolicy verifies fsys against the integrity file it carries and
+// reports which file verified, or the empty string when nothing was checked,
+// applying a decision already resolved by [Resolve] at the owning command
+// boundary.
 //
 // Call it before the verb executes anything, and — where the verb connects to a
 // database — before it connects. A gate that fires after the connection has
@@ -150,26 +207,13 @@ func Gate(notice io.Writer, fsys fs.FS, format migrator.MigrationDirFormat) (str
 // notice receives the override announcement, and receives it only when an
 // override actually suppressed a refusal: a clean directory skips nothing, so
 // it says nothing. Pass the command's stderr.
-//
-// The environment variable is resolved BEFORE the directory is read, so an
-// unparseable value refuses the command whatever state the directory is in. A
-// value that only fails the run on already-drifted directories would let
-// `PTAH_ALLOW_UNVERIFIED_MIGRATION_DIR=yes` sit unnoticed in a CI environment
-// file until the day it was load-bearing, which is the reverse of what the
-// envbool contract is for. It is resolved even under [Options.RequireSum],
-// which does not honor it, so a typo is still refused rather than reaching a
-// branch that happens not to read it.
-func GateWith(
+func GateWithPolicy(
 	notice io.Writer,
 	fsys fs.FS,
 	format migrator.MigrationDirFormat,
+	policy Policy,
 	opts Options,
 ) (string, error) {
-	allow, err := allowUnverified.Resolve()
-	if err != nil {
-		return "", err
-	}
-
 	if opts.RequireSum {
 		result, err := migratesum.VerifyWithFormat(fsys, format)
 		if err != nil {
@@ -191,7 +235,7 @@ func GateWith(
 	if result.OK() {
 		return result.SumFileName, nil
 	}
-	if !allow {
+	if !policy.allowUnverified {
 		return "", fmt.Errorf("migration sum verification failed:\n%s", result.Describe())
 	}
 	fmt.Fprintf(notice,
@@ -202,6 +246,168 @@ func GateWith(
 		result.Describe(),
 	)
 	return "", nil
+}
+
+// AuthorizeCheckpointEdit records the exact post-write state before an editor
+// opens. The directory must equal the replay-authorized history plus the new
+// checkpoint files, and its current integrity file must verify that state.
+func AuthorizeCheckpointEdit(
+	ctx context.Context,
+	writer *atlasmigrate.MigrationWriter,
+	format migrator.MigrationDirFormat,
+	authorized fs.FS,
+	editedPaths ...string,
+) (CheckpointEditAuthorization, error) {
+	if writer == nil {
+		return CheckpointEditAuthorization{}, errors.New("migration writer is required")
+	}
+	if authorized == nil {
+		return CheckpointEditAuthorization{}, errors.New("authorized migration history is required")
+	}
+	authorizedSnapshot, err := migrationsnapshot.Capture(authorized)
+	if err != nil {
+		return CheckpointEditAuthorization{}, fmt.Errorf("capture authorized migration history before checkpoint edit: %w", err)
+	}
+	editedNames, err := editedCheckpointNames(writer.Path(), editedPaths)
+	if err != nil {
+		return CheckpointEditAuthorization{}, err
+	}
+	var authorization CheckpointEditAuthorization
+	err = atlasmigrate.WithMigrationDirectoryLock(ctx, writer.Path(), 0, func(context.Context) error {
+		if err := writer.Revalidate(); err != nil {
+			return fmt.Errorf("revalidate migration directory before checkpoint edit: %w", err)
+		}
+		fsys, err := writer.FS()
+		if err != nil {
+			return fmt.Errorf("open migration directory before checkpoint edit: %w", err)
+		}
+		newFiles := make(map[string][]byte, len(editedNames)+1)
+		for _, name := range editedNames {
+			contents, readErr := fs.ReadFile(fsys, name)
+			if readErr != nil {
+				return fmt.Errorf("read checkpoint %s before edit: %w", name, readErr)
+			}
+			newFiles[name] = contents
+		}
+		sumName, err := migratesum.FileNameForFormat(format)
+		if err != nil {
+			return err
+		}
+		currentSum, err := fs.ReadFile(fsys, sumName)
+		if err != nil {
+			return fmt.Errorf("read %s before checkpoint edit: %w", sumName, err)
+		}
+		newFiles[sumName] = currentSum
+		expected, err := authorizedSnapshot.WithFiles(newFiles)
+		if err != nil {
+			return fmt.Errorf("build authorized checkpoint snapshot before edit: %w", err)
+		}
+		current, err := migrationsnapshot.Capture(fsys)
+		if err != nil {
+			return fmt.Errorf("capture migration directory before checkpoint edit: %w", err)
+		}
+		if !expected.Equal(current) {
+			return ErrAuthorizedHistoryChanged
+		}
+		result, hashed, err := migratesum.VerifyHashed(current, format)
+		if err != nil {
+			return fmt.Errorf("verify %s before checkpoint edit: %w", sumName, err)
+		}
+		if !hashed || !result.OK() {
+			return ErrAuthorizedHistoryChanged
+		}
+		authorization = CheckpointEditAuthorization{
+			snapshot:    current,
+			editedNames: slices.Clone(editedNames),
+			format:      format,
+			writer:      writer,
+		}
+		return nil
+	})
+	return authorization, err
+}
+
+// RefreshEditedCheckpointIntegrity publishes a checksum for edited checkpoint
+// files without authorizing any other change made while the editor was open.
+// writer must be the same handle passed to [AuthorizeCheckpointEdit].
+func RefreshEditedCheckpointIntegrity(
+	ctx context.Context,
+	writer *atlasmigrate.MigrationWriter,
+	authorization CheckpointEditAuthorization,
+) error {
+	if writer == nil {
+		return errors.New("migration writer is required")
+	}
+	if len(authorization.editedNames) == 0 {
+		return errors.New("checkpoint edit authorization is required")
+	}
+	if authorization.writer != writer {
+		return errors.New("checkpoint edit authorization belongs to a different migration writer")
+	}
+	return atlasmigrate.WithMigrationDirectoryLock(ctx, writer.Path(), 0, func(context.Context) error {
+		if err := writer.Revalidate(); err != nil {
+			return fmt.Errorf("revalidate migration directory after checkpoint edit: %w", err)
+		}
+		fsys, err := writer.FS()
+		if err != nil {
+			return fmt.Errorf("open migration directory after checkpoint edit: %w", err)
+		}
+		editedFiles := make(map[string][]byte, len(authorization.editedNames))
+		for _, name := range authorization.editedNames {
+			contents, readErr := fs.ReadFile(fsys, name)
+			if readErr != nil {
+				return fmt.Errorf("read edited checkpoint %s: %w", name, readErr)
+			}
+			editedFiles[name] = contents
+		}
+		expected, err := authorization.snapshot.WithFiles(editedFiles)
+		if err != nil {
+			return fmt.Errorf("build authorized checkpoint snapshot after edit: %w", err)
+		}
+		current, err := migrationsnapshot.Capture(fsys)
+		if err != nil {
+			return fmt.Errorf("capture migration directory after checkpoint edit: %w", err)
+		}
+		if !expected.Equal(current) {
+			return ErrAuthorizedHistoryChanged
+		}
+		sumName, err := migratesum.FileNameForFormat(authorization.format)
+		if err != nil {
+			return err
+		}
+		sum, err := migratesum.ComputeWithFormat(expected, authorization.format)
+		if err != nil {
+			return fmt.Errorf("compute %s after checkpoint edit: %w", sumName, err)
+		}
+		if _, err := writer.PublishSum(authorization.format, sum); err != nil {
+			return fmt.Errorf("publish %s after checkpoint edit: %w", sumName, err)
+		}
+		if err := writer.SyncDir(); err != nil {
+			return fmt.Errorf("flush migration directory after checkpoint edit: %w", err)
+		}
+		return nil
+	})
+}
+
+func editedCheckpointNames(dir string, paths []string) ([]string, error) {
+	if len(paths) == 0 {
+		return nil, errors.New("edited checkpoint path is required")
+	}
+	names := make([]string, 0, len(paths))
+	seen := make(map[string]struct{}, len(paths))
+	for _, checkpointPath := range paths {
+		rel, err := filepath.Rel(dir, checkpointPath)
+		if err != nil || rel == "." || filepath.Dir(rel) != "." {
+			return nil, fmt.Errorf("edited checkpoint path %q is not a direct child of %s", checkpointPath, dir)
+		}
+		name := filepath.ToSlash(rel)
+		if _, exists := seen[name]; exists {
+			return nil, fmt.Errorf("edited checkpoint path %q is duplicated", checkpointPath)
+		}
+		seen[name] = struct{}{}
+		names = append(names, name)
+	}
+	return names, nil
 }
 
 // sumFileNameOf names the integrity file a drifted result belongs to, falling

@@ -178,6 +178,14 @@ func (c atlasDirCapture) versionTokens() (flywayVersionTokens, error) {
 	return newFlywayVersionTokens(covered), nil
 }
 
+// sourceVersions returns the complete Flyway identity mapping, including
+// versions a surviving baseline has squashed from the converted filesystem.
+// Those retired entries interpret existing history and preserve the linearity
+// high-water mark; they never materialize a migration in migrationFS.
+func (c atlasDirCapture) sourceVersions() (map[int64]string, error) {
+	return atlasmigrateimport.FlywaySourceVersions(c.gateFS(), c.format)
+}
+
 // migrationFS returns the filesystem the verb interprets as Atlas migrations.
 // A foreign layout is rebuilt in memory as up-only Atlas migrations, which is
 // the same conversion `migrate apply` executes -- so the versions a status

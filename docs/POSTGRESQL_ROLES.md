@@ -271,7 +271,11 @@ Avoid hardcoding passwords in annotations. Use environment variables or external
 
 ## Cross-Database Compatibility
 
-Role annotations are PostgreSQL-specific and will be ignored when using MySQL or MariaDB dialects. This allows you to maintain the same entity definitions across different database backends.
+Role annotations use PostgreSQL-shaped semantics. MySQL and MariaDB both host
+roles, but Ptah does not yet read or compare their role model, so rendering or
+applying a schema with role definitions to either target fails before SQL. Use
+a target-specific desired schema and manage roles outside Ptah for those
+targets instead of relying on the definitions to be ignored.
 
 ## Migration Behavior
 

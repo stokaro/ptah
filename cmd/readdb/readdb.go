@@ -14,6 +14,7 @@ import (
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
 	"go.5x5.cz/ptah/internal/rolescope"
+	"go.5x5.cz/ptah/internal/sqlitevirtual"
 )
 
 const (
@@ -97,6 +98,11 @@ func readDBCommand(cmd *cobra.Command, opts *options) error {
 	// on the server, and an operator reading the output has no other way to
 	// learn that. See stokaro/ptah#1267.
 	rolescope.ReportUndescribed(stderr, schema)
+
+	// A SQLite virtual table whose module this build cannot load leaves that
+	// module's own storage described as ordinary tables, and the statements
+	// printed below are what an operator would replay. See stokaro/ptah#1028.
+	sqlitevirtual.ReportUnclassified(stderr, schema)
 
 	// Format and display the schema
 	dbsch := dbschematogo.ConvertDBSchemaToGoSchema(schema)

@@ -142,6 +142,11 @@ SQL:
 - A nonunique referenced key must be a complete leftmost BTREE prefix.
   FULLTEXT, SPATIAL, HASH, parser-backed, expression, and prefix indexes do not
   qualify.
+- A modified `SQL SECURITY DEFINER` routine is refused before migration SQL is
+  planned when its catalog `DEFINER` differs from the connected
+  `CURRENT_USER()`. Connect as that definer, change the desired routine to
+  `SQL SECURITY INVOKER`, or leave the foreign routine unchanged. Missing
+  ownership facts fail closed too.
 - DDL commits implicitly on both engines, so a failed migration cannot be
   rolled back by the surrounding transaction.
 
@@ -244,13 +249,69 @@ complete catalog dependency metadata, cleanup also requires that other user
 databases contain no view-like or dictionary objects and no `Buffer`,
 `Distributed`, or `Merge` tables.
 
+The narrower reset used by shadow verification, by the `schema apply` dev
+rehearsal, and by `schema clean` removes tables, views, and materialized views.
+A materialized view goes as one object, with `DROP VIEW`, so its inner storage
+table leaves with it rather than being dropped out from under it. Live views and
+window views are left alone, matching what the ClickHouse reader reports; use
+the database-realm cleanup above when a database has to be emptied completely.
+
 Plain views participate in the complete render, plan, and introspection cycle.
 Ptah emits `CREATE VIEW`, `CREATE OR REPLACE VIEW`, and `DROP VIEW`, preserving
 qualified names and query bodies, and reads ordinary views from
 `system.tables`. An empty query body, `WITH CHECK OPTION`, or
-`DROP VIEW ... CASCADE` fails instead of being ignored. Materialized views remain named as
-unsupported because the shared schema model cannot preserve ClickHouse `TO`,
-`ENGINE`, or refresh semantics safely.
+`DROP VIEW ... CASCADE` fails instead of being ignored.
+
+Materialized views do too. Ptah emits
+`CREATE MATERIALIZED VIEW <name> ENGINE = MergeTree ORDER BY tuple() AS <query>`,
+reads the object back from `system.tables`, and plans a changed query as a drop
+followed by a create. Several ClickHouse-specific points are worth knowing
+before adopting them:
+
+- The storage clause is written explicitly rather than left to the server.
+  ClickHouse 25.x and later accept a materialized view with no storage clause
+  and supply `MergeTree ORDER BY tuple()` themselves; 24.x rejects it with
+  `ORDER BY or PRIMARY KEY clause is missing`.
+- The drop is spelled `DROP VIEW`. `DROP MATERIALIZED VIEW` is a syntax error on
+  ClickHouse, and `DROP VIEW` removes the view together with the inner table
+  that stores its result.
+- `POPULATE` is never emitted, so a materialized view starts empty and fills
+  from inserts into its source rather than from the rows already there.
+  `POPULATE` is a one-shot argument that leaves no trace in the catalog, so
+  nothing Ptah reads back could diff it. Backfill existing rows yourself if you
+  need them.
+- A query written without a database qualifier is read back carrying one.
+  ClickHouse resolves the query when the view is created and records what it
+  resolved, so `SELECT count() AS c FROM users` comes back from
+  `system.tables.as_select` as `SELECT count() AS c FROM <database>.users`.
+  Comparison removes the qualifier the object's own database added, the same way
+  it does for an ordinary view, so an unchanged declaration is not reported as
+  drift and is never planned as a drop and a create. A qualifier naming some
+  other database is a real difference and is still reported.
+
+- A changed query is applied destructively. The drop takes the inner storage
+  table and every row the view had accumulated, and the replacement omits
+  `POPULATE`, so the view starts empty again and refills only from new inserts.
+  ClickHouse does have `ALTER TABLE <view> MODIFY QUERY`, which keeps the stored
+  rows, but it refuses any query whose output columns differ from the ones the
+  storage table already has, and a Ptah declaration carries a query body with no
+  column list to compare, so the planner cannot tell the two cases apart before
+  the statement runs. Treat a materialized-view body change as a change that
+  empties the view.
+
+The `TO <target table>` form and refreshable materialized views are not emitted:
+the shared schema model carries a name and a query, so it cannot name a separate
+target table, and `REFRESH MATERIALIZED VIEW` remains a named diagnostic because
+ClickHouse has no such statement.
+
+A materialized view created elsewhere with `TO <target table>` is still read, and
+it is read as though it owned its storage: `system.tables` reports the same
+engine and the same `as_select` for both forms, and the target appears only in
+`create_table_query`, which this reader does not consult. Such a view therefore
+compares as synchronized against a declaration of the same query, and a later
+body change is planned as a drop and a create that recreates it in the
+inner-storage form, so inserts stop reaching the original target table. Do not
+manage a `TO` materialized view with Ptah.
 
 ### Atlas revision metadata on ClickHouse
 

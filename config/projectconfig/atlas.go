@@ -57,6 +57,14 @@ func LoadAtlasFileCollectionWithOptions(
 	path string,
 	opts AtlasLoadOptions,
 ) ([]Config, error) {
+	// A missing atlas.hcl returns an empty collection below without ever
+	// reaching ParseAtlasFSCollectionWithOptions, so the resolve that entry
+	// point makes would never run and a malformed [IgnoreEnvSchemasEnvVar] value
+	// would be honored as its default on exactly the projects that have no
+	// config file. Resolving here refuses it whatever the file system holds.
+	if err := ValidateAtlasEnvironmentVariables(); err != nil {
+		return nil, err
+	}
 	absolute, err := filepath.Abs(path)
 	if err != nil {
 		return nil, fmt.Errorf("resolve atlas config path %s: %w", path, err)
@@ -168,6 +176,17 @@ func ParseAtlasFSCollectionWithOptions(
 	if filename == "" {
 		filename = AtlasFileName
 	}
+	// The opt-out is resolved before the document is parsed, not when the parser
+	// is built. hclsyntax.ParseConfig returns first on a document that does not
+	// parse, so resolving after it would hide a malformed
+	// [IgnoreEnvSchemasEnvVar] behind the syntax diagnostic: the operator would
+	// fix the file and only then meet the environment error, on the next run.
+	// This is the single entry point every ParseAtlas* API reaches, so one
+	// resolve here covers all of them.
+	ignoreSchemas, err := ignoreEnvSchemas.Resolve()
+	if err != nil {
+		return nil, err
+	}
 	file, diags := hclsyntax.ParseConfig(data, filename, hcl.Pos{Line: 1, Column: 1})
 	if diags.HasErrors() {
 		return nil, fmt.Errorf("parse atlas project config: %s", diags.Error())
@@ -177,7 +196,7 @@ func ParseAtlasFSCollectionWithOptions(
 		return nil, fmt.Errorf("parse atlas project config: unsupported body type %T", file.Body)
 	}
 
-	p, err := newAtlasParser(fsys, opts.Vars, filename, opts.RejectListMapForEach)
+	p, err := newAtlasParser(fsys, opts.Vars, filename, opts.RejectListMapForEach, ignoreSchemas)
 	if err != nil {
 		return nil, err
 	}
@@ -202,6 +221,13 @@ func singularAtlasConfig(configs []Config, envName string) (Config, error) {
 type atlasParser struct {
 	ctx         *hcl.EvalContext
 	varOverride map[string]cty.Value
+	// ignoreEnvSchemas carries the resolved [IgnoreEnvSchemasEnvVar] value,
+	// read by the caller before the document is parsed rather than at the
+	// `schemas` arm. The arm is only reached by a config that spells the
+	// attribute in the selected environment, so resolving there made a malformed
+	// value depend on the file under parse: the same broken environment failed
+	// one project and was ignored by the next.
+	ignoreEnvSchemas bool
 	// baseDir is the directory that contains the parsed atlas.hcl file, as
 	// spelled by the caller. Relative data.external_schema working_dir values
 	// resolve against it so the configured program runs where the config file
@@ -260,6 +286,7 @@ func newAtlasParser(
 	rawVars []string,
 	filename string,
 	rejectListMapForEach bool,
+	ignoreSchemas bool,
 ) (atlasParser, error) {
 	overrides, err := parseAtlasVarOverrides(rawVars)
 	if err != nil {
@@ -281,6 +308,7 @@ func newAtlasParser(
 			},
 		},
 		varOverride:          overrides,
+		ignoreEnvSchemas:     ignoreSchemas,
 		baseDir:              filepath.Dir(filename),
 		rejectListMapForEach: rejectListMapForEach,
 		externalSchemas:      map[string]externalSchemaDataSource{},
@@ -297,18 +325,18 @@ func (p atlasParser) parseCollection(body *hclsyntax.Body, envName string) ([]Co
 	// evaluated, so a bad reference in one is still fatal.
 	//
 	// The tolerance is not universal at this scope either: three top-level names
-	// are decoded into a struct and refuse an object body. See
-	// [atlasStructAttributes].
+	// are decoded into a struct and refuse an object body, and `env` written as
+	// an attribute takes no value but null. Both rules are asked through
+	// [checkAtlasToleratedValue] so this body cannot drift from the ones that go
+	// through [atlasParser.tolerateUnknownAttr].
 	for _, name := range sortedAttributeNames(body.Attributes) {
 		attr := body.Attributes[name]
 		value, diags := attr.Expr.Value(p.ctx)
 		if diags.HasErrors() {
 			return nil, p.evaluationFailed(name, attr, diags)
 		}
-		if atlasStructAttribute(atlasTopLevelScope, name) {
-			if err := checkAtlasStructAttribute(name, attr, value); err != nil {
-				return nil, err
-			}
+		if err := checkAtlasToleratedValue(atlasTopLevelScope, name, attr, value); err != nil {
+			return nil, err
 		}
 		p.noteIgnored("attribute", name, attr.NameRange)
 	}
@@ -454,19 +482,21 @@ func (p atlasParser) ignoredConstructs() []IgnoredAtlasConstruct {
 // carries no configuration on CE either, so matching it is a refusal and not an
 // unimplemented setting. See [atlasStructAttributeRule].
 //
-// One name the probe has caught that IS a holding-pen case, and is not in the
-// map yet: env.migration.baseline. `migration { baseline = [1,2] }` under
-// `schema inspect --env local` answers `value of attr "baseline" cannot be read
-// as string`, exit 1, on the pinned binary and exit 0 on Ptah -- while
-// skip_report and a frobnicate9 control in the SAME block under the SAME command
-// both answer 0 on the binary, which is what makes baseline's refusal
-// meaningful. It is left out because the honest resolution is a parser arm
-// rather than a refusal: --baseline already exists on `migrate apply`, so the
-// value has a meaning Ptah can carry out, and refusing a well-formed
-// `baseline = "20240101000000"` would exit 1 where the binary exits 0. That
-// wiring is stokaro/ptah#934 item 5a; `migrate apply` parses --baseline into
-// runOpts before project config is merged, so it needs a change in that command
-// and not only here.
+// env.migration.baseline was the one name the probe had caught that read as a
+// holding-pen case, and it turned out to be neither a holding-pen case nor a
+// refusal. `migration { baseline = [1,2] }` under `schema inspect --env local`
+// answers `value of attr "baseline" cannot be read as string`, exit 1, on the
+// pinned binary -- while skip_report and a frobnicate9 control in the SAME
+// block under the SAME command both answer 0, which is what makes baseline's
+// refusal meaningful. A map entry here would have been wrong: it refuses the
+// name outright, and a well-formed `baseline = "20240101000000"` exits 0 on
+// that binary. The answer is [atlasDecodedLeafAttributes], which refuses the
+// value the binary refuses and tolerates the value it takes.
+//
+// That closes the rule (a) exposure and not stokaro/ptah#934 item 5a. Acting on
+// a well-formed baseline still needs `migrate apply`, which reads --baseline
+// into its run options before project config is merged, so the value is carried
+// out nowhere yet and the ignored-name warning says so.
 var ceEnforcedConstructs = map[string]struct{}{}
 
 // enforcedByCE reports whether a scope-qualified name is one CE acts on.
@@ -498,14 +528,12 @@ func (p atlasParser) tolerateUnknownAttr(scope, name string, attr *hclsyntax.Att
 	if diags.HasErrors() {
 		return p.evaluationFailed(name, attr, diags)
 	}
-	// A name CE decodes into a struct is not tolerable in every shape. This is
-	// the right place for that check rather than the structure validator: it
-	// runs once per SELECTED env with `var`, `local` and `data` already in the
-	// context. See [atlasStructAttributes].
-	if atlasStructAttribute(scope, name) {
-		if err := checkAtlasStructAttribute(name, attr, value); err != nil {
-			return err
-		}
+	// A name CE decodes is not tolerable in every shape. This is the right place
+	// for that check rather than the structure validator: it runs once per
+	// SELECTED env with `var`, `local` and `data` already in the context. See
+	// [checkAtlasToleratedValue].
+	if err := checkAtlasToleratedValue(scope, name, attr, value); err != nil {
+		return err
 	}
 	p.noteIgnored("attribute", name, attr.NameRange)
 	return nil
@@ -517,7 +545,7 @@ func (p atlasParser) tolerateUnknownBlock(scope string, block *hclsyntax.Block) 
 	if err := rejectEnforcedConstruct(scope, block.Type, block.TypeRange); err != nil {
 		return err
 	}
-	if err := p.evaluateIgnoredBody(block.Body); err != nil {
+	if err := p.evaluateIgnoredBody(scope+"."+block.Type, block.Body); err != nil {
 		return err
 	}
 	p.noteIgnored("block", block.Type, block.TypeRange)
@@ -568,7 +596,7 @@ func (p atlasParser) noteIgnored(kind, name string, rng hcl.Range) {
 }
 
 // evaluateIgnoredBody evaluates every expression inside a construct whose NAME
-// is being ignored, discarding the values and returning the first failure.
+// is being ignored, returning the first failure.
 //
 // This is what makes the tolerance name-level rather than subtree-level, which
 // is how Atlas CE behaves: it drops the decoded result of an unrecognized name
@@ -580,18 +608,29 @@ func (p atlasParser) noteIgnored(kind, name string, rng hcl.Range) {
 //
 // Skipping the subtree instead would accept the second file, which CE rejects,
 // making this implementation LOOSER than CE -- the more dangerous direction.
-func (p atlasParser) evaluateIgnoredBody(body *hclsyntax.Body) error {
+//
+// The value rules run here too, for the same reason and one step further: an
+// ignored block can CONTAIN a name CE decodes. `test` is the measured case --
+// the block is dropped whole by both binaries, and CE still decodes `schema`
+// and `migrate` inside it. Scope is threaded rather than dropped so those rules
+// can be keyed by where the name sits, exactly as they are on the attribute
+// path.
+func (p atlasParser) evaluateIgnoredBody(scope string, body *hclsyntax.Body) error {
 	if body == nil {
 		return nil
 	}
 	for _, name := range sortedAttributeNames(body.Attributes) {
 		attr := body.Attributes[name]
-		if _, diags := attr.Expr.Value(p.ctx); diags.HasErrors() {
+		value, diags := attr.Expr.Value(p.ctx)
+		if diags.HasErrors() {
 			return p.evaluationFailed(name, attr, diags)
+		}
+		if err := checkAtlasToleratedValue(scope, name, attr, value); err != nil {
+			return err
 		}
 	}
 	for _, block := range body.Blocks {
-		if err := p.evaluateIgnoredBody(block.Body); err != nil {
+		if err := p.evaluateIgnoredBody(scope+"."+block.Type, block.Body); err != nil {
 			return err
 		}
 	}
@@ -627,7 +666,7 @@ func (p atlasParser) collectAtlasTopBlock(block *hclsyntax.Block, collected *atl
 	default:
 		// Atlas CE accepts an unrecognized top-level name and drops it. The
 		// body is still evaluated -- see evaluateIgnoredBody.
-		if err := p.evaluateIgnoredBody(block.Body); err != nil {
+		if err := p.evaluateIgnoredBody(atlasTopLevelScope+"."+block.Type, block.Body); err != nil {
 			return err
 		}
 		p.noteIgnored("block", block.Type, block.TypeRange)
@@ -974,11 +1013,7 @@ func (p atlasParser) parseEnvAttr(attrName string, attr *hclsyntax.Attribute, cf
 		if err != nil {
 			return err
 		}
-		ignore, err := ignoreEnvSchemas.Resolve()
-		if err != nil {
-			return err
-		}
-		if ignore {
+		if p.ignoreEnvSchemas {
 			p.noteIgnored("attribute", attrName, attr.NameRange)
 			return nil
 		}
@@ -1069,10 +1104,68 @@ func (p atlasParser) parseMigration(block *hclsyntax.Block, cfg *Config) error {
 			}
 		}
 	}
+	if err := p.parseMigrationBlocks(block); err != nil {
+		return err
+	}
+	cfg.Migration = migration
+	return nil
+}
+
+// parseMigrationBlocks handles the nested blocks of env.migration, which used
+// to be refused wholesale. The pinned community binary v1.3.0 accepts every one
+// of them -- see the `migration` entry in [atlasEnvBodyStructure] for the
+// measurement -- so the whole set is tolerated and only `repo` is decoded.
+func (p atlasParser) parseMigrationBlocks(block *hclsyntax.Block) error {
+	seen := map[string]struct{}{}
+	for _, nested := range block.Body.Blocks {
+		if nested.Type != "repo" {
+			// Not a `return` on the tolerated path: that would end the loop and
+			// silently skip every later block.
+			if err := p.tolerateUnknownBlock("env.migration", nested); err != nil {
+				return err
+			}
+			continue
+		}
+		if _, duplicate := seen[nested.Type]; duplicate {
+			return unsupportedBlock(nested)
+		}
+		seen[nested.Type] = struct{}{}
+		if err := p.parseMigrationRepo(nested); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// parseMigrationRepo type-checks env.migration.repo, whose only decoded
+// attribute is a string `name`, and records the block as carrying no effect.
+//
+// It mirrors [atlasParser.parseSchemaRepo] deliberately, down to refusing a
+// nested block and a null `name`: the two blocks are the same construct in two
+// scopes, and the pinned community binary treats them the same way. Nothing is
+// stored, because unlike env.schema.repo there is no field for it and the
+// community binary does nothing with the value either -- recording the name as
+// ignored tells the user that plainly, where a silently kept value would not.
+func (p atlasParser) parseMigrationRepo(block *hclsyntax.Block) error {
+	if len(block.Labels) > 0 {
+		return unsupportedBlock(block)
+	}
+	for _, attrName := range sortedAttributeNames(block.Body.Attributes) {
+		attr := block.Body.Attributes[attrName]
+		if attrName != "name" {
+			if err := p.tolerateUnknownAttr("env.migration.repo", attrName, attr); err != nil {
+				return err
+			}
+			continue
+		}
+		if _, err := p.stringAttr(attrName, attr); err != nil {
+			return err
+		}
+		p.noteIgnored("attribute", attrName, attr.NameRange)
+	}
 	if len(block.Body.Blocks) > 0 {
 		return unsupportedBlock(block.Body.Blocks[0])
 	}
-	cfg.Migration = migration
 	return nil
 }
 
@@ -1357,7 +1450,7 @@ func (p atlasParser) parseFormat(block *hclsyntax.Block, cfg *Config) error {
 }
 
 func (p atlasParser) parseMigrateFormat(block *hclsyntax.Block, cfg *Config) error {
-	return p.parseFormatAttributes(block, &cfg.presence, map[string]atlasFormatField{
+	return p.parseFormatAttributes(block, "format.migrate", &cfg.presence, map[string]atlasFormatField{
 		"apply":  {destination: &cfg.Format.Migrate.Apply, presence: fieldFormatMigrateApply},
 		"diff":   {destination: &cfg.Format.Migrate.Diff, presence: fieldFormatMigrateDiff},
 		"lint":   {destination: &cfg.Format.Migrate.Lint, presence: fieldFormatMigrateLint},
@@ -1366,7 +1459,7 @@ func (p atlasParser) parseMigrateFormat(block *hclsyntax.Block, cfg *Config) err
 }
 
 func (p atlasParser) parseSchemaFormat(block *hclsyntax.Block, cfg *Config) error {
-	return p.parseFormatAttributes(block, &cfg.presence, map[string]atlasFormatField{
+	return p.parseFormatAttributes(block, "format.schema", &cfg.presence, map[string]atlasFormatField{
 		"apply":   {destination: &cfg.Format.Schema.Apply, presence: fieldFormatSchemaApply},
 		"clean":   {destination: &cfg.Format.Schema.Clean, presence: fieldFormatSchemaClean},
 		"diff":    {destination: &cfg.Format.Schema.Diff, presence: fieldFormatSchemaDiff},
@@ -1379,18 +1472,33 @@ type atlasFormatField struct {
 	presence    configField
 }
 
+// parseFormatAttributes decodes the four template names of one format.* block.
+//
+// Every other name goes to the tolerance path rather than being refused. The
+// pinned community binary v1.3.0 decodes only the four each block lists and
+// ignores the rest, including nested blocks -- measured in the `format` entry
+// of [atlasEnvBodyStructure] -- so refusing them turned a project file that
+// binary reads into an exit 1.
 func (p atlasParser) parseFormatAttributes(
 	block *hclsyntax.Block,
+	scope string,
 	presence *configPresence,
 	fields map[string]atlasFormatField,
 ) error {
 	if len(block.Labels) > 0 {
 		return unsupportedBlock(block)
 	}
-	for attrName, attr := range block.Body.Attributes {
+	for _, attrName := range sortedAttributeNames(block.Body.Attributes) {
+		attr := block.Body.Attributes[attrName]
 		field, ok := fields[attrName]
 		if !ok {
-			return unsupportedAttr(attrName, attr)
+			// Not a `return` on the tolerated path: that would end the loop and
+			// silently skip every later name, which map iteration order would
+			// make intermittent.
+			if err := p.tolerateUnknownAttr(scope, attrName, attr); err != nil {
+				return err
+			}
+			continue
 		}
 		value, err := p.nonEmptyStringAttr(attrName, attr)
 		if err != nil {
@@ -1399,8 +1507,10 @@ func (p atlasParser) parseFormatAttributes(
 		*field.destination = value
 		presence.mark(field.presence)
 	}
-	if len(block.Body.Blocks) > 0 {
-		return unsupportedBlock(block.Body.Blocks[0])
+	for _, nested := range block.Body.Blocks {
+		if err := p.tolerateUnknownBlock(scope, nested); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -2198,10 +2308,54 @@ func atlasEnvNameUsesSelection(env atlasEnvBlock) bool {
 	return false
 }
 
-func (p atlasParser) stringAttr(name string, attr *hclsyntax.Attribute) (string, error) {
+// decodedAttrValue evaluates attr for a name Ptah DECODES and refuses the two
+// shapes no such name takes: an expression that fails to evaluate, and a null.
+//
+// Null is refused here rather than in each type gate because a cty type does
+// not separate a value from the absence of one. `cty.NullVal(cty.String)` --
+// which is what a typed variable produces, as in
+// `variable "s" { type = string, default = null }` followed by `dev = var.s` --
+// answers cty.String to Type(), so it walks straight through a
+// `value.Type() != cty.String` gate and panics in AsString(). A bare `null`
+// literal carries cty.DynamicPseudoType instead and the same gate refuses it.
+// The two spellings of one value therefore took two different paths: a bare
+// `null` a location-aware refusal at exit 1, a typed null an internal error at
+// exit 2. `want` is the same phrase the type gate would have used, so the
+// message does not depend on which spelling arrived.
+//
+// Refusing is what the eight decoded names measured for this all already do for
+// a bare `null` -- `dev`, `env.migration.dir`, `env.migration.tx_mode`,
+// `env.migration.repo.name`, `env.schema.repo.name`, `env.schema.mode.tables`,
+// `env.exclude` and `lint.latest` are each exit 1 with "must be a <type>" -- so
+// on every string-valued and number-valued name this replaces an exit-2 crash
+// with the exit 1 the bare spelling already produced. The BOOL-valued names
+// move from 0 to 1, because a typed null never crashed there: cty.Value.True()
+// answers false for one, so `mode { tables = var.b }` and
+// `lint { destructive { error = var.b } }` used to read a null as "off" and
+// disable table inspection, or destructive-change linting, in silence.
+//
+// Names Ptah only TOLERATES are unaffected: they are answered by
+// [checkAtlasDecodedLeafAttribute], which returns before its type gate on a
+// null because the pinned community binary accepts null for every one of them.
+func (p atlasParser) decodedAttrValue(
+	name string,
+	attr *hclsyntax.Attribute,
+	want string,
+) (cty.Value, error) {
 	value, diags := attr.Expr.Value(p.ctx)
 	if diags.HasErrors() {
-		return "", p.evaluationFailed(name, attr, diags)
+		return cty.NilVal, p.evaluationFailed(name, attr, diags)
+	}
+	if value.IsNull() {
+		return cty.NilVal, wrongValueType(name, attr, want)
+	}
+	return value, nil
+}
+
+func (p atlasParser) stringAttr(name string, attr *hclsyntax.Attribute) (string, error) {
+	value, err := p.decodedAttrValue(name, attr, "a string")
+	if err != nil {
+		return "", err
 	}
 	if value.Type() != cty.String {
 		return "", wrongValueType(name, attr, "a string")
@@ -2248,7 +2402,12 @@ func (p atlasParser) sensitiveModeAttr(name string, attr *hclsyntax.Attribute) (
 
 func (p atlasParser) identifierOrStringAttr(name string, attr *hclsyntax.Attribute) (string, error) {
 	value, diags := attr.Expr.Value(p.ctx)
-	if !diags.HasErrors() && value.Type() == cty.String {
+	// !value.IsNull() for the reason given on [atlasParser.decodedAttrValue]:
+	// a typed null answers cty.String to Type() and panics in AsString(). This
+	// arm cannot use that helper, because an evaluation failure is not fatal
+	// here -- a bare identifier such as `sensitive = ALLOW` is an unresolvable
+	// traversal that the fallback below reads as a word.
+	if !diags.HasErrors() && !value.IsNull() && value.Type() == cty.String {
 		return value.AsString(), nil
 	}
 	traversal, ok := attr.Expr.(*hclsyntax.ScopeTraversalExpr)
@@ -2268,7 +2427,9 @@ func (p atlasParser) scopedEnumOrStringAttr(
 	allowed ...string,
 ) (string, error) {
 	value, diags := attr.Expr.Value(p.ctx)
-	if !diags.HasErrors() && value.Type() == cty.String {
+	// !value.IsNull() for the same reason as in
+	// [atlasParser.identifierOrStringAttr].
+	if !diags.HasErrors() && !value.IsNull() && value.Type() == cty.String {
 		return value.AsString(), nil
 	}
 	traversal, ok := attr.Expr.(*hclsyntax.ScopeTraversalExpr)
@@ -2291,9 +2452,13 @@ func (p atlasParser) configBoolAttr(name string, attr *hclsyntax.Attribute) (Con
 }
 
 func (p atlasParser) boolAttr(name string, attr *hclsyntax.Attribute) (bool, error) {
-	value, diags := attr.Expr.Value(p.ctx)
-	if diags.HasErrors() {
-		return false, p.evaluationFailed(name, attr, diags)
+	// A null is refused rather than reaching cty.Value.True(), which does not
+	// panic on one -- it answers false. That is the quiet half of the same
+	// defect: `mode { tables = var.b }` with a null bool used to disable table
+	// inspection instead of saying anything.
+	value, err := p.decodedAttrValue(name, attr, "a bool")
+	if err != nil {
+		return false, err
 	}
 	if value.Type() != cty.Bool {
 		return false, wrongValueType(name, attr, "a bool")
@@ -2306,16 +2471,19 @@ func (p atlasParser) stringOrStringListAttr(name string, attr *hclsyntax.Attribu
 	if diags.HasErrors() {
 		return nil, p.evaluationFailed(name, attr, diags)
 	}
-	if value.Type() == cty.String {
+	// A null reaches [stringListValue], which refuses it as "a list of strings"
+	// -- the phrase a bare `null` already produced here, since the string arm
+	// never took it either.
+	if !value.IsNull() && value.Type() == cty.String {
 		return []string{value.AsString()}, nil
 	}
 	return stringListValue(name, attr, value)
 }
 
 func (p atlasParser) intAttr(name string, attr *hclsyntax.Attribute) (int, error) {
-	value, diags := attr.Expr.Value(p.ctx)
-	if diags.HasErrors() {
-		return 0, p.evaluationFailed(name, attr, diags)
+	value, err := p.decodedAttrValue(name, attr, "a number")
+	if err != nil {
+		return 0, err
 	}
 	if value.Type() != cty.Number {
 		return 0, wrongValueType(name, attr, "a number")
@@ -2335,16 +2503,31 @@ func (p atlasParser) stringListAttr(name string, attr *hclsyntax.Attribute) ([]s
 	return stringListValue(name, attr, value)
 }
 
+// stringListValue reads a decoded list-of-strings attribute.
+//
+// The two null tests are the collection counterpart of the rule on
+// [atlasParser.decodedAttrValue], and both are load-bearing:
+//
+//   - A null LIST answers true to CanIterateElements, because that answer comes
+//     from the type. LengthInt() on it then panics. A bare `exclude = null`
+//     never got that far, because cty.DynamicPseudoType is neither a tuple nor
+//     a list; `list(string)` holding null does.
+//   - A null ELEMENT answers cty.String to Type(), so it passed the element
+//     gate and panicked in AsString(). The pinned community binary refuses one:
+//     `exclude`, `schemas` and `src` fed a `list(string)` variable holding
+//     ["public.t1", null] each answer exit 1 there,
+//     `cannot read attribute … as string list: null value is not allowed`.
 func stringListValue(name string, attr *hclsyntax.Attribute, value cty.Value) ([]string, error) {
 	valueType := value.Type()
-	if !value.CanIterateElements() || (!valueType.IsTupleType() && !valueType.IsListType()) {
+	if value.IsNull() || !value.CanIterateElements() ||
+		(!valueType.IsTupleType() && !valueType.IsListType()) {
 		return nil, wrongValueType(name, attr, "a list of strings")
 	}
 	values := make([]string, 0, value.LengthInt())
 	it := value.ElementIterator()
 	for it.Next() {
 		_, item := it.Element()
-		if item.Type() != cty.String {
+		if item.IsNull() || item.Type() != cty.String {
 			return nil, wrongValueType(name, attr, "a list of strings")
 		}
 		values = append(values, item.AsString())

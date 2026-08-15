@@ -16,11 +16,15 @@ import (
 //
 //   - SQL Server's @@VERSION opens with the marketing year, so the shared parse
 //     reads "Microsoft SQL Server 2025 (RTM-CU7) ... 17.0.4065.4" as major
-//     2025. That is latent today only because the sqlserver dialect never
-//     reaches capability.go's version switch; it becomes a live mis-selection
-//     the day a `case platform.SQLServer:` is added. It is not latent HERE: a
-//     matrix cell labeled by the marketing year would be measuring a version
-//     that does not exist.
+//     2025. capability.ResolveServerVersion no longer routes that banner
+//     through the parse at all — capability.BannerPlatform claims "sql server"
+//     and the resolver answers from the product, which is what stopped the year
+//     being read as a PostgreSQL major on a mismatched dialect. The misread is
+//     still there in the parser and still not latent HERE: nothing in the
+//     capability package produces a version number for a SQL Server banner, so
+//     a matrix cell can only get 17.0.4065.4 from this extractor, and a cell
+//     labeled by the marketing year would be measuring a version that does not
+//     exist.
 //   - YugabyteDB's banner opens with the PostgreSQL compatibility version, so
 //     the shared parse reads "PostgreSQL 15.12-YB-2026.1.0.0-b0" as 15.12 when
 //     the product is 2026.1.0.0. That one is masked in capability.go because

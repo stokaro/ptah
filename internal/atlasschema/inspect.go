@@ -179,6 +179,13 @@ func renderInspectSchema(
 	// Inspection looks at exactly one state, so its own report is already the
 	// across-states answer.
 	reportUnmatchedExclude(opts.Diagnostics, atlasfilter.UnmatchedAcrossStates(excludeReport))
+	// Reported from the SCOPED schema, which is the document the operator
+	// receives. Emitting it before the projection let the note describe a
+	// rendering that selection had already changed -- `--include users` can
+	// leave a document with no virtual table in it at all, and the note still
+	// said the description reports the module's tables as ordinary ones. See
+	// stokaro/ptah#1028.
+	sqlitevirtual.ReportUnclassified(opts.Diagnostics, schema)
 	dbsch := dbschematogo.ConvertDBSchemaToGoSchema(schema)
 	output, err := atlasreport.RenderSchemaInspect(format, atlasreport.NewSchemaInspectReport(
 		dbsch,

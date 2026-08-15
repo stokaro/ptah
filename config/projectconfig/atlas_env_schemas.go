@@ -31,4 +31,38 @@ const IgnoreEnvSchemasEnvVar = "PTAH_ATLAS_IGNORE_ENV_SCHEMAS"
 
 // ignoreEnvSchemas is the declaration of the variable, made once, in the
 // package that owns the atlas.hcl parse. See [go.5x5.cz/ptah/internal/envbool].
-var ignoreEnvSchemas = envbool.New(IgnoreEnvSchemasEnvVar, false)
+//
+// It is [go.5x5.cz/ptah/internal/envbool.Gated], and the direction is what
+// decides it. The pinned community binary HONORS `env { schemas }`: measured on
+// v1.3.0 against a PostgreSQL database holding `one`, `two` and `public`,
+// `schemas = ["one"]` describes `one` alone. A true value here restores the
+// realm-wide description Ptah emitted before the attribute got a parser arm,
+// which is strictly MORE than the binary describes -- so it is a capability the
+// binary does not have, and strict mode, whose whole job is to be measurable
+// against that binary, has to refuse it. Retaining it would let a conformance
+// run describe schemas the oracle excluded and call the difference parity.
+var ignoreEnvSchemas = envbool.New(IgnoreEnvSchemasEnvVar, false, envbool.Gated)
+
+// ValidateAtlasEnvironmentVariables refuses a malformed value for every boolean
+// `PTAH_*` variable that governs how this package evaluates an atlas.hcl. It
+// reads the environment only; no file is opened and no document is parsed.
+//
+// It is the form for a caller that decides whether to parse AT ALL.
+// [ParseAtlasFSCollectionWithOptions] resolves the same variable because it
+// needs the value, and [LoadAtlasFileCollectionWithOptions] calls this before
+// it looks at the file system; a caller that may reach neither still owes the
+// refusal.
+//
+// cmd/atlas's compatibility adapter is exactly such a caller. It opens the
+// project file itself and returns "no project" when the file is absent, so on
+// that arm it reaches no entry point here. Measured on that adapter with
+// `PTAH_ATLAS_IGNORE_ENV_SCHEMAS` exported empty, running
+// `schema inspect --url sqlite://probe.db`: with an atlas.hcl in the working
+// directory it exits 1 naming the variable, and with no atlas.hcl it exited 0
+// and described the database. One environment, two answers, chosen by the
+// presence of a file the variable says nothing about -- which is the defect the
+// eager resolve exists to close, not a corner of it.
+func ValidateAtlasEnvironmentVariables() error {
+	_, err := ignoreEnvSchemas.Resolve()
+	return err
+}

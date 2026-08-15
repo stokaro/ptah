@@ -349,12 +349,31 @@ default; use `os.LookupEnv`, and treat an exported empty value as the
 configuration error it is.
 
 In practice that means: declare the variable once with
-`envbool.New(name, defaultValue)` in the package that owns it, resolve it through
-`Var.Resolve`, and never write `strconv.ParseBool(os.Getenv(...))` at a feature
-call site. `internal/envbool` holds the one grammar (exactly
+`envbool.New(name, defaultValue, class)` in the package that owns it, resolve it
+through `Var.Resolve`, and never write `strconv.ParseBool(os.Getenv(...))` at a
+feature call site. `internal/envbool` holds the one grammar (exactly
 `strconv.ParseBool`'s spellings, nothing trimmed) and the one error shape
 (`invalid boolean value %q for %s`); `cmd/internal/envboolguard` refuses a new
 tree that reintroduces the pattern.
+
+`class` is the strict Atlas Community Edition classification, and it is stated
+at the declaration because that is the only place that cannot drift from the
+name:
+
+- `envbool.Gated` — the variable adds behavior the pinned community binary does
+  not have. Strict mode refuses an enabled value.
+- `envbool.Retained` — the variable restores or tightens something that binary
+  already does, so it adds no Atlas capability. Strict mode keeps it reachable.
+- `envbool.Selector` — reserved for `PTAH_ATLAS_STRICT_COMPAT` itself.
+
+Say in a comment at the declaration which capability the pinned binary does or
+does not have; the class alone is an answer without its reasoning.
+`internal/atlascompatpolicy` derives its refusals from `envbool.Registered()`, so
+a variable is validated by the act of declaring it and there is no second list to
+edit. A declaration that states no class fails closed — strict mode refuses it —
+and `cmd/internal/envboolguard` refuses the tree, so an unclassified variable
+cannot ship. Retained variables are also named in the configuration reference,
+and a test requires that prose to match the registry.
 
 Resolve the variables a command owns **before** its early returns. A malformed
 value must not stay dormant because this invocation did not reach the branch

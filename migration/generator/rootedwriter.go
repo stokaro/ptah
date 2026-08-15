@@ -9,7 +9,9 @@ import (
 	"time"
 
 	"go.5x5.cz/ptah/internal/atlasmigrate"
+	"go.5x5.cz/ptah/internal/fsnapshot"
 	"go.5x5.cz/ptah/internal/migratesum"
+	"go.5x5.cz/ptah/internal/migrationsnapshot"
 	"go.5x5.cz/ptah/internal/migrationversion"
 	"go.5x5.cz/ptah/internal/pathguard"
 	"go.5x5.cz/ptah/migration/migrator"
@@ -345,12 +347,17 @@ func writeRootedAtlasCheckpoint(
 	outputDir string,
 	version int64,
 	description, upSQL string,
+	authorizedMigrationsFS fs.FS,
 ) (path string, err error) {
 	writer, err := bindMigrationOutputDir(nil, outputDir)
 	if err != nil {
 		return "", fmt.Errorf("failed to create output directory: %w", err)
 	}
 	defer func() { err = errors.Join(err, writer.Close()) }()
+	authorized, err := bindAuthorizedMigrations(writer, authorizedMigrationsFS)
+	if err != nil {
+		return "", err
+	}
 	if err := writer.Create(); err != nil {
 		return "", fmt.Errorf("failed to create output directory: %w", err)
 	}
@@ -363,7 +370,12 @@ func writeRootedAtlasCheckpoint(
 		}
 		return "", fmt.Errorf("failed to write atlas checkpoint file: %w", writeErr)
 	}
-	if sumErr := publishMigrationDirSum(writer, migrator.MigrationDirFormatAtlas); sumErr != nil {
+	if sumErr := publishAuthorizedMigrationDirSum(
+		writer,
+		migrator.MigrationDirFormatAtlas,
+		authorized,
+		map[string][]byte{name: []byte(contents)},
+	); sumErr != nil {
 		// The checkpoint is only safe to leave behind once atlas.sum covers it;
 		// an uncovered file makes the whole directory fail verification. The
 		// withdrawal goes through the same handle the file was created through,
@@ -396,12 +408,17 @@ func writeRootedMigrationPair(
 	version int64,
 	description, upSQL, downSQL, kind string,
 	nameFor func(version int64, description, direction string) string,
+	authorizedMigrationsFS fs.FS,
 ) (upPath, downPath string, err error) {
 	writer, err := bindMigrationOutputDir(nil, outputDir)
 	if err != nil {
 		return "", "", fmt.Errorf("failed to create output directory: %w", err)
 	}
 	defer func() { err = errors.Join(err, writer.Close()) }()
+	authorized, err := bindAuthorizedMigrations(writer, authorizedMigrationsFS)
+	if err != nil {
+		return "", "", err
+	}
 	if err := writer.Create(); err != nil {
 		return "", "", fmt.Errorf("failed to create output directory: %w", err)
 	}
@@ -432,13 +449,95 @@ func writeRootedMigrationPair(
 	if err != nil {
 		return "", "", err
 	}
-	if sumErr := publishMigrationDirSum(writer, migrator.MigrationDirFormatPtah); sumErr != nil {
-		return "", "", fmt.Errorf("failed to rewrite %s: %w", sumName, sumErr)
+	if sumErr := publishAuthorizedMigrationDirSum(
+		writer,
+		migrator.MigrationDirFormatPtah,
+		authorized,
+		map[string][]byte{
+			upName:   []byte(upSQL),
+			downName: []byte(downSQL),
+		},
+	); sumErr != nil {
+		return "", "", errors.Join(
+			fmt.Errorf("failed to rewrite %s: %w", sumName, sumErr),
+			writer.Remove(upName),
+			writer.Remove(downName),
+		)
 	}
 	if err := writer.SyncDir(); err != nil {
 		return "", "", fmt.Errorf("failed to flush output directory: %w", err)
 	}
 	return filepath.Join(writer.Path(), upName), filepath.Join(writer.Path(), downName), nil
+}
+
+type authorizedMigrationState struct {
+	enabled  bool
+	snapshot fsnapshot.Snapshot
+}
+
+func bindAuthorizedMigrations(
+	writer *atlasmigrate.MigrationWriter,
+	authorized fs.FS,
+) (authorizedMigrationState, error) {
+	if authorized == nil {
+		return authorizedMigrationState{}, nil
+	}
+	expected, err := migrationsnapshot.Capture(authorized)
+	if err != nil {
+		return authorizedMigrationState{}, fmt.Errorf("capture authorized migration directory: %w", err)
+	}
+	if err := verifyAuthorizedMigrationSnapshot(writer, expected); err != nil {
+		return authorizedMigrationState{}, err
+	}
+	return authorizedMigrationState{enabled: true, snapshot: expected}, nil
+}
+
+func verifyAuthorizedMigrationSnapshot(
+	writer *atlasmigrate.MigrationWriter,
+	expected fsnapshot.Snapshot,
+) error {
+	current := fsnapshot.Snapshot{}
+	if writer.Exists() {
+		fsys, err := writer.FS()
+		if err != nil {
+			return fmt.Errorf("open migration directory before checkpoint publication: %w", err)
+		}
+		current, err = migrationsnapshot.Capture(fsys)
+		if err != nil {
+			return fmt.Errorf("capture migration directory before checkpoint publication: %w", err)
+		}
+	}
+	if !expected.Equal(current) {
+		return ErrMigrationDirectoryChanged
+	}
+	return nil
+}
+
+func publishAuthorizedMigrationDirSum(
+	writer *atlasmigrate.MigrationWriter,
+	format migrator.MigrationDirFormat,
+	authorized authorizedMigrationState,
+	newFiles map[string][]byte,
+) error {
+	if !authorized.enabled {
+		return publishMigrationDirSum(writer, format)
+	}
+	expected, err := authorized.snapshot.WithFiles(newFiles)
+	if err != nil {
+		return fmt.Errorf("build authorized checkpoint snapshot: %w", err)
+	}
+	if err := verifyAuthorizedMigrationSnapshot(writer, expected); err != nil {
+		return err
+	}
+	// Compute from the authorized state rather than reopening the live directory.
+	// A concurrent edit after the comparison can make this sum fail verification,
+	// but it cannot make the new sum legitimize bytes the checkpoint never used.
+	sum, err := migratesum.ComputeWithFormat(expected, format)
+	if err != nil {
+		return err
+	}
+	_, err = writer.PublishSum(format, sum)
+	return err
 }
 
 // publishPlannedMigration commits a planned batch through the handle the

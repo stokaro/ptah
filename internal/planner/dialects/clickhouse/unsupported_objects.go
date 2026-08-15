@@ -2,6 +2,7 @@ package clickhouse
 
 import (
 	"fmt"
+	"slices"
 
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/goschema"
@@ -20,18 +21,19 @@ import (
 // rendering. The ClickHouse renderer turns supported plain views into DDL and
 // unsupported shapes into named diagnostics.
 //
-// Both paths route the same nodes through the renderer. Plain views preserve
-// their bodies and render as executable DDL; object kinds the ClickHouse model
-// cannot represent safely retain their named not-supported diagnostics.
+// Both paths route the same nodes through the renderer. Views and materialized
+// views preserve their bodies and render as executable DDL; object kinds the
+// ClickHouse model cannot represent safely retain their named not-supported
+// diagnostics.
 //
 // The split around the table statements reproduces the order the converter uses
 // for `render`, so the two surfaces agree line for line and not merely as sets.
 //
 // Unsupported nodes carry identity only because that is all their diagnostics
-// read. Plain-view additions and replacements resolve the declaration, carry
-// its body through fromschema.FromView, and share deporder.ViewLikesForCreate
-// so dependencies precede the views that read them. Diagnostic comments are
-// stripped before execution by atlasschema.SplitApplyStatements.
+// read. View-like additions and replacements resolve the declaration, carry
+// their bodies through fromschema, and share one deporder.ViewLikesForCreate
+// pass so dependencies precede the objects that read them. Diagnostic comments
+// are stripped before execution by atlasschema.SplitApplyStatements.
 func reportUnsupportedObjectsBeforeTables(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
 	result = reportExtensions(result, diff)
 	result = reportSequences(result, diff)
@@ -47,11 +49,10 @@ func reportUnsupportedObjectsAfterTables(
 	result = reportRoles(result, diff)
 	result = reportFunctions(result, diff)
 	var err error
-	result, err = reportViews(result, diff, generated, caps)
+	result, err = reportViewLikes(result, diff, generated, caps)
 	if err != nil {
 		return nil, err
 	}
-	result = reportMaterializedViews(result, diff)
 	result = reportRowLevelSecurity(result, diff)
 	result = reportGrants(result, diff)
 	result = reportTriggers(result, diff)
@@ -110,75 +111,204 @@ func reportFunctions(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
 	return result
 }
 
-func reportViews(
+// viewLikeIdentity keys a planned view-like node by kind as well as name, so a
+// map lookup can never hand a materialized view's node to a plain view.
+type viewLikeIdentity struct {
+	name         string
+	materialized bool
+}
+
+func identityOf(object deporder.ViewLike) viewLikeIdentity {
+	return viewLikeIdentity{name: object.Name, materialized: object.Materialized}
+}
+
+// reportViewLikes plans plain views and materialized views in one pass.
+//
+// The two kinds share one dependency order because either can read the other
+// and ClickHouse resolves a query when the object is created: a CREATE VIEW
+// naming an object that does not exist yet is refused with
+// "Unknown table expression identifier ... (UNKNOWN_TABLE)" rather than left to
+// fail later. The offline render path orders the two kinds together for the
+// same reason, so planning them separately would make the two surfaces disagree
+// as well as emit an unexecutable order.
+//
+// A changed materialized view is planned as a drop followed by a create, the
+// shape the PostgreSQL planner uses. Those drops are emitted before every create
+// so the object being replaced is gone first. A changed plain view needs none,
+// because CREATE OR REPLACE VIEW is one statement.
+//
+// ClickHouse does have an in-place edit, and it is deliberately not what this
+// emits. Measured on 26.7.3.19 and on 24.10.4.191,
+// `ALTER TABLE <mv> MODIFY QUERY <select>` rewrites system.tables.as_select and
+// leaves every accumulated row in the storage table -- but only while the
+// projection is unchanged. A select naming one different output column is
+// refused outright:
+//
+//	ALTER TABLE mq MODIFY QUERY SELECT sum(id) AS total FROM users
+//	-> Code: 16. DB::Exception: Column total does not exist in the
+//	   materialized view's inner table. (NO_SUCH_COLUMN_IN_TABLE)
+//
+// A goschema.MaterializedView carries a body and no column list, and nothing
+// here parses the select, so the planner cannot tell offline which of the two a
+// given body change is. Drop and create is the shape that covers both, and what
+// it costs is the stored rows. See the discussion on #1519.
+//
+// The plain view beside it is not affected either way: MODIFY QUERY on a View is
+// "Alter of type 'MODIFY_QUERY' is not supported by storage View.
+// (NOT_IMPLEMENTED)", and CREATE OR REPLACE VIEW already covers it.
+//
+// An object can also change KIND without changing its name. The plain-view and
+// materialized-view comparators are independent, so a name declared as one kind
+// and living in the database as the other arrives as an addition of the desired
+// kind next to a removal of the live kind, and the two do not have to spell the
+// name the same way: measured through migration/schemadiff, a declared view "x"
+// against a database holding a materialized view produces
+// ViewsAdded=[x] with MaterializedViewsRemoved=[ptah_test.x]. ClickHouse
+// refuses the create while the old object still owns the name — measured on
+// server 26.7.3.19, both directions answer "Code: 57. DB::Exception: Table
+// ptah_test.x already exists. (TABLE_ALREADY_EXISTS)" — so those removals are
+// emitted BEFORE the create pass. They are moved rather than added, so the plan
+// still names each object exactly once.
+func reportViewLikes(
 	result []ast.Node,
 	diff *types.SchemaDiff,
 	generated *goschema.Database,
 	caps capability.Capabilities,
 ) ([]ast.Node, error) {
 	semantics := diff.EffectiveIdentifierSemantics(platform.ClickHouse)
-	if caps.Has(capability.Views) {
-		var err error
-		result, err = appendOrderedViewChanges(result, diff, generated, semantics)
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		result = appendViewChangeDiagnostics(result, diff)
+	capacity := len(diff.ViewsAdded) + len(diff.ViewsModified) +
+		len(diff.MaterializedViewsAdded) + len(diff.MaterializedViewsModified)
+	objects := make([]deporder.ViewLike, 0, capacity)
+	nodes := make(map[viewLikeIdentity]ast.Node, capacity)
+
+	replacedMaterializedViews := crossKindReplacements(
+		diff.MaterializedViewsRemoved,
+		diff.ViewsAdded,
+		semantics,
+	)
+	replacedViews := crossKindReplacements(
+		diff.ViewsRemoved,
+		diff.MaterializedViewsAdded,
+		semantics,
+	)
+	for _, name := range replacedMaterializedViews {
+		result = append(result, ast.NewDropMaterializedView(name).SetIfExists())
 	}
-	for _, name := range diff.ViewsRemoved {
+	for _, name := range replacedViews {
 		result = append(result, ast.NewDropView(name).SetIfExists())
 	}
-	return result, nil
-}
 
-func appendViewChangeDiagnostics(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
 	for _, name := range diff.ViewsAdded {
-		result = append(result, ast.NewCreateView(name))
-	}
-	for _, view := range diff.ViewsModified {
-		result = append(result, ast.NewCreateView(view.ViewName).SetReplace())
-	}
-	return result
-}
-
-func appendOrderedViewChanges(
-	result []ast.Node,
-	diff *types.SchemaDiff,
-	generated *goschema.Database,
-	semantics identifier.Semantics,
-) ([]ast.Node, error) {
-	objects := make([]deporder.ViewLike, 0, len(diff.ViewsAdded)+len(diff.ViewsModified))
-	nodes := make(map[string]*ast.CreateViewNode, cap(objects))
-	for _, name := range diff.ViewsAdded {
-		object, node, err := clickHouseViewChange(generated, name, semantics)
+		object, node, err := clickHouseViewChange(generated, name, semantics, caps)
 		if err != nil {
 			return nil, err
 		}
 		objects = append(objects, object)
-		nodes[object.Name] = node
+		nodes[identityOf(object)] = node
 	}
 	for _, view := range diff.ViewsModified {
-		object, node, err := clickHouseViewChange(generated, view.ViewName, semantics)
+		object, node, err := clickHouseViewChange(generated, view.ViewName, semantics, caps)
 		if err != nil {
 			return nil, err
 		}
 		node.SetReplace()
 		objects = append(objects, object)
-		nodes[object.Name] = node
+		nodes[identityOf(object)] = node
+	}
+	for _, name := range diff.MaterializedViewsAdded {
+		object, node, err := clickHouseMaterializedViewChange(generated, name, semantics, caps)
+		if err != nil {
+			return nil, err
+		}
+		objects = append(objects, object)
+		nodes[identityOf(object)] = node
+	}
+	for _, view := range diff.MaterializedViewsModified {
+		object, node, err := clickHouseMaterializedViewChange(
+			generated,
+			view.ViewName,
+			semantics,
+			caps,
+		)
+		if err != nil {
+			return nil, err
+		}
+		result = appendMaterializedViewReplacementDrop(result, view.ViewName, caps)
+		objects = append(objects, object)
+		nodes[identityOf(object)] = node
 	}
 
 	for _, object := range deporder.ViewLikesForCreateForDialect(objects, platform.ClickHouse) {
-		result = append(result, nodes[object.Name])
+		result = append(result, nodes[identityOf(object)])
+	}
+	for _, name := range diff.ViewsRemoved {
+		if slices.Contains(replacedViews, name) {
+			continue
+		}
+		result = append(result, ast.NewDropView(name).SetIfExists())
+	}
+	for _, name := range diff.MaterializedViewsRemoved {
+		if slices.Contains(replacedMaterializedViews, name) {
+			continue
+		}
+		result = append(result, ast.NewDropMaterializedView(name).SetIfExists())
 	}
 	return result, nil
 }
 
+// crossKindReplacements returns the removed names the other kind's additions
+// claim, in the order the removals were reported.
+//
+// The two sides come from different schemas and do not have to spell the name
+// the same way — the database reader qualifies what a declaration leaves bare —
+// so membership is decided by objectlookup's identity rule rather than by `==`,
+// which is the mistake objectlookup exists to stop. The returned names are the
+// removal list's own elements, so the caller can skip them from that list by
+// exact string.
+func crossKindReplacements(removed, added []string, semantics identifier.Semantics) []string {
+	if len(removed) == 0 || len(added) == 0 {
+		return nil
+	}
+	replaced := make([]string, 0, len(removed))
+	for _, name := range removed {
+		if objectlookup.Contains(added, name, semantics) {
+			replaced = append(replaced, name)
+		}
+	}
+	return replaced
+}
+
+// appendMaterializedViewReplacementDrop writes the drop half of a replacement
+// only where the create half will be a real statement. A target whose
+// capability set declines materialized views renders both halves as
+// diagnostics, and naming the same object twice would say the plan does two
+// things to it.
+func appendMaterializedViewReplacementDrop(
+	result []ast.Node,
+	name string,
+	caps capability.Capabilities,
+) []ast.Node {
+	if !caps.Has(capability.MaterializedViews) {
+		return result
+	}
+	return append(result, ast.NewDropMaterializedView(name).SetIfExists())
+}
+
+// clickHouseViewChange builds the create node for one plain view.
+//
+// A capability set without Views yields a node carrying identity only, because
+// that is all the renderer's diagnostic reads, and requiring a desired
+// declaration for an object that will never be emitted would fail a plan that
+// the render path completes.
 func clickHouseViewChange(
 	generated *goschema.Database,
 	name string,
 	semantics identifier.Semantics,
+	caps capability.Capabilities,
 ) (deporder.ViewLike, *ast.CreateViewNode, error) {
+	if !caps.Has(capability.Views) {
+		return deporder.ViewLike{Name: name}, ast.NewCreateView(name), nil
+	}
 	view := objectlookup.View(generated.Views, name, semantics)
 	if view == nil {
 		return deporder.ViewLike{}, nil, fmt.Errorf(
@@ -191,17 +321,30 @@ func clickHouseViewChange(
 	return deporder.ViewLike{Name: node.Name, Body: node.Body}, node, nil
 }
 
-func reportMaterializedViews(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
-	for _, name := range diff.MaterializedViewsAdded {
-		result = append(result, ast.NewCreateMaterializedView(name))
+// clickHouseMaterializedViewChange is clickHouseViewChange for the materialized
+// kind; the Materialized flag is what keeps the two apart in the shared
+// dependency order and in the node map.
+func clickHouseMaterializedViewChange(
+	generated *goschema.Database,
+	name string,
+	semantics identifier.Semantics,
+	caps capability.Capabilities,
+) (deporder.ViewLike, *ast.CreateMaterializedViewNode, error) {
+	if !caps.Has(capability.MaterializedViews) {
+		return deporder.ViewLike{Name: name, Materialized: true},
+			ast.NewCreateMaterializedView(name),
+			nil
 	}
-	for _, view := range diff.MaterializedViewsModified {
-		result = append(result, ast.NewCreateMaterializedView(view.ViewName))
+	view := objectlookup.MaterializedView(generated.MaterializedViews, name, semantics)
+	if view == nil {
+		return deporder.ViewLike{}, nil, fmt.Errorf(
+			"%w: ClickHouse materialized view %q named by diff is missing from the desired schema",
+			ptaherr.ErrInvalidSchemaDiff,
+			name,
+		)
 	}
-	for _, name := range diff.MaterializedViewsRemoved {
-		result = append(result, ast.NewDropMaterializedView(name))
-	}
-	return result
+	node := fromschema.FromMaterializedView(*view)
+	return deporder.ViewLike{Name: node.Name, Body: node.Body, Materialized: true}, node, nil
 }
 
 func reportRowLevelSecurity(result []ast.Node, diff *types.SchemaDiff) []ast.Node {

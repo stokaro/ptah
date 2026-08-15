@@ -98,6 +98,15 @@ report while resolving the connected catalog's identifier semantics and
 default comparison options. Command adapters use that report for warnings;
 embedders can choose their own diagnostic policy.
 
+MySQL-family readers populate the JSON-hidden
+`dbschema/types.DBFunction.Definer` and `CurrentAccount` execution facts.
+Database-aware `schemadiff.CompareWithDatabase` entry points use them to refuse
+a modified `SQL SECURITY DEFINER` routine when recreating it would change the
+executing account. Custom readers that supply a modified definer routine must
+preserve both fields; missing facts fail closed with
+`ptaherr.ErrInvalidSchemaDiff`. Offline comparison has no live ownership facts
+and is not the safety boundary for applying such a replacement.
+
 `goschema.Finalize` rebuilds materialized inline, JSON, and relation fields on
 every call. `Field.GeneratedFromEmbedded` identifies those derived fields so a
 caller can mutate the source fields or embedded declarations and finalize the
@@ -123,6 +132,15 @@ CockroachDB 25.4 refuses generic and guarded `DROP CONSTRAINT` plus
 `CREATE OR REPLACE TRIGGER`; CockroachDB 26.2 accepts those statements. Use
 `ResolveServerVersion` when a live banner is available so the correct arm is
 selected instead of choosing a preset by its name.
+
+`BannerPlatform` answers a narrower question than `ResolveServerVersion`: which
+product does a version string name, if any. Callers holding a version a person
+typed need it, because two typed values naming two different servers are a
+contradiction no preset resolves. It is deliberately not the same answer as
+`VersionResolution.ResolvedDialect`, which reports the ladder the capabilities
+came from — a banner naming only PostgreSQL leaves an explicitly declared
+CockroachDB, YugabyteDB or Spanner target on its own preset, because all three
+speak the PostgreSQL wire protocol and may report exactly that banner.
 
 `migration/lint` provides the compact `LintFS` findings API and the richer
 `AnalyzeFS` API. `AnalyzeFS` captures each migration input once: SQL files,
@@ -182,23 +200,21 @@ the source file and transaction-mode details in its message.
 
 `migration/migrator.ParseFileDirectives` reads the file's directive header —
 the run of blank lines and line comments before the first executable statement
-— rather than the whole file. Both directive families answer to that one rule,
-so a `-- +ptah` line written below the statements it claims to govern is no
-longer honored, matching what `-- atlas:txmode` already did and what Atlas CE
-does. A directive outside its region is reported at `WARN` by the migrator
-rather than dropped in silence. `PTAH_DIRECTIVES_ANYWHERE=1` restores the
-earlier file-wide scope for `-- +ptah` directives; `ParseFileDirectives`
-reports no error, so a malformed value for that variable fails the migration
-run instead and this function keeps the header rule. Ordered
-`-- +ptah check` directives are unaffected: they are position-insensitive by
-design and `ParseChecks` still reads the whole file.
+— rather than the whole file. A `-- +ptah` line written below the statements it
+claims to govern is not honored. Atlas transaction mode keeps the stricter
+initial column-1 comment-block rule measured from Atlas CE. A directive outside
+its region is reported at `WARN` by the migrator
+rather than dropped in silence. Ordered `-- +ptah check` directives are
+unaffected: they are position-insensitive by design and `ParseChecks` still
+reads the whole file. Atlas directives retain their stricter individual header
+rules; for example, `atlas:txmode` must be in the unbroken column-1 comment
+block at the start of the file.
 
 Position and value stay separate verdicts. A `-- +ptah` directive whose key is
 recognized but whose value cannot be read fails `ParseMigrationUp`, `Migration.Up`
 and `Migration.Down` wherever the line sits, and the error names the line, so a
-typo is never demoted to a position warning and the verdict does not depend on
-`PTAH_DIRECTIVES_ANYWHERE`. An unrecognized bare token and an unknown
-`key=value` pair are not directives and produce neither. The `-- atlas:txmode`
+typo is never demoted to a position warning. An unrecognized bare token and an
+unknown `key=value` pair are not directives and produce neither. The `-- atlas:txmode`
 spelling is reported but not refused outside its block, because Atlas CE applies
 such a directory.
 
@@ -213,6 +229,11 @@ migration lock before transaction-mode validation, including empty plans. It
 is a metadata-only observer and cannot abort execution. `Preflight` remains the
 abort-capable hook after validation, so user-facing start output is not emitted
 for a statically invalid migration.
+
+`MigrateUpOptions.AllowDirty` authorizes a verified retry only when the current
+provider still owns the dirty migration's exact identity and body. A dirty
+exact-history row whose source file was removed remains blocking: without that
+body, the migrator cannot verify or resume the committed statement prefix.
 
 `MigrateUpOptions.DiscardRolledBackFailure` models the Atlas revision-table
 compatibility surface, which treats a confirmed transactional rollback as no
@@ -337,6 +358,13 @@ composition of planning and publication and propagates its context through
 both phases. The returned `generator.MigrationFiles.Files` slice is the
 authoritative list of generated pairs and published paths, in apply order.
 
+`GenerateMigrationOptions.PriorMigrationsFS` carries an immutable,
+already-authorized migration history into shadow verification. The same
+snapshot becomes a publication precondition: `WriteFiles` returns
+`generator.ErrMigrationDirectoryChanged` if the bound output directory no
+longer matches it, so a refreshed integrity file cannot legitimize different
+history.
+
 `migration/safety.RenderJSON` writes a `safety.Report` containing the highest
 risk, destructive verdict, and rendered statement assessments. The native
 `ptah migrations plan --report json` command writes that document to standard
@@ -366,10 +394,80 @@ Atlas revision metadata is represented explicitly by `AtlasRevisionType` on
 history transition: it preserves existing clean rows through the target, adds
 missing manually-set rows, converts dirty rows to the combined applied and
 manually-set type without discarding diagnostics, and removes rows above the
-selected version. It returns an `AtlasRevisionSetResult` describing every
-changed migration as a version-and-description `AtlasRevisionChange`.
+selected version.
+
+In exact-identity mode, it also removes source-retired rows
+that the compatibility adapter's source comparator places above the selected
+target, matching Atlas CE even when their stored numeric ordering key is no
+longer reconstructable. If the source format cannot order a retired identity
+without missing role or walk-position context, the operation refuses before
+changing metadata instead of comparing opaque identity bytes.
+
+It returns an
+`AtlasRevisionSetResult` describing every changed migration as a numeric order
+key, exact revision identity, and description in `AtlasRevisionChange`.
 `GetMigrationStatusSnapshot` returns status and the exact revision rows used to
 derive it from one metadata query.
+
+`migration/migrator.WithAtlasRevisionVersions` separates an Atlas revision's
+opaque string identity from the numeric `Migration.Version` that governs
+execution order. The map key is that numeric order key and the value is the
+exact revision-table identity; a present empty string is an owned empty
+identity, not a request to fall back to the file name. Compatibility adapters
+may include mappings for migrations a baseline squashed out of the loaded
+filesystem so existing history and the high-water mark remain interpretable.
+
+`Migrator.WithAtlasRevisionVersionComparator` supplies the matching source
+format's relationship between a retired identity and the selected target for
+metadata-only set operations. The callback receives
+`AtlasRevisionOrderIdentity` values carrying the exact key, Atlas row type,
+operator marker, and a provider-owned repeatable bit. This lets an adapter keep
+baseline, versioned, and repeatable roles distinct instead of reconstructing a
+retired identity from its token. Its false result is a fail-closed ambiguity
+signal, not an instruction to fall back to lexical order.
+
+Passing a non-nil map also keeps a persisted exact identity readable after its
+source file is removed: the retired row receives a history-only runtime, while
+its exact key still contributes to source ordering. Only migrations that the
+provider actually loads own identities and pending work. `MigrationRevision`
+JSON emits `atlas_version` for a present Atlas
+identity, including the exact empty identity, and omits it for an ordinary
+numeric revision; unmarshaling preserves the same distinction.
+
+`MigrationStatus` JSON likewise emits `current_version_key` for every present
+exact current identity, including an empty one, and omits it for ordinary
+numeric status without an exact key. Unmarshaling restores
+`CurrentVersionKeySet` from the member's presence without exposing the presence
+bit as a second JSON field. The presence bit is authoritative during marshaling,
+so a stale key value with the bit unset stays absent.
+
+`migration/migrator.WithAtlasRevisionTypes` carries source-format metadata that
+filename conversion cannot recover. A compatibility adapter marks a surviving
+Flyway baseline with the combined baseline-and-applied bits: Atlas CE writes the
+ordinary applied type for both `V2` and `B2`, but the combined marker lets Ptah
+distinguish an already-settled `B2` from an unsafe `V2` to `B2` replacement when
+both own exact revision identity `2`. It still renders as `applied` and does not
+create the implicit lower-history boundary of a pure baseline row. Missing map
+entries retain the ordinary applied type. `SetAtlasRevision` adds the manually
+set bit to the source marker, so a settled Flyway baseline becomes the combined
+value `7`; it renders as `manually set` while retaining the baseline
+discriminator for later apply.
+
+`BaselineWithOptions` preserves the pure baseline type when it records one of
+those source baselines and writes `Ptah/source-baseline` to `operator_version`.
+That durable marker proves which source the boundary selected. An ordinary
+mapped source migration instead keeps `Ptah/source-identity`; because it lacks
+the source-baseline marker, a same-token baseline introduced later remains
+ambiguous and fails closed. The source-identity marker also distinguishes an
+exact numeric source token from an ordering key recorded by an older Ptah
+build.
+
+`migration/migrator.WithAtlasRepeatableVersions` preserves the repeatable role
+when a compatibility adapter converts source files to numeric Atlas filenames.
+It takes numeric execution-order keys, deduplicates them, and does not infer the
+role from an empty revision identity: an ordinary source migration can also own
+an exact empty token. Missing keys retain the repeatability parsed from the
+Atlas filename.
 
 `migration/dbtest` exposes the declarative testing engine used by
 `ptah migrations test` and `ptah schema test`. Embedders can construct
@@ -377,6 +475,9 @@ derive it from one metadata query.
 `FilterCases`, run against an ephemeral or explicit throwaway database, and
 render text, JSON, or HTML reports. See [Declarative database
 testing](testing.md).
+`dbtest.Options.MigrationsFS` supplies one immutable history to every
+`migrate_to` step; nil retains the pathname-based fallback for embedders that
+have not captured a snapshot.
 
 `core/schemasource` executes an explicitly configured program without a shell,
 bounds its runtime and captured output, cleans up descendant processes, and
@@ -443,6 +544,14 @@ without touching the filesystem, so previews cannot drift from what is
 written; the `AtlasCheckpointDirective` it emits is only honored on the file's
 first line. `ResolveAtlasCheckpointVersion` supplies the timestamp version,
 bumped past any newer migration already in the directory.
+
+`CheckpointWriteOptions.AuthorizedMigrationsFS` and the corresponding
+`WriteCheckpointFilesWithOptions` or `WriteAtlasCheckpointFileWithOptions`
+entry point bind publication to the history that produced the checkpoint body.
+The writer returns `generator.ErrMigrationDirectoryChanged` before creating a
+checkpoint, or withdraws the checkpoint before publishing the sum, when the
+rooted destination does not match the authorized expected state. The sum is
+computed from that state rather than from a newly reopened path.
 
 `migration/planner.Planner` exposes only checked planning; malformed
 references, unresolved additions, and target index-namespace conflicts fail

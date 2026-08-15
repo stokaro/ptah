@@ -94,7 +94,17 @@ func compareWithDatabaseInfoReportingUndecidedAdditions(
 	// there is a different kind of object. Refuse both before anything is
 	// compared, rather than planning a DROP the operator never asked for
 	// (stokaro/ptah#1028).
-	if err := sqlitevirtual.ValidateComparison(info.Dialect, generated, database); err != nil {
+	//
+	// The caller's diff policy travels with the comparison because both halves
+	// of that guard predict statements, and a caller that skips `drop_table`
+	// deletes the predicted DROP again before anything is rendered. See
+	// [config.CompareOptions.SkipTableDrops].
+	virtualPolicy := sqlitevirtual.Policy{
+		SkipDropTable:  merged.SkipTableDrops,
+		SkipDropColumn: merged.SkipColumnDrops,
+		SkipDropIndex:  merged.SkipIndexDrops,
+	}
+	if err := sqlitevirtual.ValidateComparison(info.Dialect, generated, database, virtualPolicy); err != nil {
 		return nil, nil, err
 	}
 	generated = fromschema.AssignDefaultForeignKeyNames(generated, info.Dialect)
@@ -119,6 +129,26 @@ func compareWithDatabaseInfoReportingUndecidedAdditions(
 	}
 	merged.IdentifierSemantics = &semantics
 	diff, undecided := CompareReportingUndecidedAdditions(generated, database, merged)
+	// The half of the SQLite virtual-table guard that only the comparator can
+	// answer. A table both sides name and describe differently is rebuilt by
+	// the SQLite planner -- drop, recreate, copy -- which destroys a module's
+	// storage as surely as a drop, and whether that will happen is this diff's
+	// answer rather than anything the pre-comparison check could compute
+	// without a second copy of these rules (stokaro/ptah#1028).
+	if err := sqlitevirtual.ValidatePlannedChanges(
+		info.Dialect, database, diff, virtualPolicy,
+	); err != nil {
+		return nil, nil, err
+	}
+	if err := compare.ValidateMySQLFunctionDefinerReplacements(
+		generated,
+		database,
+		diff,
+		info.Dialect,
+		semantics,
+	); err != nil {
+		return nil, nil, err
+	}
 	return diff, undecided, nil
 }
 
@@ -248,7 +278,7 @@ func CompareReportingUndecidedAdditions(
 
 	// Compare views, materialized views, and triggers
 	compare.ViewsWithSemantics(generated, database, diff, opts.Dialect, identifierSemantics)
-	compare.MaterializedViewsWithSemantics(generated, database, diff, identifierSemantics)
+	compare.MaterializedViewsWithSemantics(generated, database, diff, opts.Dialect, identifierSemantics)
 	compare.TriggersWithSemantics(generated, database, diff, identifierSemantics)
 
 	// Compare RLS policies (PostgreSQL-specific feature)
