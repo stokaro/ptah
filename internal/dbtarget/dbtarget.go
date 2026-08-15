@@ -287,11 +287,44 @@ func LookupDriverDSN(engine Engine) (string, error) {
 }
 
 // driverForm renders an address in the grammar the engine's driver parses.
+//
+// There is no single "driver form". go-sql-driver wants a network address with
+// no scheme at all; pgx wants a PostgreSQL URL; go-mssqldb and clickhouse-go
+// each want their own scheme in front of one. Deciding this by looking at the
+// scheme string handed two of those drivers something they cannot parse, so
+// the question is asked of the engine, which is what actually determines the
+// driver.
 func driverForm(engine Engine, address string) string {
-	if mysqlFamily(engine) {
+	switch engine {
+	case MySQL, MySQLAdmin, MariaDB, MariaDBAdmin:
 		return mysqlNetworkDSN(address)
+	case CockroachDB, YugabyteDB:
+		// pgx does not parse these aliases, and rewriting rather than removing
+		// is what dbschema does for the same reason.
+		return postgresWireURL(address)
 	}
-	return stripScheme(address)
+	// Every other engine's driver reads the address as it stands: pgx parses
+	// postgres:// and postgresql://, go-mssqldb parses sqlserver://, and
+	// clickhouse-go parses clickhouse://.
+	//
+	// Removing a scheme is the exception, asked for by engine, rather than the
+	// rule. That way round is what matters: while stripping was the default
+	// and keeping was the exception, two drivers nobody had thought to list
+	// were handed an address they cannot parse.
+	return address
+}
+
+// postgresWireURL rewrites a PostgreSQL-family alias to the scheme pgx reads.
+func postgresWireURL(address string) string {
+	scheme, rest, found := strings.Cut(address, "://")
+	if !found {
+		return address
+	}
+	switch scheme {
+	case "cockroachdb", "yugabytedb", "spanner":
+		return "postgres://" + rest
+	}
+	return address
 }
 
 // mysqlFamily reports whether an engine is served by go-sql-driver/mysql,
@@ -356,30 +389,6 @@ func credentialsOf(user *url.Userinfo) string {
 		return user.Username() + ":" + password
 	}
 	return user.Username()
-}
-
-// stripScheme renders an address in the form a raw driver parses.
-//
-// A value with no scheme is already in driver form and is returned unchanged.
-//
-// The PostgreSQL family is rewritten rather than stripped. pgx accepts a
-// PostgreSQL URL or a keyword/value DSN and neither postgres:// nor a bare
-// root@host:26257/db is optional -- removing the scheme from a cockroachdb://
-// or yugabytedb:// address leaves something pgx cannot parse at all, so a
-// target dbtarget.URL connects with failed on the driver path. Rewriting the
-// alias to postgres:// is what dbschema does for the same reason.
-func stripScheme(address string) string {
-	scheme, rest, found := strings.Cut(address, "://")
-	if !found {
-		return address
-	}
-	switch scheme {
-	case "postgres", "postgresql":
-		return address
-	case "cockroachdb", "yugabytedb", "spanner":
-		return "postgres://" + rest
-	}
-	return rest
 }
 
 // Engines returns every engine this package knows, in declaration order, so a

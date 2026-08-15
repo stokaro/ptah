@@ -479,3 +479,48 @@ func TestLookupDriverDSN_DerivesFromAPreferredDSNCarryingItsOwnScheme(t *testing
 	c.Assert(err, qt.IsNil)
 	c.Assert(got, qt.Equals, "user:pass@tcp(127.0.0.1:3306)/db")
 }
+
+// TestLookupDriverDSN_KeepsASchemeItsDriverParses is the general form of the
+// rule, stated per engine rather than per driver family.
+//
+// "Driver form" is not one grammar. go-sql-driver wants a network address with
+// no scheme; pgx wants a PostgreSQL URL; go-mssqldb and clickhouse-go both want
+// their own scheme in front. Stripping the scheme for everything that is not
+// PostgreSQL handed two of those drivers something they cannot parse, so a
+// probe that dbtarget.URL connects with fine failed before its test ran.
+func TestLookupDriverDSN_KeepsASchemeItsDriverParses(t *testing.T) {
+	tests := []struct {
+		name   string
+		engine dbtarget.Engine
+		set    func(t *testing.T)
+		want   string
+	}{
+		{
+			name:   "SQL Server keeps its scheme for go-mssqldb",
+			engine: dbtarget.SQLServer,
+			set: func(t *testing.T) {
+				t.Setenv("PTAH_SQLSERVER_TEST_URL", "sqlserver://sa:pw@localhost:1433?database=db")
+			},
+			want: "sqlserver://sa:pw@localhost:1433?database=db",
+		},
+		{
+			name:   "ClickHouse keeps its scheme for clickhouse-go",
+			engine: dbtarget.ClickHouse,
+			set:    func(t *testing.T) { t.Setenv("CLICKHOUSE_URL", "clickhouse://default@localhost:9000/db") },
+			want:   "clickhouse://default@localhost:9000/db",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			clearAll(t)
+			test.set(t)
+
+			got, err := dbtarget.LookupDriverDSN(test.engine)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(got, qt.Equals, test.want)
+		})
+	}
+}
