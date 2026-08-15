@@ -429,7 +429,35 @@ func (r *renderer) render() {
 	r.builder.WriteString(body)
 }
 
+// reportDialectScopes reports every declared object whose `dialects=` scope
+// this document cannot carry.
+//
+// Atlas HCL has no notion of an object belonging to a subset of targets, and
+// inventing a Ptah-only attribute for it would produce a file the pinned Atlas
+// community binary refuses. So the scope is a genuine export loss, and it is
+// named as one.
+//
+// Saying so is what protects the declaration. `ptah schema export
+// --cleanup-go-annotations` deletes the Go annotations once the HCL is written,
+// and a loss diagnostic is what turns that into
+// [go.5x5.cz/ptah/internal/goannotationexport.ErrLossyCleanup]. Without this,
+// cleanup would remove the only place the scope was ever written down and the
+// schema would silently go back to reaching every dialect.
+func (r *renderer) reportDialectScopes() {
+	for _, scoped := range goschema.ScopedObjects(r.db) {
+		r.diagnostics = append(r.diagnostics, Diagnostic{
+			Severity: SeverityWarning,
+			Path:     fmt.Sprintf("%s.%s", scoped.Kind, scoped.Name),
+			Message: fmt.Sprintf(
+				"dialect scope %q is not represented in HCL",
+				strings.Join(scoped.Dialects, ","),
+			),
+		})
+	}
+}
+
 func (r *renderer) renderBody() {
+	r.reportDialectScopes()
 	r.renderExtensions()
 	r.renderSequences()
 	r.renderUserTypes()
