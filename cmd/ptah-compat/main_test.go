@@ -223,8 +223,8 @@ func TestCompatBinaryAtlasSuccessPaths(t *testing.T) {
 		err := run.Run()
 
 		c.Assert(err, qt.IsNil)
-		c.Assert(stdout.String(), qt.Contains, "# bash completion V2 for atlas")
-		c.Assert(stdout.String(), qt.Contains, "__start_atlas")
+		c.Assert(stdout.String(), qt.Contains, "# bash completion V2 for atlas ")
+		c.Assert(stdout.String(), qt.Contains, "__start_atlas()\n")
 		c.Assert(stderr.String(), qt.Equals, "")
 	})
 }
