@@ -122,6 +122,99 @@ func atlasRuleList(tb testing.TB, code string) []string {
 	return nil
 }
 
+// messagesFor lints a directory under one compatibility profile and returns the
+// messages reported under one identifier, in the order they were reported.
+func messagesFor(tb testing.TB, files map[string]string, profile lint.CompatibilityProfile, code string) []string {
+	c := qt.New(tb)
+
+	fsys := fstest.MapFS{}
+	for name, content := range files {
+		fsys[name] = &fstest.MapFile{Data: []byte(content)}
+	}
+	analysis, err := lint.AnalyzeFS(fsys, lint.Options{
+		DirFormat:     migrator.MigrationDirFormatPtah,
+		Compatibility: profile,
+	})
+	c.Assert(err, qt.IsNil)
+
+	var messages []string
+	for _, finding := range analysis.Findings() {
+		if finding.Rule == code {
+			messages = append(messages, finding.Message)
+		}
+	}
+	return messages
+}
+
+// summaryOf returns the one-line meaning the catalog publishes for a rule.
+func summaryOf(tb testing.TB, code string) string {
+	c := qt.New(tb)
+
+	entries, err := lintcatalog.Entries()
+	c.Assert(err, qt.IsNil)
+	for _, entry := range entries {
+		if entry.Code == code {
+			return entry.Summary
+		}
+	}
+	c.Fatalf("no catalog entry for %s", code)
+	return ""
+}
+
+// TestDS101SeparatesTheDropFromTheRename measures the two consequences one
+// identifier carries.
+//
+// On the compatibility surface a rename is classified as destructive and
+// reports DS101, but the table and its rows survive under the new name -- the
+// rule's own message says the name is retired, not that anything was deleted.
+// The published meaning said the rename "destroys the table and every row in
+// it", which is the drop's consequence attached to the wrong path.
+//
+// What this pins is the distinction in the code, which nothing measured before.
+// It does not by itself pin the wording: an assertion that the summary mentions
+// a rename passed against the wrong summary too, because that one mentioned a
+// rename while describing it wrongly.
+func TestDS101SeparatesTheDropFromTheRename(t *testing.T) {
+	c := qt.New(t)
+
+	renamed := messagesFor(t, map[string]string{
+		"0000000001_rename.up.sql":   "ALTER TABLE users RENAME TO accounts;",
+		"0000000001_rename.down.sql": "ALTER TABLE accounts RENAME TO users;",
+	}, lint.CompatibilityProfileAtlas, "DS101")
+
+	dropped := messagesFor(t, map[string]string{
+		"0000000001_drop.up.sql":   "DROP TABLE users;",
+		"0000000001_drop.down.sql": "CREATE TABLE users (id INTEGER);",
+	}, lint.CompatibilityProfileAtlas, "DS101")
+
+	c.Assert(renamed, qt.HasLen, 1)
+	c.Assert(dropped, qt.HasLen, 1)
+	c.Assert(renamed[0], qt.Contains, "retires the table name")
+	c.Assert(dropped[0], qt.Not(qt.Contains), "retires the table name")
+	c.Assert(summaryOf(t, "DS101"), qt.Contains, "rename")
+}
+
+// TestPG102SummaryKeepsTheVersionDistinction pins the qualification the rule
+// makes and the published meaning dropped.
+//
+// The rule says ALTER TYPE ... ADD VALUE cannot run in a transaction *before
+// PostgreSQL 12* and that the value merely stays unusable within the
+// transaction afterwards. The meaning said it cannot run inside a transaction
+// block, full stop, which sends a reader on PostgreSQL 12 or later toward a
+// non-transactional migration they do not need.
+func TestPG102SummaryKeepsTheVersionDistinction(t *testing.T) {
+	c := qt.New(t)
+
+	messages := messagesFor(t, map[string]string{
+		"0000000001_add_value.up.sql":   "ALTER TYPE order_status ADD VALUE 'refunded';",
+		"0000000001_add_value.down.sql": "-- an enum value cannot be removed",
+	}, lint.CompatibilityProfileNative, "PG102")
+
+	c.Assert(messages, qt.HasLen, 1)
+	c.Assert(messages[0], qt.Contains, "before PostgreSQL 12")
+	c.Assert(summaryOf(t, "PG102"), qt.Contains, "PostgreSQL 12")
+}
+
 // TestAtlasRowsNameTheRulesThatFire drives the statement an Atlas check
 // describes and compares what came back against the rules that check's row
 // claims.

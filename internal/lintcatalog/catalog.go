@@ -133,7 +133,7 @@ type ruleMeta struct {
 // [Entries]; removing one without removing the entry here fails it too.
 var migrationRuleMeta = map[string]ruleMeta{
 	"DS101": {
-		Summary:   "DROP TABLE, or a rename that retires the name, destroys the table and every row in it",
+		Summary:   "DROP TABLE destroys the table and every row in it; a rename reports here on the compatibility surface, retiring the old name without moving the rows",
 		AtlasCode: "DS102",
 	},
 	"DS102": {
@@ -141,7 +141,7 @@ var migrationRuleMeta = map[string]ruleMeta{
 		AtlasCode: "DS103",
 	},
 	"DS103": {
-		Summary: "a column type change can truncate or reject existing values and rewrite the table",
+		Summary: "a column type change can truncate or reject existing values and may rewrite the table under a lock",
 	},
 	"DS104": {
 		Summary: "DROP NOT NULL removes a column-level data protection",
@@ -199,14 +199,14 @@ var migrationRuleMeta = map[string]ruleMeta{
 		AtlasCode: "PG101",
 	},
 	"PG102": {
-		Summary: "ALTER TYPE ... ADD VALUE cannot run inside a transaction block",
+		Summary: "ALTER TYPE ... ADD VALUE cannot run inside a transaction before PostgreSQL 12, and the value stays unusable in the same transaction after it",
 	},
 	"PG103": {
 		Summary:   "CONCURRENTLY cannot run inside the migration's transaction",
 		AtlasCode: "PG103",
 	},
 	"PG104": {
-		Summary:   "adding a primary key takes an ACCESS EXCLUSIVE lock and scans existing rows",
+		Summary:   "adding a primary key takes an ACCESS EXCLUSIVE lock and can scan existing rows",
 		AtlasCode: "PG104",
 	},
 	"PG105": {
@@ -218,7 +218,7 @@ var migrationRuleMeta = map[string]ruleMeta{
 		AtlasCode: "PG102",
 	},
 	"PG110": {
-		Summary:   "the declared column order wastes tuple padding",
+		Summary:   "the declared column order can waste tuple padding",
 		AtlasCode: "PG110",
 	},
 	"PG302": {
@@ -230,7 +230,7 @@ var migrationRuleMeta = map[string]ruleMeta{
 		AtlasCode: "PG303",
 	},
 	"PG305": {
-		Summary:   "adding a CHECK constraint validates existing rows and holds locks",
+		Summary:   "adding a CHECK constraint validates existing rows and can hold locks",
 		AtlasCode: "PG305",
 	},
 	"PG306": {
@@ -258,7 +258,7 @@ var migrationRuleMeta = map[string]ruleMeta{
 		AtlasCode: "PG311",
 	},
 	"MY101": {
-		Summary: "this ALTER TABLE form rebuilds the table and blocks writes for the duration",
+		Summary: "this ALTER TABLE form usually rebuilds the table and blocks writes for the duration",
 	},
 	"MY102": {
 		Summary:   "MySQL ignores an inline REFERENCES clause in ADD COLUMN",

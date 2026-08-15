@@ -88,9 +88,9 @@ An identifier's prefix says whose namespace it lives in. Atlas owns a prefix whe
 | `CD102` | dropping a check constraint removes a value-validation guarantee | both | Atlas |
 | `CD103` | dropping a primary key removes row identity and can break replication | both | Atlas |
 | `DD101` | adding a NOT NULL column without a default fails or blocks on a populated table | both | Atlas |
-| `DS101` | DROP TABLE, or a rename that retires the name, destroys the table and every row in it | both | Atlas |
+| `DS101` | DROP TABLE destroys the table and every row in it; a rename reports here on the compatibility surface, retiring the old name without moving the rows | both | Atlas |
 | `DS102` | DROP COLUMN destroys the column and every value stored in it | both | Atlas |
-| `DS103` | a column type change can truncate or reject existing values and rewrite the table | both | Ptah |
+| `DS103` | a column type change can truncate or reject existing values and may rewrite the table under a lock | both | Ptah |
 | `DS104` | DROP NOT NULL removes a column-level data protection | both | Ptah |
 | `DS105` | an untyped DROP CONSTRAINT removes a data protection the SQL does not name | both | Ptah |
 | `DS106` | removing an enum value can invalidate rows that still hold it | both | Ptah |
@@ -105,7 +105,7 @@ An identifier's prefix says whose namespace it lives in. Atlas owns a prefix whe
 
 | Rule | Meaning | Surface | Origin |
 | --- | --- | --- | --- |
-| `MY101` | this ALTER TABLE form rebuilds the table and blocks writes for the duration | both | Ptah |
+| `MY101` | this ALTER TABLE form usually rebuilds the table and blocks writes for the duration | both | Ptah |
 | `MY102` | MySQL ignores an inline REFERENCES clause in ADD COLUMN | both | Atlas |
 | `MY131` | adding a foreign key can copy or lock the table and block writes | both | Atlas |
 | `MY132` | adding a primary key rebuilds the table and blocks DML | both | Atlas |
@@ -117,15 +117,15 @@ An identifier's prefix says whose namespace it lives in. Atlas owns a prefix whe
 | Rule | Meaning | Surface | Origin |
 | --- | --- | --- | --- |
 | `PG101` | CREATE INDEX without CONCURRENTLY blocks writes for the whole build | both | Atlas |
-| `PG102` | ALTER TYPE ... ADD VALUE cannot run inside a transaction block | both | Ptah |
+| `PG102` | ALTER TYPE ... ADD VALUE cannot run inside a transaction before PostgreSQL 12, and the value stays unusable in the same transaction after it | both | Ptah |
 | `PG103` | CONCURRENTLY cannot run inside the migration's transaction | both | Atlas |
-| `PG104` | adding a primary key takes an ACCESS EXCLUSIVE lock and scans existing rows | both | Atlas |
+| `PG104` | adding a primary key takes an ACCESS EXCLUSIVE lock and can scan existing rows | both | Atlas |
 | `PG105` | adding a unique constraint takes an ACCESS EXCLUSIVE lock and validates rows | both | Atlas |
 | `PG106` | DROP INDEX without CONCURRENTLY blocks writes while the index is removed | both | Atlas |
-| `PG110` | the declared column order wastes tuple padding | both | Atlas |
+| `PG110` | the declared column order can waste tuple padding | both | Atlas |
 | `PG302` | a volatile DEFAULT on an added column rewrites or evaluates every existing row | both | Atlas |
 | `PG303` | SET NOT NULL scans the table to validate existing rows | both | Atlas |
-| `PG305` | adding a CHECK constraint validates existing rows and holds locks | both | Atlas |
+| `PG305` | adding a CHECK constraint validates existing rows and can hold locks | both | Atlas |
 | `PG306` | adding a foreign key validates existing rows and can block writes on both tables | both | Atlas |
 | `PG307` | changing LOGGED or UNLOGGED rewrites the table under heavyweight locks | both | Atlas |
 | `PG308` | CREATE TRIGGER takes a SHARE ROW EXCLUSIVE lock and can block writes | both | Atlas |
