@@ -183,7 +183,7 @@ Every check code the [Atlas analyzer documentation](https://atlasgo.io/lint/anal
 | `BC102` | renaming a column | no | `BC101` | covered — one rule reports both object kinds |
 | `MY101` | adding a non-nullable column without a DEFAULT to an existing table | no | `DD101` | covered — DD101 applies to every dialect |
 | `MY102` | an inline REFERENCES clause in ADD COLUMN has no effect | no | `MY102` | covered |
-| `MY110` | removing enum values from a column requires a table copy | no | `DS106` | partial — reported as a destructive enum change, without the table-copy cost |
+| `MY110` | removing enum values from a column requires a table copy | no | `DS103`, `MY101` | partial — the MODIFY COLUMN is reported as a column type change and a lock-heavy rebuild; the old and new member lists are not compared, so the removal itself has no code |
 | `MY111` | reordering enum values requires a table copy | no | — | not implemented |
 | `MY112` | inserting enum values other than at the end requires a table copy | no | — | not implemented |
 | `MY113` | exceeding 256 enum values changes storage size and requires a table copy | no | — | not implemented |

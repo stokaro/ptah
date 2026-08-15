@@ -71,7 +71,17 @@ var atlasChecks = []AtlasCheck{
 	{Code: "MY101", Meaning: "adding a non-nullable column without a DEFAULT to an existing table", PtahRules: []string{"DD101"}, Status: StatusCovered, Note: "DD101 applies to every dialect"},
 	{Code: "MY102", Meaning: "an inline REFERENCES clause in ADD COLUMN has no effect", PtahRules: []string{"MY102"}, Status: StatusCovered},
 
-	{Code: "MY110", Meaning: "removing enum values from a column requires a table copy", PtahRules: []string{"DS106"}, Status: StatusPartial, Note: "reported as a destructive enum change, without the table-copy cost"},
+	// MySQL removes an enum value by restating the whole member list in a
+	// MODIFY COLUMN, which is why DS106 does not answer for this check: its
+	// scan matches the PostgreSQL spellings, DROP VALUE and DELETE FROM
+	// pg_enum. Measured on `ALTER TABLE orders MODIFY COLUMN status
+	// ENUM('new','paid') NOT NULL;` with --dialect mysql, the rules that fire
+	// are DS103 and MY101.
+	{
+		Code: "MY110", Meaning: "removing enum values from a column requires a table copy",
+		PtahRules: []string{"DS103", "MY101"}, Status: StatusPartial,
+		Note: "the MODIFY COLUMN is reported as a column type change and a lock-heavy rebuild; the old and new member lists are not compared, so the removal itself has no code",
+	},
 	{Code: "MY111", Meaning: "reordering enum values requires a table copy", Status: StatusAbsent},
 	{Code: "MY112", Meaning: "inserting enum values other than at the end requires a table copy", Status: StatusAbsent},
 	{Code: "MY113", Meaning: "exceeding 256 enum values changes storage size and requires a table copy", Status: StatusAbsent},

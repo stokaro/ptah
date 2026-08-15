@@ -86,6 +86,105 @@ func findingCodes(c *qt.C, files map[string]string, profile lint.CompatibilityPr
 	return slices.Compact(codes)
 }
 
+// dialectFindingCodes lints a one-version migration directory under a dialect
+// and returns the identifiers reported, sorted. Unlike findingCodes it gates
+// dialect-specific rules, which is what an Atlas row about a MySQL check needs.
+func dialectFindingCodes(tb testing.TB, dialect, up, down string) []string {
+	c := qt.New(tb)
+
+	fsys := fstest.MapFS{
+		"0000000001_change.up.sql":   &fstest.MapFile{Data: []byte(up)},
+		"0000000001_change.down.sql": &fstest.MapFile{Data: []byte(down)},
+	}
+	findings, err := lint.LintFS(fsys, lint.Options{Dialect: dialect})
+	c.Assert(err, qt.IsNil)
+
+	var codes []string
+	for _, finding := range findings {
+		codes = append(codes, finding.Rule)
+	}
+	slices.Sort(codes)
+	return slices.Compact(codes)
+}
+
+// atlasRuleList returns the Ptah rules one Atlas check's row names, sorted.
+func atlasRuleList(tb testing.TB, code string) []string {
+	c := qt.New(tb)
+
+	for _, check := range lintcatalog.AtlasChecks() {
+		if check.Code == code {
+			rules := slices.Clone(check.PtahRules)
+			slices.Sort(rules)
+			return rules
+		}
+	}
+	c.Fatalf("the Atlas analyzer list carries no check %s", code)
+	return nil
+}
+
+// TestAtlasRowsNameTheRulesThatFire drives the statement an Atlas check
+// describes and compares what came back against the rules that check's row
+// claims.
+//
+// Validate only asks that a named rule is registered somewhere, which a row
+// naming the wrong registered rule satisfies -- MY110 named DS106, whose scan
+// matches the PostgreSQL DROP VALUE and DELETE FROM pg_enum spellings and never
+// sees the MySQL MODIFY COLUMN that restates the member list. The row read as
+// coverage and the code produced none of it.
+//
+// These are the MySQL rows whose mapping is a claim about which rules fire on a
+// specific statement rather than an identity between codes. The rest of the
+// analyzer table is still a reading of the Atlas documentation joined to
+// registered rules; this test does not extend to it, and does not pretend to.
+func TestAtlasRowsNameTheRulesThatFire(t *testing.T) {
+	rows := []struct {
+		name      string
+		atlasCode string
+		dialect   string
+		up        string
+		down      string
+	}{
+		{
+			name:      "MY110, an enum value removed by restating the member list",
+			atlasCode: "MY110",
+			dialect:   "mysql",
+			up:        "ALTER TABLE orders MODIFY COLUMN status ENUM('new','paid') NOT NULL;\n",
+			down:      "ALTER TABLE orders MODIFY COLUMN status ENUM('new','paid','refunded') NOT NULL;\n",
+		},
+		{
+			name:      "MY130, a column type change",
+			atlasCode: "MY130",
+			dialect:   "mysql",
+			up:        "ALTER TABLE orders MODIFY COLUMN total BIGINT NOT NULL;\n",
+			down:      "ALTER TABLE orders MODIFY COLUMN total INT NOT NULL;\n",
+		},
+		{
+			name:      "MY133, a primary key dropped without a replacement",
+			atlasCode: "MY133",
+			dialect:   "mysql",
+			up:        "ALTER TABLE orders DROP PRIMARY KEY;\n",
+			down:      "ALTER TABLE orders ADD PRIMARY KEY (id);\n",
+		},
+		{
+			name:      "MY136, a table character set change",
+			atlasCode: "MY136",
+			dialect:   "mysql",
+			up:        "ALTER TABLE orders CONVERT TO CHARACTER SET utf8mb4;\n",
+			down:      "ALTER TABLE orders CONVERT TO CHARACTER SET latin1;\n",
+		},
+	}
+
+	for _, row := range rows {
+		t.Run(row.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(dialectFindingCodes(t, row.dialect, row.up, row.down),
+				qt.DeepEquals, atlasRuleList(t, row.atlasCode),
+				qt.Commentf("the %s row names rules the statement it describes does not produce", row.atlasCode))
+		})
+	}
+}
+
 func TestEntriesEnumerateEveryRegisteredRule(t *testing.T) {
 	c := qt.New(t)
 
