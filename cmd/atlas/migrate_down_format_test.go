@@ -618,10 +618,13 @@ func TestCompatCommand_MigrateDownFormatUsesAtlasProjectConfig(t *testing.T) {
 	// the apply report's behavior with a config-supplied dir.
 	c.Assert(err, qt.IsNil, qt.Commentf("stderr=%s", errOut.String()))
 	c.Assert(out.String(), qt.Equals, "migrations|2")
+	// Both sides are slashed before they are compared. The warning echoes the
+	// spelling the config was loaded under, and this test is about which
+	// construct was reported, not about which separator the platform writes.
 	c.Assert(
-		errOut.String(),
+		filepath.ToSlash(errOut.String()),
 		qt.Equals,
-		"warning: atlas.hcl attribute \"project\" at "+filepath.Join(projectDir, "atlas.hcl")+":3 is ignored for Atlas compatibility and has no effect\n",
+		"warning: atlas.hcl attribute \"project\" at "+filepath.ToSlash(filepath.Join(projectDir, "atlas.hcl"))+":3 is ignored for Atlas compatibility and has no effect\n",
 	)
 }
 
