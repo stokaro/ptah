@@ -26,7 +26,6 @@ import (
 // makes the wrong answer apply cleanly rather than fail. The desired schema
 // declares exactly one `users` table, in `reporting`.
 func TestPlannerDoesNotWriteToARelationTheSchemaNeverDeclaredLive(t *testing.T) {
-	c := qt.New(t)
 	adminURL := livePostgresURLForRLSEnable(t)
 
 	tests := []struct {
@@ -56,7 +55,8 @@ func TestPlannerDoesNotWriteToARelationTheSchemaNeverDeclaredLive(t *testing.T) 
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			dbURL := createRLSEnableDatabase(c, adminURL)
 			executeSQL(c, dbURL, []string{
 				`CREATE SCHEMA app`,

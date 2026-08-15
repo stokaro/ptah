@@ -61,11 +61,13 @@ func TestPostgreSQLCoverageStillPlansAGenuineRemovalIntegration(t *testing.T) {
 		))
 	})
 
-	c.Run("as inspected, applying it back plans nothing", func(c *qt.C) {
+	t.Run("as inspected, applying it back plans nothing", func(t *testing.T) {
+		c := qt.New(t)
 		c.Assert(boundaryApplyBack(c, conn, inspected, true), qt.HasLen, 0)
 	})
 
-	c.Run("with the header removed, the same document drops all three", func(c *qt.C) {
+	t.Run("with the header removed, the same document drops all three", func(t *testing.T) {
+		c := qt.New(t)
 		c.Assert(boundaryApplyBack(c, conn, authored, true), qt.DeepEquals, []string{
 			`DROP POLICY IF EXISTS "p" ON "guarded"`,
 			`DROP SEQUENCE IF EXISTS "order_seq"`,

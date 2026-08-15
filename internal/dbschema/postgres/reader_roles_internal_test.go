@@ -963,8 +963,6 @@ func TestReadRolesIntoScopesTheDescriptionByDefault(t *testing.T) {
 // written half a description would be a worse answer than the silence it
 // replaces.
 func TestReadRolesIntoRefusesAMalformedOptIn(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name        string
 		env         func(testing.TB)
@@ -992,7 +990,8 @@ func TestReadRolesIntoRefusesAMalformedOptIn(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			test.env(c)
 			reader := newRolesServer(c, fullCluster(), test.schemas, capability.Postgres16())
 			schema := &types.DBSchema{}
@@ -1037,8 +1036,6 @@ func TestReadRolesIntoDescribesEveryManagedRoleUnderTheOptIn(t *testing.T) {
 }
 
 func TestReadRolesIntoLeavesTheComparatorsAnswerAlone(t *testing.T) {
-	c := qt.New(t)
-
 	// The safety property of the opt-in, stated on its own because it is the
 	// reason the variable can exist at all: both reads run either way, so the
 	// UNION -- which is what compare.Roles takes existence from -- is the same
@@ -1073,7 +1070,8 @@ func TestReadRolesIntoLeavesTheComparatorsAnswerAlone(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			test.env(c)
 			reader := newRolesServer(c, fullCluster(), test.schemas, capability.Postgres16())
 			schema := &types.DBSchema{}

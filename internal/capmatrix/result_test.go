@@ -96,7 +96,8 @@ func TestReadResults_FailurePath(t *testing.T) {
 		readSubdir: "never-created",
 		expect:     "(?s).*read the results under .*",
 	}} {
-		c.Run(tc.name, func(c *qt.C) {
+		t.Run(tc.name, func(t *testing.T) {
+			c := qt.New(t)
 			dir := filepath.Join(c.TempDir(), "results")
 			c.Assert(os.MkdirAll(dir, 0o755), qt.IsNil)
 			for name, content := range tc.files {

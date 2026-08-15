@@ -94,7 +94,8 @@ func TestOraclePartialProgressInteroperatesBidirectionally(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			dir := writeOracleMigrationDir(c, oracle, map[string]string{
 				partialProgressVersion + "_two.sql": test.directive + partialProgressBody,
 			})

@@ -79,14 +79,42 @@ type compatDockerRow struct {
 	verb string
 	// args builds the invocation without --dev-url, which the runner appends.
 	args func(fx compatDockerFixture) []string
-	// check asserts the verb's answer. It is a func per row because the rows
-	// genuinely differ: some are refused by the provisioner, some never consult
-	// the dev URL at all, and a shared assertion would have to branch.
-	check func(c *qt.C, stdout, stderr string, err error)
-	// checkWhitespace asserts the same verb's answer when the identical probe
-	// URL is written with ONE LEADING SPACE. See
+	// check names which layer answers the verb. The rows genuinely differ --
+	// some are refused by the provisioner, some never consult the dev URL at
+	// all -- but the difference is one of three outcomes, so the row names one
+	// and [assertDevURLOutcome] knows each. Holding the assertion itself put
+	// the checker in a table row; see AGENTS.md, "A Table Row Carries Data,
+	// Not A Checker".
+	check devURLOutcome
+	// checkWhitespace names the outcome for the same verb when the identical
+	// probe URL is written with ONE LEADING SPACE. See
 	// TestCompatDockerDevURL_DoesNotProvisionAValueTheBinaryCannotParse.
-	checkWhitespace func(c *qt.C, stdout, stderr string, err error)
+	checkWhitespace devURLOutcome
+}
+
+// devURLOutcome is which layer answered a row. The values are sentences so a
+// failure names the outcome that was expected rather than an index.
+type devURLOutcome string
+
+const (
+	refusedByProvisioner devURLOutcome = "refused by the provisioner"
+	devURLNotConsulted   devURLOutcome = "dev URL never consulted"
+	notADockerURL        devURLOutcome = "refused before the provisioner"
+)
+
+// assertDevURLOutcome checks one run against the outcome its row named.
+func assertDevURLOutcome(c *qt.C, want devURLOutcome, stdout, stderr string, err error) {
+	c.Helper()
+	switch want {
+	case refusedByProvisioner:
+		assertRefusedByProvisioner(c, stdout, stderr, err)
+	case devURLNotConsulted:
+		assertDevURLNotConsulted(c, stdout, stderr, err)
+	case notADockerURL:
+		assertNotADockerURL(c, stdout, stderr, err)
+	default:
+		c.Fatalf("no assertion for outcome %q", want)
+	}
 }
 
 // compatDockerFixture is the file state the rows share.
@@ -120,7 +148,8 @@ func newCompatDockerFixture(c *qt.C) compatDockerFixture {
 
 // refusedByProvisioner asserts the verb answered in the provisioning layer's
 // words, wherever in its own diagnostic it chose to place them.
-func refusedByProvisioner(c *qt.C, stdout, stderr string, err error) {
+func assertRefusedByProvisioner(c *qt.C, stdout, stderr string, err error) {
+	c.Helper()
 	c.Assert(err, qt.IsNotNil, qt.Commentf("stdout=%q stderr=%q", stdout, stderr))
 	c.Check(stderr, qt.Contains, compatDockerImageRefusal)
 	// The old wording must be gone: a verb that still reports the URL as an
@@ -130,7 +159,8 @@ func refusedByProvisioner(c *qt.C, stdout, stderr string, err error) {
 
 // devURLNotConsulted asserts the verb completed without ever opening a dev
 // database, which is what `schema diff` between two local files does.
-func devURLNotConsulted(c *qt.C, stdout, stderr string, err error) {
+func assertDevURLNotConsulted(c *qt.C, stdout, stderr string, err error) {
+	c.Helper()
 	c.Assert(err, qt.IsNil, qt.Commentf("stdout=%q stderr=%q", stdout, stderr))
 	c.Check(stdout, qt.Equals, "Schemas are synced, no changes to be made.\n")
 }
@@ -143,7 +173,8 @@ func devURLNotConsulted(c *qt.C, stdout, stderr string, err error) {
 // "sqlite"` -- proof that it recognized a docker URL, resolved an image and was
 // one valid engine name away from starting a container for a value the pinned
 // binary cannot parse at all.
-func notADockerURL(c *qt.C, stdout, stderr string, err error) {
+func assertNotADockerURL(c *qt.C, stdout, stderr string, err error) {
+	c.Helper()
 	c.Assert(err, qt.IsNotNil, qt.Commentf("stdout=%q stderr=%q", stdout, stderr))
 	c.Check(stderr, qt.Not(qt.Contains), compatDockerImageRefusal,
 		qt.Commentf("stdout=%q stderr=%q", stdout, stderr))
@@ -234,11 +265,12 @@ func TestCompatDockerDevURL_ReachesTheProvisioner(t *testing.T) {
 	fx := newCompatDockerFixture(c)
 
 	for _, tt := range compatDockerRows() {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Chdir(c.TempDir())
 			args := append(slices.Clone(tt.args(fx)), "--dev-url", "docker://sqlite/dev")
 			stdout, stderr, err := runCompat(args...)
-			tt.check(c, stdout, stderr, err)
+			assertDevURLOutcome(c, tt.check, stdout, stderr, err)
 		})
 	}
 }
@@ -273,11 +305,12 @@ func TestCompatDockerDevURL_DoesNotProvisionAValueTheBinaryCannotParse(t *testin
 	fx := newCompatDockerFixture(c)
 
 	for _, tt := range compatDockerRows() {
-		c.Run(tt.name, func(c *qt.C) {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
 			c.Chdir(c.TempDir())
 			args := append(slices.Clone(tt.args(fx)), "--dev-url", " docker://sqlite/dev")
 			stdout, stderr, err := runCompat(args...)
-			tt.checkWhitespace(c, stdout, stderr, err)
+			assertDevURLOutcome(c, tt.checkWhitespace, stdout, stderr, err)
 		})
 	}
 }

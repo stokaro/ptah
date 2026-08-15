@@ -325,8 +325,6 @@ func atlasPlanMigrationSQL(statements []atlasschema.PlanStatement) string {
 // rehearsal would destroy it, because a dev database is reset destructively
 // before the plan is replayed on it. Only the second can fail.
 func TestSchemaPlanValidateLeavesTheTargetDatabaseUnchanged(t *testing.T) {
-	c := qt.New(t)
-
 	// newSeededFixture builds the fixture and puts rows in the target, so the
 	// assertions can speak about data and not only about table names. A
 	// destructive dev reset takes the rows with it.
@@ -340,7 +338,8 @@ func TestSchemaPlanValidateLeavesTheTargetDatabaseUnchanged(t *testing.T) {
 		return fixture
 	}
 
-	c.Run("control_no_dev_url_cannot_touch_the_target", func(c *qt.C) {
+	t.Run("control_no_dev_url_cannot_touch_the_target", func(t *testing.T) {
+		c := qt.New(t)
 		fixture := newSeededFixture(c, "validate-readonly")
 		before := readTargetSchema(c, fixture.dbURL)
 
@@ -360,7 +359,8 @@ func TestSchemaPlanValidateLeavesTheTargetDatabaseUnchanged(t *testing.T) {
 	// refusal lives in atlasschema.connectSimulationDev and only fires because
 	// runAtlasSchemaPlanValidate hands it the target URL; drop that one field
 	// and the whole suite stays green while this input destroys the database.
-	c.Run("dev_url_pointing_at_the_target_is_refused", func(c *qt.C) {
+	t.Run("dev_url_pointing_at_the_target_is_refused", func(t *testing.T) {
+		c := qt.New(t)
 		fixture := newSeededFixture(c, "validate-devurl-is-target")
 		before := readTargetSchema(c, fixture.dbURL)
 
@@ -378,7 +378,8 @@ func TestSchemaPlanValidateLeavesTheTargetDatabaseUnchanged(t *testing.T) {
 		c.Assert(countRows(c, fixture.dbPath, "keep_me"), qt.Equals, 3)
 	})
 
-	c.Run("dev_url_path_alias_of_the_target_is_refused", func(c *qt.C) {
+	t.Run("dev_url_path_alias_of_the_target_is_refused", func(t *testing.T) {
+		c := qt.New(t)
 		fixture := newSeededFixture(c, "validate-devurl-path-alias")
 		beforeFingerprint := targetSchemaFingerprint(c, fixture.dbURL)
 		aliasPath := filepath.Dir(fixture.dbPath) + string(os.PathSeparator) + "." +
@@ -394,7 +395,8 @@ func TestSchemaPlanValidateLeavesTheTargetDatabaseUnchanged(t *testing.T) {
 		c.Assert(countRows(c, fixture.dbPath, "keep_me"), qt.Equals, 3)
 	})
 
-	c.Run("percent_encoded_dev_url_alias_of_the_target_is_refused", func(c *qt.C) {
+	t.Run("percent_encoded_dev_url_alias_of_the_target_is_refused", func(t *testing.T) {
+		c := qt.New(t)
 		fixture := newSeededFixture(c, "validate-devurl-percent-encoded-alias")
 		beforeFingerprint := targetSchemaFingerprint(c, fixture.dbURL)
 		aliasURL := "sqlite:file:" + url.PathEscape(filepath.ToSlash(fixture.dbPath)) + "?mode=rwc"
@@ -408,7 +410,8 @@ func TestSchemaPlanValidateLeavesTheTargetDatabaseUnchanged(t *testing.T) {
 		c.Assert(countRows(c, fixture.dbPath, "keep_me"), qt.Equals, 3)
 	})
 
-	c.Run("dev_url_hard_link_of_the_target_is_refused", func(c *qt.C) {
+	t.Run("dev_url_hard_link_of_the_target_is_refused", func(t *testing.T) {
+		c := qt.New(t)
 		fixture := newSeededFixture(c, "validate-devurl-hard-link")
 		beforeFingerprint := targetSchemaFingerprint(c, fixture.dbURL)
 		aliasPath := filepath.Join(filepath.Dir(fixture.dbPath), "target-hard-link.db")
@@ -495,8 +498,6 @@ func TestSchemaPlanValidateRefusesAPlanThatDoesNotReachTheDesiredState(t *testin
 // exists. The control below runs the same idempotent plan against an untouched
 // target and requires it to validate.
 func TestSchemaPlanValidateRefusesAPlanWhoseSourceStateMovedOn(t *testing.T) {
-	c := qt.New(t)
-
 	// idempotentPlan rewrites a fixture's plan file so its statements can run
 	// against a target that already has the planned table.
 	idempotentPlan := func(tb testing.TB, fixture validateFixture) {
@@ -519,7 +520,8 @@ func TestSchemaPlanValidateRefusesAPlanWhoseSourceStateMovedOn(t *testing.T) {
 			"CREATE TABLE keep_me (id INTEGER PRIMARY KEY);\nCREATE TABLE added (id INTEGER PRIMARY KEY);")
 	}
 
-	c.Run("control_untouched_target_validates", func(c *qt.C) {
+	t.Run("control_untouched_target_validates", func(t *testing.T) {
+		c := qt.New(t)
 		fixture := newFixture(c, "validate-stale-control")
 		idempotentPlan(c, fixture)
 
@@ -530,7 +532,8 @@ func TestSchemaPlanValidateRefusesAPlanWhoseSourceStateMovedOn(t *testing.T) {
 		c.Assert(stdout, qt.Equals, "")
 	})
 
-	c.Run("moved_on_target_is_refused_as_stale", func(c *qt.C) {
+	t.Run("moved_on_target_is_refused_as_stale", func(t *testing.T) {
+		c := qt.New(t)
 		fixture := newFixture(c, "validate-stale")
 		idempotentPlan(c, fixture)
 		// The plan's own change, applied out of band. The target now equals the

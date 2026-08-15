@@ -97,8 +97,6 @@ func TestClassifySetExternalSchema_HappyPath(t *testing.T) {
 }
 
 func TestClassifySetExternalSchema_GateFailurePath(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name    string
 		env     func(testing.TB)
@@ -139,7 +137,8 @@ func TestClassifySetExternalSchema_GateFailurePath(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			test.env(c)
 
 			_, err := atlassource.ClassifySet("--to", []string{"env://src"}, externalSchemaProjectEnv("sql"))

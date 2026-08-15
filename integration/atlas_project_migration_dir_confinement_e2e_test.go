@@ -45,7 +45,8 @@ func TestAtlasProjectMigrationDirectoryConfinementE2E(t *testing.T) {
 	}
 
 	for _, test := range escapeCases {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			parentDir := c.TempDir()
 			projectDir := filepath.Join(parentDir, "project")
 			outsideDir := filepath.Join(parentDir, "outside")
@@ -85,7 +86,8 @@ func TestAtlasProjectMigrationDirectoryConfinementE2E(t *testing.T) {
 	}
 
 	for _, test := range insideCases {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			projectDir := c.TempDir()
 			migrationsDir := filepath.Join(projectDir, "migrations")
 			writeAtlasProjectMigrateDiffFixture(c, projectDir, test.dirURL(projectDir, migrationsDir))
@@ -105,7 +107,8 @@ func TestAtlasProjectMigrationDirectoryConfinementE2E(t *testing.T) {
 		})
 	}
 
-	c.Run("explicit CLI absolute directory remains unbounded", func(c *qt.C) {
+	t.Run("explicit CLI absolute directory remains unbounded", func(t *testing.T) {
+		c := qt.New(t)
 		parentDir := c.TempDir()
 		projectDir := filepath.Join(parentDir, "project")
 		outsideDir := filepath.Join(parentDir, "outside")

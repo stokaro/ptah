@@ -53,8 +53,6 @@ func pgNamespaceServer(catalog map[string][][]driver.Value) dbtest.QueryHandler 
 }
 
 func TestPostgreSQLReaderReadSchemasReportsWhatItRead(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []struct {
 		name string
 		// connected is the schema the connection itself is on, which is what an
@@ -115,7 +113,8 @@ func TestPostgreSQLReaderReadSchemasReportsWhatItRead(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			db := dbtest.Open(c, pgNamespaceServer(pgNamespaceFixture()))
 			reader := NewPostgreSQLReader(db.SQL, test.connected)
 			reader.SetSchemas(test.scope)

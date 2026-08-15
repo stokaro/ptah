@@ -33,7 +33,8 @@ func TestCompatMigrateLintLatestZeroE2E(t *testing.T) {
 	buildPtahCompat(c, ctx, repoRoot, binaryPath)
 	migrationsDir := writeLatestZeroAtlasDir(c)
 
-	c.Run("zero without Git has no usable selector", func(c *qt.C) {
+	t.Run("zero without Git has no usable selector", func(t *testing.T) {
+		c := qt.New(t)
 		stdout, stderr, err := runLatestZeroCompatProcess(
 			ctx,
 			c.TempDir(),
@@ -49,7 +50,8 @@ func TestCompatMigrateLintLatestZeroE2E(t *testing.T) {
 		c.Assert(stderr, qt.Equals, "Error: --latest or --git-base is required\n")
 	})
 
-	c.Run("zero allows explicit Git", func(c *qt.C) {
+	t.Run("zero allows explicit Git", func(t *testing.T) {
+		c := qt.New(t)
 		stdout, stderr, err := runLatestZeroCompatProcess(
 			ctx,
 			"",
@@ -68,7 +70,8 @@ func TestCompatMigrateLintLatestZeroE2E(t *testing.T) {
 		c.Assert(stderr, qt.Not(qt.Contains), "mutually exclusive")
 	})
 
-	c.Run("zero suppresses project latest and allows project Git", func(c *qt.C) {
+	t.Run("zero suppresses project latest and allows project Git", func(t *testing.T) {
+		c := qt.New(t)
 		root := c.TempDir()
 		project := `lint {
   latest = 1
@@ -117,7 +120,8 @@ env "ci" {
 		c.Assert(stderr, qt.Equals, "")
 	})
 
-	c.Run("positive latest and Git remain exclusive", func(c *qt.C) {
+	t.Run("positive latest and Git remain exclusive", func(t *testing.T) {
+		c := qt.New(t)
 		stdout, stderr, err := runLatestZeroCompatProcess(
 			ctx,
 			"",

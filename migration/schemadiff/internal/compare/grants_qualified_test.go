@@ -13,14 +13,50 @@ import (
 	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
 )
 
+// grantTarget is the part of a planned grant these rows tell apart: what the
+// grant is about. Everything else agrees on both sides of every row here, so
+// comparing it would state an agreement the rows are not about.
+//
+// The fields are exported because qt.DeepEquals compares through go-cmp, which
+// refuses to read unexported ones rather than guess at their meaning.
+type grantTarget struct {
+	ObjectType string
+	ObjectName string
+}
+
 // grantIdentityCase is one pair of spellings for the same grant, or for two
 // grants that only look alike, with what the comparison owes each.
+//
+// The expectation is data rather than a closure. Every row asks one question
+// -- which grants were planned -- and a row answering it with its own
+// assertions hides that the question is shared, while handing the checker to a
+// field the tooling cannot follow. See AGENTS.md, "A Table Row Carries Data,
+// Not A Checker".
+//
+// Stating the whole projected list rather than a length also says more than
+// the closures did: a row that planned one grant used to check only that it
+// planned one.
 type grantIdentityCase struct {
-	name      string
-	generated []goschema.Grant
-	roles     []goschema.Role
-	database  []types.DBGrant
-	assert    func(c *qt.C, diff *difftypes.SchemaDiff)
+	name             string
+	generated        []goschema.Grant
+	roles            []goschema.Role
+	database         []types.DBGrant
+	wantAdded        []grantTarget
+	wantRemoved      []grantTarget
+	wantOptionsAdded int
+}
+
+// grantTargets projects planned grants onto what the rows compare, answering
+// nil for none so a row that plans nothing says so by omission.
+func grantTargets(grants []difftypes.GrantRef) []grantTarget {
+	if len(grants) == 0 {
+		return nil
+	}
+	targets := make([]grantTarget, 0, len(grants))
+	for _, grant := range grants {
+		targets = append(targets, grantTarget{ObjectType: grant.ObjectType, ObjectName: grant.ObjectName})
+	}
+	return targets
 }
 
 // TestGrantsWithSemantics_QualifiedTargetIdentity pins that a grant is matched
@@ -37,8 +73,6 @@ type grantIdentityCase struct {
 // This is stokaro/ptah#1232's defect in a comparator that builds its own key,
 // collected as an instance of stokaro/ptah#1276.
 func TestGrantsWithSemantics_QualifiedTargetIdentity(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []grantIdentityCase{
 		{
 			// The headline row: identical grant, two spellings.
@@ -48,10 +82,6 @@ func TestGrantsWithSemantics_QualifiedTargetIdentity(t *testing.T) {
 			},
 			database: []types.DBGrant{
 				{Role: "app_user", Privilege: "SELECT", ObjectType: "TABLE", Schema: "public", ObjectName: "granted"},
-			},
-			assert: func(c *qt.C, diff *difftypes.SchemaDiff) {
-				c.Assert(diff.GrantsAdded, qt.HasLen, 0)
-				c.Assert(diff.GrantsRemoved, qt.HasLen, 0)
 			},
 		},
 		{
@@ -63,10 +93,6 @@ func TestGrantsWithSemantics_QualifiedTargetIdentity(t *testing.T) {
 			},
 			database: []types.DBGrant{
 				{Role: "app_user", Privilege: "SELECT", ObjectType: "TABLE", Schema: "public", ObjectName: "granted"},
-			},
-			assert: func(c *qt.C, diff *difftypes.SchemaDiff) {
-				c.Assert(diff.GrantsAdded, qt.HasLen, 0)
-				c.Assert(diff.GrantsRemoved, qt.HasLen, 0)
 			},
 		},
 		{
@@ -80,11 +106,8 @@ func TestGrantsWithSemantics_QualifiedTargetIdentity(t *testing.T) {
 			database: []types.DBGrant{
 				{Role: "app_user", Privilege: "SELECT", ObjectType: "TABLE", Schema: "public", ObjectName: "granted"},
 			},
-			assert: func(c *qt.C, diff *difftypes.SchemaDiff) {
-				c.Assert(diff.GrantsAdded, qt.HasLen, 1)
-				c.Assert(diff.GrantsAdded[0].ObjectName, qt.Equals, "other.granted")
-				c.Assert(diff.GrantsRemoved, qt.HasLen, 1)
-			},
+			wantAdded:   []grantTarget{{ObjectType: "TABLE", ObjectName: "other.granted"}},
+			wantRemoved: []grantTarget{{ObjectType: "TABLE", ObjectName: "public.granted"}},
 		},
 		{
 			// A SCHEMA grant's target is a schema, so there is no owning schema
@@ -98,12 +121,8 @@ func TestGrantsWithSemantics_QualifiedTargetIdentity(t *testing.T) {
 			database: []types.DBGrant{
 				{Role: "app_user", Privilege: "USAGE", ObjectType: "TABLE", Schema: "public", ObjectName: "app"},
 			},
-			assert: func(c *qt.C, diff *difftypes.SchemaDiff) {
-				c.Assert(diff.GrantsAdded, qt.HasLen, 1)
-				c.Assert(diff.GrantsAdded[0].ObjectType, qt.Equals, "SCHEMA")
-				c.Assert(diff.GrantsRemoved, qt.HasLen, 1)
-				c.Assert(diff.GrantsRemoved[0].ObjectType, qt.Equals, "TABLE")
-			},
+			wantAdded:   []grantTarget{{ObjectType: "SCHEMA", ObjectName: "app"}},
+			wantRemoved: []grantTarget{{ObjectType: "TABLE", ObjectName: "public.app"}},
 		},
 		{
 			// A schema grant still round-trips against its own row, which is
@@ -116,10 +135,6 @@ func TestGrantsWithSemantics_QualifiedTargetIdentity(t *testing.T) {
 			database: []types.DBGrant{
 				{Role: "app_user", Privilege: "USAGE", ObjectType: "SCHEMA", ObjectName: "app"},
 			},
-			assert: func(c *qt.C, diff *difftypes.SchemaDiff) {
-				c.Assert(diff.GrantsAdded, qt.HasLen, 0)
-				c.Assert(diff.GrantsRemoved, qt.HasLen, 0)
-			},
 		},
 		{
 			// A sequence grant travels the same qualification path as a table
@@ -130,10 +145,6 @@ func TestGrantsWithSemantics_QualifiedTargetIdentity(t *testing.T) {
 			},
 			database: []types.DBGrant{
 				{Role: "app_user", Privilege: "USAGE", ObjectType: "SEQUENCE", Schema: "public", ObjectName: "order_seq"},
-			},
-			assert: func(c *qt.C, diff *difftypes.SchemaDiff) {
-				c.Assert(diff.GrantsAdded, qt.HasLen, 0)
-				c.Assert(diff.GrantsRemoved, qt.HasLen, 0)
 			},
 		},
 		{
@@ -148,23 +159,22 @@ func TestGrantsWithSemantics_QualifiedTargetIdentity(t *testing.T) {
 			database: []types.DBGrant{
 				{Role: "app_user", Privilege: "SELECT", ObjectType: "TABLE", Schema: "public", ObjectName: "granted"},
 			},
-			assert: func(c *qt.C, diff *difftypes.SchemaDiff) {
-				c.Assert(diff.GrantsAdded, qt.HasLen, 0)
-				c.Assert(diff.GrantsRemoved, qt.HasLen, 0)
-				c.Assert(diff.GrantOptionsAdded, qt.HasLen, 1)
-			},
+			wantOptionsAdded: 1,
 		},
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			generated := &goschema.Database{Grants: test.generated, Roles: test.roles}
 			database := &types.DBSchema{Grants: test.database}
 			diff := &difftypes.SchemaDiff{}
 
 			compare.GrantsWithSemantics(generated, database, diff, identifier.ForDialect(platform.Postgres))
 
-			test.assert(c, diff)
+			c.Assert(grantTargets(diff.GrantsAdded), qt.DeepEquals, test.wantAdded)
+			c.Assert(grantTargets(diff.GrantsRemoved), qt.DeepEquals, test.wantRemoved)
+			c.Assert(diff.GrantOptionsAdded, qt.HasLen, test.wantOptionsAdded)
 		})
 	}
 }
