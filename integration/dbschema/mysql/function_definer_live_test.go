@@ -37,7 +37,10 @@ func TestForeignDefinerReplacementRefusal_Live(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			adminDSN := dbtarget.URL(c, test.engine)
+			// DriverDSN rather than URL: every consumer below hands this to
+			// go-sql-driver's ParseDSN, which reads a mysql:// prefix as part
+			// of the username. The scheme is added back where a URL is wanted.
+			adminDSN := dbtarget.DriverDSN(c, test.engine)
 			adminDB := openMySQLWriterLiveDatabase(c, test.engine)
 			c.Cleanup(func() { c.Check(adminDB.Close(), qt.IsNil) })
 
