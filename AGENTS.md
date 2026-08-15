@@ -966,6 +966,48 @@ must never do is take a handle and assert its way to the concrete type:
 `c.TB.(*testing.T)` inside a helper declared for `testing.TB` panics the moment
 it is called from a benchmark, and the signature promises otherwise.
 
+### A Table Row Carries Data, Not A Checker
+
+A table-driven test that forbids conditionals in its body pushes the varying
+part into the rows. When the varying part is a value, the row carries a value.
+Reaching for a closure instead brings the branch back one row at a time:
+
+```go
+tests := []struct {
+	name   string
+	assert func(c *qt.C, err error)   // the branch, spelled out per row
+}{
+	{name: "duplicate table", assert: func(c *qt.C, err error) {
+		c.Assert(err, qt.ErrorMatches, `table "public.users" is declared more than once;.*`)
+	}},
+	// fifty more, each three lines carrying one string
+}
+```
+
+As data that row is `wantErr: "…"`, and the table reads as a table again.
+
+`-require-data-rows` reports the shape. It matches the field's TYPE, never its
+name, so a row carrying the means to assert is reported whatever it is called.
+The rule suggests no fix, because the repair is a decision:
+
+- Every row's assertions are the same shape — give the row **the value that
+  varies**. The closure was encoding data as code.
+- The shapes differ — **split the table** along the difference, then apply the
+  rule above to each half. Rows that assert differently are two tests wearing
+  one table, and the style rule that forbids the conditional already asks for
+  the happy path and the failure path to be separate tests.
+- A row field holding a function that asserts nothing — `args func(dir string)
+  []string` — is data the test builds with. It is not reported, deliberately.
+
+**A rewritten table that still passes proves nothing.** Disable the defect its
+rows exist to catch, once, and watch the table redden; then restore it. A
+conversion that quietly drops a row's discrimination is worse than the shape it
+replaced, because the shape was visible and the missing coverage is not.
+
+The backlog is 158 sites across 40 packages, tracked in stokaro/ptah#1536 with
+the per-package counts. `-require-data-rows` joins `QTLINT_RULES` when it
+reaches zero, for the reason the list itself states.
+
 The gate runs two invocations, and neither is redundant:
 
 ```bash
