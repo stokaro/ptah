@@ -17,6 +17,7 @@ import (
 
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasreport"
+	"go.5x5.cz/ptah/internal/testutils"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -278,7 +279,11 @@ func TestWriteMigrateApplyFormat_JSONShape(t *testing.T) {
 			Conn: conn,
 			FS:   fsys,
 			Dir:  "file://migrations",
-			URL:  "sqlite://user:secret@" + dbPath + "?password=hidden&token=private",
+			// No userinfo: a SQLite URL carries none, nothing here asserts it,
+			// and atlasurl.Parse cannot read the shape on Windows -- its
+			// fallback looks for a drive letter immediately after "://", which
+			// credentials displace. The redaction under test is the query's.
+			URL: "sqlite://" + dbPath + "?password=hidden&token=private",
 			Status: &migrator.MigrationStatus{
 				CurrentVersion:    0,
 				PendingMigrations: []int64{1, 2},
@@ -305,7 +310,7 @@ func TestWriteMigrateApplyFormat_JSONShape(t *testing.T) {
 	c.Assert(json.Unmarshal(out.Bytes(), &got), qt.IsNil)
 	c.Assert(got.Driver, qt.Equals, "sqlite")
 	c.Assert(got.URL.Scheme, qt.Equals, "sqlite")
-	c.Assert(got.URL.Path, qt.Equals, dbPath)
+	c.Assert(testutils.URLDatabasePath(got.URL.Opaque, got.URL.Path), qt.Equals, dbPath)
 	c.Assert(got.URL.RawQuery, qt.Equals, "password=xxxxx&token=xxxxx")
 	c.Assert(got.URL.Schema, qt.Equals, "main")
 	c.Assert(got.Dir, qt.Equals, "file://migrations")
@@ -508,7 +513,9 @@ type migrateApplyJSONError struct {
 }
 
 type atlasReportJSONURL struct {
-	Scheme   string
+	Scheme string
+	// Opaque carries a Windows drive path; see testutils.URLDatabasePath.
+	Opaque   string
 	Host     string
 	Path     string
 	RawQuery string

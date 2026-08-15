@@ -528,7 +528,9 @@ func TestCompatBinaryDryRunFailuresStillReportOnStderr(t *testing.T) {
 					"--format", "{{ json . }}",
 				}
 			},
-			wantStderr: "no such file or directory",
+			// Ptah's own clause, not the platform's. The sentence continues
+			// with an os.PathError whose wording is the operating system's.
+			wantStderr: "open migrations directory",
 		},
 		{
 			name: "checksum mismatch",
