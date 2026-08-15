@@ -981,8 +981,12 @@ func detectMySQLWireDialect(declaredDialect, version string) string {
 
 // convertMySQLURL converts a MySQL/MariaDB URL from standard format to Go driver format
 func convertMySQLURL(dbURL string) string {
-	// If the URL is already in the correct format (contains @tcp), return as-is
-	if strings.Contains(dbURL, "@tcp(") {
+	// Already in the driver's own form, so it is returned with only the scheme
+	// removed. tcp(...) and unix(...) are two spellings of one thing to
+	// go-sql-driver -- the network and the address to reach it on -- and
+	// recognizing only the first parsed a valid socket address as a host called
+	// "unix(" with the socket path folded into the database name.
+	if strings.Contains(dbURL, "@tcp(") || strings.Contains(dbURL, "@unix(") {
 		// Remove the mysql:// or mariadb:// prefix if present
 		if after, ok := strings.CutPrefix(dbURL, "mysql://"); ok {
 			return after

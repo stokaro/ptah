@@ -87,7 +87,7 @@ jobs:
           args: --timeout=30m
           version: v2.12.2
 
-  qtlint-windows:
+  go-lint-windows:
     # The Ubuntu job's two contours differ by build tag, and a build tag cannot
     # reach a file the target operating system excludes: `go help
     # buildconstraint` puts that under GOOS. Every _windows_test.go file in the
@@ -119,12 +119,11 @@ jobs:
       - name: qtlint
         run: make lint-qtlint
 
-      - name: go vet
-        run: go vet ./...
-
-      # golangci-lint finds what qtlint cannot. Four gosec G115 findings were
-      # sitting in Windows-only source when this step was added, all of them
-      # unchecked narrowings into structures the Windows API reads.
+      # golangci-lint finds what qtlint cannot, go vet among them: govet is in
+      # .golangci.yml, so a separate step would only run it twice. Four gosec
+      # G115 findings were sitting in Windows-only source when this step was
+      # added, every one an unchecked narrowing into a structure the Windows
+      # API reads.
       - name: Golint
         uses: golangci/golangci-lint-action@v9
         with:

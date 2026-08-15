@@ -419,3 +419,63 @@ func TestLookupDriverDSN_DecodesEscapedCredentials(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(got, qt.Equals, "app:p@ss/word@tcp(db:3306)/shop")
 }
+
+// TestLookupDriverDSN_ValidatesThePreferredDSNSpelling closes the path that
+// skipped every check.
+//
+// A variable whose name ends in _DSN is preferred because someone wrote it in
+// driver form deliberately. That preference was reading the value and
+// returning it, so a URL left in a _DSN variable reached the driver whole: a
+// raw MySQL consumer read the scheme as part of the username, and pgx refused
+// the wrong scheme. Both surface as a credential or connection failure naming
+// nothing about the actual mistake, which is that the value is in the wrong
+// variable.
+func TestLookupDriverDSN_ValidatesThePreferredDSNSpelling(t *testing.T) {
+	tests := []struct {
+		name    string
+		engine  dbtarget.Engine
+		set     func(t *testing.T)
+		wantErr string
+	}{
+		{
+			name:    "a sibling engine's URL in a preferred DSN is refused",
+			engine:  dbtarget.MySQL,
+			set:     func(t *testing.T) { t.Setenv("MYSQL_TEST_DSN", "mariadb://user@host/db") },
+			wantErr: `MYSQL_TEST_DSN carries scheme "mariadb".*`,
+		},
+		{
+			name:    "another engine's URL in a preferred DSN is refused",
+			engine:  dbtarget.PostgreSQL,
+			set:     func(t *testing.T) { t.Setenv("POSTGRES_TEST_DSN", "mysql://user@host/db") },
+			wantErr: `POSTGRES_TEST_DSN carries scheme "mysql".*`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			clearAll(t)
+			test.set(t)
+
+			got, err := dbtarget.LookupDriverDSN(test.engine)
+
+			c.Assert(err, qt.ErrorMatches, test.wantErr)
+			c.Assert(got, qt.Equals, "")
+		})
+	}
+}
+
+// TestLookupDriverDSN_DerivesFromAPreferredDSNCarryingItsOwnScheme keeps the
+// preference useful. A value written in driver form with the engine's own
+// scheme in front of it is still that engine's address, and it is converted
+// rather than refused.
+func TestLookupDriverDSN_DerivesFromAPreferredDSNCarryingItsOwnScheme(t *testing.T) {
+	c := qt.New(t)
+	clearAll(t)
+	t.Setenv("MYSQL_TEST_DSN", "mysql://user:pass@tcp(127.0.0.1:3306)/db")
+
+	got, err := dbtarget.LookupDriverDSN(dbtarget.MySQL)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(got, qt.Equals, "user:pass@tcp(127.0.0.1:3306)/db")
+}

@@ -1100,3 +1100,60 @@ func TestRemovePostgresPoolParams_EdgeCases(t *testing.T) {
 		})
 	}
 }
+
+// TestConvertMySQLURL_KeepsAUnixSocketTarget pins the network form the TCP
+// branch already had.
+//
+// go-sql-driver takes tcp(...) and unix(...) as two spellings of one thing: the
+// network and the address to reach it on. Only the first was recognized here
+// and in the scheme detection above it, so a valid socket address was parsed as
+// a host called "unix(" with the socket path folded into the database name.
+// Nothing about that failure named the socket.
+func TestConvertMySQLURL_KeepsAUnixSocketTarget(t *testing.T) {
+	tests := []struct {
+		name string
+		url  string
+		want string
+	}{
+		{
+			name: "a socket target keeps its network",
+			url:  "mysql://user:pass@unix(/tmp/mysql.sock)/db",
+			want: "user:pass@unix(/tmp/mysql.sock)/db",
+		},
+		{
+			name: "a mariadb socket target too",
+			url:  "mariadb://user:pass@unix(/var/run/mysqld/mysqld.sock)/db",
+			want: "user:pass@unix(/var/run/mysqld/mysqld.sock)/db",
+		},
+		{
+			name: "the TCP spelling is unchanged",
+			url:  "mysql://user:pass@tcp(127.0.0.1:3306)/db",
+			want: "user:pass@tcp(127.0.0.1:3306)/db",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(convertMySQLURL(test.url), qt.Equals, test.want)
+		})
+	}
+}
+
+// TestConnectToDatabase_ReadsTheDialectOfASocketURL is the other half: the
+// scheme detection has to recognize the same shape, or the URL never reaches
+// the converter as MySQL at all.
+//
+// The connection itself is expected to fail — no socket is listening — but the
+// error has to be about reaching the database rather than about parsing what
+// was asked for.
+func TestConnectToDatabase_ReadsTheDialectOfASocketURL(t *testing.T) {
+	c := qt.New(t)
+
+	_, err := ConnectToDatabase(context.Background(), "mysql://user:pass@unix(/tmp/ptah-absent.sock)/db")
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(err.Error(), qt.Not(qt.Contains), "invalid database URL")
+	c.Assert(err.Error(), qt.Not(qt.Contains), "unsupported database dialect")
+}

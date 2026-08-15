@@ -259,24 +259,39 @@ func LookupDriverDSN(engine Engine) (string, error) {
 	}
 
 	// A variable whose name ends in _DSN holds a value someone wrote for the
-	// driver. Prefer it over deriving one.
+	// driver. Prefer it over deriving one -- but check it, and derive from it
+	// if it turns out to carry a scheme after all. Returning it unread let a
+	// URL left in the wrong variable reach the driver whole: a raw MySQL
+	// consumer read the scheme as part of the username and pgx refused the
+	// wrong one, so a misassigned engine surfaced as a credential failure
+	// naming nothing about the actual mistake.
 	for _, name := range append([]string{src.canonical}, src.synonyms...) {
 		if !strings.HasSuffix(name, "_DSN") {
 			continue
 		}
-		if value := strings.TrimSpace(os.Getenv(name)); value != "" {
-			return value, nil
+		value := strings.TrimSpace(os.Getenv(name))
+		if value == "" {
+			continue
 		}
+		if err := checkScheme(src, name, value); err != nil {
+			return "", err
+		}
+		return driverForm(engine, value), nil
 	}
 
 	address, err := Lookup(engine)
 	if err != nil || address == "" {
 		return "", err
 	}
+	return driverForm(engine, address), nil
+}
+
+// driverForm renders an address in the grammar the engine's driver parses.
+func driverForm(engine Engine, address string) string {
 	if mysqlFamily(engine) {
-		return mysqlNetworkDSN(address), nil
+		return mysqlNetworkDSN(address)
 	}
-	return stripScheme(address), nil
+	return stripScheme(address)
 }
 
 // mysqlFamily reports whether an engine is served by go-sql-driver/mysql,
