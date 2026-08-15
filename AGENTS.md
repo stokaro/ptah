@@ -797,8 +797,8 @@ The `modernize` linter is enabled. Prefer current Go idioms when writing or edit
   directives. A `#nosec` directive must name every suppressed `Gxxx` rule;
   never use a bare directive that suppresses all gosec findings on the line.
   Every native suppression also needs a justification. The pinned
-  nolintguard analyzer is enforced through `go vet -vettool` in both the
-  default and `integration` build-tag contours.
+  nolintguard analyzer is enforced through `go vet -vettool` across every Go
+  module in both the default and `integration` build-tag contours.
 
 When applying automatic lint fixes, run both passes:
 

@@ -66,10 +66,18 @@ jobs:
         run: go tool qtlint ./...
 
       - name: nolintguard
-        run: go vet -vettool="$(go tool -n nolintguard)" -require-justification ./...
+        run: |
+          nolintguard="$(go tool -n nolintguard)"
+          go vet -vettool="$nolintguard" -require-justification ./...
+          (cd testkit && go vet -vettool="$nolintguard" -require-justification ./...)
+          (cd examples/orm-loaders/gorm && go vet -vettool="$nolintguard" -require-justification ./...)
 
       - name: nolintguard (integration)
-        run: go vet -tags=integration -vettool="$(go tool -n nolintguard)" -require-justification ./...
+        run: |
+          nolintguard="$(go tool -n nolintguard)"
+          go vet -tags=integration -vettool="$nolintguard" -require-justification ./...
+          (cd testkit && go vet -tags=integration -vettool="$nolintguard" -require-justification ./...)
+          (cd examples/orm-loaders/gorm && go vet -tags=integration -vettool="$nolintguard" -require-justification ./...)
 
       - name: Check test style baseline
         run: scripts/check-test-style.sh

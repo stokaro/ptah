@@ -163,8 +163,13 @@ coverage:
 # Lint code
 lint: lint-qtlint
 	@echo "Running nolintguard..."
-	go vet -vettool="$$(go tool -n nolintguard)" -require-justification ./...
-	go vet -tags=integration -vettool="$$(go tool -n nolintguard)" -require-justification ./...
+	@nolintguard="$$(go tool -n nolintguard)"; \
+		go vet -vettool="$$nolintguard" -require-justification ./... && \
+		(cd testkit && go vet -vettool="$$nolintguard" -require-justification ./...) && \
+		(cd examples/orm-loaders/gorm && go vet -vettool="$$nolintguard" -require-justification ./...) && \
+		go vet -tags=integration -vettool="$$nolintguard" -require-justification ./... && \
+		(cd testkit && go vet -tags=integration -vettool="$$nolintguard" -require-justification ./...) && \
+		(cd examples/orm-loaders/gorm && go vet -tags=integration -vettool="$$nolintguard" -require-justification ./...)
 	@echo "Running golangci-lint..."
 	golangci-lint run ./...
 
