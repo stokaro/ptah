@@ -15,16 +15,21 @@ this page, or when a row here names a rule that no longer exists.
 
 | Command | Surface | Rules it reports |
 | --- | --- | --- |
-| `ptah migrations lint` | native | migration lint |
-| `ptah migrations up` | native | migration lint, as an apply gate |
-| `ptah sql lint` | native | SQL lint |
-| `ptah-compat migrate lint` | compatibility | migration lint |
-| `ptah-compat schema apply` | compatibility | migration lint, as an apply gate |
+| `ptah migrations lint` | native | every migration lint rule |
+| `ptah migrations up` | native | blocking `DS` findings only |
+| `ptah sql lint` | native | every SQL lint rule |
+| `ptah-compat migrate lint` | compatibility | every migration lint rule |
+| `ptah-compat schema apply` | compatibility | only what `atlas.hcl` names |
 
 Both surfaces read one registry, so a rule reaches both unless its row says
 otherwise. Native may carry rules the compatibility surface does not; the
 reverse would mean a rule that exists only to match another tool, and there are
 none.
+
+The two apply gates are the rows to read carefully. Neither runs the whole rule
+set, so a rule appearing in the tables below is not by itself a check standing
+between an apply and a database. The migration lint section states what each
+gate does run, generated from the gates themselves.
 
 ## How identifiers are spelled
 
@@ -72,7 +77,7 @@ An identifier's prefix says whose namespace it lives in. Atlas owns a prefix whe
 
 ## Migration lint rules
 
-42 rules, registered in `migration/lint`. Native `ptah migrations lint` and `ptah migrations up` read this registry, and so do `ptah-compat migrate lint` and `ptah-compat schema apply`. They are grouped by the dialects each rule applies to, which is why the tables carry no dialect column.
+42 rules, registered in `migration/lint`. `ptah migrations lint` and `ptah-compat migrate lint` report the whole registry. Neither apply gate does, so a rule listed below is not by itself a check that stands between an apply and a database: `ptah migrations up` disables the `MF`, `BC`, `PG` and `MY` families and refuses only on blocking `DS` findings, and `ptah-compat schema apply` runs only the rules an `atlas.hcl` `lint` block names, which means a project without such a block gets no lint pass there at all. The tables are grouped by the dialects each rule applies to, which is why they carry no dialect column.
 
 ### Every dialect
 
@@ -163,7 +168,7 @@ Every migration lint finding reports under an analyzer name and a code on the co
 
 ## Atlas analyzer checks
 
-Every check code the [Atlas analyzer documentation](https://atlasgo.io/lint/analyzers) carries, and what Ptah does about it: 33 covered, 7 partial, 16 not implemented, 2 waived, of 58. A code Atlas marks as an Atlas Pro feature is marked here too, and the ones Ptah implements are reported through both surfaces.
+Every check code the [Atlas analyzer documentation](https://atlasgo.io/lint/analyzers) carries, and what Ptah does about it: 33 covered, 7 partial, 16 not implemented, 2 waived, of 58. A code Atlas marks as an Atlas Pro feature is marked here too, and the ones Ptah implements are reported through both surfaces except `BC101` and `BC102`, whose Ptah rule the compatibility surface does not report.
 
 | Atlas check | Meaning | Pro | Ptah rule | Status |
 | --- | --- | --- | --- | --- |

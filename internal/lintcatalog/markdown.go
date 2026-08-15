@@ -5,6 +5,8 @@ import (
 	"io"
 	"slices"
 	"strings"
+
+	"go.5x5.cz/ptah/internal/migrationlintgate"
 )
 
 // WriteMarkdown renders the whole enumeration: the families, both rule tables,
@@ -66,11 +68,17 @@ func writeMigrationRules(w io.Writer, entries []Entry) error {
 	var out strings.Builder
 	out.WriteString("## Migration lint rules\n\n")
 	fmt.Fprintf(&out,
-		"%d rules, registered in `migration/lint`. Native `ptah migrations lint` and "+
-			"`ptah migrations up` read this registry, and so do `ptah-compat migrate lint` and "+
-			"`ptah-compat schema apply`. They are grouped by the dialects each rule applies to, "+
-			"which is why the tables carry no dialect column.\n\n",
-		len(rules))
+		"%d rules, registered in `migration/lint`. `ptah migrations lint` and "+
+			"`ptah-compat migrate lint` report the whole registry. Neither apply gate does, so a "+
+			"rule listed below is not by itself a check that stands between an apply and a "+
+			"database: `ptah migrations up` disables the %s families and refuses only on "+
+			"blocking `%s` findings, and `ptah-compat schema apply` runs only the rules an "+
+			"`atlas.hcl` `lint` block names, which means a project without such a block gets no "+
+			"lint pass there at all. The tables are grouped by the dialects each rule applies "+
+			"to, which is why they carry no dialect column.\n\n",
+		len(rules),
+		codeList(migrationlintgate.DisabledFamilies()),
+		migrationlintgate.ReportedFamily)
 	for _, group := range groupByDialects(rules) {
 		fmt.Fprintf(&out, "### %s\n\n", group.heading)
 		out.WriteString(ruleTable(group.rules))
@@ -201,7 +209,7 @@ func writeCompatIdentities(w io.Writer, entries []Entry) error {
 	return err
 }
 
-func writeAtlasChecks(w io.Writer, _ []Entry) error {
+func writeAtlasChecks(w io.Writer, entries []Entry) error {
 	checks := AtlasChecks()
 	counts := AtlasCounts()
 
@@ -210,9 +218,9 @@ func writeAtlasChecks(w io.Writer, _ []Entry) error {
 	fmt.Fprintf(&out,
 		"Every check code the [Atlas analyzer documentation](https://atlasgo.io/lint/analyzers) carries, "+
 			"and what Ptah does about it: %d covered, %d partial, %d not implemented, %d waived, of %d. "+
-			"A code Atlas marks as an Atlas Pro feature is marked here too, and the ones Ptah implements "+
-			"are reported through both surfaces.\n\n",
-		counts[StatusCovered], counts[StatusPartial], counts[StatusAbsent], counts[StatusWaived], len(checks))
+			"A code Atlas marks as an Atlas Pro feature is marked here too%s.\n\n",
+		counts[StatusCovered], counts[StatusPartial], counts[StatusAbsent], counts[StatusWaived], len(checks),
+		atlasSurfaceNote(entries, checks))
 	out.WriteString("| Atlas check | Meaning | Pro | Ptah rule | Status |\n| --- | --- | --- | --- | --- |\n")
 	for _, check := range checks {
 		status := string(check.Status)
@@ -246,6 +254,57 @@ func writePreConvention(w io.Writer, entries []Entry) error {
 	out.WriteString("\n")
 	_, err := io.WriteString(w, out.String())
 	return err
+}
+
+// atlasSurfaceNote says through which surfaces the Atlas checks Ptah implements
+// are reported.
+//
+// The sentence used to claim "both surfaces" unconditionally, which the catalog
+// itself contradicts: a check whose Ptah rule is native only is reported through
+// one. Deriving the exception from the same Compat flag the Surface column
+// renders is what keeps the two from disagreeing.
+func atlasSurfaceNote(entries []Entry, checks []AtlasCheck) string {
+	compat := map[string]bool{}
+	for _, entry := range entries {
+		compat[entry.Code] = entry.Compat
+	}
+
+	var nativeOnly []string
+	for _, check := range checks {
+		if len(check.PtahRules) > 0 && !everyRuleReachesCompat(check.PtahRules, compat) {
+			nativeOnly = append(nativeOnly, check.Code)
+		}
+	}
+	if len(nativeOnly) == 0 {
+		return ", and the ones Ptah implements are reported through both surfaces"
+	}
+	return fmt.Sprintf(
+		", and the ones Ptah implements are reported through both surfaces except %s, whose Ptah rule "+
+			"the compatibility surface does not report",
+		codeList(nativeOnly))
+}
+
+// everyRuleReachesCompat reports whether every rule a check names is one the
+// compatibility surface can emit.
+func everyRuleReachesCompat(codes []string, compat map[string]bool) bool {
+	for _, code := range codes {
+		if !compat[code] {
+			return false
+		}
+	}
+	return true
+}
+
+// codeList renders identifiers as prose: "`MF`, `BC`, `PG` and `MY`".
+func codeList(codes []string) string {
+	quoted := make([]string, 0, len(codes))
+	for _, code := range codes {
+		quoted = append(quoted, "`"+code+"`")
+	}
+	if len(quoted) < 2 {
+		return strings.Join(quoted, "")
+	}
+	return strings.Join(quoted[:len(quoted)-1], ", ") + " and " + quoted[len(quoted)-1]
 }
 
 // proLabel renders whether the Atlas documentation marks a check as an Atlas

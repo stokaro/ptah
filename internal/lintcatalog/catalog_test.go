@@ -12,6 +12,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/internal/lintcatalog"
+	"go.5x5.cz/ptah/internal/migrationlintgate"
 	"go.5x5.cz/ptah/internal/sqllint"
 	"go.5x5.cz/ptah/migration/lint"
 	"go.5x5.cz/ptah/migration/migrator"
@@ -227,6 +228,25 @@ func TestGeneratedBlockMatchesThePublishedPage(t *testing.T) {
 	c.Assert(generated, qt.Not(qt.Equals), "")
 	c.Assert(publishedBlock(c), qt.Equals, generated,
 		qt.Commentf("run scripts/check-lint-rules.sh --write"))
+}
+
+// TestCommandTableNamesTheFamilyTheApplyGateReports covers the one claim about
+// scope the page makes outside the generated block.
+//
+// The "Which commands lint" table is prose a reader meets before the rule
+// tables, and its `ptah migrations up` row names the family that gate reports.
+// Nothing regenerates that row, so without this the gate could narrow to
+// another family and leave the summary promising the old one -- the same drift
+// the generated block exists to prevent, one section higher up the page.
+func TestCommandTableNamesTheFamilyTheApplyGateReports(t *testing.T) {
+	c := qt.New(t)
+
+	source, err := os.ReadFile(pagePath)
+	c.Assert(err, qt.IsNil)
+
+	c.Assert(string(source), qt.Contains,
+		"| `ptah migrations up` | native | blocking `"+migrationlintgate.ReportedFamily+"` findings only |",
+		qt.Commentf("the command table on %s no longer names the family the apply gate reports", pagePath))
 }
 
 // TestSurfaceColumnMatchesWhatEachProfileReports measures the claim the surface

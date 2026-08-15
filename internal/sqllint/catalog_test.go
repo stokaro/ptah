@@ -5,6 +5,7 @@ import (
 	"go/parser"
 	"go/token"
 	"os"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strconv"
@@ -18,19 +19,32 @@ import (
 	"go.5x5.cz/ptah/internal/sqllint"
 )
 
-// ruleCodePattern is the shape of a rule identifier: a family prefix and a
-// three-digit number.
-var ruleCodePattern = regexp.MustCompile(`^[A-Z]+[0-9]{3}$`)
+// ruleCodePattern is the shape of a rule identifier: a family prefix, a
+// three-digit number, and the optional trailing `P` the repository convention
+// puts on a rule of ours inside a family Atlas also uses.
+//
+// The suffix is not decoration in this pattern. `internal/lintcatalog` refuses
+// a Ptah rule in an Atlas-owned family that is spelled without it, so `PG112P`
+// is the only spelling such a rule may have -- and a scan blind to that
+// spelling would walk past exactly the identifiers the convention mandates,
+// leaving an emitted finding documented nowhere.
+var ruleCodePattern = regexp.MustCompile(`^[A-Z]+[0-9]{3}P?$`)
 
-// declaredRuleCodes reads this package's own source for every constant whose
-// value looks like a rule identifier.
+// declaredRuleCodes reads the Go source in dir for every constant whose value
+// looks like a rule identifier.
 //
 // The SQL linter has no registry to enumerate -- two of its identifiers are
 // produced by the parse path, before any rule object exists -- so the source is
 // the only place the full set is written down. Reading it here is what stops a
 // new identifier from being emitted by a binary and documented nowhere.
-func declaredRuleCodes(c *qt.C) []string {
-	entries, err := os.ReadDir(".")
+//
+// It takes the directory rather than assuming the package's own so the scan
+// itself can be driven over a fixture, which is how the identifier shape it
+// accepts is pinned rather than asserted.
+func declaredRuleCodes(tb testing.TB, dir string) []string {
+	c := qt.New(tb)
+
+	entries, err := os.ReadDir(dir)
 	c.Assert(err, qt.IsNil)
 
 	fileSet := token.NewFileSet()
@@ -41,7 +55,7 @@ func declaredRuleCodes(c *qt.C) []string {
 		if entry.IsDir() || !strings.HasSuffix(name, ".go") || strings.HasSuffix(name, "_test.go") {
 			continue
 		}
-		file, parseErr := parser.ParseFile(fileSet, name, nil, 0)
+		file, parseErr := parser.ParseFile(fileSet, filepath.Join(dir, name), nil, 0)
 		c.Assert(parseErr, qt.IsNil)
 		scanned++
 		ast.Inspect(file, func(node ast.Node) bool {
@@ -72,7 +86,40 @@ func TestCatalogCoversEveryDeclaredRuleCode(t *testing.T) {
 	catalogued := sqllint.CatalogIDs()
 	slices.Sort(catalogued)
 
-	c.Assert(declaredRuleCodes(c), qt.DeepEquals, catalogued)
+	c.Assert(declaredRuleCodes(t, "."), qt.DeepEquals, catalogued)
+}
+
+// TestDeclaredRuleCodesReadsEveryConventionalSpelling drives the scan over a
+// fixture per identifier shape the convention allows, because a scan that
+// silently skips a shape reports the same empty disagreement as a package with
+// nothing to report. The suffixed row is the one that matters: a rule of ours
+// inside an Atlas-owned family may only be spelled with the trailing `P`, so a
+// scan that does not read that spelling cannot see the rules the convention
+// will produce.
+func TestDeclaredRuleCodesReadsEveryConventionalSpelling(t *testing.T) {
+	rows := []struct {
+		name  string
+		code  string
+		found []string
+	}{
+		{name: "Ptah rule inside an Atlas family", code: "PG112P", found: []string{"PG112P"}},
+		{name: "rule inside a family of ours", code: "SQL003", found: []string{"SQL003"}},
+		{name: "Atlas check under the Atlas identifier", code: "PG101", found: []string{"PG101"}},
+		{name: "lowercase is not an identifier", code: "pg112p", found: nil},
+		{name: "two digits is not an identifier", code: "PG12", found: nil},
+	}
+
+	for _, row := range rows {
+		t.Run(row.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			dir := t.TempDir()
+			source := "package fixture\n\nconst RuleFixture = " + strconv.Quote(row.code) + "\n"
+			c.Assert(os.WriteFile(filepath.Join(dir, "rules.go"), []byte(source), 0o600), qt.IsNil)
+
+			c.Assert(declaredRuleCodes(t, dir), qt.DeepEquals, row.found)
+		})
+	}
 }
 
 // TestCatalogRowsMatchTheEmittedFindings drives the linter once per identifier
