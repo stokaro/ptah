@@ -110,6 +110,36 @@ type deploymentReportPublication struct {
 	skip       bool
 }
 
+// This command has no adoption gate, and that is a decision rather than an
+// omission. stokaro/ptah#1253 asked whether it should refuse a database that
+// already holds objects this history never created -- the refusal
+// `ptah-compat migrate apply` grew in stokaro/ptah#1252 -- and the answer
+// recorded here is no.
+//
+// Three reasons, in the order they bind:
+//
+//   - There is no oracle. Every operand of the compatibility gate was pinned by
+//     running the pinned community binary. A native gate would be pinned by
+//     taste, and its blast radius is every existing user deploying into a
+//     pre-existing schema. Pre-v1 permits the break; permission is not a
+//     reason to take it.
+//   - The opt-out has no name left. --allow-dirty already means something else
+//     here (see registerFlags), and a second dirty-shaped flag on the surface
+//     that already has one is the confusion the gate was meant to prevent.
+//   - Native already has the better answer, and it is a verb rather than a
+//     flag: `ptah migrations baseline --version/--force/--shadow-db` adopts an
+//     existing database and can verify the adoption against a shadow. A gate
+//     would exist mostly to point at it.
+//
+// What would reverse this: evidence about what native users actually do today.
+// If deploying into a pre-existing schema turns out to be rare and accidental
+// rather than a deliberate workflow, the refusal becomes cheap and the argument
+// above loses its first and strongest leg. That measurement is not something
+// this repository can take from inside itself.
+//
+// Until then the failure stands as it is: the first object that already exists
+// stops the run, and `ptah migrations repair` or `ptah migrations baseline`
+// takes it from there.
 func NewMigrateUpCommand() *cobra.Command {
 	opts := options{}
 	cmd := &cobra.Command{
@@ -156,6 +186,25 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	flags.StringVar(&opts.lockTimeout, lockTimeoutFlag, "", "Default per-migration lock timeout, such as 3s or 500ms")
 	flags.StringVar(&opts.statementTimeout, statementTimeoutFlag, "", "Default per-migration statement timeout, such as 30s or 2m")
 	flags.BoolVar(&opts.allowDestructive, allowDestructiveFlag, false, "Allow pending migrations that contain destructive statements")
+	// --allow-dirty is one spelling with two meanings across Ptah's two
+	// surfaces, and the collision is permanent: `ptah-compat migrate apply`
+	// registers the flag Atlas registers, and this command registers the one
+	// Ptah has always had.
+	//
+	//	native  (here)                  a REVISION ROW is dirty -- a migration
+	//	                                body failed part-way. This asks for a
+	//	                                verified retry of that body.
+	//	compat  (cmd/atlas/migrate_apply.go)
+	//	                                the SCHEMA is not empty -- the database
+	//	                                already holds objects this history did
+	//	                                not create. This says "adopt it anyway".
+	//
+	// Measured against the pinned community binary: its --allow-dirty releases
+	// no dirty-revision guard at all. So the two flags share a spelling and
+	// share no meaning, and neither can be expressed in terms of the other. An
+	// operator reaching here for the documented recovery is not also opting out
+	// of anything about adoption -- see stokaro/ptah#1253 for why this surface
+	// grew no adoption gate that would have made them one flag.
 	flags.BoolVar(
 		&opts.allowDirty,
 		allowDirtyFlag,
