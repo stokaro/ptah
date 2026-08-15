@@ -19,14 +19,31 @@ type directiveClassCase struct {
 	honored map[string]bool
 	// observe reports whether the directive took effect in sql, through the
 	// exported API only.
-	observe func(c *qt.C, sql string) bool
+	//
+	// It returns an error rather than taking the checker, so the row carries a
+	// predicate and the reporting stays with the test that runs it. Each
+	// directive is seen through a different exported call, which is why this
+	// is a function at all -- but a function over the SQL, not over the
+	// checker. See AGENTS.md, "A Table Row Carries Data, Not A Checker".
+	observe func(sql string) (bool, error)
 }
 
+// upTxMode is the same reading for a test that wants the mode itself rather
+// than a predicate, and reports a parse failure through the checker because it
+// is called from a test body rather than held in a row.
 func upTxMode(c *qt.C, sql string) migrator.MigrationFileTxMode {
 	c.Helper()
 	parsed, err := migrator.ParseMigrationUp("1_x.sql", sql)
 	c.Assert(err, qt.IsNil)
 	return parsed.TxMode
+}
+
+func upTxModeIsNone(sql string) (bool, error) {
+	parsed, err := migrator.ParseMigrationUp("1_x.sql", sql)
+	if err != nil {
+		return false, err
+	}
+	return parsed.TxMode == migrator.MigrationFileTxModeNone, nil
 }
 
 // TestDirectivePositionIsOneRuleAcrossBothFamilies is the class, not the
@@ -56,33 +73,29 @@ func TestDirectivePositionIsOneRuleAcrossBothFamilies(t *testing.T) {
 			name:      "ptah no_transaction",
 			directive: "-- +ptah no_transaction",
 			honored:   directiveplacement.BeforeTheStatement(),
-			observe: func(c *qt.C, sql string) bool {
-				return upTxMode(c, sql) == migrator.MigrationFileTxModeNone
-			},
+			observe:   upTxModeIsNone,
 		},
 		{
 			name:      "ptah online_ddl_tool",
 			directive: "-- +ptah online_ddl_tool=ghost",
 			honored:   directiveplacement.BeforeTheStatement(),
-			observe: func(_ *qt.C, sql string) bool {
-				return migrator.ParseFileDirectives(sql)["online_ddl_tool"] == "ghost"
+			observe: func(sql string) (bool, error) {
+				return migrator.ParseFileDirectives(sql)["online_ddl_tool"] == "ghost", nil
 			},
 		},
 		{
 			name:      "ptah online_ddl_fallback",
 			directive: "-- +ptah online_ddl_fallback=plain",
 			honored:   directiveplacement.BeforeTheStatement(),
-			observe: func(_ *qt.C, sql string) bool {
-				return migrator.ParseFileDirectives(sql)["online_ddl_fallback"] == "plain"
+			observe: func(sql string) (bool, error) {
+				return migrator.ParseFileDirectives(sql)["online_ddl_fallback"] == "plain", nil
 			},
 		},
 		{
 			name:      "atlas txmode none",
 			directive: "-- atlas:txmode none",
 			honored:   directiveplacement.InsideAtlasHeaderBlock(),
-			observe: func(c *qt.C, sql string) bool {
-				return upTxMode(c, sql) == migrator.MigrationFileTxModeNone
-			},
+			observe:   upTxModeIsNone,
 		},
 		{
 			// A check is position-insensitive BY DESIGN, and documented that
@@ -94,10 +107,9 @@ func TestDirectivePositionIsOneRuleAcrossBothFamilies(t *testing.T) {
 			name:      "ptah check",
 			directive: `-- +ptah check name="t_absent" assert="SELECT 1"`,
 			honored:   directiveplacement.EveryLineComment(),
-			observe: func(c *qt.C, sql string) bool {
+			observe: func(sql string) (bool, error) {
 				checks, err := migrator.ParseChecks(sql, "")
-				c.Assert(err, qt.IsNil)
-				return len(checks) == 1
+				return len(checks) == 1, err
 			},
 		},
 	}
@@ -109,10 +121,14 @@ func TestDirectivePositionIsOneRuleAcrossBothFamilies(t *testing.T) {
 				"every placement needs an answer; a missing key reads as dropped"))
 
 			for _, placement := range directiveplacement.All {
-				c.Run(placement.Name, func(c *qt.C) {
+				t.Run(placement.Name, func(t *testing.T) {
+					c := qt.New(t)
 					sql := placement.Render(test.directive)
 
-					c.Check(test.observe(c, sql), qt.Equals, test.honored[placement.Name],
+					honored, err := test.observe(sql)
+
+					c.Assert(err, qt.IsNil, qt.Commentf("source:\n%s", sql))
+					c.Check(honored, qt.Equals, test.honored[placement.Name],
 						qt.Commentf("source:\n%s", sql))
 				})
 			}

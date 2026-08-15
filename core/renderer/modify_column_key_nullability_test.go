@@ -46,11 +46,47 @@ func ordinaryColumnModifyAlter() *ast.AlterTableNode {
 type modifyColumnNullabilityCase struct {
 	name    string
 	dialect string
-	// key asserts the rendering of a nullable single-column primary key.
-	key func(c *qt.C, out string, err error)
-	// ordinary asserts the rendering of a nullable non-key column, pinning the
-	// opposite direction so the key guard cannot pass by blanket NOT NULL.
-	ordinary func(c *qt.C, out string, err error)
+	// key is what the rendering of a nullable single-column primary key must
+	// produce.
+	key renderExpectation
+	// ordinary pins the opposite direction for a nullable non-key column, so
+	// the key guard cannot pass by blanket NOT NULL.
+	ordinary renderExpectation
+}
+
+// renderExpectation is one rendering's expected result, as data: the statement
+// the output has to carry, a spelling it must not, or the refusal it has to be
+// instead.
+//
+// It was a closure per row, which put the checker in a table row and made
+// twenty near-identical assertion bodies out of one question. See AGENTS.md,
+// "A Table Row Carries Data, Not A Checker".
+type renderExpectation struct {
+	// wantErr, when set, is the refusal the render must match; the output is
+	// then required to be empty.
+	wantErr string
+	// contains is the statement the output has to carry.
+	contains string
+	// absent is a spelling the output must not carry -- the half that stops a
+	// row passing on a blanket rewrite. Empty where the positive expectation
+	// already names the whole statement.
+	absent string
+}
+
+// assertRendering checks one rendering against its expectation.
+func assertRendering(c *qt.C, out string, err error, want renderExpectation) {
+	c.Helper()
+	if want.wantErr != "" {
+		c.Assert(err, qt.ErrorMatches, want.wantErr)
+		c.Assert(out, qt.Equals, "")
+		return
+	}
+	c.Assert(err, qt.IsNil)
+	c.Assert(out, qt.Contains, want.contains)
+	if want.absent == "" {
+		return
+	}
+	c.Assert(out, qt.Not(qt.Contains), want.absent)
 }
 
 // modifyColumnNullabilityCases carries one row per dialect in
@@ -59,196 +95,101 @@ type modifyColumnNullabilityCase struct {
 // rather than silently inheriting the hole this table was written to close.
 var modifyColumnNullabilityCases = []modifyColumnNullabilityCase{
 	{
-		name:    "postgresql",
-		dialect: "postgresql",
-		key: func(c *qt.C, out string, err error) {
-			c.Assert(err, qt.IsNil)
-			c.Assert(out, qt.Contains, `ALTER TABLE "users" ALTER COLUMN "id" SET NOT NULL;`)
-			c.Assert(out, qt.Not(qt.Contains), "DROP NOT NULL")
-		},
-		ordinary: func(c *qt.C, out string, err error) {
-			c.Assert(err, qt.IsNil)
-			c.Assert(out, qt.Contains, `ALTER TABLE "users" ALTER COLUMN "nickname" DROP NOT NULL;`)
-			c.Assert(out, qt.Not(qt.Contains), "SET NOT NULL")
-		},
+		name:     "postgresql",
+		dialect:  "postgresql",
+		key:      renderExpectation{contains: `ALTER TABLE "users" ALTER COLUMN "id" SET NOT NULL;`, absent: "DROP NOT NULL"},
+		ordinary: renderExpectation{contains: `ALTER TABLE "users" ALTER COLUMN "nickname" DROP NOT NULL;`, absent: "SET NOT NULL"},
 	},
 	{
-		name:    "postgres alias",
-		dialect: "postgres",
-		key: func(c *qt.C, out string, err error) {
-			c.Assert(err, qt.IsNil)
-			c.Assert(out, qt.Contains, `ALTER TABLE "users" ALTER COLUMN "id" SET NOT NULL;`)
-			c.Assert(out, qt.Not(qt.Contains), "DROP NOT NULL")
-		},
-		ordinary: func(c *qt.C, out string, err error) {
-			c.Assert(err, qt.IsNil)
-			c.Assert(out, qt.Contains, `ALTER TABLE "users" ALTER COLUMN "nickname" DROP NOT NULL;`)
-			c.Assert(out, qt.Not(qt.Contains), "SET NOT NULL")
-		},
+		name:     "postgres alias",
+		dialect:  "postgres",
+		key:      renderExpectation{contains: `ALTER TABLE "users" ALTER COLUMN "id" SET NOT NULL;`, absent: "DROP NOT NULL"},
+		ordinary: renderExpectation{contains: `ALTER TABLE "users" ALTER COLUMN "nickname" DROP NOT NULL;`, absent: "SET NOT NULL"},
 	},
 	{
-		name:    "cockroachdb",
-		dialect: "cockroachdb",
-		key: func(c *qt.C, out string, err error) {
-			c.Assert(err, qt.IsNil)
-			c.Assert(out, qt.Contains, `ALTER TABLE "users" ALTER COLUMN "id" SET NOT NULL;`)
-			c.Assert(out, qt.Not(qt.Contains), "DROP NOT NULL")
-		},
-		ordinary: func(c *qt.C, out string, err error) {
-			c.Assert(err, qt.IsNil)
-			c.Assert(out, qt.Contains, `ALTER TABLE "users" ALTER COLUMN "nickname" DROP NOT NULL;`)
-			c.Assert(out, qt.Not(qt.Contains), "SET NOT NULL")
-		},
+		name:     "cockroachdb",
+		dialect:  "cockroachdb",
+		key:      renderExpectation{contains: `ALTER TABLE "users" ALTER COLUMN "id" SET NOT NULL;`, absent: "DROP NOT NULL"},
+		ordinary: renderExpectation{contains: `ALTER TABLE "users" ALTER COLUMN "nickname" DROP NOT NULL;`, absent: "SET NOT NULL"},
 	},
 	{
-		name:    "yugabytedb",
-		dialect: "yugabytedb",
-		key: func(c *qt.C, out string, err error) {
-			c.Assert(err, qt.IsNil)
-			c.Assert(out, qt.Contains, `ALTER TABLE "users" ALTER COLUMN "id" SET NOT NULL;`)
-			c.Assert(out, qt.Not(qt.Contains), "DROP NOT NULL")
-		},
-		ordinary: func(c *qt.C, out string, err error) {
-			c.Assert(err, qt.IsNil)
-			c.Assert(out, qt.Contains, `ALTER TABLE "users" ALTER COLUMN "nickname" DROP NOT NULL;`)
-			c.Assert(out, qt.Not(qt.Contains), "SET NOT NULL")
-		},
+		name:     "yugabytedb",
+		dialect:  "yugabytedb",
+		key:      renderExpectation{contains: `ALTER TABLE "users" ALTER COLUMN "id" SET NOT NULL;`, absent: "DROP NOT NULL"},
+		ordinary: renderExpectation{contains: `ALTER TABLE "users" ALTER COLUMN "nickname" DROP NOT NULL;`, absent: "SET NOT NULL"},
 	},
 	{
-		name:    "spanner",
-		dialect: "spanner",
-		key: func(c *qt.C, out string, err error) {
-			c.Assert(err, qt.IsNil)
-			c.Assert(out, qt.Contains, `ALTER TABLE "users" ALTER COLUMN "id" SET NOT NULL;`)
-			c.Assert(out, qt.Not(qt.Contains), "DROP NOT NULL")
-		},
-		ordinary: func(c *qt.C, out string, err error) {
-			c.Assert(err, qt.IsNil)
-			c.Assert(out, qt.Contains, `ALTER TABLE "users" ALTER COLUMN "nickname" DROP NOT NULL;`)
-			c.Assert(out, qt.Not(qt.Contains), "SET NOT NULL")
-		},
+		name:     "spanner",
+		dialect:  "spanner",
+		key:      renderExpectation{contains: `ALTER TABLE "users" ALTER COLUMN "id" SET NOT NULL;`, absent: "DROP NOT NULL"},
+		ordinary: renderExpectation{contains: `ALTER TABLE "users" ALTER COLUMN "nickname" DROP NOT NULL;`, absent: "SET NOT NULL"},
 	},
 	{
-		name:    "sqlserver",
-		dialect: "sqlserver",
-		key: func(c *qt.C, out string, err error) {
-			c.Assert(err, qt.IsNil)
-			c.Assert(out, qt.Contains, "ALTER TABLE [users] ALTER COLUMN [id] BIGINT NOT NULL;")
-			c.Assert(out, qt.Not(qt.Contains), "[id] BIGINT NULL")
-		},
-		ordinary: func(c *qt.C, out string, err error) {
-			c.Assert(err, qt.IsNil)
-			c.Assert(out, qt.Contains, "ALTER TABLE [users] ALTER COLUMN [nickname] NVARCHAR(MAX) NULL;")
-			c.Assert(out, qt.Not(qt.Contains), "NVARCHAR(MAX) NOT NULL")
-		},
+		name:     "sqlserver",
+		dialect:  "sqlserver",
+		key:      renderExpectation{contains: "ALTER TABLE [users] ALTER COLUMN [id] BIGINT NOT NULL;", absent: "[id] BIGINT NULL"},
+		ordinary: renderExpectation{contains: "ALTER TABLE [users] ALTER COLUMN [nickname] NVARCHAR(MAX) NULL;", absent: "NVARCHAR(MAX) NOT NULL"},
 	},
 	{
-		name:    "mssql alias",
-		dialect: "mssql",
-		key: func(c *qt.C, out string, err error) {
-			c.Assert(err, qt.IsNil)
-			c.Assert(out, qt.Contains, "ALTER TABLE [users] ALTER COLUMN [id] BIGINT NOT NULL;")
-			c.Assert(out, qt.Not(qt.Contains), "[id] BIGINT NULL")
-		},
-		ordinary: func(c *qt.C, out string, err error) {
-			c.Assert(err, qt.IsNil)
-			c.Assert(out, qt.Contains, "ALTER TABLE [users] ALTER COLUMN [nickname] NVARCHAR(MAX) NULL;")
-			c.Assert(out, qt.Not(qt.Contains), "NVARCHAR(MAX) NOT NULL")
-		},
+		name:     "mssql alias",
+		dialect:  "mssql",
+		key:      renderExpectation{contains: "ALTER TABLE [users] ALTER COLUMN [id] BIGINT NOT NULL;", absent: "[id] BIGINT NULL"},
+		ordinary: renderExpectation{contains: "ALTER TABLE [users] ALTER COLUMN [nickname] NVARCHAR(MAX) NULL;", absent: "NVARCHAR(MAX) NOT NULL"},
 	},
 	{
 		// MySQL reaches the key column through the branch that writes
 		// PRIMARY KEY and never looks at Nullable, so it renders exactly as it
 		// did before SetPrimary() stopped clearing the flag.
-		name:    "mysql",
-		dialect: "mysql",
-		key: func(c *qt.C, out string, err error) {
-			c.Assert(err, qt.IsNil)
-			c.Assert(out, qt.Contains, "ALTER TABLE `users` MODIFY COLUMN `id` BIGINT PRIMARY KEY;")
-			c.Assert(out, qt.Not(qt.Contains), "`id` BIGINT NULL")
-		},
-		ordinary: func(c *qt.C, out string, err error) {
-			c.Assert(err, qt.IsNil)
-			c.Assert(out, qt.Contains, "ALTER TABLE `users` MODIFY COLUMN `nickname` TEXT;")
-			c.Assert(out, qt.Not(qt.Contains), "NOT NULL")
-		},
+		name:     "mysql",
+		dialect:  "mysql",
+		key:      renderExpectation{contains: "ALTER TABLE `users` MODIFY COLUMN `id` BIGINT PRIMARY KEY;", absent: "`id` BIGINT NULL"},
+		ordinary: renderExpectation{contains: "ALTER TABLE `users` MODIFY COLUMN `nickname` TEXT;", absent: "NOT NULL"},
 	},
 	{
-		name:    "mariadb",
-		dialect: "mariadb",
-		key: func(c *qt.C, out string, err error) {
-			c.Assert(err, qt.IsNil)
-			c.Assert(out, qt.Contains, "ALTER TABLE `users` MODIFY COLUMN `id` BIGINT PRIMARY KEY;")
-			c.Assert(out, qt.Not(qt.Contains), "`id` BIGINT NULL")
-		},
-		ordinary: func(c *qt.C, out string, err error) {
-			c.Assert(err, qt.IsNil)
-			c.Assert(out, qt.Contains, "ALTER TABLE `users` MODIFY COLUMN `nickname` TEXT;")
-			c.Assert(out, qt.Not(qt.Contains), "NOT NULL")
-		},
+		name:     "mariadb",
+		dialect:  "mariadb",
+		key:      renderExpectation{contains: "ALTER TABLE `users` MODIFY COLUMN `id` BIGINT PRIMARY KEY;", absent: "`id` BIGINT NULL"},
+		ordinary: renderExpectation{contains: "ALTER TABLE `users` MODIFY COLUMN `nickname` TEXT;", absent: "NOT NULL"},
 	},
 	{
 		// ClickHouse rejects Nullable() on a sorting/primary key column, so its
 		// type renderer has always excluded a key column from the wrapping.
-		name:    "clickhouse",
-		dialect: "clickhouse",
-		key: func(c *qt.C, out string, err error) {
-			c.Assert(err, qt.IsNil)
-			c.Assert(out, qt.Contains, "ALTER TABLE users MODIFY COLUMN id Int64;")
-			c.Assert(out, qt.Not(qt.Contains), "Nullable(")
-		},
-		ordinary: func(c *qt.C, out string, err error) {
-			c.Assert(err, qt.IsNil)
-			c.Assert(out, qt.Contains, "ALTER TABLE users MODIFY COLUMN nickname Nullable(String);")
-		},
+		name:     "clickhouse",
+		dialect:  "clickhouse",
+		key:      renderExpectation{contains: "ALTER TABLE users MODIFY COLUMN id Int64;", absent: "Nullable("},
+		ordinary: renderExpectation{contains: "ALTER TABLE users MODIFY COLUMN nickname Nullable(String);"},
 	},
 	{
 		// SQLite cannot ALTER a column at all: the operation is refused and the
 		// caller is expected to plan a table rebuild, so no nullability is
 		// rendered for either column and the flag is never read here.
-		name:    "sqlite",
-		dialect: "sqlite",
-		key: func(c *qt.C, out string, err error) {
-			c.Assert(err, qt.ErrorMatches, `.*requires a table rebuild plan.*`)
-			c.Assert(out, qt.Equals, "")
-		},
-		ordinary: func(c *qt.C, out string, err error) {
-			c.Assert(err, qt.ErrorMatches, `.*requires a table rebuild plan.*`)
-			c.Assert(out, qt.Equals, "")
-		},
+		name:     "sqlite",
+		dialect:  "sqlite",
+		key:      renderExpectation{wantErr: `.*requires a table rebuild plan.*`},
+		ordinary: renderExpectation{wantErr: `.*requires a table rebuild plan.*`},
 	},
 	{
-		name:    "sqlite3 alias",
-		dialect: "sqlite3",
-		key: func(c *qt.C, out string, err error) {
-			c.Assert(err, qt.ErrorMatches, `.*requires a table rebuild plan.*`)
-			c.Assert(out, qt.Equals, "")
-		},
-		ordinary: func(c *qt.C, out string, err error) {
-			c.Assert(err, qt.ErrorMatches, `.*requires a table rebuild plan.*`)
-			c.Assert(out, qt.Equals, "")
-		},
+		name:     "sqlite3 alias",
+		dialect:  "sqlite3",
+		key:      renderExpectation{wantErr: `.*requires a table rebuild plan.*`},
+		ordinary: renderExpectation{wantErr: `.*requires a table rebuild plan.*`},
 	},
 }
 
 func TestModifyColumn_KeyColumnNeverRendersNullable(t *testing.T) {
-	c := qt.New(t)
-
 	for _, test := range modifyColumnNullabilityCases {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
 			out, err := renderer.RenderSQL(test.dialect, keyColumnModifyAlter())
-			test.key(c, out, err)
+			assertRendering(qt.New(t), out, err, test.key)
 		})
 	}
 }
 
 func TestModifyColumn_OrdinaryColumnStillRendersNullable(t *testing.T) {
-	c := qt.New(t)
-
 	for _, test := range modifyColumnNullabilityCases {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
 			out, err := renderer.RenderSQL(test.dialect, ordinaryColumnModifyAlter())
-			test.ordinary(c, out, err)
+			assertRendering(qt.New(t), out, err, test.ordinary)
 		})
 	}
 }
