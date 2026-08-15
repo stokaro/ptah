@@ -201,51 +201,59 @@ func gridFixture(c *qt.C) string {
 	return dir
 }
 
-// exportTarget is one API export target: how to run it, and a token its output
-// must carry. Without the token a cell could pass by comparing one empty
-// artifact with another.
+// exportTarget is one API export target: what it is called, a token its output
+// must carry, and the flags it needs. Without the token a cell could pass by
+// comparing one empty artifact with another.
+//
+// The row describes the target; [runExportTarget] knows how to run each kind.
+// It used to carry the "how" as a closure, which put the checker in a table row
+// and left the two kinds looking like two unrelated functions rather than one
+// difference. See AGENTS.md, "A Table Row Carries Data, Not A Checker".
 type exportTarget struct {
 	name   string
 	marker string
-	run    func(c *qt.C, sourceArgs []string) string
+	// args are the target's own flags, beyond --to and the source.
+	args []string
+	// writesFile marks the stateful target: it requires --out, and its schema
+	// is read back from that path instead of from stdout.
+	writesFile bool
 }
 
 func apiExportTargets() []exportTarget {
 	return []exportTarget{
-		{name: "openapi-v3", marker: "        - inactive\n", run: stdoutExport("openapi-v3")},
-		{name: "graphql", marker: "enum ProductStatus {\n", run: stdoutExport("graphql")},
-		{name: "protobuf", marker: "PRODUCT_STATUS_INACTIVE = 2;\n", run: protobufExport},
+		{name: "openapi-v3", marker: "        - inactive\n"},
+		{name: "graphql", marker: "enum ProductStatus {\n"},
+		{
+			name:       "protobuf",
+			marker:     "PRODUCT_STATUS_INACTIVE = 2;\n",
+			args:       []string{"--proto-package", "acme.inventory.v1"},
+			writesFile: true,
+		},
 	}
 }
 
-// stdoutExport runs a stateless target with --out omitted, which writes the
-// schema itself to stdout.
-func stdoutExport(target string) func(c *qt.C, sourceArgs []string) string {
-	return func(c *qt.C, sourceArgs []string) string {
-		c.Helper()
-		stdout, stderr, err := runSchemaExport(append([]string{"--to", target}, sourceArgs...)...)
-		c.Assert(err, qt.IsNil, qt.Commentf("stderr:\n%s", stderr))
-		return stdout
-	}
-}
-
-// protobufExport runs the stateful target, which requires --out. Every run gets
-// its own output directory so no run reads another run's compatibility state.
-func protobufExport(c *qt.C, sourceArgs []string) string {
+// runExportTarget runs one target and returns the schema it produced, from
+// stdout or from the file it was told to write. A stateful target gets its own
+// output directory per run, so no run reads another run's compatibility state.
+func runExportTarget(c *qt.C, target exportTarget, sourceArgs []string) string {
 	c.Helper()
-	outPath := filepath.Join(c.TempDir(), "schema.proto")
-	args := append([]string{
-		"--to", "protobuf",
-		"--out", outPath,
-		"--proto-package", "acme.inventory.v1",
-	}, sourceArgs...)
+	args := append([]string{"--to", target.name}, target.args...)
+	if target.writesFile {
+		outPath := filepath.Join(c.TempDir(), "schema.proto")
+		args = append(args, "--out", outPath)
 
-	stdout, stderr, err := runSchemaExport(args...)
+		stdout, stderr, err := runSchemaExport(append(args, sourceArgs...)...)
 
-	c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
-	data, err := os.ReadFile(outPath)
-	c.Assert(err, qt.IsNil)
-	return string(data)
+		c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
+		data, err := os.ReadFile(outPath)
+		c.Assert(err, qt.IsNil)
+		return string(data)
+	}
+
+	stdout, stderr, err := runSchemaExport(append(args, sourceArgs...)...)
+
+	c.Assert(err, qt.IsNil, qt.Commentf("stderr:\n%s", stderr))
+	return stdout
 }
 
 // schemaSource is one non-Go desired-schema source: the --from value that names
@@ -274,12 +282,13 @@ func TestSchemaExportReadsEveryNonGoSource(t *testing.T) {
 
 	for _, target := range apiExportTargets() {
 		for _, source := range nonGoSchemaSources(dir) {
-			c.Run(target.name+"/"+source.name, func(c *qt.C) {
-				baseline := target.run(c, goSource)
+			t.Run(target.name+"/"+source.name, func(t *testing.T) {
+				c := qt.New(t)
+				baseline := runExportTarget(c, target, goSource)
 				c.Assert(baseline, qt.Contains, target.marker)
 
-				inferred := target.run(c, []string{"--schema-file", source.path})
-				declared := target.run(c, []string{"--from", source.name, "--schema-file", source.path})
+				inferred := runExportTarget(c, target, []string{"--schema-file", source.path})
+				declared := runExportTarget(c, target, []string{"--from", source.name, "--schema-file", source.path})
 
 				c.Assert(inferred, qt.Equals, baseline)
 				c.Assert(declared, qt.Equals, baseline)
@@ -298,8 +307,8 @@ func TestSchemaExportAcceptsTheYamlExtensionAlias(t *testing.T) {
 	c.Assert(os.WriteFile(aliasPath, []byte(gridYAMLSchema), 0o600), qt.IsNil)
 	target := apiExportTargets()[1]
 
-	baseline := target.run(c, []string{"--root-dir", filepath.Join(dir, "models")})
-	alias := target.run(c, []string{"--from", "yaml", "--schema-file", aliasPath})
+	baseline := runExportTarget(c, target, []string{"--root-dir", filepath.Join(dir, "models")})
+	alias := runExportTarget(c, target, []string{"--from", "yaml", "--schema-file", aliasPath})
 
 	c.Assert(alias, qt.Equals, baseline)
 }

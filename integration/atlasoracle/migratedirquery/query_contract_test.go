@@ -45,7 +45,8 @@ func TestDirQueryContract_IgnoresUnknownKeysOnEveryCEVerb(t *testing.T) {
 	compat := buildCompatBinary(c)
 
 	for _, row := range verbRows() {
-		c.Run(row.name, func(c *qt.C) {
+		t.Run(row.name, func(t *testing.T) {
+			c := qt.New(t)
 			assertUnknownKeyParity(c, row, oracle, oracle)
 			assertUnknownKeyParity(c, row, compat, oracle)
 		})
@@ -58,7 +59,8 @@ func TestDirQueryContract_FormatSelectsTheLayoutOnEveryCEVerb(t *testing.T) {
 	compat := buildCompatBinary(c)
 
 	for _, row := range verbRows() {
-		c.Run(row.name, func(c *qt.C) {
+		t.Run(row.name, func(t *testing.T) {
+			c := qt.New(t)
 			assertFormatSelection(c, row, oracle, oracle)
 			assertFormatSelection(c, row, compat, oracle)
 		})
@@ -71,7 +73,8 @@ func TestDirQueryContract_UnknownFormatFailsOnEveryCEVerb(t *testing.T) {
 	compat := buildCompatBinary(c)
 
 	for _, row := range verbRows() {
-		c.Run(row.name, func(c *qt.C) {
+		t.Run(row.name, func(t *testing.T) {
+			c := qt.New(t)
 			assertUnknownFormat(c, row, oracle, oracle)
 			assertUnknownFormat(c, row, compat, oracle)
 		})
@@ -84,7 +87,8 @@ func TestDirQueryContract_QueryOutranksTheFlag(t *testing.T) {
 	compat := buildCompatBinary(c)
 
 	for _, row := range flagVerbRows() {
-		c.Run(row.name, func(c *qt.C) {
+		t.Run(row.name, func(t *testing.T) {
+			c := qt.New(t)
 			assertQueryPrecedence(c, row, oracle, oracle)
 			assertQueryPrecedence(c, row, compat, oracle)
 		})
@@ -97,7 +101,8 @@ func TestDirQueryContract_KeepsExtensionOnlyVerbsFailClosed(t *testing.T) {
 	compat := buildCompatBinary(c)
 
 	for _, row := range extensionOnlyVerbRows() {
-		c.Run(row.name, func(c *qt.C) {
+		t.Run(row.name, func(t *testing.T) {
+			c := qt.New(t)
 			dir := writeNativeDir(c, oracle)
 			result := runCommand(c, compat, row.args(c, dir, "?format=atlas&nonsense=1")...)
 

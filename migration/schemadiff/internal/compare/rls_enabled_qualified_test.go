@@ -15,11 +15,18 @@ import (
 
 // rlsEnabledIdentityCase is one pair of spellings for a table's RLS enablement
 // and what the comparison owes it.
+//
+// The expectation is data because every row asks the same question -- which
+// tables the comparison planned to enable or disable -- and both answers are
+// already lists of names. A row answering with its own assertions hides that
+// the question is shared, and hands the checker to a field the tooling cannot
+// follow. See AGENTS.md, "A Table Row Carries Data, Not A Checker".
 type rlsEnabledIdentityCase struct {
-	name      string
-	generated []goschema.RLSEnabledTable
-	database  []types.DBTable
-	assert    func(c *qt.C, diff *difftypes.SchemaDiff)
+	name        string
+	generated   []goschema.RLSEnabledTable
+	database    []types.DBTable
+	wantAdded   []string
+	wantRemoved []string
 }
 
 // TestRLSEnabledTablesWithSemantics_QualifiedTableIdentity pins that RLS
@@ -35,36 +42,24 @@ type rlsEnabledIdentityCase struct {
 // Same defect as tableMemberKey's (stokaro/ptah#1232) in a comparator that keys
 // by raw string, collected as an instance of stokaro/ptah#1276.
 func TestRLSEnabledTablesWithSemantics_QualifiedTableIdentity(t *testing.T) {
-	c := qt.New(t)
-
 	tests := []rlsEnabledIdentityCase{
 		{
 			name:      "a bare declaration matches the qualified table the reader reports",
 			generated: []goschema.RLSEnabledTable{{Table: "secured"}},
 			database:  []types.DBTable{{Schema: "public", Name: "secured", RLSEnabled: true}},
-			assert: func(c *qt.C, diff *difftypes.SchemaDiff) {
-				c.Assert(diff.RLSEnabledTablesAdded, qt.HasLen, 0)
-				c.Assert(diff.RLSEnabledTablesRemoved, qt.HasLen, 0)
-			},
 		},
 		{
 			name:      "a qualified declaration matches the same table",
 			generated: []goschema.RLSEnabledTable{{Table: "public.secured"}},
 			database:  []types.DBTable{{Schema: "public", Name: "secured", RLSEnabled: true}},
-			assert: func(c *qt.C, diff *difftypes.SchemaDiff) {
-				c.Assert(diff.RLSEnabledTablesAdded, qt.HasLen, 0)
-				c.Assert(diff.RLSEnabledTablesRemoved, qt.HasLen, 0)
-			},
 		},
 		{
 			// The control against the fix becoming "everything matches".
-			name:      "the same table name in another schema is another table",
-			generated: []goschema.RLSEnabledTable{{Table: "other.secured"}},
-			database:  []types.DBTable{{Schema: "public", Name: "secured", RLSEnabled: true}},
-			assert: func(c *qt.C, diff *difftypes.SchemaDiff) {
-				c.Assert(diff.RLSEnabledTablesAdded, qt.DeepEquals, []string{"other.secured"})
-				c.Assert(diff.RLSEnabledTablesRemoved, qt.DeepEquals, []string{"public.secured"})
-			},
+			name:        "the same table name in another schema is another table",
+			generated:   []goschema.RLSEnabledTable{{Table: "other.secured"}},
+			database:    []types.DBTable{{Schema: "public", Name: "secured", RLSEnabled: true}},
+			wantAdded:   []string{"other.secured"},
+			wantRemoved: []string{"public.secured"},
 		},
 		{
 			// A table whose RLS the database does not have still needs
@@ -73,26 +68,21 @@ func TestRLSEnabledTablesWithSemantics_QualifiedTableIdentity(t *testing.T) {
 			name:      "a declared table the database has not enabled is still added",
 			generated: []goschema.RLSEnabledTable{{Table: "secured"}},
 			database:  []types.DBTable{{Schema: "public", Name: "secured"}},
-			assert: func(c *qt.C, diff *difftypes.SchemaDiff) {
-				c.Assert(diff.RLSEnabledTablesAdded, qt.DeepEquals, []string{"secured"})
-				c.Assert(diff.RLSEnabledTablesRemoved, qt.HasLen, 0)
-			},
+			wantAdded: []string{"secured"},
 		},
 		{
 			// And the reverse: RLS on a table nothing declares is still
 			// reported for removal, under the qualified name the reader gave.
-			name:      "an undeclared enabled table is still removed",
-			generated: nil,
-			database:  []types.DBTable{{Schema: "public", Name: "unmanaged", RLSEnabled: true}},
-			assert: func(c *qt.C, diff *difftypes.SchemaDiff) {
-				c.Assert(diff.RLSEnabledTablesAdded, qt.HasLen, 0)
-				c.Assert(diff.RLSEnabledTablesRemoved, qt.DeepEquals, []string{"public.unmanaged"})
-			},
+			name:        "an undeclared enabled table is still removed",
+			generated:   nil,
+			database:    []types.DBTable{{Schema: "public", Name: "unmanaged", RLSEnabled: true}},
+			wantRemoved: []string{"public.unmanaged"},
 		},
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			generated := &goschema.Database{RLSEnabledTables: test.generated}
 			database := &types.DBSchema{Tables: test.database}
 			diff := &difftypes.SchemaDiff{}
@@ -101,7 +91,8 @@ func TestRLSEnabledTablesWithSemantics_QualifiedTableIdentity(t *testing.T) {
 				generated, database, diff, identifier.ForDialect(platform.Postgres),
 			)
 
-			test.assert(c, diff)
+			c.Assert(diff.RLSEnabledTablesAdded, qt.DeepEquals, test.wantAdded)
+			c.Assert(diff.RLSEnabledTablesRemoved, qt.DeepEquals, test.wantRemoved)
 		})
 	}
 }

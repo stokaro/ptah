@@ -109,7 +109,6 @@ func preparePublicationHook(opts *atlasmigrate.DiffOptions, swap func()) {
 }
 
 func TestGenerateDiff_ReplacedDirectoryCannotRedirectPublication(t *testing.T) {
-	c := qt.New(t)
 	tests := []diffSwapCase{
 		{
 			name: "migration directory symlink swapped before planning",
@@ -181,7 +180,16 @@ func TestGenerateDiff_ReplacedDirectoryCannotRedirectPublication(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		// Converted by hand rather than by qtlint, which withholds the fix
+		// here: the closure hands its *qt.C to the row's staging functions,
+		// and one of them registers a Cleanup on it. That is the withholding
+		// working -- the tool cannot bound what a *qt.C reaches through a
+		// field. It is safe all the same, and for the reason the rule is
+		// about: every one of those calls now receives the subtest's own
+		// checker, so the opened directory closes with the subtest that
+		// opened it instead of with the parent.
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			root := c.TempDir()
 			decoy := c.TempDir()
 			c.Assert(os.MkdirAll(filepath.Join(decoy, "migrations"), 0o755), qt.IsNil)

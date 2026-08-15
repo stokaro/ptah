@@ -135,7 +135,8 @@ func TestMigrateUnknownDirectoryFormatDiagnosticsE2E(t *testing.T) {
 	}
 
 	for _, test := range compatCases {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			stdout, stderr, err := runCLIProcess(ctx, c.TempDir(), compatBinary, test.args...)
 
 			c.Assert(exitStatusOf(c, err), qt.Equals, 1)
@@ -145,7 +146,8 @@ func TestMigrateUnknownDirectoryFormatDiagnosticsE2E(t *testing.T) {
 		})
 	}
 
-	c.Run("native validate keeps native diagnostic", func(c *qt.C) {
+	t.Run("native validate keeps native diagnostic", func(t *testing.T) {
+		c := qt.New(t)
 		dir := c.TempDir()
 
 		stdout, stderr, err := runCLIProcess(ctx, dir, nativeBinary,
@@ -165,7 +167,8 @@ func TestMigrateUnknownDirectoryFormatDiagnosticsE2E(t *testing.T) {
 	// through a different command and keeps its own diagnostic and its own exit
 	// code; without this row, "native is unchanged" would be an argument rather
 	// than a measurement.
-	c.Run("native import keeps native diagnostic", func(c *qt.C) {
+	t.Run("native import keeps native diagnostic", func(t *testing.T) {
+		c := qt.New(t)
 		stdout, stderr, err := runCLIProcess(ctx, c.TempDir(), nativeBinary,
 			"migrations", "import",
 			"--source-dir", "nope",
@@ -202,7 +205,8 @@ func TestMigrateUnknownDirectoryFormatDiagnosticsE2E(t *testing.T) {
 	}
 
 	for _, test := range importMissingCases {
-		c.Run("compat import missing source "+test.name, func(c *qt.C) {
+		t.Run("compat import missing source "+test.name, func(t *testing.T) {
+			c := qt.New(t)
 			stdout, stderr, err := runCLIProcess(ctx, c.TempDir(), compatBinary, test.args...)
 
 			c.Assert(exitStatusOf(c, err), qt.Equals, 1)

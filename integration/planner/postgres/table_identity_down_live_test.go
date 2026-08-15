@@ -23,7 +23,6 @@ import (
 // identity-aware lookup the reverse plan is empty for the mismatched spellings
 // and the column stays dropped -- with a rollback that exits 0.
 func TestDownMigrationRestoresDroppedColumnLive(t *testing.T) {
-	c := qt.New(t)
 	adminURL := livePostgresURLForRLSEnable(t)
 
 	tests := []struct {
@@ -49,7 +48,8 @@ func TestDownMigrationRestoresDroppedColumnLive(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			dbURL := createRLSEnableDatabase(c, adminURL)
 			executeSQL(c, dbURL, []string{
 				`CREATE TABLE users (id integer PRIMARY KEY, email text, legacy_note text)`,
@@ -89,7 +89,6 @@ func usersColumns(c *qt.C, dbURL string) []string {
 // valid statement and applies cleanly. These rows apply the plan and read the
 // catalog.
 func TestModifiedUserTypeDropWithoutRecreateLive(t *testing.T) {
-	c := qt.New(t)
 	adminURL := livePostgresURLForRLSEnable(t)
 
 	tests := []struct {
@@ -118,7 +117,8 @@ func TestModifiedUserTypeDropWithoutRecreateLive(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			dbURL := createRLSEnableDatabase(c, adminURL)
 			executeSQL(c, dbURL, []string{
 				`CREATE SCHEMA app`,

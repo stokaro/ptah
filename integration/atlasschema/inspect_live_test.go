@@ -42,7 +42,6 @@ var inspectLiveMultiSchema = []string{
 }
 
 func TestInspectLive_ScopeSelectsSchemas(t *testing.T) {
-	c := qt.New(t)
 	ctx := context.Background()
 
 	tests := []struct {
@@ -115,7 +114,8 @@ func TestInspectLive_ScopeSelectsSchemas(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			conn := newInspectLiveConnection(c, ctx, test.query, test.setup)
 
 			rendered, err := atlasschema.Inspect(ctx, conn, atlasschema.InspectOptions{
@@ -159,7 +159,6 @@ func TestInspectLive_ScopeSelectsSchemas(t *testing.T) {
 // `describesSchemas` branch, which answers from the connected schema on that
 // dialect.
 func TestInspectLive_SQLSchemaStatements(t *testing.T) {
-	c := qt.New(t)
 	ctx := context.Background()
 
 	tests := []struct {
@@ -194,7 +193,8 @@ func TestInspectLive_SQLSchemaStatements(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			conn := newInspectLiveConnection(c, ctx, test.query, inspectLiveMultiSchema)
 
 			rendered, err := atlasschema.Inspect(ctx, conn, atlasschema.InspectOptions{
@@ -227,7 +227,6 @@ func TestInspectLive_SQLSchemaStatements(t *testing.T) {
 // and permissions the pinned binary does not model, which is Ptah describing
 // more of the database and is not what this test is for.
 func TestInspectLive_HCLRealmScope(t *testing.T) {
-	c := qt.New(t)
 	ctx := context.Background()
 
 	tests := []struct {
@@ -260,7 +259,8 @@ func TestInspectLive_HCLRealmScope(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		c.Run(test.name, func(c *qt.C) {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 			conn := newInspectLiveConnection(c, ctx, test.query, inspectLiveMultiSchema)
 
 			rendered, err := atlasschema.Inspect(ctx, conn, atlasschema.InspectOptions{Format: "hcl"})
