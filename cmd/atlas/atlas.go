@@ -31,7 +31,6 @@ import (
 	"go.5x5.cz/ptah/internal/atlasargs"
 	"go.5x5.cz/ptah/internal/atlascompatpolicy"
 	"go.5x5.cz/ptah/internal/atlassource"
-	"go.5x5.cz/ptah/internal/devdocker"
 )
 
 type atlasVerb struct {
@@ -628,50 +627,19 @@ func atlasMigrateTestVerb() atlasVerb {
 // atlasTestDevURLFlag registers the --dev-url that `migrate test` and
 // `schema test` run their cases against.
 //
-// Atlas provisions a docker:// dev database itself; Ptah connects to the URL it
-// is given. Both test verbs used to let a docker:// value travel all the way to
-// the database connector, which answered "unsupported database dialect: docker"
-// -- an internal classification rather than the thing the caller has to change.
-// The refusal now reads like the one migrate diff, migrate lint and
-// migrations validate already produce for the same input, and it lands on both
-// verbs: only `migrate test` was reported, but `schema test` shared the gap.
+// A docker:// value is passed through to the native verb, which provisions it.
+// Both test verbs used to refuse the scheme here, at flag-parse time, because
+// nothing downstream could provision one; wiring the native runners to
+// internal/devdocker is what made the refusal a deleted capability rather than
+// an honest diagnostic (stokaro/ptah#844, AGENTS.md compatibility rule (c)).
+//
+// What is decidable from the URL text alone -- an image no engine table names,
+// a form the pinned community binary rejects -- is still refused, by the
+// provisioner, in that binary's own words. A directly connectable URL travels
+// untouched, so a dialect Ptah does not support still reports itself at the
+// connector.
 func atlasTestDevURLFlag() atlasargs.Flag {
-	flag := atlasargs.NativeString("dev-url", "", "Dev database URL the test cases run against", "db-url")
-	flag.MapValue = atlasTestDevURLValue
-	return flag
-}
-
-// atlasTestDevURLValue refuses a docker:// dev database URL on the test verbs.
-// Every directly connectable URL passes through untouched, so a dialect Ptah
-// does not support still reports itself at the connector.
-//
-// The question "is this a docker URL" is asked of [devdocker.IsURL], which is
-// the one place in the binary that answers it, rather than restated here as a
-// prefix match. A prefix match over a trimmed copy disagreed with it in both
-// directions, and both were measured on a build of this branch:
-//
-//   - `DOCKER://postgres/16/dev` is a docker URL to net/url's Parse, which
-//     lowercases a scheme, and to the pinned community binary v1.3.0, which
-//     routes it to its own provisioner (`failed to connect to the docker API`,
-//     byte-identical to the lowercase spelling, where `notascheme://` answers
-//     `unknown driver`). It was NOT one to the prefix match, so it slipped past
-//     this refusal and reached the connector, which answered
-//     `connect to test database: unsupported database dialect: docker` --
-//     exactly the internal classification this function exists to replace, on
-//     both `migrate test` and `schema test`.
-//   - ` docker://postgres/16/dev` is NOT a docker URL to that Parse, which
-//     reads a leading space as making the whole value a relative path, but was
-//     one to the prefix match over a trimmed copy. It now falls through to the
-//     connector, which names the parse failure -- the same verdict
-//     `migrate diff` already gives that value.
-func atlasTestDevURLValue(value string) (string, error) {
-	if devdocker.IsURL(value) {
-		return "", errors.New(
-			"docker --dev-url values are accepted by Atlas, but Ptah requires" +
-				" a directly connectable dev database URL for test cases",
-		)
-	}
-	return value, nil
+	return atlasargs.NativeString("dev-url", "", "Dev database URL the test cases run against", "db-url")
 }
 
 // atlasTestReportFlag registers the report format both test verbs forward to

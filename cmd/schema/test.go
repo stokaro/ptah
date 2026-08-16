@@ -17,6 +17,7 @@ import (
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/internal/atlassource"
 	"go.5x5.cz/ptah/internal/atlasurl"
+	"go.5x5.cz/ptah/internal/devdocker"
 	"go.5x5.cz/ptah/internal/schemaload"
 	"go.5x5.cz/ptah/internal/schemascope"
 	"go.5x5.cz/ptah/migration/dbtest"
@@ -144,12 +145,22 @@ func runSchemaTest(ctx context.Context, out, diag io.Writer, opts testOptions) e
 		return err
 	}
 
+	// The test database is provisioned here, after the cases and the desired
+	// schema are known, so a run that was going to be refused for its inputs is
+	// refused without starting a container. See the same shape in
+	// cmd/migrationstest.
+	dbURL, releaseDev, err := devdocker.Resolve(ctx, opts.dbURL, devdocker.Options{})
+	if err != nil {
+		return err
+	}
+	defer releaseDev()
+
 	report, err := dbtest.RunSchemaTest(ctx, dbtest.SchemaOptions{
 		Cases:   cases,
 		RootDir: opts.rootDir,
 		Desired: desired,
 		SeedDir: opts.seedDir,
-		DBURL:   opts.dbURL,
+		DBURL:   dbURL,
 	})
 	if err != nil {
 		return err

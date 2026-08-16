@@ -19,6 +19,7 @@ import (
 	"go.5x5.cz/ptah/internal/atlasmigrate"
 	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/internal/dblock"
+	"go.5x5.cz/ptah/internal/devdocker"
 	"go.5x5.cz/ptah/internal/migratesum"
 	"go.5x5.cz/ptah/internal/migrationintegrity"
 	"go.5x5.cz/ptah/internal/migrationsnapshot"
@@ -191,8 +192,17 @@ func migrateCheckpointCommand(cmd *cobra.Command, _ []string, opts *options) err
 		return cmdutil.Fail(cmd, err)
 	}
 
+	// Provisioned here, after every refusal decidable from the flags and the
+	// directory, so a run that was going to be refused never starts a
+	// container. A directly connectable URL passes through untouched.
+	shadowDB, releaseShadow, err := devdocker.Resolve(ctx, opts.shadowDB, devdocker.Options{})
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	defer releaseShadow()
+
 	upSQL, downSQL, err := generator.GenerateCheckpointFromShadow(ctx, generator.CheckpointFromShadowOptions{
-		ShadowDatabaseURL:    opts.shadowDB,
+		ShadowDatabaseURL:    shadowDB,
 		MigrationsDir:        opts.migrationsDir,
 		MigrationsFS:         migrationsFS,
 		Dialect:              opts.dialect,

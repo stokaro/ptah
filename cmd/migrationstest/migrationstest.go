@@ -15,6 +15,7 @@ import (
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
 	"go.5x5.cz/ptah/cmd/internal/dbcli"
 	"go.5x5.cz/ptah/cmd/internal/exitcode"
+	"go.5x5.cz/ptah/internal/devdocker"
 	"go.5x5.cz/ptah/internal/migrationintegrity"
 	"go.5x5.cz/ptah/internal/migrationsnapshot"
 	"go.5x5.cz/ptah/migration/dbtest"
@@ -159,13 +160,24 @@ func run(ctx context.Context, out, notice io.Writer, opts options) error {
 		return err
 	}
 
+	// The test database is provisioned here, after every refusal this verb can
+	// answer from its flags and its cases. A docker:// URL is what the Atlas
+	// surface accepts and what an atlas.hcl env commonly carries; a directly
+	// connectable URL passes through untouched. The release is deferred before
+	// the run so it happens after the last connection is closed.
+	dbURL, releaseDev, err := devdocker.Resolve(ctx, opts.dbURL, devdocker.Options{})
+	if err != nil {
+		return err
+	}
+	defer releaseDev()
+
 	report, err := dbtest.RunMigrationTest(ctx, dbtest.Options{
 		Cases:           cases,
 		MigrationsDir:   opts.migrationsDir,
 		MigrationsFS:    migrationsFS,
 		RootDir:         opts.rootDir,
 		SeedDir:         opts.seedDir,
-		DBURL:           opts.dbURL,
+		DBURL:           dbURL,
 		DirFormat:       dirFormat,
 		RevisionsSchema: opts.migrationsSchema,
 	})
