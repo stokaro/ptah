@@ -109,8 +109,14 @@ pathname resolved to while the version was being picked.
 
 `WriteFiles` releases the migration directory handles before it returns, on the
 failure paths as well as the successful one, so the plan's hold on the directory
-ends at a moment the caller controls. A plan that is never published at all
-releases them when it is collected.
+ends at a moment the caller controls. `Close` is that same release for a plan
+the caller decides not to publish. It is a no-op on a plan that already
+published and a no-op called twice, so `defer plan.Close()` beside
+`PlanMigration` is always correct; a plan closed before publication reports
+`migration plan was closed` rather than being written.
+
+Without that call the handles are released only when the plan is collected,
+which is a promise about the garbage collector rather than about the program.
 
 Holding the directory open is not a lock on it. On Unix another process renames
 or removes the held directory exactly as it always could, and the guarantee is
