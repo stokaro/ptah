@@ -222,3 +222,49 @@ func TestChangingTheColumnUnderAPITypeKeepsTheWireType(t *testing.T) {
 	c.Assert(section(out, "message Thing {"), qt.Equals,
 		"message Thing {\n  int64 id = 1;\n  int64 external_ref = 2;\n}")
 }
+
+// enumFixture is a schema with one declared enum and the four ways a column can
+// meet it.
+func enumFixture(fields ...goschema.Field) *goschema.Database {
+	db := oneTable(fields...)
+	db.Enums = []goschema.Enum{{Name: "invoice_state", Values: []string{"draft", "sent"}}}
+	return db
+}
+
+// The override reaches enum resolution too, in both directions. Asking the type
+// mapping alone would have refused the "promoted" case, and that one is the
+// point: on a dialect with no native enum the column IS text, and publishing it
+// as the enum is exactly the representation the stored type cannot express.
+func TestAPITypeProjectsEnumsBothWays(t *testing.T) {
+	c := qt.New(t)
+
+	out := mustRenderText(c, enumFixture(
+		column("id", "BIGINT"),
+		column("state", "invoice_state"),
+		typedColumn("flattened", "invoice_state", "TEXT"),
+		typedColumn("promoted", "VARCHAR(32)", "invoice_state"),
+	), baseOptions())
+
+	c.Assert(section(out, "message Thing {"), qt.Equals,
+		"message Thing {\n  int64 id = 1;\n  InvoiceState state = 2;\n"+
+			"  string flattened = 3;\n  InvoiceState promoted = 4;\n}")
+	c.Assert(section(out, "enum InvoiceState {"), qt.Contains, "INVOICE_STATE_DRAFT = 1;",
+		qt.Commentf("the projected column has to reach the same enum, declared once"))
+}
+
+// Inline enum values describe the stored column, and enum resolution consults
+// them BEFORE the type. Left in place they answer first and the override does
+// nothing at all -- silently, which is the one outcome this annotation exists to
+// rule out.
+func TestAPITypeOverridesInlineEnumValues(t *testing.T) {
+	c := qt.New(t)
+
+	out := mustRenderText(c, oneTable(
+		column("id", "BIGINT"),
+		goschema.Field{Name: "state", Type: "VARCHAR(16)", Enum: []string{"draft", "sent"}, APIType: "TEXT"},
+	), baseOptions())
+
+	c.Assert(section(out, "message Thing {"), qt.Equals,
+		"message Thing {\n  int64 id = 1;\n  string state = 2;\n}")
+	c.Assert(out, qt.Not(qt.Contains), "enum ")
+}

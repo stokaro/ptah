@@ -48,6 +48,7 @@ func Render(db *goschema.Database, opts Options) (Result, error) {
 	if err := schemaexport.ValidateTableAPINames(tables); err != nil {
 		return Result{}, err
 	}
+	enums := schemaexport.EnumIndex(db)
 	for _, table := range tables {
 		fields := schemaexport.FieldsFor(db, table)
 		if err := schemaexport.ValidateFieldAPINames(table, fields); err != nil {
@@ -59,12 +60,14 @@ func Render(db *goschema.Database, opts Options) (Result, error) {
 		// would answer a request nobody made and hide that the declaration did
 		// nothing.
 		for _, field := range fields {
-			if field.APIType != "" && !mapGraphQLScalar(schemaexport.FieldAPIType(field)).Known {
-				return Result{}, schemaexport.UnknownAPITypeError(table, field, "GraphQL")
+			if err := schemaexport.RefuseUnknownAPIType(
+				table, field, "GraphQL", enums,
+				func(t string) bool { return mapGraphQLScalar(t).Known },
+			); err != nil {
+				return Result{}, err
 			}
 		}
 	}
-	enums := schemaexport.EnumIndex(db)
 
 	reg := newNameRegistry()
 	// Reserve built-in and structural names so no generated type can shadow

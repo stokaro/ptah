@@ -393,7 +393,47 @@ func UnknownAPITypeError(table goschema.Table, field goschema.Field, target stri
 // read again further down for array detection, enum resolution and
 // diagnostics, and an override honored by the mapping but not by those would
 // project a DECIMAL as text while still resolving it as a numeric.
+//
+// An override also drops the inline enum values, and it has to: those describe
+// the stored column, and enum resolution consults them before the type. Left in
+// place they answer first, and a column declaring api_type="TEXT" exports as an
+// enum anyway -- the declaration doing nothing, silently, which is the one
+// outcome this whole annotation exists to rule out. An override that names a
+// declared enum still resolves, through the enum index, on the type.
 func ProjectedField(field goschema.Field) goschema.Field {
+	if field.APIType != "" {
+		field.Enum = nil
+	}
 	field.Type = FieldAPIType(field)
 	return field
+}
+
+// RefuseUnknownAPIType reports an explicit override the exporter can neither map
+// nor resolve as an enum, and reports nothing for a field that declares none.
+// The mapping is supplied by the caller because each target has its own, and is
+// asked about the projected type.
+//
+// The enum arm is why this is one function rather than a comparison repeated in
+// each exporter: a target's type mapping only knows scalars, so asking it alone
+// would refuse api_type="invoice_state" -- a projection all three targets can in
+// fact produce, and the natural way to publish a column stored as text on a
+// dialect with no native enum.
+func RefuseUnknownAPIType(
+	table goschema.Table,
+	field goschema.Field,
+	target string,
+	enums map[string][]string,
+	maps func(projectedType string) bool,
+) error {
+	if field.APIType == "" {
+		return nil
+	}
+	projected := ProjectedField(field)
+	if maps(projected.Type) {
+		return nil
+	}
+	if _, ok := ResolveEnumValues(projected, enums); ok {
+		return nil
+	}
+	return UnknownAPITypeError(table, field, target)
 }

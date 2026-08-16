@@ -290,8 +290,9 @@ The three lossy rows are lossy because the stored type does not say enough. A
 nothing in the schema states its time zone — but the author knows, and can say
 so with `api_type="TIMESTAMPTZ"`, which publishes the well-typed field and its
 import. See [Types in the contract](../export/#types-in-the-contract). The
-override picks a row of this table; it cannot introduce a Protobuf type that has
-no row, and one the mapping does not recognize fails the export.
+override picks a row of this table, or names a declared enum; it cannot
+introduce a Protobuf type that is neither, and one the export cannot produce
+fails the export rather than defaulting to `string`.
 
 Once declared, the published type is independent of the column: re-typing the
 column underneath a pinned `api_type` is invisible on the wire, while changing

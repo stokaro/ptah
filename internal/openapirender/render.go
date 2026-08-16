@@ -73,8 +73,11 @@ func Render(db *goschema.Database, opts Options) (Result, error) {
 			// The API type is substituted once here, so the mapping, the array
 			// detection and the enum lookup below all read one answer.
 			projected := schemaexport.ProjectedField(field)
-			if field.APIType != "" && !mapOpenAPIType(projected.Type).Known {
-				return Result{}, schemaexport.UnknownAPITypeError(table, field, "OpenAPI")
+			if err := schemaexport.RefuseUnknownAPIType(
+				table, field, "OpenAPI", enums,
+				func(t string) bool { return mapOpenAPIType(t).Known },
+			); err != nil {
+				return Result{}, err
 			}
 			property, diag := columnSchema(table, projected, enums, pk)
 			if diag != nil {

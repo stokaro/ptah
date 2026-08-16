@@ -301,8 +301,8 @@ one exactly where the stored type is not what the value means:
 
 Declare `api_type` where the published representation should differ from the
 stored one. It names a type Ptah already maps — the left column of the table
-below — so one declaration answers all three targets and no per-format type
-vocabulary is introduced:
+below, or a declared enum — so one declaration answers all three targets and no
+per-format type vocabulary is introduced:
 
 ```go
 //ptah:schema:field name="amount" type="DECIMAL(12,2)" api_type="TEXT"
@@ -320,6 +320,29 @@ Only the contract moves. `type` is what the migration engine plans against, and
 it is unaffected: the column stays `DECIMAL(12,2)` in the database, and
 `ptah migrate` never reads `api_type`.
 
+### Enums, in both directions
+
+An override reaches enum resolution as well as the scalar mapping, so it works
+whichever way the pair sits:
+
+```go
+//ptah:schema:field name="state" type="invoice_state" api_type="TEXT"
+State string
+
+//ptah:schema:field name="legacy_state" type="VARCHAR(32)" api_type="invoice_state"
+LegacyState string
+```
+
+The first publishes an enum column as a plain string. The second publishes a
+text column as the declared enum — which is the case worth having, because on a
+dialect with no native enum type the column genuinely is text, and the contract
+still wants the enum.
+
+Inline enum values are part of what the override replaces. A column declaring
+its values on the annotation and an `api_type` beside them publishes the
+`api_type`: the values describe what is stored, and enum resolution would
+otherwise consult them first and quietly make the override do nothing.
+
 ### An override that cannot be honored is refused
 
 An `api_type` the target cannot map fails the export, naming the column, the
@@ -331,8 +354,9 @@ OpenAPI projection does not recognize; name a type Ptah maps, or drop the
 override to keep the column's own type "DECIMAL(12,2)"
 ```
 
-This is deliberately stricter than the treatment of an unrecognized **column**
-type, which exports as a string with a diagnostic. The two are different kinds
+A type this refuses is one no target can produce: neither the mapping table nor
+the declared enums have it. This is deliberately stricter than the treatment of
+an unrecognized **column** type, which exports as a string with a diagnostic. The two are different kinds
 of event: an unmapped column type is a fact about the schema, and the export
 still has something honest to say about it, while an unmapped override is an
 authoring mistake whose only possible outcome is a contract the author did not

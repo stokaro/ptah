@@ -180,3 +180,51 @@ func TestRenderStillWarnsForAnUnknownColumnType(t *testing.T) {
 	c.Assert(res.Diagnostics, qt.HasLen, 1)
 	c.Assert(res.Diagnostics[0].Message, qt.Contains, "money_ish")
 }
+
+// The override reaches enum resolution in both directions. The type mapping
+// alone knows only scalars, so asking it by itself would refuse the second
+// case -- which is the one worth having: on a dialect with no native enum the
+// column IS text, and publishing it as the enum is what the contract wants.
+func TestRenderProjectsEnumsBothWays(t *testing.T) {
+	c := qt.New(t)
+
+	db := apiNameFixture(
+		goschema.Field{StructName: "Invoice", Name: "id", Type: "BIGSERIAL", Primary: true},
+		goschema.Field{StructName: "Invoice", Name: "flattened", Type: "invoice_state", APIType: "TEXT"},
+		goschema.Field{StructName: "Invoice", Name: "promoted", Type: "VARCHAR(32)", APIType: "invoice_state"},
+	)
+	db.Enums = []goschema.Enum{{Name: "invoice_state", Values: []string{"draft", "sent"}}}
+
+	res, err := openapirender.Render(db, openapirender.Options{})
+	c.Assert(err, qt.IsNil)
+
+	var doc map[string]any
+	c.Assert(yaml.Unmarshal(res.Data, &doc), qt.IsNil)
+	props := doc["components"].(map[string]any)["schemas"].(map[string]any)["invoices"].(map[string]any)["properties"].(map[string]any)
+
+	c.Assert(props["flattened"].(map[string]any)["enum"], qt.IsNil)
+	c.Assert(props["promoted"].(map[string]any)["enum"], qt.DeepEquals, []any{"draft", "sent"})
+}
+
+// Inline enum values describe the stored column, and enum resolution consults
+// them before the type. Left in place they answer first and the override does
+// nothing -- silently, which this annotation exists to rule out.
+func TestRenderOverridesInlineEnumValues(t *testing.T) {
+	c := qt.New(t)
+
+	res, err := openapirender.Render(apiNameFixture(
+		goschema.Field{StructName: "Invoice", Name: "id", Type: "BIGSERIAL", Primary: true},
+		goschema.Field{
+			StructName: "Invoice", Name: "state", Type: "VARCHAR(16)",
+			Enum: []string{"draft", "sent"}, APIType: "TEXT",
+		},
+	), openapirender.Options{})
+	c.Assert(err, qt.IsNil)
+
+	var doc map[string]any
+	c.Assert(yaml.Unmarshal(res.Data, &doc), qt.IsNil)
+	props := doc["components"].(map[string]any)["schemas"].(map[string]any)["invoices"].(map[string]any)["properties"].(map[string]any)
+
+	c.Assert(props["state"].(map[string]any)["type"], qt.Equals, "string")
+	c.Assert(props["state"].(map[string]any)["enum"], qt.IsNil)
+}
