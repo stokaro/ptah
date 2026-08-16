@@ -380,10 +380,27 @@ make explicit rather than automatic.
 
 ## Keep numbers stable
 
-Field numbers follow the column name, not its position. Reordering columns
-produces no diff, and a new column takes the next number above everything the
-message has ever used — including retired numbers, so a number is never
-recycled.
+Field numbers follow the field's **published** name, not its position — the
+`api_name` where one is declared, and the column name otherwise. Reordering
+columns produces no diff, and a new column takes the next number above
+everything the message has ever used — including retired numbers, so a number
+is never recycled.
+
+That is what makes a storage rename survivable. Declare the published name once
+and the column underneath can change without touching the wire:
+
+```go
+//ptah:schema:field name="billing_amount_minor" api_name="amount" type="INTEGER"
+// renamed later to:
+//ptah:schema:field name="invoice_total_cents" api_name="amount" type="INTEGER"
+```
+
+`int32 amount = 2;` before and after, and nothing is reserved, because no
+identity was retired. Changing the `api_name` is the opposite case — it retires
+an identity consumers hold, so it is refused by default and handled by
+[Handle removals and incompatible changes](#handle-removals-and-incompatible-changes).
+The two identities are explained on
+[API schema export](../export/#names-in-the-contract).
 
 Starting from this message:
 
