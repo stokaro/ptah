@@ -1139,6 +1139,10 @@ rules of [`docs/STYLE_GUIDE.md`](docs/STYLE_GUIDE.md) apply in spirit.
     engine and skips when none is configured.
   - `*_e2e_test.go` — the test drives the user-facing surface: a cobra command
     built from `cmd/`, or a process it starts.
+  - `*_fs_test.go` — the test crosses the filesystem and nothing else: real
+    files, real directories, path resolution against them.
+    `integration/schemaload/path_containment_integration_test.go` is the shape,
+    and it fits neither name above.
 
   A file that does both is `*_e2e_test.go`; the CLI is the larger claim.
   `*_integration_test.go` is the third spelling and means neither — it is the
@@ -1151,6 +1155,16 @@ rules of [`docs/STYLE_GUIDE.md`](docs/STYLE_GUIDE.md) apply in spirit.
   the whole tree. The 51 `*_integration_test.go` sit across both, which is what
   makes the name uninformative rather than wrong. Renaming them is churn worth
   doing on its own, once no branch is mid-flight over the same files.
+
+  **Classify by reading, not by scanning imports.** A file's own import list
+  cannot answer which boundary its tests cross, because the helper that opens
+  the database usually lives in a sibling file of the same package.
+  `integration/planner/postgres/schema_scope_live_test.go` imports nothing but
+  `goschema`, `planner` and `types`, and creates a real PostgreSQL database
+  through `createRLSEnableDatabase` two files over. An import scan calls it
+  boundary-free and is wrong; the name is right. Every package in
+  `integration/` crosses a boundary somewhere, so a file that appears not to is
+  a question, never an answer.
 - The Docker suite in `cmd/integration-test` covers apply, rollback,
   idempotency, parallel-execution smoke, partial-failure recovery, and schema
   diff, and writes reports in stdout, text, JSON, or HTML form into the
