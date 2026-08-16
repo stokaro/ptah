@@ -370,7 +370,7 @@ func parseSQL(data []byte, dialect string) (*goschema.Database, error) {
 	if err != nil {
 		return nil, err
 	}
-	db := toschema.ToDatabase(statements)
+	db := toschema.ToDatabase(statements, dialect)
 	goschema.Finalize(&db)
 	return &db, nil
 }

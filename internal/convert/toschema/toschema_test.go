@@ -664,7 +664,7 @@ func TestToDatabase_CompleteSchema(t *testing.T) {
 		},
 	}
 
-	result := toschema.ToDatabase(statements)
+	result := toschema.ToDatabase(statements, "")
 
 	c.Assert(result.Enums, qt.HasLen, 1)
 	c.Assert(result.Enums[0].Name, qt.Equals, "user_status")
@@ -706,7 +706,7 @@ func TestToDatabase_UniqueConstraintNullsNotDistinct(t *testing.T) {
 			NullsDistinct:  &nullsDistinct,
 		})
 
-	result := toschema.ToDatabase(&ast.StatementList{Statements: []ast.Node{usersTable}})
+	result := toschema.ToDatabase(&ast.StatementList{Statements: []ast.Node{usersTable}}, "")
 
 	c.Assert(result.Constraints, qt.HasLen, 1)
 	c.Assert(result.Constraints[0].Name, qt.Equals, "users_c_key")
@@ -723,7 +723,7 @@ func TestToDatabase_EmptySchema(t *testing.T) {
 		Statements: []ast.Node{},
 	}
 
-	result := toschema.ToDatabase(statements)
+	result := toschema.ToDatabase(statements, "")
 
 	c.Assert(result.Enums, qt.HasLen, 0)
 	c.Assert(result.Tables, qt.HasLen, 0)
