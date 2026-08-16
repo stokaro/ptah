@@ -106,6 +106,30 @@ func devDockerDaemonIsRemote(c *qt.C) bool {
 	return remote
 }
 
+// expectedDevDockerBinding returns the address the dev database has to be
+// published on, which is decided by where the daemon runs.
+//
+// A daemon on this machine must publish on loopback and nowhere else. A daemon
+// on another machine cannot be reached over loopback at all -- loopback there
+// names the daemon's own host -- so it publishes on every interface of that
+// host and announces it in a warning on the same run.
+func expectedDevDockerBinding(c *qt.C) string {
+	c.Helper()
+	if devDockerDaemonIsRemote(c) {
+		return "0.0.0.0:"
+	}
+	return "127.0.0.1:"
+}
+
+// devDockerDaemonLocation names where the daemon runs, for the failure message.
+func devDockerDaemonLocation(c *qt.C) string {
+	c.Helper()
+	if devDockerDaemonIsRemote(c) {
+		return "a daemon on another machine"
+	}
+	return "a daemon on this machine"
+}
+
 // dockerEndpointIsRemote classifies a docker endpoint by whether the daemon it
 // names runs on another machine.
 //
@@ -150,9 +174,9 @@ func TestDockerEndpointIsRemote(t *testing.T) {
 		{name: "tcp on the loopback address", endpoint: "tcp://127.0.0.1:2375", want: false},
 		{name: "tcp on the loopback name", endpoint: "tcp://localhost:2375", want: false},
 		{name: "tcp on the IPv6 loopback", endpoint: "tcp://[::1]:2375", want: false},
-		{name: "tcp on another address", endpoint: "tcp://192.168.1.5:2375", want: true},
-		{name: "tcp on another name", endpoint: "tcp://denis-home:2375", want: true},
-		{name: "ssh to another machine", endpoint: "ssh://buster@remote-dev", want: true},
+		{name: "tcp on another address", endpoint: "tcp://192.0.2.10:2375", want: true},
+		{name: "tcp on another name", endpoint: "tcp://docker-host.example:2375", want: true},
+		{name: "ssh to another machine", endpoint: "ssh://user@docker-host.example", want: true},
 	}
 
 	for _, tt := range tests {
@@ -204,21 +228,11 @@ func TestDevDockerProvisionsAReachableServerAndRemovesIt(t *testing.T) {
 	//
 	// Which binding is correct depends on where the daemon runs, and the
 	// package decides that for itself, so the expectation is chosen the same
-	// way. A daemon on this machine must publish on loopback and nowhere else.
-	// A daemon on another machine cannot be reached over loopback at all, so it
-	// publishes on every interface of its own host and announces that in a
-	// warning; asserting loopback there would be asserting that a working
-	// configuration is broken.
+	// way -- see expectedDevDockerBinding.
 	mapping := devDockerPortMapping(c, onlyNewContainer(c, before, during))
-	if devDockerDaemonIsRemote(c) {
-		c.Assert(strings.HasPrefix(mapping, "0.0.0.0:"), qt.IsTrue,
-			qt.Commentf("the daemon at %q is on another machine and published %q, which no client here can reach",
-				devDockerDaemonHost(c), mapping))
-	} else {
-		c.Assert(strings.HasPrefix(mapping, "127.0.0.1:"), qt.IsTrue,
-			qt.Commentf("the daemon at %q is on this machine and published %q, not a loopback binding",
-				devDockerDaemonHost(c), mapping))
-	}
+	c.Assert(strings.HasPrefix(mapping, expectedDevDockerBinding(c)), qt.IsTrue,
+		qt.Commentf("the daemon at %q published %q, which is not the binding %s calls for",
+			devDockerDaemonHost(c), mapping, devDockerDaemonLocation(c)))
 
 	// The proof: a statement executed on the provisioned server, and its effect
 	// read back. A port that accepts a TCP connection is not a database.
