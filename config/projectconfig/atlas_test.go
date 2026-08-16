@@ -1661,9 +1661,18 @@ func TestParseAtlasProjectConfigRejectsUnsupportedConstructs(t *testing.T) {
 			err: `atlas block is not supported by the community version of Atlas`,
 		},
 		{
-			name: "unsupported data source",
+			// The refusal is about reading the value, not about the file
+			// mentioning the name -- see
+			// TestParseAtlasProjectConfigToleratesAnUnreadDataSource. It still
+			// reports the declaration's line, because that is where the
+			// construct Ptah cannot resolve was written.
+			name: "unsupported data source that an environment reads",
 			raw: `data "external" "app" {
   program = ["echo", "{}"]
+}
+
+env "local" {
+  url = data.external.app.url
 }
 `,
 			err: `unsupported atlas\.hcl construct "data.external" at atlas\.hcl:1`,
@@ -2270,4 +2279,60 @@ env "local" {
 			c.Assert(err, qt.ErrorMatches, tt.wantErr)
 		})
 	}
+}
+
+// Declaring a data source Ptah cannot resolve is not itself a failure. The
+// refusal belongs at the reference, which is where the run genuinely cannot
+// continue.
+//
+// Measured on the pinned Atlas community binary v1.3.0 with
+// `schema inspect --env <name>` against a project declaring `data "sql"`, exit
+// codes read from unpiped invocations:
+//
+//	declared, read by nobody                            -> 0
+//	read by env "other", run with --env local           -> 0
+//	read by env "other", run with --env other           -> 0  (it resolves it)
+//
+// Ptah refused all three with `unsupported atlas.hcl construct "data.sql"`, so
+// a project file could not be used at all for mentioning a name. It now
+// matches the first two. The third stays refused until the resolvers land
+// (stokaro/ptah#1511), which is a missing capability rather than this defect.
+func TestParseAtlasProjectConfigToleratesAnUnreadDataSource(t *testing.T) {
+	c := qt.New(t)
+	raw := []byte(`data "sql" "counts" {
+  url   = "sqlite://app.db"
+  query = "SELECT 1"
+}
+
+env "local" {
+  url = "sqlite://app.db"
+}
+`)
+
+	cfg, err := projectconfig.ParseAtlas(raw, "atlas.hcl", "local")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(cfg.DatabaseURL, qt.Equals, "sqlite://app.db")
+}
+
+func TestParseAtlasProjectConfigToleratesADataSourceReadByAnotherEnv(t *testing.T) {
+	c := qt.New(t)
+	raw := []byte(`data "sql" "counts" {
+  url   = "sqlite://app.db"
+  query = "SELECT 1"
+}
+
+env "local" {
+  url = "sqlite://app.db"
+}
+
+env "other" {
+  url = data.sql.counts.url
+}
+`)
+
+	cfg, err := projectconfig.ParseAtlas(raw, "atlas.hcl", "local")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(cfg.DatabaseURL, qt.Equals, "sqlite://app.db")
 }

@@ -241,6 +241,19 @@ type atlasParser struct {
 	rejectListMapForEach bool
 	// externalSchemas holds the declared data.external_schema sources by name.
 	externalSchemas map[string]externalSchemaDataSource
+	// unresolvedDataSources records, per data-source kind Ptah cannot resolve,
+	// where it was declared. Declaring one is not itself a failure: the pinned
+	// CE binary exits 0 on a project file that declares `data "sql"` and never
+	// reads it, and on one whose only reader is an environment the run did not
+	// select. Refusing at the declaration made such a file unusable with Ptah
+	// altogether, which is a much larger surface than the missing resolvers
+	// (stokaro/ptah#1511).
+	//
+	// The refusal moves to the reference instead, where the run genuinely
+	// cannot continue. A plain map for the same reason as hclSchemaScopes: the
+	// parser is passed by value, but every write here happens before any
+	// environment body is evaluated.
+	unresolvedDataSources map[string]hcl.Range
 	// sensitiveValues holds the resolved values of variables declared
 	// `sensitive = true`, so they can be scrubbed from any diagnostic before it
 	// reaches stderr. HCL renders function arguments into its own error text --
@@ -327,12 +340,13 @@ func newAtlasParser(
 				"toset":      stdlib.MakeToFunc(cty.Set(cty.DynamicPseudoType)),
 			},
 		},
-		varOverride:          overrides,
-		ignoreEnvSchemas:     ignoreSchemas,
-		baseDir:              filepath.Dir(filename),
-		rejectListMapForEach: rejectListMapForEach,
-		externalSchemas:      map[string]externalSchemaDataSource{},
-		hclSchemaScopes:      map[string]hclSchemaVarScope{},
+		varOverride:           overrides,
+		ignoreEnvSchemas:      ignoreSchemas,
+		baseDir:               filepath.Dir(filename),
+		rejectListMapForEach:  rejectListMapForEach,
+		externalSchemas:       map[string]externalSchemaDataSource{},
+		unresolvedDataSources: map[string]hcl.Range{},
+		hclSchemaScopes:       map[string]hclSchemaVarScope{},
 	}, nil
 }
 
@@ -1987,7 +2001,11 @@ func (p atlasParser) configureDataSources(blocks []*hclsyntax.Block) error {
 				return err
 			}
 		default:
-			return unsupported(block.Type+"."+block.Labels[0], block.TypeRange)
+			// Recorded, not refused. See [atlasParser.unresolvedDataSources]:
+			// the refusal happens where the value is read.
+			if _, seen := p.unresolvedDataSources[block.Labels[0]]; !seen {
+				p.unresolvedDataSources[block.Labels[0]] = block.TypeRange
+			}
 		}
 	}
 	data := map[string]cty.Value{}
@@ -3344,9 +3362,40 @@ func unsupported(name string, rng hcl.Range) error {
 // through because it names the offending sub-expression, which our own message
 // cannot.
 func (p atlasParser) evaluationFailed(name string, attr *hclsyntax.Attribute, diags hcl.Diagnostics) error {
+	// A reference to a data source Ptah cannot resolve reaches here as whatever
+	// HCL says about a missing object attribute, which describes the symptom
+	// rather than the cause. Answer with the construct instead, which is the
+	// same sentence the declaration used to produce -- the refusal did not go
+	// away, it moved to the place that actually needs the value.
+	if err := p.unresolvedDataSourceReference(attr); err != nil {
+		return err
+	}
 	return fmt.Errorf("cannot evaluate atlas.hcl %q at %s:%d: %s",
 		name, attr.NameRange.Filename, attr.NameRange.Start.Line,
 		p.scrubSensitive(diags.Error()))
+}
+
+// unresolvedDataSourceReference reports the declaration of the first
+// unresolvable data source the expression reads, or nil if it reads none.
+func (p atlasParser) unresolvedDataSourceReference(attr *hclsyntax.Attribute) error {
+	if len(p.unresolvedDataSources) == 0 {
+		return nil
+	}
+	for _, traversal := range attr.Expr.Variables() {
+		if len(traversal) < 2 || traversal.RootName() != "data" {
+			continue
+		}
+		kind, ok := traversal[1].(hcl.TraverseAttr)
+		if !ok {
+			continue
+		}
+		declared, unresolvable := p.unresolvedDataSources[kind.Name]
+		if !unresolvable {
+			continue
+		}
+		return unsupported("data."+kind.Name, declared)
+	}
+	return nil
 }
 
 // scrubSensitive removes the values of `sensitive = true` variables from text

@@ -72,17 +72,17 @@ row for a migration decision.
 
 ## At a glance
 
-Across the 181 capabilities below:
+Across the 182 capabilities below:
 
 | Reading | Count |
 | --- | --- |
 | Ptah supports it fully | 113 |
 | Ptah supports it with a stated limitation | 48 |
-| Ptah does not implement it | 20 |
+| Ptah does not implement it | 21 |
 | Ptah and Atlas CE both support it | 36 |
 | Ptah implements it openly where Atlas gates it behind Pro or Cloud | 42 |
 | Ptah has it and neither Atlas edition does | 23 |
-| Atlas CE has it and Ptah does not, or only in part | 22 |
+| Atlas CE has it and Ptah does not, or only in part | 23 |
 | An Atlas column is ❔ — not established by this page's evidence | 10 |
 
 Every 🟡 in the Ptah column names its specific limitation, reproduced against a
@@ -251,6 +251,7 @@ seven of them as open capabilities regardless.
 | atlas.hcl file() and fileset() path confinement | ✅ | ❌ | ❌ | Ptah confines file() and fileset() to the atlas.hcl directory: absolute, parent-traversal and symlink escapes are refused by name. Atlas reads them. Deliberate divergence; exit 1 either way today. |
 | atlas.hcl from the native ptah binary | 🟡 | ➖ | ➖ | ptah `--env` reads ./atlas.hcl in the working directory; `--var name=value` supplies a variable with no default on every env-aware verb; `--config` still takes ptah.yaml only. |
 | data "hcl_schema" reference | ✅ | ✅ | ✅ | Takes path, paths and vars, and exports .url. `vars` is scoped to the files that data source selects and `--var` does not cross that boundary, as on CE. A bad path or scheme names its rule. |
+| data "sql", "external", "runtimevar", "template_dir", "remote_dir" | ❌ | ✅ | ✅ | Ptah resolves only `hcl_schema` and `external_schema`. Declaring another is fine, including one read solely by an unselected env; reading one fails, naming the construct and its declaration line. |
 | Docker dev databases (`docker://` `--dev-url`) | 🟡 | ✅ | ✅ | migrate diff, lint, validate, schema inspect, schema diff and the apply rehearsal start a container and remove it. `docker://sqlite` and the colon form stay refused, as on CE. Six verbs are unwired. |
 | env:// desired-state references | 🟡 | ✅ | ✅ | Resolves only on `--to`/`--from` and only src, schema.src, url, dev, migration.dir; native `--schema-file` refuses it by name; elsewhere (`--exclude`) the literal string is used silently. |
 | Native project config (ptah.yaml) | ✅ | ➖ | ➖ | Keys url, dev, schemas, exclude, external_schema, migration, lint, migrate, diff, online_ddl. No variables or functions. An unknown key fails, naming the key, its line, and the accepted keys. |
