@@ -253,20 +253,25 @@ func TestCompatCommand_TestVerbsForwardReportFormat(t *testing.T) {
 	}
 }
 
-// dockerDevURLRefusal is the exact diagnostic both test verbs owe a docker://
-// dev database URL, in the wording migrate diff, migrate lint and
-// migrations validate already use for the same input.
-const dockerDevURLRefusal = `atlas (migrate|schema) test --dev-url: docker --dev-url values are accepted by Atlas,` +
-	` but Ptah requires a directly connectable dev database URL for test cases`
+// dockerProvisionerVerdict is what a docker:// dev URL now answers on the test
+// verbs: the provisioner's own words, not a refusal of the scheme.
+//
+// The rows below use an engine no engine table names, so the verdict is
+// decidable from the URL text and the assertion needs no container runtime. A
+// runnable engine would either provision a real database or report whichever
+// runtime the host happens to be missing, and neither is a fact about this
+// wiring.
+const dockerProvisionerVerdict = `unsupported docker image "notanengine"`
 
 // TestCompatCommand_TestVerbsAnswerADevURLFlag covers the --dev-url spelling on
-// both verbs, and the two boundaries that make the docker refusal a decision
-// rather than a substring match.
+// both verbs, and the two boundaries that make "is this a docker URL" a
+// decision rather than a substring match.
 //
-// Fixing only the spelling an issue happened to name would look complete while
-// the environment twin and the atlas.hcl env still reached the connector, whose
-// answer -- "unsupported database dialect: docker" -- names an internal
-// classification rather than the thing the caller has to change. Those two
+// Both verbs used to refuse the scheme outright, before anything could
+// provision one; stokaro/ptah#844 wired their native runners to the
+// provisioner, so a docker:// value now travels to it and is answered in its
+// words. Fixing only the spelling an issue happened to name would look complete
+// while the environment twin and the atlas.hcl env still refused: those two
 // routes have tests of their own below.
 func TestCompatCommand_TestVerbsAnswerADevURLFlag(t *testing.T) {
 	tests := []struct {
@@ -280,15 +285,15 @@ func TestCompatCommand_TestVerbsAnswerADevURLFlag(t *testing.T) {
 			name:    "migrate test --dev-url",
 			preface: migrateSeedPreamble,
 			argv:    migrateTestArgs,
-			devURL:  "docker://postgres/16/dev",
-			wantErr: dockerDevURLRefusal,
+			devURL:  "docker://notanengine/16/dev",
+			wantErr: dockerProvisionerVerdict,
 		},
 		{
 			name:    "schema test --dev-url",
 			preface: "",
 			argv:    schemaTestArgs,
-			devURL:  "docker://postgres/16/dev",
-			wantErr: dockerDevURLRefusal,
+			devURL:  "docker://notanengine/16/dev",
+			wantErr: dockerProvisionerVerdict,
 		},
 		{
 			// url.Parse lowercases a scheme, so this is the SAME dev URL, and
@@ -303,8 +308,8 @@ func TestCompatCommand_TestVerbsAnswerADevURLFlag(t *testing.T) {
 			name:    "migrate test --dev-url with an uppercase scheme",
 			preface: migrateSeedPreamble,
 			argv:    migrateTestArgs,
-			devURL:  "DOCKER://postgres/16/dev",
-			wantErr: dockerDevURLRefusal,
+			devURL:  "DOCKER://notanengine/16/dev",
+			wantErr: dockerProvisionerVerdict,
 		},
 		{
 			// Both verbs share the mapper, so both had the gap; the second row
@@ -313,8 +318,8 @@ func TestCompatCommand_TestVerbsAnswerADevURLFlag(t *testing.T) {
 			name:    "schema test --dev-url with a mixed-case scheme",
 			preface: "",
 			argv:    schemaTestArgs,
-			devURL:  "DoCkEr://postgres/16/dev",
-			wantErr: dockerDevURLRefusal,
+			devURL:  "DoCkEr://notanengine/16/dev",
+			wantErr: dockerProvisionerVerdict,
 		},
 		{
 			// The other direction of the same prefix match, and the reason it
@@ -360,10 +365,10 @@ func TestCompatCommand_TestVerbsAnswerADevURLFlag(t *testing.T) {
 	}
 }
 
-// TestCompatCommand_TestVerbsRefuseDockerDevURLFromTheEnvironment pins the
+// TestCompatCommand_TestVerbsReachTheProvisionerFromTheEnvironment pins the
 // environment twin of --dev-url. It is a separate route into the same mapper,
-// and a refusal wired to the flag alone would leave it reaching the connector.
-func TestCompatCommand_TestVerbsRefuseDockerDevURLFromTheEnvironment(t *testing.T) {
+// and wiring that reached only the flag would leave this one behind.
+func TestCompatCommand_TestVerbsReachTheProvisionerFromTheEnvironment(t *testing.T) {
 	tests := []struct {
 		name    string
 		preface string
@@ -376,22 +381,22 @@ func TestCompatCommand_TestVerbsRefuseDockerDevURLFromTheEnvironment(t *testing.
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			t.Setenv("PTAH_DEV_URL", "docker://postgres/16/dev")
+			t.Setenv("PTAH_DEV_URL", "docker://notanengine/16/dev")
 			workspace := writeTestVerbWorkspace(c, tt.preface)
 			argv := append(tt.argv(workspace), "--seed-dir", workspace.seedsDir)
 
 			out, err := runCompatArgs(argv)
 
-			c.Assert(err, qt.ErrorMatches, dockerDevURLRefusal, qt.Commentf("%s", out))
+			c.Assert(err, qt.ErrorMatches, dockerProvisionerVerdict, qt.Commentf("%s", out))
 		})
 	}
 }
 
-// TestCompatCommand_TestVerbsRefuseDockerDevURLFromTheProjectFile pins the
+// TestCompatCommand_TestVerbsReachTheProvisionerFromTheProjectFile pins the
 // third route: an atlas.hcl env whose `dev` attribute carries the value. The
-// verb never sees a flag at all here, so a refusal placed on the flag path
-// would let this one through.
-func TestCompatCommand_TestVerbsRefuseDockerDevURLFromTheProjectFile(t *testing.T) {
+// verb never sees a flag at all here, so wiring placed on the flag path alone
+// would leave this one behind -- and it is the route an Atlas project uses.
+func TestCompatCommand_TestVerbsReachTheProvisionerFromTheProjectFile(t *testing.T) {
 	tests := []struct {
 		name    string
 		preface string
@@ -413,7 +418,7 @@ func TestCompatCommand_TestVerbsRefuseDockerDevURLFromTheProjectFile(t *testing.
 				"--seed-dir", workspace.seedsDir,
 			})
 
-			c.Assert(err, qt.ErrorMatches, dockerDevURLRefusal, qt.Commentf("%s", out))
+			c.Assert(err, qt.ErrorMatches, dockerProvisionerVerdict, qt.Commentf("%s", out))
 		})
 	}
 }
@@ -448,6 +453,6 @@ func writeDockerDevProject(c *qt.C, t *testing.T, workspace testVerbWorkspace) {
 			"  migration {\n"+
 			"    dir = \"file://migrations\"\n"+
 			"  }\n"+
-			"  dev = \"docker://postgres/16/dev\"\n"+
+			"  dev = \"docker://notanengine/16/dev\"\n"+
 			"}\n"), 0o600), qt.IsNil)
 }

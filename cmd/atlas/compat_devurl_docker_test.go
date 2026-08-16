@@ -126,6 +126,16 @@ type compatDockerFixture struct {
 	schema string
 	// root holds both, and doubles as an (empty) test-case directory.
 	root string
+	// migrateCases and schemaCases hold one valid case each, because the test
+	// verbs refuse an invalid set before they reach a dev database.
+	migrateCases string
+	schemaCases  string
+	// appliedTarget is a database the fixture's migration has been applied to.
+	// `migrate down` skips its shadow verification entirely when the target has
+	// nothing to roll back -- it answers "already at or below target version"
+	// and exits 0 -- so a row driven against an empty target would pass with
+	// the wiring removed.
+	appliedTarget string
 }
 
 func newCompatDockerFixture(c *qt.C) compatDockerFixture {
@@ -143,7 +153,49 @@ func newCompatDockerFixture(c *qt.C) compatDockerFixture {
 
 	schema := filepath.Join(root, "schema.sql")
 	c.Assert(os.WriteFile(schema, []byte("CREATE TABLE widgets (id INTEGER PRIMARY KEY);\n"), 0o600), qt.IsNil)
-	return compatDockerFixture{dir: dir, schema: schema, root: root}
+
+	// The test verbs load and validate their cases before they touch a dev
+	// database, so a row driving them needs a case set that survives that far.
+	// One trivial assertion is enough: the row is about which layer answers the
+	// URL, not about what the case proves.
+	migrateCases := filepath.Join(root, "migrate-cases")
+	c.Assert(os.MkdirAll(migrateCases, 0o755), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(migrateCases, "cases.yaml"), []byte(
+		"cases:\n"+
+			"  - name: applied\n"+
+			"    steps:\n"+
+			"      - name: migrate\n"+
+			"        migrate_to: latest\n"+
+			"      - name: read back\n"+
+			"        assert:\n"+
+			"          query: SELECT count(*) FROM widgets\n"+
+			"          scalar: \"0\"\n"), 0o600), qt.IsNil)
+
+	schemaCases := filepath.Join(root, "schema-cases")
+	c.Assert(os.MkdirAll(schemaCases, 0o755), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(schemaCases, "cases.yaml"), []byte(
+		"cases:\n"+
+			"  - name: applied\n"+
+			"    steps:\n"+
+			"      - name: apply\n"+
+			"        apply_schema: true\n"+
+			"      - name: read back\n"+
+			"        assert:\n"+
+			"          query: SELECT count(*) FROM widgets\n"+
+			"          scalar: \"0\"\n"), 0o600), qt.IsNil)
+
+	appliedTarget := "sqlite://" + filepath.Join(root, "applied.db")
+	_, _, err = runCompat("migrate", "apply", "--dir", "file://"+dir, "--url", appliedTarget)
+	c.Assert(err, qt.IsNil)
+
+	return compatDockerFixture{
+		dir:           dir,
+		schema:        schema,
+		root:          root,
+		migrateCases:  migrateCases,
+		schemaCases:   schemaCases,
+		appliedTarget: appliedTarget,
+	}
 }
 
 // refusedByProvisioner asserts the verb answered in the provisioning layer's
@@ -247,6 +299,54 @@ func compatDockerRows() []compatDockerRow {
 			checkWhitespace: notADockerURL,
 		},
 		{
+			// Wired by stokaro/ptah#844. Not a parity row: the pinned community
+			// binary answers `unknown flag: --dev-url` here, so there is no
+			// wording to match -- this is Ptah's own flag, which used to refuse
+			// the scheme it accepted.
+			name: "migrate test reaches the provisioner",
+			verb: "migrate test",
+			args: func(fx compatDockerFixture) []string {
+				return []string{"migrate", "test", fx.migrateCases, "--dir", "file://" + fx.dir}
+			},
+			check:           refusedByProvisioner,
+			checkWhitespace: notADockerURL,
+		},
+		{
+			name: "schema test reaches the provisioner",
+			verb: "schema test",
+			args: func(fx compatDockerFixture) []string {
+				return []string{"schema", "test", "-u", "file://" + fx.schema, fx.schemaCases}
+			},
+			check:           refusedByProvisioner,
+			checkWhitespace: notADockerURL,
+		},
+		{
+			// The shadow database a checkpoint replays into, which used to
+			// answer `unsupported database dialect: docker` from the connector.
+			name: "migrate checkpoint reaches the provisioner",
+			verb: "migrate checkpoint",
+			args: func(fx compatDockerFixture) []string {
+				return []string{"migrate", "checkpoint", "cp1", "--dir", "file://" + fx.dir}
+			},
+			check:           refusedByProvisioner,
+			checkWhitespace: notADockerURL,
+		},
+		{
+			// The shadow database the rollback is rehearsed on. Driven against
+			// a target that HAS something to roll back: with an empty one the
+			// verb exits 0 without opening a shadow at all.
+			name: "migrate down reaches the provisioner",
+			verb: "migrate down",
+			args: func(fx compatDockerFixture) []string {
+				return []string{
+					"migrate", "down", "--dir", "file://" + fx.dir,
+					"--url", fx.appliedTarget, "--to-version", "0",
+				}
+			},
+			check:           refusedByProvisioner,
+			checkWhitespace: notADockerURL,
+		},
+		{
 			name: "schema diff between two local files never opens a dev database",
 			verb: "schema diff",
 			args: func(fx compatDockerFixture) []string {
@@ -318,22 +418,16 @@ func TestCompatDockerDevURL_DoesNotProvisionAValueTheBinaryCannotParse(t *testin
 // compatDockerVerbsNotWired are the compat verbs that register --dev-url and
 // still hand a docker value to the database connector.
 //
-// None of them has a row on the pinned community binary: measured on
-// 2026-08-13, `atlas migrate checkpoint`, `atlas migrate down`, `atlas migrate
-// test`, `atlas schema test` and `atlas schema plan` all answer `unknown flag:
-// --dev-url`, because the community version does not carry the flag there.
-// There is therefore no parity claim to keep on them and no wording to copy,
-// which is why they are named here rather than wired in the same change. Each
-// needs the provisioner threaded through a native runner that currently takes a
-// URL it opens directly; that is tracked on #844 rather than guessed at here.
+// Neither has a row on the pinned community binary: measured on 2026-08-13 and
+// again on 2026-08-16, `atlas schema plan` answers `unknown flag: --dev-url`,
+// because the community version does not carry the flag there. There is
+// therefore no parity claim to keep and no wording to copy. The four verbs that
+// shared this list -- migrate checkpoint, migrate down, migrate test and schema
+// test -- were wired by stokaro/ptah#844 and have rows of their own now.
 func compatDockerVerbsNotWired() []string {
 	return []string{
-		"migrate checkpoint",
-		"migrate down",
-		"migrate test",
 		"schema plan new",
 		"schema plan validate",
-		"schema test",
 	}
 }
 
