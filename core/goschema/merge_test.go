@@ -6,6 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/goschema"
 )
 
@@ -226,4 +227,29 @@ func TestMerge_DoesNotMutateInputs(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(source, qt.DeepEquals, want)
+}
+
+// A limit one source declared is a limit of the whole composite. Merge built
+// every source and the result with newDatabase and appended only the object
+// slices, so each source's NotDescribed was dropped on the floor: a schema that
+// said "I do not describe extensions" merged into one that said nothing, and
+// the comparator then read its silence as a removal -- the exact failure
+// coverage exists to prevent (stokaro/ptah#1028).
+func TestMergePreservesWhatEachSourceDeclinedToDescribe(t *testing.T) {
+	c := qt.New(t)
+	first := &goschema.Database{
+		NotDescribed: coverage.Set{}.WithKind(coverage.Extension),
+	}
+	second := &goschema.Database{
+		NotDescribed: coverage.Set{}.WithKind(coverage.VirtualTable),
+	}
+
+	merged, err := goschema.Merge(first, second)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(merged.NotDescribed.Describes(coverage.Extension, "pgcrypto"), qt.IsFalse)
+	c.Assert(merged.NotDescribed.Describes(coverage.VirtualTable, "docs"), qt.IsFalse)
+	// A kind neither source declined is still described, so the merge widened
+	// nothing it was not given.
+	c.Assert(merged.NotDescribed.Describes(coverage.Sequence, "order_seq"), qt.IsTrue)
 }

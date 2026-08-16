@@ -14,6 +14,7 @@ import (
 
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 
+	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/schemasource"
 	"go.5x5.cz/ptah/internal/atlassource"
@@ -170,6 +171,7 @@ func (o Options) loadCompositeContext(
 			if err != nil {
 				return nil, fmt.Errorf("error parsing packages: %w", err)
 			}
+			goDB = withGoAnnotationLimits(goDB)
 			// Preserve each root as one source so Merge can distinguish an
 			// internal cross-file duplicate from a cross-source conflict.
 			sources = append(sources, goDB)
@@ -221,7 +223,7 @@ func (o Options) loadGoRoots(rootDirs []string) (*goschema.Database, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error parsing packages: %w", err)
 	}
-	return result, nil
+	return withGoAnnotationLimits(result), nil
 }
 
 // loadCommand runs an external schema command and returns its parsed output. The
@@ -393,4 +395,24 @@ func (o Options) loadOCIResult(ctx context.Context, raw string) (*Result, error)
 			Descriptor: artifact.Descriptor,
 		},
 	}, nil
+}
+
+// withGoAnnotationLimits records what the Go annotation language cannot
+// express, so a comparator reads its silence about such an object as "outside
+// this source's managed surface" rather than as a removal.
+//
+// There is no //ptah:schema: directive for a SQLite virtual table, so a Go
+// schema in front of a live FTS5 index has not withheld one. Dropping it takes
+// the index and everything in it, and no annotation could have asked to keep it
+// (stokaro/ptah#1028).
+//
+// It is recorded here rather than in the parser because the parser answers what
+// a SOURCE declares and its answer is rendered back out; a limit invented
+// during parsing would surface as a directive nobody wrote.
+func withGoAnnotationLimits(database *goschema.Database) *goschema.Database {
+	if database == nil {
+		return nil
+	}
+	database.NotDescribed = database.NotDescribed.WithKind(coverage.VirtualTable)
+	return database
 }

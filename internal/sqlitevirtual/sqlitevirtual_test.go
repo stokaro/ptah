@@ -6,6 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/dbschema/types"
@@ -77,6 +78,34 @@ func TestValidateComparison(t *testing.T) {
 				"would delete the index and everything in it",
 				sqlitevirtual.AllowDropEnvVar,
 			},
+		},
+		{
+			// The source capability, which is the whole of stokaro/ptah#1028's
+			// last criterion. Go annotations, HCL and YAML have no
+			// virtual-table construct, so their silence is not a request to
+			// drop one and an operator has nothing to add that would say
+			// "keep it". Without this the refusal is permanent for every such
+			// schema in front of an FTS5 index.
+			name:     "a desired state that cannot describe virtual tables leaves one alone",
+			dialect:  "sqlite",
+			env:      envbooltest.Unset(sqlitevirtual.AllowDropEnvVar),
+			desired:  cannotDescribeVirtualTables(declaring("users")),
+			database: []types.DBTable{fts5, users},
+			wantErr:  false,
+		},
+		{
+			// The control that keeps the capability from becoming a blanket
+			// exemption: the collision refusal is about two kinds of object
+			// under one name, which a source that cannot spell the kind can
+			// still walk into.
+			name:            "a source that cannot describe them is still refused a collision",
+			dialect:         "sqlite",
+			env:             envbooltest.Unset(sqlitevirtual.AllowDropEnvVar),
+			desired:         cannotDescribeVirtualTables(declaring("users", "docs")),
+			database:        []types.DBTable{fts5, users},
+			wantErr:         true,
+			wantUnsupported: true,
+			wantContains:    []string{`"docs"`},
 		},
 		{
 			// The rule is about virtual tables, not about FTS5. A module that
@@ -485,4 +514,11 @@ func errorText(err error) string {
 		return ""
 	}
 	return err.Error()
+}
+
+// cannotDescribeVirtualTables marks a desired state the way the loaders mark
+// one produced by a format with no virtual-table construct.
+func cannotDescribeVirtualTables(db *goschema.Database) *goschema.Database {
+	db.NotDescribed = db.NotDescribed.WithKind(coverage.VirtualTable)
+	return db
 }
