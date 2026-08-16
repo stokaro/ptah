@@ -242,13 +242,17 @@ all, because SQLite has no enum type.
 - A user-created index on a recognized shadow table is refused rather than
   omitted. Ptah cannot replay that index without exposing the module-owned
   table as an ordinary schema object.
-- A schema document cannot declare a virtual table, so a comparison whose
-  desired side is a document can only refuse or be scoped past one. Two
-  databases can be compared and found synced, but a changed declaration is
-  still refused rather than converged: recreating a virtual table destroys its
-  contents, and Ptah does not parse module arguments to tell an equivalent
-  declaration from a changed one. Declaring virtual tables in desired state and
-  planning a recreate are tracked in
+- A desired side that does not name a live virtual table is refused rather than
+  planned as a drop, because removing one deletes the index and everything in
+  it. Name the table in a native `.sql` desired state, scope the comparison past
+  it, or set `PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP=1` to plan the drop
+  deliberately. Go annotations, HCL and YAML have no virtual-table syntax, so
+  for those sources scoping past is the only way to leave one in place.
+- A changed declaration is refused rather than converged. Recreating a virtual
+  table destroys its contents, and Ptah compares module arguments as written
+  rather than normalizing them, so it cannot tell an equivalent declaration from
+  a changed one — `fts5(title, body)` and `fts5( title , body )` are two
+  declarations here. Planning a recreate is tracked in
   [#1028](https://github.com/stokaro/ptah/issues/1028).
 
 ## Rebuild-required changes

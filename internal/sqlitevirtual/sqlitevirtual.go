@@ -22,9 +22,9 @@
 //     plans `DROP TABLE "docs"`. Measured: `ptah schema apply --auto-approve`
 //     against a desired state naming only the other table deleted an FTS5 index
 //     and its three rows, leaving `no such table: docs`, with `PRAGMA
-//     table_list` down from seven rows to one. A document could not have asked
-//     for the table to be kept, so this is deletion the operator cannot
-//     decline. Refused, waivable by [AllowDropEnvVar].
+//     table_list` down from seven rows to one. Dropping one deletes the index
+//     and everything in it, which is not a plan to derive from an absence.
+//     Refused, waivable by [AllowDropEnvVar].
 //   - VIRTUAL ON ONE SIDE, ORDINARY ON THE OTHER. Two kinds of object under one
 //     name. Treating them as equal leaves an incompatible object in place while
 //     every surface reports the schema synced; comparing their columns plans
@@ -37,6 +37,15 @@
 //   - VIRTUAL DESIRED, ABSENT LIVE. An addition, which already works: the
 //     module declaration reaches the renderer and
 //     `CREATE VIRTUAL TABLE "docs" USING fts5(title, body);` is planned.
+//
+// The first of those is the one the native parser changed. A `.sql` desired
+// state can now name a virtual table and converge to nothing, so keeping it is
+// something a document can ask for -- which is why the refusal offers that
+// before it offers the two remedies that end with the index gone. Whether
+// silence in a source that *can* declare one should instead be read as a
+// request to drop is a question about behavior rather than about the
+// diagnostic, and it is open: the classification here does not look at which
+// kind of source the desired side came from.
 //
 // See stokaro/ptah#1028.
 //
@@ -465,8 +474,9 @@ func ValidateComparison(
 		return fmt.Errorf(
 			"%w: virtual %s %s %s declared differently on the two sides;"+
 				" SQLite has no ALTER VIRTUAL TABLE, so converging %s means dropping and recreating %s,"+
-				" which destroys the index contents, and Ptah does not parse module arguments to tell"+
-				" an equivalent declaration from a changed one;"+
+				" which destroys the index contents, and Ptah compares module arguments as written"+
+				" rather than normalizing them, so it cannot tell an equivalent declaration from a"+
+				" changed one;"+
 				" exclude %s from the comparison, or recreate %s deliberately",
 			ptaherr.ErrUnsupportedFeature,
 			noun(len(transitions)),
@@ -483,13 +493,15 @@ func ValidateComparison(
 	}
 	return fmt.Errorf(
 		"%w: the database has virtual %s %s that the desired schema does not name;"+
-			" a schema document cannot declare a virtual table at all, so the absence is not a request to drop"+
-			" %s, and planning the removal would delete the index and everything in it;"+
-			" exclude %s from the comparison to leave %s in place, or set %s=1 to plan the drop anyway",
+			" dropping %s would delete the index and everything in it, so Ptah does not plan"+
+			" that from an absence;"+
+			" declare %s in a native .sql desired state, exclude %s from the comparison to leave"+
+			" %s in place, or set %s=1 to plan the drop anyway",
 		ptaherr.ErrUnsupportedFeature,
 		noun(len(removals)),
 		names(removals),
 		pronoun(len(removals)),
+		quotedNames(removals),
 		quotedNames(removals),
 		pronoun(len(removals)),
 		AllowDropEnvVar,
