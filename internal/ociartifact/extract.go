@@ -7,6 +7,8 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+
+	"go.5x5.cz/ptah/internal/fsdurable"
 )
 
 // WriteToDir reconstructs the artifact under dir. The destination must not
@@ -44,7 +46,14 @@ func (a Artifact) WriteToDir(dir string) error {
 	if err := root.Close(); err != nil {
 		return fmt.Errorf("close artifact staging directory: %w", err)
 	}
-	if err := os.Rename(staging, absolute); err != nil {
+	// Not os.Rename: the check above is a look, and what makes it a guarantee
+	// is that the install itself refuses a destination that appeared since.
+	// os.Rename supplied it on Unix, where it refuses an existing destination
+	// of either kind, and not on Windows, where it asks for replacement -- so
+	// the guarantee held on two of the three platforms Ptah releases
+	// (stokaro/ptah#1547). This refuses on all three, and does it in the move
+	// rather than in a check preceding one.
+	if err := fsdurable.MoveDirNoReplace(staging, absolute); err != nil {
 		return fmt.Errorf("install artifact output directory: %w", err)
 	}
 	return nil
