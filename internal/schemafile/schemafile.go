@@ -634,9 +634,9 @@ func toDBTables(
 			RLSEnabled:   tableRLSEnabled(table, rlsEnabledTables),
 			Strict:       table.Strict,
 			WithoutRowID: table.WithoutRowID,
-			// Always empty today: no desired-state source can declare a
-			// virtual table. Carried anyway so the two representations of a
-			// table do not disagree the day one can. See stokaro/ptah#1028.
+			// Non-empty when the desired state came from a `.sql` file
+			// declaring CREATE VIRTUAL TABLE, which is how `ptah db read`
+			// output is read back. See stokaro/ptah#1028.
 			VirtualModule:    table.VirtualModule,
 			VirtualArguments: table.VirtualArguments,
 		})

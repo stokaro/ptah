@@ -4862,11 +4862,12 @@ type Table struct {
     Strict        bool   // SQLite STRICT table option
     WithoutRowID  bool   // SQLite WITHOUT ROWID table option
     // VirtualModule is the SQLite module that owns this table, from the USING
-    // clause of its CREATE VIRTUAL TABLE statement. Only the SQLite reader
-    // sets it: no desired-state source can declare a virtual table, so it is
-    // always empty on a schema parsed from Go annotations, HCL, YAML, or a
-    // .sql file. A non-empty value makes the table render as
-    // CREATE VIRTUAL TABLE rather than CREATE TABLE. See stokaro/ptah#1028.
+    // clause of its CREATE VIRTUAL TABLE statement. The SQLite reader sets it,
+    // and so does the native SQL parser -- a `.sql` schema file may declare
+    // one, which is what makes `ptah db read` output readable back. Go
+    // annotations, HCL and YAML still have no syntax for it, so it is empty
+    // on a schema parsed from those. A non-empty value makes the table render
+    // as CREATE VIRTUAL TABLE rather than CREATE TABLE. See stokaro/ptah#1028.
     VirtualModule string
     // VirtualArguments is the text between the module's parentheses, verbatim.
     VirtualArguments string
