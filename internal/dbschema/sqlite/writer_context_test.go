@@ -278,8 +278,14 @@ func TestWriterDropDatabaseRealm_RejectsAttachedDatabase(t *testing.T) {
 	t.Cleanup(func() {
 		c.Check(conn.Close(), qt.IsNil)
 	})
-	auxPath := filepath.Join(t.TempDir(), "aux.sqlite")
-	_, err = conn.ExecContext(t.Context(), `ATTACH DATABASE ? AS aux`, auxPath)
+	// The file is not named for the schema it is attached as. `aux` is a
+	// reserved DOS device name, and SQLite cannot open a database file called
+	// that on Windows -- measured in a windowsservercore-ltsc2022 container on
+	// Go 1.26.6, where this test failed with `unable to open database:
+	// …\aux.sqlite (14)`, SQLITE_CANTOPEN. The schema alias below stays `aux`
+	// because the refusal this test asserts names it.
+	attachedPath := filepath.Join(t.TempDir(), "attached.sqlite")
+	_, err = conn.ExecContext(t.Context(), `ATTACH DATABASE ? AS aux`, attachedPath)
 	c.Assert(err, qt.IsNil)
 	_, err = conn.ExecContext(t.Context(), `CREATE TABLE main.users (id INTEGER PRIMARY KEY)`)
 	c.Assert(err, qt.IsNil)
