@@ -40,6 +40,16 @@ func Render(db *goschema.Database, opts Options) (Result, error) {
 		IncludeTables: opts.IncludeTables,
 		ExcludeTables: opts.ExcludeTables,
 	})
+	// Refused before anything is built: an alias that shadows another column
+	// would drop it from the schema, and the reader of that schema has nothing
+	// left to notice the loss with. This is the DECLARED collision; a collision
+	// that only appears after GraphQL name sanitization is a naming-rules
+	// artifact and stays a warning below.
+	for _, table := range tables {
+		if err := schemaexport.ValidateFieldAPINames(table, schemaexport.FieldsFor(db, table)); err != nil {
+			return Result{}, err
+		}
+	}
 	enums := schemaexport.EnumIndex(db)
 
 	reg := newNameRegistry()
@@ -117,10 +127,18 @@ func (b *builder) addTable(db *goschema.Database, table goschema.Table) {
 	var columns []column
 
 	for _, field := range fields {
-		// Column names are arbitrary annotation strings; a GraphQL field name
-		// must be a legal identifier or the schema fails to build.
-		name := schemaexport.SanitizeGraphQLName(field.Name)
-		if name != field.Name {
+		// The name to export is the field's API name, which is its column name
+		// unless the schema declared a different one. Sanitization runs on the
+		// result either way: an alias is an arbitrary annotation string too,
+		// and a GraphQL field name must be a legal identifier or the schema
+		// fails to build.
+		//
+		// The diagnostic paths keep naming the COLUMN. A warning about a name
+		// the reader cannot find in their schema source is a warning they
+		// cannot act on.
+		exported := schemaexport.FieldAPIName(field)
+		name := schemaexport.SanitizeGraphQLName(exported)
+		if name != exported {
 			b.warn("type "+typeName+"."+field.Name, "column name is not a valid GraphQL name; exported as "+name)
 		}
 		if usedFieldNames[name] {
