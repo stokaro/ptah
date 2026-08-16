@@ -7,12 +7,32 @@ Native Ptah commands treat CLI exit codes as a public scripting contract.
 | `0` | Success. The command completed and did not find a configured failing condition. |
 | `1` | Expected negative result. A check found drift, lint findings, integrity drift, pending migrations, or a non-empty diff when that behavior is enabled. |
 | `2` | Command or usage error. Examples: bad flags, unknown commands, invalid input, connection failure, parse failure, unsupported dialect, unwritable output, or an internal panic recovered by the root command. |
-| `3+` | Reserved. Do not rely on these codes until Ptah documents a specific use. |
+| `128+N` | Interrupted. A signal canceled the command, which exited with the shell convention of 128 plus the signal number: `130` for SIGINT (Ctrl-C), `143` for SIGTERM. |
+| `3+` | Reserved apart from the signal statuses above. Do not rely on these codes until Ptah documents a specific use. |
 
 This four-level contract applies to native Ptah commands. The Atlas-compatible
 surfaces intentionally use Atlas CE's narrower process contract: `0` for
 success and help, and `1` for command, usage, validation, and runtime failures.
-An internal panic recovered by Ptah's process boundary still exits `2`.
+An internal panic recovered by Ptah's process boundary still exits `2`. An
+interrupt is a runtime failure there as well, so a canceled `ptah-compat`
+command exits `1` rather than reporting a signal status: a surface that
+promises two codes does not grow a third one because the operator pressed
+Ctrl-C.
+
+## Interrupts
+
+SIGINT and SIGTERM cancel the running command instead of killing the process
+where it stands. The difference is visible when a command holds something that
+has to be given back -- a `docker://` dev database is the case that matters,
+because a killed process leaves the container running with a copy of the schema
+on a published port. Cancelation lets the release the command already defers
+actually run.
+
+The command therefore does not stop instantly, and says so: it writes
+`interrupt received, releasing resources; interrupt again to stop immediately`
+to stderr. A second interrupt reaches the default handler and ends the process
+at once, which is the escape hatch for a command that is not watching its
+context.
 
 ## Diagnostic Prefix
 

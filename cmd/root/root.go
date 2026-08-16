@@ -2,6 +2,7 @@
 package root
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -83,12 +84,36 @@ func Execute(args ...string) {
 // ExecuteCommand runs cmd and exits the process with Ptah's CLI exit-code
 // contract.
 func ExecuteCommand(cmd *cobra.Command, args ...string) {
+	if code := runCommand(cmd, args...); code != 0 {
+		os.Exit(code) //revive:disable-line:deep-exit root owns the process exit contract
+	}
+}
+
+// runCommand runs cmd and reports the status the process should exit with. It
+// exists so that every release the command set up -- signal delivery above all
+// -- is torn down before os.Exit, which runs no deferred function, and so that
+// the exit-code contract can be exercised without ending the test binary.
+func runCommand(cmd *cobra.Command, args ...string) int {
 	cmd.SetArgs(args)
 
+	// An interrupt cancels the command rather than killing the process, so the
+	// releases it defers -- a dev-database container above all -- actually run
+	// before the exit. See withInterruptCancel.
+	ctx, interrupted, release := withInterruptCancel(context.Background(), cmd.ErrOrStderr())
+	defer release()
+	cmd.SetContext(ctx)
+
 	err := executeWithRecovery(cmd)
-	if err != nil {
-		os.Exit(exitcode.Code(err, 2)) //revive:disable-line:deep-exit root owns the process exit contract
+	if sig := interrupted(); sig != nil {
+		// An interrupted command reports the interrupt, not whatever error the
+		// cancelation happened to surface as. What that status is belongs to
+		// the surface: see interruptExitCode.
+		return interruptExitCode(cmd, sig)
 	}
+	if err != nil {
+		return exitcode.Code(err, 2)
+	}
+	return 0
 }
 
 func executeWithRecovery(cmd *cobra.Command) (err error) {
