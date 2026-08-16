@@ -255,9 +255,20 @@ func TestValidateComparisonRefusesAnUnregisteredModule(t *testing.T) {
 			wantUnsupported: true,
 			wantContains: []string{
 				"the desired schema does not name",
+				// The remedy that keeps the table, pinned because it is the one
+				// that changed under this message: the refusal used to explain
+				// itself by saying a schema document cannot declare a virtual
+				// table at all, which stopped being true when the native parser
+				// learned CREATE VIRTUAL TABLE. A diagnostic that names an
+				// impossibility sends the reader to the two destructive
+				// remedies as if they were the only ones.
+				`declare "docs" in a native .sql desired state`,
 				sqlitevirtual.AllowDropEnvVar,
 			},
-			wantAbsent: []string{"does not register"},
+			wantAbsent: []string{
+				"does not register",
+				"cannot declare a virtual table",
+			},
 		},
 		{
 			// SQLite resolves a module name case-insensitively over ASCII, and
