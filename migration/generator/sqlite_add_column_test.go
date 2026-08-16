@@ -100,7 +100,12 @@ func TestGenerateMigration_SQLiteAddColumnPreservesStrictWithoutRowID(t *testing
 	c.Assert(sqliteUserEmailByID(c, conn, "u1"), qt.Equals, "strict@example.test")
 }
 
-func TestGenerateMigration_SQLiteAddColumnRejectsInboundForeignKeys(t *testing.T) {
+// TestGenerateMigration_SQLiteAddColumnRebuildsATableOtherTablesReferTo pins
+// what used to be a refusal. The rebuild drops the referenced table, which is
+// a foreign-key violation while enforcement is on, so the migration brackets
+// itself in the pragmas SQLite's own procedure prescribes and the apply path
+// lifts them to the connection. See stokaro/ptah#1561.
+func TestGenerateMigration_SQLiteAddColumnRebuildsATableOtherTablesReferTo(t *testing.T) {
 	tests := []struct {
 		name     string
 		childDDL string
@@ -137,6 +142,10 @@ func TestGenerateMigration_SQLiteAddColumnRejectsInboundForeignKeys(t *testing.T
 			c.Assert(err, qt.IsNil)
 			_, err = conn.ExecContext(ctx, tt.childDDL)
 			c.Assert(err, qt.IsNil)
+			_, err = conn.ExecContext(ctx, `INSERT INTO users (id, email) VALUES (1, 'a@example.test')`)
+			c.Assert(err, qt.IsNil)
+			_, err = conn.ExecContext(ctx, `INSERT INTO posts (id, user_id) VALUES (1, 1)`)
+			c.Assert(err, qt.IsNil)
 
 			files, err := generator.GenerateMigration(ctx, generator.GenerateMigrationOptions{
 				GoEntitiesDir: modelsDir,
@@ -144,8 +153,30 @@ func TestGenerateMigration_SQLiteAddColumnRejectsInboundForeignKeys(t *testing.T
 				MigrationName: "add_name",
 				OutputDir:     migrationsDir,
 			})
-			c.Assert(files, qt.IsNil)
-			c.Assert(err, qt.ErrorMatches, `.*sqlite: rebuilding table users with inbound foreign keys requires a manual rebuild plan.*`)
+			c.Assert(err, qt.IsNil)
+			c.Assert(files.Files, qt.HasLen, 1)
+
+			// Adding a nullable column is a plain ALTER; it is the rollback
+			// that has to rebuild, and the rebuild drops a table "posts"
+			// refers to. That is the direction the refusal used to fire in.
+			downSQL, err := os.ReadFile(files.Files[0].DownFile)
+			c.Assert(err, qt.IsNil)
+			c.Assert(string(downSQL), qt.Contains, `CREATE TABLE "__ptah_rebuild_users"`)
+			c.Assert(string(downSQL), qt.Contains, "PRAGMA foreign_keys = off;")
+			c.Assert(string(downSQL), qt.Contains, "PRAGMA foreign_keys = on;")
+
+			// The round trip is the assertion that matters: a migration whose
+			// pragma silently no-ops reads exactly the same and still fails to
+			// apply against the referencing row seeded above.
+			mig, err := migrator.NewFSMigrator(conn, os.DirFS(migrationsDir))
+			c.Assert(err, qt.IsNil)
+			c.Assert(mig.MigrateUp(ctx), qt.IsNil)
+			c.Assert(sqliteColumnCount(c, conn, "users", "name"), qt.Equals, 1)
+
+			c.Assert(mig.MigrateDownTo(ctx, 0), qt.IsNil)
+			c.Assert(sqliteColumnCount(c, conn, "users", "name"), qt.Equals, 0)
+			c.Assert(sqliteRowCount(c, conn, "posts"), qt.Equals, 1)
+			c.Assert(sqliteRowCount(c, conn, "users"), qt.Equals, 1)
 		})
 	}
 }
@@ -282,6 +313,15 @@ func sqliteColumnCount(c *qt.C, conn *dbschema.DatabaseConnection, table, column
 	query := fmt.Sprintf("SELECT COUNT(*) FROM pragma_table_info(%s) WHERE name = ?", quoteSQLiteString(table))
 	var count int
 	err := conn.QueryRowContext(context.Background(), query, column).Scan(&count)
+	c.Assert(err, qt.IsNil)
+	return count
+}
+
+func sqliteRowCount(c *qt.C, conn *dbschema.DatabaseConnection, table string) int {
+	c.Helper()
+	query := fmt.Sprintf("SELECT COUNT(*) FROM %q", table)
+	var count int
+	err := conn.QueryRowContext(context.Background(), query).Scan(&count)
 	c.Assert(err, qt.IsNil)
 	return count
 }

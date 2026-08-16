@@ -465,7 +465,6 @@ changes. Ptah still reports explicit errors instead of emitting unsafe or
 partial SQL for unsupported rebuild shapes:
 
 - combining dropped columns with other table changes in the same diff;
-- dropping columns from tables referenced by inbound foreign keys;
 - dropping columns when the internal rebuild table name would collide with an
   existing table;
 - dropping columns from tables whose retained triggers use SQLite syntax Ptah

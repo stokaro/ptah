@@ -22,6 +22,7 @@ import (
 	"go.5x5.cz/ptah/internal/schemafile"
 	"go.5x5.cz/ptah/internal/schemascope"
 	"go.5x5.cz/ptah/internal/schemaselection"
+	"go.5x5.cz/ptah/internal/sqliterebuild"
 	"go.5x5.cz/ptah/internal/sqlitevirtual"
 	"go.5x5.cz/ptah/migration/migrator"
 	"go.5x5.cz/ptah/migration/planner"
@@ -753,7 +754,7 @@ func applyStatements(
 	case migrator.MigrationTxModeNone:
 		return executeApplyStatements(ctx, conn.Writer(), statements)
 	case migrator.MigrationTxModeFile, migrator.MigrationTxModeAll:
-		tx, err := conn.SchemaWriter().BeginTransaction(ctx)
+		tx, err := sqliterebuild.BeginTransaction(ctx, conn, statements)
 		if err != nil {
 			return fmt.Errorf("begin schema apply transaction: %w", err)
 		}

@@ -217,43 +217,6 @@ func TestPlannerRejectsUnsafeTableRebuildPreconditions(t *testing.T) {
 			want: `sqlite: rebuilding table users would collide with existing table __ptah_rebuild_users`,
 		},
 		{
-			name: "inbound field foreign key",
-			generated: &goschema.Database{
-				Tables: []goschema.Table{
-					{Name: "users", StructName: "User"},
-					{Name: "posts", StructName: "Post"},
-				},
-				Fields: []goschema.Field{
-					{Name: "id", Type: "INTEGER", StructName: "User", Primary: true},
-					{Name: "user_id", Type: "INTEGER", StructName: "Post", Foreign: "users(id)"},
-				},
-			},
-			want: `sqlite: rebuilding table users with inbound foreign keys requires a manual rebuild plan`,
-		},
-		{
-			name: "inbound table foreign key",
-			generated: &goschema.Database{
-				Tables: []goschema.Table{
-					{Name: "users", StructName: "User"},
-					{Name: "memberships", StructName: "Membership"},
-				},
-				Fields: []goschema.Field{
-					{Name: "id", Type: "INTEGER", StructName: "User", Primary: true},
-					{Name: "tenant_id", Type: "INTEGER", StructName: "User", Primary: true},
-					{Name: "user_id", Type: "INTEGER", StructName: "Membership"},
-					{Name: "tenant_id", Type: "INTEGER", StructName: "Membership"},
-				},
-				Constraints: []goschema.Constraint{{
-					Type:           "FOREIGN KEY",
-					Table:          "memberships",
-					Columns:        []string{"user_id", "tenant_id"},
-					ForeignTable:   "users",
-					ForeignColumns: []string{"id", "tenant_id"},
-				}},
-			},
-			want: `sqlite: rebuilding table users with inbound foreign keys requires a manual rebuild plan`,
-		},
-		{
 			name: "unsupported trigger syntax",
 			generated: &goschema.Database{
 				Tables: []goschema.Table{{Name: "users", StructName: "User"}},
@@ -279,6 +242,80 @@ func TestPlannerRejectsUnsafeTableRebuildPreconditions(t *testing.T) {
 			c.Assert(nodes, qt.IsNil)
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 			c.Assert(err, qt.ErrorMatches, tt.want)
+		})
+	}
+}
+
+// TestPlannerRebuildsATableOtherTablesReferTo pins what used to be a refusal.
+// A rebuild drops the original table, which another table's foreign key makes
+// illegal while enforcement is on, so the plan brackets itself in the pragmas
+// SQLite's own ALTER TABLE procedure prescribes -- the same bracket the pinned
+// community binary emits. See stokaro/ptah#1561.
+func TestPlannerRebuildsATableOtherTablesReferTo(t *testing.T) {
+	tests := []struct {
+		name      string
+		generated *goschema.Database
+	}{
+		{
+			name: "a field declares the reference",
+			generated: &goschema.Database{
+				Tables: []goschema.Table{
+					{Name: "users", StructName: "User"},
+					{Name: "posts", StructName: "Post"},
+				},
+				Fields: []goschema.Field{
+					{Name: "id", Type: "INTEGER", StructName: "User", Primary: true},
+					{Name: "user_id", Type: "INTEGER", StructName: "Post", Foreign: "users(id)"},
+				},
+			},
+		},
+		{
+			name: "a table constraint declares the reference",
+			generated: &goschema.Database{
+				Tables: []goschema.Table{
+					{Name: "users", StructName: "User"},
+					{Name: "memberships", StructName: "Membership"},
+				},
+				Fields: []goschema.Field{
+					{Name: "id", Type: "INTEGER", StructName: "User", Primary: true},
+					{Name: "tenant_id", Type: "INTEGER", StructName: "User", Primary: true},
+					{Name: "user_id", Type: "INTEGER", StructName: "Membership"},
+					{Name: "tenant_id", Type: "INTEGER", StructName: "Membership"},
+				},
+				Constraints: []goschema.Constraint{{
+					Type:           "FOREIGN KEY",
+					Table:          "memberships",
+					Columns:        []string{"user_id", "tenant_id"},
+					ForeignTable:   "users",
+					ForeignColumns: []string{"id", "tenant_id"},
+				}},
+			},
+		},
+	}
+	diff := &types.SchemaDiff{TablesModified: []types.TableDiff{{
+		TableName:      "users",
+		ColumnsRemoved: []string{"name"},
+	}}}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			sql, err := planner.GenerateSchemaDiffSQL(diff, tt.generated, platform.SQLite)
+			c.Assert(err, qt.IsNil)
+			c.Assert(sql, qt.Contains, "PRAGMA foreign_keys = off;")
+			c.Assert(sql, qt.Contains, "PRAGMA foreign_keys = on;")
+			c.Assert(sql, qt.Contains, `DROP TABLE "users";`)
+
+			// The bracket has to enclose the rebuild, not merely accompany it.
+			c.Assert(
+				strings.Index(sql, "PRAGMA foreign_keys = off;") < strings.Index(sql, `DROP TABLE "users";`),
+				qt.IsTrue,
+			)
+			c.Assert(
+				strings.Index(sql, `DROP TABLE "users";`) < strings.Index(sql, "PRAGMA foreign_keys = on;"),
+				qt.IsTrue,
+			)
 		})
 	}
 }
