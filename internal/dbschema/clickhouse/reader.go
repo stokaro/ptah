@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/sqlrunner"
 )
@@ -29,17 +30,47 @@ import (
 type Reader struct {
 	db     sqlrunner.Runner
 	schema string
+	caps   capability.Capabilities
+
+	// version is what `SELECT version()` answered, e.g. "26.7.3.19", or empty
+	// for a reader built without one. Nothing branches on it: the RBAC reads
+	// name only catalog columns the oldest declared line already has, which is
+	// the simpler answer and the one that cannot drift. It is carried so a
+	// failing catalog read can say which server refused it -- see
+	// [Reader.onServer].
+	version string
 }
 
 // NewClickHouseReader creates a reader for the given database/schema.
 // `schema` corresponds to the ClickHouse database name; if empty it
 // defaults to `currentDatabase()` resolved on each query.
 func NewClickHouseReader(db sqlrunner.Runner, schema string) *Reader {
-	return &Reader{db: db, schema: schema}
+	return NewClickHouseReaderWithCapabilities(db, schema, "", capability.ClickHouse24())
+}
+
+// NewClickHouseReaderWithCapabilities creates a ClickHouse reader whose role and
+// grant reads are gated by the target's capabilities and whose diagnostics can
+// name the server version.
+//
+// Roles and grants are read only under [capability.RoleManagement]. A caller
+// whose preset does not carry it reads exactly what this reader read before RBAC
+// existed: no system.roles query, no system.grants query, and empty Roles,
+// RolesOutOfScope and Grants. That is the gate stokaro/ptah#1025 asks for, and
+// it is a capability rather than a version check because whether Ptah manages
+// ClickHouse RBAC on a given target is a decision about the target, not about
+// which columns its catalog happens to have.
+func NewClickHouseReaderWithCapabilities(
+	db sqlrunner.Runner,
+	schema string,
+	version string,
+	caps capability.Capabilities,
+) *Reader {
+	return &Reader{db: db, schema: schema, caps: caps, version: version}
 }
 
 // ReadSchema returns tables, columns, data-skipping indexes, plain views and
-// materialized views for the configured database. Constraints, RLS, functions,
+// materialized views for the configured database, plus roles and grants when
+// the target carries [capability.RoleManagement]. Constraints, RLS, functions,
 // and other shapes with no direct equivalent in Ptah's ClickHouse model remain
 // empty.
 func (r *Reader) ReadSchema() (*types.DBSchema, error) {
@@ -64,12 +95,18 @@ func (r *Reader) ReadSchema() (*types.DBSchema, error) {
 	if err != nil {
 		return nil, fmt.Errorf("clickhouse: read materialized views: %w", err)
 	}
-	return &types.DBSchema{
+	schema := &types.DBSchema{
 		Tables:   tables,
 		Indexes:  indexes,
 		Views:    views,
 		MatViews: matViews,
-	}, nil
+	}
+	if r.caps.Has(capability.RoleManagement) {
+		if err := r.readRBACInto(dbName, schema); err != nil {
+			return nil, err
+		}
+	}
+	return schema, nil
 }
 
 // materializedViewInnerTablesSubquery names the storage tables ClickHouse

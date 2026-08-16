@@ -53,6 +53,7 @@ import (
 	"go.5x5.cz/ptah/core/renderer/internal/dialects/mysqllike"
 	"go.5x5.cz/ptah/core/renderer/internal/dialects/postgres"
 	"go.5x5.cz/ptah/core/renderer/internal/dialects/sqlite"
+	"go.5x5.cz/ptah/internal/clickhouserbac"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/matviewrefresh"
 	"go.5x5.cz/ptah/internal/mysqlroutine"
@@ -1004,6 +1005,20 @@ func validateDatabaseDeclarations(
 	}
 	if err := mysqllike.ValidateDeclaredRoles(dialect, database.Roles); err != nil {
 		return err
+	}
+	// ClickHouse roles and grants are real, and a narrower set of declarations
+	// is representable there than in PostgreSQL: a role carries no attributes
+	// at all, and the server absorbs a narrower grant into a broader one, so a
+	// schema declaring both can never converge. The empty default database is
+	// deliberate — a render is offline and has no current database, so an
+	// unqualified on_table is refused rather than attached to a database
+	// nobody named. See internal/clickhouserbac (stokaro/ptah#1025).
+	if err := clickhouserbac.ValidateDeclared(dialect, database.Roles, database.Grants, ""); err != nil {
+		return &ptaherr.RenderError{
+			Dialect: dialect,
+			Err:     err,
+			Message: err.Error(),
+		}
 	}
 	if err := validateRoutineIdentityCollisions(dialect, database.Functions); err != nil {
 		return err

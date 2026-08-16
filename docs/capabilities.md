@@ -102,7 +102,7 @@ so typos fail fast. Current registry:
 | `catalog_dependencies` | the catalog exposes `pg_depend`, the dependency table the user-defined-type read joins |
 | `alter_generated_column_expression` | In-place `ALTER COLUMN SET EXPRESSION` for generated columns (PostgreSQL 17+) |
 | `row_level_security` | Row-level security policies (PostgreSQL) |
-| `role_management` | PostgreSQL role and object privilege management (`CREATE/ALTER ROLE`, `GRANT`, `REVOKE`) |
+| `role_management` | Named roles plus `GRANT`/`REVOKE` of object privileges. The PostgreSQL family spells it `CREATE`/`ALTER ROLE` with attributes; ClickHouse spells it `CREATE`/`DROP ROLE` with none, over database- and table-scoped grants. The key promises a round trip, not a vocabulary |
 | `foreign_keys` | Declarative `FOREIGN KEY` constraints |
 | `foreign_keys_require_unique_reference` | Foreign keys require a declared primary or unique referenced key (MySQL 8.4+ default). Requires `foreign_keys` |
 | `foreign_keys_require_indexed_reference` | Foreign keys may reference a complete leftmost index prefix (MySQL before 8.4 and MariaDB). Requires `foreign_keys` |
@@ -209,7 +209,7 @@ set that names no mode at all, which only a hand-built set produces and
 | `catalog_dependencies` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
 | `alter_generated_column_expression` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
 | `row_level_security` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
-| `role_management` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
+| `role_management` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
 | `foreign_keys` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
 | `foreign_keys_require_unique_reference` | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
 | `foreign_keys_require_indexed_reference` | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
@@ -996,6 +996,60 @@ file, exactly as any other command reaching the same URL would.
   roles, while Ptah still lacks convergent readers and planners for those kinds
   there. SQL Server sequences therefore use a named skip; MySQL-family roles
   fail closed because silently continuing would discard security state.
+  ClickHouse roles and grants have since left that list: they are planned,
+  rendered, read back and diffed as statements (#1025, below), so the diagnostic
+  they used to receive is now reserved for the kinds ClickHouse has no concept
+  of.
+- **ClickHouse roles and grants (#1025).** `ClickHouse24()` sets
+  `role_management`. A declared role and a database- or table-scoped grant are
+  planned, applied, read back from `system.roles` and `system.grants`, and
+  compared to zero difference on the next run. The renderer emits
+  `CREATE ROLE IF NOT EXISTS`,
+  `GRANT <privileges> ON <scope> TO <role> [WITH GRANT OPTION]`,
+  `REVOKE [GRANT OPTION FOR ]<privileges> ON <scope> FROM <role>`, and
+  `DROP ROLE IF EXISTS` for a source that spells one out; the planner
+  emits roles before grants, because a grant to a role the server does not know
+  fails with `Code: 511 ... (UNKNOWN_ROLE)`, and revokes before grants, because
+  the server absorbs a narrower grant into a broader one.
+
+  The key is the same key PostgreSQL carries, and it promises a round trip
+  rather than a vocabulary. ClickHouse's spelling is its own: `ALTER ROLE` is
+  refused, since `system.roles` is `(name, id, storage)` and a role has no
+  attribute to alter. Ptah manages ClickHouse **roles and grants only**. Users
+  and therefore all credentials, role membership (`GRANT role TO role`), quotas,
+  row policies, settings profiles, column-scoped grants, wildcard and global
+  (`*.*`) scopes, and `GRANT ALL` are outside it. `system.users` is never
+  queried, so no credential reaches a description, a plan, or a log.
+
+  Three refusals are the surprising part, and `internal/clickhouserbac` states
+  each one before a server is touched:
+
+  - A declared `password`, `login`, `superuser`, `createdb`, `createrole` or
+    `replication` is refused rather than dropped. Dropping a password would
+    leave an operator believing a credential was set on an object that cannot
+    hold one.
+  - Declaring the same privilege on both `db.*` and `db.t` is refused. The
+    server records only the broader row, in either order, so the narrower grant
+    reads as missing on every inspection and the plan re-issues it forever.
+  - A grant scope must be written `database.table`. An unqualified table is
+    refused because a render is offline and has no current database to resolve
+    it against, and resolving an access-control decision against the wrong
+    database is not a formatting mistake.
+
+  Two live shapes are handled rather than assumed away. A managed role carrying
+  a partial revoke — a `GRANT` with an exception, which Ptah's model cannot
+  express — fails the comparison instead of comparing equal and reporting
+  convergence. Roles are never dropped: `RolesRemoved` is reported as a named
+  comment, because a ClickHouse role is server-wide and may carry grants no
+  declared schema describes. For the same reason a read describes only the roles
+  the described grants name, and leaves roles whose `storage` is `users_xml` out
+  entirely, since SQL does not own them.
+
+  Two limitations to plan around. ClickHouse RBAC statements carry no
+  `ON CLUSTER` clause, so on a cluster they affect the connected replica only;
+  Ptah does not model cluster propagation. And a ClickHouse role is not scoped
+  to a database, so a role created by a dev or throwaway workflow outlives the
+  database that workflow drops.
 - **SQLite native DDL (#148).**
   `SQLite3()` enables enforced CHECK constraints, foreign keys, and
   `DROP INDEX IF EXISTS`. It deliberately leaves generic constraint drops and

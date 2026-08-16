@@ -6130,8 +6130,23 @@ type DBGrant struct {
     ObjectName string `json:"object_name"`          // Target table or schema name
     WithOption bool   `json:"with_option"`          // Whether the grant has WITH GRANT OPTION
     GrantedBy  string `json:"granted_by,omitempty"` // Grantor role
+
+    // IsPartialRevoke marks a row that SUBTRACTS from a broader grant rather
+    // than adding one. Only ClickHouse produces it, and only the ClickHouse
+    // reader sets it: `GRANT SELECT ON db.* TO r` followed by
+    // `REVOKE SELECT ON db.t FROM r` leaves two rows in system.grants, the
+    // second with is_partial_revoke = 1, and SHOW GRANTS prints both lines.
+    //
+    // Ptah does not manage that shape — a grant minus exceptions has no
+    // declaration to compare against — so nothing plans one. The field exists
+    // so the reader reports the row instead of dropping it, which is what lets
+    // a live validation refuse a managed role whose effective privileges are
+    // quietly narrower than its grant row alone would say.
+    //
+    // omitempty keeps every PostgreSQL serialization byte-identical.
+    IsPartialRevoke bool `json:"is_partial_revoke,omitempty"`
 }
-    DBGrant represents a PostgreSQL privilege grant read from the database.
+    DBGrant represents a privilege grant read from the database.
 
 func (g DBGrant) QualifiedTarget() string
 

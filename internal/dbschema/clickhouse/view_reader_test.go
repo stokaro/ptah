@@ -52,6 +52,16 @@ func clickHouseViewReaderQuery(
 				"Rolled up per user",
 			}},
 		}, nil
+	// The reader also describes roles and grants now that ClickHouse carries
+	// capability.RoleManagement. These tests are about views, so the catalogs
+	// answer empty rather than being left to the unexpected-query arm — which
+	// would report a view failure for an RBAC statement (stokaro/ptah#1025).
+	case strings.Contains(query, "FROM system.roles"):
+		return dbtest.QueryResult{Columns: []string{"name", "storage"}}, nil
+	case strings.Contains(query, "FROM system.grants"):
+		return dbtest.QueryResult{Columns: []string{
+			"grantee", "privilege", "database_name", "table_name", "is_partial_revoke", "grant_option",
+		}}, nil
 	default:
 		return dbtest.QueryResult{}, fmt.Errorf("unexpected query: %s", query)
 	}
@@ -86,7 +96,12 @@ func TestReaderReadSchema_LoadsPlainViews(t *testing.T) {
 	schema, err := reader.ReadSchema()
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(db.QueryCount(), qt.Equals, 5)
+	// Seven: the five catalog reads this test has always made, plus the two
+	// RBAC reads — system.roles and system.grants — that a ClickHouse reader
+	// now makes because the dialect carries capability.RoleManagement. The
+	// count is asserted rather than ignored because it is what would catch the
+	// reader issuing one statement per role (stokaro/ptah#1025).
+	c.Assert(db.QueryCount(), qt.Equals, 7)
 	c.Assert(schema.Views, qt.DeepEquals, []types.DBView{{
 		Name:        "active_users",
 		Schema:      "analytics",

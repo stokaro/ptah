@@ -354,7 +354,9 @@ not support that catalog write path.
 
 ClickHouse support is capability-limited. The preset models enums as inline
 `Enum8`/`Enum16` column types; foreign keys and enforced `CHECK` constraints
-are outside the preset. Review generated SQL and the
+are outside the preset. Roles and grants are managed declaratively, within the
+boundaries [ClickHouse roles and grants](#clickhouse-roles-and-grants) states.
+Review generated SQL and the
 [capability gates](../../reference/capabilities/) before adopting a workflow
 on ClickHouse. Dev-database replay cleanup requires ClickHouse 24.11 or newer
 and global `SHOW DATABASES` plus `SHOW TABLES`. Because ordinary views have no
@@ -430,6 +432,95 @@ compares as synchronized against a declaration of the same query, and a later
 body change is planned as a drop and a create that recreates it in the
 inner-storage form, so inserts stop reaching the original target table. Do not
 manage a `TO` materialized view with Ptah.
+
+### ClickHouse roles and grants
+
+Roles and grants complete the render, plan, apply, introspect, and diff cycle.
+A declared role and a database- or table-scoped grant are applied, read back
+from `system.roles` and `system.grants`, and compared to zero difference on the
+next run. Declaring them is the same pair of annotations every other engine
+uses, with the grant scope written as `database.table`:
+
+```go
+//ptah:schema:role name="ptah_reader"
+type PtahReaderRole struct{}
+
+//ptah:schema:grant role="ptah_reader" privileges="SELECT" on_table="ptah_test.orders"
+type PtahReaderOrdersGrant struct{}
+```
+
+`ptah schema render --dialect clickhouse` emits those as:
+
+```sql
+CREATE ROLE IF NOT EXISTS `ptah_reader`;
+GRANT SELECT ON `ptah_test`.`orders` TO `ptah_reader`;
+```
+
+Roles are always planned before grants, because ClickHouse refuses a grant to a
+role it does not know. `GRANT ... WITH GRANT OPTION` is emitted when the
+declaration asks for it, and taking that option away again is the single
+statement `REVOKE GRANT OPTION FOR ...`, which leaves the privilege itself in
+place. Removing a grant emits `REVOKE <privileges> ON <scope> FROM <role>`.
+`DROP ROLE IF EXISTS` has a rendering for a schema source that spells one out,
+but comparison never plans it — see "Roles are never dropped" below.
+
+What Ptah manages here is roles and grants, and nothing else in ClickHouse's
+access control:
+
+| Not managed | What that means for you |
+| --- | --- |
+| Users | No user is created, altered, or read, so no credential enters a description, a plan, or a log. Provision users outside Ptah and grant them a managed role. |
+| Role membership | `GRANT <role> TO <role>` is not modeled. Ptah reads and writes privilege grants only. |
+| Quotas, row policies, settings profiles | Outside the schema model entirely; a declaration cannot express them and a read does not report them. |
+| Column-scoped grants | `GRANT SELECT(id) ON db.t` is refused when declared and excluded when read. Grants are managed at database and table scope. |
+| Wildcard and global scopes | `*.*` and a wildcard database are refused. Such a grant reaches objects no declared schema describes. |
+| `GRANT ALL` | Refused: the server expands it into individual privileges and never reads it back as `ALL`. |
+
+Three refusals arrive before anything on the server changes, and the reason for
+each is worth knowing in advance:
+
+- **A ClickHouse role carries no attributes.** `system.roles` is
+  `(name, id, storage)`, so a declared `password`, `login`, `superuser`,
+  `createdb`, `createrole`, or `replication` is refused rather than dropped.
+  Dropping a password would leave you believing a credential was set on an
+  object that cannot hold one. `ALTER ROLE` is refused for the same reason:
+  there is nothing to alter.
+- **The server absorbs a narrower grant into a broader one.** Granting `SELECT`
+  on `db.*` and on `db.t` leaves one row for `db.*`, in either order, and the
+  table-level grant is recorded nowhere. Declaring both is refused, because the
+  pair could never converge: the absorbed grant would read as missing on every
+  inspection and the plan would re-issue it forever. Declare the broader scope.
+- **A grant scope must be qualified as `database.table`.** An unqualified table
+  name is refused. Rendering is offline and has no current database to resolve
+  it against, and resolving an access-control decision against whichever
+  database a session happens to have selected is not a formatting mistake.
+
+Two more boundaries shape what a run does:
+
+- **Roles are never dropped.** A role that exists on the server and not in the
+  schema is named in the plan and left alone. A ClickHouse role is server-wide
+  and may carry grants outside the managed schema, so removing it is not Ptah's
+  decision to make. A read reports only the roles the described grants name, and
+  leaves out roles defined in the server's configuration files, whose `storage`
+  is `users_xml`, because SQL does not own those.
+- **A partial revoke fails the comparison.** `GRANT SELECT ON db.* TO r`
+  followed by `REVOKE SELECT ON db.t FROM r` leaves two rows in `system.grants`,
+  and the role's effective privileges are the first minus the second. A
+  declaration cannot express an exception, so on a managed role Ptah refuses
+  instead of comparing equal and reporting convergence. Remove the partial
+  revoke, or stop declaring the role.
+
+Two operational notes. ClickHouse RBAC statements carry no `ON CLUSTER` clause,
+so on a cluster they affect the connected replica only; Ptah does not model
+cluster propagation, and a multi-replica deployment needs its own arrangement
+for that. And a ClickHouse role is server-wide rather than database-scoped, so a
+role created against a dev or throwaway database outlives the database that
+workflow drops.
+
+The connected account needs the privileges these statements require —
+`ROLE ADMIN` plus `GRANT OPTION` on what it grants. The `docker-compose.yaml`
+in this repository configures `CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1`, which
+is what gives its `ptah_user` that authority.
 
 ### Atlas revision metadata on ClickHouse
 

@@ -1,10 +1,18 @@
 // Package clickhouse implements ClickHouse-specific migration planning.
 //
 // ClickHouse only honors a subset of the schema features expressible through
-// Ptah's annotations: tables, columns, plain views, and a narrow set of
-// constraints (CHECK only). Enums, custom types, extensions, functions,
-// row-level security policies and roles are PostgreSQL-shaped and have no
+// Ptah's annotations: tables, columns, plain views, roles and grants, and a
+// narrow set of constraints (CHECK only). Enums, custom types, extensions,
+// functions and row-level security policies are PostgreSQL-shaped and have no
 // direct equivalent here, so this planner emits no runnable SQL for them.
+//
+// Roles and grants used to be in that list and are not any more
+// (stokaro/ptah#1025). ClickHouse's access control is its own shape rather than
+// PostgreSQL's with different keywords -- a role carries no attributes at all,
+// and a grant's scope is a two-part pattern with no object-type keyword -- so
+// what a declaration may say is narrowed by internal/clickhouserbac before a
+// plan is built, and rbac.go plans what survives. See rbac.go for the ordering
+// the server forces on those statements.
 //
 // It does not drop them in silence. Every such object the diff carries is
 // emitted as its AST node and reduced by the renderer to a
@@ -64,17 +72,22 @@ func (p *Planner) capabilities() capability.Capabilities {
 //  1. Diagnostics for the extensions and sequences ClickHouse cannot host.
 //  2. CREATE TABLE for every newly-added table.
 //  3. ALTER TABLE for every per-table column add/modify/drop.
-//  4. CREATE, CREATE OR REPLACE, or DROP for plain views, plus diagnostics for
-//     roles, functions, materialized views, RLS, grants, and triggers that
-//     Ptah's ClickHouse model cannot express.
+//  4. CREATE ROLE; CREATE, CREATE OR REPLACE, or DROP for plain views; REVOKE
+//     and GRANT; plus diagnostics for functions, materialized views, RLS and
+//     triggers that Ptah's ClickHouse model cannot express.
 //  5. ADD INDEX for new data-skipping indexes.
 //  6. DROP INDEX for removed indexes.
 //  7. DROP TABLE for removed tables.
 //
+// Step 4 keeps roles ahead of grants because the server refuses a grant to a
+// role it does not know (Code 511, UNKNOWN_ROLE), and keeps revokes ahead of
+// grants because ClickHouse absorbs a narrower grant into a broader one in
+// silence; rbac.go carries the measurements.
+//
 // Unsupported nodes in steps 1 and 4 emit no runnable SQL: the renderer reduces
 // each to a named `-- CLICKHOUSE: ... is not supported` comment, in the order
-// `schema render` produces for the same model. Plain-view nodes are executable
-// and retain their declared bodies.
+// `schema render` produces for the same model. Plain-view, role and grant nodes
+// are executable and retain what they declare.
 func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated *goschema.Database) ([]ast.Node, error) {
 	var result []ast.Node
 
@@ -98,7 +111,7 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 	result = reportUnsupportedObjectsBeforeTables(result, diff)
 	result = p.addNewTables(result, diff, generated)
 	result = p.modifyExistingTables(result, diff, generated)
-	result, err = reportUnsupportedObjectsAfterTables(result, diff, generated, p.capabilities())
+	result, err = planObjectsAfterTables(result, diff, generated, p.capabilities())
 	if err != nil {
 		return nil, err
 	}

@@ -221,8 +221,16 @@ const (
 	// the read is skipped rather than reduced (stokaro/ptah#942).
 	CatalogDependencies Capability = "catalog_dependencies"
 
-	// RoleManagement marks support for PostgreSQL role and object privilege
-	// management (CREATE/ALTER ROLE plus GRANT/REVOKE).
+	// RoleManagement marks support for the role and object-privilege
+	// management Ptah models: named roles plus GRANT/REVOKE of privileges on
+	// schema objects.
+	//
+	// It is deliberately NOT "PostgreSQL role management", which is what this
+	// doc said while PostgreSQL was the only implementation. Each engine
+	// satisfies it with its own vocabulary, and what the key promises is that
+	// a declared role and grant can be planned, rendered, introspected and
+	// compared — not that any particular attribute exists. A ClickHouse role
+	// carries no attributes at all, and ClickHouse still has this capability.
 	RoleManagement Capability = "role_management"
 
 	// ForeignKeys marks support for declarative FOREIGN KEY constraints.
@@ -351,7 +359,7 @@ var registry = map[Capability]spec{
 		doc: "the catalog exposes pg_depend",
 	},
 	RoleManagement: {
-		doc: "PostgreSQL role and object privilege management",
+		doc: "named roles plus GRANT/REVOKE of object privileges (PostgreSQL family, ClickHouse)",
 	},
 	ForeignKeys: {
 		doc: "declarative FOREIGN KEY constraints",
@@ -724,27 +732,40 @@ func Postgres13() Capabilities {
 // storage clause is the self-contained shape that node can express.
 func ClickHouse24() Capabilities {
 	return Capabilities{
-		DropConstraintGeneric:              false,
-		DropConstraintIfExists:             false,
-		DropIndexIfExists:                  false,
-		CheckConstraintsEnforced:           false,
-		DropCheckClause:                    false,
-		EnumInlineColumn:                   true,
-		EnumCustomType:                     false,
-		CreateIndexConcurrently:            false,
-		DropIndexConcurrently:              false,
-		IndexIncludeSPGiST:                 false,
-		Views:                              true,
-		MaterializedViews:                  true,
-		Functions:                          false,
-		Triggers:                           false,
-		CreateOrReplaceTrigger:             false,
-		AlterGeneratedColumnExpression:     false,
-		RowLevelSecurity:                   false,
-		PostgresCatalogFunctions:           false,
-		CatalogRowStatistics:               false,
-		CatalogDependencies:                false,
-		RoleManagement:                     false,
+		DropConstraintGeneric:          false,
+		DropConstraintIfExists:         false,
+		DropIndexIfExists:              false,
+		CheckConstraintsEnforced:       false,
+		DropCheckClause:                false,
+		EnumInlineColumn:               true,
+		EnumCustomType:                 false,
+		CreateIndexConcurrently:        false,
+		DropIndexConcurrently:          false,
+		IndexIncludeSPGiST:             false,
+		Views:                          true,
+		MaterializedViews:              true,
+		Functions:                      false,
+		Triggers:                       false,
+		CreateOrReplaceTrigger:         false,
+		AlterGeneratedColumnExpression: false,
+		RowLevelSecurity:               false,
+		PostgresCatalogFunctions:       false,
+		CatalogRowStatistics:           false,
+		CatalogDependencies:            false,
+		// Measured live on 24.10.4.191 and 26.7.3.19: CREATE ROLE, DROP ROLE,
+		// GRANT, REVOKE and REVOKE GRANT OPTION FOR all work on both lines, and
+		// system.roles and system.grants read them back. Only the catalog's
+		// column set differs (24.10 has 8 columns in system.grants, 26.7 adds
+		// access_object and is_wildcard), which is a projection question for
+		// the reader rather than a capability difference — so this key is true
+		// for every ClickHouse line the matrix declares, and there is no
+		// version ladder to hang it off.
+		//
+		// What ClickHouse does NOT have, and this key does not claim: role
+		// attributes of any kind (system.roles is name, id, storage), users,
+		// role membership, quotas, row policies and settings profiles.
+		// internal/clickhouserbac refuses what cannot be represented.
+		RoleManagement:                     true,
 		ForeignKeys:                        false,
 		ForeignKeysRequireUniqueReference:  false,
 		ForeignKeysRequireIndexedReference: false,

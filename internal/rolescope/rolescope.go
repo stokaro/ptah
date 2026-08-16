@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 
+	"go.5x5.cz/ptah/core/platform"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/envbool"
 )
@@ -76,16 +77,33 @@ func DescribeAll() (bool, error) {
 // stream"; the note is then dropped rather than panicking. Write errors are
 // dropped too: a diagnostic that fails to print must not fail a read that
 // succeeded.
-func ReportUndescribed(w io.Writer, schema *dbschematypes.DBSchema) {
+func ReportUndescribed(w io.Writer, dialect string, schema *dbschematypes.DBSchema) {
 	if w == nil || schema == nil || len(schema.RolesOutOfScope) == 0 {
 		return
 	}
 	fmt.Fprintf(w,
 		"note: %s Ptah manages on this server %s not described, because nothing in the inspected"+
 			" schemas refers to them; comparison still treats them as present, so none of them is"+
-			" planned as a CREATE ROLE. Set %s=1 to describe every role Ptah manages.\n",
-		countedRoles(len(schema.RolesOutOfScope)), pluralIs(len(schema.RolesOutOfScope)), DescribeAllEnvVar,
+			" planned as a CREATE ROLE.%s\n",
+		countedRoles(len(schema.RolesOutOfScope)), pluralIs(len(schema.RolesOutOfScope)),
+		describeAllRemedy(dialect),
 	)
+}
+
+// describeAllRemedy returns the sentence naming the opt-out, and the empty
+// string where there is none.
+//
+// The note used to end with it unconditionally, which was true while the
+// PostgreSQL reader was the only one filling RolesOutOfScope. ClickHouse fills
+// it now (stokaro/ptah#1025) and its reader consults no such variable, so an
+// operator inspecting ClickHouse was told to set a PostgreSQL variable that
+// would do nothing — a remedy that does not work is worse than no remedy,
+// because the reader spends the attempt before learning it was never offered.
+func describeAllRemedy(dialect string) string {
+	if !platform.IsPostgresFamily(platform.NormalizeDialect(dialect)) {
+		return ""
+	}
+	return fmt.Sprintf(" Set %s=1 to describe every role Ptah manages.", DescribeAllEnvVar)
 }
 
 // countedRoles renders a count with its singular or plural noun, in the shape

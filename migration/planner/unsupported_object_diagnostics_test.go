@@ -35,8 +35,11 @@ func unhostableSchema() *goschema.Database {
 			StructName: "S", Name: "p1", Table: "t", PolicyFor: "SELECT",
 			ToRoles: "app_role", UsingExpression: "true",
 		}},
+		// Qualified because a ClickHouse grant scope is a two-part pattern and
+		// an offline render has no current database to attach a bare table to.
+		// See internal/clickhouserbac (stokaro/ptah#1025).
 		Grants: []goschema.Grant{{
-			StructName: "G", Role: "app_role", Privileges: []string{"SELECT"}, OnTable: "t",
+			StructName: "G", Role: "app_role", Privileges: []string{"SELECT"}, OnTable: "app.t",
 		}},
 		Triggers: []goschema.Trigger{{
 			StructName: "TR", Name: "trg1", Table: "t",
@@ -60,7 +63,7 @@ func unhostableCreationDiff() *types.SchemaDiff {
 		RLSEnabledTablesAdded:  []string{"t"},
 		RLSPoliciesAdded:       []types.RLSPolicyRef{{PolicyName: "p1", TableName: "t"}},
 		GrantsAdded: []types.GrantRef{{
-			Role: "app_role", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "t",
+			Role: "app_role", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "app.t",
 		}},
 		TriggersAdded: []types.TriggerRef{{TriggerName: "trg1", TableName: "t"}},
 	}
@@ -120,11 +123,11 @@ func TestPlan_ClickHouseRendersViewsAndNamesUnsupportedObjects(t *testing.T) {
 	}{
 		{name: "extension", want: `-- CLICKHOUSE: CREATE EXTENSION "pg_trgm" is not supported`},
 		{name: "sequence", want: `-- CLICKHOUSE: CREATE SEQUENCE "order_number_seq" is not supported`},
-		{name: "role", want: `-- CLICKHOUSE: CREATE ROLE "app_role" is not supported`},
+		{name: "role", want: "CREATE ROLE IF NOT EXISTS `app_role`"},
 		{name: "function", want: `-- CLICKHOUSE: CREATE FUNCTION "bump" is not supported`},
 		{name: "rls enable", want: `-- CLICKHOUSE: ALTER TABLE ENABLE ROW LEVEL SECURITY "t" is not supported`},
 		{name: "rls policy", want: `-- CLICKHOUSE: CREATE POLICY "p1" is not supported`},
-		{name: "grant", want: `-- CLICKHOUSE: GRANT "app_role" is not supported`},
+		{name: "grant", want: "GRANT SELECT ON `app`.`t` TO `app_role`"},
 		{name: "trigger", want: `-- CLICKHOUSE: CREATE TRIGGER "trg1" is not supported`},
 	}
 
@@ -156,7 +159,11 @@ func TestPlan_ClickHouseRenderAndPlanGiveTheSameAnswer(t *testing.T) {
 	rendered := diagnosticLines(renderStatements(c, unhostableSchema(), platform.ClickHouse))
 	planned := diagnosticLines(planStatements(c, unhostableCreationDiff(), unhostableSchema(), platform.ClickHouse))
 
-	c.Assert(rendered, qt.HasLen, 8)
+	// Six, not eight: roles and grants left this list when ClickHouse gained
+	// real RBAC (stokaro/ptah#1025). The count is asserted so that a kind
+	// silently ceasing to be diagnosed is a failure rather than a shorter
+	// slice nobody reads.
+	c.Assert(rendered, qt.HasLen, 6)
 	c.Assert(planned, qt.DeepEquals, rendered)
 }
 
@@ -192,7 +199,7 @@ func TestPlan_ClickHouseNamesRemovedObjectsToo(t *testing.T) {
 		RLSEnabledTablesRemoved:  []string{"t"},
 		RLSPoliciesRemoved:       []types.RLSPolicyRef{{PolicyName: "p1", TableName: "t"}},
 		GrantsRemoved: []types.GrantRef{{
-			Role: "app_role", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "t",
+			Role: "app_role", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "app.t",
 		}},
 		TriggersRemoved: []types.TriggerRef{{TriggerName: "trg1", TableName: "t"}},
 	}
@@ -205,11 +212,15 @@ func TestPlan_ClickHouseNamesRemovedObjectsToo(t *testing.T) {
 	}{
 		{name: "extension", want: `-- CLICKHOUSE: DROP EXTENSION "pg_trgm" is not supported`},
 		{name: "sequence", want: `-- CLICKHOUSE: DROP SEQUENCE "order_number_seq" is not supported`},
-		{name: "role", want: `-- CLICKHOUSE: DROP ROLE "app_role" is not supported`},
+		// Ptah does not drop ClickHouse roles: the comparator computes no role
+		// removals at all, and the issue's non-goals forbid dropping a role
+		// that may be shared outside the managed schema. The planner names the
+		// situation instead of silently ignoring the diff category.
+		{name: "role", want: `role "app_role" exists on the server and not in the schema`},
 		{name: "function", want: `-- CLICKHOUSE: DROP FUNCTION "bump" is not supported`},
 		{name: "rls disable", want: `-- CLICKHOUSE: ALTER TABLE DISABLE ROW LEVEL SECURITY "t" is not supported`},
 		{name: "rls policy", want: `-- CLICKHOUSE: DROP POLICY "p1" is not supported`},
-		{name: "grant", want: `-- CLICKHOUSE: REVOKE "app_role" is not supported`},
+		{name: "grant", want: "REVOKE SELECT ON `app`.`t` FROM `app_role`"},
 		{name: "trigger", want: `-- CLICKHOUSE: DROP TRIGGER "trg1" is not supported`},
 	}
 

@@ -101,6 +101,18 @@ view, live/window view, dictionary, or `Buffer`, `Distributed`, or `Merge`
 table. Use a dedicated ClickHouse development server without unrelated
 dependency-capable objects.
 
+The live role and grant tests need more than the cleanup permissions above: the
+`CLICKHOUSE_URL` account must hold `CREATE ROLE`, `DROP ROLE`, `GRANT`,
+`REVOKE`, `CREATE USER` and `DROP USER`. The stock image grants all of them with
+`CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1`, which `docker-compose.yaml` and the
+integration workflow already set, so a standard checkout needs no change. An
+account without them fails these tests rather than skipping them, which is
+deliberate: a skip reads as a pass.
+
+A ClickHouse role is a SERVER-level object rather than a database-level one, so
+two runs against one server would collide on a role name. The tests give every
+role, user and table a name unique to the run and drop it in a cleanup.
+
 ## Architecture
 
 ### Components

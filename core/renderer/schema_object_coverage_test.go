@@ -331,7 +331,7 @@ func TestRender_ClickHouseRendersViewsAndNamesUnsupportedObjects(t *testing.T) {
 	}{
 		{name: "extension", want: `-- CLICKHOUSE: CREATE EXTENSION "pg_trgm" is not supported`},
 		{name: "sequence", want: `-- CLICKHOUSE: CREATE SEQUENCE "chk_seq" is not supported`},
-		{name: "role", want: `-- CLICKHOUSE: CREATE ROLE "chk_role" is not supported`},
+		{name: "role", want: "CREATE ROLE IF NOT EXISTS `chk_role`;"},
 		{name: "function", want: `-- CLICKHOUSE: CREATE FUNCTION "chk_f" is not supported`},
 		{name: "trigger", want: `-- CLICKHOUSE: CREATE TRIGGER "chk_trg" is not supported`},
 	}

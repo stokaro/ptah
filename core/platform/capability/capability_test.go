@@ -230,6 +230,11 @@ func TestPresets_KeyDifferences(t *testing.T) {
 	c.Assert(capability.MySQL84().Has(capability.EnumInlineColumn), qt.IsTrue)
 	c.Assert(capability.MySQL84().Has(capability.EnumCustomType), qt.IsFalse)
 	c.Assert(capability.MySQL84().Has(capability.RoleManagement), qt.IsFalse)
+	// ClickHouse has named roles and GRANT/REVOKE, measured live on 24.10 and
+	// 26.7, and no role attributes at all. The key names the first pair and
+	// never the second, which is why an engine with neither LOGIN nor a
+	// password still carries it.
+	c.Assert(capability.ClickHouse24().Has(capability.RoleManagement), qt.IsTrue)
 	c.Assert(capability.Postgres16().Has(capability.EnumCustomType), qt.IsTrue)
 	c.Assert(capability.Postgres16().Has(capability.EnumInlineColumn), qt.IsFalse)
 
