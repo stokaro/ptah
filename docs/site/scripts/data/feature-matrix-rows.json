@@ -581,8 +581,8 @@
     "ptah": "partial",
     "atlas_oss": "yes",
     "atlas_pro": "yes",
-    "note": "SQLite refuses any change needing a table rebuild: column modify, NOT NULL change, constraint add/remove, enum CHECK change. Same on apply.",
-    "evidence": "internal/planner/dialects/sqlite/sqlite.go:87-105 and :489 return unsupportedFeaturef for these cases. Reproduced: TEXT->INTEGER and NOT NULL->nullable both give `error: generate schema diff SQL: sqlite: modifying columns on table users requires a table rebuild plan` (exit 1); adding a column with UNIQUE gives `sqlite: adding column email to table users requires a table rebuild plan`. Plain adds and table drops still plan cleanly. CE registers schema diff per cli-surface.md:45"
+    "note": "SQLite rebuilds a table for changes ALTER TABLE cannot express. It refuses only when the table has an inbound foreign key, where CE plans a PRAGMA-guarded rebuild.",
+    "evidence": "Re-measured 2026-08-16 on SQLite, same inputs to both binaries: a NOT NULL change and a column type change both plan a create-copy-drop-rename rebuild on Ptah and on the pinned community binary v1.3.0, exit 0 either way. With a second table holding a foreign key to the rebuilt one, CE emits the same rebuild wrapped in PRAGMA foreign_keys off/on while Ptah answers `sqlite: rebuilding table t with inbound foreign keys requires a manual rebuild plan`. The note previously claimed every rebuild was refused."
   },
   {
     "area": "Declarative / direct schema workflow",
