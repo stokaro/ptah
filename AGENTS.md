@@ -1131,6 +1131,26 @@ rules of [`docs/STYLE_GUIDE.md`](docs/STYLE_GUIDE.md) apply in spirit.
   regular expressions to select integration tests. The CLI intentionally has
   no package-selection flag. The separate testkit module uses the same runner
   with `--dir ./testkit`.
+- **Name the file for what the test needs, not for the category it is in.**
+  Every file under an integration tree is an integration test, so spelling that
+  in the filename says nothing. Two suffixes carry a fact worth reading off the
+  name:
+  - `*_live_test.go` — the test needs a live server. It asks `dbtarget` for an
+    engine and skips when none is configured.
+  - `*_e2e_test.go` — the test drives the user-facing surface: a cobra command
+    built from `cmd/`, or a process it starts.
+
+  A file that does both is `*_e2e_test.go`; the CLI is the larger claim.
+  `*_integration_test.go` is the third spelling and means neither — it is the
+  name reached for when no distinction was intended, and it should not be used
+  in new files.
+
+  This is measured rather than asserted. Across the 200 files in `integration/`
+  today: of 64 `*_live_test.go`, **none** drives a command or a process and 48
+  connect to a database; of 38 `*_e2e_test.go`, 12 drive one — 12 of the 14 in
+  the whole tree. The 51 `*_integration_test.go` sit across both, which is what
+  makes the name uninformative rather than wrong. Renaming them is churn worth
+  doing on its own, once no branch is mid-flight over the same files.
 - The Docker suite in `cmd/integration-test` covers apply, rollback,
   idempotency, parallel-execution smoke, partial-failure recovery, and schema
   diff, and writes reports in stdout, text, JSON, or HTML form into the
