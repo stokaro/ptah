@@ -121,6 +121,26 @@ func postgresPlan() plan {
 				"CREATE OR REPLACE TRIGGER cort BEFORE INSERT ON cort_t FOR EACH ROW EXECUTE FUNCTION cort_fn()",
 			).decide,
 		},
+		// The three catalog keys below are decided by asking the catalog the
+		// question Ptah's reader asks it. Measured on the Cloud Spanner
+		// emulator through PGAdapter 0.55.2, which refuses all three while
+		// PostgreSQL accepts them (stokaro/ptah#942).
+		acceptanceNote(capability.PostgresCatalogFunctions, nil,
+			"SELECT obj_description(2200, 'pg_namespace')",
+			"pg_catalog's introspection helpers; Spanner answers "+
+				"`The Postgres Type is not supported: name`",
+		),
+		acceptanceNote(capability.CatalogRowStatistics, nil,
+			"SELECT 1 FROM pg_stat_all_tables LIMIT 1",
+			"the planner statistics view; Spanner answers "+
+				"`relation \"pg_stat_all_tables\" does not exist`",
+		),
+		acceptanceNote(capability.CatalogDependencies, nil,
+			"SELECT 1 FROM pg_depend LIMIT 1",
+			"the dependency table the user-defined-type read joins; naming the "+
+				"type system instead was refuted by CockroachDB, which refuses "+
+				"CREATE DOMAIN and accepts a composite type",
+		),
 		acceptance(capability.AlterGeneratedColumnExpression,
 			[]string{"CREATE TABLE agc (n int, g int GENERATED ALWAYS AS (n + 1) STORED)"},
 			"ALTER TABLE agc ALTER COLUMN g SET EXPRESSION AS (n + 2)",
@@ -312,6 +332,15 @@ func mysqlFamilyPlan(dialect string) plan {
 		capability.RoleManagement: "the key names the PostgreSQL role and privilege surface no MySQL-family " +
 			"code path consults; this server's own CREATE ROLE and GRANT are a different surface, " +
 			"so accepting them would not decide the key",
+		capability.PostgresCatalogFunctions: "the key names pg_catalog's introspection helpers, which this " +
+			"server does not have and no MySQL-family reader asks for; its absence here says nothing " +
+			"about the PostgreSQL-family reader the key gates",
+		capability.CatalogRowStatistics: "pg_stat_all_tables is a PostgreSQL statistics view this server " +
+			"does not have and no MySQL-family reader consults; its own statistics live elsewhere and " +
+			"answer a different question",
+		capability.CatalogDependencies: "pg_depend is a PostgreSQL catalog relation this server does not " +
+			"have and no MySQL-family reader joins; its absence here says nothing about the " +
+			"PostgreSQL-family read the key gates",
 	}
 	if dialect == platform.MariaDB {
 		// MariaDB has had SEQUENCE objects since 10.3 and the preset still
