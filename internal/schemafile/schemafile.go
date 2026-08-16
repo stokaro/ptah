@@ -579,7 +579,7 @@ func loadSQLFileWithStatements(path string, opts Options) (*goschema.Database, *
 	if err != nil {
 		return nil, nil, fmt.Errorf("parse SQL schema file: %w", err)
 	}
-	db := toschema.ToDatabase(statements)
+	db := toschema.ToDatabase(statements, opts.Dialect)
 	goschema.Finalize(&db)
 	// The same directive grammar the HCL loader reads, spelled with SQL's
 	// comment marker. No Ptah surface writes one into SQL today -- only the HCL
