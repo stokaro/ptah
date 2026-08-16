@@ -89,3 +89,42 @@ func TestRenderRefusesAnAPINameCollision(t *testing.T) {
 	c.Assert(err.Error(), qt.Contains, `exports two columns as "amount"`)
 	c.Assert(res.Data, qt.HasLen, 0, qt.Commentf("nothing may be written on the refusing path"))
 }
+
+// The GraphQL type name is derived from the table's API name, so a published
+// `Invoice` survives the table underneath being renamed.
+func TestRenderDerivesTheTypeNameFromTheTableAPIName(t *testing.T) {
+	c := qt.New(t)
+
+	res, err := graphqlrender.Render(&goschema.Database{
+		Tables: []goschema.Table{{StructName: "Invoice", Name: "billing_invoices", APIName: "invoices"}},
+		Fields: []goschema.Field{
+			{StructName: "Invoice", Name: "id", Type: "BIGSERIAL", Primary: true},
+		},
+	}, graphqlrender.Options{})
+	c.Assert(err, qt.IsNil)
+
+	sdl := string(res.Data)
+	// Singularized and PascalCased from the API name, exactly as it would be
+	// from a table name.
+	c.Assert(sdl, qt.Contains, "type Invoice {")
+	c.Assert(sdl, qt.Not(qt.Contains), "BillingInvoice")
+}
+
+func TestRenderRefusesATableAPINameCollision(t *testing.T) {
+	c := qt.New(t)
+
+	res, err := graphqlrender.Render(&goschema.Database{
+		Tables: []goschema.Table{
+			{StructName: "Invoice", Name: "invoices"},
+			{StructName: "Billing", Name: "billing_invoices", APIName: "invoices"},
+		},
+		Fields: []goschema.Field{
+			{StructName: "Invoice", Name: "id", Type: "BIGSERIAL", Primary: true},
+			{StructName: "Billing", Name: "id", Type: "BIGSERIAL", Primary: true},
+		},
+	}, graphqlrender.Options{})
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(err.Error(), qt.Contains, `two tables export as "invoices"`)
+	c.Assert(res.Data, qt.HasLen, 0)
+}

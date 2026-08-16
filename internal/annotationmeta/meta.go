@@ -383,6 +383,7 @@ var directives = []Directive{
 		AllowPlatform: true,
 		Attributes: []Attribute{
 			attr("name", "Table name.", valueString, false, false),
+			attr("api_name", "Name this table carries in an exported API schema, when that differs from the table name.", valueString, false, false),
 			attr("schema", "Database schema name.", valueString, false, false),
 			attr("engine", "MySQL/MariaDB table engine shortcut.", valueString, false, false),
 			attr("comment", "Table comment.", valueString, false, false),

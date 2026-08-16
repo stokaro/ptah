@@ -519,8 +519,17 @@ type Extension struct {
 //	    RoleID int64
 //	}
 type Table struct {
-	StructName    string // Name of the Go struct this table represents
-	Name          string // Database table name
+	StructName string // Name of the Go struct this table represents
+	Name       string // Database table name
+	// APIName is the name this table carries in an exported API schema, when
+	// that differs from the table name. Empty leaves the exporters deriving it
+	// from Name as they always have.
+	//
+	// It is the table-level half of the same separation the field carries: a
+	// storage rename should not rename a published type, so an established
+	// `Invoice` can keep its name while the table underneath becomes
+	// `billing_invoices` (stokaro/ptah#905).
+	APIName       string
 	Schema        string // Optional database schema/namespace (PostgreSQL-style)
 	Engine        string // Storage engine (MySQL/MariaDB specific, e.g., "InnoDB")
 	AutoIncrement string // Initial AUTO_INCREMENT value (MySQL/MariaDB specific)

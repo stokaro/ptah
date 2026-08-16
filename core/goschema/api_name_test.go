@@ -63,3 +63,50 @@ func TestParseFileReadsTheAPIName(t *testing.T) {
 		})
 	}
 }
+
+// The table-level attribute has the same reachability question as the field's:
+// the strict unknown-key validator would reject it if it were not registered.
+func TestParseFileReadsTheTableAPIName(t *testing.T) {
+	tests := []struct {
+		name        string
+		annotation  string
+		wantTable   string
+		wantAPIName string
+	}{
+		{
+			name:        "a declared API name is carried beside the table name",
+			annotation:  `name="billing_invoices" api_name="invoices"`,
+			wantTable:   "billing_invoices",
+			wantAPIName: "invoices",
+		},
+		{
+			name:        "an absent one stays empty",
+			annotation:  `name="invoices"`,
+			wantTable:   "invoices",
+			wantAPIName: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			dir := t.TempDir()
+			path := filepath.Join(dir, "model.go")
+			source := "package model\n\n" +
+				"//ptah:schema:table " + tt.annotation + "\n" +
+				"type Invoice struct {\n" +
+				"\t//ptah:schema:field name=\"id\" type=\"BIGSERIAL\" primary=\"true\"\n" +
+				"\tID int64\n" +
+				"}\n"
+			c.Assert(os.WriteFile(path, []byte(source), 0o600), qt.IsNil)
+
+			db, err := goschema.ParseFile(path)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(db.Tables, qt.HasLen, 1)
+			c.Assert(db.Tables[0].Name, qt.Equals, tt.wantTable)
+			c.Assert(db.Tables[0].APIName, qt.Equals, tt.wantAPIName)
+		})
+	}
+}
