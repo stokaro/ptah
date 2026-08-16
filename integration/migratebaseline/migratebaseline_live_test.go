@@ -16,6 +16,7 @@ import (
 
 	"go.5x5.cz/ptah/cmd/migratebaseline"
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/generator"
 )
 
@@ -162,13 +163,19 @@ func TestMigrateBaselineCommandPostgresWritesMetadataWithoutExecutingDDL(t *test
 	c.Assert(state, qt.Equals, "applied")
 }
 
-func postgresBaselineTestURL() string {
-	for _, name := range []string{"POSTGRES_TEST_DSN", "TEST_DATABASE_URL", "POSTGRES_URL"} {
-		if value := os.Getenv(name); value != "" {
-			return value
-		}
+// postgresBaselineTestURL reports the configured address or the empty string,
+// leaving the skip to requirePostgresBaselineTestConnection, which words it
+// for the connection it is about to make. dbtarget.Lookup is the registry's
+// arm for exactly that: it answers empty when nothing is configured and errors
+// when a variable holds another engine's address, which a bare os.Getenv scan
+// could only report as a connection failure much later.
+func postgresBaselineTestURL(t *testing.T) string {
+	t.Helper()
+	address, err := dbtarget.Lookup(dbtarget.PostgreSQL)
+	if err != nil {
+		t.Fatalf("dbtarget: %v", err)
 	}
-	return ""
+	return address
 }
 
 func requirePostgresBaselineTestConnection(
@@ -179,7 +186,7 @@ func requirePostgresBaselineTestConnection(
 ) (string, *dbschema.DatabaseConnection) {
 	t.Helper()
 
-	dbURL := postgresBaselineTestURL()
+	dbURL := postgresBaselineTestURL(t)
 	if dbURL == "" {
 		t.Skip("PostgreSQL test database URL is not set")
 	}

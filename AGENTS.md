@@ -1056,6 +1056,16 @@ rules of [`docs/STYLE_GUIDE.md`](docs/STYLE_GUIDE.md) apply in spirit.
   address in a test, and do not invent a spelling — there is nowhere to invent
   one, which is the point.
 
+  `TestNoIntegrationTestReadsARegistryVariableDirectly` enforces this over
+  `integration/`, deriving the names from the registry so a synonym added there
+  is covered without being listed twice. It exists because the rule was written
+  and seven PostgreSQL helpers still scanned variables themselves: a checkout
+  configured with `POSTGRES_TEST_URL`, a spelling the registry declares, ran
+  none of them and reported passing packages, because a skip reads as a pass
+  (stokaro/ptah#1541). Variables the registry does not own — the destructive
+  `MYSQL_CLEANUP_TEST_DSN` target, the oracle-specific ones — are deliberately
+  outside it and need no exemption.
+
   The two accessors are not interchangeable. `go-sql-driver/mysql` reads a
   `mysql://` prefix as part of the username and `pgx` does not parse
   `cockroachdb://` at all, so anything handed to `mysqldriver.ParseDSN` or

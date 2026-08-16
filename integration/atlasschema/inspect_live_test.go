@@ -7,7 +7,6 @@ import (
 	"database/sql"
 	"fmt"
 	"net/url"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -18,6 +17,7 @@ import (
 
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasschema"
+	"go.5x5.cz/ptah/internal/dbtarget"
 )
 
 // These cases pin the half of `schema inspect` a single-namespace fixture
@@ -356,16 +356,13 @@ func inspectLiveQuery(base, extra string) string {
 
 func requireInspectLiveURL(c *qt.C) string {
 	c.Helper()
-	for _, name := range []string{"POSTGRES_TEST_DSN", "POSTGRES_URL", "TEST_DATABASE_URL"} {
-		raw := os.Getenv(name)
-		if raw == "" {
-			continue
-		}
-		parsed, err := url.Parse(raw)
-		c.Assert(err, qt.IsNil)
-		parsed.Scheme = "postgres"
-		return parsed.String()
-	}
-	c.Skip("POSTGRES_TEST_DSN, POSTGRES_URL, or TEST_DATABASE_URL is not set")
-	return ""
+	// dbtarget answers with the address as configured, and this helper has
+	// always handed its callers the postgres:// spelling. The fold stays here
+	// rather than moving into the registry, where it would rewrite the address
+	// every PostgreSQL consumer receives on the strength of what three
+	// integration tests happen to want.
+	parsed, err := url.Parse(dbtarget.URL(c, dbtarget.PostgreSQL))
+	c.Assert(err, qt.IsNil)
+	parsed.Scheme = "postgres"
+	return parsed.String()
 }

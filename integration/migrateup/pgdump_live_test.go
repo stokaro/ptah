@@ -15,6 +15,7 @@ import (
 
 	"go.5x5.cz/ptah/cmd/migrateup"
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/dbtarget"
 )
 
 func TestMigrateUpCommandPgDumpHookWritesArtifact(t *testing.T) {
@@ -83,13 +84,7 @@ printf 'fake custom dump\n' > "$out"
 
 func requiredPgDumpPostgresURL(t *testing.T) string {
 	t.Helper()
-	for _, name := range []string{"POSTGRES_TEST_DSN", "POSTGRES_URL", "TEST_DATABASE_URL"} {
-		if value := os.Getenv(name); value != "" {
-			return value
-		}
-	}
-	t.Skip("POSTGRES_TEST_DSN, POSTGRES_URL, or TEST_DATABASE_URL is not set")
-	return ""
+	return dbtarget.URL(t, dbtarget.PostgreSQL)
 }
 
 func writePgDumpMigration(c *qt.C, dir, name, content string) {
