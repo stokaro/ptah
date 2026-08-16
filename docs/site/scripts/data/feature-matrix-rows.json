@@ -127,6 +127,15 @@
   },
   {
     "area": "Project config",
+    "feature": "data \"sql\", \"external\", \"runtimevar\", \"template_dir\", \"remote_dir\"",
+    "ptah": "no",
+    "atlas_oss": "yes",
+    "atlas_pro": "yes",
+    "note": "Ptah resolves only `hcl_schema` and `external_schema`. Declaring another is fine, including one read solely by an unselected env; reading one fails, naming the construct and its declaration line.",
+    "evidence": "config/projectconfig/atlas.go configureDataSources; pinned CE v1.3.0 `schema inspect --env local` exits 0 with `data \"sql\"` declared and unread, and with it read only by an unselected env; stokaro/ptah#1511"
+  },
+  {
+    "area": "Project config",
     "feature": "env:// desired-state references",
     "ptah": "partial",
     "atlas_oss": "yes",
