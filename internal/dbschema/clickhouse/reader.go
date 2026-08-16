@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/sqlrunner"
@@ -103,7 +104,28 @@ func (r *Reader) ReadSchema() (*types.DBSchema, error) {
 	}
 	if r.caps.Has(capability.RoleManagement) {
 		if err := r.readRBACInto(dbName, schema); err != nil {
-			return nil, err
+			// An account that may not read the access catalog must not lose the
+			// whole description over it. Reading system.roles and system.grants
+			// needs a privilege reading a table does not, and the capability
+			// preset is a statement about the SERVER -- it cannot know what the
+			// connected account was granted. Measured on 26.7.3.19: an account
+			// holding SELECT, SHOW TABLES and SHOW COLUMNS on one database gets
+			// code 497 from both catalog queries, so without this branch every
+			// ClickHouse read by such an account failed at exit 2 -- including
+			// the read of a schema that declares no role at all, which has
+			// always worked and has nothing to do with RBAC.
+			//
+			// Recording Role as not described is what makes the degradation
+			// safe rather than silent. The comparator refuses to conclude "this
+			// role is missing" from a read that admits it did not look, so a
+			// declared role is reported as an undecided addition instead of
+			// planned as a CREATE ROLE nothing verified. Nothing destructive
+			// can follow: both role and grant removal are decided from live
+			// rows, and there are none.
+			if !isAccessDenied(err) {
+				return nil, err
+			}
+			schema.NotDescribed = schema.NotDescribed.WithKind(coverage.Role)
 		}
 	}
 	return schema, nil

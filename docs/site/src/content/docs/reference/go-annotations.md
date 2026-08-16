@@ -476,10 +476,15 @@ Declares database grants.
 
 On ClickHouse a grant names one scope, and `on_table` must be qualified as
 `database.table` because rendering is offline and has no current database to
-resolve a bare name against. `on_sequence`, wildcard scopes, column-scoped
-privileges such as `SELECT(id)`, and `ALL` are refused, as is declaring the same
-privilege on both `db.*` and `db.t` — the server would absorb the narrower
-grant, so the pair could never converge.
+resolve a bare name against. `on_sequence`, wildcard scopes and column-scoped
+privileges such as `SELECT(id)` are refused, as is declaring the same privilege
+on both `db.*` and `db.t` — the server would absorb the narrower grant, so the
+pair could never converge. `role` must name a role the same schema declares,
+because ClickHouse resolves a grantee across users and roles and a user of that
+name would win. Privilege names the server rewrites on the way in — `ALL`,
+`CREATE`, `DROP`, `SYSTEM` and the rest — are refused too, because they never
+read back as written. See
+[ClickHouse roles and grants](../../databases/support-matrix/#clickhouse-roles-and-grants).
 
 ### `//ptah:schema:rls:enable`
 

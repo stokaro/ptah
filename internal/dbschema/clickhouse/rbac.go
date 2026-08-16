@@ -1,7 +1,10 @@
 package clickhouse
 
 import (
+	"errors"
 	"fmt"
+
+	clickhousedriver "github.com/ClickHouse/clickhouse-go/v2"
 
 	"go.5x5.cz/ptah/dbschema/types"
 )
@@ -54,8 +57,20 @@ import (
 // GRANT was written in.
 //
 // The alias on every projected expression is a name of its own rather than the
-// source column's, because ClickHouse reads `toString(x) AS x` as a cyclic
-// alias and refuses the statement.
+// source column's, and that is load-bearing rather than cosmetic: ClickHouse
+// resolves an identifier in WHERE against the SELECT aliases FIRST, so a
+// projection that aliased ifNull(role_name, …) back to role_name would make
+// `role_name IS NOT NULL` test the ifNull expression — which is non-nullable
+// and therefore never NULL — and the ownership filter above would silently
+// become a no-op. Measured on 26.7.3.19 against a server holding 349 rows in
+// system.grants, of which 278 belong to roles:
+//
+//	SELECT count() FROM system.grants WHERE role_name IS NOT NULL          278
+//	SELECT ifNull(role_name,'') AS role_name FROM system.grants
+//	  WHERE role_name IS NOT NULL                                          349
+//
+// The second is every row in the table, users included. Distinct aliases are
+// what keep each filter naming the catalog column it means.
 const grantsQuery = `
 	SELECT
 		ifNull(role_name, '') AS grantee,
@@ -155,15 +170,7 @@ func (r *Reader) readGrants(dbName string) ([]types.DBGrant, error) {
 		if err := rows.Scan(&role, &privilege, &database, &table, &partialRevoke, &grantOption); err != nil {
 			return nil, fmt.Errorf("clickhouse: scan grant%s: %w", r.onServer(), err)
 		}
-		grants = append(grants, types.DBGrant{
-			Role:            role,
-			Privilege:       privilege,
-			ObjectType:      grantObjectType(table),
-			Schema:          database,
-			ObjectName:      table,
-			WithOption:      grantOption != 0,
-			IsPartialRevoke: partialRevoke != 0,
-		})
+		grants = append(grants, liveGrant(role, privilege, database, table, grantOption, partialRevoke))
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("clickhouse: read grants%s: %w", r.onServer(), err)
@@ -171,23 +178,41 @@ func (r *Reader) readGrants(dbName string) ([]types.DBGrant, error) {
 	return grants, nil
 }
 
-// grantObjectType names the kind of object a live grant row applies to.
+// liveGrant builds the description of one system.grants row.
 //
-// ClickHouse has no object-type keyword -- the shape of the two-part pattern IS
-// the object type, `db`.`t` against `db`.* -- so the kind is read back off the
-// table column rather than off a keyword. Ptah models a ClickHouse database as a
+// ClickHouse has no object-type keyword — the shape of the two-part pattern IS
+// the object type, `db`.`t` against `db`.* — so the kind is read off the table
+// column rather than off a keyword. Ptah models a ClickHouse database as a
 // schema, which is what makes a database-wide grant a SCHEMA grant here.
 //
-// The database lands in DBGrant.Schema for both kinds, unlike the PostgreSQL
-// reader, which leaves Schema empty on a schema grant and puts the schema name
-// in ObjectName. internal/clickhouserbac's ScopeOfLive reads the scope out of
-// (Schema, ObjectName) in exactly that shape, so a database-wide row keeps its
-// database in Schema and reports an empty ObjectName.
-func grantObjectType(table string) string {
-	if table == "" {
-		return "SCHEMA"
+// WHERE the database lands is not a free choice, and getting it wrong is not a
+// cosmetic difference. types.DBGrant carries a schema-scoped target in
+// ObjectName with Schema empty — that is what DBGrant.QualifiedTarget returns,
+// what the PostgreSQL reader writes, and what every shared consumer reads:
+// compare.grantRefFromDatabase, dbschematogo.convertGrants and
+// schemascope.dbGrantAllowed all take a SCHEMA grant's target out of
+// ObjectName. An earlier version of this reader put the database in Schema and
+// left ObjectName empty. Measured live: the declared and live halves then never
+// keyed equal, so one declared `on_schema` grant was reported as added AND
+// removed on every run, the REVOKE it produced carried an empty scope and the
+// render refused it — and any `db.*` row held by anyone at all made
+// `ptah db read` exit 2 against that database.
+func liveGrant(role, privilege, database, table string, grantOption, partialRevoke uint8) types.DBGrant {
+	grant := types.DBGrant{
+		Role:            role,
+		Privilege:       privilege,
+		ObjectType:      "TABLE",
+		Schema:          database,
+		ObjectName:      table,
+		WithOption:      grantOption != 0,
+		IsPartialRevoke: partialRevoke != 0,
 	}
-	return "TABLE"
+	if table == "" {
+		grant.ObjectType = "SCHEMA"
+		grant.Schema = ""
+		grant.ObjectName = database
+	}
+	return grant
 }
 
 // readRoles reads system.roles and partitions it into the roles this
@@ -273,4 +298,32 @@ func (r *Reader) onServer() string {
 		return ""
 	}
 	return fmt.Sprintf(" on server %q", r.version)
+}
+
+// accessDeniedCode is what ClickHouse answers when the connected account may
+// not read a system table.
+//
+// Measured on 26.7.3.19 with an account holding only SELECT, SHOW TABLES and
+// SHOW COLUMNS on one database, both RBAC catalogs answer the same way while
+// system.tables answers normally:
+//
+//	Code: 497. DB::Exception: lowpriv: Not enough privileges. To execute this
+//	query, it's necessary to have the grant SELECT for at least one column on
+//	system.grants. (ACCESS_DENIED)
+const accessDeniedCode = 497
+
+// isAccessDenied reports whether err is the server refusing the read for want
+// of privilege, rather than any other failure.
+//
+// It matches on the driver's own exception type and code, never on the message.
+// A message match would also fire on an unrelated failure whose text happened
+// to contain the words, and this predicate decides whether a failed read is
+// downgraded to a gap in the description or fails the command — the one place a
+// false positive turns a real error into silence.
+func isAccessDenied(err error) bool {
+	var exception *clickhousedriver.Exception
+	if errors.As(err, &exception) {
+		return exception.Code == accessDeniedCode
+	}
+	return false
 }

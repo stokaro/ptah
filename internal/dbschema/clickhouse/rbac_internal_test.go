@@ -29,8 +29,10 @@ import (
 	"strings"
 	"testing"
 
+	clickhousedriver "github.com/ClickHouse/clickhouse-go/v2"
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/dbschema/dbtest"
@@ -385,7 +387,7 @@ func TestReadGrantsDescribesTheConnectedDatabase(t *testing.T) {
 				{roleName: "reader", privilege: "SELECT", database: rbacDatabase},
 			},
 			want: []types.DBGrant{
-				{Role: "reader", Privilege: "SELECT", ObjectType: "SCHEMA", Schema: rbacDatabase},
+				{Role: "reader", Privilege: "SELECT", ObjectType: "SCHEMA", ObjectName: rbacDatabase},
 			},
 		},
 		{
@@ -423,7 +425,7 @@ func TestReadGrantsDescribesTheConnectedDatabase(t *testing.T) {
 				{roleName: "reader", privilege: "SELECT", database: rbacDatabase, table: "events", partialRevoke: true},
 			},
 			want: []types.DBGrant{
-				{Role: "reader", Privilege: "SELECT", ObjectType: "SCHEMA", Schema: rbacDatabase},
+				{Role: "reader", Privilege: "SELECT", ObjectType: "SCHEMA", ObjectName: rbacDatabase},
 				{
 					Role: "reader", Privilege: "SELECT", ObjectType: "TABLE",
 					Schema: rbacDatabase, ObjectName: "events", IsPartialRevoke: true,
@@ -593,10 +595,126 @@ func TestReadSchemaFillsTheDescriptionUnderTheCapability(t *testing.T) {
 	c.Assert(roleNames(schema.RolesOutOfScope), qt.DeepEquals, []string{"configured", "elsewhere", "ungranted"})
 	c.Assert(schema.Grants, qt.DeepEquals, []types.DBGrant{
 		{Role: "analyst", Privilege: "SELECT", ObjectType: "TABLE", Schema: rbacDatabase, ObjectName: "events"},
-		{Role: "configured", Privilege: "SELECT", ObjectType: "SCHEMA", Schema: rbacDatabase},
-		{Role: "reader", Privilege: "SELECT", ObjectType: "SCHEMA", Schema: rbacDatabase},
+		{Role: "configured", Privilege: "SELECT", ObjectType: "SCHEMA", ObjectName: rbacDatabase},
+		{Role: "reader", Privilege: "SELECT", ObjectType: "SCHEMA", ObjectName: rbacDatabase},
 		{Role: "reader", Privilege: "INSERT", ObjectType: "TABLE", Schema: rbacDatabase, ObjectName: "events"},
 	})
+}
+
+// accessDenied is the exception a server raises when the connected account may
+// not read a system table, built as the driver builds it so that the reader's
+// own predicate is what decides rather than a string this file invented.
+//
+// Measured on 26.7.3.19 with an account holding only SELECT, SHOW TABLES and
+// SHOW COLUMNS on one database: both RBAC catalogs answer Code 497
+// ACCESS_DENIED while system.tables answers normally.
+func accessDenied(catalog string) error {
+	return &clickhousedriver.Exception{
+		Code: 497,
+		Name: "ACCESS_DENIED",
+		Message: "lowpriv: Not enough privileges. To execute this query, it's necessary to have " +
+			"the grant SELECT for at least one column on " + catalog + ".",
+	}
+}
+
+// newRBACServerFailing is [newRBACServer] on a server that answers one catalog
+// with the given error and everything else normally.
+func newRBACServerFailing(
+	c *qt.C, server rbacServer, caps capability.Capabilities, catalog string, failure error,
+) (*Reader, *[]string) {
+	var sent []string
+	db := dbtest.Open(c, func(query string, args []driver.NamedValue) (dbtest.QueryResult, error) {
+		sent = append(sent, query)
+		if strings.Contains(query, catalog) {
+			return dbtest.QueryResult{}, failure
+		}
+		return answerClickHouse(query, args, server)
+	})
+	return NewClickHouseReaderWithCapabilities(db.SQL, rbacDatabase, "26.7.3.19", caps), &sent
+}
+
+// unknownIdentifier is a catalog error that is NOT a privilege refusal: the
+// shape a system table changing under Ptah would produce.
+func unknownIdentifier() error {
+	return &clickhousedriver.Exception{
+		Code: 47, Name: "UNKNOWN_IDENTIFIER", Message: "Missing columns: 'is_partial_revoke'",
+	}
+}
+
+// TestReadSchemaDegradesWhenTheAccountMayNotReadTheAccessCatalog pins the one
+// failure this reader must not turn into a failed command.
+//
+// The capability preset is a statement about the SERVER; it cannot know what
+// the connected account was granted. An account that may read tables and not
+// system.grants is ordinary, and before this branch such an account read a
+// ClickHouse schema fine — including a schema declaring no role at all, which
+// has nothing to do with RBAC. Failing the whole read for it would be a
+// regression caused by adding a capability.
+//
+// The description must also SAY it did not look, which is the half that keeps
+// the degradation from being a silent one: a reader returning the tables and an
+// empty role list would tell the comparator this server has no roles, and the
+// comparator would plan CREATE ROLE for every declared one.
+func TestReadSchemaDegradesWhenTheAccountMayNotReadTheAccessCatalog(t *testing.T) {
+	tests := []struct {
+		name    string
+		catalog string
+	}{
+		{name: "system.grants is refused", catalog: "system.grants"},
+		{name: "system.roles is refused", catalog: "system.roles"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			reader, _ := newRBACServerFailing(
+				c, mixedServer(), withRoleManagement(), test.catalog, accessDenied(test.catalog),
+			)
+
+			schema, err := reader.ReadSchema()
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(schema.Roles, qt.HasLen, 0)
+			c.Assert(schema.RolesOutOfScope, qt.HasLen, 0)
+			c.Assert(schema.Grants, qt.HasLen, 0)
+			c.Assert(schema.NotDescribed.Describes(coverage.Role, "reader"), qt.IsFalse,
+				qt.Commentf("a read that could not look must not claim the role is absent"))
+		})
+	}
+}
+
+// TestReadSchemaFailsOnEveryOtherRBACError is the control on the degradation
+// above. Without it a reader that swallowed every RBAC failure would satisfy
+// that test completely, and a catalog that changed shape under Ptah would read
+// as a server with no roles.
+func TestReadSchemaFailsOnEveryOtherRBACError(t *testing.T) {
+	c := qt.New(t)
+
+	reader, _ := newRBACServerFailing(
+		c, mixedServer(), withRoleManagement(), "system.grants", unknownIdentifier(),
+	)
+
+	_, err := reader.ReadSchema()
+
+	c.Assert(err, qt.ErrorMatches, `(?s).*Missing columns.*`)
+}
+
+// TestReadSchemaDescribesRolesWhenTheAccountMayReadThem is the other half of
+// the same control: the coverage record must appear only when the read was
+// actually refused. A reader that recorded it unconditionally would pass the
+// degradation test and would then withhold every role addition on a server that
+// answered perfectly.
+func TestReadSchemaDescribesRolesWhenTheAccountMayReadThem(t *testing.T) {
+	c := qt.New(t)
+
+	reader, _ := newRBACServer(c, mixedServer(), withRoleManagement())
+
+	schema, err := reader.ReadSchema()
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(schema.NotDescribed.IsZero(), qt.IsTrue)
+	c.Assert(schema.NotDescribed.Describes(coverage.Role, "reader"), qt.IsTrue)
 }
 
 func TestReadSchemaAsksNothingAboutRBACWithoutTheCapability(t *testing.T) {

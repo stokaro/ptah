@@ -14,6 +14,7 @@ import (
 	"go.5x5.cz/ptah/internal/atlasfilter"
 	"go.5x5.cz/ptah/internal/atlasreport"
 	"go.5x5.cz/ptah/internal/atlassource"
+	"go.5x5.cz/ptah/internal/clickhouserbac"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
 	"go.5x5.cz/ptah/internal/matviewrefresh"
 	"go.5x5.cz/ptah/internal/schemafile"
@@ -195,6 +196,10 @@ func Diff(ctx context.Context, opts DiffOptions) (atlasreport.SchemaDiff, error)
 	// statement before it is rendered.
 	virtualPolicy := sqlitevirtual.Policy{SkipDropTable: opts.Policy.SkipDropTable}
 	if err := sqlitevirtual.ValidateComparison(dialect, to, fromSide.database, virtualPolicy); err != nil {
+		return atlasreport.SchemaDiff{}, err
+	}
+
+	if err := validateClickHouseRBAC(dialect, to, fromSide.database); err != nil {
 		return atlasreport.SchemaDiff{}, err
 	}
 
@@ -480,4 +485,27 @@ func diffDefaultSchema(dialect string, fromState, toState atlassource.State) str
 		return toState.DefaultSchema
 	}
 	return dialectDefaultSchema(dialect)
+}
+
+// validateClickHouseRBAC applies the ClickHouse role and grant refusals to a
+// `schema diff`, and returns nil for every other dialect.
+//
+// It is here for the reason sqlitevirtual.ValidateComparison is: this surface
+// reaches the comparator through the variant that returns no error, so a
+// refusal this seam does not make is one nothing makes. Rendering the diff's
+// SQL does reach internal/clickhouserbac, which covers a diff that plans
+// something — but a diff that plans nothing renders nothing, and without this
+// call `ptah-compat schema diff` answered exit 0 with no changes for a
+// declaration every other surface refuses (stokaro/ptah#1025).
+//
+// The empty default database matches the native seam's, so one set of
+// declarations cannot be accepted by one surface and refused by the other.
+func validateClickHouseRBAC(dialect string, to *goschema.Database, from *types.DBSchema) error {
+	if to == nil {
+		return nil
+	}
+	if err := clickhouserbac.ValidateDeclared(dialect, to.Roles, to.Grants, ""); err != nil {
+		return err
+	}
+	return clickhouserbac.ValidateLive(dialect, to, from)
 }

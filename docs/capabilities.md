@@ -1017,11 +1017,11 @@ file, exactly as any other command reaching the same URL would.
   refused, since `system.roles` is `(name, id, storage)` and a role has no
   attribute to alter. Ptah manages ClickHouse **roles and grants only**. Users
   and therefore all credentials, role membership (`GRANT role TO role`), quotas,
-  row policies, settings profiles, column-scoped grants, wildcard and global
-  (`*.*`) scopes, and `GRANT ALL` are outside it. `system.users` is never
-  queried, so no credential reaches a description, a plan, or a log.
+  row policies, settings profiles, column-scoped grants, and wildcard and global
+  (`*.*`) scopes are outside it. `system.users` is never queried, so no
+  credential reaches a description, a plan, or a log.
 
-  Three refusals are the surprising part, and `internal/clickhouserbac` states
+  Five refusals are the surprising part, and `internal/clickhouserbac` states
   each one before a server is touched:
 
   - A declared `password`, `login`, `superuser`, `createdb`, `createrole` or
@@ -1034,16 +1034,38 @@ file, exactly as any other command reaching the same URL would.
   - A grant scope must be written `database.table`. An unqualified table is
     refused because a render is offline and has no current database to resolve
     it against, and resolving an access-control decision against the wrong
-    database is not a formatting mistake.
+    database is not a formatting mistake. A trailing dot is refused too, rather
+    than read as the whole database.
+  - A grant must name a role the same schema declares. ClickHouse resolves a
+    grantee across users and roles with no syntax to choose, so an undeclared
+    name either fails at `Code: 511 (UNKNOWN_ROLE)` partway through a migration
+    or lands on a USER of that name — where the reader's `user_name IS NULL`
+    filter never sees it again, the plan re-issues it forever, and a real
+    account holds a privilege nobody declared for it.
+  - A privilege name the server REWRITES is refused: `ALL`, `CREATE`, `DROP`,
+    `SYSTEM`, `SYSTEM FLUSH`, `ACCESS MANAGEMENT`, `SHOW ACCESS`,
+    `SHOW FILESYSTEM CACHES`, and `SHOW` and `ALTER` at table scope. Measured
+    per scope on both declared lines: `GRANT ALL` records 45 rows on 26.7 and 39
+    on 24.10, `GRANT SHOW ACCESS` is stored as `SHOW ROW POLICIES`, and
+    `GRANT SHOW FILESYSTEM CACHES` is accepted and stored nowhere at all. The
+    group names that DO read back as written stay declarable, and a name the
+    server itself refuses needs no gate here.
 
-  Two live shapes are handled rather than assumed away. A managed role carrying
-  a partial revoke — a `GRANT` with an exception, which Ptah's model cannot
-  express — fails the comparison instead of comparing equal and reporting
+  Three live shapes are handled rather than assumed away. A managed role
+  carrying a partial revoke — a `GRANT` with an exception, which Ptah's model
+  cannot express — fails the comparison instead of comparing equal and reporting
   convergence. Roles are never dropped: `RolesRemoved` is reported as a named
   comment, because a ClickHouse role is server-wide and may carry grants no
   declared schema describes. For the same reason a read describes only the roles
   the described grants name, and leaves roles whose `storage` is `users_xml` out
-  entirely, since SQL does not own them.
+  entirely, since SQL does not own them. And an account that may not read the
+  access catalog — measured, an account holding only `SELECT`, `SHOW TABLES` and
+  `SHOW COLUMNS` is answered `Code: 497 (ACCESS_DENIED)` by both — still gets
+  the rest of its schema: the read records `coverage.Role` as not described, so
+  comparison withholds every declared role rather than planning a `CREATE ROLE`
+  it could not verify. Failing the whole read would have broken reading a
+  ClickHouse schema that declares no role at all, a capability this preset had
+  no right to remove.
 
   Two limitations to plan around. ClickHouse RBAC statements carry no
   `ON CLUSTER` clause, so on a cluster they affect the connected replica only;

@@ -508,18 +508,28 @@ func TestValidateSchema_MySQLFamilyRoleRefusalNamesTheSortedFirstRole(t *testing
 	}
 }
 
-// adaptForClickHouse rewrites the two declarations in the fixture that
-// ClickHouse represents differently, so the grid measures ROUTING rather than
-// stopping at a refusal.
+// adaptForClickHouse rewrites the declarations in the fixture that ClickHouse
+// represents differently, so the grid measures ROUTING rather than stopping at
+// a refusal.
 //
 // ClickHouse renders roles and grants for real (stokaro/ptah#1025), but a role
-// there carries no attributes at all and a grant scope is a two-part pattern:
-// the fixture's LOGIN and its bare `table_probe` are both refused. Nulling the
-// declarations out — the adaptation MySQL and MariaDB get — would be the wrong
-// answer here, because it would record ClickHouse as not routing objects it
-// does route. The refusals themselves are pinned in internal/clickhouserbac,
-// and TestRender_ClickHouseRefusesTheUnrepresentableDeclaration below keeps
-// them reachable from this fixture.
+// there carries no attributes at all, a grant scope is a two-part pattern, and
+// a grant must name a role the same schema declares: the fixture's LOGIN, its
+// bare `table_probe` and its undeclared `grant_probe` grantee are all refused.
+// Nulling the declarations out — the adaptation MySQL and MariaDB get — would
+// be the wrong answer here, because it would record ClickHouse as not routing
+// objects it does route. The refusals themselves are pinned in
+// internal/clickhouserbac, and
+// TestRender_ClickHouseRefusesTheUnrepresentableDeclaration below keeps them
+// reachable from this fixture.
+//
+// Declaring the grantee costs this grid one property, on ClickHouse alone: the
+// grant cell can now be satisfied by the `CREATE ROLE grant_probe` line rather
+// than by a GRANT, which is the confusion the two distinct probe names exist to
+// prevent everywhere else. There is no way to keep it — a GRANT names its
+// grantee, and on ClickHouse the grantee must be declared. The property is held
+// instead by core/renderer/internal/dialects/clickhouse's own tests, which
+// assert the rendered GRANT statement rather than a mention of the name.
 func adaptForClickHouse(database *goschema.Database, dialect string) {
 	if dialect != platform.ClickHouse {
 		return
@@ -529,6 +539,9 @@ func adaptForClickHouse(database *goschema.Database, dialect string) {
 	}
 	for i := range database.Grants {
 		database.Grants[i].OnTable = "public." + database.Grants[i].OnTable
+		database.Roles = append(database.Roles, goschema.Role{
+			Name: database.Grants[i].Role, Inherit: true,
+		})
 	}
 }
 

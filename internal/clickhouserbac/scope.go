@@ -120,6 +120,15 @@ func tableScope(role, table, defaultDatabase string) (Scope, error) {
 			"grant to role %q names table %q: a ClickHouse scope has at most two parts",
 			role, table)
 	}
+	// A trailing dot is refused rather than read as an empty table name. An
+	// empty Table is how this type spells "the whole database", so `shop.`
+	// would quietly widen a table grant to `shop`.* -- a typo turning one
+	// table's privilege into every table's, with no diagnostic anywhere.
+	if name == "" {
+		return Scope{}, fmt.Errorf(
+			"grant to role %q names table %q with no table part: write database.table, or declare on_schema for a database scope",
+			role, table)
+	}
 	if err := refuseWildcard(role, database, "database"); err != nil {
 		return Scope{}, err
 	}
@@ -147,9 +156,19 @@ func refuseWildcard(role, value, position string) error {
 
 // ScopeOfLive reads the scope a live grant row names.
 //
-// A row read from system.grants always carries a database, because the reader
-// selects only rows scoped to the connected database; the table is empty for a
-// database-wide grant, which is exactly how the catalog reports it.
+// The two object types put the database in different fields, and that is the
+// shared [types.DBGrant] contract rather than a ClickHouse quirk: a
+// schema-scoped grant carries its target in ObjectName with Schema empty —
+// which is what [types.DBGrant.QualifiedTarget] returns and what every
+// comparator and converter reads — while a table-scoped grant carries the
+// schema in Schema and the table in ObjectName.
+//
+// Reading only (Schema, ObjectName) positionally is what an earlier version of
+// this function did, and it made every database-scoped grant compare unequal to
+// itself.
 func ScopeOfLive(grant types.DBGrant) Scope {
+	if strings.EqualFold(strings.TrimSpace(grant.ObjectType), "SCHEMA") {
+		return Scope{Database: grant.ObjectName}
+	}
 	return Scope{Database: grant.Schema, Table: grant.ObjectName}
 }

@@ -68,6 +68,30 @@ func TestValidateDeclared_HappyPath(t *testing.T) {
 			},
 		},
 		{
+			// The privilege check refuses spellings the server rewrites, not
+			// every group in the privilege tree. These four are groups, they
+			// read back under their own names on both declared lines, and a
+			// gate that refused them would remove grants that converge.
+			name:  "group privileges the server stores as written",
+			roles: []goschema.Role{clickHouseRole("writer")},
+			grants: []goschema.Grant{
+				{Role: "writer", Privileges: []string{"ALTER TABLE", "ALTER COLUMN"}, OnTable: "shop.orders"},
+				{Role: "writer", Privileges: []string{"ALTER VIEW"}, OnTable: "shop.summary"},
+				{Role: "writer", Privileges: []string{"SYSTEM SENDS"}, OnSchema: "warehouse"},
+			},
+		},
+		{
+			// The scope half of the same rule: ALTER and SHOW are rewritten on
+			// a table and stored as written on a database, so the database
+			// spelling has to keep working.
+			name:  "ALTER and SHOW on a database, where the server stores them as written",
+			roles: []goschema.Role{clickHouseRole("writer")},
+			grants: []goschema.Grant{
+				{Role: "writer", Privileges: []string{"ALTER"}, OnSchema: "shop"},
+				{Role: "writer", Privileges: []string{"SHOW"}, OnSchema: "warehouse"},
+			},
+		},
+		{
 			name:  "two roles may hold the same privilege on the same scope",
 			roles: []goschema.Role{clickHouseRole("reader"), clickHouseRole("auditor")},
 			grants: []goschema.Grant{
@@ -132,13 +156,70 @@ func TestValidateDeclared_FailurePath(t *testing.T) {
 			name:    "ALL, which the server expands",
 			roles:   []goschema.Role{clickHouseRole("reader")},
 			grants:  []goschema.Grant{{Role: "reader", Privileges: []string{"ALL"}, OnSchema: "shop"}},
-			wantErr: `(?s).*declares privilege "ALL": it expands to every individual privilege.*`,
+			wantErr: `(?s).*declares privilege "ALL" on shop\.\*: ClickHouse records it as every individual privilege on the target.*`,
 		},
 		{
 			name:    "ALL PRIVILEGES",
 			roles:   []goschema.Role{clickHouseRole("reader")},
 			grants:  []goschema.Grant{{Role: "reader", Privileges: []string{"ALL PRIVILEGES"}, OnSchema: "shop"}},
-			wantErr: `(?s).*expands to every individual privilege.*`,
+			wantErr: `(?s).*records it as every individual privilege on the target.*`,
+		},
+		{
+			name:    "NONE, which names no privilege",
+			roles:   []goschema.Role{clickHouseRole("reader")},
+			grants:  []goschema.Grant{{Role: "reader", Privileges: []string{"NONE"}, OnSchema: "shop"}},
+			wantErr: `(?s).*declares privilege "NONE": it names no privilege; omit the grant instead.*`,
+		},
+		{
+			// The server accepts this one and records nothing anywhere, so an
+			// operator who declared it would be told the grant applied and
+			// would hold no privilege. Refused at both scopes.
+			name:    "SHOW FILESYSTEM CACHES, which the server records nowhere",
+			roles:   []goschema.Role{clickHouseRole("reader")},
+			grants:  []goschema.Grant{{Role: "reader", Privileges: []string{"SHOW FILESYSTEM CACHES"}, OnSchema: "shop"}},
+			wantErr: `(?s).*ClickHouse records it as nothing at all.*`,
+		},
+		{
+			name:    "CREATE, which the server expands at database scope",
+			roles:   []goschema.Role{clickHouseRole("writer")},
+			grants:  []goschema.Grant{{Role: "writer", Privileges: []string{"CREATE"}, OnSchema: "shop"}},
+			wantErr: `(?s).*records it as CREATE DATABASE, CREATE TABLE, CREATE VIEW and CREATE DICTIONARY.*`,
+		},
+		{
+			name:    "DROP, which the server expands at table scope too",
+			roles:   []goschema.Role{clickHouseRole("writer")},
+			grants:  []goschema.Grant{{Role: "writer", Privileges: []string{"DROP"}, OnTable: "shop.orders"}},
+			wantErr: `(?s).*on shop\.orders: ClickHouse records it as DROP TABLE, DROP VIEW and DROP DICTIONARY.*`,
+		},
+		{
+			// ALTER is the entry that proves the check reads the scope: it
+			// round-trips on a database and is rewritten on a table. The happy
+			// path holds the database half.
+			name:    "ALTER on a table, which the server splits",
+			roles:   []goschema.Role{clickHouseRole("writer")},
+			grants:  []goschema.Grant{{Role: "writer", Privileges: []string{"ALTER"}, OnTable: "shop.orders"}},
+			wantErr: `(?s).*records it as ALTER TABLE and ALTER VIEW.*`,
+		},
+		{
+			name:    "SHOW on a table, which the server splits",
+			roles:   []goschema.Role{clickHouseRole("reader")},
+			grants:  []goschema.Grant{{Role: "reader", Privileges: []string{"SHOW"}, OnTable: "shop.orders"}},
+			wantErr: `(?s).*records it as SHOW TABLES, SHOW COLUMNS and SHOW DICTIONARIES.*`,
+		},
+		{
+			name:    "SHOW ACCESS, which the server renames at every scope",
+			roles:   []goschema.Role{clickHouseRole("reader")},
+			grants:  []goschema.Grant{{Role: "reader", Privileges: []string{"show access"}, OnSchema: "shop"}},
+			wantErr: `(?s).*records it as SHOW ROW POLICIES.*`,
+		},
+		{
+			// Refused at both scopes even though 24.10 stores it under its own
+			// name, because a declaration that stops converging on an upgrade
+			// is not one Ptah accepts.
+			name:    "SYSTEM FLUSH, which only the older line round-trips",
+			roles:   []goschema.Role{clickHouseRole("ops")},
+			grants:  []goschema.Grant{{Role: "ops", Privileges: []string{"SYSTEM FLUSH"}, OnSchema: "shop"}},
+			wantErr: `(?s).*records it as the individual SYSTEM FLUSH privileges.*`,
 		},
 		{
 			name:    "a column-scoped privilege",
@@ -151,6 +232,25 @@ func TestValidateDeclared_FailurePath(t *testing.T) {
 			roles:   []goschema.Role{clickHouseRole("reader")},
 			grants:  []goschema.Grant{{Role: "reader", OnSchema: "shop"}},
 			wantErr: `(?s).*grant to role "reader" names no privilege.*`,
+		},
+		{
+			// Measured on 26.7.3.19: with no principal of that name the GRANT
+			// fails at Code 511 partway through a migration, and with a USER of
+			// that name it SUCCEEDS and lands on the user, where the reader
+			// never sees it again.
+			name:    "a grant to a role the schema does not declare",
+			roles:   []goschema.Role{clickHouseRole("reader")},
+			grants:  []goschema.Grant{{Role: "analyst", Privileges: []string{"SELECT"}, OnSchema: "shop"}},
+			wantErr: `(?s).*grant names role "analyst", which this schema does not declare.*`,
+		},
+		{
+			// Role names are compared exactly. ClickHouse identifiers are
+			// case-sensitive, so `Reader` and `reader` are two principals and
+			// declaring one does not declare the other.
+			name:    "a grant whose grantee differs from the declared role only in case",
+			roles:   []goschema.Role{clickHouseRole("reader")},
+			grants:  []goschema.Grant{{Role: "Reader", Privileges: []string{"SELECT"}, OnSchema: "shop"}},
+			wantErr: `(?s).*grant names role "Reader", which this schema does not declare.*`,
 		},
 		{
 			name:  "the absorption pair the server would collapse",

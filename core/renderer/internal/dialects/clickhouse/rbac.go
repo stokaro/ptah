@@ -51,8 +51,12 @@ import (
 //
 // The IF NOT EXISTS guard is unconditional. [ast.CreateRoleNode] carries no
 // IfNotExists field, so the choice is between always and never, and never fails
-// a re-applied migration with Code 493 (ROLE_ALREADY_EXISTS) at a statement
-// whose goal is already met.
+// a re-applied migration at a statement whose goal is already met. Measured on
+// 26.7.3.19, a second `CREATE ROLE dup_probe` answers
+//
+//	Code: 493. DB::Exception: role `dup_probe`: cannot insert because role
+//	`dup_probe` already exists in `local_directory`.
+//	(ACCESS_ENTITY_ALREADY_EXISTS)
 //
 // Nothing but the name is emitted: no attribute of the node has a ClickHouse
 // spelling. The attributes that assert a credential or an authority are refused

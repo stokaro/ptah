@@ -8,6 +8,7 @@ import (
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/clickhouserbac"
+	"go.5x5.cz/ptah/internal/convert/dbschematogo"
 )
 
 // TestScope_String_QuotesTheIdentifiersAndNotTheWildcard pins the one rendering
@@ -179,6 +180,21 @@ func TestScopeOf_FailurePath(t *testing.T) {
 			wantErr: `.*a ClickHouse scope has at most two parts`,
 		},
 		{
+			// A trailing dot must not read as an empty table name. An empty
+			// Table is how Scope spells "the whole database", so accepting
+			// this would widen one table's privilege to every table in the
+			// database — silently, from a typo.
+			name:    "a trailing dot, which would widen the scope",
+			grant:   goschema.Grant{Role: "reader", OnTable: "shop."},
+			wantErr: `.*names table "shop\." with no table part.*`,
+		},
+		{
+			name:            "a trailing dot is refused even with a default database",
+			grant:           goschema.Grant{Role: "reader", OnTable: "shop."},
+			defaultDatabase: "warehouse",
+			wantErr:         `.*with no table part.*`,
+		},
+		{
 			name:    "a wildcard database",
 			grant:   goschema.Grant{Role: "reader", OnTable: "*.orders"},
 			wantErr: `.*not wildcard scopes`,
@@ -200,8 +216,20 @@ func TestScopeOf_FailurePath(t *testing.T) {
 }
 
 // TestScopeOfLive_ReadsTheCatalogShape pins the reader's side of the same
-// model. A database-wide row reports an empty table, exactly as system.grants
-// records it with table = NULL.
+// model, and it reads ObjectType rather than guessing from which field is
+// populated.
+//
+// The two object types put the database in DIFFERENT fields, and that is the
+// shared [types.DBGrant] contract rather than anything ClickHouse decided: a
+// SCHEMA-typed row carries its target in ObjectName with Schema empty — which
+// is what [types.DBGrant.QualifiedTarget] returns, what the PostgreSQL reader
+// writes, and what internal/convert/dbschematogo reads — while a TABLE-typed
+// row carries the schema in Schema and the table in ObjectName.
+//
+// The rows below are deliberately spelled BOTH ways for a database scope. An
+// earlier version of this function read (Schema, ObjectName) positionally, and
+// a test that only offered `{Schema: "shop"}` passed against it while every
+// database-scoped grant compared unequal to itself on a live server.
 func TestScopeOfLive_ReadsTheCatalogShape(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -210,13 +238,25 @@ func TestScopeOfLive_ReadsTheCatalogShape(t *testing.T) {
 	}{
 		{
 			name:  "a table row",
-			grant: types.DBGrant{Schema: "shop", ObjectName: "orders"},
+			grant: types.DBGrant{ObjectType: "TABLE", Schema: "shop", ObjectName: "orders"},
 			want:  clickhouserbac.Scope{Database: "shop", Table: "orders"},
 		},
 		{
-			name:  "a database row carries no table",
-			grant: types.DBGrant{Schema: "shop"},
+			name:  "a database row, spelled the way the shared contract spells it",
+			grant: types.DBGrant{ObjectType: "SCHEMA", ObjectName: "shop"},
 			want:  clickhouserbac.Scope{Database: "shop"},
+		},
+		{
+			name:  "the object type decides, whatever case it is written in",
+			grant: types.DBGrant{ObjectType: "schema", ObjectName: "shop"},
+			want:  clickhouserbac.Scope{Database: "shop"},
+		},
+		{
+			// A row with no object type at all is a table row, because that is
+			// the only shape a reader that does not set the field can mean.
+			name:  "an untyped row falls back to the table spelling",
+			grant: types.DBGrant{Schema: "shop", ObjectName: "orders"},
+			want:  clickhouserbac.Scope{Database: "shop", Table: "orders"},
 		},
 	}
 
@@ -224,6 +264,63 @@ func TestScopeOfLive_ReadsTheCatalogShape(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			c.Assert(clickhouserbac.ScopeOfLive(test.grant), qt.Equals, test.want)
+		})
+	}
+}
+
+// TestScopeOfLive_AgreesWithScopeOfAcrossTheBoundary is the assertion the
+// convergence of every ClickHouse grant rests on: a declared grant and the live
+// row it produces must resolve to the SAME scope, or the comparator sees a
+// grant it just issued as still missing and re-issues it forever.
+//
+// It is written as a round trip rather than as two independent expectations
+// because the defect it guards against was exactly a disagreement between the
+// two sides, each of which looked right on its own.
+func TestScopeOfLive_AgreesWithScopeOfAcrossTheBoundary(t *testing.T) {
+	tests := []struct {
+		name    string
+		grant   goschema.Grant
+		live    types.DBGrant
+		wantSQL string
+	}{
+		{
+			name:    "a database scope",
+			grant:   goschema.Grant{Role: "reader", Privileges: []string{"SELECT"}, OnSchema: "shop"},
+			live:    types.DBGrant{Role: "reader", Privilege: "SELECT", ObjectType: "SCHEMA", ObjectName: "shop"},
+			wantSQL: "`shop`.*",
+		},
+		{
+			name:    "a table scope",
+			grant:   goschema.Grant{Role: "reader", Privileges: []string{"SELECT"}, OnTable: "shop.orders"},
+			live:    types.DBGrant{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", Schema: "shop", ObjectName: "orders"},
+			wantSQL: "`shop`.`orders`",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			declared, err := clickhouserbac.ScopeOf(test.grant, "")
+			c.Assert(err, qt.IsNil)
+			live := clickhouserbac.ScopeOfLive(test.live)
+
+			c.Assert(live, qt.Equals, declared)
+			c.Assert(declared.String(), qt.Equals, test.wantSQL)
+
+			// And the third side of the same triangle, driven through the real
+			// converter rather than a copy of its rule: describing the live row
+			// as a declaration and resolving THAT has to land on the same scope.
+			// This is the path `ptah db read` output takes back into a
+			// comparison, and a reader that filled the wrong field would break
+			// it while both assertions above still passed.
+			described := dbschematogo.ConvertDBSchemaToGoSchema(
+				&types.DBSchema{Grants: []types.DBGrant{test.live}},
+			)
+			c.Assert(described.Grants, qt.HasLen, 1)
+			redeclared, err := clickhouserbac.ScopeOf(described.Grants[0], "")
+			c.Assert(err, qt.IsNil)
+			c.Assert(redeclared, qt.Equals, declared)
 		})
 	}
 }

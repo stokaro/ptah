@@ -474,9 +474,9 @@ access control:
 | Quotas, row policies, settings profiles | Outside the schema model entirely; a declaration cannot express them and a read does not report them. |
 | Column-scoped grants | `GRANT SELECT(id) ON db.t` is refused when declared and excluded when read. Grants are managed at database and table scope. |
 | Wildcard and global scopes | `*.*` and a wildcard database are refused. Such a grant reaches objects no declared schema describes. |
-| `GRANT ALL` | Refused: the server expands it into individual privileges and never reads it back as `ALL`. |
+| Privilege names the server rewrites | `ALL`, `CREATE`, `DROP`, `SYSTEM`, `SYSTEM FLUSH`, `ACCESS MANAGEMENT`, `SHOW ACCESS`, `SHOW FILESYSTEM CACHES`, and — at table scope only — `SHOW` and `ALTER`. See below. |
 
-Three refusals arrive before anything on the server changes, and the reason for
+Five refusals arrive before anything on the server changes, and the reason for
 each is worth knowing in advance:
 
 - **A ClickHouse role carries no attributes.** `system.roles` is
@@ -493,9 +493,35 @@ each is worth knowing in advance:
 - **A grant scope must be qualified as `database.table`.** An unqualified table
   name is refused. Rendering is offline and has no current database to resolve
   it against, and resolving an access-control decision against whichever
-  database a session happens to have selected is not a formatting mistake.
+  database a session happens to have selected is not a formatting mistake. A
+  trailing dot such as `shop.` is refused too, rather than read as the whole
+  database: a typo must not widen one table's privilege to every table.
+- **A grant must name a role the same schema declares.** ClickHouse resolves a
+  grantee by name across users AND roles, with no syntax to say which is meant.
+  If nothing of that name exists the `GRANT` fails partway through a migration
+  with `UNKNOWN_ROLE`; if a *user* of that name exists it succeeds and lands on
+  the user, where the reader never sees it again — the plan re-issues it forever
+  and a real account quietly holds a privilege nobody declared for it. Declaring
+  the role removes both outcomes, because Ptah creates it in the same plan.
+  One case this cannot cover: if a live ClickHouse user shares a name with a
+  declared role, resolution still prefers the user. Do not name a role after an
+  account.
+- **Some privilege names are groups the server rewrites.** `GRANT CREATE ON db.*`
+  records four rows — `CREATE DATABASE`, `CREATE TABLE`, `CREATE VIEW`,
+  `CREATE DICTIONARY` — and never reads back as `CREATE`, so a schema declaring
+  it can never converge. `GRANT ALL` records 45 individual rows on 26.7 and 39 on
+  24.10. `GRANT SHOW ACCESS` is stored as `SHOW ROW POLICIES`. `GRANT SHOW
+  FILESYSTEM CACHES` is accepted and records *nothing at all*, which would tell
+  you a grant applied while the role held no privilege. Declare the individual
+  privileges instead. Group names that do read back as written stay
+  declarable — `ALTER TABLE`, `ALTER VIEW`, `ALTER COLUMN`, `ALTER INDEX`,
+  `ALTER STATISTICS`, `ALTER PROJECTION`, `ALTER CONSTRAINT`, `SYSTEM SENDS`,
+  and `SHOW` and `ALTER` on a database scope. A name the server itself refuses,
+  such as `INTROSPECTION` or `SYSTEM RELOAD`, needs no gate here: ClickHouse
+  answers `Code: 509 ... cannot be granted on the database level`, which names
+  the problem more precisely than Ptah could.
 
-Two more boundaries shape what a run does:
+Three more boundaries shape what a run does:
 
 - **Roles are never dropped.** A role that exists on the server and not in the
   schema is named in the plan and left alone. A ClickHouse role is server-wide
@@ -509,6 +535,16 @@ Two more boundaries shape what a run does:
   declaration cannot express an exception, so on a managed role Ptah refuses
   instead of comparing equal and reporting convergence. Remove the partial
   revoke, or stop declaring the role.
+- **An account that may not read the access catalog still gets a read.**
+  Reading `system.roles` and `system.grants` needs a privilege reading a table
+  does not, and an account holding only `SELECT`, `SHOW TABLES` and
+  `SHOW COLUMNS` is answered `Code: 497 ... (ACCESS_DENIED)` by both. Rather
+  than failing the whole read — which would break reading a schema that
+  declares no role at all — Ptah describes everything else and records that it
+  did not look. Comparison then withholds every declared role instead of
+  planning a `CREATE ROLE` it could not verify, and nothing destructive can
+  follow, because removal is decided from live rows and there are none.
+  `ptah-compat schema inspect` says so on stderr.
 
 Two operational notes. ClickHouse RBAC statements carry no `ON CLUSTER` clause,
 so on a cluster they affect the connected replica only; Ptah does not model
