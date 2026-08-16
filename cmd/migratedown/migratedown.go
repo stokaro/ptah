@@ -18,6 +18,7 @@ import (
 	"go.5x5.cz/ptah/cmd/internal/migrationsource"
 	"go.5x5.cz/ptah/config/projectconfig"
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/devdocker"
 	"go.5x5.cz/ptah/internal/migrationintegrity"
 	"go.5x5.cz/ptah/internal/onlineddl"
 	"go.5x5.cz/ptah/internal/preflight"
@@ -501,9 +502,17 @@ func verifyRollbackOnShadow(
 	if v.shadowDB == "" {
 		return nil
 	}
-	err := generator.VerifyRollbackFromShadow(ctx, generator.RollbackFromShadowOptions{
+	// A docker:// shadow database is provisioned here, after the no-op check
+	// above, so a run with no verification to do never starts a container.
+	shadowDB, releaseShadow, err := devdocker.Resolve(ctx, v.shadowDB, devdocker.Options{})
+	if err != nil {
+		return err
+	}
+	defer releaseShadow()
+
+	err = generator.VerifyRollbackFromShadow(ctx, generator.RollbackFromShadowOptions{
 		TargetConnection:  v.targetConnection,
-		ShadowDatabaseURL: v.shadowDB,
+		ShadowDatabaseURL: shadowDB,
 		FS:                v.migrationsFS,
 		CurrentVersion:    v.currentVersion,
 		TargetVersion:     v.targetVersion,

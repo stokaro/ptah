@@ -504,6 +504,36 @@ desired state is not asked of a container that does not exist yet:
 | --- | :-: | :-: | :-: |
 | `migrate diff m2 --dir file://migrations --to postgres://… --dev-url docker://postgres/16/dev` | 0 | 1, `unsupported database URL dialect` | **0** |
 
+Four more verbs take the scheme as of
+[`stokaro/ptah#844`](https://github.com/stokaro/ptah/issues/844). They are not a
+parity gap: Atlas CE has no `--dev-url` on any of them, answering `unknown flag:
+--dev-url` where `schema inspect` reaches its provisioner on the same value.
+They are Ptah's own surface, and they used to refuse the scheme their own flag
+accepted. Measured 2026-08-16 on a Linux host with a reachable daemon, with
+`--dev-url docker://postgres/18/dev`:
+
+| argv | Atlas CE v1.3.0 | Ptah before | Ptah after |
+| --- | :-: | :-: | :-: |
+| `migrate test --dir file://migrations tests` | 1, `unknown flag: --dev-url` | 1, refused the scheme | **0** |
+| `schema test -u file://schema.sql tests` | 1, `unknown flag: --dev-url` | 1, refused the scheme | **0** |
+| `migrate checkpoint cp1 --dir file://migrations` | 1, `unknown flag: --dev-url` | 1, `unsupported database dialect: docker` | **0** |
+| `migrate down --dir file://m --url sqlite://t.db --to-version 0` | 1, `unknown flag: --dev-url` | 1, `unsupported database URL dialect` | reaches the shadow check |
+
+The container is the database the cases run against, not a fallback that happens
+to answer: a case asserting `SELECT current_database()` returns `dev`, the name
+the URL asked for, where the same case on `sqlite://` answers `no such function:
+current_database` and on `docker://mysql/8.4/dev` answers MySQL's
+`Error 1305 (42000): FUNCTION dev.current_database does not exist`. The container
+census after every row above is zero.
+
+`migrate down` reaches its existing dialect check rather than exiting 0: a
+PostgreSQL shadow against a SQLite target is refused with `shadow database
+dialect "postgres" does not match target dialect "sqlite"`, which is the rule
+that was already there and is unrelated to the scheme. Measuring this verb on a
+target with nothing to roll back reports a pass it never earned -- it answers
+`Database is already at or below target version 0!` and exits 0 without opening
+a shadow database at all.
+
 Two `docker://` forms are refused on purpose, because Atlas CE refuses them and
 accepting them would be a `ptah-compat exits 0 where Atlas CE exits 1` cell:
 

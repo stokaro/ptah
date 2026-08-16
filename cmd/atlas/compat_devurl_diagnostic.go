@@ -68,10 +68,10 @@ import (
 // would delete the capability, which is compatibility rule (c). The refusals
 // that remain for a `docker://` value are the ones decidable from the URL text
 // -- an image no engine table names, a form the pinned community binary rejects
-// -- and they are internal/devdocker's, in that binary's own words. The one
-// verb family that still refuses the scheme outright is `migrate test` and
-// `schema test`, in [atlasTestDevURLValue]; those two are not wired to the
-// provisioner.
+// -- and they are internal/devdocker's, in that binary's own words. Every verb
+// in this family reaches the provisioner: `migrate test` and `schema test` were
+// the last two refusing the scheme outright, and stokaro/ptah#844 wired their
+// native runners to it.
 //
 // None of this reaches native Ptah. `ptah schema inspect`, `ptah migrations
 // lint` and the rest keep `unsupported --dev-url dialect "notadriver://x"`,

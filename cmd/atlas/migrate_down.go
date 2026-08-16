@@ -20,6 +20,7 @@ import (
 	"go.5x5.cz/ptah/internal/atlasmigrate"
 	"go.5x5.cz/ptah/internal/atlasmigrateimport"
 	"go.5x5.cz/ptah/internal/atlasreport"
+	"go.5x5.cz/ptah/internal/devdocker"
 	"go.5x5.cz/ptah/internal/envbool"
 	"go.5x5.cz/ptah/internal/migrationintegrity"
 	"go.5x5.cz/ptah/migration/generator"
@@ -212,9 +213,17 @@ func runAtlasMigrateDownFormat(
 	// Replay the rollback plan on the dev database first, so a failing or
 	// missing down migration aborts before the target is touched.
 	if opts.devURL != "" && !plan.Noop() {
+		// Inside the guard on purpose: a rollback with nothing to replay must
+		// not pay for a container it will not use.
+		devURL, releaseDev, resolveErr := devdocker.Resolve(cmd.Context(), opts.devURL, devdocker.Options{})
+		if resolveErr != nil {
+			return resolveErr
+		}
+		defer releaseDev()
+
 		err := generator.VerifyRollbackFromShadow(cmd.Context(), generator.RollbackFromShadowOptions{
 			TargetConnection:  conn,
-			ShadowDatabaseURL: opts.devURL,
+			ShadowDatabaseURL: devURL,
 			FS:                source.FileSystem,
 			CurrentVersion:    plan.CurrentVersion,
 			TargetVersion:     targetVersion,
