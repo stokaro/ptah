@@ -15,6 +15,7 @@ import (
 
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/internal/sqlident"
 	"go.5x5.cz/ptah/migration/generator"
 	"go.5x5.cz/ptah/migration/migrator"
@@ -137,13 +138,7 @@ func TestGenerateMigration_ConcurrentIndexApplyAndRollbackWithRealPostgres(t *te
 
 func requireGeneratorPostgresURL(t *testing.T) string {
 	t.Helper()
-	for _, name := range []string{"POSTGRES_TEST_DSN", "POSTGRES_URL", "TEST_DATABASE_URL", "TEST_DB_URL"} {
-		if value := os.Getenv(name); value != "" {
-			return value
-		}
-	}
-	t.Skip("POSTGRES_TEST_DSN, POSTGRES_URL, TEST_DATABASE_URL, or TEST_DB_URL is not set")
-	return ""
+	return dbtarget.URL(t, dbtarget.PostgreSQL)
 }
 
 func createGeneratorTestPostgres(
