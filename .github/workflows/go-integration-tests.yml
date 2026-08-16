@@ -114,6 +114,19 @@ jobs:
         ports:
           - 1433:1433
 
+      # Cloud Spanner's PostgreSQL interface: the emulator and PGAdapter in one
+      # image. Without this service dbtarget.URL skips the Spanner tests, and a
+      # skipped live test reads exactly like a passing one.
+      spanner:
+        image: gcr.io/cloud-spanner-pg-adapter/pgadapter-emulator
+        options: >-
+          --health-cmd "bash -c 'exec 3<>/dev/tcp/localhost/5432'"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+        ports:
+          - 5435:5432
+
       registry:
         image: registry:3
         ports:
@@ -294,6 +307,11 @@ jobs:
           MARIADB_CLEANUP_URL: "mariadb://root:root_password@tcp(127.0.0.1:3307)/ptah_test"
           MARIADB_ADMIN_TEST_DSN: "root:root_password@tcp(127.0.0.1:3307)/mysql"
           MARIADB_ADMIN_TEST_URL: "mariadb://root:root_password@tcp(127.0.0.1:3307)/mysql"
+          # The scheme is the dialect declaration: this endpoint's banner is a
+          # bare `PostgreSQL 14.1`, so a postgres:// address is planned as
+          # PostgreSQL and asks the catalog questions Spanner refuses. The
+          # database is created on first connect.
+          SPANNER_URL: "spanner://localhost:5435/ptah_test?sslmode=disable"
           CLICKHOUSE_URL: "clickhouse://ptah_user:ptah_password@localhost:9000/ptah_test"
           PTAH_CLICKHOUSE_REALM_TEST_URL: "clickhouse://ptah_user:ptah_password@localhost:9000/ptah_test"
           PTAH_CLICKHOUSE_LEGACY_REALM_TEST_URL: "clickhouse://ptah_user:ptah_password@localhost:9001/ptah_test"

@@ -41,6 +41,7 @@ const (
 	SQLServer
 	CockroachDB
 	YugabyteDB
+	Spanner
 )
 
 // source is where one engine's address comes from.
@@ -114,6 +115,15 @@ var sources = map[Engine]source{
 		canonical: "YUGABYTEDB_URL",
 		synonyms:  []string{"YUGABYTEDB_TEST_DSN"},
 		scheme:    []string{"postgres", "postgresql", "yugabytedb"},
+	},
+	// Cloud Spanner's PostgreSQL interface, reached through PGAdapter. The
+	// `spanner` scheme is not decoration: the endpoint's own banner is a bare
+	// `PostgreSQL 14.1`, so a target reached as postgres:// is planned as
+	// PostgreSQL and asks the catalog questions this one refuses.
+	Spanner: {
+		canonical: "SPANNER_URL",
+		synonyms:  []string{"SPANNER_TEST_DSN"},
+		scheme:    []string{"postgres", "postgresql", "spanner"},
 	},
 }
 
@@ -225,6 +235,8 @@ func engineName(engine Engine) string {
 		return "CockroachDB"
 	case YugabyteDB:
 		return "YugabyteDB"
+	case Spanner:
+		return "Cloud Spanner (PostgreSQL interface)"
 	}
 	return engine.String()
 }
@@ -303,7 +315,7 @@ func driverForm(engine Engine, address string) string {
 	switch engine {
 	case MySQL, MySQLAdmin, MariaDB, MariaDBAdmin:
 		return mysqlNetworkDSN(address)
-	case CockroachDB, YugabyteDB:
+	case CockroachDB, YugabyteDB, Spanner:
 		// pgx does not parse these aliases, and rewriting rather than removing
 		// is what dbschema does for the same reason.
 		return postgresWireURL(address)
@@ -399,7 +411,7 @@ func credentialsOf(user *url.Userinfo) string {
 func Engines() []Engine {
 	return []Engine{
 		PostgreSQL, MySQL, MySQLAdmin, MariaDB, MariaDBAdmin,
-		ClickHouse, SQLServer, CockroachDB, YugabyteDB,
+		ClickHouse, SQLServer, CockroachDB, YugabyteDB, Spanner,
 	}
 }
 

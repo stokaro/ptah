@@ -199,10 +199,22 @@ ClickHouse 26.3, ClickHouse 25.8, SQL Server 2022 (16.0), SQL Server 2019
 (15.0), and Spanner. Four of the five sit inside their vendor's support window,
 and Spanner is a managed service with no version axis at all. What none of them
 has is a run in this repository: the capability probe has no statement table for
-the `clickhouse` or `sqlserver` dialects, the only ClickHouse and SQL Server
+the `clickhouse` or `sqlserver` dialects, and the only ClickHouse and SQL Server
 versions the integration suite starts are ClickHouse 26.7, ClickHouse 24.10, and
-SQL Server 2025, and no Spanner server exists here ([issue 942](https://github.com/stokaro/ptah/issues/942)). Presence
-in the table is not certification; the `Support` column is the place to read.
+SQL Server 2025. Presence in the table is not certification; the `Support`
+column is the place to read.
+
+Spanner now has a server here — the `spanner` compose profile runs the emulator
+behind PGAdapter — but not a level that rests on it. What is executed against it
+is the boundary rather than the support: the schema read gets through schemas
+and tables and stops at the index catalog, because that query joins `pg_am` and
+this endpoint has no such relation. `integration/dbschema/spanner` asserts that,
+so the day a Spanner index read exists the test describing the limit fails and
+has to be rewritten ([issue 942](https://github.com/stokaro/ptah/issues/942)).
+
+A target there must be named with a `spanner://` URL. The endpoint's banner is a
+bare `PostgreSQL 14.1` carrying no token of its own, so a `postgres://` URL is
+planned as PostgreSQL and asks the catalog questions Spanner refuses.
 
 ### Keeping the levels current
 
