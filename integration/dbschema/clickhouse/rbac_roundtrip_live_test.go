@@ -410,11 +410,16 @@ func clickHouseRoleOnlyDeclaration(role string) *goschema.Database {
 // clickHouseSelectGrant is the description a live SELECT grant on one table
 // reads back as.
 //
-// The database lands in Schema and the table in ObjectName, which is not where
-// the PostgreSQL reader puts a schema grant's parts. ClickHouse has no
-// object-type keyword -- the shape of the two-part pattern `db`.`t` against
-// `db`.* IS the object type -- so the kind is read back off the table column,
-// and a database-wide row would be the same shape with ObjectName empty.
+// ClickHouse has no object-type keyword -- the shape of the two-part pattern
+// `db`.`t` against `db`.* IS the object type -- so the kind is read back off the
+// table column and written into ObjectType, and the two kinds then fill
+// DIFFERENT fields, exactly as the shared types.DBGrant contract says: a
+// TABLE-typed row carries the database in Schema and the table in ObjectName,
+// while a SCHEMA-typed row carries the database in ObjectName with Schema empty
+// (see [clickHouseSelectDatabaseGrant]).
+//
+// Reading them positionally instead is what made every database-scope grant
+// compare unequal to the row it had just created.
 func clickHouseSelectGrant(role, database, table string, withOption bool) dbschematypes.DBGrant {
 	return dbschematypes.DBGrant{
 		Role:       role,
@@ -575,4 +580,89 @@ func clickHouseRolesCarryingAnAttribute(schema *dbschematypes.DBSchema) []dbsche
 	return slices.DeleteFunc(all, func(role dbschematypes.DBRole) bool {
 		return role == (dbschematypes.DBRole{Name: role.Name, Inherit: true})
 	})
+}
+
+// TestClickHouseDatabaseScopeGrantRoundTripsLive covers the scope the
+// table-scoped tests above cannot reach, and it exists because that gap let a
+// defect through the first review.
+//
+// A `db`.* grant is not a `db`.`t` grant with a field left empty. ClickHouse
+// records it with `table = NULL`, and the shared types.DBGrant contract puts a
+// SCHEMA-typed row's target in ObjectName with Schema empty — the opposite
+// field from a table row. A reader that filled it positionally produced a
+// description that compared unequal to the row it had just created: the plan
+// re-issued the grant forever, and the REVOKE derived from it carried an empty
+// scope, which the renderer refused. Every assertion below passed on the
+// table-scoped shape while that was true.
+func TestClickHouseDatabaseScopeGrantRoundTripsLive(t *testing.T) {
+	c := qt.New(t)
+	conn := openLiveClickHouseRBACTarget(c)
+	database := conn.Info().Schema
+	role := uniqueClickHouseRBACName("dbscope_reader")
+	dropClickHouseRoleAfterTest(c, conn, role)
+	quotedRole := sqlident.Quote(platform.ClickHouse, role)
+	declared := clickHouseDatabaseScopeDeclaration(role, database)
+
+	creation, createStatements := planClickHouseRBAC(c, conn, declared)
+	c.Assert(creation.RolesAdded, qt.DeepEquals, []string{role})
+	c.Assert(createStatements, qt.DeepEquals, []string{
+		"CREATE ROLE IF NOT EXISTS " + quotedRole,
+		"GRANT SELECT ON " + sqlident.Quote(platform.ClickHouse, database) + ".* TO " + quotedRole,
+	})
+	applyClickHouseRBACPlan(c, conn, createStatements)
+
+	// The read has to report the row the way every shared consumer expects it,
+	// not merely report something.
+	created := readClickHouseRBAC(c, conn)
+	c.Assert(clickHouseGrantsOfRole(created, role), qt.DeepEquals, []dbschematypes.DBGrant{
+		clickHouseSelectDatabaseGrant(role, database),
+	})
+
+	// And the convergence assertion the defect broke: a second comparison
+	// against the same declaration must find the grant present.
+	converged, convergedStatements := planClickHouseRBAC(c, conn, declared)
+	c.Assert(converged.RolesAdded, qt.HasLen, 0)
+	c.Assert(convergedStatements, qt.HasLen, 0)
+
+	// Removing the grant produces a REVOKE that names the database scope. This
+	// is the statement the broken reader rendered with an empty scope, so the
+	// renderer refused it and the grant could not be taken away at all.
+	revocation, revokeStatements := planClickHouseRBAC(c, conn, clickHouseRoleOnlyDeclaration(role))
+	c.Assert(revokeStatements, qt.DeepEquals, []string{
+		"REVOKE SELECT ON " + sqlident.Quote(platform.ClickHouse, database) + ".* FROM " + quotedRole,
+	})
+	c.Assert(revocation.RolesRemoved, qt.HasLen, 0)
+	applyClickHouseRBACPlan(c, conn, revokeStatements)
+
+	revoked := readClickHouseRBAC(c, conn)
+	c.Assert(clickHouseGrantsOfRole(revoked, role), qt.HasLen, 0)
+	c.Assert(knownClickHouseRoleNames(revoked), qt.Contains, role)
+}
+
+// clickHouseDatabaseScopeDeclaration declares one role and one SELECT grant on
+// a whole database, which is what `on_schema` means on a ClickHouse target:
+// Ptah models a ClickHouse schema as a database.
+func clickHouseDatabaseScopeDeclaration(role, database string) *goschema.Database {
+	declaration := clickHouseRoleOnlyDeclaration(role)
+	declaration.Grants = []goschema.Grant{{
+		StructName: "ClickHouseAccess",
+		Role:       role,
+		Privileges: []string{"SELECT"},
+		OnSchema:   database,
+	}}
+	return declaration
+}
+
+// clickHouseSelectDatabaseGrant is the description a live SELECT grant on a
+// whole database reads back as.
+//
+// Contrast [clickHouseSelectGrant]: the database is in ObjectName here and in
+// Schema there, because the object type decides which field carries the target.
+func clickHouseSelectDatabaseGrant(role, database string) dbschematypes.DBGrant {
+	return dbschematypes.DBGrant{
+		Role:       role,
+		Privilege:  "SELECT",
+		ObjectType: "SCHEMA",
+		ObjectName: database,
+	}
 }
