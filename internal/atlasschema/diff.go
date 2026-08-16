@@ -18,6 +18,7 @@ import (
 	"go.5x5.cz/ptah/internal/matviewrefresh"
 	"go.5x5.cz/ptah/internal/schemafile"
 	"go.5x5.cz/ptah/internal/schemaselection"
+	"go.5x5.cz/ptah/internal/servertarget"
 	"go.5x5.cz/ptah/internal/sqlitevirtual"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
@@ -45,6 +46,14 @@ type DiffOptions struct {
 	// selectors and undecidable additions. It never receives plan output, so
 	// the bytes on standard output stay unchanged.
 	Diagnostics io.Writer
+	// ServerVersion pins the server the plan targets, as `--server-version`
+	// spells it. Empty plans against the dialect's newest preset, which is
+	// what this command did before the field existed.
+	//
+	// The string is resolved here rather than by the caller because the
+	// dialect is not known until the sources are classified: `schema diff`
+	// takes its dialect from --dev-url or from a source URL, not from a flag.
+	ServerVersion string
 	// Vars supplies values for HCL schema-file `variable` blocks, as `--var`
 	// spells them; see [go.5x5.cz/ptah/internal/schemafile.Options].
 	Vars []string
@@ -91,6 +100,21 @@ func Diff(ctx context.Context, opts DiffOptions) (atlasreport.SchemaDiff, error)
 	// that unreported, nor let that work start. See stokaro/ptah#1028.
 	if err := sqlitevirtual.ValidateToggle(dialect); err != nil {
 		return atlasreport.SchemaDiff{}, err
+	}
+
+	// Resolved here for the same reason, and equally early: a version naming
+	// no server is the caller's typo, and refusing it before a
+	// migration-directory source is replayed into the dev database is the
+	// difference between a fast diagnostic and one that arrives after the
+	// expensive part.
+	target, err := servertarget.Resolve(dialect, opts.ServerVersion)
+	if err != nil {
+		// The flag name is the caller's to add: this package is reached from a
+		// native verb and an Atlas-shaped one, which spell it differently.
+		return atlasreport.SchemaDiff{}, fmt.Errorf("invalid server version: %w", err)
+	}
+	if target.Note != "" && opts.Diagnostics != nil {
+		fmt.Fprintf(opts.Diagnostics, "Warning: %s.\n", target.Note)
 	}
 
 	// Both sides are desired states here, so --dev-url is the only URL that can
@@ -194,6 +218,9 @@ func Diff(ctx context.Context, opts DiffOptions) (atlasreport.SchemaDiff, error)
 	var statements []string
 	if diff.HasChanges() {
 		statements, err = planner.GenerateSchemaDiffSQLStatementsWithOptions(diff, to, dialect, planner.Options{
+			// Nil when no version was pinned, which is the planner's own
+			// "use the dialect default" and the behavior this command had.
+			Capabilities:         target.Capabilities,
 			ConcurrentIndexes:    opts.Policy.ConcurrentIndexCreate,
 			ConcurrentIndexDrops: opts.Policy.ConcurrentIndexDrop,
 		})

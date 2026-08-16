@@ -295,17 +295,23 @@ has no ladder to spend it on. `Recognized` is `false` only for the first.
 operator input reads this field alone and refuses. A caller holding a live
 banner should keep ignoring it.
 
-`ptah sql lint --version` and `ptah schema render --server-version` are those
-callers. Both refuse an unrecognized value with exit code `2` and never report
-it as the version they planned against; a recognized value that did not select
-an exact measured release line is applied and announced, on stderr as a
-`warning:` line and — on `sql lint --format json` — as `version_note`. Silence
-is reserved for an exact measured-line match. This is criterion 6 of issue #916
+`ptah sql lint --version`, `ptah schema render --server-version` and
+`ptah schema diff --server-version` are those callers. All three refuse an
+unrecognized value and never report it as the version they planned against; a
+recognized value that did not select an exact measured release line is applied
+and announced, on stderr as a warning line and — on `sql lint --format json` —
+as `version_note`. Silence is reserved for an exact measured-line match. This is criterion 6 of issue #916
 for those commands; every surface that reads a live `SELECT version()` banner
 still degrades silently by design, because a server does not typo its own name.
 
-Both also refuse a version that names a **different server product** than the
-dialect it was supplied with. A live connection resolves that contradiction in
+`schema diff` differs from the other two in where its dialect comes from: it
+has no `--dialect`, taking the dialect from `--dev-url` or from a source URL, so
+the version is resolved inside the diff rather than at the flag. The refusal and
+the warning are the same, and they still arrive before a migration-directory
+source is replayed into the dev database.
+
+All three also refuse a version that names a **different server product** than
+the dialect it was supplied with. A live connection resolves that contradiction in
 favor of the string — MariaDB announces itself over the MySQL protocol and
 CockroachDB over the PostgreSQL one — and between two values a person typed it
 is a silent contradiction instead: `--dialect mysql --server-version
@@ -461,8 +467,27 @@ the current-version default for the normalized dialect. Use the
 `...WithCapabilities` variants when a caller has a live `DBInfo.Capabilities`
 value or wants to pin a specific server version in tests/CI.
 
-`ptah schema render --server-version` is the command-line spelling of that pin,
-and the default it corrects is not a theoretical one. `ForDialect("mysql")`
+`ptah schema render --server-version` and `ptah schema diff --server-version`
+are the command-line spellings of that pin, and the default they correct is not
+a theoretical one.
+
+On `schema diff` the sharpest case is a changed generated-column expression.
+`ALTER COLUMN … SET EXPRESSION` arrived in PostgreSQL 17, and every version from
+14 is still supported, so an unpinned diff emits
+
+```sql
+ALTER TABLE "t" ALTER COLUMN "b" SET EXPRESSION AS (a * 3);
+```
+
+which a PostgreSQL 16 server rejects outright. `--server-version 16` plans the
+answer that server can act on instead:
+
+```sql
+-- WARNING: Generated column t.b changed, but ALTER COLUMN SET EXPRESSION requires PostgreSQL 17+; manual migration required. --;
+```
+
+`--server-version 17` still emits the `ALTER`, so pinning selects a plan rather
+than degrading every one. `ForDialect("mysql")`
 answers `MySQL84()`, which sets `foreign_keys_require_unique_reference`, so a
 foreign key onto a plain-indexed column is refused at exit `2` while MySQL 8.0
 — and `--dialect mariadb`, at exit `0` — accept it. Passing
