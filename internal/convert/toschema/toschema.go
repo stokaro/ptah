@@ -405,7 +405,12 @@ func ToIndex(index *ast.IndexNode) goschema.Index {
 		Unique:     index.Unique,
 		Comment:    index.Comment,
 		// PostgreSQL-specific features
-		Type:           index.Type,
+		Type: index.Type,
+		// ClickHouse's data-skipping granularity. Dropping it here let the
+		// renderer substitute its own default, so an index read with
+		// GRANULARITY 1 was written back with GRANULARITY 8192
+		// (stokaro/ptah#1574).
+		Granularity:    index.Granularity,
 		Parser:         index.Parser,
 		Condition:      index.Condition,
 		Operator:       index.Operator,
@@ -706,6 +711,13 @@ func appendStatement(database *goschema.Database, stmt ast.Node, sourcePlatform 
 func appendCreateTable(database *goschema.Database, node *ast.CreateTableNode, sourcePlatform string) {
 	tableSchema := ToTable(node, sourcePlatform)
 	database.Tables = append(database.Tables, tableSchema)
+
+	// Indexes declared inside the column list are indexes of the schema, not
+	// of the statement. Leaving them on the table node kept them parsed and
+	// unrendered (stokaro/ptah#1574).
+	for _, index := range node.Indexes {
+		database.Indexes = append(database.Indexes, ToIndex(index))
+	}
 
 	// Extract fields from table columns
 	fieldsStart := len(database.Fields)
