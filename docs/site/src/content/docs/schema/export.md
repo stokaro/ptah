@@ -225,6 +225,68 @@ argument declarations rather than a pagination guarantee. The generated file
 says so in a comment when operation shapes are present.
 :::
 
+## Names in the contract
+
+A column or table has two identities, and they are not the same thing:
+
+- the **persistence identity** — the column and table names the database uses;
+- the **API identity** — the names the exported contract publishes.
+
+By default the second is derived from the first, which couples them: renaming a
+column renames a published field, and a storage-shaped name has to become the
+public one. Declare `api_name` where they should differ.
+
+```go
+//ptah:schema:table name="billing_invoices" api_name="invoices"
+type Invoice struct {
+    //ptah:schema:field name="id" type="BIGSERIAL" primary="true"
+    ID int64
+
+    //ptah:schema:field name="billing_amount_minor" api_name="amount" type="INTEGER"
+    AmountMinor int32
+}
+```
+
+The table exports as `invoices` in OpenAPI and as `type Invoice` in GraphQL —
+singularized and PascalCased from the API name exactly as it would be from a
+table name — and the column exports as `amount` in both.
+
+Nothing changes for a schema that declares no `api_name`: the derivation is the
+one it has always been, and an unannotated schema exports byte-identically.
+
+### What it does not do
+
+- It does not change a **type**. `api_name` renames; it does not re-map
+  `DECIMAL` to an application-owned scalar, and it adds no runtime validation of
+  any kind. The type mapping below still decides the shape.
+- It does not sanitize away a format's naming rules. GraphQL still rewrites a
+  name that is not a legal identifier, and still reports having done so.
+- It does not rename the diagnostics you read. A GraphQL or Protobuf diagnostic
+  path names the **column**, because that is where you go to change something.
+  An OpenAPI diagnostic path names the published names, because that path is a
+  coordinate inside the generated document.
+
+### Collisions are refused, not resolved
+
+Two columns published under one name, or two tables, fail the export before
+anything is written, and the message names both sources:
+
+```text
+table "invoices" exports two columns as "amount": "amount" and
+"billing_amount_minor"; give one of them a distinct api_name
+```
+
+An alias that shadowed another column would drop it from the contract, and the
+contract has nothing in it to record the loss.
+
+### The Protobuf consequence
+
+Protobuf field numbers are keyed by the published field name, so the API
+identity is what carries wire compatibility: renaming a column while its
+`api_name` stays put keeps the field number. Changing the `api_name` retires an
+identity consumers hold and is refused unless the retirement is chosen
+explicitly. See [Protobuf schema export](../protobuf/).
+
 ## Type mapping
 
 The lookup is dialect-agnostic: Postgres and MySQL spellings (`SERIAL`,
