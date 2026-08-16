@@ -10,8 +10,8 @@
     {
       "name": "the SQL source discards every returned row",
       "file": "config/projectconfig/atlas_data_sources.go",
-      "old": "\treturn atlasSQLResult(values), nil",
-      "new": "\treturn atlasSQLResult(nil), nil"
+      "old": "\tresult, err := atlasSQLResult(values)",
+      "new": "\tresult, err := atlasSQLResult(nil)"
     },
     {
       "name": "the external source discards program output",
