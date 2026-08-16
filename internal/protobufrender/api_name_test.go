@@ -140,6 +140,18 @@ func TestFieldUsesTheDeclaredAPIType(t *testing.T) {
 			"  google.protobuf.Timestamp stored_utc_at = 3;\n}")
 	c.Assert(out, qt.Contains, `import "google/protobuf/timestamp.proto";`,
 		qt.Commentf("the override has to pull in the import its type needs"))
+
+	// The export compiles what it prints, so the assertion above is not only
+	// about a line of text: dropping the import turns this render into
+	// "unknown type google.protobuf.Timestamp". Re-reading the file adds the
+	// other half -- an override survives its own output unchanged, keeping the
+	// field number, rather than being re-derived from the column on every run.
+	again := mustRenderText(c, oneTable(
+		column("id", "BIGINT"),
+		column("ambiguous_at", "TIMESTAMP"),
+		typedColumn("stored_utc_at", "TIMESTAMP", "TIMESTAMPTZ"),
+	), withPrevious([]byte(out)))
+	c.Assert(again, qt.Equals, out)
 }
 
 // An override the mapping cannot honor is refused. Here the stake is higher
