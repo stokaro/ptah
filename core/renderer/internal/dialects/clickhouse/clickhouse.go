@@ -32,6 +32,7 @@ import (
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/core/renderer/internal/dialects/internal/bufwriter"
+	"go.5x5.cz/ptah/core/renderer/internal/dialects/internal/defaultlit"
 	"go.5x5.cz/ptah/internal/tableref"
 )
 
@@ -311,7 +312,7 @@ func (r *Renderer) renderColumn(col *ast.ColumnNode) (string, error) {
 		case col.Default.Expression != "":
 			parts = append(parts, "DEFAULT "+col.Default.Expression)
 		case col.Default.HasLiteral():
-			parts = append(parts, "DEFAULT "+escapeStringLiteral(col.Default.Value))
+			parts = append(parts, "DEFAULT "+defaultlit.Render(col.Default.Value, escapeStringLiteral))
 		}
 	}
 
