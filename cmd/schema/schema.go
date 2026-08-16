@@ -57,6 +57,7 @@ const (
 	protoTypeRemovalFlag          = "proto-type-removal"
 	protoOnIncompatibleChangeFlag = "proto-on-incompatible-change"
 	protoOnNameReuseFlag          = "proto-on-name-reuse"
+	protoOnFieldRemovalFlag       = "proto-on-field-removal"
 	protoSplitFlag                = "proto-split"
 	protoOnTypeMoveFlag           = "proto-on-type-move"
 	protoCommentsFlag             = "proto-comments"
@@ -172,6 +173,7 @@ func newSchemaExportCommand() *cobra.Command {
 	var protoTypeRemoval string
 	var protoOnIncompatibleChange string
 	var protoOnNameReuse string
+	var protoOnFieldRemoval string
 	var protoSplit string
 	var protoOnTypeMove string
 	var protoComments string
@@ -247,6 +249,7 @@ part of the compatibility state, so all of them must be committed together.`,
 				protoTypeRemoval:          protoTypeRemoval,
 				protoOnIncompatibleChange: protoOnIncompatibleChange,
 				protoOnNameReuse:          protoOnNameReuse,
+				protoOnFieldRemoval:       protoOnFieldRemoval,
 				protoSplit:                protoSplit,
 				protoOnTypeMove:           protoOnTypeMove,
 				protoComments:             protoComments,
@@ -281,6 +284,8 @@ part of the compatibility state, so all of them must be committed together.`,
 		"Behavior when a retained field's protobuf type or cardinality changes: error or renumber (protobuf only)")
 	flags.StringVar(&protoOnNameReuse, protoOnNameReuseFlag, string(protobufrender.NameReuseError),
 		"Behavior when a reserved field or enum value name comes back: error or release (protobuf only)")
+	flags.StringVar(&protoOnFieldRemoval, protoOnFieldRemovalFlag, string(protobufrender.FieldRemovalError),
+		"Behavior when a field disappears from a retained message: error or reserve (protobuf only)")
 	flags.StringVar(&protoSplit, protoSplitFlag, string(protobufrender.SplitNone),
 		"How many files to write: none for a single file at --out, or table for one file per exported table next to it (protobuf only)")
 	flags.StringVar(&protoOnTypeMove, protoOnTypeMoveFlag, string(protobufrender.MoveError),
@@ -319,6 +324,7 @@ type exportOptions struct {
 	protoTypeRemoval          string
 	protoOnIncompatibleChange string
 	protoOnNameReuse          string
+	protoOnFieldRemoval       string
 	protoSplit                string
 	protoOnTypeMove           string
 	protoComments             string

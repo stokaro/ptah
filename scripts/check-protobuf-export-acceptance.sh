@@ -182,7 +182,7 @@ run_compatible_case() {
 
 run_compatible_case additive add-column
 run_compatible_case reordered reorder-columns
-run_compatible_case removed-field remove-column
+run_compatible_case removed-field remove-column --proto-on-field-removal reserve
 run_compatible_case tombstoned-type remove-type --proto-type-removal tombstone
 
 # A baseline written in the retired version 1 layout must be REFUSED, and

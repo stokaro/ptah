@@ -51,6 +51,18 @@ func withPrevious(previous []byte) protobufrender.Options {
 	return opts
 }
 
+// withRetiredFields is withPrevious for a render that drops a field.
+//
+// Retiring a number is refused by default, so a test that means to exercise the
+// retirement says so. It is a separate builder rather than a line in
+// withPrevious because every test that does NOT drop a field is what keeps the
+// default under test (stokaro/ptah#905).
+func withRetiredFields(previous []byte) protobufrender.Options {
+	opts := withPrevious(previous)
+	opts.OnFieldRemoval = protobufrender.FieldRemovalReserve
+	return opts
+}
+
 func mustRender(c *qt.C, db *goschema.Database, opts protobufrender.Options) protobufrender.Result {
 	c.Helper()
 	res, err := protobufrender.Render(context.Background(), db, opts)

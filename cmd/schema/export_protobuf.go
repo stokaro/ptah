@@ -58,6 +58,9 @@ func validateProtobufExportOptions(opts exportOptions) error {
 	if _, err := parseChangePolicy(opts.protoOnIncompatibleChange); err != nil {
 		return err
 	}
+	if _, err := parseFieldRemovalPolicy(opts.protoOnFieldRemoval); err != nil {
+		return err
+	}
 	if _, err := parseNameReusePolicy(opts.protoOnNameReuse); err != nil {
 		return err
 	}
@@ -88,6 +91,7 @@ func rejectProtobufOnlyFlags(opts exportOptions) error {
 		protoTypeRemovalFlag:          {opts.protoTypeRemoval, string(protobufrender.RemovalError)},
 		protoOnIncompatibleChangeFlag: {opts.protoOnIncompatibleChange, string(protobufrender.ChangeError)},
 		protoOnNameReuseFlag:          {opts.protoOnNameReuse, string(protobufrender.NameReuseError)},
+		protoOnFieldRemovalFlag:       {opts.protoOnFieldRemoval, string(protobufrender.FieldRemovalError)},
 		protoSplitFlag:                {opts.protoSplit, string(protobufrender.SplitNone)},
 		protoOnTypeMoveFlag:           {opts.protoOnTypeMove, string(protobufrender.MoveError)},
 		protoCommentsFlag:             {opts.protoComments, string(protobufrender.CommentsNone)},
@@ -132,6 +136,18 @@ func parseNameReusePolicy(value string) (protobufrender.NameReusePolicy, error) 
 	default:
 		return "", fmt.Errorf("invalid --%s %q: expected %s or %s", protoOnNameReuseFlag, value,
 			protobufrender.NameReuseError, protobufrender.NameReuseRelease)
+	}
+}
+
+func parseFieldRemovalPolicy(value string) (protobufrender.FieldRemovalPolicy, error) {
+	switch policy := protobufrender.FieldRemovalPolicy(strings.TrimSpace(value)); policy {
+	case "", protobufrender.FieldRemovalError:
+		return protobufrender.FieldRemovalError, nil
+	case protobufrender.FieldRemovalReserve:
+		return policy, nil
+	default:
+		return "", fmt.Errorf("invalid --%s %q: expected %s or %s", protoOnFieldRemovalFlag, value,
+			protobufrender.FieldRemovalError, protobufrender.FieldRemovalReserve)
 	}
 }
 
@@ -193,6 +209,10 @@ func runProtobufExport(cmd *cobra.Command, opts exportOptions, db *goschema.Data
 	if err != nil {
 		return err
 	}
+	fieldRemoval, err := parseFieldRemovalPolicy(opts.protoOnFieldRemoval)
+	if err != nil {
+		return err
+	}
 	nameReuse, err := parseNameReusePolicy(opts.protoOnNameReuse)
 	if err != nil {
 		return err
@@ -238,6 +258,7 @@ func runProtobufExport(cmd *cobra.Command, opts exportOptions, db *goschema.Data
 		TypeRemoval:          removal,
 		OnIncompatibleChange: change,
 		OnNameReuse:          nameReuse,
+		OnFieldRemoval:       fieldRemoval,
 		OnTypeMove:           move,
 		Comments:             comments,
 	})
