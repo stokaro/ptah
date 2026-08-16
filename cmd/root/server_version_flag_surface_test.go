@@ -7,6 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 
 	"go.5x5.cz/ptah/cmd/internal/serverversion"
 	"go.5x5.cz/ptah/cmd/root"
@@ -252,4 +253,41 @@ func nativeLeafCommands(tree *cobra.Command) map[string]*cobra.Command {
 		walk(child, []string{child.Name()})
 	}
 	return leaves
+}
+
+// TestServerVersionFlagHasOneSpelling pins the name, which the contract gate
+// above deliberately does not read.
+//
+// That gate answers from an annotation, so a command could carry the contract
+// under any name at all and still pass it. One meaning spelled two ways is what
+// this rule exists to prevent, and `--version` in particular is the spelling to
+// stay away from: on a CLI it conventionally answers with the program's own
+// version, which `ptah --version` prints.
+func TestServerVersionFlagHasOneSpelling(t *testing.T) {
+	c := qt.New(t)
+
+	carriers := contractCarryingFlags(nativeLeafCommands(root.NewRootCommand()))
+	c.Assert(len(carriers) > 0, qt.IsTrue,
+		qt.Commentf("no command carries the contract, so this gate asserts nothing"))
+
+	for verb, flag := range carriers {
+		t.Run(verb, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(flag.Name, qt.Equals, serverversion.FlagName,
+				qt.Commentf("%q spells the server-version contract %q", verb, flag.Name))
+		})
+	}
+}
+
+// contractCarryingFlags is the subset of commands that opted into the
+// server-version contract, keyed by verb.
+func contractCarryingFlags(commands map[string]*cobra.Command) map[string]*pflag.Flag {
+	carriers := make(map[string]*pflag.Flag)
+	for verb, cmd := range commands {
+		if flag := serverversion.Lookup(cmd); flag != nil {
+			carriers[verb] = flag
+		}
+	}
+	return carriers
 }
