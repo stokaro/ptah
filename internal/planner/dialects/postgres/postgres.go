@@ -847,10 +847,16 @@ func (p *Planner) modifyGeneratedColumnExpression(
 		)))
 	}
 	if !p.capabilities().Has(capability.AlterGeneratedColumnExpression) {
+		// The refusal is a capability verdict, so it reads as one. A plan for
+		// a PostgreSQL-compatible engine, a managed provider that withholds
+		// the statement, or a preset composed with .With(..., false) lands
+		// here with a version number that explains nothing; the release that
+		// added the statement follows the key as its reason.
 		return append(result, ast.NewComment(fmt.Sprintf(
-			"WARNING: Generated column %s.%s changed, but ALTER COLUMN SET EXPRESSION requires PostgreSQL 17+; manual migration required.",
+			"WARNING: Generated column %s.%s changed, but ALTER COLUMN SET EXPRESSION requires target capability %s, unavailable on this target (PostgreSQL added it in 17); manual migration required.",
 			tableName,
 			colDiff.ColumnName,
+			capability.AlterGeneratedColumnExpression,
 		)))
 	}
 

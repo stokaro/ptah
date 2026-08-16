@@ -424,14 +424,18 @@ func (createIndexCapabilityRule) CheckStatement(ctx Context, stmt ast.Node) []Fi
 	}
 	line, column := ctx.LineColumn(index.Name)
 	return []Finding{{
-		Rule:      RuleUnsupportedCapability,
-		Title:     "Statement requires unsupported capability",
-		Severity:  SeverityError,
-		File:      ctx.Source.Name,
-		Line:      line,
-		Column:    column,
-		Dialect:   ctx.Dialect,
-		Message:   "CREATE INDEX CONCURRENTLY requires the create_index_concurrently capability",
+		Rule:     RuleUnsupportedCapability,
+		Title:    "Statement requires unsupported capability",
+		Severity: SeverityError,
+		File:     ctx.Source.Name,
+		Line:     line,
+		Column:   column,
+		Dialect:  ctx.Dialect,
+		// The key is read off the constant the gate above tested. A retyped
+		// literal is a second spelling of the same identifier, free to drift
+		// from the one Capabilities.Has answers for, and the finding would
+		// then name a capability no preset carries.
+		Message:   fmt.Sprintf("CREATE INDEX CONCURRENTLY requires target capability %s, unavailable on this target", capability.CreateIndexConcurrently),
 		Rationale: "Capability-aware lint rules catch SQL that is valid for one PostgreSQL-family target but not for another.",
 	}}
 }

@@ -139,6 +139,9 @@ func TestPostgres_AlterTable_SetGeneratedExpressionUnsupported(t *testing.T) {
 	err := alter.Accept(renderer)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(renderer.Output(), qt.Contains, `ALTER COLUMN SET EXPRESSION requires PostgreSQL 17+`)
+	// The refusal has to name the key a preset is composed from, because that
+	// is what an operator can act on: Postgres16() is one of several ways to
+	// reach this branch, and the others carry no version that explains it.
+	c.Assert(renderer.Output(), qt.Contains, "ALTER COLUMN SET EXPRESSION requires target capability "+string(capability.AlterGeneratedColumnExpression))
 	c.Assert(renderer.Output(), qt.Not(qt.Contains), `SET EXPRESSION AS`)
 }

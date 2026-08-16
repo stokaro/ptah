@@ -11,7 +11,7 @@ per-capability tables are in [Capabilities](../../reference/capabilities/).
 
 ## Engines at a glance
 
-| Engine | Dialect (aliases) | URL schemes | Support |
+| Engine | Dialect (aliases) | URL schemes | Coverage |
 | --- | --- | --- | --- |
 | [PostgreSQL](../postgresql/) | `postgres` (`postgresql`, `pgx`) | `postgres://`, `postgresql://` | Primary first-party target with the broadest schema-object coverage. |
 | [SQLite](../sqlite/) | `sqlite` (`sqlite3`) | `sqlite://` | Supported for local workflows, examples, and lightweight test databases. |
@@ -27,47 +27,57 @@ Accepted URL formats, and the difference between target, dev, shadow, and
 throwaway databases, are on
 [Database URLs and dev databases](../../concepts/database-urls-and-dev-databases/).
 
-## Supported release lines
+## Declared release lines
 
 Every engine ships several versions at once, and Ptah models each release line
-with its own capability preset. This matrix is the supported set: the line, the
-preset it claims, and whether continuous integration measures that claim
-against a live server on every pull request.
+with its own capability preset. The table below is the declared set: the line,
+the preset it claims, how much testing stands behind that claim, and whether the
+capability probe measures it against a live server on every pull request.
+
+Declared is not the same as usable, and `Probed` is not the same as `Support`. A
+release line absent from the table connects, resolves capabilities, and performs
+the operations those capabilities allow. A certified line can be unprobed for
+either of two reasons: the integration suite starts a server the capability
+probe has no statement table for, or the line needs no server at all — SQLite is
+compiled into the binary, so every `go test ./...` run exercises it.
+[Support levels](#support-levels) defines what each level promises.
 
 The table is generated from the single declaration the CI matrix also reads, so
-the supported set cannot say one thing here and another in a workflow file.
+the declared set cannot say one thing here and another in a workflow file.
 
 <!-- BEGIN GENERATED VERSION MATRIX -->
-| Dialect | Release line | Capability preset | Refinement | Probed |
+| Dialect | Release line | Support | Capability preset | Probed |
 | --- | --- | --- | --- | --- |
-| `postgres` | 18 | `Postgres17` | version-ladder | yes |
-| `postgres` | 17 | `Postgres17` | version-ladder | yes |
-| `postgres` | 16 | `Postgres16` | version-ladder | yes |
-| `postgres` | 15 | `Postgres16` | version-ladder | yes |
-| `postgres` | 14 | `Postgres16` | version-ladder | yes |
-| `postgres` | 13 | `Postgres13` | version-ladder | yes |
-| `mysql` | 26.7 | `MySQL84` | version-ladder | yes |
-| `mysql` | 9.7 | `MySQL84` | version-ladder | yes |
-| `mysql` | 8.4 | `MySQL84` | version-ladder | yes |
-| `mariadb` | 12.3 | `MariaDB1011` | version-ladder | yes |
-| `mariadb` | 11.8 | `MariaDB1011` | version-ladder | yes |
-| `mariadb` | 11.4 | `MariaDB1011` | version-ladder | yes |
-| `mariadb` | 10.11 | `MariaDB1011` | version-ladder | yes |
-| `cockroachdb` | 26.2 | `CockroachDB26` | version-ladder | yes |
-| `cockroachdb` | 25.4 | `CockroachDB25` | version-ladder | yes |
-| `yugabytedb` | 2026.1 | `YugabyteDB25` | measured-release-line | yes |
-| `yugabytedb` | 2025.2 | `YugabyteDB25` | measured-release-line | yes |
-| `clickhouse` | 26.7 | `ClickHouse24` | dialect-default | no |
-| `clickhouse` | 26.3 | `ClickHouse24` | dialect-default | no |
-| `clickhouse` | 25.8 | `ClickHouse24` | dialect-default | no |
-| `clickhouse` | 24.10 | `ClickHouse24` | dialect-default | no |
-| `sqlserver` | 17.0 (SQL Server 2025) | `SQLServer2022` | dialect-default | no |
-| `sqlserver` | 16.0 (SQL Server 2022) | `SQLServer2022` | dialect-default | no |
-| `sqlserver` | 15.0 (SQL Server 2019) | `SQLServer2022` | dialect-default | no |
-| `sqlite` | 3 | `SQLite3` | dialect-default | no |
-| `spanner` | 0 | `SpannerPostgres` | banner-substring | no |
+| `postgres` | 18 | certified | `Postgres17` | yes |
+| `postgres` | 17 | certified | `Postgres17` | yes |
+| `postgres` | 16 | certified | `Postgres16` | yes |
+| `postgres` | 15 | certified | `Postgres16` | yes |
+| `postgres` | 14 | certified | `Postgres16` | yes |
+| `postgres` | 13 | legacy-tested | `Postgres13` | yes |
+| `mysql` | 26.7 | certified | `MySQL84` | yes |
+| `mysql` | 9.7 | certified | `MySQL84` | yes |
+| `mysql` | 8.4 | certified | `MySQL84` | yes |
+| `mariadb` | 12.3 | certified | `MariaDB1011` | yes |
+| `mariadb` | 11.8 | certified | `MariaDB1011` | yes |
+| `mariadb` | 11.4 | certified | `MariaDB1011` | yes |
+| `mariadb` | 10.11 | certified | `MariaDB1011` | yes |
+| `cockroachdb` | 26.2 | certified | `CockroachDB26` | yes |
+| `cockroachdb` | 25.4 | certified | `CockroachDB25` | yes |
+| `yugabytedb` | 2026.1 | certified | `YugabyteDB25` | yes |
+| `yugabytedb` | 2025.2 | certified | `YugabyteDB25` | yes |
+| `clickhouse` | 26.7 | certified | `ClickHouse24` | no |
+| `clickhouse` | 26.3 | best-effort | `ClickHouse24` | no |
+| `clickhouse` | 25.8 | best-effort | `ClickHouse24` | no |
+| `clickhouse` | 24.10 | legacy-tested | `ClickHouse24` | no |
+| `sqlserver` | 17.0 (SQL Server 2025) | certified | `SQLServer2022` | no |
+| `sqlserver` | 16.0 (SQL Server 2022) | best-effort | `SQLServer2022` | no |
+| `sqlserver` | 15.0 (SQL Server 2019) | best-effort | `SQLServer2022` | no |
+| `sqlite` | 3 | certified | `SQLite3` | no |
+| `spanner` | 0 | best-effort | `SpannerPostgres` | no |
 
 Declared release lines: 26. Probed on every pull request: 17.
+
+Support levels across the 26 declared lines: 19 certified, 2 legacy-tested, 5 best-effort.
 
 Lines that are declared and not probed, and why:
 
@@ -88,12 +98,19 @@ Lines whose container tag does not name the line, so which patch it resolves to 
 - `sqlserver` 15.0, pinned as `mcr.microsoft.com/mssql/server:2019-latest`.
 <!-- END GENERATED VERSION MATRIX -->
 
-`Refinement` says how a server reaches its preset. `version-ladder` selects an
-arm by parsed version, so an observation belongs to that line alone;
-`measured-release-line` reaches the preset through an engine banner but has
-been measured directly; `banner-substring` and `dialect-default` hand every
-release of the engine the same set, so an observation on one release cannot be
-credited to one line rather than its siblings.
+Whether an observation can be credited to one line rather than its siblings is a
+separate axis, recorded per line in the declaration and left out of the table
+above: it describes the resolver rather than the promise, and the two together
+render wider than this page's reading column. A line refined by parsed version
+is attributable on its own; one reached through an engine banner is attributable
+only where it has been measured directly; and where every release of an engine
+receives the same set, an observation on one release says nothing about which of
+them produced it. That is why several ClickHouse and SQL Server lines share one
+preset.
+
+`ptah db capabilities` reports a related but narrower fact per server, as
+`Preset source`: which rule chose that server's preset, not whether the line is
+attributable.
 
 A future line with no preset resolves onto the newest preset Ptah has, which is
 a stand-in rather than a match. The pipeline reports that condition as a
@@ -103,11 +120,107 @@ remaining version-specific refinement work.
 Which versions a vendor supports is recorded, with its source, next to each
 block of cells in `internal/capabilityprobe/cells.go`. PostgreSQL does not
 label releases LTS, so the reading used here is the newest patch of each
-still-supported major line. The container that reproduces each line is
-recorded there too. CockroachDB's `latest-v<line>` aliases follow the newest
+still-supported major line. The container that reproduces a line is recorded
+there too, or the reason there is none: SQLite is compiled into the binary and
+no Spanner server exists here. CockroachDB's `latest-v<line>` aliases follow the newest
 patch. YugabyteDB publishes no equivalent aliases, so the matrix driver
 resolves the highest numeric Docker Hub tag under each declared line before it
 starts the container.
+
+## Support levels
+
+The `Support` column records how much testing stands behind a release line. It
+is a claim about Ptah's continuous integration, not about the server: what an
+operation may do against a live target is decided by the capability set resolved
+for that target.
+
+| Status | Meaning |
+| --- | --- |
+| `certified` | Ptah exercises the line in continuous integration and commits to the tested feature surface. |
+| `legacy-tested` | Upstream end-of-life, kept on purpose as a regression sentinel. Runtime behavior is the same as a certified line; the promise is weaker. |
+| `best-effort` | Not regularly tested and not rejected. Capabilities are resolved as for any other server, and the operations they allow are performed. |
+| `known-incompatible` | A concrete technical incompatibility is known and named. A vendor end-of-life date is not one, and no release line carries this level today. |
+
+Upstream end-of-life does not make a release unsupported by Ptah at runtime. It
+lowers the testing guarantee; it is not a refusal. No code in Ptah reads a
+support level to decide whether an operation may proceed. PostgreSQL 13 moved to
+`legacy-tested` when its final release shipped on 2025-11-13: measured against a
+live 13.23 server on 2026-08-16, the line reports `legacy-tested`, its
+capabilities resolve, and the operations they allow run.
+
+### A line Ptah does not declare
+
+A server whose version falls on no line in the table resolves to `best-effort`.
+Its capabilities come from the preset its dialect resolves for that server — a
+version ladder where the dialect has one, the dialect default or a banner match
+otherwise — and the connection is not refused. The capability-probe pipeline is stricter than the
+runtime here on purpose: it reports an unmatched line as a failure, because a
+measurement it cannot attribute to a declared line is not evidence.
+
+Ask the server in front of you what Ptah resolved for it:
+
+```bash
+ptah db capabilities --db-url "$DATABASE_URL"
+```
+
+Expected output includes the level and the line, here against a live PostgreSQL
+18.4:
+
+```text
+Support level:      certified
+Release line:       18
+```
+
+The report also names the dialect, the server version and banner, the preset and
+the ladder that produced it, the non-boolean behavior values, and every
+capability key as supported or unsupported; `--format json` emits everything the
+text form shows, plus each capability key's documentation string, as a stable
+sorted document.
+
+Against a MySQL 8.0.46 server, a line this matrix does not declare, the same
+command reports `best-effort` and says what it fell back to:
+
+```text
+Note: mysql 8.0.46 is not a measured release line; capabilities fall back to the preset its ladder assigns (newest measured line: 26.7)
+```
+
+That server connects, resolves its capabilities, and works.
+
+### How a level is assigned
+
+The rubric has two inputs: does anything in Ptah's continuous integration
+exercise the line, and does the vendor still support it. Both yes is
+`certified`. Exercised but upstream end-of-life is `legacy-tested`. Not exercised
+is `best-effort`, whatever the vendor says, because certification is a claim
+about Ptah's testing and an untested line has none to make.
+
+Five declared lines are `best-effort` because nothing here exercises them:
+ClickHouse 26.3, ClickHouse 25.8, SQL Server 2022 (16.0), SQL Server 2019
+(15.0), and Spanner. Four of the five sit inside their vendor's support window,
+and Spanner is a managed service with no version axis at all. What none of them
+has is a run in this repository: the capability probe has no statement table for
+the `clickhouse` or `sqlserver` dialects, the only ClickHouse and SQL Server
+versions the integration suite starts are ClickHouse 26.7, ClickHouse 24.10, and
+SQL Server 2025, and no Spanner server exists here ([issue 942](https://github.com/stokaro/ptah/issues/942)). Presence
+in the table is not certification; the `Support` column is the place to read.
+
+### Keeping the levels current
+
+A level is declared with its release line in `internal/capabilityprobe/cells.go`,
+next to the preset the line claims and, where one exists, the container that
+reproduces it, so a line and its promise cannot drift apart.
+
+The two halves of the rubric are refreshed differently. The
+continuous-integration half is machine-checked: a census test reads the CI matrix
+and the integration workflow and fails any cell claiming `certified` or
+`legacy-tested` that nothing exercises, so a line cannot earn certification by
+being written down. The upstream half is a scheduled reading of the vendor pages
+named beside each block of cells. Several vendors publish a duration rather than
+a date — the three latest stable releases, a year after release — so a line's
+status can change with no date passing.
+
+That reading never removes a line. An upstream end-of-life date moves a cell from
+`certified` to `legacy-tested` and does nothing else.
 
 ## PostgreSQL
 

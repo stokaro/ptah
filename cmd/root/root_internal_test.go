@@ -218,6 +218,7 @@ func TestZZZRootUsageErrorsExit2WithoutUsage(t *testing.T) {
 		{name: "schema drift", args: []string{"schema", "drift", "--bogus-flag"}},
 		{name: "db read", args: []string{"db", "read", "--bogus-flag"}},
 		{name: "db drop-all", args: []string{"db", "drop-all", "--bogus-flag"}},
+		{name: "db capabilities", args: []string{"db", "capabilities", "--bogus-flag"}},
 		{name: "migrations plan", args: []string{"migrations", "plan", "--bogus-flag"}},
 		{name: "migrations generate", args: []string{"migrations", "generate", "--bogus-flag"}},
 		{name: "migrations create", args: []string{"migrations", "create", "--bogus-flag"}},

@@ -4,6 +4,7 @@ package db
 import (
 	"github.com/spf13/cobra"
 
+	"go.5x5.cz/ptah/cmd/dbcapabilities"
 	"go.5x5.cz/ptah/cmd/dropall"
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
 	"go.5x5.cz/ptah/cmd/readdb"
@@ -32,5 +33,11 @@ in the separate ptah-compat binary.`,
 	dropAllCmd.Short = "Drop all schema objects in a live database"
 	dropAllCmd.Long = "Drop all schema objects in a live database using Ptah's native database namespace."
 	cmd.AddCommand(dropAllCmd)
+
+	capabilitiesCmd := dbcapabilities.NewCapabilitiesCommand()
+	capabilitiesCmd.Short = "Report the capability profile Ptah resolves for a live database"
+	capabilitiesCmd.Long = "Report the capability profile Ptah resolves for a live database using Ptah's " +
+		"native database namespace."
+	cmd.AddCommand(capabilitiesCmd)
 	return cmd
 }
