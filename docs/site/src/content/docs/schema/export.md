@@ -343,6 +343,20 @@ its values on the annotation and an `api_type` beside them publishes the
 `api_type`: the values describe what is stored, and enum resolution would
 otherwise consult them first and quietly make the override do nothing.
 
+### What an override does not do
+
+It does not convert anything. `api_type` changes what the **contract says** a
+field is; it generates no marshalling, no parsing, and no validation of any
+kind at runtime. A `DECIMAL` published as text is still a `DECIMAL` in the
+database, and the service that serves the contract is what has to render it as
+text and read it back — an override that nothing implements produces a document
+that lies about the API.
+
+Nor does it check that the two types are compatible. Publishing a `DECIMAL` as
+`BIGINT` is accepted, because there are schemas where that is correct and Ptah
+cannot tell them apart from the ones where it is not. Review the pair; the
+export only guarantees that the type you named is one it can produce.
+
 ### An override that cannot be honored is refused
 
 An `api_type` the target cannot map fails the export, naming the column, the
