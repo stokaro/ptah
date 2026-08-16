@@ -65,19 +65,15 @@ jobs:
       - name: qtlint
         run: make lint-qtlint
 
+      # Both contours, every module. The module list is discovered rather than
+      # written out here, so a module added tomorrow is covered by existing;
+      # see scripts/list-go-modules.sh for the three answers this repository
+      # used to give to that one question.
       - name: nolintguard
-        run: |
-          nolintguard="$(go tool -n nolintguard)"
-          go vet -vettool="$nolintguard" -require-justification ./...
-          (cd testkit && go vet -vettool="$nolintguard" -require-justification ./...)
-          (cd examples/orm-loaders/gorm && go vet -vettool="$nolintguard" -require-justification ./...)
+        run: make lint-nolintguard
 
-      - name: nolintguard (integration)
-        run: |
-          nolintguard="$(go tool -n nolintguard)"
-          go vet -tags=integration -vettool="$nolintguard" -require-justification ./...
-          (cd testkit && go vet -tags=integration -vettool="$nolintguard" -require-justification ./...)
-          (cd examples/orm-loaders/gorm && go vet -tags=integration -vettool="$nolintguard" -require-justification ./...)
+      - name: Check every Go module is linted
+        run: scripts/check-go-module-lint-coverage.sh
 
       - name: Check test style baseline
         run: scripts/check-test-style.sh
@@ -100,6 +96,25 @@ jobs:
         with:
           args: --timeout=30m
           version: v2.12.2
+
+      # The action lints one directory per invocation, so a nested module needs
+      # its own step. scripts/check-go-module-lint-coverage.sh fails when a
+      # tracked module has none, which is what keeps this list from going stale
+      # the way it already had: golangci-lint ran only from the repository root,
+      # so testkit -- a published module -- and the gorm example were unlinted.
+      - name: Golint (testkit)
+        uses: golangci/golangci-lint-action@v9
+        with:
+          args: --timeout=30m
+          version: v2.12.2
+          working-directory: testkit
+
+      - name: Golint (gorm example)
+        uses: golangci/golangci-lint-action@v9
+        with:
+          args: --timeout=30m
+          version: v2.12.2
+          working-directory: examples/orm-loaders/gorm
 
   go-lint-windows:
     # The Ubuntu job's two contours differ by build tag, and a build tag cannot
@@ -151,6 +166,25 @@ jobs:
         with:
           args: --timeout=30m
           version: v2.12.2
+
+      # The action lints one directory per invocation, so a nested module needs
+      # its own step. scripts/check-go-module-lint-coverage.sh fails when a
+      # tracked module has none, which is what keeps this list from going stale
+      # the way it already had: golangci-lint ran only from the repository root,
+      # so testkit -- a published module -- and the gorm example were unlinted.
+      - name: Golint (testkit)
+        uses: golangci/golangci-lint-action@v9
+        with:
+          args: --timeout=30m
+          version: v2.12.2
+          working-directory: testkit
+
+      - name: Golint (gorm example)
+        uses: golangci/golangci-lint-action@v9
+        with:
+          args: --timeout=30m
+          version: v2.12.2
+          working-directory: examples/orm-loaders/gorm
 
       # Windows-only source is not only unanalyzed without this job, it is
       # unrun: a _windows_test.go file exercises code no other runner compiles.
