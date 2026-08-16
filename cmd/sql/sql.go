@@ -71,11 +71,7 @@ migration directory specific.`,
 
 	flags := cmd.Flags()
 	flags.StringVar(&dialect, "dialect", "", "Target dialect: postgres, mysql, mariadb, sqlite, sqlserver, clickhouse, cockroachdb, yugabytedb, or spanner")
-	// Registered through the shared registrar under this command's established
-	// spelling: `--version` here means a server, and the annotation the
-	// registrar attaches is what tells the flag-surface walk that, rather than
-	// the name it shares with two flags that mean something else entirely.
-	serverversion.RegisterAs(flags, "version", &version)
+	serverversion.Register(flags, &version)
 	flags.StringVar(&format, "format", formatText, "Output format: text or json")
 	flags.BoolVar(&stdin, "stdin", false, "Read SQL from stdin")
 	flags.StringArrayVar(&disabled, "disable", nil, "Disable a rule code or family, for example DDL001 or CAP (repeatable)")
@@ -115,7 +111,7 @@ func runSQLLint(cmd *cobra.Command, opts sqlLintOptions) error {
 		return writeSQLLintError(cmd.ErrOrStderr(), opts.format, err.Error())
 	}
 
-	// Resolved before the SQL is read so an unusable --version is reported as
+	// Resolved before the SQL is read so an unusable --server-version is reported as
 	// the usage error it is, rather than behind whatever the first file has
 	// to say for itself.
 	normalizedDialect := platform.NormalizeDialect(opts.dialect)
@@ -126,7 +122,10 @@ func runSQLLint(cmd *cobra.Command, opts sqlLintOptions) error {
 		// value naming a different server than --dialect. Re-stating one here
 		// is how the other comes to be reported as the wrong thing.
 		return writeSQLLintError(cmd.ErrOrStderr(), opts.format,
-			fmt.Sprintf("invalid --version: %s", err))
+			// Named from the constant, so the diagnostic cannot drift from
+			// the flag the way it did while this command spelled it its own
+			// way (stokaro/ptah#916).
+			fmt.Sprintf("invalid --%s: %s", serverversion.FlagName, err))
 	}
 
 	sources, err := readSQLLintSources(cmd.InOrStdin(), opts)
@@ -190,7 +189,7 @@ func validateSQLLintOptions(opts sqlLintOptions) error {
 		return fmt.Errorf("invalid --dialect value %q: expected postgres, mysql, mariadb, sqlite, sqlserver, clickhouse, cockroachdb, yugabytedb, or spanner", opts.dialect)
 	}
 	if opts.version != "" && opts.dialect == "" {
-		return fmt.Errorf("--version requires --dialect")
+		return fmt.Errorf("--%s requires --dialect", serverversion.FlagName)
 	}
 	if opts.stdin && len(opts.files) > 0 {
 		return fmt.Errorf("--stdin cannot be combined with file arguments")

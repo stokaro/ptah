@@ -295,8 +295,7 @@ has no ladder to spend it on. `Recognized` is `false` only for the first.
 operator input reads this field alone and refuses. A caller holding a live
 banner should keep ignoring it.
 
-`ptah sql lint --version`, `ptah schema render --server-version` and
-`ptah schema diff --server-version` are those callers. All three refuse an
+`ptah sql lint`, `ptah schema render` and `ptah schema diff` are those callers. All three refuse an
 unrecognized value and never report it as the version they planned against; a
 recognized value that did not select an exact measured release line is applied
 and announced, on stderr as a warning line and — on `sql lint --format json` —
@@ -381,12 +380,15 @@ two servers with nothing to prefer between them, so `internal/servertarget`
 refuses it even though a live CockroachDB reporting the same banner keeps its
 own preset.
 
-The two spellings differ because `sql lint --version` predates the flag having
-a name. `cmd/internal/serverversion` registers both and marks them with one
-annotation, so `cmd/root`'s flag-surface walk can tell them from the two
+All three spell it `--server-version`, and none of them spells it `--version`:
+on a CLI that is conventionally the program's own version, and `ptah --version`
+prints one. `cmd/internal/serverversion` registers the flag and marks it with one
+annotation, so `cmd/root`'s flag-surface walk can tell it from the two
 `--version` flags on the same command tree that mean something else entirely —
 `migrations checkpoint --version` names a checkpoint and `schema push
---version` names an artifact tag.
+--version` names an artifact tag. The annotation is what the walk reads, so a
+command counts because it opted into the contract and never because of how the
+flag is spelled.
 
 ### Composition
 
@@ -437,7 +439,7 @@ so a PostgreSQL 13 connection refuses that syntax before emitting SQL.
   check against a raw `crdb` would refuse even though
   `--dialect crdb --server-version 'CockroachDB CCL v25.4.0'` exits `0`.
   `internal/servertarget.Resolve` is those two refusals, and it is what both
-  `ptah sql lint --version` and `ptah schema render --server-version` call.
+  `ptah sql lint`, `ptah schema render` and `ptah schema diff` call.
 - `capability.ForServerVersion("mysql", version)` — refine using a live
   `SELECT version()` string. Recognizes shapes like `8.0.42-log`,
   `10.11.6-MariaDB-…`, the `5.5.5-10.11.6-MariaDB` replication-protocol prefix
