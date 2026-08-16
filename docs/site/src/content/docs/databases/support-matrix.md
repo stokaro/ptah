@@ -98,16 +98,16 @@ Lines whose container tag does not name the line, so which patch it resolves to 
 - `sqlserver` 15.0, pinned as `mcr.microsoft.com/mssql/server:2019-latest`.
 <!-- END GENERATED VERSION MATRIX -->
 
-How a server reaches its preset is a separate axis, and the full table in the
-repository's `docs/capabilities.md` carries it as a `Refinement` column.
+How a server reaches its preset is a separate axis, and the table above leaves
+it out: it describes the resolver rather than the promise, and the two together
+render wider than this page's reading column. There are four answers.
 `version-ladder` selects an arm by parsed version, so an observation belongs to
 that line alone; `measured-release-line` reaches the preset through an engine
 banner but has been measured directly; `banner-substring` and `dialect-default`
 hand every release of the engine the same set, so an observation on one release
-cannot be credited to one line rather than its siblings. It is left out of the
-table above because it describes the resolver rather than the promise, and
-because the two together render wider than this page's reading column.
-`ptah db capabilities` reports it per server as `Preset source`.
+cannot be credited to one line rather than its siblings. Run
+`ptah db capabilities` against a server to see which one applied to it, reported
+as `Preset source`.
 
 A future line with no preset resolves onto the newest preset Ptah has, which is
 a stand-in rather than a match. The pipeline reports that condition as a
