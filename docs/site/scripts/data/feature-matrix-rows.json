@@ -443,11 +443,11 @@
   {
     "area": "Migration directory formats",
     "feature": "Atlas R-suffixed (`1R_`, `R__`) migration execution",
-    "ptah": "no",
+    "ptah": "yes",
     "atlas_oss": "yes",
     "atlas_pro": "yes",
-    "note": "Ptah executes native Atlas `R` and `<number>R` files once, records the opaque version token, and does not implement Flyway-style reapply on checksum changes.",
-    "evidence": "Measured 2026-08-06 against the pinned community binary v1.3.0 on Postgres 16: CE executes native Atlas `2R` and `R` files once and records the version token, then reports `No migration files to execute` after the repeatable body changes and atlas.sum is refreshed. Current Ptah coverage includes provider tests for `3R` loading and filename order, SQLite compat e2e for `2R` and `R__` execution, revision rows `2R`/`R`, status/apply string-key reporting, and no reapply after checksum change. Converted Flyway directories are separate: import still renames repeatables onto a reserved numeric slot."
+    "note": "Both execute a native Atlas `R` or `<number>R` file once and record its version token, and neither reapplies it when the body changes: reapply-on-checksum is a Flyway feature.",
+    "evidence": "Measured 2026-08-16 on SQLite against the pinned community binary v1.3.0, same directory for both: `1_base.sql` + `2R_view.sql` applied by CE as `2 migrations` and by ptah-compat as `2 pending migrations. Current version: 2R`; after the repeatable body changed and atlas.sum was refreshed, BOTH answered `No migration files to execute` at exit 0. The row previously scored Ptah `no` for lacking Flyway reapply, which CE lacks too."
   },
   {
     "area": "Migration directory formats",

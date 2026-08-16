@@ -76,13 +76,13 @@ Across the 182 capabilities below:
 
 | Reading | Count |
 | --- | --- |
-| Ptah supports it fully | 113 |
+| Ptah supports it fully | 114 |
 | Ptah supports it with a stated limitation | 48 |
-| Ptah does not implement it | 21 |
-| Ptah and Atlas CE both support it | 36 |
+| Ptah does not implement it | 20 |
+| Ptah and Atlas CE both support it | 37 |
 | Ptah implements it openly where Atlas gates it behind Pro or Cloud | 42 |
 | Ptah has it and neither Atlas edition does | 23 |
-| Atlas CE has it and Ptah does not, or only in part | 23 |
+| Atlas CE has it and Ptah does not, or only in part | 22 |
 | An Atlas column is ❔ — not established by this page's evidence | 10 |
 
 Every 🟡 in the Ptah column names its specific limitation, reproduced against a
@@ -169,7 +169,7 @@ seven of them as open capabilities regardless.
 | `--dir` defaults to `file://migrations` | ✅ | ✅ | ✅ | All eight migrate verbs registering `--dir` default it to `file://migrations`. Never a fallback: the flag, `PTAH_DIR`, `PTAH_MIGRATIONS_DIR` and `atlas.hcl` outrank it, and `atlas.sum` is still gated. |
 | An empty migration directory is not a checksum error | ✅ | ✅ | ✅ | `ptah-compat migrate validate` and `migrate lint --latest` exit 0 on a directory holding no migration files. Native `ptah migrations validate` and `ptah migrations lint` keep their refusals. |
 | Apply pending migrations (apply/up) | 🟡 | ✅ | ✅ | Dry runs read stored revisions, select only pending files, and retain execution-time validation. ClickHouse Atlas-format revision tables are covered. |
-| Atlas R-suffixed (`1R_`, `R__`) migration execution | ❌ | ✅ | ✅ | Ptah executes native Atlas `R` and `<number>R` files once, records the opaque version token, and does not implement Flyway-style reapply on checksum changes. |
+| Atlas R-suffixed (`1R_`, `R__`) migration execution | ✅ | ✅ | ✅ | Both execute a native Atlas `R` or `<number>R` file once and record its version token, and neither reapplies it when the body changes: reapply-on-checksum is a Flyway feature. |
 | Atlas SQL template migrations (`--atlas-env`) | ✅ | ❌ | ❌ | Go-template actions in Atlas-format migration files render before execution with .Env set by `--atlas-env`; sibling *.sql files supply shared {{ template }} definitions. CE runs the braces as SQL. |
 | Atlas txtar migration sections (-- atlas:txtar) | ✅ | ❌ | ✅ | `-- atlas:txtar` executes migration.sql/down.sql and enforces checks.sql plus ordered checks/*.sql, including atlas:assert oneof; unrelated files are ignored. CE runs every section as plain SQL. |
 | Atlas-format checkpoint output | ✅ | ❌ | ✅ | `migrate checkpoint --dir-format atlas` writes the single `-- atlas:checkpoint` file plus atlas.sum, and is compat's default; `--dir-format ptah` writes the reversible pair. Up-only, as Atlas is. |
