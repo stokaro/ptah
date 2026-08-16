@@ -327,6 +327,21 @@ func TestCompatOverstrictCellsStillRefused(t *testing.T) {
 			},
 		},
 		{
+			// A plan name written positionally is a common enough slip to be
+			// worth answering precisely. This command reads the name from
+			// --name and reads nothing positional, so the positional is
+			// refused rather than accepted and dropped, and the message names
+			// the flag it belongs on.
+			name:  "schema plan still refuses a positional name, and says where it belongs",
+			setup: func(_ *qt.C, _ string) {},
+			args:  []string{"schema", "plan", "myplan", "--from", "sqlite://local.db?_fk=1", "--to", "file://schema.sql"},
+			assert: func(c *qt.C, _ string, err error, output string) {
+				c.Assert(err, qt.IsNotNil, qt.Commentf("%s", output))
+				c.Assert(err.Error(), qt.Contains, `unexpected positional arguments ["myplan"]`)
+				c.Assert(err.Error(), qt.Contains, "pass the plan name via --name")
+			},
+		},
+		{
 			name:  "schema inspect still refuses a trailing positional, and says where it belongs",
 			setup: func(_ *qt.C, _ string) {},
 			args:  []string{"schema", "inspect", "-u", "sqlite://local.db?_fk=1", "stray"},
