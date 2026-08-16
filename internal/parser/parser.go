@@ -1903,7 +1903,25 @@ func (p *Parser) parseTableElement(table *ast.CreateTableNode) error {
 	if p.current.Type == lexer.TokenIdentifier {
 		keyword := strings.ToUpper(p.current.Value)
 		switch keyword {
-		case "CONSTRAINT", "PRIMARY", "UNIQUE", "FOREIGN", "CHECK", "EXCLUDE", "SPATIAL", "INDEX", "KEY":
+		case "INDEX":
+			// ClickHouse declares a data-skipping index inside the column
+			// list. Only ClickHouse does: MySQL spells a table-level index the
+			// same way, `INDEX name (cols)`, and the two are told apart by
+			// whether a parenthesis or an expression follows the name -- which
+			// this parser cannot see without a token of lookahead it does not
+			// have. Reading the keyword by dialect costs nothing a caller has
+			// today, because a ClickHouse file parsed with no dialect at all
+			// already failed here (stokaro/ptah#1574).
+			if p.dialect == platform.ClickHouse {
+				return p.parseInlineSkippingIndex(table)
+			}
+			constraint, err := p.parseTableConstraint()
+			if err != nil {
+				return err
+			}
+			table.AddConstraint(constraint)
+			return nil
+		case "CONSTRAINT", "PRIMARY", "UNIQUE", "FOREIGN", "CHECK", "EXCLUDE", "SPATIAL", "KEY":
 			constraint, err := p.parseTableConstraint()
 			if err != nil {
 				return err
@@ -4279,6 +4297,33 @@ func (p *Parser) parseAddOperation() (ast.AlterOperation, error) {
 	}
 
 	return &ast.AddColumnOperation{Column: column}, nil
+}
+
+// parseInlineSkippingIndex reads a ClickHouse data-skipping index declared
+// inside the column list and hangs it on the table.
+//
+// It is the same grammar the ALTER form takes, so it is read by the same
+// function; only where the result is stored differs. The renderer writes every
+// skipping index as an ALTER, so a table read from this form is written back in
+// the other one -- semantically the same index, and stable from the first
+// render onwards.
+func (p *Parser) parseInlineSkippingIndex(table *ast.CreateTableNode) error {
+	operation, err := p.parseAddSkippingIndex()
+	if err != nil {
+		return err
+	}
+	index, ok := operation.(*ast.AddSkippingIndexOperation)
+	if !ok {
+		return fmt.Errorf("internal: skipping index parsed as %T", operation)
+	}
+	table.Indexes = append(table.Indexes, &ast.IndexNode{
+		Name:        index.Name,
+		Table:       table.Name,
+		Columns:     []string{index.Expression},
+		Type:        index.IndexType,
+		Granularity: index.Granularity,
+	})
+	return nil
 }
 
 // parseAddSkippingIndex reads
