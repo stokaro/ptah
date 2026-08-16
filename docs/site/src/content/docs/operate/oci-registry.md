@@ -187,6 +187,17 @@ renames them into place so a failed pull does not leave a partial directory.
 Any existing file, symlink, or directory, including an empty directory, is
 rejected without being overwritten.
 
+:::caution[Fixed: this did not hold on Windows]
+Earlier releases installed the staged directory with a move that asks Windows
+to replace whatever it finds. An entry appearing at the destination between the
+absence check and the install was therefore **overwritten there, and its
+contents lost** — measured on `windows-latest`, a file written at the
+destination mid-pull was gone and the pulled directory stood in its place. Unix
+was unaffected, where the same move refuses an occupied destination.
+
+The install now refuses on every platform ([#1547](https://github.com/stokaro/ptah/issues/1547)).
+:::
+
 ## Understand deployment reporting
 
 After an OCI-backed `migrations up` applies pending migrations successfully,
