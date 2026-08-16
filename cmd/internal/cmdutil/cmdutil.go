@@ -164,6 +164,17 @@ func printDiagnostic(cmd *cobra.Command, err error) {
 	fmt.Fprintf(cmd.ErrOrStderr(), "%s: %s\n", ErrorPrefix(cmd), err)
 }
 
+// ErrorCodePolicy reports the process exit code the nearest configured
+// ancestor of cmd declares, and whether any ancestor declares one. It exposes
+// the same lookup [NormalizeCommandError] performs, for the one decision made
+// outside command execution: the status an interrupted process exits with.
+// A surface that narrows every failure to one code narrows the interrupt too,
+// rather than leaking a signal status through a contract that does not have
+// one.
+func ErrorCodePolicy(cmd *cobra.Command) (int, bool) {
+	return commandErrorCode(cmd)
+}
+
 func commandErrorCode(cmd *cobra.Command) (int, bool) {
 	for current := cmd; current != nil; current = current.Parent() {
 		policy, ok := current.Annotations[errorCodePolicyAnnotation]
