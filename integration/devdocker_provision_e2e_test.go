@@ -4,6 +4,9 @@ package integration_test
 
 import (
 	"context"
+	"net"
+	"net/url"
+	"os"
 	"os/exec"
 	"slices"
 	"strings"
@@ -74,6 +77,94 @@ func devDockerPortMapping(c *qt.C, container string) string {
 	return strings.TrimSpace(lines[0])
 }
 
+// devDockerDaemonHost returns the endpoint the docker CLI is pointed at, with
+// `DOCKER_HOST` taking precedence over the selected context -- the same
+// precedence the package under test resolves, and read from the same place, so
+// this stays an independent reading rather than an echo of the package's own
+// answer.
+//
+// An empty result means the CLI is using its built-in default, which is a
+// socket on this machine.
+func devDockerDaemonHost(c *qt.C) string {
+	c.Helper()
+	if host := os.Getenv("DOCKER_HOST"); host != "" {
+		return host
+	}
+	out, err := exec.Command(
+		"docker", "context", "inspect", "--format", "{{.Endpoints.docker.Host}}",
+	).Output()
+	c.Assert(err, qt.IsNil)
+	return strings.TrimSpace(string(out))
+}
+
+// devDockerDaemonIsRemote reports whether the daemon runs on another machine.
+func devDockerDaemonIsRemote(c *qt.C) bool {
+	c.Helper()
+	host := devDockerDaemonHost(c)
+	remote, err := dockerEndpointIsRemote(host)
+	c.Assert(err, qt.IsNil, qt.Commentf("docker endpoint %q", host))
+	return remote
+}
+
+// dockerEndpointIsRemote classifies a docker endpoint by whether the daemon it
+// names runs on another machine.
+//
+// A unix socket or a named pipe is on this machine by construction, and so is
+// the CLI's built-in default, which is what an empty endpoint means. A `tcp://`
+// or `ssh://` endpoint is remote unless it names a loopback address.
+func dockerEndpointIsRemote(endpoint string) (bool, error) {
+	if endpoint == "" ||
+		strings.HasPrefix(endpoint, "unix://") ||
+		strings.HasPrefix(endpoint, "npipe://") {
+		return false, nil
+	}
+	parsed, err := url.Parse(endpoint)
+	if err != nil {
+		return false, err
+	}
+	hostname := parsed.Hostname()
+	if hostname == "" || hostname == "localhost" {
+		return false, nil
+	}
+	// A name that is not an address cannot be loopback here: ParseIP returns
+	// nil for it, and a nil IP is not loopback, so the endpoint counts as
+	// remote -- which is the reading that matters, since the container's port
+	// has to be reachable across the network for the run to work at all.
+	return !net.ParseIP(hostname).IsLoopback(), nil
+}
+
+// The branch this picks decides which binding the provisioning test demands, so
+// a wrong answer in either direction would assert the opposite of the truth:
+// calling a local daemon remote would accept a dev database published on every
+// interface of this machine, and calling a remote daemon local would demand a
+// loopback binding no client could reach.
+func TestDockerEndpointIsRemote(t *testing.T) {
+	tests := []struct {
+		name     string
+		endpoint string
+		want     bool
+	}{
+		{name: "the CLI default", endpoint: "", want: false},
+		{name: "a unix socket", endpoint: "unix:///var/run/docker.sock", want: false},
+		{name: "a windows named pipe", endpoint: "npipe:////./pipe/docker_engine", want: false},
+		{name: "tcp on the loopback address", endpoint: "tcp://127.0.0.1:2375", want: false},
+		{name: "tcp on the loopback name", endpoint: "tcp://localhost:2375", want: false},
+		{name: "tcp on the IPv6 loopback", endpoint: "tcp://[::1]:2375", want: false},
+		{name: "tcp on another address", endpoint: "tcp://192.168.1.5:2375", want: true},
+		{name: "tcp on another name", endpoint: "tcp://denis-home:2375", want: true},
+		{name: "ssh to another machine", endpoint: "ssh://buster@remote-dev", want: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			remote, err := dockerEndpointIsRemote(tt.endpoint)
+			c.Assert(err, qt.IsNil)
+			c.Assert(remote, qt.Equals, tt.want)
+		})
+	}
+}
+
 func TestDevDockerProvisionsAReachableServerAndRemovesIt(t *testing.T) {
 	c := qt.New(t)
 	c.Assert(devdocker.DockerCLI{}.Available(t.Context()), qt.IsNil)
@@ -102,17 +193,32 @@ func TestDevDockerProvisionsAReachableServerAndRemovesIt(t *testing.T) {
 	c.Assert(during, qt.HasLen, len(before)+1,
 		qt.Commentf("before=%v during=%v", before, during))
 
-	// A LOCAL daemon must publish on loopback and nowhere else. This is asserted
-	// from the runtime rather than from the publish flag, because the flag has
-	// three fields and getting the middle one wrong is silent: `0.0.0.0:5432`
-	// reads the bind address as the host port and is refused outright, while
-	// `0.0.0.0::5432` exposes the dev database on every interface of the host.
-	// The pinned community binary v1.3.0 does the latter unconditionally --
-	// measured, its container publishes `0.0.0.0:59319->5432/tcp` -- so this row
-	// pins a divergence Ptah keeps on purpose.
+	// The binding is asserted from the runtime rather than from the publish
+	// flag, because the flag has three fields and getting the middle one wrong
+	// is silent: `0.0.0.0:5432` reads the bind address as the host port and is
+	// refused outright, while `0.0.0.0::5432` exposes the dev database on every
+	// interface of the host. The pinned community binary v1.3.0 does the latter
+	// unconditionally -- measured, its container publishes
+	// `0.0.0.0:59319->5432/tcp` -- so the loopback row below pins a divergence
+	// Ptah keeps on purpose.
+	//
+	// Which binding is correct depends on where the daemon runs, and the
+	// package decides that for itself, so the expectation is chosen the same
+	// way. A daemon on this machine must publish on loopback and nowhere else.
+	// A daemon on another machine cannot be reached over loopback at all, so it
+	// publishes on every interface of its own host and announces that in a
+	// warning; asserting loopback there would be asserting that a working
+	// configuration is broken.
 	mapping := devDockerPortMapping(c, onlyNewContainer(c, before, during))
-	c.Assert(strings.HasPrefix(mapping, "127.0.0.1:"), qt.IsTrue,
-		qt.Commentf("a local daemon published %q, not a loopback binding", mapping))
+	if devDockerDaemonIsRemote(c) {
+		c.Assert(strings.HasPrefix(mapping, "0.0.0.0:"), qt.IsTrue,
+			qt.Commentf("the daemon at %q is on another machine and published %q, which no client here can reach",
+				devDockerDaemonHost(c), mapping))
+	} else {
+		c.Assert(strings.HasPrefix(mapping, "127.0.0.1:"), qt.IsTrue,
+			qt.Commentf("the daemon at %q is on this machine and published %q, not a loopback binding",
+				devDockerDaemonHost(c), mapping))
+	}
 
 	// The proof: a statement executed on the provisioned server, and its effect
 	// read back. A port that accepts a TCP connection is not a database.
