@@ -52,6 +52,12 @@ func Render(db *goschema.Database, opts Options) (Result, error) {
 	schemas := newOrderedMap()
 	for _, table := range tables {
 		fields := schemaexport.FieldsFor(db, table)
+		// Refused before anything is written: an alias that shadows another
+		// column would drop it from the document, and the reader of the
+		// document has nothing left to notice the loss with.
+		if err := schemaexport.ValidateFieldAPINames(table, fields); err != nil {
+			return Result{}, err
+		}
 		pk := toSet(schemaexport.EffectivePrimaryKey(table, fields))
 		obj := &schemaObject{Type: "object"}
 		obj.Description = table.Comment
@@ -62,11 +68,14 @@ func Render(db *goschema.Database, opts Options) (Result, error) {
 			if diag != nil {
 				diagnostics = append(diagnostics, *diag)
 			}
-			properties.set(field.Name, property)
+			apiName := schemaexport.FieldAPIName(field)
+			properties.set(apiName, property)
 			// A primary-key column is NOT NULL by SQL rule, regardless of how the
-			// nullability was declared on the source annotation.
+			// nullability was declared on the source annotation. The membership
+			// test stays on the COLUMN name: the primary key is a property of
+			// the table, not of what the column is published as.
 			if !field.Nullable || pk[field.Name] {
-				required = append(required, field.Name)
+				required = append(required, apiName)
 			}
 		}
 		obj.Required = required
