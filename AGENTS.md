@@ -1003,6 +1003,45 @@ golangci-lint run ./...
 
 The fix pass can leave second-pass fallout such as unused imports, removed helper functions, or staticcheck suggestions. Clean those manually before considering the lint run complete.
 
+### A module is covered because it exists, not because someone listed it
+
+This repository holds three Go modules — the root, `testkit/`, and
+`examples/orm-loaders/gorm/` — and its three repository-wide tools each
+answered "which modules do I visit" differently:
+
+- **qtlint** took `-multi-module` and discovered all three.
+- **nolintguard** named all three by hand, in six `cd` lines across the
+  Makefile and the workflow.
+- **golangci-lint** ran from the repository root, so it linted the root module
+  and nothing else.
+
+The third is not a style difference, it is missing coverage, and it was
+invisible because a linter that visits nothing reports nothing. Measured: a
+file planted in `testkit/` with two `unused` findings was reported by
+`golangci-lint run ./...` inside `testkit` and reported **not at all** from the
+root. `testkit` is a published module — downstream code imports it — and it was
+unlinted, as was the gorm example.
+
+**Discover the module list, never write it out.**
+[`scripts/list-go-modules.sh`](scripts/list-go-modules.sh) is the single answer,
+sourced from `git ls-files` rather than from a filesystem walk for the reason
+`scripts/check-test-style.sh` already documents: a walk descends into linked
+worktrees parked under this one and reports modules belonging to a different
+checkout. `make lint` consumes it, so a fourth module is covered by existing.
+
+Where discovery is impossible the list has to be policed. The
+`golangci-lint-action` lints one directory per invocation, so the workflow
+names each module in a step of its own, and
+[`scripts/check-go-module-lint-coverage.sh`](scripts/check-go-module-lint-coverage.sh)
+fails when a tracked module is missing from **any** job that runs golangci-lint.
+It counts rather than searches: a module dropped from one job would otherwise
+stay green on the strength of the other, which is the same "somewhere in the
+file" reasoning that let the coverage go missing to begin with.
+
+The rule generalizes past linters. Any statement of the form "we do X for every
+module" is a claim that needs either discovery or a check — a hand-written list
+of modules is a claim that was true when it was written.
+
 ### Package Documentation
 
 Every Go package must carry a package-level doc comment (`// Package <name>

@@ -1,6 +1,6 @@
 # Ptah Migration Library Makefile
 
-.PHONY: help build test integration-test integration-test-sqlserver db-start-sqlserver clean docker-build lint lint-qtlint lint-fix install-hooks conformance
+.PHONY: help build test integration-test integration-test-sqlserver db-start-sqlserver clean docker-build lint lint-qtlint lint-nolintguard lint-golangci lint-fix install-hooks conformance
 
 VERSION ?= $(shell git describe --tags --always --dirty)
 COMMIT ?= $(shell git rev-parse --short HEAD)
@@ -160,18 +160,30 @@ coverage:
 	go tool cover -html=coverage.out -o coverage.html
 	@echo "Coverage report generated: coverage.html"
 
+# GO_MODULES is every Go module tracked in this repository, discovered rather
+# than listed. A tool that names its modules by hand covers a module because
+# somebody remembered it, and stops covering the next one without saying so.
+# That is what happened here: nolintguard named all three modules by hand, and
+# golangci-lint never left the root module at all. See
+# scripts/list-go-modules.sh.
+GO_MODULES := $(shell scripts/list-go-modules.sh)
+
 # Lint code
-lint: lint-qtlint
+lint: lint-qtlint lint-nolintguard lint-golangci
+
+lint-nolintguard:
 	@echo "Running nolintguard..."
 	@nolintguard="$$(go tool -n nolintguard)"; \
-		go vet -vettool="$$nolintguard" -require-justification ./... && \
-		(cd testkit && go vet -vettool="$$nolintguard" -require-justification ./...) && \
-		(cd examples/orm-loaders/gorm && go vet -vettool="$$nolintguard" -require-justification ./...) && \
-		go vet -tags=integration -vettool="$$nolintguard" -require-justification ./... && \
-		(cd testkit && go vet -tags=integration -vettool="$$nolintguard" -require-justification ./...) && \
-		(cd examples/orm-loaders/gorm && go vet -tags=integration -vettool="$$nolintguard" -require-justification ./...)
+	for module in $(GO_MODULES); do \
+		(cd "$$module" && go vet -vettool="$$nolintguard" -require-justification ./...) || exit 1; \
+		(cd "$$module" && go vet -tags=integration -vettool="$$nolintguard" -require-justification ./...) || exit 1; \
+	done
+
+lint-golangci:
 	@echo "Running golangci-lint..."
-	golangci-lint run ./...
+	@for module in $(GO_MODULES); do \
+		(cd "$$module" && golangci-lint run ./...) || exit 1; \
+	done
 
 # Both invocations are required, and neither is redundant.
 #
