@@ -122,36 +122,6 @@ services:
       timeout: 5s
       retries: 18
 
-  # Cloud Spanner's PostgreSQL interface: the emulator and PGAdapter in one
-  # image, answering on the PostgreSQL wire, so ptah reaches it with the pgx
-  # driver like every other member of that family.
-  #
-  # Behind a profile because nothing in the default contour needs it yet.
-  #
-  # Two things about this endpoint are worth knowing before writing anything
-  # against it, both measured here rather than assumed:
-  #
-  #   - `SELECT version()` answers a bare `PostgreSQL 14.1`, carrying no token
-  #     that names Spanner. Detection cannot come from the banner, so a target
-  #     has to be named with a `spanner://` URL. A `postgres://` one is planned
-  #     as PostgreSQL and asks the catalog questions this endpoint refuses.
-  #   - The database is created on first connect, so there is no init step.
-  spanner:
-    image: gcr.io/cloud-spanner-pg-adapter/pgadapter-emulator:v0.55.2
-    profiles:
-      - spanner
-    ports:
-      - "5435:5432"
-    healthcheck:
-      # bash, not CMD-SHELL: /dev/tcp is a bash facility and this image's
-      # /bin/sh does not have it, so CMD-SHELL reports the service unhealthy
-      # while it is answering queries. The image carries no wget, curl or nc to
-      # probe with instead.
-      test: ["CMD", "bash", "-c", "exec 3<>/dev/tcp/localhost/5432"]
-      interval: 5s
-      timeout: 5s
-      retries: 20
-
   # Test runner service
   ptah-tester:
     build:

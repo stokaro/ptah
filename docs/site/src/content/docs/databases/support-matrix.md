@@ -204,16 +204,30 @@ versions the integration suite starts are ClickHouse 26.7, ClickHouse 24.10, and
 SQL Server 2025. Presence in the table is not certification; the `Support`
 column is the place to read.
 
-Spanner now has a server here — the `spanner` compose profile runs the emulator
-behind PGAdapter — but not a level that rests on it. What is executed against it
-is the boundary rather than the support: the schema read gets through schemas
-and tables and stops at the index catalog, because that query joins `pg_am` and
-this endpoint has no such relation. `integration/dbschema/spanner` asserts that,
-so the day a Spanner index read exists the test describing the limit fails and
-has to be rewritten ([issue 942](https://github.com/stokaro/ptah/issues/942)).
+Spanner can be run against locally now, though nothing here declares a server
+for it. `integration/dbschema/spanner` connects to Cloud Spanner's emulator
+behind PGAdapter when `SPANNER_URL` names one, and skips otherwise:
 
-A target there must be named with a `spanner://` URL. The endpoint's banner is a
-bare `PostgreSQL 14.1` carrying no token of its own, so a `postgres://` URL is
+```sh
+docker run -d -p 5435:5432 gcr.io/cloud-spanner-pg-adapter/pgadapter-emulator:v0.55.2
+SPANNER_URL=spanner://localhost:5435/ptah_test?sslmode=disable \
+  go test -tags integration ./integration/dbschema/spanner/...
+```
+
+What it executes is the **boundary** rather than the support: the schema read
+gets through schemas and tables and stops at the index catalog, because that
+query joins `pg_am` and this endpoint has no such relation. The day a Spanner
+index read exists, the test describing that limit fails and has to be rewritten
+([issue 942](https://github.com/stokaro/ptah/issues/942)).
+
+Declaring the server in `docker-compose.yaml` is the step still missing, and it
+is held up by the level rather than by the container: a line continuous
+integration exercises may not stay best-effort, and certifying this one needs
+the capability rows confirmed against a server, which is a different run from
+the boundary test.
+
+A target must be named with a `spanner://` URL. The endpoint's banner is a bare
+`PostgreSQL 14.1` carrying no token of its own, so a `postgres://` URL is
 planned as PostgreSQL and asks the catalog questions Spanner refuses.
 
 ### Keeping the levels current

@@ -10,10 +10,15 @@
 // the support currently STOPS as much as where it works: a boundary nobody has
 // executed is a boundary nobody can trust.
 //
-// Run against the `spanner` compose profile:
+// Nothing here declares a Spanner server yet, and that is held up by the
+// support level rather than by the container: a line continuous integration
+// exercises may not stay best-effort, and certifying this one needs the
+// capability rows confirmed against a server, which is a different run from
+// these two. So the address is supplied by hand:
 //
-//	docker compose --profile spanner up -d spanner
-//	SPANNER_URL=spanner://localhost:5435/test?sslmode=disable \
+//	docker run -d -p 5435:5432 \
+//	  gcr.io/cloud-spanner-pg-adapter/pgadapter-emulator:v0.55.2
+//	SPANNER_URL=spanner://localhost:5435/ptah_test?sslmode=disable \
 //	  go test -tags integration ./integration/dbschema/spanner/...
 package spanner_test
 
