@@ -34,7 +34,7 @@ func TestArtifactWriteToDir_PathSwapDoesNotDeleteReplacementFile(t *testing.T) {
 	c.Assert(os.WriteFile(install.output, []byte("keep"), 0o600), qt.IsNil)
 	err := install.finish()
 
-	c.Assert(err, qt.ErrorMatches, "install artifact output directory: .*")
+	assertRefusedInstall(c, err)
 	contents, readErr := os.ReadFile(install.output)
 	c.Assert(readErr, qt.IsNil)
 	c.Assert(string(contents), qt.Equals, "keep")
@@ -47,10 +47,23 @@ func TestArtifactWriteToDir_PathSwapDoesNotReplaceDirectory(t *testing.T) {
 	c.Assert(os.Mkdir(install.output, 0o755), qt.IsNil)
 	err := install.finish()
 
-	c.Assert(err, qt.ErrorMatches, "install artifact output directory: .*")
+	assertRefusedInstall(c, err)
 	entries, readErr := os.ReadDir(install.output)
 	c.Assert(readErr, qt.IsNil)
 	c.Assert(entries, qt.HasLen, 0)
+}
+
+// assertRefusedInstall states the refusal without restating the sentence the
+// platform wrote. Windows spells this one across two lines -- "file already
+// exists\nCannot create a file when that file already exists." -- and a `.*`
+// pattern silently does not match a newline, so a regexp over the whole
+// message is an assertion about the operating system's phrasing rather than
+// about the refusal. What the caller can rely on is the sentinel and the
+// operation that failed.
+func assertRefusedInstall(c *qt.C, err error) {
+	c.Helper()
+	c.Assert(err, qt.ErrorIs, fs.ErrExist)
+	c.Assert(err, qt.ErrorMatches, `(?s)install artifact output directory: .*`)
 }
 
 // blockedInstall is a WriteToDir suspended after it has checked its

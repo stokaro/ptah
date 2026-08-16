@@ -12,7 +12,9 @@ package fsdurable_test
 // It also answers the question the original failure left open. The test that
 // caught this stopped at its first failed assertion, so nothing established
 // whether the entry that appeared at the destination survived. This one reads
-// it back.
+// it back, and the answer measured on windows-latest is that it does not: the
+// destination file is gone and the moved directory stands where it was. The
+// OCI install was a data-loss path here, not a portability nit.
 
 import (
 	"os"

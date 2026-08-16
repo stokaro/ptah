@@ -526,6 +526,16 @@ varying part as a **parameter** so every platform can exercise every answer, or
 split the test by build tag so each half is real where it runs. Never write one
 assertion that quietly becomes a tautology on the half you are not looking at.
 
+**A wildcard is not a wildcard across lines.** `qt.ErrorMatches` anchors the
+whole message and `.` does not match a newline, so `"doing the thing: .*"`
+passes wherever the platform writes one line and fails wherever it writes two.
+Windows writes two often enough to matter: `file already exists\nCannot create
+a file when that file already exists.` Assert the sentinel the caller can
+actually rely on — `qt.ErrorIs(err, fs.ErrExist)` — and pin the operation's own
+prefix with `(?s)` if it is worth pinning, so the platform's second line does
+not decide the result. A red job here reported a *fix working correctly*; the
+regexp was the only thing that disagreed.
+
 **Derive the expectation rather than restating it.** Where a diagnostic
 embeds text the platform wrote, do not spell one platform's wording and do not
 drop the clause either — the clause is what proves the failure was about that
