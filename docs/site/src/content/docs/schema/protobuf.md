@@ -213,6 +213,7 @@ wrong format. Leave `--from` unset and the extension decides.
 | `--proto-type-removal` | no | `error` (default), `tombstone`, or `drop`. See [Handle removals and incompatible changes](#handle-removals-and-incompatible-changes). |
 | `--proto-on-incompatible-change` | no | `error` (default) or `renumber`. |
 | `--proto-on-name-reuse` | no | `error` (default) or `release`. |
+| `--proto-on-field-removal` | no | `error` (default) or `reserve`. See [Handle removals and incompatible changes](#handle-removals-and-incompatible-changes). |
 | `--proto-split` | no | `none` (default) or `table`. See [Split the export across files](#split-the-export-across-files). |
 | `--proto-on-type-move` | no | `error` (default) or `relocate`. |
 | `--proto-comments` | no | `none` (default) or `all`. See [Control what the contract says](#control-what-the-contract-says). |
@@ -685,11 +686,13 @@ permanent, so nothing on this list is an unowned gap.
   when a public contract must expose only part of a table. Tracked by
   [#904](https://github.com/stokaro/ptah/issues/904).
 - Database identifiers determine generated API identifiers after Protobuf name
-  normalization. Renaming a table or column can therefore rename a public
-  symbol even when its wire number remains stable. A column rename is the quiet
-  one: the export exits `0` with no diagnostic, reserves the old number and the
-  old name, and allocates a new number for the new name. Tracked by
-  [#905](https://github.com/stokaro/ptah/issues/905).
+  normalization. Renaming a table or column therefore renames a public symbol.
+  A column rename reads to the exporter as one field removed and another added,
+  because a column carries no identity beyond its name, so it is refused by
+  default like every other change to the contract — pass
+  `--proto-on-field-removal=reserve` to retire the old number and name. An
+  alias layer that would let a storage rename keep its API identity is tracked
+  by [#905](https://github.com/stokaro/ptah/issues/905).
 - Additive compatibility is not the same as intentional exposure. Adding a
   column to a selected table adds a field on the next export unless the whole
   table is excluded. Tracked by

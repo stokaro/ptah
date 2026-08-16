@@ -357,13 +357,16 @@ func TestSchemaExportProtobufSplitRelocateCarriesPinnedNumbering(t *testing.T) {
 	c.Assert(err, qt.IsNil, qt.Commentf("stderr:\n%s", stderr))
 
 	// Retiring the middle column leaves 2 reserved and email pinned at 3, which
-	// is what separates a carried-over history from a restarted one.
+	// is what separates a carried-over history from a restarted one. The
+	// retirement is asked for explicitly because it is refused by default;
+	// this test is about what relocation carries, not about the refusal.
 	rewriteSplitModel(c, dir, splitModelWithoutNickname)
 	_, stderr, err = runSchemaExport(
 		"--to", "protobuf",
 		"--root-dir", dir,
 		"--out", outPath,
 		"--proto-package", protoTestPackage,
+		"--proto-on-field-removal", "reserve",
 	)
 	c.Assert(err, qt.IsNil, qt.Commentf("stderr:\n%s", stderr))
 	c.Assert(readProtoSet(c, outDir)["schema.proto"], qt.Contains, "  string email = 3;\n")

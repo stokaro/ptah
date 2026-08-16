@@ -43,6 +43,26 @@ const (
 	RemovalDrop RemovalPolicy = "drop"
 )
 
+// FieldRemovalPolicy controls what happens when a field disappears from the
+// source schema, which retires its number and reserves its name.
+type FieldRemovalPolicy string
+
+const (
+	// FieldRemovalError refuses the export. It is the default for the reason
+	// every policy here defaults to refusing: retiring a number and reserving
+	// a name is a change to the contract a consumer already holds, and it
+	// happened silently -- one field number retired, another allocated, exit 0
+	// (stokaro/ptah#905).
+	//
+	// The exporter cannot tell a rename from a removal, because a column
+	// carries no identity of its own beyond its name. Both change the wire
+	// contract, so both are refused until the caller says which it meant.
+	FieldRemovalError FieldRemovalPolicy = "error"
+	// FieldRemovalReserve retires the number and the name, which is what keeps
+	// the export clean under buf breaking WIRE_JSON.
+	FieldRemovalReserve FieldRemovalPolicy = "reserve"
+)
+
 // ChangePolicy controls what happens when a retained field's translated
 // Protobuf type or cardinality changes.
 type ChangePolicy string
@@ -127,7 +147,11 @@ type Options struct {
 	// SplitNone.
 	Split SplitPolicy
 
-	TypeRemoval          RemovalPolicy
+	TypeRemoval RemovalPolicy
+	// OnFieldRemoval decides what happens when a field vanishes from a type
+	// that itself survives. The zero value refuses, like every other policy
+	// here.
+	OnFieldRemoval       FieldRemovalPolicy
 	OnIncompatibleChange ChangePolicy
 	OnNameReuse          NameReusePolicy
 	// OnTypeMove decides what happens when an already-pinned type changes files.

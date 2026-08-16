@@ -133,7 +133,7 @@ func TestReservedRangesMergeWithNewlyRetiredNeighbors(t *testing.T) {
 	previous := previousExport(
 		"message Thing {\n  int64 id = 1;\n  string keep = 8;\n\n  reserved 2 to 7;\n  reserved sku;\n}\n")
 
-	shrunk := mustRenderText(c, oneTable(column("id", "BIGINT")), withPrevious(previous))
+	shrunk := mustRenderText(c, oneTable(column("id", "BIGINT")), withRetiredFields(previous))
 	c.Assert(section(shrunk, "message Thing {"), qt.Equals,
 		"message Thing {\n  int64 id = 1;\n\n  reserved 2 to 8;\n  reserved keep, sku;\n}")
 }

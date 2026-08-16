@@ -1,6 +1,7 @@
 package protobufrender_test
 
 import (
+	"context"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -150,9 +151,9 @@ func TestNameReuseErrorIsTheDefaultForFieldsAndEnumValues(t *testing.T) {
 
 	full := oneTable(column("id", "BIGINT"), column("sku", "TEXT"))
 	shrunk := mustRender(c, oneTable(column("id", "BIGINT")),
-		withPrevious(mustRender(c, full, baseOptions()).Data))
+		withRetiredFields(mustRender(c, full, baseOptions()).Data))
 
-	message := mustFail(c, full, withPrevious(shrunk.Data))
+	message := mustFail(c, full, withRetiredFields(shrunk.Data))
 	c.Assert(message, qt.Equals,
 		`field "sku" on "Thing" is reserved because it was previously removed, `+
 			"and protobuf refuses to reuse a reserved name; "+
@@ -161,9 +162,9 @@ func TestNameReuseErrorIsTheDefaultForFieldsAndEnumValues(t *testing.T) {
 
 	enumFull := inlineEnumTable("new", "done")
 	enumShrunk := mustRender(c, inlineEnumTable("new"),
-		withPrevious(mustRender(c, enumFull, baseOptions()).Data))
+		withRetiredFields(mustRender(c, enumFull, baseOptions()).Data))
 
-	message = mustFail(c, enumFull, withPrevious(enumShrunk.Data))
+	message = mustFail(c, enumFull, withRetiredFields(enumShrunk.Data))
 	c.Assert(message, qt.Contains,
 		`enum value "THING_STATE_DONE" on "ThingState" is reserved because it was previously removed`)
 }
@@ -173,9 +174,9 @@ func TestNameReuseReleaseKeepsTheNumberReserved(t *testing.T) {
 
 	full := oneTable(column("id", "BIGINT"), column("sku", "TEXT"))
 	shrunk := mustRender(c, oneTable(column("id", "BIGINT")),
-		withPrevious(mustRender(c, full, baseOptions()).Data))
+		withRetiredFields(mustRender(c, full, baseOptions()).Data))
 
-	opts := withPrevious(shrunk.Data)
+	opts := withRetiredFields(shrunk.Data)
 	opts.OnNameReuse = protobufrender.NameReuseRelease
 	res := mustRender(c, full, opts)
 
@@ -303,4 +304,25 @@ func TestScalarToEnumChangeIsRefused(t *testing.T) {
 	c.Assert(message, qt.Equals,
 		`field "state" on message "Thing" changed from string to ThingState, which is not wire compatible; `+
 			"pass --proto-on-incompatible-change=renumber to reserve the old number and allocate a new one")
+}
+
+func TestFieldRemovalZeroValueRefuses(t *testing.T) {
+	c := qt.New(t)
+
+	baseline := mustRender(c, oneTable(
+		column("id", "BIGINT"),
+		column("sku", "TEXT"),
+	), baseOptions())
+
+	// The CLI never reaches this: it parses "" into the error policy before
+	// calling. A library caller who leaves the field alone is the one who does,
+	// and every other policy here refuses on its zero value for the same
+	// reason — a caller who said nothing did not ask for a contract change.
+	opts := withPrevious(baseline.Data)
+	c.Assert(opts.OnFieldRemoval, qt.Equals, protobufrender.FieldRemovalPolicy(""))
+
+	_, err := protobufrender.Render(context.Background(), oneTable(column("id", "BIGINT")), opts)
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(err.Error(), qt.Contains, "fields removed from Thing: sku")
 }
