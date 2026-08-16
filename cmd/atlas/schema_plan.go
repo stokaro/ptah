@@ -122,7 +122,11 @@ registry sub-verbs (approve, list, pull, push, rm) and the ` + "`lint`" + ` and
 	// combination is preferred over silently picking a winner and writing a
 	// differently named plan file than the operator asked for.
 	cmd.MarkFlagsMutuallyExclusive("name", "name-format")
-	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
+	// A plan name written positionally is a common enough slip to be worth
+	// answering precisely: this command reads the name from --name and reads
+	// nothing positional, so a positional is refused rather than accepted and
+	// dropped, and the refusal names the flag the value belongs on.
+	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgsHint("pass the plan name via --name"))
 	cmd.AddCommand(newAtlasSchemaPlanNewCommand())
 	cmd.AddCommand(newAtlasSchemaPlanValidateCommand())
 	// The remaining sub-verbs stay unsupported-boundary stubs, for two
