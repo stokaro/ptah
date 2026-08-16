@@ -81,20 +81,6 @@ func runAtlasMigrateApplyRefusals(ctx context.Context, operands atlasMigrateAppl
 		return err
 	}
 
-	// Ptah builds before #1206 recorded a converted Flyway migration under an
-	// internal ordering key; builds before #982 used an even older numeric key.
-	// Either row reads as pending after the exact source token becomes the
-	// revision identity. Refuse before executing anything rather than re-running
-	// migrations that already ran.
-	if err := checkLegacyFlywayRevisions(
-		operands.captured,
-		operands.dirFormat,
-		operands.plan,
-		operands.conn.Info().Dialect,
-	); err != nil {
-		return err
-	}
-
 	// The exemption above only stops the linear guard from reading the
 	// baseline's band position as "authored earlier". Whether a baseline may
 	// run against a database that already has history is a separate question,

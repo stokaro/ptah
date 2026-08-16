@@ -629,41 +629,6 @@ func TestGolangMigrateIdentityRemainsNumeric(t *testing.T) {
 	}
 }
 
-func TestLegacyPtahOrderingKeyRefusesBeforeRecovery(t *testing.T) {
-	oracle := requireAtlasOracle(t)
-	c := qt.New(t)
-	compat := buildCompatBinary(c)
-	dir := writeHashedFlywayDir(c, oracle, []migrationFile{
-		{name: "V1__init.sql", body: "CREATE TABLE legacy_identity (id INTEGER PRIMARY KEY);\n"},
-	})
-	dbPath := filepath.Join(c.TempDir(), "legacy.db")
-	assertSQLiteApplyIdentity(c, compat, dir, dbPath, []revisionRow{{Version: "1", Description: "init"}})
-	db, err := sql.Open("sqlite", dbPath)
-	c.Assert(err, qt.IsNil)
-	// Reproduce both fields the older Ptah build wrote. Rewriting only version
-	// would retain the current source-identity marker and correctly model a
-	// retired exact numeric token instead of an obsolete ordering key.
-	_, err = db.Exec("UPDATE atlas_schema_revisions SET version = '10000', operator_version = 'Ptah' WHERE version = '1'")
-	c.Assert(err, qt.IsNil)
-	c.Assert(db.Close(), qt.IsNil)
-
-	refused := runCommand(c, compat,
-		"migrate", "apply", "--dir", "file://"+dir+"?format=flyway", "--url", "sqlite://"+dbPath)
-	c.Assert(refused.code, qt.Equals, 1)
-	c.Assert(refused.stderr, qt.Contains, "recorded version -> exact Flyway source token")
-	c.Assert(readSQLiteRevisionRows(c, dbPath), qt.DeepEquals, []revisionRow{{Version: "10000", Description: "init"}})
-
-	db, err = sql.Open("sqlite", dbPath)
-	c.Assert(err, qt.IsNil)
-	_, err = db.Exec("UPDATE atlas_schema_revisions SET version = '1' WHERE version = '10000'")
-	c.Assert(err, qt.IsNil)
-	c.Assert(db.Close(), qt.IsNil)
-	settled := runCommand(c, compat,
-		"migrate", "apply", "--dir", "file://"+dir+"?format=flyway", "--url", "sqlite://"+dbPath)
-	c.Assert(settled.code, qt.Equals, 0, qt.Commentf("stdout: %s\nstderr: %s", settled.stdout, settled.stderr))
-	c.Assert(readSQLiteRevisionRows(c, dbPath), qt.DeepEquals, []revisionRow{{Version: "1", Description: "init"}})
-}
-
 func TestFlywayRevisionIdentityMatchesAtlasCEOnPostgres(t *testing.T) {
 	oracle := requireAtlasOracle(t)
 	postgresURL := requirePostgresURL(t)
