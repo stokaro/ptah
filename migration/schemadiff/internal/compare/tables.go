@@ -127,6 +127,17 @@ func TablesAndColumnsWithSemantics(
 
 	for identity, table := range dbTables {
 		if _, exists := genTables[identity]; !exists {
+			// An object type the desired source cannot represent is outside
+			// the surface that source manages. Go annotations, HCL and YAML
+			// have no virtual-table construct, so their silence about a live
+			// FTS5 index is not a request to drop it -- and the drop takes the
+			// index and everything in it. A native `.sql` document can express
+			// one and records nothing in NotDescribed, so its silence still
+			// removes (stokaro/ptah#1028).
+			if table.VirtualModule != "" &&
+				!cov.PlansRemoval(coverage.VirtualTable, table.Schema, table.Name) {
+				continue
+			}
 			diff.TablesRemoved = append(diff.TablesRemoved, tableDiffName(table.Schema, table.Name, dialect))
 		}
 	}

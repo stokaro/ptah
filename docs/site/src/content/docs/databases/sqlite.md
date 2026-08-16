@@ -132,12 +132,21 @@ cannot express are refused:
 
 | desired side | database side | outcome |
 | --- | --- | --- |
-| does not name it | virtual | **refused** — a document could not have asked for it to be kept, so silence is not a request to drop |
+| does not name it, and **cannot** name it | virtual | **left alone** — the source has no virtual-table syntax, so its silence is not a request to drop |
+| does not name it, but **could** | virtual | **refused** — dropping one deletes the index and everything in it, so Ptah does not plan that from an absence |
 | ordinary table | virtual | **refused** — two kinds of object under one name |
 | virtual | ordinary table | **refused** — the same collision, mirrored |
 | virtual, different declaration | virtual | **refused** — no `ALTER VIRTUAL TABLE`, so converging destroys the index |
 | virtual, same declaration | virtual | synced |
 | virtual | absent | planned as `CREATE VIRTUAL TABLE` |
+
+An object type a source cannot represent is outside the surface that source
+manages. Go annotations, HCL and YAML have no `CREATE VIRTUAL TABLE`, so a
+schema written in them never withheld one and a live index it does not mention
+is left untouched — no refusal, and no drop. A native `.sql` document and a
+database URL can both express one, so for those the ordinary declarative rule
+holds and silence still means removal, which Ptah refuses rather than plans
+because the drop is destructive.
 
 The module name is folded the way SQLite folds an identifier; the module
 arguments are compared verbatim, because only the module interprets them and

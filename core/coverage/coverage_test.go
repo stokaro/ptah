@@ -441,7 +441,7 @@ func TestDecodeHeader_FailurePath(t *testing.T) {
 		{
 			name:     "unknown kind",
 			document: "// ptah:not-described publication\n",
-			wantErr:  `unknown coverage kind "publication": valid kinds are composite, domain, extension, policy, range, role, schema, sequence`,
+			wantErr:  `unknown coverage kind "publication": valid kinds are composite, domain, extension, policy, range, role, schema, sequence, virtual_table`,
 		},
 		{
 			name:     "no kind",

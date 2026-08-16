@@ -94,10 +94,20 @@ const (
 	Schema Kind = "schema"
 	// Sequence is a standalone sequence (CREATE SEQUENCE).
 	Sequence Kind = "sequence"
+	// VirtualTable is a SQLite virtual table (CREATE VIRTUAL TABLE ... USING).
+	//
+	// Unlike the kinds above it, a description usually declines this one by
+	// construction rather than by choice: Go annotations, HCL and YAML have no
+	// syntax for a virtual table at all, so their silence about one carries no
+	// intent and cannot be read as a request to drop it. A native `.sql`
+	// document and a database read can both express one and record nothing
+	// here, so their silence still means the table is gone
+	// (stokaro/ptah#1028).
+	VirtualTable Kind = "virtual_table"
 )
 
 // kinds is every valid [Kind], in the order directives are written.
-var kinds = []Kind{Composite, Domain, Extension, Policy, Range, Role, Schema, Sequence}
+var kinds = []Kind{Composite, Domain, Extension, Policy, Range, Role, Schema, Sequence, VirtualTable}
 
 // ParseKind resolves a serialized kind token. It refuses anything not in the
 // closed list rather than returning a zero value, so a directive a build does
