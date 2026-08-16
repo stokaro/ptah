@@ -46,34 +46,34 @@ The table is generated from the single declaration the CI matrix also reads, so
 the declared set cannot say one thing here and another in a workflow file.
 
 <!-- BEGIN GENERATED VERSION MATRIX -->
-| Dialect | Release line | Support | Capability preset | Refinement | Probed |
-| --- | --- | --- | --- | --- | --- |
-| `postgres` | 18 | certified | `Postgres17` | version-ladder | yes |
-| `postgres` | 17 | certified | `Postgres17` | version-ladder | yes |
-| `postgres` | 16 | certified | `Postgres16` | version-ladder | yes |
-| `postgres` | 15 | certified | `Postgres16` | version-ladder | yes |
-| `postgres` | 14 | certified | `Postgres16` | version-ladder | yes |
-| `postgres` | 13 | legacy-tested | `Postgres13` | version-ladder | yes |
-| `mysql` | 26.7 | certified | `MySQL84` | version-ladder | yes |
-| `mysql` | 9.7 | certified | `MySQL84` | version-ladder | yes |
-| `mysql` | 8.4 | certified | `MySQL84` | version-ladder | yes |
-| `mariadb` | 12.3 | certified | `MariaDB1011` | version-ladder | yes |
-| `mariadb` | 11.8 | certified | `MariaDB1011` | version-ladder | yes |
-| `mariadb` | 11.4 | certified | `MariaDB1011` | version-ladder | yes |
-| `mariadb` | 10.11 | certified | `MariaDB1011` | version-ladder | yes |
-| `cockroachdb` | 26.2 | certified | `CockroachDB26` | version-ladder | yes |
-| `cockroachdb` | 25.4 | certified | `CockroachDB25` | version-ladder | yes |
-| `yugabytedb` | 2026.1 | certified | `YugabyteDB25` | measured-release-line | yes |
-| `yugabytedb` | 2025.2 | certified | `YugabyteDB25` | measured-release-line | yes |
-| `clickhouse` | 26.7 | certified | `ClickHouse24` | dialect-default | no |
-| `clickhouse` | 26.3 | best-effort | `ClickHouse24` | dialect-default | no |
-| `clickhouse` | 25.8 | best-effort | `ClickHouse24` | dialect-default | no |
-| `clickhouse` | 24.10 | legacy-tested | `ClickHouse24` | dialect-default | no |
-| `sqlserver` | 17.0 (SQL Server 2025) | certified | `SQLServer2022` | dialect-default | no |
-| `sqlserver` | 16.0 (SQL Server 2022) | best-effort | `SQLServer2022` | dialect-default | no |
-| `sqlserver` | 15.0 (SQL Server 2019) | best-effort | `SQLServer2022` | dialect-default | no |
-| `sqlite` | 3 | certified | `SQLite3` | dialect-default | no |
-| `spanner` | 0 | best-effort | `SpannerPostgres` | banner-substring | no |
+| Dialect | Release line | Support | Capability preset | Probed |
+| --- | --- | --- | --- | --- |
+| `postgres` | 18 | certified | `Postgres17` | yes |
+| `postgres` | 17 | certified | `Postgres17` | yes |
+| `postgres` | 16 | certified | `Postgres16` | yes |
+| `postgres` | 15 | certified | `Postgres16` | yes |
+| `postgres` | 14 | certified | `Postgres16` | yes |
+| `postgres` | 13 | legacy-tested | `Postgres13` | yes |
+| `mysql` | 26.7 | certified | `MySQL84` | yes |
+| `mysql` | 9.7 | certified | `MySQL84` | yes |
+| `mysql` | 8.4 | certified | `MySQL84` | yes |
+| `mariadb` | 12.3 | certified | `MariaDB1011` | yes |
+| `mariadb` | 11.8 | certified | `MariaDB1011` | yes |
+| `mariadb` | 11.4 | certified | `MariaDB1011` | yes |
+| `mariadb` | 10.11 | certified | `MariaDB1011` | yes |
+| `cockroachdb` | 26.2 | certified | `CockroachDB26` | yes |
+| `cockroachdb` | 25.4 | certified | `CockroachDB25` | yes |
+| `yugabytedb` | 2026.1 | certified | `YugabyteDB25` | yes |
+| `yugabytedb` | 2025.2 | certified | `YugabyteDB25` | yes |
+| `clickhouse` | 26.7 | certified | `ClickHouse24` | no |
+| `clickhouse` | 26.3 | best-effort | `ClickHouse24` | no |
+| `clickhouse` | 25.8 | best-effort | `ClickHouse24` | no |
+| `clickhouse` | 24.10 | legacy-tested | `ClickHouse24` | no |
+| `sqlserver` | 17.0 (SQL Server 2025) | certified | `SQLServer2022` | no |
+| `sqlserver` | 16.0 (SQL Server 2022) | best-effort | `SQLServer2022` | no |
+| `sqlserver` | 15.0 (SQL Server 2019) | best-effort | `SQLServer2022` | no |
+| `sqlite` | 3 | certified | `SQLite3` | no |
+| `spanner` | 0 | best-effort | `SpannerPostgres` | no |
 
 Declared release lines: 26. Probed on every pull request: 17.
 
@@ -98,12 +98,16 @@ Lines whose container tag does not name the line, so which patch it resolves to 
 - `sqlserver` 15.0, pinned as `mcr.microsoft.com/mssql/server:2019-latest`.
 <!-- END GENERATED VERSION MATRIX -->
 
-`Refinement` says how a server reaches its preset. `version-ladder` selects an
-arm by parsed version, so an observation belongs to that line alone;
-`measured-release-line` reaches the preset through an engine banner but has
-been measured directly; `banner-substring` and `dialect-default` hand every
-release of the engine the same set, so an observation on one release cannot be
-credited to one line rather than its siblings.
+How a server reaches its preset is a separate axis, and the full table in the
+repository's `docs/capabilities.md` carries it as a `Refinement` column.
+`version-ladder` selects an arm by parsed version, so an observation belongs to
+that line alone; `measured-release-line` reaches the preset through an engine
+banner but has been measured directly; `banner-substring` and `dialect-default`
+hand every release of the engine the same set, so an observation on one release
+cannot be credited to one line rather than its siblings. It is left out of the
+table above because it describes the resolver rather than the promise, and
+because the two together render wider than this page's reading column.
+`ptah db capabilities` reports it per server as `Preset source`.
 
 A future line with no preset resolves onto the newest preset Ptah has, which is
 a stand-in rather than a match. The pipeline reports that condition as a

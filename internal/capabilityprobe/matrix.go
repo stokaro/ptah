@@ -499,14 +499,22 @@ func markdownProbed(cell CICell) string {
 // columns that stay are the ones that answer "which versions are supported and
 // which of them does CI measure", and the rest is written underneath as prose
 // the same generator produces.
+//
+// Refinement is deliberately NOT among them, and its removal is what made room
+// for Support. Measured: with both, this table renders 651px inside the site's
+// 632px reading column and the responsive check fails the build. Of the two,
+// Refinement is the one a reader of this page did not come for — it says how
+// the resolver REACHES a preset, which is a fact about Ptah's internals, while
+// Support says how much testing stands behind the line, which is the question
+// the page exists to answer. The wide rendering keeps both.
 func WriteMatrixSummary(w io.Writer) {
 	matrix := CIMatrix()
-	fmt.Fprintf(w, "| Dialect | Release line | Support | Capability preset | Refinement | Probed |\n")
-	fmt.Fprintf(w, "| --- | --- | --- | --- | --- | --- |\n")
+	fmt.Fprintf(w, "| Dialect | Release line | Support | Capability preset | Probed |\n")
+	fmt.Fprintf(w, "| --- | --- | --- | --- | --- |\n")
 	for _, cell := range slices.Concat(matrix.Cells, matrix.Skipped) {
-		fmt.Fprintf(w, "| `%s` | %s | %s | %s | %s | %s |\n",
+		fmt.Fprintf(w, "| `%s` | %s | %s | %s | %s |\n",
 			cell.Dialect, markdownLine(cell), markdownSupport(cell), markdownPreset(cell),
-			cell.Refinement, markdownProbedShort(cell))
+			markdownProbedShort(cell))
 	}
 	writeSummaryNotes(w, matrix)
 }

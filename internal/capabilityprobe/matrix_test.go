@@ -327,9 +327,12 @@ func TestWriteMatrix_BothRenderingsNameTheSupportLevelOfEveryLine(t *testing.T) 
 		write:   capabilityprobe.WriteMatrixMarkdown,
 		columns: 8,
 	}, {
-		name:    "compact",
+		name: "compact",
+		// Five, not six: the compact rendering drops Refinement so that Support
+		// fits. With both, the rendered table measured 651px inside the site's
+		// 632px reading column and check-responsive.mjs failed the build.
 		write:   capabilityprobe.WriteMatrixSummary,
-		columns: 6,
+		columns: 5,
 	}}
 
 	declared := slices.Concat(capabilityprobe.CIMatrix().Cells, capabilityprobe.CIMatrix().Skipped)
