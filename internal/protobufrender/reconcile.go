@@ -167,14 +167,46 @@ func (b *builder) reconcileMessage(dm desiredMessage, prev *previousSet) (messag
 	// Everything the previous file held that the source no longer describes is
 	// retired by both number and name. Reserving the name as well as the number
 	// is what keeps the export clean under buf breaking WIRE_JSON.
+	var retired []string
 	for name, number := range state.Numbers {
 		if live[name] {
 			continue
 		}
+		retired = append(retired, name)
 		msg.Reserved.addNumber(number)
 		msg.Reserved.addName(name)
 	}
+	if err := b.reportRetiredFields(dm.Name, retired); err != nil {
+		return message{}, err
+	}
 	return msg, nil
+}
+
+// reportRetiredFields answers for fields the source stopped describing.
+//
+// Retiring a number is a change to the contract a consumer already holds, and
+// it is the only compatibility-relevant event in this exporter that used to
+// pass without a word: a renamed column exited 0 with one number retired and
+// another allocated, where a removed type, a changed type and a reused name
+// were each already refused by default (stokaro/ptah#905).
+func (b *builder) reportRetiredFields(owner string, retired []string) error {
+	if len(retired) == 0 {
+		return nil
+	}
+	sort.Strings(retired)
+
+	if b.opts.OnFieldRemoval == FieldRemovalReserve {
+		for _, name := range retired {
+			b.warn(owner, fmt.Sprintf(
+				"field %q was removed from %s and retired; its number and name are reserved",
+				name, owner))
+		}
+		return nil
+	}
+	return fmt.Errorf(
+		"fields removed from %s: %s; retiring a number changes the contract consumers hold, so choose"+
+			" --proto-on-field-removal=reserve to retire them, or restore the name if the column was renamed",
+		owner, strings.Join(retired, ", "))
 }
 
 func (b *builder) reconcileEnum(de enum, prev *previousSet) (enum, error) {

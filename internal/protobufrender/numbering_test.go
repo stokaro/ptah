@@ -40,7 +40,7 @@ func TestNumberingRemovedFieldReservesNumberAndName(t *testing.T) {
 	shrunk := mustRenderText(c, oneTable(
 		column("id", "BIGINT"),
 		column("name", "TEXT"),
-	), withPrevious(baseline.Data))
+	), withRetiredFields(baseline.Data))
 
 	// Reserving the name as well as the number is what keeps the export clean
 	// under buf breaking WIRE_JSON.
@@ -54,12 +54,12 @@ func TestNumberingRemovedThenReAddedDoesNotReuseTheNumber(t *testing.T) {
 	full := oneTable(column("id", "BIGINT"), column("sku", "TEXT"))
 	baseline := mustRender(c, full, baseOptions())
 
-	shrunk := mustRender(c, oneTable(column("id", "BIGINT")), withPrevious(baseline.Data))
+	shrunk := mustRender(c, oneTable(column("id", "BIGINT")), withRetiredFields(baseline.Data))
 	c.Assert(string(shrunk.Data), qt.Contains, "  reserved 2;\n  reserved sku;\n")
 
 	// Bringing the column back is a name reuse, so it needs the release policy;
 	// the retired number 2 is gone for good and 3 is allocated instead.
-	opts := withPrevious(shrunk.Data)
+	opts := withRetiredFields(shrunk.Data)
 	opts.OnNameReuse = releasePolicy
 	readded := mustRenderText(c, full, opts)
 
@@ -157,7 +157,7 @@ func TestNumberingCollapsesContiguousReservedRuns(t *testing.T) {
 		column("e", "TEXT"),
 	), baseOptions())
 
-	shrunk := mustRenderText(c, oneTable(column("a", "TEXT"), column("e", "TEXT")), withPrevious(baseline.Data))
+	shrunk := mustRenderText(c, oneTable(column("a", "TEXT"), column("e", "TEXT")), withRetiredFields(baseline.Data))
 	c.Assert(section(shrunk, "message Thing {"), qt.Equals,
 		"message Thing {\n  string a = 1;\n  string e = 5;\n\n  reserved 2 to 4;\n  reserved b, c, d;\n}")
 }

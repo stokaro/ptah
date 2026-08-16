@@ -330,6 +330,11 @@ func TestSchemaExportProtobufRejectsInvalidConfiguration(t *testing.T) {
 			wantErr: `invalid --proto-on-name-reuse "keep": expected error or release`,
 		},
 		{
+			name:    "unknown field removal policy",
+			args:    []string{"--out", outPath, "--proto-package", protoTestPackage, "--proto-on-field-removal", "maybe"},
+			wantErr: `invalid --proto-on-field-removal "maybe": expected error or reserve`,
+		},
+		{
 			name:    "unknown comment policy",
 			args:    []string{"--out", outPath, "--proto-package", protoTestPackage, "--proto-comments", "some"},
 			wantErr: `invalid --proto-comments "some": expected all or none`,
@@ -371,6 +376,11 @@ func TestSchemaExportProtobufOnlyFlagsRejectedOnOtherTargets(t *testing.T) {
 			flag: "--proto-on-incompatible-change",
 		},
 		{name: "name reuse", args: []string{"--proto-on-name-reuse", "release"}, flag: "--proto-on-name-reuse"},
+		{
+			name: "field removal",
+			args: []string{"--proto-on-field-removal", "reserve"},
+			flag: "--proto-on-field-removal",
+		},
 		// "all" rather than "none": none is the default now, and a flag left at
 		// its default is indistinguishable from one never passed.
 		{name: "comments", args: []string{"--proto-comments", "all"}, flag: "--proto-comments"},
