@@ -137,7 +137,7 @@ services:
   #     as PostgreSQL and asks the catalog questions this endpoint refuses.
   #   - The database is created on first connect, so there is no init step.
   spanner:
-    image: gcr.io/cloud-spanner-pg-adapter/pgadapter-emulator
+    image: gcr.io/cloud-spanner-pg-adapter/pgadapter-emulator:v0.55.2
     profiles:
       - spanner
     ports:

@@ -118,7 +118,7 @@ jobs:
       # image. Without this service dbtarget.URL skips the Spanner tests, and a
       # skipped live test reads exactly like a passing one.
       spanner:
-        image: gcr.io/cloud-spanner-pg-adapter/pgadapter-emulator
+        image: gcr.io/cloud-spanner-pg-adapter/pgadapter-emulator:v0.55.2
         options: >-
           --health-cmd "bash -c 'exec 3<>/dev/tcp/localhost/5432'"
           --health-interval 5s
