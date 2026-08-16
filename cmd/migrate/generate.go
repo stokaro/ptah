@@ -476,6 +476,13 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 			connectTimeout: connectTimeout,
 			policy:         integrityPolicy,
 		})
+		// Planning can succeed and the surrounding replay still fail, which
+		// leaves a plan nobody will publish. It holds the migration directory
+		// open until it is closed, so release it here rather than at the next
+		// garbage collection; closing a published plan is a no-op.
+		if plan != nil {
+			defer plan.Close()
+		}
 		if err == nil && plan != nil {
 			files, err = plan.WriteFilesContext(cmd.Context())
 		}

@@ -4,15 +4,16 @@
 // The desired side of a comparison comes from one of two very different
 // places, and the difference decides everything here.
 //
-// No Ptah desired-state DOCUMENT can declare a virtual table. Go annotations,
-// HCL, YAML and native `.sql` schema files have no syntax for it, and the
-// native SQL parser says so out loud: feeding it `ptah db read` output for a
-// database holding one fails with `unsupported CREATE target: VIRTUAL`. But
-// `schema diff` also accepts a DATABASE URL as its desired side, and that
-// catalog is read by the same reader, so a desired table can perfectly well be
-// virtual. Conflating the two refused two identical databases as
-// `cannot convert one kind into the other`, naming the desired side ordinary
-// when it was the same FTS5 index.
+// A desired state can name a virtual table two ways. A native `.sql` schema
+// file may declare `CREATE VIRTUAL TABLE ... USING ...`, which is what makes
+// `ptah db read` output readable back by the tool that wrote it; and
+// `schema diff` accepts a DATABASE URL as its desired side, read by the same
+// reader that produced it. Go annotations, HCL and YAML still have no syntax
+// for one.
+//
+// Conflating a virtual table with an ordinary one refused two identical
+// databases as `cannot convert one kind into the other`, naming the desired
+// side ordinary when it was the same FTS5 index.
 //
 // So each name at least one side calls virtual is classified, and only the
 // answers a plan cannot express are refused:

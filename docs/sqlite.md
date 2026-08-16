@@ -192,12 +192,15 @@ database is the subject of the next section, and it is not a note.
 The desired side of a comparison comes from one of two places, and the
 difference decides what happens.
 
-No schema **document** can declare a virtual table. Go annotations, HCL, YAML
-and `.sql` schema files have no syntax for one, and the native SQL schema
-parser says so: feeding it `ptah db read` output for a database holding a
-virtual table fails with `unsupported CREATE target: VIRTUAL`. But
-`schema diff` also accepts a **database URL** as its desired side, and that
-catalog is read by the same reader — so a desired table can itself be virtual.
+A desired state can name a virtual table two ways. A native `.sql` schema file
+may declare `CREATE VIRTUAL TABLE … USING …`, so `ptah db read` output is
+readable back by the tool that wrote it; and `schema diff` accepts a **database
+URL** as its desired side, read by the same reader that produced it. Go
+annotations, HCL and YAML have no syntax for one.
+
+The module arguments are preserved verbatim — the text between the module's
+parentheses, quotes and embedded commas included — because SQLite stores and
+compares them as written.
 
 Each name that either side calls a virtual table is classified, and only the
 answers a plan cannot express are refused:

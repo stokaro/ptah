@@ -358,6 +358,13 @@ composition of planning and publication and propagates its context through
 both phases. The returned `generator.MigrationFiles.Files` slice is the
 authoritative list of generated pairs and published paths, in apply order.
 
+`MigrationPlan.Close` releases the migration directory the plan holds without
+publishing anything, for an embedder that builds a plan and then decides
+against it. It is a no-op on a published plan and a no-op called twice, so it
+composes with `defer`. An embedder that never calls it leaves the directory
+held until the plan is garbage collected, which on Windows blocks removing or
+renaming that directory for as long as it takes.
+
 `GenerateMigrationOptions.PriorMigrationsFS` carries an immutable,
 already-authorized migration history into shadow verification. The same
 snapshot becomes a publication precondition: `WriteFiles` returns
