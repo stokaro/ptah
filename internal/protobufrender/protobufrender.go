@@ -460,6 +460,17 @@ func (b *builder) assignMessageNames(tables []goschema.Table) (map[string]string
 }
 
 func (b *builder) buildField(table goschema.Table, f goschema.Field, enumIndex map[string][]string) (desiredField, error) {
+	// An explicit type override the mapping cannot honor is refused rather than
+	// defaulted to string. Here the stake is higher than in the other two
+	// exporters: a wire type is persistent, and a silently defaulted one would
+	// be pinned by the next reconcile against this file.
+	if f.APIType != "" && !mapProtoType(schemaexport.FieldAPIType(f)).Known {
+		return desiredField{}, schemaexport.UnknownAPITypeError(table, f, "Protobuf")
+	}
+	// Substituted once, so the type mapping, the array detection and the enum
+	// lookup below all read one answer.
+	f = schemaexport.ProjectedField(f)
+
 	// The protobuf field name is derived from the field's API name, and that is
 	// what carries the wire compatibility: reconcileMessage keys existing field
 	// NUMBERS by this name, so a column renamed while its api_name stays put

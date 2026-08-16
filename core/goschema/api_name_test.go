@@ -110,3 +110,57 @@ func TestParseFileReadsTheTableAPIName(t *testing.T) {
 		})
 	}
 }
+
+// The type override has the same reachability question as the two names, and
+// the same answer: an unregistered attribute is refused by the strict
+// unknown-key validator, so a value that arrives here is one an author can
+// write. It is carried beside the column type, never in place of it — the
+// storage type is what the migration engine plans against.
+func TestParseFileReadsTheAPIType(t *testing.T) {
+	tests := []struct {
+		name        string
+		annotation  string
+		wantType    string
+		wantAPIType string
+	}{
+		{
+			name:        "a declared override is carried beside the column type",
+			annotation:  `name="amount" type="DECIMAL(12,2)" api_type="TEXT"`,
+			wantType:    "DECIMAL(12,2)",
+			wantAPIType: "TEXT",
+		},
+		{
+			// Absent has to stay empty rather than be filled in with the
+			// column type: the exporters refuse an override they cannot map
+			// and only warn about a column type they cannot map, so the two
+			// cases must remain distinguishable.
+			name:        "an absent one stays empty",
+			annotation:  `name="note" type="TEXT"`,
+			wantType:    "TEXT",
+			wantAPIType: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			dir := t.TempDir()
+			path := filepath.Join(dir, "model.go")
+			source := "package model\n\n" +
+				"//ptah:schema:table name=\"invoices\"\n" +
+				"type Invoice struct {\n" +
+				"\t//ptah:schema:field " + tt.annotation + "\n" +
+				"\tValue string\n" +
+				"}\n"
+			c.Assert(os.WriteFile(path, []byte(source), 0o600), qt.IsNil)
+
+			db, err := goschema.ParseFile(path)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(db.Fields, qt.HasLen, 1)
+			c.Assert(db.Fields[0].Type, qt.Equals, tt.wantType)
+			c.Assert(db.Fields[0].APIType, qt.Equals, tt.wantAPIType)
+		})
+	}
+}

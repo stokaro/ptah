@@ -285,6 +285,18 @@ normalize to the same result. Arrays map to `repeated` of the element type.
 An unrecognized column type maps to `string` and emits a warning, so an
 unresolved custom type is visible rather than silently wrong.
 
+The three lossy rows are lossy because the stored type does not say enough. A
+`TIMESTAMP` gets `string` rather than `google.protobuf.Timestamp` because
+nothing in the schema states its time zone — but the author knows, and can say
+so with `api_type="TIMESTAMPTZ"`, which publishes the well-typed field and its
+import. See [Types in the contract](../export/#types-in-the-contract). The
+override picks a row of this table; it cannot introduce a Protobuf type that has
+no row, and one the mapping does not recognize fails the export.
+
+Once declared, the published type is independent of the column: re-typing the
+column underneath a pinned `api_type` is invisible on the wire, while changing
+the `api_type` is a wire-incompatible change and is handled by the policy below.
+
 ## What the projection loses
 
 Protobuf describes a message on the wire, not a table in a database. Four

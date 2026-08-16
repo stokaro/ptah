@@ -168,6 +168,16 @@ type Field struct {
 	// become the public one — `billing_amount_minor` can be exported as
 	// `amount` and stay itself in the database (stokaro/ptah#905).
 	APIName string
+	// APIType re-maps this column for API export only: the exporters project it
+	// as though the column had this type. It names a type Ptah's own mapping
+	// already recognizes, so no format-specific vocabulary is introduced and
+	// the same declaration serves OpenAPI, GraphQL and Protobuf.
+	//
+	// It is for a representation the storage type cannot express well rather
+	// than for a new one -- a DECIMAL carried as TEXT keeps its digits, where
+	// the numeric mapping would hand it to a float. It changes no value and
+	// adds no runtime validation (stokaro/ptah#905).
+	APIType string
 	Type    string // Database column type (e.g., "VARCHAR(255)", "INTEGER")
 	// TypeRawSQL records that Type was written with Atlas HCL's sql() raw
 	// expression -- `type = sql("USER_DEFINED")` -- rather than as a type the

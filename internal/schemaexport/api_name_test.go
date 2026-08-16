@@ -230,3 +230,50 @@ func TestValidateTableAPINamesRefusesACollision(t *testing.T) {
 		})
 	}
 }
+
+// An override re-maps a column for export only, in Ptah's own type vocabulary,
+// so one declaration serves all three formats.
+func TestFieldAPIType(t *testing.T) {
+	tests := []struct {
+		name  string
+		field goschema.Field
+		want  string
+	}{
+		{
+			name:  "an undeclared override is the column type",
+			field: goschema.Field{Name: "amount", Type: "DECIMAL(12,2)"},
+			want:  "DECIMAL(12,2)",
+		},
+		{
+			name:  "a declared one replaces it",
+			field: goschema.Field{Name: "amount", Type: "DECIMAL(12,2)", APIType: "TEXT"},
+			want:  "TEXT",
+		},
+		{
+			name:  "an empty declaration is not a declaration",
+			field: goschema.Field{Name: "amount", Type: "DECIMAL(12,2)", APIType: ""},
+			want:  "DECIMAL(12,2)",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(schemaexport.FieldAPIType(tt.field), qt.Equals, tt.want)
+		})
+	}
+}
+
+// The substitution happens once, on a copy: everything downstream reads the
+// projected type, and the caller's field is left alone.
+func TestProjectedField(t *testing.T) {
+	c := qt.New(t)
+
+	original := goschema.Field{Name: "amount", Type: "DECIMAL(12,2)", APIType: "TEXT"}
+	projected := schemaexport.ProjectedField(original)
+
+	c.Assert(projected.Type, qt.Equals, "TEXT")
+	c.Assert(projected.Name, qt.Equals, "amount")
+	c.Assert(original.Type, qt.Equals, "DECIMAL(12,2)",
+		qt.Commentf("the caller's field must not be mutated"))
+}

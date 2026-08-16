@@ -127,3 +127,56 @@ func TestRenderRefusesATableAPINameCollision(t *testing.T) {
 	c.Assert(err.Error(), qt.Contains, "billing_invoices")
 	c.Assert(res.Data, qt.HasLen, 0)
 }
+
+// The documented limitation this exists for: DECIMAL maps to `number`, which
+// can lose decimal precision. Carrying it as text keeps the digits.
+func TestRenderUsesTheDeclaredAPIType(t *testing.T) {
+	c := qt.New(t)
+
+	res, err := openapirender.Render(apiNameFixture(
+		goschema.Field{StructName: "Invoice", Name: "id", Type: "BIGSERIAL", Primary: true},
+		goschema.Field{StructName: "Invoice", Name: "plain", Type: "DECIMAL(12,2)"},
+		goschema.Field{StructName: "Invoice", Name: "exact", Type: "DECIMAL(12,2)", APIType: "TEXT"},
+	), openapirender.Options{})
+	c.Assert(err, qt.IsNil)
+
+	var doc map[string]any
+	c.Assert(yaml.Unmarshal(res.Data, &doc), qt.IsNil)
+	props := doc["components"].(map[string]any)["schemas"].(map[string]any)["invoices"].(map[string]any)["properties"].(map[string]any)
+
+	c.Assert(props["plain"].(map[string]any)["type"], qt.Equals, "number")
+	c.Assert(props["exact"].(map[string]any)["type"], qt.Equals, "string")
+}
+
+// An override the mapping cannot honor is refused, where an unrecognized
+// COLUMN type is only warned about. The difference is deliberate: one is a
+// fact about the schema, the other is a declaration that would do nothing.
+func TestRenderRefusesAnUnknownAPIType(t *testing.T) {
+	c := qt.New(t)
+
+	res, err := openapirender.Render(apiNameFixture(
+		goschema.Field{StructName: "Invoice", Name: "id", Type: "BIGSERIAL", Primary: true},
+		goschema.Field{StructName: "Invoice", Name: "amount", Type: "DECIMAL(12,2)", APIType: "money_ish"},
+	), openapirender.Options{})
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(err.Error(), qt.Contains, `declares api_type "money_ish"`)
+	c.Assert(err.Error(), qt.Contains, "OpenAPI projection does not recognize")
+	c.Assert(err.Error(), qt.Contains, `keep the column's own type "DECIMAL(12,2)"`)
+	c.Assert(res.Data, qt.HasLen, 0)
+}
+
+// The control that keeps the refusal from being a blanket rejection of unmapped
+// types: a column whose OWN type is unrecognized still exports, with a warning.
+func TestRenderStillWarnsForAnUnknownColumnType(t *testing.T) {
+	c := qt.New(t)
+
+	res, err := openapirender.Render(apiNameFixture(
+		goschema.Field{StructName: "Invoice", Name: "id", Type: "BIGSERIAL", Primary: true},
+		goschema.Field{StructName: "Invoice", Name: "quirk", Type: "money_ish", Nullable: true},
+	), openapirender.Options{})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(res.Diagnostics, qt.HasLen, 1)
+	c.Assert(res.Diagnostics[0].Message, qt.Contains, "money_ish")
+}

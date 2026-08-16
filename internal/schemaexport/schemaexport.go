@@ -357,3 +357,43 @@ func ValidateTableAPINames(tables []goschema.Table) error {
 	}
 	return nil
 }
+
+// FieldAPIType returns the type an exporter should project a field as.
+//
+// A field that declares no override keeps its column type, so an unannotated
+// schema exports exactly as before (stokaro/ptah#905).
+func FieldAPIType(field goschema.Field) string {
+	if field.APIType != "" {
+		return field.APIType
+	}
+	return field.Type
+}
+
+// UnknownAPITypeError reports an explicit type override an exporter's mapping
+// does not recognize.
+//
+// It is an error rather than the warning an unrecognized COLUMN type gets, and
+// the difference is the whole reason it exists. An unmapped column type is a
+// fact about the schema, and defaulting it to a string while saying so is the
+// most a projection can do. An unmapped override is something the author typed
+// on purpose and the exporter cannot honor -- projecting it as a string would
+// answer a request nobody made and hide that the declaration did nothing.
+func UnknownAPITypeError(table goschema.Table, field goschema.Field, target string) error {
+	return fmt.Errorf(
+		"column %q on table %q declares api_type %q, which the %s projection does not recognize; "+
+			"name a type Ptah maps, or drop the override to keep the column's own type %q",
+		field.Name, table.Name, field.APIType, target, field.Type,
+	)
+}
+
+// ProjectedField returns field as an exporter should read it, with the API type
+// substituted for the column type.
+//
+// Substituting once at the top is what keeps the answer single. The type is
+// read again further down for array detection, enum resolution and
+// diagnostics, and an override honored by the mapping but not by those would
+// project a DECIMAL as text while still resolving it as a numeric.
+func ProjectedField(field goschema.Field) goschema.Field {
+	field.Type = FieldAPIType(field)
+	return field
+}

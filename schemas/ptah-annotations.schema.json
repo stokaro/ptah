@@ -405,6 +405,10 @@
               "description": "Name this column carries in an exported API schema, when that differs from the column name.",
               "type": "string"
             },
+            "api_type": {
+              "description": "Type the API export projects this column as, named in Ptah's own type vocabulary.",
+              "type": "string"
+            },
             "auto_increment": {
               "description": "Marks the column as auto-incrementing.",
               "enum": [

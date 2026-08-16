@@ -128,3 +128,53 @@ func TestRenderRefusesATableAPINameCollision(t *testing.T) {
 	c.Assert(err.Error(), qt.Contains, `two tables export as "invoices"`)
 	c.Assert(res.Data, qt.HasLen, 0)
 }
+
+// The documented limitation this exists for: DECIMAL becomes Float, a
+// double-precision scalar that cannot carry an exact decimal. Publishing the
+// column as text keeps the digits, and costs one declaration for all three
+// export targets rather than one vocabulary per target.
+func TestRenderUsesTheDeclaredAPIType(t *testing.T) {
+	c := qt.New(t)
+
+	res, err := graphqlrender.Render(apiNameFixture(
+		goschema.Field{StructName: "Invoice", Name: "id", Type: "BIGSERIAL", Primary: true},
+		goschema.Field{StructName: "Invoice", Name: "plain", Type: "DECIMAL(12,2)"},
+		goschema.Field{StructName: "Invoice", Name: "exact", Type: "DECIMAL(12,2)", APIType: "TEXT"},
+	), graphqlrender.Options{})
+	c.Assert(err, qt.IsNil)
+
+	sdl := string(res.Data)
+	c.Assert(sdl, qt.Contains, "plain: Float!")
+	c.Assert(sdl, qt.Contains, "exact: String!")
+}
+
+// An override the projection cannot honor is refused, where an unrecognized
+// COLUMN type is only warned about. One is a fact about the schema; the other
+// is a declaration that would silently do nothing.
+func TestRenderRefusesAnUnknownAPIType(t *testing.T) {
+	c := qt.New(t)
+
+	res, err := graphqlrender.Render(apiNameFixture(
+		goschema.Field{StructName: "Invoice", Name: "id", Type: "BIGSERIAL", Primary: true},
+		goschema.Field{StructName: "Invoice", Name: "amount", Type: "DECIMAL(12,2)", APIType: "money_ish"},
+	), graphqlrender.Options{})
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(err.Error(), qt.Contains, `declares api_type "money_ish"`)
+	c.Assert(err.Error(), qt.Contains, "GraphQL projection does not recognize")
+	c.Assert(res.Data, qt.HasLen, 0)
+}
+
+// The control that keeps the refusal from becoming a blanket rejection of
+// unmapped types: a column whose OWN type is unrecognized still exports.
+func TestRenderStillExportsAnUnknownColumnType(t *testing.T) {
+	c := qt.New(t)
+
+	res, err := graphqlrender.Render(apiNameFixture(
+		goschema.Field{StructName: "Invoice", Name: "id", Type: "BIGSERIAL", Primary: true},
+		goschema.Field{StructName: "Invoice", Name: "quirk", Type: "money_ish"},
+	), graphqlrender.Options{})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(res.Data), qt.Contains, "quirk: String!")
+}

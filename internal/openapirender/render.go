@@ -70,7 +70,13 @@ func Render(db *goschema.Database, opts Options) (Result, error) {
 		properties := newOrderedMap()
 		var required []string
 		for _, field := range fields {
-			property, diag := columnSchema(table, field, enums, pk)
+			// The API type is substituted once here, so the mapping, the array
+			// detection and the enum lookup below all read one answer.
+			projected := schemaexport.ProjectedField(field)
+			if field.APIType != "" && !mapOpenAPIType(projected.Type).Known {
+				return Result{}, schemaexport.UnknownAPITypeError(table, field, "OpenAPI")
+			}
+			property, diag := columnSchema(table, projected, enums, pk)
 			if diag != nil {
 				diagnostics = append(diagnostics, *diag)
 			}

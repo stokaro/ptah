@@ -256,9 +256,9 @@ one it has always been, and an unannotated schema exports byte-identically.
 
 ### What it does not do
 
-- It does not change a **type**. `api_name` renames; it does not re-map
-  `DECIMAL` to an application-owned scalar, and it adds no runtime validation of
-  any kind. The type mapping below still decides the shape.
+- It does not change a **type**. `api_name` renames, and it adds no runtime
+  validation of any kind. Re-mapping the exported representation is a separate
+  declaration — see [Types in the contract](#types-in-the-contract).
 - It does not sanitize away a format's naming rules. GraphQL still rewrites a
   name that is not a legal identifier, and still reports having done so.
 - It does not rename the diagnostics you read. A GraphQL or Protobuf diagnostic
@@ -286,6 +286,65 @@ identity is what carries wire compatibility: renaming a column while its
 `api_name` stays put keeps the field number. Changing the `api_name` retires an
 identity consumers hold and is refused unless the retirement is chosen
 explicitly. See [Protobuf schema export](../protobuf/).
+
+## Types in the contract
+
+The type mapping below decides the shape of every exported field, and it decides
+it from the stored type. That is the right answer nearly always, and the wrong
+one exactly where the stored type is not what the value means:
+
+- an exact `DECIMAL` amount arrives as OpenAPI `number` and GraphQL `Float`,
+  both double-precision, so the digits are not guaranteed to survive;
+- a `TIMESTAMP` carries no time zone, so Protobuf declines to publish it as
+  `google.protobuf.Timestamp` — nothing in the schema says which zone it is in,
+  though the person who wrote the schema knows.
+
+Declare `api_type` where the published representation should differ from the
+stored one. It names a type Ptah already maps — the left column of the table
+below — so one declaration answers all three targets and no per-format type
+vocabulary is introduced:
+
+```go
+//ptah:schema:field name="amount" type="DECIMAL(12,2)" api_type="TEXT"
+Amount string
+
+//ptah:schema:field name="stored_utc_at" type="TIMESTAMP" api_type="TIMESTAMPTZ"
+StoredUTCAt time.Time
+```
+
+The first publishes as a string in all three formats and keeps its digits. The
+second publishes as `google.protobuf.Timestamp` in Protobuf, pulling in the
+import that goes with it, and as a date-time string in OpenAPI and GraphQL.
+
+Only the contract moves. `type` is what the migration engine plans against, and
+it is unaffected: the column stays `DECIMAL(12,2)` in the database, and
+`ptah migrate` never reads `api_type`.
+
+### An override that cannot be honored is refused
+
+An `api_type` the target cannot map fails the export, naming the column, the
+declared value and the type it would otherwise have used:
+
+```text
+column "amount" on table "invoices" declares api_type "money_ish", which the
+OpenAPI projection does not recognize; name a type Ptah maps, or drop the
+override to keep the column's own type "DECIMAL(12,2)"
+```
+
+This is deliberately stricter than the treatment of an unrecognized **column**
+type, which exports as a string with a diagnostic. The two are different kinds
+of event: an unmapped column type is a fact about the schema, and the export
+still has something honest to say about it, while an unmapped override is an
+authoring mistake whose only possible outcome is a contract the author did not
+ask for.
+
+### The Protobuf consequence
+
+A pinned `api_type` makes the wire type independent of the column: re-typing the
+column underneath it changes nothing consumers can observe. Changing the
+`api_type` itself is a wire-incompatible change like any other, and goes through
+the same policy — refused unless `--proto-on-incompatible-change=renumber`
+reserves the old number and allocates a new one.
 
 ## Type mapping
 
@@ -317,9 +376,10 @@ The generated contract is not a complete translation of database behavior:
   rules in the implementing service even when the database also enforces them.
 - GraphQL `Int` is a signed 32-bit value. A non-primary-key `BIGINT` maps to
   `Int`, so values outside that range need a separately designed scalar or
-  contract.
+  contract, or an `api_type` that publishes them as text.
 - `DECIMAL` and `NUMERIC` map to OpenAPI `number` and GraphQL `Float`. Those
-  representations can lose decimal precision.
+  representations can lose decimal precision; declare
+  [`api_type`](#types-in-the-contract) to publish the value as text instead.
 - GraphQL declares `DateTime` and `JSON` scalar names but does not provide their
   parsing, serialization, or validation behavior.
 - The GraphQL write projection recognizes auto-increment, `SERIAL`,
