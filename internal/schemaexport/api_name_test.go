@@ -135,3 +135,98 @@ func TestValidateFieldAPINamesRefusesACollision(t *testing.T) {
 		})
 	}
 }
+
+// The table-level half of the same separation: an established published type
+// name may outlive the table it was derived from.
+func TestTableAPIName(t *testing.T) {
+	tests := []struct {
+		name  string
+		table goschema.Table
+		want  string
+	}{
+		{
+			name:  "an undeclared API name is the table name",
+			table: goschema.Table{Name: "billing_invoices"},
+			want:  "billing_invoices",
+		},
+		{
+			name:  "a declared one replaces it",
+			table: goschema.Table{Name: "billing_invoices", APIName: "invoices"},
+			want:  "invoices",
+		},
+		{
+			name:  "an empty declaration is not a declaration",
+			table: goschema.Table{Name: "invoices", APIName: ""},
+			want:  "invoices",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(schemaexport.TableAPIName(tt.table), qt.Equals, tt.want)
+		})
+	}
+}
+
+func TestValidateTableAPINamesAcceptsDistinctNames(t *testing.T) {
+	tests := []struct {
+		name   string
+		tables []goschema.Table
+	}{
+		{
+			name: "tables and an alias that do not overlap",
+			tables: []goschema.Table{
+				{Name: "authors"},
+				{Name: "billing_invoices", APIName: "invoices"},
+			},
+		},
+		{
+			name:   "no tables at all",
+			tables: nil,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(schemaexport.ValidateTableAPINames(tt.tables), qt.IsNil)
+		})
+	}
+}
+
+func TestValidateTableAPINamesRefusesACollision(t *testing.T) {
+	tests := []struct {
+		name    string
+		tables  []goschema.Table
+		wantErr string
+	}{
+		{
+			name: "an alias colliding with another table",
+			tables: []goschema.Table{
+				{Name: "invoices"},
+				{Name: "billing_invoices", APIName: "invoices"},
+			},
+			wantErr: `two tables export as "invoices": "invoices" and "billing_invoices"; ` +
+				`give one of them a distinct api_name`,
+		},
+		{
+			name: "two aliases colliding with each other",
+			tables: []goschema.Table{
+				{Name: "billing_invoices", APIName: "invoices"},
+				{Name: "legacy_invoices", APIName: "invoices"},
+			},
+			wantErr: `two tables export as "invoices": "billing_invoices" and "legacy_invoices"; ` +
+				`give one of them a distinct api_name`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			err := schemaexport.ValidateTableAPINames(tt.tables)
+			c.Assert(err, qt.IsNotNil)
+			c.Assert(err.Error(), qt.Equals, tt.wantErr)
+		})
+	}
+}

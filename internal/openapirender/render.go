@@ -46,6 +46,12 @@ func Render(db *goschema.Database, opts Options) (Result, error) {
 		IncludeTables: opts.IncludeTables,
 		ExcludeTables: opts.ExcludeTables,
 	})
+	// Refused before anything is written, for the same reason a field
+	// collision is: a table that shadows another drops it from the document,
+	// and the document cannot record that it lost one.
+	if err := schemaexport.ValidateTableAPINames(tables); err != nil {
+		return Result{}, err
+	}
 	enums := schemaexport.EnumIndex(db)
 
 	var diagnostics []schemaexport.Diagnostic
@@ -82,7 +88,7 @@ func Render(db *goschema.Database, opts Options) (Result, error) {
 		if properties.len() > 0 {
 			obj.Properties = properties
 		}
-		schemas.set(table.Name, obj)
+		schemas.set(schemaexport.TableAPIName(table), obj)
 	}
 
 	doc := document{
@@ -149,10 +155,14 @@ func columnSchema(table goschema.Table, field goschema.Field, enums map[string][
 	obj.MaxLength = mapped.MaxLength
 	obj.Minimum = mapped.Minimum
 	if !mapped.Known {
+		// The path is a coordinate INSIDE the document, so it spells the names
+		// the document uses. A reader who resolves it against the output finds
+		// the property; the source names would point at nothing there.
 		return obj, &schemaexport.Diagnostic{
 			Severity: schemaexport.SeverityWarning,
-			Path:     "components.schemas." + table.Name + ".properties." + field.Name,
-			Message:  fmt.Sprintf("unknown column type %q mapped to string", field.Type),
+			Path: "components.schemas." + schemaexport.TableAPIName(table) +
+				".properties." + schemaexport.FieldAPIName(field),
+			Message: fmt.Sprintf("unknown column type %q mapped to string", field.Type),
 		}
 	}
 	return obj, nil

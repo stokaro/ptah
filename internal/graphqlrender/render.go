@@ -45,6 +45,9 @@ func Render(db *goschema.Database, opts Options) (Result, error) {
 	// left to notice the loss with. This is the DECLARED collision; a collision
 	// that only appears after GraphQL name sanitization is a naming-rules
 	// artifact and stays a warning below.
+	if err := schemaexport.ValidateTableAPINames(tables); err != nil {
+		return Result{}, err
+	}
 	for _, table := range tables {
 		if err := schemaexport.ValidateFieldAPINames(table, schemaexport.FieldsFor(db, table)); err != nil {
 			return Result{}, err
@@ -67,7 +70,7 @@ func Render(db *goschema.Database, opts Options) (Result, error) {
 	// reference targets defined later in the file.
 	typeNames := make(map[string]string, len(tables))
 	for _, table := range tables {
-		typeNames[table.Name] = reg.unique(schemaexport.SanitizeGraphQLName(schemaexport.TypeName(table.Name)))
+		typeNames[table.Name] = reg.unique(schemaexport.SanitizeGraphQLName(schemaexport.TypeName(schemaexport.TableAPIName(table))))
 	}
 
 	b := &builder{

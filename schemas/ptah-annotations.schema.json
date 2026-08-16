@@ -1164,6 +1164,10 @@
             }
           },
           "properties": {
+            "api_name": {
+              "description": "Name this table carries in an exported API schema, when that differs from the table name.",
+              "type": "string"
+            },
             "checks": {
               "description": "Comma-separated table-level check expressions.",
               "type": "string"

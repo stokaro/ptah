@@ -323,3 +323,37 @@ func ValidateFieldAPINames(table goschema.Table, fields []goschema.Field) error 
 	}
 	return nil
 }
+
+// TableAPIName returns the name a table is exported under.
+//
+// A table that declares no API name keeps its table name, so an unannotated
+// schema exports byte-identically. This is the table-level half of what
+// [FieldAPIName] does for a column (stokaro/ptah#905).
+func TableAPIName(table goschema.Table) string {
+	if table.APIName != "" {
+		return table.APIName
+	}
+	return table.Name
+}
+
+// ValidateTableAPINames refuses a schema whose tables do not resolve to
+// distinct API names, naming both tables that claimed the same one.
+//
+// Two tables published under one name means one of them is absent from the
+// exported schema, exactly as with a field, and the reader of that schema has
+// nothing left to notice it with.
+func ValidateTableAPINames(tables []goschema.Table) error {
+	claimed := make(map[string]string, len(tables))
+	for _, table := range tables {
+		api := TableAPIName(table)
+		first, taken := claimed[api]
+		if taken {
+			return fmt.Errorf(
+				"two tables export as %q: %q and %q; give one of them a distinct api_name",
+				api, first, table.Name,
+			)
+		}
+		claimed[api] = table.Name
+	}
+	return nil
+}
