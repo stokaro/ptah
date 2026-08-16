@@ -202,7 +202,7 @@ func runAtlasMigrateDownFormat(
 		FS:                   source.FileSystem,
 		TargetVersion:        targetVersion,
 		DryRun:               opts.dryRun,
-		RevisionsSchema:      opts.revisionsSchema,
+		RevisionsSchema:      applyAtlasRevisionsSchemaDefault(opts.revisionsSchema, opts.url),
 		MigrationLockTimeout: migrationLockTimeout,
 	})
 	if err != nil {

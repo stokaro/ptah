@@ -144,7 +144,7 @@ func runAtlasMigrateSet(
 		Dir:                       source.Display,
 		FS:                        migrationFS,
 		AtlasEnv:                  opts.atlasEnv,
-		RevisionsSchema:           opts.revisionsSchema,
+		RevisionsSchema:           applyAtlasRevisionsSchemaDefault(opts.revisionsSchema, opts.url),
 		RevisionVersions:          sourceVersions,
 		RevisionTypes:             linearity.revisionTypes,
 		RepeatableVersions:        linearity.repeatableVersions,
