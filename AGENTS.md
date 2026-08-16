@@ -55,8 +55,13 @@ Internal packages worth knowing, none of them importable from another module:
 - `internal/dbschema/...` — the per-dialect readers and writers `dbschema`
   selects between.
 - `internal/envbool` — the one grammar for boolean `PTAH_*` variables.
-- `internal/capabilityprobe` — the declared database release lines and the
-  probe that measures a live server against the preset each line claims.
+- `internal/capabilityprobe` — the declared database release lines, the support
+  level each one carries, and the probe that measures a live server against the
+  preset each line claims.
+- `internal/serverprofile` — what Ptah has established about one live server:
+  its identity, the capability preset that answered and how it was reached, the
+  support level of the release line it falls on, and the capability values that
+  follow. `ptah db capabilities` renders it.
 - `internal/capmatrix` — the tiered pipeline built on that declaration: the CI
   fan-out, one cell's result, and the aggregation that fails when a declared
   cell reports nothing.
@@ -134,6 +139,9 @@ ptah schema compare --root-dir ./models --db-url postgres://user:pass@localhost/
 
 # Read the schema of a live database
 ptah db read --db-url postgres://user:pass@localhost/db
+
+# Report what Ptah can do against a live database, and why
+ptah db capabilities --db-url postgres://user:pass@localhost/db --format json
 
 # Drop every schema object (DANGEROUS — try --dry-run first)
 ptah db drop-all --db-url postgres://user:pass@localhost/db --dry-run
@@ -221,6 +229,27 @@ cell on every pull request, and `capability-matrix-nightly.yml` runs the
 integration suite over the same cells on a schedule. Both read the declaration
 through `capmatrix matrix`, so adding a release line is a data change: one
 literal in `cells.go`, then `scripts/check-version-matrix.sh --write`.
+
+Every cell also declares a `Support` level from `capability.SupportLevel` —
+certified, legacy-tested, best-effort, or known-incompatible. It is a statement
+about **this repository's testing**, not about the server: nothing reads it to
+decide whether an operation may proceed, and an upstream end-of-life date moves
+a line from certified to legacy-tested rather than making it unusable.
+
+A cell may claim certified or legacy-tested only if something actually runs
+against the line. Three things can:
+
+- the capability probe, for a line the tiered workflows fan out over;
+- a server `.github/workflows/go-integration-tests.yml` starts;
+- for SQLite alone, the engine compiled into the binary, which every
+  `go test ./...` exercises.
+
+`TestCells_CertificationMatchesWhatContinuousIntegrationRuns` reads that answer
+out of the matrix and the workflow rather than believing the literal, so a line
+cannot claim certification by being written down. Five declared lines are
+best-effort today because nothing here exercises them, and
+`ptah db capabilities` is where an operator sees the resolved answer for their
+own server.
 
 ### The lint rule enumeration
 

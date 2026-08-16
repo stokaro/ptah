@@ -118,20 +118,37 @@ func Resolve(dialect, version string) (Target, error) {
 	}
 	return Target{
 		Capabilities: resolution.Capabilities,
-		Note:         versionNote(dialect, version, resolution),
+		Note:         VersionNote(dialect, version, resolution),
 	}, nil
 }
 
-// versionNote renders the one line that says what a non-version-specific
+// VersionNote renders the one line that says what a non-version-specific
 // resolution actually planned. The three arms are the three ways a recognized
 // version can fail to select a measured release line, and they are separate
 // sentences because the remedies differ: wait for the newer line to be
 // measured, read the preset a gap falls back to, or stop passing a version to
 // a dialect that has no ladder to spend it on.
-func versionNote(dialect, version string, resolution capability.VersionResolution) string {
+//
+// It is exported because a live connection asks the same question a typed
+// --server-version does. Only the refusal differs — a banner a server wrote is
+// not a typo — so the resolution is interpreted here once and refused only in
+// [Resolve]. A second wording for the live path is a second answer to "what
+// was actually planned", and the two would drift on the first edit.
+func VersionNote(dialect, version string, resolution capability.VersionResolution) string {
 	switch {
 	case resolution.VersionSpecific:
 		return ""
+	case !resolution.Recognized:
+		// Reached only from the live path: Resolve refuses an unrecognized
+		// value before it gets here. Without this arm the default below fires,
+		// because an unreadable string on a laddered dialect reports an empty
+		// NewestMeasured exactly as a dialect with no ladder does — so an
+		// unreadable PostgreSQL banner was described as "the postgres dialect
+		// has no measured version ladder", which is false about PostgreSQL and
+		// silent about the banner.
+		return fmt.Sprintf(
+			"%q does not name a %s server version Ptah can read; capabilities fall back to the dialect default",
+			version, dialect)
 	case resolution.Saturated:
 		return fmt.Sprintf(
 			"%s %s is newer than the newest measured release line %s; capabilities were planned as %s",

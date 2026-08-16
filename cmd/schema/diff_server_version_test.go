@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+
+	"go.5x5.cz/ptah/core/platform/capability"
 )
 
 // `schema diff` plans against the newest preset of its dialect unless a server
@@ -22,8 +24,16 @@ const (
 	generatedFrom = "CREATE TABLE t (\n  a integer NOT NULL,\n  b integer GENERATED ALWAYS AS (a * 2) STORED\n);\n"
 	generatedTo   = "CREATE TABLE t (\n  a integer NOT NULL,\n  b integer GENERATED ALWAYS AS (a * 3) STORED\n);\n"
 
-	alterExpression   = `ALTER TABLE "t" ALTER COLUMN "b" SET EXPRESSION AS (a * 3);`
-	manualMigrationOn = "ALTER COLUMN SET EXPRESSION requires PostgreSQL 17+; manual migration required"
+	alterExpression = `ALTER TABLE "t" ALTER COLUMN "b" SET EXPRESSION AS (a * 3);`
+
+	// Spelled through the constant rather than retyped: the flag pins a server
+	// version, but what decides the plan is the capability that version
+	// resolves to, and the plan says so. A key renamed in one place and not
+	// the other would leave this test passing against a message no operator
+	// can look up.
+	manualMigrationOn = "ALTER COLUMN SET EXPRESSION requires target capability " +
+		string(capability.AlterGeneratedColumnExpression) +
+		", unavailable on this target (PostgreSQL added it in 17); manual migration required"
 )
 
 func TestSchemaDiffServerVersionSelectsThePlan(t *testing.T) {

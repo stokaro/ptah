@@ -1220,14 +1220,14 @@ func TestGetOrderedCreateStatements_ExplicitForeignKeyIdentifierLimit_FailurePat
 		fkName  string
 		wantErr string
 	}{
-		{name: "postgres bytes", dialect: "postgres", fkName: strings.Repeat("a", 64), wantErr: ".*63-byte identifier limit"},
-		{name: "postgres multibyte bytes", dialect: "postgres", fkName: strings.Repeat("é", 32), wantErr: ".*63-byte identifier limit"},
-		{name: "mysql characters", dialect: "mysql", fkName: strings.Repeat("a", 65), wantErr: ".*mysql 64-character identifier limit"},
-		{name: "mariadb characters", dialect: "mariadb", fkName: strings.Repeat("é", 65), wantErr: ".*mariadb 64-character identifier limit"},
-		{name: "sqlserver characters", dialect: "sqlserver", fkName: strings.Repeat("a", 129), wantErr: ".*sqlserver 128-character identifier limit"},
-		{name: "sqlserver multibyte characters", dialect: "sqlserver", fkName: strings.Repeat("界", 129), wantErr: ".*sqlserver 128-character identifier limit"},
-		{name: "spanner characters", dialect: "spanner", fkName: strings.Repeat("a", 129), wantErr: ".*spanner 128-character identifier limit"},
-		{name: "spanner multibyte characters", dialect: "spanner", fkName: strings.Repeat("界", 129), wantErr: ".*spanner 128-character identifier limit"},
+		{name: "postgres bytes", dialect: "postgres", fkName: strings.Repeat("a", 64), wantErr: `.*exceeds the postgres identifier limit of 63 bytes`},
+		{name: "postgres multibyte bytes", dialect: "postgres", fkName: strings.Repeat("é", 32), wantErr: `.*exceeds the postgres identifier limit of 63 bytes`},
+		{name: "mysql characters", dialect: "mysql", fkName: strings.Repeat("a", 65), wantErr: `.*exceeds the mysql identifier limit of 64 characters`},
+		{name: "mariadb characters", dialect: "mariadb", fkName: strings.Repeat("é", 65), wantErr: `.*exceeds the mariadb identifier limit of 64 characters`},
+		{name: "sqlserver characters", dialect: "sqlserver", fkName: strings.Repeat("a", 129), wantErr: `.*exceeds the sqlserver identifier limit of 128 characters`},
+		{name: "sqlserver multibyte characters", dialect: "sqlserver", fkName: strings.Repeat("界", 129), wantErr: `.*exceeds the sqlserver identifier limit of 128 characters`},
+		{name: "spanner characters", dialect: "spanner", fkName: strings.Repeat("a", 129), wantErr: `.*exceeds the spanner identifier limit of 128 characters`},
+		{name: "spanner multibyte characters", dialect: "spanner", fkName: strings.Repeat("界", 129), wantErr: `.*exceeds the spanner identifier limit of 128 characters`},
 	}
 
 	for _, test := range tests {
@@ -1239,6 +1239,45 @@ func TestGetOrderedCreateStatements_ExplicitForeignKeyIdentifierLimit_FailurePat
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(statements, qt.IsNil)
+		})
+	}
+}
+
+// TestGetOrderedCreateStatements_ExplicitForeignKeyIdentifierLimit_HappyPath is
+// the control the failure table cannot supply: every row above is refused
+// under a byte rule AND under a character rule, so the table passes whichever
+// unit the limit is enforced in. These names separate the two. A 100-character
+// CJK name is 300 bytes, so a byte rule refuses it on SQL Server and the
+// character rule this dialect actually has accepts it; a 31-character accented
+// name is 62 bytes, one under PostgreSQL's byte limit, and a character rule
+// would accept a 32nd that the byte rule refuses one row above.
+//
+// SQLite carries no modeled limit at all, and a name no other dialect would
+// take proves that is a real absence rather than a table entry nobody reached.
+// ClickHouse is the other unlimited dialect and is covered in
+// capability.TestIdentifiers_UnlimitedDialects; it has no row here because it
+// refuses this fixture's foreign keys outright.
+func TestGetOrderedCreateStatements_ExplicitForeignKeyIdentifierLimit_HappyPath(t *testing.T) {
+	tests := []struct {
+		name    string
+		dialect string
+		fkName  string
+	}{
+		{name: "sqlserver counts characters not bytes", dialect: "sqlserver", fkName: strings.Repeat("界", 100)},
+		{name: "spanner counts characters not bytes", dialect: "spanner", fkName: strings.Repeat("界", 100)},
+		{name: "postgres accepts 62 bytes", dialect: "postgres", fkName: strings.Repeat("é", 31)},
+		{name: "mysql accepts 64 characters", dialect: "mysql", fkName: strings.Repeat("é", 64)},
+		{name: "sqlite models no limit", dialect: "sqlite", fkName: strings.Repeat("a", 300)},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			database := simpleForeignKeyDatabase("INTEGER", "INTEGER")
+			database.Fields[1].ForeignKeyName = test.fkName
+			statements, err := renderer.GetOrderedCreateStatements(database, test.dialect)
+			c.Assert(err, qt.IsNil)
+			c.Assert(statements, qt.Not(qt.HasLen), 0)
 		})
 	}
 }

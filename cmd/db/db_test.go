@@ -16,6 +16,7 @@ func TestNewDBCommand_RegistersNativePaths(t *testing.T) {
 	for _, path := range [][]string{
 		{"read"},
 		{"drop-all"},
+		{"capabilities"},
 	} {
 		found, _, err := cmd.Find(path)
 		c.Assert(err, qt.IsNil)
@@ -38,6 +39,7 @@ func TestNewDBCommand_HelpShowsNativeBoundary(t *testing.T) {
 	c.Assert(out.String(), qt.Contains, "Ptah's native live-database namespace")
 	c.Assert(out.String(), qt.Contains, "read")
 	c.Assert(out.String(), qt.Contains, "drop-all")
+	c.Assert(out.String(), qt.Contains, "capabilities")
 }
 
 func TestNewDBCommand_RejectsUnknownPositionalCommand(t *testing.T) {

@@ -261,7 +261,7 @@ func Run(ctx context.Context, dbURL string) (*Report, error) {
 		Dialect: platform.NormalizeDialect(conn.Info().Dialect),
 		Banner:  conn.Info().Version,
 	}
-	report.Version, err = ParseVersion(report.Dialect, report.Banner, productVersion(ctx, conn, report.Dialect))
+	report.Version, err = ParseVersion(report.Dialect, report.Banner, ProductVersion(ctx, conn, report.Dialect))
 	if err != nil {
 		return nil, fmt.Errorf("read the product version of %s: %w", report.URL, err)
 	}
@@ -278,11 +278,17 @@ func Run(ctx context.Context, dbURL string) (*Report, error) {
 	return report, nil
 }
 
-// productVersion asks the server for a version surface cleaner than its
+// ProductVersion asks the server for a version surface cleaner than its
 // banner, where one exists. Today only SQL Server has one, and it is the fix
 // for the marketing-year parse: SERVERPROPERTY('ProductVersion') answers
 // 17.0.4065.4 where @@VERSION opens with "Microsoft SQL Server 2025".
-func productVersion(ctx context.Context, conn *dbschema.DatabaseConnection, dialect string) string {
+//
+// It is exported for the same reason [ParseVersion] takes the value: anything
+// that maps a live server onto a release line needs both halves, and a second
+// caller writing the query itself is a caller that will keep reading the
+// marketing year as a major version. `ptah db capabilities` is that second
+// caller.
+func ProductVersion(ctx context.Context, conn *dbschema.DatabaseConnection, dialect string) string {
 	if dialect != platform.SQLServer {
 		return ""
 	}

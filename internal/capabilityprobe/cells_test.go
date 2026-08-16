@@ -1,6 +1,7 @@
 package capabilityprobe_test
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"regexp"
@@ -264,6 +265,59 @@ var pinnedImageFiles = []string{
 // structure-aware read would need two shapes to answer one question.
 var imageLine = regexp.MustCompile(`(?m)^\s*image:\s*["']?([^"'\s#]+)`)
 
+// dockerRun matches a `docker run` invocation and captures its arguments. The
+// capture runs to the end of the shell command rather than to the end of the
+// line, because the workflow's two invocations span four and three lines and
+// every continued line ends in a backslash.
+//
+// A YAML `image:` key is not the only way this repository starts a database,
+// and the difference was measured rather than imagined: the integration
+// workflow starts CockroachDB and YugabyteDB from a `run:` step, and a reviewer
+// added `docker run --detach --name ptah-extra-mysql --publish 3399:3306
+// mysql:8.0` to that step -- MySQL 8.0 being a line the matrix deliberately
+// declares no cell for -- and `go test ./internal/capabilityprobe/...` came
+// back green. CI would have started a server nothing here can describe with
+// nothing red, which is the exact failure reading these files prevents.
+var dockerRun = regexp.MustCompile(`docker[ \t]+run((?:\\\n|[^\n])*)`)
+
+// dockerRunValueFlags names the `docker run` flags whose value is the NEXT
+// token rather than part of the same one. Walking past them is the whole
+// difficulty of finding the image: `--publish 3399:3306` splits into a
+// repository and a tag exactly as readily as `mysql:8.0` does, so a read that
+// took the first token carrying a colon would classify a port mapping and miss
+// the server entirely.
+//
+// A flag missing from this list is not silent. Its value is taken for the
+// image, and an image neither databaseImages nor notADatabase classifies fails
+// TestCells_DeclareEveryDatabaseContainerThisRepositoryStarts by name.
+var dockerRunValueFlags = map[string]bool{
+	"--name":       true,
+	"--publish":    true,
+	"-p":           true,
+	"--env":        true,
+	"-e":           true,
+	"--env-file":   true,
+	"--volume":     true,
+	"-v":           true,
+	"--network":    true,
+	"--user":       true,
+	"-u":           true,
+	"--workdir":    true,
+	"-w":           true,
+	"--entrypoint": true,
+	"--hostname":   true,
+	"-h":           true,
+	"--label":      true,
+	"-l":           true,
+	"--platform":   true,
+	"--pull":       true,
+	"--restart":    true,
+	"--health-cmd": true,
+	"--memory":     true,
+	"-m":           true,
+	"--cpus":       true,
+}
+
 // databaseImages maps an image repository onto the dialect a server built from
 // it speaks.
 var databaseImages = map[string]string{
@@ -307,6 +361,33 @@ func TestCellsDeclaring_LineAliasMatchesTheTargetLine(t *testing.T) {
 		qt.Commentf("a floating 25.4 or 26.2 cell must not cover an undeclared 27.1 target"))
 }
 
+// TestDockerRun_FindsTheDatabasesTheWorkflowStartsByHand is the non-vacuity
+// guard on the docker run half of the read, and it pins today's answer the way
+// TestCells_BestEffortLinesAreExactlyTheUnmeasuredOnes pins today's levels.
+//
+// The `image:` half has a guard of its own inside startedImages; this half needs
+// one because it can only ever return fewer images than the file starts. A regex
+// that stopped matching, or an unlisted flag that swallowed the image token,
+// would leave the census reading exactly as it did before this arm existed:
+// passing, and blind to the servers CI starts by hand. Both mutants were run in
+// a scratch copy and both turn this test red.
+//
+// Repositories rather than full references, so that a tag bump stays a change to
+// cells.go alone.
+func TestDockerRun_FindsTheDatabasesTheWorkflowStartsByHand(t *testing.T) {
+	c := qt.New(t)
+
+	body, err := os.ReadFile(integrationWorkflow)
+	c.Assert(err, qt.IsNil)
+
+	var repositories []string
+	for _, ref := range dockerRunImages(string(body)) {
+		repository, _ := splitImageRef(ref)
+		repositories = append(repositories, repository)
+	}
+	c.Assert(repositories, qt.ContentEquals, []string{"cockroachdb/cockroach", "yugabytedb/yugabyte"})
+}
+
 // readPinnedImages returns every image reference the two files start, sorted
 // and deduplicated: postgres:18 appears in both.
 func readPinnedImages(c *qt.C) []string {
@@ -314,17 +395,65 @@ func readPinnedImages(c *qt.C) []string {
 
 	var refs []string
 	for _, path := range pinnedImageFiles {
-		body, err := os.ReadFile(path)
-		c.Assert(err, qt.IsNil)
-		matches := imageLine.FindAllStringSubmatch(string(body), -1)
-		c.Assert(len(matches) > 0, qt.IsTrue,
-			qt.Commentf("%s yielded no image: lines — a check whose input list comes back empty passes "+
-				"by examining nothing", path))
-		for _, match := range matches {
-			refs = append(refs, match[1])
-		}
+		refs = append(refs, startedImages(c, path)...)
 	}
 	return slices.Compact(slices.Sorted(slices.Values(refs)))
+}
+
+// startedImages returns every container image one file starts, by both of the
+// mechanisms these files use: the YAML `image:` key, and a `docker run`
+// invocation in a workflow step. Compose can only use the first; the
+// integration workflow uses both, and reading only the first is how the census
+// came to be blind to two of the seven databases CI runs.
+func startedImages(c *qt.C, path string) []string {
+	c.Helper()
+
+	body, err := os.ReadFile(path)
+	c.Assert(err, qt.IsNil)
+
+	matches := imageLine.FindAllStringSubmatch(string(body), -1)
+	c.Assert(len(matches) > 0, qt.IsTrue,
+		qt.Commentf("%s yielded no image: lines — a check whose input list comes back empty passes "+
+			"by examining nothing", path))
+
+	refs := make([]string, 0, len(matches))
+	for _, match := range matches {
+		refs = append(refs, match[1])
+	}
+	return append(refs, dockerRunImages(string(body))...)
+}
+
+// dockerRunImages returns the image every `docker run` in a file starts. An
+// invocation whose image the walk below cannot find contributes nothing rather
+// than an empty reference that would later read as an unclassified image;
+// TestDockerRun_FindsTheDatabasesTheWorkflowStartsByHand is the guard against
+// that silence.
+func dockerRunImages(body string) []string {
+	var out []string
+	for _, invocation := range dockerRun.FindAllStringSubmatch(body, -1) {
+		ref, found := dockerRunImage(strings.Fields(strings.ReplaceAll(invocation[1], "\\\n", " ")))
+		if found {
+			out = append(out, ref)
+		}
+	}
+	return out
+}
+
+// dockerRunImage returns the image reference out of one invocation's arguments:
+// the first token that is neither a flag nor a flag's value. Everything after
+// it is the container's own command, which is why the walk stops there — the
+// CockroachDB invocation continues `start-single-node --insecure`, and a read
+// that kept going would classify a subcommand as an image.
+func dockerRunImage(args []string) (ref string, found bool) {
+	for i := 0; i < len(args); i++ {
+		if !strings.HasPrefix(args[i], "-") {
+			return args[i], true
+		}
+		if dockerRunValueFlags[args[i]] {
+			i++
+		}
+	}
+	return "", false
 }
 
 // assertThePinnedListHasDatabasesInIt is the non-vacuity guard on the read
@@ -412,4 +541,237 @@ func splitImageRef(ref string) (repository, tag string) {
 		return ref, ""
 	}
 	return ref[:colon], ref[colon+1:]
+}
+
+// integrationWorkflow is the CI job that starts database services directly.
+//
+// docker-compose.yaml is deliberately NOT read here even though
+// pinnedImageFiles above reads both. Compose is the local convenience `make
+// integration-test` drives; nothing in continuous integration starts it. A
+// support level that counted it would let a line claim certification on the
+// strength of a container only a developer's laptop runs, which is the
+// difference between "Ptah tests this" and "Ptah could test this".
+const integrationWorkflow = "../../.github/workflows/go-integration-tests.yml"
+
+// TestCells_DeclareAValidSupportLevel is the census. A cell added without a
+// level would otherwise carry the zero value, and the zero value renders as an
+// empty column rather than as the omission it is.
+func TestCells_DeclareAValidSupportLevel(t *testing.T) {
+	c := qt.New(t)
+
+	c.Assert(len(capabilityprobe.Cells) > 0, qt.IsTrue)
+	for _, cell := range capabilityprobe.Cells {
+		t.Run(capabilityprobe.CellID(cell), func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(cell.Support.Valid(), qt.IsTrue,
+				qt.Commentf("cell %s declares support level %q, which capability.SupportLevel does not define",
+					cell, cell.Support))
+		})
+	}
+}
+
+// TestCells_CertificationMatchesWhatContinuousIntegrationRuns is what makes the
+// level a claim rather than a label.
+//
+// Certified and legacy-tested both assert that Ptah regularly exercises the
+// line. Three mechanisms do that — the capability probe the tiered workflows
+// fan out over, the integration suite's own databases, and the engine compiled
+// into the binary under test — and a line outside all three is measured by
+// nothing, whatever its vendor says about it. Reading the answer out of the
+// matrix and the workflow means a cell cannot claim certification by being
+// written down.
+func TestCells_CertificationMatchesWhatContinuousIntegrationRuns(t *testing.T) {
+	c := qt.New(t)
+
+	exercised := exercisedLines(c)
+	c.Assert(len(exercised) > 0, qt.IsTrue,
+		qt.Commentf("no line was found to be exercised at all, so every assertion below would be vacuous"))
+
+	for _, cell := range capabilityprobe.Cells {
+		t.Run(capabilityprobe.CellID(cell), func(t *testing.T) {
+			c := qt.New(t)
+			claimsTesting := cell.Support == capability.Certified || cell.Support == capability.LegacyTested
+			c.Assert(claimsTesting, qt.Equals, exercised[capabilityprobe.CellID(cell)],
+				qt.Commentf("cell %s declares %q; continuous integration exercises it: %v",
+					cell, cell.Support, exercised[capabilityprobe.CellID(cell)]))
+		})
+	}
+}
+
+// TestCells_BestEffortLinesAreExactlyTheUnmeasuredOnes pins the five today, so
+// that a line quietly losing its coverage shows up as this list growing rather
+// than as a level nobody re-read. The previous test proves the rule; this one
+// records the current answer, which is the part a reader of the support matrix
+// is actually asking about.
+func TestCells_BestEffortLinesAreExactlyTheUnmeasuredOnes(t *testing.T) {
+	c := qt.New(t)
+
+	unmeasured := slices.DeleteFunc(slices.Clone(capabilityprobe.Cells), func(cell capabilityprobe.Cell) bool {
+		return cell.Support != capability.BestEffort
+	})
+	bestEffort := make([]string, 0, len(unmeasured))
+	for _, cell := range unmeasured {
+		bestEffort = append(bestEffort, capabilityprobe.CellID(cell))
+	}
+
+	c.Assert(bestEffort, qt.ContentEquals, []string{
+		"clickhouse-26-3",
+		"clickhouse-25-8",
+		"sqlserver-16-0",
+		"sqlserver-15-0",
+		"spanner-0",
+	})
+}
+
+// TestCells_DeclareNoKnownIncompatibleLine records a fact rather than a rule.
+// The level exists because the vocabulary needs it; no line carries it because
+// no concrete technical incompatibility has been found. If one ever is, this
+// test is the place the change announces itself.
+func TestCells_DeclareNoKnownIncompatibleLine(t *testing.T) {
+	c := qt.New(t)
+
+	for _, cell := range capabilityprobe.Cells {
+		c.Assert(cell.Support, qt.Not(qt.Equals), capability.KnownIncompatible)
+	}
+}
+
+// exercisedLines answers, per cell id, whether continuous integration runs
+// anything against that release line.
+func exercisedLines(c *qt.C) map[string]bool {
+	c.Helper()
+
+	exercised := make(map[string]bool, len(capabilityprobe.Cells))
+	for _, cell := range capabilityprobe.Cells {
+		exercised[capabilityprobe.CellID(cell)] = false
+	}
+
+	matrix := capabilityprobe.CIMatrix()
+	c.Assert(len(matrix.Cells) > 0, qt.IsTrue,
+		qt.Commentf("the capability matrix reported no runnable cell, so this check would examine nothing"))
+	for _, ci := range matrix.Cells {
+		exercised[ci.ID] = true
+	}
+
+	for _, cell := range suiteStartedCells(c) {
+		exercised[capabilityprobe.CellID(cell)] = true
+	}
+
+	// SQLite has no container anywhere and needs none: the engine is compiled
+	// into the binary under test, so `go test ./...` exercises this line on
+	// every run of every job. Naming it here rather than exempting it keeps
+	// the rule above total.
+	for _, cell := range capabilityprobe.Cells {
+		if cell.Dialect == platform.SQLite {
+			exercised[capabilityprobe.CellID(cell)] = true
+		}
+	}
+	return exercised
+}
+
+// suiteStartedCells returns the cells whose line the integration workflow
+// starts a server for, whether it declares the container as a job service or
+// starts it from a step with `docker run`. Both count: the job runs against
+// either one, and CockroachDB and YugabyteDB are only reachable the second way.
+func suiteStartedCells(c *qt.C) []capabilityprobe.Cell {
+	c.Helper()
+
+	var out []capabilityprobe.Cell
+	for _, ref := range startedImages(c, integrationWorkflow) {
+		out = append(out, cellsDeclaring(splitImageRef(ref))...)
+	}
+	c.Assert(len(out) > 0, qt.IsTrue,
+		qt.Commentf("%s started no image any cell declares, which would silently drop every "+
+			"suite-only line to best-effort", integrationWorkflow))
+	return out
+}
+
+// renovateConfig is the dependency-automation policy. A database server image
+// carries a release line rather than a version number, so its updates are
+// classified by hand; the rule that says so names the image repositories, and
+// this file is where that name list is checked against the declaration.
+const renovateConfig = "../../renovate.json"
+
+// databaseImagesRuleGroup is the groupName of the rule under test. Matching on
+// it rather than on position means a rule reordered above stays found.
+const databaseImagesRuleGroup = "database server images"
+
+// TestRenovate_ClassifiesEveryDatabaseServerImage keeps a hand-written list
+// honest.
+//
+// renovate.json cannot read Go, so the image repositories it must not
+// auto-merge are written out there — and a written-out list is a claim that
+// was true when it was typed. A new engine added to cells.go with no entry in
+// that rule would get ordinary dependency treatment: its release lines would
+// be replaced by a bot rather than classified, which is the exact failure the
+// rule exists to prevent.
+func TestRenovate_ClassifiesEveryDatabaseServerImage(t *testing.T) {
+	c := qt.New(t)
+
+	rule := databaseImageRule(c)
+	c.Assert(rule.AutoMerge, qt.IsNotNil,
+		qt.Commentf("the rule must state automerge explicitly; inheriting it is how a server image "+
+			"comes to be merged by a bot"))
+	c.Assert(*rule.AutoMerge, qt.IsFalse)
+
+	declared := declaredImageRepositories()
+	c.Assert(len(declared) > 0, qt.IsTrue,
+		qt.Commentf("no cell declares a container image, so every assertion below would be vacuous"))
+
+	for _, repository := range declared {
+		t.Run(repository, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(rule.MatchPackageNames, qt.Contains, repository,
+				qt.Commentf("cells.go declares an image from %q, and %s does not classify it: a Renovate "+
+					"pull request replacing that line's tag would be treated as an ordinary bump",
+					repository, renovateConfig))
+		})
+	}
+
+	// The other direction: a repository named in the rule that no cell
+	// declares is a rule nobody exercises, and it hides the removal of the
+	// engine it was written for.
+	for _, repository := range rule.MatchPackageNames {
+		t.Run("declared "+repository, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(declared, qt.Contains, repository)
+		})
+	}
+}
+
+type renovatePackageRule struct {
+	GroupName         string   `json:"groupName"`
+	MatchPackageNames []string `json:"matchPackageNames"`
+	AutoMerge         *bool    `json:"automerge"`
+}
+
+func databaseImageRule(c *qt.C) renovatePackageRule {
+	c.Helper()
+
+	body, err := os.ReadFile(renovateConfig)
+	c.Assert(err, qt.IsNil)
+
+	var config struct {
+		PackageRules []renovatePackageRule `json:"packageRules"`
+	}
+	c.Assert(json.Unmarshal(body, &config), qt.IsNil)
+	c.Assert(len(config.PackageRules) > 0, qt.IsTrue)
+
+	matching := slices.DeleteFunc(slices.Clone(config.PackageRules), func(rule renovatePackageRule) bool {
+		return rule.GroupName != databaseImagesRuleGroup
+	})
+	c.Assert(matching, qt.HasLen, 1,
+		qt.Commentf("%s must carry exactly one %q rule", renovateConfig, databaseImagesRuleGroup))
+	return matching[0]
+}
+
+// declaredImageRepositories returns the image repositories the cells declare,
+// with tags removed and duplicates collapsed.
+func declaredImageRepositories() []string {
+	var out []string
+	for _, cell := range capabilityprobe.Cells {
+		repository, _ := splitImageRef(cell.Image)
+		out = append(out, repository)
+	}
+	out = slices.DeleteFunc(out, func(repository string) bool { return repository == "" })
+	return slices.Compact(slices.Sorted(slices.Values(out)))
 }

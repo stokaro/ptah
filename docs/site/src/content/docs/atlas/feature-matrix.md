@@ -72,18 +72,18 @@ row for a migration decision.
 
 ## At a glance
 
-Across the 188 capabilities below:
+Across the 190 capabilities below:
 
 | Reading | Count |
 | --- | --- |
-| Ptah supports it fully | 118 |
+| Ptah supports it fully | 120 |
 | Ptah supports it with a stated limitation | 51 |
 | Ptah does not implement it | 19 |
 | Ptah and Atlas CE both support it | 41 |
 | Ptah implements it openly where Atlas gates it behind Pro or Cloud | 42 |
 | Ptah has it and neither Atlas edition does | 23 |
 | Atlas CE has it and Ptah does not, or only in part | 24 |
-| An Atlas column is ❔ — not established by this page's evidence | 10 |
+| An Atlas column is ❔ — not established by this page's evidence | 12 |
 
 Every 🟡 in the Ptah column names its specific limitation, reproduced against a
 binary built from this repository; Atlas-column verdicts rest on the cited
@@ -269,8 +269,10 @@ seven of them as open capabilities regardless.
 
 | Capability | Ptah | CE | Pro | Difference |
 | --- | :-: | :-: | :-: | --- |
+| Capability profile of a live target (`ptah db capabilities`) | ✅ | ❔ | ❔ | Reports the dialect, resolved preset and how it was reached, the support level and every capability key for a connected server, as text or stable JSON. No source here names an Atlas equivalent. |
 | ClickHouse (clickhouse, ch) | 🟡 | ❌ | ✅ | Tables, indexes, plain views and named table CHECKs. Other modeled objects produce named not-supported comments on `render` and `apply`; domains, composites and ranges still drop. |
 | CockroachDB (cockroachdb, crdb) | 🟡 | ❌ | ✅ | `CONCURRENTLY` index syntax, XML and advisory locks are disabled; Pro-like objects remain. CockroachDB 25.4 refuses generic/guarded DROP CONSTRAINT and CREATE OR REPLACE TRIGGER; 26.2 accepts them. |
+| Declared support level per database release line | ✅ | ❔ | ❔ | 26 declared release lines: 19 certified, 2 legacy-tested, 5 best-effort. Upstream end-of-life lowers the level, not the behavior; a line Ptah does not declare resolves to best-effort. |
 | Domains, composite types, and range types | 🟡 | ❌ | ✅ | Emitted across the PostgreSQL family in `schema render` and `schema apply` alike. A changed range type is planned as DROP TYPE + CREATE TYPE. The community binary reports none of the three. |
 | Enum types | 🟡 | ✅ | ✅ | An enum is whatever the schema declares as one; the type name plays no part. The undocumented `enum_` prefix that gated the inline rewrite, the scoped-schema filter and the PostgreSQL cast is gone. |
 | Extensions | 🟡 | ❌ | ✅ | PostgreSQL and YugabyteDB preserve non-default schemas. CockroachDB and Spanner refuse placement before SQL. Other targets name unsupported extensions without executing them; Atlas CE refuses blocks. |
