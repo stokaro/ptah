@@ -185,11 +185,27 @@ func TestMigrateGenerateReplayConnectTimeoutStartsAfterDirectoryLock(t *testing.
 		)
 	}()
 	<-lockHeld
-	time.AfterFunc(250*time.Millisecond, func() { close(releaseLock) })
+	// Only the ORDER of these two durations carries the assertion: the connect
+	// timeout has to be shorter than the lock is held, so a run that started
+	// the clock before waiting for the lock would have spent it before the lock
+	// was free. Everything else about them is headroom for the connect itself.
+	//
+	// They were 250ms and 100ms, which made this a race against the runner
+	// rather than against the ordering. Opening and pinging the dev database is
+	// well under 100ms on Linux and not reliably so on a loaded Windows runner:
+	// it failed twice on master with `connect to --dev-url: failed to ping
+	// database: context deadline exceeded`, in runs whose changes touched
+	// neither this path nor anything near it. Scaled up, the connect has ten
+	// times the budget it needs and the ordering property is unchanged.
+	const (
+		lockHeldFor    = 2 * time.Second
+		connectTimeout = time.Second
+	)
+	time.AfterFunc(lockHeldFor, func() { close(releaseLock) })
 
 	out, err := runGenerate(
 		"--replay",
-		"--connect-timeout", "100ms",
+		"--connect-timeout", connectTimeout.String(),
 		"--dev-url", "sqlite://"+devPath,
 		"--migrations-dir", migrationsDir,
 		"--schema-file", schemaPath,
