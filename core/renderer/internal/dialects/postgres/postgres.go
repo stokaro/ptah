@@ -15,6 +15,7 @@ import (
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/core/renderer/internal/dialects/internal/bufwriter"
+	"go.5x5.cz/ptah/core/renderer/internal/dialects/internal/defaultlit"
 )
 
 // Renderer provides PostgreSQL-specific SQL rendering
@@ -144,7 +145,7 @@ func (r *Renderer) VisitCreateType(node *ast.CreateTypeNode) error {
 		// Add DEFAULT if specified
 		if typeDef.Default != nil {
 			if typeDef.Default.HasLiteral() {
-				sql += fmt.Sprintf(" DEFAULT %s", r.escapeValue(typeDef.Default.Value))
+				sql += fmt.Sprintf(" DEFAULT %s", r.renderDefaultLiteral(typeDef.Default.Value))
 			} else if typeDef.Default.Expression != "" {
 				sql += fmt.Sprintf(" DEFAULT %s", typeDef.Default.Expression)
 			}
@@ -265,6 +266,15 @@ func (r *Renderer) escapeValue(value string) string {
 	// Escape single quotes by doubling them (PostgreSQL standard)
 	escaped := strings.ReplaceAll(value, "'", "''")
 	return "'" + escaped + "'"
+}
+
+// renderDefaultLiteral quotes value only when it is not already written as a
+// literal. A default reaches the renderer either bare, the way a struct tag
+// supplies it, or already quoted, the way the SQL parser read it; escaping the
+// second form a second time changes the value it stands for. See the defaultlit
+// package.
+func (r *Renderer) renderDefaultLiteral(value string) string {
+	return defaultlit.Render(value, r.escapeValue)
 }
 
 // escapeIdentifier safely escapes SQL identifiers (table/column names) for PostgreSQL
@@ -969,7 +979,7 @@ func (r *Renderer) renderColumn(column *ast.ColumnNode) (string, error) {
 	case column.Default == nil:
 		// No default value
 	case column.Default.HasLiteral():
-		parts = append(parts, fmt.Sprintf("DEFAULT %s", r.escapeValue(column.Default.Value)))
+		parts = append(parts, fmt.Sprintf("DEFAULT %s", r.renderDefaultLiteral(column.Default.Value)))
 	case column.Default.Expression != "":
 		parts = append(parts, fmt.Sprintf("DEFAULT %s", column.Default.Expression))
 	}
@@ -1272,7 +1282,7 @@ func (r *Renderer) renderPostgreSQLModifyColumn(tableName string, column *ast.Co
 	case column.Default == nil:
 		r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s DROP DEFAULT;", r.escapeQualifiedIdentifier(tableName), r.escapeIdentifier(column.Name))
 	case column.Default.HasLiteral():
-		r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s SET DEFAULT %s;", r.escapeQualifiedIdentifier(tableName), r.escapeIdentifier(column.Name), r.escapeValue(column.Default.Value))
+		r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s SET DEFAULT %s;", r.escapeQualifiedIdentifier(tableName), r.escapeIdentifier(column.Name), r.renderDefaultLiteral(column.Default.Value))
 	case column.Default.Expression != "":
 		r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s SET DEFAULT %s;", r.escapeQualifiedIdentifier(tableName), r.escapeIdentifier(column.Name), column.Default.Expression)
 	}
@@ -1314,7 +1324,7 @@ func (r *Renderer) updateNullValuesBeforeNotNull(tableName string, column *ast.C
 		if column.Default.Expression != "" {
 			r.w.WriteLinef("        UPDATE %s SET %s = %s WHERE %s IS NULL;", tableIdentifier, columnIdentifier, column.Default.Expression, columnIdentifier)
 		} else if column.Default.HasLiteral() {
-			r.w.WriteLinef("        UPDATE %s SET %s = %s WHERE %s IS NULL;", tableIdentifier, columnIdentifier, r.escapeValue(column.Default.Value), columnIdentifier)
+			r.w.WriteLinef("        UPDATE %s SET %s = %s WHERE %s IS NULL;", tableIdentifier, columnIdentifier, r.renderDefaultLiteral(column.Default.Value), columnIdentifier)
 		}
 	} else {
 		// If no default is specified, use a sensible default based on column type
