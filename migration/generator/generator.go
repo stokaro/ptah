@@ -169,9 +169,10 @@ type MigrationPlan struct {
 	// plan spent. WriteFilesContext releases them on the way out whether the
 	// publication succeeded or failed, so the window in which the plan holds
 	// the directory ends at a point the caller controls rather than at the next
-	// garbage collection. A plan that is never published at all still releases
-	// them when it is collected, because os.Root closes its descriptor from a
-	// finalizer.
+	// garbage collection. A plan that is never published at all is released by
+	// Close, which is the same release point named explicitly; relying on
+	// os.Root's finalizer instead leaves the directory held for as long as the
+	// collector takes to get there.
 	dir *atlasmigrate.MigrationWriter
 	// plannedContents is what dir held when the plan was built, and nothing
 	// else. It used to carry a filesystem identity beside the contents; identity
@@ -186,6 +187,10 @@ type MigrationPlan struct {
 	reportFormat                 string
 	specs                        []generatedMigrationSpec
 	written                      bool
+	// closed records that the plan was released by Close rather than by a
+	// publication attempt. Both leave dir nil, and a caller that publishes
+	// afterwards deserves to be told which of the two happened.
+	closed bool
 }
 
 // EmptyMigrationOptions contains options for skeleton migration creation.
@@ -748,6 +753,28 @@ func recoverMigrationPublicationWithin(
 	return nil
 }
 
+// Close releases the plan's claim on the migration directory without
+// publishing anything. It is what a caller that decides not to publish should
+// use, and it is safe to defer next to PlanMigration: publishing already
+// releases the handles, so a Close after WriteFilesContext does nothing.
+// Closing twice is likewise a no-op, and Close never reports an error, so it
+// composes with defer.
+//
+// A plan holds the directory open from the moment it is built. Without this
+// call an abandoned plan keeps holding it until the garbage collector runs a
+// finalizer, and on Windows an open directory handle blocks removing or
+// renaming that directory -- so the release point has to be one the caller
+// chooses rather than one the runtime chooses (stokaro/ptah#1549).
+func (p *MigrationPlan) Close() {
+	if p == nil {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.closed = true
+	p.release()
+}
+
 // WriteFiles publishes the migration artifacts represented by the plan. A plan
 // is single-use after a successful publication.
 func (p *MigrationPlan) WriteFiles() (*MigrationFiles, error) {
@@ -786,6 +813,9 @@ func (p *MigrationPlan) WriteFilesContext(ctx context.Context) (*MigrationFiles,
 	defer p.mu.Unlock()
 	if p.written {
 		return nil, fmt.Errorf("migration plan has already been written")
+	}
+	if p.closed {
+		return nil, fmt.Errorf("migration plan was closed")
 	}
 	if p.dir == nil {
 		return nil, fmt.Errorf("migration plan was released by a failed publication")

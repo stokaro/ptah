@@ -12,6 +12,7 @@ import (
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasmigrate"
+	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/internal/migrationsnapshot"
 	"go.5x5.cz/ptah/migration/generator"
 )
@@ -99,6 +100,35 @@ func TestMigrationPlanWriteFiles_FailedPublicationSpendsThePlan(t *testing.T) {
 	matches, err := filepath.Glob(filepath.Join(outputDir, "*.sql"))
 	c.Assert(err, qt.IsNil)
 	c.Assert(matches, qt.DeepEquals, []string{concurrentMigration})
+}
+
+func TestMigrationPlanWriteFiles_ReportsAClosedPlanAsClosed(t *testing.T) {
+	c := qt.New(t)
+	plan, outputDir := newSQLiteMigrationPlan(c)
+	plan.Close()
+
+	files, err := plan.WriteFiles()
+
+	c.Assert(err, qt.ErrorMatches, `migration plan was closed`)
+	c.Assert(files, qt.IsNil)
+	matches, err := filepath.Glob(filepath.Join(outputDir, "*.sql"))
+	c.Assert(err, qt.IsNil)
+	c.Assert(matches, qt.HasLen, 0)
+}
+
+func TestMigrationPlanClose_AfterPublicationKeepsTheWrittenFiles(t *testing.T) {
+	c := qt.New(t)
+	plan, outputDir := newSQLiteMigrationPlan(c)
+	files, err := plan.WriteFiles()
+	c.Assert(err, qt.IsNil)
+	c.Assert(files.Files, qt.HasLen, 1)
+
+	plan.Close()
+
+	// One migration is a pair of files on disk, up and down.
+	matches, err := filepath.Glob(filepath.Join(outputDir, "*.sql"))
+	c.Assert(err, qt.IsNil)
+	c.Assert(matches, qt.HasLen, 2)
 }
 
 func TestMigrationPlanWriteFiles_RejectsChangedDirectory(t *testing.T) {
@@ -293,6 +323,13 @@ func newSQLiteMigrationPlanAt(c *qt.C, outputDir string) *generator.MigrationPla
 	opts := newSQLiteMigrationOptions(c, outputDir)
 	plan, err := generator.PlanMigration(c.Context(), opts)
 	c.Assert(err, qt.IsNil)
+	// A plan holds outputDir open until it is published or closed, and the
+	// tests that never publish would otherwise leave it held until the garbage
+	// collector got there. TempDir removes outputDir during cleanup, which on
+	// Windows fails while a handle is open, so the release has to happen here
+	// rather than be left to the runtime. Closing a published plan is a no-op,
+	// so this is correct for the publishing tests too.
+	c.Cleanup(plan.Close)
 	return plan
 }
 
@@ -301,15 +338,8 @@ func newSQLiteMigrationOptions(
 	outputDir string,
 ) generator.GenerateMigrationOptions {
 	c.Helper()
-	// In memory, so the planning run leaves no file behind for t.TempDir to
-	// unlink. The file-backed spelling made TestPlanMigration_DoesNotWriteArtifacts
-	// fail intermittently on windows-latest with "TempDir RemoveAll cleanup:
-	// ... The process cannot access the file because it is being used by
-	// another process": Windows refuses to delete a file whose handle is still
-	// open, and closing a database/sql pool does not guarantee the driver has
-	// released the OS handle by the time the deferred removal runs. Nothing
-	// here is about the file -- the dev database only has to exist.
-	conn, err := dbschema.ConnectToDatabase(c.Context(), "sqlite://:memory:")
+	devURL := atlasurl.SQLiteURLFromPath(filepath.Join(c.TempDir(), "dev.db"))
+	conn, err := dbschema.ConnectToDatabase(c.Context(), devURL)
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() {
 		c.Check(conn.Close(), qt.IsNil)

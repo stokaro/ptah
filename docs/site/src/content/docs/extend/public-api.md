@@ -281,6 +281,12 @@ migration-directory snapshot used during planning. `MigrationPlan.WriteFiles`
 rejects changed history with `generator.ErrMigrationDirectoryChanged` under
 the shared cross-process publication lock.
 
+A plan holds the migration directory open until it is published, so an
+embedder that may not publish should `defer plan.Close()`. `Close` is a no-op
+on a published plan and a no-op called twice; skipping it leaves the directory
+held until the plan is garbage collected, which on Windows blocks removing or
+renaming it in the meantime.
+
 When its URL or connection selects SQLite, `PlanMigration` validates
 `PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP` before resolving `OutputDir`. A malformed
 value therefore fails before filesystem work; non-SQLite plans do not consult

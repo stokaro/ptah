@@ -7194,6 +7194,7 @@ type MigrationPlan struct {
     disk yet. WriteFiles publishes the planned migration once.
 
 func PlanMigration(ctx context.Context, opts GenerateMigrationOptions) (*MigrationPlan, error)
+func (p *MigrationPlan) Close()
 func (p *MigrationPlan) WriteFiles() (*MigrationFiles, error)
 func (p *MigrationPlan) WriteFilesContext(ctx context.Context) (*MigrationFiles, error)
 

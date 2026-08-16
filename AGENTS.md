@@ -543,6 +543,44 @@ spelling is merely an odd directory name, because the alternative is a project
 that stays inside its directory where it was written and leaves it where it is
 deployed.
 
+### A handle is released by a caller, not by the collector
+
+`MigrationPlan` holds the migration directory open from the moment it is built
+until it publishes. Publication released the handle; abandonment did not, and
+the type said so out loud — a plan that is never published "still releases them
+when it is collected, because `os.Root` closes its descriptor from a
+finalizer." On Unix that reads as a harmless detail. On Windows an open
+directory handle blocks removing or renaming the directory, so the same
+sentence describes a directory an application cannot clean up until the
+collector happens to run. It surfaced as `TestPlanMigration_DoesNotWriteArtifacts`
+failing in `TempDir` cleanup, intermittently, because a finalizer is timing.
+
+**A type that acquires an operating-system handle owes its caller a way to give
+it back.** Add the release call — here `Close` — and let publication remain one
+of the paths that reaches it. Two properties make such a call composable, and
+both are worth having on purpose: releasing twice is a no-op, and releasing
+after the handle is already gone is a no-op, so `defer` next to the constructor
+is always correct and never has to know which path ran.
+
+Two consequences to check whenever you add one:
+
+- **Look for the abandonment path in production, not only in tests.** The test
+  was the symptom; `ptah migrate generate --replay` had the same hole, where a
+  plan built successfully inside a replay whose later steps failed was returned
+  and dropped. A leak that only a test can reach is a test bug. This one was
+  not.
+- **Say which release happened.** Both an abandoned plan and a failed
+  publication leave the handle nil, and reporting the second for the first is a
+  diagnostic that sends the reader looking for a publication that never
+  occurred.
+
+Verifying this needs care, because the platform that exhibits the bug is not
+the one running the test. The check that a release actually released is a
+white-box assertion on the handle field: on Unix nothing observable at the
+package boundary distinguishes a release from a flag flip, since the directory
+can be removed either way. Assert the handle, and say in the file why the
+black-box version cannot exist.
+
 ### Compatibility with older Ptah is a different axis, and it is not owed
 
 Everything above is about the community binary. Compatibility with **Ptah's own
