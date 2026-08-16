@@ -115,9 +115,21 @@ const (
 	// capability the newer server gained or lost is unmodeled.
 	SourceSaturated Source = "newer-than-measured"
 
-	// SourceDialectDefault: the version was read and did not change the
-	// answer, either because it fell between measured lines or because the
-	// dialect has no ladder.
+	// SourceUnmeasuredLine: the dialect HAS a version ladder, the version was
+	// read, and it selected no measured release line — so the ladder handed
+	// back the conservative preset it assigns between or below its measured
+	// lines.
+	//
+	// It is separate from [SourceDialectDefault] because the two were reported
+	// as one and the merged answer was wrong about the common case. MySQL
+	// 8.0.42 differs from the MySQL default on two capability keys and MariaDB
+	// 10.1.48 on five: the version plainly changed the answer, while the label
+	// said the dialect default had been used.
+	SourceUnmeasuredLine Source = "unmeasured-line"
+
+	// SourceDialectDefault: the dialect has no version ladder at all, so the
+	// version was parsed and then discarded. ClickHouse, SQLite and SQL Server
+	// resolve this way.
 	SourceDialectDefault Source = "dialect-default"
 
 	// SourceUnrecognized: the string named no server at all, so the preset was
@@ -178,27 +190,47 @@ func For(dialect, banner, productVersion string) Profile {
 		effective = normalized
 	}
 
+	// Parsed before the note is built, because the note names its subject in
+	// the middle of a sentence. servertarget.VersionNote was written for an
+	// operator-typed --server-version, which is short; handed a live banner it
+	// produced "postgres PostgreSQL 19.1 (Debian 19.1-1.pgdg13+1) on
+	// x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit is
+	// newer than the newest measured release line 18.x". The corrected parse is
+	// the number that belongs there — and on MariaDB over mysql:// it is also
+	// the one without the 5.5.5- replication prefix the resolver trims.
+	version, versionErr := capabilityprobe.ParseVersion(effective, banner, productVersion)
+	parsed := ""
+	if versionErr == nil {
+		parsed = version.String()
+	}
+	// The banner is the subject only when no version could be read from it,
+	// which is the arm that quotes its argument and means to show the operator
+	// exactly what the server said.
+	subject := parsed
+	if subject == "" {
+		subject = banner
+	}
+
 	profile := Profile{
 		Dialect: normalized,
 		Server: Server{
 			Banner:  banner,
+			Version: parsed,
 			Product: capability.BannerPlatform(banner),
 		},
 		Preset: Preset{
 			Dialect: effective,
 			Source:  sourceOf(resolution),
-			Note:    servertarget.VersionNote(effective, banner, resolution),
+			Note:    servertarget.VersionNote(effective, subject, resolution),
 		},
 		Traits:       capability.TraitsFor(effective, resolution.Capabilities),
 		Capabilities: capabilitiesOf(resolution.Capabilities),
 	}
 
-	version, err := capabilityprobe.ParseVersion(effective, banner, productVersion)
-	if err != nil {
+	if versionErr != nil {
 		profile.Certification = unmatched(effective, "")
 		return profile
 	}
-	profile.Server.Version = version.String()
 
 	cell, matched := capabilityprobe.CellFor(effective, version)
 	if !matched {
@@ -252,10 +284,17 @@ func certificationReason(cell capabilityprobe.Cell) string {
 	return cell.Support.Doc()
 }
 
-// sourceOf reads the resolution's three flags as the one mechanism that fired.
+// sourceOf reads the resolution's flags as the one mechanism that fired.
+//
 // The flags are not independent — VersionSpecific and Saturated are mutually
 // exclusive, and Recognized false implies VersionSpecific false — so a single
 // name is the honest rendering, and the order below is the implication order.
+//
+// The arms match servertarget.VersionNote's, deliberately: the note and the
+// source answer the same question, one in a sentence and one in a word, and a
+// server that gets the "not a measured release line" sentence must not also get
+// a source claiming its dialect has no ladder. NewestMeasured is what separates
+// them — it is non-empty exactly for the dialects that have one.
 func sourceOf(resolution capability.VersionResolution) Source {
 	switch {
 	case !resolution.Recognized:
@@ -264,6 +303,8 @@ func sourceOf(resolution capability.VersionResolution) Source {
 		return SourceVersionLadder
 	case resolution.Saturated:
 		return SourceSaturated
+	case resolution.NewestMeasured != "":
+		return SourceUnmeasuredLine
 	default:
 		return SourceDialectDefault
 	}

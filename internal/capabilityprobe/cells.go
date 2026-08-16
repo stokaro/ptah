@@ -208,13 +208,23 @@ func (c Cell) String() string {
 // line has none to make.
 //
 // Input 1 is not a synonym for "has a matrix cell", which is why the levels
-// below are not uniform per engine. Two mechanisms exercise a line — the
-// capability probe the tiered workflows fan out over, and the integration
-// suite whose services .github/workflows/go-integration-tests.yml starts — and
-// nine of the twenty-six cells are outside the first. Five are outside both:
-// ClickHouse 26.3 and 25.8, SQL Server 16.0 and 15.0, and Spanner. They are
-// declared, they resolve to a preset, and nothing here has ever run against
-// them. Calling them certified would be the false claim this vocabulary
+// below are not uniform per engine. Three mechanisms exercise a line:
+//
+//  1. the capability probe the tiered workflows fan out over;
+//  2. the integration suite, counting both the services
+//     .github/workflows/go-integration-tests.yml declares and the databases
+//     its steps start with `docker run` — CockroachDB and YugabyteDB are
+//     reachable only the second way;
+//  3. the engine compiled into the binary under test, which is SQLite and
+//     nothing else: it needs no container, so every `go test ./...` run
+//     exercises it. That is why sqlite-3 is certified with no image and no
+//     service anywhere.
+//
+// Nine of the twenty-six cells are outside the first and six are outside the
+// first two, of which the third mechanism covers SQLite alone. Five are outside
+// all three: ClickHouse 26.3 and 25.8, SQL Server 16.0 and 15.0, and Spanner.
+// They are declared, they resolve to a preset, and nothing here has ever run
+// against them. Calling them certified would be the false claim this vocabulary
 // exists to make impossible, so they are best-effort and the census test in
 // cells_test.go keeps them that way.
 //

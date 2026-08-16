@@ -234,12 +234,20 @@ Every cell also declares a `Support` level from `capability.SupportLevel` —
 certified, legacy-tested, best-effort, or known-incompatible. It is a statement
 about **this repository's testing**, not about the server: nothing reads it to
 decide whether an operation may proceed, and an upstream end-of-life date moves
-a line from certified to legacy-tested rather than making it unusable. A cell
-may claim certified or legacy-tested only if the capability probe or the
-integration workflow actually runs against the line, and
+a line from certified to legacy-tested rather than making it unusable.
+
+A cell may claim certified or legacy-tested only if something actually runs
+against the line. Three things can:
+
+- the capability probe, for a line the tiered workflows fan out over;
+- a server `.github/workflows/go-integration-tests.yml` starts;
+- for SQLite alone, the engine compiled into the binary, which every
+  `go test ./...` exercises.
+
 `TestCells_CertificationMatchesWhatContinuousIntegrationRuns` reads that answer
-out of the matrix and the workflow rather than believing the literal. Five
-declared lines are best-effort today because nothing here exercises them.
+out of the matrix and the workflow rather than believing the literal, so a line
+cannot claim certification by being written down. Five declared lines are
+best-effort today because nothing here exercises them, and
 `ptah db capabilities` is where an operator sees the resolved answer for their
 own server.
 

@@ -98,16 +98,19 @@ Lines whose container tag does not name the line, so which patch it resolves to 
 - `sqlserver` 15.0, pinned as `mcr.microsoft.com/mssql/server:2019-latest`.
 <!-- END GENERATED VERSION MATRIX -->
 
-How a server reaches its preset is a separate axis, and the table above leaves
-it out: it describes the resolver rather than the promise, and the two together
-render wider than this page's reading column. There are four answers.
-`version-ladder` selects an arm by parsed version, so an observation belongs to
-that line alone; `measured-release-line` reaches the preset through an engine
-banner but has been measured directly; `banner-substring` and `dialect-default`
-hand every release of the engine the same set, so an observation on one release
-cannot be credited to one line rather than its siblings. Run
-`ptah db capabilities` against a server to see which one applied to it, reported
-as `Preset source`.
+Whether an observation can be credited to one line rather than its siblings is a
+separate axis, recorded per line in the declaration and left out of the table
+above: it describes the resolver rather than the promise, and the two together
+render wider than this page's reading column. A line refined by parsed version
+is attributable on its own; one reached through an engine banner is attributable
+only where it has been measured directly; and where every release of an engine
+receives the same set, an observation on one release says nothing about which of
+them produced it. That is why several ClickHouse and SQL Server lines share one
+preset.
+
+`ptah db capabilities` reports a related but narrower fact per server, as
+`Preset source`: which rule chose that server's preset, not whether the line is
+attributable.
 
 A future line with no preset resolves onto the newest preset Ptah has, which is
 a stand-in rather than a match. The pipeline reports that condition as a

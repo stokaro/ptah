@@ -40,10 +40,11 @@ const (
 	// Capabilities are resolved for it exactly as for any other server, and
 	// the operations those capabilities allow are performed.
 	//
-	// It is the only level that is never declared. A declared level names a
-	// line somebody chose to cover; this one is what remains when a live
-	// server's version falls on no declared line at all, so it is resolved at
-	// runtime and cannot be written down in advance.
+	// It is reachable two ways, and they mean the same thing from opposite
+	// directions: DECLARED against a release line this repository covers but
+	// does not exercise, and RESOLVED at runtime for a server whose version
+	// falls on no declared line at all. Either way nothing measured it, and
+	// either way nothing refuses it.
 	BestEffort SupportLevel = "best-effort"
 
 	// KnownIncompatible is a release line with a concrete, named technical

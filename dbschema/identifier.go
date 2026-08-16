@@ -6,9 +6,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"slices"
-	"unicode/utf8"
 
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/platform/identifier"
 )
 
@@ -121,14 +121,21 @@ func normalizedIdentifierNames(names []string) []string {
 	return slices.Compact(names)
 }
 
+// validateSQLServerIdentifierNames refuses a name SQL Server cannot hold.
+//
+// The limit and the unit come from [capability.Identifiers] rather than from a
+// constant here. This function used to carry its own 128 and its own
+// utf8.RuneCountInString, which was the second copy of a rule the renderer also
+// had: two places deciding whether a multibyte name fits, agreeing only because
+// nobody had yet changed one of them.
 func validateSQLServerIdentifierNames(names []string) error {
-	const maxIdentifierCharacters = 128
+	limit := capability.Identifiers(platform.SQLServer)
 	for _, name := range names {
-		if utf8.RuneCountInString(name) > maxIdentifierCharacters {
+		if limit.Exceeds(name) {
 			return fmt.Errorf(
-				"resolve SQL Server identifier semantics: identifier %q exceeds %d characters",
+				"resolve SQL Server identifier semantics: identifier %q exceeds %s",
 				name,
-				maxIdentifierCharacters,
+				limit,
 			)
 		}
 	}

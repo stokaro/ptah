@@ -74,8 +74,11 @@ func runCapabilities(cmd *cobra.Command, opts *options) error {
 	if opts.dbURL == "" {
 		return fmt.Errorf("database URL is required")
 	}
-	if opts.format != formatText && opts.format != formatJSON {
-		return fmt.Errorf("invalid --format value %q: expected text or json", opts.format)
+	// Asked here rather than left to WriteProfile, which asks it again: a
+	// --format typo resolved after the dial reports a connection failure for a
+	// target the operator never meant to reach.
+	if err := validateFormat(opts.format); err != nil {
+		return err
 	}
 
 	connectTimeout, err := dbcli.ParseConnectTimeout(opts.connectTimeout)
@@ -105,10 +108,38 @@ func runCapabilities(cmd *cobra.Command, opts *options) error {
 		capabilityprobe.ProductVersion(cmd.Context(), conn, info.Dialect),
 	)
 
-	return writeProfile(cmd.OutOrStdout(), opts.format, profile)
+	return WriteProfile(cmd.OutOrStdout(), opts.format, profile)
 }
 
-func writeProfile(w io.Writer, format string, profile serverprofile.Profile) error {
+// validateFormat rejects a format value both entry points have to reject the
+// same way. Two spellings of this message is how the pre-connect check and the
+// renderer come to disagree about which values exist.
+func validateFormat(format string) error {
+	if format != formatText && format != formatJSON {
+		return fmt.Errorf("invalid --format value %q: expected text or json", format)
+	}
+	return nil
+}
+
+// WriteProfile renders a profile to w in the named format, and is exported
+// because the renderer is otherwise reachable only through a live server.
+//
+// Every three-way choice below is decided by what one particular server said:
+// a preset with no name, a release line carrying a label, a banner no version
+// could be read from. Driving those through the cobra command needs a SQL
+// Server 2022, a MariaDB behind a mysql:// URL and a server that answers
+// nothing about itself, so before this seam existed the only branch any test
+// took was SQLite's — the one target that needs no server — and the other arms
+// of orNone, presetDescription and lineDescription were unasserted. A hand-built
+// [serverprofile.Profile] reaches all of them, and [serverprofile.For] is pure
+// for the same reason.
+//
+// runCapabilities calls this, so the seam is the path the command takes rather
+// than a second renderer that can drift from it.
+func WriteProfile(w io.Writer, format string, profile serverprofile.Profile) error {
+	if err := validateFormat(format); err != nil {
+		return err
+	}
 	if format == formatJSON {
 		encoder := json.NewEncoder(w)
 		encoder.SetIndent("", "  ")
@@ -119,12 +150,20 @@ func writeProfile(w io.Writer, format string, profile serverprofile.Profile) err
 
 // writeProfileText renders the profile for a person.
 //
-// Every FIELD the JSON carries appears here, in the same order, because a text
-// mode that summarized would make --format json the only complete answer and
-// the reader most likely to need the complete answer is the one diagnosing by
-// eye. The two forms are not identical, and the difference runs one way only:
-// each capability's registry documentation is in the JSON and not here, since
-// twenty-five doc sentences would bury the twenty-five verdicts they annotate.
+// Every FIELD the JSON carries reaches this form too, because a text mode that
+// summarized would make --format json the only complete answer and the reader
+// most likely to need the complete answer is the one diagnosing by eye. That
+// includes Server.Product, which is the "which product does the server SAY it
+// is" answer and is exactly what a reader who reached a MariaDB through a
+// mysql:// URL came to find out.
+//
+// The two forms differ in two ways, both deliberate. The ORDER here is reading
+// order rather than the struct's: the version and the product Ptah parsed stand
+// above the banner they were parsed out of, so an operator checking a parse
+// against the raw string reads downward, while the JSON declares the banner
+// first. The CONTENTS differ one way only: each capability's registry
+// documentation is in the JSON and not here, since twenty-five doc sentences
+// would bury the twenty-five verdicts they annotate.
 func writeProfileText(w io.Writer, profile serverprofile.Profile) error {
 	if err := writeProfileHeader(w, profile); err != nil {
 		return err
@@ -139,6 +178,7 @@ func writeProfileHeader(w io.Writer, profile serverprofile.Profile) error {
 	fields := [][2]string{
 		{"Dialect", profile.Dialect},
 		{"Server version", orNone(profile.Server.Version)},
+		{"Server product", orNone(profile.Server.Product)},
 		{"Banner", orNone(profile.Server.Banner)},
 		{"Capability preset", presetDescription(profile.Preset)},
 		{"Preset source", string(profile.Preset.Source)},
@@ -232,9 +272,10 @@ func lineDescription(certification serverprofile.Certification) string {
 }
 
 // orNone keeps an empty field visible. A blank value in aligned output reads as
-// a rendering fault; "none" reads as the answer it is, and both of the fields
-// that can be empty here — an unreadable version, an undeclared line — are
-// exactly what the reader came to find out.
+// a rendering fault; "none" reads as the answer it is, and every field it
+// guards — a version no banner yielded, a banner naming no product, a server
+// that said nothing about itself, an undeclared release line — is exactly what
+// the reader came to find out.
 func orNone(value string) string {
 	if value == "" {
 		return "none"

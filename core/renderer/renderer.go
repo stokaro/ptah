@@ -1488,9 +1488,15 @@ func reserveExplicitForeignKeyName(
 // The limit and its unit come from [capability.Identifiers] rather than from a
 // dialect switch here. The switch this replaced carried the numbers 63, 64 and
 // 128 and, more importantly, carried the byte-versus-character rule that
-// decides whether a multibyte name fits — a rule any second caller of "is this
-// identifier too long" would have had to reproduce from scratch, correctly, to
-// agree with this one.
+// decides whether a multibyte name fits.
+//
+// That removes this file's copy of the rule. One other remains:
+// internal/convert/fromschema carries its own three-arm switch because it
+// truncates a generated name to fit rather than refusing it, and the truncation
+// needs a budget in the limit's unit that IdentifierLimit does not expose. Its
+// predicate agrees with capability.Identifiers today — 144 verdicts across
+// every boundary shape, zero disagreements — so what remains is a drift hazard
+// rather than a wrong answer. Do not add a third copy.
 func validateExplicitForeignKeyName(dialect, name string) error {
 	normalizedDialect := platform.NormalizeDialect(dialect)
 	limit := capability.Identifiers(normalizedDialect)

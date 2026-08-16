@@ -241,23 +241,9 @@ func TestTraits_ContradictorySetsResolveToUnspecified(t *testing.T) {
 	})
 }
 
-// TestForeignKeyReference_NamesEveryDeclaredPolicy is the census that keeps the
-// derivation and the mutex group in step. A fourth reference policy added to
-// the capability registry without a mode value to name it would otherwise
-// resolve to Unspecified on a perfectly valid set — a silent wrong answer
-// rather than a build failure.
-func TestForeignKeyReference_NamesEveryDeclaredPolicy(t *testing.T) {
-	c := qt.New(t)
-
-	policies := []capability.Capability{
-		capability.ForeignKeysRequireUniqueReference,
-		capability.ForeignKeysRequireIndexedReference,
-		capability.ForeignKeysCreateBackingIndex,
-	}
-
-	for _, policy := range policies {
-		caps := capability.Capabilities{capability.ForeignKeys: true, policy: true}
-		c.Assert(caps.ForeignKeyReference(), qt.Not(qt.Equals), capability.ReferenceUnspecified)
-		c.Assert(caps.ForeignKeyReference(), qt.Not(qt.Equals), capability.ReferenceUnsupported)
-	}
-}
+// The census that keeps referencePolicyNames in step with the policy list lives
+// in traits_internal_test.go rather than here. From outside the package the
+// list can only be retyped by hand, and a hand-typed list is the one place a
+// fourth policy is guaranteed not to appear: the literal that used to stand
+// here stayed green through a fourth policy added to the registry, to the mutex
+// group, to foreignKeyReferencePolicies and to every preset.

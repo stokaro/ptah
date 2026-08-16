@@ -151,14 +151,28 @@ characters for SQL Server and Spanner, and no modeled limit for ClickHouse and
 SQLite. PostgreSQL truncates at 63 bytes, so a 32-character accented name is
 already over the limit while its rune count says it fits. As flags the limit
 would need one key per length, and the unit would have nowhere to live at all.
-`IdentifierLimit.Exceeds` applies the byte-versus-character rule in one place,
-so a second caller cannot enforce the same limit by rune count.
+`IdentifierLimit.Exceeds` is where the byte-versus-character rule is **defined**,
+so a caller can ask the question instead of enforcing the limit by rune count.
 
 Those numbers were a dialect switch inside `core/renderer`'s foreign-key name
 validation. The renderer now reads the limit from the capability model, which is
-what makes the model load-bearing rather than decorative: another caller asks
-the same question instead of copying the switch, and the two answers cannot
-drift apart.
+what makes the model load-bearing rather than decorative: it asks the question
+instead of carrying its own copy of the switch.
+
+`Exceeds` is not yet the only place the rule is **applied**. Two copies existed
+when the model was introduced. `core/renderer` and
+`dbschema.validateSQLServerIdentifierNames` now both consume it, and one
+remains: `internal/convert/fromschema` (`foreignKeyNameFits`,
+`foreignKeyNameWithSuffix`) keeps a three-arm switch because it *truncates* a
+generated name to fit rather than refusing it, and the truncation needs a budget
+in the limit's unit — something `IdentifierLimit` does not expose today.
+
+Its predicate agrees with `capability.Identifiers`: compared against it over
+nine dialects and 16 name shapes chosen to straddle every boundary, 144
+verdicts, zero disagreements. So the cost of the remaining copy is drift, not a
+wrong answer today. Giving `IdentifierLimit` unit-aware truncation is what would
+retire it; until then, a further caller should ask `Exceeds` rather than add a
+copy.
 
 The other two values are read off the boolean set rather than declared beside
 it. `enum_inline_column` against `enum_custom_type`, and the three referenced-key

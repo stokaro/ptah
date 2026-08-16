@@ -125,6 +125,7 @@ Expected output includes:
 ```text
 Dialect:            postgres
 Server version:     18.4
+Server product:     postgres
 Banner:             PostgreSQL 18.4 (Debian 18.4-1.pgdg13+1) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit
 Capability preset:  Postgres17 (postgres)
 Preset source:      version-ladder
@@ -132,8 +133,10 @@ Support level:      certified
 Release line:       18
 ```
 
-`Banner` is the version string the server reported verbatim, and
-`Server version` is what Ptah parsed out of it. Below the block the command
+`Banner` is the version string the server reported verbatim; `Server version`
+and `Server product` are what Ptah parsed out of it. The three differ where it
+matters most: a MariaDB reached over a `mysql://` URL reports dialect `mysql`,
+product `mariadb`, and a preset resolved on the MariaDB ladder. Below the block the command
 prints the reason for the support level, the non-boolean behavior values —
 identifier limit, enum modeling, foreign key reference — and every capability
 key marked `supported` or `unsupported`. A version that selected no exact
@@ -152,8 +155,12 @@ otherwise leaves open:
   dialect in parentheses names whose resolution produced the set — a version
   ladder where the dialect has one, the dialect default or a banner match
   otherwise. It is not always the dialect the URL connected as.
-- **Why that set.** `Preset source` is `version-ladder`, `newer-than-measured`,
-  `dialect-default`, or `unrecognized-banner`.
+- **Why that set.** `Preset source` names the rule that chose it:
+  `version-ladder` when the version selected an exact measured release line,
+  `unmeasured-line` when the dialect's ladder answered but no measured line
+  matched, `newer-than-measured` when the server is newer than the newest line
+  Ptah has measured, `dialect-default` when the dialect has no ladder at all,
+  and `unrecognized-banner` when the version string named no server.
 - **What Ptah promises about the release line.** `Support level` and
   `Release line`, with the reason underneath. A server on a line Ptah declares
   nothing about reports `best-effort` and is not refused: capabilities are

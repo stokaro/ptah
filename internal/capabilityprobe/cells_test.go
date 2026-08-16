@@ -265,6 +265,59 @@ var pinnedImageFiles = []string{
 // structure-aware read would need two shapes to answer one question.
 var imageLine = regexp.MustCompile(`(?m)^\s*image:\s*["']?([^"'\s#]+)`)
 
+// dockerRun matches a `docker run` invocation and captures its arguments. The
+// capture runs to the end of the shell command rather than to the end of the
+// line, because the workflow's two invocations span four and three lines and
+// every continued line ends in a backslash.
+//
+// A YAML `image:` key is not the only way this repository starts a database,
+// and the difference was measured rather than imagined: the integration
+// workflow starts CockroachDB and YugabyteDB from a `run:` step, and a reviewer
+// added `docker run --detach --name ptah-extra-mysql --publish 3399:3306
+// mysql:8.0` to that step -- MySQL 8.0 being a line the matrix deliberately
+// declares no cell for -- and `go test ./internal/capabilityprobe/...` came
+// back green. CI would have started a server nothing here can describe with
+// nothing red, which is the exact failure reading these files prevents.
+var dockerRun = regexp.MustCompile(`docker[ \t]+run((?:\\\n|[^\n])*)`)
+
+// dockerRunValueFlags names the `docker run` flags whose value is the NEXT
+// token rather than part of the same one. Walking past them is the whole
+// difficulty of finding the image: `--publish 3399:3306` splits into a
+// repository and a tag exactly as readily as `mysql:8.0` does, so a read that
+// took the first token carrying a colon would classify a port mapping and miss
+// the server entirely.
+//
+// A flag missing from this list is not silent. Its value is taken for the
+// image, and an image neither databaseImages nor notADatabase classifies fails
+// TestCells_DeclareEveryDatabaseContainerThisRepositoryStarts by name.
+var dockerRunValueFlags = map[string]bool{
+	"--name":       true,
+	"--publish":    true,
+	"-p":           true,
+	"--env":        true,
+	"-e":           true,
+	"--env-file":   true,
+	"--volume":     true,
+	"-v":           true,
+	"--network":    true,
+	"--user":       true,
+	"-u":           true,
+	"--workdir":    true,
+	"-w":           true,
+	"--entrypoint": true,
+	"--hostname":   true,
+	"-h":           true,
+	"--label":      true,
+	"-l":           true,
+	"--platform":   true,
+	"--pull":       true,
+	"--restart":    true,
+	"--health-cmd": true,
+	"--memory":     true,
+	"-m":           true,
+	"--cpus":       true,
+}
+
 // databaseImages maps an image repository onto the dialect a server built from
 // it speaks.
 var databaseImages = map[string]string{
@@ -308,6 +361,33 @@ func TestCellsDeclaring_LineAliasMatchesTheTargetLine(t *testing.T) {
 		qt.Commentf("a floating 25.4 or 26.2 cell must not cover an undeclared 27.1 target"))
 }
 
+// TestDockerRun_FindsTheDatabasesTheWorkflowStartsByHand is the non-vacuity
+// guard on the docker run half of the read, and it pins today's answer the way
+// TestCells_BestEffortLinesAreExactlyTheUnmeasuredOnes pins today's levels.
+//
+// The `image:` half has a guard of its own inside startedImages; this half needs
+// one because it can only ever return fewer images than the file starts. A regex
+// that stopped matching, or an unlisted flag that swallowed the image token,
+// would leave the census reading exactly as it did before this arm existed:
+// passing, and blind to the servers CI starts by hand. Both mutants were run in
+// a scratch copy and both turn this test red.
+//
+// Repositories rather than full references, so that a tag bump stays a change to
+// cells.go alone.
+func TestDockerRun_FindsTheDatabasesTheWorkflowStartsByHand(t *testing.T) {
+	c := qt.New(t)
+
+	body, err := os.ReadFile(integrationWorkflow)
+	c.Assert(err, qt.IsNil)
+
+	var repositories []string
+	for _, ref := range dockerRunImages(string(body)) {
+		repository, _ := splitImageRef(ref)
+		repositories = append(repositories, repository)
+	}
+	c.Assert(repositories, qt.ContentEquals, []string{"cockroachdb/cockroach", "yugabytedb/yugabyte"})
+}
+
 // readPinnedImages returns every image reference the two files start, sorted
 // and deduplicated: postgres:18 appears in both.
 func readPinnedImages(c *qt.C) []string {
@@ -315,17 +395,65 @@ func readPinnedImages(c *qt.C) []string {
 
 	var refs []string
 	for _, path := range pinnedImageFiles {
-		body, err := os.ReadFile(path)
-		c.Assert(err, qt.IsNil)
-		matches := imageLine.FindAllStringSubmatch(string(body), -1)
-		c.Assert(len(matches) > 0, qt.IsTrue,
-			qt.Commentf("%s yielded no image: lines — a check whose input list comes back empty passes "+
-				"by examining nothing", path))
-		for _, match := range matches {
-			refs = append(refs, match[1])
-		}
+		refs = append(refs, startedImages(c, path)...)
 	}
 	return slices.Compact(slices.Sorted(slices.Values(refs)))
+}
+
+// startedImages returns every container image one file starts, by both of the
+// mechanisms these files use: the YAML `image:` key, and a `docker run`
+// invocation in a workflow step. Compose can only use the first; the
+// integration workflow uses both, and reading only the first is how the census
+// came to be blind to two of the seven databases CI runs.
+func startedImages(c *qt.C, path string) []string {
+	c.Helper()
+
+	body, err := os.ReadFile(path)
+	c.Assert(err, qt.IsNil)
+
+	matches := imageLine.FindAllStringSubmatch(string(body), -1)
+	c.Assert(len(matches) > 0, qt.IsTrue,
+		qt.Commentf("%s yielded no image: lines — a check whose input list comes back empty passes "+
+			"by examining nothing", path))
+
+	refs := make([]string, 0, len(matches))
+	for _, match := range matches {
+		refs = append(refs, match[1])
+	}
+	return append(refs, dockerRunImages(string(body))...)
+}
+
+// dockerRunImages returns the image every `docker run` in a file starts. An
+// invocation whose image the walk below cannot find contributes nothing rather
+// than an empty reference that would later read as an unclassified image;
+// TestDockerRun_FindsTheDatabasesTheWorkflowStartsByHand is the guard against
+// that silence.
+func dockerRunImages(body string) []string {
+	var out []string
+	for _, invocation := range dockerRun.FindAllStringSubmatch(body, -1) {
+		ref, found := dockerRunImage(strings.Fields(strings.ReplaceAll(invocation[1], "\\\n", " ")))
+		if found {
+			out = append(out, ref)
+		}
+	}
+	return out
+}
+
+// dockerRunImage returns the image reference out of one invocation's arguments:
+// the first token that is neither a flag nor a flag's value. Everything after
+// it is the container's own command, which is why the walk stops there — the
+// CockroachDB invocation continues `start-single-node --insecure`, and a read
+// that kept going would classify a subcommand as an image.
+func dockerRunImage(args []string) (ref string, found bool) {
+	for i := 0; i < len(args); i++ {
+		if !strings.HasPrefix(args[i], "-") {
+			return args[i], true
+		}
+		if dockerRunValueFlags[args[i]] {
+			i++
+		}
+	}
+	return "", false
 }
 
 // assertThePinnedListHasDatabasesInIt is the non-vacuity guard on the read
@@ -446,11 +574,12 @@ func TestCells_DeclareAValidSupportLevel(t *testing.T) {
 // level a claim rather than a label.
 //
 // Certified and legacy-tested both assert that Ptah regularly exercises the
-// line. Two mechanisms do that — the capability probe the tiered workflows fan
-// out over, and the integration suite's own services — and a line outside both
-// is measured by nothing, whatever its vendor says about it. Reading the answer
-// out of the matrix and the workflow means a cell cannot claim certification by
-// being written down.
+// line. Three mechanisms do that — the capability probe the tiered workflows
+// fan out over, the integration suite's own databases, and the engine compiled
+// into the binary under test — and a line outside all three is measured by
+// nothing, whatever its vendor says about it. Reading the answer out of the
+// matrix and the workflow means a cell cannot claim certification by being
+// written down.
 func TestCells_CertificationMatchesWhatContinuousIntegrationRuns(t *testing.T) {
 	c := qt.New(t)
 
@@ -540,19 +669,15 @@ func exercisedLines(c *qt.C) map[string]bool {
 }
 
 // suiteStartedCells returns the cells whose line the integration workflow
-// starts a server for.
+// starts a server for, whether it declares the container as a job service or
+// starts it from a step with `docker run`. Both count: the job runs against
+// either one, and CockroachDB and YugabyteDB are only reachable the second way.
 func suiteStartedCells(c *qt.C) []capabilityprobe.Cell {
 	c.Helper()
 
-	body, err := os.ReadFile(integrationWorkflow)
-	c.Assert(err, qt.IsNil)
-	matches := imageLine.FindAllStringSubmatch(string(body), -1)
-	c.Assert(len(matches) > 0, qt.IsTrue,
-		qt.Commentf("%s yielded no image: lines, so this read examined nothing", integrationWorkflow))
-
 	var out []capabilityprobe.Cell
-	for _, match := range matches {
-		out = append(out, cellsDeclaring(splitImageRef(match[1]))...)
+	for _, ref := range startedImages(c, integrationWorkflow) {
+		out = append(out, cellsDeclaring(splitImageRef(ref))...)
 	}
 	c.Assert(len(out) > 0, qt.IsTrue,
 		qt.Commentf("%s started no image any cell declares, which would silently drop every "+

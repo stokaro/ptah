@@ -236,10 +236,45 @@ func TestFor_BestEffort(t *testing.T) {
 			banner:            mySQL80Banner,
 			wantVersion:       "8.0.42",
 			wantPresetDialect: "mysql",
-			wantSource:        serverprofile.SourceDialectDefault,
+			// unmeasured-line, NOT dialect-default: MySQL has a ladder and it
+			// answered. 8.0.42 differs from the MySQL default on two keys
+			// (foreign_keys_require_indexed_reference, and its unique
+			// counterpart), so a source claiming the dialect default was used
+			// would be describing a set the server did not get.
+			wantSource:        serverprofile.SourceUnmeasuredLine,
 			wantIdentifierMax: 64,
 			wantEnumModeling:  capability.EnumInline,
-			wantNoteContains:  "8.0.42",
+			// The note names the parsed version, not the banner it came from.
+			// Handed the banner, this sentence spliced the whole
+			// SELECT version() string in where a number belongs.
+			wantNoteContains: "8.0.42 is not a measured release line",
+		},
+		{
+			// The dialect-default arm needs a dialect that genuinely has no
+			// ladder, or nothing separates it from the row above.
+			name:              "sql server has no version ladder to spend a version on",
+			dialect:           "sqlserver",
+			banner:            "Microsoft SQL Server 2099 (RTM) - 99.0.1.1 (X64)",
+			wantVersion:       "99.0.1.1",
+			wantPresetDialect: "sqlserver",
+			wantSource:        serverprofile.SourceDialectDefault,
+			wantIdentifierMax: 128,
+			wantEnumModeling:  capability.EnumUnsupported,
+			wantNoteContains:  "no measured version ladder",
+		},
+		{
+			// The saturated arm is a published value of Preset source and was
+			// produced by no test: deleting its case from sourceOf left the
+			// suite green.
+			name:              "a postgres major newer than the newest measured line",
+			dialect:           "postgres",
+			banner:            "PostgreSQL 19.1 (Debian 19.1-1.pgdg13+1) on x86_64-pc-linux-gnu",
+			wantVersion:       "19.1",
+			wantPresetDialect: "postgres",
+			wantSource:        serverprofile.SourceSaturated,
+			wantIdentifierMax: 63,
+			wantEnumModeling:  capability.EnumNamedType,
+			wantNoteContains:  "19.1 is newer than the newest measured release line",
 		},
 		{
 			name:              "an unreadable banner names no server",
@@ -280,15 +315,31 @@ func TestFor_BestEffort(t *testing.T) {
 				qt.Commentf("a nil capability set would report enums unsupported here"))
 
 			c.Assert(profile.Preset.Note, qt.Contains, test.wantNoteContains)
-
-			// An unreadable string on a laddered dialect reports the same empty
-			// NewestMeasured as a dialect that has no ladder, and the note
-			// generator once told a PostgreSQL operator that postgres has no
-			// version ladder — false about the dialect and silent about the
-			// banner. Neither row may say it.
-			c.Assert(profile.Preset.Note, qt.Not(qt.Contains), "no measured version ladder")
 		})
 	}
+}
+
+// TestFor_UnreadableBannerDoesNotDenyTheLadder is the regression the note
+// generator earned.
+//
+// An unreadable string on a laddered dialect reports the same empty
+// NewestMeasured as a dialect with no ladder at all, so the note fell through
+// to the no-ladder arm and told a PostgreSQL operator that postgres has no
+// version ladder — false about the dialect, and silent about the banner it
+// could not read.
+//
+// It is a test of its own rather than a row in the table above because the
+// claim is not general: a SQL Server profile SHOULD say its dialect has no
+// ladder, and asserting that sentence's absence on every best-effort row made
+// the true case fail.
+func TestFor_UnreadableBannerDoesNotDenyTheLadder(t *testing.T) {
+	c := qt.New(t)
+
+	profile := serverprofile.For("postgres", unreadableBanner, "")
+
+	c.Assert(profile.Preset.Source, qt.Equals, serverprofile.SourceUnrecognized)
+	c.Assert(profile.Preset.Note, qt.Not(qt.Contains), "no measured version ladder")
+	c.Assert(profile.Preset.Note, qt.Contains, `"not-a-version"`)
 }
 
 // TestFor_EveryDefaultDialect is the census: every dialect capability ships a

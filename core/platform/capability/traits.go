@@ -75,10 +75,27 @@ func (l IdentifierLimit) Unlimited() bool {
 
 // Exceeds reports whether name is longer than the limit allows.
 //
-// It is the one place the byte-versus-character rule is applied. Two callers
-// each applying it themselves is how a limit comes to be enforced correctly on
-// one surface and by rune count on another, so callers ask this rather than
-// comparing Max to a length they measured.
+// It applies the byte-versus-character rule so a caller does not have to. Two
+// callers each applying it themselves is how a limit comes to be enforced
+// correctly on one surface and by rune count on another, so callers ask this
+// rather than comparing Max to a length they measured.
+//
+// This is where the rule is DEFINED, and an earlier version of this comment
+// claimed it was already the only place it is APPLIED. It was not. Two copies
+// existed; core/renderer's and dbschema's now consume this method, and ONE
+// remains:
+//
+//   - internal/convert/fromschema (foreignKeyNameFits, foreignKeyNameWithSuffix)
+//     TRUNCATES a generated name to fit rather than refusing it. Its predicate
+//     half is exactly !Exceeds — compared against this method over nine dialects
+//     and 16 name shapes chosen to straddle every boundary, 144 verdicts, zero
+//     disagreements — but the truncation half needs a budget expressed in the
+//     limit's unit, which this type does not expose. Consuming only the
+//     predicate would split one algorithm across two packages and leave the rule
+//     copied regardless. Giving this type unit-aware truncation is what would
+//     retire it.
+//
+// A further caller should ask this rather than add a copy.
 func (l IdentifierLimit) Exceeds(name string) bool {
 	if l.Unlimited() {
 		return false
@@ -227,9 +244,17 @@ func (c Capabilities) ForeignKeyReference() ReferencePolicy {
 }
 
 // referencePolicyNames maps each policy capability to the mode value that
-// names it. It is derived from the same three keys foreignKeyReferencePolicies
-// lists, and a policy added to one without the other fails the census test in
-// this package.
+// names it. It carries the same keys foreignKeyReferencePolicies lists, and the
+// census in traits_internal_test.go iterates THAT list to keep the two in step:
+// a policy added there without a name here resolves to [ReferenceUnspecified]
+// on a set [Capabilities.Validate] accepts, which is a silent wrong answer
+// rather than a red test.
+//
+// The census has to read the list. Measured on a copy of this repository: a
+// fourth policy added to the registry, to the mutex group, to
+// foreignKeyReferencePolicies and to every preset, with this map left at three
+// entries, kept every test in the package green while the census enumerated a
+// hand-typed literal of three.
 var referencePolicyNames = map[Capability]ReferencePolicy{
 	ForeignKeysRequireUniqueReference:  ReferenceUnique,
 	ForeignKeysRequireIndexedReference: ReferenceIndexed,
