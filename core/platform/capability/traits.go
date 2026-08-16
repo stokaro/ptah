@@ -23,11 +23,13 @@ import (
 //     does, the version arrives here rather than in a new switch somewhere
 //     else — that centralization is the point.
 //   - [Traits.EnumModeling] and [Traits.ForeignKeyReference] are READ OFF the
-//     boolean set. Both already existed there as mutually exclusive flag
-//     groups that [Capabilities.Validate] polices with a hand-written
-//     "exactly one" rule, which is a mode wearing three booleans. Deriving
-//     them adds no claim: the same preset produces the same answer, spelled as
-//     what it always meant.
+//     boolean set. Both already existed there as mutually exclusive flag groups
+//     [Capabilities.Validate] polices — the enum pair under an "at most one"
+//     rule, where both false is a real answer and means the target models enums
+//     neither way, and the three reference-policy keys under a stricter
+//     "exactly one" rule that fires whenever foreign keys are supported.
+//     Either way it is a mode wearing booleans. Deriving it adds no claim: the
+//     same preset produces the same answer, spelled as what it always meant.
 type Traits struct {
 	// Identifiers is the longest identifier the target accepts.
 	Identifiers IdentifierLimit `json:"identifiers"`

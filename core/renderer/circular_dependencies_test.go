@@ -1252,9 +1252,11 @@ func TestGetOrderedCreateStatements_ExplicitForeignKeyIdentifierLimit_FailurePat
 // name is 62 bytes, one under PostgreSQL's byte limit, and a character rule
 // would accept a 32nd that the byte rule refuses one row above.
 //
-// ClickHouse and SQLite carry no modeled limit at all, and a name no other
-// dialect would take proves that is a real absence rather than a table entry
-// nobody reached.
+// SQLite carries no modeled limit at all, and a name no other dialect would
+// take proves that is a real absence rather than a table entry nobody reached.
+// ClickHouse is the other unlimited dialect and is covered in
+// capability.TestIdentifiers_UnlimitedDialects; it has no row here because it
+// refuses this fixture's foreign keys outright.
 func TestGetOrderedCreateStatements_ExplicitForeignKeyIdentifierLimit_HappyPath(t *testing.T) {
 	tests := []struct {
 		name    string

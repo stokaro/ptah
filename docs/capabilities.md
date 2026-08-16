@@ -176,10 +176,11 @@ copy.
 
 The other two values are read off the boolean set rather than declared beside
 it. `enum_inline_column` against `enum_custom_type`, and the three referenced-key
-policy keys, are already mutually exclusive groups that `Validate()` polices
-with an exactly-one rule — a mode wearing two or three booleans. Reading them as
-a mode adds no claim: the same preset produces the same answer, spelled as what
-it always meant. `unsupported` is a real answer in both — SQLite models enums
+policy keys, are already mutually exclusive groups that `Validate()` polices —
+the enum pair under an at-most-one rule, the policy keys under a stricter
+exactly-one rule that fires whenever foreign keys are supported. Either way it is
+a mode wearing two or three booleans, and reading it as one adds no claim: the
+same preset produces the same answer, spelled as what it always meant. `unsupported` is a real answer in both — SQLite models enums
 neither way, and ClickHouse has no declarative foreign keys — and differs from a
 set that names no mode at all, which only a hand-built set produces and
 `Validate()` rejects.

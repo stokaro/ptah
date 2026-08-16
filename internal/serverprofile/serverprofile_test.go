@@ -181,6 +181,30 @@ func TestFor_HappyPath(t *testing.T) {
 			wantLevel:       capability.BestEffort,
 			wantIdentifiers: capability.IdentifierLimit{Max: 128, Unit: capability.IdentifierCharacters},
 		},
+		{
+			// A SQL Server answering a postgres:// URL. The banner outranks the
+			// scheme for the TRAITS too, not only for the version parse, and
+			// this is the only row where the two dialects disagree about the
+			// identifier limit: resolving traits against the URL's dialect
+			// would report 63 bytes for a server that takes 128 characters.
+			// The MariaDB row above cannot catch that — MySQL and MariaDB
+			// share 64 characters, so both readings agree there.
+			name:              "the banner decides the traits, not the url scheme",
+			dialect:           "postgres",
+			banner:            sqlServer2022Banner,
+			wantDialect:       "postgres",
+			wantProduct:       "sqlserver",
+			wantVersion:       "16.0.4115.5",
+			wantPresetName:    "SQLServer2022",
+			wantPresetDialect: "sqlserver",
+			wantSource:        serverprofile.SourceDialectDefault,
+			wantNote: "the sqlserver dialect has no measured version ladder; " +
+				"the version did not refine capabilities",
+			wantLine:        "16.0",
+			wantLabel:       "SQL Server 2022",
+			wantLevel:       capability.BestEffort,
+			wantIdentifiers: capability.IdentifierLimit{Max: 128, Unit: capability.IdentifierCharacters},
+		},
 	}
 
 	for _, test := range tests {
