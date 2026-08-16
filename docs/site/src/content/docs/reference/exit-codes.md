@@ -117,6 +117,7 @@ root-level command spellings are removed instead of preserved.
 | `ptah schema export` | Schema exported. | Not used. | Usage, path, parse, render, write, cleanup, empty-export, or Protobuf compatibility failure. See details below. |
 | `ptah viz` | Schema diagram rendered. | Not used. | Usage error, invalid paths, parse error, unsupported format/theme, missing Graphviz for SVG, SVG render error, or write error. |
 | `ptah db read` | Schema read and printed. | Not used. | Usage error, connection failure, or schema-read failure. |
+| `ptah db capabilities` | Capability profile printed as text or JSON. | Not used. | Usage error (missing `--db-url`, an invalid `--format` value, an unparsable `--connect-timeout`, or an unknown flag), or connection failure. |
 | `ptah db drop-all` | Objects dropped, dry-run output printed, or operation canceled by the user. | Not used. | Usage error, connection failure, input read error, or drop failure. |
 | `ptah schema compare` | Diff printed, or no diff. | Non-empty diff when `--exit-code` is set. | Usage error, connection failure, parse failure, or diff generation failure. |
 | `ptah schema drift` | No drift that meets `--severity`, or `--exit-code=false`. | Drift meets `--severity` while `--exit-code=true`. | Usage error, connection failure, parse failure, or report error. |

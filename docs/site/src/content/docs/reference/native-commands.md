@@ -102,7 +102,70 @@ directory.
 | Command | Purpose |
 | --- | --- |
 | `ptah db read` | Read a live database as executable SQL on stdout; write connection status and failures to stderr. |
+| `ptah db capabilities` | Report the capability profile Ptah resolves for a live database: the preset it plans with, how that preset was reached, the support level of the release line, and every capability key with its value there. Modifies no schema object. |
 | `ptah db drop-all` | Drop all schema objects in a live database. |
+
+### Reading a server's capability profile
+
+`ptah db capabilities` connects, reads the server's own version surface, and
+prints what Ptah resolved from it. It executes no DDL and modifies no schema
+object. Beyond the metadata queries any Ptah connection makes — the server's
+version string, and the session's current schema or database — it adds one
+statement, `SERVERPROPERTY('ProductVersion')`, and only on SQL Server. Opening
+the connection is still opening a connection: a `sqlite://` URL naming a file
+that does not exist creates that file, exactly as any other command reaching the
+same URL would.
+
+```bash
+ptah db capabilities --db-url "$DATABASE_URL"
+```
+
+Expected output includes:
+
+```text
+Dialect:            postgres
+Server version:     18.4
+Banner:             PostgreSQL 18.4 (Debian 18.4-1.pgdg13+1) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit
+Capability preset:  Postgres17 (postgres)
+Preset source:      version-ladder
+Support level:      certified
+Release line:       18
+```
+
+`Banner` is the version string the server reported verbatim, and
+`Server version` is what Ptah parsed out of it. Below the block the command
+prints the reason for the support level, the non-boolean behavior values —
+identifier limit, enum modeling, foreign key reference — and every capability
+key marked `supported` or `unsupported`. A version that selected no exact
+measured release line adds a `Note:` line naming what was planned instead.
+
+| Flag | Value |
+| --- | --- |
+| `--db-url` | Database URL. Required. |
+| `--format` | `text` (the default) or `json`. |
+| `--connect-timeout` | Maximum time to wait for the initial connection, default `10s`; `0` disables the timeout. |
+
+The output answers four questions that a refused or unexpected operation
+otherwise leaves open:
+
+- **Which capability set is in force.** `Capability preset` names it, and the
+  dialect in parentheses names whose resolution produced the set — a version
+  ladder where the dialect has one, the dialect default or a banner match
+  otherwise. It is not always the dialect the URL connected as.
+- **Why that set.** `Preset source` is `version-ladder`, `newer-than-measured`,
+  `dialect-default`, or `unrecognized-banner`.
+- **What Ptah promises about the release line.** `Support level` and
+  `Release line`, with the reason underneath. A server on a line Ptah declares
+  nothing about reports `best-effort` and is not refused: capabilities are
+  resolved for it and the operations they allow are performed.
+- **What this server can do.** Every registered capability key appears, present
+  or absent, so an absent capability is distinguishable from one this build does
+  not know about.
+
+`--format json` carries everything the text form shows, plus each capability
+key's documentation string, as a stable sorted document. Two runs against an
+unchanged server produce identical bytes, so a diff of them reports a change
+that happened rather than a reordering.
 
 ## Registries and SQL files: `ptah oci`, `ptah sql`
 

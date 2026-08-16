@@ -39,7 +39,6 @@ import (
 	"reflect"
 	"slices"
 	"strings"
-	"unicode/utf8"
 
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/goschema"
@@ -1483,23 +1482,22 @@ func reserveExplicitForeignKeyName(
 	return nil
 }
 
+// validateExplicitForeignKeyName refuses a name the target would reject or
+// truncate.
+//
+// The limit and its unit come from [capability.Identifiers] rather than from a
+// dialect switch here. The switch this replaced carried the numbers 63, 64 and
+// 128 and, more importantly, carried the byte-versus-character rule that
+// decides whether a multibyte name fits — a rule any second caller of "is this
+// identifier too long" would have had to reproduce from scratch, correctly, to
+// agree with this one.
 func validateExplicitForeignKeyName(dialect, name string) error {
 	normalizedDialect := platform.NormalizeDialect(dialect)
-	switch normalizedDialect {
-	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB:
-		if len(name) > 63 {
-			return fmt.Errorf("foreign-key name %q exceeds the PostgreSQL-family 63-byte identifier limit", name)
-		}
-	case platform.MySQL, platform.MariaDB:
-		if utf8.RuneCountInString(name) > 64 {
-			return fmt.Errorf("foreign-key name %q exceeds the %s 64-character identifier limit", name, normalizedDialect)
-		}
-	case platform.SQLServer, platform.Spanner:
-		if utf8.RuneCountInString(name) > 128 {
-			return fmt.Errorf("foreign-key name %q exceeds the %s 128-character identifier limit", name, normalizedDialect)
-		}
+	limit := capability.Identifiers(normalizedDialect)
+	if !limit.Exceeds(name) {
+		return nil
 	}
-	return nil
+	return fmt.Errorf("foreign-key name %q exceeds the %s identifier limit of %s", name, normalizedDialect, limit)
 }
 
 func foreignKeyNameScope(dialect string, table goschema.Table, name string) (scope, normalizedName string) {

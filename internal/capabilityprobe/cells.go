@@ -91,6 +91,28 @@ type Cell struct {
 	// that makes one otherwise banner-selected line attributable.
 	Refinement Refinement
 
+	// Support is what Ptah promises about this line, in the vocabulary
+	// [capability.SupportLevel] defines. It answers a different question from
+	// Refinement: Refinement says how a capability preset is REACHED, Support
+	// says how much testing stands behind it, and the two are independent —
+	// ClickHouse 26.7 is certified and undecidable at once.
+	//
+	// [capability.BestEffort] is reachable two ways, and they mean the same
+	// thing from opposite directions: declared here for a line this repository
+	// covers but does not exercise, and resolved at runtime for a server whose
+	// version falls on no line at all. Either way nothing measured it, and
+	// either way nothing refuses it.
+	//
+	// [capability.KnownIncompatible] is declarable and no line carries it,
+	// because no concrete technical incompatibility has been found — an
+	// upstream end-of-life date is explicitly not one.
+	//
+	// The census in cells_test.go requires a valid level on every cell AND
+	// checks it against what actually runs, so a line added without a level
+	// fails the build rather than reading as certified, and a line claiming
+	// certified that no job exercises fails too.
+	Support capability.SupportLevel
+
 	// Image reproduces the line locally, empty when there is no container for
 	// it. When ResolveNewestPatch is true, its tag is a release-line selector
 	// rather than a registry tag: the CI driver resolves the newest concrete
@@ -169,43 +191,86 @@ func (c Cell) String() string {
 // the cells PRs bumping a container tag are waiting on, and probing a server
 // on one of them fails rather than reporting a green row against a preset
 // chosen by saturation.
+//
+// # Assigning Support
+//
+// The rubric has two inputs and no calendar arithmetic of its own:
+//
+//  1. does anything in this repository's continuous integration exercise the
+//     line, and
+//  2. does the vendor still support it.
+//
+// Both yes is [capability.Certified]. Exercised but upstream end-of-life is
+// [capability.LegacyTested] — kept on purpose as a regression sentinel, and
+// saying so is the difference between a deliberate choice and an oversight
+// nobody noticed. Not exercised is [capability.BestEffort], whatever the
+// vendor says, because certification is a claim about testing and an untested
+// line has none to make.
+//
+// Input 1 is not a synonym for "has a matrix cell", which is why the levels
+// below are not uniform per engine. Two mechanisms exercise a line — the
+// capability probe the tiered workflows fan out over, and the integration
+// suite whose services .github/workflows/go-integration-tests.yml starts — and
+// nine of the twenty-six cells are outside the first. Five are outside both:
+// ClickHouse 26.3 and 25.8, SQL Server 16.0 and 15.0, and Spanner. They are
+// declared, they resolve to a preset, and nothing here has ever run against
+// them. Calling them certified would be the false claim this vocabulary
+// exists to make impossible, so they are best-effort and the census test in
+// cells_test.go keeps them that way.
+//
+// The upstream half was checked against the vendors on 2026-08-16, and each
+// verdict is recorded where it is not the obvious one. What that check may NOT
+// do is remove a line: an upstream end-of-life date moves a cell from certified
+// to legacy-tested and nothing else. Ptah does not refuse a server because its
+// vendor stopped shipping patches, and no code in this repository reads Support
+// to decide whether an operation may proceed.
+//
+// Refreshing the upstream half is a scheduled reading of the vendor pages named
+// in the comments below, not a computation: several vendors publish a duration
+// ("supported for a year after release", "three latest stable releases")
+// rather than a date, so a line's status can change without any date passing.
 var Cells = []Cell{
 	// PostgreSQL: five supported majors (postgresql.org/support/versioning,
 	// read 2026-08-09 — 18.4, 17.10, 16.14, 15.18, 14.23; the project does not
 	// use the term LTS). Postgres16's own doc covers 14 through 16.
+	//
+	// Re-read 2026-08-16: the release table's Supported column still reads Yes
+	// for 18, 17, 16, 15 and 14, and No for 13. Note 14's final release is
+	// 2026-11-12, so it is the next line due to move to legacy-tested.
 	{
 		Dialect: platform.Postgres, Line: "18",
 		Preset: capability.Postgres17, PresetName: "Postgres17",
-		Refinement: RefinedByVersion, Image: "postgres:18",
+		Refinement: RefinedByVersion, Support: capability.Certified, Image: "postgres:18",
 		Note: "measured live on PostgreSQL 18.4 in capability-matrix run 31615442780: all 25 observed " +
 			"capability rows agree with Postgres17",
 	},
 	{
 		Dialect: platform.Postgres, Line: "17",
 		Preset: capability.Postgres17, PresetName: "Postgres17",
-		Refinement: RefinedByVersion, Image: "postgres:17",
+		Refinement: RefinedByVersion, Support: capability.Certified, Image: "postgres:17",
 	},
 	{
 		Dialect: platform.Postgres, Line: "16",
 		Preset: capability.Postgres16, PresetName: "Postgres16",
-		Refinement: RefinedByVersion, Image: "postgres:16",
+		Refinement: RefinedByVersion, Support: capability.Certified, Image: "postgres:16",
 	},
 	{
 		Dialect: platform.Postgres, Line: "15",
 		Preset: capability.Postgres16, PresetName: "Postgres16",
-		Refinement: RefinedByVersion, Image: "postgres:15",
+		Refinement: RefinedByVersion, Support: capability.Certified, Image: "postgres:15",
 	},
 	{
 		Dialect: platform.Postgres, Line: "14",
 		Preset: capability.Postgres16, PresetName: "Postgres16",
-		Refinement: RefinedByVersion, Image: "postgres:14",
+		Refinement: RefinedByVersion, Support: capability.Certified, Image: "postgres:14",
 		Note: "final PostgreSQL 14 release is November 2026",
 	},
 	{
 		Dialect: platform.Postgres, Line: "13",
 		Preset: capability.Postgres13, PresetName: "Postgres13",
-		Refinement: RefinedByVersion, Image: "postgres:13",
-		Note: "past its final vendor release; the cell exists because Ptah still ships a Postgres13 preset " +
+		Refinement: RefinedByVersion, Support: capability.LegacyTested, Image: "postgres:13",
+		Note: "past its final vendor release (2025-11-13, Supported=No on " +
+			"postgresql.org/support/versioning), and kept because Ptah still ships a Postgres13 preset " +
 			"and a preset with no cell is a claim nothing can measure. The preset's doc covers PostgreSQL " +
 			"12 as well and there is no 12 cell: 12 was never probed, so a 12 server correctly falls off " +
 			"the matrix rather than borrowing this line's result",
@@ -215,10 +280,20 @@ var Cells = []Cell{
 	// 2026-08-09 — 9.7 latest 9.7.2 EOL 2034-04-21, 8.4 latest 8.4.11 EOL
 	// 2032-04-30; both flagged LTS), plus 26.7, which is the line this
 	// repository actually starts.
+	//
+	// Re-read 2026-08-16 against the vendor rather than the aggregator:
+	// Oracle's Lifetime Support chart carries MySQL Database rows for 8.4
+	// (Premier Apr 2029, Extended Apr 2032) and 9.7 (Premier Apr 2031,
+	// Extended Apr 2034), and none for 26.7. That absence is the versioning
+	// change, not a gap: MySQL moved to calendar versioning after 9.7, and
+	// dev.mysql.com's release documentation states that innovation releases
+	// are "supported until the next Innovation release" while an LTS series
+	// follows the Lifetime Support Policy. All three lines are supported today
+	// and 26.7 is the one whose window closes without a published date.
 	{
 		Dialect: platform.MySQL, Line: capabilityline.MySQL26,
 		Preset: capability.MySQL84, PresetName: "MySQL84",
-		Refinement: RefinedByVersion, Image: "mysql:26.7",
+		Refinement: RefinedByVersion, Support: capability.Certified, Image: "mysql:26.7",
 		Note: "measured live on MySQL 26.7.0 in capability-matrix run 31615442780: all 24 observable " +
 			"rows agree with MySQL84; role_management remains undecidable because the probe deliberately " +
 			"does not create a privileged account",
@@ -226,95 +301,140 @@ var Cells = []Cell{
 	{
 		Dialect: platform.MySQL, Line: capabilityline.MySQL9,
 		Preset: capability.MySQL84, PresetName: "MySQL84",
-		Refinement: RefinedByVersion, Image: "mysql:9.7",
+		Refinement: RefinedByVersion, Support: capability.Certified, Image: "mysql:9.7",
 	},
 	{
 		Dialect: platform.MySQL, Line: capabilityline.MySQL8,
 		Preset: capability.MySQL84, PresetName: "MySQL84",
-		Refinement: RefinedByVersion, Image: "mysql:8.4",
+		Refinement: RefinedByVersion, Support: capability.Certified, Image: "mysql:8.4",
 	},
 
 	// MariaDB: the maintained LTS lines (mariadb.org/about/maintenance-policy,
 	// read 2026-08-09 — 11.8 EOL 2028-06-04, 11.4 EOL 2029-05-29, 10.11 EOL
 	// 2028-02-16) plus 12.3, which the vendor KB names as the latest
 	// long-term stable series.
+	//
+	// Re-read 2026-08-16: the maintenance table gives community end dates
+	// 12.3 → 2029-06-12, 11.8 → 2028-06-04, 11.4 → 2029-05-29 and
+	// 10.11 → 2028-02-16, so all four stay certified. Two cautions for whoever
+	// refreshes this. MariaDB's own downloads REST API reports 11.8's EOL as
+	// 2030-02-13, disagreeing with the maintenance table it agrees with on
+	// every other line; and the policy's footnote keeps critical and security
+	// SOURCE releases flowing for two years past the binary period, so a line
+	// dropping off the table is not a line that stopped receiving fixes.
 	{
 		Dialect: platform.MariaDB, Line: capabilityline.MariaDB12,
 		Preset: capability.MariaDB1011, PresetName: "MariaDB1011",
-		Refinement: RefinedByVersion, Image: "mariadb:12.3",
+		Refinement: RefinedByVersion, Support: capability.Certified, Image: "mariadb:12.3",
 		Note: "measured live on MariaDB 12.3.2 in capability-matrix run 31615442780: all 23 observable " +
 			"rows agree with MariaDB1011; role_management and sequences remain deliberately undecidable",
 	},
 	{
 		Dialect: platform.MariaDB, Line: capabilityline.MariaDB11LTS,
 		Preset: capability.MariaDB1011, PresetName: "MariaDB1011",
-		Refinement: RefinedByVersion, Image: "mariadb:11.8",
+		Refinement: RefinedByVersion, Support: capability.Certified, Image: "mariadb:11.8",
 	},
 	{
 		Dialect: platform.MariaDB, Line: capabilityline.MariaDB114,
 		Preset: capability.MariaDB1011, PresetName: "MariaDB1011",
-		Refinement: RefinedByVersion, Image: "mariadb:11.4",
+		Refinement: RefinedByVersion, Support: capability.Certified, Image: "mariadb:11.4",
 	},
 	{
 		Dialect: platform.MariaDB, Line: capabilityline.MariaDB10,
 		Preset: capability.MariaDB1011, PresetName: "MariaDB1011",
-		Refinement: RefinedByVersion, Image: "mariadb:10.11",
+		Refinement: RefinedByVersion, Support: capability.Certified, Image: "mariadb:10.11",
 	},
 
 	// ClickHouse has no version ladder: ResolveServerVersion parses the
 	// version and then discards it, so all four lines receive ClickHouse24.
+	//
+	// The vendor states a duration rather than a date (docs: three latest
+	// stable releases are supported; LTS releases are supported for a year
+	// after release), and the enumerated instance is the supported-versions
+	// table in the ClickHouse repository's SECURITY.md. Read 2026-08-16 it
+	// marks 26.7, 26.3 and 25.8 supported and every 24.* release unsupported,
+	// which is the whole of the certified/legacy-tested split below. Because
+	// the rule is a rolling window, 26.7 leaves support when three newer
+	// stable lines exist rather than on any date this comment could name.
 	{
 		Dialect: platform.ClickHouse, Line: "26.7",
 		Preset: capability.ClickHouse24, PresetName: "ClickHouse24",
-		Refinement: NotRefined, Image: "clickhouse/clickhouse-server:26.7",
+		Refinement: NotRefined, Support: capability.Certified, Image: "clickhouse/clickhouse-server:26.7",
 	},
 	{
 		Dialect: platform.ClickHouse, Line: "26.3",
 		Preset: capability.ClickHouse24, PresetName: "ClickHouse24",
-		Refinement: NotRefined, Image: "clickhouse/clickhouse-server:26.3",
+		Refinement: NotRefined, Support: capability.BestEffort, Image: "clickhouse/clickhouse-server:26.3",
+		Note: "a supported LTS line upstream, but the capability probe has no ClickHouse " +
+			"statement table and no CI service starts this line, so nothing in this repository has run " +
+			"against it",
 	},
 	{
 		Dialect: platform.ClickHouse, Line: "25.8",
 		Preset: capability.ClickHouse24, PresetName: "ClickHouse24",
-		Refinement: NotRefined, Image: "clickhouse/clickhouse-server:25.8",
+		Refinement: NotRefined, Support: capability.BestEffort, Image: "clickhouse/clickhouse-server:25.8",
+		Note: "the older live LTS line upstream, exercised by nothing here for the same reason " +
+			"as 26.3. Its LTS window is the shortest of the three supported lines, so it is the first " +
+			"candidate to leave the matrix",
 	},
 	{
 		Dialect: platform.ClickHouse, Line: "24.10",
 		Preset: capability.ClickHouse24, PresetName: "ClickHouse24",
-		Refinement: NotRefined, Image: "clickhouse/clickhouse-server:24.10",
-		Note: "the second ClickHouse service .github/workflows/go-integration-tests.yml starts, and " +
-			"the line the ClickHouse24 preset is named after; a live clickhouse/clickhouse-server:24.10 " +
-			"reports 24.10.4.191",
+		Refinement: NotRefined, Support: capability.LegacyTested, Image: "clickhouse/clickhouse-server:24.10",
+		Note: "SECURITY.md marks every 24.* release unsupported, and the line is kept " +
+			"because it is the second ClickHouse service .github/workflows/go-integration-tests.yml " +
+			"starts and the line the ClickHouse24 preset is named after; a live " +
+			"clickhouse/clickhouse-server:24.10 reports 24.10.4.191",
 	},
 
 	// SQL Server lines are numbered by product version here, not by the
 	// marketing year: the year is what the shared parseVersion reads out of
 	// @@VERSION, and reading "2025" as a major version is the defect
 	// version.go corrects.
+	//
+	// Microsoft Lifecycle, read 2026-08-16: 2025 (17.0) and 2022 (16.0) are in
+	// mainstream support (ending 2031-01-06 and 2028-01-11), and 2019 (15.0)
+	// is in extended support until 2030-01-08. Extended support is still
+	// vendor support, so 15.0 is certified rather than legacy-tested — the
+	// distinction this file draws is supported-or-not, not which phase.
 	{
 		Dialect: platform.SQLServer, Line: "17.0", Label: "SQL Server 2025",
 		Preset: capability.SQLServer2022, PresetName: "SQLServer2022",
-		Refinement: NotRefined, Image: "mcr.microsoft.com/mssql/server:2025-latest",
+		Refinement: NotRefined, Support: capability.Certified, Image: "mcr.microsoft.com/mssql/server:2025-latest",
 	},
 	{
 		Dialect: platform.SQLServer, Line: "16.0", Label: "SQL Server 2022",
 		Preset: capability.SQLServer2022, PresetName: "SQLServer2022",
-		Refinement: NotRefined, Image: "mcr.microsoft.com/mssql/server:2022-latest",
+		Refinement: NotRefined, Support: capability.BestEffort, Image: "mcr.microsoft.com/mssql/server:2022-latest",
+		Note: "in mainstream support until 2028-01-11, but the capability probe has no SQL " +
+			"Server statement table and the integration suite starts only the 2025 image, so nothing runs " +
+			"this line",
 	},
 	{
 		Dialect: platform.SQLServer, Line: "15.0", Label: "SQL Server 2019",
 		Preset: capability.SQLServer2022, PresetName: "SQLServer2022",
-		Refinement: NotRefined, Image: "mcr.microsoft.com/mssql/server:2019-latest",
+		Refinement: NotRefined, Support: capability.BestEffort, Image: "mcr.microsoft.com/mssql/server:2019-latest",
+		Note: "in extended support until 2030-01-08, and exercised by nothing here for the " +
+			"same reason as 16.0",
 	},
 
 	// CockroachDB resolves through a version ladder and both YugabyteDB lines
 	// still reach their preset through a banner substring. Every line below is
 	// backed by a direct live measurement, which makes the YugabyteDB
 	// observations attributable despite that resolver mechanism.
+	//
+	// Vendor support, read 2026-08-16. CockroachDB's release-support policy
+	// puts v26.2 in Maintenance Support to 2027-04-27 and v25.4 to 2027-05-03
+	// on its LTS track; note the vendor's own releases index still lists lines
+	// the policy page has already retired, so the policy page is the one to
+	// read. YugabyteDB's release table gives 2026.1 (STS) maintenance to
+	// 2027-06-29 and 2025.2 (LTS) to 2027-12-11 — the newer line is the
+	// shorter track, so "newer" is not "supported longer" here. All four are
+	// supported and certified.
 	{
 		Dialect: platform.CockroachDB, Line: capabilityline.CockroachDB26,
 		Preset: capability.CockroachDB26, PresetName: "CockroachDB26",
-		Refinement: RefinedByVersion, Image: "cockroachdb/cockroach:latest-v26.2",
+		Refinement: RefinedByVersion, Support: capability.Certified, Image: "cockroachdb/cockroach:latest-v26.2",
 		Note: "measured live on CockroachDB CCL v26.2.5: role_management, row_level_security, " +
 			"and sequences agree with CockroachDB26 after issue #1376; create_index_concurrently " +
 			"remains false because the keyword is accepted inside a transaction",
@@ -322,7 +442,7 @@ var Cells = []Cell{
 	{
 		Dialect: platform.CockroachDB, Line: capabilityline.CockroachDB25,
 		Preset: capability.CockroachDB25, PresetName: "CockroachDB25",
-		Refinement: RefinedByVersion, Image: "cockroachdb/cockroach:latest-v25.4",
+		Refinement: RefinedByVersion, Support: capability.Certified, Image: "cockroachdb/cockroach:latest-v25.4",
 		Note: "measured live on CockroachDB CCL v25.4.5 in capability-matrix run 31615442780: " +
 			"create_or_replace_trigger and drop_constraint_generic are unsupported on this line; " +
 			"guarded DROP CONSTRAINT is therefore undecidable and the other 22 rows agree with CockroachDB25",
@@ -330,7 +450,7 @@ var Cells = []Cell{
 	{
 		Dialect: platform.YugabyteDB, Line: "2026.1",
 		Preset: capability.YugabyteDB25, PresetName: "YugabyteDB25",
-		Refinement: RefinedByMeasuredLine, Image: "yugabytedb/yugabyte:2026.1", ResolveNewestPatch: true,
+		Refinement: RefinedByMeasuredLine, Support: capability.Certified, Image: "yugabytedb/yugabyte:2026.1", ResolveNewestPatch: true,
 		Note: "measured live on YugabyteDB 2026.1.0.0-b118: advisory_locks, " +
 			"create_index_concurrently, and row_level_security agree with YugabyteDB25 after issue #1376; " +
 			"drop_index_concurrently remains false because the server refuses that spelling. Docker Hub " +
@@ -339,7 +459,7 @@ var Cells = []Cell{
 	{
 		Dialect: platform.YugabyteDB, Line: "2025.2",
 		Preset: capability.YugabyteDB25, PresetName: "YugabyteDB25",
-		Refinement: RefinedByMeasuredLine, Image: "yugabytedb/yugabyte:2025.2", ResolveNewestPatch: true,
+		Refinement: RefinedByMeasuredLine, Support: capability.Certified, Image: "yugabytedb/yugabyte:2025.2", ResolveNewestPatch: true,
 		Note: "measured live on YugabyteDB v2025.2.5.2-b0 in capability-matrix run 31627407769, " +
 			"job 94218797895: all 25 rows match YugabyteDB25 with zero mismatches. Docker Hub has no " +
 			"floating line tag, so the CI driver resolves the newest numeric patch",
@@ -352,6 +472,7 @@ var Cells = []Cell{
 		Dialect: platform.SQLite, Line: "3",
 		Preset: capability.SQLite3, PresetName: "SQLite3",
 		Refinement: NotRefined,
+		Support:    capability.Certified,
 		Note:       "no container: the version is the modernc.org/sqlite amalgamation pinned in go.mod",
 	},
 
@@ -362,6 +483,7 @@ var Cells = []Cell{
 		Dialect: platform.Spanner, Line: "0",
 		Preset: capability.SpannerPostgres, PresetName: "SpannerPostgres",
 		Refinement: RefinedByBanner,
+		Support:    capability.BestEffort,
 		Note:       "no Spanner server exists in this repository (stokaro/ptah#942), so no row on this line has ever been executed",
 	},
 }

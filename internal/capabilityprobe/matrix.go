@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/platform/capability"
 )
 
 // CICell is one matrix cell in the form continuous integration consumes it.
@@ -29,6 +30,20 @@ type CICell struct {
 	// Preset is the capability preset the line claims, empty when Ptah has
 	// none for it yet.
 	Preset string `json:"preset"`
+
+	// Support is what Ptah promises about the line, in the vocabulary
+	// [capability.SupportLevel] defines. It travels with the cell so that a
+	// job, an artifact and the generated documentation all say which promise
+	// the run was measuring: a certified line going red is a broken
+	// commitment, a best-effort line going red is news about a line nobody
+	// claimed, and a consumer that cannot tell them apart has to treat both
+	// as the louder one.
+	//
+	// Like every field here it is DERIVED from the declaring cell and never
+	// edited beside it. Writing "certified" a second time is how the level
+	// stops meaning what cells.go's census enforces, which is that continuous
+	// integration actually exercises the line.
+	Support capability.SupportLevel `json:"support_level"`
 
 	Refinement string `json:"refinement"`
 
@@ -319,6 +334,7 @@ func toCICell(cell Cell) CICell {
 		Line:               cell.Line,
 		Label:              cell.Label,
 		Preset:             cell.PresetName,
+		Support:            cell.Support,
 		Refinement:         string(cell.Refinement),
 		Image:              cell.Image,
 		TagPinsLine:        tagPinsLine(cell),
@@ -411,13 +427,28 @@ func splitImageTag(ref string) (repository, tag string) {
 // the build when the checked-in table and this output differ.
 func WriteMatrixMarkdown(w io.Writer) {
 	matrix := CIMatrix()
-	fmt.Fprintf(w, "| Dialect | Release line | Capability preset | Refinement | Container image | Tag names the line | Probed per pull request |\n")
-	fmt.Fprintf(w, "| --- | --- | --- | --- | --- | --- | --- |\n")
+	fmt.Fprintf(w, "| Dialect | Release line | Support | Capability preset | Refinement | Container image | Tag names the line | Probed per pull request |\n")
+	fmt.Fprintf(w, "| --- | --- | --- | --- | --- | --- | --- | --- |\n")
 	for _, cell := range append(slices.Clone(matrix.Cells), matrix.Skipped...) {
-		fmt.Fprintf(w, "| `%s` | %s | %s | %s | %s | %s | %s |\n",
-			cell.Dialect, markdownLine(cell), markdownPreset(cell), cell.Refinement,
+		fmt.Fprintf(w, "| `%s` | %s | %s | %s | %s | %s | %s | %s |\n",
+			cell.Dialect, markdownLine(cell), markdownSupport(cell), markdownPreset(cell), cell.Refinement,
 			markdownImage(cell), markdownTagPinsLine(cell), markdownProbed(cell))
 	}
+}
+
+// markdownSupport is the one word both renderings print for a line's promise.
+//
+// It stays one word because the level's sentence lives in
+// [capability.SupportLevel.Doc] and belongs under the table, not inside a cell
+// the site's responsive check measures. A level the vocabulary does not define
+// prints "undeclared" rather than nothing: the zero value renders as an empty
+// cell, and an empty cell is equally consistent with a line nobody assigned and
+// with a renderer that dropped the column, which are not the same bug.
+func markdownSupport(cell CICell) string {
+	if !cell.Support.Valid() {
+		return "undeclared"
+	}
+	return cell.Support.String()
 }
 
 func markdownLine(cell CICell) string {
@@ -470,11 +501,12 @@ func markdownProbed(cell CICell) string {
 // the same generator produces.
 func WriteMatrixSummary(w io.Writer) {
 	matrix := CIMatrix()
-	fmt.Fprintf(w, "| Dialect | Release line | Capability preset | Refinement | Probed |\n")
-	fmt.Fprintf(w, "| --- | --- | --- | --- | --- |\n")
+	fmt.Fprintf(w, "| Dialect | Release line | Support | Capability preset | Refinement | Probed |\n")
+	fmt.Fprintf(w, "| --- | --- | --- | --- | --- | --- |\n")
 	for _, cell := range slices.Concat(matrix.Cells, matrix.Skipped) {
-		fmt.Fprintf(w, "| `%s` | %s | %s | %s | %s |\n",
-			cell.Dialect, markdownLine(cell), markdownPreset(cell), cell.Refinement, markdownProbedShort(cell))
+		fmt.Fprintf(w, "| `%s` | %s | %s | %s | %s | %s |\n",
+			cell.Dialect, markdownLine(cell), markdownSupport(cell), markdownPreset(cell),
+			cell.Refinement, markdownProbedShort(cell))
 	}
 	writeSummaryNotes(w, matrix)
 }
@@ -489,6 +521,8 @@ func markdownProbedShort(cell CICell) string {
 func writeSummaryNotes(w io.Writer, matrix Matrix) {
 	fmt.Fprintf(w, "\nDeclared release lines: %d. Probed on every pull request: %d.\n",
 		matrix.Declared, len(matrix.Cells))
+	fmt.Fprintf(w, "\nSupport levels across the %d declared lines: %s.\n",
+		matrix.Declared, strings.Join(supportCensus(slices.Concat(matrix.Cells, matrix.Skipped)), ", "))
 	fmt.Fprintf(w, "\nLines that are declared and not probed, and why:\n\n")
 	for _, cell := range matrix.Skipped {
 		fmt.Fprintf(w, "- `%s` %s — %s.\n", cell.Dialect, cell.Line, cell.Skip)
@@ -497,6 +531,46 @@ func writeSummaryNotes(w io.Writer, matrix Matrix) {
 	for _, cell := range slices.Concat(matrix.Cells, matrix.Skipped) {
 		writeTagNote(w, cell)
 	}
+}
+
+// supportCensus counts the rendered rows per promise, as the phrases the
+// summary joins: "19 certified", "2 legacy-tested", "5 best-effort".
+//
+// It counts rather than states. A written-out tally is true on the day it is
+// typed and silently false on the day a line moves to legacy-tested, which is
+// exactly the drift the generated matrix exists to remove — and the tally is
+// the number a reader checks the table against, so a stale one is worse than
+// none.
+//
+// Every rendered row lands in some phrase: the levels the vocabulary defines
+// come first, in the order [capability.SupportLevels] presents them, and a
+// label outside it is appended rather than dropped, because a row counted
+// nowhere makes the parts add up to less than the declared total with nothing
+// to show for the difference. Levels nobody declared contribute no phrase; "0
+// known-incompatible" is not a fact about this repository, only about a word.
+func supportCensus(cells []CICell) []string {
+	levels := capability.SupportLevels()
+	counts := make(map[string]int, len(levels))
+	labels := make([]string, 0, len(levels))
+	for _, level := range levels {
+		labels = append(labels, level.String())
+		counts[level.String()] = 0
+	}
+	for _, cell := range cells {
+		label := markdownSupport(cell)
+		if _, known := counts[label]; !known {
+			labels = append(labels, label)
+		}
+		counts[label]++
+	}
+	phrases := make([]string, 0, len(labels))
+	for _, label := range labels {
+		if counts[label] == 0 {
+			continue
+		}
+		phrases = append(phrases, fmt.Sprintf("%d %s", counts[label], label))
+	}
+	return phrases
 }
 
 func writeTagNote(w io.Writer, cell CICell) {

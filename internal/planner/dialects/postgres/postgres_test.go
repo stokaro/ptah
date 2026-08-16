@@ -868,7 +868,9 @@ func TestPlanner_GeneratedColumnExpressionChangeOnPostgres16RequiresManualMigrat
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQLWithCapabilities("postgres", capability.Postgres16(), nodes...)
 	c.Assert(err, qt.IsNil)
-	c.Assert(sql, qt.Contains, "WARNING: Generated column users.slug changed, but ALTER COLUMN SET EXPRESSION requires PostgreSQL 17+; manual migration required.")
+	c.Assert(sql, qt.Contains, "WARNING: Generated column users.slug changed, but ALTER COLUMN SET EXPRESSION requires target capability "+
+		string(capability.AlterGeneratedColumnExpression)+
+		", unavailable on this target (PostgreSQL added it in 17); manual migration required.")
 	c.Assert(sql, qt.Not(qt.Contains), `DROP COLUMN "slug"`)
 	c.Assert(sql, qt.Not(qt.Contains), `ADD COLUMN "slug"`)
 	c.Assert(sql, qt.Not(qt.Contains), "SET EXPRESSION AS")

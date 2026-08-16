@@ -1,13 +1,16 @@
 package capabilityprobe_test
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
 	"slices"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/internal/capabilityprobe"
 )
 
@@ -300,4 +303,181 @@ func TestWriteMatrixSummary_IsTheSameMatrixNarrower(t *testing.T) {
 			qt.Equals, cell.Image != "" && !cell.TagPinsLine,
 			qt.Commentf("cell %s pins %q and its tag names the line: %t", cell.ID, cell.Image, cell.TagPinsLine))
 	}
+}
+
+// TestWriteMatrix_BothRenderingsNameTheSupportLevelOfEveryLine ties the
+// generated Support column to the declaration in both documentation views.
+//
+// Three failures are covered here that a reader of either page cannot see. A
+// header gaining a column while the rows keep theirs renders as a table whose
+// every value has shifted one place left: GFM pads the short row silently, so
+// "certified" appears under "Capability preset" and the page is wrong without
+// being malformed. A row gaining a cell the header lacks is worse — the excess
+// is DISCARDED, taking the last column with it, which is why the cell counts
+// are asserted against the header rather than against a number typed here. And
+// a level that renders as an empty cell reads as a table that has always had a
+// blank column, rather than as the line nobody assigned a promise to.
+func TestWriteMatrix_BothRenderingsNameTheSupportLevelOfEveryLine(t *testing.T) {
+	tests := []struct {
+		name    string
+		write   func(w io.Writer)
+		columns int
+	}{{
+		name:    "wide",
+		write:   capabilityprobe.WriteMatrixMarkdown,
+		columns: 8,
+	}, {
+		name:    "compact",
+		write:   capabilityprobe.WriteMatrixSummary,
+		columns: 6,
+	}}
+
+	declared := slices.Concat(capabilityprobe.CIMatrix().Cells, capabilityprobe.CIMatrix().Skipped)
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			var out strings.Builder
+			tc.write(&out)
+			lines := strings.Split(strings.TrimRight(strings.Split(out.String(), "\n\n")[0], "\n"), "\n")
+
+			header := markdownCells(lines[0])
+			c.Assert(header, qt.HasLen, tc.columns)
+			c.Assert(header[supportColumn], qt.Equals, "Support",
+				qt.Commentf("the rendered header is %q", lines[0]))
+			c.Assert(markdownCells(lines[1]), qt.HasLen, len(header),
+				qt.Commentf("a delimiter row shorter than the header stops the table rendering as a table"))
+
+			rows := lines[2:]
+			c.Assert(rows, qt.HasLen, len(declared))
+			for i, cell := range declared {
+				rendered := markdownCells(rows[i])
+				c.Check(rendered, qt.HasLen, len(header),
+					qt.Commentf("row %s renders %d cells against a %d-column header: %q",
+						cell.ID, len(rendered), len(header), rows[i]))
+				c.Check(rendered[supportColumn], qt.Equals, cell.Support.String(),
+					qt.Commentf("row %s declares %q and renders %q", cell.ID, cell.Support, rendered[supportColumn]))
+				c.Check(capability.SupportLevel(rendered[supportColumn]).Valid(), qt.IsTrue,
+					qt.Commentf("row %s renders %q, which promises the reader nothing checkable",
+						cell.ID, rendered[supportColumn]))
+			}
+		})
+	}
+}
+
+// TestWriteMatrix_PinsALineAtEachLevel is the control the row-by-row comparison
+// above needs. That test reads the declaration on both sides, so a Support
+// column rendered from the wrong field — or a declaration whose levels were all
+// rewritten at once — satisfies it. These three rows are the words a reader
+// takes away from the page, one per level in use, and they are wrong for a
+// different reason each: postgres 13 is the end-of-life line kept on purpose,
+// clickhouse 26.3 is declared and exercised by nothing, and postgres 17 is the
+// commitment the rest of the matrix is measured against.
+func TestWriteMatrix_PinsALineAtEachLevel(t *testing.T) {
+	tests := []struct {
+		name string
+		want string
+	}{{
+		name: "a certified line",
+		want: "| `postgres` | 17 | certified |",
+	}, {
+		name: "an end-of-life line retained as a sentinel",
+		want: "| `postgres` | 13 | legacy-tested |",
+	}, {
+		name: "a line nothing exercises",
+		want: "| `clickhouse` | 26.3 | best-effort |",
+	}}
+
+	var wide, compact strings.Builder
+	capabilityprobe.WriteMatrixMarkdown(&wide)
+	capabilityprobe.WriteMatrixSummary(&compact)
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(wide.String(), qt.Contains, tc.want)
+			c.Assert(compact.String(), qt.Contains, tc.want)
+		})
+	}
+}
+
+// TestWriteMatrixSummary_CountsTheDeclaredSupportLevels checks the sentence
+// under the compact table against the cells it summarizes.
+//
+// The count is the number a reader quotes without opening cells.go, and a
+// hand-written one is true on the day it is typed and false on the day a line
+// moves to legacy-tested — with nothing to announce the change. So the expected
+// phrases are derived here too, and the totals are compared: a level counted
+// nowhere would leave the parts adding up to less than the declared lines while
+// every phrase in the sentence still looked right.
+func TestWriteMatrixSummary_CountsTheDeclaredSupportLevels(t *testing.T) {
+	c := qt.New(t)
+
+	counts := map[capability.SupportLevel]int{}
+	for _, cell := range capabilityprobe.Cells {
+		counts[cell.Support]++
+	}
+	levels := slices.DeleteFunc(capability.SupportLevels(), func(level capability.SupportLevel) bool {
+		return counts[level] == 0
+	})
+	counted := 0
+	phrases := make([]string, 0, len(levels))
+	for _, level := range levels {
+		counted += counts[level]
+		phrases = append(phrases, fmt.Sprintf("%d %s", counts[level], level))
+	}
+	c.Assert(counted, qt.Equals, len(capabilityprobe.Cells),
+		qt.Commentf("%d declared lines carry a level this vocabulary defines; the rest are counted in no phrase at all",
+			counted))
+	c.Assert(len(phrases) > 1, qt.IsTrue,
+		qt.Commentf("every declared line sits at one level, so a sentence naming one level proves nothing about the other three"))
+
+	var out strings.Builder
+	capabilityprobe.WriteMatrixSummary(&out)
+
+	c.Assert(out.String(), qt.Contains, fmt.Sprintf("Support levels across the %d declared lines: %s.",
+		len(capabilityprobe.Cells), strings.Join(phrases, ", ")))
+}
+
+// TestCIMatrix_CellsCarryTheDeclaredSupportLevelAsJSON covers the consumer that
+// never reads the Markdown: a workflow reads the fan-out as JSON, and an
+// artifact published from a job is read months later by someone deciding how
+// much a red cell means. The key is asserted by name because renaming it is a
+// silent break — a consumer asking for `support_level` on a cell that spells it
+// otherwise gets the empty string, which is a valid-looking answer meaning
+// "nothing promised".
+func TestCIMatrix_CellsCarryTheDeclaredSupportLevelAsJSON(t *testing.T) {
+	matrix := capabilityprobe.CIMatrix()
+	declared := map[string]capability.SupportLevel{}
+	for _, cell := range capabilityprobe.Cells {
+		declared[capabilityprobe.CellID(cell)] = cell.Support
+	}
+
+	for _, cell := range slices.Concat(matrix.Cells, matrix.Skipped) {
+		t.Run(cell.ID, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(cell.Support, qt.Equals, declared[cell.ID])
+			c.Assert(cell.Support.Valid(), qt.IsTrue)
+
+			encoded, err := json.Marshal(cell)
+			c.Assert(err, qt.IsNil)
+			c.Assert(string(encoded), qt.Contains,
+				fmt.Sprintf(`"support_level":%q`, cell.Support.String()))
+		})
+	}
+}
+
+// supportColumn is where both renderings put the promise: after the line it is
+// about, before the capability preset it is independent of.
+const supportColumn = 2
+
+// markdownCells splits one rendered table row into its cells. No value the
+// generator writes contains a pipe, so the split is on the column separator
+// itself rather than on the character, and a row that grew or lost a cell
+// changes the length this returns.
+func markdownCells(row string) []string {
+	return strings.Split(strings.TrimSuffix(strings.TrimPrefix(row, "| "), " |"), " | ")
 }

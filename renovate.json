@@ -29,6 +29,26 @@
       ]
     },
     {
+      "description": "A database server image is not an ordinary dependency. Its tag names a release LINE this repository declares in internal/capabilityprobe/cells.go, carrying a capability preset, a support level and -- for a certified line -- a compatibility commitment, so replacing a tag can retire coverage rather than update a dependency. Classify the release before merging. A new LTS or stable line is a candidate for an additional cell, not a replacement for an existing one. A new innovation or current line is an early-signal target. A patch inside a line the matrix already declares is an ordinary update. A line reaching upstream end-of-life is a support-level decision -- legacy-tested if it is worth keeping as a regression sentinel, retired if it is not -- and never an automatic removal, because upstream end-of-life is not Ptah incompatibility. Never auto-merge one of these, and never let a newer image displace a declared line without deciding what happens to that line's cell. TestRenovate_ClassifiesEveryDatabaseServerImage keeps this package list and the declared cells in step.",
+      "matchDatasources": [
+        "docker"
+      ],
+      "matchPackageNames": [
+        "postgres",
+        "mysql",
+        "mariadb",
+        "clickhouse/clickhouse-server",
+        "cockroachdb/cockroach",
+        "yugabytedb/yugabyte",
+        "mcr.microsoft.com/mssql/server"
+      ],
+      "groupName": "database server images",
+      "automerge": false,
+      "addLabels": [
+        "database-release-line"
+      ]
+    },
+    {
       "description": "The clickhouse-legacy integration service is pinned below 24.11 deliberately: CHECK GRANT catalog visibility arrived in 24.11, and TestWriterDropDatabaseRealm_RejectsLegacyServerLive proves the realm-drop guard fails closed without it. Matching on the current value freezes only that pin and leaves the current clickhouse service free to update.",
       "matchDatasources": [
         "docker"

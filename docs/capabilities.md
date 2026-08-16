@@ -132,6 +132,44 @@ so typos fail fast. Current registry:
 Presets are valid by construction (unit-tested); validate hand-built or
 composed sets yourself.
 
+### Values that are not booleans
+
+Three capability values have no yes-or-no answer. `core/platform/capability/traits.go`
+keeps them as a `Traits` value instead of flattening them into more flags, and
+`capability.TraitsFor(dialect, caps)` resolves all three for a target.
+
+| Value | Answers | Range |
+|---|---|---|
+| `identifier_limit` | The longest identifier the target accepts | A number with the unit it counts, or no modeled limit |
+| `enum_modeling` | How the target spells an enumerated column type | `inline`, `named-type`, `unsupported` |
+| `foreign_key_reference` | What the target requires of the columns a foreign key points at | `unique`, `indexed`, `backing-index`, `unsupported` |
+
+The identifier limit is the value a boolean cannot carry, because the unit is
+half the answer: 63 **bytes** for the PostgreSQL family (`postgres`,
+`cockroachdb`, `yugabytedb`), 64 characters for MySQL and MariaDB, 128
+characters for SQL Server and Spanner, and no modeled limit for ClickHouse and
+SQLite. PostgreSQL truncates at 63 bytes, so a 32-character accented name is
+already over the limit while its rune count says it fits. As flags the limit
+would need one key per length, and the unit would have nowhere to live at all.
+`IdentifierLimit.Exceeds` applies the byte-versus-character rule in one place,
+so a second caller cannot enforce the same limit by rune count.
+
+Those numbers were a dialect switch inside `core/renderer`'s foreign-key name
+validation. The renderer now reads the limit from the capability model, which is
+what makes the model load-bearing rather than decorative: another caller asks
+the same question instead of copying the switch, and the two answers cannot
+drift apart.
+
+The other two values are read off the boolean set rather than declared beside
+it. `enum_inline_column` against `enum_custom_type`, and the three referenced-key
+policy keys, are already mutually exclusive groups that `Validate()` polices
+with an exactly-one rule — a mode wearing two or three booleans. Reading them as
+a mode adds no claim: the same preset produces the same answer, spelled as what
+it always meant. `unsupported` is a real answer in both — SQLite models enums
+neither way, and ClickHouse has no declarative foreign keys — and differs from a
+set that names no mode at all, which only a hand-built set produces and
+`Validate()` rejects.
+
 ## Presets
 
 | Capability | MySQL84 | MySQL8019 | MySQL8016 | MySQLLegacy | MariaDB1011 | MariaDBLegacy | Postgres17 | Postgres16 | Postgres13 | ClickHouse24 | CockroachDB23 | CockroachDB25 | CockroachDB26 | YugabyteDB25 | SQLite3 | SQLServer2022 | SpannerPG |
@@ -491,8 +529,16 @@ which a PostgreSQL 16 server rejects outright. `--server-version 16` plans the
 answer that server can act on instead:
 
 ```sql
--- WARNING: Generated column t.b changed, but ALTER COLUMN SET EXPRESSION requires PostgreSQL 17+; manual migration required. --;
+-- WARNING: Generated column t.b changed, but ALTER COLUMN SET EXPRESSION requires target capability alter_generated_column_expression, unavailable on this target (PostgreSQL added it in 17); manual migration required. --;
 ```
+
+The refusal names the capability, not the version, because the version is only
+one of the ways to reach it: a PostgreSQL-compatible engine, a managed provider
+that withholds the statement, or a preset composed with
+`.With(capability.AlterGeneratedColumnExpression, false)` all land on the same
+plan while reporting a version number that explains nothing. The release that
+added the statement stays in the sentence as the reason the capability is
+absent here.
 
 `--server-version 17` still emits the `ALTER`, so pinning selects a plan rather
 than degrading every one. `ForDialect("mysql")`
@@ -505,11 +551,13 @@ server. The flag requires `--dialect`, because without one the command renders
 every supported target in a single pass and one server version does not
 describe nine engines.
 
-## Supported release lines
+## Declared release lines
 
-This is the version matrix: every database release line Ptah covers, the
-capability preset it claims, and whether continuous integration measures that
-claim against a live server.
+This is the version matrix, and it is the declared set: the line, the capability
+preset it claims, how much testing stands behind that claim, and whether the
+capability probe measures it against a live server. Declared is not the same as
+usable. A release line absent from the table still connects, still resolves
+capabilities, and still performs the operations those capabilities allow.
 
 It is generated from `internal/capabilityprobe/cells.go`, which is the only
 place a release line is declared. The tiered pipeline of stokaro/ptah#1341
@@ -517,7 +565,14 @@ reads the same declaration, so the workflow files carry no list of versions and
 `scripts/check-version-matrix.sh` fails the build when this table drifts from
 the declaration it was generated from.
 
-Three columns need reading carefully.
+Four columns need reading carefully.
+
+**Support** is how much testing stands behind the line — `certified`,
+`legacy-tested`, `best-effort`, or `known-incompatible` — and it claims
+something about this repository's continuous integration rather than about the
+server in front of you. [Support is a separate question from
+capability](#support-is-a-separate-question-from-capability), further down, says
+what each level does and does not promise.
 
 **Refinement** says how a server on the line reaches its preset.
 `version-ladder` means the parsed version selects the arm that answers, so an
@@ -541,34 +596,34 @@ both halves are derived, so adding a ClickHouse plan turns four skipped cells
 into four probed ones with no workflow edit.
 
 <!-- BEGIN GENERATED VERSION MATRIX -->
-| Dialect | Release line | Capability preset | Refinement | Container image | Tag names the line | Probed per pull request |
-| --- | --- | --- | --- | --- | --- | --- |
-| `postgres` | 18 | `Postgres17` | version-ladder | `postgres:18` | yes | yes |
-| `postgres` | 17 | `Postgres17` | version-ladder | `postgres:17` | yes | yes |
-| `postgres` | 16 | `Postgres16` | version-ladder | `postgres:16` | yes | yes |
-| `postgres` | 15 | `Postgres16` | version-ladder | `postgres:15` | yes | yes |
-| `postgres` | 14 | `Postgres16` | version-ladder | `postgres:14` | yes | yes |
-| `postgres` | 13 | `Postgres13` | version-ladder | `postgres:13` | yes | yes |
-| `mysql` | 26.7 | `MySQL84` | version-ladder | `mysql:26.7` | yes | yes |
-| `mysql` | 9.7 | `MySQL84` | version-ladder | `mysql:9.7` | yes | yes |
-| `mysql` | 8.4 | `MySQL84` | version-ladder | `mysql:8.4` | yes | yes |
-| `mariadb` | 12.3 | `MariaDB1011` | version-ladder | `mariadb:12.3` | yes | yes |
-| `mariadb` | 11.8 | `MariaDB1011` | version-ladder | `mariadb:11.8` | yes | yes |
-| `mariadb` | 11.4 | `MariaDB1011` | version-ladder | `mariadb:11.4` | yes | yes |
-| `mariadb` | 10.11 | `MariaDB1011` | version-ladder | `mariadb:10.11` | yes | yes |
-| `cockroachdb` | 26.2 | `CockroachDB26` | version-ladder | `cockroachdb/cockroach:latest-v26.2` | yes | yes |
-| `cockroachdb` | 25.4 | `CockroachDB25` | version-ladder | `cockroachdb/cockroach:latest-v25.4` | yes | yes |
-| `yugabytedb` | 2026.1 | `YugabyteDB25` | measured-release-line | `yugabytedb/yugabyte:2026.1` | yes | yes |
-| `yugabytedb` | 2025.2 | `YugabyteDB25` | measured-release-line | `yugabytedb/yugabyte:2025.2` | yes | yes |
-| `clickhouse` | 26.7 | `ClickHouse24` | dialect-default | `clickhouse/clickhouse-server:26.7` | yes | no: the capability probe has no statement table for the clickhouse dialect, so a server on this line would be asked nothing |
-| `clickhouse` | 26.3 | `ClickHouse24` | dialect-default | `clickhouse/clickhouse-server:26.3` | yes | no: the capability probe has no statement table for the clickhouse dialect, so a server on this line would be asked nothing |
-| `clickhouse` | 25.8 | `ClickHouse24` | dialect-default | `clickhouse/clickhouse-server:25.8` | yes | no: the capability probe has no statement table for the clickhouse dialect, so a server on this line would be asked nothing |
-| `clickhouse` | 24.10 | `ClickHouse24` | dialect-default | `clickhouse/clickhouse-server:24.10` | yes | no: the capability probe has no statement table for the clickhouse dialect, so a server on this line would be asked nothing |
-| `sqlserver` | 17.0 (SQL Server 2025) | `SQLServer2022` | dialect-default | `mcr.microsoft.com/mssql/server:2025-latest` | no | no: the capability probe has no statement table for the sqlserver dialect, so a server on this line would be asked nothing |
-| `sqlserver` | 16.0 (SQL Server 2022) | `SQLServer2022` | dialect-default | `mcr.microsoft.com/mssql/server:2022-latest` | no | no: the capability probe has no statement table for the sqlserver dialect, so a server on this line would be asked nothing |
-| `sqlserver` | 15.0 (SQL Server 2019) | `SQLServer2022` | dialect-default | `mcr.microsoft.com/mssql/server:2019-latest` | no | no: the capability probe has no statement table for the sqlserver dialect, so a server on this line would be asked nothing |
-| `sqlite` | 3 | `SQLite3` | dialect-default | none | n/a | no: no container image is declared for this line; the capability probe has no statement table for the sqlite dialect, so a server on this line would be asked nothing |
-| `spanner` | 0 | `SpannerPostgres` | banner-substring | none | n/a | no: no container image is declared for this line |
+| Dialect | Release line | Support | Capability preset | Refinement | Container image | Tag names the line | Probed per pull request |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| `postgres` | 18 | certified | `Postgres17` | version-ladder | `postgres:18` | yes | yes |
+| `postgres` | 17 | certified | `Postgres17` | version-ladder | `postgres:17` | yes | yes |
+| `postgres` | 16 | certified | `Postgres16` | version-ladder | `postgres:16` | yes | yes |
+| `postgres` | 15 | certified | `Postgres16` | version-ladder | `postgres:15` | yes | yes |
+| `postgres` | 14 | certified | `Postgres16` | version-ladder | `postgres:14` | yes | yes |
+| `postgres` | 13 | legacy-tested | `Postgres13` | version-ladder | `postgres:13` | yes | yes |
+| `mysql` | 26.7 | certified | `MySQL84` | version-ladder | `mysql:26.7` | yes | yes |
+| `mysql` | 9.7 | certified | `MySQL84` | version-ladder | `mysql:9.7` | yes | yes |
+| `mysql` | 8.4 | certified | `MySQL84` | version-ladder | `mysql:8.4` | yes | yes |
+| `mariadb` | 12.3 | certified | `MariaDB1011` | version-ladder | `mariadb:12.3` | yes | yes |
+| `mariadb` | 11.8 | certified | `MariaDB1011` | version-ladder | `mariadb:11.8` | yes | yes |
+| `mariadb` | 11.4 | certified | `MariaDB1011` | version-ladder | `mariadb:11.4` | yes | yes |
+| `mariadb` | 10.11 | certified | `MariaDB1011` | version-ladder | `mariadb:10.11` | yes | yes |
+| `cockroachdb` | 26.2 | certified | `CockroachDB26` | version-ladder | `cockroachdb/cockroach:latest-v26.2` | yes | yes |
+| `cockroachdb` | 25.4 | certified | `CockroachDB25` | version-ladder | `cockroachdb/cockroach:latest-v25.4` | yes | yes |
+| `yugabytedb` | 2026.1 | certified | `YugabyteDB25` | measured-release-line | `yugabytedb/yugabyte:2026.1` | yes | yes |
+| `yugabytedb` | 2025.2 | certified | `YugabyteDB25` | measured-release-line | `yugabytedb/yugabyte:2025.2` | yes | yes |
+| `clickhouse` | 26.7 | certified | `ClickHouse24` | dialect-default | `clickhouse/clickhouse-server:26.7` | yes | no: the capability probe has no statement table for the clickhouse dialect, so a server on this line would be asked nothing |
+| `clickhouse` | 26.3 | best-effort | `ClickHouse24` | dialect-default | `clickhouse/clickhouse-server:26.3` | yes | no: the capability probe has no statement table for the clickhouse dialect, so a server on this line would be asked nothing |
+| `clickhouse` | 25.8 | best-effort | `ClickHouse24` | dialect-default | `clickhouse/clickhouse-server:25.8` | yes | no: the capability probe has no statement table for the clickhouse dialect, so a server on this line would be asked nothing |
+| `clickhouse` | 24.10 | legacy-tested | `ClickHouse24` | dialect-default | `clickhouse/clickhouse-server:24.10` | yes | no: the capability probe has no statement table for the clickhouse dialect, so a server on this line would be asked nothing |
+| `sqlserver` | 17.0 (SQL Server 2025) | certified | `SQLServer2022` | dialect-default | `mcr.microsoft.com/mssql/server:2025-latest` | no | no: the capability probe has no statement table for the sqlserver dialect, so a server on this line would be asked nothing |
+| `sqlserver` | 16.0 (SQL Server 2022) | best-effort | `SQLServer2022` | dialect-default | `mcr.microsoft.com/mssql/server:2022-latest` | no | no: the capability probe has no statement table for the sqlserver dialect, so a server on this line would be asked nothing |
+| `sqlserver` | 15.0 (SQL Server 2019) | best-effort | `SQLServer2022` | dialect-default | `mcr.microsoft.com/mssql/server:2019-latest` | no | no: the capability probe has no statement table for the sqlserver dialect, so a server on this line would be asked nothing |
+| `sqlite` | 3 | certified | `SQLite3` | dialect-default | none | n/a | no: no container image is declared for this line; the capability probe has no statement table for the sqlite dialect, so a server on this line would be asked nothing |
+| `spanner` | 0 | best-effort | `SpannerPostgres` | banner-substring | none | n/a | no: no container image is declared for this line |
 <!-- END GENERATED VERSION MATRIX -->
 
 Which versions are supported is the vendors' answer, not Ptah's, and the
@@ -584,6 +639,35 @@ Every currently runnable line names a measured preset. A newly declared line
 without one fails the `preset coverage` job instead of borrowing the dialect
 default and turning green through saturation; stokaro/ptah#916 tracks the
 remaining resolver refinement work.
+
+### Support is a separate question from capability
+
+The `Support` column states what this repository's continuous integration
+covers. It is not a statement about the server in front of you, and upstream
+end-of-life is not Ptah incompatibility: no code here consults a support level
+to decide whether an operation may proceed. A line the vendor retires moves from
+`certified` to `legacy-tested` and keeps working. A release line the table does
+not declare at all resolves to `best-effort` at runtime — capabilities are
+resolved for it and it is not refused.
+
+Measured live on 2026-08-16: PostgreSQL 13.23, whose upstream final release was
+2025-11-13, resolves to `legacy-tested`, has its capabilities resolved, and
+works. MySQL 8.0.46, a line the matrix does not declare, resolves to
+`best-effort`, works, and carries the note `mysql 8.0.46 is not a measured
+release line; capabilities fall back to the preset its ladder assigns (newest
+measured line: 26.7)`. A fourth level, `known-incompatible`, requires a concrete
+technical incompatibility rather than a vendor's calendar date; no release line
+carries it today. Each level is defined once, on the reader-facing
+[Database support matrix](./site/src/content/docs/databases/support-matrix.md).
+
+`ptah db capabilities --db-url <url>` reports the resolved profile of one live
+server: the preset, how that preset was reached, the support level and release
+line with the reason for it, the non-boolean values above, and every capability
+key with its value there. It answers "why did Ptah do that against this server"
+by asking the resolver documented on this page rather than a second copy of it,
+and it executes no DDL and modifies no schema object. Connecting is still
+connecting: a `sqlite://` URL naming a file that does not exist creates that
+file, exactly as any other command reaching the same URL would.
 
 ## Current consumers
 

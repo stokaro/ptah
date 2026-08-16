@@ -5042,6 +5042,19 @@ type Capabilities map[Capability]bool
 type Capability string
     const DropConstraintGeneric Capability = "drop_constraint_generic" ...
     func All() []Capability
+type EnumMode string
+    const EnumUnspecified EnumMode = "" ...
+type IdentifierLimit struct{ ... }
+    func Identifiers(dialect string) IdentifierLimit
+type IdentifierUnit string
+    const IdentifierBytes IdentifierUnit = "bytes" ...
+type ReferencePolicy string
+    const ReferenceUnspecified ReferencePolicy = "" ...
+type SupportLevel string
+    const Certified SupportLevel = "certified" ...
+    func SupportLevels() []SupportLevel
+type Traits struct{ ... }
+    func TraitsFor(dialect string, caps Capabilities) Traits
 type VersionResolution struct{ ... }
     func ResolveServerVersion(dialect, version string) VersionResolution
 
@@ -5076,6 +5089,8 @@ func SQLite3() Capabilities
 func SpannerPostgres() Capabilities
 func YugabyteDB25() Capabilities
 func (c Capabilities) Clone() Capabilities
+func (c Capabilities) EnumModeling() EnumMode
+func (c Capabilities) ForeignKeyReference() ReferencePolicy
 func (c Capabilities) Has(key Capability) bool
 func (c Capabilities) Validate() error
 func (c Capabilities) With(key Capability, enabled bool) Capabilities
@@ -5089,6 +5104,127 @@ type Capability string
 
 const DropConstraintGeneric Capability = "drop_constraint_generic" ...
 func All() []Capability
+
+### go.5x5.cz/ptah/core/platform/capability.EnumMode
+
+package capability // import "go.5x5.cz/ptah/core/platform/capability"
+
+type EnumMode string
+    EnumMode says how a target models an enumerated column type.
+
+const EnumUnspecified EnumMode = "" ...
+
+### go.5x5.cz/ptah/core/platform/capability.IdentifierLimit
+
+package capability // import "go.5x5.cz/ptah/core/platform/capability"
+
+type IdentifierLimit struct {
+    // Max is the limit, or zero when Ptah models no limit for the target.
+    Max int `json:"max,omitempty"`
+    // Unit is what Max counts, empty exactly when Max is zero.
+    Unit IdentifierUnit `json:"unit,omitempty"`
+}
+    IdentifierLimit is the longest identifier a target accepts, and the unit
+    that length is measured in.
+
+    This is the worked example of a capability that cannot be a flag. Written
+    as booleans it would need one key per length, and the unit — the part that
+    decides whether "éééé…" fits — would have nowhere to live at all.
+
+func Identifiers(dialect string) IdentifierLimit
+func (l IdentifierLimit) Exceeds(name string) bool
+func (l IdentifierLimit) String() string
+func (l IdentifierLimit) Unlimited() bool
+
+### go.5x5.cz/ptah/core/platform/capability.IdentifierUnit
+
+package capability // import "go.5x5.cz/ptah/core/platform/capability"
+
+type IdentifierUnit string
+    IdentifierUnit says what an identifier limit counts. The distinction is
+    not pedantry: PostgreSQL truncates at 63 BYTES, so a name of 32 two-byte
+    characters is already over the limit while its rune count says otherwise.
+
+const IdentifierBytes IdentifierUnit = "bytes" ...
+
+### go.5x5.cz/ptah/core/platform/capability.ReferencePolicy
+
+package capability // import "go.5x5.cz/ptah/core/platform/capability"
+
+type ReferencePolicy string
+    ReferencePolicy says what a target requires of the columns a foreign key
+    references.
+
+const ReferenceUnspecified ReferencePolicy = "" ...
+
+### go.5x5.cz/ptah/core/platform/capability.SupportLevel
+
+package capability // import "go.5x5.cz/ptah/core/platform/capability"
+
+type SupportLevel string
+    SupportLevel names what Ptah promises about one database release line.
+
+    It answers a different question from the capability set beside it, and
+    keeping the two apart is the whole point (stokaro/ptah#1230):
+
+      - a support level answers "has Ptah regularly tested this release line",
+        which is a statement about this repository's continuous integration;
+      - a capability answers "can Ptah safely perform this operation against
+        this server", which is a statement about the server in front of it.
+
+    Conflating them turns a vendor's end-of-life date into a runtime refusal.
+    Ptah does not do that. Upstream end-of-life lowers the testing guarantee
+    Ptah offers for a release line; it is not by itself a reason to refuse to
+    work with a server, and no code in this repository consults a support level
+    to decide whether an operation may proceed.
+
+    A hard refusal is reserved for KnownIncompatible, which requires a concrete
+    technical incompatibility rather than a calendar date.
+
+const Certified SupportLevel = "certified" ...
+func SupportLevels() []SupportLevel
+func (l SupportLevel) Doc() string
+func (l SupportLevel) String() string
+func (l SupportLevel) Valid() bool
+
+### go.5x5.cz/ptah/core/platform/capability.Traits
+
+package capability // import "go.5x5.cz/ptah/core/platform/capability"
+
+type Traits struct {
+    // Identifiers is the longest identifier the target accepts.
+    Identifiers IdentifierLimit `json:"identifiers"`
+
+    // EnumModeling is how the target spells an enumerated column type.
+    EnumModeling EnumMode `json:"enum_modeling"`
+
+    // ForeignKeyReference is what the target requires of the columns a
+    // foreign key points at.
+    ForeignKeyReference ReferencePolicy `json:"foreign_key_reference"`
+}
+    Traits are the capability values that are not yes-or-no.
+
+    A boolean set answers "is this feature present". Some database differences
+    have no such answer: an identifier limit is a number with a unit,
+    and "how does this target model an enum" has three outcomes rather than two.
+    stokaro/ptah#1230 asks that those not be flattened into a growing collection
+    of misleading flags, and this type is where they are not.
+
+    The two sources are deliberately different, and the difference is visible in
+    how each field is resolved:
+
+      - Traits.Identifiers is static engine knowledge keyed on the dialect.
+        No measured release line changes it, so no version is consulted. When
+        one does, the version arrives here rather than in a new switch somewhere
+        else — that centralization is the point.
+      - Traits.EnumModeling and Traits.ForeignKeyReference are READ OFF the
+        boolean set. Both already existed there as mutually exclusive flag
+        groups that Capabilities.Validate polices with a hand-written "exactly
+        one" rule, which is a mode wearing three booleans. Deriving them adds
+        no claim: the same preset produces the same answer, spelled as what it
+        always meant.
+
+func TraitsFor(dialect string, caps Capabilities) Traits
 
 ### go.5x5.cz/ptah/core/platform/capability.VersionResolution
 

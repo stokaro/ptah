@@ -615,9 +615,16 @@ func (r *Renderer) VisitAlterTable(node *ast.AlterTableNode) error {
 			r.renderPostgreSQLModifyColumn(node.Name, op.Column)
 		case *ast.AlterGeneratedColumnExpressionOperation:
 			if !r.capabilities().Has(capability.AlterGeneratedColumnExpression) {
+				// Name the capability, not the version. The gate is the
+				// capability set, and the set says no on targets whose version
+				// number says nothing about it: a PostgreSQL-compatible engine,
+				// a managed provider that withholds the statement, a preset
+				// composed with .With(..., false). The release that added it
+				// stays in the sentence as the reason, not as the verdict.
 				r.w.WriteLinef(
-					"-- %s: ALTER COLUMN SET EXPRESSION requires PostgreSQL 17+; generated column %q was not changed.",
+					"-- %s: ALTER COLUMN SET EXPRESSION requires target capability %s, unavailable on this target (PostgreSQL added it in 17); generated column %q was not changed.",
 					r.dialectUpper,
+					capability.AlterGeneratedColumnExpression,
 					op.ColumnName,
 				)
 				continue
