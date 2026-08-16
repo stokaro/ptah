@@ -171,6 +171,56 @@ const (
 	// (PostgreSQL ALTER TABLE ... ENABLE ROW LEVEL SECURITY + CREATE POLICY).
 	RowLevelSecurity Capability = "row_level_security"
 
+	// PostgresCatalogFunctions marks that pg_catalog's introspection helpers
+	// resolve: obj_description for a stored comment, format_type for a type as
+	// the server spells it, pg_get_expr for a stored expression.
+	//
+	// They are one key because they are one fact -- whether the catalog is
+	// PostgreSQL's own or an emulation of its shape. Measured on the Cloud
+	// Spanner emulator through PGAdapter 0.55.2, which refuses all three and
+	// with a different message each time:
+	//
+	//	obj_description(2200, 'pg_namespace')  The Postgres Type is not supported: name
+	//	format_type(a.atttypid, a.atttypmod)   function format_type(bigint, bigint) does not exist
+	//	pg_get_expr('x', 1::bigint)            cannot accept a value of type pg_node_tree
+	//
+	// A refused function is the whole statement's fate, not a null column, and
+	// it is refused even inside a CASE branch no row would take, because the
+	// name must resolve before any row is read. So a reader that asks anyway
+	// cannot read the schema at all (stokaro/ptah#942).
+	PostgresCatalogFunctions Capability = "postgres_catalog_functions"
+
+	// CatalogRowStatistics marks that the catalog exposes planner row-count
+	// statistics, which Ptah reads to tell an empty table from a populated one
+	// before choosing a blocking or a concurrent index build.
+	//
+	// Measured on the Cloud Spanner emulator through PGAdapter 0.55.2:
+	// `pg_stat_all_tables` answers `relation "pg_stat_all_tables" does not
+	// exist`, while the pg_class columns beside it -- reltuples, relkind,
+	// relrowsecurity -- all answer. The catalog is emulated deeply enough to
+	// carry the tables and not the statistics views (stokaro/ptah#942).
+	CatalogRowStatistics Capability = "catalog_row_statistics"
+
+	// CatalogDependencies marks that the catalog exposes pg_depend, the
+	// dependency table the user-defined-type read joins to tell a type an
+	// extension owns from one the user declared.
+	//
+	// It names the relation rather than the feature on purpose. An earlier
+	// draft of this key named the type system -- domains, composite types and
+	// range types -- and the live probe refuted it: CockroachDB 26.2 refuses
+	// CREATE DOMAIN (crdb#27796) and CREATE TYPE ... AS RANGE (crdb#27791) yet
+	// accepts a composite type, so no single key can stand for the three, and
+	// gating the read on "has the type system" would have skipped a read
+	// CockroachDB serves.
+	//
+	// The relation is the honest gate because it is what actually fails.
+	// Measured: `SELECT 1 FROM pg_depend LIMIT 1` is accepted by PostgreSQL and
+	// by CockroachDB, and answers `relation "pg_depend" does not exist` on the
+	// Cloud Spanner emulator through PGAdapter 0.55.2 -- and a missing relation
+	// cannot be stood in for by a constant the way a missing function can, so
+	// the read is skipped rather than reduced (stokaro/ptah#942).
+	CatalogDependencies Capability = "catalog_dependencies"
+
 	// RoleManagement marks support for PostgreSQL role and object privilege
 	// management (CREATE/ALTER ROLE plus GRANT/REVOKE).
 	RoleManagement Capability = "role_management"
@@ -290,6 +340,15 @@ var registry = map[Capability]spec{
 	},
 	RowLevelSecurity: {
 		doc: "row-level security policies (PostgreSQL)",
+	},
+	PostgresCatalogFunctions: {
+		doc: "obj_description reads a comment back out of the catalog",
+	},
+	CatalogRowStatistics: {
+		doc: "the catalog exposes planner row-count statistics (pg_stat_all_tables)",
+	},
+	CatalogDependencies: {
+		doc: "the catalog exposes pg_depend",
 	},
 	RoleManagement: {
 		doc: "PostgreSQL role and object privilege management",
@@ -468,6 +527,9 @@ func MySQL84() Capabilities {
 		CreateOrReplaceTrigger:             false,
 		AlterGeneratedColumnExpression:     false,
 		RowLevelSecurity:                   false,
+		PostgresCatalogFunctions:           false,
+		CatalogRowStatistics:               false,
+		CatalogDependencies:                false,
 		RoleManagement:                     false,
 		ForeignKeys:                        true,
 		ForeignKeysRequireUniqueReference:  true,
@@ -530,6 +592,9 @@ func MariaDB1011() Capabilities {
 		CreateOrReplaceTrigger:             true,
 		AlterGeneratedColumnExpression:     false,
 		RowLevelSecurity:                   false,
+		PostgresCatalogFunctions:           false,
+		CatalogRowStatistics:               false,
+		CatalogDependencies:                false,
 		RoleManagement:                     false,
 		ForeignKeys:                        true,
 		ForeignKeysRequireUniqueReference:  false,
@@ -589,6 +654,9 @@ func Postgres16() Capabilities {
 		CreateOrReplaceTrigger:             true,
 		AlterGeneratedColumnExpression:     false,
 		RowLevelSecurity:                   true,
+		PostgresCatalogFunctions:           true,
+		CatalogRowStatistics:               true,
+		CatalogDependencies:                true,
 		RoleManagement:                     true,
 		ForeignKeys:                        true,
 		ForeignKeysRequireUniqueReference:  true,
@@ -673,6 +741,9 @@ func ClickHouse24() Capabilities {
 		CreateOrReplaceTrigger:             false,
 		AlterGeneratedColumnExpression:     false,
 		RowLevelSecurity:                   false,
+		PostgresCatalogFunctions:           false,
+		CatalogRowStatistics:               false,
+		CatalogDependencies:                false,
 		RoleManagement:                     false,
 		ForeignKeys:                        false,
 		ForeignKeysRequireUniqueReference:  false,
@@ -713,6 +784,9 @@ func SQLite3() Capabilities {
 		CreateOrReplaceTrigger:             false,
 		AlterGeneratedColumnExpression:     false,
 		RowLevelSecurity:                   false,
+		PostgresCatalogFunctions:           false,
+		CatalogRowStatistics:               false,
+		CatalogDependencies:                false,
 		RoleManagement:                     false,
 		ForeignKeys:                        true,
 		ForeignKeysRequireUniqueReference:  true,
@@ -767,6 +841,9 @@ func SQLServer2022() Capabilities {
 		CreateOrReplaceTrigger:             true,
 		AlterGeneratedColumnExpression:     false,
 		RowLevelSecurity:                   false,
+		PostgresCatalogFunctions:           false,
+		CatalogRowStatistics:               false,
+		CatalogDependencies:                false,
 		RoleManagement:                     false,
 		ForeignKeys:                        true,
 		ForeignKeysRequireUniqueReference:  true,
@@ -871,6 +948,12 @@ func YugabyteDB25() Capabilities {
 // #942 lands.
 func SpannerPostgres() Capabilities {
 	return Postgres16().
+		// Measured, unlike the rest of this preset: on the Cloud Spanner
+		// emulator through PGAdapter 0.55.2, `obj_description(2200,
+		// 'pg_namespace')` answers `The Postgres Type is not supported: name`.
+		With(PostgresCatalogFunctions, false).
+		With(CatalogRowStatistics, false).
+		With(CatalogDependencies, false).
 		With(DropConstraintGeneric, false).
 		With(DropConstraintIfExists, false).
 		With(DropIndexIfExists, false).

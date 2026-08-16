@@ -94,7 +94,10 @@ func TestPlans_AnswerEveryRegisteredCapabilityExactlyOnce(t *testing.T) {
 // silent side effect of editing plans.go.
 //
 // Each entry is the set plans.go argues for in a comment at the point of
-// declaration. Postgres argues for none: everything it registers, it measures.
+// declaration. Postgres argues for none: everything it registers, it measures,
+// including the three catalog keys added for the Spanner PostgreSQL interface
+// -- a PostgreSQL server answers all three, which is what makes them worth
+// asking (stokaro/ptah#942).
 func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 	for _, tc := range []struct {
 		dialect string
@@ -104,10 +107,21 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 		want:    nil,
 	}, {
 		dialect: platform.MySQL,
-		want:    []capability.Capability{capability.RoleManagement},
+		want: []capability.Capability{
+			capability.CatalogDependencies,
+			capability.CatalogRowStatistics,
+			capability.PostgresCatalogFunctions,
+			capability.RoleManagement,
+		},
 	}, {
 		dialect: platform.MariaDB,
-		want:    []capability.Capability{capability.RoleManagement, capability.Sequences},
+		want: []capability.Capability{
+			capability.CatalogDependencies,
+			capability.CatalogRowStatistics,
+			capability.PostgresCatalogFunctions,
+			capability.RoleManagement,
+			capability.Sequences,
+		},
 	}} {
 		t.Run(tc.dialect, func(t *testing.T) {
 			c := qt.New(t)
@@ -226,23 +240,23 @@ func TestDecidable_IsDerivedFromThePlanAndTheLine(t *testing.T) {
 		caps: capability.Postgres17(),
 		want: registered,
 	}, {
-		name: "mysql owes one fewer: role_management names a surface no MySQL path reads",
+		name: "mysql owes four fewer: role_management and the three catalog keys name PostgreSQL surfaces no MySQL path reads",
 		cell: Cell{
 			Dialect: platform.MySQL, Line: "9.7",
 			Preset: capability.MySQL84, PresetName: "MySQL84",
 			Refinement: RefinedByVersion,
 		},
 		caps: capability.MySQL84(),
-		want: registered - 1,
+		want: registered - 4,
 	}, {
-		name: "mariadb owes two fewer: sequences is a claim about the generator, not the engine",
+		name: "mariadb owes five fewer: sequences is a claim about the generator, not the engine",
 		cell: Cell{
 			Dialect: platform.MariaDB, Line: "10.11",
 			Preset: capability.MariaDB1011, PresetName: "MariaDB1011",
 			Refinement: RefinedByVersion,
 		},
 		caps: capability.MariaDB1011(),
-		want: registered - 2,
+		want: registered - 5,
 	}, {
 		name: "cockroachdb 26.2 owes every row because its preset enables both experiment prerequisites",
 		cell: Cell{

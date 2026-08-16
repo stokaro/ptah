@@ -244,6 +244,18 @@ func (r *Reader) readSchemaInfo(schemaName string) (types.DBSchemaInfo, error) {
 			COALESCE(obj_description(n.oid, 'pg_namespace'), '') AS schema_comment
 		FROM pg_namespace n
 		WHERE n.nspname = $1`
+	if !r.caps.Has(capability.PostgresCatalogFunctions) {
+		// A catalog that refuses obj_description refuses the whole statement,
+		// so asking for the comment costs the schema. Reading without it
+		// returns a schema with no comment, which is what a catalog that
+		// cannot store one has (stokaro/ptah#942).
+		schemasQuery = `
+		SELECT
+			n.nspname,
+			'' AS schema_comment
+		FROM pg_namespace n
+		WHERE n.nspname = $1`
+	}
 
 	var schema types.DBSchemaInfo
 	err := r.db.QueryRow(schemasQuery, schemaName).Scan(&schema.Name, &schema.Comment)
@@ -266,10 +278,13 @@ func (r *Reader) readTables() ([]types.DBTable, error) {
 	return tables, nil
 }
 
-// rowStatsUnknownStatisticsOnly is the part of the tri-state every
-// PostgreSQL-family server can answer: the statistics carry no usable row
-// count.
+// rowStatsUnknownStatisticsOnly is the part of the tri-state a server with the
+// statistics views can answer: the statistics carry no usable row count.
 const rowStatsUnknownStatisticsOnly = `NOT COALESCE(c.reltuples >= 0 OR COALESCE(st.n_live_tup, 0) > 0, false)`
+
+// rowStatsUnknownReltuplesOnly is the same question on a catalog with no
+// statistics views, where pg_class.reltuples is the only estimate there is.
+const rowStatsUnknownReltuplesOnly = `NOT COALESCE(c.reltuples >= 0, false)`
 
 // rowStatsUnknownProjection builds the row_stats_unknown projection for the
 // server at hand.
@@ -300,14 +315,20 @@ const rowStatsUnknownStatisticsOnly = `NOT COALESCE(c.reltuples >= 0 OR COALESCE
 // projection degrades to the statistics-only test on a server without the
 // function instead of failing the read.
 func (r *Reader) rowStatsUnknownProjection() (string, error) {
+	// A catalog with no statistics views has no st to read, and asking for one
+	// is a missing-FROM-clause error rather than a null (stokaro/ptah#942).
+	statistics := rowStatsUnknownStatisticsOnly
+	if !r.caps.Has(capability.CatalogRowStatistics) {
+		statistics = rowStatsUnknownReltuplesOnly
+	}
 	hasRelationSize, err := r.supportsRelationSize()
 	if err != nil {
 		return "", err
 	}
 	if !hasRelationSize {
-		return rowStatsUnknownStatisticsOnly, nil
+		return statistics, nil
 	}
-	return `(` + rowStatsUnknownStatisticsOnly + `)
+	return `(` + statistics + `)
 		           AND COALESCE(pg_relation_size(c.oid), 0) > 0`, nil
 }
 
@@ -364,15 +385,15 @@ func (r *Reader) readTablesForSchema(schemaName string) ([]types.DBTable, error)
 	}
 	tablesQuery := `
 		SELECT table_schema, table_name, table_type,
-		       COALESCE(obj_description(c.oid), '') as table_comment,
-		       COALESCE(GREATEST(c.reltuples::bigint, st.n_live_tup, 0), 0) AS estimated_rows,
+		       ` + r.tableCommentExpr() + `,
+		       ` + r.estimatedRowsExpr() + `,
 		       ` + rowStatsUnknown + ` AS row_stats_unknown,
 		       COALESCE(c.relkind = 'p', false) AS partitioned,
 		       COALESCE(c.relrowsecurity, false) AS rls_enabled
 			FROM information_schema.tables t
 			LEFT JOIN pg_namespace n ON n.nspname = t.table_schema
 			LEFT JOIN pg_class c ON c.relname = t.table_name AND c.relnamespace = n.oid
-			LEFT JOIN pg_stat_all_tables st ON st.relid = c.oid
+			` + r.rowStatisticsJoin() + `
 			WHERE t.table_schema = $1
 			AND t.table_type = 'BASE TABLE'
 			AND t.table_name NOT IN ('schema_migrations')
@@ -409,6 +430,148 @@ func (r *Reader) readTablesForSchema(schemaName string) ([]types.DBTable, error)
 	return tables, nil
 }
 
+// generatedExpressionExpr renders the projection carrying a generated column's
+// expression, or a constant where pg_catalog's helpers do not resolve. See
+// [Reader.formattedTypeExpr] for why a CASE is not enough.
+func (r *Reader) generatedExpressionExpr() string {
+	if !r.caps.Has(capability.PostgresCatalogFunctions) {
+		return "'' AS generated_expression"
+	}
+	return `COALESCE(CASE WHEN a.attgenerated <> '' THEN pg_get_expr(ad.adbin, ad.adrelid) ELSE '' END, '') AS generated_expression`
+}
+
+// ownedSequenceExpr renders the projection naming the sequence a serial column
+// owns, or a constant on a target without sequences.
+//
+// The gate is [capability.Sequences] rather than the catalog-function key: a
+// target with no sequences has no answer to give, and pg_get_serial_sequence is
+// only the way the answer would have been fetched. Spanner refuses the
+// projection twice over -- `Postgres function format(text, text, text) is not
+// supported` comes first, before pg_get_serial_sequence is even reached
+// (stokaro/ptah#942).
+func (r *Reader) ownedSequenceExpr() string {
+	if !r.caps.Has(capability.Sequences) {
+		return "'' AS owned_sequence_name"
+	}
+	return `COALESCE(
+				pg_get_serial_sequence(
+					format('%I.%I', col.table_schema, col.table_name),
+					col.column_name
+				),
+				''
+			) AS owned_sequence_name`
+}
+
+// tableCommentExpr renders the projection carrying a table's stored comment,
+// or a constant where pg_catalog's helpers do not resolve.
+func (r *Reader) tableCommentExpr() string {
+	if !r.caps.Has(capability.PostgresCatalogFunctions) {
+		return "'' as table_comment"
+	}
+	return "COALESCE(obj_description(c.oid), '') as table_comment"
+}
+
+// estimatedRowsExpr renders the row-count estimate, falling back to pg_class
+// alone where the statistics views are absent.
+//
+// reltuples survives on a catalog with no pg_stat_all_tables -- measured on
+// Spanner, which answers `0.0` for it and `relation "pg_stat_all_tables" does
+// not exist` for the view. Keeping the pg_class half rather than dropping the
+// estimate entirely is what lets the tri-state below still mean something
+// (stokaro/ptah#942).
+func (r *Reader) estimatedRowsExpr() string {
+	if !r.caps.Has(capability.CatalogRowStatistics) {
+		return "COALESCE(GREATEST(c.reltuples::bigint, 0), 0) AS estimated_rows"
+	}
+	return "COALESCE(GREATEST(c.reltuples::bigint, st.n_live_tup, 0), 0) AS estimated_rows"
+}
+
+// rowStatisticsJoin joins the statistics view the estimate reads, or nothing.
+func (r *Reader) rowStatisticsJoin() string {
+	if !r.caps.Has(capability.CatalogRowStatistics) {
+		return ""
+	}
+	return "LEFT JOIN pg_stat_all_tables st ON st.relid = c.oid"
+}
+
+// domainBaseTypeExpr renders a domain's base type as the server spells it, or
+// a constant where pg_catalog's helpers do not resolve.
+//
+// A catalog without format_type has no domains either -- domains are a
+// PostgreSQL type-system feature -- so the query returns no rows and the
+// constant is never read. It exists because the function name is resolved
+// before the empty result is (stokaro/ptah#942).
+func (r *Reader) domainBaseTypeExpr() string {
+	if !r.caps.Has(capability.PostgresCatalogFunctions) {
+		return "'' AS base_type"
+	}
+	return "format_type(t.typbasetype, t.typtypmod) AS base_type"
+}
+
+// The projections below all read a pg_catalog helper, and all answer with a
+// constant where those helpers do not resolve. Each is separate rather than one
+// switch because the SQL differs; the decision they share is one capability.
+// See [capability.PostgresCatalogFunctions].
+
+func (r *Reader) domainCheckExpr() string {
+	if !r.caps.Has(capability.PostgresCatalogFunctions) {
+		return "'' AS check_expr"
+	}
+	return `COALESCE((
+				SELECT string_agg(pg_get_expr(c.conbin, c.conrelid), ' AND ')
+				FROM pg_constraint c
+				WHERE c.contypid = t.oid AND c.contype = 'c'
+			), '') AS check_expr`
+}
+
+func (r *Reader) indexCommentExpr() string {
+	if !r.caps.Has(capability.PostgresCatalogFunctions) {
+		return "'' as index_comment"
+	}
+	return "COALESCE(obj_description(i.oid, 'pg_class'), '') as index_comment"
+}
+
+func (r *Reader) indexPredicateExpr() string {
+	if !r.caps.Has(capability.PostgresCatalogFunctions) {
+		return "'' as predicate"
+	}
+	return "COALESCE(pg_get_expr(ix.indpred, ix.indrelid), '') as predicate"
+}
+
+func (r *Reader) constraintCheckExpr() string {
+	if !r.caps.Has(capability.PostgresCatalogFunctions) {
+		return "''"
+	}
+	return `COALESCE(max(CASE
+					WHEN pc.contype = 'c' THEN pg_get_expr(pc.conbin, pc.conrelid)
+				END), '')`
+}
+
+func (r *Reader) constraintDefinitionExpr() string {
+	if !r.caps.Has(capability.PostgresCatalogFunctions) {
+		return "''"
+	}
+	return "COALESCE(max(pg_get_constraintdef(pc.oid)), '')"
+}
+
+// formattedTypeExpr renders the projection that spells a column's type the way
+// the server does, or a constant where pg_catalog's helpers do not resolve.
+//
+// The expression it replaces reads format_type inside a CASE that only an array
+// or a domain column takes. That is not enough on a catalog without the
+// function: the name is resolved before any row is, so a branch no row would
+// take still refuses the statement. Spanner has neither arrays nor domains, so
+// the constant loses nothing there (stokaro/ptah#942).
+func (r *Reader) formattedTypeExpr() string {
+	if !r.caps.Has(capability.PostgresCatalogFunctions) {
+		return "'' AS formatted_type"
+	}
+	return `CASE WHEN data_type = 'ARRAY' OR col.domain_name IS NOT NULL
+				THEN format_type(a.atttypid, a.atttypmod)
+				ELSE ''
+			END AS formatted_type`
+}
+
 // readColumnsForSchema reads all columns in a schema in one catalog query and
 // groups them by table name.
 func (r *Reader) readColumnsForSchema(schemaName string) (map[string][]types.DBColumn, error) {
@@ -435,10 +598,7 @@ func (r *Reader) readColumnsForSchema(schemaName string) (map[string][]types.DBC
 			-- needs that. Measured against the pinned binary v1.3.0, which
 			-- reports "type":"positive_int" here, so this is also the
 			-- compatible answer. See #1242.
-			CASE WHEN data_type = 'ARRAY' OR col.domain_name IS NOT NULL
-				THEN format_type(a.atttypid, a.atttypmod)
-				ELSE ''
-			END AS formatted_type,
+			` + r.formattedTypeExpr() + `,
 			-- The same format_type answer means two different things, and only
 			-- this column separates them: for an array it is a TYPE, and for a
 			-- domain it is the IDENTIFIER its author picked. A comparator that
@@ -473,15 +633,9 @@ func (r *Reader) readColumnsForSchema(schemaName string) (map[string][]types.DBC
 			numeric_scale,
 			ordinal_position,
 			COALESCE(a.attgenerated, '') AS generated_kind,
-			COALESCE(CASE WHEN a.attgenerated <> '' THEN pg_get_expr(ad.adbin, ad.adrelid) ELSE '' END, '') AS generated_expression,
+			` + r.generatedExpressionExpr() + `,
 			COALESCE(a.attidentity, '') AS identity_kind,
-			COALESCE(
-				pg_get_serial_sequence(
-					format('%I.%I', col.table_schema, col.table_name),
-					col.column_name
-				),
-				''
-			) AS owned_sequence_name
+			` + r.ownedSequenceExpr() + `
 		FROM information_schema.columns col
 		JOIN information_schema.tables tbl ON tbl.table_schema = col.table_schema
 			AND tbl.table_name = col.table_name
@@ -640,6 +794,13 @@ func (r *Reader) readEnumsForSchema(schemaName string) ([]types.DBEnum, error) {
 // and assigns them onto schema. Split out of ReadSchema to keep that method's
 // cyclomatic complexity manageable.
 func (r *Reader) readUserTypesInto(schema *types.DBSchema) error {
+	// The whole read is skipped rather than gated projection by projection: it
+	// joins pg_depend, and a missing relation is not something a constant can
+	// stand in for the way a missing function is. A target without the type
+	// system has nothing here to find either way (stokaro/ptah#942).
+	if !r.caps.Has(capability.CatalogDependencies) {
+		return nil
+	}
 	domains, err := r.readDomains()
 	if err != nil {
 		return fmt.Errorf("failed to read domains: %w", err)
@@ -714,18 +875,14 @@ func (r *Reader) readDomains() ([]types.DBDomain, error) {
 }
 
 func (r *Reader) readDomainsForSchema(schemaName string) ([]types.DBDomain, error) {
-	const query = `
+	query := `
 		SELECT
 			n.nspname AS schema_name,
 			t.typname AS domain_name,
-			format_type(t.typbasetype, t.typtypmod) AS base_type,
+			` + r.domainBaseTypeExpr() + `,
 			t.typnotnull AS not_null,
 			COALESCE(t.typdefault, '') AS default_value,
-			COALESCE((
-				SELECT string_agg(pg_get_expr(c.conbin, c.conrelid), ' AND ')
-				FROM pg_constraint c
-				WHERE c.contypid = t.oid AND c.contype = 'c'
-			), '') AS check_expr
+			` + r.domainCheckExpr() + `
 		FROM pg_type t
 		JOIN pg_namespace n ON n.oid = t.typnamespace
 		WHERE t.typtype = 'd' AND n.nspname = $1` +
@@ -1057,8 +1214,8 @@ func (r *Reader) readIndexesForSchema(schemaName string) ([]types.DBIndex, error
 			-- neither: the comment was dropped between the catalog and the
 			-- model, psql accepted the replay at exit 0, and the index simply
 			-- had no comment. See #1242.
-			COALESCE(obj_description(i.oid, 'pg_class'), '') as index_comment,
-			COALESCE(pg_get_expr(ix.indpred, ix.indrelid), '') as predicate,
+			` + r.indexCommentExpr() + `,
+			` + r.indexPredicateExpr() + `,
 			ix.indisprimary,
 			ix.indisunique,
 			-- Whether this index is a partition's copy of an index on its
@@ -1537,10 +1694,8 @@ func (r *Reader) readBasicConstraintsForSchema(schemaName string) ([]types.DBCon
 					WHEN 'n' THEN 'SET NULL'
 					WHEN 'd' THEN 'SET DEFAULT'
 				END), ''),
-				COALESCE(max(CASE
-					WHEN pc.contype = 'c' THEN pg_get_expr(pc.conbin, pc.conrelid)
-				END), ''),
-				COALESCE(max(pg_get_constraintdef(pc.oid)), '')
+				` + r.constraintCheckExpr() + `,
+				` + r.constraintDefinitionExpr() + `
 		FROM information_schema.table_constraints AS tc
 		JOIN pg_namespace AS constraint_schema
 			ON constraint_schema.nspname = tc.table_schema
