@@ -21,7 +21,7 @@ import (
 func parseToDatabase(c *qt.C, sql string) goschema.Database {
 	statements, err := parser.NewParser(sql).Parse()
 	c.Assert(err, qt.IsNil)
-	return toschema.ToDatabase(statements)
+	return toschema.ToDatabase(statements, "")
 }
 
 func findTable(db goschema.Database, name string) (goschema.Table, bool) {
@@ -198,7 +198,7 @@ func TestToDatabase_SQLServerBracketIdentifiersStayAtomic(t *testing.T) {
 	statements, err := parser.NewParser(sql, parser.WithDialect("sqlserver")).Parse()
 	c.Assert(err, qt.IsNil)
 
-	db := toschema.ToDatabase(statements)
+	db := toschema.ToDatabase(statements, "")
 
 	c.Assert(db.Tables, qt.HasLen, 1)
 	c.Assert(db.Tables[0].Name, qt.Equals, "user's")
@@ -293,7 +293,7 @@ func TestToDatabase_DialectQuotedIdentifiersAreCanonicalized(t *testing.T) {
 		table,
 		index,
 		enum,
-	}})
+	}}, "")
 
 	c.Assert(db.Tables, qt.HasLen, 1)
 	c.Assert(db.Tables[0].Schema, qt.Equals, "audit")

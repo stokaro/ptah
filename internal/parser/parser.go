@@ -1688,21 +1688,35 @@ func (p *Parser) parseCreateTableElements(table *ast.CreateTableNode) error {
 	return nil
 }
 
+// parseCreateTableSuffix reads everything after the column list: table options
+// and PARTITION BY, in whatever order they were written, followed by an
+// optional AS SELECT body.
+//
+// The two are interleaved rather than read once each. PARTITION BY is not a
+// table option -- it has its own parser, because PostgreSQL's form carries a
+// strategy and a key -- yet a ClickHouse table writes it in the middle of the
+// clause list: `ENGINE = MergeTree PARTITION BY toYYYYMM(d) ORDER BY a`.
+// Reading options once, then one PARTITION BY, left ORDER BY unparsed and the
+// statement refused (stokaro/ptah#1571).
 func (p *Parser) parseCreateTableSuffix(table *ast.CreateTableNode) error {
-	p.skipWhitespace()
-	if p.current.MatchIdentifierValue("PARTITION") {
-		if err := p.parsePostgreSQLPartitionClause(table); err != nil {
+	for {
+		p.skipWhitespace()
+		position := p.current.Start
+		if p.current.MatchIdentifierValue("PARTITION") {
+			if err := p.parsePostgreSQLPartitionClause(table); err != nil {
+				return err
+			}
+			continue
+		}
+		// Parse optional table options (ENGINE, WITH, TABLESPACE, etc.)
+		if err := p.parseTableOptions(table); err != nil {
 			return err
 		}
-	}
-	// Parse optional table options (ENGINE, WITH, TABLESPACE, etc.)
-	if err := p.parseTableOptions(table); err != nil {
-		return err
-	}
-	p.skipWhitespace()
-	if p.current.MatchIdentifierValue("PARTITION") {
-		if err := p.parsePostgreSQLPartitionClause(table); err != nil {
-			return err
+		p.skipWhitespace()
+		// Nothing was consumed, so nothing after this point is a clause and
+		// looping again would not end.
+		if p.current.Start == position {
+			break
 		}
 	}
 	p.skipWhitespace()
@@ -1714,6 +1728,17 @@ func (p *Parser) parseCreateTableSuffix(table *ast.CreateTableNode) error {
 	return nil
 }
 
+// parsePostgreSQLPartitionClause reads a PARTITION BY clause, which two
+// dialects spell the same way and mean differently.
+//
+// PostgreSQL declares a partitioned table: `PARTITION BY RANGE (created_at)`,
+// always one of three strategy keywords followed by a parenthesised key.
+// ClickHouse names a partition expression: `PARTITION BY toYYYYMM(created_at)`,
+// any expression at all. The strategy keyword is what separates them, so the
+// decision is made from the syntax rather than from a dialect flag -- the
+// parser is reached with no dialect on paths that only classify a file, and
+// refusing a valid ClickHouse table for want of one is the shape this whole
+// clause family was broken by (stokaro/ptah#1571).
 func (p *Parser) parsePostgreSQLPartitionClause(table *ast.CreateTableNode) error {
 	if table.Partition != nil {
 		return fmt.Errorf("duplicate PARTITION BY clause at position %d", p.current.Start)
@@ -1726,6 +1751,12 @@ func (p *Parser) parsePostgreSQLPartitionClause(table *ast.CreateTableNode) erro
 		return fmt.Errorf("expected BY after PARTITION: %w", err)
 	}
 	p.skipWhitespace()
+	if !isPostgreSQLPartitionStrategy(p.current.Value) {
+		if _, taken := table.Options["PARTITION_BY"]; taken {
+			return fmt.Errorf("duplicate PARTITION BY clause at position %d", p.current.Start)
+		}
+		return p.captureTableClause(table, "PARTITION_BY")
+	}
 	partitionType, err := p.expectIdentifier()
 	if err != nil {
 		return fmt.Errorf("expected partition type: %w", err)
@@ -2408,6 +2439,14 @@ func (p *Parser) parseColumnDefinition(table *ast.CreateTableNode) (*ast.ColumnN
 	}
 
 	column := ast.NewColumn(columnName, columnType)
+	if p.dialect == platform.ClickHouse && !isClickHouseNullableType(columnType) {
+		// ClickHouse inverts SQL's default: a bare type is NOT NULL, and
+		// nullability is spelled in the type as Nullable(T). Reading a column
+		// the ClickHouse renderer wrote -- which omits NOT NULL for exactly
+		// that reason -- as nullable is what stopped `a Int32` from being
+		// usable as a sorting key on the way back in (stokaro/ptah#1571).
+		column.SetNotNull()
+	}
 	err = p.parseColumnConstraintsAndAttributes(table, column)
 	if err != nil {
 		return nil, err
@@ -3540,6 +3579,13 @@ func (p *Parser) parseTableOptions(table *ast.CreateTableNode) error {
 		if isCreateTableOptionBoundary(option) {
 			return nil
 		}
+		if handled, clauseErr := p.handleClickHouseTableClause(table, option); handled {
+			if clauseErr != nil {
+				return clauseErr
+			}
+			continue
+		}
+
 		switch option {
 		case "ENGINE":
 			err = p.handleTableEngine(table)
@@ -3587,6 +3633,142 @@ func isCreateTableOptionBoundary(option string) bool {
 	default:
 		return false
 	}
+}
+
+// isClickHouseNullableType reports whether a ClickHouse column type admits
+// NULL. Only Nullable(T) does, and it nests -- LowCardinality(Nullable(String))
+// is nullable -- so the marker is looked for anywhere in the type rather than
+// only at the front.
+func isClickHouseNullableType(columnType string) bool {
+	return strings.Contains(strings.ToUpper(columnType), "NULLABLE(")
+}
+
+// isPostgreSQLPartitionStrategy reports whether value is one of the three
+// strategies PostgreSQL's PARTITION BY takes. Anything else after PARTITION BY
+// is an expression, which is ClickHouse's meaning of the same words.
+func isPostgreSQLPartitionStrategy(value string) bool {
+	switch strings.ToUpper(value) {
+	case "RANGE", "LIST", "HASH":
+		return true
+	default:
+		return false
+	}
+}
+
+// clickHouseTableClauses are the MergeTree clauses that follow the column list,
+// keyed by the option name [ast.CreateTableNode] carries them under -- which is
+// the name the ClickHouse renderer reads them back out of. The renderer has
+// written all six since the dialect was added; nothing read them.
+//
+// They are accepted for every dialect rather than gated on ClickHouse. At this
+// position -- after the column list, where table options live -- no other
+// dialect this parser supports spells anything the same way, and the parser is
+// reached with no dialect at all on paths that only classify a file. Gating
+// would refuse a valid ClickHouse file for want of a flag.
+var clickHouseTableClauses = map[string]string{
+	"ORDER_BY":     "ORDER BY",
+	"PARTITION_BY": "PARTITION BY",
+	"PRIMARY_KEY":  "PRIMARY KEY",
+	"SAMPLE_BY":    "SAMPLE BY",
+	"SETTINGS":     "SETTINGS",
+	"TTL":          "TTL",
+}
+
+// handleClickHouseTableClause reads the MergeTree clauses that sit among the
+// table options, and reports whether option named one. They are dispatched here
+// rather than as five more arms of [Parser.parseTableOptions] because that
+// function is already at the branch limit the linter enforces, and a clause
+// family is a thing on its own.
+func (p *Parser) handleClickHouseTableClause(table *ast.CreateTableNode, option string) (bool, error) {
+	switch option {
+	case "ORDER":
+		return true, p.handleClickHouseByClause(table, "BY", "ORDER_BY")
+	case "SAMPLE":
+		return true, p.handleClickHouseByClause(table, "BY", "SAMPLE_BY")
+	case "PRIMARY":
+		return true, p.handleClickHouseByClause(table, "KEY", "PRIMARY_KEY")
+	case "SETTINGS":
+		return true, p.handleClickHouseRawClause(table, "SETTINGS")
+	case "TTL":
+		return true, p.handleClickHouseRawClause(table, "TTL")
+	default:
+		return false, nil
+	}
+}
+
+// handleClickHouseByClause reads `<keyword> <connector> <expression>`, where
+// connector is BY or KEY, and stores the expression under option.
+func (p *Parser) handleClickHouseByClause(table *ast.CreateTableNode, connector, option string) error {
+	p.advance()
+	p.skipWhitespace()
+	if err := p.expect(lexer.TokenIdentifier, connector); err != nil {
+		return fmt.Errorf("expected %s after %s: %w", connector, strings.TrimSuffix(option, "_BY"), err)
+	}
+	return p.captureTableClause(table, option)
+}
+
+// handleClickHouseRawClause reads `<keyword> <expression>` for the clauses that
+// take no connector.
+func (p *Parser) handleClickHouseRawClause(table *ast.CreateTableNode, option string) error {
+	p.advance()
+	return p.captureTableClause(table, option)
+}
+
+// captureTableClause stores the source text of the clause expression, byte for
+// byte, under option.
+//
+// The bytes are sliced out of the parser's own input rather than rebuilt from
+// tokens, because the point of reading these clauses is that the renderer
+// writes them back: `ORDER BY (a, b)` re-rendered as `ORDER BY a, b` is a
+// different table to ClickHouse, and a rebuilt string is where that difference
+// would come from.
+func (p *Parser) captureTableClause(table *ast.CreateTableNode, option string) error {
+	p.skipWhitespace()
+	start := p.current.Start
+	end := start
+	depth := 0
+	for p.current.Type != lexer.TokenEOF {
+		if p.current.MatchOperatorValue("(") {
+			depth++
+		}
+		if p.current.MatchOperatorValue(")") {
+			depth--
+			// A closing paren below the level this clause opened belongs to
+			// whatever contains the statement, not to the expression.
+			if depth < 0 {
+				break
+			}
+		}
+		if depth == 0 && p.endsTableClause() {
+			break
+		}
+		end = p.current.End
+		p.advance()
+	}
+	value := strings.TrimSpace(p.input[start:end])
+	if value == "" {
+		return fmt.Errorf("expected an expression after %s at position %d", clickHouseTableClauses[option], start)
+	}
+	table.SetOption(option, value)
+	return nil
+}
+
+// endsTableClause reports whether the current token starts something other than
+// the clause being read: the next clause, the end of the statement, or the
+// body of a CREATE ... AS SELECT.
+func (p *Parser) endsTableClause() bool {
+	if p.current.Type == lexer.TokenSemicolon {
+		return true
+	}
+	if p.current.Type != lexer.TokenIdentifier {
+		return false
+	}
+	upper := strings.ToUpper(p.current.Value)
+	switch upper {
+	case "ORDER", "PARTITION", "PRIMARY", "SAMPLE", "SETTINGS", "TTL", "ENGINE", "COMMENT":
+		return true
+	}
+	return isCreateTableOptionBoundary(upper)
 }
 
 func (p *Parser) handleSQLiteWithoutRowID(table *ast.CreateTableNode) error {

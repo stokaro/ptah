@@ -627,7 +627,12 @@ func ToEnum(enum *ast.EnumNode) goschema.Enum {
 //
 // Returns a complete goschema.Database with all schema elements extracted and
 // properly categorized from the AST statement list.
-func ToDatabase(statements *ast.StatementList) goschema.Database {
+// sourcePlatform names the dialect the statements were parsed as. It decides
+// whether a table's platform-specific options survive the conversion: a table
+// carries them in Overrides, keyed by platform, and an empty platform has
+// nowhere to put them. Passing "" here silently dropped every ClickHouse
+// MergeTree clause a .sql file declared (stokaro/ptah#1571).
+func ToDatabase(statements *ast.StatementList, sourcePlatform string) goschema.Database {
 	database := goschema.Database{
 		Schemas: []goschema.Schema{},
 		Tables:  []goschema.Table{},
@@ -638,7 +643,7 @@ func ToDatabase(statements *ast.StatementList) goschema.Database {
 
 	// Process all statements and categorize them
 	for _, stmt := range statements.Statements {
-		appendStatement(&database, stmt)
+		appendStatement(&database, stmt, sourcePlatform)
 	}
 
 	// A PostgreSQL trigger renders as a function plus a trigger; recombine the
@@ -654,7 +659,7 @@ func ToDatabase(statements *ast.StatementList) goschema.Database {
 // case here: a node with no case is accepted by the parser and then silently
 // dropped, which is what issue #932 reported for views, domains, composite and
 // range types, extensions, functions and triggers.
-func appendStatement(database *goschema.Database, stmt ast.Node) {
+func appendStatement(database *goschema.Database, stmt ast.Node, sourcePlatform string) {
 	switch node := stmt.(type) {
 	case *ast.CreateSchemaNode:
 		database.Schemas = append(database.Schemas, goschema.Schema{
@@ -666,7 +671,7 @@ func appendStatement(database *goschema.Database, stmt ast.Node) {
 	case *ast.EnumNode:
 		database.Enums = append(database.Enums, ToEnum(node))
 	case *ast.CreateTableNode:
-		appendCreateTable(database, node)
+		appendCreateTable(database, node, sourcePlatform)
 	case *ast.IndexNode:
 		database.Indexes = append(database.Indexes, ToIndex(node))
 	case *ast.AlterTableNode:
@@ -698,8 +703,8 @@ func appendStatement(database *goschema.Database, stmt ast.Node) {
 	}
 }
 
-func appendCreateTable(database *goschema.Database, node *ast.CreateTableNode) {
-	tableSchema := ToTable(node, "")
+func appendCreateTable(database *goschema.Database, node *ast.CreateTableNode, sourcePlatform string) {
+	tableSchema := ToTable(node, sourcePlatform)
 	database.Tables = append(database.Tables, tableSchema)
 
 	// Extract fields from table columns
