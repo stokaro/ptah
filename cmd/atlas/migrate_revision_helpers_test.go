@@ -8,7 +8,6 @@ import (
 	"database/sql"
 
 	qt "github.com/frankban/quicktest"
-
 	_ "modernc.org/sqlite"
 )
 
@@ -54,7 +53,8 @@ func revisionVersions(c *qt.C, dbPath string) []string {
 }
 
 // rewriteRevisionVersion moves one recorded revision to another version and
-// restores the generic operator marker an older Ptah build wrote.
+// clears the source-identity marker, leaving the generic one. A caller uses it
+// to put a database into a state the runner did not write itself.
 func rewriteRevisionVersion(c *qt.C, dbPath, from, to string) {
 	c.Helper()
 	db, err := sql.Open("sqlite", dbPath)
