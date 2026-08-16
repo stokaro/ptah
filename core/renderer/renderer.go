@@ -308,8 +308,7 @@ func VisitorRenderSQL(r RenderVisitor, nodes ...ast.Node) (string, error) {
 	for _, node := range nodes {
 		if err := node.Accept(r); err != nil {
 			r.Reset()
-			var renderErr *ptaherr.RenderError
-			if errors.As(err, &renderErr) {
+			if _, ok := errors.AsType[*ptaherr.RenderError](err); ok {
 				return "", err
 			}
 			return "", &ptaherr.RenderError{
@@ -386,8 +385,7 @@ func prepareCreateMaterializedViewNode(
 	if err := matviewrefresh.Validate(dialect, node.Name, node.RefreshStrategy); err != nil {
 		return nil, err
 	}
-	cloned := *node
-	return &cloned, nil
+	return new(*node), nil
 }
 
 func prepareExtensionNode(dialect string, node *ast.ExtensionNode) (*ast.ExtensionNode, error) {
@@ -399,8 +397,7 @@ func prepareExtensionNode(dialect string, node *ast.ExtensionNode) (*ast.Extensi
 		}
 	}
 	if !extensionInstallationSchemaRejected(dialect) || node.Schema == "" {
-		cloned := *node
-		return &cloned, nil
+		return new(*node), nil
 	}
 	return nil, unsupportedExtensionInstallationSchema(dialect, node.Name, node.Schema)
 }
