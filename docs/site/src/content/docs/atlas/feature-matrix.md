@@ -270,7 +270,7 @@ seven of them as open capabilities regardless.
 | Capability | Ptah | CE | Pro | Difference |
 | --- | :-: | :-: | :-: | --- |
 | Capability profile of a live target (`ptah db capabilities`) | ✅ | ❔ | ❔ | Reports the dialect, resolved preset and how it was reached, the support level and every capability key for a connected server, as text or stable JSON. No source here names an Atlas equivalent. |
-| ClickHouse (clickhouse, ch) | 🟡 | ❌ | ✅ | Tables, indexes, plain views and named table CHECKs. Other modeled objects produce named not-supported comments on `render` and `apply`; domains, composites and ranges still drop. |
+| ClickHouse (clickhouse, ch) | 🟡 | ❌ | ✅ | Tables, indexes, plain views, roles and grants, and named table CHECKs. Other modeled objects produce named not-supported comments on `render` and `apply`; domains, composites and ranges still drop. |
 | CockroachDB (cockroachdb, crdb) | 🟡 | ❌ | ✅ | `CONCURRENTLY` index syntax, XML and advisory locks are disabled; Pro-like objects remain. CockroachDB 25.4 refuses generic/guarded DROP CONSTRAINT and CREATE OR REPLACE TRIGGER; 26.2 accepts them. |
 | Declared support level per database release line | ✅ | ❔ | ❔ | 26 declared release lines: 19 certified, 2 legacy-tested, 5 best-effort. Upstream end-of-life lowers the level, not the behavior; a line Ptah does not declare resolves to best-effort. |
 | Domains, composite types, and range types | 🟡 | ❌ | ✅ | Emitted across the PostgreSQL family in `schema render` and `schema apply` alike. A changed range type is planned as DROP TYPE + CREATE TYPE. The community binary reports none of the three. |
@@ -280,7 +280,7 @@ seven of them as open capabilities regardless.
 | MySQL and MariaDB | 🟡 | ✅ | ✅ | Stored functions render, read back and plan. Matviews and roles fail closed; extensions and MariaDB SEQUENCE objects get a not-supported comment. Domains, grants and RLS still drop silently. |
 | Oracle, Snowflake, Redshift, Databricks | ❌ | ❌ | ✅ | No dialect entry; the names fail normalization the same way TiDB does. Listed as Atlas Pro drivers. |
 | PostgreSQL 12+ (postgres, postgresql) | ✅ | ✅ | ✅ | Reference engine of the PostgreSQL family: views, matviews, functions, triggers, sequences, roles, RLS and domains all render. Presets 12-13, 14-16, 17+ from the server banner. |
-| Roles, grants, and row-level security | 🟡 | ❌ | ✅ | PostgreSQL, CockroachDB and YugabyteDB emit roles, grants and RLS; Spanner names them as skipped on `render` and `apply` alike. Atlas prices this as Pro; CE no-ops `role` silently. |
+| Roles, grants, and row-level security | 🟡 | ❌ | ✅ | PostgreSQL, CockroachDB and YugabyteDB emit roles, grants and RLS; ClickHouse emits roles and grants but no RLS; Spanner names all three skipped. Atlas prices this as Pro; CE no-ops `role` silently. |
 | Spanner PostgreSQL interface (spanner) | 🟡 | ❌ | ✅ | Enums, sequences, matviews, functions and triggers render as named skip comments; foreign keys render. SERIAL hard-errors, no dedicated driver (PostgreSQL pgx path), no live container or live test. |
 | SQL Server and Azure SQL (sqlserver, mssql, tsql) | 🟡 | ❌ | ✅ | Every accepted spelling renders the same DDL, and SQL Server is in `schema render`'s default dialect list and its `--dialect` help. No sequences, RLS, roles/grants or matviews. |
 | SQLite (sqlite, sqlite3) | 🟡 | ✅ | ✅ | Column drops rebuild; other shape changes fail closed. Virtual tables preserve exact identity, and indexes on module-owned shadow tables are refused. |

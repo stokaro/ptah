@@ -373,9 +373,9 @@ func TestUnsupportedFeaturesEmitCommentAndReturnNil(t *testing.T) {
 		{"drop policy", &ast.DropPolicyNode{Name: "p", Table: "t"}},
 		{"enable rls", &ast.AlterTableEnableRLSNode{Table: "t"}},
 		{"disable rls", &ast.AlterTableDisableRLSNode{Table: "t"}},
-		{"create role", &ast.CreateRoleNode{Name: "r"}},
-		{"drop role", &ast.DropRoleNode{Name: "r"}},
-		{"alter role", &ast.AlterRoleNode{Name: "r"}},
+		// The role and grant nodes are deliberately absent: ClickHouse has both
+		// objects, so they render SQL or refuse with an error rather than
+		// falling out of the migration as a comment. rbac_test.go pins them.
 		{"create type", &ast.CreateTypeNode{Name: "tp"}},
 		{"alter type", &ast.AlterTypeNode{Name: "tp"}},
 		{"drop type", &ast.DropTypeNode{Name: "tp"}},

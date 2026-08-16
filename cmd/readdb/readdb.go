@@ -97,7 +97,7 @@ func readDBCommand(cmd *cobra.Command, opts *options) error {
 	// A description scoped to the roles the schemas use omits roles that exist
 	// on the server, and an operator reading the output has no other way to
 	// learn that. See stokaro/ptah#1267.
-	rolescope.ReportUndescribed(stderr, schema)
+	rolescope.ReportUndescribed(stderr, conn.Info().Dialect, schema)
 
 	// A SQLite virtual table whose module this build cannot load leaves that
 	// module's own storage described as ordinary tables, and the statements

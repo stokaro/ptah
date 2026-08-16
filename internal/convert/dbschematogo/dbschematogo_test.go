@@ -1126,3 +1126,71 @@ func TestConvertDBSchemaToGoSchema_ExtensionDefaultValues(t *testing.T) {
 	c.Assert(ext.Version, qt.Equals, "1.0")
 	c.Assert(ext.Comment, qt.Equals, "") // Should be empty string when nil
 }
+
+// TestConvertDBSchemaToGoSchema_GrantsDescribeTheTargetTheSharedContractNames
+// pins which field a described grant reads its target out of.
+//
+// A SCHEMA-typed row carries the schema in ObjectName with Schema empty, and a
+// TABLE-typed row carries the schema in Schema. Reading them positionally
+// produces a declaration naming the wrong object, and on ClickHouse that made
+// every database-scoped grant compare unequal to the row it had just created.
+func TestConvertDBSchemaToGoSchema_GrantsDescribeTheTargetTheSharedContractNames(t *testing.T) {
+	tests := []struct {
+		name         string
+		grant        types.DBGrant
+		wantOnSchema string
+		wantOnTable  string
+	}{
+		{
+			name:         "a schema grant",
+			grant:        types.DBGrant{Role: "reader", Privilege: "USAGE", ObjectType: "SCHEMA", ObjectName: "shop"},
+			wantOnSchema: "shop",
+		},
+		{
+			name:        "a table grant",
+			grant:       types.DBGrant{Role: "reader", Privilege: "SELECT", ObjectType: "TABLE", Schema: "shop", ObjectName: "orders"},
+			wantOnTable: "shop.orders",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			converted := dbschematogo.ConvertDBSchemaToGoSchema(
+				&types.DBSchema{Grants: []types.DBGrant{test.grant}},
+			)
+
+			c.Assert(converted.Grants, qt.HasLen, 1)
+			c.Assert(converted.Grants[0].OnSchema, qt.Equals, test.wantOnSchema)
+			c.Assert(converted.Grants[0].OnTable, qt.Equals, test.wantOnTable)
+		})
+	}
+}
+
+// TestConvertDBSchemaToGoSchema_PartialRevokeIsNotDescribedAsAGrant pins the
+// one row shape that means the OPPOSITE of a grant.
+//
+// ClickHouse records `GRANT SELECT ON db.* TO r; REVOKE SELECT ON db.t FROM r`
+// as two rows, the second with is_partial_revoke set. Describing that second
+// row as a Grant would produce a document stating the role HOLDS a privilege
+// the server records it as having lost, and applying that document would grant
+// it for real. The broader grant stays, because dropping it too would make a
+// comparison plan a GRANT that wipes the exception out.
+func TestConvertDBSchemaToGoSchema_PartialRevokeIsNotDescribedAsAGrant(t *testing.T) {
+	c := qt.New(t)
+
+	converted := dbschematogo.ConvertDBSchemaToGoSchema(&types.DBSchema{
+		Grants: []types.DBGrant{
+			{Role: "reader", Privilege: "SELECT", ObjectType: "SCHEMA", ObjectName: "shop"},
+			{
+				Role: "reader", Privilege: "SELECT", ObjectType: "TABLE",
+				Schema: "shop", ObjectName: "orders", IsPartialRevoke: true,
+			},
+		},
+	})
+
+	c.Assert(converted.Grants, qt.HasLen, 1)
+	c.Assert(converted.Grants[0].OnSchema, qt.Equals, "shop")
+	c.Assert(converted.Grants[0].OnTable, qt.Equals, "")
+}

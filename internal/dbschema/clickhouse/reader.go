@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"strings"
 
+	"go.5x5.cz/ptah/core/coverage"
+	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/sqlrunner"
 )
@@ -29,17 +31,47 @@ import (
 type Reader struct {
 	db     sqlrunner.Runner
 	schema string
+	caps   capability.Capabilities
+
+	// version is what `SELECT version()` answered, e.g. "26.7.3.19", or empty
+	// for a reader built without one. Nothing branches on it: the RBAC reads
+	// name only catalog columns the oldest declared line already has, which is
+	// the simpler answer and the one that cannot drift. It is carried so a
+	// failing catalog read can say which server refused it -- see
+	// [Reader.onServer].
+	version string
 }
 
 // NewClickHouseReader creates a reader for the given database/schema.
 // `schema` corresponds to the ClickHouse database name; if empty it
 // defaults to `currentDatabase()` resolved on each query.
 func NewClickHouseReader(db sqlrunner.Runner, schema string) *Reader {
-	return &Reader{db: db, schema: schema}
+	return NewClickHouseReaderWithCapabilities(db, schema, "", capability.ClickHouse24())
+}
+
+// NewClickHouseReaderWithCapabilities creates a ClickHouse reader whose role and
+// grant reads are gated by the target's capabilities and whose diagnostics can
+// name the server version.
+//
+// Roles and grants are read only under [capability.RoleManagement]. A caller
+// whose preset does not carry it reads exactly what this reader read before RBAC
+// existed: no system.roles query, no system.grants query, and empty Roles,
+// RolesOutOfScope and Grants. That is the gate stokaro/ptah#1025 asks for, and
+// it is a capability rather than a version check because whether Ptah manages
+// ClickHouse RBAC on a given target is a decision about the target, not about
+// which columns its catalog happens to have.
+func NewClickHouseReaderWithCapabilities(
+	db sqlrunner.Runner,
+	schema string,
+	version string,
+	caps capability.Capabilities,
+) *Reader {
+	return &Reader{db: db, schema: schema, caps: caps, version: version}
 }
 
 // ReadSchema returns tables, columns, data-skipping indexes, plain views and
-// materialized views for the configured database. Constraints, RLS, functions,
+// materialized views for the configured database, plus roles and grants when
+// the target carries [capability.RoleManagement]. Constraints, RLS, functions,
 // and other shapes with no direct equivalent in Ptah's ClickHouse model remain
 // empty.
 func (r *Reader) ReadSchema() (*types.DBSchema, error) {
@@ -64,12 +96,39 @@ func (r *Reader) ReadSchema() (*types.DBSchema, error) {
 	if err != nil {
 		return nil, fmt.Errorf("clickhouse: read materialized views: %w", err)
 	}
-	return &types.DBSchema{
+	schema := &types.DBSchema{
 		Tables:   tables,
 		Indexes:  indexes,
 		Views:    views,
 		MatViews: matViews,
-	}, nil
+	}
+	if r.caps.Has(capability.RoleManagement) {
+		if err := r.readRBACInto(dbName, schema); err != nil {
+			// An account that may not read the access catalog must not lose the
+			// whole description over it. Reading system.roles and system.grants
+			// needs a privilege reading a table does not, and the capability
+			// preset is a statement about the SERVER -- it cannot know what the
+			// connected account was granted. Measured on 26.7.3.19: an account
+			// holding SELECT, SHOW TABLES and SHOW COLUMNS on one database gets
+			// code 497 from both catalog queries, so without this branch every
+			// ClickHouse read by such an account failed at exit 2 -- including
+			// the read of a schema that declares no role at all, which has
+			// always worked and has nothing to do with RBAC.
+			//
+			// Recording Role as not described is what makes the degradation
+			// safe rather than silent. The comparator refuses to conclude "this
+			// role is missing" from a read that admits it did not look, so a
+			// declared role is reported as an undecided addition instead of
+			// planned as a CREATE ROLE nothing verified. Nothing destructive
+			// can follow: both role and grant removal are decided from live
+			// rows, and there are none.
+			if !isAccessDenied(err) {
+				return nil, err
+			}
+			schema.NotDescribed = schema.NotDescribed.WithKind(coverage.Role)
+		}
+	}
+	return schema, nil
 }
 
 // materializedViewInnerTablesSubquery names the storage tables ClickHouse

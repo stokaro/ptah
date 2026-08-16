@@ -68,6 +68,15 @@ and rendering fail before SQL because Ptah cannot read or converge their role
 state, so a comment-only success would lose an authored security declaration.
 Role-free schemas still validate normally.
 
+`role_management` is not a PostgreSQL key. It promises that a declared role and
+grant can be planned, rendered, introspected, and compared, not that any
+particular attribute exists, and each engine satisfies it in its own
+vocabulary. ClickHouse carries it: a role there has no attributes at all, and
+its grants are managed at database and table scope, within the boundaries
+[ClickHouse roles and grants](../../databases/support-matrix/#clickhouse-roles-and-grants)
+states. ClickHouse users, role membership, quotas, row policies, and settings
+profiles stay outside the capability.
+
 A safely skipped object is reported again every time the plan is rebuilt,
 rather than reported once and then called synced. The skip comment is not a
 change a database can absorb. Printed plans keep the diagnostic; the apply

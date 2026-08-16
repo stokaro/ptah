@@ -115,7 +115,15 @@ func ConnectToDatabase(ctx context.Context, dbURL string) (*DatabaseConnection, 
 		}
 	case "clickhouse":
 		newReader = func(runner sqlrunner.Runner) types.SchemaReader {
-			return clickhouse.NewClickHouseReader(runner, info.Schema)
+			// Capabilities and version travel with the reader so that roles
+			// and grants are read only where RoleManagement says they exist,
+			// and so the diagnostic can name the server it read. Without them
+			// a live ClickHouse would describe no RBAC at all and every
+			// declared role would be planned again on every run
+			// (stokaro/ptah#1025).
+			return clickhouse.NewClickHouseReaderWithCapabilities(
+				runner, info.Schema, info.Version, info.Capabilities,
+			)
 		}
 		newWriter = func(runner sqlrunner.Runner, _ *sql.Conn) types.SchemaWriter {
 			return clickhouse.NewClickHouseWriterForRunner(runner, info.Schema)

@@ -12,7 +12,10 @@ own issue and its own acceptance criteria.
 
 This status was last verified on August 14, 2026, against repository commit
 `37eda0642dbb35e410af6ad30c913ef551216619` and the open GitHub issue state on
-that date. To reproduce the issue inventory, run:
+that date. One entry has left the page since: ClickHouse roles and grants
+([#1025](https://github.com/stokaro/ptah/issues/1025)) was implemented on
+August 16, 2026, and a capability Ptah now has is not deferred work. To
+reproduce the issue inventory, run:
 
 ```bash
 gh issue list --repo stokaro/ptah --state open --label post-ga \
@@ -60,13 +63,6 @@ Each entry adds coverage for an engine feature Ptah does not model. In every
 case the current behavior is either absence or an explicit refusal, not a wrong
 answer.
 
-**[#1025 — ClickHouse roles and grants](https://github.com/stokaro/ptah/issues/1025).**
-Role and grant declarations parse, and ClickHouse planning refuses them with a
-named diagnostic rather than dropping them. PostgreSQL-family engines have the
-full round trip; ClickHouse needs engine-specific principal, privilege, and
-scope semantics rather than PostgreSQL's borrowed. A user report that ClickHouse
-grants block a deployment would make this required.
-
 **[#1026 — TimescaleDB hypertables and continuous aggregates](https://github.com/stokaro/ptah/issues/1026).**
 No file in the repository mentions TimescaleDB, and no documentation page offers
 it as a target. Ptah connects to TimescaleDB through the PostgreSQL path and
@@ -99,7 +95,7 @@ guard sees database-scoped properties as artifacts, but extended properties are
 not a schema object Ptah manages. No page says they are.
 
 **[#1032 — Demand-driven roadmap](https://github.com/stokaro/ptah/issues/1032).**
-The register that tracks the six entries above against their originating
+The register that tracks the five entries above against their originating
 reports. It follows its children; it cannot be required while none of them is.
 
 **[#941 — Query builder dialect coverage](https://github.com/stokaro/ptah/issues/941).**
