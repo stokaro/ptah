@@ -1523,20 +1523,57 @@ func constraintIdentity(scope string, constraint Constraint) string {
 // the key, so logically identical grants deduplicate even when annotations list
 // privileges in a different order.
 func deduplicateGrants(grants []Grant) []Grant {
-	seen := make(map[string]bool)
+	seen := make(map[grantKey]bool)
 	deduplicated := make([]Grant, 0, len(grants))
 	for _, g := range grants {
 		g.Canonicalize()
-		privileges := append([]string(nil), g.Privileges...)
-		sort.Strings(privileges)
-		privs := strings.Join(privileges, ",")
-		key := g.Role + "|" + privs + "|t:" + g.OnTable + "|s:" + g.OnSchema + "|q:" + g.OnSequence + "|o:" + strconv.FormatBool(g.WithOption)
+		key := newGrantKey(g)
 		if !seen[key] {
 			seen[key] = true
 			deduplicated = append(deduplicated, g)
 		}
 	}
 	return deduplicated
+}
+
+// grantKey is the identity deduplicateGrants compares on.
+//
+// It is a struct rather than a delimiter-joined string because a joined string
+// makes identity depend on the delimiters being absent from every component,
+// and nothing here forbids them: Grant.Canonicalize trims and upper-cases, it
+// does not reject a role, table, schema or sequence name containing the
+// separators. The key used to be
+// `role|privs|t:table|s:schema|q:sequence|o:bool`, under which a grant on the
+// table `a|s:b` with no schema and a grant on the table `a` in the schema
+// `b|s:` produced the same string, and the second one was silently dropped.
+//
+// This is the shape stokaro/ptah#1345 names as evidence -- #1283 lost distinct
+// grants exactly this way -- so the answer is the one that removes the question
+// rather than a better separator.
+type grantKey struct {
+	role string
+	// privileges is still a joined string, because a slice is not comparable.
+	// The separator is NUL, which no privilege token can carry: Canonicalize
+	// upper-cases and trims each one, and the set they are drawn from is SQL
+	// privilege words.
+	privileges string
+	onTable    string
+	onSchema   string
+	onSequence string
+	withOption bool
+}
+
+func newGrantKey(g Grant) grantKey {
+	privileges := append([]string(nil), g.Privileges...)
+	sort.Strings(privileges)
+	return grantKey{
+		role:       g.Role,
+		privileges: strings.Join(privileges, "\x00"),
+		onTable:    g.OnTable,
+		onSchema:   g.OnSchema,
+		onSequence: g.OnSequence,
+		withOption: g.WithOption,
+	}
 }
 
 // deduplicateRoles dedups roles by name (roles are global per DB).
