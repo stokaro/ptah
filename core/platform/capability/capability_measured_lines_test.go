@@ -181,7 +181,11 @@ func measuredLines() map[string]measuredLine {
 				capability.Views:                              {true, "ACCEPTED CREATE VIEW vw AS SELECT n FROM vsrc"},
 				capability.XMLType:                            {true, "ACCEPTED CREATE TABLE xmlt (c XML)"},
 			},
-			carried: map[capability.Capability]string{},
+			carried: map[capability.Capability]string{
+				capability.PostgresCatalogFunctions: "the key exists for the Spanner PostgreSQL interface, whose catalog refuses obj_description with `The Postgres Type is not supported: name`; this run did not probe it, and a PostgreSQL server answering the function would not tell this line apart from the preset below",
+				capability.CatalogRowStatistics:     "the key exists for the Spanner PostgreSQL interface, whose catalog carries the pg_class columns beside it and not pg_stat_all_tables; this run did not probe the statistics views, and a PostgreSQL server having them would not tell this line apart from the preset below",
+				capability.CatalogDependencies:      "the key exists for the Spanner PostgreSQL interface, whose catalog has no pg_depend to join; this run did not create a domain, and a PostgreSQL server having them would not tell this line apart from the preset below",
+			},
 		},
 
 		"MySQL 26": {
@@ -217,6 +221,9 @@ func measuredLines() map[string]measuredLine {
 				capability.XMLType:                            {false, "REFUSED CREATE TABLE xmlt (c XML) -> Error 1064 (42000)"},
 			},
 			carried: map[capability.Capability]string{
+				capability.PostgresCatalogFunctions: "obj_description is a PostgreSQL catalog function no MySQL-family code path consults; this server has no such function, so neither answering nor refusing it would decide the key",
+				capability.CatalogRowStatistics:     "pg_stat_all_tables is a PostgreSQL statistics view no MySQL-family code path consults; this server has no such relation, so neither having nor lacking it would decide the key",
+				capability.CatalogDependencies:      "domains are a PostgreSQL type-system feature no MySQL-family code path consults; this server has no CREATE DOMAIN at all, so neither accepting nor refusing one would decide the key",
 				capability.RoleManagement: "the key names the PostgreSQL role and privilege surface no MySQL-family code path consults; " +
 					"this server's own CREATE ROLE and GRANT are a different surface, so accepting them would not decide the key",
 			},
@@ -254,6 +261,9 @@ func measuredLines() map[string]measuredLine {
 				capability.XMLType:                            {false, "REFUSED CREATE TABLE xmlt (c XML) -> Error 4161 (HY000): Unknown data type: 'XML'"},
 			},
 			carried: map[capability.Capability]string{
+				capability.PostgresCatalogFunctions: "obj_description is a PostgreSQL catalog function no MySQL-family code path consults; this server has no such function, so neither answering nor refusing it would decide the key",
+				capability.CatalogRowStatistics:     "pg_stat_all_tables is a PostgreSQL statistics view no MySQL-family code path consults; this server has no such relation, so neither having nor lacking it would decide the key",
+				capability.CatalogDependencies:      "domains are a PostgreSQL type-system feature no MySQL-family code path consults; this server has no CREATE DOMAIN at all, so neither accepting nor refusing one would decide the key",
 				capability.RoleManagement: "the key names the PostgreSQL role and privilege surface no MySQL-family code path consults; " +
 					"this server's own CREATE ROLE and GRANT are a different surface, so accepting them would not decide the key",
 				capability.Sequences: "the key describes Ptah's generator rather than the engine (stokaro/ptah#931 item 8): " +
