@@ -51,6 +51,20 @@ func TestApplyAtlasRevisionsSchemaDefault(t *testing.T) {
 			want: "",
 		},
 		{
+			// A URL that pins a schema keeps its bookkeeping there. Atlas does
+			// the same, measured: the same directory applied through
+			// `?search_path=public` puts the table in public, and without it in
+			// atlas_schema_revisions.
+			name: "a search_path url keeps its own schema",
+			url:  "postgres://localhost:5432/app?sslmode=disable&search_path=public",
+			want: "",
+		},
+		{
+			name: "an empty search_path does not count as pinned",
+			url:  "postgres://localhost:5432/app?sslmode=disable&search_path=",
+			want: "atlas_schema_revisions",
+		},
+		{
 			name:     "an explicit value is never overridden",
 			resolved: "custom_revisions",
 			url:      "postgres://localhost:5432/app?sslmode=disable",

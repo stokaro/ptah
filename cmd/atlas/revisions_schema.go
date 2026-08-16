@@ -1,6 +1,7 @@
 package atlas
 
 import (
+	"net/url"
 	"strings"
 
 	"go.5x5.cz/ptah/core/platform"
@@ -28,12 +29,22 @@ const atlasRevisionsSchema = "atlas_schema_revisions"
 // applyAtlasRevisionsSchemaDefault answers where the revision table lives when
 // neither the flag nor the project file says.
 //
-// It is scoped to the PostgreSQL family because that is where the community
-// binary scopes it, measured per dialect rather than assumed:
+// Two conditions, both measured against the pinned community binary rather than
+// assumed. The dialect:
 //
 //	PostgreSQL 18   schema atlas_schema_revisions
 //	MySQL 8.4       the connected database, `app`, not a database of its own
 //	SQLite          the one namespace there is
+//
+// and the scope the URL selects:
+//
+//	postgres://…/db                     atlas_schema_revisions
+//	postgres://…/db?search_path=public   public
+//
+// A URL that pins a schema keeps its bookkeeping in that schema; only a URL
+// pinning none gets Atlas's own. Applying the schema unconditionally reddened
+// the Flyway revision-identity oracle, which drives both binaries through a
+// `search_path=public` URL and then reads the rows back unqualified.
 //
 // MySQL's schema IS its database, so naming one would move the table out of the
 // database the user connected to; SQLite has no schema to name at all, and
@@ -59,5 +70,19 @@ func applyAtlasRevisionsSchemaDefault(resolved, databaseURL string) string {
 	if !platform.IsPostgresFamily(dialect) {
 		return resolved
 	}
+	if urlPinsSchema(databaseURL) {
+		return resolved
+	}
 	return atlasRevisionsSchema
+}
+
+// urlPinsSchema reports whether the URL selects one schema for the session.
+// A URL that does keeps its bookkeeping there, which is the distinction the
+// rest of this surface calls schema scope as opposed to realm scope.
+func urlPinsSchema(databaseURL string) bool {
+	parsed, err := url.Parse(databaseURL)
+	if err != nil {
+		return false
+	}
+	return strings.TrimSpace(parsed.Query().Get("search_path")) != ""
 }
