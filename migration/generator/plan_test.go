@@ -12,7 +12,6 @@ import (
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasmigrate"
-	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/internal/migrationsnapshot"
 	"go.5x5.cz/ptah/migration/generator"
 )
@@ -302,8 +301,15 @@ func newSQLiteMigrationOptions(
 	outputDir string,
 ) generator.GenerateMigrationOptions {
 	c.Helper()
-	devURL := atlasurl.SQLiteURLFromPath(filepath.Join(c.TempDir(), "dev.db"))
-	conn, err := dbschema.ConnectToDatabase(c.Context(), devURL)
+	// In memory, so the planning run leaves no file behind for t.TempDir to
+	// unlink. The file-backed spelling made TestPlanMigration_DoesNotWriteArtifacts
+	// fail intermittently on windows-latest with "TempDir RemoveAll cleanup:
+	// ... The process cannot access the file because it is being used by
+	// another process": Windows refuses to delete a file whose handle is still
+	// open, and closing a database/sql pool does not guarantee the driver has
+	// released the OS handle by the time the deferred removal runs. Nothing
+	// here is about the file -- the dev database only has to exist.
+	conn, err := dbschema.ConnectToDatabase(c.Context(), "sqlite://:memory:")
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() {
 		c.Check(conn.Close(), qt.IsNil)
