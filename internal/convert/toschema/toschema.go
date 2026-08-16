@@ -738,17 +738,35 @@ func appendAlterTableConstraints(database *goschema.Database, node *ast.AlterTab
 	qualifiedTableName := goschema.QualifyTableName(tableSchemaName, tableName)
 	structName := tableStructName(node.Name)
 	for _, op := range node.Operations {
-		add, ok := op.(*ast.AddConstraintOperation)
-		if !ok || add.Constraint == nil {
-			continue
-		}
-		constraintSchema, ok := ToConstraint(
-			add.Constraint,
-			structName,
-			qualifiedTableName,
-		)
-		if ok {
-			database.Constraints = append(database.Constraints, constraintSchema)
+		switch typed := op.(type) {
+		case *ast.AddConstraintOperation:
+			if typed.Constraint == nil {
+				continue
+			}
+			constraintSchema, ok := ToConstraint(
+				typed.Constraint,
+				structName,
+				qualifiedTableName,
+			)
+			if ok {
+				database.Constraints = append(database.Constraints, constraintSchema)
+			}
+		case *ast.AddSkippingIndexOperation:
+			// ClickHouse's data-skipping index arrives as an ALTER because that
+			// is how the ClickHouse renderer writes one. Dropping it here left
+			// the statement parsed and then unrendered, which is the shape a
+			// parse-only check cannot see (stokaro/ptah#1574).
+			database.Indexes = append(database.Indexes, goschema.Index{
+				Name:       normalizeSQLIdentifier(typed.Name),
+				StructName: tableName,
+				// The expression is one element, not a column list: it can be
+				// a function call or a tuple, and splitting it on commas would
+				// turn `(a, b)` into two indexes on columns that may not exist.
+				Fields:      []string{typed.Expression},
+				Type:        typed.IndexType,
+				Granularity: typed.Granularity,
+				TableName:   qualifiedTableName,
+			})
 		}
 	}
 }
