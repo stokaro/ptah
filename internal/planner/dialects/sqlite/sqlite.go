@@ -16,6 +16,7 @@ import (
 	"go.5x5.cz/ptah/internal/indexscope"
 	"go.5x5.cz/ptah/internal/planner/objectlookup"
 	"go.5x5.cz/ptah/internal/planner/sqliterebuild"
+	"go.5x5.cz/ptah/internal/sqliteforeignkeys"
 	"go.5x5.cz/ptah/internal/tableref"
 	"go.5x5.cz/ptah/migration/schemadiff/types"
 )
@@ -77,7 +78,43 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 	result = append(result, p.removeTriggers(diff)...)
 	result = append(result, p.removeViews(diff)...)
 	result = append(result, p.removeTables(diff)...)
-	return result, nil
+	return withRebuildForeignKeySession(result, rebuilds), nil
+}
+
+// withRebuildForeignKeySession wraps a plan that rebuilds a table in the
+// foreign-key pragmas SQLite's own ALTER TABLE procedure prescribes.
+//
+// A rebuild drops the old table and renames a copy over it. If another table
+// references the rebuilt one, the DROP is a foreign-key violation and the
+// statement fails outright -- measured on SQLite 3.51: `FOREIGN KEY constraint
+// failed`. Disabling enforcement for the duration is what makes the sequence
+// legal, and it is why a rebuild with inbound references used to be refused
+// here instead of planned.
+//
+// The pair wraps the whole plan rather than each rebuild, which is also where
+// the pinned community binary puts it. One rebuild can reference a table a
+// later statement rebuilds in turn, so per-rebuild pairs would re-enable
+// enforcement between two halves of the same reshuffle.
+//
+// Applying this SQL needs more than printing it: PRAGMA foreign_keys is a
+// no-op inside a transaction, so ptah's apply path lifts these two statements
+// to the connection. See internal/atlasschema.applyStatements. The statements
+// stay in the plan because the plan is also a file a person runs, and outside
+// a transaction they do exactly what they say.
+func withRebuildForeignKeySession(plan []ast.Node, rebuilds tableRebuilds) []ast.Node {
+	if len(rebuilds.order) == 0 || len(plan) == 0 {
+		return plan
+	}
+	wrapped := make([]ast.Node, 0, len(plan)+4)
+	wrapped = append(wrapped,
+		ast.NewComment("Disable foreign-key enforcement for the table rebuild below"),
+		ast.NewRawSQL(sqliteforeignkeys.DisableStatement),
+	)
+	wrapped = append(wrapped, plan...)
+	return append(wrapped,
+		ast.NewComment("Restore foreign-key enforcement after the table rebuild"),
+		ast.NewRawSQL(sqliteforeignkeys.EnableStatement),
+	)
 }
 
 func rejectUnsupportedChanges(diff *types.SchemaDiff) error {
@@ -423,9 +460,6 @@ func validateRebuildTablePreconditions(table goschema.Table, diff *types.SchemaD
 	if tableNameCollides(generated.Tables, table, tempName) || removedTableNameCollides(diff.TablesRemoved, table, tempName) {
 		return unsupportedFeaturef("rebuilding table %s would collide with existing table %s", table.QualifiedName(), tempName)
 	}
-	if hasInboundForeignKey(table, generated) {
-		return unsupportedFeaturef("rebuilding table %s with inbound foreign keys requires a manual rebuild plan", table.QualifiedName())
-	}
 	return nil
 }
 
@@ -587,25 +621,6 @@ func structToTableMap(tables []goschema.Table) map[string]string {
 		out[table.StructName] = table.QualifiedName()
 	}
 	return out
-}
-
-func hasInboundForeignKey(table goschema.Table, generated *goschema.Database) bool {
-	for _, field := range generated.Fields {
-		fkRef := fromschema.ParseForeignKeyReference(field.Foreign)
-		if fkRef != nil && tableMatchesName(table, fkRef.Table) {
-			return true
-		}
-	}
-	for _, constraint := range generated.Constraints {
-		if strings.EqualFold(constraint.Type, "FOREIGN KEY") && tableMatchesName(table, constraint.ForeignTable) {
-			return true
-		}
-	}
-	return false
-}
-
-func tableMatchesName(table goschema.Table, name string) bool {
-	return name == table.QualifiedName()
 }
 
 func (p *Planner) recreateTableTriggers(table goschema.Table, generated *goschema.Database) ([]ast.Node, error) {

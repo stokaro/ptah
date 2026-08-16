@@ -277,9 +277,8 @@ are:
   or parenthesized default, or a `STORED` generated column.
 - Adding a `NOT NULL` column without a default as part of a rebuild: the copy
   step leaves the column out of the `INSERT`, so the first row would violate it.
-- Rebuilding a table referenced by an inbound foreign key, whose retained
-  triggers use syntax Ptah cannot round-trip, or whose rebuild scaffolding name
-  `__ptah_rebuild_<table>` is already taken.
+- Rebuilding a table whose retained triggers use syntax Ptah cannot round-trip,
+  or whose rebuild scaffolding name `__ptah_rebuild_<table>` is already taken.
 - A constraint change the diff cannot attribute to a table, so there is no
   table to rebuild.
 

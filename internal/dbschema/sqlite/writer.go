@@ -36,6 +36,10 @@ type transactionWriter struct {
 	tx     *sql.Tx
 	schema string
 	dryRun bool
+	// session is the connection-level state this transaction borrowed, or nil
+	// when it borrowed none. It is verified before the commit and given back
+	// after the transaction ends, whichever way it ends.
+	session *foreignKeySession
 }
 
 // NewSQLiteWriter creates a SQLite schema writer.
@@ -143,8 +147,21 @@ func (w *transactionWriter) Commit() error {
 	if w.tx == nil {
 		return fmt.Errorf("transaction is closed")
 	}
+	if err := w.session.verify(w.tx); err != nil {
+		// The rebuild orphaned a row. Rolling back here rather than returning
+		// the error alone is what keeps the refusal meaningful: a caller that
+		// only logs a failed commit would otherwise leave the transaction open.
+		rollbackErr := w.tx.Rollback()
+		w.tx = nil
+		w.session.restore()
+		if rollbackErr != nil && !errors.Is(rollbackErr, sql.ErrTxDone) {
+			return errors.Join(err, fmt.Errorf("sqlite: roll back rebuild transaction: %w", rollbackErr))
+		}
+		return err
+	}
 	err := w.tx.Commit()
 	w.tx = nil
+	w.session.restore()
 	return err
 }
 
@@ -161,6 +178,7 @@ func (w *transactionWriter) Rollback() error {
 	}
 	err := w.tx.Rollback()
 	w.tx = nil
+	w.session.restore()
 	return err
 }
 

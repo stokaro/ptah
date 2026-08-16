@@ -17,6 +17,7 @@ import (
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/sqlutil"
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/sqliterebuild"
 )
 
 // MigrationStatus represents the current state of migrations
@@ -2009,6 +2010,17 @@ func (m *Migrator) applyUpMigrationsPerFile(ctx context.Context, migrations []*M
 	return checksDeferred, nil
 }
 
+// upSQLTexts is what the batch about to run in one transaction will execute,
+// which is what decides whether that transaction needs foreign-key enforcement
+// suspended for a table rebuild.
+func upSQLTexts(migrations []*Migration) []string {
+	texts := make([]string, 0, len(migrations))
+	for _, migration := range migrations {
+		texts = append(texts, migration.UpSQL)
+	}
+	return texts
+}
+
 func (m *Migrator) applyUpMigrationsInSingleTransaction(ctx context.Context, migrations []*Migration) ([]int64, error) {
 	if len(migrations) == 0 {
 		return nil, nil
@@ -2039,7 +2051,7 @@ func (m *Migrator) applyUpMigrationsInSingleTransaction(ctx context.Context, mig
 		plans[migration.RevisionVersion()] = plan
 	}
 
-	tx, err := m.conn.SchemaWriter().BeginTransaction(ctx)
+	tx, err := sqliterebuild.BeginTransactionForAnySQL(ctx, m.conn, upSQLTexts(migrations))
 	if err != nil {
 		return nil, fmt.Errorf("failed to begin tx-mode all transaction: %w", err)
 	}
@@ -2423,7 +2435,7 @@ func (m *Migrator) applyUpMigrationTransactionalOnSession(
 	// they cannot execute inside this transaction (the schema executor exposes no
 	// query path) and must not run while the tx holds the only connection of a
 	// single-connection pool.
-	tx, err := m.conn.SchemaWriter().BeginTransaction(ctx)
+	tx, err := sqliterebuild.BeginTransactionForSQL(ctx, m.conn, migration.UpSQL)
 	if err != nil {
 		return m.failMigrationWithDirtyState(
 			ctx,
@@ -2764,7 +2776,7 @@ func (m *Migrator) rollbackMigrationTransactionalOnSession(
 	if err != nil {
 		return err
 	}
-	tx, err := m.conn.SchemaWriter().BeginTransaction(ctx)
+	tx, err := sqliterebuild.BeginTransactionForSQL(ctx, m.conn, migration.DownSQL)
 	if err != nil {
 		return m.failRollbackWithDirtyState(
 			ctx,

@@ -76,13 +76,13 @@ Across the 182 capabilities below:
 
 | Reading | Count |
 | --- | --- |
-| Ptah supports it fully | 114 |
-| Ptah supports it with a stated limitation | 48 |
+| Ptah supports it fully | 115 |
+| Ptah supports it with a stated limitation | 47 |
 | Ptah does not implement it | 20 |
-| Ptah and Atlas CE both support it | 37 |
+| Ptah and Atlas CE both support it | 38 |
 | Ptah implements it openly where Atlas gates it behind Pro or Cloud | 42 |
 | Ptah has it and neither Atlas edition does | 23 |
-| Atlas CE has it and Ptah does not, or only in part | 22 |
+| Atlas CE has it and Ptah does not, or only in part | 21 |
 | An Atlas column is ❔ — not established by this page's evidence | 10 |
 
 Every 🟡 in the Ptah column names its specific limitation, reproduced against a
@@ -155,7 +155,7 @@ seven of them as open capabilities regardless.
 | Local pre-approved plan files | ✅ | ❌ | ✅ | `schema plan` writes Atlas `.plan.hcl` by default (`.json` keeps the native plan); `apply --plan` reads both, Atlas-authored included, verified by replay against `--to` plus an end-state check. |
 | schema apply against a live database | ✅ | ✅ | ✅ | Diffs `--url` against the `--to` desired state, prints the SQL plan, applies after confirmation. Verified end to end on SQLite. |
 | schema clean | 🟡 | ✅ | ✅ | `--include`/`--exclude` narrow cleanup. PostgreSQL-family scoped drops are dependency-safe and transactional; `RESTRICT` cannot cascade outside the selection. |
-| schema diff between two schema states | 🟡 | ✅ | ✅ | SQLite rebuilds a table for changes ALTER TABLE cannot express. It refuses only when the table has an inbound foreign key, where CE plans a PRAGMA-guarded rebuild. |
+| schema diff between two schema states | ✅ | ✅ | ✅ | SQLite rebuilds a table for changes ALTER TABLE cannot express, including one other tables refer to: the plan brackets itself in PRAGMA foreign_keys. |
 | schema fmt (HCL canonical layout) | ✅ | ✅ | ✅ | Formats .hcl paths recursively and prints only changed files. Native `ptah schema fmt --check` adds a no-write CI gate. |
 | schema inspect to HCL, SQL, or JSON | ✅ | ✅ | ✅ | Default HCL; rendered HCL/SQL/JSON use explicit helper templates. Bare and whitespace-wrapped hcl/sql/json are literal template text. Native shorthands still render and add file export. |
 | Schema-qualified exclude globs for enums and functions | ✅ | 🟡 | ❔ | Enums and functions match schema-qualified globs on the rule tables and views use, and the match reaches the planned DROP. The community binary matches `app.mood`; it reports no functions. |

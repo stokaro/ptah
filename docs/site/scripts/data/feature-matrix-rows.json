@@ -578,11 +578,11 @@
   {
     "area": "Declarative / direct schema workflow",
     "feature": "schema diff between two schema states",
-    "ptah": "partial",
+    "ptah": "yes",
     "atlas_oss": "yes",
     "atlas_pro": "yes",
-    "note": "SQLite rebuilds a table for changes ALTER TABLE cannot express. It refuses only when the table has an inbound foreign key, where CE plans a PRAGMA-guarded rebuild.",
-    "evidence": "Re-measured 2026-08-16 on SQLite, same inputs to both binaries: a NOT NULL change and a column type change both plan a create-copy-drop-rename rebuild on Ptah and on the pinned community binary v1.3.0, exit 0 either way. With a second table holding a foreign key to the rebuilt one, CE emits the same rebuild wrapped in PRAGMA foreign_keys off/on while Ptah answers `sqlite: rebuilding table t with inbound foreign keys requires a manual rebuild plan`. The note previously claimed every rebuild was refused."
+    "note": "SQLite rebuilds a table for changes ALTER TABLE cannot express, including one other tables refer to: the plan brackets itself in PRAGMA foreign_keys.",
+    "evidence": "Re-measured 2026-08-16 on SQLite 3.51, same inputs to both binaries: a NOT NULL change and a column type change both plan a create-copy-drop-rename rebuild, exit 0 either way. With a second table holding a foreign key to the rebuilt one, both now emit that rebuild wrapped in PRAGMA foreign_keys off/on; Ptah used to answer `sqlite: rebuilding table t with inbound foreign keys requires a manual rebuild plan` (stokaro/ptah#1561). Applying it needs more than emitting it: the pragma is a no-op inside a transaction, so Ptah suspends enforcement on the connection and runs PRAGMA foreign_key_check before the commit, which the community binary does not."
   },
   {
     "area": "Declarative / direct schema workflow",
