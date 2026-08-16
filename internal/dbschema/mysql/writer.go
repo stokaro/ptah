@@ -549,7 +549,7 @@ func metadataVisibilityRequirements(dialect, serverVersion string) globalMetadat
 			showView: true,
 		}
 	case platform.MySQL:
-		requiresShowRoutine := supportsMySQLShowRoutinePrivilege(serverVersion)
+		requiresShowRoutine := requiresMySQLShowRoutinePrivilege(serverVersion)
 		if requiresShowRoutine {
 			return globalMetadataRequirements{
 				names:       "SELECT, DROP, ALTER, ALTER ROUTINE, EVENT, LOCK TABLES, PROCESS, SHOW_ROUTINE, and TRIGGER",
@@ -1001,10 +1001,25 @@ func supportsMySQLViewTableUsage(version string) bool {
 	return parts[1] > 0 || parts[2] >= 13
 }
 
-func supportsMySQLShowRoutinePrivilege(version string) bool {
+// requiresMySQLShowRoutinePrivilege reports whether the metadata-visibility
+// check must demand the global SHOW_ROUTINE privilege, which MySQL 8.0.20
+// introduced.
+//
+// A version this file cannot read demands it. That is the opposite of what a
+// "does the server support it" question would answer, and it is deliberate:
+// the two mistakes are not symmetric. Demanding SHOW_ROUTINE from a server too
+// old to grant it refuses the clean with a diagnostic naming the privilege, and
+// the operator can see why. Not demanding it from a server that has it lets a
+// metadata read which may have skipped routines stand as the proof of complete
+// visibility -- and that proof is what authorizes dropping the schema.
+//
+// Failing closed is also what the other version gate here already does:
+// [supportsMySQLViewTableUsage] refuses the clean outright on a version it
+// cannot parse. This one was the exception (stokaro/ptah#916).
+func requiresMySQLShowRoutinePrivilege(version string) bool {
 	parts, valid := parseMySQLVersion(version)
 	if !valid {
-		return false
+		return true
 	}
 	if parts[0] != 8 {
 		return parts[0] > 8
