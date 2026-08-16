@@ -16,10 +16,10 @@ import (
 	"go.5x5.cz/ptah/migration/schemadiff/types"
 )
 
-// reportUnsupportedObjectsBeforeTables and reportUnsupportedObjectsAfterTables
-// append the shared schema-object AST nodes in the same order as offline
-// rendering. The ClickHouse renderer turns supported plain views into DDL and
-// unsupported shapes into named diagnostics.
+// reportUnsupportedObjectsBeforeTables and planObjectsAfterTables append the
+// shared schema-object AST nodes in the same order as offline rendering. The
+// ClickHouse renderer turns supported plain views into DDL and unsupported
+// shapes into named diagnostics.
 //
 // Both paths route the same nodes through the renderer. Views and materialized
 // views preserve their bodies and render as executable DDL; object kinds the
@@ -40,13 +40,23 @@ func reportUnsupportedObjectsBeforeTables(result []ast.Node, diff *types.SchemaD
 	return result
 }
 
-func reportUnsupportedObjectsAfterTables(
+// planObjectsAfterTables sequences everything the ClickHouse plan emits once the
+// tables exist. Two of its phases are no longer diagnostics: roles and grants are
+// planned as real statements by rbac.go, which is what stokaro/ptah#1025 asked
+// for.
+//
+// They keep the slots their diagnostics held, and each slot is now load-bearing
+// twice over. Roles come first because a grant to a role the server does not know
+// fails with Code 511 (UNKNOWN_ROLE), and grants sit between the row-level
+// security phase and the triggers because that is where the offline render path
+// emits them -- the two surfaces have to agree on order, not merely on content.
+func planObjectsAfterTables(
 	result []ast.Node,
 	diff *types.SchemaDiff,
 	generated *goschema.Database,
 	caps capability.Capabilities,
 ) ([]ast.Node, error) {
-	result = reportRoles(result, diff)
+	result = planRoles(result, diff)
 	result = reportFunctions(result, diff)
 	var err error
 	result, err = reportViewLikes(result, diff, generated, caps)
@@ -54,7 +64,7 @@ func reportUnsupportedObjectsAfterTables(
 		return nil, err
 	}
 	result = reportRowLevelSecurity(result, diff)
-	result = reportGrants(result, diff)
+	result = planGrants(result, diff)
 	result = reportTriggers(result, diff)
 	return result, nil
 }
@@ -81,19 +91,6 @@ func reportSequences(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
 	}
 	for _, name := range diff.SequencesRemoved {
 		result = append(result, ast.NewDropSequence(name))
-	}
-	return result
-}
-
-func reportRoles(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
-	for _, name := range diff.RolesAdded {
-		result = append(result, ast.NewCreateRole(name))
-	}
-	for _, role := range diff.RolesModified {
-		result = append(result, ast.NewAlterRole(role.RoleName))
-	}
-	for _, name := range diff.RolesRemoved {
-		result = append(result, ast.NewDropRole(name))
 	}
 	return result
 }
@@ -364,30 +361,6 @@ func reportRowLevelSecurity(result []ast.Node, diff *types.SchemaDiff) []ast.Nod
 		result = append(result, ast.NewDropPolicy(policy.PolicyName, policy.TableName))
 	}
 	return result
-}
-
-func reportGrants(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
-	for _, grant := range diff.GrantsAdded {
-		result = append(result, grantNode(grant))
-	}
-	for _, grant := range diff.GrantOptionsAdded {
-		result = append(result, grantNode(grant))
-	}
-	for _, grant := range diff.GrantsRemoved {
-		result = append(result, revokeNode(grant))
-	}
-	for _, grant := range diff.GrantOptionsRevoked {
-		result = append(result, revokeNode(grant))
-	}
-	return result
-}
-
-func grantNode(grant types.GrantRef) ast.Node {
-	return ast.NewGrantPrivilege(grant.Role, grant.ObjectType, grant.ObjectName, []string{grant.Privilege})
-}
-
-func revokeNode(grant types.GrantRef) ast.Node {
-	return ast.NewRevokePrivilege(grant.Role, grant.ObjectType, grant.ObjectName, []string{grant.Privilege})
 }
 
 func reportTriggers(result []ast.Node, diff *types.SchemaDiff) []ast.Node {

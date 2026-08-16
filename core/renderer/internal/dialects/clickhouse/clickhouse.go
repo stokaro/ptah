@@ -9,10 +9,13 @@
 //     and are never enforced; Ptah emits them as commented-out hints.
 //   - There is no auto-increment / SERIAL.
 //   - Secondary indexes are data-skipping (ADD INDEX … TYPE … GRANULARITY n).
-//   - Functions, extensions, RLS policies and roles use syntax that is
-//     incompatible with the PostgreSQL-shaped AST nodes Ptah produces; this
-//     renderer emits a -- CLICKHOUSE: not supported comment for them so they
-//     fall out of the migration cleanly instead of producing invalid SQL.
+//   - Functions, extensions and RLS policies use syntax that is incompatible
+//     with the PostgreSQL-shaped AST nodes Ptah produces; this renderer emits
+//     a -- CLICKHOUSE: not supported comment for them so they fall out of the
+//     migration cleanly instead of producing invalid SQL.
+//   - Roles and grants are not in that set. ClickHouse has both, with a syntax
+//     of its own, so rbac.go renders them and refuses only what the server
+//     cannot represent.
 //   - Materialized views exist and store their result, but they are dropped
 //     with DROP VIEW and they have no REFRESH statement, so the three
 //     materialized-view visitors do not share one spelling.
@@ -1163,33 +1166,6 @@ func (r *Renderer) VisitAlterTableDisableRLS(node *ast.AlterTableDisableRLSNode)
 	return nil
 }
 
-// VisitCreateRole is a no-op for ClickHouse. ClickHouse supports roles
-// but with different syntax than the PG-shaped node represents.
-func (r *Renderer) VisitCreateRole(node *ast.CreateRoleNode) error {
-	r.notSupported("CREATE ROLE", node.Name)
-	return nil
-}
-
-// VisitDropRole mirrors VisitCreateRole.
-func (r *Renderer) VisitDropRole(node *ast.DropRoleNode) error {
-	r.notSupported("DROP ROLE", node.Name)
-	return nil
-}
-
-// VisitAlterRole mirrors VisitCreateRole.
-func (r *Renderer) VisitAlterRole(node *ast.AlterRoleNode) error {
-	r.notSupported("ALTER ROLE", node.Name)
-	return nil
-}
-
-// VisitGrantPrivilege mirrors VisitCreateRole.
-func (r *Renderer) VisitGrantPrivilege(node *ast.GrantPrivilegeNode) error {
-	r.notSupported("GRANT", node.Role)
-	return nil
-}
-
-// VisitRevokePrivilege mirrors VisitCreateRole.
-func (r *Renderer) VisitRevokePrivilege(node *ast.RevokePrivilegeNode) error {
-	r.notSupported("REVOKE", node.Role)
-	return nil
-}
+// The five role and privilege visitors live in rbac.go. ClickHouse has roles and
+// grants, so they render SQL rather than a diagnostic; the syntax they render,
+// and what it refuses, is documented there.

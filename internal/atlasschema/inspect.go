@@ -125,7 +125,7 @@ func Inspect(ctx context.Context, conn *dbschema.DatabaseConnection, opts Inspec
 	// told to materialize, whose other cluster roles are not an answer to
 	// anything they asked. See stokaro/ptah#1267.
 	if !opts.SuppressRoleCoverageNote {
-		rolescope.ReportUndescribed(opts.Diagnostics, schema)
+		rolescope.ReportUndescribed(opts.Diagnostics, conn.Info().Dialect, schema)
 	}
 	validatedOpts := opts
 	validatedOpts.PrepareSchema = nil

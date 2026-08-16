@@ -324,14 +324,15 @@ func mysqlFamilyPlan(dialect string) plan {
 	undecided := map[capability.Capability]string{
 		// Measured live on MySQL 9.7.1: CREATE ROLE and GRANT SELECT are both
 		// accepted at exit 0 while MySQL84 records this key false. The two are
-		// not in conflict — the key names the PostgreSQL role and object
-		// privilege surface that the PostgreSQL planner, renderer and reader
-		// gate on, and no MySQL-family code path reads it. An acceptance probe
-		// here would manufacture exactly the false disagreement this harness
-		// exists to avoid.
-		capability.RoleManagement: "the key names the PostgreSQL role and privilege surface no MySQL-family " +
-			"code path consults; this server's own CREATE ROLE and GRANT are a different surface, " +
-			"so accepting them would not decide the key",
+		// not in conflict. The key does not name a SERVER's role syntax — it is
+		// engine-neutral, and PostgreSQL and ClickHouse both carry it — it names
+		// whether PTAH plans, renders, introspects and compares a declared role
+		// and grant for this target, and no MySQL-family code path does any of
+		// those. An acceptance probe here would manufacture exactly the false
+		// disagreement this harness exists to avoid.
+		capability.RoleManagement: "the key names whether Ptah plans, renders, reads and compares a declared " +
+			"role and grant for this target, which no MySQL-family code path does; this server accepting " +
+			"its own CREATE ROLE and GRANT is a different question, so it would not decide the key",
 		capability.PostgresCatalogFunctions: "the key names pg_catalog's introspection helpers, which this " +
 			"server does not have and no MySQL-family reader asks for; its absence here says nothing " +
 			"about the PostgreSQL-family reader the key gates",

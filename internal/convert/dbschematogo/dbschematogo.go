@@ -716,9 +716,31 @@ func dbDefaultLooksLikeExpression(defaultSQL string) bool {
 	return true
 }
 
+// convertGrants describes live grant rows as declarations.
+//
+// A row marked [dbschematypes.DBGrant.IsPartialRevoke] is skipped, because it
+// is not a grant: it SUBTRACTS a privilege from a broader grant, and only
+// ClickHouse produces one. Describing it as a [goschema.Grant] would state the
+// exact opposite of what the row says — a document telling an operator the role
+// HOLDS a privilege the server records it as having lost — and applying that
+// document would grant it for real.
+//
+// Skipping still leaves the broader grant the exception applies to, so the
+// description over-states the role's privileges rather than inverting them.
+// That is the safer of the two errors available: over-stating makes a
+// comparison find the grant present and plan nothing, so the exception on the
+// server survives, while dropping the broader grant as well would make the
+// comparison plan a GRANT that wipes the exception out. Ptah's grant model has
+// no shape for "this privilege except there", which is why
+// [go.5x5.cz/ptah/internal/clickhouserbac.ValidateLive] refuses to compare a
+// managed role carrying one at all rather than leaving this function to
+// approximate it.
 func convertGrants(dbGrants []dbschematypes.DBGrant) []goschema.Grant {
 	grants := make([]goschema.Grant, 0, len(dbGrants))
 	for _, dbGrant := range dbGrants {
+		if dbGrant.IsPartialRevoke {
+			continue
+		}
 		grant := goschema.Grant{
 			Role:       dbGrant.Role,
 			Privileges: []string{dbGrant.Privilege},

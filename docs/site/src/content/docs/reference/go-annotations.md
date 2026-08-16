@@ -450,6 +450,13 @@ Declares a database role.
 | `replication` | No | Allows replication. `true`/`false`. |
 | `superuser` | No | Creates the role as SUPERUSER. `true`/`false`. |
 
+Most of these attributes are PostgreSQL-family notions. A ClickHouse role
+carries none of them — `system.roles` is `(name, id, storage)` — so declaring
+`password`, `login`, `superuser`, `createdb`, `createrole`, or `replication`
+for a ClickHouse target is refused rather than dropped, and `comment` is
+emitted as a leading SQL comment because the engine cannot store one. See
+[ClickHouse roles and grants](../../databases/support-matrix/#clickhouse-roles-and-grants).
+
 ### `//ptah:schema:grant`
 
 Declares database grants.
@@ -466,6 +473,18 @@ Declares database grants.
 | `privileges` | No | Alias for `privilege`. |
 | `role` | No | Target role. |
 | `with_option` | No | Adds WITH GRANT OPTION where supported. `true`/`false`. |
+
+On ClickHouse a grant names one scope, and `on_table` must be qualified as
+`database.table` because rendering is offline and has no current database to
+resolve a bare name against. `on_sequence`, wildcard scopes and column-scoped
+privileges such as `SELECT(id)` are refused, as is declaring the same privilege
+on both `db.*` and `db.t` — the server would absorb the narrower grant, so the
+pair could never converge. `role` must name a role the same schema declares,
+because ClickHouse resolves a grantee across users and roles and a user of that
+name would win. Privilege names the server rewrites on the way in — `ALL`,
+`CREATE`, `DROP`, `SYSTEM` and the rest — are refused too, because they never
+read back as written. See
+[ClickHouse roles and grants](../../databases/support-matrix/#clickhouse-roles-and-grants).
 
 ### `//ptah:schema:rls:enable`
 

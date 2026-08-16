@@ -224,7 +224,7 @@ func measuredLines() map[string]measuredLine {
 				capability.PostgresCatalogFunctions: "obj_description is a PostgreSQL catalog function no MySQL-family code path consults; this server has no such function, so neither answering nor refusing it would decide the key",
 				capability.CatalogRowStatistics:     "pg_stat_all_tables is a PostgreSQL statistics view no MySQL-family code path consults; this server has no such relation, so neither having nor lacking it would decide the key",
 				capability.CatalogDependencies:      "domains are a PostgreSQL type-system feature no MySQL-family code path consults; this server has no CREATE DOMAIN at all, so neither accepting nor refusing one would decide the key",
-				capability.RoleManagement: "the key names the PostgreSQL role and privilege surface no MySQL-family code path consults; " +
+				capability.RoleManagement: "the key names the role and privilege surface no MySQL-family code path consults; " +
 					"this server's own CREATE ROLE and GRANT are a different surface, so accepting them would not decide the key",
 			},
 		},
@@ -264,7 +264,7 @@ func measuredLines() map[string]measuredLine {
 				capability.PostgresCatalogFunctions: "obj_description is a PostgreSQL catalog function no MySQL-family code path consults; this server has no such function, so neither answering nor refusing it would decide the key",
 				capability.CatalogRowStatistics:     "pg_stat_all_tables is a PostgreSQL statistics view no MySQL-family code path consults; this server has no such relation, so neither having nor lacking it would decide the key",
 				capability.CatalogDependencies:      "domains are a PostgreSQL type-system feature no MySQL-family code path consults; this server has no CREATE DOMAIN at all, so neither accepting nor refusing one would decide the key",
-				capability.RoleManagement: "the key names the PostgreSQL role and privilege surface no MySQL-family code path consults; " +
+				capability.RoleManagement: "the key names the role and privilege surface no MySQL-family code path consults; " +
 					"this server's own CREATE ROLE and GRANT are a different surface, so accepting them would not decide the key",
 				capability.Sequences: "the key describes Ptah's generator rather than the engine (stokaro/ptah#931 item 8): " +
 					"MariaDB has had SEQUENCE since 10.3 while no MySQL-family renderer or planner emits, reads or plans one, " +

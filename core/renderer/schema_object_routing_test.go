@@ -125,6 +125,7 @@ func routedObjectGrid(c *qt.C) []routedObjectCell {
 		if roleRefused {
 			database.Roles = nil
 		}
+		adaptForClickHouse(database, dialect)
 		statements, err := renderer.GetOrderedCreateStatements(database, dialect)
 		c.Assert(err, qt.IsNil, qt.Commentf("render failed for %s", dialect))
 		sql := strings.Join(statements, "\n")
@@ -241,6 +242,20 @@ func TestRender_TheRoutingGridDistinguishesItsAnswers(t *testing.T) {
 				"postgres     function  func_probe",
 				"postgres     trigger   trigger_probe",
 				"postgres     grant     grant_probe",
+			},
+		},
+		{
+			// ClickHouse used to answer "named" for both of these. It renders
+			// them now (stokaro/ptah#1025), and naming the cells is what makes
+			// a regression say which object moved rather than shifting a count.
+			name:   "clickhouse emits roles and grants",
+			cells:  dialectCells(cells, platform.ClickHouse),
+			answer: "ddl",
+			want: []string{
+				"clickhouse   role      role_probe",
+				"clickhouse   table     table_probe",
+				"clickhouse   view      view_probe",
+				"clickhouse   grant     grant_probe",
 			},
 		},
 		{
@@ -491,4 +506,55 @@ func TestValidateSchema_MySQLFamilyRoleRefusalNamesTheSortedFirstRole(t *testing
 			})
 		}
 	}
+}
+
+// adaptForClickHouse rewrites the declarations in the fixture that ClickHouse
+// represents differently, so the grid measures ROUTING rather than stopping at
+// a refusal.
+//
+// ClickHouse renders roles and grants for real (stokaro/ptah#1025), but a role
+// there carries no attributes at all, a grant scope is a two-part pattern, and
+// a grant must name a role the same schema declares: the fixture's LOGIN, its
+// bare `table_probe` and its undeclared `grant_probe` grantee are all refused.
+// Nulling the declarations out — the adaptation MySQL and MariaDB get — would
+// be the wrong answer here, because it would record ClickHouse as not routing
+// objects it does route. The refusals themselves are pinned in
+// internal/clickhouserbac, and
+// TestRender_ClickHouseRefusesTheUnrepresentableDeclaration below keeps them
+// reachable from this fixture.
+//
+// Declaring the grantee costs this grid one property, on ClickHouse alone: the
+// grant cell can now be satisfied by the `CREATE ROLE grant_probe` line rather
+// than by a GRANT, which is the confusion the two distinct probe names exist to
+// prevent everywhere else. There is no way to keep it — a GRANT names its
+// grantee, and on ClickHouse the grantee must be declared. The property is held
+// instead by core/renderer/internal/dialects/clickhouse's own tests, which
+// assert the rendered GRANT statement rather than a mention of the name.
+func adaptForClickHouse(database *goschema.Database, dialect string) {
+	if dialect != platform.ClickHouse {
+		return
+	}
+	for i := range database.Roles {
+		database.Roles[i].Login = false
+	}
+	for i := range database.Grants {
+		database.Grants[i].OnTable = "public." + database.Grants[i].OnTable
+		database.Roles = append(database.Roles, goschema.Role{
+			Name: database.Grants[i].Role, Inherit: true,
+		})
+	}
+}
+
+// TestRender_ClickHouseRefusesTheUnrepresentableDeclaration is the control on
+// the adaptation above: the grid passes because the fixture was adapted, and
+// this test is what proves the un-adapted fixture is refused rather than
+// quietly rendered.
+func TestRender_ClickHouseRefusesTheUnrepresentableDeclaration(t *testing.T) {
+	c := qt.New(t)
+
+	_, err := renderer.GetOrderedCreateStatements(routedObjectSchema(), platform.ClickHouse)
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(err.Error(), qt.Contains, "declares login")
+	c.Assert(err.Error(), qt.Contains, "with no database")
 }

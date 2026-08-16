@@ -2,10 +2,13 @@ package rolescope_test
 
 import (
 	"bytes"
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/core/coverage"
+	"go.5x5.cz/ptah/core/platform"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/envbool/envbooltest"
 	"go.5x5.cz/ptah/internal/rolescope"
@@ -135,7 +138,7 @@ func TestReportUndescribedNamesTheCountAndTheWayBack(t *testing.T) {
 			c := qt.New(t)
 			var out bytes.Buffer
 
-			rolescope.ReportUndescribed(&out, &dbschematypes.DBSchema{RolesOutOfScope: test.omitted})
+			rolescope.ReportUndescribed(&out, platform.Postgres, &dbschematypes.DBSchema{RolesOutOfScope: test.omitted})
 
 			c.Assert(out.String(), qt.Equals, test.want)
 		})
@@ -154,7 +157,7 @@ func TestReportUndescribedNeverPrintsARoleName(t *testing.T) {
 	c := qt.New(t)
 	var out bytes.Buffer
 
-	rolescope.ReportUndescribed(&out, &dbschematypes.DBSchema{
+	rolescope.ReportUndescribed(&out, platform.Postgres, &dbschematypes.DBSchema{
 		RolesOutOfScope: []dbschematypes.DBRole{
 			{Name: "acme_tenant_billing"},
 			{Name: "zeta_tenant_reporting"},
@@ -181,7 +184,7 @@ func TestReportUndescribedStaysSilentWhenNothingWasLeftOut(t *testing.T) {
 		{
 			name: "no roles were left out",
 			report: func(out *bytes.Buffer) {
-				rolescope.ReportUndescribed(out, &dbschematypes.DBSchema{
+				rolescope.ReportUndescribed(out, platform.Postgres, &dbschematypes.DBSchema{
 					Roles: []dbschematypes.DBRole{{Name: "app_user"}},
 				})
 			},
@@ -189,19 +192,19 @@ func TestReportUndescribedStaysSilentWhenNothingWasLeftOut(t *testing.T) {
 		{
 			name: "a dialect that reports no roles at all",
 			report: func(out *bytes.Buffer) {
-				rolescope.ReportUndescribed(out, &dbschematypes.DBSchema{})
+				rolescope.ReportUndescribed(out, platform.Postgres, &dbschematypes.DBSchema{})
 			},
 		},
 		{
 			name: "a nil schema",
 			report: func(out *bytes.Buffer) {
-				rolescope.ReportUndescribed(out, nil)
+				rolescope.ReportUndescribed(out, platform.Postgres, nil)
 			},
 		},
 		{
 			name: "a nil writer takes the roles with it",
 			report: func(_ *bytes.Buffer) {
-				rolescope.ReportUndescribed(nil, &dbschematypes.DBSchema{
+				rolescope.ReportUndescribed(nil, platform.Postgres, &dbschematypes.DBSchema{
 					RolesOutOfScope: []dbschematypes.DBRole{{Name: "other_tenant"}},
 				})
 			},
@@ -218,4 +221,112 @@ func TestReportUndescribedStaysSilentWhenNothingWasLeftOut(t *testing.T) {
 			c.Assert(out.String(), qt.Equals, "")
 		})
 	}
+}
+
+// TestReportUndescribedOffersTheOptOutOnlyWhereItWorks pins the half of the
+// note that names a remedy.
+//
+// The sentence used to be unconditional, which was true while PostgreSQL was
+// the only reader filling RolesOutOfScope. ClickHouse fills it now
+// (stokaro/ptah#1025) and consults no such variable, so an operator inspecting
+// ClickHouse was told to set a PostgreSQL variable that does nothing. A remedy
+// that does not work costs more than no remedy: the reader spends the attempt
+// before learning it was never offered.
+func TestReportUndescribedOffersTheOptOutOnlyWhereItWorks(t *testing.T) {
+	tests := []struct {
+		name       string
+		dialect    string
+		wantRemedy bool
+	}{
+		{name: "postgres honors the variable", dialect: platform.Postgres, wantRemedy: true},
+		{name: "cockroachdb is the same family", dialect: platform.CockroachDB, wantRemedy: true},
+		{name: "yugabytedb is the same family", dialect: platform.YugabyteDB, wantRemedy: true},
+		{name: "clickhouse consults no such variable", dialect: platform.ClickHouse, wantRemedy: false},
+		{name: "an unknown dialect promises nothing", dialect: "nonsense", wantRemedy: false},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			var out bytes.Buffer
+			rolescope.ReportUndescribed(&out, test.dialect, &dbschematypes.DBSchema{
+				RolesOutOfScope: []dbschematypes.DBRole{{Name: "elsewhere"}},
+			})
+
+			// The count is reported on every dialect: it is the disclosure the
+			// note exists for, and it is true whoever read the catalog.
+			c.Assert(out.String(), qt.Contains, "1 role Ptah manages on this server is not described")
+			c.Assert(strings.Contains(out.String(), rolescope.DescribeAllEnvVar), qt.Equals, test.wantRemedy)
+		})
+	}
+}
+
+// TestReportUndescribedSeparatesAReadThatCouldNotLook pins the second note.
+//
+// A read that could not look at the access catalog leaves RolesOutOfScope
+// empty, so the count note stays silent — which is exactly the silence that
+// reads as "this server has no roles". The two omissions are different facts
+// and get different sentences: one says the description was scoped, the other
+// says nothing was described and why.
+func TestReportUndescribedSeparatesAReadThatCouldNotLook(t *testing.T) {
+	tests := []struct {
+		name        string
+		schema      *dbschematypes.DBSchema
+		wantMatches string
+	}{
+		{
+			name: "a read the account was not allowed to perform",
+			schema: &dbschematypes.DBSchema{
+				NotDescribed: coverage.Set{}.WithKind(coverage.Role),
+			},
+			wantMatches: `note: roles were not described, because this connection may not read.*` +
+				`withholds every declared role.*\n`,
+		},
+		{
+			// The unreadable catalog outranks the count. A read that could not
+			// look has nothing to have scoped, and reporting a count for it
+			// would describe a decision nobody made.
+			name: "a read that could not look, with roles somehow also out of scope",
+			schema: &dbschematypes.DBSchema{
+				NotDescribed:    coverage.Set{}.WithKind(coverage.Role),
+				RolesOutOfScope: []dbschematypes.DBRole{{Name: "other_tenant"}},
+			},
+			wantMatches: `note: roles were not described, because this connection may not read.*\n`,
+		},
+		{
+			// The control: a coverage record about some OTHER kind says
+			// nothing about roles, and must not trigger the note.
+			name: "a description that declined a different kind entirely",
+			schema: &dbschematypes.DBSchema{
+				NotDescribed:    coverage.Set{}.WithKind(coverage.Extension),
+				RolesOutOfScope: []dbschematypes.DBRole{{Name: "other_tenant"}},
+			},
+			wantMatches: `note: 1 role Ptah manages on this server is not described.*\n`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			var out bytes.Buffer
+
+			rolescope.ReportUndescribed(&out, platform.ClickHouse, test.schema)
+
+			c.Assert(out.String(), qt.Matches, test.wantMatches)
+		})
+	}
+}
+
+// TestReportUndescribedNamesNoCatalogItCouldNotRead keeps the unreadable-catalog
+// note out of every read that succeeded. Silence has to keep meaning something.
+func TestReportUndescribedNamesNoCatalogItCouldNotRead(t *testing.T) {
+	c := qt.New(t)
+	var out bytes.Buffer
+
+	rolescope.ReportUndescribed(&out, platform.ClickHouse, &dbschematypes.DBSchema{
+		Roles: []dbschematypes.DBRole{{Name: "reader"}},
+	})
+
+	c.Assert(out.String(), qt.Equals, "")
 }

@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"io"
 
+	"go.5x5.cz/ptah/core/coverage"
+	"go.5x5.cz/ptah/core/platform"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/envbool"
 )
@@ -56,8 +58,13 @@ func DescribeAll() (bool, error) {
 	return describeAll.Resolve()
 }
 
-// ReportUndescribed writes a note naming how many roles the description left
-// out, and nothing at all when it left none out.
+// ReportUndescribed writes a note about what the description left out, and
+// nothing at all when it left nothing out.
+//
+// There are two omissions and they are different facts, so they get different
+// notes: a read that LOOKED at the server's roles and described only the ones
+// the inspected schemas refer to, and a read that could not look at all. Only
+// the first has a count to report.
 //
 // The omission is reported rather than silent for the reason
 // cmd/schema/test.go's dropClusterScopedTestState reports its own: an operator
@@ -76,16 +83,51 @@ func DescribeAll() (bool, error) {
 // stream"; the note is then dropped rather than panicking. Write errors are
 // dropped too: a diagnostic that fails to print must not fail a read that
 // succeeded.
-func ReportUndescribed(w io.Writer, schema *dbschematypes.DBSchema) {
-	if w == nil || schema == nil || len(schema.RolesOutOfScope) == 0 {
+func ReportUndescribed(w io.Writer, dialect string, schema *dbschematypes.DBSchema) {
+	if w == nil || schema == nil {
+		return
+	}
+	// A read that could not look at roles at all is a different fact from a
+	// read that looked and scoped the answer, and it is the one an operator is
+	// most likely to misread: no role block, no note, and a description that
+	// appears to say the server has none. It happens on ClickHouse when the
+	// connected account may not read system.roles and system.grants -- ordinary
+	// for a non-administrative account -- and the description records it rather
+	// than failing the read (stokaro/ptah#1025). RolesOutOfScope is empty in
+	// that case, so this cannot be folded into the count below.
+	if !schema.NotDescribed.Describes(coverage.Role) {
+		fmt.Fprint(w,
+			"note: roles were not described, because this connection may not read the server's"+
+				" access catalog; comparison withholds every declared role rather than planning a"+
+				" CREATE ROLE it could not verify.\n")
+		return
+	}
+	if len(schema.RolesOutOfScope) == 0 {
 		return
 	}
 	fmt.Fprintf(w,
 		"note: %s Ptah manages on this server %s not described, because nothing in the inspected"+
 			" schemas refers to them; comparison still treats them as present, so none of them is"+
-			" planned as a CREATE ROLE. Set %s=1 to describe every role Ptah manages.\n",
-		countedRoles(len(schema.RolesOutOfScope)), pluralIs(len(schema.RolesOutOfScope)), DescribeAllEnvVar,
+			" planned as a CREATE ROLE.%s\n",
+		countedRoles(len(schema.RolesOutOfScope)), pluralIs(len(schema.RolesOutOfScope)),
+		describeAllRemedy(dialect),
 	)
+}
+
+// describeAllRemedy returns the sentence naming the opt-out, and the empty
+// string where there is none.
+//
+// The note used to end with it unconditionally, which was true while the
+// PostgreSQL reader was the only one filling RolesOutOfScope. ClickHouse fills
+// it now (stokaro/ptah#1025) and its reader consults no such variable, so an
+// operator inspecting ClickHouse was told to set a PostgreSQL variable that
+// would do nothing — a remedy that does not work is worse than no remedy,
+// because the reader spends the attempt before learning it was never offered.
+func describeAllRemedy(dialect string) string {
+	if !platform.IsPostgresFamily(platform.NormalizeDialect(dialect)) {
+		return ""
+	}
+	return fmt.Sprintf(" Set %s=1 to describe every role Ptah manages.", DescribeAllEnvVar)
 }
 
 // countedRoles renders a count with its singular or plural noun, in the shape

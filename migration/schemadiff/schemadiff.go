@@ -12,6 +12,7 @@ import (
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/clickhouserbac"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/matviewrefresh"
 	"go.5x5.cz/ptah/internal/reservedrole"
@@ -90,6 +91,22 @@ func compareWithDatabaseInfoReportingUndecidedAdditions(
 			return nil, nil, err
 		}
 		if err := reservedrole.ValidateDeclared(info.Dialect, generated.Roles); err != nil {
+			return nil, nil, err
+		}
+		// The same ClickHouse refusals the renderer applies, at the other entry
+		// point a declaration reaches before a server does. The empty default
+		// database matches the renderer's, so one set of declarations cannot be
+		// accepted by a comparison and refused by a render (stokaro/ptah#1025).
+		if err := clickhouserbac.ValidateDeclared(
+			info.Dialect, generated.Roles, generated.Grants, "",
+		); err != nil {
+			return nil, nil, err
+		}
+		// A live partial revoke narrows a managed role's effective privileges
+		// in a way no declaration can express, so the comparison would find
+		// nothing to plan and report convergence. Refuse instead, here, where
+		// an error can still travel.
+		if err := clickhouserbac.ValidateLive(info.Dialect, generated, database); err != nil {
 			return nil, nil, err
 		}
 		if err := schemaselection.ValidateDeclaredPostgresSystemSchemas(
