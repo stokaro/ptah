@@ -78,3 +78,52 @@ func TestRenderRefusesAnAPINameCollision(t *testing.T) {
 	c.Assert(err.Error(), qt.Contains, "billing_amount_minor")
 	c.Assert(res.Data, qt.HasLen, 0, qt.Commentf("nothing may be written on the refusing path"))
 }
+
+// A table exports under its API name, and the diagnostic path follows it: the
+// path is a coordinate inside the document, so it has to resolve there.
+func TestRenderUsesTheDeclaredTableAPIName(t *testing.T) {
+	c := qt.New(t)
+
+	res, err := openapirender.Render(&goschema.Database{
+		Tables: []goschema.Table{{StructName: "Invoice", Name: "billing_invoices", APIName: "invoices"}},
+		Fields: []goschema.Field{
+			{StructName: "Invoice", Name: "id", Type: "BIGSERIAL", Primary: true},
+			{StructName: "Invoice", Name: "quirk", Type: "some_unknown_type", Nullable: true},
+		},
+	}, openapirender.Options{})
+	c.Assert(err, qt.IsNil)
+
+	var doc map[string]any
+	c.Assert(yaml.Unmarshal(res.Data, &doc), qt.IsNil)
+	schemas := doc["components"].(map[string]any)["schemas"].(map[string]any)
+
+	_, aliased := schemas["invoices"]
+	c.Assert(aliased, qt.IsTrue, qt.Commentf("schemas=%v", schemas))
+	_, storage := schemas["billing_invoices"]
+	c.Assert(storage, qt.IsFalse)
+
+	c.Assert(res.Diagnostics, qt.HasLen, 1)
+	c.Assert(res.Diagnostics[0].Path, qt.Equals, "components.schemas.invoices.properties.quirk")
+}
+
+// Two tables published under one name would drop one of them from the
+// document, with nothing left in it to say so.
+func TestRenderRefusesATableAPINameCollision(t *testing.T) {
+	c := qt.New(t)
+
+	res, err := openapirender.Render(&goschema.Database{
+		Tables: []goschema.Table{
+			{StructName: "Invoice", Name: "invoices"},
+			{StructName: "Billing", Name: "billing_invoices", APIName: "invoices"},
+		},
+		Fields: []goschema.Field{
+			{StructName: "Invoice", Name: "id", Type: "BIGSERIAL", Primary: true},
+			{StructName: "Billing", Name: "id", Type: "BIGSERIAL", Primary: true},
+		},
+	}, openapirender.Options{})
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(err.Error(), qt.Contains, `two tables export as "invoices"`)
+	c.Assert(err.Error(), qt.Contains, "billing_invoices")
+	c.Assert(res.Data, qt.HasLen, 0)
+}

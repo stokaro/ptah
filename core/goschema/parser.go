@@ -485,6 +485,7 @@ func (s *schemaParseState) parseTableComment(comment *ast.Comment, structName st
 	s.tableDirectives = append(s.tableDirectives, Table{
 		StructName: structName,
 		Name:       tableName,
+		APIName:    kv["api_name"],
 		Schema:     schemaName,
 		Engine:     kv["engine"],
 		Comment:    kv["comment"],
