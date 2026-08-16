@@ -411,7 +411,7 @@ func (b *builder) buildDesired(db *goschema.Database) (desiredShape, error) {
 func (b *builder) assignMessageNames(tables []goschema.Table) (map[string]string, error) {
 	bare := map[string][]goschema.Table{}
 	for _, table := range tables {
-		name, changed := messageName(table.Name)
+		name, changed := messageName(schemaexport.TableAPIName(table))
 		if changed {
 			b.warn(table.Name, fmt.Sprintf(
 				"table %q was sanitized to protobuf message %q; buf lint STANDARD will report MESSAGE_PASCAL_CASE for it",
@@ -460,7 +460,15 @@ func (b *builder) assignMessageNames(tables []goschema.Table) (map[string]string
 }
 
 func (b *builder) buildField(table goschema.Table, f goschema.Field, enumIndex map[string][]string) (desiredField, error) {
-	name, changed, lintDirty := fieldName(f.Name)
+	// The protobuf field name is derived from the field's API name, and that is
+	// what carries the wire compatibility: reconcileMessage keys existing field
+	// NUMBERS by this name, so a column renamed while its api_name stays put
+	// keeps its number, and changing the api_name goes through the ordinary
+	// reservation policy instead (stokaro/ptah#905).
+	//
+	// The diagnostic path stays on the source names. It is not a coordinate in
+	// the generated file; it is where the author has to go to change anything.
+	name, changed, lintDirty := fieldName(schemaexport.FieldAPIName(f))
 	path := table.Name + "." + f.Name
 	if changed {
 		b.warn(path, fmt.Sprintf("column %q was sanitized to protobuf field %q", f.Name, name))
@@ -546,7 +554,7 @@ func (b *builder) registerEnum(table goschema.Table, f goschema.Field, values []
 	if named {
 		raw = schemaexport.PascalCase(strings.TrimPrefix(f.Type, "enum_"))
 	} else {
-		raw = schemaexport.TypeName(table.Name) + schemaexport.PascalCase(f.Name)
+		raw = schemaexport.TypeName(schemaexport.TableAPIName(table)) + schemaexport.PascalCase(schemaexport.FieldAPIName(f))
 	}
 	name, changed := sanitizeIdent(raw)
 	if changed {
