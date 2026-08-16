@@ -197,3 +197,102 @@ func TestASkippingIndexSurvivesARoundTrip(t *testing.T) {
 		})
 	}
 }
+
+func TestParserReadsAnInlineSkippingIndex(t *testing.T) {
+	tests := []struct {
+		name            string
+		element         string
+		wantName        string
+		wantExpression  string
+		wantType        string
+		wantGranularity int
+	}{
+		{
+			name:            "a column expression",
+			element:         "INDEX idx_b b TYPE minmax GRANULARITY 1",
+			wantName:        "idx_b",
+			wantExpression:  "b",
+			wantType:        "minmax",
+			wantGranularity: 1,
+		},
+		{
+			name:            "a parameterised type",
+			element:         "INDEX idx_b b TYPE set(100) GRANULARITY 4",
+			wantName:        "idx_b",
+			wantExpression:  "b",
+			wantType:        "set(100)",
+			wantGranularity: 4,
+		},
+		{
+			name:            "a tuple expression",
+			element:         "INDEX idx_ab (a, b) TYPE minmax GRANULARITY 1",
+			wantName:        "idx_ab",
+			wantExpression:  "(a, b)",
+			wantType:        "minmax",
+			wantGranularity: 1,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			// This is the form a live server's SHOW CREATE TABLE returns.
+			table := parseOneClickHouseTable(c,
+				"CREATE TABLE t (a Int32 NOT NULL, b Int32 NOT NULL, "+tt.element+
+					") ENGINE = MergeTree ORDER BY a;")
+
+			c.Assert(table.Indexes, qt.HasLen, 1)
+			c.Assert(table.Indexes[0].Name, qt.Equals, tt.wantName)
+			c.Assert(table.Indexes[0].Columns, qt.DeepEquals, []string{tt.wantExpression})
+			c.Assert(table.Indexes[0].Type, qt.Equals, tt.wantType)
+			c.Assert(table.Indexes[0].Granularity, qt.Equals, tt.wantGranularity)
+		})
+	}
+}
+
+func TestAnInlineSkippingIndexSurvivesARoundTrip(t *testing.T) {
+	c := qt.New(t)
+
+	// The renderer writes every skipping index as an ALTER, so the inline form
+	// comes back in the other spelling -- the same index, and stable from the
+	// first render onwards. The granularity is the discriminator: dropped
+	// anywhere along the way, the renderer substitutes 8192 and the assertion
+	// reads a plausible number that nobody asked for.
+	first := renderClickHouseSchema(c,
+		"CREATE TABLE t (a Int32 NOT NULL, b Int32 NOT NULL, INDEX idx_b b TYPE set(100) GRANULARITY 4)"+
+			" ENGINE = MergeTree ORDER BY a;")
+	second := renderClickHouseSchema(c, first)
+
+	c.Assert(second, qt.Equals, first)
+	c.Assert(first, qt.Contains, "ADD INDEX `idx_b` b TYPE set(100) GRANULARITY 4;")
+}
+
+func TestAnInlineIndexOnAnotherDialectIsStillAConstraint(t *testing.T) {
+	c := qt.New(t)
+
+	// MySQL spells a table-level index the same way and means something else.
+	// The ClickHouse reading is reached by dialect, so this must be untouched.
+	statements, err := parser.NewParser(
+		"CREATE TABLE t (a INT NOT NULL, b INT NOT NULL, INDEX idx_b (b)) ENGINE = InnoDB;",
+		parser.WithDialect(platform.MySQL),
+	).Parse()
+	c.Assert(err, qt.IsNil)
+	table, ok := statements.Statements[0].(*ast.CreateTableNode)
+	c.Assert(ok, qt.IsTrue)
+
+	c.Assert(table.Indexes, qt.HasLen, 0)
+	c.Assert(table.Constraints, qt.HasLen, 1)
+	c.Assert(table.Constraints[0].Name, qt.Equals, "idx_b")
+}
+
+func parseOneClickHouseTable(c *qt.C, sql string) *ast.CreateTableNode {
+	c.Helper()
+
+	statements, err := parser.NewParser(sql, parser.WithDialect(platform.ClickHouse)).Parse()
+	c.Assert(err, qt.IsNil)
+	c.Assert(statements.Statements, qt.HasLen, 1)
+	table, ok := statements.Statements[0].(*ast.CreateTableNode)
+	c.Assert(ok, qt.IsTrue)
+	return table
+}

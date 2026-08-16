@@ -1675,6 +1675,11 @@ type CreateTableNode struct {
     Options map[string]string
     // Partition stores PostgreSQL PARTITION BY metadata.
     Partition *PartitionSpec
+    // Indexes carries indexes declared inside the column list rather than as
+    // separate statements. ClickHouse writes its data-skipping indexes there,
+    // and a live server's SHOW CREATE TABLE returns them that way, so a reader
+    // that only understood standalone CREATE INDEX lost them (stokaro/ptah#1574).
+    Indexes []*IndexNode
     // SelectBody stores the SELECT tail for CREATE TABLE ... SELECT statements.
     SelectBody string
     // Comment is an optional table comment
