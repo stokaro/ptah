@@ -262,7 +262,7 @@ func runAtlasMigrateApplyTarget(
 	if loaded &&
 		!cmd.Flags().Changed("dir") &&
 		projectCfg.StringValue(projectconfig.StringMigrationDir).Present {
-		localDir, err = project.localDirWithQuery(opts.dir)
+		localDir, err = project.resolveProjectMigrationDir(opts.dir)
 	} else {
 		localDir, err = atlasargs.ParseLocalDir(opts.dir)
 	}

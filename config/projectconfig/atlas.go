@@ -1,6 +1,7 @@
 package projectconfig
 
 import (
+	"context"
 	"encoding/csv"
 	"errors"
 	"fmt"
@@ -26,6 +27,9 @@ import (
 
 // AtlasLoadOptions selects Atlas project config evaluation settings.
 type AtlasLoadOptions struct {
+	// Context governs data-source connections, runtime-variable reads, and
+	// subprocesses. A nil context uses context.Background.
+	Context context.Context
 	EnvName string
 	Vars    []string
 	// RejectListMapForEach refuses dynamic env expansion over list and map
@@ -199,7 +203,7 @@ func ParseAtlasFSCollectionWithOptions(
 		return nil, fmt.Errorf("parse atlas project config: unsupported body type %T", file.Body)
 	}
 
-	p, err := newAtlasParser(fsys, opts.Vars, filename, opts.RejectListMapForEach, ignoreSchemas)
+	p, err := newAtlasParser(opts.Context, fsys, opts.Vars, filename, opts.RejectListMapForEach, ignoreSchemas)
 	if err != nil {
 		return nil, err
 	}
@@ -222,6 +226,8 @@ func singularAtlasConfig(configs []Config, envName string) (Config, error) {
 }
 
 type atlasParser struct {
+	runContext  context.Context
+	fsys        fs.FS
 	ctx         *hcl.EvalContext
 	varOverride map[string]cty.Value
 	// ignoreEnvSchemas carries the resolved [IgnoreEnvSchemasEnvVar] value,
@@ -241,19 +247,10 @@ type atlasParser struct {
 	rejectListMapForEach bool
 	// externalSchemas holds the declared data.external_schema sources by name.
 	externalSchemas map[string]externalSchemaDataSource
-	// unresolvedDataSources records, per data-source kind Ptah cannot resolve,
-	// where it was declared. Declaring one is not itself a failure: the pinned
-	// CE binary exits 0 on a project file that declares `data "sql"` and never
-	// reads it, and on one whose only reader is an environment the run did not
-	// select. Refusing at the declaration made such a file unusable with Ptah
-	// altogether, which is a much larger surface than the missing resolvers
-	// (stokaro/ptah#1511).
-	//
-	// The refusal moves to the reference instead, where the run genuinely
-	// cannot continue. A plain map for the same reason as hclSchemaScopes: the
-	// parser is passed by value, but every write here happens before any
-	// environment body is evaluated.
-	unresolvedDataSources map[string]hcl.Range
+	// migrationDirectories holds immutable data.template_dir filesystems by
+	// their mem:// URL. The map is shared across parser copies and attached to
+	// each selected Config after evaluation.
+	migrationDirectories map[string]MigrationDirectorySource
 	// sensitiveValues holds the resolved values of variables declared
 	// `sensitive = true`, so they can be scrubbed from any diagnostic before it
 	// reaches stderr. HCL renders function arguments into its own error text --
@@ -315,17 +312,23 @@ type IgnoredAtlasConstruct struct {
 }
 
 func newAtlasParser(
+	runContext context.Context,
 	fsys fs.FS,
 	rawVars []string,
 	filename string,
 	rejectListMapForEach bool,
 	ignoreSchemas bool,
 ) (atlasParser, error) {
+	if runContext == nil {
+		runContext = context.Background()
+	}
 	overrides, err := parseAtlasVarOverrides(rawVars)
 	if err != nil {
 		return atlasParser{}, err
 	}
 	return atlasParser{
+		runContext:      runContext,
+		fsys:            fsys,
 		sensitiveValues: &[]string{},
 		ignored:         &[]IgnoredAtlasConstruct{},
 		ignoredSeen:     map[ignoredAtlasConstructKey]struct{}{},
@@ -336,17 +339,19 @@ func newAtlasParser(
 				"fileset":    atlasFilesetFunc(fsys),
 				"format":     stdlib.FormatFunc,
 				"getenv":     atlasGetenvFunc(),
+				"jsondecode": stdlib.JSONDecodeFunc,
 				"jsonencode": stdlib.JSONEncodeFunc,
+				"tolist":     stdlib.MakeToFunc(cty.List(cty.DynamicPseudoType)),
 				"toset":      stdlib.MakeToFunc(cty.Set(cty.DynamicPseudoType)),
 			},
 		},
-		varOverride:           overrides,
-		ignoreEnvSchemas:      ignoreSchemas,
-		baseDir:               filepath.Dir(filename),
-		rejectListMapForEach:  rejectListMapForEach,
-		externalSchemas:       map[string]externalSchemaDataSource{},
-		unresolvedDataSources: map[string]hcl.Range{},
-		hclSchemaScopes:       map[string]hclSchemaVarScope{},
+		varOverride:          overrides,
+		ignoreEnvSchemas:     ignoreSchemas,
+		baseDir:              filepath.Dir(filename),
+		rejectListMapForEach: rejectListMapForEach,
+		externalSchemas:      map[string]externalSchemaDataSource{},
+		hclSchemaScopes:      map[string]hclSchemaVarScope{},
+		migrationDirectories: map[string]MigrationDirectorySource{},
 	}, nil
 }
 
@@ -355,15 +360,34 @@ func (p atlasParser) parseCollection(body *hclsyntax.Body, envName string) ([]Co
 		"env": cty.StringVal(envName),
 	})
 
+	base := Config{}
+	blocks, err := p.collectAtlasTopBlocks(body.Blocks)
+	if err != nil {
+		return nil, err
+	}
+	if err := p.validateAtlasEnvStructures(blocks.envs); err != nil {
+		return nil, err
+	}
+	var selected []atlasEnvBlock
+	if len(blocks.envs) > 0 {
+		selected, err = selectAtlasEnvBlocks(blocks.envs, envName)
+		if err != nil {
+			return nil, err
+		}
+	}
+	if err := p.configureEvalContext(
+		blocks.variables,
+		blocks.locals,
+		blocks.data,
+		atlasEvaluationRoots(body.Attributes, blocks.globalDiff, blocks.globalLint, selected),
+	); err != nil {
+		return nil, err
+	}
+
 	// CE's tolerance covers unknown ATTRIBUTES as well as blocks -- measured,
-	// and the point stokaro/ptah#1014 left open. The expression is still
-	// evaluated, so a bad reference in one is still fatal.
-	//
-	// The tolerance is not universal at this scope either: three top-level names
-	// are decoded into a struct and refuse an object body, and `env` written as
-	// an attribute takes no value but null. Both rules are asked through
-	// [checkAtlasToleratedValue] so this body cannot drift from the ones that go
-	// through [atlasParser.tolerateUnknownAttr].
+	// and the point stokaro/ptah#1014 left open. Evaluation happens after the
+	// selected data-source dependency graph is available, so a top-level value
+	// can reference data without making every declaration eager.
 	for _, name := range sortedAttributeNames(body.Attributes) {
 		attr := body.Attributes[name]
 		value, diags := attr.Expr.Value(p.ctx)
@@ -375,19 +399,6 @@ func (p atlasParser) parseCollection(body *hclsyntax.Body, envName string) ([]Co
 		}
 		p.noteIgnored("attribute", name, attr.NameRange)
 	}
-
-	base := Config{}
-	blocks, err := p.collectAtlasTopBlocks(body.Blocks)
-	if err != nil {
-		return nil, err
-	}
-	if err := p.validateAtlasEnvStructures(blocks.envs); err != nil {
-		return nil, err
-	}
-
-	if err := p.configureEvalContext(blocks.variables, blocks.locals, blocks.data); err != nil {
-		return nil, err
-	}
 	if err := p.parseSingleAtlasBlock(blocks.globalDiff, &base, p.parseDiff); err != nil {
 		return nil, err
 	}
@@ -395,14 +406,11 @@ func (p atlasParser) parseCollection(body *hclsyntax.Body, envName string) ([]Co
 		return nil, err
 	}
 	if len(blocks.envs) == 0 {
+		base.migrationDirectories = cloneMigrationDirectories(p.migrationDirectories)
 		base.IgnoredConstructs = p.ignoredConstructs()
 		return []Config{base}, nil
 	}
 
-	selected, err := selectAtlasEnvBlocks(blocks.envs, envName)
-	if err != nil {
-		return nil, err
-	}
 	configs := make([]Config, 0, len(selected))
 	for _, env := range selected {
 		instances, err := p.parseAtlasEnvInstances(env, envName)
@@ -411,6 +419,7 @@ func (p atlasParser) parseCollection(body *hclsyntax.Body, envName string) ([]Co
 		}
 		for _, instance := range instances {
 			merged := Merge(base, instance)
+			merged.migrationDirectories = cloneMigrationDirectories(p.migrationDirectories)
 			if err := p.resolveExternalSchemaMarkers(&merged); err != nil {
 				return nil, err
 			}
@@ -1633,20 +1642,6 @@ func (p atlasParser) parseDiffConcurrentIndex(block *hclsyntax.Block, cfg *Confi
 	return nil
 }
 
-func (p atlasParser) configureEvalContext(
-	variableBlocks []*hclsyntax.Block,
-	localsBlocks []*hclsyntax.Block,
-	dataBlocks []*hclsyntax.Block,
-) error {
-	if err := p.configureVariables(variableBlocks); err != nil {
-		return err
-	}
-	if err := p.configureLocals(localsBlocks); err != nil {
-		return err
-	}
-	return p.configureDataSources(dataBlocks)
-}
-
 func (p atlasParser) configureVariables(blocks []*hclsyntax.Block) error {
 	vars := map[string]cty.Value{}
 	for _, block := range blocks {
@@ -1942,101 +1937,6 @@ func atlasVariableTypeName(typ cty.Type) string {
 	}
 }
 
-func (p atlasParser) configureLocals(blocks []*hclsyntax.Block) error {
-	locals := map[string]cty.Value{}
-	pending := hclsyntax.Attributes{}
-	for _, block := range blocks {
-		if len(block.Labels) > 0 {
-			return unsupportedBlock(block)
-		}
-		if len(block.Body.Blocks) > 0 {
-			return unsupportedBlock(block.Body.Blocks[0])
-		}
-		for name, attr := range block.Body.Attributes {
-			if _, ok := pending[name]; ok {
-				return fmt.Errorf("duplicate atlas.hcl local %q at %s:%d", name, attr.NameRange.Filename, attr.NameRange.Start.Line)
-			}
-			pending[name] = attr
-		}
-	}
-	return p.evaluateLocals(locals, pending)
-}
-
-func (p atlasParser) evaluateLocals(locals map[string]cty.Value, pending hclsyntax.Attributes) error {
-	for len(pending) > 0 {
-		firstName := sortedAttributeNames(pending)[0]
-		progress := false
-		for _, name := range sortedAttributeNames(pending) {
-			attr := pending[name]
-			value, diags := attr.Expr.Value(p.ctx)
-			if diags.HasErrors() {
-				continue
-			}
-			locals[name] = value
-			p.ctx.Variables["local"] = cty.ObjectVal(locals)
-			delete(pending, name)
-			progress = true
-		}
-		if !progress {
-			return unsupportedAttr(firstName, pending[firstName])
-		}
-	}
-	return nil
-}
-
-func (p atlasParser) configureDataSources(blocks []*hclsyntax.Block) error {
-	hclSchemas := map[string]cty.Value{}
-	externalSchemas := map[string]cty.Value{}
-	for _, block := range blocks {
-		if len(block.Labels) != 2 {
-			return unsupportedBlock(block)
-		}
-		switch block.Labels[0] {
-		case "hcl_schema":
-			if err := p.configureHCLSchemaDataSource(block, hclSchemas); err != nil {
-				return err
-			}
-		case "external_schema":
-			if err := p.configureExternalSchemaDataSource(block, externalSchemas); err != nil {
-				return err
-			}
-		default:
-			// Recorded, not refused. See [atlasParser.unresolvedDataSources]:
-			// the refusal happens where the value is read.
-			if _, seen := p.unresolvedDataSources[block.Labels[0]]; !seen {
-				p.unresolvedDataSources[block.Labels[0]] = block.TypeRange
-			}
-		}
-	}
-	data := map[string]cty.Value{}
-	if len(hclSchemas) > 0 {
-		data["hcl_schema"] = cty.ObjectVal(hclSchemas)
-	}
-	if len(externalSchemas) > 0 {
-		data["external_schema"] = cty.ObjectVal(externalSchemas)
-	}
-	if len(data) > 0 {
-		p.ctx.Variables["data"] = cty.ObjectVal(data)
-	}
-	return nil
-}
-
-func (p atlasParser) configureHCLSchemaDataSource(
-	block *hclsyntax.Block,
-	values map[string]cty.Value,
-) error {
-	name := block.Labels[1]
-	if _, ok := values[name]; ok {
-		return fmt.Errorf("duplicate atlas.hcl data.hcl_schema %q at %s:%d", name, block.TypeRange.Filename, block.TypeRange.Start.Line)
-	}
-	value, err := p.hclSchemaDataSource(block)
-	if err != nil {
-		return err
-	}
-	values[name] = value
-	return nil
-}
-
 // externalSchemaMarkerScheme prefixes the opaque data.external_schema.<name>.url
 // value. It is a Ptah-internal marker, never a runnable location: the scheme is
 // reserved (Classify and the schema-file loaders reject it), so a
@@ -2058,25 +1958,6 @@ type externalSchemaDataSource struct {
 	format     string
 	workingDir string
 	env        []string
-}
-
-func (p atlasParser) configureExternalSchemaDataSource(
-	block *hclsyntax.Block,
-	values map[string]cty.Value,
-) error {
-	name := block.Labels[1]
-	if _, ok := p.externalSchemas[name]; ok {
-		return fmt.Errorf("duplicate atlas.hcl data.external_schema %q at %s:%d", name, block.TypeRange.Filename, block.TypeRange.Start.Line)
-	}
-	source, err := p.externalSchemaDataSource(block)
-	if err != nil {
-		return err
-	}
-	p.externalSchemas[name] = source
-	values[name] = cty.ObjectVal(map[string]cty.Value{
-		"url": cty.StringVal(externalSchemaMarkerScheme + name),
-	})
-	return nil
 }
 
 func (p atlasParser) externalSchemaDataSource(block *hclsyntax.Block) (externalSchemaDataSource, error) {
@@ -3362,40 +3243,9 @@ func unsupported(name string, rng hcl.Range) error {
 // through because it names the offending sub-expression, which our own message
 // cannot.
 func (p atlasParser) evaluationFailed(name string, attr *hclsyntax.Attribute, diags hcl.Diagnostics) error {
-	// A reference to a data source Ptah cannot resolve reaches here as whatever
-	// HCL says about a missing object attribute, which describes the symptom
-	// rather than the cause. Answer with the construct instead, which is the
-	// same sentence the declaration used to produce -- the refusal did not go
-	// away, it moved to the place that actually needs the value.
-	if err := p.unresolvedDataSourceReference(attr); err != nil {
-		return err
-	}
 	return fmt.Errorf("cannot evaluate atlas.hcl %q at %s:%d: %s",
 		name, attr.NameRange.Filename, attr.NameRange.Start.Line,
 		p.scrubSensitive(diags.Error()))
-}
-
-// unresolvedDataSourceReference reports the declaration of the first
-// unresolvable data source the expression reads, or nil if it reads none.
-func (p atlasParser) unresolvedDataSourceReference(attr *hclsyntax.Attribute) error {
-	if len(p.unresolvedDataSources) == 0 {
-		return nil
-	}
-	for _, traversal := range attr.Expr.Variables() {
-		if len(traversal) < 2 || traversal.RootName() != "data" {
-			continue
-		}
-		kind, ok := traversal[1].(hcl.TraverseAttr)
-		if !ok {
-			continue
-		}
-		declared, unresolvable := p.unresolvedDataSources[kind.Name]
-		if !unresolvable {
-			continue
-		}
-		return unsupported("data."+kind.Name, declared)
-	}
-	return nil
 }
 
 // scrubSensitive removes the values of `sensitive = true` variables from text

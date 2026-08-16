@@ -221,7 +221,14 @@ a synced schema.
 
 **Implementation status.** Partial. Native Ptah supports YAML, Go annotations, supported HCL schema files, SQL schema files, live DB introspection, external programs that emit SQL, HCL, or YAML, and canonical desired-schema artifacts in a bring-your-own OCI registry. The same `ptah.yaml external_schema` block supplies native render, compare, drift, and migration planning.
 
-The native OCI source is available to `schema compare` and `drift` through `--schema-file`; it is not Atlas Registry parity or an `atlas://` source for Atlas-compatible commands. Atlas HCL `data "external_schema"` is implemented for both binaries, gated behind `--allow-external-schema` (native) or `PTAH_ALLOW_EXTERNAL_SCHEMA=1` (`ptah-compat`); registry-backed sources and the remaining Atlas data sources stay outside the supported compatibility subset.
+The native OCI source is available to `schema compare` and `drift` through
+`--schema-file`; it is not Atlas Registry parity or an `atlas://` source for
+Atlas-compatible commands. Atlas HCL `data "external_schema"` is implemented
+for both binaries, gated behind `--allow-external-schema` (native) or
+`PTAH_ALLOW_EXTERNAL_SCHEMA=1` (`ptah-compat`). The Atlas OSS `data "sql"`,
+`data "external"`, `data "runtimevar"`, and `data "template_dir"` project
+sources are also implemented. Registry-backed desired-state sources remain
+outside the supported compatibility subset.
 
 **Conformance status.** Native external programs are measured by a deterministic 20-observation SQL/HCL/YAML workflow through render, compare, drift, plan, generate, apply, live SQLite facts, and convergence. A separate zero-gap tier exercises pinned GORM and SQLAlchemy providers. The native OCI round trip remains covered by Ptah's own command and integration tests rather than Atlas conformance.
 
@@ -249,21 +256,36 @@ The native OCI source is available to `schema compare` and `drift` through `--sc
 
 **Implementation status.** Partial.
 
-Ptah reads a documented subset into project config IR, including local env settings, `schema.src`, `schema.mode`, output formats, supported diff and lint policy, local variable defaults, typed variables (`string`, `number`, `bool`, `list(string)`, `map(string)`) with `sensitive` support, string/list `--var` overrides, locals, `getenv`, `file`, `fileset`, `format`, `jsonencode`, `toset`, `atlas.env`, `each.key`, `each.value`, `data.hcl_schema.<name>.url`, and migration-lint changeset selectors. Atlas-compatible `migrate apply` expands labeled or unlabeled env `for_each` collections into ordered database targets.
+Ptah reads a documented subset into project config IR, including local env
+settings, `schema.src`, `schema.mode`, output formats, supported diff and lint
+policy, local variable defaults, typed variables (`string`, `number`, `bool`,
+`list(string)`, `map(string)`) with `sensitive` support, string/list `--var`
+overrides, locals, `getenv`, `file`, `fileset`, `format`, `jsondecode`,
+`jsonencode`, `toset`,
+`atlas.env`, `each.key`, `each.value`, the supported `hcl_schema`, `sql`,
+`external`, `runtimevar`, and `template_dir` project data sources, and
+migration-lint changeset selectors. Atlas-compatible `migrate apply` expands
+labeled or unlabeled env `for_each` collections into ordered database targets.
 
 Whole-document structural validation classifies every environment before one is
 selected. Unsupported shapes fail in selected and unselected environments.
 Names that Atlas CE accepts without acting on are preserved in project config
-and reported once per source location; only the selected environment's
-expressions are evaluated.
+and reported once per source location. Recognized project data sources are
+evaluated lazily in dependency order from selected settings, global policy,
+top-level attributes, and locals; valid unreferenced sources are not opened or
+executed.
 
-Cloud, registry, data sources beyond the local subset, variable `validation` blocks, other variable type constraints such as `object(...)`, Atlas check-level lint policy, custom lint rules, unsupported lint analyzer options, unsupported format blocks, unsupported diff policy fields, and remote directory behavior are not implemented.
+Cloud and registry data sources beyond the recognized lazy subset, variable
+`validation` blocks, other variable type constraints such as `object(...)`,
+Atlas check-level lint policy, custom lint rules, unsupported lint analyzer
+options, unsupported format blocks, unsupported diff policy fields, and remote
+directory behavior are not implemented.
 
 **Conformance status.** The committed companion reports do not yet measure
 dynamic env expansion. Main-repository parser, adapter, command, and live SQLite
 tests cover the supported local subset, whole-document structural decisions,
-selected-environment evaluation, multi-target apply with partial failure and
-retry, and ignored-name warnings.
+selected-environment evaluation, dependency-ordered project data sources,
+multi-target apply with partial failure and retry, and ignored-name warnings.
 
 **Follow-up.** [`stokaro/ptah#582`](https://github.com/stokaro/ptah/issues/582), [`stokaro/ptah#583`](https://github.com/stokaro/ptah/issues/583), [`stokaro/ptah#581`](https://github.com/stokaro/ptah/issues/581), [`stokaro/ptah#619`](https://github.com/stokaro/ptah/issues/619).
 

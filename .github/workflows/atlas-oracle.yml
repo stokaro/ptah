@@ -83,6 +83,12 @@ jobs:
           ./integration/atlasoracle/migratedirquery
           -count=1
 
+      - name: Verify project data-source contract
+        run: >-
+          go test -tags=integration
+          ./integration/atlasoracle/projectdata
+          -count=1
+
       - name: Verify Flyway revision identity contract
         run: >-
           go test -tags=integration

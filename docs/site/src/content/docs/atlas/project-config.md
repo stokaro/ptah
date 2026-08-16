@@ -18,12 +18,16 @@ Ptah accepts these local configuration blocks:
 - top-level `locals`
 - `data "hcl_schema"` for local schema file data
 - `data "external_schema"` for program-generated desired state
+- `data "sql"` for a one-column database query
+- `data "external"` for direct program output
+- `data "runtimevar"` for Go CDK runtime-variable URLs
+- `data "template_dir"` for rendered migration directories
 - `env` blocks, with either one label or no label
 - top-level and env-local `lint`
 - env-local `schema`, `migration`, `format`, and `diff`
 
-Atlas Cloud, registry, remote directory, and unsupported data-source constructs
-fail explicitly.
+Referenced Atlas Cloud and remote-directory sources, registry constructs, and
+unsupported data-source types fail explicitly.
 
 ## Example
 
@@ -401,6 +405,118 @@ as the label-arity and duplicate refusals, and it can only reject a file that
 binary reads, never accept one it rejects. Names Ptah merely reports as ignored
 are the other case and do accept `null` — see
 [Settings Ptah does not act on are still type-checked](#settings-ptah-does-not-act-on-are-still-type-checked).
+
+## Project data source evaluation
+
+Project data sources are lazy. Ptah evaluates a recognized source only when a
+selected environment, a global `lint` or `diff` block, a top-level attribute,
+or a local value references it. Dependencies between locals and data sources
+run first. Declaring an unreferenced source does not open a database, start a
+program, read a runtime variable, or render a directory.
+
+The lazy set also recognizes `remote_dir`, `remote_schema`, `aws_rds_token`,
+and `gcp_cloudsql_token`, matching the community binary's treatment of valid
+unreferenced blocks. Referencing one still fails explicitly because Ptah does
+not implement it. An unknown type, including `composite_schema`, fails during
+structural validation even when unreferenced.
+
+## SQL data source
+
+`data "sql"` executes one query against `url`. The query must return one
+column. Optional positional `args` accept strings, booleans, numbers, and
+nulls. The result object contains the row count, the first row, and all rows:
+
+```hcl
+data "sql" "tenants" {
+  url   = "sqlite://app.db"
+  query = "SELECT name FROM tenant WHERE active = ? ORDER BY name"
+  args  = [true]
+}
+
+locals {
+  first_tenant = data.sql.tenants.value
+  all_tenants  = data.sql.tenants.values
+  tenant_count = data.sql.tenants.count
+}
+```
+
+When no rows match, `value` is null and `values` is an empty tuple. Strings,
+booleans, integers, floating-point values, byte strings, and timestamps are
+preserved as HCL values. Every non-null row must have the same HCL type; a
+heterogeneous result, a null result, or a query with more than one column fails
+explicitly.
+
+## External data source
+
+`data "external"` runs an argv directly and returns its standard output as a
+string without trimming it:
+
+```hcl
+data "external" "release" {
+  program     = ["./release-version", "--format", "plain"]
+  working_dir = "tools"
+}
+```
+
+No shell runs, so metacharacters are literal arguments. A relative
+`working_dir` resolves from the directory holding `atlas.hcl`; omitting it
+inherits the process working directory. Caller cancellation applies, execution
+is capped at 60 seconds, standard output is capped at 64 MiB, and errors expose
+only a sanitized bounded standard-error tail.
+
+## Runtime variable data source
+
+`data "runtimevar"` reads `url` through Go CDK and returns the exact bytes as a
+string:
+
+```hcl
+data "runtimevar" "password" {
+  url = "file://./secrets/password?timeout=2s"
+}
+```
+
+Supported URL openers are `constant`, `file`, `http`, `https`, AWS Parameter Store and
+Secrets Manager, and Google Cloud Runtime Config and Secret Manager. The
+optional `timeout` query parameter overrides the 10-second default and is
+removed before the provider receives the URL.
+
+## Template directory data source
+
+`data "template_dir"` parses its files as one shared Go `text/template` set and
+exposes an immutable rendered migration-directory URL:
+
+```hcl
+data "template_dir" "tenant" {
+  path = "migrations.tmpl"
+  vars = {
+    table = "tenant"
+  }
+}
+
+env "local" {
+  url = "sqlite://app.db"
+  migration {
+    dir = data.template_dir.tenant.url
+  }
+}
+```
+
+Missing template keys fail. Root migrations can invoke definitions from nested
+shared files because every file below `path` joins the template set. Only
+root-level names ending in lowercase `.sql` are executed and emitted as
+migrations; nested files, uppercase `.SQL` files, and other extensions are not
+emitted themselves. Each `vars` value must be a string, number, boolean, or a
+homogeneous list of those types produced with `tolist`. Numbers reach Go
+templates as `float64` values.
+
+Ptah computes `atlas.sum` for the rendered files and captures the result before
+database work. `migrate new` and a writing `migrate diff` synchronize their new
+root SQL files and `atlas.sum` back to `path` without rewriting existing
+templates. A hash-only run does not create `atlas.sum` in the source directory.
+`path` resolves from the directory holding `atlas.hcl` and is confined to it,
+including through symbolic links. A relative path remains relative in the
+result URL, so the example produces `mem://migrations.tmpl/tenant`; an absolute
+path produces a `mem:///absolute/path/tenant` URL.
 
 ## External schema data source
 

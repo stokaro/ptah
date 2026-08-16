@@ -42,6 +42,12 @@ const (
 
 type DiffOptions struct {
 	Dir string
+	// ReplaySource overrides the migration filesystem this run verifies and
+	// replays while Dir remains the publication destination. It is used by
+	// rendered project sources such as data.template_dir: planning reads the
+	// immutable rendered migrations, while new files and atlas.sum are written
+	// back to the sandboxed template source. Nil reads and writes Dir.
+	ReplaySource fs.FS
 	// Root, when set, is the opened project root the migration directory must
 	// stay inside. The writer binds Dir through it once and runs every later
 	// step -- staging, publication, checksum commit, rollback and recovery --
@@ -115,9 +121,10 @@ type DiffOptions struct {
 	// durably published and included in atlas.sum. The callback runs while the
 	// migration-directory lock is held.
 	PreparePublication func([]string) error
-	// VerifyDir re-checks the directory's integrity file against the locked
-	// snapshot, after the migration-directory lock is held and before anything
-	// is planned. Leave it nil for [verifyDirSum], which accepts a directory
+	// VerifyDir re-checks the replay directory's integrity file against its
+	// stable snapshot, after the publication-directory lock is held and before
+	// anything is planned. When ReplaySource is nil, that is the same directory
+	// as Dir. Leave VerifyDir nil for [verifyDirSum], which accepts a directory
 	// carrying no atlas.sum at all.
 	//
 	// The caller supplies it so that ONE definition of "is this directory
@@ -252,12 +259,12 @@ func generateDiff(
 	// recheck, staging, publication, the atlas.sum commit, rollback and recovery
 	// -- goes through this handle, so a directory or ancestor replaced after this
 	// point cannot redirect the transaction (stokaro/ptah#1118).
-	writer, migrationSnapshot, err := openVerifiedMigrationDir(opts)
+	openedDir, err := openVerifiedMigrationDir(opts)
 	if err != nil {
 		return DiffResult{}, err
 	}
 	defer func() {
-		err = errors.Join(err, writer.Close())
+		err = errors.Join(err, openedDir.writer.Close())
 	}()
 
 	info := conn.Info()
@@ -272,7 +279,7 @@ func generateDiff(
 	// already were one. The conversion is the same one every reading verb runs
 	// (`migrate apply`, `hash`, `validate`, `lint`), so the state this run
 	// diffs against is the state those verbs report.
-	replaySource, err := validatedDiffReplaySource(migrationSnapshot, opts)
+	replaySource, err := validatedDiffReplaySource(openedDir.snapshots.replay, opts)
 	if err != nil {
 		return DiffResult{}, err
 	}
@@ -314,7 +321,7 @@ func generateDiff(
 	if err := ctx.Err(); err != nil {
 		return DiffResult{}, err
 	}
-	if err := verifyMigrationDirUnchanged(writer, migrationSnapshot); err != nil {
+	if err := verifyMigrationDirUnchanged(openedDir.writer, openedDir.snapshots.publication); err != nil {
 		return DiffResult{}, err
 	}
 	if opts.DryRun {
@@ -327,10 +334,10 @@ func generateDiff(
 	}
 	return writeDiffArtifacts(
 		ctx,
-		writer,
+		openedDir.writer,
 		opts.Name,
 		contents,
-		migrationSnapshot,
+		openedDir.snapshots.publication,
 		opts.PreparePublication,
 		diffWriteLayout{format: opts.dirFormat(), versionFS: replaySource},
 	)
@@ -388,39 +395,60 @@ func diffReplaySource(snapshot fsnapshot.Snapshot, opts DiffOptions) (fs.FS, err
 // together with the snapshot the rest of the run is planned against. Both come
 // from the same handle deliberately: verifying one filesystem object and
 // planning against another is the defect this ordering closes.
-func openVerifiedMigrationDir(
-	opts DiffOptions,
-) (*migrationWriterDir, fsnapshot.Snapshot, error) {
+type openedMigrationDir struct {
+	writer    *migrationWriterDir
+	snapshots migrationDirSnapshots
+}
+
+type migrationDirSnapshots struct {
+	publication fsnapshot.Snapshot
+	replay      fsnapshot.Snapshot
+}
+
+func openVerifiedMigrationDir(opts DiffOptions) (openedMigrationDir, error) {
 	writer, err := createMigrationWriterDir(opts.Root, opts.Dir)
 	if err != nil {
-		return nil, fsnapshot.Snapshot{}, err
+		return openedMigrationDir{}, err
 	}
-	snapshot, err := captureVerifiedMigrationDir(writer, opts)
+	snapshots, err := captureVerifiedMigrationDir(writer, opts)
 	if err != nil {
-		return nil, fsnapshot.Snapshot{}, errors.Join(err, writer.Close())
+		return openedMigrationDir{}, errors.Join(err, writer.Close())
 	}
-	return writer, snapshot, nil
+	return openedMigrationDir{writer: writer, snapshots: snapshots}, nil
 }
 
 func captureVerifiedMigrationDir(
 	w *migrationWriterDir,
 	opts DiffOptions,
-) (fsnapshot.Snapshot, error) {
+) (migrationDirSnapshots, error) {
 	if err := recoverPendingPublication(w); err != nil {
-		return fsnapshot.Snapshot{}, fmt.Errorf("recover migration artifact publication: %w", err)
+		return migrationDirSnapshots{}, fmt.Errorf(
+			"recover migration artifact publication: %w",
+			err,
+		)
 	}
 	fsys, err := w.FS()
 	if err != nil {
-		return fsnapshot.Snapshot{}, err
+		return migrationDirSnapshots{}, err
 	}
-	snapshot, err := migrationsnapshot.CaptureStable(fsys)
+	publication, err := migrationsnapshot.CaptureStable(fsys)
 	if err != nil {
-		return fsnapshot.Snapshot{}, fmt.Errorf("capture migration directory: %w", err)
+		return migrationDirSnapshots{}, fmt.Errorf("capture migration directory: %w", err)
 	}
-	if err := opts.verifyDir(snapshot); err != nil {
-		return fsnapshot.Snapshot{}, err
+	replay := publication
+	if opts.ReplaySource != nil {
+		replay, err = migrationsnapshot.CaptureStable(opts.ReplaySource)
+		if err != nil {
+			return migrationDirSnapshots{}, fmt.Errorf(
+				"capture rendered migration directory: %w",
+				err,
+			)
+		}
 	}
-	return snapshot, nil
+	if err := opts.verifyDir(replay); err != nil {
+		return migrationDirSnapshots{}, err
+	}
+	return migrationDirSnapshots{publication: publication, replay: replay}, nil
 }
 
 func prepareDiff(

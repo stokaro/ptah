@@ -1,4 +1,4 @@
-package schemasource
+package processcapture
 
 // White-box testing required: the environment a child would receive is only
 // observable on the exec.Cmd before it starts. Asserting it through a spawned
@@ -16,13 +16,12 @@ import (
 )
 
 // TestSetWorkingDirectoryEnv_MakesPWDAgreeWithDir pins the contract
-// [Command.Env] documents: PWD is not the caller's to set, and it names the
-// directory the program runs in.
+// [Command.Dir] documents: PWD names the directory the program runs in, not the
+// one Ptah was started from.
 //
 // os/exec keeps only the POSIX half -- it appends PWD=<abs Dir> there and
 // documents that Windows and Plan 9 "do not use the PWD variable". Ptah started
-// from git-bash, MSYS2 or Cygwin inherits a PWD naming Ptah's own directory,
-// and validateEnvironment forbids the caller from correcting it.
+// from git-bash, MSYS2 or Cygwin inherits a PWD naming Ptah's own directory.
 func TestSetWorkingDirectoryEnv_MakesPWDAgreeWithDir(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()

@@ -142,7 +142,7 @@ func runAtlasMigrateStatus(
 
 	var localDir atlasargs.LocalDir
 	if dirFromProject {
-		localDir, err = project.localDirWithQuery(opts.dir)
+		localDir, err = project.resolveProjectMigrationDir(opts.dir)
 	} else {
 		// The scheme was already required above, where the measured ordering
 		// puts it.

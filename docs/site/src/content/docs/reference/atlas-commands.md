@@ -199,6 +199,10 @@ atlas layout forwards to `ptah migrations hash`. A successful compatibility
 hash is silent, matching Atlas CE; inspect or commit the resulting `atlas.sum`
 instead of relying on a progress message.
 
+When `migration.dir` is a `data.template_dir` URL, the checksum belongs to the
+immutable rendered view. The command remains silent and does not create an
+`atlas.sum` beside the source templates.
+
 ### `ptah-compat migrate validate`
 
 Silently verifies `atlas.sum` on success. Missing or mismatched checksum files
@@ -206,6 +210,9 @@ use Atlas-compatible exit-1 stdout/stderr diagnostics, and `--dev-url` cleans
 the dev database and replays the migration directory to validate SQL
 execution. Native `ptah migrations validate` keeps its own banner and exit
 contract.
+
+A `data.template_dir` URL is validated through its rendered snapshot; the
+source templates are not modified.
 
 ### Source directory layouts on the verbs that read a directory
 
@@ -374,6 +381,10 @@ spellings, and the created files follow the selected tool's convention:
 `--edit` opens the created file in `$VISUAL`/`$EDITOR` before `atlas.sum` is
 refreshed; on every other layout it is refused, as it is by Atlas.
 
+For a project `migration.dir` backed by `data.template_dir`, the new root SQL
+file and `atlas.sum` are synchronized to the template source directory. The
+existing templates remain unchanged and the command stays silent.
+
 A migration name is required on a non-`atlas` layout. Atlas accepts an omitted
 name and writes the version alone, but such a file is one Ptah's own
 `migrate apply` cannot read back on `golang-migrate`, `goose`, `liquibase` and
@@ -486,6 +497,12 @@ Verifies the directory's `atlas.sum`, replays the selected migration layout on
 `--dev-url`, diffs it against `--to`, and writes new migration files in that
 layout. `atlas.sum` updates only after every file was written; a failed write
 rolls the whole generation back.
+
+For a project `migration.dir` backed by `data.template_dir`, replay uses the
+immutable rendered snapshot while publication writes the new root SQL files and
+`atlas.sum` to the template source directory. Existing templates are not
+rewritten, and a successful writing run is silent so the backing host path does
+not leak through the virtual migration URL.
 
 The checksum refusal comes first — before the dev database is connected to and
 before `--to` and `--dev-url` are required at all, which is the order Atlas uses
@@ -881,7 +898,10 @@ still typing both, so adding `--dry-run` to the command line above is refused
 with the same sentence whether or not the variable is exported.
 
 `--env` evaluation includes local variable defaults, locals, `getenv`, `file`,
-`fileset`, `format`, `jsonencode`, and `data.hcl_schema.<name>.url` references.
+`fileset`, `format`, `jsondecode`, `jsonencode`, `tolist`, and the supported
+`hcl_schema`, `sql`, `external`, `runtimevar`, and `template_dir` project data
+sources. Data sources execute only when the selected config depends on them;
+dependency order is resolved before command settings are read.
 
 **`--schema`/`-s` and `--include`** scope both sides of the comparison.
 `--schema` restricts them to the named schema scopes; `--include` positively

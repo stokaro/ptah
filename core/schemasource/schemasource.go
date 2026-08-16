@@ -15,8 +15,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -24,6 +22,7 @@ import (
 	"go.5x5.cz/ptah/internal/atlashcl"
 	"go.5x5.cz/ptah/internal/convert/toschema"
 	"go.5x5.cz/ptah/internal/parser"
+	"go.5x5.cz/ptah/internal/processcapture"
 	"go.5x5.cz/ptah/internal/secretdisplay"
 	"go.5x5.cz/ptah/internal/yamlschema"
 )
@@ -31,17 +30,6 @@ import (
 // DefaultTimeout bounds how long an external schema command may run when the
 // caller does not set an explicit timeout.
 const DefaultTimeout = 60 * time.Second
-
-// maxCapturedOutput bounds how much stdout Ptah buffers from a schema command,
-// so a runaway program cannot exhaust memory.
-const maxCapturedOutput = 64 << 20 // 64 MiB
-
-// maxCapturedStderr bounds the rolling diagnostic tail retained from stderr.
-const maxCapturedStderr = 64 << 10 // 64 KiB
-
-// waitDelay bounds how long Run waits for process I/O after the direct process
-// exits or process-tree termination begins.
-const waitDelay = time.Second
 
 // Command describes an external program that writes a desired schema to stdout.
 type Command struct {
@@ -62,35 +50,6 @@ type Command struct {
 	// Env holds extra "KEY=VALUE" entries appended to the current environment.
 	// PATH and PWD cannot be overridden; use an explicit executable path and Dir.
 	Env []string
-}
-
-// setWorkingDirectoryEnv makes PWD name the directory the program actually runs
-// in, on every operating system.
-//
-// [Command.Env] promises that PWD cannot be overridden and that the working
-// directory is chosen with Dir, and validateEnvironment enforces the first half
-// by refusing a caller-supplied PWD. os/exec keeps only the POSIX half of the
-// bargain: it appends PWD=<abs Dir> there and documents that "Windows and Plan
-// 9 do not use the PWD variable, so we don't need to keep it accurate".
-//
-// For a shell that does use it, that is not true. Ptah started from git-bash,
-// MSYS2 or Cygwin inherits their PWD, which names Ptah's own directory rather
-// than Dir -- and the caller is forbidden from correcting it. So the loader
-// received a working directory and an environment that disagreed, with no way
-// to reconcile them.
-//
-// Appending is enough on both platforms: os/exec deduplicates the environment
-// keeping the last occurrence of each key, case-insensitively on Windows.
-func setWorkingDirectoryEnv(c *exec.Cmd) error {
-	if c.Dir == "" {
-		return nil
-	}
-	absolute, err := filepath.Abs(c.Dir)
-	if err != nil {
-		return fmt.Errorf("resolve schema command working directory: %w", err)
-	}
-	c.Env = append(c.Environ(), "PWD="+absolute)
-	return nil
 }
 
 // Run executes cmd and parses its standard output into a desired schema. It
@@ -165,109 +124,49 @@ func run(ctx context.Context, cmd Command) ([]byte, error) {
 		return nil, err
 	}
 
-	// The program and its arguments are supplied by the operator running Ptah
-	// (through --schema-cmd or ptah.yaml), analogous to git's core.editor. Ptah
-	// runs it directly with an explicit argument vector and never through a
-	// shell, so there is no shell-injection surface.
-	c := exec.Command(cmd.Args[0], cmd.Args[1:]...) // #nosec G204 -- operator-provided command, run directly without a shell
-	prepareProcess(c)
-	if strings.TrimSpace(cmd.Dir) != "" {
-		c.Dir = cmd.Dir
+	result, err := processcapture.Run(ctx, processcapture.Command{
+		Args: cmd.Args,
+		Dir:  cmd.Dir,
+		Env:  cmd.Env,
+	})
+	if err == nil {
+		return result.Stdout, nil
 	}
-	c.WaitDelay = waitDelay
-	if len(cmd.Env) > 0 {
-		c.Env = append(c.Environ(), cmd.Env...)
+	var failure *processcapture.Failure
+	if !errors.As(err, &failure) {
+		return nil, fmt.Errorf("schema command %q failed: %w", cmd.Args[0], err)
 	}
-	if err := setWorkingDirectoryEnv(c); err != nil {
-		return nil, err
-	}
-	effectiveEnv := c.Environ()
-
-	stdout := &cappedBuffer{limit: maxCapturedOutput}
-	stderr := &tailBuffer{limit: maxCapturedStderr}
-	c.Stdout = stdout
-	c.Stderr = stderr
-
-	err := executeCommand(ctx, c)
-	if ctxErr := ctx.Err(); ctxErr != nil {
+	switch failure.Kind {
+	case processcapture.FailureCanceled, processcapture.FailureTimedOut:
 		action := "canceled"
-		if errors.Is(ctxErr, context.DeadlineExceeded) {
+		if failure.Kind == processcapture.FailureTimedOut {
 			action = "timed out"
 		}
 		return nil, fmt.Errorf(
 			"schema command %q %s: %w",
 			cmd.Args[0],
 			action,
-			errors.Join(ctxErr, err),
+			failure.Err,
 		)
-	}
-	if err != nil {
-		safeStderr := secretdisplay.Sanitize(stderr.String(), effectiveEnv, cmd.Args)
+	case processcapture.FailureOutputLimit:
+		return nil, fmt.Errorf(
+			"schema command %q produced more than %d bytes of output",
+			cmd.Args[0],
+			processcapture.DefaultMaxStdout,
+		)
+	default:
+		safeStderr := secretdisplay.Sanitize(
+			failure.Stderr,
+			append(os.Environ(), cmd.Env...),
+			cmd.Args,
+		)
 		return nil, fmt.Errorf(
 			"schema command %q failed: %w%s",
 			cmd.Args[0],
-			err,
+			failure.Err,
 			stderrSuffix(safeStderr),
 		)
 	}
-	if stdout.truncated {
-		return nil, fmt.Errorf("schema command %q produced more than %d bytes of output", cmd.Args[0], maxCapturedOutput)
-	}
-	return stdout.Bytes(), nil
-}
-
-type processTree interface {
-	terminate() error
-	close() error
-}
-
-func executeCommand(ctx context.Context, cmd *exec.Cmd) error {
-	if err := ctx.Err(); err != nil {
-		return err
-	}
-	if err := cmd.Start(); err != nil {
-		return err
-	}
-
-	tree, err := attachProcessTree(cmd)
-	if err != nil {
-		killErr := cmd.Process.Kill()
-		waitErr := cmd.Wait()
-		return errors.Join(
-			fmt.Errorf("attach schema command process tree: %w", err),
-			ignoreProcessDone(killErr),
-			waitErr,
-		)
-	}
-
-	waitDone := make(chan error, 1)
-	go func() {
-		waitDone <- cmd.Wait()
-	}()
-
-	select {
-	case waitErr := <-waitDone:
-		return errors.Join(waitErr, terminateAndClose(tree))
-	case <-ctx.Done():
-		terminateErr := tree.terminate()
-		select {
-		case waitErr := <-waitDone:
-			return errors.Join(waitErr, terminateErr, tree.close())
-		case <-time.After(waitDelay):
-			return errors.Join(terminateErr, tree.close(), exec.ErrWaitDelay)
-		}
-	}
-}
-
-func terminateAndClose(tree processTree) error {
-	return errors.Join(tree.terminate(), tree.close())
-}
-
-func ignoreProcessDone(err error) error {
-	if errors.Is(err, os.ErrProcessDone) {
-		return nil
-	}
-	return err
 }
 
 func validateEnvironment(env []string) error {
@@ -289,67 +188,6 @@ func validateEnvironment(env []string) error {
 	}
 	return nil
 }
-
-// cappedBuffer accumulates up to limit bytes and then silently discards the
-// rest, recording that truncation happened. Write always reports a full write so
-// the child process is not killed with a short-write error; the timeout still
-// bounds a program that keeps producing output past the cap.
-type cappedBuffer struct {
-	buf       bytes.Buffer
-	limit     int
-	truncated bool
-}
-
-func (b *cappedBuffer) Write(p []byte) (int, error) {
-	if remaining := b.limit - b.buf.Len(); remaining > 0 {
-		if len(p) > remaining {
-			b.buf.Write(p[:remaining])
-			b.truncated = true
-		} else {
-			b.buf.Write(p)
-		}
-	} else if len(p) > 0 {
-		b.truncated = true
-	}
-	return len(p), nil
-}
-
-func (b *cappedBuffer) Bytes() []byte  { return b.buf.Bytes() }
-func (b *cappedBuffer) String() string { return b.buf.String() }
-
-// tailBuffer drains all writes while retaining only the most recent limit
-// bytes. It keeps the diagnostic useful when a command emits a large preamble
-// before its final error.
-type tailBuffer struct {
-	buf       bytes.Buffer
-	limit     int
-	truncated bool
-}
-
-func (b *tailBuffer) Write(p []byte) (int, error) {
-	written := len(p)
-	if b.limit <= 0 {
-		b.truncated = b.truncated || len(p) > 0
-		return written, nil
-	}
-	if len(p) >= b.limit {
-		b.buf.Reset()
-		b.buf.Write(p[len(p)-b.limit:])
-		b.truncated = true
-		return written, nil
-	}
-	overflow := b.buf.Len() + len(p) - b.limit
-	if overflow > 0 {
-		current := b.buf.Bytes()
-		copy(current, current[overflow:])
-		b.buf.Truncate(len(current) - overflow)
-		b.truncated = true
-	}
-	b.buf.Write(p)
-	return written, nil
-}
-
-func (b *tailBuffer) String() string { return b.buf.String() }
 
 // stderrSuffix formats a trailing, length-bounded excerpt of the program's
 // stderr for inclusion in an error message.

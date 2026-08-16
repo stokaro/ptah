@@ -1,6 +1,6 @@
 //go:build !aix && !darwin && !dragonfly && !freebsd && !illumos && !linux && !netbsd && !openbsd && !solaris && !windows
 
-package schemasource
+package processcapture
 
 import (
 	"errors"

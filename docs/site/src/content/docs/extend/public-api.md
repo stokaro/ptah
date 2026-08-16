@@ -58,6 +58,17 @@ caller-provided `fs.FS`. Use it when project config and its `file()` or
 `fileset()` inputs must come from one anchored or immutable filesystem view.
 Use the collection-valued parse or load functions for an env `for_each` that
 selects several configs; singular functions reject that cardinality.
+
+Set `projectconfig.AtlasLoadOptions.Context` or
+`projectconfig.LoadOptions.Context` to govern project data-source connections,
+runtime-variable reads, and subprocesses. A nil context uses a background
+context. `projectconfig.Config.MigrationDirectoryFS` returns the immutable
+filesystem behind a resolved `data.template_dir` URL; a host that consumes the
+configured migration directory should check it before opening the URL as an
+ordinary directory. `projectconfig.Config.MigrationDirectorySource` also
+returns the sandbox-relative source path for hosts that synchronize newly
+written migration files.
+
 `projectconfig.Config.IgnoredConstructs` carries every Atlas CE-compatible
 no-op name with its kind and source location, and `projectconfig.Merge`
 preserves the collection. Ptah's CLI reports each entry; embedders decide how

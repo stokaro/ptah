@@ -15,6 +15,7 @@ import (
 	"strings"
 	"syscall"
 	"testing"
+	"testing/fstest"
 	"time"
 
 	qt "github.com/frankban/quicktest"
@@ -1732,4 +1733,45 @@ func TestDiffOptionsVerifyDirRoutesThroughTheCallersPredicate(t *testing.T) {
 			c.Assert(tt.opts.verifyDir(snapshot), qt.ErrorIs, tt.wantErr)
 		})
 	}
+}
+
+func TestCaptureVerifiedMigrationDirSeparatesPublicationAndReplaySources(t *testing.T) {
+	c := qt.New(t)
+	dir := c.TempDir()
+	rawMigration := []byte("CREATE TABLE {{ .table }} (id INTEGER PRIMARY KEY);\n")
+	renderedMigration := []byte("CREATE TABLE widgets (id INTEGER PRIMARY KEY);\n")
+	c.Assert(os.WriteFile(filepath.Join(dir, "1_init.sql"), rawMigration, 0o600), qt.IsNil)
+	rendered := fstest.MapFS{
+		"1_init.sql": &fstest.MapFile{Data: renderedMigration, Mode: 0o444},
+		"atlas.sum":  &fstest.MapFile{Data: []byte("rendered sum\n"), Mode: 0o444},
+	}
+	verified := false
+	writer := openTestWriter(c, dir)
+	defer func() {
+		c.Assert(writer.Close(), qt.IsNil)
+	}()
+
+	snapshots, err := captureVerifiedMigrationDir(writer, DiffOptions{
+		ReplaySource: rendered,
+		VerifyDir: func(fsys fs.FS) error {
+			verified = true
+			contents, readErr := fs.ReadFile(fsys, "1_init.sql")
+			c.Assert(readErr, qt.IsNil)
+			c.Assert(contents, qt.DeepEquals, renderedMigration)
+			return nil
+		},
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(verified, qt.IsTrue)
+	publicationContents, err := fs.ReadFile(snapshots.publication, "1_init.sql")
+	c.Assert(err, qt.IsNil)
+	c.Assert(publicationContents, qt.DeepEquals, rawMigration)
+	replayContents, err := fs.ReadFile(snapshots.replay, "1_init.sql")
+	c.Assert(err, qt.IsNil)
+	c.Assert(replayContents, qt.DeepEquals, renderedMigration)
+	_, err = fs.Stat(snapshots.publication, "atlas.sum")
+	c.Assert(err, qt.ErrorIs, fs.ErrNotExist)
+	_, err = fs.Stat(snapshots.replay, "atlas.sum")
+	c.Assert(err, qt.IsNil)
 }

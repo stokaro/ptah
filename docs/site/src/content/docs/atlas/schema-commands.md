@@ -944,9 +944,10 @@ nothing and neither refuses nor contributes.
 With `--env`, Ptah can read `env.url`, `env.src`, `env.schema.src`, `env.dev`,
 `env.exclude`, `env.schema.mode`, `format.schema.apply`, and supported `diff`
 policy from the selected `atlas.hcl` environment, including local variable
-defaults, locals, `getenv`, `file`, `fileset`, `format`, `jsonencode`, and
-`data.hcl_schema.<name>.url` references. Explicit CLI flags still take
-precedence.
+defaults, locals, `getenv`, `file`, `fileset`, `format`, `jsondecode`,
+`jsonencode`, and
+the supported `hcl_schema`, `sql`, `external`, `runtimevar`, and
+`template_dir` project data sources. Explicit CLI flags still take precedence.
 
 Ptah reads the current database schema, diffs it against the desired local
 schema files, prints the planned SQL, and applies it after interactive
