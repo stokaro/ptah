@@ -217,6 +217,7 @@ type LintRuleConfig struct{ ... }
 type LoadOptions struct{ ... }
 type MigrateFormatConfig struct{ ... }
 type MigrationConfig struct{ ... }
+type MigrationDirectorySource struct{ ... }
 type OnlineDDLConfig struct{ ... }
 type SchemaConfig struct{ ... }
 type SchemaFormatConfig struct{ ... }
@@ -231,6 +232,9 @@ type Value[T any] struct{ ... }
 package projectconfig // import "go.5x5.cz/ptah/config/projectconfig"
 
 type AtlasLoadOptions struct {
+    // Context governs data-source connections, runtime-variable reads, and
+    // subprocesses. A nil context uses context.Background.
+    Context context.Context
     EnvName string
     Vars    []string
     // RejectListMapForEach refuses dynamic env expansion over list and map
@@ -303,6 +307,8 @@ func ParseAtlasFSWithOptions(data []byte, filename string, fsys fs.FS, opts Atla
 func ParseAtlasWithOptions(data []byte, filename string, opts AtlasLoadOptions) (Config, error)
 func ParsePtah(data []byte, filename, envName string) (Config, error)
 func (c Config) LintLatestValue() Value[int]
+func (c Config) MigrationDirectoryFS(rawURL string) (fs.FS, bool)
+func (c Config) MigrationDirectorySource(rawURL string) (MigrationDirectorySource, bool)
 func (c Config) SchemaSourceVars(rawURL string) (map[string]string, bool)
 func (c Config) SchemaSourcesValue() Value[[]string]
 func (c Config) SchemasValue() Value[[]string]
@@ -470,6 +476,9 @@ type LintRuleConfig struct {
 package projectconfig // import "go.5x5.cz/ptah/config/projectconfig"
 
 type LoadOptions struct {
+    // Context governs Atlas data-source evaluation. A nil context uses
+    // context.Background.
+    Context   context.Context
     PtahPath  string
     AtlasPath string
     EnvName   string
@@ -518,6 +527,20 @@ type MigrationConfig struct {
     Baseline string
 }
     MigrationConfig is the migration section of the project config IR.
+
+
+### go.5x5.cz/ptah/config/projectconfig.MigrationDirectorySource
+
+package projectconfig // import "go.5x5.cz/ptah/config/projectconfig"
+
+type MigrationDirectorySource struct {
+    FileSystem fs.FS
+    Path       string
+}
+    MigrationDirectorySource is the rendered filesystem and source path behind
+    one data.template_dir URL. FileSystem is the immutable view commands read;
+    Path is relative to the atlas.hcl root and is where writing migration verbs
+    synchronize newly created files.
 
 
 ### go.5x5.cz/ptah/config/projectconfig.OnlineDDLConfig

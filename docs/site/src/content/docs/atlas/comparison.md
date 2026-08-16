@@ -258,8 +258,8 @@ after interactive confirmation or explicit `--auto-approve`.
 With `--env` it reads `env.url`, `env.src`, `env.schema.src`, `env.dev`,
 `env.exclude`, `env.schema.mode`, `format.schema.apply`, and supported `diff`
 policy from `atlas.hcl`, including local variable defaults, locals, `getenv`,
-`file`, `fileset`, `format`, `jsonencode`, and `data.hcl_schema.<name>.url`
-references.
+`file`, `fileset`, `format`, `jsondecode`, `jsonencode`, and the supported `hcl_schema`,
+`sql`, `external`, `runtimevar`, and `template_dir` project data sources.
 
 `schema apply --edit` opens the planned SQL in `$VISUAL`/`$EDITOR` before approval so the edited SQL is what gets applied; `schema apply --plan file://<path>` executes a pre-approved local plan file saved by `schema plan`, and `schema apply --lock-timeout` bounds waiting for the session advisory lock that serializes concurrent applies against one target. Strict CE mode preflights an explicit `--schema` target scope before that lock or any desired-source replay; without one, PostgreSQL-family targets inventory the user realm because desired replay may extend the URL scope. The authoritative inspection and planning remain inside the lock, which is released on every exit path; dialects without advisory locks proceed unlocked with a stderr note.
 
@@ -555,8 +555,11 @@ Native lint and plan commands can attach canonical reports to exact migration or
 Evaluated local env, schema, format, diff, and lint settings feed
 Atlas-compatible commands. The evaluator supports typed variables (`string`,
 `number`, `bool`, `list(string)`, `map(string)`), string/list `--var` overrides,
-locals, `getenv`, `file`, `fileset`, `format`, `jsonencode`, `toset`, local and
-external schema data sources, and migration-lint changeset defaults. Env
+locals, `getenv`, `file`, `fileset`, `format`, `jsondecode`, `jsonencode`,
+`toset`, local and
+external schema data sources, the Atlas OSS `sql`, `external`, `runtimevar`,
+and `template_dir` project data sources, and migration-lint changeset defaults.
+Recognized project data sources evaluate lazily in dependency order. Env
 `for_each` expansion is supported by `migrate apply`.
 
 Ptah also composes a desired-schema schema from multiple sources — several Go roots, or a mix of Go annotations, YAML, HCL, and SQL — via repeatable `--root-dir` and `--schema-file` flags on `ptah schema render`, `ptah schema compare`, `ptah migrations plan`, and `ptah migrations generate`, an open, local, no-account counterpart to Atlas's Pro `composite_schema` data source.
@@ -565,7 +568,14 @@ Structurally unsupported constructs fail explicitly. Names that Atlas CE
 accepts without acting on are accepted for compatibility and reported as
 having no effect.
 
-**Atlas OSS.** Atlas OSS supports SQL and HCL schema sources. The community binary rejects the `data "external_schema"` project data source (measured 2026-08-01, Atlas CE v1.2.0: exit 1, `Error: data.external_schema is not supported by the community version of Atlas.`); Ptah evaluates it in the open build behind the external-schema opt-in.
+**Atlas OSS.** Atlas OSS supports SQL and HCL schema sources plus the `sql`,
+`external`, `runtimevar`, and `template_dir` project data sources. Ptah matches
+their evaluated values and lazy treatment of valid unreferenced declarations.
+The community binary rejects the separate `data "external_schema"` project
+data source (measured 2026-08-01, Atlas CE v1.2.0: exit 1,
+`Error: data.external_schema is not supported by the community version of
+Atlas.`); Ptah evaluates it in the open build behind the external-schema
+opt-in.
 
 **Atlas Commercial / Cloud.** Pro data sources and policy features include composite schema, blob directory, custom lint rules, and review workflows.
 
@@ -773,7 +783,11 @@ The pinned Atlas CE flag surface does not register `schema diff --web`, and Ptah
 
 `ptah-compat schema apply --exclude` and disabled `schema.mode` values filter matching resources out of both the current live schema and local desired schema before planning, and `ptah-compat schema diff --exclude` plus disabled `schema.mode` values filter matching resources out of both local `--from` and `--to` schema files.
 
-`ptah-compat schema apply --env` reads evaluated local `env.src`, `env.schema.src`, `env.exclude`, `env.schema.mode`, `format.schema.apply`, and supported `diff` policy from `atlas.hcl`, including `data.hcl_schema.<name>.url`; unsupported remote data sources still fail explicitly.
+`ptah-compat schema apply --env` reads evaluated local `env.src`,
+`env.schema.src`, `env.exclude`, `env.schema.mode`, `format.schema.apply`, and
+supported `diff` policy from `atlas.hcl`, including the supported `hcl_schema`,
+`sql`, `external`, `runtimevar`, and `template_dir` data sources. Referenced
+remote and Cloud-token sources still fail explicitly.
 
 `ptah-compat schema inspect --env` reads `env.url`, `env.exclude`, `env.schema.mode`, and `format.schema.inspect`. `ptah-compat schema diff --env` reads `env.schema.src`, `env.dev`, `env.exclude`, `env.schema.mode`, `format.schema.diff`, and supported `diff` policy.
 

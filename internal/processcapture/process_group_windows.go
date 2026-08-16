@@ -1,6 +1,6 @@
 //go:build windows
 
-package schemasource
+package processcapture
 
 import (
 	"errors"
@@ -13,9 +13,6 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-// prepareProcess suspends the initial thread until the process has been
-// assigned to a kill-on-close Job Object. This closes the race in which a
-// loader could spawn an untracked child between Start and assignment.
 func prepareProcess(cmd *exec.Cmd) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: windows.CREATE_SUSPENDED}
 }
@@ -53,14 +50,14 @@ func attachProcessTree(cmd *exec.Cmd) (processTree, error) {
 		pid,
 	)
 	if err != nil {
-		return nil, tree.closeWithError(fmt.Errorf("open schema command process: %w", err))
+		return nil, tree.closeWithError(fmt.Errorf("open process: %w", err))
 	}
 
 	assignErr := windows.AssignProcessToJobObject(job, process)
 	closeProcessErr := windows.CloseHandle(process)
 	if assignErr != nil || closeProcessErr != nil {
 		if assignErr != nil {
-			assignErr = fmt.Errorf("assign schema command to Job Object: %w", assignErr)
+			assignErr = fmt.Errorf("assign process to Job Object: %w", assignErr)
 		}
 		return nil, tree.closeWithError(errors.Join(assignErr, closeProcessErr))
 	}
@@ -74,13 +71,13 @@ func attachProcessTree(cmd *exec.Cmd) (processTree, error) {
 func resumeProcessThreads(processID uint32) error {
 	snapshot, err := windows.CreateToolhelp32Snapshot(windows.TH32CS_SNAPTHREAD, 0)
 	if err != nil {
-		return fmt.Errorf("snapshot schema command threads: %w", err)
+		return fmt.Errorf("snapshot process threads: %w", err)
 	}
 	defer windows.CloseHandle(snapshot)
 
 	entry := windows.ThreadEntry32{Size: uint32(unsafe.Sizeof(windows.ThreadEntry32{}))}
 	if err := windows.Thread32First(snapshot, &entry); err != nil {
-		return fmt.Errorf("find schema command initial thread: %w", err)
+		return fmt.Errorf("find process initial thread: %w", err)
 	}
 	for {
 		if entry.OwnerProcessID == processID {
@@ -90,17 +87,17 @@ func resumeProcessThreads(processID uint32) error {
 				entry.ThreadID,
 			)
 			if openErr != nil {
-				return fmt.Errorf("open schema command initial thread: %w", openErr)
+				return fmt.Errorf("open process initial thread: %w", openErr)
 			}
 			_, resumeErr := windows.ResumeThread(thread)
 			closeErr := windows.CloseHandle(thread)
 			if resumeErr != nil {
-				resumeErr = fmt.Errorf("resume schema command initial thread: %w", resumeErr)
+				resumeErr = fmt.Errorf("resume process initial thread: %w", resumeErr)
 			}
 			return errors.Join(resumeErr, closeErr)
 		}
 		if err := windows.Thread32Next(snapshot, &entry); err != nil {
-			return fmt.Errorf("find schema command initial thread: %w", err)
+			return fmt.Errorf("find process initial thread: %w", err)
 		}
 	}
 }

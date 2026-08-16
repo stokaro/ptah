@@ -220,8 +220,8 @@ func runAtlasMigrateNewConverted(cmd *cobra.Command, verb atlasVerb, source atla
 		return err
 	}
 	_, err = atlasmigrate.WriteSkeletonMigration(
-		migrateDiffWriterRoot(source.project, source.localDir),
-		source.localDir.Path,
+		migrateDiffWriterRoot(source.project, source.writeDir),
+		source.writeDir.Path,
 		source.format,
 		parsed.name,
 	)

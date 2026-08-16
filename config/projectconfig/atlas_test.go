@@ -1661,29 +1661,30 @@ func TestParseAtlasProjectConfigRejectsUnsupportedConstructs(t *testing.T) {
 			err: `atlas block is not supported by the community version of Atlas`,
 		},
 		{
-			// The refusal is about reading the value, not about the file
-			// mentioning the name -- see
-			// TestParseAtlasProjectConfigToleratesAnUnreadDataSource. It still
-			// reports the declaration's line, because that is where the
-			// construct Ptah cannot resolve was written.
-			name: "unsupported data source that an environment reads",
-			raw: `data "external" "app" {
-  program = ["echo", "{}"]
-}
-
-env "local" {
-  url = data.external.app.url
-}
-`,
-			err: `unsupported atlas\.hcl construct "data.external" at atlas\.hcl:1`,
+			// A name Atlas itself does not define is refused where it is
+			// written: there is no declaration shape to validate and no value
+			// to postpone. That is a different rule from a name Atlas defines
+			// and Ptah cannot resolve, which stays lazy until something reads
+			// it -- see TestParseAtlasProjectConfigToleratesAnUnreadDataSource
+			// for the tolerance and
+			// TestParseAtlas_ReferencedUnimplementedRemoteDataSourceStillRefuses
+			// for the refusal at the reference.
+			name: "unsupported data source",
+			raw: `data "definitely_unknown" "app" {
+	}
+	`,
+			err: `unsupported atlas\.hcl construct "data.definitely_unknown" at atlas\.hcl:1`,
 		},
 		{
 			name: "unsupported hcl schema data attribute",
 			raw: `data "hcl_schema" "app" {
-  path  = "schema.hcl"
-  query = "table.users"
-}
-`,
+	  path  = "schema.hcl"
+	  query = "table.users"
+	}
+	env "local" {
+	  src = data.hcl_schema.app.url
+	}
+	`,
 			err: `unsupported atlas\.hcl construct "query" at atlas\.hcl:3`,
 		},
 		{
@@ -1788,17 +1789,23 @@ locals {
 		{
 			name: "hcl schema data source rejects remote path",
 			raw: `data "hcl_schema" "app" {
-  path = "https://example.com/schema.hcl"
-}
-`,
+	  path = "https://example.com/schema.hcl"
+	}
+	env "local" {
+	  src = data.hcl_schema.app.url
+	}
+	`,
 			err: `atlas\.hcl "path" at atlas\.hcl:2: unsupported URL scheme: https://example\.com/schema\.hcl`,
 		},
 		{
 			name: "fileset rejects parent traversal",
 			raw: `data "hcl_schema" "app" {
-  paths = fileset("../*.hcl")
-}
-`,
+	  paths = fileset("../*.hcl")
+	}
+	env "local" {
+	  src = data.hcl_schema.app.url
+	}
+	`,
 			err: `cannot evaluate atlas\.hcl "paths" at atlas\.hcl:2: .*`,
 		},
 		{

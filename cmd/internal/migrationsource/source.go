@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"strings"
 
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
@@ -69,29 +70,51 @@ type LocalSource struct {
 // LocalDirectory is one rooted local directory handle. The caller must close
 // it after finishing any path-bound preparation.
 type LocalDirectory struct {
-	opened *pathguard.OpenedDirectory
+	opened  *pathguard.OpenedDirectory
+	fsys    fs.FS
+	display string
 }
 
 // FS returns the escape-resistant filesystem rooted at the opened directory.
 func (d *LocalDirectory) FS() fs.FS {
+	if d.fsys != nil {
+		return d.fsys
+	}
 	return d.opened.FS()
 }
 
 // Display returns the stable lexical path selected for the directory.
 func (d *LocalDirectory) Display() string {
+	if d.display != "" {
+		return d.display
+	}
 	return d.opened.Path()
 }
 
 // Close releases the underlying directory handle.
 func (d *LocalDirectory) Close() error {
+	if d == nil || d.opened == nil {
+		return nil
+	}
 	return d.opened.Close()
 }
 
 type localRootContextKey struct{}
 
+type virtualContextKey struct{}
+
 type localRootContextValue struct {
 	raw     string
 	options LocalOptions
+}
+
+type virtualContextSource struct {
+	fsys    fs.FS
+	display string
+}
+
+type virtualContextValue struct {
+	sources map[string]virtualContextSource
 }
 
 // WithLocalRoot returns a context that preserves the allowed-root provenance
@@ -122,12 +145,59 @@ func WithRootedLocal(
 	})
 }
 
+// WithVirtual returns a context that binds raw to one immutable in-memory
+// migration directory produced during project-config evaluation.
+func WithVirtual(ctx context.Context, raw string, fsys fs.FS, display string) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	sources := map[string]virtualContextSource{}
+	if current, ok := ctx.Value(virtualContextKey{}).(virtualContextValue); ok {
+		maps.Copy(sources, current.sources)
+	}
+	sources[raw] = virtualContextSource{fsys: fsys, display: display}
+	return context.WithValue(ctx, virtualContextKey{}, virtualContextValue{
+		sources: sources,
+	})
+}
+
 // Resolve loads raw as a local directory or an oci:// artifact.
 func Resolve(ctx context.Context, raw string, opts Options) (Source, error) {
+	if virtual, ok := virtualFromContext(ctx, raw); ok {
+		return resolveVirtual(virtual, opts)
+	}
 	if strings.HasPrefix(raw, ociartifact.Scheme) {
 		return resolveOCI(ctx, raw, opts)
 	}
 	return resolveLocal(raw, opts, localOptionsFromContext(ctx, raw))
+}
+
+func resolveVirtual(virtual virtualContextSource, opts Options) (Source, error) {
+	local, err := CaptureVirtual(virtual.fsys, virtual.display)
+	if err != nil {
+		return Source{}, err
+	}
+	format, err := migrator.ParseMigrationDirFormat(string(opts.DirFormat))
+	if err != nil {
+		return Source{}, err
+	}
+	return Source{
+		FileSystem: local.FileSystem,
+		Display:    local.Display,
+		DirFormat:  format,
+	}, nil
+}
+
+func virtualFromContext(ctx context.Context, raw string) (virtualContextSource, bool) {
+	if ctx == nil {
+		return virtualContextSource{}, false
+	}
+	value, ok := ctx.Value(virtualContextKey{}).(virtualContextValue)
+	if !ok {
+		return virtualContextSource{}, false
+	}
+	source, ok := value.sources[raw]
+	return source, ok && source.fsys != nil
 }
 
 func resolveLocal(raw string, opts Options, localOpts LocalOptions) (Source, error) {
@@ -165,6 +235,25 @@ func CaptureLocal(raw string, opts LocalOptions) (LocalSource, error) {
 		return LocalSource{}, err
 	}
 	return captureAndCloseLocal(opened)
+}
+
+// CaptureVirtual captures one immutable snapshot from an in-memory project
+// data source.
+func CaptureVirtual(fsys fs.FS, display string) (LocalSource, error) {
+	if fsys == nil {
+		return LocalSource{}, fmt.Errorf("open migrations directory: in-memory filesystem is unavailable")
+	}
+	snapshot, err := migrationsnapshot.CaptureStable(fsys)
+	if err != nil {
+		return LocalSource{}, fmt.Errorf("capture migrations directory: %w", err)
+	}
+	return LocalSource{FileSystem: snapshot, Display: display}, nil
+}
+
+// OpenVirtual returns a non-owning directory view over an immutable in-memory
+// project data source.
+func OpenVirtual(fsys fs.FS, display string) *LocalDirectory {
+	return &LocalDirectory{fsys: fsys, display: display}
 }
 
 // OpenLocal opens raw through its configured rooted boundary without capturing

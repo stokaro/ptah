@@ -67,6 +67,20 @@ func runAtlasMigrateHash(
 	cmd *cobra.Command,
 	source atlasMigrateSource,
 ) error {
+	if source.project.isVirtualMigrationDir(source.localDir) {
+		captured, err := source.project.captureLocal(source.localDir)
+		if err != nil {
+			return cmdutil.Fail(cmd, err)
+		}
+		names, err := atlasmigrateimport.SumFileNames(captured.FileSystem, source.format)
+		if err != nil {
+			return cmdutil.Fail(cmd, err)
+		}
+		if _, err := migratesum.ComputeAtlasFiles(captured.FileSystem, names); err != nil {
+			return cmdutil.Fail(cmd, err)
+		}
+		return nil
+	}
 	if err := cmdutil.StatDir(source.dir); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}

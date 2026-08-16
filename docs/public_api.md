@@ -59,6 +59,17 @@ one selected instance and return an error rather than discarding the others.
 `AtlasLoadOptions.RejectListMapForEach` lets a compatibility adapter retain
 tuple, object, and set expansion while refusing Ptah's list/map extension. Its
 zero value keeps the complete dynamic-environment capability.
+`AtlasLoadOptions.Context` and `LoadOptions.Context` govern project data-source
+database calls, runtime-variable reads, and subprocesses; nil uses a background
+context.
+
+`Config.MigrationDirectoryFS` returns the immutable filesystem behind a
+resolved `data.template_dir` URL. Embedders that consume migration directory
+URLs from project config must check this method before treating the URL as a
+local or remote directory. `Config.MigrationDirectorySource` additionally
+returns the sandbox-relative backing path that a host can use when a writing
+operation must synchronize new migration files.
+
 `Config.IgnoredConstructs` identifies names that
 Atlas CE accepts without acting on, with kind and source location. `Merge`
 preserves this diagnostic metadata from both inputs. Ptah's command layer warns

@@ -216,7 +216,7 @@ func runAtlasMigrateDiff(
 	// while an unknown flag and a second positional still win over it. Atlas
 	// runs the gate in a pre-run hook, so everything cobra validates before
 	// RunE precedes it and everything the command body validates follows it.
-	localDir, err := resolveAtlasMigrateDiffDir(cmd, project, opts.dirURL)
+	localDir, err := resolveAtlasMigrateDiffDir(cmd, &project, opts.dirURL)
 	if err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("atlas migrate diff --dir: %w", err))
 	}
@@ -251,7 +251,8 @@ func runAtlasMigrateDiff(
 	if err := validateAtlasMigrateDiffCurrentSource(project, localDir, dirFormat, opts.policy, opts.devURL); err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("validate current migration directory: %w", err))
 	}
-	migrationsDir, err := resolveMigrateDiffDirectory(localDir)
+	writeDir := project.writeLocalDir(localDir)
+	migrationsDir, err := resolveMigrateDiffDirectory(writeDir)
 	if err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("resolve migration directory: %w", err))
 	}
@@ -325,7 +326,8 @@ func runAtlasMigrateDiff(
 		return cmdutil.Fail(cmd, err)
 	}
 	diffResult, err := run(cmd.Context(), conn, atlasmigrate.DiffOptions{
-		Dir: migrationsDir,
+		Dir:          migrationsDir,
+		ReplaySource: project.replaySource(localDir),
 		// The same handle the preflight gate captured through. Handing it to the
 		// writer is what keeps the publication bound to the project root the
 		// directory was validated inside: without it the writer would carry only
@@ -333,7 +335,7 @@ func runAtlasMigrateDiff(
 		// publication, the atlas.sum commit and recovery, so a directory or
 		// ancestor replaced after resolution could take the write somewhere the
 		// gate never looked (stokaro/ptah#1118).
-		Root:                 migrateDiffWriterRoot(project, localDir),
+		Root:                 migrateDiffWriterRoot(project, writeDir),
 		Desired:              desired,
 		SourceConnectTimeout: dbcli.DefaultConnectTimeout,
 		Name:                 name,
@@ -391,6 +393,14 @@ func runAtlasMigrateDiff(
 	}
 	if opts.dryRun {
 		fmt.Fprint(cmd.OutOrStdout(), diffResult.SQL)
+		return nil
+	}
+	// Atlas's data.template_dir writer synchronizes the new file and atlas.sum
+	// back to the source directory without printing their backing host paths.
+	// Ordinary --dir output remains unchanged; exposing the project-local path
+	// here would both diverge from the pinned binary and leak an implementation
+	// detail hidden behind the mem:// migration URL.
+	if project.isVirtualMigrationDir(localDir) {
 		return nil
 	}
 	for _, migrationPath := range diffResult.MigrationPaths {
@@ -479,13 +489,17 @@ func planCompatBidirectionalSchemaDiff(
 // answer it.
 func resolveAtlasMigrateDiffDir(
 	cmd *cobra.Command,
-	project atlasProject,
+	project *atlasProject,
 	dirURL string,
 ) (atlasargs.LocalDir, error) {
 	if project.root != nil &&
 		!cmd.Flags().Changed("dir") &&
 		project.StringValue(projectconfig.StringMigrationDir).Present {
-		return project.localDirWithQuery(dirURL)
+		dir, err := project.resolveProjectMigrationDir(dirURL)
+		if err != nil {
+			return atlasargs.LocalDir{}, err
+		}
+		return dir, nil
 	}
 	return atlasargs.ParseLocalDir(dirURL)
 }

@@ -209,7 +209,7 @@ func runAtlasMigrateLint(
 	if loaded &&
 		!cmd.Flags().Changed("dir") &&
 		projectCfg.StringValue(projectconfig.StringMigrationDir).Present {
-		localDir, err = project.localDirWithQuery(opts.dir)
+		localDir, err = project.resolveProjectMigrationDir(opts.dir)
 	} else {
 		// A --dir spelled on the command line needs the scheme the community
 		// binary requires. Measured on the pinned v1.3.0 on 2026-08-06,

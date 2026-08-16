@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"testing/fstest"
 
 	qt "github.com/frankban/quicktest"
 
@@ -62,6 +63,36 @@ func TestResolve_EmptyLocalDirectory(t *testing.T) {
 	c.Assert(source.FileSystem, qt.IsNotNil)
 	c.Assert(source.DirFormat, qt.Equals, migrator.MigrationDirFormatAuto)
 	c.Assert(source.OCI, qt.IsNil)
+}
+
+func TestResolve_VirtualDirectoryUsesOnlyItsBoundToken(t *testing.T) {
+	c := qt.New(t)
+	const bindingID = ".ptah-template-dir-bound"
+	const display = "mem:///project/templates/rendered"
+	files := fstest.MapFS{
+		"1_init.sql": &fstest.MapFile{Data: []byte("CREATE TABLE captured (id INTEGER);\n")},
+	}
+	ctx := migrationsource.WithVirtual(context.Background(), bindingID, files, display)
+	ctx = migrationsource.WithVirtual(ctx, ".ptah-other-binding", fstest.MapFS{
+		"2_other.sql": &fstest.MapFile{Data: []byte("SELECT 2;\n")},
+	}, "mem:///other")
+
+	source, err := migrationsource.Resolve(ctx, bindingID, migrationsource.Options{
+		DirFormat: migrator.MigrationDirFormatAtlas,
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(source.Display, qt.Equals, display)
+	c.Assert(source.DirFormat, qt.Equals, migrator.MigrationDirFormatAtlas)
+	files["1_init.sql"].Data = []byte("CREATE TABLE mutated (id INTEGER);\n")
+	contents, err := fs.ReadFile(source.FileSystem, "1_init.sql")
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(contents), qt.Equals, "CREATE TABLE captured (id INTEGER);\n")
+
+	_, err = migrationsource.Resolve(ctx, bindingID+"-different", migrationsource.Options{
+		DirFormat: migrator.MigrationDirFormatAtlas,
+	})
+	c.Assert(err, qt.ErrorMatches, "open migrations directory: .*")
 }
 
 func TestCaptureLocal_SnapshotIgnoresLaterPathAndFileChanges(t *testing.T) {

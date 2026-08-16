@@ -1,4 +1,4 @@
-package schemasource
+package processcapture
 
 // White-box testing required: cappedBuffer and tailBuffer are unexported
 // memory-safety guards whose exact truncation state is not observable through

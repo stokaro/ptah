@@ -127,15 +127,6 @@
   },
   {
     "area": "Project config",
-    "feature": "data \"sql\", \"external\", \"runtimevar\", \"template_dir\", \"remote_dir\"",
-    "ptah": "no",
-    "atlas_oss": "yes",
-    "atlas_pro": "yes",
-    "note": "Ptah resolves only `hcl_schema` and `external_schema`. Declaring another is fine, including one read solely by an unselected env; reading one fails, naming the construct and its declaration line.",
-    "evidence": "config/projectconfig/atlas.go configureDataSources; pinned CE v1.3.0 `schema inspect --env local` exits 0 with `data \"sql\"` declared and unread, and with it read only by an unselected env; stokaro/ptah#1511"
-  },
-  {
-    "area": "Project config",
     "feature": "env:// desired-state references",
     "ptah": "partial",
     "atlas_oss": "yes",
@@ -145,12 +136,75 @@
   },
   {
     "area": "Project config",
-    "feature": "Remote and template directory sources",
+    "feature": "SQL project data source (data \"sql\")",
     "ptah": "yes",
     "atlas_oss": "yes",
     "atlas_pro": "yes",
-    "note": "An atlas.hcl data-source question, not a registry one: ptah-compat migration.dir takes file:// only. Native oci:// distribution is a separate ptah path.",
-    "evidence": "ptah-compat migrate status --env prod with migration.dir set to atlas:// or oci:// -> exit 1 'atlas migrate status --dir: only local file:// migration directories are supported'"
+    "note": "Runs one query and exports count, first value, and all values. Requires one column and one HCL row type. Heterogeneous rows fail explicitly; Atlas CE panics. Unreferenced blocks stay lazy.",
+    "evidence": "integration/atlasoracle/projectdata TestProjectDataSourcesMatchPinnedAtlasOutputAndExit runs both pinned Atlas CE v1.3.0 and ptah-compat and compares process exit, stdout, stderr, and the captured SQL result. integration/atlasprojectdata TestAtlasDataSQLReturnsPinnedSingleColumnShape, TestAtlasDataSQLReturnsPinnedEmptyShape, TestAtlasDataSQLPreservesPinnedNumericTypes, TestAtlasDataSQLRefusesUnsupportedRowShapes, and TestAtlasDataSQLRefusesHeterogeneousRowTypes cover args, empty, numeric, NULL, multi-column, and heterogeneous contours. Pinned Atlas CE v1.3.0 panics with `inconsistent list element types` for `SELECT 1 UNION ALL SELECT 'x'`; Ptah fails closed with a data-source diagnostic under the compatibility policy. scripts/mutations/atlas-project-data-sources.json kills a row-discarding SQL-handler mutant."
+  },
+  {
+    "area": "Project config",
+    "feature": "External program project data source (data \"external\")",
+    "ptah": "yes",
+    "atlas_oss": "yes",
+    "atlas_pro": "yes",
+    "note": "Runs argv directly without a shell and returns untrimmed stdout. Caller cancellation, a 60-second timeout, bounded output, process-tree termination, and sanitized errors define the boundary.",
+    "evidence": "integration/atlasoracle/projectdata TestProjectDataSourcesMatchPinnedAtlasOutputAndExit and TestExternalFailureKeepsPinnedExitAndProgramStderr compare pinned Atlas CE v1.3.0 with ptah-compat. integration/atlasprojectdata tests direct argv, relative working directory, failure, and cancellation; internal/processcapture black-box tests cover limits and process-tree termination. scripts/mutations/atlas-project-data-sources.json kills an external-output-discarding handler mutant."
+  },
+  {
+    "area": "Project config",
+    "feature": "Runtime variable project data source (data \"runtimevar\")",
+    "ptah": "yes",
+    "atlas_oss": "yes",
+    "atlas_pro": "yes",
+    "note": "Reads Go CDK runtime-variable URLs with byte-preserving string output and a configurable positive timeout. Constant, file, HTTP(S), AWS, and Google Cloud providers are registered.",
+    "evidence": "integration/atlasoracle/projectdata TestProjectDataSourcesMatchPinnedAtlasOutputAndExit compares pinned Atlas CE v1.3.0 and ptah-compat constant-variable output byte for byte. integration/atlasprojectdata TestAtlasDataRuntimeVariableReadsConstantBytes, TestAtlasDataRuntimeVariablePreservesFileBytes, TestAtlasDataRuntimeVariableHonorsURLTimeout, and TestAtlasDataRuntimeVariableReadsHTTPBytes cover constant, file, timeout, and HTTP behavior. scripts/mutations/atlas-project-data-sources.json kills a byte-snapshot-discarding runtime-variable handler mutant."
+  },
+  {
+    "area": "Project config",
+    "feature": "Template directory project data source (data \"template_dir\")",
+    "ptah": "yes",
+    "atlas_oss": "yes",
+    "atlas_pro": "yes",
+    "note": "Shared Go templates emit root lowercase .sql migrations only. New and diff synchronize new files and checksum to the confined source path; hash-only stays virtual.",
+    "evidence": "integration/atlasoracle/projectdata TestProjectDataSourcesMatchPinnedAtlasOutputAndExit, TestTemplateDirectoryIntegrityAndWritebackMatchPinnedAtlas, and TestTemplateDirectoryDiffWritebackMatchesPinnedAtlas compare pinned Atlas CE v1.3.0 with ptah-compat for shared rendering, mem:// output, new/diff writeback, hash, validate, stdout, stderr, and exit status. integration/atlasprojectdata covers immutable shared rendering, typed vars, failures, compat/native apply, explicit --dir precedence, source writeback, and symlink confinement. scripts/mutations/atlas-project-data-sources.json kills a wrong-virtual-URL template handler mutant."
+  },
+  {
+    "area": "Project config",
+    "feature": "Remote directory project data source (data \"remote_dir\")",
+    "ptah": "partial",
+    "atlas_oss": "yes",
+    "atlas_pro": "yes",
+    "note": "A valid unreferenced declaration is accepted lazily, matching Atlas CE. Resolving the source still fails explicitly because remote directory fetching is not implemented.",
+    "evidence": "integration/atlasoracle/projectdata TestProjectDataSourcesMatchPinnedAtlasOutputAndExit compares the valid unreferenced declaration against pinned Atlas CE v1.3.0. config/projectconfig TestParseAtlas_LazilyAcceptsRecognizedUnreferencedDataSources and TestParseAtlas_ReferencedUnimplementedRemoteDataSourceStillRefuses cover lazy acceptance and referenced refusal."
+  },
+  {
+    "area": "Project config",
+    "feature": "Remote schema project data source (data \"remote_schema\")",
+    "ptah": "partial",
+    "atlas_oss": "yes",
+    "atlas_pro": "yes",
+    "note": "A valid unreferenced declaration is accepted lazily, matching Atlas CE. Resolving the source still fails explicitly because remote schema fetching is not implemented.",
+    "evidence": "integration/atlasoracle/projectdata TestProjectDataSourcesMatchPinnedAtlasOutputAndExit compares the valid unreferenced declaration against pinned Atlas CE v1.3.0. config/projectconfig TestParseAtlas_LazilyAcceptsRecognizedUnreferencedDataSources and TestParseAtlas_ReferencedUnimplementedRemoteDataSourceStillRefuses cover lazy acceptance and referenced refusal."
+  },
+  {
+    "area": "Project config",
+    "feature": "AWS RDS token project data source (data \"aws_rds_token\")",
+    "ptah": "partial",
+    "atlas_oss": "yes",
+    "atlas_pro": "yes",
+    "note": "A valid unreferenced declaration is accepted lazily, matching Atlas CE. Resolving the token still fails explicitly because the provider is not implemented.",
+    "evidence": "integration/atlasoracle/projectdata TestProjectDataSourcesMatchPinnedAtlasOutputAndExit compares the valid unreferenced declaration against pinned Atlas CE v1.3.0. config/projectconfig TestParseAtlas_LazilyAcceptsRecognizedUnreferencedDataSources covers lazy acceptance."
+  },
+  {
+    "area": "Project config",
+    "feature": "GCP Cloud SQL token project data source (data \"gcp_cloudsql_token\")",
+    "ptah": "partial",
+    "atlas_oss": "yes",
+    "atlas_pro": "yes",
+    "note": "A valid unreferenced declaration is accepted lazily, matching Atlas CE. Resolving the token still fails explicitly because the provider is not implemented.",
+    "evidence": "integration/atlasoracle/projectdata TestProjectDataSourcesMatchPinnedAtlasOutputAndExit compares the valid unreferenced declaration against pinned Atlas CE v1.3.0. config/projectconfig TestParseAtlas_LazilyAcceptsRecognizedUnreferencedDataSources covers lazy acceptance."
   },
   {
     "area": "Go embedding",

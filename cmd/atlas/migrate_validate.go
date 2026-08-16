@@ -66,10 +66,19 @@ func runAtlasMigrateValidate(
 	policy atlascompatpolicy.Policy,
 	source atlasMigrateSource,
 ) error {
-	if err := cmdutil.StatDir(source.dir); err != nil {
-		return cmdutil.Fail(cmd, migratevalidate.AtlasDirectoryError(source.dir, err))
+	var fsys fs.FS
+	if source.project.isVirtualMigrationDir(source.localDir) {
+		captured, err := source.project.captureLocal(source.localDir)
+		if err != nil {
+			return cmdutil.Fail(cmd, err)
+		}
+		fsys = captured.FileSystem
+	} else {
+		if err := cmdutil.StatDir(source.dir); err != nil {
+			return cmdutil.Fail(cmd, migratevalidate.AtlasDirectoryError(source.dir, err))
+		}
+		fsys = os.DirFS(source.dir)
 	}
-	fsys := os.DirFS(source.dir)
 	names, err := atlasmigrateimport.SumFileNames(fsys, source.format)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)

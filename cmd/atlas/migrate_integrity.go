@@ -53,6 +53,10 @@ type atlasMigrateSource struct {
 	// confined to, so a caller that opens the directory itself opens it through
 	// the same boundary the forwarded native command uses.
 	localDir atlasargs.LocalDir
+	// writeDir is the rooted backing directory a writing verb changes. It is
+	// equal to localDir for ordinary paths and points at the template source for
+	// a data.template_dir whose rendered filesystem remains localDir's read view.
+	writeDir atlasargs.LocalDir
 	// project is the loaded atlas.hcl, zero when none was selected. It owns the
 	// directory handle localDir may be confined to.
 	project atlasProject
@@ -140,7 +144,11 @@ func newAtlasMigrateIntegrityCommand(
 		// value, which is why this cannot simply be left to it.
 		directRefusedDevURL := verb.use == atlasMigrateValidateVerb().use &&
 			atlasDevURLDriverDiagnostic(source.devURL) != nil
-		if atlasmigrate.ReadsNativeAtlasDir(source.format) && !directStrictReplay && !directRefusedDevURL {
+		virtualSource := source.project.isVirtualMigrationDir(source.localDir)
+		if atlasmigrate.ReadsNativeAtlasDir(source.format) &&
+			!directStrictReplay &&
+			!directRefusedDevURL &&
+			!virtualSource {
 			return forward(cmd, source.forwardArgs)
 		}
 		// Only the directly executed path can report what the project file
@@ -231,6 +239,7 @@ func resolveAtlasMigrateSource(
 		devURL:      devURL,
 		forwardArgs: args,
 		localDir:    localDir,
+		writeDir:    project.project.writeLocalDir(localDir),
 		project:     project.project,
 		projectArgs: project.args,
 	}
@@ -239,8 +248,14 @@ func resolveAtlasMigrateSource(
 	// construction, so leaving an ignored key such as ?nonsense=1 on the URL
 	// would resurrect the blanket refusal one layer down — exit 1 where the
 	// community binary exits 0 (stokaro/ptah#1013 section 2).
-	if len(localDir.Query) > 0 {
-		source.forwardArgs = rewriteAtlasMigrateSourceArgs(verb, args, atlasDirWithoutQuery(rawDir), string(format))
+	rewriteDir := atlasDirWithoutQuery(rawDir)
+	rewriteSource := len(localDir.Query) > 0
+	if verb.writesDir && project.project.isVirtualMigrationDir(localDir) {
+		rewriteDir = source.writeDir.Path
+		rewriteSource = true
+	}
+	if rewriteSource {
+		source.forwardArgs = rewriteAtlasMigrateSourceArgs(verb, args, rewriteDir, string(format))
 	}
 	return source, nil
 }

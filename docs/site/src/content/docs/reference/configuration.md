@@ -152,8 +152,9 @@ Atlas format templates, fail during parsing or command validation.
 Use `ptah.yaml` for Ptah-owned configuration and the supported `atlas.hcl`
 subset for Atlas-compatible project config. The supported Atlas subset includes
 local `variable` defaults and Atlas-style `--var name=value` overrides,
-`locals`, `getenv`, `file`, `fileset`, and `data.hcl_schema.<name>.url`
-references for local schema-file workflows.
+`locals`, `getenv`, `file`, `fileset`, `data.hcl_schema`, `data.sql`,
+`data.external`, `data.runtimevar`, and `data.template_dir`. Recognized project
+data sources are evaluated only when the selected config references them.
 Supported Atlas env blocks can also set `schema.src`, `schema.mode`, `format`,
 and local `diff` policy defaults for the `ptah-compat` binary's commands.
 `ptah-compat migrate apply` expands env `for_each` collections and applies each
