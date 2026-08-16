@@ -22,10 +22,10 @@ const revisionDirectionSeparator = ":"
 // encodeRevisionState renders the value written to the ptah layout's state
 // column for a revision recorded while running direction.
 //
-// Only the down direction is suffixed. An up-direction row is written with the
-// same bytes it has always been written with, so upgrading Ptah changes no
-// stored value, and a database written by an older Ptah reads back the same way
-// it always did.
+// Only the down direction is suffixed, so the stored value is the bare state
+// unless the row records a rollback. The direction is the exception worth
+// spelling in the column; an applied migration needs no marker to say it was
+// applied.
 func encodeRevisionState(state string, direction MigrationDirection) string {
 	if direction != MigrationDirectionDown {
 		return state

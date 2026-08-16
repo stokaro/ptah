@@ -35,8 +35,9 @@ const (
 
 	// SourceIdentityOperatorVersion marks a row whose version is the exact,
 	// opaque source identity supplied through Atlas revision-version mapping.
-	// The marker lets compatibility recovery distinguish those identities from
-	// numeric ordering keys written by older Ptah builds.
+	// A reader classifying a converted Flyway history uses it to tell an
+	// applied versioned migration from a baseline, which the Atlas revision
+	// type alone does not settle.
 	SourceIdentityOperatorVersion = "Ptah/source-identity"
 )
 
