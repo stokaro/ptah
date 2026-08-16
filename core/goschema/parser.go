@@ -174,6 +174,7 @@ func (s *schemaParseState) parseFieldComment(
 			StructName:          structName,
 			FieldName:           name.Name,
 			Name:                kv["name"],
+			APIName:             kv["api_name"],
 			Type:                fieldType,
 			Nullable:            kv["not_null"] != "true",
 			Primary:             kv["primary"] == "true",

@@ -6,6 +6,7 @@
 package schemaexport
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 
@@ -285,4 +286,40 @@ func toSet(values []string) map[string]struct{} {
 		}
 	}
 	return set
+}
+
+// FieldAPIName returns the name a field carries in an exported API schema.
+//
+// A field that declares no API name keeps its column name, which is what every
+// export did before the two identities could differ, so an unannotated schema
+// exports byte-identically (stokaro/ptah#905).
+func FieldAPIName(field goschema.Field) string {
+	if field.APIName != "" {
+		return field.APIName
+	}
+	return field.Name
+}
+
+// ValidateFieldAPINames refuses a table whose fields do not resolve to distinct
+// API names, naming both columns that claimed the same one.
+//
+// The refusal is the point of allowing the two identities to differ at all: an
+// alias that silently shadows another field would drop a column from the
+// exported schema, and the reader of that schema has nothing left to notice it
+// with. Both sources are named because the alias is as likely to be the
+// mistake as the column it collided with.
+func ValidateFieldAPINames(table goschema.Table, fields []goschema.Field) error {
+	claimed := make(map[string]string, len(fields))
+	for _, field := range fields {
+		api := FieldAPIName(field)
+		first, taken := claimed[api]
+		if taken {
+			return fmt.Errorf(
+				"table %q exports two columns as %q: %q and %q; give one of them a distinct api_name",
+				table.Name, api, first, field.Name,
+			)
+		}
+		claimed[api] = field.Name
+	}
+	return nil
 }

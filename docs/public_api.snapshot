@@ -4158,7 +4158,16 @@ type Field struct {
     StructName string // Name of the Go struct this field belongs to
     FieldName  string // Name of the Go struct field
     Name       string // Database column name
-    Type       string // Database column type (e.g., "VARCHAR(255)", "INTEGER")
+    // APIName is the name this column carries in an exported API schema, when
+    // that is meant to differ from the column name. Empty leaves the exporters
+    // deriving it from Name as they always have.
+    //
+    // The two identities are separate on purpose: a storage rename should not
+    // rename a published field, and a storage-shaped name should not have to
+    // become the public one — `billing_amount_minor` can be exported as
+    // `amount` and stay itself in the database (stokaro/ptah#905).
+    APIName string
+    Type    string // Database column type (e.g., "VARCHAR(255)", "INTEGER")
     // TypeRawSQL records that Type was written with Atlas HCL's sql() raw
     // expression -- `type = sql("USER_DEFINED")` -- rather than as a type the
     // grammar names. Type still holds the reduced SQL text so rendered DDL is
