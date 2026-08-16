@@ -465,10 +465,16 @@ never applies anything either. Native
 [`ptah migrations up`](../../versioned/apply/) has no equivalent gate; see
 [#1231](https://github.com/stokaro/ptah/issues/1231).
 
-At realm scope this implementation keeps its own revision table in `public`
-while Atlas keeps its in a schema named `atlas_schema_revisions`. Both databases
-are adopted at exit `0`; the difference is where the bookkeeping lands, and it
-is tracked in [#1257](https://github.com/stokaro/ptah/issues/1257).
+The revision table lands in the schema Atlas uses, `atlas_schema_revisions`,
+whenever the URL names a PostgreSQL-family database and neither
+`--revisions-schema` nor the project file says otherwise. That is what lets the
+same database be handed between the two binaries: each reads the history the
+other wrote, and reports `No migration files to execute` rather than treating
+the database as never migrated.
+
+The default is scoped to that family because the location is a per-dialect
+fact. On MySQL a schema is a database, so the table stays in the one the
+connection opened; SQLite has no schema to name at all.
 
 ```bash
 ptah-compat migrate apply 2 \
