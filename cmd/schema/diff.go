@@ -9,6 +9,7 @@ import (
 
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
 	"go.5x5.cz/ptah/cmd/internal/dbcli"
+	"go.5x5.cz/ptah/cmd/internal/serverversion"
 	"go.5x5.cz/ptah/config/projectconfig"
 	"go.5x5.cz/ptah/internal/atlasfilter"
 	"go.5x5.cz/ptah/internal/atlasreport"
@@ -33,6 +34,7 @@ type schemaDiffOptions struct {
 	include        []string
 	exclude        []string
 	format         string
+	serverVersion  string
 	connectTimeout string
 	configPath     string
 	envName        string
@@ -72,6 +74,10 @@ of reporting a synced schema to a CI check.`,
 	flags.StringArrayVar(&opts.include, diffIncludeFlag, nil, "Schema objects to include in diffing (Atlas-style selectors)")
 	flags.StringArrayVar(&opts.exclude, diffExcludeFlag, nil, "Schema objects to exclude from diffing (Atlas-style selectors)")
 	flags.StringVar(&opts.format, diffFormatFlag, "sql", "Output format: sql or json")
+	// The dialect this resolves against is not known here -- it comes from
+	// --dev-url or from a source URL -- so the value travels to
+	// atlasschema.Diff and is resolved where the dialect is.
+	serverversion.Register(flags, &opts.serverVersion)
 	dbcli.RegisterConnectTimeoutFlag(flags, &opts.connectTimeout)
 	dbcli.RegisterConfigFlag(flags, &opts.configPath)
 	dbcli.RegisterEnvFlag(flags, &opts.envName)
@@ -118,6 +124,7 @@ func runSchemaDiff(cmd *cobra.Command, opts schemaDiffOptions) error {
 		FromURLs:       opts.fromURLs,
 		ToURLs:         opts.toURLs,
 		DevURL:         opts.devURL,
+		ServerVersion:  opts.serverVersion,
 		Exclude:        opts.exclude,
 		Schemas:        dbcli.ParseSchemas(opts.schemas),
 		Include:        opts.include,
