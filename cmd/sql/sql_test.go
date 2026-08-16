@@ -122,7 +122,7 @@ func TestSQLLint_CapabilityAwareRuleUsesVersion(t *testing.T) {
 	c := qt.New(t)
 	path := writeSQLFile(c, t.TempDir(), "index.sql", "CREATE INDEX CONCURRENTLY idx_users_email ON users (email);")
 
-	_, stderr, err := execute("lint", "--dialect", "cockroachdb", "--version", "CockroachDB CCL v23.1.0", path)
+	_, stderr, err := execute("lint", "--dialect", "cockroachdb", "--server-version", "CockroachDB CCL v23.1.0", path)
 
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
@@ -137,7 +137,7 @@ func TestSQLLint_UsageErrorsExitTwo(t *testing.T) {
 	}{
 		{name: "missing input", args: []string{"lint"}},
 		{name: "stdin with file", args: []string{"lint", "--stdin", "schema.sql"}},
-		{name: "version without dialect", args: []string{"lint", "--version", "16", "--stdin"}},
+		{name: "version without dialect", args: []string{"lint", "--server-version", "16", "--stdin"}},
 		{name: "bad format", args: []string{"lint", "--format", "sarif", "--stdin"}},
 		{name: "bad dialect", args: []string{"lint", "--dialect", "oracle", "--stdin"}},
 	}
@@ -176,11 +176,11 @@ func TestSQLLint_VersionThatNamesNoServerExitsTwo(t *testing.T) {
 			c := qt.New(t)
 			path := writeSQLFile(c, t.TempDir(), "index.sql", concurrentIndexSQL)
 
-			stdout, stderr, err := execute("lint", "--dialect", tt.dialect, "--version", tt.version, path)
+			stdout, stderr, err := execute("lint", "--dialect", tt.dialect, "--server-version", tt.version, path)
 
 			c.Assert(exitcode.Code(err, 0), qt.Equals, 2)
 			c.Assert(stdout, qt.Equals, "")
-			c.Assert(stderr, qt.Contains, "--version")
+			c.Assert(stderr, qt.Contains, "--server-version")
 			c.Assert(stderr, qt.Contains, tt.version)
 			c.Assert(stderr, qt.Contains, "10.11.6-MariaDB")
 		})
@@ -196,7 +196,7 @@ func TestSQLLint_JSONNeverReportsAVersionThatDidNotResolve(t *testing.T) {
 	path := writeSQLFile(c, t.TempDir(), "index.sql", concurrentIndexSQL)
 
 	stdout, stderr, err := execute(
-		"lint", "--dialect", "postgres", "--version", "definitely-not-a-version", "--format", "json", path)
+		"lint", "--dialect", "postgres", "--server-version", "definitely-not-a-version", "--format", "json", path)
 
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 2)
 	c.Assert(stdout, qt.Equals, "")
@@ -246,7 +246,7 @@ func TestSQLLint_RecognizedVersionLintsCleanly(t *testing.T) {
 			c := qt.New(t)
 			path := writeSQLFile(c, t.TempDir(), "index.sql", concurrentIndexSQL)
 
-			stdout, stderr, err := execute("lint", "--dialect", tt.dialect, "--version", tt.version, path)
+			stdout, stderr, err := execute("lint", "--dialect", tt.dialect, "--server-version", tt.version, path)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(stderr, qt.Equals, tt.wantStderr)
@@ -263,7 +263,7 @@ func TestSQLLint_DialectWithNoLadderSaysTheVersionChangedNothing(t *testing.T) {
 	c := qt.New(t)
 	path := writeSQLFile(c, t.TempDir(), "index.sql", concurrentIndexSQL)
 
-	_, stderr, err := execute("lint", "--dialect", "sqlserver", "--version", "16.0.4115.5", path)
+	_, stderr, err := execute("lint", "--dialect", "sqlserver", "--server-version", "16.0.4115.5", path)
 
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
 	c.Assert(stderr, qt.Contains, "warning: the sqlserver dialect has no measured version ladder")
@@ -277,7 +277,7 @@ func TestSQLLint_JSONCarriesTheVersionNote(t *testing.T) {
 	path := writeSQLFile(c, t.TempDir(), "index.sql", concurrentIndexSQL)
 
 	stdout, _, err := execute(
-		"lint", "--dialect", "postgres", "--version", "99.0", "--format", "json", path)
+		"lint", "--dialect", "postgres", "--server-version", "99.0", "--format", "json", path)
 
 	c.Assert(err, qt.IsNil)
 	var report struct {
@@ -291,16 +291,16 @@ func TestSQLLint_JSONCarriesTheVersionNote(t *testing.T) {
 
 // TestSQLLint_VersionWithoutDialectStillReportsTheOlderError guards the
 // pre-existing rule at the seam the new refusal was added to. Resolving the
-// version before that rule ran would answer "invalid --version value" to
+// version before that rule ran would answer "invalid --server-version value" to
 // someone whose actual mistake was omitting --dialect.
 func TestSQLLint_VersionWithoutDialectStillReportsTheOlderError(t *testing.T) {
 	c := qt.New(t)
 
-	_, stderr, err := execute("lint", "--version", "not-a-version", "--stdin")
+	_, stderr, err := execute("lint", "--server-version", "not-a-version", "--stdin")
 
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 2)
-	c.Assert(stderr, qt.Contains, "--version requires --dialect")
-	c.Assert(stderr, qt.Not(qt.Contains), "invalid --version value")
+	c.Assert(stderr, qt.Contains, "--server-version requires --dialect")
+	c.Assert(stderr, qt.Not(qt.Contains), "invalid --server-version value")
 }
 
 // TestSQLLint_RefusesABannerFromAnotherServer is the sibling of the same
@@ -316,10 +316,10 @@ func TestSQLLint_RefusesABannerFromAnotherServer(t *testing.T) {
 	c := qt.New(t)
 
 	_, stderr, err := executeWithStdin(concurrentIndexSQL,
-		"lint", "--dialect", "mysql", "--version", "10.11.6-MariaDB", "--stdin")
+		"lint", "--dialect", "mysql", "--server-version", "10.11.6-MariaDB", "--stdin")
 
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 2)
-	c.Assert(stderr, qt.Contains, "invalid --version: ")
+	c.Assert(stderr, qt.Contains, "invalid --server-version: ")
 	c.Assert(stderr, qt.Contains, `"10.11.6-MariaDB" names a mariadb server, but the target dialect is mysql`)
 }
 
@@ -329,7 +329,7 @@ func TestSQLLint_AcceptsAMatchingBanner(t *testing.T) {
 	c := qt.New(t)
 
 	_, stderr, err := executeWithStdin(concurrentIndexSQL,
-		"lint", "--dialect", "mariadb", "--version", "10.11.6-MariaDB", "--stdin")
+		"lint", "--dialect", "mariadb", "--server-version", "10.11.6-MariaDB", "--stdin")
 
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
 	c.Assert(stderr, qt.Not(qt.Contains), "invalid --version")

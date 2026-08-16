@@ -8,8 +8,8 @@
 // checkpoint it writes, `ptah schema push` names the artifact tag it publishes
 // — so any coverage check that asks "does this command take a version?" by flag
 // name answers yes for both and measures nothing. [Lookup] answers from an
-// annotation only [Register] and [RegisterAs] set, so a flag counts because a
-// command opted into this contract and never because of how it is spelled.
+// annotation only [Register] sets, so a flag counts because a command opted
+// into this contract and never because of how it is spelled.
 package serverversion
 
 import (
@@ -17,10 +17,9 @@ import (
 	"github.com/spf13/pflag"
 )
 
-// FlagName is the native spelling for a command that has no version flag yet.
-//
-// `ptah sql lint` predates it and keeps `--version`, which is why [RegisterAs]
-// exists: the contract is what [Lookup] reads, not the name.
+// FlagName is the spelling every command uses, and it is deliberately not
+// `--version`: on a CLI that is conventionally the program's own version, which
+// `ptah --version` prints. One spelling for one meaning (stokaro/ptah#916).
 const FlagName = "server-version"
 
 // contractAnnotation marks a flag as carrying the server-version contract.
@@ -37,14 +36,8 @@ const Usage = "Server version string used to refine target capabilities, for exa
 
 // Register registers the flag under [FlagName].
 func Register(flags *pflag.FlagSet, target *string) {
-	RegisterAs(flags, FlagName, target)
-}
-
-// RegisterAs registers the flag under a caller-chosen name, for a command
-// whose established spelling is something other than [FlagName].
-func RegisterAs(flags *pflag.FlagSet, name string, target *string) {
-	flags.StringVar(target, name, "", Usage)
-	if err := flags.SetAnnotation(name, contractAnnotation, []string{"true"}); err != nil {
+	flags.StringVar(target, FlagName, "", Usage)
+	if err := flags.SetAnnotation(FlagName, contractAnnotation, []string{"true"}); err != nil {
 		panic(err)
 	}
 }
