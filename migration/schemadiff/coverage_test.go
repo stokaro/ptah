@@ -55,6 +55,25 @@ func coverageCases() []coverageCase {
 			wantWithout:  []string{"pgcrypto"},
 		},
 		{
+			// The source-capability case. Go annotations, HCL and YAML have no
+			// CREATE VIRTUAL TABLE, so a live FTS5 index they never mention is
+			// outside the surface they manage -- and the drop takes the index
+			// and everything in it (stokaro/ptah#1028). A native `.sql`
+			// document records nothing here, so the control column is what its
+			// silence still plans.
+			name:    "an undescribed virtual table is not a dropped virtual table",
+			desired: func() *goschema.Database { return &goschema.Database{} },
+			database: func() *types.DBSchema {
+				return &types.DBSchema{
+					Tables: []types.DBTable{{Name: "docs", Type: "TABLE", VirtualModule: "fts5"}},
+				}
+			},
+			notDescribed: coverage.Set{}.WithKind(coverage.VirtualTable),
+			onDesired:    true,
+			read:         func(diff *difftypes.SchemaDiff) []string { return diff.TablesRemoved },
+			wantWithout:  []string{"docs"},
+		},
+		{
 			name:    "an undescribed sequence kind is not a dropped sequence",
 			desired: func() *goschema.Database { return &goschema.Database{} },
 			database: func() *types.DBSchema {

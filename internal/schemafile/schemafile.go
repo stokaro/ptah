@@ -271,8 +271,30 @@ func statSchemaPath(path string) (resolved string, isDir bool, err error) {
 	return resolved, info.IsDir(), nil
 }
 
-// loadSchemaFile reads one schema file, chosen by extension.
+// loadSchemaFile reads one schema file, chosen by extension, and records what
+// the chosen format cannot express.
 func loadSchemaFile(resolved string, opts Options) (*goschema.Database, error) {
+	database, err := parseSchemaFile(resolved, opts)
+	if err != nil {
+		return nil, err
+	}
+	// An object type a format cannot represent is outside the surface a
+	// document written in that format manages. Only `.sql` has
+	// CREATE VIRTUAL TABLE, so silence about a live SQLite virtual table is
+	// intent there and is not intent in HCL or YAML, where the document could
+	// not have named it (stokaro/ptah#1028).
+	//
+	// It is recorded HERE rather than in each parser: the parsers answer what a
+	// DOCUMENT declares, and atlashclrender writes that answer back out, so a
+	// limit invented during parsing would appear as a `ptah:not-described`
+	// header nobody wrote.
+	if strings.ToLower(filepath.Ext(resolved)) != dirSQLExtension {
+		database.NotDescribed = database.NotDescribed.WithKind(coverage.VirtualTable)
+	}
+	return database, nil
+}
+
+func parseSchemaFile(resolved string, opts Options) (*goschema.Database, error) {
 	switch strings.ToLower(filepath.Ext(resolved)) {
 	case ".hcl":
 		return atlashcl.ParseFileWithOptions(resolved, atlashcl.Options{

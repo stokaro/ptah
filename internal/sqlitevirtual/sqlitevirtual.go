@@ -125,6 +125,7 @@ import (
 	"sort"
 	"strings"
 
+	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/identifier"
@@ -403,6 +404,13 @@ func ValidateComparison(
 		return err
 	}
 
+	// A nil desired state declares nothing, which is not the same as declaring
+	// that it cannot describe virtual tables: the zero Set claims everything,
+	// so the removal refusal still fires for it.
+	var declaredLimits coverage.Set
+	if desired != nil {
+		declaredLimits = desired.NotDescribed
+	}
 	sides := pairSides(desired, database, semantics)
 	var collisions, transitions, removals, uncreatable []Table
 	for _, side := range sides {
@@ -420,7 +428,7 @@ func ValidateComparison(
 			// `diff.skip: [drop_table]` in ptah.yaml: both opt-ins set,
 			// `ptah schema apply` reports `Schema is synced, no changes to be
 			// made.` at exit 0 -- and without them it exited 2.
-			if policy.SkipDropTable {
+			if !plansVirtualTableRemoval(side, policy, declaredLimits) {
 				continue
 			}
 			removals = append(removals, side.table())
@@ -1239,6 +1247,38 @@ type pairedSide struct {
 	declared bool
 	live     declaration
 	wanted   declaration
+}
+
+// plansVirtualTableRemoval reports whether an undeclared live virtual table is
+// a removal this comparison has to answer for.
+//
+// Two things make it not one. The caller may delete the statement again:
+// `skip drop_table` filters this table out of TablesRemoved before the plan is
+// rendered, so the DROP the refusal exists to prevent is never emitted, and
+// refusing would send an operator to an opt-in for a plan that drops nothing.
+//
+// And the desired state's source may have no syntax for a virtual table at
+// all. Then it did not withhold one, and there is nothing an operator could
+// add that would say "keep it": the refusal would be permanent for every Go
+// annotation, HCL and YAML schema in front of an FTS5 index, which is the
+// blocker stokaro/ptah#1028 opens with. A source that CAN express one records
+// nothing in NotDescribed, so its silence still reaches the refusal.
+func plansVirtualTableRemoval(side pairedSide, policy Policy, declaredLimits coverage.Set) bool {
+	if policy.SkipDropTable {
+		return false
+	}
+	return declaredLimits.Describes(coverage.VirtualTable, side.spellings()...)
+}
+
+// spellings returns every name the two sides might use for this table, which
+// is what [go.5x5.cz/ptah/core/coverage.Set.Describes] asks for: a directive
+// written against one spelling has to answer for the other, and a false
+// negative there restores the removal coverage exists to withhold.
+func (s pairedSide) spellings() []string {
+	if strings.TrimSpace(s.schema) == "" {
+		return []string{s.name}
+	}
+	return []string{s.name, s.schema + "." + s.name}
 }
 
 func (s pairedSide) table() Table {
