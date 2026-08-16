@@ -3723,8 +3723,25 @@ func (p *Parser) handleClickHouseRawClause(table *ast.CreateTableNode, option st
 // different table to ClickHouse, and a rebuilt string is where that difference
 // would come from.
 func (p *Parser) captureTableClause(table *ast.CreateTableNode, option string) error {
+	value, start := p.captureExpression(p.endsTableClause)
+	if value == "" {
+		return fmt.Errorf("expected an expression after %s at position %d", clickHouseTableClauses[option], start)
+	}
+	table.SetOption(option, value)
+	return nil
+}
+
+// captureExpression returns the source text of the expression starting at the
+// current token, byte for byte, together with the offset it started at.
+//
+// It stops at the first top-level token stop accepts, so a caller decides what
+// ends its expression: the next table clause, the TYPE keyword of a skipping
+// index, the end of the statement. Parenthesised sub-expressions are stepped
+// over, because `ORDER BY (a, b)` and `TYPE set(100)` both carry the stop
+// keywords' company inside brackets that are part of the value.
+func (p *Parser) captureExpression(stop func() bool) (value string, start int) {
 	p.skipWhitespace()
-	start := p.current.Start
+	start = p.current.Start
 	end := start
 	depth := 0
 	for p.current.Type != lexer.TokenEOF {
@@ -3733,24 +3750,19 @@ func (p *Parser) captureTableClause(table *ast.CreateTableNode, option string) e
 		}
 		if p.current.MatchOperatorValue(")") {
 			depth--
-			// A closing paren below the level this clause opened belongs to
-			// whatever contains the statement, not to the expression.
+			// A closing paren below the level this expression opened belongs
+			// to whatever contains it, not to the value.
 			if depth < 0 {
 				break
 			}
 		}
-		if depth == 0 && p.endsTableClause() {
+		if depth == 0 && stop() {
 			break
 		}
 		end = p.current.End
 		p.advance()
 	}
-	value := strings.TrimSpace(p.input[start:end])
-	if value == "" {
-		return fmt.Errorf("expected an expression after %s at position %d", clickHouseTableClauses[option], start)
-	}
-	table.SetOption(option, value)
-	return nil
+	return strings.TrimSpace(p.input[start:end]), start
 }
 
 // endsTableClause reports whether the current token starts something other than
@@ -4245,6 +4257,15 @@ func (p *Parser) parseAddOperation() (ast.AlterOperation, error) {
 		return &ast.AddConstraintOperation{Constraint: constraint}, nil
 	}
 
+	// ClickHouse's data-skipping index. Without this the statement falls
+	// through to the column parser, which reads the indexed expression as a
+	// type and TYPE as a column attribute -- and the statement it refuses is
+	// the one this repository's own ClickHouse renderer writes
+	// (stokaro/ptah#1574).
+	if p.current.Type == lexer.TokenIdentifier && strings.ToUpper(p.current.Value) == "INDEX" {
+		return p.parseAddSkippingIndex()
+	}
+
 	// Optional COLUMN keyword
 	if p.current.Type == lexer.TokenIdentifier && strings.ToUpper(p.current.Value) == "COLUMN" {
 		p.advance()
@@ -4258,6 +4279,72 @@ func (p *Parser) parseAddOperation() (ast.AlterOperation, error) {
 	}
 
 	return &ast.AddColumnOperation{Column: column}, nil
+}
+
+// parseAddSkippingIndex reads
+// `INDEX <name> <expression> TYPE <type> [GRANULARITY <n>]`.
+//
+// The expression and the type are both captured as source text: an expression
+// is arbitrary, and a type carries its own parameters -- `set(100)`,
+// `bloom_filter(0.01)`, `tokenbf_v1(256, 2, 0)` -- so neither survives being
+// rebuilt from tokens. GRANULARITY is optional; the renderer supplies
+// ClickHouse's documented default for a missing one.
+func (p *Parser) parseAddSkippingIndex() (ast.AlterOperation, error) {
+	if err := p.expect(lexer.TokenIdentifier, "INDEX"); err != nil {
+		return nil, err
+	}
+	p.skipWhitespace()
+	name, err := p.expectIdentifier()
+	if err != nil {
+		return nil, fmt.Errorf("expected an index name after ADD INDEX: %w", err)
+	}
+
+	expression, start := p.captureExpression(func() bool {
+		return p.current.Type == lexer.TokenSemicolon ||
+			p.matchesKeyword("TYPE")
+	})
+	if expression == "" {
+		return nil, fmt.Errorf("expected an indexed expression after ADD INDEX %s at position %d", name, start)
+	}
+
+	if err := p.expect(lexer.TokenIdentifier, "TYPE"); err != nil {
+		return nil, fmt.Errorf("expected TYPE after the expression of index %s: %w", name, err)
+	}
+	indexType, typeStart := p.captureExpression(func() bool {
+		return p.current.Type == lexer.TokenSemicolon ||
+			p.matchesKeyword("GRANULARITY")
+	})
+	if indexType == "" {
+		return nil, fmt.Errorf("expected an index type after TYPE at position %d", typeStart)
+	}
+
+	operation := &ast.AddSkippingIndexOperation{
+		Name:       name,
+		Expression: expression,
+		IndexType:  indexType,
+	}
+	p.skipWhitespace()
+	if !p.matchesKeyword("GRANULARITY") {
+		return operation, nil
+	}
+	p.advance()
+	p.skipWhitespace()
+	granularity, err := p.expectIdentifier()
+	if err != nil {
+		return nil, fmt.Errorf("expected a value after GRANULARITY on index %s: %w", name, err)
+	}
+	parsed, err := strconv.Atoi(granularity)
+	if err != nil {
+		return nil, fmt.Errorf("GRANULARITY on index %s must be a number, got %q", name, granularity)
+	}
+	operation.Granularity = parsed
+	return operation, nil
+}
+
+// matchesKeyword reports whether the current token is the given bare keyword.
+func (p *Parser) matchesKeyword(keyword string) bool {
+	return p.current.Type == lexer.TokenIdentifier &&
+		strings.ToUpper(p.current.Value) == keyword
 }
 
 func (p *Parser) isAlterAddConstraintStart() bool {
