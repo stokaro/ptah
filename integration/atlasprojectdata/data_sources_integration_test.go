@@ -474,7 +474,16 @@ env "local" {
 	c.Assert(cfg.DatabaseURL, qt.Equals, value)
 }
 
-func TestAtlasDataRuntimeVariableHonorsURLTimeout(t *testing.T) {
+// TestAtlasDataRuntimeVariableReportsAMissingFile pins the half of the message
+// that is Ptah's: the source that failed, the operation, and the driver's code.
+//
+// What follows the code belongs to the driver. Whether it echoes the path
+// before "no such file or directory" differs by platform and by driver version,
+// so asserting it makes the test report on a dependency's wording rather than
+// on this adapter. `(?s)` because [qt.ErrorMatches] anchors the whole message
+// and `.` does not match a newline, so a driver that ever writes a second line
+// would fail the pattern for a reason unrelated to the behavior.
+func TestAtlasDataRuntimeVariableReportsAMissingFile(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	missingURL := (&url.URL{Scheme: "file", Path: filepath.Join(dir, "missing")}).String() + "?timeout=50ms"
@@ -492,7 +501,56 @@ env "local" {
 		EnvName: "local",
 	})
 
-	c.Assert(err, qt.ErrorMatches, `data\.runtimevar\.missing: getting latest snapshot: runtimevar \(code=NotFound\): .*missing: no such file or directory`)
+	c.Assert(err, qt.ErrorMatches, `(?s)data\.runtimevar\.missing: getting latest snapshot: runtimevar \(code=NotFound\): .*`)
+}
+
+// runtimeVariableSlowResponse is how long the timeout server withholds its
+// answer. It has to dwarf the deadline under test so that the two outcomes are
+// far apart in time and cannot be confused for one another.
+const runtimeVariableSlowResponse = 2 * time.Second
+
+// TestAtlasDataRuntimeVariableHonorsURLTimeout measures the deadline the URL
+// carries, which requires a target that is slow rather than one that is absent.
+//
+// A missing file cannot serve as that target: it fails with NotFound long
+// before any deadline elapses, so a test built on one is green whatever the
+// timeout does — including when it is never read.
+//
+// Two things are asserted and one deliberately is not. Resolution fails, and it
+// fails naming the source and the operation, which is Ptah's half of the
+// message; and it returns far sooner than the server answers, which is the only
+// observation that distinguishes a deadline that was honored from one that was
+// dropped — without it the run would succeed with the late value. The driver's
+// half of the message is not asserted: Go CDK reports a cut wait as `no value
+// yet (code=FailedPrecondition)` rather than as the deadline, and pinning that
+// wording would make this test report on a dependency instead of on this
+// adapter.
+func TestAtlasDataRuntimeVariableHonorsURLTimeout(t *testing.T) {
+	c := qt.New(t)
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		time.Sleep(runtimeVariableSlowResponse)
+		_, _ = writer.Write([]byte("sqlite://answered-too-late\n"))
+	}))
+	c.Cleanup(server.Close)
+	dir := t.TempDir()
+	raw := fmt.Appendf(nil, `
+data "runtimevar" "slow" {
+  url = %s
+}
+env "local" {
+  url = data.runtimevar.slow
+}
+`, strconv.Quote(server.URL+"?timeout=50ms"))
+
+	start := time.Now()
+	_, err := projectconfig.ParseAtlasWithOptions(raw, filepath.Join(dir, "atlas.hcl"), projectconfig.AtlasLoadOptions{
+		Context: context.Background(),
+		EnvName: "local",
+	})
+	elapsed := time.Since(start)
+
+	c.Assert(err, qt.ErrorMatches, `(?s)data\.runtimevar\.slow: getting latest snapshot: .*`)
+	c.Assert(elapsed < runtimeVariableSlowResponse/2, qt.IsTrue)
 }
 
 func TestAtlasDataRuntimeVariableReadsHTTPBytes(t *testing.T) {
