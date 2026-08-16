@@ -377,7 +377,7 @@ func runAtlasMigrateApplyTarget(
 		RevisionTypes:            linearity.revisionTypes,
 		RepeatableVersions:       linearity.repeatableVersions,
 		TxMode:                   txMode,
-		RevisionsSchema:          opts.revisionsSchema,
+		RevisionsSchema:          applyAtlasRevisionsSchemaDefault(opts.revisionsSchema, opts.url),
 		MigrationLockTimeout:     migrationLockTimeout,
 		MigrationLockName:        runOpts.lockRequest.Name,
 		SkipMigrationLock:        runOpts.lockRequest.Skip,

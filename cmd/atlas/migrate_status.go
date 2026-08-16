@@ -210,7 +210,7 @@ func runAtlasMigrateStatus(
 		Dir:              dir,
 		FS:               migrationFS,
 		AtlasEnv:         opts.atlasEnv,
-		RevisionsSchema:  opts.revisionsSchema,
+		RevisionsSchema:  applyAtlasRevisionsSchemaDefault(opts.revisionsSchema, opts.url),
 		RevisionVersions: sourceVersions,
 	})
 	if err != nil {
