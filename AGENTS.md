@@ -876,6 +876,26 @@ exactly which rules fail a build and which stay a reading responsibility. Run
 no npm install, and it governs this file, the repository docs, the examples,
 the integration docs, and every package README — not only the site.
 
+It is one of five commands in that job, and running the sixteen
+`scripts/check-*.sh` gates does not stand in for any of them:
+
+```bash
+node docs/site/scripts/check-style.mjs --selftest
+node docs/site/scripts/check-style.mjs
+node docs/site/scripts/check-limitations.mjs --selftest
+node docs/site/scripts/check-limitations.mjs
+node docs/site/scripts/build-feature-matrix.mjs --check
+```
+
+**`docs/site/src/content/docs/atlas/feature-matrix.md` is generated.** Its
+source is `docs/site/scripts/data/feature-matrix-rows.json`; edit that and run
+`node docs/site/scripts/build-feature-matrix.mjs`. Editing the page by hand
+fails both this job and the site build, and leaves the counts above the tables
+describing the row total the page no longer has — the generator is what keeps
+them honest. A row's `note` is capped at 200 characters and its `evidence` is
+recorded in the data without being rendered, so anything a reader must see
+belongs in the note.
+
 Before finishing any change that affects external behavior, inspect and update
 the relevant documentation. Do this as a required verification step, not as an
 opportunistic cleanup. Purely code-internal refactors that do not alter public
