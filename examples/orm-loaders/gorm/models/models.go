@@ -1,3 +1,7 @@
+// Package models holds the GORM models this example hands to Ptah through an
+// external schema loader. It is the example's desired state, the thing its
+// ptah.yaml points at, rather than a library: nothing outside the example
+// imports it.
 package models
 
 import "gorm.io/gorm"
