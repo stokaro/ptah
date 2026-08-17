@@ -110,6 +110,7 @@ so typos fail fast. Current registry:
 | `sequences` | Database sequence objects: `SERIAL`/`BIGSERIAL` column backing and first-class standalone sequences via `//ptah:schema:sequence` (`CREATE`/`ALTER`/`DROP SEQUENCE`). See [Sequences](./sequences.md). |
 | `xml_type` | PostgreSQL `XML` column type |
 | `advisory_locks` | PostgreSQL advisory lock functions such as `pg_advisory_lock` |
+| `row_level_ttl` | Table storage parameters declaring a row-expiry policy the engine runs (CockroachDB row-level TTL). The one key that is true on a PostgreSQL-compatible engine and false on PostgreSQL itself |
 
 ### Validation rules
 
@@ -217,6 +218,7 @@ set that names no mode at all, which only a hand-built set produces and
 | `sequences` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
 | `xml_type` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ❌ |
 | `advisory_locks` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ |
+| `row_level_ttl` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
 
 Version lines: `MySQL84()` covers MySQL 8.4+, 9.x, and the 26.x generation;
 the exact measured lines are 8.4, 9.7, and 26.7. `MySQL8019()` covers
@@ -1072,6 +1074,46 @@ file, exactly as any other command reaching the same URL would.
   Ptah does not model cluster propagation. And a ClickHouse role is not scoped
   to a database, so a role created by a dev or throwaway workflow outlives the
   database that workflow drops.
+- **CockroachDB row-level TTL (#1027).** `CockroachDB23()` and the per-line
+  presets derived from it set `row_level_ttl`. It is the only key in the
+  registry that a CockroachDB preset turns ON rather than off, and the only one
+  that is true on a PostgreSQL-compatible engine and false on PostgreSQL itself,
+  so a reader meeting it should not assume the usual polarity.
+
+  A declared policy is planned, applied, read back from `pg_class.reloptions`,
+  and compared to zero difference on the next run. `CREATE TABLE ... WITH (...)`
+  carries a new policy, `ALTER TABLE ... SET (...)` changes one, and
+  `ALTER TABLE ... RESET (ttl)` removes the whole configuration in one
+  statement. Measured on both declared lines, `SET` replaces only the parameters
+  it names, so a declaration that stops naming one has its `RESET` planned
+  explicitly.
+
+  What the key promises is the surface `internal/crdbttl` models, not every
+  parameter the engine spells, and that boundary is the interesting part.
+  Nine parameters read back from the catalog exactly as written and are managed.
+  Three do not and are refused by name with the measurement in the error:
+  `ttl_expire_after`, whose interval the server canonicalizes (`'72 hours'`
+  becomes `'72:00:00'`) and which adds a hidden `crdb_internal_expiration`
+  column; `ttl_row_stats_poll_interval`, whose duration it canonicalizes and
+  which stores nothing at all below one second; and `ttl` itself, which is
+  derived. Supporting `ttl_expire_after` needs an offline interval canonicalizer
+  and a hidden-column filter, which is [#1605](https://github.com/stokaro/ptah/issues/1605)
+  rather than a gap left unexplained here.
+
+  Two refusals are about values rather than names. A zero or negative knob is
+  refused because the server rejects the negative one and accepts zero while
+  storing the parameter nowhere, so neither reads back. A `false` boolean
+  normalizes to "not declared", because on the server those are the same state:
+  `ttl_pause = false` is stored nowhere and setting it erases an existing
+  `true` exactly as a reset does.
+
+  The dialect gate is Ptah's rather than the server's, deliberately. PostgreSQL
+  18.4 answers `unrecognized parameter "ttl_expiration_expression"` on its own,
+  but YugabyteDB 2026.1 answers `WARNING: storage parameter
+  ttl_expiration_expression is unsupported, ignoring` before its error — and an
+  engine that IGNORES a retention policy would accept the statement and never
+  apply it, leaving an operator believing rows expire when they do not.
+
 - **SQLite native DDL (#148).**
   `SQLite3()` enables enforced CHECK constraints, foreign keys, and
   `DROP INDEX IF EXISTS`. It deliberately leaves generic constraint drops and

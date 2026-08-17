@@ -13,8 +13,6 @@ import (
 	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
 )
 
-func ttlInt64p(value int64) *int64 { return &value }
-
 // declaredTTL is a one-table declaration carrying the given policy.
 func declaredTTL(spec *ast.RowTTLSpec) *goschema.Database {
 	return &goschema.Database{
@@ -91,10 +89,10 @@ func TestCompare_RowTTLTransitions(t *testing.T) {
 		{
 			name:        "a knob being dropped while the policy stays",
 			desired:     &ast.RowTTLSpec{ExpirationExpression: "expires_at"},
-			current:     &ast.RowTTLSpec{ExpirationExpression: "expires_at", SelectBatchSize: ttlInt64p(500)},
+			current:     &ast.RowTTLSpec{ExpirationExpression: "expires_at", SelectBatchSize: new(int64(500))},
 			wantChanged: true,
 			wantDesired: &ast.RowTTLSpec{ExpirationExpression: "expires_at"},
-			wantCurrent: &ast.RowTTLSpec{ExpirationExpression: "expires_at", SelectBatchSize: ttlInt64p(500)},
+			wantCurrent: &ast.RowTTLSpec{ExpirationExpression: "expires_at", SelectBatchSize: new(int64(500))},
 		},
 	}
 

@@ -51,6 +51,23 @@ func (r *Renderer) rowTTLUnsupported(table string) error {
 		r.dialect, table, crdbttl.ExpirationExpressionParameter)
 }
 
+// writeRowTTLOperation renders whichever of the two row-level TTL operations it
+// is handed, and nothing for any other node.
+//
+// It exists so [Renderer.VisitAlterTable] carries one arm for the pair rather
+// than two: that switch already renders every ALTER shape every PostgreSQL-wire
+// dialect has, and its complexity is budgeted.
+func (r *Renderer) writeRowTTLOperation(node *ast.AlterTableNode, operation ast.AlterOperation) error {
+	switch op := operation.(type) {
+	case *ast.SetRowTTLOperation:
+		return r.writeSetRowTTL(node, op)
+	case *ast.ResetRowTTLOperation:
+		return r.writeResetRowTTL(node, op)
+	default:
+		return nil
+	}
+}
+
 // writeSetRowTTL emits `ALTER TABLE ... SET (...)`, which both adds a policy
 // and changes one.
 //

@@ -13,9 +13,6 @@ import (
 	"go.5x5.cz/ptah/core/renderer/internal/dialects/postgres"
 )
 
-func int64p(value int64) *int64 { return &value }
-func boolp(value bool) *bool    { return &value }
-
 // ttlTable is the smallest table a TTL can hang off: one key column and the
 // timestamp an expiry expression refers to.
 func ttlTable(spec *ast.RowTTLSpec) *ast.CreateTableNode {
@@ -64,13 +61,13 @@ func TestRender_RowTTLClause(t *testing.T) {
 			spec: &ast.RowTTLSpec{
 				ExpirationExpression:         "expires_at",
 				JobCron:                      "@daily",
-				SelectBatchSize:              int64p(500),
-				DeleteBatchSize:              int64p(100),
-				SelectRateLimit:              int64p(200),
-				DeleteRateLimit:              int64p(300),
-				Pause:                        boolp(true),
-				LabelMetrics:                 boolp(true),
-				DisableChangefeedReplication: boolp(true),
+				SelectBatchSize:              new(int64(500)),
+				DeleteBatchSize:              new(int64(100)),
+				SelectRateLimit:              new(int64(200)),
+				DeleteRateLimit:              new(int64(300)),
+				Pause:                        new(true),
+				LabelMetrics:                 new(true),
+				DisableChangefeedReplication: new(true),
 			},
 			want: `) WITH (ttl_expiration_expression = 'expires_at', ttl_job_cron = '@daily', ` +
 				`ttl_select_batch_size = 500, ttl_delete_batch_size = 100, ttl_select_rate_limit = 200, ` +

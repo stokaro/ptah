@@ -14,8 +14,6 @@ import (
 	"go.5x5.cz/ptah/migration/schemadiff/types"
 )
 
-func ttlIntp(value int64) *int64 { return &value }
-
 // ttlDiff is a diff whose only content is one table's TTL transition, which is
 // what the comparator produces for a table that differs in nothing else.
 func ttlDiff(desired, current *ast.RowTTLSpec) *types.SchemaDiff {
@@ -62,7 +60,7 @@ func TestPlanner_RowTTLTransitions(t *testing.T) {
 			// forever without this statement.
 			name:    "dropping a knob while the policy stays",
 			desired: &ast.RowTTLSpec{ExpirationExpression: "expires_at"},
-			current: &ast.RowTTLSpec{ExpirationExpression: "expires_at", SelectBatchSize: ttlIntp(500)},
+			current: &ast.RowTTLSpec{ExpirationExpression: "expires_at", SelectBatchSize: new(int64(500))},
 			want: []string{
 				`ALTER TABLE "sessions" RESET (ttl_select_batch_size);`,
 				`ALTER TABLE "sessions" SET (ttl_expiration_expression = 'expires_at');`,
@@ -81,7 +79,7 @@ func TestPlanner_RowTTLTransitions(t *testing.T) {
 			current: &ast.RowTTLSpec{
 				ExpirationExpression: "expires_at",
 				JobCron:              "@daily",
-				DeleteBatchSize:      ttlIntp(100),
+				DeleteBatchSize:      new(int64(100)),
 			},
 			want: []string{
 				`ALTER TABLE "sessions" RESET (ttl_job_cron, ttl_delete_batch_size);`,
@@ -173,7 +171,7 @@ func renderedStatements(
 	for _, node := range nodes {
 		sql, err := renderer.RenderSQLWithCapabilities(dialect, caps, node)
 		c.Assert(err, qt.IsNil)
-		for _, line := range strings.Split(sql, "\n") {
+		for line := range strings.SplitSeq(sql, "\n") {
 			line = strings.TrimSpace(line)
 			if strings.HasPrefix(line, "ALTER TABLE") {
 				statements = append(statements, line)

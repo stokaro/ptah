@@ -655,22 +655,20 @@ func (r *Renderer) VisitAlterTable(node *ast.AlterTableNode) error {
 				r.escapeQualifiedIdentifier(node.Name), r.escapeIdentifier(op.OldName), r.escapeIdentifier(op.NewName))
 		case *ast.RenameTableOperation:
 			r.w.WriteLinef("ALTER TABLE %s RENAME TO %s;", r.escapeQualifiedIdentifier(node.Name), r.escapeIdentifier(op.NewName))
-		case *ast.AddSkippingIndexOperation:
-			// Data-skipping indexes are a ClickHouse-specific construct; no
-			// PostgreSQL equivalent exists. Emit a self-explanatory comment.
-			r.w.WriteLinef("-- %s: data-skipping indexes are ClickHouse-specific; ignored.", r.dialectUpper)
-		case *ast.ModifyTTLOperation:
-			// ClickHouse's own table TTL, which is a different feature from
-			// the CockroachDB row-level TTL the two operations below carry:
-			// that one is a column expression on a MergeTree table, this one
-			// is a set of storage parameters. Neither has a PostgreSQL form.
-			r.w.WriteLinef("-- %s: table TTL is ClickHouse-specific; ignored.", r.dialectUpper)
-		case *ast.SetRowTTLOperation:
-			if err := r.writeSetRowTTL(node, op); err != nil {
-				return err
-			}
-		case *ast.ResetRowTTLOperation:
-			if err := r.writeResetRowTTL(node, op); err != nil {
+		case *ast.AddSkippingIndexOperation, *ast.ModifyTTLOperation:
+			// Two ClickHouse-specific constructs with no PostgreSQL equivalent,
+			// sharing one arm so this switch keeps its complexity budget. The
+			// ClickHouse table TTL is a different feature from the CockroachDB
+			// row-level TTL the next arm carries: that one is a column
+			// expression on a MergeTree table, this one a set of storage
+			// parameters.
+			r.writeClickHouseOnlyOperation(operation)
+		case *ast.SetRowTTLOperation, *ast.ResetRowTTLOperation:
+			// Both row-level TTL operations share one branch so this switch
+			// keeps its complexity budget; writeRowTTLOperation re-selects
+			// between them, which is a two-case type switch of its own rather
+			// than another arm here (stokaro/ptah#1027).
+			if err := r.writeRowTTLOperation(node, operation); err != nil {
 				return err
 			}
 		default:
@@ -2316,4 +2314,16 @@ func looksEncrypted(password string) bool {
 
 func unsupportedFeaturef(format string, args ...any) error {
 	return fmt.Errorf("%w: %s", ptaherr.ErrUnsupportedFeature, fmt.Sprintf(format, args...))
+}
+
+// writeClickHouseOnlyOperation names a ClickHouse construct this dialect has no
+// form for, as a comment rather than as a dropped operation: an operator
+// reading the plan has to be able to see that something was declined.
+func (r *Renderer) writeClickHouseOnlyOperation(operation ast.AlterOperation) {
+	switch operation.(type) {
+	case *ast.AddSkippingIndexOperation:
+		r.w.WriteLinef("-- %s: data-skipping indexes are ClickHouse-specific; ignored.", r.dialectUpper)
+	case *ast.ModifyTTLOperation:
+		r.w.WriteLinef("-- %s: table TTL is ClickHouse-specific; ignored.", r.dialectUpper)
+	}
 }

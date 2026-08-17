@@ -52,15 +52,15 @@ func TestOptions_RendersTheMeasuredSpelling(t *testing.T) {
 		{
 			name: "the enabler comes first, then the cron, then ints, then bools",
 			spec: &ast.RowTTLSpec{
-				DisableChangefeedReplication: boolp(true),
-				DeleteRateLimit:              int64p(300),
+				DisableChangefeedReplication: new(true),
+				DeleteRateLimit:              new(int64(300)),
 				JobCron:                      "@daily",
-				SelectBatchSize:              int64p(500),
+				SelectBatchSize:              new(int64(500)),
 				ExpirationExpression:         "expires_at",
-				LabelMetrics:                 boolp(true),
-				DeleteBatchSize:              int64p(100),
-				Pause:                        boolp(true),
-				SelectRateLimit:              int64p(200),
+				LabelMetrics:                 new(true),
+				DeleteBatchSize:              new(int64(100)),
+				Pause:                        new(true),
+				SelectRateLimit:              new(int64(200)),
 			},
 			want: []crdbttl.Option{
 				{Name: "ttl_expiration_expression", Value: "'expires_at'"},
@@ -135,19 +135,19 @@ func TestEqual_IsExact(t *testing.T) {
 		},
 		{
 			name: "a knob set on one side only",
-			a:    &ast.RowTTLSpec{ExpirationExpression: "expires_at", SelectBatchSize: int64p(500)},
+			a:    &ast.RowTTLSpec{ExpirationExpression: "expires_at", SelectBatchSize: new(int64(500))},
 			b:    &ast.RowTTLSpec{ExpirationExpression: "expires_at"},
 			want: false,
 		},
 		{
 			name: "the same knob with different values",
-			a:    &ast.RowTTLSpec{ExpirationExpression: "expires_at", SelectBatchSize: int64p(500)},
-			b:    &ast.RowTTLSpec{ExpirationExpression: "expires_at", SelectBatchSize: int64p(501)},
+			a:    &ast.RowTTLSpec{ExpirationExpression: "expires_at", SelectBatchSize: new(int64(500))},
+			b:    &ast.RowTTLSpec{ExpirationExpression: "expires_at", SelectBatchSize: new(int64(501))},
 			want: false,
 		},
 		{
 			name: "a boolean set on one side only",
-			a:    &ast.RowTTLSpec{ExpirationExpression: "expires_at", Pause: boolp(true)},
+			a:    &ast.RowTTLSpec{ExpirationExpression: "expires_at", Pause: new(true)},
 			b:    &ast.RowTTLSpec{ExpirationExpression: "expires_at"},
 			want: false,
 		},
@@ -192,7 +192,7 @@ func TestDroppedParameters_NamesWhatSetWouldLeaveBehind(t *testing.T) {
 		{
 			name:    "a knob the declaration stopped naming",
 			desired: &ast.RowTTLSpec{ExpirationExpression: "expires_at"},
-			current: &ast.RowTTLSpec{ExpirationExpression: "expires_at", SelectBatchSize: int64p(500)},
+			current: &ast.RowTTLSpec{ExpirationExpression: "expires_at", SelectBatchSize: new(int64(500))},
 			want:    []string{"ttl_select_batch_size"},
 		},
 		{
@@ -202,9 +202,9 @@ func TestDroppedParameters_NamesWhatSetWouldLeaveBehind(t *testing.T) {
 			desired: &ast.RowTTLSpec{ExpirationExpression: "expires_at"},
 			current: &ast.RowTTLSpec{
 				ExpirationExpression: "expires_at",
-				Pause:                boolp(true),
+				Pause:                new(true),
 				JobCron:              "@daily",
-				DeleteBatchSize:      int64p(100),
+				DeleteBatchSize:      new(int64(100)),
 			},
 			want: []string{"ttl_job_cron", "ttl_delete_batch_size", "ttl_pause"},
 		},
@@ -249,11 +249,11 @@ func TestValidateDeclared_HappyPath(t *testing.T) {
 			tables: []crdbttl.TableTTL{{Name: "sessions", RowTTL: &ast.RowTTLSpec{
 				ExpirationExpression: "expires_at",
 				JobCron:              "@daily",
-				SelectBatchSize:      int64p(1),
-				DeleteBatchSize:      int64p(1),
-				SelectRateLimit:      int64p(1),
-				DeleteRateLimit:      int64p(1),
-				Pause:                boolp(true),
+				SelectBatchSize:      new(int64(1)),
+				DeleteBatchSize:      new(int64(1)),
+				SelectRateLimit:      new(int64(1)),
+				DeleteRateLimit:      new(int64(1)),
+				Pause:                new(true),
 			}}},
 		},
 	}
@@ -287,14 +287,14 @@ func TestValidateDeclared_FailurePath(t *testing.T) {
 			// Zero is the silent shape: accepted, then stored nowhere.
 			name: "a zero-valued knob",
 			tables: []crdbttl.TableTTL{{Name: "sessions", RowTTL: &ast.RowTTLSpec{
-				ExpirationExpression: "expires_at", SelectBatchSize: int64p(0),
+				ExpirationExpression: "expires_at", SelectBatchSize: new(int64(0)),
 			}}},
 			wantErr: `(?s).*declares ttl_select_batch_size = 0: CockroachDB refuses a negative value.*stores nothing at all for zero.*`,
 		},
 		{
 			name: "a negative knob",
 			tables: []crdbttl.TableTTL{{Name: "sessions", RowTTL: &ast.RowTTLSpec{
-				ExpirationExpression: "expires_at", DeleteRateLimit: int64p(-1),
+				ExpirationExpression: "expires_at", DeleteRateLimit: new(int64(-1)),
 			}}},
 			wantErr: `(?s).*declares ttl_delete_rate_limit = -1.*`,
 		},

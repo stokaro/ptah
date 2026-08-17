@@ -47,7 +47,7 @@ func TestCockroachDBRowLevelTTL_RoundTripsLive(t *testing.T) {
 	declared := rowTTLDeclaration(&ast.RowTTLSpec{
 		ExpirationExpression: "expires_at",
 		JobCron:              "@daily",
-		SelectBatchSize:      rowTTLInt64(500),
+		SelectBatchSize:      new(int64(500)),
 	})
 	applyRowTTLPlan(c, db, planRowTTLAgainstLive(c, t, dsn, declared))
 
@@ -55,7 +55,7 @@ func TestCockroachDBRowLevelTTL_RoundTripsLive(t *testing.T) {
 	c.Assert(created, qt.DeepEquals, &ast.RowTTLSpec{
 		ExpirationExpression: "expires_at",
 		JobCron:              "@daily",
-		SelectBatchSize:      rowTTLInt64(500),
+		SelectBatchSize:      new(int64(500)),
 	})
 
 	// CONVERGE. The same declaration against the table it just created must
@@ -162,8 +162,6 @@ func rowTTLDeclaration(spec *ast.RowTTLSpec) *goschema.Database {
 		},
 	}
 }
-
-func rowTTLInt64(value int64) *int64 { return &value }
 
 // planRowTTLAgainstLive re-reads the database and returns the statements the
 // comparison would run against it.

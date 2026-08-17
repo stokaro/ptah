@@ -9,12 +9,6 @@ import (
 	"go.5x5.cz/ptah/internal/crdbttl"
 )
 
-// int64p and boolp build the pointers a spec carries. The pointers are the
-// model's way of telling "declared as the engine's default" apart from "not
-// declared", so a test that used plain values could not express either case.
-func int64p(value int64) *int64 { return &value }
-func boolp(value bool) *bool    { return &value }
-
 func TestFromAttributes_HappyPath(t *testing.T) {
 	tests := []struct {
 		name       string
@@ -55,13 +49,13 @@ func TestFromAttributes_HappyPath(t *testing.T) {
 			want: &ast.RowTTLSpec{
 				ExpirationExpression:         "expires_at",
 				JobCron:                      "@daily",
-				SelectBatchSize:              int64p(500),
-				DeleteBatchSize:              int64p(100),
-				SelectRateLimit:              int64p(200),
-				DeleteRateLimit:              int64p(300),
-				Pause:                        boolp(true),
-				LabelMetrics:                 boolp(true),
-				DisableChangefeedReplication: boolp(true),
+				SelectBatchSize:              new(int64(500)),
+				DeleteBatchSize:              new(int64(100)),
+				SelectRateLimit:              new(int64(200)),
+				DeleteRateLimit:              new(int64(300)),
+				Pause:                        new(true),
+				LabelMetrics:                 new(true),
+				DisableChangefeedReplication: new(true),
 			},
 		},
 		{

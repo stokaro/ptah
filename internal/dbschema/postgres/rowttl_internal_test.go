@@ -20,8 +20,6 @@ import (
 	"go.5x5.cz/ptah/internal/dbschema/dbtest"
 )
 
-func ttlInt64p(value int64) *int64 { return &value }
-
 // TestReadRowTTL_DecodesTheCatalogProjection pins the decode of the JSON array
 // the projection fetches.
 //
@@ -68,7 +66,7 @@ func TestReadRowTTL_DecodesTheCatalogProjection(t *testing.T) {
 			want: &ast.RowTTLSpec{
 				ExpirationExpression: "expires_at",
 				JobCron:              "@daily",
-				SelectBatchSize:      ttlInt64p(500),
+				SelectBatchSize:      new(int64(500)),
 			},
 		},
 	}
