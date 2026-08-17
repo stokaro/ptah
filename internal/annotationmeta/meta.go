@@ -402,7 +402,8 @@ var directives = []Directive{
 			// row it produces read the same (stokaro/ptah#1027). The two
 			// parameters whose values the server rewrites on the way in have
 			// no attribute at all -- see internal/crdbttl.
-			attr("ttl_expiration_expression", "CockroachDB row-level TTL: SQL expression whose value is when a row expires. Enables the TTL; the other ttl_ attributes are refused without it.", valueSQL, false, false),
+			attr("ttl_expiration_expression", "CockroachDB row-level TTL: SQL expression whose value is when a row expires. Enables the TTL.", valueSQL, false, false),
+			attr("ttl_expire_after", "CockroachDB row-level TTL: interval after a row is written at which it expires, such as `3 days`. Enables the TTL.", valueString, false, false),
 			attr("ttl_job_cron", "CockroachDB row-level TTL: cron schedule for the deletion job.", valueString, false, false),
 			attr("ttl_select_batch_size", "CockroachDB row-level TTL: rows selected per batch; at least 1.", valueString, false, false),
 			attr("ttl_delete_batch_size", "CockroachDB row-level TTL: rows deleted per batch; at least 1.", valueString, false, false),

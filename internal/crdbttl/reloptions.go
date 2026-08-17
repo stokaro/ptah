@@ -64,6 +64,8 @@ func assign(spec *ast.RowTTLSpec, name, value string) {
 	switch name {
 	case ExpirationExpressionParameter:
 		spec.ExpirationExpression = value
+	case ExpireAfterParameter:
+		spec.ExpireAfter = value
 	case JobCronParameter:
 		spec.JobCron = value
 	case SelectBatchSizeParameter:
@@ -104,6 +106,7 @@ func assign(spec *ast.RowTTLSpec, name, value string) {
 // A value that is not quoted at all (every numeric and boolean knob, and
 // `schema_locked=true`) is returned as it stands.
 func unquote(value string) string {
+	value = stripTypeAnnotation(value)
 	escaped := strings.HasPrefix(value, "e'")
 	if escaped {
 		value = value[1:]
@@ -156,4 +159,25 @@ func parseBool(value string) *bool {
 		return nil
 	}
 	return &parsed
+}
+
+// stripTypeAnnotation removes the `:::TYPE` suffix CockroachDB writes on a
+// typed storage parameter.
+//
+// Only one parameter carries it, and only because its value is not a string:
+// measured on v26.2.5, `ttl_expire_after = '3 days'` is stored as the element
+// `ttl_expire_after='3 days':::INTERVAL`, while every string-valued parameter
+// beside it is stored with no annotation at all. Leaving it on would make the
+// value differ from anything a declaration could write, so the parameter would
+// never compare equal to itself.
+//
+// The suffix is removed rather than parsed: what type the server chose is not
+// something Ptah models, and the value in front of it is the whole of what a
+// comparison needs.
+func stripTypeAnnotation(value string) string {
+	annotation := strings.LastIndex(value, ":::")
+	if annotation < 0 {
+		return value
+	}
+	return value[:annotation]
 }

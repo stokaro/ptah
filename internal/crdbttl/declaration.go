@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"go.5x5.cz/ptah/core/ast"
+	"go.5x5.cz/ptah/internal/crdbinterval"
 )
 
 // AttributePrefix is what every declared TTL attribute starts with. A parser
@@ -71,6 +72,18 @@ func assignAttribute(spec *ast.RowTTLSpec, table, name, value string) error {
 	switch name {
 	case ExpirationExpressionParameter:
 		spec.ExpirationExpression = value
+		return nil
+	case ExpireAfterParameter:
+		// Read here as well as in ValidateDeclared, because this is the point
+		// that can say WHERE: a parse error carries the file and line of the
+		// annotation, and an author who wrote an interval Ptah cannot read
+		// wants to be taken to it. ValidateDeclared repeats the check for
+		// specs that never pass through this parser -- HCL, native SQL, a
+		// converter -- so neither path can accept what the other refuses.
+		if _, err := crdbinterval.Parse(value); err != nil {
+			return fmt.Errorf("table %q declares %s: %w", table, name, err)
+		}
+		spec.ExpireAfter = value
 		return nil
 	case JobCronParameter:
 		spec.JobCron = value
@@ -146,6 +159,7 @@ func assignBoolAttribute(spec *ast.RowTTLSpec, table, name, value string) (bool,
 func ManagedParameters() []string {
 	return []string{
 		ExpirationExpressionParameter,
+		ExpireAfterParameter,
 		JobCronParameter,
 		SelectBatchSizeParameter,
 		DeleteBatchSizeParameter,

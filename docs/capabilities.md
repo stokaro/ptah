@@ -1089,16 +1089,29 @@ file, exactly as any other command reaching the same URL would.
   explicitly.
 
   What the key promises is the surface `internal/crdbttl` models, not every
-  parameter the engine spells, and that boundary is the interesting part.
-  Nine parameters read back from the catalog exactly as written and are managed.
-  Three do not and are refused by name with the measurement in the error:
-  `ttl_expire_after`, whose interval the server canonicalizes (`'72 hours'`
-  becomes `'72:00:00'`) and which adds a hidden `crdb_internal_expiration`
-  column; `ttl_row_stats_poll_interval`, whose duration it canonicalizes and
-  which stores nothing at all below one second; and `ttl` itself, which is
-  derived. Supporting `ttl_expire_after` needs an offline interval canonicalizer
-  and a hidden-column filter, which is [#1605](https://github.com/stokaro/ptah/issues/1605)
-  rather than a gap left unexplained here.
+  parameter the engine spells, and that boundary is the interesting part. Nine
+  parameters read back from the catalog exactly as written. `ttl_expire_after`
+  does not — the server canonicalizes the interval, so `'72 hours'` is stored as
+  `'72:00:00'` — and is compared by the interval it DENOTES instead, through
+  `internal/crdbinterval` (#1605). That is deliberately not a canonicalizer:
+  predicting the stored spelling would mean re-implementing PostgreSQL's
+  interval rendering and keeping it right forever, while reading both sides into
+  a (months, days, microseconds) triple only has to agree with the server about
+  what an interval MEANS. The three fields stay apart, because the server keeps
+  them apart: a month is not thirty days.
+
+  Two parameters remain refused by name with the measurement in the error:
+  `ttl_row_stats_poll_interval`, whose duration the server canonicalizes and
+  which stores nothing at all below one second — a value that denotes nothing
+  cannot be compared by value either — and `ttl` itself, which is derived.
+
+  `ttl_expire_after` also adds a hidden `crdb_internal_expiration` column, so the
+  CockroachDB column read now excludes hidden columns. That closes an older leak
+  as well: a table declaring no primary key gets a hidden `rowid`, and
+  `ptah db read` described it as a third column of a two-column table long
+  before row-level TTL existed. The filter is capability-gated because
+  `attishidden` is a CockroachDB column; PostgreSQL and YugabyteDB have neither
+  it nor `information_schema.columns.is_hidden`.
 
   Two refusals are about values rather than names. A zero or negative knob is
   refused because the server rejects the negative one and accepts zero while

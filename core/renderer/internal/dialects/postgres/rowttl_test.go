@@ -57,6 +57,14 @@ func TestRender_RowTTLClause(t *testing.T) {
 			want: `) WITH (ttl_expiration_expression = 'expires_at + INTERVAL ''1 day''');`,
 		},
 		{
+			// The interval enabler is sent verbatim: the server normalizes it,
+			// and the comparison reads both sides as intervals rather than
+			// Ptah predicting the stored spelling (stokaro/ptah#1605).
+			name: "the interval enabler",
+			spec: &ast.RowTTLSpec{ExpireAfter: "72 hours"},
+			want: `) WITH (ttl_expire_after = '72 hours');`,
+		},
+		{
 			name: "every managed parameter, in the order the plan fixes",
 			spec: &ast.RowTTLSpec{
 				ExpirationExpression:         "expires_at",

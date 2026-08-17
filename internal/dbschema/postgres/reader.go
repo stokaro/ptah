@@ -627,6 +627,7 @@ func (r *Reader) readColumnsForSchema(schemaName string) (map[string][]types.DBC
 		LEFT JOIN pg_attrdef ad ON ad.adrelid = a.attrelid AND ad.adnum = a.attnum
 		WHERE col.table_schema = $1
 		AND col.table_name NOT IN ('schema_migrations')
+		` + r.hiddenColumnFilter() + `
 		ORDER BY col.table_name, col.ordinal_position`
 
 	rows, err := r.db.Query(columnsQuery, schemaName)

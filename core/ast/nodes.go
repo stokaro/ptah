@@ -110,8 +110,17 @@ type CreateTableNode struct {
 // written.
 type RowTTLSpec struct {
 	// ExpirationExpression is `ttl_expiration_expression`, the SQL expression
-	// whose value is when a row expires. It is the only enabler Ptah models.
+	// whose value is when a row expires.
 	ExpirationExpression string
+	// ExpireAfter is `ttl_expire_after`, the interval after a row is written
+	// at which it expires.
+	//
+	// It is the other enabler, and unlike every other field here its value is
+	// NOT compared as text: the server rewrites the interval it stores, so
+	// `72 hours` reads back as `72:00:00`. Comparison goes through
+	// [go.5x5.cz/ptah/internal/crdbinterval], which reads both sides into the
+	// value they denote (stokaro/ptah#1605).
+	ExpireAfter string
 	// JobCron is `ttl_job_cron`.
 	JobCron string
 	// SelectBatchSize is `ttl_select_batch_size`.
@@ -2863,6 +2872,7 @@ func (s *RowTTLSpec) IsZero() bool {
 		return true
 	}
 	return s.ExpirationExpression == "" &&
+		s.ExpireAfter == "" &&
 		s.JobCron == "" &&
 		s.SelectBatchSize == nil &&
 		s.DeleteBatchSize == nil &&
