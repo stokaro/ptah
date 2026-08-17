@@ -333,6 +333,18 @@ func externalSchemaCommandsFromConfig(
 		return nil, nil
 	}
 	if strings.TrimSpace(dir) != "" {
+		// No boundary, and the reason is worth stating because this call site
+		// looks like the one that should keep one: it names the working
+		// directory of a program Ptah EXECUTES.
+		//
+		// Two things say otherwise. The control on this surface is the opt-in
+		// flag above -- once an operator has authorized running an arbitrary
+		// program, restricting which directory it starts in prevents nothing
+		// the program cannot undo with one chdir. And by the time the value
+		// arrives here the config layer has already joined a relative
+		// working_dir onto the atlas.hcl directory, so a root anchored at the
+		// process working directory would refuse an ordinary configuration
+		// whose config file lives somewhere else (stokaro/ptah#1622).
 		resolvedDir, err := pathguard.ResolveCLIPath(dir)
 		if err != nil {
 			return nil, fmt.Errorf("resolve external_schema working_dir: %w", err)

@@ -12,6 +12,7 @@ import (
 	"go.5x5.cz/ptah/cmd/internal/dbcli"
 	"go.5x5.cz/ptah/cmd/migrate"
 	"go.5x5.cz/ptah/config/projectconfig"
+	"go.5x5.cz/ptah/internal/sqlitevirtual"
 	"go.5x5.cz/ptah/migration/safety"
 )
 
@@ -149,10 +150,20 @@ func TestMigrateGenerateDoesNotValidateSQLiteToggleForPostgresPathFailure(t *tes
 	cmd := migrate.NewMigrateGenerateCommand()
 	cmd.SetArgs([]string{
 		"--db-url", "postgres://localhost/ptah",
-		"--migrations-dir", "../outside",
+		"--migrations-dir", filepath.Join(root, "migrations"),
 	})
 
 	err := cmd.Execute()
 
-	c.Assert(err, qt.ErrorMatches, `invalid migrations directory: .*outside allowed root.*`)
+	// The run fails for a PostgreSQL reason -- there is no server on that URL
+	// -- and that IS the claim: a malformed SQLite toggle is not validated on a
+	// path that never reaches SQLite.
+	//
+	// The assertion used to read the toggle's absence off a path refusal, with
+	// "--migrations-dir ../outside" short-circuiting the run before the
+	// connection. stokaro/ptah#1622 removed that refusal, and leaning on an
+	// unrelated guard to prove this claim was the weaker spelling anyway: it
+	// passed for any early failure at all.
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(err.Error(), qt.Not(qt.Contains), sqlitevirtual.AllowDropEnvVar)
 }

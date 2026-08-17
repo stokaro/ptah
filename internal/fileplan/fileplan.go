@@ -97,6 +97,15 @@ func resolveRoot(cache map[string]string, root string) (string, error) {
 	if resolved, ok := cache[root]; ok {
 		return resolved, nil
 	}
+	// No enclosing boundary, which is what stokaro/ptah#1622 left here after
+	// asking whether this one should keep the relative-only rule. It should
+	// not, and the package's own tests are the argument: an absolute output
+	// root under a temporary directory is the exercised way to use this API, so
+	// the rule refused a spelling of something callers already do rather than
+	// preventing anything. What still binds is resolveFilePath below, which
+	// refuses a "..", an absolute path or a backslash in the template-computed
+	// filename -- so a name the template produces cannot leave the root the
+	// operator chose.
 	resolved, err := pathguard.ResolveCLIPath(root)
 	if err != nil {
 		return "", fmt.Errorf("resolve output directory: %w", err)

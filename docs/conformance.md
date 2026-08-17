@@ -387,7 +387,7 @@ requiredness is a separate decision from what a run's scope is — Ptah's linter
 can analyze SQL text with no dev database, so making the flag required deletes a
 capability and needs the `PTAH_*` treatment of its own.
 
-### A relative `--to file://../schema.sql` is refused, the same file absolutely is not
+### A relative `--to file://../schema.sql` is refused, the same file absolutely is not — closed
 
 Measured 2026-08-09 on SQLite, run from a `work/` subdirectory whose parent
 holds `schema.sql`, exit status read on its own line after a redirect:
@@ -405,14 +405,23 @@ rule any caller can satisfy by respelling the argument is not a boundary, and
 recording this cell as deliberate strictness would record something the second
 row refutes.
 
+**This cell is closed.** Both spellings reach the same file now, measured
+2026-08-17 on the same fixture: `ptah-compat migrate diff --to
+file://../outside/schema.sql --dir file://mig` exits `0` and writes the
+migration, as Atlas CE v1.3.0 does on the identical arguments. The relative-only
+confinement is gone from `pathguard.ResolveCLIPath`, for the reason the second
+row above states — it filtered a spelling rather than an escape, so removing it
+takes away no containment (stokaro/ptah#1622). The entry points that take an
+explicit root are untouched and bind every spelling.
+
 A third row was measured on 2026-08-12 and has since been closed: the native
 surface did not apply even the relative half. `ptah schema render --schema-file
 ../outside/schema.sql` exited `0`, because the native desired-schema resolver
 called `filepath.Abs` on the operator's path before handing it to the same
 guard, and the absolute branch has no root. So the same helper returned opposite
 verdicts for the same destination depending on which command reached it. That is
-fixed; the absolute-pathname exemption above is untouched and remains the open
-decision.
+fixed, and the exemption it left open was resolved the other way: the boundary
+dropped rather than widened.
 
 It is **not** the confinement this project does defend. That one is `file()`
 inside an `atlas.hcl` — a config-derived path, held by a different mechanism
