@@ -421,16 +421,21 @@ var Cells = []Cell{
 	{
 		Dialect: platform.ClickHouse, Line: "26.3",
 		Preset: capability.ClickHouse2411, PresetName: "ClickHouse2411",
-		Refinement: RefinedByVersion, Support: capability.BestEffort, Image: "clickhouse/clickhouse-server:26.3",
-		Note: "a supported LTS line upstream. The capability probe has a ClickHouse statement " +
-			"table now, so this line is measurable; no CI service starts it yet",
+		Refinement: RefinedByVersion, Support: capability.Certified, Image: "clickhouse/clickhouse-server:26.3",
+		Note: "a supported LTS line. It was best-effort while the matrix had a ClickHouse statement " +
+			"table and no launch recipe to start a server for it; the recipe landed in " +
+			"stokaro/ptah#916, so a probe job runs this line now. Measured live on the recipe's own " +
+			"docker arguments: 30 decided rows, zero mismatches against ClickHouse2411",
 	},
 	{
 		Dialect: platform.ClickHouse, Line: "25.8",
 		Preset: capability.ClickHouse2411, PresetName: "ClickHouse2411",
-		Refinement: RefinedByVersion, Support: capability.BestEffort, Image: "clickhouse/clickhouse-server:25.8",
-		Note: "the older live LTS line upstream, in the same position as 26.3. Its LTS window is " +
-			"the shortest of the three supported lines, so it is the first candidate to leave the matrix",
+		Refinement: RefinedByVersion, Support: capability.Certified, Image: "clickhouse/clickhouse-server:25.8",
+		Note: "the older live LTS line, in the same position as 26.3 and certified for the same " +
+			"reason: the launch recipe stokaro/ptah#916 added gives it a probe job. Measured live " +
+			"on the recipe's own docker arguments: 30 decided rows, zero mismatches against " +
+			"ClickHouse2411. Its LTS window is the shortest of the three supported lines, so it is " +
+			"the first candidate to leave the matrix",
 	},
 	{
 		Dialect: platform.ClickHouse, Line: "24.10",

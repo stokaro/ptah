@@ -683,16 +683,16 @@ into four probed ones with no workflow edit.
 | `mariadb` | 11.8 | certified | `MariaDB1011` | version-ladder | `mariadb:11.8` | yes | yes |
 | `mariadb` | 11.4 | certified | `MariaDB1011` | version-ladder | `mariadb:11.4` | yes | yes |
 | `mariadb` | 10.11 | certified | `MariaDB1011` | version-ladder | `mariadb:10.11` | yes | yes |
+| `clickhouse` | 26.7 | certified | `ClickHouse2411` | version-ladder | `clickhouse/clickhouse-server:26.7` | yes | yes |
+| `clickhouse` | 26.3 | certified | `ClickHouse2411` | version-ladder | `clickhouse/clickhouse-server:26.3` | yes | yes |
+| `clickhouse` | 25.8 | certified | `ClickHouse2411` | version-ladder | `clickhouse/clickhouse-server:25.8` | yes | yes |
+| `clickhouse` | 24.10 | legacy-tested | `ClickHouse24` | version-ladder | `clickhouse/clickhouse-server:24.10` | yes | yes |
 | `cockroachdb` | 26.2 | certified | `CockroachDB26` | version-ladder | `cockroachdb/cockroach:latest-v26.2` | yes | yes |
 | `cockroachdb` | 25.4 | certified | `CockroachDB25` | version-ladder | `cockroachdb/cockroach:latest-v25.4` | yes | yes |
 | `yugabytedb` | 2026.1 | certified | `YugabyteDB25` | measured-release-line | `yugabytedb/yugabyte:2026.1` | yes | yes |
 | `yugabytedb` | 2025.2 | certified | `YugabyteDB25` | measured-release-line | `yugabytedb/yugabyte:2025.2` | yes | yes |
 | `yugabytedb` | 2024.2 | certified | `YugabyteDB24` | version-ladder | `yugabytedb/yugabyte:2024.2` | yes | yes |
 | `spanner` | 0 | best-effort | `SpannerPostgres` | banner-substring | `gcr.io/cloud-spanner-pg-adapter/pgadapter-emulator:v0.55.2` | no | yes |
-| `clickhouse` | 26.7 | certified | `ClickHouse2411` | version-ladder | `clickhouse/clickhouse-server:26.7` | yes | no: the clickhouse dialect has a probe plan and no launch recipe, so nothing here can start the server to run it |
-| `clickhouse` | 26.3 | best-effort | `ClickHouse2411` | version-ladder | `clickhouse/clickhouse-server:26.3` | yes | no: the clickhouse dialect has a probe plan and no launch recipe, so nothing here can start the server to run it |
-| `clickhouse` | 25.8 | best-effort | `ClickHouse2411` | version-ladder | `clickhouse/clickhouse-server:25.8` | yes | no: the clickhouse dialect has a probe plan and no launch recipe, so nothing here can start the server to run it |
-| `clickhouse` | 24.10 | legacy-tested | `ClickHouse24` | version-ladder | `clickhouse/clickhouse-server:24.10` | yes | no: the clickhouse dialect has a probe plan and no launch recipe, so nothing here can start the server to run it |
 | `sqlserver` | 17.0 (SQL Server 2025) | certified | `SQLServer2022` | dialect-default | `mcr.microsoft.com/mssql/server:2025-latest` | no | no: the capability probe has no statement table for the sqlserver dialect, so a server on this line would be asked nothing |
 | `sqlserver` | 16.0 (SQL Server 2022) | best-effort | `SQLServer2022` | dialect-default | `mcr.microsoft.com/mssql/server:2022-latest` | no | no: the capability probe has no statement table for the sqlserver dialect, so a server on this line would be asked nothing |
 | `sqlserver` | 15.0 (SQL Server 2019) | best-effort | `SQLServer2022` | dialect-default | `mcr.microsoft.com/mssql/server:2019-latest` | no | no: the capability probe has no statement table for the sqlserver dialect, so a server on this line would be asked nothing |

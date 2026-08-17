@@ -313,6 +313,29 @@ var launchers = map[string]launcher{
 		suiteCleanupURLEnv: "MARIADB_CLEANUP_URL",
 		suiteCleanupURL:    "mariadb://root:root_password@tcp(127.0.0.1:3306)/ptah_test",
 	},
+	platform.ClickHouse: {
+		// The native protocol port, not 8123: the probe connects with the Go
+		// driver the rest of Ptah uses, and CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT
+		// is what lets the RBAC experiments create a role at all. Both are taken
+		// from docker-compose.yaml so the two ways of starting a ClickHouse for
+		// Ptah cannot describe different servers (stokaro/ptah#916).
+		flags: []string{
+			"--publish", "9000:9000",
+			"--env", "CLICKHOUSE_DB=ptah_test",
+			"--env", "CLICKHOUSE_USER=ptah_user",
+			"--env", "CLICKHOUSE_PASSWORD=ptah_password",
+			"--env", "CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1",
+		},
+		url: "clickhouse://ptah_user:ptah_password@127.0.0.1:9000/ptah_test",
+		// Probe only, deliberately. The integration suite already runs against
+		// ClickHouse through docker-compose, on the one line that file pins;
+		// naming a suite target here would additionally run it on 24.10, 25.8
+		// and 26.3, which is a coverage decision about the suite rather than
+		// about the capability model this cell exists to measure.
+		suiteSkip: "the integration runner reaches ClickHouse through docker-compose on the pinned line; " +
+			"this cell adds capability-probe coverage for the other declared lines and does not move " +
+			"the suite onto them (stokaro/ptah#916)",
+	},
 	platform.CockroachDB: {
 		flags:         []string{"--publish", "26257:26257"},
 		command:       []string{"start-single-node", "--insecure", "--advertise-addr=localhost:26257"},

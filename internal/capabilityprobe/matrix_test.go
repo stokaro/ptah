@@ -393,7 +393,7 @@ func TestWriteMatrix_PinsALineAtEachLevel(t *testing.T) {
 		want: "| `postgres` | 13 | legacy-tested |",
 	}, {
 		name: "a line nothing exercises",
-		want: "| `clickhouse` | 26.3 | best-effort |",
+		want: "| `sqlserver` | 16.0 (SQL Server 2022) | best-effort |",
 	}}
 
 	var wide, compact strings.Builder
