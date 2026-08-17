@@ -105,7 +105,13 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 		want    []capability.Capability
 	}{{
 		dialect: platform.Postgres,
-		want:    nil,
+		// ShowRoutinePrivilege is the first key any plan declares undecidable
+		// on PostgreSQL, and the reason is about the PROBE rather than the
+		// server: it connects as one account and cannot ask whether a privilege
+		// exists without being able to grant it, and an acceptance test cannot
+		// separate an unknown privilege from an absent grantee
+		// (stokaro/ptah#916).
+		want: []capability.Capability{capability.ShowRoutinePrivilege},
 	}, {
 		dialect: platform.MySQL,
 		want: []capability.Capability{
@@ -114,6 +120,7 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 			capability.PostgresCatalogFunctions,
 			capability.RoleManagement,
 			capability.RowLevelTTL,
+			capability.ShowRoutinePrivilege,
 		},
 	}, {
 		dialect: platform.MariaDB,
@@ -124,7 +131,11 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 			capability.RoleManagement,
 			capability.RowLevelTTL,
 			capability.Sequences,
+			capability.ShowRoutinePrivilege,
 		},
+	}, {
+		dialect: platform.ClickHouse,
+		want:    []capability.Capability{capability.ShowRoutinePrivilege},
 	}} {
 		t.Run(tc.dialect, func(t *testing.T) {
 			c := qt.New(t)
@@ -238,37 +249,37 @@ func TestDecidable_IsDerivedFromThePlanAndTheLine(t *testing.T) {
 		caps capability.Capabilities
 		want int
 	}{{
-		name: "postgres declares nothing undecidable, so every registered row is owed",
+		name: "postgres owes one fewer: the probe cannot ask whether a privilege exists",
 		cell: measuredCell,
 		caps: capability.Postgres17(),
-		want: registered,
+		want: registered - 1,
 	}, {
-		name: "mysql owes five fewer: role_management, row_level_ttl and the three catalog keys name surfaces no MySQL path reads",
+		name: "mysql owes six fewer: role_management, row_level_ttl and the three catalog keys name surfaces no MySQL path reads",
 		cell: Cell{
 			Dialect: platform.MySQL, Line: "9.7",
 			Preset: capability.MySQL84, PresetName: "MySQL84",
 			Refinement: RefinedByVersion,
 		},
 		caps: capability.MySQL84(),
-		want: registered - 5,
+		want: registered - 6,
 	}, {
-		name: "mariadb owes six fewer: sequences is a claim about the generator, not the engine",
+		name: "mariadb owes seven fewer: sequences is a claim about the generator, not the engine",
 		cell: Cell{
 			Dialect: platform.MariaDB, Line: "10.11",
 			Preset: capability.MariaDB1011, PresetName: "MariaDB1011",
 			Refinement: RefinedByVersion,
 		},
 		caps: capability.MariaDB1011(),
-		want: registered - 6,
+		want: registered - 7,
 	}, {
-		name: "cockroachdb 26.2 owes every row because its preset enables both experiment prerequisites",
+		name: "cockroachdb 26.2 owes every row its preset enables a prerequisite for, less the one the probe cannot ask",
 		cell: Cell{
 			Dialect: platform.CockroachDB, Line: "26.2",
 			Preset: capability.CockroachDB26, PresetName: "CockroachDB26",
 			Refinement: RefinedByVersion,
 		},
 		caps: capability.CockroachDB26(),
-		want: registered,
+		want: registered - 1,
 	}, {
 		name: "cockroachdb 25.4 excludes the guarded drop row whose generic prerequisite is absent",
 		cell: Cell{
@@ -277,7 +288,7 @@ func TestDecidable_IsDerivedFromThePlanAndTheLine(t *testing.T) {
 			Refinement: RefinedByVersion,
 		},
 		caps: capability.CockroachDB25(),
-		want: registered - 1,
+		want: registered - 2,
 	}, {
 		name: "a banner-refined line owes nothing because no observation can be credited to it",
 		cell: Cell{

@@ -571,10 +571,15 @@ var Cells = []Cell{
 var PresetsWithoutCell = map[string]string{
 	"CockroachDB23": "is the conservative historical preset below the maintained 25.x and 26.x lines; " +
 		"the matrix tests the vendor-supported lines through CockroachDB25 and CockroachDB26",
-	"MySQLLegacy": "describes MySQL before 8.0.16, which left vendor support on 2026-04-30; the 8.0 line " +
-		"is three presets split at 8.0.16 and 8.0.19, so no single 8.0 cell could name one of them",
+	"MySQLLegacy": "describes MySQL before 8.0.13, which left vendor support on 2026-04-30; the 8.0 line " +
+		"is five presets split at 8.0.13, 8.0.16, 8.0.19 and 8.0.20, so no single 8.0 cell could name one of them",
+	"MySQL8013": "describes MySQL 8.0.13 to 8.0.15, inside the out-of-support 8.0 line. The split is where " +
+		"information_schema.VIEW_TABLE_USAGE arrived, which is below the 8.0.16 CHECK-enforcement step rather " +
+		"than at its edge (stokaro/ptah#916)",
 	"MySQL8016": "describes MySQL 8.0.16 to 8.0.18, inside the out-of-support 8.0 line",
-	"MySQL8019": "describes MySQL 8.0.19 to 8.3, inside the out-of-support 8.0 line",
+	"MySQL8019": "describes MySQL 8.0.19, inside the out-of-support 8.0 line",
+	"MySQL8020": "describes MySQL 8.0.20 to 8.3, inside the out-of-support 8.0 line. The split is where the " +
+		"global SHOW_ROUTINE privilege arrived (stokaro/ptah#916)",
 	"MariaDBLegacy": "describes MariaDB before 10.2, whose newest release left support in 2022; it is the " +
 		"conservative floor ForServerVersion assigns to such a server rather than a line anybody runs",
 }

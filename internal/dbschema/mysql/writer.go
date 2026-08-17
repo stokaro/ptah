@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/sqlident"
 	"go.5x5.cz/ptah/internal/sqlrunner"
@@ -54,6 +55,48 @@ type Writer struct {
 	dialect       string
 	serverVersion string
 	dryRun        bool
+}
+
+// capabilities returns the set the version gates read.
+//
+// The writer already carries the banner, so it resolves once through
+// core/platform/capability rather than comparing numbers in this file. Both
+// thresholds this replaces -- information_schema.VIEW_TABLE_USAGE at MySQL
+// 8.0.13 and the global SHOW_ROUTINE privilege at 8.0.20 -- are arms of that
+// ladder now.
+func (w *Writer) capabilities() capability.Capabilities {
+	resolved := capability.ResolveServerVersion(w.dialect, w.serverVersion).Capabilities
+	if versionIsAmbiguousForPrivileges(w.serverVersion) {
+		// A banner this file cannot read to the patch is not evidence that a
+		// privilege is absent, and the SHOW_ROUTINE requirement is what proves
+		// the metadata read saw everything before a schema is dropped. "8.0"
+		// could be 8.0.0 or 8.0.42, and the ladder must resolve it to one arm;
+		// demanding the privilege is the direction that refuses with a
+		// diagnostic instead of authorizing a drop on a weaker privilege set
+		// (stokaro/ptah#1483 hardened this, #916 moved the threshold).
+		resolved = resolved.With(capability.ShowRoutinePrivilege, true)
+	}
+	return resolved
+}
+
+// versionIsAmbiguousForPrivileges reports a version string that does not name a
+// patch level.
+//
+// It is not a version comparison -- the thresholds live in the ladder -- it is a
+// completeness check on the input, and it belongs here because only the caller
+// knows what the missing precision would authorize.
+func versionIsAmbiguousForPrivileges(version string) bool {
+	head := strings.SplitN(strings.TrimSpace(version), "-", 2)[0]
+	parts := strings.Split(head, ".")
+	if len(parts) < 3 {
+		return true
+	}
+	for _, part := range parts[:3] {
+		if _, err := strconv.Atoi(part); err != nil {
+			return true
+		}
+	}
+	return false
 }
 
 type transactionWriter struct {
@@ -278,7 +321,11 @@ func (w *Writer) dropAllTablesOnConnection(
 	if err != nil {
 		return err
 	}
-	if w.dialect == platform.MySQL && !supportsMySQLViewTableUsage(serverVersion) {
+	// The refusal stays scoped to MySQL. MariaDB has no VIEW_TABLE_USAGE at any
+	// version, and refusing every MariaDB clean is not what this gate was for:
+	// the capability is a fact about a catalog, and which dialect refuses on
+	// its absence is a policy that lives here.
+	if w.dialect == platform.MySQL && !w.capabilities().Has(capability.CatalogViewDependencies) {
 		return fmt.Errorf(
 			"mysql: refusing to clean database %q: server version %q lacks "+
 				"information_schema.VIEW_TABLE_USAGE required for complete external-view dependency checks",
@@ -291,7 +338,7 @@ func (w *Writer) dropAllTablesOnConnection(
 		conn,
 		schema,
 		w.dialect,
-		serverVersion,
+		w.capabilities(),
 	); err != nil {
 		return err
 	}
@@ -521,11 +568,11 @@ func (r globalMetadataRequirements) satisfiedBy(privileges globalMetadataPrivile
 func requireGlobalMetadataVisibility(
 	ctx context.Context,
 	conn *sql.Conn,
-	schema,
-	dialect,
-	serverVersion string,
+	schema string,
+	dialect string,
+	caps capability.Capabilities,
 ) error {
-	requirements := metadataVisibilityRequirements(dialect, serverVersion)
+	requirements := metadataVisibilityRequirements(dialect, caps)
 	privileges, err := readGlobalMetadataPrivileges(ctx, conn)
 	if err != nil {
 		return err
@@ -541,7 +588,7 @@ func requireGlobalMetadataVisibility(
 	return rejectPartialPrivilegeRevokes(ctx, conn, schema)
 }
 
-func metadataVisibilityRequirements(dialect, serverVersion string) globalMetadataRequirements {
+func metadataVisibilityRequirements(dialect string, caps capability.Capabilities) globalMetadataRequirements {
 	switch platform.NormalizeDialect(dialect) {
 	case platform.MariaDB:
 		return globalMetadataRequirements{
@@ -549,7 +596,7 @@ func metadataVisibilityRequirements(dialect, serverVersion string) globalMetadat
 			showView: true,
 		}
 	case platform.MySQL:
-		requiresShowRoutine := requiresMySQLShowRoutinePrivilege(serverVersion)
+		requiresShowRoutine := caps.Has(capability.ShowRoutinePrivilege)
 		if requiresShowRoutine {
 			return globalMetadataRequirements{
 				names:       "SELECT, DROP, ALTER, ALTER ROUTINE, EVENT, LOCK TABLES, PROCESS, SHOW_ROUTINE, and TRIGGER",
@@ -988,58 +1035,6 @@ func externalViewCount(ctx context.Context, conn *sql.Conn, schema, dialect stri
 		return mariaDBExternalViewCount(ctx, conn, schema)
 	}
 	return mySQLExternalViewCount(ctx, conn, schema)
-}
-
-func supportsMySQLViewTableUsage(version string) bool {
-	parts, valid := parseMySQLVersion(version)
-	if !valid {
-		return false
-	}
-	if parts[0] != 8 {
-		return parts[0] > 8
-	}
-	return parts[1] > 0 || parts[2] >= 13
-}
-
-// requiresMySQLShowRoutinePrivilege reports whether the metadata-visibility
-// check must demand the global SHOW_ROUTINE privilege, which MySQL 8.0.20
-// introduced.
-//
-// A version this file cannot read demands it. That is the opposite of what a
-// "does the server support it" question would answer, and it is deliberate:
-// the two mistakes are not symmetric. Demanding SHOW_ROUTINE from a server too
-// old to grant it refuses the clean with a diagnostic naming the privilege, and
-// the operator can see why. Not demanding it from a server that has it lets a
-// metadata read which may have skipped routines stand as the proof of complete
-// visibility -- and that proof is what authorizes dropping the schema.
-//
-// Failing closed is also what the other version gate here already does:
-// [supportsMySQLViewTableUsage] refuses the clean outright on a version it
-// cannot parse. This one was the exception (stokaro/ptah#916).
-func requiresMySQLShowRoutinePrivilege(version string) bool {
-	parts, valid := parseMySQLVersion(version)
-	if !valid {
-		return true
-	}
-	if parts[0] != 8 {
-		return parts[0] > 8
-	}
-	return parts[1] > 0 || parts[2] >= 20
-}
-
-func parseMySQLVersion(version string) ([3]int, bool) {
-	numericVersion, _, _ := strings.Cut(version, "-")
-	parts := strings.Split(numericVersion, ".")
-	if len(parts) < 3 {
-		return [3]int{}, false
-	}
-	major, majorErr := strconv.Atoi(parts[0])
-	minor, minorErr := strconv.Atoi(parts[1])
-	patch, patchErr := strconv.Atoi(parts[2])
-	if majorErr != nil || minorErr != nil || patchErr != nil {
-		return [3]int{}, false
-	}
-	return [3]int{major, minor, patch}, true
 }
 
 func rejectExternalStoredPrograms(ctx context.Context, conn *sql.Conn, schema string) error {

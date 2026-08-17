@@ -521,7 +521,15 @@ func TestResolveServerVersionReportsSaturation(t *testing.T) {
 	}{
 		// MySQL: the separately numbered 26.x generation is measured on exact line 26.7.
 		{"mysql undeclared legacy line", "mysql", "5.7.44", capability.MySQLLegacy(), false, false, "26.7"},
-		{"mysql undeclared 8.0 line", "mysql", "8.0.42-log", capability.MySQL8019(), false, false, "26.7"},
+		// The 8.0 patch ladder, one row per step. Each threshold is the one the
+		// hand-rolled gate it replaced carried: VIEW_TABLE_USAGE at 8.0.13 and
+		// SHOW_ROUTINE at 8.0.20 (stokaro/ptah#916 item 3).
+		{"mysql 8.0 below the catalog step", "mysql", "8.0.12", capability.MySQLLegacy(), false, false, "26.7"},
+		{"mysql 8.0 at the catalog step", "mysql", "8.0.13", capability.MySQL8013(), false, false, "26.7"},
+		{"mysql 8.0 at the check step", "mysql", "8.0.16", capability.MySQL8016(), false, false, "26.7"},
+		{"mysql 8.0 at the drop-constraint step", "mysql", "8.0.19", capability.MySQL8019(), false, false, "26.7"},
+		{"mysql 8.0 at the privilege step", "mysql", "8.0.20", capability.MySQL8020(), false, false, "26.7"},
+		{"mysql undeclared 8.0 line", "mysql", "8.0.42-log", capability.MySQL8020(), false, false, "26.7"},
 		{"mysql measured 8 LTS line", "mysql", "8.4.11", capability.MySQL84(), true, false, "26.7"},
 		{"mysql former LTS line", "mysql", "9.7.1", capability.MySQL84(), true, false, "26.7"},
 		{"mysql gap after measured 9 line", "mysql", "9.8.0", capability.MySQL84(), false, false, "26.7"},

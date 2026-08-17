@@ -331,6 +331,33 @@ const (
 	// first key on which two declared ClickHouse lines differ at all, which is
 	// what gives that dialect a version ladder to have.
 	CheckGrantStatement Capability = "check_grant_statement"
+
+	// CatalogViewDependencies marks a catalog that names the tables a view
+	// reads, rather than leaving a caller to parse the view body for them.
+	//
+	// It names information_schema.VIEW_TABLE_USAGE, which MySQL added in
+	// 8.0.13. internal/dbschema/mysql refuses a database clean without it,
+	// because an external view -- one outside the schema being cleaned that
+	// reads a table inside it -- cannot be found otherwise, and dropping the
+	// table under it leaves that view broken with nothing to say so.
+	//
+	// MariaDB does not have the view at any version, and the refusal it guards
+	// stays scoped to MySQL: the capability is a fact about a catalog, and
+	// which dialect refuses on its absence is a policy that lives with the
+	// writer (stokaro/ptah#916 item 3).
+	CatalogViewDependencies Capability = "catalog_view_dependencies"
+
+	// ShowRoutinePrivilege marks a server on which reading routine metadata
+	// requires the global SHOW_ROUTINE privilege, which MySQL introduced in
+	// 8.0.20.
+	//
+	// The polarity is the unusual part and it is deliberate: this key is true
+	// where MORE is demanded of the account, not where more is available. A
+	// server too old to grant SHOW_ROUTINE reads routines under the lesser
+	// privileges it does have, so demanding it there would refuse a clean that
+	// works. The metadata-visibility check therefore asks for it exactly where
+	// the server can grant it (stokaro/ptah#916 item 3).
+	ShowRoutinePrivilege Capability = "show_routine_privilege"
 )
 
 // spec documents a registry entry and its implication edges.
@@ -441,6 +468,12 @@ var registry = map[Capability]spec{
 	},
 	CheckGrantStatement: {
 		doc: "a statement answering whether the connected account holds a privilege (ClickHouse CHECK GRANT)",
+	},
+	CatalogViewDependencies: {
+		doc: "a catalog naming the tables a view reads (MySQL information_schema.VIEW_TABLE_USAGE)",
+	},
+	ShowRoutinePrivilege: {
+		doc: "routine metadata requires the global SHOW_ROUTINE privilege (MySQL 8.0.20+)",
 	},
 }
 
@@ -605,6 +638,8 @@ func MySQL84() Capabilities {
 		AdvisoryLocks:                      false,
 		RowLevelTTL:                        false,
 		CheckGrantStatement:                false,
+		CatalogViewDependencies:            true,
+		ShowRoutinePrivilege:               true,
 	}
 }
 
@@ -613,7 +648,17 @@ func MySQL84() Capabilities {
 func MySQL8019() Capabilities {
 	return MySQL84().
 		With(ForeignKeysRequireUniqueReference, false).
-		With(ForeignKeysRequireIndexedReference, true)
+		With(ForeignKeysRequireIndexedReference, true).
+		// SHOW_ROUTINE arrived in 8.0.20, one patch above this arm.
+		With(ShowRoutinePrivilege, false)
+}
+
+// MySQL8020 is the preset for MySQL 8.0.20 through 8.0.x: the same set as
+// [MySQL8019] plus the global SHOW_ROUTINE privilege, which MySQL introduced in
+// 8.0.20 and which the metadata-visibility check demands exactly where a server
+// can grant it (stokaro/ptah#916 item 3).
+func MySQL8020() Capabilities {
+	return MySQL8019().With(ShowRoutinePrivilege, true)
 }
 
 // MySQL8016 is the preset for MySQL 8.0.16–8.0.18: CHECK constraints are
@@ -629,7 +674,21 @@ func MySQL8016() Capabilities {
 func MySQLLegacy() Capabilities {
 	return MySQL8016().
 		With(CheckConstraintsEnforced, false).
-		With(DropCheckClause, false)
+		With(DropCheckClause, false).
+		// information_schema.VIEW_TABLE_USAGE arrived in 8.0.13, which is
+		// inside this arm's range rather than above it -- hence [MySQL8013].
+		With(CatalogViewDependencies, false)
+}
+
+// MySQL8013 is the preset for MySQL 8.0.13 through 8.0.15: [MySQLLegacy] plus
+// information_schema.VIEW_TABLE_USAGE, which MySQL added in 8.0.13.
+//
+// It exists because that threshold falls INSIDE the legacy arm rather than at
+// its edge: 8.0.13 is below the 8.0.16 CHECK-enforcement step, so the catalog
+// arrives before the constraint behavior does and neither arm can carry both
+// (stokaro/ptah#916 item 3).
+func MySQL8013() Capabilities {
+	return MySQLLegacy().With(CatalogViewDependencies, true)
 }
 
 // MariaDB1011 is the preset for the current MariaDB LTS line (10.6+ /
@@ -674,11 +733,13 @@ func MariaDB1011() Capabilities {
 		// statement `schema apply` never plans and never sees converge. This key
 		// describes the generator, so it is false until those land -- do NOT flip
 		// it back on the engine's behalf (stokaro/ptah#931 item 8).
-		Sequences:           false,
-		XMLType:             false,
-		AdvisoryLocks:       false,
-		RowLevelTTL:         false,
-		CheckGrantStatement: false,
+		Sequences:               false,
+		XMLType:                 false,
+		AdvisoryLocks:           false,
+		RowLevelTTL:             false,
+		CheckGrantStatement:     false,
+		CatalogViewDependencies: false,
+		ShowRoutinePrivilege:    false,
 	}
 }
 
@@ -736,6 +797,8 @@ func Postgres16() Capabilities {
 		AdvisoryLocks:                      true,
 		RowLevelTTL:                        false,
 		CheckGrantStatement:                false,
+		CatalogViewDependencies:            true,
+		ShowRoutinePrivilege:               false,
 	}
 }
 
@@ -861,8 +924,10 @@ func ClickHouse24() Capabilities {
 		// shape CockroachDB answers and the probe reads back out of
 		// pg_class.reloptions; `WITH (ttl_expiration_expression = ...)` is a
 		// syntax error here. Measured both ways on 26.7.3.19.
-		RowLevelTTL:         false,
-		CheckGrantStatement: false,
+		RowLevelTTL:             false,
+		CheckGrantStatement:     false,
+		CatalogViewDependencies: false,
+		ShowRoutinePrivilege:    false,
 	}
 }
 
@@ -921,6 +986,8 @@ func SQLite3() Capabilities {
 		AdvisoryLocks:                      false,
 		RowLevelTTL:                        false,
 		CheckGrantStatement:                false,
+		CatalogViewDependencies:            false,
+		ShowRoutinePrivilege:               false,
 	}
 }
 
@@ -980,6 +1047,8 @@ func SQLServer2022() Capabilities {
 		AdvisoryLocks:                      false,
 		RowLevelTTL:                        false,
 		CheckGrantStatement:                false,
+		CatalogViewDependencies:            true,
+		ShowRoutinePrivilege:               false,
 	}
 }
 
@@ -1088,6 +1157,9 @@ func YugabyteDB25() Capabilities {
 // #942 lands.
 func SpannerPostgres() Capabilities {
 	return Postgres16().
+		// Measured on the Cloud Spanner emulator behind PGAdapter:
+		// `relation "information_schema.view_table_usage" does not exist`.
+		With(CatalogViewDependencies, false).
 		// Measured, unlike the rest of this preset: on the Cloud Spanner
 		// emulator through PGAdapter 0.55.2, `obj_description(2200,
 		// 'pg_namespace')` answers `The Postgres Type is not supported: name`.
@@ -1658,10 +1730,14 @@ func mysqlForVersion(v serverVersion) Capabilities {
 	switch {
 	case v.major > 8 || (v.major == 8 && v.minor >= 4):
 		return MySQL84()
-	case v.major == 8 && (v.minor > 0 || v.patch >= 19):
+	case v.major == 8 && (v.minor > 0 || v.patch >= 20):
+		return MySQL8020()
+	case v.major == 8 && v.patch >= 19:
 		return MySQL8019()
 	case v.major == 8 && v.patch >= 16:
 		return MySQL8016()
+	case v.major == 8 && v.patch >= 13:
+		return MySQL8013()
 	default:
 		return MySQLLegacy()
 	}
