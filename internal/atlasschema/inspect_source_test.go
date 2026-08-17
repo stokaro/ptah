@@ -279,6 +279,31 @@ CREATE TABLE sessions (
 // TestInspectSource_FileExportThenDevInspectionRoundTrip exports a live
 // inspection to a single HCL file and re-inspects that file through the dev
 // database: the reloaded output must reproduce the live output.
+// TestInspectSource_WriteRootMayLeaveTheWorkingDirectory pins what
+// stokaro/ptah#1622 changed here. A `write` root that climbs out of the working
+// directory used to be refused while the identical destination spelled
+// absolutely was accepted -- and the absolute form is how this package's own
+// happy-path tests use the API, so the rule filtered a spelling of something
+// callers already do.
+func TestInspectSource_WriteRootMayLeaveTheWorkingDirectory(t *testing.T) {
+	c := qt.New(t)
+	dbPath := seedInspectSQLiteDB(c)
+	parent := c.TempDir()
+	work := filepath.Join(parent, "work")
+	c.Assert(os.Mkdir(work, 0o750), qt.IsNil)
+	t.Chdir(work)
+
+	_, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
+		URL:    "sqlite://" + dbPath,
+		Format: `{{ sql . | split | write "../outside-ptah" }}`,
+	})
+
+	c.Assert(err, qt.IsNil)
+	entries, readErr := os.ReadDir(filepath.Join(parent, "outside-ptah"))
+	c.Assert(readErr, qt.IsNil)
+	c.Assert(len(entries) > 0, qt.IsTrue)
+}
+
 func TestInspectSource_FileExportThenDevInspectionRoundTrip(t *testing.T) {
 	c := qt.New(t)
 	dbPath := seedInspectSQLiteDB(c)
@@ -395,18 +420,6 @@ func TestInspectSource_FailurePath(t *testing.T) {
 		})
 
 		c.Assert(err, qt.ErrorMatches, `parse --format template: .*`)
-	})
-
-	t.Run("write escaping the working directory", func(t *testing.T) {
-		c := qt.New(t)
-		dbPath := seedInspectSQLiteDB(c)
-
-		_, err := atlasschema.InspectSource(context.Background(), atlasschema.InspectSourceOptions{
-			URL:    "sqlite://" + dbPath,
-			Format: `{{ sql . | split | write "../../outside-ptah" }}`,
-		})
-
-		c.Assert(err, qt.ErrorMatches, `resolve output directory: .*outside allowed root.*`)
 	})
 
 	t.Run("duplicate write targets", func(t *testing.T) {

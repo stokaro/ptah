@@ -6,10 +6,18 @@
 // difference is worth knowing before treating any of them as a security
 // boundary. [ResolveWithinRoot], [OpenDirectoryWithinRoot] and
 // [OpenedDirectory.OpenDirectory] take an explicit root and bind it whatever
-// the path's spelling. [ResolveCLIPath] and [OpenCLIDirectory] take no root:
-// they use the process working directory, and they bound relative spellings
-// only, so an absolute pathname reaches any destination. Each doc comment says
-// which of the two it is.
+// the path's spelling; those are the containment controls and a caller that has
+// a real root to bind wants one of them.
+//
+// [ResolveCLIPath] and [OpenCLIDirectory] take no root and impose no enclosing
+// boundary. They resolve and clean a path an operator typed, and that is all
+// they promise. They used to confine a RELATIVE spelling to the process working
+// directory while exempting an absolute one, which filtered a spelling rather
+// than an escape: every one of their call sites reads a value the operator
+// supplied, so the same destination was refused as "../schema.sql" and accepted
+// spelled in full. A rule any caller satisfies by respelling the argument is not
+// a boundary, and it cost a behavior the community Atlas binary has
+// (stokaro/ptah#1622, item 11 of stokaro/ptah#1241).
 package pathguard
 
 import (
@@ -106,48 +114,29 @@ func ResolveWithinRoot(path, allowedRoot string) (string, error) {
 	return resolved, nil
 }
 
-// ResolveCLIPath confines a relative CLI path to the process working directory
-// and exempts an absolute one.
+// ResolveCLIPath resolves a CLI path to an absolute, cleaned pathname, with
+// existing symlinks followed. It imposes no boundary of any kind, and both
+// spellings of one destination now answer identically.
 //
-// Within the relative branch the boundary binds the destination rather than the
-// spelling: the path is resolved through its existing symlinks first, so a
-// traversal, a ".." in the middle of the path, and a symlink that leaves the
-// root are all refused, while a path that leaves the root and returns is
-// allowed. The comparison is between resolved pathnames and never between file
-// identities, so no verdict here depends on inode reuse.
-//
-// The absolute branch has no root at all, so the same destination is refused
-// when it is spelled "../schema.sql" and accepted when it is spelled in full.
-// That exemption is what makes an absolute pathname — the ordinary way an
-// operator names a file, and one the pinned community binary accepts — keep
-// working, so it cannot be removed without deciding stokaro/ptah#1241 item 11's
-// parity question. Do not read this function as containment: it bounds the
-// relative spelling only.
+// The relative-only confinement this used to carry was removed in
+// stokaro/ptah#1622: it refused "../schema.sql" and accepted the same file
+// spelled in full, so it filtered a spelling rather than an escape. Callers
+// wanting containment pass an explicit root to [ResolveWithinRoot], where the
+// root binds every spelling.
 func ResolveCLIPath(path string) (string, error) {
-	if filepath.IsAbs(path) {
-		return ResolveWithinRoot(path, "")
-	}
-	cwd, err := os.Getwd()
-	if err != nil {
-		return "", fmt.Errorf("resolve working directory: %w", err)
-	}
-	return ResolveWithinRoot(path, cwd)
+	return ResolveWithinRoot(path, "")
 }
 
-// OpenCLIDirectory validates and opens a CLI directory path in one operation.
-// Relative paths are opened through the current working directory as their
-// allowed root. Explicit absolute paths preserve their unbounded CLI behavior.
-// It carries the same relative-only boundary as [ResolveCLIPath], for the same
-// reason; callers that have a real root to bind want [OpenDirectoryWithinRoot].
+// OpenCLIDirectory validates and opens a CLI directory path in one operation,
+// with no enclosing boundary — the same treatment [ResolveCLIPath] gives, for
+// the same reason (stokaro/ptah#1622).
+//
+// The returned handle is still rooted at the directory it opened, so a path
+// resolved THROUGH it cannot escape it; that property is about the handle and
+// was never the thing the removed confinement provided. Callers that have a
+// real root to bind want [OpenDirectoryWithinRoot].
 func OpenCLIDirectory(path string) (*OpenedDirectory, error) {
-	if filepath.IsAbs(path) {
-		return OpenDirectory(path)
-	}
-	root, err := OpenCurrentDirectory()
-	if err != nil {
-		return nil, err
-	}
-	return openDirectoryAndCloseRoot(root, path)
+	return OpenDirectory(path)
 }
 
 // OpenCurrentDirectory anchors the process working directory before resolving

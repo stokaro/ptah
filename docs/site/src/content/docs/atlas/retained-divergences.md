@@ -287,28 +287,24 @@ SQLite-only caveat that
 
 ## Not on this page
 
-Two cells from that issue are still open and are deliberately not argued here,
-because no argument has been established for them.
+`--to file://../schema.sql` and `--dir file://../dir` used to be refused as
+`outside allowed root` where that binary exits `0` (item 11 of that issue). They
+are accepted now, and the divergence is closed rather than retained.
 
-`--to file://../schema.sql` and `--dir file://../dir` are refused as `outside
-allowed root` where that binary exits `0` (item 11). The containment that
-produces the refusal applies to relative CLI paths only: the identical file
-named by an absolute path is accepted, and `migrate diff --to` against it
-succeeds. A boundary that refuses one spelling of a path and accepts another
-spelling of the same path does not contain anything, so the refusal cannot yet
-be defended as a safety control. Resolving it changes a shared path helper used
-by native `ptah` verbs as well as the compatibility surface, so it is a decision
-recorded on the issue rather than a divergence retained here.
+The refusal came from a containment that applied to relative CLI paths only: the
+identical file named by an absolute path was accepted, and `migrate diff --to`
+against it succeeded. A boundary that refuses one spelling of a path and accepts
+another spelling of the same path contains nothing, so the refusal could not be
+defended as a safety control — and it cost a behavior the community binary has.
+`pathguard.ResolveCLIPath` therefore imposes no boundary at all now, and both
+spellings of one destination answer identically
+([`stokaro/ptah#1622`](https://github.com/stokaro/ptah/issues/1622)).
 
-Until that decision is taken, the two surfaces at least give the same answer.
-They did not: the native desired-schema resolver rewrote the operator's path to
-an absolute one before the guard saw it, so `ptah schema render --schema-file
-../outside/schema.sql` loaded the file while `ptah-compat migrate diff --to
-file://../outside/schema.sql` refused that identical destination through that
-identical guard. The rewrite was a canonicalization, not a decision about what
-should be reachable. The native surface now applies the relative boundary that
-the compatibility surface always applied, which narrows what native `ptah`
-accepts and leaves the absolute-pathname question exactly where it was.
+Containment did not disappear with it. `pathguard.ResolveWithinRoot` and
+`OpenDirectoryWithinRoot` take an explicit root and bind every spelling against
+it, which is what the project migration-directory confinement uses, and a
+`write` directive in a `--format` template still cannot compute a filename that
+leaves the root the operator chose.
 
 `migrate hash` carries the trailing-positional and `--var` cells of items 13 and
 12. No reading of the pinned binary was taken for either: the sandbox these

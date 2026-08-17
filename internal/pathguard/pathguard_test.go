@@ -42,19 +42,47 @@ func TestResolveWithinRootRejectsSymlinkEscape(t *testing.T) {
 	c.Assert(err, qt.ErrorIs, pathguard.ErrOutsideRoot)
 }
 
-func TestResolveCLIPathRejectsRelativeTraversal(t *testing.T) {
+// TestResolveCLIPathAnswersBothSpellingsOfOneDestination is the replacement for
+// a test that asserted "../outside" was refused.
+//
+// That refusal was a spelling filter, not a boundary: ResolveCLIPath exempted
+// absolute paths, so the identical destination spelled in full was accepted by
+// the same call. stokaro/ptah#1622 removed it, and what is pinned now is that
+// the two spellings agree -- which is the property the old rule broke and the
+// one the community Atlas binary has.
+func TestResolveCLIPathAnswersBothSpellingsOfOneDestination(t *testing.T) {
 	c := qt.New(t)
-	originalWD, err := os.Getwd()
-	c.Assert(err, qt.IsNil)
-	root := t.TempDir()
-	c.Assert(os.Chdir(root), qt.IsNil)
-	t.Cleanup(func() {
-		c.Assert(os.Chdir(originalWD), qt.IsNil)
-	})
+	parent := t.TempDir()
+	outside := filepath.Join(parent, "outside")
+	c.Assert(os.Mkdir(outside, 0o750), qt.IsNil)
+	work := filepath.Join(parent, "work")
+	c.Assert(os.Mkdir(work, 0o750), qt.IsNil)
+	t.Chdir(work)
 
-	_, err = pathguard.ResolveCLIPath("../outside")
-	c.Assert(err, qt.ErrorMatches, `.*outside allowed root.*`)
-	c.Assert(err, qt.ErrorIs, pathguard.ErrOutsideRoot)
+	relative, relativeErr := pathguard.ResolveCLIPath("../outside")
+	absolute, absoluteErr := pathguard.ResolveCLIPath(outside)
+
+	c.Assert(relativeErr, qt.IsNil)
+	c.Assert(absoluteErr, qt.IsNil)
+	c.Assert(relative, qt.Equals, absolute)
+}
+
+// TestResolveWithinRootStillRefusesATraversal is the control for the test
+// above: dropping the CLI helper's relative-only rule must not touch the entry
+// point that takes an explicit root, which binds every spelling.
+func TestResolveWithinRootStillRefusesATraversal(t *testing.T) {
+	c := qt.New(t)
+	parent := t.TempDir()
+	outside := filepath.Join(parent, "outside")
+	c.Assert(os.Mkdir(outside, 0o750), qt.IsNil)
+	root := filepath.Join(parent, "work")
+	c.Assert(os.Mkdir(root, 0o750), qt.IsNil)
+
+	_, relativeErr := pathguard.ResolveWithinRoot("../outside", root)
+	_, absoluteErr := pathguard.ResolveWithinRoot(outside, root)
+
+	c.Assert(relativeErr, qt.ErrorIs, pathguard.ErrOutsideRoot)
+	c.Assert(absoluteErr, qt.ErrorIs, pathguard.ErrOutsideRoot)
 }
 
 func TestOpenCLIDirectoryPreservesExplicitAbsolutePath(t *testing.T) {
