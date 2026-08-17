@@ -1297,10 +1297,16 @@ func (p *Planner) rejectMaterializedViews(diff *types.SchemaDiff) error {
 		len(diff.MaterializedViewsRemoved) == 0 {
 		return nil
 	}
-	message := "materialized views are not supported by MySQL or MariaDB; remove matview definitions for this target"
+	engine := "MySQL or MariaDB"
 	if p.targetDialect() == platform.SQLServer {
-		message = "materialized views are not supported by SQL Server; remove matview definitions for this target"
+		engine = "SQL Server"
 	}
+	// The names are part of the refusal: "remove matview definitions" tells an
+	// operator what kind of thing to look for, not which one, and a schema with
+	// forty objects is then a search (stokaro/ptah#1628).
+	message := fmt.Sprintf(
+		"materialized views are not supported by %s; remove matview definitions for this target: %s",
+		engine, strings.Join(changedMaterializedViewNames(diff), ", "))
 	return &ptaherr.CapabilityError{
 		Dialect: p.targetDialect(),
 		Feature: "materialized views",
@@ -2198,4 +2204,15 @@ func previousColumnType(change string) string {
 func previousColumnNullable(change string) bool {
 	before, _, ok := strings.Cut(change, " -> ")
 	return ok && strings.TrimSpace(before) == "true"
+}
+
+// changedMaterializedViewNames lists every materialized view the diff touches,
+// sorted and deduplicated so the refusal reads the same on every run.
+func changedMaterializedViewNames(diff *types.SchemaDiff) []string {
+	names := slices.Concat(diff.MaterializedViewsAdded, diff.MaterializedViewsRemoved)
+	for _, view := range diff.MaterializedViewsModified {
+		names = append(names, view.ViewName)
+	}
+	slices.Sort(names)
+	return slices.Compact(names)
 }
