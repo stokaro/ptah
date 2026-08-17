@@ -474,6 +474,18 @@ table leaves with it rather than being dropped out from under it. Live views and
 window views are left alone, matching what the ClickHouse reader reports; use
 the database-realm cleanup above when a database has to be emptied completely.
 
+A MergeTree table's sorting key is carried through the read, so a table Ptah
+creates reads back as itself: the primary-key flag comes from
+`system.columns.is_in_primary_key`, and the renderer derives the `ORDER BY` a
+MergeTree engine requires from it. Where a table declares both a narrower
+`PRIMARY KEY` and a wider `ORDER BY`, the sorting key is carried separately, so
+a description does not silently sort by fewer columns than the table it
+describes. Before this the read dropped the key entirely: a declaration carrying
+`primary="true"` differed from its own table on every comparison, so
+`ALTER TABLE ... MODIFY COLUMN` was re-planned forever, and `ptah db read`
+exited 2 against any ClickHouse database Ptah could create because the
+description it produced could not be rendered (stokaro/ptah#1603).
+
 Plain views participate in the complete render, plan, and introspection cycle.
 Ptah emits `CREATE VIEW`, `CREATE OR REPLACE VIEW`, and `DROP VIEW`, preserving
 qualified names and query bodies, and reads ordinary views from

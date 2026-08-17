@@ -117,10 +117,10 @@ func TestReaderReadTablesUsesBulkColumnQuery(t *testing.T) {
 	columnRows := make([][]driver.Value, 0, 100)
 	for i := range 50 {
 		tableName := fmt.Sprintf("table_%02d", i)
-		tableRows = append(tableRows, []driver.Value{tableName, ""})
+		tableRows = append(tableRows, []driver.Value{tableName, "", "(id)", "(id)"})
 		columnRows = append(columnRows,
-			[]driver.Value{tableName, "id", "UInt64", "", "", uint64(1), ""},
-			[]driver.Value{tableName, "payload", "Nullable(String)", "", "", uint64(2), ""},
+			[]driver.Value{tableName, "id", "UInt64", "", "", uint64(1), "", uint8(1)},
+			[]driver.Value{tableName, "payload", "Nullable(String)", "", "", uint64(2), "", uint8(0)},
 		)
 	}
 	columnRows[3][3] = "DEFAULT"
@@ -130,12 +130,15 @@ func TestReaderReadTablesUsesBulkColumnQuery(t *testing.T) {
 		switch {
 		case strings.Contains(query, "FROM system.columns"):
 			return dbtest.QueryResult{
-				Columns: []string{"table", "name", "type", "default_kind", "default_expression", "position", "comment"},
-				Rows:    columnRows,
+				Columns: []string{
+					"table", "name", "type", "default_kind", "default_expression",
+					"position", "comment", "is_in_primary_key",
+				},
+				Rows: columnRows,
 			}, nil
 		case strings.Contains(query, "FROM system.tables"):
 			return dbtest.QueryResult{
-				Columns: []string{"name", "comment"},
+				Columns: []string{"name", "comment", "sorting_key", "primary_key"},
 				Rows:    tableRows,
 			}, nil
 		default:
@@ -154,4 +157,114 @@ func TestReaderReadTablesUsesBulkColumnQuery(t *testing.T) {
 	c.Assert(tables[0].Columns[1].IsNullable, qt.Equals, "YES")
 	c.Assert(tables[1].Columns[1].ColumnDefault, qt.IsNotNil)
 	c.Assert(*tables[1].Columns[1].ColumnDefault, qt.Equals, "0")
+}
+
+// TestReaderReadTablesCarriesTheSortingKey pins both halves of what
+// stokaro/ptah#1603 was about, and they are one root cause: the read dropped
+// the key a MergeTree table sorts by.
+//
+// Without the primary-key flag, a declaration carrying `primary="true"` differs
+// from its own table on every comparison -- `ALTER TABLE ... MODIFY COLUMN` was
+// re-planned forever -- and the renderer, which falls back to the primary-key
+// columns for the ORDER BY a MergeTree engine requires, had nothing to fall back
+// to, so `ptah db read` could not render the schema it had just read.
+//
+// The sorting key is carried separately only when it says something the primary
+// key does not, which is the `PRIMARY KEY (a) ORDER BY (a, b)` case: a
+// description built from the primary key alone sorts by `a` only, and applying
+// it creates a table whose rows are ordered differently.
+func TestReaderReadTablesCarriesTheSortingKey(t *testing.T) {
+	tests := []struct {
+		name           string
+		sortingKey     string
+		primaryKey     string
+		keyColumns     []uint8
+		wantPrimary    []bool
+		wantSortingKey string
+	}{
+		{
+			name:           "the ordinary case, where the two agree",
+			sortingKey:     "(id)",
+			primaryKey:     "(id)",
+			keyColumns:     []uint8{1, 0},
+			wantPrimary:    []bool{true, false},
+			wantSortingKey: "",
+		},
+		{
+			// The catalog reports the same key in two spellings -- `(a)` for the
+			// primary key and `a, b` for the sorting key -- so an equal pair has
+			// to be recognized as equal rather than recorded as an override that
+			// changes nothing.
+			name:           "the same key, spelled differently by the two columns",
+			sortingKey:     "id",
+			primaryKey:     "(id)",
+			keyColumns:     []uint8{1, 0},
+			wantPrimary:    []bool{true, false},
+			wantSortingKey: "",
+		},
+		{
+			name:           "a sorting key wider than the primary key",
+			sortingKey:     "a, b",
+			primaryKey:     "(a)",
+			keyColumns:     []uint8{1, 0},
+			wantPrimary:    []bool{true, false},
+			wantSortingKey: "a, b",
+		},
+		{
+			name:           "a table with no key at all",
+			sortingKey:     "",
+			primaryKey:     "",
+			keyColumns:     []uint8{0, 0},
+			wantPrimary:    []bool{false, false},
+			wantSortingKey: "",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			db := dbtest.Open(t, keyedTableServer(test.sortingKey, test.primaryKey, test.keyColumns))
+			reader := NewClickHouseReader(db.SQL, "default")
+
+			tables, err := reader.readTables("default")
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(tables, qt.HasLen, 1)
+			c.Assert(tables[0].ClickHouseSortingKey, qt.Equals, test.wantSortingKey)
+			c.Assert(tables[0].Columns[0].IsPrimaryKey, qt.Equals, test.wantPrimary[0])
+			c.Assert(tables[0].Columns[1].IsPrimaryKey, qt.Equals, test.wantPrimary[1])
+		})
+	}
+}
+
+// keyedTableServer answers the two catalog reads with one table carrying the
+// given key. It is a function rather than a closure in the test body so the
+// switch that routes the two queries lives outside the assertion, which is
+// where AGENTS.md wants it.
+func keyedTableServer(
+	sortingKey, primaryKey string, keyColumns []uint8,
+) func(string, []driver.NamedValue) (dbtest.QueryResult, error) {
+	return func(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
+		switch {
+		case strings.Contains(query, "FROM system.columns"):
+			return dbtest.QueryResult{
+				Columns: []string{
+					"table", "name", "type", "default_kind", "default_expression",
+					"position", "comment", "is_in_primary_key",
+				},
+				Rows: [][]driver.Value{
+					{"t", "a", "UInt64", "", "", uint64(1), "", keyColumns[0]},
+					{"t", "b", "UInt64", "", "", uint64(2), "", keyColumns[1]},
+				},
+			}, nil
+		case strings.Contains(query, "FROM system.tables"):
+			return dbtest.QueryResult{
+				Columns: []string{"name", "comment", "sorting_key", "primary_key"},
+				Rows:    [][]driver.Value{{"t", "", sortingKey, primaryKey}},
+			}, nil
+		default:
+			return dbtest.QueryResult{}, fmt.Errorf("unexpected query: %s", query)
+		}
+	}
 }

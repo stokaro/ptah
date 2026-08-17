@@ -6717,6 +6717,15 @@ type DBTable struct {
     RLSEnabled      bool       `json:"rls_enabled"`                 // Whether RLS is enabled on this table (PostgreSQL)
     Strict          bool       `json:"strict,omitempty"`            // SQLite STRICT table option
     WithoutRowID    bool       `json:"without_rowid,omitempty"`     // SQLite WITHOUT ROWID table option
+    // ClickHouseSortingKey is the ORDER BY a MergeTree table sorts by, when
+    // that is not simply its primary-key columns.
+    //
+    // The two are usually the same and the renderer derives the ORDER BY from
+    // the primary key, so this stays empty. They come apart when a table
+    // declares `PRIMARY KEY (a) ORDER BY (a, b)`: the primary key alone would
+    // describe a table that sorts differently from the one being read, and
+    // applying that description would create one (stokaro/ptah#1603).
+    ClickHouseSortingKey string `json:"clickhouse_sorting_key,omitempty"`
     // RowTTL is the CockroachDB row-level TTL this table carries, nil for a
     // table with none and for every target without capability.RowLevelTTL.
     //
