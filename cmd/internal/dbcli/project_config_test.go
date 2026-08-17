@@ -374,7 +374,17 @@ func TestExternalSchemaCommandsFallsBackToConfig(t *testing.T) {
 	c.Assert(commands[0].Env, qt.DeepEquals, []string{"K=V"})
 }
 
-func TestExternalSchemaCommandsRejectsWorkingDirectoryOutsideProject(t *testing.T) {
+// TestExternalSchemaCommandsResolvesAWorkingDirectoryThatLeavesTheProject
+// records what stokaro/ptah#1622 decided about this call site rather than what
+// it used to refuse.
+//
+// The refusal was a spelling filter: the same directory named absolutely was
+// always accepted, and the config layer has already joined a relative
+// working_dir onto the atlas.hcl directory before the value arrives here. The
+// control on this surface is the opt-in flag, which the next test pins -- once
+// an operator authorizes running an arbitrary program, the directory it starts
+// in is not a boundary.
+func TestExternalSchemaCommandsResolvesAWorkingDirectoryThatLeavesTheProject(t *testing.T) {
 	c := qt.New(t)
 	cmd := &cobra.Command{Use: "test"}
 	dbcli.RegisterExternalSchemaOptInFlag(cmd.Flags())
@@ -388,8 +398,10 @@ func TestExternalSchemaCommandsRejectsWorkingDirectoryOutsideProject(t *testing.
 
 	commands, err := dbcli.ResolveExternalSchemaCommands(cmd, "", "sql", cfg)
 
-	c.Assert(err, qt.ErrorMatches, `resolve external_schema working_dir: ".*" is outside allowed root ".*"`)
-	c.Assert(commands, qt.IsNil)
+	c.Assert(err, qt.IsNil)
+	c.Assert(commands, qt.HasLen, 1)
+	c.Assert(commands[0].Dir, qt.Not(qt.Equals), "")
+	c.Assert(filepath.IsAbs(commands[0].Dir), qt.IsTrue)
 }
 
 func TestExternalSchemaCommandsRejectsImplicitConfigExecution(t *testing.T) {

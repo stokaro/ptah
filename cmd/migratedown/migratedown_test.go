@@ -188,8 +188,17 @@ func TestMigrateDownCommandShadowDBFailureAbortsBeforeTouchingTarget(t *testing.
 	c.Assert(count, qt.Equals, 1)
 }
 
-func TestMigrateDownCommandRejectsRelativeTraversalDirectory(t *testing.T) {
+// TestMigrateDownCommandReadsARelativeTraversalDirectory pins the behavior
+// stokaro/ptah#1622 restored: "../outside" and the identical destination
+// spelled absolutely are the same argument now. The refusal this used to assert
+// was a spelling filter -- the absolute form was always accepted -- and the
+// community Atlas binary reads both.
+//
+// The run still fails, on the directory not existing, which is what proves the
+// path was resolved and looked up rather than rejected out of hand.
+func TestMigrateDownCommandReadsARelativeTraversalDirectory(t *testing.T) {
 	c := qt.New(t)
+	t.Chdir(c.TempDir())
 	cmd := migratedown.NewMigrateDownCommand()
 	resetMigrateDownCommandForTest(c, cmd)
 	cmd.SetArgs([]string{
@@ -201,7 +210,8 @@ func TestMigrateDownCommandRejectsRelativeTraversalDirectory(t *testing.T) {
 
 	err := cmd.Execute()
 
-	c.Assert(err, qt.ErrorMatches, `.*outside allowed root.*`)
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(err.Error(), qt.Not(qt.Contains), "outside allowed root")
 	resetMigrateDownCommandForTest(c, cmd)
 }
 
