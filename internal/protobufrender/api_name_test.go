@@ -394,3 +394,23 @@ func TestSanitizationRunsOnTheProtoName(t *testing.T) {
 	c.Assert(diagnosticMessages(res), qt.Any(qt.Contains),
 		`table "things" was sanitized to protobuf message "_2faRecord"`)
 }
+
+// An override does not silence the loss it causes. Projecting a BIGINT as an
+// exact numeric reaches the same mapping every column does, so the same warning
+// is reported -- against the column, which is where the declaration is.
+//
+// This is the difference between the two kinds of unsupported: a type the
+// mapping cannot produce is refused, and a type it produces imperfectly is
+// exported with the imperfection named (stokaro/ptah#905).
+func TestALossyOverrideStillReportsItsLoss(t *testing.T) {
+	c := qt.New(t)
+
+	res := mustRender(c, oneTable(
+		column("id", "BIGINT"),
+		typedColumn("moved", "BIGINT", "DECIMAL(12,2)"),
+	), baseOptions())
+
+	c.Assert(string(res.Data), qt.Contains, "string moved = 2;")
+	c.Assert(diagnosticMessages(res), qt.Any(qt.Contains),
+		"things.moved: exact numeric mapped to string")
+}
