@@ -190,12 +190,27 @@ func runAtlasSchemaClean(
 	}
 
 	ok := true
-	if opts.autoApprove {
+	switch {
+	case len(plan.Changes) == 0:
+		// Nothing to confirm. A confirmation prompt is the price of a
+		// destructive act, and there is no act here: the plan is empty, so the
+		// apply below is a no-op either way.
+		//
+		// It is also the community binary's behavior, measured on an empty
+		// SQLite database with no --auto-approve and no terminal: it prints
+		// `Nothing to drop` and exits 0, where this binary asked for the
+		// confirmation phrase and exited 1 when it could not read one. A CI
+		// step cleaning an already-clean dev database is the ordinary case, and
+		// it worked under one binary and failed under the other.
+		if !formatOutput {
+			fmt.Fprintln(cmd.OutOrStdout(), "Nothing to drop.")
+		}
+	case opts.autoApprove:
 		if !formatOutput {
 			fmt.Fprintln(cmd.OutOrStdout(), "Auto-approval enabled; skipping interactive confirmation.")
 			fmt.Fprintln(cmd.OutOrStdout())
 		}
-	} else {
+	default:
 		if formatOutput {
 			rendered, err := renderAtlasSchemaCleanFormat(opts, conn, plan, false)
 			if err != nil {

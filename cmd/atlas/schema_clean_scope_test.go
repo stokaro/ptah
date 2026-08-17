@@ -183,3 +183,61 @@ func TestSchemaCleanRejectsUnsupportedSelectorsBeforeConnecting(t *testing.T) {
 		})
 	}
 }
+
+// A confirmation prompt is the price of a destructive act, and an empty
+// database has no act to price. Measured on the pinned community binary v1.3.0
+// with no --auto-approve and no terminal: it prints `Nothing to drop` and exits
+// 0, where this binary asked for the confirmation phrase and exited 1 when it
+// could not read one -- so a CI step cleaning an already-clean dev database
+// worked under one binary and failed under the other (stokaro/ptah#1334).
+//
+// The second row is the control, and it is what keeps the first from being a
+// blanket removal of the confirmation: with something to drop, an unconfirmed
+// clean is still refused.
+func TestSchemaCleanConfirmationFollowsThePlan(t *testing.T) {
+	tests := []struct {
+		name       string
+		tables     []string
+		wantErr    bool
+		wantOutput string
+	}{
+		{
+			name:       "an empty database needs no confirmation",
+			wantOutput: "Nothing to drop.",
+		},
+		{
+			name:    "a database with objects still does",
+			tables:  []string{"users"},
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			dbPath := filepath.Join(t.TempDir(), "clean-confirm.db")
+			for _, table := range tt.tables {
+				createSQLiteSchemaCleanTable(c, dbPath, table)
+			}
+
+			out, err := runSchemaCleanScope(c, dbPath)
+
+			c.Assert(err != nil, qt.Equals, tt.wantErr, qt.Commentf("output:\n%s", out))
+			c.Assert(out, qt.Contains, tt.wantOutput)
+		})
+	}
+}
+
+// The clean still happens where there is nothing to clean: an empty database is
+// left empty and the run reports success, rather than being skipped in a way
+// that would also skip a later apply.
+func TestSchemaCleanOnAnEmptyDatabaseWithAutoApprove(t *testing.T) {
+	c := qt.New(t)
+
+	dbPath := filepath.Join(t.TempDir(), "clean-empty-approve.db")
+
+	out, err := runSchemaCleanScope(c, dbPath, "--auto-approve")
+
+	c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", out))
+}
