@@ -936,3 +936,87 @@ func TestOccupancySQL_ExcludesEveryCatalogSchema(t *testing.T) {
 		})
 	}
 }
+
+// A cell may declare that its preset claims LESS than the server does, and the
+// probe then reports the difference instead of failing on it. The direction is
+// the whole safety property: understating costs a capability, overstating costs
+// a migration, and no written reason makes the second acceptable
+// (stokaro/ptah#942).
+func TestOutcomeFor_HonorsADeclaredUnderstatement(t *testing.T) {
+	declared := map[capability.Capability]string{
+		capability.Sequences: "a serial column needs a database option Ptah cannot set",
+	}
+
+	tests := []struct {
+		name        string
+		key         capability.Capability
+		presetSays  bool
+		serverDoes  bool
+		understates map[capability.Capability]string
+		want        Outcome
+	}{
+		{
+			name: "the declared key, understated", key: capability.Sequences,
+			presetSays: false, serverDoes: true, understates: declared, want: Conservative,
+		},
+		{
+			// The direction that must never be silenced: the preset claims a
+			// capability the server does not have, which is DDL the server
+			// refuses. The declaration names this very key and changes nothing.
+			name: "the same key, overstated", key: capability.Sequences,
+			presetSays: true, serverDoes: false, understates: declared, want: Disagrees,
+		},
+		{
+			name: "an undeclared key, understated", key: capability.Triggers,
+			presetSays: false, serverDoes: true, understates: declared, want: Disagrees,
+		},
+		{
+			name: "no declarations at all", key: capability.Sequences,
+			presetSays: false, serverDoes: true, understates: nil, want: Disagrees,
+		},
+		{
+			name: "agreement needs no declaration", key: capability.Sequences,
+			presetSays: true, serverDoes: true, understates: declared, want: Agrees,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			row := Row{
+				Capability: tt.key, Observed: true,
+				PresetSays: tt.presetSays, ServerDoes: tt.serverDoes,
+			}
+
+			c.Assert(outcomeFor(row, "", tt.understates), qt.Equals, tt.want)
+		})
+	}
+}
+
+// A conservative row is a difference, not a mismatch: Err() reads Mismatches(),
+// so a row that stayed a mismatch would fail the run the declaration exists to
+// let pass.
+func TestMismatch_ExcludesADeclaredUnderstatement(t *testing.T) {
+	tests := []struct {
+		name    string
+		outcome Outcome
+		want    bool
+	}{
+		{name: "a plain disagreement is a mismatch", outcome: Disagrees, want: true},
+		{name: "a declared understatement is not", outcome: Conservative, want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			row := Row{
+				Capability: capability.Sequences, Observed: true,
+				PresetSays: false, ServerDoes: true, Outcome: tt.outcome,
+			}
+
+			c.Assert(row.Mismatch(), qt.Equals, tt.want)
+		})
+	}
+}

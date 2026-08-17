@@ -125,6 +125,15 @@ type Cell struct {
 	// freeze one patch while claiming that it follows the line.
 	ResolveNewestPatch bool
 
+	// Understates names capability keys whose preset deliberately claims less
+	// than the server does, with the reason, so a measured difference reads as
+	// a decision rather than a defect.
+	//
+	// The declaration is honored in one direction only: the probe still fails
+	// on a preset that claims MORE than the server does, whatever is written
+	// here. Understating costs a capability; overstating costs correctness.
+	Understates map[capability.Capability]string
+
 	// Versionless declares a dialect with no release line to match against, so
 	// the single cell answers for every server of that dialect.
 	//
@@ -515,7 +524,20 @@ var Cells = []Cell{
 	{
 		Dialect: platform.Spanner, Line: "0",
 		Versionless: true,
-		Preset:      capability.SpannerPostgres, PresetName: "SpannerPostgres",
+		Understates: map[capability.Capability]string{
+			// The PostgreSQL dialect documents `serial` as an alias for an
+			// identity column and `CREATE SEQUENCE`, and the endpoint accepts
+			// both -- so the server does have sequences and the preset says it
+			// does not, on purpose. Serial types there require the database
+			// option `default_sequence_kind` to be set before use, which Ptah
+			// neither sets nor can observe from a schema, so claiming the
+			// capability would emit DDL that fails on a database where nobody
+			// set it. Understating costs a SERIAL column; overstating costs a
+			// migration (stokaro/ptah#942).
+			capability.Sequences: "Spanner has sequences and serial aliases, but a serial column needs the " +
+				"database option default_sequence_kind, which Ptah cannot set or see",
+		},
+		Preset: capability.SpannerPostgres, PresetName: "SpannerPostgres",
 		Refinement: RefinedByBanner,
 		Support:    capability.BestEffort,
 		Note:       "no Spanner server exists in this repository (stokaro/ptah#942), so no row on this line has ever been executed",
