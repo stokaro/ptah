@@ -576,8 +576,7 @@ func cloneBoolPtr(value *bool) *bool {
 	if value == nil {
 		return nil
 	}
-	cloned := *value
-	return &cloned
+	return new(*value)
 }
 
 func firstString(values []string) string {
