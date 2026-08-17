@@ -297,7 +297,7 @@ func postgresFamilyPlan(dialect string) plan {
 		// because the PostgreSQL family splits on it: CockroachDB refuses every
 		// form while PostgreSQL and YugabyteDB accept them (stokaro/ptah#1624).
 		acceptance(capability.DeferrableConstraints,
-			[]string{t.table("dfp", "id int PRIMARY KEY", "id"), t.table("dfc", "n int, id int", "n")},
+			append(t.uniquelyReferenced("dfp", "dfp_uq", "id"), t.table("dfc", "n int, id int", "n")),
 			"ALTER TABLE dfc ADD CONSTRAINT dfc_fk FOREIGN KEY (id) REFERENCES dfp (id) DEFERRABLE INITIALLY DEFERRED",
 		),
 		// The MariaDB extension to the standard CHECK_CONSTRAINTS view, asked
@@ -513,7 +513,10 @@ func mysqlFamilyPlan(dialect string) plan {
 		// The MySQL family spells the table the same way, so the statement is
 		// the same question.
 		acceptance(capability.DeferrableConstraints,
-			[]string{"CREATE TABLE dfp (id int PRIMARY KEY)", "CREATE TABLE dfc (n int, id int)"},
+			[]string{
+				"CREATE TABLE dfp (id int NOT NULL, CONSTRAINT dfp_uq UNIQUE (id))",
+				"CREATE TABLE dfc (n int, id int)",
+			},
 			"ALTER TABLE dfc ADD CONSTRAINT dfc_fk FOREIGN KEY (id) REFERENCES dfp (id) DEFERRABLE INITIALLY DEFERRED",
 		),
 		// The MariaDB extension to the standard CHECK_CONSTRAINTS view, asked

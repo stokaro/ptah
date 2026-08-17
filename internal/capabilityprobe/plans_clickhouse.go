@@ -222,7 +222,7 @@ func clickHousePlan() plan {
 		// ClickHouse parses no FOREIGN KEY clause at all, so the whole statement
 		// is refused rather than just the deferral (stokaro/ptah#1624).
 		acceptance(capability.DeferrableConstraints,
-			[]string{t.table("dfp", "id Int64", "id"), t.table("dfc", "n Int64, id Int64", "n")},
+			append(t.uniquelyReferenced("dfp", "dfp_uq", "id"), t.table("dfc", "n Int64, id Int64", "n")),
 			"ALTER TABLE dfc ADD CONSTRAINT dfc_fk FOREIGN KEY (id) REFERENCES dfp (id) DEFERRABLE INITIALLY DEFERRED",
 		),
 		acceptanceNote(capability.CatalogCheckConstraintTableName, nil,
