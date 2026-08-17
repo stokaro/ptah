@@ -136,7 +136,8 @@ func convertTablesAndFields(
 			// Cloned so the description and the declaration built from it do
 			// not share a pointer; a caller mutating one must not reach the
 			// other (stokaro/ptah#1027).
-			RowTTL: dbTable.RowTTL.Clone(),
+			RowTTL:    dbTable.RowTTL.Clone(),
+			Overrides: clickHouseTableOverrides(dbTable),
 		}
 		database.Tables = append(database.Tables, table)
 
@@ -834,4 +835,21 @@ func generateFieldName(columnName string) string {
 		}
 	}
 	return strings.Join(parts, "")
+}
+
+// clickHouseTableOverrides carries the ClickHouse engine facts a description
+// needs that have no field of their own on goschema.Table, and returns nil when
+// there are none.
+//
+// Only the sorting key is here so far. It reaches the renderer as the
+// `order_by` platform override, which is the same key a declaration writes, so
+// a read description and a hand-written one produce the same statement
+// (stokaro/ptah#1603).
+func clickHouseTableOverrides(dbTable dbschematypes.DBTable) map[string]map[string]string {
+	if dbTable.ClickHouseSortingKey == "" {
+		return nil
+	}
+	return map[string]map[string]string{
+		"clickhouse": {"order_by": dbTable.ClickHouseSortingKey},
+	}
 }
