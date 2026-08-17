@@ -335,3 +335,62 @@ func TestRenamingTheProtoNameIsRefusedAsARemoval(t *testing.T) {
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Contains, "fields removed from Thing: amount_minor")
 }
+
+// protoNamedTable is a table whose message name applies to the wire only.
+func protoNamedTable(name, apiName, protoName string, fields ...goschema.Field) *goschema.Database {
+	return &goschema.Database{
+		Tables: []goschema.Table{{
+			StructName: "Thing", Name: name,
+			APIName:  apiName,
+			APINames: goschema.TargetNames{Protobuf: protoName},
+		}},
+		Fields: columns("Thing", fields...),
+	}
+}
+
+// The table-level scoped name carries the message identity, the same way the
+// field-level one carries the field identity.
+func TestMessageUsesTheProtoName(t *testing.T) {
+	c := qt.New(t)
+
+	out := mustRenderText(c,
+		protoNamedTable("billing_invoices", "invoices", "invoice_records", column("id", "BIGINT")),
+		baseOptions())
+
+	c.Assert(out, qt.Contains, "message InvoiceRecord {")
+	c.Assert(out, qt.Not(qt.Contains), "message Invoice {")
+}
+
+// And it carries the weight that goes with an identity: changing it retires a
+// message consumers hold, through the policy that already exists for the shared
+// name. Protobuf cannot reserve a top-level type name, so the refusal names the
+// two ways out rather than choosing one.
+func TestRenamingTheTableProtoNameIsRefusedAsARemoval(t *testing.T) {
+	c := qt.New(t)
+
+	baseline := mustRender(c,
+		protoNamedTable("billing_invoices", "invoices", "invoice_records", column("id", "BIGINT")),
+		baseOptions())
+
+	_, err := protobufrender.Render(context.Background(),
+		protoNamedTable("billing_invoices", "invoices", "invoice_archive", column("id", "BIGINT")),
+		withPrevious(baseline.Data))
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(err.Error(), qt.Contains, "types removed from the source schema: InvoiceRecord")
+}
+
+// A scoped name is an arbitrary annotation string like any other, so the
+// format's naming rules still run on it -- and the diagnostic still names the
+// TABLE, because that is the line the reader has to edit.
+func TestSanitizationRunsOnTheProtoName(t *testing.T) {
+	c := qt.New(t)
+
+	res := mustRender(c,
+		protoNamedTable("things", "", "2fa records", column("id", "BIGINT")),
+		baseOptions())
+
+	c.Assert(string(res.Data), qt.Contains, "message _2faRecord {")
+	c.Assert(diagnosticMessages(res), qt.Any(qt.Contains),
+		`table "things" was sanitized to protobuf message "_2faRecord"`)
+}
