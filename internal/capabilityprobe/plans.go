@@ -221,10 +221,20 @@ func postgresFamilyPlan(dialect string) plan {
 				"type system instead was refuted by CockroachDB, which refuses "+
 				"CREATE DOMAIN and accepts a composite type",
 		),
-		acceptance(capability.AlterGeneratedColumnExpression,
-			[]string{t.table("agc", "n int, g int GENERATED ALWAYS AS (n + 1) STORED", "n")},
-			"ALTER TABLE agc ALTER COLUMN g SET EXPRESSION AS (n + 2)",
+		acceptance(capability.GeneratedColumns, nil,
+			t.table("gcx", "n int, g int GENERATED ALWAYS AS (n + 1) STORED", "n"),
 		),
+		{
+			// The setup IS the generated-column clause, so a target without it
+			// cannot be asked this question at all -- YugabyteDB 2024.2 is the
+			// declared line where that happens (stokaro/ptah#916).
+			decides:  []capability.Capability{capability.AlterGeneratedColumnExpression},
+			requires: []capability.Capability{capability.GeneratedColumns},
+			setup:    []string{t.table("agc", "n int, g int GENERATED ALWAYS AS (n + 1) STORED", "n")},
+			decide: acceptance(capability.AlterGeneratedColumnExpression, nil,
+				"ALTER TABLE agc ALTER COLUMN g SET EXPRESSION AS (n + 2)",
+			).decide,
+		},
 		all(capability.RowLevelSecurity,
 			[]string{t.table("rls", "n int", "n")},
 			"ALTER TABLE rls ENABLE ROW LEVEL SECURITY",
@@ -426,13 +436,20 @@ func mysqlFamilyPlan(dialect string) plan {
 				"CREATE OR REPLACE TRIGGER cort BEFORE INSERT ON cort_t FOR EACH ROW SET NEW.n = NEW.n",
 			).decide,
 		},
-		acceptanceNote(capability.AlterGeneratedColumnExpression,
-			[]string{"CREATE TABLE agc (n int, g int GENERATED ALWAYS AS (n + 1) STORED)"},
-			"ALTER TABLE agc ALTER COLUMN g SET EXPRESSION AS (n + 2)",
-			"this key names PostgreSQL 17's SET EXPRESSION spelling, which is what was probed; "+
-				"the MySQL family can change a generated column expression under its own "+
-				"MODIFY COLUMN spelling, so a false row here means \"not this statement\", not \"not this ability\"",
+		acceptance(capability.GeneratedColumns, nil,
+			"CREATE TABLE gcx (n int, g int GENERATED ALWAYS AS (n + 1) STORED)",
 		),
+		{
+			decides:  []capability.Capability{capability.AlterGeneratedColumnExpression},
+			requires: []capability.Capability{capability.GeneratedColumns},
+			setup:    []string{"CREATE TABLE agc (n int, g int GENERATED ALWAYS AS (n + 1) STORED)"},
+			decide: acceptanceNote(capability.AlterGeneratedColumnExpression, nil,
+				"ALTER TABLE agc ALTER COLUMN g SET EXPRESSION AS (n + 2)",
+				"this key names PostgreSQL 17's SET EXPRESSION spelling, which is what was probed; "+
+					"the MySQL family can change a generated column expression under its own "+
+					"MODIFY COLUMN spelling, so a false row here means \"not this statement\", not \"not this ability\"",
+			).decide,
+		},
 		all(capability.RowLevelSecurity,
 			[]string{"CREATE TABLE rls (n int)"},
 			"ALTER TABLE rls ENABLE ROW LEVEL SECURITY",

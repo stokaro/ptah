@@ -402,6 +402,34 @@ const (
 	// own catalog outranks a preset -- the key only decides which spelling is
 	// asked FIRST, so the common path stops paying for a failed round trip.
 	CatalogCheckConstraintTableName Capability = "catalog_check_constraint_table_name"
+
+	// GeneratedColumns marks support for a column declared
+	// GENERATED ALWAYS AS (<expr>) STORED -- the SQL-standard spelling three
+	// of Ptah's renderers emit and the only one they emit.
+	//
+	// Measured live: accepted by PostgreSQL 18.4, MySQL 8.4.11, MariaDB
+	// 11.8.8, CockroachDB v26.2.5, SQLite 3.53.3, the Spanner PostgreSQL
+	// interface and YugabyteDB 2025.1 and 2026.1; refused by ClickHouse
+	// 26.7.3.19 and SQL Server 16.0.4265.3, which parse no such clause, and by
+	// YugabyteDB 2024.2 with `syntax error at or near "("` because the engine
+	// underneath it is still PostgreSQL 11 and the feature arrived in
+	// PostgreSQL 12.
+	//
+	// That last one is why the key exists rather than being assumed: the
+	// PostgreSQL renderer serves YugabyteDB, so before this an offline plan for
+	// a 2024 LTS server emitted a clause that server cannot parse
+	// (stokaro/ptah#916).
+	//
+	// There is deliberately NO implication edge from
+	// AlterGeneratedColumnExpression to this key, even though altering a
+	// generated column plainly needs one to exist. The two name spellings, not
+	// abilities, and the spellings come apart: ClickHouse has generated columns
+	// as `MATERIALIZED <expr>` and alters them with MODIFY COLUMN, so it
+	// answers false here and true there, and an edge would make that pair
+	// invalid. The prerequisite that IS real lives in the capability probe,
+	// where the PostgreSQL-family and MySQL-family plans set up with this exact
+	// clause and so cannot ask their alter question without it.
+	GeneratedColumns Capability = "generated_columns"
 )
 
 // spec documents a registry entry and its implication edges.
@@ -524,6 +552,9 @@ var registry = map[Capability]spec{
 	},
 	CatalogCheckConstraintTableName: {
 		doc: "information_schema.CHECK_CONSTRAINTS carries TABLE_NAME (MariaDB only)",
+	},
+	GeneratedColumns: {
+		doc: "columns declared GENERATED ALWAYS AS (expr) STORED (PostgreSQL 12+, MySQL 5.7+, MariaDB 10.2+, SQLite 3.31+)",
 	},
 }
 
@@ -692,6 +723,7 @@ func MySQL84() Capabilities {
 		ShowRoutinePrivilege:               true,
 		RenameColumnClause:                 true,
 		CatalogCheckConstraintTableName:    false,
+		GeneratedColumns:                   true,
 	}
 }
 
@@ -794,6 +826,7 @@ func MariaDB1011() Capabilities {
 		ShowRoutinePrivilege:            false,
 		RenameColumnClause:              true,
 		CatalogCheckConstraintTableName: true,
+		GeneratedColumns:                true,
 	}
 }
 
@@ -855,6 +888,7 @@ func Postgres16() Capabilities {
 		ShowRoutinePrivilege:               false,
 		RenameColumnClause:                 true,
 		CatalogCheckConstraintTableName:    false,
+		GeneratedColumns:                   true,
 	}
 }
 
@@ -986,6 +1020,7 @@ func ClickHouse24() Capabilities {
 		ShowRoutinePrivilege:            false,
 		RenameColumnClause:              true,
 		CatalogCheckConstraintTableName: false,
+		GeneratedColumns:                false,
 	}
 }
 
@@ -1048,6 +1083,7 @@ func SQLite3() Capabilities {
 		ShowRoutinePrivilege:               false,
 		RenameColumnClause:                 true,
 		CatalogCheckConstraintTableName:    false,
+		GeneratedColumns:                   true,
 	}
 }
 
@@ -1061,7 +1097,13 @@ func SQLite3() Capabilities {
 // this DDL is older than Ptah's own engine, which is exactly the case
 // stokaro/ptah#916 item 5 exists for.
 func SQLite324() Capabilities {
-	return SQLite3().With(RenameColumnClause, false)
+	return SQLite3().
+		With(RenameColumnClause, false).
+		// Generated columns arrived in 3.31, well above this arm's ceiling, so
+		// a target pinned here cannot parse the clause either. Measured on the
+		// linked engine for the upper arm: sqlite_version() 3.53.3 accepts
+		// `GENERATED ALWAYS AS (n + 1) STORED`.
+		With(GeneratedColumns, false)
 }
 
 // SQLServer2022 is the preset for the portable SQL Server/Azure SQL DDL subset
@@ -1131,6 +1173,7 @@ func SQLServer2022() Capabilities {
 		ShowRoutinePrivilege:               false,
 		RenameColumnClause:                 false,
 		CatalogCheckConstraintTableName:    false,
+		GeneratedColumns:                   false,
 	}
 }
 
@@ -1216,6 +1259,39 @@ func YugabyteDB25() Capabilities {
 	return Postgres16().
 		With(DropIndexConcurrently, false).
 		With(IndexIncludeSPGiST, false)
+}
+
+// YugabyteDB24 is the preset for the 2024 LTS line, which is where YugabyteDB's
+// PostgreSQL engine is still 11.
+//
+// The two keys below it is the whole difference, and the engine swap is why:
+// 2024.2 reports "PostgreSQL 11.2-YB-2024.2.4.0-b0" and 2025.1 reports
+// "PostgreSQL 15.12-YB-2025.1.0.0-b0". Measured on both, plus 2026.1, with the
+// capability probe -- every other registered key answers identically across the
+// three, so this ladder has exactly one step and carries exactly two keys:
+//
+//   - `SELECT pg_advisory_lock(1)` answers
+//     `advisory locks are not yet implemented` (SQLSTATE 0A000) on 2024.2 and
+//     succeeds on 2025.1 and 2026.1.
+//
+//   - `CREATE OR REPLACE TRIGGER` is `syntax error at or near "TRIGGER"` on
+//     2024.2, which is PostgreSQL 11 behaving as PostgreSQL 11: the spelling
+//     arrived in PostgreSQL 14.
+//
+//   - `GENERATED ALWAYS AS (n + 1) STORED` is `syntax error at or near "("`
+//     here and accepted on both newer lines: generated columns arrived in
+//     PostgreSQL 12. This is the one the ladder was actually needed for. The
+//     PostgreSQL renderer serves YugabyteDB, so before `generated_columns`
+//     existed an offline plan for a 2024 LTS server emitted a clause that
+//     server cannot parse.
+//
+// alter_generated_column_expression is false on both arms and so carries
+// nothing: what differs there is why, not what (stokaro/ptah#916).
+func YugabyteDB24() Capabilities {
+	return YugabyteDB25().
+		With(AdvisoryLocks, false).
+		With(CreateOrReplaceTrigger, false).
+		With(GeneratedColumns, false)
 }
 
 // SpannerPostgres is the conservative preset for Cloud Spanner's PostgreSQL
@@ -1331,6 +1407,7 @@ func NamedPresets() []NamedPreset {
 		{"CockroachDB23", CockroachDB23()},
 		{"CockroachDB25", CockroachDB25()},
 		{"CockroachDB26", CockroachDB26()},
+		{"YugabyteDB24", YugabyteDB24()},
 		{"YugabyteDB25", YugabyteDB25()},
 		{"SQLite324", SQLite324()},
 		{"SQLite3", SQLite3()},
@@ -1568,15 +1645,12 @@ func ResolveServerVersion(dialect, version string) VersionResolution {
 	case platform.CockroachDB:
 		return resolvedAs(cockroachDBResolution(version), platform.CockroachDB)
 	case platform.YugabyteDB:
-		// The banner alone is the whole answer for these two: no version is
-		// consulted, so the string was recognized even though nothing in it
-		// was parsed as a number.
-		return VersionResolution{
-			Capabilities:    YugabyteDB25(),
-			VersionSpecific: true,
-			Recognized:      true,
-			ResolvedDialect: platform.YugabyteDB,
-		}
+		// YugabyteDB DOES have a ladder, of exactly one step, and it was in
+		// this arm returning YugabyteDB25 unconditionally until
+		// stokaro/ptah#916 measured the 2024 LTS line: advisory locks are "not
+		// yet implemented" there and CREATE OR REPLACE TRIGGER is a syntax
+		// error, both because the engine underneath is still PostgreSQL 11.
+		return resolvedAs(yugabyteResolution(version), platform.YugabyteDB)
 	case platform.Spanner:
 		return VersionResolution{
 			Capabilities:    SpannerPostgres(),
@@ -1678,6 +1752,11 @@ func ResolveServerVersion(dialect, version string) VersionResolution {
 		// existed and only a banner spelling the word "ClickHouse" could climb
 		// it, which is not the shape `SELECT version()` returns.
 		return resolvedAs(clickHouseResolution(version), platform.ClickHouse)
+	case platform.YugabyteDB:
+		// Same reason: a typed "2026.1.0.0" carries no "-YB-" marker, so the
+		// banner switch never sees it and the ladder would be reachable only
+		// from a live connection.
+		return resolvedAs(yugabyteResolution(version), platform.YugabyteDB)
 	default:
 		// The version parsed; this dialect simply has no ladder to spend it
 		// on. That is not the operator's mistake, so it is recognized.
@@ -1764,6 +1843,60 @@ func clickHouseForVersion(v serverVersion) Capabilities {
 		return ClickHouse2411()
 	}
 	return ClickHouse24()
+}
+
+// yugabyteResolution answers a YugabyteDB version or banner.
+//
+// The cut at "-YB-" is the whole reason this is not the shared parse. A
+// YugabyteDB banner opens with the PostgreSQL compatibility version --
+// "PostgreSQL 11.2-YB-2024.2.4.0-b0" -- so parseVersion reads 11.2, and a
+// ladder given 11.2 would put a 2024 server below every declared line and
+// report it saturated by nothing. The product version is what follows the
+// marker (stokaro/ptah#916).
+func yugabyteResolution(version string) VersionResolution {
+	v, ok := parseVersion(yugabyteProductVersion(version))
+	if !ok || !isYugabyteReleaseYear(v) {
+		// Either nothing parsed, or what parsed is not a YugabyteDB product
+		// version: a banner with no "-YB-" marker yields the PostgreSQL
+		// compatibility number, and answering "11.2 is not a measured release
+		// line" would report a number the product does not have.
+		//
+		// The string named a server, so it is recognized, but no line was
+		// selected -- and the arm taken is the LOWER one. A plan that avoids
+		// pg_advisory_lock and CREATE OR REPLACE TRIGGER runs on both engines;
+		// the reverse is a syntax error on the older one, and degrading to
+		// DROP + CREATE for a trigger costs a statement rather than a plan.
+		return VersionResolution{Capabilities: YugabyteDB24(), Recognized: true}
+	}
+	return measuredMinorLineResolution(
+		yugabyteForVersion(v), v, capabilityline.YugabyteDBMeasured(), capabilityline.YugabyteDB2026)
+}
+
+// isYugabyteReleaseYear reports whether a parsed major looks like a YugabyteDB
+// release line rather than a PostgreSQL major. YugabyteDB has numbered its
+// releases by year since 2024.1; every number below that floor is the
+// compatibility version of the engine underneath.
+func isYugabyteReleaseYear(v serverVersion) bool {
+	return v.major >= 2024
+}
+
+// yugabyteProductVersion strips the PostgreSQL compatibility version a
+// YugabyteDB banner opens with. A bare "2026.1.0.0" carries no marker and is
+// returned unchanged, which is the shape a typed --server-version has.
+func yugabyteProductVersion(version string) string {
+	if _, after, found := strings.Cut(strings.ToUpper(version), "-YB-"); found {
+		return after
+	}
+	return version
+}
+
+// yugabyteForVersion picks the arm. The PostgreSQL 11 to 15 engine swap landed
+// in the 2025 line.
+func yugabyteForVersion(v serverVersion) Capabilities {
+	if v.major >= 2025 {
+		return YugabyteDB25()
+	}
+	return YugabyteDB24()
 }
 
 func mysqlResolution(v serverVersion) VersionResolution {

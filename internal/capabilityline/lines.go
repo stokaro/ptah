@@ -28,7 +28,21 @@ const (
 	ClickHouse263 = "26.3"
 	// ClickHouse26 is the newest measured ClickHouse release line.
 	ClickHouse26 = "26.7"
+	// YugabyteDB2024 is the measured YugabyteDB 2024 LTS release line, and the
+	// only one below the PostgreSQL 11 to 15 engine swap.
+	YugabyteDB2024 = "2024.2"
+	// YugabyteDB2025 is the measured YugabyteDB 2025 release line, and the
+	// first one above that swap.
+	YugabyteDB2025 = "2025.2"
+	// YugabyteDB2026 is the newest measured YugabyteDB release line.
+	YugabyteDB2026 = "2026.1"
 )
+
+// YugabyteDBMeasured returns every YugabyteDB release line with direct matrix
+// evidence.
+func YugabyteDBMeasured() []string {
+	return []string{YugabyteDB2024, YugabyteDB2025, YugabyteDB2026}
+}
 
 // ClickHouseMeasured returns every ClickHouse release line with direct matrix
 // evidence.

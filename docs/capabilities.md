@@ -105,6 +105,7 @@ so typos fail fast. Current registry:
 | `foreign_keys_require_indexed_reference` | foreign keys require the referenced columns as a full leftmost index prefix (MySQL before 8.4 and MariaDB) |
 | `foreign_keys_require_unique_reference` | foreign keys require a declared unique referenced key |
 | `functions` | user-defined functions declared with a return type, a language, and a body |
+| `generated_columns` | columns declared GENERATED ALWAYS AS (expr) STORED (PostgreSQL 12+, MySQL 5.7+, MariaDB 10.2+, SQLite 3.31+) |
 | `index_include_spgist` | SP-GiST indexes with INCLUDE payload columns (PostgreSQL 14+) |
 | `materialized_views` | CREATE MATERIALIZED VIEW: a view whose query result is stored |
 | `postgres_catalog_functions` | obj_description reads a comment back out of the catalog |
@@ -196,42 +197,43 @@ set that names no mode at all, which only a hand-built set produces and
 ## Presets
 
 <!-- BEGIN GENERATED PRESET MATRIX -->
-| Capability | MySQLLegacy | MySQL8013 | MySQL8016 | MySQL8019 | MySQL8020 | MySQL84 | MariaDBLegacy | MariaDB1011 | Postgres13 | Postgres16 | Postgres17 | ClickHouse24 | ClickHouse2411 | CockroachDB23 | CockroachDB25 | CockroachDB26 | YugabyteDB25 | SQLite324 | SQLite3 | SQLServer2022 | SpannerPostgres |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| `advisory_locks` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ |
-| `alter_generated_column_expression` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| `catalog_check_constraint_table_name` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| `catalog_dependencies` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
-| `catalog_row_statistics` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
-| `catalog_view_dependencies` | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ |
-| `check_constraints_enforced` | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `check_grant_statement` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| `create_index_concurrently` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ |
-| `create_or_replace_trigger` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ |
-| `drop_check_clause` | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| `drop_constraint_generic` | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ |
-| `drop_constraint_if_exists` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ |
-| `drop_index_concurrently` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| `drop_index_if_exists` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `enum_custom_type` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
-| `enum_inline_column` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| `foreign_keys` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `foreign_keys_create_backing_index` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
-| `foreign_keys_require_indexed_reference` | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| `foreign_keys_require_unique_reference` | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
-| `functions` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
-| `index_include_spgist` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| `materialized_views` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
-| `postgres_catalog_functions` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
-| `rename_column_clause` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ | ❌ |
-| `role_management` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
-| `row_level_security` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
-| `row_level_ttl` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| `sequences` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
-| `show_routine_privilege` | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| `triggers` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
-| `views` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `xml_type` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ✅ | ❌ |
+| Capability | MySQLLegacy | MySQL8013 | MySQL8016 | MySQL8019 | MySQL8020 | MySQL84 | MariaDBLegacy | MariaDB1011 | Postgres13 | Postgres16 | Postgres17 | ClickHouse24 | ClickHouse2411 | CockroachDB23 | CockroachDB25 | CockroachDB26 | YugabyteDB24 | YugabyteDB25 | SQLite324 | SQLite3 | SQLServer2022 | SpannerPostgres |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| `advisory_locks` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ |
+| `alter_generated_column_expression` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| `catalog_check_constraint_table_name` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| `catalog_dependencies` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
+| `catalog_row_statistics` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
+| `catalog_view_dependencies` | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ |
+| `check_constraints_enforced` | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `check_grant_statement` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| `create_index_concurrently` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
+| `create_or_replace_trigger` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ | ✅ | ❌ | ✅ | ❌ | ❌ | ✅ | ❌ |
+| `drop_check_clause` | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| `drop_constraint_generic` | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ |
+| `drop_constraint_if_exists` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ |
+| `drop_index_concurrently` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| `drop_index_if_exists` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `enum_custom_type` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
+| `enum_inline_column` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| `foreign_keys` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `foreign_keys_create_backing_index` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
+| `foreign_keys_require_indexed_reference` | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| `foreign_keys_require_unique_reference` | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| `functions` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
+| `generated_columns` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ | ✅ | ❌ | ✅ |
+| `index_include_spgist` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| `materialized_views` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
+| `postgres_catalog_functions` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
+| `rename_column_clause` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ | ❌ |
+| `role_management` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
+| `row_level_security` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
+| `row_level_ttl` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| `sequences` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
+| `show_routine_privilege` | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| `triggers` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| `views` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `xml_type` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ |
 <!-- END GENERATED PRESET MATRIX -->
 
 Version lines: `MySQL84()` covers MySQL 8.4+, 9.x, and the 26.x generation;
@@ -268,10 +270,10 @@ remains the conservative historical arm. Both spellings of a CockroachDB
 version reach that ladder: the banner `CockroachDB CCL v25.4.5` and the dotted
 `25.4.5` resolve identically. The dotted form used to fall through to
 `ForDialect("cockroachdb")` — the 26.x arm — and report itself as a dialect with
-no measured ladder. `YugabyteDB25()` is the current
-YugabyteDB distributed-SQL preset; `SpannerPostgres()` is deliberately
-conservative because Spanner's PostgreSQL interface is not a drop-in
-PostgreSQL server.
+no measured ladder. `YugabyteDB25()` covers the 2025 and 2026 YugabyteDB lines
+and `YugabyteDB24()` the 2024 LTS line below the PostgreSQL 11 to 15 engine
+swap; `SpannerPostgres()` is deliberately conservative because Spanner's
+PostgreSQL interface is not a drop-in PostgreSQL server.
 
 `SQLServer2022()` covers Ptah's initial portable SQL Server/Azure SQL subset:
 schemas, tables, `IDENTITY`, enforced CHECK/UNIQUE/FK constraints, basic
@@ -332,9 +334,8 @@ line behaves like the preset it lands on. Do it in the change that measures
 that line — never as a side effect of bumping a container tag.
 
 Saturation is only defined where this package has a version ladder. SQL Server
-has no ladder at all, while YugabyteDB and Spanner are resolved from the banner
-without consulting a version; those three report `Saturated=false` and an empty
-`NewestMeasured`. SQLite has a ladder but no measured line, so it reports
+has no ladder at all, and Spanner is resolved from the banner without consulting
+a version; those two report `Saturated=false` and an empty `NewestMeasured`. SQLite has a ladder but no measured line, so it reports
 `VersionSpecific=true` with an empty `NewestMeasured` — a version DID select an
 arm, and the matrix declares one SQLite cell with no container behind it.
 Refining the remaining dialects is the open scope of issue #916.
@@ -345,6 +346,21 @@ the create-new/copy-rows/drop-old rebuild, which is a different plan than the
 statement describes. An unreadable version takes the LOWER arm, because the
 conservative direction for a rendered file is the one whose statements the
 older engine also accepts.
+
+YugabyteDB's ladder is also one step, at the 2025 line, and it carries three
+keys. The step is an engine swap rather than a feature release: 2024.2 reports
+`PostgreSQL 11.2-YB-2024.2.4.0-b0` and 2025.1 reports
+`PostgreSQL 15.12-YB-2025.1.0.0-b0`. Measured on 2024.2.4.0-b89, 2025.1.0.0-b168
+and 2026.1.0.0-b118, three keys move and every other registered key answers
+identically: `advisory_locks` (`advisory locks are not yet implemented`,
+SQLSTATE 0A000), `create_or_replace_trigger` (the spelling arrived in
+PostgreSQL 14) and `generated_columns` (the feature arrived in PostgreSQL 12).
+
+The number the ladder climbs is the one AFTER the `-YB-` marker. The banner
+opens with the PostgreSQL compatibility version, so the shared parse would read
+11.2 and place a 2024 server below every declared line. A string with no marker
+therefore selects no line at all and takes the conservative arm rather than
+spending a number that belongs to a different product.
 
 SQL Server keeps its absence of a ladder as a measured result rather than an
 omission. Every registered key with a T-SQL shape was asked of the three
@@ -671,6 +687,7 @@ into four probed ones with no workflow edit.
 | `cockroachdb` | 25.4 | certified | `CockroachDB25` | version-ladder | `cockroachdb/cockroach:latest-v25.4` | yes | yes |
 | `yugabytedb` | 2026.1 | certified | `YugabyteDB25` | measured-release-line | `yugabytedb/yugabyte:2026.1` | yes | yes |
 | `yugabytedb` | 2025.2 | certified | `YugabyteDB25` | measured-release-line | `yugabytedb/yugabyte:2025.2` | yes | yes |
+| `yugabytedb` | 2024.2 | certified | `YugabyteDB24` | version-ladder | `yugabytedb/yugabyte:2024.2` | yes | yes |
 | `spanner` | 0 | best-effort | `SpannerPostgres` | banner-substring | `gcr.io/cloud-spanner-pg-adapter/pgadapter-emulator:v0.55.2` | no | yes |
 | `clickhouse` | 26.7 | certified | `ClickHouse2411` | version-ladder | `clickhouse/clickhouse-server:26.7` | yes | no: the clickhouse dialect has a probe plan and no launch recipe, so nothing here can start the server to run it |
 | `clickhouse` | 26.3 | best-effort | `ClickHouse2411` | version-ladder | `clickhouse/clickhouse-server:26.3` | yes | no: the clickhouse dialect has a probe plan and no launch recipe, so nothing here can start the server to run it |

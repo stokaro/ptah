@@ -1013,6 +1013,16 @@ func (r *Renderer) renderColumn(column *ast.ColumnNode) (string, error) {
 		if column.GeneratedKind != "" && !strings.EqualFold(column.GeneratedKind, "STORED") {
 			return "", fmt.Errorf("postgres does not support %s generated columns", column.GeneratedKind)
 		}
+		// This renderer serves YugabyteDB too, whose 2024 LTS line is still
+		// PostgreSQL 11 and answers `syntax error at or near "("`. Dropping the
+		// clause silently would turn a generated column into an ordinary one,
+		// which is a different table, so the refusal is the answer
+		// (stokaro/ptah#916).
+		if !r.capabilities().Has(capability.GeneratedColumns) {
+			return "", unsupportedFeaturef(
+				"%s does not support generated columns; column %q declares GENERATED ALWAYS AS",
+				r.dialect, column.Name)
+		}
 		parts = append(parts, fmt.Sprintf("GENERATED ALWAYS AS (%s) STORED", column.GeneratedExpression))
 	}
 

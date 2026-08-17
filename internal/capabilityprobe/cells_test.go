@@ -90,21 +90,14 @@ func TestCells_AreWellFormed(t *testing.T) {
 // cannot verify by eye: that PresetName describes the set Preset returns, and
 // that the set is one the registry accepts.
 func TestCells_MeasuredCellsNameAValidPreset(t *testing.T) {
-	named := map[string]func() capability.Capabilities{
-		"Postgres17":      capability.Postgres17,
-		"Postgres16":      capability.Postgres16,
-		"Postgres13":      capability.Postgres13,
-		"MySQL84":         capability.MySQL84,
-		"MariaDB1011":     capability.MariaDB1011,
-		"ClickHouse24":    capability.ClickHouse24,
-		"ClickHouse2411":  capability.ClickHouse2411,
-		"SQLite3":         capability.SQLite3,
-		"SQLServer2022":   capability.SQLServer2022,
-		"CockroachDB23":   capability.CockroachDB23,
-		"CockroachDB25":   capability.CockroachDB25,
-		"CockroachDB26":   capability.CockroachDB26,
-		"YugabyteDB25":    capability.YugabyteDB25,
-		"SpannerPostgres": capability.SpannerPostgres,
+	// Read from the registry rather than written down here. The hand-written
+	// map this replaces was a second list of presets, and it went stale in the
+	// direction that passes: a cell naming a preset the map did not know was
+	// the only way to notice, so the map was always updated one PR late
+	// (stokaro/ptah#916).
+	named := map[string]capability.Capabilities{}
+	for _, preset := range capability.NamedPresets() {
+		named[preset.Name] = preset.Capabilities
 	}
 	for _, cell := range capabilityprobe.Cells {
 		t.Run(cell.String(), func(t *testing.T) {
@@ -122,14 +115,15 @@ func TestCells_MeasuredCellsNameAValidPreset(t *testing.T) {
 // this is a helper at all -- it used to be a helper returning a slice of
 // closures, which is the same thing with a checker handed through an extra
 // indirection nothing needed.
-func assertMeasuredCell(c *qt.C, cell capabilityprobe.Cell, named map[string]func() capability.Capabilities) {
+func assertMeasuredCell(c *qt.C, cell capabilityprobe.Cell, named map[string]capability.Capabilities) {
 	c.Helper()
 	if !cell.Measured() {
 		return
 	}
-	build, known := named[cell.PresetName]
-	c.Assert(known, qt.IsTrue, qt.Commentf("cell names preset %q, which this test does not know", cell.PresetName))
-	c.Assert(cell.Preset(), qt.DeepEquals, build(),
+	want, known := named[cell.PresetName]
+	c.Assert(known, qt.IsTrue,
+		qt.Commentf("cell names preset %q, which capability.NamedPresets does not list", cell.PresetName))
+	c.Assert(cell.Preset(), qt.DeepEquals, want,
 		qt.Commentf("cell names preset %q but carries a different set", cell.PresetName))
 	c.Assert(cell.Preset().Validate(), qt.IsNil)
 }
