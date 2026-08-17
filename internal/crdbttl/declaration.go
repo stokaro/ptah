@@ -31,7 +31,7 @@ const AttributePrefix = "ttl_"
 func FromAttributes(table string, attributes map[string]string) (*ast.RowTTLSpec, error) {
 	declared := make([]string, 0, len(attributes))
 	for name := range attributes {
-		if strings.HasPrefix(strings.ToLower(name), AttributePrefix) {
+		if isTTLAttribute(name) {
 			declared = append(declared, name)
 		}
 	}
@@ -50,6 +50,17 @@ func FromAttributes(table string, attributes map[string]string) (*ast.RowTTLSpec
 		return nil, nil
 	}
 	return spec, nil
+}
+
+// isTTLAttribute reports whether an attribute belongs to this package.
+//
+// The bare `ttl` is included even though it does not carry the prefix. It is a
+// real CockroachDB parameter and a plausible thing to write, and answering it
+// with the general "unknown attribute" error would tell an author their
+// spelling is wrong when the name is right and the parameter is derived.
+func isTTLAttribute(name string) bool {
+	lowered := strings.ToLower(name)
+	return lowered == MarkerParameter || strings.HasPrefix(lowered, AttributePrefix)
 }
 
 // assignAttribute writes one declared attribute into the spec.
