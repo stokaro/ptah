@@ -87,7 +87,9 @@ func (r *Reader) readInformationSchemaIndexes(schemaName string) ([]types.DBInde
 			indexes = append(indexes, types.DBIndex{
 				Name:      indexName,
 				TableName: tableName,
-				Schema:    schemaName,
+				// See the same field on the constraint read: the default schema
+				// is the empty string here, or the table lookups below it miss.
+				Schema:    r.outputSchema(schemaName),
 				IsUnique:  strings.EqualFold(strings.TrimSpace(isUnique), "YES"),
 				IsPrimary: strings.EqualFold(indexType, spannerPrimaryKeyIndexType),
 			})
