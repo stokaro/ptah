@@ -221,8 +221,17 @@ func clickHousePlan() plan {
 		),
 		// ClickHouse parses no FOREIGN KEY clause at all, so the whole statement
 		// is refused rather than just the deferral (stokaro/ptah#1624).
+		//
+		// The referenced table carries no unique constraint, which every other
+		// family's version of this experiment does need. ClickHouse accepts
+		// only CHECK and ASSUME after ADD CONSTRAINT, so asking for UNIQUE
+		// refuses the PRECONDITION -- and a refused precondition means the
+		// deciding statement never runs, so the row reads UNDECIDABLE. That is
+		// a hole in coverage wearing the shape of an answer, and it is what the
+		// decided-versus-floor check exists to catch: measured on ClickHouse
+		// 24.10, 25.8, 26.3 and 26.7, the run decided 30 of 31 promised rows.
 		acceptance(capability.DeferrableConstraints,
-			append(t.uniquelyReferenced("dfp", "dfp_uq", "id"), t.table("dfc", "n Int64, id Int64", "n")),
+			[]string{t.table("dfp", "id Int64", "id"), t.table("dfc", "n Int64, id Int64", "n")},
 			"ALTER TABLE dfc ADD CONSTRAINT dfc_fk FOREIGN KEY (id) REFERENCES dfp (id) DEFERRABLE INITIALLY DEFERRED",
 		),
 		acceptanceNote(capability.CatalogCheckConstraintTableName, nil,
