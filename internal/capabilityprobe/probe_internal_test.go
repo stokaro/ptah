@@ -113,6 +113,7 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 			capability.CatalogRowStatistics,
 			capability.PostgresCatalogFunctions,
 			capability.RoleManagement,
+			capability.RowLevelTTL,
 		},
 	}, {
 		dialect: platform.MariaDB,
@@ -121,6 +122,7 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 			capability.CatalogRowStatistics,
 			capability.PostgresCatalogFunctions,
 			capability.RoleManagement,
+			capability.RowLevelTTL,
 			capability.Sequences,
 		},
 	}} {
@@ -241,23 +243,23 @@ func TestDecidable_IsDerivedFromThePlanAndTheLine(t *testing.T) {
 		caps: capability.Postgres17(),
 		want: registered,
 	}, {
-		name: "mysql owes four fewer: role_management and the three catalog keys name PostgreSQL surfaces no MySQL path reads",
+		name: "mysql owes five fewer: role_management, row_level_ttl and the three catalog keys name surfaces no MySQL path reads",
 		cell: Cell{
 			Dialect: platform.MySQL, Line: "9.7",
 			Preset: capability.MySQL84, PresetName: "MySQL84",
 			Refinement: RefinedByVersion,
 		},
 		caps: capability.MySQL84(),
-		want: registered - 4,
+		want: registered - 5,
 	}, {
-		name: "mariadb owes five fewer: sequences is a claim about the generator, not the engine",
+		name: "mariadb owes six fewer: sequences is a claim about the generator, not the engine",
 		cell: Cell{
 			Dialect: platform.MariaDB, Line: "10.11",
 			Preset: capability.MariaDB1011, PresetName: "MariaDB1011",
 			Refinement: RefinedByVersion,
 		},
 		caps: capability.MariaDB1011(),
-		want: registered - 5,
+		want: registered - 6,
 	}, {
 		name: "cockroachdb 26.2 owes every row because its preset enables both experiment prerequisites",
 		cell: Cell{

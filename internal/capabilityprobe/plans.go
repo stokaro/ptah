@@ -256,6 +256,23 @@ func postgresFamilyPlan(dialect string) plan {
 			"SELECT pg_advisory_lock(1)",
 			"SELECT pg_advisory_unlock(1)",
 		),
+		// The one key in this plan whose expected answer is FALSE on
+		// PostgreSQL itself, so the usual reading of a verdict is inverted:
+		// a refusal here is PostgreSQL behaving as its preset says, and an
+		// ACCEPTANCE is what marks a CockroachDB line.
+		//
+		// The statement is the reproducer stokaro/ptah#1027 was filed with. It
+		// names ttl_expiration_expression rather than ttl_expire_after because
+		// that is the parameter Ptah models: the server rewrites an interval
+		// on the way in, which is why internal/crdbttl refuses the other
+		// enabler instead of modeling it.
+		acceptanceNote(capability.RowLevelTTL, nil,
+			"CREATE TABLE ttlp (id int PRIMARY KEY, expires_at TIMESTAMPTZ) "+
+				"WITH (ttl_expiration_expression = 'expires_at')",
+			"a table storage parameter declaring row expiry; PostgreSQL 18.4 answers "+
+				"`unrecognized parameter \"ttl_expiration_expression\"`, and YugabyteDB "+
+				"2026.1 warns that it is ignoring the parameter before refusing",
+		),
 	}
 	return plan{experiments: experiments, undecided: map[capability.Capability]string{}}
 }
@@ -412,6 +429,9 @@ func mysqlFamilyPlan(dialect string) plan {
 		capability.CatalogDependencies: "pg_depend is a PostgreSQL catalog relation this server does not " +
 			"have and no MySQL-family reader joins; its absence here says nothing about the " +
 			"PostgreSQL-family read the key gates",
+		capability.RowLevelTTL: "the key names a table storage parameter Ptah renders, reads and plans " +
+			"only on the PostgreSQL wire; this server's CREATE TABLE takes its own table options and " +
+			"none of them is the one the key names, so refusing it would answer a different question",
 	}
 	if dialect == platform.MariaDB {
 		// MariaDB has had SEQUENCE objects since 10.3 and the preset still

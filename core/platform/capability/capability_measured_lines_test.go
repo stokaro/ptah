@@ -185,6 +185,8 @@ func measuredLines() map[string]measuredLine {
 				capability.PostgresCatalogFunctions: "the key exists for the Spanner PostgreSQL interface, whose catalog refuses obj_description with `The Postgres Type is not supported: name`; this run did not probe it, and a PostgreSQL server answering the function would not tell this line apart from the preset below",
 				capability.CatalogRowStatistics:     "the key exists for the Spanner PostgreSQL interface, whose catalog carries the pg_class columns beside it and not pg_stat_all_tables; this run did not probe the statistics views, and a PostgreSQL server having them would not tell this line apart from the preset below",
 				capability.CatalogDependencies:      "the key exists for the Spanner PostgreSQL interface, whose catalog has no pg_depend to join; this run did not create a domain, and a PostgreSQL server having them would not tell this line apart from the preset below",
+				capability.RowLevelTTL: "this run predates the key and sent no TTL statement. PostgreSQL is the engine the key is false FOR, so a refusal here would restate the premise rather than measure this line; " +
+					"what decides the key is CockroachDB accepting the parameter, which internal/capabilityprobe asks on the CockroachDB cells (stokaro/ptah#1027)",
 			},
 		},
 
@@ -226,6 +228,8 @@ func measuredLines() map[string]measuredLine {
 				capability.CatalogDependencies:      "domains are a PostgreSQL type-system feature no MySQL-family code path consults; this server has no CREATE DOMAIN at all, so neither accepting nor refusing one would decide the key",
 				capability.RoleManagement: "the key names the role and privilege surface no MySQL-family code path consults; " +
 					"this server's own CREATE ROLE and GRANT are a different surface, so accepting them would not decide the key",
+				capability.RowLevelTTL: "the key names a table storage parameter no MySQL-family renderer, reader or planner emits; " +
+					"this server has no such parameter to accept or refuse, so its answer would be to a different question",
 			},
 		},
 
@@ -269,6 +273,8 @@ func measuredLines() map[string]measuredLine {
 				capability.Sequences: "the key describes Ptah's generator rather than the engine (stokaro/ptah#931 item 8): " +
 					"MariaDB has had SEQUENCE since 10.3 while no MySQL-family renderer or planner emits, reads or plans one, " +
 					"so the server's answer is to a different question",
+				capability.RowLevelTTL: "the key names a table storage parameter no MySQL-family renderer, reader or planner emits; " +
+					"this server has no such parameter to accept or refuse, so its answer would be to a different question",
 			},
 		},
 	}
