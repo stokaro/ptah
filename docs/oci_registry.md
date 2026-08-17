@@ -28,11 +28,38 @@ boundary of the `ptah-compat` binary.
 | Plan and optionally attach the report | `ptah migrations plan --schema-file <oci-reference> [--attach]` |
 | Attach a deployment report | Best-effort after a successful OCI-backed `migrations up` |
 | List direct referrer metadata | `ptah oci referrers <oci-reference>` |
+| Read an attached report's payload | `ptah oci fetch <oci-reference> [--type ...] [--digest ...]` |
+| Pin a mutable tag to a digest | `ptah oci resolve <oci-reference>` |
+| Read a manifest without downloading it | `ptah oci inspect <oci-reference>` |
 
 Native lint and plan commands can publish referrer artifacts with `--attach`.
 `ptah oci referrers` lists direct referrer metadata, with filters for Ptah lint,
-plan, and deployment reports. Ptah does not currently expose a command to pull
-or consume a referrer's payload.
+plan, and deployment reports, and `ptah oci fetch` returns the payload behind a
+descriptor — so a report Ptah published is a report Ptah can read back, without
+ORAS or a raw registry call.
+
+`fetch` never guesses which attachment was meant. One candidate is fetched;
+several are refused with their digests printed, so a pipeline that would have
+silently taken "the latest" fails while its author is watching. Narrow with
+`--type`, or name one exactly with `--digest`. The same rule governs the files
+inside the chosen referrer: one is written, several require `--file`.
+
+`resolve` prints the pinned reference a tag currently names, which is the first
+half of the operation that makes a deployment reproducible — record the digest
+once, then pass it to every later step instead of resolving the tag again at
+each one:
+
+```bash
+DIGEST=$(ptah oci resolve "oci://ghcr.io/acme/app-migrations:latest")
+ptah migrations up --db-url "$DATABASE_URL" --migrations-dir "$DIGEST" --verify-sum
+```
+
+`inspect` reads the manifest and stops there: artifact type, subject,
+annotations, and each file layer's name, media type, size, and digest, with no
+file downloaded. It also reports how each referrer was discovered, which is the
+one fact the other verbs cannot show. See
+[Referrer discovery guarantees](#referrer-discovery-guarantees) for what the
+`durable-tag` value means for clients other than Ptah.
 
 ## OCI Reference Syntax
 
