@@ -187,6 +187,7 @@ func measuredLines() map[string]measuredLine {
 				capability.CatalogDependencies:      "the key exists for the Spanner PostgreSQL interface, whose catalog has no pg_depend to join; this run did not create a domain, and a PostgreSQL server having them would not tell this line apart from the preset below",
 				capability.RowLevelTTL: "this run predates the key and sent no TTL statement. PostgreSQL is the engine the key is false FOR, so a refusal here would restate the premise rather than measure this line; " +
 					"what decides the key is CockroachDB accepting the parameter, which internal/capabilityprobe asks on the CockroachDB cells (stokaro/ptah#1027)",
+				capability.CheckGrantStatement: "the key names ClickHouse's CHECK GRANT, which this server has no spelling of; its answer would be to a different question. What decides the key is ClickHouse accepting the statement on one declared line and refusing it as a syntax error on another, which internal/capabilityprobe asks on the ClickHouse cells (stokaro/ptah#916)",
 			},
 		},
 
@@ -230,6 +231,7 @@ func measuredLines() map[string]measuredLine {
 					"this server's own CREATE ROLE and GRANT are a different surface, so accepting them would not decide the key",
 				capability.RowLevelTTL: "the key names a table storage parameter no MySQL-family renderer, reader or planner emits; " +
 					"this server has no such parameter to accept or refuse, so its answer would be to a different question",
+				capability.CheckGrantStatement: "the key names ClickHouse's CHECK GRANT, which this server has no spelling of; its answer would be to a different question. What decides the key is ClickHouse accepting the statement on one declared line and refusing it as a syntax error on another, which internal/capabilityprobe asks on the ClickHouse cells (stokaro/ptah#916)",
 			},
 		},
 
@@ -275,6 +277,7 @@ func measuredLines() map[string]measuredLine {
 					"so the server's answer is to a different question",
 				capability.RowLevelTTL: "the key names a table storage parameter no MySQL-family renderer, reader or planner emits; " +
 					"this server has no such parameter to accept or refuse, so its answer would be to a different question",
+				capability.CheckGrantStatement: "the key names ClickHouse's CHECK GRANT, which this server has no spelling of; its answer would be to a different question. What decides the key is ClickHouse accepting the statement on one declared line and refusing it as a syntax error on another, which internal/capabilityprobe asks on the ClickHouse cells (stokaro/ptah#916)",
 			},
 		},
 	}

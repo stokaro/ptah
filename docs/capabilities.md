@@ -317,11 +317,18 @@ Raising one of those numbers is the deliberate act of claiming a newer server
 line behaves like the preset it lands on. Do it in the change that measures
 that line — never as a side effect of bumping a container tag.
 
-Saturation is only defined where this package has a version ladder. ClickHouse,
-SQLite, and SQL Server have no ladder at all, while YugabyteDB and Spanner are
-resolved from the banner without consulting a version; those five report
-`Saturated=false` and an empty `NewestMeasured`. Refining those dialects is the
-remaining scope of issue #916.
+Saturation is only defined where this package has a version ladder. SQLite and
+SQL Server have no ladder at all, while YugabyteDB and Spanner are resolved from
+the banner without consulting a version; those four report `Saturated=false` and
+an empty `NewestMeasured`. Refining the remaining dialects is the open scope of
+issue #916.
+
+ClickHouse gained one in that issue, and it is one step long. Measured on the
+two declared lines furthest apart, `CHECK GRANT SHOW DATABASES, SHOW TABLES ON
+*.*` answers `1` on 26.7.3.19 and is a syntax error on 24.10.4.191; every other
+registered key answers identically on both. So the arm at 24.11 adds exactly
+`check_grant_statement` and changes nothing else — a ladder is worth having when
+a key differs across it, and worth being honest about when only one does.
 
 `dbschema.ConnectToDatabase` records a saturated resolution at `DEBUG`, naming
 the dialect, the server version, and the line it was planned as; an unparseable
@@ -633,10 +640,10 @@ into four probed ones with no workflow edit.
 | `yugabytedb` | 2026.1 | certified | `YugabyteDB25` | measured-release-line | `yugabytedb/yugabyte:2026.1` | yes | yes |
 | `yugabytedb` | 2025.2 | certified | `YugabyteDB25` | measured-release-line | `yugabytedb/yugabyte:2025.2` | yes | yes |
 | `spanner` | 0 | best-effort | `SpannerPostgres` | banner-substring | `gcr.io/cloud-spanner-pg-adapter/pgadapter-emulator:v0.55.2` | no | yes |
-| `clickhouse` | 26.7 | certified | `ClickHouse24` | dialect-default | `clickhouse/clickhouse-server:26.7` | yes | no: the capability probe has no statement table for the clickhouse dialect, so a server on this line would be asked nothing |
-| `clickhouse` | 26.3 | best-effort | `ClickHouse24` | dialect-default | `clickhouse/clickhouse-server:26.3` | yes | no: the capability probe has no statement table for the clickhouse dialect, so a server on this line would be asked nothing |
-| `clickhouse` | 25.8 | best-effort | `ClickHouse24` | dialect-default | `clickhouse/clickhouse-server:25.8` | yes | no: the capability probe has no statement table for the clickhouse dialect, so a server on this line would be asked nothing |
-| `clickhouse` | 24.10 | legacy-tested | `ClickHouse24` | dialect-default | `clickhouse/clickhouse-server:24.10` | yes | no: the capability probe has no statement table for the clickhouse dialect, so a server on this line would be asked nothing |
+| `clickhouse` | 26.7 | certified | `ClickHouse2411` | version-ladder | `clickhouse/clickhouse-server:26.7` | yes | no: the clickhouse dialect has a probe plan and no launch recipe, so nothing here can start the server to run it |
+| `clickhouse` | 26.3 | best-effort | `ClickHouse2411` | version-ladder | `clickhouse/clickhouse-server:26.3` | yes | no: the clickhouse dialect has a probe plan and no launch recipe, so nothing here can start the server to run it |
+| `clickhouse` | 25.8 | best-effort | `ClickHouse2411` | version-ladder | `clickhouse/clickhouse-server:25.8` | yes | no: the clickhouse dialect has a probe plan and no launch recipe, so nothing here can start the server to run it |
+| `clickhouse` | 24.10 | legacy-tested | `ClickHouse24` | version-ladder | `clickhouse/clickhouse-server:24.10` | yes | no: the clickhouse dialect has a probe plan and no launch recipe, so nothing here can start the server to run it |
 | `sqlserver` | 17.0 (SQL Server 2025) | certified | `SQLServer2022` | dialect-default | `mcr.microsoft.com/mssql/server:2025-latest` | no | no: the capability probe has no statement table for the sqlserver dialect, so a server on this line would be asked nothing |
 | `sqlserver` | 16.0 (SQL Server 2022) | best-effort | `SQLServer2022` | dialect-default | `mcr.microsoft.com/mssql/server:2022-latest` | no | no: the capability probe has no statement table for the sqlserver dialect, so a server on this line would be asked nothing |
 | `sqlserver` | 15.0 (SQL Server 2019) | best-effort | `SQLServer2022` | dialect-default | `mcr.microsoft.com/mssql/server:2019-latest` | no | no: the capability probe has no statement table for the sqlserver dialect, so a server on this line would be asked nothing |

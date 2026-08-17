@@ -308,6 +308,29 @@ const (
 	// server rewrites on the way in are refused there, and that refusal is
 	// part of the capability rather than a gap in it.
 	RowLevelTTL Capability = "row_level_ttl"
+
+	// CheckGrantStatement marks a server that answers a direct question about
+	// whether the CONNECTED account holds a privilege, rather than leaving the
+	// caller to infer it from a failure.
+	//
+	// It names ClickHouse's `CHECK GRANT`, which is the only spelling Ptah
+	// consults, and it exists because a version comparison was standing in for
+	// it: internal/dbschema/clickhouse refuses database-realm cleanup on a
+	// server that cannot answer, and decided that by parsing the banner against
+	// 24.11 with a hand-rolled comparison outside this package
+	// (stokaro/ptah#916 item 3).
+	//
+	// The refusal it guards is not a nicety. A realm cleanup drops every object
+	// in the database, and the proof that the read which enumerated them SAW
+	// everything is the privilege answer. A server that cannot be asked cannot
+	// supply that proof, so the cleanup is refused rather than run on a read
+	// that may have been silently partial.
+	//
+	// Measured live: `CHECK GRANT SHOW DATABASES, SHOW TABLES ON *.*` answers 1
+	// on ClickHouse 26.7.3.19 and is `Syntax error` on 24.10.4.191. It is the
+	// first key on which two declared ClickHouse lines differ at all, which is
+	// what gives that dialect a version ladder to have.
+	CheckGrantStatement Capability = "check_grant_statement"
 )
 
 // spec documents a registry entry and its implication edges.
@@ -415,6 +438,9 @@ var registry = map[Capability]spec{
 	},
 	RowLevelTTL: {
 		doc: "table storage parameters declaring a row-expiry policy (CockroachDB row-level TTL)",
+	},
+	CheckGrantStatement: {
+		doc: "a statement answering whether the connected account holds a privilege (ClickHouse CHECK GRANT)",
 	},
 }
 
@@ -578,6 +604,7 @@ func MySQL84() Capabilities {
 		XMLType:                            false,
 		AdvisoryLocks:                      false,
 		RowLevelTTL:                        false,
+		CheckGrantStatement:                false,
 	}
 }
 
@@ -647,10 +674,11 @@ func MariaDB1011() Capabilities {
 		// statement `schema apply` never plans and never sees converge. This key
 		// describes the generator, so it is false until those land -- do NOT flip
 		// it back on the engine's behalf (stokaro/ptah#931 item 8).
-		Sequences:     false,
-		XMLType:       false,
-		AdvisoryLocks: false,
-		RowLevelTTL:   false,
+		Sequences:           false,
+		XMLType:             false,
+		AdvisoryLocks:       false,
+		RowLevelTTL:         false,
+		CheckGrantStatement: false,
 	}
 }
 
@@ -707,6 +735,7 @@ func Postgres16() Capabilities {
 		XMLType:                            true,
 		AdvisoryLocks:                      true,
 		RowLevelTTL:                        false,
+		CheckGrantStatement:                false,
 	}
 }
 
@@ -766,22 +795,42 @@ func Postgres13() Capabilities {
 // storage clause is the self-contained shape that node can express.
 func ClickHouse24() Capabilities {
 	return Capabilities{
-		DropConstraintGeneric:          false,
-		DropConstraintIfExists:         false,
-		DropIndexIfExists:              false,
-		CheckConstraintsEnforced:       false,
-		DropCheckClause:                false,
-		EnumInlineColumn:               true,
-		EnumCustomType:                 false,
-		CreateIndexConcurrently:        false,
-		DropIndexConcurrently:          false,
-		IndexIncludeSPGiST:             false,
-		Views:                          true,
-		MaterializedViews:              true,
+		// Five keys below were false until stokaro/ptah#916 measured them.
+		// ClickHouse 24.10.4.191 and 26.7.3.19 answer identically on every one,
+		// so the corrections belong to the dialect rather than to a line:
+		// ALTER TABLE DROP CONSTRAINT is accepted, its IF EXISTS guard is
+		// honored (the unguarded form on an absent constraint is refused), a
+		// CHECK constraint refuses the violating INSERT and accepts the control
+		// one, ALTER TABLE DROP INDEX honors IF EXISTS, and
+		// MODIFY COLUMN ... MATERIALIZED rewrites a generated expression in
+		// place.
+		//
+		// Two more looked wrong and are not, which is why the experiments below
+		// them ask the shape the KEY names rather than any statement the server
+		// accepts: see the Functions and RowLevelTTL comments further down.
+		//
+		// Every one understated the server, so nothing was emitting DDL
+		// ClickHouse refuses; the cost was capability rather than correctness.
+		DropConstraintGeneric:    true,
+		DropConstraintIfExists:   true,
+		DropIndexIfExists:        true,
+		CheckConstraintsEnforced: true,
+		DropCheckClause:          false,
+		EnumInlineColumn:         true,
+		EnumCustomType:           false,
+		CreateIndexConcurrently:  false,
+		DropIndexConcurrently:    false,
+		IndexIncludeSPGiST:       false,
+		Views:                    true,
+		MaterializedViews:        true,
+		// NOT the lambda alias `CREATE FUNCTION fn AS (x) -> x + 1`, which
+		// ClickHouse accepts. This key names the object ast.CreateFunctionNode
+		// describes -- a return type, a language and a body -- and that shape is
+		// a syntax error here. Measured both ways on 26.7.3.19.
 		Functions:                      false,
 		Triggers:                       false,
 		CreateOrReplaceTrigger:         false,
-		AlterGeneratedColumnExpression: false,
+		AlterGeneratedColumnExpression: true,
 		RowLevelSecurity:               false,
 		PostgresCatalogFunctions:       false,
 		CatalogRowStatistics:           false,
@@ -807,8 +856,27 @@ func ClickHouse24() Capabilities {
 		Sequences:                          false,
 		XMLType:                            false,
 		AdvisoryLocks:                      false,
-		RowLevelTTL:                        false,
+		// NOT the MergeTree `TTL <expr>` clause, which ClickHouse accepts. This
+		// key names a row-expiry policy declared as STORAGE PARAMETERS, the
+		// shape CockroachDB answers and the probe reads back out of
+		// pg_class.reloptions; `WITH (ttl_expiration_expression = ...)` is a
+		// syntax error here. Measured both ways on 26.7.3.19.
+		RowLevelTTL:         false,
+		CheckGrantStatement: false,
 	}
+}
+
+// ClickHouse2411 is the preset for ClickHouse 24.11 and above.
+//
+// It differs from [ClickHouse24] in exactly one key, and that key is the reason
+// this dialect has a version ladder at all. Measured on the two lines the matrix
+// declares furthest apart, `CHECK GRANT SHOW DATABASES, SHOW TABLES ON *.*`
+// answers 1 on 26.7.3.19 and is `Syntax error` on 24.10.4.191; every other
+// registered key answers identically on both, which is why the arm is one line
+// long rather than a second transcription of the whole set
+// (stokaro/ptah#916 item 1).
+func ClickHouse2411() Capabilities {
+	return ClickHouse24().With(CheckGrantStatement, true)
 }
 
 // SQLite3 is the preset for modern SQLite 3.x. SQLite enforces CHECK
@@ -852,6 +920,7 @@ func SQLite3() Capabilities {
 		XMLType:                            false,
 		AdvisoryLocks:                      false,
 		RowLevelTTL:                        false,
+		CheckGrantStatement:                false,
 	}
 }
 
@@ -910,6 +979,7 @@ func SQLServer2022() Capabilities {
 		XMLType:                            true,
 		AdvisoryLocks:                      false,
 		RowLevelTTL:                        false,
+		CheckGrantStatement:                false,
 	}
 }
 
@@ -1336,14 +1406,14 @@ func ResolveServerVersion(dialect, version string) VersionResolution {
 		if !platform.IsPostgresFamily(normalized) {
 			return resolvedAs(postgresBannerResolution(version), platform.Postgres)
 		}
-	case platform.SQLServer, platform.ClickHouse:
-		// Neither product has a version ladder, so the banner's own name is the
+	case platform.SQLServer:
+		// SQL Server has no version ladder, so the banner's own name is the
 		// whole answer and the number in it is never spent: the preset is that
 		// product's default either way. Answering from the banner rather than
-		// falling through to parseVersion is what keeps the SQL Server marketing
-		// year out of a PostgreSQL ladder — "Microsoft SQL Server 2025 … -
-		// 17.0.4065.4" parses as major 2025, and on --dialect postgres that used
-		// to select Postgres17 and report itself saturated past release line 18.
+		// falling through to parseVersion is what keeps the marketing year out
+		// of a PostgreSQL ladder — "Microsoft SQL Server 2025 … - 17.0.4065.4"
+		// parses as major 2025, and on --dialect postgres that used to select
+		// Postgres17 and report itself saturated past release line 18.
 		//
 		// Recognized is true for the same reason it is on the YugabyteDB and
 		// Spanner arms: the string named a server, even though nothing in it was
@@ -1355,6 +1425,16 @@ func ResolveServerVersion(dialect, version string) VersionResolution {
 			Recognized:      true,
 			ResolvedDialect: banner,
 		}
+	case platform.ClickHouse:
+		// ClickHouse DOES have a ladder, of exactly one step. It was in this arm
+		// until stokaro/ptah#916 measured the two declared lines furthest apart
+		// and found one key on which they differ: CHECK GRANT is a statement on
+		// 26.7.3.19 and a syntax error on 24.10.4.191.
+		//
+		// The banner is the version here -- ClickHouse answers `SELECT
+		// version()` with 24.10.4.191 and nothing else -- so unlike SQL Server
+		// there is no marketing year to keep out of a ladder.
+		return resolvedAs(clickHouseResolution(version), platform.ClickHouse)
 	case platform.MariaDB:
 		// MariaDB announces itself in the version string even when connected
 		// via the mysql dialect/driver; trust the string over the declared
@@ -1385,6 +1465,13 @@ func ResolveServerVersion(dialect, version string) VersionResolution {
 		// drop_constraint_generic and drop_constraint_if_exists, and reported
 		// itself as a dialect with no ladder at all.
 		return resolvedAs(cockroachDBResolution(version), platform.CockroachDB)
+	case platform.ClickHouse:
+		// Reached the same way the CockroachDB arm above is: a bare dotted
+		// "26.7.3.19" carries no product token, so BannerPlatform names nothing
+		// and the banner switch never sees it. Without this arm the ladder
+		// existed and only a banner spelling the word "ClickHouse" could climb
+		// it, which is not the shape `SELECT version()` returns.
+		return resolvedAs(clickHouseResolution(version), platform.ClickHouse)
 	default:
 		// The version parsed; this dialect simply has no ladder to spend it
 		// on. That is not the operator's mistake, so it is recognized.
@@ -1421,6 +1508,30 @@ func ladderResolution(caps Capabilities, newestMeasuredMajor int, saturated bool
 		// Only reached with a parsed version in hand.
 		Recognized: true,
 	}
+}
+
+// clickHouseResolution refines a ClickHouse banner onto its one ladder step.
+//
+// A version this function cannot read takes the lower arm, and that direction is
+// the safe one: ClickHouse2411 differs only by claiming CHECK GRANT, and the
+// refusal that key guards -- a database-realm cleanup that drops every object --
+// is one Ptah would rather decline on an unreadable banner than run on a
+// privilege answer it could not obtain (stokaro/ptah#916).
+func clickHouseResolution(version string) VersionResolution {
+	v, ok := parseVersion(version)
+	if !ok {
+		return VersionResolution{Capabilities: ClickHouse24()}
+	}
+	return measuredMinorLineResolution(
+		clickHouseForVersion(v), v, capabilityline.ClickHouseMeasured(), capabilityline.ClickHouse26)
+}
+
+// clickHouseForVersion picks the arm. CHECK GRANT arrived in 24.11.
+func clickHouseForVersion(v serverVersion) Capabilities {
+	if v.major > 24 || (v.major == 24 && v.minor >= 11) {
+		return ClickHouse2411()
+	}
+	return ClickHouse24()
 }
 
 func mysqlResolution(v serverVersion) VersionResolution {

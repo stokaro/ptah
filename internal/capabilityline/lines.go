@@ -19,7 +19,22 @@ const (
 	CockroachDB25 = "25.4"
 	// CockroachDB26 is the measured CockroachDB 26 release line.
 	CockroachDB26 = "26.2"
+	// ClickHouse24 is the measured ClickHouse 24 release line, and the only one
+	// below the 24.11 CHECK GRANT step.
+	ClickHouse24 = "24.10"
+	// ClickHouse25 is the measured ClickHouse 25 LTS release line.
+	ClickHouse25 = "25.8"
+	// ClickHouse263 is the measured ClickHouse 26.3 LTS release line.
+	ClickHouse263 = "26.3"
+	// ClickHouse26 is the newest measured ClickHouse release line.
+	ClickHouse26 = "26.7"
 )
+
+// ClickHouseMeasured returns every ClickHouse release line with direct matrix
+// evidence.
+func ClickHouseMeasured() []string {
+	return []string{ClickHouse24, ClickHouse25, ClickHouse263, ClickHouse26}
+}
 
 // MySQLMeasured returns every MySQL release line with direct matrix evidence.
 func MySQLMeasured() []string {
