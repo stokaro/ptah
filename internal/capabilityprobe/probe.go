@@ -518,6 +518,18 @@ func lineReason(report *Report) string {
 	if !report.Cell.Measured() {
 		return fmt.Sprintf("matrix cell %s has no measured capability preset: %s", report.Cell, report.Cell.Note)
 	}
+	// A versionless dialect declares exactly one line -- an invariant cells_test
+	// enforces -- so there is no sibling release an observation could be
+	// confused with, and the reason the banner and dialect-default arms give
+	// below is not available: there is no "one release rather than another".
+	//
+	// What that credit does NOT carry is freshness. A managed service ships by
+	// date, so a row measured here is true as of the day it ran and nothing in
+	// this model can name the day. Treat a versionless line as re-measurable
+	// rather than settled.
+	if report.Cell.Versionless {
+		return ""
+	}
 	switch report.Cell.Refinement {
 	case RefinedByBanner:
 		return fmt.Sprintf(
