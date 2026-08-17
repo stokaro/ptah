@@ -47,7 +47,7 @@ func TestFieldAPIName(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(schemaexport.FieldAPIName(tt.field), qt.Equals, tt.want)
+			c.Assert(schemaexport.FieldAPIName(tt.field, schemaexport.TargetOpenAPI), qt.Equals, tt.want)
 		})
 	}
 }
@@ -77,7 +77,7 @@ func TestValidateFieldAPINamesAcceptsDistinctNames(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(schemaexport.ValidateFieldAPINames(table, tt.fields), qt.IsNil)
+			c.Assert(schemaexport.ValidateFieldAPINames(table, tt.fields, schemaexport.TargetOpenAPI), qt.IsNil)
 		})
 	}
 }
@@ -100,8 +100,8 @@ func TestValidateFieldAPINamesRefusesACollision(t *testing.T) {
 				{Name: "amount"},
 				{Name: "billing_amount_minor", APIName: "amount"},
 			},
-			wantErr: `table "invoices" exports two columns as "amount": "amount" and "billing_amount_minor"; ` +
-				`give one of them a distinct api_name`,
+			wantErr: `table "invoices" exports two columns as "amount" in OpenAPI: "amount" and "billing_amount_minor"; ` +
+				`give one of them a distinct api_name, or a distinct openapi_name for this export only`,
 		},
 		{
 			name: "two aliases colliding with each other",
@@ -109,8 +109,8 @@ func TestValidateFieldAPINamesRefusesACollision(t *testing.T) {
 				{Name: "net_minor", APIName: "amount"},
 				{Name: "gross_minor", APIName: "amount"},
 			},
-			wantErr: `table "invoices" exports two columns as "amount": "net_minor" and "gross_minor"; ` +
-				`give one of them a distinct api_name`,
+			wantErr: `table "invoices" exports two columns as "amount" in OpenAPI: "net_minor" and "gross_minor"; ` +
+				`give one of them a distinct api_name, or a distinct openapi_name for this export only`,
 		},
 		{
 			// The alias moved a name onto a column that did not have it, and
@@ -121,15 +121,15 @@ func TestValidateFieldAPINamesRefusesACollision(t *testing.T) {
 				{Name: "billing_amount_minor", APIName: "amount"},
 				{Name: "amount"},
 			},
-			wantErr: `table "invoices" exports two columns as "amount": "billing_amount_minor" and "amount"; ` +
-				`give one of them a distinct api_name`,
+			wantErr: `table "invoices" exports two columns as "amount" in OpenAPI: "billing_amount_minor" and "amount"; ` +
+				`give one of them a distinct api_name, or a distinct openapi_name for this export only`,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			err := schemaexport.ValidateFieldAPINames(table, tt.fields)
+			err := schemaexport.ValidateFieldAPINames(table, tt.fields, schemaexport.TargetOpenAPI)
 			c.Assert(err, qt.IsNotNil)
 			c.Assert(err.Error(), qt.Equals, tt.wantErr)
 		})
@@ -164,7 +164,7 @@ func TestTableAPIName(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(schemaexport.TableAPIName(tt.table), qt.Equals, tt.want)
+			c.Assert(schemaexport.TableAPIName(tt.table, schemaexport.TargetOpenAPI), qt.Equals, tt.want)
 		})
 	}
 }
@@ -190,7 +190,7 @@ func TestValidateTableAPINamesAcceptsDistinctNames(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(schemaexport.ValidateTableAPINames(tt.tables), qt.IsNil)
+			c.Assert(schemaexport.ValidateTableAPINames(tt.tables, schemaexport.TargetOpenAPI), qt.IsNil)
 		})
 	}
 }
@@ -207,8 +207,8 @@ func TestValidateTableAPINamesRefusesACollision(t *testing.T) {
 				{Name: "invoices"},
 				{Name: "billing_invoices", APIName: "invoices"},
 			},
-			wantErr: `two tables export as "invoices": "invoices" and "billing_invoices"; ` +
-				`give one of them a distinct api_name`,
+			wantErr: `two tables export as "invoices" in OpenAPI: "invoices" and "billing_invoices"; ` +
+				`give one of them a distinct api_name, or a distinct openapi_name for this export only`,
 		},
 		{
 			name: "two aliases colliding with each other",
@@ -216,15 +216,15 @@ func TestValidateTableAPINamesRefusesACollision(t *testing.T) {
 				{Name: "billing_invoices", APIName: "invoices"},
 				{Name: "legacy_invoices", APIName: "invoices"},
 			},
-			wantErr: `two tables export as "invoices": "billing_invoices" and "legacy_invoices"; ` +
-				`give one of them a distinct api_name`,
+			wantErr: `two tables export as "invoices" in OpenAPI: "billing_invoices" and "legacy_invoices"; ` +
+				`give one of them a distinct api_name, or a distinct openapi_name for this export only`,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			err := schemaexport.ValidateTableAPINames(tt.tables)
+			err := schemaexport.ValidateTableAPINames(tt.tables, schemaexport.TargetOpenAPI)
 			c.Assert(err, qt.IsNotNil)
 			c.Assert(err.Error(), qt.Equals, tt.wantErr)
 		})
@@ -375,4 +375,133 @@ func TestRefuseUnknownAPITypeRefuses(t *testing.T) {
 			c.Assert(err.Error(), qt.Contains, `on table "invoices"`)
 		})
 	}
+}
+
+// Three declarations answer in order, and the order is the whole design: a
+// schema that declares nothing exports as it always did, a shared name answers
+// every target, and a per-target name exists for the case the shared one cannot
+// cover.
+func TestFieldAPINamePrecedence(t *testing.T) {
+	declared := goschema.Field{
+		Name:    "billing_amount_minor",
+		APIName: "amount",
+		APINames: goschema.TargetNames{
+			GraphQL:  "amountMinor",
+			Protobuf: "amount_minor",
+		},
+	}
+
+	tests := []struct {
+		name   string
+		field  goschema.Field
+		target schemaexport.Target
+		want   string
+	}{
+		{
+			name:   "the target's own name wins",
+			field:  declared,
+			target: schemaexport.TargetGraphQL,
+			want:   "amountMinor",
+		},
+		{
+			name:   "a target that declared none takes the shared one",
+			field:  declared,
+			target: schemaexport.TargetOpenAPI,
+			want:   "amount",
+		},
+		{
+			name:   "the second target reads its own, not its neighbor's",
+			field:  declared,
+			target: schemaexport.TargetProtobuf,
+			want:   "amount_minor",
+		},
+		{
+			name:   "no declaration at all is the column name",
+			field:  goschema.Field{Name: "billing_amount_minor"},
+			target: schemaexport.TargetGraphQL,
+			want:   "billing_amount_minor",
+		},
+		{
+			// A target this package does not know resolves to the shared name
+			// rather than to whichever field a zero value happens to select.
+			name:   "an unknown target falls back to the shared name",
+			field:  declared,
+			target: schemaexport.Target("Thrift"),
+			want:   "amount",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(schemaexport.FieldAPIName(tt.field, tt.target), qt.Equals, tt.want)
+		})
+	}
+}
+
+// The table-level half resolves the same way, from the same declarations.
+func TestTableAPINamePrecedence(t *testing.T) {
+	declared := goschema.Table{
+		Name:     "billing_invoices",
+		APIName:  "invoices",
+		APINames: goschema.TargetNames{Protobuf: "invoice_records"},
+	}
+
+	tests := []struct {
+		name   string
+		table  goschema.Table
+		target schemaexport.Target
+		want   string
+	}{
+		{
+			name:   "the target's own name wins",
+			table:  declared,
+			target: schemaexport.TargetProtobuf,
+			want:   "invoice_records",
+		},
+		{
+			name:   "a target that declared none takes the shared one",
+			table:  declared,
+			target: schemaexport.TargetGraphQL,
+			want:   "invoices",
+		},
+		{
+			name:   "no declaration at all is the table name",
+			table:  goschema.Table{Name: "billing_invoices"},
+			target: schemaexport.TargetOpenAPI,
+			want:   "billing_invoices",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(schemaexport.TableAPIName(tt.table, tt.target), qt.Equals, tt.want)
+		})
+	}
+}
+
+// A collision can now exist in one export and not in another, so the refusal
+// says which export refused and names both attributes that would resolve it.
+func TestValidateFieldAPINamesRefusesAPerTargetCollision(t *testing.T) {
+	c := qt.New(t)
+
+	table := goschema.Table{Name: "invoices"}
+	fields := []goschema.Field{
+		{Name: "net_minor", APIName: "net"},
+		{
+			Name:     "gross_minor",
+			APIName:  "gross",
+			APINames: goschema.TargetNames{GraphQL: "net"},
+		},
+	}
+
+	c.Assert(schemaexport.ValidateFieldAPINames(table, fields, schemaexport.TargetOpenAPI), qt.IsNil,
+		qt.Commentf("the two names differ in OpenAPI, which declared no override"))
+
+	err := schemaexport.ValidateFieldAPINames(table, fields, schemaexport.TargetGraphQL)
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(err.Error(), qt.Equals,
+		`table "invoices" exports two columns as "net" in GraphQL: "net_minor" and "gross_minor"; `+
+			`give one of them a distinct api_name, or a distinct graphql_name for this export only`)
 }

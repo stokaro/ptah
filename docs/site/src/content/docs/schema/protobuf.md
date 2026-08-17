@@ -394,7 +394,8 @@ make explicit rather than automatic.
 ## Keep numbers stable
 
 Field numbers follow the field's **published** name, not its position — the
-`api_name` where one is declared, and the column name otherwise. Reordering
+`proto_name` where one is declared, `api_name` otherwise, and the column name
+when neither is. Reordering
 columns produces no diff, and a new column takes the next number above
 everything the message has ever used — including retired numbers, so a number
 is never recycled.
@@ -409,7 +410,18 @@ and the column underneath can change without touching the wire:
 ```
 
 `int32 amount = 2;` before and after, and nothing is reserved, because no
-identity was retired. Changing the `api_name` is the opposite case — it retires
+identity was retired.
+
+`proto_name` scopes that identity to this export. It exists because Protobuf's
+naming rules are not the other formats': `buf lint` wants `lower_snake_case`,
+where a GraphQL field is conventionally camelCase, so a schema that publishes
+`amountMinor` in GraphQL declares `proto_name="amount_minor"` here rather than
+picking one spelling for both. A pinned `proto_name` absorbs a change to the
+column **and** to the shared `api_name` — the number follows the published name,
+and the published name is this one.
+
+Which also means it carries the same weight. Changing the `proto_name`, or the
+`api_name` when no `proto_name` is declared, is the opposite case — it retires
 an identity consumers hold, so it is refused by default and handled by
 [Handle removals and incompatible changes](#handle-removals-and-incompatible-changes).
 The two identities are explained on

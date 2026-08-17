@@ -268,3 +268,70 @@ func TestAPITypeOverridesInlineEnumValues(t *testing.T) {
 		"message Thing {\n  int64 id = 1;\n  string state = 2;\n}")
 	c.Assert(out, qt.Not(qt.Contains), "enum ")
 }
+
+// protoNamedColumn is a column published under a name that applies to the wire
+// only.
+func protoNamedColumn(name, apiName, protoName, columnType string) goschema.Field {
+	return goschema.Field{
+		Name:     name,
+		APIName:  apiName,
+		APINames: goschema.TargetNames{Protobuf: protoName},
+		Type:     columnType,
+	}
+}
+
+// The Protobuf name wins here and is not read by the other two exporters. It
+// exists for the same reason as the GraphQL one -- a format's naming rules --
+// and Protobuf's are strict: `buf lint` wants lower_snake_case, where a GraphQL
+// field is conventionally camelCase.
+func TestFieldPrefersTheProtoName(t *testing.T) {
+	c := qt.New(t)
+
+	out := mustRenderText(c, oneTable(
+		column("id", "BIGINT"),
+		protoNamedColumn("billing_amount_minor", "amountMinor", "amount_minor", "INTEGER"),
+	), baseOptions())
+
+	c.Assert(section(out, "message Thing {"), qt.Equals,
+		"message Thing {\n  int64 id = 1;\n  int32 amount_minor = 2;\n}")
+}
+
+// The compatibility property that makes the Protobuf name the loaded one: the
+// field number is keyed by the published name, so a pinned proto_name absorbs
+// both a column rename and a change to the shared API name.
+func TestRenamingAroundTheProtoNameKeepsTheFieldNumber(t *testing.T) {
+	c := qt.New(t)
+
+	baseline := mustRender(c, oneTable(
+		column("id", "BIGINT"),
+		protoNamedColumn("billing_amount_minor", "amountMinor", "amount_minor", "INTEGER"),
+	), baseOptions())
+
+	republished := mustRenderText(c, oneTable(
+		column("id", "BIGINT"),
+		protoNamedColumn("net_amount_minor", "netAmount", "amount_minor", "INTEGER"),
+	), withPrevious(baseline.Data))
+
+	c.Assert(section(republished, "message Thing {"), qt.Equals,
+		"message Thing {\n  int64 id = 1;\n  int32 amount_minor = 2;\n}")
+}
+
+// And the other side of it: the Protobuf name IS the identity, so changing it
+// retires one consumers hold, and goes through the same policy as changing the
+// shared name.
+func TestRenamingTheProtoNameIsRefusedAsARemoval(t *testing.T) {
+	c := qt.New(t)
+
+	baseline := mustRender(c, oneTable(
+		column("id", "BIGINT"),
+		protoNamedColumn("billing_amount_minor", "amountMinor", "amount_minor", "INTEGER"),
+	), baseOptions())
+
+	_, err := protobufrender.Render(context.Background(), oneTable(
+		column("id", "BIGINT"),
+		protoNamedColumn("billing_amount_minor", "amountMinor", "total_minor", "INTEGER"),
+	), withPrevious(baseline.Data))
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(err.Error(), qt.Contains, "fields removed from Thing: amount_minor")
+}

@@ -155,6 +155,24 @@ type EmbeddedSources struct {
 //
 //	//ptah:schema:field name="id" type="SERIAL" platform.mysql.type="INT AUTO_INCREMENT"
 //	ID int64
+//
+// TargetNames carries the API names that apply to one export target only.
+//
+// A shared APIName answers all three targets and is what a schema normally
+// declares. These exist for the case that shared name cannot cover: a format's
+// own naming rules. A name that is legal in OpenAPI can be illegal in GraphQL,
+// where the exporter has to sanitize it and say so, and the author who wants a
+// deliberate name there should not have to change what the other two publish
+// (stokaro/ptah#905).
+//
+// An empty target name falls back to APIName, and an empty APIName to the
+// database name, so an unannotated schema exports exactly as it always did.
+type TargetNames struct {
+	OpenAPI  string
+	GraphQL  string
+	Protobuf string
+}
+
 type Field struct {
 	StructName string // Name of the Go struct this field belongs to
 	FieldName  string // Name of the Go struct field
@@ -168,6 +186,9 @@ type Field struct {
 	// become the public one — `billing_amount_minor` can be exported as
 	// `amount` and stay itself in the database (stokaro/ptah#905).
 	APIName string
+	// APINames overrides APIName for a single export target, and is empty in
+	// the ordinary case. See TargetNames.
+	APINames TargetNames
 	// APIType re-maps this column for API export only: the exporters project it
 	// as though the column had this type. It names a type Ptah's own mapping
 	// already recognizes, so no format-specific vocabulary is introduced and
@@ -539,7 +560,10 @@ type Table struct {
 	// storage rename should not rename a published type, so an established
 	// `Invoice` can keep its name while the table underneath becomes
 	// `billing_invoices` (stokaro/ptah#905).
-	APIName       string
+	APIName string
+	// APINames overrides APIName for a single export target, and is empty in
+	// the ordinary case. See TargetNames.
+	APINames      TargetNames
 	Schema        string // Optional database schema/namespace (PostgreSQL-style)
 	Engine        string // Storage engine (MySQL/MariaDB specific, e.g., "InnoDB")
 	AutoIncrement string // Initial AUTO_INCREMENT value (MySQL/MariaDB specific)

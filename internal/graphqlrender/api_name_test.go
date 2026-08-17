@@ -217,3 +217,44 @@ func TestRenderOverridesInlineEnumValues(t *testing.T) {
 	c.Assert(sdl, qt.Contains, "state: String!")
 	c.Assert(sdl, qt.Not(qt.Contains), "enum ")
 }
+
+// One column, three published names. This is the case a shared alias cannot
+// cover: GraphQL sanitizes a name its own rules reject, and an author who wants
+// a deliberate name there should not have to change what the other two publish.
+func TestRenderPrefersTheGraphQLName(t *testing.T) {
+	c := qt.New(t)
+
+	res, err := graphqlrender.Render(apiNameFixture(
+		goschema.Field{StructName: "Invoice", Name: "id", Type: "BIGSERIAL", Primary: true},
+		goschema.Field{
+			StructName: "Invoice", Name: "billing_amount_minor", Type: "INTEGER",
+			APIName:  "amount",
+			APINames: goschema.TargetNames{GraphQL: "amountMinor"},
+		},
+	), graphqlrender.Options{})
+	c.Assert(err, qt.IsNil)
+
+	sdl := string(res.Data)
+	c.Assert(sdl, qt.Contains, "amountMinor: Int!")
+	c.Assert(sdl, qt.Not(qt.Contains), "amount:")
+	c.Assert(sdl, qt.Not(qt.Contains), "billing_amount_minor")
+}
+
+// The table-level half, and the control beside it: a name declared for another
+// target is not read here.
+func TestRenderIgnoresAnotherTargetsName(t *testing.T) {
+	c := qt.New(t)
+
+	db := apiNameFixture(
+		goschema.Field{StructName: "Invoice", Name: "id", Type: "BIGSERIAL", Primary: true},
+	)
+	db.Tables[0].APIName = "invoices"
+	db.Tables[0].APINames = goschema.TargetNames{Protobuf: "invoice_records"}
+
+	res, err := graphqlrender.Render(db, graphqlrender.Options{})
+	c.Assert(err, qt.IsNil)
+
+	sdl := string(res.Data)
+	c.Assert(sdl, qt.Contains, "type Invoice {")
+	c.Assert(sdl, qt.Not(qt.Contains), "InvoiceRecord")
+}

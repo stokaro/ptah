@@ -288,12 +288,76 @@ func toSet(values []string) map[string]struct{} {
 	return set
 }
 
-// FieldAPIName returns the name a field carries in an exported API schema.
+// Target names an export format. It is what makes a per-target name resolvable,
+// and it doubles as the word every message about that target uses, so the
+// refusals cannot drift from the thing being refused.
+type Target string
+
+// The three export targets that publish names.
+const (
+	TargetOpenAPI  Target = "OpenAPI"
+	TargetGraphQL  Target = "GraphQL"
+	TargetProtobuf Target = "Protobuf"
+)
+
+// nameIn returns the declaration that applies to this target, or "" when none
+// does. An unknown Target resolves to nothing rather than guessing, so a target
+// added without a name field falls back to the shared one instead of silently
+// reading another target's.
+func (t Target) nameIn(names goschema.TargetNames) string {
+	switch t {
+	case TargetOpenAPI:
+		return names.OpenAPI
+	case TargetGraphQL:
+		return names.GraphQL
+	case TargetProtobuf:
+		return names.Protobuf
+	default:
+		return ""
+	}
+}
+
+// attribute names this target's own name attribute, or "" for a target that has
+// none.
+func (t Target) attribute() string {
+	switch t {
+	case TargetOpenAPI:
+		return "openapi_name"
+	case TargetGraphQL:
+		return "graphql_name"
+	case TargetProtobuf:
+		return "proto_name"
+	default:
+		return ""
+	}
+}
+
+// collisionAdvice names the attributes that would resolve a collision, shared
+// one first.
 //
-// A field that declares no API name keeps its column name, which is what every
-// export did before the two identities could differ, so an unannotated schema
-// exports byte-identically (stokaro/ptah#905).
-func FieldAPIName(field goschema.Field) string {
+// Both are named because either can be the fix and the message cannot tell
+// which: two api_name declarations that collide in every export want the shared
+// attribute changed, while a collision only this target has wants the scoped
+// one. Naming only the scoped attribute would send a reader who declared
+// neither to a line that does not exist in their schema.
+func collisionAdvice(target Target) string {
+	if scoped := target.attribute(); scoped != "" {
+		return "api_name, or a distinct " + scoped + " for this export only"
+	}
+	return "api_name"
+}
+
+// FieldAPIName returns the name a field carries in the named export.
+//
+// Three declarations answer in order -- the target's own name, the shared API
+// name, the column name -- so the ordinary schema declares nothing and exports
+// byte-identically, a shared alias answers every target, and a per-target name
+// exists only where a format's naming rules make the shared one unusable
+// (stokaro/ptah#905).
+func FieldAPIName(field goschema.Field, target Target) string {
+	if name := target.nameIn(field.APINames); name != "" {
+		return name
+	}
 	if field.APIName != "" {
 		return field.APIName
 	}
@@ -308,15 +372,15 @@ func FieldAPIName(field goschema.Field) string {
 // exported schema, and the reader of that schema has nothing left to notice it
 // with. Both sources are named because the alias is as likely to be the
 // mistake as the column it collided with.
-func ValidateFieldAPINames(table goschema.Table, fields []goschema.Field) error {
+func ValidateFieldAPINames(table goschema.Table, fields []goschema.Field, target Target) error {
 	claimed := make(map[string]string, len(fields))
 	for _, field := range fields {
-		api := FieldAPIName(field)
+		api := FieldAPIName(field, target)
 		first, taken := claimed[api]
 		if taken {
 			return fmt.Errorf(
-				"table %q exports two columns as %q: %q and %q; give one of them a distinct api_name",
-				table.Name, api, first, field.Name,
+				"table %q exports two columns as %q in %s: %q and %q; give one of them a distinct %s",
+				table.Name, api, target, first, field.Name, collisionAdvice(target),
 			)
 		}
 		claimed[api] = field.Name
@@ -329,7 +393,10 @@ func ValidateFieldAPINames(table goschema.Table, fields []goschema.Field) error 
 // A table that declares no API name keeps its table name, so an unannotated
 // schema exports byte-identically. This is the table-level half of what
 // [FieldAPIName] does for a column (stokaro/ptah#905).
-func TableAPIName(table goschema.Table) string {
+func TableAPIName(table goschema.Table, target Target) string {
+	if name := target.nameIn(table.APINames); name != "" {
+		return name
+	}
 	if table.APIName != "" {
 		return table.APIName
 	}
@@ -342,15 +409,15 @@ func TableAPIName(table goschema.Table) string {
 // Two tables published under one name means one of them is absent from the
 // exported schema, exactly as with a field, and the reader of that schema has
 // nothing left to notice it with.
-func ValidateTableAPINames(tables []goschema.Table) error {
+func ValidateTableAPINames(tables []goschema.Table, target Target) error {
 	claimed := make(map[string]string, len(tables))
 	for _, table := range tables {
-		api := TableAPIName(table)
+		api := TableAPIName(table, target)
 		first, taken := claimed[api]
 		if taken {
 			return fmt.Errorf(
-				"two tables export as %q: %q and %q; give one of them a distinct api_name",
-				api, first, table.Name,
+				"two tables export as %q in %s: %q and %q; give one of them a distinct %s",
+				api, target, first, table.Name, collisionAdvice(target),
 			)
 		}
 		claimed[api] = table.Name
@@ -378,7 +445,7 @@ func FieldAPIType(field goschema.Field) string {
 // most a projection can do. An unmapped override is something the author typed
 // on purpose and the exporter cannot honor -- projecting it as a string would
 // answer a request nobody made and hide that the declaration did nothing.
-func UnknownAPITypeError(table goschema.Table, field goschema.Field, target string) error {
+func UnknownAPITypeError(table goschema.Table, field goschema.Field, target Target) error {
 	return fmt.Errorf(
 		"column %q on table %q declares api_type %q, which the %s projection does not recognize; "+
 			"name a type Ptah maps, or drop the override to keep the column's own type %q",
@@ -421,7 +488,7 @@ func ProjectedField(field goschema.Field) goschema.Field {
 func RefuseUnknownAPIType(
 	table goschema.Table,
 	field goschema.Field,
-	target string,
+	target Target,
 	enums map[string][]string,
 	maps func(projectedType string) bool,
 ) error {

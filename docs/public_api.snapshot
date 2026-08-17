@@ -3743,6 +3743,7 @@ type ScopedObject struct{ ... }
 type SelfReferencingFK struct{ ... }
 type Sequence struct{ ... }
 type Table struct{ ... }
+type TargetNames struct{ ... }
 type Trigger struct{ ... }
 type View struct{ ... }
 
@@ -4167,6 +4168,9 @@ type Field struct {
     // become the public one — `billing_amount_minor` can be exported as
     // `amount` and stay itself in the database (stokaro/ptah#905).
     APIName string
+    // APINames overrides APIName for a single export target, and is empty in
+    // the ordinary case. See TargetNames.
+    APINames TargetNames
     // APIType re-maps this column for API export only: the exporters project it
     // as though the column had this type. It names a type Ptah's own mapping
     // already recognizes, so no format-specific vocabulary is introduced and
@@ -4225,35 +4229,6 @@ type Field struct {
     // source declarations so Finalize can rebuild them after schema mutation.
     GeneratedFromEmbedded bool
 }
-    Field represents a database column/field definition parsed from Go struct
-    field annotations. This is the core building block for table schema
-    generation, containing all the metadata needed to generate appropriate
-    CREATE TABLE column definitions for different database platforms.
-
-    Field is created by parsing //ptah:schema:field annotations from Go struct
-    fields:
-
-        type Product struct {
-            //ptah:schema:field name="id" type="SERIAL" primary="true"
-            ID int64
-
-            //ptah:schema:field name="name" type="VARCHAR(255)" not_null="true" unique="true"
-            Name string
-
-            //ptah:schema:field name="price" type="DECIMAL(10,2)" check="price > 0" default="0.00"
-            Price float64
-
-            //ptah:schema:field name="status" type="ENUM" enum="active,inactive" default="active"
-            Status string
-
-            //ptah:schema:field name="category_id" type="INTEGER" foreign="categories(id)"
-            CategoryID int64
-        }
-
-    The Field supports platform-specific overrides through the Overrides field:
-
-        //ptah:schema:field name="id" type="SERIAL" platform.mysql.type="INT AUTO_INCREMENT"
-        ID int64
 
 
 ### go.5x5.cz/ptah/core/goschema.Function
@@ -4909,7 +4884,10 @@ type Table struct {
     // storage rename should not rename a published type, so an established
     // `Invoice` can keep its name while the table underneath becomes
     // `billing_invoices` (stokaro/ptah#905).
-    APIName       string
+    APIName string
+    // APINames overrides APIName for a single export target, and is empty in
+    // the ordinary case. See TargetNames.
+    APINames      TargetNames
     Schema        string // Optional database schema/namespace (PostgreSQL-style)
     Engine        string // Storage engine (MySQL/MariaDB specific, e.g., "InnoDB")
     AutoIncrement string // Initial AUTO_INCREMENT value (MySQL/MariaDB specific)
@@ -4974,6 +4952,58 @@ type Table struct {
         }
 
 func (t Table) QualifiedName() string
+
+### go.5x5.cz/ptah/core/goschema.TargetNames
+
+package goschema // import "go.5x5.cz/ptah/core/goschema"
+
+type TargetNames struct {
+    OpenAPI  string
+    GraphQL  string
+    Protobuf string
+}
+    Field represents a database column/field definition parsed from Go struct
+    field annotations. This is the core building block for table schema
+    generation, containing all the metadata needed to generate appropriate
+    CREATE TABLE column definitions for different database platforms.
+
+    Field is created by parsing //ptah:schema:field annotations from Go struct
+    fields:
+
+        type Product struct {
+            //ptah:schema:field name="id" type="SERIAL" primary="true"
+            ID int64
+
+            //ptah:schema:field name="name" type="VARCHAR(255)" not_null="true" unique="true"
+            Name string
+
+            //ptah:schema:field name="price" type="DECIMAL(10,2)" check="price > 0" default="0.00"
+            Price float64
+
+            //ptah:schema:field name="status" type="ENUM" enum="active,inactive" default="active"
+            Status string
+
+            //ptah:schema:field name="category_id" type="INTEGER" foreign="categories(id)"
+            CategoryID int64
+        }
+
+    The Field supports platform-specific overrides through the Overrides field:
+
+        //ptah:schema:field name="id" type="SERIAL" platform.mysql.type="INT AUTO_INCREMENT"
+        ID int64
+
+    TargetNames carries the API names that apply to one export target only.
+
+    A shared APIName answers all three targets and is what a schema normally
+    declares. These exist for the case that shared name cannot cover: a format's
+    own naming rules. A name that is legal in OpenAPI can be illegal in GraphQL,
+    where the exporter has to sanitize it and say so, and the author who wants a
+    deliberate name there should not have to change what the other two publish
+    (stokaro/ptah#905).
+
+    An empty target name falls back to APIName, and an empty APIName to the
+    database name, so an unannotated schema exports exactly as it always did.
+
 
 ### go.5x5.cz/ptah/core/goschema.Trigger
 

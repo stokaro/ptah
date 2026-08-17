@@ -228,3 +228,34 @@ func TestRenderOverridesInlineEnumValues(t *testing.T) {
 	c.Assert(props["state"].(map[string]any)["type"], qt.Equals, "string")
 	c.Assert(props["state"].(map[string]any)["enum"], qt.IsNil)
 }
+
+// A name declared for another target is not read here: OpenAPI publishes the
+// shared name, and the GraphQL declaration beside it changes nothing.
+func TestRenderIgnoresAnotherTargetsName(t *testing.T) {
+	c := qt.New(t)
+
+	db := apiNameFixture(
+		goschema.Field{StructName: "Invoice", Name: "id", Type: "BIGSERIAL", Primary: true},
+		goschema.Field{
+			StructName: "Invoice", Name: "billing_amount_minor", Type: "INTEGER",
+			APIName:  "amount",
+			APINames: goschema.TargetNames{GraphQL: "amountMinor"},
+		},
+	)
+	db.Tables[0].APIName = "invoices"
+	db.Tables[0].APINames = goschema.TargetNames{OpenAPI: "invoice_documents"}
+
+	res, err := openapirender.Render(db, openapirender.Options{})
+	c.Assert(err, qt.IsNil)
+
+	var doc map[string]any
+	c.Assert(yaml.Unmarshal(res.Data, &doc), qt.IsNil)
+	schemas := doc["components"].(map[string]any)["schemas"].(map[string]any)
+
+	// The table's own OpenAPI name wins over its shared one; the column has no
+	// OpenAPI name, so the shared one answers and the GraphQL one is not read.
+	props := schemas["invoice_documents"].(map[string]any)["properties"].(map[string]any)
+	c.Assert(schemas["invoices"], qt.IsNil)
+	c.Assert(props["amount"], qt.IsNotNil)
+	c.Assert(props["amountMinor"], qt.IsNil)
+}
