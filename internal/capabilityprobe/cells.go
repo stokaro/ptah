@@ -134,6 +134,21 @@ type Cell struct {
 	// here. Understating costs a capability; overstating costs correctness.
 	Understates map[capability.Capability]string
 
+	// Emulated says the only container this dialect has is the vendor's
+	// emulator rather than the product itself.
+	//
+	// It exists to keep two things apart that CI would otherwise conflate: a
+	// line can be worth running on every pull request -- an emulator catches a
+	// preset that drifts from the interface -- and still not be evidence about
+	// the managed service. The two already differ measurably: the reference
+	// says a serial column needs the database option default_sequence_kind set
+	// first, and the emulator accepts one without it.
+	//
+	// So an emulated line is exercised and stays best-effort, which is the
+	// combination the certification rule otherwise forbids
+	// (stokaro/ptah#942).
+	Emulated bool
+
 	// Versionless declares a dialect with no release line to match against, so
 	// the single cell answers for every server of that dialect.
 	//
@@ -523,6 +538,8 @@ var Cells = []Cell{
 	// against a server; issue #942 is the missing container.
 	{
 		Dialect: platform.Spanner, Line: "0",
+		Image:       "gcr.io/cloud-spanner-pg-adapter/pgadapter-emulator:v0.55.2",
+		Emulated:    true,
 		Versionless: true,
 		Understates: map[capability.Capability]string{
 			// The PostgreSQL dialect documents `serial` as an alias for an
@@ -540,7 +557,7 @@ var Cells = []Cell{
 		Preset: capability.SpannerPostgres, PresetName: "SpannerPostgres",
 		Refinement: RefinedByBanner,
 		Support:    capability.BestEffort,
-		Note:       "no Spanner server exists in this repository (stokaro/ptah#942), so no row on this line has ever been executed",
+		Note:       "measured against the Cloud Spanner emulator behind PGAdapter, which is the only Spanner endpoint a container can provide; the managed service is not what runs here",
 	},
 }
 

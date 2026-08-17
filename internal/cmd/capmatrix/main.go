@@ -48,6 +48,7 @@ func newCommand() *cobra.Command {
 	root.AddCommand(
 		newMatrixCommand(), newMarkdownCommand(), newPresetsCommand(),
 		newDockerArgsCommand(), newSuiteEnvCommand(),
+		newSuiteSkipCommand(),
 		newProbeCommand(), newRecordCommand(), newReportCommand(),
 	)
 	return root
@@ -162,6 +163,33 @@ func newSuiteEnvCommand() *cobra.Command {
 	return cmd
 }
 
+// newSuiteSkipCommand prints the cell's reason for having no integration-runner
+// target, and nothing at all when it has one.
+//
+// The nightly job asks before it wires the runner, so a probe-only cell is
+// skipped by declaration rather than by a step failing and being tolerated. The
+// output is empty-or-reason so a workflow can branch on it with no parsing.
+func newSuiteSkipCommand() *cobra.Command {
+	var cellID string
+	cmd := &cobra.Command{
+		Use:   "suite-skip",
+		Short: "Print why one cell has no integration-runner target, if it has none",
+		Args:  cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			cell, err := runnableCell(cellID)
+			if err != nil {
+				return err
+			}
+			if cell.SuiteSkip != "" {
+				fmt.Fprintln(cmd.OutOrStdout(), cell.SuiteSkip)
+			}
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&cellID, "cell", "", "matrix cell id")
+	return cmd
+}
+
 func newMarkdownCommand() *cobra.Command {
 	var compact bool
 	cmd := &cobra.Command{
@@ -230,6 +258,13 @@ func newRecordCommand() *cobra.Command {
 				return fmt.Errorf("%s holds the result for cell %q, not %q", probeResult, probed.Cell, cellID)
 			}
 			probed.Tier = 3
+			// A cell whose declaration says the runner has no target for it
+			// produced no suite to fold. Folding one anyway would invent an
+			// outcome; refusing would fail the night for a dialect doing what
+			// it said it would do.
+			if probed.SuiteSkip != "" {
+				return finish(cmd, probed, result)
+			}
 			recorded, err := capmatrix.RecordSuite(probed, suiteExit, suiteReports)
 			if err != nil {
 				return err

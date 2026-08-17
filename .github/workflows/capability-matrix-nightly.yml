@@ -124,13 +124,30 @@ jobs:
       # declaration the probe used, printed by the driver rather than passed
       # through the matrix, so the suite cannot end up pointed at a different
       # server than the one that was probed.
+      # A dialect can be capability-measured before the integration runner has
+      # a target for it. Asking the driver rather than tolerating a failing
+      # step is what keeps "no suite by declaration" apart from "the suite
+      # broke": the first is a decision with a reason attached, the second is
+      # the night's finding.
+      - name: Ask whether this cell has an integration-runner target
+        id: target
+        run: |
+          set -euo pipefail
+          skip="$("${RUNNER_TEMP}/capmatrix" suite-skip --cell "${CELL_ID}")"
+          echo "skip<<EOF" >>"${GITHUB_OUTPUT}"
+          echo "${skip}" >>"${GITHUB_OUTPUT}"
+          echo "EOF" >>"${GITHUB_OUTPUT}"
+          test -z "${skip}" || echo "no integration suite for ${CELL_ID}: ${skip}"
+
       - name: Wire the integration runner to this cell
+        if: steps.target.outputs.skip == ''
         run: |
           set -euo pipefail
           "${RUNNER_TEMP}/capmatrix" suite-env --cell "${CELL_ID}" >>"${GITHUB_ENV}"
 
       - name: Run the integration suite
         id: suite
+        if: steps.target.outputs.skip == ''
         run: |
           set +e
           set -uo pipefail
@@ -150,12 +167,14 @@ jobs:
         run: |
           set +e
           set -uo pipefail
-          "${RUNNER_TEMP}/capmatrix" record \
-            --cell "${CELL_ID}" \
-            --probe-result "results/${CELL_ID}.json" \
-            --suite-exit "${SUITE_CODE}" \
-            --suite-report-dir ./reports \
-            --result "results/${CELL_ID}.json"
+          # A cell with no runner target ran no suite, so there is no exit code
+          # to pass. The driver reads its own declaration and records the probe
+          # half alone; passing a zero here would spell "the suite passed".
+          args=(--cell "${CELL_ID}" --probe-result "results/${CELL_ID}.json" --result "results/${CELL_ID}.json")
+          if [ -n "${SUITE_CODE}" ]; then
+            args+=(--suite-exit "${SUITE_CODE}" --suite-report-dir ./reports)
+          fi
+          "${RUNNER_TEMP}/capmatrix" record "${args[@]}"
           echo "code=$?" >>"${GITHUB_OUTPUT}"
 
       - name: Server log

@@ -33,6 +33,11 @@ type CellResult struct {
 
 	// Suite is what the integration runner found, present on tier 3 only.
 	Suite *SuiteOutcome `json:"suite,omitempty"`
+
+	// SuiteSkip carries the cell's declared reason for having no
+	// integration-runner target, so a tier that runs no suite for it is read as
+	// a decision rather than as a result somebody lost.
+	SuiteSkip string `json:"suite_skip,omitempty"`
 }
 
 // ProbeOutcome is the capability probe's half of a cell.
@@ -100,7 +105,11 @@ func (r CellResult) Verdict() Verdict {
 	switch {
 	case !r.Probe.OK:
 		return CapabilityDisagreement
-	case r.Tier == 3 && r.Suite == nil:
+	// Missing means a suite result that should have arrived did not. A cell
+	// that declares no runner target was never going to produce one, and
+	// treating its absence as a loss would fail the night for a dialect doing
+	// exactly what it said it would do.
+	case r.Tier == 3 && r.Suite == nil && r.SuiteSkip == "":
 		return Missing
 	case r.Suite != nil && !r.Suite.OK:
 		return SuiteFailure
