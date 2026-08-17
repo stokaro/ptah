@@ -7,6 +7,7 @@ import (
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/objectidentity"
 	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
 )
 
@@ -154,9 +155,9 @@ func newGrantIdentity(ref difftypes.GrantRef, semantics identifier.Semantics) gr
 	objectType := strings.ToUpper(strings.TrimSpace(ref.ObjectType))
 	object := newQualifiedTableIdentity(ref.ObjectName, semantics)
 	if objectType == grantObjectTypeSchema {
-		object = tableIdentity{
-			schema: semantics.TableIdentityKey(strings.TrimSpace(ref.ObjectName)),
-		}
+		// A schema grant names a schema, not a table in one, so the schema
+		// component carries the name and the table component stays empty.
+		object = objectidentity.NewBuilder(semantics).TableParts(ref.ObjectName, "").Key()
 	}
 	return grantIdentity{
 		role:       strings.TrimSpace(ref.Role),

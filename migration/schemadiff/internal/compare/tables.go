@@ -10,6 +10,7 @@ import (
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/crdbttl"
+	"go.5x5.cz/ptah/internal/objectidentity"
 	"go.5x5.cz/ptah/internal/tableref"
 	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
 )
@@ -226,10 +227,9 @@ func tableMapIdentity(schema, name, dialect string, semantics identifier.Semanti
 	if schema == "" {
 		schema = semantics.DefaultSchema
 	}
-	return tableIdentity{
-		schema: semantics.TableIdentityKey(schema),
-		table:  semantics.TableIdentityKey(name),
-	}
+	// Verbatim on SQLite: a quoted leading or trailing space is part of the
+	// name there, so trimming merges two distinct tables.
+	return objectidentity.NewBuilder(semantics).TablePartsVerbatim(schema, name).Key()
 }
 
 // tableDiffName preserves the exact catalog identifier on SQLite. Quoted

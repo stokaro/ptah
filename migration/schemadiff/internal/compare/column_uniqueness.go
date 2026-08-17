@@ -5,17 +5,33 @@ import (
 
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
+	"go.5x5.cz/ptah/internal/objectidentity"
+	"go.5x5.cz/ptah/internal/tableref"
 )
 
-type columnIdentity struct {
-	table  tableIdentity
-	column string
-}
-
-type tableIdentity struct {
-	schema string
-	table  string
-}
+// columnIdentity and tableIdentity are the shared identity model's comparison
+// value, under this package's own names.
+//
+// They were two structs private to this package, duplicated byte for byte in
+// internal/atlasfilter, and each object family had grown its own key on top.
+// Four closed defects came from that -- see the objectidentity package doc --
+// and the fix is one model rather than one more private key
+// (stokaro/ptah#1345).
+//
+// The alias is [objectidentity.Key] and not [objectidentity.ID] because these
+// names are used as map keys throughout this package, and a Key is exactly the
+// part of an identity equality is decided on. An ID additionally carries the
+// spelling each side wrote, which a diagnostic and a renderer need and a
+// comparison must never see: two spellings of one table are one table.
+type (
+	columnIdentity = objectidentity.Key
+	tableIdentity  = objectidentity.Key
+	// objectIdentity is the same value under the name a family that is not a
+	// table reads better with. A sequence keyed as `tableIdentity` invites the
+	// next reader to key it AS a table, which is the reuse that makes two
+	// families merge the day they share a map.
+	objectIdentity = objectidentity.Key
+)
 
 // collectGeneratedObjectOwnedUniqueColumns identifies desired single-column
 // uniqueness whose lifecycle is explicitly represented by an index or table
@@ -166,10 +182,7 @@ func newColumnIdentityForTable(
 	column string,
 	semantics identifier.Semantics,
 ) columnIdentity {
-	return columnIdentity{
-		table:  newTableIdentity(schema, table, semantics),
-		column: semantics.ColumnIdentityKey(column),
-	}
+	return objectidentity.NewBuilder(semantics).ColumnParts(schema, table, column).Key()
 }
 
 func newTableIdentity(
@@ -177,11 +190,40 @@ func newTableIdentity(
 	table string,
 	semantics identifier.Semantics,
 ) tableIdentity {
-	if strings.TrimSpace(schema) == "" {
-		schema = semantics.DefaultSchema
+	return objectidentity.NewBuilder(semantics).TableParts(schema, table).Key()
+}
+
+// newObjectIdentity is [newTableIdentity] for a family whose name is unique
+// within a schema without being a table: a sequence, an enum, a domain, a view.
+//
+// The kind is carried rather than borrowed from tables. These families live in
+// separate maps today, so the kind changes no answer now -- it is what stops a
+// later map that holds two of them from merging a sequence with the table it
+// was named after.
+func newObjectIdentity(
+	kind objectidentity.Kind,
+	schema string,
+	name string,
+	semantics identifier.Semantics,
+) objectIdentity {
+	return objectidentity.NewBuilder(semantics).SchemaScopedParts(kind, schema, name).Key()
+}
+
+// newQualifiedObjectIdentity is [newObjectIdentity] for a name that arrives as
+// one string, which is how the desired schema reports several of these
+// families.
+//
+// Parsing is delegated to tableref for the reason
+// [newQualifiedTableIdentity] gives: a name whose own text contains a dot must
+// not be mistaken for a qualified one.
+func newQualifiedObjectIdentity(
+	kind objectidentity.Kind,
+	name string,
+	semantics identifier.Semantics,
+) objectIdentity {
+	ref, ok := tableref.Parse(name)
+	if !ok {
+		return newObjectIdentity(kind, "", name, semantics)
 	}
-	return tableIdentity{
-		schema: semantics.TableIdentityKey(strings.TrimSpace(schema)),
-		table:  semantics.TableIdentityKey(strings.TrimSpace(table)),
-	}
+	return newObjectIdentity(kind, ref.Schema, ref.Name, semantics)
 }

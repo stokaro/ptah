@@ -11,6 +11,7 @@ import (
 	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/matviewrefresh"
 	"go.5x5.cz/ptah/internal/mysqlroutine"
+	"go.5x5.cz/ptah/internal/objectidentity"
 	"go.5x5.cz/ptah/internal/tableref"
 	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
 )
@@ -229,8 +230,8 @@ func FunctionsWithSemantics(
 		return
 	}
 
-	generatedFunctions := make(map[tableIdentity]goschema.Function, len(generated.Functions))
-	generatedNames := make(map[tableIdentity]string, len(generated.Functions))
+	generatedFunctions := make(map[objectIdentity]goschema.Function, len(generated.Functions))
+	generatedNames := make(map[objectIdentity]string, len(generated.Functions))
 	for _, function := range generated.Functions {
 		// qualifiedRoutineIdentityKey, not routineIdentityKey: folding the whole
 		// string lowercased the SCHEMA too, while the database loop below folds
@@ -238,15 +239,15 @@ func FunctionsWithSemantics(
 		// semantics. The two sides then disagreed about the schema component of
 		// `Sales.Foo`, so an unchanged function was reported as both added and
 		// removed and the plan tried to create one that already existed.
-		identity := newQualifiedTableIdentity(
+		identity := newQualifiedObjectIdentity(objectidentity.KindFunction,
 			qualifiedRoutineIdentityKey(function.Name, dialect), semantics)
 		generatedFunctions[identity] = function
 		generatedNames[identity] = function.Name
 	}
-	databaseFunctions := make(map[tableIdentity]types.DBFunction, len(database.Functions))
-	databaseNames := make(map[tableIdentity]string, len(database.Functions))
+	databaseFunctions := make(map[objectIdentity]types.DBFunction, len(database.Functions))
+	databaseNames := make(map[objectIdentity]string, len(database.Functions))
 	for _, function := range database.Functions {
-		identity := newTableIdentity(
+		identity := newObjectIdentity(objectidentity.KindFunction,
 			function.Schema, routineIdentityKey(function.Name, dialect), semantics)
 		databaseFunctions[identity] = function
 		databaseNames[identity] = function.QualifiedName()
@@ -374,17 +375,17 @@ func ViewsWithSemantics(
 		return
 	}
 
-	generatedViews := make(map[tableIdentity]goschema.View, len(generated.Views))
-	generatedNames := make(map[tableIdentity]string, len(generated.Views))
+	generatedViews := make(map[objectIdentity]goschema.View, len(generated.Views))
+	generatedNames := make(map[objectIdentity]string, len(generated.Views))
 	for _, view := range generated.Views {
-		identity := newQualifiedTableIdentity(view.Name, semantics)
+		identity := newQualifiedObjectIdentity(objectidentity.KindView, view.Name, semantics)
 		generatedViews[identity] = view
 		generatedNames[identity] = view.Name
 	}
-	databaseViews := make(map[tableIdentity]types.DBView, len(database.Views))
-	databaseNames := make(map[tableIdentity]string, len(database.Views))
+	databaseViews := make(map[objectIdentity]types.DBView, len(database.Views))
+	databaseNames := make(map[objectIdentity]string, len(database.Views))
 	for _, view := range database.Views {
-		identity := newTableIdentity(view.Schema, view.Name, semantics)
+		identity := newObjectIdentity(objectidentity.KindView, view.Schema, view.Name, semantics)
 		databaseViews[identity] = view
 		databaseNames[identity] = viewNameForDiff(view)
 	}
@@ -563,18 +564,18 @@ func MaterializedViewsWithSemantics(
 		return
 	}
 
-	generatedViews := make(map[tableIdentity]goschema.MaterializedView, len(generated.MaterializedViews))
-	generatedNames := make(map[tableIdentity]string, len(generated.MaterializedViews))
+	generatedViews := make(map[objectIdentity]goschema.MaterializedView, len(generated.MaterializedViews))
+	generatedNames := make(map[objectIdentity]string, len(generated.MaterializedViews))
 	for _, view := range generated.MaterializedViews {
 		view.Canonicalize()
-		identity := newQualifiedTableIdentity(view.Name, semantics)
+		identity := newQualifiedObjectIdentity(objectidentity.KindMatView, view.Name, semantics)
 		generatedViews[identity] = view
 		generatedNames[identity] = view.Name
 	}
-	databaseViews := make(map[tableIdentity]types.DBMatView, len(database.MatViews))
-	databaseNames := make(map[tableIdentity]string, len(database.MatViews))
+	databaseViews := make(map[objectIdentity]types.DBMatView, len(database.MatViews))
+	databaseNames := make(map[objectIdentity]string, len(database.MatViews))
 	for _, view := range database.MatViews {
-		identity := newTableIdentity(view.Schema, view.Name, semantics)
+		identity := newObjectIdentity(objectidentity.KindMatView, view.Schema, view.Name, semantics)
 		databaseViews[identity] = view
 		databaseNames[identity] = view.QualifiedName()
 	}

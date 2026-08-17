@@ -9,6 +9,7 @@ import (
 	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/mysqlroutine"
+	"go.5x5.cz/ptah/internal/objectidentity"
 	"go.5x5.cz/ptah/internal/tableref"
 	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
 )
@@ -96,16 +97,18 @@ func findCurrentFunctionForDesired(
 	semantics identifier.Semantics,
 ) (types.DBFunction, bool) {
 	if semantics.DefaultSchema != "" {
-		byIdentity := make(map[tableIdentity]types.DBFunction, len(current))
+		byIdentity := make(map[objectIdentity]types.DBFunction, len(current))
 		for _, function := range current {
-			identity := newTableIdentity(
+			identity := newObjectIdentity(
+				objectidentity.KindFunction,
 				function.Schema,
 				routineIdentityKey(function.Name, dialect),
 				semantics,
 			)
 			byIdentity[identity] = function
 		}
-		identity := newQualifiedTableIdentity(
+		identity := newQualifiedObjectIdentity(
+			objectidentity.KindFunction,
 			qualifiedRoutineIdentityKey(desired.Name, dialect),
 			semantics,
 		)

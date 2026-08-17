@@ -9,6 +9,7 @@ import (
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/objectidentity"
 	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
 )
 
@@ -43,17 +44,17 @@ func domainsWithSemantics(
 	cov Coverage,
 	semantics identifier.Semantics,
 ) {
-	generatedDomains := make(map[tableIdentity]goschema.Domain, len(generated.Domains))
-	generatedNames := make(map[tableIdentity]string, len(generated.Domains))
+	generatedDomains := make(map[objectIdentity]goschema.Domain, len(generated.Domains))
+	generatedNames := make(map[objectIdentity]string, len(generated.Domains))
 	for _, domain := range generated.Domains {
-		identity := newTableIdentity(domain.Schema, domain.Name, semantics)
+		identity := newObjectIdentity(objectidentity.KindDomain, domain.Schema, domain.Name, semantics)
 		generatedDomains[identity] = domain
 		generatedNames[identity] = domain.QualifiedName()
 	}
-	databaseDomains := make(map[tableIdentity]types.DBDomain, len(database.Domains))
-	databaseNames := make(map[tableIdentity]string, len(database.Domains))
+	databaseDomains := make(map[objectIdentity]types.DBDomain, len(database.Domains))
+	databaseNames := make(map[objectIdentity]string, len(database.Domains))
 	for _, domain := range database.Domains {
-		identity := newTableIdentity(domain.Schema, domain.Name, semantics)
+		identity := newObjectIdentity(objectidentity.KindDomain, domain.Schema, domain.Name, semantics)
 		databaseDomains[identity] = domain
 		databaseNames[identity] = domain.QualifiedName()
 	}
@@ -190,17 +191,17 @@ func compositeTypesWithSemantics(
 	cov Coverage,
 	semantics identifier.Semantics,
 ) {
-	generatedTypes := make(map[tableIdentity]goschema.CompositeType, len(generated.CompositeTypes))
-	generatedNames := make(map[tableIdentity]string, len(generated.CompositeTypes))
+	generatedTypes := make(map[objectIdentity]goschema.CompositeType, len(generated.CompositeTypes))
+	generatedNames := make(map[objectIdentity]string, len(generated.CompositeTypes))
 	for _, composite := range generated.CompositeTypes {
-		identity := newTableIdentity(composite.Schema, composite.Name, semantics)
+		identity := newObjectIdentity(objectidentity.KindComposite, composite.Schema, composite.Name, semantics)
 		generatedTypes[identity] = composite
 		generatedNames[identity] = composite.QualifiedName()
 	}
-	databaseTypes := make(map[tableIdentity]types.DBComposite, len(database.Composites))
-	databaseNames := make(map[tableIdentity]string, len(database.Composites))
+	databaseTypes := make(map[objectIdentity]types.DBComposite, len(database.Composites))
+	databaseNames := make(map[objectIdentity]string, len(database.Composites))
 	for _, composite := range database.Composites {
-		identity := newTableIdentity(composite.Schema, composite.Name, semantics)
+		identity := newObjectIdentity(objectidentity.KindComposite, composite.Schema, composite.Name, semantics)
 		databaseTypes[identity] = composite
 		databaseNames[identity] = composite.QualifiedName()
 	}
@@ -310,17 +311,17 @@ func rangesWithSemantics(
 	cov Coverage,
 	semantics identifier.Semantics,
 ) {
-	generatedRanges := make(map[tableIdentity]goschema.Range, len(generated.Ranges))
-	generatedNames := make(map[tableIdentity]string, len(generated.Ranges))
+	generatedRanges := make(map[objectIdentity]goschema.Range, len(generated.Ranges))
+	generatedNames := make(map[objectIdentity]string, len(generated.Ranges))
 	for _, rangeType := range generated.Ranges {
-		identity := newTableIdentity(rangeType.Schema, rangeType.Name, semantics)
+		identity := newObjectIdentity(objectidentity.KindRange, rangeType.Schema, rangeType.Name, semantics)
 		generatedRanges[identity] = rangeType
 		generatedNames[identity] = rangeType.QualifiedName()
 	}
-	databaseRanges := make(map[tableIdentity]types.DBRange, len(database.Ranges))
-	databaseNames := make(map[tableIdentity]string, len(database.Ranges))
+	databaseRanges := make(map[objectIdentity]types.DBRange, len(database.Ranges))
+	databaseNames := make(map[objectIdentity]string, len(database.Ranges))
 	for _, rangeType := range database.Ranges {
-		identity := newTableIdentity(rangeType.Schema, rangeType.Name, semantics)
+		identity := newObjectIdentity(objectidentity.KindRange, rangeType.Schema, rangeType.Name, semantics)
 		databaseRanges[identity] = rangeType
 		databaseNames[identity] = rangeType.QualifiedName()
 	}

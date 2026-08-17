@@ -58,6 +58,7 @@ import (
 	"go.5x5.cz/ptah/internal/crdbttl"
 	"go.5x5.cz/ptah/internal/matviewrefresh"
 	"go.5x5.cz/ptah/internal/mysqlroutine"
+	"go.5x5.cz/ptah/internal/objectidentity"
 	"go.5x5.cz/ptah/internal/planner/tablelookup"
 	"go.5x5.cz/ptah/internal/reservedrole"
 	"go.5x5.cz/ptah/internal/schemaselection"
@@ -1071,14 +1072,19 @@ func validateRoutineIdentityCollisions(dialect string, functions []goschema.Func
 	if !routineNamesAreCaseInsensitive(dialect) {
 		return nil
 	}
-	type declaration struct{ schema, name string }
-	seen := make(map[declaration]string, len(functions))
+	seen := make(map[objectidentity.Key]string, len(functions))
 	for _, function := range functions {
 		ref, ok := tableref.Parse(function.Name)
 		if !ok {
 			continue
 		}
-		key := declaration{schema: ref.Schema, name: mysqlroutine.IdentityKey(ref.Name)}
+		// The shared identity model rather than a private struct: a private one
+		// is what let this check and the comparator key the same routine two
+		// ways in the first place. The name is folded by mysqlroutine before it
+		// arrives, so the builder is asked to fold nothing on top of it.
+		key := routineIdentities.
+			SchemaScopedParts(objectidentity.KindFunction, ref.Schema, mysqlroutine.IdentityKey(ref.Name)).
+			Key()
 		previous, collides := seen[key]
 		if collides && previous != function.Name {
 			return &ptaherr.RenderError{
@@ -1095,6 +1101,12 @@ func validateRoutineIdentityCollisions(dialect string, functions []goschema.Func
 	}
 	return nil
 }
+
+// routineIdentities folds nothing of its own: the routine name arrives already
+// folded by [mysqlroutine.IdentityKey], which is the rule the comparator uses,
+// and folding again here would be the second application invariant 4 of
+// docs/object_identity.md refuses.
+var routineIdentities = objectidentity.NewBuilder(identifier.Semantics{})
 
 // routineNamesAreCaseInsensitive reports whether dialect folds stored-routine
 // names. PostgreSQL and its family do not, which is why this is not applied

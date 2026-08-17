@@ -264,17 +264,17 @@ func validateDatabaseScope(original, final *dbschematypes.DBSchema, selection *s
 		if !strings.EqualFold(constraint.Type, "FOREIGN KEY") {
 			continue
 		}
-		owner := selection.tableIdentity(constraint.Schema, constraint.TableName)
-		foreign := selection.tableIdentity(foreignSchemaOrLocal(constraint), derefString(constraint.ForeignTable))
-		if foreign.table == "" {
+		owner := selection.tableID(constraint.Schema, constraint.TableName)
+		foreign := selection.tableID(foreignSchemaOrLocal(constraint), derefString(constraint.ForeignTable))
+		if foreign.Name.Empty() {
 			continue
 		}
-		_, ownerKept := kept[owner]
-		_, foreignKept := kept[foreign]
-		_, foreignExisted := existed[foreign]
+		_, ownerKept := kept[owner.Key()]
+		_, foreignKept := kept[foreign.Key()]
+		_, foreignExisted := existed[foreign.Key()]
 		if ownerKept && foreignExisted && !foreignKept {
-			ownerName := dbschematypes.QualifyTableName(owner.schema, owner.table)
-			foreignName := dbschematypes.QualifyTableName(foreign.schema, foreign.table)
+			ownerName := dbschematypes.QualifyTableName(owner.Schema.Source, owner.Name.Source)
+			foreignName := dbschematypes.QualifyTableName(foreign.Schema.Source, foreign.Name.Source)
 			diagnostics.addf("table %q depends on table %q via a foreign key, but %q is not selected",
 				ownerName, foreignName, foreignName)
 		}
