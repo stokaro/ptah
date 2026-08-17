@@ -68,7 +68,10 @@ func TestSQLServerTableQualifiedIndexIdentity_RoundTrip(t *testing.T) {
 	)
 	c.Assert(err, qt.IsNil)
 	c.Assert(planned, qt.DeepEquals, []string{
-		"DROP INDEX [" + sqlServerIndexIdentityName + "] ON [" +
+		// IF EXISTS is part of the emission on SQL Server: the guard is
+		// ACCEPTED on every supported line, measured on 15.0.4480.2,
+		// 16.0.4265.3 and 17.0.4075.5 (stokaro/ptah#916).
+		"DROP INDEX IF EXISTS [" + sqlServerIndexIdentityName + "] ON [" +
 			sqlServerIndexIdentitySchema + "].[users]",
 	})
 	_, err = db.Exec(planned[0])
