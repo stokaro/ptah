@@ -26,6 +26,26 @@ func TestFromAttributes_HappyPath(t *testing.T) {
 			want:       &ast.RowTTLSpec{ExpirationExpression: "expires_at"},
 		},
 		{
+			// The other enabler, added by stokaro/ptah#1605. The text is kept
+			// verbatim; only the COMPARISON reads it as an interval.
+			name:       "the interval enabler",
+			attributes: map[string]string{"ttl_expire_after": "3 days"},
+			want:       &ast.RowTTLSpec{ExpireAfter: "3 days"},
+		},
+		{
+			name:       "an interval spelling the server will normalize",
+			attributes: map[string]string{"ttl_expire_after": "72 hours"},
+			want:       &ast.RowTTLSpec{ExpireAfter: "72 hours"},
+		},
+		{
+			name: "both enablers, which the server accepts together",
+			attributes: map[string]string{
+				"ttl_expiration_expression": "expires_at",
+				"ttl_expire_after":          "3 days",
+			},
+			want: &ast.RowTTLSpec{ExpirationExpression: "expires_at", ExpireAfter: "3 days"},
+		},
+		{
 			// The expression is arbitrary SQL and is kept verbatim, because the
 			// catalog keeps it verbatim: measured, whitespace, case, casts and
 			// parentheses all survive a round trip unchanged.
@@ -97,11 +117,12 @@ func TestFromAttributes_FailurePath(t *testing.T) {
 		wantErr    string
 	}{
 		{
-			// The refusal has to name the alternative, not only say no: the
-			// author's next question is always what to write instead.
-			name:       "ttl_expire_after, whose interval the server canonicalizes",
-			attributes: map[string]string{"ttl_expire_after": "3 days"},
-			wantErr:    `(?s).*declares ttl_expire_after: the server canonicalizes the interval.*declare ttl_expiration_expression.*`,
+			// The value is refused, not the parameter: an interval Ptah cannot
+			// read would be sent, normalized by the server into a spelling
+			// nothing here predicts, and re-issued on every run.
+			name:       "an interval this surface cannot read",
+			attributes: map[string]string{"ttl_expire_after": "3 fortnights"},
+			wantErr:    `(?s).*unknown unit "fortnights".*`,
 		},
 		{
 			name:       "ttl_row_stats_poll_interval, whose duration the server canonicalizes",
@@ -119,7 +140,7 @@ func TestFromAttributes_FailurePath(t *testing.T) {
 			// what you may write".
 			name:       "a misspelled parameter",
 			attributes: map[string]string{"ttl_expiration_expresion": "expires_at"},
-			wantErr:    `(?s).*unknown row-level TTL attribute "ttl_expiration_expresion": Ptah manages ttl_expiration_expression, .*`,
+			wantErr:    `(?s).*unknown row-level TTL attribute "ttl_expiration_expresion": Ptah manages ttl_expiration_expression, ttl_expire_after, .*`,
 		},
 		{
 			name:       "an integer knob that is not an integer",
@@ -152,7 +173,7 @@ func TestFromAttributes_IsDeterministic(t *testing.T) {
 	c := qt.New(t)
 
 	attributes := map[string]string{
-		"ttl_expire_after":            "3 days",
+		"ttl_expire_after":            "3 fortnights",
 		"ttl_row_stats_poll_interval": "10m",
 		"ttl_select_batch_size":       "nope",
 		"ttl_pause":                   "maybe",

@@ -87,28 +87,48 @@ func TestFromReloptions_ReadsWhatTheCatalogHolds(t *testing.T) {
 			},
 		},
 		{
-			// The parameters Ptah refuses to DECLARE are still ignored rather
-			// than refused when READ: a table someone configured outside Ptah
-			// is state to describe, not a declaration to reject.
-			name: "a table configured with a parameter Ptah does not model",
+			// The interval enabler, and the one parameter the catalog writes a
+			// TYPE ANNOTATION on: measured, `ttl_expire_after = '3 days'` is
+			// stored as `ttl_expire_after='3 days':::INTERVAL`, while every
+			// string-valued parameter beside it carries none. Leaving the
+			// annotation on would make the value differ from anything a
+			// declaration could write (stokaro/ptah#1605).
+			name: "the interval enabler, with the type annotation the catalog adds",
 			options: []string{
 				"ttl='on'",
 				"ttl_expire_after='3 days':::INTERVAL",
+			},
+			want: &ast.RowTTLSpec{ExpireAfter: "3 days"},
+		},
+		{
+			// The server's own normalization of `72 hours`. It is read back
+			// verbatim; only the comparison treats it as an interval.
+			name: "an interval the server normalized on the way in",
+			options: []string{
+				"ttl='on'",
+				"ttl_expire_after='72:00:00':::INTERVAL",
+			},
+			want: &ast.RowTTLSpec{ExpireAfter: "72:00:00"},
+		},
+		{
+			// ttl_row_stats_poll_interval is still not modeled, so a table
+			// carrying only it reads as having no policy Ptah manages.
+			name: "a table configured with a parameter Ptah does not model",
+			options: []string{
+				"ttl='on'",
 				"ttl_row_stats_poll_interval='10m0s'",
 			},
 			want: nil,
 		},
 		{
-			// Half-modeled is the dangerous middle: the enabler is one Ptah
-			// does not model, so the knob beside it must not be read as a
-			// policy Ptah manages.
-			name: "an unmodeled enabler beside a modeled knob",
+			name: "an unmodeled parameter beside modeled ones",
 			options: []string{
 				"ttl='on'",
+				"ttl_row_stats_poll_interval='10m0s'",
 				"ttl_expire_after='3 days':::INTERVAL",
 				"ttl_job_cron='@daily'",
 			},
-			want: &ast.RowTTLSpec{JobCron: "@daily"},
+			want: &ast.RowTTLSpec{ExpireAfter: "3 days", JobCron: "@daily"},
 		},
 		{
 			name:    "a malformed element with no equals sign is skipped",

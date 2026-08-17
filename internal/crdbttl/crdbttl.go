@@ -17,8 +17,12 @@
 //     `ttl_expire_after = '72 hours'` reads back as `'72:00:00':::INTERVAL` and
 //     `'5 minutes'` as `'00:05:00'`; `ttl_row_stats_poll_interval = '600s'` reads
 //     back as `'10m0s'`, `'1500ms'` as `'1s'`, and `'100ms'` is stored NOWHERE AT
-//     ALL. A declaration Ptah cannot predict the stored form of can never
-//     converge, so those two are refused — see [refusedParameters].
+//     ALL. The two are handled differently because the rewrites are different in
+//     kind: an interval has a VALUE both spellings denote, so ttl_expire_after is
+//     compared through [go.5x5.cz/ptah/internal/crdbinterval] rather than as text
+//     (stokaro/ptah#1605); a duration the server silently drops below one second
+//     denotes nothing at all, so ttl_row_stats_poll_interval stays refused — see
+//     [refusedParameters].
 //   - Everything else round-trips VERBATIM. `ttl_expiration_expression` keeps its
 //     whitespace, case, parentheses, casts and quoted identifiers exactly; the
 //     cron string, the four integer knobs and the three boolean knobs come back
@@ -47,6 +51,7 @@ import (
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
+	"go.5x5.cz/ptah/internal/crdbinterval"
 )
 
 // The policy type is [ast.RowTTLSpec], defined in core/ast and used unchanged
@@ -69,6 +74,7 @@ func Equal(a, b *ast.RowTTLSpec) bool {
 		return a.IsZero() && b.IsZero()
 	}
 	return a.ExpirationExpression == b.ExpirationExpression &&
+		equalInterval(a.ExpireAfter, b.ExpireAfter) &&
 		a.JobCron == b.JobCron &&
 		equalPtr(a.SelectBatchSize, b.SelectBatchSize) &&
 		equalPtr(a.DeleteBatchSize, b.DeleteBatchSize) &&
@@ -114,6 +120,9 @@ func Options(s *ast.RowTTLSpec) []Option {
 	options := make([]Option, 0, 9)
 	if s.ExpirationExpression != "" {
 		options = append(options, Option{ExpirationExpressionParameter, quote(s.ExpirationExpression)})
+	}
+	if s.ExpireAfter != "" {
+		options = append(options, Option{ExpireAfterParameter, quote(s.ExpireAfter)})
 	}
 	if s.JobCron != "" {
 		options = append(options, Option{JobCronParameter, quote(s.JobCron)})
@@ -220,10 +229,6 @@ const (
 // lands, the refusal is the honest answer, and it names the alternative rather
 // than only saying no.
 var refusedParameters = map[string]string{
-	ExpireAfterParameter: "the server canonicalizes the interval it stores — '72 hours' reads back as " +
-		"'72:00:00' and '5 minutes' as '00:05:00' — so the declared text can never match the catalog, " +
-		"and it adds a hidden crdb_internal_expiration column; declare " + ExpirationExpressionParameter +
-		" with an expression over a column you own instead (stokaro/ptah#1605 tracks supporting this one)",
 	RowStatsPollIntervalParameter: "the server canonicalizes the duration it stores — '600s' reads back as " +
 		"'10m0s' — and silently stores nothing at all for a value below one second, so the declaration " +
 		"can never be compared against what the table actually has",
@@ -290,13 +295,14 @@ func unsupportedDialect(dialect string, declaring []Declared) error {
 // tableProblems reports everything wrong with one table's declaration.
 func tableProblems(table Declared) []error {
 	var problems []error
-	if table.TTL.ExpirationExpression == "" {
+	if table.TTL.ExpirationExpression == "" && table.TTL.ExpireAfter == "" {
 		problems = append(problems, fmt.Errorf(
-			"table %q declares row-level TTL settings but no %s: CockroachDB refuses every other ttl_* "+
-				"parameter when no expiry is configured, answering `\"ttl_expire_after\" and/or "+
-				"\"ttl_expiration_expression\" must be set`",
-			table.Table, ExpirationExpressionParameter))
+			"table %q declares row-level TTL settings but neither %s nor %s: CockroachDB refuses every "+
+				"other ttl_* parameter when no expiry is configured, answering `\"ttl_expire_after\" "+
+				"and/or \"ttl_expiration_expression\" must be set`",
+			table.Table, ExpirationExpressionParameter, ExpireAfterParameter))
 	}
+	problems = append(problems, expireAfterProblems(table)...)
 	problems = append(problems, knobProblems(table)...)
 	return problems
 }
@@ -384,6 +390,8 @@ func declares(spec *ast.RowTTLSpec, parameter string) bool {
 	switch parameter {
 	case ExpirationExpressionParameter:
 		return spec.ExpirationExpression != ""
+	case ExpireAfterParameter:
+		return spec.ExpireAfter != ""
 	case JobCronParameter:
 		return spec.JobCron != ""
 	case SelectBatchSizeParameter:
@@ -422,4 +430,47 @@ type TableTTL struct {
 	Name string
 	// RowTTL is what it declares, nil for a table declaring none.
 	RowTTL *ast.RowTTLSpec
+}
+
+// equalInterval compares two ttl_expire_after values by the interval they
+// denote rather than by their text.
+//
+// It is the one field here compared that way, and it has to be: the server
+// rewrites the interval it stores, so `72 hours` reads back as `72:00:00` and a
+// text comparison would find a difference on every run. See
+// [go.5x5.cz/ptah/internal/crdbinterval] for the measured table.
+//
+// A value neither side can parse falls back to text equality. That case does
+// not arise through a declaration -- [ValidateDeclared] refuses an unreadable
+// one before it reaches here -- and the catalog's own spelling always parses,
+// so the fallback covers a hand-built spec rather than a real state.
+func equalInterval(a, b string) bool {
+	if a == b {
+		return true
+	}
+	if a == "" || b == "" {
+		return false
+	}
+	equal, err := crdbinterval.Equal(a, b)
+	if err != nil {
+		return false
+	}
+	return equal
+}
+
+// expireAfterProblems refuses a declared interval Ptah cannot read.
+//
+// The refusal is what keeps an unreadable spelling from becoming a silent
+// non-convergence: Ptah would send it, the server would store its own
+// normalization of it, and every later comparison would find a difference that
+// no plan could remove. Refusing here turns that into a message naming the
+// forms this surface reads.
+func expireAfterProblems(table Declared) []error {
+	if table.TTL.ExpireAfter == "" {
+		return nil
+	}
+	if _, err := crdbinterval.Parse(table.TTL.ExpireAfter); err != nil {
+		return []error{fmt.Errorf("table %q declares %s: %w", table.Table, ExpireAfterParameter, err)}
+	}
+	return nil
 }

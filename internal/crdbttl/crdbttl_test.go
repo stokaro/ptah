@@ -50,6 +50,22 @@ func TestOptions_RendersTheMeasuredSpelling(t *testing.T) {
 			},
 		},
 		{
+			name: "the interval enabler renders verbatim",
+			spec: &ast.RowTTLSpec{ExpireAfter: "72 hours"},
+			want: []crdbttl.Option{{Name: "ttl_expire_after", Value: "'72 hours'"}},
+		},
+		{
+			// Both enablers, in the order the plan fixes. The expression comes
+			// first because it is the one stokaro/ptah#1027 modeled; what
+			// matters is only that the order does not vary between runs.
+			name: "both enablers",
+			spec: &ast.RowTTLSpec{ExpirationExpression: "expires_at", ExpireAfter: "3 days"},
+			want: []crdbttl.Option{
+				{Name: "ttl_expiration_expression", Value: "'expires_at'"},
+				{Name: "ttl_expire_after", Value: "'3 days'"},
+			},
+		},
+		{
 			name: "the enabler comes first, then the cron, then ints, then bools",
 			spec: &ast.RowTTLSpec{
 				DisableChangefeedReplication: new(true),
@@ -131,6 +147,28 @@ func TestEqual_IsExact(t *testing.T) {
 			name: "an expression differing only in case",
 			a:    &ast.RowTTLSpec{ExpirationExpression: "expires_at"},
 			b:    &ast.RowTTLSpec{ExpirationExpression: "EXPIRES_AT"},
+			want: false,
+		},
+		{
+			// The one field compared by VALUE rather than by text, because the
+			// server rewrites what it stores: measured, `72 hours` reads back
+			// as `72:00:00`.
+			name: "two spellings of the same interval",
+			a:    &ast.RowTTLSpec{ExpireAfter: "72 hours"},
+			b:    &ast.RowTTLSpec{ExpireAfter: "72:00:00"},
+			want: true,
+		},
+		{
+			name: "an interval the server folds into another unit",
+			a:    &ast.RowTTLSpec{ExpireAfter: "1 week"},
+			b:    &ast.RowTTLSpec{ExpireAfter: "7 days"},
+			want: true,
+		},
+		{
+			// A month is not thirty days, and the server keeps them apart.
+			name: "two intervals that only look alike",
+			a:    &ast.RowTTLSpec{ExpireAfter: "1 mon"},
+			b:    &ast.RowTTLSpec{ExpireAfter: "30 days"},
 			want: false,
 		},
 		{
@@ -245,6 +283,27 @@ func TestValidateDeclared_HappyPath(t *testing.T) {
 			}},
 		},
 		{
+			// The interval enabler, added by stokaro/ptah#1605. The spelling is
+			// kept verbatim; only the comparison reads it as an interval.
+			name: "the interval enabler",
+			tables: []crdbttl.TableTTL{{
+				Name: "sessions", RowTTL: &ast.RowTTLSpec{ExpireAfter: "3 days"},
+			}},
+		},
+		{
+			name: "an interval the server will normalize on the way in",
+			tables: []crdbttl.TableTTL{{
+				Name: "sessions", RowTTL: &ast.RowTTLSpec{ExpireAfter: "72 hours"},
+			}},
+		},
+		{
+			// Measured: the server accepts both enablers on one table.
+			name: "both enablers together",
+			tables: []crdbttl.TableTTL{{Name: "sessions", RowTTL: &ast.RowTTLSpec{
+				ExpirationExpression: "expires_at", ExpireAfter: "3 days",
+			}}},
+		},
+		{
 			name: "every knob alongside the enabler",
 			tables: []crdbttl.TableTTL{{Name: "sessions", RowTTL: &ast.RowTTLSpec{
 				ExpirationExpression: "expires_at",
@@ -281,7 +340,7 @@ func TestValidateDeclared_FailurePath(t *testing.T) {
 			tables: []crdbttl.TableTTL{{
 				Name: "sessions", RowTTL: &ast.RowTTLSpec{JobCron: "@daily"},
 			}},
-			wantErr: `(?s).*declares row-level TTL settings but no ttl_expiration_expression.*`,
+			wantErr: `(?s).*declares row-level TTL settings but neither ttl_expiration_expression nor ttl_expire_after.*`,
 		},
 		{
 			// Zero is the silent shape: accepted, then stored nowhere.
@@ -290,6 +349,16 @@ func TestValidateDeclared_FailurePath(t *testing.T) {
 				ExpirationExpression: "expires_at", SelectBatchSize: new(int64(0)),
 			}}},
 			wantErr: `(?s).*declares ttl_select_batch_size = 0: CockroachDB refuses a negative value.*stores nothing at all for zero.*`,
+		},
+		{
+			// The VALUE is refused, not the parameter. An interval Ptah cannot
+			// read would be sent, normalized by the server into a spelling
+			// nothing here predicts, and re-issued on every run.
+			name: "an interval this surface cannot read",
+			tables: []crdbttl.TableTTL{{
+				Name: "sessions", RowTTL: &ast.RowTTLSpec{ExpireAfter: "3 fortnights"},
+			}},
+			wantErr: `(?s).*declares ttl_expire_after: interval "3 fortnights" cannot be read.*`,
 		},
 		{
 			name: "a negative knob",

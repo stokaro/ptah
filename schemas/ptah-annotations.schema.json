@@ -1241,7 +1241,11 @@
               "type": "string"
             },
             "ttl_expiration_expression": {
-              "description": "CockroachDB row-level TTL: SQL expression whose value is when a row expires. Enables the TTL; the other ttl_ attributes are refused without it.",
+              "description": "CockroachDB row-level TTL: SQL expression whose value is when a row expires. Enables the TTL.",
+              "type": "string"
+            },
+            "ttl_expire_after": {
+              "description": "CockroachDB row-level TTL: interval after a row is written at which it expires, such as `3 days`. Enables the TTL.",
               "type": "string"
             },
             "ttl_job_cron": {

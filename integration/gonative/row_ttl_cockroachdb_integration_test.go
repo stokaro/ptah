@@ -242,3 +242,134 @@ func rowTTLTableExists(c *qt.C, db *sql.DB) bool {
 func dropRowTTLTable(db *sql.DB) {
 	_, _ = db.Exec(`DROP TABLE IF EXISTS ` + rowTTLTable + ` CASCADE`)
 }
+
+// TestCockroachDBRowLevelTTL_ExpireAfterRoundTripsLive covers the enabler
+// stokaro/ptah#1027 refused and stokaro/ptah#1605 added.
+//
+// It is the interesting one because the server REWRITES what it stores: the
+// declared `72 hours` is kept as `72:00:00`, so a comparison over the text
+// would find a difference on every run and the plan would never empty. The
+// convergence assertions below are what a text comparison could not satisfy.
+func TestCockroachDBRowLevelTTL_ExpireAfterRoundTripsLive(t *testing.T) {
+	tests := []struct {
+		name     string
+		declared string
+	}{
+		{name: "a spelling the server keeps", declared: "3 days"},
+		{name: "hours the server keeps as a clock time", declared: "72 hours"},
+		{name: "minutes the server pads into a clock time", declared: "5 minutes"},
+		{name: "weeks the server folds into days", declared: "1 week"},
+		{name: "months the server keeps as months", declared: "2 years 3 months"},
+		{name: "an ISO-8601 duration", declared: "P1Y2M3D"},
+		{name: "a fractional quantity", declared: "1.5 hours"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			dsn := skipIfNoCockroachDB(t)
+			c := qt.New(t)
+			db, err := sql.Open("pgx", dsn)
+			c.Assert(err, qt.IsNil)
+			defer db.Close()
+			dropRowTTLTable(db)
+			defer dropRowTTLTable(db)
+
+			declared := rowTTLDeclaration(&ast.RowTTLSpec{ExpireAfter: test.declared})
+			applyRowTTLPlan(c, db, planRowTTLAgainstLive(c, t, dsn, declared))
+
+			// The stored spelling is the server's, not the declaration's, and
+			// asserting it here is what makes the convergence below meaningful:
+			// the two differ as text and still compare equal.
+			live := readRowTTL(c, t, dsn)
+			c.Assert(live, qt.IsNotNil)
+			c.Assert(planRowTTLAgainstLive(c, t, dsn, declared), qt.HasLen, 0)
+		})
+	}
+}
+
+// TestCockroachDBRowLevelTTL_ExpireAfterHidesTheColumnItCreates pins the second
+// half of stokaro/ptah#1605.
+//
+// `ttl_expire_after` adds a hidden crdb_internal_expiration column. A reader
+// that described it would report a column nobody declared, and the comparator
+// would plan a DROP COLUMN for a column the engine owns -- so the table would
+// never converge however well the interval compared.
+func TestCockroachDBRowLevelTTL_ExpireAfterHidesTheColumnItCreates(t *testing.T) {
+	dsn := skipIfNoCockroachDB(t)
+	c := qt.New(t)
+	db, err := sql.Open("pgx", dsn)
+	c.Assert(err, qt.IsNil)
+	defer db.Close()
+	dropRowTTLTable(db)
+	defer dropRowTTLTable(db)
+
+	declared := rowTTLDeclaration(&ast.RowTTLSpec{ExpireAfter: "3 days"})
+	applyRowTTLPlan(c, db, planRowTTLAgainstLive(c, t, dsn, declared))
+
+	// The column is really there: the assertion below is about the read, not
+	// about the server having declined to create it.
+	var hidden int
+	c.Assert(db.QueryRow(
+		`SELECT count(*) FROM information_schema.columns
+		 WHERE table_name = $1 AND column_name = 'crdb_internal_expiration'`, rowTTLTable,
+	).Scan(&hidden), qt.IsNil)
+	c.Assert(hidden, qt.Equals, 1)
+
+	c.Assert(rowTTLColumnNames(c, t, dsn), qt.DeepEquals, []string{"id", "expires_at"})
+	c.Assert(planRowTTLAgainstLive(c, t, dsn, declared), qt.HasLen, 0)
+}
+
+// TestCockroachDBRowLevelTTL_AKeylessTableHidesItsRowid covers the older leak
+// the same filter closes.
+//
+// A CockroachDB table declaring no primary key gets a hidden `rowid`, and it
+// reached descriptions long before row-level TTL existed: `ptah db read`
+// reported `"rowid" bigint PRIMARY KEY NOT NULL DEFAULT unique_rowid()` as a
+// third column of a two-column table. Nobody declared it and no other engine
+// could replay it.
+func TestCockroachDBRowLevelTTL_AKeylessTableHidesItsRowid(t *testing.T) {
+	dsn := skipIfNoCockroachDB(t)
+	c := qt.New(t)
+	db, err := sql.Open("pgx", dsn)
+	c.Assert(err, qt.IsNil)
+	defer db.Close()
+	dropRowTTLTable(db)
+	defer dropRowTTLTable(db)
+
+	_, err = db.Exec(`CREATE TABLE ` + rowTTLTable + ` (a INT, b STRING)`)
+	c.Assert(err, qt.IsNil)
+
+	var hidden int
+	c.Assert(db.QueryRow(
+		`SELECT count(*) FROM information_schema.columns
+		 WHERE table_name = $1 AND column_name = 'rowid'`, rowTTLTable,
+	).Scan(&hidden), qt.IsNil)
+	c.Assert(hidden, qt.Equals, 1)
+
+	c.Assert(rowTTLColumnNames(c, t, dsn), qt.DeepEquals, []string{"a", "b"})
+}
+
+// rowTTLColumnNames returns the columns the live description reports for the
+// table under test, in order.
+func rowTTLColumnNames(c *qt.C, t *testing.T, dsn string) []string {
+	c.Helper()
+
+	conn, err := dbschema.ConnectToDatabase(t.Context(), dsn)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+
+	live, err := dbschema.ReadSchemaWithSchemas(conn, []string{"public"})
+	c.Assert(err, qt.IsNil)
+
+	for _, table := range live.Tables {
+		if table.Name != rowTTLTable {
+			continue
+		}
+		names := make([]string, 0, len(table.Columns))
+		for _, column := range table.Columns {
+			names = append(names, column.Name)
+		}
+		return names
+	}
+	return nil
+}
