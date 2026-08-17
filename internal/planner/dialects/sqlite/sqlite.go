@@ -310,46 +310,81 @@ func touchesTriggers(diff *types.SchemaDiff) bool {
 	return len(diff.TriggersAdded) > 0 || len(diff.TriggersModified) > 0 || len(diff.TriggersRemoved) > 0
 }
 
+// rejectUnsupportedSchemaObjects refuses the object kinds SQLite has no grammar
+// for, naming the objects it refused.
+//
+// The names are the point. Refusing with "functions are not supported" tells an
+// operator that something in their schema is a function, which they knew; it
+// does not tell them WHICH function to remove or move, and a schema with forty
+// objects is then a search (stokaro/ptah#1628).
 func rejectUnsupportedSchemaObjects(diff *types.SchemaDiff) error {
-	if len(diff.MaterializedViewsAdded) > 0 || len(diff.MaterializedViewsModified) > 0 || len(diff.MaterializedViewsRemoved) > 0 {
-		return unsupportedFeaturef("materialized views are not supported")
+	if names := changedNames(diff.MaterializedViewsAdded, diff.MaterializedViewsRemoved, materializedViewNames(diff)); len(names) > 0 {
+		return unsupportedFeaturef("materialized views are not supported: %s", strings.Join(names, ", "))
 	}
-	if len(diff.ExtensionsAdded) > 0 || len(diff.ExtensionsModified) > 0 || len(diff.ExtensionsRemoved) > 0 {
-		return unsupportedFeaturef("extensions are not supported")
+	if names := changedNames(diff.ExtensionsAdded, diff.ExtensionsRemoved, extensionNames(diff)); len(names) > 0 {
+		return unsupportedFeaturef("extensions are not supported: %s", strings.Join(names, ", "))
 	}
-	if len(diff.FunctionsAdded) > 0 || len(diff.FunctionsModified) > 0 || len(diff.FunctionsRemoved) > 0 {
-		return unsupportedFeaturef("functions are not supported")
+	if names := changedNames(diff.FunctionsAdded, diff.FunctionsRemoved, functionNames(diff)); len(names) > 0 {
+		return unsupportedFeaturef("functions are not supported: %s", strings.Join(names, ", "))
 	}
-	if len(diff.SequencesAdded) > 0 || len(diff.SequencesModified) > 0 || len(diff.SequencesRemoved) > 0 {
-		return unsupportedFeaturef("sequences are not supported")
+	if names := changedNames(diff.SequencesAdded, diff.SequencesRemoved, sequenceNames(diff)); len(names) > 0 {
+		return unsupportedFeaturef("sequences are not supported: %s", strings.Join(names, ", "))
 	}
-	if hasUserDefinedTypeChanges(diff) {
-		return unsupportedFeaturef("user-defined types are not supported")
+	if names := userDefinedTypeNames(diff); len(names) > 0 {
+		return unsupportedFeaturef("user-defined types are not supported: %s", strings.Join(names, ", "))
 	}
 	return nil
 }
 
-// hasUserDefinedTypeChanges reports whether the diff touches a domain, composite
-// type or range type. Split out of rejectUnsupportedSchemaObjects so that adding
-// a category -- RangesModified, from stokaro/ptah#931 item 2 -- does not push
-// that function past the cyclomatic-complexity gate.
-func hasUserDefinedTypeChanges(diff *types.SchemaDiff) bool {
-	return len(diff.DomainsAdded) > 0 || len(diff.DomainsRemoved) > 0 || len(diff.DomainsModified) > 0 ||
-		len(diff.CompositeTypesAdded) > 0 || len(diff.CompositeTypesRemoved) > 0 || len(diff.CompositeTypesModified) > 0 ||
-		len(diff.RangesAdded) > 0 || len(diff.RangesRemoved) > 0 || len(diff.RangesModified) > 0
+// changedNames merges the added, removed and modified name lists of one object
+// kind into one sorted, deduplicated list for the refusal to print.
+func changedNames(added, removed, modified []string) []string {
+	names := slices.Concat(added, removed, modified)
+	slices.Sort(names)
+	return slices.Compact(names)
 }
 
+// rejectUnsupportedAccessControl refuses roles, grants and row-level security,
+// naming the objects for the reason rejectUnsupportedSchemaObjects does.
 func rejectUnsupportedAccessControl(diff *types.SchemaDiff) error {
-	if len(diff.RLSPoliciesAdded) > 0 || len(diff.RLSPoliciesModified) > 0 || len(diff.RLSPoliciesRemoved) > 0 ||
-		len(diff.RLSEnabledTablesAdded) > 0 || len(diff.RLSEnabledTablesRemoved) > 0 {
-		return unsupportedFeaturef("row-level security is not supported")
+	if names := rowLevelSecurityNames(diff); len(names) > 0 {
+		return unsupportedFeaturef("row-level security is not supported: %s", strings.Join(names, ", "))
 	}
-	if len(diff.RolesAdded) > 0 || len(diff.RolesModified) > 0 || len(diff.RolesRemoved) > 0 ||
-		len(diff.GrantsAdded) > 0 || len(diff.GrantsRemoved) > 0 ||
-		len(diff.GrantOptionsAdded) > 0 || len(diff.GrantOptionsRevoked) > 0 {
-		return unsupportedFeaturef("roles and grants are not supported")
+	if names := roleAndGrantNames(diff); len(names) > 0 {
+		return unsupportedFeaturef("roles and grants are not supported: %s", strings.Join(names, ", "))
 	}
 	return nil
+}
+
+// rowLevelSecurityNames lists every policy and every table whose row-level
+// security the diff changes.
+func rowLevelSecurityNames(diff *types.SchemaDiff) []string {
+	names := slices.Concat(diff.RLSEnabledTablesAdded, diff.RLSEnabledTablesRemoved)
+	for _, policy := range slices.Concat(diff.RLSPoliciesAdded, diff.RLSPoliciesRemoved) {
+		names = append(names, policy.PolicyName)
+	}
+	for _, policy := range diff.RLSPoliciesModified {
+		names = append(names, policy.PolicyName)
+	}
+	slices.Sort(names)
+	return slices.Compact(names)
+}
+
+// roleAndGrantNames lists every role the diff changes and every role a changed
+// grant names, which is what an operator has to find in their schema.
+func roleAndGrantNames(diff *types.SchemaDiff) []string {
+	names := slices.Concat(diff.RolesAdded, diff.RolesRemoved)
+	for _, role := range diff.RolesModified {
+		names = append(names, role.RoleName)
+	}
+	for _, grant := range slices.Concat(diff.GrantsAdded, diff.GrantsRemoved) {
+		names = append(names, grant.Role)
+	}
+	for _, grant := range slices.Concat(diff.GrantOptionsAdded, diff.GrantOptionsRevoked) {
+		names = append(names, grant.Role)
+	}
+	slices.Sort(names)
+	return slices.Compact(names)
 }
 
 func (p *Planner) addTables(
@@ -993,4 +1028,63 @@ func addedColumnsFor(diff *types.SchemaDiff, tableName string, semantics identif
 		return nil
 	}
 	return table.ColumnsAdded
+}
+
+// The four helpers below turn one object kind's "modified" list into names.
+// They exist because each modified-diff type spells its name field
+// differently -- ViewName, Name, FunctionName, SequenceName -- so one generic
+// helper would take a closure per call site and read worse than four lines.
+
+func materializedViewNames(diff *types.SchemaDiff) []string {
+	names := make([]string, 0, len(diff.MaterializedViewsModified))
+	for _, view := range diff.MaterializedViewsModified {
+		names = append(names, view.ViewName)
+	}
+	return names
+}
+
+func extensionNames(diff *types.SchemaDiff) []string {
+	names := make([]string, 0, len(diff.ExtensionsModified))
+	for _, extension := range diff.ExtensionsModified {
+		names = append(names, extension.Name)
+	}
+	return names
+}
+
+func functionNames(diff *types.SchemaDiff) []string {
+	names := make([]string, 0, len(diff.FunctionsModified))
+	for _, function := range diff.FunctionsModified {
+		names = append(names, function.FunctionName)
+	}
+	return names
+}
+
+func sequenceNames(diff *types.SchemaDiff) []string {
+	names := make([]string, 0, len(diff.SequencesModified))
+	for _, sequence := range diff.SequencesModified {
+		names = append(names, sequence.SequenceName)
+	}
+	return names
+}
+
+// userDefinedTypeNames lists every domain, composite type and range the diff
+// touches. hasUserDefinedTypeChanges answered the same question as a bool; this
+// answers it with the names the refusal prints.
+func userDefinedTypeNames(diff *types.SchemaDiff) []string {
+	names := slices.Concat(
+		diff.DomainsAdded, diff.DomainsRemoved,
+		diff.CompositeTypesAdded, diff.CompositeTypesRemoved,
+		diff.RangesAdded, diff.RangesRemoved,
+	)
+	for _, domain := range diff.DomainsModified {
+		names = append(names, domain.DomainName)
+	}
+	for _, composite := range diff.CompositeTypesModified {
+		names = append(names, composite.TypeName)
+	}
+	for _, rangeType := range diff.RangesModified {
+		names = append(names, rangeType.RangeName)
+	}
+	slices.Sort(names)
+	return slices.Compact(names)
 }

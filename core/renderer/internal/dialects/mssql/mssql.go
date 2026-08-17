@@ -722,7 +722,8 @@ func renderTriggerEvent(node *ast.CreateTriggerNode) (string, error) {
 		timing = "AFTER"
 	}
 	if timing == "BEFORE" {
-		return "", unsupportedFeaturef("BEFORE triggers are not supported; SQL Server offers AFTER and INSTEAD OF")
+		return "", unsupportedFeaturef(
+			"trigger %q: BEFORE triggers are not supported; SQL Server offers AFTER and INSTEAD OF", node.Name)
 	}
 	event := strings.ToUpper(strings.TrimSpace(node.Event))
 	if event == "" {

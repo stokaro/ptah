@@ -756,7 +756,10 @@ func TestPlannerRejectsExtensionPlacementChanges(t *testing.T) {
 	c.Assert(err, qt.ErrorAs, &planErr)
 	c.Assert(planErr.Dialect, qt.Equals, platform.SQLite)
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-	c.Assert(err, qt.ErrorMatches, "sqlite: extensions are not supported")
+	// The name is part of the refusal now: "extensions are not supported" told
+	// an operator that something in their schema is an extension, not which one
+	// to remove (stokaro/ptah#1628).
+	c.Assert(err, qt.ErrorMatches, "sqlite: extensions are not supported: pgcrypto")
 }
 
 func TestPlannerRejectsSQLiteExcludeConstraint(t *testing.T) {
