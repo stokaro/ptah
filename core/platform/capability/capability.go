@@ -975,10 +975,16 @@ func SpannerPostgres() Capabilities {
 		With(PostgresCatalogFunctions, false).
 		With(CatalogRowStatistics, false).
 		With(CatalogDependencies, false).
-		With(DropConstraintGeneric, false).
+		// Measured on the same endpoint AND confirmed against the PostgreSQL
+		// dialect's own reference, which is what separates these three from the
+		// assumptions below them: `ALTER TABLE Concerts DROP CONSTRAINT
+		// concert_id_gt_0`, `DROP INDEX [ IF EXISTS ] name`, and of a CHECK
+		// expression, "if the expression evaluates to FALSE, the data change is
+		// not allowed" (stokaro/ptah#942).
+		With(DropConstraintGeneric, true).
 		With(DropConstraintIfExists, false).
-		With(DropIndexIfExists, false).
-		With(CheckConstraintsEnforced, false).
+		With(DropIndexIfExists, true).
+		With(CheckConstraintsEnforced, true).
 		With(EnumCustomType, false).
 		With(CreateIndexConcurrently, false).
 		With(DropIndexConcurrently, false).
