@@ -362,7 +362,8 @@ func (r *Reader) readTablesForSchema(schemaName string) ([]types.DBTable, error)
 		       ` + r.estimatedRowsExpr() + `,
 		       ` + rowStatsUnknown + ` AS row_stats_unknown,
 		       COALESCE(c.relkind = 'p', false) AS partitioned,
-		       COALESCE(c.relrowsecurity, false) AS rls_enabled
+		       COALESCE(c.relrowsecurity, false) AS rls_enabled,
+		       ` + r.rowTTLOptionsExpr() + `
 			FROM information_schema.tables t
 			LEFT JOIN pg_namespace n ON n.nspname = t.table_schema
 			LEFT JOIN pg_class c ON c.relname = t.table_name AND c.relnamespace = n.oid
@@ -381,6 +382,7 @@ func (r *Reader) readTablesForSchema(schemaName string) ([]types.DBTable, error)
 	var tables []types.DBTable
 	for rows.Next() {
 		var table types.DBTable
+		var rowTTLOptions string
 		err := rows.Scan(
 			&table.Schema,
 			&table.Name,
@@ -390,12 +392,16 @@ func (r *Reader) readTablesForSchema(schemaName string) ([]types.DBTable, error)
 			&table.RowStatsUnknown,
 			&table.Partitioned,
 			&table.RLSEnabled,
+			&rowTTLOptions,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan table: %w", err)
 		}
 		table.Schema = r.outputSchema(table.Schema)
 		table.Columns = columnsByTable[table.Name]
+		if table.RowTTL, err = readRowTTL(rowTTLOptions); err != nil {
+			return nil, fmt.Errorf("failed to read row-level TTL for table %s: %w", table.Name, err)
+		}
 
 		tables = append(tables, table)
 	}

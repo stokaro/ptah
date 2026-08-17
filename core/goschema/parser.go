@@ -16,6 +16,7 @@ import (
 	"go.5x5.cz/ptah/core/goschema/internal/parseutils"
 	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/internal/annotationmeta"
+	"go.5x5.cz/ptah/internal/crdbttl"
 	"go.5x5.cz/ptah/internal/dialectscope"
 	"go.5x5.cz/ptah/internal/tableref"
 )
@@ -477,13 +478,31 @@ func (s *schemaParseState) parseSchemaComment(comment *ast.Comment) error {
 
 func (s *schemaParseState) parseTableComment(comment *ast.Comment, structName string) error {
 	kv := parseutils.ParseKeyValueComment(comment.Text)
+	schemaName, tableName := tableDirectiveName(kv["schema"], kv["name"])
+	// The TTL attributes are read BEFORE the general allowlist, and the order
+	// is the point. Two ttl_ names are real CockroachDB parameters Ptah refuses
+	// for measured reasons, and the allowlist would answer them with a generic
+	// "unknown annotation attribute" — telling an author their spelling is
+	// wrong when it is right and the parameter is unsupported. Running this
+	// first means ttl_expire_after gets the reason and the alternative, and a
+	// genuine ttl_ typo gets a message listing the managed surface, which is
+	// also better than the generic one (stokaro/ptah#1027).
+	rowTTL, err := crdbttl.FromAttributes(tableName, kv)
+	if err != nil {
+		return &ptaherr.ParseError{
+			File:      s.filename,
+			Line:      s.annotationContext(comment, "//ptah:schema:table", structName).line,
+			Directive: "ptah:schema:table",
+			Err:       ptaherr.ErrUnknownAttribute,
+			Message:   err.Error(),
+		}
+	}
 	if err := validateAttributes(
 		kv,
 		s.annotationContext(comment, "//ptah:schema:table", structName),
 	); err != nil {
 		return err
 	}
-	schemaName, tableName := tableDirectiveName(kv["schema"], kv["name"])
 	s.tableDirectives = append(s.tableDirectives, Table{
 		StructName: structName,
 		Name:       tableName,
@@ -495,6 +514,7 @@ func (s *schemaParseState) parseTableComment(comment *ast.Comment, structName st
 		PrimaryKey: splitCSVAttribute(kv["primary_key"]),
 		Checks:     splitCSVAttribute(kv["checks"]),
 		CustomSQL:  kv["custom"],
+		RowTTL:     rowTTL,
 		Overrides:  parseutils.ParsePlatformSpecific(kv),
 	})
 	return nil

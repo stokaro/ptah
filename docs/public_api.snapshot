@@ -814,12 +814,14 @@ type RenameEnumValueOperation struct{ ... }
 type RenameTableOperation struct{ ... }
 type RenameTypeOperation struct{ ... }
     func NewRenameTypeOperation(newName string) *RenameTypeOperation
+type ResetRowTTLOperation struct{ ... }
 type ResultColumn struct{ ... }
 type RevokePrivilegeNode struct{ ... }
     func NewRevokePrivilege(role, objectType, objectName string, privileges []string) *RevokePrivilegeNode
 type RoleOperation interface{ ... }
 type RoutineKind string
     const RoutineKindFunction RoutineKind = "function" ...
+type RowTTLSpec struct{ ... }
 type SQLServerRoutineBody struct{ ... }
 type SQLServerRoutineForm string
     const SQLServerRoutineFormProcedure SQLServerRoutineForm = "procedure" ...
@@ -841,6 +843,7 @@ type SetPasswordOperation struct{ ... }
     func NewSetPasswordOperation(password string) *SetPasswordOperation
 type SetReplicationOperation struct{ ... }
     func NewSetReplicationOperation(replication bool) *SetReplicationOperation
+type SetRowTTLOperation struct{ ... }
 type SetSuperuserOperation struct{ ... }
     func NewSetSuperuserOperation(superuser bool) *SetSuperuserOperation
 type SortDirection int
@@ -1684,6 +1687,14 @@ type CreateTableNode struct {
     SelectBody string
     // Comment is an optional table comment
     Comment string
+    // RowTTL stores the CockroachDB row-level TTL storage parameters.
+    //
+    // It is a typed field rather than entries in Options because the parameters
+    // are compared as one policy and planned as a group -- adding one and
+    // removing another is a single ALTER -- and because "this table has no TTL"
+    // is a state Options cannot spell apart from "this renderer set no option"
+    // (stokaro/ptah#1027).
+    RowTTL *RowTTLSpec
 }
     CreateTableNode represents a CREATE TABLE statement with all its components.
 
@@ -3102,6 +3113,26 @@ type RenameTypeOperation struct {
 func NewRenameTypeOperation(newName string) *RenameTypeOperation
 func (op *RenameTypeOperation) Accept(visitor Visitor) error
 
+### go.5x5.cz/ptah/core/ast.ResetRowTTLOperation
+
+package ast // import "go.5x5.cz/ptah/core/ast"
+
+type ResetRowTTLOperation struct {
+    // Parameters are the storage parameter names to reset, in the order they
+    // are emitted.
+    Parameters []string
+}
+    ResetRowTTLOperation represents ALTER TABLE ... RESET (<parameters>) for
+    CockroachDB row-level TTL.
+
+    Removing a whole policy and removing one knob are the same statement
+    with different arguments: `RESET (ttl)` drops the entire configuration,
+    and `RESET (ttl_job_cron)` drops one parameter while the policy stays.
+    Measured on v26.2.5, `RESET (ttl)` against a table that never had a TTL
+    succeeds and changes nothing, so the removal is idempotent.
+
+func (op *ResetRowTTLOperation) Accept(_visitor Visitor) error
+
 ### go.5x5.cz/ptah/core/ast.ResultColumn
 
 package ast // import "go.5x5.cz/ptah/core/ast"
@@ -3182,6 +3213,45 @@ type RoutineKind string
     RoutineKind identifies which CREATE routine form an opaque routine wraps.
 
 const RoutineKindFunction RoutineKind = "function" ...
+
+### go.5x5.cz/ptah/core/ast.RowTTLSpec
+
+package ast // import "go.5x5.cz/ptah/core/ast"
+
+type RowTTLSpec struct {
+    // ExpirationExpression is `ttl_expiration_expression`, the SQL expression
+    // whose value is when a row expires. It is the only enabler Ptah models.
+    ExpirationExpression string
+    // JobCron is `ttl_job_cron`.
+    JobCron string
+    // SelectBatchSize is `ttl_select_batch_size`.
+    SelectBatchSize *int64
+    // DeleteBatchSize is `ttl_delete_batch_size`.
+    DeleteBatchSize *int64
+    // SelectRateLimit is `ttl_select_rate_limit`.
+    SelectRateLimit *int64
+    // DeleteRateLimit is `ttl_delete_rate_limit`.
+    DeleteRateLimit *int64
+    // Pause is `ttl_pause`.
+    Pause *bool
+    // LabelMetrics is `ttl_label_metrics`.
+    LabelMetrics *bool
+    // DisableChangefeedReplication is `ttl_disable_changefeed_replication`.
+    DisableChangefeedReplication *bool
+}
+    RowTTLSpec is a table's row-level TTL policy, as CockroachDB spells it in
+    table storage parameters.
+
+    Fields are pointers wherever the parameter has a meaningful zero, so a
+    declared `ttl_pause = false` stays distinguishable from a parameter nobody
+    declared. go.5x5.cz/ptah/internal/crdbttl owns why that distinction has to
+    survive this far down, and owns which parameters may appear here at all:
+    the two whose values the server rewrites on the way in are refused before a
+    spec is built, so every value reaching this struct is one that reads back as
+    written.
+
+func (s *RowTTLSpec) Clone() *RowTTLSpec
+func (s *RowTTLSpec) IsZero() bool
 
 ### go.5x5.cz/ptah/core/ast.SQLServerRoutineBody
 
@@ -3375,6 +3445,25 @@ type SetReplicationOperation struct {
 
 func NewSetReplicationOperation(replication bool) *SetReplicationOperation
 func (op *SetReplicationOperation) GetOperationType() string
+
+### go.5x5.cz/ptah/core/ast.SetRowTTLOperation
+
+package ast // import "go.5x5.cz/ptah/core/ast"
+
+type SetRowTTLOperation struct {
+    // Options are the storage parameters to set, already rendered, in the
+    // order they are emitted.
+    Options []string
+}
+    SetRowTTLOperation represents ALTER TABLE ... SET (<storage parameters>) for
+    CockroachDB row-level TTL.
+
+    The parameters travel as rendered `name = value` text rather than
+    as a spec, because the ordering and the quoting are decisions
+    go.5x5.cz/ptah/internal/crdbttl owns and the renderer must not make a second
+    time. An empty Options is not a valid operation and renders nothing.
+
+func (op *SetRowTTLOperation) Accept(_visitor Visitor) error
 
 ### go.5x5.cz/ptah/core/ast.SetSuperuserOperation
 
@@ -4917,6 +5006,15 @@ type Table struct {
     Partition         *PartitionSpec               // PostgreSQL table partitioning metadata
     CustomSQL         string                       // Custom SQL to append to CREATE TABLE
     Overrides         map[string]map[string]string // Platform-specific overrides
+    // RowTTL is the CockroachDB row-level TTL this table declares, nil for a
+    // table declaring none.
+    //
+    // It carries the ast type rather than a copy of it. The parameters are a
+    // closed, measured set, and a per-layer duplicate is a place for one of
+    // them to go missing between the declaration and the statement -- which for
+    // a row-expiry policy means a table quietly keeping rows it was declared to
+    // delete (stokaro/ptah#1027).
+    RowTTL *ast.RowTTLSpec
 }
     Table represents a database table configuration parsed from Go struct
     annotations. This defines the overall table properties and metadata that
@@ -6619,6 +6717,13 @@ type DBTable struct {
     RLSEnabled      bool       `json:"rls_enabled"`                 // Whether RLS is enabled on this table (PostgreSQL)
     Strict          bool       `json:"strict,omitempty"`            // SQLite STRICT table option
     WithoutRowID    bool       `json:"without_rowid,omitempty"`     // SQLite WITHOUT ROWID table option
+    // RowTTL is the CockroachDB row-level TTL this table carries, nil for a
+    // table with none and for every target without capability.RowLevelTTL.
+    //
+    // omitzero keeps every other dialect's serialization byte-identical, which
+    // matters because a description is compared, fingerprinted and replayed
+    // (stokaro/ptah#1027).
+    RowTTL *ast.RowTTLSpec `json:"row_ttl,omitzero"`
     // VirtualModule is the SQLite module that owns this table, from the USING
     // clause of the CREATE VIRTUAL TABLE statement that created it -- `fts5`,
     // `rtree`, `geopoly`, or any other module a build registers. It is empty
@@ -9368,6 +9473,7 @@ type RLSPolicyDiff struct{ ... }
 type RLSPolicyRef struct{ ... }
 type RangeDiff struct{ ... }
 type RoleDiff struct{ ... }
+type RowTTLChange struct{ ... }
 type SchemaDiff struct{ ... }
 type SequenceDiff struct{ ... }
 type TableDiff struct{ ... }
@@ -9849,6 +9955,23 @@ type RoleDiff struct {
         }
 
 
+### go.5x5.cz/ptah/migration/schemadiff/types.RowTTLChange
+
+package types // import "go.5x5.cz/ptah/migration/schemadiff/types"
+
+type RowTTLChange struct {
+    // Desired is the policy the declaration asks for, nil to remove it.
+    Desired *ast.RowTTLSpec `json:"desired,omitzero"`
+    // Current is the policy the target carries, nil when it has none.
+    Current *ast.RowTTLSpec `json:"current,omitzero"`
+}
+    RowTTLChange is one table's row-level TTL transition.
+
+    Either side may be nil: a nil Current is a policy being added, a nil Desired
+    is one being removed, and both non-nil is a change. Both nil never reaches
+    here, because that is not a change.
+
+
 ### go.5x5.cz/ptah/migration/schemadiff/types.SchemaDiff
 
 package types // import "go.5x5.cz/ptah/migration/schemadiff/types"
@@ -10174,6 +10297,15 @@ type TableDiff struct {
     // ConstraintsRemoved contains names of constraints that need to be removed from the table
     // (potentially dangerous - may affect data integrity)
     ConstraintsRemoved []string `json:"constraints_removed"`
+
+    // RowTTLChange carries a CockroachDB row-level TTL transition, and is nil
+    // when the table's policy is unchanged.
+    //
+    // It is a pointer to a pair rather than a list of changed parameters
+    // because the planner needs BOTH sides: a parameter present on the target
+    // and absent from the declaration is a RESET, and only the current state
+    // says which those are. See stokaro/ptah#1027.
+    RowTTLChange *RowTTLChange `json:"row_ttl_change,omitzero"`
 }
     TableDiff represents structural differences within a specific database
     table.

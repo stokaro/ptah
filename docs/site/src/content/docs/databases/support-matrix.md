@@ -333,6 +333,8 @@ matching preset automatically.
 - **CockroachDB**: the preset excludes concurrent index creation and drops,
   `XML` columns, and advisory locks. Live CockroachDB v26.2.5 accepts role
   management, row-level security, standalone sequences, and `SERIAL` columns.
+  It is also the one target that ADDS to PostgreSQL's surface rather than
+  subtracting from it: see [CockroachDB row-level TTL](#cockroachdb-row-level-ttl).
 - **YugabyteDB**: the preset includes concurrent index creation, role
   management, row-level security, standalone sequences, `XML` columns, and
   advisory locks on the measured 2026.1 line. `DROP INDEX CONCURRENTLY`
@@ -360,6 +362,96 @@ subscriptions, logical replication slots, event triggers, and non-extension
 foreign-data objects before dev-database cleanup. PostgreSQL additionally
 removes database large objects inside the cleanup transaction; YugabyteDB does
 not support that catalog write path.
+
+### CockroachDB row-level TTL
+
+CockroachDB expires rows on a schedule the server runs, declared as table
+storage parameters. Ptah manages that policy through the render, plan, apply,
+introspect, and diff cycle: a declared TTL is applied, read back from
+`pg_class.reloptions`, and compared to zero difference on the next run.
+
+Declare it as attributes on the table, named exactly for the storage parameters
+they become:
+
+```go
+//ptah:schema:table name="sessions" ttl_expiration_expression="expires_at" ttl_job_cron="@daily"
+type Sessions struct {
+	//ptah:schema:field name="id" type="BIGINT" primary="true"
+	ID int64
+	//ptah:schema:field name="expires_at" type="TIMESTAMPTZ"
+	ExpiresAt time.Time
+}
+```
+
+`ptah schema render --dialect cockroachdb` emits that as:
+
+```sql
+CREATE TABLE "sessions" (
+  "id" BIGINT PRIMARY KEY NOT NULL,
+  "expires_at" TIMESTAMPTZ
+) WITH (ttl_expiration_expression = 'expires_at', ttl_job_cron = '@daily');
+```
+
+Changing the policy emits `ALTER TABLE ... SET (...)`, and removing it emits
+`ALTER TABLE ... RESET (ttl)`, which drops the whole configuration in one
+statement and leaves the table alone.
+
+#### What Ptah manages
+
+Nine parameters, each measured to read back from the catalog exactly as written
+on both declared lines:
+
+| Attribute | What it sets |
+| --- | --- |
+| `ttl_expiration_expression` | The SQL expression whose value is when a row expires. Required — the other attributes are refused without it. |
+| `ttl_job_cron` | The schedule the deletion job runs on. |
+| `ttl_select_batch_size` | Rows selected per batch; at least 1. |
+| `ttl_delete_batch_size` | Rows deleted per batch; at least 1. |
+| `ttl_select_rate_limit` | Rows selected per second; at least 1. |
+| `ttl_delete_rate_limit` | Rows deleted per second; at least 1. |
+| `ttl_pause` | Pauses the deletion job without removing the policy. |
+| `ttl_label_metrics` | Labels the job's metrics with the table name. |
+| `ttl_disable_changefeed_replication` | Omits the job's deletes from changefeeds. |
+
+#### What Ptah refuses, and why
+
+- **`ttl_expire_after` is not supported.** It is the other way CockroachDB can
+  enable a TTL — "delete rows N after they are written" — and Ptah refuses it
+  rather than accepting it unreliably. The server canonicalizes the interval it
+  stores, so `'72 hours'` reads back as `'72:00:00'` and `'5 minutes'` as
+  `'00:05:00'`, and the declared text can never match the catalog; the plan
+  would re-issue the change forever. It also adds a hidden
+  `crdb_internal_expiration` column that a reader would describe as a column
+  nobody declared. Declare `ttl_expiration_expression` over a timestamp column
+  you own instead. Supporting it properly is tracked separately in
+  [stokaro/ptah#1605](https://github.com/stokaro/ptah/issues/1605).
+- **`ttl_row_stats_poll_interval` is not supported**, for the same reason: the
+  server canonicalizes the duration (`'600s'` becomes `'10m0s'`) and stores
+  nothing at all for a value below one second.
+- **`ttl` cannot be declared.** It is derived from the other parameters, and
+  the server refuses it when it arrives alone.
+- **A knob without `ttl_expiration_expression` is refused**, because the server
+  refuses it too: every other `ttl_` parameter needs an expiry configured.
+- **Zero and negative knob values are refused.** The server rejects a negative
+  value and accepts zero while storing the parameter nowhere at all, so neither
+  can ever read back as declared. Omit the attribute to keep the engine default.
+- **A `false` boolean normalizes to "not declared"**, because on the server
+  those are the same state: `ttl_pause = false` is stored nowhere, and setting
+  it erases an existing `true` exactly as a reset does.
+
+#### On other engines
+
+Row-level TTL is refused on every target without the capability — PostgreSQL,
+YugabyteDB, Spanner, MySQL, MariaDB, SQLite, SQL Server and ClickHouse — before
+anything is applied. PostgreSQL answers `unrecognized parameter
+"ttl_expiration_expression"` on its own, but YugabyteDB first answers `WARNING:
+storage parameter ttl_expiration_expression is unsupported, ignoring`. An engine
+that ignores a retention policy is worse than one that refuses it, so Ptah does
+not leave that decision to the server.
+
+A CockroachDB dev database is required for dev-database workflows on a
+CockroachDB target; a mismatched `--dev-url` is refused with
+`--dev-url dialect "postgres" does not match --url dialect "cockroachdb"`.
 
 ## ClickHouse
 

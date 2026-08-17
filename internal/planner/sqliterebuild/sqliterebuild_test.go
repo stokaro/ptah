@@ -105,6 +105,12 @@ func TestEveryTableDiffFieldIsClassified(t *testing.T) {
 		"ColumnsModified":    true,
 		"ConstraintsAdded":   true,
 		"ConstraintsRemoved": true,
+		// CockroachDB row-level TTL is a storage parameter on an engine SQLite
+		// is not. The field can only be non-nil for a target carrying
+		// capability.RowLevelTTL, which no SQLite preset does, so a SQLite
+		// table cannot carry one and there is nothing to rebuild for
+		// (stokaro/ptah#1027).
+		"RowTTLChange": false,
 	}
 
 	// One non-zero value per field kind, so the census exercises the predicate
@@ -117,6 +123,9 @@ func TestEveryTableDiffFieldIsClassified(t *testing.T) {
 		},
 		reflect.Slice: func(fieldType reflect.Type) reflect.Value {
 			return reflect.MakeSlice(fieldType, 1, 1)
+		},
+		reflect.Pointer: func(fieldType reflect.Type) reflect.Value {
+			return reflect.New(fieldType.Elem())
 		},
 	}
 

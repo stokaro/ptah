@@ -158,6 +158,23 @@ Maps a Go struct to a database table.
 | `name` | No | Table name. |
 | `primary_key` | No | Comma-separated primary key columns. |
 | `schema` | No | Database schema name. |
+| `ttl_delete_batch_size` | No | CockroachDB row-level TTL: rows deleted per batch; at least 1. |
+| `ttl_delete_rate_limit` | No | CockroachDB row-level TTL: rows deleted per second; at least 1. |
+| `ttl_disable_changefeed_replication` | No | CockroachDB row-level TTL: omits the job's deletes from changefeeds. `true`/`false`. |
+| `ttl_expiration_expression` | No | CockroachDB row-level TTL: SQL expression whose value is when a row expires. Enables the TTL. |
+| `ttl_job_cron` | No | CockroachDB row-level TTL: cron schedule for the deletion job. |
+| `ttl_label_metrics` | No | CockroachDB row-level TTL: labels the job's metrics with the table name. `true`/`false`. |
+| `ttl_pause` | No | CockroachDB row-level TTL: pauses the deletion job without removing the policy. `true`/`false`. |
+| `ttl_select_batch_size` | No | CockroachDB row-level TTL: rows selected per batch; at least 1. |
+| `ttl_select_rate_limit` | No | CockroachDB row-level TTL: rows selected per second; at least 1. |
+
+The `ttl_` attributes declare CockroachDB row-level TTL and are refused on every
+other dialect before anything is applied. `ttl_expiration_expression` enables the
+policy and the rest are refused without it. Two real CockroachDB parameters are
+deliberately absent — `ttl_expire_after` and `ttl_row_stats_poll_interval` —
+because the server rewrites the values it stores for them, so a declaration could
+never read back as written; declaring either is refused by name with the reason.
+See [CockroachDB row-level TTL](../../databases/support-matrix/#cockroachdb-row-level-ttl).
 
 Platform overrides: yes.
 
