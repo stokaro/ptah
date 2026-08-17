@@ -126,7 +126,13 @@ func ConnectToDatabase(ctx context.Context, dbURL string) (*DatabaseConnection, 
 			)
 		}
 		newWriter = func(runner sqlrunner.Runner, _ *sql.Conn) types.SchemaWriter {
-			return clickhouse.NewClickHouseWriterForRunner(runner, info.Schema)
+			// The capabilities travel with the writer for the same reason
+			// they travel with the reader above: the realm-cleanup gate is a
+			// capability question, and resolving it here means the banner is
+			// read once (stokaro/ptah#916).
+			return clickhouse.NewClickHouseWriterForRunnerWithCapabilities(
+				runner, info.Schema, info.Capabilities,
+			)
 		}
 	case "sqlite":
 		newReader = func(runner sqlrunner.Runner) types.SchemaReader {

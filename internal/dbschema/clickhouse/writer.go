@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/sqlident"
 	"go.5x5.cz/ptah/internal/sqlrunner"
@@ -35,6 +36,10 @@ type Writer struct {
 	db     sqlrunner.Runner
 	schema string
 	dryRun bool
+	// caps is the capability set resolved for the connected server. It decides
+	// whether the realm cleanup can prove complete catalog visibility; see
+	// validateDatabaseRealmTarget.
+	caps capability.Capabilities
 }
 
 type transactionWriter struct {
@@ -137,7 +142,24 @@ func NewClickHouseWriter(db *sql.DB, schema string) *Writer {
 // NewClickHouseWriterForRunner constructs a writer bound to a pool or pinned
 // database session.
 func NewClickHouseWriterForRunner(runner sqlrunner.Runner, schema string) *Writer {
-	return &Writer{db: runner, schema: schema}
+	return NewClickHouseWriterForRunnerWithCapabilities(runner, schema, nil)
+}
+
+// NewClickHouseWriterForRunnerWithCapabilities builds a writer whose
+// realm-cleanup gate reads the capability set the connected server resolved to,
+// rather than parsing the banner a second time.
+//
+// A nil set is not a refusal and not a default: the writer resolves one from the
+// server's own banner through the SHARED resolver when it needs the answer. That
+// is what stokaro/ptah#916 item 3 asks for -- the threshold lives in
+// core/platform/capability and nowhere else -- while a caller that already
+// resolved the set is spared reading the banner twice.
+func NewClickHouseWriterForRunnerWithCapabilities(
+	runner sqlrunner.Runner,
+	schema string,
+	caps capability.Capabilities,
+) *Writer {
+	return &Writer{db: runner, schema: schema, caps: caps}
 }
 
 // ExecuteSQL executes a SQL statement against the ClickHouse server. Values
@@ -397,15 +419,22 @@ func (w *Writer) DropDatabaseRealm(ctx context.Context) error {
 }
 
 func (w *Writer) validateDatabaseRealmTarget(ctx context.Context) error {
-	var version string
-	if err := w.db.QueryRowContext(ctx, databaseRealmVersionQuery).Scan(&version); err != nil {
-		return fmt.Errorf("clickhouse: inspect server version: %w", err)
-	}
-	checkGrants, err := supportsCheckGrant(version)
+	// The capability, not a version comparison. This gate used to parse the
+	// banner against 24.11 with a hand-rolled Sscanf outside
+	// core/platform/capability -- one of the five ad-hoc version gates
+	// stokaro/ptah#916 item 3 names, and the one whose threshold the resolver
+	// now carries as capability.CheckGrantStatement.
+	//
+	// The behavior is unchanged in the direction that matters: a server that
+	// cannot answer is refused. What changes is where the threshold lives, and
+	// that a banner this file could not parse used to produce a parse error
+	// where it now takes the ladder's lower arm and reaches the refusal below,
+	// which is the same decision with the reason the operator can act on.
+	caps, version, err := w.realmCapabilities(ctx)
 	if err != nil {
 		return err
 	}
-	if !checkGrants {
+	if !caps.Has(capability.CheckGrantStatement) {
 		return fmt.Errorf(
 			"clickhouse: refusing database-realm cleanup on server version %q: "+
 				"ClickHouse 24.11 or newer is required to prove complete catalog visibility with CHECK GRANT",
@@ -439,16 +468,6 @@ func (w *Writer) validateDatabaseRealmTarget(ctx context.Context) error {
 		)
 	}
 	return nil
-}
-
-func supportsCheckGrant(version string) (bool, error) {
-	var major int
-	var minor int
-	count, err := fmt.Sscanf(version, "%d.%d", &major, &minor)
-	if err != nil || count != 2 {
-		return false, fmt.Errorf("clickhouse: cannot parse server version %q", version)
-	}
-	return major > 24 || major == 24 && minor >= 11, nil
 }
 
 func (w *Writer) checkDatabaseRealmPrivileges(ctx context.Context) error {
@@ -709,3 +728,22 @@ func (w *Writer) SetDryRun(dryRun bool) { w.dryRun = dryRun }
 
 // IsDryRun reports whether dry-run mode is active.
 func (w *Writer) IsDryRun() bool { return w.dryRun }
+
+// realmCapabilities returns the set the realm gate reads, and the version string
+// a refusal names.
+//
+// A caller that resolved the set already supplies it; one that did not gets it
+// from the shared resolver rather than from a comparison written here. The
+// banner is still read in the second case because the refusal names it, and a
+// refusal that cannot say which server it refused is one an operator cannot act
+// on.
+func (w *Writer) realmCapabilities(ctx context.Context) (capability.Capabilities, string, error) {
+	var version string
+	if err := w.db.QueryRowContext(ctx, databaseRealmVersionQuery).Scan(&version); err != nil {
+		return nil, "", fmt.Errorf("clickhouse: inspect server version: %w", err)
+	}
+	if len(w.caps) > 0 {
+		return w.caps, version, nil
+	}
+	return capability.ResolveServerVersion(platform.ClickHouse, version).Capabilities, version, nil
+}
