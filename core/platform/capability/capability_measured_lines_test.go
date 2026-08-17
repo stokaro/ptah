@@ -190,6 +190,7 @@ func measuredLines() map[string]measuredLine {
 				capability.CheckGrantStatement:     "the key names ClickHouse's CHECK GRANT, which this server has no spelling of; its answer would be to a different question. What decides the key is ClickHouse accepting the statement on one declared line and refusing it as a syntax error on another, which internal/capabilityprobe asks on the ClickHouse cells (stokaro/ptah#916)",
 				capability.CatalogViewDependencies: "the key names information_schema.VIEW_TABLE_USAGE, a MySQL catalog view. PostgreSQL answers view dependencies through pg_depend and pg_rewrite instead, which is a different catalog and a different question",
 				capability.ShowRoutinePrivilege:    "the key names MySQL's global SHOW_ROUTINE privilege. PostgreSQL has no such privilege, so this server has nothing to demand or to do without",
+				capability.RenameColumnClause:      "this run predates the key and sent no rename. Measured separately on PostgreSQL 18.4: `ALTER TABLE rn RENAME COLUMN a TO b` is accepted",
 			},
 		},
 
@@ -236,6 +237,7 @@ func measuredLines() map[string]measuredLine {
 				capability.CheckGrantStatement:     "the key names ClickHouse's CHECK GRANT, which this server has no spelling of; its answer would be to a different question. What decides the key is ClickHouse accepting the statement on one declared line and refusing it as a syntax error on another, which internal/capabilityprobe asks on the ClickHouse cells (stokaro/ptah#916)",
 				capability.CatalogViewDependencies: "this run predates the key and asked no catalog question for it. What decides it is whether information_schema.VIEW_TABLE_USAGE resolves, which MySQL added in 8.0.13 and every measured MySQL line has",
 				capability.ShowRoutinePrivilege:    "this run predates the key. What decides it is whether the server grants SHOW_ROUTINE, which MySQL added in 8.0.20 and every measured MySQL line has",
+				capability.RenameColumnClause:      "this run predates the key. Measured separately on MySQL 8.4.11: the clause is accepted",
 			},
 		},
 
@@ -284,6 +286,7 @@ func measuredLines() map[string]measuredLine {
 				capability.CheckGrantStatement:     "the key names ClickHouse's CHECK GRANT, which this server has no spelling of; its answer would be to a different question. What decides the key is ClickHouse accepting the statement on one declared line and refusing it as a syntax error on another, which internal/capabilityprobe asks on the ClickHouse cells (stokaro/ptah#916)",
 				capability.CatalogViewDependencies: "MariaDB has no information_schema.VIEW_TABLE_USAGE at any version, so the key is false for the dialect rather than for this line",
 				capability.ShowRoutinePrivilege:    "MariaDB has no SHOW_ROUTINE privilege; its routine metadata is reached under the privileges the MariaDB branch of the visibility check already names",
+				capability.RenameColumnClause:      "this run predates the key. Measured separately on MariaDB 11.8.8: the clause is accepted",
 			},
 		},
 	}

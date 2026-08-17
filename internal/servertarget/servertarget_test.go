@@ -102,11 +102,14 @@ func TestResolve_SaysWhatItPlannedInstead(t *testing.T) {
 				"capabilities fall back to the preset its ladder assigns (newest measured line: 26.7)",
 		},
 		{
+			// SQLite gained a ladder in stokaro/ptah#916; SQL Server is the
+			// dialect with none, and the number in its version is read and
+			// then spent on nothing.
 			name:     "a good version for a dialect with no ladder changed nothing",
-			dialect:  platform.SQLite,
-			version:  "3.53.0",
-			want:     capability.SQLite3(),
-			wantNote: "the sqlite dialect has no measured version ladder; the version did not refine capabilities",
+			dialect:  platform.SQLServer,
+			version:  "16.0.4115.5",
+			want:     capability.SQLServer2022(),
+			wantNote: "the sqlserver dialect has no measured version ladder; the version did not refine capabilities",
 		},
 	}
 	for _, tt := range tests {

@@ -405,9 +405,11 @@ func TestGenerateCommand_ServerVersionAnnouncesWhatItPlannedInstead(t *testing.T
 			want:    "newer than the newest measured release line",
 		},
 		{
+			// SQLite gained a ladder in stokaro/ptah#916, so the dialect with
+			// none is SQL Server now.
 			name:    "a dialect with no ladder at all",
-			dialect: "sqlite",
-			version: "3.53.0",
+			dialect: "sqlserver",
+			version: "16.0.4115.5",
 			want:    "no measured version ladder",
 		},
 	}

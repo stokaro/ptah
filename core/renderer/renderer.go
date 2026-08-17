@@ -131,9 +131,9 @@ func NewRendererWithCapabilities(dialect string, caps capability.Capabilities) (
 	case platform.ClickHouse:
 		raw = clickhouse.NewWithCapabilities(caps)
 	case platform.SQLite:
-		raw = sqlite.New()
+		raw = sqlite.NewWithCapabilities(caps)
 	case platform.SQLServer:
-		raw = mssql.New()
+		raw = mssql.NewWithCapabilities(caps)
 	case platform.CockroachDB, platform.YugabyteDB, platform.Spanner:
 		raw = postgres.NewWithCapabilities(caps, normalizedDialect)
 	default:

@@ -283,6 +283,13 @@ func postgresFamilyPlan(dialect string) plan {
 			"SELECT 1 FROM information_schema.view_table_usage LIMIT 1",
 			"the catalog naming the tables a view reads",
 		),
+		// Renaming a column in place. The statement is the one SQLite's
+		// renderer emits, asked here because the registry answers for every
+		// dialect (stokaro/ptah#916 item 3).
+		acceptance(capability.RenameColumnClause,
+			[]string{t.table("rnc", "a int", "a"), t.table("rnc_t", "n int, b int", "n")},
+			"ALTER TABLE rnc_t RENAME COLUMN b TO c",
+		),
 		// The one key in this plan whose expected answer is FALSE on
 		// PostgreSQL itself, so the usual reading of a verdict is inverted:
 		// a refusal here is PostgreSQL behaving as its preset says, and an
@@ -470,6 +477,12 @@ func mysqlFamilyPlan(dialect string) plan {
 		acceptanceNote(capability.CatalogViewDependencies, nil,
 			"SELECT 1 FROM information_schema.view_table_usage LIMIT 1",
 			"the catalog naming the tables a view reads",
+		),
+		// Renaming a column in place. The MySQL family spells the table the
+		// same way, so the statement is the same question.
+		acceptance(capability.RenameColumnClause,
+			[]string{"CREATE TABLE rnc_t (n int, b int)"},
+			"ALTER TABLE rnc_t RENAME COLUMN b TO c",
 		),
 	}
 
