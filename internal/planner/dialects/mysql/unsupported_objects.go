@@ -84,6 +84,7 @@ func (p *Planner) reportUnsupportedRoutinesAndRoles(result []ast.Node, diff *typ
 	for _, name := range diff.RolesRemoved {
 		result = append(result, ast.NewDropRole(name))
 	}
+	result = p.reportUnsupportedAccessControl(result, diff)
 	if p.capabilities().Has(capability.Functions) {
 		return result
 	}
@@ -92,6 +93,46 @@ func (p *Planner) reportUnsupportedRoutinesAndRoles(result []ast.Node, diff *typ
 	}
 	for _, name := range diff.FunctionsRemoved {
 		result = append(result, ast.NewDropFunction(name))
+	}
+	return result
+}
+
+// reportUnsupportedAccessControl appends the identity-only nodes for grants and
+// row-level security, which the renderer answers with a named skip comment.
+//
+// These two were the last kinds this planner dropped in silence: a declared
+// grant or RLS policy produced no statement and no diagnostic, so the
+// operator's declared intent disappeared between the schema they wrote and the
+// plan they reviewed with nothing saying so (stokaro/ptah#1628). Roles,
+// sequences and functions were already reported this way; these follow the same
+// path rather than a new one.
+//
+// The nodes carry identity only. They are not DDL this target can run -- the
+// renderer turns each into a comment -- so a privilege list or a policy body
+// would be detail nobody reads.
+func (p *Planner) reportUnsupportedAccessControl(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+	for _, grant := range diff.GrantsAdded {
+		result = append(result, ast.NewGrantPrivilege(
+			grant.Role, grant.ObjectType, grant.ObjectName, []string{grant.Privilege}))
+	}
+	for _, grant := range diff.GrantsRemoved {
+		result = append(result, ast.NewRevokePrivilege(
+			grant.Role, grant.ObjectType, grant.ObjectName, []string{grant.Privilege}))
+	}
+	for _, table := range diff.RLSEnabledTablesAdded {
+		result = append(result, ast.NewAlterTableEnableRLS(table))
+	}
+	for _, table := range diff.RLSEnabledTablesRemoved {
+		result = append(result, ast.NewAlterTableDisableRLS(table))
+	}
+	for _, policy := range diff.RLSPoliciesAdded {
+		result = append(result, ast.NewCreatePolicy(policy.PolicyName, policy.TableName))
+	}
+	for _, policy := range diff.RLSPoliciesModified {
+		result = append(result, ast.NewCreatePolicy(policy.PolicyName, policy.TableName))
+	}
+	for _, policy := range diff.RLSPoliciesRemoved {
+		result = append(result, ast.NewDropPolicy(policy.PolicyName, policy.TableName))
 	}
 	return result
 }
