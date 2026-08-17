@@ -78,10 +78,28 @@ func atlasMigrateLintDirCaptureError(path, allowedRoot string, captureErr error)
 		return prior
 	}
 	return &atlasMigrateLintMissingDirectoryError{
-		path:    filepath.Clean(pathErr.Path),
+		path:    atlasMigrateLintDisplayPath(path, pathErr.Path),
 		pathErr: pathErr,
 		cause:   prior,
 	}
+}
+
+// atlasMigrateLintDisplayPath picks which of the two spellings of one directory
+// the diagnostic prints: the relative one, because that is the one an operator
+// recognizes, and the community binary prints `stat migrations` rather than
+// `stat /tmp/x/001/migrations`.
+//
+// Which of the two IS relative depends on how the directory was opened. Opened
+// through an explicit root, the os.PathError carries the path relative to that
+// root while the caller holds the absolute one. Opened as a CLI path, it is the
+// other way round since stokaro/ptah#1622 removed the working-directory root
+// that used to keep the error's own path relative. Neither caller knows which
+// case it is in, so the choice is made here from the paths themselves.
+func atlasMigrateLintDisplayPath(typed, observed string) string {
+	if !filepath.IsAbs(observed) {
+		return filepath.Clean(observed)
+	}
+	return filepath.Clean(typed)
 }
 
 func atlasMigrateLintMissingDirectoryPathError(err error) (*os.PathError, bool) {
@@ -102,6 +120,16 @@ func atlasMigrateLintMissingDirectoryPathError(err error) (*os.PathError, bool) 
 	return pathErr, true
 }
 
+// atlasMigrateLintPathErrorMatches reports whether the failing open was of the
+// directory the operator named, rather than of something reached from inside
+// it: only the first is the community binary's `stat` diagnostic.
+//
+// Both sides are made absolute before comparing. The two used to be compared as
+// written, which worked while a relative CLI path was opened through a
+// working-directory root and the os.PathError echoed it back relative. With
+// that root gone (stokaro/ptah#1622) the error carries an absolute path, and
+// comparing "nope" to "/tmp/x/nope" as strings answers "different directory"
+// for the same directory.
 func atlasMigrateLintPathErrorMatches(path, allowedRoot, errorPath string) bool {
 	return atlasMigrateLintRootedCleanPath(path, allowedRoot) ==
 		atlasMigrateLintRootedCleanPath(errorPath, allowedRoot)
@@ -109,8 +137,16 @@ func atlasMigrateLintPathErrorMatches(path, allowedRoot, errorPath string) bool 
 
 func atlasMigrateLintRootedCleanPath(path, allowedRoot string) string {
 	clean := filepath.Clean(path)
-	if allowedRoot != "" && !filepath.IsAbs(clean) {
-		return filepath.Clean(filepath.Join(allowedRoot, clean))
+	if filepath.IsAbs(clean) {
+		return clean
 	}
-	return clean
+	root := allowedRoot
+	if root == "" {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return clean
+		}
+		root = cwd
+	}
+	return filepath.Clean(filepath.Join(root, clean))
 }
