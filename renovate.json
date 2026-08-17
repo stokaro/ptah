@@ -40,7 +40,8 @@
         "clickhouse/clickhouse-server",
         "cockroachdb/cockroach",
         "yugabytedb/yugabyte",
-        "mcr.microsoft.com/mssql/server"
+        "mcr.microsoft.com/mssql/server",
+        "gcr.io/cloud-spanner-pg-adapter/pgadapter-emulator"
       ],
       "groupName": "database server images",
       "automerge": false,

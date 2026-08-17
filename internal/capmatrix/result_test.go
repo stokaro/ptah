@@ -112,3 +112,51 @@ func TestReadResults_FailurePath(t *testing.T) {
 		})
 	}
 }
+
+// Missing means a suite result that should have arrived did not. A cell that
+// declares no integration-runner target was never going to produce one, so its
+// absence is the declaration being honored rather than a result somebody lost
+// (stokaro/ptah#942).
+func TestCellResult_VerdictHonorsADeclaredAbsentSuite(t *testing.T) {
+	tests := []struct {
+		name string
+		cell capmatrix.CellResult
+		want capmatrix.Verdict
+	}{
+		{
+			name: "tier 3, no suite, no declaration",
+			cell: capmatrix.CellResult{Tier: 3, Probe: capmatrix.ProbeOutcome{OK: true}},
+			want: capmatrix.Missing,
+		},
+		{
+			name: "tier 3, no suite, declared",
+			cell: capmatrix.CellResult{
+				Tier: 3, Probe: capmatrix.ProbeOutcome{OK: true},
+				SuiteSkip: "the integration runner has no target for this dialect",
+			},
+			want: capmatrix.Passed,
+		},
+		{
+			// The declaration covers the suite and nothing else: a probe that
+			// disagreed with the preset is still the night's finding.
+			name: "a declared absent suite does not excuse the probe",
+			cell: capmatrix.CellResult{
+				Tier: 3, Probe: capmatrix.ProbeOutcome{OK: false},
+				SuiteSkip: "the integration runner has no target for this dialect",
+			},
+			want: capmatrix.CapabilityDisagreement,
+		},
+		{
+			name: "tier 2 never expected a suite",
+			cell: capmatrix.CellResult{Tier: 2, Probe: capmatrix.ProbeOutcome{OK: true}},
+			want: capmatrix.Passed,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(tt.cell.Verdict(), qt.Equals, tt.want)
+		})
+	}
+}

@@ -90,6 +90,21 @@ type CICell struct {
 	// an absent cell reads as a passing one.
 	Skip string `json:"skip,omitempty"`
 
+	// SuiteSkip says why the integration runner has no target for this cell,
+	// and is empty exactly when the Suite fields are populated.
+	//
+	// A dialect can be capability-measured before it can be suite-tested, and
+	// the two were one decision until Spanner needed them apart: its rows are
+	// measurable against a live endpoint today, while the integration suite
+	// has no Spanner target at all. Requiring both would leave the dialect
+	// unmeasured for as long as the second half takes -- and the first half is
+	// what keeps a preset honest in the meantime (stokaro/ptah#942).
+	//
+	// It is a stated reason rather than an empty field for the same reason
+	// Skip is: a cell that quietly runs half of what its neighbors run reads
+	// as a cell that ran.
+	SuiteSkip string `json:"suite_skip,omitempty"`
+
 	// Note carries the declaring cell's own note.
 	Note string `json:"note,omitempty"`
 }
@@ -160,8 +175,16 @@ func (c CICell) problems() []error {
 	if len(c.DockerRun) == 0 {
 		problems = append(problems, fmt.Errorf("cell %s is runnable with no way to start a server", c.ID))
 	}
-	if c.SuiteDatabase == "" || c.SuiteURLEnv == "" || c.SuiteURL == "" {
+	suiteDeclared := c.SuiteDatabase != "" || c.SuiteURLEnv != "" || c.SuiteURL != ""
+	switch {
+	case suiteDeclared && (c.SuiteDatabase == "" || c.SuiteURLEnv == "" || c.SuiteURL == ""):
 		problems = append(problems, fmt.Errorf("cell %s is runnable with an incomplete integration-runner target", c.ID))
+	case suiteDeclared && c.SuiteSkip != "":
+		problems = append(problems, fmt.Errorf(
+			"cell %s declares an integration-runner target and the reason %q for having none", c.ID, c.SuiteSkip))
+	case !suiteDeclared && c.SuiteSkip == "":
+		problems = append(problems, fmt.Errorf(
+			"cell %s is runnable with no integration-runner target and says no reason why", c.ID))
 	}
 	if (c.SuiteCleanupURLEnv == "") != (c.SuiteCleanupURL == "") {
 		problems = append(problems, fmt.Errorf("cell %s has only half of its integration cleanup connection", c.ID))
@@ -225,8 +248,10 @@ type launcher struct {
 	// url addresses the container from the runner's own host namespace.
 	url string
 	// suiteDatabase and the URL fields wire the same server into the integration
-	// runner for tier 3. Empty when the runner has no target for the dialect.
+	// runner for tier 3. Empty when the runner has no target for the dialect,
+	// which suiteSkip then has to say.
 	suiteDatabase      string
+	suiteSkip          string
 	suiteURLEnv        string
 	suiteURL           string
 	suiteCleanupURLEnv string
@@ -295,6 +320,14 @@ var launchers = map[string]launcher{
 		suiteDatabase: "cockroachdb",
 		suiteURLEnv:   "COCKROACHDB_URL",
 	},
+	platform.Spanner: {
+		flags: []string{"--publish", "5432:5432"},
+		url:   "spanner://127.0.0.1:5432/ptah_test?sslmode=disable",
+		suiteSkip: "the integration runner has no Spanner target: Ptah's index read is " +
+			"pg_index/pg_class/pg_am/pg_get_indexdef throughout and Spanner exposes indexes " +
+			"through information_schema, so the suite would fail on reading a schema rather " +
+			"than on anything it set out to test (stokaro/ptah#942)",
+	},
 	platform.YugabyteDB: {
 		flags: []string{"--publish", "5433:5433"},
 		command: []string{
@@ -358,6 +391,13 @@ func toCICell(cell Cell) CICell {
 	}
 	converted.SuiteCleanupURLEnv = recipe.suiteCleanupURLEnv
 	converted.SuiteCleanupURL = recipe.suiteCleanupURL
+	converted.SuiteSkip = recipe.suiteSkip
+	// A recipe with no runner target carries no URL to hand it either; the
+	// fallback above would otherwise give the suite the probe's own URL and
+	// point it at a dialect it cannot run.
+	if recipe.suiteDatabase == "" {
+		converted.SuiteURL = ""
+	}
 	return converted
 }
 

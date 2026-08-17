@@ -20,7 +20,10 @@ import (
 // verdict about the cell, and a verdict has to reach the reporting job as a
 // result file rather than as a process that died before writing one.
 func RunProbe(ctx context.Context, out io.Writer, cell capabilityprobe.CICell, tier int, wait time.Duration) CellResult {
-	result := CellResult{Cell: cell.ID, Tier: tier, Dialect: cell.Dialect, Line: cell.Line, Image: cell.Image}
+	result := CellResult{
+		Cell: cell.ID, Tier: tier, Dialect: cell.Dialect, Line: cell.Line, Image: cell.Image,
+		SuiteSkip: cell.SuiteSkip,
+	}
 	if err := capabilityprobe.WaitForServer(ctx, cell.URL, wait); err != nil {
 		result.Probe = ProbeOutcome{Error: err.Error()}
 		return result

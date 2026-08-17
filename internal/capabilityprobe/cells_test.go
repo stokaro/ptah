@@ -328,6 +328,11 @@ var databaseImages = map[string]string{
 	"cockroachdb/cockroach":          platform.CockroachDB,
 	"yugabytedb/yugabyte":            platform.YugabyteDB,
 	"mcr.microsoft.com/mssql/server": platform.SQLServer,
+	// The vendor's emulator behind PGAdapter, which speaks the Spanner
+	// PostgreSQL interface. It is classified here as the server for the
+	// dialect because that is what the matrix starts; the cell's Emulated flag
+	// is what keeps it from being read as the managed service.
+	"gcr.io/cloud-spanner-pg-adapter/pgadapter-emulator": platform.Spanner,
 }
 
 // notADatabase lists the images these files start that no capability preset
@@ -591,9 +596,15 @@ func TestCells_CertificationMatchesWhatContinuousIntegrationRuns(t *testing.T) {
 		t.Run(capabilityprobe.CellID(cell), func(t *testing.T) {
 			c := qt.New(t)
 			claimsTesting := cell.Support == capability.Certified || cell.Support == capability.LegacyTested
-			c.Assert(claimsTesting, qt.Equals, exercised[capabilityprobe.CellID(cell)],
-				qt.Commentf("cell %s declares %q; continuous integration exercises it: %v",
-					cell, cell.Support, exercised[capabilityprobe.CellID(cell)]))
+			// An emulated line is the one place the two come apart. Running an
+			// emulator on every pull request catches a preset drifting from the
+			// interface, and says nothing about the managed service, so the
+			// line is exercised and stays best-effort. Anything else exercised
+			// must claim the level, and anything unexercised must not.
+			shouldClaim := exercised[capabilityprobe.CellID(cell)] && !cell.Emulated
+			c.Assert(claimsTesting, qt.Equals, shouldClaim,
+				qt.Commentf("cell %s declares %q; continuous integration exercises it: %v; emulated: %v",
+					cell, cell.Support, exercised[capabilityprobe.CellID(cell)], cell.Emulated))
 		})
 	}
 }
