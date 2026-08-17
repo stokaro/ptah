@@ -10,7 +10,6 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/internal/pathguard"
 	"go.5x5.cz/ptah/internal/schemaload"
 )
 
@@ -58,19 +57,21 @@ func assertReachedTable(c *qt.C, database *goschema.Database, err error, name st
 	c.Assert(database.Tables[0].Name, qt.Equals, name)
 }
 
-// TestLoad_SchemaFileContainmentRefusesEscapes pins that the CLI path guard
-// reaches the native desired-schema resolver used by schema-file commands.
+// TestLoad_SchemaFileSpellingsReachTheSameDestination is what the refusal table
+// here became when stokaro/ptah#1622 answered the decision the test below was
+// written to make loud.
 //
-// The resolver used to call filepath.Abs on the operator's path before handing
-// it to the guard. Every spelling therefore arrived absolute, the guard's
-// absolute branch skipped containment, and the native surface accepted
-// "../outside/schema.sql" while ptah-compat refused the identical destination
-// through the identical guard. The rewrite was not a decision about what should
-// be allowed; it was a canonicalization that happened to disarm the check.
+// The three rows used to assert that each of these spellings was REFUSED as
+// `outside allowed root`. That refusal was a spelling filter rather than a
+// boundary: the same file named absolutely was always accepted, which the test
+// below records and the pinned community binary does too. With the relative-only
+// rule gone, all three reach the file, and the property worth pinning is that
+// they reach the SAME file -- one destination, four spellings, one answer.
 //
-// Refusal here is judged on where a path lands, never on how it is written. In
-// particular, the symlink row never writes ".." but is still refused.
-func TestLoad_SchemaFileContainmentRefusesEscapes(t *testing.T) {
+// The symlink row still earns its place. It writes no ".." anywhere, so a rule
+// that read the text rather than resolving it would treat it differently from
+// the other two, and the four-way agreement below is what would catch that.
+func TestLoad_SchemaFileSpellingsReachTheSameDestination(t *testing.T) {
 	testCases := []struct {
 		name     string
 		spelling func(containmentFixture) string
@@ -85,6 +86,11 @@ func TestLoad_SchemaFileContainmentRefusesEscapes(t *testing.T) {
 	}, {
 		name:     "dot-dot in the middle of the path",
 		spelling: func(containmentFixture) string { return filepath.Join("a", "..", "..", "outside", "schema.sql") },
+	}, {
+		// The spelling that was always accepted, kept beside the three that
+		// were not so the agreement is visible in one table.
+		name:     "absolute path to the same file",
+		spelling: func(f containmentFixture) string { return filepath.Join(f.outside, "schema.sql") },
 	}}
 
 	for _, tc := range testCases {
@@ -97,8 +103,7 @@ func TestLoad_SchemaFileContainmentRefusesEscapes(t *testing.T) {
 				Dialect:     "sqlite",
 			})
 
-			c.Assert(err, qt.ErrorIs, pathguard.ErrOutsideRoot)
-			c.Assert(database, qt.IsNil)
+			assertReachedTable(c, database, err, "outside_target")
 		})
 	}
 }
@@ -138,27 +143,4 @@ func TestLoad_SchemaFileContainmentAllowsContainedDestinations(t *testing.T) {
 			assertReachedTable(c, database, err, "inside_target")
 		})
 	}
-}
-
-// TestLoad_AbsoluteSchemaFileOutsideTheRootIsStillAccepted records the half of
-// stokaro/ptah#1241 item 11 that this change does NOT close, so the behavior is
-// visible in the suite rather than only in an issue comment.
-//
-// pathguard.ResolveCLIPath exempts absolute pathnames from containment
-// entirely. Closing that exemption is not a bug fix, it is the parity decision
-// the issue is really asking about: an absolute pathname is how operators
-// ordinarily name a file, the pinned community binary accepts it, and refusing
-// it would remove reach that Ptah has always had. This row must be deleted, not
-// edited, by whichever way that decision goes — it exists to make the decision
-// loud.
-func TestLoad_AbsoluteSchemaFileOutsideTheRootIsStillAccepted(t *testing.T) {
-	c := qt.New(t)
-	fixture := newContainmentFixture(t, c)
-
-	database, err := schemaload.Load(schemaload.Options{
-		SchemaFiles: []string{filepath.Join(fixture.outside, "schema.sql")},
-		Dialect:     "sqlite",
-	})
-
-	assertReachedTable(c, database, err, "outside_target")
 }
