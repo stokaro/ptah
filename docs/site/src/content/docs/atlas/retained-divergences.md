@@ -296,6 +296,27 @@ PostgreSQL 17.10 were re-run against a live server. The rest carry the
 SQLite-only caveat that
 [`stokaro/ptah#1241`](https://github.com/stokaro/ptah/issues/1241) declares.
 
+## `sql()` inside `check.expr` and `index.where`
+
+**Type.** Deliberate divergence, in the direction of accepting more
+
+**Current boundary.** Ptah reduces a `sql()` call to the SQL it carries
+everywhere an attribute is read as text, including `check.expr` and
+`index.where`. The pinned community binary v1.3.0 refuses the same two with
+`incorrect type raw`.
+
+**Why it stays.** `sql()` exists so a schema file can carry an expression the
+HCL grammar has no spelling for, and a CHECK body is the clearest case of one.
+Refusing it in the two attributes that most need it would make the function
+useless where it is most useful, to match a refusal that costs the operator a
+capability rather than protecting them from anything. Nothing a document writes
+this way renders differently: the call reduces to its argument text, which is
+what an unquoted expression would have been.
+
+The reduction is not optional. It landed because the fallback below it hands an
+attribute's SOURCE TEXT to the renderer, which is how `CHECK (sql("n > 0"))`
+reached a plan verbatim.
+
 ## Not on this page
 
 `--to file://../schema.sql` and `--dir file://../dir` used to be refused as

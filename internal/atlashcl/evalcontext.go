@@ -3,13 +3,16 @@ package atlashcl
 import (
 	"encoding/csv"
 	"fmt"
+	"io"
 	"maps"
+	"os"
 	"slices"
 	"strings"
 
 	"github.com/hashicorp/hcl/v2"
 	"github.com/hashicorp/hcl/v2/ext/tryfunc"
 	"github.com/hashicorp/hcl/v2/hclsyntax"
+	ctyyaml "github.com/zclconf/go-cty-yaml"
 	"github.com/zclconf/go-cty/cty"
 	"github.com/zclconf/go-cty/cty/convert"
 	"github.com/zclconf/go-cty/cty/function"
@@ -41,6 +44,7 @@ func newEvalContext(
 	body *hclsyntax.Body,
 	vars []string,
 	varValues map[string]string,
+	printLine func(string),
 ) (*hcl.EvalContext, error) {
 	overrides, err := parseVarOverrides(vars)
 	if err != nil {
@@ -54,7 +58,7 @@ func newEvalContext(
 	}
 	ctx := &hcl.EvalContext{
 		Variables: map[string]cty.Value{},
-		Functions: schemaFunctions(),
+		Functions: schemaFunctions(printLine),
 	}
 	if err := bindVariables(ctx, body, overrides); err != nil {
 		return nil, err
@@ -382,7 +386,7 @@ func sortedAttrNames(attrs hclsyntax.Attributes) []string {
 // schema needs, and `uuid` and `print` are a nondeterministic generator and a
 // debug tap, neither of which belongs in a schema that has to diff stably. A
 // file using one of those four is refused here and planned there.
-func schemaFunctions() map[string]function.Function {
+func schemaFunctions(printLine func(string)) map[string]function.Function {
 	fns := map[string]function.Function{
 		"abs":       stdlib.AbsoluteFunc,
 		"can":       tryfunc.CanFunc,
@@ -430,7 +434,73 @@ func schemaFunctions() map[string]function.Function {
 		"zipmap":    stdlib.ZipmapFunc,
 	}
 	maps.Copy(fns, schemaCollectionFunctions())
+	maps.Copy(fns, schemaMeasuredExtraFunctions(printLine))
 	return fns
+}
+
+// schemaMeasuredExtraFunctions holds the three names stokaro/ptah#1627 found
+// present in the pinned community binary v1.3.0 and unimplemented here.
+//
+// The reasons recorded against them were "would add a module dependency" for
+// the YAML pair and "a debug tap" for print. The first is answered by using the
+// library that produces the same bytes rather than a hand-rolled encoder -- the
+// quoting is the tell, since `yamlencode({a = 1})` renders `"a": 1` on that
+// binary with the key quoted, which is go-cty-yaml's style and not what a
+// marshal of a Go map produces. The second is not an argument against
+// implementing a function that an operator debugging a schema file reaches for
+// and finds missing.
+//
+// `uuid` is deliberately absent, and it is not a divergence. It was recorded as
+// measured-present because calling `uuid()` on that binary does not answer with
+// the absent-marker; measured again for #1627, the answer is `Type "uuid" does
+// not accept attributes`, and `type = uuid` renders a `uuid` column at exit 0.
+// It is a type keyword, which Ptah already accepts, and never was a function --
+// the original probe read one non-absent answer as presence.
+func schemaMeasuredExtraFunctions(printLine func(string)) map[string]function.Function {
+	return map[string]function.Function{
+		"yamldecode": ctyyaml.YAMLDecodeFunc,
+		"yamlencode": ctyyaml.YAMLEncodeFunc,
+		"print":      printFunc(printLine),
+	}
+}
+
+// printFunc is the debug tap: it returns its argument unchanged and writes the
+// value to standard output, which is where that binary writes it -- measured
+// with the streams separated, `print("hello")` puts `hello` on stdout and
+// nothing on stderr.
+//
+// Returning the argument is what makes it usable inside an expression being
+// debugged rather than beside it, and it is what keeps a schema file that calls
+// it deterministic: the rendered DDL is the same with the call and without.
+func printFunc(printLine func(string)) function.Function {
+	return function.New(&function.Spec{
+		Params: []function.Parameter{{
+			Name:             "value",
+			Type:             cty.DynamicPseudoType,
+			AllowNull:        true,
+			AllowDynamicType: true,
+		}},
+		Type: func(args []cty.Value) (cty.Type, error) {
+			return args[0].Type(), nil
+		},
+		Impl: func(args []cty.Value, _ cty.Type) (cty.Value, error) {
+			printLine(printValueText(args[0]))
+			return args[0], nil
+		},
+	})
+}
+
+// printDestination is where a printed line ends up. It is a variable so a test
+// can read what one call produced without capturing the process's own stdout.
+var printDestination io.Writer = os.Stdout
+
+// printValueText renders one value the way that binary prints it: a string
+// unquoted, everything else through cty's own formatting.
+func printValueText(value cty.Value) string {
+	if value.IsKnown() && !value.IsNull() && value.Type() == cty.String {
+		return value.AsString()
+	}
+	return value.GoString()
 }
 
 func schemaCollectionFunctions() map[string]function.Function {
