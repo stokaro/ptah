@@ -125,6 +125,22 @@ type Cell struct {
 	// freeze one patch while claiming that it follows the line.
 	ResolveNewestPatch bool
 
+	// Versionless declares a dialect with no release line to match against, so
+	// the single cell answers for every server of that dialect.
+	//
+	// It exists because "no version" and "any version" are not the same claim
+	// and only one of them is true here. Spanner is a managed service that
+	// ships by date, and over the PostgreSQL wire the number it announces is
+	// PGAdapter's PostgreSQL compatibility level -- a live endpoint answers
+	// `PostgreSQL 14.1`. Matching a line against that would pin a Spanner cell
+	// to a number about PostgreSQL, and would move the day PGAdapter raised it.
+	//
+	// Measured: without this, a probe run against a live Spanner endpoint
+	// reports `no matrix cell covers spanner 14.1 (add a cell in cells.go)`
+	// while the cell is sitting in this file, and every row it measured is
+	// discarded for belonging to no declared line (stokaro/ptah#942).
+	Versionless bool
+
 	// Note records why a line is shaped the way it is: a missing preset, a
 	// missing server, a version axis that does not exist.
 	Note string
@@ -133,7 +149,14 @@ type Cell struct {
 // Match reports whether a parsed server version falls on this cell's line.
 // The comparison is component-wise on the dotted line, so "17" accepts every
 // 17.x and "10.11" accepts only 10.11.x.
+//
+// A versionless line accepts any version, including one it has no relationship
+// to. That is not laxity: see Versionless for why a number reaching this
+// function on such a dialect is a number about a different product.
 func (c Cell) Match(v Version) bool {
+	if c.Versionless {
+		return true
+	}
 	want := strings.Split(c.Line, ".")
 	got := v.Components()
 	if len(want) > len(got) {
@@ -491,7 +514,8 @@ var Cells = []Cell{
 	// against a server; issue #942 is the missing container.
 	{
 		Dialect: platform.Spanner, Line: "0",
-		Preset: capability.SpannerPostgres, PresetName: "SpannerPostgres",
+		Versionless: true,
+		Preset:      capability.SpannerPostgres, PresetName: "SpannerPostgres",
 		Refinement: RefinedByBanner,
 		Support:    capability.BestEffort,
 		Note:       "no Spanner server exists in this repository (stokaro/ptah#942), so no row on this line has ever been executed",

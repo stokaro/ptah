@@ -701,3 +701,49 @@ func assertErrMatches(c *qt.C, err error, want string) {
 	}
 	checks[want == ""]()
 }
+
+// A versionless line is credited with what it measures. The banner arm's reason
+// -- "an observation on one release cannot be credited to this line" -- has no
+// referent when the dialect declares one line and no releases to tell apart, so
+// applying it there would discard every row a live Spanner endpoint answered
+// while naming a distinction that does not exist (stokaro/ptah#942).
+func TestLineReason_CreditsAVersionlessLine(t *testing.T) {
+	tests := []struct {
+		name string
+		cell Cell
+		want string
+	}{
+		{
+			name: "the versionless spanner line is credited",
+			cell: Cell{
+				Dialect: platform.Spanner, Line: "0", Versionless: true,
+				Preset: capability.SpannerPostgres, PresetName: "SpannerPostgres",
+				Refinement: RefinedByBanner,
+			},
+			want: "",
+		},
+		{
+			// The control, and the reason the flag exists rather than the
+			// refinement being widened: the SAME refinement on a dialect that
+			// does have releases still withholds credit.
+			name: "the same refinement on a versioned line is not",
+			cell: Cell{
+				Dialect: platform.CockroachDB, Line: "26.2",
+				Preset: capability.CockroachDB26, PresetName: "CockroachDB26",
+				Refinement: RefinedByBanner,
+			},
+			want: "an observation on one release cannot be credited to this line",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			reason := lineReason(&Report{Matched: true, Cell: tt.cell, Dialect: tt.cell.Dialect})
+
+			c.Assert(reason, qt.Contains, tt.want)
+			c.Assert(reason == "", qt.Equals, tt.want == "")
+		})
+	}
+}
