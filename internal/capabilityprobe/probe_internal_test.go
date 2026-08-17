@@ -1022,3 +1022,44 @@ func TestMismatch_ExcludesADeclaredUnderstatement(t *testing.T) {
 		})
 	}
 }
+
+// Two ClickHouse keys have a statement that LOOKS like them and is accepted:
+// the lambda alias for Functions, and the MergeTree TTL clause for RowLevelTTL.
+// Asking either would record support for an object the key does not name and no
+// Ptah path can carry -- and nothing offline catches the substitution, because
+// both spellings compile and only a live server tells them apart. These pin the
+// shapes (stokaro/ptah#916).
+func TestClickHousePlan_AsksTheShapeTheKeyNames(t *testing.T) {
+	tests := []struct {
+		name      string
+		statement string
+		wants     []string
+		rejects   []string
+	}{
+		{
+			name:      "the function object, not the lambda alias",
+			statement: clickHouseFunctionShapeStatement,
+			wants:     []string{"RETURNS", "LANGUAGE"},
+			rejects:   []string{"->"},
+		},
+		{
+			name:      "the storage parameter, not the MergeTree TTL clause",
+			statement: clickHouseTTLShapeStatement(clickHouseSpelling),
+			wants:     []string{"ttl_expiration_expression"},
+			rejects:   []string{"TTL expires_at +", "TTL d +"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			for _, want := range tt.wants {
+				c.Assert(tt.statement, qt.Contains, want)
+			}
+			for _, reject := range tt.rejects {
+				c.Assert(tt.statement, qt.Not(qt.Contains), reject)
+			}
+		})
+	}
+}

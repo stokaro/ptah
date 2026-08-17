@@ -118,9 +118,11 @@ func TestSchemaDiffSaysWhenAVersionCouldNotRefine(t *testing.T) {
 	fromPath := writeSchemaSQLFile(c, dir, "from.sql", "CREATE TABLE t (a integer);\n")
 	toPath := writeSchemaSQLFile(c, dir, "to.sql", "CREATE TABLE t (a integer, b text);\n")
 
-	// ClickHouse has no measured version ladder, so the value is accepted and
-	// spends nothing. Saying so is the difference between a flag that did not
-	// apply and a flag that was ignored; the diff still comes out.
+	// ClickHouse has a ladder now (one step, at 24.11), but 24.3 is not one of
+	// its measured lines, so the value is accepted and buys the arm below the
+	// step rather than a line's own answers. Saying so is the difference
+	// between a flag that did not fully apply and a flag that was ignored; the
+	// diff still comes out (stokaro/ptah#916).
 	out, err := runSchema("", "diff",
 		"--from", fromPath,
 		"--to", toPath,
@@ -129,7 +131,7 @@ func TestSchemaDiffSaysWhenAVersionCouldNotRefine(t *testing.T) {
 	)
 
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
-	c.Assert(out, qt.Contains, "the clickhouse dialect has no measured version ladder")
+	c.Assert(out, qt.Contains, "clickhouse 24.3 is not a measured release line")
 	c.Assert(out, qt.Contains, "ADD COLUMN b")
 }
 

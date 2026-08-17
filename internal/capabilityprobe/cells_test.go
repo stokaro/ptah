@@ -97,6 +97,7 @@ func TestCells_MeasuredCellsNameAValidPreset(t *testing.T) {
 		"MySQL84":         capability.MySQL84,
 		"MariaDB1011":     capability.MariaDB1011,
 		"ClickHouse24":    capability.ClickHouse24,
+		"ClickHouse2411":  capability.ClickHouse2411,
 		"SQLite3":         capability.SQLite3,
 		"SQLServer2022":   capability.SQLServer2022,
 		"CockroachDB23":   capability.CockroachDB23,

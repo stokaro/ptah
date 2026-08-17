@@ -415,29 +415,27 @@ var Cells = []Cell{
 	// stable lines exist rather than on any date this comment could name.
 	{
 		Dialect: platform.ClickHouse, Line: "26.7",
-		Preset: capability.ClickHouse24, PresetName: "ClickHouse24",
-		Refinement: NotRefined, Support: capability.Certified, Image: "clickhouse/clickhouse-server:26.7",
+		Preset: capability.ClickHouse2411, PresetName: "ClickHouse2411",
+		Refinement: RefinedByVersion, Support: capability.Certified, Image: "clickhouse/clickhouse-server:26.7",
 	},
 	{
 		Dialect: platform.ClickHouse, Line: "26.3",
-		Preset: capability.ClickHouse24, PresetName: "ClickHouse24",
-		Refinement: NotRefined, Support: capability.BestEffort, Image: "clickhouse/clickhouse-server:26.3",
-		Note: "a supported LTS line upstream, but the capability probe has no ClickHouse " +
-			"statement table and no CI service starts this line, so nothing in this repository has run " +
-			"against it",
+		Preset: capability.ClickHouse2411, PresetName: "ClickHouse2411",
+		Refinement: RefinedByVersion, Support: capability.BestEffort, Image: "clickhouse/clickhouse-server:26.3",
+		Note: "a supported LTS line upstream. The capability probe has a ClickHouse statement " +
+			"table now, so this line is measurable; no CI service starts it yet",
 	},
 	{
 		Dialect: platform.ClickHouse, Line: "25.8",
-		Preset: capability.ClickHouse24, PresetName: "ClickHouse24",
-		Refinement: NotRefined, Support: capability.BestEffort, Image: "clickhouse/clickhouse-server:25.8",
-		Note: "the older live LTS line upstream, exercised by nothing here for the same reason " +
-			"as 26.3. Its LTS window is the shortest of the three supported lines, so it is the first " +
-			"candidate to leave the matrix",
+		Preset: capability.ClickHouse2411, PresetName: "ClickHouse2411",
+		Refinement: RefinedByVersion, Support: capability.BestEffort, Image: "clickhouse/clickhouse-server:25.8",
+		Note: "the older live LTS line upstream, in the same position as 26.3. Its LTS window is " +
+			"the shortest of the three supported lines, so it is the first candidate to leave the matrix",
 	},
 	{
 		Dialect: platform.ClickHouse, Line: "24.10",
 		Preset: capability.ClickHouse24, PresetName: "ClickHouse24",
-		Refinement: NotRefined, Support: capability.LegacyTested, Image: "clickhouse/clickhouse-server:24.10",
+		Refinement: RefinedByVersion, Support: capability.LegacyTested, Image: "clickhouse/clickhouse-server:24.10",
 		Note: "SECURITY.md marks every 24.* release unsupported, and the line is kept " +
 			"because it is the second ClickHouse service .github/workflows/go-integration-tests.yml " +
 			"starts and the line the ClickHouse24 preset is named after; a live " +
