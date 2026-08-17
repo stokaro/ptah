@@ -14,6 +14,7 @@ import (
 	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/clickhouserbac"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
+	"go.5x5.cz/ptah/internal/crdbttl"
 	"go.5x5.cz/ptah/internal/matviewrefresh"
 	"go.5x5.cz/ptah/internal/reservedrole"
 	"go.5x5.cz/ptah/internal/schemaselection"
@@ -107,6 +108,16 @@ func compareWithDatabaseInfoReportingUndecidedAdditions(
 		// nothing to plan and report convergence. Refuse instead, here, where
 		// an error can still travel.
 		if err := clickhouserbac.ValidateLive(info.Dialect, generated, database); err != nil {
+			return nil, nil, err
+		}
+		// The row-level TTL refusals, at the same seam and for the same reason:
+		// a declaration this comparison accepts and the renderer refuses would
+		// be a plan that fails halfway. info.Capabilities is the live target's,
+		// so the dialect gate here answers for the server actually connected
+		// rather than for a preset (stokaro/ptah#1027).
+		if err := crdbttl.ValidateDeclared(
+			info.Dialect, info.Capabilities, crdbttl.DeclaredIn(rowTTLTables(generated)),
+		); err != nil {
 			return nil, nil, err
 		}
 		if err := schemaselection.ValidateDeclaredPostgresSystemSchemas(
@@ -466,4 +477,14 @@ func mysqlInlineEnumType(values []string) string {
 		quoted = append(quoted, "'"+strings.ReplaceAll(value, "'", "''")+"'")
 	}
 	return "enum(" + strings.Join(quoted, ",") + ")"
+}
+
+// rowTTLTables projects a declaration's tables into the pairs
+// internal/crdbttl validates.
+func rowTTLTables(generated *goschema.Database) []crdbttl.TableTTL {
+	tables := make([]crdbttl.TableTTL, 0, len(generated.Tables))
+	for _, table := range generated.Tables {
+		tables = append(tables, crdbttl.TableTTL{Name: table.Name, RowTTL: table.RowTTL})
+	}
+	return tables
 }

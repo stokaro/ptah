@@ -478,18 +478,15 @@ func (s *schemaParseState) parseSchemaComment(comment *ast.Comment) error {
 
 func (s *schemaParseState) parseTableComment(comment *ast.Comment, structName string) error {
 	kv := parseutils.ParseKeyValueComment(comment.Text)
-	if err := validateAttributes(
-		kv,
-		s.annotationContext(comment, "//ptah:schema:table", structName),
-	); err != nil {
-		return err
-	}
 	schemaName, tableName := tableDirectiveName(kv["schema"], kv["name"])
-	// The TTL attributes are read through internal/crdbttl rather than picked
-	// out here, so that the refusals travel with the parse: a declaration
-	// naming ttl_expire_after gets the measured reason at the point it is
-	// written, rather than an unknown-attribute error or silence
-	// (stokaro/ptah#1027).
+	// The TTL attributes are read BEFORE the general allowlist, and the order
+	// is the point. Two ttl_ names are real CockroachDB parameters Ptah refuses
+	// for measured reasons, and the allowlist would answer them with a generic
+	// "unknown annotation attribute" — telling an author their spelling is
+	// wrong when it is right and the parameter is unsupported. Running this
+	// first means ttl_expire_after gets the reason and the alternative, and a
+	// genuine ttl_ typo gets a message listing the managed surface, which is
+	// also better than the generic one (stokaro/ptah#1027).
 	rowTTL, err := crdbttl.FromAttributes(tableName, kv)
 	if err != nil {
 		return &ptaherr.ParseError{
@@ -499,6 +496,12 @@ func (s *schemaParseState) parseTableComment(comment *ast.Comment, structName st
 			Err:       ptaherr.ErrUnknownAttribute,
 			Message:   err.Error(),
 		}
+	}
+	if err := validateAttributes(
+		kv,
+		s.annotationContext(comment, "//ptah:schema:table", structName),
+	); err != nil {
+		return err
 	}
 	s.tableDirectives = append(s.tableDirectives, Table{
 		StructName: structName,

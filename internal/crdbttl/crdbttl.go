@@ -404,3 +404,22 @@ func declares(spec *ast.RowTTLSpec, parameter string) bool {
 		return false
 	}
 }
+
+// DeclaredIn collects the TTL declarations of a schema's tables, which is the
+// shape [ValidateDeclared] takes. It is here so every caller builds the list the
+// same way and none of them has to know which field carries the policy.
+func DeclaredIn(tables []TableTTL) []Declared {
+	declared := make([]Declared, 0, len(tables))
+	for _, table := range tables {
+		declared = append(declared, Declared{Table: table.Name, TTL: table.RowTTL})
+	}
+	return declared
+}
+
+// TableTTL is the pair a caller holding any table representation can produce.
+type TableTTL struct {
+	// Name is the table's name, for the diagnostic.
+	Name string
+	// RowTTL is what it declares, nil for a table declaring none.
+	RowTTL *ast.RowTTLSpec
+}

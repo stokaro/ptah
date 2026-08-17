@@ -9,6 +9,7 @@ import (
 
 	"go.5x5.cz/ptah/config"
 	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlasfilter"
@@ -16,6 +17,7 @@ import (
 	"go.5x5.cz/ptah/internal/atlassource"
 	"go.5x5.cz/ptah/internal/clickhouserbac"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
+	"go.5x5.cz/ptah/internal/crdbttl"
 	"go.5x5.cz/ptah/internal/matviewrefresh"
 	"go.5x5.cz/ptah/internal/schemafile"
 	"go.5x5.cz/ptah/internal/schemaselection"
@@ -200,6 +202,9 @@ func Diff(ctx context.Context, opts DiffOptions) (atlasreport.SchemaDiff, error)
 	}
 
 	if err := validateClickHouseRBAC(dialect, to, fromSide.database); err != nil {
+		return atlasreport.SchemaDiff{}, err
+	}
+	if err := validateRowTTL(dialect, to); err != nil {
 		return atlasreport.SchemaDiff{}, err
 	}
 
@@ -508,4 +513,25 @@ func validateClickHouseRBAC(dialect string, to *goschema.Database, from *types.D
 		return err
 	}
 	return clickhouserbac.ValidateLive(dialect, to, from)
+}
+
+// validateRowTTL applies the CockroachDB row-level TTL refusals to a
+// `schema diff`, for the reason validateClickHouseRBAC exists: this surface
+// reaches the comparator through the variant that returns no error, so a
+// refusal it does not make is one nothing makes on this path
+// (stokaro/ptah#1027).
+//
+// The capability set is resolved from the dialect rather than from a live
+// connection, because either side of a `schema diff` may be a document and
+// there may be no server at all. That resolves to the dialect's newest preset,
+// which is the same answer `schema render` gives an offline declaration.
+func validateRowTTL(dialect string, to *goschema.Database) error {
+	if to == nil {
+		return nil
+	}
+	tables := make([]crdbttl.TableTTL, 0, len(to.Tables))
+	for _, table := range to.Tables {
+		tables = append(tables, crdbttl.TableTTL{Name: table.Name, RowTTL: table.RowTTL})
+	}
+	return crdbttl.ValidateDeclared(dialect, capability.ForDialect(dialect), crdbttl.DeclaredIn(tables))
 }
