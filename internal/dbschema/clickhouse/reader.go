@@ -218,7 +218,7 @@ func (r *Reader) readTables(dbName string) ([]types.DBTable, error) {
 	}
 
 	rows, err := r.db.Query(`
-		SELECT name, comment
+		SELECT name, comment, sorting_key, primary_key
 		FROM system.tables
 		WHERE database = ?
 		  AND is_temporary = 0
@@ -240,12 +240,13 @@ func (r *Reader) readTables(dbName string) ([]types.DBTable, error) {
 
 	var tables []types.DBTable
 	for rows.Next() {
-		var name, comment string
-		if err := rows.Scan(&name, &comment); err != nil {
+		var name, comment, sortingKey, primaryKey string
+		if err := rows.Scan(&name, &comment, &sortingKey, &primaryKey); err != nil {
 			return nil, err
 		}
 		t := types.DBTable{Name: name, Type: "TABLE", Comment: comment}
 		t.Columns = columnsByTable[name]
+		t.ClickHouseSortingKey = sortingKeyBeyondPrimaryKey(sortingKey, primaryKey)
 		tables = append(tables, t)
 	}
 	if err := rows.Err(); err != nil {
@@ -342,8 +343,17 @@ func (r *Reader) readMaterializedViews(dbName string) ([]types.DBMatView, error)
 }
 
 func (r *Reader) readColumnsByTable(dbName string) (map[string][]types.DBColumn, error) {
+	// is_in_primary_key is what makes a read of a MergeTree table describable
+	// again. Without it every column reads as non-key, which has two visible
+	// consequences and one root cause (stokaro/ptah#1603): a declaration
+	// carrying `primary="true"` differs from its own table on every comparison,
+	// so `ALTER TABLE ... MODIFY COLUMN` is re-planned forever; and the
+	// renderer, which falls back to the primary-key columns for the ORDER BY a
+	// MergeTree engine requires, has nothing to fall back to, so `ptah db read`
+	// cannot render the schema it just read.
 	rows, err := r.db.Query(`
-		SELECT table, name, type, default_kind, default_expression, position, comment
+		SELECT table, name, type, default_kind, default_expression, position, comment,
+		       is_in_primary_key
 		FROM system.columns
 		WHERE database = ?
 		ORDER BY table, position
@@ -359,8 +369,11 @@ func (r *Reader) readColumnsByTable(dbName string) (map[string][]types.DBColumn,
 			tableName                                         string
 			name, dataType, defaultKind, defaultExpr, comment string
 			position                                          int
+			inPrimaryKey                                      uint8
 		)
-		if err := rows.Scan(&tableName, &name, &dataType, &defaultKind, &defaultExpr, &position, &comment); err != nil {
+		if err := rows.Scan(
+			&tableName, &name, &dataType, &defaultKind, &defaultExpr, &position, &comment, &inPrimaryKey,
+		); err != nil {
 			return nil, err
 		}
 		nullable := "NO"
@@ -372,6 +385,7 @@ func (r *Reader) readColumnsByTable(dbName string) (map[string][]types.DBColumn,
 			DataType:        dataType,
 			ColumnType:      dataType,
 			IsNullable:      nullable,
+			IsPrimaryKey:    inPrimaryKey != 0,
 			OrdinalPosition: position,
 		}
 		// ClickHouse columns can have several flavours of default
@@ -476,4 +490,37 @@ func (r *Reader) readSkippingIndexes(dbName string) ([]types.DBIndex, error) {
 		return nil, err
 	}
 	return indexes, nil
+}
+
+// sortingKeyBeyondPrimaryKey returns the ORDER BY a description has to carry
+// explicitly, and the empty string when the primary key already implies it.
+//
+// A MergeTree table's ORDER BY and PRIMARY KEY are usually the same expression,
+// and the renderer derives the ORDER BY from the primary-key columns — so
+// carrying it again would put an override on every table for no gain. They come
+// apart when the table declares both: measured on 26.7.3.19,
+// `PRIMARY KEY (a) ORDER BY (a, b)` reports primary_key `(a)` and sorting_key
+// `a, b`, and a description built from the primary key alone sorts by `a`
+// only. That is a different table, not a formatting difference: applying such a
+// description creates one whose rows are ordered differently (stokaro/ptah#1603).
+//
+// The two are compared after stripping the parentheses and spaces the catalog
+// puts on one and not the other -- primary_key comes back as `(a)` and
+// sorting_key as `a, b` for the same table -- so an equal pair is recognized as
+// equal rather than recorded as an override that changes nothing.
+func sortingKeyBeyondPrimaryKey(sortingKey, primaryKey string) string {
+	if normalizeKeyExpression(sortingKey) == normalizeKeyExpression(primaryKey) {
+		return ""
+	}
+	return strings.TrimSpace(sortingKey)
+}
+
+// normalizeKeyExpression reduces a key expression to a form that can be
+// compared across the two columns the catalog reports it in. It is used only
+// for that comparison; what a description carries is the catalog's own text.
+func normalizeKeyExpression(expression string) string {
+	trimmed := strings.TrimSpace(expression)
+	trimmed = strings.TrimPrefix(trimmed, "(")
+	trimmed = strings.TrimSuffix(trimmed, ")")
+	return strings.Join(strings.Fields(strings.ReplaceAll(trimmed, ",", " ")), ",")
 }
