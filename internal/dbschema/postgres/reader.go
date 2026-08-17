@@ -1699,6 +1699,8 @@ func (r *Reader) readBasicConstraintsForSchema(schemaName string) ([]types.DBCon
 					WHEN 'n' THEN 'SET NULL'
 					WHEN 'd' THEN 'SET DEFAULT'
 				END), ''),
+				COALESCE(bool_or(pc.condeferrable), false),
+				COALESCE(bool_or(pc.condeferred), false),
 				` + r.constraintCheckExpr() + `,
 				` + r.constraintDefinitionExpr() + `
 		FROM information_schema.table_constraints AS tc
@@ -1746,6 +1748,7 @@ func (r *Reader) readBasicConstraintsForSchema(schemaName string) ([]types.DBCon
 	for rows.Next() {
 		var constraint types.DBConstraint
 		var columnNames, foreignSchema, foreignTable, foreignColumns, deleteRule, updateRule, checkClause, constraintDefinition string
+		var deferrable, deferred bool
 
 		err := rows.Scan(
 			&constraint.Schema,
@@ -1758,6 +1761,8 @@ func (r *Reader) readBasicConstraintsForSchema(schemaName string) ([]types.DBCon
 			&foreignColumns,
 			&deleteRule,
 			&updateRule,
+			&deferrable,
+			&deferred,
 			&checkClause,
 			&constraintDefinition,
 		)
@@ -1784,6 +1789,14 @@ func (r *Reader) readBasicConstraintsForSchema(schemaName string) ([]types.DBCon
 		}
 		if updateRule != "" {
 			constraint.UpdateRule = &updateRule
+		}
+		// Only a deferrable constraint carries a timing. Reporting "immediate"
+		// for every non-deferrable one would make a schema that never asked for
+		// deferral read back differently from the one that was written
+		// (stokaro/ptah#1624).
+		constraint.Deferrable = deferrable
+		if deferrable {
+			constraint.Initially = deferralTimings[deferred]
 		}
 		if checkClause != "" {
 			constraint.CheckClause = &checkClause
@@ -3363,3 +3376,10 @@ func (r *Reader) readCapabilityGatedObjects(schema *types.DBSchema) error {
 
 	return nil
 }
+
+// deferralTimings maps pg_constraint.condeferred onto the timing an HCL
+// document spells. It is a table rather than a function taking the bool,
+// because a function whose whole body branches on its only parameter is the
+// control-coupling shape revive refuses -- and the table reads as what it is,
+// two names for two states.
+var deferralTimings = map[bool]string{true: "deferred", false: "immediate"}

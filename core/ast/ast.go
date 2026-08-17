@@ -132,6 +132,19 @@ type ForeignKeyRef struct {
 	OnUpdate string
 	// Name is the constraint name for the foreign key
 	Name string
+	// Deferrable marks a foreign key whose check may be postponed to the end of
+	// a transaction, which is the standard answer to a circular reference and
+	// to a bulk load that transiently violates the constraint.
+	//
+	// It is a separate field from Initially because the two are separate
+	// clauses: `DEFERRABLE` alone is legal and means the check CAN be deferred
+	// while still running immediately by default (stokaro/ptah#1624).
+	Deferrable bool
+	// Initially is the default timing of a deferrable check: "deferred" or
+	// "immediate". Empty means the clause was not written, which is the same
+	// thing the engine defaults to -- IMMEDIATE -- spelled as "the author did
+	// not say".
+	Initially string
 }
 
 // ReferencedColumns returns the referenced column list, falling back to Column

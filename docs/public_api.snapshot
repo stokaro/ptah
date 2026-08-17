@@ -2337,6 +2337,19 @@ type ForeignKeyRef struct {
     OnUpdate string
     // Name is the constraint name for the foreign key
     Name string
+    // Deferrable marks a foreign key whose check may be postponed to the end of
+    // a transaction, which is the standard answer to a circular reference and
+    // to a bulk load that transiently violates the constraint.
+    //
+    // It is a separate field from Initially because the two are separate
+    // clauses: `DEFERRABLE` alone is legal and means the check CAN be deferred
+    // while still running immediately by default (stokaro/ptah#1624).
+    Deferrable bool
+    // Initially is the default timing of a deferrable check: "deferred" or
+    // "immediate". Empty means the clause was not written, which is the same
+    // thing the engine defaults to -- IMMEDIATE -- spelled as "the author did
+    // not say".
+    Initially string
 }
     ForeignKeyRef represents a foreign key reference with optional referential
     actions.
@@ -3916,6 +3929,12 @@ type Constraint struct {
     ForeignColumns []string // Referenced column names for composite foreign keys
     OnDelete       string   // ON DELETE action
     OnUpdate       string   // ON UPDATE action
+    // Deferrable marks a foreign key whose check may be postponed to the end of
+    // a transaction. See [go.5x5.cz/ptah/core/ast.ForeignKeyRef.Deferrable].
+    Deferrable bool
+    // Initially is the default timing of a deferrable check: "deferred",
+    // "immediate", or empty for a clause the author did not write.
+    Initially string
 
     // RequiresExtensions names the extensions the index backing this constraint
     // cannot be built without, as the catalog resolved them rather than as
@@ -4298,18 +4317,25 @@ type Field struct {
     IdentityIncrement string
     // IdentityOptions stores raw PostgreSQL identity sequence options for SQL round-trips.
     IdentityOptions string
-    Unique          bool     // Whether this column has a unique constraint
-    UniqueExpr      string   // Custom unique constraint expression
-    Default         string   // Default value for the column
-    DefaultSet      bool     // Whether Default is set, including an empty string literal
-    DefaultExpr     string   // Default expression (e.g., "NOW()", "UUID()", "CURRENT_TIMESTAMP", "1", "true")
-    Foreign         string   // Foreign key reference (e.g., "users(id)")
-    ForeignKeyName  string   // Custom foreign key constraint name
-    OnDelete        string   // Foreign key ON DELETE action (CASCADE, SET NULL, RESTRICT, NO ACTION)
-    OnUpdate        string   // Foreign key ON UPDATE action (CASCADE, SET NULL, RESTRICT, NO ACTION)
-    Enum            []string // Enum values for ENUM type fields
-    Check           string   // Check constraint expression
-    CheckName       string   // Optional constraint name for the column-level CHECK; defaults to "<table>_<column>_check"
+    Unique          bool   // Whether this column has a unique constraint
+    UniqueExpr      string // Custom unique constraint expression
+    Default         string // Default value for the column
+    DefaultSet      bool   // Whether Default is set, including an empty string literal
+    DefaultExpr     string // Default expression (e.g., "NOW()", "UUID()", "CURRENT_TIMESTAMP", "1", "true")
+    Foreign         string // Foreign key reference (e.g., "users(id)")
+    ForeignKeyName  string // Custom foreign key constraint name
+    OnDelete        string // Foreign key ON DELETE action (CASCADE, SET NULL, RESTRICT, NO ACTION)
+    OnUpdate        string // Foreign key ON UPDATE action (CASCADE, SET NULL, RESTRICT, NO ACTION)
+    // Deferrable marks a single-column foreign key whose check may be postponed
+    // to the end of a transaction. See
+    // [go.5x5.cz/ptah/core/ast.ForeignKeyRef.Deferrable].
+    Deferrable bool
+    // Initially is the default timing of a deferrable check: "deferred",
+    // "immediate", or empty for a clause the author did not write.
+    Initially string
+    Enum      []string // Enum values for ENUM type fields
+    Check     string   // Check constraint expression
+    CheckName string   // Optional constraint name for the column-level CHECK; defaults to "<table>_<column>_check"
     // GeneratedExpression stores the raw SQL expression for generated columns.
     GeneratedExpression string
     // GeneratedKind stores the generated column kind, such as VIRTUAL or STORED.
@@ -6153,9 +6179,17 @@ type DBConstraint struct {
     ForeignSchema  string   `json:"foreign_schema,omitempty"`
     ForeignColumn  *string  `json:"foreign_column"` // For foreign keys
     ForeignColumns []string `json:"foreign_columns,omitempty"`
-    DeleteRule     *string  `json:"delete_rule"`  // CASCADE, RESTRICT, etc.
-    UpdateRule     *string  `json:"update_rule"`  // CASCADE, RESTRICT, etc.
-    CheckClause    *string  `json:"check_clause"` // For CHECK constraints
+    DeleteRule     *string  `json:"delete_rule"` // CASCADE, RESTRICT, etc.
+    UpdateRule     *string  `json:"update_rule"` // CASCADE, RESTRICT, etc.
+    // Deferrable reports a foreign key whose check may be postponed to the end
+    // of a transaction, read from pg_constraint.condeferrable.
+    Deferrable bool `json:"deferrable,omitempty"`
+    // Initially is the default timing of a deferrable check -- "deferred" or
+    // "immediate" -- read from pg_constraint.condeferred. It is empty for a
+    // constraint that is not deferrable, so a schema that never asked for one
+    // reads back exactly as it did before (stokaro/ptah#1624).
+    Initially   string  `json:"initially,omitempty"`
+    CheckClause *string `json:"check_clause"` // For CHECK constraints
     // NullsDistinct carries PostgreSQL UNIQUE NULLS [NOT] DISTINCT state.
     // Nil means the clause was not present in the definition.
     NullsDistinct *bool `json:"nulls_distinct,omitempty"`

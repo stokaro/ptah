@@ -430,6 +430,29 @@ const (
 	// where the PostgreSQL-family and MySQL-family plans set up with this exact
 	// clause and so cannot ask their alter question without it.
 	GeneratedColumns Capability = "generated_columns"
+
+	// DeferrableConstraints marks support for a foreign key declared
+	// DEFERRABLE, whose check can be postponed to the end of a transaction.
+	//
+	// Deferred checking is the standard answer to a circular reference and to a
+	// bulk load that transiently violates a constraint, so the targets that
+	// have it are the ones where Ptah can express either.
+	//
+	// Measured live with `CONSTRAINT fk FOREIGN KEY (id) REFERENCES p(id)
+	// DEFERRABLE INITIALLY DEFERRED`: accepted by PostgreSQL 18.4 and
+	// YugabyteDB 2026.1, both reporting condeferrable and condeferred true in
+	// pg_constraint, and by SQLite 3.53.3, whose foreign-key grammar carries
+	// the clause. Refused by MySQL 8.4.11 and MariaDB 11.8.8 (error 1064), by
+	// SQL Server 16.0.4265.3 (`Incorrect syntax near 'DEFERRABLE'`), by
+	// ClickHouse 26.7.3.19, which parses no FOREIGN KEY clause at all, and by
+	// the Spanner PostgreSQL interface with `<DEFERRABLE> constraints are not
+	// supported`.
+	//
+	// CockroachDB v26.2.5 refuses it too, which is worth stating because the
+	// PostgreSQL family is otherwise where this feature lives: every form is
+	// `unimplemented: this syntax`, including `NOT DEFERRABLE`, so the key is
+	// false there rather than partially true (stokaro/ptah#1624).
+	DeferrableConstraints Capability = "deferrable_constraints"
 )
 
 // spec documents a registry entry and its implication edges.
@@ -555,6 +578,16 @@ var registry = map[Capability]spec{
 	},
 	GeneratedColumns: {
 		doc: "columns declared GENERATED ALWAYS AS (expr) STORED (PostgreSQL 12+, MySQL 5.7+, MariaDB 10.2+, SQLite 3.31+)",
+	},
+	DeferrableConstraints: {
+		doc: "foreign keys declared DEFERRABLE, whose check can be postponed to the end of a transaction (PostgreSQL, YugabyteDB, SQLite)",
+		// Deliberately no `requires: ForeignKeys`, for the reason
+		// DropIndexConcurrently states about CreateIndexConcurrently: a caller
+		// composing a set with .With(ForeignKeys, false) is restricting foreign
+		// keys, not asserting anything about this key, and Validate must not
+		// turn that composition into an error. Measured, the edge did exactly
+		// that -- four renderer tests that disable foreign keys stopped
+		// reaching their own refusal and failed on an invalid set instead.
 	},
 }
 
@@ -724,6 +757,7 @@ func MySQL84() Capabilities {
 		RenameColumnClause:                 true,
 		CatalogCheckConstraintTableName:    false,
 		GeneratedColumns:                   true,
+		DeferrableConstraints:              false,
 	}
 }
 
@@ -827,6 +861,7 @@ func MariaDB1011() Capabilities {
 		RenameColumnClause:              true,
 		CatalogCheckConstraintTableName: true,
 		GeneratedColumns:                true,
+		DeferrableConstraints:           false,
 	}
 }
 
@@ -889,6 +924,7 @@ func Postgres16() Capabilities {
 		RenameColumnClause:                 true,
 		CatalogCheckConstraintTableName:    false,
 		GeneratedColumns:                   true,
+		DeferrableConstraints:              true,
 	}
 }
 
@@ -1021,6 +1057,7 @@ func ClickHouse24() Capabilities {
 		RenameColumnClause:              true,
 		CatalogCheckConstraintTableName: false,
 		GeneratedColumns:                false,
+		DeferrableConstraints:           false,
 	}
 }
 
@@ -1084,6 +1121,7 @@ func SQLite3() Capabilities {
 		RenameColumnClause:                 true,
 		CatalogCheckConstraintTableName:    false,
 		GeneratedColumns:                   true,
+		DeferrableConstraints:              true,
 	}
 }
 
@@ -1174,6 +1212,7 @@ func SQLServer2022() Capabilities {
 		RenameColumnClause:                 false,
 		CatalogCheckConstraintTableName:    false,
 		GeneratedColumns:                   false,
+		DeferrableConstraints:              false,
 	}
 }
 
@@ -1216,6 +1255,11 @@ func SQLServer2022() Capabilities {
 // (stokaro/ptah#1027).
 func CockroachDB23() Capabilities {
 	return Postgres16().
+		// CockroachDB is the one PostgreSQL-family target without this, and it
+		// is a whole absence rather than a partial one: v26.2.5 answers
+		// `unimplemented: this syntax` to DEFERRABLE, to DEFERRABLE INITIALLY
+		// IMMEDIATE and to NOT DEFERRABLE alike (stokaro/ptah#1624).
+		With(DeferrableConstraints, false).
 		With(CreateIndexConcurrently, false).
 		With(DropIndexConcurrently, false).
 		With(IndexIncludeSPGiST, false).
@@ -1315,6 +1359,9 @@ func YugabyteDB24() Capabilities {
 // #942 lands.
 func SpannerPostgres() Capabilities {
 	return Postgres16().
+		// Measured on the Cloud Spanner emulator behind PGAdapter:
+		// `<DEFERRABLE> constraints are not supported` (stokaro/ptah#1624).
+		With(DeferrableConstraints, false).
 		// Measured: `Only <TABLE> is supported for renaming`.
 		With(RenameColumnClause, false).
 		// Measured on the Cloud Spanner emulator behind PGAdapter:

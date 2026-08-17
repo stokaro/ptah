@@ -193,6 +193,7 @@ func measuredLines() map[string]measuredLine {
 				capability.RenameColumnClause:              "this run predates the key and sent no rename. Measured separately on PostgreSQL 18.4: `ALTER TABLE rn RENAME COLUMN a TO b` is accepted",
 				capability.CatalogCheckConstraintTableName: "this run predates the key. Measured separately on PostgreSQL 18.4: `information_schema.check_constraints` is constraint_catalog, constraint_schema, constraint_name, check_clause -- no table_name",
 				capability.GeneratedColumns:                "this run predates the key. Measured separately on PostgreSQL 18.4: `CREATE TABLE gcx (n int, g int GENERATED ALWAYS AS (n + 1) STORED)` is accepted",
+				capability.DeferrableConstraints:           "this run predates the key. Measured separately on PostgreSQL 18.4: `CONSTRAINT fk FOREIGN KEY (id) REFERENCES p(id) DEFERRABLE INITIALLY DEFERRED` is accepted and pg_constraint reports condeferrable and condeferred true",
 			},
 		},
 
@@ -242,6 +243,7 @@ func measuredLines() map[string]measuredLine {
 				capability.RenameColumnClause:              "this run predates the key. Measured separately on MySQL 8.4.11: the clause is accepted",
 				capability.CatalogCheckConstraintTableName: "this run predates the key. Measured separately on MySQL 8.4.11: `information_schema.CHECK_CONSTRAINTS` has no TABLE_NAME column; selecting it is error 1054",
 				capability.GeneratedColumns:                "this run predates the key. Measured separately on MySQL 8.4.11: `CREATE TABLE gcx (n int, g int GENERATED ALWAYS AS (n + 1) STORED)` is accepted",
+				capability.DeferrableConstraints:           "this run predates the key. Measured separately on MySQL 8.4.11: the same constraint is error 1064",
 			},
 		},
 
@@ -293,6 +295,7 @@ func measuredLines() map[string]measuredLine {
 				capability.RenameColumnClause:              "this run predates the key. Measured separately on MariaDB 11.8.8: the clause is accepted",
 				capability.CatalogCheckConstraintTableName: "this run predates the key. Measured separately on MariaDB 11.8.8: `information_schema.CHECK_CONSTRAINTS` carries TABLE_NAME between CONSTRAINT_SCHEMA and CONSTRAINT_NAME",
 				capability.GeneratedColumns:                "this run predates the key. Measured separately on MariaDB 11.8.8: `CREATE TABLE gcx (n int, g int GENERATED ALWAYS AS (n + 1) STORED)` is accepted",
+				capability.DeferrableConstraints:           "this run predates the key. Measured separately on MariaDB 11.8.8: the same constraint is error 1064",
 			},
 		},
 	}

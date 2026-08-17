@@ -219,6 +219,12 @@ func clickHousePlan() plan {
 			"SELECT 1 FROM information_schema.view_table_usage LIMIT 1",
 			"the catalog naming the tables a view reads",
 		),
+		// ClickHouse parses no FOREIGN KEY clause at all, so the whole statement
+		// is refused rather than just the deferral (stokaro/ptah#1624).
+		acceptance(capability.DeferrableConstraints,
+			[]string{t.table("dfp", "id Int64", "id"), t.table("dfc", "n Int64, id Int64", "n")},
+			"ALTER TABLE dfc ADD CONSTRAINT dfc_fk FOREIGN KEY (id) REFERENCES dfp (id) DEFERRABLE INITIALLY DEFERRED",
+		),
 		acceptanceNote(capability.CatalogCheckConstraintTableName, nil,
 			"SELECT table_name FROM information_schema.check_constraints LIMIT 1",
 			"the CHECK_CONSTRAINTS column that names the declaring table",

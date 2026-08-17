@@ -644,7 +644,7 @@ func renderInlineForeignKey(ref *ast.ForeignKeyRef) string {
 	}
 	return prefix + "REFERENCES " + escapeQualifiedIdentifier(ref.Table) + " (" +
 		strings.Join(escapeIdentifierList(ref.ReferencedColumns()), ", ") + ")" +
-		renderReferentialActions(ref)
+		renderReferentialActions(ref) + renderDeferral(ref)
 }
 
 func renderNamedForeignKey(name string, columns []string, ref *ast.ForeignKeyRef) string {
@@ -654,7 +654,27 @@ func renderNamedForeignKey(name string, columns []string, ref *ast.ForeignKeyRef
 	}
 	return prefix + "FOREIGN KEY (" + strings.Join(escapeIdentifierList(columns), ", ") + ") REFERENCES " +
 		escapeQualifiedIdentifier(ref.Table) + " (" + strings.Join(escapeIdentifierList(ref.ReferencedColumns()), ", ") + ")" +
-		renderReferentialActions(ref)
+		renderReferentialActions(ref) + renderDeferral(ref)
+}
+
+// renderDeferral renders DEFERRABLE and its timing.
+//
+// SQLite's foreign-key grammar carries the clause and the linked engine accepts
+// it: measured on sqlite_version() 3.53.3, `CONSTRAINT fk FOREIGN KEY (id)
+// REFERENCES p(id) DEFERRABLE INITIALLY DEFERRED` is created without error.
+// There is no capability gate here because every SQLite preset Ptah ships has
+// the key -- the clause predates every version in the ladder
+// (stokaro/ptah#1624).
+func renderDeferral(ref *ast.ForeignKeyRef) string {
+	if !ref.Deferrable && ref.Initially == "" {
+		return ""
+	}
+	timings := map[string]string{
+		"":          "",
+		"deferred":  " INITIALLY DEFERRED",
+		"immediate": " INITIALLY IMMEDIATE",
+	}
+	return " DEFERRABLE" + timings[strings.ToLower(strings.TrimSpace(ref.Initially))]
 }
 
 func renderReferentialActions(ref *ast.ForeignKeyRef) string {
