@@ -20,6 +20,8 @@ func planFor(dialect string) (plan, bool) {
 		return postgresFamilyPlan(platform.NormalizeDialect(dialect)), true
 	case platform.MySQL, platform.MariaDB:
 		return mysqlFamilyPlan(platform.NormalizeDialect(dialect)), true
+	case platform.ClickHouse:
+		return clickHousePlan(), true
 	default:
 		return plan{}, false
 	}
@@ -57,11 +59,18 @@ type tableSpelling struct {
 	// dropCheckConstraint picks CHECK for the droppable-constraint experiment,
 	// on a dialect with no UNIQUE table constraint to drop.
 	dropCheckConstraint bool
+	// engine is the storage clause a dialect requires after the column list,
+	// with %s standing for the key column. ClickHouse has no default engine for
+	// a CREATE TABLE and refuses one without it.
+	engine string
 }
 
 // table spells a throwaway table. key names the column that becomes the primary
 // key on a dialect that requires one, and is unused where it does not.
 func (t tableSpelling) table(name, columns, key string) string {
+	if t.engine != "" {
+		return fmt.Sprintf("CREATE TABLE %s (%s) %s", name, columns, fmt.Sprintf(t.engine, key))
+	}
 	if !t.keyed {
 		return fmt.Sprintf("CREATE TABLE %s (%s)", name, columns)
 	}
@@ -257,6 +266,14 @@ func postgresFamilyPlan(dialect string) plan {
 			"SELECT pg_advisory_unlock(1)",
 		),
 		// The one key in this plan whose expected answer is FALSE on
+		// ClickHouse's statement, asked here because the registry answers for
+		// every dialect and a key nobody asks about is a key nobody measured.
+		// A server without it answers with a syntax error, which is the same
+		// answer this experiment records anywhere else.
+		acceptanceNote(capability.CheckGrantStatement, nil,
+			"CHECK GRANT SELECT ON *.*",
+			"the statement is ClickHouse's; a server without it refuses the syntax",
+		),
 		// PostgreSQL itself, so the usual reading of a verdict is inverted:
 		// a refusal here is PostgreSQL behaving as its preset says, and an
 		// ACCEPTANCE is what marks a CockroachDB line.
@@ -416,6 +433,14 @@ func mysqlFamilyPlan(dialect string) plan {
 		all(capability.AdvisoryLocks, nil,
 			"SELECT pg_advisory_lock(1)",
 			"SELECT pg_advisory_unlock(1)",
+		),
+		// ClickHouse's statement, asked here because the registry answers for
+		// every dialect and a key nobody asks about is a key nobody measured.
+		// A server without it answers with a syntax error, which is the same
+		// answer this experiment records anywhere else.
+		acceptanceNote(capability.CheckGrantStatement, nil,
+			"CHECK GRANT SELECT ON *.*",
+			"the statement is ClickHouse's; a server without it refuses the syntax",
 		),
 	}
 

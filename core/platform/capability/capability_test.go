@@ -588,7 +588,13 @@ func TestResolveServerVersionReportsSaturation(t *testing.T) {
 			"spanner is intentionally version-free",
 			"postgres", "Cloud Spanner PostgreSQL interface", capability.SpannerPostgres(), true, false, "",
 		},
-		{"clickhouse has no ladder", "clickhouse", "25.3.1.100", capability.ClickHouse24(), false, false, ""},
+		// ClickHouse HAS a ladder now, of one step at 24.11. 25.3 is above the
+		// step and below the newest measured line, so it climbs to the upper
+		// arm, is not attributable to a declared line (25.3 is not one), and is
+		// not saturated either.
+		{"clickhouse above the step, on no declared line", "clickhouse", "25.3.1.100", capability.ClickHouse2411(), false, false, "26.7"},
+		{"clickhouse on its newest measured line", "clickhouse", "26.7.3.19", capability.ClickHouse2411(), true, false, "26.7"},
+		{"clickhouse past the newest measured line", "clickhouse", "27.1.1.1", capability.ClickHouse2411(), false, true, "26.7"},
 		{"sqlite has no ladder", "sqlite", "3.53.0", capability.SQLite3(), false, false, ""},
 		{
 			"sqlserver has no ladder",
@@ -972,9 +978,15 @@ func TestBannerPlatform(t *testing.T) {
 // TestResolveServerVersionUnladderedBannersAnswerFromTheProductTheyName pins
 // the two products the token table learned to read.
 //
-// Neither SQL Server nor ClickHouse has a version ladder, so the answer that
-// matters is not which release line was selected — there is none — but which
-// PRODUCT the resolution claims. Before these tokens existed both banners named
+// SQL Server has no version ladder, so the answer that matters is not which
+// release line was selected — there is none — but which PRODUCT the resolution
+// claims.
+//
+// ClickHouse used to be here beside it and moved to
+// TestResolveServerVersion_ClickHouseLadder when it gained a ladder: a row
+// asserting VersionSpecific is false cannot describe a dialect whose declared
+// lines are measured, and the cross-dialect claim those rows carried is kept
+// there rather than dropped. Before these tokens existed both banners named
 // nothing, and the shared parser spent the first number it found on the
 // DECLARED dialect's ladder: a SQL Server @@VERSION opens with its marketing
 // year, so ResolveServerVersion("postgres", <banner>) answered Postgres17 and
@@ -984,6 +996,74 @@ func TestBannerPlatform(t *testing.T) {
 // The two "on another dialect" rows are the ones with teeth. The two rows on
 // each product's own dialect are the control: adding a token must not change
 // the answer a matching pair already got.
+// ClickHouse has a ladder of exactly one step, and this is it. CHECK GRANT is a
+// statement on 26.7.3.19 and a syntax error on 24.10.4.191 -- measured on both
+// live servers -- and it is the only registered key on which two declared
+// ClickHouse lines differ (stokaro/ptah#916).
+func TestResolveServerVersion_ClickHouseLadder(t *testing.T) {
+	tests := []struct {
+		name    string
+		version string
+		want    capability.Capabilities
+	}{
+		{
+			name:    "the line below the step",
+			version: "24.10.4.191",
+			want:    capability.ClickHouse24(),
+		},
+		{
+			name:    "the step itself",
+			version: "24.11.1.1",
+			want:    capability.ClickHouse2411(),
+		},
+		{
+			name:    "a line above it",
+			version: "26.7.3.19",
+			want:    capability.ClickHouse2411(),
+		},
+		{
+			// An unreadable banner takes the LOWER arm, and that direction is
+			// the safe one: the upper arm only adds a claim that CHECK GRANT
+			// answers, and the refusal that key guards drops every object in a
+			// database.
+			name:    "a banner with no version in it",
+			version: "ClickHouse server (official build)",
+			want:    capability.ClickHouse24(),
+		},
+		{
+			// The banner spelling, which is what `clickhouse-client --version`
+			// prints and what the probe reads.
+			name:    "a banner naming the product and the version",
+			version: clickHouseVersionFull,
+			want:    capability.ClickHouse2411(),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			resolution := capability.ResolveServerVersion(platform.ClickHouse, tt.version)
+
+			c.Assert(resolution.Capabilities, qt.DeepEquals, tt.want)
+			c.Assert(resolution.Capabilities.Has(capability.CheckGrantStatement),
+				qt.Equals, tt.want.Has(capability.CheckGrantStatement))
+		})
+	}
+}
+
+// The claim the ClickHouse rows carried in the unladdered test, kept: a banner
+// naming ClickHouse answers as ClickHouse even when the caller declared another
+// dialect, and it climbs the ladder while doing so.
+func TestResolveServerVersion_ClickHouseBannerOverridesTheDeclaredDialect(t *testing.T) {
+	c := qt.New(t)
+
+	resolution := capability.ResolveServerVersion(platform.MySQL, clickHouseBinaryBanner)
+
+	c.Assert(resolution.ResolvedDialect, qt.Equals, platform.ClickHouse)
+	c.Assert(resolution.Capabilities, qt.DeepEquals, capability.ClickHouse2411())
+}
+
 func TestResolveServerVersionUnladderedBannersAnswerFromTheProductTheyName(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -1005,20 +1085,6 @@ func TestResolveServerVersionUnladderedBannersAnswerFromTheProductTheyName(t *te
 			version:  sqlServer2025Banner,
 			resolved: platform.SQLServer,
 			want:     capability.SQLServer2022(),
-		},
-		{
-			name:     "a ClickHouse banner on its own dialect",
-			dialect:  platform.ClickHouse,
-			version:  clickHouseVersionFull,
-			resolved: platform.ClickHouse,
-			want:     capability.ClickHouse24(),
-		},
-		{
-			name:     "a ClickHouse banner on mysql",
-			dialect:  platform.MySQL,
-			version:  clickHouseBinaryBanner,
-			resolved: platform.ClickHouse,
-			want:     capability.ClickHouse24(),
 		},
 	}
 
