@@ -274,6 +274,16 @@ func postgresFamilyPlan(dialect string) plan {
 			"CHECK GRANT SELECT ON *.*",
 			"the statement is ClickHouse's; a server without it refuses the syntax",
 		),
+		// The catalog view MySQL added in 8.0.13, asked as a catalog question
+		// rather than a version comparison. PostgreSQL, CockroachDB and SQL
+		// Server have the SQL-standard view too; MariaDB, ClickHouse and
+		// Spanner answer `Unknown table` or `does not exist`, all measured
+		// (stokaro/ptah#916 item 3).
+		acceptanceNote(capability.CatalogViewDependencies, nil,
+			"SELECT 1 FROM information_schema.view_table_usage LIMIT 1",
+			"the catalog naming the tables a view reads",
+		),
+		// The one key in this plan whose expected answer is FALSE on
 		// PostgreSQL itself, so the usual reading of a verdict is inverted:
 		// a refusal here is PostgreSQL behaving as its preset says, and an
 		// ACCEPTANCE is what marks a CockroachDB line.
@@ -302,7 +312,17 @@ func postgresFamilyPlan(dialect string) plan {
 			   AND COALESCE(array_to_json(reloptions)::text, '[]') LIKE '%ttl_expiration_expression%'`,
 		),
 	}
-	return plan{experiments: experiments, undecided: map[capability.Capability]string{}}
+	return plan{experiments: experiments, undecided: map[capability.Capability]string{
+		// The probe connects as ONE account and cannot ask whether a privilege
+		// EXISTS without being able to grant it: a server that refuses
+		// `GRANT SHOW_ROUTINE` because the privilege is unknown and one that
+		// refuses it because the grantee is not there answer the same way to an
+		// acceptance test, and this harness reads acceptance rather than error
+		// text. The threshold is MySQL 8.0.20 and the ladder carries it
+		// (stokaro/ptah#916 item 3).
+		capability.ShowRoutinePrivilege: "the probe cannot ask whether a privilege exists without granting it, " +
+			"and an acceptance test cannot separate an unknown privilege from an absent grantee",
+	}}
 }
 
 // mysqlFamilyPlan is the statement table for MySQL and MariaDB.
@@ -442,9 +462,27 @@ func mysqlFamilyPlan(dialect string) plan {
 			"CHECK GRANT SELECT ON *.*",
 			"the statement is ClickHouse's; a server without it refuses the syntax",
 		),
+		// The catalog view MySQL added in 8.0.13, asked as a catalog question
+		// rather than a version comparison. PostgreSQL, CockroachDB and SQL
+		// Server have the SQL-standard view too; MariaDB, ClickHouse and
+		// Spanner answer `Unknown table` or `does not exist`, all measured
+		// (stokaro/ptah#916 item 3).
+		acceptanceNote(capability.CatalogViewDependencies, nil,
+			"SELECT 1 FROM information_schema.view_table_usage LIMIT 1",
+			"the catalog naming the tables a view reads",
+		),
 	}
 
 	undecided := map[capability.Capability]string{
+		// The probe connects as ONE account and cannot ask whether a privilege
+		// EXISTS without being able to grant it: a server that refuses
+		// `GRANT SHOW_ROUTINE` because the privilege is unknown and one that
+		// refuses it because the grantee is not there answer the same way to an
+		// acceptance test, and this harness reads acceptance rather than error
+		// text. The threshold is MySQL 8.0.20 and the ladder carries it
+		// (stokaro/ptah#916 item 3).
+		capability.ShowRoutinePrivilege: "the probe cannot ask whether a privilege exists without granting it, " +
+			"and an acceptance test cannot separate an unknown privilege from an absent grantee",
 		// Measured live on MySQL 9.7.1: CREATE ROLE and GRANT SELECT are both
 		// accepted at exit 0 while MySQL84 records this key false. The two are
 		// not in conflict. The key does not name a SERVER's role syntax — it is

@@ -5194,8 +5194,10 @@ type Capabilities map[Capability]bool
     func ForServerVersionResult(dialect, version string) (Capabilities, bool)
     func MariaDB1011() Capabilities
     func MariaDBLegacy() Capabilities
+    func MySQL8013() Capabilities
     func MySQL8016() Capabilities
     func MySQL8019() Capabilities
+    func MySQL8020() Capabilities
     func MySQL84() Capabilities
     func MySQLLegacy() Capabilities
     func Postgres13() Capabilities
@@ -5244,8 +5246,10 @@ func ForServerVersion(dialect, version string) Capabilities
 func ForServerVersionResult(dialect, version string) (Capabilities, bool)
 func MariaDB1011() Capabilities
 func MariaDBLegacy() Capabilities
+func MySQL8013() Capabilities
 func MySQL8016() Capabilities
 func MySQL8019() Capabilities
+func MySQL8020() Capabilities
 func MySQL84() Capabilities
 func MySQLLegacy() Capabilities
 func Postgres13() Capabilities
