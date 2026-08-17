@@ -603,7 +603,13 @@ func TestResolveServerVersionReportsSaturation(t *testing.T) {
 		{"clickhouse above the step, on no declared line", "clickhouse", "25.3.1.100", capability.ClickHouse2411(), false, false, "26.7"},
 		{"clickhouse on its newest measured line", "clickhouse", "26.7.3.19", capability.ClickHouse2411(), true, false, "26.7"},
 		{"clickhouse past the newest measured line", "clickhouse", "27.1.1.1", capability.ClickHouse2411(), false, true, "26.7"},
-		{"sqlite has no ladder", "sqlite", "3.53.0", capability.SQLite3(), false, false, ""},
+		// SQLite has a ladder now, of one step at 3.25. It reports
+		// VersionSpecific because a version DID select an arm, and no newest
+		// measured line because the matrix declares one SQLite cell and it has
+		// no container to measure (stokaro/ptah#916).
+		{"sqlite above the step", "sqlite", "3.53.0", capability.SQLite3(), true, false, ""},
+		{"sqlite at the step", "sqlite", "3.25.0", capability.SQLite3(), true, false, ""},
+		{"sqlite below the step", "sqlite", "3.24.0", capability.SQLite324(), true, false, ""},
 		{
 			"sqlserver has no ladder",
 			"sqlserver", "Microsoft SQL Server 2022 (RTM-CU12) - 16.0.4115.5", capability.SQLServer2022(), false, false, "",
@@ -771,7 +777,11 @@ func TestResolveServerVersionSeparatesTheThreeFieldCollision(t *testing.T) {
 	c := qt.New(t)
 
 	unreadable := capability.ResolveServerVersion("postgres", "not-a-version")
-	unladdered := capability.ResolveServerVersion("sqlite", "3.53.0")
+	// SQL Server rather than SQLite: SQLite gained a ladder in
+	// stokaro/ptah#916 and now reports VersionSpecific, so it can no longer
+	// stand for the unladdered half of this collision.
+	unladdered := capability.ResolveServerVersion(
+		"sqlserver", "Microsoft SQL Server 2022 (RTM-CU12) - 16.0.4115.5")
 
 	c.Assert(unreadable.VersionSpecific, qt.Equals, unladdered.VersionSpecific)
 	c.Assert(unreadable.Saturated, qt.Equals, unladdered.Saturated)

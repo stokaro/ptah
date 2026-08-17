@@ -317,11 +317,29 @@ Raising one of those numbers is the deliberate act of claiming a newer server
 line behaves like the preset it lands on. Do it in the change that measures
 that line — never as a side effect of bumping a container tag.
 
-Saturation is only defined where this package has a version ladder. SQLite and
-SQL Server have no ladder at all, while YugabyteDB and Spanner are resolved from
-the banner without consulting a version; those four report `Saturated=false` and
-an empty `NewestMeasured`. Refining the remaining dialects is the open scope of
-issue #916.
+Saturation is only defined where this package has a version ladder. SQL Server
+has no ladder at all, while YugabyteDB and Spanner are resolved from the banner
+without consulting a version; those three report `Saturated=false` and an empty
+`NewestMeasured`. SQLite has a ladder but no measured line, so it reports
+`VersionSpecific=true` with an empty `NewestMeasured` — a version DID select an
+arm, and the matrix declares one SQLite cell with no container behind it.
+Refining the remaining dialects is the open scope of issue #916.
+
+SQLite's ladder is one step, at 3.25, and it carries one key.
+`ALTER TABLE ... RENAME COLUMN` arrived in that release; below it a rename is
+the create-new/copy-rows/drop-old rebuild, which is a different plan than the
+statement describes. An unreadable version takes the LOWER arm, because the
+conservative direction for a rendered file is the one whose statements the
+older engine also accepts.
+
+SQL Server keeps its absence of a ladder as a measured result rather than an
+omission. Every registered key with a T-SQL shape was asked of the three
+release lines Microsoft supports — 15.0.4480.2, 16.0.4265.3 and 17.0.4075.5 —
+and all three answered identically on all of them, so an arm would select the
+same preset from every version and refine nothing. Two of those answers
+corrected the preset: both `IF EXISTS` guards are accepted on every line and
+had read `false` from the PostgreSQL and MySQL answers rather than from a SQL
+Server statement.
 
 ClickHouse gained one in that issue, and it is one step long. Measured on the
 two declared lines furthest apart, `CHECK GRANT SHOW DATABASES, SHOW TABLES ON
@@ -423,9 +441,9 @@ SQL Server is the entry with teeth. `@@VERSION` opens with the marketing year,
 so a resolver that reads the first number out of it reads `2025`; before the
 token existed, `ptah schema render --dialect postgres --server-version '<that
 banner>'` exited `0` and announced that it had planned a PostgreSQL saturated
-past release line `18.x`. Neither SQL Server nor ClickHouse has a version
-ladder, so `ResolveServerVersion` answers those two banners from the product
-alone and never spends the number in them.
+past release line `18.x`. SQL Server has no version ladder, so
+`ResolveServerVersion` answers that banner from the product alone and never
+spends the number in it.
 
 A banner naming **only** PostgreSQL names the family and not the product, so it
 does not displace a declared dialect already in that family. CockroachDB,

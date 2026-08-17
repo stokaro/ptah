@@ -10,6 +10,7 @@ import (
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
@@ -23,10 +24,29 @@ import (
 
 const DialectName = platform.SQLite
 
-type Planner struct{}
+type Planner struct {
+	caps capability.Capabilities
+}
 
 func New() *Planner {
-	return &Planner{}
+	return NewWithCapabilities(capability.SQLite3())
+}
+
+// NewWithCapabilities constructs a SQLite planner for a concrete server
+// capability set. The set is cloned so later caller mutations cannot change
+// planning behavior (stokaro/ptah#916).
+func NewWithCapabilities(caps capability.Capabilities) *Planner {
+	return &Planner{caps: caps.Clone()}
+}
+
+// capabilities answers for a zero-value Planner too: the type is constructed
+// directly in a few call sites, and a nil set there would refuse every view
+// and trigger rather than plan the dialect default.
+func (p *Planner) capabilities() capability.Capabilities {
+	if p.caps == nil {
+		return capability.SQLite3()
+	}
+	return p.caps
 }
 
 func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated *goschema.Database) ([]ast.Node, error) {
@@ -43,6 +63,9 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 		return nil, err
 	}
 	if err := rejectUnsupportedChanges(diff); err != nil {
+		return nil, err
+	}
+	if err := p.rejectObjectsTheTargetDeclines(diff); err != nil {
 		return nil, err
 	}
 	semantics := diff.EffectiveIdentifierSemantics(DialectName)
@@ -258,6 +281,33 @@ func existingTablesWithConstraintChanges(
 	names := slices.Collect(maps.Keys(tables))
 	slices.Sort(names)
 	return names, nil
+}
+
+// rejectObjectsTheTargetDeclines refuses the two object kinds this planner does
+// have a code path for when the target's own capability set declines them.
+//
+// It is separate from rejectUnsupportedChanges because the two answer different
+// questions. That one is about SQLite's grammar -- there is no CREATE SEQUENCE
+// to emit at any version, so the refusal cannot be lifted by a capability set.
+// This one is about the server in front of us, and a set that declines views or
+// triggers must not be handed statements creating them (stokaro/ptah#916).
+func (p *Planner) rejectObjectsTheTargetDeclines(diff *types.SchemaDiff) error {
+	caps := p.capabilities()
+	if !caps.Has(capability.Views) && touchesViews(diff) {
+		return unsupportedFeaturef("views are not supported by the target capability set")
+	}
+	if !caps.Has(capability.Triggers) && touchesTriggers(diff) {
+		return unsupportedFeaturef("triggers are not supported by the target capability set")
+	}
+	return nil
+}
+
+func touchesViews(diff *types.SchemaDiff) bool {
+	return len(diff.ViewsAdded) > 0 || len(diff.ViewsModified) > 0 || len(diff.ViewsRemoved) > 0
+}
+
+func touchesTriggers(diff *types.SchemaDiff) bool {
+	return len(diff.TriggersAdded) > 0 || len(diff.TriggersModified) > 0 || len(diff.TriggersRemoved) > 0
 }
 
 func rejectUnsupportedSchemaObjects(diff *types.SchemaDiff) error {

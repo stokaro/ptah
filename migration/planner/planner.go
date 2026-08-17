@@ -333,8 +333,8 @@ func registerBuiltInPlanners() error {
 	}); err != nil {
 		return err
 	}
-	return registerPlannerFactory(platform.SQLite, func(Options) Planner {
-		return sqlite.New()
+	return registerPlannerFactory(platform.SQLite, func(opts Options) Planner {
+		return sqlite.NewWithCapabilities(opts.CapabilitiesFor(platform.SQLite))
 	})
 }
 

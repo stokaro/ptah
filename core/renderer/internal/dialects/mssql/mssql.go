@@ -7,6 +7,7 @@ import (
 
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/core/renderer/internal/dialects/internal/bufwriter"
 )
@@ -14,12 +15,22 @@ import (
 const DialectName = platform.SQLServer
 
 type Renderer struct {
-	w bufwriter.Writer
+	w    bufwriter.Writer
+	caps capability.Capabilities
 }
 
 func New() *Renderer {
-	return &Renderer{}
+	return NewWithCapabilities(capability.SQLServer2022())
 }
+
+// NewWithCapabilities constructs a SQL Server renderer for a concrete server
+// capability set. The set is cloned so later caller mutations cannot change
+// rendering behavior (stokaro/ptah#916).
+func NewWithCapabilities(caps capability.Capabilities) *Renderer {
+	return &Renderer{caps: caps.Clone()}
+}
+
+func (r *Renderer) capabilities() capability.Capabilities { return r.caps }
 
 func (r *Renderer) Dialect() string { return DialectName }
 
@@ -118,8 +129,19 @@ func (r *Renderer) VisitAlterTable(node *ast.AlterTableNode) error {
 			}
 			r.w.WriteLinef("ALTER TABLE %s ADD %s;", escapeQualifiedIdentifier(node.Name), strings.TrimSpace(line))
 		case *ast.DropConstraintOperation:
-			r.w.WriteLinef("ALTER TABLE %s DROP CONSTRAINT %s;",
+			// SQL Server has one spelling for every constraint kind, so
+			// op.ForeignKey and op.Check -- which a planner sets for targets
+			// that need MySQL's dedicated clauses -- are deliberately ignored
+			// here. The guard is not: it is ACCEPTED on every supported line,
+			// and dropping it turned a re-runnable statement into one that
+			// fails the second time (stokaro/ptah#916).
+			guard := ""
+			if op.IfExists && r.capabilities().Has(capability.DropConstraintIfExists) {
+				guard = "IF EXISTS "
+			}
+			r.w.WriteLinef("ALTER TABLE %s DROP CONSTRAINT %s%s;",
 				escapeQualifiedIdentifier(node.Name),
+				guard,
 				escapeIdentifier(op.ConstraintName),
 			)
 		case *ast.DropColumnOperation:
@@ -134,6 +156,12 @@ func (r *Renderer) VisitAlterTable(node *ast.AlterTableNode) error {
 			}
 			r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s;", escapeQualifiedIdentifier(node.Name), line)
 		case *ast.RenameColumnOperation:
+			// No capability gate: sp_rename IS the SQL Server rename, and it
+			// is what capability.RenameColumnClause being false on every SQL
+			// Server line records -- `ALTER TABLE ... RENAME COLUMN` is
+			// "Incorrect syntax near 'RENAME'" on 15.0, 16.0 and 17.0 alike,
+			// so there is no arm where the clause becomes the right emission
+			// (stokaro/ptah#916).
 			r.w.WriteLinef("EXEC sp_rename %s, %s, 'COLUMN';",
 				escapeStringLiteral(node.Name+"."+op.OldName),
 				escapeStringLiteral(op.NewName),
@@ -187,7 +215,7 @@ func (r *Renderer) VisitDropIndex(node *ast.DropIndexNode) error {
 		return unsupportedFeaturef("DROP INDEX requires table name")
 	}
 	parts := []string{"DROP INDEX"}
-	if node.IfExists {
+	if node.IfExists && r.capabilities().Has(capability.DropIndexIfExists) {
 		parts = append(parts, "IF EXISTS")
 	}
 	parts = append(parts, escapeIdentifier(node.Name), "ON", escapeQualifiedIdentifier(node.Table))

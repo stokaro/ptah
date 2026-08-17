@@ -249,7 +249,10 @@ func TestGenerateDownMigrationSQL_SQLServerPreservesFilteredIndexPredicate(t *te
 	)
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(sql, qt.Contains, "DROP INDEX [idx_active_users] ON [dbo].[users]")
+	// IF EXISTS is part of the emission on SQL Server: the guard is ACCEPTED on
+	// every supported line, and a DOWN migration that drops without it fails
+	// its second run (stokaro/ptah#916).
+	c.Assert(sql, qt.Contains, "DROP INDEX IF EXISTS [idx_active_users] ON [dbo].[users]")
 	c.Assert(sql, qt.Contains, "WHERE [status] = 1")
 	c.Assert(
 		strings.Index(sql, "DROP INDEX") < strings.Index(sql, "CREATE INDEX"),

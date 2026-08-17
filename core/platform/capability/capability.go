@@ -358,6 +358,22 @@ const (
 	// works. The metadata-visibility check therefore asks for it exactly where
 	// the server can grant it (stokaro/ptah#916 item 3).
 	ShowRoutinePrivilege Capability = "show_routine_privilege"
+
+	// RenameColumnClause marks support for renaming a column in place with
+	// ALTER TABLE ... RENAME COLUMN <old> TO <new>.
+	//
+	// SQLite gained the clause in 3.25 and the SQLite renderer emitted it
+	// unconditionally -- one of the five ad-hoc version gates stokaro/ptah#916
+	// item 3 names, and the only one whose threshold was not written down
+	// anywhere at all: there was no comparison to move, just an emission with
+	// nothing behind it.
+	//
+	// Measured live: accepted by PostgreSQL 18, MySQL 8.4.11, MariaDB 11.8.8
+	// and ClickHouse 26.7.3.19 (on a column that is not the sorting key --
+	// renaming that one is refused for a different reason); refused by SQL
+	// Server 2022, which renames through sp_rename instead, and by the Spanner
+	// PostgreSQL interface with `Only <TABLE> is supported for renaming`.
+	RenameColumnClause Capability = "rename_column_clause"
 )
 
 // spec documents a registry entry and its implication edges.
@@ -474,6 +490,9 @@ var registry = map[Capability]spec{
 	},
 	ShowRoutinePrivilege: {
 		doc: "routine metadata requires the global SHOW_ROUTINE privilege (MySQL 8.0.20+)",
+	},
+	RenameColumnClause: {
+		doc: "ALTER TABLE ... RENAME COLUMN renames a column in place (SQLite 3.25+)",
 	},
 }
 
@@ -640,6 +659,7 @@ func MySQL84() Capabilities {
 		CheckGrantStatement:                false,
 		CatalogViewDependencies:            true,
 		ShowRoutinePrivilege:               true,
+		RenameColumnClause:                 true,
 	}
 }
 
@@ -740,6 +760,7 @@ func MariaDB1011() Capabilities {
 		CheckGrantStatement:     false,
 		CatalogViewDependencies: false,
 		ShowRoutinePrivilege:    false,
+		RenameColumnClause:      true,
 	}
 }
 
@@ -799,6 +820,7 @@ func Postgres16() Capabilities {
 		CheckGrantStatement:                false,
 		CatalogViewDependencies:            true,
 		ShowRoutinePrivilege:               false,
+		RenameColumnClause:                 true,
 	}
 }
 
@@ -928,6 +950,7 @@ func ClickHouse24() Capabilities {
 		CheckGrantStatement:     false,
 		CatalogViewDependencies: false,
 		ShowRoutinePrivilege:    false,
+		RenameColumnClause:      true,
 	}
 }
 
@@ -988,7 +1011,21 @@ func SQLite3() Capabilities {
 		CheckGrantStatement:                false,
 		CatalogViewDependencies:            false,
 		ShowRoutinePrivilege:               false,
+		RenameColumnClause:                 true,
 	}
+}
+
+// SQLite324 is the preset for SQLite below 3.25, which has no
+// ALTER TABLE ... RENAME COLUMN clause: a rename there is a table rebuild.
+//
+// The engine Ptah links is the modernc.org/sqlite amalgamation pinned in
+// go.mod, and it is far above that floor -- so this arm is not about the
+// database Ptah opens. It is about the one a rendered file is destined for:
+// `--server-version 3.24` on an offline render is a user saying the consumer of
+// this DDL is older than Ptah's own engine, which is exactly the case
+// stokaro/ptah#916 item 5 exists for.
+func SQLite324() Capabilities {
+	return SQLite3().With(RenameColumnClause, false)
 }
 
 // SQLServer2022 is the preset for the portable SQL Server/Azure SQL DDL subset
@@ -1005,9 +1042,16 @@ func SQLite3() Capabilities {
 // than its own object kind.
 func SQLServer2022() Capabilities {
 	return Capabilities{
-		DropConstraintGeneric:    true,
-		DropConstraintIfExists:   false,
-		DropIndexIfExists:        false,
+		DropConstraintGeneric: true,
+		// Both IF EXISTS guards are ACCEPTED, measured on the three release
+		// lines Microsoft supports -- 15.0.4480.2, 16.0.4265.3 and
+		// 17.0.4075.5 -- with `ALTER TABLE ... DROP CONSTRAINT IF EXISTS` and
+		// `DROP INDEX IF EXISTS <name> ON <table>`. They read false here until
+		// stokaro/ptah#916 because the preset was written from the PostgreSQL
+		// and MySQL answers, where the guards are the exception rather than
+		// the rule, and no SQL Server statement had been asked.
+		DropConstraintIfExists:   true,
+		DropIndexIfExists:        true,
 		CheckConstraintsEnforced: true,
 		DropCheckClause:          false,
 		EnumInlineColumn:         false,
@@ -1049,6 +1093,7 @@ func SQLServer2022() Capabilities {
 		CheckGrantStatement:                false,
 		CatalogViewDependencies:            true,
 		ShowRoutinePrivilege:               false,
+		RenameColumnClause:                 false,
 	}
 }
 
@@ -1157,6 +1202,8 @@ func YugabyteDB25() Capabilities {
 // #942 lands.
 func SpannerPostgres() Capabilities {
 	return Postgres16().
+		// Measured: `Only <TABLE> is supported for renaming`.
+		With(RenameColumnClause, false).
 		// Measured on the Cloud Spanner emulator behind PGAdapter:
 		// `relation "information_schema.view_table_usage" does not exist`.
 		With(CatalogViewDependencies, false).
@@ -1537,6 +1584,12 @@ func ResolveServerVersion(dialect, version string) VersionResolution {
 		// drop_constraint_generic and drop_constraint_if_exists, and reported
 		// itself as a dialect with no ladder at all.
 		return resolvedAs(cockroachDBResolution(version), platform.CockroachDB)
+	case platform.SQLite:
+		// SQLite's ladder is one step, at 3.25, and it exists for an offline
+		// render rather than for a live connection: the engine Ptah links is
+		// pinned far above the step, so only a user pinning an older target
+		// with --server-version can reach the lower arm (stokaro/ptah#916).
+		return resolvedAs(sqliteResolution(version), platform.SQLite)
 	case platform.ClickHouse:
 		// Reached the same way the CockroachDB arm above is: a bare dotted
 		// "26.7.3.19" carries no product token, so BannerPlatform names nothing
@@ -1589,6 +1642,32 @@ func ladderResolution(caps Capabilities, newestMeasuredMajor int, saturated bool
 // refusal that key guards -- a database-realm cleanup that drops every object --
 // is one Ptah would rather decline on an unreadable banner than run on a
 // privilege answer it could not obtain (stokaro/ptah#916).
+// sqliteResolution refines a SQLite version onto its one ladder step.
+//
+// An unreadable version takes the LOWER arm, which is the conservative
+// direction here: the upper arm only adds a clause, and emitting a clause an
+// older consumer cannot parse is worse than rebuilding a table that did not
+// need rebuilding.
+func sqliteResolution(version string) VersionResolution {
+	v, ok := parseVersion(version)
+	if !ok {
+		return VersionResolution{Capabilities: SQLite324()}
+	}
+	return VersionResolution{
+		Capabilities:    sqliteForVersion(v),
+		VersionSpecific: true,
+		Recognized:      true,
+	}
+}
+
+// sqliteForVersion picks the arm. RENAME COLUMN arrived in 3.25.
+func sqliteForVersion(v serverVersion) Capabilities {
+	if v.major > 3 || (v.major == 3 && v.minor >= 25) {
+		return SQLite3()
+	}
+	return SQLite324()
+}
+
 func clickHouseResolution(version string) VersionResolution {
 	v, ok := parseVersion(version)
 	if !ok {

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"go.5x5.cz/ptah/core/ast"
+	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/core/renderer/internal/dialects/internal/bufwriter"
 	"go.5x5.cz/ptah/internal/sqlident"
@@ -14,12 +15,26 @@ import (
 const DialectName = "sqlite"
 
 type Renderer struct {
-	w bufwriter.Writer
+	w    bufwriter.Writer
+	caps capability.Capabilities
 }
 
+// New constructs a renderer for the SQLite the offline paths assume, which is
+// the newest measured line rather than the oldest supported one: a rendered
+// file is read by whatever SQLite the operator has, and describing it as the
+// 3.24 floor would comment out statements every engine Ptah links accepts.
 func New() *Renderer {
-	return &Renderer{}
+	return NewWithCapabilities(capability.SQLite3())
 }
+
+// NewWithCapabilities constructs a SQLite renderer for a concrete server
+// capability set. The set is cloned so later caller mutations cannot change
+// rendering behavior (stokaro/ptah#916).
+func NewWithCapabilities(caps capability.Capabilities) *Renderer {
+	return &Renderer{caps: caps.Clone()}
+}
+
+func (r *Renderer) capabilities() capability.Capabilities { return r.caps }
 
 func (r *Renderer) Dialect() string { return DialectName }
 
@@ -129,6 +144,15 @@ func (r *Renderer) VisitAlterTable(node *ast.AlterTableNode) error {
 			}
 			r.w.WriteLinef("ALTER TABLE %s ADD COLUMN %s;", escapeQualifiedIdentifier(node.Name), strings.TrimSpace(line))
 		case *ast.RenameColumnOperation:
+			if !r.capabilities().Has(capability.RenameColumnClause) {
+				// SQLite below 3.25 has no RENAME COLUMN at all: the rename is
+				// done by rebuilding the table, which is a different plan than
+				// the one this node describes. Emitting the clause anyway
+				// produces a file the target refuses on the first statement,
+				// so the operator is told which one was dropped instead.
+				r.notSupported("ALTER TABLE ... RENAME COLUMN", op.OldName)
+				continue
+			}
 			r.w.WriteLinef("ALTER TABLE %s RENAME COLUMN %s TO %s;",
 				escapeQualifiedIdentifier(node.Name),
 				escapeIdentifier(op.OldName),
