@@ -335,9 +335,12 @@ func storedResult(key capability.Capability, setup []string, create, read, mutat
 // the clause and discarded it reports nothing, which is the answer this key
 // needs.
 //
-// An inspection the server refuses is undecidable rather than false: a target
-// without pg_class cannot say whether the policy took effect, and guessing
-// either way would put an unmeasured row in the report.
+// An inspection the server refuses decides FALSE rather than going undecidable.
+// That is not a guess: the projection asked here is the one
+// internal/dbschema/postgres reads, so a target that cannot answer it is a
+// target whose policy Ptah could never read back, and a policy Ptah cannot read
+// is one no comparison can converge. The Spanner PostgreSQL interface is the
+// case in hand — it accepts the CREATE and then refuses the read.
 func storedRowTTL(setup []string, create, inspect string) experiment {
 	return experiment{
 		decides: []capability.Capability{capability.RowLevelTTL},
@@ -352,10 +355,19 @@ func storedRowTTL(setup []string, create, inspect string) experiment {
 			stored, inspected := s.query(ctx, inspect)
 			attempts = append(attempts, inspected)
 			if !inspected.Accepted {
-				return verdicts{capability.RowLevelTTL: cannotDecide(
-					"the table was created but reading its storage parameters back with %q failed (%s), "+
-						"so the run cannot tell whether the row-expiry policy took effect",
-					collapse(inspected.Statement), collapse(inspected.ServerErr),
+				// A refused inspection is a decided FALSE, not an undecidable
+				// row, and the difference is what the key means. It names
+				// whether PTAH can manage a row-expiry policy on this target,
+				// and Ptah reads exactly this projection -- so a server that
+				// cannot answer it is a server whose policy Ptah could never
+				// read back, whatever the CREATE TABLE did. Measured on the
+				// Spanner PostgreSQL interface, which accepts the CREATE and
+				// then answers `Cast from text[] to text is unsupported`
+				// against its pg_class shim.
+				return verdicts{capability.RowLevelTTL: annotated(false,
+					"the CREATE was accepted but the storage parameters cannot be read back here ("+
+						collapse(inspected.ServerErr)+"), and a policy Ptah cannot read is one it "+
+						"cannot converge, so the key is false whatever the server stores internally",
 				)}, attempts
 			}
 			return verdicts{capability.RowLevelTTL: annotated(stored == 1,

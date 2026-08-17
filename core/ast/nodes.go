@@ -2895,6 +2895,5 @@ func clonePtr[T any](value *T) *T {
 	if value == nil {
 		return nil
 	}
-	copied := *value
-	return &copied
+	return new(*value)
 }

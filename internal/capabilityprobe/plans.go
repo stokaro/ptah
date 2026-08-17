@@ -269,17 +269,12 @@ func postgresFamilyPlan(dialect string) plan {
 		storedRowTTL(nil,
 			"CREATE TABLE ttlp (id int PRIMARY KEY, expires_at TIMESTAMPTZ) "+
 				"WITH (ttl_expiration_expression = 'expires_at')",
-			// Deliberately the narrowest catalog question that answers this:
-			// no current_schema(), no pg_namespace join, and no array
-			// function. The Spanner PostgreSQL interface serves pg_class from
-			// a shim over information_schema that supports none of those --
-			// `current_schema()` is answered `Postgres function
-			// current_schema() is not supported` -- and an inspection that
-			// cannot run makes the row undecidable, which lowers what this
-			// plan promised to decide. The shim does declare reloptions, as a
-			// constant empty array, so the cast below answers there: Spanner
-			// accepts the CREATE and stores no parameter, which is exactly the
-			// verdict this key needs.
+			// This is the projection internal/dbschema/postgres reads, on
+			// purpose: the probe should ask the question the reader asks, so a
+			// server the reader could not read is one this key reports false
+			// for. The Spanner PostgreSQL interface serves pg_class from a
+			// shim over information_schema and refuses both `current_schema()`
+			// and a text[] cast, so it lands in exactly that branch.
 			//
 			// The table name is unqualified because the probe runs in a
 			// throwaway schema of its own and `ttlp` belongs to this
@@ -287,7 +282,7 @@ func postgresFamilyPlan(dialect string) plan {
 			`SELECT COUNT(*)
 			 FROM pg_catalog.pg_class
 			 WHERE relname = 'ttlp'
-			   AND reloptions::text LIKE '%ttl_expiration_expression%'`,
+			   AND COALESCE(array_to_json(reloptions)::text, '[]') LIKE '%ttl_expiration_expression%'`,
 		),
 	}
 	return plan{experiments: experiments, undecided: map[capability.Capability]string{}}
