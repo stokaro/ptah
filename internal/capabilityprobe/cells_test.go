@@ -620,9 +620,10 @@ func TestCells_BestEffortLinesAreExactlyTheUnmeasuredOnes(t *testing.T) {
 		bestEffort = append(bestEffort, capabilityprobe.CellID(cell))
 	}
 
+	// ClickHouse 26.3 and 25.8 left this list in stokaro/ptah#916: the matrix
+	// gained a ClickHouse launch recipe, so both lines have a probe job now and
+	// a line CI exercises may not call itself best-effort.
 	c.Assert(bestEffort, qt.ContentEquals, []string{
-		"clickhouse-26-3",
-		"clickhouse-25-8",
 		"sqlserver-16-0",
 		"sqlserver-15-0",
 		"spanner-0",
