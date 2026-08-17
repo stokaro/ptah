@@ -8,6 +8,7 @@ import (
 
 	mysqldriver "github.com/go-sql-driver/mysql"
 
+	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/mysqlroutine"
 	"go.5x5.cz/ptah/internal/sqlrunner"
@@ -17,6 +18,11 @@ import (
 type Reader struct {
 	db     sqlrunner.Runner
 	schema string
+	// caps is the target's capability set, or nil where the caller has none.
+	// Nil is not "no capabilities": it means the reader asks the catalog and
+	// reads the shape off the answer, which is what every caller did before
+	// stokaro/ptah#916 gave this reader a set.
+	caps capability.Capabilities
 }
 
 type checkConstraintClauses struct {
@@ -44,12 +50,21 @@ type indexKey struct {
 
 // NewMySQLReader creates a new MySQL schema reader
 func NewMySQLReader(db sqlrunner.Runner, schema string) *Reader {
+	return NewMySQLReaderWithCapabilities(db, schema, nil)
+}
+
+// NewMySQLReaderWithCapabilities creates a MySQL schema reader that knows the
+// shape of the target's catalog. Pass nil to keep the sniffing behavior: the
+// set only decides which spelling of a catalog read is attempted first, and
+// every fallback stays in place either way (stokaro/ptah#916).
+func NewMySQLReaderWithCapabilities(db sqlrunner.Runner, schema string, caps capability.Capabilities) *Reader {
 	if schema == "" {
 		schema = "information_schema"
 	}
 	return &Reader{
 		db:     db,
 		schema: schema,
+		caps:   caps,
 	}
 }
 
@@ -920,6 +935,18 @@ func (r *Reader) readCheckConstraintClauses(dbName string) (checkConstraintClaus
 		byTableName: make(map[constraintKey]string),
 		byName:      make(map[string]string),
 	}
+	if !r.catalogNamesCheckConstraintTables() {
+		// The target's set says TABLE_NAME is not there, so asking for it would
+		// spend a round trip to be told error 1054. The error handling below is
+		// still the authority -- a set that is wrong about a live server must
+		// not cost the read -- so a missing view is absorbed here too.
+		err := r.readNameOnlyCheckConstraintClauses(dbName, clauses.byName)
+		if err == nil || isMissingCheckConstraintsTable(err) {
+			return clauses, nil
+		}
+		return clauses, err
+	}
+
 	err := r.readTableAwareCheckConstraintClauses(dbName, clauses.byTableName)
 	if err == nil {
 		return clauses, nil
@@ -939,6 +966,20 @@ func (r *Reader) readCheckConstraintClauses(dbName string) (checkConstraintClaus
 		return clauses, nil
 	}
 	return clauses, err
+}
+
+// catalogNamesCheckConstraintTables answers which spelling of the
+// CHECK_CONSTRAINTS read is attempted first.
+//
+// A reader built without a set answers true, which is the pre-capability
+// behavior: ask the richer spelling and read the shape off the failure. That
+// costs MySQL a failed round trip on every schema read -- the column is a
+// MariaDB extension, not a newer MySQL -- which is what the set removes.
+func (r *Reader) catalogNamesCheckConstraintTables() bool {
+	if r.caps == nil {
+		return true
+	}
+	return r.caps.Has(capability.CatalogCheckConstraintTableName)
 }
 
 func isMissingCheckConstraintTableNameColumn(err error) bool {

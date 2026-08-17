@@ -283,6 +283,14 @@ func postgresFamilyPlan(dialect string) plan {
 			"SELECT 1 FROM information_schema.view_table_usage LIMIT 1",
 			"the catalog naming the tables a view reads",
 		),
+		// The MariaDB extension to the standard CHECK_CONSTRAINTS view, asked
+		// as a catalog question. Selecting the column IS the question: a
+		// server without it answers `Unknown column` and one with it returns
+		// rows, so no version comparison is involved (stokaro/ptah#916 item 3).
+		acceptanceNote(capability.CatalogCheckConstraintTableName, nil,
+			"SELECT table_name FROM information_schema.check_constraints LIMIT 1",
+			"the CHECK_CONSTRAINTS column that names the declaring table",
+		),
 		// Renaming a column in place. The statement is the one SQLite's
 		// renderer emits, asked here because the registry answers for every
 		// dialect (stokaro/ptah#916 item 3).
@@ -477,6 +485,14 @@ func mysqlFamilyPlan(dialect string) plan {
 		acceptanceNote(capability.CatalogViewDependencies, nil,
 			"SELECT 1 FROM information_schema.view_table_usage LIMIT 1",
 			"the catalog naming the tables a view reads",
+		),
+		// The MariaDB extension to the standard CHECK_CONSTRAINTS view, asked
+		// as a catalog question. Selecting the column IS the question: a
+		// server without it answers `Unknown column` and one with it returns
+		// rows, so no version comparison is involved (stokaro/ptah#916 item 3).
+		acceptanceNote(capability.CatalogCheckConstraintTableName, nil,
+			"SELECT table_name FROM information_schema.check_constraints LIMIT 1",
+			"the CHECK_CONSTRAINTS column that names the declaring table",
 		),
 		// Renaming a column in place. The MySQL family spells the table the
 		// same way, so the statement is the same question.

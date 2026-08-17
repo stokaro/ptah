@@ -98,7 +98,11 @@ func ConnectToDatabase(ctx context.Context, dbURL string) (*DatabaseConnection, 
 		}
 	case "mysql":
 		newReader = func(runner sqlrunner.Runner) types.SchemaReader {
-			return mysql.NewMySQLReader(runner, info.Schema)
+			// The set decides which spelling of the CHECK_CONSTRAINTS read is
+			// asked first. MySQL's view has no TABLE_NAME -- that column is a
+			// MariaDB extension -- so without this every MySQL schema read
+			// spent a round trip being told error 1054 (stokaro/ptah#916).
+			return mysql.NewMySQLReaderWithCapabilities(runner, info.Schema, info.Capabilities)
 		}
 		newWriter = func(runner sqlrunner.Runner, session *sql.Conn) types.SchemaWriter {
 			if session != nil {
