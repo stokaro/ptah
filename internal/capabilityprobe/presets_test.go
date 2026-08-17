@@ -9,6 +9,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/internal/capabilityprobe"
 )
 
@@ -68,6 +69,37 @@ func TestPresetsWithoutCell_NameRealPresets(t *testing.T) {
 				qt.Commentf("an absence has to be argued for, and %q does not argue anything", reason))
 		})
 	}
+}
+
+// TestNamedPresets_ListEveryPresetPtahShips ties the exported preset list to
+// the same source parse the matrix uses. Go cannot enumerate its own package's
+// exported functions at run time, so capability.NamedPresets is written out --
+// and a written-out list goes stale in the comfortable direction unless
+// something reads the source. This is that something (stokaro/ptah#916).
+func TestNamedPresets_ListEveryPresetPtahShips(t *testing.T) {
+	c := qt.New(t)
+
+	shipped := presetConstructors(c)
+	listed := map[string]bool{}
+	for _, preset := range capability.NamedPresets() {
+		c.Check(listed[preset.Name], qt.IsFalse,
+			qt.Commentf("preset %s is listed twice, so one column of the documented matrix is a duplicate",
+				preset.Name))
+		c.Check(preset.Capabilities.Validate(), qt.IsNil,
+			qt.Commentf("preset %s is listed with a set that does not validate", preset.Name))
+		listed[preset.Name] = true
+	}
+
+	for _, preset := range shipped {
+		t.Run(preset, func(t *testing.T) {
+			c := qt.New(t)
+			c.Check(listed[preset], qt.IsTrue,
+				qt.Commentf("preset %s is not in capability.NamedPresets, so the documented matrix "+
+					"has no column for it", preset))
+		})
+	}
+	c.Check(listed, qt.HasLen, len(shipped),
+		qt.Commentf("NamedPresets lists %d presets and %s declares %d", len(listed), presetSource, len(shipped)))
 }
 
 // presetConstructors returns the name of every exported function in the

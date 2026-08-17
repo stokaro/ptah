@@ -131,6 +131,13 @@ jobs:
       - name: Check the documented version matrix
         run: scripts/check-version-matrix.sh
 
+      # Same reasoning, same job: a pull request that registers a capability
+      # key or a preset touches no file under docs/, so a gate living behind
+      # the docs.yml path filter would not run on the change that caused the
+      # drift (stokaro/ptah#916).
+      - name: Check the documented capability tables
+        run: scripts/check-capability-tables.sh
+
   probe:
     name: probe ${{ matrix.cell }}
     needs: cells

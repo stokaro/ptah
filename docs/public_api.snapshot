@@ -5217,6 +5217,8 @@ type IdentifierLimit struct{ ... }
     func Identifiers(dialect string) IdentifierLimit
 type IdentifierUnit string
     const IdentifierBytes IdentifierUnit = "bytes" ...
+type NamedPreset struct{ ... }
+    func NamedPresets() []NamedPreset
 type ReferencePolicy string
     const ReferenceUnspecified ReferencePolicy = "" ...
 type SupportLevel string
@@ -5319,6 +5321,21 @@ type IdentifierUnit string
     characters is already over the limit while its rune count says otherwise.
 
 const IdentifierBytes IdentifierUnit = "bytes" ...
+
+### go.5x5.cz/ptah/core/platform/capability.NamedPreset
+
+package capability // import "go.5x5.cz/ptah/core/platform/capability"
+
+type NamedPreset struct {
+    // Name is the constructor's name, e.g. "MySQL84".
+    Name string
+    // Capabilities is what that constructor returns.
+    Capabilities Capabilities
+}
+    NamedPreset pairs a preset with the name its constructor carries, so a
+    document or a report can print the preset a server was given.
+
+func NamedPresets() []NamedPreset
 
 ### go.5x5.cz/ptah/core/platform/capability.ReferencePolicy
 
