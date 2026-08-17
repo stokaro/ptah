@@ -893,6 +893,10 @@ func fromTableWithFieldConverter(
 		}
 	}
 	createTable.Partition = toASTPartition(newTable.Partition)
+	// Cloned rather than shared: the node travels to a renderer and a planner
+	// that must not be able to reach back through a pointer into the schema
+	// this was built from (stokaro/ptah#1027).
+	createTable.RowTTL = newTable.RowTTL.Clone()
 
 	// Add columns for fields that belong to this table
 	tableLevelPK := tableNeedsPrimaryKeyConstraint(newTable)

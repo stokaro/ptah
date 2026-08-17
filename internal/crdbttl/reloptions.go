@@ -3,6 +3,8 @@ package crdbttl
 import (
 	"strconv"
 	"strings"
+
+	"go.5x5.cz/ptah/core/ast"
 )
 
 // FromReloptions reads a table's TTL configuration out of the storage
@@ -35,8 +37,8 @@ import (
 // a session variable it calls not recommended, so a reader built on it would
 // fail for exactly the accounts a schema tool runs as. `SHOW CREATE TABLE`
 // carries the same information as text; reloptions carries it as data.
-func FromReloptions(reloptions []string) *Spec {
-	spec := &Spec{}
+func FromReloptions(reloptions []string) *ast.RowTTLSpec {
+	spec := &ast.RowTTLSpec{}
 	for _, option := range reloptions {
 		name, value, ok := strings.Cut(option, "=")
 		if !ok {
@@ -58,7 +60,7 @@ func FromReloptions(reloptions []string) *Spec {
 // ttl_expire_after is not a declaration to refuse -- it is state Ptah does not
 // model, and the comparator's own gate is what keeps it from being planned
 // against. ValidateDeclared is where a DECLARATION of one is refused.
-func assign(spec *Spec, name, value string) {
+func assign(spec *ast.RowTTLSpec, name, value string) {
 	switch name {
 	case ExpirationExpressionParameter:
 		spec.ExpirationExpression = value
@@ -116,8 +118,8 @@ func unquote(value string) string {
 	return unescape(value)
 }
 
-// unescape removes one level of backslash escaping, which is what the e'' form
-// carries. A trailing lone backslash cannot appear in a well-formed literal and
+// unescape removes one level of backslash escaping, which is what the escape
+// -string form carries. A trailing lone backslash cannot appear in a well-formed literal and
 // is kept rather than dropped, so a malformed value round-trips as itself
 // instead of losing a character.
 func unescape(value string) string {
@@ -142,12 +144,15 @@ func parseInt(value string) *int64 {
 	return &parsed
 }
 
-// parseBool returns nil for a value that is not a boolean, for the same reason
-// parseInt returns nil: false is a real setting, so it must never be the
-// fallback for an unreadable one.
+// parseBool returns nil for a value that is not a boolean AND for false.
+//
+// The server never writes a false boolean -- measured, it stores the parameter
+// nowhere at all -- so this branch is defensive rather than load-bearing. It is
+// here to make the invariant one sentence: a boolean present in a spec is
+// always true, on both sides of every comparison, however the value arrived.
 func parseBool(value string) *bool {
 	parsed, err := strconv.ParseBool(value)
-	if err != nil {
+	if err != nil || !parsed {
 		return nil
 	}
 	return &parsed

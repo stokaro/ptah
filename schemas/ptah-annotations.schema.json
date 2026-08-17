@@ -1223,6 +1223,54 @@
             "schema": {
               "description": "Database schema name.",
               "type": "string"
+            },
+            "ttl_delete_batch_size": {
+              "description": "CockroachDB row-level TTL: rows deleted per batch; at least 1.",
+              "type": "string"
+            },
+            "ttl_delete_rate_limit": {
+              "description": "CockroachDB row-level TTL: rows deleted per second; at least 1.",
+              "type": "string"
+            },
+            "ttl_disable_changefeed_replication": {
+              "description": "CockroachDB row-level TTL: omits the job's deletes from changefeeds. `true`/`false`.",
+              "enum": [
+                "true",
+                "false"
+              ],
+              "type": "string"
+            },
+            "ttl_expiration_expression": {
+              "description": "CockroachDB row-level TTL: SQL expression whose value is when a row expires. Enables the TTL; the other ttl_ attributes are refused without it.",
+              "type": "string"
+            },
+            "ttl_job_cron": {
+              "description": "CockroachDB row-level TTL: cron schedule for the deletion job.",
+              "type": "string"
+            },
+            "ttl_label_metrics": {
+              "description": "CockroachDB row-level TTL: labels the job's metrics with the table name. `true`/`false`.",
+              "enum": [
+                "true",
+                "false"
+              ],
+              "type": "string"
+            },
+            "ttl_pause": {
+              "description": "CockroachDB row-level TTL: pauses the deletion job without removing the policy. `true`/`false`.",
+              "enum": [
+                "true",
+                "false"
+              ],
+              "type": "string"
+            },
+            "ttl_select_batch_size": {
+              "description": "CockroachDB row-level TTL: rows selected per batch; at least 1.",
+              "type": "string"
+            },
+            "ttl_select_rate_limit": {
+              "description": "CockroachDB row-level TTL: rows selected per second; at least 1.",
+              "type": "string"
             }
           },
           "type": "object"

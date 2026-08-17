@@ -451,6 +451,16 @@ func (r *Renderer) VisitCreateTable(node *ast.CreateTableNode) error {
 		}
 	}
 
+	// Row-level TTL is a storage parameter, so it shares the WITH position with
+	// the options above; the two are rendered separately because a TTL is
+	// refused on a target that lacks the capability rather than filtered out of
+	// a map (stokaro/ptah#1027).
+	rowTTL, err := r.renderRowTTL(node)
+	if err != nil {
+		return err
+	}
+	r.w.Write(rowTTL)
+
 	r.w.WriteLine(";")
 	r.w.WriteLine("")
 

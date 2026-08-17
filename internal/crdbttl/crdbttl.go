@@ -44,61 +44,18 @@ import (
 	"strconv"
 	"strings"
 
+	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
 )
 
-// Spec is the row-level TTL configuration of one table.
-//
-// A nil *Spec means the table declares no TTL, which is different from a Spec
-// whose fields are all zero: the second is a declaration Ptah refuses, because
-// a knob without an enabler is what the server refuses too.
-//
-// Every field is a pointer or a string precisely so that "not declared" and
-// "declared as the engine's default" stay distinguishable. `ttl_pause = false`
-// is a real row in the catalog, and a bool alone could not say whether the
-// author wrote it.
-type Spec struct {
-	// ExpirationExpression is `ttl_expiration_expression`: a SQL expression
-	// evaluated per row, whose value is when that row expires. It is the
-	// parameter stokaro/ptah#1027 was filed about, and the only enabler Ptah
-	// models.
-	ExpirationExpression string
-	// JobCron is `ttl_job_cron`, the schedule the deletion job runs on.
-	JobCron string
-	// SelectBatchSize is `ttl_select_batch_size`.
-	SelectBatchSize *int64
-	// DeleteBatchSize is `ttl_delete_batch_size`.
-	DeleteBatchSize *int64
-	// SelectRateLimit is `ttl_select_rate_limit`.
-	SelectRateLimit *int64
-	// DeleteRateLimit is `ttl_delete_rate_limit`.
-	DeleteRateLimit *int64
-	// Pause is `ttl_pause`, which stops the deletion job without removing the
-	// policy.
-	Pause *bool
-	// LabelMetrics is `ttl_label_metrics`.
-	LabelMetrics *bool
-	// DisableChangefeedReplication is
-	// `ttl_disable_changefeed_replication`.
-	DisableChangefeedReplication *bool
-}
-
-// IsZero reports whether the spec declares nothing at all.
-func (s *Spec) IsZero() bool {
-	if s == nil {
-		return true
-	}
-	return s.ExpirationExpression == "" &&
-		s.JobCron == "" &&
-		s.SelectBatchSize == nil &&
-		s.DeleteBatchSize == nil &&
-		s.SelectRateLimit == nil &&
-		s.DeleteRateLimit == nil &&
-		s.Pause == nil &&
-		s.LabelMetrics == nil &&
-		s.DisableChangefeedReplication == nil
-}
+// The policy type is [ast.RowTTLSpec], defined in core/ast and used unchanged
+// by the schema model and the live description too. One struct rather than one
+// per layer is deliberate: the parameters are a closed, measured set, and three
+// parallel copies with conversions between them is three places for a field to
+// go missing silently -- which for a data-lifecycle policy means a table
+// quietly keeping rows it was declared to delete. core/ast has no Ptah imports
+// of its own, so nothing is coupled by naming it here.
 
 // Equal reports whether two specs describe the same policy.
 //
@@ -107,7 +64,7 @@ func (s *Spec) IsZero() bool {
 // are two policies that differ as far as the catalog is concerned — treating
 // them as equal is how a tool reports convergence while a table's data
 // -lifecycle policy differs, which is the failure stokaro/ptah#1027 names.
-func Equal(a, b *Spec) bool {
+func Equal(a, b *ast.RowTTLSpec) bool {
 	if a.IsZero() || b.IsZero() {
 		return a.IsZero() && b.IsZero()
 	}
@@ -129,7 +86,7 @@ func equalPtr[T comparable](a, b *T) bool {
 	return *a == *b
 }
 
-// Option is one rendered storage parameter, in the order [Spec.Options] fixes.
+// Option is one rendered storage parameter, in the order [Options] fixes.
 type Option struct {
 	// Name is the parameter as CockroachDB spells it, such as
 	// `ttl_expiration_expression`.
@@ -139,7 +96,7 @@ type Option struct {
 	Value string
 }
 
-// Options renders the spec as the storage parameters a `WITH (...)` or
+// Options renders a spec as the storage parameters a `WITH (...)` or
 // `SET (...)` clause carries.
 //
 // The order is fixed rather than derived from a map, and it is the order this
@@ -150,7 +107,7 @@ type Option struct {
 //
 // It returns nil for a nil or empty spec, which is a table with no TTL rather
 // than a table with an empty one.
-func (s *Spec) Options() []Option {
+func Options(s *ast.RowTTLSpec) []Option {
 	if s.IsZero() {
 		return nil
 	}
@@ -256,11 +213,17 @@ const (
 // `crdb_internal_expiration` column, which information_schema.columns reports
 // with is_hidden = YES. A reader that did not filter hidden columns would
 // describe a column nobody declared and plan a DROP COLUMN for it.
+//
+// Both are solvable and neither is solvable here without adding an offline
+// interval canonicalizer and a hidden-column filter to a reader path PostgreSQL
+// and YugabyteDB share. stokaro/ptah#1605 tracks doing that properly; until it
+// lands, the refusal is the honest answer, and it names the alternative rather
+// than only saying no.
 var refusedParameters = map[string]string{
 	ExpireAfterParameter: "the server canonicalizes the interval it stores — '72 hours' reads back as " +
 		"'72:00:00' and '5 minutes' as '00:05:00' — so the declared text can never match the catalog, " +
 		"and it adds a hidden crdb_internal_expiration column; declare " + ExpirationExpressionParameter +
-		" with an expression over a column you own instead",
+		" with an expression over a column you own instead (stokaro/ptah#1605 tracks supporting this one)",
 	RowStatsPollIntervalParameter: "the server canonicalizes the duration it stores — '600s' reads back as " +
 		"'10m0s' — and silently stores nothing at all for a value below one second, so the declaration " +
 		"can never be compared against what the table actually has",
@@ -307,7 +270,7 @@ type Declared struct {
 	// Table is the table's name, for the diagnostic.
 	Table string
 	// TTL is what it declares, nil for a table declaring none.
-	TTL *Spec
+	TTL *ast.RowTTLSpec
 }
 
 // unsupportedDialect is the refusal for a target that has no row-level TTL.

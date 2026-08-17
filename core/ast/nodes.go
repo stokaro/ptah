@@ -88,6 +88,46 @@ type CreateTableNode struct {
 	SelectBody string
 	// Comment is an optional table comment
 	Comment string
+	// RowTTL stores the CockroachDB row-level TTL storage parameters.
+	//
+	// It is a typed field rather than entries in Options because the parameters
+	// are compared as one policy and planned as a group -- adding one and
+	// removing another is a single ALTER -- and because "this table has no TTL"
+	// is a state Options cannot spell apart from "this renderer set no option"
+	// (stokaro/ptah#1027).
+	RowTTL *RowTTLSpec
+}
+
+// RowTTLSpec is a table's row-level TTL policy, as CockroachDB spells it in
+// table storage parameters.
+//
+// Fields are pointers wherever the parameter has a meaningful zero, so a
+// declared `ttl_pause = false` stays distinguishable from a parameter nobody
+// declared. [go.5x5.cz/ptah/internal/crdbttl] owns why that distinction has to
+// survive this far down, and owns which parameters may appear here at all: the
+// two whose values the server rewrites on the way in are refused before a spec
+// is built, so every value reaching this struct is one that reads back as
+// written.
+type RowTTLSpec struct {
+	// ExpirationExpression is `ttl_expiration_expression`, the SQL expression
+	// whose value is when a row expires. It is the only enabler Ptah models.
+	ExpirationExpression string
+	// JobCron is `ttl_job_cron`.
+	JobCron string
+	// SelectBatchSize is `ttl_select_batch_size`.
+	SelectBatchSize *int64
+	// DeleteBatchSize is `ttl_delete_batch_size`.
+	DeleteBatchSize *int64
+	// SelectRateLimit is `ttl_select_rate_limit`.
+	SelectRateLimit *int64
+	// DeleteRateLimit is `ttl_delete_rate_limit`.
+	DeleteRateLimit *int64
+	// Pause is `ttl_pause`.
+	Pause *bool
+	// LabelMetrics is `ttl_label_metrics`.
+	LabelMetrics *bool
+	// DisableChangefeedReplication is `ttl_disable_changefeed_replication`.
+	DisableChangefeedReplication *bool
 }
 
 // SQLite virtual-table option keys for CreateTableNode.Options.
@@ -2810,4 +2850,51 @@ func (sl *StatementList) Accept(visitor Visitor) error {
 		}
 	}
 	return nil
+}
+
+// IsZero reports whether the spec declares no TTL at all.
+//
+// A nil spec and a spec with every field unset are the same answer, and both
+// mean "this table has no row-expiry policy". They are distinct from a spec
+// carrying only knobs, which is a declaration CockroachDB refuses and
+// [go.5x5.cz/ptah/internal/crdbttl] refuses earlier.
+func (s *RowTTLSpec) IsZero() bool {
+	if s == nil {
+		return true
+	}
+	return s.ExpirationExpression == "" &&
+		s.JobCron == "" &&
+		s.SelectBatchSize == nil &&
+		s.DeleteBatchSize == nil &&
+		s.SelectRateLimit == nil &&
+		s.DeleteRateLimit == nil &&
+		s.Pause == nil &&
+		s.LabelMetrics == nil &&
+		s.DisableChangefeedReplication == nil
+}
+
+// Clone returns an independent copy, so a spec handed to a comparator or a
+// planner cannot be mutated through the pointers it shares with the schema it
+// came from. Nil stays nil.
+func (s *RowTTLSpec) Clone() *RowTTLSpec {
+	if s == nil {
+		return nil
+	}
+	out := *s
+	out.SelectBatchSize = clonePtr(s.SelectBatchSize)
+	out.DeleteBatchSize = clonePtr(s.DeleteBatchSize)
+	out.SelectRateLimit = clonePtr(s.SelectRateLimit)
+	out.DeleteRateLimit = clonePtr(s.DeleteRateLimit)
+	out.Pause = clonePtr(s.Pause)
+	out.LabelMetrics = clonePtr(s.LabelMetrics)
+	out.DisableChangefeedReplication = clonePtr(s.DisableChangefeedReplication)
+	return &out
+}
+
+func clonePtr[T any](value *T) *T {
+	if value == nil {
+		return nil
+	}
+	copied := *value
+	return &copied
 }
