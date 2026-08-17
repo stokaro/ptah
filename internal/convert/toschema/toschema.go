@@ -844,8 +844,7 @@ func cloneBoolPtr(value *bool) *bool {
 	if value == nil {
 		return nil
 	}
-	clone := *value
-	return &clone
+	return new(*value)
 }
 
 // MergeFieldOverrides merges platform-specific field variants to reconstruct platform overrides.

@@ -1010,6 +1010,12 @@ The `modernize` linter is enabled. Prefer current Go idioms when writing or edit
 
 - Use standard library helpers such as `slices.Contains`, `maps.Copy`, `strings.CutPrefix`, and `strings.SplitSeq` when they fit the code.
 - Use `any` instead of `interface{}`.
+- Take an address with `new(expr)` rather than the two-line variable dance. Go
+  1.26 allows any expression, so `return new(value.String)` replaces
+  `held := value.String; return &held`, and `return new(false)` replaces
+  `nullsDistinct := false; return &nullsDistinct`. The named temporary exists
+  only to be addressable, and naming it invites the next reader to look for a
+  reason it was named.
 - Do not add pointer helper packages or local `stringPtr`/`strPtr` helpers for new code; follow the idioms accepted by `modernize`.
 - Use `fmt.Fprintf(&builder, ...)` rather than `builder.WriteString(fmt.Sprintf(...))`.
 - Prefer clear early returns and simple control flow that satisfies `revive`, `gocognit`, `gocyclo`, `nestif`, and `funlen`.

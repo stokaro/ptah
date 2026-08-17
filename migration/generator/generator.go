@@ -1765,8 +1765,7 @@ func cloneIdentifierSemantics(
 	if semantics == nil {
 		return nil
 	}
-	cloned := semantics.Clone()
-	return &cloned
+	return new(semantics.Clone())
 }
 
 func cloneIdentifierSemanticsValue(
@@ -2428,8 +2427,7 @@ func cloneBoolPtr(value *bool) *bool {
 	if value == nil {
 		return nil
 	}
-	cloned := *value
-	return &cloned
+	return new(*value)
 }
 
 // foreignKeyAdditionFromDBConstraint builds a ConstraintAdditionInfo carrying the

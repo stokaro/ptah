@@ -165,8 +165,7 @@ func nullableString(value sql.NullString) *string {
 	if !value.Valid {
 		return nil
 	}
-	held := value.String
-	return &held
+	return new(value.String)
 }
 
 // declaredReferentialRule drops NO ACTION, which is the absence of a rule

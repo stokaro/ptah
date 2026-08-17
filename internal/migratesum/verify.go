@@ -72,8 +72,7 @@ func (r *Result) FirstMismatch() *Mismatch {
 	if r.mismatch == nil {
 		return nil
 	}
-	mismatch := *r.mismatch
-	return &mismatch
+	return new(*r.mismatch)
 }
 
 // Verify recomputes the sum of fsys and compares it against the ptah.sum

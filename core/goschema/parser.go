@@ -428,8 +428,7 @@ func parseBoolPtr(value string) *bool {
 	if strings.TrimSpace(value) == "" {
 		return nil
 	}
-	parsed := strings.EqualFold(value, "true")
-	return &parsed
+	return new(strings.EqualFold(value, "true"))
 }
 
 func (s *schemaParseState) parseExtensionComment(comment *ast.Comment) error {
