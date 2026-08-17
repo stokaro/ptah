@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 
@@ -65,7 +66,14 @@ type PlanFileOptions struct {
 	// Name is the plan name recorded in the file. When empty, a deterministic
 	// name is derived from the source and target fingerprints.
 	Name string
-	// DevURL, when set, must match the target connection's dialect.
+	// DevURL, when set, must match the target connection's dialect. It is also
+	// read for a schema scope, the same way `schema apply` reads it: a dev URL
+	// naming a schema says which one an unqualified HCL file is loaded into.
+	//
+	// It provisions nothing. A saved plan fingerprints local desired-state
+	// files (LocalFilesOnly below), so no source here needs replaying onto a
+	// dev database, and a `docker://` value is answered with a diagnostic
+	// rather than a container (stokaro/ptah#1635).
 	DevURL string
 	ToURLs []string
 	// ToSources carries the same sources as ToURLs with their atlas.hcl
@@ -79,6 +87,9 @@ type PlanFileOptions struct {
 	// Vars supplies values for HCL schema-file `variable` blocks, as `--var`
 	// spells them; see [go.5x5.cz/ptah/internal/schemafile.Options].
 	Vars []string
+
+	// Diagnostics receives out-of-band notices; see [ApplyOptions.Diagnostics].
+	Diagnostics io.Writer
 	// IgnoreUnknownHCLNames is the Atlas-compatible surface's unknown-name
 	// policy; see [ApplyOptions.IgnoreUnknownHCLNames].
 	IgnoreUnknownHCLNames bool
@@ -114,12 +125,18 @@ func PreparePlanFile(
 	if err := atlasurl.ValidateDialectMatch(opts.DevURL, conn.Info().Dialect); err != nil {
 		return PlanFile{}, err
 	}
+	reportPlanDevURLProvisionsNothing(opts.Diagnostics, opts.DevURL)
 
 	computation, err := computeApplyPlan(ctx, conn, ApplyOptions{
 		ToURLs:    opts.ToURLs,
 		ToSources: opts.ToSources,
 		Exclude:   opts.Exclude,
 		Policy:    opts.Policy,
+		// Carried so the dev URL's schema decides which schema an unqualified
+		// desired-state file is loaded into, which is what `schema apply` does
+		// with the same value. Before stokaro/ptah#1635 this literal dropped it
+		// and the flag was accepted, dialect-checked and then read by nothing.
+		DevURL: opts.DevURL,
 		// A saved plan fingerprints local desired-state files; URL sources
 		// stay a `schema plan` follow-up gap.
 		LocalFilesOnly: true,
@@ -127,6 +144,7 @@ func PreparePlanFile(
 
 		IgnoreUnknownHCLNames: opts.IgnoreUnknownHCLNames,
 		Vars:                  opts.Vars,
+		Diagnostics:           opts.Diagnostics,
 	})
 	if err != nil {
 		return PlanFile{}, err
@@ -448,4 +466,24 @@ func normalizePlanDialect(dialect string) string {
 		return "postgres"
 	}
 	return normalized
+}
+
+// reportPlanDevURLProvisionsNothing names the half of --dev-url that a saved
+// plan cannot consume.
+//
+// `schema plan` loads local desired-state files only, so there is no migration
+// directory to replay and nothing for a provisioned dev database to do. The
+// value is still read for its schema scope and still checked against the
+// target's dialect, so the flag is not inert -- but a `docker://` value asks
+// for a container, and starting none without saying so is the shape
+// stokaro/ptah#1635 objected to: accepted, checked, and then silently not
+// acted on.
+func reportPlanDevURLProvisionsNothing(diagnostics io.Writer, devURL string) {
+	if diagnostics == nil || !strings.HasPrefix(strings.TrimSpace(devURL), "docker://") {
+		return
+	}
+	fmt.Fprintln(diagnostics,
+		"Warning: --dev-url names a container, and schema plan starts none: a saved plan reads "+
+			"local schema files, so it has nothing to replay on a dev database. The URL is still "+
+			"read for its schema and checked against the target's dialect.")
 }
