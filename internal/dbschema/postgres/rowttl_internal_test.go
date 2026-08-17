@@ -192,3 +192,71 @@ func ttlTableServer(reloptions string) func(string, []driver.NamedValue) (dbtest
 		}
 	}
 }
+
+// TestHiddenColumnFilter_IsAskedOnlyWhereHiddenColumnsExist pins the gate on
+// the column read.
+//
+// attishidden is a CockroachDB column: measured, PostgreSQL 18.4 and YugabyteDB
+// 2026.1 have neither pg_attribute.attishidden nor
+// information_schema.columns.is_hidden, so naming it unconditionally would break
+// every column read on both engines rather than only changing what they report.
+func TestHiddenColumnFilter_IsAskedOnlyWhereHiddenColumnsExist(t *testing.T) {
+	tests := []struct {
+		name       string
+		caps       capability.Capabilities
+		wantFilter bool
+	}{
+		{name: "cockroachdb filters them", caps: capability.CockroachDB26(), wantFilter: true},
+		{name: "postgres has no such column", caps: capability.Postgres17(), wantFilter: false},
+		{name: "yugabytedb has no such column", caps: capability.YugabyteDB25(), wantFilter: false},
+		{name: "spanner has no such column", caps: capability.SpannerPostgres(), wantFilter: false},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			reader := &Reader{caps: test.caps}
+
+			c.Assert(strings.Contains(reader.hiddenColumnFilter(), "attishidden"), qt.Equals, test.wantFilter)
+		})
+	}
+}
+
+// TestReadColumnsForSchema_LeavesOutTheColumnsTheEngineOwns is the behavioral
+// half: the filter has to reach the statement, not only exist.
+//
+// The two hidden columns CockroachDB creates are both here. crdb_internal_expiration
+// is the one ttl_expire_after adds, and rowid is the one a table with no
+// declared primary key gets -- older than row-level TTL and already leaking
+// before this change, which `ptah db read` showed as a third column
+// `"rowid" bigint PRIMARY KEY NOT NULL DEFAULT unique_rowid()`.
+func TestReadColumnsForSchema_LeavesOutTheColumnsTheEngineOwns(t *testing.T) {
+	tests := []struct {
+		name      string
+		caps      capability.Capabilities
+		wantAsked bool
+	}{
+		{name: "cockroachdb asks for visible columns only", caps: capability.CockroachDB26(), wantAsked: true},
+		{name: "postgres asks for all of them", caps: capability.Postgres17(), wantAsked: false},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			var sent []string
+			db := dbtest.Open(c, func(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
+				sent = append(sent, query)
+				return dbtest.QueryResult{}, nil
+			})
+			reader := NewPostgreSQLReaderWithCapabilities(db.SQL, "public", test.caps)
+
+			_, err := reader.readColumnsForSchema("public")
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(sent, qt.HasLen, 1)
+			c.Assert(strings.Contains(sent[0], "attishidden"), qt.Equals, test.wantAsked)
+		})
+	}
+}

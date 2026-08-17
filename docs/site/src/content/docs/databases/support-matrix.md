@@ -398,12 +398,15 @@ statement and leaves the table alone.
 
 #### What Ptah manages
 
-Nine parameters, each measured to read back from the catalog exactly as written
-on both declared lines:
+Ten parameters. One of the two enablers is required; the rest are refused
+without one. Nine read back from the catalog exactly as written on both declared
+lines, and `ttl_expire_after` is compared by the interval it denotes rather than
+by its text, because the server rewrites the value it stores:
 
 | Attribute | What it sets |
 | --- | --- |
-| `ttl_expiration_expression` | The SQL expression whose value is when a row expires. Required — the other attributes are refused without it. |
+| `ttl_expiration_expression` | The SQL expression whose value is when a row expires. |
+| `ttl_expire_after` | The interval after a row is written at which it expires, such as `3 days`. |
 | `ttl_job_cron` | The schedule the deletion job runs on. |
 | `ttl_select_batch_size` | Rows selected per batch; at least 1. |
 | `ttl_delete_batch_size` | Rows deleted per batch; at least 1. |
@@ -415,19 +418,17 @@ on both declared lines:
 
 #### What Ptah refuses, and why
 
-- **`ttl_expire_after` is not supported.** It is the other way CockroachDB can
-  enable a TTL — "delete rows N after they are written" — and Ptah refuses it
-  rather than accepting it unreliably. The server canonicalizes the interval it
-  stores, so `'72 hours'` reads back as `'72:00:00'` and `'5 minutes'` as
-  `'00:05:00'`, and the declared text can never match the catalog; the plan
-  would re-issue the change forever. It also adds a hidden
-  `crdb_internal_expiration` column that a reader would describe as a column
-  nobody declared. Declare `ttl_expiration_expression` over a timestamp column
-  you own instead. Supporting it properly is tracked separately in
-  [stokaro/ptah#1605](https://github.com/stokaro/ptah/issues/1605).
-- **`ttl_row_stats_poll_interval` is not supported**, for the same reason: the
+- **`ttl_row_stats_poll_interval` is not supported**: the
   server canonicalizes the duration (`'600s'` becomes `'10m0s'`) and stores
   nothing at all for a value below one second.
+- **An interval Ptah cannot read is refused.** `ttl_expire_after` accepts a
+  sequence of quantity-and-unit pairs (`3 days`, `2 years 3 months`,
+  `1 day 2 hours`), an optional trailing `HH:MM:SS`, and the ISO-8601 form
+  (`P1Y2M3D`, `PT1H30M`). A spelling outside that surface is refused rather than
+  sent, because the server would normalize it into a form Ptah could not predict
+  and the plan would re-issue the change forever. Ambiguous abbreviations such as
+  a bare `m` are refused for the same reason: minutes and months are two
+  different retention policies.
 - **`ttl` cannot be declared.** It is derived from the other parameters, and
   the server refuses it when it arrives alone.
 - **A knob without `ttl_expiration_expression` is refused**, because the server
@@ -438,6 +439,25 @@ on both declared lines:
 - **A `false` boolean normalizes to "not declared"**, because on the server
   those are the same state: `ttl_pause = false` is stored nowhere, and setting
   it erases an existing `true` exactly as a reset does.
+
+#### Two things the server does that Ptah works around
+
+**The interval is rewritten on the way in.** Measured on both declared lines,
+`ttl_expire_after = '72 hours'` is stored as `'72:00:00'`, `'5 minutes'` as
+`'00:05:00'`, `'1 week'` as `'7 days'`, and `'P1Y2M3D'` as
+`'1 year 2 mons 3 days'`. Ptah sends what you wrote and compares what the
+interval *denotes*, so a declaration converges whichever spelling it uses. The
+three fields of a PostgreSQL interval stay apart in that comparison: a month is
+not thirty days and a day is not twenty-four hours, and the server keeps them
+apart too.
+
+**Hidden columns are left out of the description.** `ttl_expire_after` adds a
+`crdb_internal_expiration` column that CockroachDB marks hidden, and a table
+declaring no primary key gets a hidden `rowid` the same way. Neither is a column
+anybody declared, and describing them made a read unreplayable — applying it
+back asked for a column the engine owns. Both are now excluded from a
+CockroachDB read. PostgreSQL and YugabyteDB have no such notion and their reads
+are unchanged.
 
 #### On other engines
 
