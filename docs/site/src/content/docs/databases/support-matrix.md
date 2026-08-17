@@ -121,8 +121,9 @@ Which versions a vendor supports is recorded, with its source, next to each
 block of cells in `internal/capabilityprobe/cells.go`. PostgreSQL does not
 label releases LTS, so the reading used here is the newest patch of each
 still-supported major line. The container that reproduces a line is recorded
-there too, or the reason there is none: SQLite is compiled into the binary and
-no Spanner server exists here. CockroachDB's `latest-v<line>` aliases follow the newest
+there too, or the reason there is none: SQLite is compiled into the binary.
+Spanner's container is the vendor's emulator behind PGAdapter, which is the only
+Spanner endpoint a container can provide. CockroachDB's `latest-v<line>` aliases follow the newest
 patch. YugabyteDB publishes no equivalent aliases, so the matrix driver
 resolves the highest numeric Docker Hub tag under each declared line before it
 starts the container.
