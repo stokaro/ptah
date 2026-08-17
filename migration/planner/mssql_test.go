@@ -209,7 +209,7 @@ func TestGenerateSchemaDiffSQL_SQLServerFilteredIndexPredicateChange(t *testing.
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(statements, qt.HasLen, 2)
-	c.Assert(statements[0], qt.Equals, "DROP INDEX [idx_active_users] ON [dbo].[users]")
+	c.Assert(statements[0], qt.Equals, "DROP INDEX IF EXISTS [idx_active_users] ON [dbo].[users]")
 	c.Assert(statements[1], qt.Equals, "CREATE INDEX [idx_active_users] ON [dbo].[users] ([status]) WHERE [status] = (2)")
 }
 

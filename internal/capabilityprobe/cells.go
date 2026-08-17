@@ -580,6 +580,9 @@ var PresetsWithoutCell = map[string]string{
 	"MySQL8019": "describes MySQL 8.0.19, inside the out-of-support 8.0 line",
 	"MySQL8020": "describes MySQL 8.0.20 to 8.3, inside the out-of-support 8.0 line. The split is where the " +
 		"global SHOW_ROUTINE privilege arrived (stokaro/ptah#916)",
+	"SQLite324": "describes SQLite below 3.25, which has no ALTER TABLE ... RENAME COLUMN. The engine " +
+		"Ptah links is pinned far above that floor, so no cell can name this preset: it exists for an " +
+		"offline render pinned with --server-version at an older consumer (stokaro/ptah#916)",
 	"MariaDBLegacy": "describes MariaDB before 10.2, whose newest release left support in 2022; it is the " +
 		"conservative floor ForServerVersion assigns to such a server rather than a line anybody runs",
 }

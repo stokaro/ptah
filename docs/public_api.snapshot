@@ -5205,6 +5205,7 @@ type Capabilities map[Capability]bool
     func Postgres17() Capabilities
     func SQLServer2022() Capabilities
     func SQLite3() Capabilities
+    func SQLite324() Capabilities
     func SpannerPostgres() Capabilities
     func YugabyteDB25() Capabilities
 type Capability string
@@ -5257,6 +5258,7 @@ func Postgres16() Capabilities
 func Postgres17() Capabilities
 func SQLServer2022() Capabilities
 func SQLite3() Capabilities
+func SQLite324() Capabilities
 func SpannerPostgres() Capabilities
 func YugabyteDB25() Capabilities
 func (c Capabilities) Clone() Capabilities
