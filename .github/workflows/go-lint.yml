@@ -45,6 +45,11 @@ jobs:
           scripts/check-compose-image-pins.sh
           scripts/check-compose-image-pins-selftest.sh
 
+      - name: Check workflow concurrency groups
+        run: |
+          scripts/check-workflow-concurrency.sh
+          scripts/check-workflow-concurrency-selftest.sh
+
       - name: Check documented lint rules
         run: scripts/check-lint-rules.sh
 
