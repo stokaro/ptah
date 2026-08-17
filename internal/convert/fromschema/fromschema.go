@@ -591,6 +591,8 @@ func FromField(field goschema.Field, enums []goschema.Enum, targetPlatform strin
 		column.SetForeignKey(fkRef.Table, fkRef.Column, field.ForeignKeyName)
 		column.ForeignKey.OnDelete = field.OnDelete
 		column.ForeignKey.OnUpdate = field.OnUpdate
+		column.ForeignKey.Deferrable = field.Deferrable
+		column.ForeignKey.Initially = field.Initially
 	}
 
 	return column
@@ -1019,12 +1021,14 @@ func FromConstraint(constraint goschema.Constraint) *ast.ConstraintNode {
 		return node
 	case "FOREIGN KEY":
 		return ast.NewForeignKeyConstraint(constraint.Name, constraint.Columns, &ast.ForeignKeyRef{
-			Table:    constraint.ForeignTable,
-			Column:   constraint.ForeignColumn,
-			Columns:  constraint.ForeignColumns,
-			OnDelete: constraint.OnDelete,
-			OnUpdate: constraint.OnUpdate,
-			Name:     constraint.Name,
+			Table:      constraint.ForeignTable,
+			Column:     constraint.ForeignColumn,
+			Columns:    constraint.ForeignColumns,
+			OnDelete:   constraint.OnDelete,
+			OnUpdate:   constraint.OnUpdate,
+			Name:       constraint.Name,
+			Deferrable: constraint.Deferrable,
+			Initially:  constraint.Initially,
 		})
 	case "CHECK":
 		return &ast.ConstraintNode{
@@ -1782,6 +1786,8 @@ func appendFieldForeignKeyConstraintStatements(
 			fkRef.Table = tablelookup.ResolveReference(tables, table, fkRef.Table)
 			fkRef.OnDelete = field.OnDelete
 			fkRef.OnUpdate = field.OnUpdate
+			fkRef.Deferrable = field.Deferrable
+			fkRef.Initially = field.Initially
 			fkRef.Name = field.ForeignKeyName
 			statements.Statements = append(statements.Statements, &ast.AlterTableNode{
 				Name: table.QualifiedName(),

@@ -1421,6 +1421,8 @@ type foreignKeySpec struct {
 	foreignColumns []string
 	onDelete       string
 	onUpdate       string
+	deferrable     bool
+	initially      string
 }
 
 func (p *parser) parseForeignKey(block *hclsyntax.Block) (foreignKeySpec, error) {
@@ -1428,6 +1430,10 @@ func (p *parser) parseForeignKey(block *hclsyntax.Block) (foreignKeySpec, error)
 		return foreignKeySpec{}, p.blockError(block, "foreign_key block requires exactly one label")
 	}
 	if err := p.rejectUnsupportedForeignKeyAttrs(block); err != nil {
+		return foreignKeySpec{}, err
+	}
+	deferrable, initially, err := p.parseForeignKeyDeferral(block)
+	if err != nil {
 		return foreignKeySpec{}, err
 	}
 	columns, err := p.parseColumnRefsAttr(block, "columns")
@@ -1471,7 +1477,35 @@ func (p *parser) parseForeignKey(block *hclsyntax.Block) (foreignKeySpec, error)
 		foreignColumns: foreignColumns,
 		onDelete:       p.optionalString(block.Body.Attributes["on_delete"]),
 		onUpdate:       p.optionalString(block.Body.Attributes["on_update"]),
+		deferrable:     deferrable,
+		initially:      initially,
 	}, nil
+}
+
+// parseForeignKeyDeferral reads the two attributes that decide when a foreign
+// key is checked.
+//
+// `initially` implies `deferrable`, because INITIALLY DEFERRED on a constraint
+// that is not deferrable is not a thing an engine accepts, and a file writing
+// only the timing plainly means the check to be deferrable. The reverse is not
+// implied: `deferrable = true` alone is legal and means the check CAN be
+// deferred while still running immediately by default.
+func (p *parser) parseForeignKeyDeferral(block *hclsyntax.Block) (deferrable bool, initially string, err error) {
+	deferrable, err = p.boolAttr(block, "deferrable", "foreign_key", false)
+	if err != nil {
+		return false, "", err
+	}
+	initially = strings.ToLower(strings.TrimSpace(p.optionalString(block.Body.Attributes["initially"])))
+	switch initially {
+	case "", "deferred", "immediate":
+	default:
+		return false, "", p.blockError(block,
+			"foreign_key %q initially %q is neither deferred nor immediate", block.Labels[0], initially)
+	}
+	if initially != "" {
+		deferrable = true
+	}
+	return deferrable, initially, nil
 }
 
 func (p *parser) applyForeignKey(table goschema.Table, fieldsStart int, block *hclsyntax.Block, spec foreignKeySpec) error {
@@ -1490,6 +1524,8 @@ func (p *parser) applyForeignKey(table goschema.Table, fieldsStart int, block *h
 			ForeignColumns: spec.foreignColumns,
 			OnDelete:       spec.onDelete,
 			OnUpdate:       spec.onUpdate,
+			Deferrable:     spec.deferrable,
+			Initially:      spec.initially,
 		})
 		return nil
 	}
@@ -1503,6 +1539,8 @@ func (p *parser) applyForeignKey(table goschema.Table, fieldsStart int, block *h
 		field.ForeignKeyName = spec.name
 		field.OnDelete = spec.onDelete
 		field.OnUpdate = spec.onUpdate
+		field.Deferrable = spec.deferrable
+		field.Initially = spec.initially
 		p.pendingForeignRefs = append(p.pendingForeignRefs, pendingForeignRef{
 			field:  i,
 			owner:  table,
@@ -1764,6 +1802,14 @@ func (p *parser) rejectUnsupportedForeignKeyAttrs(block *hclsyntax.Block) error 
 		"ref_columns": true,
 		"on_delete":   true,
 		"on_update":   true,
+		// Neither is in the community binary's documented HCL, and it plans no
+		// DEFERRABLE for a file carrying them -- measured, both binaries exit 0
+		// on `deferrable = true` and emit the constraint without it. So this is
+		// Ptah's own surface rather than a parity cell, and adding it costs no
+		// drop-in fidelity: a file that does not write these attributes renders
+		// identically (stokaro/ptah#1624).
+		"deferrable": true,
+		"initially":  true,
 	}, "foreign_key")
 }
 

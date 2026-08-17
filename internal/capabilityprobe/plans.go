@@ -293,6 +293,13 @@ func postgresFamilyPlan(dialect string) plan {
 			"SELECT 1 FROM information_schema.view_table_usage LIMIT 1",
 			"the catalog naming the tables a view reads",
 		),
+		// The deferral clause on a foreign key, asked as its own question
+		// because the PostgreSQL family splits on it: CockroachDB refuses every
+		// form while PostgreSQL and YugabyteDB accept them (stokaro/ptah#1624).
+		acceptance(capability.DeferrableConstraints,
+			append(t.uniquelyReferenced("dfp", "dfp_uq", "id"), t.table("dfc", "n int, id int", "n")),
+			"ALTER TABLE dfc ADD CONSTRAINT dfc_fk FOREIGN KEY (id) REFERENCES dfp (id) DEFERRABLE INITIALLY DEFERRED",
+		),
 		// The MariaDB extension to the standard CHECK_CONSTRAINTS view, asked
 		// as a catalog question. Selecting the column IS the question: a
 		// server without it answers `Unknown column` and one with it returns
@@ -502,6 +509,15 @@ func mysqlFamilyPlan(dialect string) plan {
 		acceptanceNote(capability.CatalogViewDependencies, nil,
 			"SELECT 1 FROM information_schema.view_table_usage LIMIT 1",
 			"the catalog naming the tables a view reads",
+		),
+		// The MySQL family spells the table the same way, so the statement is
+		// the same question.
+		acceptance(capability.DeferrableConstraints,
+			[]string{
+				"CREATE TABLE dfp (id int NOT NULL, CONSTRAINT dfp_uq UNIQUE (id))",
+				"CREATE TABLE dfc (n int, id int)",
+			},
+			"ALTER TABLE dfc ADD CONSTRAINT dfc_fk FOREIGN KEY (id) REFERENCES dfp (id) DEFERRABLE INITIALLY DEFERRED",
 		),
 		// The MariaDB extension to the standard CHECK_CONSTRAINTS view, asked
 		// as a catalog question. Selecting the column IS the question: a

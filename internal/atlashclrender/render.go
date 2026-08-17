@@ -769,7 +769,8 @@ func (r *renderer) renderFieldForeignKeys(
 			continue
 		}
 		foreignTable, foreignColumns := parseForeignReference(field.Foreign)
-		r.renderForeignKey(name, []string{field.Name}, foreignTable, foreignColumns, field.OnDelete, field.OnUpdate)
+		r.renderForeignKey(name, []string{field.Name}, foreignTable, foreignColumns, field.OnDelete, field.OnUpdate,
+			foreignKeyDeferral{deferrable: field.Deferrable, initially: field.Initially})
 	}
 }
 
@@ -878,6 +879,7 @@ func (r *renderer) renderAtlasConstraint(constraint goschema.Constraint) bool {
 			constraint.ForeignColumnsOrDefault(),
 			constraint.OnDelete,
 			constraint.OnUpdate,
+			foreignKeyDeferral{deferrable: constraint.Deferrable, initially: constraint.Initially},
 		)
 		return true
 	case "PRIMARY KEY":
@@ -977,12 +979,34 @@ func atlasPrimaryKeyConstraint(constraint goschema.Constraint) bool {
 		constraint.Comment == ""
 }
 
-func (r *renderer) renderForeignKey(name string, columns []string, foreignTable string, foreignColumns []string, onDelete string, onUpdate string) {
+// foreignKeyDeferral is the deferral half of a foreign key, kept together so
+// renderForeignKey does not grow an eighth positional parameter whose meaning
+// depends on the seventh.
+type foreignKeyDeferral struct {
+	deferrable bool
+	initially  string
+}
+
+func (r *renderer) renderForeignKey(
+	name string,
+	columns []string,
+	foreignTable string,
+	foreignColumns []string,
+	onDelete string,
+	onUpdate string,
+	deferral foreignKeyDeferral,
+) {
 	r.linef(`  foreign_key %s {`, quote(name))
 	r.rawAttr(2, "columns", columnRefs(columns))
 	r.rawAttr(2, "ref_columns", r.tableColumnRefs(foreignTable, foreignColumns))
 	r.stringAttr(2, "on_delete", onDelete)
 	r.stringAttr(2, "on_update", onUpdate)
+	// Emitted only when the schema asked for deferral, so a document that never
+	// mentioned it renders byte-identically to before (stokaro/ptah#1624).
+	if deferral.deferrable {
+		r.rawAttr(2, "deferrable", "true")
+	}
+	r.stringAttr(2, "initially", deferral.initially)
 	r.line("  }")
 }
 

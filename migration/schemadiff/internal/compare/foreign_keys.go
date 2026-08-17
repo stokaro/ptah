@@ -43,6 +43,16 @@ func foreignKeyConstraintChanged(genConstraint goschema.Constraint, dbConstraint
 		return true
 	}
 
+	// Compare deferral. Without this a schema that declares DEFERRABLE against a
+	// constraint created without it reports no difference, so the plan is empty
+	// and the property never arrives (stokaro/ptah#1624).
+	if genConstraint.Deferrable != dbConstraint.Deferrable {
+		return true
+	}
+	if normalizeDeferralTiming(genConstraint.Initially) != normalizeDeferralTiming(dbConstraint.Initially) {
+		return true
+	}
+
 	return false
 }
 
@@ -104,4 +114,15 @@ func getStringValue(ptr *string) string {
 		return ""
 	}
 	return *ptr
+}
+
+// normalizeDeferralTiming folds the unwritten clause onto the timing an engine
+// defaults to, so a schema saying `deferrable = true` and a catalog reporting
+// condeferred false are the same statement rather than a permanent difference.
+func normalizeDeferralTiming(timing string) string {
+	normalized := strings.ToLower(strings.TrimSpace(timing))
+	if normalized == "" {
+		return "immediate"
+	}
+	return normalized
 }

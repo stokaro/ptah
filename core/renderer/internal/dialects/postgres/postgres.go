@@ -1217,8 +1217,45 @@ func (r *Renderer) renderForeignKeyConstraint(constraint *ast.ConstraintNode) (s
 	if ref.OnUpdate != "" {
 		result += fmt.Sprintf(" ON UPDATE %s", ref.OnUpdate)
 	}
+	deferrable, err := r.deferrableClause(ref, constraint.Name)
+	if err != nil {
+		return "", err
+	}
+	result += deferrable
 
 	return result, nil
+}
+
+// deferrableClause renders DEFERRABLE and its timing, or refuses when the
+// target cannot host one.
+//
+// The refusal is an error rather than a dropped clause. A deferred check is the
+// reason a schema declares a circular reference or a bulk load that transiently
+// violates a constraint, so emitting the same foreign key without it produces a
+// constraint that rejects exactly the writes the author arranged for -- at
+// apply time, on data, rather than at plan time on a line of DDL
+// (stokaro/ptah#1624).
+func (r *Renderer) deferrableClause(ref *ast.ForeignKeyRef, name string) (string, error) {
+	if !ref.Deferrable && ref.Initially == "" {
+		return "", nil
+	}
+	if !r.capabilities().Has(capability.DeferrableConstraints) {
+		return "", unsupportedFeaturef(
+			"%s does not support DEFERRABLE foreign keys; constraint %q declares one",
+			r.dialect, name)
+	}
+	clause := " DEFERRABLE"
+	switch strings.ToLower(strings.TrimSpace(ref.Initially)) {
+	case "":
+		return clause, nil
+	case "deferred":
+		return clause + " INITIALLY DEFERRED", nil
+	case "immediate":
+		return clause + " INITIALLY IMMEDIATE", nil
+	default:
+		return "", fmt.Errorf(
+			"foreign key %q declares initially %q, which is neither deferred nor immediate", name, ref.Initially)
+	}
 }
 
 // renderExcludeConstraint renders an EXCLUDE constraint

@@ -76,12 +76,12 @@ Across the 190 capabilities below:
 
 | Reading | Count |
 | --- | --- |
-| Ptah supports it fully | 121 |
-| Ptah supports it with a stated limitation | 50 |
+| Ptah supports it fully | 122 |
+| Ptah supports it with a stated limitation | 49 |
 | Ptah does not implement it | 19 |
 | Ptah and Atlas CE both support it | 41 |
 | Ptah implements it openly where Atlas gates it behind Pro or Cloud | 42 |
-| Ptah has it and neither Atlas edition does | 23 |
+| Ptah has it and neither Atlas edition does | 24 |
 | Atlas CE has it and Ptah does not, or only in part | 24 |
 | An Atlas column is ❔ — not established by this page's evidence | 12 |
 
@@ -112,7 +112,7 @@ seven of them as open capabilities regardless.
 | Directory of .hcl files as one schema source | ✅ | ✅ | ✅ | `--schema-file dir` and `--to file://dir` read a directory of .sql or .hcl files in filename order as an ordered script: mixed formats, an empty directory, a subdirectory and a redeclaration refuse. |
 | External program / ORM loaders | ✅ | ✅ | ✅ | `--schema-cmd` or `ptah.yaml` external_schema (needs `--allow-external-schema`) runs a program without a shell emitting SQL, HCL, or YAML. |
 | Go struct annotations | ✅ | ❌ | ❌ | Ptah parses //ptah:schema:* comments into the desired schema. Atlas's route to Go models is an external ORM provider program. |
-| HCL foreign_key deferrable | 🟡 | ❌ | ❌ | `ptah-compat` accepts and drops it at exit 0; native `ptah` exits 2 naming the attribute. DEFERRABLE is absent from the Ptah IR, so YAML and Go annotations lack it too; the binary plans none either. |
+| HCL foreign_key deferrable | ✅ | ❌ | ❌ | `deferrable` and `initially` are carried through HCL, the IR, the renderer and the PostgreSQL catalog read. The community binary plans no DEFERRABLE for the same file. |
 | HCL function calls in schema files | 🟡 | 🟡 | 🟡 | sql() reduces to its SQL everywhere; other calls evaluate against a function set measured name by name on the community binary. uuid is a type, not a function. |
 | HCL locals, lock, atlas, dynamic/for_each | 🟡 | 🟡 | 🟡 | `locals` is evaluated and `local.x` resolves. `dynamic` blocks are expanded: for_each, labels, iterator and content. `lock`/`atlas` are still dropped at exit 0 on the compat surface. |
 | HCL names outside the parsed subset | 🟡 | ✅ | ❔ | `ptah-compat` drops an unmodeled top-level name whose body names a declared schema: `procedure { schema = schema.main }` exits 0, `schema.nope` exits 1 on both binaries. Native `ptah` refuses by name. |

@@ -517,9 +517,27 @@ func renderColumn(column *ast.ColumnNode) (string, error) {
 		}
 	}
 	if column.ForeignKey != nil {
+		if err := refuseDeferrable(column.ForeignKey, column.Name); err != nil {
+			return "", err
+		}
 		parts = append(parts, renderInlineForeignKey(column.ForeignKey))
 	}
 	return strings.Join(parts, " "), nil
+}
+
+// refuseDeferrable refuses a foreign key SQL Server cannot host as written.
+//
+// Measured on 16.0.4265.3: `DEFERRABLE INITIALLY DEFERRED` on a foreign key is
+// `Incorrect syntax near 'DEFERRABLE'`. Rendering the constraint without the
+// clause would produce one that rejects exactly the writes the author deferred
+// the check for, at apply time on data rather than here on a line of DDL
+// (stokaro/ptah#1624).
+func refuseDeferrable(ref *ast.ForeignKeyRef, name string) error {
+	if !ref.Deferrable && ref.Initially == "" {
+		return nil
+	}
+	return unsupportedFeaturef(
+		"sqlserver does not support DEFERRABLE foreign keys; constraint %q declares one", name)
 }
 
 // renderColumnForAlter renders the column body of `ALTER TABLE ... ALTER COLUMN`.
@@ -636,6 +654,9 @@ func renderConstraint(constraint *ast.ConstraintNode) (string, error) {
 	case ast.ForeignKeyConstraint:
 		if constraint.Reference == nil {
 			return "", fmt.Errorf("foreign key constraint missing reference")
+		}
+		if err := refuseDeferrable(constraint.Reference, constraint.Name); err != nil {
+			return "", err
 		}
 		return "  " + renderNamedForeignKey(constraint.Name, constraint.Columns, constraint.Reference), nil
 	case ast.CheckConstraint:
