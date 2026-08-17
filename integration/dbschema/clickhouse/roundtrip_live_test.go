@@ -67,7 +67,7 @@ func TestClickHouseReadRendersItsOwnRead(t *testing.T) {
 		&goschema.Database{}, platform.ClickHouse, conn.Info().Capabilities,
 	)
 	c.Assert(err, qt.IsNil)
-	c.Assert(statements, qt.Not(qt.IsNil))
+	c.Assert(statements, qt.IsNotNil)
 }
 
 // TestClickHouseReadCarriesASortingKeyWiderThanThePrimaryKey covers the shape
