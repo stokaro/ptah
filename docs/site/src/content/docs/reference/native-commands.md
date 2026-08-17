@@ -178,7 +178,10 @@ that happened rather than a reordering.
 
 | Command | Purpose |
 | --- | --- |
+| `ptah oci resolve` | Resolve a mutable tag to the immutable digest it names. |
+| `ptah oci inspect` | Report what an artifact declares, without downloading it. |
 | `ptah oci referrers` | List direct referrer metadata attached to an OCI artifact. |
+| `ptah oci fetch` | Download the payload of metadata attached to an artifact. |
 | `ptah sql lint` | Lint standalone SQL files. |
 
 ## Top-level verbs
@@ -241,8 +244,28 @@ directory it hashed and a registry artifact is immutable.
 `text` or `json`. Unqualified subjects resolve to `:latest`, tags resolve to
 their current manifest, and digest subjects remain immutable. Docker
 credentials and HTTPS are the defaults; `--plain-http` is only for an
-explicitly trusted local registry. The command lists metadata, not attachment
-payload contents.
+explicitly trusted local registry. The command lists metadata; `ptah oci fetch`
+returns the payload.
+
+`ptah oci resolve <oci-reference>` prints the pinned reference a tag currently
+names, so a pipeline can record the digest once and pass it to every later step
+instead of resolving the tag again at each one. `--format json` adds the
+descriptor's media type and size.
+
+`ptah oci inspect <oci-reference>` reads the manifest and stops there: artifact
+type, subject, annotations, and each file layer's name, media type, size, and
+digest, without downloading the files. It also reports how each referrer was
+discovered. Ptah writes both the standard referrers index and its own
+content-derived durable tag, and a referrer reported as `durable-tag` was
+returned by the second mechanism alone — Ptah finds it and another OCI client
+may not. `--no-referrers` skips that lookup.
+
+`ptah oci fetch <oci-reference>` returns the bytes of an attached report, which
+is how Ptah reads back the lint, plan, and deployment reports Ptah published.
+Selection never guesses: one candidate is fetched, several are refused with the
+digests printed. Narrow with `--type`, or name one with `--digest`. The same
+rule governs the files inside the chosen referrer — one is written, several
+require `--file`. `--output` writes to a path instead of standard output.
 
 This does not implement the Atlas Cloud command paths. The Atlas-compatible
 `migrate push` and `schema push` remain Atlas community-edition boundary
