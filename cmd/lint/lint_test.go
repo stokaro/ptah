@@ -820,6 +820,164 @@ func TestRunLint_ConfigRuleSeverityAndExclude(t *testing.T) {
 	c.Assert(report.Findings[0].File, qt.Contains, "main/0000000002_main.up.sql")
 }
 
+// TestRunLint_SeverityDecidesTheExitCode pins the whole severity vocabulary
+// against the one thing it governs.
+//
+// stokaro/ptah#1633 added `info` because a rule was either loud enough to fail
+// or absent from the report, with nothing in between -- which is what a team
+// needs to introduce a rule to a repository that still violates it. The three
+// rows are the vocabulary, and the exit code is the only axis that separates
+// them: all three REPORT, and only `error` gates.
+//
+// The exit code is asserted rather than inferred from the finding count,
+// because "reported and not gated" is exactly the pair a severity level is for.
+func TestRunLint_SeverityDecidesTheExitCode(t *testing.T) {
+	tests := []struct {
+		name     string
+		severity migrationlint.Severity
+		wantExit int
+	}{
+		{name: "info reports and does not gate", severity: migrationlint.SeverityInfo, wantExit: 0},
+		{name: "warning reports and does not gate", severity: migrationlint.SeverityWarning, wantExit: 0},
+		{name: "error reports and gates", severity: migrationlint.SeverityError, wantExit: 1},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			dir := t.TempDir()
+			c.Assert(os.WriteFile(
+				filepath.Join(dir, migrationlint.ConfigFileName),
+				[]byte("rules:\n  DS101:\n    severity: "+string(test.severity)+"\n"),
+				0o600,
+			), qt.IsNil)
+			c.Assert(os.WriteFile(
+				filepath.Join(dir, "0000000001_drop.up.sql"),
+				[]byte("DROP TABLE users;\n"),
+				0o600,
+			), qt.IsNil)
+
+			stdout, stderr, err := execute("--dir", dir, "--format", "json")
+
+			c.Assert(exitcode.Code(err, 0), qt.Equals, test.wantExit)
+			var report struct {
+				Findings []migrationlint.Finding `json:"findings"`
+			}
+			// A gating run writes its report to stderr and a passing one to
+			// stdout, which is the same choice `ptah migrations lint` makes for
+			// a caller piping the report somewhere. The row still reads the
+			// report either way: "reported and not gated" needs both halves.
+			c.Assert(json.Unmarshal([]byte(reportStream(stdout, stderr)), &report), qt.IsNil)
+			// The fixture also trips MF101 (a migration with no down file), so
+			// the DS101 finding is selected rather than assumed to be the only
+			// one. Adding a down file would silence MF101 and take DS101's
+			// second statement with it.
+			dropped := findingForRule(c, report.Findings, "DS101")
+			c.Assert(dropped.Severity, qt.Equals, test.severity)
+		})
+	}
+}
+
+// sarifLevelForRule returns the level of the one SARIF result for a rule,
+// failing when the report carries none. Selecting inside a loop in the test
+// body would let a report with no such result assert nothing at all.
+func sarifLevelForRule(c *qt.C, report sarifForTest, code string) string {
+	c.Helper()
+	levels := make([]string, 0, 1)
+	for _, run := range report.Runs {
+		for _, result := range run.Results {
+			if result.RuleID == code {
+				levels = append(levels, result.Level)
+			}
+		}
+	}
+	c.Assert(levels, qt.HasLen, 1, qt.Commentf("results: %+v", report.Runs))
+	return levels[0]
+}
+
+// reportStream picks whichever stream carried the JSON report.
+func reportStream(stdout, stderr string) string {
+	if strings.TrimSpace(stdout) != "" {
+		return stdout
+	}
+	return stderr
+}
+
+// findingForRule returns the one finding for a rule code, failing when the
+// report carries none or more than one.
+func findingForRule(c *qt.C, findings []migrationlint.Finding, code string) migrationlint.Finding {
+	c.Helper()
+	matched := make([]migrationlint.Finding, 0, 1)
+	for _, finding := range findings {
+		if finding.Rule == code {
+			matched = append(matched, finding)
+		}
+	}
+	c.Assert(matched, qt.HasLen, 1, qt.Commentf("report: %+v", findings))
+	return matched[0]
+}
+
+// TestRunLint_InfoSeverityIsASARIFNote pins the other half of what the level
+// means. SARIF has a rank below "warning" and a finding nothing should act on
+// is what it is for; collapsing info into "warning" would put an advisory
+// result at the same level as one asking for review, which is the distinction
+// the level was added to make (stokaro/ptah#1633).
+func TestRunLint_InfoSeverityIsASARIFNote(t *testing.T) {
+	tests := []struct {
+		name     string
+		severity migrationlint.Severity
+		want     string
+	}{
+		{name: "info is a note", severity: migrationlint.SeverityInfo, want: "note"},
+		{name: "warning stays a warning", severity: migrationlint.SeverityWarning, want: "warning"},
+		{name: "error stays an error", severity: migrationlint.SeverityError, want: "error"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			dir := t.TempDir()
+			c.Assert(os.WriteFile(
+				filepath.Join(dir, migrationlint.ConfigFileName),
+				[]byte("rules:\n  DS101:\n    severity: "+string(test.severity)+"\n"),
+				0o600,
+			), qt.IsNil)
+			c.Assert(os.WriteFile(
+				filepath.Join(dir, "0000000001_drop.up.sql"),
+				[]byte("DROP TABLE users;\n"),
+				0o600,
+			), qt.IsNil)
+
+			stdout, _, err := execute("--dir", dir, "--format", "sarif", "--fail-on", "none")
+
+			c.Assert(err, qt.IsNil)
+			var report sarifForTest
+			c.Assert(json.Unmarshal([]byte(stdout), &report), qt.IsNil)
+			c.Assert(report.Runs, qt.HasLen, 1)
+			c.Assert(sarifLevelForRule(c, report, "DS101"), qt.Equals, test.want)
+		})
+	}
+}
+
+// TestRunLint_UnknownSeverityIsStillRefused is the control for the table above.
+// Adding a level must not turn the vocabulary into "anything goes": a value
+// nothing understands is a configuration error, and refusing it at exit 2 is
+// what tells the operator their file does not say what they think it says.
+func TestRunLint_UnknownSeverityIsStillRefused(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	c.Assert(os.WriteFile(
+		filepath.Join(dir, migrationlint.ConfigFileName),
+		[]byte("rules:\n  DS101:\n    severity: informational\n"),
+		0o600,
+	), qt.IsNil)
+
+	_, stderr, err := execute("--dir", dir)
+
+	c.Assert(exitcode.Code(err, 0), qt.Equals, 2)
+	c.Assert(stderr, qt.Contains, `unsupported severity "informational"`)
+}
+
 func TestRunLint_MalformedExclusionGlobFailsBeforeAnalysis(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()

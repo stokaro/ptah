@@ -681,6 +681,8 @@ disabled-rules:
 rules:
   DS103:
     severity: warning
+  DS104:
+    severity: info
   DS102:
     severity: error
     exclude:
@@ -695,10 +697,15 @@ rules:
   rule codes use uppercase ASCII letters and digits and start with a letter.
 - `rules` keys name an exact code or a family prefix; the most specific key
   wins, so a `DS102` entry beats a `DS` entry.
-- `severity` accepts `warning` or `error` and replaces the rule's default
-  severity on its findings — the level that `--fail-on` and the apply-time
-  destructive gate below evaluate. Any other value fails config parsing
-  (exit `2`).
+- `severity` accepts `info`, `warning` or `error` and replaces the rule's
+  default severity on its findings — the level that `--fail-on` and the
+  apply-time destructive gate below evaluate. Only `error` gates: a rule set to
+  `info` or `warning` is reported and exits `0`. `info` exists so a rule can be
+  introduced to a repository that still violates it, and so a team can say
+  "surface this, never block on it" without the alternatives being loud enough
+  to fail or absent from the report entirely. In SARIF the three levels are
+  `note`, `warning` and `error`. Any other value fails config parsing (exit
+  `2`), so the vocabulary gained a level rather than becoming permissive.
 - `exclude` lists slash-separated path globs (`**` crosses directory
   levels) where the rule is skipped. Prefer paths relative to the migration
   directory, such as `legacy/**`; these match regardless of how `--dir` was

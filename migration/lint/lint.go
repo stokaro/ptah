@@ -53,6 +53,11 @@ const (
 	SeverityWarning Severity = risk.Warning
 	// SeverityError marks patterns that destroy data or database objects.
 	SeverityError Severity = risk.Error
+	// SeverityInfo marks findings that are reported and never gated on. A rule
+	// configured this way appears in every report and changes no exit code,
+	// which is what lets one be introduced to a repository that still violates
+	// it (stokaro/ptah#1633).
+	SeverityInfo Severity = risk.Info
 )
 
 // Rule is one lint check. Exactly one of CheckStatement / CheckFile is set.
