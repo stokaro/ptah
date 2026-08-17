@@ -269,6 +269,10 @@ type parser struct {
 	// only be read once every table block is known; see
 	// [parser.resolveDocumentTableRefs].
 	pendingForeignRefs []pendingForeignRef
+	// dynamicIterators names the iteration roots bound by the dynamic blocks
+	// currently being expanded, outermost first. See [parser.expandDynamic].
+	dynamicIterators []string
+
 	// declaredForeignKeys holds one entry per `foreign_key` block the document
 	// declared, recorded at the block because a single-column key leaves no
 	// distinguishable trace in the IR; see [parser.recordForeignKey].
@@ -277,6 +281,12 @@ type parser struct {
 
 func (p *parser) parseBody(body *hclsyntax.Body) error {
 	for _, block := range body.Blocks {
+		if block.Type == dynamicBlockType {
+			if err := p.expandDynamic(block, p.parseTopLevelBlock); err != nil {
+				return err
+			}
+			continue
+		}
 		if err := p.parseTopLevelBlock(block); err != nil {
 			return err
 		}
@@ -475,6 +485,17 @@ func (p *parser) parseTable(block *hclsyntax.Block) error {
 	fieldsStart := len(p.db.Fields)
 	unlabeledCheckOrdinal := 0
 	for _, nested := range block.Body.Blocks {
+		if nested.Type == dynamicBlockType {
+			if err := p.expandDynamic(nested, func(generated *hclsyntax.Block) error {
+				if generated.Type == "check" && len(generated.Labels) == 0 {
+					unlabeledCheckOrdinal++
+				}
+				return p.parseTableBlock(&table, fieldsStart, unlabeledCheckOrdinal, generated)
+			}); err != nil {
+				return err
+			}
+			continue
+		}
 		if nested.Type == "check" && len(nested.Labels) == 0 {
 			unlabeledCheckOrdinal++
 		}
