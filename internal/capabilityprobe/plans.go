@@ -2,6 +2,7 @@ package capabilityprobe
 
 import (
 	"context"
+	"fmt"
 
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
@@ -16,7 +17,7 @@ import (
 func planFor(dialect string) (plan, bool) {
 	switch platform.NormalizeDialect(dialect) {
 	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner:
-		return postgresPlan(), true
+		return postgresFamilyPlan(platform.NormalizeDialect(dialect)), true
 	case platform.MySQL, platform.MariaDB:
 		return mysqlFamilyPlan(platform.NormalizeDialect(dialect)), true
 	default:
@@ -30,16 +31,86 @@ func planFor(dialect string) (plan, bool) {
 // session entered, and every experiment creates its own objects rather than
 // borrowing another's: an experiment that depends on a neighbor's setup
 // reports that neighbor's failure as its own answer.
-func postgresPlan() plan {
+// spannerSpelling writes the same experiments in the DDL Spanner accepts.
+//
+// Spanner reaches Ptah over the PostgreSQL WIRE and does not speak PostgreSQL
+// DDL. Two differences reach every experiment that needs a throwaway table, and
+// both were measured against a live endpoint rather than read anywhere:
+//
+//	CREATE TABLE rm_t (n int)  -> Primary key must be defined for table "rm_t"
+//	CONSTRAINT dcg_uq UNIQUE   -> <UNIQUE> constraint is not supported, create a unique index instead
+//
+// The first is mechanical. The second is not: spelling the unique constraint as
+// an index would make the drop-a-constraint experiment ask about an index, and
+// answer "Spanner cannot drop a constraint" on a server that can drop the CHECK
+// constraint it does have. So the spelling carries the experiment's MEANING --
+// "a table with a droppable named constraint" -- and each dialect picks a
+// constraint kind it actually supports (stokaro/ptah#942).
+var spannerSpelling = tableSpelling{keyed: true, dropCheckConstraint: true}
+
+// tableSpelling writes throwaway tables for one dialect. The zero value is the
+// PostgreSQL spelling, which is what Postgres, CockroachDB and YugabyteDB have
+// always been measured with.
+type tableSpelling struct {
+	// keyed adds a primary key to every table that declares none.
+	keyed bool
+	// dropCheckConstraint picks CHECK for the droppable-constraint experiment,
+	// on a dialect with no UNIQUE table constraint to drop.
+	dropCheckConstraint bool
+}
+
+// table spells a throwaway table. key names the column that becomes the primary
+// key on a dialect that requires one, and is unused where it does not.
+func (t tableSpelling) table(name, columns, key string) string {
+	if !t.keyed {
+		return fmt.Sprintf("CREATE TABLE %s (%s)", name, columns)
+	}
+	return fmt.Sprintf("CREATE TABLE %s (%s, PRIMARY KEY (%s))", name, columns, key)
+}
+
+// droppableConstraint spells a table carrying one named constraint this dialect
+// can drop, and the statement that drops it. The constraint KIND is the
+// dialect's choice; what the experiment decides is whether a named constraint
+// can be dropped generically, not which kind was available to try it on.
+func (t tableSpelling) droppableConstraint(table, constraint string) (setup []string, drop string) {
+	clause := fmt.Sprintf("CONSTRAINT %s UNIQUE (n)", constraint)
+	if t.dropCheckConstraint {
+		clause = fmt.Sprintf("CONSTRAINT %s CHECK (n > 0)", constraint)
+	}
+	return []string{t.table(table, "n int, "+clause, "n")},
+		fmt.Sprintf("ALTER TABLE %s DROP CONSTRAINT %s", table, constraint)
+}
+
+// uniquelyReferenced spells a table whose column can be the target of a foreign
+// key, using the unique index a dialect without a UNIQUE table constraint
+// requires -- which is what that dialect's own refusal recommends.
+func (t tableSpelling) uniquelyReferenced(table, constraint, column string) []string {
+	if !t.dropCheckConstraint {
+		return []string{t.table(table, fmt.Sprintf("%s int NOT NULL, CONSTRAINT %s UNIQUE (%s)", column, constraint, column), column)}
+	}
+	return []string{
+		t.table(table, column+" int NOT NULL", column),
+		fmt.Sprintf("CREATE UNIQUE INDEX %s ON %s (%s)", constraint, table, column),
+	}
+}
+
+// postgresFamilyPlan is the statement table for the PostgreSQL wire family.
+//
+// The experiments are one list for every dialect in it. What varies is how a
+// throwaway table is spelled, which is a property of the dialect's DDL and not
+// of the question being asked.
+func postgresFamilyPlan(dialect string) plan {
+	t := tableSpelling{}
+	if platform.NormalizeDialect(dialect) == platform.Spanner {
+		t = spannerSpelling
+	}
+	dcgSetup, dcgDrop := t.droppableConstraint("dcg", "dcg_uq")
 	experiments := []experiment{
-		acceptance(capability.DropConstraintGeneric,
-			[]string{"CREATE TABLE dcg (n int, CONSTRAINT dcg_uq UNIQUE (n))"},
-			"ALTER TABLE dcg DROP CONSTRAINT dcg_uq",
-		),
+		acceptance(capability.DropConstraintGeneric, dcgSetup, dcgDrop),
 		{
 			decides:  []capability.Capability{capability.DropConstraintIfExists},
 			requires: []capability.Capability{capability.DropConstraintGeneric},
-			setup:    []string{"CREATE TABLE dcie (n int)"},
+			setup:    []string{t.table("dcie", "n int", "n")},
 			decide: guarded(capability.DropConstraintIfExists, nil,
 				[]string{"ALTER TABLE dcie DROP CONSTRAINT IF EXISTS dcie_absent"},
 				"ALTER TABLE dcie DROP CONSTRAINT dcie_absent",
@@ -50,12 +121,12 @@ func postgresPlan() plan {
 			"DROP INDEX dii_absent",
 		),
 		enforced(capability.CheckConstraintsEnforced,
-			[]string{"CREATE TABLE cce (n int, CONSTRAINT cce_ck CHECK (n > 0))"},
+			[]string{t.table("cce", "n int, CONSTRAINT cce_ck CHECK (n > 0)", "n")},
 			"INSERT INTO cce (n) VALUES (1)",
 			"INSERT INTO cce (n) VALUES (-1)",
 		),
 		acceptance(capability.DropCheckClause,
-			[]string{"CREATE TABLE dcc (n int, CONSTRAINT dcc_ck CHECK (n > 0))"},
+			[]string{t.table("dcc", "n int, CONSTRAINT dcc_ck CHECK (n > 0)", "n")},
 			"ALTER TABLE dcc DROP CHECK dcc_ck",
 		),
 		acceptance(capability.EnumInlineColumn, nil,
@@ -65,13 +136,13 @@ func postgresPlan() plan {
 			"CREATE TYPE ect AS ENUM ('a','b')",
 		),
 		concurrentIndex(capability.CreateIndexConcurrently,
-			[]string{"CREATE TABLE cic (n int)"},
+			[]string{t.table("cic", "n int", "n")},
 			"CREATE INDEX CONCURRENTLY cic_one ON cic (n)",
 			"CREATE INDEX CONCURRENTLY cic_two ON cic (n)",
 		),
 		concurrentIndex(capability.DropIndexConcurrently,
 			[]string{
-				"CREATE TABLE dic (n int)",
+				t.table("dic", "n int", "n"),
 				"CREATE INDEX dic_one ON dic (n)",
 				"CREATE INDEX dic_two ON dic (n)",
 			},
@@ -79,7 +150,7 @@ func postgresPlan() plan {
 			"DROP INDEX CONCURRENTLY dic_two",
 		),
 		indexIncludeSPGiST(
-			[]string{"CREATE TABLE iis (k text, payload int)"},
+			[]string{t.table("iis", "k text, payload int", "k")},
 			"CREATE INDEX iis_idx ON iis USING SPGIST (k) INCLUDE (payload)",
 			`SELECT COUNT(*)
 			 FROM pg_catalog.pg_index AS i
@@ -93,11 +164,11 @@ func postgresPlan() plan {
 			   AND i.indnatts = 2`,
 		),
 		acceptance(capability.Views,
-			[]string{"CREATE TABLE vsrc (n int)"},
+			[]string{t.table("vsrc", "n int", "n")},
 			"CREATE VIEW vw AS SELECT n FROM vsrc",
 		),
 		storedResult(capability.MaterializedViews,
-			[]string{"CREATE TABLE mvs (n int)"},
+			[]string{t.table("mvs", "n int", "n")},
 			"CREATE MATERIALIZED VIEW mvw AS SELECT COUNT(*) AS c FROM mvs",
 			"SELECT c FROM mvw",
 			"INSERT INTO mvs (n) VALUES (1)",
@@ -106,7 +177,7 @@ func postgresPlan() plan {
 			"CREATE FUNCTION fn() RETURNS int LANGUAGE sql AS 'SELECT 1'",
 		),
 		all(capability.Triggers,
-			[]string{"CREATE TABLE trg_t (n int)"},
+			[]string{t.table("trg_t", "n int", "n")},
 			"CREATE FUNCTION trg_fn() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NEW; END $$",
 			"CREATE TRIGGER trg BEFORE INSERT ON trg_t FOR EACH ROW EXECUTE FUNCTION trg_fn()",
 		),
@@ -114,7 +185,7 @@ func postgresPlan() plan {
 			decides:  []capability.Capability{capability.CreateOrReplaceTrigger},
 			requires: []capability.Capability{capability.Triggers},
 			setup: []string{
-				"CREATE TABLE cort_t (n int)",
+				t.table("cort_t", "n int", "n"),
 				"CREATE FUNCTION cort_fn() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NEW; END $$",
 			},
 			decide: acceptance(capability.CreateOrReplaceTrigger, nil,
@@ -142,19 +213,19 @@ func postgresPlan() plan {
 				"CREATE DOMAIN and accepts a composite type",
 		),
 		acceptance(capability.AlterGeneratedColumnExpression,
-			[]string{"CREATE TABLE agc (n int, g int GENERATED ALWAYS AS (n + 1) STORED)"},
+			[]string{t.table("agc", "n int, g int GENERATED ALWAYS AS (n + 1) STORED", "n")},
 			"ALTER TABLE agc ALTER COLUMN g SET EXPRESSION AS (n + 2)",
 		),
 		all(capability.RowLevelSecurity,
-			[]string{"CREATE TABLE rls (n int)"},
+			[]string{t.table("rls", "n int", "n")},
 			"ALTER TABLE rls ENABLE ROW LEVEL SECURITY",
 			"CREATE POLICY rls_p ON rls USING (true)",
 		),
-		roleManagement(),
+		roleManagement(t),
 		foreignKeys(
 			[]string{
 				"CREATE TABLE fk_parent (id int PRIMARY KEY)",
-				"CREATE TABLE fk_child (id int)",
+				t.table("fk_child", "id int", "id"),
 			},
 			"ALTER TABLE fk_child ADD CONSTRAINT fk_child_fk FOREIGN KEY (id) REFERENCES fk_parent (id)",
 			"INSERT INTO fk_parent (id) VALUES (1)",
@@ -162,15 +233,14 @@ func postgresPlan() plan {
 			"INSERT INTO fk_child (id) VALUES (99)",
 		),
 		referencePolicy(referencePolicyStatements{
-			setup: []string{
-				"CREATE TABLE fkp_uni (k int NOT NULL, CONSTRAINT fkp_uni_uq UNIQUE (k))",
-				"CREATE TABLE fkp_idx (k int NOT NULL)",
+			setup: append(t.uniquelyReferenced("fkp_uni", "fkp_uni_uq", "k"),
+				t.table("fkp_idx", "k int NOT NULL", "k"),
 				"CREATE INDEX fkp_idx_k ON fkp_idx (k)",
-				"CREATE TABLE fkp_none (k int NOT NULL)",
-				"CREATE TABLE fkp_c0 (k int)",
-				"CREATE TABLE fkp_c1 (k int)",
-				"CREATE TABLE fkp_c2 (k int)",
-			},
+				t.table("fkp_none", "k int NOT NULL", "k"),
+				t.table("fkp_c0", "k int", "k"),
+				t.table("fkp_c1", "k int", "k"),
+				t.table("fkp_c2", "k int", "k"),
+			),
 			unique:  "ALTER TABLE fkp_c0 ADD CONSTRAINT fkp_s0 FOREIGN KEY (k) REFERENCES fkp_uni (k)",
 			indexed: "ALTER TABLE fkp_c1 ADD CONSTRAINT fkp_s1 FOREIGN KEY (k) REFERENCES fkp_idx (k)",
 			bare:    "ALTER TABLE fkp_c2 ADD CONSTRAINT fkp_s2 FOREIGN KEY (k) REFERENCES fkp_none (k)",
@@ -180,7 +250,7 @@ func postgresPlan() plan {
 			"CREATE TABLE ser (id SERIAL PRIMARY KEY)",
 		),
 		acceptance(capability.XMLType, nil,
-			"CREATE TABLE xmlt (c XML)",
+			t.table("xmlt", "c XML", "c"),
 		),
 		all(capability.AdvisoryLocks, nil,
 			"SELECT pg_advisory_lock(1)",
@@ -364,11 +434,11 @@ func mysqlFamilyPlan(dialect string) plan {
 // roleManagement decides RoleManagement on the PostgreSQL family and registers
 // the role it created for cleanup: a role is cluster-scoped, so dropping the
 // probe schema does not remove it.
-func roleManagement() experiment {
+func roleManagement(t tableSpelling) experiment {
 	const role = "ptah_capprobe_role"
 	return experiment{
 		decides: []capability.Capability{capability.RoleManagement},
-		setup:   []string{"CREATE TABLE rm_t (n int)"},
+		setup:   []string{t.table("rm_t", "n int", "n")},
 		decide: func(ctx context.Context, s *session) (verdicts, []Attempt) {
 			created := s.exec(ctx, "CREATE ROLE "+role)
 			attempts := []Attempt{created}

@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -700,4 +701,145 @@ func assertErrMatches(c *qt.C, err error, want string) {
 		false: func() { c.Assert(err, qt.ErrorMatches, want) },
 	}
 	checks[want == ""]()
+}
+
+// A versionless line is credited with what it measures. The banner arm's reason
+// -- "an observation on one release cannot be credited to this line" -- has no
+// referent when the dialect declares one line and no releases to tell apart, so
+// applying it there would discard every row a live Spanner endpoint answered
+// while naming a distinction that does not exist (stokaro/ptah#942).
+func TestLineReason_CreditsAVersionlessLine(t *testing.T) {
+	tests := []struct {
+		name string
+		cell Cell
+		want string
+	}{
+		{
+			name: "the versionless spanner line is credited",
+			cell: Cell{
+				Dialect: platform.Spanner, Line: "0", Versionless: true,
+				Preset: capability.SpannerPostgres, PresetName: "SpannerPostgres",
+				Refinement: RefinedByBanner,
+			},
+			want: "",
+		},
+		{
+			// The control, and the reason the flag exists rather than the
+			// refinement being widened: the SAME refinement on a dialect that
+			// does have releases still withholds credit.
+			name: "the same refinement on a versioned line is not",
+			cell: Cell{
+				Dialect: platform.CockroachDB, Line: "26.2",
+				Preset: capability.CockroachDB26, PresetName: "CockroachDB26",
+				Refinement: RefinedByBanner,
+			},
+			want: "an observation on one release cannot be credited to this line",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			reason := lineReason(&Report{Matched: true, Cell: tt.cell, Dialect: tt.cell.Dialect})
+
+			c.Assert(reason, qt.Contains, tt.want)
+			c.Assert(reason == "", qt.Equals, tt.want == "")
+		})
+	}
+}
+
+// setupStatements flattens a plan's preconditions in declaration order.
+func setupStatements(p plan) []string {
+	var out []string
+	for _, e := range p.experiments {
+		out = append(out, e.setup...)
+	}
+	return out
+}
+
+// The three dialects that were always measured with the PostgreSQL spelling
+// keep it, byte for byte. This is the control on the whole change: the Spanner
+// spelling exists so those three do not acquire primary keys they never needed,
+// and a shared plan is exactly where that would happen unnoticed.
+//
+// Confirmed live as well: the probe's full report against PostgreSQL 18 is
+// identical before and after, down to every statement, differing only in the
+// random throwaway namespace (stokaro/ptah#942).
+func TestPostgresFamilyPlan_LeavesTheSharedSpellingAlone(t *testing.T) {
+	tests := []struct {
+		name    string
+		dialect string
+	}{
+		{name: "cockroachdb reads the postgres spelling", dialect: platform.CockroachDB},
+		{name: "yugabytedb reads the postgres spelling", dialect: platform.YugabyteDB},
+	}
+
+	postgres := setupStatements(postgresFamilyPlan(platform.Postgres))
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(setupStatements(postgresFamilyPlan(tt.dialect)), qt.DeepEquals, postgres)
+		})
+	}
+
+	t.Run("and the statements themselves are unchanged", func(t *testing.T) {
+		c := qt.New(t)
+
+		c.Assert(postgres, qt.Contains, "CREATE TABLE dcie (n int)")
+		c.Assert(postgres, qt.Contains, "CREATE TABLE dcg (n int, CONSTRAINT dcg_uq UNIQUE (n))")
+		c.Assert(postgres, qt.Contains, "CREATE TABLE fkp_uni (k int NOT NULL, CONSTRAINT fkp_uni_uq UNIQUE (k))")
+		c.Assert(postgres, qt.Not(qt.Any(qt.Contains)), "PRIMARY KEY (n)")
+	})
+}
+
+// Spanner reaches Ptah over the PostgreSQL wire and does not speak PostgreSQL
+// DDL. Each difference below is a refusal measured against a live endpoint, not
+// a precaution.
+func TestPostgresFamilyPlan_SpellsSpannerDDL(t *testing.T) {
+	spanner := setupStatements(postgresFamilyPlan(platform.Spanner))
+
+	tests := []struct {
+		name string
+		want string
+	}{
+		{
+			// `Primary key must be defined for table "dcie"`.
+			name: "every throwaway table carries a primary key",
+			want: "CREATE TABLE dcie (n int, PRIMARY KEY (n))",
+		},
+		{
+			// `<UNIQUE> constraint is not supported, create a unique index
+			// instead` -- so the droppable-constraint experiment drops the
+			// constraint kind Spanner does have, rather than reporting that
+			// Spanner cannot drop a constraint at all.
+			name: "the droppable constraint is a CHECK",
+			want: "CREATE TABLE dcg (n int, CONSTRAINT dcg_uq CHECK (n > 0), PRIMARY KEY (n))",
+		},
+		{
+			name: "a foreign-key target is made unique by index",
+			want: "CREATE UNIQUE INDEX fkp_uni_uq ON fkp_uni (k)",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(spanner, qt.Contains, tt.want)
+		})
+	}
+}
+
+// The generic half of the same claim: nothing in the Spanner arm creates a
+// table without a key, because one such statement makes every capability the
+// experiment decides undecidable -- which is how this started, at ten rows out
+// of twenty-eight.
+func TestPostgresFamilyPlan_SpannerCreatesNoKeylessTable(t *testing.T) {
+	c := qt.New(t)
+
+	for _, statement := range setupStatements(postgresFamilyPlan(platform.Spanner)) {
+		keyed := strings.Contains(statement, "PRIMARY KEY") || !strings.HasPrefix(statement, "CREATE TABLE")
+		c.Assert(keyed, qt.IsTrue, qt.Commentf("%q creates a table Spanner will refuse", statement))
+	}
 }

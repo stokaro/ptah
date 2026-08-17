@@ -775,3 +775,100 @@ func declaredImageRepositories() []string {
 	out = slices.DeleteFunc(out, func(repository string) bool { return repository == "" })
 	return slices.Compact(slices.Sorted(slices.Values(out)))
 }
+
+// A versionless line accepts any version, and it has to: over the PostgreSQL
+// wire a live Spanner endpoint announces `PostgreSQL 14.1`, which is
+// PGAdapter's compatibility level rather than anything about Spanner. Matching
+// a line against it would pin the cell to a number about a different product
+// and move the day that number changed.
+//
+// Measured against a live endpoint: before this, the probe reported
+// `no matrix cell covers spanner 14.1 (add a cell in cells.go)` while the cell
+// was sitting in cells.go (stokaro/ptah#942).
+func TestCellMatch_VersionlessLineAcceptsAnyVersion(t *testing.T) {
+	tests := []struct {
+		name    string
+		version string
+	}{
+		{name: "the compatibility level a live endpoint announces", version: "PostgreSQL 14.1"},
+		{name: "a different one, should PGAdapter raise it", version: "PostgreSQL 17.4"},
+		{name: "a bare major", version: "PostgreSQL 15"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			version, err := capabilityprobe.ParseVersion(platform.Spanner, tt.version, "")
+			c.Assert(err, qt.IsNil)
+
+			cell := capabilityprobe.Cell{Dialect: platform.Spanner, Line: "0", Versionless: true}
+
+			c.Assert(cell.Match(version), qt.IsTrue)
+		})
+	}
+}
+
+// The control: the flag is what makes the match unconditional, not the shape of
+// the line. The same cell without it compares components and refuses.
+func TestCellMatch_AVersionedLineStillComparesComponents(t *testing.T) {
+	tests := []struct {
+		name    string
+		line    string
+		version string
+		want    bool
+	}{
+		{name: "a major accepts its patches", line: "17", version: "PostgreSQL 17.4", want: true},
+		{name: "a major refuses another major", line: "17", version: "PostgreSQL 16.9", want: false},
+		{name: "the spanner line without the flag refuses", line: "0", version: "PostgreSQL 14.1", want: false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			version, err := capabilityprobe.ParseVersion(platform.Spanner, tt.version, "")
+			c.Assert(err, qt.IsNil)
+
+			cell := capabilityprobe.Cell{Dialect: platform.Spanner, Line: tt.line}
+
+			c.Assert(cell.Match(version), qt.Equals, tt.want)
+		})
+	}
+}
+
+// A versionless cell answers for every server of its dialect, so a second cell
+// on that dialect would be unreachable -- CellFor returns the first match and
+// the versionless one matches everything. It is also the invariant the probe's
+// line attribution rests on: an observation is credited to a versionless line
+// because there is no sibling release to confuse it with.
+func TestCells_AVersionlessDialectDeclaresExactlyOneLine(t *testing.T) {
+	c := qt.New(t)
+
+	// Counted through a map literal rather than a condition: the invariant is
+	// arithmetic, and the assertion below reads it as arithmetic too.
+	countOf := map[bool]int{true: 1, false: 0}
+	lines := map[string]int{}
+	versionless := map[string]int{}
+	for _, cell := range capabilityprobe.Cells {
+		lines[cell.Dialect]++
+		versionless[cell.Dialect] += countOf[cell.Versionless]
+	}
+
+	for dialect, declared := range lines {
+		// Either the dialect declares no versionless line, or it declares
+		// exactly one line in total. Both are the same equation.
+		c.Assert(versionless[dialect]*(declared-1), qt.Equals, 0,
+			qt.Commentf("%s declares %d versionless line(s) among %d lines; a versionless line matches "+
+				"every version, so a sibling line would be unreachable",
+				dialect, versionless[dialect], declared))
+	}
+
+	total := 0
+	for _, n := range versionless {
+		total += n
+	}
+	c.Assert(total, qt.Equals, 1,
+		qt.Commentf("a new versionless dialect needs the attribution reasoning re-read, not just the flag"))
+	c.Assert(versionless[platform.Spanner], qt.Equals, 1)
+}
