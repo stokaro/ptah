@@ -159,11 +159,12 @@ func runSchemaPlan(cmd *cobra.Command, opts schemaPlanOptions) error {
 	}
 
 	plan, err := atlasschema.PreparePlanFile(cmd.Context(), conn, atlasschema.PlanFileOptions{
-		Name:    opts.name,
-		DevURL:  opts.devURL,
-		Desired: desired,
-		Exclude: opts.exclude,
-		Policy:  policy,
+		Name:        opts.name,
+		DevURL:      opts.devURL,
+		Desired:     desired,
+		Exclude:     opts.exclude,
+		Policy:      policy,
+		Diagnostics: cmd.ErrOrStderr(),
 	})
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
