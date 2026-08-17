@@ -115,7 +115,10 @@ func TestReadInformationSchemaIndexes(t *testing.T) {
 			c.Assert(found.IsPrimary, qt.Equals, tt.wantPrimary)
 			c.Assert(found.Definition, qt.Equals, tt.wantDefinition)
 			c.Assert(found.Parts[0].Desc, qt.Equals, tt.wantDesc)
-			c.Assert(found.Schema, qt.Equals, "public")
+			// The default schema is the empty string, as the tables spell it.
+			// Spelling it "public" keyed every index "public.s" while the
+			// tables keyed "s", so enhanceTablesWithIndexes matched nothing.
+			c.Assert(found.Schema, qt.Equals, "")
 		})
 	}
 }
