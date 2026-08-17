@@ -201,5 +201,12 @@ func clickHousePlan() plan {
 				"accepted",
 		),
 	}
-	return plan{experiments: experiments, undecided: map[capability.Capability]string{}}
+	return plan{experiments: experiments, undecided: map[capability.Capability]string{
+		// See the same declaration in the PostgreSQL-family plan: the probe
+		// connects as one account and cannot ask whether a privilege exists
+		// without granting it. ClickHouse has no SHOW_ROUTINE at all, which is
+		// a fact the preset carries rather than one this run can establish.
+		capability.ShowRoutinePrivilege: "the probe cannot ask whether a privilege exists without granting it; " +
+			"ClickHouse has no SHOW_ROUTINE privilege for it to find",
+	}}
 }

@@ -1,14 +1,17 @@
 package mysql
 
-// White-box testing required: the requirement is decided by an unexported
-// predicate, and the one place that reads it is currently shielded by an
-// earlier gate (see the test comment below), so the decision cannot be observed
-// from outside the package at all.
+// White-box testing required: the requirement is decided inside the writer, and
+// the one place that reads it is shielded by an earlier gate (see the test
+// comment below), so the decision cannot be observed from outside the package
+// at all.
 
 import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+
+	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/platform/capability"
 )
 
 // The SHOW_ROUTINE requirement gates a destructive operation: the privilege set
@@ -17,11 +20,16 @@ import (
 // the privilege rather than excuse it.
 //
 // This is hardening, not a live fix. `DropAllTables` runs the VIEW_TABLE_USAGE
-// gate first, and that one already refuses a MySQL version it cannot parse, so
-// no unparseable version reaches the privilege decision today. The ordering of
+// gate first, and that one already refuses a MySQL version it cannot resolve,
+// so no unreadable version reaches the privilege decision today. The ordering of
 // two independent checks is the only thing standing between the old answer and
 // a weaker privilege set authorizing a drop, which is not something worth
 // leaving to ordering (stokaro/ptah#916).
+//
+// The threshold itself moved into the capability ladder; what stays here is the
+// completeness check on the input. "8.0" resolves to ONE arm and the ladder has
+// to pick it, but the string could be 8.0.0 or 8.0.42, and only this caller
+// knows what the missing precision would authorize.
 func TestShowRoutineRequirementFailsClosedOnAnUnreadableVersion(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -51,7 +59,9 @@ func TestShowRoutineRequirementFailsClosedOnAnUnreadableVersion(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(requiresMySQLShowRoutinePrivilege(tt.version), qt.Equals, tt.want)
+			writer := &Writer{dialect: platform.MySQL, serverVersion: tt.version}
+
+			c.Assert(writer.capabilities().Has(capability.ShowRoutinePrivilege), qt.Equals, tt.want)
 		})
 	}
 }

@@ -10,6 +10,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/internal/dbschema/clickhouse"
 	"go.5x5.cz/ptah/internal/dbschema/dbtest"
 )
@@ -546,6 +547,12 @@ func TestWriterDropDatabaseRealm_ClickHouse2410FailsClosedBeforeCatalogRead(t *t
 	assertClickHouseSQLMockComplete(c, db, queries, nil)
 }
 
+// An unreadable banner takes the ladder's lower arm and is refused there, which
+// is the same decision the hand-rolled parser reached and a better reason for
+// it: the old error said Ptah could not parse the string, which names Ptah's
+// problem rather than the operator's. The version is still quoted, because a
+// refusal that cannot say which server it refused is one nobody can act on
+// (stokaro/ptah#916 item 3).
 func TestWriterDropDatabaseRealm_UnparseableServerVersionFailsBeforeMutation(t *testing.T) {
 	c := qt.New(t)
 	queries := []sqlMockQuery{
@@ -556,7 +563,12 @@ func TestWriterDropDatabaseRealm_UnparseableServerVersionFailsBeforeMutation(t *
 
 	err := writer.DropDatabaseRealm(t.Context())
 
-	c.Assert(err, qt.ErrorMatches, `clickhouse: cannot parse server version "development"`)
+	c.Assert(
+		err,
+		qt.ErrorMatches,
+		`clickhouse: refusing database-realm cleanup on server version "development": `+
+			`ClickHouse 24\.11 or newer is required to prove complete catalog visibility with CHECK GRANT`,
+	)
 	assertClickHouseSQLMockComplete(c, db, queries, nil)
 }
 
@@ -705,4 +717,65 @@ func normalizeSQL(query string) string {
 
 func normalizeSQLArgs(args []driver.NamedValue) []driver.NamedValue {
 	return append([]driver.NamedValue{}, args...)
+}
+
+// A supplied capability set is the answer, and the banner is then read only to
+// name a refusal. Both rows below contradict what the banner alone would say,
+// which is the point: without them, a writer that ignored its set and always
+// re-resolved would pass every test in this file (stokaro/ptah#916 item 3).
+func TestWriterDropDatabaseRealm_UsesTheSuppliedCapabilitySet(t *testing.T) {
+	// deniedPrivileges is the second query the run reaches once the gate lets it
+	// past, and it belongs to the row that gets there rather than to a
+	// condition inside the loop.
+	deniedPrivileges := []sqlMockQuery{{
+		sql: databaseRealmPrivilegesQuery("analytics"),
+		result: dbtest.QueryResult{
+			Columns: []string{"result"},
+			Rows:    [][]driver.Value{{int64(0)}},
+		},
+	}}
+
+	tests := []struct {
+		name    string
+		version string
+		caps    capability.Capabilities
+		then    []sqlMockQuery
+		wantErr string
+	}{
+		{
+			// The banner is below the step; the supplied set says the server
+			// answers CHECK GRANT, so the gate lets the cleanup start and the
+			// run fails later, on the privileges the mock denies.
+			name:    "a set above the step beats an old banner",
+			version: "24.10.2.80",
+			caps:    capability.ClickHouse2411(),
+			then:    deniedPrivileges,
+			wantErr: "clickhouse: database-realm cleanup requires SHOW DATABASES, SHOW TABLES, " +
+				"DROP TABLE, DROP VIEW, and DROP DICTIONARY on .*",
+		},
+		{
+			// And the mirror: a modern banner with a set below the step is
+			// refused at the gate.
+			name:    "a set below the step beats a new banner",
+			version: "26.7.3.19",
+			caps:    capability.ClickHouse24(),
+			wantErr: `clickhouse: refusing database-realm cleanup on server version "26\.7\.3\.19": ` +
+				`ClickHouse 24\.11 or newer is required.*`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			queries := append([]sqlMockQuery{databaseRealmVersionResult(tt.version)}, tt.then...)
+			db := openClickHouseSQLMock(t, c, queries, nil)
+			writer := clickhouse.NewClickHouseWriterForRunnerWithCapabilities(db.SQL, "analytics", tt.caps)
+
+			err := writer.DropDatabaseRealm(t.Context())
+
+			c.Assert(err, qt.ErrorMatches, tt.wantErr)
+			assertClickHouseSQLMockComplete(c, db, queries, nil)
+		})
+	}
 }
