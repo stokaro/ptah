@@ -192,6 +192,7 @@ func measuredLines() map[string]measuredLine {
 				capability.ShowRoutinePrivilege:            "the key names MySQL's global SHOW_ROUTINE privilege. PostgreSQL has no such privilege, so this server has nothing to demand or to do without",
 				capability.RenameColumnClause:              "this run predates the key and sent no rename. Measured separately on PostgreSQL 18.4: `ALTER TABLE rn RENAME COLUMN a TO b` is accepted",
 				capability.CatalogCheckConstraintTableName: "this run predates the key. Measured separately on PostgreSQL 18.4: `information_schema.check_constraints` is constraint_catalog, constraint_schema, constraint_name, check_clause -- no table_name",
+				capability.GeneratedColumns:                "this run predates the key. Measured separately on PostgreSQL 18.4: `CREATE TABLE gcx (n int, g int GENERATED ALWAYS AS (n + 1) STORED)` is accepted",
 			},
 		},
 
@@ -240,6 +241,7 @@ func measuredLines() map[string]measuredLine {
 				capability.ShowRoutinePrivilege:            "this run predates the key. What decides it is whether the server grants SHOW_ROUTINE, which MySQL added in 8.0.20 and every measured MySQL line has",
 				capability.RenameColumnClause:              "this run predates the key. Measured separately on MySQL 8.4.11: the clause is accepted",
 				capability.CatalogCheckConstraintTableName: "this run predates the key. Measured separately on MySQL 8.4.11: `information_schema.CHECK_CONSTRAINTS` has no TABLE_NAME column; selecting it is error 1054",
+				capability.GeneratedColumns:                "this run predates the key. Measured separately on MySQL 8.4.11: `CREATE TABLE gcx (n int, g int GENERATED ALWAYS AS (n + 1) STORED)` is accepted",
 			},
 		},
 
@@ -290,6 +292,7 @@ func measuredLines() map[string]measuredLine {
 				capability.ShowRoutinePrivilege:            "MariaDB has no SHOW_ROUTINE privilege; its routine metadata is reached under the privileges the MariaDB branch of the visibility check already names",
 				capability.RenameColumnClause:              "this run predates the key. Measured separately on MariaDB 11.8.8: the clause is accepted",
 				capability.CatalogCheckConstraintTableName: "this run predates the key. Measured separately on MariaDB 11.8.8: `information_schema.CHECK_CONSTRAINTS` carries TABLE_NAME between CONSTRAINT_SCHEMA and CONSTRAINT_NAME",
+				capability.GeneratedColumns:                "this run predates the key. Measured separately on MariaDB 11.8.8: `CREATE TABLE gcx (n int, g int GENERATED ALWAYS AS (n + 1) STORED)` is accepted",
 			},
 		},
 	}

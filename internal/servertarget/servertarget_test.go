@@ -365,10 +365,14 @@ func TestResolve_RefusesWhatTheLiveResolverDeliberatelyKeeps(t *testing.T) {
 			live:    capability.CockroachDB25(),
 		},
 		{
+			// The banner carries no "-YB-" marker, so the 11.2 in it is
+			// PostgreSQL's number and not the product's. YugabyteDB's ladder
+			// refuses to spend it and takes the conservative arm, which is what
+			// this row's `live` records (stokaro/ptah#916).
 			name:    "yugabytedb",
 			dialect: platform.YugabyteDB,
 			version: "PostgreSQL 11.2 on x86_64-pc-linux-gnu",
-			live:    capability.YugabyteDB25(),
+			live:    capability.YugabyteDB24(),
 		},
 		{
 			name:    "spanner",

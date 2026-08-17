@@ -519,6 +519,20 @@ var Cells = []Cell{
 			"job 94218797895: all 25 rows match YugabyteDB25 with zero mismatches. Docker Hub has no " +
 			"floating line tag, so the CI driver resolves the newest numeric patch",
 	},
+	{
+		Dialect: platform.YugabyteDB, Line: capabilityline.YugabyteDB2024,
+		Preset: capability.YugabyteDB24, PresetName: "YugabyteDB24",
+		Refinement: RefinedByVersion, Support: capability.Certified, Image: "yugabytedb/yugabyte:2024.2", ResolveNewestPatch: true,
+		Note: "the line below YugabyteDB's PostgreSQL 11 to 15 engine swap, which is what makes the " +
+			"dialect's ladder one step long. Measured live on 2024.2.4.0-b89 and on 2024.2.10.0-b62, " +
+			"which is the patch the CI driver resolves today, against 2025.1.0.0-b168 " +
+			"and 2026.1.0.0-b118: `SELECT pg_advisory_lock(1)` answers `advisory locks are not yet " +
+			"implemented` (SQLSTATE 0A000) here and succeeds on both newer lines, and " +
+			"`CREATE OR REPLACE TRIGGER` is `syntax error at or near \"TRIGGER\"` here because the " +
+			"spelling arrived in PostgreSQL 14. Every other registered key answers identically on all " +
+			"three (stokaro/ptah#916). Docker Hub has no floating line tag, so the CI driver resolves " +
+			"the newest numeric patch",
+	},
 
 	// SQLite is not a server line. Its version is whatever the driver pinned
 	// in go.mod compiles in, so the cell matches any 3.x and the "line" is a

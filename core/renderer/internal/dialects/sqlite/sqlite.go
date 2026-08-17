@@ -104,7 +104,7 @@ func (r *Renderer) VisitCreateTable(node *ast.CreateTableNode) error {
 
 	lines := make([]string, 0, len(node.Columns)+len(node.Constraints))
 	for _, column := range node.Columns {
-		line, err := renderColumn(column)
+		line, err := renderColumn(column, r.capabilities())
 		if err != nil {
 			return fmt.Errorf("render column %s: %w", column.Name, err)
 		}
@@ -138,7 +138,7 @@ func (r *Renderer) VisitAlterTable(node *ast.AlterTableNode) error {
 	for _, operation := range node.Operations {
 		switch op := operation.(type) {
 		case *ast.AddColumnOperation:
-			line, err := renderColumn(op.Column)
+			line, err := renderColumn(op.Column, r.capabilities())
 			if err != nil {
 				return fmt.Errorf("render added column %s: %w", op.Column.Name, err)
 			}
@@ -514,7 +514,7 @@ func (r *Renderer) notSupported(feature, name string) {
 	r.w.WriteLinef("-- SQLITE: %s %q is not supported", feature, name)
 }
 
-func renderColumn(column *ast.ColumnNode) (string, error) {
+func renderColumn(column *ast.ColumnNode, caps capability.Capabilities) (string, error) {
 	if column == nil {
 		return "", fmt.Errorf("nil column")
 	}
@@ -546,6 +546,15 @@ func renderColumn(column *ast.ColumnNode) (string, error) {
 		parts = append(parts, "UNIQUE")
 	}
 	if column.GeneratedExpression != "" {
+		// SQLite gained generated columns in 3.31, well above the 3.25 step
+		// this preset's lower arm describes, so a target pinned there cannot
+		// parse the clause. Dropping it silently would turn a generated column
+		// into an ordinary one (stokaro/ptah#916).
+		if !caps.Has(capability.GeneratedColumns) {
+			return "", unsupportedFeaturef(
+				"the target SQLite does not support generated columns; column %q declares GENERATED ALWAYS AS",
+				column.Name)
+		}
 		kind := strings.ToUpper(strings.TrimSpace(column.GeneratedKind))
 		if kind == "" {
 			kind = "VIRTUAL"
