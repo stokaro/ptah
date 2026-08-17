@@ -176,6 +176,99 @@ func namespaceSQL(dialect, namespace string) (enter []string, leave string) {
 		"DROP DATABASE " + namespace
 }
 
+// sentinelTable is the object confirmNamespace creates to find out where
+// unqualified DDL actually lands.
+const sentinelTable = "ptah_capprobe_sentinel"
+
+// confirmNamespace proves the throwaway namespace took effect, and refuses the
+// run when it did not.
+//
+// Entering it is not evidence that it applies. Measured on the Cloud Spanner
+// emulator through PGAdapter: CREATE SCHEMA is accepted, SET search_path is
+// accepted, and an unqualified CREATE TABLE lands in `public` regardless. Every
+// object a run creates then outlives it, the DROP at the end removes an empty
+// schema, and the next run against the same server reads the previous run's
+// leftovers as its own findings -- which is the exact failure newNamespace
+// exists to prevent, arriving through a different door.
+//
+// It is not hypothetical and it is not loud. Two runs against one server
+// answered differently, both exiting non-zero for unrelated-looking reasons:
+// nine capability disagreements on the fresh server, three on the second run,
+// with thirteen `Duplicate name in schema` refusals in between
+// (stokaro/ptah#942).
+//
+// The check is one sentinel table and one catalog count, so it costs nothing
+// and it holds for every dialect: a namespace that stops applying anywhere is
+// caught the first time it happens rather than the first time somebody notices
+// two runs disagreeing.
+func (s *session) confirmNamespace(ctx context.Context) ([]Attempt, error) {
+	created := s.exec(ctx, "CREATE TABLE "+sentinelTable+" (n bigint PRIMARY KEY)")
+	attempts := []Attempt{created}
+	if !created.Accepted {
+		return attempts, fmt.Errorf(
+			"the throwaway namespace %s could not be confirmed: creating the sentinel table was refused (%s)",
+			s.namespace, created.ServerErr)
+	}
+
+	count, asked := s.query(ctx, fmt.Sprintf(
+		"SELECT COUNT(*) FROM information_schema.tables WHERE table_name = '%s' AND table_schema = '%s'",
+		sentinelTable, s.namespace))
+	attempts = append(attempts, asked)
+	dropped := s.exec(ctx, "DROP TABLE "+sentinelTable)
+	attempts = append(attempts, dropped)
+
+	if !asked.Accepted {
+		return attempts, fmt.Errorf(
+			"the throwaway namespace %s could not be confirmed: the catalog would not say where the sentinel table landed (%s)",
+			s.namespace, asked.ServerErr)
+	}
+	// The occupancy count is taken on every run rather than only when the
+	// namespace failed, so the decision below is a pure function of two
+	// numbers and can be measured without a server.
+	occupants, counted := s.query(ctx, occupancySQL)
+	attempts = append(attempts, counted)
+	if !counted.Accepted {
+		return attempts, fmt.Errorf(
+			"the throwaway namespace %s could not be confirmed: the catalog would not say what else is on this server (%s)",
+			s.namespace, counted.ServerErr)
+	}
+	return attempts, namespaceProblem(s.namespace, count, occupants)
+}
+
+// occupancySQL counts the tables on the server that are not the catalog's own.
+// The sentinel is dropped before this runs, so a server the probe has to itself
+// counts zero.
+const occupancySQL = "SELECT COUNT(*) FROM information_schema.tables " +
+	"WHERE table_schema NOT IN ('information_schema', 'pg_catalog', 'spanner_sys', " +
+	"'mysql', 'performance_schema', 'sys')"
+
+// namespaceProblem decides whether a run may proceed, from where the sentinel
+// landed and what else is on the server.
+//
+// A namespace that applies is the whole answer and the server's contents are
+// none of the probe's business. A namespace that does not apply is survivable
+// on a server this run has to itself and on no other: the objects will land
+// beside whatever is already there, outlive the run, and be read by the next
+// run as findings.
+//
+// It is deliberately one run per server rather than a cleanup pass. The run's
+// own leftovers make the NEXT run refuse, which is the same protection arriving
+// one step later -- where a cleanup pass that missed an object would instead
+// hand it over silently.
+func namespaceProblem(namespace string, sentinelInNamespace, occupants int64) error {
+	if sentinelInNamespace == 1 {
+		return nil
+	}
+	if occupants > 0 {
+		return fmt.Errorf(
+			"the throwaway namespace %s was entered but does not apply, and this server already holds %d table(s): "+
+				"objects this run creates would land beside them and be read as findings by the next run. "+
+				"Point the probe at a server of its own",
+			namespace, occupants)
+	}
+	return nil
+}
+
 // newNamespace returns a fresh identifier no other run will collide with. The
 // machine this is developed on routinely has forty containers and several
 // agents pointed at the same server, and a fixed name turns another run's

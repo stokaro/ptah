@@ -116,6 +116,11 @@ type Report struct {
 	Control Attempt
 	// Namespace is the throwaway schema or database the run used.
 	Namespace string
+	// Namespaced records the statements that proved the namespace applies.
+	// Entering one is not evidence that it governs where objects land, and a
+	// namespace that silently does not apply is how one run's leftovers become
+	// the next run's findings.
+	Namespaced []Attempt
 	// Cleanup records the teardown statements.
 	Cleanup []Attempt
 }
@@ -334,6 +339,12 @@ func measure(ctx context.Context, pinned *dbschema.DatabaseConnection, report *R
 	defer func() {
 		report.Cleanup = append(s.dropRoles(ctx), s.exec(ctx, leave))
 	}()
+
+	confirmations, err := s.confirmNamespace(ctx)
+	report.Namespaced = confirmations
+	if err != nil {
+		return err
+	}
 
 	report.Control = s.exec(ctx, nonsenseControl)
 	observations, attempts := runPlan(ctx, s, dialectPlan)
