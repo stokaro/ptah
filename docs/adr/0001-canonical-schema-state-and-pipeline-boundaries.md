@@ -4,7 +4,8 @@
 - Deciders: Ptah maintainers
 - Issue: [#1349](https://github.com/stokaro/ptah/issues/1349), under [#1343](https://github.com/stokaro/ptah/issues/1343)
 - Supersedes: nothing
-- Prototype: [#1350](https://github.com/stokaro/ptah/issues/1350)
+- Prototype: [#1350](https://github.com/stokaro/ptah/issues/1350), reported in
+  [the canonical-pipeline prototype](../canonical_pipeline_prototype.md)
 
 ## 1. Context
 
@@ -631,6 +632,19 @@ migration. The benchmark in section 10 is where that stops being acceptable.
 **Rejected.** Nothing in this ADR moves a package for naming consistency, and
 nothing stabilizes a public API. Both are #1349 non-goals and both remain
 non-goals after it.
+
+**Revised by the prototype.** Two decisions were corrected by what #1350
+measured, and the corrections are recorded in
+[the canonical-pipeline prototype](../canonical_pipeline_prototype.md) rather
+than by editing the text above:
+
+- Invariant 2 is not about identifiers. Any value where a comparison folds and a
+  renderer emits needs both the source spelling and the folded one — a
+  referential action as much as a name component.
+- Decision 10 conflates two concepts. "Which objects a description declines to
+  describe" and "which families a reader looked at" are different questions, and
+  `coverage.Set` answers only the first: its kind list is closed and contains no
+  tables, columns or constraints, because their absence is never ambiguous.
 
 **Open.** D5 assumes #1346 will not contradict the shape `coverage.Set` and
 `capability.Capabilities` already have, and section 9's dialect claims assume
