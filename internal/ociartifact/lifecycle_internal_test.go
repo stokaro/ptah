@@ -1,12 +1,13 @@
 package ociartifact
 
-// The merge below is white-box on purpose. Reaching it from outside the package
-// means driving DiscoverReferrersFrom with a repository that answers BOTH
-// discovery mechanisms, and a durable referrer is only accepted when its tag
-// name, its subject and its manifest all agree — so a black-box fixture would
-// have to reconstruct durableReferrerTag by hand and would then be asserting
-// against its own copy of the rule rather than against the rule. The provenance
-// decision is what these tests are about, and it is pure.
+// White-box testing required: mergeDiscovered assigns the provenance the
+// inspect surface reports, and reaching it from outside the package means
+// driving DiscoverReferrersFrom with a repository that answers BOTH discovery
+// mechanisms. A durable referrer is accepted only when its tag name, its
+// subject and its manifest all agree, so a black-box fixture would have to
+// reconstruct durableReferrerTag by hand and would then assert against its own
+// copy of the rule rather than against the rule. The decision under test is
+// pure; the setup around it would not be.
 
 import (
 	"strings"

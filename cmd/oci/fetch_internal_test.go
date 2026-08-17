@@ -1,10 +1,10 @@
 package oci
 
-// selectReferrer and selectPayload are the whole point of the fetch verb and
-// they are pure, so they are tested here rather than through a live registry.
-// The rule they encode — never choose between candidates — is the one
-// stokaro/ptah#1143 asked for, and a test that had to publish two referrers to
-// a real registry to check it would not be run often enough to hold it.
+// White-box testing required: selectReferrer and selectPayload carry the rule
+// the fetch verb exists to keep — never choose between candidates — and both
+// are unexported because neither is a registry operation. Reaching them from
+// outside would mean publishing two referrers to a live registry per case, and
+// a guard that expensive is a guard that stops being run.
 
 import (
 	"strings"

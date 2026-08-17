@@ -1,9 +1,10 @@
 package oci
 
-// summarizeDiscovery is pure and is the sentence an operator reads to decide
-// whether their referrers are discoverable by anything other than Ptah, so it
-// is tested directly rather than through a registry that would have to be made
-// to answer one mechanism and not the other.
+// White-box testing required: summarizeDiscovery is the sentence an operator
+// reads to decide whether their referrers are discoverable by anything other
+// than Ptah, and newInspectRecord is the mapping behind it. Both are
+// unexported, and reaching them from outside would need a registry rigged to
+// answer one discovery mechanism and not the other.
 
 import (
 	"strings"
