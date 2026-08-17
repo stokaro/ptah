@@ -21,9 +21,24 @@ on:
 permissions:
   contents: read
 
+# Serialize the DEPLOYMENT, not the validation.
+#
+# The group used to be the constant `docs-pages`, so every pull request and
+# every master push competed for one slot. `cancel-in-progress: false` protects
+# a run that has already STARTED; it does nothing for one still queued, and a
+# queued run superseded by a newer one ends as cancelled with zero jobs. A
+# cancelled run with no jobs does not appear in the pull request's check rollup
+# at all -- so a documentation-only pull request was green on every check while
+# the only gate governing the files it changed never ran, and nothing about the
+# page said so (stokaro/ptah#1652).
+#
+# GitHub Pages genuinely needs one deploy at a time, which is what the `deploy`
+# slot keeps. A pull request running three Node scripts needs nothing of the
+# sort, and gets one group per ref: a new push to the same branch supersedes its
+# own earlier run, which is what cancellation should mean here.
 concurrency:
-  group: docs-pages
-  cancel-in-progress: false
+  group: docs-pages-${{ github.event_name == 'pull_request' && github.ref || 'deploy' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   MAX_DOC_TAG_VERSIONS: ${{ vars.MAX_DOC_TAG_VERSIONS || 10 }}
