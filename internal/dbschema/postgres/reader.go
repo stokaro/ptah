@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 
+	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/reservedrole"
@@ -136,37 +137,9 @@ func (r *Reader) ReadSchema() (*types.DBSchema, error) {
 	}
 	schema.Constraints = constraints
 
-	// Read extensions (PostgreSQL-specific)
-	extensions, err := r.readExtensions()
-	if err != nil {
-		return nil, fmt.Errorf("failed to read extensions: %w", err)
+	if err := r.readCapabilityGatedObjects(schema); err != nil {
+		return nil, err
 	}
-	schema.Extensions = extensions
-
-	// Read functions (PostgreSQL-specific)
-	functions, err := r.readFunctions()
-	if err != nil {
-		return nil, fmt.Errorf("failed to read functions: %w", err)
-	}
-	schema.Functions = functions
-
-	views, err := r.readViews()
-	if err != nil {
-		return nil, fmt.Errorf("failed to read views: %w", err)
-	}
-	schema.Views = views
-
-	matViews, err := r.readMaterializedViews()
-	if err != nil {
-		return nil, fmt.Errorf("failed to read materialized views: %w", err)
-	}
-	schema.MatViews = matViews
-
-	triggers, err := r.readTriggers()
-	if err != nil {
-		return nil, fmt.Errorf("failed to read triggers: %w", err)
-	}
-	schema.Triggers = triggers
 
 	if r.caps.Has(capability.Sequences) {
 		// Read standalone sequences (PostgreSQL-specific)
@@ -1637,6 +1610,22 @@ func splitPostgresIndexColumns(value string) []string {
 
 // readConstraints reads all constraints
 func (r *Reader) readConstraints() ([]types.DBConstraint, error) {
+	// A server without pg_catalog cannot answer either half below: the basic
+	// read is anchored in pg_constraint and aggregates with FILTER, and the
+	// second reads pg_constraint directly. The SQL-standard catalog answers the
+	// same question with different joins (stokaro/ptah#942).
+	if !r.caps.Has(capability.PostgresCatalogFunctions) {
+		var constraints []types.DBConstraint
+		for _, schemaName := range r.schemasToRead() {
+			schemaConstraints, err := r.readInformationSchemaConstraints(schemaName)
+			if err != nil {
+				return nil, err
+			}
+			constraints = append(constraints, schemaConstraints...)
+		}
+		return constraints, nil
+	}
+
 	// First, read basic constraint information from information_schema
 	basicConstraints, err := r.readBasicConstraints()
 	if err != nil {
@@ -3286,4 +3275,86 @@ func (r *Reader) readSchemaGrantsForSchema(schemaName string) ([]types.DBGrant, 
 		return nil, fmt.Errorf("failed to read schema grants for schema %s: %w", schemaName, err)
 	}
 	return grants, nil
+}
+
+// readAllViews reads views from whichever catalog the server has. A view is not
+// an object kind a preset rules out -- every dialect this reader serves has
+// views -- so the choice is which catalog can answer, not whether to ask.
+func (r *Reader) readAllViews() ([]types.DBView, error) {
+	if r.caps.Has(capability.PostgresCatalogFunctions) {
+		return r.readViews()
+	}
+	var views []types.DBView
+	for _, schemaName := range r.schemasToRead() {
+		schemaViews, err := r.readInformationSchemaViews(schemaName)
+		if err != nil {
+			return nil, err
+		}
+		views = append(views, schemaViews...)
+	}
+	return views, nil
+}
+
+// readCapabilityGatedObjects reads the object kinds whose presence a capability
+// preset decides, so ReadSchema states the order and this states the gates.
+//
+// Splitting them apart is not only tidiness: four gates inline pushed
+// ReadSchema past the cognitive-complexity limit, and the reads they guard are
+// one idea -- ask only for what this server can have.
+func (r *Reader) readCapabilityGatedObjects(schema *types.DBSchema) error {
+	// Extensions are pg_extension, and pg_catalog is where that lives. A server
+	// without it has no extension mechanism to describe -- but this read cannot
+	// prove that, only that it could not look, so the kind is recorded as not
+	// described. The comparator then withholds rather than concluding an
+	// extension is missing from a read that never asked (stokaro/ptah#942).
+	if r.caps.Has(capability.PostgresCatalogFunctions) {
+		extensions, err := r.readExtensions()
+		if err != nil {
+			return fmt.Errorf("failed to read extensions: %w", err)
+		}
+		schema.Extensions = extensions
+	} else {
+		schema.NotDescribed = schema.NotDescribed.WithKind(coverage.Extension)
+	}
+
+	// Three object kinds a preset can rule out entirely, read only where it
+	// does not. This is the gate readSequences, readRLSPolicies and
+	// readRolesInto already carry, and it needs no not-described marker for the
+	// same reason they do not: a server whose preset says it has no triggers
+	// HAS none, so reporting none is the truth rather than a read that did not
+	// look. Each of these reads is a pg_proc/pg_matviews/pg_trigger query, so
+	// without the gate a server that has neither the objects nor the catalog
+	// failed the whole read asking whether objects exist that its own preset
+	// already says cannot.
+	if r.caps.Has(capability.Functions) {
+		functions, err := r.readFunctions()
+		if err != nil {
+			return fmt.Errorf("failed to read functions: %w", err)
+		}
+		schema.Functions = functions
+	}
+
+	views, err := r.readAllViews()
+	if err != nil {
+		return fmt.Errorf("failed to read views: %w", err)
+	}
+	schema.Views = views
+
+	if r.caps.Has(capability.MaterializedViews) {
+		matViews, err := r.readMaterializedViews()
+		if err != nil {
+			return fmt.Errorf("failed to read materialized views: %w", err)
+		}
+		schema.MatViews = matViews
+	}
+
+	if r.caps.Has(capability.Triggers) {
+		triggers, err := r.readTriggers()
+		if err != nil {
+			return fmt.Errorf("failed to read triggers: %w", err)
+		}
+		schema.Triggers = triggers
+	}
+
+	return nil
 }
