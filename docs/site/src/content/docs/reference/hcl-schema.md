@@ -89,7 +89,7 @@ for the message and the flag it names.
 | `index` | `columns`, `on { column = ... }`, `on { expr = ... }`, `desc`, `on { nulls_first = ... }` or `on { nulls_last = ... }`, `unique`, `type`, `where`, `comment`, ClickHouse `granularity`, and PostgreSQL include/storage options. |
 | `constraint` | Ptah block used when annotation metadata cannot fit the Atlas-native constraint blocks, and for `EXCLUDE` constraints. |
 | `unique` | `columns`; PostgreSQL also supports `include` and `nulls_distinct`. |
-| `foreign_key` | One local `columns` entry and one table-qualified `ref_columns` entry. |
+| `foreign_key` | One local `columns` entry and one table-qualified `ref_columns` entry, plus optional `on_delete`, `on_update`, `deferrable` and `initially`. |
 | `check` | `expr`. |
 | `enum` | `values`, plus the `schema` that owns the type. A PostgreSQL enum is created in that schema and a column declared against it is qualified with it. |
 | `extension` | PostgreSQL installation `schema`, `if_not_exists`, `version`, and comments. |

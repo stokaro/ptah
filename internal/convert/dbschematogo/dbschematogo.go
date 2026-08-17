@@ -171,6 +171,8 @@ func convertTablesAndFields(
 				field.Foreign = fk.foreign
 				field.ForeignKeyName = fk.name
 				field.OnDelete = fk.onDelete
+				field.Deferrable = fk.deferrable
+				field.Initially = fk.initially
 				field.OnUpdate = fk.onUpdate
 			}
 
@@ -538,6 +540,8 @@ func convertConstraint(dbConstraint dbschematypes.DBConstraint, tableStructNames
 		ForeignColumns:  dbConstraint.ForeignColumnsOrDefault(),
 		OnDelete:        derefString(dbConstraint.DeleteRule),
 		OnUpdate:        derefString(dbConstraint.UpdateRule),
+		Deferrable:      dbConstraint.Deferrable,
+		Initially:       dbConstraint.Initially,
 		// The index backing this constraint is dropped above so the constraint
 		// renders once; what that index needed does not go with it.
 		RequiresExtensions: slices.Clone(dbConstraint.RequiresExtensions),
@@ -769,6 +773,11 @@ type foreignKeyInfo struct {
 	foreign  string // "table(column)" reference
 	onDelete string // ON DELETE action (NO ACTION normalized away later)
 	onUpdate string // ON UPDATE action
+	// deferrable and initially carry the deferral the catalog reported, so a
+	// single-column foreign key read back off a live server keeps the property
+	// the schema declared (stokaro/ptah#1624).
+	deferrable bool
+	initially  string
 }
 
 type tableMemberKey struct {
@@ -796,10 +805,12 @@ func indexForeignKeysByColumn(dbSchema *dbschematypes.DBSchema) map[tableMemberK
 			foreign = foreignTable + "(" + foreignColumn + ")"
 		}
 		result[tableMemberKey{table: c.QualifiedTableName(), member: c.ColumnName}] = foreignKeyInfo{
-			name:     c.Name,
-			foreign:  foreign,
-			onDelete: derefString(c.DeleteRule),
-			onUpdate: derefString(c.UpdateRule),
+			name:       c.Name,
+			foreign:    foreign,
+			onDelete:   derefString(c.DeleteRule),
+			onUpdate:   derefString(c.UpdateRule),
+			deferrable: c.Deferrable,
+			initially:  c.Initially,
 		}
 	}
 	return result

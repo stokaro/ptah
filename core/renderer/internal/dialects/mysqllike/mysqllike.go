@@ -908,6 +908,17 @@ func (r *Renderer) renderForeignKeyConstraint(constraint *ast.ConstraintNode) (s
 	if ref.OnUpdate != "" {
 		result += fmt.Sprintf(" ON UPDATE %s", ref.OnUpdate)
 	}
+	if ref.Deferrable || ref.Initially != "" {
+		// Neither engine parses the clause at all: measured, `DEFERRABLE
+		// INITIALLY DEFERRED` on a foreign key is error 1064 on MySQL 8.4.11
+		// and on MariaDB 11.8.8. Rendering the constraint without it would
+		// produce one that rejects exactly the writes the author deferred the
+		// check for, at apply time on data rather than here on a line of DDL
+		// (stokaro/ptah#1624).
+		return "", fmt.Errorf(
+			"%w: %s does not support DEFERRABLE foreign keys; constraint %q declares one",
+			ptaherr.ErrUnsupportedFeature, r.dialect, constraint.Name)
+	}
 
 	return result, nil
 }

@@ -57,7 +57,12 @@ current schema IR:
 - `unique` blocks with `columns`; PostgreSQL unique constraints also support
   `include` and `nulls_distinct`
 - `foreign_key` blocks with one local `columns` entry and one table-qualified
-  `ref_columns` entry
+  `ref_columns` entry, plus optional `on_delete`, `on_update`, `deferrable` and
+  `initially`. The last two are Ptah's own: the community binary plans no
+  `DEFERRABLE` for a file that writes them, so nothing about drop-in fidelity
+  changes for a document that does not. A target whose capability set lacks
+  `deferrable_constraints` refuses the constraint by name rather than rendering
+  it without the clause
 - `check` blocks with `expr`
 - `default = sql("...")` as a default expression
 - `row_security` blocks inside `table` with `enabled = true` and an optional
