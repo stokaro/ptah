@@ -78,7 +78,7 @@ func validateRule(rule Rule) error {
 		return fmt.Errorf("rule %s title is required", rule.Code)
 	}
 	switch rule.Severity {
-	case SeverityWarning, SeverityError:
+	case SeverityInfo, SeverityWarning, SeverityError:
 	default:
 		return fmt.Errorf("rule %s has unsupported severity %q", rule.Code, rule.Severity)
 	}

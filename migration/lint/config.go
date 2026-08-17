@@ -124,7 +124,7 @@ func validateRuleConfigs(configs map[string]RuleConfig) error {
 			return invalidRuleSelectorError(code)
 		}
 		switch rule.Severity {
-		case "", SeverityWarning, SeverityError:
+		case "", SeverityInfo, SeverityWarning, SeverityError:
 		default:
 			return fmt.Errorf("rule %s has unsupported severity %q", code, rule.Severity)
 		}
