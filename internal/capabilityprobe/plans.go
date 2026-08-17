@@ -266,12 +266,15 @@ func postgresFamilyPlan(dialect string) plan {
 		// that is the parameter Ptah models: the server rewrites an interval
 		// on the way in, which is why internal/crdbttl refuses the other
 		// enabler instead of modeling it.
-		acceptanceNote(capability.RowLevelTTL, nil,
+		storedRowTTL(nil,
 			"CREATE TABLE ttlp (id int PRIMARY KEY, expires_at TIMESTAMPTZ) "+
 				"WITH (ttl_expiration_expression = 'expires_at')",
-			"a table storage parameter declaring row expiry; PostgreSQL 18.4 answers "+
-				"`unrecognized parameter \"ttl_expiration_expression\"`, and YugabyteDB "+
-				"2026.1 warns that it is ignoring the parameter before refusing",
+			`SELECT COUNT(*)
+			 FROM pg_catalog.pg_class AS c
+			 JOIN pg_catalog.pg_namespace AS n ON n.oid = c.relnamespace
+			 WHERE n.nspname = current_schema()
+			   AND c.relname = 'ttlp'
+			   AND array_to_string(c.reloptions, ',') LIKE '%ttl_expiration_expression%'`,
 		),
 	}
 	return plan{experiments: experiments, undecided: map[capability.Capability]string{}}

@@ -296,6 +296,13 @@ const (
 	// which is exactly why a declaration reaching an engine without this key
 	// is refused by Ptah rather than left to the server (stokaro/ptah#1027).
 	//
+	// Acceptance alone does NOT decide this key, and the Spanner PostgreSQL
+	// interface is what proved it: through PGAdapter it accepts the same
+	// CREATE TABLE at exit 0 while having no such feature. So the probe reads
+	// pg_class.reloptions back and decides on whether the policy was STORED —
+	// the same distinction capability.MaterializedViews draws for MySQL, where
+	// CREATE MATERIALIZED VIEW is parsed and the word discarded.
+	//
 	// What the key promises is the surface [go.5x5.cz/ptah/internal/crdbttl]
 	// models, not every parameter the engine spells. The two whose values the
 	// server rewrites on the way in are refused there, and that refusal is

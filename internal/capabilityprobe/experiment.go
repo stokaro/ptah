@@ -316,3 +316,52 @@ func storedResult(key capability.Capability, setup []string, create, read, mutat
 		},
 	}
 }
+
+// storedRowTTL decides capability.RowLevelTTL by whether the policy the CREATE
+// TABLE asked for is actually STORED, not by whether the statement was accepted.
+//
+// Acceptance is the wrong test here, and the Spanner PostgreSQL interface is
+// what proved it: through PGAdapter it accepts
+// `CREATE TABLE ... WITH (ttl_expiration_expression = 'expires_at')` at exit 0
+// while having no such feature, so an acceptance probe recorded support that
+// does not exist and disagreed with a preset that was right. This is the same
+// shape capability.MaterializedViews documents for MySQL, where
+// CREATE MATERIALIZED VIEW is parsed and the word dropped.
+//
+// The verdict therefore comes from the catalog: the table is created, and
+// pg_class.reloptions is asked whether it carries the parameter. Measured on
+// CockroachDB v25.4.14 and v26.2.5, it reports
+// `{ttl='on',ttl_expiration_expression='expires_at',...}`; a server that parsed
+// the clause and discarded it reports nothing, which is the answer this key
+// needs.
+//
+// An inspection the server refuses is undecidable rather than false: a target
+// without pg_class cannot say whether the policy took effect, and guessing
+// either way would put an unmeasured row in the report.
+func storedRowTTL(setup []string, create, inspect string) experiment {
+	return experiment{
+		decides: []capability.Capability{capability.RowLevelTTL},
+		setup:   setup,
+		decide: func(ctx context.Context, s *session) (verdicts, []Attempt) {
+			created := s.exec(ctx, create)
+			attempts := []Attempt{created}
+			if !created.Accepted {
+				return verdicts{capability.RowLevelTTL: decided(false)}, attempts
+			}
+
+			stored, inspected := s.query(ctx, inspect)
+			attempts = append(attempts, inspected)
+			if !inspected.Accepted {
+				return verdicts{capability.RowLevelTTL: cannotDecide(
+					"the table was created but reading its storage parameters back with %q failed (%s), "+
+						"so the run cannot tell whether the row-expiry policy took effect",
+					collapse(inspected.Statement), collapse(inspected.ServerErr),
+				)}, attempts
+			}
+			return verdicts{capability.RowLevelTTL: annotated(stored == 1,
+				"decided by whether pg_class.reloptions reports the parameter back, because a server that "+
+					"parses the WITH clause and discards it also accepts the CREATE TABLE",
+			)}, attempts
+		},
+	}
+}
