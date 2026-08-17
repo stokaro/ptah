@@ -187,6 +187,17 @@ amounts of work: the existing one compares every object family and plans whole
 tables, the prototype compares one family. A like-for-like number needs the
 whole model, which is what the per-family migration produces.
 
+## Follow-up migration
+
+The per-family issues #1350 asks for, each with its own adapter deletion
+criteria:
+
+| Issue | Families | Retires |
+| --- | --- | --- |
+| [#1662](https://github.com/stokaro/ptah/issues/1662) | Tables and columns | Both `internal/convert` direction packages, and the planner's second parameter |
+| [#1663](https://github.com/stokaro/ptah/issues/1663) | Indexes and the remaining constraint kinds | `objectidentity.ConstraintPartsVerbatim`, the planners' constraint host keys, and the single-column uniqueness limitation below |
+| [#1664](https://github.com/stokaro/ptah/issues/1664) | The schema-scoped families | `core/goschema` parse-time keys, the third and fourth `tableMemberKey` copies, and routine overload identity |
+
 ## What this does not do
 
 - No object family other than foreign keys, and none of the surrounding
