@@ -67,6 +67,14 @@ func (p *parser) tableColumnFromExprAt(expr hclsyntax.Expression, depth int) (ta
 		return p.tableColumnFromExprAt(branch, depth+1)
 	}
 	if traversal, diags := hcl.AbsTraversalForExpr(expr); !diags.HasErrors() {
+		// An iteration bound by an enclosing dynamic block is a VALUE to
+		// evaluate, not a table.column pair to read out of source text. The two
+		// are the same shape -- `index.value` and `users.id` both parse as a
+		// two-step traversal -- so the root name is what tells them apart
+		// (stokaro/ptah#1636).
+		if p.dynamicIteratorRoot(traversal.RootName()) {
+			return "", p.evaluatedColumnName(expr)
+		}
 		return tableColumnFromTraversal(traversal)
 	}
 	// The quoted-string spelling, `column = "n"`. It is read from source text
@@ -232,4 +240,17 @@ func qualifiedTableColumn(parts []string) (table, column string) {
 		return tableref.Canonical(tableParts[0], tableParts[1]), parts[len(parts)-1]
 	}
 	return "", ""
+}
+
+// evaluatedColumnName evaluates an expression rooted at a dynamic iterator and
+// returns the column name it produced, or "" when it produced anything other
+// than a known non-empty string. The caller turns "" into the same refusal an
+// unreadable reference gets, so a for_each over the wrong kind of collection
+// fails rather than putting a rendered cty value into DDL.
+func (p *parser) evaluatedColumnName(expr hclsyntax.Expression) string {
+	value, diags := expr.Value(p.ctx)
+	if diags.HasErrors() || value.IsNull() || !value.IsKnown() || value.Type() != cty.String {
+		return ""
+	}
+	return value.AsString()
 }
