@@ -148,7 +148,7 @@ func ParseWithOptions(data []byte, filename string, opts Options) (*goschema.Dat
 	// The evaluation context is built from the file's own variable and locals
 	// blocks, so it has to exist before any attribute is read -- including the
 	// sql() arguments the next guard evaluates.
-	ctx, err := newEvalContext(body, opts.Vars, opts.VarValues)
+	ctx, err := newEvalContext(body, opts.Vars, opts.VarValues, p.printLine)
 	if err != nil {
 		return nil, err
 	}
@@ -166,9 +166,16 @@ func ParseWithOptions(data []byte, filename string, opts Options) (*goschema.Dat
 	if err := p.rejectUnresolvedExprs(body); err != nil {
 		return nil, err
 	}
+	// The walk is the one pass whose evaluations are the document's own. The two
+	// guards above evaluate every expression as well, to refuse a malformed
+	// sql() call and an unresolved var. reference before either can reach DDL,
+	// and a `print` call would otherwise fire once per pass -- three lines for
+	// one call. That binary prints one (stokaro/ptah#1627).
+	p.emitting = true
 	if err := p.parseBody(body); err != nil {
 		return nil, err
 	}
+	p.emitting = false
 	// After the walk, because a reference may name a block declared further
 	// down the file, and before Finalize, which reads schemas off the same
 	// blocks for the positions it covers.
@@ -269,6 +276,10 @@ type parser struct {
 	// only be read once every table block is known; see
 	// [parser.resolveDocumentTableRefs].
 	pendingForeignRefs []pendingForeignRef
+	// emitting is true only during the body walk, which is the pass whose
+	// evaluations produce the document. See [parser.printLine].
+	emitting bool
+
 	// dynamicIterators names the iteration roots bound by the dynamic blocks
 	// currently being expanded, outermost first. See [parser.expandDynamic].
 	dynamicIterators []string
@@ -2139,4 +2150,14 @@ func normalizeIdentityGeneration(value string) string {
 	default:
 		return ""
 	}
+}
+
+// printLine is what the `print` function writes through. It drops everything
+// outside the body walk, so the guards that evaluate every expression ahead of
+// the walk do not each produce their own copy of the line.
+func (p *parser) printLine(line string) {
+	if !p.emitting {
+		return
+	}
+	fmt.Fprintln(printDestination, line)
 }
