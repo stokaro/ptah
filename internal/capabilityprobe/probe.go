@@ -26,6 +26,15 @@ const (
 	Agrees Outcome = "AGREES"
 	// Disagrees: the server was measured and does not. This is a failure.
 	Disagrees Outcome = "DISAGREES"
+	// Conservative: the server was measured, it does MORE than the preset
+	// claims, and the cell declares that understatement on purpose. It is not a
+	// failure: Ptah emitting less than the server accepts costs a capability,
+	// where the opposite costs correctness.
+	//
+	// Only that direction can be declared. A preset claiming more than the
+	// server does stays a failure whatever the cell says, because no reason
+	// makes DDL the server refuses acceptable to emit.
+	Conservative Outcome = "CONSERVATIVE"
 	// Undecidable: this run did not establish what the server does, or
 	// established it and cannot credit it to this release line. Reason is
 	// always populated and it never counts as agreement.
@@ -62,7 +71,10 @@ type Row struct {
 // independent of Outcome, so a contradiction observed on a line the matrix
 // cannot credit is still visible instead of vanishing into UNDECIDABLE.
 func (r Row) Mismatch() bool {
-	return r.Observed && r.ServerDoes != r.PresetSays
+	// A declared understatement is a difference and not a mismatch: the cell
+	// says the preset claims less than the server on purpose, so reporting it
+	// here would fail a run for a decision somebody made and wrote down.
+	return r.Observed && r.ServerDoes != r.PresetSays && r.Outcome != Conservative
 }
 
 // Report is one probe run.
@@ -138,7 +150,7 @@ func (r *Report) Count(outcome Outcome) int {
 
 // Decided returns how many rows this run actually decided.
 func (r *Report) Decided() int {
-	return r.Count(Agrees) + r.Count(Disagrees)
+	return r.Count(Agrees) + r.Count(Disagrees) + r.Count(Conservative)
 }
 
 // Mismatches returns every row whose observation contradicts the preset,
@@ -494,20 +506,29 @@ func assemble(report *Report, observations map[capability.Capability]observation
 		default:
 			row.Observed = true
 			row.ServerDoes = obs.does
-			row.Outcome = outcomeFor(row, unattributable)
+			row.Outcome = outcomeFor(row, unattributable, report.Cell.Understates)
 			row.Reason = unattributable
+			if row.Outcome == Conservative {
+				row.Reason = report.Cell.Understates[key]
+			}
 		}
 		rows = append(rows, row)
 	}
 	return rows
 }
 
-func outcomeFor(row Row, unattributable string) Outcome {
+func outcomeFor(row Row, unattributable string, understated map[capability.Capability]string) Outcome {
 	if unattributable != "" {
 		return Undecidable
 	}
 	if row.ServerDoes == row.PresetSays {
 		return Agrees
+	}
+	// The declaration is read only in the safe direction. A cell that declared
+	// a key the preset OVERstates would otherwise silence exactly the finding
+	// this whole probe exists to produce.
+	if _, declared := understated[row.Capability]; declared && row.ServerDoes && !row.PresetSays {
+		return Conservative
 	}
 	return Disagrees
 }

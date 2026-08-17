@@ -872,3 +872,44 @@ func TestCells_AVersionlessDialectDeclaresExactlyOneLine(t *testing.T) {
 		qt.Commentf("a new versionless dialect needs the attribution reasoning re-read, not just the flag"))
 	c.Assert(versionless[platform.Spanner], qt.Equals, 1)
 }
+
+// A declared understatement is a claim about a decision, so it has to carry the
+// decision. Two ways it goes stale, both build failures rather than silent
+// weakenings of the probe:
+//
+// A reason nobody wrote makes the declaration indistinguishable from a bug
+// somebody silenced. And a declaration for a key the preset already claims is
+// finished work still standing -- it would sit there licensing an
+// understatement that no longer exists, ready to hide the next real one.
+func TestCells_EveryDeclaredUnderstatementIsStillOne(t *testing.T) {
+	type declaration struct {
+		cell   capabilityprobe.Cell
+		key    capability.Capability
+		reason string
+	}
+
+	var declarations []declaration
+	for _, cell := range capabilityprobe.Cells {
+		for key, reason := range cell.Understates {
+			declarations = append(declarations, declaration{cell: cell, key: key, reason: reason})
+		}
+	}
+
+	c := qt.New(t)
+	c.Assert(declarations, qt.Not(qt.HasLen), 0,
+		qt.Commentf("this test is the only thing holding the mechanism honest; it must not pass vacuously"))
+
+	for _, d := range declarations {
+		t.Run(d.cell.Dialect+" "+string(d.key), func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(strings.TrimSpace(d.reason), qt.Not(qt.Equals), "",
+				qt.Commentf("an understatement with no reason cannot be told from a silenced defect"))
+			c.Assert(d.cell.Measured(), qt.IsTrue,
+				qt.Commentf("a cell with no preset has nothing to understate"))
+			c.Assert(d.cell.Preset().Has(d.key), qt.IsFalse,
+				qt.Commentf("%s already claims %s, so this declaration is stale and would hide the next real difference",
+					d.cell.PresetName, d.key))
+		})
+	}
+}
