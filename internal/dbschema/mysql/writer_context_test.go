@@ -643,8 +643,21 @@ func TestWriterDropAllTables_ReservesAuxiliaryConnectionsBeforeLocking(t *testin
 
 	err := writer.DropAllTables(ctx)
 
+	// Either auxiliary connection may be the one that loses the pool race, and
+	// which one it is says nothing about the behavior under test.
+	//
+	// The two are acquired in sequence from a pool capped at two, so on a host
+	// where the earlier connection has already been returned the view-drop
+	// acquisition takes the free slot and the monitor times out; on one where
+	// it has not, the view-drop acquisition times out first. Both were observed
+	// on CI -- Linux reports the monitor and Windows reported the view-drop --
+	// and pinning either name makes the test assert on scheduling.
+	//
+	// What the test is named for is the line below it: no LOCK TABLES ran. The
+	// alternation still pins that the failure is an auxiliary-connection
+	// acquisition hitting the deadline, so a different error does not pass.
 	c.Assert(err, qt.ErrorMatches,
-		`mysql: acquire metadata-lock monitor connection: context deadline exceeded`,
+		`mysql: acquire (view-drop|metadata-lock monitor) connection: context deadline exceeded`,
 	)
 	c.Assert(recorder.statements(), qt.HasLen, 0)
 }
