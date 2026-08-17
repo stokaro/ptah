@@ -1799,12 +1799,10 @@ func (r *Reader) readBasicConstraintsForSchema(schemaName string) ([]types.DBCon
 func postgresNullsDistinctFromDefinition(definition string) *bool {
 	upper := strings.ToUpper(definition)
 	if strings.Contains(upper, "NULLS NOT DISTINCT") {
-		nullsDistinct := false
-		return &nullsDistinct
+		return new(false)
 	}
 	if strings.Contains(upper, "NULLS DISTINCT") {
-		nullsDistinct := true
-		return &nullsDistinct
+		return new(true)
 	}
 	return nil
 }

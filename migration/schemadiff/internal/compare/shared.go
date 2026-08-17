@@ -123,8 +123,7 @@ func cloneBoolPtr(value *bool) *bool {
 	if value == nil {
 		return nil
 	}
-	clone := *value
-	return &clone
+	return new(*value)
 }
 
 func uniqueStringsPreserveOrder(values []string) []string {
