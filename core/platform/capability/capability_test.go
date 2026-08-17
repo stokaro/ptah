@@ -588,9 +588,23 @@ func TestResolveServerVersionReportsSaturation(t *testing.T) {
 			"cockroachdb 25.5 uses the conservative preset without claiming measurement",
 			"postgres", "CockroachDB CCL v25.5.1 (x86_64-pc-linux-gnu)", capability.CockroachDB25(), false, false, "26.2",
 		},
+		// YugabyteDB gained a ladder in stokaro/ptah#916, and the number it
+		// climbs is the one AFTER the "-YB-" marker: the 15.2 in front of it is
+		// the PostgreSQL compatibility version.
 		{
-			"yugabytedb resolves from the banner, no ladder",
-			"postgres", "PostgreSQL 15.2-YB-2026.1.0.0-b0 on x86_64-pc-linux-gnu", capability.YugabyteDB25(), true, false, "",
+			"yugabytedb on its newest measured line",
+			"postgres", "PostgreSQL 15.2-YB-2026.1.0.0-b0 on x86_64-pc-linux-gnu",
+			capability.YugabyteDB25(), true, false, "2026.1",
+		},
+		{
+			"yugabytedb below the engine swap",
+			"postgres", "PostgreSQL 11.2-YB-2024.2.4.0-b0 on x86_64-pc-linux-gnu",
+			capability.YugabyteDB24(), true, false, "2026.1",
+		},
+		{
+			"yugabytedb past the newest measured line",
+			"postgres", "PostgreSQL 15.12-YB-2027.1.0.0-b0 on x86_64-pc-linux-gnu",
+			capability.YugabyteDB25(), false, true, "2026.1",
 		},
 		{
 			"spanner is intentionally version-free",
@@ -1241,10 +1255,13 @@ func TestResolveServerVersionKeepsAPostgresFamilyDialectOnAGenericBanner(t *test
 			want:    capability.CockroachDB26(),
 		},
 		{
+			// No "-YB-" marker, so the number is PostgreSQL's and not the
+			// product's. The ladder refuses to spend it and takes the
+			// conservative arm (stokaro/ptah#916).
 			name:    "a PostgreSQL engine banner on yugabytedb",
 			dialect: "yugabytedb",
 			version: "PostgreSQL 11.2 on x86_64-pc-linux-gnu",
-			want:    capability.YugabyteDB25(),
+			want:    capability.YugabyteDB24(),
 		},
 		{
 			name:    "a PostgreSQL banner on spanner",

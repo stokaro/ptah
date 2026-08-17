@@ -133,6 +133,13 @@ func clickHousePlan() plan {
 				"CREATE OR REPLACE TRIGGER cort BEFORE INSERT ON cort_t FOR EACH ROW EXECUTE FUNCTION cort_fn()",
 			).decide,
 		},
+		// The SQL-standard spelling, which ClickHouse does not parse. It has
+		// generated columns as `MATERIALIZED <expr>` -- the very setup the next
+		// experiment uses -- so this pair of answers is the reason the registry
+		// carries no implication edge between the two keys.
+		acceptance(capability.GeneratedColumns, nil,
+			t.table("gcx", "n Int64, g Int64 GENERATED ALWAYS AS (n + 1) STORED", "n"),
+		),
 		acceptance(capability.AlterGeneratedColumnExpression,
 			[]string{t.table("agc", "n Int64, g Int64 MATERIALIZED n + 1", "n")},
 			"ALTER TABLE agc MODIFY COLUMN g Int64 MATERIALIZED n + 2",

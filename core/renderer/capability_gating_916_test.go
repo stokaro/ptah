@@ -1,6 +1,8 @@
 package renderer_test
 
 import (
+	"fmt"
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -141,4 +143,90 @@ func TestSQLServerRenderer_DropGuardsFollowTheCapabilitySet(t *testing.T) {
 			c.Assert(indexSQL, qt.Contains, test.wantIndex)
 		})
 	}
+}
+
+// generatedColumnTable916 is the one node the rows below render. The column is
+// declared STORED so that the PostgreSQL renderer's own kind check passes and
+// the only thing left to decide is the capability.
+func generatedColumnTable916() ast.Node {
+	table := ast.NewCreateTable("readings")
+	table.AddColumn(ast.NewColumn("n", "int"))
+	generated := ast.NewColumn("g", "int")
+	generated.GeneratedExpression = "n + 1"
+	generated.GeneratedKind = "STORED"
+	table.AddColumn(generated)
+	return table
+}
+
+// TestGeneratedColumns_RefusedWhereTheTargetHasNone pins the gate
+// stokaro/ptah#916 put on GENERATED ALWAYS AS. Dropping the clause silently
+// would turn a generated column into an ordinary one, which is a different
+// table, so a target without the feature gets a refusal and no output.
+//
+// The PostgreSQL renderer is the one that matters: it serves YugabyteDB, whose
+// 2024 LTS line is still PostgreSQL 11 and answers `syntax error at or near
+// "("`.
+func TestGeneratedColumns_RefusedWhereTheTargetHasNone(t *testing.T) {
+	tests := []struct {
+		name      string
+		dialect   string
+		caps      capability.Capabilities
+		wantError string
+	}{
+		{
+			name:    "postgres 18 emits the clause",
+			dialect: "postgres",
+			caps:    capability.Postgres17(),
+		},
+		{
+			name:    "yugabytedb 2025 and newer emits the clause",
+			dialect: "yugabytedb",
+			caps:    capability.YugabyteDB25(),
+		},
+		{
+			name:      "yugabytedb 2024 refuses it",
+			dialect:   "yugabytedb",
+			caps:      capability.YugabyteDB24(),
+			wantError: "does not support generated columns",
+		},
+		{
+			name:    "sqlite above 3.31 emits the clause",
+			dialect: "sqlite",
+			caps:    capability.SQLite3(),
+		},
+		{
+			name:      "sqlite below the step refuses it",
+			dialect:   "sqlite",
+			caps:      capability.SQLite324(),
+			wantError: "does not support generated columns",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			r, err := renderer.NewRendererWithCapabilities(test.dialect, test.caps)
+			c.Assert(err, qt.IsNil)
+
+			sql, err := r.Render(generatedColumnTable916())
+
+			c.Assert(errorText916(err), qt.Contains, test.wantError)
+			// The arithmetic half: qt.Contains with "" passes on any string, so
+			// without this a row expecting the clause and getting a refusal
+			// would still be green.
+			c.Assert(strings.Contains(sql, "GENERATED ALWAYS AS"), qt.Equals, test.wantError == "",
+				qt.Commentf("err=%v sql=%s", err, sql))
+		})
+	}
+}
+
+// errorText916 keeps the loop body branch-free: a nil error reads as the empty
+// string, which is what the rows expecting output carry in wantError.
+func errorText916(err error) string {
+	texts := map[bool]func() string{
+		true:  func() string { return "" },
+		false: func() string { return fmt.Sprint(err) },
+	}
+	return texts[err == nil]()
 }

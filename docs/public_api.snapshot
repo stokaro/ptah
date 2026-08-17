@@ -5207,6 +5207,7 @@ type Capabilities map[Capability]bool
     func SQLite3() Capabilities
     func SQLite324() Capabilities
     func SpannerPostgres() Capabilities
+    func YugabyteDB24() Capabilities
     func YugabyteDB25() Capabilities
 type Capability string
     const DropConstraintGeneric Capability = "drop_constraint_generic" ...
@@ -5262,6 +5263,7 @@ func SQLServer2022() Capabilities
 func SQLite3() Capabilities
 func SQLite324() Capabilities
 func SpannerPostgres() Capabilities
+func YugabyteDB24() Capabilities
 func YugabyteDB25() Capabilities
 func (c Capabilities) Clone() Capabilities
 func (c Capabilities) EnumModeling() EnumMode
