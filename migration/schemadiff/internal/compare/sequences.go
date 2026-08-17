@@ -9,6 +9,7 @@ import (
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/objectidentity"
 	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
 )
 
@@ -53,18 +54,18 @@ func sequencesWithSemantics(
 	cov Coverage,
 	semantics identifier.Semantics,
 ) {
-	generatedSequences := make(map[tableIdentity]goschema.Sequence, len(generated.Sequences))
-	generatedNames := make(map[tableIdentity]string, len(generated.Sequences))
+	generatedSequences := make(map[objectIdentity]goschema.Sequence, len(generated.Sequences))
+	generatedNames := make(map[objectIdentity]string, len(generated.Sequences))
 	for _, sequence := range generated.Sequences {
-		identity := newTableIdentity(sequence.Schema, sequence.Name, semantics)
+		identity := newObjectIdentity(objectidentity.KindSequence, sequence.Schema, sequence.Name, semantics)
 		generatedSequences[identity] = sequence
 		generatedNames[identity] = sequence.QualifiedName()
 	}
 
-	databaseSequences := make(map[tableIdentity]types.DBSequence, len(database.Sequences))
-	databaseNames := make(map[tableIdentity]string, len(database.Sequences))
+	databaseSequences := make(map[objectIdentity]types.DBSequence, len(database.Sequences))
+	databaseNames := make(map[objectIdentity]string, len(database.Sequences))
 	for _, sequence := range database.Sequences {
-		identity := newTableIdentity(sequence.Schema, sequence.Name, semantics)
+		identity := newObjectIdentity(objectidentity.KindSequence, sequence.Schema, sequence.Name, semantics)
 		databaseSequences[identity] = sequence
 		databaseNames[identity] = sequence.QualifiedName()
 	}

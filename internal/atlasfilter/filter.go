@@ -8,7 +8,9 @@ import (
 	"strings"
 
 	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/platform/identifier"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/objectidentity"
 	"go.5x5.cz/ptah/internal/tableref"
 )
 
@@ -558,15 +560,33 @@ type exclusionState struct {
 	removedGeneratedTables map[string]goschema.Table
 }
 
-type tableIdentity struct {
-	schema string
-	table  string
-}
+// tableIdentity and columnIdentity are the shared identity model's comparison
+// value, under this package's own names.
+//
+// They were two private structs here and two more, shaped the same way, in the
+// comparator. Two copies of "what makes two tables the same table" is how the
+// filter and the comparator come to disagree about one schema: an object the
+// filter believes it excluded stays visible to the comparator, which then plans
+// against it. One model answers both (stokaro/ptah#1345).
+type (
+	tableIdentity  = objectidentity.Key
+	columnIdentity = objectidentity.Key
+)
 
-type columnIdentity struct {
-	table  tableIdentity
-	column string
-}
+// exactIdentities is the folding rule this package compares under, and it folds
+// nothing.
+//
+// An exclude pattern and the schema it is matched against are both written by
+// the same author in the same file, so the spelling that appears in one is the
+// spelling that appears in the other. Folding here would silently widen a
+// pattern past what it says: `--exclude Orders` would take `orders` with it on
+// a target where the two are distinct tables, and the object would leave the
+// schema without ever being named.
+var exactIdentities = objectidentity.NewBuilder(identifier.Semantics{
+	TableNames:  identifier.ComparisonExact,
+	ColumnNames: identifier.ComparisonExact,
+	IndexNames:  identifier.ComparisonExact,
+})
 
 func newExclusionState(patterns []resourcePattern, defaultSchema string) *exclusionState {
 	return &exclusionState{
@@ -1361,13 +1381,13 @@ func (s *exclusionState) tableExcluded(schema, table string) bool {
 }
 
 func (s *exclusionState) excludeSequence(schema, name string) {
-	if key, ok := tableIdentityKey(schema, name); ok {
+	if key, ok := sequenceIdentityKey(schema, name); ok {
 		s.excludedSequences[key] = struct{}{}
 	}
 }
 
 func (s *exclusionState) sequenceExcluded(schema, name string) bool {
-	key, ok := tableIdentityKey(schema, name)
+	key, ok := sequenceIdentityKey(schema, name)
 	if !ok {
 		return false
 	}
@@ -1668,24 +1688,36 @@ func generatedGrantTargets(grant goschema.Grant) []string {
 	}
 }
 
+// tableIdentityKey reports the identity of a table, or that the caller did not
+// name one.
+//
+// An unnamed table is refused rather than keyed as the empty name, because a
+// map holding one would answer "excluded" for every other object that also
+// arrived without a name.
 func tableIdentityKey(schema, table string) (tableIdentity, bool) {
-	table = strings.TrimSpace(table)
-	if table == "" {
+	if strings.TrimSpace(table) == "" {
 		return tableIdentity{}, false
 	}
-	return tableIdentity{
-		schema: strings.TrimSpace(schema),
-		table:  table,
-	}, true
+	return exactIdentities.TableParts(schema, table).Key(), true
+}
+
+// sequenceIdentityKey reports the identity of a sequence.
+//
+// It is separate from [tableIdentityKey] even though both are (schema, name):
+// keeping the kind means a sequence and a table sharing a name are two objects
+// in the model rather than two objects that happen to live in separate maps.
+func sequenceIdentityKey(schema, name string) (tableIdentity, bool) {
+	if strings.TrimSpace(name) == "" {
+		return tableIdentity{}, false
+	}
+	return exactIdentities.SchemaScopedParts(objectidentity.KindSequence, schema, name).Key(), true
 }
 
 func columnIdentityKey(schema, table, column string) (columnIdentity, bool) {
-	tableKey, ok := tableIdentityKey(schema, table)
-	column = strings.TrimSpace(column)
-	if !ok || column == "" {
+	if strings.TrimSpace(table) == "" || strings.TrimSpace(column) == "" {
 		return columnIdentity{}, false
 	}
-	return columnIdentity{table: tableKey, column: column}, true
+	return exactIdentities.ColumnParts(schema, table, column).Key(), true
 }
 
 func splitQualified(value string) (schema, name string) {

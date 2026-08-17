@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/objectidentity"
 )
 
 // projectDatabase applies the schema universe and include selectors to the
@@ -179,10 +180,16 @@ func (s *scopeSelection) keepDatabaseSchemas(db, out *dbschematypes.DBSchema) []
 }
 
 func (s *scopeSelection) tableIdentity(schema, table string) tableIdentity {
-	return tableIdentity{
-		schema: s.effectiveSchema(schema),
-		table:  strings.TrimSpace(table),
-	}
+	return s.tableID(schema, table).Key()
+}
+
+// tableID is [scopeSelection.tableIdentity] for a caller that also has to
+// PRINT the table, which is why the two values are separate: a diagnostic
+// quotes the spelling the catalog reported, and a lookup uses the value
+// equality is decided on. Rendering the comparison value would put this
+// package's normalization into a message about the author's schema.
+func (s *scopeSelection) tableID(schema, table string) objectidentity.ID {
+	return exactIdentities.TableParts(s.effectiveSchema(schema), table)
 }
 
 func (s *scopeSelection) tableKept(kept map[tableIdentity]struct{}, schema, table string) bool {

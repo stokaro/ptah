@@ -15,6 +15,7 @@ import (
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/deporder"
 	"go.5x5.cz/ptah/internal/indexscope"
+	"go.5x5.cz/ptah/internal/objectidentity"
 	"go.5x5.cz/ptah/internal/planner/objectlookup"
 	"go.5x5.cz/ptah/internal/planner/tablelookup"
 	"go.5x5.cz/ptah/internal/tableref"
@@ -578,9 +579,29 @@ type affectedForeignKey struct {
 	ref *ast.ForeignKeyRef
 }
 
-type constraintHostKey struct {
-	table string
-	name  string
+// constraintHostKey is the shared identity model's comparison value for a
+// constraint, under this file's own name.
+//
+// It was a private struct here and a byte-identical one in the PostgreSQL
+// planner. Two copies of "which constraint is this" is how one planner comes to
+// pair a drop with a different constraint than the other does
+// (stokaro/ptah#1345).
+type constraintHostKey = objectidentity.Key
+
+// constraintIdentities folds nothing, which is what the planner requires.
+//
+// Both spellings a host key is built from arrive from the same [types.SchemaDiff],
+// already normalized by the comparator that produced it. Folding again here
+// would apply the rule twice on one side of the pipeline and once on the other,
+// and a drop would then pair with a constraint the comparator never removed.
+// The tightening criterion is the diff carrying its identities rather than its
+// spellings; until then this is the semantics that keeps the two ends agreeing.
+var constraintIdentities = objectidentity.NewBuilder(identifier.Semantics{})
+
+// constraintHost builds a host key from an owning table spelling and a
+// constraint name.
+func constraintHost(table, name string) constraintHostKey {
+	return constraintIdentities.ConstraintPartsVerbatim(table, name).Key()
 }
 
 // columnTypeForeignKeyPlan holds the foreign-key statements the planner emits
@@ -976,10 +997,7 @@ func canonicalConstraintHostKey(
 	name string,
 	semantics identifier.Semantics,
 ) constraintHostKey {
-	return constraintHostKey{
-		table: semantics.QualifiedTableIdentityKey(table),
-		name:  semantics.IndexIdentityKey(name),
-	}
+	return constraintHost(semantics.QualifiedTableIdentityKey(table), semantics.IndexIdentityKey(name))
 }
 
 func (p *Planner) addNewIndexes(
