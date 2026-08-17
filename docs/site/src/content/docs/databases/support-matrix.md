@@ -65,6 +65,7 @@ the declared set cannot say one thing here and another in a workflow file.
 | `cockroachdb` | 25.4 | certified | `CockroachDB25` | yes |
 | `yugabytedb` | 2026.1 | certified | `YugabyteDB25` | yes |
 | `yugabytedb` | 2025.2 | certified | `YugabyteDB25` | yes |
+| `spanner` | 0 | best-effort | `SpannerPostgres` | yes |
 | `clickhouse` | 26.7 | certified | `ClickHouse24` | no |
 | `clickhouse` | 26.3 | best-effort | `ClickHouse24` | no |
 | `clickhouse` | 25.8 | best-effort | `ClickHouse24` | no |
@@ -73,9 +74,8 @@ the declared set cannot say one thing here and another in a workflow file.
 | `sqlserver` | 16.0 (SQL Server 2022) | best-effort | `SQLServer2022` | no |
 | `sqlserver` | 15.0 (SQL Server 2019) | best-effort | `SQLServer2022` | no |
 | `sqlite` | 3 | certified | `SQLite3` | no |
-| `spanner` | 0 | best-effort | `SpannerPostgres` | no |
 
-Declared release lines: 26. Probed on every pull request: 17.
+Declared release lines: 26. Probed on every pull request: 18.
 
 Support levels across the 26 declared lines: 19 certified, 2 legacy-tested, 5 best-effort.
 
@@ -89,10 +89,10 @@ Lines that are declared and not probed, and why:
 - `sqlserver` 16.0 — the capability probe has no statement table for the sqlserver dialect, so a server on this line would be asked nothing.
 - `sqlserver` 15.0 — the capability probe has no statement table for the sqlserver dialect, so a server on this line would be asked nothing.
 - `sqlite` 3 — no container image is declared for this line; the capability probe has no statement table for the sqlite dialect, so a server on this line would be asked nothing.
-- `spanner` 0 — no container image is declared for this line.
 
 Lines whose container tag does not name the line, so which patch it resolves to has to be read off the tag:
 
+- `spanner` 0, pinned as `gcr.io/cloud-spanner-pg-adapter/pgadapter-emulator:v0.55.2`.
 - `sqlserver` 17.0, pinned as `mcr.microsoft.com/mssql/server:2025-latest`.
 - `sqlserver` 16.0, pinned as `mcr.microsoft.com/mssql/server:2022-latest`.
 - `sqlserver` 15.0, pinned as `mcr.microsoft.com/mssql/server:2019-latest`.
@@ -194,15 +194,26 @@ exercise the line, and does the vendor still support it. Both yes is
 is `best-effort`, whatever the vendor says, because certification is a claim
 about Ptah's testing and an untested line has none to make.
 
-Five declared lines are `best-effort` because nothing here exercises them:
-ClickHouse 26.3, ClickHouse 25.8, SQL Server 2022 (16.0), SQL Server 2019
-(15.0), and Spanner. Four of the five sit inside their vendor's support window,
-and Spanner is a managed service with no version axis at all. What none of them
-has is a run in this repository: the capability probe has no statement table for
-the `clickhouse` or `sqlserver` dialects, the only ClickHouse and SQL Server
-versions the integration suite starts are ClickHouse 26.7, ClickHouse 24.10, and
-SQL Server 2025, and no Spanner server exists here ([issue 942](https://github.com/stokaro/ptah/issues/942)). Presence
-in the table is not certification; the `Support` column is the place to read.
+Five declared lines are `best-effort`: ClickHouse 26.3, ClickHouse 25.8, SQL
+Server 2022 (16.0), SQL Server 2019 (15.0), and Spanner. Four of the five sit
+inside their vendor's support window. What four of them lack is a run in this
+repository: the capability probe has no statement table for the `clickhouse` or
+`sqlserver` dialects, and the only ClickHouse and SQL Server versions the
+integration suite starts are ClickHouse 26.7, ClickHouse 24.10, and SQL Server
+2025.
+
+**Spanner is the exception, and it is deliberate.** Its capability rows are
+measured on every pull request, against the Cloud Spanner emulator behind
+PGAdapter — the only Spanner endpoint a container can provide. That run is worth
+having: it catches a preset drifting from the interface. It is not evidence
+about the managed service, and the two already differ measurably — the reference
+says a serial column needs the database option `default_sequence_kind` set
+first, and the emulator accepts one without it. So the line is exercised and
+stays `best-effort`, which is the one place those two answers come apart
+([issue 942](https://github.com/stokaro/ptah/issues/942)).
+
+Presence in the table is not certification; the `Support` column is the place to
+read.
 
 ### Keeping the levels current
 

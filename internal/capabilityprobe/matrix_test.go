@@ -49,10 +49,14 @@ func TestCIMatrix_RunnableCellsCarryEverythingOneJobNeeds(t *testing.T) {
 			c.Assert(cell.Skip, qt.Equals, "")
 			c.Assert(cell.Image, qt.Not(qt.Equals), "")
 			c.Assert(cell.URL, qt.Not(qt.Equals), "")
-			c.Assert(cell.SuiteDatabase, qt.Not(qt.Equals), "",
+			// A cell without a runner target is probe-only by declaration, and
+			// the declaration is what makes that different from a cell whose
+			// target somebody forgot to fill in.
+			suiteDeclared := cell.SuiteSkip == ""
+			c.Assert(cell.SuiteDatabase != "", qt.Equals, suiteDeclared,
 				qt.Commentf("tier 3 runs the integration suite for this cell and needs the runner's own name for it"))
-			c.Assert(cell.SuiteURLEnv, qt.Not(qt.Equals), "")
-			c.Assert(cell.SuiteURL, qt.Not(qt.Equals), "")
+			c.Assert(cell.SuiteURLEnv != "", qt.Equals, suiteDeclared)
+			c.Assert(cell.SuiteURL != "", qt.Equals, suiteDeclared)
 			c.Assert(cell.DockerRun, qt.Contains, cell.Image,
 				qt.Commentf("the docker run arguments must start the image this line declares"))
 			c.Assert(strings.HasPrefix(cell.URL, cell.Dialect+"://"), qt.IsTrue,
@@ -483,4 +487,83 @@ const supportColumn = 2
 // changes the length this returns.
 func markdownCells(row string) []string {
 	return strings.Split(strings.TrimSuffix(strings.TrimPrefix(row, "| "), " |"), " | ")
+}
+
+// A dialect can be capability-measured before the integration runner has a
+// target for it, and the two were one decision until Spanner needed them apart.
+// The declaration is what separates "probe-only on purpose" from "somebody left
+// the runner target blank" (stokaro/ptah#942).
+func TestCIMatrix_ProbeOnlyCellsAreDeclaredAsSuch(t *testing.T) {
+	tests := []struct {
+		name      string
+		id        string
+		wantSuite bool
+	}{
+		{name: "spanner is probe-only", id: "spanner-0", wantSuite: false},
+		{name: "postgres runs the suite too", id: "postgres-18", wantSuite: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			cell, found := capabilityprobe.CIMatrix().Find(tt.id)
+			c.Assert(found, qt.IsTrue)
+			c.Assert(cell.Runnable, qt.IsTrue)
+			c.Assert(cell.SuiteDatabase != "", qt.Equals, tt.wantSuite)
+			c.Assert(cell.SuiteURL != "", qt.Equals, tt.wantSuite)
+			c.Assert(cell.SuiteSkip == "", qt.Equals, tt.wantSuite,
+				qt.Commentf("a cell without a runner target has to say why, and one with a target must not"))
+		})
+	}
+}
+
+// The validator refuses both halves of the contradiction, so neither state can
+// reach a workflow: a cell that declares a target AND a reason for having none,
+// and a cell that declares neither.
+func TestCICell_RefusesAContradictorySuiteDeclaration(t *testing.T) {
+	tests := []struct {
+		name string
+		cell capabilityprobe.CICell
+		want string
+	}{
+		{
+			name: "a target and a reason for having none",
+			cell: capabilityprobe.CICell{
+				ID: "x-1", Dialect: "postgres", Runnable: true,
+				URL: "postgres://x", DockerRun: []string{"postgres:18"},
+				SuiteDatabase: "postgres", SuiteURLEnv: "POSTGRES_URL", SuiteURL: "postgres://x",
+				SuiteSkip: "no target",
+			},
+			want: "declares an integration-runner target and the reason",
+		},
+		{
+			name: "neither a target nor a reason",
+			cell: capabilityprobe.CICell{
+				ID: "x-2", Dialect: "postgres", Runnable: true,
+				URL: "postgres://x", DockerRun: []string{"postgres:18"},
+			},
+			want: "no integration-runner target and says no reason why",
+		},
+		{
+			name: "half a target",
+			cell: capabilityprobe.CICell{
+				ID: "x-3", Dialect: "postgres", Runnable: true,
+				URL: "postgres://x", DockerRun: []string{"postgres:18"},
+				SuiteDatabase: "postgres",
+			},
+			want: "incomplete integration-runner target",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			err := capabilityprobe.Matrix{Cells: []capabilityprobe.CICell{tt.cell}}.Validate()
+
+			c.Assert(err, qt.IsNotNil)
+			c.Assert(err.Error(), qt.Contains, tt.want)
+		})
+	}
 }

@@ -1,14 +1,18 @@
 package capmatrix_test
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/internal/capabilityprobe"
 	"go.5x5.cz/ptah/internal/capmatrix"
 	"go.5x5.cz/ptah/internal/integrationharness"
 )
@@ -101,6 +105,39 @@ func TestRecordSuite_FailurePath(t *testing.T) {
 			c.Assert(recorded.Suite.Error, qt.Matches, tc.expect)
 			c.Assert(recorded.Verdict(), qt.Equals, capmatrix.SuiteFailure)
 			c.Assert(recorded.Reasons(), qt.Contains, recorded.Suite.Error)
+		})
+	}
+}
+
+// The cell's declaration has to reach the result, or the tier 3 exemption stops
+// working with nothing to show for it: a result carrying no reason is a result
+// whose absent suite reads as lost (stokaro/ptah#942).
+func TestRunProbe_CarriesTheSuiteDeclarationIntoTheResult(t *testing.T) {
+	tests := []struct {
+		name      string
+		suiteSkip string
+	}{
+		{name: "a probe-only cell", suiteSkip: "the integration runner has no target for this dialect"},
+		{name: "a cell that runs the suite", suiteSkip: ""},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			// An address nothing listens on: the probe fails fast and the
+			// result is still constructed, which is the half being asserted.
+			cell := capabilityprobe.CICell{
+				ID: "x-1", Dialect: "postgres", Line: "18", Image: "postgres:18",
+				URL:       "postgres://ptah@127.0.0.1:1/ptah_test?sslmode=disable",
+				SuiteSkip: tt.suiteSkip,
+			}
+
+			result := capmatrix.RunProbe(context.Background(), io.Discard, cell, 3, time.Millisecond)
+
+			c.Assert(result.SuiteSkip, qt.Equals, tt.suiteSkip)
+			c.Assert(result.Probe.OK, qt.IsFalse,
+				qt.Commentf("the fixture must fail to connect, or this asserts nothing about the result path"))
 		})
 	}
 }
