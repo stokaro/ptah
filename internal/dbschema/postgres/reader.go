@@ -1104,6 +1104,15 @@ func requiredExtensionsProjection(indclassExpr, accessMethodExpr string) string 
 }
 
 func (r *Reader) readIndexesForSchema(schemaName string) ([]types.DBIndex, error) {
+	// A server without pg_catalog's introspection helpers has no
+	// pg_get_indexdef either, and the query below is pg_index/pg_class/pg_am/
+	// pg_get_indexdef throughout, so there is nothing here to degrade: the read
+	// asks the SQL-standard catalog instead. The capability is the one the
+	// probe already measures on every run, so the branch cannot drift from what
+	// the server actually answers (stokaro/ptah#942).
+	if !r.caps.Has(capability.PostgresCatalogFunctions) {
+		return r.readInformationSchemaIndexes(schemaName)
+	}
 	indexesQuery := `
 		SELECT
 			n.nspname as schemaname,
