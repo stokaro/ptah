@@ -260,11 +260,45 @@ one it has always been, and an unannotated schema exports byte-identically.
   validation of any kind. Re-mapping the exported representation is a separate
   declaration — see [Types in the contract](#types-in-the-contract).
 - It does not sanitize away a format's naming rules. GraphQL still rewrites a
-  name that is not a legal identifier, and still reports having done so.
+  name that is not a legal identifier, and still reports having done so — the
+  per-target names above are how a schema chooses that name deliberately instead
+  of accepting the rewrite.
 - It does not rename the diagnostics you read. A GraphQL or Protobuf diagnostic
   path names the **column**, because that is where you go to change something.
   An OpenAPI diagnostic path names the published names, because that path is a
   coordinate inside the generated document.
+
+### One name per target, where a format requires it
+
+`api_name` answers every target, and that is what a schema normally declares.
+A format's own naming rules are the case it cannot cover: `amountMinor` is
+idiomatic in GraphQL and fails `buf lint` in Protobuf, which wants
+`amount_minor`. Three attributes name one target each, on both the field and
+the table directive:
+
+```go
+//ptah:schema:table name="billing_invoices" api_name="invoices" proto_name="invoice_records"
+type Invoice struct {
+    //ptah:schema:field name="billing_amount_minor" type="INTEGER" api_name="amount" graphql_name="amountMinor" proto_name="amount_minor"
+    AmountMinor int32
+}
+```
+
+Three declarations answer in order — the target's own name, `api_name`, the
+database name — so the ordinary schema declares nothing and exports as it always
+did, a shared alias answers everywhere, and a scoped name changes one export
+without touching the other two. A target that declares none is unaffected by one
+declared for its neighbor.
+
+Collisions are checked per target, because a collision can now exist in one
+export and not in another. The refusal says which export refused, and names both
+attributes that would resolve it:
+
+```text
+table "invoices" exports two columns as "net" in GraphQL: "net_minor" and
+"gross_minor"; give one of them a distinct api_name, or a distinct graphql_name
+for this export only
+```
 
 ### Collisions are refused, not resolved
 

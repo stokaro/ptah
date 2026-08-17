@@ -268,3 +268,149 @@ func TestAPITypeOverridesInlineEnumValues(t *testing.T) {
 		"message Thing {\n  int64 id = 1;\n  string state = 2;\n}")
 	c.Assert(out, qt.Not(qt.Contains), "enum ")
 }
+
+// protoNamedColumn is a column published under a name that applies to the wire
+// only.
+func protoNamedColumn(name, apiName, protoName, columnType string) goschema.Field {
+	return goschema.Field{
+		Name:     name,
+		APIName:  apiName,
+		APINames: goschema.TargetNames{Protobuf: protoName},
+		Type:     columnType,
+	}
+}
+
+// The Protobuf name wins here and is not read by the other two exporters. It
+// exists for the same reason as the GraphQL one -- a format's naming rules --
+// and Protobuf's are strict: `buf lint` wants lower_snake_case, where a GraphQL
+// field is conventionally camelCase.
+func TestFieldPrefersTheProtoName(t *testing.T) {
+	c := qt.New(t)
+
+	out := mustRenderText(c, oneTable(
+		column("id", "BIGINT"),
+		protoNamedColumn("billing_amount_minor", "amountMinor", "amount_minor", "INTEGER"),
+	), baseOptions())
+
+	c.Assert(section(out, "message Thing {"), qt.Equals,
+		"message Thing {\n  int64 id = 1;\n  int32 amount_minor = 2;\n}")
+}
+
+// The compatibility property that makes the Protobuf name the loaded one: the
+// field number is keyed by the published name, so a pinned proto_name absorbs
+// both a column rename and a change to the shared API name.
+func TestRenamingAroundTheProtoNameKeepsTheFieldNumber(t *testing.T) {
+	c := qt.New(t)
+
+	baseline := mustRender(c, oneTable(
+		column("id", "BIGINT"),
+		protoNamedColumn("billing_amount_minor", "amountMinor", "amount_minor", "INTEGER"),
+	), baseOptions())
+
+	republished := mustRenderText(c, oneTable(
+		column("id", "BIGINT"),
+		protoNamedColumn("net_amount_minor", "netAmount", "amount_minor", "INTEGER"),
+	), withPrevious(baseline.Data))
+
+	c.Assert(section(republished, "message Thing {"), qt.Equals,
+		"message Thing {\n  int64 id = 1;\n  int32 amount_minor = 2;\n}")
+}
+
+// And the other side of it: the Protobuf name IS the identity, so changing it
+// retires one consumers hold, and goes through the same policy as changing the
+// shared name.
+func TestRenamingTheProtoNameIsRefusedAsARemoval(t *testing.T) {
+	c := qt.New(t)
+
+	baseline := mustRender(c, oneTable(
+		column("id", "BIGINT"),
+		protoNamedColumn("billing_amount_minor", "amountMinor", "amount_minor", "INTEGER"),
+	), baseOptions())
+
+	_, err := protobufrender.Render(context.Background(), oneTable(
+		column("id", "BIGINT"),
+		protoNamedColumn("billing_amount_minor", "amountMinor", "total_minor", "INTEGER"),
+	), withPrevious(baseline.Data))
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(err.Error(), qt.Contains, "fields removed from Thing: amount_minor")
+}
+
+// protoNamedTable is a table whose message name applies to the wire only.
+func protoNamedTable(name, apiName, protoName string, fields ...goschema.Field) *goschema.Database {
+	return &goschema.Database{
+		Tables: []goschema.Table{{
+			StructName: "Thing", Name: name,
+			APIName:  apiName,
+			APINames: goschema.TargetNames{Protobuf: protoName},
+		}},
+		Fields: columns("Thing", fields...),
+	}
+}
+
+// The table-level scoped name carries the message identity, the same way the
+// field-level one carries the field identity.
+func TestMessageUsesTheProtoName(t *testing.T) {
+	c := qt.New(t)
+
+	out := mustRenderText(c,
+		protoNamedTable("billing_invoices", "invoices", "invoice_records", column("id", "BIGINT")),
+		baseOptions())
+
+	c.Assert(out, qt.Contains, "message InvoiceRecord {")
+	c.Assert(out, qt.Not(qt.Contains), "message Invoice {")
+}
+
+// And it carries the weight that goes with an identity: changing it retires a
+// message consumers hold, through the policy that already exists for the shared
+// name. Protobuf cannot reserve a top-level type name, so the refusal names the
+// two ways out rather than choosing one.
+func TestRenamingTheTableProtoNameIsRefusedAsARemoval(t *testing.T) {
+	c := qt.New(t)
+
+	baseline := mustRender(c,
+		protoNamedTable("billing_invoices", "invoices", "invoice_records", column("id", "BIGINT")),
+		baseOptions())
+
+	_, err := protobufrender.Render(context.Background(),
+		protoNamedTable("billing_invoices", "invoices", "invoice_archive", column("id", "BIGINT")),
+		withPrevious(baseline.Data))
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(err.Error(), qt.Contains, "types removed from the source schema: InvoiceRecord")
+}
+
+// A scoped name is an arbitrary annotation string like any other, so the
+// format's naming rules still run on it -- and the diagnostic still names the
+// TABLE, because that is the line the reader has to edit.
+func TestSanitizationRunsOnTheProtoName(t *testing.T) {
+	c := qt.New(t)
+
+	res := mustRender(c,
+		protoNamedTable("things", "", "2fa records", column("id", "BIGINT")),
+		baseOptions())
+
+	c.Assert(string(res.Data), qt.Contains, "message _2faRecord {")
+	c.Assert(diagnosticMessages(res), qt.Any(qt.Contains),
+		`table "things" was sanitized to protobuf message "_2faRecord"`)
+}
+
+// An override does not silence the loss it causes. Projecting a BIGINT as an
+// exact numeric reaches the same mapping every column does, so the same warning
+// is reported -- against the column, which is where the declaration is.
+//
+// This is the difference between the two kinds of unsupported: a type the
+// mapping cannot produce is refused, and a type it produces imperfectly is
+// exported with the imperfection named (stokaro/ptah#905).
+func TestALossyOverrideStillReportsItsLoss(t *testing.T) {
+	c := qt.New(t)
+
+	res := mustRender(c, oneTable(
+		column("id", "BIGINT"),
+		typedColumn("moved", "BIGINT", "DECIMAL(12,2)"),
+	), baseOptions())
+
+	c.Assert(string(res.Data), qt.Contains, "string moved = 2;")
+	c.Assert(diagnosticMessages(res), qt.Any(qt.Contains),
+		"things.moved: exact numeric mapped to string")
+}

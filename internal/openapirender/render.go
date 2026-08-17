@@ -49,7 +49,7 @@ func Render(db *goschema.Database, opts Options) (Result, error) {
 	// Refused before anything is written, for the same reason a field
 	// collision is: a table that shadows another drops it from the document,
 	// and the document cannot record that it lost one.
-	if err := schemaexport.ValidateTableAPINames(tables); err != nil {
+	if err := schemaexport.ValidateTableAPINames(tables, schemaexport.TargetOpenAPI); err != nil {
 		return Result{}, err
 	}
 	enums := schemaexport.EnumIndex(db)
@@ -61,7 +61,7 @@ func Render(db *goschema.Database, opts Options) (Result, error) {
 		// Refused before anything is written: an alias that shadows another
 		// column would drop it from the document, and the reader of the
 		// document has nothing left to notice the loss with.
-		if err := schemaexport.ValidateFieldAPINames(table, fields); err != nil {
+		if err := schemaexport.ValidateFieldAPINames(table, fields, schemaexport.TargetOpenAPI); err != nil {
 			return Result{}, err
 		}
 		pk := toSet(schemaexport.EffectivePrimaryKey(table, fields))
@@ -74,7 +74,7 @@ func Render(db *goschema.Database, opts Options) (Result, error) {
 			// detection and the enum lookup below all read one answer.
 			projected := schemaexport.ProjectedField(field)
 			if err := schemaexport.RefuseUnknownAPIType(
-				table, field, "OpenAPI", enums,
+				table, field, schemaexport.TargetOpenAPI, enums,
 				func(t string) bool { return mapOpenAPIType(t).Known },
 			); err != nil {
 				return Result{}, err
@@ -83,7 +83,7 @@ func Render(db *goschema.Database, opts Options) (Result, error) {
 			if diag != nil {
 				diagnostics = append(diagnostics, *diag)
 			}
-			apiName := schemaexport.FieldAPIName(field)
+			apiName := schemaexport.FieldAPIName(field, schemaexport.TargetOpenAPI)
 			properties.set(apiName, property)
 			// A primary-key column is NOT NULL by SQL rule, regardless of how the
 			// nullability was declared on the source annotation. The membership
@@ -97,7 +97,7 @@ func Render(db *goschema.Database, opts Options) (Result, error) {
 		if properties.len() > 0 {
 			obj.Properties = properties
 		}
-		schemas.set(schemaexport.TableAPIName(table), obj)
+		schemas.set(schemaexport.TableAPIName(table, schemaexport.TargetOpenAPI), obj)
 	}
 
 	doc := document{
@@ -169,8 +169,8 @@ func columnSchema(table goschema.Table, field goschema.Field, enums map[string][
 		// the property; the source names would point at nothing there.
 		return obj, &schemaexport.Diagnostic{
 			Severity: schemaexport.SeverityWarning,
-			Path: "components.schemas." + schemaexport.TableAPIName(table) +
-				".properties." + schemaexport.FieldAPIName(field),
+			Path: "components.schemas." + schemaexport.TableAPIName(table, schemaexport.TargetOpenAPI) +
+				".properties." + schemaexport.FieldAPIName(field, schemaexport.TargetOpenAPI),
 			Message: fmt.Sprintf("unknown column type %q mapped to string", field.Type),
 		}
 	}

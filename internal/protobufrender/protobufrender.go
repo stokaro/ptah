@@ -411,7 +411,7 @@ func (b *builder) buildDesired(db *goschema.Database) (desiredShape, error) {
 func (b *builder) assignMessageNames(tables []goschema.Table) (map[string]string, error) {
 	bare := map[string][]goschema.Table{}
 	for _, table := range tables {
-		name, changed := messageName(schemaexport.TableAPIName(table))
+		name, changed := messageName(schemaexport.TableAPIName(table, schemaexport.TargetProtobuf))
 		if changed {
 			b.warn(table.Name, fmt.Sprintf(
 				"table %q was sanitized to protobuf message %q; buf lint STANDARD will report MESSAGE_PASCAL_CASE for it",
@@ -465,7 +465,7 @@ func (b *builder) buildField(table goschema.Table, f goschema.Field, enumIndex m
 	// exporters: a wire type is persistent, and a silently defaulted one would
 	// be pinned by the next reconcile against this file.
 	if err := schemaexport.RefuseUnknownAPIType(
-		table, f, "Protobuf", enumIndex,
+		table, f, schemaexport.TargetProtobuf, enumIndex,
 		func(t string) bool { return mapProtoType(t).Known },
 	); err != nil {
 		return desiredField{}, err
@@ -482,7 +482,7 @@ func (b *builder) buildField(table goschema.Table, f goschema.Field, enumIndex m
 	//
 	// The diagnostic path stays on the source names. It is not a coordinate in
 	// the generated file; it is where the author has to go to change anything.
-	name, changed, lintDirty := fieldName(schemaexport.FieldAPIName(f))
+	name, changed, lintDirty := fieldName(schemaexport.FieldAPIName(f, schemaexport.TargetProtobuf))
 	path := table.Name + "." + f.Name
 	if changed {
 		b.warn(path, fmt.Sprintf("column %q was sanitized to protobuf field %q", f.Name, name))
@@ -568,7 +568,7 @@ func (b *builder) registerEnum(table goschema.Table, f goschema.Field, values []
 	if named {
 		raw = schemaexport.PascalCase(strings.TrimPrefix(f.Type, "enum_"))
 	} else {
-		raw = schemaexport.TypeName(schemaexport.TableAPIName(table)) + schemaexport.PascalCase(schemaexport.FieldAPIName(f))
+		raw = schemaexport.TypeName(schemaexport.TableAPIName(table, schemaexport.TargetProtobuf)) + schemaexport.PascalCase(schemaexport.FieldAPIName(f, schemaexport.TargetProtobuf))
 	}
 	name, changed := sanitizeIdent(raw)
 	if changed {
