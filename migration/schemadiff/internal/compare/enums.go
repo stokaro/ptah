@@ -7,6 +7,7 @@ import (
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/objectidentity"
 	"go.5x5.cz/ptah/internal/tableref"
 	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
 )
@@ -139,11 +140,11 @@ func EnumsWithSemantics(
 	diff *difftypes.SchemaDiff,
 	semantics identifier.Semantics,
 ) {
-	dbByIdentity := make(map[tableIdentity]types.DBEnum, len(database.Enums))
+	dbByIdentity := make(map[objectIdentity]types.DBEnum, len(database.Enums))
 	dbByName := make(map[string][]types.DBEnum, len(database.Enums))
 	for _, enum := range database.Enums {
 		schema, name := enumParts(enum.Schema, enum.Name)
-		dbByIdentity[newTableIdentity(schema, name, semantics)] = enum
+		dbByIdentity[newObjectIdentity(objectidentity.KindEnum, schema, name, semantics)] = enum
 		dbByName[semantics.TableIdentityKey(name)] = append(dbByName[semantics.TableIdentityKey(name)], enum)
 	}
 
@@ -179,13 +180,13 @@ func EnumsWithSemantics(
 // findDatabaseEnum resolves one generated enum against the read.
 func findDatabaseEnum(
 	genEnum goschema.Enum,
-	dbByIdentity map[tableIdentity]types.DBEnum,
+	dbByIdentity map[objectIdentity]types.DBEnum,
 	dbByName map[string][]types.DBEnum,
 	semantics identifier.Semantics,
 ) (types.DBEnum, bool) {
 	schema, name := enumParts(genEnum.Schema, genEnum.Name)
 	if strings.TrimSpace(schema) != "" {
-		enum, ok := dbByIdentity[newTableIdentity(schema, name, semantics)]
+		enum, ok := dbByIdentity[newObjectIdentity(objectidentity.KindEnum, schema, name, semantics)]
 		return enum, ok
 	}
 	candidates := dbByName[semantics.TableIdentityKey(name)]

@@ -172,10 +172,7 @@ func tableColumnsWithSemantics(
 			if sqliteKeyColumnImpliesNotNull(dialect, genTable, keyColumns, genCol) {
 				genCol.Nullable = false
 			}
-			columnKey := columnIdentity{
-				table:  newTableIdentity(genTable.Schema, genTable.Name, semantics),
-				column: identity,
-			}
+			columnKey := newColumnIdentityForTable(genTable.Schema, genTable.Name, identity, semantics)
 			if _, objectOwned := objectOwnedUniqueColumns[columnKey]; objectOwned {
 				genCol.Unique = false
 				dbCol.IsUnique = false
