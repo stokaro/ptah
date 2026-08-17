@@ -374,6 +374,34 @@ const (
 	// Server 2022, which renames through sp_rename instead, and by the Spanner
 	// PostgreSQL interface with `Only <TABLE> is supported for renaming`.
 	RenameColumnClause Capability = "rename_column_clause"
+
+	// CatalogCheckConstraintTableName marks targets whose
+	// information_schema.CHECK_CONSTRAINTS view carries a TABLE_NAME column,
+	// so a CHECK clause read out of it can be attributed to the table that
+	// declares it rather than to a name alone.
+	//
+	// MariaDB is the only engine Ptah targets that has the column, and it is a
+	// MariaDB extension to the standard view rather than a newer version of it:
+	// measured, `information_schema.CHECK_CONSTRAINTS` is
+	// CONSTRAINT_CATALOG, CONSTRAINT_SCHEMA, TABLE_NAME, CONSTRAINT_NAME,
+	// LEVEL, CHECK_CLAUSE on MariaDB 11.8.8 and drops to
+	// CONSTRAINT_CATALOG, CONSTRAINT_SCHEMA, CONSTRAINT_NAME, CHECK_CLAUSE on
+	// MySQL 8.4.11, PostgreSQL 18.4, SQL Server 16.0.4265.3, CockroachDB
+	// v26.2.5, YugabyteDB 2026.1 and the Spanner PostgreSQL interface. The view
+	// does not exist at all on ClickHouse 26.7.3.19.
+	//
+	// The engines without it are not losing information: MySQL requires CHECK
+	// constraint names to be unique per schema, which is why its view has no
+	// TABLE_NAME to carry, while MariaDB allows the same name on two tables and
+	// added the column to tell them apart.
+	//
+	// This is the fifth of the ad-hoc gates stokaro/ptah#916 item 3 names, and
+	// the one that must keep its error handling: the reader sniffed the shape
+	// by asking the richer spelling and reading MySQL error 1054 off the
+	// failure. That fallback stays, because the server's own answer about its
+	// own catalog outranks a preset -- the key only decides which spelling is
+	// asked FIRST, so the common path stops paying for a failed round trip.
+	CatalogCheckConstraintTableName Capability = "catalog_check_constraint_table_name"
 )
 
 // spec documents a registry entry and its implication edges.
@@ -493,6 +521,9 @@ var registry = map[Capability]spec{
 	},
 	RenameColumnClause: {
 		doc: "ALTER TABLE ... RENAME COLUMN renames a column in place (SQLite 3.25+)",
+	},
+	CatalogCheckConstraintTableName: {
+		doc: "information_schema.CHECK_CONSTRAINTS carries TABLE_NAME (MariaDB only)",
 	},
 }
 
@@ -660,6 +691,7 @@ func MySQL84() Capabilities {
 		CatalogViewDependencies:            true,
 		ShowRoutinePrivilege:               true,
 		RenameColumnClause:                 true,
+		CatalogCheckConstraintTableName:    false,
 	}
 }
 
@@ -753,14 +785,15 @@ func MariaDB1011() Capabilities {
 		// statement `schema apply` never plans and never sees converge. This key
 		// describes the generator, so it is false until those land -- do NOT flip
 		// it back on the engine's behalf (stokaro/ptah#931 item 8).
-		Sequences:               false,
-		XMLType:                 false,
-		AdvisoryLocks:           false,
-		RowLevelTTL:             false,
-		CheckGrantStatement:     false,
-		CatalogViewDependencies: false,
-		ShowRoutinePrivilege:    false,
-		RenameColumnClause:      true,
+		Sequences:                       false,
+		XMLType:                         false,
+		AdvisoryLocks:                   false,
+		RowLevelTTL:                     false,
+		CheckGrantStatement:             false,
+		CatalogViewDependencies:         false,
+		ShowRoutinePrivilege:            false,
+		RenameColumnClause:              true,
+		CatalogCheckConstraintTableName: true,
 	}
 }
 
@@ -821,6 +854,7 @@ func Postgres16() Capabilities {
 		CatalogViewDependencies:            true,
 		ShowRoutinePrivilege:               false,
 		RenameColumnClause:                 true,
+		CatalogCheckConstraintTableName:    false,
 	}
 }
 
@@ -946,11 +980,12 @@ func ClickHouse24() Capabilities {
 		// shape CockroachDB answers and the probe reads back out of
 		// pg_class.reloptions; `WITH (ttl_expiration_expression = ...)` is a
 		// syntax error here. Measured both ways on 26.7.3.19.
-		RowLevelTTL:             false,
-		CheckGrantStatement:     false,
-		CatalogViewDependencies: false,
-		ShowRoutinePrivilege:    false,
-		RenameColumnClause:      true,
+		RowLevelTTL:                     false,
+		CheckGrantStatement:             false,
+		CatalogViewDependencies:         false,
+		ShowRoutinePrivilege:            false,
+		RenameColumnClause:              true,
+		CatalogCheckConstraintTableName: false,
 	}
 }
 
@@ -1012,6 +1047,7 @@ func SQLite3() Capabilities {
 		CatalogViewDependencies:            false,
 		ShowRoutinePrivilege:               false,
 		RenameColumnClause:                 true,
+		CatalogCheckConstraintTableName:    false,
 	}
 }
 
@@ -1094,6 +1130,7 @@ func SQLServer2022() Capabilities {
 		CatalogViewDependencies:            true,
 		ShowRoutinePrivilege:               false,
 		RenameColumnClause:                 false,
+		CatalogCheckConstraintTableName:    false,
 	}
 }
 
@@ -1256,6 +1293,50 @@ var defaultDialectPresets = map[string]func() Capabilities{
 // has a default capability preset.
 func DefaultDialects() []string {
 	return slices.Sorted(maps.Keys(defaultDialectPresets))
+}
+
+// NamedPreset pairs a preset with the name its constructor carries, so a
+// document or a report can print the preset a server was given.
+type NamedPreset struct {
+	// Name is the constructor's name, e.g. "MySQL84".
+	Name string
+	// Capabilities is what that constructor returns.
+	Capabilities Capabilities
+}
+
+// NamedPresets returns every preset this package ships, ordered by dialect
+// family and then oldest-first inside it, which is the order a reader of the
+// documentation matrix follows across a row.
+//
+// The list is written out rather than derived because Go cannot enumerate the
+// exported functions of its own package at run time. What keeps it honest is
+// that the same source is parsed by the capability-probe tests: a constructor
+// added to this file and left out of the list below fails there, so the list
+// cannot go stale in the comfortable direction (stokaro/ptah#916).
+func NamedPresets() []NamedPreset {
+	return []NamedPreset{
+		{"MySQLLegacy", MySQLLegacy()},
+		{"MySQL8013", MySQL8013()},
+		{"MySQL8016", MySQL8016()},
+		{"MySQL8019", MySQL8019()},
+		{"MySQL8020", MySQL8020()},
+		{"MySQL84", MySQL84()},
+		{"MariaDBLegacy", MariaDBLegacy()},
+		{"MariaDB1011", MariaDB1011()},
+		{"Postgres13", Postgres13()},
+		{"Postgres16", Postgres16()},
+		{"Postgres17", Postgres17()},
+		{"ClickHouse24", ClickHouse24()},
+		{"ClickHouse2411", ClickHouse2411()},
+		{"CockroachDB23", CockroachDB23()},
+		{"CockroachDB25", CockroachDB25()},
+		{"CockroachDB26", CockroachDB26()},
+		{"YugabyteDB25", YugabyteDB25()},
+		{"SQLite324", SQLite324()},
+		{"SQLite3", SQLite3()},
+		{"SQLServer2022", SQLServer2022()},
+		{"SpannerPostgres", SpannerPostgres()},
+	}
 }
 
 // ForDialect returns the default preset for a dialect name (normalized via

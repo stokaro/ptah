@@ -191,22 +191,44 @@ func newSuiteSkipCommand() *cobra.Command {
 }
 
 func newMarkdownCommand() *cobra.Command {
-	var compact bool
+	var (
+		compact bool
+		presets bool
+		keys    bool
+	)
 	cmd := &cobra.Command{
 		Use:   "markdown",
 		Short: "Print the documentation version matrix",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			if compact {
-				capabilityprobe.WriteMatrixSummary(cmd.OutOrStdout())
-				return nil
+			chosen := 0
+			for _, flag := range []bool{compact, presets, keys} {
+				if flag {
+					chosen++
+				}
 			}
-			capabilityprobe.WriteMatrixMarkdown(cmd.OutOrStdout())
+			if chosen > 1 {
+				return errors.New("--compact, --presets and --keys print different tables; pass one")
+			}
+			switch {
+			case keys:
+				capabilityprobe.WriteCapabilityKeyMarkdown(cmd.OutOrStdout())
+			case presets:
+				capabilityprobe.WritePresetMarkdown(cmd.OutOrStdout())
+			case compact:
+				capabilityprobe.WriteMatrixSummary(cmd.OutOrStdout())
+			default:
+				capabilityprobe.WriteMatrixMarkdown(cmd.OutOrStdout())
+			}
 			return nil
 		},
 	}
 	cmd.Flags().BoolVar(&compact, "compact", false,
 		"print the narrow rendering the documentation site uses, which has to fit a phone-width reading column")
+	cmd.Flags().BoolVar(&presets, "presets", false,
+		"print the capability-by-preset table instead of the release-line matrix")
+	cmd.Flags().BoolVar(&keys, "keys", false,
+		"print the capability-key registry and its documented meanings")
 	return cmd
 }
 
