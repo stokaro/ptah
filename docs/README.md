@@ -18,6 +18,7 @@ contributor or implementation detail beyond the site.
 | --- | --- |
 | `docs/site` | Human-facing documentation site and task-oriented guides. |
 | `docs/*.md` | Detailed source references for commands, config, dialects, and design. |
+| `docs/adr` | Architecture decision records: the alternatives weighed and the boundary chosen, kept so a later reader can tell a decision from an accident. |
 | `examples/*` | Runnable local examples and generated artifacts. |
 | `ptah-atlas-conformance` | External Atlas compatibility evidence and gap reports. |
 
