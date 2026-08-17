@@ -349,3 +349,58 @@ func RefusalFor(parameter string) (string, bool) {
 	reason, refused := refusedParameters[strings.ToLower(strings.TrimSpace(parameter))]
 	return reason, refused
 }
+
+// DroppedParameters names the parameters the target carries and the declaration
+// does not, in the order [ManagedParameters] lists them.
+//
+// It exists because `SET` replaces only what it names. Measured on v26.2.5, a
+// table carrying ttl_job_cron and ttl_select_batch_size, given
+// `SET (ttl_job_cron = '@hourly')`, keeps its batch size — so a declaration
+// that stopped naming a parameter would leave it in place forever unless the
+// plan resets it by name. `RESET` takes several names at once, which is why
+// this returns a list rather than one name at a time.
+//
+// It is only meaningful when the declaration still asks for a policy. Removing
+// the policy entirely is `RESET (ttl)`, and the caller decides that before
+// asking this.
+func DroppedParameters(desired, current *ast.RowTTLSpec) []string {
+	if current.IsZero() {
+		return nil
+	}
+	var dropped []string
+	for _, parameter := range ManagedParameters() {
+		if declares(current, parameter) && !declares(desired, parameter) {
+			dropped = append(dropped, parameter)
+		}
+	}
+	return dropped
+}
+
+// declares reports whether a spec carries a value for one parameter.
+func declares(spec *ast.RowTTLSpec, parameter string) bool {
+	if spec == nil {
+		return false
+	}
+	switch parameter {
+	case ExpirationExpressionParameter:
+		return spec.ExpirationExpression != ""
+	case JobCronParameter:
+		return spec.JobCron != ""
+	case SelectBatchSizeParameter:
+		return spec.SelectBatchSize != nil
+	case DeleteBatchSizeParameter:
+		return spec.DeleteBatchSize != nil
+	case SelectRateLimitParameter:
+		return spec.SelectRateLimit != nil
+	case DeleteRateLimitParameter:
+		return spec.DeleteRateLimit != nil
+	case PauseParameter:
+		return spec.Pause != nil
+	case LabelMetricsParameter:
+		return spec.LabelMetrics != nil
+	case DisableChangefeedReplicationParameter:
+		return spec.DisableChangefeedReplication != nil
+	default:
+		return false
+	}
+}

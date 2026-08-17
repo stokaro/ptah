@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 
+	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/platform/identifier"
 )
 
@@ -665,6 +666,27 @@ type TableDiff struct {
 	// ConstraintsRemoved contains names of constraints that need to be removed from the table
 	// (potentially dangerous - may affect data integrity)
 	ConstraintsRemoved []string `json:"constraints_removed"`
+
+	// RowTTLChange carries a CockroachDB row-level TTL transition, and is nil
+	// when the table's policy is unchanged.
+	//
+	// It is a pointer to a pair rather than a list of changed parameters
+	// because the planner needs BOTH sides: a parameter present on the target
+	// and absent from the declaration is a RESET, and only the current state
+	// says which those are. See stokaro/ptah#1027.
+	RowTTLChange *RowTTLChange `json:"row_ttl_change,omitzero"`
+}
+
+// RowTTLChange is one table's row-level TTL transition.
+//
+// Either side may be nil: a nil Current is a policy being added, a nil Desired
+// is one being removed, and both non-nil is a change. Both nil never reaches
+// here, because that is not a change.
+type RowTTLChange struct {
+	// Desired is the policy the declaration asks for, nil to remove it.
+	Desired *ast.RowTTLSpec `json:"desired,omitzero"`
+	// Current is the policy the target carries, nil when it has none.
+	Current *ast.RowTTLSpec `json:"current,omitzero"`
 }
 
 // ColumnDiff represents specific property changes within a database column.

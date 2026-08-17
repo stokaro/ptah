@@ -660,8 +660,19 @@ func (r *Renderer) VisitAlterTable(node *ast.AlterTableNode) error {
 			// PostgreSQL equivalent exists. Emit a self-explanatory comment.
 			r.w.WriteLinef("-- %s: data-skipping indexes are ClickHouse-specific; ignored.", r.dialectUpper)
 		case *ast.ModifyTTLOperation:
-			// Table TTL (row expiration) is a ClickHouse-only feature.
+			// ClickHouse's own table TTL, which is a different feature from
+			// the CockroachDB row-level TTL the two operations below carry:
+			// that one is a column expression on a MergeTree table, this one
+			// is a set of storage parameters. Neither has a PostgreSQL form.
 			r.w.WriteLinef("-- %s: table TTL is ClickHouse-specific; ignored.", r.dialectUpper)
+		case *ast.SetRowTTLOperation:
+			if err := r.writeSetRowTTL(node, op); err != nil {
+				return err
+			}
+		case *ast.ResetRowTTLOperation:
+			if err := r.writeResetRowTTL(node, op); err != nil {
+				return err
+			}
 		default:
 			return fmt.Errorf("unknown alter operation type: %T", operation)
 		}

@@ -50,3 +50,43 @@ func (r *Renderer) rowTTLUnsupported(table string) error {
 			"emitting a statement whose retention policy the server may drop",
 		r.dialect, table, crdbttl.ExpirationExpressionParameter)
 }
+
+// writeSetRowTTL emits `ALTER TABLE ... SET (...)`, which both adds a policy
+// and changes one.
+//
+// Measured on v25.4.14 and v26.2.5, the statement is the same either way: `SET`
+// against a table with no TTL turns one on, and against a table that has one it
+// replaces the named parameters and leaves the rest. Each mutating form starts a
+// schema-change job and the server prints a NOTICE naming it.
+func (r *Renderer) writeSetRowTTL(node *ast.AlterTableNode, op *ast.SetRowTTLOperation) error {
+	if len(op.Options) == 0 {
+		return nil
+	}
+	if !r.capabilities().Has(capability.RowLevelTTL) {
+		return r.rowTTLUnsupported(node.Name)
+	}
+	r.w.WriteLinef("ALTER TABLE %s SET (%s);",
+		r.escapeQualifiedIdentifier(node.Name), strings.Join(op.Options, ", "))
+	return nil
+}
+
+// writeResetRowTTL emits `ALTER TABLE ... RESET (...)`, which removes a whole
+// policy or individual parameters depending on what it is handed.
+//
+// The parameter names are NOT identifier-quoted, and that is a choice rather
+// than a requirement: measured on v26.2.5, `RESET ("ttl_job_cron")` is accepted
+// exactly as the bare form is. They are left bare because they are storage
+// parameter keywords rather than object names, and because nothing here comes
+// from user input -- every name emitted is a constant in internal/crdbttl, so
+// there is no identifier to escape.
+func (r *Renderer) writeResetRowTTL(node *ast.AlterTableNode, op *ast.ResetRowTTLOperation) error {
+	if len(op.Parameters) == 0 {
+		return nil
+	}
+	if !r.capabilities().Has(capability.RowLevelTTL) {
+		return r.rowTTLUnsupported(node.Name)
+	}
+	r.w.WriteLinef("ALTER TABLE %s RESET (%s);",
+		r.escapeQualifiedIdentifier(node.Name), strings.Join(op.Parameters, ", "))
+	return nil
+}

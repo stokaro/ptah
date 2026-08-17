@@ -3,11 +3,13 @@ package compare
 import (
 	"sort"
 
+	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/crdbttl"
 	"go.5x5.cz/ptah/internal/tableref"
 	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
 )
@@ -174,7 +176,16 @@ func TablesAndColumnsWithSemantics(
 				semantics,
 				objectOwnedUniqueColumns,
 			)
-			if len(tableDiff.ColumnsAdded) > 0 || len(tableDiff.ColumnsRemoved) > 0 || len(tableDiff.ColumnsModified) > 0 {
+			// The TTL policy is compared here rather than inside
+			// tableColumnsWithSemantics because it is a property of the table
+			// and not of any column, and because a table whose ONLY difference
+			// is its retention policy still has to reach TablesModified -- the
+			// column-count condition below would otherwise drop it, and the
+			// schema would report as synced while rows expire on a schedule
+			// nobody declared (stokaro/ptah#1027).
+			tableDiff.RowTTLChange = rowTTLChange(genTable.RowTTL, dbTable.RowTTL)
+			if len(tableDiff.ColumnsAdded) > 0 || len(tableDiff.ColumnsRemoved) > 0 ||
+				len(tableDiff.ColumnsModified) > 0 || tableDiff.RowTTLChange != nil {
 				diff.TablesModified = append(diff.TablesModified, tableDiff)
 			}
 		}
@@ -230,4 +241,20 @@ func tableDiffName(schema, name, dialect string) string {
 		return tableref.CanonicalExact(schema, name)
 	}
 	return types.QualifyTableName(schema, name)
+}
+
+// rowTTLChange reports the row-level TTL transition between a declaration and a
+// target, and nil when there is none.
+//
+// Equality is exact, which is the whole guarantee: every parameter Ptah models
+// was measured to read back from the catalog exactly as it was written, so two
+// values that differ are two policies that differ. A comparison that normalized
+// here would be re-deriving a rule the server does not apply, and the failure
+// mode is the one stokaro/ptah#1027 names -- reporting convergence while a
+// table's data-lifecycle policy differs.
+func rowTTLChange(desired, current *ast.RowTTLSpec) *difftypes.RowTTLChange {
+	if crdbttl.Equal(desired, current) {
+		return nil
+	}
+	return &difftypes.RowTTLChange{Desired: desired.Clone(), Current: current.Clone()}
 }

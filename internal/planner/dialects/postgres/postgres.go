@@ -1687,6 +1687,14 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 	// 12. Remove table columns (must be done after removing RLS policies that depend on columns)
 	result = p.removeTableColumns(result, diff)
 
+	// 12.4. Row-level TTL, after the columns a TTL expression may refer to
+	// exist and before anything is dropped. A policy whose expression names a
+	// column added in the same plan cannot be set before that column is there
+	// (stokaro/ptah#1027).
+	if p.planningRowTTL() {
+		result = p.applyRowTTLChanges(result, diff)
+	}
+
 	// 12.5. Remove constraints (must be done before removing tables)
 	result = p.removeConstraints(result, diff)
 

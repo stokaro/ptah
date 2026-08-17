@@ -7,6 +7,7 @@ import (
 	"context"
 	"strings"
 
+	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/platform/identifier"
@@ -135,6 +136,13 @@ type DBTable struct {
 	RLSEnabled      bool       `json:"rls_enabled"`                 // Whether RLS is enabled on this table (PostgreSQL)
 	Strict          bool       `json:"strict,omitempty"`            // SQLite STRICT table option
 	WithoutRowID    bool       `json:"without_rowid,omitempty"`     // SQLite WITHOUT ROWID table option
+	// RowTTL is the CockroachDB row-level TTL this table carries, nil for a
+	// table with none and for every target without capability.RowLevelTTL.
+	//
+	// omitzero keeps every other dialect's serialization byte-identical, which
+	// matters because a description is compared, fingerprinted and replayed
+	// (stokaro/ptah#1027).
+	RowTTL *ast.RowTTLSpec `json:"row_ttl,omitzero"`
 	// VirtualModule is the SQLite module that owns this table, from the USING
 	// clause of the CREATE VIRTUAL TABLE statement that created it -- `fts5`,
 	// `rtree`, `geopoly`, or any other module a build registers. It is empty
