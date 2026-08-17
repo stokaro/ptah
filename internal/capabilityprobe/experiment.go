@@ -316,3 +316,64 @@ func storedResult(key capability.Capability, setup []string, create, read, mutat
 		},
 	}
 }
+
+// storedRowTTL decides capability.RowLevelTTL by whether the policy the CREATE
+// TABLE asked for is actually STORED, not by whether the statement was accepted.
+//
+// Acceptance is the wrong test here, and the Spanner PostgreSQL interface is
+// what proved it: through PGAdapter it accepts
+// `CREATE TABLE ... WITH (ttl_expiration_expression = 'expires_at')` at exit 0
+// while having no such feature, so an acceptance probe recorded support that
+// does not exist and disagreed with a preset that was right. This is the same
+// shape capability.MaterializedViews documents for MySQL, where
+// CREATE MATERIALIZED VIEW is parsed and the word dropped.
+//
+// The verdict therefore comes from the catalog: the table is created, and
+// pg_class.reloptions is asked whether it carries the parameter. Measured on
+// CockroachDB v25.4.14 and v26.2.5, it reports
+// `{ttl='on',ttl_expiration_expression='expires_at',...}`; a server that parsed
+// the clause and discarded it reports nothing, which is the answer this key
+// needs.
+//
+// An inspection the server refuses decides FALSE rather than going undecidable.
+// That is not a guess: the projection asked here is the one
+// internal/dbschema/postgres reads, so a target that cannot answer it is a
+// target whose policy Ptah could never read back, and a policy Ptah cannot read
+// is one no comparison can converge. The Spanner PostgreSQL interface is the
+// case in hand — it accepts the CREATE and then refuses the read.
+func storedRowTTL(setup []string, create, inspect string) experiment {
+	return experiment{
+		decides: []capability.Capability{capability.RowLevelTTL},
+		setup:   setup,
+		decide: func(ctx context.Context, s *session) (verdicts, []Attempt) {
+			created := s.exec(ctx, create)
+			attempts := []Attempt{created}
+			if !created.Accepted {
+				return verdicts{capability.RowLevelTTL: decided(false)}, attempts
+			}
+
+			stored, inspected := s.query(ctx, inspect)
+			attempts = append(attempts, inspected)
+			if !inspected.Accepted {
+				// A refused inspection is a decided FALSE, not an undecidable
+				// row, and the difference is what the key means. It names
+				// whether PTAH can manage a row-expiry policy on this target,
+				// and Ptah reads exactly this projection -- so a server that
+				// cannot answer it is a server whose policy Ptah could never
+				// read back, whatever the CREATE TABLE did. Measured on the
+				// Spanner PostgreSQL interface, which accepts the CREATE and
+				// then answers `Cast from text[] to text is unsupported`
+				// against its pg_class shim.
+				return verdicts{capability.RowLevelTTL: annotated(false,
+					"the CREATE was accepted but the storage parameters cannot be read back here ("+
+						collapse(inspected.ServerErr)+"), and a policy Ptah cannot read is one it "+
+						"cannot converge, so the key is false whatever the server stores internally",
+				)}, attempts
+			}
+			return verdicts{capability.RowLevelTTL: annotated(stored == 1,
+				"decided by whether pg_class.reloptions reports the parameter back, because a server that "+
+					"parses the WITH clause and discards it also accepts the CREATE TABLE",
+			)}, attempts
+		},
+	}
+}

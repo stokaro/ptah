@@ -256,6 +256,34 @@ func postgresFamilyPlan(dialect string) plan {
 			"SELECT pg_advisory_lock(1)",
 			"SELECT pg_advisory_unlock(1)",
 		),
+		// The one key in this plan whose expected answer is FALSE on
+		// PostgreSQL itself, so the usual reading of a verdict is inverted:
+		// a refusal here is PostgreSQL behaving as its preset says, and an
+		// ACCEPTANCE is what marks a CockroachDB line.
+		//
+		// The statement is the reproducer stokaro/ptah#1027 was filed with. It
+		// names ttl_expiration_expression rather than ttl_expire_after because
+		// that is the parameter Ptah models: the server rewrites an interval
+		// on the way in, which is why internal/crdbttl refuses the other
+		// enabler instead of modeling it.
+		storedRowTTL(nil,
+			"CREATE TABLE ttlp (id int PRIMARY KEY, expires_at TIMESTAMPTZ) "+
+				"WITH (ttl_expiration_expression = 'expires_at')",
+			// This is the projection internal/dbschema/postgres reads, on
+			// purpose: the probe should ask the question the reader asks, so a
+			// server the reader could not read is one this key reports false
+			// for. The Spanner PostgreSQL interface serves pg_class from a
+			// shim over information_schema and refuses both `current_schema()`
+			// and a text[] cast, so it lands in exactly that branch.
+			//
+			// The table name is unqualified because the probe runs in a
+			// throwaway schema of its own and `ttlp` belongs to this
+			// experiment alone.
+			`SELECT COUNT(*)
+			 FROM pg_catalog.pg_class
+			 WHERE relname = 'ttlp'
+			   AND COALESCE(array_to_json(reloptions)::text, '[]') LIKE '%ttl_expiration_expression%'`,
+		),
 	}
 	return plan{experiments: experiments, undecided: map[capability.Capability]string{}}
 }
@@ -412,6 +440,9 @@ func mysqlFamilyPlan(dialect string) plan {
 		capability.CatalogDependencies: "pg_depend is a PostgreSQL catalog relation this server does not " +
 			"have and no MySQL-family reader joins; its absence here says nothing about the " +
 			"PostgreSQL-family read the key gates",
+		capability.RowLevelTTL: "the key names a table storage parameter Ptah renders, reads and plans " +
+			"only on the PostgreSQL wire; this server's CREATE TABLE takes its own table options and " +
+			"none of them is the one the key names, so refusing it would answer a different question",
 	}
 	if dialect == platform.MariaDB {
 		// MariaDB has had SEQUENCE objects since 10.3 and the preset still

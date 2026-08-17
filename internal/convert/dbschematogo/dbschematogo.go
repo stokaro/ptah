@@ -133,6 +133,10 @@ func convertTablesAndFields(
 			// index as an ordinary table. See stokaro/ptah#1028.
 			VirtualModule:    dbTable.VirtualModule,
 			VirtualArguments: dbTable.VirtualArguments,
+			// Cloned so the description and the declaration built from it do
+			// not share a pointer; a caller mutating one must not reach the
+			// other (stokaro/ptah#1027).
+			RowTTL: dbTable.RowTTL.Clone(),
 		}
 		database.Tables = append(database.Tables, table)
 

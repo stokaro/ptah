@@ -14,6 +14,7 @@ import (
 	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/clickhouserbac"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
+	"go.5x5.cz/ptah/internal/crdbttl"
 	"go.5x5.cz/ptah/internal/matviewrefresh"
 	"go.5x5.cz/ptah/internal/reservedrole"
 	"go.5x5.cz/ptah/internal/schemaselection"
@@ -86,35 +87,8 @@ func compareWithDatabaseInfoReportingUndecidedAdditions(
 	// DBSchema.RolesOutOfScope, so comparing it would read it as absent and
 	// plan a CREATE ROLE the server always refuses. Refuse the declaration
 	// here instead, before anything is compared (stokaro/ptah#1312).
-	if generated != nil {
-		if err := matviewrefresh.ValidateDeclared(info.Dialect, generated.MaterializedViews); err != nil {
-			return nil, nil, err
-		}
-		if err := reservedrole.ValidateDeclared(info.Dialect, generated.Roles); err != nil {
-			return nil, nil, err
-		}
-		// The same ClickHouse refusals the renderer applies, at the other entry
-		// point a declaration reaches before a server does. The empty default
-		// database matches the renderer's, so one set of declarations cannot be
-		// accepted by a comparison and refused by a render (stokaro/ptah#1025).
-		if err := clickhouserbac.ValidateDeclared(
-			info.Dialect, generated.Roles, generated.Grants, "",
-		); err != nil {
-			return nil, nil, err
-		}
-		// A live partial revoke narrows a managed role's effective privileges
-		// in a way no declaration can express, so the comparison would find
-		// nothing to plan and report convergence. Refuse instead, here, where
-		// an error can still travel.
-		if err := clickhouserbac.ValidateLive(info.Dialect, generated, database); err != nil {
-			return nil, nil, err
-		}
-		if err := schemaselection.ValidateDeclaredPostgresSystemSchemas(
-			info.Dialect,
-			generated.Schemas,
-		); err != nil {
-			return nil, nil, err
-		}
+	if err := validateDeclaredBeforeComparison(generated, database, info); err != nil {
+		return nil, nil, err
 	}
 	// A SQLite virtual table cannot appear on the desired side of any
 	// comparison, so its absence there is not deletion intent and its presence
@@ -466,4 +440,71 @@ func mysqlInlineEnumType(values []string) string {
 		quoted = append(quoted, "'"+strings.ReplaceAll(value, "'", "''")+"'")
 	}
 	return "enum(" + strings.Join(quoted, ",") + ")"
+}
+
+// rowTTLTables projects a declaration's tables into the pairs
+// internal/crdbttl validates.
+func rowTTLTables(generated *goschema.Database) []crdbttl.TableTTL {
+	tables := make([]crdbttl.TableTTL, 0, len(generated.Tables))
+	for _, table := range generated.Tables {
+		tables = append(tables, crdbttl.TableTTL{Name: table.Name, RowTTL: table.RowTTL})
+	}
+	return tables
+}
+
+// validateDeclaredBeforeComparison applies every refusal a declaration must
+// meet before anything is compared, and returns nil when there is nothing to
+// validate.
+//
+// They live together in one function rather than inline because each is a
+// separate claim about a separate feature, and the list grows: keeping them
+// here means the comparison entry point reads as its own sequence of steps
+// rather than as one long guarded block.
+func validateDeclaredBeforeComparison(
+	generated *goschema.Database,
+	database *types.DBSchema,
+	info types.DBInfo,
+) error {
+	if generated == nil {
+		return nil
+	}
+	if err := matviewrefresh.ValidateDeclared(info.Dialect, generated.MaterializedViews); err != nil {
+		return err
+	}
+	if err := reservedrole.ValidateDeclared(info.Dialect, generated.Roles); err != nil {
+		return err
+	}
+	// The same ClickHouse refusals the renderer applies, at the other entry
+	// point a declaration reaches before a server does. The empty default
+	// database matches the renderer's, so one set of declarations cannot be
+	// accepted by a comparison and refused by a render (stokaro/ptah#1025).
+	if err := clickhouserbac.ValidateDeclared(
+		info.Dialect, generated.Roles, generated.Grants, "",
+	); err != nil {
+		return err
+	}
+	// A live partial revoke narrows a managed role's effective privileges
+	// in a way no declaration can express, so the comparison would find
+	// nothing to plan and report convergence. Refuse instead, here, where
+	// an error can still travel.
+	if err := clickhouserbac.ValidateLive(info.Dialect, generated, database); err != nil {
+		return err
+	}
+	// The row-level TTL refusals, at the same seam and for the same reason:
+	// a declaration this comparison accepts and the renderer refuses would
+	// be a plan that fails halfway. info.Capabilities is the live target's,
+	// so the dialect gate here answers for the server actually connected
+	// rather than for a preset (stokaro/ptah#1027).
+	if err := crdbttl.ValidateDeclared(
+		info.Dialect, info.Capabilities, crdbttl.DeclaredIn(rowTTLTables(generated)),
+	); err != nil {
+		return err
+	}
+	if err := schemaselection.ValidateDeclaredPostgresSystemSchemas(
+		info.Dialect,
+		generated.Schemas,
+	); err != nil {
+		return err
+	}
+	return nil
 }

@@ -5,6 +5,7 @@ import (
 	"hash/fnv"
 	"strings"
 
+	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/internal/tableref"
 )
@@ -593,6 +594,15 @@ type Table struct {
 	Partition         *PartitionSpec               // PostgreSQL table partitioning metadata
 	CustomSQL         string                       // Custom SQL to append to CREATE TABLE
 	Overrides         map[string]map[string]string // Platform-specific overrides
+	// RowTTL is the CockroachDB row-level TTL this table declares, nil for a
+	// table declaring none.
+	//
+	// It carries the ast type rather than a copy of it. The parameters are a
+	// closed, measured set, and a per-layer duplicate is a place for one of
+	// them to go missing between the declaration and the statement -- which for
+	// a row-expiry policy means a table quietly keeping rows it was declared to
+	// delete (stokaro/ptah#1027).
+	RowTTL *ast.RowTTLSpec
 }
 
 // PrimaryKeyPart represents one column reference inside a table primary key.

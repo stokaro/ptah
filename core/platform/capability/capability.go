@@ -280,6 +280,34 @@ const (
 	// package, but the flag lets callers avoid assuming PostgreSQL lock
 	// functions exist on every PostgreSQL-wire engine.
 	AdvisoryLocks Capability = "advisory_locks"
+
+	// RowLevelTTL marks support for a table-level row-expiry policy declared
+	// as storage parameters and executed by a background job the engine runs.
+	//
+	// It is the first key here that is TRUE on a PostgreSQL-compatible engine
+	// and FALSE on PostgreSQL itself, and the direction matters: every other
+	// key names something PostgreSQL has and a compatible engine may lack, so
+	// a reader meeting this one should not assume the usual polarity.
+	// Measured, `CREATE TABLE t (...) WITH (ttl_expiration_expression =
+	// 'expires_at')` is accepted by CockroachDB v25.4.14 and v26.2.5, and
+	// answered `ERROR: unrecognized parameter "ttl_expiration_expression"` by
+	// PostgreSQL 18.4 and by YugabyteDB 2026.1 — which first emits `WARNING:
+	// storage parameter ttl_expiration_expression is unsupported, ignoring`,
+	// which is exactly why a declaration reaching an engine without this key
+	// is refused by Ptah rather than left to the server (stokaro/ptah#1027).
+	//
+	// Acceptance alone does NOT decide this key, and the Spanner PostgreSQL
+	// interface is what proved it: through PGAdapter it accepts the same
+	// CREATE TABLE at exit 0 while having no such feature. So the probe reads
+	// pg_class.reloptions back and decides on whether the policy was STORED —
+	// the same distinction capability.MaterializedViews draws for MySQL, where
+	// CREATE MATERIALIZED VIEW is parsed and the word discarded.
+	//
+	// What the key promises is the surface [go.5x5.cz/ptah/internal/crdbttl]
+	// models, not every parameter the engine spells. The two whose values the
+	// server rewrites on the way in are refused there, and that refusal is
+	// part of the capability rather than a gap in it.
+	RowLevelTTL Capability = "row_level_ttl"
 )
 
 // spec documents a registry entry and its implication edges.
@@ -384,6 +412,9 @@ var registry = map[Capability]spec{
 	},
 	AdvisoryLocks: {
 		doc: "PostgreSQL advisory lock functions",
+	},
+	RowLevelTTL: {
+		doc: "table storage parameters declaring a row-expiry policy (CockroachDB row-level TTL)",
 	},
 }
 
@@ -546,6 +577,7 @@ func MySQL84() Capabilities {
 		Sequences:                          false,
 		XMLType:                            false,
 		AdvisoryLocks:                      false,
+		RowLevelTTL:                        false,
 	}
 }
 
@@ -618,6 +650,7 @@ func MariaDB1011() Capabilities {
 		Sequences:     false,
 		XMLType:       false,
 		AdvisoryLocks: false,
+		RowLevelTTL:   false,
 	}
 }
 
@@ -673,6 +706,7 @@ func Postgres16() Capabilities {
 		Sequences:                          true,
 		XMLType:                            true,
 		AdvisoryLocks:                      true,
+		RowLevelTTL:                        false,
 	}
 }
 
@@ -773,6 +807,7 @@ func ClickHouse24() Capabilities {
 		Sequences:                          false,
 		XMLType:                            false,
 		AdvisoryLocks:                      false,
+		RowLevelTTL:                        false,
 	}
 }
 
@@ -816,6 +851,7 @@ func SQLite3() Capabilities {
 		Sequences:                          false,
 		XMLType:                            false,
 		AdvisoryLocks:                      false,
+		RowLevelTTL:                        false,
 	}
 }
 
@@ -873,6 +909,7 @@ func SQLServer2022() Capabilities {
 		Sequences:                          false,
 		XMLType:                            true,
 		AdvisoryLocks:                      false,
+		RowLevelTTL:                        false,
 	}
 }
 
@@ -902,13 +939,25 @@ func SQLServer2022() Capabilities {
 // ... ENABLE ROW LEVEL SECURITY plus CREATE POLICY, CREATE SEQUENCE, and
 // CREATE TABLE with SERIAL. Those keys stay enabled because otherwise Ptah
 // refuses objects this measured line can host.
+//
+// RowLevelTTL is the one key this preset turns ON rather than off, and it is
+// the only place in this file where a CockroachDB preset ADDS to PostgreSQL's
+// surface. Measured on v25.4.14 and v26.2.5 alike: `CREATE TABLE t (id INT
+// PRIMARY KEY, expires_at TIMESTAMPTZ) WITH (ttl_expiration_expression =
+// 'expires_at')` succeeds and pg_class.reloptions then reports
+// `{ttl='on',ttl_expiration_expression='expires_at',...}`, while PostgreSQL
+// 18.4 answers `ERROR: unrecognized parameter`. It is set here rather than on
+// the per-line presets because both measured lines answered identically to
+// every probe in [go.5x5.cz/ptah/internal/crdbttl]'s measured table
+// (stokaro/ptah#1027).
 func CockroachDB23() Capabilities {
 	return Postgres16().
 		With(CreateIndexConcurrently, false).
 		With(DropIndexConcurrently, false).
 		With(IndexIncludeSPGiST, false).
 		With(XMLType, false).
-		With(AdvisoryLocks, false)
+		With(AdvisoryLocks, false).
+		With(RowLevelTTL, true)
 }
 
 // CockroachDB25 is the preset measured on CockroachDB 25.4. The line refuses

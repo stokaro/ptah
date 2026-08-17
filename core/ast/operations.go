@@ -260,3 +260,48 @@ func (op *ModifyTTLOperation) Accept(_visitor Visitor) error { return nil }
 
 // alterOperation implements the marker method for type safety.
 func (op *ModifyTTLOperation) alterOperation() {}
+
+// SetRowTTLOperation represents ALTER TABLE ... SET (<storage parameters>) for
+// CockroachDB row-level TTL.
+//
+// The parameters travel as rendered `name = value` text rather than as a spec,
+// because the ordering and the quoting are decisions
+// [go.5x5.cz/ptah/internal/crdbttl] owns and the renderer must not make a
+// second time. An empty Options is not a valid operation and renders nothing.
+type SetRowTTLOperation struct {
+	// Options are the storage parameters to set, already rendered, in the
+	// order they are emitted.
+	Options []string
+}
+
+// Accept implements the Node interface for SetRowTTLOperation. The rendering
+// happens inside VisitAlterTable, as it does for the other table-level
+// operations.
+func (op *SetRowTTLOperation) Accept(_visitor Visitor) error {
+	return nil
+}
+
+// alterOperation implements the marker method for type safety.
+func (op *SetRowTTLOperation) alterOperation() {}
+
+// ResetRowTTLOperation represents ALTER TABLE ... RESET (<parameters>) for
+// CockroachDB row-level TTL.
+//
+// Removing a whole policy and removing one knob are the same statement with
+// different arguments: `RESET (ttl)` drops the entire configuration, and
+// `RESET (ttl_job_cron)` drops one parameter while the policy stays. Measured
+// on v26.2.5, `RESET (ttl)` against a table that never had a TTL succeeds and
+// changes nothing, so the removal is idempotent.
+type ResetRowTTLOperation struct {
+	// Parameters are the storage parameter names to reset, in the order they
+	// are emitted.
+	Parameters []string
+}
+
+// Accept implements the Node interface for ResetRowTTLOperation.
+func (op *ResetRowTTLOperation) Accept(_visitor Visitor) error {
+	return nil
+}
+
+// alterOperation implements the marker method for type safety.
+func (op *ResetRowTTLOperation) alterOperation() {}
