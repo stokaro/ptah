@@ -306,6 +306,7 @@ var directives = []Directive{
 		Attributes: []Attribute{
 			attr("name", "Column name.", valueString, false, false),
 			attr("api_name", "Name this column carries in an exported API schema, when that differs from the column name.", valueString, false, false),
+			attr("api_type", "Type the API export projects this column as, named in Ptah's own type vocabulary.", valueString, false, false),
 			attr("type", "Database column type.", valueString, false, false),
 			attr("not_null", "Marks the column NOT NULL.", valueBoolean, false, true),
 			attr("primary", "Marks the column as part of the primary key.", valueBoolean, false, true),

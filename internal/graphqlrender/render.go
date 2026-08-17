@@ -48,12 +48,26 @@ func Render(db *goschema.Database, opts Options) (Result, error) {
 	if err := schemaexport.ValidateTableAPINames(tables); err != nil {
 		return Result{}, err
 	}
+	enums := schemaexport.EnumIndex(db)
 	for _, table := range tables {
-		if err := schemaexport.ValidateFieldAPINames(table, schemaexport.FieldsFor(db, table)); err != nil {
+		fields := schemaexport.FieldsFor(db, table)
+		if err := schemaexport.ValidateFieldAPINames(table, fields); err != nil {
 			return Result{}, err
 		}
+		// An explicit type override the scalar mapping cannot honor is refused
+		// rather than defaulted to String. Defaulting is right for an
+		// unrecognized COLUMN type, which is a fact about the schema; here it
+		// would answer a request nobody made and hide that the declaration did
+		// nothing.
+		for _, field := range fields {
+			if err := schemaexport.RefuseUnknownAPIType(
+				table, field, "GraphQL", enums,
+				func(t string) bool { return mapGraphQLScalar(t).Known },
+			); err != nil {
+				return Result{}, err
+			}
+		}
 	}
-	enums := schemaexport.EnumIndex(db)
 
 	reg := newNameRegistry()
 	// Reserve built-in and structural names so no generated type can shadow
@@ -130,6 +144,10 @@ func (b *builder) addTable(db *goschema.Database, table goschema.Table) {
 	var columns []column
 
 	for _, field := range fields {
+		// The API type is substituted once here, so the scalar mapping, the
+		// array detection, the enum lookup and the input projections that reuse
+		// `source` below all read one answer.
+		field = schemaexport.ProjectedField(field)
 		// The name to export is the field's API name, which is its column name
 		// unless the schema declared a different one. Sanitization runs on the
 		// result either way: an alias is an arbitrary annotation string too,

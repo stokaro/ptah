@@ -230,3 +230,149 @@ func TestValidateTableAPINamesRefusesACollision(t *testing.T) {
 		})
 	}
 }
+
+// An override re-maps a column for export only, in Ptah's own type vocabulary,
+// so one declaration serves all three formats.
+func TestFieldAPIType(t *testing.T) {
+	tests := []struct {
+		name  string
+		field goschema.Field
+		want  string
+	}{
+		{
+			name:  "an undeclared override is the column type",
+			field: goschema.Field{Name: "amount", Type: "DECIMAL(12,2)"},
+			want:  "DECIMAL(12,2)",
+		},
+		{
+			name:  "a declared one replaces it",
+			field: goschema.Field{Name: "amount", Type: "DECIMAL(12,2)", APIType: "TEXT"},
+			want:  "TEXT",
+		},
+		{
+			name:  "an empty declaration is not a declaration",
+			field: goschema.Field{Name: "amount", Type: "DECIMAL(12,2)", APIType: ""},
+			want:  "DECIMAL(12,2)",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(schemaexport.FieldAPIType(tt.field), qt.Equals, tt.want)
+		})
+	}
+}
+
+// The substitution happens once, on a copy: everything downstream reads the
+// projected type, and the caller's field is left alone.
+func TestProjectedField(t *testing.T) {
+	c := qt.New(t)
+
+	original := goschema.Field{Name: "amount", Type: "DECIMAL(12,2)", APIType: "TEXT"}
+	projected := schemaexport.ProjectedField(original)
+
+	c.Assert(projected.Type, qt.Equals, "TEXT")
+	c.Assert(projected.Name, qt.Equals, "amount")
+	c.Assert(original.Type, qt.Equals, "DECIMAL(12,2)",
+		qt.Commentf("the caller's field must not be mutated"))
+}
+
+// An override replaces the inline enum values too. Enum resolution consults
+// them before the type, so leaving them in place would answer first and make
+// the override do nothing at all.
+func TestProjectedFieldDropsInlineEnumValues(t *testing.T) {
+	c := qt.New(t)
+
+	overridden := schemaexport.ProjectedField(goschema.Field{
+		Name: "state", Type: "VARCHAR(16)",
+		Enum: []string{"draft", "sent"}, APIType: "TEXT",
+	})
+	c.Assert(overridden.Enum, qt.IsNil)
+
+	// The control: with no override there is nothing to replace, and an enum
+	// column must keep exporting as an enum.
+	untouched := schemaexport.ProjectedField(goschema.Field{
+		Name: "state", Type: "VARCHAR(16)", Enum: []string{"draft", "sent"},
+	})
+	c.Assert(untouched.Enum, qt.DeepEquals, []string{"draft", "sent"})
+}
+
+// refusalTable and refusalEnums are the fixed surroundings of the refusal: the
+// answer depends on the field, not on where it lives.
+var (
+	refusalTable = goschema.Table{Name: "invoices"}
+	refusalEnums = map[string][]string{"invoice_state": {"draft", "sent"}}
+)
+
+// The refusal asks whether the exporter can produce the type at all, which is
+// two questions: the scalar mapping and the declared enums.
+func TestRefuseUnknownAPITypeAccepts(t *testing.T) {
+	tests := []struct {
+		name  string
+		field goschema.Field
+		maps  map[string]bool
+	}{
+		{
+			name:  "no override is nothing to refuse",
+			field: goschema.Field{Name: "amount", Type: "money_ish"},
+		},
+		{
+			name:  "an override the mapping knows",
+			field: goschema.Field{Name: "amount", Type: "DECIMAL(12,2)", APIType: "TEXT"},
+			maps:  map[string]bool{"TEXT": true},
+		},
+		{
+			// The arm the mapping alone would have refused, and the reason
+			// this is one helper rather than a comparison per exporter.
+			name:  "an override naming a declared enum",
+			field: goschema.Field{Name: "state", Type: "VARCHAR(32)", APIType: "invoice_state"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			err := schemaexport.RefuseUnknownAPIType(
+				refusalTable, tt.field, "OpenAPI", refusalEnums,
+				func(projected string) bool { return tt.maps[projected] },
+			)
+
+			c.Assert(err, qt.IsNil)
+		})
+	}
+}
+
+func TestRefuseUnknownAPITypeRefuses(t *testing.T) {
+	tests := []struct {
+		name  string
+		field goschema.Field
+	}{
+		{
+			name:  "an override that is neither mapped nor an enum",
+			field: goschema.Field{Name: "amount", Type: "DECIMAL(12,2)", APIType: "money_ish"},
+		},
+		{
+			// The enum arm reads the OVERRIDE, not the column: a column that
+			// happens to be an enum does not license an unmappable override.
+			name:  "an enum column with an unmappable override",
+			field: goschema.Field{Name: "state", Type: "invoice_state", APIType: "money_ish"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			err := schemaexport.RefuseUnknownAPIType(
+				refusalTable, tt.field, "OpenAPI", refusalEnums,
+				func(projected string) bool { return false },
+			)
+
+			c.Assert(err, qt.IsNotNil)
+			c.Assert(err.Error(), qt.Contains, `declares api_type "money_ish"`)
+			c.Assert(err.Error(), qt.Contains, `on table "invoices"`)
+		})
+	}
+}

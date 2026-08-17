@@ -357,3 +357,83 @@ func ValidateTableAPINames(tables []goschema.Table) error {
 	}
 	return nil
 }
+
+// FieldAPIType returns the type an exporter should project a field as.
+//
+// A field that declares no override keeps its column type, so an unannotated
+// schema exports exactly as before (stokaro/ptah#905).
+func FieldAPIType(field goschema.Field) string {
+	if field.APIType != "" {
+		return field.APIType
+	}
+	return field.Type
+}
+
+// UnknownAPITypeError reports an explicit type override an exporter's mapping
+// does not recognize.
+//
+// It is an error rather than the warning an unrecognized COLUMN type gets, and
+// the difference is the whole reason it exists. An unmapped column type is a
+// fact about the schema, and defaulting it to a string while saying so is the
+// most a projection can do. An unmapped override is something the author typed
+// on purpose and the exporter cannot honor -- projecting it as a string would
+// answer a request nobody made and hide that the declaration did nothing.
+func UnknownAPITypeError(table goschema.Table, field goschema.Field, target string) error {
+	return fmt.Errorf(
+		"column %q on table %q declares api_type %q, which the %s projection does not recognize; "+
+			"name a type Ptah maps, or drop the override to keep the column's own type %q",
+		field.Name, table.Name, field.APIType, target, field.Type,
+	)
+}
+
+// ProjectedField returns field as an exporter should read it, with the API type
+// substituted for the column type.
+//
+// Substituting once at the top is what keeps the answer single. The type is
+// read again further down for array detection, enum resolution and
+// diagnostics, and an override honored by the mapping but not by those would
+// project a DECIMAL as text while still resolving it as a numeric.
+//
+// An override also drops the inline enum values, and it has to: those describe
+// the stored column, and enum resolution consults them before the type. Left in
+// place they answer first, and a column declaring api_type="TEXT" exports as an
+// enum anyway -- the declaration doing nothing, silently, which is the one
+// outcome this whole annotation exists to rule out. An override that names a
+// declared enum still resolves, through the enum index, on the type.
+func ProjectedField(field goschema.Field) goschema.Field {
+	if field.APIType != "" {
+		field.Enum = nil
+	}
+	field.Type = FieldAPIType(field)
+	return field
+}
+
+// RefuseUnknownAPIType reports an explicit override the exporter can neither map
+// nor resolve as an enum, and reports nothing for a field that declares none.
+// The mapping is supplied by the caller because each target has its own, and is
+// asked about the projected type.
+//
+// The enum arm is why this is one function rather than a comparison repeated in
+// each exporter: a target's type mapping only knows scalars, so asking it alone
+// would refuse api_type="invoice_state" -- a projection all three targets can in
+// fact produce, and the natural way to publish a column stored as text on a
+// dialect with no native enum.
+func RefuseUnknownAPIType(
+	table goschema.Table,
+	field goschema.Field,
+	target string,
+	enums map[string][]string,
+	maps func(projectedType string) bool,
+) error {
+	if field.APIType == "" {
+		return nil
+	}
+	projected := ProjectedField(field)
+	if maps(projected.Type) {
+		return nil
+	}
+	if _, ok := ResolveEnumValues(projected, enums); ok {
+		return nil
+	}
+	return UnknownAPITypeError(table, field, target)
+}
