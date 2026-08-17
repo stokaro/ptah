@@ -843,3 +843,96 @@ func TestPostgresFamilyPlan_SpannerCreatesNoKeylessTable(t *testing.T) {
 		c.Assert(keyed, qt.IsTrue, qt.Commentf("%q creates a table Spanner will refuse", statement))
 	}
 }
+
+// Entering a throwaway namespace is not evidence that it governs where objects
+// land. Measured on the Cloud Spanner emulator through PGAdapter: CREATE SCHEMA
+// is accepted, SET search_path is accepted, and an unqualified CREATE TABLE
+// lands in `public` regardless -- so every object outlives the run and the next
+// run reads them as findings. Two runs against one server answered differently,
+// both exiting non-zero for unrelated-looking reasons: nine capability
+// disagreements on a fresh server, three on the second (stokaro/ptah#942).
+func TestNamespaceProblem(t *testing.T) {
+	tests := []struct {
+		name        string
+		sentinel    int64
+		occupants   int64
+		wantRefusal string
+	}{
+		{
+			// The ordinary case, and the reason the server's contents are then
+			// none of the probe's business: the run cannot see them and they
+			// cannot see it.
+			name:      "the namespace applies, on a server holding anything at all",
+			sentinel:  1,
+			occupants: 4000,
+		},
+		{
+			name:      "the namespace applies on an empty server too",
+			sentinel:  1,
+			occupants: 0,
+		},
+		{
+			// Survivable: the objects land beside nothing.
+			name:      "it does not apply and the server is the run's own",
+			sentinel:  0,
+			occupants: 0,
+		},
+		{
+			name:        "it does not apply and something else is already there",
+			sentinel:    0,
+			occupants:   23,
+			wantRefusal: "already holds 23 table(s)",
+		},
+		{
+			// One leftover is the whole hazard: it is the object the next run
+			// would read as its own finding.
+			name:        "one leftover is enough",
+			sentinel:    0,
+			occupants:   1,
+			wantRefusal: "already holds 1 table(s)",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			err := namespaceProblem("ptah_capprobe_test", tt.sentinel, tt.occupants)
+
+			c.Assert(errorMessageOf(err), qt.Contains, tt.wantRefusal)
+			c.Assert(err == nil, qt.Equals, tt.wantRefusal == "")
+		})
+	}
+}
+
+// errorMessageOf is "" for a nil error, so one assertion covers both outcomes.
+func errorMessageOf(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
+}
+
+// The occupancy count must exclude the catalog's own schemas on every dialect
+// the probe reaches, or a server with nothing on it counts hundreds of tables
+// and the run is refused for the catalog existing.
+func TestOccupancySQL_ExcludesEveryCatalogSchema(t *testing.T) {
+	tests := []struct {
+		name   string
+		schema string
+	}{
+		{name: "the SQL standard catalog", schema: "information_schema"},
+		{name: "PostgreSQL's own", schema: "pg_catalog"},
+		{name: "Spanner's own", schema: "spanner_sys"},
+		{name: "MySQL's system database", schema: "mysql"},
+		{name: "MySQL's instrumentation", schema: "performance_schema"},
+		{name: "MySQL's helper views", schema: "sys"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(occupancySQL, qt.Contains, "'"+tt.schema+"'")
+		})
+	}
+}
