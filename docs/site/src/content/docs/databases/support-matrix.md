@@ -61,31 +61,27 @@ the declared set cannot say one thing here and another in a workflow file.
 | `mariadb` | 11.8 | certified | `MariaDB1011` | yes |
 | `mariadb` | 11.4 | certified | `MariaDB1011` | yes |
 | `mariadb` | 10.11 | certified | `MariaDB1011` | yes |
+| `clickhouse` | 26.7 | certified | `ClickHouse2411` | yes |
+| `clickhouse` | 26.3 | certified | `ClickHouse2411` | yes |
+| `clickhouse` | 25.8 | certified | `ClickHouse2411` | yes |
+| `clickhouse` | 24.10 | legacy-tested | `ClickHouse24` | yes |
 | `cockroachdb` | 26.2 | certified | `CockroachDB26` | yes |
 | `cockroachdb` | 25.4 | certified | `CockroachDB25` | yes |
 | `yugabytedb` | 2026.1 | certified | `YugabyteDB25` | yes |
 | `yugabytedb` | 2025.2 | certified | `YugabyteDB25` | yes |
 | `yugabytedb` | 2024.2 | certified | `YugabyteDB24` | yes |
 | `spanner` | 0 | best-effort | `SpannerPostgres` | yes |
-| `clickhouse` | 26.7 | certified | `ClickHouse2411` | no |
-| `clickhouse` | 26.3 | best-effort | `ClickHouse2411` | no |
-| `clickhouse` | 25.8 | best-effort | `ClickHouse2411` | no |
-| `clickhouse` | 24.10 | legacy-tested | `ClickHouse24` | no |
 | `sqlserver` | 17.0 (SQL Server 2025) | certified | `SQLServer2022` | no |
 | `sqlserver` | 16.0 (SQL Server 2022) | best-effort | `SQLServer2022` | no |
 | `sqlserver` | 15.0 (SQL Server 2019) | best-effort | `SQLServer2022` | no |
 | `sqlite` | 3 | certified | `SQLite3` | no |
 
-Declared release lines: 27. Probed on every pull request: 19.
+Declared release lines: 27. Probed on every pull request: 23.
 
-Support levels across the 27 declared lines: 20 certified, 2 legacy-tested, 5 best-effort.
+Support levels across the 27 declared lines: 22 certified, 2 legacy-tested, 3 best-effort.
 
 Lines that are declared and not probed, and why:
 
-- `clickhouse` 26.7 — the clickhouse dialect has a probe plan and no launch recipe, so nothing here can start the server to run it.
-- `clickhouse` 26.3 — the clickhouse dialect has a probe plan and no launch recipe, so nothing here can start the server to run it.
-- `clickhouse` 25.8 — the clickhouse dialect has a probe plan and no launch recipe, so nothing here can start the server to run it.
-- `clickhouse` 24.10 — the clickhouse dialect has a probe plan and no launch recipe, so nothing here can start the server to run it.
 - `sqlserver` 17.0 — the capability probe has no statement table for the sqlserver dialect, so a server on this line would be asked nothing.
 - `sqlserver` 16.0 — the capability probe has no statement table for the sqlserver dialect, so a server on this line would be asked nothing.
 - `sqlserver` 15.0 — the capability probe has no statement table for the sqlserver dialect, so a server on this line would be asked nothing.
