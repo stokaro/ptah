@@ -1,6 +1,7 @@
 package atlasschema_test
 
 import (
+	"bytes"
 	"context"
 	"os"
 	"path/filepath"
@@ -93,6 +94,57 @@ func TestPreparePlanFileHonorsCustomNameAndDevURLDialect(t *testing.T) {
 
 	// A dev database of another dialect cannot stand in for the plan target.
 	c.Assert(err, qt.ErrorMatches, `--dev-url dialect "postgres" does not match --url dialect "sqlite"`)
+}
+
+// TestPreparePlanFileNamesTheContainerItDoesNotStart pins the half of --dev-url
+// a saved plan cannot consume. stokaro/ptah#1635 found the flag accepted,
+// dialect-checked and then read by nothing: a user passing
+// `--dev-url docker://…` got no container, no error and no sentence saying so.
+//
+// A saved plan reads local desired-state files, so there is nothing to replay
+// and a container would do nothing. What changed is that the run says it.
+func TestPreparePlanFileNamesTheContainerItDoesNotStart(t *testing.T) {
+	tests := []struct {
+		name        string
+		devURL      string
+		wantWarning string
+	}{
+		{
+			name:        "a container dev URL is answered with a sentence",
+			devURL:      "docker://sqlite/dev",
+			wantWarning: "schema plan starts none",
+		},
+		{
+			name:   "an ordinary dev URL says nothing, having nothing to explain",
+			devURL: "sqlite://dev.db",
+		},
+		{
+			name: "no dev URL says nothing",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			dir := t.TempDir()
+			conn := connectPlanSQLite(c, filepath.Join(dir, "warned.db"))
+			desired := writePlanDesiredSchema(c, dir, `CREATE TABLE users (id INTEGER PRIMARY KEY);`)
+			var diagnostics bytes.Buffer
+
+			_, err := atlasschema.PreparePlanFile(context.Background(), conn, atlasschema.PlanFileOptions{
+				DevURL:      test.devURL,
+				ToURLs:      []string{desired},
+				Diagnostics: &diagnostics,
+			})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(diagnostics.String(), qt.Contains, test.wantWarning)
+			// The arithmetic half: qt.Contains with "" passes on any string, so
+			// without this the two silent rows would assert nothing.
+			c.Assert(diagnostics.Len() > 0, qt.Equals, test.wantWarning != "",
+				qt.Commentf("diagnostics: %q", diagnostics.String()))
+		})
+	}
 }
 
 func TestPreparePlanFileRequiresConnection(t *testing.T) {

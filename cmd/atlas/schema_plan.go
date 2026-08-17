@@ -184,6 +184,7 @@ func runAtlasSchemaPlan(cmd *cobra.Command, opts atlasSchemaPlanOptions) error {
 		// Atlas-compatible surface; see cmd/atlas/schema_apply.go.
 		IgnoreUnknownHCLNames: true,
 		Vars:                  schemaVars,
+		Diagnostics:           cmd.ErrOrStderr(),
 	})
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
