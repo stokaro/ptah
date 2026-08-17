@@ -425,6 +425,24 @@ func (b Builder) ConstraintPartsVerbatim(table, constraint string) ID {
 	}
 }
 
+// ConstraintParts builds a constraint identity from components the caller
+// already has, folding each under the target's rule.
+//
+// It exists beside [Builder.Constraint] for the reason [Builder.TableParts]
+// does, and beside [Builder.ConstraintPartsVerbatim] for a different one: this
+// is what a source ADAPTER wants, where the spellings arrive unfolded and the
+// target's rule has not been applied yet. The verbatim form is for a consumer
+// downstream of a comparator that already folded them.
+func (b Builder) ConstraintParts(schema, table, constraint string) ID {
+	owner := b.TableParts(schema, table)
+	return ID{
+		Kind:   KindConstraint,
+		Schema: owner.Schema,
+		Parent: owner.Name,
+		Name:   b.namePart(strings.TrimSpace(constraint), b.semantics.IndexIdentityKey),
+	}
+}
+
 // Role builds the identity of a role, which no dialect Ptah targets qualifies
 // by schema.
 func (b Builder) Role(role string) ID {
