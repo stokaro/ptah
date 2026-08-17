@@ -45,13 +45,13 @@ func Render(db *goschema.Database, opts Options) (Result, error) {
 	// left to notice the loss with. This is the DECLARED collision; a collision
 	// that only appears after GraphQL name sanitization is a naming-rules
 	// artifact and stays a warning below.
-	if err := schemaexport.ValidateTableAPINames(tables); err != nil {
+	if err := schemaexport.ValidateTableAPINames(tables, schemaexport.TargetGraphQL); err != nil {
 		return Result{}, err
 	}
 	enums := schemaexport.EnumIndex(db)
 	for _, table := range tables {
 		fields := schemaexport.FieldsFor(db, table)
-		if err := schemaexport.ValidateFieldAPINames(table, fields); err != nil {
+		if err := schemaexport.ValidateFieldAPINames(table, fields, schemaexport.TargetGraphQL); err != nil {
 			return Result{}, err
 		}
 		// An explicit type override the scalar mapping cannot honor is refused
@@ -61,7 +61,7 @@ func Render(db *goschema.Database, opts Options) (Result, error) {
 		// nothing.
 		for _, field := range fields {
 			if err := schemaexport.RefuseUnknownAPIType(
-				table, field, "GraphQL", enums,
+				table, field, schemaexport.TargetGraphQL, enums,
 				func(t string) bool { return mapGraphQLScalar(t).Known },
 			); err != nil {
 				return Result{}, err
@@ -84,7 +84,7 @@ func Render(db *goschema.Database, opts Options) (Result, error) {
 	// reference targets defined later in the file.
 	typeNames := make(map[string]string, len(tables))
 	for _, table := range tables {
-		typeNames[table.Name] = reg.unique(schemaexport.SanitizeGraphQLName(schemaexport.TypeName(schemaexport.TableAPIName(table))))
+		typeNames[table.Name] = reg.unique(schemaexport.SanitizeGraphQLName(schemaexport.TypeName(schemaexport.TableAPIName(table, schemaexport.TargetGraphQL))))
 	}
 
 	b := &builder{
@@ -157,7 +157,7 @@ func (b *builder) addTable(db *goschema.Database, table goschema.Table) {
 		// The diagnostic paths keep naming the COLUMN. A warning about a name
 		// the reader cannot find in their schema source is a warning they
 		// cannot act on.
-		exported := schemaexport.FieldAPIName(field)
+		exported := schemaexport.FieldAPIName(field, schemaexport.TargetGraphQL)
 		name := schemaexport.SanitizeGraphQLName(exported)
 		if name != exported {
 			b.warn("type "+typeName+"."+field.Name, "column name is not a valid GraphQL name; exported as "+name)

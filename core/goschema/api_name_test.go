@@ -164,3 +164,91 @@ func TestParseFileReadsTheAPIType(t *testing.T) {
 		})
 	}
 }
+
+// The per-target names have the same reachability question as every other
+// attribute, times six: three targets on the field directive and three on the
+// table directive. An unregistered one is refused by the strict unknown-key
+// validator, so a value that arrives here is one an author can write.
+func TestParseFileReadsThePerTargetNames(t *testing.T) {
+	tests := []struct {
+		name  string
+		field string
+		table string
+		want  goschema.TargetNames
+	}{
+		{
+			name:  "all three, declared together",
+			field: `name="amount" type="INTEGER" openapi_name="amount" graphql_name="amountMinor" proto_name="amount_minor"`,
+			table: `name="billing_invoices" openapi_name="invoices" graphql_name="Invoice" proto_name="invoice_records"`,
+			want: goschema.TargetNames{
+				OpenAPI:  "amount",
+				GraphQL:  "amountMinor",
+				Protobuf: "amount_minor",
+			},
+		},
+		{
+			// One declared and two absent has to stay one declared and two
+			// absent: an absent target name falls back to the shared one, and
+			// filling it in here would make the fallback unobservable.
+			name:  "one alone leaves the others empty",
+			field: `name="amount" type="INTEGER" graphql_name="amountMinor"`,
+			table: `name="billing_invoices" graphql_name="Invoice"`,
+			want:  goschema.TargetNames{GraphQL: "amountMinor"},
+		},
+		{
+			name:  "none declared is the zero value",
+			field: `name="amount" type="INTEGER"`,
+			table: `name="billing_invoices"`,
+			want:  goschema.TargetNames{},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			dir := t.TempDir()
+			path := filepath.Join(dir, "model.go")
+			source := "package model\n\n" +
+				"//ptah:schema:table " + tt.table + "\n" +
+				"type Invoice struct {\n" +
+				"\t//ptah:schema:field " + tt.field + "\n" +
+				"\tValue string\n" +
+				"}\n"
+			c.Assert(os.WriteFile(path, []byte(source), 0o600), qt.IsNil)
+
+			db, err := goschema.ParseFile(path)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(db.Fields, qt.HasLen, 1)
+			c.Assert(db.Fields[0].APINames, qt.Equals, tt.want)
+		})
+	}
+}
+
+// The table directive carries its own three, read from the same place, so a
+// target cannot end up declarable on one level and not the other.
+func TestParseFileReadsThePerTargetTableNames(t *testing.T) {
+	c := qt.New(t)
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "model.go")
+	source := "package model\n\n" +
+		"//ptah:schema:table name=\"billing_invoices\" openapi_name=\"invoices\" " +
+		"graphql_name=\"Invoice\" proto_name=\"invoice_records\"\n" +
+		"type Invoice struct {\n" +
+		"\t//ptah:schema:field name=\"id\" type=\"BIGSERIAL\" primary=\"true\"\n" +
+		"\tID int64\n" +
+		"}\n"
+	c.Assert(os.WriteFile(path, []byte(source), 0o600), qt.IsNil)
+
+	db, err := goschema.ParseFile(path)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(db.Tables, qt.HasLen, 1)
+	c.Assert(db.Tables[0].APINames, qt.Equals, goschema.TargetNames{
+		OpenAPI:  "invoices",
+		GraphQL:  "Invoice",
+		Protobuf: "invoice_records",
+	})
+}

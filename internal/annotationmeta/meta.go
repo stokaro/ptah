@@ -306,6 +306,9 @@ var directives = []Directive{
 		Attributes: []Attribute{
 			attr("name", "Column name.", valueString, false, false),
 			attr("api_name", "Name this column carries in an exported API schema, when that differs from the column name.", valueString, false, false),
+			attr("openapi_name", "Name this column carries in the OpenAPI export only, overriding api_name there.", valueString, false, false),
+			attr("graphql_name", "Name this column carries in the GraphQL export only, overriding api_name there.", valueString, false, false),
+			attr("proto_name", "Name this column carries in the Protobuf export only, overriding api_name there. It is the wire identity, so changing it retires a field number.", valueString, false, false),
 			attr("api_type", "Type the API export projects this column as, named in Ptah's own type vocabulary.", valueString, false, false),
 			attr("type", "Database column type.", valueString, false, false),
 			attr("not_null", "Marks the column NOT NULL.", valueBoolean, false, true),
@@ -385,6 +388,9 @@ var directives = []Directive{
 		Attributes: []Attribute{
 			attr("name", "Table name.", valueString, false, false),
 			attr("api_name", "Name this table carries in an exported API schema, when that differs from the table name.", valueString, false, false),
+			attr("openapi_name", "Name this table carries in the OpenAPI export only, overriding api_name there.", valueString, false, false),
+			attr("graphql_name", "Name this table carries in the GraphQL export only, overriding api_name there.", valueString, false, false),
+			attr("proto_name", "Name this table carries in the Protobuf export only, overriding api_name there. It is the message identity, so changing it retires the old message.", valueString, false, false),
 			attr("schema", "Database schema name.", valueString, false, false),
 			attr("engine", "MySQL/MariaDB table engine shortcut.", valueString, false, false),
 			attr("comment", "Table comment.", valueString, false, false),

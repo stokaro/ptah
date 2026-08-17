@@ -175,6 +175,7 @@ func (s *schemaParseState) parseFieldComment(
 			FieldName:           name.Name,
 			Name:                kv["name"],
 			APIName:             kv["api_name"],
+			APINames:            targetNames(kv),
 			APIType:             kv["api_type"],
 			Type:                fieldType,
 			Nullable:            kv["not_null"] != "true",
@@ -487,6 +488,7 @@ func (s *schemaParseState) parseTableComment(comment *ast.Comment, structName st
 		StructName: structName,
 		Name:       tableName,
 		APIName:    kv["api_name"],
+		APINames:   targetNames(kv),
 		Schema:     schemaName,
 		Engine:     kv["engine"],
 		Comment:    kv["comment"],
@@ -1621,4 +1623,15 @@ func embeddedFieldsForStruct(embeddedFields []EmbeddedField, structName string) 
 		}
 	}
 	return matching
+}
+
+// targetNames reads the per-target name attributes. They share one shape on the
+// field and the table directives, so they are read in one place: a target that
+// gained an attribute on only one of the two would be a silent asymmetry.
+func targetNames(kv map[string]string) TargetNames {
+	return TargetNames{
+		OpenAPI:  kv["openapi_name"],
+		GraphQL:  kv["graphql_name"],
+		Protobuf: kv["proto_name"],
+	}
 }

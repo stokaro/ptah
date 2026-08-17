@@ -458,6 +458,10 @@
               "description": "Generated column kind, such as STORED or VIRTUAL.",
               "type": "string"
             },
+            "graphql_name": {
+              "description": "Name this column carries in the GraphQL export only, overriding api_name there.",
+              "type": "string"
+            },
             "identity_generation": {
               "description": "SQL identity generation mode.",
               "type": "string"
@@ -495,6 +499,10 @@
               "description": "Foreign key ON UPDATE action.",
               "type": "string"
             },
+            "openapi_name": {
+              "description": "Name this column carries in the OpenAPI export only, overriding api_name there.",
+              "type": "string"
+            },
             "primary": {
               "description": "Marks the column as part of the primary key.",
               "enum": [
@@ -503,6 +511,10 @@
               ],
               "type": "string",
               "x-ptah-bare-boolean": true
+            },
+            "proto_name": {
+              "description": "Name this column carries in the Protobuf export only, overriding api_name there. It is the wire identity, so changing it retires a field number.",
+              "type": "string"
             },
             "stored": {
               "description": "Shortcut controlling generated column storage.",
@@ -1188,12 +1200,24 @@
               "description": "MySQL/MariaDB table engine shortcut.",
               "type": "string"
             },
+            "graphql_name": {
+              "description": "Name this table carries in the GraphQL export only, overriding api_name there.",
+              "type": "string"
+            },
             "name": {
               "description": "Table name.",
               "type": "string"
             },
+            "openapi_name": {
+              "description": "Name this table carries in the OpenAPI export only, overriding api_name there.",
+              "type": "string"
+            },
             "primary_key": {
               "description": "Comma-separated primary key columns.",
+              "type": "string"
+            },
+            "proto_name": {
+              "description": "Name this table carries in the Protobuf export only, overriding api_name there. It is the message identity, so changing it retires the old message.",
               "type": "string"
             },
             "schema": {
