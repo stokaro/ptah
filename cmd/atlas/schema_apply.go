@@ -1293,15 +1293,26 @@ func validateAtlasSchemaApplyOptions(
 // still plans a file desired state against the target without a dev database.
 const applyWithoutDevURLEnvVar = "PTAH_ATLAS_APPLY_WITHOUT_DEV_URL"
 
-// ensureAtlasSchemaApplyDevURL requires --dev-url when the desired state is not
-// already a live database.
+// ensureAtlasSchemaApplyDevURL requires --dev-url when the desired state is
+// neither a live database nor a declarative schema file.
 //
-// The rule is scoped, not universal, and the scope is measured: with a database
-// URL as --to and no --dev-url the community binary exits 0, so a database
-// desired state stays exempt here. `schema inspect` and `schema diff` on this
-// binary already refuse their non-database sources for want of a dev database
-// (internal/atlasschema/inspect_source.go); `schema apply` was the sibling that
-// never got the gate, and it is the one that modifies the target.
+// The rule is scoped, not universal, and every boundary of the scope is
+// measured against the pinned community binary rather than reasoned about:
+//
+//	--to                              community binary        this binary
+//	sqlite://target.db                applies                 applies
+//	file://schema.hcl                 applies                 applies
+//	file://schema.sql                 --dev-url cannot be…    --dev-url cannot be…
+//
+// The middle row is the one this function got wrong until stokaro/ptah#1334 was
+// re-measured: an HCL desired state is already a schema definition and needs
+// nothing replayed, and refusing it broke `schema apply` for the most common
+// Atlas source there is. The fixture behind the original rule used a SQL file,
+// and one file cannot separate a rule about FILES from a rule about SQL.
+//
+// `schema inspect` and `schema diff` refuse BOTH formats on both binaries, so
+// they are not this rule and are deliberately left alone
+// (internal/atlasschema/inspect_source.go).
 //
 // A migration directory keeps its own longer diagnostic from
 // [atlassource.Set.EnsureDevDatabase], which names why the replay needs a dev
@@ -1323,7 +1334,8 @@ func ensureAtlasSchemaApplyDevURL(
 		return nil
 	}
 	set, err := atlassource.ClassifySet("--to", opts.toURLs, projectEnv)
-	if err != nil || set.Kind == atlassource.KindDatabase || len(set.Sources) == 0 {
+	if err != nil || set.Kind == atlassource.KindDatabase || len(set.Sources) == 0 ||
+		set.DeclarativeLocalFiles() {
 		// A classification error was already refused by
 		// validateAtlasSchemaApplyOptions with its own diagnostic; nothing here
 		// can improve on it.

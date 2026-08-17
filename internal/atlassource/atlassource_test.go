@@ -549,3 +549,93 @@ func TestPinDialect_NothingPins(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(dialect, qt.Equals, "")
 }
+
+// A local file is not one answer to "does this need a dev database". Measured
+// against the pinned community binary, which separates the two formats on
+// `schema apply` and on nothing else: `--to file://x.hcl` applies with no
+// --dev-url, `--to file://x.sql` refuses with `--dev-url cannot be empty`
+// (stokaro/ptah#1334).
+func TestSet_DeclarativeLocalFiles(t *testing.T) {
+	tests := []struct {
+		name  string
+		files []string
+		want  bool
+	}{
+		{
+			name:  "an HCL document is already a schema definition",
+			files: []string{"schema.hcl"},
+			want:  true,
+		},
+		{
+			// Ptah's own spelling of the same declarative document. There is
+			// no community-binary answer to match, because that binary has no
+			// YAML source; AGENTS.md decides it, since compatibility never
+			// removes a capability.
+			name:  "so is YAML, in both spellings",
+			files: []string{"schema.yaml", "other.yml"},
+			want:  true,
+		},
+		{
+			name:  "SQL has to be replayed to become one",
+			files: []string{"schema.sql"},
+			want:  false,
+		},
+		{
+			// The set must be declarative in FULL: the SQL half still needs
+			// the dev database, so the whole set does.
+			name:  "a mixture is not declarative",
+			files: []string{"schema.hcl", "extra.sql"},
+			want:  false,
+		},
+		{
+			// Case is not a format. A file the filesystem spells loudly is the
+			// same document.
+			name:  "the extension is matched case-insensitively",
+			files: []string{"SCHEMA.HCL"},
+			want:  true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			dir := t.TempDir()
+			urls := make([]string, 0, len(tt.files))
+			for _, name := range tt.files {
+				path := filepath.Join(dir, name)
+				c.Assert(os.WriteFile(path, []byte(""), 0o600), qt.IsNil)
+				urls = append(urls, "file://"+path)
+			}
+
+			set, err := atlassource.ClassifySet("--to", urls, atlassource.ProjectEnv{})
+			c.Assert(err, qt.IsNil)
+
+			c.Assert(set.DeclarativeLocalFiles(), qt.Equals, tt.want)
+		})
+	}
+}
+
+// The controls on the kind, which the format check must never answer for: a
+// database URL needs no dev database for a different reason, and an empty set
+// has nothing to classify.
+func TestSet_DeclarativeLocalFilesIsAboutLocalFilesOnly(t *testing.T) {
+	tests := []struct {
+		name string
+		urls []string
+	}{
+		{name: "a database URL", urls: []string{"sqlite://target.db"}},
+		{name: "no sources at all", urls: nil},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			set, err := atlassource.ClassifySet("--to", tt.urls, atlassource.ProjectEnv{})
+			c.Assert(err, qt.IsNil)
+
+			c.Assert(set.DeclarativeLocalFiles(), qt.IsFalse)
+		})
+	}
+}

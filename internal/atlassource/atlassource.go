@@ -346,6 +346,42 @@ func (s *Set) validate() error {
 	return nil
 }
 
+// DeclarativeLocalFiles reports whether every source in the set is a local
+// schema file already written as a schema definition -- HCL or YAML -- rather
+// than SQL a dev database has to replay to become one.
+//
+// It exists because "local file" is not one answer to "does this need a dev
+// database". Measured against the pinned community binary, which separates the
+// two on `schema apply` and on nothing else:
+//
+//	verb              file://x.hcl   file://x.sql
+//	schema apply      applies        --dev-url cannot be empty
+//	schema inspect    refuses        refuses
+//	schema diff       refuses        refuses
+//
+// The set must be declarative in FULL. A set mixing the two needs the dev
+// database its SQL half needs -- and the community binary refuses that mixture
+// earlier still, with `ambiguous schema: both SQL and HCL files found`
+// (stokaro/ptah#1334).
+//
+// YAML is Ptah's own spelling of the same declarative document and is treated
+// with HCL for the reason AGENTS.md gives: compatibility never removes a
+// capability. There is no community-binary answer to match for it, because that
+// binary has no YAML source at all.
+func (s Set) DeclarativeLocalFiles() bool {
+	if s.Kind != KindLocalFile || len(s.Sources) == 0 {
+		return false
+	}
+	for _, source := range s.Sources {
+		switch strings.ToLower(filepath.Ext(source.Path)) {
+		case ".hcl", ".yaml", ".yml":
+		default:
+			return false
+		}
+	}
+	return true
+}
+
 // EnsureDevDatabase verifies that sources requiring a dev-database replay have
 // one configured. The returned error is deterministic and reported before any
 // target database is contacted.

@@ -190,3 +190,75 @@ func TestSchemaApplyWithoutDevURLEnvVarRestoresPlanning(t *testing.T) {
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 	c.Assert(sqliteTableCount(c, dbPath, "restored_users"), qt.Equals, 1)
 }
+
+// The two desired-state formats a local file can be, side by side, because
+// separating them is the whole of stokaro/ptah#1334 and the fixture that missed
+// it wrote only SQL. Both cells are the pinned community binary v1.3.0's own
+// answers, measured on the same schema:
+//
+//	schema apply --url sqlite://x.db --to file://schema.hcl --auto-approve  -> exit 0, creates the table
+//	schema apply --url sqlite://x.db --to file://schema.sql --auto-approve  -> exit 1, --dev-url cannot be empty
+//
+// An HCL document is already a schema definition and needs nothing replayed. A
+// SQL file is a script that has to be run somewhere first, and that somewhere
+// is the dev database.
+func TestSchemaApplyDevURLRuleSeparatesTheFileFormats(t *testing.T) {
+	tests := []struct {
+		name     string
+		file     string
+		contents string
+		// wantError is "" for the cell the community binary applies, and the
+		// refusal for the cell it refuses. wantOutput is what the apply has to
+		// reach the target with, so the passing cell proves an apply and not
+		// merely a gate that let it past.
+		wantError  string
+		wantOutput string
+	}{
+		{
+			name: "an HCL desired state applies with no dev database",
+			file: "schema.hcl",
+			contents: "schema \"main\" {\n}\n" +
+				"table \"parity_hcl\" {\n  schema = schema.main\n" +
+				"  column \"id\" {\n    null = false\n    type = integer\n  }\n" +
+				"  primary_key {\n    columns = [column.id]\n  }\n}\n",
+			wantOutput: "parity_hcl",
+		},
+		{
+			name:      "a SQL desired state still requires one",
+			file:      "schema.sql",
+			contents:  "CREATE TABLE parity_sql (id INTEGER PRIMARY KEY);\n",
+			wantError: "--dev-url cannot be empty",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			dir := t.TempDir()
+			schemaPath := filepath.Join(dir, tt.file)
+			c.Assert(os.WriteFile(schemaPath, []byte(tt.contents), 0o600), qt.IsNil)
+			dbPath := filepath.Join(dir, "target.db")
+
+			out, err := runSchemaApply(c,
+				"--url", "sqlite://"+dbPath,
+				"--to", "file://"+schemaPath,
+				"--auto-approve",
+			)
+
+			c.Assert(schemaApplyErrorText(err), qt.Contains, tt.wantError,
+				qt.Commentf("output:\n%s", out))
+			c.Assert(err == nil, qt.Equals, tt.wantError == "")
+			c.Assert(out, qt.Contains, tt.wantOutput)
+		})
+	}
+}
+
+// schemaApplyErrorText is "" for a nil error, so one assertion covers the cell
+// that applies and the cell that is refused.
+func schemaApplyErrorText(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
+}
