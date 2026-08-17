@@ -76,8 +76,8 @@ Across the 190 capabilities below:
 
 | Reading | Count |
 | --- | --- |
-| Ptah supports it fully | 120 |
-| Ptah supports it with a stated limitation | 51 |
+| Ptah supports it fully | 121 |
+| Ptah supports it with a stated limitation | 50 |
 | Ptah does not implement it | 19 |
 | Ptah and Atlas CE both support it | 41 |
 | Ptah implements it openly where Atlas gates it behind Pro or Cloud | 42 |
@@ -222,7 +222,7 @@ seven of them as open capabilities regardless.
 | Generation-time destructive-change gate | ✅ | ❌ | ❌ | migrations generate and plan fail with `--check-destructive` when the generated SQL contains destructive statements; `--allow-destructive` reopens the gate. Distinct from the apply-time gate row. |
 | Inline nolint suppression | ✅ | ✅ | ✅ | Every code the compat surface prints is silenced by that code; analyzer names work on both surfaces; a blank line detaches a directive. Unknown selectors accepted silently, matching CE. |
 | Native migration lint rule set | ✅ | 🟡 | ✅ | 42 codes across 9 families, gated by `--dialect`. Atlas lists destructive and backward-incompatible rules Open; concurrent-index rules Pro. |
-| Per-rule severity policy | 🟡 | ❌ | 🟡 | Severity vocabulary is warning\|error only (info errors out). The community binary carries no severity attribute: it accepts one and ignores it, exactly as it treats an invented attribute. |
+| Per-rule severity policy | ✅ | ❌ | 🟡 | Severity vocabulary is info\|warning\|error; only error gates. The community binary carries no severity attribute: it accepts one and ignores it, exactly as it treats an invented attribute. |
 | Pre-migration assertion checks | 🟡 | ❌ | ✅ | Scalar SELECTs; txtar checks.sql and checks/*.sql support all-of/oneof groups. CE ignores checks. Compat bypass is PTAH_SKIP_CHECKS. |
 | SARIF 2.1.0 lint report | ✅ | ❌ | ➖ | Native `--format` sarif emits SARIF 2.1.0 with ruleId, level and file:line; Atlas documents Go-template `--format` output for migrate lint. |
 | Standalone SQL file linting (`ptah sql lint`) | ✅ | ❌ | ❌ | Lints arbitrary SQL files or stdin against per-dialect capability presets (9 dialects incl. sqlserver), refined by a `--version` server string; text/json output, rule disable. Not. |
