@@ -100,9 +100,20 @@ strict default. The separate `PTAH_ATLAS_STRICT_COMPAT` policy selector narrows
 the command inventory for CE oracle runs and does not relax this refusal.
 
 `migrate hash` takes no positional either and refuses through the same helper,
-`cmdutil.NoPositionalArgsHint`. No reading of that binary was taken for it: the
-sandbox this sweep ran in refuses any command containing that bare word, and
-the refusal was not scripted around.
+`cmdutil.NoPositionalArgsHint`. That cell is measured now, and it lands on this
+same argument. Read 2026-08-17 on a hashed SQLite directory, exit status taken
+from an unpiped invocation:
+
+| argv | Atlas CE v1.3.0 | Ptah |
+| --- | --- | --- |
+| `migrate hash --dir file://mig extra` | `0`, zero bytes of output | `1`, `unexpected positional arguments ["extra"]: name the migration directory with --dir` |
+
+The zero bytes are the finding rather than the exit status. That binary does not
+report the extra word, and it does the work anyway: a migration added before the
+run is hashed into `atlas.sum` exactly as if the positional had not been typed.
+So the operator who meant `--dir extra` and dropped the flag gets a rewritten
+checksum file for a directory they did not name, at exit `0`, with nothing
+printed (stokaro/ptah#1623).
 
 ## An edited already-applied migration file
 
@@ -310,7 +321,15 @@ should be reachable. The native surface now applies the relative boundary that
 the compatibility surface always applied, which narrows what native `ptah`
 accepts and leaves the absolute-pathname question exactly where it was.
 
-`migrate hash` carries the trailing-positional and `--var` cells of items 13 and
-12. No reading of the pinned binary was taken for either: the sandbox these
-sweeps ran in refuses any command containing that bare word, and the refusal was
-not scripted around.
+Both `migrate hash` cells of that issue -- the trailing positional of item 13
+and `--var` of item 12 -- were unread when this page was written, because the
+sandbox those sweeps ran in refused any command containing that bare word. They
+were read on 2026-08-17 in an environment that does not, and they split:
+
+- the trailing positional is a divergence, argued under **Positional arguments
+  a flag already names** above, where it joins the verbs that already refuse
+  one;
+- `--var` is parity. `migrate hash --dir file://mig --var x=1` exits `0` on
+  both binaries with byte-identical output, which is none.
+
+Neither is an unknown on this page any more (stokaro/ptah#1623).

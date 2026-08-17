@@ -253,9 +253,9 @@ func TestCompatCommand_LinearSkipReproducesThePinnedPrefixInsertion(t *testing.T
 // --latest 1 trailingarg` exits 0 and prints the report, discarding the
 // positional. Ptah refuses and names the flag the value belongs on.
 //
-// `migrate hash` refuses on the same shared helper. Its oracle cell is not
-// measured here: the sandbox this was run in refuses any command containing
-// that bare word, so no reading of that binary was taken for it.
+// `migrate hash` refuses on the same shared helper, and its oracle cell is
+// measured now -- see the test below, which was unwritable while the sandbox
+// this ran in refused any command containing that bare word.
 //
 // Mutated so NoPositionalArgsHint refuses only more than one positional, this
 // test fails, and so do the three rows in the other table.
@@ -279,6 +279,56 @@ func TestCompatCommand_LintRefusesATrailingPositional(t *testing.T) {
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Contains, `unexpected positional arguments ["stray"]`)
 	c.Assert(err.Error(), qt.Contains, "name the migration directory with --dir")
+}
+
+// TestCompatCommand_HashRefusesATrailingPositional pins the fifth verb of #1241
+// item 13, whose oracle reading was the one cell of that issue nobody ever took
+// (stokaro/ptah#1623).
+//
+// Read 2026-08-17 against the pinned community binary v1.3.0 on a hashed
+// directory, exit status from an unpiped invocation: `migrate hash --dir
+// file://mig extra` exits 0 and prints ZERO bytes, and it hashes the directory
+// anyway -- a migration added before the run lands in atlas.sum exactly as if
+// the word had not been typed. So the operator who meant `--dir extra` and
+// dropped the flag rewrites the checksum file of a directory they did not name,
+// silently. Ptah refuses and names the flag the value belongs on.
+//
+// The companion cell, item 12's `--var`, needs no test here because it is
+// parity: `migrate hash --dir file://mig --var x=1` exits 0 on both binaries
+// with byte-identical output, which is none.
+func TestCompatCommand_HashRefusesATrailingPositional(t *testing.T) {
+	c := qt.New(t)
+	root := c.TempDir()
+	migrationsDir := writeRetainedDir(c, filepath.Join(root, "migrations"), map[string]string{
+		retainedVersionEarly + "_early.sql": retainedEarlyBody,
+	})
+
+	_, _, err := runCompatStreams(c, "migrate", "hash", "--dir", "file://"+migrationsDir, "stray")
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(err.Error(), qt.Contains, `unexpected positional arguments ["stray"]`)
+	c.Assert(err.Error(), qt.Contains, "name the migration directory with --dir")
+}
+
+// TestCompatCommand_HashAcceptsAVar is the parity half of the pair above: item
+// 12 of #1241, also unread until stokaro/ptah#1623.
+//
+// Both binaries exit 0 on `migrate hash --dir file://mig --var x=1` and print
+// nothing. The row exists so the acceptance is held: a later change that made
+// Ptah refuse an unused --var here would be a divergence introduced against a
+// measured cell rather than an unknown.
+func TestCompatCommand_HashAcceptsAVar(t *testing.T) {
+	c := qt.New(t)
+	root := c.TempDir()
+	migrationsDir := writeRetainedDir(c, filepath.Join(root, "migrations"), map[string]string{
+		retainedVersionEarly + "_early.sql": retainedEarlyBody,
+	})
+
+	stdout, stderr, err := runCompatStreams(c, "migrate", "hash", "--dir", "file://"+migrationsDir, "--var", "x=1")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(stdout, qt.Equals, "")
+	c.Assert(stderr, qt.Equals, "")
 }
 
 // retainedZeroProgressBody fails on its FIRST statement, so the attempt commits
