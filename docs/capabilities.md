@@ -80,37 +80,44 @@ composed set to `NewWithCapabilities` (which clones its argument).
 Capability keys are a **curated registry** — `Validate()` rejects unknown keys,
 so typos fail fast. Current registry:
 
+<!-- BEGIN GENERATED CAPABILITY KEYS -->
 | Capability | Meaning |
 |---|---|
-| `drop_constraint_generic` | SQL-standard `ALTER TABLE … DROP CONSTRAINT` for non-FK constraints (MySQL 8.0.19+, MariaDB, PostgreSQL) |
-| `drop_constraint_if_exists` | `IF EXISTS` guard on constraint drops (MariaDB, PostgreSQL; **rejected by MySQL**). Requires `drop_constraint_generic` |
-| `drop_index_if_exists` | `IF EXISTS` guard on `DROP INDEX` (MariaDB 10.1.4+, PostgreSQL; **rejected by MySQL**) |
+| `advisory_locks` | PostgreSQL advisory lock functions |
+| `alter_generated_column_expression` | in-place ALTER COLUMN SET EXPRESSION for generated columns (PostgreSQL 17+) |
+| `catalog_check_constraint_table_name` | information_schema.CHECK_CONSTRAINTS carries TABLE_NAME (MariaDB only) |
+| `catalog_dependencies` | the catalog exposes pg_depend |
+| `catalog_row_statistics` | the catalog exposes planner row-count statistics (pg_stat_all_tables) |
+| `catalog_view_dependencies` | a catalog naming the tables a view reads (MySQL information_schema.VIEW_TABLE_USAGE) |
 | `check_constraints_enforced` | CHECK constraints are enforced, not parsed-and-ignored (MySQL 8.0.16+, MariaDB 10.2.1+, PostgreSQL) |
-| `drop_check_clause` | Dedicated `ALTER TABLE … DROP CHECK` spelling (MySQL 8.0.16+ only; **MariaDB rejects it** — verified live). Requires `check_constraints_enforced` |
-| `enum_inline_column` | Enums are inline column types (MySQL/MariaDB `ENUM`, ClickHouse `Enum8/16`) |
-| `enum_custom_type` | Enums are separate named types (PostgreSQL `CREATE TYPE … AS ENUM`) |
-| `create_index_concurrently` | `CREATE [UNIQUE] INDEX CONCURRENTLY` (PostgreSQL; a compatibility no-op on CockroachDB) |
-| `drop_index_concurrently` | `DROP INDEX CONCURRENTLY` (PostgreSQL; disabled on the PostgreSQL-compatible presets that do not emit `CONCURRENTLY`) |
-| `index_include_spgist` | `SPGIST` indexes with `INCLUDE` payload columns (PostgreSQL 14+) |
-| `views` | Standalone `CREATE VIEW … AS <query>` objects |
-| `materialized_views` | `CREATE MATERIALIZED VIEW`: a view whose query result is stored. Requires `views` |
-| `functions` | User-defined functions declared with a return type, a language, and a body |
-| `triggers` | `CREATE TRIGGER` objects |
-| `create_or_replace_trigger` | Single-statement trigger replacement: `CREATE OR REPLACE TRIGGER` on PostgreSQL 14+/MariaDB and `CREATE OR ALTER TRIGGER` on SQL Server. Not available on MySQL. Requires `triggers` |
-| `postgres_catalog_functions` | pg_catalog's introspection helpers resolve: `obj_description`, `format_type`, `pg_get_expr`, `pg_get_constraintdef` |
-| `catalog_row_statistics` | the catalog exposes planner row-count statistics (`pg_stat_all_tables`) |
-| `catalog_dependencies` | the catalog exposes `pg_depend`, the dependency table the user-defined-type read joins |
-| `alter_generated_column_expression` | In-place `ALTER COLUMN SET EXPRESSION` for generated columns (PostgreSQL 17+) |
-| `row_level_security` | Row-level security policies (PostgreSQL) |
-| `role_management` | Named roles plus `GRANT`/`REVOKE` of object privileges. The PostgreSQL family spells it `CREATE`/`ALTER ROLE` with attributes; ClickHouse spells it `CREATE`/`DROP ROLE` with none, over database- and table-scoped grants. The key promises a round trip, not a vocabulary |
-| `foreign_keys` | Declarative `FOREIGN KEY` constraints |
-| `foreign_keys_require_unique_reference` | Foreign keys require a declared primary or unique referenced key (MySQL 8.4+ default). Requires `foreign_keys` |
-| `foreign_keys_require_indexed_reference` | Foreign keys may reference a complete leftmost index prefix (MySQL before 8.4 and MariaDB). Requires `foreign_keys` |
-| `foreign_keys_create_backing_index` | The database creates the foreign key's backing index (Spanner). Requires `foreign_keys` |
-| `sequences` | Database sequence objects: `SERIAL`/`BIGSERIAL` column backing and first-class standalone sequences via `//ptah:schema:sequence` (`CREATE`/`ALTER`/`DROP SEQUENCE`). See [Sequences](./sequences.md). |
-| `xml_type` | PostgreSQL `XML` column type |
-| `advisory_locks` | PostgreSQL advisory lock functions such as `pg_advisory_lock` |
-| `row_level_ttl` | Table storage parameters declaring a row-expiry policy the engine runs (CockroachDB row-level TTL). The one key that is true on a PostgreSQL-compatible engine and false on PostgreSQL itself |
+| `check_grant_statement` | a statement answering whether the connected account holds a privilege (ClickHouse CHECK GRANT) |
+| `create_index_concurrently` | CREATE [UNIQUE] INDEX CONCURRENTLY (PostgreSQL; a compatibility no-op on CockroachDB) |
+| `create_or_replace_trigger` | single-statement trigger replacement (PostgreSQL/MariaDB CREATE OR REPLACE, SQL Server CREATE OR ALTER; not MySQL) |
+| `drop_check_clause` | dedicated ALTER TABLE ... DROP CHECK spelling (MySQL 8.0.16+; NOT MariaDB — verified live) |
+| `drop_constraint_generic` | SQL-standard ALTER TABLE ... DROP CONSTRAINT for non-FK constraints (MySQL 8.0.19+, MariaDB, PostgreSQL) |
+| `drop_constraint_if_exists` | IF EXISTS guard on constraint drops (MariaDB, PostgreSQL; rejected by MySQL) |
+| `drop_index_concurrently` | DROP INDEX CONCURRENTLY (PostgreSQL; disabled on the PostgreSQL-compatible presets that do not emit CONCURRENTLY) |
+| `drop_index_if_exists` | IF EXISTS guard on DROP INDEX (MariaDB 10.1.4+, PostgreSQL; rejected by MySQL) |
+| `enum_custom_type` | enums are separate named types (PostgreSQL CREATE TYPE ... AS ENUM) |
+| `enum_inline_column` | enums are inline column types (MySQL/MariaDB ENUM, ClickHouse Enum8/16) |
+| `foreign_keys` | declarative FOREIGN KEY constraints |
+| `foreign_keys_create_backing_index` | the database creates the referenced-key backing index (Cloud Spanner) |
+| `foreign_keys_require_indexed_reference` | foreign keys require the referenced columns as a full leftmost index prefix (MySQL before 8.4 and MariaDB) |
+| `foreign_keys_require_unique_reference` | foreign keys require a declared unique referenced key |
+| `functions` | user-defined functions declared with a return type, a language, and a body |
+| `index_include_spgist` | SP-GiST indexes with INCLUDE payload columns (PostgreSQL 14+) |
+| `materialized_views` | CREATE MATERIALIZED VIEW: a view whose query result is stored |
+| `postgres_catalog_functions` | obj_description reads a comment back out of the catalog |
+| `rename_column_clause` | ALTER TABLE ... RENAME COLUMN renames a column in place (SQLite 3.25+) |
+| `role_management` | named roles plus GRANT/REVOKE of object privileges (PostgreSQL family, ClickHouse) |
+| `row_level_security` | row-level security policies (PostgreSQL) |
+| `row_level_ttl` | table storage parameters declaring a row-expiry policy (CockroachDB row-level TTL) |
+| `sequences` | database sequence objects (SERIAL/BIGSERIAL or explicit CREATE SEQUENCE support) |
+| `show_routine_privilege` | routine metadata requires the global SHOW_ROUTINE privilege (MySQL 8.0.20+) |
+| `triggers` | CREATE TRIGGER objects |
+| `views` | standalone CREATE VIEW ... AS <query> objects |
+| `xml_type` | PostgreSQL XML column type |
+<!-- END GENERATED CAPABILITY KEYS -->
 
 ### Validation rules
 
@@ -188,37 +195,44 @@ set that names no mode at all, which only a hand-built set produces and
 
 ## Presets
 
-| Capability | MySQL84 | MySQL8019 | MySQL8016 | MySQLLegacy | MariaDB1011 | MariaDBLegacy | Postgres17 | Postgres16 | Postgres13 | ClickHouse24 | CockroachDB23 | CockroachDB25 | CockroachDB26 | YugabyteDB25 | SQLite3 | SQLServer2022 | SpannerPG |
-|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| `drop_constraint_generic` | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ | ✅ | ✅ | ❌ | ✅ | ❌ |
-| `drop_constraint_if_exists` | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ |
-| `drop_index_if_exists` | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ |
-| `check_constraints_enforced` | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
-| `drop_check_clause` | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| `enum_inline_column` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| `enum_custom_type` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
-| `create_index_concurrently` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ |
-| `drop_index_concurrently` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| `index_include_spgist` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| `views` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `materialized_views` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
-| `functions` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
-| `triggers` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
-| `create_or_replace_trigger` | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ❌ | ✅ | ❌ |
-| `postgres_catalog_functions` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
-| `catalog_row_statistics` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
-| `catalog_dependencies` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
-| `alter_generated_column_expression` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| `row_level_security` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
-| `role_management` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
-| `foreign_keys` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| `foreign_keys_require_unique_reference` | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
-| `foreign_keys_require_indexed_reference` | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
-| `foreign_keys_create_backing_index` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
-| `sequences` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ |
-| `xml_type` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ❌ |
-| `advisory_locks` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ |
-| `row_level_ttl` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
+<!-- BEGIN GENERATED PRESET MATRIX -->
+| Capability | MySQLLegacy | MySQL8013 | MySQL8016 | MySQL8019 | MySQL8020 | MySQL84 | MariaDBLegacy | MariaDB1011 | Postgres13 | Postgres16 | Postgres17 | ClickHouse24 | ClickHouse2411 | CockroachDB23 | CockroachDB25 | CockroachDB26 | YugabyteDB25 | SQLite324 | SQLite3 | SQLServer2022 | SpannerPostgres |
+|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+| `advisory_locks` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ |
+| `alter_generated_column_expression` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| `catalog_check_constraint_table_name` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| `catalog_dependencies` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
+| `catalog_row_statistics` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
+| `catalog_view_dependencies` | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ |
+| `check_constraints_enforced` | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `check_grant_statement` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| `create_index_concurrently` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ❌ | ❌ |
+| `create_or_replace_trigger` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ |
+| `drop_check_clause` | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| `drop_constraint_generic` | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ |
+| `drop_constraint_if_exists` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ |
+| `drop_index_concurrently` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| `drop_index_if_exists` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `enum_custom_type` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
+| `enum_inline_column` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| `foreign_keys` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `foreign_keys_create_backing_index` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ |
+| `foreign_keys_require_indexed_reference` | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| `foreign_keys_require_unique_reference` | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| `functions` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
+| `index_include_spgist` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| `materialized_views` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
+| `postgres_catalog_functions` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
+| `rename_column_clause` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ | ❌ |
+| `role_management` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
+| `row_level_security` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
+| `row_level_ttl` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| `sequences` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
+| `show_routine_privilege` | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ |
+| `triggers` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ |
+| `views` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
+| `xml_type` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ❌ | ❌ | ✅ | ❌ |
+<!-- END GENERATED PRESET MATRIX -->
 
 Version lines: `MySQL84()` covers MySQL 8.4+, 9.x, and the 26.x generation;
 the exact measured lines are 8.4, 9.7, and 26.7. `MySQL8019()` covers

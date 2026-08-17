@@ -200,6 +200,29 @@ func clickHousePlan() plan {
 				"ClickHouse's MergeTree TTL clause is a different declaration and is "+
 				"accepted",
 		),
+		// The key ClickHouse's own ladder turns on, asked of the server rather
+		// than compared against 24.11. `CHECK GRANT` is a ClickHouse statement
+		// with no counterpart elsewhere, so this is the one plan where it is a
+		// real question rather than a refusal (stokaro/ptah#916).
+		acceptanceNote(capability.CheckGrantStatement, nil,
+			"CHECK GRANT SHOW DATABASES, SHOW TABLES ON *.*",
+			"the statement that answers whether this account may see a catalog entry",
+		),
+		acceptanceNote(capability.CatalogViewDependencies, nil,
+			"SELECT 1 FROM information_schema.view_table_usage LIMIT 1",
+			"the catalog naming the tables a view reads",
+		),
+		acceptanceNote(capability.CatalogCheckConstraintTableName, nil,
+			"SELECT table_name FROM information_schema.check_constraints LIMIT 1",
+			"the CHECK_CONSTRAINTS column that names the declaring table",
+		),
+		// The renamed column is deliberately NOT the sorting key: renaming that
+		// one is refused for a reason that has nothing to do with the clause,
+		// and asking it there would answer a different question.
+		acceptance(capability.RenameColumnClause,
+			[]string{t.table("rnc_t", "n Int64, b Int64", "n")},
+			"ALTER TABLE rnc_t RENAME COLUMN b TO c",
+		),
 	}
 	return plan{experiments: experiments, undecided: map[capability.Capability]string{
 		// See the same declaration in the PostgreSQL-family plan: the probe
