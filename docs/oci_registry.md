@@ -100,6 +100,52 @@ behind in the source repository — the promotion succeeds and silently loses th
 evidence it was promoted on. A digest destination is refused: a digest names
 content that already exists, so there is nothing for a copy to create there.
 
+## Air-gapped environments
+
+An `oci-layout://` reference addresses an OCI image layout on disk instead of a
+registry, and either side of a copy may be one. That is what an air-gapped
+environment has instead of a network: export on one side of the gap, carry the
+directory across, import on the other.
+
+```bash
+# outside the gap
+ptah oci copy --recursive \
+  "oci://ghcr.io/acme/app-migrations:v20260728153000" \
+  "oci-layout:///media/transfer/app-migrations:v20260728153000"
+
+# inside it
+ptah oci copy --recursive \
+  "oci-layout:///media/transfer/app-migrations:v20260728153000" \
+  "oci://registry.internal/acme/app-migrations:production"
+```
+
+The digest is preserved across the gap, so what arrives is the artifact that was
+reviewed rather than one equal to it. The directory doubles as a release bundle,
+a registry backup, and a deterministic fixture for a test that must not depend
+on a server being up. A layout with no tag in the reference uses `latest`, and a
+destination directory that does not exist is created.
+
+## Repairing referrer discovery
+
+A registry that gained the referrers index *after* Ptah published through its
+durable tag holds attachments no other OCI client can find, and nothing about
+the artifact says so.
+
+```bash
+ptah oci reindex "oci://ghcr.io/acme/app-migrations:latest"
+```
+
+Republishing the manifest repairs it: the content is byte-identical, so the
+digest does not move, and a registry serving the index builds the entry when it
+receives a manifest carrying a subject. The pass ends by asking the registry
+again, because a registry that accepted the manifest and built no entry looks
+exactly like one that did until somebody checks; anything still missing is
+reported as unrepaired and the command exits nonzero.
+
+It is a separate verb rather than something a publish does. The repair changes
+someone else's registry state, and a publish that silently rewrote history would
+be doing work nobody asked for on artifacts they may not own.
+
 ## Reaching a private registry
 
 A registry with its own certificate authority needs one setting, and without it

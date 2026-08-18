@@ -40,6 +40,7 @@ func NewCommand() *cobra.Command {
 	cmd.AddCommand(newFetchCommand())
 	cmd.AddCommand(newInspectCommand())
 	cmd.AddCommand(newReferrersCommand())
+	cmd.AddCommand(newReindexCommand())
 	cmd.AddCommand(newResolveCommand())
 	cmd.AddCommand(newTagCommand())
 	cmd.AddCommand(newTagsCommand())
