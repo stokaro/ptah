@@ -124,7 +124,70 @@ type ArtifactCopyOptions struct {
 	Tags []string
 }
 
+// copyEndpoint is one side of a copy, resolved to something oras can read or
+// write and the selector that names the artifact within it.
+type copyEndpoint struct {
+	target   oras.Target
+	selector string
+	display  string
+}
+
+// copySource opens the side a copy reads from, registry or image layout.
+//
+// Both kinds resolve the same way on purpose. An export to a directory and an
+// import from one are the same operation as a registry-to-registry copy, and
+// making them a separate verb would give an air-gapped environment a second
+// code path to trust.
+func (c *Client) copySource(raw string) (copyEndpoint, error) {
+	if IsLayoutRef(raw) {
+		return openLayoutEndpoint(raw)
+	}
+	ref, err := ParseRef(raw)
+	if err != nil {
+		return copyEndpoint{}, err
+	}
+	repository, err := c.repository(ref)
+	if err != nil {
+		return copyEndpoint{}, err
+	}
+	return copyEndpoint{target: repository, selector: ref.Selector(), display: ref.String()}, nil
+}
+
+// copyDestination opens the side a copy writes to, and refuses a digest.
+//
+// A digest names content that already exists, so there is nothing for a copy to
+// create at that address.
+func (c *Client) copyDestination(raw string) (copyEndpoint, error) {
+	if IsLayoutRef(raw) {
+		return openLayoutEndpoint(raw)
+	}
+	ref, err := ParseRef(raw)
+	if err != nil {
+		return copyEndpoint{}, err
+	}
+	if ref.IsDigest() {
+		return copyEndpoint{}, fmt.Errorf("%w: %s", ErrDigestPush, ref)
+	}
+	repository, err := c.repository(ref)
+	if err != nil {
+		return copyEndpoint{}, err
+	}
+	return copyEndpoint{target: repository, selector: ref.Selector(), display: ref.String()}, nil
+}
+
+func openLayoutEndpoint(raw string) (copyEndpoint, error) {
+	target, tag, err := OpenLayout(raw)
+	if err != nil {
+		return copyEndpoint{}, err
+	}
+	return copyEndpoint{target: target, selector: tag, display: strings.TrimSpace(raw)}, nil
+}
+
 // CopyArtifact copies one artifact between repositories, preserving its digest.
+//
+// Either side may be an oci-layout:// directory, which is what an air-gapped
+// environment has instead of a network: export on one side of the gap, carry
+// the directory across, import on the other.
 //
 // The destination selector is used as the destination tag, so a copy names what
 // it is creating rather than inheriting the source's alias silently.
@@ -142,37 +205,34 @@ func (c *Client) CopyArtifact(
 	ctx, cancel := c.operationContext(ctx)
 	defer cancel()
 
-	source, err := ParseRef(srcRef)
+	source, err := c.copySource(srcRef)
 	if err != nil {
 		return ocispec.Descriptor{}, fmt.Errorf("parse source: %w", err)
 	}
-	destination, err := ParseRef(dstRef)
+	destination, err := c.copyDestination(dstRef)
 	if err != nil {
 		return ocispec.Descriptor{}, fmt.Errorf("parse destination: %w", err)
-	}
-	if destination.IsDigest() {
-		return ocispec.Descriptor{}, fmt.Errorf("%w: %s", ErrDigestPush, destination)
-	}
-	from, err := c.repository(source)
-	if err != nil {
-		return ocispec.Descriptor{}, err
-	}
-	to, err := c.repository(destination)
-	if err != nil {
-		return ocispec.Descriptor{}, err
 	}
 
 	var descriptor ocispec.Descriptor
 	if opts.Recursive {
-		descriptor, err = oras.ExtendedCopy(ctx, from, source.Selector(), to, destination.Selector(), oras.ExtendedCopyOptions{})
+		graph, ok := source.target.(oras.ReadOnlyGraphTarget)
+		if !ok {
+			return ocispec.Descriptor{}, fmt.Errorf(
+				"the source %s cannot enumerate referrers, so a recursive copy would silently carry none",
+				source.display)
+		}
+		descriptor, err = oras.ExtendedCopy(ctx, graph, source.selector, destination.target,
+			destination.selector, oras.ExtendedCopyOptions{})
 	} else {
-		descriptor, err = oras.Copy(ctx, from, source.Selector(), to, destination.Selector(), oras.CopyOptions{})
+		descriptor, err = oras.Copy(ctx, source.target, source.selector, destination.target,
+			destination.selector, oras.CopyOptions{})
 	}
 	if err != nil {
-		return ocispec.Descriptor{}, fmt.Errorf("copy %s to %s: %w", source, destination, err)
+		return ocispec.Descriptor{}, fmt.Errorf("copy %s to %s: %w", source.display, destination.display, err)
 	}
 	for _, tag := range extra {
-		if err := to.Tag(ctx, descriptor, tag); err != nil {
+		if err := destination.target.Tag(ctx, descriptor, tag); err != nil {
 			return descriptor, &PartialPushError{
 				Descriptor: descriptor,
 				FailedTag:  tag,

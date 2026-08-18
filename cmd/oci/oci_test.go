@@ -156,3 +156,25 @@ func TestTags_RejectsUnsupportedFormatBeforeNetworkAccess(t *testing.T) {
 
 	c.Assert(err, qt.ErrorMatches, `unsupported output format "yaml": expected text or json`)
 }
+
+func TestCommandTree_RegistersReindex(t *testing.T) {
+	c := qt.New(t)
+	cmd := oci.NewCommand()
+
+	found, _, err := cmd.Find([]string{"reindex"})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(found.CommandPath(), qt.Equals, "oci reindex")
+	c.Assert(found.Flag("format"), qt.IsNotNil)
+	c.Assert(found.Flag("plain-http"), qt.IsNotNil)
+}
+
+func TestReindex_RejectsUnsupportedFormatBeforeNetworkAccess(t *testing.T) {
+	c := qt.New(t)
+	cmd := oci.NewCommand()
+	cmd.SetArgs([]string{"reindex", "oci://registry.invalid/acme/db:latest", "--format", "yaml"})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.ErrorMatches, `unsupported output format "yaml": expected text or json`)
+}
