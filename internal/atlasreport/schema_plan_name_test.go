@@ -66,8 +66,10 @@ func TestNewSchemaPlanName_HappyPath(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(got, qt.DeepEquals, atlasreport.SchemaPlanName{
-		FromHash: "ERERERERERERERERERERERERERERERERERERERERERE=",
-		ToHash:   "IiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiI=",
+		FromHash:     "ERERERERERERERERERERERERERERERERERERERERERE=",
+		ToHash:       "IiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiI=",
+		FromHashSafe: "ERERERERERERERERERERERERERERERERERERERERERE",
+		ToHashSafe:   "IiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiIiI",
 	})
 }
 
