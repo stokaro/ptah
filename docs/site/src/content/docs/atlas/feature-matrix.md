@@ -76,12 +76,12 @@ Across the 190 capabilities below:
 
 | Reading | Count |
 | --- | --- |
-| Ptah supports it fully | 122 |
-| Ptah supports it with a stated limitation | 49 |
+| Ptah supports it fully | 123 |
+| Ptah supports it with a stated limitation | 48 |
 | Ptah does not implement it | 19 |
 | Ptah and Atlas CE both support it | 41 |
 | Ptah implements it openly where Atlas gates it behind Pro or Cloud | 42 |
-| Ptah has it and neither Atlas edition does | 26 |
+| Ptah has it and neither Atlas edition does | 27 |
 | Atlas CE has it and Ptah does not, or only in part | 24 |
 | An Atlas column is ❔ — not established by this page's evidence | 4 |
 
@@ -331,7 +331,7 @@ control — come from the registry, not from Ptah. The full workflow is on
 | Digest pinning and write-once version tags | ✅ | ➖ | ❌ | Pushing to an @sha256 reference is refused; `--version` is write-once and a conflict exits 2. The reference tag, `--tag` values and latest all move. |
 | Environment-scoped SQL seed runner | ✅ | ❌ | ❌ | NNN_desc.env.sql files recorded in schema_seeds with protected-env gates. No seed verb in the CE inventory or the cited Pro list. |
 | oci:// as a `--schema-file` desired-state source | ✅ | ❌ | ✅ | Accepted by schema render, export, inspect, compare, drift, plan, apply and push, plus migrations plan and generate. All ten expose `--plain-http`, and a walk of the command tree gates the pairing. |
-| Referrer attachments: lint, plan, deployment reports | 🟡 | ❌ | ❌ | lint `--attach`, migrations plan `--attach` and up attach reports to an exact digest. `oci referrers` lists descriptors only; no flag downloads the payload. Tracked by stokaro/ptah#1143. |
+| Referrer attachments: lint, plan, deployment reports | ✅ | ❌ | ❌ | lint `--attach`, migrations plan `--attach` and up attach reports to an exact digest, and `oci fetch` returns the payload behind a descriptor rather than the descriptor alone. |
 | Registry-backed distribution: `oci://` vs `atlas://` | ✅ | ❌ | ✅ | `atlas://` functions — publish, pull, digest-pin, run migrations directly, schemas via `--schema-file` — over any OCI registry, no account. See [OCI registry artifacts](../../operate/oci-registry/). |
 
 ## Atlas Registry and Cloud
