@@ -230,7 +230,7 @@ func FunctionsWithSemantics(
 		return
 	}
 
-	generatedFunctions := make(map[objectIdentity]goschema.Function, len(generated.Functions))
+	generatedFunctions := make(map[objectIdentity][]goschema.Function, len(generated.Functions))
 	generatedNames := make(map[objectIdentity]string, len(generated.Functions))
 	for _, function := range generated.Functions {
 		// qualifiedRoutineIdentityKey, not routineIdentityKey: folding the whole
@@ -241,31 +241,34 @@ func FunctionsWithSemantics(
 		// removed and the plan tried to create one that already existed.
 		identity := newQualifiedObjectIdentity(objectidentity.KindFunction,
 			qualifiedRoutineIdentityKey(function.Name, dialect), semantics)
-		generatedFunctions[identity] = function
+		generatedFunctions[identity] = append(generatedFunctions[identity], function)
 		generatedNames[identity] = function.Name
 	}
-	databaseFunctions := make(map[objectIdentity]types.DBFunction, len(database.Functions))
+	databaseFunctions := make(map[objectIdentity][]types.DBFunction, len(database.Functions))
 	databaseNames := make(map[objectIdentity]string, len(database.Functions))
 	for _, function := range database.Functions {
 		identity := newObjectIdentity(objectidentity.KindFunction,
 			function.Schema, routineIdentityKey(function.Name, dialect), semantics)
-		databaseFunctions[identity] = function
+		databaseFunctions[identity] = append(databaseFunctions[identity], function)
 		databaseNames[identity] = function.QualifiedName()
 	}
 
-	for identity, generatedFunction := range generatedFunctions {
-		databaseFunction, exists := databaseFunctions[identity]
-		if !exists {
+	for identity, declared := range generatedFunctions {
+		recorded := databaseFunctions[identity]
+		pairs, addedCount, _ := pairRoutineOverloads(declared, recorded)
+		for range addedCount {
 			diff.FunctionsAdded = append(diff.FunctionsAdded, generatedNames[identity])
-			continue
 		}
-		functionComparison := FunctionDefinitionsWithDialect(generatedFunction, databaseFunction, dialect)
-		if len(functionComparison.Changes) > 0 {
-			diff.FunctionsModified = append(diff.FunctionsModified, functionComparison)
+		for _, pair := range pairs {
+			functionComparison := FunctionDefinitionsWithDialect(pair.declared, pair.recorded, dialect)
+			if len(functionComparison.Changes) > 0 {
+				diff.FunctionsModified = append(diff.FunctionsModified, functionComparison)
+			}
 		}
 	}
-	for identity := range databaseFunctions {
-		if _, exists := generatedFunctions[identity]; !exists {
+	for identity, recorded := range databaseFunctions {
+		_, _, removedCount := pairRoutineOverloads(generatedFunctions[identity], recorded)
+		for range removedCount {
 			diff.FunctionsRemoved = append(diff.FunctionsRemoved, databaseNames[identity])
 		}
 	}
