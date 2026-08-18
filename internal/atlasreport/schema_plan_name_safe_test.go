@@ -52,10 +52,31 @@ func TestNewSchemaPlanName_SafeFieldsHoldNoSeparator(t *testing.T) {
 			got, err := atlasreport.NewSchemaPlanName(tc.fingerprint, tc.fingerprint)
 
 			c.Assert(err, qt.IsNil)
+			// "/" is the character that breaks a file name. "+" is checked
+			// too because the URL-safe alphabet replaces both, so its presence
+			// would mean the wrong encoder ran -- not that the name is unusable.
 			c.Assert(strings.ContainsAny(got.ToHashSafe, "/+"), qt.IsFalse)
 			c.Assert(strings.ContainsAny(got.FromHashSafe, "/+"), qt.IsFalse)
 		})
 	}
+}
+
+// TestNewSchemaPlanName_PlusIsNotAHazard records the half of the alphabet that
+// turned out not to matter.
+//
+// Standard Base64 adds two characters the URL-safe one does not, and only one
+// of them breaks a file name. Pinning "+" as harmless keeps a later reader from
+// widening the refusal to cover it, which would reject names that work.
+func TestNewSchemaPlanName_PlusIsNotAHazard(t *testing.T) {
+	c := qt.New(t)
+
+	got, err := atlasreport.NewSchemaPlanName(
+		"sha256:"+strings.Repeat("fa", 32), "sha256:"+strings.Repeat("fa", 32))
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(got.ToHash, qt.Contains, "+")
+	c.Assert(got.ToHash, qt.Not(qt.Contains), "/",
+		qt.Commentf("this fixture isolates the plus so the assertion below is about it alone"))
 }
 
 // TestNewSchemaPlanName_AtlasShapedFieldsAreUnchanged pins that the fix adds a

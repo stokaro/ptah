@@ -32,11 +32,15 @@ type SchemaPlanName struct {
 	// and "/".
 	//
 	// They exist because the documented example is a trap: for a
-	// twelve-character window, roughly a third of schemas produce a name
-	// containing a separator, and the command then refuses the name its own
-	// template produced. The Atlas-shaped fields keep their representation --
-	// that is what they are for -- and these carry the same entropy in a form
-	// that is always a legal file name.
+	// twelve-character window, about one schema in six produces a name
+	// containing "/", and the command then refuses the name its own template
+	// produced. Only "/" matters -- "+" is the other character the standard
+	// alphabet adds and it is a legal file name, so a rendering that avoided
+	// both would be avoiding one thing too many.
+	//
+	// The Atlas-shaped fields keep their representation -- that is what they
+	// are for -- and these carry the same entropy in a form that is always a
+	// legal file name.
 	FromHashSafe string
 	ToHashSafe   string
 }
