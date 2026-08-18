@@ -44,6 +44,7 @@ func NewCommand() *cobra.Command {
 	cmd.AddCommand(newResolveCommand())
 	cmd.AddCommand(newTagCommand())
 	cmd.AddCommand(newTagsCommand())
+	cmd.AddCommand(newVerifyCommand())
 	return cmd
 }
 
