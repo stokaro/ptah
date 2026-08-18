@@ -10,7 +10,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"go.5x5.cz/ptah/cmd/db"
-	"go.5x5.cz/ptah/cmd/internal/buildinfo"
 	"go.5x5.cz/ptah/cmd/internal/cmdflags"
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
 	"go.5x5.cz/ptah/cmd/internal/exitcode"
@@ -23,6 +22,7 @@ import (
 	sqlcmd "go.5x5.cz/ptah/cmd/sql"
 	"go.5x5.cz/ptah/cmd/version"
 	"go.5x5.cz/ptah/cmd/viz"
+	"go.5x5.cz/ptah/internal/buildinfo"
 )
 
 const envPrefix = "PTAH"
