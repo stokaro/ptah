@@ -121,7 +121,7 @@ seven of them as open capabilities regardless.
 | Capability | Ptah | CE | Pro | Difference |
 | --- | :-: | :-: | :-: | --- |
 | Annotated Go models from a live database | ✅ | ❌ | ❌ | Writes Ptah annotation source from introspection, with optional db/json tags. No Go-model generator in the CE inventory or Pro list. |
-| Atlas CE inspect HCL parses back into Ptah | ✅ | ✅ | ✅ | 30 atlas-differential observations parse Atlas CE 1.2.0 `schema inspect` HCL on Postgres/MySQL/SQLite with zero schema-fact mismatches. |
+| Atlas CE inspect HCL parses back into Ptah | ✅ | ✅ | ✅ | 30 differential observations parse Atlas `schema inspect` HCL on PostgreSQL, MySQL and SQLite with zero schema-fact mismatches. |
 | Atlas HCL data "external_schema" | ✅ | ❌ | ✅ | Ptah evaluates the data source and runs the program, gated behind `--allow-external-schema`/`PTAH_ALLOW_EXTERNAL_SCHEMA`. Community Atlas rejects `data.external_schema`. |
 | Composite multi-source desired schema | ✅ | ❌ | ✅ | Repeatable `--root-dir`/`--schema-file` merge into one schema; conflicts error. Repo docs cite composite_schema as an Atlas Pro data source. |
 | Desired-schema artifacts in an OCI registry | ✅ | ❌ | ✅ | `ptah schema push/pull` publish and fetch canonical HCL resolved from Go, YAML, HCL or SQL sources. Verified round trip against registry:2. |
@@ -371,7 +371,7 @@ is genuinely absent and the difference column names the issue that owns it.
 | `schema plan --push`, `--pending`, `--repo` | 🔷 | ❌ | ✅ | All three name a repository in the hosted registry and fail loudly. Ptah's plan workflow saves and reads local plan files instead, so the function is here and the service is not. |
 | `schema plan --skip-lint` | ✅ | ❌ | ✅ | Accepted, and does nothing: `schema plan` runs no lint step, so there is nothing to skip. A Pro pipeline passing it keeps working; no check is loosened. |
 | `schema plan lint` | ✅ | ❌ | ✅ | Implemented: the plan is verified against the transition, then Ptah's lint rules report on its SQL. Findings do not change the exit code; an opt-in variable makes an error-severity finding exit 1. |
-| `schema plan new` and `schema plan validate` | ✅ | ❌ | ✅ | Implemented. Flag sets match standard Atlas v1.3.0 help; runtime parity remains unverified. Successful Ptah runs keep stderr free of development notes. |
+| `schema plan new` and `schema plan validate` | ✅ | ❌ | ✅ | Implemented. Flag sets match the documented Atlas help; runtime parity remains unverified. Successful Ptah runs keep stderr free of development notes. |
 | `schema plan test` | ❌ | ❌ | ✅ | Local by its flag set (it takes no `--url`) but deferred: it consumes `test "plan"` cases in `.test.hcl` files, which nothing in Ptah parses yet. Tracked by stokaro/ptah#1211. |
 | `schema plan` registry sub-verbs (approve, list, pull, push, rm) | 🔷 | ❌ | ✅ | These five arbitrate plan state inside the hosted registry. Ptah keeps plan state in local plan files that the ordinary `schema plan` verbs read and write; the service is out of reach. |
 | Atlas Cloud deployment reporting | 🔷 | ❌ | ✅ | Ptah attaches a deployment-report referrer to its own OCI artifact after an `oci://` migrations up, so the report is readable from the registry. There is no account model to report into. |
