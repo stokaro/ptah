@@ -101,3 +101,58 @@ func TestFetch_RejectsUnsupportedTypeBeforeNetworkAccess(t *testing.T) {
 
 	c.Assert(err, qt.ErrorMatches, `unsupported referrer type "schema": expected all, lint, plan, or deployment`)
 }
+
+func TestCommandTree_RegistersThePromotionVerbs(t *testing.T) {
+	for _, tc := range []struct {
+		verb  string
+		flags []string
+	}{
+		{verb: "tags", flags: []string{"format", "plain-http"}},
+		{verb: "tag", flags: []string{"plain-http"}},
+		{verb: "copy", flags: []string{"recursive", "tag", "plain-http"}},
+		{verb: "capabilities", flags: []string{"format", "plain-http"}},
+	} {
+		t.Run(tc.verb, func(t *testing.T) {
+			c := qt.New(t)
+			cmd := oci.NewCommand()
+
+			found, _, err := cmd.Find([]string{tc.verb})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(found.CommandPath(), qt.Equals, "oci "+tc.verb)
+			for _, flag := range tc.flags {
+				c.Assert(found.Flag(flag), qt.IsNotNil, qt.Commentf("--%s is not registered on %s", flag, tc.verb))
+			}
+		})
+	}
+}
+
+func TestTag_RequiresTheAliasToMove(t *testing.T) {
+	c := qt.New(t)
+	cmd := oci.NewCommand()
+	cmd.SetArgs([]string{"tag", "oci://registry.invalid/acme/db:latest"})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNotNil, qt.Commentf("a tag with nothing to move must not reach the registry"))
+}
+
+func TestCapabilities_RejectsUnsupportedFormatBeforeNetworkAccess(t *testing.T) {
+	c := qt.New(t)
+	cmd := oci.NewCommand()
+	cmd.SetArgs([]string{"capabilities", "oci://registry.invalid/acme/db:latest", "--format", "yaml"})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.ErrorMatches, `unsupported output format "yaml": expected text or json`)
+}
+
+func TestTags_RejectsUnsupportedFormatBeforeNetworkAccess(t *testing.T) {
+	c := qt.New(t)
+	cmd := oci.NewCommand()
+	cmd.SetArgs([]string{"tags", "oci://registry.invalid/acme/db:latest", "--format", "yaml"})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.ErrorMatches, `unsupported output format "yaml": expected text or json`)
+}

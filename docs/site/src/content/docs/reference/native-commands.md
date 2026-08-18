@@ -178,10 +178,14 @@ that happened rather than a reordering.
 
 | Command | Purpose |
 | --- | --- |
+| `ptah oci tags` | List the tags a repository carries. |
 | `ptah oci resolve` | Resolve a mutable tag to the immutable digest it names. |
 | `ptah oci inspect` | Report what an artifact declares, without downloading it. |
 | `ptah oci referrers` | List direct referrer metadata attached to an OCI artifact. |
 | `ptah oci fetch` | Download the payload of metadata attached to an artifact. |
+| `ptah oci tag` | Move an alias onto an artifact that already exists. |
+| `ptah oci copy` | Copy an artifact between repositories without rebuilding it. |
+| `ptah oci capabilities` | Report what the registry behind a reference supports. |
 | `ptah sql lint` | Lint standalone SQL files. |
 
 ## Top-level verbs
@@ -266,6 +270,33 @@ Selection never guesses: one candidate is fetched, several are refused with the
 digests printed. Narrow with `--type`, or name one with `--digest`. The same
 rule governs the files inside the chosen referrer — one is written, several
 require `--file`. `--output` writes to a path instead of standard output.
+
+`ptah oci tags <oci-reference>` lists the aliases a repository carries, which
+is the view that says which of them exist before a promotion moves one.
+
+`ptah oci tag <oci-reference> <tag>...` moves an alias onto an artifact that
+already exists. Promotion through a push re-derives content that was already
+reviewed, so what arrives in production is an artifact equal to the reviewed
+one rather than the same one; moving the alias keeps the manifest digest
+identical by construction, because nothing is built and nothing is uploaded.
+Aliases move one at a time, and the ones already applied are named when a later
+one fails.
+
+`ptah oci copy <source> <destination>` copies an artifact between repositories
+with its digest preserved. `--recursive` carries the artifact's referrers with
+it; without it the copy arrives with its lint results, plans, deployment
+reports, and signatures left behind in the source repository, which is how a
+promotion loses the evidence it was promoted on. A digest destination is
+refused, because a digest names content that already exists.
+
+`ptah oci capabilities <oci-reference>` asks the registry whether it answers
+the referrers API. Ptah publishes referrers both through the standard index and
+through its own content-derived tag and merges them on read, so its own
+discovery is robust whatever the registry does — and where the API is absent, a
+referrer Ptah published is one another OCI client may never find. The question
+is put with the client pinned to the API so a success cannot have come from the
+tag-schema fallback, and a failure to ask is reported as an error rather than
+folded into a no.
 
 This does not implement the Atlas Cloud command paths. The Atlas-compatible
 `migrate push` and `schema push` remain Atlas community-edition boundary
