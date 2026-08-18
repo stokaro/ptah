@@ -14,6 +14,7 @@ import (
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/dbschema"
+	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/schemadiff"
 	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
@@ -196,4 +197,91 @@ func grantsFor(refs []difftypes.GrantRef, role string) []difftypes.GrantRef {
 		}
 	}
 	return kept
+}
+
+// grantRow returns the row a role holds for one privilege, or nil.
+func grantRow(grants []dbschematypes.DBGrant, role, privilege string) *dbschematypes.DBGrant {
+	for i := range grants {
+		if grants[i].Role == role && grants[i].Privilege == privilege {
+			return &grants[i]
+		}
+	}
+	return nil
+}
+
+// TestSQLServerLiveReaderClassifiesDenyAndSchemaGrants covers the two rows no
+// declaration can produce, and which the round trip above therefore never
+// reaches.
+//
+// A DENY subtracts a privilege from a broader grant, and Ptah plans no such
+// shape. A schema grant needs the SCHEMA:: target the reader has to classify as
+// something other than a table. Both are applied out of band here, because a
+// mutation sweep showed nothing else reaches them: a reader that called every
+// permission class a table grant, and one that read DENY as a grant, both
+// survived until this existed (stokaro/ptah#1698).
+func TestSQLServerLiveReaderClassifiesDenyAndSchemaGrants(t *testing.T) {
+	dbURL := dbtarget.URL(t, dbtarget.SQLServer)
+	c := qt.New(t)
+	ctx := t.Context()
+
+	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+
+	suffix := time.Now().UnixNano()
+	role := fmt.Sprintf("ptah_deny_role_%d", suffix)
+	table := fmt.Sprintf("ptah_dt_%d", suffix)
+	quotedRole := quoteSQLServerIdentifier(role)
+	quotedTable := "[dbo]." + quoteSQLServerIdentifier(table)
+	defer func() {
+		_, _ = conn.ExecContext(ctx, "REVOKE EXECUTE ON SCHEMA::[dbo] FROM "+quotedRole)
+		_, _ = conn.ExecContext(ctx, "DROP TABLE IF EXISTS "+quotedTable)
+		_, _ = conn.ExecContext(ctx, "DROP ROLE IF EXISTS "+quotedRole)
+	}()
+
+	for _, statement := range []string{
+		"CREATE ROLE " + quotedRole,
+		"CREATE TABLE " + quotedTable + " ([id] INT PRIMARY KEY)",
+		"GRANT SELECT ON " + quotedTable + " TO " + quotedRole,
+		"DENY DELETE ON " + quotedTable + " TO " + quotedRole,
+		"GRANT EXECUTE ON SCHEMA::[dbo] TO " + quotedRole,
+	} {
+		_, execErr := conn.ExecContext(ctx, statement)
+		c.Assert(execErr, qt.IsNil, qt.Commentf("statement:\n%s", statement))
+	}
+
+	live, err := dbschema.ReadSchemaWithSchemas(conn, []string{"dbo"})
+	c.Assert(err, qt.IsNil)
+
+	// The DENY is reported rather than dropped, and marked as the subtraction
+	// it is, so a live validation can see that effective privileges are
+	// narrower than the grant rows alone would say.
+	denied := grantRow(live.Grants, role, "DELETE")
+	c.Assert(denied, qt.IsNotNil)
+	c.Assert(denied.IsPartialRevoke, qt.IsTrue)
+
+	// A schema grant keeps its own object type. Calling it a table grant would
+	// compare it against a table of that name.
+	schemaGrant := grantRow(live.Grants, role, "EXECUTE")
+	c.Assert(schemaGrant, qt.IsNotNil)
+	c.Assert(schemaGrant.ObjectType, qt.Equals, "SCHEMA")
+	c.Assert(schemaGrant.ObjectName, qt.Equals, "dbo")
+
+	// The control on both: a plain table grant is neither.
+	plain := grantRow(live.Grants, role, "SELECT")
+	c.Assert(plain, qt.IsNotNil)
+	c.Assert(plain.IsPartialRevoke, qt.IsFalse)
+	c.Assert(plain.ObjectType, qt.Equals, "TABLE")
+
+	// And the comparator does not plan a REVOKE of the DENY. It is not a grant
+	// to revoke: the role already does not hold that privilege, and revoking it
+	// would remove the exception instead.
+	description := &goschema.Database{
+		Roles:  []goschema.Role{{StructName: "A", Name: role, Inherit: true}},
+		Grants: []goschema.Grant{{StructName: "A", Role: role, Privileges: []string{"SELECT"}, OnTable: "dbo." + table}},
+	}
+	diff := schemadiff.CompareWithDialect(description, live, platform.SQLServer)
+	for _, ref := range grantsFor(diff.GrantsRemoved, role) {
+		c.Assert(ref.Privilege, qt.Not(qt.Equals), "DELETE")
+	}
 }

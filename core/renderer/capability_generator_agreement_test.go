@@ -163,3 +163,53 @@ func emitsExecutable(statements []string, keywords []string) bool {
 	}
 	return false
 }
+
+// TestRender_ObjectKindPathsExistIndependentOfThePreset asserts the path is
+// reachable on its own, rather than only through the preset that happens to
+// claim it today.
+//
+// The agreement gate above asserts `emits == preset.Has(key)`, and its two
+// sides are not independent: the renderer consults the same flag, so a preset
+// that dropped a claim would make the renderer refuse and the assertion would
+// still hold. That is not a hole to be plugged -- a preset may withhold a key
+// deliberately, and several do, because the RENDER half exists while the read
+// or plan half does not. Equality in both directions would force a claim that
+// cannot converge.
+//
+// What is worth asserting is the weaker, true thing: turning a key on gets real
+// DDL rather than nothing. A path that only works because some other preset
+// enabled something alongside it would fail here.
+func TestRender_ObjectKindPathsExistIndependentOfThePreset(t *testing.T) {
+	claimed := map[string][]capability.Capability{
+		platform.Postgres:   {capability.Sequences, capability.RoleManagement, capability.Views, capability.Triggers, capability.Functions},
+		platform.SQLServer:  {capability.Sequences, capability.RoleManagement, capability.Views, capability.Triggers},
+		platform.ClickHouse: {capability.RoleManagement, capability.Views},
+	}
+
+	for dialect, keys := range claimed {
+		for _, key := range keys {
+			t.Run(dialect+"/"+string(key), func(t *testing.T) {
+				c := qt.New(t)
+				kind := probeKindFor(c, key)
+
+				statements, err := renderer.GetOrderedCreateStatementsWithCapabilities(
+					kind.schema(), dialect, capability.ForDialect(dialect).With(key, true))
+
+				c.Assert(err, qt.IsNil)
+				c.Assert(emitsExecutable(statements, kind.keywords), qt.IsTrue,
+					qt.Commentf("%s: %s is claimed but no path emits the object", dialect, key))
+			})
+		}
+	}
+}
+
+func probeKindFor(c *qt.C, key capability.Capability) capabilityProbeKind {
+	c.Helper()
+	for _, kind := range capabilityProbeKinds() {
+		if kind.key == key {
+			return kind
+		}
+	}
+	c.Fatalf("no probe kind for %s", key)
+	return capabilityProbeKind{}
+}
