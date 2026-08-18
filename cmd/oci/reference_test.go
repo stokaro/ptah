@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/spf13/cobra"
 
 	"go.5x5.cz/ptah/cmd/oci"
 )
@@ -34,11 +35,13 @@ var ociVerbRow = regexp.MustCompile("(?m)^\\|\\s*`ptah oci ([a-z-]+)`\\s*\\|")
 func TestOCIVerbs_MatchTheCommandReference(t *testing.T) {
 	c := qt.New(t)
 
-	var registered []string
-	for _, command := range oci.NewCommand().Commands() {
-		if command.Name() == "help" || command.Hidden {
-			continue
-		}
+	// The filter is a predicate rather than a branch inside the loop: cobra
+	// adds `help` to every namespace and the reference does not document it,
+	// and a hidden verb is one the surface deliberately does not advertise.
+	commands := slices.DeleteFunc(oci.NewCommand().Commands(),
+		func(command *cobra.Command) bool { return command.Name() == "help" || command.Hidden })
+	registered := make([]string, 0, len(commands))
+	for _, command := range commands {
 		registered = append(registered, command.Name())
 	}
 	slices.Sort(registered)
