@@ -193,11 +193,10 @@ func TestSchemaPlanNameFormatRendersPlanName(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	t.Chdir(dir)
-	// The table name is load-bearing, which is itself the finding: .ToHash is
-	// Atlas's untagged Base64, so roughly a third of schemas produce a 12-character
-	// window containing "/" or "+", and Ptah then refuses the name its own
-	// template produced as containing a path separator. This fixture is one
-	// whose window is separator-free. See stokaro/ptah#1685.
+	// The table name is still chosen rather than arbitrary: .ToHash is Atlas's
+	// untagged Base64, so roughly a third of 12-character windows hold "/" or
+	// "+". This fixture has a clean window, and stokaro/ptah#1685 added
+	// .ToHashSafe so a template no longer has to depend on that.
 	fixture := newPlanFixture(c, "nameformat", "", `CREATE TABLE nf_accounts (id INTEGER PRIMARY KEY);`)
 	referencePath := filepath.Join(dir, "reference.plan.json")
 	_, err := runSchemaPlan(atlas.NewCompatCommand("atlas"), fixture.args("--output", referencePath)...)
@@ -388,7 +387,7 @@ func TestSchemaPlanNameFormatRejectionsWriteNothing(t *testing.T) {
 		{
 			name:     "renders_path_separator",
 			template: "nested/plan",
-			want:     `--name-format: the plan name "nested/plan" contains a path separator; use --output to choose the plan file location`,
+			want:     `--name-format: the plan name "nested/plan" contains a path separator\..*`,
 		},
 		{
 			name:     "renders_control_character",

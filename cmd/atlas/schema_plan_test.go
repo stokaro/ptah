@@ -338,7 +338,7 @@ func TestSchemaPlanRejectsUnusableNames(t *testing.T) {
 		{
 			name:     "path_separator",
 			planName: "nested/plan",
-			want:     `--name: the plan name "nested/plan" contains a path separator; use --output to choose the plan file location`,
+			want:     `--name: the plan name "nested/plan" contains a path separator\..*`,
 		},
 		{
 			name:     "windows_colon",
