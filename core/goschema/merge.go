@@ -18,6 +18,7 @@ func newDatabase() *Database {
 		CompositeTypes:    []CompositeType{},
 		Ranges:            []Range{},
 		Views:             []View{},
+		Synonyms:          []Synonym{},
 		MaterializedViews: []MaterializedView{},
 		Triggers:          []Trigger{},
 		RLSPolicies:       []RLSPolicy{},
@@ -62,6 +63,7 @@ func appendDatabase(dst, src *Database) {
 	dst.CompositeTypes = append(dst.CompositeTypes, src.CompositeTypes...)
 	dst.Ranges = append(dst.Ranges, src.Ranges...)
 	dst.Views = append(dst.Views, src.Views...)
+	dst.Synonyms = append(dst.Synonyms, src.Synonyms...)
 	dst.MaterializedViews = append(dst.MaterializedViews, src.MaterializedViews...)
 	dst.Triggers = append(dst.Triggers, src.Triggers...)
 	dst.RLSPolicies = append(dst.RLSPolicies, src.RLSPolicies...)

@@ -574,6 +574,17 @@ var directives = []Directive{
 		},
 	},
 	{
+		Name:        "ptah:schema:synonym",
+		Description: "Declares a SQL Server synonym, an alias for another object.",
+		Scopes:      []Scope{ScopeStruct},
+		Attributes: []Attribute{
+			attr("name", "Synonym name, the alias being declared.", valueString, true, false),
+			attr("schema", "Schema the alias lives in.", valueString, false, false),
+			attr("target", "Object the alias stands for, as one to four dot-separated parts.", valueString, true, false),
+			attr("comment", "Synonym comment.", valueString, false, false),
+		},
+	},
+	{
 		Name:        "ptah:schema:trigger",
 		Description: "Declares a database trigger.",
 		Scopes:      []Scope{ScopeStruct},

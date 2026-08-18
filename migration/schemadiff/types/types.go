@@ -269,6 +269,23 @@ type SchemaDiff struct {
 	// but not in the target schema.
 	ViewsRemoved []string `json:"views_removed"`
 
+	// SynonymsAdded contains names of synonyms that exist in the target schema
+	// and not in the database.
+	SynonymsAdded []string `json:"synonyms_added"`
+
+	// SynonymsRemoved contains names of synonyms that exist in the database and
+	// not in the target schema.
+	SynonymsRemoved []string `json:"synonyms_removed"`
+
+	// SynonymsModified contains synonyms whose target changed.
+	//
+	// A changed target is its own case rather than a removal plus an addition,
+	// because T-SQL has no ALTER SYNONYM: the plan has to drop and recreate,
+	// and a reader who sees the same name in both the removed and added lists
+	// cannot tell a retarget from an unrelated drop that happens to share a
+	// name with an unrelated create.
+	SynonymsModified []SynonymDiff `json:"synonyms_modified"`
+
 	// ViewsModified contains detailed information about views with changed definitions.
 	ViewsModified []ViewDiff `json:"views_modified"`
 
@@ -432,6 +449,7 @@ func (d *SchemaDiff) HasChanges() bool {
 		d.hasSequenceChanges() ||
 		d.hasUserTypeChanges() ||
 		d.hasViewChanges() ||
+		d.hasSynonymChanges() ||
 		d.hasMaterializedViewChanges() ||
 		d.hasTriggerChanges() ||
 		d.hasRLSChanges() ||
@@ -580,6 +598,12 @@ func (d *SchemaDiff) hasViewChanges() bool {
 	return len(d.ViewsAdded) > 0 ||
 		len(d.ViewsRemoved) > 0 ||
 		len(d.ViewsModified) > 0
+}
+
+func (d *SchemaDiff) hasSynonymChanges() bool {
+	return len(d.SynonymsAdded) > 0 ||
+		len(d.SynonymsRemoved) > 0 ||
+		len(d.SynonymsModified) > 0
 }
 
 func (d *SchemaDiff) hasMaterializedViewChanges() bool {
@@ -868,6 +892,13 @@ type ExtensionDiff struct {
 }
 
 // ViewDiff represents changes to a view definition.
+// SynonymDiff describes a synonym whose target changed.
+type SynonymDiff struct {
+	SynonymName string `json:"synonym_name"`
+	OldTarget   string `json:"old_target"`
+	NewTarget   string `json:"new_target"`
+}
+
 type ViewDiff struct {
 	ViewName string            `json:"view_name"`
 	Changes  map[string]string `json:"changes"`

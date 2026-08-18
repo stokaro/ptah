@@ -1171,6 +1171,46 @@
       ],
       "type": "object"
     },
+    "ptah.schema.synonym": {
+      "additionalProperties": false,
+      "description": "Declares a SQL Server synonym, an alias for another object.",
+      "properties": {
+        "attributes": {
+          "additionalProperties": false,
+          "properties": {
+            "comment": {
+              "description": "Synonym comment.",
+              "type": "string"
+            },
+            "name": {
+              "description": "Synonym name, the alias being declared.",
+              "type": "string"
+            },
+            "schema": {
+              "description": "Schema the alias lives in.",
+              "type": "string"
+            },
+            "target": {
+              "description": "Object the alias stands for, as one to four dot-separated parts.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "target"
+          ],
+          "type": "object"
+        },
+        "directive": {
+          "const": "ptah:schema:synonym"
+        }
+      },
+      "required": [
+        "directive",
+        "attributes"
+      ],
+      "type": "object"
+    },
     "ptah.schema.table": {
       "additionalProperties": false,
       "description": "Maps a Go struct to a database table.",
@@ -1449,6 +1489,9 @@
     },
     {
       "$ref": "#/$defs/ptah.schema.matview"
+    },
+    {
+      "$ref": "#/$defs/ptah.schema.synonym"
     },
     {
       "$ref": "#/$defs/ptah.schema.trigger"

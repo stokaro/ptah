@@ -307,6 +307,77 @@ func findDatabaseFunction(
 }
 
 // Views compares view definitions between generated and database schemas.
+// Synonyms compares declared synonyms against the ones the database reports.
+//
+// The comparison is on the qualified name, and a changed target is reported as
+// a modification rather than as a removal plus an addition. T-SQL has no ALTER
+// SYNONYM, so both shapes end up as a drop and a create -- but only the
+// modification says the two belong together, which is what lets a plan order
+// them as one operation and a reader tell a retarget from a coincidence.
+func Synonyms(generated *goschema.Database, database *types.DBSchema, diff *difftypes.SchemaDiff) {
+	generatedSynonyms := make(map[string]goschema.Synonym, len(generated.Synonyms))
+	for _, synonym := range generated.Synonyms {
+		generatedSynonyms[synonym.QualifiedName()] = synonym
+	}
+	databaseSynonyms := make(map[string]types.DBSynonym, len(database.Synonyms))
+	for _, synonym := range database.Synonyms {
+		databaseSynonyms[synonym.QualifiedName()] = synonym
+	}
+
+	for name, generatedSynonym := range generatedSynonyms {
+		databaseSynonym, exists := databaseSynonyms[name]
+		if !exists {
+			diff.SynonymsAdded = append(diff.SynonymsAdded, name)
+			continue
+		}
+		if !sameSynonymTarget(generatedSynonym.Target, databaseSynonym) {
+			diff.SynonymsModified = append(diff.SynonymsModified, difftypes.SynonymDiff{
+				SynonymName: name,
+				OldTarget:   databaseSynonym.Target,
+				NewTarget:   generatedSynonym.Target,
+			})
+		}
+	}
+
+	for name := range databaseSynonyms {
+		if _, ok := generatedSynonyms[name]; !ok {
+			diff.SynonymsRemoved = append(diff.SynonymsRemoved, name)
+		}
+	}
+
+	sort.Strings(diff.SynonymsAdded)
+	sort.Strings(diff.SynonymsRemoved)
+	sort.Slice(diff.SynonymsModified, func(i, j int) bool {
+		return diff.SynonymsModified[i].SynonymName < diff.SynonymsModified[j].SynonymName
+	})
+}
+
+// sameSynonymTarget compares a declared target against the catalog's own
+// spelling of one.
+//
+// SQL Server records base_object_name with its own bracket quoting, so the
+// declared `dbo.orders` and the stored `[dbo].[orders]` are the same target
+// written two ways. Comparing the raw strings would report a modification on
+// every run and make the plan churn forever, which is the false-convergence
+// failure this object was added to remove rather than to introduce.
+func sameSynonymTarget(declared string, stored types.DBSynonym) bool {
+	return synonymTargetParts(declared) == synonymTargetParts(stored.Target)
+}
+
+// synonymTargetParts normalizes a one-to-four part name for comparison by
+// stripping bracket quoting and folding case, which is what SQL Server's
+// default collation does for identifiers.
+func synonymTargetParts(name string) string {
+	parts := strings.Split(name, ".")
+	for i, part := range parts {
+		part = strings.TrimSpace(part)
+		part = strings.TrimPrefix(part, "[")
+		part = strings.TrimSuffix(part, "]")
+		parts[i] = strings.ToLower(part)
+	}
+	return strings.Join(parts, ".")
+}
+
 func Views(generated *goschema.Database, database *types.DBSchema, diff *difftypes.SchemaDiff) {
 	ViewsWithDialect(generated, database, diff, "")
 }

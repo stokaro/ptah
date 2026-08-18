@@ -126,6 +126,14 @@ func clonedCollectionRows() []clonedCollectionRow {
 			},
 		},
 		{
+			field: "Synonyms", present: "s_users", absent: "nosuch_synonym",
+			seed: func(s *dbschematypes.DBSchema) {
+				s.Synonyms = append(s.Synonyms, dbschematypes.DBSynonym{
+					Name: "s_users", Target: "dbo.users", TargetSchema: "dbo", TargetObject: "users",
+				})
+			},
+		},
+		{
 			field: "MatViews", present: "mv_users", absent: "nosuch_matview",
 			seed: func(s *dbschematypes.DBSchema) {
 				s.MatViews = append(s.MatViews, dbschematypes.DBMatView{Name: "mv_users"})

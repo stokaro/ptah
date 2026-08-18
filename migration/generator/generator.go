@@ -1724,6 +1724,9 @@ func cloneSchemaDiff(diff *types.SchemaDiff) *types.SchemaDiff {
 	clone.ViewsAdded = slices.Clone(diff.ViewsAdded)
 	clone.ViewsRemoved = slices.Clone(diff.ViewsRemoved)
 	clone.ViewsModified = slices.Clone(diff.ViewsModified)
+	clone.SynonymsAdded = slices.Clone(diff.SynonymsAdded)
+	clone.SynonymsRemoved = slices.Clone(diff.SynonymsRemoved)
+	clone.SynonymsModified = slices.Clone(diff.SynonymsModified)
 	clone.MaterializedViewsAdded = slices.Clone(diff.MaterializedViewsAdded)
 	clone.MaterializedViewsRemoved = slices.Clone(diff.MaterializedViewsRemoved)
 	clone.MaterializedViewsModified = slices.Clone(diff.MaterializedViewsModified)
@@ -2138,6 +2141,15 @@ func reverseSchemaDiffWithSchemaForDialect(
 		ViewsAdded:    diff.ViewsRemoved, // Views to remove become views to add
 		ViewsRemoved:  diff.ViewsAdded,   // Views to add become views to remove
 		ViewsModified: reverseViewDiffs(diff.ViewsModified, schema),
+
+		// A synonym is an alias with no body, so reversing it needs no schema
+		// side: the down direction drops what the up direction created and
+		// recreates what it dropped. A retarget is the one entry that carries
+		// state, and swapping its two targets is the whole reversal -- the
+		// planner drops and recreates either way.
+		SynonymsAdded:    diff.SynonymsRemoved,
+		SynonymsRemoved:  diff.SynonymsAdded,
+		SynonymsModified: reverseSynonymDiffs(diff.SynonymsModified),
 
 		MaterializedViewsAdded:    diff.MaterializedViewsRemoved, // Materialized views to remove become materialized views to add
 		MaterializedViewsRemoved:  diff.MaterializedViewsAdded,   // Materialized views to add become materialized views to remove
@@ -3046,6 +3058,23 @@ func reverseDomainDiffs(domainDiffs []types.DomainDiff, schema *goschema.Databas
 // planner can neither prove the replace legal nor prove it refused, the answer
 // it should give differs by direction, and this is the only place that knows
 // which direction is being built.
+// reverseSynonymDiffs swaps each retarget so the down direction restores the
+// target the database had before the up migration ran.
+func reverseSynonymDiffs(diffs []types.SynonymDiff) []types.SynonymDiff {
+	if len(diffs) == 0 {
+		return nil
+	}
+	reversed := make([]types.SynonymDiff, 0, len(diffs))
+	for _, diff := range diffs {
+		reversed = append(reversed, types.SynonymDiff{
+			SynonymName: diff.SynonymName,
+			OldTarget:   diff.NewTarget,
+			NewTarget:   diff.OldTarget,
+		})
+	}
+	return reversed
+}
+
 func reverseViewDiffs(viewDiffs []types.ViewDiff, schema *goschema.Database) []types.ViewDiff {
 	reversed := make([]types.ViewDiff, len(viewDiffs))
 	for i, viewDiff := range viewDiffs {
