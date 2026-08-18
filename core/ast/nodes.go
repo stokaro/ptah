@@ -1650,6 +1650,83 @@ func (n *DropViewNode) Accept(visitor Visitor) error {
 	return visitor.VisitDropView(n)
 }
 
+// CreateSynonymNode represents a CREATE SYNONYM statement.
+//
+// A synonym is an alias: Name is the alias, Target is the object it stands for.
+// Both are written as identifiers rather than as free text, which is what
+// separates this node from CreateViewNode. A view carries a SELECT body that is
+// emitted verbatim; a synonym carries a NAME, and emitting it verbatim would
+// produce an unquoted identifier that breaks on the first reserved word or
+// space.
+//
+// Target may name an object this schema does not manage -- another database, or
+// a linked server through a four-part name. That is a supported shape rather
+// than an error: the alias is local even when what it points at is not, and
+// Ptah records the target it was given without claiming the remote object as a
+// dependency it can order or drop.
+//
+// There is no Replace field. T-SQL has no CREATE OR ALTER SYNONYM, and a field
+// no dialect can honor would be a promise the renderer has to break.
+type CreateSynonymNode struct {
+	Name    string
+	Target  string
+	Comment string
+}
+
+// NewCreateSynonym creates a CREATE SYNONYM node for the given alias name.
+func NewCreateSynonym(name string) *CreateSynonymNode {
+	return &CreateSynonymNode{Name: name}
+}
+
+// SetTarget sets the object the synonym stands for.
+func (n *CreateSynonymNode) SetTarget(target string) *CreateSynonymNode {
+	n.Target = target
+	return n
+}
+
+// SetComment sets a comment for the CREATE SYNONYM statement.
+func (n *CreateSynonymNode) SetComment(comment string) *CreateSynonymNode {
+	n.Comment = comment
+	return n
+}
+
+// Accept implements the Node interface for CreateSynonymNode.
+func (n *CreateSynonymNode) Accept(visitor Visitor) error {
+	return visitor.VisitCreateSynonym(n)
+}
+
+// DropSynonymNode represents a DROP SYNONYM statement.
+//
+// There is no Cascade field: DROP SYNONYM has no such clause, and a synonym has
+// no dependents of its own to cascade to.
+type DropSynonymNode struct {
+	Name     string
+	IfExists bool
+	Comment  string
+}
+
+// NewDropSynonym creates a DROP SYNONYM node for the given alias name.
+func NewDropSynonym(name string) *DropSynonymNode {
+	return &DropSynonymNode{Name: name}
+}
+
+// SetIfExists sets the IF EXISTS option for the DROP SYNONYM statement.
+func (n *DropSynonymNode) SetIfExists() *DropSynonymNode {
+	n.IfExists = true
+	return n
+}
+
+// SetComment sets a comment for the DROP SYNONYM statement.
+func (n *DropSynonymNode) SetComment(comment string) *DropSynonymNode {
+	n.Comment = comment
+	return n
+}
+
+// Accept implements the Node interface for DropSynonymNode.
+func (n *DropSynonymNode) Accept(visitor Visitor) error {
+	return visitor.VisitDropSynonym(n)
+}
+
 // CreateMaterializedViewNode represents a CREATE MATERIALIZED VIEW statement.
 type CreateMaterializedViewNode struct {
 	Name            string

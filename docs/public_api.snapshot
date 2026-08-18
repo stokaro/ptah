@@ -713,6 +713,8 @@ type CreateSchemaNode struct{ ... }
     func NewCreateSchema(name string) *CreateSchemaNode
 type CreateSequenceNode struct{ ... }
     func NewCreateSequence(name string) *CreateSequenceNode
+type CreateSynonymNode struct{ ... }
+    func NewCreateSynonym(name string) *CreateSynonymNode
 type CreateTableNode struct{ ... }
     func NewCreateTable(name string) *CreateTableNode
 type CreateTriggerNode struct{ ... }
@@ -741,6 +743,8 @@ type DropRoleNode struct{ ... }
     func NewDropRole(name string) *DropRoleNode
 type DropSequenceNode struct{ ... }
     func NewDropSequence(name string) *DropSequenceNode
+type DropSynonymNode struct{ ... }
+    func NewDropSynonym(name string) *DropSynonymNode
 type DropTableNode struct{ ... }
     func NewDropTable(name string) *DropTableNode
 type DropTriggerNode struct{ ... }
@@ -1661,6 +1665,38 @@ func (n *CreateSequenceNode) SetOwnedBy(ownedBy string) *CreateSequenceNode
 func (n *CreateSequenceNode) SetSchema(schema string) *CreateSequenceNode
 func (n *CreateSequenceNode) SetStart(start int64) *CreateSequenceNode
 
+### go.5x5.cz/ptah/core/ast.CreateSynonymNode
+
+package ast // import "go.5x5.cz/ptah/core/ast"
+
+type CreateSynonymNode struct {
+    Name    string
+    Target  string
+    Comment string
+}
+    CreateSynonymNode represents a CREATE SYNONYM statement.
+
+    A synonym is an alias: Name is the alias, Target is the object it stands
+    for. Both are written as identifiers rather than as free text, which is what
+    separates this node from CreateViewNode. A view carries a SELECT body that
+    is emitted verbatim; a synonym carries a NAME, and emitting it verbatim
+    would produce an unquoted identifier that breaks on the first reserved word
+    or space.
+
+    Target may name an object this schema does not manage -- another database,
+    or a linked server through a four-part name. That is a supported shape
+    rather than an error: the alias is local even when what it points at is not,
+    and Ptah records the target it was given without claiming the remote object
+    as a dependency it can order or drop.
+
+    There is no Replace field. T-SQL has no CREATE OR ALTER SYNONYM, and a field
+    no dialect can honor would be a promise the renderer has to break.
+
+func NewCreateSynonym(name string) *CreateSynonymNode
+func (n *CreateSynonymNode) Accept(visitor Visitor) error
+func (n *CreateSynonymNode) SetComment(comment string) *CreateSynonymNode
+func (n *CreateSynonymNode) SetTarget(target string) *CreateSynonymNode
+
 ### go.5x5.cz/ptah/core/ast.CreateTableNode
 
 package ast // import "go.5x5.cz/ptah/core/ast"
@@ -2137,6 +2173,25 @@ func (n *DropSequenceNode) SetCascade() *DropSequenceNode
 func (n *DropSequenceNode) SetComment(comment string) *DropSequenceNode
 func (n *DropSequenceNode) SetIfExists() *DropSequenceNode
 func (n *DropSequenceNode) SetSchema(schema string) *DropSequenceNode
+
+### go.5x5.cz/ptah/core/ast.DropSynonymNode
+
+package ast // import "go.5x5.cz/ptah/core/ast"
+
+type DropSynonymNode struct {
+    Name     string
+    IfExists bool
+    Comment  string
+}
+    DropSynonymNode represents a DROP SYNONYM statement.
+
+    There is no Cascade field: DROP SYNONYM has no such clause, and a synonym
+    has no dependents of its own to cascade to.
+
+func NewDropSynonym(name string) *DropSynonymNode
+func (n *DropSynonymNode) Accept(visitor Visitor) error
+func (n *DropSynonymNode) SetComment(comment string) *DropSynonymNode
+func (n *DropSynonymNode) SetIfExists() *DropSynonymNode
 
 ### go.5x5.cz/ptah/core/ast.DropTableNode
 
@@ -3685,6 +3740,10 @@ type Visitor interface {
     VisitCreateView(*CreateViewNode) error
     // VisitDropView renders a DROP VIEW statement
     VisitDropView(*DropViewNode) error
+    // VisitCreateSynonym renders a CREATE SYNONYM statement
+    VisitCreateSynonym(*CreateSynonymNode) error
+    // VisitDropSynonym renders a DROP SYNONYM statement
+    VisitDropSynonym(*DropSynonymNode) error
     // VisitCreateMaterializedView renders a CREATE MATERIALIZED VIEW statement
     VisitCreateMaterializedView(*CreateMaterializedViewNode) error
     // VisitDropMaterializedView renders a DROP MATERIALIZED VIEW statement

@@ -1373,3 +1373,25 @@ func (r *Renderer) VisitRawSQL(node *ast.RawSQLNode) error {
 	r.w.WriteLine(sql)
 	return nil
 }
+
+// VisitCreateSynonym names the synonym as unsupported. Neither MySQL nor
+// MariaDB has a synonym object; the nearest construct is a view, which is a
+// different thing with different resolution rules.
+func (r *Renderer) VisitCreateSynonym(node *ast.CreateSynonymNode) error {
+	if node.Comment != "" {
+		r.w.WriteLinef("-- Synonym %s not supported in %s: %s", node.Name, r.dialect, node.Comment)
+		return nil
+	}
+	r.w.WriteLinef("-- Synonym %s not supported in %s", node.Name, r.dialect)
+	return nil
+}
+
+// VisitDropSynonym names the drop as unsupported, for the same reason.
+func (r *Renderer) VisitDropSynonym(node *ast.DropSynonymNode) error {
+	if node.Comment != "" {
+		r.w.WriteLinef("-- DROP SYNONYM %s not supported in %s: %s", node.Name, r.dialect, node.Comment)
+		return nil
+	}
+	r.w.WriteLinef("-- DROP SYNONYM %s not supported in %s", node.Name, r.dialect)
+	return nil
+}

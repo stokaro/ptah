@@ -776,3 +776,49 @@ func TestAlterTableEnableRLSNode_Accept(t *testing.T) {
 	c.Assert(visitor.VisitedNodes, qt.HasLen, 1)
 	c.Assert(visitor.VisitedNodes[0], qt.Equals, "AlterTableEnableRLS:test_table")
 }
+
+func TestCreateSynonymNode_Accept(t *testing.T) {
+	c := qt.New(t)
+	visitor := &mocks.MockVisitor{}
+	node := ast.NewCreateSynonym("app.current_orders").
+		SetTarget("sales.orders").
+		SetComment("alias for the sales table")
+
+	err := node.Accept(visitor)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(visitor.VisitedNodes, qt.DeepEquals, []string{"CreateSynonym:app.current_orders"})
+	c.Assert(node.Target, qt.Equals, "sales.orders")
+	c.Assert(node.Comment, qt.Equals, "alias for the sales table")
+}
+
+func TestCreateSynonymNode_AcceptPropagatesTheVisitorError(t *testing.T) {
+	c := qt.New(t)
+	visitor := &mocks.MockVisitor{ReturnError: true}
+
+	err := ast.NewCreateSynonym("app.current_orders").Accept(visitor)
+
+	c.Assert(err, qt.ErrorMatches, "mock error")
+}
+
+func TestDropSynonymNode_Accept(t *testing.T) {
+	c := qt.New(t)
+	visitor := &mocks.MockVisitor{}
+	node := ast.NewDropSynonym("app.current_orders").SetIfExists().SetComment("no longer used")
+
+	err := node.Accept(visitor)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(visitor.VisitedNodes, qt.DeepEquals, []string{"DropSynonym:app.current_orders"})
+	c.Assert(node.IfExists, qt.IsTrue)
+	c.Assert(node.Comment, qt.Equals, "no longer used")
+}
+
+func TestDropSynonymNode_AcceptPropagatesTheVisitorError(t *testing.T) {
+	c := qt.New(t)
+	visitor := &mocks.MockVisitor{ReturnError: true}
+
+	err := ast.NewDropSynonym("app.current_orders").Accept(visitor)
+
+	c.Assert(err, qt.ErrorMatches, "mock error")
+}
