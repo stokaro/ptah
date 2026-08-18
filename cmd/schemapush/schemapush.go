@@ -19,6 +19,9 @@ type options struct {
 	tags        []string
 	version     string
 	plainHTTP   bool
+
+	latest           bool
+	generatedVersion bool
 }
 
 // NewSchemaPushCommand returns the schema push command.
@@ -29,7 +32,14 @@ func NewSchemaPushCommand() *cobra.Command {
 		Short: "Push a desired schema to an OCI registry",
 		Long: `Resolve a desired schema from Go annotations, YAML files, HCL files, or
 SQL files and publish a lossless canonical HCL representation as an immutable
-OCI 1.1 artifact. Authentication comes from the Docker credential store.`,
+OCI 1.1 artifact.
+
+The artifact is tagged with the tag the reference named and every explicit
+--tag, and with nothing else. Moving the latest alias is a promotion rather than
+a publication, so it is opt-in through --latest, and a timestamped write-once
+version tag is opt-in through --generated-version.
+
+Authentication comes from the Docker credential store.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return run(cmd, args[0], opts)
 		},
@@ -42,6 +52,10 @@ OCI 1.1 artifact. Authentication comes from the Docker credential store.`,
 	flags.StringVar(&opts.dialect, "dialect", "", "Dialect hint used when parsing SQL schema files")
 	flags.StringArrayVar(&opts.tags, "tag", nil, "Additional movable tag to apply (repeatable)")
 	flags.StringVar(&opts.version, "version", "", "Write-once version tag (defaults to v<UTC timestamp>)")
+	flags.BoolVar(&opts.latest, "latest", false,
+		"Also move the latest alias onto this push")
+	flags.BoolVar(&opts.generatedVersion, "generated-version", false,
+		"Also write a timestamped write-once version tag when --version names none")
 	dbcli.RegisterPlainHTTPFlag(flags, &opts.plainHTTP)
 	return cmd
 }
@@ -57,9 +71,11 @@ func run(cmd *cobra.Command, reference string, opts *options) error {
 		return err
 	}
 	result, err := schemaartifact.Push(cmd.Context(), reference, db, schemaartifact.PushOptions{
-		Tags:      opts.tags,
-		Version:   opts.version,
-		PlainHTTP: opts.plainHTTP,
+		Latest:           opts.latest,
+		GeneratedVersion: opts.generatedVersion,
+		Tags:             opts.tags,
+		Version:          opts.version,
+		PlainHTTP:        opts.plainHTTP,
 	})
 	if err != nil {
 		return err

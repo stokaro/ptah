@@ -130,7 +130,11 @@ func (c *Client) Push(ctx context.Context, rawRef string, fsys fs.FS, opts PushO
 		return PushResult{}, err
 	}
 	opts.Annotations = withProvenance(opts.Annotations)
-	opts.Tags = append(opts.Tags, ref.Selector(), DefaultTag)
+	// Only the tag the caller named. A publish that also moved latest was
+	// doing two operations under one verb, and the second one -- promoting
+	// whatever was just built -- is the one an operator has to be able to
+	// decline.
+	opts.Tags = append(opts.Tags, ref.Selector())
 	opts.Limits = mergeLimits(opts.Limits, c.options.Limits)
 	result, err := PushTo(ctx, repository, fsys, opts)
 	result.Reference = ref
