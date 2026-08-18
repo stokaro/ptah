@@ -38,6 +38,8 @@ type schemaObject struct {
 	MaxLength   *int          `yaml:"maxLength,omitempty"`
 	Minimum     *int          `yaml:"minimum,omitempty"`
 	Nullable    bool          `yaml:"nullable,omitempty"`
+	ReadOnly    bool          `yaml:"readOnly,omitempty"`
+	WriteOnly   bool          `yaml:"writeOnly,omitempty"`
 	Required    []string      `yaml:"required,omitempty"`
 	Properties  *orderedMap   `yaml:"properties,omitempty"`
 }

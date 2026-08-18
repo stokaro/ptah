@@ -476,11 +476,52 @@ Use direct projection for an internal contract or a deliberately isomorphic
 domain model. Use a curated API model when the contract crosses a trust boundary,
 must remain stable across storage refactors, or exposes only part of a row.
 
-:::caution[Table selection is not field-level access control]
-`--include-tables` and `--exclude-tables` select whole tables. Once a table is
-selected, every exportable column enters the generated shape. Ptah does not
-currently provide field allowlists, read/write visibility, API aliases, or
-sensitive-field classification.
+## Field-level exposure
+
+`--include-tables` and `--exclude-tables` select whole tables. To select
+columns, declare `api_expose` on the field:
+
+| Value | Reaches |
+| --- | --- |
+| `read` | What the API returns |
+| `write` | What the API accepts |
+| `read-write` | Both |
+| `none` | Neither — the column is absent from the generated document |
+
+```go
+//ptah:schema:field name="password_hash" type="TEXT" api_expose="write"
+PasswordHash string
+```
+
+Each target expresses the two directions in its own vocabulary. OpenAPI marks
+the single schema's properties `readOnly` and `writeOnly`; GraphQL puts a read
+column on the object type and a write column on the input types; Protobuf
+carries one message, so a column reachable either way is in it. A column
+declared `none` is emitted by none of them.
+
+`--api-field-policy` decides what an **undeclared** column means:
+
+| Value | Meaning |
+| --- | --- |
+| `all` (default) | An undeclared column is exported, which is how every schema behaved before this existed |
+| `allowlist` | Only columns declaring `api_expose` are exported; every other one is withheld and reported |
+
+Use `allowlist` when the contract crosses a trust boundary. It is what stops an
+additive database migration from widening a published contract on its own: a
+column added tomorrow enters nothing until somebody declares that it should.
+
+:::caution[Exposure controls are not access control]
+`api_expose` and `--api-field-policy` decide what enters a generated
+**document**. They are not authorization, they are not row-level security, and
+they protect nothing at runtime — Ptah generates no server, resolver, or data
+access layer, so nothing it emits can enforce them. A column omitted here is
+absent from the contract you publish; whether a caller can reach the underlying
+data is decided entirely by the service you write and the privileges you grant.
+
+Ptah also does not classify columns by name. A column called `password` is
+treated exactly like any other until a declaration says otherwise, because a
+naming heuristic that is right most of the time is a security boundary that is
+wrong some of the time.
 :::
 
 The generated surface differs by target:

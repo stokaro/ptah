@@ -22,9 +22,10 @@ Both are exercised in CI (`.github/workflows/export-acceptance.yml`).
 
 The generated artifact is not automatically a safe public API. Database models
 can contain internal, tenant, audit, credential, and personally identifiable
-fields. Use direct projection only where the selected persistence entities
-intentionally match the transport model, and review every generated field
-before publishing it.
+fields. Declare `api_expose` on a column to decide whether it reaches a contract
+and in which direction, and pass `--api-field-policy=allowlist` so a column that
+declares nothing reaches none. Both shape the generated document and neither is
+access control. Review every generated field before publishing it.
 
 This file covers the two stateless targets. The Protobuf target (`--to protobuf`,
 rendered by `internal/protobufrender`) is stateful — field numbers are persistent

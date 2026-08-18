@@ -310,6 +310,7 @@ var directives = []Directive{
 			attr("graphql_name", "Name this column carries in the GraphQL export only, overriding api_name there.", valueString, false, false),
 			attr("proto_name", "Name this column carries in the Protobuf export only, overriding api_name there. It is the wire identity, so changing it retires a field number.", valueString, false, false),
 			attr("api_type", "Type the API export projects this column as, named in Ptah's own type vocabulary.", valueString, false, false),
+			attr("api_expose", "Whether this column reaches an exported API contract: none, read, write or read-write. It declares a contract shape and is not access control.", valueString, false, false),
 			attr("type", "Database column type.", valueString, false, false),
 			attr("not_null", "Marks the column NOT NULL.", valueBoolean, false, true),
 			attr("primary", "Marks the column as part of the primary key.", valueBoolean, false, true),
