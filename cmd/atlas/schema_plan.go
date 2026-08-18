@@ -83,9 +83,9 @@ selected atlas.hcl env can provide url
 diff policy values. Registry-bound planning (--push, --pending, --repo),
 --format and --directive remain unimplemented.
 
-Standard Base64 contains "/", so a name built from .FromHash or .ToHash is a
-legal file name only about two times in three. .FromHashSafe and .ToHashSafe
-carry the same digest bytes in the URL-safe alphabet and are always usable:
+Standard Base64 contains "/", so about one schema in six gives a twelve-character
+window that is not a legal file name. .FromHashSafe and .ToHashSafe carry the
+same digest bytes in the URL-safe alphabet and are always usable:
 
     --name-format 'plan_{{ slice .ToHashSafe 0 12 }}'
 
