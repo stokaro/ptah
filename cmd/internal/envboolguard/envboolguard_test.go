@@ -47,18 +47,19 @@ import (
 // not, because the scan skips `_test.go` files: an entry for one would be a
 // claim about the tree that nothing checks.
 var nonBooleanPtahVars = []string{
-	"PTAH_CURRENT_VERSION",    // migration version, passed to preflight hooks
-	"PTAH_DB_URL",             // database URL
-	"PTAH_DIALECT",            // dialect name
-	"PTAH_DIR",                // migration directory URL
-	"PTAH_FORMAT",             // Go template
-	"PTAH_LOG_FORMAT",         // log format name
-	"PTAH_MIGRATIONS_DIR",     // native migration directory path
-	"PTAH_PLAN",               // plan name, an Atlas capability Ptah refuses
-	"PTAH_SQLSERVER_TEST_URL", // SQL Server address for the live test contour
-	"PTAH_TARGET_VERSION",     // migration version, passed to preflight hooks
-	"PTAH_TO_TAG",             // tag name, an Atlas capability Ptah refuses
-	"PTAH_VAR",                // repeatable name=value assignment
+	"PTAH_CURRENT_VERSION",     // migration version, passed to preflight hooks
+	"PTAH_DB_URL",              // database URL
+	"PTAH_DIALECT",             // dialect name
+	"PTAH_DIR",                 // migration directory URL
+	"PTAH_FORMAT",              // Go template
+	"PTAH_LOG_FORMAT",          // log format name
+	"PTAH_MIGRATIONS_DIR",      // native migration directory path
+	"PTAH_OCI_REFERRER_POLICY", // referrer publish policy: auto, api, required-api, tag
+	"PTAH_PLAN",                // plan name, an Atlas capability Ptah refuses
+	"PTAH_SQLSERVER_TEST_URL",  // SQL Server address for the live test contour
+	"PTAH_TARGET_VERSION",      // migration version, passed to preflight hooks
+	"PTAH_TO_TAG",              // tag name, an Atlas capability Ptah refuses
+	"PTAH_VAR",                 // repeatable name=value assignment
 }
 
 // ptahVarPattern finds a variable name anywhere inside a string literal, so
