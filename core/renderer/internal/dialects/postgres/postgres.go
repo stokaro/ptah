@@ -2374,3 +2374,23 @@ func (r *Renderer) writeClickHouseOnlyOperation(operation ast.AlterOperation) {
 		r.w.WriteLinef("-- %s: table TTL is ClickHouse-specific; ignored.", r.dialectUpper)
 	}
 }
+
+// VisitCreateSynonym names the synonym as skipped.
+//
+// There is no capability key behind this refusal, and that is the difference
+// between a synonym and a sequence here. A capability varies: some servers on
+// this wire have the object and some do not, so the key records which. The
+// PostgreSQL family has no synonym object at all -- not in PostgreSQL, not in
+// CockroachDB, YugabyteDB or the Spanner interface this renderer also backs --
+// so a key would have exactly one value forever and would invite a preset to
+// turn it on.
+func (r *Renderer) VisitCreateSynonym(node *ast.CreateSynonymNode) error {
+	r.writeObjectSkipped("synonym", node.Name)
+	return nil
+}
+
+// VisitDropSynonym names the synonym as skipped, for the same reason.
+func (r *Renderer) VisitDropSynonym(node *ast.DropSynonymNode) error {
+	r.writeObjectSkipped("synonym", node.Name)
+	return nil
+}

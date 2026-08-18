@@ -792,3 +792,15 @@ func splitQualifiedIdentifier(identifier string) []string {
 func unsupportedFeaturef(format string, args ...any) error {
 	return fmt.Errorf("%w: sqlite: %s", ptaherr.ErrUnsupportedFeature, fmt.Sprintf(format, args...))
 }
+
+// VisitCreateSynonym refuses: SQLite has no synonym object of any kind.
+func (r *Renderer) VisitCreateSynonym(node *ast.CreateSynonymNode) error {
+	r.notSupported("CREATE SYNONYM", node.Name)
+	return nil
+}
+
+// VisitDropSynonym refuses for the same reason.
+func (r *Renderer) VisitDropSynonym(node *ast.DropSynonymNode) error {
+	r.notSupported("DROP SYNONYM", node.Name)
+	return nil
+}

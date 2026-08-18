@@ -215,6 +215,22 @@ func (m *MockVisitor) VisitDropView(node *ast.DropViewNode) error {
 	return nil
 }
 
+func (m *MockVisitor) VisitCreateSynonym(node *ast.CreateSynonymNode) error {
+	m.VisitedNodes = append(m.VisitedNodes, "CreateSynonym:"+node.Name)
+	if m.ReturnError {
+		return errors.New("mock error")
+	}
+	return nil
+}
+
+func (m *MockVisitor) VisitDropSynonym(node *ast.DropSynonymNode) error {
+	m.VisitedNodes = append(m.VisitedNodes, "DropSynonym:"+node.Name)
+	if m.ReturnError {
+		return errors.New("mock error")
+	}
+	return nil
+}
+
 func (m *MockVisitor) VisitCreateMaterializedView(node *ast.CreateMaterializedViewNode) error {
 	m.VisitedNodes = append(m.VisitedNodes, "CreateMaterializedView:"+node.Name)
 	if m.ReturnError {

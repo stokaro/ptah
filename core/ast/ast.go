@@ -56,6 +56,10 @@ type Visitor interface {
 	VisitCreateView(*CreateViewNode) error
 	// VisitDropView renders a DROP VIEW statement
 	VisitDropView(*DropViewNode) error
+	// VisitCreateSynonym renders a CREATE SYNONYM statement
+	VisitCreateSynonym(*CreateSynonymNode) error
+	// VisitDropSynonym renders a DROP SYNONYM statement
+	VisitDropSynonym(*DropSynonymNode) error
 	// VisitCreateMaterializedView renders a CREATE MATERIALIZED VIEW statement
 	VisitCreateMaterializedView(*CreateMaterializedViewNode) error
 	// VisitDropMaterializedView renders a DROP MATERIALIZED VIEW statement
