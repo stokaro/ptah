@@ -83,6 +83,13 @@ selected atlas.hcl env can provide url
 diff policy values. Registry-bound planning (--push, --pending, --repo),
 --format and --directive remain unimplemented.
 
+Standard Base64 contains "/", so a name built from .FromHash or .ToHash is a
+legal file name only about two times in three. .FromHashSafe and .ToHashSafe
+carry the same digest bytes in the URL-safe alphabet and are always usable:
+
+    --name-format 'plan_{{ slice .ToHashSafe 0 12 }}'
+
+
 Two local sub-verbs are implemented: ` + "`new`" + ` creates a plan file for the
 transition and ` + "`validate`" + ` checks an existing plan file against it. The
 registry sub-verbs (approve, list, pull, push, rm) and the ` + "`lint`" + ` and
@@ -322,7 +329,9 @@ func validateAtlasSchemaPlanName(source, name string, outputMode atlasSchemaPlan
 		return fmt.Errorf("%s: the plan name %q is a directory reference, not a name", source, name)
 	case outputMode == atlasSchemaPlanDefaultOutput && strings.ContainsAny(name, `/\`):
 		return fmt.Errorf(
-			"%s: the plan name %q contains a path separator; use --output to choose the plan file location",
+			"%s: the plan name %q contains a path separator. .FromHash and .ToHash are "+
+				"Base64 and can hold \"/\"; use .FromHashSafe or .ToHashSafe for the same bytes "+
+				"in a form that is always a legal file name, or --output to choose the path",
 			source, name)
 	case strings.ContainsAny(name, atlasPlanNameIllegalWindowsChars):
 		return fmt.Errorf(

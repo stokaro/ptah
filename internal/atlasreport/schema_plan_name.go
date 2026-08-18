@@ -26,6 +26,19 @@ import (
 type SchemaPlanName struct {
 	FromHash string
 	ToHash   string
+
+	// FromHashSafe and ToHashSafe are the same digest bytes in the URL-safe
+	// Base64 alphabet, which uses "-" and "_" where the standard one uses "+"
+	// and "/".
+	//
+	// They exist because the documented example is a trap: for a
+	// twelve-character window, roughly a third of schemas produce a name
+	// containing a separator, and the command then refuses the name its own
+	// template produced. The Atlas-shaped fields keep their representation --
+	// that is what they are for -- and these carry the same entropy in a form
+	// that is always a legal file name.
+	FromHashSafe string
+	ToHashSafe   string
 }
 
 // NewSchemaPlanName converts Ptah's tagged hexadecimal schema fingerprints to
@@ -39,7 +52,20 @@ func NewSchemaPlanName(fromFingerprint, toFingerprint string) (SchemaPlanName, e
 	if err != nil {
 		return SchemaPlanName{}, err
 	}
-	return SchemaPlanName{FromHash: fromHash, ToHash: toHash}, nil
+	fromSafe, err := schemaPlanTemplateHashSafe("from", fromFingerprint)
+	if err != nil {
+		return SchemaPlanName{}, err
+	}
+	toSafe, err := schemaPlanTemplateHashSafe("to", toFingerprint)
+	if err != nil {
+		return SchemaPlanName{}, err
+	}
+	return SchemaPlanName{
+		FromHash:     fromHash,
+		ToHash:       toHash,
+		FromHashSafe: fromSafe,
+		ToHashSafe:   toSafe,
+	}, nil
 }
 
 func schemaPlanTemplateHash(field, fingerprint string) (string, error) {
@@ -52,6 +78,23 @@ func schemaPlanTemplateHash(field, fingerprint string) (string, error) {
 		return "", fmt.Errorf("decode %s schema fingerprint for --name-format: %w", field, err)
 	}
 	return base64.StdEncoding.EncodeToString(raw), nil
+}
+
+// schemaPlanTemplateHashSafe is schemaPlanTemplateHash in the URL-safe
+// alphabet. It decodes the same fingerprint and re-encodes the same bytes, so a
+// name built from it carries the entropy the Atlas-shaped field carries and
+// differs from it only where the standard alphabet would have produced a
+// character a file name cannot hold.
+func schemaPlanTemplateHashSafe(field, fingerprint string) (string, error) {
+	parsed, err := digest.Parse(fingerprint)
+	if err != nil {
+		return "", fmt.Errorf("parse %s schema fingerprint for --name-format: %w", field, err)
+	}
+	raw, err := hex.DecodeString(parsed.Encoded())
+	if err != nil {
+		return "", fmt.Errorf("decode %s schema fingerprint for --name-format: %w", field, err)
+	}
+	return base64.RawURLEncoding.EncodeToString(raw), nil
 }
 
 // ValidateSchemaPlanNameTemplate reports whether format parses as a plan-name
