@@ -126,6 +126,7 @@ func routedObjectGrid(c *qt.C) []routedObjectCell {
 			database.Roles = nil
 		}
 		adaptForClickHouse(database, dialect)
+		adaptForSQLServer(database, dialect)
 		statements, err := renderer.GetOrderedCreateStatements(database, dialect)
 		c.Assert(err, qt.IsNil, qt.Commentf("render failed for %s", dialect))
 		sql := strings.Join(statements, "\n")
@@ -353,7 +354,9 @@ func kindCells(cells []routedObjectCell, kind string) []routedObjectCell {
 func TestRender_SQLServerGeneratesTheSequenceItUsedOnlyToName(t *testing.T) {
 	c := qt.New(t)
 
-	statements, err := renderer.GetOrderedCreateStatements(routedObjectSchema(), platform.SQLServer)
+	database := routedObjectSchema()
+	adaptForSQLServer(database, platform.SQLServer)
+	statements, err := renderer.GetOrderedCreateStatements(database, platform.SQLServer)
 	c.Assert(err, qt.IsNil)
 	sql := strings.Join(statements, "\n")
 
@@ -545,6 +548,60 @@ func adaptForClickHouse(database *goschema.Database, dialect string) {
 			Name: database.Grants[i].Role, Inherit: true,
 		})
 	}
+}
+
+// adaptForSQLServer strips the role attributes a SQL Server DATABASE role does
+// not have.
+//
+// A database role is a permission container inside one database: it cannot log
+// in, and `CREATE ROLE [r] LOGIN` is `Incorrect syntax near 'LOGIN'` on
+// 17.0.4075.5. The renderer refuses the declaration rather than creating a
+// principal that cannot do what the author wrote, so the grid -- which asks a
+// different question, whether any declared object is lost -- hands it a role
+// the target can represent. The control below is what proves the un-adapted
+// fixture is refused rather than quietly rendered (stokaro/ptah#1698).
+func adaptForSQLServer(database *goschema.Database, dialect string) {
+	if dialect != platform.SQLServer {
+		return
+	}
+	for i := range database.Roles {
+		database.Roles[i].Login = false
+		database.Roles[i].Password = ""
+		database.Roles[i].Superuser = false
+		database.Roles[i].CreateDB = false
+		database.Roles[i].CreateRole = false
+		database.Roles[i].Replication = false
+	}
+}
+
+// TestRender_SQLServerRefusesARoleThatWantsToLogIn is the control on the
+// adaptation above.
+//
+// The permanent-diff hazard is the reason this refuses rather than warns: the
+// reader can only ever report those attributes false, so a comment-and-create
+// answer would report the same pending change on every run forever.
+func TestRender_SQLServerRefusesARoleThatWantsToLogIn(t *testing.T) {
+	c := qt.New(t)
+
+	_, err := renderer.GetOrderedCreateStatements(routedObjectSchema(), platform.SQLServer)
+
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(err.Error(), qt.Contains, "declares LOGIN")
+	c.Assert(err.Error(), qt.Contains, "server-level LOGIN")
+}
+
+// TestRender_SQLServerCreatesARoleWithoutAttributes is that control's own
+// control: a renderer that refused every role would satisfy the row above and
+// would never create one.
+func TestRender_SQLServerCreatesARoleWithoutAttributes(t *testing.T) {
+	c := qt.New(t)
+	database := routedObjectSchema()
+	adaptForSQLServer(database, platform.SQLServer)
+
+	statements, err := renderer.GetOrderedCreateStatements(database, platform.SQLServer)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(strings.Join(statements, "\n"), qt.Contains, "CREATE ROLE [role_probe];")
 }
 
 // TestRender_ClickHouseRefusesTheUnrepresentableDeclaration is the control on

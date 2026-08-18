@@ -11,6 +11,10 @@ import (
 
 const schemaPredicatePlaceholder = "/* ptah:schema-predicate */"
 
+// grantObjectTypeSchema is the object type whose target is a schema rather than
+// an object inside one.
+const grantObjectTypeSchema = "SCHEMA"
+
 type catalogTableKey struct {
 	schema string
 	table  string
@@ -103,6 +107,18 @@ func (r *Reader) ReadSchema() (*types.DBSchema, error) {
 		return nil, fmt.Errorf("sqlserver: read sequences: %w", err)
 	}
 	schema.Sequences = sequences
+
+	roles, err := r.readRoles()
+	if err != nil {
+		return nil, fmt.Errorf("sqlserver: read roles: %w", err)
+	}
+	schema.Roles = roles
+
+	grants, err := r.readGrants()
+	if err != nil {
+		return nil, fmt.Errorf("sqlserver: read grants: %w", err)
+	}
+	schema.Grants = grants
 
 	synonyms, err := r.readSynonyms()
 	if err != nil {
@@ -659,6 +675,114 @@ func (f sequenceCacheFacts) managedOption() *int64 {
 	}
 	size := f.size.Int64
 	return &size
+}
+
+// readRoles reads the database roles this database declares.
+//
+// Three exclusions, and each is a row that would otherwise be planned as
+// something to drop.
+//
+// A SQL Server role is DATABASE-scoped, unlike a PostgreSQL role, so this reads
+// one database's principals rather than a cluster's. is_fixed_role screens out
+// db_owner and its siblings, which ship with every database. And `public` has
+// to go on top of that: it reports is_fixed_role = 0, exists in every database,
+// and cannot be dropped -- a plan naming it would emit a DROP ROLE the engine
+// refuses.
+//
+// Attributes are deliberately absent. A database role has none of PostgreSQL's
+// -- no login, no password, no superuser -- so reporting false for each is not
+// a loss of information; it is the only truth available, and the renderer says
+// so when a declaration asks for one.
+func (r *Reader) readRoles() ([]types.DBRole, error) {
+	query := `
+		SELECT p.name
+		FROM sys.database_principals AS p
+		WHERE p.type = 'R' AND p.is_fixed_role = 0 AND p.name <> 'public'
+		ORDER BY p.name`
+	rows, err := r.db.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var roles []types.DBRole
+	for rows.Next() {
+		var role types.DBRole
+		if err := rows.Scan(&role.Name); err != nil {
+			return nil, err
+		}
+		// Inherit is the one attribute whose T-SQL answer is not false: a
+		// database role's members always receive its permissions.
+		role.Inherit = true
+		roles = append(roles, role)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return roles, nil
+}
+
+// readGrants reads the permissions this database's roles hold.
+//
+// state_desc carries three values, not two. GRANT and
+// GRANT_WITH_GRANT_OPTION are the pair DBGrant.WithOption models. DENY is the
+// third, and it SUBTRACTS: a role holding SELECT through a broader grant and
+// DENY on one table cannot read that table. Ptah plans no such shape, so the
+// row is reported with IsPartialRevoke set rather than dropped -- exactly what
+// that field exists for, and what lets a live validation refuse a managed role
+// whose effective privileges are quietly narrower than its grant rows say.
+func (r *Reader) readGrants() ([]types.DBGrant, error) {
+	query := `
+		SELECT grantee.name, pe.permission_name, pe.state_desc, pe.class_desc,
+			   COALESCE(s.name, ''), COALESCE(OBJECT_NAME(pe.major_id), SCHEMA_NAME(pe.major_id), '')
+		FROM sys.database_permissions AS pe
+		JOIN sys.database_principals AS grantee ON grantee.principal_id = pe.grantee_principal_id
+		LEFT JOIN sys.objects AS o ON o.object_id = pe.major_id AND pe.class = 1
+		LEFT JOIN sys.schemas AS s ON s.schema_id = o.schema_id
+		WHERE grantee.type = 'R' AND grantee.is_fixed_role = 0 AND grantee.name <> 'public'
+		ORDER BY grantee.name, pe.permission_name`
+	rows, err := r.db.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var grants []types.DBGrant
+	for rows.Next() {
+		var grant types.DBGrant
+		var state, class string
+		if err := rows.Scan(&grant.Role, &grant.Privilege, &state, &class,
+			&grant.Schema, &grant.ObjectName); err != nil {
+			return nil, err
+		}
+		grant.Privilege = strings.ToUpper(strings.TrimSpace(grant.Privilege))
+		grant.ObjectType = grantObjectTypeFor(class)
+		grant.WithOption = state == "GRANT_WITH_GRANT_OPTION"
+		grant.IsPartialRevoke = state == "DENY"
+		grants = append(grants, grant)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return grants, nil
+}
+
+// grantObjectTypeFor maps a permission's class onto the object type the shared
+// grant shape names.
+//
+// A class this reader does not model becomes the class name itself rather than
+// a guess: naming an unmodeled target is what lets a comparison decline it,
+// where defaulting to TABLE would compare a database-level permission against a
+// table grant.
+func grantObjectTypeFor(class string) string {
+	switch class {
+	case "OBJECT_OR_COLUMN":
+		return "TABLE"
+	case "SCHEMA":
+		return grantObjectTypeSchema
+	default:
+		return strings.ToUpper(strings.TrimSpace(class))
+	}
 }
 
 // readSynonyms reads the synonyms the connected database declares.
