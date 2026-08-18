@@ -40,6 +40,9 @@ type AttachmentOptions struct {
 	LayerMediaType string
 	Annotations    map[string]string
 	Limits         Limits
+	// Policy decides which discovery mechanism the attachment gets. The zero
+	// value is [ReferrerPolicyAuto].
+	Policy ReferrerPolicy
 }
 
 // Attach stores fsys as a referrer of subjectRef.
@@ -93,7 +96,8 @@ func (c *Client) Attach(
 	if err != nil {
 		return PushResult{}, fmt.Errorf("resolve attachment subject %s: %w", ref, err)
 	}
-	result, err := attachResolved(ctx, target, repository, ref, subject, fsys, opts)
+	opts.Policy = c.effectiveReferrerPolicy(opts.Policy)
+	result, err := attachResolved(ctx, target, repository, ref, subject, fsys, opts, c.indexProbe(subjectRef))
 	if err != nil {
 		return result, fmt.Errorf("attach to %s: %w", ref, err)
 	}
@@ -125,11 +129,62 @@ func (c *Client) AttachResolved(
 		return PushResult{}, err
 	}
 	opts.Limits = mergeLimits(opts.Limits, c.options.Limits)
-	result, err := attachResolved(ctx, target, repository, ref, subject, fsys, opts)
+	opts.Policy = c.effectiveReferrerPolicy(opts.Policy)
+	result, err := attachResolved(ctx, target, repository, ref, subject, fsys, opts, c.indexProbe(subjectRef))
 	if err != nil {
 		return result, fmt.Errorf("attach to resolved subject %s: %w", ref, err)
 	}
 	return result, nil
+}
+
+// indexProbe answers whether the registry serves the referrers index. It is a
+// parameter rather than a method call so that the policy decision can be tested
+// without a registry that has to be persuaded to lack a capability.
+type indexProbe func(context.Context) (bool, string, error)
+
+// resolveAttachmentPolicy turns the operator's policy into the concrete one the
+// write will use, asking the registry only where the answer changes what
+// happens.
+//
+// required-api asks BEFORE anything is written, which is the whole difference
+// between it and api: a pipeline that must not publish an undiscoverable
+// attachment fails without having created one, rather than failing afterwards
+// with the artifact already in the registry.
+func resolveAttachmentPolicy(
+	ctx context.Context,
+	policy ReferrerPolicy,
+	probe indexProbe,
+) (ReferrerPolicy, error) {
+	switch policy.normalized() {
+	case ReferrerPolicyAPI, ReferrerPolicyTag:
+		return policy.normalized(), nil
+	case ReferrerPolicyRequiredAPI:
+		supported, detail, err := probe(ctx)
+		if err != nil {
+			return "", fmt.Errorf("ask the registry for the referrers index: %w", err)
+		}
+		if !supported {
+			return "", fmt.Errorf("%w: the registry does not serve the referrers index%s",
+				ErrReferrerIndexRequired, detailSuffix(detail))
+		}
+		return ReferrerPolicyAPI, nil
+	default:
+		supported, _, err := probe(ctx)
+		if err != nil {
+			return "", fmt.Errorf("ask the registry for the referrers index: %w", err)
+		}
+		if supported {
+			return ReferrerPolicyAPI, nil
+		}
+		return ReferrerPolicyTag, nil
+	}
+}
+
+func detailSuffix(detail string) string {
+	if strings.TrimSpace(detail) == "" {
+		return ""
+	}
+	return " (" + strings.TrimSpace(detail) + ")"
 }
 
 func attachResolved(
@@ -140,10 +195,16 @@ func attachResolved(
 	subject ocispec.Descriptor,
 	fsys fs.FS,
 	opts AttachmentOptions,
+	probe indexProbe,
 ) (PushResult, error) {
 	if err := validateAttachmentSubject(subject); err != nil {
 		return PushResult{}, err
 	}
+	resolvedPolicy, err := resolveAttachmentPolicy(ctx, opts.Policy, probe)
+	if err != nil {
+		return PushResult{}, err
+	}
+	opts.Policy = resolvedPolicy
 	lock := attachmentLock(ref, subject)
 	lock.Lock()
 	defer lock.Unlock()
@@ -295,6 +356,9 @@ func AttachTo(
 	})
 	if err != nil {
 		return result, err
+	}
+	if !opts.Policy.WritesDurableTag() {
+		return result, nil
 	}
 	tag, err := durableReferrerTag(subject, result.Descriptor)
 	if err != nil {
@@ -531,4 +595,29 @@ func listReferrersFrom(
 		return nil, err
 	}
 	return result, nil
+}
+
+// indexProbe asks this client's registry whether it serves the referrers index.
+//
+// The question is put on a repository client of its own rather than the one the
+// attachment uses, because pinning the capability is a one-shot operation and
+// the attachment still needs its own auto-detection intact afterwards.
+func (c *Client) indexProbe(subjectRef string) indexProbe {
+	return func(ctx context.Context) (bool, string, error) {
+		capabilities, err := c.Capabilities(ctx, subjectRef)
+		if err != nil {
+			return false, "", err
+		}
+		return capabilities.ReferrersAPI, capabilities.Detail, nil
+	}
+}
+
+// effectiveReferrerPolicy lets an attachment override the client's policy and
+// falls back to it otherwise, so a caller that names nothing inherits the
+// decision the run was configured with rather than a hardcoded default.
+func (c *Client) effectiveReferrerPolicy(attachment ReferrerPolicy) ReferrerPolicy {
+	if attachment != "" {
+		return attachment
+	}
+	return c.options.ReferrerPolicy.normalized()
 }

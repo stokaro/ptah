@@ -6,6 +6,7 @@ import (
 	"io/fs"
 	"net"
 	"net/http"
+	"os"
 	"time"
 
 	"oras.land/oras-go/v2/registry/remote"
@@ -32,6 +33,13 @@ type ClientOptions struct {
 	// OperationTimeout bounds each registry operation and credential-helper
 	// lookup. The default is two minutes.
 	OperationTimeout time.Duration
+	// ReferrerPolicy decides how attachments made through this client are made
+	// discoverable. It sits here rather than on each attachment because it is
+	// a property of how this run talks to its registry, like PlainHTTP, and
+	// threading it through every publish signature would put the same decision
+	// in three places that must not disagree. An attachment may still override
+	// it. The zero value is [ReferrerPolicyAuto].
+	ReferrerPolicy ReferrerPolicy
 }
 
 // Client stores and retrieves Ptah artifacts from OCI repositories.
@@ -46,6 +54,13 @@ func NewClient(opts ClientOptions) (*Client, error) {
 	store, err := credentials.NewStoreFromDocker(credentials.StoreOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("open Docker credential store: %w", err)
+	}
+	if opts.ReferrerPolicy == "" {
+		policy, err := ParseReferrerPolicy(os.Getenv(ReferrerPolicyEnv))
+		if err != nil {
+			return nil, fmt.Errorf("read %s: %w", ReferrerPolicyEnv, err)
+		}
+		opts.ReferrerPolicy = policy
 	}
 	opts.Limits = opts.Limits.normalized()
 	if opts.OperationTimeout <= 0 {
