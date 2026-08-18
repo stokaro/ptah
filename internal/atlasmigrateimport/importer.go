@@ -29,6 +29,7 @@ import (
 
 	"go.5x5.cz/ptah/atlascompat"
 	"go.5x5.cz/ptah/internal/fsnapshot"
+	"go.5x5.cz/ptah/internal/migratesum"
 	"go.5x5.cz/ptah/internal/migrationsnapshot"
 	"go.5x5.cz/ptah/internal/revisiontable"
 	"go.5x5.cz/ptah/migration/importer"
@@ -1151,6 +1152,74 @@ func FlywaySourceVersions(fsys fs.FS, format Format) (map[int64]string, error) {
 		}
 	}
 	return sources, nil
+}
+
+// FlywaySourceChecksums maps each converted execution-order key to the h1 hash
+// the SOURCE directory's atlas.sum records for the file it came from.
+//
+// It is the checksum half of [FlywaySourceVersions], and it exists for the same
+// reason. Converting a Flyway directory rebuilds it as up-only Atlas migrations
+// with no integrity file, so by the time the migrator sees it the source hashes
+// are gone and a revision row falls back to the hex SHA-256 of the up SQL. A
+// history the community binary wrote stores the atlas.sum h1 instead, and the
+// two never compare equal -- which is what stopped Ptah continuing that history
+// (stokaro/ptah#1209).
+//
+// Reading the hashes here rather than after conversion is the whole point: this
+// runs against the captured SOURCE snapshot, which still carries atlas.sum.
+//
+// A file the sum does not cover contributes no entry rather than an empty one,
+// so a directory with no atlas.sum yields an empty map and every migration
+// keeps the pre-existing hex encoding. That is what keeps a Ptah-written
+// history verifying unchanged.
+func FlywaySourceChecksums(fsys fs.FS, format Format) (map[int64]string, error) {
+	if format != FormatFlyway {
+		return nil, nil
+	}
+	names, err := treeNames(fsys, skipHiddenDir)
+	if err != nil {
+		return nil, err
+	}
+	covered := flywaySumFiles(names)
+	versions, err := flywayConvertedVersions(covered)
+	if err != nil {
+		return nil, err
+	}
+	hashes, err := flywaySumHashes(fsys)
+	if err != nil {
+		return nil, err
+	}
+	checksums := make(map[int64]string, len(covered))
+	for i, file := range covered {
+		if hash := hashes[file.name]; hash != "" {
+			checksums[versions[i]] = hash
+		}
+	}
+	return checksums, nil
+}
+
+// flywaySumHashes reads the source directory's atlas.sum into a per-file map.
+//
+// A directory without one is not an error: the community binary writes it on
+// `migrate hash`, and a directory that never had it is simply one whose
+// migrations carry no source hash to continue.
+func flywaySumHashes(fsys fs.FS) (map[string]string, error) {
+	data, err := fs.ReadFile(fsys, migratesum.AtlasFileName)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return map[string]string{}, nil
+		}
+		return nil, fmt.Errorf("read %s: %w", migratesum.AtlasFileName, err)
+	}
+	sum, err := migratesum.Parse(data)
+	if err != nil {
+		return nil, fmt.Errorf("parse %s: %w", migratesum.AtlasFileName, err)
+	}
+	hashes := make(map[string]string, len(sum.Entries))
+	for _, entry := range sum.Entries {
+		hashes[entry.Name] = entry.Hash
+	}
+	return hashes, nil
 }
 
 // CompareFlywayRevisionOrder compares a retired exact Flyway identity on the

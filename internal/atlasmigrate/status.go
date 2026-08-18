@@ -18,6 +18,10 @@ type StatusOptions struct {
 	// identities. A full mapping may include baseline-squashed history; only
 	// migrations present in FS become pending work.
 	RevisionVersions map[int64]string
+
+	// RevisionChecksums carries source atlas.sum h1 hashes for converted
+	// layouts; see [ApplyOptions.RevisionChecksums] (stokaro/ptah#1209).
+	RevisionChecksums map[int64]string
 }
 
 type StatusResult struct {
@@ -41,6 +45,7 @@ func Status(ctx context.Context, conn *dbschema.DatabaseConnection, opts StatusO
 		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
 		migrator.WithAtlasTemplateData(migrator.AtlasTemplateData{Env: opts.AtlasEnv}),
 		migrator.WithAtlasRevisionVersions(opts.RevisionVersions),
+		migrator.WithAtlasRevisionChecksums(opts.RevisionChecksums),
 	)
 	if err != nil {
 		return StatusResult{}, fmt.Errorf("error registering migrations: %w", err)

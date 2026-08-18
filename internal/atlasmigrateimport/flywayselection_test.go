@@ -768,3 +768,98 @@ func TestFlywaySourceVersionsCarriesSquashedTokens(t *testing.T) {
 		})
 	}
 }
+
+// TestFlywaySourceChecksumsCarriesTheSourceSumHashes pins the value
+// stokaro/ptah#1209 threads through: each converted execution-order key gets
+// the h1 the SOURCE directory's atlas.sum recorded, verbatim.
+//
+// Verbatim matters more than it looks. An atlas.sum h1 is a cumulative chain
+// over every preceding file rather than a digest of one file, so a value
+// recomputed here from the converted bytes would be a different number even
+// with the same algorithm. Copying is what makes a row Ptah writes equal to the
+// row the community binary would have written.
+//
+// The value keeps its "h1:" prefix, which is what the native path's own reader
+// produces too. [migrator.migrationRevisionHash] trims it on the way to the
+// revision row, so both paths hand that function the same shape.
+func TestFlywaySourceChecksumsCarriesTheSourceSumHashes(t *testing.T) {
+	tests := []struct {
+		name  string
+		files []string
+		sum   string
+		want  []string
+	}{{
+		name:  "a plain numeric token",
+		files: []string{"V1__a.sql", "V2__b.sql"},
+		sum:   "h1:K2TG2a/Yo07Q2/NffeFxqIJaUNn0LwXpj+Kxrd8Aq0Q=\nV1__a.sql h1:ypeBEsobvcr6wjGzmiPcTaeG7/gUfE5yuYB3ha/uSLs=\nV2__b.sql h1:PiPoFgA5WUoziU9lZOGxNIu9egCI1CxKy3PurtWcAJ0=\n",
+		want:  []string{"h1:ypeBEsobvcr6wjGzmiPcTaeG7/gUfE5yuYB3ha/uSLs=", "h1:PiPoFgA5WUoziU9lZOGxNIu9egCI1CxKy3PurtWcAJ0="},
+	}, {
+		name:  "a dotted token",
+		files: []string{"V1__a.sql", "V1.5__half.sql"},
+		sum:   "h1:K2TG2a/Yo07Q2/NffeFxqIJaUNn0LwXpj+Kxrd8Aq0Q=\nV1__a.sql h1:ypeBEsobvcr6wjGzmiPcTaeG7/gUfE5yuYB3ha/uSLs=\nV1.5__half.sql h1:oRrgZGnGN0DXsOz4AvKCoNRulPMaZU3808DcbcJ3+QQ=\n",
+		want:  []string{"h1:ypeBEsobvcr6wjGzmiPcTaeG7/gUfE5yuYB3ha/uSLs=", "h1:oRrgZGnGN0DXsOz4AvKCoNRulPMaZU3808DcbcJ3+QQ="},
+	}, {
+		name:  "a zero-padded token",
+		files: []string{"V01__a.sql", "V2__b.sql"},
+		sum:   "h1:K2TG2a/Yo07Q2/NffeFxqIJaUNn0LwXpj+Kxrd8Aq0Q=\nV01__a.sql h1:x/m1OLk85RP2VLjRmeUCUq4DfFveVCwTKwSkLNi5LqA=\nV2__b.sql h1:PiPoFgA5WUoziU9lZOGxNIu9egCI1CxKy3PurtWcAJ0=\n",
+		want:  []string{"h1:x/m1OLk85RP2VLjRmeUCUq4DfFveVCwTKwSkLNi5LqA=", "h1:PiPoFgA5WUoziU9lZOGxNIu9egCI1CxKy3PurtWcAJ0="},
+	}, {
+		// A file the sum does not cover contributes nothing rather than an
+		// empty hash, so the migration keeps whatever encoding it already had.
+		name:  "a file the sum does not cover",
+		files: []string{"V1__a.sql", "V2__b.sql"},
+		sum:   "h1:K2TG2a/Yo07Q2/NffeFxqIJaUNn0LwXpj+Kxrd8Aq0Q=\nV1__a.sql h1:ypeBEsobvcr6wjGzmiPcTaeG7/gUfE5yuYB3ha/uSLs=\n",
+		want:  []string{"h1:ypeBEsobvcr6wjGzmiPcTaeG7/gUfE5yuYB3ha/uSLs="},
+	}}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			fsys := fstest.MapFS{"atlas.sum": &fstest.MapFile{Data: []byte(test.sum)}}
+			for _, name := range test.files {
+				fsys[name] = &fstest.MapFile{Data: []byte("SELECT 1;\n")}
+			}
+
+			checksums, err := atlasmigrateimport.FlywaySourceChecksums(fsys, atlasmigrateimport.FormatFlyway)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(slices.Sorted(maps.Values(checksums)), qt.DeepEquals, slices.Sorted(slices.Values(test.want)))
+		})
+	}
+}
+
+// TestFlywaySourceChecksumsIsEmptyWhereItCannotHelp pins the two states that
+// must leave every migration's existing checksum alone: a directory of another
+// format, and one carrying no atlas.sum at all.
+//
+// This is what keeps a Ptah-written history verifying unchanged. Returning an
+// entry here would overwrite a hex checksum that is already correct for it.
+func TestFlywaySourceChecksumsIsEmptyWhereItCannotHelp(t *testing.T) {
+	tests := []struct {
+		name   string
+		fsys   fstest.MapFS
+		format atlasmigrateimport.Format
+	}{{
+		name: "a directory that is not Flyway",
+		fsys: fstest.MapFS{
+			"1_a.sql":   &fstest.MapFile{Data: []byte("SELECT 1;\n")},
+			"atlas.sum": &fstest.MapFile{Data: []byte("h1:K2TG2a/Yo07Q2/NffeFxqIJaUNn0LwXpj+Kxrd8Aq0Q=\n1_a.sql h1:ypeBEsobvcr6wjGzmiPcTaeG7/gUfE5yuYB3ha/uSLs=\n")},
+		},
+		format: atlasmigrateimport.FormatAtlas,
+	}, {
+		name:   "a Flyway directory with no atlas.sum",
+		fsys:   fstest.MapFS{"V1__a.sql": &fstest.MapFile{Data: []byte("SELECT 1;\n")}},
+		format: atlasmigrateimport.FormatFlyway,
+	}}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			checksums, err := atlasmigrateimport.FlywaySourceChecksums(test.fsys, test.format)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(checksums, qt.HasLen, 0)
+		})
+	}
+}

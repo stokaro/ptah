@@ -29,6 +29,10 @@ type SetOptions struct {
 	// identities. The map may include squashed history so existing rows remain
 	// readable; only migrations present in FS own pending work.
 	RevisionVersions map[int64]string
+
+	// RevisionChecksums carries source atlas.sum h1 hashes for converted
+	// layouts; see [ApplyOptions.RevisionChecksums] (stokaro/ptah#1209).
+	RevisionChecksums map[int64]string
 	// RevisionTypes preserves source-format metadata for converted migrations.
 	// A manually set row combines the supplied type with the manually-set bit.
 	RevisionTypes map[int64]migrator.AtlasRevisionType
@@ -73,6 +77,7 @@ func Set(
 		migrator.WithMigrationDirFormat(dirFormat),
 		migrator.WithAtlasTemplateData(migrator.AtlasTemplateData{Env: opts.AtlasEnv}),
 		migrator.WithAtlasRevisionVersions(opts.RevisionVersions),
+		migrator.WithAtlasRevisionChecksums(opts.RevisionChecksums),
 		migrator.WithAtlasRevisionTypes(opts.RevisionTypes),
 		migrator.WithAtlasRepeatableVersions(opts.RepeatableVersions),
 	)

@@ -8314,6 +8314,7 @@ type FSMigrationProvider struct{ ... }
     func NewFSMigrationProvider(fsys fs.FS, opts ...FSProviderOption) (*FSMigrationProvider, error)
 type FSProviderOption func(*FSMigrationProvider)
     func WithAtlasRepeatableVersions(versions []int64) FSProviderOption
+    func WithAtlasRevisionChecksums(checksums map[int64]string) FSProviderOption
     func WithAtlasRevisionTypes(types map[int64]AtlasRevisionType) FSProviderOption
     func WithAtlasRevisionVersions(versions map[int64]string) FSProviderOption
     func WithAtlasTemplateData(data any) FSProviderOption
@@ -8658,6 +8659,7 @@ type FSProviderOption func(*FSMigrationProvider)
     migrations.
 
 func WithAtlasRepeatableVersions(versions []int64) FSProviderOption
+func WithAtlasRevisionChecksums(checksums map[int64]string) FSProviderOption
 func WithAtlasRevisionTypes(types map[int64]AtlasRevisionType) FSProviderOption
 func WithAtlasRevisionVersions(versions map[int64]string) FSProviderOption
 func WithAtlasTemplateData(data any) FSProviderOption

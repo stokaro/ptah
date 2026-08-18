@@ -37,6 +37,12 @@ type ApplyOptions struct {
 	// can still be interpreted and preserve their high-water mark. Only entries
 	// that survive in FS become provider migrations and own revision rows.
 	RevisionVersions map[int64]string
+
+	// RevisionChecksums maps converted execution-order keys to the h1 hash the
+	// source directory's atlas.sum recorded, so a revision row written or
+	// verified here uses the source history's checksum encoding rather than one
+	// recomputed from the converted bytes (stokaro/ptah#1209).
+	RevisionChecksums map[int64]string
 	// RevisionTypes carries source-format revision metadata aligned with the
 	// converted execution keys. A surviving Flyway baseline uses the baseline
 	// type so a later run can distinguish it from a versioned migration sharing
@@ -140,6 +146,7 @@ func PrepareApply(ctx context.Context, conn *dbschema.DatabaseConnection, opts A
 		outOfOrderExempt:     opts.OutOfOrderExempt,
 		sourceVersions:       opts.SourceVersions,
 		revisionVersions:     opts.RevisionVersions,
+		revisionChecksums:    opts.RevisionChecksums,
 		revisionTypes:        opts.RevisionTypes,
 		repeatableVersions:   opts.RepeatableVersions,
 		txMode:               opts.TxMode,
@@ -449,6 +456,7 @@ type applyMigratorOptions struct {
 	outOfOrderExempt     []int64
 	sourceVersions       map[int64]string
 	revisionVersions     map[int64]string
+	revisionChecksums    map[int64]string
 	revisionTypes        map[int64]migrator.AtlasRevisionType
 	repeatableVersions   []int64
 	txMode               migrator.MigrationTxMode
@@ -469,6 +477,7 @@ func newApplyMigrator(
 		fsys,
 		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas),
 		migrator.WithAtlasRevisionVersions(opts.revisionVersions),
+		migrator.WithAtlasRevisionChecksums(opts.revisionChecksums),
 		migrator.WithAtlasRevisionTypes(opts.revisionTypes),
 		migrator.WithAtlasRepeatableVersions(opts.repeatableVersions),
 	)

@@ -689,9 +689,19 @@ func NoopMigrationFunc(_ctx context.Context, _conn *dbschema.DatabaseConnection)
 
 // Migration represents a database migration
 type Migration struct {
-	Version                    int64
-	Description                string
-	Checksum                   string
+	Version     int64
+	Description string
+	Checksum    string
+	// sourceRevisionHash is the h1 the SOURCE directory's atlas.sum recorded
+	// for the file this migration was converted from, accepted as a valid
+	// stored revision checksum so a history the Atlas community binary wrote
+	// can be continued (stokaro/ptah#1209).
+	//
+	// It is deliberately NOT [Migration.Checksum]. That field decides what Ptah
+	// WRITES, and an atlas.sum h1 chains over every preceding file, so writing
+	// it would make a Ptah history stop verifying whenever an unrelated
+	// migration was inserted ahead of it.
+	sourceRevisionHash         string
 	atlasRevisionVersion       string
 	hasAtlasRevisionVersion    bool
 	atlasRevisionVersionMapped bool
