@@ -306,12 +306,19 @@ digest reference already names exact bytes and gets no such line.
 
 Every push applies:
 
-- `latest`;
+- the tag in the positional reference;
+- every repeatable `--tag` value;
+- `latest`, only with `--latest`;
 - a collision-resistant version tag generated as
-  `vYYYYMMDDhhmmss-<random-base32>` in UTC, or the value supplied with
-  `--version`;
-- the tag in the positional reference, when one was supplied;
-- every repeatable `--tag` value.
+  `vYYYYMMDDhhmmss-<random-base32>` in UTC, only with `--generated-version`, or
+  the value supplied with `--version` whenever one is given.
+
+Creating an immutable artifact and moving a mutable alias are two operations,
+and a publish that did both was performing the second — promoting the build it
+had only now created — without being asked. The alias moves are therefore opt-in, and
+promotion has its own verbs: `ptah oci tag` and `ptah oci copy`. This also makes
+a publish work under a registry policy that forbids moving tags, which the old
+shape could not.
 
 Duplicate tags are collapsed. Before moving any tag, Ptah rejects a generated
 or explicit version tag that already resolves to different content. Generated

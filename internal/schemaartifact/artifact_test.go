@@ -22,7 +22,9 @@ func TestPushToPullFrom_RoundTrip(t *testing.T) {
 	db.Sequences = []goschema.Sequence{{Name: "users_id_seq"}}
 
 	pushed, err := schemaartifact.PushTo(context.Background(), store, db, schemaartifact.PushOptions{
-		Tags: []string{"stable"},
+		Tags:             []string{"stable"},
+		Latest:           true,
+		GeneratedVersion: true,
 		Now: func() time.Time {
 			return time.Date(2026, time.July, 28, 9, 10, 11, 0, time.UTC)
 		},
@@ -125,4 +127,22 @@ func usersDatabase() *goschema.Database {
 	}
 	goschema.Finalize(db)
 	return db
+}
+
+// TestPushTo_WritesOnlyTheTagItWasGiven pins the default. A publish and an
+// alias move are two operations, and a publish that also moved latest was
+// promoting whatever had just been built without being asked.
+func TestPushTo_WritesOnlyTheTagItWasGiven(t *testing.T) {
+	c := qt.New(t)
+	store := memory.New()
+
+	pushed, err := schemaartifact.PushTo(context.Background(), store, usersDatabase(),
+		schemaartifact.PushOptions{Tags: []string{"release"}})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(pushed.Version, qt.Equals, "",
+		qt.Commentf("no version was asked for, so none was invented"))
+	c.Assert(pushed.Tags, qt.DeepEquals, []string{"release"})
+	_, err = schemaartifact.PullFrom(context.Background(), store, "latest")
+	c.Assert(err, qt.IsNotNil, qt.Commentf("latest must not have been moved onto this push"))
 }
