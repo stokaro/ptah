@@ -68,7 +68,7 @@ require (
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/dustin/go-humanize v1.0.1 // indirect
 	github.com/felixge/httpsnoop v1.0.4 // indirect
-	github.com/fsnotify/fsnotify v1.9.0 // indirect
+	github.com/fsnotify/fsnotify v1.10.1 // indirect
 	github.com/go-extras/nolintguard v0.4.0 // indirect
 	github.com/go-extras/qtlint v1.14.0 // indirect
 	github.com/go-faster/city v1.0.1 // indirect
