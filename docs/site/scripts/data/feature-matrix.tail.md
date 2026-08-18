@@ -5,6 +5,13 @@ The Ptah column is derived from the built binaries. `ptah --help` and
 exists, and a row that could not be demonstrated that way is marked 🟡 with the
 limitation named, or ❌.
 
+🔷 is the one verdict that is not about what a binary does today. It is claimed
+only where two things hold at once: the capability is demonstrable on a Ptah
+binary in a Ptah spelling, and the remainder is access to a service another
+company hosts behind its own accounts. Both halves are stated in the row's
+difference column, so the claim can be argued with. Where only the first holds,
+the row is ✅; where only the second does, it is ❌ with an issue.
+
 The Atlas columns are narrower on purpose. Ptah is a clean-room implementation
 that studies observable behavior only, so the Atlas CE column is derived from
 the command, usage, and flag inventory the conformance harness reads out of the

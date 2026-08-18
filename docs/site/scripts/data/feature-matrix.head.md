@@ -19,8 +19,21 @@ on [Comparison](../comparison/), the measured evidence is on
 | ✅ | Supported today |
 | 🟡 | Partial. The difference column states what is missing |
 | ❌ | Not implemented |
+| 🔷 | Ptah does this job in its own form. What is missing is wire compatibility with a hosted, account-bound service, which an independent implementation cannot obtain |
 | ➖ | Does not apply to that product |
 | ❔ | Not established by the evidence this page uses |
+
+🔷 and 🟡 answer different questions, and the difference decides whether a
+reader should wait for a release. 🟡 means the work is unfinished: the
+difference column names the issue that owns it, and a later Ptah closes it. 🔷
+means the capability is already here under a Ptah spelling, running against
+infrastructure the team already operates, and the only thing absent is speaking
+the wire protocol of a service somebody else hosts behind their own accounts.
+No release closes that, so a 🔷 cell carries no tracking issue. A capability
+that is merely incomplete is never 🔷, whatever it sits next to.
+
+🔷 appears in the **Ptah** column only. The Atlas columns describe the hosted
+product itself, where the distinction does not arise.
 
 Each table has the same columns. **Ptah**, **CE**, and **Pro** carry one symbol
 each:
