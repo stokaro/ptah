@@ -183,3 +183,24 @@ func TestPolicyChangeIsRefusedByThePlannerRatherThanDropped(t *testing.T) {
 	c.Assert(err, qt.ErrorIs, schemachange.ErrNotRendered)
 	c.Assert(operations, qt.IsNil)
 }
+
+// TestPolicyIdentityFromCatalogKeepsOneNameOnTwoTablesApart is the catalog-side
+// half of the identity property.
+//
+// The two adapters build the identity from different components -- one resolves
+// the owning table through the struct that declared the policy, the other
+// parses a qualified name the catalog reported -- so a defect in either is
+// invisible to a test that exercises only the other.
+func TestPolicyIdentityFromCatalogKeepsOneNameOnTwoTablesApart(t *testing.T) {
+	c := qt.New(t)
+	profile := postgresProfile()
+	catalog := policyCatalog()
+	catalog.RLSPolicies = append(catalog.RLSPolicies, dbschematypes.DBRLSPolicy{
+		Name: "tenant_isolation", Table: "public.invoices", PolicyFor: "ALL",
+	})
+
+	state, err := schemastate.FromCatalog(catalog, profile.Dialect, profile.Semantics)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(state.OfKind(objectidentity.KindPolicy), qt.HasLen, 2)
+}

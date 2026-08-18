@@ -211,3 +211,48 @@ func TestPartialRevokeIsNotAGrant(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(state.OfKind(objectidentity.KindGrant), qt.HasLen, 0)
 }
+
+// TestGrantIdentityKeepsTwoObjectsApart pins the object component of a grant's
+// identity on its own axis.
+//
+// Two grants of one privilege to one role in one schema differ only by the
+// object they are about, so a model that dropped the object slot would hold
+// one of them and silently plan the other away. The schema-versus-table row
+// below cannot see that: its two grants differ in the schema slot too, and it
+// stays green with the object slot gone.
+func TestGrantIdentityKeepsTwoObjectsApart(t *testing.T) {
+	c := qt.New(t)
+	profile := postgresProfile()
+	description := grantDescription([]string{"reporting"}, []goschema.Grant{
+		{StructName: "Access", Role: "reporting", Privileges: []string{"SELECT"}, OnTable: "orders"},
+		{StructName: "Access", Role: "reporting", Privileges: []string{"SELECT"}, OnTable: "invoices"},
+	})
+
+	state, err := schemastate.FromDescription(description, profile.Dialect, profile.Semantics)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(state.OfKind(objectidentity.KindGrant), qt.HasLen, 2)
+}
+
+// TestCatalogSchemaGrantMatchesADeclaredSchemaGrant pins that the catalog side
+// puts a schema grant's target in the same slot the declaration does.
+//
+// A catalog reports a schema grant with the schema in its object-name column
+// and nothing in its schema column. Reading that object name as a table in an
+// unqualified schema produces a table-shaped identity, and the declared grant
+// and the held one then look like two grants: one to add and one to revoke, on
+// every run of an unchanged schema.
+func TestCatalogSchemaGrantMatchesADeclaredSchemaGrant(t *testing.T) {
+	c := qt.New(t)
+	catalog := grantCatalog(false)
+	catalog.Grants = []dbschematypes.DBGrant{{
+		Role: "reporting", Privilege: "USAGE", ObjectType: "SCHEMA", ObjectName: "app",
+	}}
+	description := grantDescription([]string{"reporting"}, []goschema.Grant{{
+		StructName: "Access", Role: "reporting", Privileges: []string{"USAGE"}, OnSchema: "app",
+	}})
+
+	changes := grantChanges(c, description, catalog)
+
+	c.Assert(changes, qt.HasLen, 0)
+}
