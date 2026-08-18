@@ -401,6 +401,10 @@
             }
           },
           "properties": {
+            "api_expose": {
+              "description": "Whether this column reaches an exported API contract: none, read, write or read-write. It declares a contract shape and is not access control.",
+              "type": "string"
+            },
             "api_name": {
               "description": "Name this column carries in an exported API schema, when that differs from the column name.",
               "type": "string"

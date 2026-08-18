@@ -33,6 +33,7 @@ const (
 	exportSchemaFileFlag     = "schema-file"
 	exportOutFlag            = "out"
 	exportIncludeTablesFlag  = "include-tables"
+	exportFieldPolicyFlag    = "api-field-policy"
 	exportExcludeTablesFlag  = "exclude-tables"
 	exportTitleFlag          = "title"
 	graphqlOperationsFlag    = "graphql-operations"
@@ -161,6 +162,7 @@ func newSchemaExportCommand() *cobra.Command {
 	var schemaFiles []string
 	var outPath string
 	var includeTables []string
+	var fieldPolicy string
 	var excludeTables []string
 	var title string
 	var graphqlOperations []string
@@ -237,6 +239,7 @@ part of the compatibility state, so all of them must be committed together.`,
 				schemaFiles:               schemaFiles,
 				outPath:                   outPath,
 				includeTables:             includeTables,
+				fieldPolicy:               fieldPolicy,
 				excludeTables:             excludeTables,
 				title:                     title,
 				graphqlOperations:         graphqlOperations,
@@ -267,6 +270,9 @@ part of the compatibility state, so all of them must be committed together.`,
 			"not supported for --to hcl)")
 	flags.StringVar(&outPath, exportOutFlag, "", "Output file (optional for openapi-v3/graphql; required for protobuf)")
 	flags.StringSliceVar(&includeTables, exportIncludeTablesFlag, nil, "Only export these tables (comma-separated); applies to openapi-v3/graphql/protobuf")
+	flags.StringVar(&fieldPolicy, exportFieldPolicyFlag, string(schemaexport.FieldPolicyAll),
+		"What an undeclared column means: all (export it) or allowlist (export only columns declaring api_expose); "+
+			"applies to openapi-v3/graphql/protobuf")
 	flags.StringSliceVar(&excludeTables, exportExcludeTablesFlag, nil, "Exclude these tables (comma-separated); applies to openapi-v3/graphql/protobuf")
 	flags.StringVar(&title, exportTitleFlag, "", "OpenAPI info.title (openapi-v3 only)")
 	flags.StringSliceVar(&graphqlOperations, graphqlOperationsFlag, nil,
@@ -311,6 +317,7 @@ type exportOptions struct {
 	schemaFiles        []string
 	outPath            string
 	includeTables      []string
+	fieldPolicy        string
 	excludeTables      []string
 	title              string
 	graphqlOperations  []string
@@ -361,12 +368,19 @@ func runExport(cmd *cobra.Command, opts exportOptions) error {
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
+	// Parsed once, before any target runs, so an unknown value is refused with
+	// the same message whichever format was asked for.
+	policy, err := schemaexport.ParseFieldPolicy(opts.fieldPolicy)
+	if err != nil {
+		return cmdutil.Fail(cmd, fmt.Errorf("--%s: %w", exportFieldPolicyFlag, err))
+	}
 	switch opts.to {
 	case exportFormatOpenAPI:
 		rendered, err := openapirender.Render(db, openapirender.Options{
 			IncludeTables: opts.includeTables,
 			ExcludeTables: opts.excludeTables,
 			Title:         opts.title,
+			FieldPolicy:   policy,
 		})
 		if err != nil {
 			return cmdutil.Fail(cmd, err)
@@ -383,6 +397,7 @@ func runExport(cmd *cobra.Command, opts exportOptions) error {
 			IncludeTables: opts.includeTables,
 			ExcludeTables: opts.excludeTables,
 			Operations:    operations,
+			FieldPolicy:   policy,
 		})
 		if err != nil {
 			return cmdutil.Fail(cmd, err)

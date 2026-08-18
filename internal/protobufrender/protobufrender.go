@@ -123,6 +123,9 @@ const (
 type Options struct {
 	IncludeTables []string
 	ExcludeTables []string
+	// FieldPolicy decides what an undeclared column means. The zero value is
+	// the historical behavior: every column of an exported table is exported.
+	FieldPolicy schemaexport.FieldPolicy
 	// Package is the protobuf package, required.
 	Package string
 	// GoPackage, when set, is emitted as option go_package.
@@ -355,6 +358,49 @@ type desiredField struct {
 	Import string
 }
 
+// exposedFields returns the columns of a table that reach either contract
+// shape, with the diagnostics for those the policy withheld.
+//
+// It asks the shared model rather than filtering here, so this target and the
+// two API targets cannot disagree about what is published.
+func (b *builder) exposedFields(
+	db *goschema.Database,
+	table goschema.Table,
+) ([]goschema.Field, []schemaexport.Diagnostic, error) {
+	policy := b.opts.FieldPolicy
+	if policy == "" {
+		policy = schemaexport.FieldPolicyAll
+	}
+	readable, diagnostics, err := schemaexport.ExposedFields(db, table, schemaexport.ShapeRead, policy)
+	if err != nil {
+		return nil, nil, err
+	}
+	writable, _, err := schemaexport.ExposedFields(db, table, schemaexport.ShapeWrite, policy)
+	if err != nil {
+		return nil, nil, err
+	}
+	published := make(map[string]bool, len(readable))
+	fields := append([]goschema.Field(nil), readable...)
+	for _, field := range readable {
+		published[field.Name] = true
+	}
+	for _, field := range writable {
+		if !published[field.Name] {
+			fields = append(fields, field)
+			published[field.Name] = true
+		}
+	}
+	kept := make([]schemaexport.Diagnostic, 0, len(diagnostics))
+	for _, diagnostic := range diagnostics {
+		column := diagnostic.Path[strings.LastIndex(diagnostic.Path, ".")+1:]
+		if published[column] {
+			continue
+		}
+		kept = append(kept, diagnostic)
+	}
+	return fields, kept, nil
+}
+
 func (b *builder) buildDesired(db *goschema.Database) (desiredShape, error) {
 	tables := schemaexport.SelectTables(db, schemaexport.Options{
 		IncludeTables: b.opts.IncludeTables,
@@ -369,7 +415,21 @@ func (b *builder) buildDesired(db *goschema.Database) (desiredShape, error) {
 
 	shape := desiredShape{}
 	for _, table := range tables {
-		tableFields := schemaexport.FieldsFor(db, table)
+		// A Protobuf message carries no direction of its own, so a column
+		// reaches it when either contract shape publishes it.
+		//
+		// Withholding a column that was exported before is, to this target,
+		// exactly a column removal -- and removal already retires the number
+		// and reserves the name under --proto-on-field-removal. That is what
+		// keeps a wire contract safe across a projection change without a
+		// second mechanism (stokaro/ptah#904).
+		tableFields, exposureDiagnostics, err := b.exposedFields(db, table)
+		if err != nil {
+			return desiredShape{}, err
+		}
+		for _, diagnostic := range exposureDiagnostics {
+			b.warn(diagnostic.Path, diagnostic.Message)
+		}
 		if len(tableFields) == 0 {
 			// An empty message would render as "message X {}" and, more
 			// importantly, could never be told apart from a tombstone on the

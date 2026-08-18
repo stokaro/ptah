@@ -722,11 +722,12 @@ permanent, so nothing on this list is an unowned gap.
   split is permanent because a wire contract is reviewed from a file in version
   control, and introspection is the reviewable step that turns a database into
   one.
-- Table selection is the narrowest available projection. There are no
-  field-level allowlists, read/write visibility rules, sensitive-field markers,
-  or API-specific aliases. Use a curated annotation source or wrapper messages
-  when a public contract must expose only part of a table. Tracked by
-  [#904](https://github.com/stokaro/ptah/issues/904).
+- A Protobuf message carries no direction of its own, so a column declared
+  `api_expose="read"` or `api_expose="write"` is in the message either way. Only
+  `api_expose="none"` removes it. The read and write shapes differ on the
+  OpenAPI and GraphQL targets, which have a vocabulary for them, and this is
+  permanent because the wire format has one message per type and it is used for
+  both directions.
 - Database identifiers determine generated API identifiers after Protobuf name
   normalization. Renaming a table or column therefore renames a public symbol.
   A column rename reads to the exporter as one field removed and another added,
@@ -736,9 +737,15 @@ permanent, so nothing on this list is an unowned gap.
   alias layer that would let a storage rename keep its API identity is tracked
   by [#905](https://github.com/stokaro/ptah/issues/905).
 - Additive compatibility is not the same as intentional exposure. Adding a
-  column to a selected table adds a field on the next export unless the whole
-  table is excluded. Tracked by
-  [#904](https://github.com/stokaro/ptah/issues/904).
+  column to a selected table adds a field on the next export under the default
+  field policy; pass `--api-field-policy=allowlist` so only columns declaring
+  `api_expose` are exported and a new column enters nothing until it is
+  declared. Withholding a column a previous export published retires its number
+  and reserves its name, exactly as removing it does, so pass
+  `--proto-on-field-removal=reserve` the first time. That the default stays
+  permissive is permanent because changing it would rewrite the contract of
+  every schema exported before the policy existed, which is the one thing a
+  wire format must not do.
 - The generated definition contains no authorization or tenant-isolation
   semantics. RLS policies are not emitted, and their presence in the database
   does not define who may use a message field. Inferring API authorization from
