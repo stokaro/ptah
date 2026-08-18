@@ -34,6 +34,11 @@ var (
 	ErrTagConflict = errors.New("OCI write-once tag already exists")
 	// ErrReferrerNotIndexed reports an attachment missing from referrer discovery.
 	ErrReferrerNotIndexed = errors.New("OCI attachment is not discoverable as a referrer")
+	// ErrReferrerIndexRequired reports a publish refused because the registry
+	// cannot provide the cross-client discovery the policy demanded. It is
+	// returned before anything is written, so the refusal leaves no artifact
+	// behind to explain.
+	ErrReferrerIndexRequired = errors.New("the referrer policy requires the registry's referrers index")
 )
 
 // Reference is a parsed oci:// registry reference.

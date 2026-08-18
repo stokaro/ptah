@@ -100,6 +100,44 @@ behind in the source repository — the promotion succeeds and silently loses th
 evidence it was promoted on. A digest destination is refused: a digest names
 content that already exists, so there is nothing for a copy to create there.
 
+## Choosing how referrers are published
+
+Two mechanisms make an attachment discoverable and they do not have the same
+reach. The referrers index defined by the distribution specification is what
+every conformant client reads. Ptah's content-derived durable tag is readable
+by Ptah and by anyone who knows the naming rule, which in practice means Ptah.
+
+`PTAH_OCI_REFERRER_POLICY` decides which one an attachment gets:
+
+| Value | What it does |
+| --- | --- |
+| `auto` (default) | Asks the registry and uses the index where it exists, the durable tag where it does not |
+| `api` | Uses the index and does not write the durable tag; a registry without the index fails the publish |
+| `required-api` | Asks first, so a registry without the index fails **before** anything is written |
+| `tag` | Writes the durable tag alone, for a registry whose index is present but wrong |
+
+It is an environment variable rather than a flag because the decision belongs to
+the pipeline rather than to one command. Every verb that attaches something —
+`migrations lint --attach`, `migrations plan --attach`, the deployment report
+after `migrations up` — has to make the same choice, and a flag that only some
+of them carry is a guarantee with holes in it. Export it once:
+
+```bash
+export PTAH_OCI_REFERRER_POLICY=required-api
+ptah migrations lint --dir "$MIGRATIONS" --attach
+```
+
+`required-api` is the setting an audit trail needs, and the difference between
+it and `api` is when the refusal happens. Both demand the index; only
+`required-api` asks before the artifact exists, so a pipeline that must not
+publish an undiscoverable attachment never publishes one and has nothing to
+clean up.
+
+The index policies deliberately do **not** also write the durable tag. A tag
+written beside an index the operator demanded would make a failed guarantee
+read as a satisfied one on the next listing, which is the failure this policy
+exists to prevent.
+
 ## Asking the registry what it supports
 
 ```bash
