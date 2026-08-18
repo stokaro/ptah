@@ -44,6 +44,11 @@ type verifiedAtlasSchemaPlan struct {
 // The target database is never written: the replay happens on the dev database,
 // and the simulation refuses a dev URL that resolves to the target or to a
 // --to source.
+//
+// Call it after [validateAtlasSchemaPlanTransition] has accepted the same
+// transition. It reads transition.fromURLs[0] directly, because "exactly one
+// --from database URL" is that validator's answer and re-deriving it here would
+// be a second sentence with the same job.
 func verifyAtlasSchemaPlanFile(
 	cmd *cobra.Command,
 	verb string,
