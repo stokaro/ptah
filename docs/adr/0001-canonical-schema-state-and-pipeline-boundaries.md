@@ -90,8 +90,10 @@ edges are worth naming individually:
 - `core/renderer` → `internal/convert/fromschema` and
   `internal/planner/tablelookup`: the renderer reaches into conversion and
   planning.
+- `core/schemasource` → `internal/convert/toschema`: a second package under
+  `core/` reaching into conversion.
 - `internal/planner/dialects/{postgres,mysql,sqlite,clickhouse}` construct
-  `goschema.Database` values: the planner synthesizes desired-schema
+  `goschema.Database` values, once each: the planner synthesizes desired-schema
   descriptions rather than consuming them.
 
 Decision 11 asks for forbidden dependency directions. Today there is nothing for
@@ -233,8 +235,18 @@ Forbidden directions, in the order they matter:
 4. **A renderer must not import a comparator.** If rendering needs a fact, the
    change carries it.
 
-These are enforceable mechanically, and enforcing them is the first step of
-section 8's plan rather than a later cleanup.
+Two of the four already hold and two do not, which decides how each is
+enforced. Measured on the tree this record lands against:
+
+| Rule | Violations today |
+| --- | --- |
+| 1. L1 must not import L2 | 3 edges |
+| 2. L2 must not construct source descriptions | 4 sites, one per dialect planner |
+| 3. L2 must not import L3 | 0 |
+| 4. A renderer must not import a comparator | 0 |
+
+Rules 3 and 4 can therefore be enforced outright. Rules 1 and 2 cannot, and
+section 8 stage 0 says what to do instead.
 
 ## 4. Canonical state invariants
 
@@ -510,7 +522,7 @@ measurable that was not measurable before.
 
 | Stage | Work | Owner artifact | Done when | Adapter deleted by |
 | --- | --- | --- | --- | --- |
-| 0 | Layer rule script; fix the two edges in section 1.3 | `scripts/check-layer-directions.sh` | The script fails on a reverted fix | — |
+| 0 | Layer rule gate: rules 3 and 4 enforced at zero, rules 1 and 2 as a shrink-only baseline | `scripts/check-layer-directions.sh` | A new violation of any rule fails, and the recorded counts for rules 1 and 2 can only shrink | The baseline file, when rules 1 and 2 reach zero |
 | 1 | Canonical state type, identity-keyed, no consumers | `internal/schemastate` | Round-trips both public types | — |
 | 2 | Adapter contract; catalog reader and one authoring source implement it | `internal/schemastate/adapter.go` | Both produce state and coverage | `toschema`, `fromschema` after stage 6 |
 | 3 | Target profile and the normalization phase | `internal/schemastate/normalize` | Normalization is reachable from planning | `ConstraintPartsVerbatim` at this stage |
@@ -518,6 +530,12 @@ measurable that was not measurable before.
 | 5 | Typed dependency graph; forward and rollback from one source | `internal/schemachange/graph` | Rollback order derives from the same edges | — |
 | 6 | The #1350 slice runs end to end beside the existing path | prototype | Differential tests pass or differences are documented | Stage 2 and 4 adapters |
 | 7 | Per-family migration issues, decomposed by evidence from stage 6 | issues | Each names its own deletion criterion | — |
+
+Stage 0 is a gate, not a cleanup. The edges rules 1 and 2 name are load-bearing
+today and removing them is stages 1 through 4's work, so the gate records the
+counts and refuses to let them grow. A gate that demanded zero on arrival would
+be red from the commit that introduced it, and a red gate teaches a reader to
+skip it.
 
 Stages 0 through 5 are additive: nothing existing changes behavior. Stage 6 is
 where the two paths are compared, and it is the first stage that can invalidate
@@ -632,6 +650,37 @@ migration. The benchmark in section 10 is where that stops being acceptable.
 **Rejected.** Nothing in this ADR moves a package for naming consistency, and
 nothing stabilizes a public API. Both are #1349 non-goals and both remain
 non-goals after it.
+
+**Corrected after landing.** Section 8 stage 0 originally read "Layer rule
+script; fix the two edges in section 1.3", and that plan could not be executed
+as written. Measuring the four forbidden directions found three things it got
+wrong:
+
+- there are three L1-to-L2 edges rather than two, and the third,
+  `core/schemasource` → `internal/convert/toschema`, is in a package section 1.3
+  never mentioned;
+- rules 1 and 2 are violated today, so a gate forbidding them outright is red
+  from the commit that adds it, and clearing them is stages 1 through 4's work
+  rather than stage 0's;
+- rules 3 and 4 are already at zero, which the record did not distinguish, so it
+  understated what can be enforced immediately.
+
+The counts themselves carry a warning worth keeping, because getting them wrong
+is what produced the bad plan in the first place. Counting rule 2 by searching
+for a type spelling gave the wrong answer twice: first five files, which
+included a doc comment in `internal/planner/dialects/postgres/doc.go` showing a
+caller how to build a schema, and then eight sites, four of which were the same
+kind of comment in `postgres.go` and `mysql.go`. The true figure is four, one
+per dialect planner.
+
+That is precisely the false positive #1344 predicts for a check that greps for a
+spelling instead of asking the type checker — met twice while writing the
+correction about it. Rule 1's three edges came from `go list -deps`, which reads
+the import graph, and needed no correction. Stage 0's gate reads the import
+graph and the type checker for the same reason.
+
+This is a correction to a statement of fact, not a change of decision. The
+boundaries and their order are unchanged.
 
 **Revised by the prototype.** Two decisions were corrected by what #1350
 measured, and the corrections are recorded in
