@@ -185,6 +185,8 @@ type Object struct {
 	ID         objectidentity.ID
 	Table      *Table
 	ForeignKey *ForeignKey
+	Policy     *Policy
+	Grant      *Grant
 	Provenance Provenance
 }
 

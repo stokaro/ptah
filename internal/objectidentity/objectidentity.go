@@ -376,6 +376,34 @@ func (b Builder) PolicyParts(schema, table, policy string) ID {
 	}
 }
 
+// GrantParts builds the identity of one privilege grant from components the
+// caller already holds separately.
+//
+// A grant is a triple -- a role, a privilege, and the object they are about --
+// and the triple is the identity. Keying it on a delimiter-joined rendering of
+// the three collapsed two distinct grants (stokaro/ptah#1283), so each
+// component gets its own slot here and none of them can forge a boundary in
+// another.
+//
+// The object goes in the schema and parent slots, and a SCHEMA grant is the
+// case that decides their meaning: its target IS a schema, so there is no
+// owning schema to resolve, and it takes the schema slot with the parent left
+// empty. That is also what keeps `GRANT ... ON SCHEMA app` from colliding with
+// `GRANT ... ON TABLE app` -- the first has no parent and the second does.
+// Tables and sequences share one namespace on every target Ptah supports, so a
+// TABLE and a SEQUENCE grant cannot name the same object and be different
+// grants.
+func (b Builder) GrantParts(schema, object, role, privilege string) ID {
+	owner := b.TableParts(schema, object)
+	return ID{
+		Kind:      KindGrant,
+		Schema:    owner.Schema,
+		Parent:    owner.Name,
+		Name:      b.namePart(strings.TrimSpace(role), b.semantics.TableIdentityKey),
+		Signature: strings.ToUpper(strings.TrimSpace(privilege)),
+	}
+}
+
 // Index builds the identity of an index.
 //
 // Whether the name is scoped to the table or to the schema is the target's
