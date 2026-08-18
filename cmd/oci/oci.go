@@ -35,10 +35,14 @@ func NewCommand() *cobra.Command {
 		},
 	}
 	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
+	cmd.AddCommand(newCapabilitiesCommand())
+	cmd.AddCommand(newCopyCommand())
 	cmd.AddCommand(newFetchCommand())
 	cmd.AddCommand(newInspectCommand())
 	cmd.AddCommand(newReferrersCommand())
 	cmd.AddCommand(newResolveCommand())
+	cmd.AddCommand(newTagCommand())
+	cmd.AddCommand(newTagsCommand())
 	return cmd
 }
 

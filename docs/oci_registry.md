@@ -31,6 +31,10 @@ boundary of the `ptah-compat` binary.
 | Read an attached report's payload | `ptah oci fetch <oci-reference> [--type ...] [--digest ...]` |
 | Pin a mutable tag to a digest | `ptah oci resolve <oci-reference>` |
 | Read a manifest without downloading it | `ptah oci inspect <oci-reference>` |
+| List the aliases a repository carries | `ptah oci tags <oci-reference>` |
+| Promote without rebuilding | `ptah oci tag <oci-reference> <tag>...` |
+| Promote into another repository | `ptah oci copy <source> <destination> [--recursive]` |
+| Ask what the registry supports | `ptah oci capabilities <oci-reference>` |
 
 Native lint and plan commands can publish referrer artifacts with `--attach`.
 `ptah oci referrers` lists direct referrer metadata, with filters for Ptah lint,
@@ -60,6 +64,55 @@ file downloaded. It also reports how each referrer was discovered, which is the
 one fact the other verbs cannot show. See
 [Referrer discovery guarantees](#referrer-discovery-guarantees) for what the
 `durable-tag` value means for clients other than Ptah.
+
+## Promotion
+
+`build -> staging -> production` does not need a rebuild, and should not have
+one. A push creates an immutable artifact **and** moves aliases in the same
+operation, so promoting through it re-derives content that was already
+reviewed: what reaches production is an artifact equal to the reviewed one
+rather than the same one.
+
+Moving the alias keeps the digest identical by construction:
+
+```bash
+DIGEST=$(ptah oci resolve "oci://ghcr.io/acme/app-migrations:latest")
+ptah oci tag "$DIGEST" staging
+# after the staging soak, the same bytes are promoted again
+ptah oci tag "oci://ghcr.io/acme/app-migrations:staging" production
+```
+
+Aliases move one at a time. If a later one fails, the ones already applied are
+named, because an operator told only that the command failed still has to go
+and find out which environment now points at the new build.
+
+Crossing a repository boundary is `copy`:
+
+```bash
+ptah oci copy --recursive \
+  "oci://ghcr.io/acme/app-migrations:v20260728153000" \
+  "oci://registry.internal/acme/app-migrations:production"
+```
+
+`--recursive` carries the artifact's referrers with it. Without it the copy
+arrives with its lint results, plans, deployment reports, and signatures left
+behind in the source repository — the promotion succeeds and silently loses the
+evidence it was promoted on. A digest destination is refused: a digest names
+content that already exists, so there is nothing for a copy to create there.
+
+## Asking the registry what it supports
+
+```bash
+ptah oci capabilities "oci://ghcr.io/acme/app-migrations:latest"
+```
+
+Ptah's own discovery is robust whatever the registry does, because it publishes
+referrers two ways and merges them on read. Cross-client discovery is the part
+that depends on the registry, and this is how to find out rather than assume:
+the question is put with the client pinned to the referrers API, so a success
+cannot have come from the tag-schema fallback. A refusal naming the API as
+unsupported is the registry saying no; a failure to ask is reported as an error
+rather than folded into a no.
 
 ## OCI Reference Syntax
 
