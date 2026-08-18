@@ -14,6 +14,7 @@ package mssql
 
 import (
 	"database/sql"
+	"strconv"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -32,26 +33,30 @@ func TestSequenceCacheReadsTwoFactsNotOne(t *testing.T) {
 	tests := []struct {
 		name  string
 		facts sequenceCacheFacts
-		want  *int64
+		want  string
 	}{
-		{name: "explicit size is managed", facts: sequenceCacheFacts{cached: true, size: size}, want: new(int64)},
-		{name: "server-chosen size is unset", facts: sequenceCacheFacts{cached: true}, want: nil},
-		{name: "no cache is unset", facts: sequenceCacheFacts{}, want: nil},
-		{name: "no cache with a stale size is still unset", facts: sequenceCacheFacts{size: size}, want: nil},
+		{name: "explicit size is managed", facts: sequenceCacheFacts{cached: true, size: size}, want: "20"},
+		{name: "server-chosen size is unset", facts: sequenceCacheFacts{cached: true}, want: "unset"},
+		{name: "no cache is unset", facts: sequenceCacheFacts{}, want: "unset"},
+		{name: "no cache with a stale size is still unset", facts: sequenceCacheFacts{size: size}, want: "unset"},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			got := test.facts.managedOption()
+			got := describeCache(test.facts.managedOption())
 
-			if test.want == nil {
-				c.Assert(got, qt.IsNil)
-				return
-			}
-			c.Assert(got, qt.IsNotNil)
-			c.Assert(*got, qt.Equals, int64(20))
+			c.Assert(got, qt.Equals, test.want)
 		})
 	}
+}
+
+// describeCache renders a managed cache option, so a set and an unset one are
+// one comparable value rather than a branch in the assertion.
+func describeCache(cache *int64) string {
+	if cache == nil {
+		return "unset"
+	}
+	return strconv.FormatInt(*cache, 10)
 }

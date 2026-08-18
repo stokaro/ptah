@@ -10,6 +10,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/renderer"
@@ -106,26 +107,39 @@ func TestSQLServerLiveSequenceRoundTrip(t *testing.T) {
 	c.Assert(modification.SequencesModified, qt.HasLen, 1)
 	nodes, err := planner.GenerateSchemaDiffAST(modification, changed, platform.SQLServer)
 	c.Assert(err, qt.IsNil)
-	applied := 0
-	for _, node := range nodes {
-		sql, renderErr := renderer.RenderSQL(platform.SQLServer, node)
-		c.Assert(renderErr, qt.IsNil)
-		if !strings.Contains(sql, "ALTER SEQUENCE") {
-			continue
-		}
-		_, execErr := conn.ExecContext(ctx, sql)
-		c.Assert(execErr, qt.IsNil, qt.Commentf("statement:\n%s", sql))
-		applied++
-	}
-	c.Assert(applied, qt.Equals, 1)
+	alters := renderedStatementsNaming(c, nodes, "ALTER SEQUENCE")
+	c.Assert(alters, qt.HasLen, 1)
+	_, err = conn.ExecContext(ctx, alters[0])
+	c.Assert(err, qt.IsNil, qt.Commentf("statement:\n%s", alters[0]))
 
 	after, err := dbschema.ReadSchemaWithSchemas(conn, []string{schemaName})
 	c.Assert(err, qt.IsNil)
-	for _, sequence := range after.Sequences {
-		if sequence.Name == "order_number_seq" {
-			c.Assert(*sequence.Increment, qt.Equals, int64(7))
+	c.Assert(*sequenceNamed(after.Sequences, "order_number_seq").Increment, qt.Equals, int64(7))
+}
+
+// renderedStatementsNaming renders the planned nodes and keeps the ones naming
+// a keyword.
+func renderedStatementsNaming(c *qt.C, nodes []ast.Node, keyword string) []string {
+	c.Helper()
+	kept := make([]string, 0, len(nodes))
+	for _, node := range nodes {
+		sql, err := renderer.RenderSQL(platform.SQLServer, node)
+		c.Assert(err, qt.IsNil)
+		if strings.Contains(sql, keyword) {
+			kept = append(kept, sql)
 		}
 	}
+	return kept
+}
+
+// sequenceNamed returns the sequence a catalog read reports under a name.
+func sequenceNamed(sequences []dbschematypes.DBSequence, name string) dbschematypes.DBSequence {
+	for _, sequence := range sequences {
+		if sequence.Name == name {
+			return sequence
+		}
+	}
+	return dbschematypes.DBSequence{}
 }
 
 // TestSQLServerLiveSequenceRefusesWhatTheRendererDeclines pins that the two

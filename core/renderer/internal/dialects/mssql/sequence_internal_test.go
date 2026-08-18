@@ -1,5 +1,12 @@
 package mssql
 
+// White-box testing required: these tests render AST nodes through the
+// package's own Renderer, whose constructor and visitors are unexported. The
+// statements under test are the T-SQL spellings measured against a live server,
+// and reaching them from outside the package would mean going through
+// core/renderer's dialect registry, which answers a different question -- that
+// the registry routes to this renderer, not what this renderer emits.
+
 import (
 	"testing"
 
