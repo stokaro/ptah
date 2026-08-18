@@ -18,6 +18,9 @@ var sliceScope = []objectidentity.Kind{
 	objectidentity.KindTable,
 	objectidentity.KindColumn,
 	objectidentity.KindConstraint,
+	objectidentity.KindPolicy,
+	objectidentity.KindGrant,
+	objectidentity.KindRole,
 }
 
 // foreignKeyConstraintType is how both sources spell the family in their
@@ -63,6 +66,15 @@ func FromCatalog(schema *dbschematypes.DBSchema, dialect string, semantics ident
 		}); collided {
 			return nil, fmt.Errorf("catalog reports two foreign keys with one identity: %s and %s", existing.ID, id)
 		}
+	}
+	if err := PoliciesFromCatalog(state, schema, builder); err != nil {
+		return nil, err
+	}
+	if err := RolesFromCatalog(state, schema, builder); err != nil {
+		return nil, err
+	}
+	if err := GrantsFromCatalog(state, schema, builder); err != nil {
+		return nil, err
 	}
 	return state, nil
 }
@@ -131,7 +143,11 @@ func FromDescription(
 	dialect string,
 	semantics identifier.Semantics,
 ) (*State, error) {
-	state := New(dialect, sliceScope...)
+	// The description's own record of what it declines to describe travels
+	// with it. Dropping it here is what turns a partial read into a drop: the
+	// state would be silent about a family and a comparison would read that
+	// silence as absence (stokaro/ptah#1028).
+	state := New(dialect, sliceScope...).WithCoverage(description.NotDescribed)
 	builder := objectidentity.NewBuilder(semantics)
 	tablesByStruct := map[string]goschema.Table{}
 
@@ -184,6 +200,15 @@ func FromDescription(
 		if err := addForeignKey(state, builder, owner, constraint.Name, key, constraint.StructName); err != nil {
 			return nil, err
 		}
+	}
+	if err := PoliciesFromDescription(state, description, builder); err != nil {
+		return nil, err
+	}
+	if err := RolesFromDescription(state, description, builder); err != nil {
+		return nil, err
+	}
+	if err := GrantsFromDescription(state, description, builder); err != nil {
+		return nil, err
 	}
 	return state, nil
 }

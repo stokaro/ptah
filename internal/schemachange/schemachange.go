@@ -160,7 +160,256 @@ func Compare(current, desired *schemastate.State, profile schemastate.Profile) (
 		}
 		changes = append(changes, decide(removalChange(object), profile, current))
 	}
+	policyChanges, err := comparePolicies(current, desired, profile)
+	if err != nil {
+		return nil, err
+	}
+	changes = append(changes, policyChanges...)
+	grantChanges, err := compareGrants(current, desired, profile)
+	if err != nil {
+		return nil, err
+	}
+	changes = append(changes, grantChanges...)
 	return changes, nil
+}
+
+// compareGrants compares the privilege grants both sides carry.
+//
+// Two rules make a grant removal different from a table removal, and both are
+// about whose privilege it is.
+//
+// A grant held by a role Ptah does not manage is not Ptah's to revoke: the
+// description was never describing that role's privileges, so its silence is
+// not a request to take them away. And a description that declined to describe
+// the role family did not look at all, which is the same silence one level up.
+// A removal that ignores either revokes access nobody asked to revoke.
+func compareGrants(current, desired *schemastate.State, profile schemastate.Profile) ([]Change, error) {
+	if err := schemastate.RequireScope(desired, objectidentity.KindGrant); err != nil {
+		return nil, fmt.Errorf("the desired schema: %w", err)
+	}
+	if err := schemastate.RequireScope(desired, objectidentity.KindRole); err != nil {
+		return nil, fmt.Errorf("the desired schema: %w", err)
+	}
+	changes := make([]Change, 0)
+	declared := map[objectidentity.Key]schemastate.Object{}
+	for _, object := range desired.OfKind(objectidentity.KindGrant) {
+		declared[object.ID.Key()] = object
+		existing, found := current.Get(object.ID)
+		if !found || existing.Grant == nil {
+			changes = append(changes, decide(grantAddition(object), profile, desired))
+			continue
+		}
+		if existing.Grant.WithGrant != object.Grant.WithGrant {
+			changes = append(changes, decide(grantOptionChange(object, existing), profile, desired))
+		}
+	}
+	for _, object := range current.OfKind(objectidentity.KindGrant) {
+		if object.Grant == nil {
+			continue
+		}
+		if _, wanted := declared[object.ID.Key()]; wanted {
+			continue
+		}
+		changes = append(changes, grantRemoval(object, desired, profile))
+	}
+	return changes, nil
+}
+
+// grantRemoval decides whether a grant the desired schema does not carry is one
+// it is asking to revoke.
+func grantRemoval(object schemastate.Object, desired *schemastate.State, profile schemastate.Profile) Change {
+	role := object.Grant.Role
+	if !managesRole(desired, role) {
+		return withheldGrantRemoval(object, fmt.Sprintf(
+			"%s is not revoked: the desired schema does not manage role %q, so its privileges "+
+				"are not this schema's to take away", object.ID, role))
+	}
+	if !schemastate.DescribesObject(desired, roleIdentity(desired, role)) {
+		return withheldGrantRemoval(object, fmt.Sprintf(
+			"%s is not revoked: the desired schema declares role %q not-described, so its "+
+				"silence about that role's privileges is not a request to revoke them",
+			object.ID, role))
+	}
+	change := Change{
+		ID: object.ID, Operation: Remove,
+		Evidence:      "held in the database by a managed role and absent from the desired schema",
+		RequiredFacts: schemastate.RequiredFacts(),
+		Risk:          RiskGuaranteeLoss, Reversibility: Reversible,
+		Provenance: object.Provenance,
+	}
+	return decide(change, profile, desired)
+}
+
+func withheldGrantRemoval(object schemastate.Object, diagnostic string) Change {
+	return Change{
+		ID: object.ID, Operation: Remove,
+		Evidence: "held in the database and not described by the desired schema",
+		Risk:     RiskGuaranteeLoss, Reversibility: Reversible,
+		Status:     Undecidable,
+		Provenance: object.Provenance,
+		Diagnostic: diagnostic,
+	}
+}
+
+// managesRole reports whether the desired schema carries the role as an object
+// it owns.
+func managesRole(desired *schemastate.State, role string) bool {
+	for _, object := range desired.OfKind(objectidentity.KindRole) {
+		if object.ID.Name.Normalized == foldRoleName(desired, role) {
+			return true
+		}
+	}
+	return false
+}
+
+// roleIdentity returns the identity of a role as the desired state spells it,
+// so a coverage question is asked about the same object the state carries.
+func roleIdentity(desired *schemastate.State, role string) objectidentity.ID {
+	for _, object := range desired.OfKind(objectidentity.KindRole) {
+		if object.ID.Name.Normalized == foldRoleName(desired, role) {
+			return object.ID
+		}
+	}
+	return objectidentity.ID{Kind: objectidentity.KindRole}
+}
+
+// foldRoleName folds a role name with the target's own rules, so the two sides
+// resolve one role to one name.
+func foldRoleName(desired *schemastate.State, role string) string {
+	return desired.Profile().Semantics.TableIdentityKey(strings.TrimSpace(role))
+}
+
+func grantAddition(object schemastate.Object) Change {
+	return Change{
+		ID: object.ID, Operation: Add,
+		Evidence:      "declared by the desired schema and not held in the database",
+		RequiredFacts: schemastate.RequiredFacts(),
+		Risk:          RiskLow, Reversibility: Reversible,
+		Provenance: object.Provenance,
+	}
+}
+
+func grantOptionChange(object, existing schemastate.Object) Change {
+	return Change{
+		ID: object.ID, Operation: Modify, Changed: []string{"with grant option"},
+		Evidence: fmt.Sprintf("both sides hold it and they disagree about WITH GRANT OPTION: "+
+			"the database has %t and the desired schema declares %t",
+			existing.Grant.WithGrant, object.Grant.WithGrant),
+		RequiredFacts: schemastate.RequiredFacts(),
+		Risk:          RiskGuaranteeLoss, Reversibility: Reversible,
+		Provenance: object.Provenance,
+	}
+}
+
+// comparePolicies compares the row-level-security policies both sides carry.
+//
+// A removal is planned only for a policy the DESIRED description claims to
+// describe. A description that declined the policy family, or this policy in
+// it, is silent rather than empty, and reading that silence as absence is how a
+// partial read becomes a drop (stokaro/ptah#1028, #1664).
+func comparePolicies(current, desired *schemastate.State, profile schemastate.Profile) ([]Change, error) {
+	if err := schemastate.RequireScope(desired, objectidentity.KindPolicy); err != nil {
+		return nil, fmt.Errorf("the desired schema: %w", err)
+	}
+	changes := make([]Change, 0)
+	declared := map[objectidentity.Key]schemastate.Object{}
+	for _, object := range desired.OfKind(objectidentity.KindPolicy) {
+		declared[object.ID.Key()] = object
+		existing, found := current.Get(object.ID)
+		if !found || existing.Policy == nil {
+			changes = append(changes, decide(policyAddition(object), profile, desired))
+			continue
+		}
+		if changed := changedPolicyProperties(*existing.Policy, *object.Policy); len(changed) > 0 {
+			changes = append(changes, decide(policyModification(object, existing, changed), profile, desired))
+		}
+	}
+	for _, object := range current.OfKind(objectidentity.KindPolicy) {
+		if object.Policy == nil {
+			continue
+		}
+		if _, wanted := declared[object.ID.Key()]; wanted {
+			continue
+		}
+		if !schemastate.DescribesObject(desired, object.ID) {
+			changes = append(changes, withheldRemoval(object))
+			continue
+		}
+		changes = append(changes, decide(policyRemoval(object), profile, current))
+	}
+	return changes, nil
+}
+
+// withheldRemoval reports a removal the desired description did not authorize,
+// as an undecidable change rather than as nothing.
+//
+// Nothing is the dangerous answer: an operator reading a plan that omits the
+// policy cannot tell "the description keeps it" from "the description never
+// looked".
+func withheldRemoval(object schemastate.Object) Change {
+	return Change{
+		ID:            object.ID,
+		Operation:     Remove,
+		Before:        nil,
+		Evidence:      "present in the database and not described by the desired schema",
+		Risk:          RiskGuaranteeLoss,
+		Reversibility: ReversibleWithData,
+		Status:        Undecidable,
+		Provenance:    object.Provenance,
+		Diagnostic: fmt.Sprintf(
+			"%s is not removed: the desired schema declares it not-described, so its silence "+
+				"is not a request to drop it", object.ID),
+	}
+}
+
+func policyAddition(object schemastate.Object) Change {
+	return Change{
+		ID: object.ID, Operation: Add,
+		Evidence:      "declared by the desired schema and absent from the database",
+		RequiredFacts: schemastate.RequiredFacts(),
+		Risk:          RiskLow, Reversibility: Reversible,
+		Provenance: object.Provenance,
+	}
+}
+
+func policyRemoval(object schemastate.Object) Change {
+	return Change{
+		ID: object.ID, Operation: Remove,
+		Evidence:      "present in the database and absent from the desired schema",
+		RequiredFacts: schemastate.RequiredFacts(),
+		Risk:          RiskGuaranteeLoss, Reversibility: ReversibleWithData,
+		Provenance: object.Provenance,
+	}
+}
+
+func policyModification(object, existing schemastate.Object, changed []string) Change {
+	return Change{
+		ID: object.ID, Operation: Modify, Changed: changed,
+		Evidence:      "both sides declare it and they disagree about " + strings.Join(changed, ", "),
+		RequiredFacts: schemastate.RequiredFacts(),
+		Risk:          RiskGuaranteeLoss, Reversibility: Reversible,
+		Provenance: object.Provenance,
+	}
+}
+
+// changedPolicyProperties reports which properties of two policies differ, in a
+// fixed order so a diagnostic reads the same each run.
+func changedPolicyProperties(before, after schemastate.Policy) []string {
+	changed := make([]string, 0)
+	for _, property := range []struct {
+		name        string
+		left, right string
+	}{
+		{"command", before.Command, after.Command},
+		{"role", before.Role, after.Role},
+		{"using", before.Using, after.Using},
+		{"with check", before.WithCheck, after.WithCheck},
+	} {
+		if property.left != property.right {
+			changed = append(changed, property.name)
+		}
+	}
+	return changed
 }
 
 // requireComparable refuses the two states a comparison must not be given.
