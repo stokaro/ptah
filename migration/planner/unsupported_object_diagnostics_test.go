@@ -431,8 +431,15 @@ func TestPlan_SQLServerGeneratesTheSequenceAndStillNamesTheExtension(t *testing.
 	planned := strings.Join(planStatements(c, mysqlFamilyCreationDiff(), mysqlFamilySchema(), platform.SQLServer), "\n")
 	rendered := strings.Join(renderStatements(c, mysqlFamilySchema(), platform.SQLServer), "\n")
 
-	c.Assert(executableSQL(planned), qt.Contains, "CREATE SEQUENCE")
-	c.Assert(executableSQL(rendered), qt.Contains, "CREATE SEQUENCE")
+	// Exactly one, not at least one. The two halves that used to answer for a
+	// sequence -- the named skip and the real DDL -- are now one switch, and a
+	// planner that forgot to turn the first off would emit the CREATE and the
+	// skip comment for one object. With the capability on, the "skip" is
+	// itself rendered as a bare CREATE SEQUENCE, so the duplicate is two
+	// executable statements rather than a statement plus a comment, and only a
+	// count can see it.
+	c.Assert(countCreateSequence(executableSQL(planned)), qt.Equals, 1)
+	c.Assert(countCreateSequence(executableSQL(rendered)), qt.Equals, 1)
 	c.Assert(planned, qt.Not(qt.Contains), `-- SQLSERVER: CREATE SEQUENCE "order_number_seq" is not generated`)
 
 	extension := `-- SQLSERVER: extensions "pg_trgm" is not generated for this target; skipped.`
@@ -510,4 +517,16 @@ func TestPlan_MySQLFamilyRoleRefusalNamesTheSameRoleAtEitherGate(t *testing.T) {
 			})
 		}
 	}
+}
+
+// countCreateSequence counts the executable CREATE SEQUENCE statements in a
+// rendered plan.
+func countCreateSequence(sql string) int {
+	count := 0
+	for line := range strings.SplitSeq(sql, "\n") {
+		if strings.Contains(line, "CREATE SEQUENCE") {
+			count++
+		}
+	}
+	return count
 }
