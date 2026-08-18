@@ -100,6 +100,47 @@ behind in the source repository — the promotion succeeds and silently loses th
 evidence it was promoted on. A digest destination is refused: a digest names
 content that already exists, so there is nothing for a copy to create there.
 
+## Verifying an artifact before it is applied
+
+A digest proves two artifacts are the same bytes. An integrity sum proves a
+migration directory is internally consistent. Neither answers whether these
+bytes should be applied to your database: rewriting a migration and rehashing it
+produces an artifact that passes both and applies at exit 0.
+
+```bash
+ptah oci verify "oci://ghcr.io/acme/app-migrations@sha256:..." --policy policy.yaml
+```
+
+```yaml
+version: 1
+require_digest_pin: true
+artifact_types:
+  - application/vnd.stokaro.ptah.migration.v1
+require_annotations:
+  - org.opencontainers.image.source
+  - org.opencontainers.image.revision
+require_signature: true
+```
+
+Every field is a refusal that was opted into, and a policy declaring no
+requirement is rejected rather than accepted: not passing a policy and passing
+an empty one are different mistakes, and only the second leaves someone
+believing they have a gate. An unknown field or an unknown version is refused
+too, because a gate that silently ignores rules it does not understand is worse
+than no gate.
+
+Every requirement is evaluated rather than stopping at the first failure, so a
+pipeline being fixed gets the whole list instead of one violation per run.
+
+:::caution
+`require_signature` checks that a signature is **attached**. It does not verify
+one: no key is loaded, no identity is checked, no cryptography runs. Signing and
+cryptographic verification stay with cosign or Notation, which own the trust
+material. The check earns its place because the failure it catches is the common
+one — a pipeline that was meant to sign and did not — but it must not be read as
+authenticity.
+:::
+
 ## Air-gapped environments
 
 An `oci-layout://` reference addresses an OCI image layout on disk instead of a
