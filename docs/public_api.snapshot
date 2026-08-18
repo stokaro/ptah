@@ -3912,6 +3912,7 @@ type ScopedObject struct{ ... }
     func ScopedObjects(db *Database) []ScopedObject
 type SelfReferencingFK struct{ ... }
 type Sequence struct{ ... }
+type Synonym struct{ ... }
 type Table struct{ ... }
 type TargetNames struct{ ... }
 type Trigger struct{ ... }
@@ -4053,6 +4054,7 @@ type Database struct {
     CompositeTypes             []CompositeType                // PostgreSQL composite types (CREATE TYPE ... AS (...))
     Ranges                     []Range                        // PostgreSQL range types (CREATE TYPE ... AS RANGE (...))
     Views                      []View                         // Database views
+    Synonyms                   []Synonym                      // SQL Server synonyms
     MaterializedViews          []MaterializedView             // Database materialized views
     Triggers                   []Trigger                      // Database triggers
     RLSPolicies                []RLSPolicy                    // PostgreSQL Row-Level Security policies
@@ -5051,6 +5053,35 @@ type Sequence struct {
 
 func (s *Sequence) Canonicalize()
 func (s Sequence) QualifiedName() string
+
+### go.5x5.cz/ptah/core/goschema.Synonym
+
+package goschema // import "go.5x5.cz/ptah/core/goschema"
+
+type Synonym struct {
+    StructName string // Name of the Go struct this synonym is associated with
+    Name       string // Synonym name (the alias)
+    Schema     string // Optional schema the alias lives in
+    // Target is the object the alias stands for, written the way it will be
+    // emitted: one to four dot-separated parts, unquoted.
+    Target  string
+    Comment string // Optional comment for documentation
+}
+    Synonym is a SQL Server synonym: a schema-qualified alias for another
+    object.
+
+    The target may name an object this schema does not manage -- another
+    database, or a linked server through a four-part name. That is a supported
+    declaration rather than an error: the alias is local even when what it
+    points at is not. Ptah manages the alias and never the target, and it does
+    not require the target to exist, because SQL Server does not either.
+
+    Dialects is deliberately absent. Every other scopable kind carries it
+    because the declaration could plausibly belong to several targets; a synonym
+    belongs to SQL Server and to nothing else, and a scope field would invite a
+    schema to claim otherwise.
+
+func (s Synonym) QualifiedName() string
 
 ### go.5x5.cz/ptah/core/goschema.Table
 
@@ -6103,6 +6134,7 @@ type DBRole struct{ ... }
 type DBSchema struct{ ... }
 type DBSchemaInfo struct{ ... }
 type DBSequence struct{ ... }
+type DBSynonym struct{ ... }
 type DBTable struct{ ... }
 type DBTrigger struct{ ... }
 type DBView struct{ ... }
@@ -6724,6 +6756,7 @@ type DBSchema struct {
     Ranges      []DBRange      `json:"ranges"`       // PostgreSQL range types
     Views       []DBView       `json:"views"`        // Database views
     MatViews    []DBMatView    `json:"matviews"`     // Database materialized views
+    Synonyms    []DBSynonym    `json:"synonyms"`     // SQL Server synonyms
     Triggers    []DBTrigger    `json:"triggers"`     // Database triggers
     RLSPolicies []DBRLSPolicy  `json:"rls_policies"` // PostgreSQL RLS policies
     Roles       []DBRole       `json:"roles"`        // PostgreSQL roles
@@ -6829,6 +6862,42 @@ type DBSequence struct {
     plain SERIAL column does not surface as a spurious standalone sequence.
 
 func (s DBSequence) QualifiedName() string
+
+### go.5x5.cz/ptah/dbschema/types.DBSynonym
+
+package types // import "go.5x5.cz/ptah/dbschema/types"
+
+type DBSynonym struct {
+    Name   string `json:"name"`   // Synonym name (the alias)
+    Schema string `json:"schema"` // Schema the alias lives in
+    // Target is base_object_name exactly as the catalog records it, including
+    // the server's own bracket quoting.
+    Target string `json:"target"`
+    // TargetServer, TargetDatabase, TargetSchema and TargetObject are the
+    // parsed parts of Target. Absent leading parts are empty.
+    TargetServer   string `json:"target_server,omitempty"`
+    TargetDatabase string `json:"target_database,omitempty"`
+    TargetSchema   string `json:"target_schema,omitempty"`
+    TargetObject   string `json:"target_object"`
+    Comment        string `json:"comment,omitempty"` // Synonym comment/description
+}
+    DBSynonym represents a SQL Server synonym read from the database.
+
+    A synonym is an alias, and the thing it aliases may not be in this database.
+    SQL Server records the target as a name of one to four parts, and the shape
+    of that name is the whole question a dependency ordering has to answer:
+    a two-part target names an object here, and a three- or four-part target
+    names one in another database or behind a linked server.
+
+    The raw catalog value is kept alongside the parsed parts, because it is
+    what the server will resolve and what has to be written back unchanged. The
+    parts exist so that ordering can tell local from remote without re-parsing,
+    and External is derived from them rather than stored, so the two cannot
+    disagree.
+
+func (s DBSynonym) IsExternal() bool
+func (s DBSynonym) QualifiedName() string
+func (s DBSynonym) TargetQualifiedName() string
 
 ### go.5x5.cz/ptah/dbschema/types.DBTable
 
@@ -9616,6 +9685,7 @@ type RoleDiff struct{ ... }
 type RowTTLChange struct{ ... }
 type SchemaDiff struct{ ... }
 type SequenceDiff struct{ ... }
+type SynonymDiff struct{ ... }
 type TableDiff struct{ ... }
 type TriggerDiff struct{ ... }
 type TriggerRef struct{ ... }
@@ -10241,6 +10311,23 @@ type SchemaDiff struct {
     // but not in the target schema.
     ViewsRemoved []string `json:"views_removed"`
 
+    // SynonymsAdded contains names of synonyms that exist in the target schema
+    // and not in the database.
+    SynonymsAdded []string `json:"synonyms_added"`
+
+    // SynonymsRemoved contains names of synonyms that exist in the database and
+    // not in the target schema.
+    SynonymsRemoved []string `json:"synonyms_removed"`
+
+    // SynonymsModified contains synonyms whose target changed.
+    //
+    // A changed target is its own case rather than a removal plus an addition,
+    // because T-SQL has no ALTER SYNONYM: the plan has to drop and recreate,
+    // and a reader who sees the same name in both the removed and added lists
+    // cannot tell a retarget from an unrelated drop that happens to share a
+    // name with an unrelated create.
+    SynonymsModified []SynonymDiff `json:"synonyms_modified"`
+
     // ViewsModified contains detailed information about views with changed definitions.
     ViewsModified []ViewDiff `json:"views_modified"`
 
@@ -10412,6 +10499,19 @@ type SequenceDiff struct {
     SequenceDiff represents changes to a standalone sequence definition.
 
 
+### go.5x5.cz/ptah/migration/schemadiff/types.SynonymDiff
+
+package types // import "go.5x5.cz/ptah/migration/schemadiff/types"
+
+type SynonymDiff struct {
+    SynonymName string `json:"synonym_name"`
+    OldTarget   string `json:"old_target"`
+    NewTarget   string `json:"new_target"`
+}
+    ViewDiff represents changes to a view definition. SynonymDiff describes a
+    synonym whose target changed.
+
+
 ### go.5x5.cz/ptah/migration/schemadiff/types.TableDiff
 
 package types // import "go.5x5.cz/ptah/migration/schemadiff/types"
@@ -10535,7 +10635,6 @@ type ViewDiff struct {
     // Reverse plan builders set it; a forward comparison leaves it false.
     Rollback bool `json:"rollback,omitempty"`
 }
-    ViewDiff represents changes to a view definition.
 
 
 ## go.5x5.cz/ptah/migration/seeder

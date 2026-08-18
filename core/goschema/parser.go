@@ -569,6 +569,7 @@ type schemaParseState struct {
 	compositeTypes        []CompositeType
 	ranges                []Range
 	views                 []View
+	synonyms              []Synonym
 	materializedViews     []MaterializedView
 	triggers              []Trigger
 	rlsPolicies           []RLSPolicy
@@ -688,6 +689,8 @@ func (s *schemaParseState) parseSharedDirective(
 		return s.parseViewComment(comment, target.structName)
 	case "ptah:schema:matview":
 		return s.parseMaterializedViewComment(comment, target.structName)
+	case "ptah:schema:synonym":
+		return s.parseSynonymComment(comment, target.structName)
 	case "ptah:schema:trigger":
 		return s.parseTriggerComment(comment, target.structName)
 	case "ptah:schema:rls:policy":
@@ -827,6 +830,7 @@ func parseFileAST(filename string, fset *token.FileSet, f *ast.File) (Database, 
 		CompositeTypes:    state.compositeTypes,
 		Ranges:            state.ranges,
 		Views:             state.views,
+		Synonyms:          state.synonyms,
 		MaterializedViews: state.materializedViews,
 		Triggers:          state.triggers,
 		RLSPolicies:       state.rlsPolicies,
@@ -1346,6 +1350,30 @@ func (s *schemaParseState) parseViewComment(comment *ast.Comment, structName str
 		WithCheck:  kv["with_check"] == "true",
 		Comment:    kv["comment"],
 		Dialects:   scope,
+	})
+	return nil
+}
+
+// parseSynonymComment reads a SQL Server synonym declaration.
+//
+// There is no dialect scope here, and the omission is deliberate: a synonym is
+// a SQL Server object and nothing else, so a scope attribute would let a schema
+// claim it belongs to a target that has no such construct.
+func (s *schemaParseState) parseSynonymComment(comment *ast.Comment, structName string) error {
+	kv := parseutils.ParseKeyValueComment(comment.Text)
+	ctx := s.annotationContext(comment, "//ptah:schema:synonym", structName)
+	if err := validateAttributes(kv, ctx); err != nil {
+		return err
+	}
+	if err := requireAttributes(kv, ctx); err != nil {
+		return err
+	}
+	s.synonyms = append(s.synonyms, Synonym{
+		StructName: structName,
+		Name:       kv["name"],
+		Schema:     kv["schema"],
+		Target:     kv["target"],
+		Comment:    kv["comment"],
 	})
 	return nil
 }

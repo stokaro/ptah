@@ -40,6 +40,7 @@ var routedKinds = []routedKind{
 	{name: "extension", want: 1, count: countNodes[*ast.ExtensionNode]},
 	{name: "rls enable", want: 1, count: countNodes[*ast.AlterTableEnableRLSNode]},
 	{name: "policy", want: 1, count: countNodes[*ast.CreatePolicyNode]},
+	{name: "synonym", want: 1, count: countNodes[*ast.CreateSynonymNode]},
 	{name: "grant", want: 1, count: countNodes[*ast.GrantPrivilegeNode]},
 }
 
@@ -78,6 +79,7 @@ func routingFixture() goschema.Database {
 		Functions:         []goschema.Function{{Name: "func_probe", Returns: "integer", Language: "sql", Body: "SELECT 1;"}},
 		Views:             []goschema.View{{StructName: "V", Name: "view_probe", Body: "SELECT id FROM table_probe"}},
 		MaterializedViews: []goschema.MaterializedView{{StructName: "MV", Name: "matview_probe", Body: "SELECT id FROM table_probe"}},
+		Synonyms:          []goschema.Synonym{{StructName: "SY", Name: "synonym_probe", Target: "dbo.table_probe"}},
 		Triggers: []goschema.Trigger{{
 			StructName: "TR", Name: "trigger_probe", Table: "table_probe",
 			Timing: "AFTER", Event: "INSERT", ForEach: "ROW", Body: "SELECT 1",

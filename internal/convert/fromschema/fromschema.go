@@ -1741,6 +1741,27 @@ func FromView(view goschema.View) *ast.CreateViewNode {
 	return viewNode
 }
 
+// FromSynonym converts a goschema.Synonym to an ast.CreateSynonymNode.
+//
+// The alias is qualified here and the target is not. The alias is an object
+// this schema declares, so it belongs in the schema the declaration named; the
+// target is written exactly as it was given, because its part count is what
+// tells SQL Server whether it names this database, another one, or a linked
+// server, and adding a qualifier would silently turn a remote reference into a
+// local one.
+func FromSynonym(synonym goschema.Synonym) *ast.CreateSynonymNode {
+	return ast.NewCreateSynonym(synonym.QualifiedName()).
+		SetTarget(synonym.Target).
+		SetComment(synonym.Comment)
+}
+
+// appendSynonymStatements adds a CREATE SYNONYM node for each declared synonym.
+func appendSynonymStatements(statements *ast.StatementList, synonyms []goschema.Synonym) {
+	for _, synonym := range synonyms {
+		statements.Statements = append(statements.Statements, FromSynonym(synonym))
+	}
+}
+
 // FromMaterializedView converts a goschema.MaterializedView to an
 // ast.CreateMaterializedViewNode.
 func FromMaterializedView(view goschema.MaterializedView) *ast.CreateMaterializedViewNode {
@@ -2182,6 +2203,14 @@ func FromDatabase(database goschema.Database, targetPlatform string) *ast.Statem
 
 	// 8. Everything that needs the tables to exist first.
 	appendPostTableObjectStatements(statements, database, targetPlatform)
+
+	// 8b. Synonyms come after the objects a local target may name. A synonym
+	// pointing outside this database has nothing here to wait for, and one
+	// pointing at a local table or view has to follow it -- SQL Server does not
+	// require the target to exist when the synonym is created, but a script
+	// that creates the alias first and the table second reads as though the
+	// order did not matter, and the next person reorders it.
+	appendSynonymStatements(statements, database.Synonyms)
 
 	// 9. Add non-unique indexes last, except on MySQL-family targets where both
 	// sides of a foreign key need their declared indexes before ADD CONSTRAINT.

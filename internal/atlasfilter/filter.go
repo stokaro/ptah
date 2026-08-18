@@ -88,6 +88,7 @@ func ExcludeDatabaseReport(
 	filtered.Extensions = state.filterExtensions(filtered.Extensions)
 	filtered.Functions = state.filterFunctions(filtered.Functions)
 	filtered.Views = state.filterViews(filtered.Views)
+	filtered.Synonyms = state.filterSynonyms(filtered.Synonyms)
 	filtered.MatViews = state.filterMatViews(filtered.MatViews)
 	filtered.Triggers = state.filterTriggers(filtered.Triggers)
 	filtered.RLSPolicies = state.filterRLSPolicies(filtered.RLSPolicies)
@@ -910,6 +911,28 @@ func (s *exclusionState) filterViews(views []dbschematypes.DBView) []dbschematyp
 	return result
 }
 
+// filterSynonyms drops synonyms an exclusion selector names, and synonyms
+// whose own schema is excluded.
+//
+// The selector matches the ALIAS, never the target. A synonym excluded because
+// its target was excluded would be a different rule: the alias is the object
+// this schema declares, and the target may not even be in this database.
+func (s *exclusionState) filterSynonyms(synonyms []dbschematypes.DBSynonym) []dbschematypes.DBSynonym {
+	result := make([]dbschematypes.DBSynonym, 0, len(synonyms))
+	for _, synonym := range synonyms {
+		names := s.nameCandidates(synonym.Schema, synonym.Name)
+		if s.matches("synonym", names...) || s.schemaExcluded(synonym.Schema) {
+			s.excludeTable(synonym.Schema, synonym.Name)
+			continue
+		}
+		if s.matchesField("synonym", "comment", names...) {
+			synonym.Comment = ""
+		}
+		result = append(result, synonym)
+	}
+	return result
+}
+
 func (s *exclusionState) filterMatViews(views []dbschematypes.DBMatView) []dbschematypes.DBMatView {
 	result := make([]dbschematypes.DBMatView, 0, len(views))
 	for _, view := range views {
@@ -1478,6 +1501,7 @@ func cloneDatabase(schema *dbschematypes.DBSchema) *dbschematypes.DBSchema {
 		Composites:  slices.Clone(schema.Composites),
 		Ranges:      slices.Clone(schema.Ranges),
 		Views:       slices.Clone(schema.Views),
+		Synonyms:    slices.Clone(schema.Synonyms),
 		MatViews:    slices.Clone(schema.MatViews),
 		Triggers:    slices.Clone(schema.Triggers),
 		RLSPolicies: slices.Clone(schema.RLSPolicies),
@@ -1521,6 +1545,7 @@ func cloneGenerated(schema *goschema.Database) *goschema.Database {
 	filtered.CompositeTypes = slices.Clone(schema.CompositeTypes)
 	filtered.Ranges = slices.Clone(schema.Ranges)
 	filtered.Views = slices.Clone(schema.Views)
+	filtered.Synonyms = slices.Clone(schema.Synonyms)
 	filtered.MaterializedViews = slices.Clone(schema.MaterializedViews)
 	filtered.Triggers = slices.Clone(schema.Triggers)
 	filtered.RLSPolicies = slices.Clone(schema.RLSPolicies)

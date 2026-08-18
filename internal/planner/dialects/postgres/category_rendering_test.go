@@ -222,6 +222,19 @@ func diffCategoryFixtures() []categoryFixture {
 			&goschema.Database{Views: []goschema.View{{Name: "v", Body: "SELECT 2"}}},
 		},
 		{
+			"SynonymsAdded",
+			&types.SchemaDiff{SynonymsAdded: []string{"s"}},
+			&goschema.Database{Synonyms: []goschema.Synonym{{Name: "s", Target: "dbo.t"}}},
+		},
+		{"SynonymsRemoved", &types.SchemaDiff{SynonymsRemoved: []string{"s"}}, &goschema.Database{}},
+		{
+			"SynonymsModified",
+			&types.SchemaDiff{SynonymsModified: []types.SynonymDiff{
+				{SynonymName: "s", OldTarget: "dbo.old", NewTarget: "dbo.new"},
+			}},
+			&goschema.Database{Synonyms: []goschema.Synonym{{Name: "s", Target: "dbo.new"}}},
+		},
+		{
 			"MaterializedViewsAdded",
 			&types.SchemaDiff{MaterializedViewsAdded: []string{"mv"}},
 			&goschema.Database{MaterializedViews: []goschema.MaterializedView{{Name: "mv", Body: "SELECT 1"}}},
