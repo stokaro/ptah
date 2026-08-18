@@ -77,6 +77,9 @@ func (s *scopeSelection) projectGeneratedTopLevel(db, out *goschema.Database) {
 	out.MaterializedViews = keep(db.MaterializedViews, func(view goschema.MaterializedView) bool {
 		return s.selectedQualifiedName(typeList("materialized_view"), view.Name)
 	})
+	out.Synonyms = keep(db.Synonyms, func(synonym goschema.Synonym) bool {
+		return s.selectedQualifiedName(typeList("synonym"), synonym.QualifiedName())
+	})
 	out.Functions = keep(db.Functions, func(function goschema.Function) bool {
 		return s.selectedQualifiedName(typeList("function"), function.Name)
 	})

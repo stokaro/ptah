@@ -29,6 +29,7 @@ type DBSchema struct {
 	Ranges      []DBRange      `json:"ranges"`       // PostgreSQL range types
 	Views       []DBView       `json:"views"`        // Database views
 	MatViews    []DBMatView    `json:"matviews"`     // Database materialized views
+	Synonyms    []DBSynonym    `json:"synonyms"`     // SQL Server synonyms
 	Triggers    []DBTrigger    `json:"triggers"`     // Database triggers
 	RLSPolicies []DBRLSPolicy  `json:"rls_policies"` // PostgreSQL RLS policies
 	Roles       []DBRole       `json:"roles"`        // PostgreSQL roles
@@ -764,6 +765,63 @@ type DBView struct {
 // QualifiedName returns schema.view when Schema is set, or Name otherwise.
 func (v DBView) QualifiedName() string {
 	return QualifyTableName(v.Schema, v.Name)
+}
+
+// DBSynonym represents a SQL Server synonym read from the database.
+//
+// A synonym is an alias, and the thing it aliases may not be in this database.
+// SQL Server records the target as a name of one to four parts, and the shape
+// of that name is the whole question a dependency ordering has to answer: a
+// two-part target names an object here, and a three- or four-part target names
+// one in another database or behind a linked server.
+//
+// The raw catalog value is kept alongside the parsed parts, because it is what
+// the server will resolve and what has to be written back unchanged. The parts
+// exist so that ordering can tell local from remote without re-parsing, and
+// External is derived from them rather than stored, so the two cannot disagree.
+type DBSynonym struct {
+	Name   string `json:"name"`   // Synonym name (the alias)
+	Schema string `json:"schema"` // Schema the alias lives in
+	// Target is base_object_name exactly as the catalog records it, including
+	// the server's own bracket quoting.
+	Target string `json:"target"`
+	// TargetServer, TargetDatabase, TargetSchema and TargetObject are the
+	// parsed parts of Target. Absent leading parts are empty.
+	TargetServer   string `json:"target_server,omitempty"`
+	TargetDatabase string `json:"target_database,omitempty"`
+	TargetSchema   string `json:"target_schema,omitempty"`
+	TargetObject   string `json:"target_object"`
+	Comment        string `json:"comment,omitempty"` // Synonym comment/description
+}
+
+// QualifiedName returns schema.synonym when Schema is set, or Name otherwise.
+func (s DBSynonym) QualifiedName() string {
+	return QualifyTableName(s.Schema, s.Name)
+}
+
+// IsExternal reports whether the target lives outside this database.
+//
+// Ptah manages the alias in both cases and never the target: a synonym is a
+// pointer, and creating one does not require the object it points at to exist.
+// What External changes is dependency ordering -- a local target is an object
+// the same plan may create or drop, and a remote one is not something this
+// plan can order against at all.
+func (s DBSynonym) IsExternal() bool {
+	return s.TargetServer != "" || s.TargetDatabase != ""
+}
+
+// TargetQualifiedName returns the local schema.object the target names, or the
+// empty string when the target is external.
+//
+// It is the join key a dependency ordering uses, and returning nothing for an
+// external target is deliberate: an ordering that matched on the object name
+// alone would make a synonym for another database's `orders` table depend on
+// the local table of the same name, which is a dependency that does not exist.
+func (s DBSynonym) TargetQualifiedName() string {
+	if s.IsExternal() || s.TargetObject == "" {
+		return ""
+	}
+	return QualifyTableName(s.TargetSchema, s.TargetObject)
 }
 
 // DBMatView represents a PostgreSQL materialized view read from the database.

@@ -44,6 +44,7 @@ type Database struct {
 	CompositeTypes             []CompositeType                // PostgreSQL composite types (CREATE TYPE ... AS (...))
 	Ranges                     []Range                        // PostgreSQL range types (CREATE TYPE ... AS RANGE (...))
 	Views                      []View                         // Database views
+	Synonyms                   []Synonym                      // SQL Server synonyms
 	MaterializedViews          []MaterializedView             // Database materialized views
 	Triggers                   []Trigger                      // Database triggers
 	RLSPolicies                []RLSPolicy                    // PostgreSQL Row-Level Security policies
@@ -937,6 +938,36 @@ type Sequence struct {
 	// Dialects scopes this declaration to the named target dialects. See
 	// [ScopeToDialect].
 	Dialects []string `json:",omitempty"`
+}
+
+// Synonym is a SQL Server synonym: a schema-qualified alias for another object.
+//
+// The target may name an object this schema does not manage -- another
+// database, or a linked server through a four-part name. That is a supported
+// declaration rather than an error: the alias is local even when what it points
+// at is not. Ptah manages the alias and never the target, and it does not
+// require the target to exist, because SQL Server does not either.
+//
+// Dialects is deliberately absent. Every other scopable kind carries it because
+// the declaration could plausibly belong to several targets; a synonym belongs
+// to SQL Server and to nothing else, and a scope field would invite a schema to
+// claim otherwise.
+type Synonym struct {
+	StructName string // Name of the Go struct this synonym is associated with
+	Name       string // Synonym name (the alias)
+	Schema     string // Optional schema the alias lives in
+	// Target is the object the alias stands for, written the way it will be
+	// emitted: one to four dot-separated parts, unquoted.
+	Target  string
+	Comment string // Optional comment for documentation
+}
+
+// QualifiedName returns schema.synonym when Schema is set, or Name otherwise.
+func (s Synonym) QualifiedName() string {
+	if strings.TrimSpace(s.Schema) == "" {
+		return s.Name
+	}
+	return s.Schema + "." + s.Name
 }
 
 // sequenceTypeAliases maps accepted spellings of a sequence's underlying

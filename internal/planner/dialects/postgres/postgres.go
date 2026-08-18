@@ -1636,6 +1636,8 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 	// 6.6. Add and modify views, materialized views, and triggers after their tables/functions exist.
 	result = p.addNewViewLikeObjects(result, diff, generated)
 	result = p.modifyExistingViews(result, diff, generated)
+	result = p.retargetSynonyms(result, diff, generated)
+	result = p.addNewSynonyms(result, diff, generated)
 	result = p.modifyExistingMaterializedViews(result, diff, generated)
 	result = p.addNewTriggers(result, diff, generated)
 	result = p.modifyExistingTriggers(result, diff, generated)
@@ -1703,6 +1705,7 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 	result = p.removeTriggers(result, diff)
 	result = p.removeMaterializedViews(result, diff)
 	result = p.removeViews(result, diff)
+	result = p.removeSynonyms(result, diff)
 
 	// 13. Remove tables (dangerous!)
 	result = p.removeTables(result, diff, generated)
@@ -2392,6 +2395,54 @@ func (p *Planner) removeMaterializedViews(result []ast.Node, diff *types.SchemaD
 		result = append(result, ast.NewDropMaterializedView(viewName).SetIfExists().SetCascade())
 	}
 	return result
+}
+
+// addNewSynonyms emits the declared synonyms a diff adds.
+//
+// This planner backs PostgreSQL, CockroachDB, YugabyteDB and Spanner, none of
+// which has a synonym object. The node is emitted anyway and the renderer names
+// it as skipped, which is the same contract every other kind this family lacks
+// follows: the plan and the render have to agree about which objects exist, and
+// a planner that dropped the node instead would make a declared object vanish
+// from the plan while the render still reported it.
+func (p *Planner) addNewSynonyms(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+	for _, name := range diff.SynonymsAdded {
+		if synonym := findSynonym(generated.Synonyms, name); synonym != nil {
+			result = append(result, fromschema.FromSynonym(*synonym))
+		}
+	}
+	return result
+}
+
+// retargetSynonyms drops and recreates a synonym whose target changed, in that
+// order, because no dialect has an ALTER SYNONYM to do it in one statement.
+func (p *Planner) retargetSynonyms(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+	for _, synonymDiff := range diff.SynonymsModified {
+		synonym := findSynonym(generated.Synonyms, synonymDiff.SynonymName)
+		if synonym == nil {
+			continue
+		}
+		result = append(result, ast.NewDropSynonym(synonymDiff.SynonymName).SetIfExists())
+		result = append(result, fromschema.FromSynonym(*synonym))
+	}
+	return result
+}
+
+func (p *Planner) removeSynonyms(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+	for _, name := range diff.SynonymsRemoved {
+		result = append(result, ast.NewDropSynonym(name).SetIfExists())
+	}
+	return result
+}
+
+// findSynonym returns the declared synonym with the given qualified name.
+func findSynonym(synonyms []goschema.Synonym, name string) *goschema.Synonym {
+	for i := range synonyms {
+		if synonyms[i].QualifiedName() == name {
+			return &synonyms[i]
+		}
+	}
+	return nil
 }
 
 func (p *Planner) addNewTriggers(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {

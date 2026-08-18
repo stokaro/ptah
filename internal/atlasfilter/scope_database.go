@@ -60,6 +60,13 @@ func (s *scopeSelection) projectDatabaseTopLevel(
 	out.MatViews = keep(db.MatViews, func(view dbschematypes.DBMatView) bool {
 		return s.selected(typeList("materialized_view"), view.Schema, view.Name)
 	})
+	// A synonym is selected on its own name, never on its target's. The alias
+	// is the object this schema declares, and a rule that kept a synonym
+	// because its target was selected would pull in an alias the operator did
+	// not name -- possibly one whose target is not even in this database.
+	out.Synonyms = keep(db.Synonyms, func(synonym dbschematypes.DBSynonym) bool {
+		return s.selected(typeList("synonym"), synonym.Schema, synonym.Name)
+	})
 	out.Functions = keep(db.Functions, func(function dbschematypes.DBFunction) bool {
 		return s.selected(typeList("function"), function.Schema, function.Name)
 	})

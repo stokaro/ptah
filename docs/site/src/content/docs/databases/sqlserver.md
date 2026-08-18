@@ -39,6 +39,8 @@ ptah db read --db-url "sqlserver://sa:$SA_PASSWORD@localhost:1433?database=app&s
   constraints, and indexes with ordered ascending or descending key columns.
 - Filtered indexes (see below).
 - Views and triggers rendered from raw SQL definitions.
+- Synonyms: declared, rendered, introspected from `sys.synonyms`, and diffed,
+  including targets in another database or behind a linked server (see below).
 - Live introspection from `sys.tables`, `sys.columns`, `sys.indexes`, and
   related catalog views.
 - Transactional migration apply for DDL SQL Server supports in transactions,
@@ -54,6 +56,44 @@ SQL Server has no native enum object, so enum annotations render as
 ```sql
 [status] NVARCHAR(255) NOT NULL CHECK ([status] IN ('active', 'blocked'))
 ```
+
+## Synonyms
+
+A synonym is an alias for another object, and it is the one schema object whose
+target may live somewhere Ptah does not manage:
+
+```go
+//ptah:schema:synonym name="current_orders" schema="app" target="sales.orders"
+type CurrentOrdersSynonym struct{}
+```
+
+```sql
+CREATE SYNONYM [app].[current_orders] FOR [sales].[orders];
+```
+
+The target is written with as many parts as it needs. Two parts name an object
+in this database; three name another database; four name a linked server. Ptah
+records what it was given and never rewrites it, because the part count is what
+tells SQL Server where to resolve the name, and adding a qualifier would turn a
+remote reference into a local one.
+
+**Ptah manages the alias and never the target.** A synonym pointing outside this
+database is a supported declaration rather than an error — SQL Server does not
+require the target to exist either — and dependency ordering treats it as having
+no local dependency, so nothing tries to create or drop the object it points at.
+A local target does participate in ordering: the alias is emitted after the
+table or view it names.
+
+A changed target is planned as a drop and a create in that order, because T-SQL
+has no `ALTER SYNONYM` and `CREATE SYNONYM` refuses a name that already exists.
+
+Targets are compared with the server's own bracket quoting normalized away, so a
+declared `dbo.orders` and a stored `[dbo].[orders]` are the same target rather
+than a difference reported on every run.
+
+Every other target names a declared synonym as skipped rather than rendering
+nothing: the object exists in the schema model for one engine, and a dialect
+that dropped it silently would lose a declaration without saying so.
 
 ## Identifier collation
 
@@ -105,6 +145,9 @@ rendered SQL always preserves your annotation text verbatim.
 - Automatic column removal is rejected, because dependent constraints,
   defaults, and indexes must be dropped in the correct order first.
 - Standalone sequence objects are outside the subset.
+- A synonym's target is recorded and resolved by the server, not validated by
+  Ptah: a synonym naming an object that does not exist is created successfully
+  and fails when something uses it, which is SQL Server's own behavior.
 - View and trigger introspection records the persisted definition text without
   normalizing it into drift-safe definitions.
 - Index planning preserves key order, direction, and filtered predicates, but

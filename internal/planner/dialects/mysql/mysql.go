@@ -1232,6 +1232,8 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 	// 4.5. Add and modify views/triggers after tables exist.
 	result = p.addNewViews(result, diff, generated)
 	result = p.modifyExistingViews(result, diff, generated)
+	result = p.retargetSynonyms(result, diff, generated)
+	result = p.addNewSynonyms(result, diff, generated)
 	if err := p.rejectMaterializedViews(diff); err != nil {
 		return nil, err
 	}
@@ -1262,6 +1264,7 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 	// 6.6. Remove triggers and view-like objects before dependent tables.
 	result = p.removeTriggers(result, diff)
 	result = p.removeViews(result, diff)
+	result = p.removeSynonyms(result, diff)
 
 	// 6.7. Remove indexes after constraints so FK-backed indexes can be dropped.
 	result = p.removeIndexes(result, diff)
@@ -1358,6 +1361,50 @@ func (p *Planner) removeViews(result []ast.Node, diff *types.SchemaDiff) []ast.N
 		result = append(result, ast.NewDropView(viewName).SetIfExists())
 	}
 	return result
+}
+
+func (p *Planner) addNewSynonyms(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+	for _, name := range diff.SynonymsAdded {
+		if synonym := findSynonym(generated.Synonyms, name); synonym != nil {
+			result = append(result, fromschema.FromSynonym(*synonym))
+		}
+	}
+	return result
+}
+
+// retargetSynonyms drops and recreates a synonym whose target changed.
+//
+// The pair is emitted together, drop first, because T-SQL has no ALTER SYNONYM
+// and CREATE SYNONYM refuses a name that already exists. Splitting the two
+// across the add and remove phases would put the create before the drop and
+// fail at the server.
+func (p *Planner) retargetSynonyms(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
+	for _, synonymDiff := range diff.SynonymsModified {
+		synonym := findSynonym(generated.Synonyms, synonymDiff.SynonymName)
+		if synonym == nil {
+			continue
+		}
+		result = append(result, ast.NewDropSynonym(synonymDiff.SynonymName).SetIfExists())
+		result = append(result, fromschema.FromSynonym(*synonym))
+	}
+	return result
+}
+
+func (p *Planner) removeSynonyms(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+	for _, name := range diff.SynonymsRemoved {
+		result = append(result, ast.NewDropSynonym(name).SetIfExists())
+	}
+	return result
+}
+
+// findSynonym returns the declared synonym with the given qualified name.
+func findSynonym(synonyms []goschema.Synonym, name string) *goschema.Synonym {
+	for i := range synonyms {
+		if synonyms[i].QualifiedName() == name {
+			return &synonyms[i]
+		}
+	}
+	return nil
 }
 
 func (p *Planner) addNewTriggers(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {

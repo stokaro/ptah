@@ -60,6 +60,9 @@ type ActiveUsersView struct{}
 //ptah:schema:matview name="user_stats" body="SELECT COUNT(*) as cnt FROM users" refresh_strategy="manual" comment="User count matview"
 type UserStatsMatView struct{}
 
+//ptah:schema:synonym name="current_users" schema="app" target="dbo.users" comment="Alias for the users table"
+type CurrentUsersSynonym struct{}
+
 //ptah:schema:trigger name="users_set_updated_at" table="users" timing="BEFORE" event="UPDATE" for="ROW" body="NEW.updated_at = NOW(); RETURN NEW;" comment="Auto update"
 type UserTrigger struct{}
 
