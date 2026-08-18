@@ -388,8 +388,8 @@ The Ptah column is derived from the built binaries. `ptah --help` and
 exists, and a row that could not be demonstrated that way is marked 🟡 with the
 limitation named, or ❌.
 
-🔷 is the one verdict that is not about what a binary does today. It is claimed
-only where two things hold at once: the capability is demonstrable on a Ptah
+🔷 is the one verdict `--help` cannot settle on its own. It is claimed only
+where two things hold at once: the capability is demonstrable on a Ptah
 binary in a Ptah spelling, and the remainder is access to a service another
 company hosts behind its own accounts. Both halves are stated in the row's
 difference column, so the claim can be argued with. Where only the first holds,
