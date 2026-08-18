@@ -3,10 +3,11 @@ package ociartifact
 import (
 	"maps"
 	"os"
-	"runtime/debug"
 	"strings"
 
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
+
+	"go.5x5.cz/ptah/internal/buildinfo"
 )
 
 const (
@@ -35,19 +36,24 @@ const (
 //
 // The GitHub fallbacks exist because that is the one CI system whose variables
 // can be relied on without configuration. Anywhere else, the PTAH_ names are
-// explicit and portable.
+// explicit and portable. Behind both sits what the linker stamped into this
+// binary, so a release build records its own commit even when nothing in the
+// environment names one.
 func provenanceAnnotations() map[string]string {
 	annotations := map[string]string{}
 	if source := firstNonEmpty(os.Getenv(SourceEnv), githubRepositoryURL()); source != "" {
 		annotations[ocispec.AnnotationSource] = source
 	}
-	if revision := firstNonEmpty(os.Getenv(RevisionEnv), os.Getenv("GITHUB_SHA")); revision != "" {
+	stamped := buildinfo.Resolve()
+	if revision := firstNonEmpty(
+		os.Getenv(RevisionEnv), os.Getenv("GITHUB_SHA"), stampedValue(stamped.Commit),
+	); revision != "" {
 		annotations[ocispec.AnnotationRevision] = revision
 	}
 	if run := firstNonEmpty(os.Getenv(BuildRunEnv), os.Getenv("GITHUB_RUN_ID")); run != "" {
 		annotations[annotationBuildRun] = run
 	}
-	if version := producerVersion(); version != "" {
+	if version := strings.TrimSpace(stamped.Version); version != "" {
 		annotations[annotationProducerVersion] = version
 	}
 	return annotations
@@ -65,16 +71,17 @@ func githubRepositoryURL() string {
 	return strings.TrimSuffix(server, "/") + "/" + repository
 }
 
-// producerVersion reports the Ptah that is publishing, or "" when the binary
-// carries no module version. A development build reports "(devel)", which is
-// recorded as it stands: it is a true statement about an artifact that should
-// not be in a registry anyone depends on.
-func producerVersion() string {
-	info, ok := debug.ReadBuildInfo()
-	if !ok || info == nil {
+// stampedValue drops buildinfo's "unknown" sentinel.
+//
+// The sentinel is the right thing to print in `ptah version`, where the reader
+// asked what this binary is and "unknown" answers them. It is the wrong thing
+// to record on an artifact, where a reader finding a revision assumes it names
+// a commit and would go looking for one.
+func stampedValue(value string) string {
+	if strings.TrimSpace(value) == "unknown" {
 		return ""
 	}
-	return strings.TrimSpace(info.Main.Version)
+	return value
 }
 
 func firstNonEmpty(values ...string) string {

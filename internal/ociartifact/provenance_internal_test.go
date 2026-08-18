@@ -120,3 +120,38 @@ func TestWithProvenance_LeavesTheCallerMapAlone(t *testing.T) {
 	_, leaked := declared[ocispec.AnnotationSource]
 	c.Assert(leaked, qt.IsFalse, qt.Commentf("the caller's map must not gain keys it never set"))
 }
+
+// TestProvenanceAnnotations_FallsBackToWhatTheLinkerStamped is why this reads
+// buildinfo rather than the module version: a release binary knows its own
+// commit, so an artifact published outside CI still records where it came from.
+func TestProvenanceAnnotations_FallsBackToWhatTheLinkerStamped(t *testing.T) {
+	c := qt.New(t)
+	clearProvenanceEnv(t)
+
+	got := provenanceAnnotations()
+
+	// An unstamped test binary reports the sentinel, which must not be
+	// recorded as if it named a commit.
+	revision, present := got[ocispec.AnnotationRevision]
+	c.Assert(present, qt.Equals, revision != "")
+	c.Assert(revision, qt.Not(qt.Equals), "unknown")
+}
+
+func TestStampedValue_DropsTheSentinel(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		input string
+		want  string
+	}{
+		{name: "the sentinel becomes empty", input: "unknown", want: ""},
+		{name: "padding does not hide it", input: "  unknown  ", want: ""},
+		{name: "a real commit survives", input: "0123456789abcdef", want: "0123456789abcdef"},
+		{name: "an empty value stays empty", input: "", want: ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(stampedValue(tc.input), qt.Equals, tc.want)
+		})
+	}
+}

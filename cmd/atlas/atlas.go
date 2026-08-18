@@ -12,7 +12,6 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 
-	"go.5x5.cz/ptah/cmd/internal/buildinfo"
 	"go.5x5.cz/ptah/cmd/internal/cmdadapter"
 	"go.5x5.cz/ptah/cmd/internal/cmdflags"
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
@@ -31,6 +30,7 @@ import (
 	"go.5x5.cz/ptah/internal/atlasargs"
 	"go.5x5.cz/ptah/internal/atlascompatpolicy"
 	"go.5x5.cz/ptah/internal/atlassource"
+	"go.5x5.cz/ptah/internal/buildinfo"
 )
 
 type atlasVerb struct {

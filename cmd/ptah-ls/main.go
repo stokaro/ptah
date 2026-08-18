@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"os"
 
-	"go.5x5.cz/ptah/cmd/internal/buildinfo"
+	"go.5x5.cz/ptah/internal/buildinfo"
 	"go.5x5.cz/ptah/internal/ptahls"
 )
 
