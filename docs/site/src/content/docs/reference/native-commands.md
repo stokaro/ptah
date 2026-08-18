@@ -186,6 +186,8 @@ that happened rather than a reordering.
 | `ptah oci tag` | Move an alias onto an artifact that already exists. |
 | `ptah oci copy` | Copy an artifact between repositories without rebuilding it. |
 | `ptah oci capabilities` | Report what the registry behind a reference supports. |
+| `ptah oci reindex` | Republish attachments the registry's referrers index does not list. |
+| `ptah oci verify` | Check an artifact against a verification policy before it is consumed. |
 | `ptah sql lint` | Lint standalone SQL files. |
 
 ## Top-level verbs

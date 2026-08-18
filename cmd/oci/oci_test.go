@@ -178,3 +178,28 @@ func TestReindex_RejectsUnsupportedFormatBeforeNetworkAccess(t *testing.T) {
 
 	c.Assert(err, qt.ErrorMatches, `unsupported output format "yaml": expected text or json`)
 }
+
+func TestCommandTree_RegistersVerify(t *testing.T) {
+	c := qt.New(t)
+	cmd := oci.NewCommand()
+
+	found, _, err := cmd.Find([]string{"verify"})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(found.CommandPath(), qt.Equals, "oci verify")
+	c.Assert(found.Flag("policy"), qt.IsNotNil)
+	c.Assert(found.Flag("format"), qt.IsNotNil)
+	c.Assert(found.Flag("plain-http"), qt.IsNotNil)
+}
+
+// TestVerify_RequiresAPolicy keeps the verb from reporting success for a run
+// that checked nothing.
+func TestVerify_RequiresAPolicy(t *testing.T) {
+	c := qt.New(t)
+	cmd := oci.NewCommand()
+	cmd.SetArgs([]string{"verify", "oci://registry.invalid/acme/db:latest"})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.ErrorMatches, `--policy is required: verification with no policy would check nothing`)
+}
