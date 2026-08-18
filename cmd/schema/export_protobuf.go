@@ -15,6 +15,7 @@ import (
 	"go.5x5.cz/ptah/internal/fsdurable"
 	"go.5x5.cz/ptah/internal/pathguard"
 	"go.5x5.cz/ptah/internal/protobufrender"
+	"go.5x5.cz/ptah/internal/schemaexport"
 )
 
 var (
@@ -245,9 +246,15 @@ func runProtobufExport(cmd *cobra.Command, opts exportOptions, db *goschema.Data
 		return err
 	}
 
+	policy, err := schemaexport.ParseFieldPolicy(opts.fieldPolicy)
+	if err != nil {
+		return fmt.Errorf("--%s: %w", exportFieldPolicyFlag, err)
+	}
+
 	rendered, err := protobufrender.Render(cmd.Context(), db, protobufrender.Options{
 		IncludeTables:        opts.includeTables,
 		ExcludeTables:        opts.excludeTables,
+		FieldPolicy:          policy,
 		Package:              pkg,
 		GoPackage:            strings.TrimSpace(opts.protoGoPackage),
 		OutPath:              outPath,

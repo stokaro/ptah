@@ -178,6 +178,7 @@ func (s *schemaParseState) parseFieldComment(
 			APIName:             kv["api_name"],
 			APINames:            targetNames(kv),
 			APIType:             kv["api_type"],
+			APIExpose:           kv["api_expose"],
 			Type:                fieldType,
 			Nullable:            kv["not_null"] != "true",
 			Primary:             kv["primary"] == "true",

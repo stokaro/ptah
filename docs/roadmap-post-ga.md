@@ -106,11 +106,12 @@ they meet the capability. Widening it is reach, not repair.
 
 ## Exported API contracts
 
-**[#904 — Field-level projections for API schema export](https://github.com/stokaro/ptah/issues/904).**
-Export selects whole tables; once a table is in, every exportable column enters
-the contract. Three separate pages say so in those words, and one carries a
-caution block titled "Table selection is not field-level access control". The
-absence is documented at the point of use rather than discovered in production.
+**[#904 — Field-level projections for API schema export](https://github.com/stokaro/ptah/issues/904)
+is implemented.** `api_expose` selects columns and their direction, and
+`--api-field-policy=allowlist` makes an undeclared column reach no contract, so
+an additive migration cannot widen a published one on its own. The controls
+shape a generated document and are not access control; the export page says so
+where a reader meets them.
 
 ## Atlas surface beyond the community binary
 

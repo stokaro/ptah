@@ -19,6 +19,9 @@ import (
 type Options struct {
 	IncludeTables []string
 	ExcludeTables []string
+	// FieldPolicy decides what an undeclared column means. The zero value is
+	// the historical behavior: every column of an exported table is exported.
+	FieldPolicy schemaexport.FieldPolicy
 	// Operations selects the operation shapes to emit. Its zero value emits
 	// data types only.
 	Operations Operations
@@ -49,8 +52,19 @@ func Render(db *goschema.Database, opts Options) (Result, error) {
 		return Result{}, err
 	}
 	enums := schemaexport.EnumIndex(db)
+	policy := opts.FieldPolicy
+	if policy == "" {
+		policy = schemaexport.FieldPolicyAll
+	}
 	for _, table := range tables {
-		fields := schemaexport.FieldsFor(db, table)
+		// The validation pre-pass reads the EXPORTED set, so two columns
+		// colliding on api_name where the policy publishes only one of them is
+		// not a collision. It has to agree with the build pass below or a
+		// refusal describes a schema nobody asked for.
+		fields, _, err := schemaexport.ExposedFields(db, table, schemaexport.ShapeRead, policy)
+		if err != nil {
+			return Result{}, err
+		}
 		if err := schemaexport.ValidateFieldAPINames(table, fields, schemaexport.TargetGraphQL); err != nil {
 			return Result{}, err
 		}
@@ -97,7 +111,9 @@ func Render(db *goschema.Database, opts Options) (Result, error) {
 		usedQueryFields: map[string]bool{},
 	}
 	for _, table := range tables {
-		b.addTable(db, table)
+		if err := b.addTable(db, table, policy); err != nil {
+			return Result{}, err
+		}
 	}
 	if len(b.objectTypes) == 0 {
 		b.warn("schema", "no exportable tables; nothing was emitted for them")
@@ -134,8 +150,44 @@ type column struct {
 	field  gqlField
 }
 
-func (b *builder) addTable(db *goschema.Database, table goschema.Table) {
-	fields := schemaexport.FieldsFor(db, table)
+// unionShapes returns every column that reaches either contract, and which of
+// the two each one reaches.
+//
+// The order is the read shape's, with write-only columns appended, so a schema
+// does not reshuffle when an exposure changes.
+func unionShapes(read, write []goschema.Field) (all []goschema.Field, inObject, inInput map[string]bool) {
+	inObject = make(map[string]bool, len(read))
+	for _, field := range read {
+		inObject[field.Name] = true
+	}
+	inInput = make(map[string]bool, len(write))
+	for _, field := range write {
+		inInput[field.Name] = true
+	}
+	all = append([]goschema.Field(nil), read...)
+	for _, field := range write {
+		if !inObject[field.Name] {
+			all = append(all, field)
+		}
+	}
+	return all, inObject, inInput
+}
+
+func (b *builder) addTable(db *goschema.Database, table goschema.Table, policy schemaexport.FieldPolicy) error {
+	// The object type is the read shape and the input types are the write one,
+	// which is the split GraphQL already had a word for. A column exposed for
+	// write alone still needs a field built for it, so the build walks the
+	// union and the object keeps only what the read shape published.
+	readable, diagnostics, err := schemaexport.ExposedFields(db, table, schemaexport.ShapeRead, policy)
+	if err != nil {
+		return err
+	}
+	writable, _, err := schemaexport.ExposedFields(db, table, schemaexport.ShapeWrite, policy)
+	if err != nil {
+		return err
+	}
+	b.diagnostics = append(b.diagnostics, diagnostics...)
+	fields, inObject, inInput := unionShapes(readable, writable)
 	pk := toSet(schemaexport.EffectivePrimaryKey(table, fields))
 	typeName := b.typeNames[table.Name]
 
@@ -169,8 +221,12 @@ func (b *builder) addTable(db *goschema.Database, table goschema.Table) {
 		usedFieldNames[name] = true
 
 		objectField := b.columnField(table, field, pk, name)
-		object.fields = append(object.fields, objectField)
-		columns = append(columns, column{source: field, field: objectField})
+		if inObject[field.Name] {
+			object.fields = append(object.fields, objectField)
+		}
+		if inInput[field.Name] {
+			columns = append(columns, column{source: field, field: objectField})
+		}
 	}
 
 	// Foreign keys become object relations alongside the scalar id column.
@@ -207,12 +263,13 @@ func (b *builder) addTable(db *goschema.Database, table goschema.Table) {
 	// exist.
 	if len(object.fields) == 0 {
 		b.warn("type "+typeName, "table has no exportable columns; type omitted")
-		return
+		return nil
 	}
 
 	b.objectTypes = append(b.objectTypes, object)
 	b.addInputs(typeName, columns, pk)
 	b.addQueries(table, typeName, columns, pk)
+	return nil
 }
 
 // addInputs emits the requested operation inputs from the write projection: the

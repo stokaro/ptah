@@ -7,6 +7,7 @@ package openapirender
 import (
 	"bytes"
 	"fmt"
+	"strings"
 
 	yaml "go.yaml.in/yaml/v3"
 
@@ -20,6 +21,57 @@ const (
 	defaultVersion = "1.0.0"
 )
 
+// withheldOnly keeps the diagnostics whose column reached neither shape.
+func withheldOnly(diagnostics []schemaexport.Diagnostic, emitted []goschema.Field) []schemaexport.Diagnostic {
+	present := make(map[string]bool, len(emitted))
+	for _, field := range emitted {
+		present[field.Name] = true
+	}
+	kept := make([]schemaexport.Diagnostic, 0, len(diagnostics))
+	for _, diagnostic := range diagnostics {
+		column := diagnostic.Path[strings.LastIndex(diagnostic.Path, ".")+1:]
+		if present[column] {
+			continue
+		}
+		kept = append(kept, diagnostic)
+	}
+	return kept
+}
+
+// mergeWriteOnly folds the write shape into the read shape, and reports which
+// columns belong to only one of them.
+//
+// OpenAPI publishes one schema per table, so a column a caller may send but
+// never receives has to appear in that schema marked writeOnly rather than be
+// absent from it. The returned order keeps the read columns in their schema
+// order and appends the write-only ones, so a document does not reshuffle when
+// an exposure changes.
+func mergeWriteOnly(read, write []goschema.Field) (all []goschema.Field, writeOnly, readOnly map[string]bool) {
+	readNames := make(map[string]bool, len(read))
+	for _, field := range read {
+		readNames[field.Name] = true
+	}
+	writeNames := make(map[string]bool, len(write))
+	for _, field := range write {
+		writeNames[field.Name] = true
+	}
+	all = append([]goschema.Field(nil), read...)
+	writeOnly = make(map[string]bool)
+	readOnly = make(map[string]bool)
+	for _, field := range write {
+		if !readNames[field.Name] {
+			all = append(all, field)
+			writeOnly[field.Name] = true
+		}
+	}
+	for _, field := range read {
+		if !writeNames[field.Name] {
+			readOnly[field.Name] = true
+		}
+	}
+	return all, writeOnly, readOnly
+}
+
 // Options controls the OpenAPI export.
 type Options struct {
 	IncludeTables []string
@@ -28,6 +80,9 @@ type Options struct {
 	// sensible defaults when empty.
 	Title   string
 	Version string
+	// FieldPolicy decides what an undeclared column means. The zero value is
+	// the historical behavior: every column of an exported table is exported.
+	FieldPolicy schemaexport.FieldPolicy
 }
 
 // Result is the rendered OpenAPI YAML plus any lossy-export diagnostics.
@@ -55,12 +110,37 @@ func Render(db *goschema.Database, opts Options) (Result, error) {
 	enums := schemaexport.EnumIndex(db)
 
 	var diagnostics []schemaexport.Diagnostic
+	policy := opts.FieldPolicy
+	if policy == "" {
+		policy = schemaexport.FieldPolicyAll
+	}
 	schemas := newOrderedMap()
 	for _, table := range tables {
-		fields := schemaexport.FieldsFor(db, table)
+		// One schema per table carries both contract directions, so the read
+		// shape decides membership and the write-only columns are added to it
+		// below. OpenAPI 3.0 says a writeOnly property is still declared and
+		// merely not returned, which is why this is a shape declaration rather
+		// than a second document.
+		fields, exposureDiagnostics, err := schemaexport.ExposedFields(
+			db, table, schemaexport.ShapeRead, policy)
+		if err != nil {
+			return Result{}, err
+		}
+		writable, _, err := schemaexport.ExposedFields(db, table, schemaexport.ShapeWrite, policy)
+		if err != nil {
+			return Result{}, err
+		}
+		fields, writeOnly, readOnlyNames := mergeWriteOnly(fields, writable)
+		// The shared model reports per shape, and this target publishes one
+		// schema carrying both. A column the read shape withheld but the write
+		// shape kept IS in the document, marked writeOnly, so reporting it as
+		// omitted would describe something the reader can see is there.
+		diagnostics = append(diagnostics, withheldOnly(exposureDiagnostics, fields)...)
 		// Refused before anything is written: an alias that shadows another
 		// column would drop it from the document, and the reader of the
-		// document has nothing left to notice the loss with.
+		// document has nothing left to notice the loss with. It reads the
+		// EXPORTED set, so two columns colliding on api_name where a policy
+		// publishes only one of them is not a collision.
 		if err := schemaexport.ValidateFieldAPINames(table, fields, schemaexport.TargetOpenAPI); err != nil {
 			return Result{}, err
 		}
@@ -83,6 +163,13 @@ func Render(db *goschema.Database, opts Options) (Result, error) {
 			if diag != nil {
 				diagnostics = append(diagnostics, *diag)
 			}
+			// readOnly and writeOnly are OpenAPI's own words for the two
+			// directions, so the shape is declared on the property rather than
+			// by emitting a second schema. They are set on the property and
+			// never on an items sub-schema, where the specification says they
+			// mean nothing.
+			property.ReadOnly = readOnlyNames[field.Name]
+			property.WriteOnly = writeOnly[field.Name]
 			apiName := schemaexport.FieldAPIName(field, schemaexport.TargetOpenAPI)
 			properties.set(apiName, property)
 			// A primary-key column is NOT NULL by SQL rule, regardless of how the
