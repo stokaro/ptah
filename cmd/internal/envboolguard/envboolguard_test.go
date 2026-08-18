@@ -54,6 +54,9 @@ var nonBooleanPtahVars = []string{
 	"PTAH_FORMAT",              // Go template
 	"PTAH_LOG_FORMAT",          // log format name
 	"PTAH_MIGRATIONS_DIR",      // native migration directory path
+	"PTAH_OCI_CA_FILE",         // PEM bundle trusted in addition to the system roots
+	"PTAH_OCI_CLIENT_CERT",     // mutual-TLS client certificate
+	"PTAH_OCI_CLIENT_KEY",      // mutual-TLS client key
 	"PTAH_OCI_REFERRER_POLICY", // referrer publish policy: auto, api, required-api, tag
 	"PTAH_PLAN",                // plan name, an Atlas capability Ptah refuses
 	"PTAH_SQLSERVER_TEST_URL",  // SQL Server address for the live test contour
