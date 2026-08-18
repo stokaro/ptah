@@ -129,6 +129,7 @@ func (c *Client) Push(ctx context.Context, rawRef string, fsys fs.FS, opts PushO
 	if err != nil {
 		return PushResult{}, err
 	}
+	opts.Annotations = withProvenance(opts.Annotations)
 	opts.Tags = append(opts.Tags, ref.Selector(), DefaultTag)
 	opts.Limits = mergeLimits(opts.Limits, c.options.Limits)
 	result, err := PushTo(ctx, repository, fsys, opts)
