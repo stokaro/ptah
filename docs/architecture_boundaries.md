@@ -67,7 +67,7 @@ issue that owns each.
 | `goschema.Database` ↔ `types.DBSchema` | Two families are spelled differently and several exist on only one side; four packages under `internal/convert` move between them. | [#1662](https://github.com/stokaro/ptah/issues/1662) |
 | `types.SchemaDiff` per-family name lists | A change carries a name, so the planner takes the desired description as a second parameter to recover the rest. | [#1662](https://github.com/stokaro/ptah/issues/1662) |
 | Converted foreign migration layouts | The rebuilt directory carries no integrity file, so source checksums are dropped. Carried out of band since [#1209](https://github.com/stokaro/ptah/issues/1209). | closed |
-| Routine overload identity | `objectidentity.ID` carries `Signature`; comparison does not use it, so two overloads of one name compare equal. | [#1664](https://github.com/stokaro/ptah/issues/1664) |
+| Routine overload identity | Closed: comparison pairs overloads on a signature normalized to agree with the catalog, consulted only where a name is overloaded. | closed |
 | Single-column uniqueness | `schemastate.Column.Unique` records single-column keys only, so a composite key reads as not unique. | [#1663](https://github.com/stokaro/ptah/issues/1663) |
 
 ## The invariant set
