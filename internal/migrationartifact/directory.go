@@ -26,6 +26,14 @@ type DirectoryPushOptions struct {
 	PlainHTTP bool
 	VerifySum bool
 	Now       func() time.Time
+	// Latest moves the latest alias onto this push. It is opt-in because a
+	// publish and an alias move are two operations, and doing both by default
+	// makes every publish a promotion nobody asked for.
+	Latest bool
+	// GeneratedVersion writes a timestamped version tag when Version names
+	// none. It is opt-in for the same reason, and because a tag that exists
+	// only because a default created it is one nothing refers to.
+	GeneratedVersion bool
 }
 
 // DirectoryPushResult describes the immutable version written by a push.
@@ -67,7 +75,7 @@ func PushDirectory(ctx context.Context, opts DirectoryPushOptions) (DirectoryPus
 	}
 	result, err := Push(ctx, client, opts.Reference, prepared.FileSystem, PushOptions{
 		Tags:          prepared.Tags,
-		WriteOnceTags: []string{prepared.Version},
+		WriteOnceTags: prepared.writeOnceTags(),
 		DirFormat:     opts.DirFormat,
 	})
 	if err != nil {
@@ -93,7 +101,7 @@ func PushDirectoryTo(
 	}
 	result, err := PushTo(ctx, target, prepared.FileSystem, PushOptions{
 		Tags:          prepared.Tags,
-		WriteOnceTags: []string{prepared.Version},
+		WriteOnceTags: prepared.writeOnceTags(),
 		DirFormat:     opts.DirFormat,
 	})
 	if err != nil {
@@ -175,17 +183,39 @@ func prepareDirectory(
 		}
 	}
 	version := opts.Version
-	if version == "" {
+	if version == "" && opts.GeneratedVersion {
 		now := opts.Now
 		if now == nil {
 			now = time.Now
 		}
 		version = VersionTag(now())
 	}
+	tags := append([]string{}, opts.Tags...)
+	if opts.Latest {
+		tags = append(tags, ociartifact.DefaultTag)
+	}
+	// The tag the reference named is the tag that was asked for, and it
+	// belongs on the artifact whichever path published it. Client.Push adds it
+	// too and the duplicate collapses; a push straight to a target has no
+	// other way to learn it, and without this it would write an artifact
+	// nothing but a digest can address.
+	if ref, err := ociartifact.ParseRef(opts.Reference); err == nil && !ref.IsDigest() {
+		tags = append(tags, ref.Selector())
+	}
 	return preparedDirectory{
 		FileSystem: fsys,
 		Directory:  directory,
 		Version:    version,
-		Tags:       append(append([]string{}, opts.Tags...), ociartifact.DefaultTag),
+		Tags:       tags,
 	}, nil
+}
+
+// writeOnceTags is the version tag when there is one. A push that generated no
+// version has nothing to protect from being moved, and passing an empty string
+// would make the write-once check refuse a tag nobody named.
+func (p preparedDirectory) writeOnceTags() []string {
+	if p.Version == "" {
+		return nil
+	}
+	return []string{p.Version}
 }

@@ -30,10 +30,12 @@ func TestPushDirectoryTo_HappyPath(t *testing.T) {
 		context.Background(),
 		store,
 		migrationartifact.DirectoryPushOptions{
-			Reference: "oci://example.invalid/acme/migrations",
-			Directory: dir,
-			Tags:      []string{"stable"},
-			DirFormat: migrator.MigrationDirFormatPtah,
+			Reference:        "oci://example.invalid/acme/migrations",
+			Directory:        dir,
+			Tags:             []string{"stable"},
+			DirFormat:        migrator.MigrationDirFormatPtah,
+			Latest:           true,
+			GeneratedVersion: true,
 			Now: func() time.Time {
 				return time.Date(2026, time.July, 27, 12, 35, 19, 0, time.UTC)
 			},
@@ -46,6 +48,39 @@ func TestPushDirectoryTo_HappyPath(t *testing.T) {
 	pulled, err := migrationartifact.PullFrom(context.Background(), store, "latest")
 	c.Assert(err, qt.IsNil)
 	c.Assert(fstest.TestFS(pulled.FileSystem, "0000000001_create_users.up.sql"), qt.IsNil)
+}
+
+// TestPushDirectoryTo_WritesOnlyTheTagItWasGiven pins the default. A publish
+// and an alias move are two operations, and a publish that also moved latest
+// was promoting whatever had just been built without being asked. The version
+// tag is opt-in for the same reason: one that exists only because a default
+// created it is a tag nothing refers to.
+func TestPushDirectoryTo_WritesOnlyTheTagItWasGiven(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	c.Assert(os.WriteFile(
+		filepath.Join(dir, "0000000001_create_users.up.sql"),
+		[]byte("CREATE TABLE users (id INTEGER);\n"),
+		0o600,
+	), qt.IsNil)
+	store := memory.New()
+
+	result, err := migrationartifact.PushDirectoryTo(
+		context.Background(),
+		store,
+		migrationartifact.DirectoryPushOptions{
+			Reference: "oci://example.invalid/acme/migrations:release",
+			Directory: dir,
+			DirFormat: migrator.MigrationDirFormatPtah,
+		},
+	)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Version, qt.Equals, "",
+		qt.Commentf("no version was asked for, so none was invented"))
+	c.Assert(result.Tags, qt.DeepEquals, []string{"release"})
+	_, err = migrationartifact.PullFrom(context.Background(), store, "latest")
+	c.Assert(err, qt.IsNotNil, qt.Commentf("latest must not have been moved onto this push"))
 }
 
 func TestPushDirectoryTo_FailurePath(t *testing.T) {

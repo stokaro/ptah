@@ -40,6 +40,12 @@ type PushOptions struct {
 	PlainHTTP   bool
 	Now         func() time.Time
 	Annotations map[string]string
+	// Latest moves the latest alias onto this push, and GeneratedVersion
+	// writes a timestamped version tag when Version names none. Both are
+	// opt-in: a publish and an alias move are two operations, and doing both
+	// by default makes every publish a promotion nobody asked for.
+	Latest           bool
+	GeneratedVersion bool
 }
 
 // PushResult describes a published immutable schema artifact.
@@ -133,7 +139,7 @@ func PushTo(
 		ArtifactType:   ociartifact.SchemaArtifactType,
 		LayerMediaType: LayerMediaType,
 		Tags:           prepared.Tags,
-		WriteOnceTags:  []string{prepared.Version},
+		WriteOnceTags:  prepared.writeOnceTags(),
 		Annotations:    prepared.Annotations,
 	})
 	if err != nil {
@@ -157,7 +163,7 @@ func push(
 		ArtifactType:   ociartifact.SchemaArtifactType,
 		LayerMediaType: LayerMediaType,
 		Tags:           prepared.Tags,
-		WriteOnceTags:  []string{prepared.Version},
+		WriteOnceTags:  prepared.writeOnceTags(),
 		Annotations:    prepared.Annotations,
 	})
 	if err != nil {
@@ -234,14 +240,17 @@ func prepare(
 		return preparedPush{}, err
 	}
 	version := opts.Version
-	if version == "" {
+	if version == "" && opts.GeneratedVersion {
 		now := opts.Now
 		if now == nil {
 			now = time.Now
 		}
 		version = ociartifact.VersionTag(now())
 	}
-	tags := append(append([]string{}, opts.Tags...), ociartifact.DefaultTag)
+	tags := append([]string{}, opts.Tags...)
+	if opts.Latest {
+		tags = append(tags, ociartifact.DefaultTag)
+	}
 	annotations := maps.Clone(opts.Annotations)
 	if annotations == nil {
 		annotations = make(map[string]string)
@@ -320,4 +329,14 @@ func writeExclusive(output string, contents []byte) error {
 		return fmt.Errorf("close schema artifact output: %w", err)
 	}
 	return nil
+}
+
+// writeOnceTags is the version tag when there is one. A push that generated no
+// version has nothing to protect from being moved, and passing an empty string
+// would make the write-once check refuse a tag nobody named.
+func (p preparedPush) writeOnceTags() []string {
+	if p.Version == "" {
+		return nil
+	}
+	return []string{p.Version}
 }
