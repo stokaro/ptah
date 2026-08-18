@@ -100,6 +100,49 @@ behind in the source repository — the promotion succeeds and silently loses th
 evidence it was promoted on. A digest destination is refused: a digest names
 content that already exists, so there is nothing for a copy to create there.
 
+## Reaching a private registry
+
+A registry with its own certificate authority needs one setting, and without it
+every OCI verb answers with a TLS error that names a certificate rather than a
+configuration:
+
+| Variable | What it carries |
+| --- | --- |
+| `PTAH_OCI_CA_FILE` | A PEM bundle trusted **in addition to** the system roots |
+| `PTAH_OCI_CLIENT_CERT` | The certificate presented for mutual TLS |
+| `PTAH_OCI_CLIENT_KEY` | Its private key |
+
+The authority is added to the system roots rather than replacing them: naming
+an internal authority means "trust this as well", and replacing the pool would
+break every other registry the same run talks to, as a failure that names no
+cause. The mutual-TLS pair must be complete — setting one without the other is
+refused, because half a credential authenticates nothing and the run would
+otherwise fail later at the registry with an error about authorization rather
+than about configuration.
+
+There is no password setting and there will not be one. A credential passed on
+a command line lands in shell history and in the process list of every user on
+the machine. Credentials come from the Docker credential store, which already
+exists on any machine that can pull an image.
+
+## What a published artifact records about itself
+
+A digest says two artifacts are the same bytes. It does not say which commit
+they came from, which pipeline ran, or which Ptah wrote them — the questions
+asked when a deployment is being explained rather than performed. Every push
+records what the run knows:
+
+| Annotation | Source |
+| --- | --- |
+| `org.opencontainers.image.source` | `PTAH_OCI_SOURCE`, else the GitHub server and repository |
+| `org.opencontainers.image.revision` | `PTAH_OCI_REVISION`, else `GITHUB_SHA` |
+| `io.stokaro.ptah.build-run` | `PTAH_OCI_BUILD_RUN`, else `GITHUB_RUN_ID` |
+| `io.stokaro.ptah.version` | The publishing Ptah's own version |
+
+Read them back with `ptah oci inspect`. A value the command was given always
+wins over one inferred from the environment: the caller knows what it is
+publishing, and the environment only knows what ran.
+
 ## Choosing how referrers are published
 
 Two mechanisms make an attachment discoverable and they do not have the same

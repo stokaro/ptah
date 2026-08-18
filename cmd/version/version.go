@@ -4,8 +4,8 @@ package version
 import (
 	"github.com/spf13/cobra"
 
-	"go.5x5.cz/ptah/cmd/internal/buildinfo"
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
+	"go.5x5.cz/ptah/internal/buildinfo"
 )
 
 // NewVersionCommand returns the version-reporting command.

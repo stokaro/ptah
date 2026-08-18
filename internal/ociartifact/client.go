@@ -2,6 +2,7 @@ package ociartifact
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"io/fs"
 	"net"
@@ -33,6 +34,11 @@ type ClientOptions struct {
 	// OperationTimeout bounds each registry operation and credential-helper
 	// lookup. The default is two minutes.
 	OperationTimeout time.Duration
+	// Transport configures how this client reaches the registry: an additional
+	// certificate authority and a mutual-TLS client credential. The zero value
+	// is read from the environment, so every OCI consumer in a run shares one
+	// configuration without each command growing its own flags.
+	Transport TransportOptions
 	// ReferrerPolicy decides how attachments made through this client are made
 	// discoverable. It sits here rather than on each attachment because it is
 	// a property of how this run talks to its registry, like PlainHTTP, and
@@ -46,6 +52,7 @@ type ClientOptions struct {
 type Client struct {
 	options ClientOptions
 	store   credentials.Store
+	tls     *tls.Config
 }
 
 // NewClient creates a client backed by Docker's credential configuration.
@@ -54,6 +61,13 @@ func NewClient(opts ClientOptions) (*Client, error) {
 	store, err := credentials.NewStoreFromDocker(credentials.StoreOptions{})
 	if err != nil {
 		return nil, fmt.Errorf("open Docker credential store: %w", err)
+	}
+	if !opts.Transport.configured() {
+		opts.Transport = TransportFromEnvironment()
+	}
+	tlsConfig, err := opts.Transport.tlsConfig()
+	if err != nil {
+		return nil, err
 	}
 	if opts.ReferrerPolicy == "" {
 		policy, err := ParseReferrerPolicy(os.Getenv(ReferrerPolicyEnv))
@@ -66,7 +80,7 @@ func NewClient(opts ClientOptions) (*Client, error) {
 	if opts.OperationTimeout <= 0 {
 		opts.OperationTimeout = defaultOperationTimeout
 	}
-	return &Client{options: opts, store: store}, nil
+	return &Client{options: opts, store: store, tls: tlsConfig}, nil
 }
 
 // NewRepository creates an authenticated ORAS repository client using Docker
@@ -115,6 +129,7 @@ func (c *Client) Push(ctx context.Context, rawRef string, fsys fs.FS, opts PushO
 	if err != nil {
 		return PushResult{}, err
 	}
+	opts.Annotations = withProvenance(opts.Annotations)
 	opts.Tags = append(opts.Tags, ref.Selector(), DefaultTag)
 	opts.Limits = mergeLimits(opts.Limits, c.options.Limits)
 	result, err := PushTo(ctx, repository, fsys, opts)
@@ -157,7 +172,7 @@ func (c *Client) repository(ref Reference) (*remote.Repository, error) {
 	repository.ReferrerListMaxPages = c.options.Limits.ReferrerPages
 	repository.TagListMaxPages = c.options.Limits.ReferrerPages
 	repository.Client = &auth.Client{
-		Client:     newHTTPClient(c.options.OperationTimeout),
+		Client:     newHTTPClient(c.options.OperationTimeout, c.tls),
 		Cache:      auth.NewCache(),
 		Credential: c.credential,
 	}
@@ -187,8 +202,15 @@ func (c *Client) credential(ctx context.Context, hostport string) (auth.Credenti
 	return credentials.Credential(c.store)(ctx, hostport)
 }
 
-func newHTTPClient(operationTimeout time.Duration) *http.Client {
-	if _, standardRetryTransport := retry.DefaultClient.Transport.(*retry.Transport); !standardRetryTransport {
+// newHTTPClient builds the transport every registry request travels on.
+//
+// A configured TLS setting always takes the second branch. The first exists so
+// a test that replaced the shared retry transport keeps its substitution, and
+// honoring that ahead of an operator's certificate authority would drop the one
+// piece of configuration whose absence they would then see only as an
+// unexplained TLS failure.
+func newHTTPClient(operationTimeout time.Duration, tlsConfig *tls.Config) *http.Client {
+	if _, standardRetryTransport := retry.DefaultClient.Transport.(*retry.Transport); !standardRetryTransport && tlsConfig == nil {
 		client := *retry.DefaultClient
 		client.Timeout = operationTimeout
 		return &client
@@ -204,6 +226,9 @@ func newHTTPClient(operationTimeout time.Duration) *http.Client {
 	transport.ResponseHeaderTimeout = defaultResponseHeaderTimeout
 	transport.IdleConnTimeout = defaultIdleConnectionTimeout
 	transport.ExpectContinueTimeout = time.Second
+	if tlsConfig != nil {
+		transport.TLSClientConfig = tlsConfig
+	}
 	return &http.Client{
 		Transport: retry.NewTransport(transport),
 		Timeout:   operationTimeout,
