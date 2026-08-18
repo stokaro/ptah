@@ -288,7 +288,18 @@ func TestFlywayDirtyOpaqueStatusCurrentMatchesFailedExactToken(t *testing.T) {
 	c.Assert(compatStatus.stdout, qt.Contains, "-- Next Version:    x (1 statements left)")
 }
 
-func TestFlywayCrossToolReuseKeepsIdentityAndRefusesChecksumEncoding(t *testing.T) {
+// TestFlywayCrossToolReuseContinuesEitherHistory pins the outcome
+// stokaro/ptah#1209 exists for: a Flyway revision history written by either
+// binary is continued by the other with no hand-over step.
+//
+// Before that issue this direction was asymmetric. Ptah read a history the
+// community binary wrote, agreed about every identity, and then refused to
+// apply into it with a checksum mismatch: the community binary stores the
+// atlas.sum h1, Ptah stored the hex SHA-256 of the up SQL, because converting a
+// Flyway directory rebuilds it with no integrity file and the source hash was
+// dropped on the way. The refusal was the safe answer to a question that should
+// never have been asked.
+func TestFlywayCrossToolReuseContinuesEitherHistory(t *testing.T) {
 	oracle := requireAtlasOracle(t)
 	c := qt.New(t)
 	compat := buildCompatBinary(c)
@@ -376,20 +387,21 @@ func TestFlywayRepeatableBodyChangeRemainsSettled(t *testing.T) {
 	}
 }
 
+// assertCrossToolReuseResult requires the same answer in both directions: the
+// second binary has nothing to do, and says so.
+//
+// It takes the direction so a future asymmetry has somewhere to be written
+// down, and asserts the direction is one it knows rather than passing an
+// unrecognized one silently.
 func assertCrossToolReuseResult(c *qt.C, direction string, result commandResult) {
 	c.Helper()
-	switch direction {
-	case "Atlas CE then Ptah":
-		c.Assert(result.code, qt.Equals, 1, qt.Commentf("stdout: %s\nstderr: %s", result.stdout, result.stderr))
-		c.Assert(result.stdout, qt.Equals, "")
-		c.Assert(result.stderr, qt.Contains, "checksum mismatch")
-	case "Ptah then Atlas CE":
-		c.Assert(result.code, qt.Equals, 0, qt.Commentf("stdout: %s\nstderr: %s", result.stdout, result.stderr))
-		c.Assert(result.stdout, qt.Equals, "No migration files to execute\n")
-		c.Assert(result.stderr, qt.Equals, "")
-	default:
-		c.Fatalf("unknown cross-tool direction %q", direction)
-	}
+	c.Assert(
+		direction == "Atlas CE then Ptah" || direction == "Ptah then Atlas CE",
+		qt.IsTrue, qt.Commentf("unknown cross-tool direction %q", direction),
+	)
+	c.Assert(result.code, qt.Equals, 0, qt.Commentf("stdout: %s\nstderr: %s", result.stdout, result.stderr))
+	c.Assert(result.stdout, qt.Equals, "No migration files to execute\n")
+	c.Assert(result.stderr, qt.Equals, "")
 }
 
 func TestFlywayMigrateSetMatchesAtlasCE(t *testing.T) {
@@ -991,4 +1003,197 @@ func requireAtlasOracle(t *testing.T) string {
 		t.Fatalf("%s=%s reports %q, want %q", oracleEnv, oracle, strings.TrimSpace(got), oracleVersion)
 	}
 	return oracle
+}
+
+// TestFlywayContinuesAtlasCEHistoryWithoutHandover walks the whole user flow
+// stokaro/ptah#1209 describes, in one test, for every interoperable token
+// shape: the community binary applies a directory, Ptah continues it, and the
+// community binary reads the result back.
+//
+// The steps are the issue's own numbered definition of done. The one worth
+// naming is step 4: `migrate apply` with nothing pending has to be a clean
+// no-op rather than a refusal, because that is the state a user lands in the
+// moment they point Ptah at an existing database, and a refusal there is what
+// used to force `migrate set`.
+//
+// The last step is the reverse direction the issue calls desirable rather than
+// required. It is asserted rather than merely recorded: a history Ptah appended
+// to stays readable by the binary that started it.
+func TestFlywayContinuesAtlasCEHistoryWithoutHandover(t *testing.T) {
+	oracle := requireAtlasOracle(t)
+	c := qt.New(t)
+	compat := buildCompatBinary(c)
+
+	for _, test := range linearlyExtendableIdentityCases() {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			dir := writeHashedFlywayDir(c, oracle, test.files)
+			dbPath := filepath.Join(c.TempDir(), "handover.db")
+
+			// 1-3: the community binary applies the directory, and Ptah reads
+			// every one of its migrations back as already applied.
+			assertSQLiteApplyIdentity(c, oracle, dir, dbPath, test.wantRows)
+			applied := readSQLiteRevisionRows(c, dbPath)
+
+			// 4: nothing pending, so nothing runs and nothing is rewritten.
+			settled := runCommand(c, compat,
+				"migrate", "apply", "--dir", "file://"+dir+"?format=flyway", "--url", "sqlite://"+dbPath)
+			c.Assert(settled.code, qt.Equals, 0,
+				qt.Commentf("stdout: %s\nstderr: %s", settled.stdout, settled.stderr))
+			c.Assert(settled.stdout, qt.Equals, "No migration files to execute\n")
+			c.Assert(readSQLiteRevisionRows(c, dbPath), qt.DeepEquals, applied)
+
+			// 5-6: a new migration is added, and Ptah applies only that one.
+			appended := append(slices.Clone(test.files), migrationFile{
+				name: "V9000__handover_appended.sql",
+				body: "CREATE TABLE handover_appended (id INTEGER PRIMARY KEY);\n",
+			})
+			extended := writeHashedFlywayDir(c, oracle, appended)
+			applyNew := runCommand(c, compat,
+				"migrate", "apply", "--dir", "file://"+extended+"?format=flyway", "--url", "sqlite://"+dbPath)
+			c.Assert(applyNew.code, qt.Equals, 0,
+				qt.Commentf("stdout: %s\nstderr: %s", applyNew.stdout, applyNew.stderr))
+			c.Assert(applyNew.stdout, qt.Contains, "1 pending migrations")
+			c.Assert(readSQLiteRevisionRows(c, dbPath), qt.HasLen, len(applied)+1)
+
+			// 7: and a second apply performs no SQL.
+			again := runCommand(c, compat,
+				"migrate", "apply", "--dir", "file://"+extended+"?format=flyway", "--url", "sqlite://"+dbPath)
+			c.Assert(again.code, qt.Equals, 0,
+				qt.Commentf("stdout: %s\nstderr: %s", again.stdout, again.stderr))
+			c.Assert(again.stdout, qt.Equals, "No migration files to execute\n")
+
+			// 8, and the reverse direction: the community binary still reads
+			// the history Ptah extended, and has nothing of its own to do.
+			back := runCommand(c, oracle,
+				"migrate", "apply", "--dir", "file://"+extended+"?format=flyway", "--url", "sqlite://"+dbPath)
+			c.Assert(back.code, qt.Equals, 0,
+				qt.Commentf("stdout: %s\nstderr: %s", back.stdout, back.stderr))
+			c.Assert(back.stdout, qt.Equals, "No migration files to execute\n")
+		})
+	}
+}
+
+// linearlyExtendableIdentityCases are the fixtures a strictly greater numeric
+// token can be appended to.
+//
+// They are exactly the three shapes stokaro/ptah#1209's definition of done
+// names: a plain numeric token, a dotted one, and a zero-padded one. The others
+// are excluded because appending to them tests linearity rather than
+// continuation -- a directory whose newest token is non-numeric, or which holds
+// only a repeatable, treats any numeric append as out of order, and BOTH
+// binaries refuse it with an exec-order diagnostic that has nothing to do with
+// which history wrote the rows.
+//
+// Steps 1 to 4 and the reverse-readability step are covered for every shape by
+// [TestFlywayCrossToolReuseContinuesEitherHistory]; only the append half is
+// narrowed here.
+func linearlyExtendableIdentityCases() []identityCase {
+	extendable := []string{"plain", "dotted", "zero padded"}
+	return slices.DeleteFunc(interoperableIdentityCases(), func(test identityCase) bool {
+		return !slices.Contains(extendable, test.name)
+	})
+}
+
+// TestFlywayOutOfOrderInsertionStaysRefusedOnBothSides is the narrowing the
+// issue permits, measured rather than assumed.
+//
+// An atlas.sum h1 is a CUMULATIVE chain over every preceding file, so inserting
+// a migration between two applied ones silently changes the recorded hash of
+// everything after it. Measured: with V1 and V3 applied, adding V2 moves V3's
+// h1, and the row the community binary wrote keeps the pre-insert value.
+//
+// Neither binary continues from there, so this is not a compatibility gap and
+// nothing here should be widened to accept it. They refuse for different
+// stated reasons, which is worth pinning: the community binary names the
+// out-of-order file, and Ptah reports the checksum the chain moved.
+func TestFlywayOutOfOrderInsertionStaysRefusedOnBothSides(t *testing.T) {
+	oracle := requireAtlasOracle(t)
+	c := qt.New(t)
+	compat := buildCompatBinary(c)
+
+	dir := writeHashedFlywayDir(c, oracle, []migrationFile{
+		{name: "V1__ooo_first.sql", body: "CREATE TABLE ooo_first (id INTEGER PRIMARY KEY);\n"},
+		{name: "V3__ooo_third.sql", body: "CREATE TABLE ooo_third (id INTEGER PRIMARY KEY);\n"},
+	})
+	dbPath := filepath.Join(c.TempDir(), "out-of-order.db")
+	assertSQLiteApplyIdentity(c, oracle, dir, dbPath, []revisionRow{
+		{Version: "1", Description: "ooo_first"},
+		{Version: "3", Description: "ooo_third"},
+	})
+	before := readSQLiteRevisionRows(c, dbPath)
+
+	c.Assert(os.WriteFile(filepath.Join(dir, "V2__ooo_second.sql"),
+		[]byte("CREATE TABLE ooo_second (id INTEGER PRIMARY KEY);\n"), 0o600), qt.IsNil)
+	rehash := runCommand(c, oracle, "migrate", "hash", "--dir", "file://"+dir+"?format=flyway")
+	c.Assert(rehash.code, qt.Equals, 0, qt.Commentf("stdout: %s\nstderr: %s", rehash.stdout, rehash.stderr))
+
+	for _, binary := range []struct {
+		name   string
+		path   string
+		reason string
+	}{
+		{name: "Atlas CE", path: oracle, reason: "out of order"},
+		{name: "Ptah", path: compat, reason: "checksum mismatch"},
+	} {
+		t.Run(binary.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			result := runCommand(c, binary.path,
+				"migrate", "apply", "--dir", "file://"+dir+"?format=flyway", "--url", "sqlite://"+dbPath)
+
+			c.Assert(result.code, qt.Equals, 1,
+				qt.Commentf("stdout: %s\nstderr: %s", result.stdout, result.stderr))
+			c.Assert(result.stderr, qt.Contains, binary.reason)
+			c.Assert(readSQLiteRevisionRows(c, dbPath), qt.DeepEquals, before)
+		})
+	}
+}
+
+// TestFlywayEditedAppliedFileStaysRefusedAfterCEWroteIt is the control on
+// stokaro/ptah#1209: accepting the community binary's checksum encoding must
+// not accept a file whose bytes changed after it ran.
+//
+// The two are easy to conflate, because both surface as the same message. The
+// difference is which side moved. A CE-written row holds the source atlas.sum
+// h1 for bytes that are still on disk, and continuing from it is the point of
+// #1209. An edited applied file has neither hash: the source h1 moved with the
+// edit and the content digest never matched. Ptah refuses, and that refusal is
+// the deliberate divergence documented in the retained-divergences page — the
+// community binary records the checksum without comparing it, so the same edit
+// is a no-op there.
+func TestFlywayEditedAppliedFileStaysRefusedAfterCEWroteIt(t *testing.T) {
+	oracle := requireAtlasOracle(t)
+	c := qt.New(t)
+	compat := buildCompatBinary(c)
+
+	dir := writeHashedFlywayDir(c, oracle, []migrationFile{
+		{name: "V1__edited.sql", body: "CREATE TABLE edited_applied (id INTEGER PRIMARY KEY);\n"},
+	})
+	dbPath := filepath.Join(c.TempDir(), "edited.db")
+	assertSQLiteApplyIdentity(c, oracle, dir, dbPath, []revisionRow{
+		{Version: "1", Description: "edited"},
+	})
+	before := readSQLiteRevisionRows(c, dbPath)
+
+	c.Assert(os.WriteFile(filepath.Join(dir, "V1__edited.sql"),
+		[]byte("CREATE TABLE edited_applied (id INTEGER PRIMARY KEY, note TEXT);\n"), 0o600), qt.IsNil)
+	rehash := runCommand(c, oracle, "migrate", "hash", "--dir", "file://"+dir+"?format=flyway")
+	c.Assert(rehash.code, qt.Equals, 0, qt.Commentf("stdout: %s\nstderr: %s", rehash.stdout, rehash.stderr))
+
+	refused := runCommand(c, compat,
+		"migrate", "apply", "--dir", "file://"+dir+"?format=flyway", "--url", "sqlite://"+dbPath)
+
+	c.Assert(refused.code, qt.Equals, 1,
+		qt.Commentf("stdout: %s\nstderr: %s", refused.stdout, refused.stderr))
+	c.Assert(refused.stderr, qt.Contains, "checksum mismatch")
+	c.Assert(readSQLiteRevisionRows(c, dbPath), qt.DeepEquals, before)
+
+	// The divergence half: the community binary records the checksum without
+	// comparing it, so the same edited directory is a no-op there.
+	accepted := runCommand(c, oracle,
+		"migrate", "apply", "--dir", "file://"+dir+"?format=flyway", "--url", "sqlite://"+dbPath)
+	c.Assert(accepted.code, qt.Equals, 0,
+		qt.Commentf("stdout: %s\nstderr: %s", accepted.stdout, accepted.stderr))
+	c.Assert(accepted.stdout, qt.Equals, "No migration files to execute\n")
 }

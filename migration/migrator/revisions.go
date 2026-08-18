@@ -191,6 +191,14 @@ func revisionChecksumMatches(stored string, migration *Migration) bool {
 	if stored == migrationRevisionHash(migration) {
 		return true
 	}
+	// A history the Atlas community binary wrote stores the source directory's
+	// atlas.sum h1. Converting a foreign layout drops that file, so the hash
+	// arrives out of band and is accepted here rather than becoming the
+	// migration's own checksum (stokaro/ptah#1209).
+	if migration.sourceRevisionHash != "" &&
+		stored == normalizeAtlasRevisionHash(migration.sourceRevisionHash) {
+		return true
+	}
 	return migration.Checksum != "" && stored == migrationChecksum(migration.UpSQL)
 }
 

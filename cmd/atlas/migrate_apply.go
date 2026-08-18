@@ -374,6 +374,7 @@ func runAtlasMigrateApplyTarget(
 		OutOfOrderExempt:         linearity.outOfOrderExempt,
 		SourceVersions:           linearity.sourceVersions,
 		RevisionVersions:         linearity.sourceVersions,
+		RevisionChecksums:        linearity.sourceChecksums,
 		RevisionTypes:            linearity.revisionTypes,
 		RepeatableVersions:       linearity.repeatableVersions,
 		TxMode:                   txMode,
@@ -953,6 +954,7 @@ type flywayLinearity struct {
 	baseline           *atlasmigrateimport.FlywayBaseline
 	outOfOrderExempt   []int64
 	sourceVersions     map[int64]string
+	sourceChecksums    map[int64]string
 	revisionTypes      map[int64]migrator.AtlasRevisionType
 	repeatableVersions []int64
 }
@@ -973,6 +975,10 @@ func flywayLinearityOperands(
 		}
 	}
 	operands.sourceVersions, err = atlasmigrateimport.FlywaySourceVersions(captured, format)
+	if err != nil {
+		return flywayLinearity{}, err
+	}
+	operands.sourceChecksums, err = atlasmigrateimport.FlywaySourceChecksums(captured, format)
 	if err != nil {
 		return flywayLinearity{}, err
 	}

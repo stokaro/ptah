@@ -74,8 +74,21 @@ table whose collation aliases two covered tokens, such as `A` and `a`, is
 refused before migration SQL runs rather than applying one body and failing on
 the second primary-key write.
 
-Atlas CE accepts a Ptah-written exact-token history. Ptah refuses a CE-written
-row when its different per-revision checksum encoding cannot be verified. A
+Atlas CE accepts a Ptah-written exact-token history, and Ptah continues a
+CE-written one. Each side records a different per-revision checksum:
+
+- CE stores the source directory's `atlas.sum` h1.
+- Ptah stores the digest of the migration body.
+
+Ptah accepts either when verifying a row, so an existing CE-managed Flyway
+database needs no `migrate set` or revision-table rewrite before Ptah applies
+the next migration. Ptah keeps writing its own encoding for rows it adds,
+because an `atlas.sum` h1 chains over every preceding file and a history keyed
+on it stops verifying whenever an unrelated migration is inserted ahead of it.
+A file edited after it was applied is still refused, since neither checksum
+matches bytes that changed.
+
+A
 same-token `V2`/`B2` row is also refused when CE's ordinary applied type cannot
 prove which byte-identical source ran; Ptah's own executed-baseline marker still
 renders as `applied` and does not create `--baseline` boundary semantics. A

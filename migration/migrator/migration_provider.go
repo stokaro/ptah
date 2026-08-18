@@ -68,15 +68,16 @@ func (p *RegisteredMigrationProvider) maybeSortLocked() {
 // It scans the filesystem for migration files following the naming convention and
 // automatically creates Migration instances from the SQL files.
 type FSMigrationProvider struct {
-	mu                    sync.Mutex
-	fsys                  fs.FS
-	migrations            []*Migration
-	hooks                 statementExecutionHooks
-	format                MigrationDirFormat
-	atlasTemplateData     any
-	atlasRevisionVersions map[int64]string
-	atlasRevisionTypes    map[int64]AtlasRevisionType
-	atlasRepeatable       map[int64]bool
+	mu                     sync.Mutex
+	fsys                   fs.FS
+	migrations             []*Migration
+	hooks                  statementExecutionHooks
+	format                 MigrationDirFormat
+	atlasTemplateData      any
+	atlasRevisionVersions  map[int64]string
+	atlasRevisionChecksums map[int64]string
+	atlasRevisionTypes     map[int64]AtlasRevisionType
+	atlasRepeatable        map[int64]bool
 }
 
 // FSProviderOption configures a FSMigrationProvider before it loads
@@ -144,6 +145,26 @@ func WithAtlasTemplateData(data any) FSProviderOption {
 func WithAtlasRevisionVersions(versions map[int64]string) FSProviderOption {
 	return func(p *FSMigrationProvider) {
 		p.atlasRevisionVersions = maps.Clone(versions)
+	}
+}
+
+// WithAtlasRevisionChecksums supplies the h1 hash the SOURCE directory's
+// atlas.sum recorded for each converted execution-order key, so a revision row
+// carries the checksum the source history uses rather than one recomputed from
+// the converted bytes.
+//
+// Converting a foreign layout rebuilds it as up-only Atlas migrations with no
+// integrity file, so without this the migration has no Checksum and
+// [migrationRevisionHash] falls back to the hex SHA-256 of the up SQL. A
+// history the Atlas community binary wrote stores the atlas.sum h1 instead, and
+// the two never compare equal, which is what stopped Ptah continuing such a
+// history (stokaro/ptah#1209).
+//
+// Keys absent from checksums keep the pre-existing behavior, so a directory
+// with no atlas.sum and every Ptah-written history are unaffected.
+func WithAtlasRevisionChecksums(checksums map[int64]string) FSProviderOption {
+	return func(p *FSMigrationProvider) {
+		p.atlasRevisionChecksums = maps.Clone(checksums)
 	}
 }
 
@@ -326,9 +347,7 @@ func (p *FSMigrationProvider) loadAtlas(files []MigrationFile) error {
 			}
 			partsByRevision[revisionVersion] = parts
 		}
-		if hash := hashes[migrationFile.Path]; hash != "" && migrationFile.Direction == "up" {
-			parts.migration.Checksum = hash
-		}
+		p.recordAtlasHashes(parts.migration, migrationFile, hashes[migrationFile.Path], runtimeVersion)
 		raw, err := fs.ReadFile(p.fsys, migrationFile.Path)
 		if err != nil {
 			return fmt.Errorf("failed to read Atlas checksum source %s: %w", migrationFile.Path, err)
@@ -387,6 +406,36 @@ func atlasRuntimeVersion(file MigrationFile, maxVersion int64) int64 {
 		return file.Version
 	}
 	return maxVersion + 1
+}
+
+// recordAtlasHashes attaches the two checksums a converted migration can carry.
+//
+// They are different things and are deliberately kept apart. sumHash is what
+// THIS directory's own atlas.sum records, and it becomes the migration's
+// checksum: it is what Ptah writes into a revision row. The source hash comes
+// from the directory a foreign layout was converted FROM, whose atlas.sum the
+// conversion drops, and it is only ever an accepted value.
+//
+// Writing the source hash instead would look tidier and be wrong. An atlas.sum
+// h1 chains over every preceding file, so a Ptah history keyed on it would stop
+// verifying the moment an unrelated migration was inserted ahead of it -- a
+// shape Ptah supports and its mid-sequence-insertion tests cover
+// (stokaro/ptah#1209).
+func (p *FSMigrationProvider) recordAtlasHashes(
+	migration *Migration,
+	migrationFile MigrationFile,
+	sumHash string,
+	runtimeVersion int64,
+) {
+	if migrationFile.Direction != "up" {
+		return
+	}
+	if sumHash != "" {
+		migration.Checksum = sumHash
+	}
+	if sourceHash := p.atlasRevisionChecksums[runtimeVersion]; sourceHash != "" {
+		migration.sourceRevisionHash = sourceHash
+	}
 }
 
 func (p *FSMigrationProvider) loadAtlasFile(parts *atlasParts, migrationFile MigrationFile) error {
