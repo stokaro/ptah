@@ -90,10 +90,11 @@ same digest bytes in the URL-safe alphabet and are always usable:
     --name-format 'plan_{{ slice .ToHashSafe 0 12 }}'
 
 
-Two local sub-verbs are implemented: ` + "`new`" + ` creates a plan file for the
-transition and ` + "`validate`" + ` checks an existing plan file against it. The
-registry sub-verbs (approve, list, pull, push, rm) and the ` + "`lint`" + ` and
-` + "`test`" + ` sub-verbs remain unimplemented.`,
+Three local sub-verbs are implemented: ` + "`new`" + ` creates a plan file for the
+transition, ` + "`validate`" + ` checks an existing plan file against it, and
+` + "`lint`" + ` checks it and then reports what the migration lint rules find in
+its SQL. The registry sub-verbs (approve, list, pull, push, rm) and the
+` + "`test`" + ` sub-verb remain unimplemented.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runAtlasSchemaPlan(cmd, opts)
 		},
@@ -109,8 +110,10 @@ registry sub-verbs (approve, list, pull, push, rm) and the ` + "`lint`" + ` and
 	// Accepted as an explicit no-op: `schema plan` runs no lint step, so there
 	// is nothing for --skip-lint to skip. Refusing it would break a Pro
 	// pipeline that passes it, and honoring it cannot loosen a check that does
-	// not exist. Pinned by TestSchemaPlanSkipLintIsANoOp — if a plan linter is
-	// ever added, that test goes red and this comment stops being true.
+	// not exist. Pinned by TestSchemaPlanSkipLintIsANoOp — if this verb ever
+	// starts linting what it plans, that test goes red and this comment stops
+	// being true. `schema plan lint` is a separate verb over a saved plan file
+	// and does not put a lint step here for --skip-lint to reach.
 	flags.Bool("skip-lint", false, "Skip linting the migration plan")
 	// The remaining hosted plan flags are declared for CLI-surface parity
 	// and rejected loudly in validateAtlasSchemaPlanOptions: their behavior is
@@ -136,18 +139,18 @@ registry sub-verbs (approve, list, pull, push, rm) and the ` + "`lint`" + ` and
 	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgsHint("pass the plan name via --name"))
 	cmd.AddCommand(newAtlasSchemaPlanNewCommand())
 	cmd.AddCommand(newAtlasSchemaPlanValidateCommand())
-	// The remaining sub-verbs stay unsupported-boundary stubs, for two
-	// different reasons, and their descriptions must not blur them: approve,
-	// list, pull, push and rm take --url and arbitrate plan state in a remote
-	// registry, which the local plan-file workflow replaces; lint and test take
-	// no --url and are local, deferred only because neither has a measured
-	// contract. Describing lint or test as registry work would assert a
-	// dependency they do not have, so they keep Atlas's own descriptions. The
-	// reasons they are deferred rather than guessed are recorded on
+	cmd.AddCommand(newAtlasSchemaPlanLintCommand())
+	// The remaining sub-verbs stay unsupported-boundary stubs, and one of them
+	// is a stub for a different reason than the rest: approve, list, pull, push
+	// and rm take --url and arbitrate plan state in a remote registry, which the
+	// local plan-file workflow replaces, while test takes no --url and is local,
+	// deferred because it consumes `.test.hcl` case files nothing in this
+	// repository parses yet. Describing test as registry work would assert a
+	// dependency it does not have, so it keeps Atlas's own description. The
+	// reason it is deferred rather than guessed is recorded on
 	// unsupportedCommandTests.
 	addAtlasUnsupportedCommands(cmd, []atlasUnsupportedVerb{
 		{use: "approve", short: "Approve a plan in a remote registry"},
-		{use: "lint", short: "Run analysis (migration linting) on a plan file"},
 		{use: "list", short: "List plans in a remote registry"},
 		{use: "pull", short: "Pull a plan from a remote registry"},
 		{use: "push", short: "Push a plan to a remote registry"},

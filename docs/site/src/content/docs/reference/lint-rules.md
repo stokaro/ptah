@@ -19,6 +19,7 @@ this page, or when a row here names a rule that no longer exists.
 | `ptah migrations up` | native | blocking `DS` findings only |
 | `ptah sql lint` | native | every SQL lint rule |
 | `ptah-compat migrate lint` | compatibility | every rule marked `both` |
+| `ptah-compat schema plan lint` | compatibility | every rule marked `both` |
 | `ptah-compat schema apply` | compatibility | only what `atlas.hcl` names |
 
 Both surfaces read one registry, so a rule reaches both unless the Surface
@@ -30,6 +31,13 @@ The two apply gates are the rows to read carefully. Neither runs the whole rule
 set, so a rule appearing in the tables below is not by itself a check standing
 between an apply and a database. The migration lint section states what each
 gate does run, generated from the gates themselves.
+
+`ptah-compat schema plan lint` is a third row to read carefully, for the
+opposite reason: it runs the whole `both` set over a saved plan file's SQL, and
+then reports rather than gates. Findings there do not change the exit code
+unless `PTAH_ATLAS_PLAN_LINT_FAIL_ON_ERROR=1` asks for a threshold, so a rule
+appearing below is a check that will be *reported* on a plan, not one standing
+between that plan and a database.
 
 ## How identifiers are spelled
 

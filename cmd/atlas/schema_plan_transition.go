@@ -19,6 +19,7 @@ const (
 	atlasSchemaPlanVerb         = "atlas schema plan"
 	atlasSchemaPlanNewVerb      = "atlas schema plan new"
 	atlasSchemaPlanValidateVerb = "atlas schema plan validate"
+	atlasSchemaPlanLintVerb     = "atlas schema plan lint"
 )
 
 // atlasSchemaPlanTransitionFlags holds the schema-state transition every
@@ -29,7 +30,8 @@ const (
 // Atlas registers the same ten transition flags on `schema plan` and on each of
 // its local sub-verbs, per the published Atlas CLI reference
 // (https://atlasgo.io/cli-reference, entries "atlas schema plan",
-// "atlas schema plan new" and "atlas schema plan validate", retrieved
+// "atlas schema plan new", "atlas schema plan validate" and
+// "atlas schema plan lint", retrieved
 // 2026-08-02). Registering and refusing them in one place is what stops a
 // sub-verb from drifting away from the parent as flags land;
 // TestAtlasSchemaPlanVerbFlagSetsMatchAtlas pins each verb's registered set

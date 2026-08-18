@@ -60,24 +60,22 @@ type unsupportedCommandTest struct {
 // unsupportedCommandTests lists the compatibility verbs that remain
 // deliberate unsupported-boundary stubs. `migrate test`, `schema test`,
 // `migrate edit`, `migrate rebase`, `migrate rm`, `schema plan`,
-// `schema plan new` and `schema plan validate` are no longer here: they
-// forward to or implement native Ptah behavior (see
+// `schema plan new`, `schema plan validate` and `schema plan lint` are no
+// longer here: they forward to or implement native Ptah behavior (see
 // migrate_test_forward_test.go, schema_test_forward_test.go,
 // migrate_maint_forward_test.go, schema_plan_test.go,
-// schema_plan_new_test.go and schema_plan_validate_test.go).
+// schema_plan_new_test.go, schema_plan_validate_test.go and
+// schema_plan_lint_test.go).
 //
 // The remaining `schema plan` sub-verbs stay stubs for two different reasons.
 // approve, list, pull, push and rm arbitrate plan state in a remote registry,
-// which Ptah's local plan-file workflow replaces. lint and test are local by
-// their Atlas flag sets, but neither has a measured contract: a plan linter
-// narrower than Atlas's analyzer set would sit in a gating position and report
-// clean on a plan Atlas flags, and `plan test` consumes `.test.hcl` files that
-// nothing in this repository parses yet.
+// which Ptah's local plan-file workflow replaces. test is local by its Atlas
+// flag set and stays deferred for a reason of its own: it consumes `.test.hcl`
+// case files that nothing in this repository parses yet.
 func unsupportedCommandTests() []unsupportedCommandTest {
 	return []unsupportedCommandTest{
 		{name: "migrate_push", path: []string{"migrate", "push"}},
 		{name: "schema_plan_approve", path: []string{"schema", "plan", "approve"}},
-		{name: "schema_plan_lint", path: []string{"schema", "plan", "lint"}},
 		{name: "schema_plan_list", path: []string{"schema", "plan", "list"}},
 		{name: "schema_plan_pull", path: []string{"schema", "plan", "pull"}},
 		{name: "schema_plan_push", path: []string{"schema", "plan", "push"}},

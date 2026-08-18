@@ -348,6 +348,20 @@ directory is read and before `--dev-url` is contacted. Set it to `1` and the
 whole directory is linted instead, which is what Ptah's own linter does. Native
 `ptah migrations lint` needs no scope and ignores the variable.
 
+**`PTAH_ATLAS_PLAN_LINT_FAIL_ON_ERROR`** — by default, `ptah-compat schema plan
+lint` reports and does not gate: a plan carrying a destructive change is
+described on stdout and the command exits 0. A plan is a document an operator
+reviews and approves, and a report that refuses on their behalf is one they
+cannot approve anything with. Set it to `1` when a pipeline needs the report to
+gate, and an error-severity finding exits 1 with the report still on stdout.
+
+Either way the command states on stderr what the report covers: Ptah's rule set
+is its own and does not name every hazard a schema change can carry, so a report
+without findings describes the rules rather than the plan. It is an environment
+variable rather than a flag for the same reason the two above are — the
+conformance `cli-surface` tier asserts flag parity with the pinned binary, and an
+environment variable is invisible to the help surface.
+
 **`PTAH_HCL_MERGE_REDECLARATIONS`** — by default, an HCL schema document that
 declares one object twice is refused, naming the kind and the object. Before the
 refusal existed the second declaration was folded into the first and the run

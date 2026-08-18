@@ -17,6 +17,7 @@ plus the flag translation rules are on the
 | `ptah-compat schema inspect` | Inspects a live database, a local schema file, a migration directory, or an `env://` reference (non-database sources evaluated on the `--dev-url` dev database) and writes Atlas-shaped HCL, SQL, JSON, or custom-template output, including split/write file exports. |
 | `ptah-compat schema apply` | Diffs a desired-state source (schema files, a database URL, a migration directory, or an `env://` reference) against a live database and applies the planned SQL after confirmation. |
 | `ptah-compat schema plan` | Saves the declarative plan as a fingerprinted local plan file for a later `schema apply --plan`. |
+| `ptah-compat schema plan lint` | Verifies a saved plan file against the transition, then reports what the migration lint rules find in its SQL. |
 | `ptah-compat schema diff` | Diffs two desired-state sources (schema files, database URLs, migration directories, or `env://` references) and prints migration SQL. |
 | `ptah-compat schema fmt` | Formats local `.hcl` files using HCL canonical layout. |
 | `ptah-compat schema clean` | Plans and applies destructive cleanup of user-owned schema objects. |
@@ -1328,7 +1329,8 @@ invalid UTF-8 and empty edited plans, and recomputes safety metadata with the
 plan dialect, including MySQL and MariaDB executable comments. `--name-format` accepts a Go template over `.FromHash`
 and `.ToHash`; Ptah exposes its digest bytes in the untagged standard-Base64
 representation measured from Atlas. `--skip-lint` is
-accepted as an explicit no-op because this command has no lint step.
+accepted as an explicit no-op because this command has no lint step; linting a
+saved plan file is `schema plan lint`, below.
 
 Plan publication stages and syncs the complete document before an atomic
 rename. Default `--save` refuses an existing entry without a check/write race;
@@ -1463,6 +1465,51 @@ not applied to the target:
 error: pre-planned migration does not converge to the desired state: replaying the plan on the dev database, starting from the target's current schema, left the following schema drift against --to (the plan was not applied to the target):
 ...
 ```
+
+## Review a saved plan
+
+`ptah-compat schema plan lint` reads a saved plan file and reports what Ptah's
+migration lint rules find in its SQL. It is the review step between saving a
+plan and applying it, and it changes nothing:
+
+```bash
+ptah-compat schema plan lint \
+  --from "$DATABASE_URL" \
+  --to file://schema.sql \
+  --file file://add-orders.plan.hcl
+```
+
+```text
+Analyzing planned statements (3 in total):
+
+  -- destructive changes detected:
+    -- L3: Dropping table "orders" https://atlasgo.io/lint/analyzers#DS102
+  -- suggested fix:
+    -> Add a pre-migration check to ensure table "orders" is empty before dropping it
+
+  -------------------------
+  -- 4.9ms
+  -- 1 schema change
+  -- 1 diagnostic
+```
+
+The plan is verified first, exactly as `schema plan validate` verifies it, so a
+plan that does not describe the `--from`/`--to` transition is refused and
+nothing is analyzed. The analysis itself is the one `ptah-compat migrate lint`
+runs over a migration file holding the same SQL, `atlas:nolint` directives
+included.
+
+The command above exits 0. Findings are reported, not enforced: a plan is
+something you review and approve, so the report is the product and the exit code
+is not a verdict. Set `PTAH_ATLAS_PLAN_LINT_FAIL_ON_ERROR=1` where a pipeline
+needs it to gate, and an error-severity finding exits 1 with the report still on
+stdout.
+
+Read the report rather than the exit code either way. Ptah's rule set is its
+own and does not name every hazard a schema change can carry, so a run printing
+`-- no diagnostics found` is telling you these rules found nothing, not that the
+plan is safe. Every run repeats that on stderr, and
+[Lint rules](../../reference/lint-rules/) lists what each rule covers.
 
 ## Diff schema files
 
