@@ -132,13 +132,27 @@ Everything listed as not migrated keeps a private key that is correct for its
 own use today. The remaining work is tracked in
 [#1344](https://github.com/stokaro/ptah/issues/1344).
 
-### One known gap the model exposes
+### Routine overload identity
 
-Comparison keys a routine by schema and name without its overload signature, so
-two overloads of one name are one object to the comparator. `ID` carries
-`Signature` and the model can express the distinction; wiring it through
-comparison changes which routines pair with which, so it needs measurement
-against real catalogs rather than a refactor. It is not part of this migration.
+Comparison used to key a routine by schema and name alone, so two overloads of
+one name were one object: the second overwrote the first in the comparator's
+map. Measured, a dropped overload was reported as a MODIFICATION of the
+survivor rather than as a removal, and a new overload was never created — both
+answers wrong, both at exit 0 ([#1664](https://github.com/stokaro/ptah/issues/1664)).
+
+The signature is now consulted, and only where a name carries more than one
+routine on either side. That restriction is the safety argument rather than an
+optimization: a name with one routine on each side pairs exactly as it always
+did, so the common case cannot regress on a signature the normalizer spells
+differently from the catalog, and the case that does consult it is the one that
+was already broken.
+
+The two sides describe arguments differently — a schema declares `a int4`, the
+catalog reports `a integer` — so both are reduced by one normalizer whose job is
+to AGREE with `pg_get_function_identity_arguments` rather than to reproduce it.
+Its regression set is eleven declaration-and-identity pairs measured against
+PostgreSQL 18, including the one that corrected an assumption: the catalog keeps
+parameter names and drops the redundant `IN` mode.
 
 ### Why two consumers fold nothing
 
