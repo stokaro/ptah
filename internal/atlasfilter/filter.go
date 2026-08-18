@@ -421,6 +421,7 @@ var excludeFieldSelectors = map[string]map[string]struct{}{
 	"base_table":        {"comment": {}},
 	"view":              {"comment": {}},
 	"materialized_view": {"comment": {}},
+	"synonym":           {"comment": {}},
 }
 
 // parseFieldSelector resolves the `.field` suffix behind a type selector into
