@@ -2169,7 +2169,12 @@ func (p *Planner) addNewViewLikeObjects(result []ast.Node, diff *types.SchemaDif
 		}
 	}
 
-	for _, object := range deporder.ViewLikesForCreate(objects) {
+	// The dialect is what lets a body reference resolve through PostgreSQL's
+	// quoting rules. Without it a view referenced by its quoted qualified
+	// spelling -- `"analytics"."base"` -- matches no declaration, gains no
+	// dependency edge, and is created AFTER the view that reads it, so the plan
+	// renders cleanly and fails when it runs.
+	for _, object := range deporder.ViewLikesForCreateForDialect(objects, p.targetDialect()) {
 		if object.Materialized {
 			if view := findMaterializedView(generated.MaterializedViews, object.Name, semantics); view != nil {
 				result = append(result, fromschema.FromMaterializedView(*view))
@@ -2257,7 +2262,7 @@ func (p *Planner) modifyExistingViews(result []ast.Node, diff *types.SchemaDiff,
 		}
 	}
 
-	for _, object := range deporder.ViewLikesForCreate(recreate) {
+	for _, object := range deporder.ViewLikesForCreateForDialect(recreate, p.targetDialect()) {
 		result = p.appendViewLikeRecreate(result, generated, object, dropped, semantics)
 	}
 	return result
