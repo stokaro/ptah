@@ -15,6 +15,16 @@ import (
 // ErrBlocked reports an attempt to render a change the target cannot host.
 var ErrBlocked = errors.New("change is blocked")
 
+// ErrNotRendered reports a change in a family this prototype compares but does
+// not render.
+//
+// Policies, grants and roles are read into the canonical state and compared
+// there, because that is where their identity and their coverage rules had to
+// be settled. Rendering them is the shipping path's job until their own
+// migration lands, and a planner that quietly emitted nothing for them would
+// report a successful plan that changes none of them.
+var ErrNotRendered = errors.New("change is in a family this planner does not render")
+
 // Operation is one rendered statement and the change it came from.
 //
 // The change is carried rather than referenced by name, so a rendered statement
@@ -68,6 +78,9 @@ func Plan(changes []Change, profile schemastate.Profile) ([]PlannedOperation, er
 // two statements rather than becoming two changes, so the drop and the add
 // cannot be separated by a later stage that sees only one of them.
 func nodesFor(change Change, profile schemastate.Profile) ([]ast.Node, error) {
+	if change.ID.Kind != objectidentity.KindConstraint {
+		return nil, fmt.Errorf("%s: %w", change, ErrNotRendered)
+	}
 	switch change.Operation {
 	case Add:
 		return []ast.Node{addNode(change, profile)}, nil

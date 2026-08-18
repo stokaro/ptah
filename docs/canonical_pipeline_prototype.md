@@ -17,6 +17,16 @@ columns because a foreign key depends on their type, nullability and
 uniqueness, and nothing else because a prototype whose scope is implicit is one
 whose gaps read as answers.
 
+Three more families joined afterwards, for [#1664](https://github.com/stokaro/ptah/issues/1664):
+row-level-security policies, privilege grants, and the roles that hold them.
+They are here for a reason the first slice could not exercise. A foreign key's
+absence from a description is never ambiguous — the description is asking for it
+to go. These three are the families where absence and silence are different
+facts, and the rules that tell them apart are in
+[what the prototype found](#5-silence-and-absence-are-different-answers-for-three-families)
+below. Roles are read rather than planned: a grant removal has to ask whether
+the schema manages the role that holds it.
+
 The scope is a value on the state rather than a comment. A reader declares the
 families it looked at, and a comparison against a state that never looked at
 constraints is refused instead of reading its silence as "drop every foreign key
@@ -57,7 +67,8 @@ enforces the boundary rather than a convention.
 
 ## What the prototype found
 
-Four things, and three of them were found by a test rather than by reading.
+Six things. Three of the first four were found by a test rather than by
+reading; the last two came from the families added afterwards.
 
 ### 1. Invariant 2 is not about identifiers
 
@@ -109,6 +120,39 @@ that is not itself changing contributes no node, so the derived graph is a
 forest. The cycle diagnostic is kept — table creations order against each other,
 and that is where a cycle is reachable — and it is tested directly, because an
 unreachable guard with no test is a guard nobody has ever seen work.
+
+### 5. Silence and absence are different answers for three families
+
+The first slice's removal rule is one line: an object in the database that the
+description does not carry is one the description is asking to drop. For
+policies and grants that rule takes things away nobody asked to take away, and
+the prototype needed two more questions before a removal is planned.
+
+A description records what it **declines to describe**, and that is not the same
+as describing nothing. A description carrying `not-described policy` did not
+look at policies; reading its silence as absence drops every policy the database
+has. The prototype reports that removal as **undecidable, with a diagnostic**,
+rather than planning it or omitting it — omitting it is the dangerous answer,
+because an operator reading a plan with no policy in it cannot tell "the
+description keeps it" from "the description never looked".
+
+A grant adds a second question, about whose privilege it is. A grant held by a
+role Ptah does not manage is not Ptah's to revoke: the description was never
+describing that role's privileges. So a grant removal asks whether the desired
+schema carries the role as an object it owns, and then whether the role family
+was described at all — the same silence one level up.
+
+Each rule has an inverse control in the test set, because a model that withheld
+every removal satisfies all three withholding tests and never drops anything.
+
+### 6. A family that is compared and not rendered has to be refused
+
+`Plan` renders foreign keys. It now receives changes in families it has no
+statement for, and returning nothing for them would hand the caller a
+successful plan whose statements change no policy at all. It returns
+`ErrNotRendered` instead. The prototype settles these families' identity and
+coverage; rendering them is the shipping path's job until their own migration
+lands.
 
 ## Measurements
 
@@ -166,6 +210,31 @@ survived.** A deliberate non-mutant, whose anchor does not exist, is reported
 | Normalization runs once | Allow a second normalization; accept an unnormalized side |
 | Source spelling is rendered | Render the folded referential action |
 
+A second sweep covers the three families added for #1664. **Sixteen mutants, all
+applied, compiled and killed; none survived**, with the same deliberate
+non-mutant reported `PATCH-FAILED`.
+
+| Property | Mutant |
+| --- | --- |
+| A declined family's silence is not a removal | Drop the coverage guard on a policy removal; ignore the role family's coverage on a grant removal |
+| Withholding is not the answer to everything | Make coverage report every object undescribed; make no role look managed **(the inverse controls)** |
+| A policy belongs to its table | Build the identity schema-scoped, in each adapter separately |
+| A modification says what differs | Find no changed property |
+| A compared family is not silently unrendered | Remove the planner's refusal |
+| A grant is not Ptah's to revoke | Drop the managed-role gate |
+| A grant is a triple | Drop the privilege; drop the object; keep one privilege of a declaration naming two |
+| Both sides resolve one grant to one identity | Put a declared table in the schema slot; read a catalog schema grant as an object in a schema |
+| A partial revoke is not a grant | Read it as one |
+| The grant option is a property, not an identity | Never notice it changed |
+
+Two of those mutants survived their first pairing, and both for the same
+reason: the test they were measured against separated its two objects on a
+component the mutant did not touch. A schema grant and a table grant differ in
+the schema slot as well as the object slot, so dropping the object slot left
+them distinct; and the catalog's own target rule is invisible to a test built
+only from a description. Both got a fixture that separates the axis under test
+and nothing else.
+
 ### Determinism
 
 The whole pipeline runs twenty-four times over one input; the statements do not
@@ -200,8 +269,9 @@ criteria:
 
 ## What this does not do
 
-- No object family other than foreign keys, and none of the surrounding
-  families — tables, columns and indexes are read, not planned.
+- No object family is planned other than foreign keys. Tables, columns, indexes
+  and roles are read, not planned; policies and grants are read and compared,
+  and `Plan` refuses them rather than rendering them.
 - No source adapter other than Go annotations and the catalog. HCL and YAML
   reach `goschema.Database` first, so they are covered transitively rather than
   directly, and a native adapter for each is per-family migration work.
