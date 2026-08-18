@@ -19,6 +19,7 @@ contributor or implementation detail beyond the site.
 | `docs/site` | Human-facing documentation site and task-oriented guides. |
 | `docs/*.md` | Detailed source references for commands, config, dialects, and design. |
 | `docs/adr` | Architecture decision records: the alternatives weighed and the boundary chosen, kept so a later reader can tell a decision from an accident. |
+| `docs/architecture_boundaries.md` | The measured boundary inventory and the executable invariant set, with the baseline the gate ratchets against. |
 | `docs/canonical_pipeline_prototype.md` | What the ADR 0001 prototype measured, and what it changed about the record. |
 | `examples/*` | Runnable local examples and generated artifacts. |
 | `ptah-atlas-conformance` | External Atlas compatibility evidence and gap reports. |

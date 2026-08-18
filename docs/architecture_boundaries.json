@@ -1,0 +1,9 @@
+{
+  "comment": "Recorded architecture-boundary debt (stokaro/ptah#1344, ADR 0001 section 8 stage 0). A count may fall and may never rise. Regenerate with: go run ./internal/cmd/boundaries -update",
+  "rules": {
+    "model-imports-pipeline": 3,
+    "pipeline-builds-source-description": 4,
+    "pipeline-imports-execution": 0,
+    "renderer-imports-comparator": 0
+  }
+}

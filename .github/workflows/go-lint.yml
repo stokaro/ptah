@@ -50,6 +50,11 @@ jobs:
           scripts/check-workflow-concurrency.sh
           scripts/check-workflow-concurrency-selftest.sh
 
+      - name: Check architecture boundaries
+        run: |
+          scripts/check-architecture-boundaries.sh
+          scripts/check-architecture-boundaries-selftest.sh
+
       - name: Check documented lint rules
         run: scripts/check-lint-rules.sh
 
