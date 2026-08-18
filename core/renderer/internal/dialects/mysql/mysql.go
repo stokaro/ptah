@@ -218,6 +218,17 @@ func (r *Renderer) VisitDropView(node *ast.DropViewNode) error {
 	return r.r.VisitDropView(node)
 }
 
+// VisitCreateSynonym forwards to the shared renderer, which names the synonym
+// as unsupported.
+func (r *Renderer) VisitCreateSynonym(node *ast.CreateSynonymNode) error {
+	return r.r.VisitCreateSynonym(node)
+}
+
+// VisitDropSynonym forwards to the shared renderer.
+func (r *Renderer) VisitDropSynonym(node *ast.DropSynonymNode) error {
+	return r.r.VisitDropSynonym(node)
+}
+
 func (r *Renderer) VisitCreateMaterializedView(node *ast.CreateMaterializedViewNode) error {
 	return r.r.VisitCreateMaterializedView(node)
 }

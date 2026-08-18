@@ -1169,3 +1169,15 @@ func (r *Renderer) VisitAlterTableDisableRLS(node *ast.AlterTableDisableRLSNode)
 // The five role and privilege visitors live in rbac.go. ClickHouse has roles and
 // grants, so they render SQL rather than a diagnostic; the syntax they render,
 // and what it refuses, is documented there.
+
+// VisitCreateSynonym refuses: ClickHouse has no synonym object.
+func (r *Renderer) VisitCreateSynonym(node *ast.CreateSynonymNode) error {
+	r.notSupported("CREATE SYNONYM", node.Name)
+	return nil
+}
+
+// VisitDropSynonym refuses for the same reason.
+func (r *Renderer) VisitDropSynonym(node *ast.DropSynonymNode) error {
+	r.notSupported("DROP SYNONYM", node.Name)
+	return nil
+}

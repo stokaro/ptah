@@ -323,6 +323,35 @@ func (r *Renderer) VisitCreateView(node *ast.CreateViewNode) error {
 	return nil
 }
 
+// VisitCreateSynonym renders a CREATE SYNONYM statement.
+//
+// The target goes through the same identifier escaping as the alias. It is a
+// NAME, not a body: writing it verbatim the way a view's SELECT is written
+// would emit an unquoted identifier that breaks on the first reserved word or
+// space, and a four-part target naming a linked server would break sooner.
+func (r *Renderer) VisitCreateSynonym(node *ast.CreateSynonymNode) error {
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+	r.w.WriteLinef("CREATE SYNONYM %s FOR %s;",
+		escapeQualifiedIdentifier(node.Name), escapeQualifiedIdentifier(node.Target))
+	return nil
+}
+
+// VisitDropSynonym renders a DROP SYNONYM statement.
+func (r *Renderer) VisitDropSynonym(node *ast.DropSynonymNode) error {
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+	parts := []string{"DROP SYNONYM"}
+	if node.IfExists {
+		parts = append(parts, "IF EXISTS")
+	}
+	parts = append(parts, escapeQualifiedIdentifier(node.Name))
+	r.w.WriteLinef("%s;", strings.Join(parts, " "))
+	return nil
+}
+
 func (r *Renderer) VisitDropView(node *ast.DropViewNode) error {
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
