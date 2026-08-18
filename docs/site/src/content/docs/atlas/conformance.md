@@ -159,7 +159,10 @@ For the code-by-code status of the analyzer checks Atlas marks as Pro, see
 [Lint rules](../../reference/lint-rules/).
 The `atlas migrate ls`, `migrate show`, `schema stats`, and
 `schema validate` verbs are absent from the pinned Atlas CE v1.3.0 binary and
-are triaged in the comparison gap register rather than measured here.
+are triaged in the comparison gap register rather than measured here. Two of
+them, `migrate ls` and `migrate show`, are implemented anyway and reachable as
+`ptah-compat migrate ls` and `ptah-compat migrate show`; the strict profile that
+mirrors the pin registers neither.
 
 ### Declarative migration and schema tests
 

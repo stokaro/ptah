@@ -84,6 +84,8 @@ directory.
 | `ptah migrations up` | Run pending migrations; a hashed directory (`ptah.sum` or `atlas.sum`) verifies before anything executes, `--limit N` applies only the first N, and `--allow-dirty` explicitly requests a verified retry that skips only an unchanged committed source prefix. |
 | `ptah migrations down` | Roll back migrations. |
 | `ptah migrations status` | Show migration status. |
+| `ptah migrations ls` | List the migration files a directory holds, oldest version first, without contacting a database; `--short` collapses a reversible pair onto its version and `--latest` keeps only the newest migration. |
+| `ptah migrations show` | Print the SQL a migration directory stores, without contacting a database; repeat `--version` to print several bodies in the order asked for, and `--direction` selects which half of a reversible pair is printed. |
 | `ptah migrations repair` | Repair migration revision metadata under the migration advisory lock after a dirty or partial state; `--resume-from` verifies the committed prefix, then executes the remaining statements of whichever body left the row dirty — up statements before marking the version applied, or down statements before removing the revision. |
 | `ptah migrations hash` | Write or update migration-directory integrity. |
 | `ptah migrations validate` | Validate migration-directory integrity and, optionally, SQL execution by cleaning and replaying migrations on `--dev-url`. |
@@ -210,6 +212,8 @@ named beside it:
 | --- | --- | --- |
 | `ptah migrations up` | `--migrations-dir` | migration directory |
 | `ptah migrations status` | `--migrations-dir` | migration directory |
+| `ptah migrations ls` | `--migrations-dir` | migration directory |
+| `ptah migrations show` | `--migrations-dir` | migration directory |
 | `ptah migrations down` | `--migrations-dir` | migration directory |
 | `ptah migrations lint` | `--dir` | migration directory |
 | `ptah migrations validate` | `--dir` | migration directory |

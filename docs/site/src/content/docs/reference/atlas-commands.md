@@ -227,10 +227,43 @@ contract.
 A `data.template_dir` URL is validated through its rendered snapshot; the
 source templates are not modified.
 
+### `ptah-compat migrate ls`
+
+Lists the migration files the directory holds, oldest version first, one file
+per line. `-s/--short` collapses each migration to its version, dropping the
+description and the `.sql` suffix, and `-l/--latest` keeps only the newest
+migration. No database is contacted and none of the SQL is executed.
+
+The directory is verified against its `atlas.sum` before anything is listed, and
+a directory carrying no `atlas.sum` is refused. An empty directory is not: there
+is nothing to verify and nothing to list, so it exits 0 having printed nothing.
+
+Native twin: [`ptah migrations ls`](../native-commands/), which defaults to
+Ptah's own layout, offers `--dir-format`, and runs the checksum gate only under
+`--verify-sum` — it is a read-only verb, so it describes a directory that has
+drifted instead of refusing to.
+
+### `ptah-compat migrate show`
+
+Prints the SQL of each named migration, exactly as it sits on disk. A migration
+is named by version or by file name, the positional is repeatable, and the
+bodies are printed in the order named, separated by a blank line, with a
+migration named twice printed once. Every named migration is located before any
+of it is printed, so a run naming one migration that is not there prints
+nothing.
+
+The same `atlas.sum` gate as `ls` applies, for the same reason.
+
+Native twin: [`ptah migrations show`](../native-commands/), which takes the
+version on a repeatable `--version` flag rather than a positional and adds
+`--direction` to select which half of a reversible Ptah pair is printed.
+
 ### Source directory layouts on the verbs that read a directory
 
 `hash`, `validate`, `lint`, `status`, and `set` read a migration directory
-written by another tool. The layout is selected with either spelling Atlas
+written by another tool. `ls` and `show` do not: they register no
+`--dir-format`, because the verbs they mirror register none either, and they
+read the directory as the Atlas layout. The layout is selected with either spelling Atlas
 accepts, and `hash` and `validate` agree on the resulting `atlas.sum`:
 
 ```bash

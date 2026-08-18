@@ -9,6 +9,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/cmd/migratedown"
+	"go.5x5.cz/ptah/cmd/migratels"
+	"go.5x5.cz/ptah/cmd/migrateshow"
 	"go.5x5.cz/ptah/cmd/migratestatus"
 	"go.5x5.cz/ptah/cmd/migrateup"
 	"go.5x5.cz/ptah/internal/migratesum"
@@ -125,6 +127,22 @@ func verifySumClassVerbs() []verifySumClassVerb {
 			run: func(f unhashedFixture, extra []string) (string, error) {
 				return runClassCommand(migratestatus.NewMigrateStatusCommand(), append([]string{
 					"--db-url", f.db("status"), "--migrations-dir", f.dir,
+				}, extra...)...)
+			},
+		},
+		{
+			name: "ls",
+			run: func(f unhashedFixture, extra []string) (string, error) {
+				return runClassCommand(migratels.NewMigrateLsCommand(), append([]string{
+					"--migrations-dir", f.dir,
+				}, extra...)...)
+			},
+		},
+		{
+			name: "show",
+			run: func(f unhashedFixture, extra []string) (string, error) {
+				return runClassCommand(migrateshow.NewMigrateShowCommand(), append([]string{
+					"--migrations-dir", f.dir, "--version", "1",
 				}, extra...)...)
 			},
 		},

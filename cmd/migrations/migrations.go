@@ -13,10 +13,12 @@ import (
 	"go.5x5.cz/ptah/cmd/migratedown"
 	"go.5x5.cz/ptah/cmd/migrateedit"
 	"go.5x5.cz/ptah/cmd/migratehash"
+	"go.5x5.cz/ptah/cmd/migratels"
 	"go.5x5.cz/ptah/cmd/migraterebase"
 	"go.5x5.cz/ptah/cmd/migraterepair"
 	"go.5x5.cz/ptah/cmd/migraterm"
 	"go.5x5.cz/ptah/cmd/migrateset"
+	"go.5x5.cz/ptah/cmd/migrateshow"
 	"go.5x5.cz/ptah/cmd/migratestatus"
 	"go.5x5.cz/ptah/cmd/migrateup"
 	"go.5x5.cz/ptah/cmd/migratevalidate"
@@ -59,6 +61,8 @@ separate ptah-compat binary.`,
 	cmd.AddCommand(migrationCommand(migrateup.NewMigrateUpCommand(), "Run pending migrations", "Run pending migrations against a live database."))
 	cmd.AddCommand(migrationCommand(migratedown.NewMigrateDownCommand(), "Roll back migrations", "Roll back migrations against a live database."))
 	cmd.AddCommand(migrationCommand(migratestatus.NewMigrateStatusCommand(), "Show migration status", "Show migration status for a live database and migrations directory."))
+	cmd.AddCommand(migrationCommand(migratels.NewMigrateLsCommand(), "List the migration files in a directory", "List the migration files a migration directory holds, without contacting a database."))
+	cmd.AddCommand(migrationCommand(migrateshow.NewMigrateShowCommand(), "Print the SQL of one or more migrations", "Print the SQL a migration directory stores, without contacting a database."))
 	cmd.AddCommand(migrationCommand(migratebaseline.NewMigrateBaselineCommand(), "Record existing migrations as applied", "Record existing migrations as already applied in the revision table."))
 	cmd.AddCommand(migrationCommand(migrateset.NewMigrateSetCommand(), "Set the revision boundary to a version", "Move the revision boundary to an arbitrary migration version in both directions without executing migration SQL."))
 	cmd.AddCommand(migrationCommand(migratecheckpoint.NewMigrateCheckpointCommand(), "Squash history into a checkpoint", "Squash a migration directory's history into a cumulative-schema checkpoint that fresh databases bootstrap from."))

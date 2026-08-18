@@ -185,13 +185,19 @@ derived rather than restated here.
 `atlas schema validate` appear in current Atlas documentation but are entirely
 absent from the pinned conformance Atlas CE v1.3.0 binary (each resolves to
 `unknown command`, not a community-version abort stub), so they are outside the
-CLI-surface parity target today. Triage outcome, to revisit when the
+CLI-surface parity target today.
+
+Outside the parity target is not the same as unbuilt. `migrate ls` and
+`migrate show` are implemented, as native verbs with a compatibility spelling
+each; the pin decides what the `cli-surface` tier measures, and
+`PTAH_ATLAS_STRICT_COMPAT=1` is where that measurement happens, so neither verb
+is registered under the strict profile. Triage outcome, to revisit when the
 conformance Atlas pin advances past v1.3.0:
 
 | Atlas verb | Current Atlas docs behavior | Triage |
 | --- | --- | --- |
-| `migrate ls` | List migration files in the directory (`--latest`, `--short`). | Covered by native: `ptah migrations status` lists every migration with version, description, and applied/pending state. A thin drop-in forward is future work once the pin advances. |
-| `migrate show` | Print the contents of one or more migration files. | Future work: no native verb prints a migration's SQL (the files are plain SQL on disk). A thin drop-in forward is a candidate once the pin advances. |
+| `migrate ls` | List migration files in the directory (`--latest`, `--short`). | Implemented: `ptah migrations ls` lists a migration directory with no database, and `ptah-compat migrate ls` forwards to it. Not `ptah migrations status`, which an earlier triage claimed covered it: status needs `--db-url` and answers a different question. |
+| `migrate show` | Print the contents of one or more migration files. | Implemented: `ptah migrations show` prints a stored migration's SQL with no database, and `ptah-compat migrate show {name \| version}...` forwards to it. |
 | `schema stats` | Inspect database schema statistics in OpenMetrics format. | Out of scope: statistics monitoring is a metrics/observability surface, not schema management; Ptah's schema-state surface is `ptah schema compare` and `ptah schema drift`. |
 | `schema validate` | Check that a schema definition parses and loads, optionally against `--dev-url`. | Covered by native: `ptah schema render` parses and loads the desired schema and fails on invalid input; `ptah schema test` and `schema apply --dry-run` exercise it against a throwaway database. |
 
