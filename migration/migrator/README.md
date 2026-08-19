@@ -860,6 +860,46 @@ all supported dialects agree on and defer dialect-specific cases until
 execution; directive-looking text inside a valid dialect-specific string never
 changes that migration's transaction mode.
 
+### A transactional file is checked before it runs
+
+A file that is about to run inside a transaction is classified first, and one
+that cannot run there is refused before its first statement is sent. Two shapes
+are caught, and both used to reach the database and fail there with the
+server's own SQLSTATE after the earlier statements had already run:
+
+```text
+0000000001_a.up.sql cannot run inside a transaction: line 2 CREATE or DROP
+INDEX CONCURRENTLY is refused inside a transaction block; mark the file
+`-- +ptah no_transaction`, or move the concurrent index into a migration of
+its own
+```
+
+```text
+0000000001_a.up.sql cannot run inside a transaction: line 3 it uses 'brilliant',
+a value this file adds to the pre-existing enum type mood, and a new enum value
+is not usable until the transaction that added it commits; mark the file
+`-- +ptah no_transaction`, or add the value in an earlier migration
+```
+
+The enum check is semantic rather than keyword-based, because the keyword
+answer would be wrong. On PostgreSQL 12 and later `ALTER TYPE ... ADD VALUE`
+runs inside a transaction perfectly well; what fails is USING the new value
+before that transaction commits. And even that is allowed when the file creates
+the type itself, so this stays transactional and is not refused:
+
+```sql
+CREATE TYPE m AS ENUM ('a');
+ALTER TYPE m ADD VALUE 'b';
+CREATE TABLE t (c m DEFAULT 'b');
+```
+
+A `no_transaction` file is not checked at all. Each of its statements runs in
+its own transaction, where both shapes are legal, and checking it would refuse
+the workflow the directive exists for.
+
+The same classification backs `migrate lint`'s `TX101`, so the two surfaces
+cannot disagree about one file.
+
 Migration timeouts are rejected for `no_transaction` migrations because Ptah
 cannot safely apply writer/session timeouts to raw autocommit statements. Ptah
 rejects that combination before running the migration body or changing its
