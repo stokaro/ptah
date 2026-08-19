@@ -34,12 +34,19 @@ The SQLite renderer and planner support:
 - Enum annotations as `TEXT` columns plus `CHECK (<column> IN (...))`.
 - `CREATE INDEX`, including unique and partial indexes.
 - `DROP INDEX IF EXISTS` and `DROP TABLE IF EXISTS`.
-- `ALTER TABLE ... ADD COLUMN` for SQLite-native column additions, plus
+- `ALTER TABLE ... ADD COLUMN` for column additions SQLite accepts there, plus
   `RENAME COLUMN` and `RENAME TO`.
-- Simple column-drop plans through a table rebuild: create a temporary table
-  from the retained schema, copy retained columns, drop the original table,
-  rename the rebuilt table, and recreate retained indexes/triggers when their
-  metadata can be round-tripped safely.
+- Everything ALTER TABLE cannot express, through a table rebuild: create a
+  temporary table from the desired schema, copy retained columns, drop the
+  original table, rename the rebuilt table, and recreate retained
+  indexes/triggers when their metadata can be round-tripped safely. That covers
+  column drops, column type, nullability, default and generated-expression
+  changes, added and removed table constraints, and column ADDITIONS whose shape
+  `ADD COLUMN` rejects -- `PRIMARY KEY`, `UNIQUE`, `AUTOINCREMENT`,
+  `GENERATED ... STORED`, a foreign key without a `NULL` default, or a
+  non-literal default. The rebuild is chosen by the plan; nothing has to ask for
+  it. The cases it still refuses, and what to do about each, are enumerated on
+  the SQLite page of the documentation site.
 - Views without `WITH CHECK OPTION`.
 - Row-level triggers; SQLite does not support statement-level triggers.
 

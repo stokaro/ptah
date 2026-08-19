@@ -207,7 +207,7 @@ func TestGenerateMigration_SQLiteAddColumnRejectsUnsupportedTriggerSyntax(t *tes
 		OutputDir:     migrationsDir,
 	})
 	c.Assert(files, qt.IsNil)
-	c.Assert(err, qt.ErrorMatches, `.*sqlite: rebuilding table users with trigger trg_users_email requires a manual rebuild plan.*`)
+	c.Assert(err, qt.ErrorMatches, `(?s).*sqlite: rebuilding table users cannot recreate trigger trg_users_email: its body is itself a CREATE TRIGGER statement.*`)
 }
 
 const sqliteAddColumnModel = `package models
