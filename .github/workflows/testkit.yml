@@ -38,6 +38,42 @@ jobs:
           --tags integration
           --timeout 10m
 
+  tidy:
+    name: testkit module is tidy against the root
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      # testkit is a separate module that reaches the root through
+      # `replace go.5x5.cz/ptah => ..`, so a root dependency bump leaves its
+      # go.mod and go.sum behind. Every other job in this file loads that
+      # module and so every one of them fails when it happens, with "go:
+      # updates to go.mod needed" -- and the lint jobs in another workflow fail
+      # too, reporting the same load failure as "qtlint: ./... matched no
+      # packages", which names neither the module nor the fix.
+      #
+      # This job names both, in one line, for the cost of a checkout. It is
+      # deliberately not the sync workflow's job: that one repairs a bot's
+      # branch and cannot run on a human's, while this one has to be true of
+      # every pull request.
+      - name: Check that go mod tidy would change nothing
+        working-directory: testkit
+        env:
+          GOFLAGS: "-mod=mod"
+        run: |
+          set -euo pipefail
+          go mod tidy
+          if git diff --quiet -- go.mod go.sum; then
+            echo "testkit module is tidy against the root."
+            exit 0
+          fi
+          echo "::error file=testkit/go.mod::testkit is stale against the root module. Run 'cd testkit && go mod tidy' and commit the result."
+          git --no-pager diff -- go.mod go.sum
+          exit 1
+
   published-pin:
     name: Resolve the published root module without replace
     runs-on: ubuntu-latest

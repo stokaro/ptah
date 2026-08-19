@@ -7,6 +7,14 @@
 # This workflow runs that tidy on the bot's PR branch and pushes the sync
 # commit automatically.
 #
+# It has two paths, because the first one cannot be relied on alone. `sync`
+# repairs the bot's branch before the pull request merges; it is best-effort,
+# since the branch it needs is deleted by the merge and nothing guarantees the
+# job gets a runner first. `repair` watches master instead and opens the sync
+# pull request when a bump has already landed stale -- the case `sync` can
+# never reach. Between them the invariant is "master builds", not "the bot's
+# branch was patched in time".
+#
 # Token resolution, best first:
 #   1. A GitHub App installation token, minted per run when the
 #      TESTKIT_SYNC_APP_ID repository variable and TESTKIT_SYNC_APP_KEY secret
@@ -27,14 +35,27 @@ on:
     paths:
       - "go.mod"
       - "go.sum"
+  # The pull-request path is best-effort by construction: it repairs a branch,
+  # and a branch stops existing the moment the pull request merges. Nothing
+  # makes it win that race, so master itself is watched too and repaired after
+  # the fact when it lands stale.
+  push:
+    branches:
+      - master
+    paths:
+      - "go.mod"
+      - "go.sum"
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   sync:
     name: Sync testkit go.sum
+    permissions:
+      contents: write
     if: >-
+      github.event_name == 'pull_request_target' &&
       github.event.pull_request.head.repo.full_name == github.repository &&
       (github.actor == 'renovate[bot]' || github.actor == 'dependabot[bot]' ||
        startsWith(github.event.pull_request.head.ref, 'renovate/') ||
@@ -50,14 +71,94 @@ jobs:
           app-id: ${{ vars.TESTKIT_SYNC_APP_ID }}
           private-key: ${{ secrets.TESTKIT_SYNC_APP_KEY }}
 
+      # The checkout below resolves a branch NAME, and the branch is deleted the
+      # moment the pull request merges. This job has queued for minutes while a
+      # bot pull request merged in under two, and the checkout then failed with
+      # three retries of "The process '/usr/bin/git' failed with exit code 1" --
+      # a message that names neither the branch nor the reason. Asking first
+      # turns that into one sentence, and leaves the repair to the push path.
+      - name: Check that the head branch still exists
+        id: head
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+          if gh api "repos/${GITHUB_REPOSITORY}/branches/${HEAD_REF}" --silent 2>/dev/null; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "present=false" >> "$GITHUB_OUTPUT"
+          echo "::notice::${HEAD_REF} no longer exists -- the pull request merged before this job started, so there is no branch left to sync. If the merge left master stale, the push-triggered repair below opens the sync pull request."
+
       - name: Check out the pull request branch
+        if: steps.head.outputs.present == 'true'
         uses: actions/checkout@v7
         with:
           ref: ${{ github.event.pull_request.head.ref }}
           token: ${{ steps.app-token.outputs.token || secrets.TESTKIT_SYNC_TOKEN || github.token }}
 
       - name: Set up Go
+        if: steps.head.outputs.present == 'true'
         uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: |
+            go.sum
+            testkit/go.sum
+
+      - name: Tidy the testkit module
+        if: steps.head.outputs.present == 'true'
+        working-directory: testkit
+        env:
+          GOWORK: "off"
+          GOFLAGS: "-mod=mod"
+        run: go mod tidy
+
+      - name: Commit and push the sync when needed
+        if: steps.head.outputs.present == 'true'
+        run: |
+          if git diff --quiet -- testkit/go.mod testkit/go.sum; then
+            echo "testkit module already in sync; nothing to do."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add testkit/go.mod testkit/go.sum
+          git commit -m "Sync testkit module go.sum with the root dependency bump"
+          git push
+
+  # The repair path. The sync above can only ever fix a branch that still
+  # exists; this one watches what actually matters -- whether master is
+  # buildable -- and opens the sync pull request when it is not. It is what
+  # would have caught the bump that merged with five checks red: four jobs went
+  # red for one stale indirect requirement, and the two lint jobs reported it as
+  # "qtlint: ./... matched no packages", which points nowhere near testkit.
+  #
+  # It opens a pull request rather than pushing to master: the repair is a
+  # dependency change and belongs in front of the same checks as any other.
+  repair:
+    name: Open a sync pull request when master is stale
+    if: github.event_name == 'push'
+    permissions:
+      contents: write
+      pull-requests: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Mint a GitHub App token
+        id: app-token
+        if: vars.TESTKIT_SYNC_APP_ID != ''
+        uses: actions/create-github-app-token@v3
+        with:
+          app-id: ${{ vars.TESTKIT_SYNC_APP_ID }}
+          private-key: ${{ secrets.TESTKIT_SYNC_APP_KEY }}
+
+      - uses: actions/checkout@v7
+        with:
+          token: ${{ steps.app-token.outputs.token || secrets.TESTKIT_SYNC_TOKEN || github.token }}
+
+      - uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           cache-dependency-path: |
@@ -71,14 +172,42 @@ jobs:
           GOFLAGS: "-mod=mod"
         run: go mod tidy
 
-      - name: Commit and push the sync when needed
+      - name: Open the sync pull request when needed
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token || secrets.TESTKIT_SYNC_TOKEN || github.token }}
         run: |
+          set -euo pipefail
           if git diff --quiet -- testkit/go.mod testkit/go.sum; then
-            echo "testkit module already in sync; nothing to do."
+            echo "master is in sync; nothing to repair."
             exit 0
           fi
+
+          # Named after the commit that left master stale, so a re-run of this
+          # workflow lands on the branch it already made rather than opening a
+          # second pull request for the same bump.
+          branch="testkit-sync/${GITHUB_SHA:0:12}"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # -C, not -c: a re-run of this job gets a fresh checkout and would
+          # not see the branch, but a runner that reuses a workspace would, and
+          # `switch -c` on an existing branch fails the whole job under `set -e`
+          # rather than reaching the push below, which is where a repair that
+          # already exists is meant to be recognized.
+          git switch -C "$branch"
           git add testkit/go.mod testkit/go.sum
-          git commit -m "Sync testkit module go.sum with the root dependency bump"
-          git push
+          git commit -m "fix(testkit): tidy the module after the root dependency bump"
+
+          if ! git push origin "$branch"; then
+            echo "$branch already exists; an earlier run pushed this repair."
+            exit 0
+          fi
+
+          gh pr create --base master --head "$branch" \
+            --title "fix(testkit): tidy the module after the root dependency bump" \
+            --body "\`master\` is stale: \`${GITHUB_SHA}\` changed the root module's dependencies and \`testkit/\` still names the old versions.
+
+          testkit is a separate module that reaches the root through \`replace go.5x5.cz/ptah => ..\`, so every job that loads it fails with \`go: updates to go.mod needed; to update it: go mod tidy\` until this lands. The lint jobs report the same load failure as \`qtlint: ./... matched no packages\`.
+
+          This is \`go mod tidy\` in \`testkit/\` and nothing else.
+
+          Opened automatically because the pull-request sync could not run -- most often because the pull request merged, and deleted its branch, before that job was given a runner."
