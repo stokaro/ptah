@@ -333,7 +333,14 @@ func TestPresets_KeyDifferences(t *testing.T) {
 	// The engine hosts scalar functions; Ptah has no SQL Server path that reads
 	// one back, and the key names the generator rather than the engine. See the
 	// preset's own comment for the measurement (stokaro/ptah#929).
-	c.Assert(sqlServer.Has(capability.Functions), qt.IsFalse)
+	// Functions moved once the read half existed: INFORMATION_SCHEMA.PARAMETERS
+	// publishes the signature as rows, so no T-SQL header parser was needed
+	// (stokaro/ptah#1720).
+	c.Assert(sqlServer.Has(capability.Functions), qt.IsTrue)
+	// ClickHouse is the control on that move, as it is for row-level security:
+	// a change that turned the key on family-wide rather than for this one
+	// preset reddens here.
+	c.Assert(capability.ClickHouse24().Has(capability.Functions), qt.IsFalse)
 	c.Assert(sqlServer.Has(capability.Triggers), qt.IsTrue)
 	c.Assert(sqlServer.Has(capability.DropConstraintGeneric), qt.IsTrue)
 	c.Assert(sqlServer.Has(capability.CheckConstraintsEnforced), qt.IsTrue)

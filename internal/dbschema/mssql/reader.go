@@ -132,6 +132,12 @@ func (r *Reader) ReadSchema() (*types.DBSchema, error) {
 	}
 	schema.Triggers = triggers
 
+	functions, err := r.readFunctions()
+	if err != nil {
+		return nil, fmt.Errorf("sqlserver: read functions: %w", err)
+	}
+	schema.Functions = functions
+
 	policies, err := r.readRLSPolicies()
 	if err != nil {
 		return nil, fmt.Errorf("sqlserver: read rls policies: %w", err)

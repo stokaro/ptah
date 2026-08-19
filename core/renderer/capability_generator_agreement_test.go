@@ -90,9 +90,13 @@ func capabilityProbeKinds() []capabilityProbeKind {
 			keywords: []string{"CREATE TRIGGER", "CREATE OR REPLACE TRIGGER"},
 			schema:   func() *goschema.Database { return probeSchema(withTable, withTrigger) },
 		},
+		// T-SQL's create form is its replace form: CREATE OR ALTER is accepted
+		// on a name that does not exist yet, and CREATE FUNCTION IF NOT EXISTS
+		// does not parse, so SQL Server emits neither of the first two
+		// spellings.
 		{
 			key:      capability.Functions,
-			keywords: []string{"CREATE FUNCTION", "CREATE OR REPLACE FUNCTION"},
+			keywords: []string{"CREATE FUNCTION", "CREATE OR REPLACE FUNCTION", "CREATE OR ALTER FUNCTION"},
 			schema:   func() *goschema.Database { return probeSchema(withFunction) },
 		},
 	}
