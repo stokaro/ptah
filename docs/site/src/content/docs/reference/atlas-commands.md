@@ -868,11 +868,41 @@ non-community template functions, so these exports are an open Ptah extension.
   and reports it on standard error.
 - A selection that drops a dependency of a selected object is refused rather
   than rendered.
-- Other field-level exclude selectors fail explicitly. Type selectors on
+- Other field-level exclude selectors fail explicitly, and the refusal names
+  the fields the selected resource types do support. Type selectors on
   non-final pattern segments fail too, except for the leading `[type=schema]`
   segment documented in the
   [Atlas comparison](../../atlas/comparison/#leading-schema-type-selector);
   exporter blocks remain an explicit gap.
+
+<!-- BEGIN GENERATED EXCLUDE FIELD SELECTORS -->
+
+#### Subtractable fields
+
+A field is subtractable when Ptah can remove it from the inspected document and
+still write a document that means what the database holds. That is the whole
+criterion, and it is narrower than "a field the reader captured": a column's
+type is captured and cannot be subtracted, because a column without one is not
+a column. A comment can go, and the table is still that table.
+
+| Resource type | Subtractable fields |
+| --- | --- |
+| `base_table` | `comment` |
+| `extension` | `version` |
+| `materialized_view` | `comment` |
+| `synonym` | `comment` |
+| `table` | `comment` |
+| `view` | `comment` |
+
+`.*` names every field in the row for the selected type. A selector naming
+anything else is refused rather than ignored, because a selector that silently
+does nothing is how a user comes to believe a field was excluded.
+
+Adding a field is a change to `excludeFieldSelectors` in
+`internal/atlasfilter`, and this table is checked against it
+(`TestExcludeFieldSelectors_MatchTheDocumentedSet`) — the two cannot drift.
+
+<!-- END GENERATED EXCLUDE FIELD SELECTORS -->
 
 The pinned Atlas CE binary rejects `schema inspect --include` with
 `unknown flag: --include`; Atlas registers it. The measured
