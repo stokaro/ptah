@@ -1267,6 +1267,11 @@ func (p *Planner) plannedUserTypes(
 		}
 	}
 	for _, compositeDiff := range diff.CompositeTypesModified {
+		if compositeIsAlterableInPlace(compositeDiff) {
+			// Paired with the same guard in dropModifiedUserTypes: no drop was
+			// emitted, so there is nothing to put back.
+			continue
+		}
 		if composite := findCompositeType(generated.CompositeTypes, compositeDiff.TypeName, semantics); composite != nil {
 			planned = append(planned, plannedUserType{
 				dep:  deporder.UserType{Name: compositeDiff.TypeName, References: compositeFieldTypes(*composite)},
@@ -1375,6 +1380,12 @@ func (p *Planner) dropModifiedUserTypes(
 		deps = append(deps, deporder.UserType{Name: domainDiff.DomainName, References: currentDomainReferences(domainDiff)})
 	}
 	for _, compositeDiff := range diff.CompositeTypesModified {
+		if compositeIsAlterableInPlace(compositeDiff) {
+			// alterModifiedCompositeTypes reconciles this one with ALTER TYPE.
+			// Dropping it here as well would fail outright on any composite a
+			// table column uses, which is the case the ALTER exists for.
+			continue
+		}
 		if findCompositeType(generated.CompositeTypes, compositeDiff.TypeName, semantics) == nil {
 			unresolved = append(unresolved, unrecreatableUserTypeComment("composite type", compositeDiff.TypeName))
 			continue
@@ -1627,6 +1638,7 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 	// and it stays ahead of the tables, whose columns take their default and
 	// their constraint from the domain as it is when the column is created.
 	result = p.alterModifiedDomains(result, diff, generated)
+	result = p.alterModifiedCompositeTypes(result, diff, generated)
 
 	// 4. Modify existing enums
 	result = p.modifyExistingEnums(result, diff, generated)

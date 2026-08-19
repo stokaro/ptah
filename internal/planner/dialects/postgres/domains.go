@@ -139,3 +139,49 @@ func quoteDomainDefaultLiteral(literal string) string {
 	}
 	return string(append(quoted, '\''))
 }
+
+// compositeIsAlterableInPlace reports whether the comparator found a field-level
+// delta ALTER TYPE can reach.
+//
+// The comparator sets the delta only when applying it lands exactly on the
+// declared shape, so this is a presence check rather than a second judgement
+// about ordering (stokaro/ptah#1717).
+func compositeIsAlterableInPlace(compositeDiff types.CompositeTypeDiff) bool {
+	return len(compositeDiff.AttributesAdded) > 0 || len(compositeDiff.AttributesRemoved) > 0
+}
+
+// alterModifiedCompositeTypes emits the in-place ALTER TYPE statements for every
+// modified composite that needs no rebuild.
+//
+// PostgreSQL takes ADD ATTRIBUTE and DROP ATTRIBUTE on a composite a table
+// column already uses, and refuses to DROP the type itself in exactly that
+// case. Before this, a composite gaining a field was reconciled by dropping and
+// recreating it, which is the one thing the engine will not do there.
+func (p *Planner) alterModifiedCompositeTypes(
+	result []ast.Node,
+	diff *types.SchemaDiff,
+	generated *goschema.Database,
+) []ast.Node {
+	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
+	for _, compositeDiff := range diff.CompositeTypesModified {
+		if !compositeIsAlterableInPlace(compositeDiff) {
+			continue
+		}
+		if findCompositeType(generated.CompositeTypes, compositeDiff.TypeName, semantics) == nil {
+			result = append(result, unrecreatableUserTypeComment("composite type", compositeDiff.TypeName))
+			continue
+		}
+		node := ast.NewAlterType(compositeDiff.TypeName)
+		// Removals first: a field can leave and another arrive in one
+		// modification, and dropping before adding keeps a reused name from
+		// colliding with the one still there.
+		for _, name := range compositeDiff.AttributesRemoved {
+			node.AddOperation(ast.NewDropCompositeAttributeOperation(name))
+		}
+		for _, attribute := range compositeDiff.AttributesAdded {
+			node.AddOperation(ast.NewAddCompositeAttributeOperation(attribute.Name, attribute.Type))
+		}
+		result = append(result, node)
+	}
+	return result
+}

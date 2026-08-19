@@ -405,3 +405,37 @@ func (op *DomainNotNullOperation) Accept(_ Visitor) error { return nil }
 
 // typeOperation implements the marker method for type safety.
 func (op *DomainNotNullOperation) typeOperation() {}
+
+// CompositeAttributeOperation adds or removes one attribute of a composite type
+// in an ALTER TYPE statement.
+//
+// PostgreSQL takes both on a composite a table column already uses, measured on
+// 18.4 -- which is what makes them worth having, since the drop-and-recreate
+// alternative is refused outright in exactly that case. What it does not take
+// there is a change to an attribute's type: `ALTER TYPE ... ALTER ATTRIBUTE`
+// answers `cannot alter type "addr" because column "uses_addr.a" uses it`, with
+// CASCADE and without, so no operation here spells one (stokaro/ptah#1717).
+type CompositeAttributeOperation struct {
+	// DropName is the attribute to remove. Empty adds without removing.
+	DropName string
+	// AddName is the attribute to add. Empty removes without adding.
+	AddName string
+	// AddType is the added attribute's type. Required with AddName.
+	AddType string
+}
+
+// NewDropCompositeAttributeOperation removes an attribute from a composite type.
+func NewDropCompositeAttributeOperation(name string) *CompositeAttributeOperation {
+	return &CompositeAttributeOperation{DropName: name}
+}
+
+// NewAddCompositeAttributeOperation adds an attribute to a composite type.
+func NewAddCompositeAttributeOperation(name, fieldType string) *CompositeAttributeOperation {
+	return &CompositeAttributeOperation{AddName: name, AddType: fieldType}
+}
+
+// Accept implements the Node interface for CompositeAttributeOperation.
+func (op *CompositeAttributeOperation) Accept(_ Visitor) error { return nil }
+
+// typeOperation implements the marker method for type safety.
+func (op *CompositeAttributeOperation) typeOperation() {}

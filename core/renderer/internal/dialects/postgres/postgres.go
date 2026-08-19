@@ -247,6 +247,9 @@ func (r *Renderer) VisitAlterType(node *ast.AlterTypeNode) error {
 		case *ast.DomainConstraintOperation, *ast.DomainDefaultOperation, *ast.DomainNotNullOperation:
 			r.writeAlterDomain(node.Name, operation)
 
+		case *ast.CompositeAttributeOperation:
+			r.writeAlterCompositeAttribute(node.Name, op)
+
 		default:
 			return fmt.Errorf("unsupported alter type operation: %T", operation)
 		}
@@ -294,6 +297,25 @@ func (r *Renderer) writeAlterDomain(name string, operation ast.TypeOperation) {
 			return
 		}
 		r.w.WriteLinef("ALTER DOMAIN %s DROP NOT NULL;", domain)
+	}
+}
+
+// writeAlterCompositeAttribute renders one ALTER TYPE ... ATTRIBUTE operation.
+//
+// It decides against capability.CompositeTypes, the key the CREATE is behind,
+// so a target that never took the composite is not handed an ALTER for it
+// either (stokaro/ptah#1738).
+func (r *Renderer) writeAlterCompositeAttribute(name string, op *ast.CompositeAttributeOperation) {
+	if r.refuses(capability.CompositeTypes, "composite type", name) {
+		return
+	}
+	typeName := r.escapeQualifiedIdentifier(name)
+	if op.DropName != "" {
+		r.w.WriteLinef("ALTER TYPE %s DROP ATTRIBUTE %s;", typeName, r.escapeIdentifier(op.DropName))
+	}
+	if op.AddName != "" {
+		r.w.WriteLinef("ALTER TYPE %s ADD ATTRIBUTE %s %s;",
+			typeName, r.escapeIdentifier(op.AddName), op.AddType)
 	}
 }
 
