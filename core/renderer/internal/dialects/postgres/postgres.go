@@ -881,6 +881,31 @@ func (r *Renderer) renderIndexPart(part ast.IndexPart) string {
 }
 
 func (r *Renderer) VisitExtension(node *ast.ExtensionNode) error {
+	// An altered extension is a different statement about the same object, and
+	// both spellings were measured on PostgreSQL 18 rather than read:
+	// `ALTER EXTENSION pg_trgm UPDATE TO '1.6'` moves 1.5 to 1.6 and answers
+	// `NOTICE: version "1.6" ... is already installed` when it is already
+	// there, so it is idempotent; `ALTER EXTENSION pg_trgm SET SCHEMA public`
+	// moves it and is idempotent on the schema it already occupies
+	// (stokaro/ptah#1718).
+	switch node.Alteration {
+	case ast.ExtensionUpdateVersion:
+		if node.Comment != "" {
+			r.w.WriteLinef("-- %s", node.Comment)
+		}
+		r.w.WriteLinef("ALTER EXTENSION %s UPDATE TO %s;",
+			r.escapeIdentifier(node.Name), r.escapeValue(node.Version))
+		return nil
+	case ast.ExtensionSetSchema:
+		if node.Comment != "" {
+			r.w.WriteLinef("-- %s", node.Comment)
+		}
+		r.w.WriteLinef("ALTER EXTENSION %s SET SCHEMA %s;",
+			r.escapeIdentifier(node.Name), r.escapeIdentifier(node.Schema))
+		return nil
+	case ast.ExtensionUnaltered:
+	}
+
 	var parts []string
 
 	parts = append(parts, "CREATE EXTENSION")

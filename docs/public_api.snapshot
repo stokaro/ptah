@@ -758,6 +758,8 @@ type EnumNode struct{ ... }
 type EnumTypeDef struct{ ... }
     func NewEnumTypeDef(values ...string) *EnumTypeDef
 type Expression interface{ ... }
+type ExtensionAlteration string
+    const ExtensionUnaltered ExtensionAlteration = "" ...
 type ExtensionNode struct{ ... }
     func NewExtension(name string) *ExtensionNode
 type ForeignKeyRef struct{ ... }
@@ -2345,6 +2347,20 @@ type Expression interface {
     never inlined.
 
 
+### go.5x5.cz/ptah/core/ast.ExtensionAlteration
+
+package ast // import "go.5x5.cz/ptah/core/ast"
+
+type ExtensionAlteration string
+    ExtensionAlteration names what an ALTER EXTENSION statement changes.
+
+    The two are separate values rather than one "alter" flag because a node
+    carrying both would have to render two statements, and one node rendering
+    two statements is what makes an ordered plan impossible to reason about.
+    The planner emits one node per change instead.
+
+const ExtensionUnaltered ExtensionAlteration = "" ...
+
 ### go.5x5.cz/ptah/core/ast.ExtensionNode
 
 package ast // import "go.5x5.cz/ptah/core/ast"
@@ -2360,6 +2376,15 @@ type ExtensionNode struct {
     Version string
     // Comment is an optional extension comment
     Comment string
+    // Alteration names what an existing extension is being changed to, and is
+    // empty for the ordinary CREATE.
+    //
+    // It is a field on this node rather than a node of its own because a new
+    // node widens [Visitor], which every renderer must then implement -- an
+    // incompatible change to the public API for two statements that name the
+    // same object. [CreatePolicyNode.Replace] and [DropTypeNode.Domain] switch
+    // a rendered spelling the same way (stokaro/ptah#1718).
+    Alteration ExtensionAlteration
 }
     ExtensionNode represents a CREATE EXTENSION statement for PostgreSQL.
 
@@ -2368,6 +2393,7 @@ type ExtensionNode struct {
 
 func NewExtension(name string) *ExtensionNode
 func (n *ExtensionNode) Accept(visitor Visitor) error
+func (n *ExtensionNode) SetAlteration(alteration ExtensionAlteration) *ExtensionNode
 func (n *ExtensionNode) SetComment(comment string) *ExtensionNode
 func (n *ExtensionNode) SetIfNotExists() *ExtensionNode
 func (n *ExtensionNode) SetSchema(schema string) *ExtensionNode
@@ -9936,6 +9962,24 @@ type ExtensionDiff struct {
     Name       string `json:"name"`
     FromSchema string `json:"from_schema"`
     ToSchema   string `json:"to_schema"`
+    // FromVersion and ToVersion carry a declared version change. The version is
+    // the one attribute of an extension that moves over time, and it used to be
+    // rendered on the create and never compared: a team that raised the pin in
+    // its schema saw "Schema is synced" against a database still running the old
+    // one (stokaro/ptah#1718).
+    //
+    // Both are empty when the declaration names no version, which is the common
+    // case and means "whatever the server installs".
+    FromVersion string `json:"from_version,omitempty"`
+    ToVersion   string `json:"to_version,omitempty"`
+    // Relocatable reports whether the installed extension may be moved between
+    // schemas at all. It is a fact about the extension rather than the target,
+    // read from pg_extension.extrelocatable, and it rides on the diff because
+    // the planner is handed the desired schema and this diff -- never the live
+    // description that knows it. `ALTER EXTENSION plpgsql SET SCHEMA ext` is
+    // `extension "plpgsql" does not support SET SCHEMA`, measured on
+    // PostgreSQL 18.
+    Relocatable bool `json:"relocatable"`
 }
     ExtensionDiff represents a PostgreSQL extension installation-schema change.
 

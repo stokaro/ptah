@@ -733,6 +733,40 @@ type ExtensionNode struct {
 	Version string
 	// Comment is an optional extension comment
 	Comment string
+	// Alteration names what an existing extension is being changed to, and is
+	// empty for the ordinary CREATE.
+	//
+	// It is a field on this node rather than a node of its own because a new
+	// node widens [Visitor], which every renderer must then implement -- an
+	// incompatible change to the public API for two statements that name the
+	// same object. [CreatePolicyNode.Replace] and [DropTypeNode.Domain] switch
+	// a rendered spelling the same way (stokaro/ptah#1718).
+	Alteration ExtensionAlteration
+}
+
+// ExtensionAlteration names what an ALTER EXTENSION statement changes.
+//
+// The two are separate values rather than one "alter" flag because a node
+// carrying both would have to render two statements, and one node rendering
+// two statements is what makes an ordered plan impossible to reason about.
+// The planner emits one node per change instead.
+type ExtensionAlteration string
+
+const (
+	// ExtensionUnaltered is the ordinary CREATE EXTENSION.
+	ExtensionUnaltered ExtensionAlteration = ""
+	// ExtensionUpdateVersion renders ALTER EXTENSION ... UPDATE TO, taking the
+	// target version from Version.
+	ExtensionUpdateVersion ExtensionAlteration = "update-version"
+	// ExtensionSetSchema renders ALTER EXTENSION ... SET SCHEMA, taking the
+	// target schema from Schema.
+	ExtensionSetSchema ExtensionAlteration = "set-schema"
+)
+
+// SetAlteration marks this node as an ALTER rather than a CREATE.
+func (n *ExtensionNode) SetAlteration(alteration ExtensionAlteration) *ExtensionNode {
+	n.Alteration = alteration
+	return n
 }
 
 // NewExtension creates a new extension node with the specified name.
