@@ -17,6 +17,7 @@ import (
 	"go.5x5.cz/ptah/cmd/internal/schemaops"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasurl"
+	"go.5x5.cz/ptah/internal/devdocker"
 	"go.5x5.cz/ptah/internal/migrationintegrity"
 	"go.5x5.cz/ptah/internal/migrationsnapshot"
 	"go.5x5.cz/ptah/internal/sqlitevirtual"
@@ -181,9 +182,20 @@ func migrateBaselineCommand(cmd *cobra.Command, _ []string, opts *options) error
 		return nil
 	}
 
+	// A `docker://` shadow database is provisioned here rather than handed to
+	// the connector, which answered `unsupported database dialect: docker`
+	// (stokaro/ptah#1701). It comes after the dry-run return above, so a run
+	// that prints a plan and stops never starts a container; a directly
+	// connectable URL passes through untouched.
+	shadowDB, releaseShadow, err := devdocker.Resolve(ctx, opts.shadowDB, devdocker.Options{})
+	if err != nil {
+		return err
+	}
+	defer releaseShadow()
+
 	if err := verifyBaseline(ctx, baselineVerifyOptions{
 		dbURL:          opts.dbURL,
-		shadowDB:       opts.shadowDB,
+		shadowDB:       shadowDB,
 		rootDir:        opts.rootDir,
 		version:        version,
 		force:          opts.force,

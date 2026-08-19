@@ -18,6 +18,7 @@ import (
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasmigrate"
 	"go.5x5.cz/ptah/internal/atlasurl"
+	"go.5x5.cz/ptah/internal/devdocker"
 	"go.5x5.cz/ptah/internal/migrationintegrity"
 	"go.5x5.cz/ptah/internal/migrationreplay"
 	"go.5x5.cz/ptah/internal/migrationsnapshot"
@@ -392,7 +393,6 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 	if _, err := atlasmigrate.ParseQualifier(qualifierValue); err != nil {
 		return err
 	}
-	targetURL := dbURL
 	if replay {
 		if err := validateGenerateReplayMode(cmd); err != nil {
 			return err
@@ -400,7 +400,6 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 		if strings.TrimSpace(devURL) == "" {
 			return fmt.Errorf("--%s is required with --%s", generateDevURLFlag, generateReplayFlag)
 		}
-		targetURL = devURL
 	} else {
 		if err := validateGenerateIntrospectMode(cmd); err != nil {
 			return err
@@ -408,6 +407,32 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 		if dbURL == "" {
 			return fmt.Errorf("database URL is required")
 		}
+	}
+
+	// A `docker://` dev or shadow database is provisioned here, not handed to
+	// the connector: without this the value reached dbschema.ConnectToDatabase
+	// and came back as `unsupported database dialect: docker`, naming a dialect
+	// the user never wrote, while ptah-compat migrate diff provisioned the same
+	// value for the same workflow (stokaro/ptah#1701).
+	//
+	// After every refusal decidable from the flags, so a run that was going to
+	// be refused never starts a container -- the order migrate checkpoint
+	// already holds. A directly connectable URL passes through untouched, which
+	// is why both calls are unconditional.
+	devURL, releaseDev, err := devdocker.Resolve(cmd.Context(), devURL, devdocker.Options{})
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	defer releaseDev()
+	shadowDB, releaseShadow, err := devdocker.Resolve(cmd.Context(), shadowDB, devdocker.Options{})
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	defer releaseShadow()
+
+	targetURL := dbURL
+	if replay {
+		targetURL = devURL
 	}
 	dialect, err := atlasurl.DialectFromURL(targetURL)
 	if err != nil {
