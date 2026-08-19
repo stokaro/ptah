@@ -599,26 +599,6 @@ func (r *Renderer) VisitDropTrigger(node *ast.DropTriggerNode) error {
 	return nil
 }
 
-func (r *Renderer) VisitCreatePolicy(node *ast.CreatePolicyNode) error {
-	r.notSupported("RLS policies", node.Name)
-	return nil
-}
-
-func (r *Renderer) VisitDropPolicy(node *ast.DropPolicyNode) error {
-	r.notSupported("DROP POLICY", node.Name)
-	return nil
-}
-
-func (r *Renderer) VisitAlterTableEnableRLS(node *ast.AlterTableEnableRLSNode) error {
-	r.notSupported("row-level security", node.Table)
-	return nil
-}
-
-func (r *Renderer) VisitAlterTableDisableRLS(node *ast.AlterTableDisableRLSNode) error {
-	r.notSupported("row-level security", node.Table)
-	return nil
-}
-
 // VisitCreateRole renders a T-SQL CREATE ROLE, and refuses a declaration
 // carrying attributes a database role does not have.
 //
