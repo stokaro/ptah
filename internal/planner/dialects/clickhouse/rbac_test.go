@@ -282,7 +282,16 @@ func TestGenerateMigrationAST_ClickHouseGrantsKeepTheSlotTheRenderPathUsesForThe
 		TriggersAdded:         []types.TriggerRef{{TriggerName: "trg1", TableName: "events"}},
 	}
 
-	nodes := planClickHouse(c, diff, &goschema.Database{})
+	// The row-policy phase plans from the declaration now that ClickHouse
+	// carries capability.RowLevelSecurity, so the desired schema has to hold
+	// what the diff names or the phase contributes nothing and the ordering
+	// this test is about cannot be seen (stokaro/ptah#1736).
+	nodes := planClickHouse(c, diff, &goschema.Database{
+		RLSEnabledTables: []goschema.RLSEnabledTable{{Table: "events"}},
+		RLSPolicies: []goschema.RLSPolicy{{
+			Name: "p1", Table: "events", UsingExpression: "true",
+		}},
+	})
 
 	c.Assert(nodeTypes(nodes), qt.DeepEquals, []string{
 		"*ast.CreateRoleNode",

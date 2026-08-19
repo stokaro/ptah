@@ -1036,10 +1036,22 @@ func ClickHouse24() Capabilities {
 		Triggers:                       false,
 		CreateOrReplaceTrigger:         false,
 		AlterGeneratedColumnExpression: true,
-		RowLevelSecurity:               false,
-		PostgresCatalogFunctions:       false,
-		CatalogRowStatistics:           false,
-		CatalogDependencies:            false,
+		// RowLevelSecurity is on because all three halves the key requires now
+		// exist: the renderer emits CREATE/ALTER/DROP ROW POLICY, this reader
+		// takes system.row_policies back into DBSchema.RLSPolicies, and the
+		// planner plans them. The key used to be false with no reason recorded
+		// at all -- unlike Functions above it, whose false is measured and
+		// explained -- for an engine that has had row policies for years
+		// (stokaro/ptah#1736).
+		//
+		// What it does not claim is a PostgreSQL policy running here unchanged.
+		// FOR covers ALL and SELECT and nothing else, and WITH CHECK parses and
+		// is then ignored, so a declaration carrying either is named and skipped
+		// rather than rendered into something weaker than it says.
+		RowLevelSecurity:         true,
+		PostgresCatalogFunctions: false,
+		CatalogRowStatistics:     false,
+		CatalogDependencies:      false,
 		// Measured live on 24.10.4.191 and 26.7.3.19: CREATE ROLE, DROP ROLE,
 		// GRANT, REVOKE and REVOKE GRANT OPTION FOR all work on both lines, and
 		// system.roles and system.grants read them back. Only the catalog's

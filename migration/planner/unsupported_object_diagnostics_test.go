@@ -31,8 +31,14 @@ func unhostableSchema() *goschema.Database {
 		Views:             []goschema.View{{StructName: "V", Name: "v1", Body: "SELECT id FROM t"}},
 		MaterializedViews: []goschema.MaterializedView{{StructName: "MV", Name: "mv1", Body: "SELECT id FROM t"}},
 		RLSEnabledTables:  []goschema.RLSEnabledTable{{StructName: "S", Table: "t"}},
+		// FOR ALL rather than FOR SELECT, which is what an annotation without
+		// `for=` parses to. ClickHouse stores the two identically and answers
+		// SELECT to both, so a declaration naming SELECT explicitly cannot
+		// converge and this renderer names it instead of creating it
+		// (stokaro/ptah#1736). The refusal has its own row in
+		// clickhouse/rowpolicy_test.go; this fixture is about the created path.
 		RLSPolicies: []goschema.RLSPolicy{{
-			StructName: "S", Name: "p1", Table: "t", PolicyFor: "SELECT",
+			StructName: "S", Name: "p1", Table: "t", PolicyFor: "ALL",
 			ToRoles: "app_role", UsingExpression: "true",
 		}},
 		// Qualified because a ClickHouse grant scope is a two-part pattern and
@@ -81,7 +87,14 @@ func diagnosticLines(statements []string) []string {
 	for _, statement := range statements {
 		for line := range strings.SplitSeq(statement, "\n") {
 			trimmed := strings.TrimSpace(line)
-			if strings.HasPrefix(trimmed, "--") && strings.Contains(trimmed, "not supported") {
+			// The marker is the renderer's own `-- <DIALECT>:` prefix rather
+			// than the words "not supported". A declaration this target
+			// declines for a reason that is not the engine lacking the feature
+			// says so in its own words -- ClickHouse names the absent
+			// table-level RLS switch rather than claiming it has no row-level
+			// security -- and a phrase filter would drop exactly those lines
+			// from the agreement this test enforces (stokaro/ptah#1736).
+			if strings.HasPrefix(trimmed, "-- CLICKHOUSE:") {
 				lines = append(lines, trimmed)
 			}
 		}
@@ -125,8 +138,12 @@ func TestPlan_ClickHouseRendersViewsAndNamesUnsupportedObjects(t *testing.T) {
 		{name: "sequence", want: `-- CLICKHOUSE: CREATE SEQUENCE "order_number_seq" is not supported`},
 		{name: "role", want: "CREATE ROLE IF NOT EXISTS `app_role`"},
 		{name: "function", want: `-- CLICKHOUSE: CREATE FUNCTION "bump" is not supported`},
-		{name: "rls enable", want: `-- CLICKHOUSE: ALTER TABLE ENABLE ROW LEVEL SECURITY "t" is not supported`},
-		{name: "rls policy", want: `-- CLICKHOUSE: CREATE POLICY "p1" is not supported`},
+		// Row policies are planned as real DDL now (stokaro/ptah#1736). The
+		// enable half stays a diagnostic, because ClickHouse has no
+		// table-level switch to render -- but the sentence names the absent
+		// switch instead of claiming the engine lacks row-level security.
+		{name: "rls enable", want: `-- CLICKHOUSE: table "t" needs no ENABLE ROW LEVEL SECURITY`},
+		{name: "rls policy", want: "CREATE ROW POLICY IF NOT EXISTS `p1` ON `t` AS PERMISSIVE FOR SELECT USING true"},
 		{name: "grant", want: "GRANT SELECT ON `app`.`t` TO `app_role`"},
 		{name: "trigger", want: `-- CLICKHOUSE: CREATE TRIGGER "trg1" is not supported`},
 	}
@@ -159,11 +176,15 @@ func TestPlan_ClickHouseRenderAndPlanGiveTheSameAnswer(t *testing.T) {
 	rendered := diagnosticLines(renderStatements(c, unhostableSchema(), platform.ClickHouse))
 	planned := diagnosticLines(planStatements(c, unhostableCreationDiff(), unhostableSchema(), platform.ClickHouse))
 
-	// Six, not eight: roles and grants left this list when ClickHouse gained
-	// real RBAC (stokaro/ptah#1025). The count is asserted so that a kind
-	// silently ceasing to be diagnosed is a failure rather than a shorter
-	// slice nobody reads.
-	c.Assert(rendered, qt.HasLen, 6)
+	// Five: extensions, sequences, functions and triggers, which this target
+	// does not host, plus the table-level ENABLE ROW LEVEL SECURITY, which has
+	// no ClickHouse spelling even though the policy itself is real DDL now
+	// (stokaro/ptah#1736). The DISABLE half belongs to the removal path and is
+	// counted by TestPlan_ClickHouseNamesRemovedObjectsToo. Roles and grants
+	// left this list when ClickHouse gained real RBAC (stokaro/ptah#1025). The
+	// count is asserted so that a kind silently ceasing to be diagnosed is a
+	// failure rather than a shorter slice nobody reads.
+	c.Assert(rendered, qt.HasLen, 5)
 	c.Assert(planned, qt.DeepEquals, rendered)
 }
 
@@ -218,8 +239,8 @@ func TestPlan_ClickHouseNamesRemovedObjectsToo(t *testing.T) {
 		// situation instead of silently ignoring the diff category.
 		{name: "role", want: `role "app_role" exists on the server and not in the schema`},
 		{name: "function", want: `-- CLICKHOUSE: DROP FUNCTION "bump" is not supported`},
-		{name: "rls disable", want: `-- CLICKHOUSE: ALTER TABLE DISABLE ROW LEVEL SECURITY "t" is not supported`},
-		{name: "rls policy", want: `-- CLICKHOUSE: DROP POLICY "p1" is not supported`},
+		{name: "rls disable", want: `-- CLICKHOUSE: table "t" has no row-level security switch to disable`},
+		{name: "rls policy", want: "DROP ROW POLICY IF EXISTS `p1` ON `t`"},
 		{name: "grant", want: "REVOKE SELECT ON `app`.`t` FROM `app_role`"},
 		{name: "trigger", want: `-- CLICKHOUSE: DROP TRIGGER "trg1" is not supported`},
 	}

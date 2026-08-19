@@ -315,6 +315,15 @@ func answerClickHouse(query string, args []driver.NamedValue, server rbacServer)
 		return answerRoles(query, server.roles)
 	case strings.Contains(query, "FROM system.grants"):
 		return answerGrants(query, args, server.grants)
+	// The reader describes row policies now that ClickHouse carries
+	// capability.RowLevelSecurity. These tests are about roles and grants, so
+	// the catalog answers empty rather than falling to the unexpected-statement
+	// arm, which would report an RBAC failure for a policy statement
+	// (stokaro/ptah#1736).
+	case strings.Contains(query, "FROM system.row_policies"):
+		return dbtest.QueryResult{Columns: []string{
+			"short_name", "table", "select_filter", "apply_to_all", "apply_to_list", "apply_to_except",
+		}}, nil
 	case strings.Contains(query, "SELECT count()"):
 		return dbtest.QueryResult{Columns: []string{"count()"}, Rows: [][]driver.Value{{uint64(0)}}}, nil
 	case strings.Contains(query, "FROM system.tables"), strings.Contains(query, "FROM system.columns"):

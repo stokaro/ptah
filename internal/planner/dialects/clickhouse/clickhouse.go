@@ -120,6 +120,10 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 		return nil, err
 	}
 	result = p.removeIndexes(result, diff)
+	// Row policies go before the tables they name, so a drop never names an
+	// object that is already gone.
+	result = removeRowPolicies(result, diff, p.capabilities())
+
 	result = p.removeTables(result, diff)
 
 	return result, nil

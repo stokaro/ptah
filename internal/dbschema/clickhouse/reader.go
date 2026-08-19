@@ -128,6 +128,25 @@ func (r *Reader) ReadSchema() (*types.DBSchema, error) {
 			schema.NotDescribed = schema.NotDescribed.WithKind(coverage.Role)
 		}
 	}
+	if r.caps.Has(capability.RowLevelSecurity) {
+		// Reading system.row_policies needs a privilege of its own, exactly as
+		// system.roles and system.grants do, so the same degradation applies:
+		// an account that may not see the access catalog keeps its description
+		// of everything else, and the policy collection is recorded as not
+		// described rather than as empty. The comparator refuses to conclude
+		// "this policy is missing" from a read that admits it did not look, so
+		// a declared policy becomes an undecided addition instead of a CREATE
+		// nothing verified.
+		policies, err := r.readRowPolicies(dbName)
+		switch {
+		case err == nil:
+			schema.RLSPolicies = policies
+		case isAccessDenied(err):
+			schema.NotDescribed = schema.NotDescribed.WithKind(coverage.Policy)
+		default:
+			return nil, fmt.Errorf("clickhouse: read row policies: %w", err)
+		}
+	}
 	return schema, nil
 }
 
