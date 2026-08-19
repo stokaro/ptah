@@ -2190,10 +2190,11 @@ func FromDatabase(database goschema.Database, targetPlatform string) *ast.Statem
 	// 6. Add unique indexes before foreign keys. PostgreSQL accepts a unique
 	// index as the referenced key for a foreign key, so it must exist before
 	// the FK constraint is added.
-	appendUniqueIndexStatements(statements, database.Tables, database.Indexes)
+	tableIndexes, viewIndexes := splitMaterializedViewIndexes(database)
+	appendUniqueIndexStatements(statements, database.Tables, tableIndexes)
 	mysqlFamily := isMySQLFamilyTarget(targetPlatform)
 	if mysqlFamily {
-		appendNonUniqueIndexStatements(statements, database.Tables, database.Indexes)
+		appendNonUniqueIndexStatements(statements, database.Tables, tableIndexes)
 	}
 
 	// 7. Add foreign key constraints after all tables and unique indexes exist.
@@ -2203,6 +2204,9 @@ func FromDatabase(database goschema.Database, targetPlatform string) *ast.Statem
 
 	// 8. Everything that needs the tables to exist first.
 	appendPostTableObjectStatements(statements, database, targetPlatform)
+
+	// 8a. A materialized view's indexes, once the view exists.
+	appendMaterializedViewIndexStatements(statements, database, viewIndexes)
 
 	// 8b. Synonyms come after the objects a local target may name. A synonym
 	// pointing outside this database has nothing here to wait for, and one
@@ -2215,7 +2219,7 @@ func FromDatabase(database goschema.Database, targetPlatform string) *ast.Statem
 	// 9. Add non-unique indexes last, except on MySQL-family targets where both
 	// sides of a foreign key need their declared indexes before ADD CONSTRAINT.
 	if !mysqlFamily {
-		appendNonUniqueIndexStatements(statements, database.Tables, database.Indexes)
+		appendNonUniqueIndexStatements(statements, database.Tables, tableIndexes)
 	}
 
 	return statements
@@ -2311,6 +2315,69 @@ func appendMatchingIndexStatements(
 		indexNode := FromIndexWithTableMapping(index, structToTableMap)
 		statements.Statements = append(statements.Statements, indexNode)
 	}
+}
+
+// appendMaterializedViewIndexStatements appends the indexes a materialized view
+// carries, after the view itself exists.
+//
+// Ordering is the engine's rule rather than a preference: `CREATE INDEX ... ON
+// mv` before the view answers `relation "mv" does not exist` on PostgreSQL
+// 18.4. They cannot go with the table indexes for the same reason -- those are
+// emitted before views, so that a unique index can back a foreign key, and no
+// foreign key references a materialized view.
+func appendMaterializedViewIndexStatements(
+	statements *ast.StatementList,
+	database goschema.Database,
+	viewIndexes []goschema.Index,
+) {
+	mapping := createStructToViewMap(database.MaterializedViews)
+	for _, index := range viewIndexes {
+		statements.Statements = append(statements.Statements, FromIndexWithTableMapping(index, mapping))
+	}
+}
+
+// splitMaterializedViewIndexes separates the indexes a materialized view
+// carries from every other index.
+//
+// The split is deliberately narrow: an index resolves to a view only when the
+// table resolver found nothing for it AND the relation resolver found a view.
+// Everything else -- including an index whose struct name resolves to no
+// declared relation at all -- keeps the path it had, because
+// FromIndexWithTableMapping's fall back to the struct name is what makes a
+// declaration writing the TABLE name in StructName work, and that spelling is
+// in the fixtures (stokaro/ptah#1725).
+func splitMaterializedViewIndexes(database goschema.Database) (tableIndexes, viewIndexes []goschema.Index) {
+	if len(database.MaterializedViews) == 0 {
+		return database.Indexes, nil
+	}
+	tableOwners := goschema.ResolveIndexTableNames(database.Indexes, database.Tables)
+	relationOwners := goschema.ResolveIndexOwners(database.Indexes, database.Tables, database.MaterializedViews)
+	tableIndexes = make([]goschema.Index, 0, len(database.Indexes))
+	viewIndexes = make([]goschema.Index, 0)
+	for position, index := range database.Indexes {
+		if tableOwners[position] == "" && relationOwners[position] != "" {
+			viewIndexes = append(viewIndexes, index)
+			continue
+		}
+		tableIndexes = append(tableIndexes, index)
+	}
+	return tableIndexes, viewIndexes
+}
+
+// createStructToViewMap maps a struct name onto the materialized view it
+// declares.
+//
+// Views alone, with no table entries merged in, because this map is consulted
+// only for indexes splitMaterializedViewIndexes already classified as a view's
+// -- and an index whose struct also declares a table is never one of those. A
+// merged map would need a precedence rule for a collision that cannot occur,
+// and unreachable precedence rules are how the wrong one gets picked later.
+func createStructToViewMap(views []goschema.MaterializedView) map[string]string {
+	mapping := make(map[string]string, len(views))
+	for _, view := range views {
+		mapping[view.StructName] = view.Name
+	}
+	return mapping
 }
 
 // appendRoleAndFunctionStatements appends every declared role and function, for

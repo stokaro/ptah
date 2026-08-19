@@ -363,22 +363,62 @@ type indexTableResolver struct {
 	byQualifiedName   map[string]indexTableMatch
 }
 
-func newIndexTableResolver(tables []Table) *indexTableResolver {
+func newIndexTableResolver(relations []indexRelation) *indexTableResolver {
 	resolver := &indexTableResolver{
-		empty:             len(tables) == 0,
-		firstByStruct:     make(map[string]indexTableMatch, len(tables)),
-		byStructReference: make(map[indexTableRefKey]indexTableMatch, len(tables)*2),
-		byPlainName:       make(map[string]indexTableMatch, len(tables)),
-		byQualifiedName:   make(map[string]indexTableMatch, len(tables)),
+		empty:             len(relations) == 0,
+		firstByStruct:     make(map[string]indexTableMatch, len(relations)),
+		byStructReference: make(map[indexTableRefKey]indexTableMatch, len(relations)*2),
+		byPlainName:       make(map[string]indexTableMatch, len(relations)),
+		byQualifiedName:   make(map[string]indexTableMatch, len(relations)),
 	}
-	for _, table := range tables {
-		qualifiedName := table.QualifiedName()
-		addIndexTableMatch(resolver.firstByStruct, table.StructName, qualifiedName)
-		resolver.addStructReference(table.StructName, qualifiedName, qualifiedName)
-		addIndexTableMatch(resolver.byPlainName, table.Name, qualifiedName)
-		addIndexTableMatch(resolver.byQualifiedName, qualifiedName, qualifiedName)
+	for _, relation := range relations {
+		addIndexTableMatch(resolver.firstByStruct, relation.structName, relation.qualifiedName)
+		resolver.addStructReference(relation.structName, relation.qualifiedName, relation.qualifiedName)
+		addIndexTableMatch(resolver.byPlainName, relation.name, relation.qualifiedName)
+		addIndexTableMatch(resolver.byQualifiedName, relation.qualifiedName, relation.qualifiedName)
 	}
 	return resolver
+}
+
+// indexRelation is something an index can belong to.
+//
+// Two kinds qualify, and only two. A table is the obvious one. A materialized
+// view is the other: PostgreSQL accepts CREATE INDEX on one, and a UNIQUE index
+// on one is the precondition REFRESH MATERIALIZED VIEW CONCURRENTLY checks --
+// measured on 18.4, where the concurrent form without it answers `cannot
+// refresh materialized view "public.mv" concurrently` and names the fix in its
+// HINT. A plain view has no storage to index (stokaro/ptah#1725).
+type indexRelation struct {
+	structName    string
+	name          string
+	qualifiedName string
+}
+
+// indexRelations collects the relations an index may name.
+//
+// A struct declaring both a table and a materialized view makes its entry
+// AMBIGUOUS rather than picking one, the same way two tables sharing a struct
+// name already do -- addIndexTableMatch marks the second entry and resolve
+// answers "" for it. That is what keeps such an index on the table path: the
+// table-only resolver is unambiguous there, and the split below treats
+// "resolved as a table" as the deciding fact.
+func indexRelations(tables []Table, views []MaterializedView) []indexRelation {
+	relations := make([]indexRelation, 0, len(tables)+len(views))
+	for _, table := range tables {
+		relations = append(relations, indexRelation{
+			structName:    table.StructName,
+			name:          table.Name,
+			qualifiedName: table.QualifiedName(),
+		})
+	}
+	for _, view := range views {
+		relations = append(relations, indexRelation{
+			structName:    view.StructName,
+			name:          view.Name,
+			qualifiedName: view.Name,
+		})
+	}
+	return relations
 }
 
 func (r *indexTableResolver) addStructReference(structName, tableName, qualifiedName string) {
@@ -442,8 +482,31 @@ func (r *indexTableResolver) resolve(index Index) string {
 // Explicit table references and struct-based associations are matched against
 // tables. An empty result entry means the owner is missing or ambiguous.
 // When tables is empty, an explicit owner is retained for indexes-only inputs.
+//
+// It answers for tables alone. A caller holding the whole description should
+// use [ResolveIndexOwners], which also resolves an index declared on a
+// materialized view; this one is kept for the call sites whose question really
+// is about tables -- whether a table column is backed by a unique index, for
+// instance, where a matview's index is not an answer.
 func ResolveIndexTableNames(indexes []Index, tables []Table) []string {
-	resolver := newIndexTableResolver(tables)
+	return resolveIndexOwners(indexes, indexRelations(tables, nil))
+}
+
+// ResolveIndexOwners resolves every index owner against the relations an index
+// can belong to: tables and materialized views.
+//
+// An index whose struct declares a materialized view resolved to nothing
+// before, and the two surfaces then disagreed about what that meant. `schema
+// render` fell back to the Go STRUCT name and emitted `CREATE UNIQUE INDEX ...
+// ON "MV"`, which PostgreSQL answers `relation "MV" does not exist`; `schema
+// apply` refused with a sentence naming a position in a slice rather than the
+// index or the view (stokaro/ptah#1725).
+func ResolveIndexOwners(indexes []Index, tables []Table, views []MaterializedView) []string {
+	return resolveIndexOwners(indexes, indexRelations(tables, views))
+}
+
+func resolveIndexOwners(indexes []Index, relations []indexRelation) []string {
+	resolver := newIndexTableResolver(relations)
 	owners := make([]string, len(indexes))
 	for position, index := range indexes {
 		owners[position] = resolver.resolve(index)
