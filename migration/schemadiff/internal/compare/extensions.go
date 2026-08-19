@@ -2,6 +2,7 @@ package compare
 
 import (
 	"sort"
+	"strings"
 
 	"go.5x5.cz/ptah/config"
 	"go.5x5.cz/ptah/core/coverage"
@@ -144,12 +145,26 @@ func ExtensionsWithSemantics(
 		}
 		generatedSchema := effectiveExtensionSchema(genExtensions[extensionName].Schema, semantics)
 		databaseSchema := effectiveExtensionSchema(databaseExtension.Schema, semantics)
-		if generatedSchema != databaseSchema {
-			diff.ExtensionsModified = append(diff.ExtensionsModified, difftypes.ExtensionDiff{
-				Name:       extensionName,
-				FromSchema: databaseSchema,
-				ToSchema:   generatedSchema,
-			})
+		// The version is compared only when the declaration names one. An
+		// extension declared without a version means "whatever the server
+		// installs", and reporting the installed version as a difference from
+		// nothing would plan an update on every run against a database that is
+		// exactly what was asked for.
+		generatedVersion := strings.TrimSpace(genExtensions[extensionName].Version)
+		databaseVersion := strings.TrimSpace(databaseExtension.Version)
+		versionMoved := generatedVersion != "" && generatedVersion != databaseVersion
+		if generatedSchema != databaseSchema || versionMoved {
+			change := difftypes.ExtensionDiff{
+				Name:        extensionName,
+				FromSchema:  databaseSchema,
+				ToSchema:    generatedSchema,
+				Relocatable: databaseExtension.Relocatable,
+			}
+			if versionMoved {
+				change.FromVersion = databaseVersion
+				change.ToVersion = generatedVersion
+			}
+			diff.ExtensionsModified = append(diff.ExtensionsModified, change)
 		}
 	}
 

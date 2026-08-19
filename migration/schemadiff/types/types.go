@@ -889,6 +889,24 @@ type ExtensionDiff struct {
 	Name       string `json:"name"`
 	FromSchema string `json:"from_schema"`
 	ToSchema   string `json:"to_schema"`
+	// FromVersion and ToVersion carry a declared version change. The version is
+	// the one attribute of an extension that moves over time, and it used to be
+	// rendered on the create and never compared: a team that raised the pin in
+	// its schema saw "Schema is synced" against a database still running the old
+	// one (stokaro/ptah#1718).
+	//
+	// Both are empty when the declaration names no version, which is the common
+	// case and means "whatever the server installs".
+	FromVersion string `json:"from_version,omitempty"`
+	ToVersion   string `json:"to_version,omitempty"`
+	// Relocatable reports whether the installed extension may be moved between
+	// schemas at all. It is a fact about the extension rather than the target,
+	// read from pg_extension.extrelocatable, and it rides on the diff because
+	// the planner is handed the desired schema and this diff -- never the live
+	// description that knows it. `ALTER EXTENSION plpgsql SET SCHEMA ext` is
+	// `extension "plpgsql" does not support SET SCHEMA`, measured on
+	// PostgreSQL 18.
+	Relocatable bool `json:"relocatable"`
 }
 
 // ViewDiff represents changes to a view definition.
