@@ -12,7 +12,7 @@ const atlasPreserveHelpAnnotation = "ptah.atlas.preserve-help"
 
 func installAtlasUsageTree(cmd *cobra.Command) {
 	if cmd.Annotations == nil {
-		cmd.Annotations = map[string]string{}
+		cmd.Annotations = make(map[string]string)
 	}
 	if cmd.Annotations[atlasPreserveHelpAnnotation] == "" {
 		cmd.SetHelpFunc(func(cmd *cobra.Command, _ []string) {

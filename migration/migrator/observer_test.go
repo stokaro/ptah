@@ -370,7 +370,7 @@ func TestStatementObserver_NormalWriterExecutionIsObservedOnce(t *testing.T) {
 			Statement:  "CREATE TABLE writer_observed (id INTEGER PRIMARY KEY)",
 			Index:      1,
 			Total:      1,
-			Directives: map[string]string{},
+			Directives: make(map[string]string),
 		},
 	})
 }
@@ -405,7 +405,7 @@ func TestStatementObserver_InterceptorHandledStatementIsObservedOnce(t *testing.
 			Statement:  "EXECUTE THROUGH INTERCEPTOR",
 			Index:      1,
 			Total:      1,
-			Directives: map[string]string{},
+			Directives: make(map[string]string),
 		},
 	})
 }
@@ -445,7 +445,7 @@ func TestStatementObserverFunc_AdaptsFunction(t *testing.T) {
 			Statement:  "EXECUTE THROUGH INTERCEPTOR",
 			Index:      1,
 			Total:      1,
-			Directives: map[string]string{},
+			Directives: make(map[string]string),
 		},
 	})
 }
@@ -543,7 +543,7 @@ func TestStatementObserver_InterceptorDeclinedStatementIsObservedOnce(t *testing
 			Statement:  "CREATE TABLE interceptor_declined (id INTEGER PRIMARY KEY)",
 			Index:      1,
 			Total:      1,
-			Directives: map[string]string{},
+			Directives: make(map[string]string),
 		},
 	})
 }

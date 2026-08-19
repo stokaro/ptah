@@ -124,7 +124,7 @@ func (q Qualifier) ApplyToPlan(dialect string, desired *goschema.Database, nodes
 	state := &qualifyState{
 		qualifier: q,
 		enums:     enumTypeNames(dialect, desired),
-		schemas:   map[string]struct{}{},
+		schemas:   make(map[string]struct{}),
 	}
 	for _, node := range nodes {
 		if err := state.rewriteNode(node); err != nil {

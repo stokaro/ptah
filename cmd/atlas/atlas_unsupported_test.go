@@ -42,7 +42,7 @@ func TestCompatCommand_UnsupportedCommandsHelp(t *testing.T) {
 			var out bytes.Buffer
 			cmd.SetOut(&out)
 			cmd.SetErr(&out)
-			cmd.SetArgs(append(append([]string{}, test.path...), "--help"))
+			cmd.SetArgs(append(append(make([]string, 0), test.path...), "--help"))
 
 			err := cmd.Execute()
 

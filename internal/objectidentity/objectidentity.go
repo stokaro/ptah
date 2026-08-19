@@ -554,7 +554,7 @@ type Set struct {
 
 // NewSet returns an empty Set.
 func NewSet() *Set {
-	return &Set{members: map[Key]ID{}}
+	return &Set{members: make(map[Key]ID)}
 }
 
 // Add records an identity and reports the one already present under the same

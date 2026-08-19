@@ -649,7 +649,7 @@ func (p atlasParser) validateAtlasBodyStructure(scope string, body *hclsyntax.Bo
 		}
 	}
 
-	seen := map[string]struct{}{}
+	seen := make(map[string]struct{})
 	for _, block := range body.Blocks {
 		blockStructure, ok := structure.blocks[block.Type]
 		if !ok {

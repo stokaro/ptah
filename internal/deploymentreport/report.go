@@ -309,7 +309,7 @@ func marshal(report Report) ([]byte, error) {
 		Dialect:                 report.Dialect,
 		FromVersion:             report.FromVersion,
 		ToVersion:               report.ToVersion,
-		AppliedVersions:         append([]int64{}, report.AppliedVersions...),
+		AppliedVersions:         append(make([]int64, 0), report.AppliedVersions...),
 		StartedAt:               report.StartedAt.Round(0).UTC(),
 		FinishedAt:              report.FinishedAt.Round(0).UTC(),
 		Outcome:                 report.Outcome,

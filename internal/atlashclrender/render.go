@@ -992,7 +992,7 @@ func (r *renderer) renderForeignKey(
 	columns []string,
 	foreignTable string,
 	foreignColumns []string,
-	onDelete string,
+	onDelete,
 	onUpdate string,
 	deferral foreignKeyDeferral,
 ) {
@@ -1515,7 +1515,7 @@ func columnRef(name string) string {
 func (r *renderer) schemaRef(name string) string {
 	if name != "" {
 		if r.schemaRefs == nil {
-			r.schemaRefs = map[string]bool{}
+			r.schemaRefs = make(map[string]bool)
 		}
 		r.schemaRefs[name] = true
 	}

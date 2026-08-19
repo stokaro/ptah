@@ -363,7 +363,7 @@ func atlasMigrateLintFinding(finding migrationlint.Finding) migrationlint.Findin
 
 func migrateLintSteps(
 	files []MigrateLintFile,
-	total int,
+	total,
 	changes int,
 	integrity MigrateLintIntegrity,
 	errText string,

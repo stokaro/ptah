@@ -105,7 +105,7 @@ func targetConnectionRequiredError(
 
 func validateShadowConnection(
 	ctx context.Context,
-	target *dbschema.DatabaseConnection,
+	target,
 	shadow *dbschema.DatabaseConnection,
 	dialect string,
 	capabilities capability.Capabilities,

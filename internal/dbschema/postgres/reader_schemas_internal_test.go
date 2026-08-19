@@ -107,7 +107,7 @@ func TestPostgreSQLReaderReadSchemasReportsWhatItRead(t *testing.T) {
 			name:        "scoped drops a schema the server does not have",
 			connected:   "public",
 			scope:       []string{"missing"},
-			want:        []types.DBSchemaInfo{},
+			want:        make([]types.DBSchemaInfo, 0),
 			wantQueries: 1,
 		},
 	}

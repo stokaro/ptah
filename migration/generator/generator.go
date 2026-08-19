@@ -1646,7 +1646,7 @@ type splitSchemaDiffs struct {
 
 func splitConcurrentIndexDiff(
 	diff *types.SchemaDiff,
-	concurrentIndexRefs []types.IndexRef,
+	concurrentIndexRefs,
 	concurrentIndexDropRefs []types.IndexRef,
 ) splitSchemaDiffs {
 	txDiff := cloneSchemaDiff(diff)
@@ -2702,7 +2702,7 @@ func (c *reverseForeignKeyRemovalCollector) addTableForeignKeys(schema *goschema
 
 func (c *reverseForeignKeyRemovalCollector) selectedFieldForeignKey(
 	table goschema.Table,
-	name string,
+	name,
 	column string,
 ) bool {
 	return c.namedOrHostedAddition(table.QualifiedName(), name) ||
@@ -2712,7 +2712,7 @@ func (c *reverseForeignKeyRemovalCollector) selectedFieldForeignKey(
 
 func (c *reverseForeignKeyRemovalCollector) selectedTableForeignKey(
 	table goschema.Table,
-	tableName string,
+	tableName,
 	name string,
 ) bool {
 	return c.namedOrHostedAddition(tableName, name) || generatedTableInSet(table, c.addedTables)
@@ -2748,7 +2748,7 @@ func (c *reverseForeignKeyRemovalCollector) result() []types.ForeignKeyRemovalIn
 
 func canonicalTableMemberKey(
 	semantics identifier.Semantics,
-	table string,
+	table,
 	member string,
 ) tableMemberKey {
 	return tableMemberKey{

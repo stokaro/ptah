@@ -333,7 +333,7 @@ func sqlStatementPath(statement string, index int, extension string) string {
 	return kind + "/" + sanitizeSchemaInspectFileName(name) + extension
 }
 
-func sqlStatementKindAndName(statement string) (kind string, name string) {
+func sqlStatementKindAndName(statement string) (kind, name string) {
 	fields := strings.Fields(sqlutil.StripComments(statement))
 	if len(fields) < 3 || !strings.EqualFold(fields[0], "CREATE") {
 		return "", ""
@@ -484,7 +484,7 @@ type archiveGrouper struct {
 }
 
 func newArchiveGrouper(extension string) *archiveGrouper {
-	return &archiveGrouper{extension: extension, parts: map[string][]string{}}
+	return &archiveGrouper{extension: extension, parts: make(map[string][]string)}
 }
 
 func (g *archiveGrouper) append(key, data string) {
@@ -535,7 +535,7 @@ func splitTopLevelHCLBlocks(hclText string) ([]schemaInspectHCLBlock, error) {
 	return blocks, nil
 }
 
-func hclBlockKindAndName(block schemaInspectHCLBlock) (kind string, name string) {
+func hclBlockKindAndName(block schemaInspectHCLBlock) (kind, name string) {
 	if len(block.Labels) == 0 {
 		return "", ""
 	}

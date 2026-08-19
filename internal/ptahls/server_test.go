@@ -22,7 +22,7 @@ func TestRunPublishesUTF16DiagnosticsAndHandlesExit(t *testing.T) {
 		"jsonrpc": "2.0",
 		"id":      1,
 		"method":  "initialize",
-		"params":  map[string]any{},
+		"params":  make(map[string]any),
 	}) + framedMessage(map[string]any{
 		"jsonrpc": "2.0",
 		"method":  "textDocument/didOpen",
@@ -42,7 +42,7 @@ func TestRunPublishesUTF16DiagnosticsAndHandlesExit(t *testing.T) {
 		"jsonrpc": "2.0",
 		"id":      2,
 		"method":  "shutdown",
-		"params":  map[string]any{},
+		"params":  make(map[string]any),
 	}) + framedMessage(map[string]any{
 		"jsonrpc": "2.0",
 		"method":  "exit",

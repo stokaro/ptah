@@ -36,7 +36,7 @@ type Aggregate struct {
 // by that shape more than once, most recently by a paths filter that removed
 // jobs from a pull request where their absence read as approval.
 func (a Aggregate) Verdicts() []CellVerdict {
-	received := map[string]CellResult{}
+	received := make(map[string]CellResult)
 	for _, result := range a.Results {
 		received[result.Cell] = result
 	}

@@ -31,7 +31,7 @@ func TestNewFS_CleanReportUsesCanonicalJSON(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	contents, err := fs.ReadFile(reportFS, lintartifact.FileName)
 	c.Assert(err, qt.IsNil)
-	report.Findings = []migrationlint.Finding{}
+	report.Findings = make([]migrationlint.Finding, 0)
 	c.Assert(contents, qt.DeepEquals, canonicalJSON(c, report))
 	c.Assert(string(contents), qt.Contains, `"findings": []`)
 }

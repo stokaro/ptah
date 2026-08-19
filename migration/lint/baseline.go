@@ -61,11 +61,11 @@ func newBaselineIndex(columns []BaselineColumn) map[int64]baselineColumns {
 	if len(columns) == 0 {
 		return nil
 	}
-	index := map[int64]baselineColumns{}
+	index := make(map[int64]baselineColumns)
 	for _, column := range columns {
 		state, ok := index[column.Version]
 		if !ok {
-			state = baselineColumns{byRef: map[string][]BaselineColumn{}, schemaless: true}
+			state = baselineColumns{byRef: make(map[string][]BaselineColumn), schemaless: true}
 		}
 		if column.Schema != "" {
 			state.schemaless = false

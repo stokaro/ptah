@@ -28,7 +28,7 @@ func TestCIMatrix_AccountsForEveryDeclaredLine(t *testing.T) {
 	c.Assert(len(matrix.Cells) > 0, qt.IsTrue,
 		qt.Commentf("a fan-out with no cells produces no jobs and passes by examining nothing"))
 
-	placed := map[string]int{}
+	placed := make(map[string]int)
 	for _, cell := range slices.Concat(matrix.Cells, matrix.Skipped) {
 		placed[cell.ID]++
 	}
@@ -422,7 +422,7 @@ func TestWriteMatrix_PinsALineAtEachLevel(t *testing.T) {
 func TestWriteMatrixSummary_CountsTheDeclaredSupportLevels(t *testing.T) {
 	c := qt.New(t)
 
-	counts := map[capability.SupportLevel]int{}
+	counts := make(map[capability.SupportLevel]int)
 	for _, cell := range capabilityprobe.Cells {
 		counts[cell.Support]++
 	}
@@ -457,7 +457,7 @@ func TestWriteMatrixSummary_CountsTheDeclaredSupportLevels(t *testing.T) {
 // "nothing promised".
 func TestCIMatrix_CellsCarryTheDeclaredSupportLevelAsJSON(t *testing.T) {
 	matrix := capabilityprobe.CIMatrix()
-	declared := map[string]capability.SupportLevel{}
+	declared := make(map[string]capability.SupportLevel)
 	for _, cell := range capabilityprobe.Cells {
 		declared[capabilityprobe.CellID(cell)] = cell.Support
 	}

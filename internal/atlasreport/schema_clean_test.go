@@ -27,11 +27,11 @@ func TestSchemaCleanFormatRendersJSONWithRedactedURL(t *testing.T) {
 	err := atlasreport.WriteSchemaClean(&out, "{{ json . }}", report)
 
 	c.Assert(err, qt.IsNil)
-	got := map[string]any{}
+	got := make(map[string]any)
 	c.Assert(json.Unmarshal(out.Bytes(), &got), qt.IsNil)
 	gotURL := got["Env"].(map[string]any)["URL"].(map[string]any)
 	c.Assert(gotURL["Scheme"], qt.Equals, "sqlite")
-	c.Assert(gotURL["User"], qt.DeepEquals, map[string]any{})
+	c.Assert(gotURL["User"], qt.DeepEquals, make(map[string]any))
 	c.Assert(gotURL["Host"], qt.Equals, "db.sqlite")
 	c.Assert(gotURL["RawQuery"], qt.Equals, "password=xxxxx&token=xxxxx")
 	c.Assert(gotURL["Schema"], qt.Equals, "main")

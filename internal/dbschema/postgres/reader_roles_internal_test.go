@@ -373,7 +373,7 @@ func roleIsUsedByScope(role clusterRole, stripped string, branches []string, bou
 
 // someBranchReads reports whether one branch of the query reads every catalog
 // expression the reason requires.
-func someBranchReads(branches []string, reads []string) bool {
+func someBranchReads(branches, reads []string) bool {
 	for _, branch := range branches {
 		if branchReadsAll(branch, reads) {
 			return true

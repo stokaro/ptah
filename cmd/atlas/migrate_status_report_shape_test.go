@@ -151,7 +151,7 @@ func TestCompatMigrateStatus_MirrorsTheAtlasReportShape(t *testing.T) {
 			dbPath := filepath.Join(root, "shape.db")
 			writeStatusShapeFiles(c, dir, tt.second)
 			for _, seed := range tt.seeds {
-				args := append([]string{}, seed...)
+				args := append(make([]string, 0), seed...)
 				args = append(args, "--url", "sqlite://"+dbPath, "--dir", "file://"+dir)
 				_, seedStderr, seedErr := runCompat(args...)
 				c.Assert(errorText(seedErr), qt.Matches, tt.wantSeedErr,

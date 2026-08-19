@@ -185,7 +185,7 @@ func TestReportNotCreatedOnDevStaysSilentWhenItCreatedEverything(t *testing.T) {
 		{
 			name: "an empty list is not a skipped role",
 			report: func(out *bytes.Buffer) {
-				rolescope.ReportNotCreatedOnDev(out, []goschema.Role{})
+				rolescope.ReportNotCreatedOnDev(out, make([]goschema.Role, 0))
 			},
 		},
 		{

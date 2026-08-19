@@ -11,7 +11,7 @@ import (
 // removed identifiers are reserved by number and name, and new numbers are
 // allocated above everything the type has ever used.
 func (b *builder) reconcile(desired desiredShape, prev *previousSet) (outMessages []message, outEnums []enum, err error) {
-	seenMessages := map[string]bool{}
+	seenMessages := make(map[string]bool)
 	for _, dm := range desired.messages {
 		seenMessages[dm.Name] = true
 		msg, err := b.reconcileMessage(dm, prev)
@@ -21,7 +21,7 @@ func (b *builder) reconcile(desired desiredShape, prev *previousSet) (outMessage
 		outMessages = append(outMessages, msg)
 	}
 
-	seenEnums := map[string]bool{}
+	seenEnums := make(map[string]bool)
 	for _, de := range desired.enums {
 		seenEnums[de.Name] = true
 		en, err := b.reconcileEnum(de, prev)
@@ -64,7 +64,7 @@ func (b *builder) reconcile(desired desiredShape, prev *previousSet) (outMessage
 
 	switch b.opts.TypeRemoval {
 	case RemovalDrop:
-		for _, name := range append(append([]string{}, removedMessages...), removedEnums...) {
+		for _, name := range append(append(make([]string, 0), removedMessages...), removedEnums...) {
 			b.warn(name, fmt.Sprintf(
 				"type %q was removed from the source schema and dropped; its field numbers are no longer reserved and wire compatibility for it is abandoned", name))
 		}
@@ -108,12 +108,12 @@ func (b *builder) reconcileMessage(dm desiredMessage, prev *previousSet) (messag
 		state = prev.Messages[dm.Name]
 	}
 	if state.Numbers == nil {
-		state.Numbers = map[string]int32{}
+		state.Numbers = make(map[string]int32)
 	}
 	msg.Reserved = cloneReservations(state.Reserved)
 
 	highest := state.highestUsed()
-	live := map[string]bool{}
+	live := make(map[string]bool)
 
 	for _, df := range dm.Fields {
 		live[df.Name] = true
@@ -217,12 +217,12 @@ func (b *builder) reconcileEnum(de enum, prev *previousSet) (enum, error) {
 		state = prev.Enums[de.Name]
 	}
 	if state.Numbers == nil {
-		state.Numbers = map[string]int32{}
+		state.Numbers = make(map[string]int32)
 	}
 	out.Reserved = cloneReservations(state.Reserved)
 
 	highest := state.highestUsed()
-	live := map[string]bool{}
+	live := make(map[string]bool)
 
 	for _, dv := range de.Values {
 		live[dv.Name] = true

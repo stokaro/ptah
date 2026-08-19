@@ -240,7 +240,7 @@ env "prod" {
 	c.Assert(cfg.Lint.RuleConfigs["DS"].Exclude, qt.DeepEquals, []string{"legacy/**"})
 
 	rules := projectconfig.Merge(projectconfig.Config{}, parsed)
-	rules.Lint.RuleConfigs = map[string]projectconfig.LintRuleConfig{}
+	rules.Lint.RuleConfigs = make(map[string]projectconfig.LintRuleConfig)
 	cfg = projectconfig.Merge(base, rules)
 
 	c.Assert(cfg.Lint.RuleConfigs, qt.HasLen, 0)
@@ -475,7 +475,7 @@ lint:
 	c.Assert(
 		explicit.SchemasValue(),
 		qt.DeepEquals,
-		projectconfig.Value[[]string]{Value: []string{}, Present: true},
+		projectconfig.Value[[]string]{Value: make([]string, 0), Present: true},
 	)
 	c.Assert(
 		explicit.LintLatestValue(),

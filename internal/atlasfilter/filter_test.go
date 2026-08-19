@@ -148,7 +148,7 @@ func TestExcludeDatabase_ReferencedColumnFilterRemovesForeignKeys(t *testing.T) 
 	c.Assert(err, qt.IsNil)
 	c.Assert(tableNames(got.Tables), qt.DeepEquals, []string{"auth.users", "billing.invoices"})
 	c.Assert(columnNames(got.Tables[0].Columns), qt.DeepEquals, []string{"id"})
-	c.Assert(constraintNames(got.Constraints), qt.DeepEquals, []string{})
+	c.Assert(constraintNames(got.Constraints), qt.DeepEquals, make([]string, 0))
 }
 
 func TestExcludeDatabase_CrossSchemaDependenciesStayIsolated(t *testing.T) {
@@ -195,8 +195,8 @@ func TestExcludeDatabase_ViewFilterRemovesDependentGrants(t *testing.T) {
 	got, err := atlasfilter.ExcludeDatabase(schema, []string{"public.active_users[type=view]"})
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(viewNames(got.Views), qt.DeepEquals, []string{})
-	c.Assert(grantTargets(got.Grants), qt.DeepEquals, []string{})
+	c.Assert(viewNames(got.Views), qt.DeepEquals, make([]string, 0))
+	c.Assert(grantTargets(got.Grants), qt.DeepEquals, make([]string, 0))
 }
 
 func TestExcludeDatabase_CommaSeparatedPatterns(t *testing.T) {
@@ -208,8 +208,8 @@ func TestExcludeDatabase_CommaSeparatedPatterns(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(tableNames(got.Tables), qt.DeepEquals, []string{"auth.users"})
 	c.Assert(columnNames(got.Tables[0].Columns), qt.DeepEquals, []string{"id"})
-	c.Assert(indexNames(got.Indexes), qt.DeepEquals, []string{})
-	c.Assert(constraintNames(got.Constraints), qt.DeepEquals, []string{})
+	c.Assert(indexNames(got.Indexes), qt.DeepEquals, make([]string, 0))
+	c.Assert(constraintNames(got.Constraints), qt.DeepEquals, make([]string, 0))
 }
 
 func TestExcludeDatabase_RetainsUnfilteredObjectKinds(t *testing.T) {
@@ -447,7 +447,7 @@ func TestExcludeGenerated_RemovesTableAndDependentObjects(t *testing.T) {
 	c.Assert(got.Tables[0].Engine, qt.Equals, "InnoDB")
 	c.Assert(generatedFieldNames(got.Fields), qt.DeepEquals, []string{"User.id", "User.email"})
 	c.Assert(generatedIndexNames(got.Indexes), qt.DeepEquals, []string{"users_email_key"})
-	c.Assert(generatedConstraintNames(got.Constraints), qt.DeepEquals, []string{})
+	c.Assert(generatedConstraintNames(got.Constraints), qt.DeepEquals, make([]string, 0))
 	c.Assert(generatedTriggerNames(got.Triggers), qt.DeepEquals, []string{"users_updated_at"})
 	c.Assert(generatedGrantTargets(got.Grants), qt.DeepEquals, []string{"auth.users"})
 	c.Assert(generatedTableNames(schema.Tables), qt.DeepEquals, []string{"auth.users", "auth.audit_log"})
@@ -476,8 +476,8 @@ func TestExcludeGenerated_ColumnFilterRemovesDependentObjects(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(generatedFieldNames(got.Fields), qt.DeepEquals, []string{"User.id"})
 	c.Assert(got.Tables[0].PrimaryKey, qt.DeepEquals, []string{"id"})
-	c.Assert(generatedIndexNames(got.Indexes), qt.DeepEquals, []string{})
-	c.Assert(generatedConstraintNames(got.Constraints), qt.DeepEquals, []string{})
+	c.Assert(generatedIndexNames(got.Indexes), qt.DeepEquals, make([]string, 0))
+	c.Assert(generatedConstraintNames(got.Constraints), qt.DeepEquals, make([]string, 0))
 }
 
 func TestExcludeGenerated_ReferencedColumnFilterRemovesFieldForeignKey(t *testing.T) {

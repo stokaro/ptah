@@ -167,7 +167,7 @@ type nameRegistry struct {
 }
 
 func newNameRegistry() *nameRegistry {
-	return &nameRegistry{used: map[string]bool{}}
+	return &nameRegistry{used: make(map[string]bool)}
 }
 
 func (r *nameRegistry) reserve(name string) {

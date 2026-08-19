@@ -871,9 +871,9 @@ func TestCompatMigrateIntegrityConvertedDir_FailurePathBadArgs(t *testing.T) {
 			dir := writeIntegrityFixture(c)
 			base := []string{"migrate", tt.verb, "--dir", "file://" + dir}
 
-			convertedArgs := append(append(append([]string{}, base...), "--dir-format", "goose"), tt.args...)
+			convertedArgs := append(append(append(make([]string, 0), base...), "--dir-format", "goose"), tt.args...)
 			_, _, convertedErr := runCompatExit(convertedArgs...)
-			_, _, forwardedErr := runCompatExit(append(append([]string{}, base...), tt.args...)...)
+			_, _, forwardedErr := runCompatExit(append(append(make([]string, 0), base...), tt.args...)...)
 
 			c.Assert(convertedErr, qt.ErrorMatches, tt.want)
 			c.Assert(forwardedErr, qt.ErrorMatches, tt.want)

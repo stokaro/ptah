@@ -356,7 +356,7 @@ func postgresSchemaCleanupScope(schemas []string) postgresCleanupScope {
 }
 
 func postgresDatabaseCleanupScope(
-	schemas []string,
+	schemas,
 	systemExtensions []string,
 ) postgresCleanupScope {
 	return postgresCleanupScope{
@@ -771,7 +771,7 @@ func tryDropCleanupObject(
 	ctx context.Context,
 	tx *sql.Tx,
 	object postgresCleanupObject,
-) (dropErr error, controlErr error) {
+) (dropErr, controlErr error) {
 	const savepoint = "ptah_cleanup_object"
 
 	if _, err := tx.ExecContext(ctx, "SAVEPOINT "+savepoint); err != nil {
@@ -1461,7 +1461,7 @@ func validatePostgresSchemaPrivileges(privileges []postgresSchemaPrivilege) erro
 func verifyPostgresDatabaseRealm(
 	ctx context.Context,
 	tx *sql.Tx,
-	preservedSchemas []string,
+	preservedSchemas,
 	systemExtensions []string,
 ) error {
 	schemas, err := collectUserSchemas(ctx, tx)

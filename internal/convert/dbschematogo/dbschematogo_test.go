@@ -96,16 +96,16 @@ func TestConvertDBSchemaToGoSchema_Extensions(t *testing.T) {
 		{
 			name: "no extensions",
 			dbSchema: &types.DBSchema{
-				Extensions: []types.DBExtension{},
+				Extensions: make([]types.DBExtension, 0),
 			},
-			expected: []goschema.Extension{},
+			expected: make([]goschema.Extension, 0),
 		},
 		{
 			name: "nil extensions",
 			dbSchema: &types.DBSchema{
 				Extensions: nil,
 			},
-			expected: []goschema.Extension{},
+			expected: make([]goschema.Extension, 0),
 		},
 	}
 

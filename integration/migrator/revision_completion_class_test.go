@@ -116,7 +116,7 @@ func TestRevisionCompletionFailure_SQLiteTransactional(t *testing.T) {
 func TestRevisionCompletionClasses_EveryClassIsCovered(t *testing.T) {
 	c := qt.New(t)
 
-	covered := map[ddltx.Class][]string{}
+	covered := make(map[ddltx.Class][]string)
 	for _, target := range allRevisionCompletionTargets() {
 		covered[target.class] = append(covered[target.class], target.name)
 	}
@@ -164,7 +164,7 @@ func TestRevisionCompletionClasses_ClassMatchesTheDialect(t *testing.T) {
 // fine.
 func TestRevisionCompletionRepair_CoversExactlyTheSurvivingBodyClasses(t *testing.T) {
 
-	repaired := map[string]bool{}
+	repaired := make(map[string]bool)
 	for _, target := range revisionCompletionRepairTargets() {
 		repaired[target.name] = true
 	}

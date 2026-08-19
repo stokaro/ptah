@@ -327,7 +327,7 @@ func (r *testRegistryTransport) blobResponse(request *http.Request, reference st
 
 func (r *testRegistryTransport) fetchContent(
 	request *http.Request,
-	reference string,
+	reference,
 	errorCode string,
 ) (*http.Response, error) {
 	r.mu.Lock()

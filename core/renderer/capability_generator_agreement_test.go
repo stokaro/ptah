@@ -147,7 +147,7 @@ func withFunction(schema *goschema.Database) {
 // The distinction is the whole measurement: every renderer writes its refusal
 // as a comment repeating the object's DDL keywords, so a plain substring search
 // over the output cannot tell the two apart.
-func emitsExecutable(statements []string, keywords []string) bool {
+func emitsExecutable(statements, keywords []string) bool {
 	for _, statement := range statements {
 		for line := range strings.SplitSeq(statement, "\n") {
 			trimmed := strings.TrimSpace(line)

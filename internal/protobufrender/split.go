@@ -89,7 +89,7 @@ func (b *builder) assignFiles(desired desiredShape, anchor string) (map[string]s
 		return homes, nil
 	}
 
-	claimed := map[string][]string{}
+	claimed := make(map[string][]string)
 	for _, dm := range desired.messages {
 		name := splitFileName(dm.Name)
 		claimed[name] = append(claimed[name], dm.Name)

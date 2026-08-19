@@ -816,7 +816,7 @@ func TestFindMigrationGaps(t *testing.T) {
 	c.Assert(gaps2, qt.Contains, int64(7))
 
 	// Test with empty slice
-	versions3 := []int64{}
+	versions3 := make([]int64, 0)
 	gaps3 := FindMigrationGaps(versions3)
 	c.Assert(gaps3, qt.IsNil)
 

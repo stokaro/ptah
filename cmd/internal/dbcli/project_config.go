@@ -246,7 +246,7 @@ func cloneProjectConfig(config projectconfig.Config) projectconfig.Config {
 // config value (including an empty value), then the flag's built-in default.
 func EffectiveString(
 	cmd *cobra.Command,
-	flagName string,
+	flagName,
 	flagValue string,
 	configValue projectconfig.Value[string],
 ) string {
@@ -271,7 +271,7 @@ func JoinSchemasValue(value projectconfig.Value[[]string]) projectconfig.Value[s
 // auto-discovered and executing repository-controlled code must be explicit.
 func ResolveExternalSchemaCommands(
 	cmd *cobra.Command,
-	schemaCmd string,
+	schemaCmd,
 	schemaFormat string,
 	cfg projectconfig.Config,
 ) ([]schemasource.Command, error) {
@@ -325,7 +325,7 @@ func externalSchemaCommandsFromCLI(commandLine, format string) []schemasource.Co
 
 func externalSchemaCommandsFromConfig(
 	program []string,
-	format string,
+	format,
 	dir string,
 	env []string,
 ) ([]schemasource.Command, error) {

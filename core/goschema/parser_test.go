@@ -618,7 +618,7 @@ func TestDependencyResolution(t *testing.T) {
 	// Check that dependencies are correctly identified
 	c.Assert(result.Dependencies["articles"], qt.DeepEquals, []string{"users"})
 	c.Assert(result.Dependencies["products"], qt.DeepEquals, []string{"categories"})
-	c.Assert(result.Dependencies["categories"], qt.DeepEquals, []string{}) // self-reference moved to SelfReferencingForeignKeys
+	c.Assert(result.Dependencies["categories"], qt.DeepEquals, make([]string, 0)) // self-reference moved to SelfReferencingForeignKeys
 
 	// Check that self-referencing foreign keys are tracked separately
 	c.Assert(result.SelfReferencingForeignKeys["categories"], qt.HasLen, 1)
@@ -683,7 +683,7 @@ func TestGetDependencyInfo_EmptyResult(t *testing.T) {
 
 	// Create an empty result to test edge case
 	result := &goschema.Database{
-		Tables:       []goschema.Table{},
+		Tables:       make([]goschema.Table, 0),
 		Dependencies: make(map[string][]string),
 	}
 

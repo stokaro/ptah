@@ -441,7 +441,7 @@ func (r *renderer) documentRequiresExtension(name string) bool {
 // refused it with `postgres: extensions are not supported by this version`,
 // while both documents applied at exit 0.
 func collectRequiredExtensions(db *goschema.Database) map[string]bool {
-	required := map[string]bool{}
+	required := make(map[string]bool)
 	add := func(names []string) {
 		for _, name := range names {
 			name = strings.ToLower(strings.TrimSpace(name))
@@ -520,7 +520,7 @@ func (r *renderer) documentNamesAny(names []string) bool {
 // pg_depend: the names collected here are matched against what the extension
 // supplies, not against its label.
 func collectReferencedNames(db *goschema.Database) map[string]bool {
-	names := map[string]bool{}
+	names := make(map[string]bool)
 	add := func(text string) {
 		for _, token := range sqlIdentifierTokens(text) {
 			names[token] = true

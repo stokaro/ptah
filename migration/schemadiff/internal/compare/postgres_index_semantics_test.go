@@ -448,7 +448,7 @@ func TestPostgresIndexSemantics_EquivalentDefinitionsDoNotChurn(t *testing.T) {
 			name: "no storage parameters on either side",
 			generated: func() goschema.Index {
 				index := generatedIndex([]goschema.IndexPart{{Name: "ts"}})
-				index.StorageParams = map[string]string{}
+				index.StorageParams = make(map[string]string)
 				return index
 			}(),
 			database: databaseIndex([]types.DBIndexPart{{Name: "ts"}}),

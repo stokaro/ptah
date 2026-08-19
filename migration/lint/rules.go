@@ -159,7 +159,7 @@ func tableDroppedRule() Rule {
 				return nil
 			}
 			var findings []Finding
-			created := map[string]bool{}
+			created := make(map[string]bool)
 			for i := range file.Statements {
 				stmt := &file.Statements[i]
 				if ref := createdTableRef(stmt.Words); ref != "" {
@@ -555,7 +555,7 @@ func notNullWithoutDefaultFindings(file *File) []Finding {
 		return nil
 	}
 	var findings []Finding
-	created := map[string]bool{}
+	created := make(map[string]bool)
 	for i := range file.Statements {
 		stmt := &file.Statements[i]
 		if ref := createdTableRef(stmt.Words); ref != "" {
@@ -819,7 +819,7 @@ func postgresCreateIndexRule() Rule {
 				return nil
 			}
 			var findings []Finding
-			created := map[string]bool{}
+			created := make(map[string]bool)
 			for i := range file.Statements {
 				stmt := &file.Statements[i]
 				if ref := createdTableRef(stmt.Words); ref != "" {
@@ -1522,7 +1522,7 @@ func scanAddIdentityColumn(w []string) bool {
 	return false
 }
 
-func addColumnClause(w []string, i int) (start int, end int, ok bool) {
+func addColumnClause(w []string, i int) (start, end int, ok bool) {
 	if i >= len(w) || w[i] != "ADD" {
 		return 0, 0, false
 	}
@@ -1874,7 +1874,7 @@ func refersToCreated(created map[string]bool, ref string) bool {
 // same file and whether every target was parsed. An incomplete parse must remain
 // destructive because treating an unknown target as safe would be fail-open.
 func droppedTablesNotCreated(
-	w []string,
+	w,
 	sourceWords []string,
 	created map[string]bool,
 ) ([]tableReference, bool) {

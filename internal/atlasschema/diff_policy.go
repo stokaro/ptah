@@ -54,10 +54,10 @@ func applyDiffPolicy(diff *difftypes.SchemaDiff, policy DiffPolicy) *difftypes.S
 
 func filterConstraintRemovalsByTable(
 	values []difftypes.ConstraintRemovalInfo,
-	names []string,
+	names,
 	removedTables []string,
 ) ([]difftypes.ConstraintRemovalInfo, []string) {
-	removedNames := map[string]struct{}{}
+	removedNames := make(map[string]struct{})
 	filtered := slices.DeleteFunc(slices.Clone(values), func(value difftypes.ConstraintRemovalInfo) bool {
 		matched := slices.Contains(removedTables, value.TableName)
 		if matched {

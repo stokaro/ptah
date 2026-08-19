@@ -254,7 +254,7 @@ func TestExcludeDatabase_LeadingSchemaTypeSelector(t *testing.T) {
 		{
 			name:        "a schema that holds nothing removes nothing",
 			patterns:    []string{"nosuch[type=schema].*[type=table]"},
-			wantRemoved: []string{},
+			wantRemoved: make([]string, 0),
 		},
 	}
 
@@ -300,7 +300,7 @@ func TestExcludeGenerated_LeadingSchemaTypeSelector(t *testing.T) {
 		{
 			name:       "every table in every schema",
 			patterns:   []string{"*[type=schema].*[type=table]"},
-			wantTables: []string{},
+			wantTables: make([]string, 0),
 			wantEnums:  []string{"mood", "app.color"},
 		},
 		{
@@ -313,7 +313,7 @@ func TestExcludeGenerated_LeadingSchemaTypeSelector(t *testing.T) {
 			name:       "another kind entirely",
 			patterns:   []string{"*[type=schema].*[type=enum]"},
 			wantTables: []string{"app.orders", "users"},
-			wantEnums:  []string{},
+			wantEnums:  make([]string, 0),
 		},
 	}
 
@@ -414,7 +414,7 @@ func TestExcludeDatabase_FieldSelectorsSubtractFields(t *testing.T) {
 			c.Assert(grammarRemoved(grammarFieldCensus(grammarFixture()), grammarFieldCensus(got)),
 				qt.DeepEquals, test.wantSubtracted)
 			c.Assert(grammarRemoved(grammarCensus(grammarFixture()), grammarCensus(got)),
-				qt.DeepEquals, []string{})
+				qt.DeepEquals, make([]string, 0))
 		})
 	}
 }

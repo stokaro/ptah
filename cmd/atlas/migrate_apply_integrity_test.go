@@ -287,7 +287,7 @@ func TestCompatMigrateApply_DirWithoutSQLFilesApplies(t *testing.T) {
 		name  string
 		files map[string]string
 	}{
-		{name: "empty directory", files: map[string]string{}},
+		{name: "empty directory", files: make(map[string]string)},
 		{
 			name:  "no SQL files",
 			files: map[string]string{".gitkeep": "", "README.md": "migrations live here\n"},

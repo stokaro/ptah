@@ -176,7 +176,7 @@ func TestExcludeDatabaseWithDefaultSchema_QualifiedSelectorsReachEnumsAndFunctio
 			// narrows: this pattern names every enum and nothing else.
 			name:          "type selector still narrows to one kind",
 			pattern:       "*[type=enum]",
-			wantEnums:     []string{},
+			wantEnums:     make([]string, 0),
 			wantFunctions: allFixtureFunctions,
 			wantTables:    allFixtureTables,
 			wantViews:     allFixtureViews,

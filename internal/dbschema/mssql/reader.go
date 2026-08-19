@@ -1019,8 +1019,8 @@ func normalizeRule(rule string) *string {
 }
 
 func reconcileColumnFlags(schema *types.DBSchema) {
-	primary := map[catalogTableKey]map[string]struct{}{}
-	unique := map[catalogTableKey]map[string]struct{}{}
+	primary := make(map[catalogTableKey]map[string]struct{})
+	unique := make(map[catalogTableKey]map[string]struct{})
 	for _, constraint := range schema.Constraints {
 		key := catalogTableKey{schema: constraint.Schema, table: constraint.TableName}
 		switch constraint.Type {

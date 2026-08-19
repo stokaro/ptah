@@ -516,7 +516,7 @@ func TestWriterDropDatabaseRealm_IsIdempotentWhenDatabaseIsEmpty(t *testing.T) {
 		databaseRealmNoExternalDependencyQuery(database),
 		emptyObjectsQuery,
 	)
-	queries := append(append([]sqlMockQuery{}, oneRun...), oneRun...)
+	queries := append(append(make([]sqlMockQuery, 0), oneRun...), oneRun...)
 	db := openClickHouseSQLMock(t, c, queries, nil)
 	writer := clickhouse.NewClickHouseWriter(db.SQL, database)
 
@@ -642,8 +642,8 @@ func databaseRealmVersionResult(version string) sqlMockQuery {
 }
 
 func databaseRealmPreflightQueries(
-	database string,
-	privilegesQuery string,
+	database,
+	privilegesQuery,
 	engine string,
 ) []sqlMockQuery {
 	return append(
@@ -653,8 +653,8 @@ func databaseRealmPreflightQueries(
 }
 
 func databaseRealmTargetPreflightQueries(
-	database string,
-	privilegesQuery string,
+	database,
+	privilegesQuery,
 	engine string,
 ) []sqlMockQuery {
 	return []sqlMockQuery{
@@ -716,7 +716,7 @@ func normalizeSQL(query string) string {
 }
 
 func normalizeSQLArgs(args []driver.NamedValue) []driver.NamedValue {
-	return append([]driver.NamedValue{}, args...)
+	return append(make([]driver.NamedValue, 0), args...)
 }
 
 // A supplied capability set is the answer, and the banner is then read only to

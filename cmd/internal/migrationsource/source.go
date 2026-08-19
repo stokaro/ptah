@@ -151,7 +151,7 @@ func WithVirtual(ctx context.Context, raw string, fsys fs.FS, display string) co
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	sources := map[string]virtualContextSource{}
+	sources := make(map[string]virtualContextSource)
 	if current, ok := ctx.Value(virtualContextKey{}).(virtualContextValue); ok {
 		maps.Copy(sources, current.sources)
 	}

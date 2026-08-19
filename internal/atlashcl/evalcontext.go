@@ -57,7 +57,7 @@ func newEvalContext(
 		overrides[name] = cty.StringVal(value)
 	}
 	ctx := &hcl.EvalContext{
-		Variables: map[string]cty.Value{},
+		Variables: make(map[string]cty.Value),
 		Functions: schemaFunctions(printLine),
 	}
 	if err := bindVariables(ctx, body, overrides); err != nil {
@@ -73,7 +73,7 @@ func newEvalContext(
 // name collects a list, which then fails the variable's declared scalar type the
 // way that binary fails it ("variable \"v\": string required").
 func parseVarOverrides(vars []string) (map[string]cty.Value, error) {
-	overrides := map[string]cty.Value{}
+	overrides := make(map[string]cty.Value)
 	for _, raw := range vars {
 		values, err := csv.NewReader(strings.NewReader(raw)).Read()
 		if err != nil {
@@ -120,7 +120,7 @@ type schemaVariable struct {
 }
 
 func bindVariables(ctx *hcl.EvalContext, body *hclsyntax.Body, overrides map[string]cty.Value) error {
-	values := map[string]cty.Value{}
+	values := make(map[string]cty.Value)
 	for _, block := range body.Blocks {
 		if block.Type != variableBlockType {
 			continue
@@ -319,7 +319,7 @@ func bindLocals(ctx *hcl.EvalContext, body *hclsyntax.Body) (*hcl.EvalContext, e
 			return nil, err
 		}
 	}
-	values := map[string]cty.Value{}
+	values := make(map[string]cty.Value)
 	for len(pending) > 0 {
 		stuck := sortedAttrNames(pending)[0]
 		if !bindResolvableLocals(ctx, values, pending) {

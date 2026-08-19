@@ -143,7 +143,7 @@ func TestMigrationStatus_NoPending(t *testing.T) {
 
 	status := &MigrationStatus{
 		CurrentVersion:    5,
-		PendingMigrations: []int64{},
+		PendingMigrations: make([]int64, 0),
 		TotalMigrations:   5,
 		HasPendingChanges: false,
 	}
@@ -186,12 +186,12 @@ func TestSplitSQLStatements(t *testing.T) {
 		{
 			name:     "empty SQL",
 			sql:      "",
-			expected: []string{},
+			expected: make([]string, 0),
 		},
 		{
 			name:     "only comments",
 			sql:      "-- This is a comment\n/* Another comment */",
-			expected: []string{},
+			expected: make([]string, 0),
 		},
 	}
 

@@ -88,7 +88,7 @@ func TestWriterDropDatabaseRealm_UsesPinnedConnectionForVerification(t *testing.
 	c := qt.New(t)
 	recorder := &mysqlCleanupRecorder{
 		foreignKeyChecks: 1,
-		objects:          [][]driver.Value{},
+		objects:          make([][]driver.Value, 0),
 	}
 	db := dbtest.OpenWithExec(t, recorder.query, recorder.exec)
 	db.SQL.SetMaxOpenConns(1)

@@ -568,7 +568,7 @@ func (r globalMetadataRequirements) satisfiedBy(privileges globalMetadataPrivile
 func requireGlobalMetadataVisibility(
 	ctx context.Context,
 	conn *sql.Conn,
-	schema string,
+	schema,
 	dialect string,
 	caps capability.Capabilities,
 ) error {

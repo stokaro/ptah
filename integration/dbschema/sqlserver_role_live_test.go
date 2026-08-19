@@ -70,7 +70,7 @@ func TestSQLServerLiveRoleAndGrantRoundTrip(t *testing.T) {
 	c.Assert(withOption["INSERT"], qt.IsTrue)
 	c.Assert(withOption["SELECT"], qt.IsFalse)
 
-	names := map[string]bool{}
+	names := make(map[string]bool)
 	for _, readRole := range live.Roles {
 		names[readRole.Name] = true
 	}
@@ -281,8 +281,8 @@ func TestSQLServerLiveReaderClassifiesDenyAndSchemaGrants(t *testing.T) {
 // grantsHeldBy collects what one role holds, and which of those carry the grant
 // option.
 func grantsHeldBy(grants []dbschematypes.DBGrant, role string) (held, withOption map[string]bool) {
-	held = map[string]bool{}
-	withOption = map[string]bool{}
+	held = make(map[string]bool)
+	withOption = make(map[string]bool)
 	for _, grant := range grants {
 		if grant.Role != role {
 			continue

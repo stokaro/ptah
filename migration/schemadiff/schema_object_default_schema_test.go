@@ -51,7 +51,7 @@ func TestCompareWithDialect_DifferentSchemaDoesNotMatchSchemaObjects(t *testing.
 }
 
 func schemaObjectIdentityFixtures(
-	desiredSchema string,
+	desiredSchema,
 	currentSchema string,
 ) (*goschema.Database, *types.DBSchema) {
 	generated := &goschema.Database{

@@ -30,7 +30,7 @@ func TestIssue34_ExplicitlyDefinedUniqueIndexes(t *testing.T) {
 
 		// Database has no indexes yet (fresh database)
 		database := &types.DBSchema{
-			Indexes: []types.DBIndex{},
+			Indexes: make([]types.DBIndex, 0),
 		}
 
 		diff := &difftypes.SchemaDiff{}

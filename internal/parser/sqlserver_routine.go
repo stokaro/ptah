@@ -57,7 +57,7 @@ func parseSQLServerRoutineHeader(
 	tokens []lexer.Token,
 	kind ast.RoutineKind,
 	asIdx int,
-) (name string, parameters string, returns string) {
+) (name, parameters, returns string) {
 	keywordIdx := findSQLServerRoutineKeyword(tokens, strings.ToUpper(string(kind)), 0)
 	if keywordIdx == -1 && kind == ast.RoutineKindProcedure {
 		keywordIdx = findSQLServerRoutineKeyword(tokens, "PROC", 0)
@@ -154,7 +154,7 @@ func findSQLServerRoutineClosingParen(tokens []lexer.Token, openIdx int) int {
 	return openIdx
 }
 
-func parseSQLServerRoutineReturns(sql string, tokens []lexer.Token, afterIdx int, asIdx int) string {
+func parseSQLServerRoutineReturns(sql string, tokens []lexer.Token, afterIdx, asIdx int) string {
 	returnsIdx := findSQLServerRoutineKeyword(tokens, "RETURNS", afterIdx+1)
 	if returnsIdx == -1 || returnsIdx >= asIdx {
 		return ""
@@ -277,7 +277,7 @@ func (p sqlServerRoutineBodyParser) statement(startIdx, endIdx int) ast.SQLServe
 	return p.statementUntil(startIdx, end)
 }
 
-func (p sqlServerRoutineBodyParser) statementUntil(startIdx int, end int) ast.SQLServerRoutineStatement {
+func (p sqlServerRoutineBodyParser) statementUntil(startIdx, end int) ast.SQLServerRoutineStatement {
 	return ast.SQLServerRoutineStatement{
 		Kind: p.classifyStatement(startIdx),
 		SQL:  strings.TrimSpace(p.rawFragment(p.tokens[startIdx].Start, end)),
@@ -337,7 +337,7 @@ func (p sqlServerRoutineBodyParser) findMatchingBlockEnd(beginIdx int) int {
 	return -1
 }
 
-func trackSQLServerRoutineBodyKeyword(value string, nextValue string, blockDepth, caseDepth *int) {
+func trackSQLServerRoutineBodyKeyword(value, nextValue string, blockDepth, caseDepth *int) {
 	switch strings.ToUpper(value) {
 	case "BEGIN":
 		if sqlServerRawRoutineNonBlockBeginFollower(nextValue) {
@@ -374,7 +374,7 @@ func findSQLServerRoutineKeyword(tokens []lexer.Token, keyword string, startIdx 
 	return -1
 }
 
-func findSQLServerRoutineOperator(tokens []lexer.Token, operator string, startIdx int, endIdx int) int {
+func findSQLServerRoutineOperator(tokens []lexer.Token, operator string, startIdx, endIdx int) int {
 	if endIdx == -1 {
 		endIdx = len(tokens)
 	}

@@ -155,7 +155,7 @@ func TestAnalyzeFS_RenameAddSideSilentCases(t *testing.T) {
 				"2_rename.sql": "CREATE TABLE users (id int NOT NULL);\nALTER TABLE users RENAME COLUMN id TO oid;",
 			},
 			baseline: notNullBaseline(),
-			want:     []string{},
+			want:     make([]string, 0),
 		},
 		{
 			// A table rename introduces no column, so it has no add side.

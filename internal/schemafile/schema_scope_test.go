@@ -159,7 +159,7 @@ func TestLoadAcceptsADocumentTheRunCanReach(t *testing.T) {
 			name:        "a document with no schema block at all loads under a limited run",
 			files:       map[string]string{"schema.hcl": postsHCL[len("schema \"main\" {}\n"):]},
 			opts:        schemafile.Options{Dialect: "sqlite", SchemaScope: "main", SchemaScopeFlag: "dev-url"},
-			wantSchemas: []string{},
+			wantSchemas: make([]string, 0),
 			wantTables:  []string{"posts"},
 		},
 		{
@@ -169,7 +169,7 @@ func TestLoadAcceptsADocumentTheRunCanReach(t *testing.T) {
 				"2_b.sql": "CREATE TABLE posts (id INTEGER PRIMARY KEY);\n",
 			},
 			opts:        schemafile.Options{Dialect: "sqlite", SchemaScope: "main", SchemaScopeFlag: "dev-url"},
-			wantSchemas: []string{},
+			wantSchemas: make([]string, 0),
 			// Sorted rather than in file order: the SQL path finishes through
 			// goschema.Finalize, which orders tables by their dependencies.
 			wantTables: []string{"posts", "users"},

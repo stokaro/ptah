@@ -43,7 +43,7 @@ func TestReadSynonyms_Live(t *testing.T) {
 	schema, err := reader.ReadSchema()
 	c.Assert(err, qt.IsNil)
 
-	byName := map[string]int{}
+	byName := make(map[string]int)
 	for i, synonym := range schema.Synonyms {
 		byName[synonym.QualifiedName()] = i
 	}

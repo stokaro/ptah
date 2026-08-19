@@ -99,7 +99,7 @@ func primaryKeyColumns(c *qt.C, dbURL, database, table string) []string {
 		  ORDER BY ORDINAL_POSITION`, database, table)
 	c.Assert(err, qt.IsNil)
 	defer func() { _ = rows.Close() }()
-	found := []string{}
+	found := make([]string, 0)
 	for rows.Next() {
 		var column string
 		c.Assert(rows.Scan(&column), qt.IsNil)
@@ -159,7 +159,7 @@ func TestPrimaryKeyIsPlannedOnceLiveMySQL(t *testing.T) {
 			executeMySQL(c, dbURL, []string{
 				"CREATE TABLE `orders` (`id` INT NOT NULL, `note` TEXT)",
 			})
-			c.Assert(primaryKeyColumns(c, dbURL, database, "orders"), qt.DeepEquals, []string{})
+			c.Assert(primaryKeyColumns(c, dbURL, database, "orders"), qt.DeepEquals, make([]string, 0))
 
 			generated := &goschema.Database{
 				Tables: []goschema.Table{{StructName: "Order", Name: "orders", Schema: database}},

@@ -59,14 +59,14 @@ type Result struct {
 
 // CommandRunner runs an external command and returns its combined output.
 type CommandRunner interface {
-	Run(ctx context.Context, name string, args []string, env []string) (string, error)
+	Run(ctx context.Context, name string, args, env []string) (string, error)
 }
 
 // ExecCommandRunner runs commands with os/exec.
 type ExecCommandRunner struct{}
 
 // Run executes one command with the supplied extra environment.
-func (ExecCommandRunner) Run(ctx context.Context, name string, args []string, env []string) (string, error) {
+func (ExecCommandRunner) Run(ctx context.Context, name string, args, env []string) (string, error) {
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Env = append(os.Environ(), env...)
 	out, err := cmd.CombinedOutput()
@@ -469,7 +469,7 @@ func isMySQLDumpDialect(dialect string) bool {
 	}
 }
 
-func mysqlDumpCommand(dbURL, outputPath string) (args []string, env []string, err error) {
+func mysqlDumpCommand(dbURL, outputPath string) (args, env []string, err error) {
 	parsed, err := parseMySQLURL(dbURL)
 	if err != nil {
 		return nil, nil, err
@@ -498,7 +498,7 @@ func mysqlDumpCommand(dbURL, outputPath string) (args []string, env []string, er
 	return args, env, nil
 }
 
-func postgresDumpCommand(dbURL, outputPath string) (args []string, env []string) {
+func postgresDumpCommand(dbURL, outputPath string) (args, env []string) {
 	dumpURL := postgresDumpURL(dbURL)
 	parsed, err := url.Parse(dumpURL)
 	if err == nil && parsed.User != nil {

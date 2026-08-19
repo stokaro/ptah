@@ -63,21 +63,21 @@ func TestAnalyzeFS_SchemaScopeFiltersFindings(t *testing.T) {
 			base:  appBase,
 			sql:   "DROP TABLE app.\"Users\", app.audit_log;\n",
 			scope: "public",
-			want:  []string{},
+			want:  make([]string, 0),
 		},
 		{
 			name:  "single-target drop outside the scope is not reported",
 			base:  appBase,
 			sql:   "DROP TABLE app.\"Users\";\n",
 			scope: "public",
-			want:  []string{},
+			want:  make([]string, 0),
 		},
 		{
 			name:  "column drop outside the scope is not reported",
 			base:  appColumnBase,
 			sql:   "ALTER TABLE app.users DROP COLUMN nick;\n",
 			scope: "public",
-			want:  []string{},
+			want:  make([]string, 0),
 		},
 		{
 			name:  "an unrestricted scope reports the same out-of-schema drop",
@@ -184,7 +184,7 @@ func TestAnalyzeFS_SchemaScopeFiltersChanges(t *testing.T) {
 			base:  "CREATE SCHEMA app;\nCREATE TABLE app.a (id int);\nCREATE TABLE app.b (id int);\n",
 			sql:   "DROP TABLE app.a, app.b;\n",
 			scope: "public",
-			want:  []changeProjection{},
+			want:  make([]changeProjection, 0),
 		},
 		{
 			name:  "a mixed drop counts only its in-scope target",
@@ -198,7 +198,7 @@ func TestAnalyzeFS_SchemaScopeFiltersChanges(t *testing.T) {
 			base:  "CREATE SCHEMA app;\nCREATE TABLE app.users (id int, nick text);\n",
 			sql:   "ALTER TABLE app.users DROP COLUMN nick;\n",
 			scope: "public",
-			want:  []changeProjection{},
+			want:  make([]changeProjection, 0),
 		},
 		{
 			name:  "an in-scope ALTER TABLE still counts its column change",
@@ -254,16 +254,16 @@ func TestAnalyzeFS_SchemaScopeDecidesOncePerStatement(t *testing.T) {
 			base:         appTable,
 			sql:          "ALTER TABLE app.users ADD CONSTRAINT users_id_key UNIQUE (id);\n",
 			scope:        "public",
-			wantChanges:  []changeProjection{},
-			wantFindings: []string{},
+			wantChanges:  make([]changeProjection, 0),
+			wantFindings: make([]string, 0),
 		},
 		{
 			name:         "an index on a table outside the scope reports neither",
 			base:         appTable,
 			sql:          "CREATE INDEX idx ON app.users (id);\n",
 			scope:        "public",
-			wantChanges:  []changeProjection{},
-			wantFindings: []string{},
+			wantChanges:  make([]changeProjection, 0),
+			wantFindings: make([]string, 0),
 		},
 		{
 			name:         "a column dropped inside the scope reports both",
@@ -278,8 +278,8 @@ func TestAnalyzeFS_SchemaScopeDecidesOncePerStatement(t *testing.T) {
 			base:         "CREATE SCHEMA app;\nCREATE TABLE app.t (id int, c text);\n",
 			sql:          "ALTER TABLE app.t DROP COLUMN c;\n",
 			scope:        "public",
-			wantChanges:  []changeProjection{},
-			wantFindings: []string{},
+			wantChanges:  make([]changeProjection, 0),
+			wantFindings: make([]string, 0),
 		},
 		{
 			name:         "an index on a table inside the scope reports both",
@@ -362,38 +362,38 @@ func TestAnalyzeFS_SchemaScopeRemovesOnlyStatementsNamingNothingUnderReview(t *t
 		{
 			name:         "a foreign key referencing the reviewed schema keeps its statement under review",
 			sql:          "ALTER TABLE app.child ADD CONSTRAINT child_pid_fkey FOREIGN KEY (pid) REFERENCES public.parent (id);\n",
-			wantChanges:  []changeProjection{},
+			wantChanges:  make([]changeProjection, 0),
 			wantFindings: []string{"PG306"},
 		},
 		{
 			name:         "a foreign key referencing only the unreviewed schema reports neither",
 			sql:          "ALTER TABLE app.child ADD CONSTRAINT child_pid_fkey FOREIGN KEY (pid) REFERENCES app.parent (id);\n",
-			wantChanges:  []changeProjection{},
-			wantFindings: []string{},
+			wantChanges:  make([]changeProjection, 0),
+			wantFindings: make([]string, 0),
 		},
 		{
 			name:         "an unqualified foreign key reference resolves into the reviewed schema",
 			sql:          "ALTER TABLE app.child ADD CONSTRAINT child_pid_fkey FOREIGN KEY (pid) REFERENCES parent (id);\n",
-			wantChanges:  []changeProjection{},
+			wantChanges:  make([]changeProjection, 0),
 			wantFindings: []string{"PG306"},
 		},
 		{
 			name:         "a foreign key written inline on an added column is the same reference",
 			sql:          "ALTER TABLE app.users ADD COLUMN pid int REFERENCES public.parent (id), ADD CONSTRAINT users_id_key UNIQUE (id);\n",
-			wantChanges:  []changeProjection{},
+			wantChanges:  make([]changeProjection, 0),
 			wantFindings: []string{"PG105"},
 		},
 		{
 			name:         "an inline foreign key outside the reviewed schema reports neither",
 			sql:          "ALTER TABLE app.users ADD COLUMN pid int REFERENCES app.parent (id), ADD CONSTRAINT users_id_key UNIQUE (id);\n",
-			wantChanges:  []changeProjection{},
-			wantFindings: []string{},
+			wantChanges:  make([]changeProjection, 0),
+			wantFindings: make([]string, 0),
 		},
 		{
 			name:         "a constraint naming no other table is still removed with its statement",
 			sql:          "ALTER TABLE app.users ADD CONSTRAINT users_id_key UNIQUE (id);\n",
-			wantChanges:  []changeProjection{},
-			wantFindings: []string{},
+			wantChanges:  make([]changeProjection, 0),
+			wantFindings: make([]string, 0),
 		},
 		{
 			name:         "a foreign key added inside the reviewed schema reports both",
@@ -459,8 +459,8 @@ func TestAnalyzeFS_SchemaScopeExcludesOnlyTheScopedOutStatement(t *testing.T) {
 		{
 			name:         "two scoped-out statements report neither",
 			sql:          scopedOut + "ALTER TABLE app.users ADD CONSTRAINT users_id_key UNIQUE (id);\n",
-			wantChanges:  []changeProjection{},
-			wantFindings: []string{},
+			wantChanges:  make([]changeProjection, 0),
+			wantFindings: make([]string, 0),
 		},
 	}
 
@@ -496,7 +496,7 @@ func TestAnalyzeFS_SchemaScopeLeavesUnmodeledStatementsAlone(t *testing.T) {
 			name:         "a statement the parser models as no schema object keeps its finding",
 			base:         "CREATE TABLE public.t (id int);\n",
 			sql:          "DELETE FROM pg_enum WHERE enumtypid = 1;\n",
-			wantChanges:  []changeProjection{},
+			wantChanges:  make([]changeProjection, 0),
 			wantFindings: []string{"DS106"},
 		},
 		{
@@ -595,8 +595,8 @@ func TestAnalyzeFS_DropIndexCountsAsASchemaChange(t *testing.T) {
 			name:         "dropping an index outside the reviewed schema counts none and reports none",
 			base:         appBase,
 			sql:          "DROP INDEX app.idx;\n",
-			wantChanges:  []changeProjection{},
-			wantFindings: []string{},
+			wantChanges:  make([]changeProjection, 0),
+			wantFindings: make([]string, 0),
 		},
 		{
 			name:         "the modeled destructive control on the reviewed schema is unchanged",
@@ -644,7 +644,7 @@ func TestAnalyzeFS_DropIndexOnTableFormCountsInItsTableSchema(t *testing.T) {
 			name:        "a table outside the reviewed schema drops the change",
 			base:        "CREATE SCHEMA app;\nCREATE TABLE app.t (id int);\nCREATE INDEX idx ON app.t (id);\n",
 			sql:         "DROP INDEX idx ON app.t;\n",
-			wantChanges: []changeProjection{},
+			wantChanges: make([]changeProjection, 0),
 		},
 	}
 

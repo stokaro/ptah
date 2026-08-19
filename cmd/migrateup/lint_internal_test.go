@@ -60,9 +60,9 @@ func TestLintPendingDestructive_SuppressionSpellingsAtTheApplyGate(t *testing.T)
 		want []string
 	}{
 		{name: "no directive", up: "DROP TABLE users;\n", want: []string{"DS101"}},
-		{name: "native code", up: "-- ptah:nolint DS101\nDROP TABLE users;\n", want: []string{}},
-		{name: "Atlas code spelling", up: "-- atlas:nolint DS101\nDROP TABLE users;\n", want: []string{}},
-		{name: "Atlas analyzer name", up: "-- atlas:nolint destructive\nDROP TABLE users;\n", want: []string{}},
+		{name: "native code", up: "-- ptah:nolint DS101\nDROP TABLE users;\n", want: make([]string, 0)},
+		{name: "Atlas code spelling", up: "-- atlas:nolint DS101\nDROP TABLE users;\n", want: make([]string, 0)},
+		{name: "Atlas analyzer name", up: "-- atlas:nolint destructive\nDROP TABLE users;\n", want: make([]string, 0)},
 		{name: "Atlas file header", up: "-- atlas:nolint destructive\n\nDROP TABLE users;\n", want: []string{"DS101"}},
 	}
 
@@ -158,7 +158,7 @@ func TestCapturedMigrationsFeedProviderAndDestructiveGateFromSameBytes(t *testin
 				Data: []byte("CREATE TABLE users (id INTEGER);\n"),
 			},
 		},
-		reads: map[string]int{},
+		reads: make(map[string]int),
 	}
 
 	snapshot, err := migrationsnapshot.Capture(source)

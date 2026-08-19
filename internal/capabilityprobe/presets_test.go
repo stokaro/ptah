@@ -33,7 +33,7 @@ func TestCells_ClaimEveryPresetPtahShips(t *testing.T) {
 		qt.Commentf("only %d presets were read out of %s; the parse is broken, not the matrix",
 			len(shipped), presetSource))
 
-	claimed := map[string]bool{}
+	claimed := make(map[string]bool)
 	for _, cell := range capabilityprobe.Cells {
 		claimed[cell.PresetName] = true
 	}
@@ -80,7 +80,7 @@ func TestNamedPresets_ListEveryPresetPtahShips(t *testing.T) {
 	c := qt.New(t)
 
 	shipped := presetConstructors(c)
-	listed := map[string]bool{}
+	listed := make(map[string]bool)
 	for _, preset := range capability.NamedPresets() {
 		c.Check(listed[preset.Name], qt.IsFalse,
 			qt.Commentf("preset %s is listed twice, so one column of the documented matrix is a duplicate",

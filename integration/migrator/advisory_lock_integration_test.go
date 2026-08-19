@@ -314,7 +314,7 @@ func assertIssue124State(
 	t *testing.T,
 	conn *dbschema.DatabaseConnection,
 	names issue124TestNames,
-	wantMigrations int,
+	wantMigrations,
 	wantLogRows int,
 ) {
 	c := qt.New(t)

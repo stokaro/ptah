@@ -144,7 +144,7 @@ func requireGeneratorPostgresURL(t *testing.T) string {
 func createGeneratorTestPostgres(
 	c *qt.C,
 	admin *dbschema.DatabaseConnection,
-	baseURL string,
+	baseURL,
 	prefix string,
 ) (shadowURL, database string) {
 	c.Helper()

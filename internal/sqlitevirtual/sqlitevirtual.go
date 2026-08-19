@@ -759,7 +759,7 @@ func ValidatePlannedChanges(
 func ValidatePlannedRollback(
 	dialect string,
 	database *types.DBSchema,
-	forward *difftypes.SchemaDiff,
+	forward,
 	reverse *difftypes.SchemaDiff,
 ) error {
 	if platform.NormalizeDialect(dialect) != platform.SQLite || forward == nil || reverse == nil {

@@ -303,7 +303,7 @@ func processEmbeddedFieldsForStruct(embeddedFields []goschema.EmbeddedField, all
 
 func buildDependencyGraph(r *goschema.Database) {
 	for _, table := range r.Tables {
-		r.Dependencies[table.Name] = []string{}
+		r.Dependencies[table.Name] = make([]string, 0)
 	}
 
 	for _, field := range r.Fields {

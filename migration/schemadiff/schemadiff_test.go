@@ -32,7 +32,7 @@ func TestCompare_DefaultBehavior(t *testing.T) {
 
 	// plpgsql should be ignored by default, so no extensions should be removed
 	c.Assert(diff.ExtensionsAdded, qt.DeepEquals, []string{"pg_trgm"})
-	c.Assert(diff.ExtensionsRemoved, qt.DeepEquals, []string{})
+	c.Assert(diff.ExtensionsRemoved, qt.DeepEquals, make([]string, 0))
 }
 
 func TestCompareWithDialect_MySQLFamilyInlineEnumsMatchGeneratedEnumFields(t *testing.T) {
@@ -1166,7 +1166,7 @@ func TestCompareWithOptions_NilOptions(t *testing.T) {
 
 	// Should behave the same as Compare() - ignore plpgsql by default
 	c.Assert(diff.ExtensionsAdded, qt.DeepEquals, []string{"pg_trgm"})
-	c.Assert(diff.ExtensionsRemoved, qt.DeepEquals, []string{})
+	c.Assert(diff.ExtensionsRemoved, qt.DeepEquals, make([]string, 0))
 }
 
 func TestLibraryUsageExamples(t *testing.T) {
@@ -1190,7 +1190,7 @@ func TestLibraryUsageExamples(t *testing.T) {
 		diff := schemadiff.Compare(generated, database)
 
 		c.Assert(diff.ExtensionsAdded, qt.DeepEquals, []string{"btree_gin"})
-		c.Assert(diff.ExtensionsRemoved, qt.DeepEquals, []string{}) // plpgsql ignored
+		c.Assert(diff.ExtensionsRemoved, qt.DeepEquals, make([]string, 0)) // plpgsql ignored
 	})
 
 	t.Run("custom ignore list", func(t *testing.T) {
@@ -1200,7 +1200,7 @@ func TestLibraryUsageExamples(t *testing.T) {
 		diff := schemadiff.CompareWithOptions(generated, database, opts)
 
 		c.Assert(diff.ExtensionsAdded, qt.DeepEquals, []string{"btree_gin"})
-		c.Assert(diff.ExtensionsRemoved, qt.DeepEquals, []string{})
+		c.Assert(diff.ExtensionsRemoved, qt.DeepEquals, make([]string, 0))
 	})
 
 	t.Run("manage all extensions", func(t *testing.T) {
@@ -1220,6 +1220,6 @@ func TestLibraryUsageExamples(t *testing.T) {
 		diff := schemadiff.CompareWithOptions(generated, database, opts)
 
 		c.Assert(diff.ExtensionsAdded, qt.DeepEquals, []string{"btree_gin"})
-		c.Assert(diff.ExtensionsRemoved, qt.DeepEquals, []string{}) // plpgsql still ignored
+		c.Assert(diff.ExtensionsRemoved, qt.DeepEquals, make([]string, 0)) // plpgsql still ignored
 	})
 }

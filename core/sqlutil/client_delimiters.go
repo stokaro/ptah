@@ -25,7 +25,7 @@ func NormalizeClientDelimiters(input string) string {
 	return output.String()
 }
 
-func parseDelimiterDirective(line string) (delimiter string, allowCommentDelimiter bool, ok bool) {
+func parseDelimiterDirective(line string) (delimiter string, allowCommentDelimiter, ok bool) {
 	if delimiter, ok := parseClientDelimiterDirective(line); ok {
 		return delimiter, false, true
 	}

@@ -48,7 +48,7 @@ func TestPostgreSQLMultiSchemaGenerateApplyReadDiffIntegration(t *testing.T) {
 		RLSEnabledTables: []goschema.RLSEnabledTable{
 			{Table: "ptah_ms_auth.ptah_ms_users"},
 		},
-		SelfReferencingForeignKeys: map[string][]goschema.SelfReferencingFK{},
+		SelfReferencingForeignKeys: make(map[string][]goschema.SelfReferencingFK),
 	}
 
 	diff := &difftypes.SchemaDiff{

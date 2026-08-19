@@ -30,7 +30,7 @@ func TestExtensionMigration_EndToEnd(t *testing.T) {
 				},
 			},
 			databaseSchema: &types.DBSchema{
-				Extensions: []types.DBExtension{},
+				Extensions: make([]types.DBExtension, 0),
 			},
 			expectedUpSQL: []string{
 				"-- Enable trigram similarity search",
@@ -56,7 +56,7 @@ func TestExtensionMigration_EndToEnd(t *testing.T) {
 				},
 			},
 			databaseSchema: &types.DBSchema{
-				Extensions: []types.DBExtension{},
+				Extensions: make([]types.DBExtension, 0),
 			},
 			expectedUpSQL: []string{
 				"CREATE EXTENSION IF NOT EXISTS pg_trgm;",
@@ -76,7 +76,7 @@ func TestExtensionMigration_EndToEnd(t *testing.T) {
 		{
 			name: "remove extension",
 			generatedSchema: &goschema.Database{
-				Extensions: []goschema.Extension{},
+				Extensions: make([]goschema.Extension, 0),
 			},
 			databaseSchema: &types.DBSchema{
 				Extensions: []types.DBExtension{
@@ -104,7 +104,7 @@ func TestExtensionMigration_EndToEnd(t *testing.T) {
 				},
 			},
 			databaseSchema: &types.DBSchema{
-				Extensions: []types.DBExtension{},
+				Extensions: make([]types.DBExtension, 0),
 			},
 			expectedUpSQL: []string{
 				"-- Geographic data support",
@@ -193,7 +193,7 @@ func TestExtensionMigration_UpDownCycle(t *testing.T) {
 	}
 
 	databaseSchema := &types.DBSchema{
-		Extensions: []types.DBExtension{},
+		Extensions: make([]types.DBExtension, 0),
 	}
 
 	// 1. Calculate initial diff (should add extensions)
@@ -210,7 +210,7 @@ func TestExtensionMigration_UpDownCycle(t *testing.T) {
 	}
 
 	// 3. Calculate down diff (should remove extensions)
-	downDiff := schemadiff.Compare(&goschema.Database{Extensions: []goschema.Extension{}}, simulatedDatabaseAfterUp)
+	downDiff := schemadiff.Compare(&goschema.Database{Extensions: make([]goschema.Extension, 0)}, simulatedDatabaseAfterUp)
 	c.Assert(downDiff.ExtensionsAdded, qt.HasLen, 0)
 	c.Assert(downDiff.ExtensionsRemoved, qt.HasLen, 2)
 

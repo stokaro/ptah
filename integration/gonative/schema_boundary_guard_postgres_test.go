@@ -490,7 +490,7 @@ func boundarySeed(c *qt.C, dbURL string, statements []string) {
 // boundaryQuery joins the DSN's own parameters, such as sslmode, with the
 // case's.
 func boundaryQuery(base, extra string) string {
-	joined := []string{}
+	joined := make([]string, 0)
 	for _, part := range []string{base, extra} {
 		if strings.TrimSpace(part) != "" {
 			joined = append(joined, part)
@@ -583,7 +583,7 @@ func boundaryDocumentFile(c *qt.C, document string) string {
 func boundaryStripComments(statements []string) []string {
 	var out []string
 	for _, statement := range statements {
-		body := []string{}
+		body := make([]string, 0)
 		for line := range strings.SplitSeq(statement, "\n") {
 			if !strings.HasPrefix(strings.TrimSpace(line), "--") {
 				body = append(body, line)
@@ -669,14 +669,14 @@ func boundaryObjectIDs(db *goschema.Database, defaultSchema string) []string {
 	for _, extension := range db.Extensions {
 		ids = append(ids, "extension:"+extension.Name)
 	}
-	tableByStruct := map[string]string{}
+	tableByStruct := make(map[string]string)
 	for _, table := range db.Tables {
 		qualified := boundaryQualify(table.Schema, table.Name, defaultSchema)
 		tableByStruct[table.StructName] = qualified
 		ids = append(ids, "table:"+qualified)
 		ids = append(ids, boundaryPrimaryKeyID(qualified, table.PrimaryKey)...)
 	}
-	primaryKeyColumns := map[string][]string{}
+	primaryKeyColumns := make(map[string][]string)
 	for _, field := range db.Fields {
 		qualified, known := tableByStruct[field.StructName]
 		if !known {

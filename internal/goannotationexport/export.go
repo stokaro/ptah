@@ -417,7 +417,7 @@ func removedAnnotationLines(results []goannotationcleanup.Result) int {
 	return total
 }
 
-func resolvePaths(opts Options) (rootDir string, outputPath string, err error) {
+func resolvePaths(opts Options) (rootDir, outputPath string, err error) {
 	root := opts.RootDir
 	if strings.TrimSpace(root) == "" {
 		root = "."

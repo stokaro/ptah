@@ -149,7 +149,7 @@ func TestGenerateMigrationOptions_CompareOptions_ConfigurationValidation(t *test
 		{
 			name:                 "no ignored extensions",
 			compareOptions:       config.WithIgnoredExtensions(),
-			expectedIgnored:      []string{},
+			expectedIgnored:      make([]string, 0),
 			expectedNotIgnored:   []string{"plpgsql", "adminpack", "pg_trgm"},
 			expectedAddedCount:   1, // pg_trgm
 			expectedRemovedCount: 2, // plpgsql, adminpack
@@ -326,8 +326,8 @@ func TestGenerateMigration_CompareOptions_FilterIgnoredExtensions(t *testing.T) 
 		{
 			name:            "filter empty input list",
 			compareOptions:  config.DefaultCompareOptions(),
-			inputExtensions: []string{},
-			expectedOutput:  []string{},
+			inputExtensions: make([]string, 0),
+			expectedOutput:  make([]string, 0),
 		},
 	}
 

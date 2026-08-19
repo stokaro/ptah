@@ -142,7 +142,7 @@ func quoteSQLServerScenarioIdentifier(identifier string) string {
 
 func findSQLServerScenarioTable(
 	tables []dbschematypes.DBTable,
-	schemaName string,
+	schemaName,
 	tableName string,
 ) *dbschematypes.DBTable {
 	for i := range tables {

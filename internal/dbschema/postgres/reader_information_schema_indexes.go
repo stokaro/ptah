@@ -61,7 +61,7 @@ func (r *Reader) readInformationSchemaIndexes(schemaName string) ([]types.DBInde
 
 	var (
 		indexes []types.DBIndex
-		byName  = map[string]int{}
+		byName  = make(map[string]int)
 	)
 	for rows.Next() {
 		var (

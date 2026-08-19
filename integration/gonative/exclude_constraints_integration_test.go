@@ -287,7 +287,7 @@ func TestExcludeConstraints_EmptySchema(t *testing.T) {
 
 	// Test with empty schemas
 	generated := &goschema.Database{
-		Constraints: []goschema.Constraint{},
+		Constraints: make([]goschema.Constraint, 0),
 	}
 
 	database := &types.DBSchema{}

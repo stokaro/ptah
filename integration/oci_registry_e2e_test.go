@@ -87,7 +87,7 @@ func TestOCIRegistryConcurrentReferrerPublicationE2E(t *testing.T) {
 func buildOCIReferrerHelper(
 	c *qt.C,
 	ctx context.Context,
-	repoRoot string,
+	repoRoot,
 	binaryPath string,
 ) {
 	command := exec.CommandContext(
@@ -758,7 +758,7 @@ func readReferrerRecords(c *qt.C, output string) []ocireferrers.Record {
 func standardOCIReferrers(
 	c *qt.C,
 	ctx context.Context,
-	reference string,
+	reference,
 	artifactType string,
 ) []ocispec.Descriptor {
 	ref, err := ociartifact.ParseRef(reference)

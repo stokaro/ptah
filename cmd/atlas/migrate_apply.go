@@ -733,7 +733,7 @@ func resolveAtlasMigrateApplyFlywayVersions(
 }
 
 func resolveAtlasMigrateApplyVersion(
-	name string,
+	name,
 	value string,
 	source atlasMigrateApplyOperandSource,
 	tokens flywayVersionTokens,

@@ -90,7 +90,7 @@ func LoadPolicy(fsys fs.FS, databaseDialect string) (Policy, error) {
 func Analyze(
 	fsys fs.FS,
 	pending []int64,
-	databaseDialect string,
+	databaseDialect,
 	pathPrefix string,
 ) ([]lint.Finding, error) {
 	policy, err := LoadPolicy(fsys, databaseDialect)

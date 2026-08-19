@@ -162,7 +162,7 @@ func TestIssue51ExactReproduction(t *testing.T) {
 	c.Assert(selfRefConstraintFound, qt.IsTrue, qt.Commentf("Self-referencing constraint not found"))
 
 	// Verify table creation order in the SQL statements
-	tableCreationOrder := []string{}
+	tableCreationOrder := make([]string, 0)
 	for _, sql := range sqlStatements {
 		if strings.Contains(sql, "CREATE TABLE") {
 			for _, tableName := range []string{"tenants", "users", "locations", "areas"} {
@@ -180,7 +180,7 @@ func TestIssue51ExactReproduction(t *testing.T) {
 func buildDependencyGraphIssue51(r *goschema.Database) {
 	// Initialize dependencies map for all tables
 	for _, table := range r.Tables {
-		r.Dependencies[table.Name] = []string{}
+		r.Dependencies[table.Name] = make([]string, 0)
 	}
 
 	// Initialize self-referencing foreign keys tracking

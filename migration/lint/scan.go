@@ -107,7 +107,7 @@ func scanSQL(input string, mode scanMode) []lintToken {
 
 // nextLintToken scans one token starting at input[i] and returns its kind,
 // the offset past its end, and the updated executable-comment depth.
-func nextLintToken(input string, i int, mode scanMode, execDepth int) (kind lintTokenKind, end int, depth int) {
+func nextLintToken(input string, i int, mode scanMode, execDepth int) (kind lintTokenKind, end, depth int) {
 	c := input[i]
 	switch {
 	case isSpaceByte(c):
@@ -129,7 +129,7 @@ func nextLintToken(input string, i int, mode scanMode, execDepth int) (kind lint
 
 // nextPunctToken handles the punctuation-led tokens: comment forms, dollar
 // quotes and bare operator characters.
-func nextPunctToken(input string, i int, mode scanMode, execDepth int) (kind lintTokenKind, end int, depth int) {
+func nextPunctToken(input string, i int, mode scanMode, execDepth int) (kind lintTokenKind, end, depth int) {
 	n := len(input)
 	c := input[i]
 	switch {

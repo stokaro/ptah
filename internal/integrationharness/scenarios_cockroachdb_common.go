@@ -57,7 +57,7 @@ func testPostgresDistributedCommonSubset(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	recorder *StepRecorder,
-	label string,
+	label,
 	tableName string,
 	expectedCapabilities capability.Capabilities,
 ) error {

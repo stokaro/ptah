@@ -14,7 +14,7 @@ import (
 	"go.5x5.cz/ptah/migration/generator"
 )
 
-func writeRollbackShadowMigrations(c *qt.C, dir string, downSQL string) {
+func writeRollbackShadowMigrations(c *qt.C, dir, downSQL string) {
 	c.Helper()
 	write := func(name, body string) {
 		c.Assert(os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600), qt.IsNil)

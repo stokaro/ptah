@@ -200,7 +200,7 @@ func identity(name string) string { return name }
 // through a new table. A constraint change that cannot be attributed to a table
 // is still refused, because there is nothing to rebuild.
 func planTableRebuilds(diff *types.SchemaDiff, semantics identifier.Semantics) (tableRebuilds, error) {
-	rebuilds := tableRebuilds{targets: map[string]rebuildTarget{}, semantics: semantics}
+	rebuilds := tableRebuilds{targets: make(map[string]rebuildTarget), semantics: semantics}
 	add := func(tableName string, addedColumns []string) {
 		target, seen := rebuilds.targets[tableName]
 		if !seen {
@@ -259,7 +259,7 @@ func existingTablesWithConstraintChanges(
 	diff *types.SchemaDiff,
 	semantics identifier.Semantics,
 ) ([]string, error) {
-	tables := map[string]bool{}
+	tables := make(map[string]bool)
 	named := make(map[string]bool, len(diff.ConstraintsAddedWithTables)+len(diff.ConstraintsRemovedWithTables))
 	for _, constraint := range diff.ConstraintsAddedWithTables {
 		named[constraint.Name] = true

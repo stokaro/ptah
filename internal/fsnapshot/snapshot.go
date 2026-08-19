@@ -129,8 +129,8 @@ func CaptureMatching(
 	if snapshot, ok := fsys.(Snapshot); ok {
 		return snapshot.matching(include), nil
 	}
-	files := map[string][]byte{}
-	dirs := map[string]struct{}{}
+	files := make(map[string][]byte)
+	dirs := make(map[string]struct{})
 	err := fs.WalkDir(fsys, ".", func(name string, entry fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return walkErr

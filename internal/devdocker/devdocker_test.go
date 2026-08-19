@@ -265,7 +265,7 @@ func errorAt(errs []error, i int) error {
 func (f *fakeRunner) calls() (started, removed []string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return append([]string{}, f.started...), append([]string{}, f.removed...)
+	return append(make([]string, 0), f.started...), append(make([]string, 0), f.removed...)
 }
 
 // testPassword stands in for the generated superuser password wherever a URL is

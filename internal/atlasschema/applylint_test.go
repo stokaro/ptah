@@ -52,17 +52,17 @@ func TestLintPlan_RunsOnlyTheRulesThePolicyNames(t *testing.T) {
 		{
 			name:    "a lint block naming another family",
 			configs: map[string]lint.RuleConfig{"MF": {}},
-			want:    []string{},
+			want:    make([]string, 0),
 		},
 		{
 			name:    "no lint block at all",
 			configs: nil,
-			want:    []string{},
+			want:    make([]string, 0),
 		},
 		{
 			name:    "a lint block whose only selector is blank",
 			configs: map[string]lint.RuleConfig{"   ": {}},
-			want:    []string{},
+			want:    make([]string, 0),
 		},
 	}
 

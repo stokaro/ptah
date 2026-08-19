@@ -67,8 +67,8 @@ func NewForwardCommand(use, short, native string, factory func() *cobra.Command)
 // output is delegated to the target command. Use this for canonical command
 // paths that should expose the target command's real flag surface.
 func NewForwardCommandWithTargetHelp(
-	use string,
-	short string,
+	use,
+	short,
 	native string,
 	factory func() *cobra.Command,
 	prefixArgs ...string,
@@ -79,8 +79,8 @@ func NewForwardCommandWithTargetHelp(
 // NewForwardCommandWithArgs returns a forwarding command that prepends fixed
 // arguments before the user-provided arguments.
 func NewForwardCommandWithArgs(
-	use string,
-	short string,
+	use,
+	short,
 	native string,
 	factory func() *cobra.Command,
 	prefixArgs ...string,
@@ -91,8 +91,8 @@ func NewForwardCommandWithArgs(
 // NewForwardCommandWithArgsMapper returns a forwarding command that can rewrite
 // arguments before prepending fixed arguments.
 func NewForwardCommandWithArgsMapper(
-	use string,
-	short string,
+	use,
+	short,
 	native string,
 	factory func() *cobra.Command,
 	mapper ArgMapper,
@@ -102,8 +102,8 @@ func NewForwardCommandWithArgsMapper(
 }
 
 func newForwardCommandWithArgsMapper(
-	use string,
-	short string,
+	use,
+	short,
 	native string,
 	factory func() *cobra.Command,
 	mapper ArgMapper,
@@ -266,7 +266,7 @@ func argsWithoutHelp(args []string) []string {
 	return out
 }
 
-func renderTargetHelpWithAdapterUsage(adapter *cobra.Command, target *cobra.Command) error {
+func renderTargetHelpWithAdapterUsage(adapter, target *cobra.Command) error {
 	originalUsage := target.UsageFunc()
 	target.SetUsageFunc(adapterUsageFunc(adapter.CommandPath(), target))
 	target.SetIn(adapter.InOrStdin())
@@ -362,7 +362,7 @@ func defaultSliceValue(flag *pflag.Flag, value pflag.SliceValue) []string {
 		values = value.GetSlice()
 	}
 	if flag.Annotations == nil {
-		flag.Annotations = map[string][]string{}
+		flag.Annotations = make(map[string][]string)
 	}
 	flag.Annotations[defaultSliceAnnotation] = append([]string(nil), values...)
 	return values
@@ -374,7 +374,7 @@ func parseSliceDefault(value string) ([]string, error) {
 	}
 	value = strings.TrimSuffix(strings.TrimPrefix(value, "["), "]")
 	if value == "" {
-		return []string{}, nil
+		return make([]string, 0), nil
 	}
 	return csv.NewReader(strings.NewReader(value)).Read()
 }
@@ -396,9 +396,9 @@ func prepareExplicitSliceFlagsForParse(cmd *cobra.Command, args []string) {
 	}
 }
 
-func commandFlagMaps(cmd *cobra.Command) (byName map[string]*pflag.Flag, byShorthand map[string]*pflag.Flag) {
-	byName = map[string]*pflag.Flag{}
-	byShorthand = map[string]*pflag.Flag{}
+func commandFlagMaps(cmd *cobra.Command) (byName, byShorthand map[string]*pflag.Flag) {
+	byName = make(map[string]*pflag.Flag)
+	byShorthand = make(map[string]*pflag.Flag)
 	visitCommandFlags(cmd, byName, byShorthand)
 	return byName, byShorthand
 }
@@ -422,7 +422,7 @@ func visitCommandFlags(cmd *cobra.Command, byName, byShorthand map[string]*pflag
 }
 
 func explicitFlagNames(args []string) map[string]struct{} {
-	names := map[string]struct{}{}
+	names := make(map[string]struct{})
 	for _, arg := range args {
 		if arg == "--" {
 			break

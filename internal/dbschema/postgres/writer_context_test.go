@@ -953,7 +953,7 @@ func postgresSchemaScopedExtensionQuery(
 }
 
 func postgresCleanupCatalogQuery(
-	query string,
+	query,
 	version string,
 	objects [][]driver.Value,
 ) (dbtest.QueryResult, error) {

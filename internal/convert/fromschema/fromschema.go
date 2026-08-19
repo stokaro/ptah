@@ -327,12 +327,12 @@ func sqlServerFieldType(fieldType string) string {
 
 func fieldWithPlatformValues(
 	field goschema.Field,
-	fieldType string,
-	checkConstraint string,
-	checkName string,
-	comment string,
-	charset string,
-	collate string,
+	fieldType,
+	checkConstraint,
+	checkName,
+	comment,
+	charset,
+	collate,
 	defaultValue string,
 	defaultSet bool,
 	defaultExpr string,
@@ -2750,7 +2750,7 @@ func fieldKeySet(fields []goschema.Field) map[fieldKey]struct{} {
 	return seen
 }
 
-func appendNewFields(fields []goschema.Field, newFields []goschema.Field, seen map[fieldKey]struct{}) []goschema.Field {
+func appendNewFields(fields, newFields []goschema.Field, seen map[fieldKey]struct{}) []goschema.Field {
 	for _, field := range newFields {
 		key := fieldKeyFor(field)
 		if _, ok := seen[key]; ok {
@@ -2934,7 +2934,7 @@ func processEmbeddedRelationMode(generatedFields []goschema.Field, embedded gosc
 }
 
 func mergePlatformOverrides(
-	base map[string]map[string]string,
+	base,
 	explicit map[string]map[string]string,
 ) map[string]map[string]string {
 	if len(base) == 0 && len(explicit) == 0 {

@@ -79,7 +79,7 @@ func TestMergeDiscovered_RecordsWhichMechanismFoundEach(t *testing.T) {
 
 		c.Assert(err, qt.IsNil)
 		c.Assert(got, qt.HasLen, 3)
-		sources := map[string]ReferrerSource{}
+		sources := make(map[string]ReferrerSource)
 		for _, item := range got {
 			sources[item.Descriptor.Digest.String()] = item.Source
 		}

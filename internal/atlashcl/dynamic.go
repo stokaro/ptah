@@ -104,7 +104,7 @@ func (p *parser) dynamicIteratorName(block *hclsyntax.Block, generated string) (
 // block, evaluated with the iteration bound. A content block that already
 // carries literal labels keeps them, which is the shape for a generated block
 // whose label does not vary.
-func (p *parser) dynamicLabels(block *hclsyntax.Block, content *hclsyntax.Block) ([]string, error) {
+func (p *parser) dynamicLabels(block, content *hclsyntax.Block) ([]string, error) {
 	attr, ok := block.Body.Attributes["labels"]
 	if !ok {
 		return content.Labels, nil

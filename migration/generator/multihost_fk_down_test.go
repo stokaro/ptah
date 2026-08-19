@@ -180,7 +180,7 @@ func TestReverseConstraintAdditions_RestoresPerHostBody(t *testing.T) {
 	additions := reverseConstraintAdditions(upDiff, dbSchema)
 	c.Assert(additions, qt.HasLen, len(hosts))
 
-	byTable := map[string]types.ConstraintAdditionInfo{}
+	byTable := make(map[string]types.ConstraintAdditionInfo)
 	for _, a := range additions {
 		byTable[a.TableName] = a
 	}

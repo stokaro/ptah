@@ -152,7 +152,7 @@ func columnRefContext(body *hclsyntax.Body) *hcl.EvalContext {
 }
 
 func schemaVariableDefaults(body *hclsyntax.Body) map[string]cty.Value {
-	values := map[string]cty.Value{}
+	values := make(map[string]cty.Value)
 	for _, block := range body.Blocks {
 		name, value, ok := schemaVariableDefault(block)
 		if !ok {

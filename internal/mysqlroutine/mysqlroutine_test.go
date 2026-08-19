@@ -42,7 +42,7 @@ func TestCharacteristic_EncodesEachVolatilityOnADistinctCatalogCell(t *testing.T
 
 	t.Run("the three clauses are three distinct values", func(t *testing.T) {
 		c := qt.New(t)
-		seen := map[string]string{}
+		seen := make(map[string]string)
 		for _, volatility := range []string{
 			mysqlroutine.Immutable, mysqlroutine.Stable, mysqlroutine.Volatile,
 		} {

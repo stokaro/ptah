@@ -236,7 +236,7 @@ func TestExcludeDatabase_SubtractsSequencesDomainsCompositesAndRanges(t *testing
 			name:    "the table control is unaffected",
 			pattern: "users",
 			want: typeObjectSurvivors{
-				Tables:     []string{},
+				Tables:     make([]string, 0),
 				Sequences:  []string{"order_seq", "app.app_seq"},
 				Domains:    []string{"positive_int", "app.app_int"},
 				Composites: []string{"addr", "app.app_addr"},

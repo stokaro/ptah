@@ -224,7 +224,7 @@ func TestAtlasRuntimeVersionKeepsRetiredExactHistorySeparateFromNativeParsing(t 
 		nil,
 		fstest.MapFS{"2_plain.sql": {Data: []byte("SELECT 2;")}},
 		WithMigrationDirFormat(MigrationDirFormatAtlas),
-		WithAtlasRevisionVersions(map[int64]string{}),
+		WithAtlasRevisionVersions(make(map[int64]string)),
 	)
 	c.Assert(err, qt.IsNil)
 	exact = exact.WithRevisionTableFormat(RevisionTableFormatAtlas)

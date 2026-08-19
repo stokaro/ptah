@@ -59,7 +59,7 @@ import (
 // for a column absent from the live row cannot be rolled back to that absence.
 // Binary blobs are out of scope for this phase: a []byte value is treated as
 // UTF-8 text (see [renderLiteral]).
-func Render(diff *DataDiff, dialect string) (up string, down string, err error) {
+func Render(diff *DataDiff, dialect string) (up, down string, err error) {
 	if diff == nil {
 		return "", "", errors.New("datadiff: nil diff")
 	}

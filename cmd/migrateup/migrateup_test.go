@@ -283,7 +283,7 @@ func writeMigrateUpFile(c *qt.C, dir, name, content string) {
 	c.Assert(os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600), qt.IsNil)
 }
 
-func sqliteMigrateUpTableExists(c *qt.C, dbURL string, tableName string) bool {
+func sqliteMigrateUpTableExists(c *qt.C, dbURL, tableName string) bool {
 	c.Helper()
 	conn, err := dbschema.ConnectToDatabase(context.Background(), dbURL)
 	c.Assert(err, qt.IsNil)

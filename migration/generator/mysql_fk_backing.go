@@ -47,7 +47,7 @@ type mysqlForeignKeyIndexSimulation struct {
 }
 
 func addMySQLFamilyForeignKeyBackingIndexRemovals(
-	reverseDiff *types.SchemaDiff,
+	reverseDiff,
 	upDiff *types.SchemaDiff,
 	current *dbschematypes.DBSchema,
 	dialect string,
@@ -553,7 +553,7 @@ func mysqlIndexCandidateFromNode(index *ast.IndexNode) mysqlIndexCandidate {
 }
 
 func mysqlConstraintIndexCandidate(
-	table string,
+	table,
 	name string,
 	constraint *ast.ConstraintNode,
 ) mysqlIndexCandidate {
@@ -626,7 +626,7 @@ func mysqlCandidateForeignKeyCoverage(
 }
 
 func mysqlIndexColumnsCoverForeignKey(
-	indexColumns []string,
+	indexColumns,
 	foreignKeyColumns []string,
 	semantics identifier.Semantics,
 ) bool {

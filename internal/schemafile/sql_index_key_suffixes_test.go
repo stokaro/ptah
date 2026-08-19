@@ -49,7 +49,7 @@ func TestToDBSchema_SQLDocumentCarriesIndexKeySuffixes(t *testing.T) {
 	db, err := schemafile.LoadAll([]string{path}, schemafile.Options{Dialect: platform.Postgres})
 	c.Assert(err, qt.IsNil)
 
-	parts := map[string][]dbschematypes.DBIndexPart{}
+	parts := make(map[string][]dbschematypes.DBIndexPart)
 	for _, index := range schemafile.ToDBSchema(db, platform.Postgres).Indexes {
 		parts[index.Name] = index.Parts
 	}

@@ -257,12 +257,12 @@ func (r *Reader) readColumnsByTable(dbName string) (map[string][]types.DBColumn,
 func applyMySQLColumnMetadata(
 	col *types.DBColumn,
 	defaultValue sql.NullString,
-	characterMaxLength sql.NullInt64,
-	numericPrecision sql.NullInt64,
+	characterMaxLength,
+	numericPrecision,
 	numericScale sql.NullInt64,
-	charset sql.NullString,
-	collate sql.NullString,
-	extra sql.NullString,
+	charset,
+	collate,
+	extra,
 	generatedExpression sql.NullString,
 ) {
 	if defaultValue.Valid {

@@ -448,7 +448,7 @@ type stringArrayValues struct {
 }
 
 func newStringArrayValues(flags []Flag) *stringArrayValues {
-	acc := &stringArrayValues{values: map[string][]string{}}
+	acc := &stringArrayValues{values: make(map[string][]string)}
 	for _, flag := range flags {
 		if flag.Kind == StringArrayFlag {
 			acc.order = append(acc.order, flag)

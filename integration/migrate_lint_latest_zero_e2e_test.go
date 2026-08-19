@@ -194,7 +194,7 @@ func writeLatestZeroAtlasDir(c *qt.C) string {
 
 func runLatestZeroCompatProcess(
 	ctx context.Context,
-	dir string,
+	dir,
 	binaryPath string,
 	args ...string,
 ) (stdoutText, stderrText string, err error) {

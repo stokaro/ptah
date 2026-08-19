@@ -351,7 +351,7 @@ func queryStrings(t *testing.T, db *sql.DB, query string, args ...any) []string 
 	}
 	defer rows.Close()
 
-	values := []string{}
+	values := make([]string, 0)
 	for rows.Next() {
 		var value string
 		if err := rows.Scan(&value); err != nil {

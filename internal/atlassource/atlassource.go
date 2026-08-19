@@ -441,7 +441,7 @@ func (s Set) ImpliedDialect() string {
 // first, then each set in argument order. Every later database source must
 // match the pinned dialect. The returned flag names the pinning source for
 // error messages; the dialect is empty when nothing pins one.
-func PinDialect(devURL string, sets ...Set) (dialect string, pinnedBy string, err error) {
+func PinDialect(devURL string, sets ...Set) (dialect, pinnedBy string, err error) {
 	dialect, err = atlasurl.DialectFromURL(devURL)
 	if err != nil {
 		return "", "", err

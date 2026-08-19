@@ -1207,7 +1207,7 @@ func flywaySumHashes(fsys fs.FS) (map[string]string, error) {
 	data, err := fs.ReadFile(fsys, migratesum.AtlasFileName)
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return map[string]string{}, nil
+			return make(map[string]string), nil
 		}
 		return nil, fmt.Errorf("read %s: %w", migratesum.AtlasFileName, err)
 	}

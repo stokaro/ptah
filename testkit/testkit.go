@@ -384,7 +384,7 @@ func mysqlDSNDatabase(dsn, database string) string {
 	return prefix + ")/" + database
 }
 
-func createPostgresDatabase(t testing.TB, ctx context.Context, adminURL string, database string) {
+func createPostgresDatabase(t testing.TB, ctx context.Context, adminURL, database string) {
 	t.Helper()
 
 	admin := connectForTest(t, ctx, adminURL)
@@ -393,7 +393,7 @@ func createPostgresDatabase(t testing.TB, ctx context.Context, adminURL string, 
 	requireNoError(t, err, "create PostgreSQL database")
 }
 
-func dropPostgresDatabase(t testing.TB, ctx context.Context, adminURL string, database string) {
+func dropPostgresDatabase(t testing.TB, ctx context.Context, adminURL, database string) {
 	t.Helper()
 
 	admin, err := dbschema.ConnectToDatabase(ctx, adminURL)
@@ -417,7 +417,7 @@ func dropPostgresDatabase(t testing.TB, ctx context.Context, adminURL string, da
 	}
 }
 
-func createMySQLDatabase(t testing.TB, ctx context.Context, adminURL string, database string) {
+func createMySQLDatabase(t testing.TB, ctx context.Context, adminURL, database string) {
 	t.Helper()
 
 	admin := connectForTest(t, ctx, adminURL)
@@ -426,7 +426,7 @@ func createMySQLDatabase(t testing.TB, ctx context.Context, adminURL string, dat
 	requireNoError(t, err, "create MySQL-compatible database")
 }
 
-func dropMySQLDatabase(t testing.TB, ctx context.Context, adminURL string, database string) {
+func dropMySQLDatabase(t testing.TB, ctx context.Context, adminURL, database string) {
 	t.Helper()
 
 	admin, err := dbschema.ConnectToDatabase(ctx, adminURL)

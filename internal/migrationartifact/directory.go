@@ -190,7 +190,7 @@ func prepareDirectory(
 		}
 		version = VersionTag(now())
 	}
-	tags := append([]string{}, opts.Tags...)
+	tags := append(make([]string, 0), opts.Tags...)
 	if opts.Latest {
 		tags = append(tags, ociartifact.DefaultTag)
 	}

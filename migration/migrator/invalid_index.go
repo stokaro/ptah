@@ -534,7 +534,7 @@ func unusableIndexRollbackError(version int64, unusable []postgresUnusableIndex)
 func unusableIndexStateError(
 	version int64,
 	unusable []postgresUnusableIndex,
-	unsafeOutcome string,
+	unsafeOutcome,
 	retryAction string,
 ) error {
 	details, rebuild, noun := unusableIndexPhrases(unusable)
@@ -894,7 +894,7 @@ func (m *Migrator) postgresUnsafeCreateStates(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
 	statement string,
-	dropped map[postgresIndexName]struct{},
+	dropped,
 	seen map[postgresIndexName]struct{},
 ) ([]postgresIndexState, error) {
 	var unsafe []postgresIndexState

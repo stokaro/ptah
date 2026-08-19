@@ -540,7 +540,7 @@ func parseAtlasNoLintLine(line string) ([]atlaslint.Target, bool) {
 }
 
 func parseNoLintMarker(
-	comment string,
+	comment,
 	marker string,
 	targets func(string) []atlaslint.Target,
 ) ([]atlaslint.Target, bool) {

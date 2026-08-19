@@ -51,7 +51,7 @@ func parseFileDirectivesConservatively(sql string) map[string]string {
 }
 
 func parseFileDirectives(bodies iter.Seq[string]) map[string]string {
-	directives := map[string]string{}
+	directives := make(map[string]string)
 	for body := range bodies {
 		if isCheckDirectiveBody(body) {
 			continue // `-- +ptah check ...` is an ordered check, parsed by ParseChecks

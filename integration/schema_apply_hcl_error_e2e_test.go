@@ -273,7 +273,7 @@ func TestSchemaApplyHCLDiagnosticsE2E(t *testing.T) {
 
 func runCLIProcess(
 	ctx context.Context,
-	dir string,
+	dir,
 	binaryPath string,
 	args ...string,
 ) (stdoutText, stderrText string, err error) {

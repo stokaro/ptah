@@ -175,7 +175,7 @@ func (r *Report) JSON() (string, error) {
 	// directly by a library caller.
 	cases := r.Cases
 	if cases == nil {
-		cases = []CaseResult{}
+		cases = make([]CaseResult, 0)
 	}
 	doc := struct {
 		Kind   string       `json:"kind"`

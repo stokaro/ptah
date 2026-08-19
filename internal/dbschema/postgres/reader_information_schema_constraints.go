@@ -69,7 +69,7 @@ func (r *Reader) readInformationSchemaConstraints(schemaName string) ([]types.DB
 
 	var (
 		constraints []types.DBConstraint
-		byName      = map[string]int{}
+		byName      = make(map[string]int)
 	)
 	for rows.Next() {
 		var (
@@ -144,7 +144,7 @@ func isMaterializedNotNullCheck(name string, clause sql.NullString) bool {
 // referenced counterpart when the constraint has one.
 func addInformationSchemaConstraintColumn(
 	constraint *types.DBConstraint,
-	column sql.NullString,
+	column,
 	refColumn sql.NullString,
 ) {
 	if !column.Valid {

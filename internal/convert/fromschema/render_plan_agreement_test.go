@@ -140,8 +140,8 @@ func postgresFamilyPlannerDialects() []string {
 func surfaceCensus(c *qt.C, dialect string, nodes []ast.Node) []string {
 	c.Helper()
 
-	produced := map[string]int{}
-	skipped := map[string]int{}
+	produced := make(map[string]int)
+	skipped := make(map[string]int)
 	for _, node := range nodes {
 		sql, err := renderer.RenderSQL(dialect, node)
 		c.Assert(err, qt.IsNil, qt.Commentf("rendering %T for %s", node, dialect))

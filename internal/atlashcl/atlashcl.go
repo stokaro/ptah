@@ -1111,7 +1111,7 @@ func (p *parser) parseIndexStorageParams(block *hclsyntax.Block) (map[string]str
 	if pagePerRange != nil && pagesPerRange != nil {
 		return nil, p.blockError(block, "index cannot set both page_per_range and pages_per_range")
 	}
-	params := map[string]string{}
+	params := make(map[string]string)
 	if pagePerRange != nil {
 		params["pages_per_range"] = p.exprString(pagePerRange)
 	}

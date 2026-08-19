@@ -106,7 +106,7 @@ func TestIncludes_EmptyScopeBelongsEverywhereAndNarrowingOnlyNarrows(t *testing.
 		},
 		{
 			name:    "an empty scope slice is the same as no scope",
-			scope:   []string{},
+			scope:   make([]string, 0),
 			dialect: "clickhouse",
 			want:    true,
 		},

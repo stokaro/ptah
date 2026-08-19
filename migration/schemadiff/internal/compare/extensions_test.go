@@ -23,27 +23,27 @@ func TestExtensions(t *testing.T) {
 	}{
 		{
 			name:                "no extensions in either schema",
-			generatedExtensions: []goschema.Extension{},
-			databaseExtensions:  []types.DBExtension{},
-			expectedAdded:       []string{},
-			expectedRemoved:     []string{},
+			generatedExtensions: make([]goschema.Extension, 0),
+			databaseExtensions:  make([]types.DBExtension, 0),
+			expectedAdded:       make([]string, 0),
+			expectedRemoved:     make([]string, 0),
 		},
 		{
 			name: "extension needs to be added",
 			generatedExtensions: []goschema.Extension{
 				{Name: "pg_trgm", IfNotExists: true},
 			},
-			databaseExtensions: []types.DBExtension{},
+			databaseExtensions: make([]types.DBExtension, 0),
 			expectedAdded:      []string{"pg_trgm"},
-			expectedRemoved:    []string{},
+			expectedRemoved:    make([]string, 0),
 		},
 		{
 			name:                "extension needs to be removed",
-			generatedExtensions: []goschema.Extension{},
+			generatedExtensions: make([]goschema.Extension, 0),
 			databaseExtensions: []types.DBExtension{
 				{Name: "btree_gin", Version: "1.3", Schema: "public"},
 			},
-			expectedAdded:   []string{},
+			expectedAdded:   make([]string, 0),
 			expectedRemoved: []string{"btree_gin"},
 		},
 		{
@@ -54,8 +54,8 @@ func TestExtensions(t *testing.T) {
 			databaseExtensions: []types.DBExtension{
 				{Name: "pg_trgm", Version: "1.6", Schema: "public"},
 			},
-			expectedAdded:   []string{},
-			expectedRemoved: []string{},
+			expectedAdded:   make([]string, 0),
+			expectedRemoved: make([]string, 0),
 		},
 		{
 			name: "multiple extensions - mixed operations",
@@ -79,8 +79,8 @@ func TestExtensions(t *testing.T) {
 			databaseExtensions: []types.DBExtension{
 				{Name: "postgis", Version: "3.0", Schema: "public"},
 			},
-			expectedAdded:   []string{},
-			expectedRemoved: []string{},
+			expectedAdded:   make([]string, 0),
+			expectedRemoved: make([]string, 0),
 		},
 		{
 			name: "sorted output verification",
@@ -135,13 +135,13 @@ func TestExtensionsWithSemanticsComparesInstallationSchema(t *testing.T) {
 			name:      "implicit default matches explicit public",
 			generated: goschema.Extension{Name: "pgcrypto"},
 			database:  types.DBExtension{Name: "pgcrypto", Schema: "public"},
-			want:      []difftypes.ExtensionDiff{},
+			want:      make([]difftypes.ExtensionDiff, 0),
 		},
 		{
 			name:      "identical nondefault schema is synced",
 			generated: goschema.Extension{Name: "pgcrypto", Schema: "extensions"},
 			database:  types.DBExtension{Name: "pgcrypto", Schema: "extensions"},
-			want:      []difftypes.ExtensionDiff{},
+			want:      make([]difftypes.ExtensionDiff, 0),
 		},
 		{
 			name:      "placement change is not synced",
@@ -214,12 +214,12 @@ func TestExtensions_RealWorldScenarios(t *testing.T) {
 					},
 				}
 				database := &types.DBSchema{
-					Extensions: []types.DBExtension{}, // Fresh database
+					Extensions: make([]types.DBExtension, 0), // Fresh database
 				}
 				return generated, database
 			},
 			wantAdded:   []string{"btree_gin", "pg_trgm", "postgis"},
-			wantRemoved: []string{},
+			wantRemoved: make([]string, 0),
 		},
 		{
 			name:        "production database cleanup",
@@ -240,7 +240,7 @@ func TestExtensions_RealWorldScenarios(t *testing.T) {
 				}
 				return generated, database
 			},
-			wantAdded:   []string{},
+			wantAdded:   make([]string, 0),
 			wantRemoved: []string{"btree_gin", "postgis", "uuid-ossp"},
 		},
 		{
@@ -264,7 +264,7 @@ func TestExtensions_RealWorldScenarios(t *testing.T) {
 				return generated, database
 			},
 			wantAdded:   []string{"postgis", "uuid-ossp"},
-			wantRemoved: []string{},
+			wantRemoved: make([]string, 0),
 		},
 	}
 
@@ -376,8 +376,8 @@ func TestExtensions_WithIgnoreConfiguration(t *testing.T) {
 				{Name: "pg_trgm", Version: "1.6", Schema: "public"},
 			},
 			options:         nil, // Use defaults (ignores plpgsql)
-			expectedAdded:   []string{},
-			expectedRemoved: []string{},
+			expectedAdded:   make([]string, 0),
+			expectedRemoved: make([]string, 0),
 		},
 		{
 			name: "default ignore plpgsql - plpgsql not in generated schema",
@@ -389,7 +389,7 @@ func TestExtensions_WithIgnoreConfiguration(t *testing.T) {
 			},
 			options:         nil, // Use defaults (ignores plpgsql)
 			expectedAdded:   []string{"pg_trgm"},
-			expectedRemoved: []string{}, // plpgsql should not be removed
+			expectedRemoved: make([]string, 0), // plpgsql should not be removed
 		},
 		{
 			name: "custom ignore list - ignore adminpack",

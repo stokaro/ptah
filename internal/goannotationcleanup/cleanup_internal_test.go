@@ -79,7 +79,7 @@ func TestApplyPlans_FailurePath_RevalidatesCompleteSourceSetAfterStaging(t *test
 		},
 		{
 			name: "edited unannotated source",
-			mutate: func(_ string, plainPath string) error {
+			mutate: func(_, plainPath string) error {
 				return os.WriteFile(
 					plainPath,
 					[]byte("package models\n\ntype Other struct{}\n"),

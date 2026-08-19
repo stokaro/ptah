@@ -590,7 +590,7 @@ func statusCurrentAfterAssumedApplied(current int64, assumedApplied []int64) int
 func statusCurrentKeyAfterAssumedApplied(
 	currentKey string,
 	currentKeySet bool,
-	current int64,
+	current,
 	assumedCurrent int64,
 	assumedVersions []int64,
 	assumedKeys []string,

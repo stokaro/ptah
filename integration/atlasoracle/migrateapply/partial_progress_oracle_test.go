@@ -119,8 +119,8 @@ func TestOraclePartialProgressInteroperatesBidirectionally(t *testing.T) {
 
 func runPartialProgressApply(
 	c *qt.C,
-	binary string,
-	dbPath string,
+	binary,
+	dbPath,
 	dir string,
 	extraArgs ...string,
 ) commandResult {

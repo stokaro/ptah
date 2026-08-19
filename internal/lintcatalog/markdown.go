@@ -109,8 +109,8 @@ type dialectGroup struct {
 // rather than a prettier name looked up in a table, so a dialect added to a
 // rule cannot land in a group that has no heading.
 func groupByDialects(rules []Entry) []dialectGroup {
-	order := []string{}
-	byLabel := map[string][]Entry{}
+	order := make([]string, 0)
+	byLabel := make(map[string][]Entry)
 	for _, rule := range rules {
 		label := rule.DialectsLabel()
 		if _, seen := byLabel[label]; !seen {
@@ -268,7 +268,7 @@ func writePreConvention(w io.Writer, entries []Entry) error {
 // one. Deriving the exception from the same Compat flag the Surface column
 // renders is what keeps the two from disagreeing.
 func atlasSurfaceNote(entries []Entry, checks []AtlasCheck) string {
-	compat := map[string]bool{}
+	compat := make(map[string]bool)
 	for _, entry := range entries {
 		compat[entry.Code] = entry.Compat
 	}

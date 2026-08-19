@@ -480,7 +480,7 @@ func TestSetValidateLocalSchemaSourcesRunsBeforeResolution(t *testing.T) {
 		"file://schema.yaml",
 	}, atlassource.ProjectEnv{})
 	c.Assert(err, qt.IsNil)
-	seen := []string{}
+	seen := make([]string, 0)
 	validationErrors := map[string]error{
 		"schema.yaml": errors.New("YAML refused before resolution"),
 	}
