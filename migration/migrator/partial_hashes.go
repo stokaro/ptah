@@ -57,7 +57,7 @@ func (m *Migrator) atlasPartialHashes(sqlText string, applied, total int) any {
 func (m *Migrator) atlasDirtyPartialHashes(
 	sqlText string,
 	direction MigrationDirection,
-	applied int,
+	applied,
 	total int,
 ) any {
 	if direction == MigrationDirectionUp {

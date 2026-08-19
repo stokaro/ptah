@@ -268,7 +268,7 @@ func (p configPresence) has(field configField) bool {
 
 func (p *configPresence) mark(field configField) {
 	if *p == nil {
-		*p = configPresence{}
+		*p = make(configPresence)
 	}
 	(*p)[field] = struct{}{}
 }
@@ -780,7 +780,7 @@ func Merge(base, override Config) Config {
 	result.migrationDirectories = cloneMigrationDirectories(base.migrationDirectories)
 	if len(override.migrationDirectories) > 0 {
 		if result.migrationDirectories == nil {
-			result.migrationDirectories = map[string]MigrationDirectorySource{}
+			result.migrationDirectories = make(map[string]MigrationDirectorySource)
 		}
 		maps.Copy(result.migrationDirectories, override.migrationDirectories)
 	}
@@ -871,7 +871,7 @@ func Merge(base, override Config) Config {
 }
 
 func mergeStringValue(
-	base string,
+	base,
 	override string,
 	field configField,
 	overridePresence configPresence,
@@ -885,7 +885,7 @@ func mergeStringValue(
 }
 
 func mergeStringSliceValue(
-	base []string,
+	base,
 	override []string,
 	field configField,
 	overridePresence configPresence,
@@ -899,7 +899,7 @@ func mergeStringSliceValue(
 }
 
 func mergeInt64Value(
-	base int64,
+	base,
 	override int64,
 	field configField,
 	overridePresence configPresence,
@@ -913,7 +913,7 @@ func mergeInt64Value(
 }
 
 func mergeOnlineDDL(
-	base OnlineDDLConfig,
+	base,
 	override OnlineDDLConfig,
 	overridePresence configPresence,
 	resultPresence *configPresence,
@@ -957,7 +957,7 @@ func mergeOnlineDDL(
 }
 
 func mergeExternalSchema(
-	base ExternalSchemaConfig,
+	base,
 	override ExternalSchemaConfig,
 	overridePresence configPresence,
 	resultPresence *configPresence,
@@ -1024,7 +1024,7 @@ func mergeSchema(
 }
 
 func mergeMigration(
-	base MigrationConfig,
+	base,
 	override MigrationConfig,
 	overridePresence configPresence,
 	resultPresence *configPresence,
@@ -1147,7 +1147,7 @@ func mergeMigration(
 }
 
 func mergeLint(
-	base LintConfig,
+	base,
 	override LintConfig,
 	overridePresence configPresence,
 	resultPresence *configPresence,
@@ -1201,7 +1201,7 @@ func mergeLint(
 }
 
 func mergeLintRuleConfigs(
-	base map[string]LintRuleConfig,
+	base,
 	override map[string]LintRuleConfig,
 	overridePresence configPresence,
 	resultPresence *configPresence,
@@ -1213,7 +1213,7 @@ func mergeLintRuleConfigs(
 	resultPresence.mark(fieldLintRuleConfigs)
 	if len(override) == 0 {
 		resultPresence.removePrefix(lintRuleConfigFieldPrefix)
-		return map[string]LintRuleConfig{}
+		return make(map[string]LintRuleConfig)
 	}
 	if result == nil {
 		result = make(map[string]LintRuleConfig, len(override))
@@ -1252,7 +1252,7 @@ func cloneLintRuleConfigs(values map[string]LintRuleConfig) map[string]LintRuleC
 }
 
 func mergeFormat(
-	base FormatConfig,
+	base,
 	override FormatConfig,
 	overridePresence configPresence,
 	resultPresence *configPresence,

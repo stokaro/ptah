@@ -75,7 +75,7 @@ func registerRootFlags(cmd *cobra.Command, opts *rootOptions) {
 	flags.StringVar(&opts.reportFormat, reportFormatFlag, "stdout", "Report format: stdout, txt, json, or html (can be multiple separated by comma)")
 	flags.StringVar(&opts.outputDir, outputDirFlag, "/app/reports", "Output directory for reports")
 	flags.StringSliceVar(&opts.databases, databasesFlag, []string{"postgres", "mysql", "mariadb", "cockroachdb", "yugabytedb"}, "Databases to test against; SQL Server is opt-in via sqlserver")
-	flags.StringSliceVar(&opts.scenarios, scenariosFlag, []string{}, "Specific scenarios to run (empty = all)")
+	flags.StringSliceVar(&opts.scenarios, scenariosFlag, make([]string, 0), "Specific scenarios to run (empty = all)")
 	flags.BoolVar(&opts.verbose, verboseFlag, false, "Enable verbose output")
 }
 

@@ -480,7 +480,7 @@ func applyCurrentState(
 // creation planned for an object that exists fails the run.
 //
 // An explicit `--schema` outranks both: it is the operator naming the scope.
-func applyReadScope(requested []string, base []string, desired *goschema.Database) []string {
+func applyReadScope(requested, base []string, desired *goschema.Database) []string {
 	if names := SplitSchemaNames(requested); len(names) > 0 {
 		return names
 	}

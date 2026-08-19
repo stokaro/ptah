@@ -60,13 +60,13 @@ func SplitSQLStatements(sql string) []string {
 
 // SplitSQLStatementsForDialect splits SQL using dialect-specific client
 // statement boundaries where the generic splitter would be too aggressive.
-func SplitSQLStatementsForDialect(sql string, dialect string) []string {
+func SplitSQLStatementsForDialect(sql, dialect string) []string {
 	return splitSQLStatements(sql, platform.NormalizeDialect(dialect))
 }
 
-func splitSQLStatements(sql string, dialect string) []string {
+func splitSQLStatements(sql, dialect string) []string {
 	if strings.TrimSpace(sql) == "" {
-		return []string{}
+		return make([]string, 0)
 	}
 
 	sql = NormalizeClientDelimiters(sql)
@@ -142,7 +142,7 @@ func splitSQLStatements(sql string, dialect string) []string {
 
 	// Ensure we always return a non-nil slice
 	if statements == nil {
-		return []string{}
+		return make([]string, 0)
 	}
 
 	return statements

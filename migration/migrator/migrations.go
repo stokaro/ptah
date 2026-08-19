@@ -199,7 +199,7 @@ func (e *statementProgressError) Unwrap() error {
 
 func withStatementProgressRecorder(
 	ctx context.Context,
-	before statementProgressRecorder,
+	before,
 	after statementProgressRecorder,
 ) context.Context {
 	return context.WithValue(ctx, statementProgressRecorderContextKey{}, statementProgressHooks{
@@ -1013,7 +1013,7 @@ func observedFileDirectives(
 func executeMigrationFileSQL(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
-	filename string,
+	filename,
 	sql string,
 	hooks statementExecutionHooks,
 	mode migrationExecutionMode,
@@ -1234,7 +1234,7 @@ func parseMigrationFileTxModeForDialect(filename, sql, dialect string) parsedMig
 }
 
 func parseMigrationFileTxModeWithDirectives(
-	filename string,
+	filename,
 	sql string,
 	directives map[string]string,
 ) parsedMigrationFileTxMode {

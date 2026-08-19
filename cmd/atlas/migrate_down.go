@@ -486,7 +486,7 @@ func applyAtlasMigrateDownFormatProjectConfig(
 
 func atlasDownEffective(
 	flagSet *pflag.FlagSet,
-	name string,
+	name,
 	flagValue string,
 	configValue projectconfig.Value[string],
 ) string {

@@ -69,7 +69,7 @@ func declaredLines(dialect string) []string {
 }
 
 func TestCells_AreWellFormed(t *testing.T) {
-	seen := map[string]bool{}
+	seen := make(map[string]bool)
 	for _, cell := range capabilityprobe.Cells {
 		t.Run(cell.String(), func(t *testing.T) {
 			c := qt.New(t)
@@ -95,7 +95,7 @@ func TestCells_MeasuredCellsNameAValidPreset(t *testing.T) {
 	// direction that passes: a cell naming a preset the map did not know was
 	// the only way to notice, so the map was always updated one PR late
 	// (stokaro/ptah#916).
-	named := map[string]capability.Capabilities{}
+	named := make(map[string]capability.Capabilities)
 	for _, preset := range capability.NamedPresets() {
 		named[preset.Name] = preset.Capabilities
 	}
@@ -463,7 +463,7 @@ func dockerRunImage(args []string) (ref string, found bool) {
 func assertThePinnedListHasDatabasesInIt(c *qt.C, pinned []string) {
 	c.Helper()
 
-	seen := map[string]bool{}
+	seen := make(map[string]bool)
 	for _, ref := range pinned {
 		repository, _ := splitImageRef(ref)
 		seen[databaseImages[repository]] = true
@@ -855,8 +855,8 @@ func TestCells_AVersionlessDialectDeclaresExactlyOneLine(t *testing.T) {
 	// Counted through a map literal rather than a condition: the invariant is
 	// arithmetic, and the assertion below reads it as arithmetic too.
 	countOf := map[bool]int{true: 1, false: 0}
-	lines := map[string]int{}
-	versionless := map[string]int{}
+	lines := make(map[string]int)
+	versionless := make(map[string]int)
 	for _, cell := range capabilityprobe.Cells {
 		lines[cell.Dialect]++
 		versionless[cell.Dialect] += countOf[cell.Versionless]

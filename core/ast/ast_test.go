@@ -193,7 +193,7 @@ func TestStatementList_Accept_EmptyList(t *testing.T) {
 	c := qt.New(t)
 
 	visitor := &mocks.MockVisitor{}
-	sl := &ast.StatementList{Statements: []ast.Node{}}
+	sl := &ast.StatementList{Statements: make([]ast.Node, 0)}
 
 	err := sl.Accept(visitor)
 

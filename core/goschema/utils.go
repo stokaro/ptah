@@ -168,7 +168,7 @@ func tableComponentEdges(
 func orderTableComponents(
 	tableMap map[string]Table,
 	components [][]string,
-	componentDependencies []map[int]struct{},
+	componentDependencies,
 	componentDependents []map[int]struct{},
 ) []Table {
 	remainingDependencies := make([]int, len(components))
@@ -522,7 +522,7 @@ func resetDependencyMaps(r *Database) {
 	r.SelfReferencingForeignKeys = make(map[string][]SelfReferencingFK)
 
 	for _, table := range r.Tables {
-		r.Dependencies[table.QualifiedName()] = []string{}
+		r.Dependencies[table.QualifiedName()] = make([]string, 0)
 	}
 }
 
@@ -932,7 +932,7 @@ func processEmbeddedRelationMode(generatedFields []Field, embedded EmbeddedField
 }
 
 func mergePlatformOverrides(
-	base map[string]map[string]string,
+	base,
 	explicit map[string]map[string]string,
 ) map[string]map[string]string {
 	if len(base) == 0 && len(explicit) == 0 {
@@ -986,7 +986,7 @@ func buildFunctionDependencies(r *Database) {
 
 	// Initialize dependencies for all functions
 	for _, function := range r.Functions {
-		r.FunctionDependencies[function.Name] = []string{}
+		r.FunctionDependencies[function.Name] = make([]string, 0)
 	}
 
 	// Analyze each function's body for calls to other functions

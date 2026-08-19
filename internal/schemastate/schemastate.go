@@ -215,7 +215,7 @@ type State struct {
 // those", and that is the failure mode ADR 0001 invariant 4 exists to stop.
 func New(dialect string, scope ...objectidentity.Kind) *State {
 	return &State{
-		objects: map[objectidentity.Key]Object{},
+		objects: make(map[objectidentity.Key]Object),
 		scope:   slices.Clone(scope),
 		dialect: dialect,
 	}

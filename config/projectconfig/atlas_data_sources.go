@@ -385,7 +385,7 @@ func (p atlasParser) templateDirectoryDataSource(block *hclsyntax.Block) (cty.Va
 func (p atlasParser) templateDirectoryVariables(block *hclsyntax.Block) (map[string]any, error) {
 	attr, ok := block.Body.Attributes["vars"]
 	if !ok {
-		return map[string]any{}, nil
+		return make(map[string]any), nil
 	}
 	value, err := p.decodedAttrValue("vars", attr, "an object or map")
 	if err != nil {
@@ -689,7 +689,7 @@ func (p atlasParser) dataSourceError(
 	if err == nil {
 		return nil
 	}
-	allSecrets := append([]string{}, secrets...)
+	allSecrets := append(make([]string, 0), secrets...)
 	if p.sensitiveValues != nil {
 		allSecrets = append(allSecrets, (*p.sensitiveValues)...)
 	}

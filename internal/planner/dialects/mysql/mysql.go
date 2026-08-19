@@ -993,7 +993,7 @@ func foreignKeyRemovalDetailsByHost(
 }
 
 func canonicalConstraintHostKey(
-	table string,
+	table,
 	name string,
 	semantics identifier.Semantics,
 ) constraintHostKey {

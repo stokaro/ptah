@@ -184,7 +184,7 @@ func atlasCoherentHistoricalProjectionMatches(
 func atlasStoredChecksumsMatchProjectionCohort(
 	migrations []*Migration,
 	revisionsByKey map[string]MigrationRevision,
-	previousProjection map[string]string,
+	previousProjection,
 	currentProjection map[string]string,
 	projectionsByAppliedAt map[string]map[string]string,
 ) bool {

@@ -326,7 +326,7 @@ func (c yamlSettings) projectConfig() (Config, error) {
 }
 
 func applyYAMLString(
-	value *string,
+	value,
 	destination *string,
 	field configField,
 	presence *configPresence,

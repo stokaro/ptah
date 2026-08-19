@@ -89,7 +89,7 @@ func keyColumnNullability(c *qt.C, dbPath, table string) map[string]bool {
 	c.Assert(err, qt.IsNil)
 	defer func() { c.Assert(rows.Close(), qt.IsNil) }()
 
-	nullability := map[string]bool{}
+	nullability := make(map[string]bool)
 	for rows.Next() {
 		var name string
 		var notNull int

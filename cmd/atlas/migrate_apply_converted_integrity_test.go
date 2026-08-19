@@ -466,7 +466,7 @@ func TestCompatMigrateApply_ConvertedDirEmptyCoveredSetIsNotRefused(t *testing.T
 		{
 			name:   "empty directory",
 			format: "goose",
-			files:  map[string]string{},
+			files:  make(map[string]string),
 		},
 		{
 			name:   "no SQL files",

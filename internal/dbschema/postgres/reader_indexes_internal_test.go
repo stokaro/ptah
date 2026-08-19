@@ -651,7 +651,7 @@ func namesIndexRelation(query, expression string) bool {
 		from = from[marker:]
 	}
 
-	equal := map[string][]string{}
+	equal := make(map[string][]string)
 	for line := range strings.SplitSeq(from, "\n") {
 		left, right, found := strings.Cut(line, "=")
 		if !found {
@@ -738,7 +738,7 @@ func resolveProjectedAttnum(correlation string, ordinality int) (int, error) {
 //
 // Splitting on parenthesis depth also has to happen after stripping, or a
 // parenthesis inside a comment would move the depth counter.
-func selectListItem(query, alias string, fromMarker string) (string, bool) {
+func selectListItem(query, alias, fromMarker string) (string, bool) {
 	selectList := stripSQLLineComments(query)
 	if from := strings.LastIndex(selectList, fromMarker); from >= 0 {
 		selectList = selectList[:from]

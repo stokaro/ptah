@@ -51,7 +51,7 @@ type verifiedAtlasSchemaPlan struct {
 // be a second sentence with the same job.
 func verifyAtlasSchemaPlanFile(
 	cmd *cobra.Command,
-	verb string,
+	verb,
 	file string,
 	transition atlasSchemaPlanTransitionFlags,
 ) (verifiedAtlasSchemaPlan, error) {

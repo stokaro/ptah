@@ -124,7 +124,7 @@ func materializedViewDatabase(strategy string) *goschema.Database {
 func assertMaterializedViewRefreshStrategyError(
 	c *qt.C,
 	err error,
-	dialect string,
+	dialect,
 	strategy string,
 ) {
 	c.Helper()

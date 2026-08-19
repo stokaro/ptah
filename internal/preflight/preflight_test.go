@@ -33,7 +33,7 @@ func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 	return f(req)
 }
 
-func (r *fakeCommandRunner) Run(_ context.Context, name string, args []string, env []string) (string, error) {
+func (r *fakeCommandRunner) Run(_ context.Context, name string, args, env []string) (string, error) {
 	r.calls = append(r.calls, commandCall{
 		Name: name,
 		Args: append([]string(nil), args...),

@@ -19,7 +19,7 @@ func TestCapture_ProducesIndependentCompleteSnapshot(t *testing.T) {
 			"atlas.sum":        {Data: []byte("sum")},
 			"migrations/1.sql": {Data: []byte("SELECT 1;")},
 		},
-		reads: map[string]int{},
+		reads: make(map[string]int),
 	}
 
 	snapshot, err := fsnapshot.Capture(source)
@@ -44,7 +44,7 @@ func TestCapture_ClonesExistingSnapshotWithoutReadingSourceAgain(t *testing.T) {
 		FS: fstest.MapFS{
 			"1.sql": {Data: []byte("SELECT 1;")},
 		},
-		reads: map[string]int{},
+		reads: make(map[string]int),
 	}
 
 	first, err := fsnapshot.Capture(source)

@@ -1585,7 +1585,7 @@ func runRejectsTransactionControl(t *testing.T, dbURL, dialect string) {
 			// worth seeing in the same failure.
 			c.Check(err, qt.ErrorMatches,
 				`.*migration 1 cannot run tx-mode file statement 2 because it controls transaction state.*`)
-			c.Check(issue887LedgerNotes(t, conn, names), qt.DeepEquals, []string{})
+			c.Check(issue887LedgerNotes(t, conn, names), qt.DeepEquals, make([]string, 0))
 			c.Check(issue887RevisionCount(t, conn, names), qt.Equals, int64(0))
 		})
 	}
@@ -2484,7 +2484,7 @@ func issue887LedgerNotes(t *testing.T, conn *dbschema.DatabaseConnection, names 
 	c.Assert(err, qt.IsNil)
 	defer func() { c.Check(rows.Close(), qt.IsNil) }()
 
-	notes := []string{}
+	notes := make([]string, 0)
 	for rows.Next() {
 		var note string
 		c.Assert(rows.Scan(&note), qt.IsNil)

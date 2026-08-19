@@ -32,7 +32,7 @@ func AddForwardedEnvBinding(flags *pflag.FlagSet, name, envName string) error {
 		return fmt.Errorf("flag %q does not exist", name)
 	}
 	if flag.Annotations == nil {
-		flag.Annotations = map[string][]string{}
+		flag.Annotations = make(map[string][]string)
 	}
 	flag.Annotations[forwardedEnvAnnotation] = append(
 		flag.Annotations[forwardedEnvAnnotation],
@@ -59,7 +59,7 @@ func DisableEnvBinding(flags *pflag.FlagSet, name string) error {
 		return fmt.Errorf("flag %q does not exist", name)
 	}
 	if flag.Annotations == nil {
-		flag.Annotations = map[string][]string{}
+		flag.Annotations = make(map[string][]string)
 	}
 	flag.Annotations[disableEnvAnnotation] = []string{"true"}
 	return nil
@@ -204,7 +204,7 @@ func envBindingDisabled(flag *pflag.Flag) bool {
 
 func markEnvApplied(flag *pflag.Flag) {
 	if flag.Annotations == nil {
-		flag.Annotations = map[string][]string{}
+		flag.Annotations = make(map[string][]string)
 	}
 	flag.Annotations[appliedEnvAnnotation] = []string{"true"}
 }

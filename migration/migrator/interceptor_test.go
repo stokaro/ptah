@@ -72,7 +72,7 @@ func TestFSMigrationProvider_StatementInterceptorSeesStatementsAndDirectives(t *
 	// Down migrations carry their own (here: empty) directive set.
 	c.Assert(migrations[0].Down(context.Background(), nil), qt.IsNil)
 	c.Assert(interceptor.statements[2], qt.Equals, "ALTER TABLE users DROP COLUMN age")
-	c.Assert(interceptor.directives[2], qt.DeepEquals, map[string]string{})
+	c.Assert(interceptor.directives[2], qt.DeepEquals, make(map[string]string))
 }
 
 func TestNewMigrationFromSQLFilesWithInterceptor_ErrorAbortsMigration(t *testing.T) {

@@ -128,15 +128,15 @@ linters:
         - name: enforce-map-style
           arguments:
             - make
-          disabled: true # TODO: re-enable
+          disabled: false
         - name: enforce-repeated-arg-type-style
           arguments:
             - short
-          disabled: true # TODO: re-enable
+          disabled: false
         - name: enforce-slice-style
           arguments:
             - make
-          disabled: true # TODO: re-enable
+          disabled: false
         - name: error-naming
           disabled: false
         - name: error-return

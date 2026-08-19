@@ -66,7 +66,7 @@ func NewReport(
 	slices.Sort(schemas)
 	schemas = slices.Compact(schemas)
 	if schemas == nil {
-		schemas = []string{}
+		schemas = make([]string, 0)
 	}
 	if capabilities == nil {
 		capabilities = capability.Capabilities{}
@@ -74,7 +74,7 @@ func NewReport(
 		capabilities = capabilities.Clone()
 	}
 	if assessments == nil {
-		assessments = []safety.StatementAssessment{}
+		assessments = make([]safety.StatementAssessment, 0)
 	} else {
 		assessments = slices.Clone(assessments)
 	}

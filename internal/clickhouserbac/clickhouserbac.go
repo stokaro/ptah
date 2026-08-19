@@ -157,7 +157,7 @@ func roleAttributeProblems(role goschema.Role) []error {
 // the pairs it would silently absorb.
 func grantProblems(roles []goschema.Role, grants []goschema.Grant, defaultDatabase string) []error {
 	var problems []error
-	scopes := map[string][]Scope{}
+	scopes := make(map[string][]Scope)
 
 	declared := make(map[string]bool, len(roles))
 	for _, role := range roles {

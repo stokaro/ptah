@@ -1064,15 +1064,15 @@ func queryMigrationRows[T any](
 	m *Migrator,
 	query func(*Migrator) string,
 	scan func(rowScanner) (T, error),
-	queryErr string,
-	scanErr string,
+	queryErr,
+	scanErr,
 	iterErr string,
 ) ([]T, error) {
 	if err := m.Initialize(ctx); err != nil {
 		return nil, fmt.Errorf("failed to initialize migrations table: %w", err)
 	}
 	if !m.metadataAvailable {
-		return []T{}, nil
+		return make([]T, 0), nil
 	}
 
 	var revisions []T
@@ -1118,8 +1118,8 @@ func queryMigrationRowsFrom[T any](
 	queryer migrationRowsQueryer,
 	query string,
 	scan func(rowScanner) (T, error),
-	queryErr string,
-	scanErr string,
+	queryErr,
+	scanErr,
 	iterErr string,
 ) ([]T, error) {
 	rows, err := queryer.QueryContext(ctx, query)
@@ -1587,7 +1587,7 @@ func limitMigrationsToApply(migrations []*Migration, amount uint64) []*Migration
 	return migrations[:amount]
 }
 
-func mergeAppliedVersions(applied []int64, assumed []int64) []int64 {
+func mergeAppliedVersions(applied, assumed []int64) []int64 {
 	if len(assumed) == 0 {
 		return applied
 	}
@@ -2934,7 +2934,7 @@ func (m *Migrator) failMigrationWithDirtyState(
 	migration *Migration,
 	startedAt time.Time,
 	failure error,
-	sqlText string,
+	sqlText,
 	prefix string,
 ) error {
 	return m.failMigrationWithDirtyStateWithMode(
@@ -2957,7 +2957,7 @@ func (m *Migrator) failRollbackWithDirtyState(
 	migration *Migration,
 	startedAt time.Time,
 	failure error,
-	sqlText string,
+	sqlText,
 	prefix string,
 ) error {
 	return m.failRollbackWithDirtyStateWithMode(ctx, migration, startedAt, failure, sqlText, prefix, MigrationTxModeFile)
@@ -2968,7 +2968,7 @@ func (m *Migrator) failRollbackWithDirtyStateWithMode(
 	migration *Migration,
 	startedAt time.Time,
 	failure error,
-	sqlText string,
+	sqlText,
 	prefix string,
 	txMode MigrationTxMode,
 ) error {
@@ -2989,7 +2989,7 @@ func (m *Migrator) failMigrationWithDirtyStateWithMode(
 	migration *Migration,
 	startedAt time.Time,
 	failure error,
-	sqlText string,
+	sqlText,
 	prefix string,
 	txMode MigrationTxMode,
 	direction MigrationDirection,
@@ -3124,7 +3124,7 @@ func checkpointFloor(migrations []*Migration, applied []int64, bootstrap *Migrat
 // checkpoint bootstrap decision. Only the bootstrap checkpoint runs; other
 // checkpoints never do, and ordinary migrations below the squash floor are
 // covered by the checkpoint and skipped.
-func checkpointRunnable(migration *Migration, bootstrap *Migration, floor int64) bool {
+func checkpointRunnable(migration, bootstrap *Migration, floor int64) bool {
 	if migration.IsCheckpoint {
 		return migration == bootstrap
 	}
@@ -3169,7 +3169,7 @@ func pendingMigrationsFloored(
 	migrations []*Migration,
 	applied migrationIdentitySet,
 	bootstrap *Migration,
-	floor int64,
+	floor,
 	targetVersion int64,
 ) []*Migration {
 	pending := make([]*Migration, 0, len(migrations))

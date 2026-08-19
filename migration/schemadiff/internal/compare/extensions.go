@@ -114,9 +114,9 @@ func ExtensionsWithSemantics(
 	}
 
 	// Initialize slices to ensure they're never nil
-	diff.ExtensionsAdded = []string{}
-	diff.ExtensionsRemoved = []string{}
-	diff.ExtensionsModified = []difftypes.ExtensionDiff{}
+	diff.ExtensionsAdded = make([]string, 0)
+	diff.ExtensionsRemoved = make([]string, 0)
+	diff.ExtensionsModified = make([]difftypes.ExtensionDiff, 0)
 
 	// Create maps for quick lookup, filtering out ignored extensions
 	genExtensions := make(map[string]goschema.Extension)

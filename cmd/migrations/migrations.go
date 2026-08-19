@@ -78,7 +78,7 @@ separate ptah-compat binary.`,
 	return cmd
 }
 
-func migrationCommand(cmd *cobra.Command, short string, long string) *cobra.Command {
+func migrationCommand(cmd *cobra.Command, short, long string) *cobra.Command {
 	cmd.Short = short
 	cmd.Long = long
 	return cmd

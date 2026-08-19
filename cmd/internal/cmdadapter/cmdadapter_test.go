@@ -185,7 +185,7 @@ func TestForwardCommandReplacesContextAcrossReusedTargetTree(t *testing.T) {
 		},
 		"child",
 	)
-	cmd.SetArgs([]string{})
+	cmd.SetArgs(make([]string, 0))
 	firstContext, cancelFirst := context.WithCancelCause(
 		context.WithValue(t.Context(), testContextKey{}, "first"),
 	)
@@ -286,7 +286,7 @@ func TestForwardCommandPassesProjectConfigSnapshotWithoutReloading(t *testing.T)
 		},
 		mapper,
 	)
-	cmd.SetArgs([]string{})
+	cmd.SetArgs(make([]string, 0))
 
 	err := cmd.Execute()
 

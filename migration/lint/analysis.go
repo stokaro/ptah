@@ -45,7 +45,7 @@ func loadAnalyzableSources(
 		return sources, names, nil
 	}
 	if profile == CompatibilityProfileAtlas && errors.Is(err, errNoSQLMigrationFiles) {
-		return sqlSources{}, nil, nil
+		return make(sqlSources), nil, nil
 	}
 	return nil, nil, err
 }
@@ -380,11 +380,11 @@ func AnalyzeFS(fsys fs.FS, opts Options) (Analysis, error) {
 	// Directions present per version, so pairing matches the migrator, which
 	// pairs an up and a down by their shared version prefix regardless of
 	// description, not by an identical file-name stem.
-	versionDirs := map[int64]map[string]bool{}
+	versionDirs := make(map[int64]map[string]bool)
 	for _, name := range names {
 		if parsed, parseErr := parseKnownMigrationName(path.Base(name), dirFormat); parseErr == nil {
 			if versionDirs[parsed.Version] == nil {
-				versionDirs[parsed.Version] = map[string]bool{}
+				versionDirs[parsed.Version] = make(map[string]bool)
 			}
 			versionDirs[parsed.Version][parsed.Direction] = true
 		}

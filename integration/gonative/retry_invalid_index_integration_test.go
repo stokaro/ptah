@@ -545,7 +545,7 @@ func retryInvalidIndexDirtyRevision(c *qt.C, ctx context.Context, mig *migrator.
 
 func assertRetryInvalidIndexRevisionUnchanged(
 	c *qt.C,
-	got migrator.MigrationRevision,
+	got,
 	want migrator.MigrationRevision,
 ) {
 	c.Helper()

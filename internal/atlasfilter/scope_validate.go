@@ -33,7 +33,7 @@ func (d scopeDiagnostics) err() error {
 // dropped are diagnosed: a reference to an object that was never part of the
 // same state behaves exactly as it does without a selection.
 func validateGeneratedScope(original, final *goschema.Database, selection *scopeSelection) error {
-	diagnostics := scopeDiagnostics{}
+	diagnostics := make(scopeDiagnostics)
 	keptByStruct := generatedTableByStruct(final.Tables)
 
 	validateGeneratedForeignKeys(original, final, keptByStruct, diagnostics)
@@ -250,7 +250,7 @@ func typeObjectKept[T any](kept []T, schema, name string, key func(T) (schema, n
 // table has a foreign key to a table the selection dropped, or where kept
 // columns use a type object the selection dropped.
 func validateDatabaseScope(original, final *dbschematypes.DBSchema, selection *scopeSelection) error {
-	diagnostics := scopeDiagnostics{}
+	diagnostics := make(scopeDiagnostics)
 	kept := make(map[tableIdentity]struct{}, len(final.Tables))
 	for _, table := range final.Tables {
 		kept[selection.tableIdentity(table.Schema, table.Name)] = struct{}{}

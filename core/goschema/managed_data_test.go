@@ -259,7 +259,7 @@ type Currency struct {
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.ManagedData, qt.HasLen, 2)
 
-	byTable := map[string]goschema.ManagedData{}
+	byTable := make(map[string]goschema.ManagedData)
 	for _, md := range db.ManagedData {
 		byTable[md.Table] = md
 	}

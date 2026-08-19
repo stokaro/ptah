@@ -352,7 +352,7 @@ func (ctx *renderContext) writeTable(w *sourceWriter, table goschema.Table) {
 	w.writeComment(tableAnnotation(table))
 	typeName := exportedIdentifier(firstNonEmpty(table.StructName, table.Name))
 	w.writeLine("type " + typeName + " struct {")
-	usedNames := map[string]struct{}{}
+	usedNames := make(map[string]struct{})
 	for _, field := range ctx.fieldsByTable[table.StructName] {
 		fieldName := ctx.fieldIdentifier(field, usedNames)
 		w.writeComment("\t" + annotation("ptah:schema:field", fieldAttrs(field)...))

@@ -50,8 +50,8 @@ type atlasEvaluator struct {
 }
 
 func (p atlasParser) configureEvalContext(
-	variableBlocks []*hclsyntax.Block,
-	localBlocks []*hclsyntax.Block,
+	variableBlocks,
+	localBlocks,
 	dataBlocks []*hclsyntax.Block,
 	roots []hclsyntax.Expression,
 ) error {
@@ -80,18 +80,18 @@ func (p atlasParser) configureEvalContext(
 
 func newAtlasEvaluator(
 	parser *atlasParser,
-	localBlocks []*hclsyntax.Block,
+	localBlocks,
 	dataBlocks []*hclsyntax.Block,
 ) (*atlasEvaluator, error) {
 	evaluator := &atlasEvaluator{
 		parser:      parser,
 		localAttrs:  hclsyntax.Attributes{},
-		localValues: map[string]cty.Value{},
-		localState:  map[string]atlasEvalState{},
-		dataBlocks:  map[atlasDataSourceKey]*hclsyntax.Block{},
+		localValues: make(map[string]cty.Value),
+		localState:  make(map[string]atlasEvalState),
+		dataBlocks:  make(map[atlasDataSourceKey]*hclsyntax.Block),
 		dataOrder:   make([]atlasDataSourceKey, 0, len(dataBlocks)),
-		dataValues:  map[string]map[string]cty.Value{},
-		dataState:   map[atlasDataSourceKey]atlasEvalState{},
+		dataValues:  make(map[string]map[string]cty.Value),
+		dataState:   make(map[atlasDataSourceKey]atlasEvalState),
 	}
 	if err := evaluator.collectLocals(localBlocks); err != nil {
 		return nil, err
@@ -298,7 +298,7 @@ func (e *atlasEvaluator) resolveDataSource(key atlasDataSourceKey) error {
 	}
 	values := e.dataValues[key.typ]
 	if values == nil {
-		values = map[string]cty.Value{}
+		values = make(map[string]cty.Value)
 		e.dataValues[key.typ] = values
 	}
 	values[key.name] = value
@@ -328,7 +328,7 @@ func atlasBodyExpressions(body *hclsyntax.Body) []hclsyntax.Expression {
 
 func atlasEvaluationRoots(
 	topAttrs hclsyntax.Attributes,
-	globalDiff []*hclsyntax.Block,
+	globalDiff,
 	globalLint []*hclsyntax.Block,
 	selected []atlasEnvBlock,
 ) []hclsyntax.Expression {
@@ -336,7 +336,7 @@ func atlasEvaluationRoots(
 	for _, name := range sortedAttributeNames(topAttrs) {
 		roots = append(roots, topAttrs[name].Expr)
 	}
-	for _, block := range append(append([]*hclsyntax.Block{}, globalDiff...), globalLint...) {
+	for _, block := range append(append(make([]*hclsyntax.Block, 0), globalDiff...), globalLint...) {
 		roots = append(roots, atlasBodyExpressions(block.Body)...)
 	}
 	for _, env := range selected {

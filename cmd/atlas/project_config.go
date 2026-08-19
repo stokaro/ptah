@@ -442,7 +442,7 @@ func atlasProjectConfigSchemaURLs(cmd *cobra.Command, raw []string) ([]string, e
 }
 
 func atlasProjectConfigLocalDirWithQueryFromBaseDir(
-	raw string,
+	raw,
 	baseDir string,
 ) (atlasargs.LocalDir, error) {
 	path, query, err := atlasprojectpath.LocalDirWithQuery(raw, baseDir)
@@ -1049,7 +1049,7 @@ func extractAtlasProjectArgs(args []string) (atlasProjectArgValues, []string, er
 }
 
 func mergeAtlasProjectArgs(
-	parent atlasProjectArgValues,
+	parent,
 	raw atlasProjectArgValues,
 ) atlasProjectArgValues {
 	// --var marks neither side as changed, so the variables have to be merged
@@ -1094,14 +1094,14 @@ type atlasProjectArgsApplier func(
 	args []string,
 	project atlasProject,
 	projectFlags atlasProjectFlagValues,
-) (mappedArgs []string, nativeArgs []string, err error)
+) (mappedArgs, nativeArgs []string, err error)
 
 func applyAtlasProjectConfigToArgs(
 	flags []atlasargs.Flag,
 	args []string,
 	project atlasProject,
 	_ atlasProjectFlagValues,
-) (mappedArgs []string, nativeArgs []string, err error) {
+) (mappedArgs, nativeArgs []string, err error) {
 	args = appendAtlasProjectStringArg(
 		flags,
 		args,
@@ -1162,7 +1162,7 @@ func applyAtlasSchemaTestProjectConfig(
 	args []string,
 	project atlasProject,
 	projectFlags atlasProjectFlagValues,
-) (mappedArgs []string, nativeArgs []string, err error) {
+) (mappedArgs, nativeArgs []string, err error) {
 	cfg := project.Config
 	nativeVars := atlasSchemaTestNativeVarArgs(projectFlags.vars)
 	args = appendAtlasProjectStringArg(
@@ -1311,7 +1311,7 @@ func nonEmptyEnvironmentVariable(name string) bool {
 	return ok && value != ""
 }
 
-func atlasFlagPresentByName(args []string, name string, short string) bool {
+func atlasFlagPresentByName(args []string, name, short string) bool {
 	long := "--" + name
 	for _, arg := range args {
 		if arg == long || strings.HasPrefix(arg, long+"=") {

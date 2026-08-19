@@ -147,7 +147,7 @@ func runSQLLint(cmd *cobra.Command, opts sqlLintOptions) error {
 		findings = append(findings, sourceFindings...)
 	}
 	if findings == nil {
-		findings = []sqllint.Finding{}
+		findings = make([]sqllint.Finding, 0)
 	}
 
 	report := sqlLintReport{
@@ -267,7 +267,7 @@ func writeSQLLintText(w io.Writer, report sqlLintReport) error {
 func writeSQLLintError(w io.Writer, format, msg string) error {
 	report := sqlLintReport{
 		Failed:   true,
-		Findings: []sqllint.Finding{},
+		Findings: make([]sqllint.Finding, 0),
 		Error:    msg,
 	}
 	if err := writeSQLLintReport(w, format, report); err != nil {

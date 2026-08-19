@@ -198,7 +198,7 @@ func TestExcludeDatabaseWithDefaultSchema_SchemaRelativeChildrenStayAddressable(
 		{
 			name:           "every column of a table",
 			pattern:        "users.*",
-			wantColumns:    []string{},
+			wantColumns:    make([]string, 0),
 			wantIndexes:    []string{"orders_id_idx"},
 			wantExtensions: allExtensions,
 		},

@@ -106,9 +106,9 @@ func Render(db *goschema.Database, opts Options) (Result, error) {
 		ops:             opts.Operations,
 		enums:           enums,
 		typeNames:       typeNames,
-		enumNameByKey:   map[string]string{},
-		customScalars:   map[string]bool{},
-		usedQueryFields: map[string]bool{},
+		enumNameByKey:   make(map[string]string),
+		customScalars:   make(map[string]bool),
+		usedQueryFields: make(map[string]bool),
 	}
 	for _, table := range tables {
 		if err := b.addTable(db, table, policy); err != nil {
@@ -192,7 +192,7 @@ func (b *builder) addTable(db *goschema.Database, table goschema.Table, policy s
 	typeName := b.typeNames[table.Name]
 
 	object := gqlType{name: typeName, desc: table.Comment}
-	usedFieldNames := map[string]bool{}
+	usedFieldNames := make(map[string]bool)
 	var columns []column
 
 	for _, field := range fields {

@@ -258,7 +258,7 @@ func TestSchemaApplyPlanFileRejectsMalformedDocuments(t *testing.T) {
 		},
 		{
 			name:    "no_statements",
-			rewrite: func(document map[string]any) { document["statements"] = []any{} },
+			rewrite: func(document map[string]any) { document["statements"] = make([]any, 0) },
 			want:    `invalid plan file .*: plan contains no statements`,
 		},
 		{

@@ -160,7 +160,7 @@ func analyzeMigrationsWithBaseline(
 	}
 	discovery, err := migrationlint.AnalyzeFS(fsys, migrationlint.Options{DirFormat: migrator.MigrationDirFormatAtlas})
 	c.Assert(err, qt.IsNil)
-	seen := map[int64]struct{}{}
+	seen := make(map[int64]struct{})
 	for _, file := range discovery.Files() {
 		if file.Direction == "up" && !file.Repeatable && file.Version > 0 {
 			seen[file.Version] = struct{}{}

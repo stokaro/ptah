@@ -93,7 +93,7 @@ func TestAtlasCompatEnvSchemasRestrictsTheInspectedUniverseE2E(t *testing.T) {
 		{
 			name:        "a schema that does not exist",
 			attribute:   `schemas = ["nosuchschema"]`,
-			wantSchemas: []string{},
+			wantSchemas: make([]string, 0),
 			why:         "the pinned binary describes nothing and exits 0; an empty answer to an empty selection",
 		},
 		{

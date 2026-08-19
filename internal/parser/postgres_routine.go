@@ -125,7 +125,7 @@ func parsePostgresRoutineSQL(sql, dialect string, kind ast.RoutineKind) *ast.Pos
 	return routine
 }
 
-func parsePostgresRoutineHeader(sql string, tokens []lexer.Token, keyword string) (name string, parameters string) {
+func parsePostgresRoutineHeader(sql string, tokens []lexer.Token, keyword string) (name, parameters string) {
 	for i, tok := range tokens {
 		if !tok.MatchIdentifierValue(keyword) {
 			continue
@@ -163,7 +163,7 @@ func parsePostgresRoutineParameters(sql string, tokens []lexer.Token, openIdx in
 	return ""
 }
 
-func parsePostgresRoutineBodyClause(tokens []lexer.Token) (bodyToken string, language string) {
+func parsePostgresRoutineBodyClause(tokens []lexer.Token) (bodyToken, language string) {
 	for i, tok := range tokens {
 		if tok.MatchIdentifierValue("LANGUAGE") {
 			if langIdx := nextPostgresRoutineToken(tokens, i+1); langIdx != -1 {
@@ -483,7 +483,7 @@ func isPostgresRoutineTrivia(tok lexer.Token) bool {
 	return tok.Type == lexer.TokenWhitespace || tok.Type == lexer.TokenComment
 }
 
-func (p postgresRoutineBodyParser) rawTokenRange(startIdx int, end int) string {
+func (p postgresRoutineBodyParser) rawTokenRange(startIdx, end int) string {
 	if startIdx < 0 || startIdx >= len(p.tokens) {
 		return ""
 	}

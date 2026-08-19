@@ -111,14 +111,14 @@ func TestAnalyzeFS_RenameClassificationIsScopedToTheSurface(t *testing.T) {
 			// surfaces, and are silent on the analyzer this tool matches too.
 			name:   "constraint rename",
 			sql:    "ALTER TABLE users RENAME CONSTRAINT users_id_chk TO users_id_positive;",
-			native: []string{},
-			atlas:  []string{},
+			native: make([]string, 0),
+			atlas:  make([]string, 0),
 		},
 		{
 			name:   "index rename",
 			sql:    "ALTER TABLE users RENAME INDEX idx_old TO idx_new;",
-			native: []string{},
-			atlas:  []string{},
+			native: make([]string, 0),
+			atlas:  make([]string, 0),
 		},
 	}
 
@@ -281,8 +281,8 @@ func TestAnalyzeFS_RenamingAnObjectThisFileCreatedIsExempt(t *testing.T) {
 			files: map[string]string{
 				"1_rename.sql": "CREATE TABLE users (id int);\nALTER TABLE users RENAME COLUMN id TO oid;\n",
 			},
-			native: []string{},
-			atlas:  []string{},
+			native: make([]string, 0),
+			atlas:  make([]string, 0),
 		},
 		{
 			name: "control: column of a table created in an earlier file",
@@ -298,8 +298,8 @@ func TestAnalyzeFS_RenamingAnObjectThisFileCreatedIsExempt(t *testing.T) {
 			files: map[string]string{
 				"1_rename.sql": "CREATE TABLE staging (id int);\nALTER TABLE staging RENAME TO users;\n",
 			},
-			native: []string{},
-			atlas:  []string{},
+			native: make([]string, 0),
+			atlas:  make([]string, 0),
 		},
 		{
 			name: "control: table created in an earlier file",
@@ -405,7 +405,7 @@ func TestAnalyzeFS_RenameIsSuppressedByTheDestructiveSelectorOnly(t *testing.T) 
 		selector string
 		want     []string
 	}{
-		{name: "destructive owns the rename", selector: "destructive", want: []string{}},
+		{name: "destructive owns the rename", selector: "destructive", want: make([]string, 0)},
 		{name: "incompatible does not", selector: "incompatible", want: []string{"DS102"}},
 		{name: "concurrent_index does not", selector: "concurrent_index", want: []string{"DS102"}},
 	}

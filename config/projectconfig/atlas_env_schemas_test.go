@@ -80,7 +80,7 @@ func TestParseAtlasEnvSchemasSelectsTheSchemaUniverse(t *testing.T) {
   schemas = []
 }
 `,
-			wantSchemas: []string{},
+			wantSchemas: make([]string, 0),
 			wantPresent: true,
 		},
 		{

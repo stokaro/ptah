@@ -69,7 +69,8 @@ type Coverage struct {
 // which is a caller with nothing to compare rather than a caller claiming
 // nothing is described.
 func CoverageOf(generated *goschema.Database, database *types.DBSchema) Coverage {
-	cov := Coverage{undecided: &[]coverage.Object{}}
+	undecided := make([]coverage.Object, 0)
+	cov := Coverage{undecided: &undecided}
 	if generated != nil {
 		cov.Desired = generated.NotDescribed
 	}

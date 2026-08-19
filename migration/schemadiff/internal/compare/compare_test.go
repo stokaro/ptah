@@ -24,13 +24,13 @@ func TestTableColumns_UnhappyPath(t *testing.T) {
 			genTable: goschema.Table{StructName: "User", Name: "users"},
 			dbTable: types.DBTable{
 				Name:    "users",
-				Columns: []types.DBColumn{},
+				Columns: make([]types.DBColumn, 0),
 			},
 			generated: &goschema.Database{
 				Fields: []goschema.Field{
 					{StructName: "Post", Name: "id", Type: "SERIAL", Primary: true}, // Different struct
 				},
-				EmbeddedFields: []goschema.EmbeddedField{},
+				EmbeddedFields: make([]goschema.EmbeddedField, 0),
 			},
 			expected: difftypes.TableDiff{
 				TableName: "users",
@@ -41,13 +41,13 @@ func TestTableColumns_UnhappyPath(t *testing.T) {
 			genTable: goschema.Table{StructName: "User", Name: "users"},
 			dbTable: types.DBTable{
 				Name:    "users",
-				Columns: []types.DBColumn{},
+				Columns: make([]types.DBColumn, 0),
 			},
 			generated: &goschema.Database{
 				Fields: []goschema.Field{
 					{StructName: "User", Name: "id", Type: "SERIAL", Primary: true},
 				},
-				EmbeddedFields: []goschema.EmbeddedField{},
+				EmbeddedFields: make([]goschema.EmbeddedField, 0),
 			},
 			expected: difftypes.TableDiff{
 				TableName:    "users",
@@ -397,7 +397,7 @@ func TestColumns_UnhappyPath(t *testing.T) {
 			},
 			expected: difftypes.ColumnDiff{
 				ColumnName: "id",
-				Changes:    map[string]string{},
+				Changes:    make(map[string]string),
 			},
 		},
 		{
@@ -417,7 +417,7 @@ func TestColumns_UnhappyPath(t *testing.T) {
 			},
 			expected: difftypes.ColumnDiff{
 				ColumnName: "id",
-				Changes:    map[string]string{},
+				Changes:    make(map[string]string),
 			},
 		},
 		{
@@ -436,7 +436,7 @@ func TestColumns_UnhappyPath(t *testing.T) {
 			},
 			expected: difftypes.ColumnDiff{
 				ColumnName: "id",
-				Changes:    map[string]string{},
+				Changes:    make(map[string]string),
 			},
 		},
 	}
@@ -471,7 +471,7 @@ func TestEnums_HappyPath(t *testing.T) {
 				},
 			},
 			database: &types.DBSchema{
-				Enums: []types.DBEnum{},
+				Enums: make([]types.DBEnum, 0),
 			},
 			expected: &difftypes.SchemaDiff{
 				EnumsAdded: []string{"status_enum"},
@@ -480,7 +480,7 @@ func TestEnums_HappyPath(t *testing.T) {
 		{
 			name: "enum removed",
 			generated: &goschema.Database{
-				Enums: []goschema.Enum{},
+				Enums: make([]goschema.Enum, 0),
 			},
 			database: &types.DBSchema{
 				Enums: []types.DBEnum{
@@ -571,10 +571,10 @@ func TestEnums_UnhappyPath(t *testing.T) {
 		{
 			name: "empty schemas",
 			generated: &goschema.Database{
-				Enums: []goschema.Enum{},
+				Enums: make([]goschema.Enum, 0),
 			},
 			database: &types.DBSchema{
-				Enums: []types.DBEnum{},
+				Enums: make([]types.DBEnum, 0),
 			},
 			expected: &difftypes.SchemaDiff{},
 		},
@@ -701,11 +701,11 @@ func TestEnumValues_UnhappyPath(t *testing.T) {
 			name: "empty enum values",
 			genEnum: goschema.Enum{
 				Name:   "empty_enum",
-				Values: []string{},
+				Values: make([]string, 0),
 			},
 			dbEnum: types.DBEnum{
 				Name:   "empty_enum",
-				Values: []string{},
+				Values: make([]string, 0),
 			},
 			expected: difftypes.EnumDiff{
 				EnumName:      "empty_enum",
@@ -743,7 +743,7 @@ func TestIndexes_HappyPath(t *testing.T) {
 				},
 			},
 			database: &types.DBSchema{
-				Indexes: []types.DBIndex{},
+				Indexes: make([]types.DBIndex, 0),
 			},
 			expected: &difftypes.SchemaDiff{
 				IndexesAdded: []difftypes.IndexRef{
@@ -754,7 +754,7 @@ func TestIndexes_HappyPath(t *testing.T) {
 		{
 			name: "index removed",
 			generated: &goschema.Database{
-				Indexes: []goschema.Index{},
+				Indexes: make([]goschema.Index, 0),
 			},
 			database: &types.DBSchema{
 				Indexes: []types.DBIndex{
@@ -770,7 +770,7 @@ func TestIndexes_HappyPath(t *testing.T) {
 		{
 			name: "primary key index ignored",
 			generated: &goschema.Database{
-				Indexes: []goschema.Index{},
+				Indexes: make([]goschema.Index, 0),
 			},
 			database: &types.DBSchema{
 				Indexes: []types.DBIndex{
@@ -782,7 +782,7 @@ func TestIndexes_HappyPath(t *testing.T) {
 		{
 			name: "unique constraint index ignored",
 			generated: &goschema.Database{
-				Indexes: []goschema.Index{},
+				Indexes: make([]goschema.Index, 0),
 			},
 			database: &types.DBSchema{
 				Indexes: []types.DBIndex{
@@ -973,10 +973,10 @@ func TestIndexes_UnhappyPath(t *testing.T) {
 		{
 			name: "empty schemas",
 			generated: &goschema.Database{
-				Indexes: []goschema.Index{},
+				Indexes: make([]goschema.Index, 0),
 			},
 			database: &types.DBSchema{
-				Indexes: []types.DBIndex{},
+				Indexes: make([]types.DBIndex, 0),
 			},
 			expected: &difftypes.SchemaDiff{},
 		},
@@ -993,7 +993,7 @@ func TestIndexes_UnhappyPath(t *testing.T) {
 		{
 			name: "only system indexes in database",
 			generated: &goschema.Database{
-				Indexes: []goschema.Index{},
+				Indexes: make([]goschema.Index, 0),
 			},
 			database: &types.DBSchema{
 				Indexes: []types.DBIndex{
@@ -1044,7 +1044,7 @@ func TestIndexes_UnhappyPath(t *testing.T) {
 		{
 			name: "constraint-based unique indexes should be ignored",
 			generated: &goschema.Database{
-				Indexes: []goschema.Index{},
+				Indexes: make([]goschema.Index, 0),
 			},
 			database: &types.DBSchema{
 				Indexes: []types.DBIndex{
@@ -1058,7 +1058,7 @@ func TestIndexes_UnhappyPath(t *testing.T) {
 		{
 			name: "custom-named unique constraint backing indexes should be ignored",
 			generated: &goschema.Database{
-				Indexes: []goschema.Index{},
+				Indexes: make([]goschema.Index, 0),
 			},
 			database: &types.DBSchema{
 				Constraints: []types.DBConstraint{
@@ -1138,7 +1138,7 @@ func TestColumns_EdgeCases(t *testing.T) {
 			},
 			expected: difftypes.ColumnDiff{
 				ColumnName: "status",
-				Changes:    map[string]string{},
+				Changes:    make(map[string]string),
 			},
 		},
 		{
@@ -1158,7 +1158,7 @@ func TestColumns_EdgeCases(t *testing.T) {
 			},
 			expected: difftypes.ColumnDiff{
 				ColumnName: "id",
-				Changes:    map[string]string{}, // Should ignore default due to SERIAL type
+				Changes:    make(map[string]string), // Should ignore default due to SERIAL type
 			},
 		},
 		{
@@ -1175,7 +1175,7 @@ func TestColumns_EdgeCases(t *testing.T) {
 			},
 			expected: difftypes.ColumnDiff{
 				ColumnName: "description",
-				Changes:    map[string]string{}, // Both should normalize to empty
+				Changes:    make(map[string]string), // Both should normalize to empty
 			},
 		},
 	}
@@ -1213,7 +1213,7 @@ func TestTableColumns_EdgeCases(t *testing.T) {
 			{StructName: "User", Name: "id", Type: "SERIAL", Primary: true},
 			{StructName: "User", Name: "name", Type: "VARCHAR(255)", Nullable: false}, // Type and nullable change
 		},
-		EmbeddedFields: []goschema.EmbeddedField{},
+		EmbeddedFields: make([]goschema.EmbeddedField, 0),
 	}
 
 	result := compare.TableColumns(genTable, dbTable, generated)
@@ -1234,8 +1234,8 @@ func TestTablesAndColumns_SortingConsistency(t *testing.T) {
 			{StructName: "User", Name: "zebra_table"},
 			{StructName: "Post", Name: "alpha_table"},
 		},
-		Fields:         []goschema.Field{},
-		EmbeddedFields: []goschema.EmbeddedField{},
+		Fields:         make([]goschema.Field, 0),
+		EmbeddedFields: make([]goschema.EmbeddedField, 0),
 	}
 
 	database := &types.DBSchema{
@@ -1265,7 +1265,7 @@ func TestTablesAndColumns_UsesSchemaQualifiedTableIdentity(t *testing.T) {
 			{StructName: "AuthUser", Name: "id", Type: "INTEGER", Primary: true},
 			{StructName: "BillingUser", Name: "id", Type: "INTEGER", Primary: true},
 		},
-		EmbeddedFields: []goschema.EmbeddedField{},
+		EmbeddedFields: make([]goschema.EmbeddedField, 0),
 	}
 	database := &types.DBSchema{
 		Tables: []types.DBTable{
@@ -1379,13 +1379,13 @@ func TestColumnByName_HappyPath(t *testing.T) {
 			diffs: []difftypes.ColumnDiff{
 				{
 					ColumnName: "unchanged_column",
-					Changes:    map[string]string{},
+					Changes:    make(map[string]string),
 				},
 			},
 			columnName: "unchanged_column",
 			expectedDiff: &difftypes.ColumnDiff{
 				ColumnName: "unchanged_column",
-				Changes:    map[string]string{},
+				Changes:    make(map[string]string),
 			},
 		},
 		{
@@ -1450,7 +1450,7 @@ func TestColumnByName_UnhappyPath(t *testing.T) {
 		},
 		{
 			name:       "empty slice",
-			diffs:      []difftypes.ColumnDiff{},
+			diffs:      make([]difftypes.ColumnDiff, 0),
 			columnName: "any_column",
 		},
 		{
@@ -1679,10 +1679,10 @@ func TestTablesAndColumns_HappyPath(t *testing.T) {
 				Fields: []goschema.Field{
 					{StructName: "User", Name: "id", Type: "SERIAL", Primary: true},
 				},
-				EmbeddedFields: []goschema.EmbeddedField{},
+				EmbeddedFields: make([]goschema.EmbeddedField, 0),
 			},
 			database: &types.DBSchema{
-				Tables: []types.DBTable{},
+				Tables: make([]types.DBTable, 0),
 			},
 			expected: &difftypes.SchemaDiff{
 				TablesAdded: []string{"users"},
@@ -1691,9 +1691,9 @@ func TestTablesAndColumns_HappyPath(t *testing.T) {
 		{
 			name: "table removed",
 			generated: &goschema.Database{
-				Tables:         []goschema.Table{},
-				Fields:         []goschema.Field{},
-				EmbeddedFields: []goschema.EmbeddedField{},
+				Tables:         make([]goschema.Table, 0),
+				Fields:         make([]goschema.Field, 0),
+				EmbeddedFields: make([]goschema.EmbeddedField, 0),
 			},
 			database: &types.DBSchema{
 				Tables: []types.DBTable{
@@ -1714,7 +1714,7 @@ func TestTablesAndColumns_HappyPath(t *testing.T) {
 					{StructName: "User", Name: "id", Type: "SERIAL", Primary: true},
 					{StructName: "User", Name: "email", Type: "VARCHAR(255)", Nullable: false},
 				},
-				EmbeddedFields: []goschema.EmbeddedField{},
+				EmbeddedFields: make([]goschema.EmbeddedField, 0),
 			},
 			database: &types.DBSchema{
 				Tables: []types.DBTable{
@@ -1746,7 +1746,7 @@ func TestTablesAndColumns_HappyPath(t *testing.T) {
 					{StructName: "User", Name: "id", Type: "SERIAL", Primary: true},
 					{StructName: "Post", Name: "id", Type: "SERIAL", Primary: true},
 				},
-				EmbeddedFields: []goschema.EmbeddedField{},
+				EmbeddedFields: make([]goschema.EmbeddedField, 0),
 			},
 			database: &types.DBSchema{
 				Tables: []types.DBTable{
@@ -1803,12 +1803,12 @@ func TestTablesAndColumns_UnhappyPath(t *testing.T) {
 		{
 			name: "empty schemas",
 			generated: &goschema.Database{
-				Tables:         []goschema.Table{},
-				Fields:         []goschema.Field{},
-				EmbeddedFields: []goschema.EmbeddedField{},
+				Tables:         make([]goschema.Table, 0),
+				Fields:         make([]goschema.Field, 0),
+				EmbeddedFields: make([]goschema.EmbeddedField, 0),
 			},
 			database: &types.DBSchema{
-				Tables: []types.DBTable{},
+				Tables: make([]types.DBTable, 0),
 			},
 			expected: &difftypes.SchemaDiff{},
 		},
@@ -1824,7 +1824,7 @@ func TestTablesAndColumns_UnhappyPath(t *testing.T) {
 				EmbeddedFields: nil,
 			},
 			database: &types.DBSchema{
-				Tables: []types.DBTable{},
+				Tables: make([]types.DBTable, 0),
 			},
 			expected: &difftypes.SchemaDiff{
 				TablesAdded: []string{"users"},
@@ -1868,7 +1868,7 @@ func TestTableColumns_HappyPath(t *testing.T) {
 					{StructName: "User", Name: "id", Type: "SERIAL", Primary: true},
 					{StructName: "User", Name: "email", Type: "VARCHAR(255)", Nullable: false},
 				},
-				EmbeddedFields: []goschema.EmbeddedField{},
+				EmbeddedFields: make([]goschema.EmbeddedField, 0),
 			},
 			expected: difftypes.TableDiff{
 				TableName:    "users",
@@ -1889,7 +1889,7 @@ func TestTableColumns_HappyPath(t *testing.T) {
 				Fields: []goschema.Field{
 					{StructName: "User", Name: "id", Type: "SERIAL", Primary: true},
 				},
-				EmbeddedFields: []goschema.EmbeddedField{},
+				EmbeddedFields: make([]goschema.EmbeddedField, 0),
 			},
 			expected: difftypes.TableDiff{
 				TableName:      "users",

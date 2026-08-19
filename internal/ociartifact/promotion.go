@@ -193,7 +193,7 @@ func openLayoutEndpoint(raw string) (copyEndpoint, error) {
 // it is creating rather than inheriting the source's alias silently.
 func (c *Client) CopyArtifact(
 	ctx context.Context,
-	srcRef string,
+	srcRef,
 	dstRef string,
 	opts ArtifactCopyOptions,
 ) (ocispec.Descriptor, error) {

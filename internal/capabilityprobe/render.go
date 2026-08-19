@@ -143,7 +143,7 @@ func writeUndecidable(w io.Writer, r *Report) {
 	}
 	fmt.Fprintf(w, "\nundecidable rows and why:\n")
 	var order []string
-	grouped := map[string][]Row{}
+	grouped := make(map[string][]Row)
 	for _, row := range undecidable {
 		if _, seen := grouped[row.Reason]; !seen {
 			order = append(order, row.Reason)

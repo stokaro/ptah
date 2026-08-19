@@ -281,7 +281,7 @@ func NormalizeSchemaInspectFormat(format string) (string, error) {
 // write appends planned files to files instead of touching the filesystem.
 // report may be nil for parse-only validation.
 func newAtlasSchemaInspectTemplate(
-	name string,
+	name,
 	format string,
 	report *SchemaInspectReport,
 	files *[]SchemaInspectFile,

@@ -232,7 +232,7 @@ func (p *FSMigrationProvider) load() error {
 		return err
 	}
 	if len(files) == 0 {
-		p.migrations = []*Migration{}
+		p.migrations = make([]*Migration, 0)
 		return nil
 	}
 	if files[0].Format == MigrationDirFormatAtlas {
@@ -568,7 +568,7 @@ func readAtlasSumHashes(fsys fs.FS) (map[string]string, error) {
 	data, err := fs.ReadFile(fsys, "atlas.sum")
 	if err != nil {
 		if errors.Is(err, fs.ErrNotExist) {
-			return map[string]string{}, nil
+			return make(map[string]string), nil
 		}
 		return nil, fmt.Errorf("failed to read atlas.sum: %w", err)
 	}

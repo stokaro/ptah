@@ -316,7 +316,7 @@ func newAtlasParser(
 	fsys fs.FS,
 	rawVars []string,
 	filename string,
-	rejectListMapForEach bool,
+	rejectListMapForEach,
 	ignoreSchemas bool,
 ) (atlasParser, error) {
 	if runContext == nil {
@@ -326,14 +326,19 @@ func newAtlasParser(
 	if err != nil {
 		return atlasParser{}, err
 	}
+	// Addressable locals rather than &[]T{}: make's result is not
+	// addressable, and new([]T) would point at a nil slice instead of an
+	// empty one, which is a different value to every reader of these fields.
+	sensitiveValues := make([]string, 0)
+	ignored := make([]IgnoredAtlasConstruct, 0)
 	return atlasParser{
 		runContext:      runContext,
 		fsys:            fsys,
-		sensitiveValues: &[]string{},
-		ignored:         &[]IgnoredAtlasConstruct{},
-		ignoredSeen:     map[ignoredAtlasConstructKey]struct{}{},
+		sensitiveValues: &sensitiveValues,
+		ignored:         &ignored,
+		ignoredSeen:     make(map[ignoredAtlasConstructKey]struct{}),
 		ctx: &hcl.EvalContext{
-			Variables: map[string]cty.Value{},
+			Variables: make(map[string]cty.Value),
 			Functions: map[string]function.Function{
 				"file":       atlasFileFunc(fsys),
 				"fileset":    atlasFilesetFunc(fsys),
@@ -349,9 +354,9 @@ func newAtlasParser(
 		ignoreEnvSchemas:     ignoreSchemas,
 		baseDir:              filepath.Dir(filename),
 		rejectListMapForEach: rejectListMapForEach,
-		externalSchemas:      map[string]externalSchemaDataSource{},
-		hclSchemaScopes:      map[string]hclSchemaVarScope{},
-		migrationDirectories: map[string]MigrationDirectorySource{},
+		externalSchemas:      make(map[string]externalSchemaDataSource),
+		hclSchemaScopes:      make(map[string]hclSchemaVarScope),
+		migrationDirectories: make(map[string]MigrationDirectorySource),
 	}, nil
 }
 
@@ -541,7 +546,7 @@ func (p atlasParser) ignoredConstructs() []IgnoredAtlasConstruct {
 // a well-formed baseline still needs `migrate apply`, which reads --baseline
 // into its run options before project config is merged, so the value is carried
 // out nowhere yet and the ignored-name warning says so.
-var ceEnforcedConstructs = map[string]struct{}{}
+var ceEnforcedConstructs = make(map[string]struct{})
 
 // enforcedByCE reports whether a scope-qualified name is one CE acts on.
 //
@@ -856,7 +861,7 @@ func (p atlasParser) parseEnv(env atlasEnvBlock, name string) (Config, error) {
 		}
 	}
 
-	seen := map[string]struct{}{}
+	seen := make(map[string]struct{})
 	for _, nested := range env.block.Body.Blocks {
 		if err := p.parseEnvBlock(nested, seen, &cfg); err != nil {
 			return Config{}, err
@@ -904,7 +909,7 @@ func (p atlasParser) parseSchema(block *hclsyntax.Block, cfg *Config) error {
 			}
 		}
 	}
-	seen := map[string]struct{}{}
+	seen := make(map[string]struct{})
 	for _, nested := range block.Body.Blocks {
 		switch nested.Type {
 		case "mode":
@@ -1176,7 +1181,7 @@ func (p atlasParser) parseMigrationAttr(
 // of them -- see the `migration` entry in [atlasEnvBodyStructure] for the
 // measurement -- so the whole set is tolerated and only `repo` is decoded.
 func (p atlasParser) parseMigrationBlocks(block *hclsyntax.Block) error {
-	seen := map[string]struct{}{}
+	seen := make(map[string]struct{})
 	for _, nested := range block.Body.Blocks {
 		if nested.Type != "repo" {
 			// Not a `return` on the tolerated path: that would end the loop and
@@ -1283,7 +1288,7 @@ func (p atlasParser) parseLintAttr(attrName string, attr *hclsyntax.Attribute, c
 }
 
 func (p atlasParser) parseLintPolicyBlocks(block *hclsyntax.Block, cfg *Config) error {
-	seen := map[string]struct{}{}
+	seen := make(map[string]struct{})
 	for _, nested := range block.Body.Blocks {
 		switch nested.Type {
 		case "concurrent_index":
@@ -1418,7 +1423,7 @@ func lintRuleConfig(cfg *Config, code string) LintRuleConfig {
 
 func setLintRuleConfig(cfg *Config, code string, config LintRuleConfig) {
 	if cfg.Lint.RuleConfigs == nil {
-		cfg.Lint.RuleConfigs = map[string]LintRuleConfig{}
+		cfg.Lint.RuleConfigs = make(map[string]LintRuleConfig)
 	}
 	cfg.Lint.RuleConfigs[code] = config
 	cfg.presence.mark(fieldLintRuleConfigs)
@@ -1482,7 +1487,7 @@ func (p atlasParser) parseContainerBlock(
 			return err
 		}
 	}
-	seen := map[string]struct{}{}
+	seen := make(map[string]struct{})
 	for _, child := range block.Body.Blocks {
 		parse, known := nested[child.Type]
 		if !known {
@@ -1643,7 +1648,7 @@ func (p atlasParser) parseDiffConcurrentIndex(block *hclsyntax.Block, cfg *Confi
 }
 
 func (p atlasParser) configureVariables(blocks []*hclsyntax.Block) error {
-	vars := map[string]cty.Value{}
+	vars := make(map[string]cty.Value)
 	for _, block := range blocks {
 		if len(block.Labels) != 1 {
 			return unsupportedBlock(block)
@@ -1677,7 +1682,7 @@ func (p atlasParser) configureVariables(blocks []*hclsyntax.Block) error {
 }
 
 func parseAtlasVarOverrides(rawVars []string) (map[string]cty.Value, error) {
-	vars := map[string]cty.Value{}
+	vars := make(map[string]cty.Value)
 	for _, raw := range rawVars {
 		values, err := csv.NewReader(strings.NewReader(raw)).Read()
 		if err != nil {
@@ -1701,7 +1706,7 @@ func parseAtlasVarOverrides(rawVars []string) (map[string]cty.Value, error) {
 	return vars, nil
 }
 
-func appendAtlasVarValue(existing cty.Value, value cty.Value) cty.Value {
+func appendAtlasVarValue(existing, value cty.Value) cty.Value {
 	if existing.Type().IsListType() {
 		return cty.ListVal(append(existing.AsValueSlice(), value))
 	}
@@ -1981,7 +1986,7 @@ func (p atlasParser) externalSchemaDataSource(block *hclsyntax.Block) (externalS
 }
 
 func (p atlasParser) parseExternalSchemaAttr(
-	name string,
+	name,
 	attrName string,
 	attr *hclsyntax.Attribute,
 	source *externalSchemaDataSource,
@@ -2025,7 +2030,7 @@ func (p atlasParser) parseExternalSchemaAttr(
 }
 
 func applyExternalSchemaFormat(
-	name string,
+	name,
 	value string,
 	attr *hclsyntax.Attribute,
 	source *externalSchemaDataSource,
@@ -2277,8 +2282,8 @@ func (p atlasParser) schemaSourceVarScopes(
 	if len(referenced) == 0 {
 		return nil, nil
 	}
-	minted := map[string]string{}
-	scopes := map[string]map[string]string{}
+	minted := make(map[string]string)
+	scopes := make(map[string]map[string]string)
 	// file records one spelling of one URL under the data source that minted
 	// it, and refuses when a block already filed that spelling with different
 	// values. reported is the URL the refusal names, which is always the
@@ -2494,7 +2499,7 @@ func (p atlasParser) hclSchemaVarsAttr(attr *hclsyntax.Attribute) (map[string]st
 	if !valueType.IsObjectType() && !valueType.IsMapType() {
 		return nil, wrongValueType("vars", attr, "a map of values")
 	}
-	values := map[string]string{}
+	values := make(map[string]string)
 	for it := value.ElementIterator(); it.Next(); {
 		name, member := it.Element()
 		if member.IsNull() {
@@ -2931,7 +2936,7 @@ func atlasRecursiveFileset(fsys fs.FS, pattern string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	values := []string{}
+	values := make([]string, 0)
 	err = fs.WalkDir(fsys, ".", func(name string, entry fs.DirEntry, err error) error {
 		if err != nil {
 			return err

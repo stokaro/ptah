@@ -253,7 +253,7 @@ func (m *Migrator) requireMySQLTriggerCatalogVisibility(ctx context.Context, sch
 	}
 	defer func() { _ = rows.Close() }()
 
-	grants := []string{}
+	grants := make([]string, 0)
 	for rows.Next() {
 		var grant string
 		if err := rows.Scan(&grant); err != nil {
@@ -429,8 +429,8 @@ func (m *Migrator) mysqlReferencesMigrationMetadata(tokens []lexer.Token) bool {
 
 func mysqlReferencesNamedRelation(
 	tokens []lexer.Token,
-	selectedSchema string,
-	targetSchema string,
+	selectedSchema,
+	targetSchema,
 	targetName string,
 ) bool {
 	for i, token := range tokens {
@@ -638,9 +638,9 @@ func missingMetadataColumns(present map[string]struct{}, required []string) []st
 }
 
 func migrationTablePresenceQuery(
-	dialect string,
-	configuredSchema string,
-	connectionSchema string,
+	dialect,
+	configuredSchema,
+	connectionSchema,
 	table string,
 	quoteIdentifier func(string) string,
 ) (string, []any, error) {

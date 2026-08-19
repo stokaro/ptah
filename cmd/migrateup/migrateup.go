@@ -231,11 +231,11 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 }
 
 func parseMigrationSettings(
-	dirFormatValue string,
-	revisionFormatValue string,
-	execOrderValue string,
-	txModeValue string,
-	migrationLockTimeoutValue string,
+	dirFormatValue,
+	revisionFormatValue,
+	execOrderValue,
+	txModeValue,
+	migrationLockTimeoutValue,
 	connectTimeoutValue string,
 ) (parsedMigrationSettings, error) {
 	dirFormat, err := migrator.ParseMigrationDirFormat(dirFormatValue)
@@ -596,7 +596,7 @@ func emitMigrateUpDeferredChecks(emit cliobs.Emitter, versions []int64) {
 func emitMigrateUpSummary(
 	emit cliobs.Emitter,
 	opts *options,
-	status *migrator.MigrationStatus,
+	status,
 	finalStatus *migrator.MigrationStatus,
 ) {
 	emit.Println()
@@ -703,7 +703,7 @@ func shutdownObservability(runtime *cliobs.Runtime) {
 func lintPendingDestructive(
 	fsys fs.FS,
 	pending []int64,
-	dialect string,
+	dialect,
 	pathPrefix string,
 ) ([]lint.Finding, error) {
 	return migrationlintgate.Analyze(fsys, pending, dialect, pathPrefix)

@@ -309,7 +309,7 @@ func parsePattern(value, kind string) (resourcePattern, error) {
 			"unsupported Atlas %s selector %q: type selectors are supported on the final pattern segment only", kind, raw)
 	}
 	glob := body
-	types := map[string]struct{}{}
+	types := make(map[string]struct{})
 	var fields map[string]struct{}
 	if open := strings.LastIndex(body, "[type="); open >= 0 {
 		selector, err := parseTypeSelector(body, open, kind)
@@ -388,7 +388,7 @@ func parseTypeSelector(raw string, open int, kind string) (typeSelector, error) 
 	if !ok || strings.TrimSpace(selectorName) != "type" {
 		return typeSelector{}, fmt.Errorf("unsupported Atlas %s selector %q", kind, selector)
 	}
-	types := map[string]struct{}{}
+	types := make(map[string]struct{})
 	for item := range strings.SplitSeq(selectorValue, "|") {
 		item = strings.ToLower(strings.TrimSpace(item))
 		if item != "" {
@@ -438,7 +438,7 @@ func parseFieldSelector(suffix string, types map[string]struct{}, kind string) (
 	if kind != filterKindExclude {
 		return nil, fmt.Errorf("unsupported Atlas %s field selector %q", kind, suffix)
 	}
-	fields := map[string]struct{}{}
+	fields := make(map[string]struct{})
 	for resourceType := range types {
 		for honored := range excludeFieldSelectors[resourceType] {
 			if field == "*" || field == honored {
@@ -457,7 +457,7 @@ func parseFieldSelector(suffix string, types map[string]struct{}, kind string) (
 // supportedFieldsMessage names the fields the selected types do support, so a
 // refusal says what would have worked.
 func supportedFieldsMessage(types map[string]struct{}) string {
-	supported := map[string]struct{}{}
+	supported := make(map[string]struct{})
 	for resourceType := range types {
 		for honored := range excludeFieldSelectors[resourceType] {
 			supported[honored] = struct{}{}
@@ -595,11 +595,11 @@ func newExclusionState(patterns []resourcePattern, defaultSchema string) *exclus
 		patterns:               patterns,
 		defaultSchema:          strings.TrimSpace(defaultSchema),
 		matched:                make([]bool, len(patterns)),
-		excludedTables:         map[tableIdentity]struct{}{},
-		excludedColumns:        map[columnIdentity]struct{}{},
-		excludedSchemas:        map[string]struct{}{},
-		excludedSequences:      map[tableIdentity]struct{}{},
-		removedGeneratedTables: map[string]goschema.Table{},
+		excludedTables:         make(map[tableIdentity]struct{}),
+		excludedColumns:        make(map[columnIdentity]struct{}),
+		excludedSchemas:        make(map[string]struct{}),
+		excludedSequences:      make(map[tableIdentity]struct{}),
+		removedGeneratedTables: make(map[string]goschema.Table),
 	}
 }
 
@@ -1639,7 +1639,7 @@ func generatedConstraintTable(tables map[string]goschema.Table, constraint gosch
 
 func generatedObjectTable(
 	tables map[string]goschema.Table,
-	structName string,
+	structName,
 	tableName string,
 ) (goschema.Table, bool) {
 	if table, ok := tables[structName]; ok && tableMatchesName(table, tableName) {

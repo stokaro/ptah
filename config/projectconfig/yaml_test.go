@@ -170,9 +170,9 @@ env:
 	cfg, err := projectconfig.ParsePtah(raw, "ptah.yaml", "prod")
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(cfg.Schemas, qt.DeepEquals, []string{})
-	c.Assert(cfg.Exclude, qt.DeepEquals, []string{})
-	c.Assert(cfg.Lint.DisabledRules, qt.DeepEquals, []string{})
+	c.Assert(cfg.Schemas, qt.DeepEquals, make([]string, 0))
+	c.Assert(cfg.Exclude, qt.DeepEquals, make([]string, 0))
+	c.Assert(cfg.Lint.DisabledRules, qt.DeepEquals, make([]string, 0))
 }
 
 func TestParsePtahProjectConfigSelectsSingleEnv(t *testing.T) {

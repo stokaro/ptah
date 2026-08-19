@@ -308,7 +308,7 @@ func (r *Reader) readVirtualTable(name string, spec virtualTableSpec) types.DBTa
 	}
 }
 
-func sqliteTableOptions(ddl string) (strict bool, withoutRowID bool) {
+func sqliteTableOptions(ddl string) (strict, withoutRowID bool) {
 	idx := strings.LastIndex(ddl, ")")
 	if idx < 0 {
 		return false, false
@@ -459,7 +459,7 @@ func autoincrementColumn(ddl string) string {
 }
 
 func (r *Reader) readIndexesByTable(
-	indexDDLByName map[string]string,
+	indexDDLByName,
 	tableDDLByName map[string]string,
 	skipped []string,
 ) (
@@ -522,7 +522,7 @@ func (r *Reader) readIndexEntriesByTable(skipped []string) (map[string][]sqliteI
 func (r *Reader) buildIndexesForTable(
 	tableName string,
 	entries []sqliteIndexEntry,
-	indexDDLByName map[string]string,
+	indexDDLByName,
 	tableDDLByName map[string]string,
 	columnsByIndex map[string]sqliteIndexColumns,
 ) ([]types.DBIndex, []types.DBConstraint) {
@@ -1354,7 +1354,7 @@ func splitIdentifierList(value string) []string {
 	return out
 }
 
-func optionalConstraintName(value string) (name string, rest string) {
+func optionalConstraintName(value string) (name, rest string) {
 	value = strings.TrimSpace(value)
 	if !strings.HasPrefix(strings.ToUpper(value), "CONSTRAINT ") {
 		return "", value

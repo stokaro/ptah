@@ -222,7 +222,7 @@ func coverageSplitReport() *atlasreport.SchemaInspectReport {
 
 // txtarMembers reads a rendered split archive back into path -> content.
 func txtarMembers(archive string) map[string]string {
-	members := map[string]string{}
+	members := make(map[string]string)
 	var path string
 	var body strings.Builder
 	flush := func() {

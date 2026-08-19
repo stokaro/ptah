@@ -250,7 +250,7 @@ func releasePostgresLock(conn *sql.Conn, dialect, name string) func(context.Cont
 	}
 }
 
-func acquireMySQLLock(ctx context.Context, conn *sql.Conn, dialect string, name string, timeout time.Duration) error {
+func acquireMySQLLock(ctx context.Context, conn *sql.Conn, dialect, name string, timeout time.Duration) error {
 	timeoutSeconds := mySQLLockTimeoutSeconds(dialect, timeout)
 
 	var acquired sql.NullInt64

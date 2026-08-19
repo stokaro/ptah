@@ -579,7 +579,7 @@ func ociReferenceCensus(c *qt.C) []string {
 // appendOCIReferenceRow appends one parsed table row and ignores a line that is
 // not one. The branch lives here rather than in the loop above because this
 // repository's test style keeps branching out of test bodies.
-func appendOCIReferenceRow(census []string, match []string) []string {
+func appendOCIReferenceRow(census, match []string) []string {
 	if match == nil {
 		return census
 	}

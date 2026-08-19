@@ -279,7 +279,7 @@ func constraintBackedIndexIdentities(
 	dialect string,
 	semantics identifier.Semantics,
 ) (
-	foreignKeys map[difftypes.IndexRef]struct{},
+	foreignKeys,
 	uniqueConstraints map[difftypes.IndexRef]struct{},
 ) {
 	// MySQL/MariaDB transparently create a backing index for every FOREIGN KEY
@@ -361,7 +361,7 @@ func collectDatabaseIndexes(
 	dialect string,
 	semantics identifier.Semantics,
 	declared map[difftypes.IndexRef]generatedIndexEntry,
-	foreignKeys map[difftypes.IndexRef]struct{},
+	foreignKeys,
 	uniqueConstraints map[difftypes.IndexRef]struct{},
 ) map[difftypes.IndexRef]databaseIndexEntry {
 	indexes := make(map[difftypes.IndexRef]databaseIndexEntry)
@@ -470,7 +470,7 @@ func constraintOwnedDatabaseIndex(
 	index types.DBIndex,
 	dialect string,
 	identity difftypes.IndexRef,
-	foreignKeys map[difftypes.IndexRef]struct{},
+	foreignKeys,
 	uniqueConstraints map[difftypes.IndexRef]struct{},
 ) bool {
 	if _, uniqueBacked := uniqueConstraints[identity]; uniqueBacked {

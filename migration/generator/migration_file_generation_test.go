@@ -30,7 +30,7 @@ func TestMigrationFileGeneration_ExtensionSQL(t *testing.T) {
 				},
 			},
 			databaseSchema: &types.DBSchema{
-				Extensions: []types.DBExtension{},
+				Extensions: make([]types.DBExtension, 0),
 			},
 			expectedUpSQL: []string{
 				"-- Direction: UP",
@@ -56,7 +56,7 @@ func TestMigrationFileGeneration_ExtensionSQL(t *testing.T) {
 		{
 			name: "extension removal generates correct up and down SQL",
 			generatedSchema: &goschema.Database{
-				Extensions: []goschema.Extension{},
+				Extensions: make([]goschema.Extension, 0),
 			},
 			databaseSchema: &types.DBSchema{
 				Extensions: []types.DBExtension{
@@ -172,7 +172,7 @@ func TestExtensionMigrationSQL_CompleteFlow(t *testing.T) {
 	}
 
 	emptyDatabase := &types.DBSchema{
-		Extensions: []types.DBExtension{},
+		Extensions: make([]types.DBExtension, 0),
 	}
 
 	// 1. Generate up migration (should create extension)
@@ -218,10 +218,7 @@ func TestMigrationFileGeneration_EmptyDiffPrevention(t *testing.T) {
 				Tables: []goschema.Table{
 					{Name: "users", StructName: "User"},
 				},
-				Fields: []goschema.Field{
-					// Note: Missing the field that the diff claims to add/modify
-					// This simulates the scenario where the planner can't find field definitions
-				},
+				Fields: make([]goschema.Field, 0),
 			},
 			databaseSchema: &types.DBSchema{
 				Tables: []types.DBTable{
@@ -246,11 +243,11 @@ func TestMigrationFileGeneration_EmptyDiffPrevention(t *testing.T) {
 		{
 			name: "completely empty diff should not generate migration",
 			generatedSchema: &goschema.Database{
-				Tables: []goschema.Table{},
-				Fields: []goschema.Field{},
+				Tables: make([]goschema.Table, 0),
+				Fields: make([]goschema.Field, 0),
 			},
 			databaseSchema: &types.DBSchema{
-				Tables: []types.DBTable{},
+				Tables: make([]types.DBTable, 0),
 			},
 			diff: &difftypes.SchemaDiff{
 				// Completely empty diff
@@ -282,8 +279,8 @@ func TestGenerateUpMigrationSQL_NoChangesSuccess(t *testing.T) {
 	}
 
 	emptySchema := &goschema.Database{
-		Tables: []goschema.Table{},
-		Fields: []goschema.Field{},
+		Tables: make([]goschema.Table, 0),
+		Fields: make([]goschema.Field, 0),
 	}
 
 	// Generate up migration SQL - should return success with empty SQL
@@ -301,7 +298,7 @@ func TestHasActualSQLStatements(t *testing.T) {
 	}{
 		{
 			name:       "empty statements",
-			statements: []string{},
+			statements: make([]string, 0),
 			expected:   false,
 		},
 		{

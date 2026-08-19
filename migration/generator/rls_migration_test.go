@@ -21,8 +21,8 @@ func TestRLSMigrationGeneration(t *testing.T) {
 
 	// Create an empty database schema (simulating a fresh database)
 	dbSchema := &types.DBSchema{
-		Tables:      []types.DBTable{},
-		RLSPolicies: []types.DBRLSPolicy{},
+		Tables:      make([]types.DBTable, 0),
+		RLSPolicies: make([]types.DBRLSPolicy, 0),
 	}
 
 	// Generate schema diff

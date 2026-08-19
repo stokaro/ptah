@@ -209,7 +209,7 @@ func atlasMigrateApplyAppliedFiles(
 	keys []string,
 	dialect string,
 	applyErr error,
-	startedAt time.Time,
+	startedAt,
 	endedAt time.Time,
 ) []*atlasMigrateApplyAppliedFile {
 	applied := make([]*atlasMigrateApplyAppliedFile, 0, len(versions))

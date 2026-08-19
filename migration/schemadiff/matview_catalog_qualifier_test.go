@@ -123,7 +123,7 @@ func TestCompareWithDialect_MaterializedViewAliasedRelationSchemaStillDiffs(t *t
 // with the source aliased and the projection qualified by that alias, the
 // spelling the catalog keeps and the declaration therefore has to keep too.
 func aliasedMaterializedViewReadbackFixtures(
-	schema string,
+	schema,
 	readbackSchema string,
 ) (*goschema.Database, *types.DBSchema) {
 	generated := &goschema.Database{
@@ -160,7 +160,7 @@ func aliasedMaterializedViewReadbackFixtures(
 // their source without a qualifier, and a catalog read of the same two objects
 // whose bodies carry readbackSchema as the qualifier the server resolved.
 func materializedViewReadbackFixtures(
-	schema string,
+	schema,
 	readbackSchema string,
 ) (*goschema.Database, *types.DBSchema) {
 	generated := &goschema.Database{

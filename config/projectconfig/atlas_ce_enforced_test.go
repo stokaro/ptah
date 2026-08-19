@@ -273,7 +273,7 @@ func TestParseAtlasSchemaRepo(t *testing.T) {
 `,
 			want:        "myapp",
 			wantSources: nil,
-			wantIgnored: []string{},
+			wantIgnored: make([]string, 0),
 		},
 		{
 			// The community binary accepts an empty repo block -- measured at
@@ -289,7 +289,7 @@ func TestParseAtlasSchemaRepo(t *testing.T) {
 `,
 			want:        "",
 			wantSources: nil,
-			wantIgnored: []string{},
+			wantIgnored: make([]string, 0),
 		},
 		{
 			// src still parses beside it; adding the repo arm must not shadow
@@ -307,7 +307,7 @@ func TestParseAtlasSchemaRepo(t *testing.T) {
 `,
 			want:        "myapp",
 			wantSources: []string{"file://schema.hcl"},
-			wantIgnored: []string{},
+			wantIgnored: make([]string, 0),
 		},
 		{
 			// An unrecognized attribute inside repo is tolerated, matching the

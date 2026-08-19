@@ -1508,7 +1508,7 @@ func removing(table string) *difftypes.SchemaDiff {
 // the desired side produces for a database whose module this build cannot load:
 // the virtual table, and the module's storage described as an ordinary one.
 func declaringVirtualWithTable(
-	virtualName, module, arguments string,
+	virtualName, module, arguments,
 	tableName string,
 	columns []string,
 ) *goschema.Database {

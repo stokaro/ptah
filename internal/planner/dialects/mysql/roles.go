@@ -22,7 +22,7 @@ func (p *Planner) planRoles(result []ast.Node, diff *types.SchemaDiff, generated
 	if !p.capabilities().Has(capability.RoleManagement) {
 		return result
 	}
-	declared := map[string]goschema.Role{}
+	declared := make(map[string]goschema.Role)
 	for _, role := range generated.Roles {
 		declared[role.Name] = role
 	}

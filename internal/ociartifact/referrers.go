@@ -254,7 +254,7 @@ func attachmentLock(ref Reference, subject ocispec.Descriptor) *sync.Mutex {
 func ensureReferrerVisible(
 	ctx context.Context,
 	repository referrerRepository,
-	subject ocispec.Descriptor,
+	subject,
 	attachment ocispec.Descriptor,
 	artifactType string,
 	limits Limits,
@@ -304,7 +304,7 @@ func permanentReferrerVisibilityError(err error) bool {
 // Referrers lists attachments using this client's transport.
 func (c *Client) Referrers(
 	ctx context.Context,
-	subjectRef string,
+	subjectRef,
 	artifactType string,
 ) ([]ocispec.Descriptor, error) {
 	ctx, cancel := c.operationContext(ctx)
@@ -393,7 +393,7 @@ func validateAttachmentSubject(subject ocispec.Descriptor) error {
 }
 
 func durableReferrerTag(
-	subject ocispec.Descriptor,
+	subject,
 	attachment ocispec.Descriptor,
 ) (string, error) {
 	if err := validateLayerDigest(subject); err != nil {
@@ -474,7 +474,7 @@ func listDurableReferrers(
 }
 
 func validateDurableReferrer(
-	subject ocispec.Descriptor,
+	subject,
 	descriptor ocispec.Descriptor,
 	manifestBytes []byte,
 	tag string,
@@ -530,7 +530,7 @@ func sameDescriptor(left, right ocispec.Descriptor) bool {
 }
 
 func mergeReferrers(
-	groups []ocispec.Descriptor,
+	groups,
 	additional []ocispec.Descriptor,
 	limit int,
 ) ([]ocispec.Descriptor, error) {

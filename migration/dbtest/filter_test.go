@@ -31,7 +31,7 @@ func TestFilterCases_HappyPath(t *testing.T) {
 		{
 			name:    "unmatched pattern returns an empty selection",
 			pattern: `^missing$`,
-			want:    []dbtest.Case{},
+			want:    make([]dbtest.Case, 0),
 		},
 	}
 

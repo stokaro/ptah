@@ -996,7 +996,7 @@ type planRehearsalDecision struct {
 func resolveAtlasSchemaApplyPlanRehearsal(
 	policy planRehearsalPolicy,
 	format atlasschema.PlanFormat,
-	dialect string,
+	dialect,
 	devURL string,
 	desired *goschema.Database,
 ) (planRehearsalDecision, error) {

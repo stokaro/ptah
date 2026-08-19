@@ -40,7 +40,7 @@ const (
 // binary, so a release build records its own commit even when nothing in the
 // environment names one.
 func provenanceAnnotations() map[string]string {
-	annotations := map[string]string{}
+	annotations := make(map[string]string)
 	if source := firstNonEmpty(os.Getenv(SourceEnv), githubRepositoryURL()); source != "" {
 		annotations[ocispec.AnnotationSource] = source
 	}

@@ -603,7 +603,7 @@ func newSchemaParseState(filename string, fset *token.FileSet) *schemaParseState
 
 func (s *schemaParseState) annotationContext(
 	comment *ast.Comment,
-	directive string,
+	directive,
 	location string,
 ) annotationErrorContext {
 	ctx := annotationErrorContext{

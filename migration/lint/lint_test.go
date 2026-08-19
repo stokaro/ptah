@@ -62,7 +62,7 @@ ALTER TYPE mood ADD VALUE 'ambivalent';
 	// Line numbers point at the offending statements, not the file head:
 	// the comment on line 1 (with its decoy semicolon) shifts DROP TABLE to
 	// line 2 and everything after accordingly.
-	byRule := map[string]lint.Finding{}
+	byRule := make(map[string]lint.Finding)
 	for _, f := range findings {
 		byRule[f.Rule] = f
 	}
@@ -489,7 +489,7 @@ ALTER TABLE t ADD COLUMN c INT;
 -- down.sql --
 DROP INDEX idx;
 `,
-			want: []string{},
+			want: make([]string, 0),
 		},
 	}
 
@@ -1337,7 +1337,7 @@ func TestLoadConfig_FailurePath_DotSegmentExclusionGlobs(t *testing.T) {
 func TestRules_EveryRuleHasCodeTitleAndOneChecker(t *testing.T) {
 	c := qt.New(t)
 
-	seen := map[string]bool{}
+	seen := make(map[string]bool)
 	for _, rule := range lint.Rules() {
 		c.Assert(rule.Code, qt.Not(qt.Equals), "")
 		c.Assert(rule.Title, qt.Not(qt.Equals), "")

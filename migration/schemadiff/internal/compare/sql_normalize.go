@@ -29,8 +29,8 @@ func replaceSQLLiteralOutsideSingleQuotedSQL(value, old, replacement string) str
 }
 
 func replaceOutsideSingleQuotedSQL(
-	value string,
-	old string,
+	value,
+	old,
 	replacement string,
 	allowed func(value string, start int) bool,
 ) string {

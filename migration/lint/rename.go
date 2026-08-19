@@ -178,7 +178,7 @@ func fileRenames(file *File) []statementRename {
 		return nil
 	}
 	var renames []statementRename
-	created := map[string]bool{}
+	created := make(map[string]bool)
 	for i := range file.Statements {
 		stmt := &file.Statements[i]
 		if ref := createdTableRef(stmt.Words); ref != "" {

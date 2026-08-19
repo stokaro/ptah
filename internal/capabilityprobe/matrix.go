@@ -150,7 +150,7 @@ func (m Matrix) Validate() error {
 
 func (m Matrix) cellProblems() []error {
 	var problems []error
-	seen := map[string]bool{}
+	seen := make(map[string]bool)
 	for _, cell := range append(slices.Clone(m.Cells), m.Skipped...) {
 		if seen[cell.ID] {
 			problems = append(problems, fmt.Errorf("two cells share the id %q, so their jobs and artifacts would collide", cell.ID))

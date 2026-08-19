@@ -177,8 +177,8 @@ func generatedConstraintTable(
 }
 
 func newColumnIdentityForTable(
-	schema string,
-	table string,
+	schema,
+	table,
 	column string,
 	semantics identifier.Semantics,
 ) columnIdentity {
@@ -186,7 +186,7 @@ func newColumnIdentityForTable(
 }
 
 func newTableIdentity(
-	schema string,
+	schema,
 	table string,
 	semantics identifier.Semantics,
 ) tableIdentity {
@@ -202,7 +202,7 @@ func newTableIdentity(
 // was named after.
 func newObjectIdentity(
 	kind objectidentity.Kind,
-	schema string,
+	schema,
 	name string,
 	semantics identifier.Semantics,
 ) objectIdentity {

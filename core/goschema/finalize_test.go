@@ -42,7 +42,7 @@ func TestFinalize_RebuildsDerivedForeignKeyState(t *testing.T) {
 		"posts": {},
 		"users": {},
 	})
-	c.Assert(database.SelfReferencingForeignKeys, qt.DeepEquals, map[string][]goschema.SelfReferencingFK{})
+	c.Assert(database.SelfReferencingForeignKeys, qt.DeepEquals, make(map[string][]goschema.SelfReferencingFK))
 }
 
 func TestFinalize_ExpandsEmbeddedRelationsIdempotently(t *testing.T) {
@@ -203,7 +203,7 @@ func TestFinalize_PreservesUnnamedTableConstraints(t *testing.T) {
 	goschema.Finalize(database)
 
 	c.Assert(database.Constraints, qt.HasLen, 2)
-	c.Assert(database.SelfReferencingForeignKeys, qt.DeepEquals, map[string][]goschema.SelfReferencingFK{})
+	c.Assert(database.SelfReferencingForeignKeys, qt.DeepEquals, make(map[string][]goschema.SelfReferencingFK))
 }
 
 func TestFinalize_PreservesDistinctUnnamedForeignKeys(t *testing.T) {

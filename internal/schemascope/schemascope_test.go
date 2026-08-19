@@ -442,7 +442,7 @@ func generatedGrantTargets(grants []goschema.Grant) []string {
 	return targets
 }
 
-func grantTarget(schema string, table string) string {
+func grantTarget(schema, table string) string {
 	if schema != "" {
 		return "schema:" + schema
 	}

@@ -1815,7 +1815,7 @@ func TestFromEnum_BasicEnum(t *testing.T) {
 			name: "empty enum",
 			enum: goschema.Enum{
 				Name:   "empty_enum",
-				Values: []string{},
+				Values: make([]string, 0),
 			},
 			expected: func(enum *ast.EnumNode) bool {
 				return enum.Name == "empty_enum" &&
@@ -1931,10 +1931,10 @@ func TestFromDatabase_EmptySchema(t *testing.T) {
 	c := qt.New(t)
 
 	database := goschema.Database{
-		Enums:   []goschema.Enum{},
-		Tables:  []goschema.Table{},
-		Fields:  []goschema.Field{},
-		Indexes: []goschema.Index{},
+		Enums:   make([]goschema.Enum, 0),
+		Tables:  make([]goschema.Table, 0),
+		Fields:  make([]goschema.Field, 0),
+		Indexes: make([]goschema.Index, 0),
 	}
 
 	result := fromschema.FromDatabase(database, "")
@@ -2250,7 +2250,7 @@ func TestFromTable_PlatformOverrides(t *testing.T) {
 					},
 				},
 			},
-			fields:         []goschema.Field{},
+			fields:         make([]goschema.Field, 0),
 			targetPlatform: "mysql",
 			expected: func(table *ast.CreateTableNode) bool {
 				return table.Name == "products" &&
@@ -2272,7 +2272,7 @@ func TestFromTable_PlatformOverrides(t *testing.T) {
 					},
 				},
 			},
-			fields:         []goschema.Field{},
+			fields:         make([]goschema.Field, 0),
 			targetPlatform: "mariadb",
 			expected: func(table *ast.CreateTableNode) bool {
 				return table.Name == "users" &&
@@ -2292,7 +2292,7 @@ func TestFromTable_PlatformOverrides(t *testing.T) {
 					"mysql": {"engine": "MyISAM"},
 				},
 			},
-			fields:         []goschema.Field{},
+			fields:         make([]goschema.Field, 0),
 			targetPlatform: "postgres",
 			expected: func(table *ast.CreateTableNode) bool {
 				return table.Name == "logs" &&
@@ -2310,7 +2310,7 @@ func TestFromTable_PlatformOverrides(t *testing.T) {
 					"mysql": {"comment": "MySQL comment"},
 				},
 			},
-			fields:         []goschema.Field{},
+			fields:         make([]goschema.Field, 0),
 			targetPlatform: "",
 			expected: func(table *ast.CreateTableNode) bool {
 				return table.Name == "categories" &&
@@ -2325,7 +2325,7 @@ func TestFromTable_PlatformOverrides(t *testing.T) {
 				Strict:       true,
 				WithoutRowID: true,
 			},
-			fields:         []goschema.Field{},
+			fields:         make([]goschema.Field, 0),
 			targetPlatform: "sqlite",
 			expected: func(table *ast.CreateTableNode) bool {
 				return table.Name == "events" &&
@@ -2347,7 +2347,7 @@ func TestFromTable_PlatformOverrides(t *testing.T) {
 					},
 				},
 			},
-			fields:         []goschema.Field{},
+			fields:         make([]goschema.Field, 0),
 			targetPlatform: "sqlite",
 			expected: func(table *ast.CreateTableNode) bool {
 				_, strict := table.Options["STRICT"]
@@ -2368,7 +2368,7 @@ func TestFromTable_PlatformOverrides(t *testing.T) {
 					},
 				},
 			},
-			fields:         []goschema.Field{},
+			fields:         make([]goschema.Field, 0),
 			targetPlatform: "postgres",
 			expected: func(table *ast.CreateTableNode) bool {
 				return table.Partition != nil &&
@@ -2413,8 +2413,8 @@ func TestFromDatabase_PlatformOverrides(t *testing.T) {
 				},
 			},
 		},
-		Indexes: []goschema.Index{},
-		Enums:   []goschema.Enum{},
+		Indexes: make([]goschema.Index, 0),
+		Enums:   make([]goschema.Enum, 0),
 	}
 
 	// Test MySQL platform

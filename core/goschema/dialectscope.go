@@ -142,7 +142,7 @@ func collectScopedObjects(db *Database, want func(scope []string) bool) []Scoped
 		return nil
 	}
 	var found []ScopedObject
-	collect := func(kind string, name string, scope []string) {
+	collect := func(kind, name string, scope []string) {
 		if len(scope) == 0 || !want(scope) {
 			return
 		}

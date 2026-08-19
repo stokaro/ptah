@@ -57,7 +57,7 @@ type Graph struct {
 func BuildGraph(changes []Change, current, desired *schemastate.State) (*Graph, error) {
 	graph := &Graph{
 		changes: slices.Clone(changes),
-		index:   map[objectidentity.Key]int{},
+		index:   make(map[objectidentity.Key]int),
 	}
 	for position, change := range graph.changes {
 		if previous, duplicated := graph.index[change.ID.Key()]; duplicated {
@@ -177,8 +177,8 @@ func (g *Graph) Rollback() ([]Change, error) {
 // topological orders the changes, reporting a cycle in terms of the edges that
 // form it rather than as a bare failure.
 func (g *Graph) topological() ([]Change, error) {
-	indegree := map[objectidentity.Key]int{}
-	successors := map[objectidentity.Key][]objectidentity.Key{}
+	indegree := make(map[objectidentity.Key]int)
+	successors := make(map[objectidentity.Key][]objectidentity.Key)
 	for key := range g.index {
 		indegree[key] = 0
 	}

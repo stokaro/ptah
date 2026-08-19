@@ -804,7 +804,7 @@ func mySQLTableCount(
 	c *qt.C,
 	ctx context.Context,
 	db *sql.DB,
-	database string,
+	database,
 	table string,
 ) int {
 	c.Helper()

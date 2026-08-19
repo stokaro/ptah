@@ -180,7 +180,7 @@ func WriteResult(path string, result CellResult) error {
 func ReadResults(dir string) ([]CellResult, error) {
 	var results []CellResult
 	var problems []error
-	seen := map[string]string{}
+	seen := make(map[string]string)
 	err := filepath.WalkDir(dir, func(path string, entry os.DirEntry, err error) error {
 		if err != nil {
 			return err

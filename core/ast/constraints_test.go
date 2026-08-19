@@ -127,7 +127,7 @@ func TestNewForeignKeyConstraint_EmptyColumns(t *testing.T) {
 		Column: "id",
 		Name:   "fk_user",
 	}
-	constraint := ast.NewForeignKeyConstraint("fk_empty", []string{}, ref)
+	constraint := ast.NewForeignKeyConstraint("fk_empty", make([]string, 0), ref)
 
 	c.Assert(constraint.Type, qt.Equals, ast.ForeignKeyConstraint)
 	c.Assert(constraint.Name, qt.Equals, "fk_empty")

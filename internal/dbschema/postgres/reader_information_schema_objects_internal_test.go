@@ -215,7 +215,7 @@ func TestConstraintAndViewReadsPickTheCatalogTheServerHas(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			queries := []string{}
+			queries := make([]string, 0)
 			db := dbtest.Open(c, func(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
 				queries = append(queries, query)
 				return dbtest.QueryResult{}, nil

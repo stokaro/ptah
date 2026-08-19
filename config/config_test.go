@@ -35,8 +35,8 @@ func TestWithIgnoredExtensions(t *testing.T) {
 		},
 		{
 			name:       "empty list",
-			extensions: []string{},
-			expected:   []string{},
+			extensions: make([]string, 0),
+			expected:   make([]string, 0),
 		},
 	}
 
@@ -68,7 +68,7 @@ func TestWithAdditionalIgnoredExtensions(t *testing.T) {
 		},
 		{
 			name:       "add no extensions",
-			additional: []string{},
+			additional: make([]string, 0),
 			expected:   []string{"plpgsql"},
 		},
 	}
@@ -104,7 +104,7 @@ func TestCompareOptions_IsExtensionIgnored(t *testing.T) {
 		},
 		{
 			name:              "empty ignore list",
-			ignoredExtensions: []string{},
+			ignoredExtensions: make([]string, 0),
 			extensionName:     "plpgsql",
 			expected:          false,
 		},
@@ -147,7 +147,7 @@ func TestCompareOptions_FilterIgnoredExtensions(t *testing.T) {
 			name:              "filter all extensions",
 			ignoredExtensions: []string{"plpgsql", "pg_trgm"},
 			inputExtensions:   []string{"plpgsql", "pg_trgm"},
-			expected:          []string{},
+			expected:          make([]string, 0),
 		},
 		{
 			name:              "filter no extensions",
@@ -158,12 +158,12 @@ func TestCompareOptions_FilterIgnoredExtensions(t *testing.T) {
 		{
 			name:              "empty input list",
 			ignoredExtensions: []string{"plpgsql"},
-			inputExtensions:   []string{},
-			expected:          []string{},
+			inputExtensions:   make([]string, 0),
+			expected:          make([]string, 0),
 		},
 		{
 			name:              "empty ignore list",
-			ignoredExtensions: []string{},
+			ignoredExtensions: make([]string, 0),
 			inputExtensions:   []string{"plpgsql", "pg_trgm"},
 			expected:          []string{"plpgsql", "pg_trgm"},
 		},

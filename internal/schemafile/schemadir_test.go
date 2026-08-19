@@ -125,7 +125,7 @@ func TestLoadPathRefusesAnUnusableSchemaDirectory(t *testing.T) {
 		},
 		{
 			name:    "an empty directory refuses",
-			files:   map[string]string{},
+			files:   make(map[string]string),
 			wantErr: `".*" contains neither SQL nor HCL files`,
 		},
 		{

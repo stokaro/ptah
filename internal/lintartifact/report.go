@@ -27,7 +27,7 @@ const (
 // NewFS returns an immutable filesystem containing the canonical JSON report.
 func NewFS(report migrationlintreport.Report) (fs.FS, error) {
 	if report.Findings == nil {
-		report.Findings = []migrationlint.Finding{}
+		report.Findings = make([]migrationlint.Finding, 0)
 	}
 
 	var contents bytes.Buffer

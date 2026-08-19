@@ -344,7 +344,7 @@ func writeBaseline(root string, reports []ruleReport) error {
 	recorded := baseline{
 		Comment: "Recorded architecture-boundary debt (stokaro/ptah#1344, ADR 0001 section 8 stage 0). " +
 			"A count may fall and may never rise. Regenerate with: go run ./internal/cmd/boundaries -update",
-		Rules: map[string]int{},
+		Rules: make(map[string]int),
 	}
 	for _, report := range reports {
 		recorded.Rules[report.Rule] = report.Count

@@ -134,7 +134,7 @@ func Compare(current, desired *schemastate.State, profile schemastate.Profile) (
 		return nil, err
 	}
 	changes := make([]Change, 0)
-	desiredKeys := map[objectidentity.Key]schemastate.Object{}
+	desiredKeys := make(map[objectidentity.Key]schemastate.Object)
 
 	for _, object := range desired.OfKind(objectidentity.KindConstraint) {
 		if object.ForeignKey == nil {
@@ -191,7 +191,7 @@ func compareGrants(current, desired *schemastate.State, profile schemastate.Prof
 		return nil, fmt.Errorf("the desired schema: %w", err)
 	}
 	changes := make([]Change, 0)
-	declared := map[objectidentity.Key]schemastate.Object{}
+	declared := make(map[objectidentity.Key]schemastate.Object)
 	for _, object := range desired.OfKind(objectidentity.KindGrant) {
 		declared[object.ID.Key()] = object
 		existing, found := current.Get(object.ID)
@@ -312,7 +312,7 @@ func comparePolicies(current, desired *schemastate.State, profile schemastate.Pr
 		return nil, fmt.Errorf("the desired schema: %w", err)
 	}
 	changes := make([]Change, 0)
-	declared := map[objectidentity.Key]schemastate.Object{}
+	declared := make(map[objectidentity.Key]schemastate.Object)
 	for _, object := range desired.OfKind(objectidentity.KindPolicy) {
 		declared[object.ID.Key()] = object
 		existing, found := current.Get(object.ID)

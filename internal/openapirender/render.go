@@ -194,7 +194,7 @@ func Render(db *goschema.Database, opts Options) (Result, error) {
 			Version: firstNonEmpty(opts.Version, defaultVersion),
 		},
 		Servers:    []server{{URL: "/"}},
-		Paths:      map[string]any{},
+		Paths:      make(map[string]any),
 		Components: components{Schemas: schemas},
 	}
 

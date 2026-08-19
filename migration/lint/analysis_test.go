@@ -70,7 +70,7 @@ func TestAnalyzeFS_DataDependentExemptsSameFileCreatedTable(t *testing.T) {
 			// file targets an empty table, so the add cannot fail on data.
 			name:  "same-file created table is exempt",
 			sql:   "CREATE TABLE users (id INTEGER);\nALTER TABLE users ADD COLUMN tenant_id INTEGER NOT NULL;\n",
-			rules: []string{},
+			rules: make([]string, 0),
 		},
 		{
 			name:  "pre-existing table still reports",
@@ -718,7 +718,7 @@ func TestAnalyzeFS_CapturesAtlasTemplateInputsOnce(t *testing.T) {
 				Data: []byte(`{{ define "shared/drop" }}DROP TABLE users;{{ end }}`),
 			},
 		},
-		reads: map[string]int{},
+		reads: make(map[string]int),
 	}
 
 	analysis, err := lint.AnalyzeFS(fsys, lint.Options{

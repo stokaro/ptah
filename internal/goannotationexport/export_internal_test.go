@@ -28,7 +28,7 @@ func TestExport_FailurePath_RevalidatesSourcesAfterOutputStaging(t *testing.T) {
 	}{
 		{
 			name: "same-size edit",
-			mutate: func(_ string, source string, _ []byte) error {
+			mutate: func(_, source string, _ []byte) error {
 				return os.WriteFile(
 					source,
 					[]byte("package models\n\n//ptah:schema:table name=\"roles\"\ntype User struct{}\n"),
@@ -42,7 +42,7 @@ func TestExport_FailurePath_RevalidatesSourcesAfterOutputStaging(t *testing.T) {
 		},
 		{
 			name: "identity replacement",
-			mutate: func(_ string, source string, original []byte) error {
+			mutate: func(_, source string, original []byte) error {
 				replacement := source + ".replacement"
 				// Joined rather than chained: every step runs, so a row that
 				// half-completes still reports the step that failed instead of

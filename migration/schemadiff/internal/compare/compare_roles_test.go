@@ -15,8 +15,8 @@ import (
 func TestRolesComparison(t *testing.T) {
 	t.Run("no roles in either schema", func(t *testing.T) {
 		c := qt.New(t)
-		generated := &goschema.Database{Roles: []goschema.Role{}}
-		database := &types.DBSchema{Roles: []types.DBRole{}}
+		generated := &goschema.Database{Roles: make([]goschema.Role, 0)}
+		database := &types.DBSchema{Roles: make([]types.DBRole, 0)}
 		diff := &difftypes.SchemaDiff{}
 
 		compare.Roles(generated, database, diff, compare.CoverageOf(generated, database))
@@ -34,7 +34,7 @@ func TestRolesComparison(t *testing.T) {
 				{Name: "admin_user", Login: true, Superuser: true},
 			},
 		}
-		database := &types.DBSchema{Roles: []types.DBRole{}}
+		database := &types.DBSchema{Roles: make([]types.DBRole, 0)}
 		diff := &difftypes.SchemaDiff{}
 
 		compare.Roles(generated, database, diff, compare.CoverageOf(generated, database))
@@ -48,7 +48,7 @@ func TestRolesComparison(t *testing.T) {
 
 	t.Run("roles not automatically removed", func(t *testing.T) {
 		c := qt.New(t)
-		generated := &goschema.Database{Roles: []goschema.Role{}}
+		generated := &goschema.Database{Roles: make([]goschema.Role, 0)}
 		database := &types.DBSchema{
 			Roles: []types.DBRole{
 				{Name: "old_role", Login: true},
@@ -167,7 +167,7 @@ func TestRolesTreatsOutOfScopeRolesAsPresent(t *testing.T) {
 			Roles: []goschema.Role{{Name: "admin_user", Login: true, Superuser: true}},
 		}
 		database := &types.DBSchema{
-			Roles: []types.DBRole{},
+			Roles: make([]types.DBRole, 0),
 			RolesOutOfScope: []types.DBRole{
 				{Name: "admin_user", Login: true, Superuser: true},
 			},

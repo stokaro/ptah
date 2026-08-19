@@ -521,7 +521,7 @@ func repairInvalidIndexShadowDropRecreateMigrator(
 
 func repairInvalidIndexShadowMigrator(
 	conn *dbschema.DatabaseConnection,
-	tracker string,
+	tracker,
 	up string,
 ) *migrator.Migrator {
 	down := fmt.Sprintf(

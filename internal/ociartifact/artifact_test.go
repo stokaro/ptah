@@ -554,9 +554,9 @@ func pushManifest(
 	c *qt.C,
 	ctx context.Context,
 	store *memory.Store,
-	title string,
-	layerMediaType string,
-	artifactType string,
+	title,
+	layerMediaType,
+	artifactType,
 	tag string,
 ) {
 	layer, err := oras.PushBytes(ctx, store, layerMediaType, []byte("SELECT 1;"))

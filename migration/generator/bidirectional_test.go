@@ -1002,8 +1002,8 @@ func planMySQLBidirectional(
 
 func mysqlReverseMutationPositions(
 	nodes []ast.Node,
-	table string,
-	foreignKey string,
+	table,
+	foreignKey,
 	column string,
 ) (dropForeignKey, dropColumn, dropIndex int) {
 	dropForeignKey, dropColumn = mysqlReverseForeignKeyAndColumnPositions(
@@ -1024,9 +1024,9 @@ func mysqlReverseMutationPositions(
 
 func mysqlReverseForeignKeyAndColumnPositions(
 	nodes []ast.Node,
-	foreignKeyTable string,
-	foreignKey string,
-	columnTable string,
+	foreignKeyTable,
+	foreignKey,
+	columnTable,
 	column string,
 ) (dropForeignKey, dropColumn int) {
 	dropForeignKey, dropColumn = -1, -1

@@ -754,17 +754,17 @@ func TestSplitSQLStatements_EdgeCases(t *testing.T) {
 		{
 			name:     "empty string",
 			input:    "",
-			expected: []string{},
+			expected: make([]string, 0),
 		},
 		{
 			name:     "only whitespace",
 			input:    "   \n\t  ",
-			expected: []string{},
+			expected: make([]string, 0),
 		},
 		{
 			name:     "only semicolons",
 			input:    ";;;",
-			expected: []string{},
+			expected: make([]string, 0),
 		},
 		{
 			name:     "only comments",

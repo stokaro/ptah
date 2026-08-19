@@ -195,7 +195,7 @@ func schemaAllowed(allowed map[string]struct{}, schema string) bool {
 	return ok
 }
 
-func effectiveSchema(schema string, defaultSchema string) string {
+func effectiveSchema(schema, defaultSchema string) string {
 	schema = strings.TrimSpace(schema)
 	if schema != "" {
 		return schema
@@ -216,7 +216,7 @@ func keep[T any](items []T, shouldKeep func(T) bool) []T {
 func generatedStructOrTableAllowed(
 	keptStructs map[string]struct{},
 	keptTables map[string]goschema.Table,
-	structName string,
+	structName,
 	tableName string,
 ) bool {
 	if strings.TrimSpace(tableName) != "" {
@@ -229,10 +229,10 @@ func generatedStructOrTableAllowed(
 }
 
 func generatedNamedObjectAllowed(
-	allowed map[string]struct{},
+	allowed,
 	keptStructs map[string]struct{},
-	structName string,
-	name string,
+	structName,
+	name,
 	defaultSchema string,
 ) bool {
 	if _, ok := keptStructs[structName]; ok {
@@ -317,7 +317,7 @@ func grantAllowed(
 }
 
 func dbGrantAllowed(
-	allowed map[string]struct{},
+	allowed,
 	keptTables map[string]struct{},
 	grant dbschematypes.DBGrant,
 	defaultSchema string,

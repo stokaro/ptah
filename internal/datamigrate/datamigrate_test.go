@@ -145,7 +145,7 @@ func TestGenerate_RoundTripApply(t *testing.T) {
 		rows, queryErr := conn.QueryContext(ctx, `SELECT code, name FROM regions ORDER BY code`)
 		c.Assert(queryErr, qt.IsNil)
 		defer func() { _ = rows.Close() }()
-		out := map[string]string{}
+		out := make(map[string]string)
 		for rows.Next() {
 			var code, name string
 			c.Assert(rows.Scan(&code, &name), qt.IsNil)
@@ -221,7 +221,7 @@ type Region struct {
 		rows, queryErr := conn.QueryContext(ctx, `SELECT code, name FROM reference.regions ORDER BY code`)
 		c.Assert(queryErr, qt.IsNil)
 		defer func() { _ = rows.Close() }()
-		out := map[string]string{}
+		out := make(map[string]string)
 		for rows.Next() {
 			var code, name string
 			c.Assert(rows.Scan(&code, &name), qt.IsNil)
@@ -388,7 +388,7 @@ type regionData struct{ _ int }
 		}
 	}
 	readState := func() (map[string]string, map[string]string) {
-		countries := map[string]string{}
+		countries := make(map[string]string)
 		rows, qErr := conn.QueryContext(ctx, `SELECT code, name FROM countries ORDER BY code`)
 		c.Assert(qErr, qt.IsNil)
 		for rows.Next() {
@@ -398,7 +398,7 @@ type regionData struct{ _ int }
 		}
 		c.Assert(rows.Err(), qt.IsNil)
 		_ = rows.Close()
-		regions := map[string]string{}
+		regions := make(map[string]string)
 		rows2, qErr := conn.QueryContext(ctx, `SELECT code, country_code FROM regions ORDER BY code`)
 		c.Assert(qErr, qt.IsNil)
 		for rows2.Next() {
@@ -524,7 +524,7 @@ type widgetData struct{ _ int }
 		rows, queryErr := conn.QueryContext(ctx, `SELECT id, label, weight, label_len FROM widgets ORDER BY id`)
 		c.Assert(queryErr, qt.IsNil)
 		defer func() { _ = rows.Close() }()
-		out := map[string][3]any{}
+		out := make(map[string][3]any)
 		for rows.Next() {
 			var id, label string
 			var weight, labelLen int
@@ -603,7 +603,7 @@ type eventData struct{ _ int }
 		rows, queryErr := conn.QueryContext(ctx, `SELECT id, created_at FROM events ORDER BY id`)
 		c.Assert(queryErr, qt.IsNil)
 		defer func() { _ = rows.Close() }()
-		out := map[string]string{}
+		out := make(map[string]string)
 		for rows.Next() {
 			var id string
 			var ts time.Time
@@ -667,7 +667,7 @@ type ticketData struct{ _ int }
 		rows, queryErr := conn.QueryContext(ctx, `SELECT id, label FROM tickets ORDER BY id`)
 		c.Assert(queryErr, qt.IsNil)
 		defer func() { _ = rows.Close() }()
-		out := map[int64]string{}
+		out := make(map[int64]string)
 		for rows.Next() {
 			var id int64
 			var label string

@@ -149,7 +149,7 @@ func FromDescription(
 	// silence as absence (stokaro/ptah#1028).
 	state := New(dialect, sliceScope...).WithCoverage(description.NotDescribed)
 	builder := objectidentity.NewBuilder(semantics)
-	tablesByStruct := map[string]goschema.Table{}
+	tablesByStruct := make(map[string]goschema.Table)
 
 	for _, table := range description.Tables {
 		tablesByStruct[table.StructName] = table

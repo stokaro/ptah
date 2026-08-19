@@ -190,7 +190,7 @@ func atlasCheckFor(code string) (AtlasCheck, bool) {
 // AtlasCounts totals the statuses, so the page's summary sentence is counted
 // rather than remembered.
 func AtlasCounts() map[AtlasStatus]int {
-	counts := map[AtlasStatus]int{}
+	counts := make(map[AtlasStatus]int)
 	for _, check := range atlasChecks {
 		counts[check.Status]++
 	}

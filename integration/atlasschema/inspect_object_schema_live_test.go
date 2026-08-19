@@ -375,7 +375,7 @@ func readObjectSchemas(
 	c.Assert(err, qt.IsNil)
 	defer func() { c.Check(rows.Close(), qt.IsNil) }()
 
-	found := []string{}
+	found := make([]string, 0)
 	for rows.Next() {
 		var value string
 		c.Assert(rows.Scan(&value), qt.IsNil)

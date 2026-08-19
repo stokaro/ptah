@@ -74,7 +74,7 @@ import (
 // function knows which of the two spellings carried the rejected value.
 func resolveAtlasVerbDirFormat(
 	out io.Writer,
-	verb string,
+	verb,
 	configured string,
 	query url.Values,
 ) (atlasmigrateimport.Format, error) {

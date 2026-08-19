@@ -56,7 +56,7 @@ func directionalRepairMigrator(c *qt.C, name string) (*migrator.Migrator, *dbsch
 func directionalRepairRevision(
 	c *qt.C,
 	conn *dbschema.DatabaseConnection,
-) (state string, applied int, total int) {
+) (state string, applied, total int) {
 	c.Helper()
 	c.Assert(
 		conn.QueryRow("SELECT state, applied, total FROM schema_migrations WHERE version = 1").

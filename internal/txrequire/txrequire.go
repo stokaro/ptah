@@ -101,8 +101,8 @@ func (r Result) Diagnostic(file string) string {
 // one.
 func Analyze(dialect string, caps capability.Capabilities, statements []Statement) Result {
 	findings := make([]Finding, 0)
-	created := map[string]bool{}
-	pending := map[string]string{}
+	created := make(map[string]bool)
+	pending := make(map[string]string)
 	for _, statement := range statements {
 		words := tokenize(dialect, statement.SQL)
 		sourceWords := tokenizeSource(dialect, statement.SQL)

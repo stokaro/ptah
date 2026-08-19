@@ -56,7 +56,7 @@ func TestDisableReachesEveryIdentifier(t *testing.T) {
 			name:     "parse error, its own code disabled",
 			sql:      "CREATE TABLE ;",
 			disabled: []string{"SQL001"},
-			want:     []string{},
+			want:     make([]string, 0),
 		},
 		{
 			name:     "parse error, another rule's code disabled",
@@ -73,13 +73,13 @@ func TestDisableReachesEveryIdentifier(t *testing.T) {
 			name:     "statement the linter does not model, its own code disabled",
 			sql:      "SELECT 1;",
 			disabled: []string{"SQL002"},
-			want:     []string{},
+			want:     make([]string, 0),
 		},
 		{
 			name:     "both parse-path codes, the family disabled",
 			sql:      "CREATE TABLE ;\nSELECT 1;",
 			disabled: []string{"SQL"},
-			want:     []string{},
+			want:     make([]string, 0),
 		},
 		{
 			name:     "both parse-path codes, one of them disabled",
@@ -96,7 +96,7 @@ func TestDisableReachesEveryIdentifier(t *testing.T) {
 			name:     "table without a primary key, its own code disabled",
 			sql:      "CREATE TABLE users (email TEXT NOT NULL);",
 			disabled: []string{"DDL001"},
-			want:     []string{},
+			want:     make([]string, 0),
 		},
 	}
 

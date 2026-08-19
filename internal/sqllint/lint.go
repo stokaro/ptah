@@ -440,7 +440,7 @@ func (createIndexCapabilityRule) CheckStatement(ctx Context, stmt ast.Node) []Fi
 	}}
 }
 
-func (c Context) LineColumn(needle string) (line int, column int) {
+func (c Context) LineColumn(needle string) (line, column int) {
 	pos := c.statement.offset
 	if idx := strings.Index(c.statement.sql, needle); idx >= 0 {
 		pos += idx
@@ -448,7 +448,7 @@ func (c Context) LineColumn(needle string) (line int, column int) {
 	return lineColumn(c.Source.SQL, pos)
 }
 
-func lineColumn(input string, pos int) (line int, column int) {
+func lineColumn(input string, pos int) (line, column int) {
 	if pos < 0 {
 		pos = 0
 	}

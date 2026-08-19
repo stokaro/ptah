@@ -42,7 +42,7 @@ var probedDialects = []string{platform.Postgres, platform.MySQL, platform.MariaD
 // them apart is what lets
 // TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy hold the split.
 func TestPlans_AnswerEveryRegisteredCapabilityExactlyOnce(t *testing.T) {
-	registered := map[capability.Capability]bool{}
+	registered := make(map[capability.Capability]bool)
 	for _, key := range capability.All() {
 		registered[key] = true
 	}
@@ -53,14 +53,14 @@ func TestPlans_AnswerEveryRegisteredCapabilityExactlyOnce(t *testing.T) {
 			dialectPlan, ok := planFor(dialect)
 			c.Assert(ok, qt.IsTrue)
 
-			byExperiment := map[capability.Capability]int{}
+			byExperiment := make(map[capability.Capability]int)
 			for _, current := range dialectPlan.experiments {
 				c.Check(len(current.decides) > 0, qt.IsTrue, qt.Commentf("an experiment that decides nothing cannot be run"))
 				for _, key := range current.decides {
 					byExperiment[key]++
 				}
 			}
-			declared := map[capability.Capability]int{}
+			declared := make(map[capability.Capability]int)
 			for key := range dialectPlan.undecided {
 				declared[key]++
 			}
@@ -407,7 +407,7 @@ func TestAssemble_UndecidableRowsAreNotCountedAsDecided(t *testing.T) {
 	c := qt.New(t)
 
 	report := reportOn(measuredCell, true, capability.Postgres17())
-	observations := map[capability.Capability]observation{}
+	observations := make(map[capability.Capability]observation)
 	for _, key := range capability.All() {
 		observations[key] = cannotDecide("nothing was executed for this key")
 	}
@@ -604,7 +604,7 @@ func promisedReport(promised int, undecided ...capability.Capability) *Report {
 	report.Resolution.VersionSpecific = true
 	report.Decidable = promised
 
-	observations := map[capability.Capability]observation{}
+	observations := make(map[capability.Capability]observation)
 	for _, key := range capability.All() {
 		observations[key] = decided(preset.Has(key))
 	}
@@ -668,7 +668,7 @@ func TestUnmetRequirement(t *testing.T) {
 		wantMet:      false,
 	}, {
 		name:         "requirement not observed at all",
-		observations: map[capability.Capability]observation{},
+		observations: make(map[capability.Capability]observation),
 		wantMet:      false,
 	}} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -689,7 +689,7 @@ func decidedReport(cell Cell, matched bool) *Report {
 	report.Resolution.Capabilities = preset
 	report.Resolution.VersionSpecific = true
 
-	observations := map[capability.Capability]observation{}
+	observations := make(map[capability.Capability]observation)
 	for _, key := range capability.All() {
 		observations[key] = decided(preset.Has(key))
 	}
