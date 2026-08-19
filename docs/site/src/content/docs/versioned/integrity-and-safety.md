@@ -887,9 +887,35 @@ assertion fails:
 DROP TABLE users;
 ```
 
+A check guards the direction it is written in. A `-- +ptah check` in the up
+body runs before the migration; one in the down body runs before the rollback,
+which is where a precondition is often worth asserting most. The two are
+independent: an up check does not guard a rollback and a down check does not
+guard the migration.
+
 Each check is a separate read against committed state that runs before the
-migration's statements, so a failing assertion leaves nothing applied and
-exits non-zero. Checks are rejected under `--tx-mode all` on a real apply (a
+statements of its own body, so a failing assertion leaves nothing applied and
+exits non-zero.
+
+### What a check may say
+
+The vocabulary is deliberately small, and every limit below is a refusal rather
+than a silent narrowing:
+
+| Attribute | Accepted |
+| --- | --- |
+| `name` | any label; it names the failure |
+| `assert` | exactly one read-only top-level `SELECT` returning one column and one row |
+| `on_fail` | `abort` only — there is no `warn`, `skip` or `continue` |
+
+An assertion of any other shape fails closed before the migration runs, and so
+does a write-shaped one. On SQL Server, `NEXT VALUE FOR` is refused statically
+because it advances a sequence.
+
+The read-only guarantee has two strengths depending on the target. PostgreSQL,
+CockroachDB, YugabyteDB, Spanner, MySQL and MariaDB run the assertion in a
+database-enforced read-only session. SQLite, SQL Server and ClickHouse get a
+plain session, so there the guarantee rests on the static shape check alone. Checks are rejected under `--tx-mode all` on a real apply (a
 pooled read cannot see the batch's uncommitted state), and
 `ptah migrations up --skip-checks` is an emergency bypass. On the
 Atlas-compatible surface that bypass is spelled `PTAH_SKIP_CHECKS=1`, because
