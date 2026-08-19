@@ -90,14 +90,14 @@ Across the 191 capabilities below:
 
 | Reading | Count |
 | --- | --- |
-| Ptah supports it fully | 132 |
-| Ptah supports it with a stated limitation | 41 |
+| Ptah supports it fully | 133 |
+| Ptah supports it with a stated limitation | 40 |
 | Ptah does not implement it | 13 |
 | Ptah covers it in its own form, against a hosted service it cannot interoperate with | 5 |
-| Ptah and Atlas CE both support it | 41 |
+| Ptah and Atlas CE both support it | 42 |
 | Ptah implements it openly where Atlas gates it behind Pro or Cloud | 44 |
 | Ptah has it and neither Atlas edition does | 27 |
-| Atlas CE has it and Ptah does not, or only in part | 24 |
+| Atlas CE has it and Ptah does not, or only in part | 23 |
 | An Atlas column is ❔ — not established by this page's evidence | 4 |
 
 Every 🟡 and every ❌ in the Ptah column names its specific limitation and the
@@ -148,7 +148,7 @@ seven of them as open capabilities regardless.
 | Capability | Ptah | CE | Pro | Difference |
 | --- | :-: | :-: | :-: | --- |
 | `--dry-run`, `--auto-approve`, and `--edit` | ✅ | ✅ | ✅ | All three registered and functional; `--edit` opens $VISUAL/$EDITOR and the edited SQL is applied. `--dry-run` and `--auto-approve` exclude each other on the command line, as on CE. |
-| `--exclude` glob and type selectors | 🟡 | ✅ | ✅ | Resource globs, one final [type=...], and leading [type=schema]. Qualified globs reach every kind. One depth rule covers both scopes, so a column selector is refused. Tracked by stokaro/ptah#1703. |
+| `--exclude` glob and type selectors | ✅ | ✅ | ✅ | Resource globs, one final [type=...], and leading [type=schema]. Qualified globs reach every kind. A column selector works in both scopes, and the depth rule matches the pinned binary exactly. |
 | `--include` resource selectors | ✅ | ❌ | ✅ | CE registers `--include` on apply/diff but aborts it as non-community, and registers none on inspect. Ptah has all three, with union semantics and cross-scope dependency diagnostics. |
 | `--schema` / -s scoping of both sides | ✅ | ✅ | ✅ | Schema names scope resources; non-extension matches carry extensions as support. Diff refuses exact PostgreSQL-family server namespaces before SQL because catalogs do not round-trip safely. |
 | `schema diff --export` | ❌ | ❌ | ✅ | Registered and refused by name. The flag selects an exporter declared by an atlas.hcl `exporter` block, and Ptah evaluates no such block, so there is nothing to select. Tracked by stokaro/ptah#1620. |
