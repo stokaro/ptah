@@ -567,14 +567,24 @@ func (r *Renderer) VisitDropTable(node *ast.DropTableNode) error {
 	return nil
 }
 
-// VisitDropType renders DROP TYPE statements for MariaDB
+// VisitDropType names the type this target does not drop, and names the object
+// rather than the engine.
+//
+// The message used to read "MariaDB does not support DROP TYPE - enums are
+// handled inline in column definitions", which was wrong twice over: it blamed
+// the engine for a decision of Ptah's, and it described enums when the node
+// also carries domains, composite types and range types. It says which object
+// it is talking about now, the way the rest of this renderer's diagnostics do
+// (stokaro/ptah#1708).
 func (r *Renderer) VisitDropType(node *ast.DropTypeNode) error {
-	// MariaDB doesn't have separate enum types like PostgreSQL
-	// This operation is not applicable for MariaDB, so we just add a comment
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
-	r.w.WriteLinef("-- MariaDB does not support DROP TYPE - enums are handled inline in column definitions")
+	kind := "DROP TYPE"
+	if node.Domain {
+		kind = "DROP DOMAIN"
+	}
+	r.notGenerated(kind, node.Name)
 	return nil
 }
 
