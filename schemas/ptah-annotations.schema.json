@@ -1312,6 +1312,10 @@
               ],
               "type": "string"
             },
+            "ttl_row_stats_poll_interval": {
+              "description": "CockroachDB row-level TTL: how often the job refreshes its row-count estimate, such as `10m`. Truncated to whole seconds; a value below one second is refused.",
+              "type": "string"
+            },
             "ttl_select_batch_size": {
               "description": "CockroachDB row-level TTL: rows selected per batch; at least 1.",
               "type": "string"
