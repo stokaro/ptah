@@ -373,3 +373,93 @@ func rowTTLColumnNames(c *qt.C, t *testing.T, dsn string) []string {
 	}
 	return nil
 }
+
+// TestCockroachDBRowLevelTTL_RowStatsPollIntervalRoundTripsLive covers the knob
+// stokaro/ptah#1027 refused and stokaro/ptah#1721 added.
+//
+// It is the second parameter whose value the server rewrites, and it rewrites
+// it differently from `ttl_expire_after`: the duration is truncated to whole
+// seconds and stored in Go's spelling, so a declared `600s` is kept as `10m0s`
+// and a declared `1 month` as `720h0m0s`. A comparison over the text would find
+// a difference on every run and the plan would never empty.
+//
+// Each row asserts more than convergence. The stored value is read back and
+// checked against the form
+// [go.5x5.cz/ptah/internal/crdbduration] predicts, so a rewrite this package
+// gets wrong fails here as a wrong VALUE rather than only as a plan that will
+// not settle -- which is the difference between "something did not converge"
+// and "the conversion is wrong, and here is what the server did instead".
+func TestCockroachDBRowLevelTTL_RowStatsPollIntervalRoundTripsLive(t *testing.T) {
+	tests := []struct {
+		name     string
+		declared string
+		stored   string
+	}{
+		{name: "seconds the server re-expresses as minutes", declared: "600s", stored: "10m0s"},
+		{name: "a Go duration the server keeps", declared: "2h45m30s", stored: "2h45m30s"},
+		{name: "minutes spelled as an interval", declared: "5 minutes", stored: "5m0s"},
+		{name: "a clock time", declared: "00:10:00", stored: "10m0s"},
+		{name: "an ISO-8601 duration", declared: "PT10M", stored: "10m0s"},
+		{name: "a day, folded into hours", declared: "1 day", stored: "24h0m0s"},
+		{name: "a month, which is thirty days", declared: "1 month", stored: "720h0m0s"},
+		{name: "twelve months, which is a year rather than twelve of those", declared: "12 months", stored: "8766h0m0s"},
+		{name: "sub-second precision, truncated rather than rounded", declared: "2500ms", stored: "2s"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			dsn := skipIfNoCockroachDB(t)
+			c := qt.New(t)
+			db, err := sql.Open("pgx", dsn)
+			c.Assert(err, qt.IsNil)
+			defer db.Close()
+			dropRowTTLTable(db)
+			defer dropRowTTLTable(db)
+
+			declared := rowTTLDeclaration(&ast.RowTTLSpec{
+				ExpireAfter:          "1 hour",
+				RowStatsPollInterval: test.declared,
+			})
+			applyRowTTLPlan(c, db, planRowTTLAgainstLive(c, t, dsn, declared))
+
+			live := readRowTTL(c, t, dsn)
+			c.Assert(live, qt.IsNotNil)
+			c.Assert(live.RowStatsPollInterval, qt.Equals, test.stored)
+			c.Assert(planRowTTLAgainstLive(c, t, dsn, declared), qt.HasLen, 0)
+		})
+	}
+}
+
+// TestCockroachDBRowLevelTTL_RowStatsPollIntervalBelowASecondIsRefused pins the
+// case that makes this parameter more than a canonicalization.
+//
+// A value the server truncates to zero is stored NOWHERE AT ALL: the statement
+// succeeds, the table carries no such parameter, and every later inspection
+// reports it missing while the plan re-issues it forever.
+//
+// Ptah refuses such a declaration before any SQL, and the refusal itself is
+// covered offline. What only a server can establish is the PREMISE it rests on,
+// which is what this test makes the server demonstrate: the value is accepted
+// and then kept nowhere. Without this the refusal would rest on a claim about
+// an engine rather than on a measurement of one.
+func TestCockroachDBRowLevelTTL_RowStatsPollIntervalBelowASecondIsRefused(t *testing.T) {
+	dsn := skipIfNoCockroachDB(t)
+	c := qt.New(t)
+	db, err := sql.Open("pgx", dsn)
+	c.Assert(err, qt.IsNil)
+	defer db.Close()
+	dropRowTTLTable(db)
+	defer dropRowTTLTable(db)
+
+	_, err = db.Exec(`CREATE TABLE ` + rowTTLTable + ` (id INT8 PRIMARY KEY) ` +
+		`WITH (ttl_expire_after = '1 hour', ttl_row_stats_poll_interval = '500ms')`)
+	c.Assert(err, qt.IsNil)
+
+	// The statement succeeded and the table carries no such parameter. Read
+	// back through the same reader every other test here uses, so this is what
+	// Ptah would see: a declaration that applied cleanly and is missing.
+	live := readRowTTL(c, t, dsn)
+	c.Assert(live, qt.IsNotNil)
+	c.Assert(live.ExpireAfter, qt.Not(qt.Equals), "")
+	c.Assert(live.RowStatsPollInterval, qt.Equals, "")
+}

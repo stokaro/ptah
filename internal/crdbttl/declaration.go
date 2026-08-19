@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"go.5x5.cz/ptah/core/ast"
+	"go.5x5.cz/ptah/internal/crdbduration"
 	"go.5x5.cz/ptah/internal/crdbinterval"
 )
 
@@ -85,6 +86,15 @@ func assignAttribute(spec *ast.RowTTLSpec, table, name, value string) error {
 		}
 		spec.ExpireAfter = value
 		return nil
+	case RowStatsPollIntervalParameter:
+		// Read here for the same reason as ExpireAfterParameter above: this is
+		// the point that can say WHERE. ValidateDeclared repeats it for the
+		// specs that never pass through this parser.
+		if _, err := crdbduration.Canonical(value); err != nil {
+			return fmt.Errorf("table %q declares %s: %w", table, name, err)
+		}
+		spec.RowStatsPollInterval = value
+		return nil
 	case JobCronParameter:
 		spec.JobCron = value
 		return nil
@@ -160,6 +170,7 @@ func ManagedParameters() []string {
 	return []string{
 		ExpirationExpressionParameter,
 		ExpireAfterParameter,
+		RowStatsPollIntervalParameter,
 		JobCronParameter,
 		SelectBatchSizeParameter,
 		DeleteBatchSizeParameter,

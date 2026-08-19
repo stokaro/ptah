@@ -125,9 +125,24 @@ func TestFromAttributes_FailurePath(t *testing.T) {
 			wantErr:    `(?s).*unknown unit "fortnights".*`,
 		},
 		{
-			name:       "ttl_row_stats_poll_interval, whose duration the server canonicalizes",
-			attributes: map[string]string{"ttl_row_stats_poll_interval": "10m"},
-			wantErr:    `(?s).*declares ttl_row_stats_poll_interval: the server canonicalizes the duration.*`,
+			// Measured: the server truncates to whole seconds and then stores
+			// no parameter at all when that leaves zero, so a table declared
+			// with this would report the setting missing on every inspection.
+			name:       "a poll interval the server would truncate to nothing",
+			attributes: map[string]string{"ttl_expire_after": "1 hour", "ttl_row_stats_poll_interval": "500ms"},
+			wantErr:    `(?s).*declares ttl_row_stats_poll_interval:.*below one second.*`,
+		},
+		{
+			name:       "a negative poll interval, which the server refuses",
+			attributes: map[string]string{"ttl_expire_after": "1 hour", "ttl_row_stats_poll_interval": "-5s"},
+			wantErr:    `(?s).*declares ttl_row_stats_poll_interval:.*is negative.*`,
+		},
+		{
+			// Past this the server wraps and answers that the interval must be
+			// at least 0, naming the sign of a number nobody wrote.
+			name:       "a poll interval past the largest duration the server holds",
+			attributes: map[string]string{"ttl_expire_after": "1 hour", "ttl_row_stats_poll_interval": "2562048h"},
+			wantErr:    `(?s).*declares ttl_row_stats_poll_interval:.*is longer than.*`,
 		},
 		{
 			name:       "the derived marker, which the server refuses on its own",

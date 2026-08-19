@@ -111,12 +111,13 @@ func TestFromReloptions_ReadsWhatTheCatalogHolds(t *testing.T) {
 			want: &ast.RowTTLSpec{ExpireAfter: "72:00:00"},
 		},
 		{
-			// ttl_row_stats_poll_interval is still not modeled, so a table
-			// carrying only it reads as having no policy Ptah manages.
+			// schema_locked is not a TTL parameter at all, and CockroachDB puts
+			// it on every table, so a table carrying only it reads as having no
+			// policy Ptah manages.
 			name: "a table configured with a parameter Ptah does not model",
 			options: []string{
 				"ttl='on'",
-				"ttl_row_stats_poll_interval='10m0s'",
+				"schema_locked=true",
 			},
 			want: nil,
 		},
@@ -124,11 +125,22 @@ func TestFromReloptions_ReadsWhatTheCatalogHolds(t *testing.T) {
 			name: "an unmodeled parameter beside modeled ones",
 			options: []string{
 				"ttl='on'",
-				"ttl_row_stats_poll_interval='10m0s'",
+				"schema_locked=true",
 				"ttl_expire_after='3 days':::INTERVAL",
 				"ttl_job_cron='@daily'",
 			},
 			want: &ast.RowTTLSpec{ExpireAfter: "3 days", JobCron: "@daily"},
+		},
+		{
+			// The duration the server stores, read back as written. Only the
+			// comparison treats it as a duration.
+			name: "a duration the server rewrote on the way in",
+			options: []string{
+				"ttl='on'",
+				"ttl_expire_after='72:00:00':::INTERVAL",
+				"ttl_row_stats_poll_interval='10m0s'",
+			},
+			want: &ast.RowTTLSpec{ExpireAfter: "72:00:00", RowStatsPollInterval: "10m0s"},
 		},
 		{
 			name:    "a malformed element with no equals sign is skipped",
