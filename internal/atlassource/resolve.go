@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"strings"
@@ -72,6 +73,12 @@ type ResolveOptions struct {
 	// tool, and not to Ptah's own commands, where an unmodeled name is a typo
 	// worth naming. See [go.5x5.cz/ptah/internal/schemafile.Options].
 	IgnoreUnknownHCLNames bool
+	// ReportIgnored receives a warning line per name dropped under
+	// IgnoreUnknownHCLNames. See
+	// [go.5x5.cz/ptah/internal/schemafile.Options.ReportIgnored]: the tolerance
+	// and the reporting travel together, because matching a documented
+	// tolerance in silence is the part stokaro/ptah#1709 named.
+	ReportIgnored io.Writer
 	// Vars supplies values for the `variable` blocks of an HCL schema file, as
 	// `--var` spells them. See [go.5x5.cz/ptah/internal/schemafile.Options].
 	Vars []string
@@ -148,6 +155,7 @@ func (s Set) resolve(ctx context.Context, opts ResolveOptions) (State, error) {
 		schema, err := schemafile.LoadSources(s.SchemaFileSources(), schemafile.Options{
 			Dialect:               opts.Dialect,
 			IgnoreUnknownHCLNames: opts.IgnoreUnknownHCLNames,
+			ReportIgnored:         opts.ReportIgnored,
 			SchemaScope:           opts.SchemaScope,
 			SchemaScopeFlag:       opts.SchemaScopeFlag,
 			Vars:                  opts.Vars,

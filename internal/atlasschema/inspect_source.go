@@ -307,6 +307,7 @@ func inspectOnDev(
 		desired, err = schemafile.LoadSources(set.SchemaFileSources(), schemafile.Options{
 			Dialect:               dialect,
 			IgnoreUnknownHCLNames: opts.IgnoreUnknownHCLNames,
+			ReportIgnored:         opts.Diagnostics,
 			SchemaScope:           schemaScope,
 			SchemaScopeFlag:       schemaScopeFlag,
 			Vars:                  opts.Vars,

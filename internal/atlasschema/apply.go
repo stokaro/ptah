@@ -550,6 +550,7 @@ func loadDesiredApplySchema(
 		desired, err := schemafile.LoadSources(localApplySources(opts), schemafile.Options{
 			Dialect:               conn.Info().Dialect,
 			IgnoreUnknownHCLNames: opts.IgnoreUnknownHCLNames,
+			ReportIgnored:         opts.Diagnostics,
 			SchemaScope:           schemaScope,
 			SchemaScopeFlag:       schemaScopeFlag,
 			Vars:                  opts.Vars,
@@ -576,6 +577,7 @@ func loadDesiredApplySchema(
 		SchemaScope:               schemaScope,
 		SchemaScopeFlag:           schemaScopeFlag,
 		IgnoreUnknownHCLNames:     opts.IgnoreUnknownHCLNames,
+		ReportIgnored:             opts.Diagnostics,
 		Vars:                      opts.Vars,
 		ValidateSchema:            opts.ValidateDesiredSchema,
 		ValidateInspectedSchema:   opts.ValidateCurrentSchema,

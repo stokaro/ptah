@@ -137,6 +137,7 @@ func Diff(ctx context.Context, opts DiffOptions) (atlasreport.SchemaDiff, error)
 		Schemas:                   opts.Schemas,
 		ConnectTimeout:            opts.ConnectTimeout,
 		IgnoreUnknownHCLNames:     opts.IgnoreUnknownHCLNames,
+		ReportIgnored:             opts.Diagnostics,
 		Vars:                      opts.Vars,
 		ValidateSchema:            opts.ValidateSchema,
 		ValidateInspectedSchema:   opts.ValidateInspectedSchema,
