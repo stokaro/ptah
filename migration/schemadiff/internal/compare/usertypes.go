@@ -2,6 +2,7 @@ package compare
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -281,10 +282,13 @@ func compositeTypesWithSemantics(
 		if targetFields, currentFields := compositeFieldList(target), dbCompositeFieldList(current); targetFields != currentFields {
 			// CurrentFieldTypes is the from-side of the comparison carried as
 			// type spellings, for the reason given on the domain branch above.
+			added, removed := compositeAttributeDelta(target, current)
 			diff.CompositeTypesModified = append(diff.CompositeTypesModified, difftypes.CompositeTypeDiff{
 				TypeName:          generatedNames[identity],
 				Changes:           map[string]string{"fields": fmt.Sprintf("%s -> %s", currentFields, targetFields)},
 				CurrentFieldTypes: dbCompositeFieldTypes(current),
+				AttributesAdded:   added,
+				AttributesRemoved: removed,
 			})
 		}
 	}
@@ -306,6 +310,76 @@ func compositeTypesWithSemantics(
 	sort.Slice(diff.CompositeTypesModified, func(i, j int) bool {
 		return diff.CompositeTypesModified[i].TypeName < diff.CompositeTypesModified[j].TypeName
 	})
+}
+
+// compositeAttributeDelta reports the fields to add and remove, or nothing when
+// ALTER TYPE cannot reach the declared shape.
+//
+// PostgreSQL appends: a new attribute always lands last, whatever position the
+// declaration gives it. So the delta is only usable when dropping the removed
+// fields and appending the added ones produces exactly the declared list. This
+// simulates that and returns nothing when it does not match -- a rebuild then
+// carries the declared order, which is the only way to reach it.
+//
+// A field present on both sides with a different type also returns nothing.
+// ALTER TYPE ... ALTER ATTRIBUTE is refused on a composite a column uses,
+// measured on PostgreSQL 18.4 with CASCADE and without:
+// `cannot alter type "addr" because column "uses_addr.a" uses it`
+// (stokaro/ptah#1717).
+func compositeAttributeDelta(
+	target goschema.CompositeType,
+	current types.DBComposite,
+) ([]difftypes.CompositeAttribute, []string) {
+	declaredTypes := make(map[string]string, len(target.Fields))
+	for _, field := range target.Fields {
+		declaredTypes[strings.ToLower(field.Name)] = canonicalizePostgresType(field.Type)
+	}
+	currentTypes := make(map[string]string, len(current.Fields))
+	for _, field := range current.Fields {
+		currentTypes[strings.ToLower(field.Name)] = canonicalizePostgresType(field.Type)
+	}
+
+	var removed []string
+	survivors := make([]string, 0, len(current.Fields))
+	for _, field := range current.Fields {
+		name := strings.ToLower(field.Name)
+		declaredType, kept := declaredTypes[name]
+		if !kept {
+			removed = append(removed, field.Name)
+			continue
+		}
+		if declaredType != currentTypes[name] {
+			return nil, nil
+		}
+		survivors = append(survivors, name)
+	}
+
+	var added []difftypes.CompositeAttribute
+	for _, field := range target.Fields {
+		if _, held := currentTypes[strings.ToLower(field.Name)]; held {
+			continue
+		}
+		added = append(added, difftypes.CompositeAttribute{Name: field.Name, Type: field.Type})
+	}
+	if len(added) == 0 && len(removed) == 0 {
+		return nil, nil
+	}
+
+	// The shape ALTER TYPE would actually leave behind: survivors in catalog
+	// order, then the additions in declaration order.
+	reached := make([]string, 0, len(target.Fields))
+	reached = append(reached, survivors...)
+	for _, field := range added {
+		reached = append(reached, strings.ToLower(field.Name))
+	}
+	declaredOrder := make([]string, 0, len(target.Fields))
+	for _, field := range target.Fields {
+		declaredOrder = append(declaredOrder, strings.ToLower(field.Name))
+	}
+	if !slices.Equal(reached, declaredOrder) {
+		return nil, nil
+	}
+	return added, removed
 }
 
 func compositeFieldList(composite goschema.CompositeType) string {

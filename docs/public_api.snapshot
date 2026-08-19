@@ -731,6 +731,9 @@ type CommentNode struct{ ... }
 type Comparison struct{ ... }
 type ComparisonOperator int
     const OpEqual ComparisonOperator = iota ...
+type CompositeAttributeOperation struct{ ... }
+    func NewAddCompositeAttributeOperation(name, fieldType string) *CompositeAttributeOperation
+    func NewDropCompositeAttributeOperation(name string) *CompositeAttributeOperation
 type CompositeField struct{ ... }
 type CompositeTypeDef struct{ ... }
     func NewCompositeTypeDef(fields ...*CompositeField) *CompositeTypeDef
@@ -1372,6 +1375,33 @@ type ComparisonOperator int
 
 const OpEqual ComparisonOperator = iota ...
 func (op ComparisonOperator) String() string
+
+### go.5x5.cz/ptah/core/ast.CompositeAttributeOperation
+
+package ast // import "go.5x5.cz/ptah/core/ast"
+
+type CompositeAttributeOperation struct {
+    // DropName is the attribute to remove. Empty adds without removing.
+    DropName string
+    // AddName is the attribute to add. Empty removes without adding.
+    AddName string
+    // AddType is the added attribute's type. Required with AddName.
+    AddType string
+}
+    CompositeAttributeOperation adds or removes one attribute of a composite
+    type in an ALTER TYPE statement.
+
+    PostgreSQL takes both on a composite a table column already uses,
+    measured on 18.4 -- which is what makes them worth having, since the
+    drop-and-recreate alternative is refused outright in exactly that case.
+    What it does not take there is a change to an attribute's type: `ALTER
+    TYPE ... ALTER ATTRIBUTE` answers `cannot alter type "addr" because column
+    "uses_addr.a" uses it`, with CASCADE and without, so no operation here
+    spells one (stokaro/ptah#1717).
+
+func NewAddCompositeAttributeOperation(name, fieldType string) *CompositeAttributeOperation
+func NewDropCompositeAttributeOperation(name string) *CompositeAttributeOperation
+func (op *CompositeAttributeOperation) Accept(_ Visitor) error
 
 ### go.5x5.cz/ptah/core/ast.CompositeField
 
@@ -9882,6 +9912,7 @@ func CompareWithOptions(generated *goschema.Database, database *types.DBSchema, 
 ## go.5x5.cz/ptah/migration/schemadiff/types
 
 type ColumnDiff struct{ ... }
+type CompositeAttribute struct{ ... }
 type CompositeTypeDiff struct{ ... }
 type ConstraintAdditionInfo struct{ ... }
 type ConstraintRemovalInfo struct{ ... }
@@ -9945,6 +9976,18 @@ type ColumnDiff struct {
         }
 
 
+### go.5x5.cz/ptah/migration/schemadiff/types.CompositeAttribute
+
+package types // import "go.5x5.cz/ptah/migration/schemadiff/types"
+
+type CompositeAttribute struct {
+    Name string `json:"name"`
+    Type string `json:"type"`
+}
+    CompositeAttribute is one field of a composite type, as a declaration spells
+    it.
+
+
 ### go.5x5.cz/ptah/migration/schemadiff/types.CompositeTypeDiff
 
 package types // import "go.5x5.cz/ptah/migration/schemadiff/types"
@@ -9961,6 +10004,25 @@ type CompositeTypeDiff struct {
     // Empty when the caller built the diff by hand or the type's from-side is
     // unknown; the drop ordering then falls back to declaration order.
     CurrentFieldTypes []string `json:"current_field_types,omitempty"`
+
+    // AttributesAdded and AttributesRemoved carry the field-level delta, and
+    // they are set only when applying it reaches the declared shape exactly.
+    //
+    // PostgreSQL appends a new attribute at the end, so a declaration that puts
+    // a new field in the middle cannot be reached by ALTER TYPE at all: the
+    // catalog order would differ from the declared order and the next
+    // comparison would ask for the same change again, forever. The comparator
+    // therefore simulates the drops and appends and sets these two only when
+    // the result equals the declaration. A field whose TYPE changed also leaves
+    // them unset, because ALTER TYPE ... ALTER ATTRIBUTE is refused outright on
+    // a composite a column uses -- measured on PostgreSQL 18.4, with CASCADE and
+    // without: `cannot alter type "addr" because column "uses_addr.a" uses it`.
+    //
+    // Both unset means the modification takes the drop-and-recreate path
+    // (stokaro/ptah#1717).
+    AttributesAdded []CompositeAttribute `json:"attributes_added,omitempty"`
+    // AttributesRemoved names the fields to remove. See AttributesAdded.
+    AttributesRemoved []string `json:"attributes_removed,omitempty"`
 }
     CompositeTypeDiff represents changes to a PostgreSQL composite type.
 

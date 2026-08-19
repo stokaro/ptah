@@ -108,3 +108,56 @@ func TestPostgreSQLRenderer_AlterDomain_NamesTheSkipOnATargetWithoutDomains(t *t
 	c.Assert(sql, qt.Not(qt.Contains), "ALTER DOMAIN")
 	c.Assert(sql, qt.Contains, "domain positive is not supported by this target; skipped.")
 }
+
+// TestPostgreSQLRenderer_AlterCompositeAttribute covers the in-place composite
+// operations, which exist because PostgreSQL takes them on a type a table
+// column uses and refuses to drop that type in the same conditions
+// (stokaro/ptah#1717).
+func TestPostgreSQLRenderer_AlterCompositeAttribute(t *testing.T) {
+	tests := []struct {
+		name      string
+		operation ast.TypeOperation
+		want      string
+	}{
+		{
+			name:      "add an attribute",
+			operation: ast.NewAddCompositeAttributeOperation("zip", "text"),
+			want:      `ALTER TYPE "addr" ADD ATTRIBUTE "zip" text;`,
+		},
+		{
+			name:      "drop an attribute",
+			operation: ast.NewDropCompositeAttributeOperation("city"),
+			want:      `ALTER TYPE "addr" DROP ATTRIBUTE "city";`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			renderer := postgres.New()
+
+			sql, err := renderer.Render(ast.NewAlterType("addr").AddOperation(test.operation))
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(sql, qt.Contains, test.want)
+		})
+	}
+}
+
+// TestPostgreSQLRenderer_AlterCompositeAttribute_NamesTheSkipOnATargetWithout
+// keeps the in-place path behind the key the CREATE is behind.
+//
+// Spanner's PostgreSQL interface takes no composite type, and a target that
+// never took the CREATE must not be handed an ALTER for it either.
+func TestPostgreSQLRenderer_AlterCompositeAttribute_NamesTheSkipOnATargetWithout(t *testing.T) {
+	c := qt.New(t)
+	renderer := postgres.NewWithCapabilities(capability.SpannerPostgres(), platform.Spanner)
+
+	sql, err := renderer.Render(ast.NewAlterType("addr").AddOperation(
+		ast.NewAddCompositeAttributeOperation("zip", "text"),
+	))
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(sql, qt.Not(qt.Contains), "ALTER TYPE")
+	c.Assert(sql, qt.Contains, "composite type addr is not supported by this target; skipped.")
+}
