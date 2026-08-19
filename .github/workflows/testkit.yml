@@ -59,19 +59,20 @@ jobs:
       # deliberately not the sync workflow's job: that one repairs a bot's
       # branch and cannot run on a human's, while this one has to be true of
       # every pull request.
+      #
+      # `go mod tidy -diff` rather than a tidy followed by `git diff`: it writes
+      # nothing, prints the changes it would make, and exits non-zero by itself,
+      # so the check does not depend on the working tree being clean and cannot
+      # repair the staleness it is supposed to report.
       - name: Check that go mod tidy would change nothing
         working-directory: testkit
-        env:
-          GOFLAGS: "-mod=mod"
         run: |
           set -euo pipefail
-          go mod tidy
-          if git diff --quiet -- go.mod go.sum; then
+          if go mod tidy -diff; then
             echo "testkit module is tidy against the root."
             exit 0
           fi
           echo "::error file=testkit/go.mod::testkit is stale against the root module. Run 'cd testkit && go mod tidy' and commit the result."
-          git --no-pager diff -- go.mod go.sum
           exit 1
 
   published-pin:
