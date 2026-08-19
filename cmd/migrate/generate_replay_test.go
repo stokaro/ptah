@@ -343,7 +343,7 @@ func TestMigrateGenerateQualifierRejectsUnsupportedDialect(t *testing.T) {
 		"--qualifier", "tenant",
 	)
 
-	c.Assert(err, qt.ErrorMatches, `--qualifier is not supported for dialect "sqlite"`, qt.Commentf("%s", out))
+	c.Assert(err, qt.ErrorMatches, `(?s)--qualifier is not supported for dialect "sqlite": SQLite.s qualified form names an ATTACHed database.*`, qt.Commentf("%s", out))
 }
 
 func TestMigrateGenerateQualifierRejectsInvalidValue(t *testing.T) {

@@ -607,7 +607,7 @@ func TestGenerateDiff_QualifierRejectedBeforeAnyWrite(t *testing.T) {
 
 	// The dialect gate fails before the migration directory, any migration
 	// file, or any checksum is created.
-	c.Assert(err, qt.ErrorMatches, `atlas migrate diff --qualifier is not supported for dialect "sqlite"`)
+	c.Assert(err, qt.ErrorMatches, `(?s)atlas migrate diff --qualifier is not supported for dialect "sqlite": SQLite.s qualified form names an ATTACHed database.*`)
 	c.Assert(result.Synced, qt.IsFalse)
 	c.Assert(result.MigrationPaths, qt.HasLen, 0)
 	c.Assert(fileExists(migrationsDir), qt.IsFalse)
@@ -636,7 +636,7 @@ func TestGenerateDiff_QualifierRejectsMultiSchemaScopeBeforeAnyWrite(t *testing.
 
 	// SQLite is rejected by the dialect gate before the schema-scope check,
 	// and either way nothing is written.
-	c.Assert(err, qt.ErrorMatches, `atlas migrate diff --qualifier is not supported for dialect "sqlite"`)
+	c.Assert(err, qt.ErrorMatches, `(?s)atlas migrate diff --qualifier is not supported for dialect "sqlite": SQLite.s qualified form names an ATTACHed database.*`)
 	c.Assert(result.Synced, qt.IsFalse)
 	c.Assert(fileExists(migrationsDir), qt.IsFalse)
 }
