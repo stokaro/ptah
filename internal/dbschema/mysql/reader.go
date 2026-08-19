@@ -131,6 +131,16 @@ func (r *Reader) ReadSchema() (*types.DBSchema, error) {
 	// indexes. Keeping these derived flags in one post-pass avoids depending on
 	// per-column metadata that is either absent or lossy across MySQL/MariaDB
 	// versions.
+	// Read only where the preset claims the object. MySQL answers a sequence
+	// question with a syntax error rather than an empty result, so asking
+	// unconditionally would fail the whole description on the engine that has
+	// none (stokaro/ptah#1759).
+	sequences, err := r.readSequences(dbName)
+	if err != nil {
+		return nil, err
+	}
+	schema.Sequences = sequences
+
 	enhanceTablesWithPrimaryKeys(schema.Tables, schema.Constraints)
 	reconcileColumnUniqueness(schema)
 
