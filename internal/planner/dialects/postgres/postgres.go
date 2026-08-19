@@ -1535,15 +1535,9 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 	if err := p.validateExtensionInstallationSchemas(diff, generated); err != nil {
 		return nil, err
 	}
-	if diff != nil && len(diff.ExtensionsModified) > 0 {
-		change := diff.ExtensionsModified[0]
-		return nil, fmt.Errorf(
-			"%w: cannot move PostgreSQL extension %q from schema %q to schema %q; extension schema moves are not yet supported",
-			ptaherr.ErrInvalidSchemaDiff,
-			change.Name,
-			change.FromSchema,
-			change.ToSchema,
-		)
+	result, err := p.planExtensionChanges(result, diff)
+	if err != nil {
+		return nil, err
 	}
 	// One set of identifier rules for the whole plan. Every question of the form
 	// "do these two spellings name the same object" is answered with it, so the

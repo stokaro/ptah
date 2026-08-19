@@ -306,8 +306,14 @@ func TestSchemaDiffIncludeThenExcludeQualifiedLiveEnumPostgres(t *testing.T) {
 
 // TestSchemaDiffIncludePlansLiveExtensionPlacementPostgres distinguishes
 // creation, movement, and removal. Creation preserves the desired installation
-// schema; movement fails before SQL until the shared planner supports ALTER
-// EXTENSION SET SCHEMA; removal is independent of placement.
+// schema; movement emits ALTER EXTENSION SET SCHEMA; removal is independent of
+// placement.
+//
+// The movement row used to assert a refusal, and this comment used to say
+// "until the shared planner supports ALTER EXTENSION SET SCHEMA". It does now
+// (stokaro/ptah#1718). The assertion that the move is neither a CREATE nor a
+// DROP is the part worth keeping: those two would lose whatever the extension
+// owns, and they are what a planner reaches for when it cannot move an object.
 func TestSchemaDiffIncludePlansLiveExtensionPlacementPostgres(t *testing.T) {
 	c := qt.New(t)
 	dbURL := dbtarget.URL(t, dbtarget.PostgreSQL)
@@ -334,7 +340,8 @@ func TestSchemaDiffIncludePlansLiveExtensionPlacementPostgres(t *testing.T) {
 		"--to", scopedURL,
 		"--include", "*.pgcrypto",
 	)
-	c.Assert(err, qt.ErrorMatches, `.*cannot move PostgreSQL extension "pgcrypto" from schema "public" to schema "extensions".*`)
+	c.Assert(err, qt.IsNil)
+	c.Assert(moved, qt.Contains, `ALTER EXTENSION "pgcrypto" SET SCHEMA "extensions";`)
 	c.Assert(moved, qt.Not(qt.Contains), "CREATE EXTENSION")
 	c.Assert(moved, qt.Not(qt.Contains), "DROP EXTENSION")
 	c.Assert(moved, qt.Not(qt.Contains), "Atlas")

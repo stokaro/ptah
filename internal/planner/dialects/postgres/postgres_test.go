@@ -8,6 +8,7 @@ import (
 
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/core/renderer"
@@ -1306,20 +1307,95 @@ func TestPlanner_GenerateMigrationAST_ExtensionsAdded(t *testing.T) {
 	}
 }
 
-func TestPlanner_GenerateMigrationAST_ExtensionMoveRefusesBeforeEmission(t *testing.T) {
-	c := qt.New(t)
-	nodes, err := postgres.New().GenerateMigrationASTChecked(&types.SchemaDiff{
-		ExtensionsModified: []types.ExtensionDiff{{
-			Name:       "pgcrypto",
-			FromSchema: "public",
-			ToSchema:   "extensions",
-		}},
-	}, &goschema.Database{Extensions: []goschema.Extension{{Name: "pgcrypto", Schema: "extensions"}}})
+// TestPlanner_GenerateMigrationAST_ExtensionChanges covers what replaced a
+// blanket refusal.
+//
+// Any non-empty ExtensionsModified used to end the whole plan with "extension
+// schema moves are not yet supported", which was wrong on the engine the
+// message named. PostgreSQL has both ALTER EXTENSION forms, and the reader
+// already captures what decides between them (stokaro/ptah#1718).
+func TestPlanner_GenerateMigrationAST_ExtensionChanges(t *testing.T) {
+	tests := []struct {
+		name   string
+		change types.ExtensionDiff
+		want   string
+	}{{
+		name: "a relocatable move becomes SET SCHEMA",
+		change: types.ExtensionDiff{
+			Name: "pgcrypto", FromSchema: "public", ToSchema: "extensions", Relocatable: true,
+		},
+		want: `ALTER EXTENSION "pgcrypto" SET SCHEMA "extensions";`,
+	}, {
+		name: "a raised version becomes UPDATE TO",
+		change: types.ExtensionDiff{
+			Name: "pg_trgm", FromSchema: "public", ToSchema: "public",
+			FromVersion: "1.5", ToVersion: "1.6",
+		},
+		want: `ALTER EXTENSION "pg_trgm" UPDATE TO '1.6';`,
+	}}
 
-	c.Assert(nodes, qt.IsNil)
-	c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
-	c.Assert(err, qt.ErrorMatches,
-		`invalid schema diff: cannot move PostgreSQL extension "pgcrypto" from schema "public" to schema "extensions"; extension schema moves are not yet supported`)
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			nodes, err := postgres.New().GenerateMigrationASTChecked(
+				&types.SchemaDiff{ExtensionsModified: []types.ExtensionDiff{test.change}},
+				&goschema.Database{Extensions: []goschema.Extension{{
+					Name: test.change.Name, Schema: test.change.ToSchema,
+				}}},
+			)
+			c.Assert(err, qt.IsNil)
+
+			rendered, renderErr := renderer.RenderSQL(platform.Postgres, nodes...)
+			c.Assert(renderErr, qt.IsNil)
+			c.Assert(rendered, qt.Contains, test.want)
+		})
+	}
+}
+
+// TestPlanner_GenerateMigrationAST_ExtensionChangeRefusals covers the two
+// shapes that stay refused.
+//
+// They are refusals rather than skips because the server answers each with an
+// error of its own, measured on PostgreSQL 18: a downgrade is "has no update
+// path", and moving a fixed extension is "does not support SET SCHEMA". Ptah's
+// message names the reason the server's cannot.
+func TestPlanner_GenerateMigrationAST_ExtensionChangeRefusals(t *testing.T) {
+	tests := []struct {
+		name   string
+		change types.ExtensionDiff
+		want   string
+	}{{
+		name: "a fixed extension is refused, naming why the server would",
+		change: types.ExtensionDiff{
+			Name: "pgcrypto", FromSchema: "public", ToSchema: "extensions",
+		},
+		want: `(?s).*not relocatable.*does not support SET SCHEMA.*`,
+	}, {
+		name: "a lowered version is refused rather than attempted",
+		change: types.ExtensionDiff{
+			Name: "pg_trgm", FromSchema: "public", ToSchema: "public",
+			FromVersion: "1.6", ToVersion: "1.5",
+		},
+		want: `(?s).*one direction only.*has no update path.*`,
+	}}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			nodes, err := postgres.New().GenerateMigrationASTChecked(
+				&types.SchemaDiff{ExtensionsModified: []types.ExtensionDiff{test.change}},
+				&goschema.Database{Extensions: []goschema.Extension{{
+					Name: test.change.Name, Schema: test.change.ToSchema,
+				}}},
+			)
+
+			c.Assert(nodes, qt.IsNil)
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
+			c.Assert(err, qt.ErrorMatches, test.want)
+		})
+	}
 }
 
 func TestPlanner_GenerateMigrationAST_ExtensionsRemoved(t *testing.T) {
