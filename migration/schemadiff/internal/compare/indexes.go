@@ -246,7 +246,13 @@ func collectGeneratedIndexes(
 ) {
 	indexes := make(map[difftypes.IndexRef]generatedIndexEntry)
 	ambiguous := make(map[difftypes.IndexRef][]difftypes.IndexRef)
-	tableNames := goschema.ResolveIndexTableNames(generated.Indexes, generated.Tables)
+	// Materialized views are relations an index can belong to, not just
+	// tables: PostgreSQL accepts CREATE INDEX on one, and a UNIQUE index on
+	// one is what REFRESH MATERIALIZED VIEW CONCURRENTLY requires. Resolving
+	// against tables alone left the owner empty, and the refusal that
+	// followed named a position in a slice rather than the index or the view
+	// (stokaro/ptah#1725).
+	tableNames := goschema.ResolveIndexOwners(generated.Indexes, generated.Tables, generated.MaterializedViews)
 	for position, index := range generated.Indexes {
 		ref := difftypes.IndexRef{
 			Name:      index.Name,
