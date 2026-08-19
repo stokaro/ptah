@@ -3872,6 +3872,7 @@ func GetDependencyInfo(r *Database) string
 func IsValidSequenceType(asType string) bool
 func LoadManagedRows(rootDir string, md ManagedData) ([]map[string]any, error)
 func QualifyTableName(schema, table string) string
+func ResolveIndexOwners(indexes []Index, tables []Table, views []MaterializedView) []string
 func ResolveIndexTableNames(indexes []Index, tables []Table) []string
 func UniqueStructNames(embeddedFields []EmbeddedField) []string
 type CompositeType struct{ ... }
