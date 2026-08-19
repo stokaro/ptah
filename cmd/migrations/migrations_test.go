@@ -22,6 +22,8 @@ func TestNewMigrationsCommand_RegistersNativePaths(t *testing.T) {
 		{"up"},
 		{"down"},
 		{"status"},
+		{"ls"},
+		{"show"},
 		{"baseline"},
 		{"repair"},
 		{"hash"},

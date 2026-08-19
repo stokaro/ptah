@@ -323,6 +323,46 @@ func atlasDirSchemeIsAnswerable(project atlasProject, rawDir string) bool {
 	return !project.migrationDirResolved || rawDir != project.migrationDir.Path
 }
 
+// requireAtlasVerbDirScheme runs the same scheme refusal for a forwarded verb
+// that declares it, on the same value resolution the integrity verbs use.
+//
+// A plain forwarding verb has no command body to put the gate in, and putting
+// it on the --dir value mapping instead does not work: by the time a value
+// mapper sees it, an atlas.hcl `migration.dir` has already been normalized to a
+// bare local path, so gating there would refuse a project file the mirrored
+// surface accepts. [resolveAtlasMigrateSourceDir] is what separates the layers,
+// and [atlasDirSchemeIsAnswerable] is the predicate that says which of them the
+// question can still be asked of; both are shared with the integrity verbs
+// rather than restated, so the two cannot come to disagree about it.
+func requireAtlasVerbDirScheme(
+	cmd *cobra.Command,
+	group string,
+	verb atlasVerb,
+	project atlasVerbArgs,
+) error {
+	if !verb.requireDirScheme {
+		return nil
+	}
+	// The raw --dir is what carries the scheme, so the mapper runs here with
+	// the directory flags left unmapped, exactly as resolveAtlasMigrateSource
+	// runs it. A mapping error is not reported here: the real mapper a few
+	// lines later reports it once.
+	mapped, err := atlasargs.Map(group, verb.use, atlasMigrateSourceFlags(verb.flags), project.args)
+	if err != nil {
+		return nil
+	}
+	rawDir, spelledByAtlas := resolveAtlasMigrateSourceDir(verb, mapped)
+	if !spelledByAtlas || !atlasDirSchemeIsAnswerable(project.project, rawDir) {
+		return nil
+	}
+	if err := atlasargs.RequireDirScheme(rawDir); err != nil {
+		// Through cmdutil.Fail so the `Error: ` line reaches stderr from the
+		// command itself, matching the writing verbs' refusal byte for byte.
+		return cmdutil.Fail(cmd, err)
+	}
+	return nil
+}
+
 // atlasMigrateSourceFlags returns flags with the two flags the source
 // resolution reads left unmapped, so the resolver observes the raw Atlas values
 // — a --dir URL with its query intact, and a --dir-format naming a foreign

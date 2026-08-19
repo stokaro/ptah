@@ -61,10 +61,12 @@ on the same directories through its `migrate ...` commands; see the
 ## Stable local snapshots
 
 Native `migrations up`, `migrations down`, `migrations status`,
-`migrations set`, and `lint`, plus Atlas-compatible `migrate apply`,
-`migrate down`, `migrate status`, `migrate set`, and `migrate lint`, open a
+`migrations set`, `migrations ls`, `migrations show`, and `lint`, plus
+Atlas-compatible `migrate apply`, `migrate down`, `migrate status`,
+`migrate set`, `migrate ls`, `migrate show`, and `migrate lint`, open a
 local migration directory through a rooted handle and capture an immutable
-in-memory snapshot before connecting to a database. Their reports and rollback
+in-memory snapshot before connecting to a database. `ls` and `show` never
+connect to one at all: the directory is the whole of what they answer from. Their reports and rollback
 verification reuse that snapshot. It contains migration SQL,
 `.ptah-lint.yaml`, `ptah.sum`, and `atlas.sum`; unrelated files are excluded.
 
@@ -184,7 +186,10 @@ unaffected. The refusal names the entry and the rule.
   [Maintain migration history](../../versioned/maintain-history/).
 - **State questions have two answers.** "What does the schema look like?" is a
   question for the database; "what is pending?" is a question for the
-  directory minus the revision table (`ptah migrations status`).
+  directory minus the revision table (`ptah migrations status`). "What is in
+  the directory?" is a third kind, and needs no database at all —
+  `ptah migrations ls` names the files and `ptah migrations show` prints one's
+  SQL.
 
 ## Where it appears
 

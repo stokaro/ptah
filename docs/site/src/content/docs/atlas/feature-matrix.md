@@ -76,11 +76,11 @@ Across the 190 capabilities below:
 
 | Reading | Count |
 | --- | --- |
-| Ptah supports it fully | 123 |
-| Ptah supports it with a stated limitation | 48 |
-| Ptah does not implement it | 19 |
+| Ptah supports it fully | 125 |
+| Ptah supports it with a stated limitation | 47 |
+| Ptah does not implement it | 18 |
 | Ptah and Atlas CE both support it | 41 |
-| Ptah implements it openly where Atlas gates it behind Pro or Cloud | 42 |
+| Ptah implements it openly where Atlas gates it behind Pro or Cloud | 43 |
 | Ptah has it and neither Atlas edition does | 27 |
 | Atlas CE has it and Ptah does not, or only in part | 24 |
 | An Atlas column is ❔ — not established by this page's evidence | 4 |
@@ -201,8 +201,8 @@ seven of them as open capabilities regardless.
 | Set revision state to a version | ✅ | ✅ | ✅ | Removes revision rows above the target, keeps rows at or below it, and inserts missing rows through it as manually set. |
 | Structured JSON log output (`--log-format`) | ✅ | ❌ | ❌ | migrations up, down, and status take `--log-format` text\|json and `--log-level` debug\|info\|warn\|error for machine-readable run logs. |
 | Transaction modes (`--tx-mode` file/all/none) | 🟡 | ✅ | ✅ | File/all/none behavior is tested; none-mode partial progress is pinned both ways against Atlas CE v1.3.0. Txtar section modes remain a Ptah safety extension. |
-| Verb `migrate ls` | 🟡 | ❌ | ✅ | Beyond the CE pin: works in Atlas against a local directory; ptah-compat rejects it as unknown command; native `ptah migrations status` lists versions and states. Tracked by stokaro/ptah#1618. |
-| Verb `migrate show` | ❌ | ❌ | ✅ | Beyond the CE pin: prints a migration's SQL in Atlas; no compat or native Ptah verb exists, and the gap register triages it as future work. Tracked by stokaro/ptah#1618. |
+| Verb `migrate ls` | ✅ | ❌ | ✅ | `ptah migrations ls` lists a migration directory with no database; `ptah-compat migrate ls` is the drop-in spelling (`--dir`, `-s`, `-l`). Beyond the CE pin, so strict compatibility omits it. |
+| Verb `migrate show` | ✅ | ❌ | ✅ | `ptah migrations show` prints a stored migration's SQL with no database; `ptah-compat migrate show {name \| version}...` is the drop-in spelling. Beyond the CE pin, so strict compatibility omits it. |
 
 ## Linting and safety
 

@@ -1613,20 +1613,20 @@
   {
     "area": "Versioned migrations",
     "feature": "Verb `migrate ls`",
-    "ptah": "partial",
+    "ptah": "yes",
     "atlas_oss": "no",
     "atlas_pro": "yes",
-    "note": "Beyond the CE pin: works in Atlas against a local directory; ptah-compat rejects it as unknown command; native `ptah migrations status` lists versions and states. Tracked by stokaro/ptah#1618.",
-    "evidence": "Verified: /tmp/c-compat migrate ls -> 'unknown command'; /tmp/c-ptah migrations status --help exists; comparison.md gap register 'Verbs beyond the CE pin' records it absent from pinned CE v1.2.0 (unknown command, not an abort stub) while present in current Atlas docs. Measured 2026-08-01, CE v1.2.0 (scratch env): `atlas migrate ls` falls through to the parent group help, exit 0 - never registered, distinct from the community-abort stubs. `atlas migrate ls` works against a local migration directory (measured; observation study, scenario, verbs-and-flags) Tracked by stokaro/ptah#1618, which asks either for the compat verb or for a recorded decision that `ptah migrations status` covers it, and for the gap register's tracking column to point at an open issue - it currently points at stokaro/ptah#758, closed as completed."
+    "note": "`ptah migrations ls` lists a migration directory with no database; `ptah-compat migrate ls` is the drop-in spelling (`--dir`, `-s`, `-l`). Beyond the CE pin, so strict compatibility omits it.",
+    "evidence": "`ptah migrations ls --migrations-dir <dir>` lists every migration file oldest version first; `--short` collapses a reversible pair onto its version and `--latest` keeps the newest migration. `ptah-compat migrate ls --dir file://<dir>` forwards to it and additionally refuses a directory whose `atlas.sum` is missing or stale, and a `--dir` naming no scheme. Gated by cmd/migratels/migratels_test.go and cmd/atlas/migrate_read_verbs_test.go, which pin the listing on both directory layouts, both halves of the checksum gate, and the verb's absence from the strict community profile. `ptah migrations status` is a different report: it needs `--db-url` and prints applied/pending state rather than file names."
   },
   {
     "area": "Versioned migrations",
     "feature": "Verb `migrate show`",
-    "ptah": "no",
+    "ptah": "yes",
     "atlas_oss": "no",
     "atlas_pro": "yes",
-    "note": "Beyond the CE pin: prints a migration's SQL in Atlas; no compat or native Ptah verb exists, and the gap register triages it as future work. Tracked by stokaro/ptah#1618.",
-    "evidence": "Verified: /tmp/c-compat migrate show -> 'unknown command'; comparison.md:699-701 triage 'migrate show (print a migration's SQL) is future work with no native verb today'; absent from cli-surface.md inventory. Measured 2026-08-01, CE v1.2.0 (scratch env): `atlas migrate show` falls through to the parent group help, exit 0 - never registered, distinct from the community-abort stubs. `atlas migrate show` prints local migration file contents (measured; observation study, scenario, verbs-and-flags) Tracked by stokaro/ptah#1618, which asks for a native `ptah migrations show` plus the compat spelling, or a recorded decision that nothing will print a stored migration's body, and for the gap register's tracking column to point at an open issue - it currently points at stokaro/ptah#758, closed as completed."
+    "note": "`ptah migrations show` prints a stored migration's SQL with no database; `ptah-compat migrate show {name | version}...` is the drop-in spelling. Beyond the CE pin, so strict compatibility omits it.",
+    "evidence": "`ptah migrations show --migrations-dir <dir> --version N` writes the migration's bytes to standard output unchanged, adding no trailing newline of its own; repeating `--version` prints several bodies in the order asked for, separated by a blank line, with a repeat printed once, and `--direction down` selects the reverse half of a Ptah pair. Every requested version is located before anything is printed, so a run naming one missing version prints nothing. `ptah-compat migrate show 20240101000000 20240102000000 --dir file://<dir>` forwards each positional as its own `--version`. Gated by cmd/migrateshow/migrateshow_test.go and cmd/atlas/migrate_read_verbs_test.go."
   },
   {
     "area": "Declarative and direct schema changes",
