@@ -642,14 +642,35 @@ func (r *Reader) readTriggers(dbName string) ([]types.DBTrigger, error) {
 	return triggers, nil
 }
 
-// readEnums reads enum types from MySQL (stored as column types)
+// readEnums reads the enums MySQL stores, which is to say the enum-typed
+// COLUMNS: this engine has no enum type in its catalog, only a column whose
+// type carries a value list.
+//
+// Each one is named after the column that holds it. It used to be named after
+// its VALUES -- `enum_active_inactive` -- which made the identity a function of
+// the thing most likely to change. Adding one value to a live column renamed
+// the declaration `ptah schema inspect` printed, and renamed the Go type and
+// every constant `ptah introspect` generated: EnumActiveInactive became
+// EnumActiveInactiveArchived, EnumActiveInactiveActive became
+// EnumActiveInactiveArchivedActive. A schema author who had committed those
+// models got a rename across their code for adding a value (stokaro/ptah#1716).
+//
+// Two columns holding the same value list are therefore two enums here, not
+// one. That is what the engine has: there is no shared type for them to be,
+// and collapsing them under one synthesized name asserted a relationship the
+// database does not record. The comparison is unaffected either way -- the
+// MySQL family folds a declared enum into its column's type before comparing,
+// so this list is what INSPECTION reports, not what convergence rests on.
 func (r *Reader) readEnums(dbName string) ([]types.DBEnum, error) {
 	query := `
-		SELECT DISTINCT
+		SELECT
+			TABLE_NAME,
+			COLUMN_NAME,
 			COLUMN_TYPE
 		FROM information_schema.COLUMNS
 		WHERE TABLE_SCHEMA = ?
-		AND DATA_TYPE = 'enum'`
+		AND DATA_TYPE = 'enum'
+		ORDER BY TABLE_NAME, COLUMN_NAME`
 
 	rows, err := r.db.Query(query, dbName)
 	if err != nil {
@@ -658,30 +679,24 @@ func (r *Reader) readEnums(dbName string) ([]types.DBEnum, error) {
 	defer rows.Close()
 
 	var enums []types.DBEnum
-	enumMap := make(map[string][]string)
-
 	for rows.Next() {
-		var columnType string
-		err := rows.Scan(&columnType)
-		if err != nil {
+		var tableName, columnName, columnType string
+		if err := rows.Scan(&tableName, &columnName, &columnType); err != nil {
 			return nil, err
 		}
 
-		// Parse enum values from column type like "enum('value1','value2','value3')"
+		// Parse enum values from a column type like "enum('value1','value2')".
 		values := parseEnumValues(columnType)
-		if len(values) > 0 {
-			// Create a unique name for this enum based on its values
-			enumName := fmt.Sprintf("enum_%s", strings.Join(values, "_"))
-			enumMap[enumName] = values
+		if len(values) == 0 {
+			continue
 		}
-	}
-
-	// Convert map to slice
-	for name, values := range enumMap {
 		enums = append(enums, types.DBEnum{
-			Name:   name,
+			Name:   tableName + "_" + columnName,
 			Values: values,
 		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
 	}
 
 	return enums, nil
