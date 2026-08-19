@@ -45,8 +45,15 @@ jobs:
             echo "fuzztime=30s" >> "$GITHUB_OUTPUT"
           fi
 
+      # Both targets run through scripts/run-fuzz.sh, which tells a finding
+      # apart from the -fuzztime clock running out mid-execution. Its selftest
+      # proves it still fails on a written corpus entry, a panic and a mixed
+      # failure, so the wrapper cannot quietly turn red into green.
+      - name: Check the fuzz wrapper
+        run: scripts/run-fuzz-selftest.sh
+
       - name: Fuzz lexer
-        run: go test -run '^$' -fuzz=FuzzLexer -fuzztime=${{ steps.fuzz-duration.outputs.fuzztime }} -timeout=15m ./internal/lexer
+        run: scripts/run-fuzz.sh FuzzLexer ${{ steps.fuzz-duration.outputs.fuzztime }} ./internal/lexer
 
       - name: Fuzz parser
-        run: go test -run '^$' -fuzz=FuzzParseSQL -fuzztime=${{ steps.fuzz-duration.outputs.fuzztime }} -timeout=15m ./internal/parser
+        run: scripts/run-fuzz.sh FuzzParseSQL ${{ steps.fuzz-duration.outputs.fuzztime }} ./internal/parser
