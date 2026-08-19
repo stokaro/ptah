@@ -278,3 +278,107 @@ func functionOwnershipDB(c *qt.C) *dbtest.DB {
 		}
 	})
 }
+
+// enumColumnsColumns is the projection readEnums selects, one row per
+// enum-typed column.
+var enumColumnsColumns = []string{
+	"TABLE_NAME",
+	"COLUMN_NAME",
+	"COLUMN_TYPE",
+}
+
+// TestReadEnums_NamesEachOneAfterItsColumn covers stokaro/ptah#1716's second
+// half.
+//
+// MySQL has no enum type in its catalog: an enum is a COLUMN whose type carries
+// a value list. The read used to name each one after those values --
+// `enum_active_inactive` -- which made the identity a function of the thing most
+// likely to change. Adding one value renamed the declaration `schema inspect`
+// prints and, through `introspect`, the generated Go type and every constant:
+// EnumActiveInactive became EnumActiveInactiveArchived and EnumActiveInactiveActive
+// became EnumActiveInactiveArchivedActive, so an author who had committed those
+// models got a rename across their code for adding a value.
+//
+// The rows below are what the two behaviors disagree about. The same value list
+// on two columns is TWO enums here, because the engine has no shared type for
+// them to be; naming by values collapsed them into one and asserted a
+// relationship the database does not record.
+func TestReadEnums_NamesEachOneAfterItsColumn(t *testing.T) {
+	tests := []struct {
+		name string
+		rows [][]driver.Value
+		want []types.DBEnum
+	}{
+		{
+			name: "the name is the column, not the values",
+			rows: [][]driver.Value{
+				{"users", "state", "enum('active','inactive')"},
+			},
+			want: []types.DBEnum{{Name: "users_state", Values: []string{"active", "inactive"}}},
+		},
+		{
+			name: "adding a value leaves the name alone",
+			rows: [][]driver.Value{
+				{"users", "state", "enum('active','inactive','archived')"},
+			},
+			want: []types.DBEnum{{Name: "users_state", Values: []string{"active", "inactive", "archived"}}},
+		},
+		{
+			name: "one value list on two columns is two enums",
+			rows: [][]driver.Value{
+				{"orders", "state", "enum('open','closed')"},
+				{"tickets", "state", "enum('open','closed')"},
+			},
+			want: []types.DBEnum{
+				{Name: "orders_state", Values: []string{"open", "closed"}},
+				{Name: "tickets_state", Values: []string{"open", "closed"}},
+			},
+		},
+		{
+			name: "two columns of one table stay apart",
+			rows: [][]driver.Value{
+				{"t", "kind", "enum('a','b')"},
+				{"t", "level", "enum('low','high')"},
+			},
+			want: []types.DBEnum{
+				{Name: "t_kind", Values: []string{"a", "b"}},
+				{Name: "t_level", Values: []string{"low", "high"}},
+			},
+		},
+		{
+			name: "a type carrying no values is skipped rather than named",
+			rows: [][]driver.Value{
+				{"t", "broken", "enum()"},
+				{"t", "kind", "enum('a')"},
+			},
+			want: []types.DBEnum{{Name: "t_kind", Values: []string{"a"}}},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			reader := NewMySQLReader(enumColumnsDB(c, test.rows).SQL, "app")
+
+			enums, err := reader.readEnums("app")
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(enums, qt.DeepEquals, test.want)
+		})
+	}
+}
+
+// enumColumnsDB scripts the information_schema.COLUMNS read readEnums makes,
+// asserting the projection carries the column identity rather than the type
+// alone -- without TABLE_NAME and COLUMN_NAME there is nothing to name an enum
+// after, so a read that stopped selecting them would fall back to the values.
+func enumColumnsDB(c *qt.C, rows [][]driver.Value) *dbtest.DB {
+	return dbtest.Open(c, func(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
+		queried := strings.Contains(query, "FROM information_schema.COLUMNS") &&
+			strings.Contains(query, "TABLE_NAME") &&
+			strings.Contains(query, "COLUMN_NAME") &&
+			strings.Contains(query, "DATA_TYPE = 'enum'")
+		c.Assert(queried, qt.IsTrue, qt.Commentf("query: %s", query))
+		return dbtest.QueryResult{Columns: enumColumnsColumns, Rows: rows}, nil
+	})
+}
