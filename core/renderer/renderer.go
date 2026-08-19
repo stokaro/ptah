@@ -63,6 +63,7 @@ import (
 	"go.5x5.cz/ptah/internal/reservedrole"
 	"go.5x5.cz/ptah/internal/schemaselection"
 	"go.5x5.cz/ptah/internal/tableref"
+	"go.5x5.cz/ptah/internal/usertypescope"
 )
 
 // RenderVisitor defines the interface for rendering AST nodes to SQL statements.
@@ -1006,6 +1007,13 @@ func validateDatabaseDeclarations(
 		}
 	}
 	if err := mysqllike.ValidateDeclaredRoles(dialect, database.Roles); err != nil {
+		return err
+	}
+	// A domain, composite or range type the target cannot create is refused
+	// here rather than skipped, because skipping it leaves the declaration's
+	// own columns naming a type the server has no definition of
+	// (stokaro/ptah#1717).
+	if err := usertypescope.ValidateDeclared(dialect, caps, database); err != nil {
 		return err
 	}
 	// ClickHouse roles and grants are real, and a narrower set of declarations

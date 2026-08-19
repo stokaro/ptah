@@ -139,6 +139,32 @@ const (
 	// key that requires Views.
 	MaterializedViews Capability = "materialized_views"
 
+	// DomainTypes marks support for CREATE DOMAIN: a base type carrying its
+	// own NOT NULL, DEFAULT and CHECK. Measured 2026-08-19: PostgreSQL 18.4
+	// and YugabyteDB 2026.1.1.1 accept it; CockroachDB v26.2.5 answers "not
+	// yet implemented" (cockroachdb/cockroach#27796) and Spanner's PostgreSQL
+	// interface answers "Statement is not supported".
+	//
+	// The CockroachDB answer has an expiry date on it: #27796 was closed on
+	// 2026-07-23, so a release after v26.2.5 -- the newest published when this
+	// was measured -- will carry it, and that release wants its own preset
+	// rather than an edit here.
+	DomainTypes Capability = "domain_types"
+
+	// CompositeTypes marks support for CREATE TYPE ... AS (field type, ...).
+	// Measured 2026-08-19: PostgreSQL, CockroachDB and YugabyteDB all accept
+	// it; only Spanner's PostgreSQL interface refuses. It is a separate key
+	// from DomainTypes for exactly that reason -- the three user-type kinds do
+	// not travel together, and one key for "user types" would have told
+	// CockroachDB it cannot do something it does.
+	CompositeTypes Capability = "composite_types"
+
+	// RangeTypes marks support for CREATE TYPE ... AS RANGE. Measured
+	// 2026-08-19: PostgreSQL and YugabyteDB accept it; CockroachDB v26.2.5
+	// answers "not yet implemented" (cockroachdb/cockroach#27791, still open)
+	// and Spanner refuses.
+	RangeTypes Capability = "range_types"
+
 	// Functions marks support for a user-defined function declared as a
 	// standalone object with a return type, a language and a body — the shape
 	// ast.CreateFunctionNode carries. A target whose routines are declared
@@ -522,6 +548,15 @@ var registry = map[Capability]spec{
 		doc:      "CREATE MATERIALIZED VIEW: a view whose query result is stored",
 		requires: []Capability{Views},
 	},
+	DomainTypes: {
+		doc: "CREATE DOMAIN: a base type carrying its own NOT NULL, DEFAULT and CHECK",
+	},
+	CompositeTypes: {
+		doc: "CREATE TYPE ... AS (field type, ...)",
+	},
+	RangeTypes: {
+		doc: "CREATE TYPE ... AS RANGE (SUBTYPE = ...)",
+	},
 	Functions: {
 		doc: "user-defined functions declared with a return type, a language, and a body",
 	},
@@ -738,6 +773,9 @@ func All() []Capability {
 // MySQL has none.
 func MySQL84() Capabilities {
 	return Capabilities{
+		DomainTypes:                        false,
+		CompositeTypes:                     false,
+		RangeTypes:                         false,
 		DropConstraintGeneric:              true,
 		DropConstraintIfExists:             false,
 		DropIndexIfExists:                  false,
@@ -835,6 +873,9 @@ func MySQL8013() Capabilities {
 // MariaDB does not quietly accept the keyword.
 func MariaDB1011() Capabilities {
 	return Capabilities{
+		DomainTypes:                        false,
+		CompositeTypes:                     false,
+		RangeTypes:                         false,
 		DropConstraintGeneric:              true,
 		DropConstraintIfExists:             true,
 		DropIndexIfExists:                  true,
@@ -917,6 +958,9 @@ func Postgres16() Capabilities {
 		IndexIncludeSPGiST:                 true,
 		Views:                              true,
 		MaterializedViews:                  true,
+		DomainTypes:                        true,
+		CompositeTypes:                     true,
+		RangeTypes:                         true,
 		Functions:                          true,
 		Triggers:                           true,
 		CreateOrReplaceTrigger:             true,
@@ -1000,6 +1044,9 @@ func Postgres13() Capabilities {
 // storage clause is the self-contained shape that node can express.
 func ClickHouse24() Capabilities {
 	return Capabilities{
+		DomainTypes:    false,
+		CompositeTypes: false,
+		RangeTypes:     false,
 		// Five keys below were false until stokaro/ptah#916 measured them.
 		// ClickHouse 24.10.4.191 and 26.7.3.19 answer identically on every one,
 		// so the corrections belong to the dialect rather than to a line:
@@ -1102,6 +1149,9 @@ func ClickHouse2411() Capabilities {
 // sqlite3_create_function, so there is no DDL object for one to plan.
 func SQLite3() Capabilities {
 	return Capabilities{
+		DomainTypes:                        false,
+		CompositeTypes:                     false,
+		RangeTypes:                         false,
 		DropConstraintGeneric:              false,
 		DropConstraintIfExists:             false,
 		DropIndexIfExists:                  true,
@@ -1174,6 +1224,9 @@ func SQLite324() Capabilities {
 // than its own object kind.
 func SQLServer2022() Capabilities {
 	return Capabilities{
+		DomainTypes:           false,
+		CompositeTypes:        false,
+		RangeTypes:            false,
 		DropConstraintGeneric: true,
 		// Both IF EXISTS guards are ACCEPTED, measured on the three release
 		// lines Microsoft supports -- 15.0.4480.2, 16.0.4265.3 and
@@ -1318,6 +1371,20 @@ func CockroachDB23() Capabilities {
 		With(IndexIncludeSPGiST, false).
 		With(XMLType, false).
 		With(AdvisoryLocks, false).
+		// Measured 2026-08-19 on v26.2.5, with CREATE TYPE ... AS ENUM and
+		// CREATE TABLE as the controls: `CREATE DOMAIN` and
+		// `CREATE TYPE ... AS RANGE` both answer "not yet implemented"
+		// (cockroachdb/cockroach#27796 and #27791), while a composite
+		// `CREATE TYPE ... AS (...)` is accepted. Three keys rather than one
+		// because of that split (stokaro/ptah#1717).
+		//
+		// #27796 was closed on 2026-07-23 and v26.2.5 is the newest published
+		// release, so the domain answer belongs to a preset for the release
+		// that carries it rather than to an edit of this one. That expiry is
+		// tracked in stokaro/ptah#1735, whose blocker is the release itself --
+		// a comment alone outlives the fact it records.
+		With(DomainTypes, false).
+		With(RangeTypes, false).
 		With(RowLevelTTL, true)
 }
 
@@ -1426,6 +1493,12 @@ func SpannerPostgres() Capabilities {
 		With(PostgresCatalogFunctions, false).
 		With(CatalogRowStatistics, false).
 		With(CatalogDependencies, false).
+		// Measured 2026-08-19 on the emulator behind PGAdapter 0.55.2, with
+		// CREATE TABLE as the control: all three user-type kinds answer
+		// `Statement is not supported` (stokaro/ptah#1717).
+		With(DomainTypes, false).
+		With(CompositeTypes, false).
+		With(RangeTypes, false).
 		// Measured on the same endpoint AND confirmed against the PostgreSQL
 		// dialect's own reference, which is what separates these three from the
 		// assumptions below them: `ALTER TABLE Concerts DROP CONSTRAINT

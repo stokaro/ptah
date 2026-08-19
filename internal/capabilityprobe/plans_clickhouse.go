@@ -247,6 +247,12 @@ func clickHousePlan() plan {
 		),
 	}
 	return plan{experiments: experiments, undecided: map[capability.Capability]string{
+		// The three PostgreSQL user-type kinds, none of which ClickHouse has a
+		// statement for; its answer would be to a different question
+		// (stokaro/ptah#1717).
+		capability.DomainTypes:    "CREATE DOMAIN is a PostgreSQL type-system statement ClickHouse has no spelling of",
+		capability.CompositeTypes: "CREATE TYPE ... AS (...) is a PostgreSQL type-system statement ClickHouse has no spelling of",
+		capability.RangeTypes:     "CREATE TYPE ... AS RANGE is a PostgreSQL type-system statement ClickHouse has no spelling of",
 		// See the same declaration in the PostgreSQL-family plan: the probe
 		// connects as one account and cannot ask whether a privilege exists
 		// without granting it. ClickHouse has no SHOW_ROUTINE at all, which is

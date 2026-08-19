@@ -268,6 +268,19 @@ func postgresFamilyPlan(dialect string) plan {
 			"CREATE SEQUENCE sq",
 			"CREATE TABLE ser (id SERIAL PRIMARY KEY)",
 		),
+		// The three user-type kinds are asked separately because they do not
+		// travel together: CockroachDB v26.2.5 takes a composite and answers
+		// "not yet implemented" to a domain and to a range
+		// (stokaro/ptah#1717).
+		all(capability.DomainTypes, nil,
+			"CREATE DOMAIN utp_dom AS TEXT",
+		),
+		all(capability.CompositeTypes, nil,
+			"CREATE TYPE utp_comp AS (a bigint, b TEXT)",
+		),
+		all(capability.RangeTypes, nil,
+			"CREATE TYPE utp_range AS RANGE (SUBTYPE = bigint)",
+		),
 		acceptance(capability.XMLType, nil,
 			t.table("xmlt", "c XML", "c"),
 		),
@@ -536,6 +549,13 @@ func mysqlFamilyPlan(dialect string) plan {
 	}
 
 	undecided := map[capability.Capability]string{
+		// The three PostgreSQL user-type kinds. This server has no spelling of
+		// any of the statements, so neither accepting nor refusing one would
+		// decide the key -- its answer would be to a different question
+		// (stokaro/ptah#1717).
+		capability.DomainTypes:    "CREATE DOMAIN is a PostgreSQL type-system statement this server has no spelling of",
+		capability.CompositeTypes: "CREATE TYPE ... AS (...) is a PostgreSQL type-system statement this server has no spelling of",
+		capability.RangeTypes:     "CREATE TYPE ... AS RANGE is a PostgreSQL type-system statement this server has no spelling of",
 		// The probe connects as ONE account and cannot ask whether a privilege
 		// EXISTS without being able to grant it: a server that refuses
 		// `GRANT SHOW_ROUTINE` because the privilege is unknown and one that

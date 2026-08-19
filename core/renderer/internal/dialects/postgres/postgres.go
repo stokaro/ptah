@@ -109,10 +109,39 @@ func (r *Renderer) VisitCreateDatabase(node *ast.CreateDatabaseNode) error {
 	return nil
 }
 
+// refusesUserType reports whether this target declines the kind the node
+// carries, writing the named skip when it does.
+func (r *Renderer) refusesUserType(node *ast.CreateTypeNode) bool {
+	switch node.TypeDef.(type) {
+	case *ast.EnumTypeDef:
+		return r.refuses(capability.EnumCustomType, "enum type", node.Name)
+	case *ast.CompositeTypeDef:
+		return r.refuses(capability.CompositeTypes, "composite type", node.Name)
+	case *ast.DomainTypeDef:
+		return r.refuses(capability.DomainTypes, "domain", node.Name)
+	case *ast.RangeTypeDef:
+		return r.refuses(capability.RangeTypes, "range type", node.Name)
+	default:
+		return false
+	}
+}
+
 func (r *Renderer) VisitCreateType(node *ast.CreateTypeNode) error {
 	// Add comment if provided
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
+	}
+
+	// Every branch below decides against the key for its own kind. The four
+	// user-type kinds do not travel together -- CockroachDB takes a composite
+	// and refuses a domain and a range -- so one key for "user types" would
+	// tell a target it cannot do something it does (stokaro/ptah#1717).
+	//
+	// Without this the visitor emitted the same DDL for every dialect, and a
+	// CockroachDB target learned it would not be taken when the server said
+	// so, mid-apply. Every other object kind names the omission before SQL.
+	if r.refusesUserType(node) {
+		return nil
 	}
 
 	// Handle different type definitions
