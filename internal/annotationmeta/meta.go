@@ -405,6 +405,7 @@ var directives = []Directive{
 			// no attribute at all -- see internal/crdbttl.
 			attr("ttl_expiration_expression", "CockroachDB row-level TTL: SQL expression whose value is when a row expires. Enables the TTL.", valueSQL, false, false),
 			attr("ttl_expire_after", "CockroachDB row-level TTL: interval after a row is written at which it expires, such as `3 days`. Enables the TTL.", valueString, false, false),
+			attr("ttl_row_stats_poll_interval", "CockroachDB row-level TTL: how often the job refreshes its row-count estimate, such as `10m`. Truncated to whole seconds; a value below one second is refused.", valueString, false, false),
 			attr("ttl_job_cron", "CockroachDB row-level TTL: cron schedule for the deletion job.", valueString, false, false),
 			attr("ttl_select_batch_size", "CockroachDB row-level TTL: rows selected per batch; at least 1.", valueString, false, false),
 			attr("ttl_delete_batch_size", "CockroachDB row-level TTL: rows deleted per batch; at least 1.", valueString, false, false),
