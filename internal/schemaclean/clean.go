@@ -298,6 +298,16 @@ func applyPostgresFamilyPlan(
 			return errors.Join(err, cleanupRollbackError(tx.Rollback()))
 		}
 	}
+	// After the caller's revalidation, never before it. That hook is the
+	// compatibility gate -- strict mode re-reads the catalog under the relation
+	// lock and refuses an object that appeared since the snapshot was confirmed
+	// -- and this is a convenience on top of it. Running first made a
+	// concurrently created view answer "would leave dependents behind" where
+	// the surface owes "strict compatibility does not support cleaning live
+	// schema view", which the integration suite caught.
+	if err := refuseUnselectedDependents(ctx, conn, changes); err != nil {
+		return errors.Join(err, cleanupRollbackError(tx.Rollback()))
+	}
 	if err := applyPostgresFamilyPlanChanges(ctx, tx, changes); err != nil {
 		return errors.Join(err, cleanupRollbackError(tx.Rollback()))
 	}
@@ -1628,5 +1638,111 @@ func isSQLServer(dialect string) bool {
 		return true
 	default:
 		return false
+	}
+}
+
+// dependentRelationsQuery asks which relations are defined in terms of the
+// selected ones. It reaches views and materialized views, which are the
+// dependents a scoped cleanup meets: both store their definition in pg_rewrite,
+// and pg_depend links that rule back to every relation the definition reads.
+//
+// Placeholders are built by the caller rather than passed as an array, because
+// the two PostgreSQL-family drivers in use disagree about how a Go slice binds
+// to ANY($1) and a scoped cleanup should not depend on that.
+const dependentRelationsQuery = `
+	SELECT DISTINCT source.relname, dependent.relname, dependent.relkind
+	FROM pg_depend d
+	JOIN pg_rewrite r ON r.oid = d.objid
+	JOIN pg_class dependent ON dependent.oid = r.ev_class
+	JOIN pg_class source ON source.oid = d.refobjid
+	JOIN pg_namespace n ON n.oid = source.relnamespace
+	WHERE n.nspname = current_schema()
+	  AND dependent.oid <> source.oid
+	  AND source.relname IN (%s)`
+
+// refuseUnselectedDependents fails a scoped cleanup BEFORE any DROP runs when a
+// selected object has a dependent the selection leaves behind.
+//
+// Without it the run reached the server, PostgreSQL answered
+// `cannot drop table t because other objects depend on it (SQLSTATE 2BP01)`,
+// and the whole transaction rolled back -- so the user was told an SQL
+// dependency failed without being told WHICH object caused it or what to add to
+// the selection. Enumerating the dependents themselves means querying the
+// catalog by hand, which is the work the tool is for (stokaro/ptah#1704).
+//
+// Every offending pair is reported, not the first: the server stops at the
+// first failure, so a user widening the selection one name at a time would
+// discover the rest one run at a time.
+//
+// A dependent the selection ALREADY drops is not a problem -- the plan is
+// ordered by dependency depth, so it goes first -- and is filtered out here
+// rather than reported as one.
+func refuseUnselectedDependents(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	changes []Change,
+) error {
+	selected := make(map[string]bool, len(changes))
+	names := make([]string, 0, len(changes))
+	for _, change := range changes {
+		if strings.TrimSpace(change.Name) == "" {
+			continue
+		}
+		if !selected[change.Name] {
+			names = append(names, change.Name)
+		}
+		selected[change.Name] = true
+	}
+	if len(names) == 0 {
+		return nil
+	}
+
+	placeholders := make([]string, 0, len(names))
+	args := make([]any, 0, len(names))
+	for i, name := range names {
+		placeholders = append(placeholders, fmt.Sprintf("$%d", i+1))
+		args = append(args, name)
+	}
+	rows, err := conn.QueryContext(ctx, fmt.Sprintf(dependentRelationsQuery, strings.Join(placeholders, ", ")), args...)
+	if err != nil {
+		// The check is an improvement on the diagnostic, not a gate on the
+		// cleanup: a catalog this query cannot read leaves the previous
+		// behavior, where the server reports the dependency itself.
+		return nil
+	}
+	defer rows.Close()
+
+	var blocked []string
+	for rows.Next() {
+		var source, dependent, kind string
+		if err := rows.Scan(&source, &dependent, &kind); err != nil {
+			return nil
+		}
+		if selected[dependent] {
+			continue
+		}
+		blocked = append(blocked, fmt.Sprintf("%s %q depends on %s", relationKindName(kind), dependent, source))
+	}
+	if err := rows.Err(); err != nil || len(blocked) == 0 {
+		return nil
+	}
+	slices.Sort(blocked)
+	return fmt.Errorf(
+		"scoped cleanup would leave dependents behind: %s. "+
+			"Add them to the selection so they are dropped together, or widen it to the whole schema",
+		strings.Join(blocked, "; "))
+}
+
+// relationKindName spells a pg_class.relkind for a diagnostic.
+func relationKindName(kind string) string {
+	switch kind {
+	case "v":
+		return "view"
+	case "m":
+		return "materialized view"
+	case "r", "p":
+		return "table"
+	default:
+		return "object"
 	}
 }
