@@ -64,15 +64,7 @@ func TestSQLServerLiveRoleAndGrantRoundTrip(t *testing.T) {
 	live, err := dbschema.ReadSchemaWithSchemas(conn, []string{"dbo"})
 	c.Assert(err, qt.IsNil)
 
-	held := map[string]bool{}
-	withOption := map[string]bool{}
-	for _, grant := range live.Grants {
-		if grant.Role != role {
-			continue
-		}
-		held[grant.Privilege] = true
-		withOption[grant.Privilege] = grant.WithOption
-	}
+	held, withOption := grantsHeldBy(live.Grants, role)
 	c.Assert(held["SELECT"], qt.IsTrue)
 	c.Assert(held["INSERT"], qt.IsTrue)
 	c.Assert(withOption["INSERT"], qt.IsTrue)
@@ -284,4 +276,19 @@ func TestSQLServerLiveReaderClassifiesDenyAndSchemaGrants(t *testing.T) {
 	for _, ref := range grantsFor(diff.GrantsRemoved, role) {
 		c.Assert(ref.Privilege, qt.Not(qt.Equals), "DELETE")
 	}
+}
+
+// grantsHeldBy collects what one role holds, and which of those carry the grant
+// option.
+func grantsHeldBy(grants []dbschematypes.DBGrant, role string) (held, withOption map[string]bool) {
+	held = map[string]bool{}
+	withOption = map[string]bool{}
+	for _, grant := range grants {
+		if grant.Role != role {
+			continue
+		}
+		held[grant.Privilege] = true
+		withOption[grant.Privilege] = grant.WithOption
+	}
+	return held, withOption
 }
