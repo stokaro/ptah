@@ -63,7 +63,8 @@ func planObjectsAfterTables(
 	if err != nil {
 		return nil, err
 	}
-	result = reportRowLevelSecurity(result, diff)
+	result = reportRowLevelSecurity(result, diff, caps)
+	result = planRowPolicies(result, diff, generated, caps)
 	result = planGrants(result, diff)
 	result = reportTriggers(result, diff)
 	return result, nil
@@ -344,7 +345,17 @@ func clickHouseMaterializedViewChange(
 	return deporder.ViewLike{Name: node.Name, Body: node.Body, Materialized: true}, node, nil
 }
 
-func reportRowLevelSecurity(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+func reportRowLevelSecurity(
+	result []ast.Node,
+	diff *types.SchemaDiff,
+	caps capability.Capabilities,
+) []ast.Node {
+	if caps.Has(capability.RowLevelSecurity) {
+		// planRowPolicies emits the real DDL for this target. Reporting here as
+		// well would put a skip comment beside the statement it says was
+		// skipped.
+		return result
+	}
 	for _, table := range diff.RLSEnabledTablesAdded {
 		result = append(result, ast.NewAlterTableEnableRLS(table))
 	}

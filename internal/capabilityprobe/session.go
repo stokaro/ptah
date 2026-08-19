@@ -48,6 +48,11 @@ type session struct {
 	// roles are cluster-scoped objects the probe created; dropping the
 	// namespace does not remove them.
 	roles []string
+	// rowPolicies are the same kind of leftover on ClickHouse. Measured on
+	// 26.7.3.19: dropping the database a policy names leaves the policy behind
+	// in system.row_policies, so a run that forgot them would make the next one
+	// inherit objects it did not create.
+	rowPolicies []string
 	// broken records the transport failure that ended the run, if any.
 	broken error
 	// inExplicitTransaction suspends the liveness check.
@@ -285,7 +290,10 @@ func newNamespace() (string, error) {
 // the schema, so a run that forgot them would leave the server dirtier every
 // time it ran.
 func (s *session) dropRoles(ctx context.Context) []Attempt {
-	attempts := make([]Attempt, 0, 2*len(s.roles))
+	attempts := make([]Attempt, 0, 2*len(s.roles)+len(s.rowPolicies))
+	for _, statement := range s.rowPolicies {
+		attempts = append(attempts, s.exec(ctx, statement))
+	}
 	for _, role := range s.roles {
 		attempts = append(attempts,
 			s.exec(ctx, "DROP OWNED BY "+role),

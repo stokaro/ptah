@@ -90,8 +90,8 @@ Across the 191 capabilities below:
 
 | Reading | Count |
 | --- | --- |
-| Ptah supports it fully | 131 |
-| Ptah supports it with a stated limitation | 42 |
+| Ptah supports it fully | 132 |
+| Ptah supports it with a stated limitation | 41 |
 | Ptah does not implement it | 13 |
 | Ptah covers it in its own form, against a hosted service it cannot interoperate with | 5 |
 | Ptah and Atlas CE both support it | 41 |
@@ -297,7 +297,7 @@ seven of them as open capabilities regardless.
 | MySQL and MariaDB | 🟡 | ✅ | ✅ | Stored functions render, read back and plan. Matviews and roles fail closed; extensions, sequences, grants and RLS are named. Domains still drop on the plan path. Tracked by stokaro/ptah#1708. |
 | Oracle, Snowflake, Redshift, Databricks | ❌ | ❌ | ✅ | No dialect entry; the names fail normalization the same way TiDB does. Listed as Atlas Pro drivers. Tracked by stokaro/ptah#1616. |
 | PostgreSQL 12+ (postgres, postgresql) | ✅ | ✅ | ✅ | Reference engine of the PostgreSQL family: views, matviews, functions, triggers, sequences, roles, RLS and domains all render. Presets 12-13, 14-16, 17+ from the server banner. |
-| Roles, grants, and row-level security | 🟡 | ❌ | ✅ | PostgreSQL, CockroachDB, YugabyteDB and SQL Server emit roles, grants and RLS. ClickHouse emits roles and grants; its row policies are stokaro/ptah#1736. Spanner has none of the three. |
+| Roles, grants, and row-level security | ✅ | ❌ | ✅ | PostgreSQL, CockroachDB, YugabyteDB, SQL Server and ClickHouse emit roles, grants and row-level security. Spanner has none of the three, and MySQL, MariaDB and SQLite have no RLS. |
 | Spanner PostgreSQL interface (spanner) | 🟡 | ❌ | ✅ | Enums, sequences, matviews, functions and triggers render as named skips; foreign keys render, SERIAL errors. Probed live every run; no compose service or integration target (stokaro/ptah#1719). |
 | SQL Server and Azure SQL (sqlserver, mssql, tsql) | ✅ | ❌ | ✅ | Every spelling renders the same DDL. Tables, views, triggers, synonyms, sequences, roles/grants, row-level security and functions all render, read back and plan. |
 | SQLite (sqlite, sqlite3) | 🟡 | ✅ | ✅ | Column drops, type, nullability, default, generated and table-constraint changes rebuild, inbound foreign keys included. An add-column-only diff still refuses. Tracked by stokaro/ptah#1707. |

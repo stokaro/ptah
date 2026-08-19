@@ -1,6 +1,8 @@
 package capabilityprobe
 
 import (
+	"context"
+
 	"go.5x5.cz/ptah/core/platform/capability"
 )
 
@@ -144,10 +146,7 @@ func clickHousePlan() plan {
 			[]string{t.table("agc", "n Int64, g Int64 MATERIALIZED n + 1", "n")},
 			"ALTER TABLE agc MODIFY COLUMN g Int64 MATERIALIZED n + 2",
 		),
-		acceptance(capability.RowLevelSecurity,
-			[]string{t.table("rls", "n Int64", "n")},
-			"ALTER TABLE rls ENABLE ROW LEVEL SECURITY",
-		),
+		clickHouseRowPolicy(t),
 		acceptanceNote(capability.PostgresCatalogFunctions, nil,
 			"SELECT obj_description(2200, 'pg_namespace')",
 			"pg_catalog's introspection helpers; ClickHouse answers "+
@@ -254,4 +253,34 @@ func clickHousePlan() plan {
 		capability.ShowRoutinePrivilege: "the probe cannot ask whether a privilege exists without granting it; " +
 			"ClickHouse has no SHOW_ROUTINE privilege for it to find",
 	}}
+}
+
+// clickHouseRowPolicy decides RowLevelSecurity by asking the question this
+// engine can answer.
+//
+// The experiment used to run `ALTER TABLE rls ENABLE ROW LEVEL SECURITY`, which
+// is PostgreSQL's table-level switch. ClickHouse has no such statement -- the
+// policy is the whole object and takes effect when it is created -- so the row
+// reported false for an engine that has had row policies for years, and it
+// reported it as a fact about the server rather than about the statement.
+//
+// The key names the object rather than a spelling (stokaro/ptah#1736), so the
+// spelling probed here is the one the engine uses.
+//
+// The teardown is not incidental. Measured on 26.7.3.19: dropping the database
+// the policy names leaves the policy standing in system.row_policies, so the
+// statement that removes it is recorded on the session rather than left to the
+// namespace drop.
+func clickHouseRowPolicy(t tableSpelling) experiment {
+	return experiment{
+		decides: []capability.Capability{capability.RowLevelSecurity},
+		setup:   []string{t.table("rls", "n Int64", "n")},
+		decide: func(ctx context.Context, s *session) (verdicts, []Attempt) {
+			created := s.exec(ctx, "CREATE ROW POLICY rls_p ON rls USING n > 0")
+			if created.Accepted {
+				s.rowPolicies = append(s.rowPolicies, "DROP ROW POLICY IF EXISTS rls_p ON rls")
+			}
+			return verdicts{capability.RowLevelSecurity: decided(created.Accepted)}, []Attempt{created}
+		},
+	}
 }
