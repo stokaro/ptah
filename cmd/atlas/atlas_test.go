@@ -2840,7 +2840,7 @@ func TestCompatCommand_FlagSurfaceRejectsUnsupportedAtlasCEBehavior(t *testing.T
 
 		// A valid qualifier on a dialect without schema-qualified DDL support
 		// fails explicitly before any migration file or checksum is written.
-		c.Assert(err, qt.ErrorMatches, `atlas migrate diff --qualifier is not supported for dialect "sqlite"`)
+		c.Assert(err, qt.ErrorMatches, `(?s)atlas migrate diff --qualifier is not supported for dialect "sqlite": SQLite.s qualified form names an ATTACHed database.*`)
 		c.Assert(atlasSQLFiles(c, migrationsDir), qt.HasLen, 0)
 	})
 

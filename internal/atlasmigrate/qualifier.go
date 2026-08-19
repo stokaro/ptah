@@ -91,7 +91,7 @@ func (q Qualifier) ValidateScope(dialect string, schemas []string) error {
 		return nil
 	}
 	if !qualifierSupportsDialect(dialect) {
-		return fmt.Errorf("%s is not supported for dialect %q", q.errLabel(), dialect)
+		return fmt.Errorf("%s is not supported for dialect %q: %s", q.errLabel(), dialect, qualifierDialectRefusal(dialect))
 	}
 	if len(schemas) > 1 {
 		return fmt.Errorf("%s %q requires a single schema scope, got --schema %q", q.errLabel(), q.name, strings.Join(schemas, ","))
@@ -99,13 +99,43 @@ func (q Qualifier) ValidateScope(dialect string, schemas []string) error {
 	return nil
 }
 
+// qualifierDialectRefusals maps each dialect the qualifier does not rewrite for
+// to the reason it does not, so that "why not mine?" is answered in the same
+// declaration as "which ones?" (stokaro/ptah#1714). It replaced an allow-list
+// switch, which could say only that a dialect was absent from it.
+//
+// Every reason below is about what THIS package has established, not about what
+// the engine can do. The qualifier rewrites planned nodes -- table names, index
+// targets, drop targets -- into schema-qualified form, and the risk of turning
+// it on for a dialect is that it writes a name that dialect reads differently.
+// None of the four has been exercised against a server that way, so none of
+// them is enabled, and each says what enabling it would take.
+var qualifierDialectRefusals = map[string]string{
+	platform.SQLite: "SQLite's qualified form names an ATTACHed database rather than a schema inside one, " +
+		"so a qualifier would have to be established as an attachment before any statement referencing it runs; " +
+		"nothing here does that",
+	platform.SQLServer: "SQL Server has schemas and Ptah renders into one (dbo by default), but the qualifier " +
+		"has never been measured against a server there; enabling it needs a live round trip showing that a " +
+		"rewritten plan applies and reads back under the qualified name",
+	platform.ClickHouse: "ClickHouse namespaces objects by database rather than by schema within a database, so " +
+		"a qualifier is a different kind of name here; enabling it needs that difference settled first, not a " +
+		"dialect added to a list",
+	platform.Spanner: "Spanner renders through the PostgreSQL path but has no live coverage at all " +
+		"(stokaro/ptah#942), so a qualified plan could not be shown to apply",
+}
+
 func qualifierSupportsDialect(dialect string) bool {
-	switch platform.NormalizeDialect(dialect) {
-	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.MySQL, platform.MariaDB:
-		return true
-	default:
-		return false
+	_, refused := qualifierDialectRefusals[platform.NormalizeDialect(dialect)]
+	return !refused
+}
+
+// qualifierDialectRefusal returns the recorded reason, or a generic one for a
+// dialect nothing here has heard of.
+func qualifierDialectRefusal(dialect string) string {
+	if reason, ok := qualifierDialectRefusals[platform.NormalizeDialect(dialect)]; ok {
+		return reason
 	}
+	return "the qualifier has no rewriting rules for this dialect"
 }
 
 // ApplyToPlan rewrites the planned migration AST in place so that every object
@@ -119,7 +149,7 @@ func (q Qualifier) ApplyToPlan(dialect string, desired *goschema.Database, nodes
 		return nil
 	}
 	if !qualifierSupportsDialect(dialect) {
-		return fmt.Errorf("%s is not supported for dialect %q", q.errLabel(), dialect)
+		return fmt.Errorf("%s is not supported for dialect %q: %s", q.errLabel(), dialect, qualifierDialectRefusal(dialect))
 	}
 	state := &qualifyState{
 		qualifier: q,
@@ -213,7 +243,10 @@ func (s *qualifyState) rewriteColumn(tableName string, column *ast.ColumnNode) e
 	}
 	if columnUsesEnumType(s.enums, column.Type) {
 		return fmt.Errorf(
-			"%s %q: table %q column %q uses enum type %q; qualifying enum type references is not supported yet",
+			"%s %q: table %q column %q uses enum type %q. A table name is a field of the planned node and is "+
+				"rewritten; an enum reference is text inside the column's rendered TYPE, and qualifying it "+
+				"would also require the type itself to exist under the qualifier -- which this plan does not "+
+				"create. Declare the enum in the target schema and drop the qualifier for this run",
 			s.qualifier.errLabel(), s.qualifier.name, tableName, column.Name, column.Type)
 	}
 	if column.ForeignKey == nil {

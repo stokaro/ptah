@@ -37,6 +37,7 @@ import (
 	"go.5x5.cz/ptah/internal/pathguard"
 	"go.5x5.cz/ptah/internal/sqlitevirtual"
 	"go.5x5.cz/ptah/internal/tableref"
+	"go.5x5.cz/ptah/internal/txrequire"
 	"go.5x5.cz/ptah/migration/diffpolicy"
 	"go.5x5.cz/ptah/migration/migrator"
 	"go.5x5.cz/ptah/migration/planner"
@@ -1120,55 +1121,59 @@ func planGeneratedMigrationSpecs(
 		}
 		return withSkipComments([]generatedMigrationSpec{spec}, skipped), assessments, nil
 	}
-	if !allNoTransactionNodesAreConcurrentIndexes(nodeGroups.noTransaction) {
-		return nil, nil, fmt.Errorf("generated migration mixes transactional statements with non-transactional statements that cannot be split automatically")
+	if containsUnsplittableNoTransactionNode(nodeGroups.noTransaction) {
+		return nil, nil, txrequire.UnsplittableMixError(nodeGroups.noTransaction)
 	}
 
-	diffGroups := splitConcurrentIndexDiff(
-		diff,
+	// Two splits, composed, and the order of the files they produce is the
+	// order the statements have to run in. Enum values are pulled out first and
+	// LEAD, because `ALTER TYPE ... ADD VALUE` must be committed before any
+	// statement that uses the value -- PostgreSQL answers 55P04 otherwise. The
+	// concurrent indexes come out of what is left and FOLLOW, because an index
+	// is built after the table it indexes.
+	//
+	// A plan with no enum additions produces exactly the two files it produced
+	// before: the leading group has no changes and is skipped.
+	enumGroups := splitEnumValueAdditionDiff(diff)
+	indexGroups := splitConcurrentIndexDiff(
+		enumGroups.transactional,
 		bidirectional.Forward.ConcurrentIndexRefs,
 		bidirectional.Forward.ConcurrentIndexDropRefs,
 	)
-	specs := make([]generatedMigrationSpec, 0, 2)
-	allAssessments := make([]safety.StatementAssessment, 0)
-	if diffGroups.transactional.HasChanges() {
-		transactionalPlan, err := bidirectionalSubplan(bidirectional, diffGroups.transactional)
-		if err != nil {
-			return nil, nil, err
-		}
-		spec, assessments, err := buildGeneratedMigrationSpec(generatedMigrationSpecOptions{
-			Plan:      transactionalPlan,
-			Qualifier: qualifier,
-			Version:   version,
-			Name:      migrationName + "_transactional",
-		})
-		if err != nil {
-			return nil, nil, err
-		}
-		if spec.UpSQL != "" {
-			specs = append(specs, spec)
-			allAssessments = append(allAssessments, assessments...)
-			version++
-		}
+	ordered := []struct {
+		diff   *types.SchemaDiff
+		suffix string
+	}{
+		{enumGroups.noTransaction, "_enum_values"},
+		{indexGroups.transactional, "_transactional"},
+		{indexGroups.noTransaction, "_concurrent_indexes"},
 	}
-	if diffGroups.noTransaction.HasChanges() {
-		noTransactionPlan, err := bidirectionalSubplan(bidirectional, diffGroups.noTransaction)
+
+	specs := make([]generatedMigrationSpec, 0, len(ordered))
+	allAssessments := make([]safety.StatementAssessment, 0)
+	for _, group := range ordered {
+		if !group.diff.HasChanges() {
+			continue
+		}
+		plan, err := bidirectionalSubplan(bidirectional, group.diff)
 		if err != nil {
 			return nil, nil, err
 		}
 		spec, assessments, err := buildGeneratedMigrationSpec(generatedMigrationSpecOptions{
-			Plan:      noTransactionPlan,
+			Plan:      plan,
 			Qualifier: qualifier,
 			Version:   version,
-			Name:      migrationName + "_concurrent_indexes",
+			Name:      migrationName + group.suffix,
 		})
 		if err != nil {
 			return nil, nil, err
 		}
-		if spec.UpSQL != "" {
-			specs = append(specs, spec)
-			allAssessments = append(allAssessments, assessments...)
+		if spec.UpSQL == "" {
+			continue
 		}
+		specs = append(specs, spec)
+		allAssessments = append(allAssessments, assessments...)
+		version++
 	}
 	return withSkipComments(specs, skipped), allAssessments, nil
 }
@@ -1354,27 +1359,15 @@ func splitNoTransactionNodes(dialect string, nodes []ast.Node) splitMigrationNod
 	return splitMigrationNodes{transactional: txNodes, noTransaction: noTxNodes}
 }
 
-func allNoTransactionNodesAreConcurrentIndexes(nodes []ast.Node) bool {
+// containsUnsplittableNoTransactionNode reports whether any statement that must
+// leave the transactional file is one the generator has no ordered place for.
+func containsUnsplittableNoTransactionNode(nodes []ast.Node) bool {
 	for _, node := range nodes {
-		if !isConcurrentIndexNode(node) {
-			return false
+		if txrequire.Kind(node) == txrequire.KindUnsplittable {
+			return true
 		}
 	}
-	return true
-}
-
-// isConcurrentIndexNode reports whether a node is one of the two concurrent
-// index statements the generator knows how to split into its own
-// no_transaction migration.
-func isConcurrentIndexNode(node ast.Node) bool {
-	switch typed := node.(type) {
-	case *ast.IndexNode:
-		return typed.Concurrently
-	case *ast.DropIndexNode:
-		return typed.Concurrently
-	default:
-		return false
-	}
+	return false
 }
 
 // concurrentIndexRefsForPolicy resolves which newly added indexes are built
