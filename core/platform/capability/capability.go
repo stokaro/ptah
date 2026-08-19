@@ -1205,7 +1205,17 @@ func SQLServer2022() Capabilities {
 		// does not exist here. Emitting without reading is precisely the
 		// permanent diff stokaro/ptah#929 is about, so the key stays false
 		// until the reader lands.
-		Functions:                      false,
+		// Functions is on because the read half now exists. It was off because
+		// nothing could recover a function from the catalog, and a key that
+		// promises a create with no read plans the same statement forever.
+		//
+		// The blocker turned out to be narrower than it looked. The header does
+		// not have to be parsed out of sys.sql_modules.definition:
+		// INFORMATION_SCHEMA.PARAMETERS publishes the argument list and the
+		// return type as rows, ordinal zero being the return, exactly as MySQL's
+		// information_schema.ROUTINES does. Only the body comes out of the
+		// statement text (stokaro/ptah#1720).
+		Functions:                      true,
 		Triggers:                       true,
 		CreateOrReplaceTrigger:         true,
 		AlterGeneratedColumnExpression: false,

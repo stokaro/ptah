@@ -299,16 +299,6 @@ func (r *Renderer) VisitDropExtension(node *ast.DropExtensionNode) error {
 	return nil
 }
 
-func (r *Renderer) VisitCreateFunction(node *ast.CreateFunctionNode) error {
-	r.notSupported("CREATE FUNCTION", node.Name)
-	return nil
-}
-
-func (r *Renderer) VisitDropFunction(node *ast.DropFunctionNode) error {
-	r.notSupported("DROP FUNCTION", node.Name)
-	return nil
-}
-
 // defaultSchema is where SQL Server puts an object whose name carries no
 // schema, and therefore where an existence guard has to look for one.
 const defaultSchema = "dbo"
