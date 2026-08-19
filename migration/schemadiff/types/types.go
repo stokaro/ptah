@@ -886,6 +886,32 @@ type CompositeTypeDiff struct {
 	// Empty when the caller built the diff by hand or the type's from-side is
 	// unknown; the drop ordering then falls back to declaration order.
 	CurrentFieldTypes []string `json:"current_field_types,omitempty"`
+
+	// AttributesAdded and AttributesRemoved carry the field-level delta, and
+	// they are set only when applying it reaches the declared shape exactly.
+	//
+	// PostgreSQL appends a new attribute at the end, so a declaration that puts
+	// a new field in the middle cannot be reached by ALTER TYPE at all: the
+	// catalog order would differ from the declared order and the next
+	// comparison would ask for the same change again, forever. The comparator
+	// therefore simulates the drops and appends and sets these two only when
+	// the result equals the declaration. A field whose TYPE changed also leaves
+	// them unset, because ALTER TYPE ... ALTER ATTRIBUTE is refused outright on
+	// a composite a column uses -- measured on PostgreSQL 18.4, with CASCADE and
+	// without: `cannot alter type "addr" because column "uses_addr.a" uses it`.
+	//
+	// Both unset means the modification takes the drop-and-recreate path
+	// (stokaro/ptah#1717).
+	AttributesAdded []CompositeAttribute `json:"attributes_added,omitempty"`
+	// AttributesRemoved names the fields to remove. See AttributesAdded.
+	AttributesRemoved []string `json:"attributes_removed,omitempty"`
+}
+
+// CompositeAttribute is one field of a composite type, as a declaration spells
+// it.
+type CompositeAttribute struct {
+	Name string `json:"name"`
+	Type string `json:"type"`
 }
 
 // SequenceDiff represents changes to a standalone sequence definition.
