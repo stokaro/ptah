@@ -17,6 +17,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "github.com/jackc/pgx/v5/stdlib"
 
+	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/sqlutil"
 	"go.5x5.cz/ptah/internal/dbtarget"
 )
@@ -94,18 +95,39 @@ var renderPlanCatalogProbes = []catalogProbe{
 	}},
 }
 
+// renderPlanUserTypeDeclarations pairs each user-defined type the fixture can
+// declare with the capability key that decides whether the target generates it.
+// USERTYPES in the template is replaced with the lines whose key the dialect's
+// preset carries, so the fixture asks each target only for the kinds Ptah will
+// emit for it.
+//
+// Assembling it from capability.ForDialect rather than from a per-case list
+// keeps this measurement tied to the same authority the refusal consults: a
+// target that gains one of these kinds later starts being measured with it,
+// against a live server, without this file being edited. Measured on
+// CockroachDB v26.2.5, which is why two of the three are absent there:
+// CREATE DOMAIN and CREATE TYPE ... AS RANGE both fail with SQLSTATE 0A000
+// "unimplemented", while CREATE TYPE ... AS (...) succeeds.
+var renderPlanUserTypeDeclarations = []struct {
+	key  capability.Capability
+	line string
+}{
+	{capability.DomainTypes, `//ptah:schema:domain name="p929_dom_SFX" type="TEXT"`},
+	{capability.CompositeTypes, `//ptah:schema:composite name="p929_comp_SFX" fields="street:TEXT,city:TEXT"`},
+	{capability.RangeTypes, `//ptah:schema:range name="p929_rng_SFX" subtype="float8"`},
+}
+
 // renderPlanFixtureTemplate declares one object of every PostgreSQL-family kind
-// the issue named. SFX is replaced with a per-run suffix so two runs against one
-// shared server cannot read each other's objects — roles are cluster-global, not
-// per-database, so a fixed role name would make a second run find the first
-// run's role and call that agreement.
+// the issue named, with USERTYPES standing in for the user-defined types the
+// target's preset carries. SFX is replaced with a per-run suffix so two runs
+// against one shared server cannot read each other's objects — roles are
+// cluster-global, not per-database, so a fixed role name would make a second
+// run find the first run's role and call that agreement.
 const renderPlanFixtureTemplate = `package models
 
 //ptah:schema:extension name="pgcrypto" if_not_exists="true"
 //ptah:schema:sequence name="p929_seq_SFX" as="bigint" start="1000" increment="1"
-//ptah:schema:domain name="p929_dom_SFX" type="TEXT"
-//ptah:schema:composite name="p929_comp_SFX" fields="street:TEXT,city:TEXT"
-//ptah:schema:range name="p929_rng_SFX" subtype="float8"
+USERTYPES
 //ptah:schema:role name="p929_role_SFX" login="true" inherit="true"
 type _objects struct{}
 
@@ -151,9 +173,17 @@ type _grant struct{}
 // Both surfaces are executed, not compared as text. Each one's SQL is applied
 // statement by statement to its own freshly created database and the catalog is
 // then read back, so what is compared is what the engine ended up holding. That
-// matters here beyond the usual reason: these targets reject some of the SQL
-// (CockroachDB has no CREATE DOMAIN), and a text comparison would call the two
-// surfaces equal while the engine kept different things.
+// matters here beyond the usual reason: these targets do not all accept the same
+// SQL, and a text comparison would call the two surfaces equal while the engine
+// kept different things.
+//
+// The kinds a target does not have are absent from its fixture rather than
+// declared and left to fail: Ptah refuses a schema declaring a user-defined type
+// the target does not generate, before any SQL is produced, so declaring one for
+// every target would measure that refusal instead of the agreement this test is
+// for. renderPlanUserTypeDeclarations selects them from the same presets, and
+// the census still probes every kind, so a surface that created one anyway is a
+// difference the comparison names.
 //
 // Statements are applied individually in autocommit and their errors recorded
 // rather than raised. A fail-fast apply stops at the first rejected statement,
@@ -203,7 +233,16 @@ func runRenderPlanCatalogCase(
 
 	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
 	roleName := "p929_role_" + suffix
-	fixtureDir := writeRenderPlanFixture(c, suffix)
+	fixtureDir := writeRenderPlanFixture(c, suffix, test.dialect)
+
+	// Non-vacuity for the selection itself. A preset lookup that answered with
+	// nothing would drop every user-defined type from the fixture, and a kind
+	// neither surface declares reads count=0 on both of them -- which compares
+	// equal, so the kinds this fixture exists to exercise would stop being
+	// measured without any test going red. Every target here carries at least
+	// one of the three.
+	c.Assert(renderPlanUserTypeLines(test.dialect), qt.Not(qt.Equals), "",
+		qt.Commentf("%s declared no user-defined type at all", test.dialect))
 
 	renderName := "p929_render_" + suffix
 	planName := "p929_plan_" + suffix
@@ -262,15 +301,33 @@ func runRenderPlanCatalogCase(
 }
 
 // writeRenderPlanFixture materializes the annotated fixture with this run's
-// suffix and returns the directory holding it.
-func writeRenderPlanFixture(c *qt.C, suffix string) string {
+// suffix and returns the directory holding it. The user-defined types are
+// selected for the dialect first, so the fixture never asks a target for a kind
+// its preset says Ptah does not generate there.
+func writeRenderPlanFixture(c *qt.C, suffix, dialect string) string {
 	c.Helper()
 
 	dir := filepath.Join(c.TempDir(), "models")
 	c.Assert(os.MkdirAll(dir, 0o755), qt.IsNil)
-	source := strings.ReplaceAll(renderPlanFixtureTemplate, "SFX", suffix)
+	template := strings.ReplaceAll(renderPlanFixtureTemplate, "USERTYPES",
+		renderPlanUserTypeLines(dialect))
+	source := strings.ReplaceAll(template, "SFX", suffix)
 	c.Assert(os.WriteFile(filepath.Join(dir, "models.go"), []byte(source), 0o600), qt.IsNil)
 	return dir
+}
+
+// renderPlanUserTypeLines returns the fixture's user-type declarations that the
+// dialect's preset carries, newline-separated and without a trailing newline so
+// the template's own line break is the only one.
+func renderPlanUserTypeLines(dialect string) string {
+	caps := capability.ForDialect(dialect)
+	lines := make([]string, 0, len(renderPlanUserTypeDeclarations))
+	for _, declaration := range renderPlanUserTypeDeclarations {
+		if caps.Has(declaration.key) {
+			lines = append(lines, declaration.line)
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 // readRenderSurfaceSQL returns what `schema render` emits for the dialect.
