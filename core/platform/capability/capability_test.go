@@ -345,7 +345,15 @@ func TestPresets_KeyDifferences(t *testing.T) {
 	c.Assert(sqlServer.Has(capability.Sequences), qt.IsTrue)
 	c.Assert(sqlServer.Has(capability.EnumInlineColumn), qt.IsFalse)
 	c.Assert(sqlServer.Has(capability.EnumCustomType), qt.IsFalse)
-	c.Assert(sqlServer.Has(capability.RowLevelSecurity), qt.IsFalse)
+	// RowLevelSecurity moved for the same reason Sequences did, and the same
+	// three halves back it: a SECURITY POLICY is rendered, read out of
+	// sys.security_policies joined to sys.security_predicates, and planned
+	// (stokaro/ptah#1699).
+	c.Assert(sqlServer.Has(capability.RowLevelSecurity), qt.IsTrue)
+	// ClickHouse is the control on that move: it keeps the key off, so a
+	// change that turned row-level security on family-wide rather than for
+	// this one preset reddens here.
+	c.Assert(capability.ClickHouse24().Has(capability.RowLevelSecurity), qt.IsFalse)
 }
 
 func TestCapabilities_With_DoesNotMutateReceiver(t *testing.T) {

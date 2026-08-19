@@ -2415,7 +2415,8 @@ func appendPostTableObjectStatements(
 		statements.Statements = append(statements.Statements, FromRLSEnabledTable(rlsEnabled))
 	}
 	for _, rlsPolicy := range database.RLSPolicies {
-		statements.Statements = append(statements.Statements, FromRLSPolicy(rlsPolicy))
+		statements.Statements = append(statements.Statements,
+			FromRLSPolicy(QualifyRLSPolicyForTarget(rlsPolicy, database, targetPlatform)))
 	}
 	for _, grant := range database.Grants {
 		statements.Statements = append(statements.Statements, FromGrant(grant))
@@ -3000,4 +3001,45 @@ func processEmbeddedFieldsForStruct(embeddedFields []goschema.EmbeddedField, all
 	}
 
 	return generatedFields
+}
+
+// QualifyRLSPolicyForTarget puts a policy and its target table into the schema
+// the table was declared in, for a target that needs the qualification.
+//
+// Neither goschema.RLSPolicy nor ast.CreatePolicyNode carries a schema of its
+// own: the declaration names a table, and the table is what has one. On
+// PostgreSQL that costs nothing, because an unqualified name resolves through
+// search_path, and the rendering is left alone there rather than changed for
+// tidiness.
+//
+// On SQL Server it is the difference between a statement that runs and one that
+// does not. A security policy is schema-bound, and schema binding requires
+// two-part names on both sides of the ON: an unqualified target resolves to dbo
+// and a table anywhere else draws `Cannot find the object "dbo.<table>"`.
+//
+// The policy is put in the table's schema rather than left in dbo. Either is
+// accepted -- a policy may name a target in another schema -- but a policy in
+// dbo lies outside the scope a read of the table's schema covers, and an object
+// the reader cannot see is one the comparator plans forever.
+func QualifyRLSPolicyForTarget(
+	policy goschema.RLSPolicy,
+	database goschema.Database,
+	targetPlatform string,
+) goschema.RLSPolicy {
+	if targetPlatform != platform.SQLServer {
+		return policy
+	}
+	schema := ""
+	for _, declared := range database.Tables {
+		if declared.Name == policy.Table {
+			schema = declared.Schema
+			break
+		}
+	}
+	if schema == "" {
+		return policy
+	}
+	policy.Table = schema + "." + policy.Table
+	policy.Name = schema + "." + policy.Name
+	return policy
 }
