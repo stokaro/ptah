@@ -4,9 +4,8 @@ package generator_test
 
 import (
 	"context"
-	"os"
-	"path/filepath"
 	"testing"
+	"testing/fstest"
 
 	qt "github.com/frankban/quicktest"
 
@@ -19,19 +18,20 @@ import (
 	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
 )
 
-// writeInlineEnumEntities writes a Go-annotation source declaring one table
-// whose enum column carries the given values, and parses it the way the CLI
-// does.
+// inlineEnumEntities parses a Go-annotation source declaring one table whose
+// enum column carries the given values.
 //
 // The description is built by the parser rather than by hand: an enum field
 // only renders its values once the schema has been finalized, so a
 // hand-assembled goschema.Database emits a bare ENUM and measures the fixture
 // instead of the product.
-func writeInlineEnumEntities(c *qt.C, values string) *goschema.Database {
+//
+// In memory, because ParseFS takes an fs.FS and needs nothing else. The
+// neighbouring drift tests write real files for a reason this one does not
+// share: they hand a DIRECTORY PATH to generator.GenerateMigration, which
+// cannot take a filesystem.
+func inlineEnumEntities(c *qt.C, values string) *goschema.Database {
 	c.Helper()
-	root := c.TempDir()
-	entitiesDir := filepath.Join(root, "entities")
-	c.Assert(os.MkdirAll(entitiesDir, 0o750), qt.IsNil)
 	source := `package entities
 
 //ptah:schema:table name="ptah_inline_enum"
@@ -43,8 +43,9 @@ type Order struct {
 	Status string
 }
 `
-	c.Assert(os.WriteFile(filepath.Join(entitiesDir, "schema.go"), []byte(source), 0o600), qt.IsNil)
-	description, err := goschema.ParseFS(os.DirFS(root), "entities")
+	description, err := goschema.ParseFS(fstest.MapFS{
+		"entities/schema.go": &fstest.MapFile{Data: []byte(source)},
+	}, "entities")
 	c.Assert(err, qt.IsNil)
 	return description
 }
@@ -83,12 +84,12 @@ func TestInlineEnumConvergence_Integration(t *testing.T) {
 
 			// 1. Apply the declaration, then read the catalog back and require
 			// the comparison to have nothing left to do.
-			base := writeInlineEnumEntities(c, "new,paid")
+			base := inlineEnumEntities(c, "new,paid")
 			applyInlineEnum(c, ctx, conn, dialect, base)
 			c.Assert(inlineEnumDiffCount(c, conn, dialect, base), qt.Equals, 0)
 
 			// 2. A real change is still seen.
-			changed := writeInlineEnumEntities(c, "new,paid,shipped")
+			changed := inlineEnumEntities(c, "new,paid,shipped")
 			c.Assert(inlineEnumDiffCount(c, conn, dialect, changed) > 0, qt.IsTrue,
 				qt.Commentf("adding an enum value must produce a change"))
 
@@ -98,7 +99,7 @@ func TestInlineEnumConvergence_Integration(t *testing.T) {
 
 			// 4. And a removal is seen and converges too, which is what a
 			// comparison that merely stopped reporting would fail.
-			shrunk := writeInlineEnumEntities(c, "new,shipped")
+			shrunk := inlineEnumEntities(c, "new,shipped")
 			c.Assert(inlineEnumDiffCount(c, conn, dialect, shrunk) > 0, qt.IsTrue,
 				qt.Commentf("removing an enum value must produce a change"))
 			applyInlineEnum(c, ctx, conn, dialect, shrunk)
