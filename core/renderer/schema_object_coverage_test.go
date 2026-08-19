@@ -428,16 +428,59 @@ func emitsExecutableCreateSequence(statements []string) bool {
 	return false
 }
 
-// TestRender_MariaDBReportsTheSequenceItCannotGenerate is the other half of item
+// TestRender_MySQLReportsTheSequenceItCannotGenerate is the other half of item
 // 8: the flag being false must not mean the declared object vanishes.
-func TestRender_MariaDBReportsTheSequenceItCannotGenerate(t *testing.T) {
-	for _, dialect := range []string{platform.MySQL, platform.MariaDB} {
+//
+// MariaDB used to be here too and has moved to the test below. It hosts
+// sequences now, and the key it decides against is the same one -- which is why
+// the negative case moves to the engine that still answers `CREATE SEQUENCE`
+// with a syntax error rather than being deleted (stokaro/ptah#1759).
+func TestRender_MySQLReportsTheSequenceItCannotGenerate(t *testing.T) {
+	for _, dialect := range []string{platform.MySQL} {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 			statements, err := renderer.GetOrderedCreateStatements(sequenceSchema(), dialect)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(strings.Join(statements, "\n"), qt.Contains, "CREATE SEQUENCE order_number_seq not supported in "+dialect)
+		})
+	}
+}
+
+// TestRender_MariaDBEmitsTheSequenceInItsOwnGrammar is the positive half.
+//
+// MariaDB has had CREATE SEQUENCE since 10.3 and its grammar is not
+// PostgreSQL's: the negative cycle option is NOCYCLE, one word, and `NO CYCLE`
+// is ERROR 1064 near 'CYCLE' on 12.3. A shared renderer emitting the PostgreSQL
+// spelling would produce a statement that renders at exit 0 and fails on apply.
+func TestRender_MariaDBEmitsTheSequenceInItsOwnGrammar(t *testing.T) {
+	tests := []struct {
+		name      string
+		cycle     bool
+		wantCycle bool
+	}{
+		// A declaration that does not ask for CYCLE names no cycle clause at
+		// all, which is the engine's own default; the NOCYCLE spelling is what
+		// an ALTER that turns it back off has to emit, covered next door.
+		{name: "a sequence without CYCLE", cycle: false, wantCycle: false},
+		{name: "a sequence with CYCLE", cycle: true, wantCycle: true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			schema := sequenceSchema()
+			schema.Sequences[0].Cycle = test.cycle
+
+			statements, err := renderer.GetOrderedCreateStatements(schema, platform.MariaDB)
+
+			c.Assert(err, qt.IsNil)
+			rendered := strings.Join(statements, "\n")
+			c.Assert(emitsExecutableCreateSequence(statements), qt.IsTrue)
+			c.Assert(rendered, qt.Contains, "CREATE SEQUENCE `order_number_seq`")
+			c.Assert(strings.Contains(rendered, "CYCLE"), qt.Equals, test.wantCycle)
+			// The spelling that would render at exit 0 and fail on apply.
+			c.Assert(rendered, qt.Not(qt.Contains), "NO CYCLE")
 		})
 	}
 }
