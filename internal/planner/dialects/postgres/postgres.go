@@ -1224,6 +1224,7 @@ func (p *Planner) plannedUserTypes(
 	generated *goschema.Database,
 	semantics identifier.Semantics,
 ) []plannedUserType {
+	rebuiltForAdd := rebuiltUserTypes(diff)
 	var planned []plannedUserType
 	for _, name := range diff.DomainsAdded {
 		if domain := findDomain(generated.Domains, name, semantics); domain != nil {
@@ -1267,7 +1268,7 @@ func (p *Planner) plannedUserTypes(
 		}
 	}
 	for _, compositeDiff := range diff.CompositeTypesModified {
-		if compositeIsAlterableInPlace(compositeDiff) {
+		if compositeIsAlterableInPlace(compositeDiff, rebuiltForAdd) {
 			// Paired with the same guard in dropModifiedUserTypes: no drop was
 			// emitted, so there is nothing to put back.
 			continue
@@ -1360,6 +1361,7 @@ func (p *Planner) dropModifiedUserTypes(
 	generated *goschema.Database,
 ) []ast.Node {
 	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
+	rebuilt := rebuiltUserTypes(diff)
 	byName := make(map[string]ast.Node, len(diff.DomainsModified)+len(diff.CompositeTypesModified))
 	deps := make([]deporder.UserType, 0, len(diff.DomainsModified)+len(diff.CompositeTypesModified))
 	var unresolved []ast.Node
@@ -1380,7 +1382,7 @@ func (p *Planner) dropModifiedUserTypes(
 		deps = append(deps, deporder.UserType{Name: domainDiff.DomainName, References: currentDomainReferences(domainDiff)})
 	}
 	for _, compositeDiff := range diff.CompositeTypesModified {
-		if compositeIsAlterableInPlace(compositeDiff) {
+		if compositeIsAlterableInPlace(compositeDiff, rebuilt) {
 			// alterModifiedCompositeTypes reconciles this one with ALTER TYPE.
 			// Dropping it here as well would fail outright on any composite a
 			// table column uses, which is the case the ALTER exists for.
