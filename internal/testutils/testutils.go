@@ -17,11 +17,11 @@ func CreateTestParseResult() *goschema.Database {
 			{Name: "id", Type: "int", StructName: "TestTable"},
 			{Name: "name", Type: "string", StructName: "TestTable"},
 		},
-		Indexes: []goschema.Index{},
+		Indexes: make([]goschema.Index, 0),
 		Enums: []goschema.Enum{
 			{Name: "test_status", Values: []string{"active", "inactive"}},
 		},
-		EmbeddedFields: []goschema.EmbeddedField{},
+		EmbeddedFields: make([]goschema.EmbeddedField, 0),
 	}
 }
 

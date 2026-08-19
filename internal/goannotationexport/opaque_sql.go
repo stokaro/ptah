@@ -41,7 +41,7 @@ func opaqueSQLDiagnostics(
 func appendOpaqueSQLDiagnostic(
 	diagnostics []atlashclrender.Diagnostic,
 	existingPaths map[string]struct{},
-	path string,
+	path,
 	body string,
 ) []atlashclrender.Diagnostic {
 	if body == "" {

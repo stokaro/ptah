@@ -720,7 +720,7 @@ func TestToDatabase_EmptySchema(t *testing.T) {
 	c := qt.New(t)
 
 	statements := &ast.StatementList{
-		Statements: []ast.Node{},
+		Statements: make([]ast.Node, 0),
 	}
 
 	result := toschema.ToDatabase(statements, "")
@@ -829,7 +829,7 @@ func TestMergeFieldOverrides_EmptyPlatforms(t *testing.T) {
 		Type: "JSONB",
 	}
 
-	result := toschema.MergeFieldOverrides(baseField, map[string]goschema.Field{})
+	result := toschema.MergeFieldOverrides(baseField, make(map[string]goschema.Field))
 
 	c.Assert(result.Name, qt.Equals, "data")
 	c.Assert(result.Type, qt.Equals, "JSONB")

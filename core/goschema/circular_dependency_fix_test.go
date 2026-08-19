@@ -207,7 +207,7 @@ func TestMultipleSelfReferencesInSameTable(t *testing.T) {
 func buildDependencyGraphTest(r *goschema.Database) {
 	// Initialize dependencies map for all tables
 	for _, table := range r.Tables {
-		r.Dependencies[table.Name] = []string{}
+		r.Dependencies[table.Name] = make([]string, 0)
 	}
 
 	// Initialize self-referencing foreign keys tracking

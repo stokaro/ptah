@@ -266,7 +266,7 @@ func sameDirectDatabaseURL(databaseURL, candidate string) (bool, error) {
 // [rescopeStatementsForDevDatabase] and stokaro/ptah#1240.
 func rehearseStatementsOnDev(
 	ctx context.Context,
-	targetConn *dbschema.DatabaseConnection,
+	targetConn,
 	devConn *dbschema.DatabaseConnection,
 	current *dbschematypes.DBSchema,
 	txMode migrator.MigrationTxMode,

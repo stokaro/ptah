@@ -147,7 +147,7 @@ func yugabyteReaderFixture() postgresFamilyReaderFixture {
 func exercisePostgresFamilyReader(
 	c *qt.C,
 	t *testing.T,
-	dsn string,
+	dsn,
 	sourceURL string,
 	fixture postgresFamilyReaderFixture,
 ) postgresFamilyReaderResult {
@@ -183,7 +183,7 @@ func executePostgresFamilyReaderStatements(c *qt.C, db *sql.DB, statements []str
 func readPostgresFamilyReaderSchema(
 	c *qt.C,
 	t *testing.T,
-	sourceURL string,
+	sourceURL,
 	schema string,
 ) *dbschematypes.DBSchema {
 	c.Helper()
@@ -278,7 +278,7 @@ func postgresFamilyCatalogHasView(schema *dbschematypes.DBSchema, schemaName, vi
 
 func postgresFamilyCatalogHasMaterializedView(
 	schema *dbschematypes.DBSchema,
-	schemaName string,
+	schemaName,
 	viewName string,
 ) bool {
 	for _, view := range schema.MatViews {
@@ -291,8 +291,8 @@ func postgresFamilyCatalogHasMaterializedView(
 
 func postgresFamilyCatalogHasIndex(
 	schema *dbschematypes.DBSchema,
-	schemaName string,
-	tableName string,
+	schemaName,
+	tableName,
 	indexName string,
 ) bool {
 	for _, index := range schema.Indexes {
@@ -323,8 +323,8 @@ func postgresFamilyCatalogHasRLSEnabledTable(schema *dbschematypes.DBSchema, sch
 
 func postgresFamilyCatalogHasRLSPolicy(
 	schema *dbschematypes.DBSchema,
-	schemaName string,
-	tableName string,
+	schemaName,
+	tableName,
 	policyName string,
 ) bool {
 	wantTable := dbschematypes.QualifyTableName(schemaName, tableName)

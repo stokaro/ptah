@@ -199,7 +199,7 @@ func (e *CheckGroupFailedError) Error() string {
 func runCheckGroups(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
-	dialect string,
+	dialect,
 	serverVersion string,
 	version int64,
 	groups []checkGroup,
@@ -221,7 +221,7 @@ func runCheckGroups(
 func runCheckGroup(
 	ctx context.Context,
 	queryer dbschema.IsolatedQueryer,
-	dialect string,
+	dialect,
 	serverVersion string,
 	version int64,
 	group checkGroup,
@@ -285,8 +285,8 @@ func checkTransactionOptions(dialect string) *sql.TxOptions {
 func runCheckAssertion(
 	ctx context.Context,
 	queryer dbschema.IsolatedQueryer,
-	dialect string,
-	serverVersion string,
+	dialect,
+	serverVersion,
 	assertion string,
 ) (any, error) {
 	if err := validateCheckAssertionStatically(assertion, dialect, serverVersion); err != nil {

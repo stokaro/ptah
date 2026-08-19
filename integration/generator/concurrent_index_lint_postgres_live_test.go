@@ -108,7 +108,7 @@ func TestGenerateMigration_ConcurrentIndexArtifactsPassPtahLintWithRealPostgres(
 	// The lint verdict comes first deliberately. Behind a text assertion it
 	// could never be the finding that names a regression, and a rule that only
 	// ever runs after the bytes were already pinned by hand is decoration.
-	c.Assert(lintGeneratedMigrations(c, migrationsDir), qt.DeepEquals, []string{})
+	c.Assert(lintGeneratedMigrations(c, migrationsDir), qt.DeepEquals, make([]string, 0))
 
 	upSQL, err := os.ReadFile(files.Files[0].UpFile)
 	c.Assert(err, qt.IsNil)

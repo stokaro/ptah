@@ -32,17 +32,17 @@ func TestParseFileDirectives(t *testing.T) {
 		{
 			name: "regular comments are not directives",
 			sql:  "-- ordinary comment with ptah in it\n-- ptah key=value (no plus)\nSELECT 1; -- +ptah trailing=nope is fine because the line does not start with the comment\n",
-			want: map[string]string{},
+			want: make(map[string]string),
 		},
 		{
 			name: "directive-looking text inside a string literal is not a directive",
 			sql:  "INSERT INTO notes (body) VALUES ('runbook:\n-- +ptah online_ddl_tool=ghost\ndone');\nALTER TABLE users ADD COLUMN a INT;\n",
-			want: map[string]string{},
+			want: make(map[string]string),
 		},
 		{
 			name: "directive-looking text inside a block comment is not a directive",
 			sql:  "/*\n-- +ptah online_ddl_tool=ghost\n*/\nALTER TABLE users ADD COLUMN a INT;\n",
-			want: map[string]string{},
+			want: make(map[string]string),
 		},
 		{
 			name: "real directive alongside a decoy inside a string still parses",
@@ -62,12 +62,12 @@ func TestParseFileDirectives(t *testing.T) {
 		{
 			name: "directive prefix must be a whole word",
 			sql:  "-- +ptahx key=value\n",
-			want: map[string]string{},
+			want: make(map[string]string),
 		},
 		{
 			name: "empty input",
 			sql:  "",
-			want: map[string]string{},
+			want: make(map[string]string),
 		},
 	}
 	for _, tt := range tests {
@@ -107,7 +107,7 @@ func TestParseFileDirectivesTreatsHashCommentsAsHeaderComments(t *testing.T) {
 		{name: "clickhouse", dialect: platform.ClickHouse, want: map[string]string{"no_transaction": "true"}},
 		{name: "postgres", dialect: platform.Postgres, want: map[string]string{"no_transaction": "true"}},
 		{name: "sqlite", dialect: platform.SQLite, want: map[string]string{"no_transaction": "true"}},
-		{name: "sqlserver", dialect: platform.SQLServer, want: map[string]string{}},
+		{name: "sqlserver", dialect: platform.SQLServer, want: make(map[string]string)},
 	}
 
 	for _, test := range tests {

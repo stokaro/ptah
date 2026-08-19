@@ -92,17 +92,17 @@ func TestAnalyzeFS_SchemaChangeCardinality(t *testing.T) {
 		{
 			name: "operational insert is zero changes",
 			sql:  "INSERT INTO users (id) VALUES (1);",
-			want: []changeProjection{},
+			want: make([]changeProjection, 0),
 		},
 		{
 			name: "select is zero changes",
 			sql:  "SELECT 1;",
-			want: []changeProjection{},
+			want: make([]changeProjection, 0),
 		},
 		{
 			name: "comment-only file is zero changes",
 			sql:  "-- nothing structural here\n",
-			want: []changeProjection{},
+			want: make([]changeProjection, 0),
 		},
 		{
 			// GRANT used to sit here, as a statement the parser refused. It
@@ -111,7 +111,7 @@ func TestAnalyzeFS_SchemaChangeCardinality(t *testing.T) {
 			// outside it.
 			name: "statement outside the DDL grammar is zero changes",
 			sql:  "CLUSTER users USING idx_users_id;",
-			want: []changeProjection{},
+			want: make([]changeProjection, 0),
 		},
 		{
 			name: "grant is one change",

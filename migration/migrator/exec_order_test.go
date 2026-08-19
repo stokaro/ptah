@@ -127,7 +127,7 @@ func TestMigrationsToApplyExecOrderPolicies(t *testing.T) {
 	linearSkip := linear.WithExecOrder(ExecOrderLinearSkip)
 	got, err := linearSkip.migrationsToApply(migrations, applied, appliedIdentities, 0)
 	c.Assert(err, qt.IsNil)
-	c.Assert(migrationVersions(got), qt.DeepEquals, []int64{})
+	c.Assert(migrationVersions(got), qt.DeepEquals, make([]int64, 0))
 
 	nonLinear := linear.WithExecOrder(ExecOrderNonLinear)
 	got, err = nonLinear.migrationsToApply(migrations, applied, appliedIdentities, 0)

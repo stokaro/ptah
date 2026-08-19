@@ -600,7 +600,7 @@ func (dc *DatabaseConnection) WithSessionOrCurrent(
 
 func refineMySQLForeignKeyCapabilities(
 	dialect string,
-	caps capability.Capabilities,
+	caps,
 	baseline capability.Capabilities,
 	scan func(...any) error,
 ) (capability.Capabilities, error) {

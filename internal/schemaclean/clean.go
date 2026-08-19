@@ -91,7 +91,7 @@ type Object struct {
 // schema-local clean.
 func SnapshotWithinWriterScope(
 	schema *dbschematypes.DBSchema,
-	dialect string,
+	dialect,
 	writerSchema string,
 ) *dbschematypes.DBSchema {
 	if schema == nil || !isPostgresFamily(dialect) {
@@ -385,7 +385,7 @@ func tryApplyPostgresFamilyPlanChange(
 	ctx context.Context,
 	tx dbschematypes.SchemaTransaction,
 	change Change,
-) (dropErr error, controlErr error) {
+) (dropErr, controlErr error) {
 	const savepoint = "ptah_scoped_cleanup_object"
 
 	if err := tx.ExecuteSQL(ctx, "SAVEPOINT "+savepoint); err != nil {
@@ -763,7 +763,7 @@ func InspectRuntimeObjects(conn *dbschema.DatabaseConnection, schemas []string) 
 	if !coverage.postgresRuntimeObjects && !coverage.mysqlStoredObjects {
 		return nil, nil
 	}
-	objects := []Object{}
+	objects := make([]Object, 0)
 	for _, schema := range runtimeObjectSchemas(conn, schemas) {
 		var scoped []Object
 		var err error
@@ -968,7 +968,7 @@ func inspectPostgresRuntimeObjects(conn *dbschema.DatabaseConnection, schema str
 	}
 	defer rows.Close()
 
-	objects := []Object{}
+	objects := make([]Object, 0)
 	for rows.Next() {
 		var kind string
 		var schema string
@@ -1158,7 +1158,7 @@ func inspectMySQLStoredObjects(conn *dbschema.DatabaseConnection, schema string)
 	}
 	defer rows.Close()
 
-	objects := []Object{}
+	objects := make([]Object, 0)
 	for rows.Next() {
 		var name string
 		var kind string
@@ -1214,7 +1214,7 @@ func inspectRevisionTables(conn *dbschema.DatabaseConnection) ([]Object, error) 
 	}
 	defer rows.Close()
 
-	objects := []Object{}
+	objects := make([]Object, 0)
 	for rows.Next() {
 		var name string
 		if err := rows.Scan(&name); err != nil {

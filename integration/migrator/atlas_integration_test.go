@@ -1431,7 +1431,7 @@ SELECT 1;
 
 func runAtlasTxtarChecksMySQLCommentSemanticsIntegration(
 	t *testing.T,
-	dbURL string,
+	dbURL,
 	ignoredCommentAssertion string,
 ) {
 	t.Helper()

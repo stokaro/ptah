@@ -52,7 +52,7 @@ const grantObjectTypeSchema = "SCHEMA"
 // the string the source wrote, so a policy on `"tenant.data"` belongs to that
 // table and not to a table `data` in a schema `tenant`.
 func PoliciesFromDescription(state *State, description *goschema.Database, builder objectidentity.Builder) error {
-	tablesByStruct := map[string]goschema.Table{}
+	tablesByStruct := make(map[string]goschema.Table)
 	for _, table := range description.Tables {
 		tablesByStruct[table.StructName] = table
 	}
@@ -272,7 +272,7 @@ func (s *State) Manages(role string, builder objectidentity.Builder) bool {
 // a request to take it away -- the description was never describing that role's
 // privileges in the first place.
 func ManagedRoles(description *goschema.Database) map[string]bool {
-	managed := map[string]bool{}
+	managed := make(map[string]bool)
 	for _, role := range description.Roles {
 		managed[strings.TrimSpace(role.Name)] = true
 	}

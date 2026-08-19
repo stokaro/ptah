@@ -171,7 +171,7 @@ func refuseUnmatchedExclude(selectors []string) error {
 func ReportUndecidedAdditions(
 	diagnostics io.Writer,
 	undecided []coverage.Object,
-	currentDescription string,
+	currentDescription,
 	desiredDescription string,
 ) {
 	if diagnostics == nil {

@@ -27,7 +27,7 @@ import (
 // checking it would refuse the very workflow the directive exists for.
 func preflightTransactionRequirements(
 	conn *dbschema.DatabaseConnection,
-	filename string,
+	filename,
 	sql string,
 	statements []string,
 	mode migrationExecutionMode,

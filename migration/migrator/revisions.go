@@ -1552,7 +1552,7 @@ func verifyAtlasCommittedPrefix(
 	revision MigrationRevision,
 	migration *Migration,
 	direction MigrationDirection,
-	operation string,
+	operation,
 	expected string,
 ) error {
 	if len(revision.partialHashes) == 0 {
@@ -2104,7 +2104,7 @@ func (m *Migrator) failAtlasMigrationRevision(
 	failure error,
 	sqlText string,
 	direction MigrationDirection,
-	applied int,
+	applied,
 	total int,
 	stmt string,
 	failedIndex int,
@@ -2457,7 +2457,7 @@ func atlasRevisionSetChanges(
 	existing []MigrationRevision,
 	migrations []*Migration,
 	version int64,
-	retired []string,
+	retired,
 	exactRemoved []string,
 ) AtlasRevisionSetResult {
 	result := AtlasRevisionSetResult{CurrentVersion: version}

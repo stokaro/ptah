@@ -1389,7 +1389,7 @@ func postgresIndexStorageParams(value string) (map[string]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	params := map[string]string{}
+	params := make(map[string]string)
 	for _, entry := range entries {
 		name, paramValue, found := strings.Cut(entry, "=")
 		if !found {
@@ -2272,7 +2272,7 @@ func (r *Reader) readExtensionMembers() (map[string][]string, error) {
 	}
 	defer rows.Close()
 
-	members := map[string][]string{}
+	members := make(map[string][]string)
 	for rows.Next() {
 		var extensionName, memberName string
 		if err := rows.Scan(&extensionName, &memberName); err != nil {

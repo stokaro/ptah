@@ -200,7 +200,7 @@ func validateAtlasSchemaDiffSQLiteToggle(opts atlasSchemaDiffOptions) error {
 		}
 		return nil
 	}
-	for _, rawURL := range append(append([]string{}, opts.fromURLs...), opts.toURLs...) {
+	for _, rawURL := range append(append(make([]string, 0), opts.fromURLs...), opts.toURLs...) {
 		if dialect, err := atlasurl.DialectFromURL(rawURL); err == nil && dialect != "" {
 			return sqlitevirtual.ValidateToggle(dialect)
 		}

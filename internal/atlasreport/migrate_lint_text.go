@@ -318,7 +318,7 @@ func sortedUpFiles(files []migrationlint.File) []migrationlint.File {
 // diagnosticsByFile maps findings into compatibility diagnostics keyed
 // by the cleaned reporting path of the file that owns them.
 func diagnosticsByFile(findings []migrationlint.Finding) map[string][]migrateLintTextDiag {
-	byFile := map[string][]migrateLintTextDiag{}
+	byFile := make(map[string][]migrateLintTextDiag)
 	for _, finding := range findings {
 		key := path.Clean(finding.File)
 		byFile[key] = append(byFile[key], compatibilityDiagnostic(finding))
@@ -385,7 +385,7 @@ func analyzerGroupLabel(analyzer string) string {
 // first-appearance order among themselves and follow the ranked groups.
 func groupDiagnostics(diags []migrateLintTextDiag) []migrateLintTextGroup {
 	var groups []migrateLintTextGroup
-	index := map[string]int{}
+	index := make(map[string]int)
 	for _, diag := range diags {
 		at, ok := index[diag.group]
 		if !ok {

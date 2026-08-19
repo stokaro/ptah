@@ -752,7 +752,7 @@ func indexRecoveryIdentityDSNWithSearchPath(c *qt.C, dsn, searchPath string) str
 
 func indexRecoveryIdentityMigrator(
 	conn *dbschema.DatabaseConnection,
-	tracker string,
+	tracker,
 	up string,
 ) *migrator.Migrator {
 	down := fmt.Sprintf("DROP INDEX IF EXISTS %q.%q;", indexRecoveryIdentitySchema, indexRecoveryIdentityName)

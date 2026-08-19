@@ -55,13 +55,13 @@ func TestLintFS_DownDirectionHazards(t *testing.T) {
 			name: "a rule that did not opt in stays silent on the down file",
 			up:   "ALTER TABLE t ADD COLUMN c INT;\n",
 			down: "CREATE INDEX idx ON t (id);\n",
-			want: []string{},
+			want: make([]string, 0),
 		},
 		{
 			name: "a second rule that did not opt in stays silent on the down file",
 			up:   "ALTER TABLE t ADD COLUMN c INT;\n",
 			down: "BEGIN;\nALTER TABLE t DROP COLUMN c;\nCOMMIT;\n",
-			want: []string{},
+			want: make([]string, 0),
 		},
 		{
 			name: "a concurrent rollback without the marker cannot execute",
@@ -73,7 +73,7 @@ func TestLintFS_DownDirectionHazards(t *testing.T) {
 			name: "the marker exempts the rollback Ptah generates",
 			up:   "-- +ptah no_transaction\nCREATE INDEX CONCURRENTLY idx ON t (id);\n",
 			down: "-- +ptah no_transaction\nDROP INDEX CONCURRENTLY idx;\n",
-			want: []string{},
+			want: make([]string, 0),
 		},
 		{
 			name: "a rollback mixing autocommit and transactional DDL is reported",

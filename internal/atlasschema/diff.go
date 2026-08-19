@@ -432,7 +432,7 @@ func scopeDiffStates(
 func scopeDiffState(
 	state atlassource.State,
 	scope atlasfilter.Scope,
-	side string,
+	side,
 	dialect string,
 ) scopedDiffState {
 	generated, generatedReports, generatedErr := scopeGeneratedSide(state.Schema, scope, side)

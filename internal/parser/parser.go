@@ -752,7 +752,7 @@ func (p *Parser) skipSQLServerBracketedIdentifier() {
 	}
 }
 
-func trackSQLServerRawRoutineKeyword(keyword string, nextValue string, blockDepth, caseDepth *int) bool {
+func trackSQLServerRawRoutineKeyword(keyword, nextValue string, blockDepth, caseDepth *int) bool {
 	switch keyword {
 	case "BEGIN":
 		if sqlServerRawRoutineNonBlockBeginFollower(nextValue) {
@@ -4634,7 +4634,7 @@ func (p *Parser) parseCreateIndexStorageParams() (map[string]string, error) {
 	}
 	p.skipWhitespace()
 
-	params := map[string]string{}
+	params := make(map[string]string)
 	for {
 		key, err := p.expectIdentifier()
 		if err != nil {

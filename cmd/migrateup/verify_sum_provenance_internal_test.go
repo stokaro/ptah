@@ -55,8 +55,8 @@ type ociMemoryStore struct {
 
 func newOCIMemoryStore() *ociMemoryStore {
 	return &ociMemoryStore{
-		blobs: map[digest.Digest]ociStoredBlob{},
-		tags:  map[string]ocispec.Descriptor{},
+		blobs: make(map[digest.Digest]ociStoredBlob),
+		tags:  make(map[string]ocispec.Descriptor),
 	}
 }
 

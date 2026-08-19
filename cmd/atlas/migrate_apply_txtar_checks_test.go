@@ -28,7 +28,7 @@ SELECT NOT EXISTS (SELECT * FROM users);
 ALTER TABLE users ADD COLUMN email TEXT;
 `
 
-func writeTxtarChecksMigrationsDir(c *qt.C, dir string, usersSQL string) string {
+func writeTxtarChecksMigrationsDir(c *qt.C, dir, usersSQL string) string {
 	c.Helper()
 	migrationsDir := filepath.Join(dir, "migrations")
 	writeAtlasApplyProjectMigration(c, migrationsDir, "20260801000001_create_users.sql", usersSQL)

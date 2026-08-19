@@ -186,7 +186,7 @@ func TestSumFileNamesPerFormat(t *testing.T) {
 		name:   "sql suffix is case sensitive",
 		format: atlasmigrateimport.FormatGoose,
 		files:  []string{"1_init.SQL"},
-		want:   []string{},
+		want:   make([]string, 0),
 	}, {
 		name:   "goose does not recurse",
 		format: atlasmigrateimport.FormatGoose,
@@ -838,7 +838,7 @@ func TestSumFileNamesEmptyFileSetIsNotAnError(t *testing.T) {
 
 			c.Assert(err, qt.IsNil)
 			// HasLen 0 would accept nil; the contract is an empty slice.
-			c.Assert(names, qt.DeepEquals, []string{})
+			c.Assert(names, qt.DeepEquals, make([]string, 0))
 
 			// The directory is not empty on disk — only its file set is. Each
 			// corpus case holds its source file plus the recorded atlas.sum.

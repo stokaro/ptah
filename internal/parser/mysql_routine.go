@@ -487,7 +487,7 @@ func (p mysqlRoutineBodyParser) statementContentEnd(endIdx int) int {
 	return p.tokens[endIdx].End
 }
 
-func (p mysqlRoutineBodyParser) rawTokenRange(startIdx int, end int) string {
+func (p mysqlRoutineBodyParser) rawTokenRange(startIdx, end int) string {
 	if startIdx < 0 || startIdx >= len(p.tokens) {
 		return ""
 	}
@@ -555,7 +555,7 @@ func (p mysqlRoutineBodyParser) classifyDeclareStatement(startIdx int) ast.MySQL
 	return ast.MySQLRoutineStatementDeclaration
 }
 
-func (p mysqlRoutineBodyParser) outerBlockRange() (beginIdx int, endIdx int) {
+func (p mysqlRoutineBodyParser) outerBlockRange() (beginIdx, endIdx int) {
 	beginIdx = p.nextSignificant(0)
 	if beginIdx != -1 && p.isLabelStatement(beginIdx) {
 		colonIdx := p.nextSignificant(beginIdx + 1)

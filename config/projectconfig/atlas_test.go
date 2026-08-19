@@ -1870,8 +1870,8 @@ migration:
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(cfg.DatabaseURL, qt.Equals, "postgres://atlas/db")
-	c.Assert(cfg.SchemaSources, qt.DeepEquals, []string{})
-	c.Assert(cfg.Exclude, qt.DeepEquals, []string{})
+	c.Assert(cfg.SchemaSources, qt.DeepEquals, make([]string, 0))
+	c.Assert(cfg.Exclude, qt.DeepEquals, make([]string, 0))
 	c.Assert(cfg.Migration.Dir, qt.Equals, "atlas-migrations")
 	c.Assert(cfg.Migration.RevisionsSchema, qt.Equals, "")
 	c.Assert(cfg.Migration.LockTimeout, qt.Equals, "")

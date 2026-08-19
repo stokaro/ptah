@@ -373,17 +373,17 @@ func TestIgnoredDirQueryKeys(t *testing.T) {
 		query url.Values
 		want  []string
 	}{
-		{name: "no query", query: nil, want: []string{}},
-		{name: "format alone is meaningful", query: url.Values{"format": {"goose"}}, want: []string{}},
+		{name: "no query", query: nil, want: make([]string, 0)},
+		{name: "format alone is meaningful", query: url.Values{"format": {"goose"}}, want: make([]string, 0)},
 		{
 			name:  "empty format value still selects the atlas layout",
 			query: url.Values{"format": {""}},
-			want:  []string{},
+			want:  make([]string, 0),
 		},
 		{
 			name:  "repeated format lost a value, not the key",
 			query: url.Values{"format": {"flyway", "goose"}},
-			want:  []string{},
+			want:  make([]string, 0),
 		},
 		{name: "unknown key", query: url.Values{"nonsense": {"1"}}, want: []string{"nonsense"}},
 		{
@@ -458,7 +458,7 @@ func TestResolveApplySourceForFormatReadsEachFormat(t *testing.T) {
 // than a convenience wrapper that production does not use.
 func resolveApplySource(
 	source fs.FS,
-	display string,
+	display,
 	configured string,
 	query url.Values,
 ) (fsnapshot.Snapshot, error) {

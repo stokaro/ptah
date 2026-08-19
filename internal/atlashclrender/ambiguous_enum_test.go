@@ -90,7 +90,7 @@ func TestRenderLabelsAnAmbiguousEnumWithItsSchema(t *testing.T) {
 			name:       "an ambiguous name is written with its schema",
 			db:         twoSchemaEnumRealm(),
 			wantBlocks: []string{`enum "other" "mood" {`, `enum "public" "mood" {`},
-			wantTypes:  []string{},
+			wantTypes:  make([]string, 0),
 		},
 		{
 			name: "an unambiguous name keeps one label",
@@ -101,7 +101,7 @@ func TestRenderLabelsAnAmbiguousEnumWithItsSchema(t *testing.T) {
 				},
 			},
 			wantBlocks: []string{`enum "mood" {`},
-			wantTypes:  []string{},
+			wantTypes:  make([]string, 0),
 		},
 		{
 			// Two enums sharing a name AND a schema are one object declared
@@ -117,7 +117,7 @@ func TestRenderLabelsAnAmbiguousEnumWithItsSchema(t *testing.T) {
 				},
 			},
 			wantBlocks: []string{`enum "mood" {`},
-			wantTypes:  []string{},
+			wantTypes:  make([]string, 0),
 		},
 		{
 			// The reference must gain the schema exactly where the block does,

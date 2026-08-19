@@ -101,7 +101,7 @@ func TestWriterDropAllTables_RefusesBacktickedNames(t *testing.T) {
 		},
 		{
 			name:    "table",
-			views:   [][]driver.Value{},
+			views:   make([][]driver.Value, 0),
 			tables:  [][]driver.Value{{"us`ers"}},
 			wantErr: "clickhouse: refusing to drop table \"us`ers\": name contains a backtick",
 		},

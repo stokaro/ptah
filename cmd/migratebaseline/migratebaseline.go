@@ -303,7 +303,7 @@ func baselineRows(version int64, migrations []*migrator.Migration) []*migrator.M
 }
 
 func printDryRun(
-	dbURL string,
+	dbURL,
 	migrationsDir string,
 	version int64,
 	mig *migrator.Migrator,

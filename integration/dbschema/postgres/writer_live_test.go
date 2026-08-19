@@ -809,7 +809,7 @@ func postgresWriterLiveObjectCount(
 	c *qt.C,
 	ctx context.Context,
 	db *sql.DB,
-	schema string,
+	schema,
 	name string,
 ) int {
 	c.Helper()
@@ -829,7 +829,7 @@ func postgresWriterLivePolicyCount(
 	c *qt.C,
 	ctx context.Context,
 	db *sql.DB,
-	schema string,
+	schema,
 	name string,
 ) int {
 	c.Helper()
@@ -869,7 +869,7 @@ func postgresWriterLiveNamedTypeCount(
 	c *qt.C,
 	ctx context.Context,
 	db *sql.DB,
-	schema string,
+	schema,
 	name string,
 ) int {
 	c.Helper()
@@ -889,7 +889,7 @@ func postgresWriterLiveRoutineCount(
 	c *qt.C,
 	ctx context.Context,
 	db *sql.DB,
-	schema string,
+	schema,
 	name string,
 ) int {
 	c.Helper()
@@ -909,7 +909,7 @@ func postgresWriterLiveToastOID(
 	c *qt.C,
 	ctx context.Context,
 	db *sql.DB,
-	schema string,
+	schema,
 	table string,
 ) int64 {
 	c.Helper()

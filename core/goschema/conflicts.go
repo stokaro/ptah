@@ -163,7 +163,7 @@ func sourceTableIdentities(source *Database) (map[string]string, error) {
 
 func rebindTableOwners(
 	source *Database,
-	sourceTables map[string]string,
+	sourceTables,
 	owners map[string]string,
 	sourceScope string,
 ) {
@@ -246,7 +246,7 @@ func sourceHelperTypes(source *Database, sourceTables map[string]string) map[str
 }
 
 func scopeHelperType(
-	sourceScope string,
+	sourceScope,
 	structName string,
 	helperTypes map[string]struct{},
 ) string {

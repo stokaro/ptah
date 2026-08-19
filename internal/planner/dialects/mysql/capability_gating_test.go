@@ -236,7 +236,7 @@ func TestPlanner_CapabilityGating_CheckAddSkippedWhenUnenforced(t *testing.T) {
 
 		diff := &types.SchemaDiff{
 			ConstraintsAdded:   []string{"things_qty_check"},
-			ConstraintsRemoved: []string{},
+			ConstraintsRemoved: make([]string, 0),
 		}
 		generated := &goschema.Database{
 			Tables: []goschema.Table{{StructName: "Thing", Name: "things"}},

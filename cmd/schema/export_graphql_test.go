@@ -254,7 +254,7 @@ func TestSchemaExportGraphQLOperationsRejectedOnOtherTargets(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			args := append(append([]string{}, test.args...), "--graphql-operations", "list")
+			args := append(append(make([]string, 0), test.args...), "--graphql-operations", "list")
 
 			stdout, stderr, err := runSchemaExport(args...)
 

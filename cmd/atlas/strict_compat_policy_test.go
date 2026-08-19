@@ -113,7 +113,7 @@ func TestStrictCEFlagSurfaceMatchesCommunityInventory(t *testing.T) {
 		},
 		{
 			path: []string{"schema", "fmt"},
-			want: []string{},
+			want: make([]string, 0),
 		},
 	}
 
@@ -358,7 +358,7 @@ func availableChildNames(parent *cobra.Command) []string {
 }
 
 func visibleLocalFlagNames(cmd *cobra.Command) []string {
-	names := []string{}
+	names := make([]string, 0)
 	cmd.LocalNonPersistentFlags().VisitAll(func(flag *pflag.Flag) {
 		if !flag.Hidden && flag.Name != "help" {
 			names = append(names, flag.Name)

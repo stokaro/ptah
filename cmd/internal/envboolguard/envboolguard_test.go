@@ -381,7 +381,7 @@ func registeredNames() []string {
 
 // duplicateRegisteredNames returns the names declared more than once.
 func duplicateRegisteredNames() []string {
-	seen := map[string]int{}
+	seen := make(map[string]int)
 	for _, variable := range envbool.Registered() {
 		seen[variable.Name()]++
 	}

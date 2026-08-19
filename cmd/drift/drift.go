@@ -220,7 +220,7 @@ func runDrift(cmd *cobra.Command, opts runOptions) error {
 	return nil
 }
 
-func writeError(w io.Writer, format string, msg string) error {
+func writeError(w io.Writer, format, msg string) error {
 	report := driftReport{
 		Failed:           true,
 		FailureThreshold: severityAll,

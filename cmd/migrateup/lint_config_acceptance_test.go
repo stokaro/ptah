@@ -79,9 +79,9 @@ func TestMigrateUp_AbsoluteDirectoryPrefixedExclusionMatchesLintCommand(t *testi
 func assertLintAndMigrateExclusionParity(
 	c *qt.C,
 	t *testing.T,
-	root string,
-	migrationsDir string,
-	migrationsArg string,
+	root,
+	migrationsDir,
+	migrationsArg,
 	pattern string,
 ) {
 	c.Helper()

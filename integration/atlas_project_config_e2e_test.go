@@ -92,7 +92,7 @@ func TestAtlasProjectConfigMigrateStatusAndUpE2E(t *testing.T) {
 		float64(20260719010000),
 		float64(20260719010101),
 	})
-	c.Assert(readStatusField(c, output, "pending_migrations"), qt.DeepEquals, []any{})
+	c.Assert(readStatusField(c, output, "pending_migrations"), qt.DeepEquals, make([]any, 0))
 	c.Assert(readStatusField(c, output, "has_pending_changes"), qt.Equals, false)
 
 	verifyAtlasProjectConfigDatabaseState(c, ctx, testDBURL, applyStarted, applyFinished)
@@ -172,7 +172,7 @@ func verifyAtlasProjectConfigDatabaseState(
 	c *qt.C,
 	ctx context.Context,
 	dbURL string,
-	applyStarted time.Time,
+	applyStarted,
 	applyFinished time.Time,
 ) {
 	db, err := sql.Open("pgx", dbURL)

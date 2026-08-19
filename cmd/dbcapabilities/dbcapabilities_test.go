@@ -51,7 +51,7 @@ func runCapabilities(c *qt.C, args ...string) (stdout, stderr string, err error)
 // renderer moves from the two-column table to the sentences that follow it.
 func headerFields(text string) map[string]string {
 	block, _, _ := strings.Cut(text, "\n\n")
-	fields := map[string]string{}
+	fields := make(map[string]string)
 	for line := range strings.SplitSeq(block, "\n") {
 		label, value, _ := strings.Cut(line, ":")
 		fields[strings.TrimSpace(label)] = strings.TrimSpace(value)
@@ -284,7 +284,7 @@ func TestCapabilitiesCommand_FailurePath(t *testing.T) {
 	}{
 		{
 			name:    "missing database url",
-			args:    []string{},
+			args:    make([]string, 0),
 			wantErr: "database URL is required",
 		},
 		{

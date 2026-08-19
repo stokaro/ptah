@@ -38,33 +38,33 @@ func TestReverseSchemaDiff_Extensions(t *testing.T) {
 			name: "reverse only extensions added",
 			input: &types.SchemaDiff{
 				ExtensionsAdded:   []string{"pg_trgm"},
-				ExtensionsRemoved: []string{},
+				ExtensionsRemoved: make([]string, 0),
 			},
 			expected: &types.SchemaDiff{
-				ExtensionsAdded:   []string{},
+				ExtensionsAdded:   make([]string, 0),
 				ExtensionsRemoved: []string{"pg_trgm"},
 			},
 		},
 		{
 			name: "reverse only extensions removed",
 			input: &types.SchemaDiff{
-				ExtensionsAdded:   []string{},
+				ExtensionsAdded:   make([]string, 0),
 				ExtensionsRemoved: []string{"postgis"},
 			},
 			expected: &types.SchemaDiff{
 				ExtensionsAdded:   []string{"postgis"},
-				ExtensionsRemoved: []string{},
+				ExtensionsRemoved: make([]string, 0),
 			},
 		},
 		{
 			name: "no extensions to reverse",
 			input: &types.SchemaDiff{
-				ExtensionsAdded:   []string{},
-				ExtensionsRemoved: []string{},
+				ExtensionsAdded:   make([]string, 0),
+				ExtensionsRemoved: make([]string, 0),
 			},
 			expected: &types.SchemaDiff{
-				ExtensionsAdded:   []string{},
-				ExtensionsRemoved: []string{},
+				ExtensionsAdded:   make([]string, 0),
+				ExtensionsRemoved: make([]string, 0),
 			},
 		},
 		{
@@ -204,7 +204,7 @@ func TestGenerateDownMigrationSQL_Issue57_MissingTableNames(t *testing.T) {
 			{Name: "areas", RLSEnabled: true},
 			{Name: "commodities", RLSEnabled: true},
 		},
-		RLSPolicies: []dbschematypes.DBRLSPolicy{}, // Empty - this is the key to reproducing the bug
+		RLSPolicies: make([]dbschematypes.DBRLSPolicy, 0), // Empty - this is the key to reproducing the bug
 	}
 
 	// Create a generated schema that includes the RLS policies with table names

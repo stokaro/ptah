@@ -199,7 +199,7 @@ func TestBuild_LatestAndAnalysisShareOneSourceSnapshot(t *testing.T) {
 			"1_old.sql": {Data: []byte("DROP TABLE old_data;\n")},
 			"2_new.sql": {Data: []byte("DROP TABLE new_data;\n")},
 		},
-		reads: map[string]int{},
+		reads: make(map[string]int),
 	}
 
 	report, err := migrationlintreport.Build(context.Background(), migrationlintreport.Options{
@@ -309,7 +309,7 @@ func TestBuild_LoadsConventionalLintConfigFromSnapshot(t *testing.T) {
 			".ptah-lint.yaml": {Data: []byte("disabled-rules: [DS101]\n")},
 			"1_drop.sql":      {Data: []byte("DROP TABLE users;\n")},
 		},
-		reads: map[string]int{},
+		reads: make(map[string]int),
 	}
 
 	report, err := migrationlintreport.Build(context.Background(), migrationlintreport.Options{

@@ -117,7 +117,7 @@ func all(key capability.Capability, setup []string, statements ...string) experi
 // So the unguarded spelling of the same statement must be REFUSED. When both
 // are accepted the key is undecidable, with that stated, rather than recorded
 // as support the run did not separate from permissiveness.
-func guarded(key capability.Capability, setup []string, guardedStmts []string, unguarded string) experiment {
+func guarded(key capability.Capability, setup, guardedStmts []string, unguarded string) experiment {
 	return experiment{
 		decides: []capability.Capability{key},
 		setup:   setup,

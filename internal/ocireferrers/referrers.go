@@ -71,7 +71,7 @@ func ValidateFormat(format string) error {
 func List(
 	ctx context.Context,
 	client *ociartifact.Client,
-	reference string,
+	reference,
 	filter string,
 ) ([]Record, error) {
 	if client == nil {
@@ -153,7 +153,7 @@ func escapeText(value string) string {
 
 func writeJSON(w io.Writer, records []Record) error {
 	if records == nil {
-		records = []Record{}
+		records = make([]Record, 0)
 	}
 	encoder := json.NewEncoder(w)
 	encoder.SetIndent("", "  ")

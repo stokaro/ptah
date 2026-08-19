@@ -81,7 +81,7 @@ func TestFieldLevelCheckConstraint_RoundTrip_Integration(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	filteredSchema := filterCheckConstraintSchema(dbSchema, "ptah_test_files")
 
-	checks := map[string]bool{}
+	checks := make(map[string]bool)
 	for _, cs := range filteredSchema.Constraints {
 		if cs.Type == "CHECK" && cs.TableName == "ptah_test_files" {
 			checks[cs.Name] = true

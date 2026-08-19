@@ -239,11 +239,11 @@ func Render(ctx context.Context, db *goschema.Database, opts Options) (Result, e
 
 	b := &builder{
 		opts:           opts,
-		messageImports: map[string][]string{},
-		enumByKey:      map[string]string{},
-		enumNames:      map[string]bool{},
-		valueOwners:    map[string][]string{},
-		messageOwners:  map[string]string{},
+		messageImports: make(map[string][]string),
+		enumByKey:      make(map[string]string),
+		enumNames:      make(map[string]bool),
+		valueOwners:    make(map[string][]string),
+		messageOwners:  make(map[string]string),
 	}
 
 	anchor := anchorName(opts.OutPath)
@@ -290,8 +290,8 @@ func Render(ctx context.Context, db *goschema.Database, opts Options) (Result, e
 
 	out := b.group(messages, enums, homes, prev, anchor)
 
-	sources := map[string]string{}
-	pathOf := map[string]string{}
+	sources := make(map[string]string)
+	pathOf := make(map[string]string)
 	names := make([]string, 0, len(out))
 	files := make([]OutputFile, 0, len(out))
 	for _, current := range out {
@@ -441,7 +441,7 @@ func (b *builder) buildDesired(db *goschema.Database) (desiredShape, error) {
 			Name:    names[table.QualifiedName()],
 			Comment: b.sourceComment(table.Comment),
 		}
-		seen := map[string]string{}
+		seen := make(map[string]string)
 		for _, f := range tableFields {
 			df, err := b.buildField(table, f, enumIndex)
 			if err != nil {
@@ -469,7 +469,7 @@ func (b *builder) buildDesired(db *goschema.Database) (desiredShape, error) {
 // still collide after qualification the export fails naming both, rather than
 // aliasing with a numeric suffix whose result would depend on table order.
 func (b *builder) assignMessageNames(tables []goschema.Table) (map[string]string, error) {
-	bare := map[string][]goschema.Table{}
+	bare := make(map[string][]goschema.Table)
 	for _, table := range tables {
 		name, changed := messageName(schemaexport.TableAPIName(table, schemaexport.TargetProtobuf))
 		if changed {
@@ -480,8 +480,8 @@ func (b *builder) assignMessageNames(tables []goschema.Table) (map[string]string
 		bare[name] = append(bare[name], table)
 	}
 
-	names := map[string]string{}
-	final := map[string][]goschema.Table{}
+	names := make(map[string]string)
+	final := make(map[string][]goschema.Table)
 	for name, group := range bare {
 		if len(group) == 1 {
 			names[group[0].QualifiedName()] = name

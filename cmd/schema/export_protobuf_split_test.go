@@ -169,7 +169,7 @@ func protoNames(c *qt.C, dir string) []string {
 // readProtoSet reads every .proto in dir, keyed by base name.
 func readProtoSet(c *qt.C, dir string) map[string]string {
 	c.Helper()
-	set := map[string]string{}
+	set := make(map[string]string)
 	for _, name := range protoNames(c, dir) {
 		body, err := os.ReadFile(filepath.Join(dir, name))
 		c.Assert(err, qt.IsNil)

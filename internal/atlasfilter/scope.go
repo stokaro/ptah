@@ -333,7 +333,7 @@ func validateIncludeSelectorTypes(raw string, types map[string]struct{}) error {
 
 func validateIncludeSelectorTypesAgainst(
 	raw string,
-	types map[string]struct{},
+	types,
 	selectable map[string]struct{},
 ) error {
 	for resourceType := range types {

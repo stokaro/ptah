@@ -74,7 +74,7 @@ func rlsPolicyRows(t *testing.T, dbURL string) []string {
 		  ORDER BY 1`)
 	c.Assert(err, qt.IsNil)
 	defer func() { _ = rows.Close() }()
-	found := []string{}
+	found := make([]string, 0)
 	for rows.Next() {
 		var row string
 		c.Assert(rows.Scan(&row), qt.IsNil)
@@ -102,7 +102,7 @@ func qualifiedRLSPolicyRows(t *testing.T, dbURL string) []string {
 		  ORDER BY 1`)
 	c.Assert(err, qt.IsNil)
 	defer func() { _ = rows.Close() }()
-	found := []string{}
+	found := make([]string, 0)
 	for rows.Next() {
 		var row string
 		c.Assert(rows.Scan(&row), qt.IsNil)
@@ -163,7 +163,7 @@ CREATE POLICY p ON orders FOR ALL TO PUBLIC USING (tenant_id = 1);
 	// the apply is refused and the target keeps no policy on either spelling.
 	c.Assert(err, qt.ErrorMatches, `(?s)dev database simulation failed during plan: .*relation "orders" does not exist.*the plan was not applied to the target database`)
 	c.Assert(out, qt.Not(qt.Contains), "Schema apply completed successfully.")
-	c.Assert(rlsPolicyRows(t, targetURL), qt.DeepEquals, []string{})
+	c.Assert(rlsPolicyRows(t, targetURL), qt.DeepEquals, make([]string, 0))
 }
 
 // TestSchemaApplyRLSDeclaredRelationAcceptedLivePostgres is the
@@ -236,7 +236,7 @@ CREATE POLICY p ON "ORDERS" FOR ALL TO PUBLIC USING (tenant_id = 1);
 	c.Assert(out, qt.Not(qt.Contains), "Schema apply completed successfully.")
 	// Neither spelling is protected, and in particular `orders` did not quietly
 	// acquire the policy the file put on `ORDERS`.
-	c.Assert(qualifiedRLSPolicyRows(t, targetURL), qt.DeepEquals, []string{})
+	c.Assert(qualifiedRLSPolicyRows(t, targetURL), qt.DeepEquals, make([]string, 0))
 }
 
 // executeRenderedSchema renders a schema file the way `ptah schema render` does
@@ -326,5 +326,5 @@ CREATE POLICY p ON "ORDERS" FOR ALL TO PUBLIC USING (tenant_id = 1);
 	err := executeRenderedSchema(t, targetURL, schemaPath)
 
 	c.Assert(err, qt.ErrorMatches, `(?s).*relation "ORDERS" does not exist.*`)
-	c.Assert(qualifiedRLSPolicyRows(t, targetURL), qt.DeepEquals, []string{})
+	c.Assert(qualifiedRLSPolicyRows(t, targetURL), qt.DeepEquals, make([]string, 0))
 }

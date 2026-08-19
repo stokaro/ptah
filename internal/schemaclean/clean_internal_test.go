@@ -345,7 +345,7 @@ func TestUnlistedObjectsSkipsWhatThePlanAlreadyNames(t *testing.T) {
 				{Type: ObjectTypeTable, Name: revisiontable.Atlas},
 			},
 			candidates: []Object{{Type: ObjectTypeTable, Name: revisiontable.Atlas}},
-			want:       []Object{},
+			want:       make([]Object, 0),
 		},
 		{
 			name: "skips on name alone, ignoring a schema the reader qualified",
@@ -353,7 +353,7 @@ func TestUnlistedObjectsSkipsWhatThePlanAlreadyNames(t *testing.T) {
 				{Type: ObjectTypeTable, Schema: "dbo", Name: revisiontable.Atlas},
 			},
 			candidates: []Object{{Type: ObjectTypeTable, Name: revisiontable.Atlas}},
-			want:       []Object{},
+			want:       make([]Object, 0),
 		},
 		{
 			name:   "adds each distinct name once",

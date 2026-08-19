@@ -1579,7 +1579,7 @@ func validateSchemaForeignKeyColumns(
 	localColumns []string,
 	target goschema.Table,
 	referencedColumns []string,
-	onDelete string,
+	onDelete,
 	onUpdate string,
 ) error {
 	if err := validateForeignKeyColumnLists(localColumns, referencedColumns); err != nil {
@@ -1655,7 +1655,7 @@ func validateForeignKeyColumnCompatibility(
 	local goschema.Field,
 	target goschema.Table,
 	referenced goschema.Field,
-	onDelete string,
+	onDelete,
 	onUpdate string,
 ) error {
 	normalizedDialect := platform.NormalizeDialect(dialect)
@@ -1752,7 +1752,7 @@ func validateMySQLFamilyGeneratedForeignKey(
 	local goschema.Field,
 	target goschema.Table,
 	referenced goschema.Field,
-	onDelete string,
+	onDelete,
 	onUpdate string,
 ) error {
 	generated := local.GeneratedExpression != "" || referenced.GeneratedExpression != ""
@@ -1874,7 +1874,7 @@ func effectiveColumnMetadata(columnValue, tableValue string) string {
 }
 
 func incompatibleForeignKeyTextMetadataError(
-	dialect string,
+	dialect,
 	metadata string,
 	owner goschema.Table,
 	local goschema.Field,
@@ -2311,7 +2311,7 @@ func isCascadingReferentialAction(action string) bool {
 }
 
 func validateSQLServerCascadeActionGraph(
-	dialect string,
+	dialect,
 	clause string,
 	graph map[string][]string,
 ) error {

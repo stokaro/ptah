@@ -29,7 +29,7 @@ import (
 // wrote, so this seam needs the same random population rather than the handful
 // of fixtures a unit test can name. Order is asserted because it feeds the
 // Atlas hash.
-func assertCaptureSelectsTheSame(c *qt.C, dir string, format atlasmigrateimport.Format, names []string, layout []string) {
+func assertCaptureSelectsTheSame(c *qt.C, dir string, format atlasmigrateimport.Format, names, layout []string) {
 	c.Helper()
 	captured, err := atlasmigrate.CaptureApplySource(os.DirFS(dir), format)
 	c.Assert(err, qt.IsNil, qt.Commentf("PTAH_ATLAS_FUZZ_LAYOUT=%s", strings.Join(layout, ",")))
@@ -63,7 +63,7 @@ func assertCaptureSelectsTheSame(c *qt.C, dir string, format atlasmigrateimport.
 // than skipped. Skipping it would make this assertion vacuous exactly when the
 // importer started refusing everything — the one regression it most needs to
 // catch — so a refusal outside flywayRefusalClasses fails the shape.
-func assertImporterConsumesTheCoveredSet(c *qt.C, dir string, names []string, layout []string) {
+func assertImporterConsumesTheCoveredSet(c *qt.C, dir string, names, layout []string) {
 	c.Helper()
 	loaded, err := atlasmigrateimport.LoadDir(dir, atlasmigrateimport.FormatFlyway)
 	if err != nil {

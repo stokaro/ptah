@@ -45,7 +45,7 @@ CREATE TABLE pets (id INTEGER PRIMARY KEY);
 // the tool against the database the first one left behind.
 func newDirtyRetryMigrator(
 	c *qt.C,
-	dbPath string,
+	dbPath,
 	secondUp string,
 	txMode migrator.MigrationTxMode,
 	revisionFormat migrator.RevisionTableFormat,
@@ -993,7 +993,7 @@ func TestMigrateUp_RetryFailurePreservesCommittedAppliedFloor(t *testing.T) {
 // honored by only one of them looks fixed from every file-based test.
 func newRegisteredDirtyRetryMigrator(
 	c *qt.C,
-	dbPath string,
+	dbPath,
 	secondUp string,
 ) (*dbschema.DatabaseConnection, *migrator.Migrator) {
 	c.Helper()

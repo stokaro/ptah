@@ -1530,7 +1530,7 @@ func mapAtlasPositionalValue(group string, verb atlasVerb, positional atlasPosit
 }
 
 func splitAtlasPositionals(flags []atlasargs.Flag, args []string) (
-	withoutPositionals []string,
+	withoutPositionals,
 	positionals []string,
 ) {
 	valueFlags := atlasValueFlagNames(flags)
@@ -1581,7 +1581,7 @@ func atlasLongFlagName(arg string) (string, bool) {
 	return before, true
 }
 
-func atlasFlagName(arg string) (name string, inlineValue bool, ok bool) {
+func atlasFlagName(arg string) (name string, inlineValue, ok bool) {
 	switch {
 	case strings.HasPrefix(arg, "--") && len(arg) > len("--"):
 		before, _ := atlasLongFlagName(arg)

@@ -85,7 +85,7 @@ func sqliteIndexNames(c *qt.C, dbPath string) []string {
 	c.Assert(err, qt.IsNil)
 	defer func() { c.Assert(rows.Close(), qt.IsNil) }()
 
-	names := []string{}
+	names := make([]string, 0)
 	for rows.Next() {
 		var name string
 		c.Assert(rows.Scan(&name), qt.IsNil)
@@ -384,7 +384,7 @@ func inspectJSONNullability(c *qt.C, document, table string) map[string]bool {
 	c.Assert(json.Unmarshal([]byte(document), &report), qt.IsNil)
 	c.Assert(report.Schemas, qt.HasLen, 1)
 
-	nullability := map[string]bool{}
+	nullability := make(map[string]bool)
 	for _, reported := range report.Schemas[0].Tables {
 		for _, column := range reported.Columns {
 			nullability[column.Name] = column.Null

@@ -285,7 +285,7 @@ func indexMismatches(refs []types.IndexRef, kind, label string) []ShadowMismatch
 
 func changedObjectMismatches[T any](
 	values []T,
-	kind string,
+	kind,
 	label string,
 	object func(T) string,
 	changes func(T) map[string]string,

@@ -92,7 +92,7 @@ env:
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(cfg.OnlineDDL, qt.DeepEquals, projectconfig.OnlineDDLConfig{
-		Args: []string{},
+		Args: make([]string, 0),
 	})
 	c.Assert(cfg.OnlineDDL.Enabled(), qt.IsFalse)
 }

@@ -145,7 +145,7 @@ func (c *Client) Inspect(ctx context.Context, rawRef string) (ManifestInfo, erro
 // one keeps the provenance.
 func (c *Client) DiscoverReferrers(
 	ctx context.Context,
-	subjectRef string,
+	subjectRef,
 	artifactType string,
 ) (ocispec.Descriptor, []DiscoveredReferrer, error) {
 	ctx, cancel := c.operationContext(ctx)
@@ -222,7 +222,7 @@ func DiscoverReferrersFrom(
 // different registries. What differs is only that this one records which side
 // each descriptor came from.
 func mergeDiscovered(
-	standard []ocispec.Descriptor,
+	standard,
 	durable []ocispec.Descriptor,
 	limit int,
 ) ([]DiscoveredReferrer, error) {
@@ -274,7 +274,7 @@ func mergeDiscovered(
 // only when the caller remembers to establish it first is not a guarantee.
 func (c *Client) FetchReferrer(
 	ctx context.Context,
-	subjectRef string,
+	subjectRef,
 	referrerDigest string,
 ) (Artifact, error) {
 	referrerDigest = strings.TrimSpace(referrerDigest)

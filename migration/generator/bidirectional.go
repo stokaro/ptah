@@ -147,7 +147,7 @@ func planBidirectionalSchemaDiffWithRefs(
 	opts BidirectionalSchemaPlanOptions,
 	dialect string,
 	caps capability.Capabilities,
-	forwardCreateRefs []types.IndexRef,
+	forwardCreateRefs,
 	forwardDropRefs []types.IndexRef,
 ) (*BidirectionalSchemaPlan, error) {
 	if err := validateSelectedForwardConcurrentCapabilities(dialect, caps, forwardCreateRefs, forwardDropRefs); err != nil {
@@ -336,7 +336,7 @@ func requireConcurrentIndexCapability(
 func validateSelectedForwardConcurrentCapabilities(
 	dialect string,
 	caps capability.Capabilities,
-	forwardCreateRefs []types.IndexRef,
+	forwardCreateRefs,
 	forwardDropRefs []types.IndexRef,
 ) error {
 	if len(forwardCreateRefs) > 0 {

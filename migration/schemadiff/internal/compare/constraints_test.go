@@ -78,14 +78,14 @@ func TestConstraints(t *testing.T) {
 		{
 			name: "no constraints in either schema",
 			generated: &goschema.Database{
-				Constraints: []goschema.Constraint{},
+				Constraints: make([]goschema.Constraint, 0),
 			},
 			database: &types.DBSchema{
 				// Empty database - no existing constraints
 			},
 			expected: &difftypes.SchemaDiff{
-				ConstraintsAdded:   []string{},
-				ConstraintsRemoved: []string{},
+				ConstraintsAdded:   make([]string, 0),
+				ConstraintsRemoved: make([]string, 0),
 			},
 		},
 		{
@@ -565,8 +565,8 @@ func TestConstraints_HasChanges(t *testing.T) {
 		{
 			name: "no constraint changes",
 			diff: &difftypes.SchemaDiff{
-				ConstraintsAdded:   []string{},
-				ConstraintsRemoved: []string{},
+				ConstraintsAdded:   make([]string, 0),
+				ConstraintsRemoved: make([]string, 0),
 			},
 			expected: false,
 		},
@@ -782,7 +782,7 @@ func TestConstraints_ExcludeConstraintComparison(t *testing.T) {
 				},
 			},
 			database: &types.DBSchema{
-				Constraints: []types.DBConstraint{},
+				Constraints: make([]types.DBConstraint, 0),
 			},
 			expected: &difftypes.SchemaDiff{
 				ConstraintsAdded: []string{"no_overlapping_bookings"},
@@ -791,7 +791,7 @@ func TestConstraints_ExcludeConstraintComparison(t *testing.T) {
 		{
 			name: "EXCLUDE constraint removed",
 			generated: &goschema.Database{
-				Constraints: []goschema.Constraint{},
+				Constraints: make([]goschema.Constraint, 0),
 			},
 			database: &types.DBSchema{
 				Constraints: []types.DBConstraint{
@@ -929,8 +929,8 @@ func TestConstraints_ExcludeConstraintComparison(t *testing.T) {
 				},
 			},
 			expected: &difftypes.SchemaDiff{
-				ConstraintsAdded:   []string{},
-				ConstraintsRemoved: []string{},
+				ConstraintsAdded:   make([]string, 0),
+				ConstraintsRemoved: make([]string, 0),
 			},
 		},
 	}

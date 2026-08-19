@@ -121,9 +121,9 @@ func validatePreviousBytes(raw []byte) ([]byte, error) {
 func loadPrevious(ctx context.Context, pkgDir, anchor string, raw []byte, siblings map[string][]byte, wantPackage string) (*previousSet, error) {
 	order := append([]string{anchor}, sortedKeys(siblings)...)
 
-	sources := map[string]string{}
-	pathOf := map[string]string{}
-	own := map[string]bool{}
+	sources := make(map[string]string)
+	pathOf := make(map[string]string)
+	own := make(map[string]bool)
 	for _, name := range order {
 		data := raw
 		if name != anchor {
@@ -149,10 +149,10 @@ func loadPrevious(ctx context.Context, pkgDir, anchor string, raw []byte, siblin
 
 	prev := &previousSet{
 		Package:     wantPackage,
-		Messages:    map[string]previousType{},
-		Enums:       map[string]previousType{},
-		MessageFile: map[string]string{},
-		EnumFile:    map[string]string{},
+		Messages:    make(map[string]previousType),
+		Enums:       make(map[string]previousType),
+		MessageFile: make(map[string]string),
+		EnumFile:    make(map[string]string),
 		Files:       order,
 	}
 	for _, name := range order {
@@ -217,8 +217,8 @@ func shortDigest(s string) string {
 // Message reserved ranges carry an EXCLUSIVE end, unlike enum ranges.
 func messageState(md protoreflect.MessageDescriptor, file protoreflect.FileDescriptor, own map[string]bool) (previousType, error) {
 	state := previousType{
-		Numbers: map[string]int32{},
-		Fields:  map[string]previousField{},
+		Numbers: make(map[string]int32),
+		Fields:  make(map[string]previousField),
 	}
 	for i := range md.Fields().Len() {
 		fd := md.Fields().Get(i)
@@ -247,7 +247,7 @@ func messageState(md protoreflect.MessageDescriptor, file protoreflect.FileDescr
 // carry an INCLUSIVE end, unlike message ranges - a real asymmetry in
 // protoreflect that silently drops the last reserved number if ignored.
 func enumState(ed protoreflect.EnumDescriptor) (previousType, error) {
-	state := previousType{Numbers: map[string]int32{}}
+	state := previousType{Numbers: make(map[string]int32)}
 	for i := range ed.Values().Len() {
 		vd := ed.Values().Get(i)
 		state.Numbers[string(vd.Name())] = int32(vd.Number())

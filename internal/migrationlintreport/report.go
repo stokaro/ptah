@@ -211,7 +211,7 @@ func Build(ctx context.Context, opts Options, projectCfg projectconfig.Config) (
 	if err != nil {
 		return Report{}, err
 	}
-	disabled := append(append([]string{}, cfg.DisabledRules...), opts.Disabled...)
+	disabled := append(append(make([]string, 0), cfg.DisabledRules...), opts.Disabled...)
 	analysis, schemas, err := lintDirectory(ctx, opts, snapshot, prepared.dirFormat, lint.Options{
 		Compatibility: opts.Compatibility,
 		Dialect:       dialect,
@@ -356,7 +356,7 @@ func (opts Options) effectiveDevURL(projectCfg projectconfig.Config) string {
 }
 
 func effectiveProjectString(
-	optionValue projectconfig.Value[string],
+	optionValue,
 	configValue projectconfig.Value[string],
 ) string {
 	if optionValue.Present || !configValue.Present {
@@ -378,7 +378,7 @@ func loadEffectiveConfig(
 		cfg.Dialect = projectCfg.Lint.Dialect
 	}
 	if len(cfg.DisabledRules) == 0 {
-		cfg.DisabledRules = append([]string{}, projectCfg.Lint.DisabledRules...)
+		cfg.DisabledRules = append(make([]string, 0), projectCfg.Lint.DisabledRules...)
 	}
 	cfg.Rules = effectiveLintRuleConfigs(projectCfg.Lint.RuleConfigs, cfg.Rules)
 	// The policy file was canonicalized when it parsed, but a dialect taken
@@ -688,8 +688,8 @@ type lintVersionSelection struct {
 
 func newLintVersionSelection() lintVersionSelection {
 	return lintVersionSelection{
-		seenVersion: map[int64]struct{}{},
-		seenKey:     map[string]struct{}{},
+		seenVersion: make(map[int64]struct{}),
+		seenKey:     make(map[string]struct{}),
 	}
 }
 
@@ -843,8 +843,8 @@ func gitDirConfigured(
 
 func gitChangedMigrationSelection(
 	ctx context.Context,
-	migrationsDir string,
-	gitBase string,
+	migrationsDir,
+	gitBase,
 	gitDir string,
 	dirFormat migrator.MigrationDirFormat,
 ) (lintVersionSelection, error) {
@@ -1030,7 +1030,7 @@ func latestMigrationSelectionFromFiles(files []migrator.MigrationFile, latest ui
 	})
 
 	unique := make([]migrator.MigrationFile, 0, len(candidates))
-	seen := map[string]struct{}{}
+	seen := make(map[string]struct{})
 	for _, file := range candidates {
 		key := file.RevisionVersion()
 		if _, ok := seen[key]; ok {
@@ -1351,7 +1351,7 @@ func ErrorReport(failOn, msg string) Report {
 	return Report{
 		Failed:           true,
 		FailureThreshold: failOn,
-		Findings:         []lint.Finding{},
+		Findings:         make([]lint.Finding, 0),
 		Error:            msg,
 	}
 }

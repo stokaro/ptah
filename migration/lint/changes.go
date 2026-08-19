@@ -79,7 +79,7 @@ func extractSchemaChanges(file *File, dialect string, scope schemaScope) ([]Sche
 		return nil, nil
 	}
 	var changes []SchemaChange
-	excluded := map[int]bool{}
+	excluded := make(map[int]bool)
 	for i := range file.Statements {
 		stmtChanges, out := statementSchemaChanges(file, file.Statements[i], dialect, scope)
 		changes = append(changes, stmtChanges...)

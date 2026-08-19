@@ -34,7 +34,7 @@ func suppressScopedAway(current *types.DBSchema, omitted []goschema.ScopedObject
 	names := make(map[string]map[string]bool, len(omitted))
 	for _, object := range omitted {
 		if names[object.Kind] == nil {
-			names[object.Kind] = map[string]bool{}
+			names[object.Kind] = make(map[string]bool)
 		}
 		names[object.Kind][object.Name] = true
 	}

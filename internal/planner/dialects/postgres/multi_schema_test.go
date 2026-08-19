@@ -25,7 +25,7 @@ func TestPlanner_GenerateMigrationAST_MultiSchemaTablesAndFKs(t *testing.T) {
 			{StructName: "Invoice", Name: "id", Type: "SERIAL", Primary: true},
 			{StructName: "Invoice", Name: "user_id", Type: "INTEGER", Foreign: "auth.users(id)"},
 		},
-		SelfReferencingForeignKeys: map[string][]goschema.SelfReferencingFK{},
+		SelfReferencingForeignKeys: make(map[string][]goschema.SelfReferencingFK),
 	}
 	diff := &types.SchemaDiff{
 		TablesAdded: []string{"auth.users", "billing.invoices"},
@@ -58,7 +58,7 @@ func TestPlanner_GenerateMigrationAST_TrimsSchemaPreconditions(t *testing.T) {
 			{StructName: "Account", Name: "id", Type: "SERIAL", Primary: true},
 			{StructName: "Blank", Name: "id", Type: "SERIAL", Primary: true},
 		},
-		SelfReferencingForeignKeys: map[string][]goschema.SelfReferencingFK{},
+		SelfReferencingForeignKeys: make(map[string][]goschema.SelfReferencingFK),
 	}
 	diff := &types.SchemaDiff{
 		TablesAdded: []string{"auth.users", "auth.accounts", "blank"},
@@ -91,7 +91,7 @@ func TestPlanner_GenerateMigrationAST_DoesNotQualifyAmbiguousLeafFK(t *testing.T
 			{StructName: "Invoice", Name: "id", Type: "SERIAL", Primary: true},
 			{StructName: "Invoice", Name: "user_id", Type: "INTEGER", Foreign: "users(id)"},
 		},
-		SelfReferencingForeignKeys: map[string][]goschema.SelfReferencingFK{},
+		SelfReferencingForeignKeys: make(map[string][]goschema.SelfReferencingFK),
 	}
 	diff := &types.SchemaDiff{
 		TablesAdded: []string{"auth.users", "crm.users", "billing.invoices"},

@@ -708,7 +708,7 @@ func TestRenderInspectedForAtlasCLIOutputIsSelfConsistent(t *testing.T) {
 			parsed, err := atlashcl.Parse(result.Data, "compat.hcl")
 			c.Assert(err, qt.IsNil, qt.Commentf("Ptah cannot read its own compatibility output"))
 
-			declared := map[string]bool{}
+			declared := make(map[string]bool)
 			for _, sequence := range parsed.Sequences {
 				declared[sequence.Name] = true
 			}

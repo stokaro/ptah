@@ -62,7 +62,7 @@ func NewClickHouseReader(db sqlrunner.Runner, schema string) *Reader {
 // which columns its catalog happens to have.
 func NewClickHouseReaderWithCapabilities(
 	db sqlrunner.Runner,
-	schema string,
+	schema,
 	version string,
 	caps capability.Capabilities,
 ) *Reader {

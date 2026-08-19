@@ -184,7 +184,7 @@ func TestRunLint_CuratedFixtureProducesExpectedRuleHits(t *testing.T) {
 	c.Assert(json.Unmarshal([]byte(stderr), &report), qt.IsNil)
 	c.Assert(report.Failed, qt.IsTrue)
 
-	rules := map[string]int{}
+	rules := make(map[string]int)
 	for _, f := range report.Findings {
 		rules[f.Rule]++
 	}
@@ -1145,7 +1145,7 @@ func TestRunLint_ExplicitEmptyDialectOverridesConfig(t *testing.T) {
 	c.Assert(json.Unmarshal([]byte(stderr), &report), qt.IsNil)
 	c.Assert(report.Dialect, qt.Equals, "")
 
-	rules := map[string]int{}
+	rules := make(map[string]int)
 	for _, f := range report.Findings {
 		rules[f.Rule]++
 	}

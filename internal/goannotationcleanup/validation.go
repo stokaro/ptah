@@ -124,13 +124,13 @@ func annotationRepresented(removal removedLine, sourceDB, exportedDB *goschema.D
 	return matcher(removal, sourceDB, exportedDB)
 }
 
-func schemaRepresented(removal removedLine, _ *goschema.Database, exportedDB *goschema.Database) bool {
+func schemaRepresented(removal removedLine, _, exportedDB *goschema.Database) bool {
 	return slices.ContainsFunc(exportedDB.Schemas, func(schema goschema.Schema) bool {
 		return schema.Name == removal.values["name"]
 	})
 }
 
-func enumRepresented(removal removedLine, _ *goschema.Database, exportedDB *goschema.Database) bool {
+func enumRepresented(removal removedLine, _, exportedDB *goschema.Database) bool {
 	return slices.ContainsFunc(exportedDB.Enums, func(enum goschema.Enum) bool {
 		return enum.Name == removal.values["name"] &&
 			enum.Schema == removal.values["schema"] &&
@@ -138,45 +138,45 @@ func enumRepresented(removal removedLine, _ *goschema.Database, exportedDB *gosc
 	})
 }
 
-func extensionRepresented(removal removedLine, _ *goschema.Database, exportedDB *goschema.Database) bool {
+func extensionRepresented(removal removedLine, _, exportedDB *goschema.Database) bool {
 	return slices.ContainsFunc(exportedDB.Extensions, func(extension goschema.Extension) bool {
 		return extension.Name == removal.values["name"]
 	})
 }
 
-func functionRepresented(removal removedLine, _ *goschema.Database, exportedDB *goschema.Database) bool {
+func functionRepresented(removal removedLine, _, exportedDB *goschema.Database) bool {
 	return slices.ContainsFunc(exportedDB.Functions, func(function goschema.Function) bool {
 		return function.Name == removal.values["name"] && function.Body == removal.values["body"]
 	})
 }
 
-func sequenceRepresented(removal removedLine, _ *goschema.Database, exportedDB *goschema.Database) bool {
+func sequenceRepresented(removal removedLine, _, exportedDB *goschema.Database) bool {
 	return slices.ContainsFunc(exportedDB.Sequences, func(sequence goschema.Sequence) bool {
 		return sameSchemaObject(sequence.Schema, sequence.Name, removal.values["schema"], removal.values["name"])
 	})
 }
 
-func domainRepresented(removal removedLine, _ *goschema.Database, exportedDB *goschema.Database) bool {
+func domainRepresented(removal removedLine, _, exportedDB *goschema.Database) bool {
 	return slices.ContainsFunc(exportedDB.Domains, func(domain goschema.Domain) bool {
 		return sameSchemaObject(domain.Schema, domain.Name, removal.values["schema"], removal.values["name"]) &&
 			domain.BaseType == removal.values["type"]
 	})
 }
 
-func compositeRepresented(removal removedLine, _ *goschema.Database, exportedDB *goschema.Database) bool {
+func compositeRepresented(removal removedLine, _, exportedDB *goschema.Database) bool {
 	return slices.ContainsFunc(exportedDB.CompositeTypes, func(composite goschema.CompositeType) bool {
 		return sameSchemaObject(composite.Schema, composite.Name, removal.values["schema"], removal.values["name"])
 	})
 }
 
-func rangeRepresented(removal removedLine, _ *goschema.Database, exportedDB *goschema.Database) bool {
+func rangeRepresented(removal removedLine, _, exportedDB *goschema.Database) bool {
 	return slices.ContainsFunc(exportedDB.Ranges, func(rangeType goschema.Range) bool {
 		return sameSchemaObject(rangeType.Schema, rangeType.Name, removal.values["schema"], removal.values["name"]) &&
 			rangeType.Subtype == removal.values["subtype"]
 	})
 }
 
-func viewRepresented(removal removedLine, _ *goschema.Database, exportedDB *goschema.Database) bool {
+func viewRepresented(removal removedLine, _, exportedDB *goschema.Database) bool {
 	return slices.ContainsFunc(exportedDB.Views, func(view goschema.View) bool {
 		return view.Name == removal.values["name"] && view.Body == removal.values["body"]
 	})
@@ -184,7 +184,7 @@ func viewRepresented(removal removedLine, _ *goschema.Database, exportedDB *gosc
 
 func materializedViewRepresented(
 	removal removedLine,
-	_ *goschema.Database,
+	_,
 	exportedDB *goschema.Database,
 ) bool {
 	return slices.ContainsFunc(exportedDB.MaterializedViews, func(view goschema.MaterializedView) bool {
@@ -192,24 +192,24 @@ func materializedViewRepresented(
 	})
 }
 
-func triggerRepresented(removal removedLine, _ *goschema.Database, exportedDB *goschema.Database) bool {
+func triggerRepresented(removal removedLine, _, exportedDB *goschema.Database) bool {
 	return slices.ContainsFunc(exportedDB.Triggers, func(trigger goschema.Trigger) bool {
 		return trigger.Name == removal.values["name"] &&
 			sameTableRef(trigger.Table, removal.values["table"])
 	})
 }
 
-func rlsPolicyDirectiveRepresented(removal removedLine, _ *goschema.Database, exportedDB *goschema.Database) bool {
+func rlsPolicyDirectiveRepresented(removal removedLine, _, exportedDB *goschema.Database) bool {
 	return rlsPolicyRepresented(removal, exportedDB)
 }
 
-func roleRepresented(removal removedLine, _ *goschema.Database, exportedDB *goschema.Database) bool {
+func roleRepresented(removal removedLine, _, exportedDB *goschema.Database) bool {
 	return slices.ContainsFunc(exportedDB.Roles, func(role goschema.Role) bool {
 		return role.Name == removal.values["name"]
 	})
 }
 
-func grantRepresented(removal removedLine, _ *goschema.Database, exportedDB *goschema.Database) bool {
+func grantRepresented(removal removedLine, _, exportedDB *goschema.Database) bool {
 	return slices.ContainsFunc(exportedDB.Grants, func(grant goschema.Grant) bool {
 		return grant.Role == removal.values["role"] &&
 			slices.Equal(grant.Privileges, splitGrantPrivileges(removal.values)) &&
@@ -219,7 +219,7 @@ func grantRepresented(removal removedLine, _ *goschema.Database, exportedDB *gos
 	})
 }
 
-func dataRepresented(removal removedLine, _ *goschema.Database, exportedDB *goschema.Database) bool {
+func dataRepresented(removal removedLine, _, exportedDB *goschema.Database) bool {
 	return slices.ContainsFunc(exportedDB.ManagedData, func(data goschema.ManagedData) bool {
 		return sameSchemaObject(data.Schema, data.Table, removal.values["schema"], removal.values["table"]) &&
 			slices.Equal(data.Keys, splitAnnotationList(removal.values["key"])) &&

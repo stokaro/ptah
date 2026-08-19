@@ -352,7 +352,7 @@ func applyAndCensus(
 		c.Logf("%s: %v <- %s", dialect, execErr, strings.TrimSpace(statement))
 	}
 
-	census := map[string]string{}
+	census := make(map[string]string)
 	for _, probe := range renderPlanCatalogProbes {
 		var count int
 		scanErr := db.QueryRowContext(ctx, probe.query(suffix)).Scan(&count)

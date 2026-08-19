@@ -36,7 +36,7 @@ func sqliteUserTables(c *qt.C, dbPath string) []string {
 		"SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'atlas_%' ORDER BY name")
 	c.Assert(err, qt.IsNil)
 	defer rows.Close()
-	tables := []string{}
+	tables := make([]string, 0)
 	for rows.Next() {
 		var name string
 		c.Assert(rows.Scan(&name), qt.IsNil)
@@ -143,7 +143,7 @@ func TestCompatMigrateApply_ExecutesOnlyTheCoveredSet(t *testing.T) {
 			files:      []coveredSetFile{{name: "sub/2_b.sql", body: coveredSetNestedSQL}},
 			wantStdout: "No migration files to execute",
 			wantStderr: coveredSetNestedWarn,
-			wantTables: []string{},
+			wantTables: make([]string, 0),
 		},
 		{
 			name:       "top-level only is unchanged",
@@ -158,7 +158,7 @@ func TestCompatMigrateApply_ExecutesOnlyTheCoveredSet(t *testing.T) {
 			wantStdout: "No migration files to execute",
 			wantStderr: "warning: 1_a.SQL is not covered by atlas.sum and will not run; " +
 				"Atlas migrations are top-level files named *.sql\n",
-			wantTables: []string{},
+			wantTables: make([]string, 0),
 		},
 		{
 			name: "uppercase file beside a migration does not refuse the directory",

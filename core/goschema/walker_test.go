@@ -399,7 +399,7 @@ type User struct {
 	c.Assert(result.Tables, qt.HasLen, 1) // Should have only one "users" table
 
 	// Verify all fields are merged (should have id, name, email)
-	userFields := []goschema.Field{}
+	userFields := make([]goschema.Field, 0)
 	for _, field := range result.Fields {
 		if field.StructName == "User" {
 			userFields = append(userFields, field)
@@ -407,7 +407,7 @@ type User struct {
 	}
 	c.Assert(userFields, qt.HasLen, 3)
 
-	fieldNames := []string{}
+	fieldNames := make([]string, 0)
 	for _, field := range userFields {
 		fieldNames = append(fieldNames, field.Name)
 	}
@@ -640,8 +640,8 @@ type Product struct {
 			expectedTables: 0,
 			expectedFields: 0,
 			expectedEnums:  0,
-			checkTables:    []string{},
-			checkFields:    []string{},
+			checkTables:    make([]string, 0),
+			checkFields:    make([]string, 0),
 		},
 	}
 
@@ -926,7 +926,7 @@ func TestParseFS_ErrorCases(t *testing.T) {
 	}{
 		{
 			name:        "non-existent root directory",
-			fsys:        createTestFS(map[string]string{}),
+			fsys:        createTestFS(make(map[string]string)),
 			rootDir:     "non-existent",
 			expectError: true,
 			errorCheck:  func(err error) bool { return err != nil },
@@ -1016,7 +1016,7 @@ type Article struct {
 				"articles": {"users"},
 				"users":    {},
 			},
-			expectedSelfReferencing: map[string]int{},
+			expectedSelfReferencing: make(map[string]int),
 		},
 		{
 			name: "self-referencing foreign key",
@@ -1083,7 +1083,7 @@ type Order struct {
 				"products":   {"categories"},
 				"orders":     {"users", "products"},
 			},
-			expectedSelfReferencing: map[string]int{},
+			expectedSelfReferencing: make(map[string]int),
 		},
 	}
 

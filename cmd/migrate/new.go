@@ -130,7 +130,7 @@ func migrateNewCommand(cmd *cobra.Command, args []string, dirFormatValue string)
 func editCreatedMigration(
 	ctx context.Context,
 	pair generator.MigrationFilePair,
-	editorCmd string,
+	editorCmd,
 	migrationsDir string,
 	dirFormat migrator.MigrationDirFormat,
 ) error {

@@ -208,7 +208,7 @@ func (s *server) handle(msg rpcMessage) error {
 		delete(s.docs, params.TextDocument.URI)
 		return s.sendNotification("textDocument/publishDiagnostics", publishDiagnosticsParams{
 			URI:         params.TextDocument.URI,
-			Diagnostics: []lspDiagnostic{},
+			Diagnostics: make([]lspDiagnostic, 0),
 		})
 	case "textDocument/hover":
 		var params hoverParams
@@ -287,7 +287,7 @@ func (s *server) readMessage() (rpcMessage, error) {
 	return msg, nil
 }
 
-func (s *server) respond(id any, result any) error {
+func (s *server) respond(id, result any) error {
 	return s.writePayload(map[string]any{
 		"jsonrpc": "2.0",
 		"id":      id,

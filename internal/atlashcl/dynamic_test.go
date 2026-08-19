@@ -77,8 +77,8 @@ func TestParseDynamicBlockGeneratesTheBlocksItStandsFor(t *testing.T) {
       columns = ["email"]
     }
   }`,
-			wantIndexes: []string{},
-			wantColumns: []string{},
+			wantIndexes: make([]string, 0),
+			wantColumns: make([]string, 0),
 		},
 		{
 			name: "the iterator name is overridable",

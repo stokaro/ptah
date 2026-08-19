@@ -110,7 +110,7 @@ func queryStrings(c *qt.C, dbURL, query string) []string {
 	rows, err := conn.QueryContext(context.Background(), query)
 	c.Assert(err, qt.IsNil)
 	defer func() { _ = rows.Close() }()
-	found := []string{}
+	found := make([]string, 0)
 	for rows.Next() {
 		var row string
 		c.Assert(rows.Scan(&row), qt.IsNil)
@@ -240,8 +240,8 @@ func TestPlannerEnablesRowSecurityForANewTableWhoseSpellingDiffersLivePostgres(t
 					UsingExpression: "tenant_id = 1",
 				}},
 			},
-			wantPolicies:    []string{},
-			wantRowSecurity: []string{},
+			wantPolicies:    make([]string, 0),
+			wantRowSecurity: make([]string, 0),
 		},
 	}
 

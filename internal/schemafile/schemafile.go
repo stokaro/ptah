@@ -950,7 +950,7 @@ func tablePrimaryKeyName(table goschema.Table) string {
 	return table.Name + "_pkey"
 }
 
-func indexTable(structName, explicitTable string, tables map[string]goschema.Table) (tableName string, schema string) {
+func indexTable(structName, explicitTable string, tables map[string]goschema.Table) (tableName, schema string) {
 	if explicitTable != "" {
 		return splitTableIdentity(explicitTable)
 	}

@@ -1146,7 +1146,7 @@ func TestRenderSQL_MySQLFamilyInlineForeignKeyEmitsExplicitInnoDB(t *testing.T) 
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, "ENGINE=InnoDB")
-	c.Assert(table.Options, qt.DeepEquals, map[string]string{})
+	c.Assert(table.Options, qt.DeepEquals, make(map[string]string))
 }
 
 func TestRenderSQL_MySQLFamilyInlineForeignKeyNonInnoDB_FailurePath(t *testing.T) {

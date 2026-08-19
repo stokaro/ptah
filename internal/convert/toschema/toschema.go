@@ -639,11 +639,11 @@ func ToEnum(enum *ast.EnumNode) goschema.Enum {
 // MergeTree clause a .sql file declared (stokaro/ptah#1571).
 func ToDatabase(statements *ast.StatementList, sourcePlatform string) goschema.Database {
 	database := goschema.Database{
-		Schemas: []goschema.Schema{},
-		Tables:  []goschema.Table{},
-		Fields:  []goschema.Field{},
-		Indexes: []goschema.Index{},
-		Enums:   []goschema.Enum{},
+		Schemas: make([]goschema.Schema, 0),
+		Tables:  make([]goschema.Table, 0),
+		Fields:  make([]goschema.Field, 0),
+		Indexes: make([]goschema.Index, 0),
+		Enums:   make([]goschema.Enum, 0),
 	}
 
 	// Process all statements and categorize them

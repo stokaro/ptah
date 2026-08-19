@@ -83,7 +83,7 @@ ALTER TABLE accounts DROP COLUMN legacy;
 -- atlas:nolint DS103
 ALTER TABLE accounts ALTER COLUMN note TYPE varchar(10);
 `,
-			want: []string{},
+			want: make([]string, 0),
 		},
 	}
 
@@ -170,8 +170,8 @@ func TestAnalyzeFS_AtlasNoLintSelectorsAgreeAcrossSurfaces(t *testing.T) {
 		want      []string
 	}{
 		{name: "no directive", directive: "", want: []string{"PG101"}},
-		{name: "printed code", directive: "-- atlas:nolint PG101\n", want: []string{}},
-		{name: "analyzer name", directive: "-- atlas:nolint concurrent_index\n", want: []string{}},
+		{name: "printed code", directive: "-- atlas:nolint PG101\n", want: make([]string, 0)},
+		{name: "analyzer name", directive: "-- atlas:nolint concurrent_index\n", want: make([]string, 0)},
 		{name: "family prefix", directive: "-- atlas:nolint PG\n", want: []string{"PG101"}},
 		{name: "unknown selector", directive: "-- atlas:nolint totally_bogus\n", want: []string{"PG101"}},
 	}
@@ -225,8 +225,8 @@ func TestAnalyzeFS_AtlasSelectorsMatchTheCommunityBinaryOnADroppedColumn(t *test
 		want      []string
 	}{
 		{name: "no directive", directive: "", want: []string{"DS102"}},
-		{name: "printed code", directive: "-- atlas:nolint DS103\n", want: []string{}},
-		{name: "analyzer name", directive: "-- atlas:nolint destructive\n", want: []string{}},
+		{name: "printed code", directive: "-- atlas:nolint DS103\n", want: make([]string, 0)},
+		{name: "analyzer name", directive: "-- atlas:nolint destructive\n", want: make([]string, 0)},
 		{name: "the other Atlas code", directive: "-- atlas:nolint DS102\n", want: []string{"DS102"}},
 		{name: "family prefix", directive: "-- atlas:nolint DS\n", want: []string{"DS102"}},
 		{name: "single letter", directive: "-- atlas:nolint D\n", want: []string{"DS102"}},
@@ -275,7 +275,7 @@ func TestAnalyzeFS_BlankLineDetachesANoLintDirective(t *testing.T) {
 -- atlas:nolint DS103
 ALTER TABLE t DROP COLUMN legacy;
 `,
-			want: []string{},
+			want: make([]string, 0),
 		},
 		{
 			name: "directive detached by a blank line",
