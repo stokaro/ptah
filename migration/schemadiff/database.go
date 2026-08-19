@@ -3,6 +3,7 @@ package schemadiff
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"go.5x5.cz/ptah/config"
 	"go.5x5.cz/ptah/core/coverage"
@@ -62,9 +63,85 @@ func CompareWithDatabaseReportingUndecidedAdditions(
 		return nil, nil, fmt.Errorf("compare schemas: %w", err)
 	}
 	info.IdentifierSemantics = semantics
+
+	// Resolved here rather than inside the comparison for the same reason the
+	// identifier semantics are: a live fact belongs to the side that holds a
+	// connection, and the comparison itself must stay a pure function of the
+	// two states it is given.
+	expressions, err := resolveDomainExpressions(ctx, conn, generated, database)
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(expressions) > 0 {
+		merged := config.DefaultCompareOptions()
+		if opts != nil {
+			*merged = *opts
+		}
+		merged.DomainExpressions = expressions
+		opts = merged
+	}
+
 	return compareWithDatabaseInfoReportingUndecidedAdditions(
 		generated, database, info, opts,
 	)
+}
+
+// resolveDomainExpressions normalizes the declared CHECK and DEFAULT of every
+// domain the database also holds.
+//
+// Only those: a domain being created carries its declaration into the CREATE
+// statement unchanged, so nothing about it needs the server's spelling, and a
+// domain being dropped has no declaration left to normalize. The ones in the
+// middle are the ones a string comparison cannot decide (stokaro/ptah#1717).
+func resolveDomainExpressions(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	generated *goschema.Database,
+	database *dbschematypes.DBSchema,
+) (map[string]config.DomainExpression, error) {
+	if generated == nil || database == nil {
+		return nil, nil
+	}
+	held := make(map[string]struct{}, len(database.Domains))
+	for _, domain := range database.Domains {
+		held[strings.ToLower(domain.QualifiedName())] = struct{}{}
+	}
+
+	probes := make([]dbschema.DomainExpressionProbe, 0, len(generated.Domains))
+	for _, domain := range generated.Domains {
+		if _, exists := held[strings.ToLower(domain.QualifiedName())]; !exists {
+			continue
+		}
+		defaultExpression := domain.DefaultExpr
+		if defaultExpression == "" && domain.Default != "" {
+			defaultExpression = quoteDomainDefaultLiteral(domain.Default)
+		}
+		probes = append(probes, dbschema.DomainExpressionProbe{
+			Key:      domain.QualifiedName(),
+			BaseType: domain.BaseType,
+			Check:    domain.Check,
+			Default:  defaultExpression,
+		})
+	}
+	if len(probes) == 0 {
+		return nil, nil
+	}
+
+	expressions, err := conn.ResolveDomainExpressions(ctx, probes)
+	if err != nil {
+		return nil, fmt.Errorf("compare schemas: %w", err)
+	}
+	return expressions, nil
+}
+
+// quoteDomainDefaultLiteral renders a declared literal default as SQL.
+//
+// goschema.Domain keeps a literal and an expression apart, and only the
+// expression is already SQL. A literal reaches here as the value itself, so
+// `abc` has to become `'abc'` before a server can parse the statement carrying
+// it.
+func quoteDomainDefaultLiteral(literal string) string {
+	return "'" + strings.ReplaceAll(literal, "'", "''") + "'"
 }
 
 func collectIdentifierNames(

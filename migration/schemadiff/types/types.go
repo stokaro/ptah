@@ -837,6 +837,20 @@ type DomainDiff struct {
 	// Empty when the caller built the diff by hand or the domain's from-side is
 	// unknown; the drop ordering then falls back to declaration order.
 	CurrentBaseType string `json:"current_base_type,omitempty"`
+
+	// CurrentCheckConstraints names the CHECK constraints the database holds
+	// for this domain, in catalog order.
+	//
+	// ALTER DOMAIN removes a constraint by name, and a name is the one thing
+	// the declaration cannot supply: the author wrote an expression, and the
+	// server chose what to call the constraint enforcing it. Without these a
+	// changed CHECK has only the drop-and-recreate route, which fails on any
+	// domain a column uses -- that is, on every domain worth changing.
+	//
+	// Empty when nothing needs replacing, and empty as well when the reader
+	// could not enumerate them; the planner then leaves the CHECK alone rather
+	// than guessing a name (stokaro/ptah#1717).
+	CurrentCheckConstraints []string `json:"current_check_constraints,omitempty"`
 }
 
 // RangeDiff represents changes to an existing PostgreSQL range type.

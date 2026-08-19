@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 
+	"go.5x5.cz/ptah/config"
 	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
@@ -22,7 +23,7 @@ func Domains(
 	diff *difftypes.SchemaDiff,
 	cov Coverage,
 ) {
-	domainsWithSemantics(generated, database, diff, cov, identifier.ForDialect(""))
+	domainsWithSemantics(generated, database, diff, cov, identifier.ForDialect(""), nil)
 }
 
 // DomainsWithSemantics compares domain identity using the target database's
@@ -33,8 +34,9 @@ func DomainsWithSemantics(
 	diff *difftypes.SchemaDiff,
 	cov Coverage,
 	semantics identifier.Semantics,
+	expressions map[string]config.DomainExpression,
 ) {
-	domainsWithSemantics(generated, database, diff, cov, semantics.Normalize(""))
+	domainsWithSemantics(generated, database, diff, cov, semantics.Normalize(""), expressions)
 }
 
 func domainsWithSemantics(
@@ -43,6 +45,7 @@ func domainsWithSemantics(
 	diff *difftypes.SchemaDiff,
 	cov Coverage,
 	semantics identifier.Semantics,
+	expressions map[string]config.DomainExpression,
 ) {
 	generatedDomains := make(map[objectIdentity]goschema.Domain, len(generated.Domains))
 	generatedNames := make(map[objectIdentity]string, len(generated.Domains))
@@ -61,15 +64,16 @@ func domainsWithSemantics(
 
 	for identity, target := range generatedDomains {
 		if current, exists := databaseDomains[identity]; exists {
-			if changes := domainChanges(target, current); len(changes) > 0 {
+			if changes := domainChanges(target, current, expressions[generatedNames[identity]]); len(changes) > 0 {
 				// CurrentBaseType is the from-side of the comparison carried as
 				// a type spelling: the recreate path's non-CASCADE DROP runs
 				// against this database, so it is these references that can
 				// block it, not the target's.
 				diff.DomainsModified = append(diff.DomainsModified, difftypes.DomainDiff{
-					DomainName:      generatedNames[identity],
-					Changes:         changes,
-					CurrentBaseType: current.BaseType,
+					DomainName:              generatedNames[identity],
+					Changes:                 changes,
+					CurrentBaseType:         current.BaseType,
+					CurrentCheckConstraints: domainCheckConstraintNames(current),
 				})
 			}
 			continue
@@ -105,12 +109,32 @@ func domainsWithSemantics(
 
 // domainChanges compares the reconcilable options of a domain: its base type
 // (canonicalized so alias spellings such as VARCHAR vs character varying do not
-// churn) and NOT NULL. CHECK and DEFAULT are intentionally not compared:
-// PostgreSQL rewrites CHECK expressions (adding parentheses and ::casts) on
-// read-back, so a string comparison would report phantom changes, and a phantom
-// change would drive a drop+recreate. They are therefore create-only; changing
-// a domain's CHECK/DEFAULT requires a manual migration.
-func domainChanges(target goschema.Domain, current types.DBDomain) map[string]string {
+// churn), NOT NULL, and -- when a server has normalized the declaration --
+// CHECK and DEFAULT.
+//
+// CHECK and DEFAULT used to be create-only, and the reason was sound: PostgreSQL
+// stores a parsed CHECK and prints it back from the parse tree, so the
+// declaration that produced `(VALUE = ANY (ARRAY['x'::text]))` was
+// `VALUE IN ('x')` and the two never compared equal. What that cost was
+// silence. A changed constraint produced no diff and no diagnostic, so
+// `schema apply` reported a synced schema over a database still enforcing the
+// old rule (stokaro/ptah#1717).
+//
+// A resolved expression is the declaration after the same round trip through
+// the same server, so the two sides are the same language and a difference is a
+// real one. Without one -- an offline comparison has no server to ask -- both
+// attributes stay uncompared, which is the behavior this replaces.
+//
+// The comparison is deliberately one-directional: a declaration that states no
+// CHECK and no DEFAULT is not read as a request to remove the ones the catalog
+// holds. That is this comparator's rule for every attribute a declaration may
+// leave out, and inverting it here would make adopting Ptah over an existing
+// database drop constraints nobody asked about.
+func domainChanges(
+	target goschema.Domain,
+	current types.DBDomain,
+	expression config.DomainExpression,
+) map[string]string {
 	changes := make(map[string]string)
 	if target.BaseType != "" && canonicalizePostgresType(target.BaseType) != canonicalizePostgresType(current.BaseType) {
 		changes["type"] = fmt.Sprintf("%s -> %s", current.BaseType, target.BaseType)
@@ -118,7 +142,49 @@ func domainChanges(target goschema.Domain, current types.DBDomain) map[string]st
 	if target.NotNull != current.NotNull {
 		changes["not_null"] = fmt.Sprintf("%t -> %t", current.NotNull, target.NotNull)
 	}
+	if expression.Resolved {
+		if expression.Check != "" && !domainCheckMatches(expression.Check, current) {
+			changes["check"] = fmt.Sprintf("%s -> %s", current.Check, expression.Check)
+		}
+		if expression.Default != "" && expression.Default != current.Default {
+			changes["default"] = fmt.Sprintf("%s -> %s", current.Default, expression.Default)
+		}
+	}
 	return changes
+}
+
+// domainCheckMatches reports whether the catalog enforces exactly the declared
+// constraint and nothing else.
+//
+// It compares against the constraints one by one rather than against the joined
+// expression the reader also carries. A domain holding two constraints joins as
+// `(a) AND (b)`, and a declaration of `a AND b` normalizes to `((a) AND (b))`:
+// equal in meaning, different by one pair of parentheses, and comparing the
+// joined forms would plan a replacement on every run and converge on nothing.
+// One declared constraint against one stored constraint has no such seam.
+//
+// A domain the reader could not enumerate constraints for -- an older server
+// without the catalog functions -- falls back to the joined form, where a false
+// difference is still better than the silence it replaces.
+func domainCheckMatches(declared string, current types.DBDomain) bool {
+	if current.CheckConstraints == nil {
+		return declared == current.Check
+	}
+	return len(current.CheckConstraints) == 1 &&
+		current.CheckConstraints[0].Expression == declared
+}
+
+// domainCheckConstraintNames lists the catalog's names for a domain's CHECK
+// constraints, so a planner can remove them by name.
+func domainCheckConstraintNames(current types.DBDomain) []string {
+	if len(current.CheckConstraints) == 0 {
+		return nil
+	}
+	names := make([]string, 0, len(current.CheckConstraints))
+	for _, check := range current.CheckConstraints {
+		names = append(names, check.Name)
+	}
+	return names
 }
 
 // pgTypeAliases maps accepted type spellings to the canonical form PostgreSQL's

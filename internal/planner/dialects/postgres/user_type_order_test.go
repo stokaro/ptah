@@ -24,6 +24,7 @@ func userTypeOrderSchema() *goschema.Database {
 		CompositeTypes: []goschema.CompositeType{
 			{Name: "addr", Fields: []goschema.CompositeTypeField{{Name: "street", Type: "text"}, {Name: "city", Type: "text"}}},
 			{Name: "measure", Fields: []goschema.CompositeTypeField{{Name: "qty", Type: "d_int"}}},
+			{Name: "envelope", Fields: []goschema.CompositeTypeField{{Name: "recipient", Type: "addr"}}},
 		},
 		Ranges: []goschema.Range{
 			{Name: "myrange", Subtype: "integer"},
@@ -77,18 +78,24 @@ func TestPlanner_GenerateMigrationAST_CreatesUserTypesBeforeTheTypesThatNameThem
 // carries name the same types the desired ones do -- so the two orders are
 // mirror images of each other. The file next door pins what happens when they
 // are not.
+//
+// The dependent that names a composite is a composite rather than a domain
+// because a domain reaches this path only through a base-type change now: every
+// other domain modification is applied with ALTER DOMAIN and never dropped
+// (stokaro/ptah#1717). Both directions of the dependency are still here --
+// composite over composite above, composite over domain below.
 func TestPlanner_GenerateMigrationAST_RecreatesUserTypesInDependencyOrder(t *testing.T) {
 	c := qt.New(t)
 	planner := postgres.New()
 
 	diff := &difftypes.SchemaDiff{
 		DomainsModified: []difftypes.DomainDiff{
-			{DomainName: "d_comp", Changes: map[string]string{"not_null": "false -> true"}, CurrentBaseType: "addr"},
 			{DomainName: "d_int", Changes: map[string]string{"type": "smallint -> integer"}, CurrentBaseType: "smallint"},
 		},
 		CompositeTypesModified: []difftypes.CompositeTypeDiff{
 			{TypeName: "addr", Changes: map[string]string{"fields": "street text -> street text, city text"}, CurrentFieldTypes: []string{"text"}},
 			{TypeName: "measure", Changes: map[string]string{"fields": "qty d_int -> qty d_int, note text"}, CurrentFieldTypes: []string{"d_int"}},
+			{TypeName: "envelope", Changes: map[string]string{"fields": "recipient addr -> recipient addr, stamp text"}, CurrentFieldTypes: []string{"addr"}},
 		},
 	}
 
@@ -99,10 +106,10 @@ func TestPlanner_GenerateMigrationAST_RecreatesUserTypesInDependencyOrder(t *tes
 	sql = legacyRenderedSQL(sql)
 
 	// Drop dependents first.
-	assertBefore(t, sql, "DROP DOMAIN IF EXISTS d_comp", "DROP TYPE IF EXISTS addr")
+	assertBefore(t, sql, "DROP TYPE IF EXISTS envelope", "DROP TYPE IF EXISTS addr")
 	assertBefore(t, sql, "DROP TYPE IF EXISTS measure", "DROP DOMAIN IF EXISTS d_int")
 	// Recreate them last.
-	assertBefore(t, sql, "CREATE TYPE addr AS", "CREATE DOMAIN d_comp AS")
+	assertBefore(t, sql, "CREATE TYPE addr AS", "CREATE TYPE envelope AS")
 	assertBefore(t, sql, "CREATE DOMAIN d_int AS", "CREATE TYPE measure AS")
 	// Every drop precedes every recreation, so a recreation never runs against
 	// the shape it is replacing.

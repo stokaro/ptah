@@ -97,6 +97,7 @@ type CompareOptions struct{ ... }
     func DefaultCompareOptions() *CompareOptions
     func WithAdditionalIgnoredExtensions(extensions ...string) *CompareOptions
     func WithIgnoredExtensions(extensions ...string) *CompareOptions
+type DomainExpression struct{ ... }
 
 ### go.5x5.cz/ptah/config.CompareOptions
 
@@ -172,6 +173,26 @@ type CompareOptions struct {
     // the module's storage from an ordinary table; a drop the caller deletes
     // again is not one of those.
     SkipIndexDrops bool
+
+    // DomainExpressions carries each declared domain's CHECK and DEFAULT as the
+    // target server itself spells them, keyed by the domain's qualified name.
+    //
+    // PostgreSQL does not store the text of a CHECK. It parses the expression
+    // and prints it back from the parse tree, so `VALUE IN ('x','y')` is read
+    // back as `VALUE = ANY (ARRAY['x'::text, 'y'::text])` and `VALUE > 0` as
+    // `(VALUE > 0)`. Comparing a declaration against that is comparing two
+    // different languages, which is why the comparison used to decline: a
+    // string difference did not mean a changed constraint, and acting on one
+    // would have dropped and recreated a domain that had not changed.
+    //
+    // A resolved entry is the declaration after the same round trip -- the
+    // server was asked to normalize it -- so the two sides compare as like with
+    // like and a real change is neither invented nor lost (stokaro/ptah#1717).
+    //
+    // A nil map means nobody could ask a server, which is every comparison that
+    // has no connection. CHECK and DEFAULT stay uncompared there, exactly as
+    // before.
+    DomainExpressions map[string]DomainExpression
 }
     CompareOptions contains configuration options for schema comparison
     operations. These options control how schema differences are calculated and
@@ -182,6 +203,28 @@ func WithAdditionalIgnoredExtensions(extensions ...string) *CompareOptions
 func WithIgnoredExtensions(extensions ...string) *CompareOptions
 func (c *CompareOptions) FilterIgnoredExtensions(extensions []string) []string
 func (c *CompareOptions) IsExtensionIgnored(extensionName string) bool
+
+### go.5x5.cz/ptah/config.DomainExpression
+
+package config // import "go.5x5.cz/ptah/config"
+
+type DomainExpression struct {
+    // Check is the normalized CHECK, empty when the domain declares none.
+    Check string
+    // Default is the normalized DEFAULT, empty when the domain declares none.
+    Default string
+    // Resolved reports that a server answered for this domain. A false value
+    // on a present key is a domain whose declaration the server refused, and
+    // nothing about it may be compared.
+    Resolved bool
+}
+    DomainExpression is one domain's CHECK and DEFAULT in the target server's
+    own spelling. See CompareOptions.DomainExpressions.
+
+    The zero value is not "no constraint": it is what a resolver returns for a
+    declaration it could not put through the server, and a comparison must skip
+    the attribute rather than read it as removed. Resolved reports which it is.
+
 
 ## go.5x5.cz/ptah/config/projectconfig
 
@@ -725,6 +768,14 @@ type CreateViewNode struct{ ... }
     func NewCreateView(name string) *CreateViewNode
 type DefaultValue struct{ ... }
 type DeleteStatement struct{ ... }
+type DomainConstraintOperation struct{ ... }
+    func NewAddDomainConstraintOperation(expression string) *DomainConstraintOperation
+    func NewDropDomainConstraintOperation(name string) *DomainConstraintOperation
+type DomainDefaultOperation struct{ ... }
+    func NewDropDomainDefaultOperation() *DomainDefaultOperation
+    func NewSetDomainDefaultOperation(expression string) *DomainDefaultOperation
+type DomainNotNullOperation struct{ ... }
+    func NewDomainNotNullOperation(notNull bool) *DomainNotNullOperation
 type DomainTypeDef struct{ ... }
     func NewDomainTypeDef(baseType string) *DomainTypeDef
 type DropColumnOperation struct{ ... }
@@ -1867,6 +1918,68 @@ type DeleteStatement struct {
     Like UpdateStatement, a DELETE with no WHERE clause removes every row,
     so the renderer rejects it unless Unconditional is set.
 
+
+### go.5x5.cz/ptah/core/ast.DomainConstraintOperation
+
+package ast // import "go.5x5.cz/ptah/core/ast"
+
+type DomainConstraintOperation struct {
+    // DropName is the catalog name of the constraint to remove. Empty adds
+    // without removing.
+    DropName string
+    // AddExpression is the declared CHECK expression to add, without the CHECK
+    // keyword and without its enclosing parentheses. Empty removes without
+    // adding.
+    AddExpression string
+    // AddName is the name to give the added constraint. Empty lets the server
+    // choose one, which is what a declaration that names no constraint means.
+    AddName string
+}
+    DomainConstraintOperation adds or removes one CHECK constraint of a domain
+    in an ALTER DOMAIN statement.
+
+    A domain constraint is added by expression and removed by name,
+    and the two are not interchangeable: the author writes what must hold,
+    and the server chooses what to call the constraint holding it. Replacing
+    a constraint is therefore a drop of a catalog name followed by an add of a
+    declared expression, which is why one operation carries both fields rather
+    than two operations carrying one each -- a replacement that emitted only
+    half would leave the domain either unconstrained or doubly constrained
+    (stokaro/ptah#1717).
+
+func NewAddDomainConstraintOperation(expression string) *DomainConstraintOperation
+func NewDropDomainConstraintOperation(name string) *DomainConstraintOperation
+func (op *DomainConstraintOperation) Accept(_ Visitor) error
+
+### go.5x5.cz/ptah/core/ast.DomainDefaultOperation
+
+package ast // import "go.5x5.cz/ptah/core/ast"
+
+type DomainDefaultOperation struct {
+    // Expression is the new default, already rendered as SQL. Empty drops the
+    // default instead of setting one.
+    Expression string
+}
+    DomainDefaultOperation sets or drops a domain's DEFAULT in an ALTER DOMAIN
+    statement.
+
+func NewDropDomainDefaultOperation() *DomainDefaultOperation
+func NewSetDomainDefaultOperation(expression string) *DomainDefaultOperation
+func (op *DomainDefaultOperation) Accept(_ Visitor) error
+
+### go.5x5.cz/ptah/core/ast.DomainNotNullOperation
+
+package ast // import "go.5x5.cz/ptah/core/ast"
+
+type DomainNotNullOperation struct {
+    // NotNull reports the state the domain should end in.
+    NotNull bool
+}
+    DomainNotNullOperation sets or drops a domain's NOT NULL in an ALTER DOMAIN
+    statement.
+
+func NewDomainNotNullOperation(notNull bool) *DomainNotNullOperation
+func (op *DomainNotNullOperation) Accept(_ Visitor) error
 
 ### go.5x5.cz/ptah/core/ast.DomainTypeDef
 
@@ -6092,6 +6205,7 @@ func ReadSchemaWithSchemas(conn *DatabaseConnection, schemas []string) (*types.D
 func ReadTableRows(ctx context.Context, conn *DatabaseConnection, schema, table string, ...) ([]map[string]any, error)
 type DatabaseConnection struct{ ... }
     func ConnectToDatabase(ctx context.Context, dbURL string) (*DatabaseConnection, error)
+type DomainExpressionProbe struct{ ... }
 type IsolatedQueryer interface{ ... }
 
 ### go.5x5.cz/ptah/dbschema.DatabaseConnection
@@ -6114,6 +6228,7 @@ func (dc *DatabaseConnection) QueryContext(ctx context.Context, query string, ar
 func (dc *DatabaseConnection) QueryRow(query string, args ...any) *sql.Row
 func (dc *DatabaseConnection) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 func (dc *DatabaseConnection) Reader() types.SchemaReader
+func (dc *DatabaseConnection) ResolveDomainExpressions(ctx context.Context, probes []DomainExpressionProbe) (result map[string]config.DomainExpression, resultErr error)
 func (dc *DatabaseConnection) ResolveIdentifierSemantics(ctx context.Context, names []string) (identifier.Semantics, error)
 func (dc *DatabaseConnection) SchemaWriter() types.SchemaWriter
 func (dc *DatabaseConnection) WithExecutor(executor types.SchemaExecutor) *DatabaseConnection
@@ -6122,6 +6237,29 @@ func (dc *DatabaseConnection) WithSession(ctx context.Context, use func(*Databas
 func (dc *DatabaseConnection) WithSessionOrCurrent(ctx context.Context, use func(*DatabaseConnection) error) error
 func (dc *DatabaseConnection) WithUntrustedSQLSession(ctx context.Context, use func(*DatabaseConnection) error) error
 func (dc *DatabaseConnection) Writer() types.SchemaExecutor
+
+### go.5x5.cz/ptah/dbschema.DomainExpressionProbe
+
+package dbschema // import "go.5x5.cz/ptah/dbschema"
+
+type DomainExpressionProbe struct {
+    // Key identifies the domain to the caller. It is returned unchanged as the
+    // map key and is never sent to the server.
+    Key string
+    // BaseType is the domain's underlying type. The server needs it to parse
+    // the expressions: `VALUE <> ''` normalizes to `VALUE <> ''::text` over
+    // text and does not parse at all over integer.
+    BaseType string
+    // Check is the declared CHECK expression, without the CHECK keyword and
+    // without its enclosing parentheses.
+    Check string
+    // Default is the declared DEFAULT expression or literal.
+    Default string
+}
+    DomainExpressionProbe is one declared domain whose CHECK and DEFAULT need
+    the target server's own spelling before they can be compared with what the
+    catalog holds.
+
 
 ### go.5x5.cz/ptah/dbschema.IsolatedQueryer
 
@@ -6145,6 +6283,7 @@ type DBComposite struct{ ... }
 type DBCompositeField struct{ ... }
 type DBConstraint struct{ ... }
 type DBDomain struct{ ... }
+type DBDomainCheck struct{ ... }
 type DBEnum struct{ ... }
 type DBExtension struct{ ... }
 type DBFunction struct{ ... }
@@ -6351,10 +6490,35 @@ type DBDomain struct {
     NotNull  bool   `json:"not_null"`
     Default  string `json:"default,omitempty"`
     Check    string `json:"check,omitempty"`
+    // CheckConstraints names each CHECK the catalog holds for this domain,
+    // alongside the expression the server stores for it. Check above is the
+    // same expressions joined with AND, which is what a renderer needs and
+    // what a comparison of the whole domain reads; a constraint cannot be
+    // altered by that joined form, because ALTER DOMAIN ... DROP CONSTRAINT
+    // takes a name.
+    //
+    // It is a reader-only execution fact, like DBFunction.IdentityArguments:
+    // a serialized schema description declares what a domain must enforce,
+    // not what the server happened to name the constraint enforcing it.
+    CheckConstraints []DBDomainCheck `json:"-"`
 }
     DBDomain represents a PostgreSQL domain type read from the database.
 
 func (d DBDomain) QualifiedName() string
+
+### go.5x5.cz/ptah/dbschema/types.DBDomainCheck
+
+package types // import "go.5x5.cz/ptah/dbschema/types"
+
+type DBDomainCheck struct {
+    Name       string
+    Expression string
+}
+    DBDomainCheck is one named CHECK constraint of a domain, as the catalog
+    holds it. Expression is the server's own rewritten form -- PostgreSQL
+    reparses and prints a CHECK rather than storing the text it was given -- so
+    it compares equal only to another expression that made the same round trip.
+
 
 ### go.5x5.cz/ptah/dbschema/types.DBEnum
 
@@ -9880,6 +10044,20 @@ type DomainDiff struct {
     // Empty when the caller built the diff by hand or the domain's from-side is
     // unknown; the drop ordering then falls back to declaration order.
     CurrentBaseType string `json:"current_base_type,omitempty"`
+
+    // CurrentCheckConstraints names the CHECK constraints the database holds
+    // for this domain, in catalog order.
+    //
+    // ALTER DOMAIN removes a constraint by name, and a name is the one thing
+    // the declaration cannot supply: the author wrote an expression, and the
+    // server chose what to call the constraint enforcing it. Without these a
+    // changed CHECK has only the drop-and-recreate route, which fails on any
+    // domain a column uses -- that is, on every domain worth changing.
+    //
+    // Empty when nothing needs replacing, and empty as well when the reader
+    // could not enumerate them; the planner then leaves the CHECK alone rather
+    // than guessing a name (stokaro/ptah#1717).
+    CurrentCheckConstraints []string `json:"current_check_constraints,omitempty"`
 }
     DomainDiff represents changes to a PostgreSQL domain type.
 
