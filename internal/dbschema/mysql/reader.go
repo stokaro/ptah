@@ -146,17 +146,9 @@ func (r *Reader) ReadSchema() (*types.DBSchema, error) {
 	// not lose the whole description over an object kind the schema may not
 	// even declare.
 	if r.caps.Has(capability.RoleManagement) {
-		roles, err := r.readRoles()
-		if err != nil {
-			return nil, fmt.Errorf("failed to read roles: %w", err)
+		if err := r.readRolesInto(schema, dbName); err != nil {
+			return nil, err
 		}
-		schema.Roles = roles
-
-		grants, err := r.readGrants(dbName)
-		if err != nil {
-			return nil, fmt.Errorf("failed to read grants: %w", err)
-		}
-		schema.Grants = grants
 	}
 
 	enhanceTablesWithPrimaryKeys(schema.Tables, schema.Constraints)

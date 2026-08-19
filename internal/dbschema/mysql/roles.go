@@ -1,8 +1,13 @@
 package mysql
 
 import (
+	"errors"
+	"fmt"
 	"strings"
 
+	mysqldriver "github.com/go-sql-driver/mysql"
+
+	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/dbschema/types"
 )
 
@@ -156,4 +161,81 @@ func qualifyPredicate(predicate, prefix string) string {
 		predicate = strings.ReplaceAll(predicate, column, prefix+column)
 	}
 	return predicate
+}
+
+// MySQL server error numbers for a read the account is not permitted to make.
+//
+//   - 1142 ER_TABLEACCESS_DENIED_ERROR: "SELECT command denied to user ... for
+//     table 'user'", which is what an account without SELECT on mysql.user gets.
+//   - 1143 ER_COLUMNACCESS_DENIED_ERROR, the column-level form of the same
+//     refusal.
+//   - 1044 ER_DBACCESS_DENIED_ERROR, refused at the database rather than the
+//     table.
+const (
+	errTableAccessDenied    = 1142
+	errColumnAccessDenied   = 1143
+	errDatabaseAccessDenied = 1044
+)
+
+// isRoleReadDenied reports whether the server refused the read for want of a
+// privilege, rather than failing it for any other reason.
+//
+// The distinction is the whole point: a refusal is something to degrade around,
+// and everything else is a fault to surface. Matching on the message text would
+// blur the two, so this asks the server for its own error number.
+func isRoleReadDenied(err error) bool {
+	var mysqlErr *mysqldriver.MySQLError
+	if !errors.As(err, &mysqlErr) {
+		return false
+	}
+	switch mysqlErr.Number {
+	case errTableAccessDenied, errColumnAccessDenied, errDatabaseAccessDenied:
+		return true
+	default:
+		return false
+	}
+}
+
+// readRolesInto fills in the roles and grants, or records that this account was
+// not permitted to look.
+//
+// The preset says whether the SERVER has roles. It says nothing about whether
+// the connected ACCOUNT may read them, and those are different questions:
+// mysql.user and mysql.tables_priv need a privilege that reading a table does
+// not. Failing the whole read over that would mean an account with SELECT on
+// its own schema could no longer describe that schema at all -- not because
+// anything about its tables changed, but because a kind it may not even declare
+// became unreadable (stokaro/ptah#1762).
+//
+// Recording Role as not described is what makes the degradation safe rather
+// than silent, exactly as the ClickHouse reader does for system.roles. The
+// comparator refuses to conclude "this role is missing" from a read that admits
+// it did not look, so a declared role is reported as an undecided addition
+// instead of planned from nothing. Nothing destructive follows either: role and
+// grant removals are decided from live rows, and there are none.
+func (r *Reader) readRolesInto(schema *types.DBSchema, dbName string) error {
+	roles, err := r.readRoles()
+	if err != nil {
+		if !isRoleReadDenied(err) {
+			return fmt.Errorf("failed to read roles: %w", err)
+		}
+		schema.NotDescribed = schema.NotDescribed.WithKind(coverage.Role)
+		return nil
+	}
+	schema.Roles = roles
+
+	grants, err := r.readGrants(dbName)
+	if err != nil {
+		if !isRoleReadDenied(err) {
+			return fmt.Errorf("failed to read grants: %w", err)
+		}
+		// The pair travels together. A description holding roles but no grants
+		// would read as "these roles have no privileges", which is a claim this
+		// account could not check.
+		schema.Roles = nil
+		schema.NotDescribed = schema.NotDescribed.WithKind(coverage.Role)
+		return nil
+	}
+	schema.Grants = grants
+	return nil
 }
