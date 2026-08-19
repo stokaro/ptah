@@ -126,11 +126,32 @@ func routedObjectGrid(c *qt.C) []routedObjectCell {
 			database.Roles = nil
 		}
 		adaptForClickHouse(database, dialect)
+		adaptForUserTypeSupport(database, dialect)
 		adaptForSQLServer(database, dialect)
 		statements, err := renderer.GetOrderedCreateStatements(database, dialect)
 		c.Assert(err, qt.IsNil, qt.Commentf("render failed for %s", dialect))
 		sql := strings.Join(statements, "\n")
+		domainRefused := !capability.ForDialect(dialect).Has(capability.DomainTypes)
 		for _, row := range routedObjectRows {
+			// A domain a target cannot create is refused before SQL rather
+			// than skipped, because skipping it leaves the declaration's own
+			// column naming a type the server has no definition of. That is a
+			// third answer beside "ddl" and "named", and the grid records it
+			// the way it already records the MySQL-family role refusal
+			// (stokaro/ptah#1717).
+			if domainRefused && row.kind == "domain" {
+				_, err := renderer.GetOrderedCreateStatements(&goschema.Database{
+					Domains: []goschema.Domain{{Name: row.object, BaseType: "TEXT"}},
+				}, dialect)
+				c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+				cells = append(cells, routedObjectCell{
+					dialect: dialect,
+					kind:    row.kind,
+					object:  row.object,
+					answer:  "refused",
+				})
+				continue
+			}
 			if roleRefused && row.kind == "role" {
 				_, err := renderer.GetOrderedCreateStatements(&goschema.Database{
 					Roles: []goschema.Role{{Name: row.object}},
@@ -301,15 +322,35 @@ func TestRender_TheRoutingGridDistinguishesItsAnswers(t *testing.T) {
 			},
 		},
 		{
-			name:   "sqlite refuses the five kinds it has no object for",
+			name:   "sqlite names the four kinds it has no object for",
 			cells:  dialectCells(cells, platform.SQLite),
 			answer: "named",
 			want: []string{
 				"sqlite       sequence  seq_probe",
-				"sqlite       domain    domain_probe",
 				"sqlite       role      role_probe",
 				"sqlite       function  func_probe",
 				"sqlite       grant     grant_probe",
+			},
+		},
+		{
+			// A domain moved from "named" to "refused" deliberately. Naming
+			// the skip leaves the declaration's own column typed with a domain
+			// the server has no definition of, so the CREATE TABLE fails
+			// afterwards -- a diagnostic followed by a server error, rather
+			// than an answer (stokaro/ptah#1717).
+			name:   "a domain is refused before SQL wherever the target cannot create one",
+			cells:  kindCells(cells, "domain"),
+			answer: "refused",
+			// In the grid's own dialect order, so the row reads as the grid
+			// walks rather than alphabetically.
+			want: []string{
+				"cockroachdb  domain    domain_probe",
+				"spanner      domain    domain_probe",
+				"clickhouse   domain    domain_probe",
+				"mysql        domain    domain_probe",
+				"mariadb      domain    domain_probe",
+				"sqlserver    domain    domain_probe",
+				"sqlite       domain    domain_probe",
 			},
 		},
 	}
@@ -356,6 +397,7 @@ func TestRender_SQLServerGeneratesTheSequenceItUsedOnlyToName(t *testing.T) {
 
 	database := routedObjectSchema()
 	adaptForSQLServer(database, platform.SQLServer)
+	adaptForUserTypeSupport(database, platform.SQLServer)
 	statements, err := renderer.GetOrderedCreateStatements(database, platform.SQLServer)
 	c.Assert(err, qt.IsNil)
 	sql := strings.Join(statements, "\n")
@@ -583,7 +625,12 @@ func adaptForSQLServer(database *goschema.Database, dialect string) {
 func TestRender_SQLServerRefusesARoleThatWantsToLogIn(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := renderer.GetOrderedCreateStatements(routedObjectSchema(), platform.SQLServer)
+	// The user types are adapted away so this row measures the ROLE refusal it
+	// names: on the shared fixture the domain refusal now fires first.
+	database := routedObjectSchema()
+	adaptForUserTypeSupport(database, platform.SQLServer)
+
+	_, err := renderer.GetOrderedCreateStatements(database, platform.SQLServer)
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 	c.Assert(err.Error(), qt.Contains, "declares LOGIN")
@@ -597,11 +644,72 @@ func TestRender_SQLServerCreatesARoleWithoutAttributes(t *testing.T) {
 	c := qt.New(t)
 	database := routedObjectSchema()
 	adaptForSQLServer(database, platform.SQLServer)
+	adaptForUserTypeSupport(database, platform.SQLServer)
 
 	statements, err := renderer.GetOrderedCreateStatements(database, platform.SQLServer)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(strings.Join(statements, "\n"), qt.Contains, "CREATE ROLE [role_probe];")
+}
+
+// adaptForUserTypeSupport drops the user-type declarations a target cannot
+// create, deciding by capability rather than by a list of dialect names so a
+// target added later is adapted without editing this helper.
+//
+// Measured on v26.2.5: `CREATE DOMAIN` and `CREATE TYPE ... AS RANGE` answer
+// "not yet implemented", while a composite `CREATE TYPE ... AS (...)` is
+// accepted. Ptah refuses such a declaration before SQL rather than skipping
+// it, because a skipped type leaves the declaration's own columns naming
+// something the server has no definition of -- so the grid, which asks a
+// different question, is handed a schema this target can represent. The
+// control below proves the un-adapted fixture is refused rather than quietly
+// rendered (stokaro/ptah#1717).
+func adaptForUserTypeSupport(database *goschema.Database, dialect string) {
+	caps := capability.ForDialect(dialect)
+	if !caps.Has(capability.DomainTypes) {
+		database.Domains = nil
+		for i := range database.Fields {
+			if database.Fields[i].Type == "domain_probe" {
+				database.Fields[i].Type = "TEXT"
+			}
+		}
+	}
+	if !caps.Has(capability.CompositeTypes) {
+		database.CompositeTypes = nil
+	}
+	if !caps.Has(capability.RangeTypes) {
+		database.Ranges = nil
+	}
+}
+
+// TestRender_CockroachDBRefusesADomainItCannotCreate is the control on the
+// adaptation above.
+func TestRender_CockroachDBRefusesADomainItCannotCreate(t *testing.T) {
+	c := qt.New(t)
+
+	_, err := renderer.GetOrderedCreateStatements(routedObjectSchema(), platform.CockroachDB)
+
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(err.Error(), qt.Contains, "CREATE DOMAIN domain_probe")
+	c.Assert(err.Error(), qt.Contains, "scope the declaration")
+}
+
+// TestRender_CockroachDBStillTakesACompositeType is that control's own
+// control: a blanket "no user types" answer would satisfy the row above and
+// would refuse something this target accepts.
+func TestRender_CockroachDBStillTakesACompositeType(t *testing.T) {
+	c := qt.New(t)
+	database := &goschema.Database{
+		CompositeTypes: []goschema.CompositeType{{
+			StructName: "Addr", Name: "addr_t",
+			Fields: []goschema.CompositeTypeField{{Name: "street", Type: "TEXT"}},
+		}},
+	}
+
+	statements, err := renderer.GetOrderedCreateStatements(database, platform.CockroachDB)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(strings.Join(statements, "\n"), qt.Contains, `CREATE TYPE "addr_t" AS (`)
 }
 
 // TestRender_ClickHouseRefusesTheUnrepresentableDeclaration is the control on
@@ -611,7 +719,12 @@ func TestRender_SQLServerCreatesARoleWithoutAttributes(t *testing.T) {
 func TestRender_ClickHouseRefusesTheUnrepresentableDeclaration(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := renderer.GetOrderedCreateStatements(routedObjectSchema(), platform.ClickHouse)
+	// The user types are adapted away so this row measures the ROLE refusal it
+	// names: on the shared fixture the domain refusal now fires first.
+	database := routedObjectSchema()
+	adaptForUserTypeSupport(database, platform.ClickHouse)
+
+	_, err := renderer.GetOrderedCreateStatements(database, platform.ClickHouse)
 
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Contains, "declares login")

@@ -114,10 +114,17 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 		want: []capability.Capability{capability.ShowRoutinePrivilege},
 	}, {
 		dialect: platform.MySQL,
+		// The three PostgreSQL user-type kinds are declared rather than asked
+		// because this server has no spelling of any of the statements: a
+		// refusal would be a syntax error about a different question, not an
+		// answer about the key (stokaro/ptah#1717).
 		want: []capability.Capability{
 			capability.CatalogDependencies,
 			capability.CatalogRowStatistics,
+			capability.CompositeTypes,
+			capability.DomainTypes,
 			capability.PostgresCatalogFunctions,
+			capability.RangeTypes,
 			capability.RoleManagement,
 			capability.RowLevelTTL,
 			capability.ShowRoutinePrivilege,
@@ -127,7 +134,10 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 		want: []capability.Capability{
 			capability.CatalogDependencies,
 			capability.CatalogRowStatistics,
+			capability.CompositeTypes,
+			capability.DomainTypes,
 			capability.PostgresCatalogFunctions,
+			capability.RangeTypes,
 			capability.RoleManagement,
 			capability.RowLevelTTL,
 			capability.Sequences,
@@ -135,7 +145,12 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 		},
 	}, {
 		dialect: platform.ClickHouse,
-		want:    []capability.Capability{capability.ShowRoutinePrivilege},
+		want: []capability.Capability{
+			capability.CompositeTypes,
+			capability.DomainTypes,
+			capability.RangeTypes,
+			capability.ShowRoutinePrivilege,
+		},
 	}} {
 		t.Run(tc.dialect, func(t *testing.T) {
 			c := qt.New(t)
@@ -254,23 +269,23 @@ func TestDecidable_IsDerivedFromThePlanAndTheLine(t *testing.T) {
 		caps: capability.Postgres17(),
 		want: registered - 1,
 	}, {
-		name: "mysql owes six fewer: role_management, row_level_ttl and the three catalog keys name surfaces no MySQL path reads",
+		name: "mysql owes nine fewer: role_management, row_level_ttl, the three catalog keys and the three user-type kinds all name surfaces no MySQL path reads",
 		cell: Cell{
 			Dialect: platform.MySQL, Line: "9.7",
 			Preset: capability.MySQL84, PresetName: "MySQL84",
 			Refinement: RefinedByVersion,
 		},
 		caps: capability.MySQL84(),
-		want: registered - 6,
+		want: registered - 9,
 	}, {
-		name: "mariadb owes seven fewer: sequences is a claim about the generator, not the engine",
+		name: "mariadb owes ten fewer: sequences is a claim about the generator, not the engine, and the three user-type kinds have no MariaDB spelling",
 		cell: Cell{
 			Dialect: platform.MariaDB, Line: "10.11",
 			Preset: capability.MariaDB1011, PresetName: "MariaDB1011",
 			Refinement: RefinedByVersion,
 		},
 		caps: capability.MariaDB1011(),
-		want: registered - 7,
+		want: registered - 10,
 	}, {
 		name: "cockroachdb 26.2 owes every row its preset enables a prerequisite for, less the one the probe cannot ask",
 		cell: Cell{

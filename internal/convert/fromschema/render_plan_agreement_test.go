@@ -9,7 +9,10 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/ast"
+	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/platform/capability"
+	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/core/renderer"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
@@ -86,36 +89,54 @@ func TestRenderAndPlanAgreeOnEveryPostgresFamilyTarget(t *testing.T) {
 
 	for _, dialect := range dialects {
 		t.Run(dialect, func(t *testing.T) {
-			c := qt.New(t)
-			desired := routingFixture()
-
-			renderCensus := surfaceCensus(c, dialect,
-				fromschema.FromDatabase(desired, dialect).Statements)
-
-			planNodes, err := planner.GenerateSchemaDiffAST(
-				schemadiff.CompareWithDialect(&desired, &dbschematypes.DBSchema{}, dialect),
-				&desired,
-				dialect,
-			)
-			c.Assert(err, qt.IsNil)
-			planCensus := surfaceCensus(c, dialect, planNodes)
-
-			// Non-vacuity: two empty censuses are equal. The fixture declares one
-			// object of every kind in routedKinds, and each of those kinds is one
-			// AST node kind, so a surface that carried them all reports exactly
-			// that many rows.
-			//
-			// Check rather than Assert so a surface that lost a kind still reaches
-			// the comparison below, which is the assertion that names which kind
-			// went missing on which side.
-			c.Check(renderCensus, qt.HasLen, len(routedKinds),
-				qt.Commentf("render surface census:\n%s", strings.Join(renderCensus, "\n")))
-
-			c.Assert(planCensus, qt.DeepEquals, renderCensus,
-				qt.Commentf("render and plan disagree for %s\nrender:\n%s\nplan:\n%s",
-					dialect, strings.Join(renderCensus, "\n"), strings.Join(planCensus, "\n")))
+			assertRenderAndPlanAgree(qt.New(t), dialect)
 		})
 	}
+}
+
+// assertRenderAndPlanAgree is the per-dialect body.
+//
+// It lives here rather than inline because a target that cannot create a
+// domain takes the other of two paths, and the choice belongs beside the two
+// rather than as a branch inside the test.
+func assertRenderAndPlanAgree(c *qt.C, dialect string) {
+	c.Helper()
+	desired := routingFixture()
+
+	// A target that cannot create a domain refuses the whole schema before
+	// SQL, on BOTH surfaces, because they share one validation. That is
+	// agreement too, and asserting it is stronger than adapting the fixture
+	// until the question goes away: the census below could not tell a shared
+	// refusal from a shared emission (stokaro/ptah#1717).
+	if assertBothSurfacesRefuseTheDomain(c, dialect, &desired) {
+		return
+	}
+
+	renderCensus := surfaceCensus(c, dialect,
+		fromschema.FromDatabase(desired, dialect).Statements)
+
+	planNodes, err := planner.GenerateSchemaDiffAST(
+		schemadiff.CompareWithDialect(&desired, &dbschematypes.DBSchema{}, dialect),
+		&desired,
+		dialect,
+	)
+	c.Assert(err, qt.IsNil)
+	planCensus := surfaceCensus(c, dialect, planNodes)
+
+	// Non-vacuity: two empty censuses are equal. The fixture declares one
+	// object of every kind in routedKinds, and each of those kinds is one
+	// AST node kind, so a surface that carried them all reports exactly
+	// that many rows.
+	//
+	// Check rather than Assert so a surface that lost a kind still reaches
+	// the comparison below, which is the assertion that names which kind
+	// went missing on which side.
+	c.Check(renderCensus, qt.HasLen, len(routedKinds),
+		qt.Commentf("render surface census:\n%s", strings.Join(renderCensus, "\n")))
+
+	c.Assert(planCensus, qt.DeepEquals, renderCensus,
+		qt.Commentf("render and plan disagree for %s\nrender:\n%s\nplan:\n%s",
+			dialect, strings.Join(renderCensus, "\n"), strings.Join(planCensus, "\n")))
 }
 
 // postgresFamilyPlannerDialects lists the registered planner dialects that
@@ -157,4 +178,21 @@ func surfaceCensus(c *qt.C, dialect string, nodes []ast.Node) []string {
 	}
 	slices.Sort(lines)
 	return lines
+}
+
+// assertBothSurfacesRefuseTheDomain checks the shared refusal and reports
+// whether it applied, so the caller has one branch rather than a nest of them.
+func assertBothSurfacesRefuseTheDomain(c *qt.C, dialect string, desired *goschema.Database) bool {
+	c.Helper()
+	if capability.ForDialect(dialect).Has(capability.DomainTypes) {
+		return false
+	}
+	_, planErr := planner.GenerateSchemaDiffAST(
+		schemadiff.CompareWithDialect(desired, &dbschematypes.DBSchema{}, dialect), desired, dialect)
+	renderErr := renderer.ValidateSchema(desired, dialect)
+	c.Assert(planErr, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(renderErr, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(planErr.Error(), qt.Contains, "CREATE DOMAIN")
+	c.Assert(renderErr.Error(), qt.Contains, "CREATE DOMAIN")
+	return true
 }
