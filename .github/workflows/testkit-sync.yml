@@ -7,6 +7,13 @@
 # This workflow runs that tidy on the bot's PR branch and pushes the sync
 # commit automatically.
 #
+# This job is a CONVENIENCE, not the guarantee. It repairs the bot's branch when
+# it gets a chance to, and it cannot always get one: the branch it needs is
+# deleted the moment the pull request merges, and nothing makes this job win
+# that race. The guarantee lives in the `testkit module is tidy against the
+# root` check in testkit.yml, which is required for merge -- a pull request
+# whose bump leaves testkit stale cannot land whether or not this ran.
+#
 # Token resolution, best first:
 #   1. A GitHub App installation token, minted per run when the
 #      TESTKIT_SYNC_APP_ID repository variable and TESTKIT_SYNC_APP_KEY secret
@@ -50,13 +57,35 @@ jobs:
           app-id: ${{ vars.TESTKIT_SYNC_APP_ID }}
           private-key: ${{ secrets.TESTKIT_SYNC_APP_KEY }}
 
+      # The checkout below resolves a branch NAME, and the branch is deleted the
+      # moment the pull request merges. This job has queued for minutes while a
+      # bot pull request merged in under two, and the checkout then failed with
+      # three retries of "The process '/usr/bin/git' failed with exit code 1" --
+      # a message that names neither the branch nor the reason. Asking first
+      # turns that into one sentence saying what happened.
+      - name: Check that the head branch still exists
+        id: head
+        env:
+          GH_TOKEN: ${{ github.token }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+          if gh api "repos/${GITHUB_REPOSITORY}/branches/${HEAD_REF}" --silent 2>/dev/null; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "present=false" >> "$GITHUB_OUTPUT"
+          echo "::notice::${HEAD_REF} no longer exists -- the pull request merged before this job started, so there is no branch left to sync. Nothing is broken by that: the required tidy check in testkit.yml is what keeps a stale testkit from merging."
+
       - name: Check out the pull request branch
+        if: steps.head.outputs.present == 'true'
         uses: actions/checkout@v7
         with:
           ref: ${{ github.event.pull_request.head.ref }}
           token: ${{ steps.app-token.outputs.token || secrets.TESTKIT_SYNC_TOKEN || github.token }}
 
       - name: Set up Go
+        if: steps.head.outputs.present == 'true'
         uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
@@ -65,6 +94,7 @@ jobs:
             testkit/go.sum
 
       - name: Tidy the testkit module
+        if: steps.head.outputs.present == 'true'
         working-directory: testkit
         env:
           GOWORK: "off"
@@ -72,6 +102,7 @@ jobs:
         run: go mod tidy
 
       - name: Commit and push the sync when needed
+        if: steps.head.outputs.present == 'true'
         run: |
           if git diff --quiet -- testkit/go.mod testkit/go.sum; then
             echo "testkit module already in sync; nothing to do."
