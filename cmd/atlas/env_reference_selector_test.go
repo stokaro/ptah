@@ -3,9 +3,12 @@ package atlas_test
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+
+	"go.5x5.cz/ptah/config/projectconfig"
 )
 
 // writeEnvSelectorAtlasHCL writes a project whose env carries its own exclude
@@ -22,14 +25,26 @@ func writeEnvSelectorAtlasHCL(t *testing.T) (configPath, targetPath string) {
 	targetPath = filepath.Join(dir, "target.db")
 	configPath = filepath.Join(dir, "atlas.hcl")
 	config := `env "local" {
-  src     = "file://` + schemaPath + `"
-  url     = "sqlite://` + targetPath + `"
-  dev     = "sqlite://` + filepath.Join(dir, "dev.db") + `"
+  src     = ` + hclString("file://"+filepath.ToSlash(schemaPath)) + `
+  url     = ` + hclString("sqlite://"+filepath.ToSlash(targetPath)) + `
+  dev     = ` + hclString("sqlite://"+filepath.ToSlash(filepath.Join(dir, "dev.db"))) + `
   exclude = ["skipme"]
 }
 `
+	// A raw Windows path in an HCL string is not a path, it is escape
+	// sequences: C:\Users\... carries \U, which HCL reads as the start of a
+	// unicode escape and refuses with "Invalid escape sequence". Every value
+	// above goes through ToSlash and strconv.Quote; this asserts it, because
+	// the failure is invisible on a POSIX runner and only the Windows job sees
+	// it.
+	c.Assert(config, qt.Not(qt.Contains), `\`)
 	c.Assert(os.WriteFile(configPath, []byte(config), 0o600), qt.IsNil)
 	return configPath, targetPath
+}
+
+// hclString renders a value as an HCL string literal.
+func hclString(value string) string {
+	return strconv.Quote(value)
 }
 
 // TestSelectorFlagsRefuseAnEnvReference pins that a selector flag refuses the
@@ -148,4 +163,30 @@ func TestTestVerbsRefuseAnEnvReferenceSource(t *testing.T) {
 			c.Assert(out+err.Error(), qt.Contains, "desired-state sources")
 		})
 	}
+}
+
+// TestEnvSelectorConfigSurvivesAWindowsPath is the guard the Windows CI job had
+// to be the first to notice.
+//
+// A raw Windows path in an HCL string is not a path, it is escape sequences:
+// `C:\Users\...` carries `\U`, and HCL refuses it with "Invalid escape
+// sequence; The \U escape sequence must be followed by eight hexadecimal
+// digits". Every value the fixture writes therefore goes through ToSlash and
+// strconv.Quote.
+//
+// This runs the real project-config parser over a config built from a
+// Windows-shaped path, so it is red on any OS when the quoting is dropped --
+// which is what a POSIX-only check could not tell anyone.
+func TestEnvSelectorConfigSurvivesAWindowsPath(t *testing.T) {
+	c := qt.New(t)
+	windowsPath := `C:\Users\RUNNER~1\AppData\Local\Temp\Test001\schema.sql`
+	config := `env "local" {
+  src = ` + hclString("file://"+filepath.ToSlash(windowsPath)) + `
+  url = "sqlite://target.db"
+}
+`
+
+	_, err := projectconfig.ParseAtlas([]byte(config), "atlas.hcl", "local")
+
+	c.Assert(err, qt.IsNil)
 }
