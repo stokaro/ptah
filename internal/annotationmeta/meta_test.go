@@ -9,6 +9,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/internal/annotationmeta"
+	"go.5x5.cz/ptah/internal/crdbttl"
 )
 
 func sourceComments(file *ast.File) []*ast.Comment {
@@ -173,4 +174,30 @@ type User struct {
 		StructName:       "User",
 		EmbeddedTypeName: "Audit",
 	})
+}
+
+// TestTableDirectiveAllowsEveryManagedTTLParameter ties two lists that had
+// drifted apart.
+//
+// crdbttl.ManagedParameters names the CockroachDB row-level TTL parameters Ptah
+// models, and the `ptah:schema:table` directive's attribute list decides which
+// of them an author may write in a Go annotation. Nothing held them together,
+// and stokaro/ptah#1721 added ttl_row_stats_poll_interval to the first without
+// the second: the parameter rendered, read back and compared everywhere except
+// the surface most authors use, where it answered
+// `unknown annotation attribute "ttl_row_stats_poll_interval"`.
+//
+// Asserting the direction that matters — every managed parameter is writable —
+// rather than set equality, because the directive also carries attributes that
+// have nothing to do with TTL.
+func TestTableDirectiveAllowsEveryManagedTTLParameter(t *testing.T) {
+	c := qt.New(t)
+
+	for _, parameter := range crdbttl.ManagedParameters() {
+		c.Assert(
+			annotationmeta.AllowsAttribute("ptah:schema:table", parameter),
+			qt.IsTrue,
+			qt.Commentf("crdbttl manages %q and the table directive refuses it", parameter),
+		)
+	}
 }
