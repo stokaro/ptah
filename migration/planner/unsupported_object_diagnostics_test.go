@@ -213,6 +213,9 @@ func TestPlan_ClickHouseNamesRemovedObjectsToo(t *testing.T) {
 	diff := &types.SchemaDiff{
 		ExtensionsRemoved:        []string{"pg_trgm"},
 		SequencesRemoved:         []string{"order_number_seq"},
+		DomainsRemoved:           []string{"email"},
+		CompositeTypesRemoved:    []string{"addr"},
+		RangesRemoved:            []string{"tsr"},
 		RolesRemoved:             []string{"app_role"},
 		FunctionsRemoved:         []string{"bump"},
 		ViewsRemoved:             []string{"v1"},
@@ -233,6 +236,14 @@ func TestPlan_ClickHouseNamesRemovedObjectsToo(t *testing.T) {
 	}{
 		{name: "extension", want: `-- CLICKHOUSE: DROP EXTENSION "pg_trgm" is not supported`},
 		{name: "sequence", want: `-- CLICKHOUSE: DROP SEQUENCE "order_number_seq" is not supported`},
+		// The three user types were the collections nobody walked: #1628 closed
+		// with grants and row-level security fixed and these still dropped in
+		// silence (stokaro/ptah#1708). The domain is named as a DOMAIN, because
+		// one node carries four kinds and DROP TYPE sends the reader looking
+		// for something never declared under that word.
+		{name: "domain", want: `-- CLICKHOUSE: DROP DOMAIN "email" is not supported`},
+		{name: "composite type", want: `-- CLICKHOUSE: DROP TYPE "addr" is not supported`},
+		{name: "range type", want: `-- CLICKHOUSE: DROP TYPE "tsr" is not supported`},
 		// Ptah does not drop ClickHouse roles: the comparator computes no role
 		// removals at all, and the issue's non-goals forbid dropping a role
 		// that may be shared outside the managed schema. The planner names the
@@ -347,6 +358,41 @@ func TestPlan_MySQLFamilyNamesTheExtensionAndSequenceItCannotHost(t *testing.T) 
 			c.Assert(planned, qt.Contains, test.wantSequence)
 			c.Assert(rendered, qt.Contains, test.wantExtension)
 			c.Assert(rendered, qt.Contains, test.wantSequence)
+		})
+	}
+}
+
+// TestPlan_MySQLFamilyNamesTheUserTypesItNoLongerDeclares covers the three
+// collections nobody walked.
+//
+// Creating one of these is refused before any SQL by
+// usertypescope.ValidateDeclared, because a named skip would leave the
+// declaring table naming a type the server has no definition of
+// (stokaro/ptah#1717). Removing one has no declaration to refuse, and it used
+// to produce neither a statement nor a word -- which is how #1628 closed with
+// grants and row-level security fixed and these three still silent
+// (stokaro/ptah#1708).
+//
+// The domain is asserted separately from the other two because one node
+// carries four kinds: DROP TYPE for a domain sends the reader looking for
+// something never declared under that word.
+func TestPlan_MySQLFamilyNamesTheUserTypesItNoLongerDeclares(t *testing.T) {
+	diff := &types.SchemaDiff{
+		DomainsRemoved:        []string{"email"},
+		CompositeTypesRemoved: []string{"addr"},
+		RangesRemoved:         []string{"tsr"},
+	}
+
+	for _, dialect := range []string{platform.MySQL, platform.MariaDB} {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
+
+			planned := strings.Join(planStatements(c, diff, &goschema.Database{}, dialect), "\n")
+
+			upper := strings.ToUpper(dialect)
+			c.Assert(planned, qt.Contains, "-- "+upper+": DROP DOMAIN email is not generated")
+			c.Assert(planned, qt.Contains, "-- "+upper+": DROP TYPE addr is not generated")
+			c.Assert(planned, qt.Contains, "-- "+upper+": DROP TYPE tsr is not generated")
 		})
 	}
 }

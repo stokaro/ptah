@@ -52,6 +52,7 @@ func (p *Planner) reportUnsupportedObjects(result []ast.Node, diff *types.Schema
 	for _, extension := range diff.ExtensionsModified {
 		result = append(result, ast.NewExtension(extension.Name).SetSchema(extension.ToSchema))
 	}
+	result = p.reportRemovedUserTypes(result, diff)
 	result = p.reportUnsupportedSequences(result, diff)
 	return p.reportUnsupportedRoutinesAndRoles(result, diff)
 }
