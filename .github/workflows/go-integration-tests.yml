@@ -15,6 +15,7 @@ jobs:
   integration-tests:
     name: integration-tests
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     
     services:
       postgres:
@@ -256,6 +257,11 @@ jobs:
           done
 
       - name: Install Graphviz
+        # Measured: this step hung for 4h08m on 2026-08-19, retrying
+        # azure.archive.ubuntu.com forever, on master and two branches at
+        # once. apt has no business taking ten minutes, and the job ceiling
+        # would still burn an hour before noticing.
+        timeout-minutes: 10
         run: |
           sudo apt-get update
           sudo apt-get install --yes graphviz
