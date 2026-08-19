@@ -281,6 +281,26 @@ type DBDomain struct {
 	NotNull  bool   `json:"not_null"`
 	Default  string `json:"default,omitempty"`
 	Check    string `json:"check,omitempty"`
+	// CheckConstraints names each CHECK the catalog holds for this domain,
+	// alongside the expression the server stores for it. Check above is the
+	// same expressions joined with AND, which is what a renderer needs and
+	// what a comparison of the whole domain reads; a constraint cannot be
+	// altered by that joined form, because ALTER DOMAIN ... DROP CONSTRAINT
+	// takes a name.
+	//
+	// It is a reader-only execution fact, like DBFunction.IdentityArguments:
+	// a serialized schema description declares what a domain must enforce,
+	// not what the server happened to name the constraint enforcing it.
+	CheckConstraints []DBDomainCheck `json:"-"`
+}
+
+// DBDomainCheck is one named CHECK constraint of a domain, as the catalog
+// holds it. Expression is the server's own rewritten form -- PostgreSQL
+// reparses and prints a CHECK rather than storing the text it was given -- so
+// it compares equal only to another expression that made the same round trip.
+type DBDomainCheck struct {
+	Name       string
+	Expression string
 }
 
 // QualifiedName returns schema.name when Schema is set, or Name otherwise.

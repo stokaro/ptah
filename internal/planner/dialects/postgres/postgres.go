@@ -1254,6 +1254,11 @@ func (p *Planner) plannedUserTypes(
 	// composite has to wait for the recreation, which dropModifiedUserTypes has
 	// already removed by this point.
 	for _, domainDiff := range diff.DomainsModified {
+		if domainIsAlterableInPlace(domainDiff) {
+			// Paired with the same guard in dropModifiedUserTypes: no drop was
+			// emitted, so there is nothing to put back.
+			continue
+		}
 		if domain := findDomain(generated.Domains, domainDiff.DomainName, semantics); domain != nil {
 			planned = append(planned, plannedUserType{
 				dep:  deporder.UserType{Name: domainDiff.DomainName, References: []string{domain.BaseType}},
@@ -1354,6 +1359,13 @@ func (p *Planner) dropModifiedUserTypes(
 	deps := make([]deporder.UserType, 0, len(diff.DomainsModified)+len(diff.CompositeTypesModified))
 	var unresolved []ast.Node
 	for _, domainDiff := range diff.DomainsModified {
+		if domainIsAlterableInPlace(domainDiff) {
+			// alterModifiedDomains reconciles this one with ALTER DOMAIN.
+			// Dropping it here as well would take the domain apart to apply a
+			// change that needed no such thing -- and would fail outright on
+			// any domain a column uses.
+			continue
+		}
 		if findDomain(generated.Domains, domainDiff.DomainName, semantics) == nil {
 			unresolved = append(unresolved, unrecreatableUserTypeComment("domain", domainDiff.DomainName))
 			continue
@@ -1609,6 +1621,12 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 	// new domains/ranges/composites before tables can reference them.
 	result = p.dropModifiedUserTypes(result, diff, generated)
 	result = p.addNewUserTypes(result, diff, generated)
+
+	// 3d. Change in place the domains that need no rebuild. It follows the
+	// creations so that a domain added in this same plan is not also altered,
+	// and it stays ahead of the tables, whose columns take their default and
+	// their constraint from the domain as it is when the column is created.
+	result = p.alterModifiedDomains(result, diff, generated)
 
 	// 4. Modify existing enums
 	result = p.modifyExistingEnums(result, diff, generated)
