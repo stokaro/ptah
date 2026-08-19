@@ -121,9 +121,18 @@ func routedObjectGrid(c *qt.C) []routedObjectCell {
 	cells := make([]routedObjectCell, 0, len(routingDialects)*len(routedObjectRows))
 	for _, dialect := range routingDialects {
 		database := routedObjectSchema()
-		roleRefused := dialect == platform.MySQL || dialect == platform.MariaDB
-		if roleRefused {
-			database.Roles = nil
+		// The MySQL family renders a role now, and refuses only the attributes
+		// a role does not carry there (stokaro/ptah#1762). The fixture's role
+		// declares LOGIN for the PostgreSQL cells, so it is the attribute that
+		// is dropped here rather than the whole declaration -- the grid is
+		// about which answer each target gives, and removing the object would
+		// make this cell answer nothing at all.
+		roleRefused := false
+		if dialect == platform.MySQL || dialect == platform.MariaDB {
+			for i := range database.Roles {
+				database.Roles[i].Login = false
+				database.Roles[i].Inherit = false
+			}
 		}
 		adaptForClickHouse(database, dialect)
 		adaptForUserTypeSupport(database, dialect)
@@ -281,12 +290,22 @@ func TestRender_TheRoutingGridDistinguishesItsAnswers(t *testing.T) {
 			},
 		},
 		{
-			name:   "mysql family refuses roles",
+			// The MySQL family used to answer "refused" for both of these. It
+			// renders them now (stokaro/ptah#1762), and naming the cells is
+			// what makes a regression say which object moved rather than
+			// shifting a count. SQLite keeps the refused row below, which is
+			// the control: an engine without roles must not follow.
+			name:   "every engine with roles emits one",
 			cells:  kindCells(cells, "role"),
-			answer: "refused",
+			answer: "ddl",
 			want: []string{
+				"postgres     role      role_probe",
+				"cockroachdb  role      role_probe",
+				"yugabytedb   role      role_probe",
+				"clickhouse   role      role_probe",
 				"mysql        role      role_probe",
 				"mariadb      role      role_probe",
+				"sqlserver    role      role_probe",
 			},
 		},
 		{
@@ -408,30 +427,48 @@ func TestRender_SQLServerGeneratesTheSequenceItUsedOnlyToName(t *testing.T) {
 	c.Assert(routedObjectAnswer(sql, "seq_probe"), qt.Equals, "ddl")
 }
 
-// TestRender_MySQLFamilyRefusesRolesBeforeSQL pins that a role declared for a
-// MySQL-family target fails closed.
+// TestRender_MySQLFamilyEmitsRolesAndStillRefusesTheAttributes records the move
+// and keeps the control the old test provided.
 //
-// Both engines host roles, but Ptah does not read or compare their role model.
-// Reporting success after emitting only a comment loses declared state, so the
-// safe answer is an error before any statement is returned.
-func TestRender_MySQLFamilyRefusesRolesBeforeSQL(t *testing.T) {
+// The MySQL family used to fail closed on any declared role, because Ptah could
+// not read one back. The read half exists now (stokaro/ptah#1762), so a bare
+// role renders. What still fails closed is a role carrying an attribute this
+// family has no clause for: LOGIN and PASSWORD are ERROR 1064 on MySQL 8.4,
+// because what they ask for is a USER.
+//
+// The refusal must not leave with the emission. Without a row asserting one,
+// "roles are supported now" would have quietly become "every declared role is
+// accepted", including the ones the server refuses.
+func TestRender_MySQLFamilyEmitsRolesAndStillRefusesTheAttributes(t *testing.T) {
 	for _, dialect := range []string{platform.MySQL, platform.MariaDB} {
-		t.Run(dialect, func(t *testing.T) {
+		t.Run(dialect+" emits a bare role", func(t *testing.T) {
 			c := qt.New(t)
+
+			// A local fixture, because the shared one declares Login: true --
+			// which is now the refusal case rather than the ordinary one.
+			bare := &goschema.Database{Roles: []goschema.Role{{Name: "role_probe"}}}
+			statements, err := renderer.GetOrderedCreateStatements(bare, dialect)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(strings.Join(statements, "\n"), qt.Contains, "CREATE ROLE IF NOT EXISTS `role_probe`;")
+		})
+
+		t.Run(dialect+" refuses a role that wants to log in", func(t *testing.T) {
+			c := qt.New(t)
+
 			statements, err := renderer.GetOrderedCreateStatements(routedObjectSchema(), dialect)
 
 			c.Assert(statements, qt.HasLen, 0)
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-			c.Check(err, qt.ErrorMatches,
-				".*"+dialect+": CREATE ROLE role_probe: Ptah does not read or compare MySQL-family role state.*")
+			c.Check(err, qt.ErrorMatches, "(?s).*LOGIN, PASSWORD or another user attribute.*")
 		})
 	}
 }
 
-// TestValidateSchema_MySQLFamilyRefusesRoles keeps the public validation-only
-// entry points aligned with complete rendering. A role cannot pass validation
-// and then fail only when a caller asks for SQL.
-func TestValidateSchema_MySQLFamilyRefusesRoles(t *testing.T) {
+// TestValidateSchema_MySQLFamilyRefusesRoleAttributes keeps the public
+// validation-only entry points aligned with complete rendering. A role cannot
+// pass validation and then fail only when a caller asks for SQL.
+func TestValidateSchema_MySQLFamilyRefusesRoleAttributes(t *testing.T) {
 	tests := []struct {
 		name     string
 		dialect  string
@@ -471,14 +508,17 @@ func TestValidateSchema_MySQLFamilyRefusesRoles(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
+			// A role carrying LOGIN, because a bare one is created now
+			// (stokaro/ptah#1762). What this gate still owes the caller is the
+			// same answer rendering gives: a role cannot pass validation and
+			// then fail only when SQL is asked for.
 			err := test.validate(
-				&goschema.Database{Roles: []goschema.Role{{Name: "app_user"}}},
+				&goschema.Database{Roles: []goschema.Role{{Name: "app_user", Login: true}}},
 				test.dialect,
 			)
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-			c.Assert(err, qt.ErrorMatches,
-				".*"+test.dialect+": CREATE ROLE app_user: Ptah does not read or compare MySQL-family role state.*")
+			c.Assert(err, qt.ErrorMatches, "(?s).*app_user.*LOGIN, PASSWORD or another user attribute.*")
 		})
 	}
 }
@@ -540,16 +580,19 @@ func TestValidateSchema_MySQLFamilyRoleRefusalNamesTheSortedFirstRole(t *testing
 		for _, order := range declarationOrders {
 			t.Run(dialect+"/"+strings.Join(order, ","), func(t *testing.T) {
 				c := qt.New(t)
+				// Every role carries LOGIN, because a bare one is created now
+				// (stokaro/ptah#1762). The property under test is unchanged:
+				// whichever role the two gates refuse, they must name the same
+				// one, and it must not move when the declaration is reordered.
 				roles := make([]goschema.Role, 0, len(order))
 				for _, name := range order {
-					roles = append(roles, goschema.Role{Name: name})
+					roles = append(roles, goschema.Role{Name: name, Login: true})
 				}
 
 				err := renderer.ValidateSchema(&goschema.Database{Roles: roles}, dialect)
 
 				c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-				c.Assert(err, qt.ErrorMatches,
-					".*"+dialect+": CREATE ROLE admin_user: Ptah does not read or compare MySQL-family role state.*")
+				c.Assert(err, qt.ErrorMatches, "(?s).*"+dialect+`: role "admin_user" declares.*`)
 			})
 		}
 	}

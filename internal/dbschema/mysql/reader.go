@@ -140,6 +140,24 @@ func (r *Reader) ReadSchema() (*types.DBSchema, error) {
 		return nil, err
 	}
 	schema.Sequences = sequences
+	// Roles and their grants are read only where the preset claims them, the
+	// same gate the ClickHouse reader uses. mysql.user and mysql.tables_priv
+	// need a privilege reading a table does not, so an account without it must
+	// not lose the whole description over an object kind the schema may not
+	// even declare.
+	if r.caps.Has(capability.RoleManagement) {
+		roles, err := r.readRoles()
+		if err != nil {
+			return nil, fmt.Errorf("failed to read roles: %w", err)
+		}
+		schema.Roles = roles
+
+		grants, err := r.readGrants(dbName)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read grants: %w", err)
+		}
+		schema.Grants = grants
+	}
 
 	enhanceTablesWithPrimaryKeys(schema.Tables, schema.Constraints)
 	reconcileColumnUniqueness(schema)

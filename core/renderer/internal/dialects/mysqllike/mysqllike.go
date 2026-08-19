@@ -1442,40 +1442,6 @@ func (r *Renderer) notGenerated(kind, name string) {
 	r.w.WriteLinef("-- %s: %s %s is not generated for this target; skipped.", r.dialectUpper, kind, name)
 }
 
-// VisitCreateRole refuses the PostgreSQL-shaped role Ptah cannot converge on
-// this target. MySQL and MariaDB both host roles, but Ptah has no reader or
-// planner for their role model, so a successful comment-only render would
-// discard declared state.
-func (r *Renderer) VisitCreateRole(node *ast.CreateRoleNode) error {
-	return r.unsupportedRole("CREATE ROLE", node.Name)
-}
-
-// VisitDropRole refuses rather than reporting a successful comment-only drop.
-func (r *Renderer) VisitDropRole(node *ast.DropRoleNode) error {
-	return r.unsupportedRole("DROP ROLE", node.Name)
-}
-
-// VisitAlterRole refuses rather than silently omitting a detected role change.
-func (r *Renderer) VisitAlterRole(node *ast.AlterRoleNode) error {
-	return r.unsupportedRole("ALTER ROLE", node.Name)
-}
-
-func (r *Renderer) unsupportedRole(operation, name string) error {
-	return unsupportedRoleError(r.dialect, operation, name)
-}
-
-// VisitGrantPrivilege names the grant Ptah does not generate for this target.
-func (r *Renderer) VisitGrantPrivilege(node *ast.GrantPrivilegeNode) error {
-	r.notGenerated("grant", node.Role)
-	return nil
-}
-
-// VisitRevokePrivilege names the revoke Ptah does not generate for this target.
-func (r *Renderer) VisitRevokePrivilege(node *ast.RevokePrivilegeNode) error {
-	r.notGenerated("revoke", node.Role)
-	return nil
-}
-
 // VisitRawSQL renders a literal SQL fragment verbatim. Dialect-specific
 // routine nodes use this path to preserve executable routine bodies while
 // keeping parser metadata available to callers.

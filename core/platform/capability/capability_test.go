@@ -229,7 +229,15 @@ func TestPresets_KeyDifferences(t *testing.T) {
 	// Enum modeling is mutually exclusive and dialect-appropriate.
 	c.Assert(capability.MySQL84().Has(capability.EnumInlineColumn), qt.IsTrue)
 	c.Assert(capability.MySQL84().Has(capability.EnumCustomType), qt.IsFalse)
-	c.Assert(capability.MySQL84().Has(capability.RoleManagement), qt.IsFalse)
+	// MySQL and MariaDB joined once the read half existed: a role is a row in
+	// mysql.user, marked account_locked with an expired password on MySQL 8.4
+	// and carrying is_role on MariaDB 11.8 (stokaro/ptah#1762).
+	c.Assert(capability.MySQL84().Has(capability.RoleManagement), qt.IsTrue)
+	c.Assert(capability.MariaDB1011().Has(capability.RoleManagement), qt.IsTrue)
+	// SQLite is the control on that move: it has no roles at all, so a change
+	// that turned the key on family-wide rather than for the two engines that
+	// have them reddens here.
+	c.Assert(capability.SQLite3().Has(capability.RoleManagement), qt.IsFalse)
 	// ClickHouse has named roles and GRANT/REVOKE, measured live on 24.10 and
 	// 26.7, and no role attributes at all. The key names the first pair and
 	// never the second, which is why an engine with neither LOGIN nor a
