@@ -35,6 +35,7 @@ import (
 // pass so dependencies precede the objects that read them. Diagnostic comments
 // are stripped before execution by atlasschema.SplitApplyStatements.
 func reportUnsupportedObjectsBeforeTables(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+	result = reportRemovedUserTypes(result, diff)
 	result = reportExtensions(result, diff)
 	result = reportSequences(result, diff)
 	return result
@@ -68,6 +69,33 @@ func planObjectsAfterTables(
 	result = planGrants(result, diff)
 	result = reportTriggers(result, diff)
 	return result, nil
+}
+
+// reportRemovedUserTypes names the domains, composite types and range types a
+// desired schema no longer declares.
+//
+// Creation is refused before any SQL by usertypescope.ValidateDeclared, because
+// a named skip would leave the declaring table naming a type the server has no
+// definition of (stokaro/ptah#1717). Removal has no declaration to refuse and
+// dropping a type this target never created is not an error, so it is named --
+// the answer every other unhostable kind here gives.
+//
+// The path is unreachable today: no ClickHouse read reports a domain, a
+// composite or a range, so the diff cannot carry one. The collections were
+// unwalked, which is how #1628 closed with grants and row-level security fixed
+// and these three still silent (stokaro/ptah#1708). Writing it now means a
+// reader that learns them later produces a sentence rather than nothing.
+func reportRemovedUserTypes(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+	for _, name := range diff.DomainsRemoved {
+		result = append(result, ast.NewDropType(name).SetDomain())
+	}
+	for _, name := range diff.CompositeTypesRemoved {
+		result = append(result, ast.NewDropType(name))
+	}
+	for _, name := range diff.RangesRemoved {
+		result = append(result, ast.NewDropType(name))
+	}
+	return result
 }
 
 func reportExtensions(result []ast.Node, diff *types.SchemaDiff) []ast.Node {

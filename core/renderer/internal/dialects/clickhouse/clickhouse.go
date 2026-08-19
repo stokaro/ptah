@@ -920,9 +920,18 @@ func (r *Renderer) VisitAlterType(node *ast.AlterTypeNode) error {
 	return nil
 }
 
-// VisitDropType is a no-op (see VisitCreateType).
+// VisitDropType is a no-op (see VisitCreateType), and names which kind of type
+// it declined.
+//
+// The node carries enums, domains, composite types and range types, and a
+// message reading DROP TYPE for a domain sends the reader looking for a type
+// that was never declared under that word (stokaro/ptah#1708).
 func (r *Renderer) VisitDropType(node *ast.DropTypeNode) error {
-	r.notSupported("DROP TYPE", node.Name)
+	kind := "DROP TYPE"
+	if node.Domain {
+		kind = "DROP DOMAIN"
+	}
+	r.notSupported(kind, node.Name)
 	return nil
 }
 
