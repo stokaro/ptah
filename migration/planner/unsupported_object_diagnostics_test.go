@@ -409,43 +409,42 @@ func TestPlan_WhitespaceOnlyExtensionInstallationSchemaUnsupportedTargetsFailBef
 	}
 }
 
-// TestPlan_SQLServerNamesTheSequenceItDoesNotGenerate is what replaced the
-// hold-out.
+// TestPlan_SQLServerGeneratesTheSequenceAndStillNamesTheExtension is what the
+// hold-out became.
 //
 // Both surfaces used to withhold the SQL Server sequence entirely, and the
 // reason given was the renderer's answer: a flat "CREATE SEQUENCE is not
 // supported", which is a false statement about an engine that has had sequences
 // since 2012. Withholding traded that falsehood for a silent omission -- exit 0,
-// no statement, no diagnostic, on a sequence the author declared. The renderer's
-// sentence now names Ptah's generator rather than the engine, so both surfaces
-// can say what is true instead of saying nothing (stokaro/ptah#929 item 5).
+// no statement, no diagnostic, on a sequence the author declared. Naming Ptah's
+// generator rather than the engine let both surfaces say something true
+// (stokaro/ptah#929 item 5); building the path let them say the useful thing
+// instead (stokaro/ptah#1626).
 //
-// The executable half is still asserted: naming the object must not become
-// emitting a CREATE SEQUENCE Ptah cannot read back or plan again.
-func TestPlan_SQLServerNamesTheSequenceItDoesNotGenerate(t *testing.T) {
+// The extension row is the control, and it is why this test still has two
+// halves. A change that flipped every skip comment into a statement would
+// satisfy the sequence assertion; the extension has no T-SQL form at all, so it
+// must still arrive as a named skip on both surfaces.
+func TestPlan_SQLServerGeneratesTheSequenceAndStillNamesTheExtension(t *testing.T) {
 	c := qt.New(t)
 
 	planned := strings.Join(planStatements(c, mysqlFamilyCreationDiff(), mysqlFamilySchema(), platform.SQLServer), "\n")
 	rendered := strings.Join(renderStatements(c, mysqlFamilySchema(), platform.SQLServer), "\n")
 
-	c.Assert(executableSQL(planned), qt.Not(qt.Contains), "CREATE SEQUENCE")
-	c.Assert(executableSQL(rendered), qt.Not(qt.Contains), "CREATE SEQUENCE")
+	// Exactly one, not at least one. The two halves that used to answer for a
+	// sequence -- the named skip and the real DDL -- are now one switch, and a
+	// planner that forgot to turn the first off would emit the CREATE and the
+	// skip comment for one object. With the capability on, the "skip" is
+	// itself rendered as a bare CREATE SEQUENCE, so the duplicate is two
+	// executable statements rather than a statement plus a comment, and only a
+	// count can see it.
+	c.Assert(countCreateSequence(executableSQL(planned)), qt.Equals, 1)
+	c.Assert(countCreateSequence(executableSQL(rendered)), qt.Equals, 1)
+	c.Assert(planned, qt.Not(qt.Contains), `-- SQLSERVER: CREATE SEQUENCE "order_number_seq" is not generated`)
 
-	tests := []struct {
-		name string
-		want string
-	}{
-		{name: "extension", want: `-- SQLSERVER: extensions "pg_trgm" is not generated for this target; skipped.`},
-		{name: "sequence", want: `-- SQLSERVER: CREATE SEQUENCE "order_number_seq" is not generated for this target; skipped.`},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-			c.Assert(planned, qt.Contains, test.want)
-			c.Assert(rendered, qt.Contains, test.want)
-		})
-	}
+	extension := `-- SQLSERVER: extensions "pg_trgm" is not generated for this target; skipped.`
+	c.Assert(planned, qt.Contains, extension)
+	c.Assert(rendered, qt.Contains, extension)
 }
 
 // executableSQL drops every SQL line comment, leaving only what a server would
@@ -518,4 +517,16 @@ func TestPlan_MySQLFamilyRoleRefusalNamesTheSameRoleAtEitherGate(t *testing.T) {
 			})
 		}
 	}
+}
+
+// countCreateSequence counts the executable CREATE SEQUENCE statements in a
+// rendered plan.
+func countCreateSequence(sql string) int {
+	count := 0
+	for line := range strings.SplitSeq(sql, "\n") {
+		if strings.Contains(line, "CREATE SEQUENCE") {
+			count++
+		}
+	}
+	return count
 }

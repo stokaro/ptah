@@ -52,6 +52,22 @@ func (p *Planner) reportUnsupportedObjects(result []ast.Node, diff *types.Schema
 	for _, extension := range diff.ExtensionsModified {
 		result = append(result, ast.NewExtension(extension.Name).SetSchema(extension.ToSchema))
 	}
+	result = p.reportUnsupportedSequences(result, diff)
+	return p.reportUnsupportedRoutinesAndRoles(result, diff)
+}
+
+// reportUnsupportedSequences names the sequences a target in this family cannot
+// generate, and stays out of the way of one that can.
+//
+// The identity-only nodes below render as a named skip comment. A target
+// declaring capability.Sequences gets real DDL from planSequences instead,
+// which is what makes the key mean what its own doc comment says: a preset may
+// claim it only where a path emits, reads back and plans the object
+// (stokaro/ptah#1626).
+func (p *Planner) reportUnsupportedSequences(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+	if p.capabilities().Has(capability.Sequences) {
+		return result
+	}
 	for _, name := range diff.SequencesAdded {
 		result = append(result, ast.NewCreateSequence(name))
 	}
@@ -61,7 +77,7 @@ func (p *Planner) reportUnsupportedObjects(result []ast.Node, diff *types.Schema
 	for _, name := range diff.SequencesRemoved {
 		result = append(result, ast.NewDropSequence(name))
 	}
-	return p.reportUnsupportedRoutinesAndRoles(result, diff)
+	return result
 }
 
 // reportUnsupportedRoutinesAndRoles appends the identity-only nodes for the role

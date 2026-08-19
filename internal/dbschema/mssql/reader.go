@@ -98,6 +98,12 @@ func (r *Reader) ReadSchema() (*types.DBSchema, error) {
 	}
 	schema.Views = views
 
+	sequences, err := r.readSequences()
+	if err != nil {
+		return nil, fmt.Errorf("sqlserver: read sequences: %w", err)
+	}
+	schema.Sequences = sequences
+
 	synonyms, err := r.readSynonyms()
 	if err != nil {
 		return nil, fmt.Errorf("sqlserver: read synonyms: %w", err)
@@ -553,6 +559,106 @@ func (r *Reader) readViews() ([]types.DBView, error) {
 		return nil, err
 	}
 	return views, nil
+}
+
+// readSequences reads the standalone sequences the connected database declares.
+//
+// The whole difficulty is that sys.sequences reports every option filled in,
+// including the ones the author never wrote. `CREATE SEQUENCE s` with no
+// clauses at all comes back with start_value and minimum_value both
+// -9223372036854775808 and maximum_value 9223372036854775807 -- the bigint
+// bounds -- because the engine resolved the defaults at creation time and there
+// is no column recording which of them the statement actually named. Measured
+// on SQL Server 2025 (RTM-CU8), 17.0.4075.5.
+//
+// That is safe here for one reason, and it is worth stating because it is the
+// property that keeps an apply loop from re-planning the same sequence forever:
+// the comparator only compares options the DECLARATION sets, and treats a nil
+// one as unmanaged. So a fully populated read against a declaration that named
+// nothing produces no change. A declaration that names an option is asking to
+// manage it, and then the concrete catalog value is exactly what it has to be
+// compared against.
+//
+// is_cached and cache_size are two facts, not one. is_cached = 1 with a NULL
+// cache_size is the server choosing the size, which no declaration can ask for
+// by number, so it reads as unset. is_cached = 0 is NO CACHE, which
+// goschema.Sequence has no way to spell either; it also reads as unset, and the
+// renderer's own NO CACHE stays reachable through a declared cache of zero.
+func (r *Reader) readSequences() ([]types.DBSequence, error) {
+	query := `
+		SELECT s.name, sq.name, t.name,
+			   CAST(sq.start_value AS bigint), CAST(sq.increment AS bigint),
+			   CAST(sq.minimum_value AS bigint), CAST(sq.maximum_value AS bigint),
+			   sq.is_cycling, sq.is_cached, sq.cache_size
+		FROM sys.sequences AS sq
+		JOIN sys.schemas AS s ON s.schema_id = sq.schema_id
+		JOIN sys.types AS t ON t.user_type_id = sq.user_type_id
+		WHERE sq.is_ms_shipped = 0
+			  AND (` + schemaPredicatePlaceholder + `)
+		ORDER BY s.name, sq.name`
+	rows, err := r.db.Query(r.queryWithSchemaPredicate(query), r.schemaArgs()...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var sequences []types.DBSequence
+	for rows.Next() {
+		sequence, scanErr := scanSequence(rows)
+		if scanErr != nil {
+			return nil, scanErr
+		}
+		sequence.Schema = r.outputSchema(sequence.Schema)
+		sequences = append(sequences, sequence)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return sequences, nil
+}
+
+// scanSequence reads one sys.sequences row into the shared shape.
+func scanSequence(rows *sql.Rows) (types.DBSequence, error) {
+	var (
+		sequence                         types.DBSequence
+		start, increment, minVal, maxVal int64
+		isCycling, isCached              bool
+		cacheSize                        sql.NullInt64
+	)
+	if err := rows.Scan(&sequence.Schema, &sequence.Name, &sequence.DataType,
+		&start, &increment, &minVal, &maxVal, &isCycling, &isCached, &cacheSize); err != nil {
+		return types.DBSequence{}, err
+	}
+	sequence.Start = &start
+	sequence.Increment = &increment
+	sequence.MinValue = &minVal
+	sequence.MaxValue = &maxVal
+	sequence.Cycle = isCycling
+	sequence.Cache = sequenceCacheFacts{cached: isCached, size: cacheSize}.managedOption()
+	return sequence, nil
+}
+
+// sequenceCacheFacts is what sys.sequences reports about a sequence's cache,
+// which is two facts rather than one.
+type sequenceCacheFacts struct {
+	cached bool
+	size   sql.NullInt64
+}
+
+// managedOption decides which of the two facts becomes a managed option.
+//
+// A cached sequence with a size is the only combination a declaration can
+// express, so it is the only one that reads as set. A cached sequence with a
+// NULL size is the server choosing, and an uncached one is NO CACHE; neither
+// has a spelling in goschema.Sequence, and reporting a number for either would
+// make every such sequence compare unequal against a declaration that named
+// one.
+func (f sequenceCacheFacts) managedOption() *int64 {
+	if !f.cached || !f.size.Valid {
+		return nil
+	}
+	size := f.size.Int64
+	return &size
 }
 
 // readSynonyms reads the synonyms the connected database declares.

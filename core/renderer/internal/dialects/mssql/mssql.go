@@ -278,32 +278,198 @@ func (r *Renderer) VisitDropFunction(node *ast.DropFunctionNode) error {
 	return nil
 }
 
-// VisitCreateSequence names the sequence Ptah declines to generate for SQL
-// Server. It does NOT claim SQL Server has no sequences -- it has had them since
-// 2012, and the T-SQL spelling is close enough to the standard that emitting one
-// would be easy.
+// defaultSchema is where SQL Server puts an object whose name carries no
+// schema, and therefore where an existence guard has to look for one.
+const defaultSchema = "dbo"
+
+// refuses reports whether this target declines an object kind, writing the
+// named skip diagnostic when it does.
 //
-// What is missing is the other two thirds. capability.SQLServer2022 sets
-// Sequences: false because internal/dbschema/mssql does not read sequences back
-// into goschema.Database.Sequences and internal/planner/dialects/mssql plans
-// nothing for them, so a CREATE SEQUENCE emitted here would be a statement
-// `schema apply` never plans and `db read` never sees again: an apply loop that
-// re-adds the same object forever. core/renderer.TestRender_SequencesCapability
-// AgreesWithTheGenerator holds the two sides together, so flipping this to emit
-// requires the reader and the planner to land in the same change.
+// It is the same shape [Renderer.notSupported] writes, so a kind gated by a
+// capability and a kind this renderer never generates read identically to the
+// caller: a comment naming the object rather than a missing statement.
+func (r *Renderer) refuses(key capability.Capability, kind, name string) bool {
+	if r.capabilities().Has(key) {
+		return false
+	}
+	r.notSupported(strings.ToUpper(kind), name)
+	return true
+}
+
+// VisitCreateSequence renders a T-SQL CREATE SEQUENCE.
+//
+// Every clause here was measured against SQL Server 2025 (RTM-CU8),
+// 17.0.4075.5, rather than read from the grammar, because T-SQL and PostgreSQL
+// disagree in three places and each disagreement is a statement the engine
+// refuses:
+//
+//   - CREATE SEQUENCE IF NOT EXISTS is `Incorrect syntax near the keyword
+//     'IF'`. A declaration asking for the guard gets the sys.sequences
+//     existence test this renderer already uses for CREATE SCHEMA, which is
+//     idempotent on a second run.
+//   - CACHE 0 is `The cache size for sequence object must be greater than 0`,
+//     so a declared cache of zero renders NO CACHE, which the engine accepts
+//     and which is what a cache of zero means.
+//   - There is no OWNED BY. A declaration carrying one is reported rather than
+//     dropped: the association is not made, and saying so is the difference
+//     between a limitation and a surprise.
+//
+// The clause ORDER is PostgreSQL's, and that is measured too:
+// `AS ... INCREMENT BY ... MINVALUE ... MAXVALUE ... START WITH ... CACHE ...
+// CYCLE` is accepted, so the shared ordering needs no T-SQL variant.
 func (r *Renderer) VisitCreateSequence(node *ast.CreateSequenceNode) error {
-	r.notSupported("CREATE SEQUENCE", node.Name)
+	if r.refuses(capability.Sequences, "sequence", node.Name) {
+		return nil
+	}
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+	if node.OwnedBy != "" {
+		r.w.WriteLinef("-- SQLSERVER: sequence %q declares OWNED BY %q, which T-SQL has no clause for; "+
+			"the association is not made.", node.Name, node.OwnedBy)
+	}
+	statement := strings.Join(append(
+		[]string{"CREATE SEQUENCE", sequenceIdentifier(node.Name, node.Schema)},
+		sequenceOptions(node.AsType, node.Start, node.Increment, node.MinValue, node.MaxValue,
+			node.Cache, cyclePointer(node.Cycle))...,
+	), " ")
+	if !node.IfNotExists {
+		r.w.WriteLinef("%s;", statement)
+		return nil
+	}
+	r.w.WriteLinef("IF NOT EXISTS (SELECT 1 FROM sys.sequences sq JOIN sys.schemas sc "+
+		"ON sc.schema_id = sq.schema_id WHERE sc.name = %s AND sq.name = %s)",
+		escapeStringLiteral(sequenceSchemaOrDefault(node.Schema)), escapeStringLiteral(unquoteIdentifier(node.Name)))
+	r.w.WriteLinef("    EXEC(%s);", escapeStringLiteral(statement))
 	return nil
 }
 
+// VisitAlterSequence renders a T-SQL ALTER SEQUENCE, and refuses by name the
+// two options the engine will not alter in place.
+//
+// `ALTER SEQUENCE ... AS <type>` is `Argument 'AS' cannot be used in an ALTER
+// SEQUENCE statement`, and `START WITH` is the same refusal for its own
+// keyword: T-SQL spells that one RESTART WITH, which also resets the current
+// value. Both are named rather than dropped, because a plan that silently
+// omits the option an author changed reports success and leaves the sequence
+// as it was.
 func (r *Renderer) VisitAlterSequence(node *ast.AlterSequenceNode) error {
-	r.notSupported("ALTER SEQUENCE", node.Name)
+	if r.refuses(capability.Sequences, "sequence", node.Name) {
+		return nil
+	}
+	if node.AsType != "" {
+		r.w.WriteLinef("-- SQLSERVER: sequence %q cannot change its type in place; "+
+			"ALTER SEQUENCE refuses AS, so this needs a drop and a create.", node.Name)
+	}
+	if node.OwnedBy != "" {
+		r.w.WriteLinef("-- SQLSERVER: sequence %q declares OWNED BY %q, which T-SQL has no clause for; "+
+			"the association is not made.", node.Name, node.OwnedBy)
+	}
+	options := sequenceOptions("", nil, node.Increment, node.MinValue, node.MaxValue, node.Cache, node.Cycle)
+	if node.Start != nil {
+		// RESTART WITH, not START WITH: the engine refuses the second spelling
+		// in an ALTER, and the first also resets the sequence's current value.
+		options = append([]string{fmt.Sprintf("RESTART WITH %d", *node.Start)}, options...)
+	}
+	if len(options) == 0 {
+		return nil
+	}
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+	r.w.WriteLinef("ALTER SEQUENCE %s %s;", sequenceIdentifier(node.Name, node.Schema), strings.Join(options, " "))
 	return nil
 }
 
+// VisitDropSequence renders a T-SQL DROP SEQUENCE.
+//
+// DROP SEQUENCE IF EXISTS is accepted; CASCADE is `Incorrect syntax near the
+// keyword 'CASCADE'`, and there is nothing to render in its place. The engine
+// refuses a drop a column default still draws from -- `Cannot DROP SEQUENCE
+// because it is being referenced by object` -- which is the same protection
+// PostgreSQL gives without CASCADE.
 func (r *Renderer) VisitDropSequence(node *ast.DropSequenceNode) error {
-	r.notSupported("DROP SEQUENCE", node.Name)
+	if r.refuses(capability.Sequences, "sequence", node.Name) {
+		return nil
+	}
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+	if node.Cascade {
+		r.w.WriteLinef("-- SQLSERVER: sequence %q asks for CASCADE, which T-SQL has no clause for; "+
+			"the engine refuses a drop a column default still draws from.", node.Name)
+	}
+	parts := []string{"DROP SEQUENCE"}
+	if node.IfExists {
+		parts = append(parts, "IF EXISTS")
+	}
+	parts = append(parts, sequenceIdentifier(node.Name, node.Schema))
+	r.w.WriteLinef("%s;", strings.Join(parts, " "))
 	return nil
+}
+
+// sequenceIdentifier renders a sequence's escaped, schema-qualified name.
+func sequenceIdentifier(name, schema string) string {
+	if schema == "" || strings.Contains(name, ".") {
+		return escapeQualifiedIdentifier(name)
+	}
+	return escapeQualifiedIdentifier(schema + "." + name)
+}
+
+// sequenceSchemaOrDefault names the schema an unqualified sequence lands in,
+// which is the one the existence guard has to look in.
+func sequenceSchemaOrDefault(schema string) string {
+	if trimmed := unquoteIdentifier(strings.TrimSpace(schema)); trimmed != "" {
+		return trimmed
+	}
+	return defaultSchema
+}
+
+// sequenceOptions renders the option clauses in the order the engine accepts.
+//
+// A cache of zero renders NO CACHE: T-SQL refuses CACHE 0, and zero cached
+// values is what NO CACHE means.
+func sequenceOptions(asType string, start, increment, minValue, maxValue, cache *int64, cycle *bool) []string {
+	parts := make([]string, 0)
+	if asType != "" {
+		parts = append(parts, "AS "+asType)
+	}
+	if increment != nil {
+		parts = append(parts, fmt.Sprintf("INCREMENT BY %d", *increment))
+	}
+	if minValue != nil {
+		parts = append(parts, fmt.Sprintf("MINVALUE %d", *minValue))
+	}
+	if maxValue != nil {
+		parts = append(parts, fmt.Sprintf("MAXVALUE %d", *maxValue))
+	}
+	if start != nil {
+		parts = append(parts, fmt.Sprintf("START WITH %d", *start))
+	}
+	if cache != nil {
+		parts = append(parts, cacheClause(*cache))
+	}
+	if cycle != nil {
+		parts = append(parts, cycleClauses[*cycle])
+	}
+	return parts
+}
+
+func cacheClause(cache int64) string {
+	if cache <= 0 {
+		return "NO CACHE"
+	}
+	return fmt.Sprintf("CACHE %d", cache)
+}
+
+// cycleClauses spells both sides of the option. The engine takes NO CYCLE as a
+// clause of its own rather than as the absence of CYCLE.
+var cycleClauses = map[bool]string{true: "CYCLE", false: "NO CYCLE"}
+
+// cyclePointer renders NO CYCLE for a CREATE only when the declaration asks for
+// CYCLE, matching what the PostgreSQL renderer emits for the same node.
+func cyclePointer(cycle bool) *bool {
+	return map[bool]*bool{true: &cycle, false: nil}[cycle]
 }
 
 func (r *Renderer) VisitCreateView(node *ast.CreateViewNode) error {
