@@ -191,22 +191,46 @@ func TestRender_MySQLFamilyNoLongerBlamesTheEngine(t *testing.T) {
 	}
 }
 
-// TestRender_SQLServerNamesTheFunctionItDoesNotGenerate is the control for the
-// three tests above: it is the one target of the three named in #929 whose
-// preset now declares Functions false, and its diagnostic must name Ptah rather
-// than the engine, because SQL Server hosts functions perfectly well.
+// TestRender_SQLServerGeneratesTheFunctionItUsedToName records the move and
+// keeps the control the old test provided.
 //
-// Without this row a mutant that made every dialect emit DDL would still pass
-// the MySQL-family tests.
-func TestRender_SQLServerNamesTheFunctionItDoesNotGenerate(t *testing.T) {
-	c := qt.New(t)
+// SQL Server used to be the negative row here: it hosts functions perfectly
+// well, but its preset declared Functions false because nothing could read one
+// back, and the diagnostic had to name Ptah rather than the engine. The read
+// half exists now (stokaro/ptah#1720), so the row is positive.
+//
+// The control it provided must not leave with it. Without a dialect that still
+// declines, a mutant making every target emit DDL would pass every row above,
+// so ClickHouse -- which declares Functions false and means it -- takes that
+// place.
+func TestRender_SQLServerGeneratesTheFunctionItUsedToName(t *testing.T) {
+	t.Run("sqlserver emits the T-SQL create form", func(t *testing.T) {
+		c := qt.New(t)
 
-	sql, err := renderer.GetOrderedCreateStatements(functionSchema(goschema.Function{
-		Name: "func_probe", Returns: "integer", Language: "sql", Body: "RETURN 1",
-	}), platform.SQLServer)
+		sql, err := renderer.GetOrderedCreateStatements(functionSchema(goschema.Function{
+			Name: "func_probe", Returns: "integer", Language: "sql", Body: "RETURN 1",
+		}), platform.SQLServer)
 
-	c.Assert(err, qt.IsNil)
-	joined := strings.Join(sql, "\n")
-	c.Check(joined, qt.Contains, `-- SQLSERVER: CREATE FUNCTION "func_probe" is not generated for this target; skipped.`)
-	c.Check(joined, qt.Not(qt.Contains), "not supported in SQL Server")
+		c.Assert(err, qt.IsNil)
+		joined := strings.Join(sql, "\n")
+		// CREATE OR ALTER is the create form as well as the replace form here:
+		// CREATE FUNCTION IF NOT EXISTS does not parse on this engine.
+		c.Check(joined, qt.Contains, "CREATE OR ALTER FUNCTION [func_probe]()")
+		c.Check(joined, qt.Contains, "RETURNS integer")
+		c.Check(joined, qt.Not(qt.Contains), "is not generated for this target")
+		c.Check(joined, qt.Not(qt.Contains), "not supported in SQL Server")
+	})
+
+	t.Run("clickhouse still declines, and names Ptah rather than the engine", func(t *testing.T) {
+		c := qt.New(t)
+
+		sql, err := renderer.GetOrderedCreateStatements(functionSchema(goschema.Function{
+			Name: "func_probe", Returns: "integer", Language: "sql", Body: "RETURN 1",
+		}), platform.ClickHouse)
+
+		c.Assert(err, qt.IsNil)
+		joined := strings.Join(sql, "\n")
+		c.Check(joined, qt.Not(qt.Contains), "CREATE OR ALTER FUNCTION")
+		c.Check(joined, qt.Not(qt.Contains), "not supported in ClickHouse")
+	})
 }
