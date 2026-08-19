@@ -121,6 +121,14 @@ type RowTTLSpec struct {
 	// [go.5x5.cz/ptah/internal/crdbinterval], which reads both sides into the
 	// value they denote (stokaro/ptah#1605).
 	ExpireAfter string
+	// RowStatsPollInterval is `ttl_row_stats_poll_interval`, how often the TTL
+	// job refreshes its row-count estimate.
+	//
+	// Like ExpireAfter its value is NOT compared as text: the server truncates
+	// the duration to whole seconds and stores it in Go's duration form, so
+	// `600s` reads back as `10m0s`. Comparison goes through
+	// [go.5x5.cz/ptah/internal/crdbduration] (stokaro/ptah#1721).
+	RowStatsPollInterval string
 	// JobCron is `ttl_job_cron`.
 	JobCron string
 	// SelectBatchSize is `ttl_select_batch_size`.

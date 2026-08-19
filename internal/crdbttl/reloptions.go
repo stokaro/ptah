@@ -66,6 +66,8 @@ func assign(spec *ast.RowTTLSpec, name, value string) {
 		spec.ExpirationExpression = value
 	case ExpireAfterParameter:
 		spec.ExpireAfter = value
+	case RowStatsPollIntervalParameter:
+		spec.RowStatsPollInterval = value
 	case JobCronParameter:
 		spec.JobCron = value
 	case SelectBatchSizeParameter:
