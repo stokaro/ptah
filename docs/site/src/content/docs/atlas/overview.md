@@ -362,6 +362,16 @@ variable rather than a flag for the same reason the two above are — the
 conformance `cli-surface` tier asserts flag parity with the pinned binary, and an
 environment variable is invisible to the help surface.
 
+**`PTAH_SCHEMA_DIFF_TEMPLATE_HELPERS`** — by default, `ptah-compat schema diff
+--format` registers one helper, `sql`, which is what the pinned community binary
+offers there; `{{ json . }}` exits 1 with `function "json" not defined`. Set the
+variable to `1` and the shared helper set `schema apply` and `schema inspect`
+already register becomes available on this verb too, so `{{ json . }}` renders a
+document carrying `From`, `To` and `Changes`. The default stays narrow because
+registering more would let ptah-compat accept a template the community binary
+refuses. Native `ptah schema diff` needs no variable: `--format json` emits a
+machine-readable diff there already.
+
 **`PTAH_HCL_MERGE_REDECLARATIONS`** — by default, an HCL schema document that
 declares one object twice is refused, naming the kind and the object. Before the
 refusal existed the second declaration was folded into the first and the run
