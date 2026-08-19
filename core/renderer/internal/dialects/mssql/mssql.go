@@ -619,30 +619,208 @@ func (r *Renderer) VisitAlterTableDisableRLS(node *ast.AlterTableDisableRLSNode)
 	return nil
 }
 
+// VisitCreateRole renders a T-SQL CREATE ROLE, and refuses a declaration
+// carrying attributes a database role does not have.
+//
+// This is where the two engines' role models actually differ, and the
+// difference is not cosmetic. A SQL Server DATABASE ROLE is a container for
+// permissions inside one database; it cannot log in and cannot own a password.
+// `CREATE ROLE [r] LOGIN` is `Incorrect syntax near 'LOGIN'` on 17.0.4075.5,
+// measured -- the thing that logs in is a LOGIN, a server principal outside any
+// database schema.
+//
+// Writing a comment and creating the role anyway is what would make this a
+// silent trap twice over. The author would get a principal that cannot do what
+// they wrote; and because the reader can only ever report those attributes
+// false, the comparison would report the same pending change on every run
+// forever. The fail-closed shape is ClickHouse's and mysqllike's -- name the
+// role, name the reason, refuse (stokaro/ptah#1698).
 func (r *Renderer) VisitCreateRole(node *ast.CreateRoleNode) error {
-	r.notSupported("roles", node.Name)
+	if r.refuses(capability.RoleManagement, "roles", node.Name) {
+		return nil
+	}
+	if err := refuseServerLevelRoleAttributes("CREATE ROLE", node); err != nil {
+		return err
+	}
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+	r.w.WriteLinef("CREATE ROLE %s;", escapeIdentifier(unquoteIdentifier(node.Name)))
 	return nil
 }
 
+// refuseServerLevelRoleAttributes refuses the declared attributes T-SQL has no
+// database role form for, naming them in a fixed order so the sentence reads
+// the same each run.
+func refuseServerLevelRoleAttributes(operation string, node *ast.CreateRoleNode) error {
+	declared := []struct {
+		name string
+		set  bool
+	}{
+		{"LOGIN", node.Login},
+		{"a password", node.Password != ""},
+		{"SUPERUSER", node.Superuser},
+		{"CREATEDB", node.CreateDB},
+		{"CREATEROLE", node.CreateRole},
+		{"REPLICATION", node.Replication},
+	}
+	unhonored := make([]string, 0, len(declared))
+	for _, attribute := range declared {
+		if attribute.set {
+			unhonored = append(unhonored, attribute.name)
+		}
+	}
+	if len(unhonored) == 0 {
+		return nil
+	}
+	return fmt.Errorf(
+		"%w: sqlserver: %s %s: declares %s, which a SQL Server database role does not have; "+
+			"a principal that logs in is a server-level LOGIN, outside this schema",
+		ptaherr.ErrUnsupportedFeature, operation, node.Name, strings.Join(unhonored, ", "))
+}
+
+// VisitDropRole renders a T-SQL DROP ROLE. IF EXISTS is accepted.
 func (r *Renderer) VisitDropRole(node *ast.DropRoleNode) error {
-	r.notSupported("DROP ROLE", node.Name)
+	if r.refuses(capability.RoleManagement, "roles", node.Name) {
+		return nil
+	}
+	parts := []string{"DROP ROLE"}
+	if node.IfExists {
+		parts = append(parts, "IF EXISTS")
+	}
+	parts = append(parts, escapeIdentifier(unquoteIdentifier(node.Name)))
+	r.w.WriteLinef("%s;", strings.Join(parts, " "))
 	return nil
 }
 
+// VisitAlterRole refuses rather than emitting or commenting.
+//
+// `ALTER ROLE` exists in T-SQL, and it renames a role or moves members in and
+// out of it. It does not change attributes, because a database role has none.
+// An ALTER reaching here is asking for a PostgreSQL attribute transition, and
+// a comment saying so would let the plan apply, report success, and leave the
+// role exactly as it was.
 func (r *Renderer) VisitAlterRole(node *ast.AlterRoleNode) error {
-	r.notSupported("ALTER ROLE", node.Name)
-	return nil
+	if !r.capabilities().Has(capability.RoleManagement) {
+		r.notSupported("ALTER ROLE", node.Name)
+		return nil
+	}
+	return fmt.Errorf(
+		"%w: sqlserver: ALTER ROLE %s: a SQL Server database role carries no attributes to alter; "+
+			"T-SQL's own ALTER ROLE renames it or moves its members instead",
+		ptaherr.ErrUnsupportedFeature, node.Name)
 }
 
+// VisitGrantPrivilege renders a T-SQL GRANT.
+//
+// Two measured facts shape it. A schema grant is spelled `ON SCHEMA::[name]`,
+// and omitting the `::` does not fail safely: `GRANT SELECT ON [app]` looks for
+// a TABLE called app, so a schema grant written without it silently targets a
+// different object whenever a table of that name exists. And `USAGE` is
+// `Incorrect syntax near 'USAGE'` -- PostgreSQL's schema-access privilege has
+// no T-SQL counterpart, so it is reported rather than emitted.
 func (r *Renderer) VisitGrantPrivilege(node *ast.GrantPrivilegeNode) error {
-	r.notSupported("GRANT", node.Role)
+	if r.refuses(capability.RoleManagement, "GRANT", node.Role) {
+		return nil
+	}
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+	privileges, unsupported := splitTSQLPrivileges(node.Privileges)
+	if len(unsupported) > 0 {
+		r.w.WriteLinef("-- SQLSERVER: grant to %q names %s, which T-SQL has no privilege for; "+
+			"schema access there is a permission on the schema's objects.",
+			node.Role, strings.Join(unsupported, ", "))
+	}
+	if len(privileges) == 0 {
+		return nil
+	}
+	statement := fmt.Sprintf("GRANT %s ON %s TO %s",
+		strings.Join(privileges, ", "),
+		grantTargetIdentifier(node.ObjectType, node.ObjectName),
+		escapeIdentifier(unquoteIdentifier(node.Role)))
+	if node.WithOption {
+		statement += " WITH GRANT OPTION"
+	}
+	r.w.WriteLinef("%s;", statement)
 	return nil
 }
 
+// VisitRevokePrivilege renders a T-SQL REVOKE.
+//
+// Revoking only the grant option is its own spelling, `REVOKE GRANT OPTION FOR
+// ... CASCADE`, and the CASCADE is not optional in practice: the option let the
+// grantee grant onward, so those grants have to go with it.
 func (r *Renderer) VisitRevokePrivilege(node *ast.RevokePrivilegeNode) error {
-	r.notSupported("REVOKE", node.Role)
+	if r.refuses(capability.RoleManagement, "REVOKE", node.Role) {
+		return nil
+	}
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+	privileges, unsupported := splitTSQLPrivileges(node.Privileges)
+	if len(unsupported) > 0 {
+		r.w.WriteLinef("-- SQLSERVER: revoke from %q names %s, which T-SQL has no privilege for; "+
+			"nothing was granted under that name either.",
+			node.Role, strings.Join(unsupported, ", "))
+	}
+	if len(privileges) == 0 {
+		return nil
+	}
+	parts := []string{"REVOKE"}
+	if node.GrantOptionFor {
+		parts = append(parts, "GRANT OPTION FOR")
+	}
+	parts = append(parts, strings.Join(privileges, ", "),
+		"ON", grantTargetIdentifier(node.ObjectType, node.ObjectName),
+		"FROM", escapeIdentifier(unquoteIdentifier(node.Role)))
+	if node.GrantOptionFor {
+		parts = append(parts, "CASCADE")
+	}
+	r.w.WriteLinef("%s;", strings.Join(parts, " "))
 	return nil
 }
+
+// tsqlAbsentPrivileges are the PostgreSQL privilege names T-SQL has no keyword
+// for. USAGE is the one that matters: it is how a PostgreSQL schema grant is
+// written, and `GRANT USAGE` is a syntax error here.
+var tsqlAbsentPrivileges = map[string]bool{"USAGE": true, "TEMPORARY": true, "TEMP": true}
+
+// splitTSQLPrivileges separates the privileges this target can grant from the
+// ones it has no keyword for.
+func splitTSQLPrivileges(privileges []string) (supported, unsupported []string) {
+	supported = make([]string, 0, len(privileges))
+	unsupported = make([]string, 0)
+	for _, privilege := range privileges {
+		normalized := strings.ToUpper(strings.TrimSpace(privilege))
+		if normalized == "" {
+			continue
+		}
+		if tsqlAbsentPrivileges[normalized] {
+			unsupported = append(unsupported, normalized)
+			continue
+		}
+		supported = append(supported, normalized)
+	}
+	return supported, unsupported
+}
+
+// grantTargetIdentifier renders a grant's target the way T-SQL names it.
+//
+// The SCHEMA:: prefix is the whole point. Without it the server resolves the
+// name as an object, so a schema grant written bare lands on a table of the
+// same name when one exists, and fails with `Cannot find the object` when it
+// does not -- a wrong target either way.
+func grantTargetIdentifier(objectType, objectName string) string {
+	if strings.EqualFold(strings.TrimSpace(objectType), grantObjectTypeSchema) {
+		return "SCHEMA::" + escapeIdentifier(unquoteIdentifier(objectName))
+	}
+	return escapeQualifiedIdentifier(objectName)
+}
+
+// grantObjectTypeSchema is the object type whose target is a schema rather than
+// an object inside one.
+const grantObjectTypeSchema = "SCHEMA"
 
 func (r *Renderer) VisitRawSQL(node *ast.RawSQLNode) error {
 	sql := strings.TrimSpace(node.SQL)

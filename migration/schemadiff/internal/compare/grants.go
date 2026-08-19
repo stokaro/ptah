@@ -60,6 +60,22 @@ func GrantsWithSemantics(
 	databaseGrantMapForAdditions := make(map[grantIdentity]difftypes.GrantRef)
 	databaseGrantMapForRemovals := make(map[grantIdentity]difftypes.GrantRef)
 	for _, grant := range database.Grants {
+		if grant.IsPartialRevoke {
+			// Not a grant. The row SUBTRACTS a privilege from a broader one --
+			// ClickHouse's partial revoke, SQL Server's DENY -- and entering it
+			// in either map states the opposite of what it says. In the removal
+			// map it becomes a REVOKE of a privilege the role already does not
+			// hold; in the addition map it makes a declaration asking for that
+			// privilege look satisfied. [dbschematogo.convertGrants] skips it
+			// for the same reason and spells the reasoning out.
+			//
+			// The row is left in place on the server. Ptah's grant model has no
+			// shape for "this privilege except there", so a declaration that
+			// asks for a denied privilege still plans the GRANT, and on a
+			// target where the exception wins that plan does not change what
+			// the role can do (stokaro/ptah#1698).
+			continue
+		}
 		ref := grantRefFromDatabase(grant)
 		key := newGrantIdentity(ref, semantics)
 		if managedRoles[ref.Role] || generatedGrantRoles[ref.Role] {

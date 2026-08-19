@@ -1189,15 +1189,24 @@ func SQLServer2022() Capabilities {
 		// does not exist here. Emitting without reading is precisely the
 		// permanent diff stokaro/ptah#929 is about, so the key stays false
 		// until the reader lands.
-		Functions:                          false,
-		Triggers:                           true,
-		CreateOrReplaceTrigger:             true,
-		AlterGeneratedColumnExpression:     false,
-		RowLevelSecurity:                   false,
-		PostgresCatalogFunctions:           false,
-		CatalogRowStatistics:               false,
-		CatalogDependencies:                false,
-		RoleManagement:                     false,
+		Functions:                      false,
+		Triggers:                       true,
+		CreateOrReplaceTrigger:         true,
+		AlterGeneratedColumnExpression: false,
+		RowLevelSecurity:               false,
+		PostgresCatalogFunctions:       false,
+		CatalogRowStatistics:           false,
+		CatalogDependencies:            false,
+		// RoleManagement is on for the same reason Sequences is: the three
+		// halves the key requires exist for this target. The renderer emits
+		// T-SQL CREATE ROLE, GRANT and REVOKE, internal/dbschema/mssql reads
+		// sys.database_principals and sys.database_permissions back, and the
+		// shared planner plans them. A SQL Server DATABASE role has none of
+		// PostgreSQL's cluster attributes -- `CREATE ROLE [r] LOGIN` is
+		// `Incorrect syntax near 'LOGIN'` on 17.0.4075.5 -- so a declaration
+		// carrying one gets the role and a line naming what was not honored
+		// (stokaro/ptah#1698).
+		RoleManagement:                     true,
 		ForeignKeys:                        true,
 		ForeignKeysRequireUniqueReference:  true,
 		ForeignKeysRequireIndexedReference: false,
