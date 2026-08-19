@@ -369,8 +369,11 @@ func TestUnsupportedFeaturesEmitCommentAndReturnNil(t *testing.T) {
 		{"drop extension", &ast.DropExtensionNode{Name: "pg_trgm"}},
 		{"create function", &ast.CreateFunctionNode{Name: "fn"}},
 		{"drop function", &ast.DropFunctionNode{Name: "fn"}},
-		{"create policy", &ast.CreatePolicyNode{Name: "p", Table: "t"}},
-		{"drop policy", &ast.DropPolicyNode{Name: "p", Table: "t"}},
+		// The policy nodes are deliberately absent for the same reason the role
+		// ones are: ClickHouse has row policies, so they render SQL now
+		// (stokaro/ptah#1736). rowpolicy_test.go pins them. The two nodes below
+		// stay, because the table-level switch they describe has no ClickHouse
+		// spelling at all and remains a comment.
 		{"enable rls", &ast.AlterTableEnableRLSNode{Table: "t"}},
 		{"disable rls", &ast.AlterTableDisableRLSNode{Table: "t"}},
 		// The role and grant nodes are deliberately absent: ClickHouse has both

@@ -1141,31 +1141,6 @@ func (r *Renderer) VisitDropTrigger(node *ast.DropTriggerNode) error {
 	return nil
 }
 
-// VisitCreatePolicy is a no-op for ClickHouse. ClickHouse has row policies
-// but with a different syntax that the PG-shaped node cannot describe.
-func (r *Renderer) VisitCreatePolicy(node *ast.CreatePolicyNode) error {
-	r.notSupported("CREATE POLICY", node.Name)
-	return nil
-}
-
-// VisitDropPolicy mirrors VisitCreatePolicy.
-func (r *Renderer) VisitDropPolicy(node *ast.DropPolicyNode) error {
-	r.notSupported("DROP POLICY", node.Name)
-	return nil
-}
-
-// VisitAlterTableEnableRLS is a no-op for ClickHouse.
-func (r *Renderer) VisitAlterTableEnableRLS(node *ast.AlterTableEnableRLSNode) error {
-	r.notSupported("ALTER TABLE ENABLE ROW LEVEL SECURITY", node.Table)
-	return nil
-}
-
-// VisitAlterTableDisableRLS mirrors VisitAlterTableEnableRLS.
-func (r *Renderer) VisitAlterTableDisableRLS(node *ast.AlterTableDisableRLSNode) error {
-	r.notSupported("ALTER TABLE DISABLE ROW LEVEL SECURITY", node.Table)
-	return nil
-}
-
 // The five role and privilege visitors live in rbac.go. ClickHouse has roles and
 // grants, so they render SQL rather than a diagnostic; the syntax they render,
 // and what it refuses, is documented there.

@@ -357,10 +357,15 @@ func TestPresets_KeyDifferences(t *testing.T) {
 	// sys.security_policies joined to sys.security_predicates, and planned
 	// (stokaro/ptah#1699).
 	c.Assert(sqlServer.Has(capability.RowLevelSecurity), qt.IsTrue)
-	// ClickHouse is the control on that move: it keeps the key off, so a
-	// change that turned row-level security on family-wide rather than for
-	// this one preset reddens here.
-	c.Assert(capability.ClickHouse24().Has(capability.RowLevelSecurity), qt.IsFalse)
+	// ClickHouse joined on its own evidence (stokaro/ptah#1736): CREATE, ALTER
+	// and DROP ROW POLICY are rendered, system.row_policies is read back, and
+	// the planner plans them.
+	c.Assert(capability.ClickHouse24().Has(capability.RowLevelSecurity), qt.IsTrue)
+	// The control that kept a family-wide flip from passing unnoticed moves
+	// with it rather than leaving: MySQL and SQLite have no row-level security
+	// at all, so a change that turned the key on for everything reddens here.
+	c.Assert(capability.MySQL84().Has(capability.RowLevelSecurity), qt.IsFalse)
+	c.Assert(capability.SQLite3().Has(capability.RowLevelSecurity), qt.IsFalse)
 }
 
 func TestCapabilities_With_DoesNotMutateReceiver(t *testing.T) {
