@@ -16,13 +16,19 @@
 //   - The server REWRITES two of the values on the way in.
 //     `ttl_expire_after = '72 hours'` reads back as `'72:00:00':::INTERVAL` and
 //     `'5 minutes'` as `'00:05:00'`; `ttl_row_stats_poll_interval = '600s'` reads
-//     back as `'10m0s'`, `'1500ms'` as `'1s'`, and `'100ms'` is stored NOWHERE AT
-//     ALL. The two are handled differently because the rewrites are different in
-//     kind: an interval has a VALUE both spellings denote, so ttl_expire_after is
-//     compared through [go.5x5.cz/ptah/internal/crdbinterval] rather than as text
-//     (stokaro/ptah#1605); a duration the server silently drops below one second
-//     denotes nothing at all, so ttl_row_stats_poll_interval stays refused — see
-//     [refusedParameters].
+//     back as `'10m0s'` and `'1500ms'` as `'1s'`. Neither is compared as text.
+//     Each spelling denotes a VALUE, so each is compared through the value:
+//     ttl_expire_after by [go.5x5.cz/ptah/internal/crdbinterval]
+//     (stokaro/ptah#1605), ttl_row_stats_poll_interval by
+//     [go.5x5.cz/ptah/internal/crdbduration] (stokaro/ptah#1721). The two need
+//     different readers because the rewrites differ in kind — one is
+//     PostgreSQL's interval normalization, the other truncation to whole
+//     seconds in Go's duration spelling. The duration has one edge the interval
+//     does not: a value below one second truncates to zero and is then stored
+//     NOWHERE AT ALL, so `'100ms'` would leave a table reporting the parameter
+//     missing on every inspection — that one is refused before SQL rather than
+//     compared, along with the two other values the server will not keep as
+//     written, by [rowStatsPollIntervalProblems].
 //   - Everything else round-trips VERBATIM. `ttl_expiration_expression` keeps its
 //     whitespace, case, parentheses, casts and quoted identifiers exactly; the
 //     cron string, the four integer knobs and the three boolean knobs come back
@@ -51,6 +57,7 @@ import (
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
+	"go.5x5.cz/ptah/internal/crdbduration"
 	"go.5x5.cz/ptah/internal/crdbinterval"
 )
 
@@ -75,6 +82,7 @@ func Equal(a, b *ast.RowTTLSpec) bool {
 	}
 	return a.ExpirationExpression == b.ExpirationExpression &&
 		equalInterval(a.ExpireAfter, b.ExpireAfter) &&
+		equalPollInterval(a.RowStatsPollInterval, b.RowStatsPollInterval) &&
 		a.JobCron == b.JobCron &&
 		equalPtr(a.SelectBatchSize, b.SelectBatchSize) &&
 		equalPtr(a.DeleteBatchSize, b.DeleteBatchSize) &&
@@ -117,12 +125,15 @@ func Options(s *ast.RowTTLSpec) []Option {
 	if s.IsZero() {
 		return nil
 	}
-	options := make([]Option, 0, 9)
+	options := make([]Option, 0, 10)
 	if s.ExpirationExpression != "" {
 		options = append(options, Option{ExpirationExpressionParameter, quote(s.ExpirationExpression)})
 	}
 	if s.ExpireAfter != "" {
 		options = append(options, Option{ExpireAfterParameter, quote(s.ExpireAfter)})
+	}
+	if s.RowStatsPollInterval != "" {
+		options = append(options, Option{RowStatsPollIntervalParameter, quote(s.RowStatsPollInterval)})
 	}
 	if s.JobCron != "" {
 		options = append(options, Option{JobCronParameter, quote(s.JobCron)})
@@ -182,56 +193,32 @@ const (
 	LabelMetricsParameter                 = "ttl_label_metrics"
 	DisableChangefeedReplicationParameter = "ttl_disable_changefeed_replication"
 
-	// ExpireAfterParameter and RowStatsPollIntervalParameter are named so they
-	// can be REFUSED by name; see [refusedParameters]. Nothing renders them.
+	// ExpireAfterParameter and RowStatsPollIntervalParameter are the two whose
+	// values the server rewrites, so both are compared through the value they
+	// denote rather than as text -- see [equalInterval] and [equalPollInterval].
 	ExpireAfterParameter          = "ttl_expire_after"
 	RowStatsPollIntervalParameter = "ttl_row_stats_poll_interval"
 )
 
-// refusedParameters are the ttl_* parameters CockroachDB accepts and then
-// stores in a form Ptah cannot predict from the declaration.
+// refusedParameters are the ttl_* parameters a declaration may not carry, each
+// mapped to the reason a diagnostic prints.
 //
-// This is the same rule internal/clickhouserbac applies to a rewritten
-// privilege: a declaration whose stored form differs from what was written
-// reads as missing on every inspection, so the plan re-issues it forever. The
-// difference is that here the rewrite is a VALUE canonicalization rather than a
-// name expansion, which makes it harder to see and no less fatal.
+// It held three entries once. `ttl_expire_after` and
+// `ttl_row_stats_poll_interval` were both refused because the server REWRITES
+// the value it stores, so a declaration compared as text reads as missing on
+// every inspection and the plan re-issues it forever -- the same rule
+// internal/clickhouserbac applies to a rewritten privilege, with a value
+// canonicalization in place of a name expansion. Both are managed now, each
+// compared through the value its spelling denotes rather than through the text:
+// see [go.5x5.cz/ptah/internal/crdbinterval] (stokaro/ptah#1605) and
+// [go.5x5.cz/ptah/internal/crdbduration] (stokaro/ptah#1721), which carry the
+// measured tables.
 //
-// Measured on v25.4.14 and v26.2.5 alike, by creating a table with each value
-// and reading pg_class.reloptions back:
-//
-//	ttl_expire_after = '3 days'            '3 days':::INTERVAL
-//	ttl_expire_after = '72 hours'          '72:00:00':::INTERVAL
-//	ttl_expire_after = '5 minutes'         '00:05:00':::INTERVAL
-//	ttl_expire_after = '1 day 2 hours'     '1 day 02:00:00':::INTERVAL
-//	ttl_row_stats_poll_interval = '10m'    '10m0s'
-//	ttl_row_stats_poll_interval = '600s'   '10m0s'
-//	ttl_row_stats_poll_interval = '90m'    '1h30m0s'
-//	ttl_row_stats_poll_interval = '1500ms' '1s'
-//	ttl_row_stats_poll_interval = '100ms'  (absent -- stored nowhere at all)
-//
-// Neither canonicalization is one Ptah can perform offline. The interval form
-// is PostgreSQL's month/day/time normalization, and the duration form is close
-// to Go's time.Duration.String() but not equal to it: Go renders 1500ms as
-// "1.5s" and CockroachDB as "1s", because the server truncates to whole seconds
-// first and then DROPS a value that truncates to zero. The last row is the one
-// that settles it -- a parameter the server accepts and stores nowhere would
-// tell an operator a policy applied while no policy exists.
-//
-// ttl_expire_after carries a second, independent problem: it adds a hidden
-// `crdb_internal_expiration` column, which information_schema.columns reports
-// with is_hidden = YES. A reader that did not filter hidden columns would
-// describe a column nobody declared and plan a DROP COLUMN for it.
-//
-// Both are solvable and neither is solvable here without adding an offline
-// interval canonicalizer and a hidden-column filter to a reader path PostgreSQL
-// and YugabyteDB share. stokaro/ptah#1605 tracks doing that properly; until it
-// lands, the refusal is the honest answer, and it names the alternative rather
-// than only saying no.
+// What remains is refused for an unrelated reason. `ttl` is not a knob at all:
+// it is derived from the other parameters, and the server answers
+// `"ttl_expire_after" and/or "ttl_expiration_expression" must be set` when it
+// arrives on its own. There is nothing to canonicalize and nothing to compare.
 var refusedParameters = map[string]string{
-	RowStatsPollIntervalParameter: "the server canonicalizes the duration it stores — '600s' reads back as " +
-		"'10m0s' — and silently stores nothing at all for a value below one second, so the declaration " +
-		"can never be compared against what the table actually has",
 	MarkerParameter: "it is derived from the other parameters and is refused by the server when it arrives " +
 		"alone; declare " + ExpirationExpressionParameter + " to turn a TTL on, and remove that to turn it off",
 }
@@ -303,6 +290,7 @@ func tableProblems(table Declared) []error {
 			table.Table, ExpirationExpressionParameter, ExpireAfterParameter))
 	}
 	problems = append(problems, expireAfterProblems(table)...)
+	problems = append(problems, rowStatsPollIntervalProblems(table)...)
 	problems = append(problems, knobProblems(table)...)
 	return problems
 }
@@ -456,6 +444,61 @@ func equalInterval(a, b string) bool {
 		return false
 	}
 	return equal
+}
+
+// equalPollInterval compares two ttl_row_stats_poll_interval values by the
+// duration they denote rather than by their text.
+//
+// It is the second field here compared that way, and for the same reason as
+// [equalInterval]: the server rewrites what it stores, so `600s` reads back as
+// `10m0s` and a text comparison would find a difference on every run. The
+// rewrite is a different one -- truncation to whole seconds and Go's duration
+// spelling rather than PostgreSQL's interval normalization -- which is why it
+// goes through [go.5x5.cz/ptah/internal/crdbduration] and not crdbinterval.
+//
+// A value neither side can read falls back to text equality, on the same
+// reasoning: [ValidateDeclared] refuses an unreadable declaration before it
+// reaches here, and the catalog's own spelling always reads, so the fallback
+// covers a hand-built spec rather than a real state.
+func equalPollInterval(a, b string) bool {
+	if a == b {
+		return true
+	}
+	if a == "" || b == "" {
+		return false
+	}
+	left, err := crdbduration.Canonical(a)
+	if err != nil {
+		return false
+	}
+	right, err := crdbduration.Canonical(b)
+	if err != nil {
+		return false
+	}
+	return left == right
+}
+
+// rowStatsPollIntervalProblems refuses a declared duration the server would not
+// keep as written.
+//
+// Three shapes reach it, each measured on v26.2.5. A value below one second is
+// truncated to zero and the parameter is then stored NOWHERE AT ALL, so the
+// statement succeeds and every later inspection reports the parameter missing
+// -- the same silent shape [knobProblems] refuses for the integer knobs. A
+// negative value is refused by the server. A value past the largest duration it
+// holds WRAPS in the server and is answered `must be at least 0`, which names
+// the sign of a number the operator never wrote.
+//
+// Refusing all three here turns each into a message naming what would have
+// happened, before any statement runs.
+func rowStatsPollIntervalProblems(table Declared) []error {
+	if table.TTL.RowStatsPollInterval == "" {
+		return nil
+	}
+	if _, err := crdbduration.Canonical(table.TTL.RowStatsPollInterval); err != nil {
+		return []error{fmt.Errorf("table %q declares %s: %w", table.Table, RowStatsPollIntervalParameter, err)}
+	}
+	return nil
 }
 
 // expireAfterProblems refuses a declared interval Ptah cannot read.
