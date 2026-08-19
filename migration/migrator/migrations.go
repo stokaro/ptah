@@ -1036,6 +1036,9 @@ func executeMigrationFileSQL(
 	if err := validateMigrationStatements(filename, statements, hooks.validator); err != nil {
 		return err
 	}
+	if err := preflightTransactionRequirements(conn, filename, sql, statements, mode); err != nil {
+		return err
+	}
 	for i, stmt := range statements {
 		stmt = strings.TrimSpace(stmt)
 		if stmt == "" {

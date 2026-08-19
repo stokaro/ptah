@@ -1109,36 +1109,7 @@ func transactionRules() []Rule {
 			// transaction it wraps an up file in, so a rollback that mixes
 			// CREATE INDEX CONCURRENTLY with transactional DDL is refused by
 			// PostgreSQL exactly the same way.
-			CheckFile: func(file *File) []Finding {
-				if (!file.IsUp && !file.IsDown) || file.NoTransaction {
-					return nil
-				}
-				var nonTransactional *Statement
-				transactional := false
-				for i := range file.Statements {
-					stmt := &file.Statements[i]
-					if isTransactionControlStatement(stmt.Words) {
-						continue
-					}
-					if isPostgresNonTransactionalStatement(stmt.Words) {
-						nonTransactional = stmt
-						continue
-					}
-					transactional = true
-				}
-				if nonTransactional == nil || !transactional {
-					return nil
-				}
-				return []Finding{{
-					Rule:     "TX101",
-					Title:    "transactional and non-transactional statements mixed",
-					Severity: SeverityWarning,
-					File:     file.Path,
-					Line:     nonTransactional.Line,
-					Message:  "this migration mixes PostgreSQL statements that require autocommit with transactional DDL; split them into separate migrations",
-					Context:  statementFindingContext(nonTransactional.Index),
-				}}
-			},
+			CheckFile: checkTransactionMix,
 		},
 		{
 			Code:     "TX201",
@@ -1760,10 +1731,6 @@ func isTransactionControlStatement(w []string) bool {
 		hasWordPrefix(w, "START", "TRANSACTION") ||
 		hasWordPrefix(w, "COMMIT") ||
 		hasWordPrefix(w, "ROLLBACK")
-}
-
-func isPostgresNonTransactionalStatement(w []string) bool {
-	return scanConcurrentIndexOperation(w)
 }
 
 // createdTableRef returns the normalized reference of the table a CREATE

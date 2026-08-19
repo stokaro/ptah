@@ -87,6 +87,7 @@ import (
 	"go.5x5.cz/ptah/internal/planner/dialects/mysql"
 	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
 	"go.5x5.cz/ptah/internal/planner/dialects/sqlite"
+	"go.5x5.cz/ptah/internal/txrequire"
 	"go.5x5.cz/ptah/migration/diffpolicy"
 	"go.5x5.cz/ptah/migration/internal/identifiervalidation"
 	"go.5x5.cz/ptah/migration/schemadiff/types"
@@ -526,29 +527,14 @@ func GenerateSchemaDiffASTWithOptions(
 
 // NodeRequiresNoTransaction reports whether a single planned AST node must run
 // outside the migrator's per-migration transaction.
+//
+// The rule lives in [txrequire], which also answers the authored-file question
+// migration/lint and the migrator ask. There used to be two implementations
+// and they disagreed: this one counted `ALTER TYPE ... ADD VALUE` and lint's
+// counted concurrent indexes only, so the enum file lint did not call a mix
+// was exactly the file that failed at apply (stokaro/ptah#996).
 func NodeRequiresNoTransaction(dialect string, node ast.Node) bool {
-	if !platform.IsPostgresFamily(dialect) {
-		return false
-	}
-	if index, ok := node.(*ast.IndexNode); ok {
-		return index.Concurrently
-	}
-	// DROP INDEX CONCURRENTLY is rejected inside a transaction block exactly as
-	// CREATE INDEX CONCURRENTLY is, so it must reach the same no_transaction
-	// routing rather than being wrapped and failing at execution time.
-	if dropIndex, ok := node.(*ast.DropIndexNode); ok {
-		return dropIndex.Concurrently
-	}
-	alterType, ok := node.(*ast.AlterTypeNode)
-	if !ok {
-		return false
-	}
-	for _, op := range alterType.Operations {
-		if _, ok := op.(*ast.AddEnumValueOperation); ok {
-			return true
-		}
-	}
-	return false
+	return txrequire.NodeRequiresAutocommit(dialect, node)
 }
 
 // RequiresNoTransaction reports whether the planned migration contains
