@@ -90,8 +90,8 @@ Across the 191 capabilities below:
 
 | Reading | Count |
 | --- | --- |
-| Ptah supports it fully | 130 |
-| Ptah supports it with a stated limitation | 43 |
+| Ptah supports it fully | 131 |
+| Ptah supports it with a stated limitation | 42 |
 | Ptah does not implement it | 13 |
 | Ptah covers it in its own form, against a hosted service it cannot interoperate with | 5 |
 | Ptah and Atlas CE both support it | 41 |
@@ -299,7 +299,7 @@ seven of them as open capabilities regardless.
 | PostgreSQL 12+ (postgres, postgresql) | ✅ | ✅ | ✅ | Reference engine of the PostgreSQL family: views, matviews, functions, triggers, sequences, roles, RLS and domains all render. Presets 12-13, 14-16, 17+ from the server banner. |
 | Roles, grants, and row-level security | 🟡 | ❌ | ✅ | PostgreSQL, CockroachDB, YugabyteDB and SQL Server emit roles, grants and RLS; ClickHouse emits roles and grants, not RLS; Spanner names all three. CE no-ops `role`. |
 | Spanner PostgreSQL interface (spanner) | 🟡 | ❌ | ✅ | Enums, sequences, matviews, functions and triggers render as named skips; foreign keys render, SERIAL errors. Probed live every run; no compose service or integration target (stokaro/ptah#1719). |
-| SQL Server and Azure SQL (sqlserver, mssql, tsql) | 🟡 | ❌ | ✅ | Every spelling renders the same DDL. Sequences, roles/grants, row-level security and functions all render, read back and plan. The engine has no materialized views. |
+| SQL Server and Azure SQL (sqlserver, mssql, tsql) | ✅ | ❌ | ✅ | Every spelling renders the same DDL. Tables, views, triggers, synonyms, sequences, roles/grants, row-level security and functions all render, read back and plan. |
 | SQLite (sqlite, sqlite3) | 🟡 | ✅ | ✅ | Column drops, type, nullability, default, generated and table-constraint changes rebuild, inbound foreign keys included. An add-column-only diff still refuses. Tracked by stokaro/ptah#1707. |
 | Standalone sequences | 🟡 | ❌ | ✅ | PostgreSQL, CockroachDB, YugabyteDB and SQL Server emit CREATE SEQUENCE. MySQL, MariaDB, ClickHouse, Spanner and SQLite name it as skipped rather than dropping it. |
 | TiDB and LibSQL | ❌ | ✅ | ✅ | Both names fail dialect normalization: "unsupported database dialect: tidb" / "...: libsql". No renderer, planner or driver entry. Tracked by stokaro/ptah#1615. |
