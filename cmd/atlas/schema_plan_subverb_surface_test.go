@@ -154,6 +154,28 @@ var atlasSchemaPlanValidateFlags = []string{
 	"to",
 }
 
+// atlasSchemaPlanLintFlags is the same for `atlas schema plan lint`, whose
+// published entry registers the identical set: the shared transition flags plus
+// -f/--file, and no --url.
+//
+// It is spelled out rather than aliased to atlasSchemaPlanValidateFlags. The
+// two sets being equal today is a fact about the published reference, not a
+// rule, and an alias would make a future divergence in one of them silently
+// rewrite the assertion for the other.
+var atlasSchemaPlanLintFlags = []string{
+	"auto-approve",
+	"dev-url",
+	"exclude",
+	"file",
+	"format",
+	"from",
+	"include",
+	"lock-timeout",
+	"repo",
+	"schema",
+	"to",
+}
+
 // TestAtlasSchemaPlanVerbFlagSetsMatchAtlas pins each implemented sub-verb's
 // registered flag set against the captured Atlas surface.
 //
@@ -171,6 +193,7 @@ func TestAtlasSchemaPlanVerbFlagSetsMatchAtlas(t *testing.T) {
 	}{
 		{name: "new", path: []string{"schema", "plan", "new"}, want: atlasSchemaPlanNewFlags},
 		{name: "validate", path: []string{"schema", "plan", "validate"}, want: atlasSchemaPlanValidateFlags},
+		{name: "lint", path: []string{"schema", "plan", "lint"}, want: atlasSchemaPlanLintFlags},
 	}
 
 	for _, test := range tests {
@@ -197,6 +220,8 @@ func TestAtlasSchemaPlanVerbShorthandsMatchAtlas(t *testing.T) {
 		{name: "new_schema", path: []string{"schema", "plan", "new"}, flag: "schema", shorthand: "s"},
 		{name: "validate_file", path: []string{"schema", "plan", "validate"}, flag: "file", shorthand: "f"},
 		{name: "validate_schema", path: []string{"schema", "plan", "validate"}, flag: "schema", shorthand: "s"},
+		{name: "lint_file", path: []string{"schema", "plan", "lint"}, flag: "file", shorthand: "f"},
+		{name: "lint_schema", path: []string{"schema", "plan", "lint"}, flag: "schema", shorthand: "s"},
 	}
 
 	for _, test := range tests {
@@ -238,8 +263,8 @@ func TestAtlasSchemaPlanNewRejectsParentOnlyFlags(t *testing.T) {
 }
 
 // TestAtlasSchemaPlanRegistrySubverbsStayStubs pins which sub-verbs did NOT
-// move. `lint` and `test` are local by their Atlas flag sets, so their
-// presence here is a deliberate deferral, not an oversight; the reasons are on
+// move. `test` is local by its Atlas flag set, so its presence among the stubs
+// is a deliberate deferral, not an oversight; the reason is on
 // unsupportedCommandTests.
 func TestAtlasSchemaPlanRegistrySubverbsStayStubs(t *testing.T) {
 	c := qt.New(t)

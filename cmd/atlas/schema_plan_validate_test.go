@@ -702,7 +702,7 @@ func TestSchemaPlanValidateRequiredInputs(t *testing.T) {
 		{
 			name: "missing_file",
 			args: []string{"--from", fixture.dbURL, "--to", fixture.schemaURL},
-			want: "--file is required: atlas schema plan validate validates an existing plan file",
+			want: "--file is required: atlas schema plan validate reads an existing plan file",
 		},
 		{
 			name: "from_is_a_schema_file",

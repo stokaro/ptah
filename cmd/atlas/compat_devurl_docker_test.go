@@ -418,14 +418,18 @@ func TestCompatDockerDevURL_DoesNotProvisionAValueTheBinaryCannotParse(t *testin
 // compatDockerVerbsNotWired are the compat verbs that register --dev-url and
 // still hand a docker value to the database connector.
 //
-// Neither has a row on the pinned community binary: measured on 2026-08-13 and
-// again on 2026-08-16, `atlas schema plan` answers `unknown flag: --dev-url`,
-// because the community version does not carry the flag there. There is
-// therefore no parity claim to keep and no wording to copy. The four verbs that
-// shared this list -- migrate checkpoint, migrate down, migrate test and schema
-// test -- were wired by stokaro/ptah#844 and have rows of their own now.
+// None of them has a row on the pinned community binary: measured on 2026-08-13
+// and again on 2026-08-16, `atlas schema plan` answers `unknown flag:
+// --dev-url`, because the community version does not carry the flag there, and
+// every entry here is a sub-verb of it. There is therefore no parity claim to
+// keep and no wording to copy. The four verbs that shared this list --
+// migrate checkpoint, migrate down, migrate test and schema test -- were wired
+// by stokaro/ptah#844 and have rows of their own now; the plan sub-verbs were
+// not, and stokaro/ptah#1619 records that `schema plan lint` joined the list
+// rather than closing the gap for one verb while its siblings kept it.
 func compatDockerVerbsNotWired() []string {
 	return []string{
+		"schema plan lint",
 		"schema plan new",
 		"schema plan validate",
 	}
