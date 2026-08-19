@@ -73,6 +73,37 @@ func (r *Renderer) VisitCreateDatabase(node *ast.CreateDatabaseNode) error {
 	return nil
 }
 
+// namedColumnCheck gives an unnamed column CHECK the name the comparison will
+// look for.
+//
+// SQL Server names an inline CHECK itself -- `CK__orders__status__571DF1D5`,
+// with is_system_named = 1 -- and the hash is per database. The comparison
+// looks for the convention an unnamed column check carries everywhere else,
+// `<table>_<column>_check`, so the first read-back after CREATE TABLE
+// disagreed with the declaration and the next apply renamed the constraint.
+// The schema converged, but only on the second run (stokaro/ptah#1716).
+//
+// A declaration that names its own check keeps that name; only the unnamed
+// case is filled in.
+func namedColumnCheck(table string, column *ast.ColumnNode) *ast.ColumnNode {
+	if column == nil || column.Check == "" || column.CheckName != "" {
+		return column
+	}
+	named := *column
+	named.CheckName = unquoteIdentifier(tableLeafName(table)) + "_" + column.Name + "_check"
+	return &named
+}
+
+// tableLeafName drops the schema qualifier, so a table in a named schema gets
+// the same check name it would get in the default one.
+func tableLeafName(table string) string {
+	parts := splitQualifiedIdentifier(table)
+	if len(parts) == 0 {
+		return table
+	}
+	return parts[len(parts)-1]
+}
+
 func (r *Renderer) VisitCreateTable(node *ast.CreateTableNode) error {
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
@@ -87,7 +118,7 @@ func (r *Renderer) VisitCreateTable(node *ast.CreateTableNode) error {
 
 	lines := make([]string, 0, len(node.Columns)+len(node.Constraints))
 	for _, column := range node.Columns {
-		line, err := renderColumn(column)
+		line, err := renderColumn(namedColumnCheck(node.Name, column))
 		if err != nil {
 			return fmt.Errorf("render column %s: %w", column.Name, err)
 		}

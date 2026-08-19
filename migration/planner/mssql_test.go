@@ -59,7 +59,12 @@ func TestGenerateSchemaDiffSQL_SQLServerCreatesTSQL(t *testing.T) {
 	c.Assert(sql, qt.Contains, "CREATE TABLE [dbo].[users] (")
 	c.Assert(sql, qt.Contains, "[id] INT IDENTITY(1,1) PRIMARY KEY")
 	c.Assert(sql, qt.Contains, "[email] NVARCHAR(320) NOT NULL")
-	c.Assert(sql, qt.Contains, "[status] NVARCHAR(255) NOT NULL CHECK ([status] IN ('active', 'blocked'))")
+	// The check carries the name the comparison looks for. Left unnamed, SQL
+	// Server assigns its own -- CK__users__status__<hash>, is_system_named = 1
+	// -- which no declaration can predict, so the first read-back disagreed and
+	// the next apply renamed it (stokaro/ptah#1716).
+	c.Assert(sql, qt.Contains,
+		"[status] NVARCHAR(255) NOT NULL CONSTRAINT [users_status_check] CHECK ([status] IN ('active', 'blocked'))")
 	c.Assert(sql, qt.Contains, "CREATE INDEX [idx_users_email] ON [dbo].[users] ([email]);")
 	c.Assert(sql, qt.Not(qt.Contains), "MySQL")
 }
