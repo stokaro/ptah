@@ -507,6 +507,7 @@ func resolveDesiredState(
 		ConnectTimeout:            opts.SourceConnectTimeout,
 		DevLockHeld:               true,
 		IgnoreUnknownHCLNames:     opts.IgnoreUnknownHCLNames,
+		ReportIgnored:             opts.Diagnostics,
 		Vars:                      opts.Vars,
 		ValidateSchema:            opts.ValidateDesiredSchema,
 		ValidateInspectedSchema:   opts.ValidateInspectedSchema,
