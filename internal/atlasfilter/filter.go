@@ -291,10 +291,55 @@ func checkPatternDepth(raw, defaultSchema string) error {
 	return fmt.Errorf("too many parts in pattern: %q", effective)
 }
 
+// envReferenceScheme is the prefix of a reference into the selected project
+// environment. It is resolved by the desired-state classifier, and by nothing
+// else.
+const envReferenceScheme = "env://"
+
+// refuseEnvReference refuses a selector carrying an env:// reference, naming
+// the flag rather than letting the value through as a literal glob.
+//
+// Only --to, --from and --url run through the classifier that expands these
+// references; a selector never does. Passed through, `--exclude env://exclude`
+// is an exclusion pattern spelled `env://exclude`, which matches no object,
+// and the run then either refuses for the wrong reason -- the unmatched
+// selection guard blames the glob rather than the scheme -- or, where that
+// guard warns instead of failing, proceeds with NOTHING excluded and exits 0.
+// On `schema apply` and `schema clean` that difference is destructive
+// (stokaro/ptah#1697).
+//
+// The remedy is not to resolve it. The selected environment's own `exclude`
+// list is already applied without any flag, so the reference asks for
+// something the run already does; what the flag needs is the object pattern
+// itself.
+func refuseEnvReference(raw, kind string) error {
+	if !strings.HasPrefix(strings.ToLower(raw), envReferenceScheme) {
+		return nil
+	}
+	return fmt.Errorf(
+		"--%s does not resolve %s references: %q would be used as a literal pattern and match nothing; %s",
+		kind, envReferenceScheme, raw, envReferenceRemedy(kind))
+}
+
+// envReferenceRemedy names the way out, which differs by flag: the selected
+// environment has an exclude list and Ptah already applies it, so an
+// --exclude reference asks for something the run already does. There is no
+// include list to point at.
+func envReferenceRemedy(kind string) string {
+	if kind == filterKindExclude {
+		return "the selected env's own exclude list is already applied without this flag, " +
+			"so write the object pattern itself"
+	}
+	return "write the object pattern itself"
+}
+
 func parsePattern(value, kind string) (resourcePattern, error) {
 	raw := strings.TrimSpace(value)
 	if raw == "" {
 		return resourcePattern{}, nil
+	}
+	if err := refuseEnvReference(raw, kind); err != nil {
+		return resourcePattern{}, err
 	}
 	body, schemaSegment, err := stripSchemaTypeSegment(raw, kind)
 	if err != nil {
