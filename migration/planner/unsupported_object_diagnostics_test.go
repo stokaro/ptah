@@ -530,3 +530,81 @@ func countCreateSequence(sql string) int {
 	}
 	return count
 }
+
+// roleFamilySchema and roleFamilyCreationDiff exercise the PLAN path for roles
+// and grants, which the renderer-only tests cannot reach.
+//
+// A mutant that made planRoles emit nothing survived every test in this
+// repository until this fixture existed: the live round trip renders through
+// GetOrderedCreateStatements, so the planner was never asked
+// (stokaro/ptah#1698).
+func roleFamilySchema() *goschema.Database {
+	return &goschema.Database{
+		Roles:  []goschema.Role{{StructName: "A", Name: "app_reader", Inherit: true}},
+		Tables: []goschema.Table{{StructName: "T", Name: "t"}},
+		Fields: []goschema.Field{{StructName: "T", Name: "id", Type: "BIGINT", Primary: true}},
+		Grants: []goschema.Grant{{
+			StructName: "A", Role: "app_reader", Privileges: []string{"SELECT"}, OnTable: "t",
+		}},
+	}
+}
+
+func roleFamilyCreationDiff() *types.SchemaDiff {
+	return &types.SchemaDiff{
+		RolesAdded:  []string{"app_reader"},
+		TablesAdded: []string{"t"},
+		GrantsAdded: []types.GrantRef{{
+			Role: "app_reader", Privilege: "SELECT", ObjectType: "TABLE", ObjectName: "t",
+		}},
+	}
+}
+
+// TestPlan_SQLServerPlansTheRoleAndGrantExactlyOnce pins the plan path for a
+// target that manages roles.
+//
+// Exactly one, not at least one. The two halves that answer for a role -- the
+// named skip and the real DDL -- are one switch, and a planner that forgot to
+// turn the first off would emit both. With the capability on, the "skip" node
+// renders as a bare CREATE ROLE too, so the duplicate is two executable
+// statements rather than a statement plus a comment, and only a count sees it.
+func TestPlan_SQLServerPlansTheRoleAndGrantExactlyOnce(t *testing.T) {
+	c := qt.New(t)
+
+	planned := strings.Join(
+		planStatements(c, roleFamilyCreationDiff(), roleFamilySchema(), platform.SQLServer), "\n")
+
+	executable := executableSQL(planned)
+	c.Assert(countStatement(executable, "CREATE ROLE"), qt.Equals, 1)
+	c.Assert(countStatement(executable, "GRANT SELECT"), qt.Equals, 1)
+	c.Assert(executable, qt.Contains, "CREATE ROLE [app_reader]")
+	c.Assert(planned, qt.Not(qt.Contains), `-- SQLSERVER: roles "app_reader" is not generated`)
+}
+
+// TestPlan_MySQLFamilyStillRefusesTheRoleItCannotManage is the control. A
+// change that turned every named skip into a statement would satisfy the row
+// above; the MySQL family reads no role state, and its refusal is the proof
+// that the capability decided the difference rather than the dialect list.
+func TestPlan_MySQLFamilyStillRefusesTheRoleItCannotManage(t *testing.T) {
+	for _, dialect := range []string{platform.MySQL, platform.MariaDB} {
+		t.Run(dialect, func(t *testing.T) {
+			c := qt.New(t)
+
+			_, err := planner.GenerateSchemaDiffAST(
+				roleFamilyCreationDiff(), roleFamilySchema(), dialect)
+
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+			c.Assert(err.Error(), qt.Contains, "app_reader")
+		})
+	}
+}
+
+// countStatement counts the executable statements naming a keyword.
+func countStatement(sql, keyword string) int {
+	count := 0
+	for line := range strings.SplitSeq(sql, "\n") {
+		if strings.Contains(line, keyword) {
+			count++
+		}
+	}
+	return count
+}

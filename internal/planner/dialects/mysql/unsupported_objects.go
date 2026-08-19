@@ -91,15 +91,7 @@ func (p *Planner) reportUnsupportedSequences(result []ast.Node, diff *types.Sche
 // comment says: a preset may claim it only where a path emits, reads back and
 // plans the object.
 func (p *Planner) reportUnsupportedRoutinesAndRoles(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
-	for _, name := range diff.RolesAdded {
-		result = append(result, ast.NewCreateRole(name))
-	}
-	for _, role := range diff.RolesModified {
-		result = append(result, ast.NewAlterRole(role.RoleName))
-	}
-	for _, name := range diff.RolesRemoved {
-		result = append(result, ast.NewDropRole(name))
-	}
+	result = p.reportUnsupportedRoles(result, diff)
 	result = p.reportUnsupportedAccessControl(result, diff)
 	if p.capabilities().Has(capability.Functions) {
 		return result
@@ -109,6 +101,27 @@ func (p *Planner) reportUnsupportedRoutinesAndRoles(result []ast.Node, diff *typ
 	}
 	for _, name := range diff.FunctionsRemoved {
 		result = append(result, ast.NewDropFunction(name))
+	}
+	return result
+}
+
+// reportUnsupportedRoles names the roles a target in this family cannot manage,
+// and stays out of the way of one that can.
+//
+// A target declaring capability.RoleManagement gets real DDL from planRoles
+// instead (stokaro/ptah#1698).
+func (p *Planner) reportUnsupportedRoles(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+	if p.capabilities().Has(capability.RoleManagement) {
+		return result
+	}
+	for _, name := range diff.RolesAdded {
+		result = append(result, ast.NewCreateRole(name))
+	}
+	for _, role := range diff.RolesModified {
+		result = append(result, ast.NewAlterRole(role.RoleName))
+	}
+	for _, name := range diff.RolesRemoved {
+		result = append(result, ast.NewDropRole(name))
 	}
 	return result
 }
@@ -127,6 +140,12 @@ func (p *Planner) reportUnsupportedRoutinesAndRoles(result []ast.Node, diff *typ
 // renderer turns each into a comment -- so a privilege list or a policy body
 // would be detail nobody reads.
 func (p *Planner) reportUnsupportedAccessControl(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+	if p.capabilities().Has(capability.RoleManagement) {
+		// Grants are planned as real DDL; RLS is not, and the two are split
+		// below so a target that manages roles still reports the policy it
+		// cannot host.
+		return p.reportUnsupportedRowLevelSecurity(result, diff)
+	}
 	for _, grant := range diff.GrantsAdded {
 		result = append(result, ast.NewGrantPrivilege(
 			grant.Role, grant.ObjectType, grant.ObjectName, []string{grant.Privilege}))
@@ -135,6 +154,16 @@ func (p *Planner) reportUnsupportedAccessControl(result []ast.Node, diff *types.
 		result = append(result, ast.NewRevokePrivilege(
 			grant.Role, grant.ObjectType, grant.ObjectName, []string{grant.Privilege}))
 	}
+	return p.reportUnsupportedRowLevelSecurity(result, diff)
+}
+
+// reportUnsupportedRowLevelSecurity names the row-level security no target in
+// this family hosts.
+//
+// It is split from the grants above because the two moved apart: SQL Server
+// manages roles and grants now, and still has no RLS path, so a target that
+// plans one must keep reporting the other (stokaro/ptah#1699).
+func (p *Planner) reportUnsupportedRowLevelSecurity(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
 	for _, table := range diff.RLSEnabledTablesAdded {
 		result = append(result, ast.NewAlterTableEnableRLS(table))
 	}

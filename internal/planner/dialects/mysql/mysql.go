@@ -1198,6 +1198,10 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 	// both directions.
 	result = p.planSequences(result, diff, generated)
 
+	// 0a2. Plan the roles this target does manage, before tables, because a
+	// grant names a role that has to exist.
+	result = p.planRoles(result, diff, generated)
+
 	// 0b. Plan the stored functions this target does host. Functions are
 	// planned before tables because a generated column or a CHECK constraint
 	// may call one, and the function must exist first.
@@ -1260,6 +1264,9 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 	// unique indexes and constraints have been created.
 	result = p.addForeignKeyConstraintsForNewTables(result, diff, generated)
 
+	// 5.7. Grant privileges once the objects they name exist.
+	result = p.planGrants(result, diff)
+
 	// 6. Remove constraints before indexes. MySQL-family servers keep the
 	// backing index after DROP FOREIGN KEY when the index was auto-created, so
 	// rollback plans may need to drop both. The FK must go first. fkPlan.dropped
@@ -1279,6 +1286,9 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 
 	// 7a. Remove sequences after the tables whose defaults drew from them.
 	result = p.removeSequences(result, diff)
+
+	// 7b. Revoke, then drop the roles, after the tables their grants named.
+	result = p.removeGrantsAndRoles(result, diff)
 
 	// 8. Handle enum removals (MySQL-specific warnings)
 	result = p.handleEnumRemovals(result, diff)
