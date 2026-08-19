@@ -365,7 +365,7 @@ function paragraphViolations(lines) {
 
 // The symbols a status matrix uses. A contradiction is only meaningful between
 // cells drawn from a fixed vocabulary; prose cells legitimately differ.
-const STATUS_SYMBOLS = new Set(['✅', '🟡', '❌', '➖', '❔']);
+const STATUS_SYMBOLS = new Set(['✅', '🟡', '❌', '🔷', '➖', '❔']);
 
 const NAME_STOPWORDS = new Set(
   'a an the and or of to in on for with is are it its as by from not no only that this all each per via'.split(' '),
@@ -663,6 +663,15 @@ function selftest() {
     // A gap declared tracked with no issue named anywhere in the paragraph.
     'Gating the two verbs is deferred. That is tracked separately, because it',
     'interacts with the bootstrap flow.',
+    '',
+    // A contradiction where one verdict is 🔷. The own-form symbol has to be in
+    // the status vocabulary: a row carrying an unrecognized symbol drops below
+    // the two-status floor and stops being compared with anything, so a stale
+    // row beside it would never be reported.
+    '| Capability | Ptah | CE |',
+    '| --- | --- | --- |',
+    '| Registry artifact promotion path | 🔷 | ❌ |',
+    '| Artifact promotion path for a registry | ❌ | ❌ |',
   ].join('\n');
 
   const expected = [
@@ -682,6 +691,7 @@ function selftest() {
     { line: 49, needle: 'over the 900 limit' },
     { line: 66, needle: 'bare flag "--dry-run"' },
     { line: 68, needle: 'without naming an issue' },
+    { line: 74, needle: 'name the same capability and disagree' },
   ];
 
   const findings = analyze(violating);

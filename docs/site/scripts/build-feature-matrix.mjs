@@ -19,7 +19,13 @@ const scriptDir = dirname(fileURLToPath(import.meta.url));
 const dataDir = join(scriptDir, 'data');
 const pagePath = join(scriptDir, '..', 'src', 'content', 'docs', 'atlas', 'feature-matrix.md');
 
-const SYMBOL = { yes: '✅', partial: '🟡', no: '❌', na: '➖', unknown: '❔' };
+// Six verdicts, and two of them are easy to conflate. `partial` is unfinished
+// work: an issue owns it and the note names the issue. `own` is the capability
+// present in Ptah under a Ptah spelling, where the remainder is wire
+// compatibility with a hosted, account-bound service - which an independent
+// implementation cannot obtain, so no issue can own it. Anything merely
+// incomplete stays `partial`.
+const SYMBOL = { yes: '✅', partial: '🟡', no: '❌', own: '🔷', na: '➖', unknown: '❔' };
 const BANNED = /\b(simply|easily|just|seamless|powerful|blazing|effortless|cutting-edge)\b/i;
 
 // Reader-facing section order, folding the audit's fine-grained area labels.
@@ -55,7 +61,12 @@ control — come from the registry, not from Ptah. The full workflow is on
   'Atlas Registry and Cloud': `These rows are the services Atlas hosts on top of its registry — approvals,
 reporting, monitoring, the \`atlas://\` scheme itself. They concern the hosted
 service, not artifact storage; the storage function is covered under
-[Data and distribution](#data-and-distribution).`,
+[Data and distribution](#data-and-distribution).
+
+This is where 🔷 and ❌ have to be read apart. 🔷 means the row's job is done
+here already, over an ordinary OCI registry and local plan files, and only the
+hosted protocol is out of reach — nothing to wait for. ❌ means the capability
+is genuinely absent and the difference column names the issue that owns it.`,
 };
 
 // Every area label a row is allowed to carry. bucket() matches by prefix, so a
@@ -134,6 +145,12 @@ function validate(rows) {
     for (const key of ['ptah', 'atlas_oss', 'atlas_pro']) {
       if (!(row[key] in SYMBOL)) problems.push(`${row.feature}: bad status ${row[key]}`);
     }
+    // `own` says what PTAH does with a capability someone else hosts. It is
+    // meaningless in an Atlas column, where the hosted service is the product
+    // being described, so it is refused there rather than quietly rendered.
+    for (const key of ['atlas_oss', 'atlas_pro']) {
+      if (row[key] === 'own') problems.push(`${row.feature}: ${key} is own, which is a Ptah-column verdict only`);
+    }
     const key = normalize(row.feature);
     const first = seen.get(key);
     if (first) {
@@ -160,6 +177,10 @@ function summary(rows) {
     ['Ptah supports it fully', count((r) => r.ptah === 'yes')],
     ['Ptah supports it with a stated limitation', count((r) => r.ptah === 'partial')],
     ['Ptah does not implement it', count((r) => r.ptah === 'no')],
+    [
+      'Ptah covers it in its own form, against a hosted service it cannot interoperate with',
+      count((r) => r.ptah === 'own'),
+    ],
     ['Ptah and Atlas CE both support it', count((r) => r.ptah === 'yes' && r.atlas_oss === 'yes')],
     [
       'Ptah implements it openly where Atlas gates it behind Pro or Cloud',
@@ -181,9 +202,11 @@ function summary(rows) {
     '| --- | --- |',
     ...readings.map(([label, n]) => `| ${label} | ${n} |`),
     '',
-    'Every 🟡 in the Ptah column names its specific limitation, reproduced against a',
-    'binary built from this repository; Atlas-column verdicts rest on the cited',
-    'Atlas-side sources only. Confirmed gaps are tracked in',
+    'Every 🟡 and every ❌ in the Ptah column names its specific limitation and the',
+    'issue that owns it, reproduced against a binary built from this repository;',
+    'Atlas-column verdicts rest on the cited Atlas-side sources only. A 🔷 names no',
+    'issue on purpose, because nothing an independent implementation can build',
+    'closes it. Confirmed gaps are tracked in',
     '[#926 to #942](https://github.com/stokaro/ptah/issues/926) and [#944](https://github.com/stokaro/ptah/issues/944).',
     '',
     'The command surface is counted separately, because it is measured rather than',
