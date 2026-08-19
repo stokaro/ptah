@@ -1193,6 +1193,11 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 	// else, mirroring the order `schema render` emits them in.
 	result = p.reportUnsupportedObjects(result, diff)
 
+	// 0a. Plan the sequences this target does host, before tables: a column
+	// DEFAULT may draw from one, and SQL Server enforces that dependency in
+	// both directions.
+	result = p.planSequences(result, diff, generated)
+
 	// 0b. Plan the stored functions this target does host. Functions are
 	// planned before tables because a generated column or a CHECK constraint
 	// may call one, and the function must exist first.
@@ -1271,6 +1276,9 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 
 	// 7. Remove tables (dangerous!)
 	result = p.removeTables(result, diff, generated)
+
+	// 7a. Remove sequences after the tables whose defaults drew from them.
+	result = p.removeSequences(result, diff)
 
 	// 8. Handle enum removals (MySQL-specific warnings)
 	result = p.handleEnumRemovals(result, diff)

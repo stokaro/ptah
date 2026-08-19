@@ -1202,17 +1202,25 @@ func SQLServer2022() Capabilities {
 		ForeignKeysRequireUniqueReference:  true,
 		ForeignKeysRequireIndexedReference: false,
 		ForeignKeysCreateBackingIndex:      false,
-		Sequences:                          false,
-		XMLType:                            true,
-		AdvisoryLocks:                      false,
-		RowLevelTTL:                        false,
-		CheckGrantStatement:                false,
-		CatalogViewDependencies:            true,
-		ShowRoutinePrivilege:               false,
-		RenameColumnClause:                 false,
-		CatalogCheckConstraintTableName:    false,
-		GeneratedColumns:                   false,
-		DeferrableConstraints:              false,
+		// Sequences is on because all three halves the key requires now exist
+		// for this target: the renderer emits T-SQL CREATE/ALTER/DROP SEQUENCE,
+		// internal/dbschema/mssql reads sys.sequences back into
+		// DBSchema.Sequences, and the shared planner plans them. It was false
+		// while any of those was missing, which is what the key means -- it
+		// describes Ptah's generator, not the engine's brochure -- and the
+		// engine itself has had CREATE SEQUENCE since 2012
+		// (stokaro/ptah#1626).
+		Sequences:                       true,
+		XMLType:                         true,
+		AdvisoryLocks:                   false,
+		RowLevelTTL:                     false,
+		CheckGrantStatement:             false,
+		CatalogViewDependencies:         true,
+		ShowRoutinePrivilege:            false,
+		RenameColumnClause:              false,
+		CatalogCheckConstraintTableName: false,
+		GeneratedColumns:                false,
+		DeferrableConstraints:           false,
 	}
 }
 

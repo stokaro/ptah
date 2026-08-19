@@ -339,7 +339,10 @@ func TestPresets_KeyDifferences(t *testing.T) {
 	c.Assert(sqlServer.Has(capability.CheckConstraintsEnforced), qt.IsTrue)
 	c.Assert(sqlServer.Has(capability.ForeignKeys), qt.IsTrue)
 	c.Assert(sqlServer.Has(capability.CreateOrReplaceTrigger), qt.IsTrue)
-	c.Assert(sqlServer.Has(capability.Sequences), qt.IsFalse)
+	// Sequences is the one key on this preset that moved from false to true,
+	// and it moved because the three halves it names -- render, read back,
+	// plan -- now all exist for this target (stokaro/ptah#1626).
+	c.Assert(sqlServer.Has(capability.Sequences), qt.IsTrue)
 	c.Assert(sqlServer.Has(capability.EnumInlineColumn), qt.IsFalse)
 	c.Assert(sqlServer.Has(capability.EnumCustomType), qt.IsFalse)
 	c.Assert(sqlServer.Has(capability.RowLevelSecurity), qt.IsFalse)

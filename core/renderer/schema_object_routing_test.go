@@ -335,30 +335,32 @@ func kindCells(cells []routedObjectCell, kind string) []routedObjectCell {
 	})
 }
 
-// TestRender_SQLServerNamesTheSequenceWithoutClaimingItHasNone pins the answer
-// to the one cell where naming the skip and telling the truth pull apart.
+// TestRender_SQLServerGeneratesTheSequenceItUsedOnlyToName pins the answer to
+// the one cell where naming the skip and telling the truth pulled apart.
 //
 // SQL Server has had CREATE SEQUENCE since 2012. The renderer's refusal used to
 // read "CREATE SEQUENCE ... is not supported", so routing the node there would
 // have replaced a silent omission with a false claim about the engine -- and
 // that is exactly why the converter withheld it, which is how the omission
-// survived. The sentence now names Ptah's generator, which is true whatever the
-// engine can do: capability.SQLServer2022 leaves Sequences off because Ptah has
-// no SQL Server sequence reader and no SQL Server sequence planner.
+// survived. Naming Ptah's generator instead of the engine was the first half
+// of the answer; the second is that the generator now has the path, so the
+// declared sequence becomes a statement the server executes
+// (stokaro/ptah#1626).
 //
-// Both halves are asserted. Naming the object must not become emitting a
-// CREATE SEQUENCE that nothing reads back or plans again.
-func TestRender_SQLServerNamesTheSequenceWithoutClaimingItHasNone(t *testing.T) {
+// The old skip sentence must be gone, not merely joined: a target that both
+// emits the statement and reports it skipped is telling the reader two
+// different things about one object.
+func TestRender_SQLServerGeneratesTheSequenceItUsedOnlyToName(t *testing.T) {
 	c := qt.New(t)
 
 	statements, err := renderer.GetOrderedCreateStatements(routedObjectSchema(), platform.SQLServer)
 	c.Assert(err, qt.IsNil)
 	sql := strings.Join(statements, "\n")
 
-	c.Assert(sql, qt.Contains,
-		`-- SQLSERVER: CREATE SEQUENCE "seq_probe" is not generated for this target; skipped.`)
+	c.Assert(sql, qt.Contains, `CREATE SEQUENCE [seq_probe] AS bigint START WITH 1000;`)
+	c.Assert(sql, qt.Not(qt.Contains), `-- SQLSERVER: CREATE SEQUENCE "seq_probe" is not generated`)
 	c.Assert(sql, qt.Not(qt.Contains), `-- SQLSERVER: CREATE SEQUENCE "seq_probe" is not supported`)
-	c.Assert(routedObjectAnswer(sql, "seq_probe"), qt.Equals, "named")
+	c.Assert(routedObjectAnswer(sql, "seq_probe"), qt.Equals, "ddl")
 }
 
 // TestRender_MySQLFamilyRefusesRolesBeforeSQL pins that a role declared for a
