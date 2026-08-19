@@ -1116,7 +1116,10 @@ path rules.
   implemented.
 - The registry sub-verbs (`approve`, `list`, `pull`, `push`, `rm`) stay
   unsupported-boundary stubs: they arbitrate plan state in a remote registry.
-- `lint` and `test` also stay stubs — see below for why.
+- `test` also stays a stub — see below for why. `lint` is implemented and has
+  its own section below; it is a separate verb over a saved plan file, and it
+  puts no lint step on `schema plan` itself, so `--skip-lint` is still a no-op
+  there.
 
 Atlas keeps `schema plan` in its Pro registry flow, so this is a free Ptah
 capability rather than an Atlas CE stub.
@@ -1183,17 +1186,62 @@ refused: a JSON plan records the patterns it was computed with and the Atlas
 different transition than the plan describes. Registry plan URLs
 (`atlas://…`) are refused like they are on `schema apply --plan`.
 
-#### Evidence for the two local sub-verbs
+#### `ptah-compat schema plan lint`
 
-Their **flag sets** match a sanitized standard Atlas v1.3.0 help bundle
-captured on 2026-08-02 with the exact binary and artifact SHA-256 values pinned
-in testdata, and the published
-[Atlas CLI reference](https://atlasgo.io/cli-reference). Their
+Analyzes the SQL of the plan file named by `-f`/`--file` and prints what Ptah's
+migration lint rules find, without changing the target database.
+
+The plan is verified before it is analyzed, with the same two checks
+`schema plan validate` runs and on the same terms, including the `--dev-url`
+refusals above. A plan that fails either check is refused, and nothing is
+analyzed: a report about a plan that does not describe this transition would be
+an accurate report about a change nobody is about to make.
+
+The analysis is the one `ptah-compat migrate lint` runs over a migration file
+holding the same SQL — the same rules, the same codes, and the same
+`atlas:nolint` directives silence it. The report goes to stdout: a header
+naming the number of statements analyzed, the findings grouped by analyzer with
+their suggested fixes, and a summary carrying the schema-change and diagnostic
+counts.
+
+**Findings do not change the exit code.** A plan carrying a destructive change
+exits 0 with the change described. A plan is a document an operator reviews and
+approves, the lint report is what they review it with, and a report that
+refuses on their behalf is one they cannot approve anything with. Two things
+follow, and both are deliberate:
+
+- Set `PTAH_ATLAS_PLAN_LINT_FAIL_ON_ERROR=1` when a pipeline needs the report
+  to gate. An error-severity finding then exits 1, with the report still on
+  stdout so the failure names its own reason.
+- Every run states on stderr what the report is a statement about. Ptah's rule
+  set is its own and does not name every hazard a schema change can carry, so
+  "no diagnostics found" means "these rules found nothing", not "this plan is
+  safe". [Lint rules](../lint-rules/) records what each rule covers. The
+  statement is printed on the clean run too, because that is the run that reads
+  as an all-clear; it goes to stderr so a pipeline capturing stdout keeps a
+  document of findings and nothing else.
+
+`--format` is refused, as it is on the sibling plan verbs: rendering the
+analysis through a caller's template is a second output contract, and the one
+this verb has is the report on stdout. `--exclude`, `--repo`,
+`--lock-timeout`, `--schema` and `--include` are refused for the same reasons
+they are on `schema plan validate`.
+
+#### Evidence for the three local sub-verbs
+
+The **flag sets** of `new` and `validate` match a sanitized standard Atlas
+v1.3.0 help bundle captured on 2026-08-02 with the exact binary and artifact
+SHA-256 values pinned in testdata, and the published
+[Atlas CLI reference](https://atlasgo.io/cli-reference). The flag set of `lint`
+comes from that published reference alone; it carries the same set as
+`validate`, and the two are written out separately in the tests so a later
+divergence in one cannot silently rewrite the assertion for the other. Their
 **behavior** is not established by help, and Atlas Community Edition (CE)
 settles nothing because it aborts the entire `schema plan` path. Ptah records
 that limitation in tests and documentation instead of printing development
 provenance during normal commands; successful `new` and `validate` runs keep
-stderr empty. Runtime parity remains tracked in
+stderr empty, and a `lint` run keeps stdout to its report. Runtime parity
+remains tracked in
 [`stokaro/ptah#1037`](https://github.com/stokaro/ptah/issues/1037).
 
 The validation tests do not rely only on plans written by Ptah. They also run
@@ -1207,19 +1255,22 @@ treated as unauthenticated metadata because their derivation is not public;
 malformed values are rejected. The replayed end state, not a foreign hash, is
 the integrity boundary.
 
-**Why `lint` and `test` are not implemented.** Both are local by their Atlas
-flag sets, and both are deferred deliberately:
+**Why `test` is not implemented.** It is local by its Atlas flag set, and it is
+deferred deliberately: `schema plan test` consumes `test "plan"` blocks in
+`.test.hcl` files, and nothing in Ptah parses that format yet — the test engine
+reads YAML cases. `.test.hcl` ingestion is its own item, shared with
+`migrate test` and `schema test`.
 
-- `schema plan lint` has no measured output contract, no measured failure
-  threshold and no measured exit code. The engine that would back it — the
-  `migrate lint` analyzer set — reports on a migration *directory*, and a
-  linter narrower than Atlas's analyzer set sitting in a gating position would
-  report clean on a plan Atlas flags. That is a silent wrong answer in the one
-  position where silence is most expensive.
-- `schema plan test` consumes `test "plan"` blocks in `.test.hcl` files.
-  Nothing in Ptah parses that format yet; the test engine reads YAML cases.
-  `.test.hcl` ingestion is its own item, shared with `migrate test` and
-  `schema test`.
+`lint` was deferred alongside it for a different reason, and that reason is
+answered rather than outstanding. The worry was a linter in a gating position
+reporting clean on a plan a wider rule set would flag. Ptah's answer is to take
+the gate out of the default and put the coverage on the output: the verb
+reports, the exit code is not a verdict unless a pipeline asks for one with
+`PTAH_ATLAS_PLAN_LINT_FAIL_ON_ERROR`, and every run says on stderr that a
+report without findings describes the rules rather than the plan. The analyzer
+coverage itself is not private to this verb — it is the published set in
+[Lint rules](../lint-rules/), reported identically by `ptah-compat migrate
+lint`.
 
 ### `ptah-compat schema diff`
 

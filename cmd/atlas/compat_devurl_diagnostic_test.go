@@ -428,10 +428,12 @@ func TestCompatDevURLDiagnostics_LeaveDockerToTheProvisioner(t *testing.T) {
 // compatDevURLVerbsWithoutOracleRow are the compat verbs that register
 // --dev-url with no row on the pinned community binary to match.
 //
-// All six were measured on 2026-08-13: each answers `Error: unknown flag:
-// --dev-url` there, because the community version does not carry the flag on
-// them at all, and `migrate checkpoint` additionally reports the whole verb as
-// unavailable. Ptah registers --dev-url on all six as capabilities that binary
+// Six of the seven were measured on 2026-08-13: each answers `Error: unknown
+// flag: --dev-url` there, because the community version does not carry the flag
+// on them at all, and `migrate checkpoint` additionally reports the whole verb
+// as unavailable. `schema plan lint` is the seventh and needs no separate
+// measurement: it is a sub-verb of `schema plan`, which that binary refuses as a
+// whole. Ptah registers --dev-url on all seven as capabilities that binary
 // does not have, so there is no wording to copy and their own diagnostics are
 // left alone. Rewording them would be inventing an oracle rather than matching
 // one; deleting the flags would remove a capability (AGENTS.md rule (c)).
@@ -440,6 +442,7 @@ func compatDevURLVerbsWithoutOracleRow() []string {
 		"migrate checkpoint",
 		"migrate down",
 		"migrate test",
+		"schema plan lint",
 		"schema plan new",
 		"schema plan validate",
 		"schema test",

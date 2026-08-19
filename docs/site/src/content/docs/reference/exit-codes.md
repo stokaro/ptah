@@ -185,7 +185,7 @@ behavior such as migration apply, the license notice, or schema formatting.
 | `ptah-compat schema diff` | Local Atlas-style schema-file diff |
 | `ptah-compat schema fmt` | Format local `.hcl` files |
 | `ptah-compat schema test` | `ptah schema test` |
-| `ptah-compat schema plan` | Local Atlas-style plan computation saved to a fingerprinted plan file; `new` and `validate` are implemented, the registry sub-verbs plus `lint` and `test` stay boundary stubs |
+| `ptah-compat schema plan` | Local Atlas-style plan computation saved to a fingerprinted plan file; `new`, `validate` and `lint` are implemented, the registry sub-verbs plus `test` stay boundary stubs. `lint` exits 0 with findings reported unless `PTAH_ATLAS_PLAN_LINT_FAIL_ON_ERROR=1` makes an error-severity finding exit 1 |
 | `ptah-compat migrate push` | Registered but not implemented boundary command |
 | `ptah-compat schema push` | Registered but not implemented boundary command |
 
