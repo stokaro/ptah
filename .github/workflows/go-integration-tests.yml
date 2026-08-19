@@ -231,6 +231,29 @@ jobs:
                 DROP FUNCTION ptah_privilege_probe;"
           echo "MySQL routine creation is available to ptah_user"
 
+      # Roles live in mysql.user and privileges in mysql.tables_priv, and reading
+      # either needs SELECT on the mysql database -- a privilege ordinary schema
+      # work does not need. Without it the contour cannot exercise role support
+      # at all, and a suite that skips the feature it is meant to cover reports
+      # the same green as one that proves it (stokaro/ptah#1762).
+      #
+      # The statements come from the file docker-compose.yaml mounts into the
+      # same images locally, so the two contours cannot drift apart. Service
+      # containers take no initdb mount, which is why this runs as a step.
+      - name: Grant MySQL role-management privileges
+        run: |
+          for port in 3306 3307; do
+            mysql -h 127.0.0.1 -P "$port" -u root -proot_password \
+              < scripts/compose-init/mysql/10-role-privileges.sql
+            # Fail loudly here rather than inside the contour. Both halves are
+            # probed: reading the catalog, and managing a role in it.
+            mysql -h 127.0.0.1 -P "$port" -u ptah_user -pptah_password \
+              -e "SELECT COUNT(*) FROM mysql.user;
+                  CREATE ROLE IF NOT EXISTS ptah_role_probe;
+                  DROP ROLE ptah_role_probe;"
+            echo "port $port: role catalog is readable and roles are manageable by ptah_user"
+          done
+
       # A round-trip test applies a desired schema as the whole truth about the
       # database it connects to, so the planner drops every object the desired
       # schema does not declare. Run against the shared ptah_test that empties

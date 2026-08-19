@@ -26,6 +26,7 @@ services:
       - "3310:3306"
     volumes:
       - mysql_data:/var/lib/mysql
+      - ./scripts/compose-init/mysql:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "ptah_user", "-pptah_password"]
       interval: 5s
@@ -43,6 +44,7 @@ services:
       - "3307:3306"
     volumes:
       - mariadb_data:/var/lib/mysql
+      - ./scripts/compose-init/mysql:/docker-entrypoint-initdb.d:ro
     healthcheck:
       # mariadb-admin, not mysqladmin: MariaDB dropped the mysqladmin binary by
       # 12.x, so the older spelling fails with "executable file not found in
