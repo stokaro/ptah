@@ -9,7 +9,7 @@ func normalizeCheckExpression(expr string) string {
 	expr = trimBalancedCheckParens(strings.TrimSpace(expr))
 
 	normalizer := checkExpressionNormalizer{expr: expr}
-	return normalizer.normalize()
+	return canonicalizeCheckSetMembership(normalizer.normalize())
 }
 
 type checkExpressionNormalizer struct {
