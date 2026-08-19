@@ -164,6 +164,11 @@ func (p *Planner) reportUnsupportedAccessControl(result []ast.Node, diff *types.
 // manages roles and grants now, and still has no RLS path, so a target that
 // plans one must keep reporting the other (stokaro/ptah#1699).
 func (p *Planner) reportUnsupportedRowLevelSecurity(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+	if p.capabilities().Has(capability.RowLevelSecurity) {
+		// planRLS emits the real DDL for this target. Reporting here as well
+		// would put a skip comment beside the statement it says was skipped.
+		return result
+	}
 	for _, table := range diff.RLSEnabledTablesAdded {
 		result = append(result, ast.NewAlterTableEnableRLS(table))
 	}

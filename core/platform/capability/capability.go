@@ -167,8 +167,24 @@ const (
 	// automatically.
 	AlterGeneratedColumnExpression Capability = "alter_generated_column_expression"
 
-	// RowLevelSecurity marks support for row-level security policies
-	// (PostgreSQL ALTER TABLE ... ENABLE ROW LEVEL SECURITY + CREATE POLICY).
+	// RowLevelSecurity marks that a target models row-level security: that a
+	// declared policy is rendered, read back and compared -- not that any
+	// particular clause exists, and not that the object is spelled the way
+	// PostgreSQL spells it.
+	//
+	// The two shapes it covers really are different objects. PostgreSQL splits
+	// the switch from the rule: ALTER TABLE ... ENABLE ROW LEVEL SECURITY, then
+	// CREATE POLICY carrying an inline USING expression and an optional TO role
+	// list. SQL Server has one object, a SECURITY POLICY, whose predicates must
+	// invoke an existing inline table-valued function; it has no table-level
+	// switch, no inline expression and no role list, and it permits only one
+	// ENABLED policy per table.
+	//
+	// A target claiming this key therefore promises convergence, not
+	// portability: what it renders it reads back and stops planning. A
+	// PostgreSQL policy does not port to SQL Server unchanged, and the SQL
+	// Server renderer says so by name rather than rendering something with a
+	// different meaning (stokaro/ptah#1699).
 	RowLevelSecurity Capability = "row_level_security"
 
 	// PostgresCatalogFunctions marks that pg_catalog's introspection helpers
@@ -1193,10 +1209,20 @@ func SQLServer2022() Capabilities {
 		Triggers:                       true,
 		CreateOrReplaceTrigger:         true,
 		AlterGeneratedColumnExpression: false,
-		RowLevelSecurity:               false,
-		PostgresCatalogFunctions:       false,
-		CatalogRowStatistics:           false,
-		CatalogDependencies:            false,
+		// RowLevelSecurity is on because all three halves the key requires now
+		// exist for this target: the renderer emits CREATE/DROP SECURITY
+		// POLICY, internal/dbschema/mssql reads sys.security_policies joined
+		// to sys.security_predicates back into DBSchema.RLSPolicies, and the
+		// shared planner plans them. The engine has had it since 2016
+		// (stokaro/ptah#1699).
+		//
+		// What the key does not claim is that a PostgreSQL policy runs here
+		// unchanged. It cannot: T-SQL rejects an inline predicate expression
+		// outright, so a declaration carrying one is named and skipped.
+		RowLevelSecurity:         true,
+		PostgresCatalogFunctions: false,
+		CatalogRowStatistics:     false,
+		CatalogDependencies:      false,
 		// RoleManagement is on for the same reason Sequences is: the three
 		// halves the key requires exist for this target. The renderer emits
 		// T-SQL CREATE ROLE, GRANT and REVOKE, internal/dbschema/mssql reads

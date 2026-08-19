@@ -132,6 +132,18 @@ func (r *Reader) ReadSchema() (*types.DBSchema, error) {
 	}
 	schema.Triggers = triggers
 
+	policies, err := r.readRLSPolicies()
+	if err != nil {
+		return nil, fmt.Errorf("sqlserver: read rls policies: %w", err)
+	}
+	schema.RLSPolicies = policies
+
+	rlsEnabled, err := r.readRLSEnabledTables()
+	if err != nil {
+		return nil, fmt.Errorf("sqlserver: read rls enabled tables: %w", err)
+	}
+	applyRLSEnabled(schema, rlsEnabled)
+
 	reconcileColumnFlags(schema)
 	return schema, nil
 }
