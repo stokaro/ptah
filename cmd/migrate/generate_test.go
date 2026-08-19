@@ -167,3 +167,59 @@ func TestMigrateGenerateDoesNotValidateSQLiteToggleForPostgresPathFailure(t *tes
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Not(qt.Contains), sqlitevirtual.AllowDropEnvVar)
 }
+
+// TestMigrateGenerateResolvesADockerDevURL covers stokaro/ptah#1701.
+//
+// `--dev-url docker://…` used to be handed straight to the connector, which
+// answered `unsupported database dialect: docker` — naming a dialect the user
+// never wrote, for the native spelling of a workflow ptah-compat migrate diff
+// provisions for.
+//
+// The assertion is the absence of that sentence rather than a success, because
+// what happens next depends on whether a container runtime is reachable: with
+// one the run provisions and proceeds, without one it fails naming the daemon.
+// Both prove the value reached the provisioner, which is the whole change; only
+// the old behavior can produce the dialect error.
+func TestMigrateGenerateResolvesADockerDevURL(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	c.Assert(os.MkdirAll(filepath.Join(dir, "models"), 0o755), qt.IsNil)
+	c.Assert(os.WriteFile(filepath.Join(dir, "models", "models.go"), []byte(`package models
+
+//ptah:schema:table name="t"
+type T struct {
+	//ptah:schema:field name="id" type="INT" primary="true"
+	ID int64
+}
+`), 0o600), qt.IsNil)
+
+	cmd := migrate.NewMigrateGenerateCommand()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"--root-dir", filepath.Join(dir, "models"),
+		"--migrations-dir", filepath.Join(dir, "migrations"),
+		"--dev-url", "docker://postgres/18/dev",
+		"--replay",
+		"--name", "init",
+	})
+
+	err := cmd.Execute()
+
+	// A run that reached the provisioner may still fail for reasons this test
+	// does not control. What it may never do again is report the scheme as a
+	// dialect.
+	c.Assert(errorText(err), qt.Not(qt.Contains), "unsupported database dialect: docker")
+	c.Assert(out.String(), qt.Not(qt.Contains), "unsupported database dialect: docker")
+}
+
+// errorText renders an error for an assertion that must hold whether or not the
+// run failed, so the caller states one expectation instead of branching on the
+// outcome it does not control.
+func errorText(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
+}
