@@ -342,9 +342,14 @@ func TestPlan_MySQLFamilyNamesTheExtensionAndSequenceItCannotHost(t *testing.T) 
 			wantSequence:  "-- CREATE SEQUENCE order_number_seq not supported in mysql",
 		},
 		{
+			// MariaDB hosts sequences now, so only the extension is named here.
+			// The sequence half of this row moved to the test below rather than
+			// being deleted: the plan and the render still have to agree about
+			// it, and that agreement is what this test is for
+			// (stokaro/ptah#1759).
 			dialect:       platform.MariaDB,
 			wantExtension: "-- Extension pg_trgm not supported in MariaDB",
-			wantSequence:  "-- CREATE SEQUENCE order_number_seq not supported in mariadb",
+			wantSequence:  "",
 		},
 	}
 
@@ -355,11 +360,39 @@ func TestPlan_MySQLFamilyNamesTheExtensionAndSequenceItCannotHost(t *testing.T) 
 			rendered := strings.Join(renderStatements(c, mysqlFamilySchema(), test.dialect), "\n")
 
 			c.Assert(planned, qt.Contains, test.wantExtension)
-			c.Assert(planned, qt.Contains, test.wantSequence)
 			c.Assert(rendered, qt.Contains, test.wantExtension)
-			c.Assert(rendered, qt.Contains, test.wantSequence)
+			c.Assert(sequenceDiagnosticIn(planned, test.wantSequence), qt.IsTrue)
+			c.Assert(sequenceDiagnosticIn(rendered, test.wantSequence), qt.IsTrue)
 		})
 	}
+}
+
+// TestPlan_MariaDBPlansTheSequenceItHosts is the sequence half of the row
+// above, on the engine that gained the object.
+//
+// The property is the one items 5 and 8 were about and it has not changed: the
+// plan and the render agree. What changed is which side of the agreement
+// MariaDB is on -- a statement the server executes, in both, rather than a
+// comment naming an omission in both.
+func TestPlan_MariaDBPlansTheSequenceItHosts(t *testing.T) {
+	c := qt.New(t)
+
+	planned := strings.Join(planStatements(c, mysqlFamilyCreationDiff(), mysqlFamilySchema(), platform.MariaDB), "\n")
+	rendered := strings.Join(renderStatements(c, mysqlFamilySchema(), platform.MariaDB), "\n")
+
+	c.Assert(planned, qt.Contains, "CREATE SEQUENCE `order_number_seq`")
+	c.Assert(rendered, qt.Contains, "CREATE SEQUENCE `order_number_seq`")
+	c.Assert(planned, qt.Not(qt.Contains), "not supported in mariadb")
+	c.Assert(rendered, qt.Not(qt.Contains), "CREATE SEQUENCE order_number_seq not supported")
+}
+
+// sequenceDiagnosticIn reports whether the expected sequence diagnostic is
+// present, treating an empty expectation as "this target names none".
+func sequenceDiagnosticIn(statements, want string) bool {
+	if want == "" {
+		return !strings.Contains(statements, "CREATE SEQUENCE order_number_seq not supported")
+	}
+	return strings.Contains(statements, want)
 }
 
 // TestPlan_MySQLFamilyNamesTheUserTypesItNoLongerDeclares covers the three

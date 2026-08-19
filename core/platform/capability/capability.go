@@ -901,14 +901,16 @@ func MariaDB1011() Capabilities {
 		ForeignKeysRequireUniqueReference:  false,
 		ForeignKeysRequireIndexedReference: true,
 		ForeignKeysCreateBackingIndex:      false,
-		// MariaDB the engine does have SEQUENCE objects (10.3+, verified live on
-		// 10.11.18: TABLE_TYPE = SEQUENCE). Ptah the generator does not: there is
-		// no MariaDB sequence introspection and no MySQL-family sequence
-		// planning, so `schema render` emitting a CREATE SEQUENCE would produce a
-		// statement `schema apply` never plans and never sees converge. This key
-		// describes the generator, so it is false until those land -- do NOT flip
-		// it back on the engine's behalf (stokaro/ptah#931 item 8).
-		Sequences:                       false,
+		// Sequences is on because the three halves the key requires now all
+		// exist. MariaDB the engine has had SEQUENCE objects since 10.3; what
+		// was missing was Ptah's side, named here as introspection and
+		// MySQL-family planning. The planning was added with SQL Server and is
+		// capability-gated, the renderer emits MariaDB's own grammar -- NOCYCLE
+		// is one word here, `NO CYCLE` is ERROR 1064 -- and the reader reads the
+		// sequence's own row, which is the only place MariaDB reports the cache
+		// size. Measured on MariaDB 12.3, and MySQL keeps the key off because
+		// `CREATE SEQUENCE` there is a syntax error (stokaro/ptah#1759).
+		Sequences:                       true,
 		XMLType:                         false,
 		AdvisoryLocks:                   false,
 		RowLevelTTL:                     false,
