@@ -282,3 +282,57 @@ func requirePostgresCleanupLiveURL(c *qt.C) string {
 	parsed.Scheme = "postgres"
 	return parsed.String()
 }
+
+// TestScopedCleanupNamesTheDependentsItWouldLeave_PostgresLive covers
+// stokaro/ptah#1704.
+//
+// A scoped cleanup drops with RESTRICT inside one transaction, so a selected
+// object whose dependent is NOT selected fails and rolls the whole run back.
+// That is the right default. What the user met was the server's own sentence --
+// `cannot drop table t because other objects depend on it (SQLSTATE 2BP01)` --
+// which names neither the dependent nor a way forward, leaving them to query
+// the catalog by hand for the names to add.
+//
+// The refusal now names them, before any DROP runs. The second half of the test
+// is the control that matters: adding the dependent to the selection makes the
+// same cleanup succeed, so the diagnostic points at something that actually
+// resolves it rather than at a wall.
+func TestScopedCleanupNamesTheDependentsItWouldLeave_PostgresLive(t *testing.T) {
+	c := qt.New(t)
+	ctx := c.Context()
+	conn := newPostgresCleanupLiveConnection(c, ctx)
+
+	c.Assert(conn.Writer().ExecuteSQL(ctx, `CREATE TABLE dep_t (id INT PRIMARY KEY)`), qt.IsNil)
+	c.Assert(conn.Writer().ExecuteSQL(ctx, `CREATE VIEW dep_v AS SELECT id FROM dep_t`), qt.IsNil)
+
+	tableOnly := schemaclean.Plan{Changes: []schemaclean.Change{{
+		Type: "table", Name: "dep_t", Cmd: `DROP TABLE IF EXISTS "dep_t" RESTRICT`,
+	}}}
+
+	err := schemaclean.ApplyPlan(ctx, conn, tableOnly)
+
+	c.Assert(err, qt.ErrorMatches, `(?s).*would leave dependents behind.*view "dep_v" depends on dep_t.*`)
+	// Nothing ran: the refusal is before the first DROP, not a rollback after
+	// one failed, so the view the message names is still there to be added.
+	c.Assert(postgresRelationExists(c, ctx, conn, "dep_t"), qt.IsTrue)
+	c.Assert(postgresRelationExists(c, ctx, conn, "dep_v"), qt.IsTrue)
+
+	both := schemaclean.Plan{Changes: []schemaclean.Change{
+		{Type: "view", Name: "dep_v", Cmd: `DROP VIEW IF EXISTS "dep_v" RESTRICT`},
+		{Type: "table", Name: "dep_t", Cmd: `DROP TABLE IF EXISTS "dep_t" RESTRICT`},
+	}}
+
+	c.Assert(schemaclean.ApplyPlan(ctx, conn, both), qt.IsNil)
+	c.Assert(postgresRelationExists(c, ctx, conn, "dep_t"), qt.IsFalse)
+	c.Assert(postgresRelationExists(c, ctx, conn, "dep_v"), qt.IsFalse)
+}
+
+func postgresRelationExists(c *qt.C, ctx context.Context, conn *dbschema.DatabaseConnection, name string) bool {
+	c.Helper()
+	var count int
+	row := conn.QueryRowContext(ctx,
+		`SELECT count(*) FROM pg_class k JOIN pg_namespace n ON n.oid = k.relnamespace
+		 WHERE n.nspname = current_schema() AND k.relname = $1`, name)
+	c.Assert(row.Scan(&count), qt.IsNil)
+	return count > 0
+}
