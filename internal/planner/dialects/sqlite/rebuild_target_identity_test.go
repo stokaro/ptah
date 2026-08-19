@@ -182,5 +182,5 @@ func TestRebuildDoesNotResolveATableInAnotherSchema(t *testing.T) {
 		}},
 	}}}
 	_, err := planner.GenerateSchemaDiffSQLStatements(diff, identityRebuildSchema("main"), "sqlite")
-	c.Assert(err, qt.ErrorMatches, `.*requires the retained table definition.*`)
+	c.Assert(err, qt.ErrorMatches, `(?s).*requires its desired definition, and the declaration does not contain it.*`)
 }

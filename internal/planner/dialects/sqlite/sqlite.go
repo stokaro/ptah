@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strconv"
 	"strings"
 
 	"go.5x5.cz/ptah/core/ast"
@@ -69,11 +70,8 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 		return nil, err
 	}
 	semantics := diff.EffectiveIdentifierSemantics(DialectName)
-	rebuilds, err := planTableRebuilds(diff, semantics)
+	rebuilds, err := planTableRebuilds(diff, generated, semantics)
 	if err != nil {
-		return nil, err
-	}
-	if err := validateAddedColumns(diff, generated, rebuilds); err != nil {
 		return nil, err
 	}
 
@@ -199,7 +197,11 @@ func identity(name string) string { return name }
 // or generated expression, and any table constraint — has to be rewritten
 // through a new table. A constraint change that cannot be attributed to a table
 // is still refused, because there is nothing to rebuild.
-func planTableRebuilds(diff *types.SchemaDiff, semantics identifier.Semantics) (tableRebuilds, error) {
+func planTableRebuilds(
+	diff *types.SchemaDiff,
+	generated *goschema.Database,
+	semantics identifier.Semantics,
+) (tableRebuilds, error) {
 	rebuilds := tableRebuilds{targets: make(map[string]rebuildTarget), semantics: semantics}
 	add := func(tableName string, addedColumns []string) {
 		target, seen := rebuilds.targets[tableName]
@@ -216,6 +218,24 @@ func planTableRebuilds(diff *types.SchemaDiff, semantics identifier.Semantics) (
 			continue
 		}
 		add(table.TableName, table.ColumnsAdded)
+	}
+
+	// A column shape `ALTER TABLE ... ADD COLUMN` cannot express is a reason to
+	// rebuild, exactly like a type or nullability change. It reads as a separate
+	// case only because the diff calls it an addition; the table that results is
+	// the same one CREATE TABLE would have written, and a table already being
+	// rebuilt for another reason has always taken such a column without comment.
+	// Refusing here instead told the operator a rebuild plan was required by a
+	// tool that writes rebuild plans (stokaro/ptah#1707).
+	for _, table := range diff.TablesModified {
+		for _, columnName := range table.ColumnsAdded {
+			column := findColumn(generated, table.TableName, columnName)
+			if column == nil || !addedColumnNeedsRebuild(column) {
+				continue
+			}
+			add(table.TableName, table.ColumnsAdded)
+			break
+		}
 	}
 
 	constrained, err := existingTablesWithConstraintChanges(diff, semantics)
@@ -412,7 +432,11 @@ func addInlineConstraints(node *ast.CreateTableNode, table goschema.Table, const
 			continue
 		}
 		if strings.EqualFold(constraint.Type, "EXCLUDE") {
-			return unsupportedFeaturef("EXCLUDE constraints are not supported")
+			return unsupportedFeaturef(
+				"table %s declares EXCLUDE constraint %s: SQLite has no EXCLUDE constraint. "+
+					"Express the same rule as a UNIQUE index when it compares whole values for equality, "+
+					"or as a CHECK constraint or trigger when it does not",
+				table.QualifiedName(), constraint.Name)
 		}
 		if slices.ContainsFunc(node.Constraints, func(existing *ast.ConstraintNode) bool {
 			return existing.Name != "" && existing.Name == constraint.Name
@@ -499,13 +523,15 @@ func (p *Planner) rebuildTable(
 ) ([]ast.Node, error) {
 	table := findTable(generated.Tables, target.tableName, diff.EffectiveIdentifierSemantics(DialectName))
 	if table == nil {
-		return nil, unsupportedFeaturef("rebuilding table %s requires the retained table definition", target.tableName)
+		return nil, unsupportedFeaturef(
+			"rebuilding table %s requires its desired definition, and the declaration does not contain it. "+
+				"Declare the table, or drop it instead of changing it",
+			target.tableName)
 	}
-	if err := validateRebuildTablePreconditions(*table, diff, generated); err != nil {
+	tempName, err := availableRebuildTableName(*table, diff, generated)
+	if err != nil {
 		return nil, err
 	}
-
-	tempName := rebuildTableName(*table)
 
 	createNode := fromschema.FromTable(*table, generated.Fields, generated.Enums, DialectName)
 	if err := addInlineConstraints(createNode, *table, generated.Constraints); err != nil {
@@ -518,7 +544,11 @@ func (p *Planner) rebuildTable(
 		return nil, err
 	}
 	if len(columns) == 0 {
-		return nil, unsupportedFeaturef("rebuilding table %s without retained columns is not supported", table.QualifiedName())
+		return nil, unsupportedFeaturef(
+			"rebuilding table %s would retain none of its columns, so the rebuilt table has nothing to copy and "+
+				"every existing row would be lost. Drop and recreate the table instead, which says the same thing "+
+				"and says it out loud",
+			table.QualifiedName())
 	}
 
 	nodes := []ast.Node{
@@ -540,20 +570,52 @@ func (p *Planner) rebuildTable(
 	return nodes, nil
 }
 
-func validateRebuildTablePreconditions(table goschema.Table, diff *types.SchemaDiff, generated *goschema.Database) error {
-	tempName := rebuildTableName(table)
-	if tableNameCollides(generated.Tables, table, tempName) || removedTableNameCollides(diff.TablesRemoved, table, tempName) {
-		return unsupportedFeaturef("rebuilding table %s would collide with existing table %s", table.QualifiedName(), tempName)
+// rebuildTableNameAttempts bounds the search below. A schema holding
+// __ptah_rebuild_t and every numbered variant up to this many is not a schema
+// this planner should keep guessing at, and an unbounded loop over a name it
+// controls is a hang rather than a diagnostic.
+const rebuildTableNameAttempts = 100
+
+// availableRebuildTableName picks the scratch table the rebuild moves through.
+//
+// The obvious name is __ptah_rebuild_<table>, and a schema is allowed to
+// contain a table by that name -- it is an ordinary identifier, and Ptah does
+// not own the namespace. This used to be refused, which asked the operator to
+// rename their own table so that a name Ptah chose was free. The collision is
+// Ptah's to resolve, so the search continues into __ptah_rebuild_<table>_1 and
+// upward until a name nothing declares and nothing is dropping is found
+// (stokaro/ptah#1707).
+//
+// Both sources have to be asked. A name the diff DROPS is unusable even though
+// the declaration no longer holds it, because the drop and the rebuild are in
+// one plan and their order is not this function's to assume.
+func availableRebuildTableName(
+	table goschema.Table,
+	diff *types.SchemaDiff,
+	generated *goschema.Database,
+) (string, error) {
+	base := "__ptah_rebuild_" + table.Name
+	for attempt := range rebuildTableNameAttempts {
+		candidate := base
+		if attempt > 0 {
+			candidate = base + "_" + strconv.Itoa(attempt)
+		}
+		if tableNameCollides(generated.Tables, table, candidate) {
+			continue
+		}
+		if removedTableNameCollides(diff.TablesRemoved, table, candidate) {
+			continue
+		}
+		return candidate, nil
 	}
-	return nil
+	return "", unsupportedFeaturef(
+		"rebuilding table %s found no free scratch table name: %s and %d numbered variants are all taken. "+
+			"Rename or drop one of them in a separate migration first",
+		table.QualifiedName(), base, rebuildTableNameAttempts-1)
 }
 
 func findTable(tables []goschema.Table, name string, semantics identifier.Semantics) *goschema.Table {
 	return objectlookup.Qualified(tables, name, semantics)
-}
-
-func rebuildTableName(table goschema.Table) string {
-	return "__ptah_rebuild_" + table.Name
 }
 
 func tableNameCollides(tables []goschema.Table, target goschema.Table, name string) bool {
@@ -675,7 +737,9 @@ func validateRebuiltAddedColumn(table goschema.Table, field goschema.Field) erro
 		return nil
 	}
 	return unsupportedFeaturef(
-		"rebuilding table %s cannot add NOT NULL column %s without a default",
+		"rebuilding table %s cannot add NOT NULL column %s without a default: the rows copied from the old "+
+			"table have no value for it, so the new table's NOT NULL is violated as the copy runs. "+
+			"Give the column a default, or declare it nullable",
 		table.QualifiedName(),
 		field.Name,
 	)
@@ -714,7 +778,9 @@ func (p *Planner) recreateTableTriggers(table goschema.Table, generated *goschem
 		if trigger.Table == table.QualifiedName() {
 			if triggerBodyContainsCreateTrigger(trigger.Body) {
 				return nil, unsupportedFeaturef(
-					"rebuilding table %s with trigger %s requires a manual rebuild plan",
+					"rebuilding table %s cannot recreate trigger %s: its body is itself a CREATE TRIGGER "+
+						"statement, so recreating it would nest one trigger inside another. Declare the body as "+
+						"the statements the trigger runs, without the CREATE TRIGGER header",
 					table.QualifiedName(),
 					trigger.Name,
 				)
@@ -752,49 +818,30 @@ func quoteIdentifier(name string) string {
 	return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
 }
 
-// validateAddedColumns gates the ALTER TABLE ... ADD COLUMN path, whose
-// accepted shapes SQLite restricts far below what CREATE TABLE accepts. Tables
-// that are being rebuilt go through CREATE TABLE instead, so they are excluded
-// here and checked by [validateRebuiltAddedColumn].
-func validateAddedColumns(diff *types.SchemaDiff, generated *goschema.Database, rebuilds tableRebuilds) error {
-	for _, tableDiff := range diff.TablesModified {
-		if rebuilds.contains(tableDiff.TableName) {
-			continue
-		}
-		for _, columnName := range tableDiff.ColumnsAdded {
-			column := findColumn(generated, tableDiff.TableName, columnName)
-			if column == nil {
-				continue
-			}
-			if err := validateAddedColumn(tableDiff.TableName, column); err != nil {
-				return err
-			}
-		}
+// addedColumnNeedsRebuild reports whether a column can only arrive through a
+// rebuild, because `ALTER TABLE ... ADD COLUMN` accepts far less than
+// CREATE TABLE does.
+//
+// Every shape here is one SQLite documents as rejected for ADD COLUMN and
+// accepts inside CREATE TABLE, so each is a reason to enter the rebuild path
+// rather than a reason to refuse. What the rebuild itself still cannot do is a
+// separate question, asked by [validateRebuiltAddedColumn] once the table is
+// being rebuilt.
+func addedColumnNeedsRebuild(column *ast.ColumnNode) bool {
+	switch {
+	case column.Primary, column.Unique, column.AutoInc:
+		return true
+	case !column.Nullable && !hasNonNullLiteralDefault(column.Default):
+		return true
+	case column.ForeignKey != nil && !hasNullDefault(column.Default):
+		return true
+	case !isAllowedAddedColumnDefault(column.Default):
+		return true
+	case strings.EqualFold(strings.TrimSpace(column.GeneratedKind), "STORED"):
+		return true
+	default:
+		return false
 	}
-	return nil
-}
-
-func validateAddedColumn(tableName string, column *ast.ColumnNode) error {
-	if column.Primary || column.Unique || column.AutoInc {
-		return sqliteColumnRebuildError(tableName, column.Name)
-	}
-	if !column.Nullable && !hasNonNullLiteralDefault(column.Default) {
-		return sqliteColumnRebuildError(tableName, column.Name)
-	}
-	if column.ForeignKey != nil && !hasNullDefault(column.Default) {
-		return sqliteColumnRebuildError(tableName, column.Name)
-	}
-	if !isAllowedAddedColumnDefault(column.Default) {
-		return sqliteColumnRebuildError(tableName, column.Name)
-	}
-	if strings.EqualFold(strings.TrimSpace(column.GeneratedKind), "STORED") {
-		return sqliteColumnRebuildError(tableName, column.Name)
-	}
-	return nil
-}
-
-func sqliteColumnRebuildError(tableName, columnName string) error {
-	return unsupportedFeaturef("adding column %s to table %s requires a table rebuild plan", columnName, tableName)
 }
 
 func hasNonNullLiteralDefault(defaultValue *ast.DefaultValue) bool {

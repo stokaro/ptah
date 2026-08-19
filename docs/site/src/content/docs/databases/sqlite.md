@@ -51,8 +51,36 @@ The SQLite renderer and planner support:
   constraints), and a column drop combined with a column addition. A column the
   desired schema makes `NOT NULL` with a default is backfilled in the copy with
   `IFNULL(<column>, <default>)`, so rows already holding `NULL` survive.
+- Column **additions** ALTER TABLE cannot express, through the same rebuild.
+  SQLite accepts far less after `ADD COLUMN` than inside `CREATE TABLE`, so a
+  column that is `PRIMARY KEY`, `UNIQUE`, `AUTOINCREMENT`, `GENERATED ... STORED`,
+  a foreign key without a `NULL` default, or carries a non-literal default
+  arrives through a rebuild rather than an `ALTER TABLE`. Nothing has to be
+  declared to ask for this; the plan chooses the route the change needs.
 - Views without `WITH CHECK OPTION`, and row-level triggers (SQLite has no
   statement-level triggers).
+
+## What a rebuild still refuses
+
+A rebuild is planned automatically wherever it can be. These are the cases it
+cannot, each refused before any SQL runs and each naming what to do instead.
+
+| Refused | Why | What to do |
+| --- | --- | --- |
+| Adding a `NOT NULL` column with no default | The rows copied from the old table have no value for it, so the new table's `NOT NULL` is violated as the copy runs | Give the column a default, or declare it nullable |
+| Rebuilding a table that retains none of its columns | The rebuilt table would have nothing to copy and every existing row would be lost | Drop and recreate the table, which says the same thing out loud |
+| Rebuilding a table the declaration does not contain | The rebuild needs the table's desired definition and there is none | Declare the table, or drop it instead of changing it |
+| A trigger whose body is itself a `CREATE TRIGGER` statement | Recreating it would nest one trigger inside another | Declare the body as the statements the trigger runs, without the `CREATE TRIGGER` header |
+| An `EXCLUDE` constraint | SQLite has no such constraint | Express the rule as a `UNIQUE` index when it compares whole values for equality, or as a `CHECK` constraint or trigger when it does not |
+| A constraint change the comparison cannot attribute to a table | The rebuild does not know which table to rebuild | Declare the constraint on its table |
+
+A table already holding `__ptah_rebuild_<name>` is **not** refused. That name is
+an ordinary identifier and a schema is allowed to use it, so the rebuild's
+scratch table steps aside to `__ptah_rebuild_<name>_1` and upward until it finds
+a name nothing declares and nothing is dropping.
+
+Triggers on a rebuilt table are recreated, not refused; only the nested-body
+case above is turned away.
 
 Introspection ignores SQLite system objects (names starting with `sqlite_`)
 and Ptah's own revision table.

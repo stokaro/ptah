@@ -199,23 +199,43 @@ func TestPlannerRebuildsTableWhenDroppingColumn(t *testing.T) {
 	c.Assert(sql, qt.Not(qt.Contains), "DROP COLUMN")
 }
 
+// TestPlannerRebuildStepsAsideFromADeclaredTableName covers stokaro/ptah#1707.
+//
+// __ptah_rebuild_users is an ordinary identifier and a schema is allowed to
+// contain a table by that name. Refusing asked the operator to rename their own
+// table so that a name Ptah chose was free; the collision is Ptah's to resolve,
+// so the scratch table takes the next free name instead.
+func TestPlannerRebuildStepsAsideFromADeclaredTableName(t *testing.T) {
+	c := qt.New(t)
+
+	generated := &goschema.Database{
+		Tables: []goschema.Table{
+			{Name: "users", StructName: "User"},
+			{Name: "__ptah_rebuild_users", StructName: "RebuildUser"},
+		},
+		Fields: []goschema.Field{{Name: "id", Type: "INTEGER", StructName: "User", Primary: true}},
+	}
+	diff := &types.SchemaDiff{TablesModified: []types.TableDiff{{
+		TableName:      "users",
+		ColumnsRemoved: []string{"name"},
+	}}}
+
+	sql, err := planner.GenerateSchemaDiffSQL(diff, generated, platform.SQLite)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(sql, qt.Contains, `CREATE TABLE "__ptah_rebuild_users_1"`)
+	c.Assert(sql, qt.Contains, `ALTER TABLE "__ptah_rebuild_users_1" RENAME TO "users"`)
+	// The operator's own table is untouched by the rebuild that stepped around
+	// it: nothing drops it and nothing renames over it.
+	c.Assert(sql, qt.Not(qt.Contains), `DROP TABLE "__ptah_rebuild_users"`)
+}
+
 func TestPlannerRejectsUnsafeTableRebuildPreconditions(t *testing.T) {
 	tests := []struct {
 		name      string
 		generated *goschema.Database
 		want      string
 	}{
-		{
-			name: "temporary table name collision",
-			generated: &goschema.Database{
-				Tables: []goschema.Table{
-					{Name: "users", StructName: "User"},
-					{Name: "__ptah_rebuild_users", StructName: "RebuildUser"},
-				},
-				Fields: []goschema.Field{{Name: "id", Type: "INTEGER", StructName: "User", Primary: true}},
-			},
-			want: `sqlite: rebuilding table users would collide with existing table __ptah_rebuild_users`,
-		},
 		{
 			name: "unsupported trigger syntax",
 			generated: &goschema.Database{
@@ -227,7 +247,7 @@ func TestPlannerRejectsUnsafeTableRebuildPreconditions(t *testing.T) {
 					Body:  "CREATE TRIGGER trg_users_email AFTER UPDATE OF email ON users BEGIN SELECT NEW.email; END",
 				}},
 			},
-			want: `sqlite: rebuilding table users with trigger trg_users_email requires a manual rebuild plan`,
+			want: `(?s)sqlite: rebuilding table users cannot recreate trigger trg_users_email: its body is itself a CREATE TRIGGER statement.*`,
 		},
 	}
 	diff := &types.SchemaDiff{TablesModified: []types.TableDiff{{
@@ -320,7 +340,16 @@ func TestPlannerRebuildsATableOtherTablesReferTo(t *testing.T) {
 	}
 }
 
-func TestPlannerRejectsTableRebuildTempNameRemovedTableCollision(t *testing.T) {
+// TestPlannerRebuildStepsAsideFromARemovedTableName covers stokaro/ptah#1707.
+//
+// A name the diff is DROPPING is still unusable: the drop and the rebuild land
+// in one plan and their order is not the rebuild's to assume. So the scratch
+// table steps aside rather than refusing, and the rebuild proceeds.
+//
+// The assertion names both halves. Reverting to the refusal fails on the nil
+// error; picking the taken name anyway fails on the second assertion, which is
+// the one no single-name test could make.
+func TestPlannerRebuildStepsAsideFromARemovedTableName(t *testing.T) {
 	c := qt.New(t)
 
 	generated := &goschema.Database{
@@ -335,14 +364,27 @@ func TestPlannerRejectsTableRebuildTempNameRemovedTableCollision(t *testing.T) {
 		}},
 	}
 
-	nodes, err := planner.GenerateSchemaDiffAST(diff, generated, platform.SQLite)
+	sql, err := planner.GenerateSchemaDiffSQL(diff, generated, platform.SQLite)
 
-	c.Assert(nodes, qt.IsNil)
-	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-	c.Assert(err, qt.ErrorMatches, `sqlite: rebuilding table users would collide with existing table __ptah_rebuild_users`)
+	c.Assert(err, qt.IsNil)
+	c.Assert(sql, qt.Contains, `CREATE TABLE "__ptah_rebuild_users_1"`)
+	c.Assert(sql, qt.Not(qt.Contains), `CREATE TABLE "__ptah_rebuild_users"`)
+	c.Assert(sql, qt.Contains, `ALTER TABLE "__ptah_rebuild_users_1" RENAME TO "users"`)
 }
 
-func TestPlannerRejectsAddColumnShapesThatNeedRebuild(t *testing.T) {
+// TestPlannerRebuildsForAddColumnShapesAlterCannotExpress covers
+// stokaro/ptah#1707.
+//
+// Each row is a column shape `ALTER TABLE ... ADD COLUMN` rejects and
+// CREATE TABLE accepts. Every one of them used to be answered
+// "adding column X to table users requires a table rebuild plan" -- by a tool
+// that writes rebuild plans, and that had always taken the same column without
+// comment when the table was already being rebuilt for another reason.
+//
+// The assertion is that a rebuild is planned, named by the scratch table the
+// rebuild moves through. Reverting the decision restores the refusal and every
+// row fails on the nil error.
+func TestPlannerRebuildsForAddColumnShapesAlterCannotExpress(t *testing.T) {
 	tests := []struct {
 		name  string
 		field goschema.Field
@@ -353,11 +395,7 @@ func TestPlannerRejectsAddColumnShapesThatNeedRebuild(t *testing.T) {
 		},
 		{
 			name:  "unique",
-			field: goschema.Field{Name: "email", Type: "TEXT", StructName: "User", Unique: true},
-		},
-		{
-			name:  "not null without default",
-			field: goschema.Field{Name: "email", Type: "TEXT", StructName: "User", Nullable: false},
+			field: goschema.Field{Name: "email", Type: "TEXT", StructName: "User", Nullable: true, Unique: true},
 		},
 		{
 			name:  "foreign key with non null default",
@@ -383,29 +421,74 @@ func TestPlannerRejectsAddColumnShapesThatNeedRebuild(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			generated := &goschema.Database{
-				Tables: []goschema.Table{
-					{Name: "users", StructName: "User"},
-					{Name: "accounts", StructName: "Account"},
-				},
-				Fields: []goschema.Field{
-					{Name: "id", Type: "INTEGER", StructName: "Account", Primary: true},
-					tt.field,
-				},
-			}
+			generated := addColumnRebuildSchema(tt.field)
 			diff := &types.SchemaDiff{TablesModified: []types.TableDiff{{
 				TableName:    "users",
 				ColumnsAdded: []string{tt.field.Name},
 			}}}
 
-			nodes, err := planner.GenerateSchemaDiffAST(diff, generated, platform.SQLite)
-			c.Assert(nodes, qt.IsNil)
-			var planErr *ptaherr.PlanError
-			c.Assert(err, qt.ErrorAs, &planErr)
-			c.Assert(planErr.Dialect, qt.Equals, platform.SQLite)
-			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-			c.Assert(err, qt.ErrorMatches, `sqlite: adding column `+tt.field.Name+` to table users requires a table rebuild plan`)
+			sql, err := planner.GenerateSchemaDiffSQL(diff, generated, platform.SQLite)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(sql, qt.Contains, `CREATE TABLE "__ptah_rebuild_users"`)
+			c.Assert(sql, qt.Contains, `DROP TABLE "users"`)
+			c.Assert(sql, qt.Contains, `ALTER TABLE "__ptah_rebuild_users" RENAME TO "users"`)
+			// The new column has to reach the new table's definition. Copying it
+			// out of the old table instead is the shape stokaro/ptah#930 names,
+			// where SQLite reads the unknown identifier as a string literal and
+			// every row silently receives the column's own name.
+			c.Assert(sql, qt.Contains, tt.field.Name)
+			c.Assert(sql, qt.Not(qt.Contains), "ADD COLUMN")
 		})
+	}
+}
+
+// TestPlannerRefusesRebuiltNotNullAddWithoutDefault is the one shape from
+// stokaro/ptah#1707 that a rebuild cannot perform either: the copied rows have
+// no value for the column, so the new table's NOT NULL is violated the moment
+// the INSERT ... SELECT runs.
+//
+// It is refused before any SQL, and by the rebuild path rather than the
+// ADD COLUMN path -- so the message names what the rebuild cannot do rather
+// than asking for a rebuild that is already happening.
+func TestPlannerRefusesRebuiltNotNullAddWithoutDefault(t *testing.T) {
+	c := qt.New(t)
+
+	field := goschema.Field{Name: "email", Type: "TEXT", StructName: "User", Nullable: false}
+	generated := addColumnRebuildSchema(field)
+	diff := &types.SchemaDiff{TablesModified: []types.TableDiff{{
+		TableName:    "users",
+		ColumnsAdded: []string{field.Name},
+	}}}
+
+	nodes, err := planner.GenerateSchemaDiffAST(diff, generated, platform.SQLite)
+
+	c.Assert(nodes, qt.IsNil)
+	var planErr *ptaherr.PlanError
+	c.Assert(err, qt.ErrorAs, &planErr)
+	c.Assert(planErr.Dialect, qt.Equals, platform.SQLite)
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
+	c.Assert(err, qt.ErrorMatches, `(?s)sqlite: rebuilding table users cannot add NOT NULL column email without a default.*`)
+}
+
+// addColumnRebuildSchema is the two-table declaration both tests above vary a
+// single field against.
+//
+// `users` keeps a column of its own. A rebuild copies the retained columns into
+// the new table, so a users declared with nothing but the added field is a
+// table with nothing to copy -- which is refused for that reason and would hide
+// the shape under test behind an unrelated message.
+func addColumnRebuildSchema(field goschema.Field) *goschema.Database {
+	return &goschema.Database{
+		Tables: []goschema.Table{
+			{Name: "users", StructName: "User"},
+			{Name: "accounts", StructName: "Account"},
+		},
+		Fields: []goschema.Field{
+			{Name: "id", Type: "INTEGER", StructName: "User", Primary: true},
+			{Name: "id", Type: "INTEGER", StructName: "Account", Primary: true},
+			field,
+		},
 	}
 }
 
@@ -640,7 +723,7 @@ func TestPlannerRebuildRefusesAddedNotNullColumnWithoutDefault(t *testing.T) {
 	c.Assert(err, qt.ErrorAs, &planErr)
 	c.Assert(planErr.Dialect, qt.Equals, platform.SQLite)
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-	c.Assert(err, qt.ErrorMatches, `sqlite: rebuilding table users cannot add NOT NULL column email without a default`)
+	c.Assert(err, qt.ErrorMatches, `(?s)sqlite: rebuilding table users cannot add NOT NULL column email without a default.*`)
 }
 
 // TestPlannerRebuildEmitsIndexesAndTriggersOnce pins that a rebuilt table
@@ -785,7 +868,7 @@ func TestPlannerRejectsSQLiteExcludeConstraint(t *testing.T) {
 	c.Assert(err, qt.ErrorAs, &planErr)
 	c.Assert(planErr.Dialect, qt.Equals, platform.SQLite)
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-	c.Assert(err, qt.ErrorMatches, "sqlite: EXCLUDE constraints are not supported")
+	c.Assert(err, qt.ErrorMatches, `(?s)sqlite: table bookings declares EXCLUDE constraint no_overlap: SQLite has no EXCLUDE constraint.*`)
 }
 
 // TestPlannerRebuildExcludesColumnsAddedBesideAConstraintChange pins the
