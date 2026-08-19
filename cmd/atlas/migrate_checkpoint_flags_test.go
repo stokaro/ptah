@@ -289,7 +289,7 @@ func TestCompatCommand_MigrateCheckpointQualifierReachesThePlan(t *testing.T) {
 		"--dry-run",
 	)
 
-	c.Assert(err, qt.ErrorMatches, `.*--qualifier is not supported for dialect "sqlite"`)
+	c.Assert(err, qt.ErrorMatches, `(?s).*--qualifier is not supported for dialect "sqlite": SQLite.s qualified form names an ATTACHed database.*`)
 }
 
 // TestCompatCommand_MigrateCheckpointQualifierUnsetPlansCleanly is the control

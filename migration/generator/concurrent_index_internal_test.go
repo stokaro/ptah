@@ -224,7 +224,21 @@ func TestPlanGeneratedMigrationSpecs_SplitsPopulatedAndEmptyTableIndexes(t *test
 	c.Assert(specs[1].UpSQL, qt.Not(qt.Contains), "idx_posts_title")
 }
 
-func TestPlanGeneratedMigrationSpecs_RefusesUnsplitNonTransactionalMix(t *testing.T) {
+// TestPlanGeneratedMigrationSpecs_LeadsWithTheEnumValueAddition covers
+// stokaro/ptah#1714.
+//
+// This exact diff used to produce NO migration at all: a PostgreSQL enum value
+// addition beside a table change was answered "mixes transactional statements
+// with non-transactional statements that cannot be split automatically", for a
+// reason about transactionality the user did not choose and cannot see in their
+// schema.
+//
+// The order is the assertion, not just the count. `ALTER TYPE ... ADD VALUE`
+// has to be committed BEFORE any statement that uses the value -- PostgreSQL
+// answers 55P04 otherwise -- so the enum file LEADS, which is the opposite of
+// where the concurrent-index file goes. Emitting the two in the other order
+// would still produce two files and still pass a count-only test.
+func TestPlanGeneratedMigrationSpecs_LeadsWithTheEnumValueAddition(t *testing.T) {
 	c := qt.New(t)
 
 	diff := &types.SchemaDiff{
@@ -248,8 +262,18 @@ func TestPlanGeneratedMigrationSpecs_RefusesUnsplitNonTransactionalMix(t *testin
 
 	specs, _, err := planGeneratedMigrationSpecs(diff, generated, &dbschematypes.DBSchema{}, postgresInfo(capability.Postgres16()), 100, "mixed", DiffPolicy{}, atlasmigrate.Qualifier{})
 
-	c.Assert(specs, qt.IsNil)
-	c.Assert(err, qt.ErrorMatches, "generated migration mixes transactional statements with non-transactional statements that cannot be split automatically")
+	c.Assert(err, qt.IsNil)
+	c.Assert(specs, qt.HasLen, 2)
+
+	c.Assert(specs[0].NoTransaction, qt.IsTrue)
+	c.Assert(specs[0].Version, qt.Equals, int64(100))
+	c.Assert(specs[0].UpSQL, qt.Contains, `ALTER TYPE "status" ADD VALUE 'archived';`)
+	c.Assert(specs[0].UpSQL, qt.Not(qt.Contains), "CREATE TABLE")
+
+	c.Assert(specs[1].NoTransaction, qt.IsFalse)
+	c.Assert(specs[1].Version, qt.Equals, int64(101))
+	c.Assert(specs[1].UpSQL, qt.Contains, `CREATE TABLE "users"`)
+	c.Assert(specs[1].UpSQL, qt.Not(qt.Contains), "ADD VALUE")
 }
 
 func TestPublishPlannedMigration_WritesAllPairs(t *testing.T) {

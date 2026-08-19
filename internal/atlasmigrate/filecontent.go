@@ -1,7 +1,6 @@
 package atlasmigrate
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 
@@ -10,6 +9,7 @@ import (
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/core/sqlutil"
 	"go.5x5.cz/ptah/internal/atlasmigrateimport"
+	"go.5x5.cz/ptah/internal/txrequire"
 	"go.5x5.cz/ptah/migration/planner"
 )
 
@@ -107,21 +107,67 @@ func BuildMigrationFileContents(
 		}
 		return []MigrationFileContent{withTxModeNoneDirective(content)}, nil
 	}
-	if !nodesAreConcurrentIndexes(noTransaction) {
-		return nil, errors.New("generated migration mixes transactional statements with non-transactional statements that cannot be split automatically")
+	if unsplittable := unsplittableNoTransactionNodes(noTransaction); len(unsplittable) > 0 {
+		return nil, txrequire.UnsplittableMixError(unsplittable)
 	}
-	transactionalContent, err := renderMigrationFileContent(dialect, caps, format, transactional)
-	if err != nil {
-		return nil, err
+
+	// The order of these files is the order the statements have to run in.
+	// `ALTER TYPE ... ADD VALUE` leads, because PostgreSQL answers 55P04 to a
+	// statement that uses the value before the ADD VALUE has committed. The
+	// concurrent indexes follow, because an index is built after the table it
+	// indexes. A plan with no enum additions produces exactly the two files it
+	// produced before (stokaro/ptah#1714).
+	enumNodes, concurrentNodes := partitionNoTransactionNodes(noTransaction)
+	contents := make([]MigrationFileContent, 0, 3)
+	for _, group := range []struct {
+		nodes         []ast.Node
+		suffix        string
+		noTransaction bool
+	}{
+		{enumNodes, "_enum_values", true},
+		{transactional, "_transactional", false},
+		{concurrentNodes, "_concurrent_indexes", true},
+	} {
+		if len(group.nodes) == 0 {
+			continue
+		}
+		content, err := renderMigrationFileContent(dialect, caps, format, group.nodes)
+		if err != nil {
+			return nil, err
+		}
+		if group.noTransaction {
+			content = withTxModeNoneDirective(content)
+		}
+		content.NameSuffix = group.suffix
+		contents = append(contents, content)
 	}
-	transactionalContent.NameSuffix = "_transactional"
-	concurrentContent, err := renderMigrationFileContent(dialect, caps, format, noTransaction)
-	if err != nil {
-		return nil, err
+	return contents, nil
+}
+
+// partitionNoTransactionNodes splits the statements that must leave the
+// transactional file into the two kinds this package can order, preserving
+// input order within each.
+func partitionNoTransactionNodes(nodes []ast.Node) (enumValues, concurrentIndexes []ast.Node) {
+	for _, node := range nodes {
+		if txrequire.Kind(node) == txrequire.KindEnumValue {
+			enumValues = append(enumValues, node)
+			continue
+		}
+		concurrentIndexes = append(concurrentIndexes, node)
 	}
-	concurrentContent = withTxModeNoneDirective(concurrentContent)
-	concurrentContent.NameSuffix = "_concurrent_indexes"
-	return []MigrationFileContent{transactionalContent, concurrentContent}, nil
+	return enumValues, concurrentIndexes
+}
+
+// unsplittableNoTransactionNodes returns the statements this package has no
+// ordered place for.
+func unsplittableNoTransactionNodes(nodes []ast.Node) []ast.Node {
+	var unsplittable []ast.Node
+	for _, node := range nodes {
+		if txrequire.Kind(node) == txrequire.KindUnsplittable {
+			unsplittable = append(unsplittable, node)
+		}
+	}
+	return unsplittable
 }
 
 func renderMigrationFileContent(
@@ -247,24 +293,6 @@ func splitNoTransactionPlanNodes(dialect string, nodes []ast.Node) (transactiona
 		transactional = append(transactional, node)
 	}
 	return transactional, noTransaction
-}
-
-func nodesAreConcurrentIndexes(nodes []ast.Node) bool {
-	for _, node := range nodes {
-		switch typed := node.(type) {
-		case *ast.IndexNode:
-			if !typed.Concurrently {
-				return false
-			}
-		case *ast.DropIndexNode:
-			if !typed.Concurrently {
-				return false
-			}
-		default:
-			return false
-		}
-	}
-	return true
 }
 
 func hasActualSQLStatements(statements []string) bool {

@@ -138,21 +138,38 @@ func TestBuildMigrationFileContents_HappyPath(t *testing.T) {
 	})
 }
 
-func TestBuildMigrationFileContents_FailurePath(t *testing.T) {
-	t.Run("mixed plan with non-concurrent no-transaction statements is refused", func(t *testing.T) {
-		c := qt.New(t)
-		nodes := []ast.Node{
-			ast.NewCreateTable("orders").AddColumn(ast.NewColumn("id", "SERIAL").SetPrimary()),
-			ast.NewAlterType("enum_status").AddOperation(ast.NewAddEnumValueOperation("archived")),
-		}
+// TestBuildMigrationFileContents_LeadsWithTheEnumValueAddition covers
+// stokaro/ptah#1714 on the compat path.
+//
+// This plan used to produce NO files: an enum value addition beside a table
+// change was answered "cannot be split automatically". Both statements are
+// ordinary and the order between them is not ambiguous -- PostgreSQL answers
+// 55P04 to a statement that uses the value before the ADD VALUE has committed,
+// so the enum file has to LEAD.
+//
+// The order is the assertion. Emitting the two the other way round still
+// produces two files and still passes a count-only test, and would fail at
+// apply for a plan the tool said it had written.
+func TestBuildMigrationFileContents_LeadsWithTheEnumValueAddition(t *testing.T) {
+	c := qt.New(t)
+	nodes := []ast.Node{
+		ast.NewCreateTable("orders").AddColumn(ast.NewColumn("id", "SERIAL").SetPrimary()),
+		ast.NewAlterType("enum_status").AddOperation(ast.NewAddEnumValueOperation("archived")),
+	}
 
-		contents, err := atlasmigrate.BuildMigrationFileContents(
-			platform.Postgres, capability.ForDialect(platform.Postgres), defaultMigrateDiffFormat(), nodes)
+	contents, err := atlasmigrate.BuildMigrationFileContents(
+		platform.Postgres, capability.ForDialect(platform.Postgres), defaultMigrateDiffFormat(), nodes)
 
-		c.Assert(err, qt.ErrorMatches,
-			`generated migration mixes transactional statements with non-transactional statements that cannot be split automatically`)
-		c.Assert(contents, qt.HasLen, 0)
-	})
+	c.Assert(err, qt.IsNil)
+	c.Assert(contents, qt.HasLen, 2)
+
+	c.Assert(contents[0].NameSuffix, qt.Equals, "_enum_values")
+	c.Assert(contents[0].SQL, qt.Contains, "ADD VALUE")
+	c.Assert(contents[0].SQL, qt.Not(qt.Contains), "CREATE TABLE")
+
+	c.Assert(contents[1].NameSuffix, qt.Equals, "_transactional")
+	c.Assert(contents[1].SQL, qt.Contains, "CREATE TABLE")
+	c.Assert(contents[1].SQL, qt.Not(qt.Contains), "ADD VALUE")
 }
 
 // TestBuildMigrationFileContents_TxModeRoundTrip proves the generated

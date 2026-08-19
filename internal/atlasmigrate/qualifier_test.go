@@ -103,7 +103,7 @@ func TestQualifierValidateScope_FailurePath(t *testing.T) {
 		qualifier, err := atlasmigrate.ParseQualifier("tenant")
 		c.Assert(err, qt.IsNil)
 		c.Assert(qualifier.ValidateScope(platform.SQLite, nil), qt.ErrorMatches,
-			`atlas migrate diff --qualifier is not supported for dialect "sqlite"`)
+			`(?s)atlas migrate diff --qualifier is not supported for dialect "sqlite": SQLite.s qualified form names an ATTACHed database.*`)
 	})
 
 	t.Run("multiple schema scope", func(t *testing.T) {
@@ -244,7 +244,7 @@ func TestQualifierApplyToPlan_FailurePath(t *testing.T) {
 		c := qt.New(t)
 		qualifier := mustParseQualifier(c, "tenant")
 		err := qualifier.ApplyToPlan(platform.SQLite, &goschema.Database{}, []ast.Node{ast.NewCreateTable("users")})
-		c.Assert(err, qt.ErrorMatches, `atlas migrate diff --qualifier is not supported for dialect "sqlite"`)
+		c.Assert(err, qt.ErrorMatches, `(?s)atlas migrate diff --qualifier is not supported for dialect "sqlite": SQLite.s qualified form names an ATTACHed database.*`)
 	})
 
 	t.Run("unsupported statement kind", func(t *testing.T) {
@@ -284,7 +284,7 @@ func TestQualifierApplyToPlan_FailurePath(t *testing.T) {
 			AddColumn(ast.NewColumn("status", "enum_user_status"))
 		err := qualifier.ApplyToPlan(platform.Postgres, desired, []ast.Node{table})
 		c.Assert(err, qt.ErrorMatches,
-			`atlas migrate diff --qualifier "tenant": table "users" column "status" uses enum type "enum_user_status"; qualifying enum type references is not supported yet`)
+			`(?s)atlas migrate diff --qualifier "tenant": table "users" column "status" uses enum type "enum_user_status"\. A table name is a field of the planned node and is rewritten.*`)
 	})
 
 	t.Run("drop index without owning table", func(t *testing.T) {
