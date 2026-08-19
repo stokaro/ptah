@@ -134,6 +134,8 @@ root-level command spellings are removed instead of preserved.
 | `ptah migrations down` | Requested rollback applied, or dry-run output printed. | Not used. | Usage error, connection failure, migration directory error, pre-flight hook failure, lock failure, or rollback failure. |
 | `ptah migrations repair` | Migration revision repaired, or dry-run output printed. | Not used. | Usage error, connection failure, revision lookup failure, or repair failure. |
 | `ptah migrations status` | Status printed, including pending migrations by default. | Pending migrations exist when `--exit-code` is set. | Usage error, connection failure, migration directory error, or status-read failure. |
+| `ptah migrations ls` | Migration files listed, or nothing printed when the directory holds none. | Not used. | Usage error, invalid directory, invalid migration format, or integrity verification failure under `--verify-sum`. |
+| `ptah migrations show` | Migration SQL printed. | Not used. | Usage error, invalid directory or version, a version the directory does not hold, a version with no migration in the requested direction, or integrity verification failure under `--verify-sum`. |
 | `ptah migrations hash` | Integrity file written. | Not used. | Usage error, invalid directory, invalid migration format, or write error. |
 | `ptah migrations validate` | Integrity file matches the migration directory, and optional `--dev-url` SQL replay succeeds. | Migration content drift found. | Usage error, missing or unreadable integrity file, invalid directory, invalid migration format, dev-database connection failure, or SQL replay failure. |
 | `ptah migrations edit` | Migration edited and the integrity file rewritten. | Not used. | Usage error, invalid directory or version, missing migration, refused because already applied without `--force`, database connection failure, editor failure, or write error. |
@@ -176,6 +178,8 @@ behavior such as migration apply, the license notice, or schema formatting.
 | `ptah-compat migrate edit` | `ptah migrations edit` |
 | `ptah-compat migrate rebase` | `ptah migrations rebase` |
 | `ptah-compat migrate rm` | `ptah migrations rm` |
+| `ptah-compat migrate ls` | `ptah migrations ls`, with the Atlas checksum gate always on |
+| `ptah-compat migrate show` | `ptah migrations show`, with the Atlas checksum gate always on |
 | `ptah-compat schema inspect` | Atlas-shaped schema inspection |
 | `ptah-compat schema apply` | Local Atlas-style schema apply |
 | `ptah-compat schema diff` | Local Atlas-style schema-file diff |

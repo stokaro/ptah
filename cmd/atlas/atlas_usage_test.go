@@ -55,6 +55,16 @@ func TestNewCompatCommandNamedAtlas_UsageMatchesAtlasCE(t *testing.T) {
 			args:      []string{"migrate", "set", "--help"},
 			wantUsage: "Usage:\n  atlas migrate set [flags] [version]",
 		},
+		{
+			name:      "migrate_ls",
+			args:      []string{"migrate", "ls", "--help"},
+			wantUsage: "Usage:\n  atlas migrate ls [flags]",
+		},
+		{
+			name:      "migrate_show",
+			args:      []string{"migrate", "show", "--help"},
+			wantUsage: "Usage:\n  atlas migrate show [flags] {name | version}...",
+		},
 	}
 
 	for _, tt := range tests {

@@ -22,8 +22,10 @@ import (
 	"go.5x5.cz/ptah/cmd/migratecheckpoint"
 	"go.5x5.cz/ptah/cmd/migratedown"
 	"go.5x5.cz/ptah/cmd/migrateedit"
+	"go.5x5.cz/ptah/cmd/migratels"
 	"go.5x5.cz/ptah/cmd/migraterebase"
 	"go.5x5.cz/ptah/cmd/migraterm"
+	"go.5x5.cz/ptah/cmd/migrateshow"
 	"go.5x5.cz/ptah/cmd/migrationstest"
 	"go.5x5.cz/ptah/cmd/schema"
 	"go.5x5.cz/ptah/config/projectconfig"
@@ -53,6 +55,12 @@ type atlasVerb struct {
 	// projectConfig overrides how loaded atlas.hcl values map onto the verb's
 	// Atlas flags. When nil, the generic applyAtlasProjectConfigToArgs is used.
 	projectConfig atlasProjectArgsApplier
+	// requireDirScheme marks a verb that refuses a --dir naming no scheme, the
+	// way the mirrored surface does. It is opt-in per verb rather than the rule
+	// for every forwarded verb because turning it on where it was off is a
+	// behavior change for existing callers, and each verb's own measurement is
+	// what says whether the mirrored one refuses.
+	requireDirScheme bool
 	// writesDir marks a verb that can CREATE the migration directory it was
 	// pointed at. New uses this marker for its command-line scheme gate; diff
 	// owns the same gate separately, as do the read-only hash, validate, status
@@ -71,6 +79,13 @@ type atlasPositionalArg struct {
 	// a single value and rejects multiple values loudly until multi-value
 	// forwarding is implemented.
 	variadic bool
+	// repeatable marks a variadic positional whose native flag accumulates
+	// every occurrence, so each value is forwarded as its own flag pair rather
+	// than refused. It is a second field rather than an inference from variadic
+	// because forwarding several values to a native flag that holds ONE would
+	// silently keep the last and drop the rest, which is the failure the
+	// refusal exists to prevent.
+	repeatable bool
 }
 
 const (
@@ -366,8 +381,10 @@ func atlasMigrateForwardVerbs() []atlasVerb {
 			},
 		},
 		atlasMigrateEditVerb(),
+		atlasMigrateLsVerb(),
 		atlasMigrateRebaseVerb(),
 		atlasMigrateRmVerb(),
+		atlasMigrateShowVerb(),
 		atlasMigrateTestVerb(),
 	}
 }
@@ -764,6 +781,85 @@ func atlasMigrateRmVerb() atlasVerb {
 	}
 }
 
+// atlasMigrateLsVerb forwards `atlas migrate ls` to the native
+// `ptah migrations ls` command, which lists a migration directory without
+// contacting a database. --dir maps to the native migration directory, and -l
+// and -s map onto the native --latest and --short.
+func atlasMigrateLsVerb() atlasVerb {
+	return atlasVerb{
+		use:              "ls",
+		displayUse:       "ls [flags]",
+		short:            "List the migration files in the directory",
+		native:           "migrations ls",
+		factory:          migratels.NewMigrateLsCommand,
+		prefixArgs:       atlasMigrateReadPrefixArgs(),
+		nativeOnlyFlags:  atlasMigrateReadNativeOnlyFlags(),
+		requireDirScheme: true,
+		flags: []atlasargs.Flag{
+			atlasMigrationsDirFlag(),
+			atlasargs.Bool("latest", "l", "Print only the latest migration file"),
+			atlasargs.Bool("short", "s", "Print only the migration version, omitting the description and the .sql suffix"),
+		},
+	}
+}
+
+// atlasMigrateShowVerb forwards `atlas migrate show` to the native
+// `ptah migrations show` command, which prints a stored migration's SQL. The
+// repeatable {name | version} positional maps to the native --version, one flag
+// pair per value, so naming several migrations in one run prints all of them
+// instead of refusing.
+func atlasMigrateShowVerb() atlasVerb {
+	return atlasVerb{
+		use:        "show",
+		displayUse: "show [flags] {name | version}...",
+		short:      "Print the contents of one or more migration files",
+		native:     "migrations show",
+		factory:    migrateshow.NewMigrateShowCommand,
+		positionals: []atlasPositionalArg{{
+			name:       "version",
+			nativeName: "version",
+			mapValue:   atlasMigrateVersionValue,
+			variadic:   true,
+			repeatable: true,
+		}},
+		prefixArgs:       atlasMigrateReadPrefixArgs(),
+		nativeOnlyFlags:  append(atlasMigrateReadNativeOnlyFlags(), "direction", "version"),
+		requireDirScheme: true,
+		flags:            []atlasargs.Flag{atlasMigrationsDirFlag()},
+	}
+}
+
+// atlasMigrateReadPrefixArgs are the native decisions the read-only directory
+// verbs make on their caller's behalf, because this surface offers no flag for
+// either.
+//
+// --dir-format is pinned to the Atlas layout for the reason every other verb on
+// this surface pins it: a directory reached through the Atlas spelling is an
+// Atlas directory, and the verbs being mirrored register no --dir-format of
+// their own, so accepting one here would be a flag they reject.
+//
+// --verify-sum is pinned on because the surface being mirrored refuses a
+// migration directory whose integrity file is missing or stale before it lists
+// or prints anything. The native default is the opposite -- these are read-only
+// verbs, outside the always-on integrity class -- so without this the compat
+// spelling would accept a directory the mirrored surface refuses, which is the
+// one direction the compatibility policy does not allow.
+func atlasMigrateReadPrefixArgs() []string {
+	return []string{"--dir-format", atlasDirFormatDefault, "--verify-sum"}
+}
+
+// atlasMigrateReadNativeOnlyFlags lists the native read flags the Atlas-shaped
+// ls and show verbs do not accept; use the native `ptah migrations ls|show`
+// commands for them.
+func atlasMigrateReadNativeOnlyFlags() []string {
+	return []string{
+		"dir-format",
+		"migrations-dir",
+		dbcli.PlainHTTPFlagName,
+		"verify-sum",
+	}
+}
+
 func atlasMigrateMaintFlags() []atlasargs.Flag {
 	return []atlasargs.Flag{
 		atlasMigrationsDirFlag(),
@@ -1140,6 +1236,13 @@ func atlasArgMapper(group string, verb atlasVerb) cmdadapter.ArgMapper {
 		if err != nil {
 			return nil, nil, err
 		}
+		// After the positional split, because on the mirrored surface the
+		// arity check runs before the command body that reads --dir, and
+		// before the flag mapper, because a directory URL naming no scheme is
+		// refused there before the value is parsed as one.
+		if err := requireAtlasVerbDirScheme(cmd, group, verb, project); err != nil {
+			return nil, nil, err
+		}
 		mapped, err := atlasargs.Map(group, verb.use, verb.flags, args)
 		if err != nil {
 			return nil, nil, err
@@ -1378,6 +1481,13 @@ func mapAtlasPositionalArgs(group string, verb atlasVerb, args []string) (remain
 		}
 		return withoutPositionals, []string{"--" + positional.nativeName, value}, nil
 	default:
+		if positional.repeatable {
+			tail, err := mapRepeatedAtlasPositionals(group, verb, positional, positionals)
+			if err != nil {
+				return nil, nil, err
+			}
+			return withoutPositionals, tail, nil
+		}
 		if positional.variadic {
 			return nil, nil, fmt.Errorf(
 				"atlas %s %s accepts multiple %s arguments, but Ptah does not implement processing more than one per run yet",
@@ -1385,6 +1495,27 @@ func mapAtlasPositionalArgs(group string, verb atlasVerb, args []string) (remain
 		}
 		return nil, nil, fmt.Errorf("atlas %s %s accepts one %s argument, got %q", group, verb.use, positional.name, positionals)
 	}
+}
+
+// mapRepeatedAtlasPositionals turns every value of a repeatable positional into
+// its own native flag pair, in the order they were written. Order is preserved
+// rather than sorted because it is what the caller asked for and what decides
+// the order the values are acted on.
+func mapRepeatedAtlasPositionals(
+	group string,
+	verb atlasVerb,
+	positional atlasPositionalArg,
+	positionals []string,
+) ([]string, error) {
+	tail := make([]string, 0, 2*len(positionals))
+	for _, raw := range positionals {
+		value, err := mapAtlasPositionalValue(group, verb, positional, raw)
+		if err != nil {
+			return nil, err
+		}
+		tail = append(tail, "--"+positional.nativeName, value)
+	}
+	return tail, nil
 }
 
 func mapAtlasPositionalValue(group string, verb atlasVerb, positional atlasPositionalArg, value string) (string, error) {

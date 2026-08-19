@@ -708,7 +708,7 @@ tracked. This table is the index; the sections carry the boundary detail.
 | [Atlas-compatible hidden `migrate diff --dry-run`](#atlas-compatible-hidden-migrate-diff---dry-run) | Product behavior | [#618](https://github.com/stokaro/ptah/issues/618) |
 | [HCL schema and Atlas project config subset audit](#hcl-schema-and-atlas-project-config-subset-audit) | Product behavior and coverage | [#511](https://github.com/stokaro/ptah/issues/511) |
 | [Live and differential corpus breadth](#live-and-differential-corpus-breadth) | Conformance coverage | [ptah-atlas-conformance#167](https://github.com/stokaro/ptah-atlas-conformance/issues/167) |
-| [Verbs beyond the CE pin](#verbs-beyond-the-ce-pin) | Triage record | [#758](https://github.com/stokaro/ptah/issues/758) |
+| [Verbs beyond the CE pin](#verbs-beyond-the-ce-pin) | Triage record | [#1618](https://github.com/stokaro/ptah/issues/1618) |
 | [`atlas.hcl` `file()` confinement](#atlashcl-file-confinement) | Deliberate divergence | [#1042](https://github.com/stokaro/ptah/issues/1042) |
 | [Exclude field selectors](#exclude-field-selectors) | Deliberate divergence | [#933](https://github.com/stokaro/ptah/issues/933) |
 | [Leading schema type selector](#leading-schema-type-selector) | Deliberate divergence | [#933](https://github.com/stokaro/ptah/issues/933) |
@@ -880,13 +880,18 @@ claimed as byte-identical.
 
 **Type.** Triage record
 
-**Current boundary.** `atlas migrate ls`, `atlas migrate show`, `atlas schema stats`, and `atlas schema validate` appear in current Atlas docs but are entirely absent from the pinned conformance Atlas CE v1.2.0 binary (each resolves to `unknown command`, not a community-version abort stub), so they are outside the CLI-surface parity target today.
+**Current boundary.** `atlas migrate ls`, `atlas migrate show`, `atlas schema stats`, and `atlas schema validate` appear in current Atlas docs but are entirely absent from the pinned conformance Atlas CE binary (each resolves to `unknown command`, not a community-version abort stub), so they are outside the CLI-surface parity target today. Being outside that target is not a reason to leave a capability unbuilt: two of the four are now Ptah verbs, reachable through the compatibility spelling and omitted only under `PTAH_ATLAS_STRICT_COMPAT=1`, which is the profile that mirrors the pin.
 
-Triage: `migrate ls` is covered by native `ptah migrations status` (lists every migration with version, description, and state); `schema validate` is covered by native `ptah schema render` (parse/load validation) plus `ptah schema test` / `schema apply --dry-run` for dev-database validation; `migrate show` (print a migration's SQL) is future work with no native verb today; `schema stats` (OpenMetrics database statistics) is out of scope as an observability surface rather than schema management.
+Triage:
 
-Revisit when the conformance Atlas pin advances past v1.2.0.
+- `migrate ls` is `ptah-compat migrate ls`, forwarding to native `ptah migrations ls`. It is not `ptah migrations status`, which the earlier triage claimed covered it: status needs `--db-url` and reports applied/pending state, while listing a directory is a local question with no database in it.
+- `migrate show` is `ptah-compat migrate show`, forwarding to native `ptah migrations show`, which prints a stored migration's SQL.
+- `schema validate` is covered by native `ptah schema render` (parse/load validation) plus `ptah schema test` / `schema apply --dry-run` for dev-database validation.
+- `schema stats` (OpenMetrics database statistics) is out of scope as an observability surface rather than schema management.
 
-**Tracking.** [`stokaro/ptah#758`](https://github.com/stokaro/ptah/issues/758)
+Revisit the remaining two when the conformance Atlas pin advances.
+
+**Tracking.** [`stokaro/ptah#1618`](https://github.com/stokaro/ptah/issues/1618)
 
 
 ### Revision row for a migration whose body failed

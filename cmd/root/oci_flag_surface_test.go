@@ -343,6 +343,21 @@ func ociMigrationDirVerbs() []ociSourceVerb {
 				}
 			},
 		},
+		{
+			verb: "migrations ls",
+			args: func(reference string) []string {
+				return []string{"migrations", "ls", "--migrations-dir", reference, "--plain-http"}
+			},
+		},
+		{
+			verb: "migrations show",
+			args: func(reference string) []string {
+				return []string{
+					"migrations", "show", "--migrations-dir", reference,
+					"--version", "1", "--plain-http",
+				}
+			},
+		},
 	}
 }
 
@@ -636,6 +651,14 @@ func verifySumVerbs() []verifySumVerb {
 		{
 			verb: "migrations status",
 			why:  "status runs no gate by default, so this is the only way its report is an integrity claim",
+		},
+		{
+			verb: "migrations ls",
+			why:  "ls runs no gate by default, so this is the only way the listing is a claim about a covered directory",
+		},
+		{
+			verb: "migrations show",
+			why:  "show runs no gate by default, so this is the only way the printed SQL is the reviewed SQL",
 		},
 	}
 }

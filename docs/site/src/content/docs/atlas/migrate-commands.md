@@ -30,6 +30,8 @@ plus the flag translation rules are on the
 | `ptah-compat migrate edit {name \| version}` | Forwards to `ptah migrations edit` and rewrites the directory checksum. |
 | `ptah-compat migrate rebase {name \| version}` | Forwards to `ptah migrations rebase`; one migration per run. |
 | `ptah-compat migrate rm {name \| version}` | Forwards to `ptah migrations rm` and rewrites the directory checksum. |
+| `ptah-compat migrate ls` | Forwards to `ptah migrations ls`; lists the directory's migration files with `-s/--short` and `-l/--latest`, and refuses an Atlas directory whose `atlas.sum` is missing or stale. |
+| `ptah-compat migrate show {name \| version}...` | Forwards to `ptah migrations show`; prints each named migration's SQL, and refuses an Atlas directory whose `atlas.sum` is missing or stale. |
 | `ptah-compat migrate push` | Atlas CE boundary stub; the native `ptah migrations push` to any OCI registry is the open replacement. |
 
 Per-verb status detail — Atlas differences, waivers, and the inputs that fail
