@@ -262,8 +262,14 @@ func misplacedDirectiveMarkers(sql, dialect string) iter.Seq[ptahdirective.Marke
 // statement carries no directive in either family -- that is documented, not
 // accidental, and warning about every comment that mentions a directive name
 // would bury the real finding. And a `-- +ptah check` line is significant
-// wherever it appears: checks are an ordered list that always runs before the
-// first body statement, so its position never decided anything.
+// wherever it appears WITHIN a body: checks are an ordered list that always
+// runs before the first body statement, so its position inside the half it was
+// written in never decided anything.
+//
+// Which half it is written in used to decide everything, silently: a check in a
+// down body was parsed by nothing. That is fixed where it belongs, by reading
+// the body the direction is about to run, rather than by warning here
+// (stokaro/ptah#1715).
 func misplacedDirectives(sql, dialect string) []misplacedDirective {
 	options := dialectlexer.Options(dialect)
 	var found []misplacedDirective

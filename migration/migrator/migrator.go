@@ -214,8 +214,22 @@ func (m *Migrator) WithSkipChecks(skip bool) *Migrator {
 
 // migrationCheckGroups collects a migration's pre-migration checks: Atlas
 // txtar check files first (in archive order), then `-- +ptah check` directives
-// parsed from the up SQL.
-func (m *Migrator) migrationCheckGroups(migration *Migration) ([]checkGroup, error) {
+// parsed from the body the given direction is about to run.
+//
+// The direction used to be implicit, and always up. A `-- +ptah check` written
+// into a down body was parsed by nothing and ignored without a word -- no
+// error, no warning, no assertion, and the rollback simply ran. A rollback is
+// where a precondition is worth asserting most, and a safety gate that is
+// accepted and discarded is worse than one that was never offered
+// (stokaro/ptah#1715).
+//
+// Atlas txtar check files stay attached to the migration rather than to a
+// direction: the archive carries one checks.sql for the migration, and there is
+// no down half of it to read.
+func (m *Migrator) migrationCheckGroups(
+	migration *Migration,
+	direction MigrationDirection,
+) ([]checkGroup, error) {
 	dialect := m.connectionDialect()
 	groups := make([]checkGroup, 0, len(migration.atlasCheckFiles)+1)
 	for _, file := range migration.atlasCheckFiles {
@@ -231,7 +245,11 @@ func (m *Migrator) migrationCheckGroups(migration *Migration) ([]checkGroup, err
 		})
 	}
 
-	parsed, err := ParseChecks(migration.UpSQL, dialect)
+	body := migration.UpSQL
+	if direction == MigrationDirectionDown {
+		body = migration.DownSQL
+	}
+	parsed, err := ParseChecks(body, dialect)
 	if err != nil {
 		return nil, fmt.Errorf("migration %d has invalid pre-migration check directives: %w", migration.Version, err)
 	}
@@ -246,11 +264,16 @@ func (m *Migrator) migrationCheckGroups(migration *Migration) ([]checkGroup, err
 // sections) against conn, before any body statement runs. It is a no-op when
 // checks are skipped. A malformed check directive or an unsatisfied assertion
 // returns an error so the caller aborts with nothing applied.
-func (m *Migrator) runMigrationChecks(ctx context.Context, conn *dbschema.DatabaseConnection, migration *Migration) error {
+func (m *Migrator) runMigrationChecks(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	migration *Migration,
+	direction MigrationDirection,
+) error {
 	if m.skipChecks {
 		return nil
 	}
-	groups, err := m.migrationCheckGroups(migration)
+	groups, err := m.migrationCheckGroups(migration, direction)
 	if err != nil {
 		return err
 	}
@@ -271,7 +294,7 @@ func (m *Migrator) validateDeferredMigrationChecks(migration *Migration) (bool, 
 	if m.skipChecks {
 		return false, nil
 	}
-	groups, err := m.migrationCheckGroups(migration)
+	groups, err := m.migrationCheckGroups(migration, MigrationDirectionUp)
 	if err != nil {
 		return false, err
 	}
@@ -320,11 +343,11 @@ func (m *Migrator) deferPreMigrationChecks(observesApplyState bool) bool {
 //
 // "No batch transaction executes here" answers whether the check could be
 // evaluated. A preview answers what the real run will do.
-func (m *Migrator) rejectChecksUnderTxModeAll(migration *Migration) error {
+func (m *Migrator) rejectChecksUnderTxModeAll(migration *Migration, direction MigrationDirection) error {
 	if m.skipChecks {
 		return nil
 	}
-	groups, err := m.migrationCheckGroups(migration)
+	groups, err := m.migrationCheckGroups(migration, direction)
 	if err != nil {
 		return err
 	}
@@ -2130,7 +2153,7 @@ func (m *Migrator) validateUpTransactionMode(migrations []*Migration) error {
 			if !resolvedTimeouts[migration].IsZero() {
 				return fmt.Errorf("migration %d has timeouts and cannot run with tx-mode all", migration.Version)
 			}
-			if err := m.rejectChecksUnderTxModeAll(migration); err != nil {
+			if err := m.rejectChecksUnderTxModeAll(migration, MigrationDirectionUp); err != nil {
 				return err
 			}
 		}
@@ -2310,7 +2333,7 @@ func (m *Migrator) runPreMigrationChecks( //revive:disable-line:flag-parameter s
 		}
 		return declaresChecks, nil
 	}
-	if err := m.runMigrationChecks(ctx, m.conn, migration); err != nil {
+	if err := m.runMigrationChecks(ctx, m.conn, migration, MigrationDirectionUp); err != nil {
 		return false, fmt.Errorf("pre-migration check failed for migration %d: %w", migration.Version, err)
 	}
 	return false, nil
@@ -2686,6 +2709,14 @@ func (m *Migrator) rollbackMigrationObserved(ctx context.Context, migration *Mig
 	}()
 
 	m.logger.Info("Rolling back migration", "version", migration.Version, "description", migration.Description)
+	// A check in the down body runs before the rollback, for the same reason
+	// one in the up body runs before the migration: it is a precondition, and
+	// the statement it guards is about to run. Until this existed the directive
+	// was parsed by nothing and the rollback simply proceeded
+	// (stokaro/ptah#1715).
+	if err := m.runMigrationChecks(ctx, m.conn, migration, MigrationDirectionDown); err != nil {
+		return fmt.Errorf("pre-migration check failed for migration %d: %w", migration.Version, err)
+	}
 	txMode, err := m.resolveDownMigrationTxMode(migration)
 	if err != nil {
 		return err
