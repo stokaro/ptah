@@ -1006,7 +1006,7 @@ func validateDatabaseDeclarations(
 			Message: err.Error(),
 		}
 	}
-	if err := mysqllike.ValidateDeclaredRoles(dialect, database.Roles); err != nil {
+	if err := mysqllike.ValidateDeclaredRoles(dialect, caps, database.Roles); err != nil {
 		return err
 	}
 	// A domain, composite or range type the target cannot create is refused

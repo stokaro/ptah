@@ -773,30 +773,42 @@ func All() []Capability {
 // MySQL has none.
 func MySQL84() Capabilities {
 	return Capabilities{
-		DomainTypes:                        false,
-		CompositeTypes:                     false,
-		RangeTypes:                         false,
-		DropConstraintGeneric:              true,
-		DropConstraintIfExists:             false,
-		DropIndexIfExists:                  false,
-		CheckConstraintsEnforced:           true,
-		DropCheckClause:                    true,
-		EnumInlineColumn:                   true,
-		EnumCustomType:                     false,
-		CreateIndexConcurrently:            false,
-		DropIndexConcurrently:              false,
-		IndexIncludeSPGiST:                 false,
-		Views:                              true,
-		MaterializedViews:                  false,
-		Functions:                          true,
-		Triggers:                           true,
-		CreateOrReplaceTrigger:             false,
-		AlterGeneratedColumnExpression:     false,
-		RowLevelSecurity:                   false,
-		PostgresCatalogFunctions:           false,
-		CatalogRowStatistics:               false,
-		CatalogDependencies:                false,
-		RoleManagement:                     false,
+		DomainTypes:                    false,
+		CompositeTypes:                 false,
+		RangeTypes:                     false,
+		DropConstraintGeneric:          true,
+		DropConstraintIfExists:         false,
+		DropIndexIfExists:              false,
+		CheckConstraintsEnforced:       true,
+		DropCheckClause:                true,
+		EnumInlineColumn:               true,
+		EnumCustomType:                 false,
+		CreateIndexConcurrently:        false,
+		DropIndexConcurrently:          false,
+		IndexIncludeSPGiST:             false,
+		Views:                          true,
+		MaterializedViews:              false,
+		Functions:                      true,
+		Triggers:                       true,
+		CreateOrReplaceTrigger:         false,
+		AlterGeneratedColumnExpression: false,
+		RowLevelSecurity:               false,
+		PostgresCatalogFunctions:       false,
+		CatalogRowStatistics:           false,
+		CatalogDependencies:            false,
+		// RoleManagement is on because the read half exists. It was off with the
+		// recorded reason that Ptah cannot read or compare a role here, and the
+		// catalog says otherwise: measured on MySQL 8.4, a role is a row in
+		// mysql.user marked account_locked with its password expired and an empty
+		// authentication string, and on MariaDB 11.8 it carries is_role -- which
+		// is why the reader asks which columns exist rather than branching on a
+		// dialect name (stokaro/ptah#1762).
+		//
+		// What the key does not claim is the PostgreSQL role model. CREATE ROLE
+		// takes a name and nothing else here: LOGIN and PASSWORD are ERROR 1064,
+		// because what they ask for is a USER, and a declaration carrying one is
+		// refused rather than created without it.
+		RoleManagement:                     true,
 		ForeignKeys:                        true,
 		ForeignKeysRequireUniqueReference:  true,
 		ForeignKeysRequireIndexedReference: false,
@@ -873,30 +885,42 @@ func MySQL8013() Capabilities {
 // MariaDB does not quietly accept the keyword.
 func MariaDB1011() Capabilities {
 	return Capabilities{
-		DomainTypes:                        false,
-		CompositeTypes:                     false,
-		RangeTypes:                         false,
-		DropConstraintGeneric:              true,
-		DropConstraintIfExists:             true,
-		DropIndexIfExists:                  true,
-		CheckConstraintsEnforced:           true,
-		DropCheckClause:                    false,
-		EnumInlineColumn:                   true,
-		EnumCustomType:                     false,
-		CreateIndexConcurrently:            false,
-		DropIndexConcurrently:              false,
-		IndexIncludeSPGiST:                 false,
-		Views:                              true,
-		MaterializedViews:                  false,
-		Functions:                          true,
-		Triggers:                           true,
-		CreateOrReplaceTrigger:             true,
-		AlterGeneratedColumnExpression:     false,
-		RowLevelSecurity:                   false,
-		PostgresCatalogFunctions:           false,
-		CatalogRowStatistics:               false,
-		CatalogDependencies:                false,
-		RoleManagement:                     false,
+		DomainTypes:                    false,
+		CompositeTypes:                 false,
+		RangeTypes:                     false,
+		DropConstraintGeneric:          true,
+		DropConstraintIfExists:         true,
+		DropIndexIfExists:              true,
+		CheckConstraintsEnforced:       true,
+		DropCheckClause:                false,
+		EnumInlineColumn:               true,
+		EnumCustomType:                 false,
+		CreateIndexConcurrently:        false,
+		DropIndexConcurrently:          false,
+		IndexIncludeSPGiST:             false,
+		Views:                          true,
+		MaterializedViews:              false,
+		Functions:                      true,
+		Triggers:                       true,
+		CreateOrReplaceTrigger:         true,
+		AlterGeneratedColumnExpression: false,
+		RowLevelSecurity:               false,
+		PostgresCatalogFunctions:       false,
+		CatalogRowStatistics:           false,
+		CatalogDependencies:            false,
+		// RoleManagement is on because the read half exists. It was off with the
+		// recorded reason that Ptah cannot read or compare a role here, and the
+		// catalog says otherwise: measured on MySQL 8.4, a role is a row in
+		// mysql.user marked account_locked with its password expired and an empty
+		// authentication string, and on MariaDB 11.8 it carries is_role -- which
+		// is why the reader asks which columns exist rather than branching on a
+		// dialect name (stokaro/ptah#1762).
+		//
+		// What the key does not claim is the PostgreSQL role model. CREATE ROLE
+		// takes a name and nothing else here: LOGIN and PASSWORD are ERROR 1064,
+		// because what they ask for is a USER, and a declaration carrying one is
+		// refused rather than created without it.
+		RoleManagement:                     true,
 		ForeignKeys:                        true,
 		ForeignKeysRequireUniqueReference:  false,
 		ForeignKeysRequireIndexedReference: true,

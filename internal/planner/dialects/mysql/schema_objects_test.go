@@ -2,6 +2,8 @@ package mysql_test
 
 import (
 	"fmt"
+	"regexp"
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -131,20 +133,29 @@ func TestPlanner_GenerateMigrationAST_RejectsMaterializedViews(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, "materialized views are not supported by MySQL or MariaDB.*")
 }
 
-func TestPlanner_GenerateMigrationAST_RoutesEveryRoleChangeToARefusal(t *testing.T) {
+// TestPlanner_GenerateMigrationAST_RoutesEveryRoleChangeToItsStatement pins
+// what each of the three role categories becomes.
+//
+// It used to assert a refusal for all three, because nothing read a role back.
+// The read half exists now (stokaro/ptah#1762), so an addition and a removal
+// render, and only a MODIFICATION still refuses -- a MySQL-family role has no
+// attribute to alter, so a change to one is a change to something the object
+// does not have.
+func TestPlanner_GenerateMigrationAST_RoutesEveryRoleChangeToItsStatement(t *testing.T) {
 	planner := mysql.New()
 
 	tests := []struct {
-		name     string
-		diff     *difftypes.SchemaDiff
-		wantNode string
-		wantOp   string
+		name      string
+		diff      *difftypes.SchemaDiff
+		wantNode  string
+		wantSQL   string
+		wantRefus string
 	}{
 		{
 			name:     "added role",
 			diff:     &difftypes.SchemaDiff{RolesAdded: []string{"app_role"}},
 			wantNode: "*ast.CreateRoleNode",
-			wantOp:   "CREATE ROLE",
+			wantSQL:  "CREATE ROLE IF NOT EXISTS `app_role`;",
 		},
 		{
 			name: "modified role",
@@ -152,21 +163,25 @@ func TestPlanner_GenerateMigrationAST_RoutesEveryRoleChangeToARefusal(t *testing
 				RoleName: "app_role",
 				Changes:  map[string]string{"login": "false -> true"},
 			}}},
-			wantNode: "*ast.AlterRoleNode",
-			wantOp:   "ALTER ROLE",
+			wantNode:  "*ast.AlterRoleNode",
+			wantRefus: "(?s).*app_role.*an altered attribute.*",
 		},
 		{
 			name:     "removed role",
 			diff:     &difftypes.SchemaDiff{RolesRemoved: []string{"app_role"}},
 			wantNode: "*ast.DropRoleNode",
-			wantOp:   "DROP ROLE",
+			wantSQL:  "DROP ROLE IF EXISTS `app_role`;",
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			nodes, err := planner.GenerateMigrationASTChecked(test.diff, &goschema.Database{})
+			// The addition is planned from the declaration, so the desired
+			// schema has to hold what the diff names or the phase contributes
+			// nothing (stokaro/ptah#1762).
+			nodes, err := planner.GenerateMigrationASTChecked(test.diff,
+				&goschema.Database{Roles: []goschema.Role{{Name: "app_role"}}})
 			c.Assert(err, qt.IsNil)
 			c.Assert(nodes, qt.HasLen, 1)
 			c.Check(fmt.Sprintf("%T", nodes[0]), qt.Equals, test.wantNode)
@@ -175,12 +190,30 @@ func TestPlanner_GenerateMigrationAST_RoutesEveryRoleChangeToARefusal(t *testing
 				t.Run(dialect, func(t *testing.T) {
 					c := qt.New(t)
 					sql, err := renderer.RenderSQL(dialect, nodes...)
-					c.Check(sql, qt.Equals, "")
-					c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-					c.Check(err, qt.ErrorMatches,
-						".*"+dialect+": "+test.wantOp+" app_role: Ptah does not read or compare MySQL-family role state.*")
+					c.Assert(err == nil, qt.Equals, test.wantRefus == "",
+						qt.Commentf("err: %v", err))
+					c.Check(renderedOrRefusal(sql, err), qt.Matches,
+						expectedRoleAnswer(test.wantSQL, test.wantRefus))
 				})
 			}
 		})
 	}
+}
+
+// renderedOrRefusal returns whatever the render produced: its SQL, or the
+// message it refused with.
+func renderedOrRefusal(sql string, err error) string {
+	if err != nil {
+		return err.Error()
+	}
+	return strings.TrimSpace(sql)
+}
+
+// expectedRoleAnswer turns the row's expectation into one pattern, so the
+// assertion above needs no branch of its own.
+func expectedRoleAnswer(wantSQL, wantRefusal string) string {
+	if wantRefusal != "" {
+		return wantRefusal
+	}
+	return regexp.QuoteMeta(wantSQL)
 }
