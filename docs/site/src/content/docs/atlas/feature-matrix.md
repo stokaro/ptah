@@ -39,8 +39,9 @@ Each table has the same columns. **Ptah**, **CE**, and **Pro** carry one symbol
 each:
 
 - **Ptah** — the native `ptah` binary plus the separate `ptah-compat` drop-in.
-- **CE** — the pinned Atlas community binary, version 1.2.0, which the
-  conformance harness runs against.
+- **CE** — the pinned Atlas community binary, version 1.3.0, which the
+  conformance harness runs against. The pin itself lives in
+  `scripts/atlas-ce-oracle.lock`, which is what a bump changes.
 - **Pro** — capabilities Atlas keeps outside its community build, per the
   [Atlas feature availability](https://atlasgo.io/features) page and
   [pricing page](https://atlasgo.io/pricing).
@@ -410,7 +411,7 @@ or disputed without archaeology.
 Four sources carry most of the weight:
 
 - [`cli-surface.md`](https://github.com/stokaro/ptah-atlas-conformance/blob/main/cli-surface.md)
-  inventories every command in Atlas CE v1.2.0 and classifies it as an OSS
+  inventories every command in Atlas CE v1.3.0 and classifies it as an OSS
   parity target or out of scope, with the reason recorded per command.
 - [`ce-gating.md`](https://github.com/stokaro/ptah-atlas-conformance/blob/main/ce-gating.md)
   goes further than the inventory: it runs the pinned CE binary

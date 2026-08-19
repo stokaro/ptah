@@ -27,7 +27,7 @@ or disputed without archaeology.
 Four sources carry most of the weight:
 
 - [`cli-surface.md`](https://github.com/stokaro/ptah-atlas-conformance/blob/main/cli-surface.md)
-  inventories every command in Atlas CE v1.2.0 and classifies it as an OSS
+  inventories every command in Atlas CE v1.3.0 and classifies it as an OSS
   parity target or out of scope, with the reason recorded per command.
 - [`ce-gating.md`](https://github.com/stokaro/ptah-atlas-conformance/blob/main/ce-gating.md)
   goes further than the inventory: it runs the pinned CE binary
