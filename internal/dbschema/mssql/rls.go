@@ -49,8 +49,8 @@ func (r *Reader) readRLSPolicies() ([]types.DBRLSPolicy, error) {
 	// are the filter and the block halves of a single declared policy, and two
 	// tables under one policy are two declarations that happen to share a name.
 	type pairKey struct{ policy, table string }
-	order := []pairKey{}
-	byPair := map[pairKey]*types.DBRLSPolicy{}
+	order := make([]pairKey, 0)
+	byPair := make(map[pairKey]*types.DBRLSPolicy)
 
 	for rows.Next() {
 		var policySchema, policyName, tableName, definition, predicateType, operation string
@@ -143,7 +143,7 @@ func (r *Reader) readRLSEnabledTables() (map[string]bool, error) {
 	}
 	defer rows.Close()
 
-	enabled := map[string]bool{}
+	enabled := make(map[string]bool)
 	for rows.Next() {
 		var table string
 		if err := rows.Scan(&table); err != nil {
