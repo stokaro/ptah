@@ -27,6 +27,7 @@ jobs:
     name: goreleaser-check
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     permissions:
       contents: read
       pull-requests: read
@@ -61,6 +62,7 @@ jobs:
     name: release
     if: github.event_name == 'push'
     runs-on: ubuntu-latest
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v7
         with:

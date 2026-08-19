@@ -15,6 +15,7 @@ jobs:
   go-lint:
     name: ptah-go-lint
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     
     steps:
       - uses: actions/checkout@v7
@@ -138,6 +139,7 @@ jobs:
     # would have to be kept in step with it.
     name: ptah-go-lint-windows
     runs-on: windows-latest
+    timeout-minutes: 40
 
     steps:
       # Before the checkout, because the checkout is what would rewrite them.
