@@ -28,6 +28,7 @@ jobs:
   export-acceptance:
     name: export-acceptance
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     env:
       # The tools are pinned on purpose. The membership of buf's STANDARD lint
       # category and the exact fixed point of `buf format` are version-sensitive,
