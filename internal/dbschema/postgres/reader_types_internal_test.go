@@ -159,6 +159,16 @@ func typeKindRead(stripped string) (string, error) {
 func answerTypes(query string, args []driver.NamedValue, catalog []catalogType) (dbtest.QueryResult, error) {
 	stripped := stripTypeSQLComments(query)
 
+	// The domain read is two statements: the domain rows, and the names of the
+	// CHECK constraints the joined expression cannot carry. Both mention
+	// typtype 'd', so the constraint read is recognized by what it selects
+	// from rather than by the kind it filters on.
+	if strings.Contains(stripped, "c.conname AS constraint_name") {
+		return dbtest.QueryResult{
+			Columns: []string{"domain_name", "constraint_name", "constraint_expr"},
+		}, nil
+	}
+
 	kind, err := typeKindRead(stripped)
 	if err != nil {
 		return dbtest.QueryResult{}, err
@@ -367,6 +377,18 @@ func TestReadTypesStillDescribesWhatTheUserDeclared(t *testing.T) {
 	}
 }
 
+// statementsEnumeratingTypes keeps the statements that list types from those
+// that read something about types already listed.
+func statementsEnumeratingTypes(sent []string) []string {
+	var enumerations []string
+	for _, statement := range sent {
+		if strings.Contains(stripTypeSQLComments(statement), "FROM pg_type t") {
+			enumerations = append(enumerations, statement)
+		}
+	}
+	return enumerations
+}
+
 func TestReadTypesAsksPgDependRatherThanTheName(t *testing.T) {
 	// The property of the three STATEMENTS, which is where the defect would
 	// live, stated separately from the property of the answers. A read that
@@ -398,13 +420,24 @@ func TestReadTypesAsksPgDependRatherThanTheName(t *testing.T) {
 
 			_, err := test.read(reader)
 			c.Assert(err, qt.IsNil)
-			c.Assert(sent, qt.HasLen, 1)
 
-			stripped := stripTypeSQLComments(sent[0])
+			// The domain read sends a second statement for its constraint
+			// names (stokaro/ptah#1717). The exclusion is a property of the
+			// statement that enumerates the types, so that one is picked out
+			// by what it reads from rather than by the order it was sent in.
+			enumerations := statementsEnumeratingTypes(sent)
+			c.Assert(enumerations, qt.HasLen, 1)
+
+			stripped := stripTypeSQLComments(enumerations[0])
 			c.Assert(missingConjuncts(stripped), qt.HasLen, 0,
 				qt.Commentf("the ownership exclusion is not carried in full"))
-			c.Assert(stripped, qt.Not(qt.Contains), "LIKE",
-				qt.Commentf("ownership is a pg_depend edge, not a name pattern"))
+			// Every statement, not only that one: a second read that selected
+			// by name would put the pattern back where the first one no longer
+			// has it.
+			for _, statement := range sent {
+				c.Assert(stripTypeSQLComments(statement), qt.Not(qt.Contains), "LIKE",
+					qt.Commentf("ownership is a pg_depend edge, not a name pattern"))
+			}
 		})
 	}
 }

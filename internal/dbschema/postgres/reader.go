@@ -888,7 +888,58 @@ func (r *Reader) readDomainsForSchema(schemaName string) ([]types.DBDomain, erro
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("failed to read domains for schema %s: %w", schemaName, err)
 	}
+	if err := r.attachDomainCheckConstraints(schemaName, domains); err != nil {
+		return nil, err
+	}
 	return domains, nil
+}
+
+// attachDomainCheckConstraints fills in the per-constraint names the joined
+// check expression cannot carry.
+//
+// The join above answers "what does this domain enforce"; ALTER DOMAIN asks
+// "which constraint do I drop", and no amount of splitting the joined form on
+// AND recovers a name the catalog never put in it. Without the names a changed
+// CHECK has only one route -- drop the domain and create it again -- and that
+// route fails on any domain a column actually uses, which is every domain worth
+// having (stokaro/ptah#1717).
+func (r *Reader) attachDomainCheckConstraints(schemaName string, domains []types.DBDomain) error {
+	if len(domains) == 0 || !r.caps.Has(capability.PostgresCatalogFunctions) {
+		return nil
+	}
+	const query = `
+		SELECT
+			t.typname AS domain_name,
+			c.conname AS constraint_name,
+			pg_get_expr(c.conbin, c.conrelid) AS constraint_expr
+		FROM pg_constraint c
+		JOIN pg_type t ON t.oid = c.contypid
+		JOIN pg_namespace n ON n.oid = t.typnamespace
+		WHERE n.nspname = $1 AND c.contype = 'c' AND t.typtype = 'd'
+		ORDER BY t.typname, c.conname`
+
+	rows, err := r.db.Query(query, schemaName)
+	if err != nil {
+		return fmt.Errorf("failed to query domain check constraints for schema %s: %w", schemaName, err)
+	}
+	defer rows.Close()
+
+	byDomain := make(map[string][]types.DBDomainCheck, len(domains))
+	for rows.Next() {
+		var domainName string
+		var check types.DBDomainCheck
+		if err := rows.Scan(&domainName, &check.Name, &check.Expression); err != nil {
+			return fmt.Errorf("failed to scan domain check constraint for schema %s: %w", schemaName, err)
+		}
+		byDomain[domainName] = append(byDomain[domainName], check)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("failed to read domain check constraints for schema %s: %w", schemaName, err)
+	}
+	for i := range domains {
+		domains[i].CheckConstraints = byDomain[domains[i].Name]
+	}
+	return nil
 }
 
 // readComposites reads PostgreSQL composite types (typtype='c'), excluding the

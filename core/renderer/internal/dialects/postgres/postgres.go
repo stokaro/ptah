@@ -236,12 +236,65 @@ func (r *Renderer) VisitAlterType(node *ast.AlterTypeNode) error {
 			// ALTER TYPE name RENAME TO new_name
 			r.w.WriteLinef("ALTER TYPE %s RENAME TO %s;", r.escapeQualifiedIdentifier(node.Name), r.escapeIdentifier(op.NewName))
 
+		// The three domain operations below share ALTER DOMAIN rather than
+		// ALTER TYPE. PostgreSQL accepts a domain under either spelling, but
+		// only ALTER DOMAIN carries the constraint, default and NOT NULL
+		// clauses, and it is the spelling the documentation gives for a domain.
+		//
+		// They exist because the alternative was drop and recreate, which
+		// PostgreSQL refuses for any domain a column uses -- so a changed
+		// CHECK was unreachable, not merely awkward (stokaro/ptah#1717).
+		case *ast.DomainConstraintOperation, *ast.DomainDefaultOperation, *ast.DomainNotNullOperation:
+			r.writeAlterDomain(node.Name, operation)
+
 		default:
 			return fmt.Errorf("unsupported alter type operation: %T", operation)
 		}
 	}
 
 	return nil
+}
+
+// writeAlterDomain renders one in-place ALTER DOMAIN operation.
+//
+// It decides against capability.DomainTypes, the same key the CREATE is behind:
+// a target that never took the domain must not be handed an ALTER for it
+// either, and the omission is named before SQL the way every other object kind
+// decides it (stokaro/ptah#1738).
+func (r *Renderer) writeAlterDomain(name string, operation ast.TypeOperation) {
+	if r.refuses(capability.DomainTypes, "domain", name) {
+		return
+	}
+	domain := r.escapeQualifiedIdentifier(name)
+	switch op := operation.(type) {
+	case *ast.DomainConstraintOperation:
+		// A replacement is both halves of one operation. Emitting only the drop
+		// leaves the domain unconstrained; only the add leaves it constrained
+		// twice, and the second of those fails on the next apply while the
+		// first fails silently.
+		if op.DropName != "" {
+			r.w.WriteLinef("ALTER DOMAIN %s DROP CONSTRAINT %s;", domain, r.escapeIdentifier(op.DropName))
+		}
+		if op.AddExpression != "" {
+			constraint := ""
+			if op.AddName != "" {
+				constraint = fmt.Sprintf("CONSTRAINT %s ", r.escapeIdentifier(op.AddName))
+			}
+			r.w.WriteLinef("ALTER DOMAIN %s ADD %sCHECK (%s);", domain, constraint, op.AddExpression)
+		}
+	case *ast.DomainDefaultOperation:
+		if op.Expression == "" {
+			r.w.WriteLinef("ALTER DOMAIN %s DROP DEFAULT;", domain)
+			return
+		}
+		r.w.WriteLinef("ALTER DOMAIN %s SET DEFAULT %s;", domain, op.Expression)
+	case *ast.DomainNotNullOperation:
+		if op.NotNull {
+			r.w.WriteLinef("ALTER DOMAIN %s SET NOT NULL;", domain)
+			return
+		}
+		r.w.WriteLinef("ALTER DOMAIN %s DROP NOT NULL;", domain)
+	}
 }
 
 // New creates a new PostgreSQL renderer
