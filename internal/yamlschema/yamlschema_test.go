@@ -332,7 +332,6 @@ views:
 matviews:
   user_stats:
     body: SELECT id, COUNT(*) FROM users GROUP BY id
-    refresh_strategy: concurrently
 triggers:
   set_updated_at:
     table: users
@@ -345,7 +344,6 @@ triggers:
 	c.Assert(db.Views[0].Name, qt.Equals, "active_users")
 	c.Assert(db.Views[0].WithCheck, qt.IsTrue)
 	c.Assert(db.MaterializedViews, qt.HasLen, 1)
-	c.Assert(db.MaterializedViews[0].RefreshStrategy, qt.Equals, "concurrently")
 	c.Assert(db.Triggers, qt.HasLen, 1)
 	c.Assert(db.Triggers[0].Table, qt.Equals, "users")
 	c.Assert(db.Triggers[0].Timing, qt.Equals, "BEFORE")

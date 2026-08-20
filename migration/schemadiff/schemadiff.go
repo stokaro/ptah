@@ -15,7 +15,6 @@ import (
 	"go.5x5.cz/ptah/internal/clickhouserbac"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/crdbttl"
-	"go.5x5.cz/ptah/internal/matviewrefresh"
 	"go.5x5.cz/ptah/internal/reservedrole"
 	"go.5x5.cz/ptah/internal/schemaselection"
 	"go.5x5.cz/ptah/internal/sqlitevirtual"
@@ -468,9 +467,6 @@ func validateDeclaredBeforeComparison(
 ) error {
 	if generated == nil {
 		return nil
-	}
-	if err := matviewrefresh.ValidateDeclared(info.Dialect, generated.MaterializedViews); err != nil {
-		return err
 	}
 	if err := reservedrole.ValidateDeclared(info.Dialect, generated.Roles); err != nil {
 		return err

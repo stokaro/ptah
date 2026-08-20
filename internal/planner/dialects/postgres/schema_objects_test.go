@@ -7,7 +7,6 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
 	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
@@ -334,7 +333,7 @@ func TestPlanner_GenerateMigrationAST_DroppedViewRebuildsDeclaredDependents(t *t
 			{Name: "unrelated_view", Body: "SELECT id FROM accounts"},
 		},
 		MaterializedViews: []goschema.MaterializedView{
-			{Name: "mid_stats", Body: "SELECT count(*) AS total FROM base_view", RefreshStrategy: "manual"},
+			{Name: "mid_stats", Body: "SELECT count(*) AS total FROM base_view"},
 		},
 	}
 	diff := &difftypes.SchemaDiff{
@@ -392,8 +391,8 @@ func TestPlanner_GenerateMigrationAST_CascadeRebuildReadsCodeNotText(t *testing.
 			{Name: "note_view", Body: "SELECT id FROM accounts -- was base_view once\n"},
 		},
 		MaterializedViews: []goschema.MaterializedView{
-			{Name: "label_stats", Body: "SELECT 'base_view' AS label, count(*) AS total FROM accounts", RefreshStrategy: "manual"},
-			{Name: "reader_stats", Body: "SELECT count(*) AS total FROM base_view", RefreshStrategy: "manual"},
+			{Name: "label_stats", Body: "SELECT 'base_view' AS label, count(*) AS total FROM accounts"},
+			{Name: "reader_stats", Body: "SELECT count(*) AS total FROM base_view"},
 		},
 	}
 	diff := &difftypes.SchemaDiff{
@@ -549,15 +548,21 @@ func TestPlanner_GenerateMigrationAST_DuplicateTriggerNamesUseDistinctFunctions(
 	c.Assert(sql, qt.Contains, "CREATE TRIGGER set_updated_at BEFORE UPDATE ON posts FOR EACH ROW EXECUTE FUNCTION ptah_trigger_posts_set_updated_at();")
 }
 
-func TestPlanner_GenerateMigrationAST_MaterializedViewRefreshStrategyFailsBeforeSQL(t *testing.T) {
+// TestPlanner_GenerateMigrationAST_MaterializedViewPlansNoRefresh replaces the
+// refusal this test used to pin.
+//
+// A declared refresh strategy no longer reaches the planner at all -- it is
+// refused while the declaration is parsed -- so what is worth asserting here is
+// the decision itself: planning a materialized view emits its CREATE and no
+// REFRESH, on the one target whose renderer can emit one (stokaro/ptah#1625).
+func TestPlanner_GenerateMigrationAST_MaterializedViewPlansNoRefresh(t *testing.T) {
 	c := qt.New(t)
 	planner := postgres.New()
 
 	generated := &goschema.Database{
 		MaterializedViews: []goschema.MaterializedView{{
-			Name:            "user_stats",
-			Body:            "SELECT id, COUNT(*) FROM users GROUP BY id",
-			RefreshStrategy: "concurrently",
+			Name: "user_stats",
+			Body: "SELECT id, COUNT(*) FROM users GROUP BY id",
 		}},
 	}
 	diff := &difftypes.SchemaDiff{
@@ -567,9 +572,9 @@ func TestPlanner_GenerateMigrationAST_MaterializedViewRefreshStrategyFailsBefore
 	nodes, err := planner.GenerateMigrationASTChecked(diff, generated)
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
-	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-	c.Assert(err, qt.ErrorMatches, `postgres cannot represent materialized view "user_stats" refresh strategy "concurrently"; "manual" is the only strategy, .*`)
-	c.Assert(sql, qt.Equals, "")
+	c.Assert(err, qt.IsNil)
+	c.Assert(sql, qt.Contains, "CREATE MATERIALIZED VIEW")
+	c.Assert(sql, qt.Not(qt.Contains), "REFRESH MATERIALIZED VIEW")
 }
 
 func TestPlanner_GenerateMigrationAST_OrdersFunctionsByDependencies(t *testing.T) {

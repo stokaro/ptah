@@ -1,7 +1,7 @@
 package renderer_test
 
 import (
-	"fmt"
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -9,11 +9,22 @@ import (
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/core/renderer"
 )
 
-func TestMaterializedViewRefreshStrategyFailsClosedBeforeRendering(t *testing.T) {
+// TestMaterializedViewRenderingEmitsNoRefresh is what this file asserts now,
+// and it is the decision itself rather than a consequence of it.
+//
+// Every test here used to be about a refresh STRATEGY the renderer validated
+// and then ignored. Ptah does not refresh materialized views as part of schema
+// reconciliation: one is populated when it is created, a changed definition is
+// reconciled as DROP and CREATE, and it goes stale only when its source data
+// changes -- which a schema comparison cannot observe (stokaro/ptah#1625).
+//
+// So the property worth pinning is that rendering a schema emits no REFRESH on
+// any target. A future explicit refresh command would emit one from its own
+// path; nothing here may.
+func TestMaterializedViewRenderingEmitsNoRefresh(t *testing.T) {
 	dialects := []string{
 		platform.Postgres,
 		platform.MySQL,
@@ -29,67 +40,25 @@ func TestMaterializedViewRefreshStrategyFailsClosedBeforeRendering(t *testing.T)
 	for _, dialect := range dialects {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
-			node := materializedViewNode("concurrently")
 
-			sql, err := renderer.RenderSQL(dialect, node)
+			statements, err := renderer.GetOrderedCreateStatements(materializedViewDatabase(), dialect)
 
-			c.Assert(sql, qt.Equals, "")
-			assertMaterializedViewRefreshStrategyError(c, err, dialect, "concurrently")
+			// A target that hosts no materialized view at all refuses the
+			// OBJECT, which is a different and unrelated refusal. What must
+			// never happen on any target is a refusal about the refresh, or a
+			// REFRESH statement in the output.
+			c.Assert(strings.ToUpper(strings.Join(statements, "\n")), qt.Not(qt.Contains), "REFRESH MATERIALIZED VIEW")
+			c.Assert(strings.ToLower(errorText(err)), qt.Not(qt.Contains), "refresh")
 		})
 	}
 }
 
-func TestMaterializedViewScheduledRefreshStrategyFailsClosedBeforeRendering(t *testing.T) {
-	for _, dialect := range []string{platform.Postgres, platform.ClickHouse} {
-		t.Run(dialect, func(t *testing.T) {
-			c := qt.New(t)
-
-			sql, err := renderer.RenderSQL(dialect, materializedViewNode("every 5 minutes"))
-
-			c.Assert(sql, qt.Equals, "")
-			assertMaterializedViewRefreshStrategyError(c, err, dialect, "every 5 minutes")
-		})
-	}
-}
-
-func TestMaterializedViewRefreshStrategyFailsClosedBeforeWholeSchemaRendering(t *testing.T) {
-	tests := []struct {
-		dialect  string
-		strategy string
-	}{
-		{dialect: platform.Postgres, strategy: "concurrently"},
-		{dialect: platform.ClickHouse, strategy: "every 5 minutes"},
-	}
-
-	for _, test := range tests {
-		t.Run(test.dialect, func(t *testing.T) {
-			c := qt.New(t)
-
-			statements, err := renderer.GetOrderedCreateStatements(
-				materializedViewDatabase(test.strategy),
-				test.dialect,
-			)
-
-			c.Assert(statements, qt.IsNil)
-			assertMaterializedViewRefreshStrategyError(c, err, test.dialect, test.strategy)
-		})
-	}
-}
-
-func TestMaterializedViewRefreshStrategyVisitorPathFailsClosedAndResetsOutput(t *testing.T) {
-	c := qt.New(t)
-	r, err := renderer.NewRenderer(platform.Postgres)
-	c.Assert(err, qt.IsNil)
-	c.Assert(materializedViewNode("manual").Accept(r), qt.IsNil)
-	c.Assert(r.Output(), qt.Not(qt.Equals), "")
-
-	err = materializedViewNode("concurrently").Accept(r)
-
-	assertMaterializedViewRefreshStrategyError(c, err, platform.Postgres, "concurrently")
-	c.Assert(r.Output(), qt.Equals, "")
-}
-
-func TestMaterializedViewManualRefreshStrategyRenders(t *testing.T) {
+// TestMaterializedViewRendersOnEveryTargetThatHasOne is the control in the
+// other direction: removing the strategy removed a refusal, not the object.
+//
+// The targets listed here are the ones whose renderer emits the statement; the
+// rest name a skip, which the whole-schema path above already exercises.
+func TestMaterializedViewRendersOnEveryTargetThatHasOne(t *testing.T) {
 	for _, dialect := range []string{
 		platform.Postgres,
 		platform.ClickHouse,
@@ -99,46 +68,22 @@ func TestMaterializedViewManualRefreshStrategyRenders(t *testing.T) {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 
-			sql, err := renderer.RenderSQL(dialect, materializedViewNode("manual"))
+			sql, err := renderer.RenderSQL(dialect, materializedViewNode())
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(sql, qt.Contains, "CREATE MATERIALIZED VIEW")
+			c.Assert(strings.ToUpper(sql), qt.Not(qt.Contains), "REFRESH")
 		})
 	}
 }
 
-func materializedViewNode(strategy string) *ast.CreateMaterializedViewNode {
+func materializedViewNode() *ast.CreateMaterializedViewNode {
 	return ast.NewCreateMaterializedView("analytics.user_counts").
-		SetBody("SELECT count(*) AS total FROM analytics.users").
-		SetRefreshStrategy(strategy)
+		SetBody("SELECT count(*) AS total FROM analytics.users")
 }
 
-func materializedViewDatabase(strategy string) *goschema.Database {
+func materializedViewDatabase() *goschema.Database {
 	return &goschema.Database{MaterializedViews: []goschema.MaterializedView{{
-		Name:            "analytics.user_counts",
-		Body:            "SELECT count(*) AS total FROM analytics.users",
-		RefreshStrategy: strategy,
-	}}}
-}
-
-func assertMaterializedViewRefreshStrategyError(
-	c *qt.C,
-	err error,
-	dialect,
-	strategy string,
-) {
-	c.Helper()
-	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-	c.Assert(
-		err,
-		qt.ErrorMatches,
-		fmt.Sprintf(
-			`%s cannot represent materialized view "analytics.user_counts" refresh strategy %q; "manual" is the only strategy, .*`,
-			dialect,
-			strategy,
-		),
-	)
-	var capabilityErr *ptaherr.CapabilityError
-	c.Assert(err, qt.ErrorAs, &capabilityErr)
-	c.Assert(capabilityErr.Feature, qt.Equals, "materialized view refresh strategy")
+		Name: "analytics.user_counts",
+		Body: "SELECT count(*) AS total FROM analytics.users"}}}
 }

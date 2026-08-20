@@ -137,10 +137,9 @@ func schemaObjectIdentityFixtures(
 			CheckOption: "NONE",
 		}},
 		MatViews: []types.DBMatView{{
-			Name:            "mv_ctl",
-			Schema:          currentSchema,
-			Body:            "SELECT 1",
-			RefreshStrategy: "manual",
+			Name:   "mv_ctl",
+			Schema: currentSchema,
+			Body:   "SELECT 1",
 		}},
 		Triggers: []types.DBTrigger{{
 			Name:    "tr_ctl",

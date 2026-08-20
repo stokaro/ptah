@@ -1112,14 +1112,12 @@ func toDBViews(views []goschema.View) []dbschematypes.DBView {
 func toDBMaterializedViews(views []goschema.MaterializedView) []dbschematypes.DBMatView {
 	out := make([]dbschematypes.DBMatView, 0, len(views))
 	for _, view := range views {
-		view.Canonicalize()
 		name, schema := splitTableIdentity(view.Name)
 		out = append(out, dbschematypes.DBMatView{
-			Name:            name,
-			Schema:          schema,
-			Body:            view.Body,
-			RefreshStrategy: view.RefreshStrategy,
-			Comment:         view.Comment,
+			Name:    name,
+			Schema:  schema,
+			Body:    view.Body,
+			Comment: view.Comment,
 		})
 	}
 	return out

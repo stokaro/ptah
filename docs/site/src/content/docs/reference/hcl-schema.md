@@ -96,7 +96,7 @@ for the message and the flag it names.
 | `role` | PostgreSQL role attributes, including `password`. |
 | `permission` | PostgreSQL table, schema, and sequence permissions. |
 | `function` | PostgreSQL metadata and raw body, with Atlas-style `arg` blocks or a Ptah raw `params` string. |
-| `view` / `materialized` | SQL body plus schema and comments; `materialized` also parses `refresh_strategy`. |
+| `view` / `materialized` | SQL body plus schema and comments. |
 | `trigger` | Trigger timing, target, execution mode, function body, and comments. |
 | `policy` | PostgreSQL RLS policy fields. |
 | `sequence` | PostgreSQL `type`, `start`, `increment`, `min_value`, `max_value`, `cache`, `cycle`, `owned_by`, and `if_not_exists`. |
@@ -105,12 +105,15 @@ for the message and the flag it names.
 | `range` | PostgreSQL `subtype`, `subtype_opclass`, `collation`, `canonical`, and `subtype_diff`. |
 | `data` | Ptah managed-data declaration with a table reference, key columns, and a file path relative to the HCL file. |
 
-`refresh_strategy` defaults to `manual`, which means Ptah emits no separate
-refresh operation. It is the only currently supported value. After a target
-dialect is selected, another value is refused before rendering or comparison;
-the error names the dialect, materialized view, and value. The HCL codec keeps
-the attribute so target validation can diagnose it instead of silently
-dismissing it.
+A `materialized` block accepts no `refresh_strategy`. Ptah does not refresh
+materialized views: one is populated when it is created, a changed `as` body is
+reconciled as a drop and a create that populates it again, and it goes stale
+only when its source data changes, which schema reconciliation cannot observe.
+Refresh from your own scheduler.
+
+The attribute is refused on presence while the document is parsed -- before its
+value expression is read, so a bare identifier is refused the same way a string
+is -- and the refusal names the materialized view and the reason.
 
 Every `schema "pg_catalog" {}` or `schema "information_schema" {}` block is an
 explicit schema declaration, even when an extension also refers to it, and is

@@ -346,7 +346,6 @@ func (r *renderer) renderMaterializedViews() {
 }
 
 func (r *renderer) renderMaterializedView(view goschema.MaterializedView) {
-	view.Canonicalize()
 	if view.Body == "" {
 		r.warn("materialized_views."+view.Name, "materialized view body is required for HCL schema export")
 		return
@@ -357,12 +356,6 @@ func (r *renderer) renderMaterializedView(view goschema.MaterializedView) {
 		r.rawAttr(1, "schema", r.schemaRef(schema))
 	}
 	r.stringAttr(1, "as", view.Body)
-	// Emit refresh_strategy only when it differs from the canonical default so
-	// output stays minimal; the Ptah HCL parser defaults an absent attribute back
-	// to "manual", keeping this render/parse pair symmetric.
-	if view.RefreshStrategy != "" && view.RefreshStrategy != "manual" {
-		r.stringAttr(1, "refresh_strategy", view.RefreshStrategy)
-	}
 	r.stringAttr(1, "comment", view.Comment)
 	r.line("}")
 	r.line("")

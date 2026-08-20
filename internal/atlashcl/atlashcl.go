@@ -2168,7 +2168,7 @@ func (p *parser) rawExprNode(expr hclsyntax.Expression) string {
 }
 
 func (p *parser) blockError(block *hclsyntax.Block, format string, args ...any) error {
-	return fmt.Errorf("parse HCL schema at %s: %s", block.TypeRange.String(), fmt.Sprintf(format, args...))
+	return fmt.Errorf("parse HCL schema at %s: %w", block.TypeRange.String(), fmt.Errorf(format, args...))
 }
 
 func refName(raw string) string {

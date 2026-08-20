@@ -34,7 +34,27 @@ type annotationErrorContext struct {
 
 func validateAttributes(kv map[string]string, ctx annotationErrorContext) error {
 	directive := strings.TrimPrefix(ctx.directive, "//")
-	for k := range kv {
+	for _, k := range slices.Sorted(maps.Keys(kv)) {
+		// A retired attribute is checked before the unknown one, and sorted so
+		// a directive carrying two of them names the same one every run. It is
+		// still RECOGNIZED -- that is what put a bareword spelling in this map
+		// at all -- so without this branch it would pass validation and be
+		// dropped without a word (stokaro/ptah#1625).
+		if reason, retired := annotationmeta.RetiredAttribute(directive, k); retired {
+			slog.Error("retired annotation attribute",
+				"directive", ctx.directive,
+				"attribute", k,
+				"location", ctx.location,
+			)
+			return &ptaherr.ParseError{
+				File:      ctx.file,
+				Line:      ctx.line,
+				Directive: directive,
+				Attribute: k,
+				Err:       ptaherr.ErrRetiredAttribute,
+				Message:   fmt.Sprintf("%s on %s at %s: %s", k, ctx.directive, ctx.location, reason),
+			}
+		}
 		if annotationmeta.AllowsAttribute(directive, k) {
 			continue
 		}
@@ -1436,20 +1456,16 @@ func (s *schemaParseState) parseMaterializedViewComment(comment *ast.Comment, st
 	if err != nil {
 		return err
 	}
-	refreshStrategy := kv["refresh_strategy"]
-	if refreshStrategy == "" {
-		refreshStrategy = "manual"
-	}
-	matView := MaterializedView{
-		StructName:      structName,
-		Name:            kv["name"],
-		Body:            kv["body"],
-		RefreshStrategy: strings.ToLower(refreshStrategy),
-		Comment:         kv["comment"],
-		Dialects:        scope,
-	}
-	matView.Canonicalize()
-	s.materializedViews = append(s.materializedViews, matView)
+	// No refresh strategy is read. validateAttributes has already refused the
+	// retired attribute by name, so a declaration carrying one never reaches
+	// this line (stokaro/ptah#1625).
+	s.materializedViews = append(s.materializedViews, MaterializedView{
+		StructName: structName,
+		Name:       kv["name"],
+		Body:       kv["body"],
+		Comment:    kv["comment"],
+		Dialects:   scope,
+	})
 	return nil
 }
 

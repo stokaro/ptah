@@ -130,11 +130,10 @@ func TestReaderReadSchema_LoadsMaterializedViews(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(schema.MatViews, qt.DeepEquals, []types.DBMatView{{
-		Name:            "user_counts",
-		Schema:          "analytics",
-		Body:            "SELECT count() AS c FROM analytics.users",
-		RefreshStrategy: "manual",
-		Comment:         "Rolled up per user",
+		Name:    "user_counts",
+		Schema:  "analytics",
+		Body:    "SELECT count() AS c FROM analytics.users",
+		Comment: "Rolled up per user",
 	}})
 	c.Assert(schema.Views, qt.HasLen, 1)
 	c.Assert(schema.Views[0].Name, qt.Equals, "active_users")

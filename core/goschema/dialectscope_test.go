@@ -85,7 +85,7 @@ func scopedKinds() []scopedKind {
 			declare: func(db *goschema.Database, scope []string) {
 				db.MaterializedViews = []goschema.MaterializedView{{
 					StructName: "MV", Name: "stats", Body: "SELECT 1",
-					RefreshStrategy: "manual", Dialects: scope,
+					Dialects: scope,
 				}}
 			},
 			count: func(db *goschema.Database) int { return len(db.MaterializedViews) },

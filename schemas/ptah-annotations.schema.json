@@ -791,8 +791,9 @@
               "type": "string"
             },
             "refresh_strategy": {
-              "description": "Ptah-managed refresh strategy; only manual is currently supported.",
-              "type": "string"
+              "description": "Retired: refused when the annotation is parsed, on every dialect. Ptah does not refresh materialized views: one is populated when it is created, a changed definition is reconciled as DROP and CREATE, and it goes stale only when its source data changes, which schema reconciliation cannot observe. Remove the attribute and refresh from your own scheduler.",
+              "not": {},
+              "x-ptah-retired": "Ptah does not refresh materialized views: one is populated when it is created, a changed definition is reconciled as DROP and CREATE, and it goes stale only when its source data changes, which schema reconciliation cannot observe. Remove the attribute and refresh from your own scheduler"
             }
           },
           "required": [

@@ -93,6 +93,24 @@ func directiveDef(directive annotationmeta.Directive) map[string]any {
 }
 
 func attrSchema(attr annotationmeta.Attribute) map[string]any {
+	if attr.Retired != "" {
+		// A retired attribute keeps its place in properties rather than
+		// leaving it. Removing the key would still be an error, because
+		// additionalProperties is false -- but a generic "additional property
+		// is not allowed" is what an editor says about a typo, and this
+		// attribute was spelled correctly and meant something once. An empty
+		// "not" never validates, so any value fails, and the reason travels
+		// with the failure (stokaro/ptah#1625).
+		// An empty schema object, which validates everything, negated into one
+		// that validates nothing.
+		alwaysFails := make(map[string]any)
+		return map[string]any{
+			"description":    attr.Description + " " + attr.Retired + ".",
+			"not":            alwaysFails,
+			"x-ptah-retired": attr.Retired,
+		}
+	}
+
 	schema := map[string]any{
 		"description": attr.Description,
 	}

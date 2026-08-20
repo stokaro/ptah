@@ -419,9 +419,8 @@ func TestRenderPreservesSensitiveAndComplexValuesWhileReportingInvalidObjects(t 
 			Body:       "SELECT tenant_id",
 		}},
 		MaterializedViews: []goschema.MaterializedView{{
-			Name:            "user_stats",
-			Body:            "SELECT count(*) FROM users",
-			RefreshStrategy: "concurrently",
+			Name: "user_stats",
+			Body: "SELECT count(*) FROM users",
 		}},
 		Triggers: []goschema.Trigger{{
 			Name:   "bad_event",
@@ -499,13 +498,20 @@ func TestRenderPreservesTableChecksAndManagedDataWhileReportingOrphans(t *testin
 	c.Assert(parsed.ManagedData[0].File, qt.Equals, "users.yaml")
 }
 
-func TestRenderMaterializedViewRefreshStrategyRoundTrip(t *testing.T) {
+// TestRenderMaterializedViewRoundTripCarriesNoRefreshStrategy replaces the
+// round trip that used to carry the attribute through render and parse.
+//
+// Ptah writes no refresh strategy now, and its own parser refuses one, so this
+// asserts the pair agrees: what the renderer emits is a document the parser
+// takes. A renderer that still wrote the attribute would fail here on the
+// PARSE, not on the substring -- which is the stronger of the two checks
+// (stokaro/ptah#1625).
+func TestRenderMaterializedViewRoundTripCarriesNoRefreshStrategy(t *testing.T) {
 	c := qt.New(t)
 	db := &goschema.Database{
 		MaterializedViews: []goschema.MaterializedView{{
-			Name:            "user_stats",
-			Body:            "SELECT count(*) FROM users",
-			RefreshStrategy: "CONCURRENTLY",
+			Name: "user_stats",
+			Body: "SELECT count(*) FROM users",
 		}},
 	}
 
@@ -514,15 +520,15 @@ func TestRenderMaterializedViewRefreshStrategyRoundTrip(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(diagnosticPaths(rendered.Diagnostics), qt.HasLen, 0)
 	hcl := string(rendered.Data)
-	c.Assert(hcl, qt.Contains, `refresh_strategy = "concurrently"`)
+	c.Assert(hcl, qt.Not(qt.Contains), "refresh_strategy")
 
 	parsed, err := atlashcl.Parse(rendered.Data, "schema.hcl")
 	c.Assert(err, qt.IsNil, qt.Commentf("rendered HCL:\n%s", hcl))
 	c.Assert(parsed.MaterializedViews, qt.HasLen, 1)
-	c.Assert(parsed.MaterializedViews[0].RefreshStrategy, qt.Equals, "concurrently")
+	c.Assert(parsed.MaterializedViews[0].Body, qt.Equals, "SELECT count(*) FROM users")
 }
 
-func TestRenderMaterializedViewManualStrategyOmitsAttribute(t *testing.T) {
+func TestRenderMaterializedViewOmitsTheRetiredAttribute(t *testing.T) {
 	c := qt.New(t)
 	db := &goschema.Database{
 		MaterializedViews: []goschema.MaterializedView{{

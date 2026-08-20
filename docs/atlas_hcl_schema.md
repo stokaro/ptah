@@ -78,7 +78,7 @@ current schema IR:
   extension preserves parameter declarations that cannot be decomposed into
   Atlas-style `arg` blocks without changing their text
 - PostgreSQL `view` blocks with `schema`, `as`, `check_option`, and `comment`
-- `materialized` blocks with `schema`, `as`, `refresh_strategy`, and `comment`
+- `materialized` blocks with `schema`, `as`, and `comment`
 - PostgreSQL `trigger` blocks with `on`, one of `before`/`after`/`instead_of`,
   `for` or `foreach`, `as`, and `comment`
 - PostgreSQL `policy` blocks with `on`, `for`, `to`, `using`, `check`, and
@@ -94,14 +94,18 @@ current schema IR:
   `canonical`, `subtype_diff`, and `comment`
 - Ptah `data` blocks with a table reference, key columns, and a data-file path
 
-`refresh_strategy` defaults to `manual`, which means Ptah emits no separate
-refresh operation. It is the only value, and that is a decision rather than a
-gap: a Ptah apply never leaves a materialized view stale, so there is nothing
-for another strategy to do. After a target dialect is selected, another value is
-refused before rendering or comparison; the error names the dialect,
-materialized view, value, and reason. The source codec
-still preserves the attribute so it can diagnose unsupported declarations
-instead of silently dropping them.
+A `materialized` block accepts no `refresh_strategy`. Ptah does not refresh
+materialized views: one is populated when it is created, a changed `as` body is
+reconciled as a drop and a create that populates it again, and it goes stale
+only when its source data changes, which schema reconciliation cannot observe.
+Refresh from your own scheduler.
+
+The attribute is refused, not ignored, and it is refused on presence while the
+document is parsed -- before the value expression is read, so a bare identifier
+and a `sql(...)` call are refused the same way a string is. It stays a
+recognized attribute name so the refusal can carry the reason rather than
+reading as a typo, and so the tolerant unknown-attribute handling on the
+ptah-compat surface cannot discard it with a warning.
 
 Every `schema "pg_catalog" {}` or `schema "information_schema" {}` block is an
 explicit schema declaration, even when an extension also refers to it, and is
@@ -590,9 +594,8 @@ view "active_users" {
 }
 
 materialized "user_stats" {
-  schema           = schema.public
-  as               = "SELECT count(*) FROM users"
-  refresh_strategy = "manual"
+  schema = schema.public
+  as     = "SELECT count(*) FROM users"
 }
 
 trigger "users_set_updated_at" {

@@ -57,7 +57,7 @@ type SecurityMarker struct{}
 //ptah:schema:view name="active_users" body="SELECT id, email FROM users WHERE deleted_at IS NULL" with_check="false" comment="Active users view"
 type ActiveUsersView struct{}
 
-//ptah:schema:matview name="user_stats" body="SELECT COUNT(*) as cnt FROM users" refresh_strategy="manual" comment="User count matview"
+//ptah:schema:matview name="user_stats" body="SELECT COUNT(*) as cnt FROM users" comment="User count matview"
 type UserStatsMatView struct{}
 
 //ptah:schema:synonym name="current_users" schema="app" target="dbo.users" comment="Alias for the users table"
