@@ -13,6 +13,7 @@ import (
 	"go.5x5.cz/ptah/core/schemasource"
 	"go.5x5.cz/ptah/dbschema"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/atlassource"
 	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/internal/schemaload"
 	"go.5x5.cz/ptah/internal/sqlitevirtual"
@@ -30,6 +31,12 @@ type CompareOptions struct {
 	IgnoredTables  []string
 	Schemas        []string
 	PlainHTTP      bool
+	// ProjectEnv is the atlas.hcl environment an `env://` schema file is
+	// expanded through; the zero value keeps the refusal (stokaro/ptah#1760).
+	ProjectEnv atlassource.ProjectEnv
+	// EnvSelectorFlag names the flag that selects a project environment on the
+	// running command; empty when it offers none.
+	EnvSelectorFlag string
 }
 
 // CompareResult is the output of a live schema comparison.
@@ -58,11 +65,13 @@ func Compare(ctx context.Context, opts CompareOptions) (*CompareResult, error) {
 	}
 
 	loadOpts := schemaload.Options{
-		RootDirs:    opts.RootDirs,
-		SchemaFiles: opts.SchemaFiles,
-		Commands:    opts.Commands,
-		Dialect:     dialect,
-		PlainHTTP:   opts.PlainHTTP,
+		RootDirs:        opts.RootDirs,
+		SchemaFiles:     opts.SchemaFiles,
+		ProjectEnv:      opts.ProjectEnv,
+		EnvSelectorFlag: opts.EnvSelectorFlag,
+		Commands:        opts.Commands,
+		Dialect:         dialect,
+		PlainHTTP:       opts.PlainHTTP,
 	}
 	generated, err := schemaload.LoadContext(ctx, loadOpts)
 	if err != nil {

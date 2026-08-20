@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
@@ -29,6 +30,17 @@ type Options struct {
 	RootDirs []string
 	// SchemaFiles are YAML, HCL, or SQL schema files (repeatable).
 	SchemaFiles []string
+	// ProjectEnv is the evaluated atlas.hcl environment an `env://` schema file
+	// is expanded through. The zero value keeps the refusal
+	// [rejectEnvReference] writes, which is what a run that selected no project
+	// configuration should get: there is nothing to resolve the reference
+	// against (stokaro/ptah#1760).
+	ProjectEnv atlassource.ProjectEnv
+	// EnvSelectorFlag names the flag that selects a project environment on the
+	// running command, or is empty when the command offers none. It only
+	// shapes the refusal: a command with a selector can resolve the reference
+	// on the next run, and a command without one never can.
+	EnvSelectorFlag string
 	// Commands are external programs whose stdout is a desired schema
 	// (repeatable). Each runs directly without a shell.
 	Commands []schemasource.Command
@@ -129,8 +141,10 @@ func LoadResult(ctx context.Context, opts Options) (*Result, error) {
 
 func loadContext(ctx context.Context, opts Options) (*goschema.Database, error) {
 	rootDirs := opts.RootDirs
-	schemaFiles := opts.SchemaFiles
-	commands := opts.Commands
+	schemaFiles, commands, err := opts.expandEnvSchemaFiles(opts.SchemaFiles, opts.Commands)
+	if err != nil {
+		return nil, err
+	}
 
 	// With no source of any kind, default to scanning the current directory for
 	// Go entities.
@@ -264,13 +278,80 @@ func resolveRootDirs(rootDirs []string) ([]string, error) {
 	return absRoots, nil
 }
 
+// expandEnvSchemaFiles turns each `env://` schema file into the sources the
+// selected atlas.hcl environment names, and leaves every other value alone.
+//
+// It runs before the single-source fast paths below so an env reference that
+// names several files merges through the same route a repeated --schema-file
+// takes, rather than needing a second merge of its own.
+//
+// Without a loaded project configuration the reference is refused exactly as
+// before. That is not a fallback: there is nothing to resolve it against, and
+// the refusal names the attribute and the alternative.
+func (o Options) expandEnvSchemaFiles(
+	schemaFiles []string,
+	commands []schemasource.Command,
+) ([]string, []schemasource.Command, error) {
+	if !containsEnvReference(schemaFiles) {
+		return schemaFiles, commands, nil
+	}
+	expandedFiles := make([]string, 0, len(schemaFiles))
+	expandedCommands := commands
+	for _, schemaFile := range schemaFiles {
+		if !isEnvReference(schemaFile) {
+			expandedFiles = append(expandedFiles, schemaFile)
+			continue
+		}
+		if !o.ProjectEnv.Loaded {
+			return nil, nil, rejectEnvReference(schemaFile, o.EnvSelectorFlag)
+		}
+		set, err := atlassource.ClassifySet("--schema-file", []string{schemaFile}, o.ProjectEnv)
+		if err != nil {
+			return nil, nil, fmt.Errorf("--schema-file %q: %w", schemaFile, err)
+		}
+		for _, source := range set.Sources {
+			switch source.Kind {
+			case atlassource.KindLocalFile:
+				expandedFiles = append(expandedFiles, localFilePath(source))
+			case atlassource.KindExternalSchema:
+				expandedCommands = append(expandedCommands, source.Command)
+			default:
+				return nil, nil, fmt.Errorf(
+					"--schema-file %q: the selected environment names a %s (%s), which --schema-file does not read; "+
+						"pass a schema file, or use ptah-compat, whose --to and --from read it",
+					schemaFile, source.Kind, source.Raw,
+				)
+			}
+		}
+	}
+	return expandedFiles, expandedCommands, nil
+}
+
+// localFilePath prefers the path ClassifySet resolved, because the raw value
+// still carries the file:// scheme the schema reader would treat as a
+// directory component.
+func localFilePath(source atlassource.Source) string {
+	if source.Path != "" {
+		return source.Path
+	}
+	return source.Raw
+}
+
+func containsEnvReference(schemaFiles []string) bool {
+	return slices.ContainsFunc(schemaFiles, isEnvReference)
+}
+
+func isEnvReference(schemaFile string) bool {
+	return strings.HasPrefix(strings.ToLower(strings.TrimSpace(schemaFile)), envScheme)
+}
+
 // loadSchemaFile resolves a single YAML, HCL, or SQL schema file — or a
 // directory of .sql or .hcl schema files — into a finalized schema.
 func (o Options) loadSchemaFile(ctx context.Context, schemaFile string) (*goschema.Database, error) {
 	if strings.HasPrefix(schemaFile, ociartifact.Scheme) {
 		return o.loadOCI(ctx, schemaFile)
 	}
-	if err := rejectEnvReference(schemaFile); err != nil {
+	if err := rejectEnvReference(schemaFile, o.EnvSelectorFlag); err != nil {
 		return nil, err
 	}
 	absPath, err := filepath.Abs(schemaFile)
@@ -343,7 +424,7 @@ const envScheme = "env://"
 // spelled one is fixed by naming the file or by switching binaries. The
 // attribute vocabulary comes from atlassource so the two surfaces cannot
 // advertise different lists.
-func rejectEnvReference(schemaFile string) error {
+func rejectEnvReference(schemaFile, envSelectorFlag string) error {
 	trimmed := strings.TrimSpace(schemaFile)
 	if !strings.HasPrefix(strings.ToLower(trimmed), envScheme) {
 		return nil
@@ -355,11 +436,22 @@ func rejectEnvReference(schemaFile string) error {
 	if err := atlassource.ValidateEnvAttr(source.EnvAttr); err != nil {
 		return fmt.Errorf("--schema-file %q: %w", schemaFile, err)
 	}
+	if envSelectorFlag != "" {
+		return fmt.Errorf(
+			"--schema-file %q: %s names the %q attribute of a selected project environment, and this run selected none; "+
+				"pass --%s, or pass the schema file itself",
+			schemaFile,
+			envScheme,
+			source.EnvAttr,
+			envSelectorFlag,
+		)
+	}
 	return fmt.Errorf(
-		"--schema-file %q: %s references are not resolved by ptah; pass the schema file itself, "+
-			"or use ptah-compat, whose --to and --from accept %s%s",
+		"--schema-file %q: %s names the %q attribute of a project environment, and this command selects none; "+
+			"pass the schema file itself, or use a command that takes --env, or ptah-compat, whose --to and --from accept %s%s",
 		schemaFile,
 		envScheme,
+		source.EnvAttr,
 		envScheme,
 		source.EnvAttr,
 	)

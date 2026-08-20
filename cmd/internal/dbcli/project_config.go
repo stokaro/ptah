@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"path/filepath"
 	"slices"
 	"strings"
 
@@ -13,6 +14,7 @@ import (
 	"go.5x5.cz/ptah/cmd/internal/migrationsource"
 	"go.5x5.cz/ptah/config/projectconfig"
 	"go.5x5.cz/ptah/core/schemasource"
+	"go.5x5.cz/ptah/internal/atlassource"
 	"go.5x5.cz/ptah/internal/pathguard"
 )
 
@@ -377,4 +379,54 @@ func stringArrayFlag(cmd *cobra.Command, name string) ([]string, error) {
 func flagChanged(cmd *cobra.Command, name string) bool {
 	flag := cmd.Flags().Lookup(name)
 	return flag != nil && flag.Changed
+}
+
+// SchemaSourceProjectEnv describes the project environment an `env://` schema
+// source is expanded through, or the zero value when the run selected none.
+//
+// A native command reaches the same atlas.hcl the adapter does: the config is
+// discovered under its default name when no path was forwarded, so `--env`
+// selects a real environment either way. What the two sides did not share was a
+// route from that environment to a desired-state source, which is why
+// --schema-file refused every `env://` reference while --to accepted it
+// (stokaro/ptah#1760).
+//
+// The zero value is returned when no environment was selected. That is not a
+// degraded mode: with no environment there is no `src` attribute to read, and
+// the caller's refusal names both the reference and the alternative.
+func SchemaSourceProjectEnv(
+	cmd *cobra.Command,
+	config projectconfig.Config,
+) (atlassource.ProjectEnv, error) {
+	envName, err := stringFlag(cmd, EnvFlagName)
+	if err != nil {
+		return atlassource.ProjectEnv{}, err
+	}
+	if strings.TrimSpace(envName) == "" {
+		return atlassource.ProjectEnv{}, nil
+	}
+	atlasPath, err := stringFlag(cmd, AtlasProjectConfigFlagName)
+	if err != nil {
+		return atlassource.ProjectEnv{}, err
+	}
+	if strings.TrimSpace(atlasPath) == "" {
+		atlasPath = projectconfig.AtlasFileName
+	}
+	return atlassource.ProjectEnv{
+		Loaded:  true,
+		Config:  config,
+		BaseDir: filepath.Dir(atlasPath),
+	}, nil
+}
+
+// SchemaSourceEnvSelectorFlag names the flag a command offers for selecting a
+// project environment, or is empty when it offers none.
+//
+// It is read off the flag set rather than assumed, so a command that stops
+// registering the flag stops promising it in the refusal too.
+func SchemaSourceEnvSelectorFlag(cmd *cobra.Command) string {
+	if cmd.Flags().Lookup(EnvFlagName) == nil {
+		return ""
+	}
+	return EnvFlagName
 }
