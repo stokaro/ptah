@@ -5,7 +5,7 @@
 // ptah/internal/astbuilder: where those build CREATE TABLE and friends, this
 // package builds read queries. A builder produces an *ast.SelectStatement, which
 // renderer.RenderSelect turns into a SQL string plus its positional arguments
-// for PostgreSQL, MySQL, MariaDB, and SQLite.
+// for PostgreSQL, MySQL, MariaDB, SQLite, ClickHouse, and SQL Server.
 //
 // # Scope
 //
@@ -22,9 +22,16 @@
 // renderer entry point (RenderInsert, RenderUpdate, RenderDelete). See the
 // "Writes" section below.
 //
+// ClickHouse is the one dialect that does not render all four: UPDATE and
+// DELETE are mutations there -- spelled ALTER TABLE … UPDATE and applied
+// asynchronously outside a transaction -- so they are refused with that reason
+// rather than emitted in a portable spelling the server does not parse. SELECT
+// and INSERT are ordinary statements there and render normally.
+//
 // Non-aggregate function calls, arithmetic, LIKE, subqueries, window functions,
 // ON CONFLICT / upsert, INSERT … SELECT, and common table expressions are
-// intentionally not implemented yet and are tracked as follow-up phases.
+// intentionally not implemented yet and are tracked as follow-up phases of
+// stokaro/ptah#941.
 //
 // # Safety model
 //
@@ -35,8 +42,10 @@
 //   - Values passed to Eq, In, and the other comparison helpers are typed as
 //     any and always travel to the database as bound parameters. They are never
 //     interpolated into the SQL text; the renderer emits a placeholder ($1, $2,
-//     … for PostgreSQL; ? for MySQL/MariaDB/SQLite) and appends the value to the
-//     returned argument slice. LIMIT and OFFSET values are bound the same way.
+//     … for PostgreSQL; ? for MySQL/MariaDB/SQLite/ClickHouse; @p1, @p2, … for
+//     SQL Server) and appends the value to the returned argument slice. LIMIT
+//     and OFFSET values are bound the same way, including the OFFSET/FETCH
+//     bounds SQL Server pages with.
 //   - Identifiers (table names, column names) are always emitted through
 //     dialect-aware quoting, so an attacker-shaped identifier cannot terminate
 //     the quoted identifier and inject SQL. As with Ptah's DDL rendering,

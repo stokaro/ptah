@@ -107,7 +107,42 @@ func newWriteRenderer(dialect, kind string) (*selectRenderer, error) {
 	if !ok {
 		return nil, fmt.Errorf("renderer: %s rendering is not supported for dialect %q", kind, dialect)
 	}
+	if err := refuseUnportableWrite(normalized, kind); err != nil {
+		return nil, err
+	}
 	return &selectRenderer{dialect: normalized, placeholder: style}, nil
+}
+
+// refuseUnportableWrite refuses a verb whose portable spelling the dialect does
+// not execute, by an ENGINE reason rather than by the generic
+// dialect-not-taught refusal.
+//
+// ClickHouse is the only such case today. It parses no standalone
+// `UPDATE … SET …` or `DELETE FROM … WHERE …`: those are mutations there,
+// spelled `ALTER TABLE … UPDATE` and `ALTER TABLE … DELETE`, applied
+// asynchronously and outside any transaction. Emitting the portable spelling
+// would produce SQL the server rejects; emitting the mutation spelling from a
+// portable builder would give one dialect silently different semantics --
+// asynchronous, non-transactional -- behind an API whose other dialects apply
+// the row change before the call returns.
+//
+// So the verbs the engine does execute portably are rendered, and the two it
+// does not are refused with the reason. SELECT and INSERT are ordinary
+// statements on ClickHouse and are unaffected (stokaro/ptah#941).
+func refuseUnportableWrite(normalized, kind string) error {
+	if normalized != platform.ClickHouse {
+		return nil
+	}
+	switch kind {
+	case "UPDATE", "DELETE":
+		return fmt.Errorf(
+			"renderer: %s is not a portable statement on ClickHouse: it is a mutation, "+
+				"spelled ALTER TABLE … %s and applied asynchronously outside a transaction; "+
+				"issue it directly rather than through the query builder",
+			kind, kind)
+	default:
+		return nil
+	}
 }
 
 func (r *selectRenderer) renderInsert(stmt *ast.InsertStatement) error {
