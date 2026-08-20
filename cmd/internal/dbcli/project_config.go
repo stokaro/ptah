@@ -169,6 +169,9 @@ func LoadProjectConfig(cmd *cobra.Command, ptahConfigPath string) (projectconfig
 		AtlasPath: atlasPath,
 		EnvName:   envName,
 		AtlasVars: atlasVars,
+		// So a refusal about a for_each env names the command the operator
+		// ran rather than an internal API (stokaro/ptah#1696).
+		Verb: cmd.CommandPath(),
 	})
 	if err != nil {
 		return projectconfig.Config{}, err

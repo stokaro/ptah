@@ -286,6 +286,8 @@ type AtlasLoadOptions struct {
     // when they need that exact boundary. The default retains Ptah's complete
     // dynamic-env capability.
     RejectListMapForEach bool
+    // Verb names the command doing the load. See [LoadOptions.Verb].
+    Verb string
 }
     AtlasLoadOptions selects Atlas project config evaluation settings.
 
@@ -526,6 +528,9 @@ type LoadOptions struct {
     AtlasPath string
     EnvName   string
     AtlasVars []string
+    // Verb names the command doing the load, so a refusal can say which one
+    // cannot take a collection env. Empty leaves the sentence general.
+    Verb string
 }
     LoadOptions selects project config files and the Atlas env.
 

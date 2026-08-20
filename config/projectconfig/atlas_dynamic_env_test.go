@@ -533,7 +533,7 @@ func TestSingularProjectConfigAdaptersRejectMultipleSelectedInstances(t *testing
 	c.Assert(
 		err,
 		qt.ErrorMatches,
-		`atlas env "local" selected 2 project config instances; use the corresponding collection-valued API`,
+		`this command cannot run against a for_each env: atlas.hcl env "local" expands to 2 environments, and this command takes one. Select a single environment, or run the command once per instance`,
 	)
 
 	chdirWith(c, map[string]string{"atlas.hcl": raw})
@@ -545,7 +545,7 @@ func TestSingularProjectConfigAdaptersRejectMultipleSelectedInstances(t *testing
 	c.Assert(
 		err,
 		qt.ErrorMatches,
-		`atlas env "local" selected 2 project config instances; use the corresponding collection-valued API`,
+		`this command cannot run against a for_each env: atlas.hcl env "local" expands to 2 environments, and this command takes one. Select a single environment, or run the command once per instance`,
 	)
 }
 

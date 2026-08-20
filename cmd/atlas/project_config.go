@@ -275,7 +275,7 @@ func openAtlasProject(
 	flags atlasProjectFlagValues,
 	requirement atlasProjectRequirement,
 ) (atlasProject, bool, error) {
-	return openAtlasProjectWithPolicy(ctx, flags, requirement, atlascompatpolicy.Full())
+	return openAtlasProjectWithPolicy(ctx, flags, requirement, atlascompatpolicy.Full(), "")
 }
 
 func openAtlasProjectWithPolicy(
@@ -283,6 +283,7 @@ func openAtlasProjectWithPolicy(
 	flags atlasProjectFlagValues,
 	requirement atlasProjectRequirement,
 	policy atlascompatpolicy.Policy,
+	verb string,
 ) (atlasProject, bool, error) {
 	source, loaded, err := openAtlasProjectSource(flags, requirement)
 	if err != nil || !loaded {
@@ -292,7 +293,7 @@ func openAtlasProjectWithPolicy(
 		source.raw,
 		source.path,
 		source.root.FS(),
-		atlasProjectLoadOptions(ctx, flags, policy),
+		atlasProjectLoadOptions(ctx, flags, policy, verb),
 	)
 	if err != nil {
 		return atlasProject{}, false, errors.Join(err, source.Close())
@@ -316,7 +317,9 @@ func openAtlasProjectsWithPolicy(
 		source.raw,
 		source.path,
 		source.root.FS(),
-		atlasProjectLoadOptions(ctx, flags, policy),
+		// No verb: this is the COLLECTION load, which never reaches the
+		// singular refusal that names one.
+		atlasProjectLoadOptions(ctx, flags, policy, ""),
 	)
 	if err != nil {
 		return atlasProjectSet{}, false, errors.Join(err, source.Close())
@@ -334,12 +337,17 @@ func atlasProjectLoadOptions(
 	ctx context.Context,
 	flags atlasProjectFlagValues,
 	policy atlascompatpolicy.Policy,
+	verb string,
 ) projectconfig.AtlasLoadOptions {
 	return projectconfig.AtlasLoadOptions{
 		Context:              ctx,
 		EnvName:              flags.envName,
 		Vars:                 flags.vars,
 		RejectListMapForEach: policy.IsStrictCE(),
+		// So a refusal about a for_each env names the command the operator
+		// ran (stokaro/ptah#1696). Empty where no command is in scope, which
+		// leaves the sentence general rather than wrong.
+		Verb: verb,
 	}
 }
 
@@ -397,8 +405,9 @@ func openRequiredMergedProjectConfigWithPolicy(
 	ctx context.Context,
 	flags atlasProjectFlagValues,
 	policy atlascompatpolicy.Policy,
+	verbPath string,
 ) (project atlasProject, mergedConfig projectconfig.Config, err error) {
-	project, _, err = openAtlasProjectWithPolicy(ctx, flags, requiredAtlasProject, policy)
+	project, _, err = openAtlasProjectWithPolicy(ctx, flags, requiredAtlasProject, policy, verbPath)
 	if err != nil {
 		return atlasProject{}, projectconfig.Config{}, err
 	}
@@ -508,6 +517,7 @@ func openAtlasProjectForCommand(
 		flags,
 		requirement,
 		atlasCompatibilityPolicy(cmd),
+		cmd.CommandPath(),
 	)
 	if err != nil {
 		if isAtlasEnvSelectionRequired(err) && mode == ignoreMissingEnvSelection {
