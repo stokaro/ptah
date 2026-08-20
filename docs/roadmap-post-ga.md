@@ -47,9 +47,12 @@ advertises itself today, do something wrong or misleading without this?**
   is not surprised by its absence.
 
 Two entries show where the line falls. The query builder's limit is published in
-the same cell that describes the capability — "SQL Server and ClickHouse error"
-on the feature matrix — so a reader meets the limitation where they meet the
-feature, and closing it adds reach rather than correcting a claim. TimescaleDB
+the same cell that describes the capability — today "no subqueries, CTEs, LIKE
+or upsert" on the feature matrix — so a reader meets the limitation where they
+meet the feature, and closing it adds reach rather than correcting a claim. The
+cell has already moved once this way: it read "SQL Server and ClickHouse error"
+until those dialects landed, and the entry needed no correction, only a shorter
+list. TimescaleDB
 hypertables appear nowhere in the tree and nowhere in the documentation, so
 nothing Ptah does today is wrong without them.
 
