@@ -336,6 +336,34 @@ people and pipelines share a directory:
   SQL-backed non-transactional migrations record a durable progress marker
   before and after each autocommit statement. A custom Go `MigrationFunc`
   remains opaque and is recorded only when it returns.
+### What `--tx-mode all` cannot carry
+
+`--tx-mode all` runs every selected migration in one transaction. Three other
+features are scoped to a single migration, so they do not compose with it, and
+each is refused before any SQL runs rather than discovered one migration at a
+time.
+
+| Combined with `--tx-mode all` | Result |
+| --- | --- |
+| A target with no transactional DDL | refused: `tx-mode all is not supported for dialect "…": this target commits schema changes as they run, so a failed migration cannot be rolled back as a unit` |
+| A migration declaring pre-migration checks | refused: `migration N declares pre-migration checks, which cannot run with tx-mode all` |
+| A migration declaring timeouts | refused: `migration N declares timeouts, which cannot run with tx-mode all` |
+| A migration selecting its own transaction mode | refused: an explicit file-level `file` or `none` conflicts with global `all` |
+
+The reason is the same in the middle two cases: one transaction spans the whole
+run, so a per-migration timeout would bound the entire batch rather than the
+file that asked for it, and a pre-migration check would read state the batch has
+already changed. The remedy is the default per-file mode, or removing the
+directive from that migration.
+
+The first row is the engine rather than a Ptah policy, and it is decided by the
+target's transactional-DDL capability rather than by a list of dialect names.
+MySQL, MariaDB, ClickHouse and Spanner commit DDL as it runs.
+
+Timeouts themselves are not tied to that capability and reach every target whose
+server takes a session or transaction timeout; a target that takes none refuses
+`--lock-timeout` and `--statement-timeout` by naming the engine.
+
 - **Run logging** (`--log-level`, `--log-format`): `--log-level`
   debug\|info\|warn\|error selects how much of the run is narrated —
   `warn` silences the per-statement dry-run narration — and `--log-format`
