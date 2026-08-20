@@ -41,6 +41,10 @@ const (
 	SQLServer
 	CockroachDB
 	YugabyteDB
+	// Spanner is the Cloud Spanner PostgreSQL interface, reached through the
+	// emulator behind PGAdapter -- the only Spanner endpoint a container can
+	// provide (stokaro/ptah#1719).
+	Spanner
 )
 
 // source is where one engine's address comes from.
@@ -114,6 +118,11 @@ var sources = map[Engine]source{
 		canonical: "YUGABYTEDB_URL",
 		synonyms:  []string{"YUGABYTEDB_TEST_DSN"},
 		scheme:    []string{"postgres", "postgresql", "yugabytedb"},
+	},
+	Spanner: {
+		canonical: "SPANNER_URL",
+		synonyms:  []string{"SPANNER_TEST_DSN"},
+		scheme:    []string{"spanner", "postgres", "postgresql"},
 	},
 }
 
@@ -303,9 +312,12 @@ func driverForm(engine Engine, address string) string {
 	switch engine {
 	case MySQL, MySQLAdmin, MariaDB, MariaDBAdmin:
 		return mysqlNetworkDSN(address)
-	case CockroachDB, YugabyteDB:
+	case CockroachDB, YugabyteDB, Spanner:
 		// pgx does not parse these aliases, and rewriting rather than removing
-		// is what dbschema does for the same reason.
+		// is what dbschema does for the same reason. Spanner belongs here for
+		// the same reason the other two do: its endpoint speaks the PostgreSQL
+		// wire protocol, and a raw pgx caller handed `spanner://` cannot parse
+		// it (stokaro/ptah#1719).
 		return postgresWireURL(address)
 	}
 	// Every other engine's driver reads the address as it stands: pgx parses

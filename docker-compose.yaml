@@ -124,6 +124,29 @@ services:
       timeout: 5s
       retries: 18
 
+  # The Cloud Spanner emulator behind PGAdapter, which is the only Spanner
+  # endpoint a container can provide. It carries no volume: the emulator holds
+  # its data in memory and starts empty, which is what a test target wants.
+  #
+  # It sits behind a profile because it is the one service here that stands in
+  # for a managed product rather than running the product itself, so a plain
+  # `docker compose up` should not imply Spanner coverage (stokaro/ptah#1719).
+  spanner:
+    image: gcr.io/cloud-spanner-pg-adapter/pgadapter-emulator:v0.55.2
+    profiles:
+      - spanner
+    ports:
+      # 5434 is yugabytedb's. A profiled service still starts beside every
+      # unprofiled one, so a host port shared with one of them makes
+      # `docker compose --profile spanner up` fail on the port rather than on
+      # anything to do with Spanner.
+      - "5435:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/127.0.0.1/5432"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+
   # Test runner service
   ptah-tester:
     build:
@@ -152,6 +175,10 @@ services:
       COCKROACHDB_URL: "cockroachdb://root@cockroachdb:26257/defaultdb?sslmode=disable"
       YUGABYTEDB_URL: "yugabytedb://yugabyte@yugabytedb:5433/yugabyte?sslmode=disable"
       SQLSERVER_URL: "sqlserver://sa:P%40ssw0rd-ptah-2026@sqlserver:1433?database=master&encrypt=disable"
+      # No depends_on entry: the spanner service is behind its own profile, so a
+      # runner started without it must skip rather than wait for a service that
+      # was never asked for.
+      SPANNER_URL: "spanner://spanner:5432/ptah_test?sslmode=disable"
     volumes:
       - ./integration/reports:/app/reports
       - ./integration/fixtures:/app/fixtures

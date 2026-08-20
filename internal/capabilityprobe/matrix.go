@@ -346,15 +346,15 @@ var launchers = map[string]launcher{
 	platform.Spanner: {
 		flags: []string{"--publish", "5432:5432"},
 		url:   "spanner://127.0.0.1:5432/ptah_test?sslmode=disable",
-		// The read is no longer the blocker: measured 2026-08-20 against the
-		// emulator behind PGAdapter 0.55.2, `ptah db read` returns the table,
-		// its primary key and a secondary index, because the index read moved
-		// to the SQL-standard catalog. What stops the suite is execution:
-		// `schema apply` answers `DDL statements are only allowed outside
-		// explicit transactions (SQLSTATE 25000)`, and Ptah applies inside one.
-		suiteSkip: "the integration runner has no Spanner target: Spanner refuses DDL inside an " +
-			"explicit transaction and Ptah's apply path opens one, so the suite would fail on " +
-			"executing a schema rather than on anything it set out to test (stokaro/ptah#1719)",
+		// Probe only, and not by choice. The runner's cleanup drops objects
+		// inside a transaction; naming a suite target here would enable a cell
+		// that cannot finish, which is worse than one that says why it does
+		// not run. dbtarget and the runner already map SPANNER_URL, so
+		// stokaro/ptah#1811 turns this on by deleting suiteSkip.
+		suiteSkip: "the runner's cleanup drops objects inside a transaction, and Spanner refuses DDL there -- " +
+			"measured on the pinned emulator: `DDL statements are only allowed outside explicit transactions` " +
+			"(SQLSTATE 25000). This cell adds capability-probe coverage; the scenario suite moves onto Spanner " +
+			"when the cleanup path stops requiring a transaction (stokaro/ptah#1811)",
 	},
 	platform.YugabyteDB: {
 		flags: []string{"--publish", "5433:5433"},
