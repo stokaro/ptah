@@ -21,6 +21,7 @@ import (
 
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasruntimevar"
+	"go.5x5.cz/ptah/internal/cloudtoken"
 	"go.5x5.cz/ptah/internal/migratesum"
 	"go.5x5.cz/ptah/internal/migrationsnapshot"
 	"go.5x5.cz/ptah/internal/processcapture"
@@ -49,7 +50,11 @@ func (p atlasParser) resolveAtlasDataSource(block *hclsyntax.Block) (cty.Value, 
 		return p.runtimeVariableDataSource(block)
 	case "template_dir":
 		return p.templateDirectoryDataSource(block)
-	case "remote_dir", "remote_schema", "aws_rds_token", "gcp_cloudsql_token":
+	case "aws_rds_token":
+		return p.awsRDSTokenDataSource(block)
+	case "gcp_cloudsql_token":
+		return p.gcpCloudSQLTokenDataSource(block)
+	case "remote_dir", "remote_schema":
 		return cty.NilVal, unsupported("data."+block.Labels[0], block.TypeRange)
 	default:
 		return cty.NilVal, unsupported("data."+block.Labels[0], block.TypeRange)
@@ -626,7 +631,17 @@ func validateAtlasDataSourceShape(block *hclsyntax.Block) error {
 		return validateRequiredAtlasDataSourceAttrs(block, []string{"url"}, "url")
 	case "template_dir":
 		return validateRequiredAtlasDataSourceAttrs(block, []string{"path"}, "path", "vars")
-	case "remote_dir", "remote_schema", "aws_rds_token", "gcp_cloudsql_token":
+	case "aws_rds_token":
+		return validateAWSRDSTokenShape(block)
+	case "gcp_cloudsql_token":
+		// No body schema, and none required: the pinned community binary
+		// v1.3.0 decodes a block carrying an unrecognized attribute and goes
+		// straight to the token exchange, where `data "gcp_cloudsql_token"
+		// "g" { bogus = "x" }` answers `getting token: oauth2: ...` rather
+		// than "Unsupported argument". Refusing the attribute here would
+		// refuse a project that binary accepts.
+		return nil
+	case "remote_dir", "remote_schema":
 		return unsupported("data."+typ, block.TypeRange)
 	default:
 		return unsupported("data."+typ, block.TypeRange)
@@ -638,7 +653,7 @@ func validateAtlasDataSourceShape(block *hclsyntax.Block) error {
 // this compatibility layer does not implement their runtime contracts yet.
 func validateAtlasDataSourceDeclarationShape(block *hclsyntax.Block) error {
 	switch block.Labels[0] {
-	case "remote_dir", "remote_schema", "aws_rds_token", "gcp_cloudsql_token":
+	case "remote_dir", "remote_schema":
 		return nil
 	default:
 		return validateAtlasDataSourceShape(block)
@@ -699,4 +714,87 @@ func (p atlasParser) dataSourceError(
 		return fmt.Errorf("%s: %w", prefix, safe)
 	}
 	return fmt.Errorf("%s: %s: %w", prefix, action, safe)
+}
+
+// awsRDSTokenDataSource mints an RDS IAM authentication token.
+//
+// The value is a password, so it joins the sensitive set before it can reach a
+// diagnostic: a signing or credential failure that echoed the token would put
+// a live credential in a log line.
+func (p atlasParser) awsRDSTokenDataSource(block *hclsyntax.Block) (cty.Value, error) {
+	if err := validateAWSRDSTokenShape(block); err != nil {
+		return cty.NilVal, err
+	}
+	endpoint, err := p.requiredDataSourceString(block, "endpoint")
+	if err != nil {
+		return cty.NilVal, err
+	}
+	username, err := p.requiredDataSourceString(block, "username")
+	if err != nil {
+		return cty.NilVal, err
+	}
+	region, err := p.optionalAtlasDataSourceString(block, "region")
+	if err != nil {
+		return cty.NilVal, err
+	}
+	profile, err := p.optionalAtlasDataSourceString(block, "profile")
+	if err != nil {
+		return cty.NilVal, err
+	}
+	token, err := cloudtoken.AWSRDSToken(p.runContext, cloudtoken.AWSRDSOptions{
+		Endpoint: endpoint,
+		Username: username,
+		Region:   region,
+		Profile:  profile,
+	})
+	if err != nil {
+		return cty.NilVal, p.dataSourceError(block, "minting token", err)
+	}
+	p.recordSensitiveValue(token)
+	return cty.StringVal(token), nil
+}
+
+// gcpCloudSQLTokenDataSource mints a Cloud SQL IAM access token.
+func (p atlasParser) gcpCloudSQLTokenDataSource(block *hclsyntax.Block) (cty.Value, error) {
+	token, err := cloudtoken.GCPCloudSQLToken(p.runContext)
+	if err != nil {
+		return cty.NilVal, p.dataSourceError(block, "minting token", err)
+	}
+	p.recordSensitiveValue(token)
+	return cty.StringVal(token), nil
+}
+
+// optionalAtlasDataSourceString reads an attribute that may be absent,
+// answering the empty string when it is.
+func (p atlasParser) optionalAtlasDataSourceString(
+	block *hclsyntax.Block,
+	name string,
+) (string, error) {
+	attr, ok := block.Body.Attributes[name]
+	if !ok {
+		return "", nil
+	}
+	return p.stringAttr(name, attr)
+}
+
+// recordSensitiveValue adds a minted credential to the set every diagnostic is
+// sanitized against.
+func (p atlasParser) recordSensitiveValue(value string) {
+	if p.sensitiveValues == nil || value == "" {
+		return
+	}
+	*p.sensitiveValues = append(*p.sensitiveValues, value)
+}
+
+// validateAWSRDSTokenShape is the single statement of the block's schema.
+//
+// It is one function because the shape is asked for twice -- once when a
+// declaration is validated and once when it is resolved -- and two copies of
+// an attribute list are two lists that drift.
+func validateAWSRDSTokenShape(block *hclsyntax.Block) error {
+	return validateRequiredAtlasDataSourceAttrs(
+		block,
+		[]string{"endpoint", "username"},
+		"endpoint", "username", "region", "profile",
+	)
 }

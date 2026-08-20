@@ -90,14 +90,14 @@ Across the 191 capabilities below:
 
 | Reading | Count |
 | --- | --- |
-| Ptah supports it fully | 149 |
-| Ptah supports it with a stated limitation | 24 |
+| Ptah supports it fully | 151 |
+| Ptah supports it with a stated limitation | 22 |
 | Ptah does not implement it | 13 |
 | Ptah covers it in its own form, against a hosted service it cannot interoperate with | 5 |
-| Ptah and Atlas CE both support it | 50 |
+| Ptah and Atlas CE both support it | 52 |
 | Ptah implements it openly where Atlas gates it behind Pro or Cloud | 44 |
 | Ptah has it and neither Atlas edition does | 27 |
-| Atlas CE has it and Ptah does not, or only in part | 15 |
+| Atlas CE has it and Ptah does not, or only in part | 13 |
 | An Atlas column is ❔ — not established by this page's evidence | 4 |
 
 Every 🟡 and every ❌ in the Ptah column names its specific limitation and the
@@ -267,16 +267,16 @@ seven of them as open capabilities regardless.
 | Atlas project config (atlas.hcl) | 🟡 | ✅ | ✅ | Validates every env. `migrate apply` expands labeled or unlabeled env `for_each`; other verbs require one instance, and the project evaluator has eight functions. Tracked by stokaro/ptah#1696. |
 | atlas.hcl file() and fileset() path confinement | ✅ | ❌ | ❌ | Ptah confines file() and fileset() to the atlas.hcl directory: absolute, parent-traversal and symlink escapes are refused by name. Atlas reads them. Deliberate divergence; exit 1 either way today. |
 | atlas.hcl from the native ptah binary | 🟡 | ➖ | ➖ | ptah `--env` reads ./atlas.hcl; `--var name=value` supplies a variable with no default on every env-aware verb; `--config` still takes ptah.yaml only. Tracked by stokaro/ptah#1215. |
-| AWS RDS token project data source (data "aws_rds_token") | 🟡 | ✅ | ✅ | A valid unreferenced declaration is accepted lazily, matching Atlas CE. Resolving the token still fails explicitly because the provider is not implemented. Tracked by stokaro/ptah#1617. |
+| AWS RDS token project data source (data "aws_rds_token") | ✅ | ✅ | ✅ | Resolves to a SigV4 `rds-db` connect token, matching the pinned community binary parameter for parameter. `endpoint` and `username` required; `region` and `profile` optional. |
 | data "hcl_schema" reference | ✅ | ✅ | ✅ | Takes path, paths and vars, and exports .url. `vars` is scoped to the files that data source selects and `--var` does not cross that boundary, as on CE. A bad path or scheme names its rule. |
 | Docker dev databases (`docker://` `--dev-url`) | ✅ | ✅ | ✅ | Every verb taking a dev or shadow URL provisions and removes a container. `schema plan` starts none on purpose: a saved plan reads local files and has nothing to replay. |
 | env:// desired-state references | ✅ | ✅ | ✅ | Resolves on `--to`/`--from`/`--url`, on `--schema-file` and on `schema test`'s `-u` when a run selects an env. Refusing on `--exclude`/`--include` is deliberate. |
 | External program project data source (data "external") | ✅ | ✅ | ✅ | Runs argv directly without a shell and returns untrimmed stdout. Caller cancellation, a 60-second timeout, bounded output, process-tree termination, and sanitized errors define the boundary. |
-| GCP Cloud SQL token project data source (data "gcp_cloudsql_token") | 🟡 | ✅ | ✅ | A valid unreferenced declaration is accepted lazily, matching Atlas CE. Resolving the token still fails explicitly because the provider is not implemented. Tracked by stokaro/ptah#1617. |
+| GCP Cloud SQL token project data source (data "gcp_cloudsql_token") | ✅ | ✅ | ✅ | Resolves to an OAuth2 access token from application default credentials under the sqlservice.admin scope. The block takes no required attribute. |
 | Native project config (ptah.yaml) | ✅ | ➖ | ➖ | Keys url, dev, schemas, exclude, external_schema, migration, lint, migrate, diff, online_ddl. No variables or functions. An unknown key fails, naming the key, its line, and the accepted keys. |
 | PTAH_* environment-variable flag equivalents | ✅ | ❌ | ❌ | Every flag on every native verb has a documented PTAH_* environment variable ([env: PTAH_X] in help) that substitutes for the flag. CE annotates no flag with an environment variable. |
-| Remote directory project data source (data "remote_dir") | 🟡 | ✅ | ✅ | A valid unreferenced declaration is accepted lazily, matching Atlas CE. Resolving the source still fails explicitly because remote directory fetching is not implemented. Tracked by stokaro/ptah#1617. |
-| Remote schema project data source (data "remote_schema") | 🟡 | ✅ | ✅ | A valid unreferenced declaration is accepted lazily, matching Atlas CE. Resolving the source still fails explicitly because remote schema fetching is not implemented. Tracked by stokaro/ptah#1617. |
+| Remote directory project data source (data "remote_dir") | 🟡 | ✅ | ✅ | An unreferenced declaration is accepted lazily, as in Atlas CE. Resolving stays an explicit refusal until remote dir fetching lands over Ptah's OCI backend (stokaro/ptah#1210). |
+| Remote schema project data source (data "remote_schema") | 🟡 | ✅ | ✅ | An unreferenced declaration is accepted lazily, as in Atlas CE. Resolving stays an explicit refusal until remote schema fetching lands over Ptah's OCI backend (stokaro/ptah#1210). |
 | Runtime variable project data source (data "runtimevar") | ✅ | ✅ | ✅ | Reads Go CDK runtime-variable URLs with byte-preserving string output and a configurable positive timeout. Constant, file, HTTP(S), AWS, and Google Cloud providers are registered. |
 | SQL project data source (data "sql") | ✅ | ✅ | ✅ | Runs one query and exports count, first value, and all values. Requires one column and one HCL row type. Heterogeneous rows fail explicitly; Atlas CE panics. Unreferenced blocks stay lazy. |
 | Template directory project data source (data "template_dir") | ✅ | ✅ | ✅ | Shared Go templates emit root lowercase .sql migrations only. New and diff synchronize new files and checksum to the confined source path; hash-only stays virtual. |
