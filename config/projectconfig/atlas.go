@@ -206,6 +206,7 @@ func ParseAtlasFSCollectionWithOptions(
 	}
 
 	p, err := newAtlasParser(opts.Context, fsys, opts.Vars, filename, opts.RejectListMapForEach, ignoreSchemas)
+	p.source = data
 	if err != nil {
 		return nil, err
 	}
@@ -246,8 +247,14 @@ func verbOrCommand(verb string) string {
 }
 
 type atlasParser struct {
-	runContext  context.Context
-	fsys        fs.FS
+	runContext context.Context
+	fsys       fs.FS
+	// source is the document's raw bytes, kept so an attribute can be read as
+	// the EXPRESSION its author wrote rather than as a value. A declared lint
+	// rule's `match` is a predicate over a statement that does not exist while
+	// the project file is being read, so it is captured verbatim and compiled
+	// later (stokaro/ptah#1706).
+	source      []byte
 	ctx         *hcl.EvalContext
 	varOverride map[string]cty.Value
 	// ignoreEnvSchemas carries the resolved [IgnoreEnvSchemasEnvVar] value,
@@ -1373,6 +1380,10 @@ func (p atlasParser) parseLintPolicyBlocks(block *hclsyntax.Block, cfg *Config) 
 			}); err != nil {
 				return err
 			}
+		case "rule":
+			if err := p.parseLintRuleOrTolerate(nested, cfg); err != nil {
+				return err
+			}
 		default:
 			// Same in-loop rule as the attribute switches: returning here
 			// would end the loop and skip every later block.
@@ -1382,6 +1393,106 @@ func (p atlasParser) parseLintPolicyBlocks(block *hclsyntax.Block, cfg *Config) 
 		}
 	}
 	return nil
+}
+
+// parseLintRuleOrTolerate routes a `rule` block by its label count.
+//
+// One block name carries two meanings. Atlas spells a custom rule
+// `rule "hcl" "name" { src = [...] }` and CE ignores it, so Ptah keeps ignoring
+// it too; Ptah DECLARES one as `rule "CODE" { ... }` and runs it
+// (stokaro/ptah#1706). Honoring the Atlas form would run a rule its author
+// wrote for another tool.
+//
+// It is also the one lint block that may appear more than once: a project has
+// as many rules as it has conventions.
+func (p atlasParser) parseLintRuleOrTolerate(block *hclsyntax.Block, cfg *Config) error {
+	if len(block.Labels) != 1 {
+		return p.tolerateUnknownBlock("lint", block)
+	}
+	return p.parseLintRuleBlock(block, cfg)
+}
+
+// parseLintRuleBlock reads `lint { rule "CODE" { ... } }`.
+//
+// The block label is the rule code, which is what findings print and what
+// `--disable` and a `nolint` directive select. The code form itself is
+// validated where every other rule code is -- in migration/lint -- rather than
+// here, so the two configuration surfaces cannot drift on what a code may be.
+func (p atlasParser) parseLintRuleBlock(block *hclsyntax.Block, cfg *Config) error {
+	// A duplicate code is refused by the structure walk before this runs, which
+	// is where every other block-level shape check lives.
+	code := block.Labels[0]
+	rule := LintRuleConfig{}
+	for _, attrName := range sortedAttributeNames(block.Body.Attributes) {
+		if err := p.parseLintRuleAttr(code, attrName, block.Body.Attributes[attrName], &rule); err != nil {
+			return err
+		}
+	}
+	setLintRuleConfig(cfg, code, rule)
+	return nil
+}
+
+func (p atlasParser) parseLintRuleAttr(
+	code, attrName string, attr *hclsyntax.Attribute, rule *LintRuleConfig,
+) error {
+	switch attrName {
+	case "match":
+		// The expression is captured as SOURCE, not evaluated here. It is
+		// a predicate over a statement that does not exist yet, so
+		// evaluating it against the project file's scope would fail on
+		// `statement` being undefined -- and succeeding would be worse,
+		// since it would freeze one statement's answer for every file.
+		expression, ok := expressionSource(p.source, attr.Expr.Range())
+		if !ok {
+			return fmt.Errorf("lint rule %q: could not read the `match` expression", code)
+		}
+		rule.Match = expression
+	case "message":
+		value, err := p.stringAttr(attrName, attr)
+		if err != nil {
+			return err
+		}
+		rule.Message = value
+	case "title":
+		value, err := p.stringAttr(attrName, attr)
+		if err != nil {
+			return err
+		}
+		rule.Title = value
+	case "severity":
+		value, err := p.stringAttr(attrName, attr)
+		if err != nil {
+			return err
+		}
+		rule.Severity = value
+	case "dialects":
+		value, err := p.stringListAttr(attrName, attr)
+		if err != nil {
+			return err
+		}
+		rule.Dialects = value
+	case "applies_to_down":
+		value, err := p.boolAttr(attrName, attr)
+		if err != nil {
+			return err
+		}
+		rule.AppliesToDown = value
+	default:
+		return p.tolerateUnknownAttr("lint.rule", attrName, attr)
+	}
+	return nil
+}
+
+// expressionSource returns the bytes an expression was written as.
+//
+// Ranges are byte offsets into the document, so this is exact rather than a
+// re-rendering: the author's own spelling, spacing and quoting reach the
+// compiler, and a diagnostic can quote what they typed.
+func expressionSource(source []byte, rng hcl.Range) (string, bool) {
+	if source == nil || rng.Start.Byte < 0 || rng.End.Byte > len(source) || rng.Start.Byte > rng.End.Byte {
+		return "", false
+	}
+	return strings.TrimSpace(string(source[rng.Start.Byte:rng.End.Byte])), true
 }
 
 func (p atlasParser) parseSingleLintBlock(

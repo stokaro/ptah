@@ -664,6 +664,16 @@ type LintConfig struct {
 type LintRuleConfig struct {
 	Severity string
 	Exclude  []string
+
+	// Match declares a rule rather than configuring one; the remaining fields
+	// describe it. This is the project-file spelling of the same declaration
+	// `.ptah-lint.yaml` carries, so a rule behaves identically whichever file
+	// it was written in (stokaro/ptah#1706).
+	Match         string
+	Message       string
+	Title         string
+	Dialects      []string
+	AppliesToDown bool
 }
 
 // FormatConfig holds Atlas env.format command templates.
@@ -1243,6 +1253,24 @@ func mergeLintRuleConfigs(
 			overridePresence,
 			resultPresence,
 		)
+		// The DECLARATION travels whole rather than field by field. Severity
+		// and Exclude are overrides -- a value from the more specific scope
+		// replaces a value from the broader one -- but `match`, `message` and
+		// the rest are one indivisible definition, and merging them
+		// independently would let an env supply a new expression that keeps the
+		// global message, describing a rule nobody wrote.
+		//
+		// This is also the arm that made a declared rule parse and then vanish:
+		// rebuilding the entry from Severity and Exclude alone dropped `match`,
+		// so `rulesForOptions` saw an entry that configured a rule which was
+		// never defined (stokaro/ptah#1706).
+		if strings.TrimSpace(config.Match) != "" {
+			baseConfig.Match = config.Match
+			baseConfig.Message = config.Message
+			baseConfig.Title = config.Title
+			baseConfig.Dialects = slices.Clone(config.Dialects)
+			baseConfig.AppliesToDown = config.AppliesToDown
+		}
 		result[code] = baseConfig
 	}
 	return result
@@ -1255,6 +1283,7 @@ func cloneLintRuleConfigs(values map[string]LintRuleConfig) map[string]LintRuleC
 	cloned := make(map[string]LintRuleConfig, len(values))
 	for code, config := range values {
 		config.Exclude = slices.Clone(config.Exclude)
+		config.Dialects = slices.Clone(config.Dialects)
 		cloned[code] = config
 	}
 	return cloned

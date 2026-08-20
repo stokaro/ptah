@@ -148,11 +148,42 @@ func (i RuleInput) String() string {
 
 // RuleConfig customizes one rule for a lint run.
 type RuleConfig struct {
-	// Severity overrides the rule's default severity when set.
+	// Severity overrides the rule's default severity when set. On a DECLARED
+	// rule it is the rule's own severity rather than an override, and defaults
+	// to warning.
 	Severity Severity `yaml:"severity,omitempty"`
 	// Exclude lists slash-separated path globs where this rule is skipped.
 	Exclude []string `yaml:"exclude,omitempty"`
+
+	// Match DECLARES a rule rather than configuring one. It is an expression
+	// over `statement`, `file` and `dialect` that decides whether the rule
+	// fires; see [go.5x5.cz/ptah/migration/lint] package documentation for the
+	// vocabulary.
+	//
+	// Its presence is what separates the two uses of this type: an entry with
+	// Match defines a new rule, an entry without it configures a rule that
+	// already exists. A code that already belongs to a built-in rule cannot be
+	// declared, so a typo can never quietly replace a built-in check with a
+	// weaker one of the same name.
+	Match string `yaml:"match,omitempty"`
+	// Message is the finding text a declared rule reports. It is required when
+	// Match is set: a finding whose message is the rule code tells a reader
+	// what fired and nothing about why it matters.
+	Message string `yaml:"message,omitempty"`
+	// Title is the declared rule's short name in reports. It defaults to the
+	// rule code.
+	Title string `yaml:"title,omitempty"`
+	// Dialects restricts a declared rule to specific target dialects. Empty
+	// runs it under every dialect.
+	Dialects []string `yaml:"dialects,omitempty"`
+	// AppliesToDown extends a declared rule to the down half of a migration.
+	// It is off by default for the same reason it is off on a built-in rule.
+	AppliesToDown bool `yaml:"applies-to-down,omitempty"`
 }
+
+// Declares reports whether this entry declares a rule rather than configuring
+// an existing one.
+func (c RuleConfig) Declares() bool { return strings.TrimSpace(c.Match) != "" }
 
 // Options configures a lint run.
 type Options struct {
@@ -258,9 +289,13 @@ func runRules(file *File, opts Options, rules []Rule) []Finding {
 	return findings
 }
 
-func rulesForOptions(opts Options) []Rule {
-	rules := Rules()
-	return append(rules, cloneRules(opts.ExtraRules)...)
+func rulesForOptions(opts Options) ([]Rule, error) {
+	rules := append(Rules(), cloneRules(opts.ExtraRules)...)
+	declared, err := compileDeclaredRules(opts.RuleConfigs, rules, opts.Dialect)
+	if err != nil {
+		return nil, err
+	}
+	return append(rules, declared...), nil
 }
 
 func ruleSeverity(rule Rule, configs map[string]RuleConfig) Severity {

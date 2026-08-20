@@ -90,8 +90,8 @@ Across the 191 capabilities below:
 
 | Reading | Count |
 | --- | --- |
-| Ptah supports it fully | 165 |
-| Ptah supports it with a stated limitation | 9 |
+| Ptah supports it fully | 166 |
+| Ptah supports it with a stated limitation | 8 |
 | Ptah does not implement it | 10 |
 | Ptah covers it in its own form, against a hosted service it cannot interoperate with | 7 |
 | Ptah and Atlas CE both support it | 61 |
@@ -233,7 +233,7 @@ seven of them as open capabilities regardless.
 | Atlas web reports (`--web`) | 🔷 | ❌ | ✅ | The flag publishes a report into the hosted web UI and is rejected here as unknown. Ptah renders the same lint and diff findings locally through `--format`, including `{{ json . }}`. |
 | Check bypass on the compat surface | ✅ | ❌ | ❌ | No Atlas build registers `--skip-checks` on migrate apply, so the compat bypass is PTAH_SKIP_CHECKS. Explicit-only on migrate down. |
 | CI integration (GitHub Action, annotations) | ✅ | 🟡 | ✅ | stokaro/ptah-action@v1 posts a sticky PR comment; `--format` github-actions emits annotations. The community binary has no annotation mode; its lint `--format` takes a Go template only. |
-| Custom lint rules and check-level policy | 🟡 | ❌ | ✅ | Custom rules run only through Go registration; no file declares one. Atlas rule, review, naming, non_linear and force are accepted and reported as having no effect. Tracked by stokaro/ptah#1706. |
+| Custom lint rules and check-level policy | ✅ | ❌ | ✅ | A rule is declared in `.ptah-lint.yaml` or in an atlas.hcl `rule` block as an expression over the statement. Atlas review, naming, non_linear and force stay accepted and reported as having no effect. |
 | Default-firing Atlas analyzer concern mapping | ✅ | ➖ | ➖ | lint-analyzer-catalog maps every default-firing Atlas concern to a covering Ptah rule, severity and line; 0 gap on the committed corpus. |
 | Dev-URL schema scope on `migrate lint` | ✅ | ✅ | ✅ | `ptah-compat migrate lint` reviews only the schema the dev URL's search_path names, matching the pinned CE binary. Native `ptah migrations lint` reads SQL text and deliberately does not scope. |
 | Generation-time destructive-change gate | ✅ | ❌ | ❌ | migrations generate and plan fail with `--check-destructive` when the generated SQL contains destructive statements; `--allow-destructive` reopens the gate. Distinct from the apply-time gate row. |
