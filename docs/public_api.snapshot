@@ -755,6 +755,7 @@ type ColumnNode struct{ ... }
 type ColumnRef struct{ ... }
 type CommentNode struct{ ... }
     func NewComment(text string) *CommentNode
+type CommonTableExpression struct{ ... }
 type Comparison struct{ ... }
 type ComparisonOperator int
     const OpEqual ComparisonOperator = iota ...
@@ -1402,6 +1403,29 @@ type CommentNode struct {
 
 func NewComment(text string) *CommentNode
 func (n *CommentNode) Accept(visitor Visitor) error
+
+### go.5x5.cz/ptah/core/ast.CommonTableExpression
+
+package ast // import "go.5x5.cz/ptah/core/ast"
+
+type CommonTableExpression struct {
+    Name  string
+    Query *SelectStatement
+}
+    SelectStatement is a SELECT over a source table and zero or more joins,
+    with an optional DISTINCT, WHERE clause, GROUP BY / HAVING, ORDER BY terms,
+    and LIMIT/OFFSET bounds.
+
+    Subqueries, non-aggregate functions, arithmetic, and window functions are
+    not modeled yet. Render it with renderer.RenderSelect, which returns the SQL
+    string and its positional arguments. Build one fluently with the core/query
+    package. CommonTableExpression is one named subquery of a WITH clause.
+
+    Name is emitted as a quoted identifier and referenced from the outer query's
+    From (or a join) as a plain table name. Query is rendered in parentheses,
+    and its bound values are appended before the outer query's, which is what
+    keeps positional placeholders in the order the driver will read them.
+
 
 ### go.5x5.cz/ptah/core/ast.Comparison
 
@@ -3749,6 +3773,14 @@ type SelectStatement struct {
     Distinct bool
     // Columns is the projection. An empty slice renders as "*".
     Columns []ResultColumn
+    // With is the optional WITH clause: named subqueries evaluated before the
+    // main query and referenced from it by name. An empty slice emits no WITH.
+    //
+    // Only non-recursive CTEs are modeled. RECURSIVE needs a UNION ALL body and
+    // a termination argument the builder has no way to state, and emitting the
+    // keyword without one would produce a query that runs forever rather than
+    // one that fails to parse.
+    With []CommonTableExpression
     // From is the source table, rendered as a quoted identifier. Required.
     From string
     // FromAlias is the optional alias for the source table; empty means no alias.
@@ -3774,14 +3806,6 @@ type SelectStatement struct {
     // Offset is the optional row offset; nil means no OFFSET. The value is bound.
     Offset *int64
 }
-    SelectStatement is a SELECT over a source table and zero or more joins,
-    with an optional DISTINCT, WHERE clause, GROUP BY / HAVING, ORDER BY terms,
-    and LIMIT/OFFSET bounds.
-
-    Subqueries, non-aggregate functions, arithmetic, and window functions are
-    not modeled yet. Render it with renderer.RenderSelect, which returns the SQL
-    string and its positional arguments. Build one fluently with the core/query
-    package.
 
 
 ### go.5x5.cz/ptah/core/ast.SetCreateDBOperation
@@ -6309,6 +6333,7 @@ func (b *SelectBuilder) Offset(n int64) *SelectBuilder
 func (b *SelectBuilder) OrderBy(terms ...ast.OrderByClause) *SelectBuilder
 func (b *SelectBuilder) RightJoin(table, alias string, on ast.Expression) *SelectBuilder
 func (b *SelectBuilder) Where(expr ast.Expression) *SelectBuilder
+func (b *SelectBuilder) With(name string, query *SelectBuilder) *SelectBuilder
 
 ### go.5x5.cz/ptah/core/query.UpdateBuilder
 

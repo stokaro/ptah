@@ -81,6 +81,8 @@ type selectRenderer struct {
 	placeholder placeholderStyle
 	args        []any
 	buf         strings.Builder
+	// cteDepth bounds WITH nesting; see maxCTEDepth.
+	cteDepth int
 }
 
 func newSelectRenderer(dialect string) (*selectRenderer, error) {
@@ -177,6 +179,9 @@ func (r *selectRenderer) render(stmt *ast.SelectStatement) error {
 	if strings.TrimSpace(stmt.From) == "" {
 		return errors.New("renderer: select statement requires a FROM table")
 	}
+	if err := r.renderWith(stmt.With); err != nil {
+		return err
+	}
 
 	r.buf.WriteString("SELECT ")
 	if stmt.Distinct {
@@ -227,6 +232,57 @@ func (r *selectRenderer) render(stmt *ast.SelectStatement) error {
 	}
 
 	r.renderLimitOffset(stmt.Limit, stmt.Offset)
+	return nil
+}
+
+// maxCTEDepth bounds how far a WITH clause may nest.
+//
+// CommonTableExpression.Query is a pointer, so a caller can build a cycle by
+// pointing a CTE at a statement that already contains it. Rendering would then
+// recurse until the stack ran out, which is a crash rather than a diagnostic.
+const maxCTEDepth = 16
+
+// renderWith emits the WITH clause, if any, before the SELECT it precedes.
+//
+// The subqueries are rendered first and in order, which is what puts their
+// bound values ahead of the outer query's in args: a positional driver reads
+// $1 from the first CTE, not from the first WHERE.
+func (r *selectRenderer) renderWith(ctes []ast.CommonTableExpression) error {
+	if len(ctes) == 0 {
+		return nil
+	}
+	r.cteDepth++
+	defer func() { r.cteDepth-- }()
+	if r.cteDepth > maxCTEDepth {
+		return fmt.Errorf("renderer: WITH clause nests deeper than %d, which a cycle would do", maxCTEDepth)
+	}
+
+	r.buf.WriteString("WITH ")
+	for i, cte := range ctes {
+		if err := r.renderCTE(i, cte); err != nil {
+			return err
+		}
+	}
+	r.buf.WriteString(" ")
+	return nil
+}
+
+func (r *selectRenderer) renderCTE(index int, cte ast.CommonTableExpression) error {
+	if strings.TrimSpace(cte.Name) == "" {
+		return errors.New("renderer: common table expression requires a name")
+	}
+	if cte.Query == nil {
+		return fmt.Errorf("renderer: common table expression %q requires a query", cte.Name)
+	}
+	if index > 0 {
+		r.buf.WriteString(", ")
+	}
+	r.buf.WriteString(r.quote(cte.Name))
+	r.buf.WriteString(" AS (")
+	if err := r.render(cte.Query); err != nil {
+		return err
+	}
+	r.buf.WriteString(")")
 	return nil
 }
 

@@ -12,6 +12,7 @@ import (
 // method mutates and returns the same builder for chaining. Build produces the
 // statement. Builders are not safe for concurrent use.
 type SelectBuilder struct {
+	with      []ast.CommonTableExpression
 	distinct  bool
 	columns   []ast.ResultColumn
 	from      string
@@ -39,6 +40,22 @@ func Select(columns ...string) *SelectBuilder {
 		}
 		b.columns = append(b.columns, ast.ResultColumn{Name: name})
 	}
+	return b
+}
+
+// With prepends a named subquery to the WITH clause, referenced from the outer
+// query by name as though it were a table.
+//
+// Calls accumulate in order, and the order matters twice: a later CTE may read
+// an earlier one, and the bound values of all of them precede the outer query's
+// in the returned args.
+//
+// Only non-recursive CTEs are modeled; see [ast.SelectStatement].With.
+func (b *SelectBuilder) With(name string, query *SelectBuilder) *SelectBuilder {
+	if query == nil {
+		return b
+	}
+	b.with = append(b.with, ast.CommonTableExpression{Name: name, Query: query.Build()})
 	return b
 }
 
@@ -182,6 +199,7 @@ func (b *SelectBuilder) Offset(n int64) *SelectBuilder {
 // renderer.RenderSelect.
 func (b *SelectBuilder) Build() *ast.SelectStatement {
 	return &ast.SelectStatement{
+		With:      b.with,
 		Distinct:  b.distinct,
 		Columns:   b.columns,
 		From:      b.from,
