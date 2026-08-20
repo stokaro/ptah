@@ -540,8 +540,7 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 		},
 	})
 	if err != nil {
-		var checkErr *migrator.CheckFailedError
-		if errors.As(err, &checkErr) {
+		if checkErr, ok := errors.AsType[*migrator.CheckFailedError](err); ok {
 			return fmt.Errorf("%w\nrerun with --skip-checks to bypass this pre-migration check after review", checkErr)
 		}
 		return fmt.Errorf("error running migrations: %w", err)

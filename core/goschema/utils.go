@@ -533,7 +533,7 @@ func analyzeFieldForeignKeys(r *Database) {
 			continue
 		}
 
-		refTable := strings.Split(field.Foreign, "(")[0]
+		refTable, _, _ := strings.Cut(field.Foreign, "(")
 		table := findTableByStructName(r.Tables, field.StructName)
 		if table == nil {
 			continue
@@ -556,7 +556,7 @@ func analyzeEmbeddedFieldRelations(r *Database) {
 			continue
 		}
 
-		refTable := strings.Split(embedded.Ref, "(")[0]
+		refTable, _, _ := strings.Cut(embedded.Ref, "(")
 		table := findTableByStructName(r.Tables, embedded.StructName)
 		if table == nil {
 			continue
