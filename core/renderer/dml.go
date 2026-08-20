@@ -166,7 +166,139 @@ func (r *selectRenderer) renderInsert(stmt *ast.InsertStatement) error {
 	if err := r.writeInsertRows(stmt.Columns, stmt.Rows); err != nil {
 		return err
 	}
+	if err := r.renderOnConflict(stmt.OnConflict, stmt.Columns); err != nil {
+		return err
+	}
 	return r.renderReturning(stmt.Returning)
+}
+
+// renderOnConflict writes the upsert clause in the dialect's own spelling, or
+// refuses the combination the dialect cannot express.
+//
+// The refusals are the substance. PostgreSQL and SQLite watch the constraint
+// the caller NAMED; MySQL and MariaDB watch every unique key on the table and
+// have no syntax for narrowing that. So a clause carrying a conflict target is
+// refused on the MySQL family rather than rendered into one that fires on keys
+// the caller never mentioned -- a statement that inserts correctly in testing
+// and overwrites the wrong row the first time a second unique index exists.
+//
+// SQL Server spells this as MERGE and ClickHouse has no upsert statement, so
+// both are refused by name (stokaro/ptah#941).
+func (r *selectRenderer) renderOnConflict(clause *ast.OnConflict, inserted []string) error {
+	if clause == nil {
+		return nil
+	}
+	if clause.DoNothing && len(clause.Update) > 0 {
+		return errors.New("renderer: ON CONFLICT cannot both do nothing and update")
+	}
+	if !clause.DoNothing && len(clause.Update) == 0 {
+		return errors.New(
+			"renderer: ON CONFLICT updates no column; use DoNothing to discard a colliding row")
+	}
+	for _, group := range [][]string{clause.Columns, clause.Update} {
+		for _, name := range group {
+			if strings.TrimSpace(name) == "" {
+				return errors.New("renderer: ON CONFLICT column has an empty name")
+			}
+		}
+	}
+	switch {
+	case platform.IsPostgresFamily(r.dialect) || r.dialect == platform.SQLite:
+		return r.renderOnConflictTarget(clause)
+	case r.dialect == platform.MySQL || r.dialect == platform.MariaDB:
+		return r.renderOnDuplicateKey(clause, inserted)
+	case r.dialect == platform.SQLServer:
+		return errors.New(
+			"renderer: SQL Server has no ON CONFLICT: it expresses an upsert as MERGE, " +
+				"a different statement with its own source, join condition and match clauses")
+	case r.dialect == platform.ClickHouse:
+		return errors.New(
+			"renderer: ClickHouse has no upsert statement: a ReplacingMergeTree deduplicates " +
+				"in the background rather than at insert time, which is a table design and not " +
+				"a clause on this INSERT")
+	default:
+		return fmt.Errorf("renderer: %s has no upsert statement this builder emits", r.dialect)
+	}
+}
+
+// renderOnConflictTarget writes the PostgreSQL and SQLite spelling, where the
+// proposed row is named `excluded`.
+func (r *selectRenderer) renderOnConflictTarget(clause *ast.OnConflict) error {
+	// Both engines allow the target to be omitted only for DO NOTHING. A bare
+	// `ON CONFLICT DO UPDATE` is a syntax error on each -- the server has no way
+	// to know which index's collision the SET applies to -- so it is refused
+	// here rather than emitted and rejected at execution.
+	if !clause.DoNothing && len(clause.Columns) == 0 {
+		return fmt.Errorf(
+			"renderer: %s requires a conflict target for DO UPDATE: name the columns whose "+
+				"unique index the insert watches, or use DoNothing, which accepts no target",
+			r.dialect)
+	}
+	r.buf.WriteString(" ON CONFLICT")
+	if len(clause.Columns) > 0 {
+		r.buf.WriteString(" (")
+		for i, name := range clause.Columns {
+			if i > 0 {
+				r.buf.WriteString(", ")
+			}
+			r.buf.WriteString(r.quote(name))
+		}
+		r.buf.WriteString(")")
+	}
+	if clause.DoNothing {
+		r.buf.WriteString(" DO NOTHING")
+		return nil
+	}
+	r.buf.WriteString(" DO UPDATE SET ")
+	for i, name := range clause.Update {
+		if i > 0 {
+			r.buf.WriteString(", ")
+		}
+		r.buf.WriteString(r.quote(name))
+		r.buf.WriteString(" = excluded.")
+		r.buf.WriteString(r.quote(name))
+	}
+	return nil
+}
+
+// renderOnDuplicateKey writes the MySQL-family spelling, where the proposed row
+// is read back with VALUES().
+//
+// A conflict TARGET is refused here rather than dropped: ON DUPLICATE KEY fires
+// for every unique key on the table, so honoring the clause while ignoring the
+// columns it named would widen what the caller asked for.
+func (r *selectRenderer) renderOnDuplicateKey(clause *ast.OnConflict, inserted []string) error {
+	if len(clause.Columns) > 0 {
+		return fmt.Errorf(
+			"renderer: %s cannot scope an upsert to named columns: ON DUPLICATE KEY UPDATE "+
+				"fires for every unique key on the table, so a conflict target would be ignored "+
+				"and the statement would overwrite on keys the caller did not name", r.dialect)
+	}
+	if clause.DoNothing {
+		// MySQL has no DO NOTHING. Assigning a column to itself is the
+		// documented idiom, and it is written out rather than hidden: it keeps
+		// the row untouched while still consuming the duplicate.
+		if len(inserted) == 0 {
+			return errors.New("renderer: ON CONFLICT DO NOTHING needs a column to hold steady")
+		}
+		name := inserted[0]
+		r.buf.WriteString(" ON DUPLICATE KEY UPDATE ")
+		r.buf.WriteString(r.quote(name))
+		r.buf.WriteString(" = ")
+		r.buf.WriteString(r.quote(name))
+		return nil
+	}
+	r.buf.WriteString(" ON DUPLICATE KEY UPDATE ")
+	for i, name := range clause.Update {
+		if i > 0 {
+			r.buf.WriteString(", ")
+		}
+		r.buf.WriteString(r.quote(name))
+		r.buf.WriteString(" = VALUES(")
+		r.buf.WriteString(r.quote(name))
+		r.buf.WriteString(")")
+	}
+	return nil
 }
 
 // writeInsertColumns writes the parenthesized column list. Each name is quoted
