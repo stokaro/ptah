@@ -1568,7 +1568,15 @@ func (r *Renderer) VisitDropExtension(node *ast.DropExtensionNode) error {
 
 // VisitCreateFunction renders a CREATE FUNCTION statement for PostgreSQL
 func (r *Renderer) VisitCreateFunction(node *ast.CreateFunctionNode) error {
-	if r.refuses(capability.Functions, "function", node.Name) {
+	// A procedure decides against its own key. The two kinds are one catalog
+	// object and one node, and they are still two different claims: SQL Server
+	// hosts functions and no Ptah path reads a procedure back there
+	// (stokaro/ptah#1722).
+	if node.IsProcedure() {
+		if r.refuses(capability.Procedures, "procedure", node.Name) {
+			return nil
+		}
+	} else if r.refuses(capability.Functions, "function", node.Name) {
 		return nil
 	}
 
@@ -1579,14 +1587,19 @@ func (r *Renderer) VisitCreateFunction(node *ast.CreateFunctionNode) error {
 
 	// Build CREATE OR REPLACE FUNCTION statement
 	var parts []string
-	parts = append(parts, "CREATE OR REPLACE FUNCTION")
+	if node.IsProcedure() {
+		parts = append(parts, "CREATE OR REPLACE PROCEDURE")
+	} else {
+		parts = append(parts, "CREATE OR REPLACE FUNCTION")
+	}
 
 	// Function parameters are raw SQL fragments; only the function identifier
 	// is quoted here.
 	parts = append(parts, r.escapeFunctionSignature(node.Name, node.Parameters))
 
-	// Return type
-	if node.Returns != "" {
+	// Return type. A procedure has none: `CREATE PROCEDURE ... RETURNS` does
+	// not parse, which is the property that separates the two statements.
+	if node.Returns != "" && !node.IsProcedure() {
 		parts = append(parts, "RETURNS", node.Returns)
 	}
 
@@ -1698,7 +1711,11 @@ func (r *Renderer) VisitAlterTableEnableRLS(node *ast.AlterTableEnableRLSNode) e
 
 // VisitDropFunction renders a DROP FUNCTION statement
 func (r *Renderer) VisitDropFunction(node *ast.DropFunctionNode) error {
-	if r.refuses(capability.Functions, "function", node.Name) {
+	if node.IsProcedure() {
+		if r.refuses(capability.Procedures, "procedure", node.Name) {
+			return nil
+		}
+	} else if r.refuses(capability.Functions, "function", node.Name) {
 		return nil
 	}
 
@@ -1707,9 +1724,16 @@ func (r *Renderer) VisitDropFunction(node *ast.DropFunctionNode) error {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
 
-	// Build DROP FUNCTION statement
+	// Build DROP FUNCTION statement. The verb has to match the object: a
+	// server answers `DROP FUNCTION` aimed at a procedure with
+	// `could not find a function named ...`, so the kind travels on the drop
+	// as well as on the create (stokaro/ptah#1722).
 	var parts []string
-	parts = append(parts, "DROP FUNCTION")
+	if node.IsProcedure() {
+		parts = append(parts, "DROP PROCEDURE")
+	} else {
+		parts = append(parts, "DROP FUNCTION")
+	}
 
 	if node.IfExists {
 		parts = append(parts, "IF EXISTS")
@@ -1717,7 +1741,19 @@ func (r *Renderer) VisitDropFunction(node *ast.DropFunctionNode) error {
 
 	// Function parameters are raw SQL fragments; only the function identifier
 	// is quoted here.
-	parts = append(parts, r.escapeFunctionSignature(node.Name, node.Parameters))
+	//
+	// An empty parameter list drops the argument list entirely rather than
+	// rendering `()`. The two are different targets: `f()` names the
+	// zero-argument overload specifically, so a drop of a routine that takes
+	// arguments matched nothing and -- with IF EXISTS in front of it -- reported
+	// success having removed nothing. PostgreSQL 10 and later accept the bare
+	// name and refuse it only when it is ambiguous, which is a louder failure
+	// than the silent one it replaces (stokaro/ptah#1722).
+	if node.Parameters == "" {
+		parts = append(parts, r.escapeQualifiedIdentifier(node.Name))
+	} else {
+		parts = append(parts, r.escapeFunctionSignature(node.Name, node.Parameters))
+	}
 
 	if node.Cascade {
 		parts = append(parts, "CASCADE")

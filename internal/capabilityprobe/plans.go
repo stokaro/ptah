@@ -185,6 +185,14 @@ func postgresFamilyPlan(dialect string) plan {
 		acceptance(capability.Functions, nil,
 			"CREATE FUNCTION fn() RETURNS int LANGUAGE sql AS 'SELECT 1'",
 		),
+		// A procedure is the same routine object with its return type removed,
+		// and the statement is the one thing that separates the two keys. It is
+		// asked rather than declared because the answers differ across this
+		// family: PostgreSQL and CockroachDB take it, Spanner's PostgreSQL
+		// interface does not (stokaro/ptah#1722).
+		acceptance(capability.Procedures, nil,
+			"CREATE PROCEDURE pr() LANGUAGE sql AS 'SELECT 1'",
+		),
 		all(capability.Triggers,
 			[]string{t.table("trg_t", "n int", "n")},
 			"CREATE FUNCTION trg_fn() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NEW; END $$",
@@ -447,6 +455,12 @@ func mysqlFamilyPlan(dialect string) plan {
 		acceptance(capability.Functions, nil,
 			"CREATE FUNCTION fn() RETURNS INT DETERMINISTIC RETURN 1",
 		),
+		// No RETURNS clause: that is the grammar difference the key names, and
+		// the catalog agrees -- a procedure's DTD_IDENTIFIER is NULL where a
+		// function's carries the type (stokaro/ptah#1722).
+		acceptance(capability.Procedures, nil,
+			"CREATE PROCEDURE pr() SELECT 1",
+		),
 		acceptance(capability.Triggers,
 			[]string{"CREATE TABLE trg_t (n int)"},
 			"CREATE TRIGGER trg BEFORE INSERT ON trg_t FOR EACH ROW SET NEW.n = NEW.n",
@@ -595,21 +609,15 @@ func mysqlFamilyPlan(dialect string) plan {
 			"only on the PostgreSQL wire; this server's CREATE TABLE takes its own table options and " +
 			"none of them is the one the key names, so refusing it would answer a different question",
 	}
-	if dialect == platform.MariaDB {
-		// MariaDB has had SEQUENCE objects since 10.3 and the preset still
-		// says false, deliberately: the key describes Ptah's generator, and
-		// there is no MariaDB sequence introspection and no MySQL-family
-		// sequence planning. The two answers are known in advance to differ on
-		// this dialect, so the engine cannot decide the key.
-		undecided[capability.Sequences] = "the key describes Ptah's generator rather than the engine " +
-			"(stokaro/ptah#931 item 8): MariaDB has had SEQUENCE since 10.3 while no MySQL-family " +
-			"renderer or planner emits, reads or plans one, so the server's answer is to a different question"
-	} else {
-		experiments = append(experiments, all(capability.Sequences, nil,
-			"CREATE SEQUENCE sq",
-			"CREATE TABLE ser (id SERIAL PRIMARY KEY)",
-		))
-	}
+	// Both dialects are asked now. MariaDB used to be declared undecided here,
+	// on the ground that the engine has SEQUENCE while Ptah's generator did
+	// not -- so the server's answer was to a different question. Ptah renders,
+	// reads and plans a MariaDB sequence since stokaro/ptah#1759, so the two
+	// answers agree and the experiment decides the key on both engines.
+	experiments = append(experiments, all(capability.Sequences, nil,
+		"CREATE SEQUENCE sq",
+		"CREATE TABLE ser (id SERIAL PRIMARY KEY)",
+	))
 	return plan{experiments: experiments, undecided: undecided}
 }
 

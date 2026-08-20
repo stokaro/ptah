@@ -1661,6 +1661,7 @@ func FromRange(rangeType goschema.Range) *ast.CreateTypeNode {
 // Returns a fully configured *ast.CreateFunctionNode ready for SQL generation.
 func FromFunction(function goschema.Function) *ast.CreateFunctionNode {
 	functionNode := ast.NewCreateFunction(function.Name).
+		SetKind(function.Kind).
 		SetParameters(function.Parameters).
 		SetReturns(function.Returns).
 		SetLanguage(function.Language).

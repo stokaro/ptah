@@ -221,6 +221,16 @@ type SchemaDiff struct {
 	// FunctionsRemoved contains names of PostgreSQL functions that exist in the current database
 	// but not in the target schema (potentially dangerous - may break existing functionality)
 	FunctionsRemoved []string `json:"functions_removed"`
+	// ProceduresRemoved names the procedures the database holds and the desired
+	// state does not.
+	//
+	// It is separate from FunctionsRemoved because the DROP verb has to match the
+	// object: a server answers `DROP FUNCTION` aimed at a procedure by name, and
+	// the removal is the one operation whose kind cannot be recovered from the
+	// declaration -- there is no declaration left. Additions and modifications
+	// stay in the function collections, where the planner reads the kind off the
+	// declaration it is building from (stokaro/ptah#1722).
+	ProceduresRemoved []string `json:"procedures_removed,omitempty"`
 
 	// FunctionsModified contains detailed information about functions that exist in both
 	// schemas but have different definitions (parameters, body, attributes, etc.)
@@ -577,6 +587,7 @@ func (d *SchemaDiff) hasExtensionChanges() bool {
 func (d *SchemaDiff) hasFunctionChanges() bool {
 	return len(d.FunctionsAdded) > 0 ||
 		len(d.FunctionsRemoved) > 0 ||
+		len(d.ProceduresRemoved) > 0 ||
 		len(d.FunctionsModified) > 0
 }
 

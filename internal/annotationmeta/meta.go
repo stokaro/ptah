@@ -487,6 +487,21 @@ var directives = []Directive{
 		},
 	},
 	{
+		Name:        "ptah:schema:procedure",
+		Description: "Declares a stored procedure: a routine that returns nothing and is invoked with CALL.",
+		Scopes:      []Scope{ScopeStruct},
+		Attributes: []Attribute{
+			attr("name", "Procedure name.", valueString, false, false),
+			attr("params", "Procedure parameter list.", valueString, false, false),
+			attr("language", "Procedure language.", valueString, false, false),
+			attr("security", "Security mode, such as DEFINER.", valueString, false, false),
+			attr("volatility", "Volatility class.", valueString, false, false),
+			attr("body", "Procedure body SQL.", valueSQL, false, false),
+			attr("comment", "Procedure comment.", valueString, false, false),
+			dialectsAttr(),
+		},
+	},
+	{
 		Name:        "ptah:schema:sequence",
 		Description: "Declares a standalone PostgreSQL sequence.",
 		Scopes:      []Scope{ScopeStruct},

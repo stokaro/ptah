@@ -2048,6 +2048,16 @@ func (p *Planner) removeFunctions(result []ast.Node, diff *types.SchemaDiff) []a
 			SetComment("WARNING: Ensure no other objects depend on this function")
 		result = append(result, dropFunctionNode)
 	}
+	// A procedure is dropped with its own verb. PostgreSQL answers
+	// `DROP FUNCTION` aimed at one with `could not find a function named ...`,
+	// so the kind the comparator kept is what makes the statement run
+	// (stokaro/ptah#1722).
+	for _, procedureName := range diff.ProceduresRemoved {
+		result = append(result, ast.NewDropFunction(procedureName).
+			SetKind(goschema.FunctionKindProcedure).
+			SetIfExists().
+			SetComment("WARNING: Ensure no other objects depend on this procedure"))
+	}
 	return result
 }
 

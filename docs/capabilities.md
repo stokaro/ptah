@@ -113,6 +113,7 @@ so typos fail fast. Current registry:
 | `materialized_views` | CREATE MATERIALIZED VIEW: a view whose query result is stored |
 | `migration_timeouts` | a migration can be bounded by a lock timeout and a statement timeout the migrator sets and restores |
 | `postgres_catalog_functions` | obj_description reads a comment back out of the catalog |
+| `procedures` | stored procedures: routines that return nothing and are invoked with CALL |
 | `range_types` | CREATE TYPE ... AS RANGE (SUBTYPE = ...) |
 | `rename_column_clause` | ALTER TABLE ... RENAME COLUMN renames a column in place (SQLite 3.25+) |
 | `role_management` | named roles plus GRANT/REVOKE of object privileges (PostgreSQL family, ClickHouse) |
@@ -235,6 +236,7 @@ set that names no mode at all, which only a hand-built set produces and
 | `materialized_views` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
 | `migration_timeouts` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
 | `postgres_catalog_functions` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
+| `procedures` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
 | `range_types` | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ | ❌ | ✅ | ✅ | ❌ | ❌ | ❌ | ❌ |
 | `rename_column_clause` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ✅ | ❌ | ❌ |
 | `role_management` | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ❌ | ❌ | ✅ | ❌ |
