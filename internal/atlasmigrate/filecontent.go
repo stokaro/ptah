@@ -252,12 +252,48 @@ func formatExpressesNoTransaction(format atlasmigrateimport.Format) bool {
 	}
 }
 
+// validateGolangMigrateTransactionMode accepts the one shape golang-migrate can
+// run outside a transaction, and refuses the rest.
+//
+// golang-migrate has no directive. What it has is a file rule, and it is the
+// one its own postgres driver guidance names: put the statement in a migration
+// of its own. Measured against golang-migrate v4.19.0 on PostgreSQL 17, a
+// migration holding ONE statement runs unwrapped and applies a CREATE INDEX
+// CONCURRENTLY, while the same statement beside a second one in the same file
+// answers `CREATE INDEX CONCURRENTLY cannot run inside a transaction block` --
+// a multi-statement send is an implicit transaction block, which is
+// PostgreSQL's rule rather than the tool's (stokaro/ptah#1630).
+//
+// The two directions are separate files here, so each is judged on its own
+// count. A migration that needs several statements outside a transaction still
+// fails closed: writing it would produce a file the source tool cannot run.
+func validateGolangMigrateTransactionMode(content MigrationFileContent) error {
+	if content.NoTransaction && len(content.Statements) > 1 {
+		return fmt.Errorf(
+			"migration directory format %q runs a migration outside a transaction only when it holds one "+
+				"statement, and this forward migration holds %d; no migration files or atlas.sum were written",
+			atlasmigrateimport.FormatGolangMigrate, len(content.Statements),
+		)
+	}
+	if content.ReverseNoTransaction && len(content.ReverseStatements) > 1 {
+		return fmt.Errorf(
+			"migration directory format %q runs a migration outside a transaction only when it holds one "+
+				"statement, and this rollback holds %d; no migration files or atlas.sum were written",
+			atlasmigrateimport.FormatGolangMigrate, len(content.ReverseStatements),
+		)
+	}
+	return nil
+}
+
 func validateForeignTransactionMode(
 	format atlasmigrateimport.Format,
 	content MigrationFileContent,
 ) error {
 	if ReadsNativeAtlasDir(format) || formatExpressesNoTransaction(format) {
 		return nil
+	}
+	if format == atlasmigrateimport.FormatGolangMigrate {
+		return validateGolangMigrateTransactionMode(content)
 	}
 	if content.NoTransaction {
 		return fmt.Errorf(

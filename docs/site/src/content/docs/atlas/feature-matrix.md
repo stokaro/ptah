@@ -90,14 +90,14 @@ Across the 191 capabilities below:
 
 | Reading | Count |
 | --- | --- |
-| Ptah supports it fully | 170 |
-| Ptah supports it with a stated limitation | 5 |
+| Ptah supports it fully | 171 |
+| Ptah supports it with a stated limitation | 4 |
 | Ptah does not implement it | 9 |
 | Ptah covers it in its own form, against a hosted service it cannot interoperate with | 7 |
-| Ptah and Atlas CE both support it | 62 |
+| Ptah and Atlas CE both support it | 63 |
 | Ptah implements it openly where Atlas gates it behind Pro or Cloud | 47 |
 | Ptah has it and neither Atlas edition does | 27 |
-| Atlas CE has it and Ptah does not, or only in part | 1 |
+| Atlas CE has it and Ptah does not, or only in part | 0 |
 | An Atlas column is ❔ — not established by this page's evidence | 4 |
 
 Every 🟡 and every ❌ in the Ptah column names its specific limitation and the
@@ -197,7 +197,7 @@ seven of them as open capabilities regardless.
 | Directory maintenance: edit, rebase, rm | ✅ | ❌ | ✅ | Each rewrites `ptah.sum`/`atlas.sum` and refuses a migration applied in `--db-url` unless `--force`; CE aborts all three as non-community verbs. |
 | Dynamic down planning (`migrate down --plan`) | ❌ | ❌ | ✅ | `--plan`, `--to-tag` and `--skip-checks` are recorded waivers that fail loudly; Ptah reverts only through pre-planned down files. Tracked by stokaro/ptah#1621. |
 | Execution order (`--exec-order`) | ✅ | ✅ | ✅ | linear fails on a pending migration below the current version, linear-skip leaves it pending, and non-linear applies it. Atlas chained revision hashes remain valid after an insertion. |
-| External `--dir-format` outside `migrate import` | 🟡 | ✅ | ✅ | Five external layouts read and write. Four carry a no-transaction requirement in their own syntax; golang-migrate has no such syntax to write (stokaro/ptah#1630). |
+| External `--dir-format` outside `migrate import` | ✅ | ✅ | ✅ | Five external layouts read and write, and all five carry a no-transaction requirement in whatever their own format offers -- a directive, a sidecar, or a migration of its own. |
 | Failed rollback state is recorded and recoverable | ✅ | ❌ | ❌ | Ptah records failed rollback direction, error, and completed-statement count in both revision-table formats; compat keeps the Atlas schema but does not copy Atlas's hidden failed-down state. |
 | Flyway repeatable (`R__`) migration import | ✅ | ✅ | ✅ | Compat import converts `R__` to a one-time migration ordered last, as the format requires. Editing the body is then refused, naming the conversion and both remedies. |
 | Generate migrations from a schema diff | ✅ | ✅ | ✅ | diff and new stamp the UTC second, stepping past a version already taken; checkpoint and rebase bump past the newest. A plan mixing transaction modes is split into ordered files. |
