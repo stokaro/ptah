@@ -90,8 +90,8 @@ Across the 191 capabilities below:
 
 | Reading | Count |
 | --- | --- |
-| Ptah supports it fully | 148 |
-| Ptah supports it with a stated limitation | 25 |
+| Ptah supports it fully | 149 |
+| Ptah supports it with a stated limitation | 24 |
 | Ptah does not implement it | 13 |
 | Ptah covers it in its own form, against a hosted service it cannot interoperate with | 5 |
 | Ptah and Atlas CE both support it | 50 |
@@ -176,8 +176,8 @@ seven of them as open capabilities regardless.
 | schema fmt (HCL canonical layout) | ✅ | ✅ | ✅ | Formats .hcl paths recursively and prints only changed files. Native `ptah schema fmt --check` adds a no-write CI gate. |
 | schema inspect to HCL, SQL, or JSON | ✅ | ✅ | ✅ | Default HCL; rendered HCL/SQL/JSON use explicit helper templates. Bare and whitespace-wrapped hcl/sql/json are literal template text. Native shorthands still render and add file export. |
 | Schema-qualified exclude globs for enums and functions | ✅ | 🟡 | ✅ | Enums and functions match schema-qualified globs on the rule tables and views use, and the match reaches the planned DROP. The community binary matches `app.mood`; it reports no functions. |
-| Verb `schema stats` | ❌ | ❌ | ✅ | In Atlas it exists as `schema stats inspect` and emits OpenMetrics, rejecting SQLite at runtime. Ptah emits metrics in no form. Tracked by stokaro/ptah#1711. |
-| Verb `schema validate` | 🟡 | ❌ | ✅ | No validate verb on either binary. Native `schema render` parse and load validation, `schema test`, and `schema apply --dry-run` cover the ground between them. Tracked by stokaro/ptah#1711. |
+| Verb `schema stats` | ❌ | ❌ | ✅ | In Atlas it exists as `schema stats inspect` and emits OpenMetrics, rejecting SQLite at runtime. Ptah emits metrics in no form; whether it should is the open half of stokaro/ptah#1711. |
+| Verb `schema validate` | ✅ | ❌ | ✅ | `ptah schema validate` and the compat verb report every structural problem in a desired state without a database; exit 1 when any is found. |
 
 ## Versioned migrations
 
