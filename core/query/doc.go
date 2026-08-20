@@ -46,9 +46,13 @@
 // their values in the order they are emitted, so a driver reading positionally
 // sees CTE values, then the outer query's, then a subquery's.
 //
-// Non-aggregate function calls, arithmetic, window functions and
-// INSERT … SELECT are intentionally not implemented yet and are tracked as
-// follow-up phases of stokaro/ptah#941.
+// Func calls a function this package has no named helper for, and Add, Sub,
+// Mul, Div and Mod build arithmetic. Every arithmetic node renders
+// parenthesized, so the tree the caller built is the expression the server
+// evaluates rather than one its precedence rules recover.
+//
+// Window functions and INSERT … SELECT are intentionally not implemented yet
+// and are tracked as follow-up phases of stokaro/ptah#941.
 //
 // # Safety model
 //
