@@ -92,8 +92,8 @@ Across the 191 capabilities below:
 | --- | --- |
 | Ptah supports it fully | 159 |
 | Ptah supports it with a stated limitation | 14 |
-| Ptah does not implement it | 12 |
-| Ptah covers it in its own form, against a hosted service it cannot interoperate with | 6 |
+| Ptah does not implement it | 11 |
+| Ptah covers it in its own form, against a hosted service it cannot interoperate with | 7 |
 | Ptah and Atlas CE both support it | 58 |
 | Ptah implements it openly where Atlas gates it behind Pro or Cloud | 44 |
 | Ptah has it and neither Atlas edition does | 27 |
@@ -368,7 +368,7 @@ is genuinely absent and the difference column names the issue that owns it.
 | `atlas://` vendor protocol | 🔷 | ❌ | ✅ | Ptah addresses any OCI registry with `oci://` and its own push and pull verbs. The vendor spelling names a hosted account and is refused by name (stokaro/ptah#1210). |
 | `migrate push` and `schema push` | 🔷 | ❌ | ✅ | `ptah schema push` and `ptah migrations push` publish to any OCI registry. The Atlas verbs address the hosted registry an account owns; the compat stubs say so and exit 1. |
 | `schema plan --edit` and `--name-format` | ✅ | ❌ | ✅ | `--edit` preserves comments and re-derives dialect-aware severity; `--name-format` uses Atlas-shaped Base64 .FromHash/.ToHash values. |
-| `schema plan --format` and `--directive` | ❌ | ❌ | ✅ | Both fail loudly. `--format` ships on the eight compat verbs whose payload shape is settled; `schema plan` is the one where it is not. Tracked by stokaro/ptah#1700. |
+| `schema plan --format` and `--directive` | 🔷 | ❌ | ✅ | Both are implemented under Ptah's own payload and directive vocabulary. Atlas gates the verb behind its hosted registry, so its field names and directive set are not obtainable. |
 | `schema plan --push`, `--pending`, `--repo` | 🔷 | ❌ | ✅ | All three name a repository in the hosted registry and fail loudly. Ptah's plan workflow saves and reads local plan files instead, so the function is here and the service is not. |
 | `schema plan --skip-lint` | ✅ | ❌ | ✅ | Accepted, and does nothing: `schema plan` runs no lint step, so there is nothing to skip. A Pro pipeline passing it keeps working; no check is loosened. |
 | `schema plan lint` | ✅ | ❌ | ✅ | Implemented: the plan is verified against the transition, then Ptah's lint rules report on its SQL. Findings do not change the exit code; an opt-in variable makes an error-severity finding exit 1. |

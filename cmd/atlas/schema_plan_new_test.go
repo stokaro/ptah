@@ -228,7 +228,8 @@ func TestSchemaPlanNewRefusesUnimplementedTransitionFlags(t *testing.T) {
 		want string
 	}{
 		{name: "repo", args: []string{"--repo", "atlas://app"}, want: "accepts --repo, but schema repositories require a hosted registry"},
-		{name: "format", args: []string{"--format", "{{ json . }}"}, want: "accepts --format, but Ptah does not implement"},
+		// --format left this table: `new` produces a plan document, so it
+		// renders one. TestSchemaPlanNewFormatRendersTheTemplate has it.
 		{name: "lock_timeout", args: []string{"--lock-timeout", "10s"}, want: "accepts --lock-timeout, but Ptah does not implement"},
 		{name: "include", args: []string{"--include", "public.*"}, want: "accepts --include, but Ptah only supports"},
 		{name: "schema", args: []string{"--schema", "public"}, want: "accepts --schema, but Ptah only supports"},

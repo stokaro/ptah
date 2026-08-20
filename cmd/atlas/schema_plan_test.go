@@ -393,6 +393,10 @@ func TestSchemaPlanRejectsUnimplementedAtlasFlags(t *testing.T) {
 	schemaPath := filepath.Join(dir, "schema.sql")
 	c.Assert(os.WriteFile(schemaPath, []byte(`CREATE TABLE u (id INTEGER PRIMARY KEY);`), 0o600), qt.IsNil)
 
+	// --format and --directive used to be rows in this table. They are
+	// implemented now, and what they do instead is pinned by
+	// TestSchemaPlanFormatRendersTheTemplate and
+	// TestSchemaPlanDirectiveIsWrittenIntoThePlanFile (stokaro/ptah#1700).
 	tests := []struct {
 		name string
 		args []string
@@ -412,16 +416,6 @@ func TestSchemaPlanRejectsUnimplementedAtlasFlags(t *testing.T) {
 			name: "repo",
 			args: []string{"--repo", "atlas://plans"},
 			want: `atlas schema plan accepts --repo, but schema repositories require a hosted registry; Ptah plans are local files`,
-		},
-		{
-			name: "format",
-			args: []string{"--format", "{{ json . }}"},
-			want: `atlas schema plan accepts --format, but Ptah does not implement --format for schema plan yet`,
-		},
-		{
-			name: "directive",
-			args: []string{"--directive", "atlas:txmode none"},
-			want: `atlas schema plan accepts --directive, but Ptah does not implement Atlas plan directives yet; the plan file records only the migration SQL`,
 		},
 		{
 			name: "lock_timeout",
