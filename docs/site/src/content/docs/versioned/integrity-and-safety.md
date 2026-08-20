@@ -916,7 +916,9 @@ The read-only guarantee has two strengths depending on the target. PostgreSQL,
 CockroachDB, YugabyteDB, Spanner, MySQL and MariaDB run the assertion in a
 database-enforced read-only session. SQLite, SQL Server and ClickHouse get a
 plain session, so there the guarantee rests on the static shape check alone. Checks are rejected under `--tx-mode all` on a real apply (a
-pooled read cannot see the batch's uncommitted state), and
+pooled read cannot see the batch's uncommitted state) -- see
+[what `--tx-mode all` cannot carry](../apply/#what---tx-mode-all-cannot-carry)
+for the whole interaction -- and
 `ptah migrations up --skip-checks` is an emergency bypass. On the
 Atlas-compatible surface that bypass is spelled `PTAH_SKIP_CHECKS=1`, because
 Atlas registers no `--skip-checks` on `migrate apply` and `ptah-compat` adds no
