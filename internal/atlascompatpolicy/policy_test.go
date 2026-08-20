@@ -92,6 +92,20 @@ func TestResolveStrictCERejectsPtahLogEnvironment(t *testing.T) {
 		`PTAH_ATLAS_STRICT_COMPAT does not allow PTAH_LOG_FORMAT`)
 }
 
+func TestResolveStrictCERejectsTheRegistryNamespace(t *testing.T) {
+	c := qt.New(t)
+	t.Setenv(atlascompatpolicy.StrictCompatEnvVar, "1")
+	// The community binary has no registry namespace setting, so a strict run
+	// that consumed this one would fetch from a backend the oracle never
+	// reaches. Presence alone is the refusal; the value is not read.
+	t.Setenv("PTAH_ATLAS_REGISTRY", "")
+
+	_, err := atlascompatpolicy.Resolve()
+
+	c.Assert(err, qt.ErrorMatches,
+		`PTAH_ATLAS_STRICT_COMPAT does not allow PTAH_ATLAS_REGISTRY`)
+}
+
 func TestResolveFullCompatibilityDoesNotInspectExtensionEnvironment(t *testing.T) {
 	c := qt.New(t)
 	t.Setenv(atlascompatpolicy.StrictCompatEnvVar, "false")

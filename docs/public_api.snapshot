@@ -584,6 +584,15 @@ package projectconfig // import "go.5x5.cz/ptah/config/projectconfig"
 type MigrationDirectorySource struct {
     FileSystem fs.FS
     Path       string
+    // ReadOnly marks a source with no local directory behind it, so a writing
+    // verb is refused rather than given a path to create.
+    //
+    // A rendered template directory has a real path under the project root and
+    // a writer synchronizes into it. A directory fetched from a registry does
+    // not: giving the writer an OCI reference to join to the root would create
+    // a literal `oci:/registry/repo:tag` directory and report success while the
+    // registry stayed unchanged (stokaro/ptah#1210).
+    ReadOnly bool
 }
     MigrationDirectorySource is the rendered filesystem and source path behind
     one data.template_dir URL. FileSystem is the immutable view commands read;

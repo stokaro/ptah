@@ -462,10 +462,19 @@ a global `lint` or `diff` block, a top-level attribute, or a `locals` value
 references them. Dependencies between locals and data sources are evaluated
 first. A declared but unreferenced recognized source is not opened or executed.
 This lazy behavior also applies to `hcl_schema`, `external_schema`,
-`remote_dir`, `remote_schema`, `aws_rds_token`, and `gcp_cloudsql_token`; the
-last four still fail explicitly when a selected expression references them. An
-unknown source type, including `composite_schema`, fails during structural
-validation even when unreferenced.
+`remote_dir`, `remote_schema`, `aws_rds_token`, and `gcp_cloudsql_token`;
+`remote_schema`, `aws_rds_token`, and `gcp_cloudsql_token` still fail
+explicitly when a selected expression references them. An unknown source type,
+including `composite_schema`, fails during structural validation even when
+unreferenced.
+
+A referenced `remote_dir` pulls a migration directory from an OCI registry.
+`name` is required; `tag` selects a moving tag and defaults to `latest`, and
+`version` selects an immutable one. `PTAH_ATLAS_REGISTRY` names the namespace
+the repository resolves against, and `PTAH_ATLAS_REGISTRY_PLAIN_HTTP=1` reaches
+a registry over plain HTTP. Both are Ptah extensions and
+`PTAH_ATLAS_STRICT_COMPAT` refuses them. The pulled directory is read-only:
+`migrate new`, `migrate diff` and `migrate hash` refuse against it.
 
 `data "sql"` runs one query against `url` and accepts optional positional
 `args` containing strings, booleans, numbers, or nulls. The query must return
@@ -639,9 +648,9 @@ matching `--var name=value`. Variable blocks accept the `type` constraints
   print that URL or path.
 - `validation` blocks are not accepted until Ptah implements their semantics.
 
-Referenced `remote_dir`, `remote_schema`, `aws_rds_token`, and
-`gcp_cloudsql_token` sources, registry-backed sources, and Cloud-specific
-sources outside the recognized lazy set still fail explicitly.
+Referenced `remote_schema`, `aws_rds_token`, and `gcp_cloudsql_token`
+sources, and Cloud-specific sources outside the recognized lazy set, still fail
+explicitly.
 
 ## Env selection
 

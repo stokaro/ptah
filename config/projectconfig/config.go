@@ -125,6 +125,15 @@ func (c Config) SchemaSourceVars(rawURL string) (map[string]string, bool) {
 type MigrationDirectorySource struct {
 	FileSystem fs.FS
 	Path       string
+	// ReadOnly marks a source with no local directory behind it, so a writing
+	// verb is refused rather than given a path to create.
+	//
+	// A rendered template directory has a real path under the project root and
+	// a writer synchronizes into it. A directory fetched from a registry does
+	// not: giving the writer an OCI reference to join to the root would create
+	// a literal `oci:/registry/repo:tag` directory and report success while the
+	// registry stayed unchanged (stokaro/ptah#1210).
+	ReadOnly bool
 }
 
 // MigrationDirectoryFS returns the immutable filesystem produced for a
