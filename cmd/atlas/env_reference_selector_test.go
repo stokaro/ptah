@@ -141,13 +141,19 @@ func TestApplyExcludeLiteralStillFiltersAndTheEnvListIsApplied(t *testing.T) {
 
 // TestTestVerbsRefuseAnEnvReferenceSource pins the half that was already
 // right, so it cannot regress into passing the value through as a literal.
-func TestTestVerbsRefuseAnEnvReferenceSource(t *testing.T) {
+// TestSchemaTestResolvesAnEnvReferenceSource replaces the refusal this test
+// used to assert. `schema test` mapped its source in the flag layer, which is
+// built at registration and holds no environment, so the scheme could only be
+// refused there; the mapper now receives the environment the run selected
+// (stokaro/ptah#1761). Both attributes a desired state can come from are
+// covered: `src` names a schema file, `url` a database.
+func TestSchemaTestResolvesAnEnvReferenceSource(t *testing.T) {
 	tests := []struct {
 		name string
 		args []string
 	}{
-		{name: "schema test --url", args: []string{"schema", "test", "--url", "env://url"}},
 		{name: "schema test --url src", args: []string{"schema", "test", "--url", "env://src"}},
+		{name: "schema test --url url", args: []string{"schema", "test", "--url", "env://url"}},
 	}
 
 	for _, test := range tests {
@@ -156,13 +162,22 @@ func TestTestVerbsRefuseAnEnvReferenceSource(t *testing.T) {
 			configPath, _ := writeEnvSelectorAtlasHCL(t)
 
 			out, err := runCompatCommand(t,
-				append(test.args, "--config", "file://"+configPath, "--env", "local")...)
+				append(test.args, "--config", "file://"+configPath, "--env", "local", t.TempDir())...)
 
-			c.Assert(err, qt.IsNotNil)
-			c.Assert(out+err.Error(), qt.Contains, "does not support")
-			c.Assert(out+err.Error(), qt.Contains, "desired-state sources")
+			assertNoEnvSourceRefusal(c, out, err)
 		})
 	}
+}
+
+// assertNoEnvSourceRefusal holds the one thing these cases are about: whatever
+// else an empty case directory does, the run must not stop at the scheme.
+func assertNoEnvSourceRefusal(c *qt.C, out string, err error) {
+	combined := out
+	if err != nil {
+		combined += err.Error()
+	}
+	c.Assert(combined, qt.Not(qt.Contains), "does not support")
+	c.Assert(combined, qt.Not(qt.Contains), "desired-state sources")
 }
 
 // TestEnvSelectorConfigSurvivesAWindowsPath is the guard the Windows CI job had
