@@ -25,7 +25,7 @@ func TestSchemaDiffRefusesMaterializedViewRefreshStrategyBeforeSyncedOutput(t *t
 	)
 
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-	c.Assert(err, qt.ErrorMatches, `postgres cannot represent materialized view "user_counts" refresh strategy "concurrently"; only "manual" is currently supported`)
+	c.Assert(err, qt.ErrorMatches, `postgres cannot represent materialized view "user_counts" refresh strategy "concurrently"; "manual" is the only strategy, .*`)
 	c.Assert(out, qt.Not(qt.Contains), "CREATE MATERIALIZED VIEW")
 }
 

@@ -319,9 +319,11 @@ dialect-specific trigger bodies.
   `with_option`, `comment`
 
 `matviews.refresh_strategy` defaults to `manual`, which means Ptah emits no
-separate refresh operation. It is the only currently supported value. After a
-target dialect is selected, any other value is refused before rendering or
-comparison, and the error names the dialect, materialized view, and value.
+separate refresh operation. It is the only value, and that is a decision rather
+than a gap: a Ptah apply never leaves a materialized view stale, so there is
+nothing for another strategy to do. After a target dialect is selected, any
+other value is refused before rendering or comparison, and the error names the
+dialect, materialized view, value, and reason.
 Catalog readers report `manual` because databases do not persist a Ptah-managed
 refresh policy. Target validation runs before comparison, so an unsupported
 authored value cannot be mistaken for a synchronized schema.
