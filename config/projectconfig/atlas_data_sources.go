@@ -850,7 +850,11 @@ func (p atlasParser) remoteDirectoryDataSource(block *hclsyntax.Block) (cty.Valu
 	}).String()
 	p.migrationDirectories[memURL] = MigrationDirectorySource{
 		FileSystem: artifact.FileSystem,
-		Path:       reference.OCI,
+		// The reference is carried for display, and ReadOnly is what keeps it
+		// out of a writer: it is not a local path, and joining it to the
+		// project root would create a directory named after it.
+		Path:     reference.OCI,
+		ReadOnly: true,
 	}
 	return cty.ObjectVal(map[string]cty.Value{
 		"url": cty.StringVal(memURL),
