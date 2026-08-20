@@ -20,8 +20,8 @@ import (
 	"github.com/zclconf/go-cty/cty"
 	"github.com/zclconf/go-cty/cty/convert"
 	"github.com/zclconf/go-cty/cty/function"
+	"github.com/zclconf/go-cty/cty/function/stdlib"
 
-	"go.5x5.cz/ptah/internal/atlashcl"
 	"go.5x5.cz/ptah/internal/atlasprojectpath"
 )
 
@@ -3314,21 +3314,27 @@ func emptyValue(name string, attr *hclsyntax.Attribute) error {
 
 // atlasProjectFunctions is the function set an atlas.hcl is evaluated with.
 //
-// It is the schema evaluator's set plus the three names bound to this parse:
-// `file` and `fileset` read through the project's own filesystem, and `getenv`
-// reads the process environment. Before this the project side registered eight
-// names against the schema side's 67, so a call that worked in a schema file
-// failed in the project file that selected it (stokaro/ptah#1696).
+// It is deliberately NOT the schema evaluator's set, and the reason is
+// disclosure rather than scope. A `sensitive = true` variable is redacted by
+// replacing its literal bytes in a diagnostic, so a function that PRESERVES
+// those bytes stays safe -- `file(format("%s-x", var.token))` reports
+// `(sensitive value)-x` -- while one that transforms them does not:
+// `file(upper(var.token))` reported the secret uppercased, which a CI log then
+// keeps.
 //
-// The overlay direction matters: the project's `file` and `fileset` are bound
-// to its base directory, so they must win over any same-named entry the shared
-// set carries.
+// Every function here is byte-preserving for its argument. Widening the set to
+// match the schema evaluator needs the redaction to follow a value rather than
+// a string, which cty marks are for; until then the wider set would trade a
+// missing function name for a leaked credential (stokaro/ptah#1696).
 func atlasProjectFunctions(fsys fs.FS) map[string]function.Function {
-	fns := atlashcl.SharedFunctions(func(line string) {
-		fmt.Fprintln(os.Stdout, line)
-	})
-	fns["file"] = atlasFileFunc(fsys)
-	fns["fileset"] = atlasFilesetFunc(fsys)
-	fns["getenv"] = atlasGetenvFunc()
-	return fns
+	return map[string]function.Function{
+		"file":       atlasFileFunc(fsys),
+		"fileset":    atlasFilesetFunc(fsys),
+		"format":     stdlib.FormatFunc,
+		"getenv":     atlasGetenvFunc(),
+		"jsondecode": stdlib.JSONDecodeFunc,
+		"jsonencode": stdlib.JSONEncodeFunc,
+		"tolist":     stdlib.MakeToFunc(cty.List(cty.DynamicPseudoType)),
+		"toset":      stdlib.MakeToFunc(cty.Set(cty.DynamicPseudoType)),
+	}
 }

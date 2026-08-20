@@ -386,21 +386,6 @@ func sortedAttrNames(attrs hclsyntax.Attributes) []string {
 // schema needs, and `uuid` and `print` are a nondeterministic generator and a
 // debug tap, neither of which belongs in a schema that has to diff stably. A
 // file using one of those four is refused here and planned there.
-// SharedFunctions is the function set both HCL evaluators register.
-//
-// Ptah evaluates HCL twice -- once for a schema file and once for the atlas.hcl
-// that selects it -- and the two used to disagree about what the language is:
-// this side registered 67 names and the project side eight, so `join(",",
-// var.schemas)` evaluated inside a schema file and failed inside the project
-// file one directory away (stokaro/ptah#1696).
-//
-// Everything here is pure: nothing reads a filesystem or an environment. The
-// project evaluator overlays its own `file`, `fileset` and `getenv` on top,
-// because those are bound to a base directory it owns.
-func SharedFunctions(printLine func(string)) map[string]function.Function {
-	return schemaFunctions(printLine)
-}
-
 func schemaFunctions(printLine func(string)) map[string]function.Function {
 	fns := map[string]function.Function{
 		"abs":       stdlib.AbsoluteFunc,
