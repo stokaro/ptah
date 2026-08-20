@@ -1604,14 +1604,12 @@ func YugabyteDB24() Capabilities {
 // against the Cloud Spanner emulator behind PGAdapter, which the capability
 // probe runs on every pull request (stokaro/ptah#942 closed on that).
 //
-// What is still not measured is the managed service and the end-to-end path.
-// An emulator is evidence about the PostgreSQL interface, not about hosted
-// Spanner, and there is no integration target exercising render, plan, apply
-// and read the way every other engine has one: Ptah reads indexes through
-// pg_index/pg_class/pg_am/pg_get_indexdef and Spanner exposes them through
-// information_schema, so that suite cannot run until the read learns the
-// standard catalog (stokaro/ptah#1719). The line stays best-effort for that
-// reason and not for want of a probe.
+// There is an integration target now as well, exercising render, apply, read
+// and compare against the same emulator (stokaro/ptah#1719).
+//
+// What is still not measured is the managed service. An emulator is evidence
+// about the PostgreSQL interface, not about hosted Spanner, and that is why the
+// line stays best-effort -- not for want of coverage.
 func SpannerPostgres() Capabilities {
 	return Postgres16().
 		// Measured on the Cloud Spanner emulator behind PGAdapter:

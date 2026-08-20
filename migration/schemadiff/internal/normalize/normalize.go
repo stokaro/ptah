@@ -53,7 +53,22 @@ func Type(typeName string) string {
 	typeName = strings.ToLower(typeName)
 
 	switch {
-	case strings.Contains(typeName, "varchar"):
+	// `character varying` is the SQL-standard spelling of the same type, and
+	// it reaches here from a catalog that reports data_type without a udt_name
+	// to prefer. Measured on Cloud Spanner through PGAdapter 0.55.2: a
+	// varchar(200) column comes back as data_type "character varying" with
+	// udt_name empty, where PostgreSQL answers "varchar" and never needs this
+	// arm. Without it the comparison plans a type change on every run
+	// (stokaro/ptah#1719).
+	//
+	// The array form is excluded from BOTH varchar arms on purpose. An array is
+	// not its element type, so folding `varchar(200)[]` to `varchar` would make
+	// a live scalar `character varying(200)` compare equal to a desired
+	// `varchar(200)[]` -- a column that changed from a scalar to an array,
+	// reported as no change at all.
+	case strings.Contains(typeName, "character varying") && !isArrayType(typeName):
+		return "varchar"
+	case strings.Contains(typeName, "varchar") && !isArrayType(typeName):
 		return "varchar"
 	case strings.Contains(typeName, "text"):
 		return "text"
@@ -333,4 +348,12 @@ func skipQuotedSQL(value string, start int, quote byte) (int, bool) {
 		return i, true
 	}
 	return 0, false
+}
+
+// isArrayType reports whether a normalized type name names an array.
+//
+// The suffix is the whole test because that is how every catalog this compares
+// spells one: `varchar(100)[]`, `int[]`, `text[]`.
+func isArrayType(typeName string) bool {
+	return strings.HasSuffix(strings.TrimSpace(typeName), "[]")
 }
