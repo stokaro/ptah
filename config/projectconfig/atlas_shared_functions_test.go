@@ -64,13 +64,13 @@ func TestParseAtlas_ForEachStillExpandsForACollectionCaller(t *testing.T) {
 	c.Assert(configs, qt.HasLen, 2)
 }
 
-// TestParseAtlas_ProjectFunctionsStayByterPreservingForASecret is why the
-// project evaluator does not simply register the schema evaluator's 67
-// functions.
+// TestParseAtlas_ProjectFunctionsStayBytePreservingForASecret pins that a
+// diagnostic reached through a function call never carries the secret.
 //
-// A `sensitive = true` variable is redacted by replacing its literal bytes in a
-// diagnostic. A function that preserves those bytes stays safe; one that
-// transforms them does not, and the transformed secret reaches a CI log.
+// Byte replacement alone could not promise this: a function that transforms its
+// argument produces a spelling the scrubber cannot find. The diagnostic is now
+// withheld whenever the expression READS a sensitive variable, which does not
+// depend on what the function did to the value.
 func TestParseAtlas_ProjectFunctionsStayBytePreservingForASecret(t *testing.T) {
 	c := qt.New(t)
 	raw := []byte(`
@@ -88,5 +88,6 @@ env "local" {
 
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Not(qt.Contains), "supersecret")
-	c.Assert(err.Error(), qt.Contains, "(sensitive value)")
+	c.Assert(err.Error(), qt.Not(qt.Contains), "SUPERSECRET")
+	c.Assert(err.Error(), qt.Contains, `reads the sensitive variable "token"`)
 }

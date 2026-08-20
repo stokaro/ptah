@@ -280,7 +280,7 @@ seven of them as open capabilities regardless.
 | Runtime variable project data source (data "runtimevar") | ✅ | ✅ | ✅ | Reads Go CDK runtime-variable URLs with byte-preserving string output and a configurable positive timeout. Constant, file, HTTP(S), AWS, and Google Cloud providers are registered. |
 | SQL project data source (data "sql") | ✅ | ✅ | ✅ | Runs one query and exports count, first value, and all values. Requires one column and one HCL row type. Heterogeneous rows fail explicitly; Atlas CE panics. Unreferenced blocks stay lazy. |
 | Template directory project data source (data "template_dir") | ✅ | ✅ | ✅ | Shared Go templates emit root lowercase .sql migrations only. New and diff synchronize new files and checksum to the confined source path; hash-only stays virtual. |
-| Variables, locals, and HCL functions | 🟡 | ✅ | ✅ | Variables, locals and data sources are evaluated in both files. The project evaluator keeps a narrower function set than a schema file (stokaro/ptah#1696). |
+| Variables, locals, and HCL functions | 🟡 | ✅ | ✅ | Variables, locals and data sources are evaluated in both files. The project evaluator keeps a narrower function set than a schema file (stokaro/ptah#1810). |
 
 ## Databases and schema objects
 

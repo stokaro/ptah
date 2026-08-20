@@ -282,6 +282,16 @@ type atlasParser struct {
 	// value, so a plain slice field would be appended to on a copy and the
 	// values would never reach the scrubber.
 	sensitiveValues *[]string
+	// sensitiveNames holds the NAMES of those variables.
+	//
+	// Scrubbing by value only removes the value as it was authored. A function
+	// that transforms its argument defeats that: `file(jsonencode(var.token))`
+	// on a token containing a backslash fails with the escaped spelling, which
+	// does not contain the original as a substring and therefore survives the
+	// scrubber. Knowing the names lets a diagnostic be withheld whenever the
+	// expression touched a sensitive variable at all, which is decidable where
+	// "did any function derive a value from it" is not.
+	sensitiveNames *map[string]struct{}
 	// ignored records the constructs tolerated under Atlas CE's
 	// unknown-name policy, so the caller can report them. Pointer for the same
 	// reason as sensitiveValues: the parser is passed by value.
@@ -350,11 +360,13 @@ func newAtlasParser(
 	// addressable, and new([]T) would point at a nil slice instead of an
 	// empty one, which is a different value to every reader of these fields.
 	sensitiveValues := make([]string, 0)
+	sensitiveNames := make(map[string]struct{})
 	ignored := make([]IgnoredAtlasConstruct, 0)
 	return atlasParser{
 		runContext:      runContext,
 		fsys:            fsys,
 		sensitiveValues: &sensitiveValues,
+		sensitiveNames:  &sensitiveNames,
 		ignored:         &ignored,
 		ignoredSeen:     make(map[ignoredAtlasConstructKey]struct{}),
 		ctx: &hcl.EvalContext{
@@ -1676,8 +1688,13 @@ func (p atlasParser) configureVariables(blocks []*hclsyntax.Block) error {
 		if err != nil {
 			return err
 		}
-		if variable.sensitive && p.sensitiveValues != nil {
-			appendSensitiveStrings(p.sensitiveValues, value)
+		if variable.sensitive {
+			if p.sensitiveValues != nil {
+				appendSensitiveStrings(p.sensitiveValues, value)
+			}
+			if p.sensitiveNames != nil {
+				(*p.sensitiveNames)[name] = struct{}{}
+			}
 		}
 		vars[name] = value
 	}
@@ -3259,9 +3276,40 @@ func unsupported(name string, rng hcl.Range) error {
 // through because it names the offending sub-expression, which our own message
 // cannot.
 func (p atlasParser) evaluationFailed(name string, attr *hclsyntax.Attribute, diags hcl.Diagnostics) error {
+	if secret, found := p.sensitiveVariableIn(attr.Expr); found {
+		return fmt.Errorf(
+			"cannot evaluate atlas.hcl %q at %s:%d: the expression reads the sensitive variable %q and failed; "+
+				"the underlying diagnostic is withheld because it quotes the evaluated argument, which a "+
+				"function may have derived from that variable in a form scrubbing cannot recognize",
+			name, attr.NameRange.Filename, attr.NameRange.Start.Line, secret)
+	}
 	return fmt.Errorf("cannot evaluate atlas.hcl %q at %s:%d: %s",
 		name, attr.NameRange.Filename, attr.NameRange.Start.Line,
 		p.scrubSensitive(diags.Error()))
+}
+
+// sensitiveVariableIn reports the first `sensitive = true` variable expr reads.
+//
+// The traversals are what the expression NAMES, so this stays correct however
+// the value is transformed on the way to the failing call -- which is the half
+// [atlasParser.scrubSensitive] cannot cover.
+func (p atlasParser) sensitiveVariableIn(expr hcl.Expression) (string, bool) {
+	if p.sensitiveNames == nil || expr == nil || len(*p.sensitiveNames) == 0 {
+		return "", false
+	}
+	for _, traversal := range expr.Variables() {
+		if len(traversal) < 2 || traversal.RootName() != "var" {
+			continue
+		}
+		attr, ok := traversal[1].(hcl.TraverseAttr)
+		if !ok {
+			continue
+		}
+		if _, sensitive := (*p.sensitiveNames)[attr.Name]; sensitive {
+			return attr.Name, true
+		}
+	}
+	return "", false
 }
 
 // scrubSensitive removes the values of `sensitive = true` variables from text

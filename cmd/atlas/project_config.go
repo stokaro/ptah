@@ -405,8 +405,9 @@ func openRequiredMergedProjectConfigWithPolicy(
 	ctx context.Context,
 	flags atlasProjectFlagValues,
 	policy atlascompatpolicy.Policy,
+	verbPath string,
 ) (project atlasProject, mergedConfig projectconfig.Config, err error) {
-	project, _, err = openAtlasProjectWithPolicy(ctx, flags, requiredAtlasProject, policy, "")
+	project, _, err = openAtlasProjectWithPolicy(ctx, flags, requiredAtlasProject, policy, verbPath)
 	if err != nil {
 		return atlasProject{}, projectconfig.Config{}, err
 	}
