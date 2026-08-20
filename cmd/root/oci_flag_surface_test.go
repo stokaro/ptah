@@ -93,6 +93,12 @@ type ociSourceVerb struct {
 func ociSchemaSourceVerbs() []ociSourceVerb {
 	return []ociSourceVerb{
 		{
+			verb: "schema validate",
+			args: func(reference string) []string {
+				return []string{"schema", "validate", "--schema-file", reference, "--dialect", "sqlite", "--plain-http"}
+			},
+		},
+		{
 			verb: "schema render",
 			args: func(reference string) []string {
 				return []string{"schema", "render", "--schema-file", reference, "--dialect", "sqlite", "--plain-http"}

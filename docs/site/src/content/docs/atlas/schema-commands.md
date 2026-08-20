@@ -22,6 +22,7 @@ plus the flag translation rules are on the
 | `ptah-compat schema fmt` | Formats local `.hcl` files using HCL canonical layout. |
 | `ptah-compat schema clean` | Plans and applies destructive cleanup of user-owned schema objects. |
 | `ptah-compat schema test [paths]` | Forwards to `ptah schema test` with Ptah-native YAML test cases. |
+| `ptah-compat schema validate` | Forwards to `ptah schema validate`: loads the desired state, reports every structural problem found in it without a database, and exits 1 when it finds any. The pinned Atlas community binary v1.3.0 has no such verb, so it is unavailable under `PTAH_ATLAS_STRICT_COMPAT`. |
 | `ptah-compat schema push` | Atlas CE boundary stub; the native `ptah schema push` to any OCI registry is the open replacement. |
 
 Per-verb status detail — Atlas differences, waivers, and the inputs that fail
