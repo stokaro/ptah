@@ -33,10 +33,17 @@
 // caller's to write and to escape. Case sensitivity is the server's -- see
 // [Like].
 //
+// Upsert is available through InsertBuilder.OnConflictDoNothing and
+// OnConflictDoUpdate. The engines disagree about MEANING rather than spelling
+// here, so the builder refuses the combinations they cannot express: PostgreSQL
+// and SQLite require the conflict target for DO UPDATE, MySQL and MariaDB
+// accept no target at all because ON DUPLICATE KEY UPDATE fires for every
+// unique key, and SQL Server (MERGE) and ClickHouse (no upsert statement) are
+// refused by name.
+//
 // Non-aggregate function calls, arithmetic, subqueries, window functions,
-// ON CONFLICT / upsert, INSERT … SELECT, and common table expressions are
-// intentionally not implemented yet and are tracked as follow-up phases of
-// stokaro/ptah#941.
+// INSERT … SELECT, and common table expressions are intentionally not
+// implemented yet and are tracked as follow-up phases of stokaro/ptah#941.
 //
 // # Safety model
 //
