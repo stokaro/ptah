@@ -384,6 +384,18 @@ const (
 	// Ptah, and the refusal says so (stokaro/ptah#1713).
 	TransactionalDDL Capability = "transactional_ddl"
 
+	// DDLInsideTransaction marks that the server accepts a schema statement
+	// inside an explicit transaction, whether or not it can roll one back.
+	//
+	// It is a different question from [TransactionalDDL], and the two split on
+	// MySQL: MySQL commits DDL implicitly, so a failed migration cannot be
+	// rolled back as a unit -- but it takes the statement inside a transaction
+	// perfectly well. Spanner's PostgreSQL interface does not, and answers
+	// `DDL statements are only allowed outside explicit transactions`
+	// (SQLSTATE 25000), which made every declarative apply fail on its first
+	// statement (stokaro/ptah#1793).
+	DDLInsideTransaction Capability = "ddl_inside_transaction"
+
 	// CheckGrantStatement marks a server that answers a direct question about
 	// whether the CONNECTED account holds a privilege, rather than leaving the
 	// caller to infer it from a failure.
@@ -648,6 +660,9 @@ var registry = map[Capability]spec{
 	MigrationTimeouts: {
 		doc: "a migration can be bounded by a lock timeout and a statement timeout the migrator sets and restores",
 	},
+	DDLInsideTransaction: {
+		doc: "the server accepts a schema statement inside an explicit transaction, whether or not it rolls one back",
+	},
 	TransactionalDDL: {
 		doc: "schema changes run inside a transaction that rolls back as a unit, which is what --tx-mode all needs",
 	},
@@ -862,6 +877,7 @@ func MySQL84() Capabilities {
 		RowLevelTTL:                        false,
 		MigrationTimeouts:                  true,
 		TransactionalDDL:                   false,
+		DDLInsideTransaction:               true,
 		CheckGrantStatement:                false,
 		CatalogViewDependencies:            true,
 		ShowRoutinePrivilege:               true,
@@ -986,6 +1002,7 @@ func MariaDB1011() Capabilities {
 		RowLevelTTL:                     false,
 		MigrationTimeouts:               true,
 		TransactionalDDL:                false,
+		DDLInsideTransaction:            true,
 		CheckGrantStatement:             false,
 		CatalogViewDependencies:         false,
 		ShowRoutinePrivilege:            false,
@@ -1055,6 +1072,7 @@ func Postgres16() Capabilities {
 		RowLevelTTL:                        false,
 		MigrationTimeouts:                  true,
 		TransactionalDDL:                   true,
+		DDLInsideTransaction:               true,
 		CheckGrantStatement:                false,
 		CatalogViewDependencies:            true,
 		ShowRoutinePrivilege:               false,
@@ -1206,6 +1224,7 @@ func ClickHouse24() Capabilities {
 		RowLevelTTL:                     false,
 		MigrationTimeouts:               false,
 		TransactionalDDL:                false,
+		DDLInsideTransaction:            false,
 		CheckGrantStatement:             false,
 		CatalogViewDependencies:         false,
 		ShowRoutinePrivilege:            false,
@@ -1276,6 +1295,7 @@ func SQLite3() Capabilities {
 		RowLevelTTL:                        false,
 		MigrationTimeouts:                  false,
 		TransactionalDDL:                   true,
+		DDLInsideTransaction:               true,
 		CheckGrantStatement:                false,
 		CatalogViewDependencies:            false,
 		ShowRoutinePrivilege:               false,
@@ -1410,6 +1430,7 @@ func SQLServer2022() Capabilities {
 		RowLevelTTL:                     false,
 		MigrationTimeouts:               false,
 		TransactionalDDL:                false,
+		DDLInsideTransaction:            true,
 		CheckGrantStatement:             false,
 		CatalogViewDependencies:         true,
 		ShowRoutinePrivilege:            false,
@@ -1621,6 +1642,12 @@ func SpannerPostgres() Capabilities {
 		With(DropIndexConcurrently, false).
 		With(IndexIncludeSPGiST, false).
 		With(MaterializedViews, false).
+		// Measured on the Cloud Spanner emulator behind PGAdapter 0.55.2:
+		// every declarative apply failed on its first statement with
+		// `DDL statements are only allowed outside explicit transactions`
+		// (SQLSTATE 25000). The same DDL applies when it is not wrapped, so
+		// what the server refuses is the wrapper (stokaro/ptah#1793).
+		With(DDLInsideTransaction, false).
 		// Neither runtime policy is measured on this endpoint, and the
 		// migrator excluded it from both before there were keys to say so.
 		// The key describes what Ptah supports on a target rather than what

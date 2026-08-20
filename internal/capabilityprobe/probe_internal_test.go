@@ -112,6 +112,7 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 		// separate an unknown privilege from an absent grantee
 		// (stokaro/ptah#916).
 		want: []capability.Capability{
+			capability.DDLInsideTransaction,
 			capability.MigrationTimeouts,
 			capability.ShowRoutinePrivilege,
 			capability.TransactionalDDL,
@@ -126,6 +127,7 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 			capability.CatalogDependencies,
 			capability.CatalogRowStatistics,
 			capability.CompositeTypes,
+			capability.DDLInsideTransaction,
 			capability.DomainTypes,
 			capability.MigrationTimeouts,
 			capability.PostgresCatalogFunctions,
@@ -141,6 +143,7 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 			capability.CatalogDependencies,
 			capability.CatalogRowStatistics,
 			capability.CompositeTypes,
+			capability.DDLInsideTransaction,
 			capability.DomainTypes,
 			capability.MigrationTimeouts,
 			capability.PostgresCatalogFunctions,
@@ -154,6 +157,7 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 		dialect: platform.ClickHouse,
 		want: []capability.Capability{
 			capability.CompositeTypes,
+			capability.DDLInsideTransaction,
 			capability.DomainTypes,
 			capability.MigrationTimeouts,
 			capability.Procedures,
@@ -274,28 +278,28 @@ func TestDecidable_IsDerivedFromThePlanAndTheLine(t *testing.T) {
 		caps capability.Capabilities
 		want int
 	}{{
-		name: "postgres owes three fewer: the probe cannot ask whether a privilege exists, and neither runtime policy is a statement it can send",
+		name: "postgres owes four fewer: the probe cannot ask whether a privilege exists, and neither runtime policy nor the transaction wrapper is a statement it can send",
 		cell: measuredCell,
 		caps: capability.Postgres17(),
-		want: registered - 3,
+		want: registered - 4,
 	}, {
-		name: "mysql owes eleven fewer: role_management, row_level_ttl, the three catalog keys and the three user-type kinds all name surfaces no MySQL path reads",
+		name: "mysql owes twelve fewer: role_management, row_level_ttl, the three catalog keys, the three user-type kinds and the three runtime properties name surfaces no MySQL path reads or no statement decides",
 		cell: Cell{
 			Dialect: platform.MySQL, Line: "9.7",
 			Preset: capability.MySQL84, PresetName: "MySQL84",
 			Refinement: RefinedByVersion,
 		},
 		caps: capability.MySQL84(),
-		want: registered - 11,
+		want: registered - 12,
 	}, {
-		name: "mariadb owes eleven fewer: the three user-type kinds have no MariaDB spelling, the two runtime policies are not statements, and sequences is asked now that Ptah renders, reads and plans one",
+		name: "mariadb owes twelve fewer: the three user-type kinds have no MariaDB spelling, the three runtime properties are not statements, and sequences is asked now that Ptah renders, reads and plans one",
 		cell: Cell{
 			Dialect: platform.MariaDB, Line: "10.11",
 			Preset: capability.MariaDB1011, PresetName: "MariaDB1011",
 			Refinement: RefinedByVersion,
 		},
 		caps: capability.MariaDB1011(),
-		want: registered - 11,
+		want: registered - 12,
 	}, {
 		name: "cockroachdb 26.2 owes every row its preset enables a prerequisite for, less the one the probe cannot ask",
 		cell: Cell{
@@ -304,7 +308,7 @@ func TestDecidable_IsDerivedFromThePlanAndTheLine(t *testing.T) {
 			Refinement: RefinedByVersion,
 		},
 		caps: capability.CockroachDB26(),
-		want: registered - 3,
+		want: registered - 4,
 	}, {
 		name: "cockroachdb 25.4 excludes the guarded drop row whose generic prerequisite is absent",
 		cell: Cell{
@@ -313,7 +317,7 @@ func TestDecidable_IsDerivedFromThePlanAndTheLine(t *testing.T) {
 			Refinement: RefinedByVersion,
 		},
 		caps: capability.CockroachDB25(),
-		want: registered - 4,
+		want: registered - 5,
 	}, {
 		name: "a banner-refined line owes nothing because no observation can be credited to it",
 		cell: Cell{
