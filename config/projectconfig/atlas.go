@@ -20,8 +20,8 @@ import (
 	"github.com/zclconf/go-cty/cty"
 	"github.com/zclconf/go-cty/cty/convert"
 	"github.com/zclconf/go-cty/cty/function"
-	"github.com/zclconf/go-cty/cty/function/stdlib"
 
+	"go.5x5.cz/ptah/internal/atlashcl"
 	"go.5x5.cz/ptah/internal/atlasprojectpath"
 )
 
@@ -3374,15 +3374,31 @@ func emptyValue(name string, attr *hclsyntax.Attribute) error {
 // match the schema evaluator needs the redaction to follow a value rather than
 // a string, which cty marks are for; until then the wider set would trade a
 // missing function name for a leaked credential (stokaro/ptah#1696).
+// atlasProjectFunctions is the schema evaluator's function set with the three
+// names this file binds itself overlaid on top.
+//
+// The set used to be eight names written out here, which meant `atlas.hcl`
+// refused expressions a schema file evaluates -- `join(",", var.schemas)` among
+// them, in the block most likely to assemble a list of schemas
+// (stokaro/ptah#1810). Sharing it rather than lengthening it is what keeps the
+// two from drifting again.
+//
+// The overlay direction is load-bearing: `file` and `fileset` here read the
+// PROJECT filesystem, and a shared entry of either name would read some other
+// directory while looking entirely correct.
 func atlasProjectFunctions(fsys fs.FS) map[string]function.Function {
+	return atlashcl.WithProjectBoundFunctions(
+		atlashcl.ProjectFunctions(),
+		atlasProjectBoundFunctions(fsys),
+	)
+}
+
+// atlasProjectBoundFunctions are the three whose meaning depends on where the
+// project file lives; see [atlashcl.ProjectBoundFunctionNames].
+func atlasProjectBoundFunctions(fsys fs.FS) map[string]function.Function {
 	return map[string]function.Function{
-		"file":       atlasFileFunc(fsys),
-		"fileset":    atlasFilesetFunc(fsys),
-		"format":     stdlib.FormatFunc,
-		"getenv":     atlasGetenvFunc(),
-		"jsondecode": stdlib.JSONDecodeFunc,
-		"jsonencode": stdlib.JSONEncodeFunc,
-		"tolist":     stdlib.MakeToFunc(cty.List(cty.DynamicPseudoType)),
-		"toset":      stdlib.MakeToFunc(cty.Set(cty.DynamicPseudoType)),
+		"file":    atlasFileFunc(fsys),
+		"fileset": atlasFilesetFunc(fsys),
+		"getenv":  atlasGetenvFunc(),
 	}
 }

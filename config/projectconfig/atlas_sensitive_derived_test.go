@@ -89,3 +89,79 @@ env "local" {
 	c.Assert(err.Error(), qt.Contains, "no-such-file")
 	c.Assert(err.Error(), qt.Not(qt.Contains), "withheld")
 }
+
+// TestParseAtlasWithholdsThroughNewlyRegisteredFunctions is the guard
+// stokaro/ptah#1810 asks for by name.
+//
+// That change replaced eight hand-written functions with the schema
+// evaluator's whole set, so a secret can now reach a failing call through
+// dozens of transformations that did not exist in a project file before. The
+// withholding keys on what the EXPRESSION NAMES rather than on what a function
+// did to the value, which is what makes it hold for functions nobody had in
+// mind when it was written -- and this is the test that says so rather than
+// leaving it to be true by luck.
+//
+// Every row derives the secret through a function the project evaluator gained
+// in that change.
+func TestParseAtlasWithholdsThroughNewlyRegisteredFunctions(t *testing.T) {
+	rows := []derivedSecretRow{
+		{
+			name:       "upper",
+			expression: `file(upper(var.token))`,
+			value:      "plainsecret",
+			leaked:     "PLAINSECRET",
+		},
+		{
+			name:       "join",
+			expression: `file(join("/", [var.token, "x"]))`,
+			value:      "plainsecret",
+			leaked:     "plainsecret",
+		},
+		{
+			name:       "replace",
+			expression: `file(replace(var.token, "a", "b"))`,
+			value:      "plainsecret",
+			leaked:     "plbinsecret",
+		},
+		{
+			name:       "substr",
+			expression: `file(substr(var.token, 0, 5))`,
+			value:      "plainsecret",
+			leaked:     "plain",
+		},
+		{
+			name:       "strrev",
+			expression: `file(strrev(var.token))`,
+			value:      "plainsecret",
+			leaked:     "tercesnialp",
+		},
+	}
+
+	for _, row := range rows {
+		t.Run(row.name, func(t *testing.T) {
+			c := qt.New(t)
+			raw := []byte(`variable "token" {
+  type      = string
+  sensitive = true
+}
+
+env "local" {
+  url = "sqlite://x.db?_fk=1"
+  migration {
+    dir = "file://${` + row.expression + `}"
+  }
+}
+`)
+
+			_, err := projectconfig.ParseAtlasWithOptions(raw, "atlas.hcl", projectconfig.AtlasLoadOptions{
+				EnvName: "local",
+				Vars:    []string{"token=" + row.value},
+			})
+
+			c.Assert(err, qt.IsNotNil)
+			c.Assert(err.Error(), qt.Not(qt.Contains), row.leaked)
+			c.Assert(err.Error(), qt.Not(qt.Contains), row.value)
+			c.Assert(err.Error(), qt.Contains, `reads the sensitive variable "token"`)
+		})
+	}
+}

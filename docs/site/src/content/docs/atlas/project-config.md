@@ -284,6 +284,38 @@ external schema program. `env://url` and `env://dev` resolve the corresponding
 database URL; `env://migration.dir` resolves the configured local migration
 directory. Nested `env://` references fail explicitly.
 
+## Functions
+
+`atlas.hcl` is evaluated against the same function set as an HCL schema file —
+`join`, `upper`, `replace`, `substr`, `sort`, `format`, `jsonencode`, `try`,
+`can` and the rest. An expression that works in a schema file works here:
+
+```hcl
+variable "schemas" {
+  type    = list(string)
+  default = ["public", "app"]
+}
+
+env "local" {
+  url     = getenv("DATABASE_URL")
+  exclude = [join(",", var.schemas)]
+}
+```
+
+Three functions mean something different here than in a schema file, because
+their answer depends on where the file being evaluated lives: `file` and
+`fileset` read the directory holding `atlas.hcl`, and `getenv` reads the
+process environment. Everything else is shared.
+
+`print(value)` returns its argument unchanged and writes it to stdout while the
+project is being read, which is where an operator debugging the file wants it.
+
+A failing expression that reads a `sensitive = true` variable has its
+underlying diagnostic withheld, whatever functions the value passed through on
+the way — the withholding keys on what the expression names, not on what a
+function did to the value. A non-sensitive expression keeps its full
+diagnostic.
+
 ## Reading files with file() and fileset()
 
 `file("path")` inlines a file's contents into a config value, and
