@@ -287,7 +287,7 @@ seven of them as open capabilities regardless.
 | Capability | Ptah | CE | Pro | Difference |
 | --- | :-: | :-: | :-: | --- |
 | Capability profile of a live target (`ptah db capabilities`) | ✅ | ❔ | ❌ | Reports the dialect, resolved preset and how it was reached, the support level and every capability key for a connected server, as text or stable JSON. No source here names an Atlas equivalent. |
-| ClickHouse (clickhouse, ch) | ✅ | ❌ | ✅ | Tables, indexes, plain views, roles, grants, row policies and named table CHECKs. Other kinds are named on render and on the plan path; matviews have a ClickHouse-only form. |
+| ClickHouse (clickhouse, ch) | 🟡 | ❌ | ✅ | Tables, indexes, plain views, roles, grants, row policies and named table CHECKs. Other kinds are named on render and on the plan path; the refreshable matview is stokaro/ptah#1802. |
 | CockroachDB (cockroachdb, crdb) | ✅ | ❌ | ✅ | `CONCURRENTLY`, XML, advisory locks and DEFERRABLE are engine limits; 25.4 also refuses generic DROP CONSTRAINT, and 26.2 accepts it. Row-level TTL is fully managed. |
 | Declared support level per database release line | ✅ | ❔ | ❔ | 26 declared release lines: 19 certified, 2 legacy-tested, 5 best-effort. Upstream end-of-life lowers the level, not the behavior; a line Ptah does not declare resolves to best-effort. |
 | Domains, composite types, and range types | ✅ | ❌ | ✅ | Domains and composites compare and change in place, each kind gated per target. Range types rebuild because PostgreSQL offers no ALTER TYPE ... AS RANGE. |
@@ -304,7 +304,7 @@ seven of them as open capabilities regardless.
 | Standalone sequences | 🟡 | ❌ | ✅ | PostgreSQL, CockroachDB, YugabyteDB, SQL Server and MariaDB emit CREATE SEQUENCE. MySQL, ClickHouse and SQLite have none; Spanner has them and no live coverage (stokaro/ptah#1719). |
 | TiDB and LibSQL | ❌ | ✅ | ✅ | Both names fail dialect normalization: "unsupported database dialect: tidb" / "...: libsql". No renderer, planner or driver entry. Tracked by stokaro/ptah#1615. |
 | Triggers | ✅ | ❌ | ✅ | Every engine spelling renders the same trigger DDL and four readers read them back. ClickHouse and Spanner have none and name the omission; MySQL statement triggers and SQL Server BEFORE do not exist. |
-| Views and materialized views | ✅ | ❌ | ✅ | Plain views work on every dialect. Materialized views render on PostgreSQL, CockroachDB, YugabyteDB and ClickHouse. `manual` is the only refresh strategy, and it needs no refresh. |
+| Views and materialized views | 🟡 | ❌ | ✅ | Plain views work everywhere. Materialized views render on PostgreSQL, CockroachDB, YugabyteDB and ClickHouse. Refresh is an operation, not schema; the ClickHouse schedule is stokaro/ptah#1802. |
 | YugabyteDB (yugabytedb, ysql) | ✅ | ❌ | ✅ | Roles, grants, RLS, sequences, domains, views, matviews, functions, triggers and CREATE INDEX CONCURRENTLY are enabled. Three keys stay off because the server refuses them, not Ptah. |
 
 ## Go embedding and developer tooling

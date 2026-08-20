@@ -2737,7 +2737,6 @@ func (r *Reader) readMaterializedViewsForSchema(schemaName string) ([]types.DBMa
 			return nil, fmt.Errorf("failed to scan materialized view: %w", err)
 		}
 		view.Schema = r.outputSchema(view.Schema)
-		view.RefreshStrategy = "manual"
 		views = append(views, view)
 	}
 	return views, nil

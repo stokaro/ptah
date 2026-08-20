@@ -1068,9 +1068,12 @@ const materializedViewEngineClause = "ENGINE = MergeTree ORDER BY tuple()"
 // report byte-identical as_select in system.tables, so nothing Ptah reads back
 // could tell them apart or diff them.
 //
-// The public renderer validates RefreshStrategy before this dialect visitor is
-// called. Only the manual strategy reaches this method; it asks Ptah to emit no
-// separate refresh operation and does not alter the CREATE statement.
+// No refresh clause is written either. ClickHouse spells a scheduled refresh
+// as "REFRESH EVERY|AFTER ..." inside the CREATE statement, which makes the
+// schedule engine-native DDL that a reader could observe and a diff could
+// reconcile -- so it is a ClickHouse capability worth modeling on its own
+// terms, not a value of the shared refresh_strategy attribute this renderer
+// used to be handed (stokaro/ptah#1625).
 func (r *Renderer) VisitCreateMaterializedView(node *ast.CreateMaterializedViewNode) error {
 	if !r.capabilities().Has(capability.MaterializedViews) {
 		r.notSupported("CREATE MATERIALIZED VIEW", node.Name)

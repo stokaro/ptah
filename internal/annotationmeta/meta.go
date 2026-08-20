@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"go.5x5.cz/ptah/internal/dialectscope"
+	"go.5x5.cz/ptah/internal/matviewrefresh"
 )
 
 // Scope describes where a directive is valid in Go source.
@@ -30,6 +31,18 @@ type Attribute struct {
 	// surfaces must redact it; planning and destructive writes keep using the
 	// original bytes.
 	Sensitive bool `json:"sensitive,omitempty"`
+	// Retired carries the reason an attribute Ptah still RECOGNIZES is no
+	// longer accepted. Empty for every ordinary attribute.
+	//
+	// Recognizing it is the point. Deleting the entry instead would make the
+	// parser answer "unknown annotation attribute", which reads as a typo and
+	// says nothing about why a correctly spelled attribute stopped working --
+	// and worse, it would make a bareword spelling vanish: a directive
+	// carrying `refresh_strategy` with no `=value` is promoted into the
+	// key/value map only while the attribute is UNKNOWN, so an entry that
+	// merely disappeared would be silently dropped rather than refused
+	// (stokaro/ptah#1625).
+	Retired string `json:"retired,omitempty"`
 }
 
 // Directive describes one //ptah annotation directive.
@@ -584,7 +597,9 @@ var directives = []Directive{
 		Attributes: []Attribute{
 			attr("name", "Materialized view name.", valueString, true, false),
 			attr("body", "Materialized view SELECT body.", valueSQL, true, false),
-			attr("refresh_strategy", "Ptah-managed refresh strategy; only manual is currently supported.", valueString, false, false),
+			retiredAttr("refresh_strategy",
+				"Retired: refused when the annotation is parsed, on every dialect.",
+				matviewrefresh.Reason),
 			attr("comment", "Materialized view comment.", valueString, false, false),
 			dialectsAttr(),
 		},
@@ -722,6 +737,32 @@ func attr(name, description, value string, required, boolean bool) Attribute {
 		Required:    required,
 		Boolean:     boolean,
 	}
+}
+
+// retiredAttr is attr for an attribute Ptah recognizes and refuses.
+//
+// It keeps AllowsAttribute answering true, which is what routes a bareword
+// spelling into the key/value map and therefore into the refusal, and it
+// carries the reason so every surface can quote one wording.
+func retiredAttr(name, description, reason string) Attribute {
+	a := attr(name, description, valueString, false, false)
+	a.Retired = reason
+	return a
+}
+
+// RetiredAttribute reports the reason a recognized attribute is refused, and
+// whether it is retired at all.
+func RetiredAttribute(directive, key string) (string, bool) {
+	spec, ok := Lookup(directive)
+	if !ok {
+		return "", false
+	}
+	for _, attribute := range spec.Attributes {
+		if attribute.Name == key && attribute.Retired != "" {
+			return attribute.Retired, true
+		}
+	}
+	return "", false
 }
 
 // sensitiveAttr is attr for an attribute carrying a credential.

@@ -64,10 +64,9 @@ func viewLikeGoSchemaWithObjects(viewBody, matViewBody, triggerBody string) *gos
 		},
 		MaterializedViews: []goschema.MaterializedView{
 			{
-				StructName:      "RevUserStats",
-				Name:            "rev_user_stats",
-				Body:            matViewBody,
-				RefreshStrategy: "manual",
+				StructName: "RevUserStats",
+				Name:       "rev_user_stats",
+				Body:       matViewBody,
 			},
 		},
 		Triggers: []goschema.Trigger{
@@ -92,7 +91,7 @@ func viewLikeDBWithObjects(viewBody, matViewBody, triggerBody string) *dbschemat
 		{Name: "rev_active_users", Body: viewBody},
 	}
 	db.MatViews = []dbschematypes.DBMatView{
-		{Name: "rev_user_stats", Body: matViewBody, RefreshStrategy: "manual"},
+		{Name: "rev_user_stats", Body: matViewBody},
 	}
 	db.Triggers = []dbschematypes.DBTrigger{
 		{

@@ -52,7 +52,7 @@ func TestPostgresLiveMaterializedViewIndexApplies(t *testing.T) {
 		Tables: []goschema.Table{{StructName: "T", Name: "t"}},
 		Fields: []goschema.Field{{StructName: "T", Name: "id", Type: "INT", Primary: true}},
 		MaterializedViews: []goschema.MaterializedView{{
-			StructName: "MV", Name: "mv", Body: "SELECT id FROM t", RefreshStrategy: "manual",
+			StructName: "MV", Name: "mv", Body: "SELECT id FROM t",
 		}},
 		Indexes: []goschema.Index{
 			{StructName: "MV", Name: "mv_uk", Fields: []string{"id"}, Unique: true},

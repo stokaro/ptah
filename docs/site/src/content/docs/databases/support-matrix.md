@@ -240,33 +240,37 @@ the generate / compare / migrate / rollback lifecycle.
 [PostgreSQL](../postgresql/) covers each area and its version-dependent
 behavior.
 
-### Materialized view refresh strategies
+### Materialized view refresh
 
-`refresh_strategy` accepts `manual`, and that is the whole answer rather than a
-feature waiting to be written. Any other value is refused before rendering or
-comparison, with the dialect, the view, the value, and the reason.
+Ptah does not refresh materialized views, and a declaration cannot ask it to.
+A `refresh_strategy` attribute is refused when the schema is parsed, on every
+dialect and in every frontend.
 
-| Strategy | Status |
-| --- | --- |
-| `manual` | Accepted. Ptah emits no separate refresh, because it never needs one — see below. |
-| `concurrently` | Refused. It is a data operation with no point in a schema apply to attach to. |
-| `every <interval>` | Refused. None of the supported engines schedules a plain materialized view. |
+That is a boundary rather than a missing feature. `REFRESH MATERIALIZED VIEW`
+is a statement someone runs, and `CONCURRENTLY` is an option of that statement;
+neither is state the database holds, so nothing Ptah reads back could report a
+refresh policy or diff one. What Ptah does manage keeps the view current on its
+own terms: `CREATE MATERIALIZED VIEW` populates the view, and a changed body is
+reconciled as a `DROP` and a `CREATE` that populates it again. Measured on
+PostgreSQL 18.
 
-`manual` needs no refresh because a Ptah apply never leaves a view stale.
-Measured on PostgreSQL 18: `CREATE MATERIALIZED VIEW` populates, and a body
-change is planned as `DROP` plus `CREATE`, which populates again. ClickHouse has
-no refresh statement at all — its materialized views are maintained by inserts
-into the source.
+The case that is left over is a view no schema change touched, going stale
+because its **source data** moved. Schema reconciliation cannot observe that,
+so a refresh emitted there would be an unbounded data operation attached to a
+migration on a relationship Ptah inferred. Issue it yourself, from whatever
+already knows when the data changed:
 
-`concurrently` is refused for the same reason. `REFRESH MATERIALIZED VIEW
-CONCURRENTLY` is real on the PostgreSQL family, and its precondition is real
-too — without a unique index the server answers `cannot refresh materialized
-view "public.mv" concurrently` — but the only moment it would matter is on a
-view the current run did **not** change. Refreshing there is a data operation on
-an unchanged schema, which apply performs for no other object.
+```sql
+REFRESH MATERIALIZED VIEW CONCURRENTLY analytics.user_counts;
+```
 
-To refresh on your own schedule, issue `REFRESH MATERIALIZED VIEW` yourself; it
-is not a property of the schema Ptah manages.
+`CONCURRENTLY` needs a unique index on the view, or the server answers
+`cannot refresh materialized view "public.mv" concurrently`.
+
+ClickHouse is a different matter and is covered in its own section: an ordinary
+materialized view there is maintained by inserts into its source, and the
+scheduled form the server does own, `REFRESH EVERY|AFTER`, is engine-native DDL
+tracked by [#1802](https://github.com/stokaro/ptah/issues/1802).
 
 ## MySQL and MariaDB
 
@@ -553,11 +557,12 @@ reads the object back from `system.tables`, and plans a changed query as a drop
 followed by a create. Several ClickHouse-specific points are worth knowing
 before adopting them:
 
-- `refresh_strategy` accepts only `manual`, which means Ptah emits no separate
-  refresh operation, and does not change ClickHouse's insert-driven materialized
-  view maintenance. See
-  [materialized view refresh strategies](#materialized-view-refresh-strategies)
-  for why the other values are refused.
+- A materialized view maintains itself from inserts into its source. Ptah
+  declares no refresh strategy and emits no refresh: a declaration that carries
+  `refresh_strategy` is refused when it is parsed, on every dialect. ClickHouse
+  also has a scheduled form, `REFRESH EVERY|AFTER ...`, which the server owns
+  and records; modeling it is tracked in
+  [#1802](https://github.com/stokaro/ptah/issues/1802).
 
 - The storage clause is written explicitly rather than left to the server.
   ClickHouse 25.x and later accept a materialized view with no storage clause
@@ -591,9 +596,8 @@ before adopting them:
   empties the view.
 
 The `TO <target table>` form and refreshable materialized views are not emitted:
-the shared schema model carries a name and a query, so it cannot name a separate
-target table, and `REFRESH MATERIALIZED VIEW` remains a named diagnostic because
-ClickHouse has no such statement.
+the shared schema model carries a name and a query, so it can name neither a
+separate target table nor a refresh schedule.
 
 A materialized view created elsewhere with `TO <target table>` is still read, and
 it is read as though it owned its storage: `system.tables` reports the same

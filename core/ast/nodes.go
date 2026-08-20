@@ -1770,24 +1770,21 @@ func (n *DropSynonymNode) Accept(visitor Visitor) error {
 }
 
 // CreateMaterializedViewNode represents a CREATE MATERIALIZED VIEW statement.
+// A materialized view node carries no refresh strategy: refreshing is an
+// operation, not schema state (stokaro/ptah#1625). [RefreshMaterializedViewNode]
+// is the operation, and nothing in schema reconciliation produces one.
 type CreateMaterializedViewNode struct {
-	Name            string
-	Body            string
-	RefreshStrategy string
-	Comment         string
+	Name    string
+	Body    string
+	Comment string
 }
 
 func NewCreateMaterializedView(name string) *CreateMaterializedViewNode {
-	return &CreateMaterializedViewNode{Name: name, RefreshStrategy: "manual"}
+	return &CreateMaterializedViewNode{Name: name}
 }
 
 func (n *CreateMaterializedViewNode) SetBody(body string) *CreateMaterializedViewNode {
 	n.Body = body
-	return n
-}
-
-func (n *CreateMaterializedViewNode) SetRefreshStrategy(refreshStrategy string) *CreateMaterializedViewNode {
-	n.RefreshStrategy = refreshStrategy
 	return n
 }
 

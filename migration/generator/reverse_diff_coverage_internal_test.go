@@ -194,10 +194,9 @@ func modifiedCategoryContext() (*goschema.Database, *dbschematypes.DBSchema) {
 			{StructName: "RevNamedActive", Name: modifiedCategoryView, Body: modifiedCategoryTargetViewBody},
 		},
 		MaterializedViews: []goschema.MaterializedView{{
-			StructName:      "RevNamedStats",
-			Name:            modifiedCategoryMatView,
-			Body:            "SELECT count(*) AS total FROM rev_named_users WHERE id > 0",
-			RefreshStrategy: "manual",
+			StructName: "RevNamedStats",
+			Name:       modifiedCategoryMatView,
+			Body:       "SELECT count(*) AS total FROM rev_named_users WHERE id > 0",
 		}},
 		Triggers: []goschema.Trigger{{
 			StructName: "RevNamedUser",
@@ -225,10 +224,9 @@ func modifiedCategoryContext() (*goschema.Database, *dbschematypes.DBSchema) {
 			{Name: modifiedCategoryView, Schema: modifiedCategorySchema, Body: modifiedCategoryPriorViewBody},
 		},
 		MatViews: []dbschematypes.DBMatView{{
-			Name:            modifiedCategoryMatView,
-			Schema:          modifiedCategorySchema,
-			Body:            modifiedCategoryPriorMatViewBody,
-			RefreshStrategy: "manual",
+			Name:   modifiedCategoryMatView,
+			Schema: modifiedCategorySchema,
+			Body:   modifiedCategoryPriorMatViewBody,
 		}},
 		Triggers: []dbschematypes.DBTrigger{{
 			Name:    modifiedCategoryTrigger,

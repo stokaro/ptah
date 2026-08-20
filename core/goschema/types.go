@@ -1050,27 +1050,24 @@ type View struct {
 //
 // MaterializedView is created by parsing //ptah:schema:matview annotations:
 //
-//	//ptah:schema:matview name="user_stats" body="SELECT user_id, COUNT(*) FROM users GROUP BY user_id" refresh_strategy="manual"
+//	//ptah:schema:matview name="user_stats" body="SELECT user_id, COUNT(*) FROM users GROUP BY user_id"
 //	type UserStats struct{}
+//
+// A materialized view carries no refresh strategy. Refreshing is an operation
+// rather than schema state: the view is populated when it is created, a changed
+// definition is reconciled as DROP and CREATE, and it goes stale only when its
+// source data changes -- which a schema comparison cannot observe. See
+// [go.5x5.cz/ptah/internal/matviewrefresh] for the whole reasoning and the
+// refusal a declaration of the retired attribute gets (stokaro/ptah#1625).
 type MaterializedView struct {
-	StructName      string // Name of the Go struct this materialized view is associated with
-	Name            string // Materialized view name
-	Body            string // SELECT query used as the materialized view body
-	RefreshStrategy string // Ptah refresh workflow; manual emits no separate refresh operation
-	Comment         string // Optional comment for documentation
+	StructName string // Name of the Go struct this materialized view is associated with
+	Name       string // Materialized view name
+	Body       string // SELECT query used as the materialized view body
+	Comment    string // Optional comment for documentation
 
 	// Dialects scopes this declaration to the named target dialects. See
 	// [ScopeToDialect].
 	Dialects []string `json:",omitempty"`
-}
-
-// Canonicalize fills in materialized-view defaults used by the planner and
-// comparator.
-func (v *MaterializedView) Canonicalize() {
-	v.RefreshStrategy = strings.ToLower(strings.TrimSpace(v.RefreshStrategy))
-	if v.RefreshStrategy == "" {
-		v.RefreshStrategy = "manual"
-	}
 }
 
 // Trigger represents a database trigger definition parsed from Go annotations.

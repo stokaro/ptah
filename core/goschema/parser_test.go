@@ -303,7 +303,6 @@ type User struct {
 	c.Assert(db.Views[0].WithCheck, qt.IsTrue)
 	c.Assert(db.MaterializedViews, qt.HasLen, 1)
 	c.Assert(db.MaterializedViews[0].Name, qt.Equals, "user_stats")
-	c.Assert(db.MaterializedViews[0].RefreshStrategy, qt.Equals, "manual")
 	c.Assert(db.Triggers, qt.HasLen, 1)
 	c.Assert(db.Triggers[0].Name, qt.Equals, "set_updated_at")
 	c.Assert(db.Triggers[0].Table, qt.Equals, "users")

@@ -469,11 +469,18 @@ Declares a materialized view.
 | `comment` | No | Materialized view comment. |
 | `dialects` | No | Comma-separated target dialects this object belongs to; omitted means every dialect. See [Scoping an object to dialects](#scoping-an-object-to-dialects). |
 | `name` | Yes | Materialized view name. |
-| `refresh_strategy` | No | Ptah-managed refresh strategy. Defaults to `manual`, the only currently supported value. |
 
-`manual` means Ptah emits no separate refresh operation. After a target dialect
-is selected, another value is refused before rendering or comparison, and the
-error names the dialect, materialized view, and value.
+`refresh_strategy` is not an attribute. Ptah does not refresh materialized
+views: one is populated when it is created, a changed `body` is reconciled as a
+drop and a create that populates it again, and it goes stale only when its
+source data changes, which schema reconciliation cannot observe. Refresh from
+your own scheduler.
+
+An annotation that still declares it is refused while the source file is
+parsed, with that reason, on every dialect -- including the bare form with no
+value, and including a view scoped away from the current target by `dialects`.
+The name stays recognized so the refusal explains itself instead of reading as
+a misspelling.
 
 ## Security
 

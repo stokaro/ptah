@@ -310,9 +310,15 @@ func (r *Reader) readViews(dbName string) ([]types.DBView, error) {
 // qualified names comes back byte for byte, so the desired body and the read
 // body compare directly.
 //
-// RefreshStrategy is reported as "manual" to match the PostgreSQL reader's
-// default. ClickHouse has no refresh statement at all, so no read could report
-// anything narrower, and the comparator does not diff the field.
+// A refresh strategy is not read, because there is none to read: refreshing is
+// an operation rather than schema state, and Ptah carries no strategy on either
+// side of the comparison. This read used to report "manual" for every view --
+// a value no catalog holds, invented to match the PostgreSQL reader's own
+// invented default (stokaro/ptah#1625).
+//
+// ClickHouse's own REFRESH EVERY|AFTER is a real, engine-scheduled property and
+// is NOT what that field carried; modeling it needs a ClickHouse-specific
+// declaration, tracked separately.
 //
 // What this read cannot tell apart, stated rather than hidden: a view created
 // with `TO <target table>` routes its rows into a table the user owns and has no
@@ -349,7 +355,7 @@ func (r *Reader) readMaterializedViews(dbName string) ([]types.DBMatView, error)
 
 	var views []types.DBMatView
 	for rows.Next() {
-		view := types.DBMatView{Schema: dbName, RefreshStrategy: "manual"}
+		view := types.DBMatView{Schema: dbName}
 		if err := rows.Scan(&view.Name, &view.Body, &view.Comment); err != nil {
 			return nil, err
 		}

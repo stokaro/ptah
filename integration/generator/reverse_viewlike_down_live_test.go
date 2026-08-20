@@ -356,10 +356,9 @@ func revIntSchema(opts revIntOptions) *goschema.Database {
 		}
 		if !opts.noTrigger || opts.matView {
 			schema.MaterializedViews = []goschema.MaterializedView{{
-				StructName:      "RevIntUserStats",
-				Name:            revIntMatView,
-				Body:            cmp.Or(opts.matViewBody, revIntMatViewBody),
-				RefreshStrategy: "manual",
+				StructName: "RevIntUserStats",
+				Name:       revIntMatView,
+				Body:       cmp.Or(opts.matViewBody, revIntMatViewBody),
 			}}
 		}
 	}

@@ -1501,7 +1501,6 @@ func deduplicateMaterializedViews(views []MaterializedView) []MaterializedView {
 	seen := make(map[string]bool)
 	deduplicated := make([]MaterializedView, 0, len(views))
 	for _, view := range views {
-		view.Canonicalize()
 		if !seen[view.Name] {
 			seen[view.Name] = true
 			deduplicated = append(deduplicated, view)

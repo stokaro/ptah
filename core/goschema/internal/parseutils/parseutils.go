@@ -64,7 +64,14 @@ func ParseKeyValueComment(comment string) map[string]string {
 		if skip[attr] {
 			continue
 		}
-		if !isAutoPromotedBoolean(attr, skip) && !isUnknownAttribute(comment, attr) {
+		// A retired attribute is promoted for the same reason an unknown one
+		// is: it has to reach validation to be refused. Without this it is in
+		// no map at all -- never validated, never refused, dropped without a
+		// word -- which is exactly the silence retiring it was meant to end
+		// (stokaro/ptah#1625).
+		if !isAutoPromotedBoolean(attr, skip) &&
+			!isUnknownAttribute(comment, attr) &&
+			!isRetiredAttribute(comment, attr) {
 			continue
 		}
 		// Only set if not already set by key=value parsing
@@ -74,6 +81,17 @@ func ParseKeyValueComment(comment string) map[string]string {
 	}
 
 	return result
+}
+
+// isRetiredAttribute reports whether the directive recognizes this attribute
+// and refuses it.
+func isRetiredAttribute(comment, attr string) bool {
+	directive, ok := annotationmeta.MatchCommentDirective(comment)
+	if !ok {
+		return false
+	}
+	_, retired := annotationmeta.RetiredAttribute(directive.Name, attr)
+	return retired
 }
 
 func isUnknownAttribute(comment, attr string) bool {
