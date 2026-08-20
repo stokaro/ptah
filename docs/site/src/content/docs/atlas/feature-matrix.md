@@ -90,14 +90,14 @@ Across the 191 capabilities below:
 
 | Reading | Count |
 | --- | --- |
-| Ptah supports it fully | 165 |
-| Ptah supports it with a stated limitation | 9 |
+| Ptah supports it fully | 166 |
+| Ptah supports it with a stated limitation | 8 |
 | Ptah does not implement it | 10 |
 | Ptah covers it in its own form, against a hosted service it cannot interoperate with | 7 |
-| Ptah and Atlas CE both support it | 61 |
+| Ptah and Atlas CE both support it | 62 |
 | Ptah implements it openly where Atlas gates it behind Pro or Cloud | 45 |
 | Ptah has it and neither Atlas edition does | 27 |
-| Atlas CE has it and Ptah does not, or only in part | 4 |
+| Atlas CE has it and Ptah does not, or only in part | 3 |
 | An Atlas column is ❔ — not established by this page's evidence | 4 |
 
 Every 🟡 and every ❌ in the Ptah column names its specific limitation and the
@@ -203,7 +203,7 @@ seven of them as open capabilities regardless.
 | Generate migrations from a schema diff | ✅ | ✅ | ✅ | diff and new stamp the UTC second, stepping past a version already taken; checkpoint and rebase bump past the newest. A plan mixing transaction modes is split into ordered files. |
 | migrate apply `--allow-dirty` semantics and the not-clean adoption gate | ✅ | ✅ | ✅ | Exact-identity retries require the current provider to own the dirty body; the flag also permits unmanaged-object adoption. Recovery preserves the committed prefix. |
 | Migration checkpoints (squash history) | ✅ | ❌ | ✅ | Replays the directory on `--shadow-db` into a cumulative checkpoint: the ptah reversible pair, or Atlas's single `-- atlas:checkpoint` file under `--dir-format atlas`. CE gates the verb. |
-| Migration import from other tools | 🟡 | ✅ | ✅ | Native import writes Ptah format; compat import writes Atlas format and orders `R__` last. Liquibase SQL becomes a numeric changeset stream; XML, YAML and JSON are not read (stokaro/ptah#1629). |
+| Migration import from other tools | ✅ | ✅ | ✅ | Native import writes Ptah format; compat import writes Atlas format and orders `R__` last. All four Liquibase serializations import; unconvertible changelog constructs are refused by name. |
 | Migration linting | ✅ | 🟡 | ✅ | CE registers `migrate lint` with Open rules; its features page marks the CLI Pro. Compat requires `--dev-url`. `--latest 0` disables latest selection but preserves Git; opt-ins lift each precondition. |
 | Migration lock, lock timeout, `--lock-name`, `--skip-lock` | ✅ | 🟡 | ✅ | Compat `--lock-timeout` bounds directory and dev-db locks. `--lock-name` and `--skip-lock` on `migrate apply` are Pro surface adopted openly; CE registers only `--lock-timeout`. |
 | Migration status report | ✅ | ✅ | ✅ | Compat status mirrors the Atlas default report shape and renders Go templates over .Env, .Available, .Applied, .Pending, .Current, .Next. Native ptah keeps its own block. |

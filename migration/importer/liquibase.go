@@ -79,12 +79,31 @@ func (liquibaseParser) Parse(fsys fs.FS) ([]SourceMigration, error) {
 		}
 	}
 
-	// A changelog (XML/YAML/JSON) is unsupported and, when present, likely defines
-	// the real apply order or includes the SQL files. Importing only the SQL files
-	// (ordered by name) could silently reorder or omit history, so reject rather
-	// than partially import.
+	// A changelog (XML/YAML/JSON) defines the real apply order and may include
+	// the SQL files, so mixing the two sources would reorder or duplicate
+	// history. They are read INSTEAD of the formatted-SQL files when present,
+	// and a directory holding both is refused rather than half-read
+	// (stokaro/ptah#1629).
 	if len(changelogFiles) > 0 {
-		return nil, fmt.Errorf("liquibase XML/YAML/JSON changelogs are not yet supported (only formatted-SQL changelogs beginning with %q); found %s", "--liquibase formatted sql", strings.Join(changelogFiles, ", "))
+		if len(sqlFiles) > 0 {
+			return nil, fmt.Errorf(
+				"liquibase source holds both changelog files (%s) and formatted-SQL changelogs (%s); "+
+					"a changelog defines the apply order and may include the SQL files, so importing both "+
+					"would reorder or duplicate history -- import them separately",
+				strings.Join(changelogFiles, ", "), strings.Join(sqlFiles, ", "))
+		}
+		migrations, err := parseLiquibaseChangelogFiles(fsys, changelogFiles)
+		if err != nil {
+			return nil, err
+		}
+		if len(migrations) == 0 {
+			return nil, fmt.Errorf("liquibase changelog(s) %s contain no changesets",
+				strings.Join(changelogFiles, ", "))
+		}
+		for i := range migrations {
+			migrations[i].Version = int64(i + 1)
+		}
+		return migrations, nil
 	}
 
 	// No numeric version orders formatted-SQL changesets: Liquibase applies them
@@ -237,7 +256,8 @@ func liquibaseFormattedSQLFile(fsys fs.FS, name string) bool {
 }
 
 // liquibaseChangelogFile reports whether name is an XML/YAML/JSON Liquibase
-// changelog (a `databaseChangeLog` root), the formats this importer rejects.
+// changelog (a `databaseChangeLog` root), the serializations read by
+// liquibase_changelog.go.
 func liquibaseChangelogFile(fsys fs.FS, name string) bool {
 	if !liquibaseChangelogExts[strings.ToLower(path.Ext(name))] {
 		return false

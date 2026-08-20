@@ -296,7 +296,9 @@ func TestResolveApplyDir_RejectsUnexecutableAndEmptyDirectories(t *testing.T) {
 
 		gotFS, err := resolveApplySource(os.DirFS(dir), dir, "liquibase", nil)
 
-		c.Assert(err, qt.ErrorMatches, `liquibase XML/YAML/JSON changelogs are not yet supported .* found changelog\.xml`)
+		c.Assert(err, qt.ErrorMatches,
+			"this path reads liquibase formatted-SQL changelogs.*found serialized changelog\\(s\\) "+
+				"changelog\\.xml, which are imported by `migrate import`")
 		c.Assert(gotFS, qt.DeepEquals, fsnapshot.Snapshot{})
 	})
 }

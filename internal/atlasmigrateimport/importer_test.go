@@ -1,6 +1,7 @@
 package atlasmigrateimport_test
 
 import (
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -28,7 +29,12 @@ func TestLoadFS_RejectsUnsupportedSourceFiles(t *testing.T) {
 		c.Assert(err, qt.ErrorMatches, `Go-based Goose migration "2_seed\.go" is not supported \(SQL migrations only\)`)
 	})
 
-	t.Run("Liquibase XML changelog", func(t *testing.T) {
+	// `migrate import` converts a serialized changelog now (stokaro/ptah#1629).
+	// This entry point is the DIRECT-APPLY reading, which keeps one entry per
+	// file and takes each file's name as its version -- a changelog has no such
+	// name, so it is still refused here, by a message naming the verb that does
+	// convert it.
+	t.Run("Liquibase changelog on the direct-apply path", func(t *testing.T) {
 		c := qt.New(t)
 		source := fstest.MapFS{
 			"1_init.sql":    &fstest.MapFile{Data: []byte("--liquibase formatted sql\n--changeset ptah:1\nCREATE TABLE users (id int);\n")},
@@ -37,7 +43,8 @@ func TestLoadFS_RejectsUnsupportedSourceFiles(t *testing.T) {
 
 		_, err := atlasmigrateimport.LoadFS(source, "migrations", atlasmigrateimport.FormatLiquibase)
 
-		c.Assert(err, qt.ErrorMatches, `liquibase XML/YAML/JSON changelogs are not yet supported .* found changelog\.xml`)
+		c.Assert(err, qt.ErrorMatches,
+			".*found serialized changelog\\(s\\) changelog\\.xml, which are imported by `migrate import`")
 	})
 }
 
@@ -355,7 +362,7 @@ CREATE TABLE invalid_table (id int);
 			wantError: `liquibase changeset identity "_" in changelog\.sql cannot be represented in an Atlas migration file name`,
 		},
 		{
-			name: "unsupported structured changelog",
+			name: "structured changelog mixed with formatted SQL",
 			files: map[string]string{
 				"changelog.sql": `--liquibase formatted sql
 --changeset alice:valid
@@ -363,7 +370,7 @@ CREATE TABLE valid_table (id int);
 `,
 				"master.xml": "<databaseChangeLog></databaseChangeLog>\n",
 			},
-			wantError: `liquibase XML/YAML/JSON changelogs are not yet supported .* found master\.xml`,
+			wantError: `liquibase source holds both changelog files \(master\.xml\) and formatted-SQL changelogs \(changelog\.sql\).*`,
 		},
 	}
 
@@ -499,4 +506,188 @@ func assertAtlasSumOK(c *qt.C, dir, sumFile string) {
 	result, err := atlascompat.VerifySumDir(dir, migrator.MigrationDirFormatAtlas)
 	c.Assert(err, qt.IsNil)
 	c.Assert(result.OK(), qt.Equals, true)
+}
+
+// TestImportLiquibaseSerializedChangelogs is the destination half of
+// stokaro/ptah#1629: the three serializations reach an Atlas migration
+// directory, not just the shared parser.
+//
+// Each row is the same changelog written the way its tool writes it, so a row
+// failing means that serialization stopped reaching the destination rather than
+// that the changelog changed.
+func TestImportLiquibaseSerializedChangelogs(t *testing.T) {
+	tests := []struct {
+		name    string
+		file    string
+		content string
+	}{
+		{
+			name: "xml",
+			file: "db.changelog.xml",
+			content: `<?xml version="1.0" encoding="UTF-8"?>
+<databaseChangeLog>
+  <changeSet id="create-users" author="alice">
+    <sql>CREATE TABLE users (id int);</sql>
+    <rollback><sql>DROP TABLE users;</sql></rollback>
+  </changeSet>
+  <changeSet id="add-email" author="bob">
+    <sql>ALTER TABLE users ADD COLUMN email text;</sql>
+  </changeSet>
+</databaseChangeLog>
+`,
+		},
+		{
+			name: "yaml",
+			file: "db.changelog.yaml",
+			content: `databaseChangeLog:
+  - changeSet:
+      id: create-users
+      author: alice
+      changes:
+        - sql:
+            sql: "CREATE TABLE users (id int);"
+      rollback:
+        - sql:
+            sql: "DROP TABLE users;"
+  - changeSet:
+      id: add-email
+      author: bob
+      changes:
+        - sql:
+            sql: "ALTER TABLE users ADD COLUMN email text;"
+`,
+		},
+		{
+			name: "json",
+			file: "db.changelog.json",
+			content: `{"databaseChangeLog": [
+  {"changeSet": {"id": "create-users", "author": "alice",
+    "changes": [{"sql": {"sql": "CREATE TABLE users (id int);"}}],
+    "rollback": [{"sql": {"sql": "DROP TABLE users;"}}]}},
+  {"changeSet": {"id": "add-email", "author": "bob",
+    "changes": [{"sql": {"sql": "ALTER TABLE users ADD COLUMN email text;"}}]}}
+]}
+`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			source := t.TempDir()
+			target := t.TempDir()
+			writeFile(c, source, tt.file, tt.content)
+
+			result, err := atlasmigrateimport.Import(atlasmigrateimport.Options{
+				FromURL: "file://" + source + "?format=liquibase",
+				ToURL:   "file://" + target,
+			})
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(baseNames(result.Files), qt.DeepEquals, []string{
+				"1_alice_create_users.sql",
+				"2_bob_add_email.sql",
+			})
+			c.Assert(readFile(c, target, "1_alice_create_users.sql"), qt.Equals, "CREATE TABLE users (id int);\n")
+			c.Assert(readFile(c, target, "2_bob_add_email.sql"),
+				qt.Equals, "ALTER TABLE users ADD COLUMN email text;\n")
+			// An Atlas migration directory has no down file, so the rollback is
+			// not carried here -- the same as Flyway undo and Goose down on this
+			// path. Ptah's own layout keeps it; see the migrations import tests.
+			assertAtlasSumOK(c, target, result.SumFile)
+		})
+	}
+}
+
+// TestImportLiquibaseChangelogsOrderedAcrossFiles pins the ordering rule at the
+// destination, where it is observable as file names.
+//
+// The versions are global across the directory, not per file, so a second
+// changelog cannot restart at 1 and collide with the first.
+func TestImportLiquibaseChangelogsOrderedAcrossFiles(t *testing.T) {
+	c := qt.New(t)
+	source := t.TempDir()
+	target := t.TempDir()
+	// Written in the order that would be wrong if insertion order won.
+	writeFile(c, source, "02-second.xml",
+		`<databaseChangeLog><changeSet id="second" author="bob">`+
+			`<sql>ALTER TABLE users ADD COLUMN email text;</sql></changeSet></databaseChangeLog>`)
+	writeFile(c, source, "01-first.xml",
+		`<databaseChangeLog><changeSet id="first" author="alice">`+
+			`<sql>CREATE TABLE users (id int);</sql></changeSet></databaseChangeLog>`)
+
+	result, err := atlasmigrateimport.Import(atlasmigrateimport.Options{
+		FromURL: "file://" + source + "?format=liquibase",
+		ToURL:   "file://" + target,
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(baseNames(result.Files), qt.DeepEquals, []string{
+		"1_alice_first.sql",
+		"2_bob_second.sql",
+	})
+	assertAtlasSumOK(c, target, result.SumFile)
+}
+
+// TestImportLiquibaseChangelogRefusalWritesNothing is the "refused rather than
+// dropped" rule seen at the destination.
+//
+// A refusal that had already written half a directory would leave a target that
+// applies cleanly and is missing the rest, which is the state this whole path
+// exists to avoid.
+func TestImportLiquibaseChangelogRefusalWritesNothing(t *testing.T) {
+	c := qt.New(t)
+	root := t.TempDir()
+	source := filepath.Join(root, "source")
+	target := filepath.Join(root, "target")
+	c.Assert(os.Mkdir(source, 0o700), qt.IsNil)
+	// The first changeset converts; the second does not.
+	writeFile(c, source, "changelog.xml",
+		`<databaseChangeLog>`+
+			`<changeSet id="ok" author="alice"><sql>CREATE TABLE users (id int);</sql></changeSet>`+
+			`<changeSet id="typed" author="bob"><createTable tableName="posts"/></changeSet>`+
+			`</databaseChangeLog>`)
+
+	_, err := atlasmigrateimport.Import(atlasmigrateimport.Options{
+		FromURL: "file://" + source + "?format=liquibase",
+		ToURL:   "file://" + target,
+	})
+
+	c.Assert(err, qt.ErrorMatches, `.*uses <createTable>, which is not SQL text.*`)
+	_, statErr := os.Stat(target)
+	c.Assert(os.IsNotExist(statErr), qt.IsTrue, qt.Commentf("target directory must not be created"))
+}
+
+// TestImportLiquibaseChangelogPadsVersionsToWidth pins the padding on the
+// changelog path.
+//
+// atlas.sum orders entries lexically and Ptah executes a hashed Atlas directory
+// in that order, so an unpadded 10 sorts before 2 and the directory applies in
+// an order neither tool would have run. Ten changesets is the smallest fixture
+// that separates padded from unpadded -- with nine, both spellings agree.
+func TestImportLiquibaseChangelogPadsVersionsToWidth(t *testing.T) {
+	c := qt.New(t)
+	source := t.TempDir()
+	target := t.TempDir()
+	changelog := "<databaseChangeLog>"
+	for i := 1; i <= 10; i++ {
+		changelog += fmt.Sprintf(
+			`<changeSet id="c%d" author="alice"><sql>CREATE TABLE t%d (id int);</sql></changeSet>`, i, i)
+	}
+	changelog += "</databaseChangeLog>"
+	writeFile(c, source, "db.changelog.xml", changelog)
+
+	result, err := atlasmigrateimport.Import(atlasmigrateimport.Options{
+		FromURL: "file://" + source + "?format=liquibase",
+		ToURL:   "file://" + target,
+	})
+
+	c.Assert(err, qt.IsNil)
+	names := baseNames(result.Files)
+	c.Assert(names, qt.HasLen, 10)
+	// Padded: 01 first and 10 last. Unpadded, "10" sorts between "1" and "2".
+	c.Assert(names[0], qt.Equals, "01_alice_c1.sql")
+	c.Assert(names[1], qt.Equals, "02_alice_c2.sql")
+	c.Assert(names[9], qt.Equals, "10_alice_c10.sql")
+	assertAtlasSumOK(c, target, result.SumFile)
 }
