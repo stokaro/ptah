@@ -41,6 +41,10 @@ const (
 	SQLServer
 	CockroachDB
 	YugabyteDB
+	// Spanner is the Cloud Spanner PostgreSQL interface, reached through the
+	// emulator behind PGAdapter -- the only Spanner endpoint a container can
+	// provide (stokaro/ptah#1719).
+	Spanner
 )
 
 // source is where one engine's address comes from.
@@ -114,6 +118,11 @@ var sources = map[Engine]source{
 		canonical: "YUGABYTEDB_URL",
 		synonyms:  []string{"YUGABYTEDB_TEST_DSN"},
 		scheme:    []string{"postgres", "postgresql", "yugabytedb"},
+	},
+	Spanner: {
+		canonical: "SPANNER_URL",
+		synonyms:  []string{"SPANNER_TEST_DSN"},
+		scheme:    []string{"spanner", "postgres", "postgresql"},
 	},
 }
 

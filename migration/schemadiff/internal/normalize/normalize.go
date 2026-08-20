@@ -53,6 +53,19 @@ func Type(typeName string) string {
 	typeName = strings.ToLower(typeName)
 
 	switch {
+	// `character varying` is the SQL-standard spelling of the same type, and
+	// it reaches here from a catalog that reports data_type without a udt_name
+	// to prefer. Measured on Cloud Spanner through PGAdapter 0.55.2: a
+	// varchar(200) column comes back as data_type "character varying" with
+	// udt_name empty, where PostgreSQL answers "varchar" and never needs this
+	// arm. Without it the comparison plans a type change on every run
+	// (stokaro/ptah#1719).
+	//
+	// The array form is excluded on purpose: `character varying(100)[]` is a
+	// different type from `character varying(100)`, and folding the two would
+	// make a column that changed from an array to a scalar compare equal.
+	case strings.Contains(typeName, "character varying") && !strings.HasSuffix(typeName, "[]"):
+		return "varchar"
 	case strings.Contains(typeName, "varchar"):
 		return "varchar"
 	case strings.Contains(typeName, "text"):

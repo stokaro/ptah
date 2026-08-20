@@ -386,16 +386,14 @@ open-source containers. Their reader coverage seeds a table, index, view,
 materialized view, sequence, and row-level security policy, then verifies both
 `ptah db read` and `ptah-compat schema inspect`.
 
-Spanner sits between the two:
+Spanner runs both now: its capability rows are measured on every pull request,
+and an integration target exercises render, apply, read and compare against the
+Cloud Spanner emulator behind PGAdapter, which the `spanner` compose profile
+starts.
 
-- Its capability rows are measured on every pull request, against the Cloud
-  Spanner emulator behind PGAdapter.
-- It has no integration target exercising render, plan, apply and read end to
-  end, the way the engines above do.
-- An emulator is evidence about the PostgreSQL interface, not about the managed
-  service.
-
-Review generated SQL before relying on it.
+It stays best-effort for a reason that no amount of coverage changes: an
+emulator is evidence about the PostgreSQL interface, not about the managed
+service. Review generated SQL before relying on it.
 PostgreSQL and YugabyteDB reject unsupported database-scoped publications,
 subscriptions, logical replication slots, event triggers, and non-extension
 foreign-data objects before dev-database cleanup. PostgreSQL additionally

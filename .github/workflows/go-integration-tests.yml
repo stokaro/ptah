@@ -115,6 +115,14 @@ jobs:
         ports:
           - 1433:1433
 
+      # The Cloud Spanner emulator behind PGAdapter, which is the only Spanner
+      # endpoint a container can provide. It holds its data in memory and
+      # starts empty, so it needs no volume (stokaro/ptah#1719).
+      spanner:
+        image: gcr.io/cloud-spanner-pg-adapter/pgadapter-emulator:v0.55.2
+        ports:
+          - 5434:5432
+
       registry:
         image: registry:3
         ports:
@@ -332,6 +340,7 @@ jobs:
           YUGABYTEDB_URL: "yugabytedb://yugabyte@localhost:5433/yugabyte?sslmode=disable"
           SQLSERVER_TEST_DSN: "sqlserver://sa:P%40ssw0rd-ptah-2026@localhost:1433?database=master&encrypt=disable"
           SQLSERVER_URL: "sqlserver://sa:P%40ssw0rd-ptah-2026@localhost:1433?database=master&encrypt=disable"
+          SPANNER_URL: "spanner://localhost:5434/ptah_test?sslmode=disable"
           PTAH_SQLSERVER_TEST_URL: "sqlserver://sa:P%40ssw0rd-ptah-2026@localhost:1433?database=master&encrypt=disable"
           PTAH_SQLSERVER_REALM_TEST_URL: "sqlserver://sa:P%40ssw0rd-ptah-2026@localhost:1433?database=master&encrypt=disable"
           PTAH_OCI_TEST_REGISTRY: "127.0.0.1:5000"
@@ -380,6 +389,7 @@ jobs:
       - name: Run SQL Server live smoke tests
         env:
           SQLSERVER_URL: "sqlserver://sa:P%40ssw0rd-ptah-2026@localhost:1433?database=master&encrypt=disable"
+          SPANNER_URL: "spanner://localhost:5434/ptah_test?sslmode=disable"
         run: |
           ./integration-test --databases=sqlserver --scenarios=apply_incremental_migrations,rollback_migrations,upgrade_to_specific_version,check_current_version,read_actual_db_schema,dry_run_support,operation_planning,failure_diagnostics,idempotency_reapply,idempotency_up_to_date,parallel_migrate_smoke,cleanup_support,dynamic_circular_dependencies,dynamic_sqlserver_identity_schema_bracket_reserved_words --report=stdout,txt,json,html --verbose --output=./reports
 
