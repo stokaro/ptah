@@ -6124,11 +6124,13 @@ func In[T any](column string, values []T) ast.Expression
 func IsNotNull(column string) ast.Expression
 func IsNull(column string) ast.Expression
 func Le(column string, value any) ast.Expression
+func Like(column, pattern string) ast.Expression
 func Lt(column string, value any) ast.Expression
 func Max(column string) ast.Expression
 func Min(column string) ast.Expression
 func Ne(column string, value any) ast.Expression
 func Not(expr ast.Expression) ast.Expression
+func NotLike(column, pattern string) ast.Expression
 func Or(exprs ...ast.Expression) ast.Expression
 func Sum(column string) ast.Expression
 type Column struct{ ... }

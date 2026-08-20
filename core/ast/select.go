@@ -14,7 +14,7 @@ package ast
 // GroupBy column list, and a Having expression on SelectStatement; a general
 // FuncCall expression node for COUNT / SUM / AVG / MIN / MAX; and an optional
 // Expr (and Alias) on ResultColumn so a projection entry can be an expression
-// rather than a plain column. Non-aggregate functions, arithmetic, LIKE,
+// rather than a plain column. Non-aggregate functions, arithmetic,
 // subqueries, and window functions remain follow-up phases. The types are shaped
 // so those extensions slot in without breaking callers (for example, Comparison
 // takes Expression operands on both sides rather than a bare column string, so a
@@ -79,6 +79,16 @@ const (
 	OpGreaterThan
 	// OpGreaterThanOrEqual is the >= operator.
 	OpGreaterThanOrEqual
+	// OpLike is the LIKE operator.
+	//
+	// Its CASE SENSITIVITY belongs to the server, not to Ptah: PostgreSQL's
+	// LIKE is case-sensitive, MySQL's follows the column's collation and is
+	// usually not, and SQLite's folds ASCII. Ptah emits the operator and lets
+	// each engine mean what it means -- inventing a portable spelling would
+	// claim a uniformity none of them share (stokaro/ptah#941).
+	OpLike
+	// OpNotLike is the NOT LIKE operator. See OpLike on case sensitivity.
+	OpNotLike
 )
 
 // String returns the SQL token for the operator, or an empty string when the
@@ -98,6 +108,10 @@ func (op ComparisonOperator) String() string {
 		return ">"
 	case OpGreaterThanOrEqual:
 		return ">="
+	case OpLike:
+		return "LIKE"
+	case OpNotLike:
+		return "NOT LIKE"
 	default:
 		return ""
 	}

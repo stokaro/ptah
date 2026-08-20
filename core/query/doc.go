@@ -28,7 +28,12 @@
 // rather than emitted in a portable spelling the server does not parse. SELECT
 // and INSERT are ordinary statements there and render normally.
 //
-// Non-aggregate function calls, arithmetic, LIKE, subqueries, window functions,
+// LIKE and NOT LIKE are available through Like and NotLike. Their pattern is a
+// bound value like any other, so it can carry no SQL; its wildcards are the
+// caller's to write and to escape. Case sensitivity is the server's -- see
+// [Like].
+//
+// Non-aggregate function calls, arithmetic, subqueries, window functions,
 // ON CONFLICT / upsert, INSERT … SELECT, and common table expressions are
 // intentionally not implemented yet and are tracked as follow-up phases of
 // stokaro/ptah#941.
