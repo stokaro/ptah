@@ -60,9 +60,11 @@ func (m *Migrator) verifyAppliedMigrationChecksums(
 		}
 		if mismatch == nil {
 			mismatch = &ChecksumMismatchError{
-				Version:  migration.Version,
-				Stored:   stored,
-				Computed: migrationRevisionHash(migration),
+				Version:             migration.Version,
+				Stored:              stored,
+				Computed:            migrationRevisionHash(migration),
+				Description:         migration.Description,
+				ConvertedRepeatable: migration.Version == ConvertedFlywayRepeatableVersion,
 			}
 		}
 	}
