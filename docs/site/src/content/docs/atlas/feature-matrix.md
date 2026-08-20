@@ -90,8 +90,8 @@ Across the 191 capabilities below:
 
 | Reading | Count |
 | --- | --- |
-| Ptah supports it fully | 156 |
-| Ptah supports it with a stated limitation | 17 |
+| Ptah supports it fully | 159 |
+| Ptah supports it with a stated limitation | 14 |
 | Ptah does not implement it | 12 |
 | Ptah covers it in its own form, against a hosted service it cannot interoperate with | 6 |
 | Ptah and Atlas CE both support it | 57 |
@@ -293,7 +293,7 @@ seven of them as open capabilities regardless.
 | Domains, composite types, and range types | ✅ | ❌ | ✅ | Domains and composites compare and change in place, each kind gated per target. Range types rebuild because PostgreSQL offers no ALTER TYPE ... AS RANGE. |
 | Enum types | ✅ | ✅ | ✅ | An enum is whatever the schema declares as one. PostgreSQL alters values in place; MySQL, MariaDB, SQLite and SQL Server carry them in the column type or a check constraint. |
 | Extensions | ✅ | ❌ | ✅ | PostgreSQL and YugabyteDB create, compare and relocate extensions, version included. Every other target names the declaration it cannot host rather than dropping it. |
-| Functions | 🟡 | ❌ | ✅ | Functions render, read and plan on the PostgreSQL and MySQL families and SQL Server; procedures on the first two. SQL Server hosts procedures and reads none back (stokaro/ptah#1784). |
+| Functions | ✅ | ❌ | ✅ | Functions and procedures render, read and plan on the PostgreSQL and MySQL families and SQL Server. ClickHouse and SQLite host neither. |
 | MySQL and MariaDB | ✅ | ✅ | ✅ | Roles, grants, stored functions and MariaDB sequences render, read back and plan. An inline enum change plans a real MODIFY COLUMN and converges; matviews fail closed. |
 | Oracle, Snowflake, Redshift, Databricks | ❌ | ❌ | ✅ | No dialect entry; the names fail normalization the same way TiDB does. Listed as Atlas Pro drivers. Tracked by stokaro/ptah#1616. |
 | PostgreSQL 12+ (postgres, postgresql) | ✅ | ✅ | ✅ | Reference engine of the PostgreSQL family: views, matviews, functions, triggers, sequences, roles, RLS and domains all render. Presets 12-13, 14-16, 17+ from the server banner. |

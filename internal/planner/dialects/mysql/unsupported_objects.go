@@ -249,10 +249,16 @@ func (p *Planner) planFunctions(result []ast.Node, diff *types.SchemaDiff, gener
 			result = append(result, node)
 			continue
 		}
+		// The drop half carries the kind for the same reason the removal path
+		// does: DROP FUNCTION and DROP PROCEDURE are different statements, and
+		// a server answers the wrong one by name. A replacement that dropped a
+		// procedure as a function would fail on the drop and leave the old body
+		// in place while reporting the plan it did not run.
 		result = append(result, ast.NewDropFunction(fn.Name).
+			SetKind(fn.Kind).
 			SetIfExists().
-			SetComment(fmt.Sprintf("Replace function %s: %s", fn.Name, changes)))
-		node.SetComment(fmt.Sprintf("Modify function %s: %s", fn.Name, changes))
+			SetComment(fmt.Sprintf("Replace %s %s: %s", routineWord(fn), fn.Name, changes)))
+		node.SetComment(fmt.Sprintf("Modify %s %s: %s", routineWord(fn), fn.Name, changes))
 		result = append(result, node)
 	}
 	for _, name := range diff.FunctionsRemoved {
@@ -281,4 +287,13 @@ func findGeneratedFunction(generated *goschema.Database, name string) (goschema.
 		}
 	}
 	return goschema.Function{}, false
+}
+
+// routineWord names the object a plan comment is about, so a comment on a
+// procedure does not call it a function.
+func routineWord(fn goschema.Function) string {
+	if fn.IsProcedure() {
+		return "procedure"
+	}
+	return "function"
 }
