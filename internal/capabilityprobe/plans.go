@@ -373,6 +373,8 @@ func postgresFamilyPlan(dialect string) plan {
 		// acceptance test, and this harness reads acceptance rather than error
 		// text. The threshold is MySQL 8.0.20 and the ladder carries it
 		// (stokaro/ptah#916 item 3).
+		capability.DDLInsideTransaction: "the key names whether the server takes a schema statement inside an explicit transaction, " +
+			"which is a property of the wrapper the migrator opens rather than of any statement this probe sends",
 		capability.MigrationTimeouts: "the key names a runtime policy the migrator applies around a migration; " +
 			"this server accepting a timeout statement says nothing about whether Ptah sets and restores it",
 		capability.TransactionalDDL: "the key names whether a failed migration rolls back as a unit, which is the engine's DDL semantics rather than one statement's answer",
@@ -580,6 +582,8 @@ func mysqlFamilyPlan(dialect string) plan {
 		// acceptance test, and this harness reads acceptance rather than error
 		// text. The threshold is MySQL 8.0.20 and the ladder carries it
 		// (stokaro/ptah#916 item 3).
+		capability.DDLInsideTransaction: "the key names whether the server takes a schema statement inside an explicit transaction, " +
+			"which is a property of the wrapper the migrator opens rather than of any statement this probe sends",
 		capability.MigrationTimeouts: "the key names a runtime policy the migrator applies around a migration; " +
 			"this server accepting a timeout statement says nothing about whether Ptah sets and restores it",
 		capability.TransactionalDDL: "the key names whether a failed migration rolls back as a unit, which is the engine's DDL semantics rather than one statement's answer",

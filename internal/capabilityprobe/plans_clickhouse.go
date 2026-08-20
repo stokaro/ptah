@@ -260,8 +260,9 @@ func clickHousePlan() plan {
 		// connects as one account and cannot ask whether a privilege exists
 		// without granting it. ClickHouse has no SHOW_ROUTINE at all, which is
 		// a fact the preset carries rather than one this run can establish.
-		capability.MigrationTimeouts: "the key names a runtime policy the migrator applies around a migration rather than a statement this probe can send",
-		capability.TransactionalDDL:  "the key names whether a failed migration rolls back as a unit; ClickHouse commits DDL as it runs, which is the engine rather than one statement's answer",
+		capability.DDLInsideTransaction: "ClickHouse has no cross-statement transaction for a schema statement to be inside of, so neither answer would decide the key",
+		capability.MigrationTimeouts:    "the key names a runtime policy the migrator applies around a migration rather than a statement this probe can send",
+		capability.TransactionalDDL:     "the key names whether a failed migration rolls back as a unit; ClickHouse commits DDL as it runs, which is the engine rather than one statement's answer",
 		capability.ShowRoutinePrivilege: "the probe cannot ask whether a privilege exists without granting it; " +
 			"ClickHouse has no SHOW_ROUTINE privilege for it to find",
 	}}
