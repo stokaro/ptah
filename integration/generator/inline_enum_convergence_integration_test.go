@@ -4,6 +4,7 @@ package generator_test
 
 import (
 	"context"
+	"path/filepath"
 	"testing"
 	"testing/fstest"
 
@@ -66,18 +67,30 @@ type Order struct {
 func TestInlineEnumConvergence_Integration(t *testing.T) {
 	cases := []struct {
 		dialect string
-		engine  dbtarget.Engine
+		connect func(t *testing.T) *dbschema.DatabaseConnection
 	}{
-		{"mysql", dbtarget.MySQL},
-		{"mariadb", dbtarget.MariaDB},
-		{"sqlserver", dbtarget.SQLServer},
+		{"mysql", func(t *testing.T) *dbschema.DatabaseConnection {
+			return requireGeneratorDatabaseConnection(t, dbtarget.MySQL)
+		}},
+		{"mariadb", func(t *testing.T) *dbschema.DatabaseConnection {
+			return requireGeneratorDatabaseConnection(t, dbtarget.MariaDB)
+		}},
+		{"sqlserver", func(t *testing.T) *dbschema.DatabaseConnection {
+			return requireGeneratorDatabaseConnection(t, dbtarget.SQLServer)
+		}},
+		// SQLite is the fourth inline-enum dialect stokaro/ptah#1716 names, and
+		// the only one that needs no server: it takes a file rather than a URL
+		// out of the environment, so it has no dbtarget entry and is connected
+		// directly. Leaving it out left the dialect whose enum change costs a
+		// TABLE REBUILD as the one with no convergence assertion.
+		{"sqlite", requireInlineEnumSQLiteConnection},
 	}
 
 	for _, tc := range cases {
 		t.Run(tc.dialect, func(t *testing.T) {
 			c := qt.New(t)
 			ctx := context.Background()
-			conn := requireGeneratorDatabaseConnection(t, tc.engine)
+			conn := tc.connect(t)
 			dialect := conn.Info().Dialect
 			cleanupInlineEnumTable(conn, dialect)
 			t.Cleanup(func() { cleanupInlineEnumTable(conn, dialect) })
@@ -167,4 +180,19 @@ func applyInlineEnum(
 func cleanupInlineEnumTable(conn *dbschema.DatabaseConnection, dialect string) {
 	_ = dialect
 	_, _ = conn.ExecContext(context.Background(), "DROP TABLE IF EXISTS ptah_inline_enum")
+}
+
+// requireInlineEnumSQLiteConnection opens a throwaway SQLite database.
+//
+// Every other engine here comes out of the environment because it needs a
+// server; SQLite needs a path, so a temp file is the whole configuration and
+// the case never skips.
+func requireInlineEnumSQLiteConnection(t *testing.T) *dbschema.DatabaseConnection {
+	t.Helper()
+	c := qt.New(t)
+	conn, err := dbschema.ConnectToDatabase(
+		t.Context(), "sqlite://"+filepath.Join(t.TempDir(), "inline_enum.db"))
+	c.Assert(err, qt.IsNil)
+	t.Cleanup(func() { c.Check(conn.Close(), qt.IsNil) })
+	return conn
 }
