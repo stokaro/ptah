@@ -35,7 +35,7 @@ func TestDiffRefusesMaterializedViewRefreshStrategyBeforeComparing(t *testing.T)
 			})
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-			c.Assert(err, qt.ErrorMatches, `postgres cannot represent materialized view "user_counts" refresh strategy ".+"; only "manual" is currently supported`)
+			c.Assert(err, qt.ErrorMatches, `postgres cannot represent materialized view "user_counts" refresh strategy ".+"; "manual" is the only strategy, .*`)
 			c.Assert(report.Changes, qt.HasLen, 0)
 		})
 	}

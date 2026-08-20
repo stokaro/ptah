@@ -568,7 +568,7 @@ func TestPlanner_GenerateMigrationAST_MaterializedViewRefreshStrategyFailsBefore
 	c.Assert(err, qt.IsNil)
 	sql, err := renderer.RenderSQL("postgres", nodes...)
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-	c.Assert(err, qt.ErrorMatches, `postgres cannot represent materialized view "user_stats" refresh strategy "concurrently"; only "manual" is currently supported`)
+	c.Assert(err, qt.ErrorMatches, `postgres cannot represent materialized view "user_stats" refresh strategy "concurrently"; "manual" is the only strategy, .*`)
 	c.Assert(sql, qt.Equals, "")
 }
 

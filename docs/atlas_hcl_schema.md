@@ -95,9 +95,11 @@ current schema IR:
 - Ptah `data` blocks with a table reference, key columns, and a data-file path
 
 `refresh_strategy` defaults to `manual`, which means Ptah emits no separate
-refresh operation. It is the only currently supported value. After a target
-dialect is selected, another value is refused before rendering or comparison;
-the error names the dialect, materialized view, and value. The source codec
+refresh operation. It is the only value, and that is a decision rather than a
+gap: a Ptah apply never leaves a materialized view stale, so there is nothing
+for another strategy to do. After a target dialect is selected, another value is
+refused before rendering or comparison; the error names the dialect,
+materialized view, value, and reason. The source codec
 still preserves the attribute so it can diagnose unsupported declarations
 instead of silently dropping them.
 

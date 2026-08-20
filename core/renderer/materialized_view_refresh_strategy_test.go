@@ -133,7 +133,7 @@ func assertMaterializedViewRefreshStrategyError(
 		err,
 		qt.ErrorMatches,
 		fmt.Sprintf(
-			`%s cannot represent materialized view "analytics.user_counts" refresh strategy %q; only "manual" is currently supported`,
+			`%s cannot represent materialized view "analytics.user_counts" refresh strategy %q; "manual" is the only strategy, .*`,
 			dialect,
 			strategy,
 		),

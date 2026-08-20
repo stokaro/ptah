@@ -240,6 +240,34 @@ the generate / compare / migrate / rollback lifecycle.
 [PostgreSQL](../postgresql/) covers each area and its version-dependent
 behavior.
 
+### Materialized view refresh strategies
+
+`refresh_strategy` accepts `manual`, and that is the whole answer rather than a
+feature waiting to be written. Any other value is refused before rendering or
+comparison, with the dialect, the view, the value, and the reason.
+
+| Strategy | Status |
+| --- | --- |
+| `manual` | Accepted. Ptah emits no separate refresh, because it never needs one — see below. |
+| `concurrently` | Refused. It is a data operation with no point in a schema apply to attach to. |
+| `every <interval>` | Refused. None of the supported engines schedules a plain materialized view. |
+
+`manual` needs no refresh because a Ptah apply never leaves a view stale.
+Measured on PostgreSQL 18: `CREATE MATERIALIZED VIEW` populates, and a body
+change is planned as `DROP` plus `CREATE`, which populates again. ClickHouse has
+no refresh statement at all — its materialized views are maintained by inserts
+into the source.
+
+`concurrently` is refused for the same reason. `REFRESH MATERIALIZED VIEW
+CONCURRENTLY` is real on the PostgreSQL family, and its precondition is real
+too — without a unique index the server answers `cannot refresh materialized
+view "public.mv" concurrently` — but the only moment it would matter is on a
+view the current run did **not** change. Refreshing there is a data operation on
+an unchanged schema, which apply performs for no other object.
+
+To refresh on your own schedule, issue `REFRESH MATERIALIZED VIEW` yourself; it
+is not a property of the schema Ptah manages.
+
 ## MySQL and MariaDB
 
 MySQL and MariaDB share one planner and renderer family, but they are separate
@@ -526,9 +554,10 @@ followed by a create. Several ClickHouse-specific points are worth knowing
 before adopting them:
 
 - `refresh_strategy` accepts only `manual`, which means Ptah emits no separate
-  refresh operation. It does not change ClickHouse's insert-driven materialized
-  view maintenance. Any other value is refused before rendering or comparison,
-  with the dialect, materialized view, and value in the error.
+  refresh operation, and does not change ClickHouse's insert-driven materialized
+  view maintenance. See
+  [materialized view refresh strategies](#materialized-view-refresh-strategies)
+  for why the other values are refused.
 
 - The storage clause is written explicitly rather than left to the server.
   ClickHouse 25.x and later accept a materialized view with no storage clause
