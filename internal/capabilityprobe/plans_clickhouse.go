@@ -246,6 +246,10 @@ func clickHousePlan() plan {
 		),
 	}
 	return plan{experiments: experiments, undecided: map[capability.Capability]string{
+		// The key asks whether a recursive CTE may also read the pg catalogs.
+		// ClickHouse has no pg catalogs, so the statement cannot be put to it
+		// and an answer would be to a different question.
+		capability.CatalogRecursiveCTE: "pg_class is a PostgreSQL catalog ClickHouse has no spelling of",
 		// The three PostgreSQL user-type kinds, none of which ClickHouse has a
 		// statement for; its answer would be to a different question
 		// (stokaro/ptah#1717).

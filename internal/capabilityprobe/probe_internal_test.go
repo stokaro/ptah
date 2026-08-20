@@ -156,6 +156,9 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 	}, {
 		dialect: platform.ClickHouse,
 		want: []capability.Capability{
+			// ClickHouse has no pg catalogs, so the recursive-catalog-read
+			// question cannot be put to it (stokaro/ptah#1811).
+			capability.CatalogRecursiveCTE,
 			capability.CompositeTypes,
 			capability.DDLInsideTransaction,
 			capability.DomainTypes,

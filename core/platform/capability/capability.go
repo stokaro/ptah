@@ -434,6 +434,23 @@ const (
 	// writer (stokaro/ptah#916 item 3).
 	CatalogViewDependencies Capability = "catalog_view_dependencies"
 
+	// CatalogRecursiveCTE marks a server that accepts a `WITH RECURSIVE` query
+	// which also reads the pg catalogs.
+	//
+	// Every real PostgreSQL-family engine does. Cloud Spanner's PostgreSQL
+	// interface does not, and the reason is the interface rather than the SQL:
+	// PGAdapter answers a catalog reference by prepending its own emulation as
+	// `WITH pg_class AS (...)`, which lands beside the query's own WITH clause.
+	// A plain `WITH` merges with it; `WITH RECURSIVE` does not, and the server
+	// answers with a syntax error naming the query's first CTE.
+	//
+	// Measured on the Cloud Spanner emulator through PGAdapter 0.55.2:
+	// `WITH RECURSIVE m AS (SELECT relname FROM pg_class) SELECT relname FROM m`
+	// fails with `syntax error at or near "m"`, while the same query without
+	// RECURSIVE, and `WITH RECURSIVE` over a non-catalog relation, both succeed
+	// (stokaro/ptah#1811).
+	CatalogRecursiveCTE Capability = "catalog_recursive_cte"
+
 	// ShowRoutinePrivilege marks a server on which reading routine metadata
 	// requires the global SHOW_ROUTINE privilege, which MySQL introduced in
 	// 8.0.20.
@@ -660,6 +677,9 @@ var registry = map[Capability]spec{
 	MigrationTimeouts: {
 		doc: "a migration can be bounded by a lock timeout and a statement timeout the migrator sets and restores",
 	},
+	CatalogRecursiveCTE: {
+		doc: "the server accepts a WITH RECURSIVE query that also reads the pg catalogs",
+	},
 	DDLInsideTransaction: {
 		doc: "the server accepts a schema statement inside an explicit transaction, whether or not it rolls one back",
 	},
@@ -877,6 +897,7 @@ func MySQL84() Capabilities {
 		RowLevelTTL:                        false,
 		MigrationTimeouts:                  true,
 		TransactionalDDL:                   false,
+		CatalogRecursiveCTE:                true,
 		DDLInsideTransaction:               true,
 		CheckGrantStatement:                false,
 		CatalogViewDependencies:            true,
@@ -1002,6 +1023,7 @@ func MariaDB1011() Capabilities {
 		RowLevelTTL:                     false,
 		MigrationTimeouts:               true,
 		TransactionalDDL:                false,
+		CatalogRecursiveCTE:             true,
 		DDLInsideTransaction:            true,
 		CheckGrantStatement:             false,
 		CatalogViewDependencies:         false,
@@ -1072,6 +1094,7 @@ func Postgres16() Capabilities {
 		RowLevelTTL:                        false,
 		MigrationTimeouts:                  true,
 		TransactionalDDL:                   true,
+		CatalogRecursiveCTE:                true,
 		DDLInsideTransaction:               true,
 		CheckGrantStatement:                false,
 		CatalogViewDependencies:            true,
@@ -1139,9 +1162,13 @@ func Postgres13() Capabilities {
 // storage clause is the self-contained shape that node can express.
 func ClickHouse24() Capabilities {
 	return Capabilities{
-		DomainTypes:    false,
-		CompositeTypes: false,
-		RangeTypes:     false,
+		// ClickHouse has no pg catalogs at all, so the question the key asks
+		// does not arise; false is the honest answer for the same reason it is
+		// false for every non-PostgreSQL-family engine.
+		CatalogRecursiveCTE: false,
+		DomainTypes:         false,
+		CompositeTypes:      false,
+		RangeTypes:          false,
 		// Five keys below were false until stokaro/ptah#916 measured them.
 		// ClickHouse 24.10.4.191 and 26.7.3.19 answer identically on every one,
 		// so the corrections belong to the dialect rather than to a line:
@@ -1295,6 +1322,7 @@ func SQLite3() Capabilities {
 		RowLevelTTL:                        false,
 		MigrationTimeouts:                  false,
 		TransactionalDDL:                   true,
+		CatalogRecursiveCTE:                true,
 		DDLInsideTransaction:               true,
 		CheckGrantStatement:                false,
 		CatalogViewDependencies:            false,
@@ -1437,6 +1465,7 @@ func SQLServer2022() Capabilities {
 		RowLevelTTL:                     false,
 		MigrationTimeouts:               false,
 		TransactionalDDL:                false,
+		CatalogRecursiveCTE:             true,
 		DDLInsideTransaction:            true,
 		CheckGrantStatement:             false,
 		CatalogViewDependencies:         true,
@@ -1620,6 +1649,12 @@ func SpannerPostgres() Capabilities {
 		// Measured on the Cloud Spanner emulator behind PGAdapter:
 		// `relation "information_schema.view_table_usage" does not exist`.
 		With(CatalogViewDependencies, false).
+		// Measured on the Cloud Spanner emulator through PGAdapter 0.55.2:
+		// `WITH RECURSIVE m AS (SELECT relname FROM pg_class) ...` answers
+		// `syntax error at or near "m"`, because PGAdapter prepends its own
+		// `WITH pg_class AS (...)` beside the query's WITH clause and the two
+		// only merge when the query's is not RECURSIVE (stokaro/ptah#1811).
+		With(CatalogRecursiveCTE, false).
 		// Measured, unlike the rest of this preset: on the Cloud Spanner
 		// emulator through PGAdapter 0.55.2, `obj_description(2200,
 		// 'pg_namespace')` answers `The Postgres Type is not supported: name`.
