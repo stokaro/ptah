@@ -545,23 +545,6 @@ func mysqlFamilyPlan(dialect string) plan {
 			"CHECK GRANT SELECT ON *.*",
 			"the statement is ClickHouse's; a server without it refuses the syntax",
 		),
-		// The catalog view MySQL added in 8.0.13, asked as a catalog question
-		// rather than a version comparison. PostgreSQL, CockroachDB and SQL
-		// Server have the SQL-standard view too; MariaDB, ClickHouse and
-		// Spanner answer `Unknown table` or `does not exist`, all measured
-		// (stokaro/ptah#916 item 3).
-		// The recursive form of a catalog read, asked as its own question
-		// because the PostgreSQL family splits on it for a reason outside SQL.
-		// Cloud Spanner's PostgreSQL interface answers a catalog reference by
-		// prepending its own `WITH pg_class AS (...)`, which merges with a
-		// plain WITH and collides with a RECURSIVE one; measured on the
-		// emulator through PGAdapter 0.55.2, this statement answers `syntax
-		// error at or near "m"` while the same query without RECURSIVE
-		// succeeds (stokaro/ptah#1811).
-		acceptanceNote(capability.CatalogRecursiveCTE, nil,
-			"WITH RECURSIVE m AS (SELECT relname FROM pg_class) SELECT relname FROM m LIMIT 1",
-			"a recursive CTE that also reads the catalogs",
-		),
 		acceptanceNote(capability.CatalogViewDependencies, nil,
 			"SELECT 1 FROM information_schema.view_table_usage LIMIT 1",
 			"the catalog naming the tables a view reads",
@@ -592,6 +575,10 @@ func mysqlFamilyPlan(dialect string) plan {
 	}
 
 	undecided := map[capability.Capability]string{
+		// The key asks whether a recursive CTE may also read the pg catalogs.
+		// The MySQL family has no pg catalogs, so the statement cannot be put
+		// to it and an answer would be to a different question.
+		capability.CatalogRecursiveCTE: "pg_class is a PostgreSQL catalog the MySQL family has no spelling of",
 		// The three PostgreSQL user-type kinds. This server has no spelling of
 		// any of the statements, so neither accepting nor refusing one would
 		// decide the key -- its answer would be to a different question
