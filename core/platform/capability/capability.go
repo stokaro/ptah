@@ -1383,8 +1383,15 @@ func SQLServer2022() Capabilities {
 		// return type as rows, ordinal zero being the return, exactly as MySQL's
 		// information_schema.ROUTINES does. Only the body comes out of the
 		// statement text (stokaro/ptah#1720).
-		Functions:                      true,
-		Procedures:                     false,
+		Functions: true,
+		// Procedures joined Functions once the same three halves existed for
+		// it. sys.parameters reports a procedure's parameters exactly as it
+		// reports a function's, so no header parser was needed; only the body
+		// comes out of the statement text, and there it ends at the AS that is
+		// not the one in `WITH EXECUTE AS OWNER` -- measured on SQL Server
+		// 2025, a procedure created with that clause keeps both words in
+		// sys.sql_modules.definition (stokaro/ptah#1784).
+		Procedures:                     true,
 		Triggers:                       true,
 		CreateOrReplaceTrigger:         true,
 		AlterGeneratedColumnExpression: false,

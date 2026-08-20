@@ -44,7 +44,15 @@ import (
 // so a function annotated without `language=` lands in this branch and is
 // skipped when it looks like it should have been generated.
 func (r *Renderer) VisitCreateFunction(node *ast.CreateFunctionNode) error {
-	if r.refuses(capability.Functions, "CREATE FUNCTION", node.Name) {
+	// A procedure is gated on its own key. The two are one catalog object
+	// differing in one property, but a target can host one and not the other,
+	// and refusing a procedure under the function key would say the wrong
+	// thing about which one is missing.
+	if node.IsProcedure() {
+		if r.refuses(capability.Procedures, "CREATE PROCEDURE", node.Name) {
+			return nil
+		}
+	} else if r.refuses(capability.Functions, "CREATE FUNCTION", node.Name) {
 		return nil
 	}
 	if !mysqlroutine.RunsLanguage(node.Language) {
@@ -65,8 +73,9 @@ func (r *Renderer) VisitCreateFunction(node *ast.CreateFunctionNode) error {
 	// would be reported as differing from its own declaration on every run.
 	// Naming it and creating nothing is the only answer that does not lie.
 	if parameterCarriesDefault(node.Parameters) {
-		r.w.WriteLinef("-- SQLSERVER: function %q declares a parameter default, which the catalog does not "+
-			"report back, so the function would be replanned on every run; it is not created.", node.Name)
+		r.w.WriteLinef("-- SQLSERVER: %s %q declares a parameter default, which the catalog does not "+
+			"report back, so it would be replanned on every run; it is not created.",
+			routineWord(node), node.Name)
 		return nil
 	}
 	if node.Comment != "" {
@@ -79,17 +88,25 @@ func (r *Renderer) VisitCreateFunction(node *ast.CreateFunctionNode) error {
 	// VOLATILE is what an unset declaration canonicalizes to and what a function
 	// written here reports back, so naming that would be noise on every run.
 	if volatility := strings.ToUpper(strings.TrimSpace(node.Volatility)); volatility != "" && volatility != "VOLATILE" {
-		r.w.WriteLinef("-- SQLSERVER: function %q declares %s, which T-SQL has no clause for; "+
-			"determinism is inferred by the engine from the body.", node.Name, volatility)
+		r.w.WriteLinef("-- SQLSERVER: %s %q declares %s, which T-SQL has no clause for; "+
+			"determinism is inferred by the engine from the body.", routineWord(node), node.Name, volatility)
 	}
 
 	// CREATE OR ALTER is used for both the plain and the replacing form. The
 	// engine accepts it on a name that does not exist yet, so it is the create
 	// as well as the replace, and it is what a declaration asking for
 	// IF NOT EXISTS gets -- that clause does not parse here.
-	r.w.WriteLinef("CREATE OR ALTER FUNCTION %s(%s)", escapeQualifiedIdentifier(node.Name),
-		strings.TrimSpace(node.Parameters))
-	r.w.WriteLinef("RETURNS %s", strings.TrimSpace(node.Returns))
+	if node.IsProcedure() {
+		// A procedure takes its parameters without parentheses in T-SQL, and
+		// `CREATE PROCEDURE p(@a int)` is `Incorrect syntax near '('`. It also
+		// has no RETURNS: that clause is what separates the two statements.
+		r.w.WriteLinef("CREATE OR ALTER PROCEDURE %s %s", escapeQualifiedIdentifier(node.Name),
+			strings.TrimSpace(node.Parameters))
+	} else {
+		r.w.WriteLinef("CREATE OR ALTER FUNCTION %s(%s)", escapeQualifiedIdentifier(node.Name),
+			strings.TrimSpace(node.Parameters))
+		r.w.WriteLinef("RETURNS %s", strings.TrimSpace(node.Returns))
+	}
 	// SECURITY DEFINER does have a T-SQL spelling, and it was nearly written off
 	// as absent: `WITH EXECUTE AS OWNER` is what the catalog reports back as a
 	// principal id on sys.sql_modules.execute_as_principal_id. CALLER is the
@@ -107,7 +124,11 @@ func (r *Renderer) VisitCreateFunction(node *ast.CreateFunctionNode) error {
 // The IF EXISTS clause is accepted, unlike its counterpart on CREATE, so the
 // guarded form needs no catalog test.
 func (r *Renderer) VisitDropFunction(node *ast.DropFunctionNode) error {
-	if r.refuses(capability.Functions, "DROP FUNCTION", node.Name) {
+	if node.IsProcedure() {
+		if r.refuses(capability.Procedures, "DROP PROCEDURE", node.Name) {
+			return nil
+		}
+	} else if r.refuses(capability.Functions, "DROP FUNCTION", node.Name) {
 		return nil
 	}
 	if node.Comment != "" {
@@ -117,7 +138,14 @@ func (r *Renderer) VisitDropFunction(node *ast.DropFunctionNode) error {
 	if node.IfExists {
 		guard = "IF EXISTS "
 	}
-	r.w.WriteLinef("DROP FUNCTION %s%s;", guard, escapeQualifiedIdentifier(node.Name))
+	// DROP PROCEDURE and DROP FUNCTION are different statements: the server
+	// answers the wrong one with "Cannot drop the procedure ... because it
+	// does not exist", naming an object that is right there.
+	statement := "DROP FUNCTION"
+	if node.IsProcedure() {
+		statement = "DROP PROCEDURE"
+	}
+	r.w.WriteLinef("%s %s%s;", statement, guard, escapeQualifiedIdentifier(node.Name))
 	return nil
 }
 
@@ -139,4 +167,13 @@ func parameterCarriesDefault(parameters string) bool {
 		}
 	}
 	return false
+}
+
+// routineWord names the object a diagnostic is about, so a message on a
+// procedure does not call it a function.
+func routineWord(node *ast.CreateFunctionNode) string {
+	if node.IsProcedure() {
+		return "procedure"
+	}
+	return "function"
 }
