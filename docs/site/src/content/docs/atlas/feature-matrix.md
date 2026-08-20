@@ -90,14 +90,14 @@ Across the 191 capabilities below:
 
 | Reading | Count |
 | --- | --- |
-| Ptah supports it fully | 147 |
-| Ptah supports it with a stated limitation | 26 |
+| Ptah supports it fully | 148 |
+| Ptah supports it with a stated limitation | 25 |
 | Ptah does not implement it | 13 |
 | Ptah covers it in its own form, against a hosted service it cannot interoperate with | 5 |
-| Ptah and Atlas CE both support it | 49 |
+| Ptah and Atlas CE both support it | 50 |
 | Ptah implements it openly where Atlas gates it behind Pro or Cloud | 44 |
 | Ptah has it and neither Atlas edition does | 27 |
-| Atlas CE has it and Ptah does not, or only in part | 16 |
+| Atlas CE has it and Ptah does not, or only in part | 15 |
 | An Atlas column is ❔ — not established by this page's evidence | 4 |
 
 Every 🟡 and every ❌ in the Ptah column names its specific limitation and the
@@ -270,7 +270,7 @@ seven of them as open capabilities regardless.
 | AWS RDS token project data source (data "aws_rds_token") | 🟡 | ✅ | ✅ | A valid unreferenced declaration is accepted lazily, matching Atlas CE. Resolving the token still fails explicitly because the provider is not implemented. Tracked by stokaro/ptah#1617. |
 | data "hcl_schema" reference | ✅ | ✅ | ✅ | Takes path, paths and vars, and exports .url. `vars` is scoped to the files that data source selects and `--var` does not cross that boundary, as on CE. A bad path or scheme names its rule. |
 | Docker dev databases (`docker://` `--dev-url`) | ✅ | ✅ | ✅ | Every verb taking a dev or shadow URL provisions and removes a container. `schema plan` starts none on purpose: a saved plan reads local files and has nothing to replay. |
-| env:// desired-state references | 🟡 | ✅ | ✅ | Resolves on `--to`/`--from`/`--url`, and on `--schema-file` when a command selects an env. Test verb sources still refuse (stokaro/ptah#1761); refusing on `--exclude`/`--include` is deliberate. |
+| env:// desired-state references | ✅ | ✅ | ✅ | Resolves on `--to`/`--from`/`--url`, on `--schema-file` and on `schema test`'s `-u` when a run selects an env. Refusing on `--exclude`/`--include` is deliberate. |
 | External program project data source (data "external") | ✅ | ✅ | ✅ | Runs argv directly without a shell and returns untrimmed stdout. Caller cancellation, a 60-second timeout, bounded output, process-tree termination, and sanitized errors define the boundary. |
 | GCP Cloud SQL token project data source (data "gcp_cloudsql_token") | 🟡 | ✅ | ✅ | A valid unreferenced declaration is accepted lazily, matching Atlas CE. Resolving the token still fails explicitly because the provider is not implemented. Tracked by stokaro/ptah#1617. |
 | Native project config (ptah.yaml) | ✅ | ➖ | ➖ | Keys url, dev, schemas, exclude, external_schema, migration, lint, migrate, diff, online_ddl. No variables or functions. An unknown key fails, naming the key, its line, and the accepted keys. |
