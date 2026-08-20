@@ -171,15 +171,20 @@ func FunctionsWithDialect(
 	databaseFunctionsByName := make(map[string][]types.DBFunction, len(database.Functions))
 	databaseFunctionsByQualifiedName := make(map[string]types.DBFunction, len(database.Functions))
 	for _, fn := range database.Functions {
+		// The kind is part of the key. One schema can hold a procedure and a
+		// function of the same name, and folding them together would compare a
+		// declared function against a stored procedure (stokaro/ptah#1722).
 		key := routineIdentityKey(fn.Name, dialect)
-		databaseFunctionsByName[key] = append(databaseFunctionsByName[key], fn)
+		kinded := routineKeyWithKind(fn.Kind, key)
+		databaseFunctionsByName[kinded] = append(databaseFunctionsByName[kinded], fn)
 		// The schema keeps its own spelling; only the routine half is folded.
-		databaseFunctionsByQualifiedName[tableref.Canonical(fn.Schema, key)] = fn
+		databaseFunctionsByQualifiedName[routineKeyWithKind(fn.Kind, tableref.Canonical(fn.Schema, key))] = fn
 	}
 
 	matchedDatabaseFunctions := make(map[string]struct{}, len(database.Functions))
 	for functionKey, generatedFunction := range generatedFunctionMap {
 		databaseFunction, exists := findDatabaseFunction(
+			generatedFunction.Kind,
 			functionKey,
 			databaseFunctionsByName,
 			databaseFunctionsByQualifiedName,
@@ -191,7 +196,10 @@ func FunctionsWithDialect(
 			diff.FunctionsAdded = append(diff.FunctionsAdded, generatedFunction.Name)
 			continue
 		}
-		matchedDatabaseFunctions[databaseFunction.QualifiedName()] = struct{}{}
+		// Keyed by kind as well: a procedure and a function can share a
+		// qualified name, and a match on one would otherwise mark the other as
+		// matched and silently keep it (stokaro/ptah#1722).
+		matchedDatabaseFunctions[routineKeyWithKind(databaseFunction.Kind, databaseFunction.QualifiedName())] = struct{}{}
 		functionComparison := FunctionDefinitionsWithDialect(generatedFunction, databaseFunction, dialect)
 		if len(functionComparison.Changes) > 0 {
 			diff.FunctionsModified = append(diff.FunctionsModified, functionComparison)
@@ -199,7 +207,11 @@ func FunctionsWithDialect(
 	}
 
 	for _, fn := range database.Functions {
-		if _, ok := matchedDatabaseFunctions[fn.QualifiedName()]; ok {
+		if _, ok := matchedDatabaseFunctions[routineKeyWithKind(fn.Kind, fn.QualifiedName())]; ok {
+			continue
+		}
+		if strings.EqualFold(strings.TrimSpace(fn.Kind), "procedure") {
+			diff.ProceduresRemoved = append(diff.ProceduresRemoved, fn.QualifiedName())
 			continue
 		}
 		diff.FunctionsRemoved = append(diff.FunctionsRemoved, fn.QualifiedName())
@@ -208,6 +220,7 @@ func FunctionsWithDialect(
 	// Ensure consistent ordering of results
 	sort.Strings(diff.FunctionsAdded)
 	sort.Strings(diff.FunctionsRemoved)
+	sort.Strings(diff.ProceduresRemoved)
 	sort.Slice(diff.FunctionsModified, func(i, j int) bool {
 		return diff.FunctionsModified[i].FunctionName < diff.FunctionsModified[j].FunctionName
 	})
@@ -334,6 +347,15 @@ func splitTopLevelArguments(parameters string) []string {
 	return append(arguments, parameters[start:])
 }
 
+// routineKeyWithKind prefixes a routine key with its kind, so a procedure and a
+// function of the same name are two entries rather than one.
+func routineKeyWithKind(kind, key string) string {
+	if strings.EqualFold(strings.TrimSpace(kind), "procedure") {
+		return "procedure\x00" + key
+	}
+	return "function\x00" + key
+}
+
 // routineIdentityKind separates a procedure from a function of the same name.
 //
 // Both engines that model procedures let one schema hold both -- MySQL keys
@@ -358,7 +380,7 @@ func routineIdentityKind(kind string) objectidentity.Kind {
 // same question about an object whose generated name may or may not carry its
 // schema.
 func findDatabaseFunction(
-	name string,
+	kind, name string,
 	byName map[string][]types.DBFunction,
 	byQualifiedName map[string]types.DBFunction,
 ) (types.DBFunction, bool) {
@@ -366,11 +388,13 @@ func findDatabaseFunction(
 	if !ok {
 		return types.DBFunction{}, false
 	}
+	// The kind joins the key after parsing, never before: a kind-prefixed name
+	// is not a name tableref can read (stokaro/ptah#1722).
 	if ref.Qualified {
-		fn, ok := byQualifiedName[tableref.Canonical(ref.Schema, ref.Name)]
+		fn, ok := byQualifiedName[routineKeyWithKind(kind, tableref.Canonical(ref.Schema, ref.Name))]
 		return fn, ok
 	}
-	candidates := byName[ref.Name]
+	candidates := byName[routineKeyWithKind(kind, ref.Name)]
 	if len(candidates) != 1 {
 		return types.DBFunction{}, false
 	}

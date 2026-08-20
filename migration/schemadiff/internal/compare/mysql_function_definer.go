@@ -9,7 +9,6 @@ import (
 	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/mysqlroutine"
-	"go.5x5.cz/ptah/internal/objectidentity"
 	"go.5x5.cz/ptah/internal/tableref"
 	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
 )
@@ -100,7 +99,7 @@ func findCurrentFunctionForDesired(
 		byIdentity := make(map[objectIdentity]types.DBFunction, len(current))
 		for _, function := range current {
 			identity := newObjectIdentity(
-				objectidentity.KindFunction,
+				routineIdentityKind(function.Kind),
 				function.Schema,
 				routineIdentityKey(function.Name, dialect),
 				semantics,
@@ -108,7 +107,7 @@ func findCurrentFunctionForDesired(
 			byIdentity[identity] = function
 		}
 		identity := newQualifiedObjectIdentity(
-			objectidentity.KindFunction,
+			routineIdentityKind(desired.Kind),
 			qualifiedRoutineIdentityKey(desired.Name, dialect),
 			semantics,
 		)
@@ -120,10 +119,11 @@ func findCurrentFunctionForDesired(
 	byQualifiedName := make(map[string]types.DBFunction, len(current))
 	for _, function := range current {
 		key := routineIdentityKey(function.Name, dialect)
-		byName[key] = append(byName[key], function)
-		byQualifiedName[tableref.Canonical(function.Schema, key)] = function
+		byName[routineKeyWithKind(function.Kind, key)] = append(byName[routineKeyWithKind(function.Kind, key)], function)
+		byQualifiedName[routineKeyWithKind(function.Kind, tableref.Canonical(function.Schema, key))] = function
 	}
 	return findDatabaseFunction(
+		desired.Kind,
 		qualifiedRoutineIdentityKey(desired.Name, dialect),
 		byName,
 		byQualifiedName,
