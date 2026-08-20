@@ -1,6 +1,7 @@
 package query
 
 import (
+	"slices"
 	"strings"
 
 	"go.5x5.cz/ptah/core/ast"
@@ -303,6 +304,58 @@ func Like(column, pattern string) ast.Expression {
 // case sensitivity.
 func NotLike(column, pattern string) ast.Expression {
 	return comparison(column, ast.OpNotLike, pattern)
+}
+
+// Func builds a call to name with args, for the functions this package has no
+// named helper for.
+//
+// The name is a KEYWORD, emitted verbatim and never quoted, and the renderer
+// refuses anything that is not a simple identifier -- so a name cannot carry
+// SQL. Arguments are ordinary expressions: Col produces a quoted identifier and
+// Value a bound placeholder, which is what keeps a caller's data out of the
+// statement text (stokaro/ptah#941).
+//
+//	query.Func("COALESCE", query.ColExpr("nick"), query.Value("anon"))
+//	// COALESCE("nick", $1)
+func Func(name string, args ...ast.Expression) ast.Expression {
+	return &ast.FuncCall{Name: name, Args: slices.Clone(args)}
+}
+
+// ColExpr is a column reference usable as a function argument or an arithmetic
+// operand.
+//
+// It is spelled apart from [Col], which builds the Column value a projection or
+// GROUP BY term takes. The two are different positions in the grammar and
+// giving them one name would let a caller pass the wrong one and find out at
+// the type checker rather than at the point of confusion.
+func ColExpr(name string) ast.Expression { return &ast.ColumnRef{Name: name} }
+
+// Value is a bound value usable as a function argument or an arithmetic
+// operand. It is never interpolated into the statement text.
+func Value(v any) ast.Expression { return &ast.BoundValue{Value: v} }
+
+// Add, Sub, Mul, Div and Mod build binary arithmetic expressions.
+//
+// Each renders parenthesized, so the tree the caller built is the expression
+// the server evaluates rather than one its precedence rules recover. See
+// [go.5x5.cz/ptah/core/ast.Arithmetic].
+func Add(left, right ast.Expression) ast.Expression { return arith(left, ast.OpAdd, right) }
+
+// Sub builds "(left - right)". See [Add].
+func Sub(left, right ast.Expression) ast.Expression { return arith(left, ast.OpSubtract, right) }
+
+// Mul builds "(left * right)". See [Add].
+func Mul(left, right ast.Expression) ast.Expression { return arith(left, ast.OpMultiply, right) }
+
+// Div builds "(left / right)". See [Add].
+func Div(left, right ast.Expression) ast.Expression { return arith(left, ast.OpDivide, right) }
+
+// Mod builds "(left %% right)". Its spelling is portable and its result for a
+// negative operand is not; see [go.5x5.cz/ptah/core/ast.OpModulo].
+func Mod(left, right ast.Expression) ast.Expression { return arith(left, ast.OpModulo, right) }
+
+func arith(left ast.Expression, op ast.ArithmeticOperator, right ast.Expression) ast.Expression {
+	return &ast.Arithmetic{Left: left, Operator: op, Right: right}
 }
 
 // In builds "column IN (values...)", binding each value as a parameter. The

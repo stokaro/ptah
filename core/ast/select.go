@@ -250,6 +250,69 @@ type FuncCall struct {
 
 func (*FuncCall) expressionNode() {}
 
+// ArithmeticOperator enumerates the binary arithmetic operators.
+type ArithmeticOperator int
+
+const (
+	// OpAdd is the + operator.
+	OpAdd ArithmeticOperator = iota
+	// OpSubtract is the - operator.
+	OpSubtract
+	// OpMultiply is the * operator.
+	OpMultiply
+	// OpDivide is the / operator.
+	OpDivide
+	// OpModulo is the % operator.
+	//
+	// Its spelling is portable; its RESULT for a negative operand is not.
+	// PostgreSQL and SQLite take the sign of the dividend, so -7 % 3 is -1;
+	// other engines differ. Ptah emits the operator and leaves the engine's
+	// arithmetic to the engine (stokaro/ptah#941).
+	OpModulo
+)
+
+// String returns the SQL token for the operator, or an empty string when the
+// operator is outside the defined range. Renderers treat an empty string as an
+// error rather than emitting invalid SQL.
+func (op ArithmeticOperator) String() string {
+	switch op {
+	case OpAdd:
+		return "+"
+	case OpSubtract:
+		return "-"
+	case OpMultiply:
+		return "*"
+	case OpDivide:
+		return "/"
+	case OpModulo:
+		return "%"
+	default:
+		return ""
+	}
+}
+
+// Arithmetic is a binary arithmetic expression of the form
+// "(Left <Operator> Right)".
+//
+// # Why it always renders its own parentheses
+//
+// The node is a TREE and SQL is text, so `Mul(Add(a, b), c)` and
+// `Add(a, Mul(b, c))` have to render differently. Emitting them without
+// parentheses produces `a + b * c` for both, and the server then applies its own
+// precedence -- which agrees with one of the two trees and silently rewrites the
+// other. Parenthesizing every node costs a pair of characters and makes the
+// rendered text mean exactly what the caller built (stokaro/ptah#941).
+type Arithmetic struct {
+	// Left is the left-hand operand.
+	Left Expression
+	// Operator is the arithmetic operator.
+	Operator ArithmeticOperator
+	// Right is the right-hand operand.
+	Right Expression
+}
+
+func (*Arithmetic) expressionNode() {}
+
 // SortDirection is the direction of an ORDER BY term.
 type SortDirection int
 
