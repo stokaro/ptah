@@ -182,9 +182,10 @@ func measuredLines() map[string]measuredLine {
 				capability.XMLType:                            {true, "ACCEPTED CREATE TABLE xmlt (c XML)"},
 			},
 			carried: map[capability.Capability]string{
-				capability.MigrationTimeouts: "the key names a runtime policy the migrator applies around a migration, not a statement this probe can send; the server accepting SET LOCAL statement_timeout says nothing about whether Ptah sets and restores it here (stokaro/ptah#1713)",
-				capability.TransactionalDDL:  "the key names whether a failed migration rolls back as a unit, which one accepted statement cannot show; it is decided by the engine's DDL semantics rather than by a statement (stokaro/ptah#1713)",
-				capability.Procedures:        "this run predates the key and sent no CREATE PROCEDURE. The probe plan asks nothing about procedures yet, so the value here comes from the preset beneath and is not a measurement of this line (stokaro/ptah#1722)",
+				capability.DDLInsideTransaction: "the key names whether the server takes a schema statement inside an explicit transaction, which is a property of the wrapper the migrator opens rather than of any statement this probe sends (stokaro/ptah#1793)",
+				capability.MigrationTimeouts:    "the key names a runtime policy the migrator applies around a migration, not a statement this probe can send; the server accepting SET LOCAL statement_timeout says nothing about whether Ptah sets and restores it here (stokaro/ptah#1713)",
+				capability.TransactionalDDL:     "the key names whether a failed migration rolls back as a unit, which one accepted statement cannot show; it is decided by the engine's DDL semantics rather than by a statement (stokaro/ptah#1713)",
+				capability.Procedures:           "this run predates the key and sent no CREATE PROCEDURE. The probe plan asks nothing about procedures yet, so the value here comes from the preset beneath and is not a measurement of this line (stokaro/ptah#1722)",
 				capability.DomainTypes: "this run predates the key and sent no CREATE DOMAIN. PostgreSQL is the engine the key is true FOR, so an acceptance here would restate the premise rather than measure this line; " +
 					"what decides it is CockroachDB v26.2.5 answering \"not yet implemented\" and Spanner's PostgreSQL interface answering \"Statement is not supported\" (stokaro/ptah#1717)",
 				capability.CompositeTypes: "this run predates the key and sent no CREATE TYPE ... AS (...). It is the one user-type key CockroachDB accepts, so what decides it is Spanner refusing it while CockroachDB takes it -- a split a PostgreSQL acceptance cannot show (stokaro/ptah#1717)",
@@ -238,6 +239,7 @@ func measuredLines() map[string]measuredLine {
 				capability.XMLType:                            {false, "REFUSED CREATE TABLE xmlt (c XML) -> Error 1064 (42000)"},
 			},
 			carried: map[capability.Capability]string{
+				capability.DDLInsideTransaction:     "the key names whether the server takes a schema statement inside an explicit transaction, which is a property of the wrapper the migrator opens rather than of any statement this probe sends (stokaro/ptah#1793)",
 				capability.MigrationTimeouts:        "the key names a runtime policy the migrator applies around a migration, not a statement this probe can send; the server accepting SET LOCAL statement_timeout says nothing about whether Ptah sets and restores it here (stokaro/ptah#1713)",
 				capability.TransactionalDDL:         "the key names whether a failed migration rolls back as a unit, which one accepted statement cannot show; it is decided by the engine's DDL semantics rather than by a statement (stokaro/ptah#1713)",
 				capability.Procedures:               "this run predates the key and sent no CREATE PROCEDURE. The probe plan asks nothing about procedures yet, so the value here comes from the preset beneath and is not a measurement of this line (stokaro/ptah#1722)",
@@ -293,6 +295,7 @@ func measuredLines() map[string]measuredLine {
 				capability.XMLType:                            {false, "REFUSED CREATE TABLE xmlt (c XML) -> Error 4161 (HY000): Unknown data type: 'XML'"},
 			},
 			carried: map[capability.Capability]string{
+				capability.DDLInsideTransaction:     "the key names whether the server takes a schema statement inside an explicit transaction, which is a property of the wrapper the migrator opens rather than of any statement this probe sends (stokaro/ptah#1793)",
 				capability.MigrationTimeouts:        "the key names a runtime policy the migrator applies around a migration, not a statement this probe can send; the server accepting SET LOCAL statement_timeout says nothing about whether Ptah sets and restores it here (stokaro/ptah#1713)",
 				capability.TransactionalDDL:         "the key names whether a failed migration rolls back as a unit, which one accepted statement cannot show; it is decided by the engine's DDL semantics rather than by a statement (stokaro/ptah#1713)",
 				capability.Procedures:               "this run predates the key and sent no CREATE PROCEDURE. The probe plan asks nothing about procedures yet, so the value here comes from the preset beneath and is not a measurement of this line (stokaro/ptah#1722)",
