@@ -96,7 +96,11 @@ func ConnectToDatabase(ctx context.Context, dbURL string) (*DatabaseConnection, 
 			return postgres.NewPostgreSQLReaderWithCapabilities(runner, info.Schema, info.Capabilities)
 		}
 		newWriter = func(runner sqlrunner.Runner, _ *sql.Conn) types.SchemaWriter {
-			return postgres.NewPostgreSQLWriterForRunner(runner, info.Schema)
+			// The set decides whether cleanup may take a transaction: Spanner
+			// refuses DDL inside one, and the writer cannot ask the server
+			// without opening the transaction it is trying to avoid.
+			return postgres.NewPostgreSQLWriterForRunnerWithCapabilities(
+				runner, info.Schema, info.Capabilities)
 		}
 	case "mysql":
 		newReader = func(runner sqlrunner.Runner) types.SchemaReader {

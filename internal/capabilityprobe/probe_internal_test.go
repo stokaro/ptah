@@ -125,6 +125,7 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 		// answer about the key (stokaro/ptah#1717).
 		want: []capability.Capability{
 			capability.CatalogDependencies,
+			capability.CatalogRecursiveCTE,
 			capability.CatalogRowStatistics,
 			capability.CompositeTypes,
 			capability.DDLInsideTransaction,
@@ -141,6 +142,7 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 		dialect: platform.MariaDB,
 		want: []capability.Capability{
 			capability.CatalogDependencies,
+			capability.CatalogRecursiveCTE,
 			capability.CatalogRowStatistics,
 			capability.CompositeTypes,
 			capability.DDLInsideTransaction,
@@ -156,6 +158,9 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 	}, {
 		dialect: platform.ClickHouse,
 		want: []capability.Capability{
+			// ClickHouse has no pg catalogs, so the recursive-catalog-read
+			// question cannot be put to it (stokaro/ptah#1811).
+			capability.CatalogRecursiveCTE,
 			capability.CompositeTypes,
 			capability.DDLInsideTransaction,
 			capability.DomainTypes,
@@ -283,23 +288,23 @@ func TestDecidable_IsDerivedFromThePlanAndTheLine(t *testing.T) {
 		caps: capability.Postgres17(),
 		want: registered - 4,
 	}, {
-		name: "mysql owes twelve fewer: role_management, row_level_ttl, the three catalog keys, the three user-type kinds and the three runtime properties name surfaces no MySQL path reads or no statement decides",
+		name: "mysql owes thirteen fewer: role_management, row_level_ttl, the four catalog keys, the three user-type kinds and the three runtime properties name surfaces no MySQL path reads or no statement decides",
 		cell: Cell{
 			Dialect: platform.MySQL, Line: "9.7",
 			Preset: capability.MySQL84, PresetName: "MySQL84",
 			Refinement: RefinedByVersion,
 		},
 		caps: capability.MySQL84(),
-		want: registered - 12,
+		want: registered - 13,
 	}, {
-		name: "mariadb owes twelve fewer: the three user-type kinds have no MariaDB spelling, the three runtime properties are not statements, and sequences is asked now that Ptah renders, reads and plans one",
+		name: "mariadb owes thirteen fewer: the three user-type kinds have no MariaDB spelling, the three runtime properties are not statements, pg_class is not a catalog it has, and sequences is asked now that Ptah renders, reads and plans one",
 		cell: Cell{
 			Dialect: platform.MariaDB, Line: "10.11",
 			Preset: capability.MariaDB1011, PresetName: "MariaDB1011",
 			Refinement: RefinedByVersion,
 		},
 		caps: capability.MariaDB1011(),
-		want: registered - 12,
+		want: registered - 13,
 	}, {
 		name: "cockroachdb 26.2 owes every row its preset enables a prerequisite for, less the one the probe cannot ask",
 		cell: Cell{
