@@ -550,9 +550,11 @@ var Cells = []Cell{
 		Note:       "no container: the version is the modernc.org/sqlite amalgamation pinned in go.mod",
 	},
 
-	// Spanner is a managed service with no version axis and no local server.
-	// SpannerPostgres' own doc concedes that nothing in it was executed
-	// against a server; issue #942 is the missing container.
+	// Spanner is a managed service with no version axis and no open-source
+	// server. The emulator behind PGAdapter is the only endpoint a container
+	// can provide, and stokaro/ptah#942 closed once this cell started running
+	// it on every pull request. What it does not cover is the hosted product
+	// or an end-to-end suite; see stokaro/ptah#1719.
 	{
 		Dialect: platform.Spanner, Line: "0",
 		Image:       "gcr.io/cloud-spanner-pg-adapter/pgadapter-emulator:v0.55.2",

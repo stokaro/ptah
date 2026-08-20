@@ -346,10 +346,15 @@ var launchers = map[string]launcher{
 	platform.Spanner: {
 		flags: []string{"--publish", "5432:5432"},
 		url:   "spanner://127.0.0.1:5432/ptah_test?sslmode=disable",
-		suiteSkip: "the integration runner has no Spanner target: Ptah's index read is " +
-			"pg_index/pg_class/pg_am/pg_get_indexdef throughout and Spanner exposes indexes " +
-			"through information_schema, so the suite would fail on reading a schema rather " +
-			"than on anything it set out to test (stokaro/ptah#942)",
+		// The read is no longer the blocker: measured 2026-08-20 against the
+		// emulator behind PGAdapter 0.55.2, `ptah db read` returns the table,
+		// its primary key and a secondary index, because the index read moved
+		// to the SQL-standard catalog. What stops the suite is execution:
+		// `schema apply` answers `DDL statements are only allowed outside
+		// explicit transactions (SQLSTATE 25000)`, and Ptah applies inside one.
+		suiteSkip: "the integration runner has no Spanner target: Spanner refuses DDL inside an " +
+			"explicit transaction and Ptah's apply path opens one, so the suite would fail on " +
+			"executing a schema rather than on anything it set out to test (stokaro/ptah#1719)",
 	},
 	platform.YugabyteDB: {
 		flags: []string{"--publish", "5433:5433"},
