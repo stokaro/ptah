@@ -82,6 +82,7 @@ type StatusEnumMarker struct{}
 | [`ptah:schema:extension`](#ptahschemaextension) | A PostgreSQL extension | struct |
 | [`ptah:schema:sequence`](#ptahschemasequence) | A standalone PostgreSQL sequence | struct |
 | [`ptah:schema:function`](#ptahschemafunction) | A database function | struct |
+| [`ptah:schema:procedure`](#ptahschemaprocedure) | A stored procedure | struct |
 | [`ptah:schema:trigger`](#ptahschematrigger) | A database trigger | struct |
 | [`ptah:schema:view`](#ptahschemaview) | A database view | struct |
 | [`ptah:schema:matview`](#ptahschemamatview) | A materialized view | struct |
@@ -402,6 +403,32 @@ Declares a database function.
 | `name` | No | Function name. |
 | `params` | No | Function parameter list. |
 | `returns` | No | Return type. |
+| `security` | No | Security mode, such as DEFINER. |
+| `volatility` | No | Volatility class. |
+
+### `//ptah:schema:procedure`
+
+Declares a stored procedure: a routine that returns nothing and is invoked with `CALL`.
+
+A procedure is the same catalog object as a function with one property removed, so it takes
+the same attributes minus `returns`. Declaring `returns` is refused rather than ignored:
+`CREATE PROCEDURE ... RETURNS` does not parse on either engine that has procedures, and
+accepting the attribute would mean a declaration that says one thing while the database holds
+another.
+
+```go
+//ptah:schema:procedure name="archive_tenant" params="tenant_id integer" language="sql" body="DELETE FROM tenants WHERE id = tenant_id"
+type ArchiveTenant struct{}
+```
+
+| Attribute | Required | Description |
+| --- | --- | --- |
+| `body` | No | Procedure body SQL. |
+| `comment` | No | Procedure comment. |
+| `dialects` | No | Comma-separated target dialects this object belongs to; omitted means every dialect. See [Scoping an object to dialects](#scoping-an-object-to-dialects). |
+| `language` | No | Procedure language. |
+| `name` | No | Procedure name. |
+| `params` | No | Procedure parameter list. |
 | `security` | No | Security mode, such as DEFINER. |
 | `volatility` | No | Volatility class. |
 

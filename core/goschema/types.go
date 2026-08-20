@@ -881,6 +881,15 @@ func (r Range) QualifiedName() string {
 type Function struct {
 	StructName string // Name of the Go struct this function is associated with
 	Name       string // Function name (e.g., "set_tenant_context")
+	// Kind separates a function from a procedure. Empty means "function",
+	// which is what every declaration written before procedures existed meant.
+	//
+	// The two are one model because they are one catalog row on both engines
+	// that have them -- pg_proc with prokind 'f' or 'p', ROUTINE_TYPE FUNCTION
+	// or PROCEDURE -- and they differ in exactly one property a schema can
+	// state: a procedure returns nothing and is invoked with CALL
+	// (stokaro/ptah#1722).
+	Kind       string
 	Parameters string // Function parameters (e.g., "tenant_id_param TEXT")
 	Returns    string // Return type (e.g., "VOID", "TEXT")
 	Language   string // Function language (e.g., "plpgsql", "sql")
@@ -1180,7 +1189,24 @@ func isIdentifierPart(character byte) bool {
 // are the annotation parser (which sees raw user-typed text) and any
 // programmatic constructor — test fixtures, downstream API consumers — that
 // builds Function values without going through the parser.
+// The two routine kinds one Function can carry.
+const (
+	// FunctionKindFunction returns a value and is called in an expression.
+	FunctionKindFunction = "function"
+	// FunctionKindProcedure returns nothing and is invoked with CALL.
+	FunctionKindProcedure = "procedure"
+)
+
+// IsProcedure reports whether this routine is a procedure.
+func (f Function) IsProcedure() bool {
+	return strings.EqualFold(strings.TrimSpace(f.Kind), FunctionKindProcedure)
+}
+
 func (f *Function) Canonicalize() {
+	// Lower-cased but NOT defaulted. Empty already means function everywhere
+	// that reads it, and filling it in would rewrite every declaration written
+	// before procedures existed into a form its author did not type.
+	f.Kind = strings.ToLower(strings.TrimSpace(f.Kind))
 	f.Language = strings.ToLower(f.Language)
 	if f.Language == "" {
 		f.Language = "plpgsql"

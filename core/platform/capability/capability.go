@@ -173,6 +173,16 @@ const (
 	// RowLevelSecurity.
 	Functions Capability = "functions"
 
+	// Procedures marks support for CREATE PROCEDURE: a routine that returns
+	// nothing and is invoked with CALL.
+	//
+	// It is separate from [Functions] because the two do not travel together.
+	// SQL Server hosts both and Ptah reads back only the function; ClickHouse
+	// has neither. A preset claims this one only where a renderer emits the
+	// procedure, a reader returns it, and a planner reconciles it
+	// (stokaro/ptah#1722).
+	Procedures Capability = "procedures"
+
 	// Triggers marks support for the CREATE TRIGGER object itself. Whether
 	// that object can be replaced in a single statement is
 	// CreateOrReplaceTrigger, which requires this one — replace syntax for a
@@ -583,6 +593,9 @@ var registry = map[Capability]spec{
 	Functions: {
 		doc: "user-defined functions declared with a return type, a language, and a body",
 	},
+	Procedures: {
+		doc: "stored procedures: routines that return nothing and are invoked with CALL",
+	},
 	Triggers: {
 		doc: "CREATE TRIGGER objects",
 	},
@@ -818,6 +831,7 @@ func MySQL84() Capabilities {
 		Views:                          true,
 		MaterializedViews:              false,
 		Functions:                      true,
+		Procedures:                     true,
 		Triggers:                       true,
 		CreateOrReplaceTrigger:         false,
 		AlterGeneratedColumnExpression: false,
@@ -932,6 +946,7 @@ func MariaDB1011() Capabilities {
 		Views:                          true,
 		MaterializedViews:              false,
 		Functions:                      true,
+		Procedures:                     true,
 		Triggers:                       true,
 		CreateOrReplaceTrigger:         true,
 		AlterGeneratedColumnExpression: false,
@@ -1021,6 +1036,7 @@ func Postgres16() Capabilities {
 		CompositeTypes:                     true,
 		RangeTypes:                         true,
 		Functions:                          true,
+		Procedures:                         true,
 		Triggers:                           true,
 		CreateOrReplaceTrigger:             true,
 		AlterGeneratedColumnExpression:     false,
@@ -1141,6 +1157,7 @@ func ClickHouse24() Capabilities {
 		// describes -- a return type, a language and a body -- and that shape is
 		// a syntax error here. Measured both ways on 26.7.3.19.
 		Functions:                      false,
+		Procedures:                     false,
 		Triggers:                       false,
 		CreateOrReplaceTrigger:         false,
 		AlterGeneratedColumnExpression: true,
@@ -1240,6 +1257,7 @@ func SQLite3() Capabilities {
 		Views:                              true,
 		MaterializedViews:                  false,
 		Functions:                          false,
+		Procedures:                         false,
 		Triggers:                           true,
 		CreateOrReplaceTrigger:             false,
 		AlterGeneratedColumnExpression:     false,
@@ -1346,6 +1364,7 @@ func SQLServer2022() Capabilities {
 		// information_schema.ROUTINES does. Only the body comes out of the
 		// statement text (stokaro/ptah#1720).
 		Functions:                      true,
+		Procedures:                     false,
 		Triggers:                       true,
 		CreateOrReplaceTrigger:         true,
 		AlterGeneratedColumnExpression: false,
@@ -1609,6 +1628,10 @@ func SpannerPostgres() Capabilities {
 		With(MigrationTimeouts, false).
 		With(TransactionalDDL, false).
 		With(Functions, false).
+		// A procedure is the same routine object with its return type removed,
+		// so an endpoint that takes no CREATE FUNCTION takes no CREATE
+		// PROCEDURE either (stokaro/ptah#1722).
+		With(Procedures, false).
 		With(Triggers, false).
 		With(CreateOrReplaceTrigger, false).
 		With(RowLevelSecurity, false).

@@ -320,6 +320,10 @@ func convertFunctions(database *goschema.Database, dbFunctions []dbschematypes.D
 		function := goschema.Function{
 			StructName: "", // Functions are not associated with specific structs in DB schema
 			Name:       dbFunction.QualifiedName(),
+			// The kind travels with the routine. Dropping it here would turn
+			// every read-back procedure into a function, which is what the
+			// reader used to do by filtering them out (stokaro/ptah#1722).
+			Kind:       dbFunction.Kind,
 			Parameters: dbFunction.Parameters,
 			Returns:    dbFunction.Returns,
 			Language:   dbFunction.Language,

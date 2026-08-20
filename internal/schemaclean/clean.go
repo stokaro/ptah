@@ -741,6 +741,14 @@ func rangeObjects(schema *dbschematypes.DBSchema) []Object {
 func functionObjects(schema *dbschematypes.DBSchema, dialect string) []Object {
 	objects := make([]Object, 0, len(schema.Functions))
 	for _, function := range schema.Functions {
+		// Procedures are enumerated by inspectRuntimeObjects, which already
+		// names the kind and emits DROP PROCEDURE. They only reach this
+		// collection because the reader models them now (stokaro/ptah#1722);
+		// letting them through here would list each one twice and give one of
+		// the two the wrong verb, which the server refuses by name.
+		if strings.EqualFold(strings.TrimSpace(function.Kind), "procedure") {
+			continue
+		}
 		identityArguments := function.Parameters
 		if function.IdentityArguments != nil {
 			identityArguments = *function.IdentityArguments

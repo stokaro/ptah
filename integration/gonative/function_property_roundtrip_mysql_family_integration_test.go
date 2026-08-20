@@ -17,6 +17,7 @@ import (
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/dbschema"
+	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/dbschema/mysql"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
@@ -469,9 +470,11 @@ func TestFunctionCaseOnlySpelling_MySQLFamily_Integration(t *testing.T) {
 // `a int, p_x varchar(50), p_y decimal(10,2)` -- parameter drift no apply could
 // ever resolve.
 //
-// The procedure is created directly rather than through Ptah because Ptah does
-// not declare procedures; it is a fact about the database the reader must
-// tolerate, not a thing under test.
+// The procedure is created directly rather than through Ptah because what is
+// under test is the FUNCTION's signature, not the procedure. Ptah models
+// procedures since stokaro/ptah#1722, and the reader returns this one -- so the
+// collision the parameter map has to survive is reachable now instead of being
+// prevented by a filter.
 func TestFunctionParametersIgnoreASameNamedProcedure_Integration(t *testing.T) {
 	for _, target := range mysqlFamilyTargets {
 		t.Run(target.name, func(t *testing.T) {
@@ -491,16 +494,32 @@ func TestFunctionParametersIgnoreASameNamedProcedure_Integration(t *testing.T) {
 			c.Assert(err, qt.IsNil)
 
 			// The procedure's arguments must not reach the function's signature.
+			// Both routines come back now, keyed apart by kind: information_schema
+			// .PARAMETERS keys both by SPECIFIC_NAME, so a map keyed by name alone
+			// would hand one routine the other's arguments.
 			reader := mysql.NewMySQLReader(db, "")
 			live, err := reader.ReadSchema()
 			c.Assert(err, qt.IsNil)
-			c.Assert(live.Functions, qt.HasLen, 1)
-			c.Check(live.Functions[0].Parameters, qt.Equals, "a int")
-			c.Check(live.Functions[0].Parameters, qt.Not(qt.Contains), "p_x")
-			c.Check(live.Functions[0].Parameters, qt.Not(qt.Contains), "p_y")
+			c.Assert(live.Functions, qt.HasLen, 2)
 
-			// So the schema still converges with the procedure sitting there.
-			c.Check(propertyDiff(c, db, target.dialect, desired).HasChanges(), qt.IsFalse)
+			function := liveRoutineOfKind(c, live.Functions, false)
+			c.Check(function.Parameters, qt.Equals, "a int")
+			c.Check(function.Parameters, qt.Not(qt.Contains), "p_x")
+			c.Check(function.Parameters, qt.Not(qt.Contains), "p_y")
+
+			procedure := liveRoutineOfKind(c, live.Functions, true)
+			c.Check(procedure.Parameters, qt.Contains, "p_x")
+			c.Check(procedure.Parameters, qt.Not(qt.Contains), "a int")
+
+			// The function itself still converges: what the comparison now
+			// reports is the undeclared PROCEDURE, as a removal, exactly as it
+			// would report an undeclared function. That is what modeling the
+			// kind means, and it is the one behavior change here.
+			diff := propertyDiff(c, db, target.dialect, desired)
+			c.Check(diff.FunctionsAdded, qt.HasLen, 0)
+			c.Check(diff.FunctionsModified, qt.HasLen, 0)
+			c.Check(diff.FunctionsRemoved, qt.HasLen, 0)
+			c.Check(diff.ProceduresRemoved, qt.HasLen, 1)
 
 			// The procedure is this test's own object; take it away explicitly
 			// so the owned-database drop is not the only thing standing between
@@ -533,6 +552,20 @@ func TestFunctionParametersIgnoreASameNamedProcedure_Integration(t *testing.T) {
 //
 // The count is read from the catalog after a SUCCESSFUL apply, because that is
 // the failure mode: the migration reports success.
+// liveRoutineOfKind picks the one routine of the asked-for kind, failing when
+// the read holds none or more than one.
+func liveRoutineOfKind(c *qt.C, routines []dbschematypes.DBFunction, procedures bool) dbschematypes.DBFunction {
+	c.Helper()
+	var found []dbschematypes.DBFunction
+	for _, routine := range routines {
+		if strings.EqualFold(strings.TrimSpace(routine.Kind), "procedure") == procedures {
+			found = append(found, routine)
+		}
+	}
+	c.Assert(found, qt.HasLen, 1)
+	return found[0]
+}
+
 func TestFunctionSkippedLanguageNeverDropsTheLiveRoutine_Integration(t *testing.T) {
 	tests := []struct {
 		name     string

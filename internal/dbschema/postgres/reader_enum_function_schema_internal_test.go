@@ -37,11 +37,11 @@ func enumFunctionCatalog(query string, _ []driver.NamedValue) (dbtest.QueryResul
 	return dbtest.QueryResult{
 		Columns: []string{
 			"function_name", "parameters", "identity_arguments", "returns", "language",
-			"security", "volatility", "body", "comment",
+			"security", "volatility", "body", "comment", "kind",
 		},
 		Rows: [][]driver.Value{{
 			"fn_app", "value integer DEFAULT 1, OUT doubled integer", "integer",
-			"integer", "sql", "INVOKER", "VOLATILE", " SELECT 2 ", "",
+			"integer", "sql", "INVOKER", "VOLATILE", " SELECT 2 ", "", "function",
 		}},
 	}, nil
 }

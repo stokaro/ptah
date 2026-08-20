@@ -1532,6 +1532,13 @@ package ast // import "go.5x5.cz/ptah/core/ast"
 type CreateFunctionNode struct {
     // Name is the name of the function to create
     Name string
+    // Kind separates a function from a procedure. Empty means function.
+    //
+    // It is a field rather than a node of its own because the two are one
+    // catalog object differing in one property, and a second node would widen
+    // [Visitor] for every dialect that already answers this one
+    // (stokaro/ptah#1722).
+    Kind string
     // Parameters contains the function parameter definitions (e.g., "tenant_id_param TEXT")
     Parameters string
     // Returns specifies the return type (e.g., "VOID", "TEXT", "INTEGER")
@@ -1562,9 +1569,11 @@ type CreateFunctionNode struct {
 
 func NewCreateFunction(name string) *CreateFunctionNode
 func (n *CreateFunctionNode) Accept(visitor Visitor) error
+func (n *CreateFunctionNode) IsProcedure() bool
 func (n *CreateFunctionNode) SetAtomicBody(body string) *CreateFunctionNode
 func (n *CreateFunctionNode) SetBody(body string) *CreateFunctionNode
 func (n *CreateFunctionNode) SetComment(comment string) *CreateFunctionNode
+func (n *CreateFunctionNode) SetKind(kind string) *CreateFunctionNode
 func (n *CreateFunctionNode) SetLanguage(language string) *CreateFunctionNode
 func (n *CreateFunctionNode) SetParameters(parameters string) *CreateFunctionNode
 func (n *CreateFunctionNode) SetReturnBody(body string) *CreateFunctionNode
@@ -2134,6 +2143,10 @@ package ast // import "go.5x5.cz/ptah/core/ast"
 type DropFunctionNode struct {
     // Name is the name of the function to drop
     Name string
+    // Kind separates a function from a procedure. Empty means function.
+    // DROP PROCEDURE and DROP FUNCTION are different statements, and a server
+    // refuses the wrong one by name.
+    Kind string
     // Parameters contains the function parameter definitions for function signature matching
     // This is needed because PostgreSQL allows function overloading
     Parameters string
@@ -2153,9 +2166,11 @@ type DropFunctionNode struct {
 
 func NewDropFunction(name string) *DropFunctionNode
 func (n *DropFunctionNode) Accept(visitor Visitor) error
+func (n *DropFunctionNode) IsProcedure() bool
 func (n *DropFunctionNode) SetCascade() *DropFunctionNode
 func (n *DropFunctionNode) SetComment(comment string) *DropFunctionNode
 func (n *DropFunctionNode) SetIfExists() *DropFunctionNode
+func (n *DropFunctionNode) SetKind(kind string) *DropFunctionNode
 func (n *DropFunctionNode) SetParameters(parameters string) *DropFunctionNode
 
 ### go.5x5.cz/ptah/core/ast.DropIndexNode
@@ -4043,6 +4058,7 @@ func (s Set) WithObject(kind Kind, name string) Set
 ## go.5x5.cz/ptah/core/goschema
 
 const NullsOrderFirst = "FIRST" ...
+const FunctionKindFunction = "function" ...
 func Deduplicate(r *Database)
 func Finalize(r *Database)
 func GetDependencyInfo(r *Database) string
@@ -4617,6 +4633,15 @@ package goschema // import "go.5x5.cz/ptah/core/goschema"
 type Function struct {
     StructName string // Name of the Go struct this function is associated with
     Name       string // Function name (e.g., "set_tenant_context")
+    // Kind separates a function from a procedure. Empty means "function",
+    // which is what every declaration written before procedures existed meant.
+    //
+    // The two are one model because they are one catalog row on both engines
+    // that have them -- pg_proc with prokind 'f' or 'p', ROUTINE_TYPE FUNCTION
+    // or PROCEDURE -- and they differ in exactly one property a schema can
+    // state: a procedure returns nothing and is invoked with CALL
+    // (stokaro/ptah#1722).
+    Kind       string
     Parameters string // Function parameters (e.g., "tenant_id_param TEXT")
     Returns    string // Return type (e.g., "VOID", "TEXT")
     Language   string // Function language (e.g., "plpgsql", "sql")
@@ -4663,6 +4688,7 @@ type Function struct {
         $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 func (f *Function) Canonicalize()
+func (f Function) IsProcedure() bool
 
 ### go.5x5.cz/ptah/core/goschema.Grant
 
@@ -6645,6 +6671,9 @@ package types // import "go.5x5.cz/ptah/dbschema/types"
 
 type DBFunction struct {
     Name string `json:"name"` // Function name
+    // Kind separates a function from a procedure. Empty means function, which
+    // is what every description written before procedures existed meant.
+    Kind string `json:"kind,omitempty"`
     // Schema owns the function. Readers blank it for the connection's own
     // schema, the same convention tables, views and domains follow, so a
     // filter reconstructs the qualified spelling from the connection's
@@ -10572,6 +10601,16 @@ type SchemaDiff struct {
     // FunctionsRemoved contains names of PostgreSQL functions that exist in the current database
     // but not in the target schema (potentially dangerous - may break existing functionality)
     FunctionsRemoved []string `json:"functions_removed"`
+    // ProceduresRemoved names the procedures the database holds and the desired
+    // state does not.
+    //
+    // It is separate from FunctionsRemoved because the DROP verb has to match the
+    // object: a server answers `DROP FUNCTION` aimed at a procedure by name, and
+    // the removal is the one operation whose kind cannot be recovered from the
+    // declaration -- there is no declaration left. Additions and modifications
+    // stay in the function collections, where the planner reads the kind off the
+    // declaration it is building from (stokaro/ptah#1722).
+    ProceduresRemoved []string `json:"procedures_removed,omitempty"`
 
     // FunctionsModified contains detailed information about functions that exist in both
     // schemas but have different definitions (parameters, body, attributes, etc.)

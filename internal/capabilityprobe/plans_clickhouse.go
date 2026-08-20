@@ -252,6 +252,10 @@ func clickHousePlan() plan {
 		capability.DomainTypes:    "CREATE DOMAIN is a PostgreSQL type-system statement ClickHouse has no spelling of",
 		capability.CompositeTypes: "CREATE TYPE ... AS (...) is a PostgreSQL type-system statement ClickHouse has no spelling of",
 		capability.RangeTypes:     "CREATE TYPE ... AS RANGE is a PostgreSQL type-system statement ClickHouse has no spelling of",
+		// ClickHouse's CREATE FUNCTION takes a lambda rather than a body, and
+		// there is no CREATE PROCEDURE at all, so neither accepting nor
+		// refusing one would decide the key (stokaro/ptah#1722).
+		capability.Procedures: "CREATE PROCEDURE is a statement ClickHouse has no spelling of",
 		// See the same declaration in the PostgreSQL-family plan: the probe
 		// connects as one account and cannot ask whether a privilege exists
 		// without granting it. ClickHouse has no SHOW_ROUTINE at all, which is

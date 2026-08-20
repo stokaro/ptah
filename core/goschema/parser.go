@@ -678,6 +678,8 @@ func (s *schemaParseState) parseSharedDirective(
 		return s.parseExtensionComment(comment)
 	case "ptah:schema:function":
 		return s.parseFunctionComment(comment, target.structName)
+	case "ptah:schema:procedure":
+		return s.parseProcedureComment(comment, target.structName)
 	case "ptah:schema:sequence":
 		return s.parseSequenceComment(comment, target.structName)
 	case "ptah:schema:domain":
@@ -1064,6 +1066,48 @@ func (s *schemaParseState) parseFileScopedRLSEnableComment(comment *ast.Comment,
 		Dialects:   scope,
 	})
 	seen.enabledTables[tableName] = struct{}{}
+	return nil
+}
+
+// parseProcedureComment parses a //ptah:schema:procedure annotation.
+//
+// A procedure is the same catalog object as a function with one property
+// removed, so it reuses the function parser and sets the kind rather than
+// carrying a second model. `returns` is refused rather than ignored: a
+// procedure that named one would be a declaration the server cannot take, and
+// dropping the attribute silently is the failure this issue is about
+// (stokaro/ptah#1722).
+func (s *schemaParseState) parseProcedureComment(comment *ast.Comment, structName string) error {
+	// The attributes are validated against the procedure's own directive, so
+	// `returns=` is refused by name rather than accepted and then rejected
+	// below -- the registry is where an operator reads what a directive takes.
+	kv := parseutils.ParseKeyValueComment(comment.Text)
+	if err := validateAttributes(kv, s.annotationContext(comment, "//ptah:schema:procedure", structName)); err != nil {
+		return err
+	}
+
+	before := len(s.functions)
+	if err := s.parseFunctionComment(comment, structName); err != nil {
+		return err
+	}
+	if len(s.functions) == before {
+		return nil
+	}
+	routine := &s.functions[len(s.functions)-1]
+	if routine.Returns != "" {
+		ctx := s.annotationContext(comment, "//ptah:schema:procedure", structName)
+		return &ptaherr.ParseError{
+			File:      ctx.file,
+			Line:      ctx.line,
+			Directive: strings.TrimPrefix(ctx.directive, "//"),
+			Attribute: "returns",
+			Err:       ptaherr.ErrInvalidAttributeValue,
+			Message: fmt.Sprintf(
+				"procedure %q declares returns=%q at %s; a procedure returns nothing and is invoked with CALL",
+				routine.Name, routine.Returns, ctx.location),
+		}
+	}
+	routine.Kind = FunctionKindProcedure
 	return nil
 }
 

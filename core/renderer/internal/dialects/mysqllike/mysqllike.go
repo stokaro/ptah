@@ -1113,7 +1113,16 @@ func (r *Renderer) VisitDropExtension(node *ast.DropExtensionNode) error {
 // halves drifting apart is what made a declared STABLE function plan the same
 // destructive replacement on every apply.
 func (r *Renderer) VisitCreateFunction(node *ast.CreateFunctionNode) error {
-	if !r.caps.Has(capability.Functions) {
+	// A procedure decides against its own key, and every refusal below still
+	// applies to it: the language it runs, the security clause, the
+	// characteristic. Only the header and the return type differ
+	// (stokaro/ptah#1722).
+	if node.IsProcedure() {
+		if !r.caps.Has(capability.Procedures) {
+			r.notGenerated("CREATE PROCEDURE", node.Name)
+			return nil
+		}
+	} else if !r.caps.Has(capability.Functions) {
 		r.notGenerated("CREATE FUNCTION", node.Name)
 		return nil
 	}
@@ -1189,11 +1198,13 @@ func (r *Renderer) VisitCreateFunction(node *ast.CreateFunctionNode) error {
 			Message: fmt.Sprintf("function %s: %s", node.Name, err.Error()),
 		}
 	}
-	if err := mysqlroutine.ValidateSignature(node.Parameters, node.Returns); err != nil {
-		return &ptaherr.RenderError{
-			Dialect: r.dialect,
-			Err:     err,
-			Message: fmt.Sprintf("function %s: %s", node.Name, err.Error()),
+	if !node.IsProcedure() {
+		if err := mysqlroutine.ValidateSignature(node.Parameters, node.Returns); err != nil {
+			return &ptaherr.RenderError{
+				Dialect: r.dialect,
+				Err:     err,
+				Message: fmt.Sprintf("function %s: %s", node.Name, err.Error()),
+			}
 		}
 	}
 
@@ -1201,8 +1212,15 @@ func (r *Renderer) VisitCreateFunction(node *ast.CreateFunctionNode) error {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
 
+	// A procedure has no RETURNS clause. `CREATE PROCEDURE p(...) RETURNS int`
+	// is a syntax error on MySQL 26.7, and the catalog agrees: a procedure's
+	// DTD_IDENTIFIER is NULL where a function's carries the type.
 	header := fmt.Sprintf("CREATE FUNCTION %s(%s) RETURNS %s",
 		escapeQualifiedIdentifier(node.Name), strings.TrimSpace(node.Parameters), strings.TrimSpace(node.Returns))
+	if node.IsProcedure() {
+		header = fmt.Sprintf("CREATE PROCEDURE %s(%s)",
+			escapeQualifiedIdentifier(node.Name), strings.TrimSpace(node.Parameters))
+	}
 	parts := []string{header, characteristic}
 	if security != "" {
 		parts = append(parts, security)
@@ -1247,14 +1265,24 @@ func (r *Renderer) VisitAlterTableEnableRLS(node *ast.AlterTableEnableRLSNode) e
 // FUNCTION, and a routine has no dependent objects to cascade to in their
 // model, so silently omitting it changes nothing the operator asked for.
 func (r *Renderer) VisitDropFunction(node *ast.DropFunctionNode) error {
-	if !r.caps.Has(capability.Functions) {
+	if node.IsProcedure() {
+		if !r.caps.Has(capability.Procedures) {
+			r.notGenerated("DROP PROCEDURE", node.Name)
+			return nil
+		}
+	} else if !r.caps.Has(capability.Functions) {
 		r.notGenerated("DROP FUNCTION", node.Name)
 		return nil
 	}
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
+	// The verb has to match the object: DROP FUNCTION aimed at a procedure is
+	// refused by name on both engines.
 	parts := []string{"DROP FUNCTION"}
+	if node.IsProcedure() {
+		parts = []string{"DROP PROCEDURE"}
+	}
 	if node.IfExists {
 		parts = append(parts, "IF EXISTS")
 	}
