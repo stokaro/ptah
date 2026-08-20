@@ -261,7 +261,7 @@ func TestSelectBuilder_DegenerateExpressionsErrorCleanly(t *testing.T) {
 		{
 			name:        "empty in list",
 			expr:        query.In("status", make([]string, 0)),
-			wantErrLike: "renderer: IN requires at least one value",
+			wantErrLike: "renderer: IN requires at least one value or a subquery",
 		},
 		{
 			name:        "and without operands",

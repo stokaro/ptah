@@ -23,7 +23,7 @@ func TestRenderRefusesACyclicWithClause(t *testing.T) {
 
 	_, _, err := RenderSelect(stmt, "postgres")
 
-	c.Assert(err, qt.ErrorMatches, `renderer: WITH clause nests deeper than \d+, which a cycle would do`)
+	c.Assert(err, qt.ErrorMatches, `renderer: statement nests deeper than \d+, which a cycle would do`)
 }
 
 func TestRenderRefusesAnUnnamedOrEmptyCTE(t *testing.T) {
@@ -43,4 +43,37 @@ func TestRenderRefusesAnUnnamedOrEmptyCTE(t *testing.T) {
 
 	_, _, err = RenderSelect(base(ast.CommonTableExpression{Name: "x"}), "postgres")
 	c.Assert(err, qt.ErrorMatches, `renderer: common table expression "x" requires a query`)
+}
+
+func TestRenderRefusesInWithBothValuesAndSubquery(t *testing.T) {
+	c := qt.New(t)
+
+	// Both set describes two different membership tests. Picking one silently
+	// would answer a question the caller never asked.
+	stmt := &ast.SelectStatement{
+		From:    "users",
+		Columns: []ast.ResultColumn{{Name: "id"}},
+		Where: &ast.InExpr{
+			Operand:  &ast.ColumnRef{Name: "id"},
+			Values:   []ast.Expression{&ast.BoundValue{Value: 1}},
+			Subquery: &ast.SelectStatement{From: "posts", Columns: []ast.ResultColumn{{Name: "author_id"}}},
+		},
+	}
+
+	_, _, err := RenderSelect(stmt, "postgres")
+
+	c.Assert(err, qt.ErrorMatches, `renderer: IN takes either values or a subquery, not both`)
+}
+
+func TestRenderRefusesACyclicSubquery(t *testing.T) {
+	c := qt.New(t)
+
+	// A subquery holds a pointer too, so the same cycle is reachable through
+	// EXISTS as through WITH, and the one bound covers both.
+	stmt := &ast.SelectStatement{From: "t", Columns: []ast.ResultColumn{{Name: "id"}}}
+	stmt.Where = &ast.ExistsExpr{Query: stmt}
+
+	_, _, err := RenderSelect(stmt, "postgres")
+
+	c.Assert(err, qt.ErrorMatches, `renderer: statement nests deeper than \d+, which a cycle would do`)
 }

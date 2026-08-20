@@ -81,8 +81,8 @@ type selectRenderer struct {
 	placeholder placeholderStyle
 	args        []any
 	buf         strings.Builder
-	// cteDepth bounds WITH nesting; see maxCTEDepth.
-	cteDepth int
+	// nestDepth bounds WITH nesting; see maxNestDepth.
+	nestDepth int
 }
 
 func newSelectRenderer(dialect string) (*selectRenderer, error) {
@@ -235,12 +235,13 @@ func (r *selectRenderer) render(stmt *ast.SelectStatement) error {
 	return nil
 }
 
-// maxCTEDepth bounds how far a WITH clause may nest.
+// maxNestDepth bounds how far one statement may nest inside another.
 //
-// CommonTableExpression.Query is a pointer, so a caller can build a cycle by
-// pointing a CTE at a statement that already contains it. Rendering would then
-// recurse until the stack ran out, which is a crash rather than a diagnostic.
-const maxCTEDepth = 16
+// Both a CTE and a subquery hold a *SelectStatement, so a caller can build a
+// cycle by pointing either at a statement that already contains it. Rendering
+// would then recurse until the stack ran out, which is a crash rather than a
+// diagnostic. One counter covers both, because the two nest through each other.
+const maxNestDepth = 16
 
 // renderWith emits the WITH clause, if any, before the SELECT it precedes.
 //
@@ -251,10 +252,10 @@ func (r *selectRenderer) renderWith(ctes []ast.CommonTableExpression) error {
 	if len(ctes) == 0 {
 		return nil
 	}
-	r.cteDepth++
-	defer func() { r.cteDepth-- }()
-	if r.cteDepth > maxCTEDepth {
-		return fmt.Errorf("renderer: WITH clause nests deeper than %d, which a cycle would do", maxCTEDepth)
+	r.nestDepth++
+	defer func() { r.nestDepth-- }()
+	if r.nestDepth > maxNestDepth {
+		return fmt.Errorf("renderer: statement nests deeper than %d, which a cycle would do", maxNestDepth)
 	}
 
 	r.buf.WriteString("WITH ")
@@ -420,6 +421,8 @@ func (r *selectRenderer) renderExpr(expr ast.Expression) error {
 		return nil
 	case *ast.Comparison:
 		return r.renderComparison(e)
+	case *ast.ExistsExpr:
+		return r.renderExists(e)
 	case *ast.InExpr:
 		return r.renderIn(e)
 	case *ast.NullTest:
@@ -471,12 +474,45 @@ func (r *selectRenderer) renderComparison(cmp *ast.Comparison) error {
 	return r.renderExpr(cmp.Right)
 }
 
+// renderNested renders one statement inside another, inside parentheses, under
+// the shared nesting bound.
+func (r *selectRenderer) renderNested(stmt *ast.SelectStatement) error {
+	r.nestDepth++
+	defer func() { r.nestDepth-- }()
+	if r.nestDepth > maxNestDepth {
+		return fmt.Errorf("renderer: statement nests deeper than %d, which a cycle would do", maxNestDepth)
+	}
+	r.buf.WriteString("(")
+	if err := r.render(stmt); err != nil {
+		return err
+	}
+	r.buf.WriteString(")")
+	return nil
+}
+
+func (r *selectRenderer) renderExists(exists *ast.ExistsExpr) error {
+	if exists == nil {
+		return errors.New("renderer: nil EXISTS expression")
+	}
+	if exists.Query == nil {
+		return errors.New("renderer: EXISTS requires a subquery")
+	}
+	if exists.Negated {
+		r.buf.WriteString("NOT ")
+	}
+	r.buf.WriteString("EXISTS ")
+	return r.renderNested(exists.Query)
+}
+
 func (r *selectRenderer) renderIn(in *ast.InExpr) error {
 	if in == nil {
 		return errors.New("renderer: nil IN expression")
 	}
+	if in.Subquery != nil {
+		return r.renderInSubquery(in)
+	}
 	if len(in.Values) == 0 {
-		return errors.New("renderer: IN requires at least one value")
+		return errors.New("renderer: IN requires at least one value or a subquery")
 	}
 	if err := r.renderExpr(in.Operand); err != nil {
 		return err
@@ -492,6 +528,19 @@ func (r *selectRenderer) renderIn(in *ast.InExpr) error {
 	}
 	r.buf.WriteString(")")
 	return nil
+}
+
+// renderInSubquery renders the membership form that reads its candidates from
+// a query rather than from a value list.
+func (r *selectRenderer) renderInSubquery(in *ast.InExpr) error {
+	if len(in.Values) > 0 {
+		return errors.New("renderer: IN takes either values or a subquery, not both")
+	}
+	if err := r.renderExpr(in.Operand); err != nil {
+		return err
+	}
+	r.buf.WriteString(" IN ")
+	return r.renderNested(in.Subquery)
 }
 
 func (r *selectRenderer) renderNullTest(test *ast.NullTest) error {
