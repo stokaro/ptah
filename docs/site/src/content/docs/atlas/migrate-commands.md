@@ -229,7 +229,10 @@ Statement-level rejection errors identify the statement number and safety class
 without echoing the SQL. Migration-function and interceptor refusals identify
 the affected direction instead because their inner statements are opaque.
 
-MySQL and MariaDB do not support `--tx-mode all`. Ordinary session settings
+MySQL and MariaDB do not support `--tx-mode all`, along with every other target
+that commits DDL as it runs; see
+[what `--tx-mode all` cannot carry](../../versioned/apply/#what---tx-mode-all-cannot-carry).
+Ordinary session settings
 remain valid. Ptah runs the body on one pinned session, discards it afterward,
 and replays safe settings such as `SET SESSION time_zone` from a verified
 committed prefix before an automatic retry.
