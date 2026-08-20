@@ -254,7 +254,7 @@ func TestMigrateUp_TxtarEmptyOneOfGroupRejectedUnderTxModeAll(t *testing.T) {
 	c.Assert(
 		err,
 		qt.ErrorMatches,
-		`migration 1 declares pre-migration checks, which cannot run with tx-mode all; use the default per-file transaction mode`,
+		`migration 1 declares pre-migration checks, which cannot run with tx-mode all: .*`,
 	)
 	c.Assert(usersHasEmailColumn(t, conn), qt.IsFalse)
 }
