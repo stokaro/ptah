@@ -61,12 +61,14 @@ func Type(typeName string) string {
 	// arm. Without it the comparison plans a type change on every run
 	// (stokaro/ptah#1719).
 	//
-	// The array form is excluded on purpose: `character varying(100)[]` is a
-	// different type from `character varying(100)`, and folding the two would
-	// make a column that changed from an array to a scalar compare equal.
-	case strings.Contains(typeName, "character varying") && !strings.HasSuffix(typeName, "[]"):
+	// The array form is excluded from BOTH varchar arms on purpose. An array is
+	// not its element type, so folding `varchar(200)[]` to `varchar` would make
+	// a live scalar `character varying(200)` compare equal to a desired
+	// `varchar(200)[]` -- a column that changed from a scalar to an array,
+	// reported as no change at all.
+	case strings.Contains(typeName, "character varying") && !isArrayType(typeName):
 		return "varchar"
-	case strings.Contains(typeName, "varchar"):
+	case strings.Contains(typeName, "varchar") && !isArrayType(typeName):
 		return "varchar"
 	case strings.Contains(typeName, "text"):
 		return "text"
@@ -346,4 +348,12 @@ func skipQuotedSQL(value string, start int, quote byte) (int, bool) {
 		return i, true
 	}
 	return 0, false
+}
+
+// isArrayType reports whether a normalized type name names an array.
+//
+// The suffix is the whole test because that is how every catalog this compares
+// spells one: `varchar(100)[]`, `int[]`, `text[]`.
+func isArrayType(typeName string) bool {
+	return strings.HasSuffix(strings.TrimSpace(typeName), "[]")
 }

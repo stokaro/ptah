@@ -282,6 +282,13 @@ func configuredDatabaseConnections() map[string]databaseTarget {
 			"SQLSERVER_URL",
 			"SQLSERVER_CLEANUP_URL",
 		),
+		// The capability matrix names this suite database for the spanner cell,
+		// so the runner has to know it or the nightly run asks for a database
+		// that is not configured (stokaro/ptah#1719).
+		"spanner": databaseTargetFromEnvironment(
+			"SPANNER_URL",
+			"SPANNER_CLEANUP_URL",
+		),
 	}
 }
 
