@@ -41,6 +41,7 @@ func fullCatalogCaps() capability.Capabilities {
 		capability.CatalogRecursiveCTE:      true,
 		capability.CatalogDependencies:      true,
 		capability.CatalogDefaultPrivileges: true,
+		capability.PostgresCatalogFunctions: true,
 	}
 }
 
