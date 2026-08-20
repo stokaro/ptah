@@ -748,6 +748,9 @@ type AlterTableEnableRLSNode struct{ ... }
 type AlterTableNode struct{ ... }
 type AlterTypeNode struct{ ... }
     func NewAlterType(name string) *AlterTypeNode
+type Arithmetic struct{ ... }
+type ArithmeticOperator int
+    const OpAdd ArithmeticOperator = iota ...
 type Assignment struct{ ... }
 type BoundValue struct{ ... }
 type ColumnNode struct{ ... }
@@ -1238,6 +1241,41 @@ type AlterTypeNode struct {
 func NewAlterType(name string) *AlterTypeNode
 func (n *AlterTypeNode) Accept(visitor Visitor) error
 func (n *AlterTypeNode) AddOperation(operation TypeOperation) *AlterTypeNode
+
+### go.5x5.cz/ptah/core/ast.Arithmetic
+
+package ast // import "go.5x5.cz/ptah/core/ast"
+
+type Arithmetic struct {
+    // Left is the left-hand operand.
+    Left Expression
+    // Operator is the arithmetic operator.
+    Operator ArithmeticOperator
+    // Right is the right-hand operand.
+    Right Expression
+}
+    Arithmetic is a binary arithmetic expression of the form "(Left <Operator>
+    Right)".
+
+    # Why it always renders its own parentheses
+
+    The node is a TREE and SQL is text, so `Mul(Add(a, b), c)` and `Add(a,
+    Mul(b, c))` have to render differently. Emitting them without parentheses
+    produces `a + b * c` for both, and the server then applies its own
+    precedence -- which agrees with one of the two trees and silently rewrites
+    the other. Parenthesizing every node costs a pair of characters and makes
+    the rendered text mean exactly what the caller built (stokaro/ptah#941).
+
+
+### go.5x5.cz/ptah/core/ast.ArithmeticOperator
+
+package ast // import "go.5x5.cz/ptah/core/ast"
+
+type ArithmeticOperator int
+    ArithmeticOperator enumerates the binary arithmetic operators.
+
+const OpAdd ArithmeticOperator = iota ...
+func (op ArithmeticOperator) String() string
 
 ### go.5x5.cz/ptah/core/ast.Assignment
 
@@ -6196,15 +6234,19 @@ func (e *RenderError) Unwrap() error
 
 ## go.5x5.cz/ptah/core/query
 
+func Add(left, right ast.Expression) ast.Expression
 func And(exprs ...ast.Expression) ast.Expression
 func Asc(column string) ast.OrderByClause
 func Avg(column string) ast.Expression
+func ColExpr(name string) ast.Expression
 func Count(column string) ast.Expression
 func CountDistinct(column string) ast.Expression
 func CountStar() ast.Expression
 func Desc(column string) ast.OrderByClause
+func Div(left, right ast.Expression) ast.Expression
 func Eq(column string, value any) ast.Expression
 func Exists(sub *SelectBuilder) ast.Expression
+func Func(name string, args ...ast.Expression) ast.Expression
 func Ge(column string, value any) ast.Expression
 func Gt(column string, value any) ast.Expression
 func In[T any](column string, values []T) ast.Expression
@@ -6216,12 +6258,16 @@ func Like(column, pattern string) ast.Expression
 func Lt(column string, value any) ast.Expression
 func Max(column string) ast.Expression
 func Min(column string) ast.Expression
+func Mod(left, right ast.Expression) ast.Expression
+func Mul(left, right ast.Expression) ast.Expression
 func Ne(column string, value any) ast.Expression
 func Not(expr ast.Expression) ast.Expression
 func NotExists(sub *SelectBuilder) ast.Expression
 func NotLike(column, pattern string) ast.Expression
 func Or(exprs ...ast.Expression) ast.Expression
+func Sub(left, right ast.Expression) ast.Expression
 func Sum(column string) ast.Expression
+func Value(v any) ast.Expression
 type Column struct{ ... }
     func Col(qualifier, name string) Column
 type DeleteBuilder struct{ ... }

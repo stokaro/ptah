@@ -433,9 +433,39 @@ func (r *selectRenderer) renderExpr(expr ast.Expression) error {
 		return r.renderNot(e)
 	case *ast.FuncCall:
 		return r.renderFuncCall(e)
+	case *ast.Arithmetic:
+		return r.renderArithmetic(e)
 	default:
 		return fmt.Errorf("renderer: unsupported expression type %T", expr)
 	}
+}
+
+// renderArithmetic writes a binary arithmetic expression, always parenthesized.
+//
+// The parentheses are not decoration. The node is a tree and SQL is text, so
+// without them `Mul(Add(a, b), c)` and `Add(a, Mul(b, c))` both render as
+// `a + b * c` and the server picks one reading by its own precedence --
+// agreeing with one tree and silently rewriting the other. See ast.Arithmetic.
+func (r *selectRenderer) renderArithmetic(expr *ast.Arithmetic) error {
+	if expr == nil {
+		return errors.New("renderer: nil arithmetic expression")
+	}
+	symbol := expr.Operator.String()
+	if symbol == "" {
+		return fmt.Errorf("renderer: unknown arithmetic operator %d", expr.Operator)
+	}
+	r.buf.WriteString("(")
+	if err := r.renderExpr(expr.Left); err != nil {
+		return err
+	}
+	r.buf.WriteString(" ")
+	r.buf.WriteString(symbol)
+	r.buf.WriteString(" ")
+	if err := r.renderExpr(expr.Right); err != nil {
+		return err
+	}
+	r.buf.WriteString(")")
+	return nil
 }
 
 func (r *selectRenderer) renderColumnRef(ref *ast.ColumnRef) error {
