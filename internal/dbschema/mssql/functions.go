@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/dbschema/types"
 )
 
@@ -45,7 +46,7 @@ func (r *Reader) readFunctions() ([]types.DBFunction, error) {
 		FROM sys.objects AS o
 		JOIN sys.schemas AS s ON s.schema_id = o.schema_id
 		JOIN sys.sql_modules AS m ON m.object_id = o.object_id
-		WHERE o.type IN ('FN', 'IF', 'TF') AND o.is_ms_shipped = 0
+		WHERE o.type IN ('FN', 'IF', 'TF', 'P') AND o.is_ms_shipped = 0
 			  AND (` + schemaPredicatePlaceholder + `)
 		ORDER BY s.name, o.name`
 	rows, err := r.db.Query(r.queryWithSchemaPredicate(query), r.schemaArgs()...)
@@ -65,9 +66,13 @@ func (r *Reader) readFunctions() ([]types.DBFunction, error) {
 		key := routineKey{schema: schema, name: name}
 		functions = append(functions, types.DBFunction{
 			Name:       name,
+			Kind:       routineKind(objectType),
 			Schema:     r.outputSchema(schema),
 			Parameters: parameters[key],
-			Returns:    functionReturns(objectType, returns[key]),
+			// A procedure returns nothing, and sys.parameters reports no
+			// return row for one, so asking functionReturns would produce the
+			// empty string by accident rather than by decision.
+			Returns: procedureAwareReturns(objectType, returns[key]),
 			// The language is the engine's own. T-SQL has no LANGUAGE clause --
 			// `LANGUAGE SQL` is `Incorrect syntax near 'LANGUAGE'` -- so there
 			// is nothing to read, and reporting "sql" is what lets a
@@ -81,7 +86,7 @@ func (r *Reader) readFunctions() ([]types.DBFunction, error) {
 			// keeps the fact PostgreSQL spells as volatility.
 			Security:   functionSecurity(executeAs),
 			Volatility: functionVolatility(deterministic),
-			Body:       functionBody(definition),
+			Body:       routineBody(objectType, definition),
 		})
 	}
 	if err := rows.Err(); err != nil {
@@ -104,7 +109,7 @@ func (r *Reader) readRoutineSignatures() (parameters, returns map[routineKey]str
 		JOIN sys.schemas AS s ON s.schema_id = o.schema_id
 		JOIN sys.parameters AS p ON p.object_id = o.object_id
 		JOIN sys.types AS t ON t.user_type_id = p.user_type_id
-		WHERE o.type IN ('FN', 'IF', 'TF') AND o.is_ms_shipped = 0
+		WHERE o.type IN ('FN', 'IF', 'TF', 'P') AND o.is_ms_shipped = 0
 			  AND (` + schemaPredicatePlaceholder + `)
 		ORDER BY s.name, o.name, p.parameter_id`
 	rows, err := r.db.Query(r.queryWithSchemaPredicate(query), r.schemaArgs()...)
@@ -278,4 +283,94 @@ func functionReturns(objectType, scalarType string) string {
 	default:
 		return scalarType
 	}
+}
+
+// isProcedureObjectType reports whether sys.objects.type names a stored
+// procedure. The column is char(2), so the value arrives padded.
+func isProcedureObjectType(objectType string) bool {
+	return strings.EqualFold(strings.TrimSpace(objectType), "P")
+}
+
+// routineKind spells the kind the schema model uses. Empty means function,
+// which is what every description written before procedures existed meant.
+func routineKind(objectType string) string {
+	if isProcedureObjectType(objectType) {
+		return goschema.FunctionKindProcedure
+	}
+	return ""
+}
+
+// procedureAwareReturns answers the empty string for a procedure rather than
+// letting functionReturns arrive there through a missing catalog row.
+func procedureAwareReturns(objectType, scalarType string) string {
+	if isProcedureObjectType(objectType) {
+		return ""
+	}
+	return functionReturns(objectType, scalarType)
+}
+
+// routineBody extracts the body from the statement text sys.sql_modules keeps.
+func routineBody(objectType, definition string) string {
+	if isProcedureObjectType(objectType) {
+		return procedureBody(definition)
+	}
+	return functionBody(definition)
+}
+
+// procedureBody returns everything after the AS that opens a procedure body.
+//
+// A function is found by scanning past RETURNS, which a procedure does not
+// have, so the same walk would run off the end and hand back the whole CREATE
+// statement. The header ends at the first standalone AS outside brackets --
+// except the one in `WITH EXECUTE AS OWNER`, which is part of the header and
+// sits before the real one. Measured on SQL Server 2025: a procedure created
+// `WITH EXECUTE AS OWNER AS BEGIN ... END` keeps both words in the definition,
+// so a walk that took the first AS would report `OWNER AS BEGIN ... END` as
+// the body and replan the procedure on every run.
+func procedureBody(definition string) string {
+	upper := strings.ToUpper(definition)
+	depth := 0
+	for i := 0; i < len(definition); i++ {
+		switch definition[i] {
+		case '(', '[':
+			depth++
+		case ')', ']':
+			depth--
+		case '\'':
+			if next := strings.IndexByte(definition[i+1:], '\''); next >= 0 {
+				i += next + 1
+			}
+			continue
+		}
+		if depth != 0 {
+			continue
+		}
+		if i+2 > len(upper) || upper[i:i+2] != "AS" || !standaloneWord(definition, i, i+2) {
+			continue
+		}
+		if precededByExecute(upper, i) {
+			continue
+		}
+		return strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(definition[i+2:]), ";"))
+	}
+	return strings.TrimSpace(definition)
+}
+
+// precededByExecute reports whether the AS at position i is the one in an
+// EXECUTE AS clause rather than the one that opens the body.
+func precededByExecute(upper string, i int) bool {
+	end := i
+	for end > 0 && isSpaceByte(upper[end-1]) {
+		end--
+	}
+	const executeWord = "EXECUTE"
+	start := end - len(executeWord)
+	if start < 0 || upper[start:end] != executeWord {
+		return false
+	}
+	return standaloneWord(upper, start, end)
+}
+
+func isSpaceByte(b byte) bool {
+	return b == ' ' || b == '\t' || b == '\n' || b == '\r'
 }
