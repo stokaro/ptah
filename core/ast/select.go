@@ -351,12 +351,31 @@ type JoinClause struct {
 // Subqueries, non-aggregate functions, arithmetic, and window functions are not
 // modeled yet. Render it with renderer.RenderSelect, which returns the SQL string
 // and its positional arguments. Build one fluently with the core/query package.
+// CommonTableExpression is one named subquery of a WITH clause.
+//
+// Name is emitted as a quoted identifier and referenced from the outer query's
+// From (or a join) as a plain table name. Query is rendered in parentheses, and
+// its bound values are appended before the outer query's, which is what keeps
+// positional placeholders in the order the driver will read them.
+type CommonTableExpression struct {
+	Name  string
+	Query *SelectStatement
+}
+
 type SelectStatement struct {
 	// Distinct renders SELECT DISTINCT, deduplicating result rows. It defaults to
 	// false, so a zero statement renders a plain SELECT unchanged.
 	Distinct bool
 	// Columns is the projection. An empty slice renders as "*".
 	Columns []ResultColumn
+	// With is the optional WITH clause: named subqueries evaluated before the
+	// main query and referenced from it by name. An empty slice emits no WITH.
+	//
+	// Only non-recursive CTEs are modeled. RECURSIVE needs a UNION ALL body and
+	// a termination argument the builder has no way to state, and emitting the
+	// keyword without one would produce a query that runs forever rather than
+	// one that fails to parse.
+	With []CommonTableExpression
 	// From is the source table, rendered as a quoted identifier. Required.
 	From string
 	// FromAlias is the optional alias for the source table; empty means no alias.
