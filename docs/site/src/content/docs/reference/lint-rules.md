@@ -270,6 +270,14 @@ is accepted anyway — in `disabled-rules`, in `--disable`, and as a key under
 `rules:` for a severity override. `PG301` reaches `DS103`, `PG304` reaches
 `PG104`, and so on for `BC102`, `MF104`, `MY110`, `MY130`, `MY133` and `MY136`.
 
+An alias reaches its Ptah rule only for the engine the Atlas code belongs to.
+`PG301` is a PostgreSQL code, so `--dialect mysql --disable PG301` disables
+nothing: without that scoping it would expand to `DS103` and silence MySQL
+column-type-change findings that the policy never mentioned. The `MY` codes
+cover both `mysql` and `mariadb`. `BC102` and `MF104` name no engine and apply
+everywhere. A selector is still *accepted* on every dialect, so one policy file
+can carry entries for several engines.
+
 Six Atlas codes are deliberately **not** aliased, because Ptah uses the same
 spelling for a rule of its own meaning something else: `DS101`, `DS102`,
 `DS103`, `MF103`, `MY101` and `PG102`. Atlas `DS103` reports under Ptah `DS102`

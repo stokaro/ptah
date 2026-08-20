@@ -1,6 +1,7 @@
 package lint
 
 import (
+	"maps"
 	"slices"
 	"strings"
 )
@@ -27,16 +28,28 @@ import (
 // internal/lintcatalog holds the same pairs as data and TestAtlasAliases...
 // there checks the two agree, so an alias cannot outlive the mapping it stands
 // for.
-var atlasCodeAliases = map[string][]string{
-	"BC102": {"BC101"},
-	"MF104": {"PG303", "LT101"},
-	"MY110": {"DS103", "MY101"},
-	"MY130": {"MY101", "DS103"},
-	"MY133": {"CD103"},
-	"MY136": {"MY101"},
-	"PG301": {"DS103"},
-	"PG304": {"PG104"},
+type atlasAlias struct {
+	// dialects are the engines the ATLAS code is defined for. Empty means the
+	// code is not engine-specific and the alias applies everywhere.
+	dialects []string
+	// rules are the Ptah rules that report the same hazard.
+	rules []string
 }
+
+var atlasCodeAliases = map[string]atlasAlias{
+	"BC102": {rules: []string{"BC101"}},
+	"MF104": {rules: []string{"PG303", "LT101"}},
+	"MY110": {dialects: mysqlFamily, rules: []string{"DS103", "MY101"}},
+	"MY130": {dialects: mysqlFamily, rules: []string{"MY101", "DS103"}},
+	"MY133": {dialects: mysqlFamily, rules: []string{"CD103"}},
+	"MY136": {dialects: mysqlFamily, rules: []string{"MY101"}},
+	"PG301": {dialects: []string{"postgres"}, rules: []string{"DS103"}},
+	"PG304": {dialects: []string{"postgres"}, rules: []string{"PG104"}},
+}
+
+// mysqlFamily is the pair every MY-coded alias is defined for; Ptah's own MySQL
+// rules list the same two.
+var mysqlFamily = []string{"mysql", "mariadb"}
 
 // atlasCodesPtahAlsoUses are the Atlas codes that are ALSO Ptah rule codes,
 // meaning something else.
@@ -61,9 +74,7 @@ var atlasCodesPtahAlsoUses = map[string]string{
 // against a second list.
 func AtlasCodesPtahAlsoUses() map[string]string {
 	out := make(map[string]string, len(atlasCodesPtahAlsoUses))
-	for code, reason := range atlasCodesPtahAlsoUses {
-		out[code] = reason
-	}
+	maps.Copy(out, atlasCodesPtahAlsoUses)
 	return out
 }
 
@@ -71,27 +82,63 @@ func AtlasCodesPtahAlsoUses() map[string]string {
 // against the Atlas analyzer list.
 func AtlasCodeAliases() map[string][]string {
 	out := make(map[string][]string, len(atlasCodeAliases))
-	for code, rules := range atlasCodeAliases {
-		out[code] = append([]string(nil), rules...)
+	for code, alias := range atlasCodeAliases {
+		out[code] = append([]string(nil), alias.rules...)
 	}
 	return out
 }
 
 // expandAtlasCodeSelectors rewrites every Atlas-spelled selector into the Ptah
-// rules that report it, leaving every other entry alone.
+// rules that report it, leaving every other entry alone. It expands every
+// alias regardless of engine, which is what VALIDATION wants: a policy shared
+// across engines names PG301 legitimately even while linting MySQL.
 //
 // The original entry is kept as well. A selector is a PREFIX, so dropping it
 // would change what an entry like `PG3` selects, and an operator who wrote a
 // prefix meant the prefix.
+//
+// Use [expandAtlasCodeSelectorsForDialect] anywhere the expansion decides what
+// RUNS. Expanding unconditionally there lets a policy for one engine weaken
+// another engine's checks: `--dialect mysql --disable PG301` would expand to
+// DS103 and silence MySQL column-type-change findings the operator never
+// mentioned (stokaro/ptah#1631).
 func expandAtlasCodeSelectors(selectors []string) []string {
+	return expandAtlasCodeSelectorsForDialect(selectors, "")
+}
+
+// expandAtlasCodeSelectorsForDialect expands only the aliases whose Atlas code
+// is defined for dialect. An empty dialect expands everything, matching the
+// rule engine's own "no configured dialect runs everything" convention.
+func expandAtlasCodeSelectorsForDialect(selectors []string, dialect string) []string {
 	expanded := make([]string, 0, len(selectors))
 	for _, selector := range selectors {
 		expanded = append(expanded, selector)
-		for _, rule := range atlasCodeAliases[strings.ToUpper(strings.TrimSpace(selector))] {
-			expanded = append(expanded, rule)
+		alias, found := atlasCodeAliases[strings.ToUpper(strings.TrimSpace(selector))]
+		if !found || !aliasAppliesToDialect(alias, dialect) {
+			continue
 		}
+		expanded = append(expanded, alias.rules...)
 	}
 	return expanded
+}
+
+// aliasAppliesToDialect mirrors ruleAppliesToDialect: an alias with no declared
+// engine applies everywhere, and an empty configured dialect accepts every
+// alias.
+func aliasAppliesToDialect(alias atlasAlias, dialect string) bool {
+	if len(alias.dialects) == 0 || dialect == "" {
+		return true
+	}
+	return slices.Contains(alias.dialects, dialect)
+}
+
+// ExpandAtlasRuleSelectors expands the Atlas-spelled entries in selectors into
+// the Ptah rules that report them, scoped to dialect.
+//
+// It is exported for the schema-apply path, which builds its own enabled set
+// and would otherwise disable the very rule an aliased policy entry asked for.
+func ExpandAtlasRuleSelectors(selectors []string, dialect string) []string {
+	return expandAtlasCodeSelectorsForDialect(selectors, dialect)
 }
 
 // AtlasCodeFor returns the Atlas code a Ptah rule stands in for, so a report
@@ -101,12 +148,9 @@ func expandAtlasCodeSelectors(selectors []string) []string {
 // PG301 and part of MY130 -- so the answer is a list, ordered for stable output.
 func AtlasCodeFor(ptahRule string) []string {
 	var codes []string
-	for code, rules := range atlasCodeAliases {
-		for _, rule := range rules {
-			if rule == ptahRule {
-				codes = append(codes, code)
-				break
-			}
+	for code, alias := range atlasCodeAliases {
+		if slices.Contains(alias.rules, ptahRule) {
+			codes = append(codes, code)
 		}
 	}
 	slices.Sort(codes)

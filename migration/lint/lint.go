@@ -162,7 +162,7 @@ func parseKnownMigrationName(name string, dirFormat migrator.MigrationDirFormat)
 func runRules(file *File, opts Options, rules []Rule) []Finding {
 	var findings []Finding
 	for _, rule := range rules {
-		if ruleDisabled(rule.Code, opts.Disabled) ||
+		if ruleDisabled(rule.Code, opts.Disabled, opts.Dialect) ||
 			fileSuppressesRule(file, rule.Code) ||
 			!ruleAppliesToDialect(rule, opts.Dialect) ||
 			ruleExcludedForFile(rule.Code, file, opts.RuleConfigs) {
@@ -356,8 +356,11 @@ func matchGlobSegments(pattern, value []string) bool {
 
 // ruleDisabled reports whether code matches any disabled entry — exact code
 // or family prefix ("DS" disables every DS rule).
-func ruleDisabled(code string, disabled []string) bool {
-	for _, entry := range expandAtlasCodeSelectors(disabled) {
+//
+// dialect scopes the Atlas alias expansion: a PostgreSQL Atlas code must not
+// silence a generic Ptah rule while linting MySQL (stokaro/ptah#1631).
+func ruleDisabled(code string, disabled []string, dialect string) bool {
+	for _, entry := range expandAtlasCodeSelectorsForDialect(disabled, dialect) {
 		entry = strings.TrimSpace(entry)
 		if entry != "" && strings.HasPrefix(code, entry) {
 			return true
