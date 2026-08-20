@@ -12,6 +12,7 @@ import (
 
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/sqlident"
 	"go.5x5.cz/ptah/internal/sqlrunner"
@@ -46,6 +47,12 @@ type PostgreSQLWriter struct {
 	db     sqlrunner.Runner
 	schema string
 	dryRun bool
+	// caps decides whether cleanup may take a transaction. The writer cannot
+	// ask the server: the answer has to be known BEFORE the transaction is
+	// opened, and on a server that refuses DDL there the probe would be the
+	// failure it is trying to avoid. The connection layer already resolves the
+	// set, and the reader beside this writer already takes it.
+	caps capability.Capabilities
 }
 
 type postgresTransactionWriter struct {
@@ -65,9 +72,27 @@ func NewPostgreSQLWriter(db *sql.DB, schema string) *PostgreSQLWriter {
 
 // NewPostgreSQLWriterForRunner creates a writer bound to a pool or pinned
 // database session.
+//
+// It assumes the server accepts DDL inside a transaction, which every
+// PostgreSQL-family engine except Spanner does. Callers that know the dialect
+// should use [NewPostgreSQLWriterForRunnerWithCapabilities].
 func NewPostgreSQLWriterForRunner(
 	runner sqlrunner.Runner,
 	schema string,
+) *PostgreSQLWriter {
+	return NewPostgreSQLWriterForRunnerWithCapabilities(
+		runner, schema, capability.Capabilities{
+			capability.DDLInsideTransaction: true,
+			capability.CatalogRecursiveCTE:  true,
+		})
+}
+
+// NewPostgreSQLWriterForRunnerWithCapabilities creates a writer that knows what
+// the server accepts.
+func NewPostgreSQLWriterForRunnerWithCapabilities(
+	runner sqlrunner.Runner,
+	schema string,
+	caps capability.Capabilities,
 ) *PostgreSQLWriter {
 	if schema == "" {
 		schema = "public"
@@ -75,6 +100,7 @@ func NewPostgreSQLWriterForRunner(
 	return &PostgreSQLWriter{
 		db:     runner,
 		schema: schema,
+		caps:   caps,
 	}
 }
 
@@ -288,6 +314,19 @@ type postgresCleanupCapabilities struct {
 	systemExtensions         []string
 }
 
+// cleanupConn is the part of a database handle the schema cleanup uses.
+//
+// Both *sql.Tx and *sql.DB satisfy it, which is the whole point: the cleanup
+// runs inside a transaction where the server accepts DDL there, and directly on
+// the pool where it does not. Spanner refuses DDL in an explicit transaction --
+// `DDL statements are only allowed outside explicit transactions`, SQLSTATE
+// 25000 -- so a cleanup that always took one could never finish (#1811).
+type cleanupConn interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
 type postgresCleanupScope struct {
 	schemas                []string
 	extensionNamespaceJoin string
@@ -296,7 +335,7 @@ type postgresCleanupScope struct {
 
 func inspectCleanupCapabilities(
 	ctx context.Context,
-	tx *sql.Tx,
+	tx cleanupConn,
 ) (postgresCleanupCapabilities, error) {
 	var version string
 	if err := tx.QueryRowContext(ctx, "SELECT version()").Scan(&version); err != nil {
@@ -339,11 +378,19 @@ func inspectCleanupCapabilities(
 
 func (c postgresCleanupCapabilities) dropObjects(
 	ctx context.Context,
-	tx *sql.Tx,
+	tx cleanupConn,
 	objects []postgresCleanupObject,
 ) error {
 	if c.retryFailedDDL {
-		return dropCleanupObjects(ctx, tx, objects)
+		// The retry loop drops each object inside a SAVEPOINT, so it needs a
+		// real transaction. The capability is only ever set on the path that
+		// opened one; the check is here so a future caller that forgets gets a
+		// diagnostic rather than a panic.
+		sqlTx, ok := tx.(*sql.Tx)
+		if !ok {
+			return fmt.Errorf("cleanup retry needs a transaction, which this server does not accept DDL in")
+		}
+		return dropCleanupObjects(ctx, sqlTx, objects)
 	}
 	return dropCleanupObjectsOnce(ctx, tx, objects)
 }
@@ -387,7 +434,7 @@ type postgresDatabaseCleanupPlan struct {
 	objects      []postgresCleanupObject
 }
 
-func (w *PostgreSQLWriter) rejectSchemaScopedExtensions(ctx context.Context, tx *sql.Tx) error {
+func (w *PostgreSQLWriter) rejectSchemaScopedExtensions(ctx context.Context, tx cleanupConn) error {
 	// DROP EXTENSION removes every member regardless of the member's schema.
 	// Refuse it here because a schema-scoped cleanup cannot safely own that
 	// database-wide operation, even when DROP EXTENSION uses RESTRICT.
@@ -416,7 +463,7 @@ func (w *PostgreSQLWriter) rejectSchemaScopedExtensions(ctx context.Context, tx 
 //nolint:funlen // The dependency-ordered catalog query is kept in one auditable unit.
 func (w *PostgreSQLWriter) collectAllObjects(
 	ctx context.Context,
-	tx *sql.Tx,
+	tx cleanupConn,
 	scope postgresCleanupScope,
 ) ([]postgresCleanupObject, error) {
 	if len(scope.schemas) == 0 {
@@ -431,7 +478,7 @@ func (w *PostgreSQLWriter) collectAllObjects(
 		args = append(args, stringsToAny(scope.systemExtensions)...)
 	}
 	query := strings.ReplaceAll(`
-		WITH RECURSIVE
+		WITH {{RECURSIVE}}
 		managed_namespaces AS (
 			SELECT n.oid, n.nspname
 			FROM pg_namespace n
@@ -444,23 +491,7 @@ func (w *PostgreSQLWriter) collectAllObjects(
 			AND c.relkind IN ('v', 'm')
 		),
 		view_dependencies AS (
-			SELECT
-				dependent.oid AS dependent_oid,
-				referenced.oid AS referenced_oid
-			FROM pg_rewrite rewrite
-			JOIN pg_class dependent ON dependent.oid = rewrite.ev_class
-			JOIN managed_namespaces dependent_namespace
-				ON dependent_namespace.oid = dependent.relnamespace
-			JOIN pg_depend dependency
-				ON dependency.classid = 'pg_rewrite'::regclass
-			   AND dependency.objid = rewrite.oid
-			   AND dependency.refclassid = 'pg_class'::regclass
-			JOIN pg_class referenced ON referenced.oid = dependency.refobjid
-			JOIN managed_namespaces referenced_namespace
-				ON referenced_namespace.oid = referenced.relnamespace
-			WHERE dependent.relkind IN ('v', 'm')
-			  AND referenced.relkind IN ('v', 'm')
-			  AND dependent.oid <> referenced.oid
+			{{VIEW_DEPENDENCIES}}
 		),
 		view_depths AS (
 			SELECT view.oid, 0 AS depth
@@ -471,12 +502,7 @@ func (w *PostgreSQLWriter) collectAllObjects(
 				WHERE dependency.dependent_oid = view.oid
 			)
 
-			UNION ALL
-
-			SELECT dependency.dependent_oid, depth.depth + 1
-			FROM view_depths depth
-			JOIN view_dependencies dependency
-				ON dependency.referenced_oid = depth.oid
+			{{VIEW_DEPTH_RECURSION}}
 		),
 		view_order AS (
 			SELECT oid, MAX(depth) AS depth
@@ -659,6 +685,7 @@ func (w *PostgreSQLWriter) collectAllObjects(
 	`, "{{SCHEMA_PLACEHOLDERS}}", postgresPlaceholders(len(scope.schemas)))
 	query = strings.ReplaceAll(query, "{{EXTENSION_NAMESPACE_JOIN}}", scope.extensionNamespaceJoin)
 	query = strings.ReplaceAll(query, "{{SYSTEM_EXTENSION_FILTER}}", extensionFilter)
+	query = applyViewOrderingShape(query, viewOrderingShapeFor(w.caps))
 	rows, err := tx.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query schema objects: %w", err)
@@ -699,9 +726,89 @@ func stringsToAny(values []string) []any {
 	return args
 }
 
+// viewOrderingShape names the two forms the cleanup query takes.
+type viewOrderingShape int
+
+const (
+	// recursiveViewOrdering walks pg_rewrite so a view is dropped after the
+	// views it selects from.
+	recursiveViewOrdering viewOrderingShape = iota
+	// flatViewOrdering asks neither question, for a server that cannot answer
+	// them.
+	flatViewOrdering
+)
+
+// viewOrderingShapeFor picks the shape a server can answer.
+func viewOrderingShapeFor(caps capability.Capabilities) viewOrderingShape {
+	if caps.Has(capability.CatalogRecursiveCTE) {
+		return recursiveViewOrdering
+	}
+	return flatViewOrdering
+}
+
+// flatViewDependencies stands in for the walk, keeping the CTE present and
+// type-correct so everything downstream joins against it unchanged while
+// pg_rewrite stays out of the query entirely.
+const flatViewDependencies = `SELECT c.oid AS dependent_oid, c.oid AS referenced_oid
+			FROM pg_class c
+			WHERE false`
+
+// realViewDependencies is the pg_rewrite walk that pairs a view with the views
+// it selects from. It is only substituted where the server has views at all.
+const realViewDependencies = `SELECT
+				dependent.oid AS dependent_oid,
+				referenced.oid AS referenced_oid
+			FROM pg_rewrite rewrite
+			JOIN pg_class dependent ON dependent.oid = rewrite.ev_class
+			JOIN managed_namespaces dependent_namespace
+				ON dependent_namespace.oid = dependent.relnamespace
+			JOIN pg_depend dependency
+				ON dependency.classid = 'pg_rewrite'::regclass
+			   AND dependency.objid = rewrite.oid
+			   AND dependency.refclassid = 'pg_class'::regclass
+			JOIN pg_class referenced ON referenced.oid = dependency.refobjid
+			JOIN managed_namespaces referenced_namespace
+				ON referenced_namespace.oid = referenced.relnamespace
+			WHERE dependent.relkind IN ('v', 'm')
+			  AND referenced.relkind IN ('v', 'm')
+			  AND dependent.oid <> referenced.oid`
+
+// applyViewOrderingShape fills the three placeholders that decide whether the
+// cleanup query orders nested views recursively.
+//
+// The recursion exists only to drop a view after the views it selects from. A
+// server with no views has nothing to order, and asking for the recursion there
+// is not free: Cloud Spanner's PostgreSQL interface rewrites a catalog
+// reference by prepending its own `WITH pg_class AS (...)`, which produces two
+// WITH clauses and a syntax error when the query already opened with `WITH
+// RECURSIVE`. Measured on the pinned emulator, `WITH RECURSIVE m AS (SELECT
+// relname FROM pg_class) ...` fails while the same query without RECURSIVE
+// succeeds (#1811).
+//
+// The stubs keep the CTEs present and type-correct so everything downstream
+// joins against them unchanged, and keep pg_rewrite and pg_depend out of the
+// query entirely on a server that has no views to describe.
+func applyViewOrderingShape(query string, shape viewOrderingShape) string {
+	if shape == flatViewOrdering {
+		query = strings.ReplaceAll(query, "{{RECURSIVE}}", "")
+		query = strings.ReplaceAll(query, "{{VIEW_DEPENDENCIES}}", flatViewDependencies)
+		return strings.ReplaceAll(query, "{{VIEW_DEPTH_RECURSION}}", "")
+	}
+	recursive, dependencies, depthRecursion := "RECURSIVE", realViewDependencies, `
+			UNION ALL
+
+			SELECT dependency.dependent_oid, depth.depth + 1
+			FROM view_depths depth
+			JOIN view_dependencies dependency
+				ON dependency.referenced_oid = depth.oid`
+	query = strings.ReplaceAll(query, "{{RECURSIVE}}", recursive)
+	query = strings.ReplaceAll(query, "{{VIEW_DEPENDENCIES}}", dependencies)
+	return strings.ReplaceAll(query, "{{VIEW_DEPTH_RECURSION}}", depthRecursion)
+}
+
 func (w *PostgreSQLWriter) lockManagedRelations(
 	ctx context.Context,
-	tx *sql.Tx,
+	tx cleanupConn,
 	objects []postgresCleanupObject,
 ) error {
 	relations := make([]string, 0, len(objects))
@@ -725,7 +832,7 @@ func (w *PostgreSQLWriter) lockManagedRelations(
 	return nil
 }
 
-func (w *PostgreSQLWriter) rejectCrossSchemaPartitionEdges(ctx context.Context, tx *sql.Tx) error {
+func (w *PostgreSQLWriter) rejectCrossSchemaPartitionEdges(ctx context.Context, tx cleanupConn) error {
 	var parentSchema string
 	var parentName string
 	var childSchema string
@@ -797,7 +904,7 @@ func tryDropCleanupObject(
 
 func dropCleanupObjectsOnce(
 	ctx context.Context,
-	tx *sql.Tx,
+	tx cleanupConn,
 	objects []postgresCleanupObject,
 ) error {
 	for _, object := range objects {
@@ -1044,6 +1151,15 @@ func (w *PostgreSQLWriter) dropSchemaObjects(ctx context.Context) (resultErr err
 		return fmt.Errorf("no database connection")
 	}
 
+	// A server that refuses DDL inside an explicit transaction gets the cleanup
+	// run directly on the pool. That trades atomicity away -- a cleanup that
+	// fails halfway leaves objects behind -- which is acceptable for the
+	// scratch database this drops and is the only way the run can finish at all
+	// (#1811). Every other PostgreSQL-family engine keeps the transaction.
+	if !w.caps.Has(capability.DDLInsideTransaction) {
+		return w.dropSchemaObjectsWithoutTransaction(ctx)
+	}
+
 	sqlTx, err := w.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
@@ -1094,6 +1210,39 @@ func (w *PostgreSQLWriter) dropSchemaObjects(ctx context.Context) (resultErr err
 	}
 	committed = true
 
+	return nil
+}
+
+// dropSchemaObjectsWithoutTransaction is dropSchemaObjects for a server that
+// refuses DDL inside one.
+//
+// Two capabilities are deliberately dropped with the transaction rather than
+// carried into it. The retry loop drops each object inside a SAVEPOINT, and the
+// relation lock is released at commit; both are transaction constructs, and
+// pretending otherwise would either error or silently do nothing. What survives
+// is RESTRICT, which is the authority on dependency order either way, so an
+// object that cannot be dropped still fails loudly instead of being skipped.
+func (w *PostgreSQLWriter) dropSchemaObjectsWithoutTransaction(ctx context.Context) error {
+	capabilities, err := inspectCleanupCapabilities(ctx, w.db)
+	if err != nil {
+		return err
+	}
+	capabilities.retryFailedDDL = false
+	if err := w.rejectSchemaScopedExtensions(ctx, w.db); err != nil {
+		return err
+	}
+	objects, err := w.collectAllObjects(ctx, w.db, postgresSchemaCleanupScope([]string{w.schema}))
+	if err != nil {
+		return err
+	}
+	if capabilities.inspectPartitionEdges {
+		if err := w.rejectCrossSchemaPartitionEdges(ctx, w.db); err != nil {
+			return err
+		}
+	}
+	if err := capabilities.dropObjects(ctx, w.db, objects); err != nil {
+		return fmt.Errorf("refusing to clean schema %q: %w", w.schema, err)
+	}
 	return nil
 }
 
