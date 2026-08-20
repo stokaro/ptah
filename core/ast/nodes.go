@@ -1777,6 +1777,59 @@ type CreateMaterializedViewNode struct {
 	Name    string
 	Body    string
 	Comment string
+	// Refresh is the ClickHouse refresh schedule, nil for a view that declares
+	// none; see [MatViewRefreshSpec].
+	Refresh *MatViewRefreshSpec
+}
+
+// MatViewRefreshSpec is a ClickHouse materialized-view refresh schedule.
+//
+// It is nil for a view that declares none, which is every materialized view on
+// every other dialect and the ordinary ClickHouse one: a plain ClickHouse
+// materialized view is maintained by inserts into its source and has no
+// schedule to carry.
+//
+// It carries the engine's own vocabulary rather than a cross-dialect
+// abstraction, and that distinction is the point. A shared `refresh_strategy`
+// lived on this node once and was removed (stokaro/ptah#1625), because it
+// described an operation no catalog records and no dialect could read back.
+// This one is the opposite on every count: ClickHouse owns the schedule, stores
+// it, reports it, and alters it, so it is schema state -- of one engine, named
+// after that engine's feature, and absent everywhere else (stokaro/ptah#1802).
+//
+// The values are the ones the server stores, not the ones an operator wrote:
+// see go.5x5.cz/ptah/internal/chrefresh, which is where a declaration is
+// normalized before it reaches here.
+type MatViewRefreshSpec struct {
+	// Mode is EVERY, which refreshes on a wall-clock schedule, or AFTER, which
+	// refreshes that long after the previous run finished.
+	Mode string
+	// Interval is the schedule, in the server's spelling: `1 HOUR`,
+	// `1 MINUTE 30 SECOND`, `1 YEAR 6 MONTH`.
+	Interval string
+	// Offset shifts an EVERY schedule within its period. It is empty for AFTER,
+	// which the server refuses to combine with one.
+	Offset string
+	// Randomize spreads the refresh over a window, the RANDOMIZE FOR clause.
+	Randomize string
+	// DependsOn names the views this one refreshes after, schema-qualified the
+	// way the server stores them.
+	DependsOn []string
+	// Append adds each refresh's rows instead of replacing the previous ones.
+	Append bool
+}
+
+// Clone returns a deep copy, so a spec handed to a diff cannot be mutated
+// through the schema it came from.
+func (s *MatViewRefreshSpec) Clone() *MatViewRefreshSpec {
+	if s == nil {
+		return nil
+	}
+	cloned := *s
+	if s.DependsOn != nil {
+		cloned.DependsOn = append([]string(nil), s.DependsOn...)
+	}
+	return &cloned
 }
 
 func NewCreateMaterializedView(name string) *CreateMaterializedViewNode {
@@ -1826,6 +1879,37 @@ func (n *DropMaterializedViewNode) SetComment(comment string) *DropMaterializedV
 
 func (n *DropMaterializedViewNode) Accept(visitor Visitor) error {
 	return visitor.VisitDropMaterializedView(n)
+}
+
+// AlterMaterializedViewRefreshNode changes a ClickHouse materialized view's
+// refresh schedule in place.
+//
+// It exists because the alternative keeps no data. A changed schedule is
+// otherwise a drop and a create, and the drop takes the inner storage table
+// with every row the view accumulated; `ALTER TABLE <view> MODIFY REFRESH ...`
+// changes the schedule and keeps them.
+//
+// It applies only to a view that already HAS a schedule. Measured on
+// 26.7.3.19, the same statement against a plain materialized view is answered
+// `Code: 48 ... Alter of type 'MODIFY_REFRESH' is not supported by storage
+// MaterializedView`, so gaining a first schedule or losing the last one is
+// still a drop and a create (stokaro/ptah#1802).
+type AlterMaterializedViewRefreshNode struct {
+	// Name is the materialized view whose schedule changes.
+	Name string
+	// Refresh is the schedule to set. It is never nil: removing a schedule is
+	// not something this statement can do.
+	Refresh *MatViewRefreshSpec
+}
+
+// NewAlterMaterializedViewRefresh creates an AlterMaterializedViewRefreshNode.
+func NewAlterMaterializedViewRefresh(name string, refresh *MatViewRefreshSpec) *AlterMaterializedViewRefreshNode {
+	return &AlterMaterializedViewRefreshNode{Name: name, Refresh: refresh}
+}
+
+// Accept dispatches to the visitor.
+func (n *AlterMaterializedViewRefreshNode) Accept(visitor Visitor) error {
+	return visitor.VisitAlterMaterializedViewRefresh(n)
 }
 
 // RefreshMaterializedViewNode represents a REFRESH MATERIALIZED VIEW statement.

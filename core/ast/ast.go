@@ -64,6 +64,9 @@ type Visitor interface {
 	VisitCreateMaterializedView(*CreateMaterializedViewNode) error
 	// VisitDropMaterializedView renders a DROP MATERIALIZED VIEW statement
 	VisitDropMaterializedView(*DropMaterializedViewNode) error
+	// VisitAlterMaterializedViewRefresh renders an in-place change to a
+	// materialized view's refresh schedule
+	VisitAlterMaterializedViewRefresh(*AlterMaterializedViewRefreshNode) error
 	// VisitRefreshMaterializedView renders a REFRESH MATERIALIZED VIEW statement
 	VisitRefreshMaterializedView(*RefreshMaterializedViewNode) error
 	// VisitCreateTrigger renders a CREATE TRIGGER statement

@@ -247,6 +247,14 @@ func (m *MockVisitor) VisitDropMaterializedView(node *ast.DropMaterializedViewNo
 	return nil
 }
 
+func (m *MockVisitor) VisitAlterMaterializedViewRefresh(node *ast.AlterMaterializedViewRefreshNode) error {
+	m.VisitedNodes = append(m.VisitedNodes, "AlterMaterializedViewRefresh:"+node.Name)
+	if m.ReturnError {
+		return errors.New("mock error")
+	}
+	return nil
+}
+
 func (m *MockVisitor) VisitRefreshMaterializedView(node *ast.RefreshMaterializedViewNode) error {
 	m.VisitedNodes = append(m.VisitedNodes, "RefreshMaterializedView:"+node.Name)
 	if m.ReturnError {

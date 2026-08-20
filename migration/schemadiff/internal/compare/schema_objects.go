@@ -6,9 +6,11 @@ import (
 	"sort"
 	"strings"
 
+	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/chrefresh"
 	"go.5x5.cz/ptah/internal/mysqlroutine"
 	"go.5x5.cz/ptah/internal/objectidentity"
 	"go.5x5.cz/ptah/internal/tableref"
@@ -982,8 +984,53 @@ func MaterializedViewDefinitionsWithDialect(
 	if !schemaObjectBodiesEqual(genView.Body, dbView.Body, dialect, dbView.Schema) {
 		viewDiff.Changes["body"] = fmt.Sprintf("%s -> %s", strings.TrimSpace(dbView.Body), strings.TrimSpace(genView.Body))
 	}
+	if desired, current, changed := refreshChange(genView, dbView); changed {
+		viewDiff.Changes["refresh"] = fmt.Sprintf("%s -> %s", refreshText(current), refreshText(desired))
+		viewDiff.RefreshChange = &difftypes.MatViewRefreshChange{
+			Desired: desired.Clone(),
+			Current: current.Clone(),
+		}
+	}
 
 	return viewDiff
+}
+
+// refreshChange compares the declared ClickHouse refresh schedule with the one
+// read back, and returns the change to report or "" when they agree.
+//
+// The declaration is canonicalized first, and that is the whole reason
+// [go.5x5.cz/ptah/internal/chrefresh] exists: the server rewrites what it
+// stores, so `EVERY 60 MINUTE` reads back as `EVERY 1 HOUR`. Comparing the two
+// as written would report a change on every run and plan a drop and a create
+// for it -- on an object whose drop takes every row it accumulated
+// (stokaro/ptah#1802).
+//
+// A declaration the canonicalizer refuses reports no change rather than a
+// wrong one. Refusing a declaration is the renderer's job and it does it with
+// the reason; a comparison that invented a difference here would plan work for
+// a schedule that is never going to be sent.
+func refreshChange(
+	genView goschema.MaterializedView,
+	dbView types.DBMatView,
+) (desired, current *ast.MatViewRefreshSpec, changed bool) {
+	desired, err := chrefresh.Canonical(genView.Refresh, dbView.Schema)
+	if err != nil {
+		return nil, nil, false
+	}
+	if chrefresh.Equal(desired, dbView.Refresh) {
+		return nil, nil, false
+	}
+	return desired, dbView.Refresh, true
+}
+
+// refreshText names a schedule for a diff entry, and names its absence too: a
+// view gaining or losing one is a change, and "" on one side would read as a
+// missing value rather than as a plain view.
+func refreshText(spec *ast.MatViewRefreshSpec) string {
+	if spec == nil {
+		return "(none)"
+	}
+	return chrefresh.Clause(spec)
 }
 
 // schemaObjectBodiesEqual reports whether a declared view or materialized view

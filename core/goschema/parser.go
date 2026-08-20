@@ -13,9 +13,11 @@ import (
 	"strconv"
 	"strings"
 
+	ptahast "go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/goschema/internal/parseutils"
 	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/internal/annotationmeta"
+	"go.5x5.cz/ptah/internal/chrefresh"
 	"go.5x5.cz/ptah/internal/crdbttl"
 	"go.5x5.cz/ptah/internal/dialectscope"
 	"go.5x5.cz/ptah/internal/tableref"
@@ -1458,15 +1460,70 @@ func (s *schemaParseState) parseMaterializedViewComment(comment *ast.Comment, st
 	}
 	// No refresh strategy is read. validateAttributes has already refused the
 	// retired attribute by name, so a declaration carrying one never reaches
-	// this line (stokaro/ptah#1625).
+	// this line (stokaro/ptah#1625). What IS read is the ClickHouse schedule,
+	// which is the opposite kind of thing: engine-native state the server owns
+	// (stokaro/ptah#1802).
+	refresh, err := parseMatViewRefresh(kv, ctx)
+	if err != nil {
+		return err
+	}
 	s.materializedViews = append(s.materializedViews, MaterializedView{
 		StructName: structName,
 		Name:       kv["name"],
 		Body:       kv["body"],
 		Comment:    kv["comment"],
 		Dialects:   scope,
+		Refresh:    refresh,
 	})
 	return nil
+}
+
+// parseMatViewRefresh reads the ClickHouse refresh schedule a materialized view
+// declares, and returns nil for one declaring none.
+//
+// The attribute carries the clause as ClickHouse spells it -- `every 1 hour`,
+// `after 30 minute offset 5 minute` -- rather than a set of sub-attributes, so
+// an operator moving a schedule out of a CREATE statement moves the text. It is
+// canonicalized here, before it reaches the model, so every later layer sees the
+// spelling the server would have stored and a comparison against the catalog
+// starts from the same place.
+func parseMatViewRefresh(
+	kv map[string]string,
+	ctx annotationErrorContext,
+) (*ptahast.MatViewRefreshSpec, error) {
+	declared := strings.TrimSpace(kv["refresh"])
+	if declared == "" {
+		return nil, nil
+	}
+	spec := chrefresh.ParseClause(declared)
+	if spec == nil {
+		return nil, matViewRefreshError(ctx, fmt.Errorf(
+			"refresh %q is not a ClickHouse refresh clause; expected EVERY or AFTER "+
+				"followed by an interval", declared))
+	}
+	canonical, err := chrefresh.Canonical(spec, "")
+	if err != nil {
+		return nil, matViewRefreshError(ctx, err)
+	}
+	return canonical, nil
+}
+
+// matViewRefreshError reports a refresh declaration the parser refused, in the
+// shape every other attribute refusal in this file takes.
+func matViewRefreshError(ctx annotationErrorContext, err error) error {
+	slog.Error("invalid refresh schedule",
+		"directive", ctx.directive,
+		"location", ctx.location,
+		"error", err,
+	)
+	return &ptaherr.ParseError{
+		File:      ctx.file,
+		Line:      ctx.line,
+		Directive: strings.TrimPrefix(ctx.directive, "//"),
+		Attribute: "refresh",
+		Err:       ptaherr.ErrInvalidAttributeValue,
+		Message:   fmt.Sprintf("refresh on %s at %s: %s", ctx.directive, ctx.location, err),
+	}
 }
 
 func (s *schemaParseState) parseTriggerComment(comment *ast.Comment, structName string) error {

@@ -1766,9 +1766,13 @@ func appendSynonymStatements(statements *ast.StatementList, synonyms []goschema.
 // FromMaterializedView converts a goschema.MaterializedView to an
 // ast.CreateMaterializedViewNode.
 func FromMaterializedView(view goschema.MaterializedView) *ast.CreateMaterializedViewNode {
-	return ast.NewCreateMaterializedView(view.Name).
+	node := ast.NewCreateMaterializedView(view.Name).
 		SetBody(view.Body).
 		SetComment(view.Comment)
+	// Cloned rather than shared: a node handed to a renderer must not be a
+	// window onto the schema it came from (stokaro/ptah#1802).
+	node.Refresh = view.Refresh.Clone()
+	return node
 }
 
 func appendForeignKeyConstraintStatements(

@@ -643,6 +643,12 @@ func (r *Renderer) VisitRefreshMaterializedView(node *ast.RefreshMaterializedVie
 	return r.materializedViewsUnsupported("REFRESH MATERIALIZED VIEW", node.Name)
 }
 
+// VisitAlterMaterializedViewRefresh refuses for the same reason as
+// VisitCreateMaterializedView.
+func (r *Renderer) VisitAlterMaterializedViewRefresh(node *ast.AlterMaterializedViewRefreshNode) error {
+	return r.materializedViewsUnsupported("ALTER MATERIALIZED VIEW REFRESH", node.Name)
+}
+
 func (r *Renderer) materializedViewsUnsupported(statement, name string) error {
 	return fmt.Errorf("%w: %s: %s %s: materialized views are not supported by MySQL or MariaDB; remove matview definitions for this target",
 		ptaherr.ErrUnsupportedFeature, r.dialect, statement, name)

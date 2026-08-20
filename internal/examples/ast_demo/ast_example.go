@@ -286,6 +286,11 @@ func (a *SchemaAnalyzer) VisitDropMaterializedView(node *ast.DropMaterializedVie
 func (a *SchemaAnalyzer) VisitRefreshMaterializedView(node *ast.RefreshMaterializedViewNode) error {
 	return nil
 }
+func (a *SchemaAnalyzer) VisitAlterMaterializedViewRefresh(
+	node *ast.AlterMaterializedViewRefreshNode,
+) error {
+	return nil
+}
 func (a *SchemaAnalyzer) VisitCreateTrigger(node *ast.CreateTriggerNode) error { return nil }
 func (a *SchemaAnalyzer) VisitDropTrigger(node *ast.DropTriggerNode) error     { return nil }
 func (a *SchemaAnalyzer) VisitDropPolicy(node *ast.DropPolicyNode) error {
