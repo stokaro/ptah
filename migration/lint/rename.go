@@ -242,3 +242,16 @@ func renamesOfKind(renames []statementRename, kind SubjectKind) []statementRenam
 	}
 	return out
 }
+
+// renameAddSideStatements is [renameAddSideCandidates] as the statement-index
+// list a rule declares, so the versions read from the dev database and the
+// statements that produce a finding are decided by one function rather than two
+// that can drift.
+func renameAddSideStatements(file *File) []int {
+	candidates := renameAddSideCandidates(file)
+	indexes := make([]int, 0, len(candidates))
+	for _, candidate := range candidates {
+		indexes = append(indexes, candidate.statementIndex)
+	}
+	return indexes
+}

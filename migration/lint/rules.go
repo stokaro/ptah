@@ -85,6 +85,28 @@ func validateRule(rule Rule) error {
 	if (rule.CheckStatement != nil) == (rule.CheckFile != nil) {
 		return fmt.Errorf("rule %s must set exactly one checker", rule.Code)
 	}
+	// A declaration nothing enforces is a comment. These two make the input a
+	// property of the rule the analysis can act on: a rule asking for the
+	// baseline must say which statements it wants it for, or it would ask for
+	// every version and resolve nothing; a rule that reads text must not carry
+	// the predicate, or a reader has to work out which of the two fields is the
+	// real answer (stokaro/ptah#1632).
+	switch rule.Input {
+	case InputBaselineSchema:
+		if rule.BaselineSubjects == nil {
+			return fmt.Errorf(
+				"rule %s declares the %s input and must set BaselineSubjects to say which statements need it",
+				rule.Code, rule.Input)
+		}
+	case InputStatementText:
+		if rule.BaselineSubjects != nil {
+			return fmt.Errorf(
+				"rule %s sets BaselineSubjects but declares the %s input; set Input to InputBaselineSchema",
+				rule.Code, rule.Input)
+		}
+	default:
+		return fmt.Errorf("rule %s has unsupported input %d", rule.Code, rule.Input)
+	}
 	return nil
 }
 
@@ -546,6 +568,14 @@ func dataDependentRules() []Rule {
 			// rows and is exempt — the ADD-side analogue of the create-then-drop
 			// exemption in DS101 (tableDroppedRule).
 			CheckFile: notNullWithoutDefaultFindings,
+			// The ADD COLUMN half reads text. The rename half cannot: the
+			// retired column's type, nullability and default live in an earlier
+			// file or the base schema, never in the RENAME statement. Declaring
+			// the stronger of the two inputs is what puts this rule's files in
+			// [Analysis.BaselineVersions] and, on a run that supplies no
+			// baseline, in [Analysis.UnmetInputs].
+			Input:            InputBaselineSchema,
+			BaselineSubjects: renameAddSideStatements,
 		},
 	}
 }

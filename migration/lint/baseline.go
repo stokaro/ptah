@@ -104,6 +104,12 @@ func baselineKeys(column BaselineColumn) []string {
 // reference that resolves to more than one column -- a bare table name carried
 // by several schemas -- is not a match: naming the wrong table's column is worse
 // than saying nothing, so ambiguity fails closed.
+// empty reports that this state resolves nothing, which is what a version the
+// run never read from a dev database gets.
+func (b baselineColumns) empty() bool {
+	return len(b.byRef) == 0
+}
+
 func (b baselineColumns) column(tableRef, columnName string) (BaselineColumn, bool) {
 	if len(b.byRef) == 0 || tableRef == "" || columnName == "" {
 		return BaselineColumn{}, false
@@ -132,29 +138,110 @@ func (b baselineColumns) exact(tableRef, columnName string) (BaselineColumn, boo
 	return matches[0], true
 }
 
-// baselineVersions returns the versions whose starting schema state would let
-// the analysis say more than it can from SQL text alone, sorted ascending.
+// baselineVersions returns the versions whose starting schema state a rule
+// asked for, sorted ascending.
 //
-// Today that is exactly the versions carrying a column rename the compatibility
-// surface models as a drop plus an add: the add side needs the retired column's
-// type and nullability, which the statement does not carry. Files whose rename
-// is exempt because this same file created the table are not listed -- nothing
-// about them is reportable, so reading the database for them would be a round
-// trip spent to learn nothing.
-func baselineVersions(files []File) []int64 {
+// The list is assembled from the rules rather than from a check written here.
+// It used to be "the versions carrying a column rename", which was true because
+// exactly one rule needed the state -- and would have gone quietly wrong for the
+// second one, whose files nobody would have read and whose findings would
+// therefore never have fired (stokaro/ptah#1632). Now a rule declares
+// [InputBaselineSchema] and names the files it wants through
+// [Rule.BaselineSubject], and both this list and the rule's own check go through
+// that one predicate.
+//
+// A file no enabled rule asks about is not listed, so a directory with nothing
+// to resolve costs no round trip.
+func baselineVersions(files []File, opts Options, rules []Rule) []int64 {
 	var versions []int64
 	for i := range files {
 		file := &files[i]
-		if !file.Selected || !file.IsUp || file.Version == 0 {
-			continue
-		}
-		if len(renameAddSideCandidates(file)) == 0 {
+		if !baselineRequested(file, opts, rules) {
 			continue
 		}
 		versions = append(versions, file.Version)
 	}
 	slices.Sort(versions)
 	return slices.Compact(versions)
+}
+
+// baselineRequested reports whether any enabled rule wants this file's starting
+// schema state.
+func baselineRequested(file *File, opts Options, rules []Rule) bool {
+	if !file.Selected || !file.IsUp || file.Version == 0 {
+		return false
+	}
+	for _, rule := range rules {
+		if ruleWantsBaseline(rule, file, opts) {
+			return true
+		}
+	}
+	return false
+}
+
+// ruleWantsBaseline reports whether rule asks for this file's starting schema
+// state, for a statement the run actually reviews.
+//
+// The reviewed-schema filter is applied here rather than by each rule: a rename
+// in a schema outside the scope produces no finding, so reading the database
+// for it would be a round trip spent to learn nothing and reporting it as
+// unresolved would be a warning about work the operator excluded on purpose.
+func ruleWantsBaseline(rule Rule, file *File, opts Options) bool {
+	if rule.Input != InputBaselineSchema || rule.BaselineSubjects == nil {
+		return false
+	}
+	if !ruleRunsOnFile(rule, file, opts) {
+		return false
+	}
+	for _, index := range rule.BaselineSubjects(file) {
+		if !file.scopeExcluded[index] {
+			return true
+		}
+	}
+	return false
+}
+
+// unmetInputs returns every rule that asked for a file's starting schema state
+// on a run that supplied none.
+//
+// This is the reason the input is declared at all. A rule that needs the
+// replayed schema and does not get it does not fail -- it resolves nothing and
+// reports less, while the run exits 0, which the issue that asked for this
+// called the hardest kind of gap to notice from CI. Saying so costs one line of
+// output and turns silence into a fact a reader can act on.
+func unmetInputs(files []File, opts Options, rules []Rule) []UnmetInput {
+	var unmet []UnmetInput
+	for i := range files {
+		file := &files[i]
+		if !file.Selected || !file.IsUp || file.Version == 0 || !file.baseline.empty() {
+			continue
+		}
+		for _, rule := range rules {
+			if !ruleWantsBaseline(rule, file, opts) {
+				continue
+			}
+			unmet = append(unmet, UnmetInput{
+				Rule:    rule.Code,
+				Input:   rule.Input,
+				File:    file.Path,
+				Version: file.Version,
+			})
+		}
+	}
+	return unmet
+}
+
+// UnmetInput reports one rule that asked for an analyzer input the run did not
+// supply, on one file.
+type UnmetInput struct {
+	// Rule is the code of the rule that asked.
+	Rule string
+	// Input is what it asked for.
+	Input RuleInput
+	// File is the migration file whose analysis was thinner for the absence.
+	File string
+	// Version is that file's migration version.
+	Version int64
 }
 
 // normalizeBaselineColumns drops entries no lookup can use, so an index never

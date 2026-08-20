@@ -207,6 +207,12 @@ func runLint(cmd *cobra.Command, opts runOptions) error {
 	if err := migrationlintreport.Write(writer, opts.format, report); err != nil {
 		return writeError(cmd.ErrOrStderr(), formatText, opts.failOn, err.Error())
 	}
+	// Stderr, so a --format json consumer decodes exactly what it decoded
+	// before while a reader still learns the analysis was thinner than it
+	// could have been.
+	if err := migrationlintreport.WriteUnmetInputNotice(cmd.ErrOrStderr(), report); err != nil {
+		return writeError(cmd.ErrOrStderr(), formatText, opts.failOn, err.Error())
+	}
 	if report.Failed {
 		return exitcode.New(1, errLintFindings)
 	}
