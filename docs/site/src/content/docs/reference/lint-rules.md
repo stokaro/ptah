@@ -263,6 +263,20 @@ Every check code the [Atlas analyzer documentation](https://atlasgo.io/lint/anal
 | `PG106` | reports Atlas `PG102`, which the convention spells `PG102` |
 
 <!-- END GENERATED LINT RULES -->
+### Writing an Atlas code in a config
+
+Where Ptah reports an Atlas hazard under a rule of its own name, the Atlas code
+is accepted anyway — in `disabled-rules`, in `--disable`, and as a key under
+`rules:` for a severity override. `PG301` reaches `DS103`, `PG304` reaches
+`PG104`, and so on for `BC102`, `MF104`, `MY110`, `MY130`, `MY133` and `MY136`.
+
+Six Atlas codes are deliberately **not** aliased, because Ptah uses the same
+spelling for a rule of its own meaning something else: `DS101`, `DS102`,
+`DS103`, `MF103`, `MY101` and `PG102`. Atlas `DS103` reports under Ptah `DS102`
+while Ptah's own `DS103` is a different hazard, so an alias would make
+`--disable DS103` silence two rules where you asked for one. In a config those
+six select the Ptah rule of that name.
+
 
 ## Changing what a rule does
 

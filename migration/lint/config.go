@@ -165,10 +165,17 @@ func validateConfiguredRuleSelectors(rules []Rule, opts Options) error {
 	return nil
 }
 
+// selectorMatchesRule reports whether a configured selector reaches a rule.
+//
+// The Atlas spelling counts. A user reading the Atlas documentation writes
+// PG301, and refusing it as unknown told them their code does not exist when
+// what it does not have is a rule of its own (stokaro/ptah#1631).
 func selectorMatchesRule(selector string, rules []Rule) bool {
-	for _, rule := range rules {
-		if strings.HasPrefix(rule.Code, selector) {
-			return true
+	for _, candidate := range expandAtlasCodeSelectors([]string{selector}) {
+		for _, rule := range rules {
+			if strings.HasPrefix(rule.Code, candidate) {
+				return true
+			}
 		}
 	}
 	return false

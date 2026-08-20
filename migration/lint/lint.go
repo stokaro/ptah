@@ -239,6 +239,14 @@ func ruleConfigForCode(code string, configs map[string]RuleConfig) (RuleConfig, 
 	if config, ok := configs[code]; ok {
 		return config, true
 	}
+	// An entry written under the Atlas spelling governs the Ptah rule that
+	// reports it, so `rules: {PG301: {severity: warning}}` reaches DS103
+	// (stokaro/ptah#1631).
+	for _, atlasCode := range AtlasCodeFor(code) {
+		if config, ok := configs[atlasCode]; ok {
+			return config, true
+		}
+	}
 	bestPrefix := ""
 	var best RuleConfig
 	for prefix, config := range configs {
@@ -349,7 +357,7 @@ func matchGlobSegments(pattern, value []string) bool {
 // ruleDisabled reports whether code matches any disabled entry — exact code
 // or family prefix ("DS" disables every DS rule).
 func ruleDisabled(code string, disabled []string) bool {
-	for _, entry := range disabled {
+	for _, entry := range expandAtlasCodeSelectors(disabled) {
 		entry = strings.TrimSpace(entry)
 		if entry != "" && strings.HasPrefix(code, entry) {
 			return true
