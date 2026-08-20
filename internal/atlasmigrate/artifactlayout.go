@@ -66,6 +66,18 @@ const (
 	// community binary's own `migrate hash`, `validate` and `apply` read back,
 	// and that binary writes `--changeset atlas:<version>-<n>`.
 	liquibaseChangesetAuthor = "atlas"
+	// liquibaseNoTransactionAttribute opts a changeset out of transaction
+	// wrapping. Liquibase takes it as an attribute on the changeset line, and
+	// this layout writes ONE changeset carrying both directions, so the
+	// attribute covers the pair the way Goose's whole-file directive does
+	// rather than marking a direction the way dbmate's does.
+	//
+	// Liquibase documents the cost: with the attribute set and a changeset of
+	// several statements, a failure part way through can leave DATABASECHANGELOG
+	// inconsistent. That is the same trade the requirement itself carries -- a
+	// statement that cannot run in a transaction cannot be rolled back as part
+	// of one either (stokaro/ptah#1630).
+	liquibaseNoTransactionAttribute = " runInTransaction:false"
 	// liquibaseRollbackPrefix introduces one line of a changeset's rollback.
 	// Liquibase concatenates consecutive rollback lines into one rollback
 	// statement, which is why a multi-line statement is emitted as several of
@@ -249,6 +261,17 @@ func directiveArtifact(
 // Liquibase concatenates into one rollback statement. Emitting it as a single
 // line carrying newlines would end the rollback at the first one and silently
 // drop the rest.
+// liquibaseChangesetAttributes returns the attributes the one changeset carries.
+//
+// The changeset holds both directions, so a requirement on either half opts the
+// whole changeset out -- there is no narrower unit to mark.
+func liquibaseChangesetAttributes(content MigrationFileContent) string {
+	if !content.NoTransaction && !content.ReverseNoTransaction {
+		return ""
+	}
+	return liquibaseNoTransactionAttribute
+}
+
 func composeLiquibaseArtifact(
 	name string,
 	version int64,
@@ -257,7 +280,8 @@ func composeLiquibaseArtifact(
 	var body strings.Builder
 	body.WriteString(liquibaseHeader)
 	body.WriteString("\n")
-	fmt.Fprintf(&body, "--changeset %s:%d-1\n", liquibaseChangesetAuthor, version)
+	fmt.Fprintf(&body, "--changeset %s:%d-1%s\n",
+		liquibaseChangesetAuthor, version, liquibaseChangesetAttributes(content))
 	for _, statement := range content.Statements {
 		body.WriteString(strings.TrimRight(statement, "\n"))
 		body.WriteString(";\n")

@@ -231,13 +231,20 @@ func attachReversePlan(
 // Goose publishes a whole-file `-- +goose NO TRANSACTION`; dbmate takes
 // `transaction:false` on each direction's own directive line. The layouts left
 // out are left out for a measured reason and not for want of trying:
-// golang-migrate documents no per-file mechanism at all -- its own guidance for
-// CREATE INDEX CONCURRENTLY is to put the statement in a separate migration --
-// so writing one would be inventing syntax the tool that owns the format would
-// not read (stokaro/ptah#1630).
+// Liquibase takes `runInTransaction:false` as an attribute on the changeset
+// line, and this layout writes one changeset per migration, so the attribute
+// covers both directions.
+//
+// The layouts left out are left out for a measured reason and not for want of
+// trying. golang-migrate documents no per-file mechanism at all -- its own
+// guidance for CREATE INDEX CONCURRENTLY is to put the statement in a separate
+// migration -- so writing one would be inventing syntax the tool that owns the
+// format would not read. Flyway does have one, a `<script>.conf` sidecar
+// carrying `executeInTransaction=false`, but it is a second FILE rather than a
+// line, which this artifact set does not yet model (stokaro/ptah#1630).
 func formatExpressesNoTransaction(format atlasmigrateimport.Format) bool {
 	switch format {
-	case atlasmigrateimport.FormatGoose, atlasmigrateimport.FormatDBMate:
+	case atlasmigrateimport.FormatGoose, atlasmigrateimport.FormatDBMate, atlasmigrateimport.FormatLiquibase:
 		return true
 	default:
 		return false

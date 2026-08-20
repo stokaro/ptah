@@ -6,6 +6,7 @@ package atlasmigrate
 // through GenerateDiff without a dev database per layout.
 
 import (
+	"strings"
 	"testing"
 	"testing/fstest"
 
@@ -224,6 +225,56 @@ func TestComposeMigrationArtifacts_DBMateMarksEachDirectionIndependently(t *test
 			c.Assert(err, qt.IsNil)
 			c.Assert(artifacts, qt.HasLen, 1)
 			c.Assert(string(artifacts[0].Contents), qt.Equals, test.want)
+		})
+	}
+}
+
+// TestComposeMigrationArtifacts_LiquibaseMarksTheChangeset pins the third
+// layout that can carry the requirement, and the reason it marks a pair rather
+// than a direction.
+//
+// Liquibase takes `runInTransaction:false` as an attribute on the changeset
+// line, and this layout writes ONE changeset holding both directions, so a
+// requirement on either half opts the whole changeset out. dbmate, above, marks
+// each direction because it has a directive per direction to mark.
+func TestComposeMigrationArtifacts_LiquibaseMarksTheChangeset(t *testing.T) {
+	tests := []struct {
+		name                 string
+		noTransaction        bool
+		reverseNoTransaction bool
+		wantChangesetLine    string
+	}{{
+		name:              "ordinary changeset carries no attribute",
+		wantChangesetLine: "--changeset atlas:20240102030405-1",
+	}, {
+		name:              "a forward requirement marks the changeset",
+		noTransaction:     true,
+		wantChangesetLine: "--changeset atlas:20240102030405-1 runInTransaction:false",
+	}, {
+		name:                 "a rollback requirement marks the same changeset",
+		reverseNoTransaction: true,
+		wantChangesetLine:    "--changeset atlas:20240102030405-1 runInTransaction:false",
+	}}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			artifacts, err := composeMigrationArtifacts(
+				atlasmigrateimport.FormatLiquibase,
+				"widgets",
+				20240102030405,
+				[]MigrationFileContent{{
+					Statements:           []string{"CREATE TABLE widgets (id INTEGER)"},
+					ReverseStatements:    []string{"DROP TABLE widgets"},
+					NoTransaction:        test.noTransaction,
+					ReverseNoTransaction: test.reverseNoTransaction,
+				}},
+			)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(artifacts, qt.HasLen, 1)
+			c.Assert(strings.Split(string(artifacts[0].Contents), "\n")[1], qt.Equals, test.wantChangesetLine)
 		})
 	}
 }

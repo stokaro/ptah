@@ -578,7 +578,6 @@ func TestWriteDiffArtifacts_ReverseNoTransactionRefusesUnrepresentedForeignLayou
 	formats := []atlasmigrateimport.Format{
 		atlasmigrateimport.FormatGolangMigrate,
 		atlasmigrateimport.FormatFlyway,
-		atlasmigrateimport.FormatLiquibase,
 	}
 
 	for _, format := range formats {
@@ -667,7 +666,6 @@ func TestWriteDiffArtifacts_EnumAddRefusesUnrepresentedForeignLayoutsBeforePubli
 	formats := []atlasmigrateimport.Format{
 		atlasmigrateimport.FormatGolangMigrate,
 		atlasmigrateimport.FormatFlyway,
-		atlasmigrateimport.FormatLiquibase,
 	}
 
 	for _, format := range formats {
