@@ -645,6 +645,10 @@ func Resolve() (Policy, error) {
 // non-boolean, and a name in both classifications fails there.
 var gatedPresenceEnvVars = []string{
 	"PTAH_LOG_FORMAT",
+	// Names the OCI namespace `atlas://` references resolve against. The
+	// community binary has no such setting, so a strict run that consumed it
+	// would fetch from a backend the oracle never reaches.
+	"PTAH_ATLAS_REGISTRY",
 }
 
 // validateStrictEnvironment applies the strict rule to every boolean `PTAH_*`

@@ -251,6 +251,9 @@ func runAtlasMigrateDiff(
 	if err := validateAtlasMigrateDiffCurrentSource(project, localDir, dirFormat, opts.policy, opts.devURL); err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("validate current migration directory: %w", err))
 	}
+	if err := project.refuseWriteToReadOnlyMigrationDir(localDir, "atlas migrate diff"); err != nil {
+		return err
+	}
 	writeDir := project.writeLocalDir(localDir)
 	migrationsDir, err := resolveMigrateDiffDirectory(writeDir)
 	if err != nil {

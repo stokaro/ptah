@@ -414,11 +414,44 @@ or a local value references it. Dependencies between locals and data sources
 run first. Declaring an unreferenced source does not open a database, start a
 program, read a runtime variable, or render a directory.
 
-The lazy set also recognizes `remote_dir`, `remote_schema`, `aws_rds_token`,
-and `gcp_cloudsql_token`, matching the community binary's treatment of valid
+The lazy set also recognizes `remote_schema`, `aws_rds_token`, and
+`gcp_cloudsql_token`, matching the community binary's treatment of valid
 unreferenced blocks. Referencing one still fails explicitly because Ptah does
 not implement it. An unknown type, including `composite_schema`, fails during
 structural validation even when unreferenced.
+
+## Remote directory data source
+
+`data "remote_dir"` pulls a migration directory from an OCI registry.
+
+```hcl
+data "remote_dir" "app" {
+  name = "app"
+}
+
+env "local" {
+  migration {
+    dir = data.remote_dir.app.url
+  }
+}
+```
+
+`name` is required and names the repository. `tag` selects a moving tag and
+defaults to `latest`; `version` selects an immutable one. Naming both is
+refused, because a tag moves and a version does not, so a block carrying both
+names two different artifacts.
+
+Set `PTAH_ATLAS_REGISTRY` to the namespace the repository resolves against —
+for example `registry.example.com/acme`, which makes the block above resolve to
+`oci://registry.example.com/acme/app:latest`. Without it the reference is
+refused rather than guessed. Set `PTAH_ATLAS_REGISTRY_PLAIN_HTTP=1` to reach a
+registry over plain HTTP, which is intended for a local registry in a test.
+Both variables are Ptah extensions, so `PTAH_ATLAS_STRICT_COMPAT` refuses them.
+
+The directory is read-only. Ptah pulls it and reads it; it does not write back
+to a registry, so `migrate new`, `migrate diff` and `migrate hash` refuse
+against it and name the reference they refused. Write to a local directory and
+publish it with `ptah migrations push`.
 
 ## SQL data source
 

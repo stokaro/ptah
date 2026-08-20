@@ -199,6 +199,14 @@ func resolveAtlasMigrateSource(
 	if project.project.migrationDirResolved && localDir.Path == project.project.migrationDir.Path {
 		localDir.AllowedRoot = project.project.migrationDir.AllowedRoot
 	}
+	// A verb that writes into the directory cannot run against one pulled from a
+	// registry: the write would land in a temporary filesystem nobody reads back
+	// and the run would exit 0 having done nothing (stokaro/ptah#1210).
+	if verb.writesDir {
+		if err := project.project.refuseWriteToReadOnlyMigrationDir(localDir, "atlas migrate "+verb.use); err != nil {
+			return atlasMigrateSource{}, cmdutil.Fail(cmd, err)
+		}
+	}
 	// The scheme requirement runs before the layout is resolved, and the order
 	// is measured: `migrate new a --dir mig --dir-format nosuchformat` prints
 	// the scheme refusal, not `unknown dir format`, on the pinned community

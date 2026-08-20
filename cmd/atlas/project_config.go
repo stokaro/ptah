@@ -56,12 +56,16 @@ type atlasProjectArgValues struct {
 
 type atlasProject struct {
 	projectconfig.Config
-	root                 *pathguard.OpenedDirectory
-	migrationDir         atlasargs.LocalDir
-	migrationWriteDir    atlasargs.LocalDir
-	migrationFS          fs.FS
-	migrationDisplay     string
-	migrationVirtual     bool
+	root              *pathguard.OpenedDirectory
+	migrationDir      atlasargs.LocalDir
+	migrationWriteDir atlasargs.LocalDir
+	migrationFS       fs.FS
+	migrationDisplay  string
+	migrationOrigin   string
+	migrationVirtual  bool
+	// migrationReadOnly marks a migration directory fetched from a registry:
+	// there is no local directory to write back to (stokaro/ptah#1210).
+	migrationReadOnly    bool
 	migrationDirResolved bool
 }
 
@@ -158,12 +162,22 @@ func newAtlasProject(cfg projectconfig.Config, root *pathguard.OpenedDirectory) 
 	}
 	digest := sha256.Sum256([]byte(migrationDir.Value))
 	project.migrationDir = atlasargs.LocalDir{Path: fmt.Sprintf(".ptah-template-dir-%x", digest)}
-	writePath := virtual.Path
-	if root != nil {
-		writePath = filepath.Join(root.Path(), filepath.FromSlash(virtual.Path))
-		project.migrationWriteDir.AllowedRoot = root.Path()
+	// A read-only source has no local directory to synchronize into, so it gets
+	// no write path at all. Joining its display value to the project root would
+	// create a directory named after a registry reference and report success
+	// while the registry stayed unchanged (stokaro/ptah#1210).
+	if !virtual.ReadOnly {
+		writePath := virtual.Path
+		if root != nil {
+			writePath = filepath.Join(root.Path(), filepath.FromSlash(virtual.Path))
+			project.migrationWriteDir.AllowedRoot = root.Path()
+		}
+		project.migrationWriteDir.Path = writePath
 	}
-	project.migrationWriteDir.Path = writePath
+	project.migrationReadOnly = virtual.ReadOnly
+	// The refusal names the registry reference the directory came from, not the
+	// in-memory URL it is registered under, which means nothing to the caller.
+	project.migrationOrigin = virtual.Path
 	project.migrationFS = virtual.FileSystem
 	project.migrationDisplay = migrationDir.Value
 	project.migrationVirtual = true
@@ -239,6 +253,23 @@ func (p atlasProject) writeLocalDir(dir atlasargs.LocalDir) atlasargs.LocalDir {
 		return p.migrationWriteDir
 	}
 	return dir
+}
+
+// refuseWriteToReadOnlyMigrationDir stops a writing verb whose migration
+// directory came from a registry.
+//
+// Without it the verb writes nowhere and exits 0: the directory has no local
+// path, so the writer is handed the unresolved one and produces nothing, while
+// the operator is told the command succeeded and the registry is untouched
+// (stokaro/ptah#1210).
+func (p atlasProject) refuseWriteToReadOnlyMigrationDir(dir atlasargs.LocalDir, verb string) error {
+	if !p.isVirtualMigrationDir(dir) || !p.migrationReadOnly {
+		return nil
+	}
+	return fmt.Errorf(
+		"%s writes to the migration directory, and %s came from a registry, which Ptah reads and does not write "+
+			"back to; write to a local directory and publish it with `ptah migrations push`",
+		verb, p.migrationOrigin)
 }
 
 func (p atlasProject) replaySource(dir atlasargs.LocalDir) fs.FS {
