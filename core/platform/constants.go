@@ -28,6 +28,13 @@ func NormalizeDialect(dialect string) string {
 		return ClickHouse
 	case "sqlite", "sqlite3":
 		return SQLite
+	// libsql is a transport, not a dialect. The pinned community binary v1.3.0
+	// resolves both spellings onto its SQLite driver -- the errors it answers
+	// with are prefixed `sqlite:` and the HCL it inspects is SQLite HCL -- so
+	// the renderer, planner and reader are SQLite's and only the connection
+	// differs (stokaro/ptah#1615).
+	case "libsql", "libsql+ws":
+		return SQLite
 	case "mssql", "sqlserver", "sql-server", "sql_server", "tsql":
 		return SQLServer
 	case "cockroach", "cockroachdb", "crdb":

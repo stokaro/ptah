@@ -1199,11 +1199,11 @@
   {
     "area": "Database engines",
     "feature": "TiDB and LibSQL",
-    "ptah": "no",
+    "ptah": "yes",
     "atlas_oss": "yes",
     "atlas_pro": "yes",
-    "note": "Both names fail dialect normalization: \"unsupported database dialect: tidb\" / \"...: libsql\". No renderer, planner or driver entry. Tracked by stokaro/ptah#1615.",
-    "evidence": "`ptah schema render --dialect tidb` -> \"error: error rendering tidb schema: unsupported database dialect: tidb\"; same for libsql. platform/constants.go:19 NormalizeDialect has no tidb or libsql case. Atlas side: comparison.md:398 lists TiDB and LibSQL as Open drivers. Atlas pricing page (atlasgo.io/pricing), retrieved 2026-08-01: Starter 'Databases engines' names only MySQL, MariaDB, PostgreSQL and SQLite (Pro: All) — tension with the Open-driver listing for TiDB and LibSQL; cells kept on the features-page classification pending a measured check of the CE binary. Tracked by stokaro/ptah#1615, which asks first for a measured reading of the pinned community binary against a live TiDB and a live LibSQL to settle the open-driver-versus-pricing-page tension recorded above, and then either dialect entries with renderer, planner and reader coverage or a recorded retained divergence."
+    "note": "TiDB is reached through `mysql://`, which both binaries do and neither exposes as its own driver. `libsql://` and `libsql+ws://` resolve onto the SQLite dialect over the remote transport.",
+    "evidence": "Measured against the pinned community binary v1.3.0. TiDB: `atlas schema inspect -u tidb://...` answers `sql/sqlclient: unknown driver \"tidb\"`, so the binary has no TiDB driver either; it reaches TiDB through `mysql://`, and against a live TiDB v8.5.1 both binaries return the same `schema \"test\" { charset = \"utf8mb4\" collate = \"utf8mb4_bin\" }`. The pricing-page tension recorded here before is therefore moot: TiDB is not a driver on either side. LibSQL: the binary resolves `libsql://` onto its SQLite driver -- its errors are prefixed `sqlite:` -- reaching `https://<host>/v2/pipeline`, while `libsql+ws://` dials a WebSocket; `libsql+http://` is not a driver on either side. Ptah now maps both accepted spellings onto the SQLite dialect over the libsql-client-go transport. Verified against a live libsql-server v0.24.32 with tables, an index, a foreign key, a check and a view: both binaries exit 0 with empty stderr, and the difference between Ptah's HCL and the binary's is byte-identical to the difference the two already have over a local `sqlite://` file on the same schema -- so the transport adds no divergence of its own. dbschema/connection.go libSQLDriverConfig and core/platform/constants.go NormalizeDialect; dbschema/libsql_transport_internal_test.go. Closed by stokaro/ptah#1615."
   },
   {
     "area": "Database engines",
