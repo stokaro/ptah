@@ -1342,6 +1342,7 @@ func resolveAtlasVerbProject(
 		project.flags,
 		requirement,
 		compatibilityPolicy,
+		cmd.CommandPath(),
 	)
 	if err != nil {
 		return atlasVerbArgs{}, err
@@ -1423,26 +1424,32 @@ type selectedAtlasProject struct {
 	loaded       bool
 }
 
+// verbPath is the command path the diagnostics name, so a refusal that must
+// say WHICH command cannot run -- a for_each env expanding to several
+// environments, for one -- names it on every branch. Passing "" here left the
+// table-driven forwarded commands with the generic wording while the bespoke
+// ones were specific (stokaro/ptah#1696).
 func loadAtlasAdapterProjectConfig(
 	ctx context.Context,
 	verb atlasVerb,
 	flags atlasProjectFlagValues,
 	requirement atlasProjectRequirement,
 	policy atlascompatpolicy.Policy,
+	verbPath string,
 ) (selectedAtlasProject, error) {
 	if !verb.nativeProjectConfig {
-		project, loaded, err := openAtlasProjectWithPolicy(ctx, flags, requirement, policy)
+		project, loaded, err := openAtlasProjectWithPolicy(ctx, flags, requirement, policy, verbPath)
 		return selectedAtlasProject{project: project, loaded: loaded}, err
 	}
 	if requirement == requiredAtlasProject {
-		project, targetConfig, err := openRequiredMergedProjectConfigWithPolicy(ctx, flags, policy)
+		project, targetConfig, err := openRequiredMergedProjectConfigWithPolicy(ctx, flags, policy, verbPath)
 		return selectedAtlasProject{
 			project:      project,
 			targetConfig: targetConfig,
 			loaded:       err == nil,
 		}, err
 	}
-	project, loaded, err := openAtlasProjectWithPolicy(ctx, flags, optionalAtlasProject, policy)
+	project, loaded, err := openAtlasProjectWithPolicy(ctx, flags, optionalAtlasProject, policy, verbPath)
 	if err != nil || !loaded {
 		return selectedAtlasProject{}, err
 	}
