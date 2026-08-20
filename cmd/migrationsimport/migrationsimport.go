@@ -37,9 +37,12 @@ adopt Ptah without hand-rewriting its migration history.
 
 Supported source tools: golang-migrate, Goose, Flyway, Liquibase, and dbmate.
 The source tool is auto-detected from the directory layout, or set it
-explicitly with --from. For Liquibase, only formatted-SQL changelogs are
-supported; XML, YAML, and JSON changelogs are detected and rejected with a
-message.
+explicitly with --from. For Liquibase, all four serializations are read:
+formatted SQL, and the XML, YAML and JSON changelogs. A changelog construct
+that cannot become a migration file -- include, preConditions, contexts,
+labels, and the typed refactorings such as createTable -- is refused by name
+rather than dropped, so an import either carries the whole changelog or does
+not happen.
 
 A source migration with no rollback file gets a placeholder down migration. A
 Flyway repeatable (R__) migration is imported as a one-time migration ordered
