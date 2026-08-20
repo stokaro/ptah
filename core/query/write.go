@@ -19,11 +19,12 @@ import (
 // InsertBuilder builds an *ast.InsertStatement through a fluent, chainable API.
 // Start with InsertInto. A builder is not safe for concurrent use.
 type InsertBuilder struct {
-	table      string
-	columns    []string
-	rows       [][]ast.Expression
-	returning  []ast.ColumnRef
-	onConflict *ast.OnConflict
+	table        string
+	columns      []string
+	rows         [][]ast.Expression
+	returning    []ast.ColumnRef
+	onConflict   *ast.OnConflict
+	selectSource *ast.SelectStatement
 }
 
 // InsertInto starts an INSERT INTO the given table. Follow it with Columns to
@@ -55,6 +56,29 @@ func (b *InsertBuilder) Values(values ...any) *InsertBuilder {
 // Returning adds columns to the RETURNING clause, projecting them from the
 // inserted rows. RETURNING renders only on the PostgreSQL family and SQLite;
 // RenderInsert rejects it on MySQL and MariaDB.
+// FromSelect supplies the inserted rows from a query instead of from literal
+// values.
+//
+//	query.InsertInto("archive").Columns("id", "name").
+//	    FromSelect(query.Select("id", "name").From("users").Where(query.Lt("age", 18)))
+//	// INSERT INTO "archive" ("id", "name") SELECT "id", "name" FROM "users" WHERE "age" < $1
+//
+// It is mutually exclusive with Values: VALUES and SELECT are alternative row
+// sources in the grammar, and a statement carrying both is refused rather than
+// resolved in one direction.
+//
+// The query must project one expression per target column, and must project
+// them explicitly -- a star projection supplies whatever the source table has
+// today, so a statement that matches now breaks the next time someone adds a
+// column there (stokaro/ptah#941).
+func (b *InsertBuilder) FromSelect(query *SelectBuilder) *InsertBuilder {
+	if query == nil {
+		return b
+	}
+	b.selectSource = query.Build()
+	return b
+}
+
 // OnConflictDoNothing discards a row that collides with an existing one.
 //
 // The columns name the unique index the insert watches. Passing none means
@@ -94,6 +118,7 @@ func (b *InsertBuilder) Build() *ast.InsertStatement {
 		Rows:       b.rows,
 		Returning:  b.returning,
 		OnConflict: b.onConflict,
+		Select:     b.selectSource,
 	}
 }
 

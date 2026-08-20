@@ -41,9 +41,23 @@ type InsertStatement struct {
 	// Columns is the inserted column list, each a quoted identifier. Required and
 	// non-empty; every row must supply exactly one value per column.
 	Columns []string
-	// Rows is the list of value rows. At least one row is required, and each row
-	// must have the same length as Columns. Values are bound row by row, in order.
+	// Rows is the list of value rows. At least one row is required unless Select
+	// supplies the rows instead, and each row must have the same length as
+	// Columns. Values are bound row by row, in order.
 	Rows [][]Expression
+	// Select supplies the inserted rows from a query rather than from literal
+	// values: INSERT INTO t (a, b) SELECT x, y FROM u.
+	//
+	// It is mutually exclusive with Rows. A statement carrying both is a
+	// contradiction rather than a merge -- VALUES and SELECT are alternative
+	// sources in the grammar, and picking one silently would insert rows the
+	// caller did not ask for (stokaro/ptah#941).
+	//
+	// The query's projection must supply one expression per column. That is the
+	// server's rule rather than Ptah's, but it is checked here because the
+	// mismatch is a runtime error naming neither side, and the builder knows
+	// both.
+	Select *SelectStatement
 	// Returning is the optional RETURNING projection: the columns to return from
 	// the inserted rows. An empty slice emits no RETURNING. RETURNING is supported
 	// only on the PostgreSQL family and SQLite; the renderer rejects it on MySQL
