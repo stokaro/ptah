@@ -162,6 +162,11 @@ func clickHousePlan() plan {
 			"the dependency table the user-defined-type read joins; ClickHouse "+
 				"answers `Unknown table expression identifier`",
 		),
+		acceptanceNote(capability.CatalogDefaultPrivileges, nil,
+			"SELECT 1 FROM pg_default_acl LIMIT 1",
+			"the relation the PostgreSQL-family cleanup reads default-privilege "+
+				"grants from; ClickHouse answers `Unknown table expression identifier`",
+		),
 		roleManagement(t),
 		foreignKeys(
 			[]string{
