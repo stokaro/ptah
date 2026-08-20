@@ -152,8 +152,13 @@ func (r *selectRenderer) renderInsert(stmt *ast.InsertStatement) error {
 	if len(stmt.Columns) == 0 {
 		return errors.New("renderer: insert statement requires at least one column")
 	}
-	if len(stmt.Rows) == 0 {
-		return errors.New("renderer: insert statement requires at least one row")
+	if len(stmt.Rows) > 0 && stmt.Select != nil {
+		return errors.New(
+			"renderer: insert statement has both VALUES rows and a SELECT source; " +
+				"they are alternatives, and choosing one would insert rows the caller did not ask for")
+	}
+	if len(stmt.Rows) == 0 && stmt.Select == nil {
+		return errors.New("renderer: insert statement requires at least one row or a SELECT source")
 	}
 
 	r.buf.WriteString("INSERT INTO ")
@@ -162,14 +167,47 @@ func (r *selectRenderer) renderInsert(stmt *ast.InsertStatement) error {
 	if err := r.writeInsertColumns(stmt.Columns); err != nil {
 		return err
 	}
-	r.buf.WriteString(") VALUES ")
-	if err := r.writeInsertRows(stmt.Columns, stmt.Rows); err != nil {
-		return err
+	r.buf.WriteString(")")
+	if stmt.Select != nil {
+		if err := r.writeInsertSelect(stmt.Columns, stmt.Select); err != nil {
+			return err
+		}
+	} else {
+		r.buf.WriteString(" VALUES ")
+		if err := r.writeInsertRows(stmt.Columns, stmt.Rows); err != nil {
+			return err
+		}
 	}
 	if err := r.renderOnConflict(stmt.OnConflict, stmt.Columns); err != nil {
 		return err
 	}
 	return r.renderReturning(stmt.Returning)
+}
+
+// writeInsertSelect writes the SELECT that supplies the inserted rows.
+//
+// The projection is checked against the column list first. The server enforces
+// the same rule, but its error names neither the target columns nor the query
+// -- `INSERT has more expressions than target columns` is all a caller gets --
+// and the builder is holding both sides, so it can say which is which.
+//
+// A star projection is refused rather than counted: `SELECT *` supplies however
+// many columns the source table happens to have today, so a statement that
+// matches now breaks the next time somebody adds a column to that table, with
+// nothing in this statement changed (stokaro/ptah#941).
+func (r *selectRenderer) writeInsertSelect(columns []string, query *ast.SelectStatement) error {
+	if len(query.Columns) == 0 {
+		return errors.New(
+			"renderer: the SELECT supplying an INSERT must project its columns explicitly; " +
+				"a star projection supplies whatever the source table has today")
+	}
+	if len(query.Columns) != len(columns) {
+		return fmt.Errorf(
+			"renderer: the SELECT supplying an INSERT projects %d column(s) for %d target column(s)",
+			len(query.Columns), len(columns))
+	}
+	r.buf.WriteString(" ")
+	return r.render(query)
 }
 
 // renderOnConflict writes the upsert clause in the dialect's own spelling, or

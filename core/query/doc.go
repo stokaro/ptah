@@ -51,8 +51,13 @@
 // parenthesized, so the tree the caller built is the expression the server
 // evaluates rather than one its precedence rules recover.
 //
-// Window functions and INSERT … SELECT are intentionally not implemented yet
-// and are tracked as follow-up phases of stokaro/ptah#941.
+// InsertBuilder.FromSelect supplies the inserted rows from a query instead of
+// from literal values. It is mutually exclusive with Values, and the query must
+// project one expression per target column, explicitly -- a star projection
+// supplies whatever the source table has today.
+//
+// Window functions are intentionally not implemented yet and are tracked as a
+// follow-up phase of stokaro/ptah#941.
 //
 // # Safety model
 //

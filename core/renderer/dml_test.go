@@ -173,10 +173,12 @@ func TestRenderInsert_Errors(t *testing.T) {
 			wantErrLike: "renderer: insert statement requires at least one column",
 		},
 		{
-			name:        "no rows",
+			// The message names both sources now that a SELECT can supply the
+			// rows; an insert with neither is still refused (stokaro/ptah#941).
+			name:        "neither rows nor a select source",
 			stmt:        &ast.InsertStatement{Table: "t", Columns: []string{"a"}},
 			dialect:     platform.Postgres,
-			wantErrLike: "renderer: insert statement requires at least one row",
+			wantErrLike: "renderer: insert statement requires at least one row or a SELECT source",
 		},
 		{
 			name: "ragged row",
