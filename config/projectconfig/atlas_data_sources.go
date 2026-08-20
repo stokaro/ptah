@@ -8,7 +8,6 @@ import (
 	"io/fs"
 	"net/url"
 	"os"
-	"path"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -379,11 +378,7 @@ func (p atlasParser) templateDirectoryDataSource(block *hclsyntax.Block) (cty.Va
 	if err != nil {
 		return cty.NilVal, p.dataSourceError(block, "rendering template directory", err, rawPath)
 	}
-	name := block.Labels[1]
-	memURL := (&url.URL{
-		Scheme: "mem",
-		Path:   filepath.ToSlash(filepath.Join(memPath, name)),
-	}).String()
+	memURL := memDirectoryURL(filepath.ToSlash(memPath), block.Labels[1])
 	p.migrationDirectories[memURL] = MigrationDirectorySource{
 		FileSystem: directory,
 		Path:       fsPath,
@@ -416,6 +411,18 @@ func (p atlasParser) templateDirectoryVariables(block *hclsyntax.Block) (map[str
 		variables[key.AsString()] = converted
 	}
 	return variables, nil
+}
+
+// memDirectoryURL builds the in-memory handle a rendered or pulled directory is
+// registered under.
+//
+// The block label is escaped rather than joined as a path segment. Joining
+// normalizes, and two distinct labels that normalize to the same segment --
+// `a/../b` and `b` -- would produce one key: the second registration would
+// replace the first filesystem while both HCL values still carry that key, so
+// an env selecting the first block would execute the second block's migrations.
+func memDirectoryURL(prefix, name string) string {
+	return "mem:///" + strings.Trim(prefix, "/") + "/" + url.PathEscape(name)
 }
 
 func (p atlasParser) templateDirectoryPath(rawPath string) (fsPath, memPath string, err error) {
@@ -843,11 +850,7 @@ func (p atlasParser) remoteDirectoryDataSource(block *hclsyntax.Block) (cty.Valu
 	if err != nil {
 		return cty.NilVal, p.dataSourceError(block, "fetching remote directory", err, reference.OCI)
 	}
-	name := block.Labels[1]
-	memURL := (&url.URL{
-		Scheme: "mem",
-		Path:   "/" + path.Join("remote_dir", name),
-	}).String()
+	memURL := memDirectoryURL("remote_dir", block.Labels[1])
 	p.migrationDirectories[memURL] = MigrationDirectorySource{
 		FileSystem: artifact.FileSystem,
 		// The reference is carried for display, and ReadOnly is what keeps it

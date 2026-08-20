@@ -80,6 +80,9 @@ func Resolve(raw string) (Reference, error) {
 	if err != nil {
 		return Reference{}, fmt.Errorf("atlasregistry: parse %q: %w", raw, err)
 	}
+	if err := refuseUnusedReferenceParts(parsed, raw); err != nil {
+		return Reference{}, err
+	}
 	repository := strings.Trim(parsed.Host+parsed.Path, "/")
 	if repository == "" {
 		return Reference{}, fmt.Errorf("atlasregistry: %q names no repository", raw)
@@ -98,6 +101,45 @@ func Resolve(raw string) (Reference, error) {
 		Tag:        tag,
 		Immutable:  immutable,
 	}, nil
+}
+
+// refuseUnusedReferenceParts rejects the URL components this scheme has no
+// meaning for, for the same reason an undocumented query parameter is rejected:
+// a reference carrying one resolves to a DIFFERENT artifact than it names.
+//
+// `atlas://app#staging` parses as repository `app` with the fragment discarded,
+// so without this it would quietly pull `app:latest` and run migrations from
+// somewhere the author did not write.
+func refuseUnusedReferenceParts(parsed *url.URL, raw string) error {
+	switch {
+	case parsed.Fragment != "":
+		return unusedReferencePart(raw, "a fragment (#"+parsed.Fragment+")")
+	case parsed.User != nil:
+		// The value is deliberately not echoed: it can carry a password, and
+		// this error reaches logs.
+		return unusedReferencePart(raw, "user information")
+	case parsed.Opaque != "":
+		return unusedReferencePart(raw, "an opaque body ("+parsed.Opaque+")")
+	}
+	return nil
+}
+
+func unusedReferencePart(raw, part string) error {
+	return fmt.Errorf(
+		"atlasregistry: %q carries %s, which has no meaning here and would resolve to a different "+
+			"artifact than the reference names; the supported forms are %s<repository>, ?tag=<tag> and ?version=<version>",
+		redactReference(raw), part, Scheme)
+}
+
+// redactReference strips user information so a password in an authored
+// reference does not reach a log through the refusal that rejected it.
+func redactReference(raw string) string {
+	parsed, err := url.Parse(strings.TrimSpace(raw))
+	if err != nil || parsed.User == nil {
+		return raw
+	}
+	parsed.User = url.User("redacted")
+	return parsed.String()
 }
 
 // referenceTag reads the tag out of the query, refusing the combination that
