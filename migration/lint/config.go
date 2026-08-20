@@ -121,6 +121,19 @@ func validateRuleConfigs(configs map[string]RuleConfig) error {
 	for _, code := range slices.Sorted(maps.Keys(configs)) {
 		rule := configs[code]
 		if !isCanonicalRuleCode(code) {
+			if rule.Declares() {
+				// A declared rule's code is not decoration: it is what reports
+				// print, what `--disable` selects, and what a `nolint`
+				// directive names. A second naming shape would make a family
+				// prefix such as `DS` ambiguous against a rule that merely
+				// starts with those letters.
+				return fmt.Errorf(
+					"lint rule %q: a declared rule needs a code in the same form as every other "+
+						"rule -- uppercase ASCII letters and digits, such as %q -- because the code "+
+						"is what findings print and what --disable and nolint select; "+
+						"put the readable name in `title`",
+					code, suggestedRuleCode(code))
+			}
 			return invalidRuleSelectorError(code)
 		}
 		switch rule.Severity {
