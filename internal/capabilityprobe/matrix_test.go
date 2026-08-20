@@ -505,7 +505,7 @@ func TestCIMatrix_ProbeOnlyCellsAreDeclaredAsSuch(t *testing.T) {
 		wantSuite bool
 	}{
 		{name: "clickhouse 24.10 is probe-only", id: "clickhouse-24-10", wantSuite: false},
-		{name: "spanner runs the suite now", id: "spanner-0", wantSuite: true},
+		{name: "spanner is probe-only until its cleanup path lands", id: "spanner-0", wantSuite: false},
 		{name: "postgres runs the suite too", id: "postgres-18", wantSuite: true},
 	}
 
