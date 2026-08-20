@@ -637,6 +637,25 @@ func missingMetadataColumns(present map[string]struct{}, required []string) []st
 	return missing
 }
 
+// sqlServerTablePresenceQuery asks sys.tables whether one table exists.
+//
+// Beside clickHouseTablePresenceQuery, and for the same reason: see its comment.
+const sqlServerTablePresenceQuery = `SELECT COUNT(*)
+FROM sys.tables AS t
+JOIN sys.schemas AS s ON s.schema_id = t.schema_id
+WHERE s.name = ? AND t.name = ?`
+
+// clickHouseTablePresenceQuery asks system.tables whether one table exists.
+//
+// It is a constant rather than a literal inside the return, because a raw
+// string spanning lines inside an argument list is where gofmt's column model
+// and the formatter golangci-lint runs disagree: the `[]any{` block that
+// followed it was indented one level deeper than the statement, gofmt left it
+// alone, and CI reported the file as unformatted.
+const clickHouseTablePresenceQuery = `SELECT count()
+FROM system.tables
+WHERE database = ? AND name = ? AND is_temporary = 0`
+
 func migrationTablePresenceQuery(
 	dialect,
 	configuredSchema,
@@ -661,12 +680,10 @@ WHERE table_schema = current_schema() AND table_name = ? AND table_type = 'BASE 
 			table,
 		)
 	case platform.ClickHouse:
-		return `SELECT count()
-FROM system.tables
-WHERE database = ? AND name = ? AND is_temporary = 0`, []any{
-				configuredOrConnectionSchema(configuredSchema, connectionSchema),
-				table,
-			}, nil
+		return clickHouseTablePresenceQuery, []any{
+			configuredOrConnectionSchema(configuredSchema, connectionSchema),
+			table,
+		}, nil
 	case platform.SQLite:
 		schema := configuredOrConnectionSchema(configuredSchema, connectionSchema)
 		if schema == "" {
@@ -677,13 +694,10 @@ WHERE database = ? AND name = ? AND is_temporary = 0`, []any{
 			quoteIdentifier(schema),
 		), []any{table}, nil
 	case platform.SQLServer:
-		return `SELECT COUNT(*)
-FROM sys.tables AS t
-JOIN sys.schemas AS s ON s.schema_id = t.schema_id
-WHERE s.name = ? AND t.name = ?`, []any{
-				configuredOrConnectionSchema(configuredSchema, connectionSchema),
-				table,
-			}, nil
+		return sqlServerTablePresenceQuery, []any{
+			configuredOrConnectionSchema(configuredSchema, connectionSchema),
+			table,
+		}, nil
 	default:
 		return "", nil, fmt.Errorf("unsupported migration metadata dialect %q", dialect)
 	}

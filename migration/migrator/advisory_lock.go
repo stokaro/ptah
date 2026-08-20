@@ -141,8 +141,7 @@ func acquireMigrationLock(
 	timeout time.Duration,
 ) (*dblock.Lock, error) {
 	lock, err := dblock.Acquire(ctx, conn, normalizeMigrationLockName(name), timeout)
-	var timeoutErr *dblock.TimeoutError
-	if errors.As(err, &timeoutErr) {
+	if timeoutErr, ok := errors.AsType[*dblock.TimeoutError](err); ok {
 		return nil, &MigrationLockTimeoutError{
 			Dialect: timeoutErr.Dialect,
 			Name:    timeoutErr.Name,

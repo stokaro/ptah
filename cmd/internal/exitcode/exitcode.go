@@ -28,8 +28,7 @@ func (e *Error) Unwrap() error {
 // Code returns the explicit process exit code carried by err, or fallback when
 // err is not an exit-code error.
 func Code(err error, fallback int) int {
-	var exitErr *Error
-	if errors.As(err, &exitErr) {
+	if exitErr, ok := errors.AsType[*Error](err); ok {
 		return exitErr.code
 	}
 	return fallback

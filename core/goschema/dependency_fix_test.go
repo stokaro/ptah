@@ -310,7 +310,7 @@ func buildDependencyGraph(r *goschema.Database) {
 		if field.Foreign == "" {
 			continue
 		}
-		refTable := strings.Split(field.Foreign, "(")[0]
+		refTable, _, _ := strings.Cut(field.Foreign, "(")
 
 		for _, table := range r.Tables {
 			if table.StructName != field.StructName {
