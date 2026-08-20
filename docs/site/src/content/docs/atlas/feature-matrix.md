@@ -90,14 +90,14 @@ Across the 191 capabilities below:
 
 | Reading | Count |
 | --- | --- |
-| Ptah supports it fully | 135 |
-| Ptah supports it with a stated limitation | 38 |
+| Ptah supports it fully | 144 |
+| Ptah supports it with a stated limitation | 29 |
 | Ptah does not implement it | 13 |
 | Ptah covers it in its own form, against a hosted service it cannot interoperate with | 5 |
-| Ptah and Atlas CE both support it | 43 |
+| Ptah and Atlas CE both support it | 49 |
 | Ptah implements it openly where Atlas gates it behind Pro or Cloud | 44 |
 | Ptah has it and neither Atlas edition does | 27 |
-| Atlas CE has it and Ptah does not, or only in part | 22 |
+| Atlas CE has it and Ptah does not, or only in part | 16 |
 | An Atlas column is ❔ — not established by this page's evidence | 4 |
 
 Every 🟡 and every ❌ in the Ptah column names its specific limitation and the
@@ -131,8 +131,8 @@ seven of them as open capabilities regardless.
 | Go struct annotations | ✅ | ❌ | ❌ | Ptah parses //ptah:schema:* comments into the desired schema. Atlas's route to Go models is an external ORM provider program. |
 | HCL foreign_key deferrable | ✅ | ❌ | ❌ | `deferrable` and `initially` are carried through HCL, the IR, the renderer and the PostgreSQL catalog read. The community binary plans no DEFERRABLE for the same file. |
 | HCL function calls in schema files | ✅ | 🟡 | 🟡 | sql() reduces to its SQL everywhere, and all 67 names the schema evaluator registers evaluate. uuid is a type, not a function. sql() inside check.expr and index.where is a retained divergence. |
-| HCL locals, lock, atlas, dynamic/for_each | 🟡 | 🟡 | 🟡 | `locals` is evaluated and `local.x` resolves. `dynamic` blocks expand: for_each, labels, iterator and content. `lock`/`atlas` are still dropped at exit 0 with no warning (stokaro/ptah#1709). |
-| HCL names outside the parsed subset | 🟡 | ✅ | ❌ | `ptah-compat` drops an unmodeled top-level name whose body names a declared schema, with no warning; `schema.nope` exits 1 on both. Native `ptah` refuses by name. Tracked by stokaro/ptah#1709. |
+| HCL locals, lock, atlas, dynamic/for_each | ✅ | 🟡 | 🟡 | `locals` is evaluated and `local.x` resolves. `dynamic` blocks expand: for_each, labels, iterator and content. `lock` and `atlas` are accepted and reported as ignored. |
+| HCL names outside the parsed subset | ✅ | ✅ | ❌ | `ptah-compat` accepts an unmodeled top-level name whose body names a declared schema and reports it as ignored; `schema.nope` exits 1 on both. Native `ptah` refuses by name. |
 | HCL table and column child blocks | ✅ | 🟡 | ✅ | column, primary_key, index, unique, foreign_key, check, partition, row_security, constraint, platform; column nests as, identity, platform. The binary drops row_security; ptah-compat plans it. |
 | HCL top-level blocks Ptah parses | ✅ | 🟡 | ✅ | schema, enum, table, extension, sequence, domain, composite, range, function, view, materialized, trigger, policy, role, permission, data. The community binary plans DDL for table and enum. |
 | HCL variable blocks and var.* references | ✅ | ✅ | ✅ | `variable` blocks bind `var.x`, `--var name=value` overrides them, and a typed variable with no value exits 1 with `missing value for required variable "x"` — the community binary's own text. |
@@ -163,15 +163,15 @@ seven of them as open capabilities regardless.
 | Exclude selector that matches nothing is diagnosed | ✅ | ❌ | ❌ | A selector naming no object warns on inspect and diff and exits 1 on apply, and only a filter that asked it may call it empty; a PTAH_ATLAS opt-in restores the permissive behavior. |
 | Exclude subtracts a named schema and its contents | ✅ | ✅ | ✅ | A one-part selector names a schema by catalog or quoted spelling, and it leaves with all contents. Case-preserving names remain addressable without collapsing case or quoted whitespace. |
 | Exclude subtracts sequences, domains, composite types and range types | ✅ | ❔ | ✅ | `--exclude` reaches the same object kinds `--include` selects. Before, these four were read and cloned but never offered to a pattern, so excluding one was a silent no-op that still planned its DROP. |
-| Go-template `--format` output | 🟡 | ✅ | ✅ | schema apply registers the shared helper set, so {{ json . }} renders a full document. schema diff registers only sql, so its diff document is unreachable. Tracked by stokaro/ptah#1705. |
-| Inspect `--exclude` field selectors | 🟡 | ❌ | 🟡 | Six resource types subtract a field: `version` on an extension, `comment` on the rest. Anything else is refused, and the refusal names what would have worked (stokaro/ptah#1710). |
+| Go-template `--format` output | ✅ | ✅ | ✅ | schema apply and schema inspect register the shared helper set. schema diff registers `sql` by default, and the full set behind an opt-in variable named in the evidence. |
+| Inspect `--exclude` field selectors | ✅ | ❌ | 🟡 | Six resource types subtract a field: `version` on an extension, `comment` on the rest. A field Ptah cannot subtract is refused, and the refusal names the ones that work. |
 | Inspect non-database sources via `--dev-url` | ✅ | ✅ | ✅ | Schema file, `atlas.sum` migration dir, or env:// is materialized on a reset dev DB then introspected; without `--dev-url` it fails. |
 | Inspect split/write file exports | ✅ | ❌ | ✅ | `{{ hcl . \| split \| write "dir" }}` writes object/schema/type trees; pinned Atlas CE rejects split, write, hcl as non-community. |
 | Inspected document declares what it does not describe | ✅ | ❌ | ❌ | A compat inspect document records the block kinds it omitted, in its own header and in every split member, so a later apply reads the omission as unknown rather than as deletion intent. |
 | JSON output for native schema diff | ✅ | ➖ | ➖ | Native ptah schema diff `--format` json emits a machine-readable statements document; the Go-template row only states that {{ json . }} fails on the compat diff, leaving native JSON unstated. |
 | Local pre-approved plan files | ✅ | ❌ | ✅ | `schema plan` writes Atlas `.plan.hcl` by default (`.json` keeps the native plan); `apply --plan` reads both, Atlas-authored included, verified by replay against `--to` plus an end-state check. |
 | schema apply against a live database | ✅ | ✅ | ✅ | Diffs `--url` against the `--to` desired state, prints the SQL plan, applies after confirmation. Verified end to end on SQLite. |
-| schema clean | 🟡 | ✅ | ✅ | `--include`/`--exclude` narrow cleanup. PostgreSQL-family scoped drops are dependency-safe and transactional; `RESTRICT` cannot cascade outside the selection. Tracked by stokaro/ptah#1704. |
+| schema clean | ✅ | ✅ | ✅ | `--include`/`--exclude` narrow cleanup. PostgreSQL-family scoped drops are dependency-safe and transactional, and a dependent left outside the selection is named before any DROP runs. |
 | schema diff between two schema states | ✅ | ✅ | ✅ | SQLite rebuilds a table for changes ALTER TABLE cannot express, including one other tables refer to: the plan brackets itself in PRAGMA foreign_keys. |
 | schema fmt (HCL canonical layout) | ✅ | ✅ | ✅ | Formats .hcl paths recursively and prints only changed files. Native `ptah schema fmt --check` adds a no-write CI gate. |
 | schema inspect to HCL, SQL, or JSON | ✅ | ✅ | ✅ | Default HCL; rendered HCL/SQL/JSON use explicit helper templates. Bare and whitespace-wrapped hcl/sql/json are literal template text. Native shorthands still render and add file export. |
@@ -200,7 +200,7 @@ seven of them as open capabilities regardless.
 | External `--dir-format` outside `migrate import` | 🟡 | ✅ | ✅ | All supporting verbs read the selected layout; new and diff write it with exact rollback. Goose represents whole-file no-transaction execution; four formats fail closed. Tracked by stokaro/ptah#1630. |
 | Failed rollback state is recorded and recoverable | ✅ | ❌ | ❌ | Ptah records failed rollback direction, error, and completed-statement count in both revision-table formats; compat keeps the Atlas schema but does not copy Atlas's hidden failed-down state. |
 | Flyway repeatable (`R__`) migration import | 🟡 | ✅ | ✅ | Compat import converts `R__` to a one-time migration ordered last, as the format requires. Editing the body then fails on a Ptah per-revision checksum. Tracked by stokaro/ptah#1702. |
-| Generate migrations from a schema diff | 🟡 | ✅ | ✅ | diff and new stamp the UTC second, stepping past a version already taken; checkpoint and rebase bump past the newest. A plan mixing transaction modes writes nothing. Tracked by stokaro/ptah#1714. |
+| Generate migrations from a schema diff | ✅ | ✅ | ✅ | diff and new stamp the UTC second, stepping past a version already taken; checkpoint and rebase bump past the newest. A plan mixing transaction modes is split into ordered files. |
 | migrate apply `--allow-dirty` semantics and the not-clean adoption gate | ✅ | ✅ | ✅ | Exact-identity retries require the current provider to own the dirty body; the flag also permits unmanaged-object adoption. Recovery preserves the committed prefix. |
 | Migration checkpoints (squash history) | ✅ | ❌ | ✅ | Replays the directory on `--shadow-db` into a cumulative checkpoint: the ptah reversible pair, or Atlas's single `-- atlas:checkpoint` file under `--dir-format atlas`. CE gates the verb. |
 | Migration import from other tools | 🟡 | ✅ | ✅ | Native import writes Ptah format; compat import writes Atlas format and orders `R__` last. Liquibase SQL becomes a numeric changeset stream; XML, YAML and JSON are not read (stokaro/ptah#1629). |
@@ -252,7 +252,7 @@ seven of them as open capabilities regardless.
 | Atlas `.test.hcl` ingestion | ✅ | ❌ | ✅ | Implemented: `.test.hcl` is read alongside native YAML by `schema test` and `migrate test`. Adding `output` to an `exec` makes it an assertion; step order is preserved and cases are selected by kind. |
 | Atlas CE strict oracle profile | ✅ | ➖ | ➖ | Strict mode builds the CE tree and refuses unsafe sources, migration extensions, and catalog-only live objects before output, comparison, or mutation. Default retains the full surface. |
 | Atlas-shaped migrate test / schema test verbs | 🟡 | ❌ | ✅ | Reports and seed directories are exposed. schema test accepts `-s/--schema`, Go, SQL/HCL or database sources; `--var` reaches HCL files. `env://` sources are refused (stokaro/ptah#1761). |
-| Dev / shadow database verification | 🟡 | ✅ | ✅ | `--shadow-db` on generate, checkpoint, baseline and down; `schema apply --dry-run` runs the real rehearsal. Only checkpoint and down resolve a `docker://` shadow value. Tracked by stokaro/ptah#1701. |
+| Dev / shadow database verification | ✅ | ✅ | ✅ | `--shadow-db` on generate, checkpoint, baseline and down; `schema apply --dry-run` runs the real rehearsal. All four resolve a `docker://` shadow value. |
 | Embeddable test runner (Go package) | ✅ | ❔ | ❌ | migration/dbtest exports RunMigrationTest and RunSchemaTest. CE stays unknown: a CLI probe cannot see a Go API; an Atlas-side source naming a test-runner entry point would settle it. |
 | Exit-code contract for CI gates | ✅ | ✅ | ➖ | Native 0/1/2 separates expected negative results from command errors; ptah-compat collapses to Atlas CE 0/1, recovered panics still exit 2. |
 | Migration test framework (`ptah migrations test`) | ✅ | ❌ | ✅ | Declarative YAML cases: migrate_to, apply_schema, seed, exec, assert. Fresh ephemeral SQLite per case unless `--db-url` is set. |
@@ -269,7 +269,7 @@ seven of them as open capabilities regardless.
 | atlas.hcl from the native ptah binary | 🟡 | ➖ | ➖ | ptah `--env` reads ./atlas.hcl; `--var name=value` supplies a variable with no default on every env-aware verb; `--config` still takes ptah.yaml only. Tracked by stokaro/ptah#1215. |
 | AWS RDS token project data source (data "aws_rds_token") | 🟡 | ✅ | ✅ | A valid unreferenced declaration is accepted lazily, matching Atlas CE. Resolving the token still fails explicitly because the provider is not implemented. Tracked by stokaro/ptah#1617. |
 | data "hcl_schema" reference | ✅ | ✅ | ✅ | Takes path, paths and vars, and exports .url. `vars` is scoped to the files that data source selects and `--var` does not cross that boundary, as on CE. A bad path or scheme names its rule. |
-| Docker dev databases (`docker://` `--dev-url`) | 🟡 | ✅ | ✅ | Eleven compat verbs provision and remove a container, `schema plan validate` included; `schema plan` starts none, and native generate and baseline reject the scheme. Tracked by stokaro/ptah#1701. |
+| Docker dev databases (`docker://` `--dev-url`) | ✅ | ✅ | ✅ | Every verb taking a dev or shadow URL provisions and removes a container. `schema plan` starts none on purpose: a saved plan reads local files and has nothing to replay. |
 | env:// desired-state references | 🟡 | ✅ | ✅ | Resolves on `--to`/`--from`/`--url`. Refused by name on `--schema-file` and the test verbs' sources (stokaro/ptah#1760); on `--exclude`/`--include` refusing is deliberate. |
 | External program project data source (data "external") | ✅ | ✅ | ✅ | Runs argv directly without a shell and returns untrimmed stdout. Caller cancellation, a 60-second timeout, bounded output, process-tree termination, and sanitized errors define the boundary. |
 | GCP Cloud SQL token project data source (data "gcp_cloudsql_token") | 🟡 | ✅ | ✅ | A valid unreferenced declaration is accepted lazily, matching Atlas CE. Resolving the token still fails explicitly because the provider is not implemented. Tracked by stokaro/ptah#1617. |
@@ -292,7 +292,7 @@ seven of them as open capabilities regardless.
 | Declared support level per database release line | ✅ | ❔ | ❔ | 26 declared release lines: 19 certified, 2 legacy-tested, 5 best-effort. Upstream end-of-life lowers the level, not the behavior; a line Ptah does not declare resolves to best-effort. |
 | Domains, composite types, and range types | ✅ | ❌ | ✅ | Domains and composites compare and change in place, each kind gated per target. Range types rebuild because PostgreSQL offers no ALTER TYPE ... AS RANGE. |
 | Enum types | 🟡 | ✅ | ✅ | An enum is whatever the schema declares as one. PostgreSQL alters values in place; MySQL, MariaDB, SQLite and SQL Server have their enum catalogs erased before comparison (stokaro/ptah#1716). |
-| Extensions | 🟡 | ❌ | ✅ | PostgreSQL and YugabyteDB preserve non-default schemas on create; other targets name unsupported ones. A declared version change is never diffed, and a schema move is refused (stokaro/ptah#1718). |
+| Extensions | ✅ | ❌ | ✅ | PostgreSQL and YugabyteDB preserve non-default schemas on create; other targets name unsupported ones. A declared version change and a schema move are both planned. |
 | Functions | 🟡 | ❌ | ✅ | `schema render` and `schema apply` emit functions on the PostgreSQL and MySQL families, and both read and plan them. Procedures are modeled nowhere (stokaro/ptah#1722). Spanner and SQL Server skip. |
 | MySQL and MariaDB | 🟡 | ✅ | ✅ | Roles, grants, stored functions and MariaDB sequences render, read back and plan. An inline enum change is still erased before comparison (stokaro/ptah#1716); matviews fail closed. |
 | Oracle, Snowflake, Redshift, Databricks | ❌ | ❌ | ✅ | No dialect entry; the names fail normalization the same way TiDB does. Listed as Atlas Pro drivers. Tracked by stokaro/ptah#1616. |
@@ -301,7 +301,7 @@ seven of them as open capabilities regardless.
 | Spanner PostgreSQL interface (spanner) | 🟡 | ❌ | ✅ | Enums, sequences, matviews, functions and triggers render as named skips; foreign keys render, SERIAL errors. Probed live every run; no compose service or integration target (stokaro/ptah#1719). |
 | SQL Server and Azure SQL (sqlserver, mssql, tsql) | ✅ | ❌ | ✅ | Every spelling renders the same DDL. Tables, views, triggers, synonyms, sequences, roles/grants, row-level security and functions all render, read back and plan. |
 | SQLite (sqlite, sqlite3) | ✅ | ✅ | ✅ | Column drops, type, nullability, default, generated, table-constraint and add-column changes all rebuild, inbound foreign keys included. The engine has no other object kind Ptah models. |
-| Standalone sequences | 🟡 | ❌ | ✅ | PostgreSQL, CockroachDB, YugabyteDB, SQL Server and MariaDB emit CREATE SEQUENCE. MySQL, ClickHouse and SQLite have none; Spanner has them but cannot report them (stokaro/ptah#1759). |
+| Standalone sequences | 🟡 | ❌ | ✅ | PostgreSQL, CockroachDB, YugabyteDB, SQL Server and MariaDB emit CREATE SEQUENCE. MySQL, ClickHouse and SQLite have none; Spanner has them and no live coverage (stokaro/ptah#1719). |
 | TiDB and LibSQL | ❌ | ✅ | ✅ | Both names fail dialect normalization: "unsupported database dialect: tidb" / "...: libsql". No renderer, planner or driver entry. Tracked by stokaro/ptah#1615. |
 | Triggers | ✅ | ❌ | ✅ | Every engine spelling renders the same trigger DDL and four readers read them back. ClickHouse and Spanner have none and name the omission; MySQL statement triggers and SQL Server BEFORE do not exist. |
 | Views and materialized views | 🟡 | ❌ | ✅ | Plain views work on every dialect. Materialized views render on PostgreSQL, CockroachDB, YugabyteDB and ClickHouse. Only manual refresh is accepted, and it refreshes nothing (stokaro/ptah#1625). |
