@@ -315,7 +315,10 @@ func inspectOnDev(
 		if err != nil {
 			return "", err
 		}
-	case atlassource.KindExternalSchema:
+	case atlassource.KindExternalSchema, atlassource.KindRemoteSchema:
+		// Both resolve to a schema IR rather than to files: an external program
+		// prints one, and a registry artifact records one. Neither has a local
+		// path for the file loader above to read.
 		state, err := set.Resolve(ctx, atlassource.ResolveOptions{
 			Dialect:                   dialect,
 			DialectFlag:               "--dev-url",
@@ -394,7 +397,7 @@ func inspectOnDev(
 			return "", fmt.Errorf("--url %q: %w", set.Sources[0].Raw, err)
 		}
 		return rendered, nil
-	case atlassource.KindLocalFile, atlassource.KindExternalSchema:
+	case atlassource.KindLocalFile, atlassource.KindExternalSchema, atlassource.KindRemoteSchema:
 		var rendered string
 		err := withMaterializedDevSchema(
 			ctx,
