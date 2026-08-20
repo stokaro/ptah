@@ -344,17 +344,10 @@ var launchers = map[string]launcher{
 		suiteURLEnv:   "COCKROACHDB_URL",
 	},
 	platform.Spanner: {
-		flags: []string{"--publish", "5432:5432"},
-		url:   "spanner://127.0.0.1:5432/ptah_test?sslmode=disable",
-		// Probe only, and not by choice. The runner's cleanup drops objects
-		// inside a transaction; naming a suite target here would enable a cell
-		// that cannot finish, which is worse than one that says why it does
-		// not run. dbtarget and the runner already map SPANNER_URL, so
-		// stokaro/ptah#1811 turns this on by deleting suiteSkip.
-		suiteSkip: "the runner's cleanup drops objects inside a transaction, and Spanner refuses DDL there -- " +
-			"measured on the pinned emulator: `DDL statements are only allowed outside explicit transactions` " +
-			"(SQLSTATE 25000). This cell adds capability-probe coverage; the scenario suite moves onto Spanner " +
-			"when the cleanup path stops requiring a transaction (stokaro/ptah#1811)",
+		flags:         []string{"--publish", "5432:5432"},
+		url:           "spanner://127.0.0.1:5432/ptah_test?sslmode=disable",
+		suiteDatabase: "spanner",
+		suiteURLEnv:   "SPANNER_URL",
 	},
 	platform.YugabyteDB: {
 		flags: []string{"--publish", "5433:5433"},

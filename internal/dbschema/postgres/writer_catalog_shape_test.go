@@ -41,6 +41,13 @@ func fullCatalogCaps() capability.Capabilities {
 		capability.CatalogRecursiveCTE:      true,
 		capability.CatalogDependencies:      true,
 		capability.CatalogDefaultPrivileges: true,
+		capability.PostgresCatalogFunctions: true,
+		capability.Functions:                true,
+		capability.Procedures:               true,
+		capability.DomainTypes:              true,
+		capability.CompositeTypes:           true,
+		capability.RangeTypes:               true,
+		capability.CatalogPartitions:        true,
 	}
 }
 
@@ -105,7 +112,7 @@ func TestCleanupQuery_KeepsEveryOtherBranchWhenOneIsOmitted(t *testing.T) {
 		c.Assert(query, qt.Contains, kept)
 	}
 	// The routine branch survives; only its extension filter is gone.
-	c.Assert(query, qt.Contains, "p.prokind IN ('f', 'p', 'a', 'w')")
+	c.Assert(query, qt.Contains, "p.prokind = 'f' OR p.prokind = 'p'")
 }
 
 // TestNewPostgreSQLWriterForRunner_DeclaresTheCatalogItAssumes pins the default
