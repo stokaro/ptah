@@ -274,8 +274,7 @@ func hookError(direction Direction, name string, err error, output string) error
 }
 
 func webhookError(direction Direction, err error) error {
-	var urlErr *url.Error
-	if errors.As(err, &urlErr) {
+	if urlErr, ok := errors.AsType[*url.Error](err); ok {
 		redactedURL := redactSecretURL(urlErr.URL)
 		cause := urlErr.Err
 		for {

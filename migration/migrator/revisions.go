@@ -268,8 +268,7 @@ func migrationExecutionProgress(
 	dialect string,
 	txMode MigrationTxMode,
 ) migrationProgress {
-	var progressErr *statementProgressError
-	if errors.As(err, &progressErr) {
+	if progressErr, ok := errors.AsType[*statementProgressError](err); ok {
 		event := progressErr.event
 		return migrationProgress{
 			Applied: progressErr.applied, Total: event.Total,
@@ -277,8 +276,7 @@ func migrationExecutionProgress(
 		}
 	}
 
-	var observationErr *StatementObservationError
-	if errors.As(err, &observationErr) {
+	if observationErr, ok := errors.AsType[*StatementObservationError](err); ok {
 		event := observationErr.Event
 		// The observed statement executed and only the observation that follows
 		// it failed, so no statement of the body is itself the failure: pass 0
@@ -2089,8 +2087,7 @@ func preservesProgressWitnessUnknownOutcome(
 	if revision.Error != unknownStatementOutcomeError {
 		return false
 	}
-	var progressErr *statementProgressError
-	if errors.As(failure, &progressErr) {
+	if _, ok := errors.AsType[*statementProgressError](failure); ok {
 		return true
 	}
 	var execErr *MigrationExecutionError

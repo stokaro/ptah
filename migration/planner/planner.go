@@ -729,8 +729,7 @@ func wrapPlanError(dialect string, err error) error {
 	if err == nil {
 		return nil
 	}
-	var planErr *ptaherr.PlanError
-	if errors.As(err, &planErr) {
+	if _, ok := errors.AsType[*ptaherr.PlanError](err); ok {
 		return err
 	}
 	return &ptaherr.PlanError{
@@ -744,8 +743,7 @@ func wrapRenderError(dialect string, err error) error {
 	if err == nil {
 		return nil
 	}
-	var renderErr *ptaherr.RenderError
-	if errors.As(err, &renderErr) {
+	if _, ok := errors.AsType[*ptaherr.RenderError](err); ok {
 		return err
 	}
 	return &ptaherr.RenderError{

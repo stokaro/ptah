@@ -19,8 +19,7 @@ func IsRetryable(err error) bool {
 		}
 	}
 
-	var mysqlErr *mysqldriver.MySQLError
-	if errors.As(err, &mysqlErr) {
+	if mysqlErr, ok := errors.AsType[*mysqldriver.MySQLError](err); ok {
 		switch mysqlErr.Number {
 		case 1205, 1213:
 			return true

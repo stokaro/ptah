@@ -290,7 +290,7 @@ func TestWriteMatrixSummary_IsTheSameMatrixNarrower(t *testing.T) {
 	var out strings.Builder
 	capabilityprobe.WriteMatrixSummary(&out)
 	rendered := out.String()
-	table := strings.Split(rendered, "\n\nDeclared release lines:")[0]
+	table, _, _ := strings.Cut(rendered, "\n\nDeclared release lines:")
 
 	c.Assert(strings.Split(strings.TrimRight(table, "\n"), "\n"), qt.HasLen, len(capabilityprobe.Cells)+2,
 		qt.Commentf("one header row, one delimiter row, and one row per declared release line"))
