@@ -111,7 +111,11 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 		// exists without being able to grant it, and an acceptance test cannot
 		// separate an unknown privilege from an absent grantee
 		// (stokaro/ptah#916).
-		want: []capability.Capability{capability.ShowRoutinePrivilege},
+		want: []capability.Capability{
+			capability.MigrationTimeouts,
+			capability.ShowRoutinePrivilege,
+			capability.TransactionalDDL,
+		},
 	}, {
 		dialect: platform.MySQL,
 		// The three PostgreSQL user-type kinds are declared rather than asked
@@ -123,11 +127,13 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 			capability.CatalogRowStatistics,
 			capability.CompositeTypes,
 			capability.DomainTypes,
+			capability.MigrationTimeouts,
 			capability.PostgresCatalogFunctions,
 			capability.RangeTypes,
 			capability.RoleManagement,
 			capability.RowLevelTTL,
 			capability.ShowRoutinePrivilege,
+			capability.TransactionalDDL,
 		},
 	}, {
 		dialect: platform.MariaDB,
@@ -136,20 +142,24 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 			capability.CatalogRowStatistics,
 			capability.CompositeTypes,
 			capability.DomainTypes,
+			capability.MigrationTimeouts,
 			capability.PostgresCatalogFunctions,
 			capability.RangeTypes,
 			capability.RoleManagement,
 			capability.RowLevelTTL,
 			capability.Sequences,
 			capability.ShowRoutinePrivilege,
+			capability.TransactionalDDL,
 		},
 	}, {
 		dialect: platform.ClickHouse,
 		want: []capability.Capability{
 			capability.CompositeTypes,
 			capability.DomainTypes,
+			capability.MigrationTimeouts,
 			capability.RangeTypes,
 			capability.ShowRoutinePrivilege,
+			capability.TransactionalDDL,
 		},
 	}} {
 		t.Run(tc.dialect, func(t *testing.T) {
@@ -264,28 +274,28 @@ func TestDecidable_IsDerivedFromThePlanAndTheLine(t *testing.T) {
 		caps capability.Capabilities
 		want int
 	}{{
-		name: "postgres owes one fewer: the probe cannot ask whether a privilege exists",
+		name: "postgres owes three fewer: the probe cannot ask whether a privilege exists, and neither runtime policy is a statement it can send",
 		cell: measuredCell,
 		caps: capability.Postgres17(),
-		want: registered - 1,
+		want: registered - 3,
 	}, {
-		name: "mysql owes nine fewer: role_management, row_level_ttl, the three catalog keys and the three user-type kinds all name surfaces no MySQL path reads",
+		name: "mysql owes eleven fewer: role_management, row_level_ttl, the three catalog keys and the three user-type kinds all name surfaces no MySQL path reads",
 		cell: Cell{
 			Dialect: platform.MySQL, Line: "9.7",
 			Preset: capability.MySQL84, PresetName: "MySQL84",
 			Refinement: RefinedByVersion,
 		},
 		caps: capability.MySQL84(),
-		want: registered - 9,
+		want: registered - 11,
 	}, {
-		name: "mariadb owes ten fewer: sequences is a claim about the generator, not the engine, and the three user-type kinds have no MariaDB spelling",
+		name: "mariadb owes twelve fewer: sequences is a claim about the generator, not the engine, and the three user-type kinds have no MariaDB spelling",
 		cell: Cell{
 			Dialect: platform.MariaDB, Line: "10.11",
 			Preset: capability.MariaDB1011, PresetName: "MariaDB1011",
 			Refinement: RefinedByVersion,
 		},
 		caps: capability.MariaDB1011(),
-		want: registered - 10,
+		want: registered - 12,
 	}, {
 		name: "cockroachdb 26.2 owes every row its preset enables a prerequisite for, less the one the probe cannot ask",
 		cell: Cell{
@@ -294,7 +304,7 @@ func TestDecidable_IsDerivedFromThePlanAndTheLine(t *testing.T) {
 			Refinement: RefinedByVersion,
 		},
 		caps: capability.CockroachDB26(),
-		want: registered - 1,
+		want: registered - 3,
 	}, {
 		name: "cockroachdb 25.4 excludes the guarded drop row whose generic prerequisite is absent",
 		cell: Cell{
@@ -303,7 +313,7 @@ func TestDecidable_IsDerivedFromThePlanAndTheLine(t *testing.T) {
 			Refinement: RefinedByVersion,
 		},
 		caps: capability.CockroachDB25(),
-		want: registered - 2,
+		want: registered - 4,
 	}, {
 		name: "a banner-refined line owes nothing because no observation can be credited to it",
 		cell: Cell{

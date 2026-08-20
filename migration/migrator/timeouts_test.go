@@ -7,6 +7,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/platform/capability"
 )
 
 func TestParseMigrationTimeouts(t *testing.T) {
@@ -118,7 +119,7 @@ func TestTimeoutStatements(t *testing.T) {
 				LockTimeout:    time.Second,
 				HasLockTimeout: true,
 			},
-			wantErr: `migration timeouts are not supported for dialect "clickhouse"`,
+			wantErr: `migration timeouts are not supported for dialect "clickhouse": .*`,
 		},
 		{
 			name:    "spanner unsupported",
@@ -127,7 +128,7 @@ func TestTimeoutStatements(t *testing.T) {
 				LockTimeout:    time.Second,
 				HasLockTimeout: true,
 			},
-			wantErr: `migration timeouts are not supported for dialect "spanner"`,
+			wantErr: `migration timeouts are not supported for dialect "spanner": .*`,
 		},
 	}
 
@@ -135,7 +136,8 @@ func TestTimeoutStatements(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			gotSetup, gotRestore, err := timeoutStatements(tt.dialect, tt.timeouts)
+			gotSetup, gotRestore, err := timeoutStatements(
+				tt.dialect, capability.ForDialect(tt.dialect), tt.timeouts)
 			if tt.wantErr != "" {
 				c.Assert(err, qt.ErrorMatches, tt.wantErr)
 				return

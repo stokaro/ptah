@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/dbschema"
 )
 
@@ -175,7 +176,8 @@ func (m *Migrator) applyTimeoutsWithRestore(
 		return noopRestoreTimeouts, nil
 	}
 
-	setupStatements, restoreStatements, err := timeoutStatements(conn.Info().Dialect, timeouts)
+	setupStatements, restoreStatements, err := timeoutStatements(
+		conn.Info().Dialect, conn.Info().Capabilities, timeouts)
 	if err != nil {
 		return nil, err
 	}
@@ -220,18 +222,47 @@ func (m *Migrator) restoreTimeoutsAfterFailure(ctx context.Context, version int6
 	return failure
 }
 
-func timeoutStatements(dialect string, timeouts MigrationTimeouts) (setupStatements, restoreStatements []string, err error) {
+// timeoutStatements returns the statements that bound a migration on this
+// target, and the ones that put the session back afterwards.
+//
+// The decision is capability.MigrationTimeouts rather than a list of dialect
+// names. That list had three entries, and two of the engines it excluded --
+// CockroachDB and YugabyteDB -- accept `SET LOCAL statement_timeout` and
+// `SET LOCAL lock_timeout` exactly as PostgreSQL does. They speak the
+// PostgreSQL wire protocol, so what refused them was Ptah's switch rather than
+// the server, on the two deployments where a long lock hurts most
+// (stokaro/ptah#1713).
+//
+// The SPELLING still comes from the dialect, because it differs: PostgreSQL
+// sets two transaction-local GUCs, and the MySQL family sets and restores two
+// session variables. A target that carries the key and has no spelling here is
+// a programming error rather than an unsupported engine, and it says so.
+func timeoutStatements(
+	dialect string,
+	caps capability.Capabilities,
+	timeouts MigrationTimeouts,
+) (setupStatements, restoreStatements []string, err error) {
 	normalized := platform.NormalizeDialect(dialect)
 
+	if !caps.Has(capability.MigrationTimeouts) {
+		return nil, nil, fmt.Errorf(
+			"migration timeouts are not supported for dialect %q: this target has no session or "+
+				"transaction timeout Ptah sets and restores around a migration",
+			dialect)
+	}
+
 	switch normalized {
-	case platform.Postgres:
+	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB:
 		return postgresTimeoutStatements(timeouts), nil, nil
 	case platform.MySQL:
 		return mysqlTimeoutStatements(timeouts)
 	case platform.MariaDB:
 		return mariaDBTimeoutStatements(timeouts)
 	default:
-		return nil, nil, fmt.Errorf("migration timeouts are not supported for dialect %q", dialect)
+		return nil, nil, fmt.Errorf(
+			"migration timeouts are declared supported for dialect %q but no statement spelling is "+
+				"registered for it",
+			dialect)
 	}
 }
 
