@@ -33,9 +33,11 @@ import (
 //
 // Supported dialects are the PostgreSQL family (PostgreSQL itself, CockroachDB,
 // YugabyteDB, and Cloud Spanner's PostgreSQL interface — the set
-// platform.IsPostgresFamily reports), plus MySQL, MariaDB, and SQLite. SQL
-// Server and ClickHouse are not supported yet and are refused by name; see
-// selectPlaceholderStyle. Any other dialect returns an error, as does a nil
+// platform.IsPostgresFamily reports), plus MySQL, MariaDB, SQLite, ClickHouse
+// and SQL Server. SQL Server binds @p1, @p2, … and pages with
+// OFFSET/FETCH rather than LIMIT, synthesizing ORDER BY (SELECT NULL) when the
+// caller ordered nothing, because T-SQL accepts neither clause without one.
+// Any other dialect returns an error, as does a nil
 // statement, a statement without a FROM table, an empty IN list, a malformed
 // operator, a function call with an invalid name or a bad argument shape, a GROUP
 // BY term with an empty column, a join without a table or ON condition, or a
@@ -60,8 +62,16 @@ type placeholderStyle int
 const (
 	// placeholderDollar numbers parameters $1, $2, … (PostgreSQL family).
 	placeholderDollar placeholderStyle = iota
-	// placeholderQuestion emits ? for every parameter (MySQL, MariaDB, SQLite).
+	// placeholderQuestion emits ? for every parameter (MySQL, MariaDB, SQLite,
+	// ClickHouse).
 	placeholderQuestion
+	// placeholderAtP numbers parameters @p1, @p2, … (SQL Server).
+	//
+	// SQL Server has no positional `?` in T-SQL itself; its drivers bind named
+	// parameters, and @pN is the name the standard Go driver generates for an
+	// ordinal argument. Emitting `?` here would render SQL the server parses as
+	// a syntax error rather than as a parameter.
+	placeholderAtP
 )
 
 // selectRenderer holds the mutable state for one RenderSelect call: the target
@@ -93,19 +103,28 @@ func newSelectRenderer(dialect string) (*selectRenderer, error) {
 // is true, sqlutil.Rebind gives it $n, NewRendererWithCapabilities routes its
 // DDL through the PostgreSQL renderer, and dbschema reads it over pgx.
 //
-// SQL Server and ClickHouse are deliberately absent. Neither is a missing map
-// entry: SQL Server needs a third placeholder style (@p1, @p2, … — what
-// sqlutil.Rebind already emits for it), T-SQL pagination in place of LIMIT, and
-// an OUTPUT-versus-RETURNING decision; ClickHouse needs a decided statement
-// shape for UPDATE and DELETE, whose mutation forms are not the portable
-// statements this renderer emits. Both are tracked on stokaro/ptah#941.
+// SQL Server and ClickHouse are both present as of stokaro/ptah#941, and what
+// each needed is worth recording because neither was a missing map entry.
+//
+// SQL Server needed a third placeholder style (@p1, @p2, … — the same style
+// sqlutil.Rebind already emits for it) and T-SQL pagination in place of LIMIT;
+// see renderFetchOffset. Its OUTPUT clause is still unmodeled, so a RETURNING
+// projection is refused by supportsReturning rather than silently mapped onto a
+// clause with different placement and different semantics.
+//
+// ClickHouse needed nothing here — it takes ? and backticks like MySQL — but it
+// executes only two of the four verbs portably. UPDATE and DELETE are mutations
+// there and are refused by refuseUnportableWrite with that reason, which is a
+// statement about the engine rather than about this table.
 func selectPlaceholderStyle(normalized string) (placeholderStyle, bool) {
 	if platform.IsPostgresFamily(normalized) {
 		return placeholderDollar, true
 	}
 	switch normalized {
-	case platform.MySQL, platform.MariaDB, platform.SQLite:
+	case platform.MySQL, platform.MariaDB, platform.SQLite, platform.ClickHouse:
 		return placeholderQuestion, true
+	case platform.SQLServer:
+		return placeholderAtP, true
 	default:
 		return 0, false
 	}
@@ -114,10 +133,14 @@ func selectPlaceholderStyle(normalized string) (placeholderStyle, bool) {
 // bind records value as a positional argument and returns its placeholder.
 func (r *selectRenderer) bind(value any) string {
 	r.args = append(r.args, value)
-	if r.placeholder == placeholderDollar {
+	switch r.placeholder {
+	case placeholderDollar:
 		return "$" + strconv.Itoa(len(r.args))
+	case placeholderAtP:
+		return "@p" + strconv.Itoa(len(r.args))
+	default:
+		return "?"
 	}
-	return "?"
 }
 
 // quote returns identifier quoted for the renderer's dialect.
@@ -190,6 +213,17 @@ func (r *selectRenderer) render(stmt *ast.SelectStatement) error {
 
 	if err := r.renderOrderBy(stmt.OrderBy); err != nil {
 		return err
+	}
+
+	// T-SQL accepts OFFSET/FETCH only after an ORDER BY, so a row-limited query
+	// with no ordering is a SYNTAX ERROR on SQL Server rather than an unordered
+	// result. `ORDER BY (SELECT NULL)` is the documented spelling for "no
+	// particular order", which is exactly the semantics every other dialect
+	// gives an unordered LIMIT -- so this synthesizes the same meaning rather
+	// than imposing an order the caller did not ask for (stokaro/ptah#941).
+	if r.dialect == platform.SQLServer &&
+		len(stmt.OrderBy) == 0 && (stmt.Limit != nil || stmt.Offset != nil) {
+		r.buf.WriteString(" ORDER BY (SELECT NULL)")
 	}
 
 	r.renderLimitOffset(stmt.Limit, stmt.Offset)
@@ -594,6 +628,10 @@ const (
 // structural constant, not caller data, so it is emitted as a literal and does
 // not consume a placeholder; the OFFSET value remains bound.
 func (r *selectRenderer) renderLimitOffset(limit, offset *int64) {
+	if r.dialect == platform.SQLServer {
+		r.renderFetchOffset(limit, offset)
+		return
+	}
 	if limit != nil {
 		r.buf.WriteString(" LIMIT ")
 		r.buf.WriteString(r.bind(*limit))
@@ -606,6 +644,32 @@ func (r *selectRenderer) renderLimitOffset(limit, offset *int64) {
 	if offset != nil {
 		r.buf.WriteString(" OFFSET ")
 		r.buf.WriteString(r.bind(*offset))
+	}
+}
+
+// renderFetchOffset writes SQL Server's row-limiting clause.
+//
+// T-SQL has no LIMIT. The ANSI spelling it accepts is
+// `OFFSET n ROWS FETCH NEXT m ROWS ONLY`, and OFFSET is mandatory before FETCH
+// -- so a query with only a limit still emits `OFFSET 0 ROWS`. That zero is a
+// structural constant rather than caller data, so it is written as a literal and
+// consumes no placeholder, which keeps the argument order the doc comment
+// promises (stokaro/ptah#941).
+func (r *selectRenderer) renderFetchOffset(limit, offset *int64) {
+	if limit == nil && offset == nil {
+		return
+	}
+	r.buf.WriteString(" OFFSET ")
+	if offset != nil {
+		r.buf.WriteString(r.bind(*offset))
+	} else {
+		r.buf.WriteString("0")
+	}
+	r.buf.WriteString(" ROWS")
+	if limit != nil {
+		r.buf.WriteString(" FETCH NEXT ")
+		r.buf.WriteString(r.bind(*limit))
+		r.buf.WriteString(" ROWS ONLY")
 	}
 }
 
