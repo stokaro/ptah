@@ -61,6 +61,11 @@ const (
 	// KindEnv is an env://<attribute> reference into the evaluated atlas.hcl
 	// environment. ClassifySet expands it, so resolved sets never carry it.
 	KindEnv Kind = "env reference"
+	// KindRemoteSchema is an atlas.hcl `data "remote_schema"` block whose
+	// artifact lives in an ordinary OCI registry. The schema is pulled and read
+	// as the desired state, which is what lets one be distributed without a
+	// hosted service (stokaro/ptah#1210).
+	KindRemoteSchema Kind = "remote schema artifact"
 	// KindExternalSchema is an atlas.hcl data.external_schema program whose
 	// standard output is the desired state. It only ever appears through env
 	// expansion of a selected env whose desired-state source is a declared
@@ -89,6 +94,9 @@ type Source struct {
 	Path string
 	// EnvAttr is the referenced attribute for env:// sources.
 	EnvAttr string
+	// OCIReference is the registry reference a [KindRemoteSchema] source pulls,
+	// carrying the oci:// scheme every Ptah artifact API expects.
+	OCIReference string
 	// Command is the resolved external schema program for external-schema
 	// sources; zero for every other kind. Its dialect hint is filled during
 	// resolution.
@@ -233,6 +241,17 @@ func Classify(rawURL string) (Source, error) {
 		return Source{}, errors.New("docker:// URLs provision Atlas dev databases and cannot be used as a desired-state source; pass a directly connectable database URL")
 	case scheme == "atlas":
 		return Source{}, errors.New("atlas:// registry URLs are not supported; use oci:// with a native Ptah command, or use a local schema file, a migration directory, a database URL, or an env:// reference")
+	case scheme == projectconfig.RemoteSchemaMarkerScheme:
+		// Reserved for the same reason ptah-external-schema is, and refused for
+		// a sharper one: `oci://` is deliberately NOT a desired-state scheme on
+		// this surface, because the pinned community binary answers it with
+		// `unknown driver "oci"` at exit 1 and AGENTS.md rule (a) forbids
+		// exiting 0 where it exits 1. Only a declared data source mints this
+		// marker, so the capability is reachable through the project file
+		// without making the registry spelling acceptable on a flag.
+		return Source{}, errors.New(
+			projectconfig.RemoteSchemaMarkerScheme + ":// is a reserved internal marker scheme; " +
+				"reference data.remote_schema.<name>.url from an atlas.hcl env src instead")
 	case scheme == "ptah-external-schema":
 		// The marker is minted internally when an atlas.hcl env src selects a
 		// data "external_schema" source; spelled directly it must never reach
@@ -645,6 +664,17 @@ func externalSchemaAllowed() (bool, error) {
 // the standard rules.
 func classifyEnvValue(value, baseDir string) (Source, error) {
 	trimmed := strings.TrimSpace(value)
+	// A remote-schema marker is recognized HERE and nowhere else: this function
+	// reads values the project file minted, while [Classify] reads values a
+	// human typed on a flag. That split is what keeps the registry capability
+	// available through `data "remote_schema"` while `--to oci://...` goes on
+	// being refused (stokaro/ptah#1210).
+	if reference, ok := strings.CutPrefix(trimmed, projectconfig.RemoteSchemaMarkerScheme+"://"); ok {
+		if strings.TrimSpace(reference) == "" {
+			return Source{}, errors.New("remote schema marker carries no artifact reference")
+		}
+		return Source{Raw: trimmed, Kind: KindRemoteSchema, OCIReference: reference}, nil
+	}
 	base, _, _ := strings.Cut(trimmed, "?")
 	if strings.Contains(base, "://") && !strings.HasPrefix(base, "file://") {
 		source, err := Classify(trimmed)

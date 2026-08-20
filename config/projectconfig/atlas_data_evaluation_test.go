@@ -156,12 +156,22 @@ env "local" {
 	return err
 }
 
-func TestParseAtlas_ReferencedUnimplementedRemoteDataSourceStillRefuses(t *testing.T) {
+// TestParseAtlas_ReferencedRemoteSchemaNeedsARegistry is where the refusal for
+// `remote_schema` MOVED to.
+//
+// It used to be "unsupported construct": the source had no runtime contract at
+// all. It resolves through Ptah's OCI backend now, so what is left is a
+// configuration question -- which namespace holds the artifact -- and the
+// refusal must name that rather than the construct, and must never fall back to
+// a hosted service (stokaro/ptah#1210).
+func TestParseAtlas_ReferencedRemoteSchemaNeedsARegistry(t *testing.T) {
 	c := qt.New(t)
+	t.Setenv(atlasregistry.NamespaceEnvVar, "")
 
 	err := referencedRemoteDataSource(c, "remote_schema")
 
-	c.Assert(err, qt.ErrorMatches, `unsupported atlas\.hcl construct "data\.remote_schema" at atlas\.hcl:2`)
+	c.Assert(err, qt.ErrorMatches, `.*require an OCI backing registry in Ptah.*`)
+	c.Assert(err.Error(), qt.Contains, atlasregistry.NamespaceEnvVar)
 }
 
 // TestParseAtlas_ReferencedRemoteDirNeedsARegistry is the half stokaro/ptah#1210

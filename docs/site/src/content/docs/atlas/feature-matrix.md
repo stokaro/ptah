@@ -90,14 +90,14 @@ Across the 191 capabilities below:
 
 | Reading | Count |
 | --- | --- |
-| Ptah supports it fully | 168 |
-| Ptah supports it with a stated limitation | 7 |
+| Ptah supports it fully | 169 |
+| Ptah supports it with a stated limitation | 6 |
 | Ptah does not implement it | 9 |
 | Ptah covers it in its own form, against a hosted service it cannot interoperate with | 7 |
-| Ptah and Atlas CE both support it | 63 |
+| Ptah and Atlas CE both support it | 64 |
 | Ptah implements it openly where Atlas gates it behind Pro or Cloud | 45 |
 | Ptah has it and neither Atlas edition does | 27 |
-| Atlas CE has it and Ptah does not, or only in part | 2 |
+| Atlas CE has it and Ptah does not, or only in part | 1 |
 | An Atlas column is ❔ — not established by this page's evidence | 4 |
 
 Every 🟡 and every ❌ in the Ptah column names its specific limitation and the
@@ -276,7 +276,7 @@ seven of them as open capabilities regardless.
 | Native project config (ptah.yaml) | ✅ | ➖ | ➖ | Keys url, dev, schemas, exclude, external_schema, migration, lint, migrate, diff, online_ddl. No variables or functions. An unknown key fails, naming the key, its line, and the accepted keys. |
 | PTAH_* environment-variable flag equivalents | ✅ | ❌ | ❌ | Every flag on every native verb has a documented PTAH_* environment variable ([env: PTAH_X] in help) that substitutes for the flag. CE annotates no flag with an environment variable. |
 | Remote directory project data source (data "remote_dir") | ✅ | ✅ | ✅ | Resolves through Ptah's OCI backend: `name`, `tag` and `version` map onto a movable or a write-once tag in the namespace `PTAH_ATLAS_REGISTRY` names. |
-| Remote schema project data source (data "remote_schema") | 🟡 | ✅ | ✅ | An unreferenced declaration is accepted lazily, as in Atlas CE. Resolving stays refused until a desired-state source can carry an OCI reference (stokaro/ptah#1210). |
+| Remote schema project data source (data "remote_schema") | ✅ | ✅ | ✅ | `data "remote_schema"` resolves through Ptah's OCI backend via an internal marker. The `oci://` spelling stays refused on compat flags, where the community binary answers `unknown driver`. |
 | Runtime variable project data source (data "runtimevar") | ✅ | ✅ | ✅ | Reads Go CDK runtime-variable URLs with byte-preserving string output and a configurable positive timeout. Constant, file, HTTP(S), AWS, and Google Cloud providers are registered. |
 | SQL project data source (data "sql") | ✅ | ✅ | ✅ | Runs one query and exports count, first value, and all values. Requires one column and one HCL row type. Heterogeneous rows fail explicitly; Atlas CE panics. Unreferenced blocks stay lazy. |
 | Template directory project data source (data "template_dir") | ✅ | ✅ | ✅ | Shared Go templates emit root lowercase .sql migrations only. New and diff synchronize new files and checksum to the confined source path; hash-only stays virtual. |

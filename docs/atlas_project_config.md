@@ -463,10 +463,41 @@ references them. Dependencies between locals and data sources are evaluated
 first. A declared but unreferenced recognized source is not opened or executed.
 This lazy behavior also applies to `hcl_schema`, `external_schema`,
 `remote_dir`, `remote_schema`, `aws_rds_token`, and `gcp_cloudsql_token`;
-`remote_schema`, `aws_rds_token`, and `gcp_cloudsql_token` still fail
-explicitly when a selected expression references them. An unknown source type,
+`aws_rds_token` and `gcp_cloudsql_token` still fail explicitly when a selected
+expression references them. An unknown source type,
 including `composite_schema`, fails during structural validation even when
 unreferenced.
+
+A referenced `remote_schema` names the OCI artifact holding a desired schema.
+`name` is required; `tag` selects a moving tag and defaults to `latest`, and
+`version` selects a write-once tag. The mapping onto a registry reference is
+the one `remote_dir` uses, so a project addressing a migration directory and a
+schema in the same namespace cannot have the two disagree about what `version`
+means. Set `PTAH_ATLAS_REGISTRY` to the namespace holding them.
+
+The block resolves to an internal marker rather than to a registry URL, and it
+does not fetch anything at parse time. Both are deliberate. A project file is
+read by every verb, so pulling an artifact the run never uses would make an
+unrelated command fail whenever the registry is unreachable. And the marker
+keeps the capability off the flag surface: `--to oci://…` and `--url oci://…`
+go on being refused on the Atlas-compatible commands, because the community
+binary answers that spelling with `unknown driver "oci"`. Push the schema with
+`ptah schema push`, then reference it:
+
+```hcl
+data "remote_schema" "app" {
+  name = "app"
+  tag  = "prod"
+}
+
+env "local" {
+  url = "postgres://localhost:5432/app?sslmode=disable"
+  src = data.remote_schema.app.url
+}
+```
+
+Native Ptah reads the same artifact directly, with no project file and no
+marker: `ptah schema inspect --schema-file oci://<registry>/<repository>:<tag>`.
 
 A referenced `remote_dir` pulls a migration directory from an OCI registry.
 `name` is required; `tag` selects a moving tag and defaults to `latest`, and
@@ -648,9 +679,8 @@ matching `--var name=value`. Variable blocks accept the `type` constraints
   print that URL or path.
 - `validation` blocks are not accepted until Ptah implements their semantics.
 
-Referenced `remote_schema`, `aws_rds_token`, and `gcp_cloudsql_token`
-sources, and Cloud-specific sources outside the recognized lazy set, still fail
-explicitly.
+Referenced `aws_rds_token` and `gcp_cloudsql_token` sources, and
+Cloud-specific sources outside the recognized lazy set, still fail explicitly.
 
 ## Env selection
 

@@ -60,7 +60,7 @@ func (p atlasParser) resolveAtlasDataSource(block *hclsyntax.Block) (cty.Value, 
 	case "remote_dir":
 		return p.remoteDirectoryDataSource(block)
 	case "remote_schema":
-		return cty.NilVal, unsupported("data."+block.Labels[0], block.TypeRange)
+		return p.remoteSchemaDataSource(block)
 	default:
 		return cty.NilVal, unsupported("data."+block.Labels[0], block.TypeRange)
 	}
@@ -662,7 +662,7 @@ func validateAtlasDataSourceShape(block *hclsyntax.Block) error {
 	case "remote_dir":
 		return validateRequiredAtlasDataSourceAttrs(block, []string{"name"}, "name", "tag", "version")
 	case "remote_schema":
-		return unsupported("data."+typ, block.TypeRange)
+		return validateRequiredAtlasDataSourceAttrs(block, []string{"name"}, "name", "tag", "version")
 	default:
 		return unsupported("data."+typ, block.TypeRange)
 	}
@@ -672,12 +672,12 @@ func validateAtlasDataSourceShape(block *hclsyntax.Block) error {
 // without executing a data source. Recognized cloud sources stay lazy because
 // this compatibility layer does not implement their runtime contracts yet.
 func validateAtlasDataSourceDeclarationShape(block *hclsyntax.Block) error {
-	switch block.Labels[0] {
-	case "remote_schema":
-		return nil
-	default:
-		return validateAtlasDataSourceShape(block)
-	}
+	// Every recognized source now has a runtime contract, so a declaration is
+	// checked the same way whether or not anything references it. `remote_schema`
+	// used to stay lazy here because resolving it was refused outright, which
+	// meant a misspelled attribute was learned about on the day the block
+	// started being used (stokaro/ptah#1210).
+	return validateAtlasDataSourceShape(block)
 }
 
 func validateRequiredAtlasDataSourceAttrs(
@@ -866,6 +866,45 @@ func (p atlasParser) remoteDirectoryDataSource(block *hclsyntax.Block) (cty.Valu
 	}
 	return cty.ObjectVal(map[string]cty.Value{
 		"url": cty.StringVal(memURL),
+	}), nil
+}
+
+// RemoteSchemaMarkerScheme prefixes the value `data "remote_schema"` mints.
+//
+// It is a Ptah-internal marker rather than a runnable location, and this
+// package is its only author. The scheme is reserved in the desired-state
+// classifier, so a hand-written URL cannot impersonate a declared data source.
+//
+// It lives here rather than beside the classifier because the classifier
+// already imports this package; the reverse would be an import cycle, and a
+// second copy of the string is how two layers stop agreeing on what a marker
+// looks like.
+const RemoteSchemaMarkerScheme = "ptah-remote-schema"
+
+// remoteSchemaDataSource resolves `data "remote_schema"` to the internal marker
+// naming the artifact that holds the desired state.
+//
+// It returns a MARKER rather than a pulled schema, for two reasons. A project
+// file is read by every verb, so fetching an artifact the run never uses would
+// make an unrelated command fail whenever the registry is unreachable. And the
+// marker keeps the capability off the flag surface: `--to oci://...` goes on
+// being refused, because the pinned community binary answers that spelling with
+// `unknown driver "oci"` at exit 1 (stokaro/ptah#1210).
+//
+// The mapping from name, tag and version is the one remote_dir uses, so a
+// project addressing a migration directory and a schema in the same namespace
+// cannot have the two disagree about what `version` means.
+func (p atlasParser) remoteSchemaDataSource(block *hclsyntax.Block) (cty.Value, error) {
+	// The block's shape is checked by the data-source shape validator, which
+	// runs for a declaration whether or not anything references it.
+	reference, err := p.remoteArtifactReference(block)
+	if err != nil {
+		return cty.NilVal, err
+	}
+	return cty.ObjectVal(map[string]cty.Value{
+		// reference.OCI already carries the oci:// scheme, which is what every
+		// Ptah artifact API expects.
+		"url": cty.StringVal(RemoteSchemaMarkerScheme + "://" + reference.OCI),
 	}), nil
 }
 
