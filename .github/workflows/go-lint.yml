@@ -106,7 +106,7 @@ jobs:
         uses: golangci/golangci-lint-action@v9
         with:
           args: --timeout=30m
-          version: v2.12.2
+          version: v2.13.0
 
       # The action lints one directory per invocation, so a nested module needs
       # its own step. scripts/check-go-module-lint-coverage.sh fails when a
@@ -117,14 +117,14 @@ jobs:
         uses: golangci/golangci-lint-action@v9
         with:
           args: --timeout=30m
-          version: v2.12.2
+          version: v2.13.0
           working-directory: testkit
 
       - name: Golint (gorm example)
         uses: golangci/golangci-lint-action@v9
         with:
           args: --timeout=30m
-          version: v2.12.2
+          version: v2.13.0
           working-directory: examples/orm-loaders/gorm
 
   go-lint-windows:
@@ -177,7 +177,7 @@ jobs:
         uses: golangci/golangci-lint-action@v9
         with:
           args: --timeout=30m
-          version: v2.12.2
+          version: v2.13.0
 
       # The action lints one directory per invocation, so a nested module needs
       # its own step. scripts/check-go-module-lint-coverage.sh fails when a
@@ -188,14 +188,14 @@ jobs:
         uses: golangci/golangci-lint-action@v9
         with:
           args: --timeout=30m
-          version: v2.12.2
+          version: v2.13.0
           working-directory: testkit
 
       - name: Golint (gorm example)
         uses: golangci/golangci-lint-action@v9
         with:
           args: --timeout=30m
-          version: v2.12.2
+          version: v2.13.0
           working-directory: examples/orm-loaders/gorm
 
       # Windows-only source is not only unanalyzed without this job, it is

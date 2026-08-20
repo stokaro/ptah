@@ -58,7 +58,7 @@ jobs:
         uses: golangci/golangci-lint-action@v9
         with:
           args: --enable-only=gosec --output.sarif.path=gosec.sarif --timeout=30m
-          version: v2.12.2
+          version: v2.13.0
 
       - name: Upload gosec SARIF
         if: always() && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
