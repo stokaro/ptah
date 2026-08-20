@@ -221,7 +221,7 @@ func buildDependencyGraphTest(r *goschema.Database) {
 			continue
 		}
 		// Parse foreign key reference (e.g., "users(id)" -> "users")
-		refTable := strings.Split(field.Foreign, "(")[0]
+		refTable, _, _ := strings.Cut(field.Foreign, "(")
 
 		// Find the table that contains this field
 		for _, table := range r.Tables {
@@ -254,7 +254,7 @@ func buildDependencyGraphTest(r *goschema.Database) {
 		}
 
 		// Parse embedded relation reference (e.g., "users(id)" -> "users")
-		refTable := strings.Split(embedded.Ref, "(")[0]
+		refTable, _, _ := strings.Cut(embedded.Ref, "(")
 
 		// Find the table that contains this embedded field
 		for _, table := range r.Tables {

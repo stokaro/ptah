@@ -135,9 +135,8 @@ func countParseErrors(err error) int {
 	if err == nil {
 		return 0
 	}
-	var parseErr *ptaherr.ParseError
 	count := 0
-	if errors.As(err, &parseErr) {
+	if _, ok := errors.AsType[*ptaherr.ParseError](err); ok {
 		count++
 	}
 

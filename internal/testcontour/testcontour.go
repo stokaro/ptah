@@ -265,8 +265,7 @@ func listPackages(ctx context.Context, config Config, pattern string) ([]package
 	cmd.Dir = config.Dir
 	output, err := cmd.Output()
 	if err != nil {
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) {
+		if exitErr, ok := errors.AsType[*exec.ExitError](err); ok {
 			return nil, fmt.Errorf("list integration packages %s: %s", pattern, strings.TrimSpace(string(exitErr.Stderr)))
 		}
 		return nil, fmt.Errorf("list integration packages %s: %w", pattern, err)

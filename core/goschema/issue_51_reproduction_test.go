@@ -194,7 +194,7 @@ func buildDependencyGraphIssue51(r *goschema.Database) {
 			continue
 		}
 		// Parse foreign key reference (e.g., "users(id)" -> "users")
-		refTable := strings.Split(field.Foreign, "(")[0]
+		refTable, _, _ := strings.Cut(field.Foreign, "(")
 
 		// Find the table that contains this field
 		for _, table := range r.Tables {
