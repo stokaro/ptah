@@ -35,7 +35,7 @@ func materializedViewIndexSchema() *goschema.Database {
 			},
 		},
 		MaterializedViews: []goschema.MaterializedView{{
-			StructName: "MV", Name: "mv", Body: "SELECT id FROM t", RefreshStrategy: "manual",
+			StructName: "MV", Name: "mv", Body: "SELECT id FROM t",
 		}},
 		Indexes: []goschema.Index{
 			{StructName: "MV", Name: "mv_uk", Fields: []string{"id"}, Unique: true},
@@ -158,7 +158,7 @@ func TestRender_OneStructDeclaringBothResolvesToTheTable(t *testing.T) {
 		Tables: []goschema.Table{{StructName: "Both", Name: "both_t"}},
 		Fields: []goschema.Field{{StructName: "Both", Name: "id", Type: "INT", Primary: true}},
 		MaterializedViews: []goschema.MaterializedView{{
-			StructName: "Both", Name: "both_mv", Body: "SELECT id FROM both_t", RefreshStrategy: "manual",
+			StructName: "Both", Name: "both_mv", Body: "SELECT id FROM both_t",
 		}},
 		Indexes: []goschema.Index{{StructName: "Both", Name: "both_ix", Fields: []string{"id"}}},
 	}

@@ -399,12 +399,10 @@ func convertViews(database *goschema.Database, dbViews []dbschematypes.DBView) {
 func convertMaterializedViews(database *goschema.Database, dbViews []dbschematypes.DBMatView) {
 	for _, dbView := range dbViews {
 		materializedView := goschema.MaterializedView{
-			Name:            dbView.QualifiedName(),
-			Body:            dbView.Body,
-			RefreshStrategy: dbView.RefreshStrategy,
-			Comment:         dbView.Comment,
+			Name:    dbView.QualifiedName(),
+			Body:    dbView.Body,
+			Comment: dbView.Comment,
 		}
-		materializedView.Canonicalize()
 		database.MaterializedViews = append(database.MaterializedViews, materializedView)
 	}
 }

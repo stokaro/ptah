@@ -849,11 +849,10 @@ func (s DBSynonym) TargetQualifiedName() string {
 
 // DBMatView represents a PostgreSQL materialized view read from the database.
 type DBMatView struct {
-	Name            string `json:"name"`             // Materialized view name
-	Schema          string `json:"schema"`           // Schema where the materialized view is defined
-	Body            string `json:"body"`             // SELECT query used as the materialized view definition
-	RefreshStrategy string `json:"refresh_strategy"` // Reported as manual because catalogs do not persist Ptah refresh policy
-	Comment         string `json:"comment"`          // Materialized view comment/description
+	Name    string `json:"name"`    // Materialized view name
+	Schema  string `json:"schema"`  // Schema where the materialized view is defined
+	Body    string `json:"body"`    // SELECT query used as the materialized view definition
+	Comment string `json:"comment"` // Materialized view comment/description
 }
 
 // QualifiedName returns schema.materialized_view when Schema is set, or Name otherwise.

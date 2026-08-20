@@ -148,43 +148,50 @@ func TestMaterializedViews_DetectsBodyChange(t *testing.T) {
 
 	compare.MaterializedViews(&goschema.Database{
 		MaterializedViews: []goschema.MaterializedView{{
-			Name:            "user_stats",
-			Body:            "SELECT id, COUNT(*) FROM users GROUP BY id",
-			RefreshStrategy: "concurrently",
+			Name: "user_stats",
+			Body: "SELECT id, COUNT(*) FROM users GROUP BY id",
 		}},
 	}, &dbschematypes.DBSchema{
 		MatViews: []dbschematypes.DBMatView{{
-			Name:            "user_stats",
-			Body:            "SELECT id, COUNT(*) FROM users WHERE enabled GROUP BY id",
-			RefreshStrategy: "manual",
+			Name: "user_stats",
+			Body: "SELECT id, COUNT(*) FROM users WHERE enabled GROUP BY id",
 		}},
 	}, diff)
 
 	c.Assert(diff.MaterializedViewsModified, qt.HasLen, 1)
 	c.Assert(diff.MaterializedViewsModified[0].Changes["body"], qt.Not(qt.Equals), "")
-	c.Assert(diff.MaterializedViewsModified[0].Changes["refresh_strategy"], qt.Equals, "manual -> concurrently")
+	// The body is the only property a materialized view has to compare. The
+	// refresh strategy was carried here too, on both sides -- and the database
+	// side was invented by the reader, because no catalog reports one
+	// (stokaro/ptah#1625).
+	c.Assert(diff.MaterializedViewsModified[0].Changes, qt.HasLen, 1)
 }
 
-func TestMaterializedViews_ReportsUnvalidatedRefreshStrategyDrift(t *testing.T) {
+// TestMaterializedViews_ReportsNoDriftForAnUnchangedView replaces a test that
+// asserted the opposite.
+//
+// It used to pin a refresh_strategy drift entry as a backstop: the read
+// synthesized "manual" for every materialized view, so a declaration of
+// anything else showed up here even though no renderer read the field. With
+// nothing carrying a strategy on either side, an unchanged view is unchanged
+// (stokaro/ptah#1625).
+func TestMaterializedViews_ReportsNoDriftForAnUnchangedView(t *testing.T) {
 	c := qt.New(t)
 	diff := &difftypes.SchemaDiff{}
 
 	compare.MaterializedViews(&goschema.Database{
 		MaterializedViews: []goschema.MaterializedView{{
-			Name:            "user_stats",
-			Body:            "SELECT id, COUNT(*) FROM users GROUP BY id",
-			RefreshStrategy: "concurrently",
+			Name: "user_stats",
+			Body: "SELECT id, COUNT(*) FROM users GROUP BY id",
 		}},
 	}, &dbschematypes.DBSchema{
 		MatViews: []dbschematypes.DBMatView{{
-			Name:            "user_stats",
-			Body:            "SELECT id, COUNT(*) FROM users GROUP BY id",
-			RefreshStrategy: "manual",
+			Name: "user_stats",
+			Body: "SELECT id, COUNT(*) FROM users GROUP BY id",
 		}},
 	}, diff)
 
-	c.Assert(diff.MaterializedViewsModified, qt.HasLen, 1)
-	c.Assert(diff.MaterializedViewsModified[0].Changes["refresh_strategy"], qt.Equals, "manual -> concurrently")
+	c.Assert(diff.MaterializedViewsModified, qt.HasLen, 0)
 }
 
 func TestMaterializedViews_IgnoresPostgreSQLDefaultAggregateAlias(t *testing.T) {

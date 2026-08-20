@@ -118,12 +118,10 @@ func toView(node *ast.CreateViewNode) goschema.View {
 
 func toMaterializedView(node *ast.CreateMaterializedViewNode) goschema.MaterializedView {
 	view := goschema.MaterializedView{
-		Name:            normalizeSQLTableReference(node.Name),
-		Body:            strings.TrimSpace(node.Body),
-		RefreshStrategy: node.RefreshStrategy,
-		Comment:         node.Comment,
+		Name:    normalizeSQLTableReference(node.Name),
+		Body:    strings.TrimSpace(node.Body),
+		Comment: node.Comment,
 	}
-	view.Canonicalize()
 	return view
 }
 

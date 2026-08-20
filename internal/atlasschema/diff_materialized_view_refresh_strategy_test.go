@@ -11,7 +11,11 @@ import (
 	"go.5x5.cz/ptah/internal/atlasschema"
 )
 
-func TestDiffRefusesMaterializedViewRefreshStrategyBeforeComparing(t *testing.T) {
+// TestDiffRefusesTheRetiredRefreshStrategyBeforeComparing keeps this file's
+// subject on the refusal that is now correct: the message no longer names a
+// target, because no target refreshes as part of reconciliation
+// (stokaro/ptah#1625).
+func TestDiffRefusesTheRetiredRefreshStrategyBeforeComparing(t *testing.T) {
 	tests := []struct {
 		name         string
 		fromStrategy string
@@ -19,6 +23,7 @@ func TestDiffRefusesMaterializedViewRefreshStrategyBeforeComparing(t *testing.T)
 	}{
 		{name: "from declaration", fromStrategy: "concurrently", toStrategy: "manual"},
 		{name: "to declaration", fromStrategy: "manual", toStrategy: "every 5 minutes"},
+		{name: "the value that used to be accepted", fromStrategy: "manual", toStrategy: "manual"},
 	}
 
 	for _, test := range tests {
@@ -34,14 +39,23 @@ func TestDiffRefusesMaterializedViewRefreshStrategyBeforeComparing(t *testing.T)
 				DevURL:   "postgres://localhost/dev",
 			})
 
-			c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-			c.Assert(err, qt.ErrorMatches, `postgres cannot represent materialized view "user_counts" refresh strategy ".+"; "manual" is the only strategy, .*`)
+			c.Assert(err, qt.ErrorIs, ptaherr.ErrRetiredAttribute)
+			c.Assert(err, qt.ErrorMatches, `.*materialized view "user_counts" declares refresh_strategy.*`)
+			c.Assert(err, qt.Not(qt.ErrorMatches), `.*postgres cannot represent.*`)
 			c.Assert(report.Changes, qt.HasLen, 0)
 		})
 	}
 }
 
-func TestDiffValidatesMaterializedViewRefreshStrategyAfterExclusion(t *testing.T) {
+// TestDiffRefusesTheRetiredRefreshStrategyDespiteExclusion inverts what this
+// test pinned, deliberately.
+//
+// `--exclude` used to rescue an unsupported declaration, and that followed from
+// the refusal being a per-target capability judgment: an object nobody compares
+// raises no capability question. The refusal is now about the DOCUMENT -- the
+// attribute is not schema state on any target -- and it fires while the file is
+// parsed, before a selection exists to rescue anything.
+func TestDiffRefusesTheRetiredRefreshStrategyDespiteExclusion(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	from := writeScopedMaterializedViewSchema(c, dir, "from.hcl")
@@ -54,7 +68,7 @@ func TestDiffValidatesMaterializedViewRefreshStrategyAfterExclusion(t *testing.T
 		Exclude:  []string{"legacy_stats"},
 	})
 
-	c.Assert(err, qt.IsNil)
+	c.Assert(err, qt.ErrorIs, ptaherr.ErrRetiredAttribute)
 	c.Assert(report.Changes, qt.HasLen, 0)
 }
 

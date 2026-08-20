@@ -317,7 +317,6 @@ func (ctx *renderContext) writeGlobalObjects(w *sourceWriter) {
 		w.writeComment(annotation("ptah:schema:matview",
 			attr{name: "name", value: view.Name, set: true},
 			attr{name: "body", value: view.Body, set: true},
-			attr{name: "refresh_strategy", value: view.RefreshStrategy, set: view.RefreshStrategy != ""},
 			attr{name: "comment", value: view.Comment, set: view.Comment != ""},
 		))
 	}

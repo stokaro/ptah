@@ -1766,12 +1766,9 @@ func appendSynonymStatements(statements *ast.StatementList, synonyms []goschema.
 // FromMaterializedView converts a goschema.MaterializedView to an
 // ast.CreateMaterializedViewNode.
 func FromMaterializedView(view goschema.MaterializedView) *ast.CreateMaterializedViewNode {
-	view.Canonicalize()
-	viewNode := ast.NewCreateMaterializedView(view.Name).
+	return ast.NewCreateMaterializedView(view.Name).
 		SetBody(view.Body).
-		SetRefreshStrategy(view.RefreshStrategy).
 		SetComment(view.Comment)
-	return viewNode
 }
 
 func appendForeignKeyConstraintStatements(

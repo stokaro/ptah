@@ -563,9 +563,8 @@ func TestGenerateMigrationASTChecked_KindChangeDropsTheLiveObjectFirst(t *testin
 			wantNodes: []ast.Node{
 				&ast.DropViewNode{Name: "analytics.user_counts", IfExists: true},
 				&ast.CreateMaterializedViewNode{
-					Name:            "user_counts",
-					Body:            "SELECT count() AS c FROM analytics.users",
-					RefreshStrategy: "manual",
+					Name: "user_counts",
+					Body: "SELECT count() AS c FROM analytics.users",
 				},
 			},
 		},

@@ -1586,18 +1586,19 @@ func (n *CreateFunctionNode) SetVolatility(volatility string) *CreateFunctionNod
 package ast // import "go.5x5.cz/ptah/core/ast"
 
 type CreateMaterializedViewNode struct {
-    Name            string
-    Body            string
-    RefreshStrategy string
-    Comment         string
+    Name    string
+    Body    string
+    Comment string
 }
     CreateMaterializedViewNode represents a CREATE MATERIALIZED VIEW statement.
+    A materialized view node carries no refresh strategy: refreshing is an
+    operation, not schema state (stokaro/ptah#1625). RefreshMaterializedViewNode
+    is the operation, and nothing in schema reconciliation produces one.
 
 func NewCreateMaterializedView(name string) *CreateMaterializedViewNode
 func (n *CreateMaterializedViewNode) Accept(visitor Visitor) error
 func (n *CreateMaterializedViewNode) SetBody(body string) *CreateMaterializedViewNode
 func (n *CreateMaterializedViewNode) SetComment(comment string) *CreateMaterializedViewNode
-func (n *CreateMaterializedViewNode) SetRefreshStrategy(refreshStrategy string) *CreateMaterializedViewNode
 
 ### go.5x5.cz/ptah/core/ast.CreatePolicyNode
 
@@ -4921,11 +4922,10 @@ type ManagedData struct {
 package goschema // import "go.5x5.cz/ptah/core/goschema"
 
 type MaterializedView struct {
-    StructName      string // Name of the Go struct this materialized view is associated with
-    Name            string // Materialized view name
-    Body            string // SELECT query used as the materialized view body
-    RefreshStrategy string // Ptah refresh workflow; manual emits no separate refresh operation
-    Comment         string // Optional comment for documentation
+    StructName string // Name of the Go struct this materialized view is associated with
+    Name       string // Materialized view name
+    Body       string // SELECT query used as the materialized view body
+    Comment    string // Optional comment for documentation
 
     // Dialects scopes this declaration to the named target dialects. See
     // [ScopeToDialect].
@@ -4936,10 +4936,16 @@ type MaterializedView struct {
 
     MaterializedView is created by parsing //ptah:schema:matview annotations:
 
-        //ptah:schema:matview name="user_stats" body="SELECT user_id, COUNT(*) FROM users GROUP BY user_id" refresh_strategy="manual"
+        //ptah:schema:matview name="user_stats" body="SELECT user_id, COUNT(*) FROM users GROUP BY user_id"
         type UserStats struct{}
 
-func (v *MaterializedView) Canonicalize()
+    A materialized view carries no refresh strategy. Refreshing is an operation
+    rather than schema state: the view is populated when it is created, a
+    changed definition is reconciled as DROP and CREATE, and it goes stale only
+    when its source data changes -- which a schema comparison cannot observe.
+    See go.5x5.cz/ptah/internal/matviewrefresh for the whole reasoning and the
+    refusal a declaration of the retired attribute gets (stokaro/ptah#1625).
+
 
 ### go.5x5.cz/ptah/core/goschema.PartitionPart
 
@@ -6936,11 +6942,10 @@ type DBInfo struct {
 package types // import "go.5x5.cz/ptah/dbschema/types"
 
 type DBMatView struct {
-    Name            string `json:"name"`             // Materialized view name
-    Schema          string `json:"schema"`           // Schema where the materialized view is defined
-    Body            string `json:"body"`             // SELECT query used as the materialized view definition
-    RefreshStrategy string `json:"refresh_strategy"` // Reported as manual because catalogs do not persist Ptah refresh policy
-    Comment         string `json:"comment"`          // Materialized view comment/description
+    Name    string `json:"name"`    // Materialized view name
+    Schema  string `json:"schema"`  // Schema where the materialized view is defined
+    Body    string `json:"body"`    // SELECT query used as the materialized view definition
+    Comment string `json:"comment"` // Materialized view comment/description
 }
     DBMatView represents a PostgreSQL materialized view read from the database.
 

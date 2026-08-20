@@ -731,7 +731,6 @@ func canonicalViewDefinition(view View) View {
 
 func canonicalMaterializedViewDefinition(view MaterializedView) MaterializedView {
 	view.StructName = ""
-	view.Canonicalize()
 	return view
 }
 

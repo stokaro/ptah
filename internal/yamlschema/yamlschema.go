@@ -12,6 +12,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/internal/matviewrefresh"
 )
 
 // ParseFile parses a YAML schema file into the same Database IR used by Go annotations.
@@ -194,10 +195,16 @@ type viewSpec struct {
 }
 
 type matViewSpec struct {
-	StructName      stringScalar `yaml:"struct_name"`
-	Name            stringScalar `yaml:"name"`
-	Body            stringScalar `yaml:"body"`
-	RefreshStrategy stringScalar `yaml:"refresh_strategy"`
+	StructName stringScalar `yaml:"struct_name"`
+	Name       stringScalar `yaml:"name"`
+	Body       stringScalar `yaml:"body"`
+	// RefreshStrategy is retired and kept only so a document that declares it
+	// is refused by name. Deleting the field would make the strict decoder
+	// answer `field refresh_strategy not found`, which reads as a typo and says
+	// nothing about why a correctly spelled key stopped working
+	// (stokaro/ptah#1625). It is a yaml.Node so that `refresh_strategy:` with
+	// no value, and an empty string, are refused as well as a real value.
+	RefreshStrategy yaml.Node    `yaml:"refresh_strategy"`
 	Comment         stringScalar `yaml:"comment"`
 }
 
@@ -649,15 +656,15 @@ func (d document) addMaterializedViews(db *goschema.Database) error {
 		if string(spec.Body) == "" {
 			return fmt.Errorf("materialized view %q requires body", key)
 		}
-		view := goschema.MaterializedView{
-			StructName:      string(spec.StructName),
-			Name:            valueOrDefault(spec.Name, key),
-			Body:            string(spec.Body),
-			RefreshStrategy: string(spec.RefreshStrategy),
-			Comment:         string(spec.Comment),
+		if spec.RefreshStrategy.Kind != 0 {
+			return matviewrefresh.Refuse(valueOrDefault(spec.Name, key))
 		}
-		view.Canonicalize()
-		db.MaterializedViews = append(db.MaterializedViews, view)
+		db.MaterializedViews = append(db.MaterializedViews, goschema.MaterializedView{
+			StructName: string(spec.StructName),
+			Name:       valueOrDefault(spec.Name, key),
+			Body:       string(spec.Body),
+			Comment:    string(spec.Comment),
+		})
 	}
 	return nil
 }

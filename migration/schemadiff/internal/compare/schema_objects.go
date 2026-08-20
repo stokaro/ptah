@@ -9,7 +9,6 @@ import (
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/dbschema/types"
-	"go.5x5.cz/ptah/internal/matviewrefresh"
 	"go.5x5.cz/ptah/internal/mysqlroutine"
 	"go.5x5.cz/ptah/internal/objectidentity"
 	"go.5x5.cz/ptah/internal/tableref"
@@ -640,7 +639,6 @@ func MaterializedViewsWithDialect(
 ) {
 	generatedViews := make(map[string]goschema.MaterializedView, len(generated.MaterializedViews))
 	for _, view := range generated.MaterializedViews {
-		view.Canonicalize()
 		generatedViews[view.Name] = view
 	}
 
@@ -733,7 +731,6 @@ func MaterializedViewsWithSemantics(
 	generatedViews := make(map[objectIdentity]goschema.MaterializedView, len(generated.MaterializedViews))
 	generatedNames := make(map[objectIdentity]string, len(generated.MaterializedViews))
 	for _, view := range generated.MaterializedViews {
-		view.Canonicalize()
 		identity := newQualifiedObjectIdentity(objectidentity.KindMatView, view.Name, semantics)
 		generatedViews[identity] = view
 		generatedNames[identity] = view.Name
@@ -984,11 +981,6 @@ func MaterializedViewDefinitionsWithDialect(
 
 	if !schemaObjectBodiesEqual(genView.Body, dbView.Body, dialect, dbView.Schema) {
 		viewDiff.Changes["body"] = fmt.Sprintf("%s -> %s", strings.TrimSpace(dbView.Body), strings.TrimSpace(genView.Body))
-	}
-	generatedStrategy := matviewrefresh.Canonical(genView.RefreshStrategy)
-	databaseStrategy := matviewrefresh.Canonical(dbView.RefreshStrategy)
-	if generatedStrategy != databaseStrategy {
-		viewDiff.Changes["refresh_strategy"] = fmt.Sprintf("%s -> %s", databaseStrategy, generatedStrategy)
 	}
 
 	return viewDiff
