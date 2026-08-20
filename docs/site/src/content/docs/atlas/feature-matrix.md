@@ -90,14 +90,14 @@ Across the 191 capabilities below:
 
 | Reading | Count |
 | --- | --- |
-| Ptah supports it fully | 162 |
-| Ptah supports it with a stated limitation | 11 |
+| Ptah supports it fully | 164 |
+| Ptah supports it with a stated limitation | 9 |
 | Ptah does not implement it | 11 |
 | Ptah covers it in its own form, against a hosted service it cannot interoperate with | 7 |
-| Ptah and Atlas CE both support it | 59 |
+| Ptah and Atlas CE both support it | 61 |
 | Ptah implements it openly where Atlas gates it behind Pro or Cloud | 44 |
 | Ptah has it and neither Atlas edition does | 27 |
-| Atlas CE has it and Ptah does not, or only in part | 6 |
+| Atlas CE has it and Ptah does not, or only in part | 4 |
 | An Atlas column is ❔ — not established by this page's evidence | 4 |
 
 Every 🟡 and every ❌ in the Ptah column names its specific limitation and the
@@ -280,7 +280,7 @@ seven of them as open capabilities regardless.
 | Runtime variable project data source (data "runtimevar") | ✅ | ✅ | ✅ | Reads Go CDK runtime-variable URLs with byte-preserving string output and a configurable positive timeout. Constant, file, HTTP(S), AWS, and Google Cloud providers are registered. |
 | SQL project data source (data "sql") | ✅ | ✅ | ✅ | Runs one query and exports count, first value, and all values. Requires one column and one HCL row type. Heterogeneous rows fail explicitly; Atlas CE panics. Unreferenced blocks stay lazy. |
 | Template directory project data source (data "template_dir") | ✅ | ✅ | ✅ | Shared Go templates emit root lowercase .sql migrations only. New and diff synchronize new files and checksum to the confined source path; hash-only stays virtual. |
-| Variables, locals, and HCL functions | 🟡 | ✅ | ✅ | Variables, locals and data sources are evaluated in both files. The project evaluator keeps a narrower function set than a schema file (stokaro/ptah#1810). |
+| Variables, locals, and HCL functions | ✅ | ✅ | ✅ | Variables, locals and data sources are evaluated in both files, against one function set: the project evaluator shares the schema evaluator's, overlaying the three names bound to its own directory. |
 
 ## Databases and schema objects
 

@@ -2205,5 +2205,12 @@ func (p *parser) printLine(line string) {
 	if !p.emitting {
 		return
 	}
+	writePrintLine(line)
+}
+
+// writePrintLine is the one place a printed line reaches the destination, so
+// the schema evaluator and the project evaluator cannot drift about where it
+// goes.
+func writePrintLine(line string) {
 	fmt.Fprintln(printDestination, line)
 }
