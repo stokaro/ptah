@@ -107,6 +107,10 @@ func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
 	if err != nil {
 		return err
 	}
+	schemaSourceEnv, err := dbcli.SchemaSourceProjectEnv(cmd, projectCfg)
+	if err != nil {
+		return err
+	}
 	commands, err := dbcli.ResolveExternalSchemaCommands(
 		cmd,
 		opts.schemaCmd,
@@ -147,11 +151,13 @@ func migrateCommandWithOptions(cmd *cobra.Command, opts *options) error {
 		return err
 	}
 	loadOpts := schemaload.Options{
-		RootDirs:    opts.rootDirs,
-		SchemaFiles: opts.schemaFiles,
-		Commands:    commands,
-		Dialect:     dialect,
-		PlainHTTP:   opts.plainHTTP,
+		RootDirs:        opts.rootDirs,
+		SchemaFiles:     opts.schemaFiles,
+		ProjectEnv:      schemaSourceEnv,
+		EnvSelectorFlag: dbcli.SchemaSourceEnvSelectorFlag(cmd),
+		Commands:        commands,
+		Dialect:         dialect,
+		PlainHTTP:       opts.plainHTTP,
 	}
 	rootsDisplay := loadOpts.Sources()
 

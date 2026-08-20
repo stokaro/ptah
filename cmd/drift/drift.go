@@ -140,6 +140,10 @@ func runDrift(cmd *cobra.Command, opts runOptions) error {
 	if err != nil {
 		return writeError(cmd.ErrOrStderr(), opts.format, err.Error())
 	}
+	schemaSourceEnv, err := dbcli.SchemaSourceProjectEnv(cmd, projectCfg)
+	if err != nil {
+		return writeError(cmd.ErrOrStderr(), opts.format, err.Error())
+	}
 	commands, err := dbcli.ResolveExternalSchemaCommands(
 		cmd,
 		opts.schemaCmd,
@@ -177,14 +181,16 @@ func runDrift(cmd *cobra.Command, opts runOptions) error {
 	schemas := dbcli.ParseSchemas(schemasValue)
 
 	result, err := schemaops.Compare(cmd.Context(), schemaops.CompareOptions{
-		RootDirs:       opts.rootDirs,
-		SchemaFiles:    opts.schemaFiles,
-		Commands:       commands,
-		DatabaseURL:    dbURL,
-		ConnectTimeout: connectTimeout,
-		IgnoredTables:  ignoredTables,
-		Schemas:        schemas,
-		PlainHTTP:      opts.plainHTTP,
+		RootDirs:        opts.rootDirs,
+		SchemaFiles:     opts.schemaFiles,
+		ProjectEnv:      schemaSourceEnv,
+		EnvSelectorFlag: dbcli.SchemaSourceEnvSelectorFlag(cmd),
+		Commands:        commands,
+		DatabaseURL:     dbURL,
+		ConnectTimeout:  connectTimeout,
+		IgnoredTables:   ignoredTables,
+		Schemas:         schemas,
+		PlainHTTP:       opts.plainHTTP,
 	})
 	if err != nil {
 		return writeError(cmd.ErrOrStderr(), opts.format, err.Error())
