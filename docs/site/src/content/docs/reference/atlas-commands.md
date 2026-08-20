@@ -1217,10 +1217,9 @@ $ ptah-compat schema apply --url "$DB" --to file://schema.sql --plan file://app.
   implemented.
 - The registry sub-verbs (`approve`, `list`, `pull`, `push`, `rm`) stay
   unsupported-boundary stubs: they arbitrate plan state in a remote registry.
-- `test` also stays a stub — see below for why. `lint` is implemented and has
-  its own section below; it is a separate verb over a saved plan file, and it
-  puts no lint step on `schema plan` itself, so `--skip-lint` is still a no-op
-  there.
+- `test` and `lint` are implemented and have their own sections below. Both are
+  separate verbs over a saved plan file, and neither puts a lint or test step on
+  `schema plan` itself, so `--skip-lint` is still a no-op there.
 
 Atlas keeps `schema plan` in its Pro registry flow, so this is a free Ptah
 capability rather than an Atlas CE stub.
@@ -1356,11 +1355,61 @@ treated as unauthenticated metadata because their derivation is not public;
 malformed values are rejected. The replayed end state, not a foreign hash, is
 the integrity boundary.
 
-**Why `test` is not implemented.** It is local by its Atlas flag set, and it is
-deferred deliberately: `schema plan test` consumes `test "plan"` blocks in
-`.test.hcl` files, and nothing in Ptah parses that format yet — the test engine
-reads YAML cases. `.test.hcl` ingestion is its own item, shared with
-`migrate test` and `schema test`.
+#### `ptah-compat schema plan test [paths]`
+
+Runs `test "plan"` cases from Atlas `.test.hcl` files against a throwaway
+database. A case establishes a starting state, applies a saved plan file, and
+asserts what the plan did:
+
+```hcl
+test "plan" "add_email" {
+  schema {
+    url = "file://snapshots/v1.sql"
+  }
+
+  exec {
+    sql = "INSERT INTO users (id, name) VALUES (1, 'Ada')"
+  }
+
+  apply {
+    url = "file://plans/add_email.plan.json"
+  }
+
+  exec {
+    sql    = "SELECT email FROM users WHERE id = 1"
+    output = "ada@example.com"
+  }
+}
+```
+
+| Block | Does |
+| --- | --- |
+| `schema { url }` | Brings the database to the state that source describes. Applied through the same convergence path `apply_schema` uses. |
+| `apply { url }` | Reads the plan file and runs its statements, through the same reader and executor as `schema apply --plan`. |
+| `exec { sql }` | Runs a statement. With `output`, runs it and compares the first result. |
+
+Steps run in the order they are written, which is what makes a case mean
+anything: a plan describes a transition **from** a state, so `schema` has to
+establish that state before `apply`.
+
+Before the plan runs, its recorded from-state is checked against the database
+the case established. A snapshot that has drifted away from the state the plan
+was computed for is testing that plan against a state it was never meant for,
+and the case fails rather than reporting whatever the statements happened to do
+there. Only a plan carrying Ptah's own sha256 fingerprint is checked: an
+Atlas-authored plan's hashes have no local recipe.
+
+The plan's own statements are executed, never recomputed. A plan file that
+stopped matching what the planner now produces is precisely what this verb
+exists to catch, and recomputing would hide it.
+
+`--dev-url` names the throwaway database, and takes a `docker://` value like
+every other verb that provisions one. Without it a SQLite database is created
+per case and removed afterwards. `--run` filters cases by name, and a filter
+matching nothing is refused rather than reported as a pass.
+
+`test "schema"` and `test "migrate"` cases in the same files are left to
+`schema test` and `migrate test`.
 
 `lint` was deferred alongside it for a different reason, and that reason is
 answered rather than outstanding. The worry was a linter in a gating position

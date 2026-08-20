@@ -158,20 +158,19 @@ its SQL. The registry sub-verbs (approve, list, pull, push, rm) and the
 	// The remaining sub-verbs stay unsupported-boundary stubs, and one of them
 	// is a stub for a different reason than the rest: approve, list, pull, push
 	// and rm take --url and arbitrate plan state in a remote registry, which the
-	// local plan-file workflow replaces, while test takes no --url and is local,
-	// deferred because it consumes `.test.hcl` case files nothing in this
-	// repository parses yet. Describing test as registry work would assert a
-	// dependency it does not have, so it keeps Atlas's own description. The
-	// reason it is deferred rather than guessed is recorded on
-	// unsupportedCommandTests.
+	// local plan-file workflow replaces. `test` used to be here too, deferred
+	// because it consumes `.test.hcl` case files nothing parsed; it is
+	// implemented now (stokaro/ptah#1211).
 	addAtlasUnsupportedCommands(cmd, []atlasUnsupportedVerb{
 		{use: "approve", short: "Approve a plan in a remote registry"},
 		{use: "list", short: "List plans in a remote registry"},
 		{use: "pull", short: "Pull a plan from a remote registry"},
 		{use: "push", short: "Push a plan to a remote registry"},
 		{use: "rm", short: "Remove a plan from a remote registry"},
-		{use: "test", short: "Run schema plan tests"},
 	})
+	// `test` left this list in stokaro/ptah#1211: it takes no --url and is
+	// entirely local, so nothing about it depended on a registry.
+	cmd.AddCommand(newAtlasSchemaPlanTestCommand())
 	return cmd
 }
 

@@ -312,6 +312,18 @@ func compatDockerRows() []compatDockerRow {
 			checkWhitespace: notADockerURL,
 		},
 		{
+			// A plan case builds its own starting state, so the only database
+			// it needs is the throwaway one --dev-url names
+			// (stokaro/ptah#1211).
+			name: "schema plan test reaches the provisioner",
+			verb: "schema plan test",
+			args: func(fx compatDockerFixture) []string {
+				return []string{"schema", "plan", "test", fx.schemaCases}
+			},
+			check:           refusedByProvisioner,
+			checkWhitespace: notADockerURL,
+		},
+		{
 			name: "schema test reaches the provisioner",
 			verb: "schema test",
 			args: func(fx compatDockerFixture) []string {
