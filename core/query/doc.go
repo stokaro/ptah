@@ -41,9 +41,14 @@
 // unique key, and SQL Server (MERGE) and ClickHouse (no upsert statement) are
 // refused by name.
 //
-// Non-aggregate function calls, arithmetic, subqueries, window functions,
-// INSERT … SELECT, and common table expressions are intentionally not
-// implemented yet and are tracked as follow-up phases of stokaro/ptah#941.
+// Subqueries reach WHERE through InQuery, Exists and NotExists, and a
+// non-recursive common table expression through SelectBuilder.With. Both bind
+// their values in the order they are emitted, so a driver reading positionally
+// sees CTE values, then the outer query's, then a subquery's.
+//
+// Non-aggregate function calls, arithmetic, window functions and
+// INSERT … SELECT are intentionally not implemented yet and are tracked as
+// follow-up phases of stokaro/ptah#941.
 //
 // # Safety model
 //
