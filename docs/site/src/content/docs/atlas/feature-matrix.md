@@ -90,14 +90,14 @@ Across the 191 capabilities below:
 
 | Reading | Count |
 | --- | --- |
-| Ptah supports it fully | 154 |
-| Ptah supports it with a stated limitation | 19 |
+| Ptah supports it fully | 156 |
+| Ptah supports it with a stated limitation | 17 |
 | Ptah does not implement it | 12 |
 | Ptah covers it in its own form, against a hosted service it cannot interoperate with | 6 |
-| Ptah and Atlas CE both support it | 55 |
+| Ptah and Atlas CE both support it | 57 |
 | Ptah implements it openly where Atlas gates it behind Pro or Cloud | 44 |
 | Ptah has it and neither Atlas edition does | 27 |
-| Atlas CE has it and Ptah does not, or only in part | 10 |
+| Atlas CE has it and Ptah does not, or only in part | 8 |
 | An Atlas column is ❔ — not established by this page's evidence | 4 |
 
 Every 🟡 and every ❌ in the Ptah column names its specific limitation and the
@@ -291,10 +291,10 @@ seven of them as open capabilities regardless.
 | CockroachDB (cockroachdb, crdb) | ✅ | ❌ | ✅ | `CONCURRENTLY`, XML, advisory locks and DEFERRABLE are engine limits; 25.4 also refuses generic DROP CONSTRAINT, and 26.2 accepts it. Row-level TTL is fully managed. |
 | Declared support level per database release line | ✅ | ❔ | ❔ | 26 declared release lines: 19 certified, 2 legacy-tested, 5 best-effort. Upstream end-of-life lowers the level, not the behavior; a line Ptah does not declare resolves to best-effort. |
 | Domains, composite types, and range types | ✅ | ❌ | ✅ | Domains and composites compare and change in place, each kind gated per target. Range types rebuild because PostgreSQL offers no ALTER TYPE ... AS RANGE. |
-| Enum types | 🟡 | ✅ | ✅ | An enum is whatever the schema declares as one. PostgreSQL alters values in place; MySQL, MariaDB, SQLite and SQL Server have their enum catalogs erased before comparison (stokaro/ptah#1716). |
+| Enum types | ✅ | ✅ | ✅ | An enum is whatever the schema declares as one. PostgreSQL alters values in place; MySQL, MariaDB, SQLite and SQL Server carry them in the column type or a check constraint. |
 | Extensions | ✅ | ❌ | ✅ | PostgreSQL and YugabyteDB create, compare and relocate extensions, version included. Every other target names the declaration it cannot host rather than dropping it. |
 | Functions | 🟡 | ❌ | ✅ | Functions render, read and plan on the PostgreSQL and MySQL families and SQL Server; procedures on the first two. SQL Server hosts procedures and reads none back (stokaro/ptah#1784). |
-| MySQL and MariaDB | 🟡 | ✅ | ✅ | Roles, grants, stored functions and MariaDB sequences render, read back and plan. An inline enum change is still erased before comparison (stokaro/ptah#1716); matviews fail closed. |
+| MySQL and MariaDB | ✅ | ✅ | ✅ | Roles, grants, stored functions and MariaDB sequences render, read back and plan. An inline enum change plans a real MODIFY COLUMN and converges; matviews fail closed. |
 | Oracle, Snowflake, Redshift, Databricks | ❌ | ❌ | ✅ | No dialect entry; the names fail normalization the same way TiDB does. Listed as Atlas Pro drivers. Tracked by stokaro/ptah#1616. |
 | PostgreSQL 12+ (postgres, postgresql) | ✅ | ✅ | ✅ | Reference engine of the PostgreSQL family: views, matviews, functions, triggers, sequences, roles, RLS and domains all render. Presets 12-13, 14-16, 17+ from the server banner. |
 | Roles, grants, and row-level security | ✅ | ❌ | ✅ | Roles and grants on every engine that has them. Row-level security on the PostgreSQL family, SQL Server and ClickHouse; MySQL, MariaDB and Spanner have no such object to model. |
