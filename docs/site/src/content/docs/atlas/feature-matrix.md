@@ -90,14 +90,14 @@ Across the 191 capabilities below:
 
 | Reading | Count |
 | --- | --- |
-| Ptah supports it fully | 159 |
-| Ptah supports it with a stated limitation | 14 |
+| Ptah supports it fully | 160 |
+| Ptah supports it with a stated limitation | 13 |
 | Ptah does not implement it | 11 |
 | Ptah covers it in its own form, against a hosted service it cannot interoperate with | 7 |
-| Ptah and Atlas CE both support it | 58 |
+| Ptah and Atlas CE both support it | 59 |
 | Ptah implements it openly where Atlas gates it behind Pro or Cloud | 44 |
 | Ptah has it and neither Atlas edition does | 27 |
-| Atlas CE has it and Ptah does not, or only in part | 7 |
+| Atlas CE has it and Ptah does not, or only in part | 6 |
 | An Atlas column is ❔ — not established by this page's evidence | 4 |
 
 Every 🟡 and every ❌ in the Ptah column names its specific limitation and the

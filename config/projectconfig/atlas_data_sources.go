@@ -422,7 +422,12 @@ func (p atlasParser) templateDirectoryVariables(block *hclsyntax.Block) (map[str
 // replace the first filesystem while both HCL values still carry that key, so
 // an env selecting the first block would execute the second block's migrations.
 func memDirectoryURL(prefix, name string) string {
-	return "mem:///" + strings.Trim(prefix, "/") + "/" + url.PathEscape(name)
+	// The prefix keeps the escaping and the slash count url.URL gave it before
+	// this helper existed -- data.template_dir's handle is compared against the
+	// pinned binary's output, and `mem://templates/x` and `mem:///templates/x`
+	// are not the same string to that comparison.
+	base := (&url.URL{Scheme: "mem", Path: prefix}).String()
+	return strings.TrimSuffix(base, "/") + "/" + url.PathEscape(name)
 }
 
 func (p atlasParser) templateDirectoryPath(rawPath string) (fsPath, memPath string, err error) {
@@ -850,7 +855,7 @@ func (p atlasParser) remoteDirectoryDataSource(block *hclsyntax.Block) (cty.Valu
 	if err != nil {
 		return cty.NilVal, p.dataSourceError(block, "fetching remote directory", err, reference.OCI)
 	}
-	memURL := memDirectoryURL("remote_dir", block.Labels[1])
+	memURL := memDirectoryURL("/remote_dir", block.Labels[1])
 	p.migrationDirectories[memURL] = MigrationDirectorySource{
 		FileSystem: artifact.FileSystem,
 		// The reference is carried for display, and ReadOnly is what keeps it
