@@ -273,6 +273,23 @@ const (
 	// the read is skipped rather than reduced (stokaro/ptah#942).
 	CatalogDependencies Capability = "catalog_dependencies"
 
+	// CatalogDefaultPrivileges marks a catalog that has pg_default_acl, the
+	// relation recording ALTER DEFAULT PRIVILEGES grants.
+	//
+	// It names the relation rather than the feature, for the same reason
+	// CatalogDependencies does: what fails is the relation, and a missing one
+	// cannot be stood in for by a constant the way a missing function can --
+	// the statement does not parse, so a cleanup that asks anyway cannot drop
+	// anything at all rather than merely missing a grant.
+	//
+	// Measured on the Cloud Spanner emulator through PGAdapter 0.55.2:
+	// `SELECT 1 FROM pg_default_acl LIMIT 1` answers `relation
+	// "pg_default_acl" does not exist`, while pg_namespace, pg_class,
+	// pg_extension, pg_constraint, pg_proc, pg_type, pg_collation,
+	// pg_attribute, pg_index and pg_sequence all answer. PostgreSQL and
+	// CockroachDB have it (stokaro/ptah#1811).
+	CatalogDefaultPrivileges Capability = "catalog_default_privileges"
+
 	// RoleManagement marks support for the role and object-privilege
 	// management Ptah models: named roles plus GRANT/REVOKE of privileges on
 	// schema objects.
@@ -644,6 +661,9 @@ var registry = map[Capability]spec{
 	CatalogRowStatistics: {
 		doc: "the catalog exposes planner row-count statistics (pg_stat_all_tables)",
 	},
+	CatalogDefaultPrivileges: {
+		doc: "the catalog has pg_default_acl, the relation recording ALTER DEFAULT PRIVILEGES grants",
+	},
 	CatalogDependencies: {
 		doc: "the catalog exposes pg_depend",
 	},
@@ -874,6 +894,7 @@ func MySQL84() Capabilities {
 		PostgresCatalogFunctions:       false,
 		CatalogRowStatistics:           false,
 		CatalogDependencies:            false,
+		CatalogDefaultPrivileges:       false,
 		// RoleManagement is on because the read half exists. It was off with the
 		// recorded reason that Ptah cannot read or compare a role here, and the
 		// catalog says otherwise: measured on MySQL 8.4, a role is a row in
@@ -991,6 +1012,7 @@ func MariaDB1011() Capabilities {
 		PostgresCatalogFunctions:       false,
 		CatalogRowStatistics:           false,
 		CatalogDependencies:            false,
+		CatalogDefaultPrivileges:       false,
 		// RoleManagement is on because the read half exists. It was off with the
 		// recorded reason that Ptah cannot read or compare a role here, and the
 		// catalog says otherwise: measured on MySQL 8.4, a role is a row in
@@ -1083,6 +1105,7 @@ func Postgres16() Capabilities {
 		PostgresCatalogFunctions:           true,
 		CatalogRowStatistics:               true,
 		CatalogDependencies:                true,
+		CatalogDefaultPrivileges:           true,
 		RoleManagement:                     true,
 		ForeignKeys:                        true,
 		ForeignKeysRequireUniqueReference:  true,
@@ -1222,6 +1245,7 @@ func ClickHouse24() Capabilities {
 		PostgresCatalogFunctions: false,
 		CatalogRowStatistics:     false,
 		CatalogDependencies:      false,
+		CatalogDefaultPrivileges: false,
 		// Measured live on 24.10.4.191 and 26.7.3.19: CREATE ROLE, DROP ROLE,
 		// GRANT, REVOKE and REVOKE GRANT OPTION FOR all work on both lines, and
 		// system.roles and system.grants read them back. Only the catalog's
@@ -1311,6 +1335,7 @@ func SQLite3() Capabilities {
 		PostgresCatalogFunctions:           false,
 		CatalogRowStatistics:               false,
 		CatalogDependencies:                false,
+		CatalogDefaultPrivileges:           false,
 		RoleManagement:                     false,
 		ForeignKeys:                        true,
 		ForeignKeysRequireUniqueReference:  true,
@@ -1437,6 +1462,7 @@ func SQLServer2022() Capabilities {
 		PostgresCatalogFunctions: false,
 		CatalogRowStatistics:     false,
 		CatalogDependencies:      false,
+		CatalogDefaultPrivileges: false,
 		// RoleManagement is on for the same reason Sequences is: the three
 		// halves the key requires exist for this target. The renderer emits
 		// T-SQL CREATE ROLE, GRANT and REVOKE, internal/dbschema/mssql reads
@@ -1661,6 +1687,9 @@ func SpannerPostgres() Capabilities {
 		With(PostgresCatalogFunctions, false).
 		With(CatalogRowStatistics, false).
 		With(CatalogDependencies, false).
+		// Measured on the same endpoint: `relation "pg_default_acl" does not
+		// exist` (stokaro/ptah#1811).
+		With(CatalogDefaultPrivileges, false).
 		// Measured 2026-08-19 on the emulator behind PGAdapter 0.55.2, with
 		// CREATE TABLE as the control: all three user-type kinds answer
 		// `Statement is not supported` (stokaro/ptah#1717).

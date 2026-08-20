@@ -73,9 +73,10 @@ func NewPostgreSQLWriter(db *sql.DB, schema string) *PostgreSQLWriter {
 // NewPostgreSQLWriterForRunner creates a writer bound to a pool or pinned
 // database session.
 //
-// It assumes the server accepts DDL inside a transaction, which every
-// PostgreSQL-family engine except Spanner does. Callers that know the dialect
-// should use [NewPostgreSQLWriterForRunnerWithCapabilities].
+// It assumes the server accepts DDL inside a transaction, answers a recursive
+// catalog query, and has pg_depend -- which every PostgreSQL-family engine
+// except Spanner does. Callers that know the dialect should use
+// [NewPostgreSQLWriterForRunnerWithCapabilities].
 func NewPostgreSQLWriterForRunner(
 	runner sqlrunner.Runner,
 	schema string,
@@ -84,6 +85,14 @@ func NewPostgreSQLWriterForRunner(
 		runner, schema, capability.Capabilities{
 			capability.DDLInsideTransaction: true,
 			capability.CatalogRecursiveCTE:  true,
+			// pg_depend, for the same reason as the two above: every
+			// PostgreSQL-family engine has it except Spanner, and a Spanner
+			// caller knows its dialect and passes its own set. Leaving it out
+			// made the cleanup query drop its extension-owned-routine filter
+			// on every caller that used this constructor, which is most of them
+			// (stokaro/ptah#1811).
+			capability.CatalogDependencies:      true,
+			capability.CatalogDefaultPrivileges: true,
 		})
 }
 
@@ -460,7 +469,6 @@ func (w *PostgreSQLWriter) rejectSchemaScopedExtensions(ctx context.Context, tx 
 	return nil
 }
 
-//nolint:funlen // The dependency-ordered catalog query is kept in one auditable unit.
 func (w *PostgreSQLWriter) collectAllObjects(
 	ctx context.Context,
 	tx cleanupConn,
@@ -600,14 +608,7 @@ func (w *PostgreSQLWriter) collectAllObjects(
 				)
 			FROM pg_proc p
 			JOIN managed_namespaces n ON n.oid = p.pronamespace
-			WHERE p.prokind IN ('f', 'p', 'a', 'w')
-			  AND NOT EXISTS (
-				SELECT 1
-				FROM pg_depend d
-				WHERE d.classid = 'pg_proc'::regclass
-				  AND d.objid = p.oid
-				  AND d.deptype = 'i'
-			  )
+			WHERE p.prokind IN ('f', 'p', 'a', 'w'){{EXTENSION_OWNED_ROUTINE_FILTER}}
 
 			UNION ALL
 
@@ -642,42 +643,7 @@ func (w *PostgreSQLWriter) collectAllObjects(
 			FROM pg_collation c
 			JOIN managed_namespaces n ON n.oid = c.collnamespace
 
-			UNION ALL
-
-			SELECT DISTINCT
-				70,
-				0,
-				'default privilege',
-				n.nspname,
-				format(
-					'%s/%s/%s',
-					pg_get_userbyid(d.defaclrole),
-					d.defaclobjtype,
-					CASE acl.grantee
-						WHEN 0 THEN 'PUBLIC'
-						ELSE pg_get_userbyid(acl.grantee)
-					END
-				),
-				format(
-					'ALTER DEFAULT PRIVILEGES FOR ROLE %I IN SCHEMA %I ' ||
-					'REVOKE ALL PRIVILEGES ON %s FROM %s',
-					pg_get_userbyid(d.defaclrole),
-					n.nspname,
-					CASE d.defaclobjtype
-						WHEN 'r' THEN 'TABLES'
-						WHEN 'S' THEN 'SEQUENCES'
-						WHEN 'f' THEN 'FUNCTIONS'
-						WHEN 'T' THEN 'TYPES'
-					END,
-					CASE acl.grantee
-						WHEN 0 THEN 'PUBLIC'
-						ELSE format('%I', pg_get_userbyid(acl.grantee))
-					END
-				)
-			FROM pg_default_acl d
-			JOIN managed_namespaces n ON n.oid = d.defaclnamespace
-			CROSS JOIN LATERAL aclexplode(d.defaclacl) acl
-			WHERE d.defaclobjtype IN ('r', 'S', 'f', 'T')
+{{DEFAULT_PRIVILEGE_OBJECTS}}
 		)
 		SELECT object_kind, object_schema, object_name, drop_statement
 		FROM cleanup_objects
@@ -686,6 +652,10 @@ func (w *PostgreSQLWriter) collectAllObjects(
 	query = strings.ReplaceAll(query, "{{EXTENSION_NAMESPACE_JOIN}}", scope.extensionNamespaceJoin)
 	query = strings.ReplaceAll(query, "{{SYSTEM_EXTENSION_FILTER}}", extensionFilter)
 	query = applyViewOrderingShape(query, viewOrderingShapeFor(w.caps))
+	query = strings.ReplaceAll(
+		query, "{{EXTENSION_OWNED_ROUTINE_FILTER}}", extensionOwnedRoutineFilter(w.caps))
+	query = strings.ReplaceAll(
+		query, "{{DEFAULT_PRIVILEGE_OBJECTS}}", defaultPrivilegeObjects(w.caps))
 	rows, err := tx.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query schema objects: %w", err)
@@ -738,9 +708,106 @@ const (
 	flatViewOrdering
 )
 
+// extensionOwnedRoutineFilter returns the clause that keeps an extension's own
+// routines out of the cleanup, or an empty string on a server whose catalog
+// cannot answer the question.
+//
+// The clause reads pg_depend. That relation is exactly what
+// capability.CatalogDependencies names, and a MISSING relation cannot be stood
+// in for by a constant the way a missing function can -- the statement fails to
+// parse before any row is read, so the whole cleanup query dies rather than one
+// column coming back null. Measured on the Cloud Spanner emulator through
+// PGAdapter 0.55.2: `relation "pg_depend" does not exist` (stokaro/ptah#1811).
+//
+// Dropping the clause there is safe rather than merely necessary. It exists to
+// skip routines an extension owns, and a server with no pg_depend has no
+// extension-owned routines to skip: on Spanner's PostgreSQL interface the
+// preset already reports no extensions and no user functions, so the filter
+// removes nothing it would have removed.
+//
+// The reader has honored this key since stokaro/ptah#942; the cleanup path did
+// not, which is why a scenario that creates a table could not clean up after
+// itself on Spanner even after the transaction half was fixed.
+func extensionOwnedRoutineFilter(caps capability.Capabilities) string {
+	if !caps.Has(capability.CatalogDependencies) {
+		return ""
+	}
+	return `
+			  AND NOT EXISTS (
+				SELECT 1
+				FROM pg_depend d
+				WHERE d.classid = 'pg_proc'::regclass
+				  AND d.objid = p.oid
+				  AND d.deptype = 'i'
+			  )`
+}
+
+// defaultPrivilegeObjects returns the UNION branch that revokes ALTER DEFAULT
+// PRIVILEGES grants, or an empty string on a server whose catalog has no
+// pg_default_acl to read them from.
+//
+// Same reasoning as extensionOwnedRoutineFilter and for the same relation-shaped
+// reason: a missing relation is a parse failure, so asking anyway costs the
+// whole cleanup rather than one branch. A server without the relation has no
+// default-privilege grants to revoke, so the branch removes nothing it would
+// have removed (stokaro/ptah#1811).
+func defaultPrivilegeObjects(caps capability.Capabilities) string {
+	if !caps.Has(capability.CatalogDefaultPrivileges) {
+		return ""
+	}
+	return `			UNION ALL
+
+			SELECT DISTINCT
+				70,
+				0,
+				'default privilege',
+				n.nspname,
+				format(
+					'%s/%s/%s',
+					pg_get_userbyid(d.defaclrole),
+					d.defaclobjtype,
+					CASE acl.grantee
+						WHEN 0 THEN 'PUBLIC'
+						ELSE pg_get_userbyid(acl.grantee)
+					END
+				),
+				format(
+					'ALTER DEFAULT PRIVILEGES FOR ROLE %I IN SCHEMA %I ' ||
+					'REVOKE ALL PRIVILEGES ON %s FROM %s',
+					pg_get_userbyid(d.defaclrole),
+					n.nspname,
+					CASE d.defaclobjtype
+						WHEN 'r' THEN 'TABLES'
+						WHEN 'S' THEN 'SEQUENCES'
+						WHEN 'f' THEN 'FUNCTIONS'
+						WHEN 'T' THEN 'TYPES'
+					END,
+					CASE acl.grantee
+						WHEN 0 THEN 'PUBLIC'
+						ELSE format('%I', pg_get_userbyid(acl.grantee))
+					END
+				)
+			FROM pg_default_acl d
+			JOIN managed_namespaces n ON n.oid = d.defaclnamespace
+			CROSS JOIN LATERAL aclexplode(d.defaclacl) acl
+			WHERE d.defaclobjtype IN ('r', 'S', 'f', 'T')`
+}
+
 // viewOrderingShapeFor picks the shape a server can answer.
+//
+// It asks TWO questions, because the recursive shape needs two different things
+// and they are separate facts about a server. The walk is spelled `WITH
+// RECURSIVE`, which CatalogRecursiveCTE reports, and it joins pg_depend, which
+// CatalogDependencies reports. Asking only the first conflates them: a server
+// with recursive CTEs and no pg_depend would be handed a query naming a
+// relation it does not have, and a missing relation is a parse failure that
+// costs the whole cleanup rather than the ordering (stokaro/ptah#1811).
+//
+// No declared preset is that server today -- Spanner reports neither -- so this
+// changes no behavior. It states the dependency the query actually has, instead
+// of one that happens to coincide with it.
 func viewOrderingShapeFor(caps capability.Capabilities) viewOrderingShape {
-	if caps.Has(capability.CatalogRecursiveCTE) {
+	if caps.Has(capability.CatalogRecursiveCTE) && caps.Has(capability.CatalogDependencies) {
 		return recursiveViewOrdering
 	}
 	return flatViewOrdering

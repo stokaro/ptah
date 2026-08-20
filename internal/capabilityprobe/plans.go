@@ -229,6 +229,11 @@ func postgresFamilyPlan(dialect string) plan {
 				"type system instead was refuted by CockroachDB, which refuses "+
 				"CREATE DOMAIN and accepts a composite type",
 		),
+		acceptanceNote(capability.CatalogDefaultPrivileges, nil,
+			"SELECT 1 FROM pg_default_acl LIMIT 1",
+			"the relation the cleanup reads ALTER DEFAULT PRIVILEGES grants "+
+				"from; Spanner answers `relation \"pg_default_acl\" does not exist`",
+		),
 		acceptance(capability.GeneratedColumns, nil,
 			t.table("gcx", "n int, g int GENERATED ALWAYS AS (n + 1) STORED", "n"),
 		),
@@ -620,6 +625,9 @@ func mysqlFamilyPlan(dialect string) plan {
 		capability.CatalogDependencies: "pg_depend is a PostgreSQL catalog relation this server does not " +
 			"have and no MySQL-family reader joins; its absence here says nothing about the " +
 			"PostgreSQL-family read the key gates",
+		capability.CatalogDefaultPrivileges: "pg_default_acl is a PostgreSQL catalog relation this server " +
+			"does not have and no MySQL-family cleanup reads; its absence here says nothing about the " +
+			"PostgreSQL-family cleanup the key gates",
 		capability.RowLevelTTL: "the key names a table storage parameter Ptah renders, reads and plans " +
 			"only on the PostgreSQL wire; this server's CREATE TABLE takes its own table options and " +
 			"none of them is the one the key names, so refusing it would answer a different question",
