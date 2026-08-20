@@ -457,9 +457,43 @@ program, read a runtime variable, or render a directory.
 
 The lazy set also recognizes `remote_schema`, `aws_rds_token`, and
 `gcp_cloudsql_token`, matching the community binary's treatment of valid
-unreferenced blocks. Referencing one still fails explicitly because Ptah does
-not implement it. An unknown type, including `composite_schema`, fails during
-structural validation even when unreferenced.
+unreferenced blocks. Referencing `aws_rds_token` or `gcp_cloudsql_token` still
+fails explicitly because Ptah does not implement it; `remote_schema` resolves
+through Ptah's OCI backend (see [Remote schema data
+source](#remote-schema-data-source)). An unknown type, including
+`composite_schema`, fails during structural validation even when unreferenced.
+
+## Remote schema data source
+
+`data "remote_schema"` names the OCI artifact holding a desired schema. `name`
+is required; `tag` selects a moving tag and defaults to `latest`, and `version`
+selects a write-once tag. Set `PTAH_ATLAS_REGISTRY` to the namespace holding
+them.
+
+```hcl
+data "remote_schema" "app" {
+  name = "app"
+  tag  = "prod"
+}
+
+env "local" {
+  url = "postgres://localhost:5432/app?sslmode=disable"
+  src = data.remote_schema.app.url
+}
+```
+
+The block resolves to an internal marker and fetches nothing at parse time. A
+project file is read by every verb, so pulling an artifact the run never uses
+would make an unrelated command fail whenever the registry is unreachable.
+
+The marker also keeps the capability off the flag surface: `--to oci://…` and
+`--url oci://…` remain refused on the Atlas-compatible commands, because the
+community binary answers that spelling with `unknown driver "oci"`. Native Ptah
+reads the artifact directly instead, with no project file:
+
+```sh
+ptah schema inspect --schema-file oci://ghcr.io/acme/app:prod
+```
 
 ## Remote directory data source
 

@@ -33,3 +33,10 @@ docker-compose.override.yaml
 integration/reports
 test-reports
 integration-test
+
+# A leaked SQLite dev database. `--dev-url "sqlite://dev?mode=memory"` opens a
+# RELATIVE FILE named `dev` rather than an in-memory database, so a test that
+# passes that spelling writes one into the package directory it runs in. Tracked
+# as stokaro/ptah#1819; ignored here so it cannot be committed again while the
+# underlying behavior is being fixed.
+cmd/atlas/dev
