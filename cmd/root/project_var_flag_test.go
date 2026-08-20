@@ -36,6 +36,7 @@ var projectEnvCommandPaths = []string{
 	"ptah schema inspect",
 	"ptah schema plan",
 	"ptah schema render",
+	"ptah schema validate",
 }
 
 // TestEveryProjectEnvCommandAcceptsVar holds every project-env command to the

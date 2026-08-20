@@ -289,10 +289,11 @@ func newAtlasSchemaCommand(policy atlascompatpolicy.Policy) *cobra.Command {
 	cmd.AddCommand(newAtlasSchemaDiffCommand(policy))
 	cmd.AddCommand(newAtlasSchemaFmtCommand())
 	if policy.IsStrictCE() {
-		addAtlasCommunityGatedCommands(cmd, "schema", []string{"plan", "push", "test"})
+		addAtlasCommunityGatedCommands(cmd, "schema", []string{"plan", "push", "test", "validate"})
 	} else {
 		cmd.AddCommand(newAtlasSchemaPlanCommand())
 		cmd.AddCommand(newAtlasAdapterCommand("schema", atlasSchemaTestVerb()))
+		cmd.AddCommand(newAtlasAdapterCommand("schema", atlasSchemaValidateVerb()))
 		addAtlasUnsupportedCommands(cmd, []atlasUnsupportedVerb{
 			{use: "push", short: "Push schema state to a remote registry"},
 		})
@@ -1733,5 +1734,33 @@ func atlasSchemaTestSourceValueWithEnv(
 		// project's base directory, and the existing mapper is what decides
 		// which kinds this verb reads.
 		return atlasSchemaTestSourceValue(set.Sources[0].Raw)
+	}
+}
+
+func atlasSchemaValidateNativeCommand() *cobra.Command {
+	return schema.NewSchemaValidateCommand()
+}
+
+// atlasSchemaValidateVerb mirrors the native `schema validate` onto the
+// Atlas-compatible surface.
+//
+// The pinned community binary v1.3.0 has no such verb, so it is registered
+// beside the other verbs that binary does not carry and is community-gated in
+// strict mode. There is no flag oracle for it on the community surface, so the
+// flag set is the native one, named here rather than guessed at
+// (stokaro/ptah#1711).
+func atlasSchemaValidateVerb() atlasVerb {
+	return atlasVerb{
+		use:        "validate",
+		displayUse: "validate [flags]",
+		short:      "Report structural problems in a desired schema without a database",
+		native:     "schema validate",
+		factory:    atlasSchemaValidateNativeCommand,
+		flags: []atlasargs.Flag{
+			atlasargs.NativeStringArray("dialect", "", "Target dialect to validate against (repeatable)", "dialect"),
+			atlasargs.NativeStringArray("root-dir", "", "Root directory to scan for Go entities (repeatable)", "root-dir"),
+			atlasargs.NativeStringArray("schema-file", "", "YAML, HCL, or SQL desired-schema file (repeatable)", "schema-file"),
+			atlasargs.NativeString("server-version", "", "Server version whose capability preset one target is validated against", "server-version"),
+		},
 	}
 }

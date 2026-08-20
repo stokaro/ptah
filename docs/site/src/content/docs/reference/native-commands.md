@@ -14,6 +14,7 @@ Use `ptah <command> --help` for the exact flag set in an installed binary.
 | Command | Purpose |
 | --- | --- |
 | `ptah schema render` | Render desired-schema SQL to stdout from Go, YAML, HCL, SQL, or external-command inputs; write progress and dependency diagnostics to stderr. |
+| `ptah schema validate` | Report every structural problem in a desired schema without a database; exit 1 when any is found, 0 when none is. |
 | `ptah schema annotations` | Export Ptah Go annotation metadata as a JSON Schema document. |
 | `ptah schema compare` | Compare desired schema with a live database. |
 | `ptah schema drift` | Check live database drift against desired schema. |
@@ -218,6 +219,7 @@ named beside it:
 | `ptah migrations lint` | `--dir` | migration directory |
 | `ptah migrations validate` | `--dir` | migration directory |
 | `ptah schema render` | `--schema-file` | desired schema |
+| `ptah schema validate` | `--schema-file` | desired schema |
 | `ptah schema export` | `--schema-file` | desired schema |
 | `ptah schema inspect` | `--schema-file` | desired schema |
 | `ptah schema compare` | `--schema-file` | desired schema |

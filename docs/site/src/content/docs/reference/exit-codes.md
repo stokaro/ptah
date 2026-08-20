@@ -122,6 +122,7 @@ root-level command spellings are removed instead of preserved.
 | `ptah schema compare` | Diff printed, or no diff. | Non-empty diff when `--exit-code` is set. | Usage error, connection failure, parse failure, or diff generation failure. |
 | `ptah schema drift` | No drift that meets `--severity`, or `--exit-code=false`. | Drift meets `--severity` while `--exit-code=true`. | Usage error, connection failure, parse failure, or report error. |
 | `ptah schema diff` | Diff printed, or no diff. | Not used. | Usage error, source failure, invalid selector, an explicit include selection matching neither side, or diff generation failure. |
+| `ptah schema validate` | No structural problem found in any target. | One or more structural problems found; each is printed on its own line. | Usage error (no `--dialect`, no `--root-dir` or `--schema-file`, or an unknown flag). |
 | `ptah schema test` | Every schema test case passed. | One or more cases failed. | Usage error (including a `--root-dir` database source whose dialect differs from `--db-url`, or a non-SQLite database source with no `--db-url`), invalid or unreadable cases, connection failure, interrupted run, desired-schema parse/apply failure, or report error. |
 | `ptah migrations lint` | No findings above `--fail-on`, or `--fail-on=none`. | Findings meet `--fail-on`. | Usage error, invalid config, unreadable migration directory, dev-database connection failure, SQL replay failure, or report error. |
 | `ptah migrations test` | Every migration test case passed. | One or more cases failed. | Usage error, invalid or unreadable cases, connection failure, interrupted run, migration/schema setup failure, or report error. |
@@ -185,6 +186,7 @@ behavior such as migration apply, the license notice, or schema formatting.
 | `ptah-compat schema diff` | Local Atlas-style schema-file diff |
 | `ptah-compat schema fmt` | Format local `.hcl` files |
 | `ptah-compat schema test` | `ptah schema test` |
+| `ptah-compat schema validate` | `ptah schema validate` |
 | `ptah-compat schema plan` | Local Atlas-style plan computation saved to a fingerprinted plan file; `new`, `validate` and `lint` are implemented, the registry sub-verbs plus `test` stay boundary stubs. `lint` exits 0 with findings reported unless `PTAH_ATLAS_PLAN_LINT_FAIL_ON_ERROR=1` makes an error-severity finding exit 1 |
 | `ptah-compat migrate push` | Registered but not implemented boundary command |
 | `ptah-compat schema push` | Registered but not implemented boundary command |

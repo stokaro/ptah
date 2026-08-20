@@ -1640,11 +1640,11 @@
   {
     "area": "Declarative and direct schema changes",
     "feature": "Verb `schema validate`",
-    "ptah": "partial",
+    "ptah": "yes",
     "atlas_oss": "no",
     "atlas_pro": "yes",
-    "note": "No validate verb on either binary. Native `schema render` parse and load validation, `schema test`, and `schema apply --dry-run` cover the ground between them. Tracked by stokaro/ptah#1711.",
-    "evidence": "Verified: /tmp/c-compat schema validate -> 'unknown command'; /tmp/c-ptah schema render --help exists; comparison.md gap register 'Verbs beyond the CE pin'; absent from cli-surface.md inventory. Measured 2026-08-01, CE v1.2.0 (scratch env): `atlas schema validate` falls through to the parent group help, exit 0 - never registered, distinct from the community-abort stubs. `atlas schema validate` exists in Atlas (measured; observation study, scenario, verbs-and-flags) Filed as stokaro/ptah#1711 together with schema stats: both were triaged in the gap register and neither had an issue."
+    "note": "`ptah schema validate` and the compat verb report every structural problem in a desired state without a database; exit 1 when any is found.",
+    "evidence": "Verified: /tmp/c-compat schema validate -> 'unknown command'; /tmp/c-ptah schema render --help exists; comparison.md gap register 'Verbs beyond the CE pin'; absent from cli-surface.md inventory. Measured 2026-08-01, CE v1.2.0 (scratch env): `atlas schema validate` falls through to the parent group help, exit 0 - never registered, distinct from the community-abort stubs. `atlas schema validate` exists in Atlas (measured; observation study, scenario, verbs-and-flags) Filed as stokaro/ptah#1711 together with schema stats: both were triaged in the gap register and neither had an issue. Closed by stokaro/ptah#1711: internal/schemavalidate collects problems instead of stopping at the first, and adds the checks the renderer never made. Measured 2026-08-20 on master before the change: `CREATE INDEX i ON orders (nosuchcolumn)` rendered and exited 0, and so did an index naming a table no declaration defines; a dangling foreign key was caught but only after the dependency and creation-order output the caller has to read past, and only the first fault of any kind was reported. After: `schema validate --schema-file s.sql --dialect postgres` prints one line per fault and exits 1, prints nothing and exits 0 on a clean schema, and exits 2 for a usage error, so a pre-commit hook can use the status alone. --dialect is repeatable and each target answers under its own name. The check also catches an index left pointing at a materialized view scoped away from the target, which the renderer emits as CREATE INDEX ... ON `Struct` -- the shape stokaro/ptah#1725 found on the render side. The compat verb carries the native flag set, because the pinned community binary v1.3.0 registers no such verb to take one from, and it is community-gated under PTAH_ATLAS_STRICT_COMPAT beside plan, push and test."
   },
   {
     "area": "Declarative and direct schema changes",
@@ -1652,7 +1652,7 @@
     "ptah": "no",
     "atlas_oss": "no",
     "atlas_pro": "yes",
-    "note": "In Atlas it exists as `schema stats inspect` and emits OpenMetrics, rejecting SQLite at runtime. Ptah emits metrics in no form. Tracked by stokaro/ptah#1711.",
+    "note": "In Atlas it exists as `schema stats inspect` and emits OpenMetrics, rejecting SQLite at runtime. Ptah emits metrics in no form; whether it should is the open half of stokaro/ptah#1711.",
     "evidence": "Verified: /tmp/c-compat schema stats -> 'unknown command'; comparison.md:699-701 triage 'schema stats (OpenMetrics database statistics) is out of scope'; absent from cli-surface.md inventory. Measured 2026-08-01, CE v1.2.0 (scratch env): `atlas schema stats` falls through to the parent group help, exit 0 - never registered, distinct from the community-abort stubs. Atlas pricing page (atlasgo.io/pricing), retrieved 2026-08-01: Schema statistics appears only in the Schema Monitoring product (absent from Starter, Pro at $39/mo per monitored database); consistent with the measured CE no, but the pricing label does not name the `schema stats` verb, registered as `atlas schema stats inspect`, OpenMetrics output, rejects sqlite targets at runtime (measured; observation study, scenario, verbs-and-flags) Filed as stokaro/ptah#1711. The row previously recorded a triage decision - out of scope as observability - with no owner, which is the shape this audit exists to remove."
   },
   {
