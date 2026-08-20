@@ -2817,7 +2817,10 @@ func (r *Reader) readFunctionsForSchema(schemaName string) ([]types.DBFunction, 
 			p.proname AS function_name,
 			pg_get_function_arguments(p.oid) AS parameters,
 			pg_get_function_identity_arguments(p.oid) AS identity_arguments,
-			pg_get_function_result(p.oid) AS returns,
+			-- COALESCE because pg_get_function_result is NULL for a procedure,
+			-- which is the catalog stating the property that separates the two
+			-- kinds (stokaro/ptah#1722).
+			COALESCE(pg_get_function_result(p.oid), '') AS returns,
 			l.lanname AS language,
 			CASE p.prosecdef WHEN true THEN 'DEFINER' ELSE 'INVOKER' END AS security,
 			CASE p.provolatile
@@ -2826,12 +2829,20 @@ func (r *Reader) readFunctionsForSchema(schemaName string) ([]types.DBFunction, 
 				WHEN 'v' THEN 'VOLATILE'
 			END AS volatility,
 			p.prosrc AS body,
-			COALESCE(obj_description(p.oid, 'pg_proc'), '') AS comment
+			COALESCE(obj_description(p.oid, 'pg_proc'), '') AS comment,
+			CASE p.prokind WHEN 'p' THEN 'procedure' ELSE 'function' END AS kind
 		FROM pg_proc p
 		JOIN pg_namespace n ON n.oid = p.pronamespace
 		JOIN pg_language l ON l.oid = p.prolang
 		WHERE n.nspname = $1
-		AND p.prokind = 'f'  -- Only functions, not procedures
+		-- Functions and procedures, which are the two routine kinds a schema
+		-- can declare. Aggregates ('a') and window functions ('w') are left
+		-- out on purpose: both are defined by naming other routines rather
+		-- than by a body a schema can carry, and neither has a Ptah
+		-- declaration to compare against. They were excluded before this
+		-- comment existed and nothing said so, which is the silence
+		-- stokaro/ptah#1722 is about.
+		AND p.prokind IN ('f', 'p')
 		AND l.lanname != 'internal'  -- Exclude internal functions
 		-- Escaped for the same reason as the role filters above: a bare _
 		-- is a LIKE wildcard, so the unescaped form also excluded ordinary
@@ -2866,6 +2877,7 @@ func (r *Reader) readFunctionsForSchema(schemaName string) ([]types.DBFunction, 
 			&fn.Volatility,
 			&fn.Body,
 			&fn.Comment,
+			&fn.Kind,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan function: %w", err)

@@ -103,6 +103,9 @@ func (p *Planner) reportUnsupportedRoutinesAndRoles(result []ast.Node, diff *typ
 	for _, name := range diff.FunctionsRemoved {
 		result = append(result, ast.NewDropFunction(name))
 	}
+	for _, name := range diff.ProceduresRemoved {
+		result = append(result, ast.NewDropFunction(name).SetKind(goschema.FunctionKindProcedure))
+	}
 	return result
 }
 
@@ -256,6 +259,14 @@ func (p *Planner) planFunctions(result []ast.Node, diff *types.SchemaDiff, gener
 		result = append(result, ast.NewDropFunction(name).
 			SetIfExists().
 			SetComment("WARNING: Ensure no other objects depend on this function"))
+	}
+	// The verb has to match the object; the comparator kept the two apart for
+	// exactly this statement (stokaro/ptah#1722).
+	for _, name := range diff.ProceduresRemoved {
+		result = append(result, ast.NewDropFunction(name).
+			SetKind(goschema.FunctionKindProcedure).
+			SetIfExists().
+			SetComment("WARNING: Ensure no other objects depend on this procedure"))
 	}
 	return result
 }

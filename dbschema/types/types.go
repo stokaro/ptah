@@ -738,6 +738,9 @@ type SchemaTransaction interface {
 // DBFunction represents a custom function read from the database.
 type DBFunction struct {
 	Name string `json:"name"` // Function name
+	// Kind separates a function from a procedure. Empty means function, which
+	// is what every description written before procedures existed meant.
+	Kind string `json:"kind,omitempty"`
 	// Schema owns the function. Readers blank it for the connection's own
 	// schema, the same convention tables, views and domains follow, so a
 	// filter reconstructs the qualified spelling from the connection's

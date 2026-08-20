@@ -287,13 +287,13 @@ seven of them as open capabilities regardless.
 | Capability | Ptah | CE | Pro | Difference |
 | --- | :-: | :-: | :-: | --- |
 | Capability profile of a live target (`ptah db capabilities`) | ✅ | ❔ | ❌ | Reports the dialect, resolved preset and how it was reached, the support level and every capability key for a connected server, as text or stable JSON. No source here names an Atlas equivalent. |
-| ClickHouse (clickhouse, ch) | 🟡 | ❌ | ✅ | Tables, indexes, plain views, roles, grants, row policies and named table CHECKs. Every other object kind is named on render and on the plan path alike (stokaro/ptah#1722 covers procedures). |
+| ClickHouse (clickhouse, ch) | 🟡 | ❌ | ✅ | Tables, indexes, plain views, roles, grants, row policies and named table CHECKs. Other kinds are named on render and on the plan path; matviews have a ClickHouse-only form (stokaro/ptah#1625). |
 | CockroachDB (cockroachdb, crdb) | ✅ | ❌ | ✅ | `CONCURRENTLY`, XML, advisory locks and DEFERRABLE are engine limits; 25.4 also refuses generic DROP CONSTRAINT, and 26.2 accepts it. Row-level TTL is fully managed. |
 | Declared support level per database release line | ✅ | ❔ | ❔ | 26 declared release lines: 19 certified, 2 legacy-tested, 5 best-effort. Upstream end-of-life lowers the level, not the behavior; a line Ptah does not declare resolves to best-effort. |
 | Domains, composite types, and range types | ✅ | ❌ | ✅ | Domains and composites compare and change in place, each kind gated per target. Range types rebuild because PostgreSQL offers no ALTER TYPE ... AS RANGE. |
 | Enum types | 🟡 | ✅ | ✅ | An enum is whatever the schema declares as one. PostgreSQL alters values in place; MySQL, MariaDB, SQLite and SQL Server have their enum catalogs erased before comparison (stokaro/ptah#1716). |
 | Extensions | ✅ | ❌ | ✅ | PostgreSQL and YugabyteDB create, compare and relocate extensions, version included. Every other target names the declaration it cannot host rather than dropping it. |
-| Functions | 🟡 | ❌ | ✅ | Rendered, read and planned on the PostgreSQL and MySQL families and on SQL Server. Procedures are modeled nowhere (stokaro/ptah#1722); Spanner names the skip. |
+| Functions | 🟡 | ❌ | ✅ | Functions render, read and plan on the PostgreSQL and MySQL families and SQL Server; procedures on the first two. SQL Server hosts procedures and reads none back (stokaro/ptah#1784). |
 | MySQL and MariaDB | 🟡 | ✅ | ✅ | Roles, grants, stored functions and MariaDB sequences render, read back and plan. An inline enum change is still erased before comparison (stokaro/ptah#1716); matviews fail closed. |
 | Oracle, Snowflake, Redshift, Databricks | ❌ | ❌ | ✅ | No dialect entry; the names fail normalization the same way TiDB does. Listed as Atlas Pro drivers. Tracked by stokaro/ptah#1616. |
 | PostgreSQL 12+ (postgres, postgresql) | ✅ | ✅ | ✅ | Reference engine of the PostgreSQL family: views, matviews, functions, triggers, sequences, roles, RLS and domains all render. Presets 12-13, 14-16, 17+ from the server banner. |

@@ -1973,6 +1973,13 @@ func (n *DropTriggerNode) Accept(visitor Visitor) error {
 type CreateFunctionNode struct {
 	// Name is the name of the function to create
 	Name string
+	// Kind separates a function from a procedure. Empty means function.
+	//
+	// It is a field rather than a node of its own because the two are one
+	// catalog object differing in one property, and a second node would widen
+	// [Visitor] for every dialect that already answers this one
+	// (stokaro/ptah#1722).
+	Kind string
 	// Parameters contains the function parameter definitions (e.g., "tenant_id_param TEXT")
 	Parameters string
 	// Returns specifies the return type (e.g., "VOID", "TEXT", "INTEGER")
@@ -2016,6 +2023,31 @@ const (
 //		SetLanguage("plpgsql").
 //		SetSecurity("DEFINER").
 //		SetBody("BEGIN PERFORM set_config('app.current_tenant_id', tenant_id_param, false); END;")
+//
+// SetKind marks this routine as a function or a procedure and returns the node
+// for chaining.
+func (n *CreateFunctionNode) SetKind(kind string) *CreateFunctionNode {
+	n.Kind = kind
+	return n
+}
+
+// IsProcedure reports whether this routine is a procedure.
+func (n *CreateFunctionNode) IsProcedure() bool {
+	return strings.EqualFold(strings.TrimSpace(n.Kind), "procedure")
+}
+
+// SetKind marks the dropped routine as a function or a procedure and returns
+// the node for chaining.
+func (n *DropFunctionNode) SetKind(kind string) *DropFunctionNode {
+	n.Kind = kind
+	return n
+}
+
+// IsProcedure reports whether the dropped routine is a procedure.
+func (n *DropFunctionNode) IsProcedure() bool {
+	return strings.EqualFold(strings.TrimSpace(n.Kind), "procedure")
+}
+
 func NewCreateFunction(name string) *CreateFunctionNode {
 	return &CreateFunctionNode{
 		Name:     name,
@@ -2264,6 +2296,10 @@ func (n *AlterTableEnableRLSNode) Accept(visitor Visitor) error {
 type DropFunctionNode struct {
 	// Name is the name of the function to drop
 	Name string
+	// Kind separates a function from a procedure. Empty means function.
+	// DROP PROCEDURE and DROP FUNCTION are different statements, and a server
+	// refuses the wrong one by name.
+	Kind string
 	// Parameters contains the function parameter definitions for function signature matching
 	// This is needed because PostgreSQL allows function overloading
 	Parameters string

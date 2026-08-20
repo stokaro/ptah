@@ -257,7 +257,7 @@ func functionOwnershipDB(c *qt.C) *dbtest.DB {
 		switch {
 		case strings.Contains(query, "FROM information_schema.PARAMETERS"):
 			return dbtest.QueryResult{
-				Columns: []string{"SPECIFIC_NAME", "PARAMETER_NAME", "DTD_IDENTIFIER"},
+				Columns: []string{"ROUTINE_TYPE", "SPECIFIC_NAME", "PARAMETER_NAME", "DTD_IDENTIFIER"},
 			}, nil
 		case strings.Contains(query, "FROM information_schema.ROUTINES"):
 			c.Assert(query, qt.Contains, "DEFINER")
@@ -266,11 +266,11 @@ func functionOwnershipDB(c *qt.C) *dbtest.DB {
 				Columns: []string{
 					"ROUTINE_NAME", "DTD_IDENTIFIER", "IS_DETERMINISTIC",
 					"SQL_DATA_ACCESS", "SECURITY_TYPE", "DEFINER", "CURRENT_USER()",
-					"ROUTINE_DEFINITION", "ROUTINE_COMMENT",
+					"ROUTINE_DEFINITION", "ROUTINE_COMMENT", "ROUTINE_TYPE",
 				},
 				Rows: [][]driver.Value{{
 					"f", "int", "YES", "NO SQL", "DEFINER", "owner_a@%",
-					"migrator_a@%", "RETURN 1", "owned function",
+					"migrator_a@%", "RETURN 1", "owned function", "FUNCTION",
 				}},
 			}, nil
 		default:

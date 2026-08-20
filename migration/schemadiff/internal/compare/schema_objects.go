@@ -239,7 +239,7 @@ func FunctionsWithSemantics(
 		// semantics. The two sides then disagreed about the schema component of
 		// `Sales.Foo`, so an unchanged function was reported as both added and
 		// removed and the plan tried to create one that already existed.
-		identity := newQualifiedObjectIdentity(objectidentity.KindFunction,
+		identity := newQualifiedObjectIdentity(routineIdentityKind(function.Kind),
 			qualifiedRoutineIdentityKey(function.Name, dialect), semantics)
 		generatedFunctions[identity] = append(generatedFunctions[identity], function)
 		generatedNames[identity] = function.Name
@@ -247,7 +247,7 @@ func FunctionsWithSemantics(
 	databaseFunctions := make(map[objectIdentity][]types.DBFunction, len(database.Functions))
 	databaseNames := make(map[objectIdentity]string, len(database.Functions))
 	for _, function := range database.Functions {
-		identity := newObjectIdentity(objectidentity.KindFunction,
+		identity := newObjectIdentity(routineIdentityKind(function.Kind),
 			function.Schema, routineIdentityKey(function.Name, dialect), semantics)
 		databaseFunctions[identity] = append(databaseFunctions[identity], function)
 		databaseNames[identity] = function.QualifiedName()
@@ -269,15 +269,83 @@ func FunctionsWithSemantics(
 	for identity, recorded := range databaseFunctions {
 		_, _, removedCount := pairRoutineOverloads(generatedFunctions[identity], recorded)
 		for range removedCount {
+			// The kind travels with the removal because it cannot be recovered
+			// later: there is no declaration left to read it off, and the DROP
+			// verb has to match the object (stokaro/ptah#1722).
+			if identity.Kind() == objectidentity.KindProcedure {
+				diff.ProceduresRemoved = append(diff.ProceduresRemoved, databaseNames[identity])
+				continue
+			}
 			diff.FunctionsRemoved = append(diff.FunctionsRemoved, databaseNames[identity])
 		}
 	}
 
 	sort.Strings(diff.FunctionsAdded)
 	sort.Strings(diff.FunctionsRemoved)
+	sort.Strings(diff.ProceduresRemoved)
 	sort.Slice(diff.FunctionsModified, func(i, j int) bool {
 		return diff.FunctionsModified[i].FunctionName < diff.FunctionsModified[j].FunctionName
 	})
+}
+
+// foldDefaultArgumentMode removes an explicit leading IN from each argument.
+//
+// Only IN: it is the default the grammar supplies when no mode is written, so
+// dropping it compares two spellings of one argument. OUT, INOUT and VARIADIC
+// change what the argument is and are left alone (stokaro/ptah#1722).
+func foldDefaultArgumentMode(parameters string) string {
+	if parameters == "" {
+		return parameters
+	}
+	arguments := splitTopLevelArguments(parameters)
+	for i, argument := range arguments {
+		trimmed := strings.TrimSpace(argument)
+		rest, found := strings.CutPrefix(trimmed, "in ")
+		if !found {
+			rest, found = strings.CutPrefix(trimmed, "IN ")
+		}
+		if found {
+			trimmed = strings.TrimSpace(rest)
+		}
+		arguments[i] = trimmed
+	}
+	return strings.Join(arguments, ", ")
+}
+
+// splitTopLevelArguments splits an argument list on the commas that separate
+// arguments, leaving the ones inside a type's own parentheses alone --
+// `numeric(10, 2)` is one argument, not two.
+func splitTopLevelArguments(parameters string) []string {
+	var arguments []string
+	depth, start := 0, 0
+	for i, r := range parameters {
+		switch r {
+		case '(', '[':
+			depth++
+		case ')', ']':
+			depth--
+		case ',':
+			if depth == 0 {
+				arguments = append(arguments, parameters[start:i])
+				start = i + 1
+			}
+		}
+	}
+	return append(arguments, parameters[start:])
+}
+
+// routineIdentityKind separates a procedure from a function of the same name.
+//
+// Both engines that model procedures let one schema hold both -- MySQL keys
+// information_schema.PARAMETERS by SPECIFIC_NAME for exactly that reason -- so
+// folding them onto one identity would pair a declared function against a
+// stored procedure and report the difference between two different objects as a
+// change to one (stokaro/ptah#1722).
+func routineIdentityKind(kind string) objectidentity.Kind {
+	if strings.EqualFold(strings.TrimSpace(kind), "procedure") {
+		return objectidentity.KindProcedure
+	}
+	return objectidentity.KindFunction
 }
 
 // findDatabaseFunction resolves one generated function name against the read.
@@ -774,6 +842,21 @@ func FunctionDefinitionsWithDialect(
 		dbFunction.Returns = mysqlroutine.NormalizeType(dbFunction.Returns)
 		dbFunction.Parameters = mysqlroutine.NormalizeParameterList(dbFunction.Parameters)
 	}
+
+	// The argument mode is folded on both sides, and only here. IN is the
+	// default, so `n integer` and `IN n integer` are the same argument -- but
+	// PostgreSQL prints the mode for a procedure's arguments and omits it for a
+	// function's, measured on 18.4:
+	//
+	//	pg_get_function_arguments(procedure) -> IN n integer
+	//	pg_get_function_arguments(function)  -> n integer
+	//
+	// so a declaration written the ordinary way never converged against a
+	// procedure. The fold stays in the comparison: rendering the folded form
+	// would write Ptah's normalization into the operator's DDL, and OUT,
+	// INOUT and VARIADIC are not defaults and are left exactly as written.
+	genFunction.Parameters = foldDefaultArgumentMode(genFunction.Parameters)
+	dbFunction.Parameters = foldDefaultArgumentMode(dbFunction.Parameters)
 
 	// Compare parameters
 	if genFunction.Parameters != dbFunction.Parameters {
