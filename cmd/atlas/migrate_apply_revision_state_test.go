@@ -51,7 +51,7 @@ func TestMigrateApplyTxModeAllChecksHonorDryRun(t *testing.T) {
 		{
 			name:    "real apply refuses the checked directory",
 			args:    nil,
-			wantErr: `error applying migrations: migration 2 declares pre-migration checks, which cannot run with tx-mode all; use the default per-file transaction mode`,
+			wantErr: `error applying migrations: migration 2 declares pre-migration checks, which cannot run with tx-mode all: .*`,
 		},
 		{
 			// The dry run refuses too, and it has to. The verdict is decidable
@@ -62,7 +62,7 @@ func TestMigrateApplyTxModeAllChecksHonorDryRun(t *testing.T) {
 			// that cannot succeed, which is worse than not previewing at all.
 			name:    "dry run refuses it the same way",
 			args:    []string{"--dry-run"},
-			wantErr: `error applying migrations: migration 2 declares pre-migration checks, which cannot run with tx-mode all; use the default per-file transaction mode`,
+			wantErr: `error applying migrations: migration 2 declares pre-migration checks, which cannot run with tx-mode all: .*`,
 		},
 	}
 

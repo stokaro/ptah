@@ -351,6 +351,29 @@ const (
 	// part of the capability rather than a gap in it.
 	RowLevelTTL Capability = "row_level_ttl"
 
+	// MigrationTimeouts marks that Ptah can bound a migration with a lock and a
+	// statement timeout on this target.
+	//
+	// It names a runtime policy rather than an object: the migrator wraps a
+	// migration in the server's own timeout settings and restores them
+	// afterwards. Before this key the decision was a switch over three dialect
+	// names, so CockroachDB and YugabyteDB answered "migration timeouts are not
+	// supported" while both accept `SET LOCAL statement_timeout` and
+	// `SET LOCAL lock_timeout` -- measured on CockroachDB v25.4.0 and
+	// YugabyteDB 2026.1. A timeout is the safety belt on a migration that takes
+	// a lock, and those are the two deployments where a long lock hurts most
+	// (stokaro/ptah#1713).
+	MigrationTimeouts Capability = "migration_timeouts"
+
+	// TransactionalDDL marks that this target runs schema changes inside a
+	// transaction that rolls back as a unit, which is what `--tx-mode all`
+	// asks for.
+	//
+	// MySQL, MariaDB and ClickHouse commit DDL implicitly, so a failed
+	// migration leaves whatever ran before it; that is the engine rather than
+	// Ptah, and the refusal says so (stokaro/ptah#1713).
+	TransactionalDDL Capability = "transactional_ddl"
+
 	// CheckGrantStatement marks a server that answers a direct question about
 	// whether the CONNECTED account holds a privilege, rather than leaving the
 	// caller to infer it from a failure.
@@ -609,6 +632,12 @@ var registry = map[Capability]spec{
 	AdvisoryLocks: {
 		doc: "PostgreSQL advisory lock functions",
 	},
+	MigrationTimeouts: {
+		doc: "a migration can be bounded by a lock timeout and a statement timeout the migrator sets and restores",
+	},
+	TransactionalDDL: {
+		doc: "schema changes run inside a transaction that rolls back as a unit, which is what --tx-mode all needs",
+	},
 	RowLevelTTL: {
 		doc: "table storage parameters declaring a row-expiry policy (CockroachDB row-level TTL)",
 	},
@@ -817,6 +846,8 @@ func MySQL84() Capabilities {
 		XMLType:                            false,
 		AdvisoryLocks:                      false,
 		RowLevelTTL:                        false,
+		MigrationTimeouts:                  true,
+		TransactionalDDL:                   false,
 		CheckGrantStatement:                false,
 		CatalogViewDependencies:            true,
 		ShowRoutinePrivilege:               true,
@@ -938,6 +969,8 @@ func MariaDB1011() Capabilities {
 		XMLType:                         false,
 		AdvisoryLocks:                   false,
 		RowLevelTTL:                     false,
+		MigrationTimeouts:               true,
+		TransactionalDDL:                false,
 		CheckGrantStatement:             false,
 		CatalogViewDependencies:         false,
 		ShowRoutinePrivilege:            false,
@@ -1004,6 +1037,8 @@ func Postgres16() Capabilities {
 		XMLType:                            true,
 		AdvisoryLocks:                      true,
 		RowLevelTTL:                        false,
+		MigrationTimeouts:                  true,
+		TransactionalDDL:                   true,
 		CheckGrantStatement:                false,
 		CatalogViewDependencies:            true,
 		ShowRoutinePrivilege:               false,
@@ -1152,6 +1187,8 @@ func ClickHouse24() Capabilities {
 		// pg_class.reloptions; `WITH (ttl_expiration_expression = ...)` is a
 		// syntax error here. Measured both ways on 26.7.3.19.
 		RowLevelTTL:                     false,
+		MigrationTimeouts:               false,
+		TransactionalDDL:                false,
 		CheckGrantStatement:             false,
 		CatalogViewDependencies:         false,
 		ShowRoutinePrivilege:            false,
@@ -1219,6 +1256,8 @@ func SQLite3() Capabilities {
 		XMLType:                            false,
 		AdvisoryLocks:                      false,
 		RowLevelTTL:                        false,
+		MigrationTimeouts:                  false,
+		TransactionalDDL:                   true,
 		CheckGrantStatement:                false,
 		CatalogViewDependencies:            false,
 		ShowRoutinePrivilege:               false,
@@ -1350,6 +1389,8 @@ func SQLServer2022() Capabilities {
 		XMLType:                         true,
 		AdvisoryLocks:                   false,
 		RowLevelTTL:                     false,
+		MigrationTimeouts:               false,
+		TransactionalDDL:                false,
 		CheckGrantStatement:             false,
 		CatalogViewDependencies:         true,
 		ShowRoutinePrivilege:            false,
@@ -1552,6 +1593,12 @@ func SpannerPostgres() Capabilities {
 		With(DropIndexConcurrently, false).
 		With(IndexIncludeSPGiST, false).
 		With(MaterializedViews, false).
+		// Neither runtime policy is measured on this endpoint, and the
+		// migrator excluded it from both before there were keys to say so.
+		// The key describes what Ptah supports on a target rather than what
+		// the wire protocol suggests (stokaro/ptah#1713).
+		With(MigrationTimeouts, false).
+		With(TransactionalDDL, false).
 		With(Functions, false).
 		With(Triggers, false).
 		With(CreateOrReplaceTrigger, false).
