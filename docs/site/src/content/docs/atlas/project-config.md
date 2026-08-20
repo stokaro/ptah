@@ -284,6 +284,47 @@ external schema program. `env://url` and `env://dev` resolve the corresponding
 database URL; `env://migration.dir` resolves the configured local migration
 directory. Nested `env://` references fail explicitly.
 
+## Functions
+
+`atlas.hcl` is evaluated against the same function set as an HCL schema file —
+`join`, `upper`, `replace`, `substr`, `sort`, `format`, `jsonencode`, `try`,
+`can` and the rest. An expression that works in a schema file works here:
+
+```hcl
+variable "schemas" {
+  type    = list(string)
+  default = ["public", "app"]
+}
+
+env "local" {
+  url     = getenv("DATABASE_URL")
+  exclude = [join(",", var.schemas)]
+}
+```
+
+Three functions mean something different here than in a schema file, because
+their answer depends on where the file being evaluated lives: `file` and
+`fileset` read the directory holding `atlas.hcl`, and `getenv` reads the
+process environment. Everything else is shared.
+
+`print` is not available here, unlike in a schema file. It returns its argument
+and writes the value to stdout, and `atlas.hcl` is the one place a
+`sensitive = true` variable exists — so `print(var.token)` would put a
+credential in the command's output and in CI logs.
+
+A `sensitive = true` variable is protected on both error paths, and the two
+differ on purpose:
+
+- an expression that **fails to evaluate** has its diagnostic withheld
+  entirely, whatever functions the value passed through;
+- a value that evaluates and then **fails a rule** is scrubbed when the
+  expression names the variable directly, so the reason survives
+  (`unsupported URL scheme: (sensitive value)`), and withheld when the value
+  was derived — `upper(var.token)` puts bytes in the message that replacing the
+  original value cannot find.
+
+A non-sensitive expression keeps its full diagnostic either way.
+
 ## Reading files with file() and fileset()
 
 `file("path")` inlines a file's contents into a config value, and
