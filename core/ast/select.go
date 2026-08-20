@@ -140,9 +140,28 @@ func (*Comparison) expressionNode() {}
 type InExpr struct {
 	// Operand is the expression tested for membership, typically a ColumnRef.
 	Operand Expression
-	// Values are the candidate values, each bound as a placeholder.
+	// Values are the candidate values, each bound as a placeholder. Exactly one
+	// of Values and Subquery must be set.
 	Values []Expression
+	// Subquery, when set, replaces Values and renders as
+	// "Operand IN (SELECT …)". The two are mutually exclusive rather than
+	// combined: a caller who set both would be describing two different
+	// membership tests, and picking one silently would answer a question that
+	// was never asked.
+	Subquery *SelectStatement
 }
+
+// ExistsExpr is a row-existence test of the form "EXISTS (SELECT …)" or, when
+// Negated, "NOT EXISTS (SELECT …)".
+//
+// The subquery's projection is irrelevant to the test but is still rendered as
+// written; EXISTS stops at the first row either way.
+type ExistsExpr struct {
+	Query   *SelectStatement
+	Negated bool
+}
+
+func (*ExistsExpr) expressionNode() {}
 
 func (*InExpr) expressionNode() {}
 
