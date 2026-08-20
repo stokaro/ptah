@@ -40,7 +40,7 @@ type PlanLintOptions struct {
 // The statements are linted as a migration file in a scratch directory because
 // the engine reads a filesystem. Nothing is left behind.
 func LintPlan(statements []string, opts PlanLintOptions) ([]lint.Finding, error) {
-	enabled := lintPlanEnabledCodes(opts.RuleConfigs)
+	enabled := lintPlanEnabledCodes(opts.RuleConfigs, opts.Dialect)
 	if len(enabled) == 0 {
 		return nil, nil
 	}
@@ -73,14 +73,18 @@ func LintPlan(statements []string, opts PlanLintOptions) ([]lint.Finding, error)
 
 // lintPlanEnabledCodes returns the non-empty rule code selectors the policy
 // declares.
-func lintPlanEnabledCodes(configs map[string]lint.RuleConfig) []string {
+func lintPlanEnabledCodes(configs map[string]lint.RuleConfig, dialect string) []string {
 	enabled := make([]string, 0, len(configs))
 	for code := range configs {
 		if strings.TrimSpace(code) != "" {
 			enabled = append(enabled, code)
 		}
 	}
-	return enabled
+	// A policy entry spelled the Atlas way selects the Ptah rule that reports
+	// it. Without this the raw selector matches no registered code, the rule
+	// lands in the DISABLED set below, and an error-rated policy silently never
+	// runs (stokaro/ptah#1631).
+	return lint.ExpandAtlasRuleSelectors(enabled, dialect)
 }
 
 // lintPlanDisabledCodes lists every registered rule that no enabled selector
