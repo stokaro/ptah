@@ -92,8 +92,8 @@ Across the 191 capabilities below:
 | --- | --- |
 | Ptah supports it fully | 154 |
 | Ptah supports it with a stated limitation | 19 |
-| Ptah does not implement it | 13 |
-| Ptah covers it in its own form, against a hosted service it cannot interoperate with | 5 |
+| Ptah does not implement it | 12 |
+| Ptah covers it in its own form, against a hosted service it cannot interoperate with | 6 |
 | Ptah and Atlas CE both support it | 55 |
 | Ptah implements it openly where Atlas gates it behind Pro or Cloud | 44 |
 | Ptah has it and neither Atlas edition does | 27 |
@@ -365,7 +365,7 @@ is genuinely absent and the difference column names the issue that owns it.
 
 | Capability | Ptah | CE | Pro | Difference |
 | --- | :-: | :-: | :-: | --- |
-| `atlas://` vendor protocol | ❌ | ❌ | ✅ | Rejected with a named error; every function behind it is available natively over `oci://`. Resolving the spelling against a configured OCI namespace is tracked by stokaro/ptah#1210. |
+| `atlas://` vendor protocol | 🔷 | ❌ | ✅ | Ptah addresses any OCI registry with `oci://` and its own push and pull verbs. The vendor spelling names a hosted account and is refused by name (stokaro/ptah#1210). |
 | `migrate push` and `schema push` | 🔷 | ❌ | ✅ | `ptah schema push` and `ptah migrations push` publish to any OCI registry. The Atlas verbs address the hosted registry an account owns; the compat stubs say so and exit 1. |
 | `schema plan --edit` and `--name-format` | ✅ | ❌ | ✅ | `--edit` preserves comments and re-derives dialect-aware severity; `--name-format` uses Atlas-shaped Base64 .FromHash/.ToHash values. |
 | `schema plan --format` and `--directive` | ❌ | ❌ | ✅ | Both fail loudly. `--format` ships on the eight compat verbs whose payload shape is settled; `schema plan` is the one where it is not. Tracked by stokaro/ptah#1700. |
