@@ -90,8 +90,8 @@ Across the 191 capabilities below:
 
 | Reading | Count |
 | --- | --- |
-| Ptah supports it fully | 144 |
-| Ptah supports it with a stated limitation | 29 |
+| Ptah supports it fully | 146 |
+| Ptah supports it with a stated limitation | 27 |
 | Ptah does not implement it | 13 |
 | Ptah covers it in its own form, against a hosted service it cannot interoperate with | 5 |
 | Ptah and Atlas CE both support it | 49 |
@@ -240,7 +240,7 @@ seven of them as open capabilities regardless.
 | Inline nolint suppression | ✅ | ✅ | ✅ | Every code the compat surface prints is silenced by that code; analyzer names work on both surfaces; a blank line detaches a directive. Unknown selectors accepted silently, matching CE. |
 | Native migration lint rule set | ✅ | 🟡 | ✅ | 42 codes across 9 families, gated by `--dialect`. Atlas lists destructive and backward-incompatible rules Open; concurrent-index rules Pro. |
 | Per-rule severity policy | ✅ | ❌ | 🟡 | Severity vocabulary is info\|warning\|error; only error gates. The community binary carries no severity attribute: it accepts one and ignores it, exactly as it treats an invented attribute. |
-| Pre-migration assertion checks | 🟡 | ❌ | ✅ | Scalar SELECTs in either direction; txtar checks.sql and checks/*.sql support all-of/oneof groups. Only on_fail=abort, and never under `--tx-mode all` (stokaro/ptah#1715). |
+| Pre-migration assertion checks | ✅ | ❌ | ✅ | Scalar SELECTs in either direction; txtar checks.sql and checks/*.sql support all-of/oneof groups. One failure mode, abort, and no checks under `--tx-mode all`. |
 | SARIF 2.1.0 lint report | ✅ | ❌ | ➖ | Native `--format` sarif emits SARIF 2.1.0 with ruleId, level and file:line; Atlas documents Go-template `--format` output for migrate lint. |
 | Standalone SQL file linting (`ptah sql lint`) | ✅ | ❌ | ❌ | Lints arbitrary SQL files or stdin against per-dialect capability presets (9 dialects incl. sqlserver), refined by a `--version` server string; text/json output, rule disable. Not. |
 | Statement safety classification report | ✅ | ➖ | ➖ | plan `--report` text\|html\|json and generate `--report` html\|json emit highest severity, a destructive flag, and per-statement assessments. |
@@ -288,7 +288,7 @@ seven of them as open capabilities regardless.
 | --- | :-: | :-: | :-: | --- |
 | Capability profile of a live target (`ptah db capabilities`) | ✅ | ❔ | ❌ | Reports the dialect, resolved preset and how it was reached, the support level and every capability key for a connected server, as text or stable JSON. No source here names an Atlas equivalent. |
 | ClickHouse (clickhouse, ch) | 🟡 | ❌ | ✅ | Tables, indexes, plain views, roles, grants, row policies and named table CHECKs. Every other object kind is named on render and on the plan path alike (stokaro/ptah#1722 covers procedures). |
-| CockroachDB (cockroachdb, crdb) | 🟡 | ❌ | ✅ | `CONCURRENTLY`, XML, advisory locks and DEFERRABLE are engine limits; 25.4 also refuses generic DROP CONSTRAINT, and 26.2 accepts it. Row-level TTL is managed here, except for stokaro/ptah#1721. |
+| CockroachDB (cockroachdb, crdb) | ✅ | ❌ | ✅ | `CONCURRENTLY`, XML, advisory locks and DEFERRABLE are engine limits; 25.4 also refuses generic DROP CONSTRAINT, and 26.2 accepts it. Row-level TTL is fully managed. |
 | Declared support level per database release line | ✅ | ❔ | ❔ | 26 declared release lines: 19 certified, 2 legacy-tested, 5 best-effort. Upstream end-of-life lowers the level, not the behavior; a line Ptah does not declare resolves to best-effort. |
 | Domains, composite types, and range types | ✅ | ❌ | ✅ | Domains and composites compare and change in place, each kind gated per target. Range types rebuild because PostgreSQL offers no ALTER TYPE ... AS RANGE. |
 | Enum types | 🟡 | ✅ | ✅ | An enum is whatever the schema declares as one. PostgreSQL alters values in place; MySQL, MariaDB, SQLite and SQL Server have their enum catalogs erased before comparison (stokaro/ptah#1716). |
