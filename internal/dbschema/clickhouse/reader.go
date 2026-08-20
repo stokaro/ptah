@@ -7,6 +7,7 @@ import (
 	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/chrefresh"
 	"go.5x5.cz/ptah/internal/sqlrunner"
 )
 
@@ -340,8 +341,12 @@ func (r *Reader) readViews(dbName string) ([]types.DBView, error) {
 // outright would take away a read that works today. Neither is decided here --
 // the support matrix says plainly not to manage a `TO` view with Ptah.
 func (r *Reader) readMaterializedViews(dbName string) ([]types.DBMatView, error) {
+	refreshable, err := r.readRefreshableViews(dbName)
+	if err != nil {
+		return nil, err
+	}
 	rows, err := r.db.Query(`
-		SELECT name, as_select, comment
+		SELECT name, as_select, comment, create_table_query
 		FROM system.tables
 		WHERE database = ?
 		  AND is_temporary = 0
@@ -356,8 +361,18 @@ func (r *Reader) readMaterializedViews(dbName string) ([]types.DBMatView, error)
 	var views []types.DBMatView
 	for rows.Next() {
 		view := types.DBMatView{Schema: dbName}
-		if err := rows.Scan(&view.Name, &view.Body, &view.Comment); err != nil {
+		var createQuery string
+		if err := rows.Scan(&view.Name, &view.Body, &view.Comment, &createQuery); err != nil {
 			return nil, err
+		}
+		// The schedule is read only for a view the server itself calls
+		// refreshable. Reading the statement alone would be enough in practice,
+		// but the two answers together are what makes a wrong one loud: a plain
+		// view whose BODY happens to contain the word cannot acquire a
+		// schedule, and a refreshable view whose clause this reader cannot
+		// parse is left without one rather than with half of one.
+		if refreshable[view.Name] {
+			view.Refresh = chrefresh.ParseCreateQuery(createQuery)
 		}
 		views = append(views, view)
 	}
@@ -548,4 +563,41 @@ func normalizeKeyExpression(expression string) string {
 	trimmed = strings.TrimPrefix(trimmed, "(")
 	trimmed = strings.TrimSuffix(trimmed, ")")
 	return strings.Join(strings.Fields(strings.ReplaceAll(trimmed, ",", " ")), ",")
+}
+
+// readRefreshableViews returns the names of the materialized views the server
+// schedules, which is how a refreshable one is told apart from a plain one.
+//
+// system.view_refreshes lists refreshable views and only those -- measured on
+// 26.7.3.19, a plain materialized view is absent from it. It carries the
+// refresh STATE rather than the rules, so it answers "is this scheduled" and
+// not "scheduled how"; the schedule itself comes from create_table_query
+// (stokaro/ptah#1802).
+//
+// A server that does not have the table at all is answered with an empty set
+// rather than an error: the read then reports every view as plain, which is
+// what this reader did before refreshable views were modeled.
+func (r *Reader) readRefreshableViews(dbName string) (map[string]bool, error) {
+	rows, err := r.db.Query(`
+		SELECT view
+		FROM system.view_refreshes
+		WHERE database = ?
+	`, dbName)
+	if err != nil {
+		return make(map[string]bool), nil //nolint:nilerr // an absent table means no refreshable views
+	}
+	defer rows.Close()
+
+	refreshable := make(map[string]bool)
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		refreshable[name] = true
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return refreshable, nil
 }

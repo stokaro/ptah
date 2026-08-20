@@ -723,6 +723,8 @@ type AddEnumValueOperation struct{ ... }
     func NewAddEnumValueOperation(value string) *AddEnumValueOperation
 type AddSkippingIndexOperation struct{ ... }
 type AlterGeneratedColumnExpressionOperation struct{ ... }
+type AlterMaterializedViewRefreshNode struct{ ... }
+    func NewAlterMaterializedViewRefresh(name string, refresh *MatViewRefreshSpec) *AlterMaterializedViewRefreshNode
 type AlterOperation interface{ ... }
 type AlterRoleNode struct{ ... }
     func NewAlterRole(name string) *AlterRoleNode
@@ -847,6 +849,7 @@ type JoinType int
 type LogicalExpr struct{ ... }
 type LogicalOperator int
     const LogicalAnd LogicalOperator = iota ...
+type MatViewRefreshSpec struct{ ... }
 type ModifyColumnOperation struct{ ... }
 type ModifyTTLOperation struct{ ... }
 type MySQLRoutineBody struct{ ... }
@@ -1028,6 +1031,34 @@ type AlterGeneratedColumnExpressionOperation struct {
     existing generated column without dropping the column and its dependents.
 
 func (op *AlterGeneratedColumnExpressionOperation) Accept(_visitor Visitor) error
+
+### go.5x5.cz/ptah/core/ast.AlterMaterializedViewRefreshNode
+
+package ast // import "go.5x5.cz/ptah/core/ast"
+
+type AlterMaterializedViewRefreshNode struct {
+    // Name is the materialized view whose schedule changes.
+    Name string
+    // Refresh is the schedule to set. It is never nil: removing a schedule is
+    // not something this statement can do.
+    Refresh *MatViewRefreshSpec
+}
+    AlterMaterializedViewRefreshNode changes a ClickHouse materialized view's
+    refresh schedule in place.
+
+    It exists because the alternative keeps no data. A changed schedule is
+    otherwise a drop and a create, and the drop takes the inner storage table
+    with every row the view accumulated; `ALTER TABLE <view> MODIFY REFRESH ...`
+    changes the schedule and keeps them.
+
+    It applies only to a view that already HAS a schedule. Measured on
+    26.7.3.19, the same statement against a plain materialized view is answered
+    `Code: 48 ... Alter of type 'MODIFY_REFRESH' is not supported by storage
+    MaterializedView`, so gaining a first schedule or losing the last one is
+    still a drop and a create (stokaro/ptah#1802).
+
+func NewAlterMaterializedViewRefresh(name string, refresh *MatViewRefreshSpec) *AlterMaterializedViewRefreshNode
+func (n *AlterMaterializedViewRefreshNode) Accept(visitor Visitor) error
 
 ### go.5x5.cz/ptah/core/ast.AlterOperation
 
@@ -1603,6 +1634,9 @@ type CreateMaterializedViewNode struct {
     Name    string
     Body    string
     Comment string
+    // Refresh is the ClickHouse refresh schedule, nil for a view that declares
+    // none; see [MatViewRefreshSpec].
+    Refresh *MatViewRefreshSpec
 }
     CreateMaterializedViewNode represents a CREATE MATERIALIZED VIEW statement.
     A materialized view node carries no refresh strategy: refreshing is an
@@ -2880,6 +2914,50 @@ type LogicalOperator int
 const LogicalAnd LogicalOperator = iota ...
 func (op LogicalOperator) String() string
 
+### go.5x5.cz/ptah/core/ast.MatViewRefreshSpec
+
+package ast // import "go.5x5.cz/ptah/core/ast"
+
+type MatViewRefreshSpec struct {
+    // Mode is EVERY, which refreshes on a wall-clock schedule, or AFTER, which
+    // refreshes that long after the previous run finished.
+    Mode string
+    // Interval is the schedule, in the server's spelling: `1 HOUR`,
+    // `1 MINUTE 30 SECOND`, `1 YEAR 6 MONTH`.
+    Interval string
+    // Offset shifts an EVERY schedule within its period. It is empty for AFTER,
+    // which the server refuses to combine with one.
+    Offset string
+    // Randomize spreads the refresh over a window, the RANDOMIZE FOR clause.
+    Randomize string
+    // DependsOn names the views this one refreshes after, schema-qualified the
+    // way the server stores them.
+    DependsOn []string
+    // Append adds each refresh's rows instead of replacing the previous ones.
+    Append bool
+}
+    MatViewRefreshSpec is a ClickHouse materialized-view refresh schedule.
+
+    It is nil for a view that declares none, which is every materialized view
+    on every other dialect and the ordinary ClickHouse one: a plain ClickHouse
+    materialized view is maintained by inserts into its source and has no
+    schedule to carry.
+
+    It carries the engine's own vocabulary rather than a cross-dialect
+    abstraction, and that distinction is the point. A shared `refresh_strategy`
+    lived on this node once and was removed (stokaro/ptah#1625), because it
+    described an operation no catalog records and no dialect could read back.
+    This one is the opposite on every count: ClickHouse owns the schedule,
+    stores it, reports it, and alters it, so it is schema state -- of one
+    engine, named after that engine's feature, and absent everywhere else
+    (stokaro/ptah#1802).
+
+    The values are the ones the server stores, not the ones an operator wrote:
+    see go.5x5.cz/ptah/internal/chrefresh, which is where a declaration is
+    normalized before it reaches here.
+
+func (s *MatViewRefreshSpec) Clone() *MatViewRefreshSpec
+
 ### go.5x5.cz/ptah/core/ast.ModifyColumnOperation
 
 package ast // import "go.5x5.cz/ptah/core/ast"
@@ -3955,6 +4033,9 @@ type Visitor interface {
     VisitCreateMaterializedView(*CreateMaterializedViewNode) error
     // VisitDropMaterializedView renders a DROP MATERIALIZED VIEW statement
     VisitDropMaterializedView(*DropMaterializedViewNode) error
+    // VisitAlterMaterializedViewRefresh renders an in-place change to a
+    // materialized view's refresh schedule
+    VisitAlterMaterializedViewRefresh(*AlterMaterializedViewRefreshNode) error
     // VisitRefreshMaterializedView renders a REFRESH MATERIALIZED VIEW statement
     VisitRefreshMaterializedView(*RefreshMaterializedViewNode) error
     // VisitCreateTrigger renders a CREATE TRIGGER statement
@@ -4940,6 +5021,16 @@ type MaterializedView struct {
     Name       string // Materialized view name
     Body       string // SELECT query used as the materialized view body
     Comment    string // Optional comment for documentation
+
+    // Refresh is the ClickHouse refresh schedule this view declares, nil for
+    // one declaring none -- which is every materialized view on every other
+    // dialect, and the ordinary ClickHouse one.
+    //
+    // It carries the ast type rather than a copy of it, for the reason
+    // [Table.RowTTL] carries its own: the clauses are a closed, measured set,
+    // and a per-layer duplicate is a place for one of them to go missing
+    // between the declaration and the statement (stokaro/ptah#1802).
+    Refresh *ast.MatViewRefreshSpec
 
     // Dialects scopes this declaration to the named target dialects. See
     // [ScopeToDialect].
@@ -6960,6 +7051,14 @@ type DBMatView struct {
     Schema  string `json:"schema"`  // Schema where the materialized view is defined
     Body    string `json:"body"`    // SELECT query used as the materialized view definition
     Comment string `json:"comment"` // Materialized view comment/description
+
+    // Refresh is the ClickHouse refresh schedule read back from the server,
+    // nil for a view that has none.
+    //
+    // It is read from create_table_query, which is the only place the schedule
+    // survives: system.tables.as_select is byte-identical for a plain view and
+    // a refreshable one (stokaro/ptah#1802).
+    Refresh *ast.MatViewRefreshSpec
 }
     DBMatView represents a PostgreSQL materialized view read from the database.
 
@@ -9985,6 +10084,7 @@ type ForeignKeyRemovalInfo struct{ ... }
 type FunctionDiff struct{ ... }
 type GrantRef struct{ ... }
 type IndexRef struct{ ... }
+type MatViewRefreshChange struct{ ... }
 type MaterializedViewDiff struct{ ... }
 type RLSPolicyDiff struct{ ... }
 type RLSPolicyRef struct{ ... }
@@ -10391,6 +10491,23 @@ type IndexRef struct {
     names are scoped to a table rather than the database.
 
 
+### go.5x5.cz/ptah/migration/schemadiff/types.MatViewRefreshChange
+
+package types // import "go.5x5.cz/ptah/migration/schemadiff/types"
+
+type MatViewRefreshChange struct {
+    // Desired is the schedule the declaration asks for, nil to remove it.
+    Desired *ast.MatViewRefreshSpec `json:"desired,omitzero"`
+    // Current is the schedule the target carries, nil when it has none.
+    Current *ast.MatViewRefreshSpec `json:"current,omitzero"`
+}
+    MatViewRefreshChange is one materialized view's refresh-schedule transition.
+
+    Either side may be nil: a nil Current is a schedule being added, a nil
+    Desired is one being removed, and both non-nil is a change of schedule.
+    Both nil never reaches here, because that is not a change.
+
+
 ### go.5x5.cz/ptah/migration/schemadiff/types.MaterializedViewDiff
 
 package types // import "go.5x5.cz/ptah/migration/schemadiff/types"
@@ -10398,6 +10515,18 @@ package types // import "go.5x5.cz/ptah/migration/schemadiff/types"
 type MaterializedViewDiff struct {
     ViewName string            `json:"view_name"`
     Changes  map[string]string `json:"changes"`
+
+    // RefreshChange carries a ClickHouse refresh-schedule transition, and is
+    // nil when the schedule is unchanged.
+    //
+    // It is a pair rather than a text entry in Changes because the planner
+    // needs BOTH sides to choose a statement: a schedule changing to another
+    // schedule is an ALTER that keeps the view's rows, while a view gaining or
+    // losing one has to be dropped and recreated -- measured, the server
+    // answers MODIFY REFRESH on a plain view with `Alter of type
+    // 'MODIFY_REFRESH' is not supported by storage MaterializedView`
+    // (stokaro/ptah#1802).
+    RefreshChange *MatViewRefreshChange `json:"refresh_change,omitzero"`
 }
     MaterializedViewDiff represents changes to a materialized view definition.
 

@@ -250,6 +250,12 @@ func reportViewLikes(
 		nodes[identityOf(object)] = node
 	}
 	for _, view := range diff.MaterializedViewsModified {
+		// A schedule change on its own is an ALTER that keeps the view's rows.
+		// Everything else is a drop and a create, which does not.
+		if alter := clickHouseRefreshAlter(view); alter != nil {
+			result = append(result, alter)
+			continue
+		}
 		object, node, err := clickHouseMaterializedViewChange(
 			generated,
 			view.ViewName,
@@ -413,4 +419,31 @@ func reportTriggers(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
 		result = append(result, ast.NewDropTrigger(trigger.TriggerName, trigger.TableName))
 	}
 	return result
+}
+
+// clickHouseRefreshAlter returns the ALTER that changes a materialized view's
+// refresh schedule in place, or nil when this change cannot be made that way.
+//
+// The distinction is measured, not assumed. `ALTER TABLE <view> MODIFY REFRESH
+// ...` changes the schedule of an already-refreshable view and keeps every row
+// it accumulated; the same statement against a PLAIN materialized view is
+// answered `Code: 48 ... Alter of type 'MODIFY_REFRESH' is not supported by
+// storage MaterializedView`. So a view gaining its first schedule, or losing
+// its last, has to be dropped and recreated -- and the drop takes the rows,
+// which is why the in-place path is worth having at all (stokaro/ptah#1802).
+//
+// A change that also touches the body falls through for the same reason: the
+// body is what a drop and a create exist to replace.
+func clickHouseRefreshAlter(view types.MaterializedViewDiff) ast.Node {
+	change := view.RefreshChange
+	if change == nil || change.Desired == nil || change.Current == nil {
+		return nil
+	}
+	if len(view.Changes) != 1 {
+		return nil
+	}
+	if _, only := view.Changes["refresh"]; !only {
+		return nil
+	}
+	return ast.NewAlterMaterializedViewRefresh(view.ViewName, change.Desired.Clone())
 }

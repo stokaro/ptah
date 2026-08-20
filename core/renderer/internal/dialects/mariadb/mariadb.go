@@ -234,6 +234,10 @@ func (r *Renderer) VisitDropMaterializedView(node *ast.DropMaterializedViewNode)
 	return r.r.VisitDropMaterializedView(node)
 }
 
+func (r *Renderer) VisitAlterMaterializedViewRefresh(node *ast.AlterMaterializedViewRefreshNode) error {
+	return r.r.VisitAlterMaterializedViewRefresh(node)
+}
+
 func (r *Renderer) VisitRefreshMaterializedView(node *ast.RefreshMaterializedViewNode) error {
 	return r.r.VisitRefreshMaterializedView(node)
 }

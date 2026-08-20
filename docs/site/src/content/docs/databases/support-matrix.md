@@ -270,7 +270,7 @@ REFRESH MATERIALIZED VIEW CONCURRENTLY analytics.user_counts;
 ClickHouse is a different matter and is covered in its own section: an ordinary
 materialized view there is maintained by inserts into its source, and the
 scheduled form the server does own, `REFRESH EVERY|AFTER`, is engine-native DDL
-tracked by [#1802](https://github.com/stokaro/ptah/issues/1802).
+and is managed — see the ClickHouse section below.
 
 ## MySQL and MariaDB
 
@@ -557,10 +557,30 @@ before adopting them:
 
 - A materialized view maintains itself from inserts into its source. Ptah
   declares no refresh strategy and emits no refresh: a declaration that carries
-  `refresh_strategy` is refused when it is parsed, on every dialect. ClickHouse
-  also has a scheduled form, `REFRESH EVERY|AFTER ...`, which the server owns
-  and records; modeling it is tracked in
-  [#1802](https://github.com/stokaro/ptah/issues/1802).
+  `refresh_strategy` is refused when it is parsed, on every dialect.
+
+- ClickHouse's own **scheduled** materialized views are managed. A declaration
+  carries the schedule as ClickHouse spells it, and Ptah renders it, reads it
+  back, and reconciles it:
+
+  ```go
+  //ptah:schema:matview name="user_stats" body="SELECT count() AS c FROM users" refresh="every 1 hour"
+  ```
+
+  The server rewrites what it stores — `EVERY 60 MINUTE` becomes `EVERY 1 HOUR`,
+  `AFTER 90 SECOND` becomes `AFTER 1 MINUTE 30 SECOND` — so a declaration is
+  normalized to the stored spelling before anything compares it. Any spelling of
+  the same schedule therefore converges instead of re-planning forever.
+
+  A changed schedule is applied with `ALTER TABLE <view> MODIFY REFRESH`, which
+  keeps the rows the view accumulated. A view gaining its first schedule or
+  losing its last is a drop and a create instead, because the server refuses
+  that transition in place: `Alter of type 'MODIFY_REFRESH' is not supported by
+  storage MaterializedView`. That drop empties the view.
+
+  `OFFSET`, `RANDOMIZE FOR`, `DEPENDS ON` and `APPEND` are carried too. `OFFSET`
+  belongs to `EVERY` alone, and an interval mixing calendar units with clock
+  ones is refused where it is declared, both matching the server.
 
 - The storage clause is written explicitly rather than left to the server.
   ClickHouse 25.x and later accept a materialized view with no storage clause
