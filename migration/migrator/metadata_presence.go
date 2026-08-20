@@ -637,6 +637,14 @@ func missingMetadataColumns(present map[string]struct{}, required []string) []st
 	return missing
 }
 
+// sqlServerTablePresenceQuery asks sys.tables whether one table exists.
+//
+// Beside clickHouseTablePresenceQuery, and for the same reason: see its comment.
+const sqlServerTablePresenceQuery = `SELECT COUNT(*)
+FROM sys.tables AS t
+JOIN sys.schemas AS s ON s.schema_id = t.schema_id
+WHERE s.name = ? AND t.name = ?`
+
 // clickHouseTablePresenceQuery asks system.tables whether one table exists.
 //
 // It is a constant rather than a literal inside the return, because a raw
@@ -686,13 +694,10 @@ WHERE table_schema = current_schema() AND table_name = ? AND table_type = 'BASE 
 			quoteIdentifier(schema),
 		), []any{table}, nil
 	case platform.SQLServer:
-		return `SELECT COUNT(*)
-FROM sys.tables AS t
-JOIN sys.schemas AS s ON s.schema_id = t.schema_id
-WHERE s.name = ? AND t.name = ?`, []any{
-				configuredOrConnectionSchema(configuredSchema, connectionSchema),
-				table,
-			}, nil
+		return sqlServerTablePresenceQuery, []any{
+			configuredOrConnectionSchema(configuredSchema, connectionSchema),
+			table,
+		}, nil
 	default:
 		return "", nil, fmt.Errorf("unsupported migration metadata dialect %q", dialect)
 	}
