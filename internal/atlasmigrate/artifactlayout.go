@@ -50,6 +50,11 @@ const (
 	// dbmateUpDirective and dbmateDownDirective are dbmate's equivalents.
 	dbmateUpDirective   = "-- migrate:up"
 	dbmateDownDirective = "-- migrate:down"
+	// dbmateNoTransactionOption is dbmate's own spelling for a migration half
+	// that must not be wrapped in a transaction. dbmate documents it as an
+	// option on the directive line, which is why this layout can express the
+	// requirement where golang-migrate cannot (stokaro/ptah#1630).
+	dbmateNoTransactionOption = " transaction:false"
 	// liquibaseHeader is the first line of a Liquibase formatted-SQL changelog.
 	liquibaseHeader = "--liquibase formatted sql"
 	// liquibaseChangesetAuthor is the author half of the `author:id` pair on
@@ -129,17 +134,35 @@ func composeMigrationArtifact(
 			content,
 		), nil
 	case atlasmigrateimport.FormatDBMate:
-		return directiveArtifact(
-			fmt.Sprintf("%d_%s.sql", version, slug),
-			dbmateUpDirective,
-			dbmateDownDirective,
-			content,
-		), nil
+		return dbmateArtifact(fmt.Sprintf("%d_%s.sql", version, slug), content), nil
 	case atlasmigrateimport.FormatLiquibase:
 		return composeLiquibaseArtifact(fmt.Sprintf("%d_%s.sql", version, slug), version, content), nil
 	default:
 		return nil, fmt.Errorf("unknown migration import format %q", format)
 	}
+}
+
+// dbmateArtifact composes the layout that marks each direction separately.
+//
+// dbmate keeps both directions in one file under a directive each and takes
+// `transaction:false` as an option on that line, so a forward requirement and a
+// rollback requirement are independent. Goose, below, has only a whole-file
+// directive and has to opt the entire file out when either half needs it.
+//
+// Measured against dbmate v2.35.0 on PostgreSQL 17: a migration carrying the
+// option applies a CREATE INDEX CONCURRENTLY that fails without it. Note the
+// statement still has to be the only one in its send, but that is PostgreSQL's
+// rule and not dbmate's -- a multi-statement send is an implicit transaction
+// block on every layout, the native one included (stokaro/ptah#1630).
+func dbmateArtifact(name string, content MigrationFileContent) []PublicationArtifact {
+	up, down := dbmateUpDirective, dbmateDownDirective
+	if content.NoTransaction {
+		up += dbmateNoTransactionOption
+	}
+	if content.ReverseNoTransaction {
+		down += dbmateNoTransactionOption
+	}
+	return directiveArtifact(name, up, down, content)
 }
 
 func gooseArtifact(name string, content MigrationFileContent) []PublicationArtifact {

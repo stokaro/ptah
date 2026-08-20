@@ -171,6 +171,63 @@ func TestComposeMigrationArtifacts_GooseRepresentsWholeFileNoTransaction(t *test
 	}
 }
 
+// TestComposeMigrationArtifacts_DBMateMarksEachDirectionIndependently pins the
+// half of stokaro/ptah#1630 dbmate can express and Goose cannot.
+//
+// dbmate keeps both directions in one file under a directive each and documents
+// `transaction:false` as an option on that line, so a forward requirement and a
+// rollback requirement are marked separately. Goose has only a whole-file
+// directive, which is why its rows above opt the entire file out when either
+// half needs it.
+func TestComposeMigrationArtifacts_DBMateMarksEachDirectionIndependently(t *testing.T) {
+	tests := []struct {
+		name                 string
+		noTransaction        bool
+		reverseNoTransaction bool
+		want                 string
+	}{{
+		name: "ordinary file carries no option on either directive",
+		want: "-- migrate:up\nCREATE TABLE widgets (id INTEGER);\n\n" +
+			"-- migrate:down\nDROP TABLE widgets;\n",
+	}, {
+		name:          "a forward requirement marks only the up directive",
+		noTransaction: true,
+		want: "-- migrate:up transaction:false\nCREATE TABLE widgets (id INTEGER);\n\n" +
+			"-- migrate:down\nDROP TABLE widgets;\n",
+	}, {
+		name:                 "a rollback requirement marks only the down directive",
+		reverseNoTransaction: true,
+		want: "-- migrate:up\nCREATE TABLE widgets (id INTEGER);\n\n" +
+			"-- migrate:down transaction:false\nDROP TABLE widgets;\n",
+	}, {
+		name:                 "both requirements mark both directives",
+		noTransaction:        true,
+		reverseNoTransaction: true,
+		want: "-- migrate:up transaction:false\nCREATE TABLE widgets (id INTEGER);\n\n" +
+			"-- migrate:down transaction:false\nDROP TABLE widgets;\n",
+	}}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			artifacts, err := composeMigrationArtifacts(
+				atlasmigrateimport.FormatDBMate,
+				"widgets",
+				20240102030405,
+				[]MigrationFileContent{{
+					SQL: "CREATE TABLE widgets (id INTEGER);", DownSQL: "DROP TABLE widgets;",
+					NoTransaction: test.noTransaction, ReverseNoTransaction: test.reverseNoTransaction,
+				}},
+			)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(artifacts, qt.HasLen, 1)
+			c.Assert(string(artifacts[0].Contents), qt.Equals, test.want)
+		})
+	}
+}
+
 // TestComposeMigrationArtifactsKeepsTheAtlasLayoutUnchanged is the control on
 // the whole file: the native layout's file name and bytes are what they were
 // before any of this existed.
