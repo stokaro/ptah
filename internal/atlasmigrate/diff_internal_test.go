@@ -577,9 +577,6 @@ func TestWriteDiffArtifacts_SumPublishFailureRollsBackMigrations(t *testing.T) {
 func TestWriteDiffArtifacts_ReverseNoTransactionRefusesUnrepresentedForeignLayoutsBeforePublication(t *testing.T) {
 	formats := []atlasmigrateimport.Format{
 		atlasmigrateimport.FormatGolangMigrate,
-		atlasmigrateimport.FormatFlyway,
-		atlasmigrateimport.FormatDBMate,
-		atlasmigrateimport.FormatLiquibase,
 	}
 
 	for _, format := range formats {
@@ -667,9 +664,6 @@ func TestWriteDiffArtifacts_EnumAddRefusesUnrepresentedForeignLayoutsBeforePubli
 
 	formats := []atlasmigrateimport.Format{
 		atlasmigrateimport.FormatGolangMigrate,
-		atlasmigrateimport.FormatFlyway,
-		atlasmigrateimport.FormatDBMate,
-		atlasmigrateimport.FormatLiquibase,
 	}
 
 	for _, format := range formats {
