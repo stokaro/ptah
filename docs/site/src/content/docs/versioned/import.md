@@ -102,6 +102,32 @@ This is native Ptah-format import, distinct from the Atlas-compatible
 `migrate import` verb of the `ptah-compat` binary, which writes an Atlas-format directory with
 `atlas.sum`.
 
+### A repeatable becomes a one-time migration
+
+Flyway's `R__name.sql` re-runs whenever its body changes. Import converts it to
+an ordinary one-time migration on a reserved slot ordered after every versioned
+file, because the destination format has no reapply semantics to convert it
+into.
+
+That changes what editing the file means. Ptah checksums every applied
+migration, so editing a converted repeatable and re-hashing the directory is
+refused on the next apply — before anything runs, and with nothing written:
+
+```text
+migration 9223372036854775807 checksum mismatch: stored …, current …:
+"view" was a Flyway repeatable, and importing it made it a one-time migration,
+so editing it is refused the way editing any applied migration is.
+Add a new versioned migration with the change, or re-import the source directory.
+```
+
+The two remedies the message names are the whole answer. Adding a versioned
+migration is the ordinary loop; re-importing is for a source directory that is
+still the source of truth. `ptah migrations repair` is not the route here — it
+edits recorded state, and nothing has gone wrong.
+
+The checksum itself is unchanged for every other migration: editing an applied
+versioned file is refused exactly as before.
+
 ## After the import
 
 The converted directory is ordinary Ptah history; what comes next depends on
