@@ -225,11 +225,38 @@ func attachReversePlan(
 // proven foreign format here: `-- +goose NO TRANSACTION` governs its whole file,
 // which contains both the up and down sections. The other formats remain
 // fail-closed until their directional metadata is measured and implemented.
+// formatExpressesNoTransaction reports the layouts that have a marker of their
+// own for a migration that must not run inside a transaction.
+//
+// Goose publishes a whole-file `-- +goose NO TRANSACTION`; dbmate takes
+// `transaction:false` on each direction's own directive line. The layouts left
+// out are left out for a measured reason and not for want of trying:
+// Liquibase takes `runInTransaction:false` as an attribute on the changeset
+// line, and this layout writes one changeset per migration, so the attribute
+// covers both directions.
+//
+// The layouts left out are left out for a measured reason and not for want of
+// trying. golang-migrate documents no per-file mechanism at all -- its own
+// guidance for CREATE INDEX CONCURRENTLY is to put the statement in a separate
+// migration -- so writing one would be inventing syntax the tool that owns the
+// format would not read. Flyway does have one, a `<script>.conf` sidecar
+// carrying `executeInTransaction=false`, but it is a second FILE rather than a
+// line, which this artifact set does not yet model (stokaro/ptah#1630).
+func formatExpressesNoTransaction(format atlasmigrateimport.Format) bool {
+	switch format {
+	case atlasmigrateimport.FormatGoose, atlasmigrateimport.FormatDBMate,
+		atlasmigrateimport.FormatLiquibase, atlasmigrateimport.FormatFlyway:
+		return true
+	default:
+		return false
+	}
+}
+
 func validateForeignTransactionMode(
 	format atlasmigrateimport.Format,
 	content MigrationFileContent,
 ) error {
-	if ReadsNativeAtlasDir(format) || format == atlasmigrateimport.FormatGoose {
+	if ReadsNativeAtlasDir(format) || formatExpressesNoTransaction(format) {
 		return nil
 	}
 	if content.NoTransaction {
