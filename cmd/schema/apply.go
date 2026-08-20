@@ -144,6 +144,10 @@ func runSchemaApply(cmd *cobra.Command, opts schemaApplyOptions) error {
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
+	schemaSourceEnv, err := dbcli.SchemaSourceProjectEnv(cmd, projectCfg)
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	opts.dbURL = dbcli.EffectiveString(
 		cmd,
 		applyDBURLFlag,
@@ -219,10 +223,12 @@ func runSchemaApply(cmd *cobra.Command, opts schemaApplyOptions) error {
 	var desired *goschema.Database
 	if len(opts.rootDirs) > 0 || len(opts.schemaFiles) > 0 {
 		desired, err = schemaload.LoadContext(cmd.Context(), schemaload.Options{
-			RootDirs:    opts.rootDirs,
-			SchemaFiles: opts.schemaFiles,
-			Dialect:     conn.Info().Dialect,
-			PlainHTTP:   opts.plainHTTP,
+			RootDirs:        opts.rootDirs,
+			SchemaFiles:     opts.schemaFiles,
+			ProjectEnv:      schemaSourceEnv,
+			EnvSelectorFlag: dbcli.SchemaSourceEnvSelectorFlag(cmd),
+			Dialect:         conn.Info().Dialect,
+			PlainHTTP:       opts.plainHTTP,
 		})
 		if err != nil {
 			return cmdutil.Fail(cmd, err)
