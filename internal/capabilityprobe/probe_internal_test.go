@@ -288,16 +288,14 @@ func TestDecidable_IsDerivedFromThePlanAndTheLine(t *testing.T) {
 		caps: capability.MySQL84(),
 		want: registered - 11,
 	}, {
-		name: "mariadb owes twelve fewer: sequences is a claim about the generator, not the engine, and the three user-type kinds have no MariaDB spelling",
-		name: "mariadb owes nine fewer: the three user-type kinds have no MariaDB spelling, and sequences is asked now that Ptah renders, reads and plans one",
+		name: "mariadb owes eleven fewer: the three user-type kinds have no MariaDB spelling, the two runtime policies are not statements, and sequences is asked now that Ptah renders, reads and plans one",
 		cell: Cell{
 			Dialect: platform.MariaDB, Line: "10.11",
 			Preset: capability.MariaDB1011, PresetName: "MariaDB1011",
 			Refinement: RefinedByVersion,
 		},
 		caps: capability.MariaDB1011(),
-		want: registered - 12,
-		want: registered - 9,
+		want: registered - 11,
 	}, {
 		name: "cockroachdb 26.2 owes every row its preset enables a prerequisite for, less the one the probe cannot ask",
 		cell: Cell{
