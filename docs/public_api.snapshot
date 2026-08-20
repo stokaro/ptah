@@ -839,6 +839,7 @@ type EnumNode struct{ ... }
     func NewEnum(name string, values ...string) *EnumNode
 type EnumTypeDef struct{ ... }
     func NewEnumTypeDef(values ...string) *EnumTypeDef
+type ExistsExpr struct{ ... }
 type Expression interface{ ... }
 type ExtensionAlteration string
     const ExtensionUnaltered ExtensionAlteration = "" ...
@@ -2573,6 +2574,21 @@ type EnumTypeDef struct {
 func NewEnumTypeDef(values ...string) *EnumTypeDef
 func (td *EnumTypeDef) Accept(visitor Visitor) error
 
+### go.5x5.cz/ptah/core/ast.ExistsExpr
+
+package ast // import "go.5x5.cz/ptah/core/ast"
+
+type ExistsExpr struct {
+    Query   *SelectStatement
+    Negated bool
+}
+    ExistsExpr is a row-existence test of the form "EXISTS (SELECT …)" or,
+    when Negated, "NOT EXISTS (SELECT …)".
+
+    The subquery's projection is irrelevant to the test but is still rendered as
+    written; EXISTS stops at the first row either way.
+
+
 ### go.5x5.cz/ptah/core/ast.Expression
 
 package ast // import "go.5x5.cz/ptah/core/ast"
@@ -2760,8 +2776,15 @@ package ast // import "go.5x5.cz/ptah/core/ast"
 type InExpr struct {
     // Operand is the expression tested for membership, typically a ColumnRef.
     Operand Expression
-    // Values are the candidate values, each bound as a placeholder.
+    // Values are the candidate values, each bound as a placeholder. Exactly one
+    // of Values and Subquery must be set.
     Values []Expression
+    // Subquery, when set, replaces Values and renders as
+    // "Operand IN (SELECT …)". The two are mutually exclusive rather than
+    // combined: a caller who set both would be describing two different
+    // membership tests, and picking one silently would answer a question that
+    // was never asked.
+    Subquery *SelectStatement
 }
     InExpr is a membership test of the form "Operand IN (Values...)".
 
@@ -6181,9 +6204,11 @@ func CountDistinct(column string) ast.Expression
 func CountStar() ast.Expression
 func Desc(column string) ast.OrderByClause
 func Eq(column string, value any) ast.Expression
+func Exists(sub *SelectBuilder) ast.Expression
 func Ge(column string, value any) ast.Expression
 func Gt(column string, value any) ast.Expression
 func In[T any](column string, values []T) ast.Expression
+func InQuery(column string, sub *SelectBuilder) ast.Expression
 func IsNotNull(column string) ast.Expression
 func IsNull(column string) ast.Expression
 func Le(column string, value any) ast.Expression
@@ -6193,6 +6218,7 @@ func Max(column string) ast.Expression
 func Min(column string) ast.Expression
 func Ne(column string, value any) ast.Expression
 func Not(expr ast.Expression) ast.Expression
+func NotExists(sub *SelectBuilder) ast.Expression
 func NotLike(column, pattern string) ast.Expression
 func Or(exprs ...ast.Expression) ast.Expression
 func Sum(column string) ast.Expression

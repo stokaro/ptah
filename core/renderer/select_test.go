@@ -374,7 +374,7 @@ func TestRenderSelect_Errors(t *testing.T) {
 			name:        "empty in list",
 			stmt:        &ast.SelectStatement{From: "t", Where: &ast.InExpr{Operand: &ast.ColumnRef{Name: "a"}}},
 			dialect:     platform.Postgres,
-			wantErrLike: "renderer: IN requires at least one value",
+			wantErrLike: "renderer: IN requires at least one value or a subquery",
 		},
 		{
 			name:        "empty column name",

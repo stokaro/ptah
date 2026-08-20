@@ -59,6 +59,34 @@ func (b *SelectBuilder) With(name string, query *SelectBuilder) *SelectBuilder {
 	return b
 }
 
+// InQuery builds "column IN (SELECT …)", reading the candidate values from a
+// query rather than from a value list.
+func InQuery(column string, sub *SelectBuilder) ast.Expression {
+	if sub == nil {
+		return nil
+	}
+	return &ast.InExpr{Operand: &ast.ColumnRef{Name: column}, Subquery: sub.Build()}
+}
+
+// Exists builds "EXISTS (SELECT …)".
+//
+// The subquery's projection does not affect the test; EXISTS stops at the first
+// row whatever it selects.
+func Exists(sub *SelectBuilder) ast.Expression {
+	if sub == nil {
+		return nil
+	}
+	return &ast.ExistsExpr{Query: sub.Build()}
+}
+
+// NotExists builds "NOT EXISTS (SELECT …)".
+func NotExists(sub *SelectBuilder) ast.Expression {
+	if sub == nil {
+		return nil
+	}
+	return &ast.ExistsExpr{Query: sub.Build(), Negated: true}
+}
+
 // From sets the source table for the query. It is required; rendering a
 // statement without a table returns an error. Calling From clears any alias set
 // by a previous FromAs.
