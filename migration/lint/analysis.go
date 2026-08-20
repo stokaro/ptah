@@ -347,7 +347,10 @@ func validateOptions(opts Options) (migrator.MigrationDirFormat, []Rule, error) 
 	if err := validateCompatibilityProfile(opts.Compatibility); err != nil {
 		return "", nil, err
 	}
-	rules := rulesForOptions(opts)
+	rules, err := rulesForOptions(opts)
+	if err != nil {
+		return "", nil, err
+	}
 	if err := validateRules(rules); err != nil {
 		return "", nil, err
 	}
@@ -360,8 +363,8 @@ func validateOptions(opts Options) (migrator.MigrationDirFormat, []Rule, error) 
 	if err := validateConfiguredRuleSelectors(rules, opts); err != nil {
 		return "", nil, err
 	}
-	dirFormat, err := migrator.ParseMigrationDirFormat(string(opts.DirFormat))
-	return dirFormat, rules, err
+	dirFormat, parseErr := migrator.ParseMigrationDirFormat(string(opts.DirFormat))
+	return dirFormat, rules, parseErr
 }
 
 // AnalyzeFS captures and analyzes every *.sql file under fsys recursively.
