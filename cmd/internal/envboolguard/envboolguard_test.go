@@ -47,6 +47,7 @@ import (
 // not, because the scan skips `_test.go` files: an entry for one would be a
 // claim about the tree that nothing checks.
 var nonBooleanPtahVars = []string{
+	"PTAH_ATLAS_REGISTRY",      // OCI namespace an atlas:// reference resolves against
 	"PTAH_CURRENT_VERSION",     // migration version, passed to preflight hooks
 	"PTAH_DB_URL",              // database URL
 	"PTAH_DIALECT",             // dialect name

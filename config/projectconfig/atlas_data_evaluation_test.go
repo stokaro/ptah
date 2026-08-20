@@ -9,6 +9,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/config/projectconfig"
+	"go.5x5.cz/ptah/internal/atlasregistry"
 )
 
 func TestParseAtlas_ResolvesComputedDataSourceIndex(t *testing.T) {
@@ -138,12 +139,11 @@ env "other" {
 	c.Assert(cfg.DatabaseURL, qt.Equals, "sqlite://selected.db")
 }
 
-func TestParseAtlas_ReferencedUnimplementedRemoteDataSourceStillRefuses(t *testing.T) {
-	tests := []string{"remote_dir", "remote_schema"}
-	for _, sourceType := range tests {
-		t.Run(sourceType, func(t *testing.T) {
-			c := qt.New(t)
-			raw := fmt.Appendf(nil, `
+// referencedRemoteDataSource evaluates a project that references one remote
+// data source by name.
+func referencedRemoteDataSource(c *qt.C, sourceType string) error {
+	c.Helper()
+	raw := fmt.Appendf(nil, `
 data %q "selected" {
   name = "cloud-object"
 }
@@ -152,11 +152,30 @@ env "local" {
 }
 `, sourceType, sourceType)
 
-			_, err := projectconfig.ParseAtlas(raw, "atlas.hcl", "local")
+	_, err := projectconfig.ParseAtlas(raw, "atlas.hcl", "local")
+	return err
+}
 
-			c.Assert(err, qt.ErrorMatches, `unsupported atlas\.hcl construct "data\.`+sourceType+`" at atlas\.hcl:2`)
-		})
-	}
+func TestParseAtlas_ReferencedUnimplementedRemoteDataSourceStillRefuses(t *testing.T) {
+	c := qt.New(t)
+
+	err := referencedRemoteDataSource(c, "remote_schema")
+
+	c.Assert(err, qt.ErrorMatches, `unsupported atlas\.hcl construct "data\.remote_schema" at atlas\.hcl:2`)
+}
+
+// TestParseAtlas_ReferencedRemoteDirNeedsARegistry is the half stokaro/ptah#1210
+// implemented. The source resolves through Ptah's OCI backend now, so the
+// refusal is about configuration rather than about the construct -- and it must
+// never fall back to a hosted service.
+func TestParseAtlas_ReferencedRemoteDirNeedsARegistry(t *testing.T) {
+	c := qt.New(t)
+	t.Setenv(atlasregistry.NamespaceEnvVar, "")
+
+	err := referencedRemoteDataSource(c, "remote_dir")
+
+	c.Assert(err, qt.ErrorMatches, `data\.remote_dir\.selected: resolving the reference: atlas:// references require an OCI backing registry.*`)
+	c.Assert(err.Error(), qt.Not(qt.Contains), "unsupported atlas.hcl construct")
 }
 
 func TestParseAtlas_ReportsDataSourceDependencyCycleBeforeExecution(t *testing.T) {
