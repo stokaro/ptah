@@ -597,6 +597,10 @@ var directives = []Directive{
 		Attributes: []Attribute{
 			attr("name", "Materialized view name.", valueString, true, false),
 			attr("body", "Materialized view SELECT body.", valueSQL, true, false),
+			attr("refresh", "ClickHouse refresh schedule, as ClickHouse spells it: "+
+				"`every 1 hour`, `after 30 minute`, `every 1 day offset 2 hour`. "+
+				"Omitted leaves the view maintained by inserts into its source.",
+				valueString, false, false),
 			retiredAttr("refresh_strategy",
 				"Retired: refused when the annotation is parsed, on every dialect.",
 				matviewrefresh.Reason),

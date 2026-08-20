@@ -402,6 +402,7 @@ func convertMaterializedViews(database *goschema.Database, dbViews []dbschematyp
 			Name:    dbView.QualifiedName(),
 			Body:    dbView.Body,
 			Comment: dbView.Comment,
+			Refresh: dbView.Refresh.Clone(),
 		}
 		database.MaterializedViews = append(database.MaterializedViews, materializedView)
 	}

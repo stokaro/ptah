@@ -1065,6 +1065,16 @@ type MaterializedView struct {
 	Body       string // SELECT query used as the materialized view body
 	Comment    string // Optional comment for documentation
 
+	// Refresh is the ClickHouse refresh schedule this view declares, nil for
+	// one declaring none -- which is every materialized view on every other
+	// dialect, and the ordinary ClickHouse one.
+	//
+	// It carries the ast type rather than a copy of it, for the reason
+	// [Table.RowTTL] carries its own: the clauses are a closed, measured set,
+	// and a per-layer duplicate is a place for one of them to go missing
+	// between the declaration and the statement (stokaro/ptah#1802).
+	Refresh *ast.MatViewRefreshSpec
+
 	// Dialects scopes this declaration to the named target dialects. See
 	// [ScopeToDialect].
 	Dialects []string `json:",omitempty"`

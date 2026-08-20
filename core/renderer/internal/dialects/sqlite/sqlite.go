@@ -366,6 +366,12 @@ func (r *Renderer) VisitRefreshMaterializedView(node *ast.RefreshMaterializedVie
 	return materializedViewsUnsupported("REFRESH MATERIALIZED VIEW", node.Name)
 }
 
+// VisitAlterMaterializedViewRefresh refuses for the same reason as
+// VisitCreateMaterializedView.
+func (r *Renderer) VisitAlterMaterializedViewRefresh(node *ast.AlterMaterializedViewRefreshNode) error {
+	return materializedViewsUnsupported("ALTER MATERIALIZED VIEW REFRESH", node.Name)
+}
+
 func materializedViewsUnsupported(statement, name string) error {
 	return unsupportedFeaturef("%s %s: materialized views are not supported", statement, name)
 }

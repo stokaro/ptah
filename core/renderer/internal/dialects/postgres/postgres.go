@@ -1997,6 +1997,19 @@ func (r *Renderer) VisitDropMaterializedView(node *ast.DropMaterializedViewNode)
 }
 
 // VisitRefreshMaterializedView renders a REFRESH MATERIALIZED VIEW statement.
+// VisitAlterMaterializedViewRefresh refuses: a refresh SCHEDULE is a ClickHouse
+// property, and PostgreSQL has no statement that carries one. Refreshing a
+// PostgreSQL materialized view is an operation someone runs, which is
+// VisitRefreshMaterializedView below (stokaro/ptah#1625, stokaro/ptah#1802).
+func (r *Renderer) VisitAlterMaterializedViewRefresh(node *ast.AlterMaterializedViewRefreshNode) error {
+	return fmt.Errorf(
+		"%w: postgres: materialized view %q cannot carry a refresh schedule; "+
+			"a scheduled refresh is a ClickHouse feature",
+		ptaherr.ErrUnsupportedFeature,
+		node.Name,
+	)
+}
+
 func (r *Renderer) VisitRefreshMaterializedView(node *ast.RefreshMaterializedViewNode) error {
 	if r.refuses(capability.MaterializedViews, "materialized view", node.Name) {
 		return nil

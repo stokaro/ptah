@@ -469,6 +469,21 @@ Declares a materialized view.
 | `comment` | No | Materialized view comment. |
 | `dialects` | No | Comma-separated target dialects this object belongs to; omitted means every dialect. See [Scoping an object to dialects](#scoping-an-object-to-dialects). |
 | `name` | Yes | Materialized view name. |
+| `refresh` | No | ClickHouse refresh schedule, as ClickHouse spells it. See below. |
+
+`refresh` carries a ClickHouse **scheduled** materialized view's schedule, in
+the engine's own words: `every 1 hour`, `after 30 minute`,
+`every 1 day offset 2 hour randomize for 30 minute append`. Omitting it leaves
+an ordinary materialized view, maintained by inserts into its source.
+
+The server rewrites intervals — `every 60 minute` is stored as `EVERY 1 HOUR` —
+so the declaration is normalized to the stored spelling when it is parsed. Any
+spelling of the same schedule converges. A schedule the server would refuse is
+refused here instead: an interval mixing calendar units with clock units, a
+zero interval, or `offset` on an `after` schedule.
+
+It is a ClickHouse property and only that. It is not the retired
+cross-dialect strategy below, which described an operation rather than state:
 
 `refresh_strategy` is not an attribute. Ptah does not refresh materialized
 views: one is populated when it is created, a changed `body` is reconciled as a

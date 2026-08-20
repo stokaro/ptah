@@ -853,6 +853,14 @@ type DBMatView struct {
 	Schema  string `json:"schema"`  // Schema where the materialized view is defined
 	Body    string `json:"body"`    // SELECT query used as the materialized view definition
 	Comment string `json:"comment"` // Materialized view comment/description
+
+	// Refresh is the ClickHouse refresh schedule read back from the server,
+	// nil for a view that has none.
+	//
+	// It is read from create_table_query, which is the only place the schedule
+	// survives: system.tables.as_select is byte-identical for a plain view and
+	// a refreshable one (stokaro/ptah#1802).
+	Refresh *ast.MatViewRefreshSpec
 }
 
 // QualifiedName returns schema.materialized_view when Schema is set, or Name otherwise.

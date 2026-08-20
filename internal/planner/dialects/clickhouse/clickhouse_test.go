@@ -1,6 +1,7 @@
 package clickhouse_test
 
 import (
+	"fmt"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -632,6 +633,116 @@ func TestGenerateMigrationASTChecked_NilDiffFailurePath(t *testing.T) {
 
 			c.Assert(err, qt.ErrorIs, ptaherr.ErrInvalidSchemaDiff)
 			c.Assert(nodes, qt.IsNil)
+		})
+	}
+}
+
+// matViewRefreshDiff is a materialized view whose only change is its refresh
+// schedule, with both sides supplied the way the comparator supplies them.
+func matViewRefreshDiff(desired, current *ast.MatViewRefreshSpec) *types.SchemaDiff {
+	return &types.SchemaDiff{
+		MaterializedViewsModified: []types.MaterializedViewDiff{{
+			ViewName:      "mv",
+			Changes:       map[string]string{"refresh": "x -> y"},
+			RefreshChange: &types.MatViewRefreshChange{Desired: desired, Current: current},
+		}},
+	}
+}
+
+func matViewRefreshSchema() *goschema.Database {
+	return &goschema.Database{
+		MaterializedViews: []goschema.MaterializedView{{
+			StructName: "MV",
+			Name:       "mv",
+			Body:       "SELECT count() AS c FROM src",
+		}},
+	}
+}
+
+// TestGenerateMigrationAST_RefreshOnlyChangeAltersInPlace is the reason the
+// in-place path exists.
+//
+// A drop and a create would produce the right schedule and lose every row the
+// view had accumulated -- ClickHouse's drop takes the inner storage table with
+// it. Measured on 26.7.3.19: a view holding one row still holds it after
+// `ALTER TABLE ... MODIFY REFRESH`, and the schedule is the new one
+// (stokaro/ptah#1802).
+func TestGenerateMigrationAST_RefreshOnlyChangeAltersInPlace(t *testing.T) {
+	c := qt.New(t)
+	diff := matViewRefreshDiff(
+		&ast.MatViewRefreshSpec{Mode: "EVERY", Interval: "2 HOUR"},
+		&ast.MatViewRefreshSpec{Mode: "EVERY", Interval: "1 HOUR"},
+	)
+
+	nodes, err := clickhouse.New().GenerateMigrationASTChecked(diff, matViewRefreshSchema())
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(nodes, qt.HasLen, 1)
+	alter, ok := nodes[0].(*ast.AlterMaterializedViewRefreshNode)
+	c.Assert(ok, qt.IsTrue, qt.Commentf("got %T", nodes[0]))
+	c.Assert(alter.Name, qt.Equals, "mv")
+	c.Assert(alter.Refresh.Interval, qt.Equals, "2 HOUR")
+	// The protected property, stated as an assertion rather than left implied:
+	// nothing in this plan destroys the view.
+	c.Assert(nodeKinds(nodes)["*ast.DropMaterializedViewNode"], qt.Equals, 0)
+}
+
+// nodeKinds counts the planned nodes by concrete type, so a test can assert
+// which statements a plan contains without branching inside the assertion.
+func nodeKinds(nodes []ast.Node) map[string]int {
+	kinds := make(map[string]int, len(nodes))
+	for _, node := range nodes {
+		kinds[fmt.Sprintf("%T", node)]++
+	}
+	return kinds
+}
+
+// TestGenerateMigrationAST_RefreshTransitionsThatCannotBeAltered covers the
+// three shapes the server will not change in place, each of which has to be a
+// drop and a create instead.
+//
+// Measured: `ALTER TABLE <view> MODIFY REFRESH` against a PLAIN materialized
+// view is answered `Code: 48 ... Alter of type 'MODIFY_REFRESH' is not
+// supported by storage MaterializedView`, so a view gaining its first schedule
+// or losing its last cannot take that path. A change that also touches the body
+// cannot either, because the body is what a recreate exists to replace.
+func TestGenerateMigrationAST_RefreshTransitionsThatCannotBeAltered(t *testing.T) {
+	every := func(interval string) *ast.MatViewRefreshSpec {
+		return &ast.MatViewRefreshSpec{Mode: "EVERY", Interval: interval}
+	}
+	tests := []struct {
+		name string
+		diff *types.SchemaDiff
+	}{
+		{
+			name: "a plain view gaining its first schedule",
+			diff: matViewRefreshDiff(every("1 HOUR"), nil),
+		},
+		{
+			name: "a refreshable view losing its last",
+			diff: matViewRefreshDiff(nil, every("1 HOUR")),
+		},
+		{
+			name: "the body changed too",
+			diff: func() *types.SchemaDiff {
+				d := matViewRefreshDiff(every("2 HOUR"), every("1 HOUR"))
+				d.MaterializedViewsModified[0].Changes["body"] = "a -> b"
+				return d
+			}(),
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			nodes, err := clickhouse.New().GenerateMigrationASTChecked(test.diff, matViewRefreshSchema())
+
+			c.Assert(err, qt.IsNil)
+			kinds := nodeKinds(nodes)
+			c.Assert(kinds["*ast.AlterMaterializedViewRefreshNode"], qt.Equals, 0,
+				qt.Commentf("MODIFY REFRESH cannot make this transition"))
+			c.Assert(kinds["*ast.DropMaterializedViewNode"], qt.Not(qt.Equals), 0)
 		})
 	}
 }
