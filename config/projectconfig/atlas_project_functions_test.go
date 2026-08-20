@@ -144,3 +144,47 @@ func TestAtlasProjectFunctions_LeavesTheBoundNamesToTheCaller(t *testing.T) {
 		c.Assert(present, qt.IsFalse, qt.Commentf("%s must be bound by the caller", name))
 	}
 }
+
+// TestAtlasProjectFunctions_OmitsPrint pins a deliberate absence.
+//
+// `print` returns its argument and writes the value to stdout, and a project
+// file is the one place a `sensitive = true` variable exists — so
+// `print(var.token)` would put a credential in the command's output and in CI
+// logs, before any diagnostic redaction could run. Measured on an earlier
+// revision of this change, it printed the token verbatim
+// (stokaro/ptah#1810).
+//
+// A function sees a value, not the expression that produced it, so enforcing
+// sensitivity inside the binding would mean threading the parser's variable
+// registry into a function — the coupling the shared/bound split exists to
+// avoid.
+func TestAtlasProjectFunctions_OmitsPrint(t *testing.T) {
+	c := qt.New(t)
+
+	_, present := atlashcl.ProjectFunctions()["print"]
+
+	c.Assert(present, qt.IsFalse)
+}
+
+// TestParseAtlas_PrintIsRefusedRatherThanLeaking is the same absence seen from
+// a project file: calling it fails, and the failure discloses nothing.
+func TestParseAtlas_PrintIsRefusedRatherThanLeaking(t *testing.T) {
+	c := qt.New(t)
+	raw := []byte(`variable "token" {
+  type      = string
+  sensitive = true
+}
+
+env "local" {
+  url = print(var.token)
+}
+`)
+
+	_, err := projectconfig.ParseAtlasWithOptions(raw, "atlas.hcl", projectconfig.AtlasLoadOptions{
+		EnvName: "local",
+		Vars:    []string{"token=SUPERSECRET"},
+	})
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(err.Error(), qt.Not(qt.Contains), "SUPERSECRET")
+}

@@ -307,14 +307,23 @@ their answer depends on where the file being evaluated lives: `file` and
 `fileset` read the directory holding `atlas.hcl`, and `getenv` reads the
 process environment. Everything else is shared.
 
-`print(value)` returns its argument unchanged and writes it to stdout while the
-project is being read, which is where an operator debugging the file wants it.
+`print` is not available here, unlike in a schema file. It returns its argument
+and writes the value to stdout, and `atlas.hcl` is the one place a
+`sensitive = true` variable exists — so `print(var.token)` would put a
+credential in the command's output and in CI logs.
 
-A failing expression that reads a `sensitive = true` variable has its
-underlying diagnostic withheld, whatever functions the value passed through on
-the way — the withholding keys on what the expression names, not on what a
-function did to the value. A non-sensitive expression keeps its full
-diagnostic.
+A `sensitive = true` variable is protected on both error paths, and the two
+differ on purpose:
+
+- an expression that **fails to evaluate** has its diagnostic withheld
+  entirely, whatever functions the value passed through;
+- a value that evaluates and then **fails a rule** is scrubbed when the
+  expression names the variable directly, so the reason survives
+  (`unsupported URL scheme: (sensitive value)`), and withheld when the value
+  was derived — `upper(var.token)` puts bytes in the message that replacing the
+  original value cannot find.
+
+A non-sensitive expression keeps its full diagnostic either way.
 
 ## Reading files with file() and fileset()
 

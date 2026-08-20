@@ -22,12 +22,24 @@ import (
 // -- so binding them here would answer it wrongly for somebody. See
 // [ProjectBoundFunctionNames].
 //
-// `print` is included, and it is the one entry with a side effect. It writes
-// through the same destination the schema evaluator uses; a project file that
-// calls it prints while the project is being read, which is when an operator
-// debugging that file wants to see it.
+// `print` is deliberately NOT in the set, and it is the one name whose absence
+// is a decision rather than an omission. It returns its argument and writes the
+// value to stdout, and a project file is the one place a `sensitive = true`
+// variable exists -- so `print(var.token)` would put a credential in the
+// command's output and in CI logs, before any diagnostic redaction could run.
+// Measured on an earlier revision of this change, it printed the token
+// verbatim.
+//
+// Binding it sensitively was the alternative. A function sees a VALUE, not the
+// expression that produced it, so enforcing sensitivity there would mean
+// threading the parser's variable registry into a function binding -- the exact
+// coupling this split exists to avoid. Omitting it costs a debug tap in a file
+// that is evaluated once at startup, which is also before the command has
+// decided whether its output is machine-readable.
 func ProjectFunctions() map[string]function.Function {
-	return schemaFunctions(projectPrintLine)
+	fns := schemaFunctions(projectPrintLine)
+	delete(fns, "print")
+	return fns
 }
 
 // ProjectBoundFunctionNames are the functions [ProjectFunctions] leaves to the
@@ -55,12 +67,10 @@ func WithProjectBoundFunctions(
 	return combined
 }
 
-// projectPrintLine writes a `print` call's line while a project file is being
-// evaluated.
-//
-// Unlike the schema evaluator's, it has no emitting guard to consult: a project
-// file is evaluated once, so there is no second walk for a line to be repeated
-// on.
-func projectPrintLine(line string) {
-	writePrintLine(line)
+// projectPrintLine exists only to satisfy schemaFunctions' signature; the
+// `print` it binds is removed from the set before it is returned, so nothing
+// calls this. It panics rather than printing, so a future change that puts
+// `print` back cannot do it silently.
+func projectPrintLine(string) {
+	panic("print is not available in a project file; see ProjectFunctions")
 }

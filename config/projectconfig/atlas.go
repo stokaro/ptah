@@ -3340,7 +3340,28 @@ func (p atlasParser) scrubSensitive(text string) string {
 // The text is scrubbed for the same reason evaluationFailed scrubs it: the value
 // may have come from a `sensitive = true` variable, and the rule's error quotes
 // the value.
+// invalidValue reports a value that evaluated successfully and then failed a
+// Ptah rule -- an unsupported URL scheme, a malformed duration.
+//
+// It withholds only when the value was DERIVED from a sensitive variable, and
+// scrubs otherwise. The distinction is what keeps the message useful. A bare
+// `path = var.secret` reaches the error with the variable's own bytes, so
+// scrubbing replaces them and the operator still learns what was wrong with the
+// value. `path = upper(var.secret)` does not: it puts `S3://SECRET` in the
+// error while the scrubber looks for `s3://secret`, which is measured and is
+// the reason this branch exists (stokaro/ptah#1810).
+//
+// [atlasParser.evaluationFailed] withholds for a bare reference too, and that
+// asymmetry is deliberate: an HCL diagnostic quotes whatever sub-expression it
+// blames, so there is no equivalent guarantee that the bytes survived.
 func (p atlasParser) invalidValue(name string, attr *hclsyntax.Attribute, err error) error {
+	if secret, found := p.derivedSensitiveVariableIn(attr.Expr); found {
+		return fmt.Errorf(
+			"atlas.hcl %q at %s:%d: the expression reads the sensitive variable %q and its value was "+
+				"refused; the underlying reason is withheld because it quotes the evaluated value, which "+
+				"a function may have derived from that variable in a form scrubbing cannot recognize",
+			name, attr.NameRange.Filename, attr.NameRange.Start.Line, secret)
+	}
 	return fmt.Errorf("atlas.hcl %q at %s:%d: %s",
 		name, attr.NameRange.Filename, attr.NameRange.Start.Line,
 		p.scrubSensitive(err.Error()))
@@ -3401,4 +3422,18 @@ func atlasProjectBoundFunctions(fsys fs.FS) map[string]function.Function {
 		"fileset": atlasFilesetFunc(fsys),
 		"getenv":  atlasGetenvFunc(),
 	}
+}
+
+// derivedSensitiveVariableIn reports the first sensitive variable an expression
+// TRANSFORMS, as opposed to naming directly.
+//
+// A bare traversal -- `var.secret` -- reaches a message unchanged, which is
+// what makes scrubbing sufficient for it. Anything else may have passed the
+// value through a function, and a function's output is not something byte
+// replacement can find.
+func (p atlasParser) derivedSensitiveVariableIn(expr hclsyntax.Expression) (string, bool) {
+	if _, bare := expr.(*hclsyntax.ScopeTraversalExpr); bare {
+		return "", false
+	}
+	return p.sensitiveVariableIn(expr)
 }

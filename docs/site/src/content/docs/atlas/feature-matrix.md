@@ -90,8 +90,8 @@ Across the 191 capabilities below:
 
 | Reading | Count |
 | --- | --- |
-| Ptah supports it fully | 162 |
-| Ptah supports it with a stated limitation | 11 |
+| Ptah supports it fully | 164 |
+| Ptah supports it with a stated limitation | 9 |
 | Ptah does not implement it | 11 |
 | Ptah covers it in its own form, against a hosted service it cannot interoperate with | 7 |
 | Ptah and Atlas CE both support it | 61 |
