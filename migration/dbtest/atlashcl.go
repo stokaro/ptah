@@ -24,6 +24,10 @@ const (
 	AtlasTestKindSchema AtlasTestKind = "schema"
 	// AtlasTestKindMigrate selects `test "migrate" "..."` cases.
 	AtlasTestKindMigrate AtlasTestKind = "migrate"
+	// AtlasTestKindPlan selects `test "plan" "..."` cases, which establish a
+	// starting state, apply a saved plan file, and assert what it did
+	// (stokaro/ptah#1211).
+	AtlasTestKindPlan AtlasTestKind = "plan"
 )
 
 // ParseAtlasTestCases parses an Atlas-format `.test.hcl` document and returns
@@ -73,17 +77,17 @@ func ParseAtlasTestCases(data []byte, filename string, kind AtlasTestKind) ([]Ca
 		}
 		blockKind, name := AtlasTestKind(block.Labels[0]), block.Labels[1]
 		switch blockKind {
-		case AtlasTestKindSchema, AtlasTestKindMigrate:
+		case AtlasTestKindSchema, AtlasTestKindMigrate, AtlasTestKindPlan:
 		default:
-			return nil, fmt.Errorf("%s:%d: unsupported test kind %q: want %q or %q",
+			return nil, fmt.Errorf("%s:%d: unsupported test kind %q: want %q, %q or %q",
 				filename, block.TypeRange.Start.Line, blockKind,
-				AtlasTestKindSchema, AtlasTestKindMigrate)
+				AtlasTestKindSchema, AtlasTestKindMigrate, AtlasTestKindPlan)
 		}
 		if blockKind != kind {
 			continue
 		}
 
-		steps, err := atlasTestSteps(block, filename)
+		steps, err := atlasTestSteps(block, filename, blockKind)
 		if err != nil {
 			return nil, err
 		}
@@ -97,7 +101,7 @@ func ParseAtlasTestCases(data []byte, filename string, kind AtlasTestKind) ([]Ca
 }
 
 // atlasTestSteps translates one `test` block body into ordered native steps.
-func atlasTestSteps(block *hclsyntax.Block, filename string) ([]Step, error) {
+func atlasTestSteps(block *hclsyntax.Block, filename string, kind AtlasTestKind) ([]Step, error) {
 	if len(block.Body.Attributes) > 0 {
 		names := make([]string, 0, len(block.Body.Attributes))
 		for attrName := range block.Body.Attributes {
@@ -110,38 +114,11 @@ func atlasTestSteps(block *hclsyntax.Block, filename string) ([]Step, error) {
 
 	steps := make([]Step, 0, len(block.Body.Blocks))
 	for _, step := range block.Body.Blocks {
-		line := step.TypeRange.Start.Line
-		switch step.Type {
-		case "exec":
-			sql, err := atlasRequiredString(step, "sql", filename)
-			if err != nil {
-				return nil, err
-			}
-			output, hasOutput, err := atlasOptionalString(step, "output", filename)
-			if err != nil {
-				return nil, err
-			}
-			if err := atlasRejectUnknownAttrs(step, filename, "sql", "output"); err != nil {
-				return nil, err
-			}
-			if hasOutput {
-				steps = append(steps, Step{Assert: &Assertion{Query: sql, Scalar: &output}})
-				continue
-			}
-			steps = append(steps, Step{Exec: sql})
-		case "migrate":
-			to, err := atlasRequiredString(step, "to", filename)
-			if err != nil {
-				return nil, err
-			}
-			if err := atlasRejectUnknownAttrs(step, filename, "to"); err != nil {
-				return nil, err
-			}
-			steps = append(steps, Step{MigrateTo: to})
-		default:
-			return nil, fmt.Errorf("%s:%d: unsupported step %q: want `exec` or `migrate`",
-				filename, line, step.Type)
+		translated, err := atlasTestStep(step, filename, kind)
+		if err != nil {
+			return nil, err
 		}
+		steps = append(steps, translated)
 	}
 	return steps, nil
 }
@@ -197,4 +174,97 @@ func atlasRejectUnknownAttrs(block *hclsyntax.Block, filename string, allowed ..
 	sort.Strings(unknown)
 	return fmt.Errorf("%s:%d: `%s` does not take %v: want %v",
 		filename, block.TypeRange.Start.Line, block.Type, unknown, allowed)
+}
+
+// atlasRequirePlanKind refuses a plan-only step in another kind's case.
+func atlasRequirePlanKind(kind AtlasTestKind, stepType, filename string, line int) error {
+	if kind == AtlasTestKindPlan {
+		return nil
+	}
+	return fmt.Errorf("%s:%d: step %q belongs to a `test %q` case, not `test %q`",
+		filename, line, stepType, AtlasTestKindPlan, kind)
+}
+
+// atlasStepsFor names the steps a kind accepts, so a refusal tells the author
+// what this case may contain rather than what some case may contain.
+func atlasStepsFor(kind AtlasTestKind) string {
+	if kind == AtlasTestKindPlan {
+		return "`exec`, `migrate`, `schema` or `apply`"
+	}
+	return "`exec` or `migrate`"
+}
+
+// atlasTestStep translates one step block.
+//
+// It is separate from the loop so each step kind reads as its own small
+// function rather than as another arm of one that grows every time a kind is
+// added -- which is how the third kind pushed the loop past the complexity the
+// linter allows (stokaro/ptah#1211).
+func atlasTestStep(step *hclsyntax.Block, filename string, kind AtlasTestKind) (Step, error) {
+	line := step.TypeRange.Start.Line
+	switch step.Type {
+	case "exec":
+		return atlasExecStep(step, filename)
+	case "migrate":
+		return atlasMigrateStep(step, filename)
+	case "schema", "apply":
+		// Both belong to a plan case. Accepting them elsewhere would run a plan
+		// the caller of that kind never asked for, which is the same reason
+		// kinds are not interchangeable in the first place.
+		if err := atlasRequirePlanKind(kind, step.Type, filename, line); err != nil {
+			return Step{}, err
+		}
+		return atlasPlanStep(step, filename)
+	default:
+		return Step{}, fmt.Errorf("%s:%d: unsupported step %q: want %s",
+			filename, line, step.Type, atlasStepsFor(kind))
+	}
+}
+
+// atlasExecStep translates `exec`. The `output` attribute turns it into an
+// assertion, because that is what it means in Atlas.
+func atlasExecStep(step *hclsyntax.Block, filename string) (Step, error) {
+	sql, err := atlasRequiredString(step, "sql", filename)
+	if err != nil {
+		return Step{}, err
+	}
+	output, hasOutput, err := atlasOptionalString(step, "output", filename)
+	if err != nil {
+		return Step{}, err
+	}
+	if err := atlasRejectUnknownAttrs(step, filename, "sql", "output"); err != nil {
+		return Step{}, err
+	}
+	if hasOutput {
+		return Step{Assert: &Assertion{Query: sql, Scalar: &output}}, nil
+	}
+	return Step{Exec: sql}, nil
+}
+
+// atlasMigrateStep translates `migrate`.
+func atlasMigrateStep(step *hclsyntax.Block, filename string) (Step, error) {
+	to, err := atlasRequiredString(step, "to", filename)
+	if err != nil {
+		return Step{}, err
+	}
+	if err := atlasRejectUnknownAttrs(step, filename, "to"); err != nil {
+		return Step{}, err
+	}
+	return Step{MigrateTo: to}, nil
+}
+
+// atlasPlanStep translates `schema` and `apply`, which differ only in what the
+// url they both require names.
+func atlasPlanStep(step *hclsyntax.Block, filename string) (Step, error) {
+	url, err := atlasRequiredString(step, "url", filename)
+	if err != nil {
+		return Step{}, err
+	}
+	if err := atlasRejectUnknownAttrs(step, filename, "url"); err != nil {
+		return Step{}, err
+	}
+	if step.Type == "schema" {
+		return Step{Name: "schema " + url, EstablishSchema: &SchemaSourceStep{URL: url}}, nil
+	}
+	return Step{Name: "apply " + url, ApplyPlan: &ApplyPlanStep{URL: url}}, nil
 }
