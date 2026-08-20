@@ -236,6 +236,29 @@ func Ge(column string, value any) ast.Expression {
 	return comparison(column, ast.OpGreaterThanOrEqual, value)
 }
 
+// Like builds "column LIKE pattern", binding the pattern as a parameter.
+//
+// The pattern is a VALUE, so it is bound rather than interpolated and cannot
+// carry SQL into the statement. Its wildcards are the caller's to write: `%`
+// matches any run of characters and `_` any single one, and a caller matching a
+// literal `%` or `_` has to escape it themselves -- Ptah cannot tell an intended
+// wildcard from an accidental one, and escaping on the caller's behalf would
+// break every pattern that meant them.
+//
+// Case sensitivity is the SERVER's. PostgreSQL matches case-sensitively, MySQL
+// follows the column's collation and usually does not, and SQLite folds ASCII.
+// A query relying on one behavior is relying on that engine, not on this
+// builder (stokaro/ptah#941).
+func Like(column, pattern string) ast.Expression {
+	return comparison(column, ast.OpLike, pattern)
+}
+
+// NotLike builds "column NOT LIKE pattern". See [Like] on wildcards and on
+// case sensitivity.
+func NotLike(column, pattern string) ast.Expression {
+	return comparison(column, ast.OpNotLike, pattern)
+}
+
 // In builds "column IN (values...)", binding each value as a parameter. The
 // values slice must be non-empty; rendering an empty IN returns an error. The
 // generic element type lets callers pass, for example, []string or []int64
