@@ -1431,7 +1431,7 @@ func loadAtlasAdapterProjectConfig(
 	policy atlascompatpolicy.Policy,
 ) (selectedAtlasProject, error) {
 	if !verb.nativeProjectConfig {
-		project, loaded, err := openAtlasProjectWithPolicy(ctx, flags, requirement, policy)
+		project, loaded, err := openAtlasProjectWithPolicy(ctx, flags, requirement, policy, "")
 		return selectedAtlasProject{project: project, loaded: loaded}, err
 	}
 	if requirement == requiredAtlasProject {
@@ -1442,7 +1442,7 @@ func loadAtlasAdapterProjectConfig(
 			loaded:       err == nil,
 		}, err
 	}
-	project, loaded, err := openAtlasProjectWithPolicy(ctx, flags, optionalAtlasProject, policy)
+	project, loaded, err := openAtlasProjectWithPolicy(ctx, flags, optionalAtlasProject, policy, "")
 	if err != nil || !loaded {
 		return selectedAtlasProject{}, err
 	}

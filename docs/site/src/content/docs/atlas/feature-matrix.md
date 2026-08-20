@@ -94,10 +94,10 @@ Across the 191 capabilities below:
 | Ptah supports it with a stated limitation | 14 |
 | Ptah does not implement it | 12 |
 | Ptah covers it in its own form, against a hosted service it cannot interoperate with | 6 |
-| Ptah and Atlas CE both support it | 57 |
+| Ptah and Atlas CE both support it | 59 |
 | Ptah implements it openly where Atlas gates it behind Pro or Cloud | 44 |
 | Ptah has it and neither Atlas edition does | 27 |
-| Atlas CE has it and Ptah does not, or only in part | 8 |
+| Atlas CE has it and Ptah does not, or only in part | 6 |
 | An Atlas column is ❔ — not established by this page's evidence | 4 |
 
 Every 🟡 and every ❌ in the Ptah column names its specific limitation and the
@@ -264,7 +264,7 @@ seven of them as open capabilities regardless.
 | --- | :-: | :-: | :-: | --- |
 | `--var` does not require an `atlas.hcl` | ✅ | ✅ | ✅ | `-c` and `--env` select a project file and still require one. `--var` only supplies values to one, on every verb. Its syntax is still checked with no `atlas.hcl` present. |
 | A malformed `--var` is refused wherever it is spelled | ✅ | ✅ | ✅ | CE parses `--var` while parsing flags, so a value with no `=` is refused before any project file is sought. Ptah checks it on every command under `schema` and `migrate`, even ones that never read it. |
-| Atlas project config (atlas.hcl) | 🟡 | ✅ | ✅ | Validates every env. `migrate apply` expands labeled or unlabeled env `for_each`; other verbs require one instance, and the project evaluator has eight functions. Tracked by stokaro/ptah#1696. |
+| Atlas project config (atlas.hcl) | ✅ | ✅ | ✅ | Envs, variables, locals, data sources and `for_each` are evaluated. A collection env expands where a verb takes one and is refused by name elsewhere. |
 | atlas.hcl file() and fileset() path confinement | ✅ | ❌ | ❌ | Ptah confines file() and fileset() to the atlas.hcl directory: absolute, parent-traversal and symlink escapes are refused by name. Atlas reads them. Deliberate divergence; exit 1 either way today. |
 | atlas.hcl from the native ptah binary | 🟡 | ➖ | ➖ | ptah `--env` reads ./atlas.hcl; `--var name=value` supplies a variable with no default on every env-aware verb; `--config` still takes ptah.yaml only. Tracked by stokaro/ptah#1215. |
 | AWS RDS token project data source (data "aws_rds_token") | ✅ | ✅ | ✅ | Resolves to a SigV4 `rds-db` connect token, matching the pinned community binary parameter for parameter. `endpoint` and `username` required; `region` and `profile` optional. |
@@ -280,7 +280,7 @@ seven of them as open capabilities regardless.
 | Runtime variable project data source (data "runtimevar") | ✅ | ✅ | ✅ | Reads Go CDK runtime-variable URLs with byte-preserving string output and a configurable positive timeout. Constant, file, HTTP(S), AWS, and Google Cloud providers are registered. |
 | SQL project data source (data "sql") | ✅ | ✅ | ✅ | Runs one query and exports count, first value, and all values. Requires one column and one HCL row type. Heterogeneous rows fail explicitly; Atlas CE panics. Unreferenced blocks stay lazy. |
 | Template directory project data source (data "template_dir") | ✅ | ✅ | ✅ | Shared Go templates emit root lowercase .sql migrations only. New and diff synchronize new files and checksum to the confined source path; hash-only stays virtual. |
-| Variables, locals, and HCL functions | 🟡 | ✅ | ✅ | file, fileset, format, getenv, jsondecode, jsonencode, tolist and toset evaluate — eight, where a schema file has 67. Env `for_each` exposes atlas.env and each.*. Tracked by stokaro/ptah#1696. |
+| Variables, locals, and HCL functions | ✅ | ✅ | ✅ | Variables, locals and the HCL function set are evaluated the same way in a schema file and in the atlas.hcl that selects it. |
 
 ## Databases and schema objects
 

@@ -20,8 +20,8 @@ import (
 	"github.com/zclconf/go-cty/cty"
 	"github.com/zclconf/go-cty/cty/convert"
 	"github.com/zclconf/go-cty/cty/function"
-	"github.com/zclconf/go-cty/cty/function/stdlib"
 
+	"go.5x5.cz/ptah/internal/atlashcl"
 	"go.5x5.cz/ptah/internal/atlasprojectpath"
 )
 
@@ -38,6 +38,8 @@ type AtlasLoadOptions struct {
 	// when they need that exact boundary. The default retains Ptah's complete
 	// dynamic-env capability.
 	RejectListMapForEach bool
+	// Verb names the command doing the load. See [LoadOptions.Verb].
+	Verb string
 }
 
 // LoadAtlasFile loads the supported subset of an Atlas project config file. A
@@ -54,7 +56,7 @@ func LoadAtlasFileWithOptions(path string, opts AtlasLoadOptions) (Config, error
 	if err != nil {
 		return Config{}, err
 	}
-	return singularAtlasConfig(configs, opts.EnvName)
+	return singularAtlasConfig(configs, opts.EnvName, opts.Verb)
 }
 
 // LoadAtlasFileCollectionWithOptions loads every selected instance from an
@@ -114,7 +116,7 @@ func ParseAtlasWithOptions(data []byte, filename string, opts AtlasLoadOptions) 
 	if err != nil {
 		return Config{}, err
 	}
-	return singularAtlasConfig(configs, opts.EnvName)
+	return singularAtlasConfig(configs, opts.EnvName, opts.Verb)
 }
 
 // ParseAtlasCollectionWithOptions parses every selected instance from an
@@ -168,7 +170,7 @@ func ParseAtlasFSWithOptions(
 	if err != nil {
 		return Config{}, err
 	}
-	return singularAtlasConfig(configs, opts.EnvName)
+	return singularAtlasConfig(configs, opts.EnvName, opts.Verb)
 }
 
 // ParseAtlasFSCollectionWithOptions parses every selected Atlas project config
@@ -210,7 +212,13 @@ func ParseAtlasFSCollectionWithOptions(
 	return p.parseCollection(body, opts.EnvName)
 }
 
-func singularAtlasConfig(configs []Config, envName string) (Config, error) {
+// singularAtlasConfig narrows a selection to the one instance a verb can take.
+//
+// The refusal names the verb and the block, because the alternative was a
+// sentence about a "collection-valued API" -- an internal detail an operator
+// cannot act on, and one that read like a bug rather than like a limit of the
+// verb they ran (stokaro/ptah#1696).
+func singularAtlasConfig(configs []Config, envName, verb string) (Config, error) {
 	switch len(configs) {
 	case 1:
 		return configs[0], nil
@@ -218,11 +226,23 @@ func singularAtlasConfig(configs []Config, envName string) (Config, error) {
 		return Config{}, fmt.Errorf("atlas env %q selected no project config instances", envName)
 	default:
 		return Config{}, fmt.Errorf(
-			"atlas env %q selected %d project config instances; use the corresponding collection-valued API",
+			"%s cannot run against a for_each env: %s env %q expands to %d environments, "+
+				"and this command takes one. Select a single environment, or run the command once per instance",
+			verbOrCommand(verb),
+			AtlasFileName,
 			envName,
 			len(configs),
 		)
 	}
+}
+
+// verbOrCommand names the caller for the refusal above, falling back to a
+// general noun when the caller did not say.
+func verbOrCommand(verb string) string {
+	if strings.TrimSpace(verb) == "" {
+		return "this command"
+	}
+	return verb
 }
 
 type atlasParser struct {
@@ -339,16 +359,7 @@ func newAtlasParser(
 		ignoredSeen:     make(map[ignoredAtlasConstructKey]struct{}),
 		ctx: &hcl.EvalContext{
 			Variables: make(map[string]cty.Value),
-			Functions: map[string]function.Function{
-				"file":       atlasFileFunc(fsys),
-				"fileset":    atlasFilesetFunc(fsys),
-				"format":     stdlib.FormatFunc,
-				"getenv":     atlasGetenvFunc(),
-				"jsondecode": stdlib.JSONDecodeFunc,
-				"jsonencode": stdlib.JSONEncodeFunc,
-				"tolist":     stdlib.MakeToFunc(cty.List(cty.DynamicPseudoType)),
-				"toset":      stdlib.MakeToFunc(cty.Set(cty.DynamicPseudoType)),
-			},
+			Functions: atlasProjectFunctions(fsys),
 		},
 		varOverride:          overrides,
 		ignoreEnvSchemas:     ignoreSchemas,
@@ -3299,4 +3310,25 @@ func wrongValueType(name string, attr *hclsyntax.Attribute, want string) error {
 func emptyValue(name string, attr *hclsyntax.Attribute) error {
 	return fmt.Errorf("atlas.hcl %q at %s:%d must not be empty",
 		name, attr.NameRange.Filename, attr.NameRange.Start.Line)
+}
+
+// atlasProjectFunctions is the function set an atlas.hcl is evaluated with.
+//
+// It is the schema evaluator's set plus the three names bound to this parse:
+// `file` and `fileset` read through the project's own filesystem, and `getenv`
+// reads the process environment. Before this the project side registered eight
+// names against the schema side's 67, so a call that worked in a schema file
+// failed in the project file that selected it (stokaro/ptah#1696).
+//
+// The overlay direction matters: the project's `file` and `fileset` are bound
+// to its base directory, so they must win over any same-named entry the shared
+// set carries.
+func atlasProjectFunctions(fsys fs.FS) map[string]function.Function {
+	fns := atlashcl.SharedFunctions(func(line string) {
+		fmt.Fprintln(os.Stdout, line)
+	})
+	fns["file"] = atlasFileFunc(fsys)
+	fns["fileset"] = atlasFilesetFunc(fsys)
+	fns["getenv"] = atlasGetenvFunc()
+	return fns
 }
