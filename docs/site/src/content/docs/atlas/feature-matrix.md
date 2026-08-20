@@ -90,12 +90,12 @@ Across the 191 capabilities below:
 
 | Reading | Count |
 | --- | --- |
-| Ptah supports it fully | 164 |
+| Ptah supports it fully | 165 |
 | Ptah supports it with a stated limitation | 9 |
-| Ptah does not implement it | 11 |
+| Ptah does not implement it | 10 |
 | Ptah covers it in its own form, against a hosted service it cannot interoperate with | 7 |
 | Ptah and Atlas CE both support it | 61 |
-| Ptah implements it openly where Atlas gates it behind Pro or Cloud | 44 |
+| Ptah implements it openly where Atlas gates it behind Pro or Cloud | 45 |
 | Ptah has it and neither Atlas edition does | 27 |
 | Atlas CE has it and Ptah does not, or only in part | 4 |
 | An Atlas column is ❔ — not established by this page's evidence | 4 |
@@ -373,7 +373,7 @@ is genuinely absent and the difference column names the issue that owns it.
 | `schema plan --skip-lint` | ✅ | ❌ | ✅ | Accepted, and does nothing: `schema plan` runs no lint step, so there is nothing to skip. A Pro pipeline passing it keeps working; no check is loosened. |
 | `schema plan lint` | ✅ | ❌ | ✅ | Implemented: the plan is verified against the transition, then Ptah's lint rules report on its SQL. Findings do not change the exit code; an opt-in variable makes an error-severity finding exit 1. |
 | `schema plan new` and `schema plan validate` | ✅ | ❌ | ✅ | Implemented. Flag sets match the documented Atlas help; runtime parity remains unverified. Successful Ptah runs keep stderr free of development notes. |
-| `schema plan test` | ❌ | ❌ | ✅ | Local by its flag set (it takes no `--url`) but deferred: it consumes `test "plan"` cases in `.test.hcl` files, which nothing in Ptah parses yet. Tracked by stokaro/ptah#1211. |
+| `schema plan test` | ✅ | ❌ | ✅ | Runs `test "plan"` cases: establish a state, verify the plan was computed for it, apply the plan file, assert. Local by its flag set, and now by its implementation. |
 | `schema plan` registry sub-verbs (approve, list, pull, push, rm) | 🔷 | ❌ | ✅ | These five arbitrate plan state inside the hosted registry. Ptah keeps plan state in local plan files that the ordinary `schema plan` verbs read and write; the service is out of reach. |
 | Atlas Cloud deployment reporting | 🔷 | ❌ | ✅ | Ptah attaches a deployment-report referrer to its own OCI artifact after an `oci://` migrations up, so the report is readable from the registry. There is no account model to report into. |
 | Atlas Copilot (AI assistant) | ❌ | ❌ | ✅ | An AI assistant gated to accounts with the vendor. Ptah's own MCP server and BYOK/BYOM assistant are stokaro/ptah#1483; the nearest surface today is the `ptah-ls` language server. |
