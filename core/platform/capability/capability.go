@@ -468,6 +468,19 @@ const (
 	// (stokaro/ptah#1811).
 	CatalogRecursiveCTE Capability = "catalog_recursive_cte"
 
+	// CatalogPartitions marks a server whose catalog has pg_inherits, the
+	// relation that records which table is a partition of which.
+	//
+	// The cleanup reads it to refuse a schema whose partition parent lives
+	// elsewhere, since dropping the child alone would leave the parent broken.
+	// A server with no partitioning has no such edge to find, and the relation
+	// is MISSING rather than empty there -- a parse failure, so asking anyway
+	// costs the whole statement rather than one empty result.
+	//
+	// Measured on the Cloud Spanner emulator through PGAdapter 0.55.2:
+	// `relation "pg_inherits" does not exist` (stokaro/ptah#1811).
+	CatalogPartitions Capability = "catalog_partitions"
+
 	// ShowRoutinePrivilege marks a server on which reading routine metadata
 	// requires the global SHOW_ROUTINE privilege, which MySQL introduced in
 	// 8.0.20.
@@ -697,6 +710,9 @@ var registry = map[Capability]spec{
 	MigrationTimeouts: {
 		doc: "a migration can be bounded by a lock timeout and a statement timeout the migrator sets and restores",
 	},
+	CatalogPartitions: {
+		doc: "the catalog has pg_inherits, which records partition parentage",
+	},
 	CatalogRecursiveCTE: {
 		doc: "the server accepts a WITH RECURSIVE query that also reads the pg catalogs",
 	},
@@ -918,6 +934,7 @@ func MySQL84() Capabilities {
 		RowLevelTTL:                        false,
 		MigrationTimeouts:                  true,
 		TransactionalDDL:                   false,
+		CatalogPartitions:                  true,
 		CatalogRecursiveCTE:                true,
 		DDLInsideTransaction:               true,
 		CheckGrantStatement:                false,
@@ -1045,6 +1062,7 @@ func MariaDB1011() Capabilities {
 		RowLevelTTL:                     false,
 		MigrationTimeouts:               true,
 		TransactionalDDL:                false,
+		CatalogPartitions:               true,
 		CatalogRecursiveCTE:             true,
 		DDLInsideTransaction:            true,
 		CheckGrantStatement:             false,
@@ -1117,6 +1135,7 @@ func Postgres16() Capabilities {
 		RowLevelTTL:                        false,
 		MigrationTimeouts:                  true,
 		TransactionalDDL:                   true,
+		CatalogPartitions:                  true,
 		CatalogRecursiveCTE:                true,
 		DDLInsideTransaction:               true,
 		CheckGrantStatement:                false,
@@ -1188,6 +1207,7 @@ func ClickHouse24() Capabilities {
 		// ClickHouse has no pg catalogs at all, so the question the key asks
 		// does not arise; false is the honest answer for the same reason it is
 		// false for every non-PostgreSQL-family engine.
+		CatalogPartitions:   false,
 		CatalogRecursiveCTE: false,
 		DomainTypes:         false,
 		CompositeTypes:      false,
@@ -1347,6 +1367,7 @@ func SQLite3() Capabilities {
 		RowLevelTTL:                        false,
 		MigrationTimeouts:                  false,
 		TransactionalDDL:                   true,
+		CatalogPartitions:                  true,
 		CatalogRecursiveCTE:                true,
 		DDLInsideTransaction:               true,
 		CheckGrantStatement:                false,
@@ -1491,6 +1512,7 @@ func SQLServer2022() Capabilities {
 		RowLevelTTL:                     false,
 		MigrationTimeouts:               false,
 		TransactionalDDL:                false,
+		CatalogPartitions:               true,
 		CatalogRecursiveCTE:             true,
 		DDLInsideTransaction:            true,
 		CheckGrantStatement:             false,
@@ -1681,6 +1703,9 @@ func SpannerPostgres() Capabilities {
 		// `WITH pg_class AS (...)` beside the query's WITH clause and the two
 		// only merge when the query's is not RECURSIVE (stokaro/ptah#1811).
 		With(CatalogRecursiveCTE, false).
+		// Measured on the Cloud Spanner emulator through PGAdapter 0.55.2:
+		// `relation "pg_inherits" does not exist` (stokaro/ptah#1811).
+		With(CatalogPartitions, false).
 		// Measured, unlike the rest of this preset: on the Cloud Spanner
 		// emulator through PGAdapter 0.55.2, `obj_description(2200,
 		// 'pg_namespace')` answers `The Postgres Type is not supported: name`.

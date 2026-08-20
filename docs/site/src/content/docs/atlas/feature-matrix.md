@@ -90,8 +90,8 @@ Across the 191 capabilities below:
 
 | Reading | Count |
 | --- | --- |
-| Ptah supports it fully | 169 |
-| Ptah supports it with a stated limitation | 6 |
+| Ptah supports it fully | 170 |
+| Ptah supports it with a stated limitation | 5 |
 | Ptah does not implement it | 9 |
 | Ptah covers it in its own form, against a hosted service it cannot interoperate with | 7 |
 | Ptah and Atlas CE both support it | 62 |
@@ -298,7 +298,7 @@ seven of them as open capabilities regardless.
 | Oracle, Snowflake, Redshift, Databricks | ❌ | ❌ | ✅ | No dialect entry; the names fail normalization the same way TiDB does. Listed as Atlas Pro drivers. Tracked by stokaro/ptah#1616. |
 | PostgreSQL 12+ (postgres, postgresql) | ✅ | ✅ | ✅ | Reference engine of the PostgreSQL family: views, matviews, functions, triggers, sequences, roles, RLS and domains all render. Presets 12-13, 14-16, 17+ from the server banner. |
 | Roles, grants, and row-level security | ✅ | ❌ | ✅ | Roles and grants on every engine that has them. Row-level security on the PostgreSQL family, SQL Server and ClickHouse; MySQL, MariaDB and Spanner have no such object to model. |
-| Spanner PostgreSQL interface (spanner) | 🟡 | ❌ | ✅ | Enums, sequences, matviews, functions and triggers render as named skips; foreign keys render, SERIAL errors. Probed live with a compose service; the suite does not run yet (stokaro/ptah#1811). |
+| Spanner PostgreSQL interface (spanner) | ✅ | ❌ | ✅ | Enums, sequences, matviews, functions and triggers render as named skips; foreign keys render, SERIAL errors. Probed live, with a compose service and a scenario suite. |
 | SQL Server and Azure SQL (sqlserver, mssql, tsql) | ✅ | ❌ | ✅ | Every spelling renders the same DDL. Tables, views, triggers, synonyms, sequences, roles/grants, row-level security and functions all render, read back and plan. |
 | SQLite (sqlite, sqlite3) | ✅ | ✅ | ✅ | Column drops, type, nullability, default, generated, table-constraint and add-column changes all rebuild, inbound foreign keys included. The engine has no other object kind Ptah models. |
 | Standalone sequences | 🟡 | ❌ | ✅ | PostgreSQL, CockroachDB, YugabyteDB, SQL Server and MariaDB emit CREATE SEQUENCE. MySQL, ClickHouse and SQLite have none; Spanner has them and Ptah declares none (stokaro/ptah#1808). |
