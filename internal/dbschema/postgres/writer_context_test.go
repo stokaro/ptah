@@ -57,7 +57,7 @@ func TestWriterDropAllTables_CommitsAllCatalogObjects(t *testing.T) {
 	c.Assert(catalogQueries[2], qt.Contains, "ORDER BY priority, dependency_depth DESC")
 	c.Assert(catalogQueries[2], qt.Contains, "FROM pg_constraint")
 	c.Assert(catalogQueries[2], qt.Contains, "con.contype = 'f'")
-	c.Assert(catalogQueries[2], qt.Contains, "p.prokind IN ('f', 'p', 'a', 'w')")
+	c.Assert(catalogQueries[2], qt.Contains, "p.prokind = 'f' OR p.prokind = 'p'")
 	c.Assert(catalogQueries[2], qt.Contains, "d.deptype = 'i'")
 	c.Assert(catalogQueries[2], qt.Contains, "t.typtype IN ('e', 'd', 'r')")
 	c.Assert(catalogQueries[2], qt.Contains, "RESTRICT")

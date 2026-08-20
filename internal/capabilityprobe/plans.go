@@ -323,6 +323,14 @@ func postgresFamilyPlan(dialect string) plan {
 		// emulator through PGAdapter 0.55.2, this statement answers `syntax
 		// error at or near "m"` while the same query without RECURSIVE
 		// succeeds (stokaro/ptah#1811).
+		// The relation that records partition parentage, asked as a catalog
+		// question. Every real PostgreSQL-family engine has it; Cloud Spanner's
+		// PostgreSQL interface answers `relation "pg_inherits" does not exist`
+		// (stokaro/ptah#1811).
+		acceptanceNote(capability.CatalogPartitions, nil,
+			"SELECT 1 FROM pg_inherits LIMIT 1",
+			"the catalog recording which table is a partition of which",
+		),
 		acceptanceNote(capability.CatalogRecursiveCTE, nil,
 			"WITH RECURSIVE m AS (SELECT relname FROM pg_class) SELECT relname FROM m LIMIT 1",
 			"a recursive CTE that also reads the catalogs",
@@ -583,6 +591,7 @@ func mysqlFamilyPlan(dialect string) plan {
 		// The key asks whether a recursive CTE may also read the pg catalogs.
 		// The MySQL family has no pg catalogs, so the statement cannot be put
 		// to it and an answer would be to a different question.
+		capability.CatalogPartitions:   "pg_inherits is a PostgreSQL catalog the MySQL family has no spelling of",
 		capability.CatalogRecursiveCTE: "pg_class is a PostgreSQL catalog the MySQL family has no spelling of",
 		// The three PostgreSQL user-type kinds. This server has no spelling of
 		// any of the statements, so neither accepting nor refusing one would

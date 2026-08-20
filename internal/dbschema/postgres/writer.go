@@ -96,6 +96,17 @@ func NewPostgreSQLWriterForRunner(
 			// format(), likewise: it assembles every DROP the query returns,
 			// and only a catalog emulation lacks it.
 			capability.PostgresCatalogFunctions: true,
+			// The object kinds whose cleanup branches are gated. A caller that
+			// does not name its dialect gets the full query, which is what
+			// every PostgreSQL-family engine can answer.
+			capability.Functions:      true,
+			capability.Procedures:     true,
+			capability.DomainTypes:    true,
+			capability.CompositeTypes: true,
+			capability.RangeTypes:     true,
+			// pg_inherits, for the same reason: a caller that does not name its
+			// dialect gets the full set of checks.
+			capability.CatalogPartitions: true,
 		})
 }
 
@@ -526,7 +537,7 @@ func (w *PostgreSQLWriter) collectAllObjects(
 			FROM view_depths
 			GROUP BY oid
 		),
-		cleanup_objects AS (
+{{BRANCH_EXTENSION_BEGIN}}		cleanup_objects AS (
 			SELECT
 				-10 AS priority,
 				0 AS dependency_depth,
@@ -537,7 +548,7 @@ func (w *PostgreSQLWriter) collectAllObjects(
 				{{DROP_EXPR_1}} AS drop_statement
 			FROM pg_extension e
 			{{EXTENSION_NAMESPACE_JOIN}}
-			{{SYSTEM_EXTENSION_FILTER}}
+			{{SYSTEM_EXTENSION_FILTER}}{{BRANCH_EXTENSION_END}}
 
 			UNION ALL
 
@@ -582,7 +593,7 @@ func (w *PostgreSQLWriter) collectAllObjects(
 
 			UNION ALL
 
-			SELECT
+{{BRANCH_ROUTINE_BEGIN}}			SELECT
 				40,
 				0,
 				CASE p.prokind
@@ -596,11 +607,11 @@ func (w *PostgreSQLWriter) collectAllObjects(
 				{{DROP_EXPR_4}}
 			FROM pg_proc p
 			JOIN managed_namespaces n ON n.oid = p.pronamespace
-			WHERE p.prokind IN ('f', 'p', 'a', 'w'){{EXTENSION_OWNED_ROUTINE_FILTER}}
+			WHERE (p.prokind = 'f' OR p.prokind = 'p' OR p.prokind = 'a' OR p.prokind = 'w'){{EXTENSION_OWNED_ROUTINE_FILTER}}{{BRANCH_ROUTINE_END}}
 
 			UNION ALL
 
-			SELECT
+{{BRANCH_USERTYPE_BEGIN}}			SELECT
 				50,
 				0,
 				'type',
@@ -614,11 +625,11 @@ func (w *PostgreSQLWriter) collectAllObjects(
 			WHERE (
 				t.typtype IN ('e', 'd', 'r')
 				OR (t.typtype = 'c' AND c.relkind = 'c')
-			  )
+			  ){{BRANCH_USERTYPE_END}}
 
 			UNION ALL
 
-			SELECT
+{{BRANCH_COLLATION_BEGIN}}			SELECT
 				60,
 				0,
 				'collation',
@@ -631,7 +642,7 @@ func (w *PostgreSQLWriter) collectAllObjects(
 
 {{DEFAULT_PRIVILEGE_OBJECTS}}
 		)
-		SELECT object_kind, object_schema, object_name, object_qualifier, drop_statement
+{{BRANCH_COLLATION_END}}		SELECT object_kind, object_schema, object_name, object_qualifier, drop_statement
 		FROM cleanup_objects
 		ORDER BY priority, dependency_depth DESC, object_schema, object_kind, object_name
 	`, "{{SCHEMA_PREDICATE}}", postgresSchemaPredicate(len(scope.schemas)))
@@ -639,6 +650,7 @@ func (w *PostgreSQLWriter) collectAllObjects(
 	query = strings.ReplaceAll(query, "{{SYSTEM_EXTENSION_FILTER}}", extensionFilter)
 	query = applyViewOrderingShape(query, viewOrderingShapeFor(w.caps))
 	query = applyCleanupDropExpressions(query, dropAssemblyFor(w.caps))
+	query = applyCleanupBranches(query, w.caps)
 	query = strings.ReplaceAll(
 		query, "{{EXTENSION_OWNED_ROUTINE_FILTER}}", extensionOwnedRoutineFilter(w.caps))
 	query = strings.ReplaceAll(
@@ -672,6 +684,14 @@ func (w *PostgreSQLWriter) collectAllObjects(
 	}
 	return objects, nil
 }
+
+// The routine kinds are compared with OR rather than IN, and pg_class's are
+// not, which looks inconsistent and is measured rather than chosen. Cloud
+// Spanner's PostgreSQL interface answers this one branch with `ANY, SOME, and
+// IN expressions requiring array casting are not supported` while accepting the
+// identical shape against pg_class -- its pg_proc emulation types prokind
+// differently. Isolated by running each UNION branch of this query against the
+// emulator on its own (stokaro/ptah#1811).
 
 // postgresSchemaPredicate matches the managed namespaces by name.
 //
@@ -973,6 +993,70 @@ func applyCleanupDropExpressions(query string, assembly dropAssembly) string {
 		query = strings.ReplaceAll(query, fmt.Sprintf("{{DROP_EXPR_%d}}", i+1), replacement)
 	}
 	return query
+}
+
+// cleanupBranchKeys names, per optional UNION branch of the cleanup query, the
+// capabilities a server needs before the branch is worth asking.
+//
+// Dropping a branch is not an optimization. Cloud Spanner's PostgreSQL
+// interface answers the full query with `Number of joins exceeds the maximum
+// allowed limit of 20`, because its emulation expands every catalog reference
+// into joins of its own, so a query that asks about six catalogs cannot run
+// there at all. Measured on the emulator through PGAdapter 0.55.2
+// (stokaro/ptah#1811).
+//
+// It is also safe rather than merely necessary: a server whose preset reports
+// no extensions has no extensions to drop, so the branch removes nothing it
+// would have removed. Spanner reports false for every key below and true only
+// for views, which is why the two branches that stay are the ones that can
+// return rows.
+// Only two branches are gated, and the reason is that only two have a key. The
+// registry has no capability for extensions or collations, so gating those on a
+// name that does not exist would read false for EVERY dialect and delete the
+// branch on real PostgreSQL too -- which is what this nearly did.
+var cleanupBranchKeys = map[string][]capability.Capability{
+	"ROUTINE":  {capability.Functions, capability.Procedures},
+	"USERTYPE": {capability.DomainTypes, capability.CompositeTypes, capability.RangeTypes},
+}
+
+// applyCleanupBranches keeps the optional branches a server can answer and
+// removes the rest, along with the UNION ALL that joined them.
+func applyCleanupBranches(query string, caps capability.Capabilities) string {
+	for _, name := range []string{"EXTENSION", "COLLATION"} {
+		query = strings.ReplaceAll(query, "{{BRANCH_"+name+"_BEGIN}}", "")
+		query = strings.ReplaceAll(query, "{{BRANCH_"+name+"_END}}", "")
+	}
+	for name, keys := range cleanupBranchKeys {
+		begin, end := "{{BRANCH_"+name+"_BEGIN}}", "{{BRANCH_"+name+"_END}}"
+		if anyCapability(caps, keys) {
+			query = strings.ReplaceAll(query, begin, "")
+			query = strings.ReplaceAll(query, end, "")
+			continue
+		}
+		query = removeCleanupBranch(query, begin, end)
+	}
+	return query
+}
+
+func anyCapability(caps capability.Capabilities, keys []capability.Capability) bool {
+	return slices.ContainsFunc(keys, caps.Has)
+}
+
+// removeCleanupBranch cuts one marked branch out, taking the UNION ALL on
+// whichever side keeps the remaining branches joined.
+func removeCleanupBranch(query, begin, end string) string {
+	i, j := strings.Index(query, begin), strings.Index(query, end)
+	if i < 0 || j < 0 {
+		return query
+	}
+	before, after := query[:i], query[j+len(end):]
+	if trimmed, cut := strings.CutSuffix(strings.TrimRight(before, " \t\n"), "UNION ALL"); cut {
+		return trimmed + after
+	}
+	if trimmed, cut := strings.CutPrefix(strings.TrimLeft(after, " \t\n"), "UNION ALL"); cut {
+		return before + trimmed
+	}
+	return before + after
 }
 
 // dropAssembly names which side builds the DROP statements.
@@ -1417,7 +1501,7 @@ func (w *PostgreSQLWriter) dropSchemaObjects(ctx context.Context) (resultErr err
 			return err
 		}
 	}
-	if capabilities.inspectPartitionEdges {
+	if capabilities.inspectPartitionEdges && w.caps.Has(capability.CatalogPartitions) {
 		if err := w.rejectCrossSchemaPartitionEdges(ctx, sqlTx); err != nil {
 			return err
 		}
@@ -1458,7 +1542,7 @@ func (w *PostgreSQLWriter) dropSchemaObjectsWithoutTransaction(ctx context.Conte
 	if err != nil {
 		return err
 	}
-	if capabilities.inspectPartitionEdges {
+	if capabilities.inspectPartitionEdges && w.caps.Has(capability.CatalogPartitions) {
 		if err := w.rejectCrossSchemaPartitionEdges(ctx, w.db); err != nil {
 			return err
 		}
