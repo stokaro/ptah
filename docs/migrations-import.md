@@ -34,7 +34,7 @@ The source tool is auto-detected; pass `--from` to be explicit or to disambiguat
 | golang-migrate | **Supported** | `<version>_<name>.up.sql` / `.down.sql`; integer or timestamp versions. |
 | Goose | **Supported** | Single-file `<version>_<name>.sql` split by `-- +goose Up` / `-- +goose Down` (SQL only; `StatementBegin/End` directives are stripped, the exact line `-- +goose NO TRANSACTION` becomes `-- +ptah no_transaction` on both output directions, and Go-based migrations are rejected). |
 | Flyway | **Supported** | Versioned `V<version>__<desc>.sql` (dotted versions such as `V2.1` are supported), undo `U<version>__<desc>.sql` (paired to its versioned migration by version and imported as the down), and repeatable `R__<desc>.sql` (imported as a one-time migration ordered after the versioned ones). |
-| Liquibase | **Supported** (formatted SQL) | Formatted-SQL changelogs (a `.sql` file beginning with `--liquibase formatted sql`): each `--changeset <author>:<id>` becomes a migration, and its `--rollback` lines become the down. XML, YAML, and JSON changelogs are detected and rejected with a message — they are a follow-up. |
+| Liquibase | **Supported** | All four serializations: formatted SQL, XML, YAML and JSON. See [Liquibase specifics](#liquibase-specifics). |
 
 ## Behavior
 
@@ -59,19 +59,51 @@ The source tool is auto-detected; pass `--from` to be explicit or to disambiguat
   `repeatable_<desc>`), because Ptah-native migrations do not have Flyway-style
   reapply semantics — a later source change becomes a new Ptah migration rather
   than an automatic re-run.
-- **Liquibase specifics.** Only formatted-SQL changelogs are read. A changeset
-  has no numeric version (it is identified by `author:id` and applied in changelog
-  order), so changesets are assigned sequential Ptah versions in file order — files
-  are ordered by name, changesets within a file by appearance — with the
-  `author:id` carried into the name (`0000000001_alice_create_users...`). Each
-  `--rollback` line contributes the down; a normal `--` SQL comment is kept in the
-  up. XML, YAML, and JSON changelogs are detected and rejected with an actionable
-  message rather than silently skipped.
+- **Liquibase specifics.** All four serializations are read, and a changelog
+  construct that cannot become a migration file is refused by name. See
+  [Liquibase specifics](#liquibase-specifics) below.
 - **No clobbering.** The import refuses to overwrite an existing migration file
   in the output directory — point `--migrations-dir` at an empty or new
   directory.
 - **Integrity.** After writing, `ptah.sum` is refreshed, so
   `ptah migrations validate` passes against the imported directory immediately.
+
+## Liquibase specifics
+
+All four serializations are read: formatted SQL, and the XML, YAML and JSON
+changelogs. A changeset has no numeric version (it is identified by `author:id`
+and applied in changelog order), so changesets are assigned sequential Ptah
+versions in file order — files are ordered by name, changesets within a file by
+appearance — with the `author:id` carried into the name
+(`0000000001_alice_create_users...`).
+
+In formatted SQL each `--rollback` line contributes the down, and a normal `--`
+SQL comment is kept in the up. In a changelog the `sql` changes are the up and
+`rollback` is the down, whether it is written as a change list, a nested
+`<sql>`, or bare SQL text.
+
+### Constructs that are refused
+
+A construct that cannot become a migration file is **refused by name**, so an
+import either carries the whole changelog or does not happen. A migration
+directory that is not the changelog it claims to have imported applies cleanly
+and is wrong, which is worse than an import that did not happen.
+
+| Construct | Why it is refused |
+| --- | --- |
+| `include`, `includeAll` | They compose other changelog files. Ptah imports one changelog at a time, so the changesets those files hold would be left out. Import the referenced files instead. |
+| `preConditions`, `contexts`, `labels` | They decide *whether* a changeset runs. A migration directory has no equivalent, so importing them would turn a conditional history into an unconditional one. Split the changelog, or import it by hand. |
+| Typed refactorings (`createTable`, `addColumn`, …) | They are not SQL text, and rendering them would mean reimplementing Liquibase's generator for every dialect. Rewrite the changeset as a `sql` change. |
+
+A directory holding both a changelog and formatted-SQL files is refused as well:
+the two shapes order changesets by different rules, and a changelog may
+`include` the SQL files outright, so importing both would reorder or duplicate
+history. Import them separately.
+
+`migrate apply --dir` still refuses a serialized changelog and names
+`migrate import` as the verb that reads one. Direct apply takes each file's own
+name as its version, and a changelog has none — its order lives inside the
+document.
 
 ## After importing
 

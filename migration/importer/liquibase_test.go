@@ -99,10 +99,19 @@ func TestLiquibaseImportEndToEnd(t *testing.T) {
 	c.Assert(string(placeholder), qt.Contains, "No rollback")
 }
 
-// TestLiquibaseRejectsXMLChangelog checks that an XML/YAML/JSON changelog is
-// detected as Liquibase but rejected with an actionable message rather than
-// silently ignored or reported as an unknown tool.
-func TestLiquibaseRejectsXMLChangelog(t *testing.T) {
+// TestLiquibaseDetectsAnXMLChangelog keeps the detection half of what used to be
+// TestLiquibaseRejectsXMLChangelog.
+//
+// A serialized changelog carries no `--liquibase formatted sql` header, so
+// detection has to recognize it by its root element or report an unknown tool.
+// That was true when the reader refused these files and is still true now that
+// it reads them (stokaro/ptah#1629).
+//
+// The rejection half of the original test moved rather than left: this fixture's
+// <createTable> is still refused, now by the name of the construct rather than by
+// the name of the serialization -- see
+// TestLiquibaseChangelog_RefusesUnconvertibleConstructs.
+func TestLiquibaseDetectsAnXMLChangelog(t *testing.T) {
 	c := qt.New(t)
 
 	xmlFS := fstest.MapFS{
@@ -114,13 +123,14 @@ func TestLiquibaseRejectsXMLChangelog(t *testing.T) {
 </databaseChangeLog>
 `)},
 	}
-	// Auto-detect picks Liquibase (so the user gets the specific message)...
+
 	parser, err := importer.DetectParser(xmlFS)
+
 	c.Assert(err, qt.IsNil)
 	c.Assert(parser.Name(), qt.Equals, "liquibase")
-	// ...and Parse rejects with an actionable, format-naming error.
+	// The construct, not the serialization, is what stops this one now.
 	_, err = parser.Parse(xmlFS)
-	c.Assert(err, qt.ErrorMatches, `.*XML/YAML/JSON changelogs are not yet supported.*db\.changelog\.xml.*`)
+	c.Assert(err, qt.ErrorMatches, `.*uses <createTable>, which is not SQL text.*`)
 }
 
 func TestLiquibaseParseErrors(t *testing.T) {
@@ -155,7 +165,7 @@ func TestLiquibaseParseErrors(t *testing.T) {
 				"changelog.sql": {Data: []byte("--liquibase formatted sql\n--changeset a:b\nSELECT 1;\n")},
 				"master.xml":    {Data: []byte("<databaseChangeLog></databaseChangeLog>")},
 			},
-			re: `.*XML/YAML/JSON changelogs are not yet supported.*master\.xml.*`,
+			re: `.*holds both changelog files \(master\.xml\) and formatted-SQL changelogs.*`,
 		},
 		{
 			name: "changeset without SQL",

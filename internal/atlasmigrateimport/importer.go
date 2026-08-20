@@ -304,6 +304,29 @@ func loadCapturedForImport(snapshot fsnapshot.Snapshot, dir string, format Forma
 	if format != FormatLiquibase {
 		return loadCaptured(snapshot, dir, format)
 	}
+	// Serialized changelogs are converted HERE rather than in loadCaptured,
+	// which is also the direct-apply reading and deliberately keeps one entry
+	// per file. A changelog carries no version in its file name, so only the
+	// import path -- which assigns versions anyway -- can read one
+	// (stokaro/ptah#1629).
+	//
+	// This runs before the covered-name check because SumFileNames lists only
+	// *.sql: a directory of nothing but changelogs covers no file at all, and
+	// would otherwise fall through to the direct reading and be refused.
+	changelogs, err := snapshotLiquibaseChangelogNames(snapshot)
+	if err != nil {
+		return nil, err
+	}
+	if len(changelogs) > 0 {
+		entries, err := loadLiquibaseChangelogEntries(snapshot, changelogs)
+		if err != nil {
+			return nil, err
+		}
+		if err := checkDuplicateConvertedVersions(entries); err != nil {
+			return nil, err
+		}
+		return &Loaded{Format: format, Dir: dir, Entries: entries}, nil
+	}
 	covered, err := SumFileNames(snapshot, format)
 	if err != nil {
 		return nil, err
@@ -324,13 +347,9 @@ func loadCapturedForImport(snapshot fsnapshot.Snapshot, dir string, format Forma
 }
 
 func loadConventionalLiquibaseImportEntries(snapshot fsnapshot.Snapshot, covered []string) ([]Entry, error) {
-	files, err := fs.ReadDir(snapshot, ".")
-	if err != nil {
-		return nil, fmt.Errorf("read source migration directory: %w", err)
-	}
-	if err := rejectUnsupportedLiquibaseChangelogs(snapshot, files); err != nil {
-		return nil, err
-	}
+	// A directory holding a serialized changelog never reaches this path: it is
+	// taken by the changelog branch of loadCapturedForImport, which refuses a
+	// directory mixing the two shapes rather than reading half of it.
 	parser, err := importer.ParserByName(string(FormatLiquibase))
 	if err != nil {
 		return nil, err
@@ -707,11 +726,86 @@ func loadGooseEntries(fsys fs.FS, files []fs.DirEntry) ([]Entry, error) {
 	return loadDirectiveSectionEntries(fsys, files, gooseUpSQL)
 }
 
+// loadLiquibaseEntries reads the FORMATTED-SQL shape, whose changesets are
+// marked by `--changeset` directives inside .sql files.
+//
+// This is the DIRECT-APPLY reading, and it keeps one entry per file: a source
+// file's own name is its version, which is what lets `migrate apply --dir` run a
+// foreign directory without rewriting it. A serialized changelog carries no such
+// name -- its order lives inside the document -- so converting one here would
+// have to synthesize versions, and the same directory would then apply under one
+// set of versions and import under another.
+//
+// So a changelog is refused here, by a message naming `migrate import`, which is
+// the verb that converts it (stokaro/ptah#1629).
 func loadLiquibaseEntries(fsys fs.FS, files []fs.DirEntry) ([]Entry, error) {
 	if err := rejectUnsupportedLiquibaseChangelogs(fsys, files); err != nil {
 		return nil, err
 	}
 	return loadDirectiveSectionEntries(fsys, files, liquibaseSQL)
+}
+
+// liquibaseChangelogNames lists the serialized changelogs in a source
+// directory.
+func liquibaseChangelogNames(fsys fs.FS, files []fs.DirEntry) []string {
+	var names []string
+	for _, file := range files {
+		if file.IsDir() || !liquibaseChangelogExtensions[strings.ToLower(filepath.Ext(file.Name()))] {
+			continue
+		}
+		data, err := fs.ReadFile(fsys, file.Name())
+		if err != nil {
+			continue
+		}
+		if liquibaseRootRe.Match(data) {
+			names = append(names, file.Name())
+		}
+	}
+	return names
+}
+
+// snapshotLiquibaseChangelogNames lists the serialized changelogs at the top
+// level of a captured source directory.
+func snapshotLiquibaseChangelogNames(fsys fs.FS) ([]string, error) {
+	files, err := fs.ReadDir(fsys, ".")
+	if err != nil {
+		return nil, fmt.Errorf("read liquibase source directory: %w", err)
+	}
+	return liquibaseChangelogNames(fsys, files), nil
+}
+
+// loadLiquibaseChangelogEntries reads XML, YAML and JSON changelogs through the
+// shared parser, which converts the changesets it can, refuses the constructs it
+// cannot by name, and refuses a directory mixing changelogs with formatted SQL
+// (stokaro/ptah#1629).
+func loadLiquibaseChangelogEntries(fsys fs.FS, changelogs []string) ([]Entry, error) {
+	parser, err := importer.ParserByName(string(FormatLiquibase))
+	if err != nil {
+		return nil, err
+	}
+	migrations, err := parser.Parse(fsys)
+	if err != nil {
+		return nil, err
+	}
+	// The same padding the conventional path applies, and for the same measured
+	// reason: atlas.sum orders entries lexically, so 10 would sort before 2
+	// without it.
+	width := len(strconv.Itoa(len(migrations)))
+	entries := make([]Entry, 0, len(migrations))
+	for index, migration := range migrations {
+		identity := sanitizeName(migration.Name)
+		if identity == "" {
+			return nil, fmt.Errorf(
+				"liquibase changeset identity %q in %s cannot be represented in an Atlas migration file name",
+				migration.Name, strings.Join(changelogs, ", "))
+		}
+		entries = append(entries, Entry{
+			Name: fmt.Sprintf("%0*d_%s.sql", width, index+1, identity),
+			Data: normalizeSQL([]byte(migration.UpSQL)),
+		})
+	}
+	sortEntries(entries)
+	return entries, nil
 }
 
 func rejectUnsupportedLiquibaseChangelogs(fsys fs.FS, files []fs.DirEntry) error {
@@ -730,7 +824,8 @@ func rejectUnsupportedLiquibaseChangelogs(fsys fs.FS, files []fs.DirEntry) error
 	}
 	if len(changelogFiles) > 0 {
 		return fmt.Errorf(
-			"liquibase XML/YAML/JSON changelogs are not yet supported (only formatted-SQL changelogs beginning with %q); found %s",
+			"this path reads liquibase formatted-SQL changelogs (files beginning with %q); "+
+				"found serialized changelog(s) %s, which are imported by `migrate import`",
 			"--liquibase formatted sql",
 			strings.Join(changelogFiles, ", "),
 		)

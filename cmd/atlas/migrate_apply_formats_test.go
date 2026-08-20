@@ -347,7 +347,8 @@ func TestMigrateApplyRejectsUnsupportedFormatFilesBeforeOpeningDatabase(t *testi
 				"1_init.sql":    "--liquibase formatted sql\n--changeset ptah:1\nCREATE TABLE users (id INTEGER PRIMARY KEY);\n",
 				"changelog.xml": "<databaseChangeLog></databaseChangeLog>\n",
 			},
-			wantErr: `atlas migrate apply --dir: liquibase XML/YAML/JSON changelogs are not yet supported .* found changelog\.xml`,
+			wantErr: "atlas migrate apply --dir: .*found serialized changelog\\(s\\) changelog\\.xml, " +
+				"which are imported by `migrate import`",
 		},
 	}
 
