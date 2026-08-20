@@ -56,30 +56,55 @@ func resolveMigrationFileTxMode(global MigrationTxMode, file MigrationFileTxMode
 	}
 }
 
+// ResolveAtlasDirectiveTxMode combines a global transaction mode with the
+// mode an `-- atlas:txmode` directive selects, under the rule that family
+// already answers to: the directive overrides the global mode, except under
+// `all`, where the combination is refused rather than resolved.
+//
+// It is exported because the directive is not only a migration file's: a
+// declarative plan file carries the same header, and reading the same line to
+// mean two different things depending on which artifact carried it is the
+// defect this shared entry point exists to prevent (stokaro/ptah#1700).
+//
+// source names the artifact for the refusal -- a migration file's path and
+// description, or a plan file's path.
+func ResolveAtlasDirectiveTxMode(
+	global MigrationTxMode,
+	file MigrationFileTxMode,
+	source string,
+) (MigrationTxMode, error) {
+	if global == MigrationTxModeAll && file != MigrationFileTxModeUnspecified {
+		return "", newAtlasTxModeDirectiveError(
+			"cannot set txmode directive to %q in %q when txmode %q is set globally",
+			file,
+			source,
+			MigrationTxModeAll,
+		)
+	}
+	return resolveMigrationFileTxMode(global, file)
+}
+
 func (m *Migrator) resolveUpMigrationTxMode(migration *Migration) (MigrationTxMode, error) {
 	fileMode := migration.parsedUpTxModeForDialect(m.connectionDialect())
 	if fileMode.err != nil {
 		return "", fileMode.err
 	}
-	if m.txMode == MigrationTxModeAll && fileMode.mode != MigrationFileTxModeUnspecified {
+	if m.txMode == MigrationTxModeAll && fileMode.mode != MigrationFileTxModeUnspecified &&
+		fileMode.source != migrationFileTxModeSourceAtlas {
 		if fileMode.source == migrationFileTxModeSourcePtah && fileMode.mode == MigrationFileTxModeNone {
 			return "", fmt.Errorf("migration %d is marked no_transaction and cannot run with tx-mode all", migration.Version)
 		}
-		if fileMode.source != migrationFileTxModeSourceAtlas {
-			return "", fmt.Errorf(
-				"migration %d selects txmode %q and cannot run with tx-mode all",
-				migration.Version,
-				fileMode.mode,
-			)
-		}
-		return "", newAtlasTxModeDirectiveError(
-			"cannot set txmode directive to %q in %q when txmode %q is set globally",
+		return "", fmt.Errorf(
+			"migration %d selects txmode %q and cannot run with tx-mode all",
+			migration.Version,
 			fileMode.mode,
-			migrationTxModeSourceName(migration.upSourcePath, migration.Description),
-			MigrationTxModeAll,
 		)
 	}
-	return resolveMigrationFileTxMode(m.txMode, fileMode.mode)
+	return ResolveAtlasDirectiveTxMode(
+		m.txMode,
+		fileMode.mode,
+		migrationTxModeSourceName(migration.upSourcePath, migration.Description),
+	)
 }
 
 func (m *Migrator) resolveDownMigrationTxMode(migration *Migration) (MigrationTxMode, error) {

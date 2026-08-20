@@ -744,7 +744,14 @@ func TestSchemaPlanValidateRefusesUnimplementedTransitionFlags(t *testing.T) {
 		want string
 	}{
 		{name: "repo", args: []string{"--repo", "atlas://app"}, want: "accepts --repo, but schema repositories require a hosted registry"},
-		{name: "format", args: []string{"--format", "{{ json . }}"}, want: "accepts --format, but Ptah does not implement"},
+		// This verb reports a verdict on a plan rather than producing one, so
+		// --format has no plan document to render and says so, instead of the
+		// "not yet" it used to answer with (stokaro/ptah#1700).
+		{
+			name: "format",
+			args: []string{"--format", "{{ json . }}"},
+			want: "accepts --format, but --format renders a plan document, and this verb reports on a plan instead of producing one",
+		},
 		{name: "lock_timeout", args: []string{"--lock-timeout", "10s"}, want: "accepts --lock-timeout, but Ptah does not implement"},
 		{name: "include", args: []string{"--include", "public.*"}, want: "accepts --include, but Ptah only supports"},
 		{name: "schema", args: []string{"--schema", "public"}, want: "accepts --schema, but Ptah only supports"},

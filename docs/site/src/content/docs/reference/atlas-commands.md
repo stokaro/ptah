@@ -1093,6 +1093,8 @@ plan document prints to stdout.
 | `--edit` | Opens the planned SQL in `$VISUAL`, then `$EDITOR`, and saves the plan rebuilt from valid UTF-8 text. Comments round-trip, and dialect-aware statement severity and the destructive marker are re-derived from what you wrote. An edit leaving no statement is refused, and nothing is written. |
 | `--name-format <template>` | Templates the name over `.FromHash` and `.ToHash`; hashes use Atlas's measured untagged standard-Base64 representation, and the Atlas template helpers (`json`, `upper`, `add`, `indent_ln`, …) are available. Cannot be combined with `--name`. A rendered `/` or `\` requires explicit `--output`. |
 | `--skip-lint` | Accepted as an explicit no-op: `schema plan` runs no lint step, so there is nothing to skip. |
+| `--format <template>` | Renders the plan through a Go template instead of printing the plan document. See [Plan report payload](#plan-report-payload). |
+| `--directive <line>`/`-d` | Writes a migration directive into the plan file. See [Plan directives](#plan-directives). |
 | `--env` | Reads `url` (the plan target), `schema.src`, `dev`, `exclude`, `schema.mode`, and supported `diff` policy from `atlas.hcl`. |
 
 The JSON plan records the ordered SQL statements with per-statement safety
@@ -1131,17 +1133,86 @@ standard-Base64 hash value; because standard Base64 can contain `/`, use an
 explicit `--output` when the rendered name must never depend on file-system
 path rules.
 
+#### Plan report payload
+
+`--format` takes the same Go template `schema apply`, `schema diff`,
+`migrate apply` and the other reporting verbs take, and renders it instead of
+printing the plan document. It selects the output rather than adding to it: a
+plan asked to be saved is still saved, and the `Plan saved to file://…` line is
+suppressed so it cannot land inside a rendered document.
+
+The payload's field names are Ptah's. On the other eight verbs the shape
+follows what Atlas prints, because Atlas executes those verbs and the names are
+therefore observable; Atlas keeps `schema plan` in its Pro registry flow and
+publishes help text for this flag and nothing a template could be written
+against, so there was no shape to match — only one to choose and write down.
+What it is chosen to match is the sibling verb: `.Changes[].Cmd` is
+`schema diff`'s spelling, so a template written there reads a plan unchanged.
+
+| Field | Meaning |
+| --- | --- |
+| `.Name` | Plan name, which is also the default plan file's base name. |
+| `.Dialect` | Target dialect the statements were rendered for. Empty for a plan read back from `.plan.hcl`, which has no field for it. |
+| `.From`, `.To` | The plan's source and desired-state fingerprints, the two values the plan file records. |
+| `.Exclude` | Exclusion patterns the plan was computed with; omitted when there are none. |
+| `.Destructive` | Whether any statement was classified destructive. |
+| `.Changes` | Ordered planned statements, each with `.Cmd`, `.Severity` and `.Reason`. Always a list, so a synced schema renders an empty array rather than a sentence. |
+| `.MigrationBody` | The plan file's `migration` attribute exactly as written, directives included. Read this to reproduce the artifact; read `.Changes` or `sql` to describe it. |
+
+`sql` renders the statements as one script and takes the same optional indent
+argument it takes on `schema diff`. The shared helpers (`json`, `json_merge`,
+`upper`, `add`, `indent_ln`, and the color helpers) are all registered — on
+`schema diff` the shared set is behind `PTAH_SCHEMA_DIFF_TEMPLATE_HELPERS`
+because Atlas offers `sql` alone there, and no such narrower surface exists on
+a verb Atlas does not run at all.
+
+```console
+$ ptah-compat schema plan --from "$DB" --to file://schema.sql --dry-run --format '{{ json . }}'
+$ ptah-compat schema plan --from "$DB" --to file://schema.sql --dry-run --format '{{ sql . }}'
+```
+
+An empty or unparseable `--format` is refused before any database is opened,
+and nothing is written.
+
+#### Plan directives
+
+`-d`/`--directive` writes a migration directive into the plan file, in the
+leading comment block its readers honor — the unbroken run of line comments
+that starts the migration body, closed by a blank line. A directive below that
+block governs nothing, which is why the position is not the operator's to
+choose.
+
+Both spellings of a line are accepted: `atlas:txmode none` as the flag's help
+spells it, and `-- atlas:txmode none` as a migration file spells it.
+
+| Directive | Honored by |
+| --- | --- |
+| `atlas:txmode none`, `atlas:txmode file` | `schema apply --plan`, which executes the plan in that transaction mode. |
+| `atlas:nolint [<selector>…]` | `schema plan lint`, which silences the named rules over the plan's SQL. |
+
+Anything else is refused rather than recorded, including `atlas:checkpoint`:
+a directive a plan file carries and nothing acts on is an instruction the
+reviewer approves and the run ignores. `atlas:txmode all` is refused too, and
+the refusal names `file` as the value to write instead — a transaction mode is
+a file-level directive, and `all` is a global one.
+
+A second `atlas:txmode` is refused whether or not it agrees with the first;
+repeated `atlas:nolint` lines are ordinary, since each names its own selectors.
+
+At apply time the directive resolves against `--tx-mode` under the rule a
+versioned migration's directive already answers to, through the same code: the
+directive wins, except under `--tx-mode all`, where the combination is refused
+rather than silently decided.
+
+```console
+$ ptah-compat schema plan --from "$DB" --to file://schema.sql -o app.plan.hcl -d 'atlas:txmode none'
+$ ptah-compat schema apply --url "$DB" --to file://schema.sql --plan file://app.plan.hcl
+```
+
 **Not implemented**
 
 - Registry-bound `--push`, `--pending`, and `--repo` are recorded waivers
   that fail loudly.
-- `--format` fails explicitly. Atlas's plan report payload was never executed
-  in Atlas, so its field names are unknown; an invented shape
-  would silently break Pro templates that reference the real ones.
-- `--directive` fails explicitly. The measured Atlas `.plan.hcl` carries only
-  `from`, `to`, and `migration`, so a directive would have to ride inside the
-  migration heredoc in an unmeasured spelling — and Ptah's own reader ignores
-  `-- atlas:checkpoint` today, so emitted directives would be silent no-ops.
 - `--schema`, `--include`, and `--lock-timeout` fail explicitly until
   implemented.
 - The registry sub-verbs (`approve`, `list`, `pull`, `push`, `rm`) stay
@@ -1165,9 +1236,9 @@ is to create the plan file.
 The plan is written to `--output`/`-o` when given, and to `<name>.plan.hcl` in
 the working directory otherwise; an existing default-named plan file is never
 overwritten. An `--output` path ending in `.json` writes the native JSON plan
-format. `--edit`, `--name` and `--name-format` behave exactly as they do on
-`schema plan`, and the same refusals apply to `--repo`, `--format`,
-`--lock-timeout`, `--schema` and `--include`.
+format. `--edit`, `--name`, `--name-format` and `--format` behave exactly as they do on
+`schema plan`, and the same refusals apply to `--repo`, `--lock-timeout`,
+`--schema` and `--include`.
 
 `--save`, `--dry-run`, `--push`, `--pending`, `--skip-lint` and `--directive`
 are **not registered** here, because Atlas does not register them here.

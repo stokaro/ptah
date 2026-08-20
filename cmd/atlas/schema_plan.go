@@ -31,6 +31,10 @@ type atlasSchemaPlanOptions struct {
 	save       bool
 	dryRun     bool
 	edit       bool
+	// directives are the --directive values, normalized and refused at parse
+	// time; see [atlasschema.PlanDirectives]. Only the parent verb registers
+	// the flag, so this is empty on every sub-verb.
+	directives []atlasschema.PlanDirective
 }
 
 type atlasSchemaPlanOutputMode uint8
@@ -80,8 +84,19 @@ representation; it cannot be combined with --name. Standard Base64 can contain
 /, so a rendered path separator requires an explicit --output. When --env is set, the
 selected atlas.hcl env can provide url
 (the --from target), schema.src, dev, exclude, schema.mode, and supported
-diff policy values. Registry-bound planning (--push, --pending, --repo),
---format and --directive remain unimplemented.
+diff policy values. Registry-bound planning (--push, --pending, --repo) and
+--lock-timeout remain unimplemented.
+--format renders the plan through a Go template instead of printing the plan
+document, and selects the output rather than adding to it: a plan asked to be
+saved is still saved. The payload is Ptah's own -- Atlas publishes help text
+for this flag and no shape a template could be written against -- and it is
+documented under Reference / Atlas compatibility.
+--directive writes a migration directive into the plan file, in the leading
+comment block its readers honor. Two keys are accepted, and both do something:
+` + "`atlas:txmode none`" + ` and ` + "`atlas:txmode file`" + ` select how
+` + "`schema apply --plan`" + ` executes the plan, and ` + "`atlas:nolint`" + `
+silences a rule in ` + "`schema plan lint`" + `. Anything else is refused
+rather than recorded, so a directive in a plan file is one something acts on.
 
 Standard Base64 contains "/", so about one schema in six gives a twelve-character
 window that is not a legal file name. .FromHashSafe and .ToHashSafe carry the
@@ -170,6 +185,10 @@ func runAtlasSchemaPlan(cmd *cobra.Command, opts atlasSchemaPlanOptions) error {
 	if err := validateAtlasSchemaPlanOptions(cmd, opts); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
+	opts.directives, err = resolveAtlasSchemaPlanDirectives(cmd)
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 
 	connectCtx, cancel := dbcli.ConnectContext(cmd.Context(), dbcli.DefaultConnectTimeout)
 	defer cancel()
@@ -199,7 +218,15 @@ func runAtlasSchemaPlan(cmd *cobra.Command, opts atlasSchemaPlanOptions) error {
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
+	plan = plan.WithDirectiveHeader(opts.directives)
 	if !plan.HasChanges() {
+		// With --format the operator asked for a document to parse, and a
+		// synced schema is one of its answers. Printing the sentence here
+		// instead would hand a JSON consumer a line of English on the one
+		// outcome it is most likely to hit.
+		if opts.format != "" {
+			return writeAtlasSchemaPlanFormat(cmd, opts.format, plan)
+		}
 		fmt.Fprintln(cmd.OutOrStdout(), "Schema is synced, no changes to be made.")
 		return nil
 	}
@@ -238,16 +265,29 @@ func runAtlasSchemaPlan(cmd *cobra.Command, opts atlasSchemaPlanOptions) error {
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
+	// --format replaces what this command prints, and only that: a plan asked
+	// to be saved is still saved, so a CI job can render a document to parse
+	// and keep the artifact in the same run.
+	if opts.format != "" {
+		if err := writeAtlasSchemaPlanFormat(cmd, opts.format, plan); err != nil {
+			return err
+		}
+	}
 	// Without a save destination the plan document prints to stdout, like
 	// Atlas printing the computed plan; --dry-run does the same explicitly.
 	if opts.dryRun || (!opts.save && outputPath == "") {
+		if opts.format != "" {
+			return nil
+		}
 		if _, err := cmd.OutOrStdout().Write(document); err != nil {
 			return cmdutil.Fail(cmd, fmt.Errorf("write plan preview: %w", err))
 		}
 		return nil
 	}
 
-	printAtlasSchemaApplyPlan(cmd.OutOrStdout(), plan.SQL())
+	if opts.format == "" {
+		printAtlasSchemaApplyPlan(cmd.OutOrStdout(), plan.SQL())
+	}
 	path := outputPath
 	if path == "" {
 		path = plan.Name + atlasschema.PlanFileSuffixFor(format)
@@ -259,7 +299,19 @@ func runAtlasSchemaPlan(cmd *cobra.Command, opts atlasSchemaPlanOptions) error {
 		}
 		return cmdutil.Fail(cmd, fmt.Errorf("write plan file: %w", err))
 	}
-	fmt.Fprintf(cmd.OutOrStdout(), "Plan saved to file://%s\n", path)
+	if opts.format == "" {
+		fmt.Fprintf(cmd.OutOrStdout(), "Plan saved to file://%s\n", path)
+	}
+	return nil
+}
+
+// writeAtlasSchemaPlanFormat renders the plan and writes it to stdout.
+func writeAtlasSchemaPlanFormat(cmd *cobra.Command, format string, plan atlasschema.PlanFile) error {
+	rendered, err := renderAtlasSchemaPlanFormat(format, plan)
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	fmt.Fprint(cmd.OutOrStdout(), rendered)
 	return nil
 }
 
@@ -394,6 +446,17 @@ func validateAtlasSchemaPlanOptions(cmd *cobra.Command, opts atlasSchemaPlanOpti
 			return err
 		}
 	}
+	// Same rule for the output template, and the same reason. An empty value
+	// is refused rather than treated as absent, matching `schema apply`: the
+	// operator asked for a rendering and named none.
+	if cmd.Flags().Changed("format") {
+		if strings.TrimSpace(opts.format) == "" {
+			return fmt.Errorf("--format must not be empty")
+		}
+		if err := atlasreport.ValidateSchemaPlanTemplate(opts.format); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
@@ -435,9 +498,18 @@ func rejectUnimplementedAtlasSchemaPlanFlags(
 		{"push", "plan push requires a hosted registry; Ptah's local plan workflow saves plan files with --save or --output instead"},
 		{"pending", "pending plans require a hosted approval state; a locally saved plan file is approved by operator review"},
 		{"repo", "schema repositories require a hosted registry; Ptah plans are local files"},
-		{"format", "Ptah does not implement --format for schema plan yet"},
-		{"directive", "Ptah does not implement Atlas plan directives yet; the plan file records only the migration SQL"},
 		{"lock-timeout", "Ptah does not implement database lock waiting yet"},
+	}
+	if !atlasSchemaPlanVerbsImplementingFormat[verb] {
+		// `validate` and `lint` register --format because Atlas registers it
+		// there, and they report on a plan rather than producing one. Their
+		// payloads are a separate question from this one, and the refusal says
+		// which -- an answer rather than a "not yet" (stokaro/ptah#1700).
+		rejections = append(rejections, struct {
+			flag   string
+			reason string
+		}{"format", "--format renders a plan document, and this verb reports on a plan instead of producing one; " +
+			"its payload would be the verdict, which is not settled. Use `" + atlasSchemaPlanVerb + " --format` to render the plan itself"})
 	}
 	for _, rejection := range rejections {
 		if cmd.Flags().Changed(rejection.flag) {
@@ -451,4 +523,54 @@ func rejectUnimplementedAtlasSchemaPlanFlags(
 		return fmt.Errorf("%s accepts --include, but Ptah only supports local schema files for this command yet", verb)
 	}
 	return nil
+}
+
+// atlasSchemaPlanVerbsImplementingFormat is the set of plan verbs whose
+// --format renders something.
+//
+// It is the two that produce a plan document. `validate` and `lint` consume
+// one and report a verdict on it, which is a different payload with a
+// different shape, and shipping a plan-shaped document from a verb that
+// reports a verdict would be worse than refusing the flag.
+var atlasSchemaPlanVerbsImplementingFormat = map[string]bool{
+	atlasSchemaPlanVerb:    true,
+	atlasSchemaPlanNewVerb: true,
+}
+
+// resolveAtlasSchemaPlanDirectives reads and normalizes --directive.
+//
+// The flag is registered on the parent verb alone, matching Atlas, so an
+// unregistered lookup on a sub-verb is not an error: it means the operator had
+// no way to pass one.
+func resolveAtlasSchemaPlanDirectives(cmd *cobra.Command) ([]atlasschema.PlanDirective, error) {
+	raw, err := cmd.Flags().GetStringArray("directive")
+	if err != nil {
+		return nil, nil
+	}
+	return atlasschema.PlanDirectives(raw)
+}
+
+// renderAtlasSchemaPlanFormat renders the plan through the operator's
+// --format template.
+func renderAtlasSchemaPlanFormat(format string, plan atlasschema.PlanFile) (string, error) {
+	changes := make([]atlasreport.SchemaPlanChange, 0, len(plan.Statements))
+	for _, statement := range plan.Statements {
+		changes = append(changes, atlasreport.SchemaPlanChange{
+			Cmd:      statement.SQL,
+			Severity: string(statement.Severity),
+			Reason:   statement.Reason,
+		})
+	}
+	var out strings.Builder
+	err := atlasreport.WriteSchemaPlan(&out, format, atlasreport.NewSchemaPlan(atlasreport.SchemaPlanOptions{
+		Name:          plan.Name,
+		Dialect:       plan.Dialect,
+		From:          plan.FromFingerprint,
+		To:            plan.ToFingerprint,
+		Exclude:       plan.Exclude,
+		Destructive:   plan.Destructive,
+		Statements:    changes,
+		MigrationBody: plan.SQL(),
+	}))
+	return out.String(), err
 }

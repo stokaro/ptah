@@ -781,6 +781,22 @@ func runAtlasSchemaApplyPlanFile(cmd *cobra.Command, opts atlasSchemaApplyOption
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
+	// A plan carrying `-- atlas:txmode` says how it is to be executed, and it
+	// says so from the artifact the operator reviewed. It is resolved against
+	// --tx-mode under the same rule a migration file's directive answers to,
+	// through the same function: the directive wins, except under --tx-mode
+	// all, where the combination is refused rather than silently decided
+	// (stokaro/ptah#1700).
+	planMode, err := atlasschema.PlanTxMode(path, plan.SQL())
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	if planMode != migrator.MigrationFileTxModeUnspecified {
+		txMode, err = migrator.ResolveAtlasDirectiveTxMode(txMode, planMode, path)
+		if err != nil {
+			return cmdutil.Fail(cmd, err)
+		}
+	}
 	// Atlas requires the desired state to verify a plan file; the Atlas plan
 	// format has nothing else to verify against, so the compat tree mirrors
 	// Atlas's contract and error for it.
