@@ -56,8 +56,9 @@ in the working directory otherwise; a default-named plan file is never
 overwritten. An --output path ending in .json writes Ptah's native
 fingerprinted JSON plan instead of the Atlas ` + "`.plan.hcl`" + ` shape.
 
---edit, --name and --name-format behave exactly as they do on ` + "`schema plan`" + `.
-Registry-bound planning (--repo), --format and --lock-timeout are declared for
+--edit, --name, --name-format and --format behave exactly as they do on
+` + "`schema plan`" + `.
+Registry-bound planning (--repo) and --lock-timeout are declared for
 CLI-surface parity and refused.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			// Atlas registers neither --save nor --dry-run here, so there is no

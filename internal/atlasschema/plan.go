@@ -299,8 +299,27 @@ func (p PlanFile) HasChanges() bool {
 }
 
 // SQL returns the plan statements as one executable SQL script.
+//
+// Any directives the plan carries are inside it, in the header of the first
+// statement, because that is where they were written and where every reader
+// that honors one looks; see plandirective.go.
 func (p PlanFile) SQL() string {
 	return FormatMigrationSQL(p.StatementSQL())
+}
+
+// WithDirectiveHeader returns a copy of the plan whose first statement carries
+// the directive header, with the statement list and safety classification
+// re-derived from the combined text.
+//
+// Re-deriving rather than splicing is what keeps the plan self-consistent: the
+// statements a caller reads are the ones the writer emits, so the file cannot
+// say one thing and the report another.
+func (p PlanFile) WithDirectiveHeader(directives []PlanDirective) PlanFile {
+	header := PlanDirectiveHeader(directives)
+	if header == "" {
+		return p
+	}
+	return p.WithStatementsFromSQL(header + p.SQL())
 }
 
 // StatementSQL returns the ordered plan statement SQL texts.
