@@ -244,7 +244,8 @@ func attachReversePlan(
 // line, which this artifact set does not yet model (stokaro/ptah#1630).
 func formatExpressesNoTransaction(format atlasmigrateimport.Format) bool {
 	switch format {
-	case atlasmigrateimport.FormatGoose, atlasmigrateimport.FormatDBMate, atlasmigrateimport.FormatLiquibase:
+	case atlasmigrateimport.FormatGoose, atlasmigrateimport.FormatDBMate,
+		atlasmigrateimport.FormatLiquibase, atlasmigrateimport.FormatFlyway:
 		return true
 	default:
 		return false

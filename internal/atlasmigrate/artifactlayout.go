@@ -66,6 +66,12 @@ const (
 	// community binary's own `migrate hash`, `validate` and `apply` read back,
 	// and that binary writes `--changeset atlas:<version>-<n>`.
 	liquibaseChangesetAuthor = "atlas"
+	// flywayScriptConfigSuffix names a Flyway script configuration file, which
+	// Flyway locates by the migration's own file name plus this suffix.
+	flywayScriptConfigSuffix = ".conf"
+	// flywayNoTransactionSetting is the line that file carries to opt its
+	// migration out of transaction wrapping.
+	flywayNoTransactionSetting = "executeInTransaction=false\n"
 	// liquibaseNoTransactionAttribute opts a changeset out of transaction
 	// wrapping. Liquibase takes it as an attribute on the changeset line, and
 	// this layout writes ONE changeset carrying both directions, so the
@@ -139,7 +145,7 @@ func composeMigrationArtifact(
 		return pairedArtifacts(stem+".up.sql", stem+".down.sql", content), nil
 	case atlasmigrateimport.FormatFlyway:
 		stem := fmt.Sprintf("%d__%s", version, slug)
-		return pairedArtifacts("V"+stem+".sql", "U"+stem+".sql", content), nil
+		return flywayArtifacts("V"+stem+".sql", "U"+stem+".sql", content), nil
 	case atlasmigrateimport.FormatGoose:
 		return gooseArtifact(
 			fmt.Sprintf("%d_%s.sql", version, slug),
@@ -191,6 +197,38 @@ func gooseArtifact(name string, content MigrationFileContent) []PublicationArtif
 		artifacts[0].Contents...,
 	)
 	return artifacts
+}
+
+// flywayArtifacts composes the layout whose no-transaction marker is a FILE.
+//
+// Flyway keeps the two directions in two migration files and takes the setting
+// from a script configuration file named after each -- `V1__x.sql` is
+// configured by `V1__x.sql.conf` -- so the directions are marked independently,
+// as dbmate's are, but by adding an artifact rather than editing a line.
+//
+// The sidecar is written only when it says something. An empty `.conf` beside
+// every migration would be noise in a directory the source tool also owns.
+//
+// It is deliberately not part of the Atlas integrity set: the file does not end
+// in `.sql`, so SumFileNames does not select it and `migrate validate` neither
+// covers nor rejects it. That matches what the community binary would do with a
+// directory it did not write the sidecar into (stokaro/ptah#1630).
+func flywayArtifacts(upName, downName string, content MigrationFileContent) []PublicationArtifact {
+	artifacts := pairedArtifacts(upName, downName, content)
+	if content.NoTransaction {
+		artifacts = append(artifacts, flywayScriptConfig(upName))
+	}
+	if content.ReverseNoTransaction {
+		artifacts = append(artifacts, flywayScriptConfig(downName))
+	}
+	return artifacts
+}
+
+func flywayScriptConfig(migrationName string) PublicationArtifact {
+	return PublicationArtifact{
+		Name:     migrationName + flywayScriptConfigSuffix,
+		Contents: []byte(flywayNoTransactionSetting),
+	}
 }
 
 // pairedArtifacts composes the two layouts that keep the rollback in a file of

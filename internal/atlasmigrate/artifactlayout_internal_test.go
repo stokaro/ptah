@@ -279,6 +279,114 @@ func TestComposeMigrationArtifacts_LiquibaseMarksTheChangeset(t *testing.T) {
 	}
 }
 
+// TestComposeMigrationArtifacts_FlywayWritesAScriptConfigSidecar pins the
+// layout whose no-transaction marker is a file rather than a line.
+//
+// Flyway keeps the two directions in two migration files and locates the
+// setting by file name -- `V1__x.sql` is configured by `V1__x.sql.conf` -- so
+// the directions are marked independently, and the sidecar is only written when
+// it has something to say.
+func TestComposeMigrationArtifacts_FlywayWritesAScriptConfigSidecar(t *testing.T) {
+	tests := []struct {
+		name                 string
+		noTransaction        bool
+		reverseNoTransaction bool
+		wantNames            []string
+	}{{
+		name:      "no requirement writes no sidecar",
+		wantNames: []string{"V20240102030405__widgets.sql", "U20240102030405__widgets.sql"},
+	}, {
+		name:          "a forward requirement configures the forward file only",
+		noTransaction: true,
+		wantNames: []string{
+			"V20240102030405__widgets.sql", "U20240102030405__widgets.sql",
+			"V20240102030405__widgets.sql.conf",
+		},
+	}, {
+		name:                 "a rollback requirement configures the undo file only",
+		reverseNoTransaction: true,
+		wantNames: []string{
+			"V20240102030405__widgets.sql", "U20240102030405__widgets.sql",
+			"U20240102030405__widgets.sql.conf",
+		},
+	}, {
+		name:                 "both requirements configure both files",
+		noTransaction:        true,
+		reverseNoTransaction: true,
+		wantNames: []string{
+			"V20240102030405__widgets.sql", "U20240102030405__widgets.sql",
+			"V20240102030405__widgets.sql.conf", "U20240102030405__widgets.sql.conf",
+		},
+	}}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			artifacts, err := composeMigrationArtifacts(
+				atlasmigrateimport.FormatFlyway,
+				"widgets",
+				20240102030405,
+				[]MigrationFileContent{{
+					SQL: "CREATE TABLE widgets (id INTEGER);", DownSQL: "DROP TABLE widgets;",
+					NoTransaction: test.noTransaction, ReverseNoTransaction: test.reverseNoTransaction,
+				}},
+			)
+
+			c.Assert(err, qt.IsNil)
+			names := make([]string, 0, len(artifacts))
+			for _, artifact := range artifacts {
+				names = append(names, artifact.Name)
+			}
+			c.Assert(names, qt.DeepEquals, test.wantNames)
+		})
+	}
+}
+
+// TestComposeMigrationArtifacts_FlywaySidecarCarriesTheDocumentedSetting keeps
+// the sidecar's one line honest: Flyway reads a properties file, and a
+// different spelling would be a file it silently ignores.
+func TestComposeMigrationArtifacts_FlywaySidecarCarriesTheDocumentedSetting(t *testing.T) {
+	c := qt.New(t)
+
+	artifacts, err := composeMigrationArtifacts(
+		atlasmigrateimport.FormatFlyway,
+		"widgets",
+		20240102030405,
+		[]MigrationFileContent{{
+			SQL: "CREATE TABLE widgets (id INTEGER);", DownSQL: "DROP TABLE widgets;",
+			NoTransaction: true,
+		}},
+	)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(artifacts, qt.HasLen, 3)
+	c.Assert(string(artifacts[2].Contents), qt.Equals, "executeInTransaction=false\n")
+}
+
+// TestFlywaySidecarStaysOutOfTheIntegritySet is the control on the sidecar's
+// one risky property.
+//
+// atlas.sum is the community binary's integrity file, and it was written for a
+// directory that has no sidecars in it. A `.conf` that got hashed would make
+// every such directory fail `migrate validate` against the binary Ptah is a
+// drop-in for. The selection is by `.sql` suffix, which the sidecar does not
+// have -- this pins that rather than trusting it.
+func TestFlywaySidecarStaysOutOfTheIntegritySet(t *testing.T) {
+	c := qt.New(t)
+	dir := fstest.MapFS{
+		"V20240102030405__widgets.sql":      {Data: []byte("CREATE TABLE widgets (id INTEGER);\n")},
+		"U20240102030405__widgets.sql":      {Data: []byte("DROP TABLE widgets;\n")},
+		"V20240102030405__widgets.sql.conf": {Data: []byte("executeInTransaction=false\n")},
+	}
+
+	names, err := atlasmigrateimport.SumFileNames(dir, atlasmigrateimport.FormatFlyway)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(names, qt.Contains, "V20240102030405__widgets.sql")
+	c.Assert(names, qt.Not(qt.Contains), "V20240102030405__widgets.sql.conf")
+}
+
 // TestComposeMigrationArtifactsKeepsTheAtlasLayoutUnchanged is the control on
 // the whole file: the native layout's file name and bytes are what they were
 // before any of this existed.
