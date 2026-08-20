@@ -89,6 +89,61 @@ type Rule struct {
 	AppliesToDown bool
 	// CheckFile inspects file-level form and returns full findings.
 	CheckFile func(file *File) []Finding
+	// Input declares what this rule reads. The zero value,
+	// [InputStatementText], is the migration SQL and nothing else.
+	//
+	// It is a declaration rather than a comment: [Analysis.BaselineVersions]
+	// is computed from it, so a rule that needs the starting schema state and
+	// does not say so is handed an empty one -- and a rule that says so and
+	// does not get it is reported by [Analysis.UnmetInputs] instead of quietly
+	// finding less (stokaro/ptah#1632).
+	Input RuleInput
+	// BaselineSubjects returns the indexes of the statements in this file whose
+	// analysis would say more with the schema state its version starts from.
+	//
+	// It is required for, and only meaningful to, [InputBaselineSchema].
+	// Statement indexes rather than a yes/no answer, because the reviewed-schema
+	// filter works at that granularity: a rename in a schema the run does not
+	// review is neither worth a dev-database round trip nor worth reporting as
+	// unresolved, and answering per file could not tell the two apart.
+	//
+	// A directory with nothing for the rule to resolve therefore costs no round
+	// trip at all.
+	BaselineSubjects func(file *File) []int
+}
+
+// RuleInput is the analyzer input a [Rule] reads.
+//
+// Ptah's analyzers read migration SQL; Atlas replays the directory against a
+// dev database and analyzes the resulting schema. A concern whose subject
+// exists only in the post-state -- the type of a column a RENAME introduces,
+// say -- is unreachable from the text, so those rules take a second input.
+// Which of the two a rule takes is declared here rather than inferred, because
+// the failure mode of getting it wrong is silence: the rule runs, resolves
+// nothing, and reports less than the tool it replaces while exiting 0.
+type RuleInput uint8
+
+const (
+	// InputStatementText reads the migration SQL and nothing else. It is the
+	// zero value, so a rule says nothing about its input only when its input
+	// is the text.
+	InputStatementText RuleInput = iota
+	// InputBaselineSchema additionally reads the schema state the analyzed
+	// version starts from, replayed onto a dev database by the caller and
+	// handed back through [Options.Baseline]; see [BaselineColumn].
+	InputBaselineSchema
+)
+
+// String names the input for diagnostics.
+func (i RuleInput) String() string {
+	switch i {
+	case InputBaselineSchema:
+		return "baseline schema"
+	case InputStatementText:
+		return "statement text"
+	default:
+		return "unknown input"
+	}
 }
 
 // RuleConfig customizes one rule for a lint run.
@@ -162,10 +217,7 @@ func parseKnownMigrationName(name string, dirFormat migrator.MigrationDirFormat)
 func runRules(file *File, opts Options, rules []Rule) []Finding {
 	var findings []Finding
 	for _, rule := range rules {
-		if ruleDisabled(rule.Code, opts.Disabled, opts.Dialect) ||
-			fileSuppressesRule(file, rule.Code) ||
-			!ruleAppliesToDialect(rule, opts.Dialect) ||
-			ruleExcludedForFile(rule.Code, file, opts.RuleConfigs) {
+		if !ruleRunsOnFile(rule, file, opts) {
 			continue
 		}
 		severity := ruleSeverity(rule, opts.RuleConfigs)
@@ -652,4 +704,17 @@ func tokenizeSourceWords(sql string, mode scanMode) []string {
 		}
 	}
 	return words
+}
+
+// ruleRunsOnFile reports whether rule is enabled for this file under opts.
+//
+// It is shared with [baselineVersions] on purpose: the set of rules that run on
+// a file and the set that may ask for that file's starting schema state have to
+// be the same set, or a run reads a dev database for a rule it then skips, or
+// skips a read for a rule it then runs (stokaro/ptah#1632).
+func ruleRunsOnFile(rule Rule, file *File, opts Options) bool {
+	return !ruleDisabled(rule.Code, opts.Disabled, opts.Dialect) &&
+		!fileSuppressesRule(file, rule.Code) &&
+		ruleAppliesToDialect(rule, opts.Dialect) &&
+		!ruleExcludedForFile(rule.Code, file, opts.RuleConfigs)
 }

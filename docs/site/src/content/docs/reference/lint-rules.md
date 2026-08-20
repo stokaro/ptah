@@ -39,6 +39,47 @@ unless `PTAH_ATLAS_PLAN_LINT_FAIL_ON_ERROR=1` asks for a threshold, so a rule
 appearing below is a check that will be *reported* on a plan, not one standing
 between that plan and a database.
 
+## What a rule reads
+
+Most rules decide from the migration SQL. A few cannot: the type of a column a
+`RENAME` introduces, for instance, lives in an earlier file or in the base
+schema and never in the rename statement. Those rules read a second input — the
+schema state the analyzed version starts from, replayed onto the dev database
+`--dev-url` names.
+
+Which of the two a rule takes is declared on the rule rather than inferred,
+because the failure mode of getting it wrong is silence: the rule runs,
+resolves nothing, and reports less than it should while the command still exits
+0.
+
+| Input | What the rule sees |
+| --- | --- |
+| statement text | The migration SQL, and nothing else. The default. |
+| baseline schema | The above, plus the schema state the version starts from, read from the replayed dev database. |
+
+Two things follow from the declaration:
+
+- **Only the versions a rule asks about are read.** A directory with nothing to
+  resolve costs no introspection, and a rule silenced by `--disable`, by
+  `atlas:nolint`, or by a reviewed-schema scope that excludes its statements
+  costs none either.
+- **A rule that asks and gets nothing says so.** When the run supplies no
+  starting state for a version a rule asked about, both surfaces print a
+  warning on **stderr** naming the rule. Stdout bytes and the exit code are
+  unchanged, so nothing that parses the report is affected:
+
+  ```text
+  warning: DD101 ran without the baseline schema it reads, so this analysis is
+  thinner than the same directory would get against a dev database the run can read
+  ```
+
+  A clean report with that line on stderr means the analysis was narrower than
+  the directory allows, not that the directory is clean.
+
+`DD101` is the rule that reads the baseline today, for the add side of a column
+rename on the compatibility surface. The native surface models a rename as a
+rename, so it asks for no starting state and never prints the notice.
+
 ## How identifiers are spelled
 
 An identifier is a two- or three-letter family prefix and a number. The prefix

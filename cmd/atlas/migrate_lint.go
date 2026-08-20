@@ -353,6 +353,12 @@ func runAtlasMigrateLint(
 	}); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
+	// Stderr, after the report and whatever format produced it: stdout and the
+	// exit code stay byte-identical to a run without this, and a reader still
+	// learns that an analyzer went without the input it reads.
+	if err := migrationlintreport.WriteUnmetInputNotice(cmd.ErrOrStderr(), report); err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	if report.Failed {
 		return exitcode.New(1, errors.New(atlasMigrateLintFindingError))
 	}
