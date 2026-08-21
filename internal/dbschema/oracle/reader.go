@@ -87,6 +87,7 @@ FROM all_tables t
 LEFT JOIN all_tab_comments c
        ON c.owner = t.owner AND c.table_name = t.table_name
 WHERE t.owner = :1
+  AND t.dropped = 'NO'
 ORDER BY t.table_name`
 
 func (r *Reader) readTables() ([]types.DBTable, error) {
@@ -150,6 +151,7 @@ SELECT c.table_name,
 FROM all_tab_cols c
 WHERE c.owner = :1
   AND c.hidden_column = 'NO'
+  AND c.table_name NOT LIKE 'BIN$%'
 ORDER BY c.table_name, c.column_id`
 
 func (r *Reader) readColumns() (map[string][]types.DBColumn, error) {
@@ -216,6 +218,7 @@ FROM all_constraints c
 JOIN all_cons_columns col
      ON col.owner = c.owner AND col.constraint_name = c.constraint_name
 WHERE c.owner = :1
+  AND c.table_name NOT LIKE 'BIN$%'
   AND c.constraint_type IN ('P', 'U', 'R', 'C')
   AND NOT (c.constraint_type = 'C' AND c.generated = 'GENERATED NAME'
            AND REGEXP_LIKE(c.search_condition_vc, '^"[^"]+" IS NOT NULL$'))
@@ -344,6 +347,7 @@ FROM all_constraints c
 JOIN all_cons_columns col
      ON col.owner = c.owner AND col.constraint_name = c.constraint_name
 WHERE c.owner = :1
+  AND c.table_name NOT LIKE 'BIN$%'
   AND c.constraint_type IN ('P', 'U')
 ORDER BY c.constraint_name, col.position`
 
@@ -378,6 +382,8 @@ const indexQuery = `
 SELECT i.index_name, i.table_name, i.uniqueness, i.index_type
 FROM all_indexes i
 WHERE i.owner = :1
+  AND i.table_name NOT LIKE 'BIN$%'
+  AND i.index_name NOT LIKE 'BIN$%'
   AND i.constraint_index = 'NO'
   AND i.index_type <> 'LOB'
 ORDER BY i.table_name, i.index_name`

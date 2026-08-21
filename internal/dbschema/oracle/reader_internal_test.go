@@ -179,3 +179,39 @@ func TestDropStatement_CarriesTheClausesCleanupNeeds(t *testing.T) {
 		})
 	}
 }
+
+// TestQueriesExcludeTheRecycleBin pins the filters that keep dropped objects out
+// of a read.
+//
+// Oracle does not delete a dropped table: it renames it to BIN$... and keeps it
+// until the bin is purged, and all_tables lists it like any other. Measured
+// against 23.26 -- after one apply dropped a table, dba_recyclebin held it and
+// the next plan answered
+//
+//	ALTER TABLE APPUSER."BIN$WZaxbiSHASjgYwUAEawI+Q==$0" DROP CONSTRAINT ...
+//
+// which compounds: every apply that drops a table leaves an entry the next read
+// treats as live. all_tables carries the flag; the other catalogs do not, so
+// they are filtered by the name Oracle gives a recycled object.
+func TestQueriesExcludeTheRecycleBin(t *testing.T) {
+	tests := []struct {
+		name  string
+		query string
+		want  string
+	}{
+		{name: "tables use the catalog flag", query: tableQuery, want: "t.dropped = 'NO'"},
+		{name: "columns exclude recycled tables", query: columnQuery, want: "c.table_name NOT LIKE 'BIN$%'"},
+		{name: "constraints exclude recycled tables", query: constraintQuery, want: "c.table_name NOT LIKE 'BIN$%'"},
+		{name: "referenced keys exclude recycled tables", query: referencedKeyQuery, want: "c.table_name NOT LIKE 'BIN$%'"},
+		{name: "indexes exclude recycled tables", query: indexQuery, want: "i.table_name NOT LIKE 'BIN$%'"},
+		{name: "indexes exclude recycled indexes", query: indexQuery, want: "i.index_name NOT LIKE 'BIN$%'"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(tt.query, qt.Contains, tt.want)
+		})
+	}
+}
