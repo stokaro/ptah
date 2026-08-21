@@ -728,6 +728,29 @@ are accepted; other URL schemes fail explicitly. `--var name=value` can be
 repeated. Repeating the same variable name produces a string list for supported
 Atlas HCL expressions.
 
+### Naming a project config from the native binary
+
+The native `ptah` binary reads the same file. Discovery finds `./atlas.hcl`,
+and `--config` names one anywhere else:
+
+```bash
+ptah migrations status --config conf/staging.hcl --env staging
+```
+
+`--config` takes a `ptah.yaml` as it always has; a path ending in `.hcl` is read
+as an Atlas project config instead. The extension decides, not the contents, so
+a path resolves the same way every time rather than changing meaning while the
+file is being edited.
+
+Naming one replaces discovery rather than adding to it: `./atlas.hcl` is not
+also read, so an env defined in both files resolves from the one named. A
+`./ptah.yaml` is still read underneath for what the Atlas file leaves unset,
+which is the precedence discovery already had.
+
+Before this, an Atlas project config that was not `./atlas.hcl` could be reached
+from `ptah-compat` and not from `ptah` — backwards for a project moving from the
+compatibility surface to the native one.
+
 A `--var` carrying no `=` is refused where it is written, on every verb, in the
 community CLI's own words
 ([#1231](https://github.com/stokaro/ptah/issues/1231)):

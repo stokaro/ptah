@@ -16,6 +16,12 @@ import (
 // cmd/internal/dbcli holds the two spellings together.
 const ptahConfigFlagName = "config"
 
+// atlasConfigExtension is the extension that makes --config read a path as an
+// Atlas project config. Duplicated from the CLI rather than imported, because
+// this package sits below it and the advice would otherwise invert the
+// dependency (stokaro/ptah#1215).
+const atlasConfigExtension = ".hcl"
+
 // The go-yaml strict decoder reports rejected input against the Go type it was
 // decoding into: `field src not found in type projectconfig.yamlDocument`. That
 // names a symbol the user cannot act on and cannot even find, so every decoder
@@ -161,13 +167,15 @@ func translatePtahYAMLError(err error, filename string, source ptahConfigSource)
 	if found, line, ok := ptahYAMLRootMismatch(lines); ok {
 		if source == explicitPtahConfig {
 			return fmt.Errorf(
-				"--%s takes a %s file, and %s is not a YAML mapping (line %s: found %s); an Atlas project config is discovered as ./%s and selected with --env",
+				"--%s takes a %s file, and %s is not a YAML mapping (line %s: found %s); an Atlas project config is discovered as ./%s, named on --%s when it ends in %s, and selected with --env",
 				ptahConfigFlagName,
 				PtahFileName,
 				filename,
 				line,
 				found,
 				AtlasFileName,
+				ptahConfigFlagName,
+				atlasConfigExtension,
 			)
 		}
 		return fmt.Errorf(

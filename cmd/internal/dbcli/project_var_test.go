@@ -22,9 +22,14 @@ env "local" {
 `
 
 func chdirTemp(c *qt.C, files map[string]string) string {
+	c.Helper()
 	dir := c.TempDir()
 	for name, content := range files {
-		c.Assert(os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600), qt.IsNil)
+		// A name may carry directories, so a fixture can put a config
+		// somewhere discovery will not look (stokaro/ptah#1215).
+		path := filepath.Join(dir, name)
+		c.Assert(os.MkdirAll(filepath.Dir(path), 0o750), qt.IsNil)
+		c.Assert(os.WriteFile(path, []byte(content), 0o600), qt.IsNil)
 	}
 	original, err := os.Getwd()
 	c.Assert(err, qt.IsNil)
@@ -133,18 +138,42 @@ func TestRegisterEnvFlagAnnotatesTheProjectEnvFlag(t *testing.T) {
 	c.Assert(unbound.Flags().Lookup(dbcli.ProjectVarFlagName), qt.IsNotNil)
 }
 
-// TestExplicitConfigOverHCLNamesTheConfigFlag holds the ptah.yaml diagnostic's
-// spelling of the flag to the flag this package actually registers. The
-// projectconfig package cannot import this one, so it spells "config" itself;
-// this is what stops the two from drifting apart.
-func TestExplicitConfigOverHCLNamesTheConfigFlag(t *testing.T) {
+// TestExplicitConfigOverNonYAMLNamesTheConfigFlag holds the ptah.yaml
+// diagnostic's spelling of the flag to the flag this package actually
+// registers. The projectconfig package cannot import this one, so it spells
+// "config" itself; this is what stops the two from drifting apart.
+//
+// The fixture is a .conf file rather than the atlas.hcl this test used to
+// pass. Since stokaro/ptah#1215 a --config path ending in .hcl routes to the
+// Atlas loader and never reaches this diagnostic, so an .hcl fixture would
+// have measured the routing instead of the spelling and quietly stopped
+// guarding anything. A non-.hcl file holding non-YAML still lands here, which
+// is the case an operator hits by giving their project config an unfamiliar
+// name.
+func TestExplicitConfigOverNonYAMLNamesTheConfigFlag(t *testing.T) {
 	c := qt.New(t)
-	chdirTemp(c, map[string]string{"atlas.hcl": atlasHCLRequiringVar})
+	chdirTemp(c, map[string]string{"project.conf": atlasHCLRequiringVar})
 
 	cmd := envVarCommand(c)
-	_, err := dbcli.LoadProjectConfig(cmd, "atlas.hcl")
+	_, err := dbcli.LoadProjectConfig(cmd, "project.conf")
 
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Contains, "--"+dbcli.ConfigFlagName)
 	c.Assert(err.Error(), qt.Not(qt.Contains), "projectconfig")
+}
+
+// TestExplicitHCLConfigRoutesToTheAtlasLoader is the case the test above gave
+// up. Naming an .hcl on --config no longer reports what --config accepts; it
+// loads, and the diagnostic that comes back is the Atlas one about a variable
+// with no default -- which is the whole point of routing it there.
+func TestExplicitHCLConfigRoutesToTheAtlasLoader(t *testing.T) {
+	c := qt.New(t)
+	chdirTemp(c, map[string]string{"project.hcl": atlasHCLRequiringVar})
+
+	cmd := envVarCommand(c)
+	_, err := dbcli.LoadProjectConfig(cmd, "project.hcl")
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(err.Error(), qt.Contains, `variable "dburl" requires a default`)
+	c.Assert(err.Error(), qt.Not(qt.Contains), "is not a YAML mapping")
 }
