@@ -324,9 +324,12 @@ func TestRenderSelect_GroupByHavingErrors(t *testing.T) {
 			wantErrLike: "renderer: function call has an empty name",
 		},
 		{
-			name:        "function without arguments or star",
+			// The message names the window alternative now: a zero-argument
+			// call is meaningless without one and is the whole shape of a
+			// ranking function with one (stokaro/ptah#941).
+			name:        "function without arguments, star or window",
 			stmt:        &ast.SelectStatement{Columns: []ast.ResultColumn{{Expr: &ast.FuncCall{Name: "SUM"}}}, From: "t"},
-			wantErrLike: "renderer: function SUM requires at least one argument",
+			wantErrLike: "renderer: function SUM requires at least one argument, or a window that supplies its input",
 		},
 		{
 			name:        "star with arguments",
