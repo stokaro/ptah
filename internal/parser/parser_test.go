@@ -4856,6 +4856,46 @@ func TestParser_MariaDBVirtualColumn(t *testing.T) {
 	c.Assert(createTable.Columns[1].GeneratedKind, qt.Equals, "STORED")
 }
 
+// TestParser_GeneratedColumnStorageKind holds both spellings on both paths.
+//
+// The AS path and the GENERATED ALWAYS AS path read the storage keyword
+// separately, and they took different sets: AS accepted STORED and VIRTUAL, and
+// GENERATED ALWAYS AS accepted only STORED. Nothing noticed until the Oracle
+// renderer wrote `GENERATED ALWAYS AS ("size" * 2) VIRTUAL`, which is what an
+// Oracle virtual column is, and reading Ptah's own rendered file back answered
+// `unsupported column attribute: VIRTUAL` (stokaro/ptah#1875).
+//
+// The four rows are the two paths times the two keywords, because a fixture
+// that varies only one axis is exactly what let the asymmetry survive.
+func TestParser_GeneratedColumnStorageKind(t *testing.T) {
+	tests := []struct {
+		name   string
+		clause string
+		want   string
+	}{
+		{name: "AS ... STORED", clause: `AS (n * 2) STORED`, want: "STORED"},
+		{name: "AS ... VIRTUAL", clause: `AS (n * 2) VIRTUAL`, want: "VIRTUAL"},
+		{name: "GENERATED ALWAYS AS ... STORED", clause: `GENERATED ALWAYS AS (n * 2) STORED`, want: "STORED"},
+		{name: "GENERATED ALWAYS AS ... VIRTUAL", clause: `GENERATED ALWAYS AS (n * 2) VIRTUAL`, want: "VIRTUAL"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			sql := "CREATE TABLE t (n INT, doubled INT " + test.clause + ");"
+			statements, err := parser.NewParser(sql).Parse()
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(statements.Statements, qt.HasLen, 1)
+			createTable := statements.Statements[0].(*ast.CreateTableNode)
+			c.Assert(createTable.Columns, qt.HasLen, 2)
+			c.Assert(createTable.Columns[1].GeneratedExpression, qt.Equals, "n * 2")
+			c.Assert(createTable.Columns[1].GeneratedKind, qt.Equals, test.want)
+		})
+	}
+}
+
 func TestParser_MariaDBTableOptions(t *testing.T) {
 	c := qt.New(t)
 

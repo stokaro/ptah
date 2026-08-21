@@ -2115,11 +2115,23 @@ func (p *Parser) handleGenerated(column *ast.ColumnNode) error {
 		p.advance()
 	}
 
+	// STORED and VIRTUAL both, the way handleAs above already reads them.
+	//
+	// The two paths took different keyword sets until Oracle rendered the one
+	// this path did not know: `GENERATED ALWAYS AS ("size" * 2) VIRTUAL` is
+	// what an Oracle virtual column is, and reading Ptah's own rendered file
+	// back answered `unsupported column attribute: VIRTUAL`. Every fixture
+	// reached the other path, where VIRTUAL has always been accepted, so the
+	// asymmetry cost nothing until a renderer produced the spelling that
+	// separates them (stokaro/ptah#1875).
 	generatedKind := ""
 	p.skipWhitespace()
-	if p.current.Type == lexer.TokenIdentifier && strings.ToUpper(p.current.Value) == "STORED" {
-		generatedKind = "STORED"
-		p.advance()
+	if p.current.Type == lexer.TokenIdentifier {
+		storageType := strings.ToUpper(p.current.Value)
+		if storageType == "STORED" || storageType == "VIRTUAL" {
+			generatedKind = storageType
+			p.advance()
+		}
 	}
 
 	column.SetGenerated(expr.String(), generatedKind)

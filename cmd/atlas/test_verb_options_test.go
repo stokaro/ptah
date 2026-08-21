@@ -337,15 +337,14 @@ func TestCompatCommand_TestVerbsAnswerADevURLFlag(t *testing.T) {
 				` first path segment in URL cannot contain colon`,
 		},
 		{
-			// Oracle is a dialect Ptah renders and plans for and does not
-			// connect to, which is a different answer from a name it has never
-			// heard of -- the case below.
-			name:    "a dialect with no reader still answers at the connector",
+			// Oracle connects like any other dialect now, so the answer comes
+			// from the driver rather than from a refusal: the URL names no
+			// port, and the connector says so.
+			name:    "a dialect with a reader reaches the driver",
 			preface: "",
 			argv:    schemaTestArgs,
 			devURL:  "oracle://host/dev",
-			wantErr: `connect to test database: connecting to oracle is not supported yet: ` +
-				`Ptah renders and plans oracle schemas, and reading a live oracle catalog is not implemented`,
+			wantErr: `connect to test database: failed to ping database: address host: missing port in address`,
 		},
 		{
 			name:    "an unknown dialect still answers at the connector",
