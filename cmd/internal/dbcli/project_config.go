@@ -140,8 +140,43 @@ func RegisterAtlasProjectInternalFlags(flags *pflag.FlagSet) {
 	}
 }
 
+// AtlasProjectConfigExtension is the file extension that routes an explicit
+// --config path to the Atlas project loader rather than the ptah.yaml one.
+const AtlasProjectConfigExtension = ".hcl"
+
+// splitExplicitConfigPath decides which loader an explicit --config path is
+// meant for, by extension.
+//
+// # Why --config takes both
+//
+// The Atlas project loader has always accepted an explicit path, but the only
+// way to reach it from the native binary was discovery, which looks for
+// ./atlas.hcl and nothing else. A project that keeps its Atlas config anywhere
+// else -- a subdirectory, a second file for staging, any name but that one --
+// was reachable from ptah-compat and unreachable from ptah, which is the
+// opposite of the adoption direction this is meant to run in
+// (stokaro/ptah#1215).
+//
+// # Why by extension and not by reading the file
+//
+// A path the operator typed should resolve the same way every time, whatever
+// is inside the file today. Sniffing the contents would make --config's
+// meaning depend on them, so a file mid-edit could change which loader claims
+// it, and a syntax error in one language would surface as a parse error in the
+// other.
+func splitExplicitConfigPath(path string) (ptahPath, atlasPath string) {
+	if path == "" {
+		return "", ""
+	}
+	if strings.EqualFold(filepath.Ext(path), AtlasProjectConfigExtension) {
+		return "", path
+	}
+	return path, ""
+}
+
 // LoadProjectConfig loads project-level configuration for a command. The
-// explicit Ptah config path controls ptah.yaml only; Atlas-compatible adapters
+// explicit config path controls ptah.yaml, or an Atlas project config when it
+// ends in .hcl; Atlas-compatible adapters
 // can pass an internal atlas.hcl path and variable overrides through hidden
 // flags. A project-config snapshot supplied by an adapter takes precedence and
 // avoids reopening project files during the forwarded execution.
@@ -158,6 +193,19 @@ func LoadProjectConfig(cmd *cobra.Command, ptahConfigPath string) (projectconfig
 	atlasPath, err := stringFlag(cmd, AtlasProjectConfigFlagName)
 	if err != nil {
 		return projectconfig.Config{}, err
+	}
+	ptahConfigPath, explicitAtlasPath := splitExplicitConfigPath(ptahConfigPath)
+	if explicitAtlasPath != "" {
+		// A compat adapter forwarding its own project config and an operator
+		// naming a different one on --config cannot both be honored, and
+		// picking either silently would apply a config the caller did not ask
+		// for. Name both paths instead.
+		if atlasPath != "" && atlasPath != explicitAtlasPath {
+			return projectconfig.Config{}, fmt.Errorf(
+				"--%s names %s and the forwarded Atlas project config is %s; pass one Atlas project config",
+				ConfigFlagName, explicitAtlasPath, atlasPath)
+		}
+		atlasPath = explicitAtlasPath
 	}
 	atlasVars, err := projectVars(cmd)
 	if err != nil {
