@@ -91,11 +91,11 @@ Across the 191 capabilities below:
 | Reading | Count |
 | --- | --- |
 | Ptah supports it fully | 180 |
-| Ptah supports it with a stated limitation | 0 |
-| Ptah does not implement it | 1 |
+| Ptah supports it with a stated limitation | 1 |
+| Ptah does not implement it | 0 |
 | Ptah covers it in its own form, against a hosted service it cannot interoperate with | 10 |
 | Ptah and Atlas CE both support it | 63 |
-| Ptah implements it openly where Atlas gates it behind Pro or Cloud | 52 |
+| Ptah implements it openly where Atlas gates it behind Pro or Cloud | 53 |
 | Ptah has it and neither Atlas edition does | 27 |
 | Atlas CE has it and Ptah does not, or only in part | 0 |
 | An Atlas column is ❔ — not established by this page's evidence | 4 |
@@ -295,7 +295,7 @@ seven of them as open capabilities regardless.
 | Extensions | ✅ | ❌ | ✅ | PostgreSQL and YugabyteDB create, compare and relocate extensions, version included. Every other target names the declaration it cannot host rather than dropping it. |
 | Functions | ✅ | ❌ | ✅ | Functions and procedures render, read and plan on the PostgreSQL and MySQL families and SQL Server. ClickHouse and SQLite host neither. |
 | MySQL and MariaDB | ✅ | ✅ | ✅ | Roles, grants, stored functions and MariaDB sequences render, read back and plan. An inline enum change plans a real MODIFY COLUMN and converges; matviews fail closed. |
-| Oracle, Snowflake, Redshift, Databricks | ❌ | ❌ | ✅ | Decided per engine: Oracle is taken (stokaro/ptah#1875); the other three have no endpoint anyone can measure, so they are out of scope with the reason rather than an unowned gap. |
+| Oracle, Snowflake, Redshift, Databricks | 🟡 | ❌ | ✅ | Oracle renders, plans, reads and converges; Snowflake, Redshift and Databricks have no endpoint anyone can measure and are out of scope with the reason (stokaro/ptah#1875). |
 | PostgreSQL 12+ (postgres, postgresql) | ✅ | ✅ | ✅ | Reference engine of the PostgreSQL family: views, matviews, functions, triggers, sequences, roles, RLS and domains all render. Presets 12-13, 14-16, 17+ from the server banner. |
 | Roles, grants, and row-level security | ✅ | ❌ | ✅ | Roles and grants on every engine that has them. Row-level security on the PostgreSQL family, SQL Server and ClickHouse; MySQL, MariaDB and Spanner have no such object to model. |
 | Spanner PostgreSQL interface (spanner) | ✅ | ❌ | ✅ | Enums, sequences, matviews, functions and triggers render as named skips; foreign keys render, SERIAL errors. Probed live, with a compose service and a scenario suite. |
