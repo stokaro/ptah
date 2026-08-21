@@ -1,0 +1,72 @@
+package schemadiff_test
+
+import (
+	"testing"
+
+	qt "github.com/frankban/quicktest"
+
+	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/migration/schemadiff"
+)
+
+// TestEnumDeclaredByName_ComparesAsWhatTheTargetStores pins the second spelling
+// of an enum column.
+//
+// A column names its values two ways: inline on the field, or by naming an enum
+// declared elsewhere. The renderer reads the second and the comparison read only
+// the first, so a schema written as `//ptah:schema:enum` plus a column typed
+// with that enum's name rendered as the target's inline model and compared as
+// the enum's own name. Nothing converged.
+//
+// The live side of each case is what that dialect's renderer actually writes,
+// so a case passing means a schema applied from this declaration compares equal
+// to the database it produced.
+func TestEnumDeclaredByName_ComparesAsWhatTheTargetStores(t *testing.T) {
+	check := func(clause string) []types.DBConstraint {
+		return []types.DBConstraint{{
+			Name: "accounts_status_check", TableName: "accounts",
+			Type: "CHECK", CheckClause: &clause,
+		}}
+	}
+
+	tests := []struct {
+		name        string
+		dialect     string
+		liveType    string
+		constraints []types.DBConstraint
+	}{
+		{name: "sqlite stores TEXT and a check", dialect: platform.SQLite, liveType: "TEXT", constraints: check("status IN ('active', 'archived')")},
+		{name: "oracle stores VARCHAR2 and a check", dialect: platform.Oracle, liveType: "VARCHAR2(255)", constraints: check("status IN ('active', 'archived')")},
+		{name: "sqlserver stores NVARCHAR and a check", dialect: platform.SQLServer, liveType: "NVARCHAR(255)", constraints: check("[status] IN ('active', 'archived')")},
+		{name: "mysql stores a native enum, and no check", dialect: platform.MySQL, liveType: "enum('active','archived')", constraints: nil},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			generated := &goschema.Database{
+				Tables: []goschema.Table{{StructName: "Account", Name: "accounts"}},
+				Fields: []goschema.Field{
+					// The declaration names the enum rather than listing its
+					// values, which is what `//ptah:schema:enum` produces.
+					{StructName: "Account", Name: "status", Type: "status_kind", Nullable: true},
+				},
+				Enums: []goschema.Enum{{Name: "status_kind", Values: []string{"active", "archived"}}},
+			}
+			live := &types.DBSchema{
+				Tables: []types.DBTable{{Name: "accounts", Columns: []types.DBColumn{
+					{Name: "status", DataType: tt.liveType, IsNullable: "YES"},
+				}}},
+				Constraints: tt.constraints,
+			}
+
+			diff := schemadiff.CompareWithDialect(generated, live, tt.dialect)
+
+			c.Assert(diff.TablesModified, qt.HasLen, 0,
+				qt.Commentf("a column declared by enum name must compare as what %s stores", tt.dialect))
+		})
+	}
+}
