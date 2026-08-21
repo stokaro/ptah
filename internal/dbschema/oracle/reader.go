@@ -53,7 +53,7 @@ func (r *Reader) ReadSchema() (*types.DBSchema, error) {
 	}
 	schema.Tables = tables
 
-	constraints, err := r.readConstraints()
+	constraints, generatedKeys, err := r.readConstraints()
 	if err != nil {
 		return nil, fmt.Errorf("oracle: read constraints: %w", err)
 	}
@@ -78,7 +78,36 @@ func (r *Reader) ReadSchema() (*types.DBSchema, error) {
 	schema.Views = views
 
 	markKeyColumns(schema)
+	schema.Constraints = withoutGeneratedKeys(schema.Constraints, generatedKeys)
 	return schema, nil
+}
+
+// withoutGeneratedKeys drops the PRIMARY KEY and UNIQUE constraints Oracle named
+// itself, after markKeyColumns has taken the fact off them.
+//
+// A key declared on the column is not a named constraint in the declaration, and
+// Oracle gives it one anyway: `id INTEGER PRIMARY KEY` becomes SYS_C008644. Read
+// back as a named constraint it has no counterpart to compare against, so a plan
+// drops it, the next apply recreates the key inline, Oracle invents a fresh
+// number, and the plan is non-empty again with a different name every time.
+//
+// The order matters. markKeyColumns runs first and copies IsPrimaryKey and
+// IsUnique onto the columns, which is the shape the declared side uses, so
+// nothing is lost by removing the row afterwards. A constraint the user named
+// arrives with generated = 'USER NAME' and is kept, because that one does have a
+// counterpart (stokaro/ptah#1890).
+func withoutGeneratedKeys(constraints []types.DBConstraint, generated map[string]bool) []types.DBConstraint {
+	if len(generated) == 0 {
+		return constraints
+	}
+	kept := make([]types.DBConstraint, 0, len(constraints))
+	for _, constraint := range constraints {
+		if generated[constraint.Name] {
+			continue
+		}
+		kept = append(kept, constraint)
+	}
+	return kept
 }
 
 const tableQuery = `
@@ -87,6 +116,7 @@ FROM all_tables t
 LEFT JOIN all_tab_comments c
        ON c.owner = t.owner AND c.table_name = t.table_name
 WHERE t.owner = :1
+  AND t.dropped = 'NO'
 ORDER BY t.table_name`
 
 func (r *Reader) readTables() ([]types.DBTable, error) {
@@ -150,6 +180,7 @@ SELECT c.table_name,
 FROM all_tab_cols c
 WHERE c.owner = :1
   AND c.hidden_column = 'NO'
+  AND c.table_name NOT LIKE 'BIN$%'
 ORDER BY c.table_name, c.column_id`
 
 func (r *Reader) readColumns() (map[string][]types.DBColumn, error) {
@@ -204,6 +235,7 @@ func (r *Reader) readColumns() (map[string][]types.DBColumn, error) {
 const constraintQuery = `
 SELECT c.constraint_name,
        c.constraint_type,
+       c.generated,
        c.table_name,
        NVL(c.search_condition_vc, ' '),
        NVL(c.r_constraint_name, ' '),
@@ -216,31 +248,34 @@ FROM all_constraints c
 JOIN all_cons_columns col
      ON col.owner = c.owner AND col.constraint_name = c.constraint_name
 WHERE c.owner = :1
+  AND c.table_name NOT LIKE 'BIN$%'
   AND c.constraint_type IN ('P', 'U', 'R', 'C')
   AND NOT (c.constraint_type = 'C' AND c.generated = 'GENERATED NAME'
            AND REGEXP_LIKE(c.search_condition_vc, '^"[^"]+" IS NOT NULL$'))
 ORDER BY c.table_name, c.constraint_name, col.position`
 
-func (r *Reader) readConstraints() ([]types.DBConstraint, error) {
+func (r *Reader) readConstraints() ([]types.DBConstraint, map[string]bool, error) {
 	rows, err := r.db.Query(constraintQuery, r.schema)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer rows.Close()
 
 	referenced, err := r.readReferencedKeys()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	var (
 		constraints []types.DBConstraint
 		index       = make(map[string]int)
 	)
+	generatedKeys := make(map[string]bool)
 	for rows.Next() {
 		var (
 			name       string
 			kind       string
+			generated  string
 			table      string
 			condition  string
 			refName    string
@@ -250,9 +285,12 @@ func (r *Reader) readConstraints() ([]types.DBConstraint, error) {
 			columnName sql.NullString
 			position   sql.NullInt64
 		)
-		if err := rows.Scan(&name, &kind, &table, &condition, &refName,
+		if err := rows.Scan(&name, &kind, &generated, &table, &condition, &refName,
 			&deleteRule, &deferrable, &deferred, &columnName, &position); err != nil {
-			return nil, err
+			return nil, nil, err
+		}
+		if generated == "GENERATED NAME" && (kind == "P" || kind == "U") {
+			generatedKeys[name] = true
 		}
 
 		at, seen := index[name]
@@ -277,7 +315,7 @@ func (r *Reader) readConstraints() ([]types.DBConstraint, error) {
 			}
 		}
 	}
-	return constraints, rows.Err()
+	return constraints, generatedKeys, rows.Err()
 }
 
 // constraintRow is one ALL_CONSTRAINTS row, before its columns are joined on.
@@ -344,6 +382,7 @@ FROM all_constraints c
 JOIN all_cons_columns col
      ON col.owner = c.owner AND col.constraint_name = c.constraint_name
 WHERE c.owner = :1
+  AND c.table_name NOT LIKE 'BIN$%'
   AND c.constraint_type IN ('P', 'U')
 ORDER BY c.constraint_name, col.position`
 
@@ -378,6 +417,8 @@ const indexQuery = `
 SELECT i.index_name, i.table_name, i.uniqueness, i.index_type
 FROM all_indexes i
 WHERE i.owner = :1
+  AND i.table_name NOT LIKE 'BIN$%'
+  AND i.index_name NOT LIKE 'BIN$%'
   AND i.constraint_index = 'NO'
   AND i.index_type <> 'LOB'
 ORDER BY i.table_name, i.index_name`
