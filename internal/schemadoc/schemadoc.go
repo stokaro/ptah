@@ -52,12 +52,46 @@ func Render(db *goschema.Database, opts Options) (Result, error) {
 	writeSidebar(&out, doc)
 	out.WriteString(`<main class="content">`)
 	writeOverview(&out, doc)
-	writeDiagram(&out, doc)
-	writeTables(&out, doc)
-	writeEnums(&out, doc)
+	writeBody(&out, doc)
 	out.WriteString(`<div class="footer">Rendered by Ptah from the declared schema. This file is self-contained: opening it fetches nothing.</div>`)
 	out.WriteString(`</main></div></body></html>`)
 	return Result{Data: []byte(out.String()), Diagnostics: diagnostics}, nil
+}
+
+// Stylesheet is the appearance this package renders with, for a caller that
+// composes its own page out of the same parts.
+//
+// It is exported so the dashboard in stokaro/ptah#1863 shares one design rather
+// than growing a second one that drifts from this. A copy would look the same
+// on the day it was made and not the day after.
+func Stylesheet() string { return documentCSS }
+
+// Page is the schema's own sections -- navigation, overview, diagram, tables
+// and enums -- without the document that wraps them.
+//
+// A caller that serves a live view puts its own panels above these and supplies
+// the surrounding html, head and body itself. Everything here is the same
+// markup Render emits, so the two views cannot disagree about what a schema
+// looks like.
+func Page(db *goschema.Database, opts Options) (sidebar, content string, err error) {
+	if db == nil {
+		return "", "", fmt.Errorf("schema database is nil")
+	}
+	doc := build(db, opts)
+	if doc.Title == "" {
+		doc.Title = defaultTitle
+	}
+	var nav, body strings.Builder
+	writeSidebar(&nav, doc)
+	writeBody(&body, doc)
+	return nav.String(), body.String(), nil
+}
+
+// writeBody writes the sections both views share, so adding one reaches both.
+func writeBody(out *strings.Builder, doc document) {
+	writeDiagram(out, doc)
+	writeTables(out, doc)
+	writeEnums(out, doc)
 }
 
 func writeHead(out *strings.Builder, doc document) {
