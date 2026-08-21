@@ -724,52 +724,6 @@ func TestCompatCommand_MigrateDownRejectsNativeConfirmationFlag(t *testing.T) {
 	}
 }
 
-// TestCompatCommand_MigrateDownWaivedFlagsRejectWithRationale pins the
-// recorded waiver for the one down flag Ptah still does not implement, on both
-// the forward path and the --format path: identical wording, no silent drops.
-func TestCompatCommand_MigrateDownWaivedFlagsRejectWithRationale(t *testing.T) {
-	waived := []struct {
-		name string
-		args []string
-		want string
-	}{
-		// --to-tag and --skip-checks were waived here until stokaro/ptah#1621.
-		// Both waivers claimed a hosted dependency neither flag has: tags
-		// resolve against the tag namespace this repository stores in the
-		// database, and down bodies have carried real pre-migration checks
-		// since stokaro/ptah#1715. They are implemented, so they are gone from
-		// this table -- see TestCompatCommand_MigrateDownImplementedFlags.
-		{
-			name: "plan",
-			args: []string{"--plan"},
-			want: `atlas migrate down accepts --plan, but Ptah does not implement its behavior: dynamic down planning requires a hosted plan-approval workflow; use --dev-url to verify the pre-planned rollback on a dev database instead`,
-		},
-	}
-
-	for _, tt := range waived {
-		for _, path := range []struct {
-			name  string
-			extra []string
-		}{
-			{name: "forward"},
-			{name: "format", extra: []string{"--format", "{{ json . }}"}},
-		} {
-			t.Run(tt.name+"_"+path.name, func(t *testing.T) {
-				c := qt.New(t)
-				cmd := atlas.NewCompatCommand("atlas")
-				var out bytes.Buffer
-				cmd.SetOut(&out)
-				cmd.SetErr(&out)
-				cmd.SetArgs(append(append([]string{"migrate", "down"}, path.extra...), tt.args...))
-
-				err := cmd.Execute()
-
-				c.Assert(err, qt.ErrorMatches, tt.want)
-			})
-		}
-	}
-}
-
 func TestNewCompatCommand_MigrateDownFormatResolvesAtRoot(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
@@ -795,12 +749,18 @@ func TestNewCompatCommand_MigrateDownFormatResolvesAtRoot(t *testing.T) {
 	c.Assert(out.String(), qt.Equals, "planned=2")
 }
 
-// TestCompatCommand_MigrateDownImplementedFlags is the other half of the table
-// above: the two flags that left it must be accepted, not merely unwaived.
+// TestCompatCommand_MigrateDownImplementedFlags replaces the waiver-rationale
+// table that used to sit here.
 //
-// A waiver removed without an implementation behind it would show up here as
-// an unknown-flag error rather than a refusal, which is the same failure
-// wearing a different message.
+// That table pinned the wording of three refusals. stokaro/ptah#1621
+// implemented all three flags, so there is no refusal left to word, and what
+// has to be held instead is that each one is accepted -- not merely unwaived.
+// A waiver removed without an implementation behind it would show up here as an
+// unknown-flag error rather than a refusal, which is the same failure wearing a
+// different message.
+//
+// The refusal machinery itself is unchanged and still covered where a flag
+// still needs it; atlasMigrateDownUnsupportedFlags is simply empty now.
 func TestCompatCommand_MigrateDownImplementedFlags(t *testing.T) {
 	for _, tt := range []struct {
 		name string
@@ -808,6 +768,7 @@ func TestCompatCommand_MigrateDownImplementedFlags(t *testing.T) {
 	}{
 		{name: "to_tag", args: []string{"--to-tag", "release-v1"}},
 		{name: "skip_checks", args: []string{"--skip-checks"}},
+		{name: "plan", args: []string{"--plan"}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)

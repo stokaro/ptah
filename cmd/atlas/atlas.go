@@ -596,12 +596,15 @@ func atlasMigrateDownVerb() atlasVerb {
 			// thing to bypass, and refusing the flag left an operator with a
 			// blocking check no flag could get past.
 			atlasargs.NativeBool("skip-checks", "", "Skip the pre-migration checks in the down migrations being rolled back", "skip-checks"),
-			// --plan forces Atlas's registry-bound dynamic down planning.
-			// Ptah's local plan files (the `schema plan` workflow) are
-			// declarative apply plans, not down plans, so forcing a down plan
-			// has no local meaning and is rejected rather than faked.
-			atlasargs.UnsupportedBoolReason("plan", "", "Force dynamic down planning",
-				"dynamic down planning requires a hosted plan-approval workflow; use --dev-url to verify the pre-planned rollback on a dev database instead"),
+			// --plan derives the rollback from the schema difference instead of
+			// running the down bodies, which is what makes a migration with no
+			// down body revertible.
+			//
+			// The waiver this replaces called dynamic down planning
+			// hosted-only. It is not: the target version's schema is built on
+			// --dev-url and compared against the live database, both locally
+			// (stokaro/ptah#1621).
+			atlasargs.NativeBool("plan", "", "Derive the rollback from the schema difference instead of running the down migrations", "plan"),
 		},
 	}
 }

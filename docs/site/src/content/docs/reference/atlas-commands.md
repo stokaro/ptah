@@ -546,10 +546,28 @@ back carry — the `-- +ptah check` directives that abort a rollback when their
 assertion does not hold. It means on this verb exactly what it means on
 `migrate apply`, including through `PTAH_SKIP_CHECKS`.
 
-`--plan` remains a recorded waiver that fails loudly with its rationale, and is
-settable through `PTAH_PLAN`. Refusing it is the point: setting the variable is
-a request for a capability Ptah does not implement, and discarding it would
-leave an empty rollback target that reverts the whole history.
+`--plan` derives the rollback from the schema difference instead of running the
+down bodies, which is what makes a migration with **no** down body revertible:
+
+```bash
+ptah-compat migrate down --url "$DATABASE_URL" --dir file://migrations \
+  --to-version 1 --plan --dev-url "docker://postgres/16/dev"
+```
+
+The target version's schema is built on `--dev-url` and compared against the live
+database, so the flag needs one: that schema exists nowhere else — not in the
+live database, which is what is being changed, and not in any single file, since
+a version's schema is the accumulation of every migration up to it.
+
+Ptah's own revision and tag tables are excluded from the comparison. The live
+database and the dev replay can name them differently, and a table one side has
+and the other does not otherwise looks exactly like a table the rollback should
+drop.
+
+A derived plan is an inference about structure, while a down file is a statement
+of intent. A down body can preserve data a derived `DROP` will not, and can order
+operations in a way a structural comparison has no reason to choose. That is why
+`--plan` is opt-in and the authored bodies stay the default.
 
 ### `ptah-compat migrate diff`
 

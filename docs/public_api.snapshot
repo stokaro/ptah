@@ -8104,6 +8104,7 @@ func GenerateCheckpoint(schema *goschema.Database, dialect string) (upSQL, downS
 func GenerateCheckpointFromShadow(ctx context.Context, opts CheckpointFromShadowOptions) (upSQL, downSQL string, err error)
 func GenerateCheckpointWithDatabase(ctx context.Context, conn *dbschema.DatabaseConnection, ...) (upSQL, downSQL string, err error)
 func GenerateCheckpointWithDatabaseInfo(schema *goschema.Database, info dbschematypes.DBInfo) (upSQL, downSQL string, err error)
+func PlanDynamicRollback(ctx context.Context, opts DynamicRollbackOptions) ([]string, error)
 func ResolveAtlasCheckpointVersion(outputDir string) int64
 func VerifyBaselineShadow(ctx context.Context, opts BaselineShadowVerifyOptions) error
 func VerifyRollbackFromShadow(ctx context.Context, opts RollbackFromShadowOptions) error
@@ -8122,6 +8123,7 @@ type CheckpointWriteOptions struct{ ... }
 type ConcurrentIndexMode uint8
     const ConcurrentIndexAutomatic ConcurrentIndexMode = iota ...
 type DiffPolicy struct{ ... }
+type DynamicRollbackOptions struct{ ... }
 type EmptyMigrationOptions struct{ ... }
 type GenerateMigrationOptions struct{ ... }
 type MigrationFilePair struct{ ... }
@@ -8297,6 +8299,35 @@ type DiffPolicy struct {
     ConcurrentIndexDrop bool
 }
     DiffPolicy is the generator-level view of the project diff policy.
+
+
+### go.5x5.cz/ptah/migration/generator.DynamicRollbackOptions
+
+package generator // import "go.5x5.cz/ptah/migration/generator"
+
+type DynamicRollbackOptions struct {
+    // TargetConnection is the live database the plan would be applied to. It is
+    // read, never written, by planning.
+    TargetConnection *dbschema.DatabaseConnection
+    // DevDatabaseURL is an ephemeral database the planner drops clean and
+    // replays the migration directory into, to materialize the target state.
+    // Its contents are discarded.
+    DevDatabaseURL string
+    // FS is the migration filesystem the target state is replayed from.
+    FS fs.FS
+    // TargetVersion is the version the database is being rolled back to. The
+    // dev database is migrated up to exactly this version, and the schema it
+    // then holds is what the plan drives the live database towards.
+    TargetVersion int64
+    // ProviderOptions are passed to the migration provider (e.g. dir format).
+    ProviderOptions []migrator.FSProviderOption
+    // ConnectTimeout bounds the dev database connection attempt.
+    ConnectTimeout time.Duration
+    // RevisionsTable names the revision table this run was configured with, so
+    // a non-default one is excluded from the comparison alongside the defaults.
+    RevisionsTable string
+}
+    DynamicRollbackOptions configures PlanDynamicRollback.
 
 
 ### go.5x5.cz/ptah/migration/generator.EmptyMigrationOptions

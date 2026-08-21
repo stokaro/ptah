@@ -1,14 +1,11 @@
 package atlas_test
 
 import (
-	"context"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
-
-	"go.5x5.cz/ptah/dbschema"
 )
 
 // `migrate down`'s --skip-checks was explicit-only until stokaro/ptah#1621: it
@@ -24,11 +21,17 @@ import (
 // and #1621 implemented --skip-checks to bypass them. The variable now means the
 // same thing on both verbs, so it is honored here like any other twin.
 //
-// --plan is the flag still waived, and setting PTAH_PLAN IS a request for a
-// capability Ptah lacks, so it must still be refused. Ignoring it is not a
-// harmless no-op on this verb: an ignored flag leaves the rollback target
-// parsing as 0, and the whole history rolls back — silent data loss where the
-// operator asked for something bounded.
+// --plan followed in the same issue, so `migrate down` now waives nothing and
+// the tests that pinned its refusals are gone. What replaced them is
+// TestCompatCommand_MigrateDownImplementedFlags, which holds that all three
+// flags are accepted: with no refusal left to word, the failure worth catching
+// is a flag silently reaching the native command as unknown.
+//
+// The environment twins still matter, and for the reason the refusals did. An
+// ignored flag on this verb is not a harmless no-op: the rollback target parses
+// as 0, and the whole history rolls back — silent data loss where the operator
+// asked for something bounded. That is now held by the twins being honored
+// rather than refused.
 //
 // Both down paths are covered because they parse flags separately: the default
 // path goes through the atlasargs mapper, while --format has its own flag set
@@ -40,26 +43,6 @@ const downUnsupportedFlagRefusal = "but Ptah does not implement its behavior"
 // which parses flags in parseAtlasMigrateDownFormatArgs rather than through the
 // atlasargs mapper.
 var formatPathArgs = []string{"--format", "{{ .Current }}"}
-
-// noSkipChecksEnv is the control setup for cases that must not depend on an
-// ambient PTAH_SKIP_CHECKS.
-func noSkipChecksEnv(t *testing.T) {
-	t.Helper()
-	unsetSkipChecksEnv(t)
-}
-
-// sqliteUsersRowCount reports how many rows survive in the seeded table, which
-// is what separates a refused rollback from one that ran to completion.
-func sqliteUsersRowCount(c *qt.C, dbPath string) int {
-	c.Helper()
-	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)
-	c.Assert(err, qt.IsNil)
-	defer dbschema.CloseAndWarn(conn)
-	row := conn.QueryRowContext(context.Background(), `SELECT count(*) FROM users`)
-	var count int
-	c.Assert(row.Scan(&count), qt.IsNil)
-	return count
-}
 
 // writeDownableMigrationsDir builds an Atlas txtar directory where BOTH
 // migrations carry a down.sql section, so `migrate down` reaches real rollback
@@ -145,63 +128,6 @@ func TestMigrateDownHonorsTheSkipChecksEnvironmentTwin(t *testing.T) {
 	}
 }
 
-// The other waivers keep their environment twin, and refusing them is what
-// protects the database. A discarded PTAH_TO_TAG leaves an empty rollback
-// target that parses as version 0, so "ignore the environment" applied to this
-// flag does not skip the rollback — it rolls back everything. The row count is
-// the assertion that matters; the error message alone would pass even if the
-// refusal came after the damage.
-func TestMigrateDownRefusesUnsupportedFlagEnvironmentTwins(t *testing.T) {
-	for _, tc := range []struct {
-		name string
-		// env is the PTAH_<FLAG> twin of an unsupported Atlas down flag that
-		// has no competing meaning on any other verb.
-		env string
-		// value is what that variable is set to.
-		value string
-		// wantFlag is the flag name the refusal must name.
-		wantFlag string
-		// pathArgs selects the down path.
-		pathArgs []string
-	}{
-		// --to-tag left this table when stokaro/ptah#1621 gave it a native
-		// implementation; PTAH_TO_TAG now names a tag to resolve rather than a
-		// capability to refuse. --plan is the one still waived.
-		{name: "plan on the default path", env: "PTAH_PLAN", value: "1", wantFlag: "--plan"},
-		{name: "plan on the format path", env: "PTAH_PLAN", value: "1", wantFlag: "--plan", pathArgs: formatPathArgs},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			c := qt.New(t)
-			dir := t.TempDir()
-			migrationsDir := writeDownableMigrationsDir(c, dir)
-			dbPath := filepath.Join(dir, "down.db")
-
-			_, err := executeAtlasProjectCommand(
-				"migrate", "apply",
-				"--url", "sqlite://"+dbPath,
-				"--dir", "file://"+migrationsDir,
-			)
-			c.Assert(err, qt.IsNil)
-
-			t.Setenv(tc.env, tc.value)
-			args := append([]string{
-				"migrate", "down",
-				"--url", "sqlite://" + dbPath,
-				"--dir", "file://" + migrationsDir,
-			}, tc.pathArgs...)
-
-			out, err := executeAtlasProjectCommand(args...)
-
-			c.Assert(err, qt.IsNotNil, qt.Commentf("command output:\n%s", out))
-			c.Assert(err.Error(), qt.Contains, tc.wantFlag)
-			c.Assert(err.Error(), qt.Contains, downUnsupportedFlagRefusal)
-			// Nothing was rolled back: the seeded row and its table survive.
-			c.Assert(sqliteTableCount(c, dbPath, "users"), qt.Equals, 1)
-			c.Assert(sqliteUsersRowCount(c, dbPath), qt.Equals, 1)
-		})
-	}
-}
-
 // downHelpEnvAnnotation returns the "[env: ...]" suffix cobra printed for a
 // flag's usage line, or the empty string when it printed none. Returning the
 // annotation rather than asserting on it lets every case below make the same
@@ -252,58 +178,6 @@ func TestMigrateDownHelpAdvertisesOnlyLiveEnvironmentTwins(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			c := qt.New(t)
 			c.Assert(downHelpEnvAnnotation(c, help, tc.flag), qt.Equals, tc.want)
-		})
-	}
-}
-
-// The refusal itself must survive: passing the flag explicitly is still an ask,
-// and still fails loudly on both paths. Without this, "ignore the environment"
-// could be implemented by dropping the waiver altogether.
-func TestMigrateDownStillRefusesExplicitUnsupportedFlags(t *testing.T) {
-	for _, tc := range []struct {
-		name string
-		flag string
-		// setEnv installs the flag's environment twin as well, so the case
-		// separates "explicit-only" from "suppressed whenever the twin is set".
-		setEnv func(t *testing.T)
-		// pathArgs selects the down path, as above.
-		pathArgs []string
-	}{
-		// --skip-checks and --to-tag left this table in stokaro/ptah#1621: both
-		// are implemented now, so an explicit one is honored rather than
-		// refused. --plan is the only waiver left, and it is what keeps this
-		// test meaningful -- the refusal path must still exist for the flag
-		// that still needs it.
-		{name: "plan on the default path", flag: "--plan", setEnv: noSkipChecksEnv},
-		{name: "plan on the format path", flag: "--plan", setEnv: noSkipChecksEnv, pathArgs: formatPathArgs},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			c := qt.New(t)
-			dir := t.TempDir()
-			migrationsDir := writeDownableMigrationsDir(c, dir)
-			dbPath := filepath.Join(dir, "down.db")
-
-			_, err := executeAtlasProjectCommand(
-				"migrate", "apply",
-				"--url", "sqlite://"+dbPath,
-				"--dir", "file://"+migrationsDir,
-			)
-			c.Assert(err, qt.IsNil)
-
-			tc.setEnv(t)
-			args := append([]string{
-				"migrate", "down",
-				"--url", "sqlite://" + dbPath,
-				"--dir", "file://" + migrationsDir,
-				"--to-version", "20260801000001",
-				tc.flag,
-			}, tc.pathArgs...)
-
-			out, err := executeAtlasProjectCommand(args...)
-
-			c.Assert(err, qt.IsNotNil, qt.Commentf("command output:\n%s", out))
-			c.Assert(err.Error(), qt.Contains, downUnsupportedFlagRefusal)
-			c.Assert(sqliteUsersEmailColumnCount(c, dbPath), qt.Equals, 1)
 		})
 	}
 }

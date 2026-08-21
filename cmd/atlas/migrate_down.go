@@ -326,7 +326,11 @@ func parseAtlasMigrateDownFormatArgs(verb atlasVerb, args []string) (*atlasMigra
 
 // atlasMigrateDownUnsupportedFlags are the Atlas down flags this command
 // accepts for help parity but refuses at runtime.
-var atlasMigrateDownUnsupportedFlags = []string{"plan"}
+//
+// It is empty: stokaro/ptah#1621 implemented the last three. The slice stays
+// because the refusal machinery around it is what a future waived flag would
+// use, and an empty list is a clearer statement than a deleted one.
+var atlasMigrateDownUnsupportedFlags []string
 
 // atlasMigrateDownExplicitOnlyFlags are the flags this path must not fill from
 // a PTAH_<FLAG> environment value.
