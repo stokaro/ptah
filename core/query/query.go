@@ -358,6 +358,66 @@ func arith(left ast.Expression, op ast.ArithmeticOperator, right ast.Expression)
 	return &ast.Arithmetic{Left: left, Operator: op, Right: right}
 }
 
+// Over turns a function call into a window function.
+//
+// The call is whatever this package builds -- an aggregate such as Sum, or a
+// ranking function through Func -- and the spec says which rows it is computed
+// over:
+//
+//	query.Over(query.Sum("total"), query.Partition("user_id"), query.OrderAsc("day"))
+//	// SUM("total") OVER (PARTITION BY "user_id" ORDER BY "day" ASC)
+//
+// A window function belongs in a projection and not in WHERE, because the
+// window is computed after the rows are filtered. The engines say so clearly in
+// their own terms, so this package does not add a rule of its own
+// (stokaro/ptah#941).
+//
+// No frame clause is emitted. Without one the engine applies its default, which
+// is what an unframed window means everywhere; guessing a frame would change
+// results.
+func Over(call ast.Expression, options ...WindowOption) ast.Expression {
+	fn, ok := call.(*ast.FuncCall)
+	if !ok {
+		return call
+	}
+	spec := &ast.WindowSpec{}
+	for _, option := range options {
+		option(spec)
+	}
+	fn.Over = spec
+	return fn
+}
+
+// WindowOption configures the OVER clause built by [Over].
+type WindowOption func(*ast.WindowSpec)
+
+// Partition adds PARTITION BY columns to a window.
+func Partition(columns ...string) WindowOption {
+	return func(spec *ast.WindowSpec) {
+		for _, name := range columns {
+			spec.PartitionBy = append(spec.PartitionBy, ast.ColumnRef{Name: name})
+		}
+	}
+}
+
+// OrderAsc adds ascending ORDER BY terms to a window.
+func OrderAsc(columns ...string) WindowOption {
+	return windowOrder(ast.SortAscending, columns)
+}
+
+// OrderDesc adds descending ORDER BY terms to a window.
+func OrderDesc(columns ...string) WindowOption {
+	return windowOrder(ast.SortDescending, columns)
+}
+
+func windowOrder(direction ast.SortDirection, columns []string) WindowOption {
+	return func(spec *ast.WindowSpec) {
+		for _, name := range columns {
+			spec.OrderBy = append(spec.OrderBy, ast.OrderByClause{Column: name, Direction: direction})
+		}
+	}
+}
+
 // In builds "column IN (values...)", binding each value as a parameter. The
 // values slice must be non-empty; rendering an empty IN returns an error. The
 // generic element type lets callers pass, for example, []string or []int64

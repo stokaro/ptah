@@ -246,6 +246,37 @@ type FuncCall struct {
 	// Distinct emits the DISTINCT keyword before the arguments, as in
 	// COUNT(DISTINCT "col").
 	Distinct bool
+	// Over turns the call into a window function: SUM("x") OVER (PARTITION BY
+	// "y" ORDER BY "z" ASC). Nil emits no OVER clause and the call is an
+	// ordinary one.
+	//
+	// A window function is legal wherever a projection expression is, and
+	// nowhere else -- notably not in WHERE, because the window is computed
+	// after the rows are filtered. The renderer does not enforce that: the
+	// engines report it clearly and in their own terms, and a builder-side rule
+	// would have to model where each clause sits rather than what it contains
+	// (stokaro/ptah#941).
+	Over *WindowSpec
+}
+
+// WindowSpec is the OVER (...) clause of a window function.
+//
+// # What it deliberately does not model
+//
+// A frame clause -- ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW and its
+// relatives -- is a further phase. Without one the engine applies its default
+// frame, which is well defined and is what an unframed window means everywhere:
+// RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW when the window is ordered,
+// and the whole partition when it is not. Emitting no frame is therefore
+// honest rather than incomplete; emitting a guessed one would change results.
+type WindowSpec struct {
+	// PartitionBy divides the rows into groups the function is computed over.
+	// Empty computes over the whole result set.
+	PartitionBy []ColumnRef
+	// OrderBy orders the rows within each partition. Empty leaves the order
+	// unspecified, which for a ranking function means the engine may return any
+	// ordering -- a query relying on one is relying on that engine.
+	OrderBy []OrderByClause
 }
 
 func (*FuncCall) expressionNode() {}

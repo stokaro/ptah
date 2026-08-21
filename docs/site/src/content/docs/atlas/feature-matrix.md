@@ -90,8 +90,8 @@ Across the 191 capabilities below:
 
 | Reading | Count |
 | --- | --- |
-| Ptah supports it fully | 171 |
-| Ptah supports it with a stated limitation | 4 |
+| Ptah supports it fully | 172 |
+| Ptah supports it with a stated limitation | 3 |
 | Ptah does not implement it | 9 |
 | Ptah covers it in its own form, against a hosted service it cannot interoperate with | 7 |
 | Ptah and Atlas CE both support it | 63 |
@@ -319,7 +319,7 @@ seven of them as open capabilities regardless.
 | Protobuf schema export with pinned field numbers | ✅ | ❌ | ❌ | Edition 2023 output from Go annotations or a YAML, HCL or SQL schema file; `--out` pins field numbers, with policies for type removal, name reuse and incompatible change. Not in CE inventory. |
 | ptah-ls annotation language server | ✅ | ➖ | ➖ | stdio LSP over //ptah annotations: hover, completion, diagnostics, plus a VS Code extension. Tied to Ptah's own annotation syntax. |
 | Public API compatibility gate | ✅ | ➖ | ➖ | check-public-api.sh keeps the committed API baseline and the package tree in sync; pre-v1 breaks need a per-baseline approval line. |
-| Query builder for parameterized SQL | 🟡 | ➖ | ➖ | Joins, DISTINCT, GROUP BY, HAVING, RETURNING, LIKE, upsert, CTEs, subqueries, arithmetic, function calls and INSERT … SELECT render. No window functions (stokaro/ptah#941). |
+| Query builder for parameterized SQL | ✅ | ➖ | ➖ | Joins, DISTINCT, GROUP BY, HAVING, RETURNING, LIKE, upsert, CTEs, subqueries, arithmetic, function calls, INSERT … SELECT and window functions all render. No frame clause yet. |
 | Reusable Go packages (embedder API) | ✅ | ➖ | ➖ | Documented embedder packages cover parse, diff, plan, render, migrate, lint and seed. CE conformance measures CLI commands, not Go APIs. |
 | Schema visualization (ERD diagrams) | ✅ | ❌ | ✅ | Mermaid, DOT or SVG ERD from Go annotations only; SVG shells out to Graphviz dot. Atlas ERD lives in the hosted service (any plan per its pricing page); the CE binary rejects `--web`. |
 | Statement observer and validator hooks (Go API) | ✅ | ➖ | ➖ | migrator.WithStatementObserver runs a read-only callback per executed statement; WithStatementValidator gates all statements pre-execution; both compose with StatementInterceptor. |
