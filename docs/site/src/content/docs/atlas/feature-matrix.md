@@ -295,7 +295,7 @@ seven of them as open capabilities regardless.
 | Extensions | ✅ | ❌ | ✅ | PostgreSQL and YugabyteDB create, compare and relocate extensions, version included. Every other target names the declaration it cannot host rather than dropping it. |
 | Functions | ✅ | ❌ | ✅ | Functions and procedures render, read and plan on the PostgreSQL and MySQL families and SQL Server. ClickHouse and SQLite host neither. |
 | MySQL and MariaDB | ✅ | ✅ | ✅ | Roles, grants, stored functions and MariaDB sequences render, read back and plan. An inline enum change plans a real MODIFY COLUMN and converges; matviews fail closed. |
-| Oracle, Snowflake, Redshift, Databricks | ❌ | ❌ | ✅ | No dialect entry; the names fail normalization the same way TiDB does. Listed as Atlas Pro drivers. Tracked by stokaro/ptah#1616. |
+| Oracle, Snowflake, Redshift, Databricks | ❌ | ❌ | ✅ | Decided per engine: Oracle is taken (stokaro/ptah#1875); the other three have no endpoint anyone can measure, so they are out of scope with the reason rather than an unowned gap. |
 | PostgreSQL 12+ (postgres, postgresql) | ✅ | ✅ | ✅ | Reference engine of the PostgreSQL family: views, matviews, functions, triggers, sequences, roles, RLS and domains all render. Presets 12-13, 14-16, 17+ from the server banner. |
 | Roles, grants, and row-level security | ✅ | ❌ | ✅ | Roles and grants on every engine that has them. Row-level security on the PostgreSQL family, SQL Server and ClickHouse; MySQL, MariaDB and Spanner have no such object to model. |
 | Spanner PostgreSQL interface (spanner) | ✅ | ❌ | ✅ | Enums, sequences, matviews, functions and triggers render as named skips; foreign keys render, SERIAL errors. Probed live, with a compose service and a scenario suite. |
