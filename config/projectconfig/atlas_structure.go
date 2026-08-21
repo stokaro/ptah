@@ -82,7 +82,8 @@ func (p atlasParser) checkBlockArityAndUniqueness(
 
 func atlasEnvBodyStructure() atlasBodyStructure {
 	return atlasBodyStructure{
-		attributes:             []string{"dev", "exclude", "for_each", "name", "schemas", "src", "url"},
+		// "exporter" names the output template --export selects (stokaro/ptah#1620).
+		attributes:             []string{"dev", "exclude", "exporter", "for_each", "name", "schemas", "src", "url"},
 		allowUnknownAttributes: true,
 		allowUnknownBlocks:     true,
 		blocks: map[string]atlasBlockStructure{
