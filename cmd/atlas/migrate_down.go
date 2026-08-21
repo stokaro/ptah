@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"slices"
 	"strconv"
@@ -102,6 +103,14 @@ type atlasMigrateDownFormatOptions struct {
 	revisionsSchema string
 	lockTimeout     string
 	dryRun          bool
+	// toTag, skipChecks and plan are the three flags stokaro/ptah#1621
+	// implemented. They live on the options struct rather than as parser
+	// locals because this path builds its own execution: a value parsed into a
+	// local here is silently dropped, which is what made --to-tag roll the
+	// whole history back instead of stopping at the tag.
+	toTag      string
+	skipChecks bool
+	plan       bool
 
 	flagSet *pflag.FlagSet
 	// rawDir preserves the pre-resolution --dir value for the report's Env.Dir.
@@ -204,6 +213,28 @@ func runAtlasMigrateDownFormat(
 	}
 	defer dbschema.CloseAndWarn(conn)
 
+	// --plan derives the rollback from a schema difference, which produces
+	// generated statements rather than the per-migration reverts this report is
+	// shaped around: its Planned and Reverted arrays name migration files, and
+	// a derived plan has none. Refusing the combination names it; accepting it
+	// would emit a report whose file lists silently disagree with what ran
+	// (stokaro/ptah#1621).
+	if opts.plan {
+		return fmt.Errorf(
+			"--plan and --format cannot be combined: a derived rollback has no migration files for the report to name")
+	}
+
+	// The tag resolves here, against the same revision metadata the forwarding
+	// path uses. Parsing it and not resolving it left the target at its default
+	// of 0, so a bounded rollback reverted the entire history instead
+	// (stokaro/ptah#1621).
+	if strings.TrimSpace(opts.toTag) != "" {
+		targetVersion, err = resolveAtlasDownFormatTag(cmd.Context(), conn, opts, source.FileSystem)
+		if err != nil {
+			return err
+		}
+	}
+
 	plan, err := atlasmigrate.PrepareDown(cmd.Context(), conn, atlasmigrate.DownOptions{
 		Dir:                  dir,
 		FS:                   source.FileSystem,
@@ -211,6 +242,7 @@ func runAtlasMigrateDownFormat(
 		DryRun:               opts.dryRun,
 		RevisionsSchema:      applyAtlasRevisionsSchemaDefault(opts.revisionsSchema, opts.url),
 		MigrationLockTimeout: migrationLockTimeout,
+		SkipChecks:           opts.skipChecks,
 	})
 	if err != nil {
 		return err
@@ -278,21 +310,19 @@ func parseAtlasMigrateDownFormatArgs(verb atlasVerb, args []string) (*atlasMigra
 		return nil, err
 	}
 	opts := &atlasMigrateDownFormatOptions{}
-	var toTag string
-	var skipChecks, forcePlan bool
 	flagSet := pflag.NewFlagSet("atlas migrate down", pflag.ContinueOnError)
 	flagSet.SetOutput(io.Discard)
 	flagSet.StringVarP(&opts.url, "url", "u", "", "")
 	flagSet.StringVar(&opts.dir, "dir", "", "")
 	flagSet.StringVar(&opts.devURL, "dev-url", "", "")
 	flagSet.StringVar(&opts.toVersion, "to-version", "", "")
-	flagSet.StringVar(&toTag, "to-tag", "", "")
+	flagSet.StringVar(&opts.toTag, "to-tag", "", "")
 	flagSet.BoolVar(&opts.dryRun, "dry-run", false, "")
 	flagSet.StringVar(&opts.format, "format", "", "")
 	flagSet.StringVar(&opts.revisionsSchema, "revisions-schema", "", "")
 	flagSet.StringVar(&opts.lockTimeout, "lock-timeout", "", "")
-	flagSet.BoolVar(&skipChecks, "skip-checks", false, "")
-	flagSet.BoolVar(&forcePlan, "plan", false, "")
+	flagSet.BoolVar(&opts.skipChecks, "skip-checks", false, "")
+	flagSet.BoolVar(&opts.plan, "plan", false, "")
 	if err := flagSet.Parse(args); err != nil {
 		return nil, fmt.Errorf("atlas migrate down: %w", err)
 	}
@@ -520,4 +550,35 @@ func parseAtlasMigrateDownTarget(value string) (int64, error) {
 		return 0, fmt.Errorf("--to-version must be greater than or equal to zero")
 	}
 	return target, nil
+}
+
+// resolveAtlasDownFormatTag turns --to-tag into the version the formatted
+// rollback stops at.
+//
+// It exists because this path constructs its own execution rather than
+// forwarding to the native command, so every option has to be applied here
+// too. `migrate down` parses flags in two independent places -- the atlasargs
+// mapper and parseAtlasMigrateDownFormatArgs -- and a fix to one is not a fix
+// to the other, which is the whole reason the refusal tests always covered
+// both paths (stokaro/ptah#1621).
+func resolveAtlasDownFormatTag(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	opts *atlasMigrateDownFormatOptions,
+	migrations fs.FS,
+) (int64, error) {
+	// Both name where to stop. Preferring either silently would roll back to a
+	// version the operator did not choose.
+	if strings.TrimSpace(opts.toVersion) != "" {
+		return 0, fmt.Errorf("--to-version and --to-tag both name where to stop; pass one")
+	}
+	resolver, err := migrator.NewFSMigrator(conn, migrations,
+		migrator.WithMigrationDirFormat(migrator.MigrationDirFormatAtlas))
+	if err != nil {
+		return 0, fmt.Errorf("error registering migrations: %w", err)
+	}
+	resolver = resolver.
+		WithMigrationsTable(applyAtlasRevisionsSchemaDefault(opts.revisionsSchema, opts.url), "").
+		WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)
+	return resolver.ResolveMigrationTag(ctx, opts.toTag)
 }
