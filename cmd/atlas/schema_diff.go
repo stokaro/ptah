@@ -120,11 +120,11 @@ func runAtlasSchemaDiff(cmd *cobra.Command, opts atlasSchemaDiffOptions) error {
 	}
 	// An exporter is a named format, so selecting one is choosing the template
 	// this run renders through (stokaro/ptah#1620).
-	exported, err := resolveAtlasExporter(cmd, atlasExportProject{config: projectCfg, loaded: loaded})
+	exported, exportSelected, err := resolveAtlasExporter(cmd, atlasExportProject{config: projectCfg, loaded: loaded})
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	if exported != "" {
+	if exportSelected {
 		opts.format = exported
 		formatConfigured = true
 	}

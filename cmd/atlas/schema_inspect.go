@@ -185,11 +185,11 @@ func runAtlasSchemaInspect(cmd *cobra.Command, opts atlasSchemaInspectOptions) e
 			return cmdutil.Fail(cmd, err)
 		}
 	}
-	exported, err := resolveAtlasExporter(cmd, atlasExportProject{config: projectCfg, loaded: loaded})
+	exported, exportSelected, err := resolveAtlasExporter(cmd, atlasExportProject{config: projectCfg, loaded: loaded})
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	if exported != "" {
+	if exportSelected {
 		opts.format = exported
 		formatConfigured = true
 	}

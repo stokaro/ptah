@@ -99,29 +99,39 @@ type atlasExportProject struct {
 // Every failure here is a case where emitting the ordinary report would let an
 // operator believe their exporter ran. That is the failure the flag was a
 // registered refusal to avoid, and implementing it must not reintroduce it.
-func resolveAtlasExporter(cmd *cobra.Command, project atlasExportProject) (string, error) {
-	if !cmd.Flags().Changed(atlasSchemaExportFlagName) {
-		return "", nil
+func resolveAtlasExporter(cmd *cobra.Command, project atlasExportProject) (string, bool, error) {
+	// The VALUE, not just Changed. Cobra marks a boolean flag changed for
+	// `--export=false` too, so testing Changed alone would apply the exporter
+	// on an invocation that explicitly asked for ordinary output -- and error
+	// on a project that declares none. Generated command lines pass explicit
+	// booleans, so this is a spelling real callers use.
+	export, err := cmd.Flags().GetBool(atlasSchemaExportFlagName)
+	if err != nil || !export {
+		return "", false, nil
 	}
 	if !project.loaded {
-		return "", fmt.Errorf(
+		return "", false, fmt.Errorf(
 			"--%s needs a project config: an exporter is declared by an atlas.hcl `exporter` block",
 			atlasSchemaExportFlagName)
 	}
 	if cmd.Flags().Changed("format") {
-		return "", fmt.Errorf(
+		return "", false, fmt.Errorf(
 			"--%s and --format both choose the output; pass one", atlasSchemaExportFlagName)
 	}
 	if project.config.ExporterName == "" {
-		return "", fmt.Errorf(
+		return "", false, fmt.Errorf(
 			"--%s: this env selects no exporter; name one with an `exporter` attribute",
 			atlasSchemaExportFlagName)
 	}
 	exporter, err := project.config.Exporter(project.config.ExporterName)
 	if err != nil {
-		return "", fmt.Errorf("--%s: %w", atlasSchemaExportFlagName, err)
+		return "", false, fmt.Errorf("--%s: %w", atlasSchemaExportFlagName, err)
 	}
-	return exporter.Template, nil
+	// The selection is reported separately from the template. A caller reading
+	// "selected" off a non-empty string cannot tell an exporter that renders
+	// nothing from one that was never chosen, and would quietly print the
+	// default report for the first.
+	return exporter.Template, true, nil
 }
 
 // refuseAtlasUIFlag rejects a registered UI-bound flag that was actually passed.

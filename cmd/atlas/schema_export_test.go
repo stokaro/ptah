@@ -326,3 +326,124 @@ func urlLinesOf(body string) []string {
 	}
 	return lines
 }
+
+// The three cases below came from review on stokaro/ptah#1620. Each was
+// reproduced before being fixed, and each is a way --export could look like it
+// worked while doing something else.
+
+// TestSchemaExportFalseKeepsTheDefaultOutput covers the explicit false.
+//
+// Cobra marks a boolean flag changed for `--export=false` too, so testing
+// Changed alone applied the exporter on an invocation that asked for ordinary
+// output -- and errored on a project declaring none. Generated command lines
+// pass explicit booleans, so this is a spelling real callers use.
+func TestSchemaExportFalseKeepsTheDefaultOutput(t *testing.T) {
+	c := qt.New(t)
+	dir := c.TempDir()
+	target := filepath.Join(dir, "target.db")
+	dev := filepath.Join(dir, "dev.db")
+	createSQLiteSchemaCleanTable(c, target, "users")
+	desired := filepath.Join(dir, "desired.sql")
+	c.Assert(os.WriteFile(desired,
+		[]byte("CREATE TABLE users (id INTEGER PRIMARY KEY);\nCREATE TABLE orders (id INTEGER PRIMARY KEY);\n"),
+		0o600), qt.IsNil)
+	config := writeExportProject(c, dir, exportProjectBody(target, dev))
+
+	out, err := runExportCommand(c, "schema", "diff",
+		"-c", "file://"+config, "--env", "local",
+		"--from", "sqlite://"+target, "--to", "file://"+desired,
+		"--dev-url", "sqlite://"+dev, "--export=false")
+
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+	c.Assert(out, qt.Not(qt.Contains), "## Rollout")
+	c.Assert(out, qt.Contains, "CREATE TABLE")
+}
+
+// TestSchemaExporterWithAnEmptyTemplateIsRefused covers a template that is
+// present and blank.
+//
+// It renders nothing, so an export selecting it printed nothing at all and
+// exited 0 -- indistinguishable from no exporter being selected, because the
+// caller read selection off the returned string. Refusing it at parse time is
+// what keeps the two apart.
+func TestSchemaExporterWithAnEmptyTemplateIsRefused(t *testing.T) {
+	c := qt.New(t)
+	dir := c.TempDir()
+	target := filepath.Join(dir, "target.db")
+	createSQLiteSchemaCleanTable(c, target, "users")
+	config := writeExportProject(c, dir, `exporter "blank" {
+  template = ""
+}
+
+env "local" {
+  url      = "sqlite://`+hclPath(target)+`"
+  exporter = "blank"
+}
+`)
+
+	out, err := runExportCommand(c, "schema", "inspect",
+		"-c", "file://"+config, "--env", "local", "--export")
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(out+err.Error(), qt.Contains, `exporter "blank" declares an empty template`)
+}
+
+// TestSchemaExporterNestedBlockIsStillEvaluated keeps this surface from being
+// looser than the community binary.
+//
+// Before the exporter parser existed, the block took the unknown-top-level-name
+// path, whose body evaluation refuses a child expression like
+// `metadata { value = var.missing }` exactly as Atlas CE refuses it. Walking
+// only Attributes made that configuration succeed while silently discarding the
+// child. The control is the same bad reference inside an unknown block, which
+// was refused throughout.
+func TestSchemaExporterNestedBlockIsStillEvaluated(t *testing.T) {
+	c := qt.New(t)
+	dir := c.TempDir()
+	target := filepath.Join(dir, "target.db")
+	createSQLiteSchemaCleanTable(c, target, "users")
+	config := writeExportProject(c, dir, `exporter "markdown" {
+  template = "x"
+  metadata {
+    value = var.missing
+  }
+}
+
+env "local" {
+  url      = "sqlite://`+hclPath(target)+`"
+  exporter = "markdown"
+}
+`)
+
+	out, err := runExportCommand(c, "schema", "inspect",
+		"-c", "file://"+config, "--env", "local")
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(out+err.Error(), qt.Contains, `no variable named "var"`)
+}
+
+// TestUnknownBlockNestedBadReferenceIsRefused is that control, held here so the
+// test above is measuring the exporter path and not a rule that stopped
+// applying anywhere.
+func TestUnknownBlockNestedBadReferenceIsRefused(t *testing.T) {
+	c := qt.New(t)
+	dir := c.TempDir()
+	target := filepath.Join(dir, "target.db")
+	createSQLiteSchemaCleanTable(c, target, "users")
+	config := writeExportProject(c, dir, `frobnicate "x" {
+  metadata {
+    value = var.missing
+  }
+}
+
+env "local" {
+  url = "sqlite://`+hclPath(target)+`"
+}
+`)
+
+	out, err := runExportCommand(c, "schema", "inspect",
+		"-c", "file://"+config, "--env", "local")
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(out+err.Error(), qt.Contains, `no variable named "var"`)
+}

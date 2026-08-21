@@ -124,6 +124,29 @@ func (p atlasParser) parseAtlasExporterBlock(block *hclsyntax.Block, cfg *Config
 	if !found {
 		return fmt.Errorf("atlas.hcl exporter %q declares no template", name)
 	}
+	// An empty template is the same user error as a missing one: it renders
+	// nothing, so an export that selected it would print nothing at all and
+	// exit 0. Refusing it here is what keeps a selected exporter from being
+	// indistinguishable from no exporter downstream.
+	if body == "" {
+		return fmt.Errorf("atlas.hcl exporter %q declares an empty template", name)
+	}
+	// Child blocks go through the same tolerated-body evaluation an unknown
+	// top-level block gets. Before this parser existed, `exporter` followed the
+	// unknown-name path, so a nested `metadata { value = var.missing }` was
+	// evaluated and refused exactly as Atlas CE refuses it. Walking only
+	// Attributes made that configuration succeed while discarding the block --
+	// which is this surface being LOOSER than the community binary on a
+	// construct it already handled. Measured: the same bad reference inside an
+	// unknown `frobnicate` block is still refused, and inside `exporter` it was
+	// not (stokaro/ptah#1620).
+	for _, child := range block.Body.Blocks {
+		if err := p.evaluateIgnoredBody(
+			atlasTopLevelScope+".exporter."+name+"."+child.Type, child.Body); err != nil {
+			return err
+		}
+		p.noteIgnored("block", atlasTopLevelScope+".exporter."+name+"."+child.Type, child.TypeRange)
+	}
 	if cfg.exporters == nil {
 		cfg.exporters = make(map[string]string)
 	}
