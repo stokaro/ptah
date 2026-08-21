@@ -99,23 +99,45 @@ func isReservedKeyword(dialect, name string) bool {
 // isOracleReservedKeyword reports whether name is one of the words Oracle
 // refuses as a bare identifier.
 //
-// The list is the server's own: `SELECT keyword FROM v$reserved_words WHERE
-// reserved = 'Y'` on 23.26 answers 104 rows, of which the 86 below are
-// word-shaped and the rest are punctuation that isPlainIdentifier already
-// rejects. It matters more here than it does for SQLite, because the Oracle
-// renderer writes a plain name WITHOUT quotes -- see escapeIdentifier there for
-// why -- so a column named "size" or "comment" would otherwise reach the server
-// as syntax.
+// The list is the server's own, and the predicate matters: `reserved = 'Y'`
+// alone is NOT the set Oracle refuses as an identifier. v$reserved_words has
+// 3082 rows and four flags, and the words below are spread across two of them --
+// SIZE and RESOURCE answer reserved='Y', while COMMENT, LEVEL, SESSION and USER
+// answer reserved='N' with res_semi='Y'. Measured on 23.26, the server refuses
+// every one of them the same way:
+//
+//	CREATE TABLE t (comment CLOB)  ->  ORA-03050: invalid identifier: "COMMENT" is a reserved word
+//	CREATE TABLE t (user CLOB)     ->  ORA-03050: invalid identifier: "USER" is a reserved word
+//	CREATE TABLE t (description CLOB)  ->  created  (control)
+//
+// So the list is every word-shaped keyword any of the four flags marks:
+//
+//	SELECT keyword FROM v$reserved_words
+//	 WHERE reserved = 'Y' OR res_type = 'Y' OR res_attr = 'Y' OR res_semi = 'Y'
+//
+// which answers 111 word-shaped rows on 23.26 and the identical 111 on 21.3, so
+// one list serves both measured lines. Narrowing it to `reserved='Y'` alone
+// answers 81 and drops `user`, `comment`, `level` and `session`, which are
+// ordinary column names (stokaro/ptah#1875).
+//
+// It matters more here than it does for SQLite, because the Oracle renderer
+// writes a plain name WITHOUT quotes -- see escapeIdentifier there for why -- so
+// a column named "size" or "comment" would otherwise reach the server as
+// syntax.
 func isOracleReservedKeyword(name string) bool {
 	switch strings.ToUpper(name) {
-	case "ALL", "ALTER", "AND", "ANY", "AS", "ASC", "BETWEEN", "BY", "CHAR", "CHECK", "CLUSTER",
-		"COMPRESS", "CONNECT", "CREATE", "DATE", "DECIMAL", "DEFAULT", "DELETE", "DESC", "DISTINCT",
-		"DROP", "ELSE", "EXCEPT", "EXCLUSIVE", "EXISTS", "FLOAT", "FOR", "FROM", "GRANT", "GROUP",
-		"HAVING", "IDENTIFIED", "IN", "INDEX", "INSERT", "INTEGER", "INTERSECT", "INTO", "IS", "LIKE",
-		"LOCK", "LONG", "MINUS", "MODE", "NOCOMPRESS", "NOT", "NOWAIT", "NULL", "NUMBER", "OF", "ON",
-		"OPTION", "OR", "ORDER", "PCTFREE", "PRIOR", "PUBLIC", "RAW", "RENAME", "RESOURCE", "REVOKE",
-		"SELECT", "SET", "SHARE", "SIZE", "SMALLINT", "START", "SYNONYM", "TABLE", "THEN", "TO",
-		"TRIGGER", "UNION", "UNIQUE", "UPDATE", "VALUES", "VARCHAR", "VARCHAR2", "VIEW", "WHERE", "WITH":
+	case "ACCESS", "ADD", "ALL", "ALTER", "AND", "ANY", "AS", "ASC", "AUDIT", "BETWEEN", "BY",
+		"CHAR", "CHECK", "CLUSTER", "COLUMN", "COLUMN_VALUE", "COMMENT", "COMPRESS", "CONNECT",
+		"CREATE", "CURRENT", "DATE", "DECIMAL", "DEFAULT", "DELETE", "DESC", "DISTINCT", "DROP",
+		"ELSE", "EXCEPT", "EXCLUSIVE", "EXISTS", "FILE", "FLOAT", "FOR", "FROM", "GRANT", "GROUP",
+		"HAVING", "IDENTIFIED", "IMMEDIATE", "IN", "INCREMENT", "INDEX", "INITIAL", "INSERT",
+		"INTEGER", "INTERSECT", "INTO", "IS", "LEVEL", "LIKE", "LOCK", "LONG", "MAXEXTENTS", "MINUS",
+		"MLSLABEL", "MODE", "MODIFY", "NESTED_TABLE_ID", "NOAUDIT", "NOCOMPRESS", "NOT", "NOWAIT",
+		"NULL", "NUMBER", "OF", "OFFLINE", "ON", "ONLINE", "OPTION", "OR", "ORDER", "PCTFREE",
+		"PRIOR", "PUBLIC", "RAW", "RENAME", "RESOURCE", "REVOKE", "ROW", "ROWID", "ROWNUM", "ROWS",
+		"SELECT", "SESSION", "SET", "SHARE", "SIZE", "SMALLINT", "START", "SUCCESSFUL", "SYNONYM",
+		"SYSDATE", "TABLE", "THEN", "TO", "TRIGGER", "UID", "UNION", "UNIQUE", "UPDATE", "USER",
+		"VALIDATE", "VALUES", "VARCHAR", "VARCHAR2", "VIEW", "WHENEVER", "WHERE", "WITH":
 		return true
 	default:
 		return false

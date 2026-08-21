@@ -221,3 +221,39 @@ ALTER TABLE ora_posts DROP COLUMN payload;
 ALTER TABLE ora_posts DROP CONSTRAINT fk_post_author;
 `)
 }
+
+// TestBooleanDefaultLiteralIsNumeric pins the default beside a BOOLEAN column,
+// which maps to NUMBER(1) here.
+//
+// It uses a declared literal rather than an Expression, because the two take
+// different arms and only the literal arm quotes. A test that sets Expression
+// exercises the pass-through and says nothing about the arm that renders a
+// declared default.
+//
+// Measured on 23.26 -- Oracle converts a quoted number implicitly, so a quoted
+// numeric default reaches a created table, and only the boolean spelling is
+// refused:
+//
+//	qty NUMBER(10) DEFAULT '5'      accepted
+//	flag NUMBER(1) DEFAULT 'false'  ORA-01722, unable to convert string value containing 'f'
+func TestBooleanDefaultLiteralIsNumeric(t *testing.T) {
+	c := qt.New(t)
+
+	table := &ast.CreateTableNode{
+		Name: "ora_flags",
+		Columns: []*ast.ColumnNode{
+			{Name: "off_flag", Type: "BOOLEAN", Default: &ast.DefaultValue{Value: "false"}, Nullable: true},
+			{Name: "on_flag", Type: "BOOL", Default: &ast.DefaultValue{Value: "true"}, Nullable: true},
+			// Not a boolean: the literal stays a literal, because Oracle takes
+			// it and rewriting defaults that already work is not this fix.
+			{Name: "note", Type: "TEXT", Default: &ast.DefaultValue{Value: "none"}, Nullable: true},
+		},
+	}
+
+	c.Assert(render(c, capability.Oracle23(), table), qt.Equals, `CREATE TABLE ora_flags (
+  off_flag NUMBER(1) DEFAULT 0,
+  on_flag NUMBER(1) DEFAULT 1,
+  note CLOB DEFAULT 'none'
+);
+`)
+}

@@ -111,3 +111,62 @@ func TestBareOrQuoted(t *testing.T) {
 		})
 	}
 }
+
+// TestOracleReservedWordsAreQuoted pins the words Oracle refuses as a bare
+// identifier, because the Oracle renderer writes names WITHOUT quotes and this
+// list is the only thing standing between a declaration and ORA-03050.
+//
+// The reserved cases are not a sample. Each one answered ORA-03050 on a live
+// 23.26 server while the ordinary controls beside them created their table.
+// They span both flags the server sets -- `size` and `resource` are
+// `reserved='Y'`, the rest are `res_semi='Y'` -- because a list built from
+// either flag alone covers only part of the set.
+func TestOracleReservedWordsAreQuoted(t *testing.T) {
+	tests := []struct {
+		name  string
+		ident string
+		want  string
+	}{
+		{name: "comment is reserved", ident: "comment", want: `"comment"`},
+		{name: "level is reserved", ident: "level", want: `"level"`},
+		{name: "session is reserved", ident: "session", want: `"session"`},
+		{name: "user is reserved", ident: "user", want: `"user"`},
+		{name: "row is reserved", ident: "row", want: `"row"`},
+		{name: "rows is reserved", ident: "rows", want: `"rows"`},
+		{name: "access is reserved", ident: "access", want: `"access"`},
+		{name: "add is reserved", ident: "add", want: `"add"`},
+		{name: "column is reserved", ident: "column", want: `"column"`},
+		{name: "file is reserved", ident: "file", want: `"file"`},
+		{name: "current is reserved", ident: "current", want: `"current"`},
+		{name: "uid is reserved", ident: "uid", want: `"uid"`},
+		{name: "sysdate is reserved", ident: "sysdate", want: `"sysdate"`},
+		{name: "rowid is reserved", ident: "rowid", want: `"rowid"`},
+		{name: "rownum is reserved", ident: "rownum", want: `"rownum"`},
+		{name: "audit is reserved", ident: "audit", want: `"audit"`},
+		{name: "online is reserved", ident: "online", want: `"online"`},
+		{name: "offline is reserved", ident: "offline", want: `"offline"`},
+		{name: "validate is reserved", ident: "validate", want: `"validate"`},
+		{name: "whenever is reserved", ident: "whenever", want: `"whenever"`},
+		{name: "immediate is reserved", ident: "immediate", want: `"immediate"`},
+		{name: "increment is reserved", ident: "increment", want: `"increment"`},
+		{name: "initial is reserved", ident: "initial", want: `"initial"`},
+		{name: "modify is reserved", ident: "modify", want: `"modify"`},
+		{name: "size was already on the list", ident: "size", want: `"size"`},
+		{name: "resource was already on the list", ident: "resource", want: `"resource"`},
+		// Controls: an ordinary name must stay bare, or an over-broad list
+		// would undo the renderer's whole bare-identifier decision.
+		{name: "description is ordinary", ident: "description", want: "description"},
+		{name: "status is ordinary", ident: "status", want: "status"},
+		{name: "title is ordinary", ident: "title", want: "title"},
+		{name: "amount is ordinary", ident: "amount", want: "amount"},
+		{name: "email is ordinary", ident: "email", want: "email"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(sqlident.Ident("oracle", tt.ident), qt.Equals, tt.want)
+		})
+	}
+}

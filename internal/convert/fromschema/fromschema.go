@@ -429,13 +429,27 @@ func applyInlineEnumModel(field goschema.Field, enum goschema.Enum, targetPlatfo
 			enumCheck = fmt.Sprintf("(%s) AND %s", field.Check, enumCheck)
 		}
 		newField.Check = enumCheck
+	case platform.Oracle:
+		newField.Type = "VARCHAR2(255)"
+		// The column reference is spelled by the same rule the Oracle renderer
+		// spells the declaration with, because Oracle refuses a CHECK whose
+		// spelling disagrees with the column it constrains: measured,
+		// `"view_count" NUMBER(10) CHECK (view_count >= 0)` answers ORA-00904
+		// while the two agreeing forms are accepted. sqlident.Ident is what
+		// escapeIdentifier there calls, so the two cannot drift apart.
+		enumCheck := fmt.Sprintf("%s IN (%s)",
+			sqlident.Ident(platform.Oracle, field.Name), strings.Join(quotedValues, ", "))
+		if field.Check != "" {
+			enumCheck = fmt.Sprintf("(%s) AND %s", field.Check, enumCheck)
+		}
+		newField.Check = enumCheck
 	}
 	return newField
 }
 
 func emitsStandaloneEnumDefinitions(targetPlatform string) bool {
 	switch platform.NormalizeDialect(targetPlatform) {
-	case platform.MySQL, platform.MariaDB, platform.SQLite, platform.SQLServer:
+	case platform.MySQL, platform.MariaDB, platform.SQLite, platform.SQLServer, platform.Oracle:
 		return false
 	default:
 		return true

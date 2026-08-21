@@ -22,6 +22,7 @@ per-capability tables are in [Capabilities](../../reference/capabilities/).
 | YugabyteDB | `yugabytedb` (`yugabyte`, `ysql`) | `yugabytedb://`, `ysql://` | PostgreSQL-compatible path with capability differences. |
 | ClickHouse | `clickhouse` (`ch`) | `clickhouse://`, `ch://` | Capability-limited support. |
 | Spanner (PostgreSQL interface) | `spanner` (`cloudspanner`, `google-spanner`, `google_spanner`) | `spanner://` | Most conservative capability-limited support. |
+| Oracle | `oracle` | `oracle://` | Renders and plans DDL; reading a live catalog is not implemented. |
 
 Accepted URL formats, and the difference between target, dev, shadow, and
 throwaway databases, are on
@@ -37,28 +38,9 @@ ptah schema render --dialect snowflake
 error: error rendering snowflake schema: unsupported database dialect: snowflake
 ```
 
-**Oracle is no longer on that list.** It renders and plans, against two measured
-release lines, and it does not read a live catalog yet — so naming it produces
-SQL, while pointing a command at an `oracle://` URL says what is missing:
-
-```text
-ptah schema render --dialect oracle    # renders Oracle DDL
-ptah schema inspect --db-url oracle://...
-error: connect to --url: connecting to oracle is not supported yet: Ptah renders
-and plans oracle schemas, and reading a live oracle catalog is not implemented
-```
-
-It qualified for the reason the other three do not: a pure-Go driver exists, an
-official free container image starts in about a minute, and the whole loop was
-driven end to end against it — connect, create a table and an index, read the
-columns back with their types and nullability. That is what earning a dialect
-looks like here. What remains is tracked by
-[#1875](https://github.com/stokaro/ptah/issues/1875).
-
-The three that remain are out of scope, and **the blocker is not the price**. That was
-the assumption, and measuring it found it wrong for all three: every one has a
-free route to *something*. What none of them has is a free route to **the engine
-itself, startable per pull request without a human-held credential**.
+**The blocker is not the price.** Every one of the three has a free route to
+*something*. What none of them has is a free route to **the engine itself,
+startable per pull request without a human-held credential**.
 
 ### Snowflake
 
@@ -452,6 +434,43 @@ subset: core table DDL, `IDENTITY` columns, filtered indexes, and live
 introspection, with collation-aware identifier comparison driven by the target
 catalog. [SQL Server](../sqlserver/) covers connection URLs, the supported
 surface, and its limitations.
+
+## Oracle
+
+Oracle renders and plans DDL against two measured release lines, 23 and 21.
+Reading a live catalog is not implemented, so a command pointed at an
+`oracle://` URL says exactly that rather than failing obscurely:
+
+```text
+ptah db capabilities --db-url oracle://...
+error: connecting to oracle is not supported yet: Ptah renders and plans oracle
+schemas, and reading a live oracle catalog is not implemented
+```
+
+Identifiers are written **bare**, which is Oracle-only among the engines here
+and is forced by the engine rather than chosen. Oracle folds an unquoted name to
+upper case and preserves a quoted one, so a name has two spellings, and a
+declaration has to agree with every expression that references it. A `CHECK` or
+a generated expression is author text Ptah does not rewrite, so the declaration
+is what moves:
+
+```sql
+CREATE TABLE q ("view_count" NUMBER(10) CHECK (view_count >= 0))   -- refused
+CREATE TABLE b (view_count NUMBER(10) CHECK (view_count >= 0))     -- accepted
+```
+
+A name Oracle refuses bare — a reserved word such as `size`, `comment` or
+`user`, or a name carrying a character outside a plain identifier — is quoted on
+both sides instead, so the two still agree.
+
+Two type mappings are worth knowing because Oracle has no direct equivalent:
+`BOOLEAN` becomes `NUMBER(1)`, with `true` and `false` written as `1` and `0`,
+and an enum becomes `VARCHAR2(255)` with a `CHECK` listing its values.
+
+The `IF [NOT] EXISTS` guards are a 23-line feature. On 21 they are refused, and
+the capability preset for that line reflects it, so a plan for a 21 server omits
+them. What remains for Oracle is tracked by
+[#1875](https://github.com/stokaro/ptah/issues/1875).
 
 ## PostgreSQL-compatible distributed targets
 
