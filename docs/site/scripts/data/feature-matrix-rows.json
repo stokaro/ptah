@@ -1703,11 +1703,11 @@
   {
     "area": "Atlas Registry and Cloud",
     "feature": "Hosted Schema Docs (schema documentation)",
-    "ptah": "no",
+    "ptah": "own",
     "atlas_oss": "no",
     "atlas_pro": "yes",
-    "note": "Auto-generated schema documentation. Ptah has no docs generator: `ptah schema export` emits HCL, OpenAPI, GraphQL or protobuf definitions, and `ptah viz` covers ERD only. Tracked by stokaro/ptah#1712.",
-    "evidence": "`ptah schema export --help` and `ptah viz --help` show no documentation-page generator (export targets are openapi-v3, graphql, proto, hcl per the existing export rows); docs/site/src/content/docs/atlas/docs-coverage.md scope statement. Atlas pricing page (atlasgo.io/pricing), retrieved 2026-08-01: 'ERD & Schema Docs' is Starter absent / Pro checked in the Atlas Pipelines and Schema Monitoring tables. Deliberately NOT reclassified to the own-form verdict: rendering a schema as a document needs nothing hosted, so this is an unimplemented capability rather than a structural boundary. Filed as stokaro/ptah#1712."
+    "note": "`ptah schema export --to markdown` writes reference documentation locally: a section per table with columns, types, defaults, keys, comments, indexes and enums. Not a hosted service.",
+    "evidence": "internal/docsrender renders the same desired schema every other export target reads, as Markdown, and cmd/schema/schema.go registers it as a --to target beside hcl, openapi-v3, graphql and protobuf. Unlike the API targets it documents EVERY column: those project a public shape, while documentation that hid a column would describe a schema the reader does not have. Two behaviours carry tests because they are quiet when wrong -- a pipe in a comment is escaped rather than splitting the row and shifting every column after it, and a default counts from either source, since the Go annotation parser sets DefaultSet beside Default while the YAML loader sets only Default, so requiring the flag would have documented every YAML-declared default as absent. An empty selection says so rather than emitting a bare heading, because a reader cannot tell that from a schema with no tables. The row is `own` rather than `yes`: Atlas offers this as a hosted service and Ptah generates a file, which is the same job in a different form (stokaro/ptah#1712)."
   },
   {
     "area": "Atlas Registry and Cloud",

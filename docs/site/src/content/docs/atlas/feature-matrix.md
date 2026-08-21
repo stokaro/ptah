@@ -92,8 +92,8 @@ Across the 191 capabilities below:
 | --- | --- |
 | Ptah supports it fully | 172 |
 | Ptah supports it with a stated limitation | 3 |
-| Ptah does not implement it | 9 |
-| Ptah covers it in its own form, against a hosted service it cannot interoperate with | 7 |
+| Ptah does not implement it | 8 |
+| Ptah covers it in its own form, against a hosted service it cannot interoperate with | 8 |
 | Ptah and Atlas CE both support it | 63 |
 | Ptah implements it openly where Atlas gates it behind Pro or Cloud | 47 |
 | Ptah has it and neither Atlas edition does | 27 |
@@ -378,7 +378,7 @@ is genuinely absent and the difference column names the issue that owns it.
 | Atlas Cloud deployment reporting | 🔷 | ❌ | ✅ | Ptah attaches a deployment-report referrer to its own OCI artifact after an `oci://` migrations up, so the report is readable from the registry. There is no account model to report into. |
 | Atlas Copilot (AI assistant) | ❌ | ❌ | ✅ | An AI assistant gated to accounts with the vendor. Ptah's own MCP server and BYOK/BYOM assistant are stokaro/ptah#1483; the nearest surface today is the `ptah-ls` language server. |
 | Column-level data lineage | ❌ | ❌ | ✅ | Column-to-column dependency tracing across schemas. No Ptah surface: `ptah viz` draws table-level foreign keys only, and nothing derives edges from view bodies. Tracked by stokaro/ptah#1712. |
-| Hosted Schema Docs (schema documentation) | ❌ | ❌ | ✅ | Auto-generated schema documentation. Ptah has no docs generator: `ptah schema export` emits HCL, OpenAPI, GraphQL or protobuf definitions, and `ptah viz` covers ERD only. Tracked by stokaro/ptah#1712. |
+| Hosted Schema Docs (schema documentation) | 🔷 | ❌ | ✅ | `ptah schema export --to markdown` writes reference documentation locally: a section per table with columns, types, defaults, keys, comments, indexes and enums. Not a hosted service. |
 | Reviewer approval and policy workflows | ❌ | ❌ | ✅ | Local `-- +ptah check` pre-migration assertions exist. Reviewer approval needs an identity and a service; the self-hosted control plane that would carry it is stokaro/ptah#1229. |
 | Schema monitoring, hosted UI, login | ❌ | ❌ | ✅ | No login, registry UI, promotion or monitoring. Native `ptah schema drift` is a local one-shot check; the self-hosted control plane that would cover the rest is stokaro/ptah#1229. |
 
