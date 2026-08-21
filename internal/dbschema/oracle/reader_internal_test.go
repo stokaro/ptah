@@ -215,3 +215,59 @@ func TestQueriesExcludeTheRecycleBin(t *testing.T) {
 		})
 	}
 }
+
+// TestWithoutGeneratedKeys_KeepsWhatTheDeclarationCanMatch pins which key
+// constraints survive a read.
+//
+// Oracle names an inline key itself -- `id INTEGER PRIMARY KEY` becomes
+// SYS_C008644 -- and the declaration has no name to compare that against, so a
+// plan drops it and the next apply recreates it under a fresh number. The fact
+// is not lost: markKeyColumns runs first and puts IsPrimaryKey on the column,
+// which is the shape the declared side uses.
+//
+// A constraint the user named arrives as 'USER NAME' and is kept, because that
+// one does have a counterpart to compare against.
+func TestWithoutGeneratedKeys_KeepsWhatTheDeclarationCanMatch(t *testing.T) {
+	tests := []struct {
+		name      string
+		generated map[string]bool
+		want      []string
+	}{
+		{
+			name:      "an inline key Oracle named is dropped",
+			generated: map[string]bool{"SYS_C008644": true},
+			want:      []string{"orders_total_check", "uq_email", "fk_author"},
+		},
+		{
+			name:      "nothing generated leaves the list alone",
+			generated: make(map[string]bool),
+			want:      []string{"SYS_C008644", "orders_total_check", "uq_email", "fk_author"},
+		},
+		{
+			name:      "a user-named unique is kept even beside a generated one",
+			generated: map[string]bool{"SYS_C008644": true, "SYS_C008700": true},
+			want:      []string{"orders_total_check", "uq_email", "fk_author"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			constraints := []types.DBConstraint{
+				{Name: "SYS_C008644", Type: "PRIMARY KEY"},
+				{Name: "orders_total_check", Type: "CHECK"},
+				{Name: "uq_email", Type: "UNIQUE"},
+				{Name: "fk_author", Type: "FOREIGN KEY"},
+			}
+
+			kept := withoutGeneratedKeys(constraints, tt.generated)
+
+			names := make([]string, 0, len(kept))
+			for _, constraint := range kept {
+				names = append(names, constraint.Name)
+			}
+			c.Assert(names, qt.DeepEquals, tt.want)
+		})
+	}
+}
