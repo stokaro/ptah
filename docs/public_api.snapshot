@@ -9167,6 +9167,7 @@ type VersionSelection struct {
 
 const ConvertedFlywayRepeatableVersion int64 = math.MaxInt64
 const DirectiveNoTransaction = "no_transaction"
+var ErrMigrationTagNotFound = errors.New("migration tag not found")
 func FindMigrationGaps(versions []int64) []int64
 func GenerateCheckpointMigrationFileName(version int64, description, direction string) string
 func GenerateMigrationFileName(version int64, description, direction string) string
@@ -9176,6 +9177,7 @@ func IsDirtyMigration(err error) bool
 func IsMigrationLockTimeout(err error) bool
 func LooksAtlasTemplateSQL(sql string) bool
 func NoopMigrationFunc(_ctx context.Context, _conn *dbschema.DatabaseConnection) error
+func NormalizeMigrationTag(tag string) (string, error)
 func ParseFileDirectives(sql string) map[string]string
 func ParseMigrationLockTimeout(value string) (time.Duration, error)
 func RenderAtlasTemplateSQL(fsys fs.FS, filename string, data any) (sql string, rendered bool, err error)
@@ -9244,6 +9246,7 @@ type MigrationProvider interface{ ... }
 type MigrationRevision struct{ ... }
 type MigrationStatus struct{ ... }
 type MigrationStatusSnapshot struct{ ... }
+type MigrationTag struct{ ... }
 type MigrationTimeouts struct{ ... }
     func ParseMigrationTimeouts(lockTimeout, statementTimeout string) (MigrationTimeouts, error)
 type MigrationTxMode string
@@ -9894,6 +9897,21 @@ type MigrationStatusSnapshot struct {
     used to derive it.
 
 
+### go.5x5.cz/ptah/migration/migrator.MigrationTag
+
+package migrator // import "go.5x5.cz/ptah/migration/migrator"
+
+type MigrationTag struct {
+    // Tag is the name the operator gave the directory state.
+    Tag string `json:"tag"`
+    // Version is the highest migration version the tagged directory carries.
+    Version int64 `json:"version"`
+    // RecordedAt is when this tag last resolved to Version.
+    RecordedAt time.Time `json:"recorded_at"`
+}
+    MigrationTag records a directory tag and the schema version it selects.
+
+
 ### go.5x5.cz/ptah/migration/migrator.MigrationTimeouts
 
 package migrator // import "go.5x5.cz/ptah/migration/migrator"
@@ -9935,6 +9953,8 @@ func NewFSMigrator(conn *dbschema.DatabaseConnection, fsys fs.FS, opts ...FSProv
 func NewMigrator(conn *dbschema.DatabaseConnection, provider MigrationProvider) *Migrator
 func (m *Migrator) Baseline(ctx context.Context, version int64) error
 func (m *Migrator) BaselineWithOptions(ctx context.Context, opts BaselineOptions) error
+func (m *Migrator) DeleteMigrationTag(ctx context.Context, tag string) error
+func (m *Migrator) EnsureMigrationTagsTable(ctx context.Context) error
 func (m *Migrator) GetAppliedMigrations(ctx context.Context) ([]int64, error)
 func (m *Migrator) GetAppliedRevisions(ctx context.Context) ([]MigrationRevision, error)
 func (m *Migrator) GetCurrentVersion(ctx context.Context) (int64, error)
@@ -9954,8 +9974,11 @@ func (m *Migrator) MigrateUpWithPreflight(ctx context.Context, hook PreMigration
 func (m *Migrator) MigrationLockName() string
 func (m *Migrator) MigrationLockSkipped() bool
 func (m *Migrator) MigrationProvider() MigrationProvider
+func (m *Migrator) MigrationTags(ctx context.Context) ([]MigrationTag, error)
 func (m *Migrator) MigrationsTableIdentifier() string
+func (m *Migrator) RecordMigrationTag(ctx context.Context, tag string, version int64) error
 func (m *Migrator) RepairMigration(ctx context.Context, opts RepairMigrationOptions) error
+func (m *Migrator) ResolveMigrationTag(ctx context.Context, tag string) (int64, error)
 func (m *Migrator) SetAtlasRevision(ctx context.Context, version int64) (AtlasRevisionSetResult, error)
 func (m *Migrator) SetRevision(ctx context.Context, version int64) (AtlasRevisionSetResult, error)
 func (m *Migrator) WithAtlasRevisionVersionComparator(compare AtlasRevisionVersionComparator) *Migrator
