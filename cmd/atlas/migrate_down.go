@@ -326,24 +326,28 @@ func parseAtlasMigrateDownFormatArgs(verb atlasVerb, args []string) (*atlasMigra
 
 // atlasMigrateDownUnsupportedFlags are the Atlas down flags this command
 // accepts for help parity but refuses at runtime.
-var atlasMigrateDownUnsupportedFlags = []string{"to-tag", "skip-checks", "plan"}
+var atlasMigrateDownUnsupportedFlags = []string{"plan"}
 
 // atlasMigrateDownExplicitOnlyFlags are the flags this path must not fill from
-// a PTAH_<FLAG> environment value. It is deliberately NOT the unsupported list:
-// PTAH_TO_TAG and PTAH_PLAN are requests for capabilities Ptah lacks, and the
-// loud refusal is the right answer to them — silently discarding PTAH_TO_TAG
-// would roll the whole history back to version 0 instead.
+// a PTAH_<FLAG> environment value.
 //
-// Only --skip-checks is excluded, and only because `migrate apply` reads
-// PTAH_SKIP_CHECKS as its pre-migration check bypass, so on this verb the
-// variable is not an ask at all. It mirrors the EnvDisabled marker the arg
-// mapper honors on the same flag (see atlasargs.ExplicitUnsupportedBoolReason);
-// the two paths parse flags independently, so both need it.
+// It is empty, and the reason the one entry left is worth recording. Until
+// stokaro/ptah#1621, --skip-checks was excluded here because `migrate apply`
+// reads PTAH_SKIP_CHECKS as its pre-migration check bypass while down had no
+// checks to bypass -- so on this verb an ambient value was not an ask at all,
+// and honoring it would have failed every `migrate down` in a shell where an
+// apply had exported it.
 //
-// --format is deliberately absent: it is unsupported in the mapper but IS
-// honored here, and atlasMigrateDownWantsFormat routes to this path on
-// PTAH_FORMAT alone.
-var atlasMigrateDownExplicitOnlyFlags = []string{"skip-checks"}
+// Both halves of that changed. stokaro/ptah#1715 taught `-- +ptah check` the
+// down direction, so down bodies carry checks that abort a rollback, and
+// --skip-checks now bypasses them. The variable therefore means the same thing
+// on both verbs, and an exclusion premised on the meanings differing has
+// nothing left to stand on.
+//
+// --format was always absent for a different reason: it is unsupported in the
+// mapper but IS honored here, and atlasMigrateDownWantsFormat routes to this
+// path on PTAH_FORMAT alone.
+var atlasMigrateDownExplicitOnlyFlags []string
 
 // applyAtlasMigrateDownEnvFallback fills unset flags from PTAH_<FLAG>
 // environment values, mirroring the env convention the forward path's arg

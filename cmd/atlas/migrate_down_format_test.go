@@ -13,6 +13,7 @@ import (
 
 	"go.5x5.cz/ptah/cmd/atlas"
 	"go.5x5.cz/ptah/cmd/migratedown"
+	"go.5x5.cz/ptah/cmd/migratetag"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/migrationintegrity"
 )
@@ -724,24 +725,20 @@ func TestCompatCommand_MigrateDownRejectsNativeConfirmationFlag(t *testing.T) {
 }
 
 // TestCompatCommand_MigrateDownWaivedFlagsRejectWithRationale pins the
-// recorded waivers for the registry/cloud-bound down flags on both the
-// forward path and the --format path: identical wording, no silent drops.
+// recorded waiver for the one down flag Ptah still does not implement, on both
+// the forward path and the --format path: identical wording, no silent drops.
 func TestCompatCommand_MigrateDownWaivedFlagsRejectWithRationale(t *testing.T) {
 	waived := []struct {
 		name string
 		args []string
 		want string
 	}{
-		{
-			name: "to_tag",
-			args: []string{"--to-tag", "release-v1"},
-			want: `atlas migrate down accepts --to-tag, but Ptah does not implement its behavior: migration tags require a hosted registry; use --to-version with a migration version instead`,
-		},
-		{
-			name: "skip_checks",
-			args: []string{"--skip-checks"},
-			want: `atlas migrate down accepts --skip-checks, but Ptah does not implement its behavior: down checks require a hosted plan-approval workflow; Ptah reverts through locally reviewed down migrations and has no generated checks to skip`,
-		},
+		// --to-tag and --skip-checks were waived here until stokaro/ptah#1621.
+		// Both waivers claimed a hosted dependency neither flag has: tags
+		// resolve against the tag namespace this repository stores in the
+		// database, and down bodies have carried real pre-migration checks
+		// since stokaro/ptah#1715. They are implemented, so they are gone from
+		// this table -- see TestCompatCommand_MigrateDownImplementedFlags.
 		{
 			name: "plan",
 			args: []string{"--plan"},
@@ -796,4 +793,108 @@ func TestNewCompatCommand_MigrateDownFormatResolvesAtRoot(t *testing.T) {
 
 	c.Assert(err, qt.IsNil, qt.Commentf("stderr=%s", errOut.String()))
 	c.Assert(out.String(), qt.Equals, "planned=2")
+}
+
+// TestCompatCommand_MigrateDownImplementedFlags is the other half of the table
+// above: the two flags that left it must be accepted, not merely unwaived.
+//
+// A waiver removed without an implementation behind it would show up here as
+// an unknown-flag error rather than a refusal, which is the same failure
+// wearing a different message.
+func TestCompatCommand_MigrateDownImplementedFlags(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		args []string
+	}{
+		{name: "to_tag", args: []string{"--to-tag", "release-v1"}},
+		{name: "skip_checks", args: []string{"--skip-checks"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			cmd := atlas.NewCompatCommand("atlas")
+			var out bytes.Buffer
+			cmd.SetOut(&out)
+			cmd.SetErr(&out)
+			cmd.SetArgs(append([]string{"migrate", "down"}, tt.args...))
+
+			err := cmd.Execute()
+
+			// The command still fails -- no --url was given -- but on the
+			// missing database, never on the flag.
+			c.Assert(err, qt.IsNotNil)
+			c.Assert(err.Error(), qt.Not(qt.Contains), "does not implement its behavior")
+			c.Assert(err.Error(), qt.Not(qt.Contains), "unknown flag")
+			c.Assert(out.String(), qt.Not(qt.Contains), "does not implement its behavior")
+			c.Assert(out.String(), qt.Not(qt.Contains), "unknown flag")
+		})
+	}
+}
+
+// TestCompatCommand_MigrateDownToTagResolvesTheTag is what proves the compat
+// flag reaches the tag namespace rather than merely being accepted.
+//
+// Accepting a flag and mapping it correctly are different claims: mapping
+// --to-tag onto the native --target would still be "not refused", and would
+// then fail parsing the tag as a version -- or, worse, succeed against a
+// version the operator never named. Rolling back to the version the tag selects
+// is the observation that separates the two.
+func TestCompatCommand_MigrateDownToTagResolvesTheTag(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	migrationsDir := writeDownableMigrationsDir(c, dir)
+	dbPath := filepath.Join(dir, "down.db")
+
+	_, err := executeAtlasProjectCommand(
+		"migrate", "apply",
+		"--url", "sqlite://"+dbPath,
+		"--dir", "file://"+migrationsDir,
+	)
+	c.Assert(err, qt.IsNil)
+
+	// Tag the first migration, then ask for it by name.
+	tagCmd := migratetag.NewMigrateTagCommand()
+	var tagOut bytes.Buffer
+	tagCmd.SetOut(&tagOut)
+	tagCmd.SetErr(&tagOut)
+	tagCmd.SetArgs([]string{
+		"release-v1", "--db-url", "sqlite://" + dbPath,
+		"--version", "20260801000001", "--revision-format", "atlas",
+	})
+	c.Assert(tagCmd.Execute(), qt.IsNil, qt.Commentf("%s", tagOut.String()))
+
+	out, err := executeAtlasProjectCommand(
+		"migrate", "down",
+		"--url", "sqlite://"+dbPath,
+		"--dir", "file://"+migrationsDir,
+		"--to-tag", "release-v1",
+	)
+
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+	// The tag named the first migration, so the second one's down body ran and
+	// the first one's did not: the column is gone, the table and its row remain.
+	c.Assert(downColumnNames(c, dbPath, "users"), qt.Not(qt.Contains), "email")
+	c.Assert(downColumnNames(c, dbPath, "users"), qt.Contains, "name")
+}
+
+// downColumnNames reads the real catalog, so the assertion is about what the
+// database holds and not about what the report said.
+func downColumnNames(c *qt.C, dbPath, table string) []string {
+	c.Helper()
+	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+
+	rows, err := conn.QueryContext(context.Background(),
+		"SELECT name FROM pragma_table_info(?) ORDER BY name", table)
+	c.Assert(err, qt.IsNil)
+	defer func() { c.Assert(rows.Close(), qt.IsNil) }()
+
+	var names []string
+	for rows.Next() {
+		var name string
+		c.Assert(rows.Scan(&name), qt.IsNil)
+		names = append(names, name)
+	}
+	c.Assert(rows.Err(), qt.IsNil)
+	return names
 }

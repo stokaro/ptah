@@ -20,6 +20,7 @@ import (
 	"go.5x5.cz/ptah/cmd/migrateset"
 	"go.5x5.cz/ptah/cmd/migrateshow"
 	"go.5x5.cz/ptah/cmd/migratestatus"
+	"go.5x5.cz/ptah/cmd/migratetag"
 	"go.5x5.cz/ptah/cmd/migrateup"
 	"go.5x5.cz/ptah/cmd/migratevalidate"
 	"go.5x5.cz/ptah/cmd/migrationsimport"
@@ -64,6 +65,7 @@ separate ptah-compat binary.`,
 	cmd.AddCommand(migrationCommand(migratels.NewMigrateLsCommand(), "List the migration files in a directory", "List the migration files a migration directory holds, without contacting a database."))
 	cmd.AddCommand(migrationCommand(migrateshow.NewMigrateShowCommand(), "Print the SQL of one or more migrations", "Print the SQL a migration directory stores, without contacting a database."))
 	cmd.AddCommand(migrationCommand(migratebaseline.NewMigrateBaselineCommand(), "Record existing migrations as applied", "Record existing migrations as already applied in the revision table."))
+	cmd.AddCommand(migrationCommand(migratetag.NewMigrateTagCommand(), "Record, list, or remove a migration tag", "Record a tag naming the migration version a database has reached, list the tags recorded against it, or remove one."))
 	cmd.AddCommand(migrationCommand(migrateset.NewMigrateSetCommand(), "Set the revision boundary to a version", "Move the revision boundary to an arbitrary migration version in both directions without executing migration SQL."))
 	cmd.AddCommand(migrationCommand(migratecheckpoint.NewMigrateCheckpointCommand(), "Squash history into a checkpoint", "Squash a migration directory's history into a cumulative-schema checkpoint that fresh databases bootstrap from."))
 	cmd.AddCommand(migrationCommand(migraterepair.NewMigrateRepairCommand(), "Repair migration revision metadata", "Repair migration revision metadata after a dirty or partial migration state."))

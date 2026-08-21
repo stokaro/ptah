@@ -11,20 +11,24 @@ import (
 	"go.5x5.cz/ptah/dbschema"
 )
 
-// `migrate down`'s --skip-checks waiver is explicit-only: it is never
-// synthesized from PTAH_SKIP_CHECKS, because `migrate apply` reads that
-// variable as its pre-migration check bypass (cmd/atlas/migrate_apply.go), so
-// on this verb an ambient value is not a request for hosted down checks.
-// Before that exclusion, exporting the variable for an apply made every
-// `migrate down` in the same shell fail with "accepts --skip-checks, but Ptah
-// does not implement its behavior".
+// `migrate down`'s --skip-checks was explicit-only until stokaro/ptah#1621: it
+// was never synthesized from PTAH_SKIP_CHECKS, because `migrate apply` reads
+// that variable as its pre-migration check bypass (cmd/atlas/migrate_apply.go)
+// while down had no checks of its own, so on this verb an ambient value was not
+// an ask at all. Before that exclusion, exporting the variable for an apply made
+// every `migrate down` in the same shell fail with "accepts --skip-checks, but
+// Ptah does not implement its behavior".
 //
-// The exclusion stops there, and the tests below pin that it does. --to-tag and
-// --plan have no competing meaning, so setting PTAH_TO_TAG or PTAH_PLAN IS a
-// request for a capability Ptah lacks and must still be refused. Ignoring them
-// is not a harmless no-op: the tag is discarded, the rollback target parses as
-// 0, and the whole history rolls back — a silent data loss where the operator
-// asked for a bounded rollback.
+// Both halves of that premise are gone. stokaro/ptah#1715 taught `-- +ptah
+// check` the down direction, so down bodies carry checks that abort a rollback,
+// and #1621 implemented --skip-checks to bypass them. The variable now means the
+// same thing on both verbs, so it is honored here like any other twin.
+//
+// --plan is the flag still waived, and setting PTAH_PLAN IS a request for a
+// capability Ptah lacks, so it must still be refused. Ignoring it is not a
+// harmless no-op on this verb: an ignored flag leaves the rollback target
+// parsing as 0, and the whole history rolls back — silent data loss where the
+// operator asked for something bounded.
 //
 // Both down paths are covered because they parse flags separately: the default
 // path goes through the atlasargs mapper, while --format has its own flag set
@@ -91,7 +95,13 @@ ALTER TABLE users DROP COLUMN email;
 	return migrationsDir
 }
 
-func TestMigrateDownIgnoresTheSkipChecksEnvironmentTwin(t *testing.T) {
+// TestMigrateDownHonorsTheSkipChecksEnvironmentTwin replaces the test that
+// pinned the opposite. The run succeeding is the same observation either way --
+// this fixture has no blocking check -- so the assertion that separates
+// "honored" from "ignored" is the paired pair below it, not this one. This case
+// remains because it is the one that regressed historically: an ambient
+// PTAH_SKIP_CHECKS from an apply must not make a rollback fail.
+func TestMigrateDownHonorsTheSkipChecksEnvironmentTwin(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		// env is the PTAH_<FLAG> twin of an unsupported Atlas down flag.
@@ -154,8 +164,9 @@ func TestMigrateDownRefusesUnsupportedFlagEnvironmentTwins(t *testing.T) {
 		// pathArgs selects the down path.
 		pathArgs []string
 	}{
-		{name: "to-tag on the default path", env: "PTAH_TO_TAG", value: "v1", wantFlag: "--to-tag"},
-		{name: "to-tag on the format path", env: "PTAH_TO_TAG", value: "v1", wantFlag: "--to-tag", pathArgs: formatPathArgs},
+		// --to-tag left this table when stokaro/ptah#1621 gave it a native
+		// implementation; PTAH_TO_TAG now names a tag to resolve rather than a
+		// capability to refuse. --plan is the one still waived.
 		{name: "plan on the default path", env: "PTAH_PLAN", value: "1", wantFlag: "--plan"},
 		{name: "plan on the format path", env: "PTAH_PLAN", value: "1", wantFlag: "--plan", pathArgs: formatPathArgs},
 	} {
@@ -229,7 +240,10 @@ func TestMigrateDownHelpAdvertisesOnlyLiveEnvironmentTwins(t *testing.T) {
 		// want is the annotation the usage line must carry, empty for none.
 		want string
 	}{
-		{name: "skip-checks is explicit-only", flag: "--skip-checks", want: ""},
+		// --skip-checks stopped being explicit-only in stokaro/ptah#1621: it is
+		// a native flag whose variable means on down exactly what it means on
+		// apply, so the help advertises it like any other.
+		{name: "skip-checks keeps its twin", flag: "--skip-checks", want: "[env: PTAH_SKIP_CHECKS]"},
 		{name: "to-tag keeps its twin", flag: "--to-tag", want: "[env: PTAH_TO_TAG]"},
 		{name: "plan keeps its twin", flag: "--plan", want: "[env: PTAH_PLAN]"},
 		{name: "format keeps its twin", flag: "--format", want: "[env: PTAH_FORMAT]"},
@@ -255,19 +269,11 @@ func TestMigrateDownStillRefusesExplicitUnsupportedFlags(t *testing.T) {
 		// pathArgs selects the down path, as above.
 		pathArgs []string
 	}{
-		{name: "skip-checks on the default path", flag: "--skip-checks", setEnv: noSkipChecksEnv},
-		{name: "skip-checks on the format path", flag: "--skip-checks", setEnv: noSkipChecksEnv, pathArgs: formatPathArgs},
-		{
-			name:   "skip-checks on the default path with its twin set",
-			flag:   "--skip-checks",
-			setEnv: setSkipChecksEnv("1"),
-		},
-		{
-			name:     "skip-checks on the format path with its twin set",
-			flag:     "--skip-checks",
-			setEnv:   setSkipChecksEnv("1"),
-			pathArgs: formatPathArgs,
-		},
+		// --skip-checks and --to-tag left this table in stokaro/ptah#1621: both
+		// are implemented now, so an explicit one is honored rather than
+		// refused. --plan is the only waiver left, and it is what keeps this
+		// test meaningful -- the refusal path must still exist for the flag
+		// that still needs it.
 		{name: "plan on the default path", flag: "--plan", setEnv: noSkipChecksEnv},
 		{name: "plan on the format path", flag: "--plan", setEnv: noSkipChecksEnv, pathArgs: formatPathArgs},
 	} {
