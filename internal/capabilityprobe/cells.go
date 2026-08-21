@@ -569,17 +569,31 @@ var Cells = []Cell{
 		Emulated:    true,
 		Versionless: true,
 		Understates: map[capability.Capability]string{
-			// The PostgreSQL dialect documents `serial` as an alias for an
-			// identity column and `CREATE SEQUENCE`, and the endpoint accepts
-			// both -- so the server does have sequences and the preset says it
-			// does not, on purpose. Serial types there require the database
-			// option `default_sequence_kind` to be set before use, which Ptah
-			// neither sets nor can observe from a schema, so claiming the
-			// capability would emit DDL that fails on a database where nobody
-			// set it. Understating costs a SERIAL column; overstating costs a
-			// migration (stokaro/ptah#942).
-			capability.Sequences: "Spanner has sequences and serial aliases, but a serial column needs the " +
-				"database option default_sequence_kind, which Ptah cannot set or see",
+			// The server does have sequences, and the preset says it does
+			// not, on purpose. Measured 2026-08-21 on this endpoint: a
+			// sequence is created, exists -- creating it again answers
+			// `Duplicate name in schema` -- and drops, while every catalog
+			// surface reports none of them. pg_class filtered to relkind 'S',
+			// pg_sequence, pg_sequences and information_schema.sequences each
+			// return zero rows, because PGAdapter rewrites that view into a
+			// stub built from `select ... where false` (stokaro/ptah#1759).
+			//
+			// A capability key needs a renderer, a reader and a planner
+			// together. Claiming this one would give Ptah the first and not the
+			// second: it would emit CREATE SEQUENCE, read the schema back, see
+			// nothing, and plan the same statement again on every run. Not a
+			// migration that fails once -- a comparison that never converges.
+			// Understating costs a declared sequence; overstating costs
+			// convergence (stokaro/ptah#942, stokaro/ptah#1808).
+			//
+			// An earlier reading rested this on `default_sequence_kind`, which
+			// the reference requires before a serial column. That is a fact
+			// about the managed service, which nothing here runs, and it does
+			// not hold on the endpoint that is measured: a serial column is
+			// accepted with the option untouched. The catalog is the reason
+			// that can be checked.
+			capability.Sequences: "Spanner writes sequences and reports none: every catalog surface " +
+				"returns zero rows, so a sequence Ptah emitted could never be read back",
 		},
 		Preset: capability.SpannerPostgres, PresetName: "SpannerPostgres",
 		Refinement: RefinedByBanner,
