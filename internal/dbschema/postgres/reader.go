@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"strconv"
 	"strings"
 
 	"go.5x5.cz/ptah/core/coverage"
@@ -422,14 +423,19 @@ func (r *Reader) generatedExpressionExpr() string {
 // ownedSequenceExpr renders the projection naming the sequence a serial column
 // owns, or a constant on a target without sequences.
 //
-// The gate is [capability.Sequences] rather than the catalog-function key: a
-// target with no sequences has no answer to give, and pg_get_serial_sequence is
-// only the way the answer would have been fetched. Spanner refuses the
-// projection twice over -- `Postgres function format(text, text, text) is not
-// supported` comes first, before pg_get_serial_sequence is even reached
-// (stokaro/ptah#942).
+// It takes two keys, because it needs two things. A target with no sequences
+// has no answer to give, and a target without pg_catalog's helpers has no way
+// to fetch one: Spanner refuses this projection twice over, and
+// `Postgres function format(text, text, text) is not supported` comes first,
+// before pg_get_serial_sequence is even reached (stokaro/ptah#942).
+//
+// The second key used to be redundant there, because Spanner declared no
+// sequences at all. It stopped being redundant when the standalone object was
+// earned on that target and the shorthand was not: a serial column is refused
+// while a CREATE SEQUENCE is rendered, so "has sequences" no longer implies
+// "can be asked which sequence a serial column owns" (stokaro/ptah#1856).
 func (r *Reader) ownedSequenceExpr() string {
-	if !r.caps.Has(capability.Sequences) {
+	if !r.caps.Has(capability.Sequences) || !r.caps.Has(capability.PostgresCatalogFunctions) {
 		return "'' AS owned_sequence_name"
 	}
 	return `COALESCE(
@@ -2366,7 +2372,130 @@ func (r *Reader) readSequences() ([]types.DBSequence, error) {
 	return sequences, nil
 }
 
+// readSequencesForSchema reads one schema's sequences through whichever catalog
+// the target carries.
 func (r *Reader) readSequencesForSchema(schemaName string) ([]types.DBSequence, error) {
+	if !r.caps.Has(capability.PostgresCatalogFunctions) {
+		return r.readSequencesFromInformationSchema(schemaName)
+	}
+	return r.readSequencesFromPgCatalog(schemaName)
+}
+
+// readSequencesFromInformationSchema reads sequences from the SQL-standard view
+// on a target without pg_sequence or the pg_catalog helpers the query below
+// needs.
+//
+// The identifiers are quoted on purpose, and the quoting is the whole reason
+// this path works. Measured 2026-08-21 against the Cloud Spanner emulator behind
+// PGAdapter 0.55.2: on a database holding three sequences,
+// `information_schema.sequences` answers zero rows while
+// `"information_schema"."sequences"` answers three. PGAdapter matches the
+// unquoted spelling and serves a stub built from `select ... where false`, so
+// the sequences looked unreadable and the capability was declared false for
+// that reason (stokaro/ptah#1856). Unquoting any of these identifiers restores
+// the empty answer, so a schema Ptah just applied would read back as having no
+// sequences and be planned again on every run.
+//
+// The options the view reports as NULL stay nil rather than becoming zero. A
+// target that carries no increment has not set it to 0, and the comparator
+// skips an option the declaration does not state -- writing 0 here would turn
+// every unstated option into a difference.
+func (r *Reader) readSequencesFromInformationSchema(schemaName string) ([]types.DBSequence, error) {
+	const query = `
+		SELECT
+			"sequence_schema",
+			"sequence_name",
+			"data_type",
+			"start_value",
+			"increment",
+			"minimum_value",
+			"maximum_value",
+			"cycle_option",
+			"counter_start_value"
+		FROM "information_schema"."sequences"
+		WHERE "sequence_schema" = $1
+		ORDER BY "sequence_name"`
+
+	rows, err := r.db.Query(query, schemaName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query sequences for schema %s: %w", schemaName, err)
+	}
+	defer rows.Close()
+
+	var sequences []types.DBSequence
+	for rows.Next() {
+		var (
+			seq         types.DBSequence
+			rawSchema   string
+			start       sql.NullString
+			increment   sql.NullString
+			minValue    sql.NullString
+			maxValue    sql.NullString
+			cycleOption sql.NullString
+			counter     sql.NullString
+		)
+		if err := rows.Scan(
+			&rawSchema, &seq.Name, &seq.DataType,
+			&start, &increment, &minValue, &maxValue, &cycleOption, &counter,
+		); err != nil {
+			return nil, fmt.Errorf("failed to scan sequence for schema %s: %w", schemaName, err)
+		}
+		seq.Schema = r.outputSchema(rawSchema)
+		seq.DataType = standardSequenceType(seq.DataType)
+		// The counter start is where this target records the value START
+		// COUNTER WITH set, and start_value is NULL there. Preferring it keeps
+		// a declared start comparable; falling back keeps the standard column
+		// meaningful on a target that fills it instead.
+		seq.Start = firstReportedInt64(counter, start)
+		seq.Increment = reportedInt64(increment)
+		seq.MinValue = reportedInt64(minValue)
+		seq.MaxValue = reportedInt64(maxValue)
+		seq.Cycle = strings.EqualFold(cycleOption.String, "YES")
+		sequences = append(sequences, seq)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to read sequences for schema %s: %w", schemaName, err)
+	}
+	return sequences, nil
+}
+
+// standardSequenceType spells a sequence's type the way the rest of Ptah does.
+//
+// Spanner reports INT64, which is the same 64-bit integer PostgreSQL's own
+// information_schema calls bigint. Leaving the engine's spelling in place would
+// make a declared `AS bigint` differ from the catalog on every comparison and
+// plan a type change that has nothing to change (stokaro/ptah#1856).
+func standardSequenceType(reported string) string {
+	if strings.EqualFold(reported, "INT64") {
+		return "bigint"
+	}
+	return reported
+}
+
+// reportedInt64 turns a catalog value the view may leave NULL into a pointer,
+// so "not reported" stays distinguishable from zero.
+func reportedInt64(value sql.NullString) *int64 {
+	if !value.Valid {
+		return nil
+	}
+	parsed, err := strconv.ParseInt(strings.TrimSpace(value.String), 10, 64)
+	if err != nil {
+		return nil
+	}
+	return &parsed
+}
+
+// firstReportedInt64 returns the first of its arguments the catalog reported.
+func firstReportedInt64(values ...sql.NullString) *int64 {
+	for _, value := range values {
+		if parsed := reportedInt64(value); parsed != nil {
+			return parsed
+		}
+	}
+	return nil
+}
+
+func (r *Reader) readSequencesFromPgCatalog(schemaName string) ([]types.DBSequence, error) {
 	const query = `
 		SELECT
 			n.nspname AS schema_name,

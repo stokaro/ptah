@@ -282,6 +282,16 @@ linters:
       - linters:
           - dupl
         path: '(jsonapi|apiserver|registry/.*)/.*\.go$'
+      # The capability presets are declarative tables: one literal per measured
+      # release line, every registered key spelled out in each so a preset
+      # cannot answer a key by omission. They resemble each other because they
+      # describe the same set of questions, and the resemblance grows by one
+      # line every time a key is added -- which is the mechanism working, not
+      # code worth extracting. dupl reads the table as repetition it could
+      # factor out; factoring it out is exactly what the coverage test forbids.
+      - linters:
+          - dupl
+        path: 'core/platform/capability/capability\.go$'
       # Allow migration filenames to have numbers at the beginning
       - path: 'registry/postgres/migrations/.*\.go$'
         text: 'filename-format:'

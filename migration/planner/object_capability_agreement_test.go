@@ -485,7 +485,15 @@ func TestObjectKinds_EveryGateIsExercised(t *testing.T) {
 	c.Assert(refusingDialects(capability.MaterializedViews), qt.DeepEquals, []string{platform.Spanner})
 	c.Assert(refusingDialects(capability.Functions), qt.DeepEquals, []string{platform.Spanner})
 	c.Assert(refusingDialects(capability.Triggers), qt.DeepEquals, []string{platform.Spanner})
-	c.Assert(refusingDialects(capability.Sequences), qt.DeepEquals, []string{platform.Spanner})
+	// Sequences lost its refusing member when Spanner earned the key: the
+	// endpoint writes, reads and drops a standalone sequence, so no member of
+	// this family refuses one any more (stokaro/ptah#1856). The gate is still
+	// exercised on both sides -- by the MySQL family, where MySQL refuses and
+	// MariaDB accepts -- and what Spanner exercises here now is the restriction
+	// beside it, which is asserted below rather than left to a vacuous pair of
+	// absences.
+	c.Assert(refusingDialects(capability.Sequences), qt.HasLen, 0)
+	c.Assert(acceptingDialects(capability.SequenceStartCounterOnly), qt.DeepEquals, []string{platform.Spanner})
 	c.Assert(refusingDialects(capability.RoleManagement), qt.DeepEquals, []string{platform.Spanner})
 	c.Assert(refusingDialects(capability.RowLevelSecurity), qt.DeepEquals, []string{platform.Spanner})
 
@@ -494,7 +502,8 @@ func TestObjectKinds_EveryGateIsExercised(t *testing.T) {
 	c.Assert(acceptingDialects(capability.MaterializedViews), qt.HasLen, 3)
 	c.Assert(acceptingDialects(capability.Functions), qt.HasLen, 3)
 	c.Assert(acceptingDialects(capability.Triggers), qt.HasLen, 3)
-	c.Assert(acceptingDialects(capability.Sequences), qt.HasLen, 3)
+	// Four, not three: Spanner joined the accepting side (stokaro/ptah#1856).
+	c.Assert(acceptingDialects(capability.Sequences), qt.HasLen, 4)
 	c.Assert(acceptingDialects(capability.RoleManagement), qt.HasLen, 3)
 	c.Assert(acceptingDialects(capability.RowLevelSecurity), qt.HasLen, 3)
 

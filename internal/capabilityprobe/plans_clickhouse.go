@@ -251,6 +251,9 @@ func clickHousePlan() plan {
 		),
 	}
 	return plan{experiments: experiments, undecided: map[capability.Capability]string{
+		capability.SequenceStartCounterOnly: "the key is a restriction on the CREATE SEQUENCE grammar, decided by a " +
+			"server that takes the bare statement and refuses an option clause beside it. This dialect has no " +
+			"CREATE SEQUENCE for the control to run, so its answer would be to a different question",
 		// The key asks whether a recursive CTE may also read the pg catalogs.
 		// ClickHouse has no pg catalogs, so the statement cannot be put to it
 		// and an answer would be to a different question.

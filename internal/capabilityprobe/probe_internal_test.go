@@ -137,6 +137,7 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 			capability.RangeTypes,
 			capability.RoleManagement,
 			capability.RowLevelTTL,
+			capability.SequenceStartCounterOnly,
 			capability.ShowRoutinePrivilege,
 			capability.TransactionalDDL,
 		},
@@ -156,6 +157,7 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 			capability.RangeTypes,
 			capability.RoleManagement,
 			capability.RowLevelTTL,
+			capability.SequenceStartCounterOnly,
 			capability.ShowRoutinePrivilege,
 			capability.TransactionalDDL,
 		},
@@ -172,6 +174,7 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 			capability.MigrationTimeouts,
 			capability.Procedures,
 			capability.RangeTypes,
+			capability.SequenceStartCounterOnly,
 			capability.ShowRoutinePrivilege,
 			capability.TransactionalDDL,
 		},
@@ -293,23 +296,23 @@ func TestDecidable_IsDerivedFromThePlanAndTheLine(t *testing.T) {
 		caps: capability.Postgres17(),
 		want: registered - 4,
 	}, {
-		name: "mysql owes fifteen fewer: role_management, row_level_ttl, the five catalog keys, the three user-type kinds and the three runtime properties name surfaces no MySQL path reads or no statement decides",
+		name: "mysql owes sixteen fewer: role_management, row_level_ttl, the five catalog keys, the three user-type kinds, the three runtime properties and the sequence grammar restriction name surfaces no MySQL path reads or no statement decides",
 		cell: Cell{
 			Dialect: platform.MySQL, Line: "9.7",
 			Preset: capability.MySQL84, PresetName: "MySQL84",
 			Refinement: RefinedByVersion,
 		},
 		caps: capability.MySQL84(),
-		want: registered - 15,
+		want: registered - 16,
 	}, {
-		name: "mariadb owes fifteen fewer: the three user-type kinds have no MariaDB spelling, the three runtime properties are not statements, neither pg_class nor pg_default_acl is a catalog it has, and sequences is asked now that Ptah renders, reads and plans one",
+		name: "mariadb owes sixteen fewer: the three user-type kinds have no MariaDB spelling, the three runtime properties are not statements, neither pg_class nor pg_default_acl is a catalog it has, the sequence grammar restriction has no control statement here, and sequences is asked now that Ptah renders, reads and plans one",
 		cell: Cell{
 			Dialect: platform.MariaDB, Line: "10.11",
 			Preset: capability.MariaDB1011, PresetName: "MariaDB1011",
 			Refinement: RefinedByVersion,
 		},
 		caps: capability.MariaDB1011(),
-		want: registered - 15,
+		want: registered - 16,
 	}, {
 		name: "cockroachdb 26.2 owes every row its preset enables a prerequisite for, less the one the probe cannot ask",
 		cell: Cell{
