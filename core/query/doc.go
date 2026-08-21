@@ -56,8 +56,15 @@
 // project one expression per target column, explicitly -- a star projection
 // supplies whatever the source table has today.
 //
-// Window functions are intentionally not implemented yet and are tracked as a
-// follow-up phase of stokaro/ptah#941.
+// Over turns a function call into a window function, with Partition, OrderAsc
+// and OrderDesc describing the window. A ranking function such as ROW_NUMBER
+// takes no arguments and gets its input from the OVER clause, which is why a
+// zero-argument call is accepted with a window and refused without one.
+//
+// No FRAME clause is emitted. Without one the engine applies its default, which
+// is what an unframed window means everywhere; guessing a frame would change
+// results. A frame clause is the remaining follow-up phase of
+// stokaro/ptah#941.
 //
 // # Safety model
 //

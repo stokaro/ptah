@@ -647,8 +647,16 @@ func (r *selectRenderer) renderFuncCall(fn *ast.FuncCall) error {
 	if fn.Star {
 		return r.renderFuncStar(name, fn)
 	}
-	if len(fn.Args) == 0 {
-		return fmt.Errorf("renderer: function %s requires at least one argument", name)
+	// A zero-argument call is meaningless without a window -- SUM() computes
+	// nothing -- but with one it is the whole shape of a ranking function:
+	// ROW_NUMBER(), RANK() and DENSE_RANK() take no arguments and get their
+	// input from the OVER clause. So the argument requirement is lifted exactly
+	// where the window supplies what the arguments would have
+	// (stokaro/ptah#941).
+	if len(fn.Args) == 0 && fn.Over == nil {
+		return fmt.Errorf(
+			"renderer: function %s requires at least one argument, or a window that supplies its input",
+			name)
 	}
 	r.buf.WriteString(name)
 	r.buf.WriteString("(")
@@ -660,6 +668,43 @@ func (r *selectRenderer) renderFuncCall(fn *ast.FuncCall) error {
 			r.buf.WriteString(", ")
 		}
 		if err := r.renderExpr(arg); err != nil {
+			return err
+		}
+	}
+	r.buf.WriteString(")")
+	return r.renderWindowSpec(fn.Over)
+}
+
+// renderWindowSpec writes the OVER (...) clause of a window function.
+//
+// An empty spec still renders `OVER ()`, which is valid and means the whole
+// result set: the clause is what makes the call a window function, so omitting
+// it for an empty spec would silently turn one back into an ordinary aggregate
+// over the group -- a different query with a different answer
+// (stokaro/ptah#941).
+func (r *selectRenderer) renderWindowSpec(spec *ast.WindowSpec) error {
+	if spec == nil {
+		return nil
+	}
+	r.buf.WriteString(" OVER (")
+	if len(spec.PartitionBy) > 0 {
+		r.buf.WriteString("PARTITION BY ")
+		for i := range spec.PartitionBy {
+			if i > 0 {
+				r.buf.WriteString(", ")
+			}
+			column := spec.PartitionBy[i]
+			if strings.TrimSpace(column.Name) == "" {
+				return errors.New("renderer: window PARTITION BY term has an empty column")
+			}
+			r.writeQualifiedIdent(column.Qualifier, column.Name)
+		}
+	}
+	if len(spec.OrderBy) > 0 {
+		if len(spec.PartitionBy) > 0 {
+			r.buf.WriteString(" ")
+		}
+		if err := r.writeOrderByTerms(spec.OrderBy); err != nil {
 			return err
 		}
 	}
@@ -679,7 +724,7 @@ func (r *selectRenderer) renderFuncStar(name string, fn *ast.FuncCall) error {
 	}
 	r.buf.WriteString(name)
 	r.buf.WriteString("(*)")
-	return nil
+	return r.renderWindowSpec(fn.Over)
 }
 
 // isSafeFunctionName reports whether name is a simple SQL identifier — a letter
@@ -724,7 +769,18 @@ func (r *selectRenderer) renderOrderBy(terms []ast.OrderByClause) error {
 	if len(terms) == 0 {
 		return nil
 	}
-	r.buf.WriteString(" ORDER BY ")
+	r.buf.WriteString(" ")
+	return r.writeOrderByTerms(terms)
+}
+
+// writeOrderByTerms writes "ORDER BY <term>, <term>" with no leading space.
+//
+// The statement's ORDER BY and a window's share this, rather than each spelling
+// the loop: a term is a term, and two copies would let one learn a rule the
+// other did not -- an empty column refused in one place and emitted in the
+// other (stokaro/ptah#941).
+func (r *selectRenderer) writeOrderByTerms(terms []ast.OrderByClause) error {
+	r.buf.WriteString("ORDER BY ")
 	for i, term := range terms {
 		if i > 0 {
 			r.buf.WriteString(", ")
