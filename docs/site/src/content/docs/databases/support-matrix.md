@@ -27,6 +27,91 @@ Accepted URL formats, and the difference between target, dev, shadow, and
 throwaway databases, are on
 [Database URLs and dev databases](../../concepts/database-urls-and-dev-databases/).
 
+## Engines Ptah does not support
+
+Oracle, Snowflake, Amazon Redshift and Databricks have no dialect entry. Naming
+one is an error rather than a fallback:
+
+```text
+ptah schema render --dialect oracle
+error: error rendering oracle schema: unsupported database dialect: oracle
+```
+
+**Oracle is being implemented** and is tracked by
+[#1875](https://github.com/stokaro/ptah/issues/1875). It qualified for a reason
+worth stating, because it is the same reason the other three do not: a pure-Go
+driver exists, an official free container image starts in about a minute, and
+the whole loop was driven end to end against it — connect, create a table and an
+index, read the columns back with their types and nullability. That is what
+earning a dialect looks like here.
+
+The other three are out of scope, and **the blocker is not the price**. That was
+the assumption, and measuring it found it wrong for all three: every one has a
+free route to *something*. What none of them has is a free route to **the engine
+itself, startable per pull request without a human-held credential**.
+
+### Snowflake
+
+Free: a 30-day trial with credits and no credit card, renewable by signing up
+again. Several open-source emulators also exist, and one of them, `fakesnow`, is
+genuinely faithful — it accepts `NUMBER(38,0)`, `TIMESTAMP_NTZ` and `VARIANT`,
+and refuses `CREATE INDEX` exactly as the real engine does.
+
+Why it does not qualify: the emulators reimplement Snowflake on DuckDB, so a
+capability preset measured against one describes the emulator rather than
+Snowflake. The trial is a real endpoint, but it is one person's account, not
+something a pull request can start.
+
+One trap for anyone who tries anyway: the Snowflake SQL API answers **HTTP 200
+on a failed statement**, with the failure only in the body. A probe that keys on
+the status code scores every capability as supported.
+
+### Amazon Redshift
+
+Free: credits on Redshift Serverless for a first-time account, and container
+images that advertise Redshift.
+
+Why it does not qualify: those containers are PostgreSQL wearing the name.
+Measured against both of the ones commonly cited, every Redshift catalog view
+answers the same way, while a control query against `pg_class` returns rows
+normally:
+
+```text
+pg_table_def, svv_columns, svv_table_info, stl_query  ->  relation does not exist
+Redshift DDL                                          ->  rejected at "distkey"
+```
+
+Redshift *removes* indexes, sequences and enforced constraints, and that removal
+is invisible from the PostgreSQL wire protocol it shares — so wire compatibility
+is the wrong thing to reason from, and routing Redshift onto the PostgreSQL
+dialect would render statements the engine rejects.
+
+### Databricks
+
+Free: Databricks Free Edition, a genuine perpetual free tier with no credit card
+and no expiry, providing a SQL warehouse a driver can reach with a workspace
+token.
+
+Why it does not qualify: one workspace per account, with no account-level API to
+provision another, so continuous integration would share a single
+human-created token — and a pull request from a fork would get none. Its terms
+also bar commercial use. There is no Databricks emulator, official or otherwise.
+
+Why this is stricter than it may look: a capability preset in this repository is
+a transcription of what a live server actually answered, the capability probe
+starts a container per cell on every pull request, and the integration suite
+starts a server. Support inferred from a vendor's documentation is refused
+everywhere else in this tree, and an emulator's behavior recorded under the
+engine's name would be the same thing with better manners.
+
+Any of three developments would reopen this: an emulator faithful enough that
+measuring it is a statement about the engine, a free tier that a forked pull
+request can provision without human-held credentials, or an explicit decision to
+relax the measurement standard for one engine — taken deliberately and written
+down, rather than by drift. The findings behind the current answer, including
+what was executed rather than read, are in
+[#1879](https://github.com/stokaro/ptah/issues/1879).
+
 ## Declared release lines
 
 Every engine ships several versions at once, and Ptah models each release line
