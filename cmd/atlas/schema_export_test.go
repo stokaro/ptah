@@ -111,7 +111,7 @@ func TestSchemaInspectExportRendersTheDeclaredTemplate(t *testing.T) {
 }
 
 env "local" {
-  url      = "sqlite://`+target+`"
+  url      = "sqlite://`+hclPath(target)+`"
   exporter = "json_report"
 }
 `)
@@ -210,7 +210,7 @@ func TestSchemaExporterWithoutATemplateIsRefused(t *testing.T) {
 }
 
 env "local" {
-  url      = "sqlite://`+target+`"
+  url      = "sqlite://`+hclPath(target)+`"
   exporter = "markdown"
 }
 `)
@@ -238,7 +238,7 @@ exporter "markdown" {
 }
 
 env "local" {
-  url      = "sqlite://`+target+`"
+  url      = "sqlite://`+hclPath(target)+`"
   exporter = "markdown"
 }
 `)
@@ -253,7 +253,27 @@ env "local" {
 // exportProjectBody fills the shared project template with a target and dev
 // database path.
 func exportProjectBody(target, dev string) string {
-	return fmt.Sprintf(exportProjectHCL, target, dev)
+	return fmt.Sprintf(exportProjectHCL, hclPath(target), hclPath(dev))
+}
+
+// hclPath makes a filesystem path safe to embed in a quoted HCL string.
+//
+// A Windows temp path is C:\Users\RUNNER~1\..., and HCL reads a backslash as
+// the start of an escape sequence: \U there is "the \U escape must be followed
+// by eight hexadecimal digits", so the whole config fails to parse. POSIX paths
+// have no backslashes, which is why this only ever failed on Windows -- and the
+// Windows run was right (stokaro/ptah#1620).
+//
+// Forward slashes rather than doubled backslashes: sqlite and file:// URLs take
+// them on Windows, and a URL is what every one of these paths becomes.
+//
+// The replacement is explicit rather than filepath.ToSlash, which keys off
+// os.PathSeparator and is therefore a no-op everywhere except Windows. That
+// would have fixed the failing job while leaving the fix unverifiable on the
+// platforms this repository is developed on -- and a fix no local test can
+// exercise is one the next refactor silently undoes.
+func hclPath(path string) string {
+	return strings.ReplaceAll(path, `\`, "/")
 }
 
 // sprintfDB fills a single %s in a config body with the database path, and
@@ -262,5 +282,47 @@ func sprintfDB(body, target string) string {
 	if !strings.Contains(body, "%s") {
 		return body
 	}
-	return fmt.Sprintf(body, target)
+	return fmt.Sprintf(body, hclPath(target))
+}
+
+// TestExportProjectBodyEscapesAWindowsPath reproduces, on any platform, the
+// failure that only Windows saw.
+//
+// The fixtures embed a filesystem path in a quoted HCL string. A Windows temp
+// path is `C:\Users\RUNNER~1\...`, and HCL reads the backslash as an escape:
+// `\U` is "the \U escape sequence must be followed by eight hexadecimal
+// digits", so the config fails to parse before any exporter is reached. POSIX
+// paths carry no backslashes, so every macOS and Linux run passed while the
+// Windows job failed on all six export tests.
+//
+// Asserting on the rendered body rather than on hclPath's return value is what
+// makes this a test of the fixture: a future config template that interpolates
+// a path without going through the helper reddens here.
+func TestExportProjectBodyEscapesAWindowsPath(t *testing.T) {
+	c := qt.New(t)
+	windowsPath := `C:\Users\RUNNER~1\AppData\Local\Temp\TestExport001\target.db`
+
+	body := exportProjectBody(windowsPath, windowsPath)
+
+	// The assertion is on the url lines, not the whole body: the exporter's
+	// own template legitimately contains `\n`, and a blanket no-backslash rule
+	// would fail on that rather than on the defect.
+	urlLines := urlLinesOf(body)
+	c.Assert(urlLines, qt.Not(qt.HasLen), 0, qt.Commentf("%s", body))
+	for _, line := range urlLines {
+		c.Assert(line, qt.Not(qt.Contains), `\`)
+		c.Assert(line, qt.Contains, "C:/Users/RUNNER~1/AppData/Local/Temp/TestExport001/target.db")
+	}
+}
+
+// urlLinesOf returns the config lines carrying a database URL, which are the
+// ones an interpolated path reaches.
+func urlLinesOf(body string) []string {
+	var lines []string
+	for line := range strings.SplitSeq(body, "\n") {
+		if strings.Contains(line, "sqlite://") {
+			lines = append(lines, line)
+		}
+	}
+	return lines
 }
