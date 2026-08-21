@@ -31,6 +31,30 @@ func Quote(dialect, name string) string {
 	}
 }
 
+// Ident returns the spelling that refers to name in dialect.
+//
+// For every dialect but Oracle this is [Quote]: a quoted name is the same name
+// in the catalog, so quoting always is both safe and unambiguous.
+//
+// Oracle is the exception, because there quoting CHANGES which object is named.
+// An unquoted identifier folds to upper case and a quoted one does not, and
+// measured on 23.26 the two coexist: `CREATE TABLE ptah_fold (...)` and
+// `CREATE TABLE "ptah_fold" (...)` produce two tables, reported by user_tables
+// as PTAH_FOLD and ptah_fold. So the choice has to be the SAME one everywhere a
+// name is written -- in the DDL that creates a table and in the query that
+// reads it. When they disagreed, the Oracle DDL renderer wrote `ora_posts` and
+// the query builder wrote `"ora_posts"`, which is a table nobody created.
+//
+// See the Oracle renderer's escapeIdentifier for why bare is the side both
+// chose: a CHECK or a generated expression is author text this repository does
+// not rewrite, and only the bare form agrees with it.
+func Ident(dialect, name string) string {
+	if platform.NormalizeDialect(dialect) == platform.Oracle {
+		return BareOrQuoted(dialect, name)
+	}
+	return Quote(dialect, name)
+}
+
 // BareOrQuoted returns name unquoted when it is a plain, nonreserved identifier
 // for dialect, and dialect-quoted otherwise.
 //
@@ -62,9 +86,43 @@ func BareOrQuoted(dialect, name string) string {
 // Other dialects currently use BareOrQuoted only in tests and retain the
 // existing plain-identifier behavior.
 func isReservedKeyword(dialect, name string) bool {
-	if platform.NormalizeDialect(dialect) != platform.SQLite {
+	switch platform.NormalizeDialect(dialect) {
+	case platform.SQLite:
+		return isSQLiteReservedKeyword(name)
+	case platform.Oracle:
+		return isOracleReservedKeyword(name)
+	default:
 		return false
 	}
+}
+
+// isOracleReservedKeyword reports whether name is one of the words Oracle
+// refuses as a bare identifier.
+//
+// The list is the server's own: `SELECT keyword FROM v$reserved_words WHERE
+// reserved = 'Y'` on 23.26 answers 104 rows, of which the 86 below are
+// word-shaped and the rest are punctuation that isPlainIdentifier already
+// rejects. It matters more here than it does for SQLite, because the Oracle
+// renderer writes a plain name WITHOUT quotes -- see escapeIdentifier there for
+// why -- so a column named "size" or "comment" would otherwise reach the server
+// as syntax.
+func isOracleReservedKeyword(name string) bool {
+	switch strings.ToUpper(name) {
+	case "ALL", "ALTER", "AND", "ANY", "AS", "ASC", "BETWEEN", "BY", "CHAR", "CHECK", "CLUSTER",
+		"COMPRESS", "CONNECT", "CREATE", "DATE", "DECIMAL", "DEFAULT", "DELETE", "DESC", "DISTINCT",
+		"DROP", "ELSE", "EXCEPT", "EXCLUSIVE", "EXISTS", "FLOAT", "FOR", "FROM", "GRANT", "GROUP",
+		"HAVING", "IDENTIFIED", "IN", "INDEX", "INSERT", "INTEGER", "INTERSECT", "INTO", "IS", "LIKE",
+		"LOCK", "LONG", "MINUS", "MODE", "NOCOMPRESS", "NOT", "NOWAIT", "NULL", "NUMBER", "OF", "ON",
+		"OPTION", "OR", "ORDER", "PCTFREE", "PRIOR", "PUBLIC", "RAW", "RENAME", "RESOURCE", "REVOKE",
+		"SELECT", "SET", "SHARE", "SIZE", "SMALLINT", "START", "SYNONYM", "TABLE", "THEN", "TO",
+		"TRIGGER", "UNION", "UNIQUE", "UPDATE", "VALUES", "VARCHAR", "VARCHAR2", "VIEW", "WHERE", "WITH":
+		return true
+	default:
+		return false
+	}
+}
+
+func isSQLiteReservedKeyword(name string) bool {
 	switch strings.ToUpper(name) {
 	case "ABORT", "ACTION", "ADD", "AFTER", "ALL", "ALTER", "ALWAYS", "ANALYZE", "AND", "AS", "ASC", "ATTACH",
 		"AUTOINCREMENT", "BEFORE", "BEGIN", "BETWEEN", "BY", "CASCADE", "CASE", "CAST", "CHECK", "COLLATE", "COLUMN",

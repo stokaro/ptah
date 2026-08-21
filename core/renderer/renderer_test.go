@@ -16,7 +16,7 @@ func TestSupportedDialects(t *testing.T) {
 	c := qt.New(t)
 
 	dialects := renderer.SupportedDialects()
-	expected := []string{"postgresql", "postgres", "mysql", "mariadb", "clickhouse", "sqlite", "sqlite3", "sqlserver", "mssql", "cockroachdb", "yugabytedb", "spanner"}
+	expected := []string{"postgresql", "postgres", "mysql", "mariadb", "clickhouse", "sqlite", "sqlite3", "sqlserver", "mssql", "cockroachdb", "yugabytedb", "spanner", "oracle"}
 
 	c.Assert(dialects, qt.DeepEquals, expected)
 }
@@ -133,7 +133,7 @@ func TestNewRenderer_UnsupportedDialects(t *testing.T) {
 	}{
 		{
 			name:    "Oracle",
-			dialect: "oracle",
+			dialect: "db2",
 		},
 		{
 			name:    "SQL Server old unsupported placeholder",
@@ -197,14 +197,14 @@ func TestRenderSQL_UnsupportedDialect(t *testing.T) {
 
 	comment := &ast.CommentNode{Text: "Test comment"}
 
-	sql, err := renderer.RenderSQL("oracle", comment)
+	sql, err := renderer.RenderSQL("db2", comment)
 	c.Assert(sql, qt.Equals, "")
-	c.Assert(err, qt.ErrorMatches, "unsupported database dialect: oracle")
+	c.Assert(err, qt.ErrorMatches, "unsupported database dialect: db2")
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedDialect)
 
 	var renderErr *ptaherr.RenderError
 	c.Assert(err, qt.ErrorAs, &renderErr)
-	c.Assert(renderErr.Dialect, qt.Equals, "oracle")
+	c.Assert(renderErr.Dialect, qt.Equals, "db2")
 }
 
 func TestRenderSQL_UpsertUnsupportedDialects(t *testing.T) {

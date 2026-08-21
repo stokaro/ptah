@@ -85,6 +85,7 @@ import (
 	"go.5x5.cz/ptah/internal/planner/dialects/clickhouse"
 	"go.5x5.cz/ptah/internal/planner/dialects/mssql"
 	"go.5x5.cz/ptah/internal/planner/dialects/mysql"
+	"go.5x5.cz/ptah/internal/planner/dialects/oracle"
 	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
 	"go.5x5.cz/ptah/internal/planner/dialects/sqlite"
 	"go.5x5.cz/ptah/internal/txrequire"
@@ -325,6 +326,12 @@ func registerBuiltInPlanners() error {
 
 	if err := registerPlannerFactory(platform.SQLServer, func(opts Options) Planner {
 		return mssql.NewWithCapabilities(opts.CapabilitiesFor(platform.SQLServer))
+	}); err != nil {
+		return err
+	}
+
+	if err := registerPlannerFactory(platform.Oracle, func(opts Options) Planner {
+		return oracle.NewWithCapabilities(opts.CapabilitiesFor(platform.Oracle))
 	}); err != nil {
 		return err
 	}

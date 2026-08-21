@@ -39,6 +39,12 @@ const (
 	YugabyteDB2025 = "2025.2"
 	// YugabyteDB2026 is the newest measured YugabyteDB release line.
 	YugabyteDB2026 = "2026.1"
+	// Oracle21 is the measured Oracle 21 release line, and the only one below
+	// the step that added the IF [NOT] EXISTS guards.
+	Oracle21 = "21.3"
+	// Oracle23 is the newest measured Oracle release line, and the first one
+	// carrying those guards.
+	Oracle23 = "23.26"
 )
 
 // YugabyteDBMeasured returns every YugabyteDB release line with direct matrix
@@ -66,4 +72,9 @@ func MariaDBMeasured() []string {
 // CockroachDBMeasured returns every CockroachDB release line with direct matrix evidence.
 func CockroachDBMeasured() []string {
 	return []string{CockroachDB25, CockroachDB26, CockroachDB263}
+}
+
+// OracleMeasured returns every Oracle release line with direct matrix evidence.
+func OracleMeasured() []string {
+	return []string{Oracle21, Oracle23}
 }

@@ -370,11 +370,11 @@ func TestGenerateCommand_AnUnknownDialectIsReportedBeforeTheVersion(t *testing.T
 	dir := unevenlyReferencedFixture(c)
 
 	_, _, err := renderFixture(c,
-		"--root-dir", dir, "--dialect", "oracle", "--server-version", "not-a-version")
+		"--root-dir", dir, "--dialect", "db2", "--server-version", "not-a-version")
 
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 2)
-	c.Assert(err.Error(), qt.Contains, "unsupported database dialect: oracle")
+	c.Assert(err.Error(), qt.Contains, "unsupported database dialect: db2")
 	c.Assert(err.Error(), qt.Not(qt.Contains), "--server-version")
 }
 

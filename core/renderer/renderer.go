@@ -51,6 +51,7 @@ import (
 	"go.5x5.cz/ptah/core/renderer/internal/dialects/mssql"
 	"go.5x5.cz/ptah/core/renderer/internal/dialects/mysql"
 	"go.5x5.cz/ptah/core/renderer/internal/dialects/mysqllike"
+	"go.5x5.cz/ptah/core/renderer/internal/dialects/oracle"
 	"go.5x5.cz/ptah/core/renderer/internal/dialects/postgres"
 	"go.5x5.cz/ptah/core/renderer/internal/dialects/sqlite"
 	"go.5x5.cz/ptah/internal/clickhouserbac"
@@ -93,7 +94,7 @@ type RenderVisitor interface {
 
 // SupportedDialects returns a list of all supported database dialects.
 func SupportedDialects() []string {
-	return []string{"postgresql", "postgres", "mysql", "mariadb", "clickhouse", "sqlite", "sqlite3", "sqlserver", "mssql", "cockroachdb", "yugabytedb", "spanner"}
+	return []string{"postgresql", "postgres", "mysql", "mariadb", "clickhouse", "sqlite", "sqlite3", "sqlserver", "mssql", "cockroachdb", "yugabytedb", "spanner", "oracle"}
 }
 
 // NewRenderer creates a new renderer for the specified database dialect.
@@ -135,6 +136,8 @@ func NewRendererWithCapabilities(dialect string, caps capability.Capabilities) (
 		raw = sqlite.NewWithCapabilities(caps)
 	case platform.SQLServer:
 		raw = mssql.NewWithCapabilities(caps)
+	case platform.Oracle:
+		raw = oracle.NewWithCapabilities(caps)
 	case platform.CockroachDB, platform.YugabyteDB, platform.Spanner:
 		raw = postgres.NewWithCapabilities(caps, normalizedDialect)
 	default:

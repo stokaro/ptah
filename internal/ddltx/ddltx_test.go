@@ -37,8 +37,8 @@ func TestClassOf_KnowsNoDialectOutsideTheCapabilityPresets(t *testing.T) {
 		name    string
 		dialect string
 	}{
-		{name: "oracle", dialect: "oracle"},
 		{name: "db2", dialect: "db2"},
+		{name: "informix", dialect: "informix"},
 		{name: "empty", dialect: ""},
 		{name: "whitespace", dialect: "   "},
 	}

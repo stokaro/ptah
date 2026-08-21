@@ -14,6 +14,7 @@ const (
 	CockroachDB = "cockroachdb"
 	YugabyteDB  = "yugabytedb"
 	Spanner     = "spanner"
+	Oracle      = "oracle"
 )
 
 func NormalizeDialect(dialect string) string {
@@ -43,6 +44,8 @@ func NormalizeDialect(dialect string) string {
 		return YugabyteDB
 	case "spanner", "cloudspanner", "google-spanner", "google_spanner":
 		return Spanner
+	case "oracle", "oracledb":
+		return Oracle
 	default:
 		return ""
 	}

@@ -139,7 +139,7 @@ func TestSQLLint_UsageErrorsExitTwo(t *testing.T) {
 		{name: "stdin with file", args: []string{"lint", "--stdin", "schema.sql"}},
 		{name: "version without dialect", args: []string{"lint", "--server-version", "16", "--stdin"}},
 		{name: "bad format", args: []string{"lint", "--format", "sarif", "--stdin"}},
-		{name: "bad dialect", args: []string{"lint", "--dialect", "oracle", "--stdin"}},
+		{name: "bad dialect", args: []string{"lint", "--dialect", "db2", "--stdin"}},
 	}
 
 	for _, tt := range tests {

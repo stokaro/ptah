@@ -188,7 +188,7 @@ func TestValidateSchema_FailurePath(t *testing.T) {
 
 	t.Run("unsupported dialect", func(t *testing.T) {
 		c := qt.New(t)
-		err := renderer.ValidateSchema(mutualForeignKeyDatabase(), "oracle")
+		err := renderer.ValidateSchema(mutualForeignKeyDatabase(), "db2")
 		c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedDialect)
 	})
 

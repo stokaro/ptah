@@ -3,6 +3,8 @@
 package lintdialect
 
 import (
+	"slices"
+
 	"go.5x5.cz/ptah/core/platform"
 )
 
@@ -37,7 +39,35 @@ func Canonical(dialect string) (string, bool) {
 		return "", true
 	}
 	canonical := platform.NormalizeDialect(dialect)
-	return canonical, canonical != ""
+	if !slices.Contains(supported, canonical) {
+		// The empty return is the safe half. A caller that ignores ok would
+		// otherwise receive a name that selects no Rule.Dialects entry and no
+		// lexer mode, and run clean against a grammar nothing parsed.
+		return "", false
+	}
+	return canonical, true
+}
+
+// supported is the engine list [Expected] names, as data.
+//
+// It used to be "whatever NormalizeDialect resolves", which held only while
+// every dialect Ptah knew was also a dialect lint analyzes. Oracle broke that:
+// the moment platform gained the name, `--dialect oracle` became valid here
+// while migration/lint has no Oracle rule and internal/dialectlexer has no
+// Oracle mode -- so the run would have exited 0 having matched no rule and
+// scanned with the hybrid lexer, which is the exact failure the comment on
+// Canonical describes for aliases. A new engine now has to be added here
+// deliberately, when lint can actually analyze it (stokaro/ptah#1875).
+var supported = []string{
+	platform.Postgres,
+	platform.MySQL,
+	platform.MariaDB,
+	platform.SQLite,
+	platform.SQLServer,
+	platform.ClickHouse,
+	platform.CockroachDB,
+	platform.YugabyteDB,
+	platform.Spanner,
 }
 
 // Valid reports whether dialect is supported. The empty value means that the
