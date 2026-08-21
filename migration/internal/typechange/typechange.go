@@ -122,12 +122,24 @@ func normalizeName(raw string) string {
 	return strings.Join(strings.Fields(clean), " ")
 }
 
+// isSizedString reports whether a type carries a declared character width.
+//
+// The Oracle spellings are here because Oracle is the one dialect whose
+// declared type and catalog type are never the same word: a declared
+// VARCHAR(200) is stored as VARCHAR2(200). Without them, parseSpec gave a
+// VARCHAR2 no kind at all, so IsNarrowing and IsWidening both answered false
+// and a width change on an Oracle column -- in either direction -- was never
+// reported (stokaro/ptah#1875).
 func isSizedString(name string) bool {
-	return name == "varchar" || name == "char" || name == "character"
+	return name == "varchar" || name == "char" || name == "character" ||
+		name == "varchar2" || name == "nvarchar2" || name == "nchar"
 }
 
+// isTextType reports whether a type is an unsized character type. CLOB and
+// NCLOB are Oracle's, and they are what a declared TEXT becomes there.
 func isTextType(name string) bool {
-	return name == "text" || name == "tinytext" || name == "mediumtext" || name == "longtext"
+	return name == "text" || name == "tinytext" || name == "mediumtext" || name == "longtext" ||
+		name == "clob" || name == "nclob"
 }
 
 func integerRank(name string) int {

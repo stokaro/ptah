@@ -10,6 +10,7 @@ import (
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/oracletype"
 	"go.5x5.cz/ptah/internal/sqlitekey"
 	"go.5x5.cz/ptah/migration/internal/generatedschema"
 	"go.5x5.cz/ptah/migration/internal/typechange"
@@ -372,6 +373,7 @@ func columnsWithDesiredDomains(
 	if genDefault == "" {
 		genDefault = genCol.DefaultExpr
 	}
+	genDefault = renderedDefaultForDialect(genDefault, genCol.Type, dialect)
 	dbDefault := ""
 	if dbCol.ColumnDefault != nil {
 		dbDefault = *dbCol.ColumnDefault
@@ -677,10 +679,50 @@ func unquoteIdentifier(name string) string {
 	return strings.Trim(strings.TrimSpace(name), `"`)
 }
 
+// renderedDefaultForDialect answers the default the renderer would write, where
+// that differs from the declared one.
+//
+// Only Oracle needs it today, and only for booleans: BOOLEAN becomes NUMBER(1)
+// there, so a column declared `default="true"` is written as `DEFAULT 1` and
+// read back as `1`. Comparing the declared `true` against the catalog's `1`
+// reported a default change on a column that matched, on every run.
+//
+// It is the same question the type comparison asks one function above -- not
+// "are these the same word" but "would rendering this declaration produce what
+// the catalog holds" -- and it is answered by the renderer's own mapping rather
+// than a second copy of it.
+func renderedDefaultForDialect(declaredDefault, declaredType, dialect string) string {
+	if platform.NormalizeDialect(dialect) != platform.Oracle {
+		return declaredDefault
+	}
+	switch oracletype.Base(declaredType) {
+	case "BOOLEAN", "BOOL":
+		switch strings.ToLower(strings.Trim(declaredDefault, "'")) {
+		case "true":
+			return "1"
+		case "false":
+			return "0"
+		}
+	}
+	return declaredDefault
+}
+
 func normalizeColumnTypesForDialect(genType, dbType, dialect string) (generatedType, databaseType string) {
 	switch platform.NormalizeDialect(dialect) {
 	case platform.SQLite:
 		return normalize.Type(sqliteRenderedColumnType(genType)), normalize.Type(dbType)
+	case platform.Oracle:
+		// Oracle has no counterpart for most declared type names, so the
+		// declaration and the catalog never agree on the spelling: a declared
+		// TEXT is a CLOB, an INT is a NUMBER(10), a BOOLEAN is a NUMBER(1).
+		// Comparing them raw reported an ALTER for every column of a database
+		// Ptah had just built from that declaration.
+		//
+		// The declared side goes through the same mapping the renderer writes,
+		// which is what makes the two comparable: the question the comparison
+		// has to answer is not "are these the same word" but "would rendering
+		// this declaration produce the type the catalog holds".
+		return normalize.Type(oracletype.Map(genType)), normalize.Type(dbType)
 	default:
 		return normalize.Type(genType), normalize.Type(dbType)
 	}
@@ -697,6 +739,29 @@ func shouldReportSizedTypeChange(dbType, genType, dialect string) bool {
 	if platform.NormalizeDialect(dialect) == platform.SQLite &&
 		normalize.Type(dbType) == normalize.Type(sqliteRenderedColumnType(genType)) {
 		return false
+	}
+	// The suppression Oracle needs, and it compares the FULL rendered type
+	// rather than the normalized one.
+	//
+	// normalize.Type strips the width, which is what SQLite's arm above wants:
+	// there, type affinity means a width is not a type distinction at all.
+	// Using it here suppressed real width changes -- a declared VARCHAR(200)
+	// against a catalog VARCHAR2(400) normalizes to one string, so an ALTER
+	// that a database built from the declaration would carry stopped being
+	// reported. Comparing what the renderer would actually write keeps the
+	// suppression to the case it is for: a declaration that already produces
+	// exactly the catalog's type.
+	if platform.NormalizeDialect(dialect) == platform.Oracle {
+		// The declaration is asked in the renderer's spelling on both counts.
+		// typechange compares type FAMILIES, and it has no reading of a
+		// declared VARCHAR against a catalog VARCHAR2 -- so without the
+		// mapping it answered neither narrowing nor widening, and a width
+		// change went unreported in either direction.
+		rendered := oracletype.Map(genType)
+		if strings.EqualFold(strings.TrimSpace(dbType), rendered) {
+			return false
+		}
+		return typechange.IsNarrowing(dbType, rendered) || typechange.IsWidening(dbType, rendered)
 	}
 	return typechange.IsNarrowing(dbType, genType) || typechange.IsWidening(dbType, genType)
 }

@@ -1,10 +1,10 @@
 package compare
 
 import (
-	"slices"
 	"strings"
 
 	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/dbschema/types"
 )
 
@@ -18,18 +18,23 @@ import (
 // explicit action, producing a perpetual drop+add loop on every `generate`
 // (the same hazard checkConstraintChanged guards against for CHECK clauses).
 func foreignKeyConstraintChanged(genConstraint goschema.Constraint, dbConstraint types.DBConstraint, dialect string) bool {
-	// Compare local columns.
-	if !slices.Equal(genConstraint.Columns, uniqueStringsPreserveOrder(dbConstraint.ColumnNamesOrDefault())) {
+	semantics := identifier.ForDialect(dialect)
+
+	// Compare local columns, under the dialect's column-name comparison rather
+	// than as raw strings: Oracle stores an unquoted `author_id` as AUTHOR_ID,
+	// and comparing the spellings made an untouched foreign key read as
+	// changed.
+	if !sameColumnNames(semantics, genConstraint.Columns, uniqueStringsPreserveOrder(dbConstraint.ColumnNamesOrDefault())) {
 		return true
 	}
 
 	// Compare referenced table
-	if !foreignTableRefMatches(genConstraint.ForeignTable, dbConstraint) {
+	if !foreignTableRefMatches(genConstraint.ForeignTable, dbConstraint, dialect) {
 		return true
 	}
 
-	// Compare referenced columns.
-	if !slices.Equal(genConstraint.ForeignColumnsOrDefault(), uniqueStringsPreserveOrder(dbConstraint.ForeignColumnsOrDefault())) {
+	// Compare referenced columns, the same way.
+	if !sameColumnNames(semantics, genConstraint.ForeignColumnsOrDefault(), uniqueStringsPreserveOrder(dbConstraint.ForeignColumnsOrDefault())) {
 		return true
 	}
 
@@ -56,15 +61,43 @@ func foreignKeyConstraintChanged(genConstraint goschema.Constraint, dbConstraint
 	return false
 }
 
-func foreignTableRefMatches(generated string, dbConstraint types.DBConstraint) bool {
+// foreignTableRefMatches reports whether a declared referenced table names the
+// same table the catalog recorded.
+//
+// The comparison is the dialect's own, not a string equality. Oracle folds an
+// unquoted name to upper case, so a declaration referencing `ora_authors` and a
+// catalog reporting ORA_AUTHORS name one table -- and comparing the strings
+// made a foreign key nobody touched read as changed, which the diff expresses
+// as a drop and an add of the same constraint on every run (stokaro/ptah#1875).
+func foreignTableRefMatches(generated string, dbConstraint types.DBConstraint, dialect string) bool {
 	generated = strings.TrimSpace(generated)
 	if generated == "" {
 		return dbConstraint.ForeignTable == nil
 	}
+	semantics := identifier.ForDialect(dialect)
 	if strings.Contains(generated, ".") {
-		return generated == dbConstraint.QualifiedForeignTableName()
+		return sameTableName(semantics, generated, dbConstraint.QualifiedForeignTableName())
 	}
-	return generated == getStringValue(dbConstraint.ForeignTable)
+	return sameTableName(semantics, generated, getStringValue(dbConstraint.ForeignTable))
+}
+
+// sameTableName folds both sides through the dialect's table-name comparison.
+func sameTableName(semantics identifier.Semantics, left, right string) bool {
+	return semantics.TableIdentityKey(left) == semantics.TableIdentityKey(right)
+}
+
+// sameColumnNames compares two column lists in order, under the dialect's
+// column-name comparison.
+func sameColumnNames(semantics identifier.Semantics, left, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for position, name := range left {
+		if semantics.ColumnIdentityKey(name) != semantics.ColumnIdentityKey(right[position]) {
+			return false
+		}
+	}
+	return true
 }
 
 // normalizeReferentialAction canonicalizes an ON DELETE / ON UPDATE action so

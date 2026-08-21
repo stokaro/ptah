@@ -33,11 +33,18 @@ type tableMemberKey struct {
 }
 
 // newTableMemberKey builds a key from a table name that may or may not carry a
-// schema, resolving an absent one to the dialect's default.
+// schema, resolving an absent one to the dialect's default, and normalizes the
+// member the way the table half is already normalized.
+//
+// The member half was compared verbatim, which is correct only where the engine
+// compares names verbatim. Oracle does not: an unquoted name is folded to upper
+// case, so a declaration writing `orders_total_check` and a catalog reporting
+// ORDERS_TOTAL_CHECK are the same constraint, and comparing the two strings
+// made every apply drop one and add the other.
 func newTableMemberKey(table, member string, semantics identifier.Semantics) tableMemberKey {
 	return tableMemberKey{
 		table:  newQualifiedTableIdentity(table, semantics),
-		member: member,
+		member: semantics.ColumnIdentityKey(member),
 	}
 }
 
