@@ -15,6 +15,7 @@ import (
 	"go.5x5.cz/ptah/cmd/internal/exitcode"
 	"go.5x5.cz/ptah/cmd/introspect"
 	"go.5x5.cz/ptah/cmd/license"
+	mcpcmd "go.5x5.cz/ptah/cmd/mcp"
 	"go.5x5.cz/ptah/cmd/migrations"
 	"go.5x5.cz/ptah/cmd/oci"
 	"go.5x5.cz/ptah/cmd/schema"
@@ -53,6 +54,7 @@ func NewRootCommand() *cobra.Command {
 	cmd.AddCommand(seed.NewSeedCommand())
 	cmd.AddCommand(sqlcmd.NewSQLCommand())
 	cmd.AddCommand(viz.NewCommand())
+	cmd.AddCommand(mcpcmd.NewCommand())
 	cmd.AddCommand(version.NewVersionCommand())
 	cmd.AddCommand(license.NewLicenseCommand())
 
