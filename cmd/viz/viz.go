@@ -13,6 +13,7 @@ import (
 
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
 	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/internal/lineage"
 	"go.5x5.cz/ptah/internal/pathguard"
 	"go.5x5.cz/ptah/internal/schemaviz"
 )
@@ -23,6 +24,7 @@ const (
 	includeColumnsFlag = "include-columns"
 	excludeTablesFlag  = "exclude-tables"
 	themeFlag          = "theme"
+	lineageFlag        = "lineage"
 	formatSVG          = "svg"
 )
 
@@ -32,6 +34,7 @@ type options struct {
 	includeColumns bool
 	excludeTables  string
 	theme          string
+	lineage        bool
 }
 
 // NewCommand returns the native schema visualization command.
@@ -45,7 +48,14 @@ func NewCommand() *cobra.Command {
 The command scans Go annotations and writes Graphviz DOT, Mermaid erDiagram, or
 SVG output to stdout:
 
-  ptah viz --root-dir ./models --format mermaid --include-columns`,
+  ptah viz --root-dir ./models --format mermaid --include-columns
+
+--lineage draws column-level dependencies instead of the entity diagram: which
+base column each view column reads. A column whose source cannot be established
+is drawn with the reason on it rather than left out, so the picture does not
+read as more settled than it is:
+
+  ptah viz --root-dir ./models --lineage --format dot`,
 		Args:          cmdutil.NoPositionalArgs,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -58,6 +68,7 @@ SVG output to stdout:
 	flags.BoolVar(&opts.includeColumns, includeColumnsFlag, false, "Include table columns in the diagram")
 	flags.StringVar(&opts.excludeTables, excludeTablesFlag, "", "Comma-separated table names to omit from the diagram")
 	flags.StringVar(&opts.theme, themeFlag, schemaviz.ThemeLight, "Diagram theme: light or dark")
+	flags.BoolVar(&opts.lineage, lineageFlag, false, "Draw column-level lineage instead of the entity diagram")
 	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
 	return cmd
 }
@@ -79,12 +90,7 @@ func run(cmd *cobra.Command, opts options) error {
 	if renderFormat == formatSVG {
 		renderFormat = schemaviz.FormatDOT
 	}
-	rendered, err := schemaviz.Render(db, schemaviz.Options{
-		Format:         renderFormat,
-		IncludeColumns: opts.includeColumns,
-		ExcludeTables:  splitCSV(opts.excludeTables),
-		Theme:          opts.theme,
-	})
+	rendered, err := renderGraph(db, opts, renderFormat)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
@@ -99,6 +105,24 @@ func run(cmd *cobra.Command, opts options) error {
 		return cmdutil.Fail(cmd, fmt.Errorf("write visualization: %w", err))
 	}
 	return nil
+}
+
+// renderGraph draws whichever of the two graphs was asked for.
+//
+// They are separate graphs rather than one with extra edges: an entity diagram
+// answers "how do these tables relate" and a lineage graph answers "where does
+// this column come from", and drawing both at once produces a picture that
+// answers neither (stokaro/ptah#1712).
+func renderGraph(db *goschema.Database, opts options, renderFormat string) ([]byte, error) {
+	if opts.lineage {
+		return lineage.Render(lineage.Derive(db), renderFormat)
+	}
+	return schemaviz.Render(db, schemaviz.Options{
+		Format:         renderFormat,
+		IncludeColumns: opts.includeColumns,
+		ExcludeTables:  splitCSV(opts.excludeTables),
+		Theme:          opts.theme,
+	})
 }
 
 func renderDOTToSVG(ctx context.Context, dot []byte) ([]byte, error) {

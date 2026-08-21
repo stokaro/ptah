@@ -95,8 +95,38 @@ a bug in the visualization path, not an acceptable example.
   `Graphviz dot is required for --format svg; install graphviz or use --format dot`.
   See [Troubleshooting](../../operate/troubleshooting/).
 
+## Draw column lineage instead
+
+`--lineage` answers a different question from the entity diagram: not how tables
+relate, but where each view column's value comes from.
+
+```bash
+ptah viz --root-dir ./models --lineage --format dot > lineage.dot
+```
+
+Each edge runs from a base column to the view column that reads it. The two
+graphs are separate rather than combined, because a picture that answers both
+questions at once answers neither.
+
+A column whose source cannot be established is **drawn anyway**, dashed and
+carrying the reason, rather than left out — a graph showing only what resolved
+would read as a schema that is fully understood. Four reasons appear:
+
+- the column is computed from an expression, and the references inside it are
+  not opened;
+- more than one relation the view reads declares a column of that name, so the
+  bare reference is ambiguous;
+- no relation the view reads declares it, which usually means the view reads
+  something these annotations do not describe;
+- the view body has a shape the projection parser does not model — a common
+  table expression or a `SELECT *`, for instance — in which case the view is
+  named whole and none of its columns is resolved.
+
 ## Limitations
 
+- `--lineage` resolves plain column references. It does not open the columns
+  inside an expression, and it does not follow a view that reads another view
+  through an unmodeled body.
 - `ptah viz` reads Go annotations only (`--root-dir`); it does not accept
   `--schema-file` or a database URL. To diagram a live database or a SQL
   schema file, generate annotated models first with `ptah introspect` — the
