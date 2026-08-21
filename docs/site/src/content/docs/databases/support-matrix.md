@@ -65,6 +65,7 @@ the declared set cannot say one thing here and another in a workflow file.
 | `clickhouse` | 26.3 | certified | `ClickHouse2411` | yes |
 | `clickhouse` | 25.8 | certified | `ClickHouse2411` | yes |
 | `clickhouse` | 24.10 | legacy-tested | `ClickHouse24` | yes |
+| `cockroachdb` | 26.3 | certified | `CockroachDB263` | yes |
 | `cockroachdb` | 26.2 | certified | `CockroachDB26` | yes |
 | `cockroachdb` | 25.4 | certified | `CockroachDB25` | yes |
 | `yugabytedb` | 2026.1 | certified | `YugabyteDB25` | yes |
@@ -76,9 +77,9 @@ the declared set cannot say one thing here and another in a workflow file.
 | `sqlserver` | 15.0 (SQL Server 2019) | best-effort | `SQLServer2022` | no |
 | `sqlite` | 3 | certified | `SQLite3` | no |
 
-Declared release lines: 27. Probed on every pull request: 23.
+Declared release lines: 28. Probed on every pull request: 24.
 
-Support levels across the 27 declared lines: 22 certified, 2 legacy-tested, 3 best-effort.
+Support levels across the 28 declared lines: 23 certified, 2 legacy-tested, 3 best-effort.
 
 Lines that are declared and not probed, and why:
 

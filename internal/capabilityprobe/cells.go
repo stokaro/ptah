@@ -492,6 +492,14 @@ var Cells = []Cell{
 	// shorter track, so "newer" is not "supported longer" here. All four are
 	// supported and certified.
 	{
+		Dialect: platform.CockroachDB, Line: capabilityline.CockroachDB263,
+		Preset: capability.CockroachDB263, PresetName: "CockroachDB263",
+		Refinement: RefinedByVersion, Support: capability.Certified, Image: "cockroachdb/cockroach:latest-v26.3",
+		Note: "measured live on CockroachDB CCL v26.3.0: the first line that carries CREATE DOMAIN " +
+			"(cockroachdb/cockroach#27796), so domain_types is true here and false on every line below " +
+			"it; range_types stays false because cockroachdb/cockroach#27791 is still open",
+	},
+	{
 		Dialect: platform.CockroachDB, Line: capabilityline.CockroachDB26,
 		Preset: capability.CockroachDB26, PresetName: "CockroachDB26",
 		Refinement: RefinedByVersion, Support: capability.Certified, Image: "cockroachdb/cockroach:latest-v26.2",
