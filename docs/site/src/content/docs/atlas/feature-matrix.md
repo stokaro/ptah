@@ -92,8 +92,8 @@ Across the 191 capabilities below:
 | --- | --- |
 | Ptah supports it fully | 180 |
 | Ptah supports it with a stated limitation | 0 |
-| Ptah does not implement it | 2 |
-| Ptah covers it in its own form, against a hosted service it cannot interoperate with | 9 |
+| Ptah does not implement it | 1 |
+| Ptah covers it in its own form, against a hosted service it cannot interoperate with | 10 |
 | Ptah and Atlas CE both support it | 63 |
 | Ptah implements it openly where Atlas gates it behind Pro or Cloud | 52 |
 | Ptah has it and neither Atlas edition does | 27 |
@@ -376,7 +376,7 @@ is genuinely absent and the difference column names the issue that owns it.
 | `schema plan test` | ✅ | ❌ | ✅ | Runs `test "plan"` cases: establish a state, verify the plan was computed for it, apply the plan file, assert. Local by its flag set, and now by its implementation. |
 | `schema plan` registry sub-verbs (approve, list, pull, push, rm) | 🔷 | ❌ | ✅ | These five arbitrate plan state inside the hosted registry. Ptah keeps plan state in local plan files that the ordinary `schema plan` verbs read and write; the service is out of reach. |
 | Atlas Cloud deployment reporting | 🔷 | ❌ | ✅ | Ptah attaches a deployment-report referrer to its own OCI artifact after an `oci://` migrations up, so the report is readable from the registry. There is no account model to report into. |
-| Atlas Copilot (AI assistant) | ❌ | ❌ | ✅ | An AI assistant gated to accounts with the vendor. Ptah's own MCP server and BYOK/BYOM assistant are stokaro/ptah#1483; the nearest surface today is the `ptah-ls` language server. |
+| Atlas Copilot (AI assistant) | 🔷 | ❌ | ✅ | `ptah mcp` gives any AI client Ptah's read-only operations over the Model Context Protocol, locally. No account, no vendor gate (stokaro/ptah#1486). |
 | Column-level data lineage | ✅ | ❌ | ✅ | `ptah schema lineage` derives column-to-column edges from view and materialized-view bodies and emits them as a table or JSON. A body it cannot resolve is reported, not omitted. |
 | Hosted Schema Docs (schema documentation) | 🔷 | ❌ | ✅ | `ptah schema export --to markdown` writes reference documentation locally: a section per table with columns, types, defaults, keys, comments, indexes and enums. Not a hosted service. |
 | Reviewer approval and policy workflows | ✅ | ❌ | ✅ | `ptah schema approve` signs a plan with an SSH key; `--require-approval` refuses to apply one that does not verify against a committed allowed_signers file. No identity service. |
