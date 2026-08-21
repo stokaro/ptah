@@ -1,6 +1,7 @@
 package oracle_test
 
 import (
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -256,4 +257,86 @@ func TestBooleanDefaultLiteralIsNumeric(t *testing.T) {
   note CLOB DEFAULT 'none'
 );
 `)
+}
+
+// TestModifyColumn_WritesNullabilityOnlyWhenItChanges pins when MODIFY states
+// nullability at all.
+//
+// Oracle's nullability change is not idempotent, and a bare MODIFY is not a
+// no-op that fails -- it is a no-op that succeeds. Measured on 23.26 against a
+// VARCHAR2 column declared NOT NULL:
+//
+//	start                              nullable = N
+//	MODIFY (note VARCHAR2(200))        accepted, nullable = N   <- unchanged
+//	MODIFY (note VARCHAR2(200) NULL)   accepted, nullable = Y
+//
+// so the relaxing direction has to spell the clause, and the unchanged
+// direction must not: MODIFY (n NOT NULL) on a column already NOT NULL answers
+// ORA-01442 and MODIFY (n NULL) on one already nullable answers ORA-01451.
+//
+// Worth knowing beside this: a CLOB column refuses both forms with ORA-22859,
+// invalid modification of columns, so a TEXT column -- which maps to CLOB --
+// cannot have its nullability changed by MODIFY at all. That is an engine limit
+// rather than a rendering choice, and it is why this test uses VARCHAR2.
+func TestModifyColumn_WritesNullabilityOnlyWhenItChanges(t *testing.T) {
+	tests := []struct {
+		name     string
+		op       *ast.ModifyColumnOperation
+		contains string
+		absent   string
+	}{
+		{
+			name: "relaxing states NULL",
+			op: &ast.ModifyColumnOperation{
+				Column:              &ast.ColumnNode{Name: "note", Type: "VARCHAR(200)", Nullable: true},
+				HasPreviousNullable: true, PreviousNullable: false,
+			},
+			contains: "NULL", absent: "NOT NULL",
+		},
+		{
+			name: "tightening states NOT NULL",
+			op: &ast.ModifyColumnOperation{
+				Column:              &ast.ColumnNode{Name: "note", Type: "VARCHAR(200)"},
+				HasPreviousNullable: true, PreviousNullable: true,
+			},
+			contains: "NOT NULL", absent: "",
+		},
+		{
+			name: "unchanged NOT NULL states neither, because restating it is ORA-01442",
+			op: &ast.ModifyColumnOperation{
+				Column:              &ast.ColumnNode{Name: "note", Type: "VARCHAR(200)"},
+				HasPreviousNullable: true, PreviousNullable: false,
+			},
+			contains: "VARCHAR2(200)", absent: "NULL",
+		},
+		{
+			name: "unchanged nullable states neither, because restating it is ORA-01451",
+			op: &ast.ModifyColumnOperation{
+				Column:              &ast.ColumnNode{Name: "note", Type: "VARCHAR(200)", Nullable: true},
+				HasPreviousNullable: true, PreviousNullable: true,
+			},
+			contains: "VARCHAR2(200)", absent: "NULL",
+		},
+		{
+			name: "an unknown previous states the target, which is what a fresh plan needs",
+			op: &ast.ModifyColumnOperation{
+				Column: &ast.ColumnNode{Name: "note", Type: "VARCHAR(200)"},
+			},
+			contains: "NOT NULL", absent: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			alter := &ast.AlterTableNode{Name: "t", Operations: []ast.AlterOperation{tt.op}}
+
+			rendered := render(c, capability.Oracle23(), alter)
+
+			c.Assert(rendered, qt.Contains, tt.contains)
+			c.Assert(strings.Contains(rendered, tt.absent) && tt.absent != "", qt.IsFalse,
+				qt.Commentf("rendered %q must not carry %q", rendered, tt.absent))
+		})
+	}
 }

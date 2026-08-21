@@ -182,17 +182,28 @@ func isSerialType(declared string) bool {
 // the key clause across answers ORA-02260, table can have only one primary key:
 // the constraint already exists, and MODIFY restating it declares a second one.
 //
-// Worth recording next to this, for whoever plans these statements: Oracle's
-// nullability change is NOT idempotent. `MODIFY (n NUMBER(10) NOT NULL)` on a
-// column already NOT NULL answers ORA-01442, and `MODIFY (n NULL)` on one
-// already nullable answers ORA-01451. A plan that emits the clause whenever it
-// emits the statement therefore fails on re-application, which is a planner
-// question rather than a renderer one -- ModifyColumnOperation carries the
-// previous nullability for exactly this kind of decision (stokaro/ptah#1875).
-func renderModifiedColumn(column *ast.ColumnNode) (string, error) {
-	if column == nil {
+// Oracle's nullability change is NOT idempotent, and that decides when the
+// clause is written at all. Measured on 23.26:
+//
+//	MODIFY (n NUMBER(10) NOT NULL)  on a column already NOT NULL   ORA-01442
+//	MODIFY (n NULL)                 on one already nullable        ORA-01451
+//	MODIFY (n NUMBER(10))           on a NOT NULL column           accepted, changes nothing
+//
+// So the clause is written only when the nullability actually changes, which
+// needs the previous value: op carries it, and until it was read here the
+// relaxing direction had no branch at all. `MODIFY (n CLOB)` is a statement
+// Oracle accepts and that leaves the constraint in place, so a migration
+// relaxing a column reported success and did nothing (stokaro/ptah#1885).
+//
+// An operation that does not carry the previous value falls back to stating the
+// target, which is what a freshly planned NOT NULL needs and what re-applying
+// one refuses -- the same answer as before, for the case where nothing better
+// is known.
+func renderModifiedColumn(op *ast.ModifyColumnOperation) (string, error) {
+	if op == nil || op.Column == nil {
 		return "", fmt.Errorf("nil column")
 	}
+	column := op.Column
 	parts := []string{escapeIdentifier(column.Name), mapColumnType(column)}
 	switch {
 	case column.Default == nil:
@@ -201,10 +212,30 @@ func renderModifiedColumn(column *ast.ColumnNode) (string, error) {
 	case column.Default.Expression != "":
 		parts = append(parts, "DEFAULT", column.Default.Expression)
 	}
-	if !column.Nullable || column.Primary {
-		parts = append(parts, "NOT NULL")
+	if clause := nullabilityClause(op); clause != "" {
+		parts = append(parts, clause)
 	}
 	return strings.Join(parts, " "), nil
+}
+
+// nullabilityClause answers what MODIFY should say about nullability, which is
+// usually nothing.
+func nullabilityClause(op *ast.ModifyColumnOperation) string {
+	notNull := !op.Column.Nullable || op.Column.Primary
+	if !op.HasPreviousNullable {
+		if notNull {
+			return "NOT NULL"
+		}
+		return ""
+	}
+	previousNotNull := !op.PreviousNullable
+	if notNull == previousNotNull {
+		return ""
+	}
+	if notNull {
+		return "NOT NULL"
+	}
+	return "NULL"
 }
 
 // renderDefaultLiteral renders a declared default for a column of declaredType.
