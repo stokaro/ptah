@@ -86,6 +86,7 @@ in the separate ptah-compat binary.`,
 	cmd.AddCommand(newSchemaPlanCommand())
 	cmd.AddCommand(newSchemaValidateCommand())
 	cmd.AddCommand(newSchemaStatsCommand())
+	cmd.AddCommand(newSchemaLineageCommand())
 	cmd.AddCommand(newSchemaInspectCommand())
 	cmd.AddCommand(newSchemaDiffCommand())
 	cmd.AddCommand(newSchemaFmtCommand())
