@@ -92,8 +92,8 @@ Across the 191 capabilities below:
 | --- | --- |
 | Ptah supports it fully | 179 |
 | Ptah supports it with a stated limitation | 0 |
-| Ptah does not implement it | 4 |
-| Ptah covers it in its own form, against a hosted service it cannot interoperate with | 8 |
+| Ptah does not implement it | 3 |
+| Ptah covers it in its own form, against a hosted service it cannot interoperate with | 9 |
 | Ptah and Atlas CE both support it | 63 |
 | Ptah implements it openly where Atlas gates it behind Pro or Cloud | 51 |
 | Ptah has it and neither Atlas edition does | 27 |
@@ -380,7 +380,7 @@ is genuinely absent and the difference column names the issue that owns it.
 | Column-level data lineage | ✅ | ❌ | ✅ | `ptah schema lineage` derives column-to-column edges from view and materialized-view bodies and emits them as a table or JSON. A body it cannot resolve is reported, not omitted. |
 | Hosted Schema Docs (schema documentation) | 🔷 | ❌ | ✅ | `ptah schema export --to markdown` writes reference documentation locally: a section per table with columns, types, defaults, keys, comments, indexes and enums. Not a hosted service. |
 | Reviewer approval and policy workflows | ❌ | ❌ | ✅ | Local `-- +ptah check` pre-migration assertions exist. Reviewer approval needs an identity and a service; the self-hosted control plane that would carry it is stokaro/ptah#1229. |
-| Schema monitoring, hosted UI, login | ❌ | ❌ | ✅ | No login, registry UI, promotion or monitoring. Native `ptah schema drift` is a local one-shot check; the self-hosted control plane that would cover the rest is stokaro/ptah#1229. |
+| Schema monitoring, hosted UI, login | 🔷 | ❌ | ✅ | `ptah schema serve` shows drift live and `schema export --to html` writes the same view as one file. No login, and none intended (stokaro/ptah#1857). |
 
 ## How these rows were established
 
