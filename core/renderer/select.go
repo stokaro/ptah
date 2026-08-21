@@ -65,6 +65,10 @@ const (
 	// placeholderQuestion emits ? for every parameter (MySQL, MariaDB, SQLite,
 	// ClickHouse).
 	placeholderQuestion
+	// placeholderColon numbers parameters :1, :2, … (Oracle). Measured on
+	// 23.26: an INSERT with :1 is accepted, while the same statement with ?
+	// answers ORA-00911 and with $1 answers ORA-00911.
+	placeholderColon
 	// placeholderAtP numbers parameters @p1, @p2, … (SQL Server).
 	//
 	// SQL Server has no positional `?` in T-SQL itself; its drivers bind named
@@ -114,6 +118,13 @@ func newSelectRenderer(dialect string) (*selectRenderer, error) {
 // projection is refused by supportsReturning rather than silently mapped onto a
 // clause with different placement and different semantics.
 //
+// Oracle needed a fourth style, :1 and :2, and the same ANSI pagination SQL
+// Server takes: measured on 23.26, LIMIT answers ORA-03049 while `OFFSET n ROWS
+// FETCH NEXT m ROWS ONLY` is accepted. Its RETURNING is refused by
+// supportsReturning for a reason of its own -- Oracle has the keyword, but only
+// with an INTO clause binding out-parameters, so `RETURNING id` as a projection
+// answers ORA-00925, missing INTO keyword.
+//
 // ClickHouse needed nothing here — it takes ? and backticks like MySQL — but it
 // executes only two of the four verbs portably. UPDATE and DELETE are mutations
 // there and are refused by refuseUnportableWrite with that reason, which is a
@@ -127,6 +138,8 @@ func selectPlaceholderStyle(normalized string) (placeholderStyle, bool) {
 		return placeholderQuestion, true
 	case platform.SQLServer:
 		return placeholderAtP, true
+	case platform.Oracle:
+		return placeholderColon, true
 	default:
 		return 0, false
 	}
@@ -140,6 +153,8 @@ func (r *selectRenderer) bind(value any) string {
 		return "$" + strconv.Itoa(len(r.args))
 	case placeholderAtP:
 		return "@p" + strconv.Itoa(len(r.args))
+	case placeholderColon:
+		return ":" + strconv.Itoa(len(r.args))
 	default:
 		return "?"
 	}
@@ -147,7 +162,7 @@ func (r *selectRenderer) bind(value any) string {
 
 // quote returns identifier quoted for the renderer's dialect.
 func (r *selectRenderer) quote(identifier string) string {
-	return sqlident.Quote(r.dialect, identifier)
+	return sqlident.Ident(r.dialect, identifier)
 }
 
 // writeQualifiedIdent writes name quoted for the dialect, prefixed by a quoted
@@ -819,7 +834,7 @@ const (
 // structural constant, not caller data, so it is emitted as a literal and does
 // not consume a placeholder; the OFFSET value remains bound.
 func (r *selectRenderer) renderLimitOffset(limit, offset *int64) {
-	if r.dialect == platform.SQLServer {
+	if r.dialect == platform.SQLServer || r.dialect == platform.Oracle {
 		r.renderFetchOffset(limit, offset)
 		return
 	}

@@ -1,0 +1,223 @@
+package oracle_test
+
+import (
+	"testing"
+
+	qt "github.com/frankban/quicktest"
+
+	"go.5x5.cz/ptah/core/ast"
+	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/platform/capability"
+	"go.5x5.cz/ptah/core/renderer"
+)
+
+// render is the whole path a caller takes, so a defect in the dispatch is a
+// failure here rather than a test that passes against a renderer nothing
+// reaches.
+func render(c *qt.C, caps capability.Capabilities, nodes ...ast.Node) string {
+	c.Helper()
+	sql, err := renderer.RenderSQLWithCapabilities(platform.Oracle, caps, nodes...)
+	c.Assert(err, qt.IsNil)
+	return sql
+}
+
+func renderErr(c *qt.C, caps capability.Capabilities, nodes ...ast.Node) error {
+	c.Helper()
+	_, err := renderer.RenderSQLWithCapabilities(platform.Oracle, caps, nodes...)
+	return err
+}
+
+// TestCreateTable_IsAcceptedByBothMeasuredLines pins the exact text both live
+// servers accepted.
+//
+// The statement below is byte-for-byte what `ptah schema render --dialect
+// oracle` produced for this table and what Oracle 23.26.2.0.0 and 21.3.0.0.0
+// each created without error, with user_tab_columns reading the columns back
+// afterwards (stokaro/ptah#1875).
+func TestCreateTable_IsAcceptedByBothMeasuredLines(t *testing.T) {
+	c := qt.New(t)
+
+	table := &ast.CreateTableNode{
+		Name: "ora_authors",
+		Columns: []*ast.ColumnNode{
+			{Name: "id", Type: "INT", Primary: true},
+			{Name: "name", Type: "VARCHAR(200)"},
+			{Name: "email", Type: "VARCHAR(255)", Unique: true},
+			{Name: "bio", Type: "TEXT", Nullable: true},
+			{Name: "is_active", Type: "BOOLEAN", Default: &ast.DefaultValue{Expression: "1"}},
+			{Name: "rating", Type: "DECIMAL(5,2)", Nullable: true},
+		},
+	}
+
+	c.Assert(render(c, capability.Oracle23(), table), qt.Equals, `CREATE TABLE ora_authors (
+  id NUMBER(10) NOT NULL PRIMARY KEY,
+  name VARCHAR2(200) NOT NULL,
+  email VARCHAR2(255) NOT NULL UNIQUE,
+  bio CLOB,
+  is_active NUMBER(1) DEFAULT 1 NOT NULL,
+  rating NUMBER(5,2)
+);
+`)
+}
+
+// TestObjectGuards_FollowTheMeasuredVersionStep is the difference between the
+// two presets, and it is load-bearing rather than cosmetic.
+//
+// Measured: the guarded render applied to 21.3 answers ORA-00969, missing ON
+// keyword, on both index statements, while the unguarded render of the same
+// schema is accepted whole on the same server.
+func TestObjectGuards_FollowTheMeasuredVersionStep(t *testing.T) {
+	c := qt.New(t)
+
+	index := &ast.IndexNode{Name: "idx_ora_posts_title", Table: "ora_posts", Unique: true, IfNotExists: true,
+		Columns: []string{"title"}}
+	drop := &ast.DropTableNode{Name: "ora_posts", IfExists: true}
+
+	c.Assert(render(c, capability.Oracle23(), index), qt.Equals,
+		"CREATE UNIQUE INDEX IF NOT EXISTS idx_ora_posts_title ON ora_posts (title);\n")
+	c.Assert(render(c, capability.Oracle21(), index), qt.Equals,
+		"CREATE UNIQUE INDEX idx_ora_posts_title ON ora_posts (title);\n")
+
+	c.Assert(render(c, capability.Oracle23(), drop), qt.Equals, "DROP TABLE IF EXISTS ora_posts;\n")
+	c.Assert(render(c, capability.Oracle21(), drop), qt.Equals, "DROP TABLE ora_posts;\n")
+}
+
+// TestIdentifiers_AreBareUntilOracleRefusesThemBare holds the decision that
+// separates this renderer from every other one here.
+//
+// A plain name is written without quotes so that a CHECK or a generated
+// expression naming it bare refers to the same column; a reserved word is
+// quoted because there is no other way to express it. Measured on 23.26, the
+// mixed form is refused: a quoted column with a bare reference in its own CHECK
+// answers ORA-02438, and at table level ORA-00904.
+func TestIdentifiers_AreBareUntilOracleRefusesThemBare(t *testing.T) {
+	c := qt.New(t)
+
+	table := &ast.CreateTableNode{
+		Name: "ora_events",
+		Columns: []*ast.ColumnNode{
+			{Name: "kind", Type: "VARCHAR(40)"},
+			{Name: "size", Type: "INT"},
+			{Name: "mixedCase", Type: "INT"},
+			{Name: "with-dash", Type: "INT"},
+		},
+	}
+
+	c.Assert(render(c, capability.Oracle23(), table), qt.Equals, `CREATE TABLE ora_events (
+  kind VARCHAR2(40) NOT NULL,
+  "size" NUMBER(10) NOT NULL,
+  mixedCase NUMBER(10) NOT NULL,
+  "with-dash" NUMBER(10) NOT NULL
+);
+`)
+}
+
+// TestQuotedColumn_RefusesABareReferenceInItsOwnExpression converts the
+// server's least useful error into one that names the column.
+//
+// Measured on 23.26: `"size" NUMBER(10), doubled NUMBER(10) GENERATED ALWAYS AS
+// (size * 2) VIRTUAL` answers ORA-00936, missing expression -- which names
+// neither the column nor the reason.
+func TestQuotedColumn_RefusesABareReferenceInItsOwnExpression(t *testing.T) {
+	c := qt.New(t)
+
+	bare := &ast.CreateTableNode{
+		Name: "ora_events",
+		Columns: []*ast.ColumnNode{
+			{Name: "size", Type: "INT"},
+			{Name: "doubled", Type: "INT", Nullable: true, GeneratedExpression: "size * 2"},
+		},
+	}
+	err := renderErr(c, capability.Oracle23(), bare)
+	c.Assert(err, qt.ErrorMatches, `.*column "size" of table "ora_events" needs quoting in Oracle.*write "size" in the expression.*`)
+
+	// The quoted form is what 23.26 accepted, so the refusal above is about
+	// the spelling rather than about the feature.
+	quoted := &ast.CreateTableNode{
+		Name: "ora_events",
+		Columns: []*ast.ColumnNode{
+			{Name: "size", Type: "INT"},
+			{Name: "doubled", Type: "INT", Nullable: true, GeneratedExpression: `"size" * 2`},
+		},
+	}
+	c.Assert(render(c, capability.Oracle23(), quoted), qt.Contains, `GENERATED ALWAYS AS ("size" * 2) VIRTUAL`)
+
+	// A plain column is not affected: nothing is quoted, so nothing disagrees.
+	plain := &ast.CreateTableNode{
+		Name: "ora_posts",
+		Columns: []*ast.ColumnNode{
+			{Name: "view_count", Type: "INT", Check: "view_count >= 0"},
+		},
+	}
+	c.Assert(render(c, capability.Oracle23(), plain), qt.Contains, "CHECK (view_count >= 0)")
+}
+
+// TestSerial_BecomesAnIdentityColumn holds the half of SERIAL that is a clause
+// rather than a width.
+//
+// Rendering the width alone produced `id NUMBER(10) PRIMARY KEY` for a column
+// PostgreSQL fills by itself: the table is created, the migration reports
+// success, and the first INSERT that omits the key fails instead.
+func TestSerial_BecomesAnIdentityColumn(t *testing.T) {
+	c := qt.New(t)
+
+	for _, declared := range []string{"SERIAL", "BIGSERIAL", "SMALLSERIAL"} {
+		table := &ast.CreateTableNode{
+			Name:    "ora_events",
+			Columns: []*ast.ColumnNode{{Name: "id", Type: declared, Primary: true}},
+		}
+		c.Assert(render(c, capability.Oracle23(), table), qt.Contains, "GENERATED BY DEFAULT AS IDENTITY",
+			qt.Commentf("declared type %q", declared))
+	}
+}
+
+// TestIdentity_RefusesASecondGeneratedColumn measures the same rule the
+// renderer's guard states, and it exists because the guard and the emitter once
+// asked different questions: the guard read AutoInc while the emitter also
+// treated SERIAL as generated, so this table passed the guard and answered
+// ORA-30669 from the server.
+func TestIdentity_RefusesASecondGeneratedColumn(t *testing.T) {
+	c := qt.New(t)
+
+	mixed := &ast.CreateTableNode{
+		Name: "ora_two",
+		Columns: []*ast.ColumnNode{
+			{Name: "id", Type: "SERIAL", Primary: true},
+			{Name: "seq", Type: "INT", AutoInc: true},
+		},
+	}
+	err := renderErr(c, capability.Oracle23(), mixed)
+	c.Assert(err, qt.ErrorMatches, `.*table "ora_two" declares 2 auto-increment columns \(id, seq\) and Oracle allows one per table.*`)
+
+	single := &ast.CreateTableNode{
+		Name:    "ora_one",
+		Columns: []*ast.ColumnNode{{Name: "id", Type: "SERIAL", Primary: true}, {Name: "seq", Type: "INT"}},
+	}
+	c.Assert(renderErr(c, capability.Oracle23(), single), qt.IsNil)
+}
+
+// TestAlterTable_UsesOraclesOwnClauseNames pins the three spellings the server
+// refuses in the shapes every other dialect here writes: ADD COLUMN is
+// ORA-03050, ALTER COLUMN ... TYPE is ORA-01735, and DROP CONSTRAINT IF EXISTS
+// is ORA-01735.
+func TestAlterTable_UsesOraclesOwnClauseNames(t *testing.T) {
+	c := qt.New(t)
+
+	alter := &ast.AlterTableNode{
+		Name: "ora_posts",
+		Operations: []ast.AlterOperation{
+			&ast.AddColumnOperation{Column: &ast.ColumnNode{Name: "slug", Type: "VARCHAR(80)", Nullable: true}},
+			&ast.ModifyColumnOperation{Column: &ast.ColumnNode{Name: "title", Type: "VARCHAR(300)"}},
+			&ast.RenameColumnOperation{OldName: "body", NewName: "content"},
+			&ast.DropColumnOperation{ColumnName: "payload"},
+			&ast.DropConstraintOperation{ConstraintName: "fk_post_author", IfExists: true},
+		},
+	}
+
+	c.Assert(render(c, capability.Oracle23(), alter), qt.Equals, `ALTER TABLE ora_posts ADD (slug VARCHAR2(80));
+ALTER TABLE ora_posts MODIFY (title VARCHAR2(300) NOT NULL);
+ALTER TABLE ora_posts RENAME COLUMN body TO content;
+ALTER TABLE ora_posts DROP COLUMN payload;
+ALTER TABLE ora_posts DROP CONSTRAINT fk_post_author;
+`)
+}

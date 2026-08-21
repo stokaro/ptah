@@ -11,6 +11,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/internal/lintdialect"
 	"go.5x5.cz/ptah/migration/lint"
 )
 
@@ -52,6 +53,22 @@ func acceptedSpellings(c *qt.C) []string {
 	spellings = slices.Compact(spellings)
 	c.Assert(len(spellings) > 9, qt.IsTrue, qt.Commentf("extracted %d spellings, so the sweeps below cover no aliases", len(spellings)))
 	return spellings
+}
+
+// lintSupportedSpellings narrows the switch's list to the engines lint
+// analyzes.
+//
+// The two lists were the same until Ptah gained a dialect lint has no rules
+// for. The filter is lintdialect.Valid rather than a list copied into this
+// file, so the sweeps below still cannot fall behind the switch; what changed
+// is that they sweep the engines lint can actually answer for. The other side
+// of the partition is held by
+// TestCanonical_RefusesEveryEngineLintCannotAnalyzeYet in internal/lintdialect
+// (stokaro/ptah#1875).
+func lintSupportedSpellings(c *qt.C) []string {
+	return slices.DeleteFunc(acceptedSpellings(c), func(spelling string) bool {
+		return !lintdialect.Valid(spelling)
+	})
 }
 
 // dialectFixture is a directory whose up migration adds an index to a table it
@@ -96,7 +113,7 @@ func findingCodes(c *qt.C, policyDialect string) []string {
 func TestLoadConfigFS_HappyPath_CanonicalizesEveryAcceptedSpelling(t *testing.T) {
 	c := qt.New(t)
 
-	for _, spelling := range acceptedSpellings(c) {
+	for _, spelling := range lintSupportedSpellings(c) {
 		t.Run(spelling, func(t *testing.T) {
 			c := qt.New(t)
 			cfg, err := lint.LoadConfigFS(dialectFixture(spelling), lint.ConfigFileName)
@@ -129,7 +146,7 @@ func TestLintFS_HappyPath_FixtureDiscriminatesDialects(t *testing.T) {
 func TestLintFS_HappyPath_EverySpellingLintsLikeItsCanonicalName(t *testing.T) {
 	c := qt.New(t)
 
-	for _, spelling := range acceptedSpellings(c) {
+	for _, spelling := range lintSupportedSpellings(c) {
 		t.Run(spelling, func(t *testing.T) {
 			c := qt.New(t)
 			c.Assert(findingCodes(c, spelling), qt.DeepEquals, findingCodes(c, platform.NormalizeDialect(spelling)))

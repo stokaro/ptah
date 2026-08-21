@@ -157,8 +157,8 @@ func TestRenderInsert_Errors(t *testing.T) {
 			// here until stokaro/ptah#941 taught it, which is why the example
 			// is now a name outside platform's set entirely: an example the
 			// builder supports asserts nothing.
-			dialect:     "oracle",
-			wantErrLike: `renderer: INSERT rendering is not supported for dialect "oracle"`,
+			dialect:     "db2",
+			wantErrLike: `renderer: INSERT rendering is not supported for dialect "db2"`,
 		},
 		{
 			name:        "missing table",
@@ -530,8 +530,8 @@ func TestRenderDelete_Errors(t *testing.T) {
 			// here until stokaro/ptah#941 taught it, which is why the example
 			// is now a name outside platform's set entirely: an example the
 			// builder supports asserts nothing.
-			dialect:     "oracle",
-			wantErrLike: `renderer: DELETE rendering is not supported for dialect "oracle"`,
+			dialect:     "db2",
+			wantErrLike: `renderer: DELETE rendering is not supported for dialect "db2"`,
 		},
 		{
 			name:        "missing table",

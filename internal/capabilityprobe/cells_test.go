@@ -627,6 +627,13 @@ func TestCells_BestEffortLinesAreExactlyTheUnmeasuredOnes(t *testing.T) {
 		"sqlserver-16-0",
 		"sqlserver-15-0",
 		"spanner-0",
+		// Both Oracle lines were measured statement by statement against the
+		// images their cells name, and neither is exercised by a job here: the
+		// capability probe has no Oracle statement table and the integration
+		// suite starts no Oracle container. They belong on this list until one
+		// of those exists (stokaro/ptah#1875).
+		"oracle-23",
+		"oracle-21",
 	})
 }
 

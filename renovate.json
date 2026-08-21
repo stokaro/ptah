@@ -40,6 +40,8 @@
         "clickhouse/clickhouse-server",
         "cockroachdb/cockroach",
         "yugabytedb/yugabyte",
+        "gvenzl/oracle-free",
+        "gvenzl/oracle-xe",
         "mcr.microsoft.com/mssql/server",
         "gcr.io/cloud-spanner-pg-adapter/pgadapter-emulator"
       ],

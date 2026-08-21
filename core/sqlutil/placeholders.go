@@ -31,6 +31,10 @@ func Rebind(dialect, query string) string {
 		return rebindToOrdinal(query, "$")
 	case platform.SQLServer:
 		return rebindToOrdinal(query, "@p")
+	case platform.Oracle:
+		// Measured on 23.26: an INSERT bound with :1 is accepted, while ? and
+		// $1 both answer ORA-00911, invalid character.
+		return rebindToOrdinal(query, ":")
 	default:
 		return query
 	}

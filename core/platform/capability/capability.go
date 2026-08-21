@@ -72,6 +72,24 @@ const (
 	// DROP INDEX IF EXISTS <name>). MySQL has no such form.
 	DropIndexIfExists Capability = "drop_index_if_exists"
 
+	// ObjectExistenceGuards marks support for the IF NOT EXISTS guard on
+	// CREATE and the IF EXISTS guard on DROP for the objects the two keys
+	// above do not name: tables, views and sequences.
+	//
+	// It exists because Oracle is the first engine here whose ladder crosses
+	// that step. Measured, 21.3 refuses every one of them -- ORA-00922 on
+	// CREATE TABLE, ORA-00969 on CREATE INDEX, ORA-00933 on CREATE SEQUENCE
+	// and on all three DROP forms -- while a bare CREATE TABLE in the same
+	// session is accepted, and 23.26 accepts every one. On 23 the guard is a
+	// real guard rather than a clause the parser discards: a second guarded
+	// CREATE TABLE of a name that exists is accepted where the bare control is
+	// refused with ORA-00955.
+	//
+	// SQL Server reads false: CREATE TABLE IF NOT EXISTS is not T-SQL, and its
+	// renderer spells the same intent as IF OBJECT_ID(...) IS NULL rather than
+	// consulting this key.
+	ObjectExistenceGuards Capability = "object_existence_guards"
+
 	// CheckConstraintsEnforced marks targets that actually enforce CHECK
 	// constraints. MySQL parsed-and-ignored CHECK before 8.0.16; MariaDB
 	// enforces from 10.2.1; PostgreSQL always enforces. When absent, emitting
@@ -631,6 +649,9 @@ var registry = map[Capability]spec{
 	DropIndexIfExists: {
 		doc: "IF EXISTS guard on DROP INDEX (MariaDB 10.1.4+, PostgreSQL; rejected by MySQL)",
 	},
+	ObjectExistenceGuards: {
+		doc: "IF NOT EXISTS on CREATE and IF EXISTS on DROP of a table, view or sequence (Oracle 23+; not T-SQL)",
+	},
 	CheckConstraintsEnforced: {
 		doc: "CHECK constraints are enforced, not parsed-and-ignored (MySQL 8.0.16+, MariaDB 10.2.1+, PostgreSQL)",
 	},
@@ -916,6 +937,7 @@ func MySQL84() Capabilities {
 		DropConstraintGeneric:          true,
 		DropConstraintIfExists:         false,
 		DropIndexIfExists:              false,
+		ObjectExistenceGuards:          true,
 		CheckConstraintsEnforced:       true,
 		DropCheckClause:                true,
 		EnumInlineColumn:               true,
@@ -1036,6 +1058,7 @@ func MariaDB1011() Capabilities {
 		DropConstraintGeneric:          true,
 		DropConstraintIfExists:         true,
 		DropIndexIfExists:              true,
+		ObjectExistenceGuards:          true,
 		CheckConstraintsEnforced:       true,
 		DropCheckClause:                false,
 		EnumInlineColumn:               true,
@@ -1128,6 +1151,7 @@ func Postgres16() Capabilities {
 		DropConstraintGeneric:              true,
 		DropConstraintIfExists:             true,
 		DropIndexIfExists:                  true,
+		ObjectExistenceGuards:              true,
 		CheckConstraintsEnforced:           true,
 		DropCheckClause:                    false,
 		EnumInlineColumn:                   false,
@@ -1258,6 +1282,7 @@ func ClickHouse24() Capabilities {
 		DropConstraintGeneric:    true,
 		DropConstraintIfExists:   true,
 		DropIndexIfExists:        true,
+		ObjectExistenceGuards:    true,
 		CheckConstraintsEnforced: true,
 		DropCheckClause:          false,
 		EnumInlineColumn:         true,
@@ -1365,6 +1390,7 @@ func SQLite3() Capabilities {
 		DropConstraintGeneric:              false,
 		DropConstraintIfExists:             false,
 		DropIndexIfExists:                  true,
+		ObjectExistenceGuards:              true,
 		CheckConstraintsEnforced:           true,
 		DropCheckClause:                    false,
 		EnumInlineColumn:                   false,
@@ -1455,6 +1481,7 @@ func SQLServer2022() Capabilities {
 		// the rule, and no SQL Server statement had been asked.
 		DropConstraintIfExists:   true,
 		DropIndexIfExists:        true,
+		ObjectExistenceGuards:    false,
 		CheckConstraintsEnforced: true,
 		DropCheckClause:          false,
 		EnumInlineColumn:         false,
@@ -1865,6 +1892,149 @@ func SpannerPostgres() Capabilities {
 		With(ForeignKeysCreateBackingIndex, true)
 }
 
+// Oracle23 is the capability set measured against Oracle 23.26.
+//
+// Every value below is a transcription of what the live server answered, taken
+// through Ptah's driver against `gvenzl/oracle-free:slim`, banner `Oracle AI
+// Database 26ai Free Release 23.26.2.0.0`. Where a key reads false because the
+// engine refuses the statement, the refusal is quoted; where it reads false
+// because Ptah's Oracle path does not render the object yet, that is said
+// instead, because the two are different promises and only the second one
+// changes when a later slice lands.
+func Oracle23() Capabilities {
+	return Capabilities{
+		// Oracle 23 has a real CREATE DOMAIN -- measured usable as a column
+		// type and enforcing its own NOT NULL against an INSERT of NULL -- and
+		// this still reads false, because the key says what Ptah renders and
+		// reads back, not what the engine owns. Flipping it is a renderer, a
+		// reader and a planner together.
+		DomainTypes: false,
+		// CREATE TYPE ... AS (a NUMBER, b VARCHAR2(10)) is ACCEPTED and
+		// creates nothing usable: user_types reports TYPECODE=OBJECT with
+		// ATTRIBUTES=0 and user_type_attrs has no row for it. Oracle's real
+		// composite is CREATE TYPE ... AS OBJECT, which Ptah does not render.
+		CompositeTypes: false,
+		// CREATE TYPE ... AS RANGE (SUBTYPE = NUMBER) is ACCEPTED and produces
+		// the same empty OBJECT shell. Accepted is not created: without the
+		// catalog read this key would have been written true.
+		RangeTypes:            false,
+		DropConstraintGeneric: true,
+		// `ALTER TABLE t DROP CONSTRAINT IF EXISTS c` -> ORA-01735: invalid
+		// ALTER TABLE option. Oracle takes the guard on CREATE and DROP of an
+		// object and refuses it inside ALTER, which is the split SpannerPostgres
+		// carries for the same reason.
+		DropConstraintIfExists: false,
+		DropIndexIfExists:      true,
+		ObjectExistenceGuards:  true,
+		// A violating INSERT is refused: ORA-02290: check constraint
+		// (PTAH.PTAH_CK3) violated.
+		CheckConstraintsEnforced: true,
+		// `ALTER TABLE t DROP CHECK c` -> ORA-02000: missing COLUMN keyword.
+		// The generic DROP CONSTRAINT spelling above is the one Oracle takes.
+		DropCheckClause: false,
+		// `CREATE TABLE t (c ENUM('a','b'))` -> ORA-03060: Data type ENUM is
+		// invalid.
+		EnumInlineColumn: false,
+		// `CREATE TYPE e AS ENUM ('a','b')` is ACCEPTED, and the type it makes
+		// cannot be used: `CREATE TABLE t (c e)` -> ORA-00902: invalid
+		// datatype. Another empty OBJECT shell.
+		EnumCustomType: false,
+		// `CREATE INDEX CONCURRENTLY i ON t (c)` -> ORA-00969: missing ON
+		// keyword. Oracle's online build is a different clause Ptah does not
+		// render.
+		CreateIndexConcurrently: false,
+		DropIndexConcurrently:   false,
+		IndexIncludeSPGiST:      false,
+		Views:                   true,
+		MaterializedViews:       true,
+		// PL/SQL routines are their own language rather than the
+		// language-plus-body shape ast.CreateFunctionNode carries, so Ptah's
+		// Oracle path refuses them today. The engine accepts both.
+		Functions:              false,
+		Procedures:             false,
+		Triggers:               true,
+		CreateOrReplaceTrigger: true,
+		// Oracle changes a virtual column's expression through MODIFY rather
+		// than through the SET EXPRESSION clause this key names, and Ptah's
+		// Oracle path does not render either yet.
+		AlterGeneratedColumnExpression: false,
+		// `ALTER TABLE t ENABLE ROW LEVEL SECURITY` -> ORA-02000: missing
+		// MOVEMENT keyword. Oracle's row-level access control is a different
+		// mechanism, not this statement.
+		RowLevelSecurity:         false,
+		PostgresCatalogFunctions: false,
+		CatalogRowStatistics:     false,
+		CatalogDependencies:      false,
+		CatalogDefaultPrivileges: false,
+		// CREATE ROLE is ACCEPTED. This reads false because Ptah's Oracle path
+		// renders no role or grant statement yet.
+		RoleManagement: false,
+		ForeignKeys:    true,
+		// A foreign key onto a column with no unique or primary key ->
+		// ORA-02270: no matching unique or primary key for this column-list.
+		ForeignKeysRequireUniqueReference: true,
+		// That is the unique-key rule above, not MySQL's leftmost-index-prefix
+		// rule, which is what this key names.
+		ForeignKeysRequireIndexedReference: false,
+		// Measured after adding a foreign key: user_ind_columns has no row for
+		// the child column, so nothing was created on Ptah's behalf.
+		ForeignKeysCreateBackingIndex: false,
+		Sequences:                     true,
+		// `CREATE SEQUENCE s START WITH 5 INCREMENT BY 2 MAXVALUE 100 CACHE 5
+		// CYCLE` is ACCEPTED whole, so the option clauses are available and
+		// this is not the name-and-counter shape Spanner has.
+		SequenceStartCounterOnly: false,
+		// XMLType is ACCEPTED. It is refused on a connection whose default
+		// tablespace is SYSTEM -- ORA-43853, about SecureFiles LOBs rather
+		// than about the type -- which is a property of that account, not of
+		// the engine.
+		XMLType: true,
+		// pg_advisory_lock is ORA-00904: invalid identifier. Oracle's lock
+		// package is not these functions.
+		AdvisoryLocks:     false,
+		RowLevelTTL:       false,
+		MigrationTimeouts: false,
+		// A CREATE TABLE inside an explicit transaction survives ROLLBACK:
+		// Oracle commits the transaction in progress before every schema
+		// statement, so there is nothing left to roll back. --tx-mode all
+		// cannot be honored here.
+		TransactionalDDL:    false,
+		CatalogPartitions:   false,
+		CatalogRecursiveCTE: false,
+		// The statement is accepted inside a transaction; it is the rollback
+		// above that does not hold.
+		DDLInsideTransaction:            true,
+		CheckGrantStatement:             false,
+		CatalogViewDependencies:         false,
+		ShowRoutinePrivilege:            false,
+		RenameColumnClause:              true,
+		CatalogCheckConstraintTableName: false,
+		// GENERATED ALWAYS AS (expr) is ACCEPTED both VIRTUAL and STORED.
+		GeneratedColumns: true,
+		// DEFERRABLE INITIALLY DEFERRED is ACCEPTED on a foreign key.
+		DeferrableConstraints: true,
+	}
+}
+
+// Oracle21 is the capability set measured against Oracle 21.3.
+//
+// It differs from [Oracle23] in the two keys that carry the guards, and the
+// measurement that separates them is worth keeping next to the number: on 21.3 every
+// `IF [NOT] EXISTS` guard is refused -- ORA-00922 on CREATE TABLE, ORA-00969
+// on CREATE INDEX, ORA-00933 on CREATE SEQUENCE and on all three DROP forms --
+// while a bare CREATE TABLE in the same session is accepted. The bare control
+// is what makes those refusals readable as being about the guard rather than
+// about the connection.
+//
+// Two more differences exist that no capability key carries: 21.3 has no
+// BOOLEAN type and no VECTOR type, both ORA-00902. The renderer handles the
+// first by never emitting BOOLEAN on any line; see mapColumnType there.
+func Oracle21() Capabilities {
+	return Oracle23().
+		With(DropIndexIfExists, false).
+		With(ObjectExistenceGuards, false)
+}
+
 var defaultDialectPresets = map[string]func() Capabilities{
 	platform.ClickHouse:  ClickHouse24,
 	platform.CockroachDB: CockroachDB26,
@@ -1875,6 +2045,7 @@ var defaultDialectPresets = map[string]func() Capabilities{
 	platform.SQLite:      SQLite3,
 	platform.SQLServer:   SQLServer2022,
 	platform.YugabyteDB:  YugabyteDB25,
+	platform.Oracle:      Oracle23,
 }
 
 // DefaultDialects returns the normalized dialect names for which [ForDialect]
@@ -1926,6 +2097,8 @@ func NamedPresets() []NamedPreset {
 		{"SQLite3", SQLite3()},
 		{"SQLServer2022", SQLServer2022()},
 		{"SpannerPostgres", SpannerPostgres()},
+		{"Oracle21", Oracle21()},
+		{"Oracle23", Oracle23()},
 	}
 }
 
@@ -2140,6 +2313,8 @@ func BannerPlatform(version string) string {
 		return platform.SQLServer
 	case strings.Contains(versionLower, "clickhouse"):
 		return platform.ClickHouse
+	case strings.Contains(versionLower, "oracle"):
+		return platform.Oracle
 	default:
 		return ""
 	}
@@ -2212,6 +2387,8 @@ func ResolveServerVersion(dialect, version string) VersionResolution {
 			Recognized:      true,
 			ResolvedDialect: banner,
 		}
+	case platform.Oracle:
+		return resolvedAs(oracleResolution(version), platform.Oracle)
 	case platform.ClickHouse:
 		// ClickHouse DOES have a ladder, of exactly one step. It was in this arm
 		// until stokaro/ptah#916 measured the two declared lines furthest apart
@@ -2270,6 +2447,13 @@ func ResolveServerVersion(dialect, version string) VersionResolution {
 		// banner switch never sees it and the ladder would be reachable only
 		// from a live connection.
 		return resolvedAs(yugabyteResolution(version), platform.YugabyteDB)
+	case platform.Oracle:
+		// Same reason again: product_component_version.version_full answers a
+		// bare "23.26.2.0.0" with no product token in it, so the banner switch
+		// never sees it. Without this arm the live path -- which reads exactly
+		// that column -- would climb no ladder and take Oracle23 for a 21
+		// server, promising it four IF [NOT] EXISTS guards it refuses.
+		return resolvedAs(oracleResolution(version), platform.Oracle)
 	default:
 		// The version parsed; this dialect simply has no ladder to spend it
 		// on. That is not the operator's mistake, so it is recognized.
@@ -2339,6 +2523,62 @@ func sqliteForVersion(v serverVersion) Capabilities {
 		return SQLite3()
 	}
 	return SQLite324()
+}
+
+// oracleResolution answers an Oracle version string or banner.
+//
+// It does not reach parseVersion directly, and the reason is the trap the SQL
+// Server arm of ResolveServerVersion describes: an Oracle banner carries two
+// numbers, and the first one is not the version. Measured on the two servers
+// this ladder was built against:
+//
+//	Oracle AI Database 26ai Free Release 23.26.2.0.0 - Develop, Learn, ...
+//	Oracle Database 21c Express Edition Release 21.0.0.0.0 - Production
+//
+// parseVersion takes the first digits it finds, so the first banner reads as
+// major 26 -- a release line that does not exist -- and would resolve past the
+// top of this ladder as a newer server than anything measured. The second one
+// happens to read as 21 and be right, which is exactly the kind of accident
+// that keeps a defect invisible: a fixture carrying only the 21 banner passes
+// on a resolver that is wrong about every 23 server.
+//
+// What follows "Release " is the real version on both, so that is what is read
+// when the word is present. A bare version_full string like "23.26.2.0.0" has
+// no such word and is parsed whole.
+func oracleResolution(version string) VersionResolution {
+	v, ok := parseVersion(oracleVersionField(version))
+	if !ok {
+		return VersionResolution{Capabilities: Oracle23()}
+	}
+	return measuredMinorLineResolution(
+		oracleForVersion(v), v, capabilityline.OracleMeasured(), capabilityline.Oracle23)
+}
+
+// oracleVersionField returns the substring a version can be read from.
+func oracleVersionField(version string) string {
+	const marker = "release "
+	lower := strings.ToLower(version)
+	if index := strings.Index(lower, marker); index >= 0 {
+		return version[index+len(marker):]
+	}
+	return version
+}
+
+// oracleForVersion picks the arm. The IF [NOT] EXISTS guards arrived in the 23
+// line: measured, 21.3 refuses every one of them and 23.26 accepts every one.
+//
+// The comparison is on the major alone, for the reason the CockroachDB 25 arm
+// gives. What separates the lines is a grammar step that the whole major
+// carries, and 23.0 through 23.25 were never measured; sending them to the 21
+// preset would promise them less than they have, which is what a conservative
+// fallback is for, while sending them to the 23 preset on a minor comparison
+// they do not match would promise them a guard nobody watched them accept.
+func oracleForVersion(v serverVersion) Capabilities {
+	line23, _ := parseVersion(capabilityline.Oracle23)
+	if v.major >= line23.major {
+		return Oracle23()
+	}
+	return Oracle21()
 }
 
 func clickHouseResolution(version string) VersionResolution {

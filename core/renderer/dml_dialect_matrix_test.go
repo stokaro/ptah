@@ -217,6 +217,35 @@ func sqlServerCells(dialect string) dmlMatrixRow {
 	}
 }
 
+// oracleCells is the Oracle row, and every part of it was measured on
+// 23.26.2.0.0 rather than derived from the SQL Server row it resembles.
+//
+// The placeholders are :1 and :2; ? and $1 both answer ORA-00911. The
+// row-limiting clause is the ANSI one, because LIMIT answers ORA-03049. What
+// separates it from SQL Server is the sentinel ORDER BY: T-SQL requires one
+// before OFFSET and Oracle does not, so it is omitted -- and the omission is
+// load-bearing rather than cosmetic. Measured, `ORDER BY (SELECT NULL)` is
+// accepted on 23.26, where a SELECT needs no FROM clause, and refused on 21.3
+// with ORA-00923, FROM keyword not found. Emitting the sentinel would render
+// SQL only the newer line of the ladder can run.
+//
+// Identifiers are bare rather than quoted, which is the decision the Oracle DDL
+// renderer makes and this builder has to make the same way: a table created as
+// ora_posts is ORA_POSTS in the catalog, and a query naming "ora_posts" would
+// look for a table nobody created. See sqlident.Ident.
+func oracleCells(dialect string) dmlMatrixRow {
+	return dmlMatrixRow{
+		dialect: dialect,
+		sel: dmlCell{
+			sql:  "SELECT id, name FROM users WHERE id = :1 OFFSET 0 ROWS FETCH NEXT :2 ROWS ONLY",
+			args: []any{int64(1), int64(10)},
+		},
+		ins: dmlCell{sql: "INSERT INTO users (id, name) VALUES (:1, :2)", args: []any{int64(1), "a"}},
+		upd: dmlCell{sql: "UPDATE users SET name = :1 WHERE id = :2", args: []any{"a", int64(1)}},
+		del: dmlCell{sql: "DELETE FROM users WHERE id = :1", args: []any{int64(1)}},
+	}
+}
+
 // dmlMatrixRows lists one row per name in renderer.SupportedDialects(), in the
 // same order. TestDMLDialectMatrix compares the two lists, so this table cannot
 // fall behind the set of names the renderer accepts.
@@ -234,6 +263,7 @@ func dmlMatrixRows() []dmlMatrixRow {
 		dollarCells("cockroachdb"),
 		dollarCells("yugabytedb"),
 		dollarCells("spanner"),
+		oracleCells("oracle"),
 	}
 }
 
@@ -394,10 +424,15 @@ func assertAgreesWithRebind(c *qt.C, dialect string) {
 	sql, args, err := renderer.RenderInsert(onePlaceholderInsert(), dialect)
 	c.Assert(err, qt.IsNil)
 	c.Assert(args, qt.DeepEquals, []any{int64(1)})
+	// sqlident.Ident, not sqlident.Quote: this assertion is about the
+	// placeholder, and the identifier spelling only has to match whatever the
+	// builder writes. They are the same function for every dialect but Oracle,
+	// where the builder writes a plain name bare so that it names the same
+	// object the DDL renderer created. See sqlident.Ident.
 	c.Assert(sql, qt.Equals, fmt.Sprintf(
 		"INSERT INTO %s (%s) VALUES (%s)",
-		sqlident.Quote(dialect, "users"),
-		sqlident.Quote(dialect, "id"),
+		sqlident.Ident(dialect, "users"),
+		sqlident.Ident(dialect, "id"),
 		sqlutil.Rebind(dialect, "?"),
 	))
 }
@@ -443,6 +478,7 @@ func TestDMLPlaceholderAgreesWithRebind(t *testing.T) {
 		{dialect: "cockroachdb"},
 		{dialect: "yugabytedb"},
 		{dialect: "spanner"},
+		{dialect: "oracle"},
 	}
 
 	names := make([]string, 0, len(rows))

@@ -182,6 +182,9 @@ func measuredLines() map[string]measuredLine {
 				capability.XMLType:                            {true, "ACCEPTED CREATE TABLE xmlt (c XML)"},
 			},
 			carried: map[capability.Capability]string{
+				capability.ObjectExistenceGuards: "this run predates the key and sent no guarded CREATE or DROP of a table, view or sequence. " +
+					"The key exists because Oracle is the first engine here whose ladder crosses that step -- 21.3 refuses every guard while 23.26 accepts every one -- " +
+					"and an engine that has had them throughout its ladder cannot tell this line apart from the preset below (stokaro/ptah#1875)",
 				capability.SequenceStartCounterOnly: "this run predates the key and sent no CREATE SEQUENCE with an option clause. The key is a restriction only Spanner carries, and what decides it there is `INCREMENT BY` answering `Optional clause <increment> is not supported in <CREATE SEQUENCE> statement` while a bare CREATE SEQUENCE is accepted (stokaro/ptah#1856)",
 				capability.DDLInsideTransaction:     "the key names whether the server takes a schema statement inside an explicit transaction, which is a property of the wrapper the migrator opens rather than of any statement this probe sends (stokaro/ptah#1793)",
 				capability.MigrationTimeouts:        "the key names a runtime policy the migrator applies around a migration, not a statement this probe can send; the server accepting SET LOCAL statement_timeout says nothing about whether Ptah sets and restores it here (stokaro/ptah#1713)",
@@ -243,6 +246,9 @@ func measuredLines() map[string]measuredLine {
 				capability.XMLType:                            {false, "REFUSED CREATE TABLE xmlt (c XML) -> Error 1064 (42000)"},
 			},
 			carried: map[capability.Capability]string{
+				capability.ObjectExistenceGuards: "this run predates the key and sent no guarded CREATE or DROP of a table, view or sequence. " +
+					"The key exists because Oracle is the first engine here whose ladder crosses that step -- 21.3 refuses every guard while 23.26 accepts every one -- " +
+					"and an engine that has had them throughout its ladder cannot tell this line apart from the preset below (stokaro/ptah#1875)",
 				capability.SequenceStartCounterOnly: "this run predates the key and sent no CREATE SEQUENCE with an option clause. The key is a restriction only Spanner carries, and what decides it there is `INCREMENT BY` answering `Optional clause <increment> is not supported in <CREATE SEQUENCE> statement` while a bare CREATE SEQUENCE is accepted (stokaro/ptah#1856)",
 				capability.DDLInsideTransaction:     "the key names whether the server takes a schema statement inside an explicit transaction, which is a property of the wrapper the migrator opens rather than of any statement this probe sends (stokaro/ptah#1793)",
 				capability.MigrationTimeouts:        "the key names a runtime policy the migrator applies around a migration, not a statement this probe can send; the server accepting SET LOCAL statement_timeout says nothing about whether Ptah sets and restores it here (stokaro/ptah#1713)",
@@ -303,6 +309,9 @@ func measuredLines() map[string]measuredLine {
 				capability.XMLType:                            {false, "REFUSED CREATE TABLE xmlt (c XML) -> Error 4161 (HY000): Unknown data type: 'XML'"},
 			},
 			carried: map[capability.Capability]string{
+				capability.ObjectExistenceGuards: "this run predates the key and sent no guarded CREATE or DROP of a table, view or sequence. " +
+					"The key exists because Oracle is the first engine here whose ladder crosses that step -- 21.3 refuses every guard while 23.26 accepts every one -- " +
+					"and an engine that has had them throughout its ladder cannot tell this line apart from the preset below (stokaro/ptah#1875)",
 				capability.SequenceStartCounterOnly: "this run predates the key and sent no CREATE SEQUENCE with an option clause. The key is a restriction only Spanner carries, and what decides it there is `INCREMENT BY` answering `Optional clause <increment> is not supported in <CREATE SEQUENCE> statement` while a bare CREATE SEQUENCE is accepted (stokaro/ptah#1856)",
 				capability.DDLInsideTransaction:     "the key names whether the server takes a schema statement inside an explicit transaction, which is a property of the wrapper the migrator opens rather than of any statement this probe sends (stokaro/ptah#1793)",
 				capability.MigrationTimeouts:        "the key names a runtime policy the migrator applies around a migration, not a statement this probe can send; the server accepting SET LOCAL statement_timeout says nothing about whether Ptah sets and restores it here (stokaro/ptah#1713)",
