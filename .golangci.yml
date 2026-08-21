@@ -263,7 +263,7 @@ linters:
       - linters:
           - gosec
         text: 'G101:'
-        path: '(dbschema/connection.*_test\.go|migration/migrator/(debug|example)_test\.go)$'
+        path: '(dbschema/connection.*_test\.go|migration/migrator/(debug|example)_test\.go|cmd/internal/schemaserve/.*_test\.go)$'
       # gosec G602 false positives on `j-1` slice access inside guarded test loops
       # (`for j := 1; j < len(...); j++`). Limited to the field-order tests.
       - linters:

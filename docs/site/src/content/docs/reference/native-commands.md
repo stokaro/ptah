@@ -202,7 +202,40 @@ that happened rather than a reordering.
 | `ptah viz` | Render desired schema diagrams as Mermaid, DOT, or SVG. |
 | `ptah version` | Print Ptah build information. |
 | `ptah license` | Print license, copyright, and Atlas-compatibility attribution. |
+| `ptah schema serve` | Serve a read-only local view of the declared schema and how the live database differs from it. |
 | `ptah completion <shell>` | Generate shell completion output for the native `ptah` command tree. |
+
+## A live view
+
+`ptah schema serve` serves the same schema page against a live database, adding
+what only means something over time:
+
+```bash
+ptah schema serve --db-url "$DATABASE_URL" --root-dir ./models
+```
+
+It shows drift — how the database differs from the declared schema, by category
+and severity — and when that was last measured. A page whose age is unknown is
+not a live view; one that stopped refreshing looks identical to one that
+refreshed a second ago.
+
+The schema below the status panel is rendered by the same code as
+`schema export --to html`, so the served view and the exported document cannot
+disagree about what a schema looks like.
+
+**It is read-only.** Every route answers `GET` and `HEAD` and nothing else, and
+no code path writes to the database. Nothing about it becomes a dependency of a
+migration: `ptah migrate` works identically with this never started. There is no
+account, no login and no upload — it binds to a local address and reads a
+database you already have credentials for.
+
+If the database cannot be reached the page says so. It does not render zero
+drift, which would show a reader a green page and let them conclude their schema
+is in sync.
+
+The page reloads itself with a `meta refresh` and carries no JavaScript;
+`--refresh 0` serves a page that does not reload. The declared schema comes from
+`--root-dir`.
 
 ## Schema documentation
 
