@@ -206,5 +206,27 @@ jobs:
       # path inside a sqlite:// URL, refused because the drive letter's colon
       # reads as a port separator. That is fixed in this branch, so the step
       # gates rather than documents.
+      #
+      # -timeout is stated rather than left at Go's 10m default, and the number
+      # comes from measurement rather than taste. On stokaro/ptah#1809 the same
+      # commit failed twice and passed on the third attempt with no change:
+      #
+      #   step            fast runner   slow runner
+      #   Set up Go            93s          125s
+      #   qtlint               82s          112s
+      #   Golint               79s          151s
+      #   Unit tests          309s          696s (killed)
+      #   - cmd/atlas         184s         >600s (killed)
+      #
+      # Every step is 1.4-1.9x slower on the slow runner, Set up Go and Golint
+      # among them, which no branch content can influence. So 184s of a 600s
+      # budget is not headroom: it is 31% on a good day, and most compat work
+      # adds tests to cmd/atlas.
+      #
+      # 20m is ~2x the observed cliff. It moves the cliff rather than removing
+      # it -- splitting cmd/atlas is the real fix (stokaro/ptah#1812) -- but the
+      # job's own timeout-minutes above stays the real bound, so a genuine hang
+      # is still caught, by the job rather than by a panic naming whichever test
+      # happened to be running (stokaro/ptah#1749).
       - name: Unit tests
-        run: go test ./... -count=1
+        run: go test ./... -count=1 -timeout=20m
