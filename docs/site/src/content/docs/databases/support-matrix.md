@@ -22,7 +22,7 @@ per-capability tables are in [Capabilities](../../reference/capabilities/).
 | YugabyteDB | `yugabytedb` (`yugabyte`, `ysql`) | `yugabytedb://`, `ysql://` | PostgreSQL-compatible path with capability differences. |
 | ClickHouse | `clickhouse` (`ch`) | `clickhouse://`, `ch://` | Capability-limited support. |
 | Spanner (PostgreSQL interface) | `spanner` (`cloudspanner`, `google-spanner`, `google_spanner`) | `spanner://` | Most conservative capability-limited support. |
-| Oracle | `oracle` | `oracle://` | Renders, plans and reads a live catalog; comparing a declared file against one does not converge on constraint names yet. |
+| Oracle | `oracle` | `oracle://` | Renders, plans, and reads a live catalog. |
 
 Accepted URL formats, and the difference between target, dev, shadow, and
 throwaway databases, are on
