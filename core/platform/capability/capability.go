@@ -1598,14 +1598,52 @@ func CockroachDB25() Capabilities {
 	return CockroachDB23().
 		With(DropConstraintGeneric, false).
 		With(DropConstraintIfExists, false).
-		With(CreateOrReplaceTrigger, false)
+		With(CreateOrReplaceTrigger, false).
+		// CockroachDB added the session setting `autocommit_before_ddl` for
+		// PostgreSQL compatibility, and its default became on in v25: a schema
+		// statement arriving inside an open transaction commits that
+		// transaction before it runs, so the ROLLBACK that follows finds
+		// nothing to undo and says so -- `WARNING: there is no transaction in
+		// progress` (SQLSTATE 25P01).
+		//
+		// Measured through Ptah's driver, rows left after a rolled-back
+		// CREATE TABLE:
+		//
+		//	v23.2.30  setting absent      0
+		//	v24.3.20  setting default off 0
+		//	v25.4.5   setting default on  1
+		//	v26.2.5   setting default on  1
+		//	v26.3.0   setting default on  1
+		//
+		// So CockroachDB23, which covers both lines below this one, keeps the
+		// true it was written with.
+		//
+		// Turning the setting off is not the way to keep the capability, and
+		// this was measured rather than assumed: with it off, v26.2.5 refuses
+		// `ALTER TABLE <existing table> ADD COLUMN` inside a transaction with
+		// `this schema change is disallowed because table ... is locked and
+		// this operation cannot automatically unlock the table` (SQLSTATE
+		// 57000), because tables carry `schema_locked` by default. A plain
+		// CREATE INDEX draws the same refusal, so it is the transaction rather
+		// than any one statement. That trades a rollback that silently does
+		// nothing for a migration that cannot run at all, and the only escape
+		// is to unlock each table -- a persistent change to the user's schema
+		// that also carries a changefeed cost the vendor warns about.
+		//
+		// `--tx-mode all` therefore refuses here, and says why, instead of
+		// promising an atomicity the target does not have (stokaro/ptah#1849).
+		With(TransactionalDDL, false)
 }
 
 // CockroachDB26 is the preset measured on CockroachDB 26.2. It retains the
 // full current CockroachDB surface documented by CockroachDB23 while giving
 // the version resolver a truthful current-line name.
 func CockroachDB26() Capabilities {
-	return CockroachDB23()
+	return CockroachDB23().
+		// Stated here as well as on CockroachDB25 because this line derives
+		// from CockroachDB23, which is below the boundary and keeps the true.
+		// The measurement and the reason are on CockroachDB25.
+		With(TransactionalDDL, false)
 }
 
 // CockroachDB263 is the first CockroachDB line that carries CREATE DOMAIN.
