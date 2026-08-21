@@ -90,8 +90,8 @@ Across the 191 capabilities below:
 
 | Reading | Count |
 | --- | --- |
-| Ptah supports it fully | 173 |
-| Ptah supports it with a stated limitation | 3 |
+| Ptah supports it fully | 174 |
+| Ptah supports it with a stated limitation | 2 |
 | Ptah does not implement it | 7 |
 | Ptah covers it in its own form, against a hosted service it cannot interoperate with | 8 |
 | Ptah and Atlas CE both support it | 63 |
@@ -266,7 +266,7 @@ seven of them as open capabilities regardless.
 | A malformed `--var` is refused wherever it is spelled | ✅ | ✅ | ✅ | CE parses `--var` while parsing flags, so a value with no `=` is refused before any project file is sought. Ptah checks it on every command under `schema` and `migrate`, even ones that never read it. |
 | Atlas project config (atlas.hcl) | ✅ | ✅ | ✅ | Envs, variables, locals, data sources and `for_each` are evaluated. A collection env expands where a verb takes one and is refused by name elsewhere. |
 | atlas.hcl file() and fileset() path confinement | ✅ | ❌ | ❌ | Ptah confines file() and fileset() to the atlas.hcl directory: absolute, parent-traversal and symlink escapes are refused by name. Atlas reads them. Deliberate divergence; exit 1 either way today. |
-| atlas.hcl from the native ptah binary | 🟡 | ➖ | ➖ | ptah `--env` reads ./atlas.hcl; `--var name=value` supplies a variable with no default on every env-aware verb; `--config` still takes ptah.yaml only. Tracked by stokaro/ptah#1215. |
+| atlas.hcl from the native ptah binary | ✅ | ➖ | ➖ | ptah `--env` reads ./atlas.hcl, `--config` names one anywhere else when the path ends in .hcl, and `--var name=value` supplies a variable with no default on every env-aware verb. |
 | AWS RDS token project data source (data "aws_rds_token") | ✅ | ✅ | ✅ | Resolves to a SigV4 `rds-db` connect token, matching the pinned community binary parameter for parameter. `endpoint` and `username` required; `region` and `profile` optional. |
 | data "hcl_schema" reference | ✅ | ✅ | ✅ | Takes path, paths and vars, and exports .url. `vars` is scoped to the files that data source selects and `--var` does not cross that boundary, as on CE. A bad path or scheme names its rule. |
 | Docker dev databases (`docker://` `--dev-url`) | ✅ | ✅ | ✅ | Every verb taking a dev or shadow URL provisions and removes a container. `schema plan` starts none on purpose: a saved plan reads local files and has nothing to replay. |
