@@ -204,6 +204,37 @@ that happened rather than a reordering.
 | `ptah license` | Print license, copyright, and Atlas-compatibility attribution. |
 | `ptah completion <shell>` | Generate shell completion output for the native `ptah` command tree. |
 
+## Column lineage
+
+`ptah schema lineage` derives column-to-column dependencies from the view and
+materialized-view bodies a schema declares:
+
+```bash
+ptah schema lineage --schema-file schema.sql
+```
+
+```text
+SOURCE        FEEDS                 KIND
+users.email   active_users.contact  view
+users.id      active_users.id       view
+
+1 view(s) not fully resolved:
+  joined: the FROM clause names more than one source, so an unqualified column cannot be attributed
+```
+
+This answers "what breaks if I drop this column" before the drop rather than
+after. A view column resolves to the base columns it reads, so a column nothing
+reads is visibly different from one three views depend on. `--format json` emits
+the same answer as a document.
+
+The analysis is static and local: it reads the schema Ptah already models and
+contacts nothing.
+
+A body it cannot fully resolve is **reported, not omitted**. A join, a subquery
+source, a set operation, or a computed column with no alias each appear under
+`undecided` with the reason. That distinction is the difference between "nothing
+reads this column" and "I could not tell", and only the first makes a drop safe.
+
 ## OCI transport behavior
 
 These native commands resolve an `oci://` reference, each through the flag
@@ -222,6 +253,7 @@ named beside it:
 | `ptah schema validate` | `--schema-file` | desired schema |
 | `ptah schema export` | `--schema-file` | desired schema |
 | `ptah schema inspect` | `--schema-file` | desired schema |
+| `ptah schema lineage` | `--schema-file` | desired schema |
 | `ptah schema compare` | `--schema-file` | desired schema |
 | `ptah schema drift` | `--schema-file` | desired schema |
 | `ptah schema plan` | `--schema-file` | desired schema |

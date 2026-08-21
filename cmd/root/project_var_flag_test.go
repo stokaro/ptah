@@ -35,6 +35,7 @@ var projectEnvCommandPaths = []string{
 	"ptah schema diff",
 	"ptah schema drift",
 	"ptah schema inspect",
+	"ptah schema lineage",
 	"ptah schema plan",
 	"ptah schema render",
 	"ptah schema validate",
