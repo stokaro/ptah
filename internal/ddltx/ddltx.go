@@ -88,6 +88,15 @@ func ClassOf(dialect string) Class {
 	case platform.MySQL, platform.MariaDB:
 		return ImplicitCommit
 
+	// Measured on Oracle 23.26.2.0.0 and 21.3.0.0.0 alike: a CREATE TABLE
+	// issued inside an explicit transaction is still in user_tables after the
+	// ROLLBACK, because Oracle commits the transaction in progress before
+	// every schema statement. That is the same contract MySQL has, reached the
+	// same way, so a migration body here survives a failed revision write
+	// (stokaro/ptah#1875).
+	case platform.Oracle:
+		return ImplicitCommit
+
 	// Proven live by TestRevisionCompletionFailure_ClickHouseNoTransactionLive.
 	// The ClickHouse writer's BeginTransaction returns a transaction whose
 	// Commit and Rollback are no-ops.

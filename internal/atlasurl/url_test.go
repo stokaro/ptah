@@ -242,7 +242,7 @@ func TestSameDatabaseEndpoint_HappyPath(t *testing.T) {
 func TestSameDatabaseEndpoint_FailurePath(t *testing.T) {
 	t.Run("unsupported dialect", func(t *testing.T) {
 		c := qt.New(t)
-		got, err := atlasurl.SameDatabaseEndpoint("oracle://localhost/source", "postgres://localhost/dev")
+		got, err := atlasurl.SameDatabaseEndpoint("db2://localhost/source", "postgres://localhost/dev")
 		c.Assert(err, qt.ErrorMatches, "unsupported database URL dialect")
 		c.Assert(got, qt.IsFalse)
 	})

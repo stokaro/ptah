@@ -113,13 +113,13 @@ func TestGenerateCommandUnsupportedDialectExits2WithoutPanicTrace(t *testing.T) 
 	var errOut bytes.Buffer
 	cmd.SetOut(&out)
 	cmd.SetErr(&errOut)
-	cmd.SetArgs([]string{"--root-dir", filepath.Join("..", "..", "stubs"), "--dialect", "oracle"})
+	cmd.SetArgs([]string{"--root-dir", filepath.Join("..", "..", "stubs"), "--dialect", "db2"})
 
 	err := cmd.Execute()
 
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 2)
-	c.Assert(errOut.String(), qt.Contains, "error: error rendering oracle schema: unsupported database dialect: oracle")
+	c.Assert(errOut.String(), qt.Contains, "error: error rendering db2 schema: unsupported database dialect: db2")
 	c.Assert(errOut.String(), qt.Not(qt.Contains), "panic:")
 	c.Assert(errOut.String(), qt.Not(qt.Contains), "goroutine")
 	c.Assert(errOut.String(), qt.Not(qt.Contains), "Usage:")

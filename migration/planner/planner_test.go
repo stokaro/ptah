@@ -160,21 +160,21 @@ func TestGetPlannerRejectsFactoryReturningNil(t *testing.T) {
 func TestGenerateSchemaDiffSQL_UnsupportedDialectReturnsError(t *testing.T) {
 	c := qt.New(t)
 
-	nodes, err := planner.GenerateSchemaDiffAST(&types.SchemaDiff{}, &goschema.Database{}, "oracle")
+	nodes, err := planner.GenerateSchemaDiffAST(&types.SchemaDiff{}, &goschema.Database{}, "db2")
 	c.Assert(nodes, qt.IsNil)
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedDialect)
 
 	var astPlanErr *ptaherr.PlanError
 	c.Assert(err, qt.ErrorAs, &astPlanErr)
-	c.Assert(astPlanErr.Dialect, qt.Equals, "oracle")
+	c.Assert(astPlanErr.Dialect, qt.Equals, "db2")
 
-	sql, err := planner.GenerateSchemaDiffSQL(&types.SchemaDiff{}, &goschema.Database{}, "oracle")
+	sql, err := planner.GenerateSchemaDiffSQL(&types.SchemaDiff{}, &goschema.Database{}, "db2")
 	c.Assert(sql, qt.Equals, "")
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedDialect)
 
 	var planErr *ptaherr.PlanError
 	c.Assert(err, qt.ErrorAs, &planErr)
-	c.Assert(planErr.Dialect, qt.Equals, "oracle")
+	c.Assert(planErr.Dialect, qt.Equals, "db2")
 }
 
 func TestGenerateSchemaDiffAST_WrapsPlannerFailures(t *testing.T) {

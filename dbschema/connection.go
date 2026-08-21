@@ -57,6 +57,15 @@ func ConnectToDatabase(ctx context.Context, dbURL string) (*DatabaseConnection, 
 	}
 
 	dialectProtocol, connectionString := databaseDriverConfig(dialect, dbURL)
+	if dialectProtocol == "" {
+		// A dialect Ptah renders and plans for, and does not connect to yet.
+		// Without this the empty driver name reaches sql.Open, which answers
+		// `sql: unknown driver "" (forgotten import?)` -- a message about this
+		// package's imports rather than about what the operator asked for.
+		return nil, fmt.Errorf(
+			"connecting to %s is not supported yet: Ptah renders and plans %s schemas, "+
+				"and reading a live %s catalog is not implemented", dialect, dialect, dialect)
+	}
 
 	db, err := sql.Open(dialectProtocol, connectionString)
 	if err != nil {
@@ -366,6 +375,11 @@ func databaseDriverConfig(dialect, dbURL string) (driverName, dataSourceName str
 	case platform.SQLServer:
 		return "sqlserver", convertSQLServerURL(dbURL)
 	default:
+		// Oracle reaches this arm deliberately. Its renderer and planner are
+		// registered and its capability presets are measured, and no reader
+		// exists, so there is nothing for a live connection to do yet. The
+		// empty driver name is turned into a message naming the dialect by
+		// ConnectToDatabase (stokaro/ptah#1875).
 		return "", ""
 	}
 }

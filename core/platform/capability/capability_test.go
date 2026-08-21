@@ -452,8 +452,12 @@ func TestForDialect(t *testing.T) {
 	c.Assert(capability.ForDialect("mssql").Has(capability.CreateOrReplaceTrigger), qt.IsTrue)
 	c.Assert(capability.ForDialect("sql-server").Has(capability.ForeignKeys), qt.IsTrue)
 	c.Assert(capability.ForDialect("spanner").Has(capability.ForeignKeys), qt.IsTrue)
-	// Unknown dialects get the conservative nil set.
-	c.Assert(capability.ForDialect("oracle"), qt.IsNil)
+	c.Assert(capability.ForDialect("oracle").Has(capability.ObjectExistenceGuards), qt.IsTrue)
+	c.Assert(capability.ForDialect("oracle").Has(capability.TransactionalDDL), qt.IsFalse)
+	// Unknown dialects get the conservative nil set. This used to be spelled
+	// with "oracle", which stopped being an unknown dialect when Ptah gained
+	// one; "db2" is named by nothing in NormalizeDialect.
+	c.Assert(capability.ForDialect("db2"), qt.IsNil)
 }
 
 func TestForServerVersion(t *testing.T) {

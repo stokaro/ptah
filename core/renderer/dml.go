@@ -504,6 +504,15 @@ func (r *selectRenderer) renderReturning(cols []ast.ColumnRef) error {
 // Family membership is asked of platform.IsPostgresFamily rather than spelled
 // out, for the same reason as in selectPlaceholderStyle: a list of names here is
 // a list that drifts, and it had already drifted — it omitted Spanner.
+// supportsReturning reports whether the dialect executes a RETURNING
+// projection.
+//
+// Oracle is absent deliberately rather than by omission. It has the keyword and
+// not this shape: measured on 23.26, `INSERT INTO t (id) VALUES (99) RETURNING
+// id INTO :out` is accepted with an out-parameter bound, while the same
+// statement ending at `RETURNING id` answers ORA-00925, missing INTO keyword.
+// A projection has nowhere to go there, which is the same reason SQL Server's
+// OUTPUT clause is not mapped onto this one.
 func (r *selectRenderer) supportsReturning() bool {
 	return platform.IsPostgresFamily(r.dialect) || r.dialect == platform.SQLite
 }

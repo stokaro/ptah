@@ -129,6 +129,14 @@ func postgresFamilyPlan(dialect string) plan {
 			[]string{"DROP INDEX IF EXISTS dii_absent"},
 			"DROP INDEX dii_absent",
 		),
+		// The guard on an object rather than on a constraint or an index. The
+		// unguarded control is what makes the acceptance readable: a server
+		// that also drops an absent table without complaint has not shown a
+		// guard, and `guarded` refuses to decide there.
+		guarded(capability.ObjectExistenceGuards, nil,
+			[]string{"DROP TABLE IF EXISTS oeg_absent"},
+			"DROP TABLE oeg_absent",
+		),
 		enforced(capability.CheckConstraintsEnforced,
 			[]string{t.table("cce", "n int, CONSTRAINT cce_ck CHECK (n > 0)", "n")},
 			"INSERT INTO cce (n) VALUES (1)",
@@ -446,6 +454,14 @@ func mysqlFamilyPlan(dialect string) plan {
 			[]string{"CREATE TABLE dii (n int)"},
 			[]string{"DROP INDEX IF EXISTS dii_absent ON dii"},
 			"DROP INDEX dii_absent ON dii",
+		),
+		// The guard on an object rather than on a constraint or an index. The
+		// unguarded control is what makes the acceptance readable: a server
+		// that also drops an absent table without complaint has not shown a
+		// guard, and `guarded` refuses to decide there.
+		guarded(capability.ObjectExistenceGuards, nil,
+			[]string{"DROP TABLE IF EXISTS oeg_absent"},
+			"DROP TABLE oeg_absent",
 		),
 		enforced(capability.CheckConstraintsEnforced,
 			[]string{"CREATE TABLE cce (n int, CONSTRAINT cce_ck CHECK (n > 0))"},

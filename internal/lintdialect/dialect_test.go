@@ -55,9 +55,9 @@ func acceptedSpellings(c *qt.C) []string {
 	return slices.Compact(spellings)
 }
 
-// canonicalDialects returns the distinct canonical names the accepted spellings
-// resolve to -- one per supported engine.
-func canonicalDialects(c *qt.C) []string {
+// platformCanonicalDialects returns the distinct canonical names the accepted
+// spellings resolve to -- one per engine platform knows.
+func platformCanonicalDialects(c *qt.C) []string {
 	spellings := acceptedSpellings(c)
 	canonicals := make([]string, 0, len(spellings))
 	for _, spelling := range spellings {
@@ -65,6 +65,28 @@ func canonicalDialects(c *qt.C) []string {
 	}
 	slices.Sort(canonicals)
 	return slices.Compact(canonicals)
+}
+
+// canonicalDialects returns the engines lint analyzes.
+//
+// This used to be every engine platform knows, and the two were the same list
+// until Ptah gained a dialect lint has no rules for. The filter is
+// lintdialect.Valid itself rather than a list copied into this file, so the
+// anti-drift property the extraction above exists for still holds: what is
+// asserted is the partition, and TestCanonical_RefusesEveryEngineLintCannot
+// AnalyzeYet names which side each engine is on (stokaro/ptah#1875).
+func canonicalDialects(c *qt.C) []string {
+	return slices.DeleteFunc(platformCanonicalDialects(c), func(canonical string) bool {
+		return !lintdialect.Valid(canonical)
+	})
+}
+
+// lintSupportedSpellings returns every accepted spelling of an engine lint
+// analyzes.
+func lintSupportedSpellings(c *qt.C) []string {
+	return slices.DeleteFunc(acceptedSpellings(c), func(spelling string) bool {
+		return !lintdialect.Valid(spelling)
+	})
 }
 
 // familyMembers groups the canonical dialects by the family lintdialect.Family
@@ -107,6 +129,39 @@ func TestAcceptedSpellings_ExtractionControls(t *testing.T) {
 	}
 	// The engine count is what the exhaustive sweeps below depend on.
 	c.Assert(canonicalDialects(c), qt.HasLen, 9)
+	c.Assert(platformCanonicalDialects(c), qt.HasLen, 10)
+}
+
+// TestCanonical_RefusesEveryEngineLintCannotAnalyzeYet is the other side of the
+// partition, and the reason the two counts above differ.
+//
+// A dialect Ptah knows is not automatically a dialect lint can analyze:
+// migration/lint selects Rule.Dialects by exact string comparison and
+// internal/dialectlexer picks a scanner mode the same way, and neither
+// validates the name. An engine neither of them has an arm for would therefore
+// lint clean -- exit 0, no findings, nothing scanned in its own grammar --
+// which reads exactly like a migration with no problems.
+//
+// Naming the engines here rather than deriving them is deliberate: adding one
+// to platform.NormalizeDialect must fail this test until somebody decides
+// which side it belongs on (stokaro/ptah#1875).
+func TestCanonical_RefusesEveryEngineLintCannotAnalyzeYet(t *testing.T) {
+	c := qt.New(t)
+
+	unanalyzed := []string{platform.Oracle}
+
+	for _, canonical := range unanalyzed {
+		c.Assert(platformCanonicalDialects(c), qt.Contains, canonical,
+			qt.Commentf("%q is not a dialect platform knows, so refusing it here proves nothing", canonical))
+		c.Assert(lintdialect.Valid(canonical), qt.IsFalse)
+		resolved, ok := lintdialect.Canonical(canonical)
+		c.Assert(ok, qt.IsFalse)
+		c.Assert(resolved, qt.Equals, "")
+	}
+
+	// The partition is exact: every engine platform knows is on exactly one
+	// side, so an engine added to neither list fails here.
+	c.Assert(len(canonicalDialects(c))+len(unanalyzed), qt.Equals, len(platformCanonicalDialects(c)))
 }
 
 // TestValid_HappyPath_AcceptsEveryAcceptedSpelling is the exhaustive alias
@@ -119,7 +174,7 @@ func TestAcceptedSpellings_ExtractionControls(t *testing.T) {
 func TestValid_HappyPath_AcceptsEveryAcceptedSpelling(t *testing.T) {
 	c := qt.New(t)
 
-	for _, spelling := range acceptedSpellings(c) {
+	for _, spelling := range lintSupportedSpellings(c) {
 		t.Run(spelling, func(t *testing.T) {
 			c := qt.New(t)
 			c.Assert(lintdialect.Valid(spelling), qt.IsTrue)
@@ -140,7 +195,7 @@ func TestCanonical_HappyPath_ResolvesEverySpellingToItsEngine(t *testing.T) {
 
 	canonicals := canonicalDialects(c)
 
-	for _, spelling := range acceptedSpellings(c) {
+	for _, spelling := range lintSupportedSpellings(c) {
 		t.Run(spelling, func(t *testing.T) {
 			c := qt.New(t)
 			canonical, ok := lintdialect.Canonical(spelling)
@@ -189,7 +244,7 @@ func TestValid_FailurePath(t *testing.T) {
 func TestCompatible_HappyPath_EverySpellingMatchesItsOwnEngine(t *testing.T) {
 	c := qt.New(t)
 
-	for _, spelling := range acceptedSpellings(c) {
+	for _, spelling := range lintSupportedSpellings(c) {
 		t.Run(spelling, func(t *testing.T) {
 			c := qt.New(t)
 			c.Assert(lintdialect.Compatible(spelling, platform.NormalizeDialect(spelling)), qt.IsTrue)

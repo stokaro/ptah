@@ -29,23 +29,33 @@ throwaway databases, are on
 
 ## Engines Ptah does not support
 
-Oracle, Snowflake, Amazon Redshift and Databricks have no dialect entry. Naming
-one is an error rather than a fallback:
+Snowflake, Amazon Redshift and Databricks have no dialect entry. Naming one is
+an error rather than a fallback:
 
 ```text
-ptah schema render --dialect oracle
-error: error rendering oracle schema: unsupported database dialect: oracle
+ptah schema render --dialect snowflake
+error: error rendering snowflake schema: unsupported database dialect: snowflake
 ```
 
-**Oracle is being implemented** and is tracked by
-[#1875](https://github.com/stokaro/ptah/issues/1875). It qualified for a reason
-worth stating, because it is the same reason the other three do not: a pure-Go
-driver exists, an official free container image starts in about a minute, and
-the whole loop was driven end to end against it — connect, create a table and an
-index, read the columns back with their types and nullability. That is what
-earning a dialect looks like here.
+**Oracle is no longer on that list.** It renders and plans, against two measured
+release lines, and it does not read a live catalog yet — so naming it produces
+SQL, while pointing a command at an `oracle://` URL says what is missing:
 
-The other three are out of scope, and **the blocker is not the price**. That was
+```text
+ptah schema render --dialect oracle    # renders Oracle DDL
+ptah schema inspect --db-url oracle://...
+error: connect to --url: connecting to oracle is not supported yet: Ptah renders
+and plans oracle schemas, and reading a live oracle catalog is not implemented
+```
+
+It qualified for the reason the other three do not: a pure-Go driver exists, an
+official free container image starts in about a minute, and the whole loop was
+driven end to end against it — connect, create a table and an index, read the
+columns back with their types and nullability. That is what earning a dialect
+looks like here. What remains is tracked by
+[#1875](https://github.com/stokaro/ptah/issues/1875).
+
+The three that remain are out of scope, and **the blocker is not the price**. That was
 the assumption, and measuring it found it wrong for all three: every one has a
 free route to *something*. What none of them has is a free route to **the engine
 itself, startable per pull request without a human-held credential**.
@@ -160,17 +170,21 @@ the declared set cannot say one thing here and another in a workflow file.
 | `sqlserver` | 17.0 (SQL Server 2025) | certified | `SQLServer2022` | no |
 | `sqlserver` | 16.0 (SQL Server 2022) | best-effort | `SQLServer2022` | no |
 | `sqlserver` | 15.0 (SQL Server 2019) | best-effort | `SQLServer2022` | no |
+| `oracle` | 23 | best-effort | `Oracle23` | no |
+| `oracle` | 21 | best-effort | `Oracle21` | no |
 | `sqlite` | 3 | certified | `SQLite3` | no |
 
-Declared release lines: 28. Probed on every pull request: 24.
+Declared release lines: 30. Probed on every pull request: 24.
 
-Support levels across the 28 declared lines: 23 certified, 2 legacy-tested, 3 best-effort.
+Support levels across the 30 declared lines: 23 certified, 2 legacy-tested, 5 best-effort.
 
 Lines that are declared and not probed, and why:
 
 - `sqlserver` 17.0 — the capability probe has no statement table for the sqlserver dialect, so a server on this line would be asked nothing.
 - `sqlserver` 16.0 — the capability probe has no statement table for the sqlserver dialect, so a server on this line would be asked nothing.
 - `sqlserver` 15.0 — the capability probe has no statement table for the sqlserver dialect, so a server on this line would be asked nothing.
+- `oracle` 23 — the capability probe has no statement table for the oracle dialect, so a server on this line would be asked nothing.
+- `oracle` 21 — the capability probe has no statement table for the oracle dialect, so a server on this line would be asked nothing.
 - `sqlite` 3 — no container image is declared for this line; the capability probe has no statement table for the sqlite dialect, so a server on this line would be asked nothing.
 
 Lines whose container tag does not name the line, so which patch it resolves to has to be read off the tag:
@@ -179,6 +193,8 @@ Lines whose container tag does not name the line, so which patch it resolves to 
 - `sqlserver` 17.0, pinned as `mcr.microsoft.com/mssql/server:2025-latest`.
 - `sqlserver` 16.0, pinned as `mcr.microsoft.com/mssql/server:2022-latest`.
 - `sqlserver` 15.0, pinned as `mcr.microsoft.com/mssql/server:2019-latest`.
+- `oracle` 23, pinned as `gvenzl/oracle-free:slim`.
+- `oracle` 21, pinned as `gvenzl/oracle-xe:21-slim`.
 <!-- END GENERATED VERSION MATRIX -->
 
 Whether an observation can be credited to one line rather than its siblings is a
