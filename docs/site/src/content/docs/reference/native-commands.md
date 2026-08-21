@@ -23,7 +23,7 @@ Use `ptah <command> --help` for the exact flag set in an installed binary.
 | `ptah schema inspect` | Inspect a live database, a local schema file, an `oci://` schema artifact, or an Atlas-format migration directory as machine-clean HCL, SQL, or JSON; `--out-dir`/`--split` export files. |
 | `ptah schema diff` | Diff two arbitrary schema states (files, database URLs, or migration directories) into migration SQL or JSON. |
 | `ptah schema fmt` | Format HCL schema files canonically; `--check` is a no-write CI gate. |
-| `ptah schema export` | Export a schema to HCL, an OpenAPI 3.0 component schema, a GraphQL SDL, or a Protobuf Edition 2023 definition. |
+| `ptah schema export` | Export a schema to HCL, an OpenAPI 3.0 component schema, a GraphQL SDL, a Protobuf Edition 2023 definition, or reference documentation as Markdown or a self-contained HTML page. |
 | `ptah schema push` | Publish a lossless canonical desired schema to an OCI registry. |
 | `ptah schema pull` | Pull a canonical desired schema from an OCI registry. |
 | `ptah schema test` | Apply a desired schema from Go annotations, a SQL or HCL file, or a live database to a throwaway database and run declarative seed/SQL/assert cases against it. |
@@ -203,6 +203,32 @@ that happened rather than a reordering.
 | `ptah version` | Print Ptah build information. |
 | `ptah license` | Print license, copyright, and Atlas-compatibility attribution. |
 | `ptah completion <shell>` | Generate shell completion output for the native `ptah` command tree. |
+
+## Schema documentation
+
+`ptah schema export --to html` writes the schema as **one self-contained page**:
+
+```bash
+ptah schema export --to html --root-dir ./models --out schema.html
+```
+
+Opening it fetches nothing. No stylesheet, no font, no script, no image — the
+styling and the diagram are inside the file. So it works on a machine with no
+network, it can be attached to a review or copied to somebody, and looking at a
+schema never sends the schema anywhere.
+
+The entity diagram is inline SVG that Ptah lays out itself, left to right by
+dependency: reading it that way reads the order the tables can be created in.
+Nothing renders it at view time, which is why it needs neither a JavaScript
+library nor Graphviz installed.
+
+The page follows the reader's light or dark preference rather than picking one,
+and every column of every selected table appears — documentation that hid one
+would describe a schema the reader does not have. `--include-tables` and
+`--exclude-tables` select what it covers.
+
+`--to markdown` writes the same reference as a Markdown document, for a
+repository that would rather commit text.
 
 ## Column lineage
 
