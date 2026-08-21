@@ -129,20 +129,27 @@ func newWriteRenderer(dialect, kind string) (*selectRenderer, error) {
 // So the verbs the engine does execute portably are rendered, and the two it
 // does not are refused with the reason. SELECT and INSERT are ordinary
 // statements on ClickHouse and are unaffected (stokaro/ptah#941).
+// DELETE was refused here too, and that was stricter than the engine. Measured
+// on ClickHouse 24.10.4.191 -- the oldest line the presets and the compose
+// service cover -- `DELETE FROM u WHERE id = 1` runs and the row is gone;
+// measured again on 25.8.30 with the same result. Lightweight delete has been
+// on by default since 23.3, so every version Ptah supports has it.
+//
+// UPDATE is different, and the server says so rather than the docs: a plain
+// UPDATE answers `Lightweight updates are not supported. Lightweight updates
+// are supported only for tables with materialized _block_number column`, which
+// is a per-table setting a statement cannot declare (stokaro/ptah#941).
 func refuseUnportableWrite(normalized, kind string) error {
 	if normalized != platform.ClickHouse {
 		return nil
 	}
-	switch kind {
-	case "UPDATE", "DELETE":
-		return fmt.Errorf(
-			"renderer: %s is not a portable statement on ClickHouse: it is a mutation, "+
-				"spelled ALTER TABLE … %s and applied asynchronously outside a transaction; "+
-				"issue it directly rather than through the query builder",
-			kind, kind)
-	default:
+	if kind != "UPDATE" {
 		return nil
 	}
+	return fmt.Errorf(
+		"renderer: UPDATE is not a portable statement on ClickHouse: a plain UPDATE runs only on a table " +
+			"with the materialized _block_number column, which a statement cannot declare; use " +
+			"ALTER TABLE … UPDATE, or enable enable_block_number_column on the table")
 }
 
 func (r *selectRenderer) renderInsert(stmt *ast.InsertStatement) error {

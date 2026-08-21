@@ -176,19 +176,21 @@ func clickhouseCells(dialect string) dmlMatrixRow {
 		dialect: dialect,
 		sel:     dmlCell{sql: "SELECT `id`, `name` FROM `users` WHERE `id` = ? LIMIT ?", args: []any{int64(1), int64(10)}},
 		ins:     dmlCell{sql: "INSERT INTO `users` (`id`, `name`) VALUES (?, ?)", args: []any{int64(1), "a"}},
-		// UPDATE and DELETE are refused for an ENGINE reason rather than
-		// rendered. ClickHouse parses neither portable spelling: both are
-		// mutations there, applied asynchronously outside a transaction, so a
-		// portable builder that emitted them would give this one dialect
-		// silently different semantics. The refusal is deliberately NOT the
-		// generic dialect-not-taught marker -- see TestDMLGenericRefusalCensus,
-		// which counts those and would report this cell if it were.
-		upd: dmlCell{err: "renderer: UPDATE is not a portable statement on ClickHouse: it is a mutation, " +
-			"spelled ALTER TABLE … UPDATE and applied asynchronously outside a transaction; " +
-			"issue it directly rather than through the query builder"},
-		del: dmlCell{err: "renderer: DELETE is not a portable statement on ClickHouse: it is a mutation, " +
-			"spelled ALTER TABLE … DELETE and applied asynchronously outside a transaction; " +
-			"issue it directly rather than through the query builder"},
+		// DELETE renders. It was refused here too, and that was stricter than
+		// the engine: measured on ClickHouse 24.10.4.191 -- the oldest line the
+		// presets and the compose service cover -- `DELETE FROM u WHERE id = 1`
+		// runs and the row is gone, and 25.8.30 answers the same. Lightweight
+		// delete has been on by default since 23.3.
+		//
+		// UPDATE is refused for an ENGINE reason the server states itself:
+		// `Lightweight updates are not supported ... only for tables with
+		// materialized _block_number column`, a per-table setting a statement
+		// cannot declare. The refusal is deliberately NOT the generic
+		// dialect-not-taught marker -- see TestDMLGenericRefusalCensus.
+		upd: dmlCell{err: "renderer: UPDATE is not a portable statement on ClickHouse: a plain UPDATE runs " +
+			"only on a table with the materialized _block_number column, which a statement cannot declare; " +
+			"use ALTER TABLE … UPDATE, or enable enable_block_number_column on the table"},
+		del: dmlCell{sql: "DELETE FROM `users` WHERE `id` = ?", args: []any{int64(1)}},
 	}
 }
 
