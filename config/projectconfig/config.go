@@ -48,6 +48,15 @@ type Config struct {
 	// make the no-op visible; the Ptah CLIs warn on stderr while preserving the
 	// command's stdout and exit code.
 	IgnoredConstructs []IgnoredAtlasConstruct
+	// ExporterName is the exporter an env selects, as its `exporter`
+	// attribute names it. Empty means the env selects none, which is what
+	// makes `--export` refusable rather than silently a no-op.
+	ExporterName string
+	// exporters holds atlas.hcl `exporter` block templates by name. It is
+	// unexported because a caller selects one by name through Exporter rather
+	// than reaching into the map, which is what lets an unknown name be
+	// reported instead of silently missing (stokaro/ptah#1620).
+	exporters map[string]string
 	// EnvName is the selected project env name, when the source had one.
 	EnvName string
 	// DatabaseURL is the target database URL used by migration commands.
@@ -796,6 +805,12 @@ func appendDisabledMode(patterns []string, option ConfigBool, pattern string) []
 // non-zero programmatic values from override.
 func Merge(base, override Config) Config {
 	result := base
+	// Exporters are copied rather than shared, so an env instance cannot write
+	// into the map the base and its siblings are reading (stokaro/ptah#1620).
+	result.exporters = mergeExporters(base.exporters, override.exporters)
+	if override.ExporterName != "" {
+		result.ExporterName = override.ExporterName
+	}
 	result.migrationDirectories = cloneMigrationDirectories(base.migrationDirectories)
 	if len(override.migrationDirectories) > 0 {
 		if result.migrationDirectories == nil {
@@ -1379,4 +1394,16 @@ func mergeBool(base, override ConfigBool) ConfigBool {
 		return override
 	}
 	return base
+}
+
+// mergeExporters copies both sides into a fresh map, with the override winning
+// a shared name.
+func mergeExporters(base, override map[string]string) map[string]string {
+	if len(base) == 0 && len(override) == 0 {
+		return nil
+	}
+	merged := make(map[string]string, len(base)+len(override))
+	maps.Copy(merged, base)
+	maps.Copy(merged, override)
+	return merged
 }

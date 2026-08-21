@@ -434,6 +434,15 @@ func (p atlasParser) parseCollection(body *hclsyntax.Body, envName string) ([]Co
 		}
 		p.noteIgnored("attribute", name, attr.NameRange)
 	}
+	// Exporters are top-level and env-independent: an exporter names an output
+	// format, and a format does not change because a different database was
+	// selected. Parsing them into base means every env instance inherits the
+	// same set through Merge (stokaro/ptah#1620).
+	for _, block := range blocks.exporters {
+		if err := p.parseAtlasExporterBlock(block, &base); err != nil {
+			return nil, err
+		}
+	}
 	if err := p.parseSingleAtlasBlock(blocks.globalDiff, &base, p.parseDiff); err != nil {
 		return nil, err
 	}
@@ -478,6 +487,7 @@ type atlasTopBlocks struct {
 	envs       []atlasEnvBlock
 	locals     []*hclsyntax.Block
 	variables  []*hclsyntax.Block
+	exporters  []*hclsyntax.Block
 }
 
 func (p atlasParser) collectAtlasTopBlocks(blocks []*hclsyntax.Block) (atlasTopBlocks, error) {
@@ -734,6 +744,8 @@ func (p atlasParser) collectAtlasTopBlock(block *hclsyntax.Block, collected *atl
 		collected.locals = append(collected.locals, block)
 	case "variable":
 		collected.variables = append(collected.variables, block)
+	case "exporter":
+		collected.exporters = append(collected.exporters, block)
 	case "atlas":
 		// The one top-level name CE KNOWS and refuses, rather than not
 		// recognizing. Measured across nine candidate names on the pinned CE
@@ -1065,6 +1077,15 @@ func (p atlasParser) parseEnvAttr(attrName string, attr *hclsyntax.Attribute, cf
 		}
 		cfg.DevURL = value
 		cfg.presence.mark(fieldDevURL)
+	case "exporter":
+		// The env names which exporter `--export` uses. The template itself
+		// lives in a top-level `exporter` block, because an output format is
+		// not a property of a database (stokaro/ptah#1620).
+		value, err := p.stringAttr(attrName, attr)
+		if err != nil {
+			return err
+		}
+		cfg.ExporterName = value
 	case "src":
 		return p.parseSchemaSources(attr, cfg)
 	case "exclude":

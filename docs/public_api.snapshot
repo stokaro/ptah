@@ -253,6 +253,7 @@ type ConfigBool struct{ ... }
 type DiffConcurrentIndexConfig struct{ ... }
 type DiffConfig struct{ ... }
 type DiffSkipConfig struct{ ... }
+type Exporter struct{ ... }
 type ExternalSchemaConfig struct{ ... }
 type FormatConfig struct{ ... }
 type IgnoredAtlasConstruct struct{ ... }
@@ -269,6 +270,7 @@ type SchemaModeConfig struct{ ... }
 type SchemaRepoConfig struct{ ... }
 type StringField uint8
     const StringEnvName StringField = iota ...
+type UnknownExporterError struct{ ... }
 type Value[T any] struct{ ... }
 
 ### go.5x5.cz/ptah/config/projectconfig.AtlasLoadOptions
@@ -305,6 +307,11 @@ type Config struct {
     // make the no-op visible; the Ptah CLIs warn on stderr while preserving the
     // command's stdout and exit code.
     IgnoredConstructs []IgnoredAtlasConstruct
+    // ExporterName is the exporter an env selects, as its `exporter`
+    // attribute names it. Empty means the env selects none, which is what
+    // makes `--export` refusable rather than silently a no-op.
+    ExporterName string
+
     // EnvName is the selected project env name, when the source had one.
     EnvName string
     // DatabaseURL is the target database URL used by migration commands.
@@ -352,6 +359,8 @@ func ParseAtlasFSCollectionWithOptions(data []byte, filename string, fsys fs.FS,
 func ParseAtlasFSWithOptions(data []byte, filename string, fsys fs.FS, opts AtlasLoadOptions) (Config, error)
 func ParseAtlasWithOptions(data []byte, filename string, opts AtlasLoadOptions) (Config, error)
 func ParsePtah(data []byte, filename, envName string) (Config, error)
+func (c Config) Exporter(name string) (Exporter, error)
+func (c Config) Exporters() []Exporter
 func (c Config) LintLatestValue() Value[int]
 func (c Config) MigrationDirectoryFS(rawURL string) (fs.FS, bool)
 func (c Config) MigrationDirectorySource(rawURL string) (MigrationDirectorySource, bool)
@@ -428,6 +437,33 @@ type DiffSkipConfig struct {
     DiffSkipConfig holds the diff.skip policy: the destructive change kinds a
     project omits from generated migrations. Each field is a tri-state so an
     explicit false can override an inherited true.
+
+
+### go.5x5.cz/ptah/config/projectconfig.Exporter
+
+package projectconfig // import "go.5x5.cz/ptah/config/projectconfig"
+
+type Exporter struct {
+    // Name is the block's label, the token `--export` selects.
+    Name string
+    // Template is the Go text/template body rendered against the report.
+    Template string
+}
+    Exporter is a named output template declared by an atlas.hcl `exporter`
+    block and selected by `--export`.
+
+    # What an exporter is here
+
+    A Go text/template over the same document `--format` renders, stored
+    in the project config under a name. That is the whole design, and it is
+    deliberately small: `schema diff` and `schema inspect` already render their
+    reports through templates, so an exporter needs no evaluator of its own --
+    it is a format the project names once and every invocation can ask for by
+    that name.
+
+    The alternative was a declarative description of output structure,
+    which would have meant a second language to learn, document and version,
+    doing what the template surface already does (stokaro/ptah#1620).
 
 
 ### go.5x5.cz/ptah/config/projectconfig.ExternalSchemaConfig
@@ -710,6 +746,20 @@ type StringField uint8
     command-default resolution.
 
 const StringEnvName StringField = iota ...
+
+### go.5x5.cz/ptah/config/projectconfig.UnknownExporterError
+
+package projectconfig // import "go.5x5.cz/ptah/config/projectconfig"
+
+type UnknownExporterError struct {
+    Name string
+    // Declared lists what the project does declare, so the message can show
+    // the choice rather than only refusing the one that was made.
+    Declared []string
+}
+    UnknownExporterError reports an --export naming no declared exporter.
+
+func (e *UnknownExporterError) Error() string
 
 ### go.5x5.cz/ptah/config/projectconfig.Value
 

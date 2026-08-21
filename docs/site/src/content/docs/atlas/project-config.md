@@ -24,6 +24,7 @@ Ptah accepts these local configuration blocks:
 - `data "template_dir"` for rendered migration directories
 - `env` blocks, with either one label or no label
 - top-level and env-local `lint`
+- top-level `exporter` for named output templates
 - env-local `schema`, `migration`, `format`, and `diff`
 
 Referenced Atlas Cloud and remote-directory sources, registry constructs, and
@@ -711,6 +712,43 @@ outside it, and symbolic links that leave it fail as `outside allowed root`.
 Non-local URI schemes in `migration.dir` and `schema.src` fail explicitly when
 a command needs that configured value; an explicit CLI path flag still wins
 before URI validation.
+
+## Named output templates
+
+An `exporter` block declares a Go template, and an env's `exporter` attribute
+picks which one `--export` renders through:
+
+```hcl
+exporter "markdown" {
+  template = "## Rollout\n{{ range .Changes }}- {{ .Cmd }}\n{{ end }}"
+}
+
+env "local" {
+  url      = "sqlite://app.db"
+  dev      = "sqlite://dev.db"
+  exporter = "markdown"
+}
+```
+
+```bash
+ptah-compat schema diff --env local --from ... --to ... --export
+ptah-compat schema inspect --env local --export
+```
+
+An exporter is `--format` with the template kept in the project instead of in
+every invocation, over the same report that flag renders. That is the whole
+design: the two verbs already render through templates, so a named format needs
+no evaluator of its own, and a declarative description of output structure would
+have been a second language to learn, document and version for the same result.
+
+The block is top-level rather than env-local because an output format is not a
+property of a database — every env can select the same one by name.
+
+Every way an export can fail to name a template is refused rather than answered
+with the ordinary report: no project config, an env selecting none, an env
+naming one nothing declares, a block declaring no template, a name declared
+twice, and `--export` passed alongside `--format`. Each of those would otherwise
+print the default output and let you believe your exporter ran.
 
 ## Environment selection
 
