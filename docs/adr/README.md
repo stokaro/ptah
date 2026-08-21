@@ -11,6 +11,7 @@ a new record that names it, and its own status line is updated to point there.
 | Number | Title | Status |
 | --- | --- | --- |
 | [0001](0001-canonical-schema-state-and-pipeline-boundaries.md) | Canonical schema state and pipeline boundaries | Proposed |
+| [0002](0002-read-only-agent-mvp-scope-and-transport.md) | Read-only agent MVP scope, operation ownership, and transport | Proposed |
 
 ## Writing one
 
