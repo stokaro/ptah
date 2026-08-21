@@ -603,6 +603,27 @@ func TestConvertSQLiteURL(t *testing.T) {
 			expected: ":memory:?_pragma=foreign_keys%281%29",
 		},
 		{
+			// The form this repository's own tests, help text and docs use.
+			// Without the file: prefix SQLite never reads the query at all and
+			// opens a FILE named `dev`, which then carries the previous run's
+			// state into the next plan (stokaro/ptah#1819).
+			name:     "named memory database becomes a uri",
+			input:    "sqlite://dev?mode=memory",
+			expected: "file:dev?_pragma=foreign_keys%281%29&mode=memory",
+		},
+		{
+			name:     "named memory database keeps a shared cache",
+			input:    "sqlite://dev?mode=memory&cache=shared",
+			expected: "file:dev?_pragma=foreign_keys%281%29&cache=shared&mode=memory",
+		},
+		{
+			// A plain path stays a plain path: file: there would change how a
+			// name containing ? or # is read.
+			name:     "a file database is not rewritten",
+			input:    "sqlite://dev.db",
+			expected: "dev.db?_pragma=foreign_keys%281%29",
+		},
+		{
 			name:     "uri memory database",
 			input:    "sqlite:file:memdb1?mode=memory&cache=shared",
 			expected: "file:memdb1?_pragma=foreign_keys%281%29&cache=shared&mode=memory",
