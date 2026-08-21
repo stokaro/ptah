@@ -14,6 +14,7 @@ import (
 
 	_ "github.com/jackc/pgx/v5/stdlib"                   // PostgreSQL driver
 	_ "github.com/microsoft/go-mssqldb"                  // SQL Server driver
+	_ "github.com/sijms/go-ora/v2"                       // Oracle driver
 	_ "github.com/tursodatabase/libsql-client-go/libsql" // libsql (Turso) driver
 
 	"go.5x5.cz/ptah/core/platform"
@@ -24,6 +25,7 @@ import (
 	"go.5x5.cz/ptah/internal/dbschema/clickhouse"
 	"go.5x5.cz/ptah/internal/dbschema/mssql"
 	"go.5x5.cz/ptah/internal/dbschema/mysql"
+	"go.5x5.cz/ptah/internal/dbschema/oracle"
 	"go.5x5.cz/ptah/internal/dbschema/postgres"
 	"go.5x5.cz/ptah/internal/dbschema/sqlite"
 	"go.5x5.cz/ptah/internal/schemaselection"
@@ -62,6 +64,7 @@ func ConnectToDatabase(ctx context.Context, dbURL string) (*DatabaseConnection, 
 		// Without this the empty driver name reaches sql.Open, which answers
 		// `sql: unknown driver "" (forgotten import?)` -- a message about this
 		// package's imports rather than about what the operator asked for.
+		// No dialect reaches this today; it is the arm the next one lands in.
 		return nil, fmt.Errorf(
 			"connecting to %s is not supported yet: Ptah renders and plans %s schemas, "+
 				"and reading a live %s catalog is not implemented", dialect, dialect, dialect)
@@ -171,6 +174,13 @@ func ConnectToDatabase(ctx context.Context, dbURL string) (*DatabaseConnection, 
 		}
 		newWriter = func(runner sqlrunner.Runner, _ *sql.Conn) types.SchemaWriter {
 			return mssql.NewSQLServerWriterForRunner(runner, info.Schema)
+		}
+	case "oracle":
+		newReader = func(runner sqlrunner.Runner) types.SchemaReader {
+			return oracle.NewOracleReader(runner, info.Schema)
+		}
+		newWriter = func(runner sqlrunner.Runner, _ *sql.Conn) types.SchemaWriter {
+			return oracle.NewOracleWriterForRunner(runner, info.Schema)
 		}
 	default:
 		_ = db.Close()
@@ -374,12 +384,9 @@ func databaseDriverConfig(dialect, dbURL string) (driverName, dataSourceName str
 		return "sqlite", convertSQLiteURL(dbURL)
 	case platform.SQLServer:
 		return "sqlserver", convertSQLServerURL(dbURL)
+	case platform.Oracle:
+		return "oracle", dbURL
 	default:
-		// Oracle reaches this arm deliberately. Its renderer and planner are
-		// registered and its capability presets are measured, and no reader
-		// exists, so there is nothing for a live connection to do yet. The
-		// empty driver name is turned into a message naming the dialect by
-		// ConnectToDatabase (stokaro/ptah#1875).
 		return "", ""
 	}
 }
@@ -1066,8 +1073,52 @@ func getDatabaseInfo(ctx context.Context, db *sql.DB, dialect string, parsedURL 
 		info.Schema = "main"
 	case platform.SQLServer:
 		return getSQLServerDatabaseInfo(ctx, db, parsedURL, info)
+	case platform.Oracle:
+		return getOracleDatabaseInfo(ctx, db, parsedURL, info)
 	}
 
+	return info, nil
+}
+
+// getOracleDatabaseInfo reads the version and the schema an Oracle connection
+// works in.
+//
+// The version comes from product_component_version.version_full rather than
+// from the banner, and the difference is measured: on 21.3 the banner says
+// "Release 21.0.0.0.0" while that column says "21.3.0.0.0", and only the second
+// is a release line capability.ResolveServerVersion has measured. The banner
+// carries a second trap on the newer line -- "Oracle AI Database 26ai Free
+// Release 23.26.2.0.0" names 26 before it names 23.26 -- which the resolver
+// handles, and which this column avoids entirely.
+//
+// The schema is the connected user, because in Oracle a schema IS a user:
+// objects live in the namespace of the account that owns them, and there is no
+// separate namespace to select. An explicit ?schema= still wins, for the reader
+// that has been granted access to somebody else's objects.
+func getOracleDatabaseInfo(
+	ctx context.Context,
+	db *sql.DB,
+	parsedURL *url.URL,
+	info types.DBInfo,
+) (types.DBInfo, error) {
+	var version string
+	const versionQuery = `SELECT version_full FROM product_component_version WHERE ROWNUM = 1`
+	if err := db.QueryRowContext(ctx, versionQuery).Scan(&version); err != nil {
+		return info, fmt.Errorf("failed to get Oracle version: %w", err)
+	}
+	info.Version = version
+
+	var currentSchema string
+	const schemaQuery = `SELECT SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA') FROM dual`
+	if err := db.QueryRowContext(ctx, schemaQuery).Scan(&currentSchema); err != nil {
+		return info, fmt.Errorf("failed to get Oracle schema: %w", err)
+	}
+	info.Schema = currentSchema
+	if schema := parsedURL.Query().Get("schema"); schema != "" {
+		info.Schema = schema
+	}
+	info.IdentifierSemantics = identifier.ForDialect(platform.Oracle)
+	info.IdentifierSemantics.DefaultSchema = info.Schema
 	return info, nil
 }
 

@@ -102,6 +102,41 @@ func (r *Renderer) VisitCreateDatabase(node *ast.CreateDatabaseNode) error {
 	return nil
 }
 
+// namedColumnCheck gives an unnamed column CHECK the name the comparison will
+// look for.
+//
+// Oracle names an inline CHECK itself -- measured, a column declared
+// `view_count NUMBER(10) CHECK (view_count >= 0)` comes back from
+// ALL_CONSTRAINTS as SYS_C008794, and the number is per database. The
+// comparison looks for the convention an unnamed column check carries
+// everywhere else, `<table>_<column>_check`, so the first read-back after
+// CREATE TABLE disagrees with the declaration and the next apply renames the
+// constraint. The schema converges, but only on the second run.
+//
+// This is the same defect stokaro/ptah#1716 fixed for SQL Server, whose
+// CK__orders__status__571DF1D5 is the same idea with a different hash.
+//
+// A declaration that names its own check keeps that name; only the unnamed
+// case is filled in.
+func namedColumnCheck(table string, column *ast.ColumnNode) *ast.ColumnNode {
+	if column == nil || column.Check == "" || column.CheckName != "" {
+		return column
+	}
+	named := *column
+	named.CheckName = unquoteIdentifier(tableLeafName(table)) + "_" + column.Name + "_check"
+	return &named
+}
+
+// tableLeafName drops the schema qualifier, so a table in a named schema gets
+// the same check name it would get in the default one.
+func tableLeafName(table string) string {
+	parts := splitQualifiedIdentifier(table)
+	if len(parts) == 0 {
+		return table
+	}
+	return parts[len(parts)-1]
+}
+
 func (r *Renderer) VisitCreateTable(node *ast.CreateTableNode) error {
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
@@ -128,7 +163,7 @@ func (r *Renderer) VisitCreateTable(node *ast.CreateTableNode) error {
 
 	lines := make([]string, 0, len(node.Columns)+len(node.Constraints))
 	for _, column := range node.Columns {
-		line, err := renderColumn(column, r.capabilities())
+		line, err := renderColumn(namedColumnCheck(node.Name, column), r.capabilities())
 		if err != nil {
 			return fmt.Errorf("render column %s: %w", column.Name, err)
 		}
