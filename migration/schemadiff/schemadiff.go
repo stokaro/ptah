@@ -17,6 +17,7 @@ import (
 	"go.5x5.cz/ptah/internal/crdbttl"
 	"go.5x5.cz/ptah/internal/reservedrole"
 	"go.5x5.cz/ptah/internal/schemaselection"
+	"go.5x5.cz/ptah/internal/sqlident"
 	"go.5x5.cz/ptah/internal/sqlitevirtual"
 	"go.5x5.cz/ptah/migration/internal/identifiervalidation"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
@@ -341,6 +342,7 @@ func normalizeInlineEnumsForCompare(
 	normalizedGenerated.Fields = append([]goschema.Field(nil), generated.Fields...)
 	for i := range normalizedGenerated.Fields {
 		field := &normalizedGenerated.Fields[i]
+		resolveDeclaredEnumValues(field, generated.Enums)
 		if len(field.Enum) > 0 {
 			switch platform.NormalizeDialect(opts.Dialect) {
 			case platform.MySQL, platform.MariaDB:
@@ -351,6 +353,9 @@ func normalizeInlineEnumsForCompare(
 			case platform.SQLServer:
 				field.Type = "NVARCHAR(255)"
 				field.Check = sqlServerInlineEnumCheck(*field)
+			case platform.Oracle:
+				field.Type = "VARCHAR2(255)"
+				field.Check = oracleInlineEnumCheck(*field)
 			}
 		}
 	}
@@ -397,9 +402,35 @@ func defaultGeneratedColumnKind(dialect string) string {
 	}
 }
 
+// resolveDeclaredEnumValues fills in the values for the other spelling of an
+// enum column.
+//
+// A column can name its values two ways: inline on the field, or by naming an
+// enum declared elsewhere. The renderer reads the second -- handleEnumTypes
+// finds the enum by the column's type -- and this normalization read only the
+// first, so a schema written with `//ptah:schema:enum` plus `type="status_kind"`
+// rendered as the target's inline model and compared as the enum's own name.
+// Nothing converged: measured on SQLite, the plan rebuilt the table into one
+// whose only difference from the original was none, on every apply.
+//
+// Filling the values here rather than teaching every arm about the second
+// spelling keeps the arms about what a dialect writes, which is what they are
+// for.
+func resolveDeclaredEnumValues(field *goschema.Field, enums []goschema.Enum) {
+	if len(field.Enum) > 0 {
+		return
+	}
+	for _, enum := range enums {
+		if enum.Name == field.Type {
+			field.Enum = enum.Values
+			return
+		}
+	}
+}
+
 func isInlineEnumDialect(dialect string) bool {
 	switch platform.NormalizeDialect(dialect) {
-	case platform.MySQL, platform.MariaDB, platform.SQLite, platform.SQLServer:
+	case platform.MySQL, platform.MariaDB, platform.SQLite, platform.SQLServer, platform.Oracle:
 		return true
 	default:
 		return false
@@ -416,6 +447,25 @@ func sqlServerInlineEnumCheck(field goschema.Field) string {
 		quoted = append(quoted, "'"+strings.ReplaceAll(value, "'", "''")+"'")
 	}
 	enumCheck := "[" + strings.ReplaceAll(field.Name, "]", "]]") + "] IN (" + strings.Join(quoted, ", ") + ")"
+	if field.Check != "" {
+		return "(" + field.Check + ") AND " + enumCheck
+	}
+	return enumCheck
+}
+
+// oracleInlineEnumCheck spells the column the way the Oracle renderer spells the
+// declaration beside it.
+//
+// Oracle refuses a CHECK whose spelling disagrees with the column it constrains,
+// so the two have to be decided by one rule: sqlident.Ident is what the
+// renderer's escapeIdentifier calls, and it is what fromschema.applyInlineEnumModel
+// already uses for the same expression on the rendering side.
+func oracleInlineEnumCheck(field goschema.Field) string {
+	quoted := make([]string, 0, len(field.Enum))
+	for _, value := range field.Enum {
+		quoted = append(quoted, "'"+strings.ReplaceAll(value, "'", "''")+"'")
+	}
+	enumCheck := sqlident.Ident(platform.Oracle, field.Name) + " IN (" + strings.Join(quoted, ", ") + ")"
 	if field.Check != "" {
 		return "(" + field.Check + ") AND " + enumCheck
 	}
