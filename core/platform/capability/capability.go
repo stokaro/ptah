@@ -2477,7 +2477,19 @@ func cockroachDBForVersion(v serverVersion) Capabilities {
 		return CockroachDB263()
 	case compareServerVersion(v, line26) >= 0:
 		return CockroachDB26()
-	case compareServerVersion(v, line25) >= 0:
+	case v.major >= line25.major:
+		// The whole 25 line reaches this arm, not only the measured 25.4
+		// minor. What separates the line from the one below it is
+		// autocommit_before_ddl defaulting on, and that is a major-line fact:
+		// measured through Ptah's driver on v25.1.10, v25.2.22, v25.3.7 and
+		// v25.4.5, a rolled-back CREATE TABLE leaves the table behind on every
+		// one. Comparing the minor as well sent 25.0 through 25.3 to
+		// CockroachDB23, which still promises the rollback they do not do.
+		//
+		// Routing them here also only ever declares less -- CockroachDB25 is
+		// CockroachDB23 minus four capabilities -- which is what a
+		// conservative fallback is for. They stay outside the measured lines,
+		// so VersionSpecific is still false for them (stokaro/ptah#1849).
 		return CockroachDB25()
 	default:
 		return CockroachDB23()

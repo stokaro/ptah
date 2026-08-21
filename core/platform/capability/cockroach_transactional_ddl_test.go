@@ -36,7 +36,22 @@ func TestCockroachTransactionalDDLFollowsTheMeasuredReleases(t *testing.T) {
 		banner:        "CockroachDB CCL v24.3.20 (x86_64-pc-linux-gnu)",
 		wantRollsBack: true,
 	}, {
-		name:          "v25.4 is where the default flipped",
+		// The three minors below the measured 25.4 line. They are the reason
+		// this arm compares majors: on a minor comparison they fell to
+		// CockroachDB23 and kept a rollback none of them does.
+		name:          "v25.1 loses the rollback like the rest of its line",
+		banner:        "CockroachDB CCL v25.1.10 (x86_64-pc-linux-gnu)",
+		wantRollsBack: false,
+	}, {
+		name:          "v25.2 does too",
+		banner:        "CockroachDB CCL v25.2.22 (x86_64-pc-linux-gnu)",
+		wantRollsBack: false,
+	}, {
+		name:          "v25.3 does too",
+		banner:        "CockroachDB CCL v25.3.7 (x86_64-pc-linux-gnu)",
+		wantRollsBack: false,
+	}, {
+		name:          "v25.4 is the measured line of that same fact",
 		banner:        "CockroachDB CCL v25.4.5 (x86_64-pc-linux-gnu)",
 		wantRollsBack: false,
 	}, {
