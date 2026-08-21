@@ -135,9 +135,27 @@ are hard.
 **Accepted.** Naming operations independently of CLI verbs means two vocabularies
 to keep in step, and documentation that maps one to the other.
 
-**Accepted.** A new dependency on the MCP SDK, in a repository that vendors
-little. It is a protocol implementation rather than a framework, and the v1
-commitment is the reason it is tolerable.
+**Accepted.** A new dependency on the MCP SDK, measured rather than described.
+Building a minimal stdio server against v1.7.0 pulls eight modules; four of them
+-- `golang.org/x/oauth2`, `github.com/golang-jwt/jwt/v5`,
+`github.com/segmentio/asm` and `github.com/google/go-cmp`, alongside `x/sync`
+and `x/sys` -- this repository already carries. The net addition is **four**:
+
+	github.com/modelcontextprotocol/go-sdk
+	github.com/google/jsonschema-go
+	github.com/segmentio/encoding
+	github.com/yosida95/uritemplate/v3
+
+Against 126 direct requirements and 392 modules in the current build, that is a
+small addition rather than a large one. An earlier draft of this record called
+the repository one that "vendors little", which the same measurement contradicts;
+the claim is withdrawn rather than left standing, because a decision record that
+argues from a flattering description of the tree cannot be checked.
+
+Worth naming even so: OAuth2 and JWT enter the graph for a stdio-only server,
+because the SDK carries its remote-transport authentication in the same module.
+They are compiled and unused in this phase, and they become relevant when
+stokaro/ptah#1492 opens that transport.
 
 **Accepted, and worth stating.** Freezing a contract early means later phases
 inherit these names. That is the point of freezing them, and it is also the cost:
