@@ -269,8 +269,7 @@ func atlasMigrateApplyFailedVersion(err error, versions []int64, keys []string) 
 }
 
 func atlasMigrateApplyExecutionError(err error) *migrator.MigrationExecutionError {
-	var execErr *migrator.MigrationExecutionError
-	if errors.As(err, &execErr) {
+	if execErr, ok := errors.AsType[*migrator.MigrationExecutionError](err); ok {
 		return execErr
 	}
 	return nil

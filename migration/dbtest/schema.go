@@ -38,6 +38,25 @@ type SchemaOptions struct {
 	// ephemeral SQLite database is provisioned per case in a temporary directory
 	// and removed afterwards.
 	DBURL string
+	// ReportKind labels the report header. Empty leaves it "SCHEMA", which is
+	// what a schema test run is; a plan test run passes "PLAN", because a
+	// header naming the wrong verb is the first thing a reader trusts and the
+	// last thing they check (stokaro/ptah#1211).
+	ReportKind string
+	// ResolveSchema loads the desired state a `schema` block's url names. It
+	// backs the `schema` block of a plan case.
+	//
+	// It resolves rather than applies, so the applying stays in one place: the
+	// same convergence path every other schema step uses. Which URL schemes
+	// exist, and how a desired state is loaded from one, belongs to the command
+	// that knows about schema files (stokaro/ptah#1211). A case using the step
+	// with no callback set fails, rather than silently skipping the state it
+	// was meant to establish.
+	ResolveSchema func(url string) (*goschema.Database, error)
+	// ApplyPlan executes the saved plan file at url against the connected
+	// database. It backs the `apply` block of a plan case, and is supplied by
+	// the caller for the same reason.
+	ApplyPlan func(ctx context.Context, conn *dbschema.DatabaseConnection, url string) error
 }
 
 // RunSchemaTest applies a desired schema — parsed from the Go annotations in
@@ -61,16 +80,23 @@ func RunSchemaTest(ctx context.Context, opts SchemaOptions) (*Report, error) {
 		return nil, fmt.Errorf("invalid test cases: %w", err)
 	}
 
+	// A run with no desired schema at all is legitimate: a plan case builds its
+	// own starting state from the source its `schema` block names, so there is
+	// nothing to converge before the cases and nothing to parse. Parsing
+	// opts.RootDir regardless walked the working directory and refused the run
+	// over an annotation in some unrelated file (stokaro/ptah#1211).
 	schema := opts.Desired
-	if schema == nil {
+	if schema == nil && strings.TrimSpace(opts.RootDir) != "" {
 		parsed, err := goschema.ParseDir(opts.RootDir)
 		if err != nil {
 			return nil, fmt.Errorf("parse desired schema from %s: %w", opts.RootDir, err)
 		}
 		schema = parsed
 	}
-	if err := validateTestSchema(schema); err != nil {
-		return nil, err
+	if schema != nil {
+		if err := validateTestSchema(schema); err != nil {
+			return nil, err
+		}
 	}
 
 	// Provision the desired schema once per database — once per ephemeral
@@ -78,16 +104,29 @@ func RunSchemaTest(ctx context.Context, opts SchemaOptions) (*Report, error) {
 	// per case, so re-creating already-created objects never collides on the
 	// shared-database path.
 	provision := func(ctx context.Context, conn *dbschema.DatabaseConnection) error {
+		if schema == nil {
+			return nil
+		}
 		_, err := applyDesiredSchema(ctx, conn, schema)
 		return err
 	}
 	run := func(ctx context.Context, conn *dbschema.DatabaseConnection, c Case) (CaseResult, error) {
-		r := &runner{conn: conn, desiredSchema: schema, seedDir: opts.SeedDir}
+		r := &runner{
+			conn:          conn,
+			desiredSchema: schema,
+			seedDir:       opts.SeedDir,
+			resolveSchema: opts.ResolveSchema,
+			applyPlan:     opts.ApplyPlan,
+		}
 		r.migrateTo = rejectMigrateToInSchemaTest
 		r.applySchema = r.runApplySchema
 		return r.runCase(ctx, c)
 	}
-	return runCases(ctx, opts.DBURL, "SCHEMA", opts.Cases, provision, run)
+	kind := opts.ReportKind
+	if kind == "" {
+		kind = "SCHEMA"
+	}
+	return runCases(ctx, opts.DBURL, kind, opts.Cases, provision, run)
 }
 
 func desiredSchemaForMigrationCases(rootDir string, cases []Case) (*goschema.Database, error) {

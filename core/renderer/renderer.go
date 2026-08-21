@@ -56,7 +56,6 @@ import (
 	"go.5x5.cz/ptah/internal/clickhouserbac"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/crdbttl"
-	"go.5x5.cz/ptah/internal/matviewrefresh"
 	"go.5x5.cz/ptah/internal/mysqlroutine"
 	"go.5x5.cz/ptah/internal/objectidentity"
 	"go.5x5.cz/ptah/internal/planner/tablelookup"
@@ -384,9 +383,6 @@ func prepareCreateMaterializedViewNode(
 			Err:     ptaherr.ErrInvalidSchemaDiff,
 			Message: "materialized view node is nil",
 		}
-	}
-	if err := matviewrefresh.Validate(dialect, node.Name, node.RefreshStrategy); err != nil {
-		return nil, err
 	}
 	return new(*node), nil
 }
@@ -986,9 +982,6 @@ func validateDatabaseDeclarations(
 	caps capability.Capabilities,
 	database *goschema.Database,
 ) error {
-	if err := matviewrefresh.ValidateDeclared(dialect, database.MaterializedViews); err != nil {
-		return err
-	}
 	if err := schemaselection.ValidateDeclaredPostgresSystemSchemas(dialect, database.Schemas); err != nil {
 		return err
 	}
@@ -1006,7 +999,7 @@ func validateDatabaseDeclarations(
 			Message: err.Error(),
 		}
 	}
-	if err := mysqllike.ValidateDeclaredRoles(dialect, database.Roles); err != nil {
+	if err := mysqllike.ValidateDeclaredRoles(dialect, caps, database.Roles); err != nil {
 		return err
 	}
 	// A domain, composite or range type the target cannot create is refused

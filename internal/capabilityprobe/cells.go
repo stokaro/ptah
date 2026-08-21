@@ -492,6 +492,14 @@ var Cells = []Cell{
 	// shorter track, so "newer" is not "supported longer" here. All four are
 	// supported and certified.
 	{
+		Dialect: platform.CockroachDB, Line: capabilityline.CockroachDB263,
+		Preset: capability.CockroachDB263, PresetName: "CockroachDB263",
+		Refinement: RefinedByVersion, Support: capability.Certified, Image: "cockroachdb/cockroach:latest-v26.3",
+		Note: "measured live on CockroachDB CCL v26.3.0: the first line that carries CREATE DOMAIN " +
+			"(cockroachdb/cockroach#27796), so domain_types is true here and false on every line below " +
+			"it; range_types stays false because cockroachdb/cockroach#27791 is still open",
+	},
+	{
 		Dialect: platform.CockroachDB, Line: capabilityline.CockroachDB26,
 		Preset: capability.CockroachDB26, PresetName: "CockroachDB26",
 		Refinement: RefinedByVersion, Support: capability.Certified, Image: "cockroachdb/cockroach:latest-v26.2",
@@ -550,26 +558,42 @@ var Cells = []Cell{
 		Note:       "no container: the version is the modernc.org/sqlite amalgamation pinned in go.mod",
 	},
 
-	// Spanner is a managed service with no version axis and no local server.
-	// SpannerPostgres' own doc concedes that nothing in it was executed
-	// against a server; issue #942 is the missing container.
+	// Spanner is a managed service with no version axis and no open-source
+	// server. The emulator behind PGAdapter is the only endpoint a container
+	// can provide, and stokaro/ptah#942 closed once this cell started running
+	// it on every pull request. What it does not cover is the hosted product
+	// or an end-to-end suite; see stokaro/ptah#1719.
 	{
 		Dialect: platform.Spanner, Line: "0",
 		Image:       "gcr.io/cloud-spanner-pg-adapter/pgadapter-emulator:v0.55.2",
 		Emulated:    true,
 		Versionless: true,
 		Understates: map[capability.Capability]string{
-			// The PostgreSQL dialect documents `serial` as an alias for an
-			// identity column and `CREATE SEQUENCE`, and the endpoint accepts
-			// both -- so the server does have sequences and the preset says it
-			// does not, on purpose. Serial types there require the database
-			// option `default_sequence_kind` to be set before use, which Ptah
-			// neither sets nor can observe from a schema, so claiming the
-			// capability would emit DDL that fails on a database where nobody
-			// set it. Understating costs a SERIAL column; overstating costs a
-			// migration (stokaro/ptah#942).
-			capability.Sequences: "Spanner has sequences and serial aliases, but a serial column needs the " +
-				"database option default_sequence_kind, which Ptah cannot set or see",
+			// The server does have sequences, and the preset says it does
+			// not, on purpose. Measured 2026-08-21 on this endpoint: a
+			// sequence is created, exists -- creating it again answers
+			// `Duplicate name in schema` -- and drops, while every catalog
+			// surface reports none of them. pg_class filtered to relkind 'S',
+			// pg_sequence, pg_sequences and information_schema.sequences each
+			// return zero rows, because PGAdapter rewrites that view into a
+			// stub built from `select ... where false` (stokaro/ptah#1759).
+			//
+			// A capability key needs a renderer, a reader and a planner
+			// together. Claiming this one would give Ptah the first and not the
+			// second: it would emit CREATE SEQUENCE, read the schema back, see
+			// nothing, and plan the same statement again on every run. Not a
+			// migration that fails once -- a comparison that never converges.
+			// Understating costs a declared sequence; overstating costs
+			// convergence (stokaro/ptah#942, stokaro/ptah#1808).
+			//
+			// An earlier reading rested this on `default_sequence_kind`, which
+			// the reference requires before a serial column. That is a fact
+			// about the managed service, which nothing here runs, and it does
+			// not hold on the endpoint that is measured: a serial column is
+			// accepted with the option untouched. The catalog is the reason
+			// that can be checked.
+			capability.Sequences: "Spanner writes sequences and reports none: every catalog surface " +
+				"returns zero rows, so a sequence Ptah emitted could never be read back",
 		},
 		Preset: capability.SpannerPostgres, PresetName: "SpannerPostgres",
 		Refinement: RefinedByBanner,

@@ -140,10 +140,9 @@ func aliasedMaterializedViewReadbackFixtures(
 	}
 	database := &types.DBSchema{
 		MatViews: []types.DBMatView{{
-			Name:            "user_ids",
-			Schema:          schema,
-			Body:            "SELECT u.id AS id FROM " + readbackSchema + ".users AS u",
-			RefreshStrategy: "manual",
+			Name:   "user_ids",
+			Schema: schema,
+			Body:   "SELECT u.id AS id FROM " + readbackSchema + ".users AS u",
 		}},
 		Views: []types.DBView{{
 			Name: "user_ids_plain",
@@ -177,10 +176,9 @@ func materializedViewReadbackFixtures(
 	}
 	database := &types.DBSchema{
 		MatViews: []types.DBMatView{{
-			Name:            "user_counts",
-			Schema:          schema,
-			Body:            "SELECT count(*) AS c FROM " + readbackSchema + ".users",
-			RefreshStrategy: "manual",
+			Name:   "user_counts",
+			Schema: schema,
+			Body:   "SELECT count(*) AS c FROM " + readbackSchema + ".users",
 		}},
 		Views: []types.DBView{{
 			Name: "user_counts_plain",

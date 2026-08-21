@@ -241,6 +241,7 @@ type Analysis struct {
 	findings         []Finding
 	snapshot         fsnapshot.Snapshot
 	baselineVersions []int64
+	unmetInputs      []UnmetInput
 }
 
 // Files returns every prepared migration file in the captured directory.
@@ -273,6 +274,18 @@ func (a Analysis) Findings() []Finding {
 // versions back through [Options.Baseline]; see [BaselineColumn].
 func (a Analysis) BaselineVersions() []int64 {
 	return slices.Clone(a.baselineVersions)
+}
+
+// UnmetInputs returns every rule that asked for an analyzer input this run did
+// not supply, ordered by file and then by rule code.
+//
+// It is empty for a run that gave every rule what it asked for, which is every
+// run whose second pass had a baseline and every run with nothing to resolve.
+// A non-empty result means the analysis was thinner than the same directory
+// would get with a dev database it could read -- not that anything failed, and
+// not that the findings reported are wrong (stokaro/ptah#1632).
+func (a Analysis) UnmetInputs() []UnmetInput {
+	return slices.Clone(a.unmetInputs)
 }
 
 // SnapshotFS returns a read-only filesystem containing the SQL sources,
@@ -334,7 +347,10 @@ func validateOptions(opts Options) (migrator.MigrationDirFormat, []Rule, error) 
 	if err := validateCompatibilityProfile(opts.Compatibility); err != nil {
 		return "", nil, err
 	}
-	rules := rulesForOptions(opts)
+	rules, err := rulesForOptions(opts)
+	if err != nil {
+		return "", nil, err
+	}
 	if err := validateRules(rules); err != nil {
 		return "", nil, err
 	}
@@ -347,8 +363,8 @@ func validateOptions(opts Options) (migrator.MigrationDirFormat, []Rule, error) 
 	if err := validateConfiguredRuleSelectors(rules, opts); err != nil {
 		return "", nil, err
 	}
-	dirFormat, err := migrator.ParseMigrationDirFormat(string(opts.DirFormat))
-	return dirFormat, rules, err
+	dirFormat, parseErr := migrator.ParseMigrationDirFormat(string(opts.DirFormat))
+	return dirFormat, rules, parseErr
 }
 
 // AnalyzeFS captures and analyzes every *.sql file under fsys recursively.
@@ -439,7 +455,8 @@ func AnalyzeFS(fsys fs.FS, opts Options) (Analysis, error) {
 		files:            files,
 		findings:         cloneFindings(findings),
 		snapshot:         snapshot,
-		baselineVersions: baselineVersions(files),
+		baselineVersions: baselineVersions(files, opts, rules),
+		unmetInputs:      unmetInputs(files, opts, rules),
 	}, nil
 }
 

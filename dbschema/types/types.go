@@ -281,6 +281,26 @@ type DBDomain struct {
 	NotNull  bool   `json:"not_null"`
 	Default  string `json:"default,omitempty"`
 	Check    string `json:"check,omitempty"`
+	// CheckConstraints names each CHECK the catalog holds for this domain,
+	// alongside the expression the server stores for it. Check above is the
+	// same expressions joined with AND, which is what a renderer needs and
+	// what a comparison of the whole domain reads; a constraint cannot be
+	// altered by that joined form, because ALTER DOMAIN ... DROP CONSTRAINT
+	// takes a name.
+	//
+	// It is a reader-only execution fact, like DBFunction.IdentityArguments:
+	// a serialized schema description declares what a domain must enforce,
+	// not what the server happened to name the constraint enforcing it.
+	CheckConstraints []DBDomainCheck `json:"-"`
+}
+
+// DBDomainCheck is one named CHECK constraint of a domain, as the catalog
+// holds it. Expression is the server's own rewritten form -- PostgreSQL
+// reparses and prints a CHECK rather than storing the text it was given -- so
+// it compares equal only to another expression that made the same round trip.
+type DBDomainCheck struct {
+	Name       string
+	Expression string
 }
 
 // QualifiedName returns schema.name when Schema is set, or Name otherwise.
@@ -718,6 +738,9 @@ type SchemaTransaction interface {
 // DBFunction represents a custom function read from the database.
 type DBFunction struct {
 	Name string `json:"name"` // Function name
+	// Kind separates a function from a procedure. Empty means function, which
+	// is what every description written before procedures existed meant.
+	Kind string `json:"kind,omitempty"`
 	// Schema owns the function. Readers blank it for the connection's own
 	// schema, the same convention tables, views and domains follow, so a
 	// filter reconstructs the qualified spelling from the connection's
@@ -826,11 +849,18 @@ func (s DBSynonym) TargetQualifiedName() string {
 
 // DBMatView represents a PostgreSQL materialized view read from the database.
 type DBMatView struct {
-	Name            string `json:"name"`             // Materialized view name
-	Schema          string `json:"schema"`           // Schema where the materialized view is defined
-	Body            string `json:"body"`             // SELECT query used as the materialized view definition
-	RefreshStrategy string `json:"refresh_strategy"` // Reported as manual because catalogs do not persist Ptah refresh policy
-	Comment         string `json:"comment"`          // Materialized view comment/description
+	Name    string `json:"name"`    // Materialized view name
+	Schema  string `json:"schema"`  // Schema where the materialized view is defined
+	Body    string `json:"body"`    // SELECT query used as the materialized view definition
+	Comment string `json:"comment"` // Materialized view comment/description
+
+	// Refresh is the ClickHouse refresh schedule read back from the server,
+	// nil for a view that has none.
+	//
+	// It is read from create_table_query, which is the only place the schedule
+	// survives: system.tables.as_select is byte-identical for a plain view and
+	// a refreshable one (stokaro/ptah#1802).
+	Refresh *ast.MatViewRefreshSpec
 }
 
 // QualifiedName returns schema.materialized_view when Schema is set, or Name otherwise.

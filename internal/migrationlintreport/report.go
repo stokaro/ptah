@@ -607,14 +607,23 @@ func effectiveLintRuleConfigs(
 	}
 	merged := make(map[string]lint.RuleConfig, len(projectRules)+len(configRules))
 	for code, rule := range projectRules {
-		converted := lint.RuleConfig{
+		merged[code] = lint.RuleConfig{
 			Severity: lint.Severity(rule.Severity),
 			Exclude:  slices.Clone(rule.Exclude),
+			// The declaration travels with the entry. Dropping these here is
+			// what would make `lint { rule ... }` parse, validate, and then
+			// never run -- accepted and ignored, which is the state
+			// stokaro/ptah#1706 was filed about.
+			Match:         rule.Match,
+			Message:       rule.Message,
+			Title:         rule.Title,
+			Dialects:      slices.Clone(rule.Dialects),
+			AppliesToDown: rule.AppliesToDown,
 		}
-		merged[code] = converted
 	}
 	for code, rule := range configRules {
 		rule.Exclude = slices.Clone(rule.Exclude)
+		rule.Dialects = slices.Clone(rule.Dialects)
 		merged[code] = rule
 	}
 	return merged
@@ -627,6 +636,7 @@ func cloneLintRuleConfigs(values map[string]lint.RuleConfig) map[string]lint.Rul
 	cloned := make(map[string]lint.RuleConfig, len(values))
 	for code, rule := range values {
 		rule.Exclude = slices.Clone(rule.Exclude)
+		rule.Dialects = slices.Clone(rule.Dialects)
 		cloned[code] = rule
 	}
 	return cloned

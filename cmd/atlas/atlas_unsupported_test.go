@@ -80,7 +80,10 @@ func unsupportedCommandTests() []unsupportedCommandTest {
 		{name: "schema_plan_pull", path: []string{"schema", "plan", "pull"}},
 		{name: "schema_plan_push", path: []string{"schema", "plan", "push"}},
 		{name: "schema_plan_rm", path: []string{"schema", "plan", "rm"}},
-		{name: "schema_plan_test", path: []string{"schema", "plan", "test"}},
+		// `schema plan test` left this list in stokaro/ptah#1211: it takes no
+		// --url and is entirely local, so nothing about it depended on the
+		// registry the rest of these do. It is covered by
+		// TestSchemaPlanTest_RunsAPlanCaseEndToEnd.
 		{name: "schema_push", path: []string{"schema", "push"}},
 	}
 }

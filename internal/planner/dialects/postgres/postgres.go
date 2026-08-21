@@ -1224,6 +1224,7 @@ func (p *Planner) plannedUserTypes(
 	generated *goschema.Database,
 	semantics identifier.Semantics,
 ) []plannedUserType {
+	rebuiltForAdd := rebuiltUserTypes(diff)
 	var planned []plannedUserType
 	for _, name := range diff.DomainsAdded {
 		if domain := findDomain(generated.Domains, name, semantics); domain != nil {
@@ -1254,6 +1255,11 @@ func (p *Planner) plannedUserTypes(
 	// composite has to wait for the recreation, which dropModifiedUserTypes has
 	// already removed by this point.
 	for _, domainDiff := range diff.DomainsModified {
+		if domainIsAlterableInPlace(domainDiff) {
+			// Paired with the same guard in dropModifiedUserTypes: no drop was
+			// emitted, so there is nothing to put back.
+			continue
+		}
 		if domain := findDomain(generated.Domains, domainDiff.DomainName, semantics); domain != nil {
 			planned = append(planned, plannedUserType{
 				dep:  deporder.UserType{Name: domainDiff.DomainName, References: []string{domain.BaseType}},
@@ -1262,6 +1268,11 @@ func (p *Planner) plannedUserTypes(
 		}
 	}
 	for _, compositeDiff := range diff.CompositeTypesModified {
+		if compositeIsAlterableInPlace(compositeDiff, rebuiltForAdd) {
+			// Paired with the same guard in dropModifiedUserTypes: no drop was
+			// emitted, so there is nothing to put back.
+			continue
+		}
 		if composite := findCompositeType(generated.CompositeTypes, compositeDiff.TypeName, semantics); composite != nil {
 			planned = append(planned, plannedUserType{
 				dep:  deporder.UserType{Name: compositeDiff.TypeName, References: compositeFieldTypes(*composite)},
@@ -1350,10 +1361,18 @@ func (p *Planner) dropModifiedUserTypes(
 	generated *goschema.Database,
 ) []ast.Node {
 	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
+	rebuilt := rebuiltUserTypes(diff)
 	byName := make(map[string]ast.Node, len(diff.DomainsModified)+len(diff.CompositeTypesModified))
 	deps := make([]deporder.UserType, 0, len(diff.DomainsModified)+len(diff.CompositeTypesModified))
 	var unresolved []ast.Node
 	for _, domainDiff := range diff.DomainsModified {
+		if domainIsAlterableInPlace(domainDiff) {
+			// alterModifiedDomains reconciles this one with ALTER DOMAIN.
+			// Dropping it here as well would take the domain apart to apply a
+			// change that needed no such thing -- and would fail outright on
+			// any domain a column uses.
+			continue
+		}
 		if findDomain(generated.Domains, domainDiff.DomainName, semantics) == nil {
 			unresolved = append(unresolved, unrecreatableUserTypeComment("domain", domainDiff.DomainName))
 			continue
@@ -1363,6 +1382,12 @@ func (p *Planner) dropModifiedUserTypes(
 		deps = append(deps, deporder.UserType{Name: domainDiff.DomainName, References: currentDomainReferences(domainDiff)})
 	}
 	for _, compositeDiff := range diff.CompositeTypesModified {
+		if compositeIsAlterableInPlace(compositeDiff, rebuilt) {
+			// alterModifiedCompositeTypes reconciles this one with ALTER TYPE.
+			// Dropping it here as well would fail outright on any composite a
+			// table column uses, which is the case the ALTER exists for.
+			continue
+		}
 		if findCompositeType(generated.CompositeTypes, compositeDiff.TypeName, semantics) == nil {
 			unresolved = append(unresolved, unrecreatableUserTypeComment("composite type", compositeDiff.TypeName))
 			continue
@@ -1535,15 +1560,9 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 	if err := p.validateExtensionInstallationSchemas(diff, generated); err != nil {
 		return nil, err
 	}
-	if diff != nil && len(diff.ExtensionsModified) > 0 {
-		change := diff.ExtensionsModified[0]
-		return nil, fmt.Errorf(
-			"%w: cannot move PostgreSQL extension %q from schema %q to schema %q; extension schema moves are not yet supported",
-			ptaherr.ErrInvalidSchemaDiff,
-			change.Name,
-			change.FromSchema,
-			change.ToSchema,
-		)
+	result, err := p.planExtensionChanges(result, diff)
+	if err != nil {
+		return nil, err
 	}
 	// One set of identifier rules for the whole plan. Every question of the form
 	// "do these two spellings name the same object" is answered with it, so the
@@ -1615,6 +1634,13 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 	// new domains/ranges/composites before tables can reference them.
 	result = p.dropModifiedUserTypes(result, diff, generated)
 	result = p.addNewUserTypes(result, diff, generated)
+
+	// 3d. Change in place the domains that need no rebuild. It follows the
+	// creations so that a domain added in this same plan is not also altered,
+	// and it stays ahead of the tables, whose columns take their default and
+	// their constraint from the domain as it is when the column is created.
+	result = p.alterModifiedDomains(result, diff, generated)
+	result = p.alterModifiedCompositeTypes(result, diff, generated)
 
 	// 4. Modify existing enums
 	result = p.modifyExistingEnums(result, diff, generated)
@@ -2021,6 +2047,16 @@ func (p *Planner) removeFunctions(result []ast.Node, diff *types.SchemaDiff) []a
 			SetIfExists().
 			SetComment("WARNING: Ensure no other objects depend on this function")
 		result = append(result, dropFunctionNode)
+	}
+	// A procedure is dropped with its own verb. PostgreSQL answers
+	// `DROP FUNCTION` aimed at one with `could not find a function named ...`,
+	// so the kind the comparator kept is what makes the statement run
+	// (stokaro/ptah#1722).
+	for _, procedureName := range diff.ProceduresRemoved {
+		result = append(result, ast.NewDropFunction(procedureName).
+			SetKind(goschema.FunctionKindProcedure).
+			SetIfExists().
+			SetComment("WARNING: Ensure no other objects depend on this procedure"))
 	}
 	return result
 }

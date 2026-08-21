@@ -737,6 +737,85 @@ analyzer codes the same way as to built-in ones — see
 [Reusable components](../../extend/components/) for registering custom
 rules from Go.
 
+### Declare a rule of your own
+
+A `rules` entry that carries `match` **defines** a rule instead of configuring
+one. The rule runs on `ptah migrations lint` and on the compat `migrate lint`
+alike, with no Go build anywhere:
+
+```yaml
+dialect: postgres
+rules:
+  NOVARCHAR:
+    title: varchar(n) instead of text
+    severity: warning
+    match: 'strcontains(lower(statement.sql), "varchar(")'
+    message: use text, not varchar(n) — postgres stores them identically
+```
+
+The same rule in `atlas.hcl`, where `match` is written as a bare expression:
+
+```hcl
+env "local" {
+  lint {
+    rule "NOVARCHAR" {
+      title    = "varchar(n) instead of text"
+      severity = "warning"
+      match    = strcontains(lower(statement.sql), "varchar(")
+      message  = "use text, not varchar(n)"
+    }
+  }
+}
+```
+
+`match` is an expression evaluated once per statement; the rule fires where it
+is true. `message` is required — a finding whose text is its own rule code says
+what fired and not why it matters. `severity` defaults to `warning`, `title`
+defaults to the code, `dialects` restricts the rule to named dialects, and
+`applies-to-down` (`applies_to_down` in HCL) extends it to the down half of a
+migration.
+
+The code follows the same form as every other rule — uppercase ASCII letters
+and digits — because it is what findings print and what `--disable`,
+`disabled-rules` and a `ptah:nolint` directive select. Put the readable name in
+`title`. A code that already belongs to a built-in rule is refused rather than
+overridden: replacing a data-safety check with an expression that never fires
+would leave the report naming a rule that is not running.
+
+#### What an expression can read
+
+| Name | Meaning |
+| --- | --- |
+| `statement.sql` | the statement as written, comments included |
+| `statement.canonical` | comment-stripped, whitespace-collapsed, uppercased |
+| `statement.words` | token words; string literals and quoted identifiers stay whole |
+| `statement.line` | 1-based line of the statement's first token |
+| `file.path` | the path findings report |
+| `file.is_up`, `file.is_down` | which direction the statement belongs to |
+| `dialect` | the dialect being linted |
+
+Prefer `statement.words` for a rule about SQL keywords: a column named `drop`
+or a string literal containing `DROP COLUMN` cannot impersonate a keyword
+there, and a substring match on `statement.sql` has no way to tell them apart.
+
+The functions are the same set `atlas.hcl` evaluates — `lower`, `upper`,
+`join`, `regexall`, `length` and the rest — plus `strcontains(haystack,
+needle)` for substring matching. Note that `contains` tests **list** membership,
+so it belongs on `statement.words`; using it on a string reports the mistake and
+names `strcontains` as the fix.
+
+There is deliberately no `file`, `fileset`, `getenv` or `print`. A rule that
+could read a file or the environment would report findings that depend on the
+machine it ran on, so the same migration would lint clean on one checkout and
+fail in CI with nothing in the migration to explain it. Evaluation is a pure
+function of the statement, which is what makes a finding reproducible.
+
+An expression must evaluate to a boolean; anything else is refused rather than
+coerced, since a coerced value fires on every statement or on none and both
+look like a working rule. A malformed declaration — an empty or unparseable
+expression, an unknown name, a missing message, an unsupported dialect — fails
+the run before any findings are reported.
+
 ### Suppress a single statement inline
 
 When one reviewed statement is acceptable but the rule should stay active
@@ -916,7 +995,9 @@ The read-only guarantee has two strengths depending on the target. PostgreSQL,
 CockroachDB, YugabyteDB, Spanner, MySQL and MariaDB run the assertion in a
 database-enforced read-only session. SQLite, SQL Server and ClickHouse get a
 plain session, so there the guarantee rests on the static shape check alone. Checks are rejected under `--tx-mode all` on a real apply (a
-pooled read cannot see the batch's uncommitted state), and
+pooled read cannot see the batch's uncommitted state) -- see
+[what `--tx-mode all` cannot carry](../apply/#what---tx-mode-all-cannot-carry)
+for the whole interaction -- and
 `ptah migrations up --skip-checks` is an emergency bypass. On the
 Atlas-compatible surface that bypass is spelled `PTAH_SKIP_CHECKS=1`, because
 Atlas registers no `--skip-checks` on `migrate apply` and `ptah-compat` adds no

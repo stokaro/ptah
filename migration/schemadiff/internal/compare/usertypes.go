@@ -2,9 +2,11 @@ package compare
 
 import (
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
+	"go.5x5.cz/ptah/config"
 	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
@@ -22,7 +24,7 @@ func Domains(
 	diff *difftypes.SchemaDiff,
 	cov Coverage,
 ) {
-	domainsWithSemantics(generated, database, diff, cov, identifier.ForDialect(""))
+	domainsWithSemantics(generated, database, diff, cov, identifier.ForDialect(""), nil)
 }
 
 // DomainsWithSemantics compares domain identity using the target database's
@@ -33,8 +35,9 @@ func DomainsWithSemantics(
 	diff *difftypes.SchemaDiff,
 	cov Coverage,
 	semantics identifier.Semantics,
+	expressions map[string]config.DomainExpression,
 ) {
-	domainsWithSemantics(generated, database, diff, cov, semantics.Normalize(""))
+	domainsWithSemantics(generated, database, diff, cov, semantics.Normalize(""), expressions)
 }
 
 func domainsWithSemantics(
@@ -43,6 +46,7 @@ func domainsWithSemantics(
 	diff *difftypes.SchemaDiff,
 	cov Coverage,
 	semantics identifier.Semantics,
+	expressions map[string]config.DomainExpression,
 ) {
 	generatedDomains := make(map[objectIdentity]goschema.Domain, len(generated.Domains))
 	generatedNames := make(map[objectIdentity]string, len(generated.Domains))
@@ -61,15 +65,16 @@ func domainsWithSemantics(
 
 	for identity, target := range generatedDomains {
 		if current, exists := databaseDomains[identity]; exists {
-			if changes := domainChanges(target, current); len(changes) > 0 {
+			if changes := domainChanges(target, current, expressions[generatedNames[identity]]); len(changes) > 0 {
 				// CurrentBaseType is the from-side of the comparison carried as
 				// a type spelling: the recreate path's non-CASCADE DROP runs
 				// against this database, so it is these references that can
 				// block it, not the target's.
 				diff.DomainsModified = append(diff.DomainsModified, difftypes.DomainDiff{
-					DomainName:      generatedNames[identity],
-					Changes:         changes,
-					CurrentBaseType: current.BaseType,
+					DomainName:              generatedNames[identity],
+					Changes:                 changes,
+					CurrentBaseType:         current.BaseType,
+					CurrentCheckConstraints: domainCheckConstraintNames(current),
 				})
 			}
 			continue
@@ -105,12 +110,32 @@ func domainsWithSemantics(
 
 // domainChanges compares the reconcilable options of a domain: its base type
 // (canonicalized so alias spellings such as VARCHAR vs character varying do not
-// churn) and NOT NULL. CHECK and DEFAULT are intentionally not compared:
-// PostgreSQL rewrites CHECK expressions (adding parentheses and ::casts) on
-// read-back, so a string comparison would report phantom changes, and a phantom
-// change would drive a drop+recreate. They are therefore create-only; changing
-// a domain's CHECK/DEFAULT requires a manual migration.
-func domainChanges(target goschema.Domain, current types.DBDomain) map[string]string {
+// churn), NOT NULL, and -- when a server has normalized the declaration --
+// CHECK and DEFAULT.
+//
+// CHECK and DEFAULT used to be create-only, and the reason was sound: PostgreSQL
+// stores a parsed CHECK and prints it back from the parse tree, so the
+// declaration that produced `(VALUE = ANY (ARRAY['x'::text]))` was
+// `VALUE IN ('x')` and the two never compared equal. What that cost was
+// silence. A changed constraint produced no diff and no diagnostic, so
+// `schema apply` reported a synced schema over a database still enforcing the
+// old rule (stokaro/ptah#1717).
+//
+// A resolved expression is the declaration after the same round trip through
+// the same server, so the two sides are the same language and a difference is a
+// real one. Without one -- an offline comparison has no server to ask -- both
+// attributes stay uncompared, which is the behavior this replaces.
+//
+// The comparison is deliberately one-directional: a declaration that states no
+// CHECK and no DEFAULT is not read as a request to remove the ones the catalog
+// holds. That is this comparator's rule for every attribute a declaration may
+// leave out, and inverting it here would make adopting Ptah over an existing
+// database drop constraints nobody asked about.
+func domainChanges(
+	target goschema.Domain,
+	current types.DBDomain,
+	expression config.DomainExpression,
+) map[string]string {
 	changes := make(map[string]string)
 	if target.BaseType != "" && canonicalizePostgresType(target.BaseType) != canonicalizePostgresType(current.BaseType) {
 		changes["type"] = fmt.Sprintf("%s -> %s", current.BaseType, target.BaseType)
@@ -118,7 +143,49 @@ func domainChanges(target goschema.Domain, current types.DBDomain) map[string]st
 	if target.NotNull != current.NotNull {
 		changes["not_null"] = fmt.Sprintf("%t -> %t", current.NotNull, target.NotNull)
 	}
+	if expression.Resolved {
+		if expression.Check != "" && !domainCheckMatches(expression.Check, current) {
+			changes["check"] = fmt.Sprintf("%s -> %s", current.Check, expression.Check)
+		}
+		if expression.Default != "" && expression.Default != current.Default {
+			changes["default"] = fmt.Sprintf("%s -> %s", current.Default, expression.Default)
+		}
+	}
 	return changes
+}
+
+// domainCheckMatches reports whether the catalog enforces exactly the declared
+// constraint and nothing else.
+//
+// It compares against the constraints one by one rather than against the joined
+// expression the reader also carries. A domain holding two constraints joins as
+// `(a) AND (b)`, and a declaration of `a AND b` normalizes to `((a) AND (b))`:
+// equal in meaning, different by one pair of parentheses, and comparing the
+// joined forms would plan a replacement on every run and converge on nothing.
+// One declared constraint against one stored constraint has no such seam.
+//
+// A domain the reader could not enumerate constraints for -- an older server
+// without the catalog functions -- falls back to the joined form, where a false
+// difference is still better than the silence it replaces.
+func domainCheckMatches(declared string, current types.DBDomain) bool {
+	if current.CheckConstraints == nil {
+		return declared == current.Check
+	}
+	return len(current.CheckConstraints) == 1 &&
+		current.CheckConstraints[0].Expression == declared
+}
+
+// domainCheckConstraintNames lists the catalog's names for a domain's CHECK
+// constraints, so a planner can remove them by name.
+func domainCheckConstraintNames(current types.DBDomain) []string {
+	if len(current.CheckConstraints) == 0 {
+		return nil
+	}
+	names := make([]string, 0, len(current.CheckConstraints))
+	for _, check := range current.CheckConstraints {
+		names = append(names, check.Name)
+	}
+	return names
 }
 
 // pgTypeAliases maps accepted type spellings to the canonical form PostgreSQL's
@@ -215,10 +282,13 @@ func compositeTypesWithSemantics(
 		if targetFields, currentFields := compositeFieldList(target), dbCompositeFieldList(current); targetFields != currentFields {
 			// CurrentFieldTypes is the from-side of the comparison carried as
 			// type spellings, for the reason given on the domain branch above.
+			added, removed := compositeAttributeDelta(target, current)
 			diff.CompositeTypesModified = append(diff.CompositeTypesModified, difftypes.CompositeTypeDiff{
 				TypeName:          generatedNames[identity],
 				Changes:           map[string]string{"fields": fmt.Sprintf("%s -> %s", currentFields, targetFields)},
 				CurrentFieldTypes: dbCompositeFieldTypes(current),
+				AttributesAdded:   added,
+				AttributesRemoved: removed,
 			})
 		}
 	}
@@ -240,6 +310,76 @@ func compositeTypesWithSemantics(
 	sort.Slice(diff.CompositeTypesModified, func(i, j int) bool {
 		return diff.CompositeTypesModified[i].TypeName < diff.CompositeTypesModified[j].TypeName
 	})
+}
+
+// compositeAttributeDelta reports the fields to add and remove, or nothing when
+// ALTER TYPE cannot reach the declared shape.
+//
+// PostgreSQL appends: a new attribute always lands last, whatever position the
+// declaration gives it. So the delta is only usable when dropping the removed
+// fields and appending the added ones produces exactly the declared list. This
+// simulates that and returns nothing when it does not match -- a rebuild then
+// carries the declared order, which is the only way to reach it.
+//
+// A field present on both sides with a different type also returns nothing.
+// ALTER TYPE ... ALTER ATTRIBUTE is refused on a composite a column uses,
+// measured on PostgreSQL 18.4 with CASCADE and without:
+// `cannot alter type "addr" because column "uses_addr.a" uses it`
+// (stokaro/ptah#1717).
+func compositeAttributeDelta(
+	target goschema.CompositeType,
+	current types.DBComposite,
+) ([]difftypes.CompositeAttribute, []string) {
+	declaredTypes := make(map[string]string, len(target.Fields))
+	for _, field := range target.Fields {
+		declaredTypes[strings.ToLower(field.Name)] = canonicalizePostgresType(field.Type)
+	}
+	currentTypes := make(map[string]string, len(current.Fields))
+	for _, field := range current.Fields {
+		currentTypes[strings.ToLower(field.Name)] = canonicalizePostgresType(field.Type)
+	}
+
+	var removed []string
+	survivors := make([]string, 0, len(current.Fields))
+	for _, field := range current.Fields {
+		name := strings.ToLower(field.Name)
+		declaredType, kept := declaredTypes[name]
+		if !kept {
+			removed = append(removed, field.Name)
+			continue
+		}
+		if declaredType != currentTypes[name] {
+			return nil, nil
+		}
+		survivors = append(survivors, name)
+	}
+
+	var added []difftypes.CompositeAttribute
+	for _, field := range target.Fields {
+		if _, held := currentTypes[strings.ToLower(field.Name)]; held {
+			continue
+		}
+		added = append(added, difftypes.CompositeAttribute{Name: field.Name, Type: field.Type})
+	}
+	if len(added) == 0 && len(removed) == 0 {
+		return nil, nil
+	}
+
+	// The shape ALTER TYPE would actually leave behind: survivors in catalog
+	// order, then the additions in declaration order.
+	reached := make([]string, 0, len(target.Fields))
+	reached = append(reached, survivors...)
+	for _, field := range added {
+		reached = append(reached, strings.ToLower(field.Name))
+	}
+	declaredOrder := make([]string, 0, len(target.Fields))
+	for _, field := range target.Fields {
+		declaredOrder = append(declaredOrder, strings.ToLower(field.Name))
+	}
+	if !slices.Equal(reached, declaredOrder) {
+		return nil, nil
+	}
+	return added, removed
 }
 
 func compositeFieldList(composite goschema.CompositeType) string {

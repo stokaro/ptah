@@ -108,3 +108,38 @@ func TestGenerateIncludesIndexCoveringColumns(t *testing.T) {
 		"Comma-separated INCLUDE columns for covering indexes (PostgreSQL: default/BTREE/GIST, plus SPGIST on 14+; YugabyteDB: default/LSM, with BTREE as the default-LSM alias; Spanner PostgreSQL dialect: default only).",
 	)
 }
+
+// TestGenerateRefusesRetiredAttributesAndSaysWhy pins the one property shape
+// that is neither accepted nor absent.
+//
+// An editor validating a source file against this document is the only place a
+// retired attribute is diagnosed before Ptah runs, so it has to fail there --
+// but fail for the stated reason. Deleting the key would fail too, via
+// additionalProperties, which is the message a misspelling gets.
+func TestGenerateRefusesRetiredAttributesAndSaysWhy(t *testing.T) {
+	c := qt.New(t)
+
+	generated, err := annotationschema.Generate()
+	c.Assert(err, qt.IsNil)
+
+	var doc map[string]any
+	c.Assert(json.Unmarshal(generated, &doc), qt.IsNil)
+	defs := doc["$defs"].(map[string]any)
+	matview := defs["ptah.schema.matview"].(map[string]any)
+	container := matview["properties"].(map[string]any)
+	attributes := container["attributes"].(map[string]any)
+	properties := attributes["properties"].(map[string]any)
+
+	refresh, present := properties["refresh_strategy"].(map[string]any)
+	c.Assert(present, qt.IsTrue)
+	c.Assert(refresh["not"], qt.DeepEquals, make(map[string]any))
+	c.Assert(refresh["type"], qt.IsNil)
+	c.Assert(refresh["description"], qt.Matches, `Retired: refused when the annotation is parsed, on every dialect\. Ptah does not refresh materialized views.*`)
+	c.Assert(refresh["x-ptah-retired"], qt.Matches, `Ptah does not refresh materialized views.*`)
+
+	// The body next to it is still an ordinary accepted attribute, so the
+	// refusal above is a property of retirement rather than of this directive.
+	body := properties["body"].(map[string]any)
+	c.Assert(body["not"], qt.IsNil)
+	c.Assert(body["type"], qt.Equals, "string")
+}

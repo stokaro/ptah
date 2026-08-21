@@ -10,8 +10,12 @@ import (
 	"go.5x5.cz/ptah/cmd/atlas"
 )
 
-// TestSchemaUIFlagsAreRegisteredRefusals pins the decision taken on the two
-// UI-bound flags: they parse, and they refuse with a named reason.
+// TestSchemaUIFlagsAreRegisteredRefusals pins the decision taken on --web: it
+// parses, and it refuses with a named reason.
+//
+// --export was here too until stokaro/ptah#1620 implemented it. What is left of
+// it in this table is the case where there is nothing to select, which still
+// has to refuse for the reason the whole flag once did.
 //
 // Reverted, both rows fail with `unknown flag`, which is the state that made a
 // script passing the spelling unable to learn anything. Turned into a silent
@@ -38,8 +42,12 @@ func TestSchemaUIFlagsAreRegisteredRefusals(t *testing.T) {
 			},
 			want: "render it with --format '{{ mermaid . }}'",
 		},
+		// --export left this table in stokaro/ptah#1620: it is implemented, so
+		// there is no refusal to word. Its own refusals -- the ones that keep
+		// an export nobody declared from silently emitting the ordinary
+		// report -- are covered by TestSchemaExportRefusesWhatItCannotResolve.
 		{
-			name: "schema diff --export",
+			name: "schema diff --export with no project config",
 			args: func(dbPath string) []string {
 				return []string{
 					"schema", "diff",
@@ -48,19 +56,7 @@ func TestSchemaUIFlagsAreRegisteredRefusals(t *testing.T) {
 					"--export",
 				}
 			},
-			want: "atlas schema diff accepts --export, but Ptah does not implement its behavior",
-		},
-		{
-			name: "schema diff --export names what it would need",
-			args: func(dbPath string) []string {
-				return []string{
-					"schema", "diff",
-					"--from", "sqlite://" + dbPath,
-					"--to", "sqlite://" + dbPath,
-					"--export",
-				}
-			},
-			want: "atlas.hcl `exporter` block",
+			want: "an exporter is declared by an atlas.hcl `exporter` block",
 		},
 	}
 	for _, test := range tests {

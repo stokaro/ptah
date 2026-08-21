@@ -60,7 +60,7 @@ func TestSchemaCleanScopeRefusesUnselectedPostgresDependents(t *testing.T) {
 	c.Assert(code, qt.Equals, 1, qt.Commentf("stdout=%q stderr=%q", stdout, stderr))
 	c.Assert(stdout, qt.Contains, `DROP TABLE IF EXISTS "users" RESTRICT`)
 	c.Assert(stdout, qt.Not(qt.Contains), "CASCADE")
-	c.Assert(stderr, qt.Contains, "other objects depend on it")
+	c.Assert(stderr, qt.Contains, "would leave dependents behind")
 	c.Assert(postgresScopedDependencyObjectCount(t, scopedURL), qt.Equals, 4)
 }
 
@@ -112,7 +112,7 @@ func TestSchemaCleanScopeRollsBackPostgresPlanWhenRestrictRefuses(t *testing.T) 
 	c.Assert(code, qt.Equals, 1, qt.Commentf("stdout=%q stderr=%q", stdout, stderr))
 	c.Assert(stdout, qt.Contains, `DROP CONSTRAINT "b_child_parent_id_fkey"`)
 	c.Assert(stdout, qt.Contains, `DROP TABLE IF EXISTS "z_blocked" RESTRICT`)
-	c.Assert(stderr, qt.Contains, "other objects depend on it")
+	c.Assert(stderr, qt.Contains, "would leave dependents behind")
 	c.Assert(postgresCleanupDependencyCount(t, scopedURL), qt.Equals, 5)
 }
 
@@ -191,4 +191,48 @@ func postgresScopedDependencyObjectCount(t *testing.T, dbURL string) int {
 	).Scan(&count)
 	c.Assert(err, qt.IsNil)
 	return count
+}
+
+// TestSchemaCleanScopeRollsBackWhenAForeignKeyBlocksTheDrop keeps the savepoint
+// and rollback machinery under test after stokaro/ptah#1704.
+//
+// The dependents pre-check reads pg_rewrite, which records the definitions of
+// views and materialized views. A FOREIGN KEY is not recorded there, so a drop
+// blocked by one still reaches the server, still answers 2BP01, and still rolls
+// the whole transaction back -- the path the sibling rollback test exercised
+// before its own case started being refused early.
+//
+// Without this, the pre-check would have quietly retired the coverage for the
+// machinery it sits in front of.
+func TestSchemaCleanScopeRollsBackWhenAForeignKeyBlocksTheDrop(t *testing.T) {
+	c := qt.New(t)
+	scopedURL := postgresCleanupDependencySchema(t, "fk_rollback")
+	postgresCleanupDependencyExec(t, scopedURL,
+		"CREATE TABLE a_parent (id INTEGER PRIMARY KEY)",
+		"CREATE TABLE b_child (id INTEGER PRIMARY KEY, parent_id INTEGER REFERENCES a_parent(id))",
+	)
+
+	// Captured before the run rather than written as a literal: what this
+	// asserts is that NOTHING changed, and a hard-coded number states the
+	// fixture's shape instead, which is a second thing to keep in step.
+	before := postgresCleanupDependencyCount(t, scopedURL)
+
+	compat := buildSchemaInspectBinary(c, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
+	stdout, stderr, code := runAtlasBinary(
+		compat,
+		nil,
+		"schema", "clean",
+		"--url", scopedURL,
+		"--include", "a_parent[type=table]",
+		"--auto-approve",
+	)
+
+	c.Assert(code, qt.Equals, 1, qt.Commentf("stdout=%q stderr=%q", stdout, stderr))
+	c.Assert(stdout, qt.Contains, `DROP TABLE IF EXISTS "a_parent" RESTRICT`)
+	// The server's own sentence, not the pre-check's: this dependency is
+	// invisible to pg_rewrite, which is the point of the case.
+	c.Assert(stderr, qt.Contains, "other objects depend on it")
+	c.Assert(stderr, qt.Not(qt.Contains), "would leave dependents behind")
+	// Everything survives: the transaction rolled back.
+	c.Assert(postgresCleanupDependencyCount(t, scopedURL), qt.Equals, before)
 }

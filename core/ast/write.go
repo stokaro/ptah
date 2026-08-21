@@ -41,14 +41,61 @@ type InsertStatement struct {
 	// Columns is the inserted column list, each a quoted identifier. Required and
 	// non-empty; every row must supply exactly one value per column.
 	Columns []string
-	// Rows is the list of value rows. At least one row is required, and each row
-	// must have the same length as Columns. Values are bound row by row, in order.
+	// Rows is the list of value rows. At least one row is required unless Select
+	// supplies the rows instead, and each row must have the same length as
+	// Columns. Values are bound row by row, in order.
 	Rows [][]Expression
+	// Select supplies the inserted rows from a query rather than from literal
+	// values: INSERT INTO t (a, b) SELECT x, y FROM u.
+	//
+	// It is mutually exclusive with Rows. A statement carrying both is a
+	// contradiction rather than a merge -- VALUES and SELECT are alternative
+	// sources in the grammar, and picking one silently would insert rows the
+	// caller did not ask for (stokaro/ptah#941).
+	//
+	// The query's projection must supply one expression per column. That is the
+	// server's rule rather than Ptah's, but it is checked here because the
+	// mismatch is a runtime error naming neither side, and the builder knows
+	// both.
+	Select *SelectStatement
 	// Returning is the optional RETURNING projection: the columns to return from
 	// the inserted rows. An empty slice emits no RETURNING. RETURNING is supported
 	// only on the PostgreSQL family and SQLite; the renderer rejects it on MySQL
 	// and MariaDB rather than emit SQL those engines cannot run.
 	Returning []ColumnRef
+	// OnConflict is the optional upsert clause. Nil emits none, and a row that
+	// collides then fails the statement as it always did.
+	OnConflict *OnConflict
+}
+
+// OnConflict describes what an INSERT does when a row collides with an existing
+// one.
+//
+// # Why the shape is this and not richer
+//
+// The engines do not agree, and the disagreement is about MEANING rather than
+// spelling. PostgreSQL and SQLite name the constraint to watch --
+// `ON CONFLICT (email) DO UPDATE` fires for that key and no other. MySQL and
+// MariaDB have no such target: `ON DUPLICATE KEY UPDATE` fires for ANY unique
+// key on the table. So a statement naming a target means one thing on one
+// engine and something broader on the other, and the renderer refuses the
+// combination rather than emit it (stokaro/ptah#941).
+//
+// SQL Server expresses this as MERGE, a different statement with its own
+// source, join condition and match clauses, and ClickHouse has no upsert
+// statement at all -- its ReplacingMergeTree is a table engine, deduplicating
+// in the background rather than at insert time. Both are refused by name.
+type OnConflict struct {
+	// Columns is the conflict target: the columns whose unique index the
+	// insert watches. Empty means "any unique key", which every supported
+	// engine can express.
+	Columns []string
+	// DoNothing discards a colliding row. It is mutually exclusive with Update.
+	DoNothing bool
+	// Update lists the columns to overwrite from the row that was proposed.
+	// Empty with DoNothing false is an error rather than a silent no-op: a
+	// clause that updates nothing is either DoNothing or a mistake.
+	Update []string
 }
 
 // UpdateStatement is an UPDATE … SET … over a single table, with an optional

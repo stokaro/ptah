@@ -1,7 +1,9 @@
 package projectconfig
 
 import (
+	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/hashicorp/hcl/v2/hclsyntax"
 	"github.com/zclconf/go-cty/cty"
@@ -17,11 +19,71 @@ type atlasBodyStructure struct {
 type atlasBlockStructure struct {
 	body   atlasBodyStructure
 	labels int
+	// tolerateOtherLabelArity sends a block of this type written with a
+	// DIFFERENT number of labels down the unknown-block path instead of
+	// refusing it.
+	//
+	// One block name carries two meanings under `lint`: Atlas spells a custom
+	// rule `rule "hcl" "name" { src = [...] }`, which CE ignores and so does
+	// Ptah, and Ptah declares one as `rule "CODE" { match = ... }`, which Ptah
+	// runs. The label count is what tells them apart, so the arity mismatch
+	// here is not a malformed block -- it is the other spelling
+	// (stokaro/ptah#1706).
+	tolerateOtherLabelArity bool
+}
+
+// checkBlockArityAndUniqueness answers the two block-level shape questions:
+// does this block carry the labels its structure declares, and has an
+// identically-addressed block already been seen.
+//
+// It reports handled=true when the block was recorded as ignored and the
+// caller should move on to the next one.
+func (p atlasParser) checkBlockArityAndUniqueness(
+	scope string,
+	block *hclsyntax.Block,
+	blockStructure atlasBlockStructure,
+	structure atlasBodyStructure,
+	seen map[string]struct{},
+) (bool, error) {
+	if len(block.Labels) != blockStructure.labels {
+		if blockStructure.tolerateOtherLabelArity && structure.allowUnknownBlocks {
+			// The other spelling of this block name; record and skip it
+			// exactly as an unrecognized block.
+			return true, p.recordIgnoredBlock(scope, block)
+		}
+		// Label arity is left refusing for now. CE applies the block and
+		// ignores the extra labels -- measured -- so this is a known
+		// remaining divergence, not the rule above.
+		return false, unsupportedBlock(block)
+	}
+	// A LABELED block type is a collection rather than a singleton: `rule
+	// "A"` and `rule "B"` are two different rules, not one block written
+	// twice. Keying the duplicate check on the labels as well as the type
+	// is what lets a project declare more than one of them, and it changes
+	// nothing for the unlabeled blocks -- every other entry in these maps
+	// declares zero labels, so their key is still the bare type.
+	key := block.Type + "\x00" + strings.Join(block.Labels, "\x00")
+	if _, duplicate := seen[key]; duplicate {
+		if len(block.Labels) > 0 {
+			// A labeled block is addressed BY its label, so the useful
+			// message names it: two `rule "NOVARCHAR"` blocks are a
+			// collision between two definitions, not an unsupported
+			// construct, and "unsupported" sends the reader looking for a
+			// spelling mistake that is not there.
+			return false, fmt.Errorf("duplicate %s %q at %s:%d",
+				block.Type, strings.Join(block.Labels, " "),
+				block.TypeRange.Filename, block.TypeRange.Start.Line)
+		}
+		return false, unsupportedBlock(block)
+	}
+	seen[key] = struct{}{}
+	return false, nil
 }
 
 func atlasEnvBodyStructure() atlasBodyStructure {
 	return atlasBodyStructure{
-		attributes:             []string{"dev", "exclude", "for_each", "name", "schemas", "src", "url"},
+		// "exporter" names the output template --export selects (stokaro/ptah#1620).
+		attributes:             []string{"dev", "exclude", "exporter", "for_each", "name", "schemas", "src", "url"},
 		allowUnknownAttributes: true,
 		allowUnknownBlocks:     true,
 		blocks: map[string]atlasBlockStructure{
@@ -97,6 +159,24 @@ func atlasEnvBodyStructure() atlasBodyStructure {
 						"git":              {body: atlasTolerantLeafStructure("base", "dir")},
 						"incompatible":     {body: atlasTolerantLeafStructure("error")},
 						"nestedtx":         {body: atlasTolerantLeafStructure("error")},
+						// `rule` is Ptah's own: it declares a lint check rather
+						// than configuring one of CE's analyzers
+						// (stokaro/ptah#1706). It is listed here so the
+						// structure walk treats it as a KNOWN block; left
+						// unknown, the tolerated-block path evaluates the whole
+						// body, and `match` is a predicate over a statement
+						// that does not exist yet -- so a perfectly good rule
+						// failed with "there is no function named strcontains".
+						"rule": {
+							labels:                  1,
+							tolerateOtherLabelArity: true,
+							body: atlasBodyStructure{
+								attributes: []string{
+									"applies_to_down", "dialects", "match", "message", "severity", "title",
+								},
+								allowUnknownAttributes: true,
+							},
+						},
 					},
 				},
 			},
@@ -682,16 +762,13 @@ func (p atlasParser) validateAtlasBodyStructure(scope string, body *hclsyntax.Bo
 			}
 			continue
 		}
-		if len(block.Labels) != blockStructure.labels {
-			// Label arity is left refusing for now. CE applies the block and
-			// ignores the extra labels -- measured -- so this is a known
-			// remaining divergence, not the rule above.
-			return unsupportedBlock(block)
+		handled, err := p.checkBlockArityAndUniqueness(scope, block, blockStructure, structure, seen)
+		if err != nil {
+			return err
 		}
-		if _, duplicate := seen[block.Type]; duplicate {
-			return unsupportedBlock(block)
+		if handled {
+			continue
 		}
-		seen[block.Type] = struct{}{}
 		if err := p.validateAtlasBodyStructure(scope+"."+block.Type, block.Body, blockStructure.body); err != nil {
 			return err
 		}

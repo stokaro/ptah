@@ -320,6 +320,10 @@ func convertFunctions(database *goschema.Database, dbFunctions []dbschematypes.D
 		function := goschema.Function{
 			StructName: "", // Functions are not associated with specific structs in DB schema
 			Name:       dbFunction.QualifiedName(),
+			// The kind travels with the routine. Dropping it here would turn
+			// every read-back procedure into a function, which is what the
+			// reader used to do by filtering them out (stokaro/ptah#1722).
+			Kind:       dbFunction.Kind,
 			Parameters: dbFunction.Parameters,
 			Returns:    dbFunction.Returns,
 			Language:   dbFunction.Language,
@@ -395,12 +399,11 @@ func convertViews(database *goschema.Database, dbViews []dbschematypes.DBView) {
 func convertMaterializedViews(database *goschema.Database, dbViews []dbschematypes.DBMatView) {
 	for _, dbView := range dbViews {
 		materializedView := goschema.MaterializedView{
-			Name:            dbView.QualifiedName(),
-			Body:            dbView.Body,
-			RefreshStrategy: dbView.RefreshStrategy,
-			Comment:         dbView.Comment,
+			Name:    dbView.QualifiedName(),
+			Body:    dbView.Body,
+			Comment: dbView.Comment,
+			Refresh: dbView.Refresh.Clone(),
 		}
-		materializedView.Canonicalize()
 		database.MaterializedViews = append(database.MaterializedViews, materializedView)
 	}
 }

@@ -14,7 +14,7 @@ package ast
 // GroupBy column list, and a Having expression on SelectStatement; a general
 // FuncCall expression node for COUNT / SUM / AVG / MIN / MAX; and an optional
 // Expr (and Alias) on ResultColumn so a projection entry can be an expression
-// rather than a plain column. Non-aggregate functions, arithmetic, LIKE,
+// rather than a plain column. Non-aggregate functions, arithmetic,
 // subqueries, and window functions remain follow-up phases. The types are shaped
 // so those extensions slot in without breaking callers (for example, Comparison
 // takes Expression operands on both sides rather than a bare column string, so a
@@ -79,6 +79,16 @@ const (
 	OpGreaterThan
 	// OpGreaterThanOrEqual is the >= operator.
 	OpGreaterThanOrEqual
+	// OpLike is the LIKE operator.
+	//
+	// Its CASE SENSITIVITY belongs to the server, not to Ptah: PostgreSQL's
+	// LIKE is case-sensitive, MySQL's follows the column's collation and is
+	// usually not, and SQLite's folds ASCII. Ptah emits the operator and lets
+	// each engine mean what it means -- inventing a portable spelling would
+	// claim a uniformity none of them share (stokaro/ptah#941).
+	OpLike
+	// OpNotLike is the NOT LIKE operator. See OpLike on case sensitivity.
+	OpNotLike
 )
 
 // String returns the SQL token for the operator, or an empty string when the
@@ -98,6 +108,10 @@ func (op ComparisonOperator) String() string {
 		return ">"
 	case OpGreaterThanOrEqual:
 		return ">="
+	case OpLike:
+		return "LIKE"
+	case OpNotLike:
+		return "NOT LIKE"
 	default:
 		return ""
 	}
@@ -126,9 +140,28 @@ func (*Comparison) expressionNode() {}
 type InExpr struct {
 	// Operand is the expression tested for membership, typically a ColumnRef.
 	Operand Expression
-	// Values are the candidate values, each bound as a placeholder.
+	// Values are the candidate values, each bound as a placeholder. Exactly one
+	// of Values and Subquery must be set.
 	Values []Expression
+	// Subquery, when set, replaces Values and renders as
+	// "Operand IN (SELECT …)". The two are mutually exclusive rather than
+	// combined: a caller who set both would be describing two different
+	// membership tests, and picking one silently would answer a question that
+	// was never asked.
+	Subquery *SelectStatement
 }
+
+// ExistsExpr is a row-existence test of the form "EXISTS (SELECT …)" or, when
+// Negated, "NOT EXISTS (SELECT …)".
+//
+// The subquery's projection is irrelevant to the test but is still rendered as
+// written; EXISTS stops at the first row either way.
+type ExistsExpr struct {
+	Query   *SelectStatement
+	Negated bool
+}
+
+func (*ExistsExpr) expressionNode() {}
 
 func (*InExpr) expressionNode() {}
 
@@ -213,9 +246,103 @@ type FuncCall struct {
 	// Distinct emits the DISTINCT keyword before the arguments, as in
 	// COUNT(DISTINCT "col").
 	Distinct bool
+	// Over turns the call into a window function: SUM("x") OVER (PARTITION BY
+	// "y" ORDER BY "z" ASC). Nil emits no OVER clause and the call is an
+	// ordinary one.
+	//
+	// A window function is legal wherever a projection expression is, and
+	// nowhere else -- notably not in WHERE, because the window is computed
+	// after the rows are filtered. The renderer does not enforce that: the
+	// engines report it clearly and in their own terms, and a builder-side rule
+	// would have to model where each clause sits rather than what it contains
+	// (stokaro/ptah#941).
+	Over *WindowSpec
+}
+
+// WindowSpec is the OVER (...) clause of a window function.
+//
+// # What it deliberately does not model
+//
+// A frame clause -- ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW and its
+// relatives -- is a further phase. Without one the engine applies its default
+// frame, which is well defined and is what an unframed window means everywhere:
+// RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW when the window is ordered,
+// and the whole partition when it is not. Emitting no frame is therefore
+// honest rather than incomplete; emitting a guessed one would change results.
+type WindowSpec struct {
+	// PartitionBy divides the rows into groups the function is computed over.
+	// Empty computes over the whole result set.
+	PartitionBy []ColumnRef
+	// OrderBy orders the rows within each partition. Empty leaves the order
+	// unspecified, which for a ranking function means the engine may return any
+	// ordering -- a query relying on one is relying on that engine.
+	OrderBy []OrderByClause
 }
 
 func (*FuncCall) expressionNode() {}
+
+// ArithmeticOperator enumerates the binary arithmetic operators.
+type ArithmeticOperator int
+
+const (
+	// OpAdd is the + operator.
+	OpAdd ArithmeticOperator = iota
+	// OpSubtract is the - operator.
+	OpSubtract
+	// OpMultiply is the * operator.
+	OpMultiply
+	// OpDivide is the / operator.
+	OpDivide
+	// OpModulo is the % operator.
+	//
+	// Its spelling is portable; its RESULT for a negative operand is not.
+	// PostgreSQL and SQLite take the sign of the dividend, so -7 % 3 is -1;
+	// other engines differ. Ptah emits the operator and leaves the engine's
+	// arithmetic to the engine (stokaro/ptah#941).
+	OpModulo
+)
+
+// String returns the SQL token for the operator, or an empty string when the
+// operator is outside the defined range. Renderers treat an empty string as an
+// error rather than emitting invalid SQL.
+func (op ArithmeticOperator) String() string {
+	switch op {
+	case OpAdd:
+		return "+"
+	case OpSubtract:
+		return "-"
+	case OpMultiply:
+		return "*"
+	case OpDivide:
+		return "/"
+	case OpModulo:
+		return "%"
+	default:
+		return ""
+	}
+}
+
+// Arithmetic is a binary arithmetic expression of the form
+// "(Left <Operator> Right)".
+//
+// # Why it always renders its own parentheses
+//
+// The node is a TREE and SQL is text, so `Mul(Add(a, b), c)` and
+// `Add(a, Mul(b, c))` have to render differently. Emitting them without
+// parentheses produces `a + b * c` for both, and the server then applies its own
+// precedence -- which agrees with one of the two trees and silently rewrites the
+// other. Parenthesizing every node costs a pair of characters and makes the
+// rendered text mean exactly what the caller built (stokaro/ptah#941).
+type Arithmetic struct {
+	// Left is the left-hand operand.
+	Left Expression
+	// Operator is the arithmetic operator.
+	Operator ArithmeticOperator
+	// Right is the right-hand operand.
+	Right Expression
+}
+
+func (*Arithmetic) expressionNode() {}
 
 // SortDirection is the direction of an ORDER BY term.
 type SortDirection int
@@ -337,12 +464,31 @@ type JoinClause struct {
 // Subqueries, non-aggregate functions, arithmetic, and window functions are not
 // modeled yet. Render it with renderer.RenderSelect, which returns the SQL string
 // and its positional arguments. Build one fluently with the core/query package.
+// CommonTableExpression is one named subquery of a WITH clause.
+//
+// Name is emitted as a quoted identifier and referenced from the outer query's
+// From (or a join) as a plain table name. Query is rendered in parentheses, and
+// its bound values are appended before the outer query's, which is what keeps
+// positional placeholders in the order the driver will read them.
+type CommonTableExpression struct {
+	Name  string
+	Query *SelectStatement
+}
+
 type SelectStatement struct {
 	// Distinct renders SELECT DISTINCT, deduplicating result rows. It defaults to
 	// false, so a zero statement renders a plain SELECT unchanged.
 	Distinct bool
 	// Columns is the projection. An empty slice renders as "*".
 	Columns []ResultColumn
+	// With is the optional WITH clause: named subqueries evaluated before the
+	// main query and referenced from it by name. An empty slice emits no WITH.
+	//
+	// Only non-recursive CTEs are modeled. RECURSIVE needs a UNION ALL body and
+	// a termination argument the builder has no way to state, and emitting the
+	// keyword without one would produce a query that runs forever rather than
+	// one that fails to parse.
+	With []CommonTableExpression
 	// From is the source table, rendered as a quoted identifier. Required.
 	From string
 	// FromAlias is the optional alias for the source table; empty means no alias.

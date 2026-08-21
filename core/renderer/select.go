@@ -33,9 +33,11 @@ import (
 //
 // Supported dialects are the PostgreSQL family (PostgreSQL itself, CockroachDB,
 // YugabyteDB, and Cloud Spanner's PostgreSQL interface — the set
-// platform.IsPostgresFamily reports), plus MySQL, MariaDB, and SQLite. SQL
-// Server and ClickHouse are not supported yet and are refused by name; see
-// selectPlaceholderStyle. Any other dialect returns an error, as does a nil
+// platform.IsPostgresFamily reports), plus MySQL, MariaDB, SQLite, ClickHouse
+// and SQL Server. SQL Server binds @p1, @p2, … and pages with
+// OFFSET/FETCH rather than LIMIT, synthesizing ORDER BY (SELECT NULL) when the
+// caller ordered nothing, because T-SQL accepts neither clause without one.
+// Any other dialect returns an error, as does a nil
 // statement, a statement without a FROM table, an empty IN list, a malformed
 // operator, a function call with an invalid name or a bad argument shape, a GROUP
 // BY term with an empty column, a join without a table or ON condition, or a
@@ -60,8 +62,16 @@ type placeholderStyle int
 const (
 	// placeholderDollar numbers parameters $1, $2, … (PostgreSQL family).
 	placeholderDollar placeholderStyle = iota
-	// placeholderQuestion emits ? for every parameter (MySQL, MariaDB, SQLite).
+	// placeholderQuestion emits ? for every parameter (MySQL, MariaDB, SQLite,
+	// ClickHouse).
 	placeholderQuestion
+	// placeholderAtP numbers parameters @p1, @p2, … (SQL Server).
+	//
+	// SQL Server has no positional `?` in T-SQL itself; its drivers bind named
+	// parameters, and @pN is the name the standard Go driver generates for an
+	// ordinal argument. Emitting `?` here would render SQL the server parses as
+	// a syntax error rather than as a parameter.
+	placeholderAtP
 )
 
 // selectRenderer holds the mutable state for one RenderSelect call: the target
@@ -71,6 +81,8 @@ type selectRenderer struct {
 	placeholder placeholderStyle
 	args        []any
 	buf         strings.Builder
+	// nestDepth bounds WITH nesting; see maxNestDepth.
+	nestDepth int
 }
 
 func newSelectRenderer(dialect string) (*selectRenderer, error) {
@@ -93,19 +105,28 @@ func newSelectRenderer(dialect string) (*selectRenderer, error) {
 // is true, sqlutil.Rebind gives it $n, NewRendererWithCapabilities routes its
 // DDL through the PostgreSQL renderer, and dbschema reads it over pgx.
 //
-// SQL Server and ClickHouse are deliberately absent. Neither is a missing map
-// entry: SQL Server needs a third placeholder style (@p1, @p2, … — what
-// sqlutil.Rebind already emits for it), T-SQL pagination in place of LIMIT, and
-// an OUTPUT-versus-RETURNING decision; ClickHouse needs a decided statement
-// shape for UPDATE and DELETE, whose mutation forms are not the portable
-// statements this renderer emits. Both are tracked on stokaro/ptah#941.
+// SQL Server and ClickHouse are both present as of stokaro/ptah#941, and what
+// each needed is worth recording because neither was a missing map entry.
+//
+// SQL Server needed a third placeholder style (@p1, @p2, … — the same style
+// sqlutil.Rebind already emits for it) and T-SQL pagination in place of LIMIT;
+// see renderFetchOffset. Its OUTPUT clause is still unmodeled, so a RETURNING
+// projection is refused by supportsReturning rather than silently mapped onto a
+// clause with different placement and different semantics.
+//
+// ClickHouse needed nothing here — it takes ? and backticks like MySQL — but it
+// executes only two of the four verbs portably. UPDATE and DELETE are mutations
+// there and are refused by refuseUnportableWrite with that reason, which is a
+// statement about the engine rather than about this table.
 func selectPlaceholderStyle(normalized string) (placeholderStyle, bool) {
 	if platform.IsPostgresFamily(normalized) {
 		return placeholderDollar, true
 	}
 	switch normalized {
-	case platform.MySQL, platform.MariaDB, platform.SQLite:
+	case platform.MySQL, platform.MariaDB, platform.SQLite, platform.ClickHouse:
 		return placeholderQuestion, true
+	case platform.SQLServer:
+		return placeholderAtP, true
 	default:
 		return 0, false
 	}
@@ -114,10 +135,14 @@ func selectPlaceholderStyle(normalized string) (placeholderStyle, bool) {
 // bind records value as a positional argument and returns its placeholder.
 func (r *selectRenderer) bind(value any) string {
 	r.args = append(r.args, value)
-	if r.placeholder == placeholderDollar {
+	switch r.placeholder {
+	case placeholderDollar:
 		return "$" + strconv.Itoa(len(r.args))
+	case placeholderAtP:
+		return "@p" + strconv.Itoa(len(r.args))
+	default:
+		return "?"
 	}
-	return "?"
 }
 
 // quote returns identifier quoted for the renderer's dialect.
@@ -153,6 +178,9 @@ func (r *selectRenderer) writeTableRef(table, alias string) {
 func (r *selectRenderer) render(stmt *ast.SelectStatement) error {
 	if strings.TrimSpace(stmt.From) == "" {
 		return errors.New("renderer: select statement requires a FROM table")
+	}
+	if err := r.renderWith(stmt.With); err != nil {
+		return err
 	}
 
 	r.buf.WriteString("SELECT ")
@@ -192,7 +220,70 @@ func (r *selectRenderer) render(stmt *ast.SelectStatement) error {
 		return err
 	}
 
+	// T-SQL accepts OFFSET/FETCH only after an ORDER BY, so a row-limited query
+	// with no ordering is a SYNTAX ERROR on SQL Server rather than an unordered
+	// result. `ORDER BY (SELECT NULL)` is the documented spelling for "no
+	// particular order", which is exactly the semantics every other dialect
+	// gives an unordered LIMIT -- so this synthesizes the same meaning rather
+	// than imposing an order the caller did not ask for (stokaro/ptah#941).
+	if r.dialect == platform.SQLServer &&
+		len(stmt.OrderBy) == 0 && (stmt.Limit != nil || stmt.Offset != nil) {
+		r.buf.WriteString(" ORDER BY (SELECT NULL)")
+	}
+
 	r.renderLimitOffset(stmt.Limit, stmt.Offset)
+	return nil
+}
+
+// maxNestDepth bounds how far one statement may nest inside another.
+//
+// Both a CTE and a subquery hold a *SelectStatement, so a caller can build a
+// cycle by pointing either at a statement that already contains it. Rendering
+// would then recurse until the stack ran out, which is a crash rather than a
+// diagnostic. One counter covers both, because the two nest through each other.
+const maxNestDepth = 16
+
+// renderWith emits the WITH clause, if any, before the SELECT it precedes.
+//
+// The subqueries are rendered first and in order, which is what puts their
+// bound values ahead of the outer query's in args: a positional driver reads
+// $1 from the first CTE, not from the first WHERE.
+func (r *selectRenderer) renderWith(ctes []ast.CommonTableExpression) error {
+	if len(ctes) == 0 {
+		return nil
+	}
+	r.nestDepth++
+	defer func() { r.nestDepth-- }()
+	if r.nestDepth > maxNestDepth {
+		return fmt.Errorf("renderer: statement nests deeper than %d, which a cycle would do", maxNestDepth)
+	}
+
+	r.buf.WriteString("WITH ")
+	for i, cte := range ctes {
+		if err := r.renderCTE(i, cte); err != nil {
+			return err
+		}
+	}
+	r.buf.WriteString(" ")
+	return nil
+}
+
+func (r *selectRenderer) renderCTE(index int, cte ast.CommonTableExpression) error {
+	if strings.TrimSpace(cte.Name) == "" {
+		return errors.New("renderer: common table expression requires a name")
+	}
+	if cte.Query == nil {
+		return fmt.Errorf("renderer: common table expression %q requires a query", cte.Name)
+	}
+	if index > 0 {
+		r.buf.WriteString(", ")
+	}
+	r.buf.WriteString(r.quote(cte.Name))
+	r.buf.WriteString(" AS (")
+	if err := r.render(cte.Query); err != nil {
+		return err
+	}
+	r.buf.WriteString(")")
 	return nil
 }
 
@@ -330,6 +421,8 @@ func (r *selectRenderer) renderExpr(expr ast.Expression) error {
 		return nil
 	case *ast.Comparison:
 		return r.renderComparison(e)
+	case *ast.ExistsExpr:
+		return r.renderExists(e)
 	case *ast.InExpr:
 		return r.renderIn(e)
 	case *ast.NullTest:
@@ -340,9 +433,39 @@ func (r *selectRenderer) renderExpr(expr ast.Expression) error {
 		return r.renderNot(e)
 	case *ast.FuncCall:
 		return r.renderFuncCall(e)
+	case *ast.Arithmetic:
+		return r.renderArithmetic(e)
 	default:
 		return fmt.Errorf("renderer: unsupported expression type %T", expr)
 	}
+}
+
+// renderArithmetic writes a binary arithmetic expression, always parenthesized.
+//
+// The parentheses are not decoration. The node is a tree and SQL is text, so
+// without them `Mul(Add(a, b), c)` and `Add(a, Mul(b, c))` both render as
+// `a + b * c` and the server picks one reading by its own precedence --
+// agreeing with one tree and silently rewriting the other. See ast.Arithmetic.
+func (r *selectRenderer) renderArithmetic(expr *ast.Arithmetic) error {
+	if expr == nil {
+		return errors.New("renderer: nil arithmetic expression")
+	}
+	symbol := expr.Operator.String()
+	if symbol == "" {
+		return fmt.Errorf("renderer: unknown arithmetic operator %d", expr.Operator)
+	}
+	r.buf.WriteString("(")
+	if err := r.renderExpr(expr.Left); err != nil {
+		return err
+	}
+	r.buf.WriteString(" ")
+	r.buf.WriteString(symbol)
+	r.buf.WriteString(" ")
+	if err := r.renderExpr(expr.Right); err != nil {
+		return err
+	}
+	r.buf.WriteString(")")
+	return nil
 }
 
 func (r *selectRenderer) renderColumnRef(ref *ast.ColumnRef) error {
@@ -381,12 +504,45 @@ func (r *selectRenderer) renderComparison(cmp *ast.Comparison) error {
 	return r.renderExpr(cmp.Right)
 }
 
+// renderNested renders one statement inside another, inside parentheses, under
+// the shared nesting bound.
+func (r *selectRenderer) renderNested(stmt *ast.SelectStatement) error {
+	r.nestDepth++
+	defer func() { r.nestDepth-- }()
+	if r.nestDepth > maxNestDepth {
+		return fmt.Errorf("renderer: statement nests deeper than %d, which a cycle would do", maxNestDepth)
+	}
+	r.buf.WriteString("(")
+	if err := r.render(stmt); err != nil {
+		return err
+	}
+	r.buf.WriteString(")")
+	return nil
+}
+
+func (r *selectRenderer) renderExists(exists *ast.ExistsExpr) error {
+	if exists == nil {
+		return errors.New("renderer: nil EXISTS expression")
+	}
+	if exists.Query == nil {
+		return errors.New("renderer: EXISTS requires a subquery")
+	}
+	if exists.Negated {
+		r.buf.WriteString("NOT ")
+	}
+	r.buf.WriteString("EXISTS ")
+	return r.renderNested(exists.Query)
+}
+
 func (r *selectRenderer) renderIn(in *ast.InExpr) error {
 	if in == nil {
 		return errors.New("renderer: nil IN expression")
 	}
+	if in.Subquery != nil {
+		return r.renderInSubquery(in)
+	}
 	if len(in.Values) == 0 {
-		return errors.New("renderer: IN requires at least one value")
+		return errors.New("renderer: IN requires at least one value or a subquery")
 	}
 	if err := r.renderExpr(in.Operand); err != nil {
 		return err
@@ -402,6 +558,19 @@ func (r *selectRenderer) renderIn(in *ast.InExpr) error {
 	}
 	r.buf.WriteString(")")
 	return nil
+}
+
+// renderInSubquery renders the membership form that reads its candidates from
+// a query rather than from a value list.
+func (r *selectRenderer) renderInSubquery(in *ast.InExpr) error {
+	if len(in.Values) > 0 {
+		return errors.New("renderer: IN takes either values or a subquery, not both")
+	}
+	if err := r.renderExpr(in.Operand); err != nil {
+		return err
+	}
+	r.buf.WriteString(" IN ")
+	return r.renderNested(in.Subquery)
 }
 
 func (r *selectRenderer) renderNullTest(test *ast.NullTest) error {
@@ -478,8 +647,16 @@ func (r *selectRenderer) renderFuncCall(fn *ast.FuncCall) error {
 	if fn.Star {
 		return r.renderFuncStar(name, fn)
 	}
-	if len(fn.Args) == 0 {
-		return fmt.Errorf("renderer: function %s requires at least one argument", name)
+	// A zero-argument call is meaningless without a window -- SUM() computes
+	// nothing -- but with one it is the whole shape of a ranking function:
+	// ROW_NUMBER(), RANK() and DENSE_RANK() take no arguments and get their
+	// input from the OVER clause. So the argument requirement is lifted exactly
+	// where the window supplies what the arguments would have
+	// (stokaro/ptah#941).
+	if len(fn.Args) == 0 && fn.Over == nil {
+		return fmt.Errorf(
+			"renderer: function %s requires at least one argument, or a window that supplies its input",
+			name)
 	}
 	r.buf.WriteString(name)
 	r.buf.WriteString("(")
@@ -491,6 +668,43 @@ func (r *selectRenderer) renderFuncCall(fn *ast.FuncCall) error {
 			r.buf.WriteString(", ")
 		}
 		if err := r.renderExpr(arg); err != nil {
+			return err
+		}
+	}
+	r.buf.WriteString(")")
+	return r.renderWindowSpec(fn.Over)
+}
+
+// renderWindowSpec writes the OVER (...) clause of a window function.
+//
+// An empty spec still renders `OVER ()`, which is valid and means the whole
+// result set: the clause is what makes the call a window function, so omitting
+// it for an empty spec would silently turn one back into an ordinary aggregate
+// over the group -- a different query with a different answer
+// (stokaro/ptah#941).
+func (r *selectRenderer) renderWindowSpec(spec *ast.WindowSpec) error {
+	if spec == nil {
+		return nil
+	}
+	r.buf.WriteString(" OVER (")
+	if len(spec.PartitionBy) > 0 {
+		r.buf.WriteString("PARTITION BY ")
+		for i := range spec.PartitionBy {
+			if i > 0 {
+				r.buf.WriteString(", ")
+			}
+			column := spec.PartitionBy[i]
+			if strings.TrimSpace(column.Name) == "" {
+				return errors.New("renderer: window PARTITION BY term has an empty column")
+			}
+			r.writeQualifiedIdent(column.Qualifier, column.Name)
+		}
+	}
+	if len(spec.OrderBy) > 0 {
+		if len(spec.PartitionBy) > 0 {
+			r.buf.WriteString(" ")
+		}
+		if err := r.writeOrderByTerms(spec.OrderBy); err != nil {
 			return err
 		}
 	}
@@ -510,7 +724,7 @@ func (r *selectRenderer) renderFuncStar(name string, fn *ast.FuncCall) error {
 	}
 	r.buf.WriteString(name)
 	r.buf.WriteString("(*)")
-	return nil
+	return r.renderWindowSpec(fn.Over)
 }
 
 // isSafeFunctionName reports whether name is a simple SQL identifier — a letter
@@ -555,7 +769,18 @@ func (r *selectRenderer) renderOrderBy(terms []ast.OrderByClause) error {
 	if len(terms) == 0 {
 		return nil
 	}
-	r.buf.WriteString(" ORDER BY ")
+	r.buf.WriteString(" ")
+	return r.writeOrderByTerms(terms)
+}
+
+// writeOrderByTerms writes "ORDER BY <term>, <term>" with no leading space.
+//
+// The statement's ORDER BY and a window's share this, rather than each spelling
+// the loop: a term is a term, and two copies would let one learn a rule the
+// other did not -- an empty column refused in one place and emitted in the
+// other (stokaro/ptah#941).
+func (r *selectRenderer) writeOrderByTerms(terms []ast.OrderByClause) error {
+	r.buf.WriteString("ORDER BY ")
 	for i, term := range terms {
 		if i > 0 {
 			r.buf.WriteString(", ")
@@ -594,6 +819,10 @@ const (
 // structural constant, not caller data, so it is emitted as a literal and does
 // not consume a placeholder; the OFFSET value remains bound.
 func (r *selectRenderer) renderLimitOffset(limit, offset *int64) {
+	if r.dialect == platform.SQLServer {
+		r.renderFetchOffset(limit, offset)
+		return
+	}
 	if limit != nil {
 		r.buf.WriteString(" LIMIT ")
 		r.buf.WriteString(r.bind(*limit))
@@ -606,6 +835,32 @@ func (r *selectRenderer) renderLimitOffset(limit, offset *int64) {
 	if offset != nil {
 		r.buf.WriteString(" OFFSET ")
 		r.buf.WriteString(r.bind(*offset))
+	}
+}
+
+// renderFetchOffset writes SQL Server's row-limiting clause.
+//
+// T-SQL has no LIMIT. The ANSI spelling it accepts is
+// `OFFSET n ROWS FETCH NEXT m ROWS ONLY`, and OFFSET is mandatory before FETCH
+// -- so a query with only a limit still emits `OFFSET 0 ROWS`. That zero is a
+// structural constant rather than caller data, so it is written as a literal and
+// consumes no placeholder, which keeps the argument order the doc comment
+// promises (stokaro/ptah#941).
+func (r *selectRenderer) renderFetchOffset(limit, offset *int64) {
+	if limit == nil && offset == nil {
+		return
+	}
+	r.buf.WriteString(" OFFSET ")
+	if offset != nil {
+		r.buf.WriteString(r.bind(*offset))
+	} else {
+		r.buf.WriteString("0")
+	}
+	r.buf.WriteString(" ROWS")
+	if limit != nil {
+		r.buf.WriteString(" FETCH NEXT ")
+		r.buf.WriteString(r.bind(*limit))
+		r.buf.WriteString(" ROWS ONLY")
 	}
 }
 

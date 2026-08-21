@@ -65,6 +65,7 @@ the declared set cannot say one thing here and another in a workflow file.
 | `clickhouse` | 26.3 | certified | `ClickHouse2411` | yes |
 | `clickhouse` | 25.8 | certified | `ClickHouse2411` | yes |
 | `clickhouse` | 24.10 | legacy-tested | `ClickHouse24` | yes |
+| `cockroachdb` | 26.3 | certified | `CockroachDB263` | yes |
 | `cockroachdb` | 26.2 | certified | `CockroachDB26` | yes |
 | `cockroachdb` | 25.4 | certified | `CockroachDB25` | yes |
 | `yugabytedb` | 2026.1 | certified | `YugabyteDB25` | yes |
@@ -76,9 +77,9 @@ the declared set cannot say one thing here and another in a workflow file.
 | `sqlserver` | 15.0 (SQL Server 2019) | best-effort | `SQLServer2022` | no |
 | `sqlite` | 3 | certified | `SQLite3` | no |
 
-Declared release lines: 27. Probed on every pull request: 23.
+Declared release lines: 28. Probed on every pull request: 24.
 
-Support levels across the 27 declared lines: 22 certified, 2 legacy-tested, 3 best-effort.
+Support levels across the 28 declared lines: 23 certified, 2 legacy-tested, 3 best-effort.
 
 Lines that are declared and not probed, and why:
 
@@ -240,6 +241,38 @@ the generate / compare / migrate / rollback lifecycle.
 [PostgreSQL](../postgresql/) covers each area and its version-dependent
 behavior.
 
+### Materialized view refresh
+
+Ptah does not refresh materialized views, and a declaration cannot ask it to.
+A `refresh_strategy` attribute is refused when the schema is parsed, on every
+dialect and in every frontend.
+
+That is a boundary rather than a missing feature. `REFRESH MATERIALIZED VIEW`
+is a statement someone runs, and `CONCURRENTLY` is an option of that statement;
+neither is state the database holds, so nothing Ptah reads back could report a
+refresh policy or diff one. What Ptah does manage keeps the view current on its
+own terms: `CREATE MATERIALIZED VIEW` populates the view, and a changed body is
+reconciled as a `DROP` and a `CREATE` that populates it again. Measured on
+PostgreSQL 18.
+
+The case that is left over is a view no schema change touched, going stale
+because its **source data** moved. Schema reconciliation cannot observe that,
+so a refresh emitted there would be an unbounded data operation attached to a
+migration on a relationship Ptah inferred. Issue it yourself, from whatever
+already knows when the data changed:
+
+```sql
+REFRESH MATERIALIZED VIEW CONCURRENTLY analytics.user_counts;
+```
+
+`CONCURRENTLY` needs a unique index on the view, or the server answers
+`cannot refresh materialized view "public.mv" concurrently`.
+
+ClickHouse is a different matter and is covered in its own section: an ordinary
+materialized view there is maintained by inserts into its source, and the
+scheduled form the server does own, `REFRESH EVERY|AFTER`, is engine-native DDL
+and is managed — see the ClickHouse section below.
+
 ## MySQL and MariaDB
 
 MySQL and MariaDB share one planner and renderer family, but they are separate
@@ -352,9 +385,16 @@ matching preset automatically.
 CockroachDB and YugabyteDB run in integration coverage against live
 open-source containers. Their reader coverage seeds a table, index, view,
 materialized view, sequence, and row-level security policy, then verifies both
-`ptah db read` and `ptah-compat schema inspect`. Spanner coverage is offline
-(capability, planning, rendering, URL, and detection), so review generated SQL
-before relying on it.
+`ptah db read` and `ptah-compat schema inspect`.
+
+Spanner runs both now: its capability rows are measured on every pull request,
+and an integration target exercises render, apply, read and compare against the
+Cloud Spanner emulator behind PGAdapter, which the `spanner` compose profile
+starts.
+
+It stays best-effort for a reason that no amount of coverage changes: an
+emulator is evidence about the PostgreSQL interface, not about the managed
+service. Review generated SQL before relying on it.
 PostgreSQL and YugabyteDB reject unsupported database-scoped publications,
 subscriptions, logical replication slots, event triggers, and non-extension
 foreign-data objects before dev-database cleanup. PostgreSQL additionally
@@ -516,10 +556,32 @@ reads the object back from `system.tables`, and plans a changed query as a drop
 followed by a create. Several ClickHouse-specific points are worth knowing
 before adopting them:
 
-- `refresh_strategy` accepts only `manual`, which means Ptah emits no separate
-  refresh operation. It does not change ClickHouse's insert-driven materialized
-  view maintenance. Any other value is refused before rendering or comparison,
-  with the dialect, materialized view, and value in the error.
+- A materialized view maintains itself from inserts into its source. Ptah
+  declares no refresh strategy and emits no refresh: a declaration that carries
+  `refresh_strategy` is refused when it is parsed, on every dialect.
+
+- ClickHouse's own **scheduled** materialized views are managed. A declaration
+  carries the schedule as ClickHouse spells it, and Ptah renders it, reads it
+  back, and reconciles it:
+
+  ```go
+  //ptah:schema:matview name="user_stats" body="SELECT count() AS c FROM users" refresh="every 1 hour"
+  ```
+
+  The server rewrites what it stores — `EVERY 60 MINUTE` becomes `EVERY 1 HOUR`,
+  `AFTER 90 SECOND` becomes `AFTER 1 MINUTE 30 SECOND` — so a declaration is
+  normalized to the stored spelling before anything compares it. Any spelling of
+  the same schedule therefore converges instead of re-planning forever.
+
+  A changed schedule is applied with `ALTER TABLE <view> MODIFY REFRESH`, which
+  keeps the rows the view accumulated. A view gaining its first schedule or
+  losing its last is a drop and a create instead, because the server refuses
+  that transition in place: `Alter of type 'MODIFY_REFRESH' is not supported by
+  storage MaterializedView`. That drop empties the view.
+
+  `OFFSET`, `RANDOMIZE FOR`, `DEPENDS ON` and `APPEND` are carried too. `OFFSET`
+  belongs to `EVERY` alone, and an interval mixing calendar units with clock
+  ones is refused where it is declared, both matching the server.
 
 - The storage clause is written explicitly rather than left to the server.
   ClickHouse 25.x and later accept a materialized view with no storage clause
@@ -553,9 +615,8 @@ before adopting them:
   empties the view.
 
 The `TO <target table>` form and refreshable materialized views are not emitted:
-the shared schema model carries a name and a query, so it cannot name a separate
-target table, and `REFRESH MATERIALIZED VIEW` remains a named diagnostic because
-ClickHouse has no such statement.
+the shared schema model carries a name and a query, so it can name neither a
+separate target table nor a refresh schedule.
 
 A materialized view created elsewhere with `TO <target table>` is still read, and
 it is read as though it owned its storage: `system.tables` reports the same

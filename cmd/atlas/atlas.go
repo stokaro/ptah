@@ -289,10 +289,12 @@ func newAtlasSchemaCommand(policy atlascompatpolicy.Policy) *cobra.Command {
 	cmd.AddCommand(newAtlasSchemaDiffCommand(policy))
 	cmd.AddCommand(newAtlasSchemaFmtCommand())
 	if policy.IsStrictCE() {
-		addAtlasCommunityGatedCommands(cmd, "schema", []string{"plan", "push", "test"})
+		addAtlasCommunityGatedCommands(cmd, "schema", []string{"plan", "push", "stats", "test", "validate"})
 	} else {
 		cmd.AddCommand(newAtlasSchemaPlanCommand())
 		cmd.AddCommand(newAtlasAdapterCommand("schema", atlasSchemaTestVerb()))
+		cmd.AddCommand(newAtlasAdapterCommand("schema", atlasSchemaValidateVerb()))
+		cmd.AddCommand(newAtlasSchemaStatsCommand())
 		addAtlasUnsupportedCommands(cmd, []atlasUnsupportedVerb{
 			{use: "push", short: "Push schema state to a remote registry"},
 		})
@@ -570,10 +572,11 @@ func atlasMigrateDownVerb() atlasVerb {
 			// before touching the target (native --shadow-db).
 			atlasargs.NativeString("dev-url", "", "Dev database URL the rollback plan is verified on before applying it", "shadow-db"),
 			atlasargs.NativeString("to-version", "", "Target version to roll back to", "target"),
-			// --to-tag targets a hosted registry tag, for which Ptah intentionally
-			// has no counterpart (see docs/site/src/content/docs/reference/atlas-commands.md).
-			atlasargs.UnsupportedStringReason("to-tag", "", "Target migration tag to roll back to",
-				"migration tags require a hosted registry; use --to-version with a migration version instead"),
+			// --to-tag resolves against the tags `ptah migrations tag` records
+			// in the database, not against a hosted registry. The waiver this
+			// replaces said migration tags require one; they do not, and the
+			// tag namespace added for stokaro/ptah#1621 is where these resolve.
+			atlasargs.NativeString("to-tag", "", "Target migration tag to roll back to", "to-tag"),
 			atlasargs.NativeBool("dry-run", "", "Show rollback plan without applying it", "dry-run"),
 			// --format is implemented by newAtlasMigrateDownCommand, which
 			// intercepts it before the arg mapper runs. The Unsupported marker
@@ -583,22 +586,25 @@ func atlasMigrateDownVerb() atlasVerb {
 			atlasargs.UnsupportedString("format", "", "Atlas Go template output format"),
 			atlasargs.NativeString("revisions-schema", "", "Schema for the revision table", "migrations-schema"),
 			atlasargs.NativeString("lock-timeout", "", "Timeout for acquiring migration locks", "migration-lock-timeout"),
-			// --skip-checks skips the checks of a hosted pre-planned down
-			// migration; Ptah reverts through locally reviewed down files and
-			// has no generated checks to skip.
+			// --skip-checks bypasses the pre-migration checks the down bodies
+			// being rolled back carry.
 			//
-			// Explicit-only, unlike the waivers around it, because `migrate
-			// apply` reads PTAH_SKIP_CHECKS as its pre-migration check bypass.
-			// An ambient value meant for an apply is not a request for hosted down
-			// checks, and must not refuse a rollback.
-			atlasargs.ExplicitUnsupportedBoolReason("skip-checks", "", "Skip down migration safety checks",
-				"down checks require a hosted plan-approval workflow; Ptah reverts through locally reviewed down migrations and has no generated checks to skip"),
-			// --plan forces Atlas's registry-bound dynamic down planning.
-			// Ptah's local plan files (the `schema plan` workflow) are
-			// declarative apply plans, not down plans, so forcing a down plan
-			// has no local meaning and is rejected rather than faked.
-			atlasargs.UnsupportedBoolReason("plan", "", "Force dynamic down planning",
-				"dynamic down planning requires a hosted plan-approval workflow; use --dev-url to verify the pre-planned rollback on a dev database instead"),
+			// The waiver this replaces said Ptah had no generated checks to
+			// skip. That stopped being true when stokaro/ptah#1715 taught
+			// `-- +ptah check` the down direction: a down body's checks run
+			// before its statements and abort the rollback, so there is a real
+			// thing to bypass, and refusing the flag left an operator with a
+			// blocking check no flag could get past.
+			atlasargs.NativeBool("skip-checks", "", "Skip the pre-migration checks in the down migrations being rolled back", "skip-checks"),
+			// --plan derives the rollback from the schema difference instead of
+			// running the down bodies, which is what makes a migration with no
+			// down body revertible.
+			//
+			// The waiver this replaces called dynamic down planning
+			// hosted-only. It is not: the target version's schema is built on
+			// --dev-url and compared against the live database, both locally
+			// (stokaro/ptah#1621).
+			atlasargs.NativeBool("plan", "", "Derive the rollback from the schema difference instead of running the down migrations", "plan"),
 		},
 	}
 }
@@ -1243,7 +1249,11 @@ func atlasArgMapper(group string, verb atlasVerb) cmdadapter.ArgMapper {
 		if err := requireAtlasVerbDirScheme(cmd, group, verb, project); err != nil {
 			return nil, nil, err
 		}
-		mapped, err := atlasargs.Map(group, verb.use, verb.flags, args)
+		verbFlags, err := atlasEnvAwareSourceFlags(group, verb, project)
+		if err != nil {
+			return nil, nil, err
+		}
+		mapped, err := atlasargs.Map(group, verb.use, verbFlags, args)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -1274,6 +1284,13 @@ type atlasVerbArgs struct {
 	// can read it through the same rooted boundary the forwarded native command
 	// gets, instead of reopening the path unbounded.
 	project atlasProject
+	// projectFlags are the project selection flags this invocation resolved,
+	// kept so a flag mapper can locate the config file the values came from.
+	projectFlags atlasProjectFlagValues
+	// projectLoaded reports whether a project file was actually selected. The
+	// adapter loads one only when -c or --env names it, so a bare run has no
+	// environment for an env:// reference to be read out of.
+	projectLoaded bool
 }
 
 // resolveAtlasVerbProject merges the Atlas project selection flags reachable
@@ -1308,6 +1325,7 @@ func resolveAtlasVerbProject(
 	}
 	project = mergeAtlasProjectArgs(parentProject, project)
 	resolved.args = remaining
+	resolved.projectFlags = project.flags
 	// -c and --env SELECT a project file, so naming either one makes it
 	// required. --var only supplies values to a file the caller may or may not
 	// have, so it makes the file OPTIONAL: present, it is loaded and the
@@ -1329,6 +1347,7 @@ func resolveAtlasVerbProject(
 		project.flags,
 		requirement,
 		compatibilityPolicy,
+		cmd.CommandPath(),
 	)
 	if err != nil {
 		return atlasVerbArgs{}, err
@@ -1357,6 +1376,7 @@ func resolveAtlasVerbProject(
 		return atlasVerbArgs{}, err
 	}
 	resolved.project = loadedProject
+	resolved.projectLoaded = true
 	applyProjectConfig := verb.projectConfig
 	if applyProjectConfig == nil {
 		applyProjectConfig = applyAtlasProjectConfigToArgs
@@ -1409,26 +1429,32 @@ type selectedAtlasProject struct {
 	loaded       bool
 }
 
+// verbPath is the command path the diagnostics name, so a refusal that must
+// say WHICH command cannot run -- a for_each env expanding to several
+// environments, for one -- names it on every branch. Passing "" here left the
+// table-driven forwarded commands with the generic wording while the bespoke
+// ones were specific (stokaro/ptah#1696).
 func loadAtlasAdapterProjectConfig(
 	ctx context.Context,
 	verb atlasVerb,
 	flags atlasProjectFlagValues,
 	requirement atlasProjectRequirement,
 	policy atlascompatpolicy.Policy,
+	verbPath string,
 ) (selectedAtlasProject, error) {
 	if !verb.nativeProjectConfig {
-		project, loaded, err := openAtlasProjectWithPolicy(ctx, flags, requirement, policy)
+		project, loaded, err := openAtlasProjectWithPolicy(ctx, flags, requirement, policy, verbPath)
 		return selectedAtlasProject{project: project, loaded: loaded}, err
 	}
 	if requirement == requiredAtlasProject {
-		project, targetConfig, err := openRequiredMergedProjectConfigWithPolicy(ctx, flags, policy)
+		project, targetConfig, err := openRequiredMergedProjectConfigWithPolicy(ctx, flags, policy, verbPath)
 		return selectedAtlasProject{
 			project:      project,
 			targetConfig: targetConfig,
 			loaded:       err == nil,
 		}, err
 	}
-	project, loaded, err := openAtlasProjectWithPolicy(ctx, flags, optionalAtlasProject, policy)
+	project, loaded, err := openAtlasProjectWithPolicy(ctx, flags, optionalAtlasProject, policy, verbPath)
 	if err != nil || !loaded {
 		return selectedAtlasProject{}, err
 	}
@@ -1645,4 +1671,108 @@ func logFormatWritesReportDirectly(args []string) bool {
 	}
 	format = strings.ToLower(strings.TrimSpace(format))
 	return format == "" || format == "text"
+}
+
+// atlasEnvAwareSourceFlags binds the selected project environment into the
+// test verbs' desired-state source flag.
+//
+// The flag list is built at registration, where no environment exists yet, so
+// the mapper it carries could only ever refuse `env://`. Rewriting the entry
+// here — the pattern atlasMigrateSourceFlags already uses for --dir — hands the
+// mapper the environment the run actually selected, which is what --to and
+// --from have had all along (stokaro/ptah#1761).
+//
+// Verbs other than `schema test` are returned untouched, and so is a run that
+// selected no environment: with nothing selected there is no attribute to read,
+// and the mapper's own refusal still names the scheme and the attribute.
+func atlasEnvAwareSourceFlags(
+	group string,
+	verb atlasVerb,
+	project atlasVerbArgs,
+) ([]atlasargs.Flag, error) {
+	if group != "schema" || verb.use != "test" || !project.projectLoaded {
+		return verb.flags, nil
+	}
+	baseDir, err := atlasProjectConfigBaseDir(project.projectFlags)
+	if err != nil {
+		return nil, err
+	}
+	projectEnv := atlassource.ProjectEnv{
+		Loaded:  true,
+		Config:  project.project.Config,
+		BaseDir: baseDir,
+	}
+	out := slices.Clone(verb.flags)
+	for i := range out {
+		if out[i].Name != "url" {
+			continue
+		}
+		out[i].MapValue = atlasSchemaTestSourceValueWithEnv(projectEnv)
+	}
+	return out, nil
+}
+
+// atlasSchemaTestSourceValueWithEnv maps one desired-state source URL for
+// `schema test`, expanding an `env://` reference through the selected
+// environment first.
+//
+// An environment naming several sources is refused rather than silently
+// reduced to the first. This is where the verb parts company with --to, which
+// merges them: -u forwards to a single native --root-dir, so there is nowhere
+// for the second source to go, and picking one would test a schema the
+// environment does not describe.
+func atlasSchemaTestSourceValueWithEnv(
+	projectEnv atlassource.ProjectEnv,
+) func(string) (string, error) {
+	return func(value string) (string, error) {
+		trimmed := strings.TrimSpace(value)
+		if !strings.HasPrefix(strings.ToLower(trimmed), "env://") {
+			return atlasSchemaTestSourceValue(value)
+		}
+		set, err := atlassource.ClassifySet("-u", []string{trimmed}, projectEnv)
+		if err != nil {
+			return "", err
+		}
+		if len(set.Sources) != 1 {
+			return "", fmt.Errorf(
+				"%q names %d desired-state sources, and this flag forwards one:"+
+					" the verb reads a single --root-dir. Name the source itself,"+
+					" or point the env at one source",
+				value,
+				len(set.Sources),
+			)
+		}
+		// Raw, not Path: expandEnv already resolved the value against the
+		// project's base directory, and the existing mapper is what decides
+		// which kinds this verb reads.
+		return atlasSchemaTestSourceValue(set.Sources[0].Raw)
+	}
+}
+
+func atlasSchemaValidateNativeCommand() *cobra.Command {
+	return schema.NewSchemaValidateCommand()
+}
+
+// atlasSchemaValidateVerb mirrors the native `schema validate` onto the
+// Atlas-compatible surface.
+//
+// The pinned community binary v1.3.0 has no such verb, so it is registered
+// beside the other verbs that binary does not carry and is community-gated in
+// strict mode. There is no flag oracle for it on the community surface, so the
+// flag set is the native one, named here rather than guessed at
+// (stokaro/ptah#1711).
+func atlasSchemaValidateVerb() atlasVerb {
+	return atlasVerb{
+		use:        "validate",
+		displayUse: "validate [flags]",
+		short:      "Report structural problems in a desired schema without a database",
+		native:     "schema validate",
+		factory:    atlasSchemaValidateNativeCommand,
+		flags: []atlasargs.Flag{
+			atlasargs.NativeStringArray("dialect", "", "Target dialect to validate against (repeatable)", "dialect"),
+			atlasargs.NativeStringArray("root-dir", "", "Root directory to scan for Go entities (repeatable)", "root-dir"),
+			atlasargs.NativeStringArray("schema-file", "", "YAML, HCL, or SQL desired-schema file (repeatable)", "schema-file"),
+			atlasargs.NativeString("server-version", "", "Server version whose capability preset one target is validated against", "server-version"),
+		},
+	}
 }

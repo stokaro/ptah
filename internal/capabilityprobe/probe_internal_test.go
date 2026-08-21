@@ -111,7 +111,12 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 		// exists without being able to grant it, and an acceptance test cannot
 		// separate an unknown privilege from an absent grantee
 		// (stokaro/ptah#916).
-		want: []capability.Capability{capability.ShowRoutinePrivilege},
+		want: []capability.Capability{
+			capability.DDLInsideTransaction,
+			capability.MigrationTimeouts,
+			capability.ShowRoutinePrivilege,
+			capability.TransactionalDDL,
+		},
 	}, {
 		dialect: platform.MySQL,
 		// The three PostgreSQL user-type kinds are declared rather than asked
@@ -119,37 +124,56 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 		// refusal would be a syntax error about a different question, not an
 		// answer about the key (stokaro/ptah#1717).
 		want: []capability.Capability{
+			capability.CatalogDefaultPrivileges,
 			capability.CatalogDependencies,
+			capability.CatalogPartitions,
+			capability.CatalogRecursiveCTE,
 			capability.CatalogRowStatistics,
 			capability.CompositeTypes,
+			capability.DDLInsideTransaction,
 			capability.DomainTypes,
+			capability.MigrationTimeouts,
 			capability.PostgresCatalogFunctions,
 			capability.RangeTypes,
 			capability.RoleManagement,
 			capability.RowLevelTTL,
 			capability.ShowRoutinePrivilege,
+			capability.TransactionalDDL,
 		},
 	}, {
 		dialect: platform.MariaDB,
 		want: []capability.Capability{
+			capability.CatalogDefaultPrivileges,
 			capability.CatalogDependencies,
+			capability.CatalogPartitions,
+			capability.CatalogRecursiveCTE,
 			capability.CatalogRowStatistics,
 			capability.CompositeTypes,
+			capability.DDLInsideTransaction,
 			capability.DomainTypes,
+			capability.MigrationTimeouts,
 			capability.PostgresCatalogFunctions,
 			capability.RangeTypes,
 			capability.RoleManagement,
 			capability.RowLevelTTL,
-			capability.Sequences,
 			capability.ShowRoutinePrivilege,
+			capability.TransactionalDDL,
 		},
 	}, {
 		dialect: platform.ClickHouse,
 		want: []capability.Capability{
+			// ClickHouse has no pg catalogs, so the recursive-catalog-read
+			// question cannot be put to it (stokaro/ptah#1811).
+			capability.CatalogPartitions,
+			capability.CatalogRecursiveCTE,
 			capability.CompositeTypes,
+			capability.DDLInsideTransaction,
 			capability.DomainTypes,
+			capability.MigrationTimeouts,
+			capability.Procedures,
 			capability.RangeTypes,
 			capability.ShowRoutinePrivilege,
+			capability.TransactionalDDL,
 		},
 	}} {
 		t.Run(tc.dialect, func(t *testing.T) {
@@ -264,28 +288,28 @@ func TestDecidable_IsDerivedFromThePlanAndTheLine(t *testing.T) {
 		caps capability.Capabilities
 		want int
 	}{{
-		name: "postgres owes one fewer: the probe cannot ask whether a privilege exists",
+		name: "postgres owes four fewer: the probe cannot ask whether a privilege exists, and neither runtime policy nor the transaction wrapper is a statement it can send",
 		cell: measuredCell,
 		caps: capability.Postgres17(),
-		want: registered - 1,
+		want: registered - 4,
 	}, {
-		name: "mysql owes nine fewer: role_management, row_level_ttl, the three catalog keys and the three user-type kinds all name surfaces no MySQL path reads",
+		name: "mysql owes fifteen fewer: role_management, row_level_ttl, the five catalog keys, the three user-type kinds and the three runtime properties name surfaces no MySQL path reads or no statement decides",
 		cell: Cell{
 			Dialect: platform.MySQL, Line: "9.7",
 			Preset: capability.MySQL84, PresetName: "MySQL84",
 			Refinement: RefinedByVersion,
 		},
 		caps: capability.MySQL84(),
-		want: registered - 9,
+		want: registered - 15,
 	}, {
-		name: "mariadb owes ten fewer: sequences is a claim about the generator, not the engine, and the three user-type kinds have no MariaDB spelling",
+		name: "mariadb owes fifteen fewer: the three user-type kinds have no MariaDB spelling, the three runtime properties are not statements, neither pg_class nor pg_default_acl is a catalog it has, and sequences is asked now that Ptah renders, reads and plans one",
 		cell: Cell{
 			Dialect: platform.MariaDB, Line: "10.11",
 			Preset: capability.MariaDB1011, PresetName: "MariaDB1011",
 			Refinement: RefinedByVersion,
 		},
 		caps: capability.MariaDB1011(),
-		want: registered - 10,
+		want: registered - 15,
 	}, {
 		name: "cockroachdb 26.2 owes every row its preset enables a prerequisite for, less the one the probe cannot ask",
 		cell: Cell{
@@ -294,7 +318,7 @@ func TestDecidable_IsDerivedFromThePlanAndTheLine(t *testing.T) {
 			Refinement: RefinedByVersion,
 		},
 		caps: capability.CockroachDB26(),
-		want: registered - 1,
+		want: registered - 4,
 	}, {
 		name: "cockroachdb 25.4 excludes the guarded drop row whose generic prerequisite is absent",
 		cell: Cell{
@@ -303,7 +327,7 @@ func TestDecidable_IsDerivedFromThePlanAndTheLine(t *testing.T) {
 			Refinement: RefinedByVersion,
 		},
 		caps: capability.CockroachDB25(),
-		want: registered - 2,
+		want: registered - 5,
 	}, {
 		name: "a banner-refined line owes nothing because no observation can be credited to it",
 		cell: Cell{

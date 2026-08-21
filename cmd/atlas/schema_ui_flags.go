@@ -1,8 +1,11 @@
 package atlas
 
 import (
+	"fmt"
+
 	"github.com/spf13/cobra"
 
+	"go.5x5.cz/ptah/config/projectconfig"
 	"go.5x5.cz/ptah/internal/atlasargs"
 )
 
@@ -52,10 +55,83 @@ func atlasSchemaWebFlag() atlasargs.Flag {
 }
 
 func atlasSchemaExportFlag() atlasargs.Flag {
-	return atlasargs.UnsupportedBoolReason(
+	return atlasargs.NativeBool(
 		atlasSchemaExportFlagName, "", "Use the exporter defined in the atlas.hcl env",
-		"an exporter is declared by an atlas.hcl `exporter` block, which Ptah does not evaluate; there is no exporter to select, and emitting the default output instead would report an export that never happened",
+		atlasSchemaExportFlagName,
 	)
+}
+
+// atlasExportProject is the project config an export resolves against, with
+// whether one was found at all.
+//
+// The two travel together because "no config" and "a config selecting nothing"
+// need different sentences, and a bare bool parameter beside the config reads
+// as a mode switch rather than as part of the same answer.
+type atlasExportProject struct {
+	config projectconfig.Config
+	loaded bool
+}
+
+// resolveAtlasExporter turns `--export` into the template it selects.
+//
+// # What an exporter is
+//
+// A Go text/template over the same report `--format` renders, declared once by
+// a top-level `exporter` block and chosen by an env's `exporter` attribute:
+//
+//	exporter "markdown" {
+//	  template = "# Changes\n{{ range .Changes }}- {{ .Cmd }}\n{{ end }}"
+//	}
+//
+//	env "local" {
+//	  url      = "sqlite://app.db"
+//	  exporter = "markdown"
+//	}
+//
+// So `--export` is `--format` with the template kept in the project instead of
+// in every invocation, which is why it needs no evaluator of its own. The
+// alternative was a declarative description of output structure: a second
+// language to learn, document and version, doing what the template surface
+// already does (stokaro/ptah#1620).
+//
+// # Why each refusal exists
+//
+// Every failure here is a case where emitting the ordinary report would let an
+// operator believe their exporter ran. That is the failure the flag was a
+// registered refusal to avoid, and implementing it must not reintroduce it.
+func resolveAtlasExporter(cmd *cobra.Command, project atlasExportProject) (string, bool, error) {
+	// The VALUE, not just Changed. Cobra marks a boolean flag changed for
+	// `--export=false` too, so testing Changed alone would apply the exporter
+	// on an invocation that explicitly asked for ordinary output -- and error
+	// on a project that declares none. Generated command lines pass explicit
+	// booleans, so this is a spelling real callers use.
+	export, err := cmd.Flags().GetBool(atlasSchemaExportFlagName)
+	if err != nil || !export {
+		return "", false, nil
+	}
+	if !project.loaded {
+		return "", false, fmt.Errorf(
+			"--%s needs a project config: an exporter is declared by an atlas.hcl `exporter` block",
+			atlasSchemaExportFlagName)
+	}
+	if cmd.Flags().Changed("format") {
+		return "", false, fmt.Errorf(
+			"--%s and --format both choose the output; pass one", atlasSchemaExportFlagName)
+	}
+	if project.config.ExporterName == "" {
+		return "", false, fmt.Errorf(
+			"--%s: this env selects no exporter; name one with an `exporter` attribute",
+			atlasSchemaExportFlagName)
+	}
+	exporter, err := project.config.Exporter(project.config.ExporterName)
+	if err != nil {
+		return "", false, fmt.Errorf("--%s: %w", atlasSchemaExportFlagName, err)
+	}
+	// The selection is reported separately from the template. A caller reading
+	// "selected" off a non-empty string cannot tell an exporter that renders
+	// nothing from one that was never chosen, and would quietly print the
+	// default report for the first.
+	return exporter.Template, true, nil
 }
 
 // refuseAtlasUIFlag rejects a registered UI-bound flag that was actually passed.

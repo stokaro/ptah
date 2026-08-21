@@ -11,6 +11,9 @@ type LoadOptions struct {
 	AtlasPath string
 	EnvName   string
 	AtlasVars []string
+	// Verb names the command doing the load, so a refusal can say which one
+	// cannot take a collection env. Empty leaves the sentence general.
+	Verb string
 }
 
 // Load reads Ptah and Atlas project config files and merges them with the
@@ -22,7 +25,7 @@ func Load(opts LoadOptions) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
-	return singularAtlasConfig(configs, opts.EnvName)
+	return singularAtlasConfig(configs, opts.EnvName, opts.Verb)
 }
 
 // LoadCollection reads Ptah and Atlas project config files and returns every
@@ -50,6 +53,7 @@ func LoadCollection(opts LoadOptions) ([]Config, error) {
 		Context: opts.Context,
 		EnvName: opts.EnvName,
 		Vars:    opts.AtlasVars,
+		Verb:    opts.Verb,
 	})
 	if err != nil {
 		return nil, err

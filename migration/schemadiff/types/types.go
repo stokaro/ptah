@@ -221,6 +221,16 @@ type SchemaDiff struct {
 	// FunctionsRemoved contains names of PostgreSQL functions that exist in the current database
 	// but not in the target schema (potentially dangerous - may break existing functionality)
 	FunctionsRemoved []string `json:"functions_removed"`
+	// ProceduresRemoved names the procedures the database holds and the desired
+	// state does not.
+	//
+	// It is separate from FunctionsRemoved because the DROP verb has to match the
+	// object: a server answers `DROP FUNCTION` aimed at a procedure by name, and
+	// the removal is the one operation whose kind cannot be recovered from the
+	// declaration -- there is no declaration left. Additions and modifications
+	// stay in the function collections, where the planner reads the kind off the
+	// declaration it is building from (stokaro/ptah#1722).
+	ProceduresRemoved []string `json:"procedures_removed,omitempty"`
 
 	// FunctionsModified contains detailed information about functions that exist in both
 	// schemas but have different definitions (parameters, body, attributes, etc.)
@@ -577,6 +587,7 @@ func (d *SchemaDiff) hasExtensionChanges() bool {
 func (d *SchemaDiff) hasFunctionChanges() bool {
 	return len(d.FunctionsAdded) > 0 ||
 		len(d.FunctionsRemoved) > 0 ||
+		len(d.ProceduresRemoved) > 0 ||
 		len(d.FunctionsModified) > 0
 }
 
@@ -837,6 +848,20 @@ type DomainDiff struct {
 	// Empty when the caller built the diff by hand or the domain's from-side is
 	// unknown; the drop ordering then falls back to declaration order.
 	CurrentBaseType string `json:"current_base_type,omitempty"`
+
+	// CurrentCheckConstraints names the CHECK constraints the database holds
+	// for this domain, in catalog order.
+	//
+	// ALTER DOMAIN removes a constraint by name, and a name is the one thing
+	// the declaration cannot supply: the author wrote an expression, and the
+	// server chose what to call the constraint enforcing it. Without these a
+	// changed CHECK has only the drop-and-recreate route, which fails on any
+	// domain a column uses -- that is, on every domain worth changing.
+	//
+	// Empty when nothing needs replacing, and empty as well when the reader
+	// could not enumerate them; the planner then leaves the CHECK alone rather
+	// than guessing a name (stokaro/ptah#1717).
+	CurrentCheckConstraints []string `json:"current_check_constraints,omitempty"`
 }
 
 // RangeDiff represents changes to an existing PostgreSQL range type.
@@ -872,6 +897,32 @@ type CompositeTypeDiff struct {
 	// Empty when the caller built the diff by hand or the type's from-side is
 	// unknown; the drop ordering then falls back to declaration order.
 	CurrentFieldTypes []string `json:"current_field_types,omitempty"`
+
+	// AttributesAdded and AttributesRemoved carry the field-level delta, and
+	// they are set only when applying it reaches the declared shape exactly.
+	//
+	// PostgreSQL appends a new attribute at the end, so a declaration that puts
+	// a new field in the middle cannot be reached by ALTER TYPE at all: the
+	// catalog order would differ from the declared order and the next
+	// comparison would ask for the same change again, forever. The comparator
+	// therefore simulates the drops and appends and sets these two only when
+	// the result equals the declaration. A field whose TYPE changed also leaves
+	// them unset, because ALTER TYPE ... ALTER ATTRIBUTE is refused outright on
+	// a composite a column uses -- measured on PostgreSQL 18.4, with CASCADE and
+	// without: `cannot alter type "addr" because column "uses_addr.a" uses it`.
+	//
+	// Both unset means the modification takes the drop-and-recreate path
+	// (stokaro/ptah#1717).
+	AttributesAdded []CompositeAttribute `json:"attributes_added,omitempty"`
+	// AttributesRemoved names the fields to remove. See AttributesAdded.
+	AttributesRemoved []string `json:"attributes_removed,omitempty"`
+}
+
+// CompositeAttribute is one field of a composite type, as a declaration spells
+// it.
+type CompositeAttribute struct {
+	Name string `json:"name"`
+	Type string `json:"type"`
 }
 
 // SequenceDiff represents changes to a standalone sequence definition.
@@ -889,6 +940,24 @@ type ExtensionDiff struct {
 	Name       string `json:"name"`
 	FromSchema string `json:"from_schema"`
 	ToSchema   string `json:"to_schema"`
+	// FromVersion and ToVersion carry a declared version change. The version is
+	// the one attribute of an extension that moves over time, and it used to be
+	// rendered on the create and never compared: a team that raised the pin in
+	// its schema saw "Schema is synced" against a database still running the old
+	// one (stokaro/ptah#1718).
+	//
+	// Both are empty when the declaration names no version, which is the common
+	// case and means "whatever the server installs".
+	FromVersion string `json:"from_version,omitempty"`
+	ToVersion   string `json:"to_version,omitempty"`
+	// Relocatable reports whether the installed extension may be moved between
+	// schemas at all. It is a fact about the extension rather than the target,
+	// read from pg_extension.extrelocatable, and it rides on the diff because
+	// the planner is handed the desired schema and this diff -- never the live
+	// description that knows it. `ALTER EXTENSION plpgsql SET SCHEMA ext` is
+	// `extension "plpgsql" does not support SET SCHEMA`, measured on
+	// PostgreSQL 18.
+	Relocatable bool `json:"relocatable"`
 }
 
 // ViewDiff represents changes to a view definition.
@@ -945,6 +1014,30 @@ type ViewDiff struct {
 type MaterializedViewDiff struct {
 	ViewName string            `json:"view_name"`
 	Changes  map[string]string `json:"changes"`
+
+	// RefreshChange carries a ClickHouse refresh-schedule transition, and is
+	// nil when the schedule is unchanged.
+	//
+	// It is a pair rather than a text entry in Changes because the planner
+	// needs BOTH sides to choose a statement: a schedule changing to another
+	// schedule is an ALTER that keeps the view's rows, while a view gaining or
+	// losing one has to be dropped and recreated -- measured, the server
+	// answers MODIFY REFRESH on a plain view with `Alter of type
+	// 'MODIFY_REFRESH' is not supported by storage MaterializedView`
+	// (stokaro/ptah#1802).
+	RefreshChange *MatViewRefreshChange `json:"refresh_change,omitzero"`
+}
+
+// MatViewRefreshChange is one materialized view's refresh-schedule transition.
+//
+// Either side may be nil: a nil Current is a schedule being added, a nil
+// Desired is one being removed, and both non-nil is a change of schedule. Both
+// nil never reaches here, because that is not a change.
+type MatViewRefreshChange struct {
+	// Desired is the schedule the declaration asks for, nil to remove it.
+	Desired *ast.MatViewRefreshSpec `json:"desired,omitzero"`
+	// Current is the schedule the target carries, nil when it has none.
+	Current *ast.MatViewRefreshSpec `json:"current,omitzero"`
 }
 
 // TriggerRef identifies a trigger by table and trigger name.

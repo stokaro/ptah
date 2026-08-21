@@ -48,6 +48,15 @@ type Config struct {
 	// make the no-op visible; the Ptah CLIs warn on stderr while preserving the
 	// command's stdout and exit code.
 	IgnoredConstructs []IgnoredAtlasConstruct
+	// ExporterName is the exporter an env selects, as its `exporter`
+	// attribute names it. Empty means the env selects none, which is what
+	// makes `--export` refusable rather than silently a no-op.
+	ExporterName string
+	// exporters holds atlas.hcl `exporter` block templates by name. It is
+	// unexported because a caller selects one by name through Exporter rather
+	// than reaching into the map, which is what lets an unknown name be
+	// reported instead of silently missing (stokaro/ptah#1620).
+	exporters map[string]string
 	// EnvName is the selected project env name, when the source had one.
 	EnvName string
 	// DatabaseURL is the target database URL used by migration commands.
@@ -125,6 +134,15 @@ func (c Config) SchemaSourceVars(rawURL string) (map[string]string, bool) {
 type MigrationDirectorySource struct {
 	FileSystem fs.FS
 	Path       string
+	// ReadOnly marks a source with no local directory behind it, so a writing
+	// verb is refused rather than given a path to create.
+	//
+	// A rendered template directory has a real path under the project root and
+	// a writer synchronizes into it. A directory fetched from a registry does
+	// not: giving the writer an OCI reference to join to the root would create
+	// a literal `oci:/registry/repo:tag` directory and report success while the
+	// registry stayed unchanged (stokaro/ptah#1210).
+	ReadOnly bool
 }
 
 // MigrationDirectoryFS returns the immutable filesystem produced for a
@@ -655,6 +673,16 @@ type LintConfig struct {
 type LintRuleConfig struct {
 	Severity string
 	Exclude  []string
+
+	// Match declares a rule rather than configuring one; the remaining fields
+	// describe it. This is the project-file spelling of the same declaration
+	// `.ptah-lint.yaml` carries, so a rule behaves identically whichever file
+	// it was written in (stokaro/ptah#1706).
+	Match         string
+	Message       string
+	Title         string
+	Dialects      []string
+	AppliesToDown bool
 }
 
 // FormatConfig holds Atlas env.format command templates.
@@ -777,6 +805,12 @@ func appendDisabledMode(patterns []string, option ConfigBool, pattern string) []
 // non-zero programmatic values from override.
 func Merge(base, override Config) Config {
 	result := base
+	// Exporters are copied rather than shared, so an env instance cannot write
+	// into the map the base and its siblings are reading (stokaro/ptah#1620).
+	result.exporters = mergeExporters(base.exporters, override.exporters)
+	if override.ExporterName != "" {
+		result.ExporterName = override.ExporterName
+	}
 	result.migrationDirectories = cloneMigrationDirectories(base.migrationDirectories)
 	if len(override.migrationDirectories) > 0 {
 		if result.migrationDirectories == nil {
@@ -1234,6 +1268,24 @@ func mergeLintRuleConfigs(
 			overridePresence,
 			resultPresence,
 		)
+		// The DECLARATION travels whole rather than field by field. Severity
+		// and Exclude are overrides -- a value from the more specific scope
+		// replaces a value from the broader one -- but `match`, `message` and
+		// the rest are one indivisible definition, and merging them
+		// independently would let an env supply a new expression that keeps the
+		// global message, describing a rule nobody wrote.
+		//
+		// This is also the arm that made a declared rule parse and then vanish:
+		// rebuilding the entry from Severity and Exclude alone dropped `match`,
+		// so `rulesForOptions` saw an entry that configured a rule which was
+		// never defined (stokaro/ptah#1706).
+		if strings.TrimSpace(config.Match) != "" {
+			baseConfig.Match = config.Match
+			baseConfig.Message = config.Message
+			baseConfig.Title = config.Title
+			baseConfig.Dialects = slices.Clone(config.Dialects)
+			baseConfig.AppliesToDown = config.AppliesToDown
+		}
 		result[code] = baseConfig
 	}
 	return result
@@ -1246,6 +1298,7 @@ func cloneLintRuleConfigs(values map[string]LintRuleConfig) map[string]LintRuleC
 	cloned := make(map[string]LintRuleConfig, len(values))
 	for code, config := range values {
 		config.Exclude = slices.Clone(config.Exclude)
+		config.Dialects = slices.Clone(config.Dialects)
 		cloned[code] = config
 	}
 	return cloned
@@ -1341,4 +1394,16 @@ func mergeBool(base, override ConfigBool) ConfigBool {
 		return override
 	}
 	return base
+}
+
+// mergeExporters copies both sides into a fresh map, with the override winning
+// a shared name.
+func mergeExporters(base, override map[string]string) map[string]string {
+	if len(base) == 0 && len(override) == 0 {
+		return nil
+	}
+	merged := make(map[string]string, len(base)+len(override))
+	maps.Copy(merged, base)
+	maps.Copy(merged, override)
+	return merged
 }

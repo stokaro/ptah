@@ -50,6 +50,11 @@ const (
 	// dbmateUpDirective and dbmateDownDirective are dbmate's equivalents.
 	dbmateUpDirective   = "-- migrate:up"
 	dbmateDownDirective = "-- migrate:down"
+	// dbmateNoTransactionOption is dbmate's own spelling for a migration half
+	// that must not be wrapped in a transaction. dbmate documents it as an
+	// option on the directive line, which is why this layout can express the
+	// requirement where golang-migrate cannot (stokaro/ptah#1630).
+	dbmateNoTransactionOption = " transaction:false"
 	// liquibaseHeader is the first line of a Liquibase formatted-SQL changelog.
 	liquibaseHeader = "--liquibase formatted sql"
 	// liquibaseChangesetAuthor is the author half of the `author:id` pair on
@@ -61,6 +66,24 @@ const (
 	// community binary's own `migrate hash`, `validate` and `apply` read back,
 	// and that binary writes `--changeset atlas:<version>-<n>`.
 	liquibaseChangesetAuthor = "atlas"
+	// flywayScriptConfigSuffix names a Flyway script configuration file, which
+	// Flyway locates by the migration's own file name plus this suffix.
+	flywayScriptConfigSuffix = ".conf"
+	// flywayNoTransactionSetting is the line that file carries to opt its
+	// migration out of transaction wrapping.
+	flywayNoTransactionSetting = "executeInTransaction=false\n"
+	// liquibaseNoTransactionAttribute opts a changeset out of transaction
+	// wrapping. Liquibase takes it as an attribute on the changeset line, and
+	// this layout writes ONE changeset carrying both directions, so the
+	// attribute covers the pair the way Goose's whole-file directive does
+	// rather than marking a direction the way dbmate's does.
+	//
+	// Liquibase documents the cost: with the attribute set and a changeset of
+	// several statements, a failure part way through can leave DATABASECHANGELOG
+	// inconsistent. That is the same trade the requirement itself carries -- a
+	// statement that cannot run in a transaction cannot be rolled back as part
+	// of one either (stokaro/ptah#1630).
+	liquibaseNoTransactionAttribute = " runInTransaction:false"
 	// liquibaseRollbackPrefix introduces one line of a changeset's rollback.
 	// Liquibase concatenates consecutive rollback lines into one rollback
 	// statement, which is why a multi-line statement is emitted as several of
@@ -122,24 +145,42 @@ func composeMigrationArtifact(
 		return pairedArtifacts(stem+".up.sql", stem+".down.sql", content), nil
 	case atlasmigrateimport.FormatFlyway:
 		stem := fmt.Sprintf("%d__%s", version, slug)
-		return pairedArtifacts("V"+stem+".sql", "U"+stem+".sql", content), nil
+		return flywayArtifacts("V"+stem+".sql", "U"+stem+".sql", content), nil
 	case atlasmigrateimport.FormatGoose:
 		return gooseArtifact(
 			fmt.Sprintf("%d_%s.sql", version, slug),
 			content,
 		), nil
 	case atlasmigrateimport.FormatDBMate:
-		return directiveArtifact(
-			fmt.Sprintf("%d_%s.sql", version, slug),
-			dbmateUpDirective,
-			dbmateDownDirective,
-			content,
-		), nil
+		return dbmateArtifact(fmt.Sprintf("%d_%s.sql", version, slug), content), nil
 	case atlasmigrateimport.FormatLiquibase:
 		return composeLiquibaseArtifact(fmt.Sprintf("%d_%s.sql", version, slug), version, content), nil
 	default:
 		return nil, fmt.Errorf("unknown migration import format %q", format)
 	}
+}
+
+// dbmateArtifact composes the layout that marks each direction separately.
+//
+// dbmate keeps both directions in one file under a directive each and takes
+// `transaction:false` as an option on that line, so a forward requirement and a
+// rollback requirement are independent. Goose, below, has only a whole-file
+// directive and has to opt the entire file out when either half needs it.
+//
+// Measured against dbmate v2.35.0 on PostgreSQL 17: a migration carrying the
+// option applies a CREATE INDEX CONCURRENTLY that fails without it. Note the
+// statement still has to be the only one in its send, but that is PostgreSQL's
+// rule and not dbmate's -- a multi-statement send is an implicit transaction
+// block on every layout, the native one included (stokaro/ptah#1630).
+func dbmateArtifact(name string, content MigrationFileContent) []PublicationArtifact {
+	up, down := dbmateUpDirective, dbmateDownDirective
+	if content.NoTransaction {
+		up += dbmateNoTransactionOption
+	}
+	if content.ReverseNoTransaction {
+		down += dbmateNoTransactionOption
+	}
+	return directiveArtifact(name, up, down, content)
 }
 
 func gooseArtifact(name string, content MigrationFileContent) []PublicationArtifact {
@@ -156,6 +197,38 @@ func gooseArtifact(name string, content MigrationFileContent) []PublicationArtif
 		artifacts[0].Contents...,
 	)
 	return artifacts
+}
+
+// flywayArtifacts composes the layout whose no-transaction marker is a FILE.
+//
+// Flyway keeps the two directions in two migration files and takes the setting
+// from a script configuration file named after each -- `V1__x.sql` is
+// configured by `V1__x.sql.conf` -- so the directions are marked independently,
+// as dbmate's are, but by adding an artifact rather than editing a line.
+//
+// The sidecar is written only when it says something. An empty `.conf` beside
+// every migration would be noise in a directory the source tool also owns.
+//
+// It is deliberately not part of the Atlas integrity set: the file does not end
+// in `.sql`, so SumFileNames does not select it and `migrate validate` neither
+// covers nor rejects it. That matches what the community binary would do with a
+// directory it did not write the sidecar into (stokaro/ptah#1630).
+func flywayArtifacts(upName, downName string, content MigrationFileContent) []PublicationArtifact {
+	artifacts := pairedArtifacts(upName, downName, content)
+	if content.NoTransaction {
+		artifacts = append(artifacts, flywayScriptConfig(upName))
+	}
+	if content.ReverseNoTransaction {
+		artifacts = append(artifacts, flywayScriptConfig(downName))
+	}
+	return artifacts
+}
+
+func flywayScriptConfig(migrationName string) PublicationArtifact {
+	return PublicationArtifact{
+		Name:     migrationName + flywayScriptConfigSuffix,
+		Contents: []byte(flywayNoTransactionSetting),
+	}
 }
 
 // pairedArtifacts composes the two layouts that keep the rollback in a file of
@@ -226,6 +299,17 @@ func directiveArtifact(
 // Liquibase concatenates into one rollback statement. Emitting it as a single
 // line carrying newlines would end the rollback at the first one and silently
 // drop the rest.
+// liquibaseChangesetAttributes returns the attributes the one changeset carries.
+//
+// The changeset holds both directions, so a requirement on either half opts the
+// whole changeset out -- there is no narrower unit to mark.
+func liquibaseChangesetAttributes(content MigrationFileContent) string {
+	if !content.NoTransaction && !content.ReverseNoTransaction {
+		return ""
+	}
+	return liquibaseNoTransactionAttribute
+}
+
 func composeLiquibaseArtifact(
 	name string,
 	version int64,
@@ -234,7 +318,8 @@ func composeLiquibaseArtifact(
 	var body strings.Builder
 	body.WriteString(liquibaseHeader)
 	body.WriteString("\n")
-	fmt.Fprintf(&body, "--changeset %s:%d-1\n", liquibaseChangesetAuthor, version)
+	fmt.Fprintf(&body, "--changeset %s:%d-1%s\n",
+		liquibaseChangesetAuthor, version, liquibaseChangesetAttributes(content))
 	for _, statement := range content.Statements {
 		body.WriteString(strings.TrimRight(statement, "\n"))
 		body.WriteString(";\n")

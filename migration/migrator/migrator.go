@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/sqlutil"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/sqliterebuild"
@@ -327,6 +328,24 @@ func (m *Migrator) deferPreMigrationChecks(observesApplyState bool) bool {
 	return !observesApplyState && m.conn.Writer().IsDryRun()
 }
 
+// txModeAllExclusionAdvice is the one place the two --tx-mode all exclusions
+// are explained.
+//
+// A timeout and a pre-migration check are both scoped to one migration, and
+// `--tx-mode all` deliberately has no such scope: one transaction spans every
+// migration in the run. A timeout set inside it would bound the whole batch
+// rather than the file that asked for it, and a check would read committed
+// pre-batch state and evaluate its precondition against a database the earlier
+// migrations in the same transaction have already changed.
+//
+// Both refusals name the migration and the feature and point here, because a
+// user who adopts tx-mode all for atomicity used to discover the two
+// incompatibilities one migration at a time (stokaro/ptah#1713).
+const txModeAllExclusionAdvice = "tx-mode all runs every migration in one transaction, " +
+	"so a per-migration timeout would bound the whole batch and a per-migration check would " +
+	"read state the batch has already changed; use the default per-file transaction mode, or " +
+	"remove the directive from this migration"
+
 // rejectChecksUnderTxModeAll refuses a migration that declares pre-migration
 // checks when running with tx-mode all. Under a single shared transaction a
 // check reads committed pre-batch state on the pool connection and cannot see
@@ -352,7 +371,9 @@ func (m *Migrator) rejectChecksUnderTxModeAll(migration *Migration, direction Mi
 		return err
 	}
 	if len(groups) > 0 {
-		return fmt.Errorf("migration %d declares pre-migration checks, which cannot run with tx-mode all; use the default per-file transaction mode", migration.Version)
+		return fmt.Errorf(
+			"migration %d declares pre-migration checks, which cannot run with tx-mode all: "+
+				"%s", migration.Version, txModeAllExclusionAdvice)
 	}
 	return nil
 }
@@ -2151,7 +2172,9 @@ func (m *Migrator) validateUpTransactionMode(migrations []*Migration) error {
 				return err
 			}
 			if !resolvedTimeouts[migration].IsZero() {
-				return fmt.Errorf("migration %d has timeouts and cannot run with tx-mode all", migration.Version)
+				return fmt.Errorf(
+					"migration %d declares timeouts, which cannot run with tx-mode all: "+
+						"%s", migration.Version, txModeAllExclusionAdvice)
 			}
 			if err := m.rejectChecksUnderTxModeAll(migration, MigrationDirectionUp); err != nil {
 				return err
@@ -2195,14 +2218,22 @@ func (m *Migrator) effectiveDownTimeouts(migration *Migration) (MigrationTimeout
 	return mergeMigrationTimeouts(m.defaultTimeouts, timeouts), nil
 }
 
+// validateTxModeAllDialect refuses --tx-mode all where the target cannot roll
+// a schema change back as a unit.
+//
+// The decision is capability.TransactionalDDL rather than a second list of
+// dialect names beside the one timeouts used. MySQL, MariaDB and ClickHouse
+// commit DDL implicitly, so a failed migration leaves whatever ran before it --
+// that is the engine, and the message says so rather than reporting an
+// unexplained "not supported" (stokaro/ptah#1713).
 func (m *Migrator) validateTxModeAllDialect() error {
-	dialect := platform.NormalizeDialect(m.conn.Info().Dialect)
-	switch dialect {
-	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.SQLite:
+	if m.conn.Info().Capabilities.Has(capability.TransactionalDDL) {
 		return nil
-	default:
-		return fmt.Errorf("tx-mode all is not supported for dialect %q", m.conn.Info().Dialect)
 	}
+	return fmt.Errorf(
+		"tx-mode all is not supported for dialect %q: this target commits schema changes as they run, "+
+			"so a failed migration cannot be rolled back as a unit",
+		m.conn.Info().Dialect)
 }
 
 func (m *Migrator) applyUpMigrationObserved(

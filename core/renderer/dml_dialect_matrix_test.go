@@ -164,19 +164,56 @@ func quotedQuestionCells(dialect string) dmlMatrixRow {
 	}
 }
 
-// genericRefusalCells is the row for a dialect the builder has not been taught:
-// all four verbs answer with the generic unsupported-dialect error, quoting the
-// caller's spelling of the dialect rather than the normalized name.
-func genericRefusalCells(dialect string) dmlMatrixRow {
-	refusal := func(verb string) dmlCell {
-		return dmlCell{err: fmt.Sprintf("renderer: %s %s %q", verb, genericRefusalMarker, dialect)}
-	}
+// clickhouseCells is the pinned rendering for ClickHouse: backtick identifier
+// quoting with ? placeholders, and the ordinary LIMIT/OFFSET spelling.
+//
+// It shares backtickQuestionCells' output exactly, which is the point: nothing
+// about ClickHouse's DML surface differs from MySQL's for these four
+// statements, so the row is written out rather than aliased -- an alias would
+// hide the day one of them diverges (stokaro/ptah#941).
+func clickhouseCells(dialect string) dmlMatrixRow {
 	return dmlMatrixRow{
 		dialect: dialect,
-		sel:     refusal("SELECT"),
-		ins:     refusal("INSERT"),
-		upd:     refusal("UPDATE"),
-		del:     refusal("DELETE"),
+		sel:     dmlCell{sql: "SELECT `id`, `name` FROM `users` WHERE `id` = ? LIMIT ?", args: []any{int64(1), int64(10)}},
+		ins:     dmlCell{sql: "INSERT INTO `users` (`id`, `name`) VALUES (?, ?)", args: []any{int64(1), "a"}},
+		// DELETE renders. It was refused here too, and that was stricter than
+		// the engine: measured on ClickHouse 24.10.4.191 -- the oldest line the
+		// presets and the compose service cover -- `DELETE FROM u WHERE id = 1`
+		// runs and the row is gone, and 25.8.30 answers the same. Lightweight
+		// delete has been on by default since 23.3.
+		//
+		// UPDATE is refused for an ENGINE reason the server states itself:
+		// `Lightweight updates are not supported ... only for tables with
+		// materialized _block_number column`, a per-table setting a statement
+		// cannot declare. The refusal is deliberately NOT the generic
+		// dialect-not-taught marker -- see TestDMLGenericRefusalCensus.
+		upd: dmlCell{err: "renderer: UPDATE is not a portable statement on ClickHouse: a plain UPDATE runs " +
+			"only on a table with the materialized _block_number column, which a statement cannot declare; " +
+			"use ALTER TABLE … UPDATE, or enable enable_block_number_column on the table"},
+		del: dmlCell{sql: "DELETE FROM `users` WHERE `id` = ?", args: []any{int64(1)}},
+	}
+}
+
+// sqlServerCells is the pinned rendering for SQL Server: bracket identifier
+// quoting with @pN placeholders, and T-SQL's row-limiting clause.
+//
+// The SELECT carries two things no other row does. `OFFSET 0 ROWS` is
+// synthesized because T-SQL requires OFFSET before FETCH, and
+// `ORDER BY (SELECT NULL)` because it accepts neither without an ORDER BY --
+// a limited query with no ordering is a syntax error there rather than an
+// unordered result. Both are structural constants and bind no placeholder,
+// which is why the args are still the caller's two values in caller order.
+func sqlServerCells(dialect string) dmlMatrixRow {
+	return dmlMatrixRow{
+		dialect: dialect,
+		sel: dmlCell{
+			sql: "SELECT [id], [name] FROM [users] WHERE [id] = @p1 " +
+				"ORDER BY (SELECT NULL) OFFSET 0 ROWS FETCH NEXT @p2 ROWS ONLY",
+			args: []any{int64(1), int64(10)},
+		},
+		ins: dmlCell{sql: "INSERT INTO [users] ([id], [name]) VALUES (@p1, @p2)", args: []any{int64(1), "a"}},
+		upd: dmlCell{sql: "UPDATE [users] SET [name] = @p1 WHERE [id] = @p2", args: []any{"a", int64(1)}},
+		del: dmlCell{sql: "DELETE FROM [users] WHERE [id] = @p1", args: []any{int64(1)}},
 	}
 }
 
@@ -189,11 +226,11 @@ func dmlMatrixRows() []dmlMatrixRow {
 		dollarCells("postgres"),
 		backtickQuestionCells("mysql"),
 		backtickQuestionCells("mariadb"),
-		genericRefusalCells("clickhouse"),
+		clickhouseCells("clickhouse"),
 		quotedQuestionCells("sqlite"),
 		quotedQuestionCells("sqlite3"),
-		genericRefusalCells("sqlserver"),
-		genericRefusalCells("mssql"),
+		sqlServerCells("sqlserver"),
+		sqlServerCells("mssql"),
 		dollarCells("cockroachdb"),
 		dollarCells("yugabytedb"),
 		dollarCells("spanner"),
@@ -201,20 +238,24 @@ func dmlMatrixRows() []dmlMatrixRow {
 }
 
 // dmlGenericRefusalQuarantine is the hand-written list of cells that still
-// answer with the generic unsupported-dialect refusal. Every entry is a dialect
-// the query builder has never been taught, tracked on stokaro/ptah#941:
-// SQL Server (workstream W2) and ClickHouse (workstream W3).
+// answer with the generic unsupported-dialect refusal -- a dialect the query
+// builder has never been taught.
 //
-// Adding a dialect to selectPlaceholderStyle without editing this list makes
-// TestDMLGenericRefusalCensus red, and the list is compared against observed
-// behavior rather than against dmlMatrixRows, so shrinking it without also
-// teaching the renderer is red too.
+// It is EMPTY as of stokaro/ptah#941: SQL Server and ClickHouse were the last
+// two names in it, and every dialect renderer.SupportedDialects() reports now
+// renders all four verbs. The list and the test stay, because the guard is
+// about the next dialect rather than about those two: a name added to
+// selectPlaceholderStyle without a row written for it lands here.
+//
+// The list is compared against OBSERVED behavior rather than against
+// dmlMatrixRows, so shrinking it without also teaching the renderer is red too.
+//
+// The helper that built an all-four-refusals row went with the last entry: a
+// row nothing constructs is dead weight, and whoever adds an untaught dialect
+// writes its cells when they write its row. The census is what tells them a row
+// is needed.
 func dmlGenericRefusalQuarantine() []string {
-	return []string{
-		"clickhouse/SELECT", "clickhouse/INSERT", "clickhouse/UPDATE", "clickhouse/DELETE",
-		"sqlserver/SELECT", "sqlserver/INSERT", "sqlserver/UPDATE", "sqlserver/DELETE",
-		"mssql/SELECT", "mssql/INSERT", "mssql/UPDATE", "mssql/DELETE",
-	}
+	return nil
 }
 
 // TestDMLDialectMatrix pins all 48 (dialect, verb) cells.
@@ -394,11 +435,11 @@ func TestDMLPlaceholderAgreesWithRebind(t *testing.T) {
 		{dialect: "postgres"},
 		{dialect: "mysql"},
 		{dialect: "mariadb"},
-		{dialect: "clickhouse", wantRebind: "?"},
+		{dialect: "clickhouse"},
 		{dialect: "sqlite"},
 		{dialect: "sqlite3"},
-		{dialect: "sqlserver", wantRebind: "@p1"},
-		{dialect: "mssql", wantRebind: "@p1"},
+		{dialect: "sqlserver"},
+		{dialect: "mssql"},
 		{dialect: "cockroachdb"},
 		{dialect: "yugabytedb"},
 		{dialect: "spanner"},

@@ -6,13 +6,15 @@ import (
 	"database/sql/driver"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/url"
 	"regexp"
 	"strings"
 
-	_ "github.com/jackc/pgx/v5/stdlib"  // PostgreSQL driver
-	_ "github.com/microsoft/go-mssqldb" // SQL Server driver
+	_ "github.com/jackc/pgx/v5/stdlib"                   // PostgreSQL driver
+	_ "github.com/microsoft/go-mssqldb"                  // SQL Server driver
+	_ "github.com/tursodatabase/libsql-client-go/libsql" // libsql (Turso) driver
 
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
@@ -94,7 +96,11 @@ func ConnectToDatabase(ctx context.Context, dbURL string) (*DatabaseConnection, 
 			return postgres.NewPostgreSQLReaderWithCapabilities(runner, info.Schema, info.Capabilities)
 		}
 		newWriter = func(runner sqlrunner.Runner, _ *sql.Conn) types.SchemaWriter {
-			return postgres.NewPostgreSQLWriterForRunner(runner, info.Schema)
+			// The set decides whether cleanup may take a transaction: Spanner
+			// refuses DDL inside one, and the writer cannot ask the server
+			// without opening the transaction it is trying to avoid.
+			return postgres.NewPostgreSQLWriterForRunnerWithCapabilities(
+				runner, info.Schema, info.Capabilities)
 		}
 	case "mysql":
 		newReader = func(runner sqlrunner.Runner) types.SchemaReader {
@@ -138,7 +144,9 @@ func ConnectToDatabase(ctx context.Context, dbURL string) (*DatabaseConnection, 
 				runner, info.Schema, info.Capabilities,
 			)
 		}
-	case "sqlite":
+	// libsql reaches a remote server, but the schema it serves is SQLite's, so
+	// it takes SQLite's reader, writer and executor unchanged.
+	case "sqlite", "libsql":
 		newReader = func(runner sqlrunner.Runner) types.SchemaReader {
 			return sqlite.NewSQLiteReader(runner, info.Schema)
 		}
@@ -170,6 +178,7 @@ func ConnectToDatabase(ctx context.Context, dbURL string) (*DatabaseConnection, 
 		newReader:      newReader,
 		newWriter:      newWriter,
 		inMemorySQLite: inMemorySQLite,
+		remoteLibSQL:   dialectProtocol == "libsql",
 	}, nil
 }
 
@@ -320,6 +329,25 @@ func resolveDatabaseCapabilities(info types.DBInfo) capability.VersionResolution
 	return capability.ResolveServerVersion(info.Dialect, info.Version)
 }
 
+// libSQLDriverConfig maps the two libsql spellings onto the transport the
+// pinned community binary v1.3.0 uses for each, measured against a live
+// libsql-server v0.24.32:
+//
+//	libsql://host     -> POST https://host/v2/pipeline
+//	libsql+ws://host  -> a WebSocket dial
+//
+// The client library spells the second `ws://`, and takes `libsql://` as it is.
+// Anything else is not a libsql URL and is left to the local SQLite driver.
+func libSQLDriverConfig(dbURL string) (driverName, dataSourceName string, remote bool) {
+	switch {
+	case strings.HasPrefix(strings.ToLower(dbURL), "libsql+ws://"):
+		return "libsql", "ws://" + dbURL[len("libsql+ws://"):], true
+	case strings.HasPrefix(strings.ToLower(dbURL), "libsql://"):
+		return "libsql", dbURL, true
+	}
+	return "", "", false
+}
+
 func databaseDriverConfig(dialect, dbURL string) (driverName, dataSourceName string) {
 	switch dialect {
 	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner:
@@ -329,6 +357,11 @@ func databaseDriverConfig(dialect, dbURL string) (driverName, dataSourceName str
 	case platform.ClickHouse:
 		return "clickhouse", convertClickHouseURL(dbURL)
 	case platform.SQLite:
+		// libsql shares SQLite's dialect but not its connection: it is a remote
+		// protocol, so the dialect alone cannot pick the driver.
+		if libSQLDriver, libSQLDSN, remote := libSQLDriverConfig(dbURL); remote {
+			return libSQLDriver, libSQLDSN
+		}
 		return "sqlite", convertSQLiteURL(dbURL)
 	case platform.SQLServer:
 		return "sqlserver", convertSQLServerURL(dbURL)
@@ -349,6 +382,9 @@ type DatabaseConnection struct {
 	newWriter      schemaWriterFactory
 	pinned         bool
 	inMemorySQLite bool
+	// remoteLibSQL marks a connection reached over the libsql WebSocket
+	// transport, whose teardown reports an error that is not one.
+	remoteLibSQL bool
 	// session is the pinned physical session set by WithSession. Connection
 	// state that only applies per physical connection — see
 	// WithUntrustedSQLSession — needs it.
@@ -757,10 +793,31 @@ func (dc *DatabaseConnection) Close() error {
 	if dc.pinned {
 		return nil
 	}
-	if dc.db != nil {
-		return dc.db.Close()
+	if dc.db == nil {
+		return nil
 	}
-	return nil
+	err := dc.db.Close()
+	if libSQLTeardownIsBenign(dc.remoteLibSQL, err) {
+		// Measured against libsql-server v0.24.32: EVERY libsql WebSocket
+		// connection that ran a statement reports `failed to close WebSocket:
+		// failed to read frame header: EOF` on Close, and one that ran none
+		// closes cleanly. The server hangs up first, so the client's read of
+		// the close frame returns io.EOF. Reporting it would put a warning on
+		// stderr after every successful command, which the pinned community
+		// binary does not, and which would be the only difference between the
+		// two on this transport (stokaro/ptah#1615).
+		//
+		// Only io.EOF is swallowed, and only here: a genuine close failure on
+		// this transport still reaches the caller.
+		return nil
+	}
+	return err
+}
+
+// libSQLTeardownIsBenign reports the one close error this transport always
+// produces and which is not a failure.
+func libSQLTeardownIsBenign(remoteLibSQL bool, err error) bool {
+	return remoteLibSQL && errors.Is(err, io.EOF)
 }
 
 func (dc *DatabaseConnection) sqlRunner() sqlrunner.Runner {
@@ -1176,10 +1233,40 @@ func convertSQLiteURL(dbURL string) string {
 	if !hasSQLiteForeignKeysPragma(query) {
 		query.Add("_pragma", "foreign_keys(1)")
 	}
+	dsn = sqliteURIForMemory(dsn, query)
 	if encoded := query.Encode(); encoded != "" {
 		dsn += "?" + encoded
 	}
 	return dsn
+}
+
+// sqliteURIForMemory prefixes a named in-memory database with `file:`, which is
+// what makes SQLite read the query as URI parameters at all.
+//
+// Without it `mode=memory` is not ignored so much as never seen: the whole
+// string is taken as a filename, so `sqlite://dev?mode=memory` -- the form this
+// repository's own tests, help text and docs use -- opens a FILE named
+// `dev?mode=memory` in the working directory and leaves it there.
+//
+// Measured against modernc.org/sqlite v1.57.0:
+//
+//	dev?mode=memory       -> a file appears
+//	file:dev?mode=memory  -> no file
+//
+// The second problem is the worse one. A dev database exists to be empty, and a
+// persistent one carries the previous run's state into the next plan -- which
+// produces a wrong answer that looks like a right one (stokaro/ptah#1819).
+//
+// Only the memory case is rewritten. A plain path stays a plain path, because
+// `file:` there would change how a name containing `?` or `#` is read.
+func sqliteURIForMemory(dsn string, query url.Values) string {
+	if !strings.EqualFold(query.Get("mode"), "memory") {
+		return dsn
+	}
+	if strings.HasPrefix(dsn, "file:") || dsn == ":memory:" {
+		return dsn
+	}
+	return "file:" + dsn
 }
 
 func isSQLiteMemoryDSN(dsn string) bool {

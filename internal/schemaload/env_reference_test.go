@@ -20,7 +20,7 @@ func TestLoad_EnvReferenceWithSupportedAttributeNamesEnvScheme(t *testing.T) {
 
 	_, err := schemaload.Load(schemaload.Options{SchemaFiles: []string{"env://src"}})
 
-	c.Assert(err, qt.ErrorMatches, `--schema-file "env://src": env:// references are not resolved by ptah; pass the schema file itself, or use ptah-compat, whose --to and --from accept env://src`)
+	c.Assert(err, qt.ErrorMatches, `--schema-file "env://src": env:// names the "src" attribute of a project environment, and this command selects none; pass the schema file itself, or use a command that takes --env, or ptah-compat, whose --to and --from accept env://src`)
 	c.Assert(err.Error(), qt.Not(qt.Contains), `unsupported schema file extension`)
 }
 
@@ -49,7 +49,7 @@ func TestLoad_EnvReferencesDifferByAttributeValidity(t *testing.T) {
 	// while still telling a user with a typo to go and use another binary, so
 	// each message is also held to the phrase the other must not carry.
 	c.Assert(supported.Error(), qt.Not(qt.Contains), "unsupported env:// attribute")
-	c.Assert(unknown.Error(), qt.Not(qt.Contains), "are not resolved by ptah")
+	c.Assert(unknown.Error(), qt.Not(qt.Contains), "this command selects none")
 }
 
 func TestLoad_EnvReferenceWithoutAttributeIsNamed(t *testing.T) {

@@ -537,6 +537,28 @@ func firstNonemptyLine(source string) string {
 	return ""
 }
 
+// containsFunction reports whether the collection holds a routine that returns
+// a value.
+func containsFunction(routines []goschema.Function) bool {
+	for _, routine := range routines {
+		if !routine.IsProcedure() {
+			return true
+		}
+	}
+	return false
+}
+
+// containsProcedure reports whether the collection holds a routine that returns
+// nothing.
+func containsProcedure(routines []goschema.Function) bool {
+	for _, routine := range routines {
+		if routine.IsProcedure() {
+			return true
+		}
+	}
+	return false
+}
+
 type strictCEDesiredObject struct {
 	name    string
 	present bool
@@ -545,7 +567,12 @@ type strictCEDesiredObject struct {
 func strictCEUnsupportedDesiredObjects(database *goschema.Database) []strictCEDesiredObject {
 	return []strictCEDesiredObject{
 		{name: "extensions", present: len(database.Extensions) > 0},
-		{name: "functions", present: len(database.Functions) > 0},
+		// The two routine kinds are named apart. They share one collection --
+		// a procedure is a function with its return type removed -- and a
+		// refusal that called a procedure a function would send an operator
+		// looking for a function that is not there (stokaro/ptah#1722).
+		{name: "functions", present: containsFunction(database.Functions)},
+		{name: "procedures", present: containsProcedure(database.Functions)},
 		{name: "standalone sequences", present: len(database.Sequences) > 0},
 		{name: "domains", present: len(database.Domains) > 0},
 		{name: "composite types", present: len(database.CompositeTypes) > 0},
@@ -618,6 +645,10 @@ func Resolve() (Policy, error) {
 // non-boolean, and a name in both classifications fails there.
 var gatedPresenceEnvVars = []string{
 	"PTAH_LOG_FORMAT",
+	// Names the OCI namespace `atlas://` references resolve against. The
+	// community binary has no such setting, so a strict run that consumed it
+	// would fetch from a backend the oracle never reaches.
+	"PTAH_ATLAS_REGISTRY",
 }
 
 // validateStrictEnvironment applies the strict rule to every boolean `PTAH_*`

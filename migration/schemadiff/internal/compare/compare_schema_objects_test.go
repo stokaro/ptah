@@ -5,6 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/goschema"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
@@ -148,43 +149,50 @@ func TestMaterializedViews_DetectsBodyChange(t *testing.T) {
 
 	compare.MaterializedViews(&goschema.Database{
 		MaterializedViews: []goschema.MaterializedView{{
-			Name:            "user_stats",
-			Body:            "SELECT id, COUNT(*) FROM users GROUP BY id",
-			RefreshStrategy: "concurrently",
+			Name: "user_stats",
+			Body: "SELECT id, COUNT(*) FROM users GROUP BY id",
 		}},
 	}, &dbschematypes.DBSchema{
 		MatViews: []dbschematypes.DBMatView{{
-			Name:            "user_stats",
-			Body:            "SELECT id, COUNT(*) FROM users WHERE enabled GROUP BY id",
-			RefreshStrategy: "manual",
+			Name: "user_stats",
+			Body: "SELECT id, COUNT(*) FROM users WHERE enabled GROUP BY id",
 		}},
 	}, diff)
 
 	c.Assert(diff.MaterializedViewsModified, qt.HasLen, 1)
 	c.Assert(diff.MaterializedViewsModified[0].Changes["body"], qt.Not(qt.Equals), "")
-	c.Assert(diff.MaterializedViewsModified[0].Changes["refresh_strategy"], qt.Equals, "manual -> concurrently")
+	// The body is the only property a materialized view has to compare. The
+	// refresh strategy was carried here too, on both sides -- and the database
+	// side was invented by the reader, because no catalog reports one
+	// (stokaro/ptah#1625).
+	c.Assert(diff.MaterializedViewsModified[0].Changes, qt.HasLen, 1)
 }
 
-func TestMaterializedViews_ReportsUnvalidatedRefreshStrategyDrift(t *testing.T) {
+// TestMaterializedViews_ReportsNoDriftForAnUnchangedView replaces a test that
+// asserted the opposite.
+//
+// It used to pin a refresh_strategy drift entry as a backstop: the read
+// synthesized "manual" for every materialized view, so a declaration of
+// anything else showed up here even though no renderer read the field. With
+// nothing carrying a strategy on either side, an unchanged view is unchanged
+// (stokaro/ptah#1625).
+func TestMaterializedViews_ReportsNoDriftForAnUnchangedView(t *testing.T) {
 	c := qt.New(t)
 	diff := &difftypes.SchemaDiff{}
 
 	compare.MaterializedViews(&goschema.Database{
 		MaterializedViews: []goschema.MaterializedView{{
-			Name:            "user_stats",
-			Body:            "SELECT id, COUNT(*) FROM users GROUP BY id",
-			RefreshStrategy: "concurrently",
+			Name: "user_stats",
+			Body: "SELECT id, COUNT(*) FROM users GROUP BY id",
 		}},
 	}, &dbschematypes.DBSchema{
 		MatViews: []dbschematypes.DBMatView{{
-			Name:            "user_stats",
-			Body:            "SELECT id, COUNT(*) FROM users GROUP BY id",
-			RefreshStrategy: "manual",
+			Name: "user_stats",
+			Body: "SELECT id, COUNT(*) FROM users GROUP BY id",
 		}},
 	}, diff)
 
-	c.Assert(diff.MaterializedViewsModified, qt.HasLen, 1)
-	c.Assert(diff.MaterializedViewsModified[0].Changes["refresh_strategy"], qt.Equals, "manual -> concurrently")
+	c.Assert(diff.MaterializedViewsModified, qt.HasLen, 0)
 }
 
 func TestMaterializedViews_IgnoresPostgreSQLDefaultAggregateAlias(t *testing.T) {
@@ -535,4 +543,109 @@ func TestTriggers_DetectsNewOldQualifierChange(t *testing.T) {
 
 	c.Assert(diff.TriggersModified, qt.HasLen, 1)
 	c.Assert(diff.TriggersModified[0].Changes["body"], qt.Not(qt.Equals), "")
+}
+
+// refreshComparison compares one declared schedule against one stored schedule
+// over the same view body.
+func refreshComparison(
+	c *qt.C,
+	declared, stored *ast.MatViewRefreshSpec,
+) *difftypes.SchemaDiff {
+	c.Helper()
+	const body = "SELECT count() AS c FROM src"
+	diff := &difftypes.SchemaDiff{}
+	compare.MaterializedViews(&goschema.Database{
+		MaterializedViews: []goschema.MaterializedView{{
+			Name: "mv", Body: body, Refresh: declared,
+		}},
+	}, &dbschematypes.DBSchema{
+		MatViews: []dbschematypes.DBMatView{{
+			Name: "mv", Schema: "ptah_test", Body: body, Refresh: stored,
+		}},
+	}, diff)
+	return diff
+}
+
+// TestMaterializedViews_CanonicalizesTheDeclaredScheduleBeforeComparing is the
+// reason internal/chrefresh exists at all.
+//
+// ClickHouse rewrites what it stores: a view created with `EVERY 60 MINUTE`
+// reads back as `EVERY 1 HOUR`. Comparing the declaration as written would
+// report a difference on every single run and plan a drop and a create for it,
+// on an object whose drop takes every row it accumulated (stokaro/ptah#1802).
+//
+// Every row here is a spelling measured to store as `EVERY 1 HOUR`, so a
+// comparison that skipped the canonicalization would fail all of them.
+func TestMaterializedViews_CanonicalizesTheDeclaredScheduleBeforeComparing(t *testing.T) {
+	stored := &ast.MatViewRefreshSpec{Mode: "EVERY", Interval: "1 HOUR"}
+	tests := []struct {
+		name     string
+		declared string
+	}{
+		{name: "already canonical", declared: "1 HOUR"},
+		{name: "minutes", declared: "60 MINUTE"},
+		{name: "seconds", declared: "3600 SECOND"},
+		{name: "plural spelling", declared: "60 MINUTES"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			diff := refreshComparison(c,
+				&ast.MatViewRefreshSpec{Mode: "EVERY", Interval: test.declared}, stored)
+
+			c.Assert(diff.MaterializedViewsModified, qt.HasLen, 0)
+		})
+	}
+}
+
+// TestMaterializedViews_ReportsARealScheduleChange is the control: the
+// canonicalization must not make every schedule compare equal.
+func TestMaterializedViews_ReportsARealScheduleChange(t *testing.T) {
+	tests := []struct {
+		name     string
+		declared *ast.MatViewRefreshSpec
+		stored   *ast.MatViewRefreshSpec
+	}{
+		{
+			name:     "a different interval",
+			declared: &ast.MatViewRefreshSpec{Mode: "EVERY", Interval: "2 HOUR"},
+			stored:   &ast.MatViewRefreshSpec{Mode: "EVERY", Interval: "1 HOUR"},
+		},
+		{
+			// Same interval, different meaning: EVERY is wall-clock and AFTER
+			// counts from the end of the previous run.
+			name:     "a different mode",
+			declared: &ast.MatViewRefreshSpec{Mode: "AFTER", Interval: "1 HOUR"},
+			stored:   &ast.MatViewRefreshSpec{Mode: "EVERY", Interval: "1 HOUR"},
+		},
+		{
+			name:     "a schedule added to a plain view",
+			declared: &ast.MatViewRefreshSpec{Mode: "EVERY", Interval: "1 HOUR"},
+			stored:   nil,
+		},
+		{
+			name:     "a schedule removed",
+			declared: nil,
+			stored:   &ast.MatViewRefreshSpec{Mode: "EVERY", Interval: "1 HOUR"},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			diff := refreshComparison(c, test.declared, test.stored)
+
+			c.Assert(diff.MaterializedViewsModified, qt.HasLen, 1)
+			c.Assert(diff.MaterializedViewsModified[0].Changes["refresh"], qt.Not(qt.Equals), "")
+			// The typed transition is what lets the planner choose between an
+			// in-place ALTER and a recreate, so it has to carry both sides.
+			change := diff.MaterializedViewsModified[0].RefreshChange
+			c.Assert(change, qt.IsNotNil)
+			c.Assert(change.Desired != nil, qt.Equals, test.declared != nil)
+			c.Assert(change.Current != nil, qt.Equals, test.stored != nil)
+		})
+	}
 }

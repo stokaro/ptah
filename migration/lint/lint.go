@@ -89,15 +89,101 @@ type Rule struct {
 	AppliesToDown bool
 	// CheckFile inspects file-level form and returns full findings.
 	CheckFile func(file *File) []Finding
+	// Input declares what this rule reads. The zero value,
+	// [InputStatementText], is the migration SQL and nothing else.
+	//
+	// It is a declaration rather than a comment: [Analysis.BaselineVersions]
+	// is computed from it, so a rule that needs the starting schema state and
+	// does not say so is handed an empty one -- and a rule that says so and
+	// does not get it is reported by [Analysis.UnmetInputs] instead of quietly
+	// finding less (stokaro/ptah#1632).
+	Input RuleInput
+	// BaselineSubjects returns the indexes of the statements in this file whose
+	// analysis would say more with the schema state its version starts from.
+	//
+	// It is required for, and only meaningful to, [InputBaselineSchema].
+	// Statement indexes rather than a yes/no answer, because the reviewed-schema
+	// filter works at that granularity: a rename in a schema the run does not
+	// review is neither worth a dev-database round trip nor worth reporting as
+	// unresolved, and answering per file could not tell the two apart.
+	//
+	// A directory with nothing for the rule to resolve therefore costs no round
+	// trip at all.
+	BaselineSubjects func(file *File) []int
+}
+
+// RuleInput is the analyzer input a [Rule] reads.
+//
+// Ptah's analyzers read migration SQL; Atlas replays the directory against a
+// dev database and analyzes the resulting schema. A concern whose subject
+// exists only in the post-state -- the type of a column a RENAME introduces,
+// say -- is unreachable from the text, so those rules take a second input.
+// Which of the two a rule takes is declared here rather than inferred, because
+// the failure mode of getting it wrong is silence: the rule runs, resolves
+// nothing, and reports less than the tool it replaces while exiting 0.
+type RuleInput uint8
+
+const (
+	// InputStatementText reads the migration SQL and nothing else. It is the
+	// zero value, so a rule says nothing about its input only when its input
+	// is the text.
+	InputStatementText RuleInput = iota
+	// InputBaselineSchema additionally reads the schema state the analyzed
+	// version starts from, replayed onto a dev database by the caller and
+	// handed back through [Options.Baseline]; see [BaselineColumn].
+	InputBaselineSchema
+)
+
+// String names the input for diagnostics.
+func (i RuleInput) String() string {
+	switch i {
+	case InputBaselineSchema:
+		return "baseline schema"
+	case InputStatementText:
+		return "statement text"
+	default:
+		return "unknown input"
+	}
 }
 
 // RuleConfig customizes one rule for a lint run.
 type RuleConfig struct {
-	// Severity overrides the rule's default severity when set.
+	// Severity overrides the rule's default severity when set. On a DECLARED
+	// rule it is the rule's own severity rather than an override, and defaults
+	// to warning.
 	Severity Severity `yaml:"severity,omitempty"`
 	// Exclude lists slash-separated path globs where this rule is skipped.
 	Exclude []string `yaml:"exclude,omitempty"`
+
+	// Match DECLARES a rule rather than configuring one. It is an expression
+	// over `statement`, `file` and `dialect` that decides whether the rule
+	// fires; see [go.5x5.cz/ptah/migration/lint] package documentation for the
+	// vocabulary.
+	//
+	// Its presence is what separates the two uses of this type: an entry with
+	// Match defines a new rule, an entry without it configures a rule that
+	// already exists. A code that already belongs to a built-in rule cannot be
+	// declared, so a typo can never quietly replace a built-in check with a
+	// weaker one of the same name.
+	Match string `yaml:"match,omitempty"`
+	// Message is the finding text a declared rule reports. It is required when
+	// Match is set: a finding whose message is the rule code tells a reader
+	// what fired and nothing about why it matters.
+	Message string `yaml:"message,omitempty"`
+	// Title is the declared rule's short name in reports. It defaults to the
+	// rule code.
+	Title string `yaml:"title,omitempty"`
+	// Dialects restricts a declared rule to specific target dialects. Empty
+	// runs it under every dialect.
+	Dialects []string `yaml:"dialects,omitempty"`
+	// AppliesToDown extends a declared rule to the down half of a migration.
+	// It is off by default for the same reason it is off on a built-in rule.
+	AppliesToDown bool `yaml:"applies-to-down,omitempty"`
 }
+
+// Declares reports whether this entry declares a rule rather than configuring
+// an existing one.
+func (c RuleConfig) Declares() bool { return strings.TrimSpace(c.Match) != "" }
 
 // Options configures a lint run.
 type Options struct {
@@ -162,10 +248,7 @@ func parseKnownMigrationName(name string, dirFormat migrator.MigrationDirFormat)
 func runRules(file *File, opts Options, rules []Rule) []Finding {
 	var findings []Finding
 	for _, rule := range rules {
-		if ruleDisabled(rule.Code, opts.Disabled) ||
-			fileSuppressesRule(file, rule.Code) ||
-			!ruleAppliesToDialect(rule, opts.Dialect) ||
-			ruleExcludedForFile(rule.Code, file, opts.RuleConfigs) {
+		if !ruleRunsOnFile(rule, file, opts) {
 			continue
 		}
 		severity := ruleSeverity(rule, opts.RuleConfigs)
@@ -206,9 +289,13 @@ func runRules(file *File, opts Options, rules []Rule) []Finding {
 	return findings
 }
 
-func rulesForOptions(opts Options) []Rule {
-	rules := Rules()
-	return append(rules, cloneRules(opts.ExtraRules)...)
+func rulesForOptions(opts Options) ([]Rule, error) {
+	rules := append(Rules(), cloneRules(opts.ExtraRules)...)
+	declared, err := compileDeclaredRules(opts.RuleConfigs, rules, opts.Dialect)
+	if err != nil {
+		return nil, err
+	}
+	return append(rules, declared...), nil
 }
 
 func ruleSeverity(rule Rule, configs map[string]RuleConfig) Severity {
@@ -238,6 +325,14 @@ func ruleConfigForCode(code string, configs map[string]RuleConfig) (RuleConfig, 
 	}
 	if config, ok := configs[code]; ok {
 		return config, true
+	}
+	// An entry written under the Atlas spelling governs the Ptah rule that
+	// reports it, so `rules: {PG301: {severity: warning}}` reaches DS103
+	// (stokaro/ptah#1631).
+	for _, atlasCode := range AtlasCodeFor(code) {
+		if config, ok := configs[atlasCode]; ok {
+			return config, true
+		}
 	}
 	bestPrefix := ""
 	var best RuleConfig
@@ -348,8 +443,11 @@ func matchGlobSegments(pattern, value []string) bool {
 
 // ruleDisabled reports whether code matches any disabled entry — exact code
 // or family prefix ("DS" disables every DS rule).
-func ruleDisabled(code string, disabled []string) bool {
-	for _, entry := range disabled {
+//
+// dialect scopes the Atlas alias expansion: a PostgreSQL Atlas code must not
+// silence a generic Ptah rule while linting MySQL (stokaro/ptah#1631).
+func ruleDisabled(code string, disabled []string, dialect string) bool {
+	for _, entry := range expandAtlasCodeSelectorsForDialect(disabled, dialect) {
 		entry = strings.TrimSpace(entry)
 		if entry != "" && strings.HasPrefix(code, entry) {
 			return true
@@ -641,4 +739,17 @@ func tokenizeSourceWords(sql string, mode scanMode) []string {
 		}
 	}
 	return words
+}
+
+// ruleRunsOnFile reports whether rule is enabled for this file under opts.
+//
+// It is shared with [baselineVersions] on purpose: the set of rules that run on
+// a file and the set that may ask for that file's starting schema state have to
+// be the same set, or a run reads a dev database for a rule it then skips, or
+// skips a read for a rule it then runs (stokaro/ptah#1632).
+func ruleRunsOnFile(rule Rule, file *File, opts Options) bool {
+	return !ruleDisabled(rule.Code, opts.Disabled, opts.Dialect) &&
+		!fileSuppressesRule(file, rule.Code) &&
+		ruleAppliesToDialect(rule, opts.Dialect) &&
+		!ruleExcludedForFile(rule.Code, file, opts.RuleConfigs)
 }

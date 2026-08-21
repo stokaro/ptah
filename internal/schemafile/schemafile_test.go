@@ -1,8 +1,10 @@
 package schemafile_test
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -364,4 +366,103 @@ func TestLocalFilePath_RejectsRemoteURL(t *testing.T) {
 	_, err := schemafile.LocalFilePath("postgres://localhost/db")
 
 	c.Assert(err, qt.ErrorMatches, `only local file:// schema files are supported`)
+}
+
+// ignoredBlocksSchema is a schema file carrying the three top-level names the
+// compat surface accepts and drops: two Atlas project-shaped blocks and one
+// unmodeled object kind whose body resolves a declared schema.
+const ignoredBlocksSchema = `schema "main" {
+}
+
+lock {
+}
+
+atlas {
+}
+
+procedure "do_thing" {
+  schema = schema.main
+}
+
+table "users" {
+  schema = schema.main
+  column "id" {
+    type = int
+  }
+}
+`
+
+// TestLoad_ReportsIgnoredTopLevelBlocks covers stokaro/ptah#1709.
+//
+// The compat surface accepts these three names and contributes nothing for
+// them, matching a documented tolerance. Matching it is defensible; matching it
+// in SILENCE is not -- a `procedure` block dropped from a schema file is a
+// stored routine the author believes is managed, and the same product already
+// warns about an ignored atlas.hcl block through
+// dbcli.ReportIgnoredAtlasConstructs.
+//
+// The load still succeeds and the modeled objects still arrive, which is the
+// half a reporting change could break by turning a warning into a refusal.
+func TestLoad_ReportsIgnoredTopLevelBlocks(t *testing.T) {
+	c := qt.New(t)
+	path := filepath.Join(t.TempDir(), "schema.hcl")
+	c.Assert(os.WriteFile(path, []byte(ignoredBlocksSchema), 0o600), qt.IsNil)
+	var reported bytes.Buffer
+
+	db, err := schemafile.Load("file://"+path, schemafile.Options{
+		Dialect:               platform.SQLite,
+		IgnoreUnknownHCLNames: true,
+		ReportIgnored:         &reported,
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(db.Tables, qt.HasLen, 1)
+
+	lines := strings.Split(strings.TrimSpace(reported.String()), "\n")
+	c.Assert(lines, qt.HasLen, 3)
+	// The line number is what makes the warning actionable in a file that
+	// declares dozens of blocks, so it is asserted rather than the name alone.
+	c.Assert(lines[0], qt.Matches, `warning: schema file block "lock" at .*schema\.hcl:4 is ignored for Atlas compatibility and has no effect`)
+	c.Assert(lines[1], qt.Matches, `warning: schema file block "atlas" at .*schema\.hcl:7 is ignored for Atlas compatibility and has no effect`)
+	c.Assert(lines[2], qt.Matches, `warning: schema file block "procedure" at .*schema\.hcl:10 is ignored for Atlas compatibility and has no effect`)
+}
+
+// TestLoad_RefusesIgnoredTopLevelBlocksWithoutTolerance is the other half of
+// the pair, and the one that keeps the two surfaces apart on purpose: native
+// `ptah` reads the same file with the tolerance off, where an unmodeled name is
+// a user error worth naming rather than a warning worth printing.
+//
+// Nothing is written to the reporter, because there is nothing ignored -- the
+// first unmodeled name ends the load.
+func TestLoad_RefusesIgnoredTopLevelBlocksWithoutTolerance(t *testing.T) {
+	c := qt.New(t)
+	path := filepath.Join(t.TempDir(), "schema.hcl")
+	c.Assert(os.WriteFile(path, []byte(ignoredBlocksSchema), 0o600), qt.IsNil)
+	var reported bytes.Buffer
+
+	_, err := schemafile.Load("file://"+path, schemafile.Options{
+		Dialect:       platform.SQLite,
+		ReportIgnored: &reported,
+	})
+
+	c.Assert(err, qt.ErrorMatches, `(?s).*unsupported top-level block "lock".*`)
+	c.Assert(reported.String(), qt.Equals, "")
+}
+
+// TestLoad_IgnoredBlocksStaySilentWithoutAReporter pins that the reporting is
+// the caller's choice and not a behavior change forced on everyone: with no
+// writer the load is exactly what it was before, which is what the community
+// binary does.
+func TestLoad_IgnoredBlocksStaySilentWithoutAReporter(t *testing.T) {
+	c := qt.New(t)
+	path := filepath.Join(t.TempDir(), "schema.hcl")
+	c.Assert(os.WriteFile(path, []byte(ignoredBlocksSchema), 0o600), qt.IsNil)
+
+	db, err := schemafile.Load("file://"+path, schemafile.Options{
+		Dialect:               platform.SQLite,
+		IgnoreUnknownHCLNames: true,
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(db.Tables, qt.HasLen, 1)
 }

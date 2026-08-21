@@ -12,6 +12,7 @@ import (
 	"slices"
 
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/sqliteforeignkeys"
@@ -42,6 +43,9 @@ func BeginTransaction(
 	conn *dbschema.DatabaseConnection,
 	statements []string,
 ) (types.SchemaTransaction, error) {
+	if unwrapped, ok := beginWithoutTransaction(conn.Info().Capabilities, conn.Writer()); ok {
+		return unwrapped, nil
+	}
 	if sqliteforeignkeys.Brackets(statements) {
 		return beginWithoutForeignKeys(ctx, conn)
 	}
@@ -55,6 +59,9 @@ func BeginTransactionForSQL(
 	conn *dbschema.DatabaseConnection,
 	sqlText string,
 ) (types.SchemaTransaction, error) {
+	if unwrapped, ok := beginWithoutTransaction(conn.Info().Capabilities, conn.Writer()); ok {
+		return unwrapped, nil
+	}
 	if sqliteforeignkeys.BracketsSQL(sqlText) {
 		return beginWithoutForeignKeys(ctx, conn)
 	}
@@ -69,11 +76,67 @@ func BeginTransactionForAnySQL(
 	conn *dbschema.DatabaseConnection,
 	sqlTexts []string,
 ) (types.SchemaTransaction, error) {
+	if unwrapped, ok := beginWithoutTransaction(conn.Info().Capabilities, conn.Writer()); ok {
+		return unwrapped, nil
+	}
 	if slices.ContainsFunc(sqlTexts, sqliteforeignkeys.BracketsSQL) {
 		return beginWithoutForeignKeys(ctx, conn)
 	}
 	return conn.SchemaWriter().BeginTransaction(ctx)
 }
+
+// beginWithoutTransaction answers for a target that refuses schema statements
+// inside an explicit transaction, and reports whether it did.
+//
+// Spanner's PostgreSQL interface is that target: measured on the Cloud Spanner
+// emulator behind PGAdapter 0.55.2, every declarative apply failed on its first
+// statement with `DDL statements are only allowed outside explicit
+// transactions` (SQLSTATE 25000), while the same DDL applies unwrapped. So the
+// whole declarative workflow was unreachable there, and nothing said so --
+// the capability line is probed every run and the probe applies nothing
+// (stokaro/ptah#1793).
+//
+// The decision is capability.DDLInsideTransaction rather than a dialect name,
+// because the reasons differ and the answers do not travel together: MySQL
+// commits DDL implicitly and still takes the wrapper, ClickHouse has no
+// cross-statement transactions at all, and Spanner has them and refuses DDL
+// inside one.
+//
+// This is the only place schema SQL opens a transaction, which is why the
+// answer belongs here rather than in each writer.
+func beginWithoutTransaction(
+	caps capability.Capabilities,
+	writer types.SchemaExecutor,
+) (types.SchemaTransaction, bool) {
+	if writer == nil || caps.Has(capability.DDLInsideTransaction) {
+		return nil, false
+	}
+	return unwrappedTransaction{writer: writer}, true
+}
+
+// unwrappedTransaction runs statements straight at the writer and answers
+// Commit and Rollback without doing anything.
+//
+// Rollback is the honest part: there is no transaction to undo, and every
+// statement that already ran has already taken effect. A caller that rolls back
+// here is not returned to its starting state, which is exactly what a target
+// without transactional DDL offers and what capability.TransactionalDDL
+// records separately.
+type unwrappedTransaction struct {
+	writer types.SchemaExecutor
+}
+
+func (t unwrappedTransaction) ExecuteSQL(ctx context.Context, sqlExpr string, args ...any) error {
+	return t.writer.ExecuteSQL(ctx, sqlExpr, args...)
+}
+
+// IsDryRun reports what the writer beneath reports, so a preview stays a
+// preview through the unwrapped path.
+func (t unwrappedTransaction) IsDryRun() bool { return t.writer.IsDryRun() }
+
+func (t unwrappedTransaction) Commit() error { return nil }
+
+func (t unwrappedTransaction) Rollback() error { return nil }
 
 // beginWithoutForeignKeys opens the transaction a rebuild needs. A writer with
 // no session to suspend -- any dialect but SQLite -- gets an ordinary

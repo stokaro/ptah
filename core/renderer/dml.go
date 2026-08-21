@@ -107,7 +107,49 @@ func newWriteRenderer(dialect, kind string) (*selectRenderer, error) {
 	if !ok {
 		return nil, fmt.Errorf("renderer: %s rendering is not supported for dialect %q", kind, dialect)
 	}
+	if err := refuseUnportableWrite(normalized, kind); err != nil {
+		return nil, err
+	}
 	return &selectRenderer{dialect: normalized, placeholder: style}, nil
+}
+
+// refuseUnportableWrite refuses a verb whose portable spelling the dialect does
+// not execute, by an ENGINE reason rather than by the generic
+// dialect-not-taught refusal.
+//
+// ClickHouse is the only such case today. It parses no standalone
+// `UPDATE … SET …` or `DELETE FROM … WHERE …`: those are mutations there,
+// spelled `ALTER TABLE … UPDATE` and `ALTER TABLE … DELETE`, applied
+// asynchronously and outside any transaction. Emitting the portable spelling
+// would produce SQL the server rejects; emitting the mutation spelling from a
+// portable builder would give one dialect silently different semantics --
+// asynchronous, non-transactional -- behind an API whose other dialects apply
+// the row change before the call returns.
+//
+// So the verbs the engine does execute portably are rendered, and the two it
+// does not are refused with the reason. SELECT and INSERT are ordinary
+// statements on ClickHouse and are unaffected (stokaro/ptah#941).
+// DELETE was refused here too, and that was stricter than the engine. Measured
+// on ClickHouse 24.10.4.191 -- the oldest line the presets and the compose
+// service cover -- `DELETE FROM u WHERE id = 1` runs and the row is gone;
+// measured again on 25.8.30 with the same result. Lightweight delete has been
+// on by default since 23.3, so every version Ptah supports has it.
+//
+// UPDATE is different, and the server says so rather than the docs: a plain
+// UPDATE answers `Lightweight updates are not supported. Lightweight updates
+// are supported only for tables with materialized _block_number column`, which
+// is a per-table setting a statement cannot declare (stokaro/ptah#941).
+func refuseUnportableWrite(normalized, kind string) error {
+	if normalized != platform.ClickHouse {
+		return nil
+	}
+	if kind != "UPDATE" {
+		return nil
+	}
+	return fmt.Errorf(
+		"renderer: UPDATE is not a portable statement on ClickHouse: a plain UPDATE runs only on a table " +
+			"with the materialized _block_number column, which a statement cannot declare; use " +
+			"ALTER TABLE … UPDATE, or enable enable_block_number_column on the table")
 }
 
 func (r *selectRenderer) renderInsert(stmt *ast.InsertStatement) error {
@@ -117,8 +159,13 @@ func (r *selectRenderer) renderInsert(stmt *ast.InsertStatement) error {
 	if len(stmt.Columns) == 0 {
 		return errors.New("renderer: insert statement requires at least one column")
 	}
-	if len(stmt.Rows) == 0 {
-		return errors.New("renderer: insert statement requires at least one row")
+	if len(stmt.Rows) > 0 && stmt.Select != nil {
+		return errors.New(
+			"renderer: insert statement has both VALUES rows and a SELECT source; " +
+				"they are alternatives, and choosing one would insert rows the caller did not ask for")
+	}
+	if len(stmt.Rows) == 0 && stmt.Select == nil {
+		return errors.New("renderer: insert statement requires at least one row or a SELECT source")
 	}
 
 	r.buf.WriteString("INSERT INTO ")
@@ -127,11 +174,176 @@ func (r *selectRenderer) renderInsert(stmt *ast.InsertStatement) error {
 	if err := r.writeInsertColumns(stmt.Columns); err != nil {
 		return err
 	}
-	r.buf.WriteString(") VALUES ")
-	if err := r.writeInsertRows(stmt.Columns, stmt.Rows); err != nil {
+	r.buf.WriteString(")")
+	if stmt.Select != nil {
+		if err := r.writeInsertSelect(stmt.Columns, stmt.Select); err != nil {
+			return err
+		}
+	} else {
+		r.buf.WriteString(" VALUES ")
+		if err := r.writeInsertRows(stmt.Columns, stmt.Rows); err != nil {
+			return err
+		}
+	}
+	if err := r.renderOnConflict(stmt.OnConflict, stmt.Columns); err != nil {
 		return err
 	}
 	return r.renderReturning(stmt.Returning)
+}
+
+// writeInsertSelect writes the SELECT that supplies the inserted rows.
+//
+// The projection is checked against the column list first. The server enforces
+// the same rule, but its error names neither the target columns nor the query
+// -- `INSERT has more expressions than target columns` is all a caller gets --
+// and the builder is holding both sides, so it can say which is which.
+//
+// A star projection is refused rather than counted: `SELECT *` supplies however
+// many columns the source table happens to have today, so a statement that
+// matches now breaks the next time somebody adds a column to that table, with
+// nothing in this statement changed (stokaro/ptah#941).
+func (r *selectRenderer) writeInsertSelect(columns []string, query *ast.SelectStatement) error {
+	if len(query.Columns) == 0 {
+		return errors.New(
+			"renderer: the SELECT supplying an INSERT must project its columns explicitly; " +
+				"a star projection supplies whatever the source table has today")
+	}
+	if len(query.Columns) != len(columns) {
+		return fmt.Errorf(
+			"renderer: the SELECT supplying an INSERT projects %d column(s) for %d target column(s)",
+			len(query.Columns), len(columns))
+	}
+	r.buf.WriteString(" ")
+	return r.render(query)
+}
+
+// renderOnConflict writes the upsert clause in the dialect's own spelling, or
+// refuses the combination the dialect cannot express.
+//
+// The refusals are the substance. PostgreSQL and SQLite watch the constraint
+// the caller NAMED; MySQL and MariaDB watch every unique key on the table and
+// have no syntax for narrowing that. So a clause carrying a conflict target is
+// refused on the MySQL family rather than rendered into one that fires on keys
+// the caller never mentioned -- a statement that inserts correctly in testing
+// and overwrites the wrong row the first time a second unique index exists.
+//
+// SQL Server spells this as MERGE and ClickHouse has no upsert statement, so
+// both are refused by name (stokaro/ptah#941).
+func (r *selectRenderer) renderOnConflict(clause *ast.OnConflict, inserted []string) error {
+	if clause == nil {
+		return nil
+	}
+	if clause.DoNothing && len(clause.Update) > 0 {
+		return errors.New("renderer: ON CONFLICT cannot both do nothing and update")
+	}
+	if !clause.DoNothing && len(clause.Update) == 0 {
+		return errors.New(
+			"renderer: ON CONFLICT updates no column; use DoNothing to discard a colliding row")
+	}
+	for _, group := range [][]string{clause.Columns, clause.Update} {
+		for _, name := range group {
+			if strings.TrimSpace(name) == "" {
+				return errors.New("renderer: ON CONFLICT column has an empty name")
+			}
+		}
+	}
+	switch {
+	case platform.IsPostgresFamily(r.dialect) || r.dialect == platform.SQLite:
+		return r.renderOnConflictTarget(clause)
+	case r.dialect == platform.MySQL || r.dialect == platform.MariaDB:
+		return r.renderOnDuplicateKey(clause, inserted)
+	case r.dialect == platform.SQLServer:
+		return errors.New(
+			"renderer: SQL Server has no ON CONFLICT: it expresses an upsert as MERGE, " +
+				"a different statement with its own source, join condition and match clauses")
+	case r.dialect == platform.ClickHouse:
+		return errors.New(
+			"renderer: ClickHouse has no upsert statement: a ReplacingMergeTree deduplicates " +
+				"in the background rather than at insert time, which is a table design and not " +
+				"a clause on this INSERT")
+	default:
+		return fmt.Errorf("renderer: %s has no upsert statement this builder emits", r.dialect)
+	}
+}
+
+// renderOnConflictTarget writes the PostgreSQL and SQLite spelling, where the
+// proposed row is named `excluded`.
+func (r *selectRenderer) renderOnConflictTarget(clause *ast.OnConflict) error {
+	// Both engines allow the target to be omitted only for DO NOTHING. A bare
+	// `ON CONFLICT DO UPDATE` is a syntax error on each -- the server has no way
+	// to know which index's collision the SET applies to -- so it is refused
+	// here rather than emitted and rejected at execution.
+	if !clause.DoNothing && len(clause.Columns) == 0 {
+		return fmt.Errorf(
+			"renderer: %s requires a conflict target for DO UPDATE: name the columns whose "+
+				"unique index the insert watches, or use DoNothing, which accepts no target",
+			r.dialect)
+	}
+	r.buf.WriteString(" ON CONFLICT")
+	if len(clause.Columns) > 0 {
+		r.buf.WriteString(" (")
+		for i, name := range clause.Columns {
+			if i > 0 {
+				r.buf.WriteString(", ")
+			}
+			r.buf.WriteString(r.quote(name))
+		}
+		r.buf.WriteString(")")
+	}
+	if clause.DoNothing {
+		r.buf.WriteString(" DO NOTHING")
+		return nil
+	}
+	r.buf.WriteString(" DO UPDATE SET ")
+	for i, name := range clause.Update {
+		if i > 0 {
+			r.buf.WriteString(", ")
+		}
+		r.buf.WriteString(r.quote(name))
+		r.buf.WriteString(" = excluded.")
+		r.buf.WriteString(r.quote(name))
+	}
+	return nil
+}
+
+// renderOnDuplicateKey writes the MySQL-family spelling, where the proposed row
+// is read back with VALUES().
+//
+// A conflict TARGET is refused here rather than dropped: ON DUPLICATE KEY fires
+// for every unique key on the table, so honoring the clause while ignoring the
+// columns it named would widen what the caller asked for.
+func (r *selectRenderer) renderOnDuplicateKey(clause *ast.OnConflict, inserted []string) error {
+	if len(clause.Columns) > 0 {
+		return fmt.Errorf(
+			"renderer: %s cannot scope an upsert to named columns: ON DUPLICATE KEY UPDATE "+
+				"fires for every unique key on the table, so a conflict target would be ignored "+
+				"and the statement would overwrite on keys the caller did not name", r.dialect)
+	}
+	if clause.DoNothing {
+		// MySQL has no DO NOTHING. Assigning a column to itself is the
+		// documented idiom, and it is written out rather than hidden: it keeps
+		// the row untouched while still consuming the duplicate.
+		if len(inserted) == 0 {
+			return errors.New("renderer: ON CONFLICT DO NOTHING needs a column to hold steady")
+		}
+		name := inserted[0]
+		r.buf.WriteString(" ON DUPLICATE KEY UPDATE ")
+		r.buf.WriteString(r.quote(name))
+		r.buf.WriteString(" = ")
+		r.buf.WriteString(r.quote(name))
+		return nil
+	}
+	r.buf.WriteString(" ON DUPLICATE KEY UPDATE ")
+	for i, name := range clause.Update {
+		if i > 0 {
+			r.buf.WriteString(", ")
+		}
+		r.buf.WriteString(r.quote(name))
+		r.buf.WriteString(" = VALUES(")
+		r.buf.WriteString(r.quote(name))
+		r.buf.WriteString(")")
+	}
+	return nil
 }
 
 // writeInsertColumns writes the parenthesized column list. Each name is quoted

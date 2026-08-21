@@ -24,6 +24,7 @@ Ptah accepts these local configuration blocks:
 - `data "template_dir"` for rendered migration directories
 - `env` blocks, with either one label or no label
 - top-level and env-local `lint`
+- top-level `exporter` for named output templates
 - env-local `schema`, `migration`, `format`, and `diff`
 
 Referenced Atlas Cloud and remote-directory sources, registry constructs, and
@@ -284,6 +285,47 @@ external schema program. `env://url` and `env://dev` resolve the corresponding
 database URL; `env://migration.dir` resolves the configured local migration
 directory. Nested `env://` references fail explicitly.
 
+## Functions
+
+`atlas.hcl` is evaluated against the same function set as an HCL schema file —
+`join`, `upper`, `replace`, `substr`, `sort`, `format`, `jsonencode`, `try`,
+`can` and the rest. An expression that works in a schema file works here:
+
+```hcl
+variable "schemas" {
+  type    = list(string)
+  default = ["public", "app"]
+}
+
+env "local" {
+  url     = getenv("DATABASE_URL")
+  exclude = [join(",", var.schemas)]
+}
+```
+
+Three functions mean something different here than in a schema file, because
+their answer depends on where the file being evaluated lives: `file` and
+`fileset` read the directory holding `atlas.hcl`, and `getenv` reads the
+process environment. Everything else is shared.
+
+`print` is not available here, unlike in a schema file. It returns its argument
+and writes the value to stdout, and `atlas.hcl` is the one place a
+`sensitive = true` variable exists — so `print(var.token)` would put a
+credential in the command's output and in CI logs.
+
+A `sensitive = true` variable is protected on both error paths, and the two
+differ on purpose:
+
+- an expression that **fails to evaluate** has its diagnostic withheld
+  entirely, whatever functions the value passed through;
+- a value that evaluates and then **fails a rule** is scrubbed when the
+  expression names the variable directly, so the reason survives
+  (`unsupported URL scheme: (sensitive value)`), and withheld when the value
+  was derived — `upper(var.token)` puts bytes in the message that replacing the
+  original value cannot find.
+
+A non-sensitive expression keeps its full diagnostic either way.
+
 ## Reading files with file() and fileset()
 
 `file("path")` inlines a file's contents into a config value, and
@@ -414,11 +456,78 @@ or a local value references it. Dependencies between locals and data sources
 run first. Declaring an unreferenced source does not open a database, start a
 program, read a runtime variable, or render a directory.
 
-The lazy set also recognizes `remote_dir`, `remote_schema`, `aws_rds_token`,
-and `gcp_cloudsql_token`, matching the community binary's treatment of valid
-unreferenced blocks. Referencing one still fails explicitly because Ptah does
-not implement it. An unknown type, including `composite_schema`, fails during
-structural validation even when unreferenced.
+The lazy set also recognizes `remote_schema`, `aws_rds_token`, and
+`gcp_cloudsql_token`, matching the community binary's treatment of valid
+unreferenced blocks. Referencing `aws_rds_token` or `gcp_cloudsql_token` still
+fails explicitly because Ptah does not implement it; `remote_schema` resolves
+through Ptah's OCI backend (see [Remote schema data
+source](#remote-schema-data-source)). An unknown type, including
+`composite_schema`, fails during structural validation even when unreferenced.
+
+## Remote schema data source
+
+`data "remote_schema"` names the OCI artifact holding a desired schema. `name`
+is required; `tag` selects a moving tag and defaults to `latest`, and `version`
+selects a write-once tag. Set `PTAH_ATLAS_REGISTRY` to the namespace holding
+them.
+
+```hcl
+data "remote_schema" "app" {
+  name = "app"
+  tag  = "prod"
+}
+
+env "local" {
+  url = "postgres://localhost:5432/app?sslmode=disable"
+  src = data.remote_schema.app.url
+}
+```
+
+The block resolves to an internal marker and fetches nothing at parse time. A
+project file is read by every verb, so pulling an artifact the run never uses
+would make an unrelated command fail whenever the registry is unreachable.
+
+The marker also keeps the capability off the flag surface: `--to oci://…` and
+`--url oci://…` remain refused on the Atlas-compatible commands, because the
+community binary answers that spelling with `unknown driver "oci"`. Native Ptah
+reads the artifact directly instead, with no project file:
+
+```sh
+ptah schema inspect --schema-file oci://ghcr.io/acme/app:prod
+```
+
+## Remote directory data source
+
+`data "remote_dir"` pulls a migration directory from an OCI registry.
+
+```hcl
+data "remote_dir" "app" {
+  name = "app"
+}
+
+env "local" {
+  migration {
+    dir = data.remote_dir.app.url
+  }
+}
+```
+
+`name` is required and names the repository. `tag` selects a moving tag and
+defaults to `latest`; `version` selects an immutable one. Naming both is
+refused, because a tag moves and a version does not, so a block carrying both
+names two different artifacts.
+
+Set `PTAH_ATLAS_REGISTRY` to the namespace the repository resolves against —
+for example `registry.example.com/acme`, which makes the block above resolve to
+`oci://registry.example.com/acme/app:latest`. Without it the reference is
+refused rather than guessed. Set `PTAH_ATLAS_REGISTRY_PLAIN_HTTP=1` to reach a
+registry over plain HTTP, which is intended for a local registry in a test.
+Both variables are Ptah extensions, so `PTAH_ATLAS_STRICT_COMPAT` refuses them.
+
+The directory is read-only. Ptah pulls it and reads it; it does not write back
+to a registry, so `migrate new`, `migrate diff` and `migrate hash` refuse
+against it and name the reference they refused. Write to a local directory and
+publish it with `ptah migrations push`.
 
 ## SQL data source
 
@@ -604,6 +713,43 @@ Non-local URI schemes in `migration.dir` and `schema.src` fail explicitly when
 a command needs that configured value; an explicit CLI path flag still wins
 before URI validation.
 
+## Named output templates
+
+An `exporter` block declares a Go template, and an env's `exporter` attribute
+picks which one `--export` renders through:
+
+```hcl
+exporter "markdown" {
+  template = "## Rollout\n{{ range .Changes }}- {{ .Cmd }}\n{{ end }}"
+}
+
+env "local" {
+  url      = "sqlite://app.db"
+  dev      = "sqlite://dev.db"
+  exporter = "markdown"
+}
+```
+
+```bash
+ptah-compat schema diff --env local --from ... --to ... --export
+ptah-compat schema inspect --env local --export
+```
+
+An exporter is `--format` with the template kept in the project instead of in
+every invocation, over the same report that flag renders. That is the whole
+design: the two verbs already render through templates, so a named format needs
+no evaluator of its own, and a declarative description of output structure would
+have been a second language to learn, document and version for the same result.
+
+The block is top-level rather than env-local because an output format is not a
+property of a database — every env can select the same one by name.
+
+Every way an export can fail to name a template is refused rather than answered
+with the ordinary report: no project config, an env selecting none, an env
+naming one nothing declares, a block declaring no template, a name declared
+twice, and `--export` passed alongside `--format`. Each of those would otherwise
+print the default output and let you believe your exporter ran.
+
 ## Environment selection
 
 Use Atlas project flags on commands under `ptah-compat schema ...` and
@@ -619,6 +765,29 @@ ptah-compat migrate hash --env local --var dir=migrations
 are accepted; other URL schemes fail explicitly. `--var name=value` can be
 repeated. Repeating the same variable name produces a string list for supported
 Atlas HCL expressions.
+
+### Naming a project config from the native binary
+
+The native `ptah` binary reads the same file. Discovery finds `./atlas.hcl`,
+and `--config` names one anywhere else:
+
+```bash
+ptah migrations status --config conf/staging.hcl --env staging
+```
+
+`--config` takes a `ptah.yaml` as it always has; a path ending in `.hcl` is read
+as an Atlas project config instead. The extension decides, not the contents, so
+a path resolves the same way every time rather than changing meaning while the
+file is being edited.
+
+Naming one replaces discovery rather than adding to it: `./atlas.hcl` is not
+also read, so an env defined in both files resolves from the one named. A
+`./ptah.yaml` is still read underneath for what the Atlas file leaves unset,
+which is the precedence discovery already had.
+
+Before this, an Atlas project config that was not `./atlas.hcl` could be reached
+from `ptah-compat` and not from `ptah` — backwards for a project moving from the
+compatibility surface to the native one.
 
 A `--var` carrying no `=` is refused where it is written, on every verb, in the
 community CLI's own words

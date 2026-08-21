@@ -2168,7 +2168,7 @@ func (p *parser) rawExprNode(expr hclsyntax.Expression) string {
 }
 
 func (p *parser) blockError(block *hclsyntax.Block, format string, args ...any) error {
-	return fmt.Errorf("parse HCL schema at %s: %s", block.TypeRange.String(), fmt.Sprintf(format, args...))
+	return fmt.Errorf("parse HCL schema at %s: %w", block.TypeRange.String(), fmt.Errorf(format, args...))
 }
 
 func refName(raw string) string {
@@ -2205,5 +2205,12 @@ func (p *parser) printLine(line string) {
 	if !p.emitting {
 		return
 	}
+	writePrintLine(line)
+}
+
+// writePrintLine is the one place a printed line reaches the destination, so
+// the schema evaluator and the project evaluator cannot drift about where it
+// goes.
+func writePrintLine(line string) {
 	fmt.Fprintln(printDestination, line)
 }

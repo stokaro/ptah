@@ -526,16 +526,48 @@ does not accept the native `--confirm` flag. Review `--url`, `--dir`, and
 `--to-version` before running it. Native `ptah migrations down` keeps its
 interactive confirmation.
 
-The registry-bound `--to-tag`, `--skip-checks`, and `--plan` flags are recorded
-waivers that fail loudly with their rationale. `--to-tag` and `--plan` are also
-settable through their `PTAH_<FLAG>` twins, and refusing them is the point:
-setting `PTAH_TO_TAG` is a request for a capability Ptah lacks, and discarding
-it would leave an empty rollback target that reverts the whole history.
+`--to-tag` rolls back to the version a tag names. Tags are recorded with `ptah
+migrations tag` and live in the database beside the revisions, so resolving one
+contacts nothing:
 
-`--skip-checks` is the single exception, and it is explicit-only. `migrate
-apply` reads `PTAH_SKIP_CHECKS` as its pre-migration check bypass, so on this
-verb the variable is not a request for Atlas Cloud down checks; it neither
-refuses a rollback nor appears as an `[env: ...]` suffix in `--help`.
+```bash
+ptah migrations tag release-v1 --db-url "$DATABASE_URL" --version 20260801000001
+ptah-compat migrate down --url "$DATABASE_URL" --dir file://migrations --to-tag release-v1
+```
+
+A tag nobody recorded is refused rather than resolved to zero, because the
+rollback target defaults to `0` and a discarded tag would revert the whole
+history where the operator asked for something bounded. Passing `--to-version`
+as well is refused too: both name where to stop, and picking one silently would
+roll back to a version nobody chose.
+
+`--skip-checks` bypasses the pre-migration checks the down bodies being rolled
+back carry — the `-- +ptah check` directives that abort a rollback when their
+assertion does not hold. It means on this verb exactly what it means on
+`migrate apply`, including through `PTAH_SKIP_CHECKS`.
+
+`--plan` derives the rollback from the schema difference instead of running the
+down bodies, which is what makes a migration with **no** down body revertible:
+
+```bash
+ptah-compat migrate down --url "$DATABASE_URL" --dir file://migrations \
+  --to-version 1 --plan --dev-url "docker://postgres/16/dev"
+```
+
+The target version's schema is built on `--dev-url` and compared against the live
+database, so the flag needs one: that schema exists nowhere else — not in the
+live database, which is what is being changed, and not in any single file, since
+a version's schema is the accumulation of every migration up to it.
+
+Ptah's own revision and tag tables are excluded from the comparison. The live
+database and the dev replay can name them differently, and a table one side has
+and the other does not otherwise looks exactly like a table the rollback should
+drop.
+
+A derived plan is an inference about structure, while a down file is a statement
+of intent. A down body can preserve data a derived `DROP` will not, and can order
+operations in a way a structural comparison has no reason to choose. That is why
+`--plan` is opt-in and the authored bodies stay the default.
 
 ### `ptah-compat migrate diff`
 
@@ -868,11 +900,41 @@ non-community template functions, so these exports are an open Ptah extension.
   and reports it on standard error.
 - A selection that drops a dependency of a selected object is refused rather
   than rendered.
-- Other field-level exclude selectors fail explicitly. Type selectors on
+- Other field-level exclude selectors fail explicitly, and the refusal names
+  the fields the selected resource types do support. Type selectors on
   non-final pattern segments fail too, except for the leading `[type=schema]`
   segment documented in the
   [Atlas comparison](../../atlas/comparison/#leading-schema-type-selector);
   exporter blocks remain an explicit gap.
+
+<!-- BEGIN GENERATED EXCLUDE FIELD SELECTORS -->
+
+#### Subtractable fields
+
+A field is subtractable when Ptah can remove it from the inspected document and
+still write a document that means what the database holds. That is the whole
+criterion, and it is narrower than "a field the reader captured": a column's
+type is captured and cannot be subtracted, because a column without one is not
+a column. A comment can go, and the table is still that table.
+
+| Resource type | Subtractable fields |
+| --- | --- |
+| `base_table` | `comment` |
+| `extension` | `version` |
+| `materialized_view` | `comment` |
+| `synonym` | `comment` |
+| `table` | `comment` |
+| `view` | `comment` |
+
+`.*` names every field in the row for the selected type. A selector naming
+anything else is refused rather than ignored, because a selector that silently
+does nothing is how a user comes to believe a field was excluded.
+
+Adding a field is a change to `excludeFieldSelectors` in
+`internal/atlasfilter`, and this table is checked against it
+(`TestExcludeFieldSelectors_MatchTheDocumentedSet`) — the two cannot drift.
+
+<!-- END GENERATED EXCLUDE FIELD SELECTORS -->
 
 The pinned Atlas CE binary rejects `schema inspect --include` with
 `unknown flag: --include`; Atlas registers it. The measured
@@ -1063,6 +1125,8 @@ plan document prints to stdout.
 | `--edit` | Opens the planned SQL in `$VISUAL`, then `$EDITOR`, and saves the plan rebuilt from valid UTF-8 text. Comments round-trip, and dialect-aware statement severity and the destructive marker are re-derived from what you wrote. An edit leaving no statement is refused, and nothing is written. |
 | `--name-format <template>` | Templates the name over `.FromHash` and `.ToHash`; hashes use Atlas's measured untagged standard-Base64 representation, and the Atlas template helpers (`json`, `upper`, `add`, `indent_ln`, …) are available. Cannot be combined with `--name`. A rendered `/` or `\` requires explicit `--output`. |
 | `--skip-lint` | Accepted as an explicit no-op: `schema plan` runs no lint step, so there is nothing to skip. |
+| `--format <template>` | Renders the plan through a Go template instead of printing the plan document. See [Plan report payload](#plan-report-payload). |
+| `--directive <line>`/`-d` | Writes a migration directive into the plan file. See [Plan directives](#plan-directives). |
 | `--env` | Reads `url` (the plan target), `schema.src`, `dev`, `exclude`, `schema.mode`, and supported `diff` policy from `atlas.hcl`. |
 
 The JSON plan records the ordered SQL statements with per-statement safety
@@ -1101,25 +1165,93 @@ standard-Base64 hash value; because standard Base64 can contain `/`, use an
 explicit `--output` when the rendered name must never depend on file-system
 path rules.
 
+#### Plan report payload
+
+`--format` takes the same Go template `schema apply`, `schema diff`,
+`migrate apply` and the other reporting verbs take, and renders it instead of
+printing the plan document. It selects the output rather than adding to it: a
+plan asked to be saved is still saved, and the `Plan saved to file://…` line is
+suppressed so it cannot land inside a rendered document.
+
+The payload's field names are Ptah's. On the other eight verbs the shape
+follows what Atlas prints, because Atlas executes those verbs and the names are
+therefore observable; Atlas keeps `schema plan` in its Pro registry flow and
+publishes help text for this flag and nothing a template could be written
+against, so there was no shape to match — only one to choose and write down.
+What it is chosen to match is the sibling verb: `.Changes[].Cmd` is
+`schema diff`'s spelling, so a template written there reads a plan unchanged.
+
+| Field | Meaning |
+| --- | --- |
+| `.Name` | Plan name, which is also the default plan file's base name. |
+| `.Dialect` | Target dialect the statements were rendered for. Empty for a plan read back from `.plan.hcl`, which has no field for it. |
+| `.From`, `.To` | The plan's source and desired-state fingerprints, the two values the plan file records. |
+| `.Exclude` | Exclusion patterns the plan was computed with; omitted when there are none. |
+| `.Destructive` | Whether any statement was classified destructive. |
+| `.Changes` | Ordered planned statements, each with `.Cmd`, `.Severity` and `.Reason`. Always a list, so a synced schema renders an empty array rather than a sentence. |
+| `.MigrationBody` | The plan file's `migration` attribute exactly as written, directives included. Read this to reproduce the artifact; read `.Changes` or `sql` to describe it. |
+
+`sql` renders the statements as one script and takes the same optional indent
+argument it takes on `schema diff`. The shared helpers (`json`, `json_merge`,
+`upper`, `add`, `indent_ln`, and the color helpers) are all registered — on
+`schema diff` the shared set is behind `PTAH_SCHEMA_DIFF_TEMPLATE_HELPERS`
+because Atlas offers `sql` alone there, and no such narrower surface exists on
+a verb Atlas does not run at all.
+
+```console
+$ ptah-compat schema plan --from "$DB" --to file://schema.sql --dry-run --format '{{ json . }}'
+$ ptah-compat schema plan --from "$DB" --to file://schema.sql --dry-run --format '{{ sql . }}'
+```
+
+An empty or unparseable `--format` is refused before any database is opened,
+and nothing is written.
+
+#### Plan directives
+
+`-d`/`--directive` writes a migration directive into the plan file, in the
+leading comment block its readers honor — the unbroken run of line comments
+that starts the migration body, closed by a blank line. A directive below that
+block governs nothing, which is why the position is not the operator's to
+choose.
+
+Both spellings of a line are accepted: `atlas:txmode none` as the flag's help
+spells it, and `-- atlas:txmode none` as a migration file spells it.
+
+| Directive | Honored by |
+| --- | --- |
+| `atlas:txmode none`, `atlas:txmode file` | `schema apply --plan`, which executes the plan in that transaction mode. |
+| `atlas:nolint [<selector>…]` | `schema plan lint`, which silences the named rules over the plan's SQL. |
+
+Anything else is refused rather than recorded, including `atlas:checkpoint`:
+a directive a plan file carries and nothing acts on is an instruction the
+reviewer approves and the run ignores. `atlas:txmode all` is refused too, and
+the refusal names `file` as the value to write instead — a transaction mode is
+a file-level directive, and `all` is a global one.
+
+A second `atlas:txmode` is refused whether or not it agrees with the first;
+repeated `atlas:nolint` lines are ordinary, since each names its own selectors.
+
+At apply time the directive resolves against `--tx-mode` under the rule a
+versioned migration's directive already answers to, through the same code: the
+directive wins, except under `--tx-mode all`, where the combination is refused
+rather than silently decided.
+
+```console
+$ ptah-compat schema plan --from "$DB" --to file://schema.sql -o app.plan.hcl -d 'atlas:txmode none'
+$ ptah-compat schema apply --url "$DB" --to file://schema.sql --plan file://app.plan.hcl
+```
+
 **Not implemented**
 
 - Registry-bound `--push`, `--pending`, and `--repo` are recorded waivers
   that fail loudly.
-- `--format` fails explicitly. Atlas's plan report payload was never executed
-  in Atlas, so its field names are unknown; an invented shape
-  would silently break Pro templates that reference the real ones.
-- `--directive` fails explicitly. The measured Atlas `.plan.hcl` carries only
-  `from`, `to`, and `migration`, so a directive would have to ride inside the
-  migration heredoc in an unmeasured spelling — and Ptah's own reader ignores
-  `-- atlas:checkpoint` today, so emitted directives would be silent no-ops.
 - `--schema`, `--include`, and `--lock-timeout` fail explicitly until
   implemented.
 - The registry sub-verbs (`approve`, `list`, `pull`, `push`, `rm`) stay
   unsupported-boundary stubs: they arbitrate plan state in a remote registry.
-- `test` also stays a stub — see below for why. `lint` is implemented and has
-  its own section below; it is a separate verb over a saved plan file, and it
-  puts no lint step on `schema plan` itself, so `--skip-lint` is still a no-op
-  there.
+- `test` and `lint` are implemented and have their own sections below. Both are
+  separate verbs over a saved plan file, and neither puts a lint or test step on
+  `schema plan` itself, so `--skip-lint` is still a no-op there.
 
 Atlas keeps `schema plan` in its Pro registry flow, so this is a free Ptah
 capability rather than an Atlas CE stub.
@@ -1135,9 +1267,9 @@ is to create the plan file.
 The plan is written to `--output`/`-o` when given, and to `<name>.plan.hcl` in
 the working directory otherwise; an existing default-named plan file is never
 overwritten. An `--output` path ending in `.json` writes the native JSON plan
-format. `--edit`, `--name` and `--name-format` behave exactly as they do on
-`schema plan`, and the same refusals apply to `--repo`, `--format`,
-`--lock-timeout`, `--schema` and `--include`.
+format. `--edit`, `--name`, `--name-format` and `--format` behave exactly as they do on
+`schema plan`, and the same refusals apply to `--repo`, `--lock-timeout`,
+`--schema` and `--include`.
 
 `--save`, `--dry-run`, `--push`, `--pending`, `--skip-lint` and `--directive`
 are **not registered** here, because Atlas does not register them here.
@@ -1255,11 +1387,61 @@ treated as unauthenticated metadata because their derivation is not public;
 malformed values are rejected. The replayed end state, not a foreign hash, is
 the integrity boundary.
 
-**Why `test` is not implemented.** It is local by its Atlas flag set, and it is
-deferred deliberately: `schema plan test` consumes `test "plan"` blocks in
-`.test.hcl` files, and nothing in Ptah parses that format yet — the test engine
-reads YAML cases. `.test.hcl` ingestion is its own item, shared with
-`migrate test` and `schema test`.
+#### `ptah-compat schema plan test [paths]`
+
+Runs `test "plan"` cases from Atlas `.test.hcl` files against a throwaway
+database. A case establishes a starting state, applies a saved plan file, and
+asserts what the plan did:
+
+```hcl
+test "plan" "add_email" {
+  schema {
+    url = "file://snapshots/v1.sql"
+  }
+
+  exec {
+    sql = "INSERT INTO users (id, name) VALUES (1, 'Ada')"
+  }
+
+  apply {
+    url = "file://plans/add_email.plan.json"
+  }
+
+  exec {
+    sql    = "SELECT email FROM users WHERE id = 1"
+    output = "ada@example.com"
+  }
+}
+```
+
+| Block | Does |
+| --- | --- |
+| `schema { url }` | Brings the database to the state that source describes. Applied through the same convergence path `apply_schema` uses. |
+| `apply { url }` | Reads the plan file and runs its statements, through the same reader and executor as `schema apply --plan`. |
+| `exec { sql }` | Runs a statement. With `output`, runs it and compares the first result. |
+
+Steps run in the order they are written, which is what makes a case mean
+anything: a plan describes a transition **from** a state, so `schema` has to
+establish that state before `apply`.
+
+Before the plan runs, its recorded from-state is checked against the database
+the case established. A snapshot that has drifted away from the state the plan
+was computed for is testing that plan against a state it was never meant for,
+and the case fails rather than reporting whatever the statements happened to do
+there. Only a plan carrying Ptah's own sha256 fingerprint is checked: an
+Atlas-authored plan's hashes have no local recipe.
+
+The plan's own statements are executed, never recomputed. A plan file that
+stopped matching what the planner now produces is precisely what this verb
+exists to catch, and recomputing would hide it.
+
+`--dev-url` names the throwaway database, and takes a `docker://` value like
+every other verb that provisions one. Without it a SQLite database is created
+per case and removed afterwards. `--run` filters cases by name, and a filter
+matching nothing is refused rather than reported as a pass.
+
+`test "schema"` and `test "migrate"` cases in the same files are left to
+`schema test` and `migrate test`.
 
 `lint` was deferred alongside it for a different reason, and that reason is
 answered rather than outstanding. The worry was a linter in a gating position

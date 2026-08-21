@@ -164,23 +164,24 @@ func TestPresets_AllValid_AndCoverEveryRegisteredCapability(t *testing.T) {
 	c := qt.New(t)
 
 	presets := map[string]capability.Capabilities{
-		"MySQL84":       capability.MySQL84(),
-		"MySQL8019":     capability.MySQL8019(),
-		"MySQL8016":     capability.MySQL8016(),
-		"MySQLLegacy":   capability.MySQLLegacy(),
-		"MariaDB1011":   capability.MariaDB1011(),
-		"MariaDBLegacy": capability.MariaDBLegacy(),
-		"Postgres17":    capability.Postgres17(),
-		"Postgres16":    capability.Postgres16(),
-		"Postgres13":    capability.Postgres13(),
-		"ClickHouse24":  capability.ClickHouse24(),
-		"SQLite3":       capability.SQLite3(),
-		"CockroachDB23": capability.CockroachDB23(),
-		"CockroachDB25": capability.CockroachDB25(),
-		"CockroachDB26": capability.CockroachDB26(),
-		"YugabyteDB25":  capability.YugabyteDB25(),
-		"SQLServer2022": capability.SQLServer2022(),
-		"Spanner":       capability.SpannerPostgres(),
+		"MySQL84":        capability.MySQL84(),
+		"MySQL8019":      capability.MySQL8019(),
+		"MySQL8016":      capability.MySQL8016(),
+		"MySQLLegacy":    capability.MySQLLegacy(),
+		"MariaDB1011":    capability.MariaDB1011(),
+		"MariaDBLegacy":  capability.MariaDBLegacy(),
+		"Postgres17":     capability.Postgres17(),
+		"Postgres16":     capability.Postgres16(),
+		"Postgres13":     capability.Postgres13(),
+		"ClickHouse24":   capability.ClickHouse24(),
+		"SQLite3":        capability.SQLite3(),
+		"CockroachDB23":  capability.CockroachDB23(),
+		"CockroachDB25":  capability.CockroachDB25(),
+		"CockroachDB26":  capability.CockroachDB26(),
+		"CockroachDB263": capability.CockroachDB263(),
+		"YugabyteDB25":   capability.YugabyteDB25(),
+		"SQLServer2022":  capability.SQLServer2022(),
+		"Spanner":        capability.SpannerPostgres(),
 	}
 	for name, preset := range presets {
 		c.Assert(preset.Validate(), qt.IsNil, qt.Commentf("preset %s must validate", name))
@@ -229,7 +230,15 @@ func TestPresets_KeyDifferences(t *testing.T) {
 	// Enum modeling is mutually exclusive and dialect-appropriate.
 	c.Assert(capability.MySQL84().Has(capability.EnumInlineColumn), qt.IsTrue)
 	c.Assert(capability.MySQL84().Has(capability.EnumCustomType), qt.IsFalse)
-	c.Assert(capability.MySQL84().Has(capability.RoleManagement), qt.IsFalse)
+	// MySQL and MariaDB joined once the read half existed: a role is a row in
+	// mysql.user, marked account_locked with an expired password on MySQL 8.4
+	// and carrying is_role on MariaDB 11.8 (stokaro/ptah#1762).
+	c.Assert(capability.MySQL84().Has(capability.RoleManagement), qt.IsTrue)
+	c.Assert(capability.MariaDB1011().Has(capability.RoleManagement), qt.IsTrue)
+	// SQLite is the control on that move: it has no roles at all, so a change
+	// that turned the key on family-wide rather than for the two engines that
+	// have them reddens here.
+	c.Assert(capability.SQLite3().Has(capability.RoleManagement), qt.IsFalse)
 	// ClickHouse has named roles and GRANT/REVOKE, measured live on 24.10 and
 	// 26.7, and no role attributes at all. The key names the first pair and
 	// never the second, which is why an engine with neither LOGIN nor a
@@ -593,23 +602,30 @@ func TestResolveServerVersionReportsSaturation(t *testing.T) {
 		{"postgres empty", "postgres", "", capability.Postgres17(), false, false, ""},
 		{
 			"cockroachdb 26.2 selects its measured preset",
-			"postgres", "CockroachDB CCL v26.2.4 (x86_64-pc-linux-gnu)", capability.CockroachDB26(), true, false, "26.2",
+			"postgres", "CockroachDB CCL v26.2.4 (x86_64-pc-linux-gnu)", capability.CockroachDB26(), true, false, "26.3",
 		},
 		{
 			"cockroachdb 26.1 is not claimed as its measured 26.2 sibling",
-			"postgres", "CockroachDB CCL v26.1.4 (x86_64-pc-linux-gnu)", capability.CockroachDB25(), false, false, "26.2",
+			"postgres", "CockroachDB CCL v26.1.4 (x86_64-pc-linux-gnu)", capability.CockroachDB25(), false, false, "26.3",
 		},
 		{
-			"cockroachdb 26.3 saturates above the measured 26.2 line",
-			"postgres", "CockroachDB CCL v26.3.0 (x86_64-pc-linux-gnu)", capability.CockroachDB26(), false, true, "26.2",
+			// 26.3 stopped being a version above the ladder when it was
+			// published and measured: it is the line that carries CREATE
+			// DOMAIN (stokaro/ptah#1735).
+			"cockroachdb 26.3 selects the line that carries CREATE DOMAIN",
+			"postgres", "CockroachDB CCL v26.3.0 (x86_64-pc-linux-gnu)", capability.CockroachDB263(), true, false, "26.3",
+		},
+		{
+			"cockroachdb 26.4 saturates above the measured 26.3 line",
+			"postgres", "CockroachDB CCL v26.4.0 (x86_64-pc-linux-gnu)", capability.CockroachDB263(), false, true, "26.3",
 		},
 		{
 			"cockroachdb 25.4 selects its measured preset",
-			"postgres", "CockroachDB CCL v25.4.5 (x86_64-pc-linux-gnu)", capability.CockroachDB25(), true, false, "26.2",
+			"postgres", "CockroachDB CCL v25.4.5 (x86_64-pc-linux-gnu)", capability.CockroachDB25(), true, false, "26.3",
 		},
 		{
 			"cockroachdb 25.5 uses the conservative preset without claiming measurement",
-			"postgres", "CockroachDB CCL v25.5.1 (x86_64-pc-linux-gnu)", capability.CockroachDB25(), false, false, "26.2",
+			"postgres", "CockroachDB CCL v25.5.1 (x86_64-pc-linux-gnu)", capability.CockroachDB25(), false, false, "26.3",
 		},
 		// YugabyteDB gained a ladder in stokaro/ptah#916, and the number it
 		// climbs is the one AFTER the "-YB-" marker: the 15.2 in front of it is

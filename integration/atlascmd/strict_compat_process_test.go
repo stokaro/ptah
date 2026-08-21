@@ -1163,8 +1163,14 @@ func TestStrictCompatSchemaInspectAndCleanRefusePostgresWriterOnlyObjects(t *tes
 	)
 	c.Assert(code, qt.Equals, 1)
 	c.Assert(stdout, qt.Equals, "")
+	// The refusal moved layer with stokaro/ptah#1722. A procedure used to be
+	// invisible to the schema reader, so only the supplemental live-object
+	// inventory could name it; the reader models it now, so the ordinary
+	// inspected-schema check refuses it first -- by kind, exactly as it refuses
+	// a function. The clean assertion below is unchanged, because the cleanup
+	// inventory still enumerates the procedure itself.
 	c.Assert(stderr, qt.Equals,
-		`Error: Atlas Community Edition strict compatibility does not support inspecting live schema procedure "refresh_users()"`+"\n")
+		"Error: Atlas Community Edition strict compatibility does not support inspected schema procedures\n")
 	c.Assert(postgresStrictCleanObjectCount(t, scopedURL), qt.Equals, 1)
 
 	stdout, stderr, code = runAtlasBinary(compat, nil, inspectArgs...)
@@ -1353,7 +1359,19 @@ func TestStrictCompatSchemaApplyAndDiffRefusePostgresWriterOnlyObjects(t *testin
 	dbschema.CloseAndWarn(conn)
 
 	compat := buildSchemaInspectBinary(c, "ptah-compat", "go.5x5.cz/ptah/cmd/ptah-compat")
-	wantPolicyError := `Atlas Community Edition strict compatibility does not support inspecting live schema procedure "refresh_users()"`
+	// See the inspect test above: the reader models a procedure now, so the
+	// inspected-schema check refuses it by kind before the live-object
+	// inventory is consulted (stokaro/ptah#1722).
+	// Two refusals, one object, and the difference is which surface reaches it
+	// first. `schema apply` reads the target through the ordinary schema
+	// reader, which models a procedure since stokaro/ptah#1722, so the
+	// inspected-schema check refuses it by kind. The `--from`/`--to` loaders
+	// consult the supplemental live-object inventory first, and that one names
+	// the object. Both are strict refusals at exit 1; a single expectation here
+	// would have to be a substring match, which is what let this test pass on a
+	// message that had stopped being true.
+	wantPolicyError := "Atlas Community Edition strict compatibility does not support inspected schema procedures"
+	wantLoaderPolicyError := `Atlas Community Edition strict compatibility does not support inspecting live schema procedure "refresh_users()"`
 
 	t.Run("apply target before desired replay", func(t *testing.T) {
 		c := qt.New(t)
@@ -1518,7 +1536,7 @@ func TestStrictCompatSchemaApplyAndDiffRefusePostgresWriterOnlyObjects(t *testin
 		)
 		c.Assert(code, qt.Equals, 1)
 		c.Assert(stdout, qt.Equals, "")
-		c.Assert(stderr, qt.Equals, "Error: load --from schema: "+wantPolicyError+"\n")
+		c.Assert(stderr, qt.Equals, "Error: load --from schema: "+wantLoaderPolicyError+"\n")
 	})
 
 	t.Run("diff database to", func(t *testing.T) {
@@ -1532,7 +1550,7 @@ func TestStrictCompatSchemaApplyAndDiffRefusePostgresWriterOnlyObjects(t *testin
 		)
 		c.Assert(code, qt.Equals, 1)
 		c.Assert(stdout, qt.Equals, "")
-		c.Assert(stderr, qt.Equals, "Error: load --to schema: "+wantPolicyError+"\n")
+		c.Assert(stderr, qt.Equals, "Error: load --to schema: "+wantLoaderPolicyError+"\n")
 	})
 
 	t.Run("diff live to before from replay", func(t *testing.T) {
@@ -1556,7 +1574,7 @@ func TestStrictCompatSchemaApplyAndDiffRefusePostgresWriterOnlyObjects(t *testin
 		)
 		c.Assert(code, qt.Equals, 1)
 		c.Assert(stdout, qt.Equals, "")
-		c.Assert(stderr, qt.Equals, "Error: load --to schema: "+wantPolicyError+"\n")
+		c.Assert(stderr, qt.Equals, "Error: load --to schema: "+wantLoaderPolicyError+"\n")
 		c.Assert(postgresTableExists(t, replayDevURL, tableName), qt.IsFalse)
 	})
 
@@ -1613,7 +1631,7 @@ func TestStrictCompatSchemaApplyAndDiffRefusePostgresWriterOnlyObjects(t *testin
 		)
 		c.Assert(code, qt.Equals, 1)
 		c.Assert(stdout, qt.Equals, "")
-		c.Assert(stderr, qt.Equals, "Error: load --to schema: "+wantPolicyError+"\n")
+		c.Assert(stderr, qt.Equals, "Error: load --to schema: "+wantLoaderPolicyError+"\n")
 		entries, err := os.ReadDir(currentDir)
 		c.Assert(err, qt.IsNil)
 		c.Assert(entries, qt.HasLen, 0)

@@ -290,7 +290,7 @@ func TestWriteMatrixSummary_IsTheSameMatrixNarrower(t *testing.T) {
 	var out strings.Builder
 	capabilityprobe.WriteMatrixSummary(&out)
 	rendered := out.String()
-	table := strings.Split(rendered, "\n\nDeclared release lines:")[0]
+	table, _, _ := strings.Cut(rendered, "\n\nDeclared release lines:")
 
 	c.Assert(strings.Split(strings.TrimRight(table, "\n"), "\n"), qt.HasLen, len(capabilityprobe.Cells)+2,
 		qt.Commentf("one header row, one delimiter row, and one row per declared release line"))
@@ -493,13 +493,19 @@ func markdownCells(row string) []string {
 // target for it, and the two were one decision until Spanner needed them apart.
 // The declaration is what separates "probe-only on purpose" from "somebody left
 // the runner target blank" (stokaro/ptah#942).
+//
+// Spanner was the case that forced the split and is no longer an example of it:
+// it has a compose service and a suite target now (stokaro/ptah#1719). The
+// table keeps both shapes so the separation stays measured -- ClickHouse's
+// 24.10 line is probed without the runner moving onto it.
 func TestCIMatrix_ProbeOnlyCellsAreDeclaredAsSuch(t *testing.T) {
 	tests := []struct {
 		name      string
 		id        string
 		wantSuite bool
 	}{
-		{name: "spanner is probe-only", id: "spanner-0", wantSuite: false},
+		{name: "clickhouse 24.10 is probe-only", id: "clickhouse-24-10", wantSuite: false},
+		{name: "spanner runs the suite now that its cleanup path lands", id: "spanner-0", wantSuite: true},
 		{name: "postgres runs the suite too", id: "postgres-18", wantSuite: true},
 	}
 

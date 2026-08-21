@@ -20,11 +20,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/goschema"
-	"go.5x5.cz/ptah/core/platform"
-	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/dbschema"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlasmigrateimport"
@@ -574,47 +571,6 @@ func TestWriteDiffArtifacts_SumPublishFailureRollsBackMigrations(t *testing.T) {
 	c.Assert(entries[0].IsDir(), qt.IsTrue)
 }
 
-func TestWriteDiffArtifacts_ReverseNoTransactionRefusesUnrepresentedForeignLayoutsBeforePublication(t *testing.T) {
-	formats := []atlasmigrateimport.Format{
-		atlasmigrateimport.FormatGolangMigrate,
-		atlasmigrateimport.FormatFlyway,
-		atlasmigrateimport.FormatDBMate,
-		atlasmigrateimport.FormatLiquibase,
-	}
-
-	for _, format := range formats {
-		t.Run(string(format), func(t *testing.T) {
-			c := qt.New(t)
-			dir := c.TempDir()
-			baseSnapshot, err := migrationsnapshot.CaptureStable(os.DirFS(dir))
-			c.Assert(err, qt.IsNil)
-			writer := openTestWriter(c, dir)
-
-			result, err := writeDiffArtifacts(
-				t.Context(),
-				writer,
-				"concurrent_index",
-				[]MigrationFileContent{{
-					SQL:                  "CREATE INDEX CONCURRENTLY idx_widgets_id ON widgets (id);",
-					DownSQL:              "DROP INDEX CONCURRENTLY idx_widgets_id;",
-					ReverseNoTransaction: true,
-				}},
-				baseSnapshot,
-				nil,
-				diffWriteLayout{format: format},
-			)
-
-			c.Assert(result, qt.DeepEquals, DiffResult{})
-			c.Assert(err, qt.ErrorMatches,
-				`migration directory format "`+string(format)+`" cannot safely express a rollback that requires no-transaction execution; no migration files or atlas\.sum were written`)
-			entries, readErr := os.ReadDir(dir)
-			c.Assert(readErr, qt.IsNil)
-			c.Assert(entries, qt.HasLen, 0,
-				qt.Commentf("a refused %s rollback published artifacts", format))
-		})
-	}
-}
-
 func TestWriteDiffArtifacts_GooseNoTransactionPublishesWholeFileDirective(t *testing.T) {
 	c := qt.New(t)
 	dir := c.TempDir()
@@ -649,56 +605,6 @@ func TestWriteDiffArtifacts_GooseNoTransactionPublishesWholeFileDirective(t *tes
 			"-- +goose Down\nDROP INDEX CONCURRENTLY idx_widgets_id;\n")
 	_, statErr := os.Stat(filepath.Join(dir, "atlas.sum"))
 	c.Assert(statErr, qt.IsNil)
-}
-
-func TestWriteDiffArtifacts_EnumAddRefusesUnrepresentedForeignLayoutsBeforePublication(t *testing.T) {
-	c := qt.New(t)
-	contents, err := BuildMigrationFileContents(
-		platform.Postgres,
-		capability.Postgres17(),
-		"",
-		[]ast.Node{
-			ast.NewAlterType("status").AddOperation(ast.NewAddEnumValueOperation("archived")),
-		},
-	)
-	c.Assert(err, qt.IsNil)
-	c.Assert(contents, qt.HasLen, 1)
-	c.Assert(contents[0].NoTransaction, qt.IsTrue)
-
-	formats := []atlasmigrateimport.Format{
-		atlasmigrateimport.FormatGolangMigrate,
-		atlasmigrateimport.FormatFlyway,
-		atlasmigrateimport.FormatDBMate,
-		atlasmigrateimport.FormatLiquibase,
-	}
-
-	for _, format := range formats {
-		t.Run(string(format), func(t *testing.T) {
-			c := qt.New(t)
-			dir := c.TempDir()
-			baseSnapshot, err := migrationsnapshot.CaptureStable(os.DirFS(dir))
-			c.Assert(err, qt.IsNil)
-			writer := openTestWriter(c, dir)
-
-			result, err := writeDiffArtifacts(
-				t.Context(),
-				writer,
-				"enum_add",
-				contents,
-				baseSnapshot,
-				nil,
-				diffWriteLayout{format: format},
-			)
-
-			c.Assert(result, qt.DeepEquals, DiffResult{})
-			c.Assert(err, qt.ErrorMatches,
-				`migration directory format "`+string(format)+`" cannot safely express a forward migration that requires no-transaction execution; no migration files or atlas\.sum were written`)
-			entries, readErr := os.ReadDir(dir)
-			c.Assert(readErr, qt.IsNil)
-			c.Assert(entries, qt.HasLen, 0,
-				qt.Commentf("a refused %s forward migration published artifacts", format))
-		})
-	}
 }
 
 func TestRecoverPendingPublication_RollsBackInterruptedBatch(t *testing.T) {

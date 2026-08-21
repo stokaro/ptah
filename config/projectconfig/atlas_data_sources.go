@@ -20,9 +20,13 @@ import (
 	"github.com/zclconf/go-cty/cty"
 
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/atlasregistry"
 	"go.5x5.cz/ptah/internal/atlasruntimevar"
+	"go.5x5.cz/ptah/internal/cloudtoken"
 	"go.5x5.cz/ptah/internal/migratesum"
+	"go.5x5.cz/ptah/internal/migrationartifact"
 	"go.5x5.cz/ptah/internal/migrationsnapshot"
+	"go.5x5.cz/ptah/internal/ociartifact"
 	"go.5x5.cz/ptah/internal/processcapture"
 	"go.5x5.cz/ptah/internal/secretdisplay"
 )
@@ -49,8 +53,14 @@ func (p atlasParser) resolveAtlasDataSource(block *hclsyntax.Block) (cty.Value, 
 		return p.runtimeVariableDataSource(block)
 	case "template_dir":
 		return p.templateDirectoryDataSource(block)
-	case "remote_dir", "remote_schema", "aws_rds_token", "gcp_cloudsql_token":
-		return cty.NilVal, unsupported("data."+block.Labels[0], block.TypeRange)
+	case "aws_rds_token":
+		return p.awsRDSTokenDataSource(block)
+	case "gcp_cloudsql_token":
+		return p.gcpCloudSQLTokenDataSource(block)
+	case "remote_dir":
+		return p.remoteDirectoryDataSource(block)
+	case "remote_schema":
+		return p.remoteSchemaDataSource(block)
 	default:
 		return cty.NilVal, unsupported("data."+block.Labels[0], block.TypeRange)
 	}
@@ -368,11 +378,7 @@ func (p atlasParser) templateDirectoryDataSource(block *hclsyntax.Block) (cty.Va
 	if err != nil {
 		return cty.NilVal, p.dataSourceError(block, "rendering template directory", err, rawPath)
 	}
-	name := block.Labels[1]
-	memURL := (&url.URL{
-		Scheme: "mem",
-		Path:   filepath.ToSlash(filepath.Join(memPath, name)),
-	}).String()
+	memURL := memDirectoryURL(filepath.ToSlash(memPath), block.Labels[1])
 	p.migrationDirectories[memURL] = MigrationDirectorySource{
 		FileSystem: directory,
 		Path:       fsPath,
@@ -405,6 +411,23 @@ func (p atlasParser) templateDirectoryVariables(block *hclsyntax.Block) (map[str
 		variables[key.AsString()] = converted
 	}
 	return variables, nil
+}
+
+// memDirectoryURL builds the in-memory handle a rendered or pulled directory is
+// registered under.
+//
+// The block label is escaped rather than joined as a path segment. Joining
+// normalizes, and two distinct labels that normalize to the same segment --
+// `a/../b` and `b` -- would produce one key: the second registration would
+// replace the first filesystem while both HCL values still carry that key, so
+// an env selecting the first block would execute the second block's migrations.
+func memDirectoryURL(prefix, name string) string {
+	// The prefix keeps the escaping and the slash count url.URL gave it before
+	// this helper existed -- data.template_dir's handle is compared against the
+	// pinned binary's output, and `mem://templates/x` and `mem:///templates/x`
+	// are not the same string to that comparison.
+	base := (&url.URL{Scheme: "mem", Path: prefix}).String()
+	return strings.TrimSuffix(base, "/") + "/" + url.PathEscape(name)
 }
 
 func (p atlasParser) templateDirectoryPath(rawPath string) (fsPath, memPath string, err error) {
@@ -626,8 +649,20 @@ func validateAtlasDataSourceShape(block *hclsyntax.Block) error {
 		return validateRequiredAtlasDataSourceAttrs(block, []string{"url"}, "url")
 	case "template_dir":
 		return validateRequiredAtlasDataSourceAttrs(block, []string{"path"}, "path", "vars")
-	case "remote_dir", "remote_schema", "aws_rds_token", "gcp_cloudsql_token":
-		return unsupported("data."+typ, block.TypeRange)
+	case "aws_rds_token":
+		return validateAWSRDSTokenShape(block)
+	case "gcp_cloudsql_token":
+		// No body schema, and none required: the pinned community binary
+		// v1.3.0 decodes a block carrying an unrecognized attribute and goes
+		// straight to the token exchange, where `data "gcp_cloudsql_token"
+		// "g" { bogus = "x" }` answers `getting token: oauth2: ...` rather
+		// than "Unsupported argument". Refusing the attribute here would
+		// refuse a project that binary accepts.
+		return nil
+	case "remote_dir":
+		return validateRequiredAtlasDataSourceAttrs(block, []string{"name"}, "name", "tag", "version")
+	case "remote_schema":
+		return validateRequiredAtlasDataSourceAttrs(block, []string{"name"}, "name", "tag", "version")
 	default:
 		return unsupported("data."+typ, block.TypeRange)
 	}
@@ -637,12 +672,12 @@ func validateAtlasDataSourceShape(block *hclsyntax.Block) error {
 // without executing a data source. Recognized cloud sources stay lazy because
 // this compatibility layer does not implement their runtime contracts yet.
 func validateAtlasDataSourceDeclarationShape(block *hclsyntax.Block) error {
-	switch block.Labels[0] {
-	case "remote_dir", "remote_schema", "aws_rds_token", "gcp_cloudsql_token":
-		return nil
-	default:
-		return validateAtlasDataSourceShape(block)
-	}
+	// Every recognized source now has a runtime contract, so a declaration is
+	// checked the same way whether or not anything references it. `remote_schema`
+	// used to stay lazy here because resolving it was refused outright, which
+	// meant a misspelled attribute was learned about on the day the block
+	// started being used (stokaro/ptah#1210).
+	return validateAtlasDataSourceShape(block)
 }
 
 func validateRequiredAtlasDataSourceAttrs(
@@ -699,4 +734,209 @@ func (p atlasParser) dataSourceError(
 		return fmt.Errorf("%s: %w", prefix, safe)
 	}
 	return fmt.Errorf("%s: %s: %w", prefix, action, safe)
+}
+
+// awsRDSTokenDataSource mints an RDS IAM authentication token.
+//
+// The value is a password, so it joins the sensitive set before it can reach a
+// diagnostic: a signing or credential failure that echoed the token would put
+// a live credential in a log line.
+func (p atlasParser) awsRDSTokenDataSource(block *hclsyntax.Block) (cty.Value, error) {
+	if err := validateAWSRDSTokenShape(block); err != nil {
+		return cty.NilVal, err
+	}
+	endpoint, err := p.requiredDataSourceString(block, "endpoint")
+	if err != nil {
+		return cty.NilVal, err
+	}
+	username, err := p.requiredDataSourceString(block, "username")
+	if err != nil {
+		return cty.NilVal, err
+	}
+	region, err := p.optionalAtlasDataSourceString(block, "region")
+	if err != nil {
+		return cty.NilVal, err
+	}
+	profile, err := p.optionalAtlasDataSourceString(block, "profile")
+	if err != nil {
+		return cty.NilVal, err
+	}
+	token, err := cloudtoken.AWSRDSToken(p.runContext, cloudtoken.AWSRDSOptions{
+		Endpoint: endpoint,
+		Username: username,
+		Region:   region,
+		Profile:  profile,
+	})
+	if err != nil {
+		return cty.NilVal, p.dataSourceError(block, "minting token", err)
+	}
+	p.recordSensitiveValue(token)
+	return cty.StringVal(token), nil
+}
+
+// gcpCloudSQLTokenDataSource mints a Cloud SQL IAM access token.
+func (p atlasParser) gcpCloudSQLTokenDataSource(block *hclsyntax.Block) (cty.Value, error) {
+	token, err := cloudtoken.GCPCloudSQLToken(p.runContext)
+	if err != nil {
+		return cty.NilVal, p.dataSourceError(block, "minting token", err)
+	}
+	p.recordSensitiveValue(token)
+	return cty.StringVal(token), nil
+}
+
+// optionalAtlasDataSourceString reads an attribute that may be absent,
+// answering the empty string when it is.
+func (p atlasParser) optionalAtlasDataSourceString(
+	block *hclsyntax.Block,
+	name string,
+) (string, error) {
+	attr, ok := block.Body.Attributes[name]
+	if !ok {
+		return "", nil
+	}
+	return p.stringAttr(name, attr)
+}
+
+// recordSensitiveValue adds a minted credential to the set every diagnostic is
+// sanitized against.
+func (p atlasParser) recordSensitiveValue(value string) {
+	if p.sensitiveValues == nil || value == "" {
+		return
+	}
+	*p.sensitiveValues = append(*p.sensitiveValues, value)
+}
+
+// validateAWSRDSTokenShape is the single statement of the block's schema.
+//
+// It is one function because the shape is asked for twice -- once when a
+// declaration is validated and once when it is resolved -- and two copies of
+// an attribute list are two lists that drift.
+func validateAWSRDSTokenShape(block *hclsyntax.Block) error {
+	return validateRequiredAtlasDataSourceAttrs(
+		block,
+		[]string{"endpoint", "username"},
+		"endpoint", "username", "region", "profile",
+	)
+}
+
+// remoteDirectoryDataSource fetches a migration directory from the OCI
+// namespace an `atlas://` reference resolves against.
+//
+// The vendor spelling names a repository and a pointer with no registry host in
+// it, because it assumes one hosted account. Ptah has none: the reference is
+// resolved through [atlasregistry] against a namespace the operator configures,
+// and a run with none configured is refused rather than sent anywhere
+// (stokaro/ptah#1210).
+//
+// The fetched directory is registered the way a rendered template directory is,
+// so everything downstream reads it through the same in-memory route. That is
+// what the consumer accepts: the Atlas-compatible --dir takes a local or an
+// in-memory directory, not an oci:// reference, so handing the reference on
+// would only move the refusal.
+func (p atlasParser) remoteDirectoryDataSource(block *hclsyntax.Block) (cty.Value, error) {
+	if err := validateRequiredAtlasDataSourceAttrs(
+		block, []string{"name"}, "name", "tag", "version",
+	); err != nil {
+		return cty.NilVal, err
+	}
+	reference, err := p.remoteArtifactReference(block)
+	if err != nil {
+		return cty.NilVal, err
+	}
+	plainHTTP, err := atlasregistry.PlainHTTP.Resolve()
+	if err != nil {
+		return cty.NilVal, p.dataSourceError(block, "reading the registry transport setting", err)
+	}
+	client, err := ociartifact.NewClient(ociartifact.ClientOptions{PlainHTTP: plainHTTP})
+	if err != nil {
+		return cty.NilVal, p.dataSourceError(block, "opening the registry client", err, reference.OCI)
+	}
+	artifact, err := migrationartifact.Pull(p.runContext, client, reference.OCI)
+	if err != nil {
+		return cty.NilVal, p.dataSourceError(block, "fetching remote directory", err, reference.OCI)
+	}
+	memURL := memDirectoryURL("/remote_dir", block.Labels[1])
+	p.migrationDirectories[memURL] = MigrationDirectorySource{
+		FileSystem: artifact.FileSystem,
+		// The reference is carried for display, and ReadOnly is what keeps it
+		// out of a writer: it is not a local path, and joining it to the
+		// project root would create a directory named after it.
+		Path:     reference.OCI,
+		ReadOnly: true,
+	}
+	return cty.ObjectVal(map[string]cty.Value{
+		"url": cty.StringVal(memURL),
+	}), nil
+}
+
+// RemoteSchemaMarkerScheme prefixes the value `data "remote_schema"` mints.
+//
+// It is a Ptah-internal marker rather than a runnable location, and this
+// package is its only author. The scheme is reserved in the desired-state
+// classifier, so a hand-written URL cannot impersonate a declared data source.
+//
+// It lives here rather than beside the classifier because the classifier
+// already imports this package; the reverse would be an import cycle, and a
+// second copy of the string is how two layers stop agreeing on what a marker
+// looks like.
+const RemoteSchemaMarkerScheme = "ptah-remote-schema"
+
+// remoteSchemaDataSource resolves `data "remote_schema"` to the internal marker
+// naming the artifact that holds the desired state.
+//
+// It returns a MARKER rather than a pulled schema, for two reasons. A project
+// file is read by every verb, so fetching an artifact the run never uses would
+// make an unrelated command fail whenever the registry is unreachable. And the
+// marker keeps the capability off the flag surface: `--to oci://...` goes on
+// being refused, because the pinned community binary answers that spelling with
+// `unknown driver "oci"` at exit 1 (stokaro/ptah#1210).
+//
+// The mapping from name, tag and version is the one remote_dir uses, so a
+// project addressing a migration directory and a schema in the same namespace
+// cannot have the two disagree about what `version` means.
+func (p atlasParser) remoteSchemaDataSource(block *hclsyntax.Block) (cty.Value, error) {
+	// The block's shape is checked by the data-source shape validator, which
+	// runs for a declaration whether or not anything references it.
+	reference, err := p.remoteArtifactReference(block)
+	if err != nil {
+		return cty.NilVal, err
+	}
+	return cty.ObjectVal(map[string]cty.Value{
+		// reference.OCI already carries the oci:// scheme, which is what every
+		// Ptah artifact API expects.
+		"url": cty.StringVal(RemoteSchemaMarkerScheme + "://" + reference.OCI),
+	}), nil
+}
+
+// remoteArtifactReference resolves the block's name, tag and version into the
+// OCI reference the artifact is read through.
+//
+// The attributes are spelled the way the block spells them rather than
+// assembled into an atlas:// string first, because that string would only be
+// taken apart again -- but the resolver still owns the mapping, so the two
+// routes cannot disagree about what `version` means.
+func (p atlasParser) remoteArtifactReference(block *hclsyntax.Block) (atlasregistry.Reference, error) {
+	name, err := p.requiredDataSourceString(block, "name")
+	if err != nil {
+		return atlasregistry.Reference{}, err
+	}
+	query := url.Values{}
+	for _, attr := range []string{"tag", "version"} {
+		value, attrErr := p.optionalAtlasDataSourceString(block, attr)
+		if attrErr != nil {
+			return atlasregistry.Reference{}, attrErr
+		}
+		if strings.TrimSpace(value) != "" {
+			query.Set(attr, value)
+		}
+	}
+	raw := atlasregistry.Scheme + name
+	if encoded := query.Encode(); encoded != "" {
+		raw += "?" + encoded
+	}
+	reference, err := atlasregistry.Resolve(raw)
+	if err != nil {
+		return atlasregistry.Reference{}, p.dataSourceError(block, "resolving the reference", err)
+	}
+	return reference, nil
 }

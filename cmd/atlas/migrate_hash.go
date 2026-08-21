@@ -67,6 +67,11 @@ func runAtlasMigrateHash(
 	cmd *cobra.Command,
 	source atlasMigrateSource,
 ) error {
+	if err := source.project.refuseWriteToReadOnlyMigrationDir(
+		source.localDir, "atlas migrate hash",
+	); err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	if source.project.isVirtualMigrationDir(source.localDir) {
 		captured, err := source.project.captureLocal(source.localDir)
 		if err != nil {

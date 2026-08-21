@@ -2073,6 +2073,51 @@ func reverseSchemaDiffWithSchema(diff *types.SchemaDiff, schema *goschema.Databa
 	return reverseSchemaDiffWithSchemaForDialect(diff, schema, dbSchema, "")
 }
 
+// reverseProceduresRemoved names which of the added routines are procedures, so
+// the rollback drops each with the verb its object takes.
+//
+// The forward diff records an addition by name only; the kind lives on the
+// declaration the addition came from, which is what this looks up. A name the
+// desired schema no longer holds is left with the functions, because a DROP
+// FUNCTION that is refused is a louder failure than a DROP PROCEDURE aimed at a
+// function (stokaro/ptah#1722).
+func reverseFunctionsRemoved(added []string, schema *goschema.Database) []string {
+	procedures := reverseProceduresRemoved(added, schema)
+	if len(procedures) == 0 {
+		return added
+	}
+	isProcedure := make(map[string]struct{}, len(procedures))
+	for _, name := range procedures {
+		isProcedure[name] = struct{}{}
+	}
+	kept := make([]string, 0, len(added))
+	for _, name := range added {
+		if _, skip := isProcedure[name]; !skip {
+			kept = append(kept, name)
+		}
+	}
+	return kept
+}
+
+func reverseProceduresRemoved(added []string, schema *goschema.Database) []string {
+	if schema == nil || len(added) == 0 {
+		return nil
+	}
+	procedures := make(map[string]struct{}, len(schema.Functions))
+	for _, routine := range schema.Functions {
+		if routine.IsProcedure() {
+			procedures[strings.ToLower(routine.Name)] = struct{}{}
+		}
+	}
+	var removed []string
+	for _, name := range added {
+		if _, isProcedure := procedures[strings.ToLower(name)]; isProcedure {
+			removed = append(removed, name)
+		}
+	}
+	return removed
+}
+
 func reverseSchemaDiffWithSchemaForDialect(
 	diff *types.SchemaDiff,
 	schema *goschema.Database,
@@ -2098,9 +2143,15 @@ func reverseSchemaDiffWithSchemaForDialect(
 		ExtensionsModified: reverseExtensionDiffs(diff.ExtensionsModified),
 
 		// Reverse function operations
-		FunctionsAdded:    diff.FunctionsRemoved, // Functions to remove become functions to add
-		FunctionsRemoved:  diff.FunctionsAdded,   // Functions to add become functions to remove
+		FunctionsAdded:    append(slices.Clone(diff.FunctionsRemoved), diff.ProceduresRemoved...),
+		FunctionsRemoved:  reverseFunctionsRemoved(diff.FunctionsAdded, schema),
 		FunctionsModified: reverseFunctionDiffs(diff.FunctionsModified),
+		// A removed procedure comes back as an addition, and the planner reads
+		// its kind off the declaration -- which is why the reverse of a removal
+		// needs no kind of its own. The reverse of an ADDITION does: nothing
+		// here knows whether the added routine was a procedure, so
+		// reverseProceduresRemoved asks the desired schema.
+		ProceduresRemoved: reverseProceduresRemoved(diff.FunctionsAdded, schema),
 
 		// Reverse sequence operations
 		// Reverse user-defined type operations

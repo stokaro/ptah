@@ -131,6 +131,26 @@ func (r *Reader) ReadSchema() (*types.DBSchema, error) {
 	// indexes. Keeping these derived flags in one post-pass avoids depending on
 	// per-column metadata that is either absent or lossy across MySQL/MariaDB
 	// versions.
+	// Read only where the preset claims the object. MySQL answers a sequence
+	// question with a syntax error rather than an empty result, so asking
+	// unconditionally would fail the whole description on the engine that has
+	// none (stokaro/ptah#1759).
+	sequences, err := r.readSequences(dbName)
+	if err != nil {
+		return nil, err
+	}
+	schema.Sequences = sequences
+	// Roles and their grants are read only where the preset claims them, the
+	// same gate the ClickHouse reader uses. mysql.user and mysql.tables_priv
+	// need a privilege reading a table does not, so an account without it must
+	// not lose the whole description over an object kind the schema may not
+	// even declare.
+	if r.caps.Has(capability.RoleManagement) {
+		if err := r.readRolesInto(schema, dbName); err != nil {
+			return nil, err
+		}
+	}
+
 	enhanceTablesWithPrimaryKeys(schema.Tables, schema.Constraints)
 	reconcileColumnUniqueness(schema)
 
@@ -476,11 +496,15 @@ func (r *Reader) readFunctions(dbName string) ([]types.DBFunction, error) {
 			DEFINER,
 			CURRENT_USER(),
 			ROUTINE_DEFINITION,
-			COALESCE(ROUTINE_COMMENT, '')
+			COALESCE(ROUTINE_COMMENT, ''),
+			ROUTINE_TYPE
 		FROM information_schema.ROUTINES
 		WHERE ROUTINE_SCHEMA = ?
-		AND ROUTINE_TYPE = 'FUNCTION'
-		ORDER BY ROUTINE_NAME`
+		-- Both routine kinds. A procedure used to be filtered out here with
+		-- nothing saying so, so a comparison against a schema holding one
+		-- reported no difference and no diagnostic (stokaro/ptah#1722).
+		AND ROUTINE_TYPE IN ('FUNCTION', 'PROCEDURE')
+		ORDER BY ROUTINE_TYPE, ROUTINE_NAME`
 
 	rows, err := r.db.Query(query, dbName)
 	if err != nil {
@@ -495,21 +519,27 @@ func (r *Reader) readFunctions(dbName string) ([]types.DBFunction, error) {
 			isDeterministic string
 			sqlDataAccess   string
 			body            sql.NullString
+			returns         sql.NullString
+			routineType     string
 		)
 		if err := rows.Scan(
-			&fn.Name, &fn.Returns, &isDeterministic, &sqlDataAccess,
-			&fn.Security, &fn.Definer, &fn.CurrentAccount, &body, &fn.Comment,
+			&fn.Name, &returns, &isDeterministic, &sqlDataAccess,
+			&fn.Security, &fn.Definer, &fn.CurrentAccount, &body, &fn.Comment, &routineType,
 		); err != nil {
 			return nil, err
 		}
 		if !body.Valid {
 			return nil, hiddenRoutineBodyError(dbName, fn.Name)
 		}
+		// DTD_IDENTIFIER is NULL for a procedure and carries the type for a
+		// function, which is the catalog saying the same thing the grammar
+		// does: a procedure has no return type. Measured on MySQL 26.7.
+		fn.Kind = routineKind(routineType)
 		fn.Body = body.String
 		fn.Schema = dbName
 		fn.Language = "sql"
-		fn.Returns = mysqlroutine.NormalizeType(fn.Returns)
-		fn.Parameters = parameters[fn.Name]
+		fn.Returns = mysqlroutine.NormalizeType(returns.String)
+		fn.Parameters = parameters[routineParameterKey(routineType, fn.Name)]
 		fn.Volatility = mysqlroutine.VolatilityFromCatalog(isDeterministic, sqlDataAccess)
 		functions = append(functions, fn)
 	}
@@ -572,12 +602,12 @@ func hiddenRoutineBodyError(dbName, routine string) error {
 // still produced `a int, p_x varchar(50), p_y decimal(10,2)` on both engines.
 func (r *Reader) readRoutineParameters(dbName string) (map[string]string, error) {
 	query := `
-		SELECT SPECIFIC_NAME, PARAMETER_NAME, DTD_IDENTIFIER
+		SELECT ROUTINE_TYPE, SPECIFIC_NAME, PARAMETER_NAME, DTD_IDENTIFIER
 		FROM information_schema.PARAMETERS
 		WHERE SPECIFIC_SCHEMA = ?
-		AND ROUTINE_TYPE = 'FUNCTION'
+		AND ROUTINE_TYPE IN ('FUNCTION', 'PROCEDURE')
 		AND ORDINAL_POSITION > 0
-		ORDER BY SPECIFIC_NAME, ORDINAL_POSITION`
+		ORDER BY ROUTINE_TYPE, SPECIFIC_NAME, ORDINAL_POSITION`
 
 	rows, err := r.db.Query(query, dbName)
 	if err != nil {
@@ -587,11 +617,12 @@ func (r *Reader) readRoutineParameters(dbName string) (map[string]string, error)
 
 	declarations := make(map[string][]string)
 	for rows.Next() {
-		var routine, name, dataType string
-		if err := rows.Scan(&routine, &name, &dataType); err != nil {
+		var routineType, routine, name, dataType string
+		if err := rows.Scan(&routineType, &routine, &name, &dataType); err != nil {
 			return nil, err
 		}
-		declarations[routine] = append(declarations[routine], name+" "+mysqlroutine.NormalizeType(dataType))
+		key := routineParameterKey(routineType, routine)
+		declarations[key] = append(declarations[key], name+" "+mysqlroutine.NormalizeType(dataType))
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -602,6 +633,26 @@ func (r *Reader) readRoutineParameters(dbName string) (map[string]string, error)
 		rendered[routine] = strings.Join(args, ", ")
 	}
 	return rendered, nil
+}
+
+// routineParameterKey identifies a routine's parameter rows by kind and name.
+//
+// The kind is not decoration. MySQL and MariaDB let one schema hold a procedure
+// and a function of the same name, and information_schema.PARAMETERS keys both
+// by SPECIFIC_NAME, so a map keyed by name alone returns one routine's
+// parameters for the other. That was safe only while the read filtered to
+// functions; reading both kinds makes the collision reachable
+// (stokaro/ptah#1722).
+func routineParameterKey(routineType, name string) string {
+	return strings.ToUpper(strings.TrimSpace(routineType)) + "\x00" + name
+}
+
+// routineKind maps a catalog ROUTINE_TYPE onto the kind the schema model uses.
+func routineKind(routineType string) string {
+	if strings.EqualFold(strings.TrimSpace(routineType), "PROCEDURE") {
+		return "procedure"
+	}
+	return "function"
 }
 
 func (r *Reader) readTriggers(dbName string) ([]types.DBTrigger, error) {

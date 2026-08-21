@@ -8,7 +8,27 @@ import (
 	"text/template"
 
 	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/internal/envbool"
 )
+
+// SchemaDiffTemplateHelpersEnvVar opens the shared `--format` helper set on
+// compat `schema diff`.
+//
+// The narrow registration is deliberate and stays the default: the pinned
+// community binary offers `sql` alone here, and registering more would let
+// ptah-compat render a template that binary refuses -- the first half of the
+// compatibility policy. The second half says compatibility must not withhold a
+// capability Ptah has, and Ptah has the document: `schema apply` and
+// `schema inspect` already render it, and native `ptah schema diff --format
+// json` emits a machine-readable diff with no variable at all.
+//
+// So the fuller behavior lives behind this variable rather than behind a new
+// flag, leaving the command and flag inventory identical (stokaro/ptah#1705).
+// It is Gated because a true value adds a reading the pinned binary does not
+// have.
+const SchemaDiffTemplateHelpersEnvVar = "PTAH_SCHEMA_DIFF_TEMPLATE_HELPERS"
+
+var schemaDiffTemplateHelpers = envbool.New(SchemaDiffTemplateHelpersEnvVar, false, envbool.Gated)
 
 const schemaDiffDefaultFormat = `{{- with .Changes -}}
 {{ sql $ }}
@@ -62,13 +82,34 @@ func renderSchemaDiffTemplate(w io.Writer, name, format string, data SchemaDiff)
 }
 
 func newSchemaDiffTemplate(name, format string) (*template.Template, error) {
-	tmpl, err := template.New(name).Funcs(template.FuncMap{
-		"sql": schemaDiffSQL,
-	}).Parse(format)
+	funcs, err := schemaDiffTemplateFuncs()
+	if err != nil {
+		return nil, err
+	}
+	tmpl, err := template.New(name).Funcs(funcs).Parse(format)
 	if err != nil {
 		return nil, fmt.Errorf("parse --format template: %w", err)
 	}
 	return tmpl, nil
+}
+
+// schemaDiffTemplateFuncs is `sql` alone by default, and the shared set plus
+// `sql` when [SchemaDiffTemplateHelpersEnvVar] is on.
+//
+// The variable is resolved here rather than at start-up so that a malformed
+// value is refused by the command that would have used it, naming the
+// template it refused to parse.
+func schemaDiffTemplateFuncs() (template.FuncMap, error) {
+	enabled, err := schemaDiffTemplateHelpers.Resolve()
+	if err != nil {
+		return nil, err
+	}
+	if !enabled {
+		return template.FuncMap{"sql": schemaDiffSQL}, nil
+	}
+	funcs := atlasTemplateFuncs()
+	funcs["sql"] = schemaDiffSQL
+	return funcs, nil
 }
 
 func NormalizeSchemaDiffFormat(format string) string {

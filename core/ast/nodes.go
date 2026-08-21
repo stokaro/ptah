@@ -733,6 +733,40 @@ type ExtensionNode struct {
 	Version string
 	// Comment is an optional extension comment
 	Comment string
+	// Alteration names what an existing extension is being changed to, and is
+	// empty for the ordinary CREATE.
+	//
+	// It is a field on this node rather than a node of its own because a new
+	// node widens [Visitor], which every renderer must then implement -- an
+	// incompatible change to the public API for two statements that name the
+	// same object. [CreatePolicyNode.Replace] and [DropTypeNode.Domain] switch
+	// a rendered spelling the same way (stokaro/ptah#1718).
+	Alteration ExtensionAlteration
+}
+
+// ExtensionAlteration names what an ALTER EXTENSION statement changes.
+//
+// The two are separate values rather than one "alter" flag because a node
+// carrying both would have to render two statements, and one node rendering
+// two statements is what makes an ordered plan impossible to reason about.
+// The planner emits one node per change instead.
+type ExtensionAlteration string
+
+const (
+	// ExtensionUnaltered is the ordinary CREATE EXTENSION.
+	ExtensionUnaltered ExtensionAlteration = ""
+	// ExtensionUpdateVersion renders ALTER EXTENSION ... UPDATE TO, taking the
+	// target version from Version.
+	ExtensionUpdateVersion ExtensionAlteration = "update-version"
+	// ExtensionSetSchema renders ALTER EXTENSION ... SET SCHEMA, taking the
+	// target schema from Schema.
+	ExtensionSetSchema ExtensionAlteration = "set-schema"
+)
+
+// SetAlteration marks this node as an ALTER rather than a CREATE.
+func (n *ExtensionNode) SetAlteration(alteration ExtensionAlteration) *ExtensionNode {
+	n.Alteration = alteration
+	return n
 }
 
 // NewExtension creates a new extension node with the specified name.
@@ -1736,24 +1770,74 @@ func (n *DropSynonymNode) Accept(visitor Visitor) error {
 }
 
 // CreateMaterializedViewNode represents a CREATE MATERIALIZED VIEW statement.
+// A materialized view node carries no refresh strategy: refreshing is an
+// operation, not schema state (stokaro/ptah#1625). [RefreshMaterializedViewNode]
+// is the operation, and nothing in schema reconciliation produces one.
 type CreateMaterializedViewNode struct {
-	Name            string
-	Body            string
-	RefreshStrategy string
-	Comment         string
+	Name    string
+	Body    string
+	Comment string
+	// Refresh is the ClickHouse refresh schedule, nil for a view that declares
+	// none; see [MatViewRefreshSpec].
+	Refresh *MatViewRefreshSpec
+}
+
+// MatViewRefreshSpec is a ClickHouse materialized-view refresh schedule.
+//
+// It is nil for a view that declares none, which is every materialized view on
+// every other dialect and the ordinary ClickHouse one: a plain ClickHouse
+// materialized view is maintained by inserts into its source and has no
+// schedule to carry.
+//
+// It carries the engine's own vocabulary rather than a cross-dialect
+// abstraction, and that distinction is the point. A shared `refresh_strategy`
+// lived on this node once and was removed (stokaro/ptah#1625), because it
+// described an operation no catalog records and no dialect could read back.
+// This one is the opposite on every count: ClickHouse owns the schedule, stores
+// it, reports it, and alters it, so it is schema state -- of one engine, named
+// after that engine's feature, and absent everywhere else (stokaro/ptah#1802).
+//
+// The values are the ones the server stores, not the ones an operator wrote:
+// see go.5x5.cz/ptah/internal/chrefresh, which is where a declaration is
+// normalized before it reaches here.
+type MatViewRefreshSpec struct {
+	// Mode is EVERY, which refreshes on a wall-clock schedule, or AFTER, which
+	// refreshes that long after the previous run finished.
+	Mode string
+	// Interval is the schedule, in the server's spelling: `1 HOUR`,
+	// `1 MINUTE 30 SECOND`, `1 YEAR 6 MONTH`.
+	Interval string
+	// Offset shifts an EVERY schedule within its period. It is empty for AFTER,
+	// which the server refuses to combine with one.
+	Offset string
+	// Randomize spreads the refresh over a window, the RANDOMIZE FOR clause.
+	Randomize string
+	// DependsOn names the views this one refreshes after, schema-qualified the
+	// way the server stores them.
+	DependsOn []string
+	// Append adds each refresh's rows instead of replacing the previous ones.
+	Append bool
+}
+
+// Clone returns a deep copy, so a spec handed to a diff cannot be mutated
+// through the schema it came from.
+func (s *MatViewRefreshSpec) Clone() *MatViewRefreshSpec {
+	if s == nil {
+		return nil
+	}
+	cloned := *s
+	if s.DependsOn != nil {
+		cloned.DependsOn = append([]string(nil), s.DependsOn...)
+	}
+	return &cloned
 }
 
 func NewCreateMaterializedView(name string) *CreateMaterializedViewNode {
-	return &CreateMaterializedViewNode{Name: name, RefreshStrategy: "manual"}
+	return &CreateMaterializedViewNode{Name: name}
 }
 
 func (n *CreateMaterializedViewNode) SetBody(body string) *CreateMaterializedViewNode {
 	n.Body = body
-	return n
-}
-
-func (n *CreateMaterializedViewNode) SetRefreshStrategy(refreshStrategy string) *CreateMaterializedViewNode {
-	n.RefreshStrategy = refreshStrategy
 	return n
 }
 
@@ -1795,6 +1879,37 @@ func (n *DropMaterializedViewNode) SetComment(comment string) *DropMaterializedV
 
 func (n *DropMaterializedViewNode) Accept(visitor Visitor) error {
 	return visitor.VisitDropMaterializedView(n)
+}
+
+// AlterMaterializedViewRefreshNode changes a ClickHouse materialized view's
+// refresh schedule in place.
+//
+// It exists because the alternative keeps no data. A changed schedule is
+// otherwise a drop and a create, and the drop takes the inner storage table
+// with every row the view accumulated; `ALTER TABLE <view> MODIFY REFRESH ...`
+// changes the schedule and keeps them.
+//
+// It applies only to a view that already HAS a schedule. Measured on
+// 26.7.3.19, the same statement against a plain materialized view is answered
+// `Code: 48 ... Alter of type 'MODIFY_REFRESH' is not supported by storage
+// MaterializedView`, so gaining a first schedule or losing the last one is
+// still a drop and a create (stokaro/ptah#1802).
+type AlterMaterializedViewRefreshNode struct {
+	// Name is the materialized view whose schedule changes.
+	Name string
+	// Refresh is the schedule to set. It is never nil: removing a schedule is
+	// not something this statement can do.
+	Refresh *MatViewRefreshSpec
+}
+
+// NewAlterMaterializedViewRefresh creates an AlterMaterializedViewRefreshNode.
+func NewAlterMaterializedViewRefresh(name string, refresh *MatViewRefreshSpec) *AlterMaterializedViewRefreshNode {
+	return &AlterMaterializedViewRefreshNode{Name: name, Refresh: refresh}
+}
+
+// Accept dispatches to the visitor.
+func (n *AlterMaterializedViewRefreshNode) Accept(visitor Visitor) error {
+	return visitor.VisitAlterMaterializedViewRefresh(n)
 }
 
 // RefreshMaterializedViewNode represents a REFRESH MATERIALIZED VIEW statement.
@@ -1939,6 +2054,13 @@ func (n *DropTriggerNode) Accept(visitor Visitor) error {
 type CreateFunctionNode struct {
 	// Name is the name of the function to create
 	Name string
+	// Kind separates a function from a procedure. Empty means function.
+	//
+	// It is a field rather than a node of its own because the two are one
+	// catalog object differing in one property, and a second node would widen
+	// [Visitor] for every dialect that already answers this one
+	// (stokaro/ptah#1722).
+	Kind string
 	// Parameters contains the function parameter definitions (e.g., "tenant_id_param TEXT")
 	Parameters string
 	// Returns specifies the return type (e.g., "VOID", "TEXT", "INTEGER")
@@ -1982,6 +2104,31 @@ const (
 //		SetLanguage("plpgsql").
 //		SetSecurity("DEFINER").
 //		SetBody("BEGIN PERFORM set_config('app.current_tenant_id', tenant_id_param, false); END;")
+//
+// SetKind marks this routine as a function or a procedure and returns the node
+// for chaining.
+func (n *CreateFunctionNode) SetKind(kind string) *CreateFunctionNode {
+	n.Kind = kind
+	return n
+}
+
+// IsProcedure reports whether this routine is a procedure.
+func (n *CreateFunctionNode) IsProcedure() bool {
+	return strings.EqualFold(strings.TrimSpace(n.Kind), "procedure")
+}
+
+// SetKind marks the dropped routine as a function or a procedure and returns
+// the node for chaining.
+func (n *DropFunctionNode) SetKind(kind string) *DropFunctionNode {
+	n.Kind = kind
+	return n
+}
+
+// IsProcedure reports whether the dropped routine is a procedure.
+func (n *DropFunctionNode) IsProcedure() bool {
+	return strings.EqualFold(strings.TrimSpace(n.Kind), "procedure")
+}
+
 func NewCreateFunction(name string) *CreateFunctionNode {
 	return &CreateFunctionNode{
 		Name:     name,
@@ -2230,6 +2377,10 @@ func (n *AlterTableEnableRLSNode) Accept(visitor Visitor) error {
 type DropFunctionNode struct {
 	// Name is the name of the function to drop
 	Name string
+	// Kind separates a function from a procedure. Empty means function.
+	// DROP PROCEDURE and DROP FUNCTION are different statements, and a server
+	// refuses the wrong one by name.
+	Kind string
 	// Parameters contains the function parameter definitions for function signature matching
 	// This is needed because PostgreSQL allows function overloading
 	Parameters string

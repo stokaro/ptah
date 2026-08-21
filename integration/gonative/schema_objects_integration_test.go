@@ -107,9 +107,8 @@ func schemaObjectsTarget() *goschema.Database {
 			Body: "SELECT id, updated_at FROM ptah_schema_objects_users WHERE deleted_at IS NULL",
 		}},
 		MaterializedViews: []goschema.MaterializedView{{
-			Name:            "ptah_schema_objects_user_stats",
-			Body:            "SELECT id, COUNT(*) FROM ptah_schema_objects_users GROUP BY id",
-			RefreshStrategy: "manual",
+			Name: "ptah_schema_objects_user_stats",
+			Body: "SELECT id, COUNT(*) FROM ptah_schema_objects_users GROUP BY id",
 		}},
 		Triggers: []goschema.Trigger{{
 			Name:   "ptah_schema_objects_set_updated_at",

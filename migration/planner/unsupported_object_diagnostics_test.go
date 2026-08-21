@@ -342,9 +342,14 @@ func TestPlan_MySQLFamilyNamesTheExtensionAndSequenceItCannotHost(t *testing.T) 
 			wantSequence:  "-- CREATE SEQUENCE order_number_seq not supported in mysql",
 		},
 		{
+			// MariaDB hosts sequences now, so only the extension is named here.
+			// The sequence half of this row moved to the test below rather than
+			// being deleted: the plan and the render still have to agree about
+			// it, and that agreement is what this test is for
+			// (stokaro/ptah#1759).
 			dialect:       platform.MariaDB,
 			wantExtension: "-- Extension pg_trgm not supported in MariaDB",
-			wantSequence:  "-- CREATE SEQUENCE order_number_seq not supported in mariadb",
+			wantSequence:  "",
 		},
 	}
 
@@ -355,11 +360,39 @@ func TestPlan_MySQLFamilyNamesTheExtensionAndSequenceItCannotHost(t *testing.T) 
 			rendered := strings.Join(renderStatements(c, mysqlFamilySchema(), test.dialect), "\n")
 
 			c.Assert(planned, qt.Contains, test.wantExtension)
-			c.Assert(planned, qt.Contains, test.wantSequence)
 			c.Assert(rendered, qt.Contains, test.wantExtension)
-			c.Assert(rendered, qt.Contains, test.wantSequence)
+			c.Assert(sequenceDiagnosticIn(planned, test.wantSequence), qt.IsTrue)
+			c.Assert(sequenceDiagnosticIn(rendered, test.wantSequence), qt.IsTrue)
 		})
 	}
+}
+
+// TestPlan_MariaDBPlansTheSequenceItHosts is the sequence half of the row
+// above, on the engine that gained the object.
+//
+// The property is the one items 5 and 8 were about and it has not changed: the
+// plan and the render agree. What changed is which side of the agreement
+// MariaDB is on -- a statement the server executes, in both, rather than a
+// comment naming an omission in both.
+func TestPlan_MariaDBPlansTheSequenceItHosts(t *testing.T) {
+	c := qt.New(t)
+
+	planned := strings.Join(planStatements(c, mysqlFamilyCreationDiff(), mysqlFamilySchema(), platform.MariaDB), "\n")
+	rendered := strings.Join(renderStatements(c, mysqlFamilySchema(), platform.MariaDB), "\n")
+
+	c.Assert(planned, qt.Contains, "CREATE SEQUENCE `order_number_seq`")
+	c.Assert(rendered, qt.Contains, "CREATE SEQUENCE `order_number_seq`")
+	c.Assert(planned, qt.Not(qt.Contains), "not supported in mariadb")
+	c.Assert(rendered, qt.Not(qt.Contains), "CREATE SEQUENCE order_number_seq not supported")
+}
+
+// sequenceDiagnosticIn reports whether the expected sequence diagnostic is
+// present, treating an empty expectation as "this target names none".
+func sequenceDiagnosticIn(statements, want string) bool {
+	if want == "" {
+		return !strings.Contains(statements, "CREATE SEQUENCE order_number_seq not supported")
+	}
+	return strings.Contains(statements, want)
 }
 
 // TestPlan_MySQLFamilyNamesTheUserTypesItNoLongerDeclares covers the three
@@ -529,16 +562,6 @@ func executableSQL(sqlText string) string {
 	return strings.Join(kept, "\n")
 }
 
-// databaseDeclaringRoles builds a desired schema whose only content is the
-// named roles, in the order given.
-func databaseDeclaringRoles(names ...string) *goschema.Database {
-	roles := make([]goschema.Role, 0, len(names))
-	for _, name := range names {
-		roles = append(roles, goschema.Role{Name: name})
-	}
-	return &goschema.Database{Roles: roles}
-}
-
 // TestPlan_MySQLFamilyRoleRefusalNamesTheSameRoleAtEitherGate pins the sentence
 // a MySQL-family plan produces for a schema carrying several roles.
 //
@@ -556,6 +579,10 @@ func databaseDeclaringRoles(names ...string) *goschema.Database {
 // disagreement has to be pinned at; the second case removes the roles from the
 // desired schema so the planner gate answers instead of validation.
 func TestPlan_MySQLFamilyRoleRefusalNamesTheSameRoleAtEitherGate(t *testing.T) {
+	// Every role carries LOGIN, because a bare one is created now
+	// (stokaro/ptah#1762). The property this test owns is unchanged: whichever
+	// role the two gates refuse, they must name the same one.
+	//
 	// The order goschema parses the 016-roles fixture in.
 	declarationOrder := []string{"app_user", "admin_user", "readonly_user"}
 	// The order compare.Roles leaves diff.RolesAdded in.
@@ -565,8 +592,8 @@ func TestPlan_MySQLFamilyRoleRefusalNamesTheSameRoleAtEitherGate(t *testing.T) {
 		name      string
 		generated *goschema.Database
 	}{
-		{name: "validation gate", generated: databaseDeclaringRoles(declarationOrder...)},
-		{name: "planner gate", generated: &goschema.Database{}},
+		{name: "validation gate", generated: rolesDeclaringLogin(declarationOrder...)},
+		{name: "planner gate", generated: rolesDeclaringLogin(added...)},
 	}
 
 	for _, dialect := range []string{platform.MySQL, platform.MariaDB} {
@@ -579,8 +606,7 @@ func TestPlan_MySQLFamilyRoleRefusalNamesTheSameRoleAtEitherGate(t *testing.T) {
 
 				c.Assert(statements, qt.HasLen, 0)
 				c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
-				c.Assert(err, qt.ErrorMatches,
-					".*"+dialect+": CREATE ROLE admin_user: Ptah does not read or compare MySQL-family role state.*")
+				c.Assert(err, qt.ErrorMatches, `(?s).*`+dialect+`: role "admin_user" declares.*`)
 			})
 		}
 	}
@@ -647,12 +673,16 @@ func TestPlan_SQLServerPlansTheRoleAndGrantExactlyOnce(t *testing.T) {
 	c.Assert(planned, qt.Not(qt.Contains), `-- SQLSERVER: roles "app_reader" is not generated`)
 }
 
-// TestPlan_MySQLFamilyStillRefusesTheRoleItCannotManage is the control. A
-// change that turned every named skip into a statement would satisfy the row
-// above; the MySQL family reads no role state, and its refusal is the proof
-// that the capability decided the difference rather than the dialect list.
-func TestPlan_MySQLFamilyStillRefusesTheRoleItCannotManage(t *testing.T) {
-	for _, dialect := range []string{platform.MySQL, platform.MariaDB} {
+// TestPlan_SQLiteStillRefusesTheRoleItCannotManage is the control. A change
+// that turned every named skip into a statement would satisfy the row above,
+// and the proof that the CAPABILITY decided rather than the dialect list is a
+// target that still declines.
+//
+// The MySQL family used to hold this place. It reads role state now
+// (stokaro/ptah#1762), so the control moves to SQLite, which has no roles at
+// all -- rather than leaving with the behavior it was guarding.
+func TestPlan_SQLiteStillRefusesTheRoleItCannotManage(t *testing.T) {
+	for _, dialect := range []string{platform.SQLite} {
 		t.Run(dialect, func(t *testing.T) {
 			c := qt.New(t)
 
@@ -674,4 +704,14 @@ func countStatement(sql, keyword string) int {
 		}
 	}
 	return count
+}
+
+// rolesDeclaringLogin builds a desired schema whose roles all ask to log in,
+// which is the shape the MySQL family refuses now that a bare role is created.
+func rolesDeclaringLogin(names ...string) *goschema.Database {
+	roles := make([]goschema.Role, 0, len(names))
+	for _, name := range names {
+		roles = append(roles, goschema.Role{StructName: "R", Name: name, Login: true})
+	}
+	return &goschema.Database{Roles: roles}
 }

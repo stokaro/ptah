@@ -321,8 +321,7 @@ const accessDeniedCode = 497
 // downgraded to a gap in the description or fails the command — the one place a
 // false positive turns a real error into silence.
 func isAccessDenied(err error) bool {
-	var exception *clickhousedriver.Exception
-	if errors.As(err, &exception) {
+	if exception, ok := errors.AsType[*clickhousedriver.Exception](err); ok {
 		return exception.Code == accessDeniedCode
 	}
 	return false

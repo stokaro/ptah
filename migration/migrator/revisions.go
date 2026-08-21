@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"math"
 	"slices"
 	"strconv"
 	"strings"
@@ -145,11 +146,39 @@ type ChecksumMismatchError struct {
 	Version  int64
 	Stored   string
 	Computed string
+	// Description is the migration's own description, used to name the file a
+	// converted repeatable came from.
+	Description string
+	// ConvertedRepeatable marks the one case where the mismatch is the normal
+	// use of a feature rather than a sign of tampering. See
+	// [ConvertedFlywayRepeatableVersion].
+	ConvertedRepeatable bool
 }
 
 func (e *ChecksumMismatchError) Error() string {
-	return fmt.Sprintf("migration %d checksum mismatch: stored %s, current %s", e.Version, e.Stored, e.Computed)
+	base := fmt.Sprintf("migration %d checksum mismatch: stored %s, current %s", e.Version, e.Stored, e.Computed)
+	if !e.ConvertedRepeatable {
+		return base
+	}
+	// The default sentence reads as tampering, and here it is not: a repeatable
+	// exists to be re-run when it changes, and editing one is the ordinary
+	// Flyway lifecycle. What changed is not the file's honesty but its
+	// semantics, at import (stokaro/ptah#1702).
+	return base + fmt.Sprintf(
+		": %q was a Flyway repeatable, and importing it made it a one-time migration, "+
+			"so editing it is refused the way editing any applied migration is. "+
+			"Add a new versioned migration with the change, or re-import the source directory",
+		e.Description)
 }
+
+// ConvertedFlywayRepeatableVersion is the reserved slot every Flyway repeatable
+// lands on when a directory is imported: the top of int64, because the source
+// tool applies repeatables after every versioned file.
+//
+// It is restated here rather than imported because the importer sits above this
+// package. TestConvertedFlywayRepeatableVersionMatchesTheImporter holds the two
+// together, so the pair cannot drift.
+const ConvertedFlywayRepeatableVersion int64 = math.MaxInt64
 
 // RepairMigrationOptions configures migration metadata repair.
 type RepairMigrationOptions struct {
@@ -239,8 +268,7 @@ func migrationExecutionProgress(
 	dialect string,
 	txMode MigrationTxMode,
 ) migrationProgress {
-	var progressErr *statementProgressError
-	if errors.As(err, &progressErr) {
+	if progressErr, ok := errors.AsType[*statementProgressError](err); ok {
 		event := progressErr.event
 		return migrationProgress{
 			Applied: progressErr.applied, Total: event.Total,
@@ -248,8 +276,7 @@ func migrationExecutionProgress(
 		}
 	}
 
-	var observationErr *StatementObservationError
-	if errors.As(err, &observationErr) {
+	if observationErr, ok := errors.AsType[*StatementObservationError](err); ok {
 		event := observationErr.Event
 		// The observed statement executed and only the observation that follows
 		// it failed, so no statement of the body is itself the failure: pass 0
@@ -2060,8 +2087,7 @@ func preservesProgressWitnessUnknownOutcome(
 	if revision.Error != unknownStatementOutcomeError {
 		return false
 	}
-	var progressErr *statementProgressError
-	if errors.As(failure, &progressErr) {
+	if _, ok := errors.AsType[*statementProgressError](failure); ok {
 		return true
 	}
 	var execErr *MigrationExecutionError

@@ -153,6 +153,7 @@ func diffCategoryFixtures() []categoryFixture {
 			&goschema.Database{Functions: []goschema.Function{{Name: "f", Returns: "int", Body: "SELECT 1"}}},
 		},
 		{"FunctionsRemoved", &types.SchemaDiff{FunctionsRemoved: []string{"f"}}, &goschema.Database{}},
+		{"ProceduresRemoved", &types.SchemaDiff{ProceduresRemoved: []string{"p"}}, &goschema.Database{}},
 		{
 			"FunctionsModified",
 			&types.SchemaDiff{FunctionsModified: []types.FunctionDiff{{FunctionName: "f", Changes: map[string]string{"body": "x -> y"}}}},

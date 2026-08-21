@@ -3624,6 +3624,18 @@ func testDynamicRolesCrossDatabase(ctx context.Context, conn *dbschema.DatabaseC
 	})
 }
 
+// verifyMySQLFamilyRoleRefusal checks that this fixture's role declaration is
+// still refused, and refused for the reason that is now true.
+//
+// It used to be refused because Ptah could not read or compare a MySQL-family
+// role at all. It can now (stokaro/ptah#1762), and this fixture is refused one
+// step further in: the role it declares carries LOGIN and PASSWORD, and a
+// MySQL-family role carries neither. A principal that logs in is a USER here,
+// which is a different object and not one Ptah manages.
+//
+// The refusal is what this scenario is for, so the assertion moved to the new
+// reason rather than being deleted -- a fixture that started succeeding would
+// have stopped testing anything.
 func verifyMySQLFamilyRoleRefusal(conn *dbschema.DatabaseConnection, err error) error {
 	if err == nil {
 		return fmt.Errorf("expected MySQL-family role declaration to fail closed")
@@ -3632,7 +3644,7 @@ func verifyMySQLFamilyRoleRefusal(conn *dbschema.DatabaseConnection, err error) 
 		return fmt.Errorf("expected unsupported-feature role refusal, got: %w", err)
 	}
 	want := fmt.Sprintf(
-		"%s: CREATE ROLE admin_user: Ptah does not read or compare MySQL-family role state; manage roles outside Ptah for this target",
+		"%s: role \"admin_user\" declares LOGIN, PASSWORD or another user attribute, which a role does not carry here",
 		conn.Info().Dialect,
 	)
 	if !strings.Contains(err.Error(), want) {

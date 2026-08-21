@@ -2202,7 +2202,7 @@ env "local" {
 	_, err := projectconfig.ParseAtlas(raw, "atlas.hcl", "local")
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Not(qt.Contains), secret)
-	c.Assert(err.Error(), qt.Contains, "(sensitive value)")
+	c.Assert(err.Error(), qt.Contains, `reads the sensitive variable "secret"`)
 
 	// The control: a NON-sensitive variable keeps its value in the diagnostic,
 	// because that is what makes the message actionable. Without this half, a

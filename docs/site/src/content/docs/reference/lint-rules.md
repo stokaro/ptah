@@ -39,6 +39,47 @@ unless `PTAH_ATLAS_PLAN_LINT_FAIL_ON_ERROR=1` asks for a threshold, so a rule
 appearing below is a check that will be *reported* on a plan, not one standing
 between that plan and a database.
 
+## What a rule reads
+
+Most rules decide from the migration SQL. A few cannot: the type of a column a
+`RENAME` introduces, for instance, lives in an earlier file or in the base
+schema and never in the rename statement. Those rules read a second input — the
+schema state the analyzed version starts from, replayed onto the dev database
+`--dev-url` names.
+
+Which of the two a rule takes is declared on the rule rather than inferred,
+because the failure mode of getting it wrong is silence: the rule runs,
+resolves nothing, and reports less than it should while the command still exits
+0.
+
+| Input | What the rule sees |
+| --- | --- |
+| statement text | The migration SQL, and nothing else. The default. |
+| baseline schema | The above, plus the schema state the version starts from, read from the replayed dev database. |
+
+Two things follow from the declaration:
+
+- **Only the versions a rule asks about are read.** A directory with nothing to
+  resolve costs no introspection, and a rule silenced by `--disable`, by
+  `atlas:nolint`, or by a reviewed-schema scope that excludes its statements
+  costs none either.
+- **A rule that asks and gets nothing says so.** When the run supplies no
+  starting state for a version a rule asked about, both surfaces print a
+  warning on **stderr** naming the rule. Stdout bytes and the exit code are
+  unchanged, so nothing that parses the report is affected:
+
+  ```text
+  warning: DD101 ran without the baseline schema it reads, so this analysis is
+  thinner than the same directory would get against a dev database the run can read
+  ```
+
+  A clean report with that line on stderr means the analysis was narrower than
+  the directory allows, not that the directory is clean.
+
+`DD101` is the rule that reads the baseline today, for the add side of a column
+rename on the compatibility surface. The native surface models a rename as a
+rename, so it asks for no starting state and never prints the notice.
+
 ## How identifiers are spelled
 
 An identifier is a two- or three-letter family prefix and a number. The prefix
@@ -263,6 +304,28 @@ Every check code the [Atlas analyzer documentation](https://atlasgo.io/lint/anal
 | `PG106` | reports Atlas `PG102`, which the convention spells `PG102` |
 
 <!-- END GENERATED LINT RULES -->
+### Writing an Atlas code in a config
+
+Where Ptah reports an Atlas hazard under a rule of its own name, the Atlas code
+is accepted anyway — in `disabled-rules`, in `--disable`, and as a key under
+`rules:` for a severity override. `PG301` reaches `DS103`, `PG304` reaches
+`PG104`, and so on for `BC102`, `MF104`, `MY110`, `MY130`, `MY133` and `MY136`.
+
+An alias reaches its Ptah rule only for the engine the Atlas code belongs to.
+`PG301` is a PostgreSQL code, so `--dialect mysql --disable PG301` disables
+nothing: without that scoping it would expand to `DS103` and silence MySQL
+column-type-change findings that the policy never mentioned. The `MY` codes
+cover both `mysql` and `mariadb`. `BC102` and `MF104` name no engine and apply
+everywhere. A selector is still *accepted* on every dialect, so one policy file
+can carry entries for several engines.
+
+Six Atlas codes are deliberately **not** aliased, because Ptah uses the same
+spelling for a rule of its own meaning something else: `DS101`, `DS102`,
+`DS103`, `MF103`, `MY101` and `PG102`. Atlas `DS103` reports under Ptah `DS102`
+while Ptah's own `DS103` is a different hazard, so an alias would make
+`--disable DS103` silence two rules where you asked for one. In a config those
+six select the Ptah rule of that name.
+
 
 ## Changing what a rule does
 

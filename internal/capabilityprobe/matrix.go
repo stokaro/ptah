@@ -344,12 +344,10 @@ var launchers = map[string]launcher{
 		suiteURLEnv:   "COCKROACHDB_URL",
 	},
 	platform.Spanner: {
-		flags: []string{"--publish", "5432:5432"},
-		url:   "spanner://127.0.0.1:5432/ptah_test?sslmode=disable",
-		suiteSkip: "the integration runner has no Spanner target: Ptah's index read is " +
-			"pg_index/pg_class/pg_am/pg_get_indexdef throughout and Spanner exposes indexes " +
-			"through information_schema, so the suite would fail on reading a schema rather " +
-			"than on anything it set out to test (stokaro/ptah#942)",
+		flags:         []string{"--publish", "5432:5432"},
+		url:           "spanner://127.0.0.1:5432/ptah_test?sslmode=disable",
+		suiteDatabase: "spanner",
+		suiteURLEnv:   "SPANNER_URL",
 	},
 	platform.YugabyteDB: {
 		flags: []string{"--publish", "5433:5433"},

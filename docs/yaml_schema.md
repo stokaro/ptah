@@ -307,7 +307,7 @@ dialect-specific trigger bodies.
 - `functions`: `name`, `params` or `parameters`, `returns`, `language`,
   `security`, `volatility`, `body`, `comment`
 - `views`: `name`, `body`, `with_check`, `comment`
-- `matviews`: `name`, `body`, `refresh_strategy`, `comment`
+- `matviews`: `name`, `body`, `comment`
 - `triggers`: `name`, `table`, `timing`, `event`, `for`, `body`, `comment`
 - `rls_enabled_tables` or `rls_enabled`: map of tables with optional `table`,
   `struct_name`, and `comment`
@@ -318,13 +318,28 @@ dialect-specific trigger bodies.
 - `grants`: `role`, `privilege` or `privileges`, `on_table`, `on_schema`,
   `with_option`, `comment`
 
-`matviews.refresh_strategy` defaults to `manual`, which means Ptah emits no
-separate refresh operation. It is the only currently supported value. After a
-target dialect is selected, any other value is refused before rendering or
-comparison, and the error names the dialect, materialized view, and value.
-Catalog readers report `manual` because databases do not persist a Ptah-managed
-refresh policy. Target validation runs before comparison, so an unsupported
-authored value cannot be mistaken for a synchronized schema.
+`matviews` accepts no refresh strategy. Ptah does not refresh materialized
+views: one is populated when it is created, a changed body is reconciled as a
+drop and a create that populates it again, and it goes stale only when its
+source data changes, which schema reconciliation cannot observe. A `matviews`
+entry that declares `refresh_strategy` is refused while the document is parsed,
+with the reason, on every dialect and whether or not a target has been chosen.
+Refresh from your own scheduler. See [Materialized View Refresh](#materialized-view-refresh).
+
+## Materialized View Refresh
+
+A refresh is an operation, not schema state, so Ptah neither declares nor
+performs one. What that means per family:
+
+- PostgreSQL, CockroachDB, YugabyteDB: `REFRESH MATERIALIZED VIEW` is a
+  statement someone runs, `CONCURRENTLY` is an option of that statement, and no
+  catalog records a refresh policy. Ptah emits no such statement and reads
+  back no such policy.
+- ClickHouse: a materialized view maintains itself from inserts into its source.
+  ClickHouse also has a scheduled form, `REFRESH EVERY|AFTER ...`, which the
+  server owns and records; modeling it is a ClickHouse capability tracked in
+  [#1802](https://github.com/stokaro/ptah/issues/1802), not a value of a shared
+  attribute.
 
 ## Validation
 

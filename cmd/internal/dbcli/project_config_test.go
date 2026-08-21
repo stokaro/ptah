@@ -469,3 +469,167 @@ func TestExternalSchemaCommandsNilWhenNeitherSet(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(commands, qt.IsNil)
 }
+
+// envCommand builds a command carrying just the flags LoadProjectConfig reads.
+func envCommand(c *qt.C, envName string) *cobra.Command {
+	c.Helper()
+	cmd := &cobra.Command{Use: "test"}
+	cmd.Flags().String(dbcli.EnvFlagName, "", "")
+	if envName != "" {
+		c.Assert(cmd.Flags().Set(dbcli.EnvFlagName, envName), qt.IsNil)
+	}
+	return cmd
+}
+
+// An Atlas project config that is not ./atlas.hcl used to be reachable from
+// ptah-compat and unreachable from ptah, which is backwards for a feature whose
+// job is moving projects the other way. --config now names one
+// (stokaro/ptah#1215).
+
+// TestLoadProjectConfigReadsAnAtlasConfigNamedOnConfig is the closed gap.
+//
+// The env exists only in the file --config names. Discovery cannot reach it,
+// which is what the paired control below establishes, so a successful load can
+// only have come from the named path.
+func TestLoadProjectConfigReadsAnAtlasConfigNamedOnConfig(t *testing.T) {
+	c := qt.New(t)
+	chdirTemp(c, map[string]string{
+		"conf/staging.hcl":          "env \"staging\" {\n  url = \"postgres://named/db\"\n}\n",
+		projectconfig.AtlasFileName: "env \"local\" {\n  url = \"postgres://discovered/db\"\n}\n",
+	})
+
+	cfg, err := dbcli.LoadProjectConfig(envCommand(c, "staging"), "conf/staging.hcl")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(cfg.DatabaseURL, qt.Equals, "postgres://named/db")
+}
+
+// TestLoadProjectConfigCannotDiscoverAnAtlasConfigElsewhere is the control.
+//
+// Same tree, same env, no --config. Without it the env is unreachable, so the
+// test above is measuring the flag and not merely a file that happened to be
+// found anyway.
+func TestLoadProjectConfigCannotDiscoverAnAtlasConfigElsewhere(t *testing.T) {
+	c := qt.New(t)
+	chdirTemp(c, map[string]string{
+		"conf/staging.hcl":          "env \"staging\" {\n  url = \"postgres://named/db\"\n}\n",
+		projectconfig.AtlasFileName: "env \"local\" {\n  url = \"postgres://discovered/db\"\n}\n",
+	})
+
+	_, err := dbcli.LoadProjectConfig(envCommand(c, "staging"), "")
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(err.Error(), qt.Contains, `env "staging" not found`)
+}
+
+// TestLoadProjectConfigNamingAnAtlasConfigLeavesDiscoveryAlone keeps the
+// explicit path from becoming an extra source alongside ./atlas.hcl. Naming one
+// replaces discovery rather than adding to it, or an env defined in both files
+// would resolve from whichever the loader happened to read second.
+func TestLoadProjectConfigNamingAnAtlasConfigLeavesDiscoveryAlone(t *testing.T) {
+	c := qt.New(t)
+	chdirTemp(c, map[string]string{
+		"conf/staging.hcl":          "env \"shared\" {\n  url = \"postgres://named/db\"\n}\n",
+		projectconfig.AtlasFileName: "env \"shared\" {\n  url = \"postgres://discovered/db\"\n}\n",
+	})
+
+	cfg, err := dbcli.LoadProjectConfig(envCommand(c, "shared"), "conf/staging.hcl")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(cfg.DatabaseURL, qt.Equals, "postgres://named/db")
+}
+
+// TestLoadProjectConfigStillReadsPtahYAMLUnderneath keeps the merge order.
+// Naming an Atlas config does not stop ./ptah.yaml being read for what the
+// Atlas file leaves unset -- the same precedence discovery already had.
+func TestLoadProjectConfigStillReadsPtahYAMLUnderneath(t *testing.T) {
+	c := qt.New(t)
+	chdirTemp(c, map[string]string{
+		"conf/staging.hcl":         "env \"staging\" {\n  url = \"postgres://named/db\"\n}\n",
+		projectconfig.PtahFileName: "migration:\n  dir: ./ptah-migrations\n",
+	})
+
+	cfg, err := dbcli.LoadProjectConfig(envCommand(c, "staging"), "conf/staging.hcl")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(cfg.DatabaseURL, qt.Equals, "postgres://named/db")
+	// Verbatim: a ptah.yaml dir is not put through the normalization a
+	// file:// Atlas dir gets.
+	c.Assert(cfg.Migration.Dir, qt.Equals, "./ptah-migrations")
+}
+
+// TestLoadProjectConfigMatchesTheExtensionCaseInsensitively covers a spelling
+// the filesystem does not distinguish.
+//
+// macOS and Windows both hand back PROJECT.HCL for a file created as
+// project.hcl, so a case-sensitive match would route the same file to the
+// ptah.yaml loader or the Atlas one depending on how the operator happened to
+// type it -- and the ptah.yaml branch would then report an HCL file as bad
+// YAML.
+func TestLoadProjectConfigMatchesTheExtensionCaseInsensitively(t *testing.T) {
+	c := qt.New(t)
+	chdirTemp(c, map[string]string{
+		"conf/STAGING.HCL": "env \"staging\" {\n  url = \"postgres://named/db\"\n}\n",
+	})
+
+	cfg, err := dbcli.LoadProjectConfig(envCommand(c, "staging"), "conf/STAGING.HCL")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(cfg.DatabaseURL, qt.Equals, "postgres://named/db")
+}
+
+// TestLoadProjectConfigStillTakesPtahYAMLOnConfig is the other branch of the
+// routing: a path that does not end in .hcl still selects the ptah.yaml loader,
+// which is the behavior every existing caller depends on.
+func TestLoadProjectConfigStillTakesPtahYAMLOnConfig(t *testing.T) {
+	c := qt.New(t)
+	chdirTemp(c, map[string]string{
+		"conf/project.yaml": "url: postgres://named-yaml/db\n",
+	})
+
+	cfg, err := dbcli.LoadProjectConfig(envCommand(c, ""), "conf/project.yaml")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(cfg.DatabaseURL, qt.Equals, "postgres://named-yaml/db")
+}
+
+// TestLoadProjectConfigRefusesTwoAtlasConfigs covers the collision.
+//
+// A compat adapter forwards its own project config on a hidden flag. If the
+// operator also names one on --config, honoring either silently would apply a
+// config nobody asked for, so the refusal names both paths.
+func TestLoadProjectConfigRefusesTwoAtlasConfigs(t *testing.T) {
+	c := qt.New(t)
+	chdirTemp(c, map[string]string{
+		"conf/staging.hcl":   "env \"staging\" {\n  url = \"postgres://named/db\"\n}\n",
+		"conf/forwarded.hcl": "env \"staging\" {\n  url = \"postgres://forwarded/db\"\n}\n",
+	})
+	cmd := envCommand(c, "staging")
+	dbcli.RegisterAtlasProjectInternalFlags(cmd.Flags())
+	c.Assert(cmd.Flags().Set(dbcli.AtlasProjectConfigFlagName, "conf/forwarded.hcl"), qt.IsNil)
+
+	_, err := dbcli.LoadProjectConfig(cmd, "conf/staging.hcl")
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(err.Error(), qt.Contains, "conf/staging.hcl")
+	c.Assert(err.Error(), qt.Contains, "conf/forwarded.hcl")
+}
+
+// TestLoadProjectConfigAcceptsTheSameAtlasConfigTwice is the near miss beside
+// the refusal above. The same path on both is not a collision -- there is only
+// one config to apply -- and refusing it would break an adapter that forwards
+// the very path the operator typed.
+func TestLoadProjectConfigAcceptsTheSameAtlasConfigTwice(t *testing.T) {
+	c := qt.New(t)
+	chdirTemp(c, map[string]string{
+		"conf/staging.hcl": "env \"staging\" {\n  url = \"postgres://named/db\"\n}\n",
+	})
+	cmd := envCommand(c, "staging")
+	dbcli.RegisterAtlasProjectInternalFlags(cmd.Flags())
+	c.Assert(cmd.Flags().Set(dbcli.AtlasProjectConfigFlagName, "conf/staging.hcl"), qt.IsNil)
+
+	cfg, err := dbcli.LoadProjectConfig(cmd, "conf/staging.hcl")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(cfg.DatabaseURL, qt.Equals, "postgres://named/db")
+}

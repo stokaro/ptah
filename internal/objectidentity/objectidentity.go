@@ -73,14 +73,19 @@ const (
 	KindEnum       Kind = "enum"
 	KindSequence   Kind = "sequence"
 	KindFunction   Kind = "function"
-	KindTrigger    Kind = "trigger"
-	KindPolicy     Kind = "policy"
-	KindRole       Kind = "role"
-	KindGrant      Kind = "grant"
-	KindExtension  Kind = "extension"
-	KindComposite  Kind = "composite type"
-	KindRange      Kind = "range type"
-	KindMatView    Kind = "materialized view"
+	// KindProcedure separates a procedure from a function of the same name.
+	// Both engines that model procedures allow one schema to hold both, and a
+	// comparison that folded them together would report the procedure as a
+	// changed function (stokaro/ptah#1722).
+	KindProcedure Kind = "procedure"
+	KindTrigger   Kind = "trigger"
+	KindPolicy    Kind = "policy"
+	KindRole      Kind = "role"
+	KindGrant     Kind = "grant"
+	KindExtension Kind = "extension"
+	KindComposite Kind = "composite type"
+	KindRange     Kind = "range type"
+	KindMatView   Kind = "materialized view"
 )
 
 // Part is one component of a qualified name: what the author wrote, and what

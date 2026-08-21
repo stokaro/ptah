@@ -57,7 +57,7 @@ func TestWriterDropAllTables_CommitsAllCatalogObjects(t *testing.T) {
 	c.Assert(catalogQueries[2], qt.Contains, "ORDER BY priority, dependency_depth DESC")
 	c.Assert(catalogQueries[2], qt.Contains, "FROM pg_constraint")
 	c.Assert(catalogQueries[2], qt.Contains, "con.contype = 'f'")
-	c.Assert(catalogQueries[2], qt.Contains, "p.prokind IN ('f', 'p', 'a', 'w')")
+	c.Assert(catalogQueries[2], qt.Contains, "p.prokind = 'f' OR p.prokind = 'p'")
 	c.Assert(catalogQueries[2], qt.Contains, "d.deptype = 'i'")
 	c.Assert(catalogQueries[2], qt.Contains, "t.typtype IN ('e', 'd', 'r')")
 	c.Assert(catalogQueries[2], qt.Contains, "RESTRICT")
@@ -519,6 +519,7 @@ func TestWriterDropDatabaseRealm_RollsBackOnPreservedDependency(t *testing.T) {
 		"function",
 		"public",
 		"is_allowed",
+		nil,
 		`DROP FUNCTION IF EXISTS "public"."is_allowed"() RESTRICT`,
 	}}
 	db := dbtest.OpenWithExec(t, queryHandler.query, failPostgresPreservedFunctionDrop)
@@ -671,16 +672,16 @@ func postgresCleanupQuery(
 	_ []driver.NamedValue,
 ) (dbtest.QueryResult, error) {
 	return postgresCleanupCatalogQuery(query, "PostgreSQL 18.0", [][]driver.Value{
-		{"constraint", "public", "users_parent_fkey", `ALTER TABLE "public"."users" DROP CONSTRAINT IF EXISTS "users_parent_fkey" RESTRICT`},
-		{"view", "public", "active_users", `DROP VIEW IF EXISTS "public"."active_users" RESTRICT`},
-		{"materialized view", "public", "user_stats", `DROP MATERIALIZED VIEW IF EXISTS "public"."user_stats" RESTRICT`},
-		{"foreign table", "public", "remote_users", `DROP FOREIGN TABLE IF EXISTS "public"."remote_users" RESTRICT`},
-		{"table", "public", "users", `DROP TABLE IF EXISTS "public"."users" RESTRICT`},
-		{"sequence", "public", "users_id_seq", `DROP SEQUENCE IF EXISTS "public"."users_id_seq" RESTRICT`},
-		{"procedure", "public", "refresh_users", `DROP PROCEDURE IF EXISTS "public"."refresh_users"() RESTRICT`},
-		{"aggregate", "public", "sum_text", `DROP AGGREGATE IF EXISTS "public"."sum_text"(text) RESTRICT`},
-		{"function", "public", "normalize_email", `DROP FUNCTION IF EXISTS "public"."normalize_email"(text) RESTRICT`},
-		{"type", "public", "status", `DROP TYPE IF EXISTS "public"."status" RESTRICT`},
+		{"constraint", "public", "users_parent_fkey", "users", `ALTER TABLE "public"."users" DROP CONSTRAINT IF EXISTS "users_parent_fkey" RESTRICT`},
+		{"view", "public", "active_users", nil, `DROP VIEW IF EXISTS "public"."active_users" RESTRICT`},
+		{"materialized view", "public", "user_stats", nil, `DROP MATERIALIZED VIEW IF EXISTS "public"."user_stats" RESTRICT`},
+		{"foreign table", "public", "remote_users", nil, `DROP FOREIGN TABLE IF EXISTS "public"."remote_users" RESTRICT`},
+		{"table", "public", "users", nil, `DROP TABLE IF EXISTS "public"."users" RESTRICT`},
+		{"sequence", "public", "users_id_seq", nil, `DROP SEQUENCE IF EXISTS "public"."users_id_seq" RESTRICT`},
+		{"procedure", "public", "refresh_users", nil, `DROP PROCEDURE IF EXISTS "public"."refresh_users"() RESTRICT`},
+		{"aggregate", "public", "sum_text", nil, `DROP AGGREGATE IF EXISTS "public"."sum_text"(text) RESTRICT`},
+		{"function", "public", "normalize_email", nil, `DROP FUNCTION IF EXISTS "public"."normalize_email"(text) RESTRICT`},
+		{"type", "public", "status", nil, `DROP TYPE IF EXISTS "public"."status" RESTRICT`},
 	})
 }
 
@@ -692,6 +693,7 @@ func postgresPolicyCleanupQuery(
 		"function",
 		"public",
 		"is_allowed",
+		nil,
 		`DROP FUNCTION IF EXISTS "public"."is_allowed"() RESTRICT`,
 	}})
 }
@@ -701,8 +703,8 @@ func postgresInternalDependencyQuery(
 	_ []driver.NamedValue,
 ) (dbtest.QueryResult, error) {
 	return postgresCleanupCatalogQuery(query, "PostgreSQL 18.0", [][]driver.Value{
-		{"table", "public", "users", `DROP TABLE IF EXISTS "public"."users" RESTRICT`},
-		{"view", "public", "active_users", `DROP VIEW IF EXISTS "public"."active_users" RESTRICT`},
+		{"table", "public", "users", nil, `DROP TABLE IF EXISTS "public"."users" RESTRICT`},
+		{"view", "public", "active_users", nil, `DROP VIEW IF EXISTS "public"."active_users" RESTRICT`},
 	})
 }
 
@@ -714,9 +716,9 @@ func cockroachOrderedDependencyQuery(
 		query,
 		"CockroachDB CCL v26.2.4",
 		[][]driver.Value{
-			{"view", "public", "z_dependent_view", `DROP VIEW IF EXISTS "public"."z_dependent_view" RESTRICT`},
-			{"view", "public", "a_base_view", `DROP VIEW IF EXISTS "public"."a_base_view" RESTRICT`},
-			{"table", "public", "users", `DROP TABLE IF EXISTS "public"."users" RESTRICT`},
+			{"view", "public", "z_dependent_view", nil, `DROP VIEW IF EXISTS "public"."z_dependent_view" RESTRICT`},
+			{"view", "public", "a_base_view", nil, `DROP VIEW IF EXISTS "public"."a_base_view" RESTRICT`},
+			{"table", "public", "users", nil, `DROP TABLE IF EXISTS "public"."users" RESTRICT`},
 		},
 	)
 }
@@ -758,18 +760,21 @@ func newPostgresRealmMetadataQuery() *postgresRealmQuery {
 				"extension",
 				"public",
 				"hstore",
+				nil,
 				`DROP EXTENSION IF EXISTS "hstore" RESTRICT`,
 			},
 			{
 				"collation",
 				"public",
 				"ptah_case_sensitive",
+				nil,
 				`DROP COLLATION IF EXISTS "public"."ptah_case_sensitive" RESTRICT`,
 			},
 			{
 				"default privilege",
 				"public",
 				"app_owner/r/PUBLIC",
+				nil,
 				`ALTER DEFAULT PRIVILEGES FOR ROLE "app_owner" IN SCHEMA "public" REVOKE ALL PRIVILEGES ON TABLES FROM PUBLIC`,
 			},
 		},
@@ -862,7 +867,7 @@ func (q *postgresRealmQuery) query(
 		}, nil
 	case strings.Contains(query, "cleanup_objects"):
 		return dbtest.QueryResult{
-			Columns: []string{"object_kind", "object_schema", "object_name", "drop_statement"},
+			Columns: []string{"object_kind", "object_schema", "object_name", "object_qualifier", "drop_statement"},
 			Rows:    q.publicObjects,
 		}, nil
 	case strings.Contains(query, "aclexplode"):
@@ -966,7 +971,7 @@ func postgresCleanupCatalogQuery(
 		return noPostgresCrossSchemaPartitionEdges(), nil
 	default:
 		return dbtest.QueryResult{
-			Columns: []string{"object_kind", "object_schema", "object_name", "drop_statement"},
+			Columns: []string{"object_kind", "object_schema", "object_name", "object_qualifier", "drop_statement"},
 			Rows:    objects,
 		}, nil
 	}

@@ -102,13 +102,15 @@ func TestGetOrderedCreateStatements_AnUnscopedSchemaRendersAsItAlwaysDid(t *test
 // TestGetOrderedCreateStatements_AnUnscopedRoleStillRefusesTheMySQLFamily pins
 // the refusal a scope is the only way to avoid.
 //
-// A declared role is not skipped on MySQL or MariaDB, it stops the render:
-// Ptah neither reads nor compares MySQL-family role state, so planning a
-// CREATE ROLE would never converge and refusing is the honest answer. That
-// refusal is also what made one schema across postgres and mariadb impossible
-// before a declaration could say which targets a role is for -- so it must
-// still fire for a role that names none.
-func TestGetOrderedCreateStatements_AnUnscopedRoleStillRefusesTheMySQLFamily(t *testing.T) {
+// TestGetOrderedCreateStatements_AnUnscopedRoleReachesTheMySQLFamily pins that
+// scoping still decides which targets a declaration reaches.
+//
+// This used to assert a refusal, because the MySQL family could not read a role
+// back and so refused every one. It reads one back now (stokaro/ptah#1762), so
+// what the unscoped role proves is the scoping rule rather than the refusal: a
+// declaration naming no dialects reaches this target, and the statement it
+// produces is that target's.
+func TestGetOrderedCreateStatements_AnUnscopedRoleReachesTheMySQLFamily(t *testing.T) {
 	c := qt.New(t)
 
 	unscoped := scopedSchema()
@@ -116,7 +118,8 @@ func TestGetOrderedCreateStatements_AnUnscopedRoleStillRefusesTheMySQLFamily(t *
 	unscoped.Functions[0].Dialects = nil
 	unscoped.Roles[0].Dialects = nil
 
-	_, err := renderer.GetOrderedCreateStatements(unscoped, "mysql")
+	statements, err := renderer.GetOrderedCreateStatements(unscoped, "mysql")
 
-	c.Assert(err, qt.ErrorMatches, `.*CREATE ROLE app_reader.*`)
+	c.Assert(err, qt.IsNil)
+	c.Assert(strings.Join(statements, "\n"), qt.Contains, "CREATE ROLE IF NOT EXISTS `app_reader`;")
 }

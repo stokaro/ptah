@@ -424,6 +424,12 @@ type runner struct {
 	migrateTo func(ctx context.Context, target string) (passed bool, detail string)
 	// applySchema handles an apply_schema step.
 	applySchema func(ctx context.Context) (passed bool, detail string)
+	// resolveSchema and applyPlan handle the two steps a plan case adds. They
+	// are nil for a run that never sees one; a case using the step then fails
+	// with the reason rather than skipping the state it meant to establish
+	// (stokaro/ptah#1211).
+	resolveSchema func(url string) (*goschema.Database, error)
+	applyPlan     func(ctx context.Context, conn *dbschema.DatabaseConnection, url string) error
 }
 
 func (r *runner) runCase(ctx context.Context, c Case) (CaseResult, error) {
@@ -459,6 +465,10 @@ func (r *runner) execStep(ctx context.Context, step Step) (passed bool, detail s
 		return r.runSeed(ctx, step.Seed)
 	case stepKindAssert:
 		return r.runAssert(ctx, step.Assert)
+	case stepKindEstablishSchema:
+		return r.runEstablishSchema(ctx, step.EstablishSchema)
+	case stepKindApplyPlan:
+		return r.runApplyPlan(ctx, step.ApplyPlan)
 	default:
 		return false, "step performs no action"
 	}
@@ -667,4 +677,39 @@ func normalizeScalar(v any) string {
 	default:
 		return fmt.Sprintf("%v", v)
 	}
+}
+
+// runEstablishSchema brings the database to the state a schema source
+// describes, which is what a plan case does before applying anything: a plan is
+// only meaningful against the state it was computed for.
+func (r *runner) runEstablishSchema(
+	ctx context.Context,
+	step *SchemaSourceStep,
+) (passed bool, detail string) {
+	if r.resolveSchema == nil {
+		return false, "schema steps are only available in a plan test run"
+	}
+	desired, err := r.resolveSchema(step.URL)
+	if err != nil {
+		return false, fmt.Sprintf("schema %s failed: %v", step.URL, err)
+	}
+	// Applied through the same convergence path apply_schema uses, so a plan
+	// case starts from a state built exactly the way every other test builds
+	// one.
+	if _, err := applyDesiredSchema(ctx, r.conn, desired); err != nil {
+		return false, fmt.Sprintf("schema %s failed: %v", step.URL, err)
+	}
+	return true, ""
+}
+
+// runApplyPlan executes a saved plan file, which is the action a plan case
+// exists to check.
+func (r *runner) runApplyPlan(ctx context.Context, step *ApplyPlanStep) (passed bool, detail string) {
+	if r.applyPlan == nil {
+		return false, "apply steps are only available in a plan test run"
+	}
+	if err := r.applyPlan(ctx, r.conn, step.URL); err != nil {
+		return false, fmt.Sprintf("apply %s failed: %v", step.URL, err)
+	}
+	return true, ""
 }

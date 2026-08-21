@@ -20,8 +20,8 @@ import (
 	"github.com/zclconf/go-cty/cty"
 	"github.com/zclconf/go-cty/cty/convert"
 	"github.com/zclconf/go-cty/cty/function"
-	"github.com/zclconf/go-cty/cty/function/stdlib"
 
+	"go.5x5.cz/ptah/internal/atlashcl"
 	"go.5x5.cz/ptah/internal/atlasprojectpath"
 )
 
@@ -38,6 +38,8 @@ type AtlasLoadOptions struct {
 	// when they need that exact boundary. The default retains Ptah's complete
 	// dynamic-env capability.
 	RejectListMapForEach bool
+	// Verb names the command doing the load. See [LoadOptions.Verb].
+	Verb string
 }
 
 // LoadAtlasFile loads the supported subset of an Atlas project config file. A
@@ -54,7 +56,7 @@ func LoadAtlasFileWithOptions(path string, opts AtlasLoadOptions) (Config, error
 	if err != nil {
 		return Config{}, err
 	}
-	return singularAtlasConfig(configs, opts.EnvName)
+	return singularAtlasConfig(configs, opts.EnvName, opts.Verb)
 }
 
 // LoadAtlasFileCollectionWithOptions loads every selected instance from an
@@ -114,7 +116,7 @@ func ParseAtlasWithOptions(data []byte, filename string, opts AtlasLoadOptions) 
 	if err != nil {
 		return Config{}, err
 	}
-	return singularAtlasConfig(configs, opts.EnvName)
+	return singularAtlasConfig(configs, opts.EnvName, opts.Verb)
 }
 
 // ParseAtlasCollectionWithOptions parses every selected instance from an
@@ -168,7 +170,7 @@ func ParseAtlasFSWithOptions(
 	if err != nil {
 		return Config{}, err
 	}
-	return singularAtlasConfig(configs, opts.EnvName)
+	return singularAtlasConfig(configs, opts.EnvName, opts.Verb)
 }
 
 // ParseAtlasFSCollectionWithOptions parses every selected Atlas project config
@@ -204,13 +206,20 @@ func ParseAtlasFSCollectionWithOptions(
 	}
 
 	p, err := newAtlasParser(opts.Context, fsys, opts.Vars, filename, opts.RejectListMapForEach, ignoreSchemas)
+	p.source = data
 	if err != nil {
 		return nil, err
 	}
 	return p.parseCollection(body, opts.EnvName)
 }
 
-func singularAtlasConfig(configs []Config, envName string) (Config, error) {
+// singularAtlasConfig narrows a selection to the one instance a verb can take.
+//
+// The refusal names the verb and the block, because the alternative was a
+// sentence about a "collection-valued API" -- an internal detail an operator
+// cannot act on, and one that read like a bug rather than like a limit of the
+// verb they ran (stokaro/ptah#1696).
+func singularAtlasConfig(configs []Config, envName, verb string) (Config, error) {
 	switch len(configs) {
 	case 1:
 		return configs[0], nil
@@ -218,16 +227,34 @@ func singularAtlasConfig(configs []Config, envName string) (Config, error) {
 		return Config{}, fmt.Errorf("atlas env %q selected no project config instances", envName)
 	default:
 		return Config{}, fmt.Errorf(
-			"atlas env %q selected %d project config instances; use the corresponding collection-valued API",
+			"%s cannot run against a for_each env: %s env %q expands to %d environments, "+
+				"and this command takes one. Select a single environment, or run the command once per instance",
+			verbOrCommand(verb),
+			AtlasFileName,
 			envName,
 			len(configs),
 		)
 	}
 }
 
+// verbOrCommand names the caller for the refusal above, falling back to a
+// general noun when the caller did not say.
+func verbOrCommand(verb string) string {
+	if strings.TrimSpace(verb) == "" {
+		return "this command"
+	}
+	return verb
+}
+
 type atlasParser struct {
-	runContext  context.Context
-	fsys        fs.FS
+	runContext context.Context
+	fsys       fs.FS
+	// source is the document's raw bytes, kept so an attribute can be read as
+	// the EXPRESSION its author wrote rather than as a value. A declared lint
+	// rule's `match` is a predicate over a statement that does not exist while
+	// the project file is being read, so it is captured verbatim and compiled
+	// later (stokaro/ptah#1706).
+	source      []byte
 	ctx         *hcl.EvalContext
 	varOverride map[string]cty.Value
 	// ignoreEnvSchemas carries the resolved [IgnoreEnvSchemasEnvVar] value,
@@ -262,6 +289,16 @@ type atlasParser struct {
 	// value, so a plain slice field would be appended to on a copy and the
 	// values would never reach the scrubber.
 	sensitiveValues *[]string
+	// sensitiveNames holds the NAMES of those variables.
+	//
+	// Scrubbing by value only removes the value as it was authored. A function
+	// that transforms its argument defeats that: `file(jsonencode(var.token))`
+	// on a token containing a backslash fails with the escaped spelling, which
+	// does not contain the original as a substring and therefore survives the
+	// scrubber. Knowing the names lets a diagnostic be withheld whenever the
+	// expression touched a sensitive variable at all, which is decidable where
+	// "did any function derive a value from it" is not.
+	sensitiveNames *map[string]struct{}
 	// ignored records the constructs tolerated under Atlas CE's
 	// unknown-name policy, so the caller can report them. Pointer for the same
 	// reason as sensitiveValues: the parser is passed by value.
@@ -330,25 +367,18 @@ func newAtlasParser(
 	// addressable, and new([]T) would point at a nil slice instead of an
 	// empty one, which is a different value to every reader of these fields.
 	sensitiveValues := make([]string, 0)
+	sensitiveNames := make(map[string]struct{})
 	ignored := make([]IgnoredAtlasConstruct, 0)
 	return atlasParser{
 		runContext:      runContext,
 		fsys:            fsys,
 		sensitiveValues: &sensitiveValues,
+		sensitiveNames:  &sensitiveNames,
 		ignored:         &ignored,
 		ignoredSeen:     make(map[ignoredAtlasConstructKey]struct{}),
 		ctx: &hcl.EvalContext{
 			Variables: make(map[string]cty.Value),
-			Functions: map[string]function.Function{
-				"file":       atlasFileFunc(fsys),
-				"fileset":    atlasFilesetFunc(fsys),
-				"format":     stdlib.FormatFunc,
-				"getenv":     atlasGetenvFunc(),
-				"jsondecode": stdlib.JSONDecodeFunc,
-				"jsonencode": stdlib.JSONEncodeFunc,
-				"tolist":     stdlib.MakeToFunc(cty.List(cty.DynamicPseudoType)),
-				"toset":      stdlib.MakeToFunc(cty.Set(cty.DynamicPseudoType)),
-			},
+			Functions: atlasProjectFunctions(fsys),
 		},
 		varOverride:          overrides,
 		ignoreEnvSchemas:     ignoreSchemas,
@@ -404,6 +434,15 @@ func (p atlasParser) parseCollection(body *hclsyntax.Body, envName string) ([]Co
 		}
 		p.noteIgnored("attribute", name, attr.NameRange)
 	}
+	// Exporters are top-level and env-independent: an exporter names an output
+	// format, and a format does not change because a different database was
+	// selected. Parsing them into base means every env instance inherits the
+	// same set through Merge (stokaro/ptah#1620).
+	for _, block := range blocks.exporters {
+		if err := p.parseAtlasExporterBlock(block, &base); err != nil {
+			return nil, err
+		}
+	}
 	if err := p.parseSingleAtlasBlock(blocks.globalDiff, &base, p.parseDiff); err != nil {
 		return nil, err
 	}
@@ -448,6 +487,7 @@ type atlasTopBlocks struct {
 	envs       []atlasEnvBlock
 	locals     []*hclsyntax.Block
 	variables  []*hclsyntax.Block
+	exporters  []*hclsyntax.Block
 }
 
 func (p atlasParser) collectAtlasTopBlocks(blocks []*hclsyntax.Block) (atlasTopBlocks, error) {
@@ -704,6 +744,8 @@ func (p atlasParser) collectAtlasTopBlock(block *hclsyntax.Block, collected *atl
 		collected.locals = append(collected.locals, block)
 	case "variable":
 		collected.variables = append(collected.variables, block)
+	case "exporter":
+		collected.exporters = append(collected.exporters, block)
 	case "atlas":
 		// The one top-level name CE KNOWS and refuses, rather than not
 		// recognizing. Measured across nine candidate names on the pinned CE
@@ -1035,6 +1077,15 @@ func (p atlasParser) parseEnvAttr(attrName string, attr *hclsyntax.Attribute, cf
 		}
 		cfg.DevURL = value
 		cfg.presence.mark(fieldDevURL)
+	case "exporter":
+		// The env names which exporter `--export` uses. The template itself
+		// lives in a top-level `exporter` block, because an output format is
+		// not a property of a database (stokaro/ptah#1620).
+		value, err := p.stringAttr(attrName, attr)
+		if err != nil {
+			return err
+		}
+		cfg.ExporterName = value
 	case "src":
 		return p.parseSchemaSources(attr, cfg)
 	case "exclude":
@@ -1350,6 +1401,10 @@ func (p atlasParser) parseLintPolicyBlocks(block *hclsyntax.Block, cfg *Config) 
 			}); err != nil {
 				return err
 			}
+		case "rule":
+			if err := p.parseLintRuleOrTolerate(nested, cfg); err != nil {
+				return err
+			}
 		default:
 			// Same in-loop rule as the attribute switches: returning here
 			// would end the loop and skip every later block.
@@ -1359,6 +1414,106 @@ func (p atlasParser) parseLintPolicyBlocks(block *hclsyntax.Block, cfg *Config) 
 		}
 	}
 	return nil
+}
+
+// parseLintRuleOrTolerate routes a `rule` block by its label count.
+//
+// One block name carries two meanings. Atlas spells a custom rule
+// `rule "hcl" "name" { src = [...] }` and CE ignores it, so Ptah keeps ignoring
+// it too; Ptah DECLARES one as `rule "CODE" { ... }` and runs it
+// (stokaro/ptah#1706). Honoring the Atlas form would run a rule its author
+// wrote for another tool.
+//
+// It is also the one lint block that may appear more than once: a project has
+// as many rules as it has conventions.
+func (p atlasParser) parseLintRuleOrTolerate(block *hclsyntax.Block, cfg *Config) error {
+	if len(block.Labels) != 1 {
+		return p.tolerateUnknownBlock("lint", block)
+	}
+	return p.parseLintRuleBlock(block, cfg)
+}
+
+// parseLintRuleBlock reads `lint { rule "CODE" { ... } }`.
+//
+// The block label is the rule code, which is what findings print and what
+// `--disable` and a `nolint` directive select. The code form itself is
+// validated where every other rule code is -- in migration/lint -- rather than
+// here, so the two configuration surfaces cannot drift on what a code may be.
+func (p atlasParser) parseLintRuleBlock(block *hclsyntax.Block, cfg *Config) error {
+	// A duplicate code is refused by the structure walk before this runs, which
+	// is where every other block-level shape check lives.
+	code := block.Labels[0]
+	rule := LintRuleConfig{}
+	for _, attrName := range sortedAttributeNames(block.Body.Attributes) {
+		if err := p.parseLintRuleAttr(code, attrName, block.Body.Attributes[attrName], &rule); err != nil {
+			return err
+		}
+	}
+	setLintRuleConfig(cfg, code, rule)
+	return nil
+}
+
+func (p atlasParser) parseLintRuleAttr(
+	code, attrName string, attr *hclsyntax.Attribute, rule *LintRuleConfig,
+) error {
+	switch attrName {
+	case "match":
+		// The expression is captured as SOURCE, not evaluated here. It is
+		// a predicate over a statement that does not exist yet, so
+		// evaluating it against the project file's scope would fail on
+		// `statement` being undefined -- and succeeding would be worse,
+		// since it would freeze one statement's answer for every file.
+		expression, ok := expressionSource(p.source, attr.Expr.Range())
+		if !ok {
+			return fmt.Errorf("lint rule %q: could not read the `match` expression", code)
+		}
+		rule.Match = expression
+	case "message":
+		value, err := p.stringAttr(attrName, attr)
+		if err != nil {
+			return err
+		}
+		rule.Message = value
+	case "title":
+		value, err := p.stringAttr(attrName, attr)
+		if err != nil {
+			return err
+		}
+		rule.Title = value
+	case "severity":
+		value, err := p.stringAttr(attrName, attr)
+		if err != nil {
+			return err
+		}
+		rule.Severity = value
+	case "dialects":
+		value, err := p.stringListAttr(attrName, attr)
+		if err != nil {
+			return err
+		}
+		rule.Dialects = value
+	case "applies_to_down":
+		value, err := p.boolAttr(attrName, attr)
+		if err != nil {
+			return err
+		}
+		rule.AppliesToDown = value
+	default:
+		return p.tolerateUnknownAttr("lint.rule", attrName, attr)
+	}
+	return nil
+}
+
+// expressionSource returns the bytes an expression was written as.
+//
+// Ranges are byte offsets into the document, so this is exact rather than a
+// re-rendering: the author's own spelling, spacing and quoting reach the
+// compiler, and a diagnostic can quote what they typed.
+func expressionSource(source []byte, rng hcl.Range) (string, bool) {
+	if source == nil || rng.Start.Byte < 0 || rng.End.Byte > len(source) || rng.Start.Byte > rng.End.Byte {
+		return "", false
+	}
+	return strings.TrimSpace(string(source[rng.Start.Byte:rng.End.Byte])), true
 }
 
 func (p atlasParser) parseSingleLintBlock(
@@ -1665,8 +1820,13 @@ func (p atlasParser) configureVariables(blocks []*hclsyntax.Block) error {
 		if err != nil {
 			return err
 		}
-		if variable.sensitive && p.sensitiveValues != nil {
-			appendSensitiveStrings(p.sensitiveValues, value)
+		if variable.sensitive {
+			if p.sensitiveValues != nil {
+				appendSensitiveStrings(p.sensitiveValues, value)
+			}
+			if p.sensitiveNames != nil {
+				(*p.sensitiveNames)[name] = struct{}{}
+			}
 		}
 		vars[name] = value
 	}
@@ -3248,9 +3408,40 @@ func unsupported(name string, rng hcl.Range) error {
 // through because it names the offending sub-expression, which our own message
 // cannot.
 func (p atlasParser) evaluationFailed(name string, attr *hclsyntax.Attribute, diags hcl.Diagnostics) error {
+	if secret, found := p.sensitiveVariableIn(attr.Expr); found {
+		return fmt.Errorf(
+			"cannot evaluate atlas.hcl %q at %s:%d: the expression reads the sensitive variable %q and failed; "+
+				"the underlying diagnostic is withheld because it quotes the evaluated argument, which a "+
+				"function may have derived from that variable in a form scrubbing cannot recognize",
+			name, attr.NameRange.Filename, attr.NameRange.Start.Line, secret)
+	}
 	return fmt.Errorf("cannot evaluate atlas.hcl %q at %s:%d: %s",
 		name, attr.NameRange.Filename, attr.NameRange.Start.Line,
 		p.scrubSensitive(diags.Error()))
+}
+
+// sensitiveVariableIn reports the first `sensitive = true` variable expr reads.
+//
+// The traversals are what the expression NAMES, so this stays correct however
+// the value is transformed on the way to the failing call -- which is the half
+// [atlasParser.scrubSensitive] cannot cover.
+func (p atlasParser) sensitiveVariableIn(expr hcl.Expression) (string, bool) {
+	if p.sensitiveNames == nil || expr == nil || len(*p.sensitiveNames) == 0 {
+		return "", false
+	}
+	for _, traversal := range expr.Variables() {
+		if len(traversal) < 2 || traversal.RootName() != "var" {
+			continue
+		}
+		attr, ok := traversal[1].(hcl.TraverseAttr)
+		if !ok {
+			continue
+		}
+		if _, sensitive := (*p.sensitiveNames)[attr.Name]; sensitive {
+			return attr.Name, true
+		}
+	}
+	return "", false
 }
 
 // scrubSensitive removes the values of `sensitive = true` variables from text
@@ -3281,7 +3472,28 @@ func (p atlasParser) scrubSensitive(text string) string {
 // The text is scrubbed for the same reason evaluationFailed scrubs it: the value
 // may have come from a `sensitive = true` variable, and the rule's error quotes
 // the value.
+// invalidValue reports a value that evaluated successfully and then failed a
+// Ptah rule -- an unsupported URL scheme, a malformed duration.
+//
+// It withholds only when the value was DERIVED from a sensitive variable, and
+// scrubs otherwise. The distinction is what keeps the message useful. A bare
+// `path = var.secret` reaches the error with the variable's own bytes, so
+// scrubbing replaces them and the operator still learns what was wrong with the
+// value. `path = upper(var.secret)` does not: it puts `S3://SECRET` in the
+// error while the scrubber looks for `s3://secret`, which is measured and is
+// the reason this branch exists (stokaro/ptah#1810).
+//
+// [atlasParser.evaluationFailed] withholds for a bare reference too, and that
+// asymmetry is deliberate: an HCL diagnostic quotes whatever sub-expression it
+// blames, so there is no equivalent guarantee that the bytes survived.
 func (p atlasParser) invalidValue(name string, attr *hclsyntax.Attribute, err error) error {
+	if secret, found := p.derivedSensitiveVariableIn(attr.Expr); found {
+		return fmt.Errorf(
+			"atlas.hcl %q at %s:%d: the expression reads the sensitive variable %q and its value was "+
+				"refused; the underlying reason is withheld because it quotes the evaluated value, which "+
+				"a function may have derived from that variable in a form scrubbing cannot recognize",
+			name, attr.NameRange.Filename, attr.NameRange.Start.Line, secret)
+	}
 	return fmt.Errorf("atlas.hcl %q at %s:%d: %s",
 		name, attr.NameRange.Filename, attr.NameRange.Start.Line,
 		p.scrubSensitive(err.Error()))
@@ -3299,4 +3511,61 @@ func wrongValueType(name string, attr *hclsyntax.Attribute, want string) error {
 func emptyValue(name string, attr *hclsyntax.Attribute) error {
 	return fmt.Errorf("atlas.hcl %q at %s:%d must not be empty",
 		name, attr.NameRange.Filename, attr.NameRange.Start.Line)
+}
+
+// atlasProjectFunctions is the function set an atlas.hcl is evaluated with.
+//
+// It is deliberately NOT the schema evaluator's set, and the reason is
+// disclosure rather than scope. A `sensitive = true` variable is redacted by
+// replacing its literal bytes in a diagnostic, so a function that PRESERVES
+// those bytes stays safe -- `file(format("%s-x", var.token))` reports
+// `(sensitive value)-x` -- while one that transforms them does not:
+// `file(upper(var.token))` reported the secret uppercased, which a CI log then
+// keeps.
+//
+// Every function here is byte-preserving for its argument. Widening the set to
+// match the schema evaluator needs the redaction to follow a value rather than
+// a string, which cty marks are for; until then the wider set would trade a
+// missing function name for a leaked credential (stokaro/ptah#1696).
+// atlasProjectFunctions is the schema evaluator's function set with the three
+// names this file binds itself overlaid on top.
+//
+// The set used to be eight names written out here, which meant `atlas.hcl`
+// refused expressions a schema file evaluates -- `join(",", var.schemas)` among
+// them, in the block most likely to assemble a list of schemas
+// (stokaro/ptah#1810). Sharing it rather than lengthening it is what keeps the
+// two from drifting again.
+//
+// The overlay direction is load-bearing: `file` and `fileset` here read the
+// PROJECT filesystem, and a shared entry of either name would read some other
+// directory while looking entirely correct.
+func atlasProjectFunctions(fsys fs.FS) map[string]function.Function {
+	return atlashcl.WithProjectBoundFunctions(
+		atlashcl.ProjectFunctions(),
+		atlasProjectBoundFunctions(fsys),
+	)
+}
+
+// atlasProjectBoundFunctions are the three whose meaning depends on where the
+// project file lives; see [atlashcl.ProjectBoundFunctionNames].
+func atlasProjectBoundFunctions(fsys fs.FS) map[string]function.Function {
+	return map[string]function.Function{
+		"file":    atlasFileFunc(fsys),
+		"fileset": atlasFilesetFunc(fsys),
+		"getenv":  atlasGetenvFunc(),
+	}
+}
+
+// derivedSensitiveVariableIn reports the first sensitive variable an expression
+// TRANSFORMS, as opposed to naming directly.
+//
+// A bare traversal -- `var.secret` -- reaches a message unchanged, which is
+// what makes scrubbing sufficient for it. Anything else may have passed the
+// value through a function, and a function's output is not something byte
+// replacement can find.
+func (p atlasParser) derivedSensitiveVariableIn(expr hclsyntax.Expression) (string, bool) {
+	if _, bare := expr.(*hclsyntax.ScopeTraversalExpr); bare {
+		return "", false
+	}
+	return p.sensitiveVariableIn(expr)
 }

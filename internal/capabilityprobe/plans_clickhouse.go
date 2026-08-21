@@ -162,6 +162,11 @@ func clickHousePlan() plan {
 			"the dependency table the user-defined-type read joins; ClickHouse "+
 				"answers `Unknown table expression identifier`",
 		),
+		acceptanceNote(capability.CatalogDefaultPrivileges, nil,
+			"SELECT 1 FROM pg_default_acl LIMIT 1",
+			"the relation the PostgreSQL-family cleanup reads default-privilege "+
+				"grants from; ClickHouse answers `Unknown table expression identifier`",
+		),
 		roleManagement(t),
 		foreignKeys(
 			[]string{
@@ -246,16 +251,28 @@ func clickHousePlan() plan {
 		),
 	}
 	return plan{experiments: experiments, undecided: map[capability.Capability]string{
+		// The key asks whether a recursive CTE may also read the pg catalogs.
+		// ClickHouse has no pg catalogs, so the statement cannot be put to it
+		// and an answer would be to a different question.
+		capability.CatalogPartitions:   "pg_inherits is a PostgreSQL catalog ClickHouse has no spelling of",
+		capability.CatalogRecursiveCTE: "pg_class is a PostgreSQL catalog ClickHouse has no spelling of",
 		// The three PostgreSQL user-type kinds, none of which ClickHouse has a
 		// statement for; its answer would be to a different question
 		// (stokaro/ptah#1717).
 		capability.DomainTypes:    "CREATE DOMAIN is a PostgreSQL type-system statement ClickHouse has no spelling of",
 		capability.CompositeTypes: "CREATE TYPE ... AS (...) is a PostgreSQL type-system statement ClickHouse has no spelling of",
 		capability.RangeTypes:     "CREATE TYPE ... AS RANGE is a PostgreSQL type-system statement ClickHouse has no spelling of",
+		// ClickHouse's CREATE FUNCTION takes a lambda rather than a body, and
+		// there is no CREATE PROCEDURE at all, so neither accepting nor
+		// refusing one would decide the key (stokaro/ptah#1722).
+		capability.Procedures: "CREATE PROCEDURE is a statement ClickHouse has no spelling of",
 		// See the same declaration in the PostgreSQL-family plan: the probe
 		// connects as one account and cannot ask whether a privilege exists
 		// without granting it. ClickHouse has no SHOW_ROUTINE at all, which is
 		// a fact the preset carries rather than one this run can establish.
+		capability.DDLInsideTransaction: "ClickHouse has no cross-statement transaction for a schema statement to be inside of, so neither answer would decide the key",
+		capability.MigrationTimeouts:    "the key names a runtime policy the migrator applies around a migration rather than a statement this probe can send",
+		capability.TransactionalDDL:     "the key names whether a failed migration rolls back as a unit; ClickHouse commits DDL as it runs, which is the engine rather than one statement's answer",
 		capability.ShowRoutinePrivilege: "the probe cannot ask whether a privilege exists without granting it; " +
 			"ClickHouse has no SHOW_ROUTINE privilege for it to find",
 	}}

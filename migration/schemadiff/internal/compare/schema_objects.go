@@ -6,10 +6,11 @@ import (
 	"sort"
 	"strings"
 
+	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/dbschema/types"
-	"go.5x5.cz/ptah/internal/matviewrefresh"
+	"go.5x5.cz/ptah/internal/chrefresh"
 	"go.5x5.cz/ptah/internal/mysqlroutine"
 	"go.5x5.cz/ptah/internal/objectidentity"
 	"go.5x5.cz/ptah/internal/tableref"
@@ -171,15 +172,20 @@ func FunctionsWithDialect(
 	databaseFunctionsByName := make(map[string][]types.DBFunction, len(database.Functions))
 	databaseFunctionsByQualifiedName := make(map[string]types.DBFunction, len(database.Functions))
 	for _, fn := range database.Functions {
+		// The kind is part of the key. One schema can hold a procedure and a
+		// function of the same name, and folding them together would compare a
+		// declared function against a stored procedure (stokaro/ptah#1722).
 		key := routineIdentityKey(fn.Name, dialect)
-		databaseFunctionsByName[key] = append(databaseFunctionsByName[key], fn)
+		kinded := routineKeyWithKind(fn.Kind, key)
+		databaseFunctionsByName[kinded] = append(databaseFunctionsByName[kinded], fn)
 		// The schema keeps its own spelling; only the routine half is folded.
-		databaseFunctionsByQualifiedName[tableref.Canonical(fn.Schema, key)] = fn
+		databaseFunctionsByQualifiedName[routineKeyWithKind(fn.Kind, tableref.Canonical(fn.Schema, key))] = fn
 	}
 
 	matchedDatabaseFunctions := make(map[string]struct{}, len(database.Functions))
 	for functionKey, generatedFunction := range generatedFunctionMap {
 		databaseFunction, exists := findDatabaseFunction(
+			generatedFunction.Kind,
 			functionKey,
 			databaseFunctionsByName,
 			databaseFunctionsByQualifiedName,
@@ -191,7 +197,10 @@ func FunctionsWithDialect(
 			diff.FunctionsAdded = append(diff.FunctionsAdded, generatedFunction.Name)
 			continue
 		}
-		matchedDatabaseFunctions[databaseFunction.QualifiedName()] = struct{}{}
+		// Keyed by kind as well: a procedure and a function can share a
+		// qualified name, and a match on one would otherwise mark the other as
+		// matched and silently keep it (stokaro/ptah#1722).
+		matchedDatabaseFunctions[routineKeyWithKind(databaseFunction.Kind, databaseFunction.QualifiedName())] = struct{}{}
 		functionComparison := FunctionDefinitionsWithDialect(generatedFunction, databaseFunction, dialect)
 		if len(functionComparison.Changes) > 0 {
 			diff.FunctionsModified = append(diff.FunctionsModified, functionComparison)
@@ -199,7 +208,11 @@ func FunctionsWithDialect(
 	}
 
 	for _, fn := range database.Functions {
-		if _, ok := matchedDatabaseFunctions[fn.QualifiedName()]; ok {
+		if _, ok := matchedDatabaseFunctions[routineKeyWithKind(fn.Kind, fn.QualifiedName())]; ok {
+			continue
+		}
+		if strings.EqualFold(strings.TrimSpace(fn.Kind), "procedure") {
+			diff.ProceduresRemoved = append(diff.ProceduresRemoved, fn.QualifiedName())
 			continue
 		}
 		diff.FunctionsRemoved = append(diff.FunctionsRemoved, fn.QualifiedName())
@@ -208,6 +221,7 @@ func FunctionsWithDialect(
 	// Ensure consistent ordering of results
 	sort.Strings(diff.FunctionsAdded)
 	sort.Strings(diff.FunctionsRemoved)
+	sort.Strings(diff.ProceduresRemoved)
 	sort.Slice(diff.FunctionsModified, func(i, j int) bool {
 		return diff.FunctionsModified[i].FunctionName < diff.FunctionsModified[j].FunctionName
 	})
@@ -239,7 +253,7 @@ func FunctionsWithSemantics(
 		// semantics. The two sides then disagreed about the schema component of
 		// `Sales.Foo`, so an unchanged function was reported as both added and
 		// removed and the plan tried to create one that already existed.
-		identity := newQualifiedObjectIdentity(objectidentity.KindFunction,
+		identity := newQualifiedObjectIdentity(routineIdentityKind(function.Kind),
 			qualifiedRoutineIdentityKey(function.Name, dialect), semantics)
 		generatedFunctions[identity] = append(generatedFunctions[identity], function)
 		generatedNames[identity] = function.Name
@@ -247,7 +261,7 @@ func FunctionsWithSemantics(
 	databaseFunctions := make(map[objectIdentity][]types.DBFunction, len(database.Functions))
 	databaseNames := make(map[objectIdentity]string, len(database.Functions))
 	for _, function := range database.Functions {
-		identity := newObjectIdentity(objectidentity.KindFunction,
+		identity := newObjectIdentity(routineIdentityKind(function.Kind),
 			function.Schema, routineIdentityKey(function.Name, dialect), semantics)
 		databaseFunctions[identity] = append(databaseFunctions[identity], function)
 		databaseNames[identity] = function.QualifiedName()
@@ -269,15 +283,92 @@ func FunctionsWithSemantics(
 	for identity, recorded := range databaseFunctions {
 		_, _, removedCount := pairRoutineOverloads(generatedFunctions[identity], recorded)
 		for range removedCount {
+			// The kind travels with the removal because it cannot be recovered
+			// later: there is no declaration left to read it off, and the DROP
+			// verb has to match the object (stokaro/ptah#1722).
+			if identity.Kind() == objectidentity.KindProcedure {
+				diff.ProceduresRemoved = append(diff.ProceduresRemoved, databaseNames[identity])
+				continue
+			}
 			diff.FunctionsRemoved = append(diff.FunctionsRemoved, databaseNames[identity])
 		}
 	}
 
 	sort.Strings(diff.FunctionsAdded)
 	sort.Strings(diff.FunctionsRemoved)
+	sort.Strings(diff.ProceduresRemoved)
 	sort.Slice(diff.FunctionsModified, func(i, j int) bool {
 		return diff.FunctionsModified[i].FunctionName < diff.FunctionsModified[j].FunctionName
 	})
+}
+
+// foldDefaultArgumentMode removes an explicit leading IN from each argument.
+//
+// Only IN: it is the default the grammar supplies when no mode is written, so
+// dropping it compares two spellings of one argument. OUT, INOUT and VARIADIC
+// change what the argument is and are left alone (stokaro/ptah#1722).
+func foldDefaultArgumentMode(parameters string) string {
+	if parameters == "" {
+		return parameters
+	}
+	arguments := splitTopLevelArguments(parameters)
+	for i, argument := range arguments {
+		trimmed := strings.TrimSpace(argument)
+		rest, found := strings.CutPrefix(trimmed, "in ")
+		if !found {
+			rest, found = strings.CutPrefix(trimmed, "IN ")
+		}
+		if found {
+			trimmed = strings.TrimSpace(rest)
+		}
+		arguments[i] = trimmed
+	}
+	return strings.Join(arguments, ", ")
+}
+
+// splitTopLevelArguments splits an argument list on the commas that separate
+// arguments, leaving the ones inside a type's own parentheses alone --
+// `numeric(10, 2)` is one argument, not two.
+func splitTopLevelArguments(parameters string) []string {
+	var arguments []string
+	depth, start := 0, 0
+	for i, r := range parameters {
+		switch r {
+		case '(', '[':
+			depth++
+		case ')', ']':
+			depth--
+		case ',':
+			if depth == 0 {
+				arguments = append(arguments, parameters[start:i])
+				start = i + 1
+			}
+		}
+	}
+	return append(arguments, parameters[start:])
+}
+
+// routineKeyWithKind prefixes a routine key with its kind, so a procedure and a
+// function of the same name are two entries rather than one.
+func routineKeyWithKind(kind, key string) string {
+	if strings.EqualFold(strings.TrimSpace(kind), "procedure") {
+		return "procedure\x00" + key
+	}
+	return "function\x00" + key
+}
+
+// routineIdentityKind separates a procedure from a function of the same name.
+//
+// Both engines that model procedures let one schema hold both -- MySQL keys
+// information_schema.PARAMETERS by SPECIFIC_NAME for exactly that reason -- so
+// folding them onto one identity would pair a declared function against a
+// stored procedure and report the difference between two different objects as a
+// change to one (stokaro/ptah#1722).
+func routineIdentityKind(kind string) objectidentity.Kind {
+	if strings.EqualFold(strings.TrimSpace(kind), "procedure") {
+		return objectidentity.KindProcedure
+	}
+	return objectidentity.KindFunction
 }
 
 // findDatabaseFunction resolves one generated function name against the read.
@@ -290,7 +381,7 @@ func FunctionsWithSemantics(
 // same question about an object whose generated name may or may not carry its
 // schema.
 func findDatabaseFunction(
-	name string,
+	kind, name string,
 	byName map[string][]types.DBFunction,
 	byQualifiedName map[string]types.DBFunction,
 ) (types.DBFunction, bool) {
@@ -298,11 +389,13 @@ func findDatabaseFunction(
 	if !ok {
 		return types.DBFunction{}, false
 	}
+	// The kind joins the key after parsing, never before: a kind-prefixed name
+	// is not a name tableref can read (stokaro/ptah#1722).
 	if ref.Qualified {
-		fn, ok := byQualifiedName[tableref.Canonical(ref.Schema, ref.Name)]
+		fn, ok := byQualifiedName[routineKeyWithKind(kind, tableref.Canonical(ref.Schema, ref.Name))]
 		return fn, ok
 	}
-	candidates := byName[ref.Name]
+	candidates := byName[routineKeyWithKind(kind, ref.Name)]
 	if len(candidates) != 1 {
 		return types.DBFunction{}, false
 	}
@@ -548,7 +641,6 @@ func MaterializedViewsWithDialect(
 ) {
 	generatedViews := make(map[string]goschema.MaterializedView, len(generated.MaterializedViews))
 	for _, view := range generated.MaterializedViews {
-		view.Canonicalize()
 		generatedViews[view.Name] = view
 	}
 
@@ -641,7 +733,6 @@ func MaterializedViewsWithSemantics(
 	generatedViews := make(map[objectIdentity]goschema.MaterializedView, len(generated.MaterializedViews))
 	generatedNames := make(map[objectIdentity]string, len(generated.MaterializedViews))
 	for _, view := range generated.MaterializedViews {
-		view.Canonicalize()
 		identity := newQualifiedObjectIdentity(objectidentity.KindMatView, view.Name, semantics)
 		generatedViews[identity] = view
 		generatedNames[identity] = view.Name
@@ -775,6 +866,21 @@ func FunctionDefinitionsWithDialect(
 		dbFunction.Parameters = mysqlroutine.NormalizeParameterList(dbFunction.Parameters)
 	}
 
+	// The argument mode is folded on both sides, and only here. IN is the
+	// default, so `n integer` and `IN n integer` are the same argument -- but
+	// PostgreSQL prints the mode for a procedure's arguments and omits it for a
+	// function's, measured on 18.4:
+	//
+	//	pg_get_function_arguments(procedure) -> IN n integer
+	//	pg_get_function_arguments(function)  -> n integer
+	//
+	// so a declaration written the ordinary way never converged against a
+	// procedure. The fold stays in the comparison: rendering the folded form
+	// would write Ptah's normalization into the operator's DDL, and OUT,
+	// INOUT and VARIADIC are not defaults and are left exactly as written.
+	genFunction.Parameters = foldDefaultArgumentMode(genFunction.Parameters)
+	dbFunction.Parameters = foldDefaultArgumentMode(dbFunction.Parameters)
+
 	// Compare parameters
 	if genFunction.Parameters != dbFunction.Parameters {
 		functionDiff.Changes["parameters"] = fmt.Sprintf("%s -> %s", dbFunction.Parameters, genFunction.Parameters)
@@ -878,13 +984,53 @@ func MaterializedViewDefinitionsWithDialect(
 	if !schemaObjectBodiesEqual(genView.Body, dbView.Body, dialect, dbView.Schema) {
 		viewDiff.Changes["body"] = fmt.Sprintf("%s -> %s", strings.TrimSpace(dbView.Body), strings.TrimSpace(genView.Body))
 	}
-	generatedStrategy := matviewrefresh.Canonical(genView.RefreshStrategy)
-	databaseStrategy := matviewrefresh.Canonical(dbView.RefreshStrategy)
-	if generatedStrategy != databaseStrategy {
-		viewDiff.Changes["refresh_strategy"] = fmt.Sprintf("%s -> %s", databaseStrategy, generatedStrategy)
+	if desired, current, changed := refreshChange(genView, dbView); changed {
+		viewDiff.Changes["refresh"] = fmt.Sprintf("%s -> %s", refreshText(current), refreshText(desired))
+		viewDiff.RefreshChange = &difftypes.MatViewRefreshChange{
+			Desired: desired.Clone(),
+			Current: current.Clone(),
+		}
 	}
 
 	return viewDiff
+}
+
+// refreshChange compares the declared ClickHouse refresh schedule with the one
+// read back, and returns the change to report or "" when they agree.
+//
+// The declaration is canonicalized first, and that is the whole reason
+// [go.5x5.cz/ptah/internal/chrefresh] exists: the server rewrites what it
+// stores, so `EVERY 60 MINUTE` reads back as `EVERY 1 HOUR`. Comparing the two
+// as written would report a change on every run and plan a drop and a create
+// for it -- on an object whose drop takes every row it accumulated
+// (stokaro/ptah#1802).
+//
+// A declaration the canonicalizer refuses reports no change rather than a
+// wrong one. Refusing a declaration is the renderer's job and it does it with
+// the reason; a comparison that invented a difference here would plan work for
+// a schedule that is never going to be sent.
+func refreshChange(
+	genView goschema.MaterializedView,
+	dbView types.DBMatView,
+) (desired, current *ast.MatViewRefreshSpec, changed bool) {
+	desired, err := chrefresh.Canonical(genView.Refresh, dbView.Schema)
+	if err != nil {
+		return nil, nil, false
+	}
+	if chrefresh.Equal(desired, dbView.Refresh) {
+		return nil, nil, false
+	}
+	return desired, dbView.Refresh, true
+}
+
+// refreshText names a schedule for a diff entry, and names its absence too: a
+// view gaining or losing one is a change, and "" on one side would read as a
+// missing value rather than as a plain view.
+func refreshText(spec *ast.MatViewRefreshSpec) string {
+	if spec == nil {
+		return "(none)"
+	}
+	return chrefresh.Clause(spec)
 }
 
 // schemaObjectBodiesEqual reports whether a declared view or materialized view

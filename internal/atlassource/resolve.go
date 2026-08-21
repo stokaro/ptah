@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"os"
 	"strings"
@@ -14,12 +15,15 @@ import (
 	"go.5x5.cz/ptah/core/schemasource"
 	"go.5x5.cz/ptah/dbschema"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/atlasregistry"
 	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
 	"go.5x5.cz/ptah/internal/devdocker"
 	"go.5x5.cz/ptah/internal/migratesum"
 	"go.5x5.cz/ptah/internal/migrationreplay"
 	"go.5x5.cz/ptah/internal/migrationsnapshot"
+	"go.5x5.cz/ptah/internal/ociartifact"
+	"go.5x5.cz/ptah/internal/schemaartifact"
 	"go.5x5.cz/ptah/internal/schemafile"
 	"go.5x5.cz/ptah/internal/schemascope"
 	"go.5x5.cz/ptah/migration/migrator"
@@ -72,6 +76,12 @@ type ResolveOptions struct {
 	// tool, and not to Ptah's own commands, where an unmodeled name is a typo
 	// worth naming. See [go.5x5.cz/ptah/internal/schemafile.Options].
 	IgnoreUnknownHCLNames bool
+	// ReportIgnored receives a warning line per name dropped under
+	// IgnoreUnknownHCLNames. See
+	// [go.5x5.cz/ptah/internal/schemafile.Options.ReportIgnored]: the tolerance
+	// and the reporting travel together, because matching a documented
+	// tolerance in silence is the part stokaro/ptah#1709 named.
+	ReportIgnored io.Writer
 	// Vars supplies values for the `variable` blocks of an HCL schema file, as
 	// `--var` spells them. See [go.5x5.cz/ptah/internal/schemafile.Options].
 	Vars []string
@@ -148,6 +158,7 @@ func (s Set) resolve(ctx context.Context, opts ResolveOptions) (State, error) {
 		schema, err := schemafile.LoadSources(s.SchemaFileSources(), schemafile.Options{
 			Dialect:               opts.Dialect,
 			IgnoreUnknownHCLNames: opts.IgnoreUnknownHCLNames,
+			ReportIgnored:         opts.ReportIgnored,
 			SchemaScope:           opts.SchemaScope,
 			SchemaScopeFlag:       opts.SchemaScopeFlag,
 			Vars:                  opts.Vars,
@@ -162,9 +173,41 @@ func (s Set) resolve(ctx context.Context, opts ResolveOptions) (State, error) {
 		return s.resolveMigrationDir(ctx, opts)
 	case KindExternalSchema:
 		return s.resolveExternalSchema(ctx, opts)
+	case KindRemoteSchema:
+		return s.resolveRemoteSchema(ctx)
 	default:
 		return State{}, fmt.Errorf("%s: unresolved %s desired-state source", s.Flag, s.Kind)
 	}
+}
+
+// resolveRemoteSchema pulls the schema artifact a `data "remote_schema"` block
+// names and returns the schema it carries.
+//
+// The artifact records the schema IR itself, so there is nothing to
+// materialize: no temporary file, no re-parse, and no dialect guess. Ptah
+// pushes these with `schema push`, so this is the read half of a capability the
+// repository already had -- distributing a desired state through an ordinary
+// registry, with tags, digests and ordinary registry auth, and with no hosted
+// service in the path (stokaro/ptah#1210).
+func (s Set) resolveRemoteSchema(ctx context.Context) (State, error) {
+	reference := s.Sources[0].OCIReference
+	plainHTTP, err := atlasregistry.PlainHTTP.Resolve()
+	if err != nil {
+		return State{}, fmt.Errorf("%s %q: reading the registry transport setting: %w",
+			s.Flag, reference, err)
+	}
+	client, err := ociartifact.NewClient(ociartifact.ClientOptions{PlainHTTP: plainHTTP})
+	if err != nil {
+		return State{}, fmt.Errorf("%s %q: opening the registry client: %w", s.Flag, reference, err)
+	}
+	// Pull validates the artifact type, the format annotation and the single
+	// expected file, and parses the schema, so it returns either a schema or an
+	// error.
+	artifact, err := schemaartifact.Pull(ctx, client, reference)
+	if err != nil {
+		return State{}, fmt.Errorf("%s %q: %w", s.Flag, reference, err)
+	}
+	return State{Kind: s.Kind, Schema: artifact.Database}, nil
 }
 
 // resolveExternalSchema runs the classified external schema program and parses

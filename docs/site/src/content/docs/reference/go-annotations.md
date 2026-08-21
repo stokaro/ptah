@@ -82,6 +82,7 @@ type StatusEnumMarker struct{}
 | [`ptah:schema:extension`](#ptahschemaextension) | A PostgreSQL extension | struct |
 | [`ptah:schema:sequence`](#ptahschemasequence) | A standalone PostgreSQL sequence | struct |
 | [`ptah:schema:function`](#ptahschemafunction) | A database function | struct |
+| [`ptah:schema:procedure`](#ptahschemaprocedure) | A stored procedure | struct |
 | [`ptah:schema:trigger`](#ptahschematrigger) | A database trigger | struct |
 | [`ptah:schema:view`](#ptahschemaview) | A database view | struct |
 | [`ptah:schema:matview`](#ptahschemamatview) | A materialized view | struct |
@@ -405,6 +406,32 @@ Declares a database function.
 | `security` | No | Security mode, such as DEFINER. |
 | `volatility` | No | Volatility class. |
 
+### `//ptah:schema:procedure`
+
+Declares a stored procedure: a routine that returns nothing and is invoked with `CALL`.
+
+A procedure is the same catalog object as a function with one property removed, so it takes
+the same attributes minus `returns`. Declaring `returns` is refused rather than ignored:
+`CREATE PROCEDURE ... RETURNS` does not parse on either engine that has procedures, and
+accepting the attribute would mean a declaration that says one thing while the database holds
+another.
+
+```go
+//ptah:schema:procedure name="archive_tenant" params="tenant_id integer" language="sql" body="DELETE FROM tenants WHERE id = tenant_id"
+type ArchiveTenant struct{}
+```
+
+| Attribute | Required | Description |
+| --- | --- | --- |
+| `body` | No | Procedure body SQL. |
+| `comment` | No | Procedure comment. |
+| `dialects` | No | Comma-separated target dialects this object belongs to; omitted means every dialect. See [Scoping an object to dialects](#scoping-an-object-to-dialects). |
+| `language` | No | Procedure language. |
+| `name` | No | Procedure name. |
+| `params` | No | Procedure parameter list. |
+| `security` | No | Security mode, such as DEFINER. |
+| `volatility` | No | Volatility class. |
+
 ### `//ptah:schema:trigger`
 
 Declares a database trigger.
@@ -442,11 +469,33 @@ Declares a materialized view.
 | `comment` | No | Materialized view comment. |
 | `dialects` | No | Comma-separated target dialects this object belongs to; omitted means every dialect. See [Scoping an object to dialects](#scoping-an-object-to-dialects). |
 | `name` | Yes | Materialized view name. |
-| `refresh_strategy` | No | Ptah-managed refresh strategy. Defaults to `manual`, the only currently supported value. |
+| `refresh` | No | ClickHouse refresh schedule, as ClickHouse spells it. See below. |
 
-`manual` means Ptah emits no separate refresh operation. After a target dialect
-is selected, another value is refused before rendering or comparison, and the
-error names the dialect, materialized view, and value.
+`refresh` carries a ClickHouse **scheduled** materialized view's schedule, in
+the engine's own words: `every 1 hour`, `after 30 minute`,
+`every 1 day offset 2 hour randomize for 30 minute append`. Omitting it leaves
+an ordinary materialized view, maintained by inserts into its source.
+
+The server rewrites intervals — `every 60 minute` is stored as `EVERY 1 HOUR` —
+so the declaration is normalized to the stored spelling when it is parsed. Any
+spelling of the same schedule converges. A schedule the server would refuse is
+refused here instead: an interval mixing calendar units with clock units, a
+zero interval, or `offset` on an `after` schedule.
+
+It is a ClickHouse property and only that. It is not the retired
+cross-dialect strategy below, which described an operation rather than state:
+
+`refresh_strategy` is not an attribute. Ptah does not refresh materialized
+views: one is populated when it is created, a changed `body` is reconciled as a
+drop and a create that populates it again, and it goes stale only when its
+source data changes, which schema reconciliation cannot observe. Refresh from
+your own scheduler.
+
+An annotation that still declares it is refused while the source file is
+parsed, with that reason, on every dialect -- including the bare form with no
+value, and including a view scoped away from the current target by `dialects`.
+The name stays recognized so the refusal explains itself instead of reading as
+a misspelling.
 
 ## Security
 

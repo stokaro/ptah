@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"path/filepath"
 	"slices"
 	"strings"
 
@@ -13,6 +14,7 @@ import (
 	"go.5x5.cz/ptah/cmd/internal/migrationsource"
 	"go.5x5.cz/ptah/config/projectconfig"
 	"go.5x5.cz/ptah/core/schemasource"
+	"go.5x5.cz/ptah/internal/atlassource"
 	"go.5x5.cz/ptah/internal/pathguard"
 )
 
@@ -138,8 +140,43 @@ func RegisterAtlasProjectInternalFlags(flags *pflag.FlagSet) {
 	}
 }
 
+// AtlasProjectConfigExtension is the file extension that routes an explicit
+// --config path to the Atlas project loader rather than the ptah.yaml one.
+const AtlasProjectConfigExtension = ".hcl"
+
+// splitExplicitConfigPath decides which loader an explicit --config path is
+// meant for, by extension.
+//
+// # Why --config takes both
+//
+// The Atlas project loader has always accepted an explicit path, but the only
+// way to reach it from the native binary was discovery, which looks for
+// ./atlas.hcl and nothing else. A project that keeps its Atlas config anywhere
+// else -- a subdirectory, a second file for staging, any name but that one --
+// was reachable from ptah-compat and unreachable from ptah, which is the
+// opposite of the adoption direction this is meant to run in
+// (stokaro/ptah#1215).
+//
+// # Why by extension and not by reading the file
+//
+// A path the operator typed should resolve the same way every time, whatever
+// is inside the file today. Sniffing the contents would make --config's
+// meaning depend on them, so a file mid-edit could change which loader claims
+// it, and a syntax error in one language would surface as a parse error in the
+// other.
+func splitExplicitConfigPath(path string) (ptahPath, atlasPath string) {
+	if path == "" {
+		return "", ""
+	}
+	if strings.EqualFold(filepath.Ext(path), AtlasProjectConfigExtension) {
+		return "", path
+	}
+	return path, ""
+}
+
 // LoadProjectConfig loads project-level configuration for a command. The
-// explicit Ptah config path controls ptah.yaml only; Atlas-compatible adapters
+// explicit config path controls ptah.yaml, or an Atlas project config when it
+// ends in .hcl; Atlas-compatible adapters
 // can pass an internal atlas.hcl path and variable overrides through hidden
 // flags. A project-config snapshot supplied by an adapter takes precedence and
 // avoids reopening project files during the forwarded execution.
@@ -157,6 +194,19 @@ func LoadProjectConfig(cmd *cobra.Command, ptahConfigPath string) (projectconfig
 	if err != nil {
 		return projectconfig.Config{}, err
 	}
+	ptahConfigPath, explicitAtlasPath := splitExplicitConfigPath(ptahConfigPath)
+	if explicitAtlasPath != "" {
+		// A compat adapter forwarding its own project config and an operator
+		// naming a different one on --config cannot both be honored, and
+		// picking either silently would apply a config the caller did not ask
+		// for. Name both paths instead.
+		if atlasPath != "" && atlasPath != explicitAtlasPath {
+			return projectconfig.Config{}, fmt.Errorf(
+				"--%s names %s and the forwarded Atlas project config is %s; pass one Atlas project config",
+				ConfigFlagName, explicitAtlasPath, atlasPath)
+		}
+		atlasPath = explicitAtlasPath
+	}
 	atlasVars, err := projectVars(cmd)
 	if err != nil {
 		return projectconfig.Config{}, err
@@ -167,6 +217,9 @@ func LoadProjectConfig(cmd *cobra.Command, ptahConfigPath string) (projectconfig
 		AtlasPath: atlasPath,
 		EnvName:   envName,
 		AtlasVars: atlasVars,
+		// So a refusal about a for_each env names the command the operator
+		// ran rather than an internal API (stokaro/ptah#1696).
+		Verb: cmd.CommandPath(),
 	})
 	if err != nil {
 		return projectconfig.Config{}, err
@@ -377,4 +430,54 @@ func stringArrayFlag(cmd *cobra.Command, name string) ([]string, error) {
 func flagChanged(cmd *cobra.Command, name string) bool {
 	flag := cmd.Flags().Lookup(name)
 	return flag != nil && flag.Changed
+}
+
+// SchemaSourceProjectEnv describes the project environment an `env://` schema
+// source is expanded through, or the zero value when the run selected none.
+//
+// A native command reaches the same atlas.hcl the adapter does: the config is
+// discovered under its default name when no path was forwarded, so `--env`
+// selects a real environment either way. What the two sides did not share was a
+// route from that environment to a desired-state source, which is why
+// --schema-file refused every `env://` reference while --to accepted it
+// (stokaro/ptah#1760).
+//
+// The zero value is returned when no environment was selected. That is not a
+// degraded mode: with no environment there is no `src` attribute to read, and
+// the caller's refusal names both the reference and the alternative.
+func SchemaSourceProjectEnv(
+	cmd *cobra.Command,
+	config projectconfig.Config,
+) (atlassource.ProjectEnv, error) {
+	envName, err := stringFlag(cmd, EnvFlagName)
+	if err != nil {
+		return atlassource.ProjectEnv{}, err
+	}
+	if strings.TrimSpace(envName) == "" {
+		return atlassource.ProjectEnv{}, nil
+	}
+	atlasPath, err := stringFlag(cmd, AtlasProjectConfigFlagName)
+	if err != nil {
+		return atlassource.ProjectEnv{}, err
+	}
+	if strings.TrimSpace(atlasPath) == "" {
+		atlasPath = projectconfig.AtlasFileName
+	}
+	return atlassource.ProjectEnv{
+		Loaded:  true,
+		Config:  config,
+		BaseDir: filepath.Dir(atlasPath),
+	}, nil
+}
+
+// SchemaSourceEnvSelectorFlag names the flag a command offers for selecting a
+// project environment, or is empty when it offers none.
+//
+// It is read off the flag set rather than assumed, so a command that stops
+// registering the flag stops promising it in the refusal too.
+func SchemaSourceEnvSelectorFlag(cmd *cobra.Command) string {
+	if cmd.Flags().Lookup(EnvFlagName) == nil {
+		return ""
+	}
+	return EnvFlagName
 }

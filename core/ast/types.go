@@ -320,3 +320,122 @@ func (op *RenameTypeOperation) Accept(visitor Visitor) error {
 
 // typeOperation implements the marker method for type safety.
 func (op *RenameTypeOperation) typeOperation() {}
+
+// DomainConstraintOperation adds or removes one CHECK constraint of a domain in
+// an ALTER DOMAIN statement.
+//
+// A domain constraint is added by expression and removed by name, and the two
+// are not interchangeable: the author writes what must hold, and the server
+// chooses what to call the constraint holding it. Replacing a constraint is
+// therefore a drop of a catalog name followed by an add of a declared
+// expression, which is why one operation carries both fields rather than two
+// operations carrying one each -- a replacement that emitted only half would
+// leave the domain either unconstrained or doubly constrained
+// (stokaro/ptah#1717).
+type DomainConstraintOperation struct {
+	// DropName is the catalog name of the constraint to remove. Empty adds
+	// without removing.
+	DropName string
+	// AddExpression is the declared CHECK expression to add, without the CHECK
+	// keyword and without its enclosing parentheses. Empty removes without
+	// adding.
+	AddExpression string
+	// AddName is the name to give the added constraint. Empty lets the server
+	// choose one, which is what a declaration that names no constraint means.
+	AddName string
+}
+
+// NewDropDomainConstraintOperation removes a domain's named CHECK constraint.
+func NewDropDomainConstraintOperation(name string) *DomainConstraintOperation {
+	return &DomainConstraintOperation{DropName: name}
+}
+
+// NewAddDomainConstraintOperation adds a CHECK constraint to a domain.
+func NewAddDomainConstraintOperation(expression string) *DomainConstraintOperation {
+	return &DomainConstraintOperation{AddExpression: expression}
+}
+
+// Accept implements the Node interface for DomainConstraintOperation.
+func (op *DomainConstraintOperation) Accept(_ Visitor) error {
+	// Handled by the parent AlterTypeNode's visitor, as every type operation is.
+	return nil
+}
+
+// typeOperation implements the marker method for type safety.
+func (op *DomainConstraintOperation) typeOperation() {}
+
+// DomainDefaultOperation sets or drops a domain's DEFAULT in an ALTER DOMAIN
+// statement.
+type DomainDefaultOperation struct {
+	// Expression is the new default, already rendered as SQL. Empty drops the
+	// default instead of setting one.
+	Expression string
+}
+
+// NewSetDomainDefaultOperation sets a domain's default to the given SQL.
+func NewSetDomainDefaultOperation(expression string) *DomainDefaultOperation {
+	return &DomainDefaultOperation{Expression: expression}
+}
+
+// NewDropDomainDefaultOperation removes a domain's default.
+func NewDropDomainDefaultOperation() *DomainDefaultOperation {
+	return &DomainDefaultOperation{}
+}
+
+// Accept implements the Node interface for DomainDefaultOperation.
+func (op *DomainDefaultOperation) Accept(_ Visitor) error { return nil }
+
+// typeOperation implements the marker method for type safety.
+func (op *DomainDefaultOperation) typeOperation() {}
+
+// DomainNotNullOperation sets or drops a domain's NOT NULL in an ALTER DOMAIN
+// statement.
+type DomainNotNullOperation struct {
+	// NotNull reports the state the domain should end in.
+	NotNull bool
+}
+
+// NewDomainNotNullOperation sets or drops a domain's NOT NULL.
+func NewDomainNotNullOperation(notNull bool) *DomainNotNullOperation {
+	return &DomainNotNullOperation{NotNull: notNull}
+}
+
+// Accept implements the Node interface for DomainNotNullOperation.
+func (op *DomainNotNullOperation) Accept(_ Visitor) error { return nil }
+
+// typeOperation implements the marker method for type safety.
+func (op *DomainNotNullOperation) typeOperation() {}
+
+// CompositeAttributeOperation adds or removes one attribute of a composite type
+// in an ALTER TYPE statement.
+//
+// PostgreSQL takes both on a composite a table column already uses, measured on
+// 18.4 -- which is what makes them worth having, since the drop-and-recreate
+// alternative is refused outright in exactly that case. What it does not take
+// there is a change to an attribute's type: `ALTER TYPE ... ALTER ATTRIBUTE`
+// answers `cannot alter type "addr" because column "uses_addr.a" uses it`, with
+// CASCADE and without, so no operation here spells one (stokaro/ptah#1717).
+type CompositeAttributeOperation struct {
+	// DropName is the attribute to remove. Empty adds without removing.
+	DropName string
+	// AddName is the attribute to add. Empty removes without adding.
+	AddName string
+	// AddType is the added attribute's type. Required with AddName.
+	AddType string
+}
+
+// NewDropCompositeAttributeOperation removes an attribute from a composite type.
+func NewDropCompositeAttributeOperation(name string) *CompositeAttributeOperation {
+	return &CompositeAttributeOperation{DropName: name}
+}
+
+// NewAddCompositeAttributeOperation adds an attribute to a composite type.
+func NewAddCompositeAttributeOperation(name, fieldType string) *CompositeAttributeOperation {
+	return &CompositeAttributeOperation{AddName: name, AddType: fieldType}
+}
+
+// Accept implements the Node interface for CompositeAttributeOperation.
+func (op *CompositeAttributeOperation) Accept(_ Visitor) error { return nil }
+
+// typeOperation implements the marker method for type safety.
+func (op *CompositeAttributeOperation) typeOperation() {}

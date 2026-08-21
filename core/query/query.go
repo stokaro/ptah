@@ -1,6 +1,7 @@
 package query
 
 import (
+	"slices"
 	"strings"
 
 	"go.5x5.cz/ptah/core/ast"
@@ -12,6 +13,7 @@ import (
 // method mutates and returns the same builder for chaining. Build produces the
 // statement. Builders are not safe for concurrent use.
 type SelectBuilder struct {
+	with      []ast.CommonTableExpression
 	distinct  bool
 	columns   []ast.ResultColumn
 	from      string
@@ -40,6 +42,50 @@ func Select(columns ...string) *SelectBuilder {
 		b.columns = append(b.columns, ast.ResultColumn{Name: name})
 	}
 	return b
+}
+
+// With prepends a named subquery to the WITH clause, referenced from the outer
+// query by name as though it were a table.
+//
+// Calls accumulate in order, and the order matters twice: a later CTE may read
+// an earlier one, and the bound values of all of them precede the outer query's
+// in the returned args.
+//
+// Only non-recursive CTEs are modeled; see [ast.SelectStatement].With.
+func (b *SelectBuilder) With(name string, query *SelectBuilder) *SelectBuilder {
+	if query == nil {
+		return b
+	}
+	b.with = append(b.with, ast.CommonTableExpression{Name: name, Query: query.Build()})
+	return b
+}
+
+// InQuery builds "column IN (SELECT …)", reading the candidate values from a
+// query rather than from a value list.
+func InQuery(column string, sub *SelectBuilder) ast.Expression {
+	if sub == nil {
+		return nil
+	}
+	return &ast.InExpr{Operand: &ast.ColumnRef{Name: column}, Subquery: sub.Build()}
+}
+
+// Exists builds "EXISTS (SELECT …)".
+//
+// The subquery's projection does not affect the test; EXISTS stops at the first
+// row whatever it selects.
+func Exists(sub *SelectBuilder) ast.Expression {
+	if sub == nil {
+		return nil
+	}
+	return &ast.ExistsExpr{Query: sub.Build()}
+}
+
+// NotExists builds "NOT EXISTS (SELECT …)".
+func NotExists(sub *SelectBuilder) ast.Expression {
+	if sub == nil {
+		return nil
+	}
+	return &ast.ExistsExpr{Query: sub.Build(), Negated: true}
 }
 
 // From sets the source table for the query. It is required; rendering a
@@ -182,6 +228,7 @@ func (b *SelectBuilder) Offset(n int64) *SelectBuilder {
 // renderer.RenderSelect.
 func (b *SelectBuilder) Build() *ast.SelectStatement {
 	return &ast.SelectStatement{
+		With:      b.with,
 		Distinct:  b.distinct,
 		Columns:   b.columns,
 		From:      b.from,
@@ -234,6 +281,141 @@ func Gt(column string, value any) ast.Expression {
 // Ge builds "column >= value".
 func Ge(column string, value any) ast.Expression {
 	return comparison(column, ast.OpGreaterThanOrEqual, value)
+}
+
+// Like builds "column LIKE pattern", binding the pattern as a parameter.
+//
+// The pattern is a VALUE, so it is bound rather than interpolated and cannot
+// carry SQL into the statement. Its wildcards are the caller's to write: `%`
+// matches any run of characters and `_` any single one, and a caller matching a
+// literal `%` or `_` has to escape it themselves -- Ptah cannot tell an intended
+// wildcard from an accidental one, and escaping on the caller's behalf would
+// break every pattern that meant them.
+//
+// Case sensitivity is the SERVER's. PostgreSQL matches case-sensitively, MySQL
+// follows the column's collation and usually does not, and SQLite folds ASCII.
+// A query relying on one behavior is relying on that engine, not on this
+// builder (stokaro/ptah#941).
+func Like(column, pattern string) ast.Expression {
+	return comparison(column, ast.OpLike, pattern)
+}
+
+// NotLike builds "column NOT LIKE pattern". See [Like] on wildcards and on
+// case sensitivity.
+func NotLike(column, pattern string) ast.Expression {
+	return comparison(column, ast.OpNotLike, pattern)
+}
+
+// Func builds a call to name with args, for the functions this package has no
+// named helper for.
+//
+// The name is a KEYWORD, emitted verbatim and never quoted, and the renderer
+// refuses anything that is not a simple identifier -- so a name cannot carry
+// SQL. Arguments are ordinary expressions: Col produces a quoted identifier and
+// Value a bound placeholder, which is what keeps a caller's data out of the
+// statement text (stokaro/ptah#941).
+//
+//	query.Func("COALESCE", query.ColExpr("nick"), query.Value("anon"))
+//	// COALESCE("nick", $1)
+func Func(name string, args ...ast.Expression) ast.Expression {
+	return &ast.FuncCall{Name: name, Args: slices.Clone(args)}
+}
+
+// ColExpr is a column reference usable as a function argument or an arithmetic
+// operand.
+//
+// It is spelled apart from [Col], which builds the Column value a projection or
+// GROUP BY term takes. The two are different positions in the grammar and
+// giving them one name would let a caller pass the wrong one and find out at
+// the type checker rather than at the point of confusion.
+func ColExpr(name string) ast.Expression { return &ast.ColumnRef{Name: name} }
+
+// Value is a bound value usable as a function argument or an arithmetic
+// operand. It is never interpolated into the statement text.
+func Value(v any) ast.Expression { return &ast.BoundValue{Value: v} }
+
+// Add, Sub, Mul, Div and Mod build binary arithmetic expressions.
+//
+// Each renders parenthesized, so the tree the caller built is the expression
+// the server evaluates rather than one its precedence rules recover. See
+// [go.5x5.cz/ptah/core/ast.Arithmetic].
+func Add(left, right ast.Expression) ast.Expression { return arith(left, ast.OpAdd, right) }
+
+// Sub builds "(left - right)". See [Add].
+func Sub(left, right ast.Expression) ast.Expression { return arith(left, ast.OpSubtract, right) }
+
+// Mul builds "(left * right)". See [Add].
+func Mul(left, right ast.Expression) ast.Expression { return arith(left, ast.OpMultiply, right) }
+
+// Div builds "(left / right)". See [Add].
+func Div(left, right ast.Expression) ast.Expression { return arith(left, ast.OpDivide, right) }
+
+// Mod builds "(left %% right)". Its spelling is portable and its result for a
+// negative operand is not; see [go.5x5.cz/ptah/core/ast.OpModulo].
+func Mod(left, right ast.Expression) ast.Expression { return arith(left, ast.OpModulo, right) }
+
+func arith(left ast.Expression, op ast.ArithmeticOperator, right ast.Expression) ast.Expression {
+	return &ast.Arithmetic{Left: left, Operator: op, Right: right}
+}
+
+// Over turns a function call into a window function.
+//
+// The call is whatever this package builds -- an aggregate such as Sum, or a
+// ranking function through Func -- and the spec says which rows it is computed
+// over:
+//
+//	query.Over(query.Sum("total"), query.Partition("user_id"), query.OrderAsc("day"))
+//	// SUM("total") OVER (PARTITION BY "user_id" ORDER BY "day" ASC)
+//
+// A window function belongs in a projection and not in WHERE, because the
+// window is computed after the rows are filtered. The engines say so clearly in
+// their own terms, so this package does not add a rule of its own
+// (stokaro/ptah#941).
+//
+// No frame clause is emitted. Without one the engine applies its default, which
+// is what an unframed window means everywhere; guessing a frame would change
+// results.
+func Over(call ast.Expression, options ...WindowOption) ast.Expression {
+	fn, ok := call.(*ast.FuncCall)
+	if !ok {
+		return call
+	}
+	spec := &ast.WindowSpec{}
+	for _, option := range options {
+		option(spec)
+	}
+	fn.Over = spec
+	return fn
+}
+
+// WindowOption configures the OVER clause built by [Over].
+type WindowOption func(*ast.WindowSpec)
+
+// Partition adds PARTITION BY columns to a window.
+func Partition(columns ...string) WindowOption {
+	return func(spec *ast.WindowSpec) {
+		for _, name := range columns {
+			spec.PartitionBy = append(spec.PartitionBy, ast.ColumnRef{Name: name})
+		}
+	}
+}
+
+// OrderAsc adds ascending ORDER BY terms to a window.
+func OrderAsc(columns ...string) WindowOption {
+	return windowOrder(ast.SortAscending, columns)
+}
+
+// OrderDesc adds descending ORDER BY terms to a window.
+func OrderDesc(columns ...string) WindowOption {
+	return windowOrder(ast.SortDescending, columns)
+}
+
+func windowOrder(direction ast.SortDirection, columns []string) WindowOption {
+	return func(spec *ast.WindowSpec) {
+		for _, name := range columns {
+			spec.OrderBy = append(spec.OrderBy, ast.OrderByClause{Column: name, Direction: direction})
+		}
+	}
 }
 
 // In builds "column IN (values...)", binding each value as a parameter. The

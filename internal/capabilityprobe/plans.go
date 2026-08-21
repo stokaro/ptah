@@ -185,6 +185,14 @@ func postgresFamilyPlan(dialect string) plan {
 		acceptance(capability.Functions, nil,
 			"CREATE FUNCTION fn() RETURNS int LANGUAGE sql AS 'SELECT 1'",
 		),
+		// A procedure is the same routine object with its return type removed,
+		// and the statement is the one thing that separates the two keys. It is
+		// asked rather than declared because the answers differ across this
+		// family: PostgreSQL and CockroachDB take it, Spanner's PostgreSQL
+		// interface does not (stokaro/ptah#1722).
+		acceptance(capability.Procedures, nil,
+			"CREATE PROCEDURE pr() LANGUAGE sql AS 'SELECT 1'",
+		),
 		all(capability.Triggers,
 			[]string{t.table("trg_t", "n int", "n")},
 			"CREATE FUNCTION trg_fn() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RETURN NEW; END $$",
@@ -220,6 +228,11 @@ func postgresFamilyPlan(dialect string) plan {
 			"the dependency table the user-defined-type read joins; naming the "+
 				"type system instead was refuted by CockroachDB, which refuses "+
 				"CREATE DOMAIN and accepts a composite type",
+		),
+		acceptanceNote(capability.CatalogDefaultPrivileges, nil,
+			"SELECT 1 FROM pg_default_acl LIMIT 1",
+			"the relation the cleanup reads ALTER DEFAULT PRIVILEGES grants "+
+				"from; Spanner answers `relation \"pg_default_acl\" does not exist`",
 		),
 		acceptance(capability.GeneratedColumns, nil,
 			t.table("gcx", "n int, g int GENERATED ALWAYS AS (n + 1) STORED", "n"),
@@ -302,6 +315,26 @@ func postgresFamilyPlan(dialect string) plan {
 		// Server have the SQL-standard view too; MariaDB, ClickHouse and
 		// Spanner answer `Unknown table` or `does not exist`, all measured
 		// (stokaro/ptah#916 item 3).
+		// The recursive form of a catalog read, asked as its own question
+		// because the PostgreSQL family splits on it for a reason outside SQL.
+		// Cloud Spanner's PostgreSQL interface answers a catalog reference by
+		// prepending its own `WITH pg_class AS (...)`, which merges with a
+		// plain WITH and collides with a RECURSIVE one; measured on the
+		// emulator through PGAdapter 0.55.2, this statement answers `syntax
+		// error at or near "m"` while the same query without RECURSIVE
+		// succeeds (stokaro/ptah#1811).
+		// The relation that records partition parentage, asked as a catalog
+		// question. Every real PostgreSQL-family engine has it; Cloud Spanner's
+		// PostgreSQL interface answers `relation "pg_inherits" does not exist`
+		// (stokaro/ptah#1811).
+		acceptanceNote(capability.CatalogPartitions, nil,
+			"SELECT 1 FROM pg_inherits LIMIT 1",
+			"the catalog recording which table is a partition of which",
+		),
+		acceptanceNote(capability.CatalogRecursiveCTE, nil,
+			"WITH RECURSIVE m AS (SELECT relname FROM pg_class) SELECT relname FROM m LIMIT 1",
+			"a recursive CTE that also reads the catalogs",
+		),
 		acceptanceNote(capability.CatalogViewDependencies, nil,
 			"SELECT 1 FROM information_schema.view_table_usage LIMIT 1",
 			"the catalog naming the tables a view reads",
@@ -365,6 +398,11 @@ func postgresFamilyPlan(dialect string) plan {
 		// acceptance test, and this harness reads acceptance rather than error
 		// text. The threshold is MySQL 8.0.20 and the ladder carries it
 		// (stokaro/ptah#916 item 3).
+		capability.DDLInsideTransaction: "the key names whether the server takes a schema statement inside an explicit transaction, " +
+			"which is a property of the wrapper the migrator opens rather than of any statement this probe sends",
+		capability.MigrationTimeouts: "the key names a runtime policy the migrator applies around a migration; " +
+			"this server accepting a timeout statement says nothing about whether Ptah sets and restores it",
+		capability.TransactionalDDL: "the key names whether a failed migration rolls back as a unit, which is the engine's DDL semantics rather than one statement's answer",
 		capability.ShowRoutinePrivilege: "the probe cannot ask whether a privilege exists without granting it, " +
 			"and an acceptance test cannot separate an unknown privilege from an absent grantee",
 	}}
@@ -444,6 +482,12 @@ func mysqlFamilyPlan(dialect string) plan {
 		acceptance(capability.Functions, nil,
 			"CREATE FUNCTION fn() RETURNS INT DETERMINISTIC RETURN 1",
 		),
+		// No RETURNS clause: that is the grammar difference the key names, and
+		// the catalog agrees -- a procedure's DTD_IDENTIFIER is NULL where a
+		// function's carries the type (stokaro/ptah#1722).
+		acceptance(capability.Procedures, nil,
+			"CREATE PROCEDURE pr() SELECT 1",
+		),
 		acceptance(capability.Triggers,
 			[]string{"CREATE TABLE trg_t (n int)"},
 			"CREATE TRIGGER trg BEFORE INSERT ON trg_t FOR EACH ROW SET NEW.n = NEW.n",
@@ -514,11 +558,6 @@ func mysqlFamilyPlan(dialect string) plan {
 			"CHECK GRANT SELECT ON *.*",
 			"the statement is ClickHouse's; a server without it refuses the syntax",
 		),
-		// The catalog view MySQL added in 8.0.13, asked as a catalog question
-		// rather than a version comparison. PostgreSQL, CockroachDB and SQL
-		// Server have the SQL-standard view too; MariaDB, ClickHouse and
-		// Spanner answer `Unknown table` or `does not exist`, all measured
-		// (stokaro/ptah#916 item 3).
 		acceptanceNote(capability.CatalogViewDependencies, nil,
 			"SELECT 1 FROM information_schema.view_table_usage LIMIT 1",
 			"the catalog naming the tables a view reads",
@@ -549,6 +588,11 @@ func mysqlFamilyPlan(dialect string) plan {
 	}
 
 	undecided := map[capability.Capability]string{
+		// The key asks whether a recursive CTE may also read the pg catalogs.
+		// The MySQL family has no pg catalogs, so the statement cannot be put
+		// to it and an answer would be to a different question.
+		capability.CatalogPartitions:   "pg_inherits is a PostgreSQL catalog the MySQL family has no spelling of",
+		capability.CatalogRecursiveCTE: "pg_class is a PostgreSQL catalog the MySQL family has no spelling of",
 		// The three PostgreSQL user-type kinds. This server has no spelling of
 		// any of the statements, so neither accepting nor refusing one would
 		// decide the key -- its answer would be to a different question
@@ -563,6 +607,11 @@ func mysqlFamilyPlan(dialect string) plan {
 		// acceptance test, and this harness reads acceptance rather than error
 		// text. The threshold is MySQL 8.0.20 and the ladder carries it
 		// (stokaro/ptah#916 item 3).
+		capability.DDLInsideTransaction: "the key names whether the server takes a schema statement inside an explicit transaction, " +
+			"which is a property of the wrapper the migrator opens rather than of any statement this probe sends",
+		capability.MigrationTimeouts: "the key names a runtime policy the migrator applies around a migration; " +
+			"this server accepting a timeout statement says nothing about whether Ptah sets and restores it",
+		capability.TransactionalDDL: "the key names whether a failed migration rolls back as a unit, which is the engine's DDL semantics rather than one statement's answer",
 		capability.ShowRoutinePrivilege: "the probe cannot ask whether a privilege exists without granting it, " +
 			"and an acceptance test cannot separate an unknown privilege from an absent grantee",
 		// Measured live on MySQL 9.7.1: CREATE ROLE and GRANT SELECT are both
@@ -585,25 +634,22 @@ func mysqlFamilyPlan(dialect string) plan {
 		capability.CatalogDependencies: "pg_depend is a PostgreSQL catalog relation this server does not " +
 			"have and no MySQL-family reader joins; its absence here says nothing about the " +
 			"PostgreSQL-family read the key gates",
+		capability.CatalogDefaultPrivileges: "pg_default_acl is a PostgreSQL catalog relation this server " +
+			"does not have and no MySQL-family cleanup reads; its absence here says nothing about the " +
+			"PostgreSQL-family cleanup the key gates",
 		capability.RowLevelTTL: "the key names a table storage parameter Ptah renders, reads and plans " +
 			"only on the PostgreSQL wire; this server's CREATE TABLE takes its own table options and " +
 			"none of them is the one the key names, so refusing it would answer a different question",
 	}
-	if dialect == platform.MariaDB {
-		// MariaDB has had SEQUENCE objects since 10.3 and the preset still
-		// says false, deliberately: the key describes Ptah's generator, and
-		// there is no MariaDB sequence introspection and no MySQL-family
-		// sequence planning. The two answers are known in advance to differ on
-		// this dialect, so the engine cannot decide the key.
-		undecided[capability.Sequences] = "the key describes Ptah's generator rather than the engine " +
-			"(stokaro/ptah#931 item 8): MariaDB has had SEQUENCE since 10.3 while no MySQL-family " +
-			"renderer or planner emits, reads or plans one, so the server's answer is to a different question"
-	} else {
-		experiments = append(experiments, all(capability.Sequences, nil,
-			"CREATE SEQUENCE sq",
-			"CREATE TABLE ser (id SERIAL PRIMARY KEY)",
-		))
-	}
+	// Both dialects are asked now. MariaDB used to be declared undecided here,
+	// on the ground that the engine has SEQUENCE while Ptah's generator did
+	// not -- so the server's answer was to a different question. Ptah renders,
+	// reads and plans a MariaDB sequence since stokaro/ptah#1759, so the two
+	// answers agree and the experiment decides the key on both engines.
+	experiments = append(experiments, all(capability.Sequences, nil,
+		"CREATE SEQUENCE sq",
+		"CREATE TABLE ser (id SERIAL PRIMARY KEY)",
+	))
 	return plan{experiments: experiments, undecided: undecided}
 }
 

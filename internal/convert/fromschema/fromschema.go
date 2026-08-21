@@ -1661,6 +1661,7 @@ func FromRange(rangeType goschema.Range) *ast.CreateTypeNode {
 // Returns a fully configured *ast.CreateFunctionNode ready for SQL generation.
 func FromFunction(function goschema.Function) *ast.CreateFunctionNode {
 	functionNode := ast.NewCreateFunction(function.Name).
+		SetKind(function.Kind).
 		SetParameters(function.Parameters).
 		SetReturns(function.Returns).
 		SetLanguage(function.Language).
@@ -1765,12 +1766,13 @@ func appendSynonymStatements(statements *ast.StatementList, synonyms []goschema.
 // FromMaterializedView converts a goschema.MaterializedView to an
 // ast.CreateMaterializedViewNode.
 func FromMaterializedView(view goschema.MaterializedView) *ast.CreateMaterializedViewNode {
-	view.Canonicalize()
-	viewNode := ast.NewCreateMaterializedView(view.Name).
+	node := ast.NewCreateMaterializedView(view.Name).
 		SetBody(view.Body).
-		SetRefreshStrategy(view.RefreshStrategy).
 		SetComment(view.Comment)
-	return viewNode
+	// Cloned rather than shared: a node handed to a renderer must not be a
+	// window onto the schema it came from (stokaro/ptah#1802).
+	node.Refresh = view.Refresh.Clone()
+	return node
 }
 
 func appendForeignKeyConstraintStatements(

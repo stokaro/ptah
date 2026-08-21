@@ -10,6 +10,7 @@ import (
 	"github.com/zclconf/go-cty/cty"
 
 	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/internal/matviewrefresh"
 	"go.5x5.cz/ptah/internal/tableref"
 )
 
@@ -194,19 +195,24 @@ func (p *parser) parseMaterializedView(block *hclsyntax.Block) error {
 	if body == "" {
 		return p.blockError(block, "materialized %q requires as", name)
 	}
-	view := goschema.MaterializedView{
-		Name:            tableref.Canonical(schema, name),
-		Body:            body,
-		RefreshStrategy: p.optionalString(block.Body.Attributes["refresh_strategy"]),
-		Comment:         p.optionalString(block.Body.Attributes["comment"]),
+	// The retired attribute is refused on PRESENCE, before its value is read.
+	// A value expression is not required to be a string here -- a bare
+	// identifier, a variable reference and sql(...) all declare the same thing
+	// -- so reading it first would let two of the three spellings through
+	// (stokaro/ptah#1625).
+	//
+	// It stays on the supported-attribute allow-list above rather than being
+	// removed from it: on the ptah-compat surface the unknown-attribute gate is
+	// tolerant, so a removed entry would be discarded with a warning instead of
+	// refused, which is the outcome this change exists to remove.
+	if _, declared := block.Body.Attributes[matviewrefresh.Attribute]; declared {
+		return p.blockError(block, "%w", matviewrefresh.Refuse(tableref.Canonical(schema, name)))
 	}
-	// Canonicalize lowercases refresh_strategy and defaults it to "manual",
-	// mirroring the Go-annotation path (parseMatViewComment). The Go path applies
-	// no further validation, so neither does this one: any strategy string is
-	// accepted, keeping both frontends' MaterializedView identical for the same
-	// schema.
-	view.Canonicalize()
-	p.db.MaterializedViews = append(p.db.MaterializedViews, view)
+	p.db.MaterializedViews = append(p.db.MaterializedViews, goschema.MaterializedView{
+		Name:    tableref.Canonical(schema, name),
+		Body:    body,
+		Comment: p.optionalString(block.Body.Attributes["comment"]),
+	})
 	return nil
 }
 

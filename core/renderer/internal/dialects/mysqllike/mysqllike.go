@@ -643,6 +643,12 @@ func (r *Renderer) VisitRefreshMaterializedView(node *ast.RefreshMaterializedVie
 	return r.materializedViewsUnsupported("REFRESH MATERIALIZED VIEW", node.Name)
 }
 
+// VisitAlterMaterializedViewRefresh refuses for the same reason as
+// VisitCreateMaterializedView.
+func (r *Renderer) VisitAlterMaterializedViewRefresh(node *ast.AlterMaterializedViewRefreshNode) error {
+	return r.materializedViewsUnsupported("ALTER MATERIALIZED VIEW REFRESH", node.Name)
+}
+
 func (r *Renderer) materializedViewsUnsupported(statement, name string) error {
 	return fmt.Errorf("%w: %s: %s %s: materialized views are not supported by MySQL or MariaDB; remove matview definitions for this target",
 		ptaherr.ErrUnsupportedFeature, r.dialect, statement, name)
@@ -1113,7 +1119,16 @@ func (r *Renderer) VisitDropExtension(node *ast.DropExtensionNode) error {
 // halves drifting apart is what made a declared STABLE function plan the same
 // destructive replacement on every apply.
 func (r *Renderer) VisitCreateFunction(node *ast.CreateFunctionNode) error {
-	if !r.caps.Has(capability.Functions) {
+	// A procedure decides against its own key, and every refusal below still
+	// applies to it: the language it runs, the security clause, the
+	// characteristic. Only the header and the return type differ
+	// (stokaro/ptah#1722).
+	if node.IsProcedure() {
+		if !r.caps.Has(capability.Procedures) {
+			r.notGenerated("CREATE PROCEDURE", node.Name)
+			return nil
+		}
+	} else if !r.caps.Has(capability.Functions) {
 		r.notGenerated("CREATE FUNCTION", node.Name)
 		return nil
 	}
@@ -1189,11 +1204,13 @@ func (r *Renderer) VisitCreateFunction(node *ast.CreateFunctionNode) error {
 			Message: fmt.Sprintf("function %s: %s", node.Name, err.Error()),
 		}
 	}
-	if err := mysqlroutine.ValidateSignature(node.Parameters, node.Returns); err != nil {
-		return &ptaherr.RenderError{
-			Dialect: r.dialect,
-			Err:     err,
-			Message: fmt.Sprintf("function %s: %s", node.Name, err.Error()),
+	if !node.IsProcedure() {
+		if err := mysqlroutine.ValidateSignature(node.Parameters, node.Returns); err != nil {
+			return &ptaherr.RenderError{
+				Dialect: r.dialect,
+				Err:     err,
+				Message: fmt.Sprintf("function %s: %s", node.Name, err.Error()),
+			}
 		}
 	}
 
@@ -1201,8 +1218,15 @@ func (r *Renderer) VisitCreateFunction(node *ast.CreateFunctionNode) error {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
 
+	// A procedure has no RETURNS clause. `CREATE PROCEDURE p(...) RETURNS int`
+	// is a syntax error on MySQL 26.7, and the catalog agrees: a procedure's
+	// DTD_IDENTIFIER is NULL where a function's carries the type.
 	header := fmt.Sprintf("CREATE FUNCTION %s(%s) RETURNS %s",
 		escapeQualifiedIdentifier(node.Name), strings.TrimSpace(node.Parameters), strings.TrimSpace(node.Returns))
+	if node.IsProcedure() {
+		header = fmt.Sprintf("CREATE PROCEDURE %s(%s)",
+			escapeQualifiedIdentifier(node.Name), strings.TrimSpace(node.Parameters))
+	}
 	parts := []string{header, characteristic}
 	if security != "" {
 		parts = append(parts, security)
@@ -1247,14 +1271,24 @@ func (r *Renderer) VisitAlterTableEnableRLS(node *ast.AlterTableEnableRLSNode) e
 // FUNCTION, and a routine has no dependent objects to cascade to in their
 // model, so silently omitting it changes nothing the operator asked for.
 func (r *Renderer) VisitDropFunction(node *ast.DropFunctionNode) error {
-	if !r.caps.Has(capability.Functions) {
+	if node.IsProcedure() {
+		if !r.caps.Has(capability.Procedures) {
+			r.notGenerated("DROP PROCEDURE", node.Name)
+			return nil
+		}
+	} else if !r.caps.Has(capability.Functions) {
 		r.notGenerated("DROP FUNCTION", node.Name)
 		return nil
 	}
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
+	// The verb has to match the object: DROP FUNCTION aimed at a procedure is
+	// refused by name on both engines.
 	parts := []string{"DROP FUNCTION"}
+	if node.IsProcedure() {
+		parts = []string{"DROP PROCEDURE"}
+	}
 	if node.IfExists {
 		parts = append(parts, "IF EXISTS")
 	}
@@ -1263,48 +1297,152 @@ func (r *Renderer) VisitDropFunction(node *ast.DropFunctionNode) error {
 	return nil
 }
 
-// VisitCreateSequence reports that Ptah does not generate standalone sequence
-// objects for this target.
+// VisitCreateSequence renders CREATE SEQUENCE where the target has one, and
+// names the omission where it does not.
 //
-// MySQL has no SEQUENCE object at all. MariaDB does -- 10.3 and later, verified
-// live: `CREATE SEQUENCE s START WITH 1000 NOCYCLE` on MariaDB 10.11.18 lands a
-// row with TABLE_TYPE = SEQUENCE -- but Ptah has no MariaDB sequence
-// introspection and no MySQL-family sequence planning, so emitting the CREATE
-// here would make `schema render` produce a statement `schema apply` never
-// plans and a reader never sees again: a plan that cannot converge. That is a
-// worse failure than the one this replaces, so the capability stays off until
-// the reader and planner arrive; capability.MariaDB1011 records the same thing.
+// The two engines this renderer serves differ here, which is why the decision is
+// a capability rather than a dialect string. MySQL has no SEQUENCE object at
+// all -- `CREATE SEQUENCE s` on 26.7 is a syntax error at "SEQUENCE" -- while
+// MariaDB has had one since 10.3 and takes the whole statement, measured on
+// 12.3.
 //
-// The point of this comment existing at all is that the sequence used to be
+// MariaDB's grammar is not PostgreSQL's, and one clause separates them: the
+// negative cycle option is NOCYCLE, one word. `NO CYCLE` is
+// ERROR 1064 near 'CYCLE', so a shared renderer emitting the PostgreSQL
+// spelling would produce a statement this engine rejects (stokaro/ptah#1759).
+//
+// OWNED BY has no MariaDB form and is dropped rather than rendered: it is a
+// PostgreSQL association between a sequence and the column that consumes it,
+// and there is nothing here for it to mean.
+//
+// The point of the skip comment existing at all is that the sequence used to be
 // dropped by the converter before any renderer ran, so `--dialect mariadb`
 // omitted it with no statement and no diagnostic (stokaro/ptah#931 item 8).
 func (r *Renderer) VisitCreateSequence(node *ast.CreateSequenceNode) error {
-	if node.Comment != "" {
-		r.w.WriteLinef("-- CREATE SEQUENCE %s not supported in %s: %s", node.Name, r.dialect, node.Comment)
-	} else {
-		r.w.WriteLinef("-- CREATE SEQUENCE %s not supported in %s", node.Name, r.dialect)
+	if !r.caps.Has(capability.Sequences) {
+		r.sequenceNotSupported("CREATE SEQUENCE", node.Name, node.Comment)
+		return nil
 	}
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+
+	parts := []string{"CREATE SEQUENCE"}
+	if node.IfNotExists {
+		parts = append(parts, "IF NOT EXISTS")
+	}
+	parts = append(parts, r.sequenceIdentifier(node.Name, node.Schema))
+
+	var cycle *bool
+	if node.Cycle {
+		cycle = &node.Cycle
+	}
+	parts = append(parts, mariaDBSequenceOptions(
+		node.AsType, node.Start, node.Increment, node.MinValue, node.MaxValue, node.Cache, cycle)...)
+
+	r.w.WriteLinef("%s;", strings.Join(parts, " "))
 	return nil
 }
 
-// VisitAlterSequence renders ALTER SEQUENCE for MySQL-like databases (no-op).
+// VisitAlterSequence renders ALTER SEQUENCE where the target has one.
+//
+// MariaDB takes the same option clauses the CREATE takes, so the difference
+// between the two statements is the verb and the guard, not the options.
 func (r *Renderer) VisitAlterSequence(node *ast.AlterSequenceNode) error {
-	if node.Comment != "" {
-		r.w.WriteLinef("-- ALTER SEQUENCE %s not supported in %s: %s", node.Name, r.dialect, node.Comment)
-	} else {
-		r.w.WriteLinef("-- ALTER SEQUENCE %s not supported in %s", node.Name, r.dialect)
+	if !r.caps.Has(capability.Sequences) {
+		r.sequenceNotSupported("ALTER SEQUENCE", node.Name, node.Comment)
+		return nil
 	}
+	options := mariaDBSequenceOptions(
+		node.AsType, node.Start, node.Increment, node.MinValue, node.MaxValue, node.Cache, node.Cycle)
+	if len(options) == 0 {
+		// An ALTER naming nothing is not a statement; emitting `ALTER SEQUENCE s;`
+		// would be a syntax error where the plan meant to do nothing.
+		return nil
+	}
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+	r.w.WriteLinef("ALTER SEQUENCE %s %s;",
+		r.sequenceIdentifier(node.Name, node.Schema), strings.Join(options, " "))
 	return nil
 }
 
-// VisitDropSequence renders DROP SEQUENCE for MySQL-like databases (no-op).
+// VisitDropSequence renders DROP SEQUENCE where the target has one.
 func (r *Renderer) VisitDropSequence(node *ast.DropSequenceNode) error {
-	if node.Comment != "" {
-		r.w.WriteLinef("-- DROP SEQUENCE %s not supported in %s: %s", node.Name, r.dialect, node.Comment)
-	} else {
-		r.w.WriteLinef("-- DROP SEQUENCE %s not supported in %s", node.Name, r.dialect)
+	if !r.caps.Has(capability.Sequences) {
+		r.sequenceNotSupported("DROP SEQUENCE", node.Name, node.Comment)
+		return nil
 	}
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+	parts := []string{"DROP SEQUENCE"}
+	if node.IfExists {
+		parts = append(parts, "IF EXISTS")
+	}
+	parts = append(parts, r.sequenceIdentifier(node.Name, node.Schema))
+	// CASCADE is deliberately not rendered: MariaDB has no such clause, and a
+	// drop that silently ignored the caller's CASCADE would be a promise the
+	// engine never made.
+	r.w.WriteLinef("%s;", strings.Join(parts, " "))
 	return nil
+}
+
+// sequenceNotSupported names a sequence statement this target does not host.
+func (r *Renderer) sequenceNotSupported(statement, name, comment string) {
+	if comment != "" {
+		r.w.WriteLinef("-- %s %s not supported in %s: %s", statement, name, r.dialect, comment)
+		return
+	}
+	r.w.WriteLinef("-- %s %s not supported in %s", statement, name, r.dialect)
+}
+
+// sequenceIdentifier qualifies a sequence name with its declared schema when the
+// name does not already carry one.
+func (r *Renderer) sequenceIdentifier(name, schema string) string {
+	if schema == "" || strings.Contains(name, ".") {
+		return escapeQualifiedIdentifier(name)
+	}
+	return escapeQualifiedIdentifier(schema) + "." + escapeQualifiedIdentifier(name)
+}
+
+// mariaDBSequenceOptions renders the option clauses in the order MariaDB's own
+// SHOW CREATE SEQUENCE reports them, so a rendered statement and the engine's
+// echo of it read the same way.
+func mariaDBSequenceOptions(
+	asType string,
+	start, increment, minValue, maxValue, cache *int64,
+	cycle *bool,
+) []string {
+	var parts []string
+	if asType != "" {
+		parts = append(parts, "AS "+asType)
+	}
+	if start != nil {
+		parts = append(parts, fmt.Sprintf("START WITH %d", *start))
+	}
+	if minValue != nil {
+		parts = append(parts, fmt.Sprintf("MINVALUE %d", *minValue))
+	}
+	if maxValue != nil {
+		parts = append(parts, fmt.Sprintf("MAXVALUE %d", *maxValue))
+	}
+	if increment != nil {
+		parts = append(parts, fmt.Sprintf("INCREMENT BY %d", *increment))
+	}
+	if cache != nil {
+		parts = append(parts, fmt.Sprintf("CACHE %d", *cache))
+	}
+	if cycle != nil {
+		// NOCYCLE, one word. `NO CYCLE` is ERROR 1064 on MariaDB 12.3.
+		if *cycle {
+			parts = append(parts, "CYCLE")
+		} else {
+			parts = append(parts, "NOCYCLE")
+		}
+	}
+	return parts
 }
 
 // VisitDropPolicy names the policy drop Ptah does not generate for this target,
@@ -1336,40 +1474,6 @@ func (r *Renderer) notGenerated(kind, name string) {
 		return
 	}
 	r.w.WriteLinef("-- %s: %s %s is not generated for this target; skipped.", r.dialectUpper, kind, name)
-}
-
-// VisitCreateRole refuses the PostgreSQL-shaped role Ptah cannot converge on
-// this target. MySQL and MariaDB both host roles, but Ptah has no reader or
-// planner for their role model, so a successful comment-only render would
-// discard declared state.
-func (r *Renderer) VisitCreateRole(node *ast.CreateRoleNode) error {
-	return r.unsupportedRole("CREATE ROLE", node.Name)
-}
-
-// VisitDropRole refuses rather than reporting a successful comment-only drop.
-func (r *Renderer) VisitDropRole(node *ast.DropRoleNode) error {
-	return r.unsupportedRole("DROP ROLE", node.Name)
-}
-
-// VisitAlterRole refuses rather than silently omitting a detected role change.
-func (r *Renderer) VisitAlterRole(node *ast.AlterRoleNode) error {
-	return r.unsupportedRole("ALTER ROLE", node.Name)
-}
-
-func (r *Renderer) unsupportedRole(operation, name string) error {
-	return unsupportedRoleError(r.dialect, operation, name)
-}
-
-// VisitGrantPrivilege names the grant Ptah does not generate for this target.
-func (r *Renderer) VisitGrantPrivilege(node *ast.GrantPrivilegeNode) error {
-	r.notGenerated("grant", node.Role)
-	return nil
-}
-
-// VisitRevokePrivilege names the revoke Ptah does not generate for this target.
-func (r *Renderer) VisitRevokePrivilege(node *ast.RevokePrivilegeNode) error {
-	r.notGenerated("revoke", node.Role)
-	return nil
 }
 
 // VisitRawSQL renders a literal SQL fragment verbatim. Dialect-specific

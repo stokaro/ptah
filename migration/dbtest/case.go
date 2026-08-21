@@ -110,6 +110,36 @@ type Step struct {
 	Seed *SeedStep `yaml:"seed"`
 	// Assert runs a query and checks a single condition on the result.
 	Assert *Assertion `yaml:"assert"`
+	// EstablishSchema brings the database to the state a schema source
+	// describes, before anything else in the case runs. It is the `schema`
+	// block of an Atlas `test "plan"` case.
+	EstablishSchema *SchemaSourceStep `yaml:"establish_schema"`
+	// ApplyPlan executes a saved plan file against the database. It is the
+	// `apply` block of an Atlas `test "plan"` case.
+	ApplyPlan *ApplyPlanStep `yaml:"apply_plan"`
+}
+
+// SchemaSourceStep establishes the database state a schema source describes.
+//
+// It names the source by URL rather than carrying a parsed schema, because the
+// runner is handed a loader by its caller: which URL schemes resolve, and how,
+// belongs to the command that knows about schema files, not to the test engine
+// (stokaro/ptah#1211).
+type SchemaSourceStep struct {
+	// URL is the desired-state source, `file://snapshots/v1.sql` and the like.
+	URL string `yaml:"url"`
+}
+
+// ApplyPlanStep executes a saved plan file.
+//
+// A plan test exists to check that a REVIEWED plan does what it claims on a
+// known starting state, so the plan is named by path and read by the same
+// reader `schema apply --plan` uses rather than recomputed here. Recomputing
+// would test the planner against itself and never notice a plan file that
+// stopped matching what the planner now produces.
+type ApplyPlanStep struct {
+	// URL is the plan file, `file://plans/add_email.plan.hcl`.
+	URL string `yaml:"url"`
 }
 
 // SeedStep applies SQL seed files using the seeder's
@@ -156,6 +186,8 @@ const (
 	stepKindExec
 	stepKindSeed
 	stepKindAssert
+	stepKindEstablishSchema
+	stepKindApplyPlan
 )
 
 // kind reports which single action the step performs and how many actions are
@@ -179,6 +211,14 @@ func (s Step) kind() (kind stepKind, setCount int) {
 	}
 	if s.Assert != nil {
 		kind = stepKindAssert
+		setCount++
+	}
+	if s.EstablishSchema != nil {
+		kind = stepKindEstablishSchema
+		setCount++
+	}
+	if s.ApplyPlan != nil {
+		kind = stepKindApplyPlan
 		setCount++
 	}
 	return kind, setCount
@@ -306,10 +346,14 @@ func (c Case) validate() error {
 func (s Step) validate() error {
 	kind, setCount := s.kind()
 	if setCount == 0 {
-		return fmt.Errorf("step must set exactly one of migrate_to, apply_schema, exec, seed, or assert, but none is set")
+		return fmt.Errorf(
+			"step must set exactly one of migrate_to, apply_schema, exec, seed, assert, " +
+				"establish_schema, or apply_plan, but none is set")
 	}
 	if setCount > 1 {
-		return fmt.Errorf("step must set exactly one of migrate_to, apply_schema, exec, seed, or assert, but %d are set", setCount)
+		return fmt.Errorf(
+			"step must set exactly one of migrate_to, apply_schema, exec, seed, assert, "+
+				"establish_schema, or apply_plan, but %d are set", setCount)
 	}
 	if kind == stepKindMigrateTo {
 		return validateMigrateToTarget(s.MigrateTo)
@@ -319,6 +363,30 @@ func (s Step) validate() error {
 	}
 	if s.Assert != nil {
 		return s.Assert.validate()
+	}
+	if s.EstablishSchema != nil {
+		return s.EstablishSchema.validate()
+	}
+	if s.ApplyPlan != nil {
+		return s.ApplyPlan.validate()
+	}
+	return nil
+}
+
+// validate refuses a schema step naming no source. An empty URL would apply
+// nothing and leave the case running against whatever state it inherited,
+// which is the opposite of what the block is for.
+func (s *SchemaSourceStep) validate() error {
+	if strings.TrimSpace(s.URL) == "" {
+		return fmt.Errorf("schema step requires url")
+	}
+	return nil
+}
+
+// validate refuses a plan step naming no plan.
+func (s *ApplyPlanStep) validate() error {
+	if strings.TrimSpace(s.URL) == "" {
+		return fmt.Errorf("apply step requires url")
 	}
 	return nil
 }

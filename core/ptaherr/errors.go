@@ -24,6 +24,15 @@ var (
 	// recognized attribute with an invalid value.
 	ErrInvalidAttributeValue = errors.New("invalid annotation attribute value")
 
+	// ErrRetiredAttribute marks a declaration attribute Ptah still recognizes
+	// and no longer accepts.
+	//
+	// It is deliberately not ErrUnknownAttribute: a caller branching on that
+	// one treats the attribute as a typo, and a retired attribute is the
+	// opposite -- it was spelled correctly and meant something once. The
+	// refusal carries the reason it stopped meaning anything.
+	ErrRetiredAttribute = errors.New("retired declaration attribute")
+
 	// ErrUnsupportedFeature marks dialect or capability feature mismatches.
 	ErrUnsupportedFeature = errors.New("unsupported feature")
 

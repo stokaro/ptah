@@ -173,6 +173,16 @@ const (
 	// RowLevelSecurity.
 	Functions Capability = "functions"
 
+	// Procedures marks support for CREATE PROCEDURE: a routine that returns
+	// nothing and is invoked with CALL.
+	//
+	// It is separate from [Functions] because the two do not travel together.
+	// SQL Server hosts both and Ptah reads back only the function; ClickHouse
+	// has neither. A preset claims this one only where a renderer emits the
+	// procedure, a reader returns it, and a planner reconciles it
+	// (stokaro/ptah#1722).
+	Procedures Capability = "procedures"
+
 	// Triggers marks support for the CREATE TRIGGER object itself. Whether
 	// that object can be replaced in a single statement is
 	// CreateOrReplaceTrigger, which requires this one — replace syntax for a
@@ -263,6 +273,23 @@ const (
 	// the read is skipped rather than reduced (stokaro/ptah#942).
 	CatalogDependencies Capability = "catalog_dependencies"
 
+	// CatalogDefaultPrivileges marks a catalog that has pg_default_acl, the
+	// relation recording ALTER DEFAULT PRIVILEGES grants.
+	//
+	// It names the relation rather than the feature, for the same reason
+	// CatalogDependencies does: what fails is the relation, and a missing one
+	// cannot be stood in for by a constant the way a missing function can --
+	// the statement does not parse, so a cleanup that asks anyway cannot drop
+	// anything at all rather than merely missing a grant.
+	//
+	// Measured on the Cloud Spanner emulator through PGAdapter 0.55.2:
+	// `SELECT 1 FROM pg_default_acl LIMIT 1` answers `relation
+	// "pg_default_acl" does not exist`, while pg_namespace, pg_class,
+	// pg_extension, pg_constraint, pg_proc, pg_type, pg_collation,
+	// pg_attribute, pg_index and pg_sequence all answer. PostgreSQL and
+	// CockroachDB have it (stokaro/ptah#1811).
+	CatalogDefaultPrivileges Capability = "catalog_default_privileges"
+
 	// RoleManagement marks support for the role and object-privilege
 	// management Ptah models: named roles plus GRANT/REVOKE of privileges on
 	// schema objects.
@@ -351,6 +378,41 @@ const (
 	// part of the capability rather than a gap in it.
 	RowLevelTTL Capability = "row_level_ttl"
 
+	// MigrationTimeouts marks that Ptah can bound a migration with a lock and a
+	// statement timeout on this target.
+	//
+	// It names a runtime policy rather than an object: the migrator wraps a
+	// migration in the server's own timeout settings and restores them
+	// afterwards. Before this key the decision was a switch over three dialect
+	// names, so CockroachDB and YugabyteDB answered "migration timeouts are not
+	// supported" while both accept `SET LOCAL statement_timeout` and
+	// `SET LOCAL lock_timeout` -- measured on CockroachDB v25.4.0 and
+	// YugabyteDB 2026.1. A timeout is the safety belt on a migration that takes
+	// a lock, and those are the two deployments where a long lock hurts most
+	// (stokaro/ptah#1713).
+	MigrationTimeouts Capability = "migration_timeouts"
+
+	// TransactionalDDL marks that this target runs schema changes inside a
+	// transaction that rolls back as a unit, which is what `--tx-mode all`
+	// asks for.
+	//
+	// MySQL, MariaDB and ClickHouse commit DDL implicitly, so a failed
+	// migration leaves whatever ran before it; that is the engine rather than
+	// Ptah, and the refusal says so (stokaro/ptah#1713).
+	TransactionalDDL Capability = "transactional_ddl"
+
+	// DDLInsideTransaction marks that the server accepts a schema statement
+	// inside an explicit transaction, whether or not it can roll one back.
+	//
+	// It is a different question from [TransactionalDDL], and the two split on
+	// MySQL: MySQL commits DDL implicitly, so a failed migration cannot be
+	// rolled back as a unit -- but it takes the statement inside a transaction
+	// perfectly well. Spanner's PostgreSQL interface does not, and answers
+	// `DDL statements are only allowed outside explicit transactions`
+	// (SQLSTATE 25000), which made every declarative apply fail on its first
+	// statement (stokaro/ptah#1793).
+	DDLInsideTransaction Capability = "ddl_inside_transaction"
+
 	// CheckGrantStatement marks a server that answers a direct question about
 	// whether the CONNECTED account holds a privilege, rather than leaving the
 	// caller to infer it from a failure.
@@ -388,6 +450,36 @@ const (
 	// which dialect refuses on its absence is a policy that lives with the
 	// writer (stokaro/ptah#916 item 3).
 	CatalogViewDependencies Capability = "catalog_view_dependencies"
+
+	// CatalogRecursiveCTE marks a server that accepts a `WITH RECURSIVE` query
+	// which also reads the pg catalogs.
+	//
+	// Every real PostgreSQL-family engine does. Cloud Spanner's PostgreSQL
+	// interface does not, and the reason is the interface rather than the SQL:
+	// PGAdapter answers a catalog reference by prepending its own emulation as
+	// `WITH pg_class AS (...)`, which lands beside the query's own WITH clause.
+	// A plain `WITH` merges with it; `WITH RECURSIVE` does not, and the server
+	// answers with a syntax error naming the query's first CTE.
+	//
+	// Measured on the Cloud Spanner emulator through PGAdapter 0.55.2:
+	// `WITH RECURSIVE m AS (SELECT relname FROM pg_class) SELECT relname FROM m`
+	// fails with `syntax error at or near "m"`, while the same query without
+	// RECURSIVE, and `WITH RECURSIVE` over a non-catalog relation, both succeed
+	// (stokaro/ptah#1811).
+	CatalogRecursiveCTE Capability = "catalog_recursive_cte"
+
+	// CatalogPartitions marks a server whose catalog has pg_inherits, the
+	// relation that records which table is a partition of which.
+	//
+	// The cleanup reads it to refuse a schema whose partition parent lives
+	// elsewhere, since dropping the child alone would leave the parent broken.
+	// A server with no partitioning has no such edge to find, and the relation
+	// is MISSING rather than empty there -- a parse failure, so asking anyway
+	// costs the whole statement rather than one empty result.
+	//
+	// Measured on the Cloud Spanner emulator through PGAdapter 0.55.2:
+	// `relation "pg_inherits" does not exist` (stokaro/ptah#1811).
+	CatalogPartitions Capability = "catalog_partitions"
 
 	// ShowRoutinePrivilege marks a server on which reading routine metadata
 	// requires the global SHOW_ROUTINE privilege, which MySQL introduced in
@@ -560,6 +652,9 @@ var registry = map[Capability]spec{
 	Functions: {
 		doc: "user-defined functions declared with a return type, a language, and a body",
 	},
+	Procedures: {
+		doc: "stored procedures: routines that return nothing and are invoked with CALL",
+	},
 	Triggers: {
 		doc: "CREATE TRIGGER objects",
 	},
@@ -578,6 +673,9 @@ var registry = map[Capability]spec{
 	},
 	CatalogRowStatistics: {
 		doc: "the catalog exposes planner row-count statistics (pg_stat_all_tables)",
+	},
+	CatalogDefaultPrivileges: {
+		doc: "the catalog has pg_default_acl, the relation recording ALTER DEFAULT PRIVILEGES grants",
 	},
 	CatalogDependencies: {
 		doc: "the catalog exposes pg_depend",
@@ -608,6 +706,21 @@ var registry = map[Capability]spec{
 	},
 	AdvisoryLocks: {
 		doc: "PostgreSQL advisory lock functions",
+	},
+	MigrationTimeouts: {
+		doc: "a migration can be bounded by a lock timeout and a statement timeout the migrator sets and restores",
+	},
+	CatalogPartitions: {
+		doc: "the catalog has pg_inherits, which records partition parentage",
+	},
+	CatalogRecursiveCTE: {
+		doc: "the server accepts a WITH RECURSIVE query that also reads the pg catalogs",
+	},
+	DDLInsideTransaction: {
+		doc: "the server accepts a schema statement inside an explicit transaction, whether or not it rolls one back",
+	},
+	TransactionalDDL: {
+		doc: "schema changes run inside a transaction that rolls back as a unit, which is what --tx-mode all needs",
 	},
 	RowLevelTTL: {
 		doc: "table storage parameters declaring a row-expiry policy (CockroachDB row-level TTL)",
@@ -773,30 +886,44 @@ func All() []Capability {
 // MySQL has none.
 func MySQL84() Capabilities {
 	return Capabilities{
-		DomainTypes:                        false,
-		CompositeTypes:                     false,
-		RangeTypes:                         false,
-		DropConstraintGeneric:              true,
-		DropConstraintIfExists:             false,
-		DropIndexIfExists:                  false,
-		CheckConstraintsEnforced:           true,
-		DropCheckClause:                    true,
-		EnumInlineColumn:                   true,
-		EnumCustomType:                     false,
-		CreateIndexConcurrently:            false,
-		DropIndexConcurrently:              false,
-		IndexIncludeSPGiST:                 false,
-		Views:                              true,
-		MaterializedViews:                  false,
-		Functions:                          true,
-		Triggers:                           true,
-		CreateOrReplaceTrigger:             false,
-		AlterGeneratedColumnExpression:     false,
-		RowLevelSecurity:                   false,
-		PostgresCatalogFunctions:           false,
-		CatalogRowStatistics:               false,
-		CatalogDependencies:                false,
-		RoleManagement:                     false,
+		DomainTypes:                    false,
+		CompositeTypes:                 false,
+		RangeTypes:                     false,
+		DropConstraintGeneric:          true,
+		DropConstraintIfExists:         false,
+		DropIndexIfExists:              false,
+		CheckConstraintsEnforced:       true,
+		DropCheckClause:                true,
+		EnumInlineColumn:               true,
+		EnumCustomType:                 false,
+		CreateIndexConcurrently:        false,
+		DropIndexConcurrently:          false,
+		IndexIncludeSPGiST:             false,
+		Views:                          true,
+		MaterializedViews:              false,
+		Functions:                      true,
+		Procedures:                     true,
+		Triggers:                       true,
+		CreateOrReplaceTrigger:         false,
+		AlterGeneratedColumnExpression: false,
+		RowLevelSecurity:               false,
+		PostgresCatalogFunctions:       false,
+		CatalogRowStatistics:           false,
+		CatalogDependencies:            false,
+		CatalogDefaultPrivileges:       false,
+		// RoleManagement is on because the read half exists. It was off with the
+		// recorded reason that Ptah cannot read or compare a role here, and the
+		// catalog says otherwise: measured on MySQL 8.4, a role is a row in
+		// mysql.user marked account_locked with its password expired and an empty
+		// authentication string, and on MariaDB 11.8 it carries is_role -- which
+		// is why the reader asks which columns exist rather than branching on a
+		// dialect name (stokaro/ptah#1762).
+		//
+		// What the key does not claim is the PostgreSQL role model. CREATE ROLE
+		// takes a name and nothing else here: LOGIN and PASSWORD are ERROR 1064,
+		// because what they ask for is a USER, and a declaration carrying one is
+		// refused rather than created without it.
+		RoleManagement:                     true,
 		ForeignKeys:                        true,
 		ForeignKeysRequireUniqueReference:  true,
 		ForeignKeysRequireIndexedReference: false,
@@ -805,6 +932,11 @@ func MySQL84() Capabilities {
 		XMLType:                            false,
 		AdvisoryLocks:                      false,
 		RowLevelTTL:                        false,
+		MigrationTimeouts:                  true,
+		TransactionalDDL:                   false,
+		CatalogPartitions:                  true,
+		CatalogRecursiveCTE:                true,
+		DDLInsideTransaction:               true,
 		CheckGrantStatement:                false,
 		CatalogViewDependencies:            true,
 		ShowRoutinePrivilege:               true,
@@ -873,45 +1005,66 @@ func MySQL8013() Capabilities {
 // MariaDB does not quietly accept the keyword.
 func MariaDB1011() Capabilities {
 	return Capabilities{
-		DomainTypes:                        false,
-		CompositeTypes:                     false,
-		RangeTypes:                         false,
-		DropConstraintGeneric:              true,
-		DropConstraintIfExists:             true,
-		DropIndexIfExists:                  true,
-		CheckConstraintsEnforced:           true,
-		DropCheckClause:                    false,
-		EnumInlineColumn:                   true,
-		EnumCustomType:                     false,
-		CreateIndexConcurrently:            false,
-		DropIndexConcurrently:              false,
-		IndexIncludeSPGiST:                 false,
-		Views:                              true,
-		MaterializedViews:                  false,
-		Functions:                          true,
-		Triggers:                           true,
-		CreateOrReplaceTrigger:             true,
-		AlterGeneratedColumnExpression:     false,
-		RowLevelSecurity:                   false,
-		PostgresCatalogFunctions:           false,
-		CatalogRowStatistics:               false,
-		CatalogDependencies:                false,
-		RoleManagement:                     false,
+		DomainTypes:                    false,
+		CompositeTypes:                 false,
+		RangeTypes:                     false,
+		DropConstraintGeneric:          true,
+		DropConstraintIfExists:         true,
+		DropIndexIfExists:              true,
+		CheckConstraintsEnforced:       true,
+		DropCheckClause:                false,
+		EnumInlineColumn:               true,
+		EnumCustomType:                 false,
+		CreateIndexConcurrently:        false,
+		DropIndexConcurrently:          false,
+		IndexIncludeSPGiST:             false,
+		Views:                          true,
+		MaterializedViews:              false,
+		Functions:                      true,
+		Procedures:                     true,
+		Triggers:                       true,
+		CreateOrReplaceTrigger:         true,
+		AlterGeneratedColumnExpression: false,
+		RowLevelSecurity:               false,
+		PostgresCatalogFunctions:       false,
+		CatalogRowStatistics:           false,
+		CatalogDependencies:            false,
+		CatalogDefaultPrivileges:       false,
+		// RoleManagement is on because the read half exists. It was off with the
+		// recorded reason that Ptah cannot read or compare a role here, and the
+		// catalog says otherwise: measured on MySQL 8.4, a role is a row in
+		// mysql.user marked account_locked with its password expired and an empty
+		// authentication string, and on MariaDB 11.8 it carries is_role -- which
+		// is why the reader asks which columns exist rather than branching on a
+		// dialect name (stokaro/ptah#1762).
+		//
+		// What the key does not claim is the PostgreSQL role model. CREATE ROLE
+		// takes a name and nothing else here: LOGIN and PASSWORD are ERROR 1064,
+		// because what they ask for is a USER, and a declaration carrying one is
+		// refused rather than created without it.
+		RoleManagement:                     true,
 		ForeignKeys:                        true,
 		ForeignKeysRequireUniqueReference:  false,
 		ForeignKeysRequireIndexedReference: true,
 		ForeignKeysCreateBackingIndex:      false,
-		// MariaDB the engine does have SEQUENCE objects (10.3+, verified live on
-		// 10.11.18: TABLE_TYPE = SEQUENCE). Ptah the generator does not: there is
-		// no MariaDB sequence introspection and no MySQL-family sequence
-		// planning, so `schema render` emitting a CREATE SEQUENCE would produce a
-		// statement `schema apply` never plans and never sees converge. This key
-		// describes the generator, so it is false until those land -- do NOT flip
-		// it back on the engine's behalf (stokaro/ptah#931 item 8).
-		Sequences:                       false,
+		// Sequences is on because the three halves the key requires now all
+		// exist. MariaDB the engine has had SEQUENCE objects since 10.3; what
+		// was missing was Ptah's side, named here as introspection and
+		// MySQL-family planning. The planning was added with SQL Server and is
+		// capability-gated, the renderer emits MariaDB's own grammar -- NOCYCLE
+		// is one word here, `NO CYCLE` is ERROR 1064 -- and the reader reads the
+		// sequence's own row, which is the only place MariaDB reports the cache
+		// size. Measured on MariaDB 12.3, and MySQL keeps the key off because
+		// `CREATE SEQUENCE` there is a syntax error (stokaro/ptah#1759).
+		Sequences:                       true,
 		XMLType:                         false,
 		AdvisoryLocks:                   false,
 		RowLevelTTL:                     false,
+		MigrationTimeouts:               true,
+		TransactionalDDL:                false,
+		CatalogPartitions:               true,
+		CatalogRecursiveCTE:             true,
+		DDLInsideTransaction:            true,
 		CheckGrantStatement:             false,
 		CatalogViewDependencies:         false,
 		ShowRoutinePrivilege:            false,
@@ -962,6 +1115,7 @@ func Postgres16() Capabilities {
 		CompositeTypes:                     true,
 		RangeTypes:                         true,
 		Functions:                          true,
+		Procedures:                         true,
 		Triggers:                           true,
 		CreateOrReplaceTrigger:             true,
 		AlterGeneratedColumnExpression:     false,
@@ -969,6 +1123,7 @@ func Postgres16() Capabilities {
 		PostgresCatalogFunctions:           true,
 		CatalogRowStatistics:               true,
 		CatalogDependencies:                true,
+		CatalogDefaultPrivileges:           true,
 		RoleManagement:                     true,
 		ForeignKeys:                        true,
 		ForeignKeysRequireUniqueReference:  true,
@@ -978,6 +1133,11 @@ func Postgres16() Capabilities {
 		XMLType:                            true,
 		AdvisoryLocks:                      true,
 		RowLevelTTL:                        false,
+		MigrationTimeouts:                  true,
+		TransactionalDDL:                   true,
+		CatalogPartitions:                  true,
+		CatalogRecursiveCTE:                true,
+		DDLInsideTransaction:               true,
 		CheckGrantStatement:                false,
 		CatalogViewDependencies:            true,
 		ShowRoutinePrivilege:               false,
@@ -1044,9 +1204,14 @@ func Postgres13() Capabilities {
 // storage clause is the self-contained shape that node can express.
 func ClickHouse24() Capabilities {
 	return Capabilities{
-		DomainTypes:    false,
-		CompositeTypes: false,
-		RangeTypes:     false,
+		// ClickHouse has no pg catalogs at all, so the question the key asks
+		// does not arise; false is the honest answer for the same reason it is
+		// false for every non-PostgreSQL-family engine.
+		CatalogPartitions:   false,
+		CatalogRecursiveCTE: false,
+		DomainTypes:         false,
+		CompositeTypes:      false,
+		RangeTypes:          false,
 		// Five keys below were false until stokaro/ptah#916 measured them.
 		// ClickHouse 24.10.4.191 and 26.7.3.19 answer identically on every one,
 		// so the corrections belong to the dialect rather than to a line:
@@ -1080,6 +1245,7 @@ func ClickHouse24() Capabilities {
 		// describes -- a return type, a language and a body -- and that shape is
 		// a syntax error here. Measured both ways on 26.7.3.19.
 		Functions:                      false,
+		Procedures:                     false,
 		Triggers:                       false,
 		CreateOrReplaceTrigger:         false,
 		AlterGeneratedColumnExpression: true,
@@ -1099,6 +1265,7 @@ func ClickHouse24() Capabilities {
 		PostgresCatalogFunctions: false,
 		CatalogRowStatistics:     false,
 		CatalogDependencies:      false,
+		CatalogDefaultPrivileges: false,
 		// Measured live on 24.10.4.191 and 26.7.3.19: CREATE ROLE, DROP ROLE,
 		// GRANT, REVOKE and REVOKE GRANT OPTION FOR all work on both lines, and
 		// system.roles and system.grants read them back. Only the catalog's
@@ -1126,6 +1293,9 @@ func ClickHouse24() Capabilities {
 		// pg_class.reloptions; `WITH (ttl_expiration_expression = ...)` is a
 		// syntax error here. Measured both ways on 26.7.3.19.
 		RowLevelTTL:                     false,
+		MigrationTimeouts:               false,
+		TransactionalDDL:                false,
+		DDLInsideTransaction:            false,
 		CheckGrantStatement:             false,
 		CatalogViewDependencies:         false,
 		ShowRoutinePrivilege:            false,
@@ -1177,6 +1347,7 @@ func SQLite3() Capabilities {
 		Views:                              true,
 		MaterializedViews:                  false,
 		Functions:                          false,
+		Procedures:                         false,
 		Triggers:                           true,
 		CreateOrReplaceTrigger:             false,
 		AlterGeneratedColumnExpression:     false,
@@ -1184,6 +1355,7 @@ func SQLite3() Capabilities {
 		PostgresCatalogFunctions:           false,
 		CatalogRowStatistics:               false,
 		CatalogDependencies:                false,
+		CatalogDefaultPrivileges:           false,
 		RoleManagement:                     false,
 		ForeignKeys:                        true,
 		ForeignKeysRequireUniqueReference:  true,
@@ -1193,6 +1365,11 @@ func SQLite3() Capabilities {
 		XMLType:                            false,
 		AdvisoryLocks:                      false,
 		RowLevelTTL:                        false,
+		MigrationTimeouts:                  false,
+		TransactionalDDL:                   true,
+		CatalogPartitions:                  true,
+		CatalogRecursiveCTE:                true,
+		DDLInsideTransaction:               true,
 		CheckGrantStatement:                false,
 		CatalogViewDependencies:            false,
 		ShowRoutinePrivilege:               false,
@@ -1280,7 +1457,15 @@ func SQLServer2022() Capabilities {
 		// return type as rows, ordinal zero being the return, exactly as MySQL's
 		// information_schema.ROUTINES does. Only the body comes out of the
 		// statement text (stokaro/ptah#1720).
-		Functions:                      true,
+		Functions: true,
+		// Procedures joined Functions once the same three halves existed for
+		// it. sys.parameters reports a procedure's parameters exactly as it
+		// reports a function's, so no header parser was needed; only the body
+		// comes out of the statement text, and there it ends at the AS that is
+		// not the one in `WITH EXECUTE AS OWNER` -- measured on SQL Server
+		// 2025, a procedure created with that clause keeps both words in
+		// sys.sql_modules.definition (stokaro/ptah#1784).
+		Procedures:                     true,
 		Triggers:                       true,
 		CreateOrReplaceTrigger:         true,
 		AlterGeneratedColumnExpression: false,
@@ -1298,6 +1483,7 @@ func SQLServer2022() Capabilities {
 		PostgresCatalogFunctions: false,
 		CatalogRowStatistics:     false,
 		CatalogDependencies:      false,
+		CatalogDefaultPrivileges: false,
 		// RoleManagement is on for the same reason Sequences is: the three
 		// halves the key requires exist for this target. The renderer emits
 		// T-SQL CREATE ROLE, GRANT and REVOKE, internal/dbschema/mssql reads
@@ -1324,6 +1510,11 @@ func SQLServer2022() Capabilities {
 		XMLType:                         true,
 		AdvisoryLocks:                   false,
 		RowLevelTTL:                     false,
+		MigrationTimeouts:               false,
+		TransactionalDDL:                false,
+		CatalogPartitions:               true,
+		CatalogRecursiveCTE:             true,
+		DDLInsideTransaction:            true,
 		CheckGrantStatement:             false,
 		CatalogViewDependencies:         true,
 		ShowRoutinePrivilege:            false,
@@ -1407,14 +1598,78 @@ func CockroachDB25() Capabilities {
 	return CockroachDB23().
 		With(DropConstraintGeneric, false).
 		With(DropConstraintIfExists, false).
-		With(CreateOrReplaceTrigger, false)
+		With(CreateOrReplaceTrigger, false).
+		// CockroachDB added the session setting `autocommit_before_ddl` for
+		// PostgreSQL compatibility, and its default became on in v25: a schema
+		// statement arriving inside an open transaction commits that
+		// transaction before it runs, so the ROLLBACK that follows finds
+		// nothing to undo and says so -- `WARNING: there is no transaction in
+		// progress` (SQLSTATE 25P01).
+		//
+		// Measured through Ptah's driver, rows left after a rolled-back
+		// CREATE TABLE:
+		//
+		//	v23.2.30  setting absent      0
+		//	v24.3.20  setting default off 0
+		//	v25.4.5   setting default on  1
+		//	v26.2.5   setting default on  1
+		//	v26.3.0   setting default on  1
+		//
+		// So CockroachDB23, which covers both lines below this one, keeps the
+		// true it was written with.
+		//
+		// Turning the setting off is not the way to keep the capability, and
+		// this was measured rather than assumed: with it off, v26.2.5 refuses
+		// `ALTER TABLE <existing table> ADD COLUMN` inside a transaction with
+		// `this schema change is disallowed because table ... is locked and
+		// this operation cannot automatically unlock the table` (SQLSTATE
+		// 57000), because tables carry `schema_locked` by default. A plain
+		// CREATE INDEX draws the same refusal, so it is the transaction rather
+		// than any one statement. That trades a rollback that silently does
+		// nothing for a migration that cannot run at all, and the only escape
+		// is to unlock each table -- a persistent change to the user's schema
+		// that also carries a changefeed cost the vendor warns about.
+		//
+		// `--tx-mode all` therefore refuses here, and says why, instead of
+		// promising an atomicity the target does not have (stokaro/ptah#1849).
+		With(TransactionalDDL, false)
 }
 
 // CockroachDB26 is the preset measured on CockroachDB 26.2. It retains the
 // full current CockroachDB surface documented by CockroachDB23 while giving
 // the version resolver a truthful current-line name.
 func CockroachDB26() Capabilities {
-	return CockroachDB23()
+	return CockroachDB23().
+		// Stated here as well as on CockroachDB25 because this line derives
+		// from CockroachDB23, which is below the boundary and keeps the true.
+		// The measurement and the reason are on CockroachDB25.
+		With(TransactionalDDL, false)
+}
+
+// CockroachDB263 is the first CockroachDB line that carries CREATE DOMAIN.
+//
+// Measured 2026-08-21 on v26.3.0, published 2026-07-28 and the newest release
+// at the time, with CREATE TYPE ... AS ENUM as the control. The domain is a
+// working one rather than an accepted statement: `CREATE DOMAIN pos AS INT NOT
+// NULL DEFAULT 1 CHECK (VALUE > 0)` takes a column, refuses -5 with 23514,
+// refuses NULL with 23502, applies the default, and reads back through Ptah's
+// own domain query with every column populated. DROP DOMAIN is accepted.
+//
+// This is the expiry stokaro/ptah#1735 was opened to catch, and the reason it
+// is a line of its own rather than an edit to CockroachDB26: v26.2.5 answers
+// `not yet implemented` (cockroachdb/cockroach#27796) and would fall to the
+// CockroachDB25 rung if the 26 line simply moved up.
+//
+// RangeTypes stays false. cockroachdb/cockroach#27791 is still open and v26.3
+// still points at it.
+//
+// One narrowing to know about: dbschema.ResolveDomainExpressions creates its
+// probe domain in pg_temp, and CockroachDB answers `cannot create type ... in
+// temporary schema` (SQLSTATE 3F000). The probe reports that as unresolved, so
+// CHECK and DEFAULT stay uncompared here while base type and NOT NULL are
+// compared as everywhere else.
+func CockroachDB263() Capabilities {
+	return CockroachDB26().With(DomainTypes, true)
 }
 
 // YugabyteDB25 is the preset for YugabyteDB YSQL. It stays close to
@@ -1485,10 +1740,17 @@ func YugabyteDB24() Capabilities {
 // states that Spanner does not run user code in the database, so triggers and
 // user-defined stored procedures and functions belong in the application.
 //
-// This row rests on that documentation alone. Ptah has no Spanner container
-// and no live Spanner test (issue #942), so unlike every other preset in this
-// file nothing here was executed against a server. Re-measure these four when
-// #942 lands.
+// The object-kind rows above rest on that documentation. The rest of this
+// preset does not: every key carrying a "Measured" comment below was executed
+// against the Cloud Spanner emulator behind PGAdapter, which the capability
+// probe runs on every pull request (stokaro/ptah#942 closed on that).
+//
+// There is an integration target now as well, exercising render, apply, read
+// and compare against the same emulator (stokaro/ptah#1719).
+//
+// What is still not measured is the managed service. An emulator is evidence
+// about the PostgreSQL interface, not about hosted Spanner, and that is why the
+// line stays best-effort -- not for want of coverage.
 func SpannerPostgres() Capabilities {
 	return Postgres16().
 		// Measured on the Cloud Spanner emulator behind PGAdapter:
@@ -1499,12 +1761,24 @@ func SpannerPostgres() Capabilities {
 		// Measured on the Cloud Spanner emulator behind PGAdapter:
 		// `relation "information_schema.view_table_usage" does not exist`.
 		With(CatalogViewDependencies, false).
+		// Measured on the Cloud Spanner emulator through PGAdapter 0.55.2:
+		// `WITH RECURSIVE m AS (SELECT relname FROM pg_class) ...` answers
+		// `syntax error at or near "m"`, because PGAdapter prepends its own
+		// `WITH pg_class AS (...)` beside the query's WITH clause and the two
+		// only merge when the query's is not RECURSIVE (stokaro/ptah#1811).
+		With(CatalogRecursiveCTE, false).
+		// Measured on the Cloud Spanner emulator through PGAdapter 0.55.2:
+		// `relation "pg_inherits" does not exist` (stokaro/ptah#1811).
+		With(CatalogPartitions, false).
 		// Measured, unlike the rest of this preset: on the Cloud Spanner
 		// emulator through PGAdapter 0.55.2, `obj_description(2200,
 		// 'pg_namespace')` answers `The Postgres Type is not supported: name`.
 		With(PostgresCatalogFunctions, false).
 		With(CatalogRowStatistics, false).
 		With(CatalogDependencies, false).
+		// Measured on the same endpoint: `relation "pg_default_acl" does not
+		// exist` (stokaro/ptah#1811).
+		With(CatalogDefaultPrivileges, false).
 		// Measured 2026-08-19 on the emulator behind PGAdapter 0.55.2, with
 		// CREATE TABLE as the control: all three user-type kinds answer
 		// `Statement is not supported` (stokaro/ptah#1717).
@@ -1526,7 +1800,23 @@ func SpannerPostgres() Capabilities {
 		With(DropIndexConcurrently, false).
 		With(IndexIncludeSPGiST, false).
 		With(MaterializedViews, false).
+		// Measured on the Cloud Spanner emulator behind PGAdapter 0.55.2:
+		// every declarative apply failed on its first statement with
+		// `DDL statements are only allowed outside explicit transactions`
+		// (SQLSTATE 25000). The same DDL applies when it is not wrapped, so
+		// what the server refuses is the wrapper (stokaro/ptah#1793).
+		With(DDLInsideTransaction, false).
+		// Neither runtime policy is measured on this endpoint, and the
+		// migrator excluded it from both before there were keys to say so.
+		// The key describes what Ptah supports on a target rather than what
+		// the wire protocol suggests (stokaro/ptah#1713).
+		With(MigrationTimeouts, false).
+		With(TransactionalDDL, false).
 		With(Functions, false).
+		// A procedure is the same routine object with its return type removed,
+		// so an endpoint that takes no CREATE FUNCTION takes no CREATE
+		// PROCEDURE either (stokaro/ptah#1722).
+		With(Procedures, false).
 		With(Triggers, false).
 		With(CreateOrReplaceTrigger, false).
 		With(RowLevelSecurity, false).
@@ -1592,6 +1882,7 @@ func NamedPresets() []NamedPreset {
 		{"CockroachDB23", CockroachDB23()},
 		{"CockroachDB25", CockroachDB25()},
 		{"CockroachDB26", CockroachDB26()},
+		{"CockroachDB263", CockroachDB263()},
 		{"YugabyteDB24", YugabyteDB24()},
 		{"YugabyteDB25", YugabyteDB25()},
 		{"SQLite324", SQLite324()},
@@ -2160,15 +2451,19 @@ func cockroachDBResolution(version string) VersionResolution {
 	if !ok {
 		// A CockroachDB banner with no version in it. The ladder was not
 		// consulted, so Recognized stays false.
+		//
+		// This stays on the 26.2 line rather than following the newest one:
+		// an unreadable banner is not evidence of a release, and CockroachDB263
+		// carries a capability only 26.3 has (stokaro/ptah#1735).
 		return VersionResolution{Capabilities: CockroachDB26()}
 	}
-	newest, _ := parseVersion(capabilityline.CockroachDB26)
+	newest, _ := parseVersion(capabilityline.CockroachDB263)
 	saturated := compareServerVersion(v, newest) > 0
 	return VersionResolution{
 		Capabilities:    cockroachDBForVersion(v),
 		VersionSpecific: cockroachDBMeasuredLine(v),
 		Saturated:       saturated,
-		NewestMeasured:  capabilityline.CockroachDB26,
+		NewestMeasured:  capabilityline.CockroachDB263,
 		Recognized:      true,
 	}
 }
@@ -2176,10 +2471,25 @@ func cockroachDBResolution(version string) VersionResolution {
 func cockroachDBForVersion(v serverVersion) Capabilities {
 	line25, _ := parseVersion(capabilityline.CockroachDB25)
 	line26, _ := parseVersion(capabilityline.CockroachDB26)
+	line263, _ := parseVersion(capabilityline.CockroachDB263)
 	switch {
+	case compareServerVersion(v, line263) >= 0:
+		return CockroachDB263()
 	case compareServerVersion(v, line26) >= 0:
 		return CockroachDB26()
-	case compareServerVersion(v, line25) >= 0:
+	case v.major >= line25.major:
+		// The whole 25 line reaches this arm, not only the measured 25.4
+		// minor. What separates the line from the one below it is
+		// autocommit_before_ddl defaulting on, and that is a major-line fact:
+		// measured through Ptah's driver on v25.1.10, v25.2.22, v25.3.7 and
+		// v25.4.5, a rolled-back CREATE TABLE leaves the table behind on every
+		// one. Comparing the minor as well sent 25.0 through 25.3 to
+		// CockroachDB23, which still promises the rollback they do not do.
+		//
+		// Routing them here also only ever declares less -- CockroachDB25 is
+		// CockroachDB23 minus four capabilities -- which is what a
+		// conservative fallback is for. They stay outside the measured lines,
+		// so VersionSpecific is still false for them (stokaro/ptah#1849).
 		return CockroachDB25()
 	default:
 		return CockroachDB23()

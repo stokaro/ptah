@@ -236,12 +236,87 @@ func (r *Renderer) VisitAlterType(node *ast.AlterTypeNode) error {
 			// ALTER TYPE name RENAME TO new_name
 			r.w.WriteLinef("ALTER TYPE %s RENAME TO %s;", r.escapeQualifiedIdentifier(node.Name), r.escapeIdentifier(op.NewName))
 
+		// The three domain operations below share ALTER DOMAIN rather than
+		// ALTER TYPE. PostgreSQL accepts a domain under either spelling, but
+		// only ALTER DOMAIN carries the constraint, default and NOT NULL
+		// clauses, and it is the spelling the documentation gives for a domain.
+		//
+		// They exist because the alternative was drop and recreate, which
+		// PostgreSQL refuses for any domain a column uses -- so a changed
+		// CHECK was unreachable, not merely awkward (stokaro/ptah#1717).
+		case *ast.DomainConstraintOperation, *ast.DomainDefaultOperation, *ast.DomainNotNullOperation:
+			r.writeAlterDomain(node.Name, operation)
+
+		case *ast.CompositeAttributeOperation:
+			r.writeAlterCompositeAttribute(node.Name, op)
+
 		default:
 			return fmt.Errorf("unsupported alter type operation: %T", operation)
 		}
 	}
 
 	return nil
+}
+
+// writeAlterDomain renders one in-place ALTER DOMAIN operation.
+//
+// It decides against capability.DomainTypes, the same key the CREATE is behind:
+// a target that never took the domain must not be handed an ALTER for it
+// either, and the omission is named before SQL the way every other object kind
+// decides it (stokaro/ptah#1738).
+func (r *Renderer) writeAlterDomain(name string, operation ast.TypeOperation) {
+	if r.refuses(capability.DomainTypes, "domain", name) {
+		return
+	}
+	domain := r.escapeQualifiedIdentifier(name)
+	switch op := operation.(type) {
+	case *ast.DomainConstraintOperation:
+		// A replacement is both halves of one operation. Emitting only the drop
+		// leaves the domain unconstrained; only the add leaves it constrained
+		// twice, and the second of those fails on the next apply while the
+		// first fails silently.
+		if op.DropName != "" {
+			r.w.WriteLinef("ALTER DOMAIN %s DROP CONSTRAINT %s;", domain, r.escapeIdentifier(op.DropName))
+		}
+		if op.AddExpression != "" {
+			constraint := ""
+			if op.AddName != "" {
+				constraint = fmt.Sprintf("CONSTRAINT %s ", r.escapeIdentifier(op.AddName))
+			}
+			r.w.WriteLinef("ALTER DOMAIN %s ADD %sCHECK (%s);", domain, constraint, op.AddExpression)
+		}
+	case *ast.DomainDefaultOperation:
+		if op.Expression == "" {
+			r.w.WriteLinef("ALTER DOMAIN %s DROP DEFAULT;", domain)
+			return
+		}
+		r.w.WriteLinef("ALTER DOMAIN %s SET DEFAULT %s;", domain, op.Expression)
+	case *ast.DomainNotNullOperation:
+		if op.NotNull {
+			r.w.WriteLinef("ALTER DOMAIN %s SET NOT NULL;", domain)
+			return
+		}
+		r.w.WriteLinef("ALTER DOMAIN %s DROP NOT NULL;", domain)
+	}
+}
+
+// writeAlterCompositeAttribute renders one ALTER TYPE ... ATTRIBUTE operation.
+//
+// It decides against capability.CompositeTypes, the key the CREATE is behind,
+// so a target that never took the composite is not handed an ALTER for it
+// either (stokaro/ptah#1738).
+func (r *Renderer) writeAlterCompositeAttribute(name string, op *ast.CompositeAttributeOperation) {
+	if r.refuses(capability.CompositeTypes, "composite type", name) {
+		return
+	}
+	typeName := r.escapeQualifiedIdentifier(name)
+	if op.DropName != "" {
+		r.w.WriteLinef("ALTER TYPE %s DROP ATTRIBUTE %s;", typeName, r.escapeIdentifier(op.DropName))
+	}
+	if op.AddName != "" {
+		r.w.WriteLinef("ALTER TYPE %s ADD ATTRIBUTE %s %s;",
+			typeName, r.escapeIdentifier(op.AddName), op.AddType)
+	}
 }
 
 // New creates a new PostgreSQL renderer
@@ -881,6 +956,31 @@ func (r *Renderer) renderIndexPart(part ast.IndexPart) string {
 }
 
 func (r *Renderer) VisitExtension(node *ast.ExtensionNode) error {
+	// An altered extension is a different statement about the same object, and
+	// both spellings were measured on PostgreSQL 18 rather than read:
+	// `ALTER EXTENSION pg_trgm UPDATE TO '1.6'` moves 1.5 to 1.6 and answers
+	// `NOTICE: version "1.6" ... is already installed` when it is already
+	// there, so it is idempotent; `ALTER EXTENSION pg_trgm SET SCHEMA public`
+	// moves it and is idempotent on the schema it already occupies
+	// (stokaro/ptah#1718).
+	switch node.Alteration {
+	case ast.ExtensionUpdateVersion:
+		if node.Comment != "" {
+			r.w.WriteLinef("-- %s", node.Comment)
+		}
+		r.w.WriteLinef("ALTER EXTENSION %s UPDATE TO %s;",
+			r.escapeIdentifier(node.Name), r.escapeValue(node.Version))
+		return nil
+	case ast.ExtensionSetSchema:
+		if node.Comment != "" {
+			r.w.WriteLinef("-- %s", node.Comment)
+		}
+		r.w.WriteLinef("ALTER EXTENSION %s SET SCHEMA %s;",
+			r.escapeIdentifier(node.Name), r.escapeIdentifier(node.Schema))
+		return nil
+	case ast.ExtensionUnaltered:
+	}
+
 	var parts []string
 
 	parts = append(parts, "CREATE EXTENSION")
@@ -1468,7 +1568,15 @@ func (r *Renderer) VisitDropExtension(node *ast.DropExtensionNode) error {
 
 // VisitCreateFunction renders a CREATE FUNCTION statement for PostgreSQL
 func (r *Renderer) VisitCreateFunction(node *ast.CreateFunctionNode) error {
-	if r.refuses(capability.Functions, "function", node.Name) {
+	// A procedure decides against its own key. The two kinds are one catalog
+	// object and one node, and they are still two different claims: SQL Server
+	// hosts functions and no Ptah path reads a procedure back there
+	// (stokaro/ptah#1722).
+	if node.IsProcedure() {
+		if r.refuses(capability.Procedures, "procedure", node.Name) {
+			return nil
+		}
+	} else if r.refuses(capability.Functions, "function", node.Name) {
 		return nil
 	}
 
@@ -1479,14 +1587,19 @@ func (r *Renderer) VisitCreateFunction(node *ast.CreateFunctionNode) error {
 
 	// Build CREATE OR REPLACE FUNCTION statement
 	var parts []string
-	parts = append(parts, "CREATE OR REPLACE FUNCTION")
+	if node.IsProcedure() {
+		parts = append(parts, "CREATE OR REPLACE PROCEDURE")
+	} else {
+		parts = append(parts, "CREATE OR REPLACE FUNCTION")
+	}
 
 	// Function parameters are raw SQL fragments; only the function identifier
 	// is quoted here.
 	parts = append(parts, r.escapeFunctionSignature(node.Name, node.Parameters))
 
-	// Return type
-	if node.Returns != "" {
+	// Return type. A procedure has none: `CREATE PROCEDURE ... RETURNS` does
+	// not parse, which is the property that separates the two statements.
+	if node.Returns != "" && !node.IsProcedure() {
 		parts = append(parts, "RETURNS", node.Returns)
 	}
 
@@ -1598,7 +1711,11 @@ func (r *Renderer) VisitAlterTableEnableRLS(node *ast.AlterTableEnableRLSNode) e
 
 // VisitDropFunction renders a DROP FUNCTION statement
 func (r *Renderer) VisitDropFunction(node *ast.DropFunctionNode) error {
-	if r.refuses(capability.Functions, "function", node.Name) {
+	if node.IsProcedure() {
+		if r.refuses(capability.Procedures, "procedure", node.Name) {
+			return nil
+		}
+	} else if r.refuses(capability.Functions, "function", node.Name) {
 		return nil
 	}
 
@@ -1607,9 +1724,16 @@ func (r *Renderer) VisitDropFunction(node *ast.DropFunctionNode) error {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
 
-	// Build DROP FUNCTION statement
+	// Build DROP FUNCTION statement. The verb has to match the object: a
+	// server answers `DROP FUNCTION` aimed at a procedure with
+	// `could not find a function named ...`, so the kind travels on the drop
+	// as well as on the create (stokaro/ptah#1722).
 	var parts []string
-	parts = append(parts, "DROP FUNCTION")
+	if node.IsProcedure() {
+		parts = append(parts, "DROP PROCEDURE")
+	} else {
+		parts = append(parts, "DROP FUNCTION")
+	}
 
 	if node.IfExists {
 		parts = append(parts, "IF EXISTS")
@@ -1617,7 +1741,19 @@ func (r *Renderer) VisitDropFunction(node *ast.DropFunctionNode) error {
 
 	// Function parameters are raw SQL fragments; only the function identifier
 	// is quoted here.
-	parts = append(parts, r.escapeFunctionSignature(node.Name, node.Parameters))
+	//
+	// An empty parameter list drops the argument list entirely rather than
+	// rendering `()`. The two are different targets: `f()` names the
+	// zero-argument overload specifically, so a drop of a routine that takes
+	// arguments matched nothing and -- with IF EXISTS in front of it -- reported
+	// success having removed nothing. PostgreSQL 10 and later accept the bare
+	// name and refuse it only when it is ambiguous, which is a louder failure
+	// than the silent one it replaces (stokaro/ptah#1722).
+	if node.Parameters == "" {
+		parts = append(parts, r.escapeQualifiedIdentifier(node.Name))
+	} else {
+		parts = append(parts, r.escapeFunctionSignature(node.Name, node.Parameters))
+	}
 
 	if node.Cascade {
 		parts = append(parts, "CASCADE")
@@ -1861,6 +1997,19 @@ func (r *Renderer) VisitDropMaterializedView(node *ast.DropMaterializedViewNode)
 }
 
 // VisitRefreshMaterializedView renders a REFRESH MATERIALIZED VIEW statement.
+// VisitAlterMaterializedViewRefresh refuses: a refresh SCHEDULE is a ClickHouse
+// property, and PostgreSQL has no statement that carries one. Refreshing a
+// PostgreSQL materialized view is an operation someone runs, which is
+// VisitRefreshMaterializedView below (stokaro/ptah#1625, stokaro/ptah#1802).
+func (r *Renderer) VisitAlterMaterializedViewRefresh(node *ast.AlterMaterializedViewRefreshNode) error {
+	return fmt.Errorf(
+		"%w: postgres: materialized view %q cannot carry a refresh schedule; "+
+			"a scheduled refresh is a ClickHouse feature",
+		ptaherr.ErrUnsupportedFeature,
+		node.Name,
+	)
+}
+
 func (r *Renderer) VisitRefreshMaterializedView(node *ast.RefreshMaterializedViewNode) error {
 	if r.refuses(capability.MaterializedViews, "materialized view", node.Name) {
 		return nil

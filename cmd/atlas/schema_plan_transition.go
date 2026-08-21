@@ -49,6 +49,10 @@ type atlasSchemaPlanTransitionFlags struct {
 	// --to the operator typed leaves it empty and keeps flag-variable
 	// precedence, exactly as on `schema apply`.
 	toSources []schemafile.Source
+	// format is the --format Go template. Every plan verb registers the flag,
+	// and rejectUnimplementedAtlasSchemaPlanFlags decides which of them acts on
+	// it; see atlasSchemaPlanVerbsImplementingFormat.
+	format string
 }
 
 // atlasSchemaPlanSources is the desired state of a plan verb, as sources.
@@ -80,12 +84,13 @@ func registerAtlasSchemaPlanTransitionFlags(flags *pflag.FlagSet, opts *atlasSch
 	flags.StringArrayVar(&opts.exclude, "exclude", nil, "Schema objects to exclude from planning")
 	registerAtlasSchemaFlag(flags, &opts.schemas, "Schemas to plan when database URLs are used")
 	// Declared for CLI-surface parity and rejected loudly: see
-	// rejectUnimplementedAtlasSchemaPlanFlags. --auto-approve is the one
-	// exception — a locally saved plan file is approved by operator review, so
-	// there is no prompt for it to skip and accepting it changes nothing.
+	// rejectUnimplementedAtlasSchemaPlanFlags. --auto-approve is one exception
+	// — a locally saved plan file is approved by operator review, so there is
+	// no prompt for it to skip and accepting it changes nothing — and --format
+	// is the other, implemented on the verbs that produce a plan document.
 	flags.Bool("auto-approve", false, "Approve the plan without asking for confirmation")
 	flags.String("repo", "", "URL to the schema repository")
-	flags.String("format", "", "Atlas Go template output format")
+	flags.StringVar(&opts.format, "format", "", "Atlas Go template output format")
 	flags.StringArray("include", nil, "Schema objects to include in planning")
 	flags.String("lock-timeout", "", "Timeout for acquiring the database lock")
 }

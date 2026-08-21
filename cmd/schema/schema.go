@@ -18,6 +18,7 @@ import (
 	"go.5x5.cz/ptah/cmd/schemapush"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/internal/annotationschema"
+	"go.5x5.cz/ptah/internal/docsrender"
 	"go.5x5.cz/ptah/internal/goannotationexport"
 	"go.5x5.cz/ptah/internal/graphqlrender"
 	"go.5x5.cz/ptah/internal/openapirender"
@@ -48,6 +49,7 @@ const (
 	exportFormatOpenAPI      = "openapi-v3"
 	exportFormatGraphQL      = "graphql"
 	exportFormatProtobuf     = "protobuf"
+	exportFormatMarkdown     = "markdown"
 
 	// exportSourceDB is named so --from db is refused with the reason and the
 	// command that does read a live database, rather than with a bare list.
@@ -82,6 +84,8 @@ in the separate ptah-compat binary.`,
 	cmd.AddCommand(newSchemaExportCommand())
 	cmd.AddCommand(newSchemaApplyCommand())
 	cmd.AddCommand(newSchemaPlanCommand())
+	cmd.AddCommand(newSchemaValidateCommand())
+	cmd.AddCommand(newSchemaStatsCommand())
 	cmd.AddCommand(newSchemaInspectCommand())
 	cmd.AddCommand(newSchemaDiffCommand())
 	cmd.AddCommand(newSchemaFmtCommand())
@@ -186,13 +190,14 @@ func newSchemaExportCommand() *cobra.Command {
 		Long: `Export a Ptah schema to another format.
 
 Convert a desired schema to an HCL schema, an OpenAPI 3.0 component schema, a
-GraphQL SDL, or a Protobuf definition:
+GraphQL SDL, a Protobuf definition, or Markdown reference documentation:
 
   ptah schema export --to hcl         --root-dir ./models --out schema.hcl
   ptah schema export --to openapi-v3  --root-dir ./models --out openapi.yaml
   ptah schema export --to graphql     --root-dir ./models --out schema.graphql
   ptah schema export --to protobuf    --root-dir ./models \
     --out ./proto/acme/inventory/v1/schema.proto --proto-package acme.inventory.v1
+  ptah schema export --to markdown    --root-dir ./models --out SCHEMA.md
 
 The source is Go annotations under --root-dir by default. The openapi-v3,
 graphql, and protobuf targets also read a YAML, HCL, or SQL schema file, which
@@ -205,8 +210,13 @@ graphql, and protobuf targets also read a YAML, HCL, or SQL schema file, which
 it unset to take the format from the extension. The hcl target reads Go
 annotations only, because it rewrites the files it reads.
 
-For openapi-v3 and graphql, --out is optional; the schema is written to stdout
-when omitted. Use --include-tables / --exclude-tables to select which tables are
+The markdown target writes reference documentation: one section per table with
+its columns, types, nullability, defaults, keys and comments, plus its indexes
+and any enums. Unlike the API targets it documents every column, because
+documentation that hid one would describe a schema the reader does not have.
+
+For openapi-v3, graphql and markdown, --out is optional; the schema is written
+to stdout when omitted. Use --include-tables / --exclude-tables to select which tables are
 exported.
 
 The graphql target emits data types only. Operation shapes are opt-in through
@@ -388,6 +398,21 @@ func runExport(cmd *cobra.Command, opts exportOptions) error {
 		if err := emitAPISchema(cmd, opts, db, rendered.Data, rendered.Diagnostics, "OpenAPI schema"); err != nil {
 			return cmdutil.Fail(cmd, err)
 		}
+	case exportFormatMarkdown:
+		rendered, err := docsrender.Render(db, docsrender.Options{
+			IncludeTables: opts.includeTables,
+			ExcludeTables: opts.excludeTables,
+			Title:         opts.title,
+		})
+		if err != nil {
+			return cmdutil.Fail(cmd, err)
+		}
+		for _, diagnostic := range rendered.Diagnostics {
+			fmt.Fprintf(cmd.ErrOrStderr(), "warning: %s\n", diagnostic)
+		}
+		if err := emitAPISchema(cmd, opts, db, rendered.Data, nil, "schema documentation"); err != nil {
+			return cmdutil.Fail(cmd, err)
+		}
 	case exportFormatGraphQL:
 		operations, err := graphqlrender.ParseOperations(opts.graphqlOperations)
 		if err != nil {
@@ -508,10 +533,12 @@ func validateExportOptions(opts exportOptions) error {
 		return err
 	}
 	switch opts.to {
-	case exportFormatHCL, exportFormatOpenAPI, exportFormatGraphQL, exportFormatProtobuf:
+	case exportFormatHCL, exportFormatOpenAPI, exportFormatGraphQL, exportFormatProtobuf,
+		exportFormatMarkdown:
 	default:
-		return fmt.Errorf("unsupported --to %q: expected %s, %s, %s, or %s",
-			opts.to, exportFormatHCL, exportFormatOpenAPI, exportFormatGraphQL, exportFormatProtobuf)
+		return fmt.Errorf("unsupported --to %q: expected %s, %s, %s, %s, or %s",
+			opts.to, exportFormatHCL, exportFormatOpenAPI, exportFormatGraphQL, exportFormatProtobuf,
+			exportFormatMarkdown)
 	}
 	if opts.to == exportFormatHCL && strings.TrimSpace(opts.outPath) == "" {
 		return fmt.Errorf("--out is required for --%s %s", exportToFlag, exportFormatHCL)

@@ -13,9 +13,11 @@ import (
 	"strconv"
 	"strings"
 
+	ptahast "go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/goschema/internal/parseutils"
 	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/internal/annotationmeta"
+	"go.5x5.cz/ptah/internal/chrefresh"
 	"go.5x5.cz/ptah/internal/crdbttl"
 	"go.5x5.cz/ptah/internal/dialectscope"
 	"go.5x5.cz/ptah/internal/tableref"
@@ -34,7 +36,27 @@ type annotationErrorContext struct {
 
 func validateAttributes(kv map[string]string, ctx annotationErrorContext) error {
 	directive := strings.TrimPrefix(ctx.directive, "//")
-	for k := range kv {
+	for _, k := range slices.Sorted(maps.Keys(kv)) {
+		// A retired attribute is checked before the unknown one, and sorted so
+		// a directive carrying two of them names the same one every run. It is
+		// still RECOGNIZED -- that is what put a bareword spelling in this map
+		// at all -- so without this branch it would pass validation and be
+		// dropped without a word (stokaro/ptah#1625).
+		if reason, retired := annotationmeta.RetiredAttribute(directive, k); retired {
+			slog.Error("retired annotation attribute",
+				"directive", ctx.directive,
+				"attribute", k,
+				"location", ctx.location,
+			)
+			return &ptaherr.ParseError{
+				File:      ctx.file,
+				Line:      ctx.line,
+				Directive: directive,
+				Attribute: k,
+				Err:       ptaherr.ErrRetiredAttribute,
+				Message:   fmt.Sprintf("%s on %s at %s: %s", k, ctx.directive, ctx.location, reason),
+			}
+		}
 		if annotationmeta.AllowsAttribute(directive, k) {
 			continue
 		}
@@ -678,6 +700,8 @@ func (s *schemaParseState) parseSharedDirective(
 		return s.parseExtensionComment(comment)
 	case "ptah:schema:function":
 		return s.parseFunctionComment(comment, target.structName)
+	case "ptah:schema:procedure":
+		return s.parseProcedureComment(comment, target.structName)
 	case "ptah:schema:sequence":
 		return s.parseSequenceComment(comment, target.structName)
 	case "ptah:schema:domain":
@@ -1067,6 +1091,48 @@ func (s *schemaParseState) parseFileScopedRLSEnableComment(comment *ast.Comment,
 	return nil
 }
 
+// parseProcedureComment parses a //ptah:schema:procedure annotation.
+//
+// A procedure is the same catalog object as a function with one property
+// removed, so it reuses the function parser and sets the kind rather than
+// carrying a second model. `returns` is refused rather than ignored: a
+// procedure that named one would be a declaration the server cannot take, and
+// dropping the attribute silently is the failure this issue is about
+// (stokaro/ptah#1722).
+func (s *schemaParseState) parseProcedureComment(comment *ast.Comment, structName string) error {
+	// The attributes are validated against the procedure's own directive, so
+	// `returns=` is refused by name rather than accepted and then rejected
+	// below -- the registry is where an operator reads what a directive takes.
+	kv := parseutils.ParseKeyValueComment(comment.Text)
+	if err := validateAttributes(kv, s.annotationContext(comment, "//ptah:schema:procedure", structName)); err != nil {
+		return err
+	}
+
+	before := len(s.functions)
+	if err := s.parseFunctionComment(comment, structName); err != nil {
+		return err
+	}
+	if len(s.functions) == before {
+		return nil
+	}
+	routine := &s.functions[len(s.functions)-1]
+	if routine.Returns != "" {
+		ctx := s.annotationContext(comment, "//ptah:schema:procedure", structName)
+		return &ptaherr.ParseError{
+			File:      ctx.file,
+			Line:      ctx.line,
+			Directive: strings.TrimPrefix(ctx.directive, "//"),
+			Attribute: "returns",
+			Err:       ptaherr.ErrInvalidAttributeValue,
+			Message: fmt.Sprintf(
+				"procedure %q declares returns=%q at %s; a procedure returns nothing and is invoked with CALL",
+				routine.Name, routine.Returns, ctx.location),
+		}
+	}
+	routine.Kind = FunctionKindProcedure
+	return nil
+}
+
 func (s *schemaParseState) parseFunctionComment(comment *ast.Comment, structName string) error {
 	kv := parseutils.ParseKeyValueComment(comment.Text)
 	ctx := s.annotationContext(comment, "//ptah:schema:function", structName)
@@ -1392,21 +1458,72 @@ func (s *schemaParseState) parseMaterializedViewComment(comment *ast.Comment, st
 	if err != nil {
 		return err
 	}
-	refreshStrategy := kv["refresh_strategy"]
-	if refreshStrategy == "" {
-		refreshStrategy = "manual"
+	// No refresh strategy is read. validateAttributes has already refused the
+	// retired attribute by name, so a declaration carrying one never reaches
+	// this line (stokaro/ptah#1625). What IS read is the ClickHouse schedule,
+	// which is the opposite kind of thing: engine-native state the server owns
+	// (stokaro/ptah#1802).
+	refresh, err := parseMatViewRefresh(kv, ctx)
+	if err != nil {
+		return err
 	}
-	matView := MaterializedView{
-		StructName:      structName,
-		Name:            kv["name"],
-		Body:            kv["body"],
-		RefreshStrategy: strings.ToLower(refreshStrategy),
-		Comment:         kv["comment"],
-		Dialects:        scope,
-	}
-	matView.Canonicalize()
-	s.materializedViews = append(s.materializedViews, matView)
+	s.materializedViews = append(s.materializedViews, MaterializedView{
+		StructName: structName,
+		Name:       kv["name"],
+		Body:       kv["body"],
+		Comment:    kv["comment"],
+		Dialects:   scope,
+		Refresh:    refresh,
+	})
 	return nil
+}
+
+// parseMatViewRefresh reads the ClickHouse refresh schedule a materialized view
+// declares, and returns nil for one declaring none.
+//
+// The attribute carries the clause as ClickHouse spells it -- `every 1 hour`,
+// `after 30 minute offset 5 minute` -- rather than a set of sub-attributes, so
+// an operator moving a schedule out of a CREATE statement moves the text. It is
+// canonicalized here, before it reaches the model, so every later layer sees the
+// spelling the server would have stored and a comparison against the catalog
+// starts from the same place.
+func parseMatViewRefresh(
+	kv map[string]string,
+	ctx annotationErrorContext,
+) (*ptahast.MatViewRefreshSpec, error) {
+	declared := strings.TrimSpace(kv["refresh"])
+	if declared == "" {
+		return nil, nil
+	}
+	spec := chrefresh.ParseClause(declared)
+	if spec == nil {
+		return nil, matViewRefreshError(ctx, fmt.Errorf(
+			"refresh %q is not a ClickHouse refresh clause; expected EVERY or AFTER "+
+				"followed by an interval", declared))
+	}
+	canonical, err := chrefresh.Canonical(spec, "")
+	if err != nil {
+		return nil, matViewRefreshError(ctx, err)
+	}
+	return canonical, nil
+}
+
+// matViewRefreshError reports a refresh declaration the parser refused, in the
+// shape every other attribute refusal in this file takes.
+func matViewRefreshError(ctx annotationErrorContext, err error) error {
+	slog.Error("invalid refresh schedule",
+		"directive", ctx.directive,
+		"location", ctx.location,
+		"error", err,
+	)
+	return &ptaherr.ParseError{
+		File:      ctx.file,
+		Line:      ctx.line,
+		Directive: strings.TrimPrefix(ctx.directive, "//"),
+		Attribute: "refresh",
+		Err:       ptaherr.ErrInvalidAttributeValue,
+		Message:   fmt.Sprintf("refresh on %s at %s: %s", ctx.directive, ctx.location, err),
+	}
 }
 
 func (s *schemaParseState) parseTriggerComment(comment *ast.Comment, structName string) error {

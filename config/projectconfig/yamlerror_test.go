@@ -27,16 +27,22 @@ func chdirWith(c *qt.C, files map[string]string) {
 	})
 }
 
-// TestLoadExplicitConfigOverHCLBlamesTheFlag covers pointing --config at an
-// atlas.hcl. The real problem is what --config accepts, not which YAML node
-// kind the decoder found.
+// TestLoadExplicitConfigOverHCLBlamesTheFlag covers a caller putting an HCL
+// path in PtahPath. The real problem is what that field accepts, not which
+// YAML node kind the decoder found.
+//
+// The CLI now routes a --config path ending in .hcl to AtlasPath instead
+// (stokaro/ptah#1215), so an operator no longer reaches this message by typing
+// `--config atlas.hcl`. This layer still refuses, because PtahPath names the
+// ptah.yaml and a caller filling it with HCL has made a mistake the loader
+// should not paper over -- and the advice now says where the .hcl belongs.
 func TestLoadExplicitConfigOverHCLBlamesTheFlag(t *testing.T) {
 	c := qt.New(t)
 	chdirWith(c, map[string]string{"atlas.hcl": "env \"local\" {\n  url = \"sqlite://file.db\"\n}\n"})
 
 	_, err := projectconfig.Load(projectconfig.LoadOptions{PtahPath: "atlas.hcl", EnvName: "local"})
 
-	c.Assert(err, qt.ErrorMatches, `--config takes a ptah\.yaml file, and atlas\.hcl is not a YAML mapping \(line 1: found !!str\); an Atlas project config is discovered as \./atlas\.hcl and selected with --env`)
+	c.Assert(err, qt.ErrorMatches, `--config takes a ptah\.yaml file, and atlas\.hcl is not a YAML mapping \(line 1: found !!str\); an Atlas project config is discovered as \./atlas\.hcl, named on --config when it ends in \.hcl, and selected with --env`)
 	c.Assert(err.Error(), qt.Not(qt.Contains), "projectconfig")
 	c.Assert(err.Error(), qt.Not(qt.Contains), "unmarshal")
 }

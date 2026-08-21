@@ -84,6 +84,43 @@ type CompareOptions struct {
 	// the module's storage from an ordinary table; a drop the caller deletes
 	// again is not one of those.
 	SkipIndexDrops bool
+
+	// DomainExpressions carries each declared domain's CHECK and DEFAULT as the
+	// target server itself spells them, keyed by the domain's qualified name.
+	//
+	// PostgreSQL does not store the text of a CHECK. It parses the expression
+	// and prints it back from the parse tree, so `VALUE IN ('x','y')` is read
+	// back as `VALUE = ANY (ARRAY['x'::text, 'y'::text])` and `VALUE > 0` as
+	// `(VALUE > 0)`. Comparing a declaration against that is comparing two
+	// different languages, which is why the comparison used to decline: a
+	// string difference did not mean a changed constraint, and acting on one
+	// would have dropped and recreated a domain that had not changed.
+	//
+	// A resolved entry is the declaration after the same round trip -- the
+	// server was asked to normalize it -- so the two sides compare as like with
+	// like and a real change is neither invented nor lost (stokaro/ptah#1717).
+	//
+	// A nil map means nobody could ask a server, which is every comparison that
+	// has no connection. CHECK and DEFAULT stay uncompared there, exactly as
+	// before.
+	DomainExpressions map[string]DomainExpression
+}
+
+// DomainExpression is one domain's CHECK and DEFAULT in the target server's own
+// spelling. See [CompareOptions.DomainExpressions].
+//
+// The zero value is not "no constraint": it is what a resolver returns for a
+// declaration it could not put through the server, and a comparison must skip
+// the attribute rather than read it as removed. Resolved reports which it is.
+type DomainExpression struct {
+	// Check is the normalized CHECK, empty when the domain declares none.
+	Check string
+	// Default is the normalized DEFAULT, empty when the domain declares none.
+	Default string
+	// Resolved reports that a server answered for this domain. A false value
+	// on a present key is a domain whose declaration the server refused, and
+	// nothing about it may be compared.
+	Resolved bool
 }
 
 // DefaultCompareOptions returns the default comparison options with sensible defaults.

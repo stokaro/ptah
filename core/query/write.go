@@ -1,6 +1,10 @@
 package query
 
-import "go.5x5.cz/ptah/core/ast"
+import (
+	"slices"
+
+	"go.5x5.cz/ptah/core/ast"
+)
 
 // This file adds the write-side builders — INSERT, UPDATE, and DELETE — alongside
 // the SELECT builder. They share the SELECT builder's conventions: each method
@@ -15,10 +19,12 @@ import "go.5x5.cz/ptah/core/ast"
 // InsertBuilder builds an *ast.InsertStatement through a fluent, chainable API.
 // Start with InsertInto. A builder is not safe for concurrent use.
 type InsertBuilder struct {
-	table     string
-	columns   []string
-	rows      [][]ast.Expression
-	returning []ast.ColumnRef
+	table        string
+	columns      []string
+	rows         [][]ast.Expression
+	returning    []ast.ColumnRef
+	onConflict   *ast.OnConflict
+	selectSource *ast.SelectStatement
 }
 
 // InsertInto starts an INSERT INTO the given table. Follow it with Columns to
@@ -50,6 +56,54 @@ func (b *InsertBuilder) Values(values ...any) *InsertBuilder {
 // Returning adds columns to the RETURNING clause, projecting them from the
 // inserted rows. RETURNING renders only on the PostgreSQL family and SQLite;
 // RenderInsert rejects it on MySQL and MariaDB.
+// FromSelect supplies the inserted rows from a query instead of from literal
+// values.
+//
+//	query.InsertInto("archive").Columns("id", "name").
+//	    FromSelect(query.Select("id", "name").From("users").Where(query.Lt("age", 18)))
+//	// INSERT INTO "archive" ("id", "name") SELECT "id", "name" FROM "users" WHERE "age" < $1
+//
+// It is mutually exclusive with Values: VALUES and SELECT are alternative row
+// sources in the grammar, and a statement carrying both is refused rather than
+// resolved in one direction.
+//
+// The query must project one expression per target column, and must project
+// them explicitly -- a star projection supplies whatever the source table has
+// today, so a statement that matches now breaks the next time someone adds a
+// column there (stokaro/ptah#941).
+func (b *InsertBuilder) FromSelect(query *SelectBuilder) *InsertBuilder {
+	if query == nil {
+		return b
+	}
+	b.selectSource = query.Build()
+	return b
+}
+
+// OnConflictDoNothing discards a row that collides with an existing one.
+//
+// The columns name the unique index the insert watches. Passing none means
+// "any unique key", which every engine that has an upsert can express -- and it
+// is the ONLY form MySQL and MariaDB accept, because ON DUPLICATE KEY UPDATE
+// fires for every unique key on the table and has no syntax for narrowing that
+// (stokaro/ptah#941).
+func (b *InsertBuilder) OnConflictDoNothing(columns ...string) *InsertBuilder {
+	b.onConflict = &ast.OnConflict{Columns: slices.Clone(columns), DoNothing: true}
+	return b
+}
+
+// OnConflictDoUpdate overwrites the named columns from the row that was
+// proposed when an insert collides.
+//
+// PostgreSQL and SQLite require the conflict target for this form: without it
+// the server cannot know which index's collision the update applies to, and the
+// statement is a syntax error. MySQL and MariaDB accept the opposite -- no
+// target at all -- so a call carrying one is refused there rather than widened
+// to every unique key on the table.
+func (b *InsertBuilder) OnConflictDoUpdate(columns []string, update ...string) *InsertBuilder {
+	b.onConflict = &ast.OnConflict{Columns: slices.Clone(columns), Update: slices.Clone(update)}
+	return b
+}
+
 func (b *InsertBuilder) Returning(columns ...string) *InsertBuilder {
 	b.returning = appendReturning(b.returning, columns)
 	return b
@@ -59,10 +113,12 @@ func (b *InsertBuilder) Returning(columns ...string) *InsertBuilder {
 // renderer.RenderInsert.
 func (b *InsertBuilder) Build() *ast.InsertStatement {
 	return &ast.InsertStatement{
-		Table:     b.table,
-		Columns:   b.columns,
-		Rows:      b.rows,
-		Returning: b.returning,
+		Table:      b.table,
+		Columns:    b.columns,
+		Rows:       b.rows,
+		Returning:  b.returning,
+		OnConflict: b.onConflict,
+		Select:     b.selectSource,
 	}
 }
 

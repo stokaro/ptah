@@ -888,7 +888,58 @@ func (r *Reader) readDomainsForSchema(schemaName string) ([]types.DBDomain, erro
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("failed to read domains for schema %s: %w", schemaName, err)
 	}
+	if err := r.attachDomainCheckConstraints(schemaName, domains); err != nil {
+		return nil, err
+	}
 	return domains, nil
+}
+
+// attachDomainCheckConstraints fills in the per-constraint names the joined
+// check expression cannot carry.
+//
+// The join above answers "what does this domain enforce"; ALTER DOMAIN asks
+// "which constraint do I drop", and no amount of splitting the joined form on
+// AND recovers a name the catalog never put in it. Without the names a changed
+// CHECK has only one route -- drop the domain and create it again -- and that
+// route fails on any domain a column actually uses, which is every domain worth
+// having (stokaro/ptah#1717).
+func (r *Reader) attachDomainCheckConstraints(schemaName string, domains []types.DBDomain) error {
+	if len(domains) == 0 || !r.caps.Has(capability.PostgresCatalogFunctions) {
+		return nil
+	}
+	const query = `
+		SELECT
+			t.typname AS domain_name,
+			c.conname AS constraint_name,
+			pg_get_expr(c.conbin, c.conrelid) AS constraint_expr
+		FROM pg_constraint c
+		JOIN pg_type t ON t.oid = c.contypid
+		JOIN pg_namespace n ON n.oid = t.typnamespace
+		WHERE n.nspname = $1 AND c.contype = 'c' AND t.typtype = 'd'
+		ORDER BY t.typname, c.conname`
+
+	rows, err := r.db.Query(query, schemaName)
+	if err != nil {
+		return fmt.Errorf("failed to query domain check constraints for schema %s: %w", schemaName, err)
+	}
+	defer rows.Close()
+
+	byDomain := make(map[string][]types.DBDomainCheck, len(domains))
+	for rows.Next() {
+		var domainName string
+		var check types.DBDomainCheck
+		if err := rows.Scan(&domainName, &check.Name, &check.Expression); err != nil {
+			return fmt.Errorf("failed to scan domain check constraint for schema %s: %w", schemaName, err)
+		}
+		byDomain[domainName] = append(byDomain[domainName], check)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("failed to read domain check constraints for schema %s: %w", schemaName, err)
+	}
+	for i := range domains {
+		domains[i].CheckConstraints = byDomain[domains[i].Name]
+	}
+	return nil
 }
 
 // readComposites reads PostgreSQL composite types (typtype='c'), excluding the
@@ -2686,7 +2737,6 @@ func (r *Reader) readMaterializedViewsForSchema(schemaName string) ([]types.DBMa
 			return nil, fmt.Errorf("failed to scan materialized view: %w", err)
 		}
 		view.Schema = r.outputSchema(view.Schema)
-		view.RefreshStrategy = "manual"
 		views = append(views, view)
 	}
 	return views, nil
@@ -2766,7 +2816,10 @@ func (r *Reader) readFunctionsForSchema(schemaName string) ([]types.DBFunction, 
 			p.proname AS function_name,
 			pg_get_function_arguments(p.oid) AS parameters,
 			pg_get_function_identity_arguments(p.oid) AS identity_arguments,
-			pg_get_function_result(p.oid) AS returns,
+			-- COALESCE because pg_get_function_result is NULL for a procedure,
+			-- which is the catalog stating the property that separates the two
+			-- kinds (stokaro/ptah#1722).
+			COALESCE(pg_get_function_result(p.oid), '') AS returns,
 			l.lanname AS language,
 			CASE p.prosecdef WHEN true THEN 'DEFINER' ELSE 'INVOKER' END AS security,
 			CASE p.provolatile
@@ -2775,12 +2828,20 @@ func (r *Reader) readFunctionsForSchema(schemaName string) ([]types.DBFunction, 
 				WHEN 'v' THEN 'VOLATILE'
 			END AS volatility,
 			p.prosrc AS body,
-			COALESCE(obj_description(p.oid, 'pg_proc'), '') AS comment
+			COALESCE(obj_description(p.oid, 'pg_proc'), '') AS comment,
+			CASE p.prokind WHEN 'p' THEN 'procedure' ELSE 'function' END AS kind
 		FROM pg_proc p
 		JOIN pg_namespace n ON n.oid = p.pronamespace
 		JOIN pg_language l ON l.oid = p.prolang
 		WHERE n.nspname = $1
-		AND p.prokind = 'f'  -- Only functions, not procedures
+		-- Functions and procedures, which are the two routine kinds a schema
+		-- can declare. Aggregates ('a') and window functions ('w') are left
+		-- out on purpose: both are defined by naming other routines rather
+		-- than by a body a schema can carry, and neither has a Ptah
+		-- declaration to compare against. They were excluded before this
+		-- comment existed and nothing said so, which is the silence
+		-- stokaro/ptah#1722 is about.
+		AND p.prokind IN ('f', 'p')
 		AND l.lanname != 'internal'  -- Exclude internal functions
 		-- Escaped for the same reason as the role filters above: a bare _
 		-- is a LIKE wildcard, so the unescaped form also excluded ordinary
@@ -2815,6 +2876,7 @@ func (r *Reader) readFunctionsForSchema(schemaName string) ([]types.DBFunction, 
 			&fn.Volatility,
 			&fn.Body,
 			&fn.Comment,
+			&fn.Kind,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan function: %w", err)

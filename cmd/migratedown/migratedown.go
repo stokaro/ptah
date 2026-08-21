@@ -8,6 +8,7 @@ import (
 	"io"
 	"io/fs"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -18,6 +19,7 @@ import (
 	"go.5x5.cz/ptah/cmd/internal/migrationsource"
 	"go.5x5.cz/ptah/config/projectconfig"
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/atlasmigrate"
 	"go.5x5.cz/ptah/internal/devdocker"
 	"go.5x5.cz/ptah/internal/migrationintegrity"
 	"go.5x5.cz/ptah/internal/onlineddl"
@@ -30,6 +32,9 @@ const (
 	dbURLFlag                = "db-url"
 	migrationsFlag           = "migrations-dir"
 	targetFlag               = "target"
+	toTagFlag                = "to-tag"
+	skipChecksFlag           = "skip-checks"
+	planFlag                 = "plan"
 	shadowDBFlag             = "shadow-db"
 	dirFormatFlag            = "dir-format"
 	atlasEnvFlag             = "atlas-env"
@@ -53,6 +58,9 @@ type options struct {
 	migrationsDir        string
 	target               string
 	shadowDB             string
+	toTag                string
+	skipChecks           bool
+	plan                 bool
 	dirFormat            string
 	atlasEnv             string
 	dryRun               bool
@@ -110,6 +118,13 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	flags.StringVar(&opts.migrationsDir, migrationsFlag, "", "Local directory or oci:// reference containing migration files (required)")
 	flags.StringVar(&opts.target, targetFlag, "0", "Target version to migrate down to (required)")
 	flags.StringVar(&opts.shadowDB, shadowDBFlag, "", "Ephemeral shadow database URL where the rollback plan is replayed and verified before touching the target")
+	flags.StringVar(&opts.toTag, toTagFlag, "",
+		"Migration tag to roll back to, resolved against the tags recorded by `migrations tag`")
+	flags.BoolVar(&opts.skipChecks, skipChecksFlag, false,
+		"Skip the pre-migration checks embedded in the down migrations being rolled back")
+	flags.BoolVar(&opts.plan, planFlag, false,
+		"Derive the rollback from the schema difference instead of running the down migrations, "+
+			"requires --"+shadowDBFlag)
 	flags.StringVar(&opts.dirFormat, dirFormatFlag, string(migrator.MigrationDirFormatAuto), "Migration directory format: auto, ptah, or atlas")
 	flags.StringVar(&opts.atlasEnv, atlasEnvFlag, "", "Value exposed as .Env when rendering Atlas SQL template migrations")
 	flags.BoolVar(&opts.dryRun, dryRunFlag, false, "Show what migrations would be rolled back without actually running them")
@@ -212,10 +227,6 @@ func migrateDownCommand(cmd *cobra.Command, opts *options) error {
 	migrationLockTimeoutValue := resolvedOpts.migrationLockTimeout
 	lockTimeout := resolvedOpts.lockTimeout
 	statementTimeout := resolvedOpts.statementTimeout
-	preDownHook := resolvedOpts.preDownHook
-	pgDumpTo := resolvedOpts.pgDumpTo
-	mySQLDumpTo := resolvedOpts.mySQLDumpTo
-	webhook := resolvedOpts.webhook
 	migrationsSchema := resolvedOpts.migrationsSchema
 	migrationsTable := resolvedOpts.migrationsTable
 	revisionFormatValue := resolvedOpts.revisionTableFormat
@@ -322,27 +333,33 @@ func migrateDownCommand(cmd *cobra.Command, opts *options) error {
 	// Set dry run mode if requested
 	conn.SchemaWriter().SetDryRun(opts.dryRun)
 
-	if opts.dryRun {
-		emit.Println("=== DRY RUN MODE ===")
-		emit.Println("No actual changes will be made to the database")
-		emit.Println()
+	writeDownBanner(emit, downBanner{
+		dryRun:        opts.dryRun,
+		dbURL:         dbURL,
+		dialect:       conn.Info().Dialect,
+		migrationsDir: migrationsDir,
+		dirFormat:     dirFormat,
+	})
+	// A tag names a directory state; resolving it here, before the banner,
+	// means the banner reports the version the rollback will actually stop at
+	// rather than the numeric default the tag replaced (stokaro/ptah#1621).
+	if resolvedOpts.toTag != "" {
+		if targetVersion, err = resolveDownTag(cmd, emit, downTagResolution{
+			toTag:            resolvedOpts.toTag,
+			conn:             conn,
+			migrationsFS:     migrationsFS,
+			dirFormat:        dirFormat,
+			migrationsSchema: migrationsSchema,
+			migrationsTable:  migrationsTable,
+			revisionFormat:   revisionFormat,
+		}); err != nil {
+			return err
+		}
 	}
-
-	emit.Println("=== MIGRATE DOWN ===")
-	emit.Printf("Database: %s\n", dbschema.FormatDatabaseURL(dbURL))
-	emit.Printf("Dialect: %s\n", conn.Info().Dialect)
-	emit.Printf("Migrations directory: %s\n", migrationsDir)
-	emit.Printf("Migration directory format: %s\n", dirFormat)
 	emit.Printf("Target version: %d\n", targetVersion)
 	emit.Println()
 
-	// Online-DDL routing works for down migrations too: a rollback ALTER on
-	// a large table is just as lock-heavy as the forward one.
-	onlineCfg := projectCfg.OnlineDDL
-	if onlineCfg.Enabled() {
-		emit.Printf("Online DDL: tool=%s threshold_rows=%d\n", onlineCfg.Tool, onlineCfg.ThresholdRows)
-	}
-	interceptor := onlineddl.New(onlineCfg).WithDryRun(opts.dryRun)
+	interceptor := downOnlineDDLInterceptor(emit, projectCfg, opts.dryRun)
 
 	// Create migrator to access applied migrations
 	mig, err := migrator.NewFSMigrator(
@@ -357,6 +374,7 @@ func migrateDownCommand(cmd *cobra.Command, opts *options) error {
 	}
 	mig = mig.WithMigrationsTable(migrationsSchema, migrationsTable).
 		WithRevisionTableFormat(revisionFormat).
+		WithSkipChecks(resolvedOpts.skipChecks).
 		WithDefaultTimeouts(timeouts).
 		WithExecOrder(execOrder).
 		WithMigrationLockTimeout(migrationLockTimeout).
@@ -398,9 +416,18 @@ func migrateDownCommand(cmd *cobra.Command, opts *options) error {
 
 	emit.Println()
 
+	// --plan takes the dev database for itself: it builds the target schema
+	// there to derive the plan from. Verifying a file-based rollback on it
+	// first would run exactly the down bodies --plan exists to bypass, and
+	// would fail on the migration with no down body that is the reason to
+	// reach for --plan at all (stokaro/ptah#1621).
+	shadowVerificationURL := resolvedOpts.shadowDB
+	if resolvedOpts.plan {
+		shadowVerificationURL = ""
+	}
 	if err := verifyRollbackOnShadow(cmd.Context(), shadowVerification{
 		targetConnection: conn,
-		shadowDB:         resolvedOpts.shadowDB,
+		shadowDB:         shadowVerificationURL,
 		migrationsFS:     migrationsFS,
 		currentVersion:   status.CurrentVersion,
 		targetVersion:    targetVersion,
@@ -420,20 +447,16 @@ func migrateDownCommand(cmd *cobra.Command, opts *options) error {
 		return nil
 	}
 
-	preflightHook := dbcli.LockedMigrationPreflightHook(opts.dryRun, preflight.Options{
-		Direction:          preflight.DirectionDown,
-		DatabaseURL:        dbURL,
-		DisplayDatabaseURL: dbschema.FormatDatabaseURL(dbURL),
-		Dialect:            conn.Info().Dialect,
-		Command:            preDownHook,
-		PostgresDumpDir:    pgDumpTo,
-		MySQLDumpDir:       mySQLDumpTo,
-		WebhookURL:         webhook,
-	}, emit, cliobs.NewOutputWriter(cmd.OutOrStdout(), runtime, "pre-flight output"))
+	preflightHook := downPreflightHook(cmd, opts, runtime, conn, dbURL, resolvedOpts, emit)
 
 	// Run down migrations
-	err = mig.MigrateDownToWithPreflight(context.Background(), targetVersion, preflightHook)
-	if err != nil {
+	if err = executeRollback(cmd, buildRollbackExecution(
+		resolvedOpts, opts, mig, preflightHook, conn, rollbackInputs{
+			migrationsFS: migrationsFS, migrationsDir: migrationsDir,
+			targetVersion: targetVersion, dirFormat: dirFormat, atlasEnv: atlasEnv,
+			connectTimeout: connectTimeout, migrationsSchema: migrationsSchema,
+			migrationsTable: migrationsTable, revisionFormat: revisionFormat,
+		}), emit); err != nil {
 		return fmt.Errorf("error running down migrations: %w", err)
 	}
 
@@ -585,4 +608,245 @@ func shutdownObservability(runtime *cliobs.Runtime) {
 	if err := runtime.Shutdown(ctx); err != nil {
 		runtime.Logger().Warn("failed to shut down observability", "error", err)
 	}
+}
+
+// downTagResolution carries what resolving --to-tag needs.
+type downTagResolution struct {
+	toTag            string
+	conn             *dbschema.DatabaseConnection
+	migrationsFS     fs.FS
+	dirFormat        migrator.MigrationDirFormat
+	migrationsSchema string
+	migrationsTable  string
+	revisionFormat   migrator.RevisionTableFormat
+}
+
+// resolveDownTag turns --to-tag into the version the rollback stops at.
+//
+// Passing --target as well is refused rather than resolved by precedence: both
+// name where to stop, and silently preferring one would roll back to a version
+// the operator did not choose.
+func resolveDownTag(cmd *cobra.Command, emit cliobs.Emitter, r downTagResolution) (int64, error) {
+	if cmd.Flags().Changed(targetFlag) {
+		return 0, fmt.Errorf("--%s and --%s both name where to stop; pass one",
+			targetFlag, toTagFlag)
+	}
+	resolver, err := migrator.NewFSMigrator(r.conn, r.migrationsFS,
+		migrator.WithMigrationDirFormat(r.dirFormat))
+	if err != nil {
+		return 0, fmt.Errorf("error registering migrations: %w", err)
+	}
+	resolver = resolver.
+		WithMigrationsTable(r.migrationsSchema, r.migrationsTable).
+		WithRevisionTableFormat(r.revisionFormat)
+	version, err := resolver.ResolveMigrationTag(cmd.Context(), r.toTag)
+	if err != nil {
+		return 0, err
+	}
+	emit.Printf("Target tag: %s\n", r.toTag)
+	return version, nil
+}
+
+// downBanner is what the run reports about itself before it starts.
+type downBanner struct {
+	dryRun        bool
+	dbURL         string
+	dialect       string
+	migrationsDir string
+	dirFormat     migrator.MigrationDirFormat
+}
+
+func writeDownBanner(emit cliobs.Emitter, b downBanner) {
+	if b.dryRun {
+		emit.Println("=== DRY RUN MODE ===")
+		emit.Println("No actual changes will be made to the database")
+		emit.Println()
+	}
+	emit.Println("=== MIGRATE DOWN ===")
+	emit.Printf("Database: %s\n", dbschema.FormatDatabaseURL(b.dbURL))
+	emit.Printf("Dialect: %s\n", b.dialect)
+	emit.Printf("Migrations directory: %s\n", b.migrationsDir)
+	emit.Printf("Migration directory format: %s\n", b.dirFormat)
+}
+
+// downOnlineDDLInterceptor builds the statement interceptor for a rollback and
+// reports the routing it will do.
+//
+// Online-DDL routing works for down migrations too: a rollback ALTER on a large
+// table is just as lock-heavy as the forward one.
+func downOnlineDDLInterceptor(
+	emit cliobs.Emitter,
+	projectCfg projectconfig.Config,
+	dryRun bool,
+) *onlineddl.Executor {
+	cfg := projectCfg.OnlineDDL
+	if cfg.Enabled() {
+		emit.Printf("Online DDL: tool=%s threshold_rows=%d\n", cfg.Tool, cfg.ThresholdRows)
+	}
+	return onlineddl.New(cfg).WithDryRun(dryRun)
+}
+
+// dynamicRollback carries what a --plan rollback needs.
+type dynamicRollback struct {
+	conn           *dbschema.DatabaseConnection
+	devURL         string
+	migrationsFS   fs.FS
+	migrationsDir  string
+	targetVersion  int64
+	dirFormat      migrator.MigrationDirFormat
+	atlasEnv       string
+	connectTimeout time.Duration
+	dryRun         bool
+	revisionsOpts  atlasmigrate.SetOptions
+}
+
+// runDynamicRollback derives the rollback from the schema difference and
+// applies it, instead of running the down bodies the directory carries.
+//
+// The revision boundary moves through the same path `migrations set` uses, so a
+// derived rollback leaves the bookkeeping in the state a file-based one would:
+// the rows above the target are removed, and nothing below is disturbed. Doing
+// it after the statements, not before, means a plan that fails partway leaves
+// revisions that still describe a database ahead of the target -- which is the
+// honest reading of what happened, and what `migrations repair` expects.
+func runDynamicRollback(cmd *cobra.Command, r dynamicRollback, emit cliobs.Emitter) error {
+	if strings.TrimSpace(r.devURL) == "" {
+		return fmt.Errorf("--%s requires --%s: the schema at version %d has to be built somewhere "+
+			"before it can be compared against the live database",
+			planFlag, shadowDBFlag, r.targetVersion)
+	}
+	devURL, releaseDev, err := devdocker.Resolve(cmd.Context(), r.devURL, devdocker.Options{})
+	if err != nil {
+		return err
+	}
+	defer releaseDev()
+
+	statements, err := generator.PlanDynamicRollback(cmd.Context(), generator.DynamicRollbackOptions{
+		TargetConnection: r.conn,
+		DevDatabaseURL:   devURL,
+		FS:               r.migrationsFS,
+		TargetVersion:    r.targetVersion,
+		ProviderOptions: []migrator.FSProviderOption{
+			migrator.WithMigrationDirFormat(r.dirFormat),
+			migrator.WithAtlasTemplateData(migrator.AtlasTemplateData{Env: r.atlasEnv}),
+		},
+		ConnectTimeout: r.connectTimeout,
+		RevisionsTable: r.revisionsOpts.RevisionsTable,
+	})
+	if err != nil {
+		return err
+	}
+
+	emit.Printf("Derived rollback plan: %d statements\n", len(statements))
+	for _, statement := range statements {
+		emit.Printf("  %s\n", statement)
+	}
+	emit.Println()
+	if r.dryRun {
+		return nil
+	}
+	for _, statement := range statements {
+		if _, err := r.conn.ExecContext(cmd.Context(), statement); err != nil {
+			return fmt.Errorf("apply derived rollback statement %q: %w", statement, err)
+		}
+	}
+	if _, err := atlasmigrate.Set(
+		cmd.Context(), r.conn, r.targetVersion, r.revisionsOpts); err != nil {
+		return fmt.Errorf("move the revision boundary to version %d: %w", r.targetVersion, err)
+	}
+	return nil
+}
+
+// rollbackExecution is everything either rollback strategy needs.
+type rollbackExecution struct {
+	plan          bool
+	migrator      *migrator.Migrator
+	preflightHook migrator.PreMigrationHook
+	dynamicRollback
+}
+
+// executeRollback picks between running the authored down bodies and deriving
+// the rollback from the schema difference.
+//
+// The choice lives here rather than inline so the two strategies read as
+// alternatives. They are not variations on one path: one runs SQL a person
+// wrote and reviewed, the other runs SQL inferred from structure minutes ago.
+func executeRollback(cmd *cobra.Command, r rollbackExecution, emit cliobs.Emitter) error {
+	if r.plan {
+		return runDynamicRollback(cmd, r.dynamicRollback, emit)
+	}
+	return r.migrator.MigrateDownToWithPreflight(
+		context.Background(), r.targetVersion, r.preflightHook)
+}
+
+// rollbackInputs are the resolved values a rollback strategy reads, gathered so
+// the command body does not have to spell one struct inside another.
+type rollbackInputs struct {
+	migrationsFS     fs.FS
+	migrationsDir    string
+	targetVersion    int64
+	dirFormat        migrator.MigrationDirFormat
+	atlasEnv         string
+	connectTimeout   time.Duration
+	migrationsSchema string
+	migrationsTable  string
+	revisionFormat   migrator.RevisionTableFormat
+}
+
+func buildRollbackExecution(
+	resolved options,
+	opts *options,
+	mig *migrator.Migrator,
+	hook migrator.PreMigrationHook,
+	conn *dbschema.DatabaseConnection,
+	in rollbackInputs,
+) rollbackExecution {
+	return rollbackExecution{
+		plan:          resolved.plan,
+		migrator:      mig,
+		preflightHook: hook,
+		dynamicRollback: dynamicRollback{
+			conn:           conn,
+			devURL:         resolved.shadowDB,
+			migrationsFS:   in.migrationsFS,
+			migrationsDir:  in.migrationsDir,
+			targetVersion:  in.targetVersion,
+			dirFormat:      in.dirFormat,
+			atlasEnv:       in.atlasEnv,
+			connectTimeout: in.connectTimeout,
+			dryRun:         opts.dryRun,
+			revisionsOpts: atlasmigrate.SetOptions{
+				Dir:             in.migrationsDir,
+				FS:              in.migrationsFS,
+				AtlasEnv:        in.atlasEnv,
+				RevisionsSchema: in.migrationsSchema,
+				RevisionsTable:  in.migrationsTable,
+				DirFormat:       in.dirFormat,
+				RevisionFormat:  in.revisionFormat,
+			},
+		},
+	}
+}
+
+// downPreflightHook builds the hook that runs inside the migration lock, just
+// before any rollback SQL does.
+func downPreflightHook(
+	cmd *cobra.Command,
+	opts *options,
+	runtime *cliobs.Runtime,
+	conn *dbschema.DatabaseConnection,
+	dbURL string,
+	resolved options,
+	emit cliobs.Emitter,
+) migrator.PreMigrationHook {
+	return dbcli.LockedMigrationPreflightHook(opts.dryRun, preflight.Options{
+		Direction:          preflight.DirectionDown,
+		DatabaseURL:        dbURL,
+		DisplayDatabaseURL: dbschema.FormatDatabaseURL(dbURL),
+		Dialect:            conn.Info().Dialect,
+		Command:            resolved.preDownHook,
+		PostgresDumpDir:    resolved.pgDumpTo,
+		MySQLDumpDir:       resolved.mySQLDumpTo,
+		WebhookURL:         resolved.webhook,
+	}, emit, cliobs.NewOutputWriter(cmd.OutOrStdout(), runtime, "pre-flight output"))
 }

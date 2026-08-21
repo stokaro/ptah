@@ -86,7 +86,7 @@ func (w *Writer) capabilities() capability.Capabilities {
 // completeness check on the input, and it belongs here because only the caller
 // knows what the missing precision would authorize.
 func versionIsAmbiguousForPrivileges(version string) bool {
-	head := strings.SplitN(strings.TrimSpace(version), "-", 2)[0]
+	head, _, _ := strings.Cut(strings.TrimSpace(version), "-")
 	parts := strings.Split(head, ".")
 	if len(parts) < 3 {
 		return true

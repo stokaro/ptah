@@ -97,6 +97,7 @@ type CompareOptions struct{ ... }
     func DefaultCompareOptions() *CompareOptions
     func WithAdditionalIgnoredExtensions(extensions ...string) *CompareOptions
     func WithIgnoredExtensions(extensions ...string) *CompareOptions
+type DomainExpression struct{ ... }
 
 ### go.5x5.cz/ptah/config.CompareOptions
 
@@ -172,6 +173,26 @@ type CompareOptions struct {
     // the module's storage from an ordinary table; a drop the caller deletes
     // again is not one of those.
     SkipIndexDrops bool
+
+    // DomainExpressions carries each declared domain's CHECK and DEFAULT as the
+    // target server itself spells them, keyed by the domain's qualified name.
+    //
+    // PostgreSQL does not store the text of a CHECK. It parses the expression
+    // and prints it back from the parse tree, so `VALUE IN ('x','y')` is read
+    // back as `VALUE = ANY (ARRAY['x'::text, 'y'::text])` and `VALUE > 0` as
+    // `(VALUE > 0)`. Comparing a declaration against that is comparing two
+    // different languages, which is why the comparison used to decline: a
+    // string difference did not mean a changed constraint, and acting on one
+    // would have dropped and recreated a domain that had not changed.
+    //
+    // A resolved entry is the declaration after the same round trip -- the
+    // server was asked to normalize it -- so the two sides compare as like with
+    // like and a real change is neither invented nor lost (stokaro/ptah#1717).
+    //
+    // A nil map means nobody could ask a server, which is every comparison that
+    // has no connection. CHECK and DEFAULT stay uncompared there, exactly as
+    // before.
+    DomainExpressions map[string]DomainExpression
 }
     CompareOptions contains configuration options for schema comparison
     operations. These options control how schema differences are calculated and
@@ -183,12 +204,35 @@ func WithIgnoredExtensions(extensions ...string) *CompareOptions
 func (c *CompareOptions) FilterIgnoredExtensions(extensions []string) []string
 func (c *CompareOptions) IsExtensionIgnored(extensionName string) bool
 
+### go.5x5.cz/ptah/config.DomainExpression
+
+package config // import "go.5x5.cz/ptah/config"
+
+type DomainExpression struct {
+    // Check is the normalized CHECK, empty when the domain declares none.
+    Check string
+    // Default is the normalized DEFAULT, empty when the domain declares none.
+    Default string
+    // Resolved reports that a server answered for this domain. A false value
+    // on a present key is a domain whose declaration the server refused, and
+    // nothing about it may be compared.
+    Resolved bool
+}
+    DomainExpression is one domain's CHECK and DEFAULT in the target server's
+    own spelling. See CompareOptions.DomainExpressions.
+
+    The zero value is not "no constraint": it is what a resolver returns for a
+    declaration it could not put through the server, and a comparison must skip
+    the attribute rather than read it as removed. Resolved reports which it is.
+
+
 ## go.5x5.cz/ptah/config/projectconfig
 
 const PtahFileName = "ptah.yaml" ...
 const OnlineDDLToolGhost = "ghost" ...
 const OnlineDDLFallbackError = "error" ...
 const IgnoreEnvSchemasEnvVar = "PTAH_ATLAS_IGNORE_ENV_SCHEMAS"
+const RemoteSchemaMarkerScheme = "ptah-remote-schema"
 func ValidateAtlasEnvironmentVariables() error
 type AtlasLoadOptions struct{ ... }
 type Config struct{ ... }
@@ -209,6 +253,7 @@ type ConfigBool struct{ ... }
 type DiffConcurrentIndexConfig struct{ ... }
 type DiffConfig struct{ ... }
 type DiffSkipConfig struct{ ... }
+type Exporter struct{ ... }
 type ExternalSchemaConfig struct{ ... }
 type FormatConfig struct{ ... }
 type IgnoredAtlasConstruct struct{ ... }
@@ -225,6 +270,7 @@ type SchemaModeConfig struct{ ... }
 type SchemaRepoConfig struct{ ... }
 type StringField uint8
     const StringEnvName StringField = iota ...
+type UnknownExporterError struct{ ... }
 type Value[T any] struct{ ... }
 
 ### go.5x5.cz/ptah/config/projectconfig.AtlasLoadOptions
@@ -243,6 +289,8 @@ type AtlasLoadOptions struct {
     // when they need that exact boundary. The default retains Ptah's complete
     // dynamic-env capability.
     RejectListMapForEach bool
+    // Verb names the command doing the load. See [LoadOptions.Verb].
+    Verb string
 }
     AtlasLoadOptions selects Atlas project config evaluation settings.
 
@@ -259,6 +307,11 @@ type Config struct {
     // make the no-op visible; the Ptah CLIs warn on stderr while preserving the
     // command's stdout and exit code.
     IgnoredConstructs []IgnoredAtlasConstruct
+    // ExporterName is the exporter an env selects, as its `exporter`
+    // attribute names it. Empty means the env selects none, which is what
+    // makes `--export` refusable rather than silently a no-op.
+    ExporterName string
+
     // EnvName is the selected project env name, when the source had one.
     EnvName string
     // DatabaseURL is the target database URL used by migration commands.
@@ -306,6 +359,8 @@ func ParseAtlasFSCollectionWithOptions(data []byte, filename string, fsys fs.FS,
 func ParseAtlasFSWithOptions(data []byte, filename string, fsys fs.FS, opts AtlasLoadOptions) (Config, error)
 func ParseAtlasWithOptions(data []byte, filename string, opts AtlasLoadOptions) (Config, error)
 func ParsePtah(data []byte, filename, envName string) (Config, error)
+func (c Config) Exporter(name string) (Exporter, error)
+func (c Config) Exporters() []Exporter
 func (c Config) LintLatestValue() Value[int]
 func (c Config) MigrationDirectoryFS(rawURL string) (fs.FS, bool)
 func (c Config) MigrationDirectorySource(rawURL string) (MigrationDirectorySource, bool)
@@ -382,6 +437,33 @@ type DiffSkipConfig struct {
     DiffSkipConfig holds the diff.skip policy: the destructive change kinds a
     project omits from generated migrations. Each field is a tri-state so an
     explicit false can override an inherited true.
+
+
+### go.5x5.cz/ptah/config/projectconfig.Exporter
+
+package projectconfig // import "go.5x5.cz/ptah/config/projectconfig"
+
+type Exporter struct {
+    // Name is the block's label, the token `--export` selects.
+    Name string
+    // Template is the Go text/template body rendered against the report.
+    Template string
+}
+    Exporter is a named output template declared by an atlas.hcl `exporter`
+    block and selected by `--export`.
+
+    # What an exporter is here
+
+    A Go text/template over the same document `--format` renders, stored
+    in the project config under a name. That is the whole design, and it is
+    deliberately small: `schema diff` and `schema inspect` already render their
+    reports through templates, so an exporter needs no evaluator of its own --
+    it is a format the project names once and every invocation can ask for by
+    that name.
+
+    The alternative was a declarative description of output structure,
+    which would have meant a second language to learn, document and version,
+    doing what the template surface already does (stokaro/ptah#1620).
 
 
 ### go.5x5.cz/ptah/config/projectconfig.ExternalSchemaConfig
@@ -466,6 +548,16 @@ package projectconfig // import "go.5x5.cz/ptah/config/projectconfig"
 type LintRuleConfig struct {
     Severity string
     Exclude  []string
+
+    // Match declares a rule rather than configuring one; the remaining fields
+    // describe it. This is the project-file spelling of the same declaration
+    // `.ptah-lint.yaml` carries, so a rule behaves identically whichever file
+    // it was written in (stokaro/ptah#1706).
+    Match         string
+    Message       string
+    Title         string
+    Dialects      []string
+    AppliesToDown bool
 }
     LintRuleConfig holds project-level overrides for one lint rule code or
     rule-family prefix.
@@ -483,6 +575,9 @@ type LoadOptions struct {
     AtlasPath string
     EnvName   string
     AtlasVars []string
+    // Verb names the command doing the load, so a refusal can say which one
+    // cannot take a collection env. Empty leaves the sentence general.
+    Verb string
 }
     LoadOptions selects project config files and the Atlas env.
 
@@ -536,6 +631,15 @@ package projectconfig // import "go.5x5.cz/ptah/config/projectconfig"
 type MigrationDirectorySource struct {
     FileSystem fs.FS
     Path       string
+    // ReadOnly marks a source with no local directory behind it, so a writing
+    // verb is refused rather than given a path to create.
+    //
+    // A rendered template directory has a real path under the project root and
+    // a writer synchronizes into it. A directory fetched from a registry does
+    // not: giving the writer an OCI reference to join to the root would create
+    // a literal `oci:/registry/repo:tag` directory and report success while the
+    // registry stayed unchanged (stokaro/ptah#1210).
+    ReadOnly bool
 }
     MigrationDirectorySource is the rendered filesystem and source path behind
     one data.template_dir URL. FileSystem is the immutable view commands read;
@@ -643,6 +747,20 @@ type StringField uint8
 
 const StringEnvName StringField = iota ...
 
+### go.5x5.cz/ptah/config/projectconfig.UnknownExporterError
+
+package projectconfig // import "go.5x5.cz/ptah/config/projectconfig"
+
+type UnknownExporterError struct {
+    Name string
+    // Declared lists what the project does declare, so the message can show
+    // the choice rather than only refusing the one that was made.
+    Declared []string
+}
+    UnknownExporterError reports an --export naming no declared exporter.
+
+func (e *UnknownExporterError) Error() string
+
 ### go.5x5.cz/ptah/config/projectconfig.Value
 
 package projectconfig // import "go.5x5.cz/ptah/config/projectconfig"
@@ -666,6 +784,8 @@ type AddEnumValueOperation struct{ ... }
     func NewAddEnumValueOperation(value string) *AddEnumValueOperation
 type AddSkippingIndexOperation struct{ ... }
 type AlterGeneratedColumnExpressionOperation struct{ ... }
+type AlterMaterializedViewRefreshNode struct{ ... }
+    func NewAlterMaterializedViewRefresh(name string, refresh *MatViewRefreshSpec) *AlterMaterializedViewRefreshNode
 type AlterOperation interface{ ... }
 type AlterRoleNode struct{ ... }
     func NewAlterRole(name string) *AlterRoleNode
@@ -678,6 +798,9 @@ type AlterTableEnableRLSNode struct{ ... }
 type AlterTableNode struct{ ... }
 type AlterTypeNode struct{ ... }
     func NewAlterType(name string) *AlterTypeNode
+type Arithmetic struct{ ... }
+type ArithmeticOperator int
+    const OpAdd ArithmeticOperator = iota ...
 type Assignment struct{ ... }
 type BoundValue struct{ ... }
 type ColumnNode struct{ ... }
@@ -685,9 +808,13 @@ type ColumnNode struct{ ... }
 type ColumnRef struct{ ... }
 type CommentNode struct{ ... }
     func NewComment(text string) *CommentNode
+type CommonTableExpression struct{ ... }
 type Comparison struct{ ... }
 type ComparisonOperator int
     const OpEqual ComparisonOperator = iota ...
+type CompositeAttributeOperation struct{ ... }
+    func NewAddCompositeAttributeOperation(name, fieldType string) *CompositeAttributeOperation
+    func NewDropCompositeAttributeOperation(name string) *CompositeAttributeOperation
 type CompositeField struct{ ... }
 type CompositeTypeDef struct{ ... }
     func NewCompositeTypeDef(fields ...*CompositeField) *CompositeTypeDef
@@ -725,6 +852,14 @@ type CreateViewNode struct{ ... }
     func NewCreateView(name string) *CreateViewNode
 type DefaultValue struct{ ... }
 type DeleteStatement struct{ ... }
+type DomainConstraintOperation struct{ ... }
+    func NewAddDomainConstraintOperation(expression string) *DomainConstraintOperation
+    func NewDropDomainConstraintOperation(name string) *DomainConstraintOperation
+type DomainDefaultOperation struct{ ... }
+    func NewDropDomainDefaultOperation() *DomainDefaultOperation
+    func NewSetDomainDefaultOperation(expression string) *DomainDefaultOperation
+type DomainNotNullOperation struct{ ... }
+    func NewDomainNotNullOperation(notNull bool) *DomainNotNullOperation
 type DomainTypeDef struct{ ... }
     func NewDomainTypeDef(baseType string) *DomainTypeDef
 type DropColumnOperation struct{ ... }
@@ -757,7 +892,10 @@ type EnumNode struct{ ... }
     func NewEnum(name string, values ...string) *EnumNode
 type EnumTypeDef struct{ ... }
     func NewEnumTypeDef(values ...string) *EnumTypeDef
+type ExistsExpr struct{ ... }
 type Expression interface{ ... }
+type ExtensionAlteration string
+    const ExtensionUnaltered ExtensionAlteration = "" ...
 type ExtensionNode struct{ ... }
     func NewExtension(name string) *ExtensionNode
 type ForeignKeyRef struct{ ... }
@@ -777,6 +915,7 @@ type JoinType int
 type LogicalExpr struct{ ... }
 type LogicalOperator int
     const LogicalAnd LogicalOperator = iota ...
+type MatViewRefreshSpec struct{ ... }
 type ModifyColumnOperation struct{ ... }
 type ModifyTTLOperation struct{ ... }
 type MySQLRoutineBody struct{ ... }
@@ -793,6 +932,7 @@ type MySQLRoutineStatementKind string
 type Node interface{ ... }
 type NotExpr struct{ ... }
 type NullTest struct{ ... }
+type OnConflict struct{ ... }
 type OpaqueRoutineNode struct{ ... }
     func NewOpaqueRoutine(sql, dialect string, kind RoutineKind) *OpaqueRoutineNode
 type OrderByClause struct{ ... }
@@ -860,6 +1000,7 @@ type UpsertAssignment struct{ ... }
 type UpsertNode struct{ ... }
     func NewUpsert(table string) *UpsertNode
 type Visitor interface{ ... }
+type WindowSpec struct{ ... }
 
 ### go.5x5.cz/ptah/core/ast.AddColumnOperation
 
@@ -958,6 +1099,34 @@ type AlterGeneratedColumnExpressionOperation struct {
     existing generated column without dropping the column and its dependents.
 
 func (op *AlterGeneratedColumnExpressionOperation) Accept(_visitor Visitor) error
+
+### go.5x5.cz/ptah/core/ast.AlterMaterializedViewRefreshNode
+
+package ast // import "go.5x5.cz/ptah/core/ast"
+
+type AlterMaterializedViewRefreshNode struct {
+    // Name is the materialized view whose schedule changes.
+    Name string
+    // Refresh is the schedule to set. It is never nil: removing a schedule is
+    // not something this statement can do.
+    Refresh *MatViewRefreshSpec
+}
+    AlterMaterializedViewRefreshNode changes a ClickHouse materialized view's
+    refresh schedule in place.
+
+    It exists because the alternative keeps no data. A changed schedule is
+    otherwise a drop and a create, and the drop takes the inner storage table
+    with every row the view accumulated; `ALTER TABLE <view> MODIFY REFRESH ...`
+    changes the schedule and keeps them.
+
+    It applies only to a view that already HAS a schedule. Measured on
+    26.7.3.19, the same statement against a plain materialized view is answered
+    `Code: 48 ... Alter of type 'MODIFY_REFRESH' is not supported by storage
+    MaterializedView`, so gaining a first schedule or losing the last one is
+    still a drop and a create (stokaro/ptah#1802).
+
+func NewAlterMaterializedViewRefresh(name string, refresh *MatViewRefreshSpec) *AlterMaterializedViewRefreshNode
+func (n *AlterMaterializedViewRefreshNode) Accept(visitor Visitor) error
 
 ### go.5x5.cz/ptah/core/ast.AlterOperation
 
@@ -1123,6 +1292,41 @@ type AlterTypeNode struct {
 func NewAlterType(name string) *AlterTypeNode
 func (n *AlterTypeNode) Accept(visitor Visitor) error
 func (n *AlterTypeNode) AddOperation(operation TypeOperation) *AlterTypeNode
+
+### go.5x5.cz/ptah/core/ast.Arithmetic
+
+package ast // import "go.5x5.cz/ptah/core/ast"
+
+type Arithmetic struct {
+    // Left is the left-hand operand.
+    Left Expression
+    // Operator is the arithmetic operator.
+    Operator ArithmeticOperator
+    // Right is the right-hand operand.
+    Right Expression
+}
+    Arithmetic is a binary arithmetic expression of the form "(Left <Operator>
+    Right)".
+
+    # Why it always renders its own parentheses
+
+    The node is a TREE and SQL is text, so `Mul(Add(a, b), c)` and `Add(a,
+    Mul(b, c))` have to render differently. Emitting them without parentheses
+    produces `a + b * c` for both, and the server then applies its own
+    precedence -- which agrees with one of the two trees and silently rewrites
+    the other. Parenthesizing every node costs a pair of characters and makes
+    the rendered text mean exactly what the caller built (stokaro/ptah#941).
+
+
+### go.5x5.cz/ptah/core/ast.ArithmeticOperator
+
+package ast // import "go.5x5.cz/ptah/core/ast"
+
+type ArithmeticOperator int
+    ArithmeticOperator enumerates the binary arithmetic operators.
+
+const OpAdd ArithmeticOperator = iota ...
+func (op ArithmeticOperator) String() string
 
 ### go.5x5.cz/ptah/core/ast.Assignment
 
@@ -1290,6 +1494,29 @@ type CommentNode struct {
 func NewComment(text string) *CommentNode
 func (n *CommentNode) Accept(visitor Visitor) error
 
+### go.5x5.cz/ptah/core/ast.CommonTableExpression
+
+package ast // import "go.5x5.cz/ptah/core/ast"
+
+type CommonTableExpression struct {
+    Name  string
+    Query *SelectStatement
+}
+    SelectStatement is a SELECT over a source table and zero or more joins,
+    with an optional DISTINCT, WHERE clause, GROUP BY / HAVING, ORDER BY terms,
+    and LIMIT/OFFSET bounds.
+
+    Subqueries, non-aggregate functions, arithmetic, and window functions are
+    not modeled yet. Render it with renderer.RenderSelect, which returns the SQL
+    string and its positional arguments. Build one fluently with the core/query
+    package. CommonTableExpression is one named subquery of a WITH clause.
+
+    Name is emitted as a quoted identifier and referenced from the outer query's
+    From (or a join) as a plain table name. Query is rendered in parentheses,
+    and its bound values are appended before the outer query's, which is what
+    keeps positional placeholders in the order the driver will read them.
+
+
 ### go.5x5.cz/ptah/core/ast.Comparison
 
 package ast // import "go.5x5.cz/ptah/core/ast"
@@ -1319,6 +1546,33 @@ type ComparisonOperator int
 
 const OpEqual ComparisonOperator = iota ...
 func (op ComparisonOperator) String() string
+
+### go.5x5.cz/ptah/core/ast.CompositeAttributeOperation
+
+package ast // import "go.5x5.cz/ptah/core/ast"
+
+type CompositeAttributeOperation struct {
+    // DropName is the attribute to remove. Empty adds without removing.
+    DropName string
+    // AddName is the attribute to add. Empty removes without adding.
+    AddName string
+    // AddType is the added attribute's type. Required with AddName.
+    AddType string
+}
+    CompositeAttributeOperation adds or removes one attribute of a composite
+    type in an ALTER TYPE statement.
+
+    PostgreSQL takes both on a composite a table column already uses,
+    measured on 18.4 -- which is what makes them worth having, since the
+    drop-and-recreate alternative is refused outright in exactly that case.
+    What it does not take there is a change to an attribute's type: `ALTER
+    TYPE ... ALTER ATTRIBUTE` answers `cannot alter type "addr" because column
+    "uses_addr.a" uses it`, with CASCADE and without, so no operation here
+    spells one (stokaro/ptah#1717).
+
+func NewAddCompositeAttributeOperation(name, fieldType string) *CompositeAttributeOperation
+func NewDropCompositeAttributeOperation(name string) *CompositeAttributeOperation
+func (op *CompositeAttributeOperation) Accept(_ Visitor) error
 
 ### go.5x5.cz/ptah/core/ast.CompositeField
 
@@ -1449,6 +1703,13 @@ package ast // import "go.5x5.cz/ptah/core/ast"
 type CreateFunctionNode struct {
     // Name is the name of the function to create
     Name string
+    // Kind separates a function from a procedure. Empty means function.
+    //
+    // It is a field rather than a node of its own because the two are one
+    // catalog object differing in one property, and a second node would widen
+    // [Visitor] for every dialect that already answers this one
+    // (stokaro/ptah#1722).
+    Kind string
     // Parameters contains the function parameter definitions (e.g., "tenant_id_param TEXT")
     Parameters string
     // Returns specifies the return type (e.g., "VOID", "TEXT", "INTEGER")
@@ -1479,9 +1740,11 @@ type CreateFunctionNode struct {
 
 func NewCreateFunction(name string) *CreateFunctionNode
 func (n *CreateFunctionNode) Accept(visitor Visitor) error
+func (n *CreateFunctionNode) IsProcedure() bool
 func (n *CreateFunctionNode) SetAtomicBody(body string) *CreateFunctionNode
 func (n *CreateFunctionNode) SetBody(body string) *CreateFunctionNode
 func (n *CreateFunctionNode) SetComment(comment string) *CreateFunctionNode
+func (n *CreateFunctionNode) SetKind(kind string) *CreateFunctionNode
 func (n *CreateFunctionNode) SetLanguage(language string) *CreateFunctionNode
 func (n *CreateFunctionNode) SetParameters(parameters string) *CreateFunctionNode
 func (n *CreateFunctionNode) SetReturnBody(body string) *CreateFunctionNode
@@ -1494,18 +1757,22 @@ func (n *CreateFunctionNode) SetVolatility(volatility string) *CreateFunctionNod
 package ast // import "go.5x5.cz/ptah/core/ast"
 
 type CreateMaterializedViewNode struct {
-    Name            string
-    Body            string
-    RefreshStrategy string
-    Comment         string
+    Name    string
+    Body    string
+    Comment string
+    // Refresh is the ClickHouse refresh schedule, nil for a view that declares
+    // none; see [MatViewRefreshSpec].
+    Refresh *MatViewRefreshSpec
 }
     CreateMaterializedViewNode represents a CREATE MATERIALIZED VIEW statement.
+    A materialized view node carries no refresh strategy: refreshing is an
+    operation, not schema state (stokaro/ptah#1625). RefreshMaterializedViewNode
+    is the operation, and nothing in schema reconciliation produces one.
 
 func NewCreateMaterializedView(name string) *CreateMaterializedViewNode
 func (n *CreateMaterializedViewNode) Accept(visitor Visitor) error
 func (n *CreateMaterializedViewNode) SetBody(body string) *CreateMaterializedViewNode
 func (n *CreateMaterializedViewNode) SetComment(comment string) *CreateMaterializedViewNode
-func (n *CreateMaterializedViewNode) SetRefreshStrategy(refreshStrategy string) *CreateMaterializedViewNode
 
 ### go.5x5.cz/ptah/core/ast.CreatePolicyNode
 
@@ -1868,6 +2135,68 @@ type DeleteStatement struct {
     so the renderer rejects it unless Unconditional is set.
 
 
+### go.5x5.cz/ptah/core/ast.DomainConstraintOperation
+
+package ast // import "go.5x5.cz/ptah/core/ast"
+
+type DomainConstraintOperation struct {
+    // DropName is the catalog name of the constraint to remove. Empty adds
+    // without removing.
+    DropName string
+    // AddExpression is the declared CHECK expression to add, without the CHECK
+    // keyword and without its enclosing parentheses. Empty removes without
+    // adding.
+    AddExpression string
+    // AddName is the name to give the added constraint. Empty lets the server
+    // choose one, which is what a declaration that names no constraint means.
+    AddName string
+}
+    DomainConstraintOperation adds or removes one CHECK constraint of a domain
+    in an ALTER DOMAIN statement.
+
+    A domain constraint is added by expression and removed by name,
+    and the two are not interchangeable: the author writes what must hold,
+    and the server chooses what to call the constraint holding it. Replacing
+    a constraint is therefore a drop of a catalog name followed by an add of a
+    declared expression, which is why one operation carries both fields rather
+    than two operations carrying one each -- a replacement that emitted only
+    half would leave the domain either unconstrained or doubly constrained
+    (stokaro/ptah#1717).
+
+func NewAddDomainConstraintOperation(expression string) *DomainConstraintOperation
+func NewDropDomainConstraintOperation(name string) *DomainConstraintOperation
+func (op *DomainConstraintOperation) Accept(_ Visitor) error
+
+### go.5x5.cz/ptah/core/ast.DomainDefaultOperation
+
+package ast // import "go.5x5.cz/ptah/core/ast"
+
+type DomainDefaultOperation struct {
+    // Expression is the new default, already rendered as SQL. Empty drops the
+    // default instead of setting one.
+    Expression string
+}
+    DomainDefaultOperation sets or drops a domain's DEFAULT in an ALTER DOMAIN
+    statement.
+
+func NewDropDomainDefaultOperation() *DomainDefaultOperation
+func NewSetDomainDefaultOperation(expression string) *DomainDefaultOperation
+func (op *DomainDefaultOperation) Accept(_ Visitor) error
+
+### go.5x5.cz/ptah/core/ast.DomainNotNullOperation
+
+package ast // import "go.5x5.cz/ptah/core/ast"
+
+type DomainNotNullOperation struct {
+    // NotNull reports the state the domain should end in.
+    NotNull bool
+}
+    DomainNotNullOperation sets or drops a domain's NOT NULL in an ALTER DOMAIN
+    statement.
+
+func NewDomainNotNullOperation(notNull bool) *DomainNotNullOperation
+func (op *DomainNotNullOperation) Accept(_ Visitor) error
+
 ### go.5x5.cz/ptah/core/ast.DomainTypeDef
 
 package ast // import "go.5x5.cz/ptah/core/ast"
@@ -1989,6 +2318,10 @@ package ast // import "go.5x5.cz/ptah/core/ast"
 type DropFunctionNode struct {
     // Name is the name of the function to drop
     Name string
+    // Kind separates a function from a procedure. Empty means function.
+    // DROP PROCEDURE and DROP FUNCTION are different statements, and a server
+    // refuses the wrong one by name.
+    Kind string
     // Parameters contains the function parameter definitions for function signature matching
     // This is needed because PostgreSQL allows function overloading
     Parameters string
@@ -2008,9 +2341,11 @@ type DropFunctionNode struct {
 
 func NewDropFunction(name string) *DropFunctionNode
 func (n *DropFunctionNode) Accept(visitor Visitor) error
+func (n *DropFunctionNode) IsProcedure() bool
 func (n *DropFunctionNode) SetCascade() *DropFunctionNode
 func (n *DropFunctionNode) SetComment(comment string) *DropFunctionNode
 func (n *DropFunctionNode) SetIfExists() *DropFunctionNode
+func (n *DropFunctionNode) SetKind(kind string) *DropFunctionNode
 func (n *DropFunctionNode) SetParameters(parameters string) *DropFunctionNode
 
 ### go.5x5.cz/ptah/core/ast.DropIndexNode
@@ -2328,6 +2663,21 @@ type EnumTypeDef struct {
 func NewEnumTypeDef(values ...string) *EnumTypeDef
 func (td *EnumTypeDef) Accept(visitor Visitor) error
 
+### go.5x5.cz/ptah/core/ast.ExistsExpr
+
+package ast // import "go.5x5.cz/ptah/core/ast"
+
+type ExistsExpr struct {
+    Query   *SelectStatement
+    Negated bool
+}
+    ExistsExpr is a row-existence test of the form "EXISTS (SELECT …)" or,
+    when Negated, "NOT EXISTS (SELECT …)".
+
+    The subquery's projection is irrelevant to the test but is still rendered as
+    written; EXISTS stops at the first row either way.
+
+
 ### go.5x5.cz/ptah/core/ast.Expression
 
 package ast // import "go.5x5.cz/ptah/core/ast"
@@ -2345,6 +2695,20 @@ type Expression interface {
     never inlined.
 
 
+### go.5x5.cz/ptah/core/ast.ExtensionAlteration
+
+package ast // import "go.5x5.cz/ptah/core/ast"
+
+type ExtensionAlteration string
+    ExtensionAlteration names what an ALTER EXTENSION statement changes.
+
+    The two are separate values rather than one "alter" flag because a node
+    carrying both would have to render two statements, and one node rendering
+    two statements is what makes an ordered plan impossible to reason about.
+    The planner emits one node per change instead.
+
+const ExtensionUnaltered ExtensionAlteration = "" ...
+
 ### go.5x5.cz/ptah/core/ast.ExtensionNode
 
 package ast // import "go.5x5.cz/ptah/core/ast"
@@ -2360,6 +2724,15 @@ type ExtensionNode struct {
     Version string
     // Comment is an optional extension comment
     Comment string
+    // Alteration names what an existing extension is being changed to, and is
+    // empty for the ordinary CREATE.
+    //
+    // It is a field on this node rather than a node of its own because a new
+    // node widens [Visitor], which every renderer must then implement -- an
+    // incompatible change to the public API for two statements that name the
+    // same object. [CreatePolicyNode.Replace] and [DropTypeNode.Domain] switch
+    // a rendered spelling the same way (stokaro/ptah#1718).
+    Alteration ExtensionAlteration
 }
     ExtensionNode represents a CREATE EXTENSION statement for PostgreSQL.
 
@@ -2368,6 +2741,7 @@ type ExtensionNode struct {
 
 func NewExtension(name string) *ExtensionNode
 func (n *ExtensionNode) Accept(visitor Visitor) error
+func (n *ExtensionNode) SetAlteration(alteration ExtensionAlteration) *ExtensionNode
 func (n *ExtensionNode) SetComment(comment string) *ExtensionNode
 func (n *ExtensionNode) SetIfNotExists() *ExtensionNode
 func (n *ExtensionNode) SetSchema(schema string) *ExtensionNode
@@ -2435,6 +2809,17 @@ type FuncCall struct {
     // Distinct emits the DISTINCT keyword before the arguments, as in
     // COUNT(DISTINCT "col").
     Distinct bool
+    // Over turns the call into a window function: SUM("x") OVER (PARTITION BY
+    // "y" ORDER BY "z" ASC). Nil emits no OVER clause and the call is an
+    // ordinary one.
+    //
+    // A window function is legal wherever a projection expression is, and
+    // nowhere else -- notably not in WHERE, because the window is computed
+    // after the rows are filtered. The renderer does not enforce that: the
+    // engines report it clearly and in their own terms, and a builder-side rule
+    // would have to model where each clause sits rather than what it contains
+    // (stokaro/ptah#941).
+    Over *WindowSpec
 }
     FuncCall is a function-call expression, such as an aggregate: COUNT(*),
     COUNT("col"), COUNT(DISTINCT "col"), or SUM("col"). It is shaped as a
@@ -2491,8 +2876,15 @@ package ast // import "go.5x5.cz/ptah/core/ast"
 type InExpr struct {
     // Operand is the expression tested for membership, typically a ColumnRef.
     Operand Expression
-    // Values are the candidate values, each bound as a placeholder.
+    // Values are the candidate values, each bound as a placeholder. Exactly one
+    // of Values and Subquery must be set.
     Values []Expression
+    // Subquery, when set, replaces Values and renders as
+    // "Operand IN (SELECT …)". The two are mutually exclusive rather than
+    // combined: a caller who set both would be describing two different
+    // membership tests, and picking one silently would answer a question that
+    // was never asked.
+    Subquery *SelectStatement
 }
     InExpr is a membership test of the form "Operand IN (Values...)".
 
@@ -2604,14 +2996,31 @@ type InsertStatement struct {
     // Columns is the inserted column list, each a quoted identifier. Required and
     // non-empty; every row must supply exactly one value per column.
     Columns []string
-    // Rows is the list of value rows. At least one row is required, and each row
-    // must have the same length as Columns. Values are bound row by row, in order.
+    // Rows is the list of value rows. At least one row is required unless Select
+    // supplies the rows instead, and each row must have the same length as
+    // Columns. Values are bound row by row, in order.
     Rows [][]Expression
+    // Select supplies the inserted rows from a query rather than from literal
+    // values: INSERT INTO t (a, b) SELECT x, y FROM u.
+    //
+    // It is mutually exclusive with Rows. A statement carrying both is a
+    // contradiction rather than a merge -- VALUES and SELECT are alternative
+    // sources in the grammar, and picking one silently would insert rows the
+    // caller did not ask for (stokaro/ptah#941).
+    //
+    // The query's projection must supply one expression per column. That is the
+    // server's rule rather than Ptah's, but it is checked here because the
+    // mismatch is a runtime error naming neither side, and the builder knows
+    // both.
+    Select *SelectStatement
     // Returning is the optional RETURNING projection: the columns to return from
     // the inserted rows. An empty slice emits no RETURNING. RETURNING is supported
     // only on the PostgreSQL family and SQLite; the renderer rejects it on MySQL
     // and MariaDB rather than emit SQL those engines cannot run.
     Returning []ColumnRef
+    // OnConflict is the optional upsert clause. Nil emits none, and a row that
+    // collides then fails the statement as it always did.
+    OnConflict *OnConflict
 }
     InsertStatement is an INSERT INTO … VALUES … over a single table, with one
     or more value rows and an optional RETURNING projection.
@@ -2680,6 +3089,50 @@ type LogicalOperator int
 
 const LogicalAnd LogicalOperator = iota ...
 func (op LogicalOperator) String() string
+
+### go.5x5.cz/ptah/core/ast.MatViewRefreshSpec
+
+package ast // import "go.5x5.cz/ptah/core/ast"
+
+type MatViewRefreshSpec struct {
+    // Mode is EVERY, which refreshes on a wall-clock schedule, or AFTER, which
+    // refreshes that long after the previous run finished.
+    Mode string
+    // Interval is the schedule, in the server's spelling: `1 HOUR`,
+    // `1 MINUTE 30 SECOND`, `1 YEAR 6 MONTH`.
+    Interval string
+    // Offset shifts an EVERY schedule within its period. It is empty for AFTER,
+    // which the server refuses to combine with one.
+    Offset string
+    // Randomize spreads the refresh over a window, the RANDOMIZE FOR clause.
+    Randomize string
+    // DependsOn names the views this one refreshes after, schema-qualified the
+    // way the server stores them.
+    DependsOn []string
+    // Append adds each refresh's rows instead of replacing the previous ones.
+    Append bool
+}
+    MatViewRefreshSpec is a ClickHouse materialized-view refresh schedule.
+
+    It is nil for a view that declares none, which is every materialized view
+    on every other dialect and the ordinary ClickHouse one: a plain ClickHouse
+    materialized view is maintained by inserts into its source and has no
+    schedule to carry.
+
+    It carries the engine's own vocabulary rather than a cross-dialect
+    abstraction, and that distinction is the point. A shared `refresh_strategy`
+    lived on this node once and was removed (stokaro/ptah#1625), because it
+    described an operation no catalog records and no dialect could read back.
+    This one is the opposite on every count: ClickHouse owns the schedule,
+    stores it, reports it, and alters it, so it is schema state -- of one
+    engine, named after that engine's feature, and absent everywhere else
+    (stokaro/ptah#1802).
+
+    The values are the ones the server stores, not the ones an operator wrote:
+    see go.5x5.cz/ptah/internal/chrefresh, which is where a declaration is
+    normalized before it reaches here.
+
+func (s *MatViewRefreshSpec) Clone() *MatViewRefreshSpec
 
 ### go.5x5.cz/ptah/core/ast.ModifyColumnOperation
 
@@ -2888,6 +3341,41 @@ type NullTest struct {
 }
     NullTest is a null check of the form "Operand IS NULL" or, when Negated,
     "Operand IS NOT NULL".
+
+
+### go.5x5.cz/ptah/core/ast.OnConflict
+
+package ast // import "go.5x5.cz/ptah/core/ast"
+
+type OnConflict struct {
+    // Columns is the conflict target: the columns whose unique index the
+    // insert watches. Empty means "any unique key", which every supported
+    // engine can express.
+    Columns []string
+    // DoNothing discards a colliding row. It is mutually exclusive with Update.
+    DoNothing bool
+    // Update lists the columns to overwrite from the row that was proposed.
+    // Empty with DoNothing false is an error rather than a silent no-op: a
+    // clause that updates nothing is either DoNothing or a mistake.
+    Update []string
+}
+    OnConflict describes what an INSERT does when a row collides with an
+    existing one.
+
+    # Why the shape is this and not richer
+
+    The engines do not agree, and the disagreement is about MEANING rather than
+    spelling. PostgreSQL and SQLite name the constraint to watch -- `ON CONFLICT
+    (email) DO UPDATE` fires for that key and no other. MySQL and MariaDB have
+    no such target: `ON DUPLICATE KEY UPDATE` fires for ANY unique key on the
+    table. So a statement naming a target means one thing on one engine and
+    something broader on the other, and the renderer refuses the combination
+    rather than emit it (stokaro/ptah#941).
+
+    SQL Server expresses this as MERGE, a different statement with its own
+    source, join condition and match clauses, and ClickHouse has no upsert
+    statement at all -- its ReplacingMergeTree is a table engine, deduplicating
+    in the background rather than at insert time. Both are refused by name.
 
 
 ### go.5x5.cz/ptah/core/ast.OpaqueRoutineNode
@@ -3422,6 +3910,14 @@ type SelectStatement struct {
     Distinct bool
     // Columns is the projection. An empty slice renders as "*".
     Columns []ResultColumn
+    // With is the optional WITH clause: named subqueries evaluated before the
+    // main query and referenced from it by name. An empty slice emits no WITH.
+    //
+    // Only non-recursive CTEs are modeled. RECURSIVE needs a UNION ALL body and
+    // a termination argument the builder has no way to state, and emitting the
+    // keyword without one would produce a query that runs forever rather than
+    // one that fails to parse.
+    With []CommonTableExpression
     // From is the source table, rendered as a quoted identifier. Required.
     From string
     // FromAlias is the optional alias for the source table; empty means no alias.
@@ -3447,14 +3943,6 @@ type SelectStatement struct {
     // Offset is the optional row offset; nil means no OFFSET. The value is bound.
     Offset *int64
 }
-    SelectStatement is a SELECT over a source table and zero or more joins,
-    with an optional DISTINCT, WHERE clause, GROUP BY / HAVING, ORDER BY terms,
-    and LIMIT/OFFSET bounds.
-
-    Subqueries, non-aggregate functions, arithmetic, and window functions are
-    not modeled yet. Render it with renderer.RenderSelect, which returns the SQL
-    string and its positional arguments. Build one fluently with the core/query
-    package.
 
 
 ### go.5x5.cz/ptah/core/ast.SetCreateDBOperation
@@ -3756,6 +4244,9 @@ type Visitor interface {
     VisitCreateMaterializedView(*CreateMaterializedViewNode) error
     // VisitDropMaterializedView renders a DROP MATERIALIZED VIEW statement
     VisitDropMaterializedView(*DropMaterializedViewNode) error
+    // VisitAlterMaterializedViewRefresh renders an in-place change to a
+    // materialized view's refresh schedule
+    VisitAlterMaterializedViewRefresh(*AlterMaterializedViewRefreshNode) error
     // VisitRefreshMaterializedView renders a REFRESH MATERIALIZED VIEW statement
     VisitRefreshMaterializedView(*RefreshMaterializedViewNode) error
     // VisitCreateTrigger renders a CREATE TRIGGER statement
@@ -3796,6 +4287,32 @@ type Visitor interface {
 
     Implementations of this interface should handle the rendering logic for
     their specific database dialect (PostgreSQL, MySQL, MariaDB, etc.).
+
+
+### go.5x5.cz/ptah/core/ast.WindowSpec
+
+package ast // import "go.5x5.cz/ptah/core/ast"
+
+type WindowSpec struct {
+    // PartitionBy divides the rows into groups the function is computed over.
+    // Empty computes over the whole result set.
+    PartitionBy []ColumnRef
+    // OrderBy orders the rows within each partition. Empty leaves the order
+    // unspecified, which for a ranking function means the engine may return any
+    // ordering -- a query relying on one is relying on that engine.
+    OrderBy []OrderByClause
+}
+    WindowSpec is the OVER (...) clause of a window function.
+
+    # What it deliberately does not model
+
+    A frame clause -- ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW and
+    its relatives -- is a further phase. Without one the engine applies its
+    default frame, which is well defined and is what an unframed window means
+    everywhere: RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW when the
+    window is ordered, and the whole partition when it is not. Emitting no frame
+    is therefore honest rather than incomplete; emitting a guessed one would
+    change results.
 
 
 ## go.5x5.cz/ptah/core/coverage
@@ -3874,6 +4391,7 @@ func (s Set) WithObject(kind Kind, name string) Set
 ## go.5x5.cz/ptah/core/goschema
 
 const NullsOrderFirst = "FIRST" ...
+const FunctionKindFunction = "function" ...
 func Deduplicate(r *Database)
 func Finalize(r *Database)
 func GetDependencyInfo(r *Database) string
@@ -4448,6 +4966,15 @@ package goschema // import "go.5x5.cz/ptah/core/goschema"
 type Function struct {
     StructName string // Name of the Go struct this function is associated with
     Name       string // Function name (e.g., "set_tenant_context")
+    // Kind separates a function from a procedure. Empty means "function",
+    // which is what every declaration written before procedures existed meant.
+    //
+    // The two are one model because they are one catalog row on both engines
+    // that have them -- pg_proc with prokind 'f' or 'p', ROUTINE_TYPE FUNCTION
+    // or PROCEDURE -- and they differ in exactly one property a schema can
+    // state: a procedure returns nothing and is invoked with CALL
+    // (stokaro/ptah#1722).
+    Kind       string
     Parameters string // Function parameters (e.g., "tenant_id_param TEXT")
     Returns    string // Return type (e.g., "VOID", "TEXT")
     Language   string // Function language (e.g., "plpgsql", "sql")
@@ -4494,6 +5021,7 @@ type Function struct {
         $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 func (f *Function) Canonicalize()
+func (f Function) IsProcedure() bool
 
 ### go.5x5.cz/ptah/core/goschema.Grant
 
@@ -4726,11 +5254,20 @@ type ManagedData struct {
 package goschema // import "go.5x5.cz/ptah/core/goschema"
 
 type MaterializedView struct {
-    StructName      string // Name of the Go struct this materialized view is associated with
-    Name            string // Materialized view name
-    Body            string // SELECT query used as the materialized view body
-    RefreshStrategy string // Ptah refresh workflow; manual emits no separate refresh operation
-    Comment         string // Optional comment for documentation
+    StructName string // Name of the Go struct this materialized view is associated with
+    Name       string // Materialized view name
+    Body       string // SELECT query used as the materialized view body
+    Comment    string // Optional comment for documentation
+
+    // Refresh is the ClickHouse refresh schedule this view declares, nil for
+    // one declaring none -- which is every materialized view on every other
+    // dialect, and the ordinary ClickHouse one.
+    //
+    // It carries the ast type rather than a copy of it, for the reason
+    // [Table.RowTTL] carries its own: the clauses are a closed, measured set,
+    // and a per-layer duplicate is a place for one of them to go missing
+    // between the declaration and the statement (stokaro/ptah#1802).
+    Refresh *ast.MatViewRefreshSpec
 
     // Dialects scopes this declaration to the named target dialects. See
     // [ScopeToDialect].
@@ -4741,10 +5278,16 @@ type MaterializedView struct {
 
     MaterializedView is created by parsing //ptah:schema:matview annotations:
 
-        //ptah:schema:matview name="user_stats" body="SELECT user_id, COUNT(*) FROM users GROUP BY user_id" refresh_strategy="manual"
+        //ptah:schema:matview name="user_stats" body="SELECT user_id, COUNT(*) FROM users GROUP BY user_id"
         type UserStats struct{}
 
-func (v *MaterializedView) Canonicalize()
+    A materialized view carries no refresh strategy. Refreshing is an operation
+    rather than schema state: the view is populated when it is created, a
+    changed definition is reconciled as DROP and CREATE, and it goes stale only
+    when its source data changes -- which a schema comparison cannot observe.
+    See go.5x5.cz/ptah/internal/matviewrefresh for the whole reasoning and the
+    refusal a declaration of the retired attribute gets (stokaro/ptah#1625).
+
 
 ### go.5x5.cz/ptah/core/goschema.PartitionPart
 
@@ -5330,6 +5873,7 @@ type Capabilities map[Capability]bool
     func CockroachDB23() Capabilities
     func CockroachDB25() Capabilities
     func CockroachDB26() Capabilities
+    func CockroachDB263() Capabilities
     func ForDialect(dialect string) Capabilities
     func ForServerVersion(dialect, version string) Capabilities
     func ForServerVersionResult(dialect, version string) (Capabilities, bool)
@@ -5386,6 +5930,7 @@ func ClickHouse2411() Capabilities
 func CockroachDB23() Capabilities
 func CockroachDB25() Capabilities
 func CockroachDB26() Capabilities
+func CockroachDB263() Capabilities
 func ForDialect(dialect string) Capabilities
 func ForServerVersion(dialect, version string) Capabilities
 func ForServerVersionResult(dialect, version string) (Capabilities, bool)
@@ -5793,27 +6338,41 @@ func (e *RenderError) Unwrap() error
 
 ## go.5x5.cz/ptah/core/query
 
+func Add(left, right ast.Expression) ast.Expression
 func And(exprs ...ast.Expression) ast.Expression
 func Asc(column string) ast.OrderByClause
 func Avg(column string) ast.Expression
+func ColExpr(name string) ast.Expression
 func Count(column string) ast.Expression
 func CountDistinct(column string) ast.Expression
 func CountStar() ast.Expression
 func Desc(column string) ast.OrderByClause
+func Div(left, right ast.Expression) ast.Expression
 func Eq(column string, value any) ast.Expression
+func Exists(sub *SelectBuilder) ast.Expression
+func Func(name string, args ...ast.Expression) ast.Expression
 func Ge(column string, value any) ast.Expression
 func Gt(column string, value any) ast.Expression
 func In[T any](column string, values []T) ast.Expression
+func InQuery(column string, sub *SelectBuilder) ast.Expression
 func IsNotNull(column string) ast.Expression
 func IsNull(column string) ast.Expression
 func Le(column string, value any) ast.Expression
+func Like(column, pattern string) ast.Expression
 func Lt(column string, value any) ast.Expression
 func Max(column string) ast.Expression
 func Min(column string) ast.Expression
+func Mod(left, right ast.Expression) ast.Expression
+func Mul(left, right ast.Expression) ast.Expression
 func Ne(column string, value any) ast.Expression
 func Not(expr ast.Expression) ast.Expression
+func NotExists(sub *SelectBuilder) ast.Expression
+func NotLike(column, pattern string) ast.Expression
 func Or(exprs ...ast.Expression) ast.Expression
+func Over(call ast.Expression, options ...WindowOption) ast.Expression
+func Sub(left, right ast.Expression) ast.Expression
 func Sum(column string) ast.Expression
+func Value(v any) ast.Expression
 type Column struct{ ... }
     func Col(qualifier, name string) Column
 type DeleteBuilder struct{ ... }
@@ -5826,6 +6385,10 @@ type SelectBuilder struct{ ... }
     func Select(columns ...string) *SelectBuilder
 type UpdateBuilder struct{ ... }
     func Update(table string) *UpdateBuilder
+type WindowOption func(*ast.WindowSpec)
+    func OrderAsc(columns ...string) WindowOption
+    func OrderDesc(columns ...string) WindowOption
+    func Partition(columns ...string) WindowOption
 
 ### go.5x5.cz/ptah/core/query.Column
 
@@ -5914,6 +6477,9 @@ type InsertBuilder struct {
 func InsertInto(table string) *InsertBuilder
 func (b *InsertBuilder) Build() *ast.InsertStatement
 func (b *InsertBuilder) Columns(columns ...string) *InsertBuilder
+func (b *InsertBuilder) FromSelect(query *SelectBuilder) *InsertBuilder
+func (b *InsertBuilder) OnConflictDoNothing(columns ...string) *InsertBuilder
+func (b *InsertBuilder) OnConflictDoUpdate(columns []string, update ...string) *InsertBuilder
 func (b *InsertBuilder) Returning(columns ...string) *InsertBuilder
 func (b *InsertBuilder) Values(values ...any) *InsertBuilder
 
@@ -5949,6 +6515,7 @@ func (b *SelectBuilder) Offset(n int64) *SelectBuilder
 func (b *SelectBuilder) OrderBy(terms ...ast.OrderByClause) *SelectBuilder
 func (b *SelectBuilder) RightJoin(table, alias string, on ast.Expression) *SelectBuilder
 func (b *SelectBuilder) Where(expr ast.Expression) *SelectBuilder
+func (b *SelectBuilder) With(name string, query *SelectBuilder) *SelectBuilder
 
 ### go.5x5.cz/ptah/core/query.UpdateBuilder
 
@@ -5966,6 +6533,17 @@ func (b *UpdateBuilder) Returning(columns ...string) *UpdateBuilder
 func (b *UpdateBuilder) Set(column string, value any) *UpdateBuilder
 func (b *UpdateBuilder) Unconditional() *UpdateBuilder
 func (b *UpdateBuilder) Where(expr ast.Expression) *UpdateBuilder
+
+### go.5x5.cz/ptah/core/query.WindowOption
+
+package query // import "go.5x5.cz/ptah/core/query"
+
+type WindowOption func(*ast.WindowSpec)
+    WindowOption configures the OVER clause built by Over.
+
+func OrderAsc(columns ...string) WindowOption
+func OrderDesc(columns ...string) WindowOption
+func Partition(columns ...string) WindowOption
 
 ## go.5x5.cz/ptah/core/renderer
 
@@ -6092,6 +6670,7 @@ func ReadSchemaWithSchemas(conn *DatabaseConnection, schemas []string) (*types.D
 func ReadTableRows(ctx context.Context, conn *DatabaseConnection, schema, table string, ...) ([]map[string]any, error)
 type DatabaseConnection struct{ ... }
     func ConnectToDatabase(ctx context.Context, dbURL string) (*DatabaseConnection, error)
+type DomainExpressionProbe struct{ ... }
 type IsolatedQueryer interface{ ... }
 
 ### go.5x5.cz/ptah/dbschema.DatabaseConnection
@@ -6114,6 +6693,7 @@ func (dc *DatabaseConnection) QueryContext(ctx context.Context, query string, ar
 func (dc *DatabaseConnection) QueryRow(query string, args ...any) *sql.Row
 func (dc *DatabaseConnection) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 func (dc *DatabaseConnection) Reader() types.SchemaReader
+func (dc *DatabaseConnection) ResolveDomainExpressions(ctx context.Context, probes []DomainExpressionProbe) (result map[string]config.DomainExpression, resultErr error)
 func (dc *DatabaseConnection) ResolveIdentifierSemantics(ctx context.Context, names []string) (identifier.Semantics, error)
 func (dc *DatabaseConnection) SchemaWriter() types.SchemaWriter
 func (dc *DatabaseConnection) WithExecutor(executor types.SchemaExecutor) *DatabaseConnection
@@ -6122,6 +6702,29 @@ func (dc *DatabaseConnection) WithSession(ctx context.Context, use func(*Databas
 func (dc *DatabaseConnection) WithSessionOrCurrent(ctx context.Context, use func(*DatabaseConnection) error) error
 func (dc *DatabaseConnection) WithUntrustedSQLSession(ctx context.Context, use func(*DatabaseConnection) error) error
 func (dc *DatabaseConnection) Writer() types.SchemaExecutor
+
+### go.5x5.cz/ptah/dbschema.DomainExpressionProbe
+
+package dbschema // import "go.5x5.cz/ptah/dbschema"
+
+type DomainExpressionProbe struct {
+    // Key identifies the domain to the caller. It is returned unchanged as the
+    // map key and is never sent to the server.
+    Key string
+    // BaseType is the domain's underlying type. The server needs it to parse
+    // the expressions: `VALUE <> ''` normalizes to `VALUE <> ''::text` over
+    // text and does not parse at all over integer.
+    BaseType string
+    // Check is the declared CHECK expression, without the CHECK keyword and
+    // without its enclosing parentheses.
+    Check string
+    // Default is the declared DEFAULT expression or literal.
+    Default string
+}
+    DomainExpressionProbe is one declared domain whose CHECK and DEFAULT need
+    the target server's own spelling before they can be compared with what the
+    catalog holds.
+
 
 ### go.5x5.cz/ptah/dbschema.IsolatedQueryer
 
@@ -6145,6 +6748,7 @@ type DBComposite struct{ ... }
 type DBCompositeField struct{ ... }
 type DBConstraint struct{ ... }
 type DBDomain struct{ ... }
+type DBDomainCheck struct{ ... }
 type DBEnum struct{ ... }
 type DBExtension struct{ ... }
 type DBFunction struct{ ... }
@@ -6351,10 +6955,35 @@ type DBDomain struct {
     NotNull  bool   `json:"not_null"`
     Default  string `json:"default,omitempty"`
     Check    string `json:"check,omitempty"`
+    // CheckConstraints names each CHECK the catalog holds for this domain,
+    // alongside the expression the server stores for it. Check above is the
+    // same expressions joined with AND, which is what a renderer needs and
+    // what a comparison of the whole domain reads; a constraint cannot be
+    // altered by that joined form, because ALTER DOMAIN ... DROP CONSTRAINT
+    // takes a name.
+    //
+    // It is a reader-only execution fact, like DBFunction.IdentityArguments:
+    // a serialized schema description declares what a domain must enforce,
+    // not what the server happened to name the constraint enforcing it.
+    CheckConstraints []DBDomainCheck `json:"-"`
 }
     DBDomain represents a PostgreSQL domain type read from the database.
 
 func (d DBDomain) QualifiedName() string
+
+### go.5x5.cz/ptah/dbschema/types.DBDomainCheck
+
+package types // import "go.5x5.cz/ptah/dbschema/types"
+
+type DBDomainCheck struct {
+    Name       string
+    Expression string
+}
+    DBDomainCheck is one named CHECK constraint of a domain, as the catalog
+    holds it. Expression is the server's own rewritten form -- PostgreSQL
+    reparses and prints a CHECK rather than storing the text it was given -- so
+    it compares equal only to another expression that made the same round trip.
+
 
 ### go.5x5.cz/ptah/dbschema/types.DBEnum
 
@@ -6425,6 +7054,9 @@ package types // import "go.5x5.cz/ptah/dbschema/types"
 
 type DBFunction struct {
     Name string `json:"name"` // Function name
+    // Kind separates a function from a procedure. Empty means function, which
+    // is what every description written before procedures existed meant.
+    Kind string `json:"kind,omitempty"`
     // Schema owns the function. Readers blank it for the connection's own
     // schema, the same convention tables, views and domains follow, so a
     // filter reconstructs the qualified spelling from the connection's
@@ -6687,11 +7319,18 @@ type DBInfo struct {
 package types // import "go.5x5.cz/ptah/dbschema/types"
 
 type DBMatView struct {
-    Name            string `json:"name"`             // Materialized view name
-    Schema          string `json:"schema"`           // Schema where the materialized view is defined
-    Body            string `json:"body"`             // SELECT query used as the materialized view definition
-    RefreshStrategy string `json:"refresh_strategy"` // Reported as manual because catalogs do not persist Ptah refresh policy
-    Comment         string `json:"comment"`          // Materialized view comment/description
+    Name    string `json:"name"`    // Materialized view name
+    Schema  string `json:"schema"`  // Schema where the materialized view is defined
+    Body    string `json:"body"`    // SELECT query used as the materialized view definition
+    Comment string `json:"comment"` // Materialized view comment/description
+
+    // Refresh is the ClickHouse refresh schedule read back from the server,
+    // nil for a view that has none.
+    //
+    // It is read from create_table_query, which is the only place the schedule
+    // survives: system.tables.as_select is byte-identical for a plain view and
+    // a refreshable one (stokaro/ptah#1802).
+    Refresh *ast.MatViewRefreshSpec
 }
     DBMatView represents a PostgreSQL materialized view read from the database.
 
@@ -7158,6 +7797,7 @@ type RowUpdate struct {
 
 ## go.5x5.cz/ptah/migration/dbtest
 
+type ApplyPlanStep struct{ ... }
 type Assertion struct{ ... }
 type AtlasTestKind string
     const AtlasTestKindSchema AtlasTestKind = "schema" ...
@@ -7173,9 +7813,27 @@ type Report struct{ ... }
     func RunMigrationTest(ctx context.Context, opts Options) (*Report, error)
     func RunSchemaTest(ctx context.Context, opts SchemaOptions) (*Report, error)
 type SchemaOptions struct{ ... }
+type SchemaSourceStep struct{ ... }
 type SeedStep struct{ ... }
 type Step struct{ ... }
 type StepResult struct{ ... }
+
+### go.5x5.cz/ptah/migration/dbtest.ApplyPlanStep
+
+package dbtest // import "go.5x5.cz/ptah/migration/dbtest"
+
+type ApplyPlanStep struct {
+    // URL is the plan file, `file://plans/add_email.plan.hcl`.
+    URL string `yaml:"url"`
+}
+    ApplyPlanStep executes a saved plan file.
+
+    A plan test exists to check that a REVIEWED plan does what it claims on a
+    known starting state, so the plan is named by path and read by the same
+    reader `schema apply --plan` uses rather than recomputed here. Recomputing
+    would test the planner against itself and never notice a plan file that
+    stopped matching what the planner now produces.
+
 
 ### go.5x5.cz/ptah/migration/dbtest.Assertion
 
@@ -7334,8 +7992,43 @@ type SchemaOptions struct {
     // ephemeral SQLite database is provisioned per case in a temporary directory
     // and removed afterwards.
     DBURL string
+    // ReportKind labels the report header. Empty leaves it "SCHEMA", which is
+    // what a schema test run is; a plan test run passes "PLAN", because a
+    // header naming the wrong verb is the first thing a reader trusts and the
+    // last thing they check (stokaro/ptah#1211).
+    ReportKind string
+    // ResolveSchema loads the desired state a `schema` block's url names. It
+    // backs the `schema` block of a plan case.
+    //
+    // It resolves rather than applies, so the applying stays in one place: the
+    // same convergence path every other schema step uses. Which URL schemes
+    // exist, and how a desired state is loaded from one, belongs to the command
+    // that knows about schema files (stokaro/ptah#1211). A case using the step
+    // with no callback set fails, rather than silently skipping the state it
+    // was meant to establish.
+    ResolveSchema func(url string) (*goschema.Database, error)
+    // ApplyPlan executes the saved plan file at url against the connected
+    // database. It backs the `apply` block of a plan case, and is supplied by
+    // the caller for the same reason.
+    ApplyPlan func(ctx context.Context, conn *dbschema.DatabaseConnection, url string) error
 }
     SchemaOptions configures a single RunSchemaTest invocation.
+
+
+### go.5x5.cz/ptah/migration/dbtest.SchemaSourceStep
+
+package dbtest // import "go.5x5.cz/ptah/migration/dbtest"
+
+type SchemaSourceStep struct {
+    // URL is the desired-state source, `file://snapshots/v1.sql` and the like.
+    URL string `yaml:"url"`
+}
+    SchemaSourceStep establishes the database state a schema source describes.
+
+    It names the source by URL rather than carrying a parsed schema, because the
+    runner is handed a loader by its caller: which URL schemes resolve, and how,
+    belongs to the command that knows about schema files, not to the test engine
+    (stokaro/ptah#1211).
 
 
 ### go.5x5.cz/ptah/migration/dbtest.SeedStep
@@ -7374,6 +8067,13 @@ type Step struct {
     Seed *SeedStep `yaml:"seed"`
     // Assert runs a query and checks a single condition on the result.
     Assert *Assertion `yaml:"assert"`
+    // EstablishSchema brings the database to the state a schema source
+    // describes, before anything else in the case runs. It is the `schema`
+    // block of an Atlas `test "plan"` case.
+    EstablishSchema *SchemaSourceStep `yaml:"establish_schema"`
+    // ApplyPlan executes a saved plan file against the database. It is the
+    // `apply` block of an Atlas `test "plan"` case.
+    ApplyPlan *ApplyPlanStep `yaml:"apply_plan"`
 }
     Step performs exactly one action against the test database.
 
@@ -7454,6 +8154,7 @@ func GenerateCheckpoint(schema *goschema.Database, dialect string) (upSQL, downS
 func GenerateCheckpointFromShadow(ctx context.Context, opts CheckpointFromShadowOptions) (upSQL, downSQL string, err error)
 func GenerateCheckpointWithDatabase(ctx context.Context, conn *dbschema.DatabaseConnection, ...) (upSQL, downSQL string, err error)
 func GenerateCheckpointWithDatabaseInfo(schema *goschema.Database, info dbschematypes.DBInfo) (upSQL, downSQL string, err error)
+func PlanDynamicRollback(ctx context.Context, opts DynamicRollbackOptions) ([]string, error)
 func ResolveAtlasCheckpointVersion(outputDir string) int64
 func VerifyBaselineShadow(ctx context.Context, opts BaselineShadowVerifyOptions) error
 func VerifyRollbackFromShadow(ctx context.Context, opts RollbackFromShadowOptions) error
@@ -7472,6 +8173,7 @@ type CheckpointWriteOptions struct{ ... }
 type ConcurrentIndexMode uint8
     const ConcurrentIndexAutomatic ConcurrentIndexMode = iota ...
 type DiffPolicy struct{ ... }
+type DynamicRollbackOptions struct{ ... }
 type EmptyMigrationOptions struct{ ... }
 type GenerateMigrationOptions struct{ ... }
 type MigrationFilePair struct{ ... }
@@ -7647,6 +8349,35 @@ type DiffPolicy struct {
     ConcurrentIndexDrop bool
 }
     DiffPolicy is the generator-level view of the project diff policy.
+
+
+### go.5x5.cz/ptah/migration/generator.DynamicRollbackOptions
+
+package generator // import "go.5x5.cz/ptah/migration/generator"
+
+type DynamicRollbackOptions struct {
+    // TargetConnection is the live database the plan would be applied to. It is
+    // read, never written, by planning.
+    TargetConnection *dbschema.DatabaseConnection
+    // DevDatabaseURL is an ephemeral database the planner drops clean and
+    // replays the migration directory into, to materialize the target state.
+    // Its contents are discarded.
+    DevDatabaseURL string
+    // FS is the migration filesystem the target state is replayed from.
+    FS fs.FS
+    // TargetVersion is the version the database is being rolled back to. The
+    // dev database is migrated up to exactly this version, and the schema it
+    // then holds is what the plan drives the live database towards.
+    TargetVersion int64
+    // ProviderOptions are passed to the migration provider (e.g. dir format).
+    ProviderOptions []migrator.FSProviderOption
+    // ConnectTimeout bounds the dev database connection attempt.
+    ConnectTimeout time.Duration
+    // RevisionsTable names the revision table this run was configured with, so
+    // a non-default one is excluded from the comparison alongside the defaults.
+    RevisionsTable string
+}
+    DynamicRollbackOptions configures PlanDynamicRollback.
 
 
 ### go.5x5.cz/ptah/migration/generator.EmptyMigrationOptions
@@ -7948,7 +8679,11 @@ func Normalize(migrations []SourceMigration) ([]SourceMigration, error)
 ## go.5x5.cz/ptah/migration/lint
 
 const ConfigFileName = ".ptah-lint.yaml"
+func AtlasCodeAliases() map[string][]string
+func AtlasCodeFor(ptahRule string) []string
+func AtlasCodesPtahAlsoUses() map[string]string
 func Describe(f Finding) string
+func ExpandAtlasRuleSelectors(selectors []string, dialect string) []string
 func Register(rule Rule) error
 func ValidateOptions(opts Options) error
 type Analysis struct{ ... }
@@ -7967,6 +8702,8 @@ type Options struct{ ... }
 type Rule struct{ ... }
     func Rules() []Rule
 type RuleConfig struct{ ... }
+type RuleInput uint8
+    const InputStatementText RuleInput = iota ...
 type SchemaChange struct{ ... }
 type SchemaChangeKind string
     const SchemaChangeAdd SchemaChangeKind = "add" ...
@@ -7977,6 +8714,7 @@ type Statement struct{ ... }
 type Subject struct{ ... }
 type SubjectKind string
     const SubjectTable SubjectKind = "table" ...
+type UnmetInput struct{ ... }
 type VersionSelection struct{ ... }
 
 ### go.5x5.cz/ptah/migration/lint.Analysis
@@ -7996,6 +8734,7 @@ func (a Analysis) Files() []File
 func (a Analysis) Findings() []Finding
 func (a Analysis) SelectedFiles() []File
 func (a Analysis) SnapshotFS() fs.FS
+func (a Analysis) UnmetInputs() []UnmetInput
 
 ### go.5x5.cz/ptah/migration/lint.BaselineColumn
 
@@ -8272,6 +9011,27 @@ type Rule struct {
     AppliesToDown bool
     // CheckFile inspects file-level form and returns full findings.
     CheckFile func(file *File) []Finding
+    // Input declares what this rule reads. The zero value,
+    // [InputStatementText], is the migration SQL and nothing else.
+    //
+    // It is a declaration rather than a comment: [Analysis.BaselineVersions]
+    // is computed from it, so a rule that needs the starting schema state and
+    // does not say so is handed an empty one -- and a rule that says so and
+    // does not get it is reported by [Analysis.UnmetInputs] instead of quietly
+    // finding less (stokaro/ptah#1632).
+    Input RuleInput
+    // BaselineSubjects returns the indexes of the statements in this file whose
+    // analysis would say more with the schema state its version starts from.
+    //
+    // It is required for, and only meaningful to, [InputBaselineSchema].
+    // Statement indexes rather than a yes/no answer, because the reviewed-schema
+    // filter works at that granularity: a rename in a schema the run does not
+    // review is neither worth a dev-database round trip nor worth reporting as
+    // unresolved, and answering per file could not tell the two apart.
+    //
+    // A directory with nothing for the rule to resolve therefore costs no round
+    // trip at all.
+    BaselineSubjects func(file *File) []int
 }
     Rule is one lint check. Exactly one of CheckStatement / CheckFile is set.
 
@@ -8282,13 +9042,59 @@ func Rules() []Rule
 package lint // import "go.5x5.cz/ptah/migration/lint"
 
 type RuleConfig struct {
-    // Severity overrides the rule's default severity when set.
+    // Severity overrides the rule's default severity when set. On a DECLARED
+    // rule it is the rule's own severity rather than an override, and defaults
+    // to warning.
     Severity Severity `yaml:"severity,omitempty"`
     // Exclude lists slash-separated path globs where this rule is skipped.
     Exclude []string `yaml:"exclude,omitempty"`
+
+    // Match DECLARES a rule rather than configuring one. It is an expression
+    // over `statement`, `file` and `dialect` that decides whether the rule
+    // fires; see [go.5x5.cz/ptah/migration/lint] package documentation for the
+    // vocabulary.
+    //
+    // Its presence is what separates the two uses of this type: an entry with
+    // Match defines a new rule, an entry without it configures a rule that
+    // already exists. A code that already belongs to a built-in rule cannot be
+    // declared, so a typo can never quietly replace a built-in check with a
+    // weaker one of the same name.
+    Match string `yaml:"match,omitempty"`
+    // Message is the finding text a declared rule reports. It is required when
+    // Match is set: a finding whose message is the rule code tells a reader
+    // what fired and nothing about why it matters.
+    Message string `yaml:"message,omitempty"`
+    // Title is the declared rule's short name in reports. It defaults to the
+    // rule code.
+    Title string `yaml:"title,omitempty"`
+    // Dialects restricts a declared rule to specific target dialects. Empty
+    // runs it under every dialect.
+    Dialects []string `yaml:"dialects,omitempty"`
+    // AppliesToDown extends a declared rule to the down half of a migration.
+    // It is off by default for the same reason it is off on a built-in rule.
+    AppliesToDown bool `yaml:"applies-to-down,omitempty"`
 }
     RuleConfig customizes one rule for a lint run.
 
+func (c RuleConfig) Declares() bool
+
+### go.5x5.cz/ptah/migration/lint.RuleInput
+
+package lint // import "go.5x5.cz/ptah/migration/lint"
+
+type RuleInput uint8
+    RuleInput is the analyzer input a Rule reads.
+
+    Ptah's analyzers read migration SQL; Atlas replays the directory against
+    a dev database and analyzes the resulting schema. A concern whose subject
+    exists only in the post-state -- the type of a column a RENAME introduces,
+    say -- is unreachable from the text, so those rules take a second input.
+    Which of the two a rule takes is declared here rather than inferred, because
+    the failure mode of getting it wrong is silence: the rule runs, resolves
+    nothing, and reports less than the tool it replaces while exiting 0.
+
+const InputStatementText RuleInput = iota ...
+func (i RuleInput) String() string
 
 ### go.5x5.cz/ptah/migration/lint.SchemaChange
 
@@ -8404,6 +9210,24 @@ type SubjectKind string
 
 const SubjectTable SubjectKind = "table" ...
 
+### go.5x5.cz/ptah/migration/lint.UnmetInput
+
+package lint // import "go.5x5.cz/ptah/migration/lint"
+
+type UnmetInput struct {
+    // Rule is the code of the rule that asked.
+    Rule string
+    // Input is what it asked for.
+    Input RuleInput
+    // File is the migration file whose analysis was thinner for the absence.
+    File string
+    // Version is that file's migration version.
+    Version int64
+}
+    UnmetInput reports one rule that asked for an analyzer input the run did not
+    supply, on one file.
+
+
 ### go.5x5.cz/ptah/migration/lint.VersionSelection
 
 package lint // import "go.5x5.cz/ptah/migration/lint"
@@ -8424,7 +9248,9 @@ type VersionSelection struct {
 
 ## go.5x5.cz/ptah/migration/migrator
 
+const ConvertedFlywayRepeatableVersion int64 = math.MaxInt64
 const DirectiveNoTransaction = "no_transaction"
+var ErrMigrationTagNotFound = errors.New("migration tag not found")
 func FindMigrationGaps(versions []int64) []int64
 func GenerateCheckpointMigrationFileName(version int64, description, direction string) string
 func GenerateMigrationFileName(version int64, description, direction string) string
@@ -8434,6 +9260,7 @@ func IsDirtyMigration(err error) bool
 func IsMigrationLockTimeout(err error) bool
 func LooksAtlasTemplateSQL(sql string) bool
 func NoopMigrationFunc(_ctx context.Context, _conn *dbschema.DatabaseConnection) error
+func NormalizeMigrationTag(tag string) (string, error)
 func ParseFileDirectives(sql string) map[string]string
 func ParseMigrationLockTimeout(value string) (time.Duration, error)
 func RenderAtlasTemplateSQL(fsys fs.FS, filename string, data any) (sql string, rendered bool, err error)
@@ -8502,11 +9329,13 @@ type MigrationProvider interface{ ... }
 type MigrationRevision struct{ ... }
 type MigrationStatus struct{ ... }
 type MigrationStatusSnapshot struct{ ... }
+type MigrationTag struct{ ... }
 type MigrationTimeouts struct{ ... }
     func ParseMigrationTimeouts(lockTimeout, statementTimeout string) (MigrationTimeouts, error)
 type MigrationTxMode string
     const MigrationTxModeFile MigrationTxMode = "file" ...
     func ParseMigrationTxMode(value string) (MigrationTxMode, error)
+    func ResolveAtlasDirectiveTxMode(global MigrationTxMode, file MigrationFileTxMode, source string) (MigrationTxMode, error)
 type Migrator struct{ ... }
     func NewFSMigrator(conn *dbschema.DatabaseConnection, fsys fs.FS, opts ...FSProviderOption) (*Migrator, error)
     func NewMigrator(conn *dbschema.DatabaseConnection, provider MigrationProvider) *Migrator
@@ -8761,6 +9590,13 @@ type ChecksumMismatchError struct {
     Version  int64
     Stored   string
     Computed string
+    // Description is the migration's own description, used to name the file a
+    // converted repeatable came from.
+    Description string
+    // ConvertedRepeatable marks the one case where the mismatch is the normal
+    // use of a feature rather than a sign of tampering. See
+    // [ConvertedFlywayRepeatableVersion].
+    ConvertedRepeatable bool
 }
     ChecksumMismatchError reports that an already-applied migration file
     changed.
@@ -9144,6 +9980,21 @@ type MigrationStatusSnapshot struct {
     used to derive it.
 
 
+### go.5x5.cz/ptah/migration/migrator.MigrationTag
+
+package migrator // import "go.5x5.cz/ptah/migration/migrator"
+
+type MigrationTag struct {
+    // Tag is the name the operator gave the directory state.
+    Tag string `json:"tag"`
+    // Version is the highest migration version the tagged directory carries.
+    Version int64 `json:"version"`
+    // RecordedAt is when this tag last resolved to Version.
+    RecordedAt time.Time `json:"recorded_at"`
+}
+    MigrationTag records a directory tag and the schema version it selects.
+
+
 ### go.5x5.cz/ptah/migration/migrator.MigrationTimeouts
 
 package migrator // import "go.5x5.cz/ptah/migration/migrator"
@@ -9170,6 +10021,7 @@ type MigrationTxMode string
 
 const MigrationTxModeFile MigrationTxMode = "file" ...
 func ParseMigrationTxMode(value string) (MigrationTxMode, error)
+func ResolveAtlasDirectiveTxMode(global MigrationTxMode, file MigrationFileTxMode, source string) (MigrationTxMode, error)
 
 ### go.5x5.cz/ptah/migration/migrator.Migrator
 
@@ -9184,6 +10036,8 @@ func NewFSMigrator(conn *dbschema.DatabaseConnection, fsys fs.FS, opts ...FSProv
 func NewMigrator(conn *dbschema.DatabaseConnection, provider MigrationProvider) *Migrator
 func (m *Migrator) Baseline(ctx context.Context, version int64) error
 func (m *Migrator) BaselineWithOptions(ctx context.Context, opts BaselineOptions) error
+func (m *Migrator) DeleteMigrationTag(ctx context.Context, tag string) error
+func (m *Migrator) EnsureMigrationTagsTable(ctx context.Context) error
 func (m *Migrator) GetAppliedMigrations(ctx context.Context) ([]int64, error)
 func (m *Migrator) GetAppliedRevisions(ctx context.Context) ([]MigrationRevision, error)
 func (m *Migrator) GetCurrentVersion(ctx context.Context) (int64, error)
@@ -9203,8 +10057,11 @@ func (m *Migrator) MigrateUpWithPreflight(ctx context.Context, hook PreMigration
 func (m *Migrator) MigrationLockName() string
 func (m *Migrator) MigrationLockSkipped() bool
 func (m *Migrator) MigrationProvider() MigrationProvider
+func (m *Migrator) MigrationTags(ctx context.Context) ([]MigrationTag, error)
 func (m *Migrator) MigrationsTableIdentifier() string
+func (m *Migrator) RecordMigrationTag(ctx context.Context, tag string, version int64) error
 func (m *Migrator) RepairMigration(ctx context.Context, opts RepairMigrationOptions) error
+func (m *Migrator) ResolveMigrationTag(ctx context.Context, tag string) (int64, error)
 func (m *Migrator) SetAtlasRevision(ctx context.Context, version int64) (AtlasRevisionSetResult, error)
 func (m *Migrator) SetRevision(ctx context.Context, version int64) (AtlasRevisionSetResult, error)
 func (m *Migrator) WithAtlasRevisionVersionComparator(compare AtlasRevisionVersionComparator) *Migrator
@@ -9692,6 +10549,7 @@ func CompareWithOptions(generated *goschema.Database, database *types.DBSchema, 
 ## go.5x5.cz/ptah/migration/schemadiff/types
 
 type ColumnDiff struct{ ... }
+type CompositeAttribute struct{ ... }
 type CompositeTypeDiff struct{ ... }
 type ConstraintAdditionInfo struct{ ... }
 type ConstraintRemovalInfo struct{ ... }
@@ -9702,6 +10560,7 @@ type ForeignKeyRemovalInfo struct{ ... }
 type FunctionDiff struct{ ... }
 type GrantRef struct{ ... }
 type IndexRef struct{ ... }
+type MatViewRefreshChange struct{ ... }
 type MaterializedViewDiff struct{ ... }
 type RLSPolicyDiff struct{ ... }
 type RLSPolicyRef struct{ ... }
@@ -9755,6 +10614,18 @@ type ColumnDiff struct {
         }
 
 
+### go.5x5.cz/ptah/migration/schemadiff/types.CompositeAttribute
+
+package types // import "go.5x5.cz/ptah/migration/schemadiff/types"
+
+type CompositeAttribute struct {
+    Name string `json:"name"`
+    Type string `json:"type"`
+}
+    CompositeAttribute is one field of a composite type, as a declaration spells
+    it.
+
+
 ### go.5x5.cz/ptah/migration/schemadiff/types.CompositeTypeDiff
 
 package types // import "go.5x5.cz/ptah/migration/schemadiff/types"
@@ -9771,6 +10642,25 @@ type CompositeTypeDiff struct {
     // Empty when the caller built the diff by hand or the type's from-side is
     // unknown; the drop ordering then falls back to declaration order.
     CurrentFieldTypes []string `json:"current_field_types,omitempty"`
+
+    // AttributesAdded and AttributesRemoved carry the field-level delta, and
+    // they are set only when applying it reaches the declared shape exactly.
+    //
+    // PostgreSQL appends a new attribute at the end, so a declaration that puts
+    // a new field in the middle cannot be reached by ALTER TYPE at all: the
+    // catalog order would differ from the declared order and the next
+    // comparison would ask for the same change again, forever. The comparator
+    // therefore simulates the drops and appends and sets these two only when
+    // the result equals the declaration. A field whose TYPE changed also leaves
+    // them unset, because ALTER TYPE ... ALTER ATTRIBUTE is refused outright on
+    // a composite a column uses -- measured on PostgreSQL 18.4, with CASCADE and
+    // without: `cannot alter type "addr" because column "uses_addr.a" uses it`.
+    //
+    // Both unset means the modification takes the drop-and-recreate path
+    // (stokaro/ptah#1717).
+    AttributesAdded []CompositeAttribute `json:"attributes_added,omitempty"`
+    // AttributesRemoved names the fields to remove. See AttributesAdded.
+    AttributesRemoved []string `json:"attributes_removed,omitempty"`
 }
     CompositeTypeDiff represents changes to a PostgreSQL composite type.
 
@@ -9880,6 +10770,20 @@ type DomainDiff struct {
     // Empty when the caller built the diff by hand or the domain's from-side is
     // unknown; the drop ordering then falls back to declaration order.
     CurrentBaseType string `json:"current_base_type,omitempty"`
+
+    // CurrentCheckConstraints names the CHECK constraints the database holds
+    // for this domain, in catalog order.
+    //
+    // ALTER DOMAIN removes a constraint by name, and a name is the one thing
+    // the declaration cannot supply: the author wrote an expression, and the
+    // server chose what to call the constraint enforcing it. Without these a
+    // changed CHECK has only the drop-and-recreate route, which fails on any
+    // domain a column uses -- that is, on every domain worth changing.
+    //
+    // Empty when nothing needs replacing, and empty as well when the reader
+    // could not enumerate them; the planner then leaves the CHECK alone rather
+    // than guessing a name (stokaro/ptah#1717).
+    CurrentCheckConstraints []string `json:"current_check_constraints,omitempty"`
 }
     DomainDiff represents changes to a PostgreSQL domain type.
 
@@ -9936,6 +10840,24 @@ type ExtensionDiff struct {
     Name       string `json:"name"`
     FromSchema string `json:"from_schema"`
     ToSchema   string `json:"to_schema"`
+    // FromVersion and ToVersion carry a declared version change. The version is
+    // the one attribute of an extension that moves over time, and it used to be
+    // rendered on the create and never compared: a team that raised the pin in
+    // its schema saw "Schema is synced" against a database still running the old
+    // one (stokaro/ptah#1718).
+    //
+    // Both are empty when the declaration names no version, which is the common
+    // case and means "whatever the server installs".
+    FromVersion string `json:"from_version,omitempty"`
+    ToVersion   string `json:"to_version,omitempty"`
+    // Relocatable reports whether the installed extension may be moved between
+    // schemas at all. It is a fact about the extension rather than the target,
+    // read from pg_extension.extrelocatable, and it rides on the diff because
+    // the planner is handed the desired schema and this diff -- never the live
+    // description that knows it. `ALTER EXTENSION plpgsql SET SCHEMA ext` is
+    // `extension "plpgsql" does not support SET SCHEMA`, measured on
+    // PostgreSQL 18.
+    Relocatable bool `json:"relocatable"`
 }
     ExtensionDiff represents a PostgreSQL extension installation-schema change.
 
@@ -10045,6 +10967,23 @@ type IndexRef struct {
     names are scoped to a table rather than the database.
 
 
+### go.5x5.cz/ptah/migration/schemadiff/types.MatViewRefreshChange
+
+package types // import "go.5x5.cz/ptah/migration/schemadiff/types"
+
+type MatViewRefreshChange struct {
+    // Desired is the schedule the declaration asks for, nil to remove it.
+    Desired *ast.MatViewRefreshSpec `json:"desired,omitzero"`
+    // Current is the schedule the target carries, nil when it has none.
+    Current *ast.MatViewRefreshSpec `json:"current,omitzero"`
+}
+    MatViewRefreshChange is one materialized view's refresh-schedule transition.
+
+    Either side may be nil: a nil Current is a schedule being added, a nil
+    Desired is one being removed, and both non-nil is a change of schedule.
+    Both nil never reaches here, because that is not a change.
+
+
 ### go.5x5.cz/ptah/migration/schemadiff/types.MaterializedViewDiff
 
 package types // import "go.5x5.cz/ptah/migration/schemadiff/types"
@@ -10052,6 +10991,18 @@ package types // import "go.5x5.cz/ptah/migration/schemadiff/types"
 type MaterializedViewDiff struct {
     ViewName string            `json:"view_name"`
     Changes  map[string]string `json:"changes"`
+
+    // RefreshChange carries a ClickHouse refresh-schedule transition, and is
+    // nil when the schedule is unchanged.
+    //
+    // It is a pair rather than a text entry in Changes because the planner
+    // needs BOTH sides to choose a statement: a schedule changing to another
+    // schedule is an ALTER that keeps the view's rows, while a view gaining or
+    // losing one has to be dropped and recreated -- measured, the server
+    // answers MODIFY REFRESH on a plain view with `Alter of type
+    // 'MODIFY_REFRESH' is not supported by storage MaterializedView`
+    // (stokaro/ptah#1802).
+    RefreshChange *MatViewRefreshChange `json:"refresh_change,omitzero"`
 }
     MaterializedViewDiff represents changes to a materialized view definition.
 
@@ -10288,6 +11239,16 @@ type SchemaDiff struct {
     // FunctionsRemoved contains names of PostgreSQL functions that exist in the current database
     // but not in the target schema (potentially dangerous - may break existing functionality)
     FunctionsRemoved []string `json:"functions_removed"`
+    // ProceduresRemoved names the procedures the database holds and the desired
+    // state does not.
+    //
+    // It is separate from FunctionsRemoved because the DROP verb has to match the
+    // object: a server answers `DROP FUNCTION` aimed at a procedure by name, and
+    // the removal is the one operation whose kind cannot be recovered from the
+    // declaration -- there is no declaration left. Additions and modifications
+    // stay in the function collections, where the planner reads the kind off the
+    // declaration it is building from (stokaro/ptah#1722).
+    ProceduresRemoved []string `json:"procedures_removed,omitempty"`
 
     // FunctionsModified contains detailed information about functions that exist in both
     // schemas but have different definitions (parameters, body, attributes, etc.)

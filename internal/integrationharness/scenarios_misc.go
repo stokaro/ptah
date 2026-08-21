@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io/fs"
 	"strings"
+	"time"
 
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/dbschema"
@@ -133,28 +134,91 @@ func testManualPatchDetection(ctx context.Context, conn *dbschema.DatabaseConnec
 	return nil
 }
 
+// probeMySQLPermissionRefusal checks that a refused catalog read comes back as a
+// permission error rather than as data.
+//
+// The probe used to be the scenario connection reading mysql.user, on the
+// premise that CI provisions it without that privilege. That premise stopped
+// holding the moment the contour granted the privilege so it could exercise
+// role support at all, and the scenario broke -- which is the failure mode of
+// asserting on an ambient fact about how a runner was configured
+// (stokaro/ptah#1762).
+//
+// It now makes its own restricted account, so what it measures is the server's
+// answer to an unprivileged read and nothing about the credentials the suite
+// happens to run as.
+func probeMySQLPermissionRefusal(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	dialect string,
+) error {
+	// MySQL caps a user name at 32 characters and refuses a longer one with
+	// ER_WRONG_STRING_LENGTH, so the suffix is seconds rather than the
+	// nanoseconds every other name in this suite uses.
+	account := fmt.Sprintf("ptah_restricted_%d", time.Now().Unix())
+	const password = "ptah_restricted_password"
+
+	if _, err := conn.ExecContext(ctx, fmt.Sprintf(
+		"CREATE USER '%s'@'%%' IDENTIFIED BY '%s'", account, password)); err != nil {
+		return fmt.Errorf("create restricted %s account: %w", dialect, err)
+	}
+	defer func() {
+		_, _ = conn.ExecContext(ctx, fmt.Sprintf("DROP USER IF EXISTS '%s'@'%%'", account))
+	}()
+
+	// Restricted, not locked out. Without a grant on the scenario database the
+	// account cannot open a connection at all, and the probe would measure a
+	// failed handshake instead of a refused catalog read -- the same error
+	// class, and the wrong question.
+	if _, err := conn.ExecContext(ctx, fmt.Sprintf(
+		"GRANT SELECT ON %s.* TO '%s'@'%%'", quoteMySQLDatabaseName(conn.Info().Schema), account)); err != nil {
+		return fmt.Errorf("grant the restricted %s account its own schema: %w", dialect, err)
+	}
+
+	restricted, err := dbschema.ConnectToDatabase(ctx, restrictedMySQLURL(conn.Info().URL, account, password))
+	if err != nil {
+		return fmt.Errorf("connect as restricted %s account: %w", dialect, err)
+	}
+	defer dbschema.CloseAndWarn(restricted)
+
+	var userCount int
+	err = restricted.QueryRowContext(ctx, "SELECT COUNT(*) FROM mysql.user").Scan(&userCount)
+	if err == nil {
+		return fmt.Errorf("restricted %s connection unexpectedly read mysql.user", dialect)
+	}
+	if err.Error() == "" {
+		return fmt.Errorf("restricted %s failure message should not be empty", dialect)
+	}
+	errorMessage := strings.ToLower(err.Error())
+	if !strings.Contains(errorMessage, "denied") &&
+		!strings.Contains(errorMessage, "permission") &&
+		!strings.Contains(errorMessage, "privilege") {
+		return fmt.Errorf("restricted %s connection returned a non-permission error: %w", dialect, err)
+	}
+	return nil
+}
+
+// quoteMySQLDatabaseName wraps a database name in backticks for a GRANT.
+func quoteMySQLDatabaseName(name string) string {
+	return "`" + strings.ReplaceAll(name, "`", "``") + "`"
+}
+
+// restrictedMySQLURL swaps the account in a MySQL-family URL, keeping the host,
+// port and database the scenario is already pointed at.
+func restrictedMySQLURL(dbURL, account, password string) string {
+	scheme, rest, _ := strings.Cut(dbURL, "://")
+	_, tail, found := strings.Cut(rest, "@")
+	if !found {
+		tail = rest
+	}
+	return fmt.Sprintf("%s://%s:%s@%s", scheme, account, password, tail)
+}
+
 // testPermissionRestrictions tests behavior with limited database permissions
 func testPermissionRestrictions(ctx context.Context, conn *dbschema.DatabaseConnection, fixtures fs.FS) error {
 	dialect := platform.NormalizeDialect(conn.Info().Dialect)
 	if dialect == platform.MySQL || dialect == platform.MariaDB {
-		// CI provisions these scenario connections without access to the
-		// server-wide privilege table, giving this probe a side-effect-free
-		// distinction between scenario and cleanup credentials.
-		var userCount int
-		err := conn.QueryRowContext(ctx, "SELECT COUNT(*) FROM mysql.user").Scan(&userCount)
-		if err == nil {
-			return fmt.Errorf("restricted %s connection unexpectedly read mysql.user", dialect)
-		}
-		if err.Error() == "" {
-			return fmt.Errorf("restricted %s failure message should not be empty", dialect)
-		}
-		errorMessage := strings.ToLower(err.Error())
-		if !strings.Contains(errorMessage, "denied") &&
-			!strings.Contains(errorMessage, "permission") &&
-			!strings.Contains(errorMessage, "privilege") {
-			return fmt.Errorf("restricted %s connection returned a non-permission error: %w", dialect, err)
-		}
-		return nil
+		return probeMySQLPermissionRefusal(ctx, conn, dialect)
 	}
 
 	// Try to execute a statement that might fail due to permissions

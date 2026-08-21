@@ -3,6 +3,7 @@ package schemafile
 
 import (
 	"fmt"
+	"io"
 	"maps"
 	"net/url"
 	"os"
@@ -45,11 +46,25 @@ type Options struct {
 	// defaulting it on is exactly how the native commands became tolerant
 	// without anyone intending it.
 	//
-	// There is deliberately no companion hook for reporting what was dropped.
-	// [atlashcl.Options.RecordIgnored] offers one, but nothing on this path
-	// consumes it, and a forwarding field with no producer is a field no test
-	// can hold to account.
+	// Set [Options.ReportIgnored] alongside it. Matching a documented tolerance
+	// is defensible; matching it in SILENCE is not, and a `procedure` block
+	// dropped from a schema file is a stored routine the author believes is
+	// managed (stokaro/ptah#1709).
 	IgnoreUnknownHCLNames bool
+
+	// ReportIgnored receives one warning line per top-level name accepted and
+	// dropped under [Options.IgnoreUnknownHCLNames], naming the construct and
+	// the line it was written on.
+	//
+	// nil discards them, which is what the community binary does and what the
+	// native surface needs -- there the tolerance is off, so an unmodeled name
+	// is refused and there is nothing to report.
+	//
+	// The wording matches the project-file channel
+	// (dbcli.ReportIgnoredAtlasConstructs) on purpose: the same product should
+	// not describe an ignored atlas.hcl block and an ignored schema-file block
+	// in two different sentences.
+	ReportIgnored io.Writer
 
 	// Vars supplies values for the `variable` blocks of an HCL schema file, as
 	// `--var` spells them. See [atlashcl.Options.Vars].
@@ -299,6 +314,7 @@ func parseSchemaFile(resolved string, opts Options) (*goschema.Database, error) 
 	case ".hcl":
 		return atlashcl.ParseFileWithOptions(resolved, atlashcl.Options{
 			IgnoreUnknownNames: opts.IgnoreUnknownHCLNames,
+			RecordIgnored:      ignoredNameReporter(opts.ReportIgnored),
 			RecordSchemaBlock:  opts.recordSchemaBlock(),
 			Vars:               opts.Vars,
 			VarValues:          opts.VarValues,
@@ -1096,14 +1112,12 @@ func toDBViews(views []goschema.View) []dbschematypes.DBView {
 func toDBMaterializedViews(views []goschema.MaterializedView) []dbschematypes.DBMatView {
 	out := make([]dbschematypes.DBMatView, 0, len(views))
 	for _, view := range views {
-		view.Canonicalize()
 		name, schema := splitTableIdentity(view.Name)
 		out = append(out, dbschematypes.DBMatView{
-			Name:            name,
-			Schema:          schema,
-			Body:            view.Body,
-			RefreshStrategy: view.RefreshStrategy,
-			Comment:         view.Comment,
+			Name:    name,
+			Schema:  schema,
+			Body:    view.Body,
+			Comment: view.Comment,
 		})
 	}
 	return out
@@ -1213,4 +1227,27 @@ func optionalStringPtr(value string) *string {
 		return nil
 	}
 	return new(value)
+}
+
+// ignoredNameReporter turns the writer into the callback the HCL parser takes,
+// or nil when there is nowhere to write.
+//
+// Returning nil rather than a no-op function is what keeps the parser's own
+// documented behavior -- "nil discards them, which is what the community binary
+// does" -- reachable, and keeps a caller that wants silence from paying for a
+// formatted string it throws away.
+func ignoredNameReporter(out io.Writer) func(atlashcl.IgnoredName) {
+	if out == nil {
+		return nil
+	}
+	return func(ignored atlashcl.IgnoredName) {
+		fmt.Fprintf(
+			out,
+			"warning: schema file %s %q at %s:%d is ignored for Atlas compatibility and has no effect\n",
+			ignored.Kind,
+			ignored.Name,
+			ignored.Filename,
+			ignored.Line,
+		)
+	}
 }

@@ -151,10 +151,14 @@ func TestRenderInsert_Errors(t *testing.T) {
 			wantErrLike: "renderer: nil insert statement",
 		},
 		{
-			name:        "unsupported dialect",
-			stmt:        insertUsers(),
-			dialect:     platform.ClickHouse,
-			wantErrLike: `renderer: INSERT rendering is not supported for dialect "clickhouse"`,
+			name: "unsupported dialect",
+			stmt: insertUsers(),
+			// A dialect the renderer has never been taught. ClickHouse stood
+			// here until stokaro/ptah#941 taught it, which is why the example
+			// is now a name outside platform's set entirely: an example the
+			// builder supports asserts nothing.
+			dialect:     "oracle",
+			wantErrLike: `renderer: INSERT rendering is not supported for dialect "oracle"`,
 		},
 		{
 			name:        "missing table",
@@ -169,10 +173,12 @@ func TestRenderInsert_Errors(t *testing.T) {
 			wantErrLike: "renderer: insert statement requires at least one column",
 		},
 		{
-			name:        "no rows",
+			// The message names both sources now that a SELECT can supply the
+			// rows; an insert with neither is still refused (stokaro/ptah#941).
+			name:        "neither rows nor a select source",
 			stmt:        &ast.InsertStatement{Table: "t", Columns: []string{"a"}},
 			dialect:     platform.Postgres,
-			wantErrLike: "renderer: insert statement requires at least one row",
+			wantErrLike: "renderer: insert statement requires at least one row or a SELECT source",
 		},
 		{
 			name: "ragged row",
@@ -518,10 +524,14 @@ func TestRenderDelete_Errors(t *testing.T) {
 			wantErrLike: "renderer: nil delete statement",
 		},
 		{
-			name:        "unsupported dialect",
-			stmt:        deleteUser(),
-			dialect:     platform.ClickHouse,
-			wantErrLike: `renderer: DELETE rendering is not supported for dialect "clickhouse"`,
+			name: "unsupported dialect",
+			stmt: deleteUser(),
+			// A dialect the renderer has never been taught. ClickHouse stood
+			// here until stokaro/ptah#941 taught it, which is why the example
+			// is now a name outside platform's set entirely: an example the
+			// builder supports asserts nothing.
+			dialect:     "oracle",
+			wantErrLike: `renderer: DELETE rendering is not supported for dialect "oracle"`,
 		},
 		{
 			name:        "missing table",
