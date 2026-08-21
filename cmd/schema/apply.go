@@ -29,40 +29,44 @@ import (
 )
 
 const (
-	applyDBURLFlag       = "db-url"
-	applyRootDirFlag     = "root-dir"
-	applySchemaFileFlag  = "schema-file"
-	applyToFlag          = "to"
-	applyDevURLFlag      = "dev-url"
-	applyDryRunFlag      = "dry-run"
-	applyAutoApproveFlag = "auto-approve"
-	applyEditFlag        = "edit"
-	applyTxModeFlag      = "tx-mode"
-	applyLockTimeoutFlag = "lock-timeout"
-	applyIncludeFlag     = "include"
-	applyExcludeFlag     = "exclude"
-	applyPlanFlag        = "plan"
+	applyDBURLFlag           = "db-url"
+	applyRootDirFlag         = "root-dir"
+	applySchemaFileFlag      = "schema-file"
+	applyToFlag              = "to"
+	applyDevURLFlag          = "dev-url"
+	applyDryRunFlag          = "dry-run"
+	applyAutoApproveFlag     = "auto-approve"
+	applyEditFlag            = "edit"
+	applyTxModeFlag          = "tx-mode"
+	applyLockTimeoutFlag     = "lock-timeout"
+	applyIncludeFlag         = "include"
+	applyExcludeFlag         = "exclude"
+	applyPlanFlag            = "plan"
+	applyRequireApprovalFlag = "require-approval"
 )
 
 type schemaApplyOptions struct {
-	dbURL          string
-	rootDirs       []string
-	schemaFiles    []string
-	toURLs         []string
-	devURL         string
-	dryRun         bool
-	autoApprove    bool
-	edit           bool
-	txMode         string
-	lockTimeout    string
-	schemas        string
-	include        []string
-	exclude        []string
-	planPath       string
-	plainHTTP      bool
-	connectTimeout string
-	configPath     string
-	envName        string
+	dbURL           string
+	rootDirs        []string
+	schemaFiles     []string
+	toURLs          []string
+	devURL          string
+	dryRun          bool
+	autoApprove     bool
+	edit            bool
+	txMode          string
+	lockTimeout     string
+	schemas         string
+	include         []string
+	exclude         []string
+	planPath        string
+	requireApproval bool
+	allowedSigners  string
+	approvalSigner  string
+	plainHTTP       bool
+	connectTimeout  string
+	configPath      string
+	envName         string
 }
 
 func newSchemaApplyCommand() *cobra.Command {
@@ -113,6 +117,12 @@ apply rather than reporting a synced schema for work that did not happen.`,
 	flags.StringArrayVar(&opts.include, applyIncludeFlag, nil, "Schema objects to include in the apply (Atlas-style selectors)")
 	flags.StringArrayVar(&opts.exclude, applyExcludeFlag, nil, "Schema objects to exclude from the apply (Atlas-style selectors)")
 	flags.StringVar(&opts.planPath, applyPlanFlag, "", "Pre-approved plan file saved by `ptah schema plan`; executed after fingerprint verification")
+	flags.BoolVar(&opts.requireApproval, applyRequireApprovalFlag, false,
+		"Refuse to execute a --plan that does not carry a verified approval")
+	flags.StringVar(&opts.allowedSigners, approvalAllowedSignersFlag, "",
+		"OpenSSH allowed_signers file listing approvers (default: ./.ptah/allowed_signers)")
+	flags.StringVar(&opts.approvalSigner, approvalSignerFlag, "",
+		"Require the approval to belong to this principal")
 	dbcli.RegisterPlainHTTPFlag(flags, &opts.plainHTTP)
 	dbcli.RegisterConnectTimeoutFlag(flags, &opts.connectTimeout)
 	dbcli.RegisterConfigFlag(flags, &opts.configPath)
@@ -334,6 +344,15 @@ func runSchemaApplyPlanFile(cmd *cobra.Command, opts schemaApplyOptions) error {
 	path, err := schemafile.LocalFilePath(opts.planPath)
 	if err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("--%s %q: %w", applyPlanFlag, opts.planPath, err))
+	}
+	// The approval gate runs on the resolved path, before the plan is parsed
+	// and long before the database is contacted: a plan nobody approved must
+	// not reach a connection, and refusing after a connect would leave the
+	// operator wondering what already ran (stokaro/ptah#1857).
+	if opts.requireApproval {
+		if err := requirePlanApproval(cmd, path, opts.allowedSigners, opts.approvalSigner); err != nil {
+			return cmdutil.Fail(cmd, err)
+		}
 	}
 	plan, err := atlasschema.ReadPlanFile(path)
 	if err != nil {
