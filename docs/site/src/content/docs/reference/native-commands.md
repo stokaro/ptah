@@ -263,6 +263,57 @@ would describe a schema the reader does not have. `--include-tables` and
 `--to markdown` writes the same reference as a Markdown document, for a
 repository that would rather commit text.
 
+## Plan approval
+
+`ptah schema approve` records that a human reviewed a saved plan, by signing it
+with an SSH key:
+
+```bash
+ptah schema plan --db-url "$DATABASE_URL" --schema-file schema.sql --name release
+ptah schema approve --plan release.plan.json --key ~/.ssh/id_ed25519
+ptah schema verify-approval --plan release.plan.json
+```
+
+```text
+Approved by alice@example.com
+Plan digest: b1a46d7d7fc05bd7705c7deb1e27016e3a99ed583a2df97d0c3b1e834efa27fd
+```
+
+`ptah schema apply --plan <path> --require-approval` refuses to execute a plan
+that does not verify, before the plan is parsed and before the database is
+contacted.
+
+Approvers live in an OpenSSH `allowed_signers` file, `./.ptah/allowed_signers`
+by default. Committing it is what makes the set of approvers reviewable in the
+same place as the code, and changing it a reviewable change:
+
+```text
+alice@example.com ssh-ed25519 AAAAC3Nza...
+bob@example.com   ssh-ed25519 AAAAC3Nza...
+```
+
+This is the mechanism git uses for signed commits, and it answers the same
+question: which known key vouched for this exact content. Ptah implements no
+cryptography and never reads a private key — `ssh-keygen` does both halves, so
+principal matching, key revocation and validity windows behave exactly as
+OpenSSH defines them.
+
+The signature covers the plan document byte for byte, not selected fields. A
+rule for which fields matter would let a plan that later gained a destructive
+flag nobody signed keep verifying.
+
+Three outcomes stay distinct, because they call for different actions:
+
+| Outcome | Meaning |
+| --- | --- |
+| unapproved | no signature beside the plan — nobody reviewed it |
+| unverifiable | the plan changed after approval, or an unlisted key signed it |
+| approved | verified, and the signer is named |
+
+A signature made for another purpose does not count: the approval is scoped to
+the `ptah-plan` namespace, so a commit signature over the same bytes cannot be
+replayed as a plan approval.
+
 ## Column lineage
 
 `ptah schema lineage` derives column-to-column dependencies from the view and
