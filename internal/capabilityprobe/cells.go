@@ -487,7 +487,7 @@ var Cells = []Cell{
 	{
 		Dialect: platform.Oracle, Line: "23",
 		Preset: capability.Oracle23, PresetName: "Oracle23",
-		Refinement: RefinedByVersion, Support: capability.BestEffort, Image: "gvenzl/oracle-free:slim",
+		Refinement: RefinedByVersion, Support: capability.Certified, Image: "gvenzl/oracle-free:slim",
 		Understates: map[capability.Capability]string{
 			// Four keys where the engine does more than Ptah's Oracle path
 			// does. Each is a renderer that has not been written rather than a
@@ -502,7 +502,8 @@ var Cells = []Cell{
 			capability.RoleManagement: "CREATE ROLE and GRANT are both accepted, and the renderer emits neither a role " +
 				"nor a grant for Oracle",
 		},
-		Note: "measured live on 23.26.2.0.0: every IF [NOT] EXISTS guard accepted -- and shown to be a " +
+		Note: "exercised by the tagged integration contour, which starts this image and runs the " +
+			"declaration-convergence round trip against it. Measured live on 23.26.2.0.0: every IF [NOT] EXISTS guard accepted -- and shown to be a " +
 			"guard rather than a discarded clause, because the unguarded control answered ORA-00955 -- " +
 			"CREATE DOMAIN usable as a column type and enforcing its own NOT NULL, and a CREATE TABLE " +
 			"surviving ROLLBACK",

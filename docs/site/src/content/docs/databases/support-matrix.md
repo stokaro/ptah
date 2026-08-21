@@ -152,13 +152,13 @@ the declared set cannot say one thing here and another in a workflow file.
 | `sqlserver` | 17.0 (SQL Server 2025) | certified | `SQLServer2022` | no |
 | `sqlserver` | 16.0 (SQL Server 2022) | best-effort | `SQLServer2022` | no |
 | `sqlserver` | 15.0 (SQL Server 2019) | best-effort | `SQLServer2022` | no |
-| `oracle` | 23 | best-effort | `Oracle23` | no |
+| `oracle` | 23 | certified | `Oracle23` | no |
 | `oracle` | 21 | best-effort | `Oracle21` | no |
 | `sqlite` | 3 | certified | `SQLite3` | no |
 
 Declared release lines: 30. Probed on every pull request: 24.
 
-Support levels across the 30 declared lines: 23 certified, 2 legacy-tested, 5 best-effort.
+Support levels across the 30 declared lines: 24 certified, 2 legacy-tested, 4 best-effort.
 
 Lines that are declared and not probed, and why:
 
