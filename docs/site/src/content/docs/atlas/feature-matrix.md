@@ -90,12 +90,12 @@ Across the 191 capabilities below:
 
 | Reading | Count |
 | --- | --- |
-| Ptah supports it fully | 178 |
+| Ptah supports it fully | 179 |
 | Ptah supports it with a stated limitation | 0 |
-| Ptah does not implement it | 5 |
+| Ptah does not implement it | 4 |
 | Ptah covers it in its own form, against a hosted service it cannot interoperate with | 8 |
 | Ptah and Atlas CE both support it | 63 |
-| Ptah implements it openly where Atlas gates it behind Pro or Cloud | 50 |
+| Ptah implements it openly where Atlas gates it behind Pro or Cloud | 51 |
 | Ptah has it and neither Atlas edition does | 27 |
 | Atlas CE has it and Ptah does not, or only in part | 0 |
 | An Atlas column is ❔ — not established by this page's evidence | 4 |
@@ -377,7 +377,7 @@ is genuinely absent and the difference column names the issue that owns it.
 | `schema plan` registry sub-verbs (approve, list, pull, push, rm) | 🔷 | ❌ | ✅ | These five arbitrate plan state inside the hosted registry. Ptah keeps plan state in local plan files that the ordinary `schema plan` verbs read and write; the service is out of reach. |
 | Atlas Cloud deployment reporting | 🔷 | ❌ | ✅ | Ptah attaches a deployment-report referrer to its own OCI artifact after an `oci://` migrations up, so the report is readable from the registry. There is no account model to report into. |
 | Atlas Copilot (AI assistant) | ❌ | ❌ | ✅ | An AI assistant gated to accounts with the vendor. Ptah's own MCP server and BYOK/BYOM assistant are stokaro/ptah#1483; the nearest surface today is the `ptah-ls` language server. |
-| Column-level data lineage | ❌ | ❌ | ✅ | Column-to-column dependency tracing across schemas. No Ptah surface: `ptah viz` draws table-level foreign keys only, and nothing derives edges from view bodies. Tracked by stokaro/ptah#1712. |
+| Column-level data lineage | ✅ | ❌ | ✅ | `ptah schema lineage` derives column-to-column edges from view and materialized-view bodies and emits them as a table or JSON. A body it cannot resolve is reported, not omitted. |
 | Hosted Schema Docs (schema documentation) | 🔷 | ❌ | ✅ | `ptah schema export --to markdown` writes reference documentation locally: a section per table with columns, types, defaults, keys, comments, indexes and enums. Not a hosted service. |
 | Reviewer approval and policy workflows | ❌ | ❌ | ✅ | Local `-- +ptah check` pre-migration assertions exist. Reviewer approval needs an identity and a service; the self-hosted control plane that would carry it is stokaro/ptah#1229. |
 | Schema monitoring, hosted UI, login | ❌ | ❌ | ✅ | No login, registry UI, promotion or monitoring. Native `ptah schema drift` is a local one-shot check; the self-hosted control plane that would cover the rest is stokaro/ptah#1229. |

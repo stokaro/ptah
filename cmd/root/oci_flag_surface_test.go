@@ -99,6 +99,12 @@ func ociSchemaSourceVerbs() []ociSourceVerb {
 			},
 		},
 		{
+			verb: "schema lineage",
+			args: func(reference string) []string {
+				return []string{"schema", "lineage", "--schema-file", reference, "--dialect", "sqlite", "--plain-http"}
+			},
+		},
+		{
 			verb: "schema render",
 			args: func(reference string) []string {
 				return []string{"schema", "render", "--schema-file", reference, "--dialect", "sqlite", "--plain-http"}

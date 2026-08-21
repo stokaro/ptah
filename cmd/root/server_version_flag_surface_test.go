@@ -72,6 +72,11 @@ func offlineDialectVerbs() []dialectVerb {
 				"and nothing here connects to a server",
 		},
 		{
+			verb: "schema lineage",
+			why: "--dialect selects the capability preset the schema is read against, " +
+				"and the lineage is derived from view bodies without connecting to a server",
+		},
+		{
 			verb: "sql lint",
 			why: "--dialect selects the capability preset the CAP rules are evaluated against, " +
 				"and nothing here connects to a server",
