@@ -33,7 +33,16 @@ func TestRuntimePolicies_ReachEveryTargetTheirCapabilityClaims(t *testing.T) {
 	}{
 		{dialect: platform.Postgres, wantTimeouts: true, wantTxAll: true},
 		// The two the dialect switch excluded, both measured live.
-		{dialect: platform.CockroachDB, wantTimeouts: true, wantTxAll: true},
+		//
+		// CockroachDB carries the timeout policy and not the rollback one. A
+		// dialect with no version in hand gets its newest measured line, and on
+		// that line a schema statement inside a transaction commits it first,
+		// so the ROLLBACK undoes nothing -- measured on v25.4.5 and newer
+		// (stokaro/ptah#1849). A connected server on v23 or v24 still reaches
+		// the true through the version ladder, which is where a version is
+		// known; here there is none, and promising a rollback that may not
+		// happen is the worse of the two errors.
+		{dialect: platform.CockroachDB, wantTimeouts: true, wantTxAll: false},
 		{dialect: platform.YugabyteDB, wantTimeouts: true, wantTxAll: true},
 		// The MySQL family sets and restores session variables, and commits
 		// DDL as it runs -- so it carries one policy and not the other.
