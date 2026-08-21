@@ -90,12 +90,12 @@ Across the 191 capabilities below:
 
 | Reading | Count |
 | --- | --- |
-| Ptah supports it fully | 172 |
+| Ptah supports it fully | 173 |
 | Ptah supports it with a stated limitation | 3 |
-| Ptah does not implement it | 8 |
+| Ptah does not implement it | 7 |
 | Ptah covers it in its own form, against a hosted service it cannot interoperate with | 8 |
 | Ptah and Atlas CE both support it | 63 |
-| Ptah implements it openly where Atlas gates it behind Pro or Cloud | 47 |
+| Ptah implements it openly where Atlas gates it behind Pro or Cloud | 48 |
 | Ptah has it and neither Atlas edition does | 27 |
 | Atlas CE has it and Ptah does not, or only in part | 0 |
 | An Atlas column is ❔ — not established by this page's evidence | 4 |
@@ -176,7 +176,7 @@ seven of them as open capabilities regardless.
 | schema fmt (HCL canonical layout) | ✅ | ✅ | ✅ | Formats .hcl paths recursively and prints only changed files. Native `ptah schema fmt --check` adds a no-write CI gate. |
 | schema inspect to HCL, SQL, or JSON | ✅ | ✅ | ✅ | Default HCL; rendered HCL/SQL/JSON use explicit helper templates. Bare and whitespace-wrapped hcl/sql/json are literal template text. Native shorthands still render and add file export. |
 | Schema-qualified exclude globs for enums and functions | ✅ | 🟡 | ✅ | Enums and functions match schema-qualified globs on the rule tables and views use, and the match reaches the planned DROP. The community binary matches `app.mood`; it reports no functions. |
-| Verb `schema stats` | ❌ | ❌ | ✅ | In Atlas it exists as `schema stats inspect` and emits OpenMetrics, rejecting SQLite at runtime. Ptah emits metrics in no form; whether it should is the open half of stokaro/ptah#1711. |
+| Verb `schema stats` | ✅ | ❌ | ✅ | Ptah implements it as `schema stats inspect` on the compat surface and `schema stats` natively, emitting OpenMetrics counts for 18 object kinds. Unlike Atlas it accepts SQLite. |
 | Verb `schema validate` | ✅ | ❌ | ✅ | `ptah schema validate` and the compat verb report every structural problem in a desired state without a database; exit 1 when any is found. |
 
 ## Versioned migrations

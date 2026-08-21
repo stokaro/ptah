@@ -23,10 +23,44 @@ plus the flag translation rules are on the
 | `ptah-compat schema clean` | Plans and applies destructive cleanup of user-owned schema objects. |
 | `ptah-compat schema test [paths]` | Forwards to `ptah schema test` with Ptah-native YAML test cases. |
 | `ptah-compat schema validate` | Forwards to `ptah schema validate`: loads the desired state, reports every structural problem found in it without a database, and exits 1 when it finds any. The pinned Atlas community binary v1.3.0 has no such verb, so it is unavailable under `PTAH_ATLAS_STRICT_COMPAT`. |
+| `ptah-compat schema stats inspect` | Forwards to `ptah schema stats`: reads a live database and writes one OpenMetrics gauge per schema object kind. See [Schema statistics](#schema-statistics). |
 | `ptah-compat schema push` | Atlas CE boundary stub; the native `ptah schema push` to any OCI registry is the open replacement. |
 
 Per-verb status detail — Atlas differences, waivers, and the inputs that fail
 explicitly — is on [Atlas-compatible commands](../../reference/atlas-commands/).
+
+## Schema statistics
+
+`ptah schema stats`, spelled `ptah-compat schema stats inspect` on the
+Atlas-compatible surface, reads a live database and writes one OpenMetrics
+gauge per schema object kind:
+
+```text
+# HELP ptah_schema_tables Tables.
+# TYPE ptah_schema_tables gauge
+ptah_schema_tables{dialect="postgres"} 12
+# EOF
+```
+
+Every sample carries the dialect as a label, and `--schemas` adds the schema
+selection as a second one, so several databases can be scraped into one
+collector without their series colliding.
+
+What it counts is the schema, and only the schema. There are no row counts, no
+table sizes and no bloat estimates, because those are properties of the data
+rather than of the structure Ptah models -- a schema that has not changed
+reports the same numbers however much has been written to it.
+
+A kind Ptah reads nothing for reports zero rather than being left out. A
+pipeline charting a series needs the series to exist before it can fall to
+zero, and an absent metric and a zero one mean different things to a collector.
+
+Atlas rejects SQLite for this verb at runtime. Ptah does not: its reader handles
+SQLite like any other dialect, and refusing would copy a limitation this
+implementation does not have.
+
+The pinned Atlas community binary v1.3.0 registers no `stats` verb under
+`schema`, so the verb is unavailable under `PTAH_ATLAS_STRICT_COMPAT`.
 
 ## Inspect a schema source
 
