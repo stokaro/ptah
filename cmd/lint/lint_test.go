@@ -1108,12 +1108,15 @@ func TestRunLint_LocalSourceValidationPrecedence(t *testing.T) {
 			want: `unknown migration directory format "custom"`,
 		},
 		{
+			// "db2" rather than "spanner": Spanner is a dev-URL dialect now,
+			// and used to land here only because a hand-written scheme list
+			// had drifted from NormalizeDialect (stokaro/ptah#1875).
 			name: "dev url before directory capture",
 			args: []string{
 				"--dir", invalidMetadataDir,
-				"--dev-url", "spanner://localhost/dev",
+				"--dev-url", "db2://localhost/dev",
 			},
-			want: `unsupported --dev-url dialect "spanner://localhost/dev"`,
+			want: `unsupported --dev-url dialect "db2://localhost/dev"`,
 		},
 	}
 

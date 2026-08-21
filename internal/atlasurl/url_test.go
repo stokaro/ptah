@@ -57,7 +57,12 @@ func TestDialectFromURL_FailurePath(t *testing.T) {
 		wantErr string
 	}{
 		{name: "missing docker engine", rawURL: "docker:///dev", wantErr: `docker --dev-url is missing database engine`},
-		{name: "unsupported", rawURL: "spanner://localhost/dev", wantErr: `unsupported --dev-url dialect "spanner://localhost/dev"`},
+		// "db2" rather than "spanner": Spanner used to land here because a
+		// hand-written scheme list had drifted from NormalizeDialect, not
+		// because a Spanner dev database is refused -- internal/devclean and
+		// internal/devlock both put it in the PostgreSQL family, and the
+		// dev-database page documents the URL form.
+		{name: "unsupported", rawURL: "db2://localhost/dev", wantErr: `unsupported --dev-url dialect "db2://localhost/dev"`},
 	}
 
 	for _, test := range tests {
@@ -94,8 +99,8 @@ func TestValidateDialectMatch_HappyPath(t *testing.T) {
 func TestValidateDialectMatch_FailurePath(t *testing.T) {
 	t.Run("unsupported dev url", func(t *testing.T) {
 		c := qt.New(t)
-		err := atlasurl.ValidateDialectMatch("spanner://localhost/dev", "postgres")
-		c.Assert(err, qt.ErrorMatches, `unsupported --dev-url dialect "spanner://localhost/dev"`)
+		err := atlasurl.ValidateDialectMatch("db2://localhost/dev", "postgres")
+		c.Assert(err, qt.ErrorMatches, `unsupported --dev-url dialect "db2://localhost/dev"`)
 	})
 
 	t.Run("mismatched dialect", func(t *testing.T) {
