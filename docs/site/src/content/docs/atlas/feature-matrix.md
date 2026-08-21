@@ -90,12 +90,12 @@ Across the 191 capabilities below:
 
 | Reading | Count |
 | --- | --- |
-| Ptah supports it fully | 174 |
-| Ptah supports it with a stated limitation | 2 |
-| Ptah does not implement it | 7 |
+| Ptah supports it fully | 176 |
+| Ptah supports it with a stated limitation | 1 |
+| Ptah does not implement it | 6 |
 | Ptah covers it in its own form, against a hosted service it cannot interoperate with | 8 |
 | Ptah and Atlas CE both support it | 63 |
-| Ptah implements it openly where Atlas gates it behind Pro or Cloud | 48 |
+| Ptah implements it openly where Atlas gates it behind Pro or Cloud | 49 |
 | Ptah has it and neither Atlas edition does | 27 |
 | Atlas CE has it and Ptah does not, or only in part | 0 |
 | An Atlas column is ❔ — not established by this page's evidence | 4 |
@@ -195,7 +195,7 @@ seven of them as open capabilities regardless.
 | Direct Flyway revision identity | ✅ | ✅ | ✅ | Flyway tokens persist; numeric keys order them. Empty identities render as "". Baselines use raw-token order. A repeatable target preserves history CE deletes; unknown roles and ties fail closed. |
 | Directory integrity file and execution gate | ✅ | ✅ | ✅ | Both sums support hash/validate. Native SQL execution gates hashed dirs; compat apply/status/set/new/diff/down do too. Import verifies source sums. Replay uses one verified snapshot and refuses drift. |
 | Directory maintenance: edit, rebase, rm | ✅ | ❌ | ✅ | Each rewrites `ptah.sum`/`atlas.sum` and refuses a migration applied in `--db-url` unless `--force`; CE aborts all three as non-community verbs. |
-| Dynamic down planning (`migrate down --plan`) | ❌ | ❌ | ✅ | `--plan`, `--to-tag` and `--skip-checks` are recorded waivers that fail loudly; Ptah reverts only through pre-planned down files. Tracked by stokaro/ptah#1621. |
+| Dynamic down planning (`migrate down --plan`) | ✅ | ❌ | ✅ | `--plan` builds the target schema on `--dev-url` and derives the rollback from the difference, so a migration with no down body is revertible. `--to-tag` and `--skip-checks` land too. |
 | Execution order (`--exec-order`) | ✅ | ✅ | ✅ | linear fails on a pending migration below the current version, linear-skip leaves it pending, and non-linear applies it. Atlas chained revision hashes remain valid after an insertion. |
 | External `--dir-format` outside `migrate import` | ✅ | ✅ | ✅ | Five external layouts read and write, and all five carry a no-transaction requirement in whatever their own format offers -- a directive, a sidecar, or a migration of its own. |
 | Failed rollback state is recorded and recoverable | ✅ | ❌ | ❌ | Ptah records failed rollback direction, error, and completed-statement count in both revision-table formats; compat keeps the Atlas schema but does not copy Atlas's hidden failed-down state. |
@@ -214,7 +214,7 @@ seven of them as open capabilities regardless.
 | Repair dirty or partial revision state | ✅ | ❌ | ❌ | Under the migration advisory lock, `--resume-from` verifies the committed prefix, then finishes up before marking applied or down before removing the revision. Atlas CE has no repair verb. |
 | Report of an ignored `--dir` URL query key | ✅ | ❌ | ❌ | Only `?format=` selects a layout. On the eight verbs accepting a `--dir` query, other keys are ignored, named on stderr, exit 0 unchanged; `PTAH_STRICT_DIR_QUERY=1` refuses. Six verbs take no query. |
 | Revision table format and placement | ✅ | ✅ | ✅ | `--revision-format` ptah\|atlas plus `--migrations-table` and `--migrations-schema`; the compat path defaults to Atlas rows. |
-| Roll back applied migrations (down) | 🟡 | ❌ | ✅ | Ptah validates all selected down bodies before changing state, and dry-run reports distinguish preflight rejection from attempted rollback. Registry flags stay waivers. Tracked by stokaro/ptah#1621. |
+| Roll back applied migrations (down) | ✅ | ❌ | ✅ | Ptah validates all down bodies before changing state, dry-run reports separate preflight rejection from attempted rollback, and `--plan`, `--to-tag` and `--skip-checks` are implemented. |
 | Set revision state to a version | ✅ | ✅ | ✅ | Removes revision rows above the target, keeps rows at or below it, and inserts missing rows through it as manually set. |
 | Structured JSON log output (`--log-format`) | ✅ | ❌ | ❌ | migrations up, down, and status take `--log-format` text\|json and `--log-level` debug\|info\|warn\|error for machine-readable run logs. |
 | Transaction modes (`--tx-mode` file/all/none) | ✅ | ✅ | ✅ | File/all/none behavior is tested and none-mode partial progress is pinned both ways. `--tx-mode all` decides on transactional DDL and carries neither checks nor timeouts. |

@@ -572,10 +572,11 @@ func atlasMigrateDownVerb() atlasVerb {
 			// before touching the target (native --shadow-db).
 			atlasargs.NativeString("dev-url", "", "Dev database URL the rollback plan is verified on before applying it", "shadow-db"),
 			atlasargs.NativeString("to-version", "", "Target version to roll back to", "target"),
-			// --to-tag targets a hosted registry tag, for which Ptah intentionally
-			// has no counterpart (see docs/site/src/content/docs/reference/atlas-commands.md).
-			atlasargs.UnsupportedStringReason("to-tag", "", "Target migration tag to roll back to",
-				"migration tags require a hosted registry; use --to-version with a migration version instead"),
+			// --to-tag resolves against the tags `ptah migrations tag` records
+			// in the database, not against a hosted registry. The waiver this
+			// replaces said migration tags require one; they do not, and the
+			// tag namespace added for stokaro/ptah#1621 is where these resolve.
+			atlasargs.NativeString("to-tag", "", "Target migration tag to roll back to", "to-tag"),
 			atlasargs.NativeBool("dry-run", "", "Show rollback plan without applying it", "dry-run"),
 			// --format is implemented by newAtlasMigrateDownCommand, which
 			// intercepts it before the arg mapper runs. The Unsupported marker
@@ -585,22 +586,25 @@ func atlasMigrateDownVerb() atlasVerb {
 			atlasargs.UnsupportedString("format", "", "Atlas Go template output format"),
 			atlasargs.NativeString("revisions-schema", "", "Schema for the revision table", "migrations-schema"),
 			atlasargs.NativeString("lock-timeout", "", "Timeout for acquiring migration locks", "migration-lock-timeout"),
-			// --skip-checks skips the checks of a hosted pre-planned down
-			// migration; Ptah reverts through locally reviewed down files and
-			// has no generated checks to skip.
+			// --skip-checks bypasses the pre-migration checks the down bodies
+			// being rolled back carry.
 			//
-			// Explicit-only, unlike the waivers around it, because `migrate
-			// apply` reads PTAH_SKIP_CHECKS as its pre-migration check bypass.
-			// An ambient value meant for an apply is not a request for hosted down
-			// checks, and must not refuse a rollback.
-			atlasargs.ExplicitUnsupportedBoolReason("skip-checks", "", "Skip down migration safety checks",
-				"down checks require a hosted plan-approval workflow; Ptah reverts through locally reviewed down migrations and has no generated checks to skip"),
-			// --plan forces Atlas's registry-bound dynamic down planning.
-			// Ptah's local plan files (the `schema plan` workflow) are
-			// declarative apply plans, not down plans, so forcing a down plan
-			// has no local meaning and is rejected rather than faked.
-			atlasargs.UnsupportedBoolReason("plan", "", "Force dynamic down planning",
-				"dynamic down planning requires a hosted plan-approval workflow; use --dev-url to verify the pre-planned rollback on a dev database instead"),
+			// The waiver this replaces said Ptah had no generated checks to
+			// skip. That stopped being true when stokaro/ptah#1715 taught
+			// `-- +ptah check` the down direction: a down body's checks run
+			// before its statements and abort the rollback, so there is a real
+			// thing to bypass, and refusing the flag left an operator with a
+			// blocking check no flag could get past.
+			atlasargs.NativeBool("skip-checks", "", "Skip the pre-migration checks in the down migrations being rolled back", "skip-checks"),
+			// --plan derives the rollback from the schema difference instead of
+			// running the down bodies, which is what makes a migration with no
+			// down body revertible.
+			//
+			// The waiver this replaces called dynamic down planning
+			// hosted-only. It is not: the target version's schema is built on
+			// --dev-url and compared against the live database, both locally
+			// (stokaro/ptah#1621).
+			atlasargs.NativeBool("plan", "", "Derive the rollback from the schema difference instead of running the down migrations", "plan"),
 		},
 	}
 }

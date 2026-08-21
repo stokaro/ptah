@@ -28,6 +28,7 @@ var projectEnvCommandPaths = []string{
 	"ptah migrations plan",
 	"ptah migrations set",
 	"ptah migrations status",
+	"ptah migrations tag",
 	"ptah migrations up",
 	"ptah schema apply",
 	"ptah schema compare",
