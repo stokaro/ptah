@@ -149,10 +149,18 @@ func (p *Planner) handleEnumModifications(result []ast.Node, diff *types.SchemaD
 	return result
 }
 
+// enumDialectLabel names the engine a refusal is about.
+//
+// This planner is shared by more than the MySQL family: SQL Server and Oracle
+// are aliased onto it, and a refusal that names the wrong engine sends an
+// operator to the wrong documentation. Every dialect aliased here needs an arm,
+// because the default spells a family it may not belong to.
 func (p *Planner) enumDialectLabel() string {
 	switch p.targetDialect() {
 	case platform.SQLServer:
 		return "SQL Server"
+	case platform.Oracle:
+		return "Oracle"
 	default:
 		return "MySQL-family"
 	}
@@ -1346,9 +1354,12 @@ func (p *Planner) rejectMaterializedViews(diff *types.SchemaDiff) error {
 		len(diff.MaterializedViewsRemoved) == 0 {
 		return nil
 	}
-	engine := "MySQL or MariaDB"
-	if p.targetDialect() == platform.SQLServer {
-		engine = "SQL Server"
+	// Same reason as enumDialectLabel: this planner serves more engines than
+	// its package name. MySQL and MariaDB keep the joint spelling because the
+	// two share the refusal and existing callers assert on it.
+	engine := p.enumDialectLabel()
+	if engine == "MySQL-family" {
+		engine = "MySQL or MariaDB"
 	}
 	// The names are part of the refusal: "remove matview definitions" tells an
 	// operator what kind of thing to look for, not which one, and a schema with

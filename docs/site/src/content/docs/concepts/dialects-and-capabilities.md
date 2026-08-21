@@ -22,8 +22,11 @@ covered.
 
 Each normalized dialect maps
 to an implementation family, and several engines deliberately share one —
-MySQL and MariaDB share a planner family, and CockroachDB, YugabyteDB, and
-Spanner ride the PostgreSQL family. What distinguishes the members is their
+MySQL and MariaDB share a planner family that SQL Server and Oracle also ride,
+and CockroachDB, YugabyteDB, and Spanner ride the PostgreSQL family. Sharing a
+family is not sharing a dialect: each member keeps its own renderer and its own
+capability set, which is what lets Oracle write bare identifiers while the rest
+quote. What distinguishes the members is their
 **capability set**: a validated map of known capability keys, with presets per
 engine and version line (PostgreSQL 12–13, 14–16, and 17+ are three different
 presets). Unknown keys and contradictory sets are rejected outright, so a
