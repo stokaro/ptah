@@ -24,6 +24,7 @@ import (
 	"go.5x5.cz/ptah/internal/openapirender"
 	"go.5x5.cz/ptah/internal/pathguard"
 	"go.5x5.cz/ptah/internal/protobufrender"
+	"go.5x5.cz/ptah/internal/schemadoc"
 	"go.5x5.cz/ptah/internal/schemaexport"
 )
 
@@ -50,6 +51,7 @@ const (
 	exportFormatGraphQL      = "graphql"
 	exportFormatProtobuf     = "protobuf"
 	exportFormatMarkdown     = "markdown"
+	exportFormatHTML         = "html"
 
 	// exportSourceDB is named so --from db is refused with the reason and the
 	// command that does read a live database, rather than with a bare list.
@@ -199,6 +201,7 @@ GraphQL SDL, a Protobuf definition, or Markdown reference documentation:
   ptah schema export --to protobuf    --root-dir ./models \
     --out ./proto/acme/inventory/v1/schema.proto --proto-package acme.inventory.v1
   ptah schema export --to markdown    --root-dir ./models --out SCHEMA.md
+  ptah schema export --to html        --root-dir ./models --out schema.html
 
 The source is Go annotations under --root-dir by default. The openapi-v3,
 graphql, and protobuf targets also read a YAML, HCL, or SQL schema file, which
@@ -211,13 +214,21 @@ graphql, and protobuf targets also read a YAML, HCL, or SQL schema file, which
 it unset to take the format from the extension. The hcl target reads Go
 annotations only, because it rewrites the files it reads.
 
-The markdown target writes reference documentation: one section per table with
-its columns, types, nullability, defaults, keys and comments, plus its indexes
-and any enums. Unlike the API targets it documents every column, because
-documentation that hid one would describe a schema the reader does not have.
+The markdown and html targets write reference documentation: one section per
+table with its columns, types, nullability, defaults, keys and comments, plus
+its indexes and any enums. Unlike the API targets they document every column,
+because documentation that hid one would describe a schema the reader does not
+have.
 
-For openapi-v3, graphql and markdown, --out is optional; the schema is written
-to stdout when omitted. Use --include-tables / --exclude-tables to select which tables are
+html writes one self-contained page. It carries its own styling and draws the
+entity diagram as inline SVG, so opening it fetches nothing -- no stylesheet, no
+font, no script -- and it reads on a machine with no network. The diagram is
+laid out left to right by dependency, so reading it that way reads the order the
+tables can be created in. It follows the reader's light or dark preference
+rather than choosing one.
+
+For openapi-v3, graphql, markdown and html, --out is optional; the schema is
+written to stdout when omitted. Use --include-tables / --exclude-tables to select which tables are
 exported.
 
 The graphql target emits data types only. Operation shapes are opt-in through
@@ -399,6 +410,21 @@ func runExport(cmd *cobra.Command, opts exportOptions) error {
 		if err := emitAPISchema(cmd, opts, db, rendered.Data, rendered.Diagnostics, "OpenAPI schema"); err != nil {
 			return cmdutil.Fail(cmd, err)
 		}
+	case exportFormatHTML:
+		rendered, err := schemadoc.Render(db, schemadoc.Options{
+			IncludeTables: opts.includeTables,
+			ExcludeTables: opts.excludeTables,
+			Title:         opts.title,
+		})
+		if err != nil {
+			return cmdutil.Fail(cmd, err)
+		}
+		for _, diagnostic := range rendered.Diagnostics {
+			fmt.Fprintf(cmd.ErrOrStderr(), "warning: %s\n", diagnostic)
+		}
+		if err := emitAPISchema(cmd, opts, db, rendered.Data, nil, "schema documentation"); err != nil {
+			return cmdutil.Fail(cmd, err)
+		}
 	case exportFormatMarkdown:
 		rendered, err := docsrender.Render(db, docsrender.Options{
 			IncludeTables: opts.includeTables,
@@ -535,11 +561,11 @@ func validateExportOptions(opts exportOptions) error {
 	}
 	switch opts.to {
 	case exportFormatHCL, exportFormatOpenAPI, exportFormatGraphQL, exportFormatProtobuf,
-		exportFormatMarkdown:
+		exportFormatMarkdown, exportFormatHTML:
 	default:
-		return fmt.Errorf("unsupported --to %q: expected %s, %s, %s, %s, or %s",
+		return fmt.Errorf("unsupported --to %q: expected %s, %s, %s, %s, %s, or %s",
 			opts.to, exportFormatHCL, exportFormatOpenAPI, exportFormatGraphQL, exportFormatProtobuf,
-			exportFormatMarkdown)
+			exportFormatMarkdown, exportFormatHTML)
 	}
 	if opts.to == exportFormatHCL && strings.TrimSpace(opts.outPath) == "" {
 		return fmt.Errorf("--out is required for --%s %s", exportToFlag, exportFormatHCL)
