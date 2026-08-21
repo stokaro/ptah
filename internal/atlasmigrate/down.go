@@ -26,6 +26,14 @@ type DownOptions struct {
 	RevisionsSchema      string
 	MigrationLockTimeout time.Duration
 	AtlasEnv             string
+	// SkipChecks bypasses the pre-migration checks the down bodies carry.
+	//
+	// The formatted path builds its own migrator here rather than going through
+	// the native command, so an option the native path applies has to be
+	// threaded in explicitly or it is silently dropped -- which is how
+	// --skip-checks came to be accepted and ignored on this path
+	// (stokaro/ptah#1621).
+	SkipChecks bool
 }
 
 // DownPlan is the selected Atlas migrate down work prepared from the migration
@@ -84,6 +92,7 @@ func PrepareDown(ctx context.Context, conn *dbschema.DatabaseConnection, opts Do
 	mig = mig.WithRevisionTableFormat(migrator.RevisionTableFormatAtlas).
 		WithMigrationsTable(opts.RevisionsSchema, "").
 		WithMigrationLockTimeout(opts.MigrationLockTimeout).
+		WithSkipChecks(opts.SkipChecks).
 		WithLogger(compatMigratorLogger())
 
 	conn.SchemaWriter().SetDryRun(opts.DryRun)

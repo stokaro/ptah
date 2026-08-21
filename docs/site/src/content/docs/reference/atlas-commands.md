@@ -526,16 +526,48 @@ does not accept the native `--confirm` flag. Review `--url`, `--dir`, and
 `--to-version` before running it. Native `ptah migrations down` keeps its
 interactive confirmation.
 
-The registry-bound `--to-tag`, `--skip-checks`, and `--plan` flags are recorded
-waivers that fail loudly with their rationale. `--to-tag` and `--plan` are also
-settable through their `PTAH_<FLAG>` twins, and refusing them is the point:
-setting `PTAH_TO_TAG` is a request for a capability Ptah lacks, and discarding
-it would leave an empty rollback target that reverts the whole history.
+`--to-tag` rolls back to the version a tag names. Tags are recorded with `ptah
+migrations tag` and live in the database beside the revisions, so resolving one
+contacts nothing:
 
-`--skip-checks` is the single exception, and it is explicit-only. `migrate
-apply` reads `PTAH_SKIP_CHECKS` as its pre-migration check bypass, so on this
-verb the variable is not a request for Atlas Cloud down checks; it neither
-refuses a rollback nor appears as an `[env: ...]` suffix in `--help`.
+```bash
+ptah migrations tag release-v1 --db-url "$DATABASE_URL" --version 20260801000001
+ptah-compat migrate down --url "$DATABASE_URL" --dir file://migrations --to-tag release-v1
+```
+
+A tag nobody recorded is refused rather than resolved to zero, because the
+rollback target defaults to `0` and a discarded tag would revert the whole
+history where the operator asked for something bounded. Passing `--to-version`
+as well is refused too: both name where to stop, and picking one silently would
+roll back to a version nobody chose.
+
+`--skip-checks` bypasses the pre-migration checks the down bodies being rolled
+back carry — the `-- +ptah check` directives that abort a rollback when their
+assertion does not hold. It means on this verb exactly what it means on
+`migrate apply`, including through `PTAH_SKIP_CHECKS`.
+
+`--plan` derives the rollback from the schema difference instead of running the
+down bodies, which is what makes a migration with **no** down body revertible:
+
+```bash
+ptah-compat migrate down --url "$DATABASE_URL" --dir file://migrations \
+  --to-version 1 --plan --dev-url "docker://postgres/16/dev"
+```
+
+The target version's schema is built on `--dev-url` and compared against the live
+database, so the flag needs one: that schema exists nowhere else — not in the
+live database, which is what is being changed, and not in any single file, since
+a version's schema is the accumulation of every migration up to it.
+
+Ptah's own revision and tag tables are excluded from the comparison. The live
+database and the dev replay can name them differently, and a table one side has
+and the other does not otherwise looks exactly like a table the rollback should
+drop.
+
+A derived plan is an inference about structure, while a down file is a statement
+of intent. A down body can preserve data a derived `DROP` will not, and can order
+operations in a way a structural comparison has no reason to choose. That is why
+`--plan` is opt-in and the authored bodies stay the default.
 
 ### `ptah-compat migrate diff`
 
