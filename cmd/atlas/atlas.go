@@ -289,11 +289,12 @@ func newAtlasSchemaCommand(policy atlascompatpolicy.Policy) *cobra.Command {
 	cmd.AddCommand(newAtlasSchemaDiffCommand(policy))
 	cmd.AddCommand(newAtlasSchemaFmtCommand())
 	if policy.IsStrictCE() {
-		addAtlasCommunityGatedCommands(cmd, "schema", []string{"plan", "push", "test", "validate"})
+		addAtlasCommunityGatedCommands(cmd, "schema", []string{"plan", "push", "stats", "test", "validate"})
 	} else {
 		cmd.AddCommand(newAtlasSchemaPlanCommand())
 		cmd.AddCommand(newAtlasAdapterCommand("schema", atlasSchemaTestVerb()))
 		cmd.AddCommand(newAtlasAdapterCommand("schema", atlasSchemaValidateVerb()))
+		cmd.AddCommand(newAtlasSchemaStatsCommand())
 		addAtlasUnsupportedCommands(cmd, []atlasUnsupportedVerb{
 			{use: "push", short: "Push schema state to a remote registry"},
 		})
