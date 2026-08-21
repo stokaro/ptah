@@ -113,6 +113,11 @@ and the ERD itself is available as data through --format '{{ mermaid . }}'.`,
 		flags.StringArrayVar(&opts.include, "include", nil, "Schema objects to include in inspection")
 		flags.StringVarP(&opts.output, "output", "o", "", "Write the inspected schema to this file instead of stdout")
 		registerAtlasUIFlag(cmd, atlasSchemaWebFlag())
+		// The twin of `schema diff --export`, and it was left unregistered
+		// while that one was a waiver. Both are implemented now, so both are
+		// registered: a flag on one verb and not its twin is the inconsistency
+		// the earlier batch flagged and deferred (stokaro/ptah#1620).
+		registerAtlasUIFlag(cmd, atlasSchemaExportFlag())
 	}
 	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgsHint("name the database with -u/--url"))
 	return cmd
@@ -179,6 +184,14 @@ func runAtlasSchemaInspect(cmd *cobra.Command, opts atlasSchemaInspectOptions) e
 		if err != nil {
 			return cmdutil.Fail(cmd, err)
 		}
+	}
+	exported, err := resolveAtlasExporter(cmd, atlasExportProject{config: projectCfg, loaded: loaded})
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	if exported != "" {
+		opts.format = exported
+		formatConfigured = true
 	}
 	if formatConfigured && strings.TrimSpace(opts.format) == "" {
 		return cmdutil.Fail(cmd, fmt.Errorf("--format must not be empty"))

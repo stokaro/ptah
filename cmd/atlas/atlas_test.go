@@ -303,13 +303,13 @@ func TestCompatCommand_AdvertisesEssentialAtlasFlags(t *testing.T) {
 			// --include and --output are Pro-surface flags the pinned Atlas CE
 			// binary does not register on inspect; compat implements both so
 			// Pro pipelines port. --web is registered as a named refusal
-			// (see schema_ui_flags.go). --export stays unregistered: it is a
-			// separate item of stokaro/ptah#951.
+			// (see schema_ui_flags.go). --export is implemented since
+			// stokaro/ptah#1620 and registered on both this verb and its twin,
+			// `schema diff`.
 			flags: []string{
 				"--url", "--dev-url", "--env", "--schema", "--exclude",
-				"--format", "--include", "--output", "--web",
+				"--format", "--include", "--output", "--web", "--export",
 			},
-			forbidden: []string{"--export"},
 		},
 		{
 			name: "schema_apply",
@@ -1436,32 +1436,6 @@ func TestCompatCommand_SchemaInspectUsesAtlasProjectFormatAndSchemaMode(t *testi
 	// this row is the one place it survived a filter rather than an empty
 	// database.
 	c.Assert(out.String(), qt.Equals, `{"schemas":[{"name":"main"}]}`)
-}
-
-// TestCompatCommand_SchemaInspectRejectsProOnlyOutputFlags pins the inspect
-// flags Atlas registers that compat deliberately does not.
-//
-// The list has shrunk to --export. --output is implemented
-// (schema_inspect_output_test.go) and --web is a registered refusal
-// (schema_ui_flags_test.go); --export on inspect is the twin of the
-// `schema diff --export` decision and stays a separate item of
-// stokaro/ptah#951. --include is registered and covered by
-// schema_inspect_include_test.go.
-func TestCompatCommand_SchemaInspectRejectsProOnlyOutputFlags(t *testing.T) {
-	for _, flag := range []string{"--export"} {
-		t.Run(flag, func(t *testing.T) {
-			c := qt.New(t)
-			cmd := NewCompatCommand("atlas")
-			var out bytes.Buffer
-			cmd.SetOut(&out)
-			cmd.SetErr(&out)
-			cmd.SetArgs([]string{"schema", "inspect", "--url", "sqlite://inspect.db", flag, "x"})
-
-			err := cmd.Execute()
-
-			c.Assert(err, qt.ErrorMatches, "unknown flag: "+flag)
-		})
-	}
 }
 
 func TestCompatCommand_ForwardsParentedNativeCommand(t *testing.T) {

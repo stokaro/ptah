@@ -90,12 +90,12 @@ Across the 191 capabilities below:
 
 | Reading | Count |
 | --- | --- |
-| Ptah supports it fully | 176 |
+| Ptah supports it fully | 177 |
 | Ptah supports it with a stated limitation | 1 |
-| Ptah does not implement it | 6 |
+| Ptah does not implement it | 5 |
 | Ptah covers it in its own form, against a hosted service it cannot interoperate with | 8 |
 | Ptah and Atlas CE both support it | 63 |
-| Ptah implements it openly where Atlas gates it behind Pro or Cloud | 49 |
+| Ptah implements it openly where Atlas gates it behind Pro or Cloud | 50 |
 | Ptah has it and neither Atlas edition does | 27 |
 | Atlas CE has it and Ptah does not, or only in part | 0 |
 | An Atlas column is ❔ — not established by this page's evidence | 4 |
@@ -151,7 +151,7 @@ seven of them as open capabilities regardless.
 | `--exclude` glob and type selectors | ✅ | ✅ | ✅ | Resource globs, one final [type=...], and leading [type=schema]. Qualified globs reach every kind. A column selector works in both scopes, and the depth rule matches the pinned binary exactly. |
 | `--include` resource selectors | ✅ | ❌ | ✅ | CE registers `--include` on apply/diff but aborts it as non-community, and registers none on inspect. Ptah has all three, with union semantics and cross-scope dependency diagnostics. |
 | `--schema` / -s scoping of both sides | ✅ | ✅ | ✅ | Schema names scope resources; non-extension matches carry extensions as support. Diff refuses exact PostgreSQL-family server namespaces before SQL because catalogs do not round-trip safely. |
-| `schema diff --export` | ❌ | ❌ | ✅ | Registered and refused by name. The flag selects an exporter declared by an atlas.hcl `exporter` block, and Ptah evaluates no such block, so there is nothing to select. Tracked by stokaro/ptah#1620. |
+| `schema diff --export` | ✅ | ❌ | ✅ | An `exporter` block declares a Go template and an env's `exporter` attribute selects it; `--export` renders through it, on both `schema diff` and `schema inspect`. |
 | `schema inspect --include` filtering | ✅ | ❌ | ✅ | Compat and native inspect select top-level resources with the apply/diff selector engine. CE rejects the flag as unknown. A selection matching nothing renders nothing, exits 0, and says so on stderr. |
 | `schema inspect --output` | ✅ | ❌ | ✅ | `-o/--output` writes the rendered schema to a file instead of stdout, published atomically so a reader never sees a partial document. |
 | An include selector matching neither diff side fails closed | ✅ | ❌ | ❌ | Compat and native retain `--include`; no-match exits nonzero. Qualified PostgreSQL extension creates preserve installation schema; moves fail before SQL. |

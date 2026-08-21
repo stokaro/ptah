@@ -90,11 +90,6 @@ func runAtlasSchemaDiff(cmd *cobra.Command, opts atlasSchemaDiffOptions) error {
 	if err := validateAtlasSchemaDiffSQLiteToggle(opts); err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	// The refusal lands before any config or database work: a flag Ptah does
-	// not implement must not be answered with a diff that ignored it.
-	if err := refuseAtlasUIFlag(cmd, "schema", "diff", atlasSchemaExportFlag()); err != nil {
-		return cmdutil.Fail(cmd, err)
-	}
 	formatConfigured := cmd.Flags().Changed("format")
 	policy := atlasschema.DiffPolicy{}
 	mode := ignoreMissingEnvSelection
@@ -122,6 +117,16 @@ func runAtlasSchemaDiff(cmd *cobra.Command, opts atlasSchemaDiffOptions) error {
 		if err != nil {
 			return cmdutil.Fail(cmd, err)
 		}
+	}
+	// An exporter is a named format, so selecting one is choosing the template
+	// this run renders through (stokaro/ptah#1620).
+	exported, err := resolveAtlasExporter(cmd, atlasExportProject{config: projectCfg, loaded: loaded})
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
+	if exported != "" {
+		opts.format = exported
+		formatConfigured = true
 	}
 	if err := validateAtlasSchemaDiffSQLiteToggle(opts); err != nil {
 		return cmdutil.Fail(cmd, err)
