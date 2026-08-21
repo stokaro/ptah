@@ -568,34 +568,7 @@ var Cells = []Cell{
 		Image:       "gcr.io/cloud-spanner-pg-adapter/pgadapter-emulator:v0.55.2",
 		Emulated:    true,
 		Versionless: true,
-		Understates: map[capability.Capability]string{
-			// The server does have sequences, and the preset says it does
-			// not, on purpose. Measured 2026-08-21 on this endpoint: a
-			// sequence is created, exists -- creating it again answers
-			// `Duplicate name in schema` -- and drops, while every catalog
-			// surface reports none of them. pg_class filtered to relkind 'S',
-			// pg_sequence, pg_sequences and information_schema.sequences each
-			// return zero rows, because PGAdapter rewrites that view into a
-			// stub built from `select ... where false` (stokaro/ptah#1759).
-			//
-			// A capability key needs a renderer, a reader and a planner
-			// together. Claiming this one would give Ptah the first and not the
-			// second: it would emit CREATE SEQUENCE, read the schema back, see
-			// nothing, and plan the same statement again on every run. Not a
-			// migration that fails once -- a comparison that never converges.
-			// Understating costs a declared sequence; overstating costs
-			// convergence (stokaro/ptah#942, stokaro/ptah#1808).
-			//
-			// An earlier reading rested this on `default_sequence_kind`, which
-			// the reference requires before a serial column. That is a fact
-			// about the managed service, which nothing here runs, and it does
-			// not hold on the endpoint that is measured: a serial column is
-			// accepted with the option untouched. The catalog is the reason
-			// that can be checked.
-			capability.Sequences: "Spanner writes sequences and reports none: every catalog surface " +
-				"returns zero rows, so a sequence Ptah emitted could never be read back",
-		},
-		Preset: capability.SpannerPostgres, PresetName: "SpannerPostgres",
+		Preset:      capability.SpannerPostgres, PresetName: "SpannerPostgres",
 		Refinement: RefinedByBanner,
 		Support:    capability.BestEffort,
 		Note:       "measured against the Cloud Spanner emulator behind PGAdapter, which is the only Spanner endpoint a container can provide; the managed service is not what runs here",

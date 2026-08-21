@@ -281,6 +281,17 @@ func postgresFamilyPlan(dialect string) plan {
 			"CREATE SEQUENCE sq",
 			"CREATE TABLE ser (id SERIAL PRIMARY KEY)",
 		),
+		// The restriction beside the key above. Acceptance of a bare
+		// CREATE SEQUENCE says nothing about the option clauses, and Spanner's
+		// PostgreSQL interface takes the first and refuses the second:
+		// `Optional clause <increment> is not supported in <CREATE SEQUENCE>
+		// statement`. The bare form is the control, so a server that refuses
+		// every CREATE SEQUENCE reads as undecidable rather than as restricted
+		// (stokaro/ptah#1856).
+		enforced(capability.SequenceStartCounterOnly, nil,
+			"CREATE SEQUENCE sso_ok",
+			"CREATE SEQUENCE sso_no INCREMENT BY 2",
+		),
 		// The three user-type kinds are asked separately because they do not
 		// travel together: CockroachDB v26.2.5 takes a composite and answers
 		// "not yet implemented" to a domain and to a range
@@ -588,6 +599,9 @@ func mysqlFamilyPlan(dialect string) plan {
 	}
 
 	undecided := map[capability.Capability]string{
+		capability.SequenceStartCounterOnly: "the key is a restriction on the CREATE SEQUENCE grammar, decided by a " +
+			"server that takes the bare statement and refuses an option clause beside it. This dialect has no " +
+			"CREATE SEQUENCE for the control to run, so its answer would be to a different question",
 		// The key asks whether a recursive CTE may also read the pg catalogs.
 		// The MySQL family has no pg catalogs, so the statement cannot be put
 		// to it and an answer would be to a different question.

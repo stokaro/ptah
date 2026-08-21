@@ -5,6 +5,7 @@ package dbschema_test
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -159,4 +160,122 @@ func TestSpannerLiveApplyPathRunsOutsideATransaction(t *testing.T) {
 	live, readErr := dbschema.ReadSchemaWithSchemas(conn, []string{"public"})
 	c.Assert(readErr, qt.IsNil)
 	c.Assert(spannerLiveTableNames(live.Tables), qt.Contains, table)
+}
+
+// spannerLiveSequenceSchema declares one standalone sequence, stating only what
+// this target's CREATE SEQUENCE grammar takes.
+func spannerLiveSequenceSchema(name string) *goschema.Database {
+	start := int64(1000)
+	return &goschema.Database{
+		Sequences: []goschema.Sequence{{Name: name, AsType: "bigint", Start: &start}},
+	}
+}
+
+// TestSpannerLiveSequenceRoundTrip is the convergence assertion behind the
+// Sequences capability on this target.
+//
+// The key was false because no catalog appeared to report a sequence, which
+// would have made Ptah emit a CREATE SEQUENCE and plan the same one again on
+// every run. The catalog does report them -- through the quoted spelling of
+// information_schema.sequences, where the unquoted one is a PGAdapter stub
+// answering zero rows (stokaro/ptah#1856). This asserts the whole loop, so the
+// day that stub changes shape, something goes red instead of silent.
+func TestSpannerLiveSequenceRoundTrip(t *testing.T) {
+	dbURL := dbtarget.URL(t, dbtarget.Spanner)
+	c := qt.New(t)
+	ctx := t.Context()
+
+	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+
+	name := fmt.Sprintf("ptah_sq_%d", time.Now().UnixNano())
+	description := spannerLiveSequenceSchema(name)
+	defer func() {
+		_, _ = conn.ExecContext(context.Background(), `DROP SEQUENCE IF EXISTS "`+name+`"`)
+	}()
+
+	statements, err := renderer.GetOrderedCreateStatements(description, platform.Spanner)
+	c.Assert(err, qt.IsNil)
+	c.Assert(spannerLiveJoined(statements), qt.Contains, "CREATE SEQUENCE",
+		qt.Commentf("a claimed capability has to reach an executable statement"))
+	for _, statement := range statements {
+		_, execErr := conn.ExecContext(ctx, statement)
+		c.Assert(execErr, qt.IsNil, qt.Commentf("statement:\n%s", statement))
+	}
+
+	live, err := dbschema.ReadSchemaWithSchemas(conn, []string{"public"})
+	c.Assert(err, qt.IsNil)
+	c.Assert(spannerLiveSequenceNames(live.Sequences), qt.Contains, name,
+		qt.Commentf("the reader must find the sequence it just applied"))
+
+	settled := schemadiff.CompareWithDialect(description, live, platform.Spanner)
+	c.Assert(settled.SequencesAdded, qt.HasLen, 0,
+		qt.Commentf("a second run must have nothing to do"))
+	c.Assert(settled.SequencesModified, qt.HasLen, 0)
+}
+
+// TestSpannerLiveRefusesTheSequenceOptionClauses pins that a declaration this
+// grammar cannot carry is named rather than emitted without it.
+//
+// Emitting the sequence with the clause dropped would create an object that
+// behaves differently from what was written, and say nothing.
+func TestSpannerLiveRefusesTheSequenceOptionClauses(t *testing.T) {
+	dbURL := dbtarget.URL(t, dbtarget.Spanner)
+	c := qt.New(t)
+	ctx := t.Context()
+
+	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+
+	increment := int64(2)
+	name := fmt.Sprintf("ptah_sqi_%d", time.Now().UnixNano())
+	description := &goschema.Database{
+		Sequences: []goschema.Sequence{{Name: name, Increment: &increment}},
+	}
+
+	statements, err := renderer.GetOrderedCreateStatements(description, platform.Spanner)
+	c.Assert(err, qt.IsNil)
+	rendered := spannerLiveJoined(statements)
+	c.Assert(rendered, qt.Contains, "INCREMENT BY",
+		qt.Commentf("the clause that could not be carried has to be named"))
+	c.Assert(rendered, qt.Contains, "skipped")
+	// Neither "contains no CREATE SEQUENCE" nor "contains no semicolon" is the
+	// discriminator: the skip line names the statement it is about and ends in
+	// a sentence. What has to be true is that nothing executable was produced.
+	c.Assert(spannerLiveExecutableLines(rendered), qt.HasLen, 0,
+		qt.Commentf("a refused declaration must render no statement at all, only the reason:\n%s", rendered))
+
+	// And the server agrees the refusal is the right answer.
+	_, execErr := conn.ExecContext(ctx, `CREATE SEQUENCE "`+name+`" INCREMENT BY 2`)
+	c.Assert(execErr, qt.IsNotNil)
+}
+
+// spannerLiveSequenceNames lists the sequence names a schema read returned.
+func spannerLiveSequenceNames(sequences []dbschematypes.DBSequence) []string {
+	names := make([]string, 0, len(sequences))
+	for _, sequence := range sequences {
+		names = append(names, sequence.Name)
+	}
+	return names
+}
+
+// spannerLiveExecutableLines lists the rendered lines a server would run, which
+// is every line that is not a comment.
+func spannerLiveExecutableLines(rendered string) []string {
+	var executable []string
+	for _, line := range strings.Split(rendered, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" || strings.HasPrefix(trimmed, "--") {
+			continue
+		}
+		executable = append(executable, trimmed)
+	}
+	return executable
+}
+
+// spannerLiveJoined renders a statement list as one string for assertions.
+func spannerLiveJoined(statements []string) string {
+	return strings.Join(statements, "\n")
 }

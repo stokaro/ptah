@@ -292,7 +292,13 @@ func TestPresets_KeyDifferences(t *testing.T) {
 	c.Assert(spanner.Has(capability.EnumCustomType), qt.IsFalse)
 	c.Assert(spanner.Has(capability.ForeignKeys), qt.IsTrue)
 	c.Assert(spanner.Has(capability.ForeignKeysCreateBackingIndex), qt.IsTrue)
-	c.Assert(spanner.Has(capability.Sequences), qt.IsFalse)
+	// Sequences turned true when the reader half was found: the endpoint writes
+	// and drops them, and the quoted spelling of information_schema.sequences
+	// reports them, where the unquoted one is a PGAdapter stub answering zero
+	// rows. The restriction beside it is the grammar -- a name and a start
+	// counter, and none of the option clauses (stokaro/ptah#1856).
+	c.Assert(spanner.Has(capability.Sequences), qt.IsTrue)
+	c.Assert(spanner.Has(capability.SequenceStartCounterOnly), qt.IsTrue)
 	c.Assert(spanner.Has(capability.XMLType), qt.IsFalse)
 	c.Assert(spanner.Has(capability.RoleManagement), qt.IsFalse)
 

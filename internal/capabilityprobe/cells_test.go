@@ -902,9 +902,31 @@ func TestCells_EveryDeclaredUnderstatementIsStillOne(t *testing.T) {
 		}
 	}
 
-	c := qt.New(t)
-	c.Assert(declarations, qt.Not(qt.HasLen), 0,
-		qt.Commentf("this test is the only thing holding the mechanism honest; it must not pass vacuously"))
+	// Nothing declares an understatement today. Spanner's was the only one and
+	// it was earned away rather than deleted: the endpoint's sequences turned
+	// out to be readable through the quoted spelling of the catalog view, so
+	// the preset claims the key now (stokaro/ptah#1856).
+	//
+	// An empty list must not be the same thing as a rule that stopped working,
+	// so the rule is exercised on a declaration built here. Without this, the
+	// day someone declares the next understatement they would inherit checks
+	// nothing had run in a long time.
+	t.Run("the rule still catches a stale declaration", func(t *testing.T) {
+		c := qt.New(t)
+		stale := capabilityprobe.Cell{
+			Dialect: platform.Postgres, Line: "17",
+			Preset: capability.Postgres17, PresetName: "Postgres17",
+			Understates: map[capability.Capability]string{
+				capability.Sequences: "PostgreSQL claims sequences, so declaring an understatement for it is finished work still standing",
+			},
+		}
+		c.Assert(stale.Measured(), qt.IsTrue)
+		for key := range stale.Understates {
+			c.Assert(stale.Preset().Has(key), qt.IsTrue,
+				qt.Commentf("the staleness check reads this predicate; if it stopped answering, every "+
+					"declaration would pass whatever the preset says"))
+		}
+	})
 
 	for _, d := range declarations {
 		t.Run(d.cell.Dialect+" "+string(d.key), func(t *testing.T) {

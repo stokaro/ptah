@@ -1214,7 +1214,18 @@ func (r *Renderer) processFieldType(fieldType string, enums []string) (string, e
 	if strings.EqualFold(fieldType, "XML") && !r.capabilities().Has(capability.XMLType) {
 		return "", unsupportedFeaturef("%s does not support XML columns; use a platform-specific type override", r.dialect)
 	}
-	if sequenceBackedType(fieldType) && !r.capabilities().Has(capability.Sequences) {
+	// A sequence-backed column is a narrower claim than a standalone sequence,
+	// and the two part company on a start-counter-only target. Spanner's
+	// PostgreSQL interface writes, reads and drops a standalone sequence -- all
+	// measured -- while a serial column is the one thing its reference gates
+	// behind the database option default_sequence_kind, which Ptah can neither
+	// set nor read from a schema. The emulator accepts a serial column without
+	// it, and that difference between the emulator and the reference is exactly
+	// what makes it the wrong thing to claim from an emulator measurement. So
+	// the standalone object is supported here and the shorthand keeps its
+	// refusal, which names itself (stokaro/ptah#1856, stokaro/ptah#1808).
+	if sequenceBackedType(fieldType) &&
+		(!r.capabilities().Has(capability.Sequences) || r.capabilities().Has(capability.SequenceStartCounterOnly)) {
 		return "", unsupportedFeaturef("%s does not support sequence-backed type %s; use a platform-specific type override", r.dialect, fieldType)
 	}
 
@@ -1859,6 +1870,20 @@ func (r *Renderer) VisitCreateSequence(node *ast.CreateSequenceNode) error {
 	if node.Cycle {
 		cycle = &node.Cycle
 	}
+
+	if r.capabilities().Has(capability.SequenceStartCounterOnly) {
+		refused := refusedSequenceClauses(node.AsType, node.Increment, node.MinValue, node.MaxValue, node.Cache, cycle, node.OwnedBy)
+		if len(refused) > 0 {
+			r.writeSequenceClausesSkipped(node.Name, refused)
+			return nil
+		}
+		if node.Start != nil {
+			parts = append(parts, fmt.Sprintf("START COUNTER WITH %d", *node.Start))
+		}
+		r.w.WriteLinef("%s;", strings.Join(parts, " "))
+		return nil
+	}
+
 	parts = append(parts, sequenceOptions(node.AsType, node.Start, node.Increment, node.MinValue, node.MaxValue, node.Cache, cycle)...)
 
 	if node.OwnedBy != "" {
@@ -1869,11 +1894,79 @@ func (r *Renderer) VisitCreateSequence(node *ast.CreateSequenceNode) error {
 	return nil
 }
 
+// refusedSequenceClauses lists the option clauses a node states that a
+// start-counter-only grammar has no room for.
+//
+// Measured 2026-08-21 against the Cloud Spanner emulator behind PGAdapter
+// 0.55.2, each on its own CREATE SEQUENCE: `INCREMENT BY` and `CACHE` and `AS`
+// answer `Optional clause <name> is not supported in <CREATE SEQUENCE>
+// statement`, `MINVALUE` answers the same for its clause, `CYCLE` answers
+// `Optional clause <cycle> only support ` + "`NO CYCLE`" + ` as the value`, and
+// `OWNED BY` answers the same shape for `NONE`. A bare sequence and
+// `START COUNTER WITH n` are accepted (stokaro/ptah#1856).
+//
+// They are named rather than dropped. Emitting the sequence without a clause
+// the declaration states would apply something the author did not write, and
+// silently: the object would exist with different behavior and nothing would
+// say so.
+func refusedSequenceClauses(asType string, increment, minValue, maxValue, cache *int64, cycle *bool, ownedBy string) []string {
+	var refused []string
+	// A declared type that names the one type this grammar produces is
+	// satisfied by leaving the clause off: the target's sequence is a 64-bit
+	// integer and its catalog says so, which is what the reader normalizes to
+	// bigint. Any other type is a different request and is named.
+	if asType != "" && !isBigintSpelling(asType) {
+		refused = append(refused, "AS")
+	}
+	if increment != nil {
+		refused = append(refused, "INCREMENT BY")
+	}
+	if minValue != nil {
+		refused = append(refused, "MINVALUE")
+	}
+	if maxValue != nil {
+		refused = append(refused, "MAXVALUE")
+	}
+	if cache != nil {
+		refused = append(refused, "CACHE")
+	}
+	if cycle != nil && *cycle {
+		refused = append(refused, "CYCLE")
+	}
+	if ownedBy != "" {
+		refused = append(refused, "OWNED BY")
+	}
+	return refused
+}
+
+// isBigintSpelling reports whether a declared sequence type names the 64-bit
+// integer a start-counter-only target produces, under any of the spellings Ptah
+// accepts for it.
+func isBigintSpelling(asType string) bool {
+	switch strings.ToLower(strings.TrimSpace(asType)) {
+	case "bigint", "int8", "int64":
+		return true
+	default:
+		return false
+	}
+}
+
+// writeSequenceClausesSkipped names the clauses that kept a sequence from being
+// rendered, in the shape writeObjectSkipped uses for a whole object.
+func (r *Renderer) writeSequenceClausesSkipped(name string, clauses []string) {
+	r.w.WriteLinef("-- %s: sequence %s states %s, which this target's CREATE SEQUENCE does not take; skipped.",
+		r.dialectUpper, commentFragment(name), commentFragment(strings.Join(clauses, ", ")))
+}
+
 // VisitAlterSequence renders an ALTER SEQUENCE statement for PostgreSQL. Only
 // the set options are emitted; a node with no set options renders nothing.
 func (r *Renderer) VisitAlterSequence(node *ast.AlterSequenceNode) error {
 	if r.refuses(capability.Sequences, "sequence", node.Name) {
 		return nil
+	}
+
+	if r.capabilities().Has(capability.SequenceStartCounterOnly) {
+		return r.renderStartCounterAlter(node)
 	}
 
 	options := sequenceOptions(node.AsType, node.Start, node.Increment, node.MinValue, node.MaxValue, node.Cache, node.Cycle)
@@ -1888,6 +1981,33 @@ func (r *Renderer) VisitAlterSequence(node *ast.AlterSequenceNode) error {
 		r.w.WriteLinef("-- %s", node.Comment)
 	}
 	r.w.WriteLinef("ALTER SEQUENCE %s %s;", r.sequenceIdentifier(node.Name, node.Schema), strings.Join(options, " "))
+	return nil
+}
+
+// renderStartCounterAlter renders an ALTER SEQUENCE for a start-counter-only
+// grammar, where the one accepted option moves the counter.
+//
+// Measured on the same endpoint: `ALTER SEQUENCE s RESTART COUNTER WITH 42` is
+// accepted and the catalog then reports `counter_start_value` as 42, while
+// `START COUNTER WITH` answers `Optional clause <start_counter> is not
+// supported in <ALTER SEQUENCE> statement`. So a changed start is applicable
+// and the comparison converges after it; every other option is named and
+// skipped rather than rewritten into something with a different meaning.
+func (r *Renderer) renderStartCounterAlter(node *ast.AlterSequenceNode) error {
+	if refused := refusedSequenceClauses(
+		node.AsType, node.Increment, node.MinValue, node.MaxValue, node.Cache, node.Cycle, node.OwnedBy,
+	); len(refused) > 0 {
+		r.writeSequenceClausesSkipped(node.Name, refused)
+		return nil
+	}
+	if node.Start == nil {
+		return nil
+	}
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+	r.w.WriteLinef("ALTER SEQUENCE %s RESTART COUNTER WITH %d;",
+		r.sequenceIdentifier(node.Name, node.Schema), *node.Start)
 	return nil
 }
 
@@ -1906,6 +2026,14 @@ func (r *Renderer) VisitDropSequence(node *ast.DropSequenceNode) error {
 		parts = append(parts, "IF EXISTS")
 	}
 	parts = append(parts, r.sequenceIdentifier(node.Name, node.Schema))
+	// A start-counter-only target takes RESTRICT alone: measured, CASCADE
+	// answers `Only <RESTRICT> behavior is supported by <DROP> statement`
+	// (SQLSTATE 0A000). Dropping the keyword silently would widen a drop the
+	// author asked to cascade, so it is named instead (stokaro/ptah#1856).
+	if node.Cascade && r.capabilities().Has(capability.SequenceStartCounterOnly) {
+		r.writeSequenceClausesSkipped(node.Name, []string{"CASCADE"})
+		return nil
+	}
 	if node.Cascade {
 		parts = append(parts, "CASCADE")
 	}
