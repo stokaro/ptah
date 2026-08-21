@@ -671,7 +671,7 @@ func (w *PostgreSQLWriter) collectAllObjects(
 		object.Qualifier = qualifier.String
 		object.Statement = statement.String
 		if object.Statement == "" {
-			built, err := buildCleanupStatement(object)
+			built, err := buildCleanupStatement(object, w.caps)
 			if err != nil {
 				return nil, err
 			}
@@ -939,6 +939,27 @@ var cleanupDropVerbs = map[string]string{
 	"collation":         "COLLATION",
 }
 
+// constraintDropGuard is the IF EXISTS a constraint drop carries, or nothing on
+// a target that refuses the guard inside ALTER.
+//
+// The other kinds here keep theirs unconditionally, and the asymmetry is the
+// engine's rather than this function's: measured on the Cloud Spanner emulator
+// behind PGAdapter 0.55.2, `DROP TABLE IF EXISTS` is accepted while
+// `ALTER TABLE ... DROP CONSTRAINT IF EXISTS ... RESTRICT` answers
+// `<IF [NOT] EXISTS> is not supported in <ALTER> statement operations`
+// (SQLSTATE P0001). The same statement without the guard is accepted.
+//
+// Dropping unguarded is safe here because the cleanup enumerates the
+// constraints it drops from the catalog a moment earlier, so the object exists.
+// The guard was protecting against a race this path does not have
+// (stokaro/ptah#1811).
+func constraintDropGuard(caps capability.Capabilities) string {
+	if caps.Has(capability.DropConstraintIfExists) {
+		return "IF EXISTS "
+	}
+	return ""
+}
+
 // buildCleanupStatement assembles the DROP a server without format() could not
 // assemble for itself.
 //
@@ -952,7 +973,7 @@ var cleanupDropVerbs = map[string]string{
 // unknown branch is unreachable: its preset reports no extensions and no user
 // functions, and pg_proc, pg_extension and pg_sequence answer zero rows
 // (stokaro/ptah#1811).
-func buildCleanupStatement(object postgresCleanupObject) (string, error) {
+func buildCleanupStatement(object postgresCleanupObject, caps capability.Capabilities) (string, error) {
 	name := sqlident.Quote(platform.Postgres, object.Schema) + "." + sqlident.Quote(platform.Postgres, object.Name)
 	if object.Kind == "extension" {
 		// An extension is database-scoped: DROP EXTENSION takes a bare name,
@@ -966,7 +987,7 @@ func buildCleanupStatement(object postgresCleanupObject) (string, error) {
 		}
 		table := sqlident.Quote(platform.Postgres, object.Schema) + "." +
 			sqlident.Quote(platform.Postgres, object.Qualifier)
-		return "ALTER TABLE " + table + " DROP CONSTRAINT IF EXISTS " +
+		return "ALTER TABLE " + table + " DROP CONSTRAINT " + constraintDropGuard(caps) +
 			sqlident.Quote(platform.Postgres, object.Name) + " RESTRICT", nil
 	}
 	verb, known := cleanupDropVerbs[object.Kind]
