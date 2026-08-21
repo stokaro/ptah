@@ -1608,6 +1608,32 @@ func CockroachDB26() Capabilities {
 	return CockroachDB23()
 }
 
+// CockroachDB263 is the first CockroachDB line that carries CREATE DOMAIN.
+//
+// Measured 2026-08-21 on v26.3.0, published 2026-07-28 and the newest release
+// at the time, with CREATE TYPE ... AS ENUM as the control. The domain is a
+// working one rather than an accepted statement: `CREATE DOMAIN pos AS INT NOT
+// NULL DEFAULT 1 CHECK (VALUE > 0)` takes a column, refuses -5 with 23514,
+// refuses NULL with 23502, applies the default, and reads back through Ptah's
+// own domain query with every column populated. DROP DOMAIN is accepted.
+//
+// This is the expiry stokaro/ptah#1735 was opened to catch, and the reason it
+// is a line of its own rather than an edit to CockroachDB26: v26.2.5 answers
+// `not yet implemented` (cockroachdb/cockroach#27796) and would fall to the
+// CockroachDB25 rung if the 26 line simply moved up.
+//
+// RangeTypes stays false. cockroachdb/cockroach#27791 is still open and v26.3
+// still points at it.
+//
+// One narrowing to know about: dbschema.ResolveDomainExpressions creates its
+// probe domain in pg_temp, and CockroachDB answers `cannot create type ... in
+// temporary schema` (SQLSTATE 3F000). The probe reports that as unresolved, so
+// CHECK and DEFAULT stay uncompared here while base type and NOT NULL are
+// compared as everywhere else.
+func CockroachDB263() Capabilities {
+	return CockroachDB26().With(DomainTypes, true)
+}
+
 // YugabyteDB25 is the preset for YugabyteDB YSQL. It stays close to
 // PostgreSQL for the common DDL subset. Live YugabyteDB 2026.1.0.0 accepted
 // CREATE INDEX CONCURRENTLY outside a transaction and refused it inside one
@@ -1818,6 +1844,7 @@ func NamedPresets() []NamedPreset {
 		{"CockroachDB23", CockroachDB23()},
 		{"CockroachDB25", CockroachDB25()},
 		{"CockroachDB26", CockroachDB26()},
+		{"CockroachDB263", CockroachDB263()},
 		{"YugabyteDB24", YugabyteDB24()},
 		{"YugabyteDB25", YugabyteDB25()},
 		{"SQLite324", SQLite324()},
@@ -2386,15 +2413,19 @@ func cockroachDBResolution(version string) VersionResolution {
 	if !ok {
 		// A CockroachDB banner with no version in it. The ladder was not
 		// consulted, so Recognized stays false.
+		//
+		// This stays on the 26.2 line rather than following the newest one:
+		// an unreadable banner is not evidence of a release, and CockroachDB263
+		// carries a capability only 26.3 has (stokaro/ptah#1735).
 		return VersionResolution{Capabilities: CockroachDB26()}
 	}
-	newest, _ := parseVersion(capabilityline.CockroachDB26)
+	newest, _ := parseVersion(capabilityline.CockroachDB263)
 	saturated := compareServerVersion(v, newest) > 0
 	return VersionResolution{
 		Capabilities:    cockroachDBForVersion(v),
 		VersionSpecific: cockroachDBMeasuredLine(v),
 		Saturated:       saturated,
-		NewestMeasured:  capabilityline.CockroachDB26,
+		NewestMeasured:  capabilityline.CockroachDB263,
 		Recognized:      true,
 	}
 }
@@ -2402,7 +2433,10 @@ func cockroachDBResolution(version string) VersionResolution {
 func cockroachDBForVersion(v serverVersion) Capabilities {
 	line25, _ := parseVersion(capabilityline.CockroachDB25)
 	line26, _ := parseVersion(capabilityline.CockroachDB26)
+	line263, _ := parseVersion(capabilityline.CockroachDB263)
 	switch {
+	case compareServerVersion(v, line263) >= 0:
+		return CockroachDB263()
 	case compareServerVersion(v, line26) >= 0:
 		return CockroachDB26()
 	case compareServerVersion(v, line25) >= 0:

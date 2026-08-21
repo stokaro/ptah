@@ -164,23 +164,24 @@ func TestPresets_AllValid_AndCoverEveryRegisteredCapability(t *testing.T) {
 	c := qt.New(t)
 
 	presets := map[string]capability.Capabilities{
-		"MySQL84":       capability.MySQL84(),
-		"MySQL8019":     capability.MySQL8019(),
-		"MySQL8016":     capability.MySQL8016(),
-		"MySQLLegacy":   capability.MySQLLegacy(),
-		"MariaDB1011":   capability.MariaDB1011(),
-		"MariaDBLegacy": capability.MariaDBLegacy(),
-		"Postgres17":    capability.Postgres17(),
-		"Postgres16":    capability.Postgres16(),
-		"Postgres13":    capability.Postgres13(),
-		"ClickHouse24":  capability.ClickHouse24(),
-		"SQLite3":       capability.SQLite3(),
-		"CockroachDB23": capability.CockroachDB23(),
-		"CockroachDB25": capability.CockroachDB25(),
-		"CockroachDB26": capability.CockroachDB26(),
-		"YugabyteDB25":  capability.YugabyteDB25(),
-		"SQLServer2022": capability.SQLServer2022(),
-		"Spanner":       capability.SpannerPostgres(),
+		"MySQL84":        capability.MySQL84(),
+		"MySQL8019":      capability.MySQL8019(),
+		"MySQL8016":      capability.MySQL8016(),
+		"MySQLLegacy":    capability.MySQLLegacy(),
+		"MariaDB1011":    capability.MariaDB1011(),
+		"MariaDBLegacy":  capability.MariaDBLegacy(),
+		"Postgres17":     capability.Postgres17(),
+		"Postgres16":     capability.Postgres16(),
+		"Postgres13":     capability.Postgres13(),
+		"ClickHouse24":   capability.ClickHouse24(),
+		"SQLite3":        capability.SQLite3(),
+		"CockroachDB23":  capability.CockroachDB23(),
+		"CockroachDB25":  capability.CockroachDB25(),
+		"CockroachDB26":  capability.CockroachDB26(),
+		"CockroachDB263": capability.CockroachDB263(),
+		"YugabyteDB25":   capability.YugabyteDB25(),
+		"SQLServer2022":  capability.SQLServer2022(),
+		"Spanner":        capability.SpannerPostgres(),
 	}
 	for name, preset := range presets {
 		c.Assert(preset.Validate(), qt.IsNil, qt.Commentf("preset %s must validate", name))
@@ -601,23 +602,30 @@ func TestResolveServerVersionReportsSaturation(t *testing.T) {
 		{"postgres empty", "postgres", "", capability.Postgres17(), false, false, ""},
 		{
 			"cockroachdb 26.2 selects its measured preset",
-			"postgres", "CockroachDB CCL v26.2.4 (x86_64-pc-linux-gnu)", capability.CockroachDB26(), true, false, "26.2",
+			"postgres", "CockroachDB CCL v26.2.4 (x86_64-pc-linux-gnu)", capability.CockroachDB26(), true, false, "26.3",
 		},
 		{
 			"cockroachdb 26.1 is not claimed as its measured 26.2 sibling",
-			"postgres", "CockroachDB CCL v26.1.4 (x86_64-pc-linux-gnu)", capability.CockroachDB25(), false, false, "26.2",
+			"postgres", "CockroachDB CCL v26.1.4 (x86_64-pc-linux-gnu)", capability.CockroachDB25(), false, false, "26.3",
 		},
 		{
-			"cockroachdb 26.3 saturates above the measured 26.2 line",
-			"postgres", "CockroachDB CCL v26.3.0 (x86_64-pc-linux-gnu)", capability.CockroachDB26(), false, true, "26.2",
+			// 26.3 stopped being a version above the ladder when it was
+			// published and measured: it is the line that carries CREATE
+			// DOMAIN (stokaro/ptah#1735).
+			"cockroachdb 26.3 selects the line that carries CREATE DOMAIN",
+			"postgres", "CockroachDB CCL v26.3.0 (x86_64-pc-linux-gnu)", capability.CockroachDB263(), true, false, "26.3",
+		},
+		{
+			"cockroachdb 26.4 saturates above the measured 26.3 line",
+			"postgres", "CockroachDB CCL v26.4.0 (x86_64-pc-linux-gnu)", capability.CockroachDB263(), false, true, "26.3",
 		},
 		{
 			"cockroachdb 25.4 selects its measured preset",
-			"postgres", "CockroachDB CCL v25.4.5 (x86_64-pc-linux-gnu)", capability.CockroachDB25(), true, false, "26.2",
+			"postgres", "CockroachDB CCL v25.4.5 (x86_64-pc-linux-gnu)", capability.CockroachDB25(), true, false, "26.3",
 		},
 		{
 			"cockroachdb 25.5 uses the conservative preset without claiming measurement",
-			"postgres", "CockroachDB CCL v25.5.1 (x86_64-pc-linux-gnu)", capability.CockroachDB25(), false, false, "26.2",
+			"postgres", "CockroachDB CCL v25.5.1 (x86_64-pc-linux-gnu)", capability.CockroachDB25(), false, false, "26.3",
 		},
 		// YugabyteDB gained a ladder in stokaro/ptah#916, and the number it
 		// climbs is the one AFTER the "-YB-" marker: the 15.2 in front of it is
