@@ -284,7 +284,7 @@ func (r *Renderer) VisitAlterTable(node *ast.AlterTableNode) error {
 			}
 			r.w.WriteLinef("ALTER TABLE %s DROP COLUMN %s%s;", table, escapeIdentifier(op.ColumnName), cascade)
 		case *ast.ModifyColumnOperation:
-			line, err := renderModifiedColumn(op.Column)
+			line, err := renderModifiedColumn(op)
 			if err != nil {
 				return fmt.Errorf("render modified column %s: %w", op.Column.Name, err)
 			}
