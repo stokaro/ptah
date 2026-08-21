@@ -42,7 +42,7 @@ func renderColumn(column *ast.ColumnNode, caps capability.Capabilities) (string,
 	switch {
 	case column.Default == nil:
 	case column.Default.HasLiteral():
-		parts = append(parts, "DEFAULT", renderDefaultLiteral(column.Default.Value))
+		parts = append(parts, "DEFAULT", renderDefaultLiteral(column.Type, column.Default.Value))
 	case column.Default.Expression != "":
 		parts = append(parts, "DEFAULT", column.Default.Expression)
 	}
@@ -206,7 +206,7 @@ func renderModifiedColumn(column *ast.ColumnNode) (string, error) {
 	switch {
 	case column.Default == nil:
 	case column.Default.HasLiteral():
-		parts = append(parts, "DEFAULT", renderDefaultLiteral(column.Default.Value))
+		parts = append(parts, "DEFAULT", renderDefaultLiteral(column.Type, column.Default.Value))
 	case column.Default.Expression != "":
 		parts = append(parts, "DEFAULT", column.Default.Expression)
 	}
@@ -310,12 +310,49 @@ func splitTypeArguments(upper string) (base, arguments string) {
 	return strings.TrimSpace(upper[:index]), strings.TrimSpace(upper[index:])
 }
 
-func renderDefaultLiteral(value string) string {
+// renderDefaultLiteral renders a declared default for a column of declaredType.
+//
+// The type is needed because BOOLEAN maps to NUMBER(1) here -- see
+// oracleFixedTypes -- and the literal beside it has to follow the type it
+// landed on. Measured on 23.26, only the boolean spelling is refused; Oracle
+// converts a quoted number implicitly, so the other quoted literals reach a
+// created table:
+//
+//	qty NUMBER(10) DEFAULT '5'         accepted
+//	price NUMBER(10,2) DEFAULT '0.00'  accepted
+//	note CLOB DEFAULT 'none'           accepted
+//	flag NUMBER(1) DEFAULT 'false'     ORA-01722, unable to convert string value containing 'f' to a number
+//
+// So this narrows to the one case the server refuses rather than rewriting
+// every literal, which would change defaults that already work.
+func renderDefaultLiteral(declaredType, value string) string {
 	value = strings.TrimSpace(value)
+	if literal, ok := renderBooleanDefaultLiteral(declaredType, value); ok {
+		return literal
+	}
 	if strings.HasPrefix(value, "'") && strings.HasSuffix(value, "'") {
 		return value
 	}
 	return escapeStringLiteral(value)
+}
+
+// renderBooleanDefaultLiteral maps a declared boolean default onto the NUMBER(1)
+// the type became. A value that is neither spelling is left alone: it is either
+// already numeric, or something this renderer should not be inventing a
+// conversion for.
+func renderBooleanDefaultLiteral(declaredType, value string) (string, bool) {
+	base, _ := splitTypeArguments(strings.ToUpper(strings.TrimSpace(declaredType)))
+	if base != "BOOLEAN" && base != "BOOL" {
+		return "", false
+	}
+	switch strings.ToLower(strings.Trim(value, "'")) {
+	case "true":
+		return "1", true
+	case "false":
+		return "0", true
+	default:
+		return "", false
+	}
 }
 
 func renderConstraint(constraint *ast.ConstraintNode) (string, error) {
