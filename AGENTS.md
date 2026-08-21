@@ -998,6 +998,41 @@ it routes CLI, config, migration, parser/renderer, conformance, public API, and
 example changes to the right documentation surfaces and uses Inventario's docs
 site as the quality reference.
 
+### Label every issue you file
+
+An issue without labels is invisible to every filter anyone uses to plan, and
+nothing in this repository supplies one by default -- there are no issue
+templates, so a bare `gh issue create` produces a bare issue. That is how 157 of
+them accumulated before being classified in one pass.
+
+Give each new issue **one type label**, and **area labels only where they are
+clear**:
+
+| | |
+| --- | --- |
+| type, exactly one | `bug`, `enhancement`, `feature-request`, `documentation`, `question` |
+| area, zero or more | `cli`, `migration`, `schema-generation`, `postgresql`, `sql`, `rls`, `roles`, `security`, `foreign-key`, `constraints`, `field-ordering` |
+| extra, when it applies | `post-ga` for work deferred past general availability, `critical` for data loss or a broken release |
+
+```bash
+gh issue create --title "..." --body-file /tmp/issue.md \
+  --label bug --label migration
+```
+
+Engine names have no label of their own. An issue about Spanner, ClickHouse,
+MySQL or SQL Server is classified by what it is about, usually
+`schema-generation` -- do not invent an engine label. Milestones are not used
+here at all; do not start.
+
+Two labels carry a meaning beyond classification and are worth knowing:
+`frozen` means an issue is owned and actively worked, and nobody else should
+open a pull request against it until the label comes off; `hold-off-merge`
+means what it says.
+
+Prefer no label to a wrong one when you genuinely cannot tell. A wrong label
+pollutes every search that trusts it, and nobody re-checks an issue that already
+looks classified.
+
 ## Code Style And Linting
 
 Ptah treats `.golangci.yml` as a strict contract. Fix code to satisfy the configured linters instead of relaxing thresholds, disabling checks, or broadening exclusions. In particular, keep `revive` `error-strings` enabled and preserve the current "stricter wins" lint posture unless a maintainer explicitly asks for a config change.
