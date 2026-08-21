@@ -90,12 +90,12 @@ Across the 191 capabilities below:
 
 | Reading | Count |
 | --- | --- |
-| Ptah supports it fully | 179 |
+| Ptah supports it fully | 180 |
 | Ptah supports it with a stated limitation | 0 |
-| Ptah does not implement it | 3 |
+| Ptah does not implement it | 2 |
 | Ptah covers it in its own form, against a hosted service it cannot interoperate with | 9 |
 | Ptah and Atlas CE both support it | 63 |
-| Ptah implements it openly where Atlas gates it behind Pro or Cloud | 51 |
+| Ptah implements it openly where Atlas gates it behind Pro or Cloud | 52 |
 | Ptah has it and neither Atlas edition does | 27 |
 | Atlas CE has it and Ptah does not, or only in part | 0 |
 | An Atlas column is ❔ — not established by this page's evidence | 4 |
@@ -379,7 +379,7 @@ is genuinely absent and the difference column names the issue that owns it.
 | Atlas Copilot (AI assistant) | ❌ | ❌ | ✅ | An AI assistant gated to accounts with the vendor. Ptah's own MCP server and BYOK/BYOM assistant are stokaro/ptah#1483; the nearest surface today is the `ptah-ls` language server. |
 | Column-level data lineage | ✅ | ❌ | ✅ | `ptah schema lineage` derives column-to-column edges from view and materialized-view bodies and emits them as a table or JSON. A body it cannot resolve is reported, not omitted. |
 | Hosted Schema Docs (schema documentation) | 🔷 | ❌ | ✅ | `ptah schema export --to markdown` writes reference documentation locally: a section per table with columns, types, defaults, keys, comments, indexes and enums. Not a hosted service. |
-| Reviewer approval and policy workflows | ❌ | ❌ | ✅ | Local `-- +ptah check` pre-migration assertions exist. Reviewer approval needs an identity and a service; the self-hosted control plane that would carry it is stokaro/ptah#1229. |
+| Reviewer approval and policy workflows | ✅ | ❌ | ✅ | `ptah schema approve` signs a plan with an SSH key; `--require-approval` refuses to apply one that does not verify against a committed allowed_signers file. No identity service. |
 | Schema monitoring, hosted UI, login | 🔷 | ❌ | ✅ | `ptah schema serve` shows drift live and `schema export --to html` writes the same view as one file. No login, and none intended (stokaro/ptah#1857). |
 
 ## How these rows were established
