@@ -1233,10 +1233,40 @@ func convertSQLiteURL(dbURL string) string {
 	if !hasSQLiteForeignKeysPragma(query) {
 		query.Add("_pragma", "foreign_keys(1)")
 	}
+	dsn = sqliteURIForMemory(dsn, query)
 	if encoded := query.Encode(); encoded != "" {
 		dsn += "?" + encoded
 	}
 	return dsn
+}
+
+// sqliteURIForMemory prefixes a named in-memory database with `file:`, which is
+// what makes SQLite read the query as URI parameters at all.
+//
+// Without it `mode=memory` is not ignored so much as never seen: the whole
+// string is taken as a filename, so `sqlite://dev?mode=memory` -- the form this
+// repository's own tests, help text and docs use -- opens a FILE named
+// `dev?mode=memory` in the working directory and leaves it there.
+//
+// Measured against modernc.org/sqlite v1.57.0:
+//
+//	dev?mode=memory       -> a file appears
+//	file:dev?mode=memory  -> no file
+//
+// The second problem is the worse one. A dev database exists to be empty, and a
+// persistent one carries the previous run's state into the next plan -- which
+// produces a wrong answer that looks like a right one (stokaro/ptah#1819).
+//
+// Only the memory case is rewritten. A plain path stays a plain path, because
+// `file:` there would change how a name containing `?` or `#` is read.
+func sqliteURIForMemory(dsn string, query url.Values) string {
+	if !strings.EqualFold(query.Get("mode"), "memory") {
+		return dsn
+	}
+	if strings.HasPrefix(dsn, "file:") || dsn == ":memory:" {
+		return dsn
+	}
+	return "file:" + dsn
 }
 
 func isSQLiteMemoryDSN(dsn string) bool {
