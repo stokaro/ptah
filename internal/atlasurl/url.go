@@ -102,14 +102,25 @@ func DialectFromURL(rawURL string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("parse --dev-url: %w", err)
 	}
-	switch parsed.Scheme {
-	case "docker":
+	if parsed.Scheme == "docker" {
 		return dialectFromDockerURL(parsed)
-	case "sqlite", "sqlite3", "mysql", "mariadb", "postgres", "postgresql", "sqlserver", "mssql", "clickhouse", "cockroach", "cockroachdb", "yugabyte", "yugabytedb":
-		dialect := platform.NormalizeDialect(parsed.Scheme)
-		if dialect != "" {
-			return dialect, nil
-		}
+	}
+	// Every spelling platform.NormalizeDialect accepts, rather than a list
+	// copied from it.
+	//
+	// The copy had drifted by fifteen spellings, and two of them were canonical
+	// dialect names rather than aliases: `oracle://` and `spanner://` were
+	// refused as a dev URL while `ptah schema render --dialect oracle` and
+	// `--dialect spanner` both worked. The other thirteen were documented
+	// aliases -- `crdb`, `ch`, `pgx`, `tsql`, `ysql`, `sql-server`,
+	// `cloudspanner` and the rest -- refused here alone while every other
+	// boundary took them. That is the defect stokaro/ptah#270 fixed for lint
+	// dialects, in a second hand-maintained list (stokaro/ptah#1875).
+	//
+	// A scheme that names no dialect still fails: NormalizeDialect answers the
+	// empty string for it, which is what the refusal below reads.
+	if dialect := platform.NormalizeDialect(parsed.Scheme); dialect != "" {
+		return dialect, nil
 	}
 	return "", fmt.Errorf("unsupported --dev-url dialect %q", rawURL)
 }
