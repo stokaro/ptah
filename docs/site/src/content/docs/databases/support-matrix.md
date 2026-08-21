@@ -22,7 +22,7 @@ per-capability tables are in [Capabilities](../../reference/capabilities/).
 | YugabyteDB | `yugabytedb` (`yugabyte`, `ysql`) | `yugabytedb://`, `ysql://` | PostgreSQL-compatible path with capability differences. |
 | ClickHouse | `clickhouse` (`ch`) | `clickhouse://`, `ch://` | Capability-limited support. |
 | Spanner (PostgreSQL interface) | `spanner` (`cloudspanner`, `google-spanner`, `google_spanner`) | `spanner://` | Most conservative capability-limited support. |
-| Oracle | `oracle` | `oracle://` | Renders and plans DDL; reading a live catalog is not implemented. |
+| Oracle | `oracle` | `oracle://` | Renders, plans, and reads a live catalog. |
 
 Accepted URL formats, and the difference between target, dev, shadow, and
 throwaway databases, are on
@@ -437,15 +437,21 @@ surface, and its limitations.
 
 ## Oracle
 
-Oracle renders and plans DDL against two measured release lines, 23 and 21.
-Reading a live catalog is not implemented, so a command pointed at an
-`oracle://` URL says exactly that rather than failing obscurely:
+Oracle renders, plans, connects and reads a live catalog, against two measured
+release lines, 23 and 21. A schema Ptah applies reads back as itself on both:
 
 ```text
-ptah db capabilities --db-url oracle://...
-error: connecting to oracle is not supported yet: Ptah renders and plans oracle
-schemas, and reading a live oracle catalog is not implemented
+ptah schema inspect --db-url oracle://user:pass@host:1521/FREEPDB1 > live.hcl
+ptah schema diff --from oracle://user:pass@host:1521/FREEPDB1 --to live.hcl
+Schemas are synced, no changes to be made.
 ```
+
+Comparing a **declared file** against a live Oracle catalog does not converge
+yet. Tables, columns and indexes fold across the case difference between a
+declaration and the catalog; constraint names do not, so an unnamed `CHECK`
+declared as `orders_total_check` and stored as `ORDERS_TOTAL_CHECK` is dropped
+and re-added on each apply. Tracked by
+[#1875](https://github.com/stokaro/ptah/issues/1875).
 
 Identifiers are written **bare**, which is Oracle-only among the engines here
 and is forced by the engine rather than chosen. Oracle folds an unquoted name to
