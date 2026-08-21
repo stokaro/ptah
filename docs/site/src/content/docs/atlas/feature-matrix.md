@@ -90,8 +90,8 @@ Across the 191 capabilities below:
 
 | Reading | Count |
 | --- | --- |
-| Ptah supports it fully | 177 |
-| Ptah supports it with a stated limitation | 1 |
+| Ptah supports it fully | 178 |
+| Ptah supports it with a stated limitation | 0 |
 | Ptah does not implement it | 5 |
 | Ptah covers it in its own form, against a hosted service it cannot interoperate with | 8 |
 | Ptah and Atlas CE both support it | 63 |
@@ -301,7 +301,7 @@ seven of them as open capabilities regardless.
 | Spanner PostgreSQL interface (spanner) | ✅ | ❌ | ✅ | Enums, sequences, matviews, functions and triggers render as named skips; foreign keys render, SERIAL errors. Probed live, with a compose service and a scenario suite. |
 | SQL Server and Azure SQL (sqlserver, mssql, tsql) | ✅ | ❌ | ✅ | Every spelling renders the same DDL. Tables, views, triggers, synonyms, sequences, roles/grants, row-level security and functions all render, read back and plan. |
 | SQLite (sqlite, sqlite3) | ✅ | ✅ | ✅ | Column drops, type, nullability, default, generated, table-constraint and add-column changes all rebuild, inbound foreign keys included. The engine has no other object kind Ptah models. |
-| Standalone sequences | 🟡 | ❌ | ✅ | PostgreSQL, CockroachDB, YugabyteDB, SQL Server and MariaDB emit CREATE SEQUENCE. MySQL, ClickHouse and SQLite have none; Spanner has them and Ptah declares none (stokaro/ptah#1808). |
+| Standalone sequences | ✅ | ❌ | ✅ | Every target with standalone sequences emits, reads and plans them, Spanner included. MySQL, ClickHouse and SQLite have none and name the omission (stokaro/ptah#1856). |
 | TiDB and LibSQL | ✅ | ✅ | ✅ | TiDB is reached through `mysql://`, which both binaries do and neither exposes as its own driver. `libsql://` and `libsql+ws://` resolve onto the SQLite dialect over the remote transport. |
 | Triggers | ✅ | ❌ | ✅ | Every engine spelling renders the same trigger DDL and four readers read them back. ClickHouse and Spanner have none and name the omission; MySQL statement triggers and SQL Server BEFORE do not exist. |
 | Views and materialized views | ✅ | ❌ | ✅ | Plain views work everywhere. Materialized views render on PostgreSQL, CockroachDB, YugabyteDB and ClickHouse, whose scheduled form carries its REFRESH EVERY\|AFTER clause. |

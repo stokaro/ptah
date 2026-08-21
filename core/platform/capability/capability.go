@@ -339,6 +339,26 @@ const (
 	// emitted, read or planned one (stokaro/ptah#931 item 8).
 	Sequences Capability = "sequences"
 
+	// SequenceStartCounterOnly marks a target whose CREATE SEQUENCE carries a
+	// name and a start counter and refuses the option clauses PostgreSQL takes
+	// beside them.
+	//
+	// It is written as a restriction rather than as a support key, the way
+	// ForeignKeysRequireUniqueReference is, so that a target which says nothing
+	// keeps the full PostgreSQL grammar. Only one target restricts it today and
+	// every other one would have to opt back in.
+	//
+	// Measured 2026-08-21 on the Cloud Spanner emulator behind PGAdapter
+	// 0.55.2. `CREATE SEQUENCE s` is accepted and becomes a
+	// bit-reversed-positive sequence with a counter start of 1;
+	// `START COUNTER WITH 500` is accepted and reported back. `INCREMENT BY`
+	// answers `Optional clause <increment> is not supported in
+	// <CREATE SEQUENCE> statement` and `MINVALUE` answers the same for its own
+	// clause, both SQLSTATE P0001. The catalog agrees with the grammar:
+	// increment, minimum, maximum and start are NULL on every row because there
+	// is nothing there to hold them (stokaro/ptah#1856).
+	SequenceStartCounterOnly Capability = "sequence_start_counter_only"
+
 	// XMLType marks support for the PostgreSQL XML column type. CockroachDB
 	// and Spanner PostgreSQL disable it; callers should use platform-specific
 	// type overrides for those targets.
@@ -701,6 +721,10 @@ var registry = map[Capability]spec{
 	Sequences: {
 		doc: "database sequence objects (SERIAL/BIGSERIAL or explicit CREATE SEQUENCE support)",
 	},
+	SequenceStartCounterOnly: {
+		doc:      "CREATE SEQUENCE takes a name and a start counter and refuses the option clauses PostgreSQL takes beside them",
+		requires: []Capability{Sequences},
+	},
 	XMLType: {
 		doc: "PostgreSQL XML column type",
 	},
@@ -929,6 +953,7 @@ func MySQL84() Capabilities {
 		ForeignKeysRequireIndexedReference: false,
 		ForeignKeysCreateBackingIndex:      false,
 		Sequences:                          false,
+		SequenceStartCounterOnly:           false,
 		XMLType:                            false,
 		AdvisoryLocks:                      false,
 		RowLevelTTL:                        false,
@@ -1057,6 +1082,7 @@ func MariaDB1011() Capabilities {
 		// size. Measured on MariaDB 12.3, and MySQL keeps the key off because
 		// `CREATE SEQUENCE` there is a syntax error (stokaro/ptah#1759).
 		Sequences:                       true,
+		SequenceStartCounterOnly:        false,
 		XMLType:                         false,
 		AdvisoryLocks:                   false,
 		RowLevelTTL:                     false,
@@ -1130,6 +1156,7 @@ func Postgres16() Capabilities {
 		ForeignKeysRequireIndexedReference: false,
 		ForeignKeysCreateBackingIndex:      false,
 		Sequences:                          true,
+		SequenceStartCounterOnly:           false,
 		XMLType:                            true,
 		AdvisoryLocks:                      true,
 		RowLevelTTL:                        false,
@@ -1285,6 +1312,7 @@ func ClickHouse24() Capabilities {
 		ForeignKeysRequireIndexedReference: false,
 		ForeignKeysCreateBackingIndex:      false,
 		Sequences:                          false,
+		SequenceStartCounterOnly:           false,
 		XMLType:                            false,
 		AdvisoryLocks:                      false,
 		// NOT the MergeTree `TTL <expr>` clause, which ClickHouse accepts. This
@@ -1362,6 +1390,7 @@ func SQLite3() Capabilities {
 		ForeignKeysRequireIndexedReference: false,
 		ForeignKeysCreateBackingIndex:      false,
 		Sequences:                          false,
+		SequenceStartCounterOnly:           false,
 		XMLType:                            false,
 		AdvisoryLocks:                      false,
 		RowLevelTTL:                        false,
@@ -1507,6 +1536,7 @@ func SQLServer2022() Capabilities {
 		// engine itself has had CREATE SEQUENCE since 2012
 		// (stokaro/ptah#1626).
 		Sequences:                       true,
+		SequenceStartCounterOnly:        false,
 		XMLType:                         true,
 		AdvisoryLocks:                   false,
 		RowLevelTTL:                     false,
@@ -1821,7 +1851,14 @@ func SpannerPostgres() Capabilities {
 		With(CreateOrReplaceTrigger, false).
 		With(RowLevelSecurity, false).
 		With(RoleManagement, false).
-		With(Sequences, false).
+		// The three halves the key requires all exist now. The endpoint writes
+		// and drops sequences, and the reader reads them back through the
+		// quoted spelling of information_schema.sequences -- the unquoted one
+		// is a stub PGAdapter answers with zero rows, which is what made this
+		// look impossible (stokaro/ptah#1856). What it does not take is the
+		// option clauses, hence the restriction beside it.
+		With(Sequences, true).
+		With(SequenceStartCounterOnly, true).
 		With(XMLType, false).
 		With(AdvisoryLocks, false).
 		With(ForeignKeysRequireUniqueReference, false).
