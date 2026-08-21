@@ -165,8 +165,8 @@ Lines that are declared and not probed, and why:
 - `sqlserver` 17.0 — the capability probe has no statement table for the sqlserver dialect, so a server on this line would be asked nothing.
 - `sqlserver` 16.0 — the capability probe has no statement table for the sqlserver dialect, so a server on this line would be asked nothing.
 - `sqlserver` 15.0 — the capability probe has no statement table for the sqlserver dialect, so a server on this line would be asked nothing.
-- `oracle` 23 — the capability probe has no statement table for the oracle dialect, so a server on this line would be asked nothing.
-- `oracle` 21 — the capability probe has no statement table for the oracle dialect, so a server on this line would be asked nothing.
+- `oracle` 23 — the oracle dialect has a probe plan and no launch recipe, so nothing here can start the server to run it.
+- `oracle` 21 — the oracle dialect has a probe plan and no launch recipe, so nothing here can start the server to run it.
 - `sqlite` 3 — no container image is declared for this line; the capability probe has no statement table for the sqlite dialect, so a server on this line would be asked nothing.
 
 Lines whose container tag does not name the line, so which patch it resolves to has to be read off the tag:

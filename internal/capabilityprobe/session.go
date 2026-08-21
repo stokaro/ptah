@@ -110,14 +110,29 @@ func (s *session) query(ctx context.Context, statement string) (int64, Attempt) 
 
 // alive returns nil while the session can still answer.
 func (s *session) alive(ctx context.Context) error {
+	statement := livenessSQL(s.dialect)
 	var one int
-	if err := s.conn.QueryRowContext(ctx, "SELECT 1").Scan(&one); err != nil {
+	if err := s.conn.QueryRowContext(ctx, statement).Scan(&one); err != nil {
 		return err
 	}
 	if one != 1 {
-		return fmt.Errorf("session answered SELECT 1 with %d", one)
+		return fmt.Errorf("session answered %s with %d", statement, one)
 	}
 	return nil
+}
+
+// livenessSQL is the smallest query the dialect answers.
+//
+// `SELECT 1` needs no FROM clause only from Oracle 23: measured, 21.3 answers
+// ORA-00923, FROM keyword not found where expected. That turned every ordinary
+// REFUSED verdict on 21 into a dead session, because the check that asks
+// whether the connection survived was itself refused -- so the run ended at its
+// own nonsense control, before a single capability question.
+func livenessSQL(dialect string) string {
+	if platform.NormalizeDialect(dialect) == platform.Oracle {
+		return "SELECT 1 FROM dual"
+	}
+	return "SELECT 1"
 }
 
 // runAll executes statements in order and stops at the first refusal.
@@ -174,11 +189,58 @@ func namespaceSQL(dialect, namespace string) (enter []string, leave string) {
 			},
 			"DROP SCHEMA " + namespace + " CASCADE"
 	}
+	if platform.NormalizeDialect(dialect) == platform.Oracle {
+		// In Oracle a schema IS a user, so the throwaway namespace is an
+		// account. CREATE DATABASE below is an instance-level statement there
+		// and answers ORA-01501 against a mounted database, which is what a
+		// probe run reported before this arm existed.
+		//
+		// It needs a privileged connection -- an ordinary account answers
+		// ORA-01031, insufficient privileges -- which is the same requirement
+		// the CREATE DATABASE arm carries for MySQL.
+		//
+		// Measured on 23.26 that the isolation is real rather than merely
+		// accepted: after ALTER SESSION SET CURRENT_SCHEMA, an unqualified
+		// CREATE TABLE lands with the throwaway account as its owner, which is
+		// exactly what confirmNamespace goes on to check. The Spanner failure
+		// that check exists for -- a namespace accepted and then ignored --
+		// does not happen here.
+		return []string{
+				"CREATE USER " + namespace + " IDENTIFIED BY ptah_capability_probe QUOTA UNLIMITED ON users",
+				// The privileges an ordinary schema owner has, and no more.
+				//
+				// They are granted because without them the probe measures the
+				// ACCOUNT rather than the engine: measured, a namespace with
+				// only a quota answers ORA-01031, insufficient privileges, to
+				// CREATE MATERIALIZED VIEW -- and the run recorded that as the
+				// server not supporting materialized views. The same refusal
+				// silently agreed with the preset on role_management, which is
+				// the worse half: a privilege the account lacked read as a
+				// capability the engine lacks.
+				"GRANT CREATE SESSION, CREATE TABLE, CREATE VIEW, CREATE MATERIALIZED VIEW, " +
+					"CREATE SEQUENCE, CREATE TRIGGER, CREATE PROCEDURE, CREATE TYPE, " +
+					"CREATE SYNONYM, CREATE ROLE TO " + namespace,
+				"ALTER SESSION SET CURRENT_SCHEMA = " + namespace,
+			},
+			"DROP USER " + namespace + " CASCADE"
+	}
 	return []string{
 			"CREATE DATABASE " + namespace,
 			"USE " + namespace,
 		},
 		"DROP DATABASE " + namespace
+}
+
+// sentinelKeyType names a 64-bit integer in the dialect's own spelling.
+//
+// `bigint` is not universal, and the sentinel is the one statement that must
+// succeed for a run to start: Oracle answers ORA-00902, invalid datatype, so a
+// probe there failed before it asked a single capability question.
+func sentinelKeyType(dialect string) string {
+	if platform.NormalizeDialect(dialect) == platform.Oracle {
+		return "NUMBER(19)"
+	}
+	return "bigint"
 }
 
 // sentinelTable is the object confirmNamespace creates to find out where
@@ -207,7 +269,7 @@ const sentinelTable = "ptah_capprobe_sentinel"
 // caught the first time it happens rather than the first time somebody notices
 // two runs disagreeing.
 func (s *session) confirmNamespace(ctx context.Context) ([]Attempt, error) {
-	created := s.exec(ctx, "CREATE TABLE "+sentinelTable+" (n bigint PRIMARY KEY)")
+	created := s.exec(ctx, "CREATE TABLE "+sentinelTable+" (n "+sentinelKeyType(s.dialect)+" PRIMARY KEY)")
 	attempts := []Attempt{created}
 	if !created.Accepted {
 		return attempts, fmt.Errorf(
@@ -215,9 +277,7 @@ func (s *session) confirmNamespace(ctx context.Context) ([]Attempt, error) {
 			s.namespace, created.ServerErr)
 	}
 
-	count, asked := s.query(ctx, fmt.Sprintf(
-		"SELECT COUNT(*) FROM information_schema.tables WHERE table_name = '%s' AND table_schema = '%s'",
-		sentinelTable, s.namespace))
+	count, asked := s.query(ctx, sentinelLocationSQL(s.dialect, s.namespace))
 	attempts = append(attempts, asked)
 	dropped := s.exec(ctx, "DROP TABLE "+sentinelTable)
 	attempts = append(attempts, dropped)
@@ -230,7 +290,7 @@ func (s *session) confirmNamespace(ctx context.Context) ([]Attempt, error) {
 	// The occupancy count is taken on every run rather than only when the
 	// namespace failed, so the decision below is a pure function of two
 	// numbers and can be measured without a server.
-	occupants, counted := s.query(ctx, occupancySQL)
+	occupants, counted := s.query(ctx, occupancySQLFor(s.dialect))
 	attempts = append(attempts, counted)
 	if !counted.Accepted {
 		return attempts, fmt.Errorf(
@@ -246,6 +306,41 @@ func (s *session) confirmNamespace(ctx context.Context) ([]Attempt, error) {
 const occupancySQL = "SELECT COUNT(*) FROM information_schema.tables " +
 	"WHERE table_schema NOT IN ('information_schema', 'pg_catalog', 'spanner_sys', " +
 	"'mysql', 'performance_schema', 'sys')"
+
+// oracleOccupancySQL is occupancySQL for a catalog that has no
+// information_schema.
+//
+// The exclusion is a fact the server records rather than a list of names:
+// ALL_USERS.ORACLE_MAINTAINED is 'Y' for every account Oracle created for
+// itself, and a list would go stale the first time a release added one.
+// Measured on 23.26 and 21.3, the count moves 0 -> 1 -> 0 as one user table
+// appears and is dropped, so it is a count rather than a constant.
+const oracleOccupancySQL = "SELECT COUNT(*) FROM all_tables t " +
+	"JOIN all_users u ON u.username = t.owner WHERE u.oracle_maintained = 'N'"
+
+// occupancySQLFor returns the statement that counts what else is on the server.
+func occupancySQLFor(dialect string) string {
+	if platform.NormalizeDialect(dialect) == platform.Oracle {
+		return oracleOccupancySQL
+	}
+	return occupancySQL
+}
+
+// sentinelLocationSQL asks the catalog where the sentinel table landed.
+//
+// Oracle's answer comes from ALL_TABLES keyed by OWNER, and both halves are
+// upper-cased because an unquoted identifier is folded there: the namespace is
+// created as `ptah_capprobe_...` and stored as PTAH_CAPPROBE_....
+func sentinelLocationSQL(dialect, namespace string) string {
+	if platform.NormalizeDialect(dialect) == platform.Oracle {
+		return fmt.Sprintf(
+			"SELECT COUNT(*) FROM all_tables WHERE table_name = UPPER('%s') AND owner = UPPER('%s')",
+			sentinelTable, namespace)
+	}
+	return fmt.Sprintf(
+		"SELECT COUNT(*) FROM information_schema.tables WHERE table_name = '%s' AND table_schema = '%s'",
+		sentinelTable, namespace)
+}
 
 // namespaceProblem decides whether a run may proceed, from where the sentinel
 // landed and what else is on the server.
@@ -289,16 +384,28 @@ func newNamespace() (string, error) {
 // dropRoles removes the cluster-scoped roles the probe created. Roles outlive
 // the schema, so a run that forgot them would leave the server dirtier every
 // time it ran.
+// dropRole removes one role in the dialect's own spelling.
+//
+// Oracle has neither DROP OWNED BY nor an IF EXISTS guard on DROP ROLE, so the
+// PostgreSQL pair below would leave the role behind and report two refusals
+// while doing it.
+func (s *session) dropRole(ctx context.Context, role string) []Attempt {
+	if platform.NormalizeDialect(s.dialect) == platform.Oracle {
+		return []Attempt{s.exec(ctx, "DROP ROLE "+role)}
+	}
+	return []Attempt{
+		s.exec(ctx, "DROP OWNED BY "+role),
+		s.exec(ctx, "DROP ROLE IF EXISTS "+role),
+	}
+}
+
 func (s *session) dropRoles(ctx context.Context) []Attempt {
 	attempts := make([]Attempt, 0, 2*len(s.roles)+len(s.rowPolicies))
 	for _, statement := range s.rowPolicies {
 		attempts = append(attempts, s.exec(ctx, statement))
 	}
 	for _, role := range s.roles {
-		attempts = append(attempts,
-			s.exec(ctx, "DROP OWNED BY "+role),
-			s.exec(ctx, "DROP ROLE IF EXISTS "+role),
-		)
+		attempts = append(attempts, s.dropRole(ctx, role)...)
 	}
 	return attempts
 }

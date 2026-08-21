@@ -723,8 +723,8 @@ into four probed ones with no workflow edit.
 | `sqlserver` | 17.0 (SQL Server 2025) | certified | `SQLServer2022` | dialect-default | `mcr.microsoft.com/mssql/server:2025-latest` | no | no: the capability probe has no statement table for the sqlserver dialect, so a server on this line would be asked nothing |
 | `sqlserver` | 16.0 (SQL Server 2022) | best-effort | `SQLServer2022` | dialect-default | `mcr.microsoft.com/mssql/server:2022-latest` | no | no: the capability probe has no statement table for the sqlserver dialect, so a server on this line would be asked nothing |
 | `sqlserver` | 15.0 (SQL Server 2019) | best-effort | `SQLServer2022` | dialect-default | `mcr.microsoft.com/mssql/server:2019-latest` | no | no: the capability probe has no statement table for the sqlserver dialect, so a server on this line would be asked nothing |
-| `oracle` | 23 | best-effort | `Oracle23` | version-ladder | `gvenzl/oracle-free:slim` | no | no: the capability probe has no statement table for the oracle dialect, so a server on this line would be asked nothing |
-| `oracle` | 21 | best-effort | `Oracle21` | version-ladder | `gvenzl/oracle-xe:21-slim` | no | no: the capability probe has no statement table for the oracle dialect, so a server on this line would be asked nothing |
+| `oracle` | 23 | best-effort | `Oracle23` | version-ladder | `gvenzl/oracle-free:slim` | no | no: the oracle dialect has a probe plan and no launch recipe, so nothing here can start the server to run it |
+| `oracle` | 21 | best-effort | `Oracle21` | version-ladder | `gvenzl/oracle-xe:21-slim` | no | no: the oracle dialect has a probe plan and no launch recipe, so nothing here can start the server to run it |
 | `sqlite` | 3 | certified | `SQLite3` | dialect-default | none | n/a | no: no container image is declared for this line; the capability probe has no statement table for the sqlite dialect, so a server on this line would be asked nothing |
 <!-- END GENERATED VERSION MATRIX -->
 
