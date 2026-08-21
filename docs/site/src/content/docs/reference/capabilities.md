@@ -58,10 +58,12 @@ before they reached a visitor, without saying so.
 For the PostgreSQL family, that refusal path currently applies to Spanner. A
 role, grant, sequence, row-level security enablement, or policy is written as a
 named `-- SPANNER: ... skipped.` diagnostic instead of being dropped from a plan
-in silence. CockroachDB 25.4 and 26.2 plus YugabyteDB 2026.1 were measured with
-live servers and accept those three categories, so their presets enable them.
-CockroachDB's two measured resolver arms differ where the 25.4 server refuses
-generic and guarded `DROP CONSTRAINT` and `CREATE OR REPLACE TRIGGER`.
+in silence. CockroachDB 25.4, 26.2 and 26.3 plus YugabyteDB 2026.1 were measured
+with live servers and accept those three categories, so their presets enable
+them. CockroachDB's three measured resolver arms differ in two places: the 25.4
+server refuses generic and guarded `DROP CONSTRAINT` and
+`CREATE OR REPLACE TRIGGER`, and 26.3 is the first line to accept
+`CREATE DOMAIN`.
 
 MySQL and MariaDB roles do not take that skip path. Complete-schema validation
 and rendering fail before SQL because Ptah cannot read or converge their role

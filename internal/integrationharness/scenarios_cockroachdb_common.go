@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io/fs"
-	"maps"
 	"strings"
 
 	"go.5x5.cz/ptah/core/ast"
@@ -30,7 +29,12 @@ func testCockroachDBCommonSubset(ctx context.Context, conn *dbschema.DatabaseCon
 		recorder,
 		"CockroachDB",
 		"crdb_common_users",
-		capability.CockroachDB23(),
+		[]capability.Capability{
+			capability.CreateIndexConcurrently,
+			capability.DropIndexConcurrently,
+			capability.XMLType,
+			capability.AdvisoryLocks,
+		},
 	)
 }
 
@@ -49,8 +53,29 @@ func testYugabyteDBCommonSubset(ctx context.Context, conn *dbschema.DatabaseConn
 		recorder,
 		"YugabyteDB",
 		"yb_common_users",
-		capability.YugabyteDB25(),
+		[]capability.Capability{capability.DropIndexConcurrently},
 	)
+}
+
+// capabilitiesClaimed lists which of the named capabilities the connection
+// claims, so a scenario defined by an absence can say which part of that
+// absence went missing.
+//
+// This replaced an equality check against a named preset. That check read as a
+// stronger assertion than it was: it passed only while CockroachDB26 was
+// literally CockroachDB23, and the moment those lines gained a difference --
+// any difference, in any key, related to this scenario or not -- it failed
+// while the subset it names was still intact (stokaro/ptah#1735). Naming the
+// keys the scenario is about survives a release the ladder learns about, and
+// still fails if one of them turns true.
+func capabilitiesClaimed(have capability.Capabilities, named []capability.Capability) []capability.Capability {
+	var claimed []capability.Capability
+	for _, key := range named {
+		if have.Has(key) {
+			claimed = append(claimed, key)
+		}
+	}
+	return claimed
 }
 
 func testPostgresDistributedCommonSubset(
@@ -59,7 +84,7 @@ func testPostgresDistributedCommonSubset(
 	recorder *StepRecorder,
 	label,
 	tableName string,
-	expectedCapabilities capability.Capabilities,
+	absent []capability.Capability,
 ) error {
 	createUsers := ast.NewCreateTable(tableName).
 		AddColumn(ast.NewColumn("id", "BIGINT").SetPrimary()).
@@ -71,8 +96,10 @@ func testPostgresDistributedCommonSubset(
 	if err := recorder.RecordStep("Render "+label+" DDL", "Render common-subset table and index through the distributed-SQL renderer", func() error {
 		var err error
 		info := conn.Info()
-		if !maps.Equal(info.Capabilities, expectedCapabilities) {
-			return fmt.Errorf("%s connection capabilities must match the expected preset", label)
+		if claimed := capabilitiesClaimed(info.Capabilities, absent); len(claimed) > 0 {
+			return fmt.Errorf(
+				"%s connection claims %v, which this common-subset scenario is defined by the absence of",
+				label, claimed)
 		}
 		sqlText, err = renderer.RenderSQLWithCapabilities(info.Dialect, info.Capabilities, createUsers, createEmailIndex)
 		if err != nil {

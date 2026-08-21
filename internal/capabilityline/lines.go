@@ -17,8 +17,11 @@ const (
 	MariaDB12 = "12.3"
 	// CockroachDB25 is the measured CockroachDB 25 release line.
 	CockroachDB25 = "25.4"
-	// CockroachDB26 is the measured CockroachDB 26 release line.
+	// CockroachDB26 is the measured CockroachDB 26.2 release line.
 	CockroachDB26 = "26.2"
+	// CockroachDB263 is the newest measured CockroachDB release line, and the
+	// first one carrying CREATE DOMAIN.
+	CockroachDB263 = "26.3"
 	// ClickHouse24 is the measured ClickHouse 24 release line, and the only one
 	// below the 24.11 CHECK GRANT step.
 	ClickHouse24 = "24.10"
@@ -62,5 +65,5 @@ func MariaDBMeasured() []string {
 
 // CockroachDBMeasured returns every CockroachDB release line with direct matrix evidence.
 func CockroachDBMeasured() []string {
-	return []string{CockroachDB25, CockroachDB26}
+	return []string{CockroachDB25, CockroachDB26, CockroachDB263}
 }
