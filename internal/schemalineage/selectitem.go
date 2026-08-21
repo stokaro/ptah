@@ -3,6 +3,7 @@ package schemalineage
 import (
 	"fmt"
 	"slices"
+	"strconv"
 
 	"go.5x5.cz/ptah/internal/lexer"
 )
@@ -120,10 +121,13 @@ func splitAlias(item []lexer.Token) ([]lexer.Token, string) {
 		item[len(item)-1].Type == lexer.TokenIdentifier {
 		return item[:len(item)-2], unquote(item[len(item)-1].Value)
 	}
-	// `expr name` without AS is an alias too, but only when the expression is
-	// not itself a bare identifier -- `a b` is ambiguous and left alone.
-	if len(item) >= 3 && item[len(item)-1].Type == lexer.TokenIdentifier &&
+	// `expr name` without AS is an alias too. `SELECT email contact` is two
+	// tokens and means exactly what `email AS contact` means, so the length
+	// floor here is 2 -- an earlier floor of 3 reported that view as
+	// unresolvable rather than resolving it.
+	if len(item) >= 2 && item[len(item)-1].Type == lexer.TokenIdentifier &&
 		!item[len(item)-1].MatchIdentifierValue("as") &&
+		!isClauseKeyword(item[len(item)-1]) &&
 		!item[len(item)-2].MatchOperatorValue(".") {
 		return item[:len(item)-1], unquote(item[len(item)-1].Value)
 	}
@@ -135,7 +139,12 @@ func splitAlias(item []lexer.Token) ([]lexer.Token, string) {
 func plainColumn(expression []lexer.Token, source sourceRef) (string, bool) {
 	switch len(expression) {
 	case 1:
-		if expression[0].Type == lexer.TokenIdentifier && !isClauseKeyword(expression[0]) {
+		// The numeric check belongs here too, not only on the expression path.
+		// `SELECT 1 AS one` reaches this branch as a single identifier token,
+		// so filtering literals downstream left it reporting a source column
+		// named "1" -- the first fix for this missed exactly this shape.
+		if expression[0].Type == lexer.TokenIdentifier && !isClauseKeyword(expression[0]) &&
+			!isNumericLiteral(unquote(expression[0].Value)) {
 			return unquote(expression[0].Value), true
 		}
 	case 3:
@@ -174,7 +183,7 @@ func referencedColumns(expression []lexer.Token, source sourceRef) []string {
 				continue
 			}
 		}
-		if isLiteralKeyword(token) || seen[lowerName(name)] {
+		if isLiteralKeyword(token) || isNumericLiteral(name) || seen[lowerName(name)] {
 			continue
 		}
 		seen[lowerName(name)] = true
@@ -186,4 +195,19 @@ func referencedColumns(expression []lexer.Token, source sourceRef) []string {
 func isLiteralKeyword(token lexer.Token) bool {
 	return slices.ContainsFunc([]string{"null", "true", "false", "case", "when", "then", "else", "end",
 		"and", "or", "not", "distinct", "cast", "as", "interval"}, token.MatchIdentifierValue)
+}
+
+// isNumericLiteral reports whether a token the lexer called an identifier is
+// really a number.
+//
+// The lexer does not separate them, so `WHEN id > 0` and `SELECT 1 AS one`
+// arrived here as identifiers and were reported as source columns named "0"
+// and "1" -- lineage naming columns that do not exist, which is worse than
+// naming none (stokaro/ptah#1712).
+func isNumericLiteral(name string) bool {
+	if name == "" {
+		return false
+	}
+	_, err := strconv.ParseFloat(name, 64)
+	return err == nil
 }

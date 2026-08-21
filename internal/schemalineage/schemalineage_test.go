@@ -203,3 +203,66 @@ func TestDeriveOnAnEmptySchemaIsEmptyNotUndecided(t *testing.T) {
 	c.Assert(result.Edges, qt.HasLen, 0)
 	c.Assert(result.Undecided, qt.HasLen, 0)
 }
+
+// The three cases below were found by running the verb against real view
+// shapes rather than by reading the parser. Each reported something false.
+
+// TestDeriveDoesNotReportANumericLiteralAsAColumn covers both paths a literal
+// can arrive on.
+//
+// The lexer does not separate numbers from identifiers, so `SELECT 1 AS one`
+// and `WHEN id > 0` both reached the resolver as identifiers and were reported
+// as source columns named "1" and "0" -- lineage naming columns that do not
+// exist, which is worse than naming none. The two shapes take different code
+// paths, and the first fix caught only one of them.
+func TestDeriveDoesNotReportANumericLiteralAsAColumn(t *testing.T) {
+	c := qt.New(t)
+	db := schemaWith(
+		goschema.View{Name: "bare", Body: "SELECT 1 AS one, email FROM users"},
+		goschema.View{Name: "inexpr", Body: "SELECT CASE WHEN id > 0 THEN email ELSE email END AS pick FROM users"},
+	)
+
+	result := schemalineage.Derive(db)
+
+	for _, edge := range result.Edges {
+		c.Assert(isDigits(edge.FromColumn), qt.IsFalse,
+			qt.Commentf("edge %+v names a numeric literal as a column", edge))
+	}
+	// The real columns beside the literals still resolve.
+	c.Assert(result.Edges, qt.Contains, schemalineage.Edge{
+		FromTable: "users", FromColumn: "email", ToView: "bare", ToColumn: "email",
+	})
+	c.Assert(result.Edges, qt.Contains, schemalineage.Edge{
+		FromTable: "users", FromColumn: "email", ToView: "inexpr", ToColumn: "pick",
+	})
+}
+
+// TestDeriveResolvesAnAliasWrittenWithoutAS covers `SELECT email contact`.
+//
+// It means exactly what `email AS contact` means, and was reported as
+// unresolvable because the alias split required three tokens where this shape
+// has two.
+func TestDeriveResolvesAnAliasWrittenWithoutAS(t *testing.T) {
+	c := qt.New(t)
+	db := schemaWith(goschema.View{Name: "v", Body: "SELECT email contact FROM users"})
+
+	result := schemalineage.Derive(db)
+
+	c.Assert(result.Undecided, qt.HasLen, 0)
+	c.Assert(result.Edges, qt.DeepEquals, []schemalineage.Edge{
+		{FromTable: "users", FromColumn: "email", ToView: "v", ToColumn: "contact"},
+	})
+}
+
+// isDigits reports whether every rune is a decimal digit.
+func isDigits(value string) bool {
+	if value == "" {
+		return false
+	}
+	for _, r := range value {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
