@@ -1,0 +1,138 @@
+#!/usr/bin/env bash
+# Proves that each gate below can still fail.
+#
+# A gate stops gating quietly. It does not error -- it discovers zero inputs and
+# reports the same success it reports on a clean tree, which is why several of
+# them say so in their own headers: "a gate that compares nothing to nothing
+# reports success at exactly the moment it stopped working."
+#
+# Eleven gates could already prove otherwise -- three shell ones carry a
+# `-selftest.sh` companion and eight `check-*.mjs` take `--selftest`. The rest
+# carried nothing, and an audit that broke each rule by hand is a photograph:
+# nothing keeps it true (stokaro/ptah#1923).
+#
+# This is the single-harness shape that issue proposes, with its violations as
+# the fixtures. Each one breaks the rule the gate states, runs the gate, and
+# requires a non-zero exit. A gate that passes its own broken fixture is a gate
+# that has stopped reading something.
+#
+# The mutations run in a throwaway git worktree, never in the caller's tree.
+# That is not tidiness: several gates read the whole repository through
+# `git rev-parse --show-toplevel`, so they have to see a real checkout, and a
+# harness that edited the caller's files would leave them edited when a gate
+# exits non-zero -- which is the expected outcome here, not the exception.
+set -euo pipefail
+
+repo_root="$(git rev-parse --show-toplevel)"
+cd "$repo_root"
+
+worktree=""
+cleanup() {
+	if [ -n "$worktree" ] && [ -d "$worktree" ]; then
+		git worktree remove --force "$worktree" >/dev/null 2>&1 || true
+	fi
+}
+trap cleanup EXIT
+
+worktree="$(mktemp -d "${TMPDIR:-/tmp}/ptah-gate-selftest.XXXXXX")"
+rmdir "$worktree"
+git worktree add --detach "$worktree" HEAD >/dev/null 2>&1
+
+failures=0
+checked=0
+
+# run_case breaks one rule and requires the gate to notice.
+#
+# The mutation is a shell snippet run inside the worktree. Restoring is
+# `git checkout` plus `git clean`, because some mutations add files and
+# `checkout` alone leaves those behind -- a leftover from one case would then
+# decide the next one.
+run_case() {
+	local gate="$1" description="$2" mutation="$3"
+	checked=$((checked + 1))
+
+	if ! (cd "$worktree" && bash "scripts/${gate}" >/dev/null 2>&1); then
+		echo "check-gate-selftests: ${gate} fails on an UNMODIFIED tree; the fixture below proves nothing" >&2
+		failures=$((failures + 1))
+		return
+	fi
+
+	(cd "$worktree" && eval "$mutation")
+	local status=0
+	(cd "$worktree" && bash "scripts/${gate}" >/dev/null 2>&1) || status=$?
+	(cd "$worktree" && git checkout -- . >/dev/null 2>&1 && git clean -fdq >/dev/null 2>&1)
+
+	if [ "$status" -eq 0 ]; then
+		echo "check-gate-selftests: ${gate} PASSED with ${description}" >&2
+		failures=$((failures + 1))
+		return
+	fi
+	printf '  %-40s %s\n' "$gate" "$description"
+}
+
+echo "check-gate-selftests: breaking each gate's own rule and requiring it to notice"
+
+# The path is assembled rather than written out, because check-repository-local-
+# paths.sh reads this file too and would find its own fixture. Its exclusion
+# list names only the gate itself, which is the right list: a harness that had
+# to be added to it would be a harness nobody could tell from a real leak.
+home_root="/Users"
+run_case check-repository-local-paths.sh \
+	"an absolute developer path in README" \
+	"printf '\n    %s/somebody/Work/ptah/schema.sql\n' \"${home_root}\" >>README.md"
+
+run_case check-go-toolchain-single-source.sh \
+	"a Go version literal pinned in a workflow" \
+	"perl -0pi -e 's/go-version-file: go.mod/go-version: \"1.26.0\"/' .github/workflows/go-unit-tests.yml"
+
+run_case check-go-module-lint-coverage.sh \
+	"working-directory: testkit removed from one job" \
+	"perl -0pi -e 's/working-directory: testkit//' .github/workflows/go-lint.yml"
+
+run_case check-version-matrix.sh \
+	"a declared release line deleted from the documented block" \
+	"perl -0pi -e 's/^\|\s\`postgres\`\s\|\s18[^\n]*\n//m' docs/site/src/content/docs/databases/support-matrix.md"
+
+run_case check-lint-rules.sh \
+	"a heading removed from the generated block" \
+	"perl -0pi -e 's/^## Identifier families\n//m' docs/site/src/content/docs/reference/lint-rules.md"
+
+run_case check-test-style.sh \
+	"a conditional added to a test function" \
+	"printf '\nfunc TestGateSelftestConditional(t *testing.T) {\n\tif t.Name() == \"\" {\n\t\tt.Fatal(\"unreachable\")\n\t}\n}\n' >>internal/dbtarget/dbtarget_test.go"
+
+run_case check-public-api-snapshot.sh \
+	"an exported field added to a documented struct" \
+	"perl -0pi -e 's/type DomainExpression struct \{/type DomainExpression struct {\n\t\/\/ GateSelftestField exists only inside this fixture.\n\tGateSelftestField string\n/' config/config.go"
+
+run_case check-capability-tables.sh \
+	"a key removed from the generated capability table" \
+	"perl -0pi -e 's/^\| \`advisory_locks\`[^\n]*\n//m' docs/capabilities.md"
+
+run_case check-public-api.sh \
+	"an exported package with no doc comment" \
+	"mkdir -p gateselftest && printf 'package gateselftest\n\nfunc Exported() {}\n' >gateselftest/gateselftest.go"
+
+# What this harness does NOT cover, and why. Printed rather than left out,
+# because a coverage list nobody can see is the same failure mode the harness
+# exists to prevent -- silence that reads as completeness.
+cat <<'UNCOVERED'
+
+  not covered here, with the reason:
+    check-architecture-boundaries.sh    carries its own -selftest.sh companion
+    check-compose-image-pins.sh         carries its own -selftest.sh companion
+    check-*.mjs (eight of them)         take --selftest and run it in the docs job
+    check-coverage.sh                   runs the whole test suite; minutes per fixture
+    check-public-api-released.sh        resolves the published module over the network
+    check-documented-install.sh         downloads the published binaries
+    check-api-export-acceptance.sh      needs a built binary the throwaway worktree has none of
+    check-hcl-export-acceptance.sh      the same
+    check-protobuf-export-acceptance.sh the same
+UNCOVERED
+
+echo
+if [ "$failures" -gt 0 ]; then
+	echo "check-gate-selftests: ${failures} of ${checked} gates did not notice their own broken rule" >&2
+	exit 1
+fi
+echo "check-gate-selftests: OK (${checked} gates each failed on their own broken rule)"
