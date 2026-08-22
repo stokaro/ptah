@@ -120,9 +120,12 @@ func runSchemaSecurity(cmd *cobra.Command, opts schemaSecurityOptions) error {
 	if err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("read schema: %w", err))
 	}
+	// The connection's own set rather than the dialect default: it is what the
+	// session resolved, so a rule gated on a capability this server refines is
+	// gated on what this server answered (stokaro/ptah#1230).
 	report := schemasecurity.Analyze(
 		dbschematogo.ConvertDBSchemaToGoSchema(live),
-		schemasecurity.Options{Dialect: conn.Info().Dialect},
+		schemasecurity.Options{Capabilities: conn.Info().Capabilities},
 	)
 
 	if err := writeSecurityReport(cmd.OutOrStdout(), opts.format, report); err != nil {

@@ -25,7 +25,38 @@ type Options struct {
 	IncludeColumns bool
 	ExcludeTables  []string
 	Theme          string
+	// Annotations marks nodes with what an analysis found about them, keyed by
+	// the table's qualified name. An empty map renders exactly the diagram
+	// that rendered before annotations existed.
+	//
+	// The renderer takes findings as data rather than importing an analyzer:
+	// what marks a node is a severity and a few labels, and a graph renderer
+	// that knew about security rules would have to learn about the next
+	// analysis too (stokaro/ptah#1035).
+	Annotations map[string]Annotation
+	// Unattached carries what an analysis found about objects this diagram has
+	// no node for -- a routine, a schema. They are emitted as a comment rather
+	// than dropped: a diagram that silently shows three of five findings is
+	// worse than one that shows three and says so.
+	Unattached []string
 }
+
+// Annotation is what an analysis found about one node.
+type Annotation struct {
+	// Severity is the highest severity among the node's findings: info,
+	// warning, or error. An unrecognized value renders as info, because a
+	// severity the renderer does not know must not out-rank the ones it does.
+	Severity string
+	// Labels are the finding codes, in the order they should be shown.
+	Labels []string
+}
+
+// Severity values Annotation understands.
+const (
+	SeverityInfo    = "info"
+	SeverityWarning = "warning"
+	SeverityError   = "error"
+)
 
 type relationship struct {
 	From  string
@@ -293,8 +324,38 @@ func renderDOT(model graphModel, opts Options) string {
 	for _, rel := range model.Relationships {
 		fmt.Fprintf(&b, "  %q -> %q [label=%q];\n", rel.From, rel.To, rel.Label)
 	}
+	for _, note := range opts.Unattached {
+		fmt.Fprintf(&b, "  // %s\n", note)
+	}
 	b.WriteString("}\n")
 	return b.String()
+}
+
+// annotationColors maps a severity onto the border a marked node is drawn
+// with, per theme.
+//
+// The colors are the ones the rest of this renderer already uses for text and
+// edges, darkened or lightened per theme, so a marked node reads as part of the
+// diagram rather than as something pasted onto it.
+func annotationColor(severity, theme string) string {
+	dark := theme == ThemeDark
+	switch severity {
+	case SeverityError:
+		if dark {
+			return "#f87171"
+		}
+		return "#b91c1c"
+	case SeverityWarning:
+		if dark {
+			return "#fbbf24"
+		}
+		return "#b45309"
+	default:
+		if dark {
+			return "#60a5fa"
+		}
+		return "#1d4ed8"
+	}
 }
 
 func dotTableLabel(table goschema.Table, fields []goschema.Field, opts Options) string {
@@ -310,6 +371,12 @@ func dotTableLabel(table goschema.Table, fields []goschema.Field, opts Options) 
 		headerTextColor = "#f9fafb"
 		rowTextColor = "#e5e7eb"
 	}
+	// A marked node is drawn in its severity's color, so the diagram carries
+	// the finding rather than a legend the reader has to hold in their head.
+	annotation, marked := opts.Annotations[table.QualifiedName()]
+	if marked {
+		borderColor = annotationColor(annotation.Severity, opts.Theme)
+	}
 
 	var b strings.Builder
 	fmt.Fprintf(
@@ -324,6 +391,15 @@ func dotTableLabel(table goschema.Table, fields []goschema.Field, opts Options) 
 		headerTextColor,
 		escapeHTML(table.QualifiedName()),
 	)
+	if marked {
+		fmt.Fprintf(
+			&b,
+			"      <TR><TD ALIGN=\"LEFT\" BGCOLOR=\"%s\"><FONT COLOR=\"%s\">%s</FONT></TD></TR>\n",
+			rowColor,
+			annotationColor(annotation.Severity, opts.Theme),
+			escapeHTML(annotation.Severity+": "+strings.Join(annotation.Labels, " ")),
+		)
+	}
 	if opts.IncludeColumns {
 		for _, field := range fields {
 			fmt.Fprintf(
@@ -360,6 +436,23 @@ func renderMermaid(model graphModel, opts Options) string {
 	}
 	for _, rel := range model.Relationships {
 		fmt.Fprintf(&b, "  %s ||--o{ %s : %q\n", names[rel.To], names[rel.From], rel.Label)
+	}
+	// Mermaid's erDiagram has no per-entity styling and no display name, so an
+	// annotation cannot be drawn on the node the way DOT draws it. It is
+	// written as a comment beside the entity it belongs to rather than left
+	// out: the file then carries every finding, and a reader who opens it sees
+	// which entity each one is about. Use --format dot (or svg) for a diagram
+	// that shows them.
+	for _, table := range model.Tables {
+		annotation, marked := opts.Annotations[table.QualifiedName()]
+		if !marked {
+			continue
+		}
+		fmt.Fprintf(&b, "  %%%% %s: %s %s\n",
+			names[table.QualifiedName()], annotation.Severity, strings.Join(annotation.Labels, " "))
+	}
+	for _, note := range opts.Unattached {
+		fmt.Fprintf(&b, "  %%%% %s\n", note)
 	}
 	return b.String()
 }
