@@ -431,6 +431,45 @@ Migration runs serialize through a session-level advisory lock
 `ptah migrations up` runs against one database cannot interleave. Timeout
 flags for the lock are on [Apply migrations](../../versioned/apply/).
 
+### Transaction poolers
+
+A PostgreSQL advisory lock belongs to a **session**. A transaction pooler such
+as PgBouncer in `pool_mode = transaction` hands a client whichever backend is
+free between transactions, so two clients can be given the same backend — and
+there the lock is reentrant and answers "acquired" to both.
+
+That does not weaken the lock. It removes it, and it fails open: both runs
+believe they hold it. Measured through PgBouncer 1.25.2 in transaction mode, two
+independent client connections and one key:
+
+```text
+first handle         acquired=true  backend=113
+second handle        acquired=true  backend=113
+first handle again   acquired=true  backend=113
+```
+
+So Ptah checks, rather than trusts. After taking the lock it asks a second
+connection for the same one; if that succeeds, the lock excludes nothing and the
+command refuses before it changes anything:
+
+```console
+$ ptah migrations up --db-url "postgres://…@pgbouncer:6432/app"
+error: postgres advisory lock "ptah_migrate" excludes nothing on this connection:
+a second connection took the same lock, which is what a transaction-pooling proxy
+such as PgBouncer produces — it hands both clients one backend session, where the
+lock is reentrant. …
+```
+
+The check asks the property rather than identifying the proxy, so it holds for
+any topology that shares backends, named or not, and costs one query against a
+direct server.
+
+**Point schema-mutating commands at the database directly.** Reads through a
+pooler are unaffected; it is the lock that cannot survive one. Where the risk is
+understood and accepted — a single deploy job that no other run can race —
+`PTAH_ALLOW_UNVERIFIED_MIGRATION_LOCK=1` skips the refusal. It does not skip the
+lock, only the proof that the lock excludes anybody.
+
 ## Next steps
 
 - Declaring these objects in Go sources: [Go annotation reference](../../reference/go-annotations/).
