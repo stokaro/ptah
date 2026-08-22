@@ -40,6 +40,9 @@ git worktree add --detach "$worktree" HEAD >/dev/null 2>&1
 
 failures=0
 checked=0
+# fixtured accumulates the gates run_case was given, so the coverage guard at
+# the end reads what actually ran rather than a second list beside it.
+fixtured=()
 
 # run_case breaks one rule and requires the gate to notice.
 #
@@ -50,6 +53,7 @@ checked=0
 run_case() {
 	local gate="$1" description="$2" mutation="$3"
 	checked=$((checked + 1))
+	fixtured+=("$gate")
 
 	if ! (cd "$worktree" && bash "scripts/${gate}" >/dev/null 2>&1); then
 		echo "check-gate-selftests: ${gate} fails on an UNMODIFIED tree; the fixture below proves nothing" >&2
@@ -113,26 +117,74 @@ run_case check-public-api.sh \
 	"an exported package with no doc comment" \
 	"mkdir -p gateselftest && printf 'package gateselftest\n\nfunc Exported() {}\n' >gateselftest/gateselftest.go"
 
-# What this harness does NOT cover, and why. Printed rather than left out,
-# because a coverage list nobody can see is the same failure mode the harness
-# exists to prevent -- silence that reads as completeness.
-cat <<'UNCOVERED'
+# What this harness does NOT cover, and why. A data table rather than a
+# paragraph, because the guard at the end of this file reads it: a coverage list
+# nobody checks is the same failure mode the harness exists to prevent --
+# silence that reads as completeness (stokaro/ptah#1923).
+uncovered=(
+	"check-coverage.sh	runs the whole test suite; minutes per fixture"
+	"check-public-api-released.sh	resolves the published module over the network"
+	"check-documented-install.sh	downloads the published binaries"
+	"check-api-export-acceptance.sh	needs a built binary the throwaway worktree has none of"
+	"check-hcl-export-acceptance.sh	the same"
+	"check-protobuf-export-acceptance.sh	the same"
+)
 
-  not covered here, with the reason:
-    check-architecture-boundaries.sh    carries its own -selftest.sh companion
-    check-compose-image-pins.sh         carries its own -selftest.sh companion
-    check-*.mjs (eight of them)         take --selftest and run it in the docs job
-    check-coverage.sh                   runs the whole test suite; minutes per fixture
-    check-public-api-released.sh        resolves the published module over the network
-    check-documented-install.sh         downloads the published binaries
-    check-api-export-acceptance.sh      needs a built binary the throwaway worktree has none of
-    check-hcl-export-acceptance.sh      the same
-    check-protobuf-export-acceptance.sh the same
-UNCOVERED
+# companion_gates lists the gates that prove themselves, derived from the files
+# on disk rather than written down: a `-selftest.sh` beside a gate IS the
+# statement that the gate can fail, and a hand-written copy of that list is what
+# falls behind when the next companion lands. It already had: this list named
+# two companions while the tree carried three.
+companion_gates() {
+	local companion base
+	for companion in scripts/check-*-selftest.sh; do
+		[ -e "$companion" ] || continue
+		base="$(basename "$companion")"
+		echo "${base%-selftest.sh}.sh"
+	done
+}
 
 echo
+echo "  not covered here, with the reason:"
+for entry in "${uncovered[@]}"; do
+	printf '    %-40s %s\n' "${entry%%	*}" "${entry##*	}"
+done
+for gate in $(companion_gates); do
+	printf '    %-40s %s\n' "$gate" "carries its own -selftest.sh companion"
+done
+printf '    %-40s %s\n' "check-*.mjs" "take --selftest and run it in the docs job"
+
+# The coverage guard. Every shell gate has to be in one of the three lists
+# above, or this harness reports a number that means less than it looks like:
+# "9 gates each failed on their own broken rule" says nothing about the tenth
+# that nobody wired in.
+unlisted=""
+guarded=0
+for path in scripts/check-*.sh; do
+	gate="$(basename "$path")"
+	case "$gate" in
+	*-selftest.sh | check-gate-selftests.sh) continue ;;
+	esac
+	guarded=$((guarded + 1))
+	listed=""
+	for covered in "${fixtured[@]}" $(companion_gates); do
+		[ "$covered" = "$gate" ] && listed="yes"
+	done
+	for entry in "${uncovered[@]}"; do
+		[ "${entry%%	*}" = "$gate" ] && listed="yes"
+	done
+	[ -n "$listed" ] || unlisted="${unlisted} ${gate}"
+done
+
+echo
+if [ -n "$unlisted" ]; then
+	echo "check-gate-selftests: no fixture, no companion and no reason for:${unlisted}" >&2
+	echo "  add a run_case for it, give it a -selftest.sh, or say in uncovered why not" >&2
+	exit 1
+fi
 if [ "$failures" -gt 0 ]; then
 	echo "check-gate-selftests: ${failures} of ${checked} gates did not notice their own broken rule" >&2
 	exit 1
 fi
-echo "check-gate-selftests: OK (${checked} gates each failed on their own broken rule)"
+echo "check-gate-selftests: OK (${checked} gates each failed on their own broken rule," \
+	"${guarded} shell gates all accounted for)"
