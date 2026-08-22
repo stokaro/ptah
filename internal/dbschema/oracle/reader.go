@@ -264,16 +264,32 @@ WHERE c.owner = :1
 ORDER BY c.table_name, c.constraint_name, col.position`
 
 func (r *Reader) readConstraints() ([]types.DBConstraint, map[string]bool, error) {
+	// The referenced keys are read BEFORE the constraint rows are opened, and
+	// the order is load-bearing rather than tidy.
+	//
+	// go-ora v3 refuses a second query on the same *sql.DB while an earlier
+	// result set still has rows to read, answering EOF. Measured, and the
+	// distinction is undrained rather than open:
+	//
+	//	first drained, not closed, then second   ok
+	//	first undrained, then second             EOF
+	//
+	// That is why readIndexes needs no such change: its loop drains before it
+	// calls readIndexColumns. This read opened its second query first, with the
+	// constraint rows untouched.
+	//
+	// v2 served the pair from a second pooled connection, so the old order
+	// worked by accident of the driver rather than by design.
+	referenced, err := r.readReferencedKeys()
+	if err != nil {
+		return nil, nil, err
+	}
+
 	rows, err := r.db.Query(constraintQuery, r.schema)
 	if err != nil {
 		return nil, nil, err
 	}
 	defer rows.Close()
-
-	referenced, err := r.readReferencedKeys()
-	if err != nil {
-		return nil, nil, err
-	}
 
 	var (
 		constraints []types.DBConstraint

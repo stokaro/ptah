@@ -9,7 +9,7 @@ import (
 	"time"
 
 	qt "github.com/frankban/quicktest"
-	_ "github.com/sijms/go-ora/v2"
+	_ "github.com/sijms/go-ora/v3"
 
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/platform"
