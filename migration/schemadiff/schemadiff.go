@@ -259,13 +259,14 @@ func CompareReportingUndecidedAdditions(
 	cov := compare.CoverageOf(generated, database)
 
 	// Compare tables and their column structures
-	compare.TablesAndColumnsWithSemantics(
+	compare.TablesAndColumnsWithGeneratedExpressions(
 		generated,
 		database,
 		diff,
 		opts.Dialect,
 		identifierSemantics,
 		cov,
+		opts.GeneratedExpressions,
 	)
 
 	// Compare enum type definitions and values. The semantics carry the

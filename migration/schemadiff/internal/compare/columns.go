@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strings"
 
+	"go.5x5.cz/ptah/config"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/identifier"
@@ -123,6 +124,7 @@ func TableColumnsWithSemantics(
 		dialect,
 		semantics,
 		nil,
+		nil,
 	)
 }
 
@@ -133,6 +135,7 @@ func tableColumnsWithSemantics(
 	dialect string,
 	semantics identifier.Semantics,
 	objectOwnedUniqueColumns map[columnIdentity]struct{},
+	generatedExpressions map[string]config.GeneratedExpression,
 ) difftypes.TableDiff {
 	tableDiff := difftypes.TableDiff{TableName: genTable.QualifiedName()}
 
@@ -178,7 +181,11 @@ func tableColumnsWithSemantics(
 				genCol.Unique = false
 				dbCol.IsUnique = false
 			}
-			colDiff := columnsWithDesiredDomains(genCol, dbCol, dialect, desiredDomains)
+			colDiff := columnsWithDesiredDomains(genCol, dbCol, dialect, desiredDomains, columnContext{
+				schema:               genTable.Schema,
+				table:                genTable.Name,
+				generatedExpressions: generatedExpressions,
+			})
 			if len(colDiff.Changes) > 0 {
 				tableDiff.ColumnsModified = append(tableDiff.ColumnsModified, colDiff)
 			}
@@ -290,7 +297,23 @@ func Columns(genCol goschema.Field, dbCol types.DBColumn) difftypes.ColumnDiff {
 // comparison that has a desired schema to consult goes through
 // tableColumnsWithSemantics, which passes that set down.
 func ColumnsWithDialect(genCol goschema.Field, dbCol types.DBColumn, dialect string) difftypes.ColumnDiff {
-	return columnsWithDesiredDomains(genCol, dbCol, dialect, nil)
+	return columnsWithDesiredDomains(genCol, dbCol, dialect, nil, columnContext{})
+}
+
+// columnContext carries what a column comparison needs about the table it sits
+// in and about the server that answered for the schema.
+//
+// It is a struct rather than three more parameters because the two facts arrive
+// together and are read together: the generated-expression map is keyed by the
+// column's qualified name, so a comparison that knows the map and not the table
+// can look nothing up.
+type columnContext struct {
+	// schema and table qualify the column for
+	// [config.CompareOptions.GeneratedExpressions].
+	schema string
+	table  string
+	// generatedExpressions is that map, nil when nobody asked a server.
+	generatedExpressions map[string]config.GeneratedExpression
 }
 
 func columnsWithDesiredDomains(
@@ -298,6 +321,7 @@ func columnsWithDesiredDomains(
 	dbCol types.DBColumn,
 	dialect string,
 	desiredDomains map[string]domainIdentity,
+	ctx columnContext,
 ) difftypes.ColumnDiff {
 	colDiff := difftypes.ColumnDiff{
 		ColumnName: genCol.Name,
@@ -364,7 +388,11 @@ func columnsWithDesiredDomains(
 	if genUnique != dbUnique {
 		colDiff.Changes["unique"] = fmt.Sprintf("%t -> %t", dbUnique, genUnique)
 	}
-	if diff := generatedColumnDiff(genCol, dbCol, dialect); diff != "" {
+	var resolution *config.GeneratedExpression
+	if entry, ok := ctx.generatedExpressions[generatedColumnKey(ctx.schema, ctx.table, genCol.Name)]; ok {
+		resolution = &entry
+	}
+	if diff := generatedColumnDiff(genCol, dbCol, dialect, resolution); diff != "" {
 		colDiff.Changes["generated"] = diff
 	}
 
@@ -815,8 +843,67 @@ func tablePrimaryKeyColumns(table goschema.Table) []string {
 	return columns
 }
 
-func generatedColumnDiff(genCol goschema.Field, dbCol types.DBColumn, dialect string) string {
-	genExpr := normalizeGeneratedExpression(genCol.GeneratedExpression, dialect)
+// generatedExpressionIsRewritten reports that the target stores a rewrite of a
+// generated column's expression rather than the text it was given.
+//
+// Oracle is the one such target, measured on 23.26.2.0.0 and 21.3.0.0.0: every
+// column reference is quoted and upper-cased, the spaces around operators are
+// dropped, and parentheses appear that the declaration did not carry --
+// `CASE WHEN n > 0 AND n < 10 THEN 1 ELSE 0 END` is stored as
+// `CASE  WHEN ("N">0 AND "N"<10) THEN 1 ELSE 0 END`, doubled space included.
+//
+// It decides what happens when nobody resolved the declaration: elsewhere the
+// stored text is the declared text and a comparison is sound, and here it is
+// not, so the attribute is left uncompared rather than reported as a change
+// that a MODIFY would not make (stokaro/ptah#1915).
+func generatedExpressionIsRewritten(dialect string) bool {
+	return platform.NormalizeDialect(dialect) == platform.Oracle
+}
+
+// generatedColumnKey names one column for [config.CompareOptions.GeneratedExpressions].
+//
+// The declared spelling is the key on both sides, because the resolver builds
+// the map from the same declaration this comparison reads. Folded to lower case
+// so a target that reports its catalog in upper case does not need a second
+// spelling.
+func generatedColumnKey(schema, table, column string) string {
+	name := table + "." + column
+	if schema != "" {
+		name = schema + "." + name
+	}
+	return strings.ToLower(name)
+}
+
+// generatedColumnDiff compares a generated column, using the server's own
+// spelling of the declaration where one was resolved.
+//
+// resolution is nil when nobody asked a server about this column. A non-nil one
+// that reports Resolved false is a declaration the server refused, and there is
+// nothing to compare -- an expression no server accepts has no stored form to
+// be equal to.
+func generatedColumnDiff(
+	genCol goschema.Field,
+	dbCol types.DBColumn,
+	dialect string,
+	resolution *config.GeneratedExpression,
+) string {
+	declared := genCol.GeneratedExpression
+	switch {
+	case resolution != nil && resolution.Resolved:
+		// The server's own spelling of the declaration, so the two sides are
+		// compared as like with like.
+		declared = resolution.Expression
+	case resolution != nil:
+		return ""
+	case generatedExpressionIsRewritten(dialect):
+		// A rewriting target with nobody to ask. Reporting the textual
+		// difference here is what plans a MODIFY that changes nothing on every
+		// run; the kind is still compared, because VIRTUAL against nothing is a
+		// real change whatever the expression says.
+		return generatedKindDiff(genCol, dbCol)
+	}
+
+	genExpr := normalizeGeneratedExpression(declared, dialect)
 	dbExpr := ""
 	if dbCol.GeneratedExpression != nil {
 		dbExpr = normalizeGeneratedExpression(*dbCol.GeneratedExpression, dialect)
@@ -827,6 +914,20 @@ func generatedColumnDiff(genCol goschema.Field, dbCol types.DBColumn, dialect st
 		return ""
 	}
 	return fmt.Sprintf("%s %s -> %s %s", dbKind, dbExpr, genKind, genExpr)
+}
+
+// generatedKindDiff compares only whether the column is generated, and how.
+//
+// It is what remains comparable on a rewriting target with no resolution: a
+// column that stops being generated, or changes between STORED and VIRTUAL, is
+// a change no spelling question can hide.
+func generatedKindDiff(genCol goschema.Field, dbCol types.DBColumn) string {
+	genKind := strings.ToUpper(strings.TrimSpace(genCol.GeneratedKind))
+	dbKind := strings.ToUpper(strings.TrimSpace(dbCol.GeneratedKind))
+	if genKind == dbKind {
+		return ""
+	}
+	return fmt.Sprintf("%s -> %s", dbKind, genKind)
 }
 
 func normalizeGeneratedExpression(expression, dialect string) string {

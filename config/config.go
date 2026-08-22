@@ -104,6 +104,50 @@ type CompareOptions struct {
 	// has no connection. CHECK and DEFAULT stay uncompared there, exactly as
 	// before.
 	DomainExpressions map[string]DomainExpression
+
+	// GeneratedExpressions carries each declared generated column's expression
+	// as the target server itself spells it, keyed by the column's qualified
+	// name.
+	//
+	// It is [CompareOptions.DomainExpressions] for a different attribute and the
+	// same reason: Oracle does not store the text of a generated column's
+	// expression. It stores a rewrite -- every column reference quoted and
+	// upper-cased, the spaces around operators gone, and parentheses added that
+	// the declaration did not have. Measured on 23.26.2.0.0:
+	//
+	//	declared                                        stored
+	//	n * 2                                        -> "N"*2
+	//	CASE WHEN n > 0 AND n < 10 THEN 1 ELSE 0 END -> CASE  WHEN ("N">0 AND "N"<10) THEN 1 ELSE 0 END
+	//
+	// The last row is why no textual fold is sound: nothing that folds
+	// whitespace and case invents those parentheses, and a rule that agrees on
+	// the simple rows and disagrees on that one is worse than no rule.
+	//
+	// A resolved entry is the declaration after the same round trip, so the two
+	// sides compare as like with like (stokaro/ptah#1915).
+	//
+	// A nil map means nobody could ask a server. On a dialect whose stored form
+	// is a rewrite the expression then stays UNCOMPARED, because reporting a
+	// difference between two spellings of one expression plans a modification
+	// that changes nothing, on every run. Every other dialect stores the text it
+	// was given and is compared as before.
+	GeneratedExpressions map[string]GeneratedExpression
+}
+
+// GeneratedExpression is one generated column's expression in the target
+// server's own spelling. See [CompareOptions.GeneratedExpressions].
+//
+// The zero value is not "no expression": it is what a resolver returns for a
+// declaration it could not put through the server, and a comparison must skip
+// the attribute rather than read it as removed. Resolved reports which it is.
+type GeneratedExpression struct {
+	// Expression is the normalized expression, empty when the column declares
+	// none.
+	Expression string
+	// Resolved reports that a server answered for this column. A false value on
+	// a present key is a declaration the server refused, and the expression may
+	// not be compared.
+	Resolved bool
 }
 
 // DomainExpression is one domain's CHECK and DEFAULT in the target server's own
