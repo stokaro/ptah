@@ -240,12 +240,21 @@ function body(rows) {
   for (const [title, items] of grouped) {
     out.push(`## ${title}`, '');
     if (SECTION_INTROS[title]) out.push(SECTION_INTROS[title], '');
+    // The wrapper is what lets the table keep its desktop column widths on a
+    // phone. Starlight makes every table its own scroller, so a min-width on
+    // the table widens the scroller and the page scrolls sideways instead --
+    // measured at 648px against a 390px viewport. With the scrolling on the
+    // wrapper and the width on the table, the difference column divides as it
+    // does at 1280px and the reader scrolls the table rather than the page
+    // (stokaro/ptah#946). The blank lines are load-bearing: without them the
+    // table is not parsed as markdown inside the div.
+    out.push('<div class="ptah-wide-table">', '');
     out.push('| Capability | Ptah | CE | Pro | Difference |');
     out.push('| --- | :-: | :-: | :-: | --- |');
     for (const row of items) {
       out.push(`| ${cell(row.feature)} | ${SYMBOL[row.ptah]} | ${SYMBOL[row.atlas_oss]} | ${SYMBOL[row.atlas_pro]} | ${cell(row.note)} |`);
     }
-    out.push('');
+    out.push('', '</div>', '');
   }
   return out.join('\n');
 }

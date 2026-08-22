@@ -39,10 +39,39 @@ const overflowTolerance = 2;
 // token in its neighbor renders just as tall as a long one, and that is the
 // shape readers actually complain about.
 //
-// Measured at desktop only. At 390px a wide table scrolls inside its own
-// container, so its columns keep their desktop widths and a mobile limit would
-// either duplicate this one or punish tables for being on a phone.
+// Measured at desktop for every table, and at 390px for the wide ones.
+//
+// The desktop-only rule rested on an assumption -- that a wide table scrolls
+// inside its own container at 390px and keeps its desktop column widths -- and
+// the feature matrix did not satisfy it. It scrolled, because Starlight makes
+// every table its own scroller, but auto layout still shrank it toward the
+// viewport, to 437px against a desktop 632px, and the difference column stacked
+// into cells of fifteen rendered lines. 505 cells over the cap at 390px, none
+// at 1280px (stokaro/ptah#946).
+//
+// The fix is a scrolling wrapper with the desktop width on the table inside it,
+// and this is what keeps it: deleting the wrapper or the stylesheet puts those
+// cells back over the cap at 390px and turns this red. A `min-width` on the
+// table alone does not work and is not what to reach for -- Starlight's table
+// IS the scroller, so widening it scrolls the page instead, measured at 648px
+// against a 390px viewport.
+//
+// Narrow tables stay desktop-only. Applying the cap to every table at 390px
+// reports each ordinary three-column reference table in the site, which is a
+// separate decision and is not made here.
 const maxCellLines = 8;
+const wideTableColumns = 5;
+
+// Routes whose wide tables are known to fail the mobile cap and are not fixed
+// by this rule. Each entry states the measurement and what would fix it.
+const mobileCapExemptions = new Map([
+  [
+    '/reference/lint-rules/',
+    'the Atlas-check comparison table renders 35 cells over the cap at 390px, worst 18 lines. ' +
+      'Same mechanism as the feature matrix and the same fix, but the table is emitted by ' +
+      'internal/lintcatalog/markdown.go rather than by a docs script (stokaro/ptah#946).',
+  ],
+]);
 
 // Pages whose tables are lookup references, where an exhaustive cell is the
 // content rather than a mistake. Each entry states why.
@@ -207,7 +236,13 @@ const measure = ({ tolerance, cellLineLimit }) => {
     if (!Number.isFinite(lineHeight) || lineHeight <= 0) continue;
     const lines = Math.round(rect.height / lineHeight);
     if (lines <= cellLineLimit) continue;
-    tallCells.push({ lines, width: Math.round(rect.width), text: cell.textContent.trim().slice(0, 50) });
+    const table = cell.closest('table');
+    tallCells.push({
+      lines,
+      width: Math.round(rect.width),
+      text: cell.textContent.trim().slice(0, 50),
+      columns: table ? table.querySelectorAll('thead th').length : 0,
+    });
   }
 
   return {
@@ -464,10 +499,18 @@ async function main() {
             );
           }
         }
-        if (viewport.name === 'desktop' && result.tallCells.length > 0) {
+        // Desktop measures every table. Mobile measures the wide ones, where
+        // the cap is a statement about the layout rather than about the phone.
+        const capped =
+          viewport.name === 'desktop'
+            ? result.tallCells
+            : mobileCapExemptions.has(route)
+              ? []
+              : result.tallCells.filter((cell) => cell.columns >= wideTableColumns);
+        if (capped.length > 0) {
           routesWithTallCells.add(route);
           if (!denseTableAllowlist.has(route)) {
-            for (const cell of result.tallCells) {
+            for (const cell of capped) {
               errors.push(
                 `${route}: a table cell renders ${cell.lines} lines tall in a ${cell.width}px column, ` +
                   `over the ${maxCellLines}-line limit — "${cell.text}"`,
