@@ -67,6 +67,15 @@ func TestBuildCleanupStatementMatchesTheServerSideForm(t *testing.T) {
 		caps:   capability.SpannerPostgres(),
 		want:   `DROP TABLE IF EXISTS "public"."users" RESTRICT`,
 	}, {
+		// Spanner accepts the guard here too, which is what lets the index
+		// drop stay unconditional. Measured on the emulator through PGAdapter
+		// 0.55.2: `DROP INDEX IF EXISTS "public"."absent" RESTRICT` answers ok
+		// on an index that was never there (stokaro/ptah#1901).
+		name:   "an index is dropped by its qualified name",
+		object: postgresCleanupObject{Kind: "index", Schema: "public", Name: "users_email_idx"},
+		caps:   capability.SpannerPostgres(),
+		want:   `DROP INDEX IF EXISTS "public"."users_email_idx" RESTRICT`,
+	}, {
 		// The identifiers come from a catalog, and %I in the query this
 		// replaces is what keeps a hostile one from ending the statement early.
 		name:   "an identifier with a quote in it stays one identifier",
