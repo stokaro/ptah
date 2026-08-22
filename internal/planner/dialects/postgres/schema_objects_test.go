@@ -186,6 +186,11 @@ func TestPlanner_GenerateMigrationAST_ModifiedViewDropsWhenReplaceWouldBeRefused
 // out to be illegal the engine says so and the migration stops having destroyed
 // nothing. A rollback cannot be answered that way -- it is already running
 // during the incident -- so it takes the statement that always applies.
+//
+// A star is no longer on that list by itself. See
+// [TestPlanner_GenerateMigrationAST_SameStarOverSameRelationsKeepsTheReplace]
+// for the one star shape that is decided, and the two rows below for the ones
+// that are not.
 func TestPlanner_GenerateMigrationAST_UndecidableViewBodyFollowsTheDirection(t *testing.T) {
 	cases := []struct {
 		name         string
@@ -208,15 +213,54 @@ func TestPlanner_GenerateMigrationAST_UndecidableViewBodyFollowsTheDirection(t *
 			wantReplace:  false,
 		},
 		{
-			name:         "star projection hides the column list, forward",
-			previousBody: "SELECT * FROM users",
-			nextBody:     "SELECT * FROM users WHERE id > 10",
+			// A star beside another item is the shape the star rule refuses to
+			// decide. Measured on PostgreSQL 16.10: replaying this same body
+			// after users gained a column is refused with `cannot change name
+			// of view column "x" to "c"` -- the star grew and pushed the item
+			// after it along (stokaro/ptah#1861).
+			name:         "star beside another item, forward",
+			previousBody: "SELECT *, id AS x FROM users",
+			nextBody:     "SELECT *, id AS x FROM users WHERE id > 10",
 			wantReplace:  true,
 		},
 		{
-			name:         "star projection hides the column list, rollback",
+			name:         "star beside another item, rollback",
+			previousBody: "SELECT *, id AS x FROM users",
+			nextBody:     "SELECT *, id AS x FROM users WHERE id > 10",
+			rollback:     true,
+			wantReplace:  false,
+		},
+		{
+			// The same star over different relations says nothing: what a star
+			// expands to is a property of what it reads, so a changed FROM can
+			// move or retype every column in the list.
+			name:         "same star, different relations, forward",
 			previousBody: "SELECT * FROM users",
-			nextBody:     "SELECT * FROM users WHERE id > 10",
+			nextBody:     "SELECT * FROM archived_users",
+			wantReplace:  true,
+		},
+		{
+			name:         "same star, different relations, rollback",
+			previousBody: "SELECT * FROM users",
+			nextBody:     "SELECT * FROM archived_users",
+			rollback:     true,
+			wantReplace:  false,
+		},
+		{
+			// Two spellings of a star are interchangeable over one relation and
+			// are not over a join, where replacing the qualified form with the
+			// bare one is refused with `column "a" of relation "j" already
+			// exists`. The rule requires the same text rather than telling the
+			// two apart (stokaro/ptah#1861).
+			name:         "two star spellings, forward",
+			previousBody: "SELECT users.* FROM users",
+			nextBody:     "SELECT * FROM users",
+			wantReplace:  true,
+		},
+		{
+			name:         "two star spellings, rollback",
+			previousBody: "SELECT users.* FROM users",
+			nextBody:     "SELECT * FROM users",
 			rollback:     true,
 			wantReplace:  false,
 		},
@@ -276,6 +320,97 @@ func TestPlanner_GenerateMigrationAST_UndecidableViewBodyFollowsTheDirection(t *
 			c.Assert(strings.Contains(sql, "DROP VIEW IF EXISTS active_users CASCADE;"), qt.Equals, !tc.wantReplace,
 				qt.Commentf("rendered:\n%s", sql))
 			c.Assert(sql, qt.Contains, tc.nextBody)
+		})
+	}
+}
+
+// TestPlanner_GenerateMigrationAST_SameStarOverSameRelationsKeepsTheReplace
+// pins the one star-projected change the mechanical test can decide.
+//
+// A star does not spell its columns out, so nothing can say what the projection
+// is. It can say when the projection did not change: with the relations equal
+// and both select lists the same single star, the two bodies expand to the same
+// column list at the moment the replace runs, whatever that list is.
+//
+// The rollback row is the whole point. Forward already took the replace, from
+// undecidable rather than from knowing anything; a rollback took
+// DROP VIEW ... CASCADE, which removes dependent views and every grant on them,
+// to make a predicate edit it could not read. Measured on PostgreSQL 16.10, the
+// replace it now takes instead is accepted, and the two ways the expansion
+// could have moved underneath it are both refused while the view exists:
+//
+//	ALTER TABLE t DROP COLUMN b       ERROR: cannot drop column b of table t
+//	                                  because other objects depend on it
+//	ALTER TABLE t ALTER COLUMN a TYPE bigint
+//	                                  ERROR: cannot alter type of a column used
+//	                                  by a view or rule
+//
+// so reaching either state needs the view dropped first, which is a different
+// plan than this one (stokaro/ptah#1861).
+func TestPlanner_GenerateMigrationAST_SameStarOverSameRelationsKeepsTheReplace(t *testing.T) {
+	cases := []struct {
+		name         string
+		previousBody string
+		nextBody     string
+		rollback     bool
+	}{
+		{
+			name:         "bare star, predicate edit, forward",
+			previousBody: "SELECT * FROM users",
+			nextBody:     "SELECT * FROM users WHERE id > 10",
+		},
+		{
+			name:         "bare star, predicate edit, rollback",
+			previousBody: "SELECT * FROM users",
+			nextBody:     "SELECT * FROM users WHERE id > 10",
+			rollback:     true,
+		},
+		{
+			// The qualified spelling decides the same way, because what the
+			// rule compares is the text rather than the meaning.
+			name:         "qualified star, predicate edit, rollback",
+			previousBody: "SELECT users.* FROM users",
+			nextBody:     "SELECT users.* FROM users WHERE id > 10",
+			rollback:     true,
+		},
+		{
+			// Case and spacing are not the change. normalizeExpression folds
+			// them outside quoted identifiers, which is what lets a body read
+			// back from the catalog compare equal to the one that was written.
+			name:         "star respelled, rollback",
+			previousBody: "SELECT  * FROM users",
+			nextBody:     "SELECT * FROM  users WHERE id > 10",
+			rollback:     true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := qt.New(t)
+			planner := postgres.New()
+
+			generated := &goschema.Database{
+				Views: []goschema.View{{Name: "active_users", Body: tc.nextBody}},
+			}
+			diff := &difftypes.SchemaDiff{
+				ViewsModified: []difftypes.ViewDiff{{
+					ViewName:     "active_users",
+					Changes:      map[string]string{"body": "old -> new"},
+					PreviousBody: tc.previousBody,
+					Rollback:     tc.rollback,
+				}},
+			}
+
+			nodes, err := planner.GenerateMigrationASTChecked(diff, generated)
+			c.Assert(err, qt.IsNil)
+			sql, err := renderer.RenderSQL("postgres", nodes...)
+			c.Assert(err, qt.IsNil)
+			sql = legacyRenderedSQL(sql)
+
+			c.Assert(sql, qt.Contains, "CREATE OR REPLACE VIEW active_users",
+				qt.Commentf("rendered:\n%s", sql))
+			c.Assert(sql, qt.Not(qt.Contains), "DROP VIEW IF EXISTS active_users CASCADE;",
+				qt.Commentf("rendered:\n%s", sql))
 		})
 	}
 }

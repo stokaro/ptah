@@ -86,6 +86,9 @@ const (
 // so reaching that last state requires dropping the view first, which is a
 // different plan than this one.
 func viewReplaceLegality(previousBody, nextBody string) viewReplaceVerdict {
+	if bothProjectionsAreTheSameStar(previousBody, nextBody) {
+		return viewReplaceAppendsColumns
+	}
 	previous, previousFrom, ok := viewProjection(previousBody)
 	if !ok {
 		return viewReplaceUndecidable
@@ -106,6 +109,77 @@ func viewReplaceLegality(previousBody, nextBody string) viewReplaceVerdict {
 		}
 	}
 	return viewReplaceAppendsColumns
+}
+
+// bothProjectionsAreTheSameStar reports the one star-projected change this
+// parser can decide: the same star over the same relations.
+//
+// A star does not spell its columns out, so in general nothing here can say
+// what the projection is. It can say when the projection did not change. With
+// the FROM text equal and both select lists the same single star, the two
+// bodies expand to the same column list at the moment the replace runs,
+// whatever that list is -- which is the appends-nothing case, and the cheapest
+// one there is.
+//
+// The narrowness is measured rather than cautious. On PostgreSQL 16.10, over a
+// view of `SELECT * FROM t` on t(a, b):
+//
+//	replace with SELECT * FROM t WHERE a > 1     accepted
+//	ALTER TABLE t DROP COLUMN b                  ERROR: cannot drop column b of
+//	                                             table t because other objects
+//	                                             depend on it
+//	ALTER TABLE t ALTER COLUMN a TYPE bigint      ERROR: cannot alter type of a
+//	                                             column used by a view or rule
+//	ALTER TABLE t ADD COLUMN c date, then
+//	replace with SELECT * FROM t                 accepted, view gains c
+//
+// So the expansion can only stay the same or grow. Shrinking or retyping it
+// needs the view dropped first, which is a different plan than this one -- the
+// same residual assumption [viewReplaceLegality] already rests on.
+//
+// Two shapes are deliberately left undecidable, each because the measurement
+// says so:
+//
+//   - A star with anything beside it. `SELECT *, a AS x FROM t`, replayed
+//     unchanged after t gained a column, is refused with
+//     `cannot change name of view column "x" to "c"`: the star grew and pushed
+//     the item after it along.
+//   - Two different star spellings. `SELECT *` and `SELECT t.*` are
+//     interchangeable over one relation and are not over a join, where
+//     replacing the qualified form with the bare one is refused with
+//     `column "a" of relation "j" already exists`. Requiring the same text
+//     keeps both cases out without having to tell them apart.
+//
+// Undecidable rather than viewReplaceMovesColumns for those, because a forward
+// plan already attempts the replace where nothing is known and the engine
+// refuses it for free. Answering "moves" would spend a DROP ... CASCADE on the
+// forward path to say what the server would have said.
+func bothProjectionsAreTheSameStar(previousBody, nextBody string) bool {
+	previousProjection, previousFrom, ok := viewProjectionText(previousBody)
+	if !ok {
+		return false
+	}
+	nextProjection, nextFrom, ok := viewProjectionText(nextBody)
+	if !ok {
+		return false
+	}
+	if previousFrom != nextFrom {
+		return false
+	}
+	return isLoneStar(previousProjection) &&
+		normalizeExpression(previousProjection) == normalizeExpression(nextProjection)
+}
+
+// isLoneStar reports whether a select list is one star and nothing else.
+//
+// The star test is the same suffix check parseViewSelectItem uses to give up on
+// one, so the two agree on what a star is by construction.
+func isLoneStar(projection string) bool {
+	parts := splitTopLevel(projection, ',')
+	if len(parts) != 1 {
+		return false
+	}
+	return strings.HasSuffix(strings.TrimSpace(parts[0]), "*")
 }
 
 // viewSelectItem is one entry of a view's top-level select list, reduced to the
