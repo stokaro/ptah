@@ -197,6 +197,11 @@ func TestIdentity_RefusesASecondGeneratedColumn(t *testing.T) {
 	c.Assert(renderErr(c, capability.Oracle23(), single), qt.IsNil)
 }
 
+// The MODIFY below states no nullability, and that is the rule
+// TestModifyColumn_WritesNullabilityOnlyWhenItChanges holds: this operation
+// carries no previous value, which for a planned change means nullability did
+// not change, and restating it answers ORA-01442.
+//
 // TestAlterTable_UsesOraclesOwnClauseNames pins the three spellings the server
 // refuses in the shapes every other dialect here writes: ADD COLUMN is
 // ORA-03050, ALTER COLUMN ... TYPE is ORA-01735, and DROP CONSTRAINT IF EXISTS
@@ -216,7 +221,7 @@ func TestAlterTable_UsesOraclesOwnClauseNames(t *testing.T) {
 	}
 
 	c.Assert(render(c, capability.Oracle23(), alter), qt.Equals, `ALTER TABLE ora_posts ADD (slug VARCHAR2(80));
-ALTER TABLE ora_posts MODIFY (title VARCHAR2(300) NOT NULL);
+ALTER TABLE ora_posts MODIFY (title VARCHAR2(300));
 ALTER TABLE ora_posts RENAME COLUMN body TO content;
 ALTER TABLE ora_posts DROP COLUMN payload;
 ALTER TABLE ora_posts DROP CONSTRAINT fk_post_author;
@@ -318,11 +323,89 @@ func TestModifyColumn_WritesNullabilityOnlyWhenItChanges(t *testing.T) {
 			contains: "VARCHAR2(200)", absent: "NULL",
 		},
 		{
-			name: "an unknown previous states the target, which is what a fresh plan needs",
+			// This row used to expect NOT NULL, on the reasoning that stating
+			// the target is what a freshly planned constraint needs. Measured,
+			// that is the one case it cannot be: the planners populate the
+			// previous value exactly when the comparison recorded a nullability
+			// change, so an operation that does not carry it is an operation
+			// whose nullability did not change -- and restating it there
+			// answers ORA-01442. A declaration that only cleared a default
+			// failed on its first statement for this reason, and the
+			// relaxation queued behind it never ran (stokaro/ptah#1885).
+			//
+			// Omitting the clause is safe because MODIFY without one preserves
+			// the constraint, which is the third line of the measurement above.
+			name: "an unknown previous states neither, because it means unchanged",
 			op: &ast.ModifyColumnOperation{
 				Column: &ast.ColumnNode{Name: "note", Type: "VARCHAR(200)"},
 			},
-			contains: "NOT NULL", absent: "",
+			contains: "VARCHAR2(200)", absent: "NULL",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			alter := &ast.AlterTableNode{Name: "t", Operations: []ast.AlterOperation{tt.op}}
+
+			rendered := render(c, capability.Oracle23(), alter)
+
+			c.Assert(rendered, qt.Contains, tt.contains)
+			c.Assert(strings.Contains(rendered, tt.absent) && tt.absent != "", qt.IsFalse,
+				qt.Commentf("rendered %q must not carry %q", rendered, tt.absent))
+		})
+	}
+}
+
+// TestModifyColumn_WritesTheDefaultOnlyWhenItChanges is the other half of the
+// same statement, and it fails in the opposite direction.
+//
+// MODIFY states the whole new column definition, so a cleared default has to be
+// spelled DEFAULT NULL. Omitting it is a statement Oracle accepts that leaves
+// the old default in place: measured on 23.26, after a plan whose own comment
+// read `default_expr: 7 -> `, all_tab_cols still reported data_default = 7 and
+// the migration reported success.
+func TestModifyColumn_WritesTheDefaultOnlyWhenItChanges(t *testing.T) {
+	tests := []struct {
+		name     string
+		op       *ast.ModifyColumnOperation
+		contains string
+		absent   string
+	}{
+		{
+			name: "clearing a default spells DEFAULT NULL",
+			op: &ast.ModifyColumnOperation{
+				Column:             &ast.ColumnNode{Name: "n", Type: "INTEGER"},
+				HasPreviousDefault: true, PreviousDefault: "7",
+			},
+			contains: "DEFAULT NULL",
+		},
+		{
+			name: "a declared default is stated",
+			op: &ast.ModifyColumnOperation{
+				Column:             &ast.ColumnNode{Name: "n", Type: "INTEGER", Default: &ast.DefaultValue{Expression: "9"}},
+				HasPreviousDefault: true, PreviousDefault: "7",
+			},
+			contains: "DEFAULT 9", absent: "DEFAULT NULL",
+		},
+		{
+			// The control the row above would pass without: a column that
+			// never had a default must not be handed one, or every unrelated
+			// MODIFY would clear a default nobody set.
+			name: "no default, and none before, states nothing",
+			op: &ast.ModifyColumnOperation{
+				Column: &ast.ColumnNode{Name: "n", Type: "INTEGER"},
+			},
+			contains: "NUMBER(10)", absent: "DEFAULT",
+		},
+		{
+			name: "no default, and none before it either, states nothing",
+			op: &ast.ModifyColumnOperation{
+				Column:             &ast.ColumnNode{Name: "n", Type: "INTEGER"},
+				HasPreviousDefault: true, PreviousDefault: "",
+			},
+			contains: "NUMBER(10)", absent: "DEFAULT",
 		},
 	}
 

@@ -70,6 +70,17 @@ type ModifyColumnOperation struct {
 	PreviousNullable bool
 	// HasPreviousNullable reports whether PreviousNullable was populated.
 	HasPreviousNullable bool
+	// PreviousDefault is the best-known existing default before the
+	// modification, empty when the column had none.
+	//
+	// Like PreviousNullable it is metadata most renderers ignore, and for the
+	// same reason the Oracle renderer cannot: MODIFY there states the whole new
+	// column definition, so a cleared default has to be spelled DEFAULT NULL --
+	// omitting it leaves the old default in place and the migration reports
+	// success (stokaro/ptah#1885).
+	PreviousDefault string
+	// HasPreviousDefault reports whether PreviousDefault was populated.
+	HasPreviousDefault bool
 }
 
 // Accept implements the Node interface for ModifyColumnOperation.

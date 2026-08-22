@@ -195,22 +195,27 @@ func isSerialType(declared string) bool {
 // Oracle accepts and that leaves the constraint in place, so a migration
 // relaxing a column reported success and did nothing (stokaro/ptah#1885).
 //
-// An operation that does not carry the previous value falls back to stating the
-// target, which is what a freshly planned NOT NULL needs and what re-applying
-// one refuses -- the same answer as before, for the case where nothing better
-// is known.
+// An operation that does not carry the previous value says NOTHING about
+// nullability, and that is the direction the first version had backwards.
+// Stating the target instead answered ORA-01442 on a column whose nullability
+// had not changed at all: the planners populate the previous value exactly when
+// the comparison recorded a nullability change, so "not carried" means "did not
+// change" for every plan Ptah produces. Measured -- a declaration that only
+// cleared a default failed on its first statement, and the relaxation queued
+// behind it never ran.
+//
+// The default is the other half, and it needs the same treatment for the
+// opposite reason. MODIFY states the whole new column definition, so a cleared
+// default has to be spelled DEFAULT NULL; omitting it leaves the old default in
+// place while the plan's own comment says it was cleared.
 func renderModifiedColumn(op *ast.ModifyColumnOperation) (string, error) {
 	if op == nil || op.Column == nil {
 		return "", fmt.Errorf("nil column")
 	}
 	column := op.Column
 	parts := []string{escapeIdentifier(column.Name), mapColumnType(column)}
-	switch {
-	case column.Default == nil:
-	case column.Default.HasLiteral():
-		parts = append(parts, "DEFAULT", renderDefaultLiteral(column.Type, column.Default.Value))
-	case column.Default.Expression != "":
-		parts = append(parts, "DEFAULT", column.Default.Expression)
+	if clause := defaultClause(op); clause != "" {
+		parts = append(parts, clause)
 	}
 	if clause := nullabilityClause(op); clause != "" {
 		parts = append(parts, clause)
@@ -218,14 +223,35 @@ func renderModifiedColumn(op *ast.ModifyColumnOperation) (string, error) {
 	return strings.Join(parts, " "), nil
 }
 
+// defaultClause answers what MODIFY should say about the default.
+//
+// A declared default is stated. A column that declares none is left alone
+// UNLESS one is being cleared, which Oracle spells DEFAULT NULL: the statement
+// replaces the column definition, and a MODIFY that simply omits the clause
+// keeps the old default. Measured on 23.26 -- after a plan whose own comment
+// read `default_expr: 7 -> `, all_tab_cols still reported data_default = 7.
+func defaultClause(op *ast.ModifyColumnOperation) string {
+	column := op.Column
+	switch {
+	case column.Default == nil:
+		if op.HasPreviousDefault && op.PreviousDefault != "" {
+			return "DEFAULT NULL"
+		}
+		return ""
+	case column.Default.HasLiteral():
+		return "DEFAULT " + renderDefaultLiteral(column.Type, column.Default.Value)
+	case column.Default.Expression != "":
+		return "DEFAULT " + column.Default.Expression
+	default:
+		return ""
+	}
+}
+
 // nullabilityClause answers what MODIFY should say about nullability, which is
 // usually nothing.
 func nullabilityClause(op *ast.ModifyColumnOperation) string {
 	notNull := !op.Column.Nullable || op.Column.Primary
 	if !op.HasPreviousNullable {
-		if notNull {
-			return "NOT NULL"
-		}
 		return ""
 	}
 	previousNotNull := !op.PreviousNullable

@@ -131,10 +131,19 @@ var modifyColumnNullabilityCases = []modifyColumnNullabilityCase{
 		// accepted, while `ALTER TABLE t ALTER COLUMN n TYPE NUMBER(14)`
 		// answers ORA-01735. Identifiers are bare here for the reason
 		// sqlident.Ident records.
+		//
+		// Neither row states nullability at all, and the `absent` is the whole
+		// word rather than a verb because of it. These operations carry no
+		// previous nullability, which for a planned change means it did not
+		// change -- and Oracle answers ORA-01442 to a restatement, so the
+		// clause is written only when the value moves. The half of this file's
+		// property that Oracle CAN violate is held by
+		// TestModifyColumn_KeyColumnStatesNotNullWhenItMoves beside it
+		// (stokaro/ptah#1885).
 		name:     "oracle",
 		dialect:  "oracle",
-		key:      renderExpectation{contains: "ALTER TABLE users MODIFY (id NUMBER(19) NOT NULL);", absent: "SET NOT NULL"},
-		ordinary: renderExpectation{contains: "ALTER TABLE users MODIFY (nickname CLOB);", absent: "DROP NOT NULL"},
+		key:      renderExpectation{contains: "ALTER TABLE users MODIFY (id NUMBER(19));", absent: "NULL"},
+		ordinary: renderExpectation{contains: "ALTER TABLE users MODIFY (nickname CLOB);", absent: "NULL"},
 	},
 	{
 		name:     "sqlserver",
@@ -215,4 +224,36 @@ func TestModifyColumn_KeyNullabilityCoversEveryDialect(t *testing.T) {
 	}
 
 	c.Assert(covered, qt.ContentEquals, renderer.SupportedDialects())
+}
+
+// TestModifyColumn_KeyColumnStatesNotNullWhenItMoves holds this file's property
+// where Oracle can actually break it.
+//
+// The table above renders operations that carry no previous nullability, so the
+// Oracle rows state nothing and the property is true for free. It can only be
+// violated when the value moves, and then a key column must still come out NOT
+// NULL whatever its own flag says -- a primary key that rendered NULL would be
+// refused by the server, and one that rendered nothing would leave a key
+// column nullable.
+func TestModifyColumn_KeyColumnStatesNotNullWhenItMoves(t *testing.T) {
+	c := qt.New(t)
+
+	alter := &ast.AlterTableNode{
+		Name: "users",
+		Operations: []ast.AlterOperation{
+			&ast.ModifyColumnOperation{
+				// Nullable is deliberately true AND Primary is set: the key
+				// wins, which is what keeps a key column non-nullable when a
+				// declaration leaves the flag on.
+				Column:              &ast.ColumnNode{Name: "id", Type: "BIGINT", Nullable: true, Primary: true},
+				HasPreviousNullable: true, PreviousNullable: true,
+			},
+		},
+	}
+
+	rendered, err := renderer.RenderSQL("oracle", alter)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(rendered, qt.Contains, "NOT NULL")
+	c.Assert(rendered, qt.Contains, "MODIFY (id NUMBER(19) NOT NULL)")
 }
