@@ -83,6 +83,10 @@ func (r *Reader) ReadSchema() (*types.DBSchema, error) {
 	}
 	schema.MatViews = matViews
 
+	if err := r.readRolesInto(schema); err != nil {
+		return nil, fmt.Errorf("oracle: %w", err)
+	}
+
 	markKeyColumns(schema)
 	schema.Constraints = withoutGeneratedKeys(schema.Constraints, generatedKeys)
 	return schema, nil
