@@ -32,40 +32,74 @@ Implemented so far:
 - `ORDER BY` with per-column `ASC`/`DESC`;
 - `LIMIT` and `OFFSET`;
 - single-table `INSERT` (one or more `VALUES` rows), `UPDATE`, and `DELETE`,
-  each with an optional `RETURNING` clause (see [Writes](#writes)).
+  each with an optional `RETURNING` clause (see [Writes](#writes));
+- `LIKE` and `NOT LIKE`, with the pattern bound rather than interpolated;
+- arithmetic (`+`, `-`, `*`, `/`, `%`) and non-aggregate function calls, in the
+  projection and anywhere else an expression is accepted;
+- subqueries: `IN (SELECT …)`, `EXISTS` / `NOT EXISTS`, and a derived table in
+  `FROM`;
+- window functions — an aggregate with `OVER (PARTITION BY … ORDER BY …)`;
+- common table expressions (`WITH name AS (…)`, one or more);
+- `ON CONFLICT DO NOTHING` and `ON CONFLICT DO UPDATE`, and `INSERT … SELECT`.
 
-Not yet implemented (follow-up phases): non-aggregate function calls, arithmetic,
-`LIKE`, subqueries, window functions, `ON CONFLICT` / upsert, `INSERT … SELECT`,
-and common table expressions.
+One thing is deliberately absent: a window **frame** clause. Without one the
+engine applies its default, which is what an unframed window means everywhere,
+and guessing a frame would change results.
 
 ## Dialect coverage
 
-`RenderSelect`, `RenderInsert`, `RenderUpdate`, and `RenderDelete` render for the
-PostgreSQL family — PostgreSQL, CockroachDB, YugabyteDB, and Cloud Spanner's
-PostgreSQL interface, which all take `$1`, `$2`, … placeholders — and for MySQL,
-MariaDB, and SQLite, which take `?`. Spanner renders byte-identically to
-PostgreSQL, including `RETURNING`; it has no live coverage in this repository, so
-the [support matrix](../../databases/support-matrix/) caveat applies — review the
-generated SQL before relying on it.
+`RenderSelect`, `RenderInsert`, `RenderUpdate`, and `RenderDelete` render for
+every dialect `renderer.SupportedDialects()` returns. What differs between them
+is the placeholder, the identifier quoting, and how a row limit is written. The
+first column holds the strings you pass as the dialect, so the table is also
+that list of names:
 
-SQL Server (`sqlserver`, `mssql`) and ClickHouse are Ptah dialects for DDL and
-introspection, but the query builder refuses them:
+| Dialect | Placeholder | Identifiers | `LIMIT` / `OFFSET` |
+| --- | --- | --- | --- |
+| `postgresql` `postgres` `cockroachdb` `yugabytedb` `spanner` | `$1`, `$2`, … | `"id"` | `LIMIT $n OFFSET $n` |
+| `mysql` `mariadb` | `?` | `` `id` `` | `LIMIT ? OFFSET ?` |
+| `clickhouse` | `?` | `` `id` `` | `LIMIT ? OFFSET ?` |
+| `sqlite` `sqlite3` | `?` | `"id"` | `LIMIT ? OFFSET ?` |
+| `sqlserver` `mssql` | `@p1`, `@p2`, … | `[id]` | `OFFSET 0 ROWS FETCH NEXT @pn ROWS ONLY` |
+| `oracle` | `:1`, `:2`, … | bare `id` | `OFFSET 0 ROWS FETCH NEXT :n ROWS ONLY` |
+
+Three of those rows carry a decision worth stating:
+
+- **SQL Server** writes its row limit as T-SQL's row-limiting clause, which
+  requires an `OFFSET` before the `FETCH` and an `ORDER BY` before either — a
+  limited query with no ordering is a syntax error there rather than an
+  unordered result. `RenderSelect` therefore synthesizes `ORDER BY (SELECT NULL)
+  OFFSET 0 ROWS` when the caller ordered nothing. Both are structural constants
+  and bind no placeholder, so the argument list stays the caller's values in
+  caller order.
+- **Oracle** takes the same ANSI row-limiting clause and no sentinel `ORDER BY`,
+  because it needs none. The omission is load-bearing: `ORDER BY (SELECT NULL)`
+  is accepted on 23.26, where a `SELECT` needs no `FROM`, and refused on 21.3
+  with `ORA-00923`. Identifiers are bare because a table created as `ora_posts`
+  is `ORA_POSTS` in the catalog, and a query naming `"ora_posts"` would look for
+  a table nobody created — the same decision the Oracle DDL renderer makes.
+- **Spanner** renders byte-identically to PostgreSQL, including `RETURNING`. It
+  has no live coverage in this repository, so the
+  [support matrix](../../databases/support-matrix/) caveat applies — review the
+  generated SQL before relying on it.
+
+One statement is refused, and for an engine reason rather than an untaught one:
 
 ```text
-renderer: INSERT rendering is not supported for dialect "sqlserver"
+renderer: UPDATE is not a portable statement on ClickHouse: a plain UPDATE runs
+only on a table with the materialized _block_number column, which a statement
+cannot declare; use ALTER TABLE … UPDATE, or enable enable_block_number_column
+on the table
 ```
 
-Neither is a one-line addition. SQL Server needs a third placeholder style
-(`@p1`, `@p2`, …, which `sqlutil.Rebind` already emits for it), T-SQL pagination
-in place of `LIMIT`, and an `OUTPUT`-versus-`RETURNING` decision; ClickHouse needs
-a decided statement shape for `UPDATE` and `DELETE`, whose mutation forms are not
-the portable statements this renderer emits. Both are tracked on
-[`#941`](https://github.com/stokaro/ptah/issues/941).
-
 Every dialect name `renderer.SupportedDialects()` returns is pinned against all
-four render functions — 48 cells, each pinned to an exact SQL string or an exact
-error — in `core/renderer/dml_dialect_matrix_test.go`, so the builder cannot
-acquire or lose a dialect without that table saying so.
+four render functions — one cell per (dialect, verb) pair, each pinned to an
+exact SQL string or an exact error — in
+`core/renderer/dml_dialect_matrix_test.go`, so the builder cannot
+acquire or lose a dialect without that table saying so. What each dialect
+renders is also executed against a live server for SQL Server and ClickHouse in
+`integration/gonative/dml_execution_integration_test.go`: a renderer test proves
+the string, and only the server proves the SQL.
 
 ## Safety model
 
@@ -76,7 +110,8 @@ The builder keeps identifiers and values in separate lanes, so the classic
   comparison helpers are typed as `any` and travel to the database as bound
   parameters. They are never interpolated into the SQL text. `LIMIT` and
   `OFFSET` values are bound the same way. The renderer emits the dialect's
-  placeholder (`$1`, `$2`, … for PostgreSQL; `?` for MySQL, MariaDB, and SQLite)
+  placeholder — `$1`, `$2`, … for PostgreSQL, `?` for MySQL, MariaDB, ClickHouse
+  and SQLite, `@p1`, `@p2`, … for SQL Server, and `:1`, `:2`, … for Oracle —
   and returns the values in a matching `[]any`.
 - **Identifiers are always quoted.** Table and column names are emitted through
   dialect-aware identifier quoting, so an attacker-shaped identifier cannot
@@ -201,7 +236,7 @@ Not every dialect can express every join type. `RenderSelect` rejects an
 unsupported join at render time — returning a clear error — rather than emit SQL
 that fails at execution time against the database.
 
-| Join type | PostgreSQL family | MySQL / MariaDB | SQLite |
+| Join type | PostgreSQL family, SQL Server, Oracle, ClickHouse | MySQL / MariaDB | SQLite |
 | --- | --- | --- | --- |
 | `INNER` | yes | yes | yes |
 | `LEFT` | yes | yes | yes |
@@ -214,8 +249,8 @@ that fails at execution time against the database.
 - **MySQL and MariaDB** have no `FULL [OUTER] JOIN` in any version — it must be
   emulated with a `UNION` of a `LEFT` and a `RIGHT` join — so `FULL` is rejected
   (`renderer: mysql does not support FULL OUTER JOIN`). `RIGHT` renders normally.
-- The **PostgreSQL family** (including CockroachDB, YugabyteDB, and Spanner)
-  supports all four.
+- The **PostgreSQL family** (including CockroachDB, YugabyteDB, and Spanner),
+  **SQL Server**, **Oracle**, and **ClickHouse** support all four.
 
 ## Aggregates, GROUP BY, and HAVING
 
@@ -398,6 +433,9 @@ that cannot execute it, rather than emit SQL that fails at execution time.
 | SQLite | yes (since 3.35, 2021) |
 | MySQL | no |
 | MariaDB | no (see note) |
+| SQL Server, Azure SQL | no (see note) |
+| Oracle | no (see note) |
+| ClickHouse | no |
 
 - **MySQL** has no `RETURNING` at all.
 - **MariaDB** supports `RETURNING` for `INSERT` and `DELETE` but not `UPDATE`. To
@@ -406,6 +444,14 @@ that cannot execute it, rather than emit SQL that fails at execution time.
   (`renderer: mariadb does not support RETURNING`).
 - **SQLite** gained `RETURNING` in 3.35 (2021). Ptah emits it; if you must target
   an older SQLite, avoid `Returning`.
+- **SQL Server** has `OUTPUT`, which is a different clause in a different
+  position, not a spelling of this one. Mapping `Returning` onto it would change
+  what the statement means, so a non-empty `Returning` is rejected
+  (`renderer: sqlserver does not support RETURNING`).
+- **Oracle** has the keyword and not this shape: measured on 23.26,
+  `INSERT INTO t (id) VALUES (99) RETURNING id INTO :out` is accepted with an
+  out-parameter bound, while the same statement ending at `RETURNING id` answers
+  `ORA-00925`. A projection has nowhere to go there.
 
 ## Builder reference
 
@@ -461,6 +507,8 @@ It returns an error for an unsupported dialect, a missing `FROM` table, an empty
 MySQL, MariaDB, and SQLite only accept `OFFSET` as a suffix of `LIMIT`, so
 setting `Offset` without `Limit` renders a dialect-specific "no limit" sentinel
 in front of the bound `OFFSET`: `LIMIT -1` for SQLite and
-`LIMIT 18446744073709551615` for MySQL and MariaDB. PostgreSQL accepts a bare
-`OFFSET` and emits one. The sentinel is a structural constant, not caller data,
+`LIMIT 18446744073709551615` for MySQL and MariaDB. PostgreSQL and ClickHouse
+accept a bare `OFFSET` and emit one. SQL Server and Oracle write it as the
+row-limiting clause with no `FETCH`, `OFFSET @p1 ROWS` and `OFFSET :1 ROWS`, and
+SQL Server keeps the sentinel `ORDER BY (SELECT NULL)` that clause requires. The sentinel is a structural constant, not caller data,
 so it is emitted as a literal and the `OFFSET` value stays a bound parameter.
