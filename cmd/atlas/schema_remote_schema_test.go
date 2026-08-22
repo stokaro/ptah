@@ -146,3 +146,70 @@ func TestSchemaInspect_RendersARegistryDesiredStateAsSQL(t *testing.T) {
 	c.Assert(out, qt.Contains, "CREATE TABLE")
 	c.Assert(out, qt.Contains, "users")
 }
+
+// TestSchemaApply_AppliesADesiredStateNamedByTheVendorSpelling is the direct
+// flag half of the same capability: the artifact the test above reaches through
+// a project file, named on `--to` the way an Atlas project names it.
+//
+// It applies rather than classifies. A classifier that returns the right kind
+// into a resolver with no arm for it, or one that pulls the wrong reference,
+// both look correct until a database is read back -- so the assertion is the
+// table and the column, out of the target database, after the run
+// (stokaro/ptah#1210).
+func TestSchemaApply_AppliesADesiredStateNamedByTheVendorSpelling(t *testing.T) {
+	c := qt.New(t)
+	c.Setenv(atlasregistry.PlainHTTP.Name(), "1")
+	host := schemaartifacttest.StartSchemaArtifactRegistry(c, "acme/app", "prod", remoteSchemaArtifact())
+	c.Setenv(atlasregistry.NamespaceEnvVar, host+"/acme")
+	target := filepath.Join(c.TB.TempDir(), "app.db")
+
+	out, err := runAtlasArgs(
+		"schema", "apply",
+		"--url", sqliteURLFromPath(target),
+		"--to", "atlas://app?tag=prod",
+		"--dev-url", "sqlite://dev?mode=memory",
+		"--auto-approve",
+	)
+
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+	inspected, inspectErr := runAtlasArgs("schema", "inspect", "--url", sqliteURLFromPath(target))
+	c.Assert(inspectErr, qt.IsNil, qt.Commentf("%s", inspected))
+	c.Assert(inspected, qt.Contains, `table "users"`)
+	c.Assert(inspected, qt.Contains, `column "email"`)
+}
+
+// TestSchemaDiff_ReachesTheSameArtifactByBothSpellings is the equivalence this
+// issue asks for: one artifact, two ways of naming it, one answer.
+//
+// The vendor spelling carries no registry host, so it can only agree with an
+// explicit reference if the namespace it resolves against is the one that
+// reference names. The project file states the OCI reference in full; the flag
+// states the logical name; the diff each produces against the same empty
+// database has to be the same statements.
+func TestSchemaDiff_ReachesTheSameArtifactByBothSpellings(t *testing.T) {
+	c := qt.New(t)
+	c.Setenv(atlasregistry.PlainHTTP.Name(), "1")
+	host := schemaartifacttest.StartSchemaArtifactRegistry(c, "acme/app", "prod", remoteSchemaArtifact())
+	dir := remoteSchemaProject(c, host+"/acme")
+	empty := sqliteURLFromPath(filepath.Join(c.TB.TempDir(), "empty.db"))
+
+	viaProject, projectErr := runAtlasArgs(
+		"schema", "diff",
+		"--config", "file://"+filepath.Join(dir, "atlas.hcl"),
+		"--env", "local",
+		"--from", empty,
+		"--to", "env://src",
+		"--dev-url", "sqlite://dev?mode=memory",
+	)
+	viaFlag, flagErr := runAtlasArgs(
+		"schema", "diff",
+		"--from", empty,
+		"--to", "atlas://app?tag=prod",
+		"--dev-url", "sqlite://dev?mode=memory",
+	)
+
+	c.Assert(projectErr, qt.IsNil, qt.Commentf("%s", viaProject))
+	c.Assert(flagErr, qt.IsNil, qt.Commentf("%s", viaFlag))
+	c.Assert(viaFlag, qt.Contains, `CREATE TABLE "users"`)
+	c.Assert(viaFlag, qt.Equals, viaProject)
+}

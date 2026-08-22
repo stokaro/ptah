@@ -507,6 +507,9 @@ func TestCompatCommand_SchemaTestFileSourcesStillResolveToThemselves(t *testing.
 // migration directories, which would send an operator to fix a flag that is not
 // the problem.
 func TestCompatCommand_SchemaTestRefusesURLsThatAreNotADesiredState(t *testing.T) {
+	// A run with a namespace configured resolves this reference instead of
+	// refusing it, so the test says which run it is.
+	t.Setenv("PTAH_ATLAS_REGISTRY", "")
 	tests := []struct {
 		name string
 		url  string
@@ -515,7 +518,7 @@ func TestCompatCommand_SchemaTestRefusesURLsThatAreNotADesiredState(t *testing.T
 		{
 			name: "atlas:// registry URLs stay refused",
 			url:  "atlas://myschema",
-			want: "atlas:// registry URLs are not supported",
+			want: "atlas:// registry URLs name a hosted namespace",
 		},
 		{
 			name: "docker:// as desired state stays refused",

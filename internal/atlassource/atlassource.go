@@ -19,8 +19,10 @@
 //   - A local file:// or plain-path directory that contains an atlas.sum file
 //     is a migration directory; any other directory keeps the pre-resolver
 //     local-file behavior.
-//   - Unsupported schemes (atlas://, docker://-as-state, and anything else)
-//     fail during classification, before any target database is contacted.
+//   - An atlas:// reference resolves against the OCI namespace
+//     PTAH_ATLAS_REGISTRY names, and is refused when that variable is unset.
+//   - Unsupported schemes (docker://-as-state and anything else) fail during
+//     classification, before any target database is contacted.
 package atlassource
 
 import (
@@ -36,6 +38,7 @@ import (
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/schemasource"
 	"go.5x5.cz/ptah/internal/atlasprojectpath"
+	"go.5x5.cz/ptah/internal/atlasregistry"
 	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/internal/devdocker"
 	"go.5x5.cz/ptah/internal/envbool"
@@ -240,7 +243,7 @@ func Classify(rawURL string) (Source, error) {
 	case scheme == "docker":
 		return Source{}, errors.New("docker:// URLs provision Atlas dev databases and cannot be used as a desired-state source; pass a directly connectable database URL")
 	case scheme == "atlas":
-		return Source{}, errors.New("atlas:// registry URLs are not supported; use oci:// with a native Ptah command, or use a local schema file, a migration directory, a database URL, or an env:// reference")
+		return classifyAtlasReference(trimmed)
 	case scheme == projectconfig.RemoteSchemaMarkerScheme:
 		// Reserved for the same reason ptah-external-schema is, and refused for
 		// a sharper one: `oci://` is deliberately NOT a desired-state scheme on
@@ -662,6 +665,45 @@ func externalSchemaAllowed() (bool, error) {
 // classifyEnvValue classifies one env-provided source value. Relative local
 // paths resolve against the atlas.hcl directory; non-file URLs classify under
 // the standard rules.
+// classifyAtlasReference decides what an `atlas://` desired state means here.
+//
+// The vendor spelling names a repository in a hosted namespace. Ptah has no
+// hosted namespace, so the reference means nothing until an operator says which
+// registry it stands for -- which is exactly what PTAH_ATLAS_REGISTRY is, and
+// what `data "remote_schema"` already resolves through.
+//
+// # Why the variable decides it rather than the scheme
+//
+// Refusing outright cost a capability the repository already had: the artifact
+// is an ordinary OCI one, `schema push` writes it, and `data "remote_schema"`
+// reads it. Accepting outright would break the other half -- the community
+// binary answers this spelling from an account nobody here has, and rule 1 of
+// docs/conformance.md is that nothing may succeed on Ptah which that binary
+// refuses.
+//
+// The variable settles both. Unset, the refusal is what it always was, and a
+// compatibility run behaves as before. Set, the operator has stated the
+// namespace, so the reference resolves against a registry they chose and no
+// hosted service is in the path -- the same shape AGENTS.md's compatibility
+// policy describes for every capability that reaches past the pinned surface
+// (stokaro/ptah#1210).
+func classifyAtlasReference(trimmed string) (Source, error) {
+	// Asked before resolving, so an unconfigured run keeps the refusal it has
+	// always given rather than a message about a namespace it never set.
+	if _, err := atlasregistry.Namespace(); err != nil {
+		return Source{}, fmt.Errorf(
+			"atlas:// registry URLs name a hosted namespace; set %s to the OCI namespace they "+
+				"stand for, or use oci:// with a native Ptah command, a local schema file, a "+
+				"migration directory, a database URL, or an env:// reference",
+			atlasregistry.NamespaceEnvVar)
+	}
+	reference, err := atlasregistry.Resolve(trimmed)
+	if err != nil {
+		return Source{}, err
+	}
+	return Source{Raw: trimmed, Kind: KindRemoteSchema, OCIReference: reference.OCI}, nil
+}
+
 func classifyEnvValue(value, baseDir string) (Source, error) {
 	trimmed := strings.TrimSpace(value)
 	// A remote-schema marker is recognized HERE and nowhere else: this function
