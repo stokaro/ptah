@@ -89,6 +89,13 @@ jobs:
       - name: Check test style baseline
         run: scripts/check-test-style.sh
 
+      # A gate stops gating quietly: it discovers zero inputs, or its pattern
+      # stops matching, and reports the same success it reports on a clean
+      # tree. This breaks the rule each gate states, in a throwaway worktree,
+      # and fails if the gate does not notice (stokaro/ptah#1923).
+      - name: Check that the gates can still fail
+        run: scripts/check-gates-can-fail.sh
+
       - name: Validate lint SARIF output
         run: go test ./cmd/lint -run 'TestRunLint_SARIF' -count=1
 
