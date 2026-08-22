@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 
 	"go.5x5.cz/ptah/config"
@@ -85,8 +86,15 @@ func ResolveGeneratedExpressions(
 // one schema apart within a run, and the prefix keeps the probe's tables apart
 // from anything a person made. A dev database is Ptah's to write in, which is
 // what makes a permanent table acceptable here and nowhere else.
+//
+// The process id is in the name because the probe table is permanent for the
+// length of the call and a dev database is shared. Two runs probing at once
+// would otherwise collide on the CREATE, and a collision inside the server
+// reads exactly like a declaration the server refused -- which this package
+// records as unresolved, so the expression would go quietly uncompared for a
+// reason that has nothing to do with the declaration.
 func GeneratedExpressionProbeTable(index int) string {
-	return fmt.Sprintf("ptah_genexpr_probe_%d", index)
+	return fmt.Sprintf("ptah_genexpr_probe_%d_%d", os.Getpid(), index)
 }
 
 func resolveOneGeneratedProbe(
@@ -113,7 +121,10 @@ func resolveOneGeneratedProbe(
 	defer func() {
 		// The drop is the point of the probe table's existence, not its error
 		// path: nothing here is meant to outlive this call.
-		if _, err := dev.ExecContext(context.WithoutCancel(ctx), "DROP TABLE "+table); err != nil {
+		// PURGE, because without it the table goes to the recycle bin and
+		// ALL_TABLES still lists it -- which the next reader sees as a probe
+		// that leaked.
+		if _, err := dev.ExecContext(context.WithoutCancel(ctx), "DROP TABLE "+table+" PURGE"); err != nil {
 			resultErr = errors.Join(resultErr, fmt.Errorf(
 				"resolve generated expressions: drop probe table %s: %w", table, err))
 		}
@@ -136,12 +147,19 @@ func resolveOneGeneratedProbe(
 // oracleVirtualColumnQuery reads back what the server stored for each virtual
 // column of one table.
 //
+// ALL_TAB_COLS rather than ALL_TAB_COLUMNS: the latter omits virtual columns,
+// which are the only rows this asks for. That also brings in the hidden ones --
+// the system columns behind a function-based index among them -- so
+// HIDDEN_COLUMN filters them back out, since none of them is a column anybody
+// declared.
+//
 // DATA_DEFAULT is a LONG, so it is selected bare: wrapping it in anything --
 // NVL included -- answers ORA-00932.
 const oracleVirtualColumnQuery = `
 	SELECT column_name, data_default
 	FROM all_tab_cols
-	WHERE owner = USER AND table_name = :1 AND virtual_column = 'YES'`
+	WHERE owner = USER AND table_name = :1
+	  AND virtual_column = 'YES' AND hidden_column = 'NO'`
 
 func readOracleVirtualColumnExpressions(
 	ctx context.Context,
