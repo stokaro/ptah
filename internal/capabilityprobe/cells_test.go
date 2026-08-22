@@ -328,6 +328,11 @@ var databaseImages = map[string]string{
 	// dialect because that is what the matrix starts; the cell's Emulated flag
 	// is what keeps it from being read as the managed service.
 	"gcr.io/cloud-spanner-pg-adapter/pgadapter-emulator": platform.Spanner,
+	// The vendor's own free edition, which is the product rather than an
+	// emulator of it: gvenzl/oracle-free ships Oracle Database Free and
+	// gvenzl/oracle-xe ships Express Edition, so neither cell is Emulated.
+	"gvenzl/oracle-free": platform.Oracle,
+	"gvenzl/oracle-xe":   platform.Oracle,
 }
 
 // notADatabase lists the images these files start that no capability preset
@@ -627,12 +632,12 @@ func TestCells_BestEffortLinesAreExactlyTheUnmeasuredOnes(t *testing.T) {
 		"sqlserver-16-0",
 		"sqlserver-15-0",
 		"spanner-0",
-		// Both Oracle lines were measured statement by statement against the
-		// images their cells name, and neither is exercised by a job here: the
-		// capability probe has no Oracle statement table and the integration
-		// suite starts no Oracle container. They belong on this list until one
-		// of those exists (stokaro/ptah#1875).
-		"oracle-23",
+		// The 23 line left this list when the tagged integration contour
+		// started its image; 21 stays, because nothing here starts an Oracle
+		// 21 server. The capability probe has a statement table for both now,
+		// and no launch recipe for either -- adding one would put both on
+		// every pull request, which is a cost decision rather than an
+		// oversight (stokaro/ptah#1875).
 		"oracle-21",
 	})
 }

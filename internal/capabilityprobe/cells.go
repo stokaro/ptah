@@ -487,8 +487,23 @@ var Cells = []Cell{
 	{
 		Dialect: platform.Oracle, Line: "23",
 		Preset: capability.Oracle23, PresetName: "Oracle23",
-		Refinement: RefinedByVersion, Support: capability.BestEffort, Image: "gvenzl/oracle-free:slim",
-		Note: "measured live on 23.26.2.0.0: every IF [NOT] EXISTS guard accepted -- and shown to be a " +
+		Refinement: RefinedByVersion, Support: capability.Certified, Image: "gvenzl/oracle-free:slim",
+		Understates: map[capability.Capability]string{
+			// Four keys where the engine does more than Ptah's Oracle path
+			// does. Each is a renderer that has not been written rather than a
+			// statement the server refuses, and each was measured ACCEPTED on
+			// this line while the preset reads false (stokaro/ptah#1875).
+			capability.DomainTypes: "Oracle 23 has CREATE DOMAIN and the probe confirms it -- the domain is usable " +
+				"as a column type and enforces its own NOT NULL -- while Ptah's Oracle renderer emits no domain",
+			capability.Functions: "PL/SQL function bodies are their own language rather than the language-plus-body " +
+				"shape ast.CreateFunctionNode carries, so the renderer refuses them",
+			capability.Procedures: "the same reason as functions: CREATE PROCEDURE is accepted here and the renderer " +
+				"emits none",
+			capability.RoleManagement: "CREATE ROLE and GRANT are both accepted, and the renderer emits neither a role " +
+				"nor a grant for Oracle",
+		},
+		Note: "exercised by the tagged integration contour, which starts this image and runs the " +
+			"declaration-convergence round trip against it. Measured live on 23.26.2.0.0: every IF [NOT] EXISTS guard accepted -- and shown to be a " +
 			"guard rather than a discarded clause, because the unguarded control answered ORA-00955 -- " +
 			"CREATE DOMAIN usable as a column type and enforcing its own NOT NULL, and a CREATE TABLE " +
 			"surviving ROLLBACK",
@@ -497,6 +512,17 @@ var Cells = []Cell{
 		Dialect: platform.Oracle, Line: "21",
 		Preset: capability.Oracle21, PresetName: "Oracle21",
 		Refinement: RefinedByVersion, Support: capability.BestEffort, Image: "gvenzl/oracle-xe:21-slim",
+		Understates: map[capability.Capability]string{
+			// The same three as the 23 line, minus domains: CREATE DOMAIN is
+			// ORA-00901 here, so the preset's false is a measurement rather
+			// than an understatement.
+			capability.Functions: "PL/SQL function bodies are their own language rather than the language-plus-body " +
+				"shape ast.CreateFunctionNode carries, so the renderer refuses them",
+			capability.Procedures: "the same reason as functions: CREATE PROCEDURE is accepted here and the renderer " +
+				"emits none",
+			capability.RoleManagement: "CREATE ROLE and GRANT are both accepted, and the renderer emits neither a role " +
+				"nor a grant for Oracle",
+		},
 		Note: "measured live on 21.3.0.0.0: every IF [NOT] EXISTS guard refused -- ORA-00922, ORA-00969 " +
 			"and ORA-00933 -- while a bare CREATE TABLE in the same session was accepted, plus no BOOLEAN " +
 			"and no VECTOR type, both ORA-00902",

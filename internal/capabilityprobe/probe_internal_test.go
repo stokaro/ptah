@@ -23,7 +23,7 @@ import (
 )
 
 // probedDialects are the dialects the probe has a statement table for.
-var probedDialects = []string{platform.Postgres, platform.MySQL, platform.MariaDB, platform.ClickHouse}
+var probedDialects = []string{platform.Postgres, platform.MySQL, platform.MariaDB, platform.ClickHouse, platform.Oracle}
 
 // TestPlans_AnswerEveryRegisteredCapabilityExactlyOnce is the guard that keeps
 // the matrix complete as the registry grows.

@@ -123,6 +123,33 @@ jobs:
         ports:
           - 5434:5432
 
+      # Oracle, which the tagged contour needs because internal/testcontour
+      # refuses a skipped integration test: a test in ./integration/... either
+      # runs here or does not belong there. gvenzl/oracle-free:slim is the
+      # image both Oracle capability cells name.
+      #
+      # It is slower to become healthy than every other service in this list --
+      # a minute or two rather than seconds -- so the retries are generous. The
+      # image ships healthcheck.sh, which answers only once the database is
+      # open, so a start-period guess is not needed on top.
+      oracle:
+        image: gvenzl/oracle-free:slim
+        env:
+          ORACLE_PASSWORD: ptah_password
+          # A plain schema owner, created by the image. The tests must NOT
+          # connect as SYSTEM: the contour's Oracle test calls DropAllTables,
+          # which drops every object the connected account owns, and under a
+          # privileged account that reaches Oracle's own.
+          APP_USER: ptah
+          APP_USER_PASSWORD: ptah_password
+        options: >-
+          --health-cmd healthcheck.sh
+          --health-interval 10s
+          --health-timeout 10s
+          --health-retries 30
+        ports:
+          - 1521:1521
+
       registry:
         image: registry:3
         ports:
@@ -341,6 +368,7 @@ jobs:
           SQLSERVER_TEST_DSN: "sqlserver://sa:P%40ssw0rd-ptah-2026@localhost:1433?database=master&encrypt=disable"
           SQLSERVER_URL: "sqlserver://sa:P%40ssw0rd-ptah-2026@localhost:1433?database=master&encrypt=disable"
           SPANNER_URL: "spanner://localhost:5434/ptah_test?sslmode=disable"
+          ORACLE_TEST_URL: "oracle://ptah:ptah_password@localhost:1521/FREEPDB1"
           PTAH_SQLSERVER_TEST_URL: "sqlserver://sa:P%40ssw0rd-ptah-2026@localhost:1433?database=master&encrypt=disable"
           PTAH_SQLSERVER_REALM_TEST_URL: "sqlserver://sa:P%40ssw0rd-ptah-2026@localhost:1433?database=master&encrypt=disable"
           PTAH_OCI_TEST_REGISTRY: "127.0.0.1:5000"
