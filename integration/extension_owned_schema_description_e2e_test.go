@@ -41,6 +41,13 @@ import (
 // a fixture of one product. A second container would test one arrangement of
 // it and cost the suite a database.
 //
+// The extension is plpgsql, which every PostgreSQL database already has. An
+// earlier draft installed pg_trgm and did not remove it, and the contour runs
+// every test against ONE server: the extension outlived this test and the
+// scenario runner that compares a whole realm then found an extension nobody
+// declared. Borrowing an extension that is always there leaves this test's
+// whole footprint as one schema it also drops.
+//
 // The control is the half a vacuous test omits: the schema really is there,
 // and it really is owned, while the read is running.
 func TestExtensionOwnedSchemaStaysOutOfTheRealmDescriptionE2E(t *testing.T) {
@@ -57,10 +64,9 @@ func TestExtensionOwnedSchemaStaysOutOfTheRealmDescriptionE2E(t *testing.T) {
 	dropExtensionOwnedFixture(context.WithoutCancel(ctx), conn)
 	defer dropExtensionOwnedFixture(context.WithoutCancel(ctx), conn)
 
-	execPostgres(ctx, c, conn, "CREATE EXTENSION IF NOT EXISTS pg_trgm")
 	execPostgres(ctx, c, conn, "CREATE SCHEMA ext_owned_probe")
 	execPostgres(ctx, c, conn, "CREATE TABLE ext_owned_probe.owned_relation (id integer)")
-	execPostgres(ctx, c, conn, "ALTER EXTENSION pg_trgm ADD SCHEMA ext_owned_probe")
+	execPostgres(ctx, c, conn, "ALTER EXTENSION plpgsql ADD SCHEMA ext_owned_probe")
 	execPostgres(ctx, c, conn, "CREATE TABLE public.declared_relation (id integer)")
 
 	// The control, read from the server rather than assumed: without the
@@ -101,10 +107,10 @@ func realmURL(c *qt.C, address string) string {
 //
 // The schema has to leave the extension before it can be dropped: measured on
 // PostgreSQL 18, DROP SCHEMA on an extension member answers
-// `cannot drop schema ext_owned_probe because extension pg_trgm requires it`.
+// `cannot drop schema ext_owned_probe because extension plpgsql requires it`.
 func dropExtensionOwnedFixture(ctx context.Context, conn *dbschema.DatabaseConnection) {
 	writer := conn.SchemaWriter()
-	_ = writer.ExecuteSQL(ctx, "ALTER EXTENSION pg_trgm DROP SCHEMA ext_owned_probe")
+	_ = writer.ExecuteSQL(ctx, "ALTER EXTENSION plpgsql DROP SCHEMA ext_owned_probe")
 	_ = writer.ExecuteSQL(ctx, "DROP SCHEMA IF EXISTS ext_owned_probe CASCADE")
 	_ = writer.ExecuteSQL(ctx, "DROP TABLE IF EXISTS public.declared_relation")
 }
