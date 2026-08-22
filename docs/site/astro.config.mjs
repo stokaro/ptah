@@ -186,6 +186,7 @@ export default defineConfig({
             { slug: 'reference/capabilities' },
             { slug: 'reference/lint-rules' },
             { slug: 'reference/exit-codes' },
+            { slug: 'reference/glossary' },
           ],
         },
       ],

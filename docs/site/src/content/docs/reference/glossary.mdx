@@ -1,0 +1,43 @@
+---
+title: Glossary
+description: Terms whose meaning a table can only show as a glyph, defined where they are used.
+---
+
+import GlossaryTerm from '../../../components/GlossaryTerm.astro';
+
+A dense table shows a glyph or a number; what it means lives in a paragraph
+somewhere else on the page. These terms carry their definition where they are
+used: focus the ⓘ with <kbd>Tab</kbd> or tap it, and press <kbd>Esc</kbd> to
+dismiss.
+
+Definitions come from one source, `docs/site/src/glossary.ts`, so the same term
+cannot come to mean two things on two pages.
+
+## The terms
+
+| Term | Where a reader meets it | Why the table cannot show it |
+| --- | --- | --- |
+| <GlossaryTerm term="measured" /> | the capability matrix | a ✅ looks the same whether a server on that line answered or the value came from the line below |
+| <GlossaryTerm term="carried" /> | the capability matrix | as above, from the other side |
+| <GlossaryTerm term="certified" /> | the release-line table | the level is a word; what earns it is a probe run |
+| <GlossaryTerm term="best-effort" /> | the release-line table | reads as a hedge, and is a statement about who re-measures it |
+| <GlossaryTerm term="legacy-tested" /> | the release-line table | end of life lowers the level, not the behavior |
+
+## Inside a table that scrolls
+
+This is the case the affordance is most likely to break, so it is exercised
+here rather than assumed. The table below is five columns wide and scrolls
+horizontally on a phone; every cell in the last column carries a term.
+
+| Dialect | Line | Support | Probe | Note |
+| --- | --- | --- | --- | --- |
+| postgres | 18 | <GlossaryTerm term="certified" /> | every pull request | <GlossaryTerm term="measured">measured on this line</GlossaryTerm> |
+| postgres | 13 | <GlossaryTerm term="legacy-tested" /> | every pull request | <GlossaryTerm term="measured">measured on this line</GlossaryTerm> |
+| mysql | 9.7 | <GlossaryTerm term="certified" /> | every pull request | <GlossaryTerm term="carried">carried from 8.4</GlossaryTerm> |
+| sqlserver | 16.0 | <GlossaryTerm term="best-effort" /> | none | <GlossaryTerm term="carried">carried from 17.0</GlossaryTerm> |
+
+## Adding a term
+
+Add it to `docs/site/src/glossary.ts`, then use `<GlossaryTerm term="…" />`. A
+term with no entry there is a build error rather than a silent blank, so a
+typo cannot ship as an empty tooltip.
