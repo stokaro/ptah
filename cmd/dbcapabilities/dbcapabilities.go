@@ -11,6 +11,7 @@
 package dbcapabilities
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -108,8 +109,50 @@ func runCapabilities(cmd *cobra.Command, opts *options) error {
 		capabilityprobe.ProductVersion(cmd.Context(), conn, info.Dialect),
 	)
 
+	// A version alone does not decide every key, and this verb exists to say
+	// what THIS server does. Pinning a session is what asks it: the connection
+	// reads the settings that refine a capability and hands back the set it
+	// would actually plan with. Measured on two MySQL 8.4 servers differing
+	// only in restrict_fk_on_non_standard_key, the version-only answer is
+	// wrong on both foreign-key reference keys for one of them
+	// (stokaro/ptah#1230).
+	profile, err = withSessionRefinement(cmd.Context(), conn, profile)
+	if err != nil {
+		return err
+	}
+
 	return WriteProfile(cmd.OutOrStdout(), opts.format, profile)
 }
+
+// withSessionRefinement asks the server for the capability set a pinned session
+// resolves, and records where it differs from the release line's answer.
+//
+// A failure to pin is not a failure of the verb: the profile the version gives
+// is still the truth about the release line, and refusing to print it because a
+// session could not be opened would take away an answer over a refinement that
+// may not exist on this dialect. The error is returned only when the session
+// opened and the read inside it failed, which is a server that answered
+// something unreadable rather than one that answered nothing.
+func withSessionRefinement(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	profile serverprofile.Profile,
+) (serverprofile.Profile, error) {
+	var effective capability.Capabilities
+	if err := conn.WithSession(ctx, func(scoped *dbschema.DatabaseConnection) error {
+		effective = scoped.Info().Capabilities
+		return nil
+	}); err != nil {
+		return profile, nil
+	}
+	return profile.Refined(effective, sessionRefinementReason), nil
+}
+
+// sessionRefinementReason names, in the server's own vocabulary, what a pinned
+// session consults. One string rather than one per key, because a reader who
+// goes looking needs the setting, and the settings a session reads are listed
+// where they are read.
+const sessionRefinementReason = "read from this server's session settings, not from its release line"
 
 // validateFormat rejects a format value both entry points have to reject the
 // same way. Two spellings of this message is how the pre-connect check and the
@@ -171,6 +214,9 @@ func writeProfileText(w io.Writer, profile serverprofile.Profile) error {
 	if err := writeProfileTraits(w, profile.Traits); err != nil {
 		return err
 	}
+	if err := writeProfileRefinements(w, profile.Refinements); err != nil {
+		return err
+	}
 	return writeProfileCapabilities(w, profile.Capabilities)
 }
 
@@ -224,6 +270,35 @@ func writeProfileTraits(w io.Writer, traits capability.Traits) error {
 		}
 	}
 	return tw.Flush()
+}
+
+// writeProfileRefinements names the keys this server's configuration answered
+// differently from its release line, and is silent when there are none.
+//
+// Silent rather than "none", because an ordinary server is the common case and
+// a section that appears only when it has something to say is one a reader
+// learns to look for.
+func writeProfileRefinements(w io.Writer, refinements []serverprofile.Refinement) error {
+	if len(refinements) == 0 {
+		return nil
+	}
+	if _, err := fmt.Fprintln(w, "\nSet by this server rather than by its release line:"); err != nil {
+		return err
+	}
+	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
+	for _, entry := range refinements {
+		if _, err := fmt.Fprintf(
+			tw, "  %s\t%s\t(the %s line answers %s)\n",
+			entry.Key, supportedWord[entry.Effective], "release", supportedWord[entry.Preset],
+		); err != nil {
+			return err
+		}
+	}
+	if err := tw.Flush(); err != nil {
+		return err
+	}
+	_, err := fmt.Fprintf(w, "  %s\n", refinements[0].Reason)
+	return err
 }
 
 func writeProfileCapabilities(w io.Writer, capabilities []serverprofile.Capability) error {
