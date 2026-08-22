@@ -246,7 +246,17 @@ func TestSchemaApplyAtlasPlanFileRefusesEscapeHiddenBehindValidChanges(t *testin
 	oraclePlan, err := os.ReadFile(oracleFixturePath(c, oracleAtlasPlanFile))
 	c.Assert(err, qt.IsNil)
 	// The real oracle migration plus a trailing escape.
-	migration := strings.SplitN(string(oraclePlan), "migration = <<-SQL\n", 2)[1]
+	//
+	// The split is asserted rather than indexed. Both markers carry a newline,
+	// so a fixture checked out with CRLF matches neither, and indexing a
+	// one-element result turned that into `index out of range [1] with length
+	// 1` -- a panic naming this test, about a property of the checkout
+	// (stokaro/ptah#1812).
+	planParts := strings.SplitN(string(oraclePlan), "migration = <<-SQL\n", 2)
+	c.Assert(planParts, qt.HasLen, 2,
+		qt.Commentf("the oracle plan fixture has no migration block; read %d bytes starting %q",
+			len(oraclePlan), string(oraclePlan[:min(80, len(oraclePlan))])))
+	migration := planParts[1]
 	migration = strings.SplitN(migration, "\n  SQL\n", 2)[0]
 	migration = strings.ReplaceAll(migration, "\n  ", "\n")
 	migration = strings.TrimPrefix(migration, "  ")
