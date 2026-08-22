@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+
+	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 )
 
 func TestCompatExplicitSQLiteURLValidatesVirtualDropToggleBeforeProjectConfig(t *testing.T) {
@@ -48,7 +50,7 @@ func TestCompatExplicitSQLiteURLValidatesVirtualDropToggleBeforeProjectConfig(t 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			out, err := runCompatCommand(t, test.args...)
+			out, err := atlastest.RunCompatCommand(t, test.args...)
 
 			c.Assert(err, qt.ErrorMatches,
 				`invalid boolean value "not-a-boolean" for PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP`,
@@ -98,7 +100,7 @@ func TestCompatExplicitPostgresURLLeavesSQLiteToggleToSQLiteCommands(t *testing.
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			out, err := runCompatCommand(t, test.args...)
+			out, err := atlastest.RunCompatCommand(t, test.args...)
 
 			c.Assert(err, qt.IsNotNil)
 			c.Assert(err.Error(), qt.Not(qt.Contains), "PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP")
@@ -110,7 +112,7 @@ func TestCompatExplicitPostgresURLLeavesSQLiteToggleToSQLiteCommands(t *testing.
 func TestCompatSchemaDiffExplicitSQLiteURLValidatesVirtualDropToggleBeforeEarlyReturn(t *testing.T) {
 	c := qt.New(t)
 	t.Setenv("PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP", "not-a-boolean")
-	out, err := runCompatCommand(t,
+	out, err := atlastest.RunCompatCommand(t,
 		"schema", "diff",
 		"--from", "sqlite://"+filepath.Join(t.TempDir(), "current.db"),
 		"--to", "file://"+filepath.Join(t.TempDir(), "desired.sql"),
@@ -126,7 +128,7 @@ func TestCompatSchemaDiffExplicitSQLiteURLValidatesVirtualDropToggleBeforeEarlyR
 func TestCompatSchemaDiffExplicitPostgresURLKeepsExportRefusal(t *testing.T) {
 	c := qt.New(t)
 	t.Setenv("PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP", "not-a-boolean")
-	out, err := runCompatCommand(t,
+	out, err := atlastest.RunCompatCommand(t,
 		"schema", "diff",
 		"--from", "postgres://localhost/database",
 		"--to", "file://"+filepath.Join(t.TempDir(), "desired.sql"),
@@ -141,7 +143,7 @@ func TestCompatSchemaDiffExplicitPostgresURLKeepsExportRefusal(t *testing.T) {
 func TestCompatSchemaApplyExplicitSQLiteURLValidatesVirtualDropToggleBeforePreRunRefusal(t *testing.T) {
 	c := qt.New(t)
 	t.Setenv("PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP", "not-a-boolean")
-	out, err := runCompatCommand(t,
+	out, err := atlastest.RunCompatCommand(t,
 		"schema", "apply",
 		"--url", "sqlite://"+filepath.Join(t.TempDir(), "target.db"),
 		"--to", "file://"+filepath.Join(t.TempDir(), "desired.sql"),
@@ -157,7 +159,7 @@ func TestCompatSchemaApplyExplicitSQLiteURLValidatesVirtualDropToggleBeforePreRu
 func TestCompatSchemaApplyExplicitPostgresURLKeepsPreRunRefusal(t *testing.T) {
 	c := qt.New(t)
 	t.Setenv("PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP", "not-a-boolean")
-	out, err := runCompatCommand(t,
+	out, err := atlastest.RunCompatCommand(t,
 		"schema", "apply",
 		"--url", "postgres://localhost/database",
 		"--to", "file://"+filepath.Join(t.TempDir(), "desired.sql"),
@@ -173,7 +175,7 @@ func TestCompatSchemaApplyExplicitPostgresURLKeepsPreRunRefusal(t *testing.T) {
 func TestCompatSchemaApplyExplicitSQLiteURLValidatesVirtualDropToggleBeforeArgsRefusal(t *testing.T) {
 	c := qt.New(t)
 	t.Setenv("PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP", "not-a-boolean")
-	out, err := runCompatCommand(t,
+	out, err := atlastest.RunCompatCommand(t,
 		"schema", "apply", "unexpected",
 		"--url", "sqlite://"+filepath.Join(t.TempDir(), "target.db"),
 		"--to", "file://"+filepath.Join(t.TempDir(), "desired.sql"),
@@ -188,7 +190,7 @@ func TestCompatSchemaApplyExplicitSQLiteURLValidatesVirtualDropToggleBeforeArgsR
 func TestCompatSchemaApplyExplicitPostgresURLKeepsArgsRefusal(t *testing.T) {
 	c := qt.New(t)
 	t.Setenv("PTAH_SQLITE_ALLOW_VIRTUAL_TABLE_DROP", "not-a-boolean")
-	out, err := runCompatCommand(t,
+	out, err := atlastest.RunCompatCommand(t,
 		"schema", "apply", "unexpected",
 		"--url", "postgres://localhost/database",
 		"--to", "file://"+filepath.Join(t.TempDir(), "desired.sql"),

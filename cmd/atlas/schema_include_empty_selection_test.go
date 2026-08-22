@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+
+	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 )
 
 // emptySelectionDDL holds a plainly named table and a table whose name
@@ -57,7 +59,7 @@ func TestSchemaDiffIncludeEmptySelectionRefuses(t *testing.T) {
 			c.Assert(os.WriteFile(fromPath, []byte(""), 0o600), qt.IsNil)
 			c.Assert(os.WriteFile(toPath, []byte(emptySelectionDDL), 0o600), qt.IsNil)
 
-			stdout, stderr, err := runCompat("schema", "diff",
+			stdout, stderr, err := atlastest.RunCompat("schema", "diff",
 				"--from", "file://"+fromPath,
 				"--to", "file://"+toPath,
 				"--dev-url", "sqlite://"+filepath.Join(dir, "dev.db"),
@@ -82,7 +84,7 @@ func TestSchemaInspectIncludeEmptySelectionIsReportedOnStderr(t *testing.T) {
 	for _, spelling := range emptySelectionSpellings {
 		t.Run(spelling.name, func(t *testing.T) {
 			c := qt.New(t)
-			dbPath := seedSQLiteDB(c, emptySelectionDDL)
+			dbPath := atlastest.SeedSQLiteDB(c, emptySelectionDDL)
 
 			stdout, stderr, err := runCompatInspect(
 				"--url", "sqlite://"+dbPath,
@@ -112,11 +114,11 @@ func TestSchemaApplyIncludeEmptySelectionRefuses(t *testing.T) {
 	for _, spelling := range emptySelectionSpellings {
 		t.Run(spelling.name, func(t *testing.T) {
 			c := qt.New(t)
-			dbPath := seedSQLiteDB(c, "CREATE TABLE keepme (id INTEGER PRIMARY KEY);")
+			dbPath := atlastest.SeedSQLiteDB(c, "CREATE TABLE keepme (id INTEGER PRIMARY KEY);")
 			schemaPath := filepath.Join(t.TempDir(), "schema.sql")
 			c.Assert(os.WriteFile(schemaPath, []byte(emptySelectionDDL), 0o600), qt.IsNil)
 
-			stdout, _, err := runCompat("schema", "apply",
+			stdout, _, err := atlastest.RunCompat("schema", "apply",
 				"--url", "sqlite://"+dbPath,
 				"--to", "file://"+schemaPath,
 				"--include", spelling.selector,
@@ -132,8 +134,8 @@ func TestSchemaApplyIncludeEmptySelectionRefuses(t *testing.T) {
 			c.Assert(stdout, qt.Equals, "")
 			// Nothing was applied either way; the refusal only makes that
 			// visible.
-			c.Assert(sqliteHasTable(t, dbPath, "keepme"), qt.IsTrue)
-			c.Assert(sqliteHasTable(t, dbPath, "empty_sel_users"), qt.IsFalse)
+			c.Assert(atlastest.SqliteHasTable(t, dbPath, "keepme"), qt.IsTrue)
+			c.Assert(atlastest.SqliteHasTable(t, dbPath, "empty_sel_users"), qt.IsFalse)
 		})
 	}
 }
@@ -158,7 +160,7 @@ func TestSchemaIncludeSelectionAcceptsBareDottedName(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			dbPath := seedSQLiteDB(c, emptySelectionDDL)
+			dbPath := atlastest.SeedSQLiteDB(c, emptySelectionDDL)
 
 			stdout, stderr, err := runCompatInspect(
 				"--url", "sqlite://"+dbPath,

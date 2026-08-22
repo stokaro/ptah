@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+
+	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 )
 
 // `migrate down`'s --skip-checks was explicit-only until stokaro/ptah#1621: it
@@ -55,7 +57,7 @@ var formatPathArgs = []string{"--format", "{{ .Current }}"}
 func writeDownableMigrationsDir(c *qt.C, dir string) string {
 	c.Helper()
 	migrationsDir := filepath.Join(dir, "migrations")
-	writeAtlasApplyProjectMigration(c, migrationsDir, "20260801000001_create_users.sql",
+	atlastest.WriteAtlasApplyProjectMigration(c, migrationsDir, "20260801000001_create_users.sql",
 		`-- atlas:txtar
 
 -- migration.sql --
@@ -65,7 +67,7 @@ INSERT INTO users (id, name) VALUES (1, 'alice');
 -- down.sql --
 DROP TABLE users;
 `)
-	writeAtlasApplyProjectMigration(c, migrationsDir, "20260801000002_add_users_email.sql",
+	atlastest.WriteAtlasApplyProjectMigration(c, migrationsDir, "20260801000002_add_users_email.sql",
 		`-- atlas:txtar
 
 -- migration.sql --
@@ -74,7 +76,7 @@ ALTER TABLE users ADD COLUMN email TEXT;
 -- down.sql --
 ALTER TABLE users DROP COLUMN email;
 `)
-	writeAtlasApplyProjectSum(c, migrationsDir)
+	atlastest.WriteAtlasApplyProjectSum(c, migrationsDir)
 	return migrationsDir
 }
 

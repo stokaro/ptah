@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+
+	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 )
 
 // TestMigrateApplyHonorsProjectBaseline pins stokaro/ptah#934 item 5a: the
@@ -61,19 +63,19 @@ func TestMigrateApplyHonorsProjectBaseline(t *testing.T) {
 			c := qt.New(t)
 			root := t.TempDir()
 			t.Chdir(root)
-			writeAtlasApplyProjectMigration(c, "migrations", "1_create_first.sql",
+			atlastest.WriteAtlasApplyProjectMigration(c, "migrations", "1_create_first.sql",
 				"CREATE TABLE baseline_first (id INTEGER PRIMARY KEY);\n")
-			writeAtlasApplyProjectMigration(c, "migrations", "2_create_second.sql",
+			atlastest.WriteAtlasApplyProjectMigration(c, "migrations", "2_create_second.sql",
 				"CREATE TABLE baseline_second (id INTEGER PRIMARY KEY);\n")
-			writeAtlasApplyProjectSum(c, "migrations")
+			atlastest.WriteAtlasApplyProjectSum(c, "migrations")
 			dbPath := filepath.Join(root, "apply.db")
 			writeAtlasApplyBaselineProjectConfig(c, dbPath, test.migrationExtra)
 
 			output, err := executeAtlasProjectCommand("migrate", "apply", "--env", "local")
 
 			c.Assert(err, qt.IsNil, qt.Commentf("command output:\n%s", output))
-			c.Check(sqliteTableCount(c, dbPath, "baseline_first"), qt.Equals, test.wantFirstRan)
-			c.Check(sqliteTableCount(c, dbPath, "baseline_second"), qt.Equals, test.wantSecondRan)
+			c.Check(atlastest.SqliteTableCount(c, dbPath, "baseline_first"), qt.Equals, test.wantFirstRan)
+			c.Check(atlastest.SqliteTableCount(c, dbPath, "baseline_second"), qt.Equals, test.wantSecondRan)
 		})
 	}
 }
@@ -88,11 +90,11 @@ func TestMigrateApplyBaselineFlagWinsOverProject(t *testing.T) {
 	c := qt.New(t)
 	root := t.TempDir()
 	t.Chdir(root)
-	writeAtlasApplyProjectMigration(c, "migrations", "1_create_first.sql",
+	atlastest.WriteAtlasApplyProjectMigration(c, "migrations", "1_create_first.sql",
 		"CREATE TABLE baseline_first (id INTEGER PRIMARY KEY);\n")
-	writeAtlasApplyProjectMigration(c, "migrations", "2_create_second.sql",
+	atlastest.WriteAtlasApplyProjectMigration(c, "migrations", "2_create_second.sql",
 		"CREATE TABLE baseline_second (id INTEGER PRIMARY KEY);\n")
-	writeAtlasApplyProjectSum(c, "migrations")
+	atlastest.WriteAtlasApplyProjectSum(c, "migrations")
 	dbPath := filepath.Join(root, "apply.db")
 	writeAtlasApplyBaselineProjectConfig(c, dbPath, "    baseline = \"1\"\n")
 
@@ -101,8 +103,8 @@ func TestMigrateApplyBaselineFlagWinsOverProject(t *testing.T) {
 	c.Assert(err, qt.IsNil, qt.Commentf("command output:\n%s", output))
 	// The flag baselined version 2, so neither file ran. Had the project value
 	// won, baseline_second would exist.
-	c.Check(sqliteTableCount(c, dbPath, "baseline_first"), qt.Equals, 0)
-	c.Check(sqliteTableCount(c, dbPath, "baseline_second"), qt.Equals, 0)
+	c.Check(atlastest.SqliteTableCount(c, dbPath, "baseline_first"), qt.Equals, 0)
+	c.Check(atlastest.SqliteTableCount(c, dbPath, "baseline_second"), qt.Equals, 0)
 }
 
 // TestMigrateApplyProjectBaselineNotFound pins the refusal, which is the arm
@@ -124,9 +126,9 @@ func TestMigrateApplyProjectBaselineNotFound(t *testing.T) {
 	c := qt.New(t)
 	root := t.TempDir()
 	t.Chdir(root)
-	writeAtlasApplyProjectMigration(c, "migrations", "1_create_first.sql",
+	atlastest.WriteAtlasApplyProjectMigration(c, "migrations", "1_create_first.sql",
 		"CREATE TABLE baseline_first (id INTEGER PRIMARY KEY);\n")
-	writeAtlasApplyProjectSum(c, "migrations")
+	atlastest.WriteAtlasApplyProjectSum(c, "migrations")
 	dbPath := filepath.Join(root, "apply.db")
 	writeAtlasApplyBaselineProjectConfig(c, dbPath, "    baseline = \"20200101000000\"\n")
 

@@ -9,6 +9,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/cmd/atlas"
+	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 )
 
 // The native command tree (#850) reuses the binary-agnostic internals behind
@@ -54,7 +55,7 @@ func TestCompatPinAtlasMigrateSetOutput(t *testing.T) {
 	// `migrate set` verifies atlas.sum before it writes revision rows (#974),
 	// so the fixture is hashed. Hashing is the fix; loosening the gate to keep
 	// an unhashed fixture green would re-open the bug.
-	writeAtlasApplyProjectSum(c, migrationsDir)
+	atlastest.WriteAtlasApplyProjectSum(c, migrationsDir)
 	dbPath := filepath.Join(t.TempDir(), "pin.db")
 
 	out, err := runAtlasArgs("migrate", "set", "2",

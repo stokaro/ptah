@@ -7,6 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 	"go.5x5.cz/ptah/config/projectconfig"
 	"go.5x5.cz/ptah/internal/envbool/envbooltest"
 )
@@ -60,10 +61,10 @@ func TestCompatEnvSchemasOptOutIsRefusedWithoutAProjectFile(t *testing.T) {
 			c := qt.New(t)
 			dir := t.TempDir()
 			test.env(t)
-			seedSQLiteDBAt(t, filepath.Join(dir, "probe.db"), "CREATE TABLE users (id INTEGER PRIMARY KEY)")
+			atlastest.SeedSQLiteDBAt(t, filepath.Join(dir, "probe.db"), "CREATE TABLE users (id INTEGER PRIMARY KEY)")
 			t.Chdir(dir)
 
-			out, err := runCompatCommand(t, "schema", "inspect", "--url", "sqlite://probe.db")
+			out, err := atlastest.RunCompatCommand(t, "schema", "inspect", "--url", "sqlite://probe.db")
 
 			c.Assert(errMessageOrEmpty(err), qt.Equals, test.wantErr, qt.Commentf("%s", out))
 			c.Assert(out, qt.Not(qt.Contains), `table "users"`)
@@ -80,10 +81,10 @@ func TestCompatEnvSchemasOptOutIsRefusedWithAProjectFileThatOmitsSchemas(t *test
 	dir := t.TempDir()
 	writeAtlasProjectFileWithoutSchemas(c, dir)
 	t.Setenv(projectconfig.IgnoreEnvSchemasEnvVar, "")
-	seedSQLiteDBAt(t, filepath.Join(dir, "probe.db"), "CREATE TABLE users (id INTEGER PRIMARY KEY)")
+	atlastest.SeedSQLiteDBAt(t, filepath.Join(dir, "probe.db"), "CREATE TABLE users (id INTEGER PRIMARY KEY)")
 	t.Chdir(dir)
 
-	out, err := runCompatCommand(t, "schema", "inspect", "--url", "sqlite://probe.db")
+	out, err := atlastest.RunCompatCommand(t, "schema", "inspect", "--url", "sqlite://probe.db")
 
 	c.Assert(errMessageOrEmpty(err), qt.Equals,
 		`invalid boolean value "" for PTAH_ATLAS_IGNORE_ENV_SCHEMAS`, qt.Commentf("%s", out))
@@ -123,10 +124,10 @@ func TestCompatEnvSchemasValidValuesStillDescribeTheDatabase(t *testing.T) {
 			c := qt.New(t)
 			dir := t.TempDir()
 			test.env(t)
-			seedSQLiteDBAt(t, filepath.Join(dir, "probe.db"), "CREATE TABLE users (id INTEGER PRIMARY KEY)")
+			atlastest.SeedSQLiteDBAt(t, filepath.Join(dir, "probe.db"), "CREATE TABLE users (id INTEGER PRIMARY KEY)")
 			t.Chdir(dir)
 
-			out, err := runCompatCommand(t, "schema", "inspect", "--url", "sqlite://probe.db")
+			out, err := atlastest.RunCompatCommand(t, "schema", "inspect", "--url", "sqlite://probe.db")
 
 			c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 			c.Assert(out, qt.Contains, `table "users"`)

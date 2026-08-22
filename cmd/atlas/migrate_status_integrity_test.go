@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+
+	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 )
 
 // These tests pin stokaro/ptah#974 on `ptah-compat migrate status`: the
@@ -52,7 +54,7 @@ func atlasChecksumGuidanceWith(pointer string) string {
 // writeStatusIntegrityUnhashed writes one Atlas migration and no atlas.sum.
 func writeStatusIntegrityUnhashed(c *qt.C, dir string) {
 	c.Helper()
-	writeAtlasApplyProjectMigration(c, dir, statusIntegrityMigration,
+	atlastest.WriteAtlasApplyProjectMigration(c, dir, statusIntegrityMigration,
 		"CREATE TABLE t1 (id INTEGER PRIMARY KEY);\n")
 }
 
@@ -60,7 +62,7 @@ func writeStatusIntegrityUnhashed(c *qt.C, dir string) {
 func writeStatusIntegrityHashed(c *qt.C, dir string) {
 	c.Helper()
 	writeStatusIntegrityUnhashed(c, dir)
-	writeAtlasApplyProjectSum(c, dir)
+	atlastest.WriteAtlasApplyProjectSum(c, dir)
 }
 
 // writeStatusIntegrityEdited hashes the directory and then edits the migration,
@@ -68,7 +70,7 @@ func writeStatusIntegrityHashed(c *qt.C, dir string) {
 func writeStatusIntegrityEdited(c *qt.C, dir string) {
 	c.Helper()
 	writeStatusIntegrityHashed(c, dir)
-	writeAtlasApplyProjectMigration(c, dir, statusIntegrityMigration, statusIntegrityEdit)
+	atlastest.WriteAtlasApplyProjectMigration(c, dir, statusIntegrityMigration, statusIntegrityEdit)
 }
 
 // statusIntegrityFile is one migration file a fixture writes.
@@ -121,7 +123,7 @@ func writeStatusIntegrityDrifted(c *qt.C, dir string, drift statusIntegrityDrift
 	c.Helper()
 	writeStatusIntegrityHashed(c, dir)
 	for _, file := range drift.write {
-		writeAtlasApplyProjectMigration(c, dir, file.name, file.sql)
+		atlastest.WriteAtlasApplyProjectMigration(c, dir, file.name, file.sql)
 	}
 	for _, name := range drift.remove {
 		c.Assert(os.Remove(filepath.Join(dir, name)), qt.IsNil)
@@ -154,7 +156,7 @@ func TestCompatMigrateStatus_DriftedDirRefuses(t *testing.T) {
 			writeStatusIntegrityDrifted(c, dir, drift)
 			dbPath := filepath.Join(tempDir, "status.db")
 
-			stdout, stderr, err := runCompat(
+			stdout, stderr, err := atlastest.RunCompat(
 				"migrate", "status",
 				"--url", "sqlite://"+dbPath,
 				"--dir", "file://"+dir,
@@ -182,7 +184,7 @@ func TestCompatMigrateStatus_NeverHashedDirRefuses(t *testing.T) {
 	writeStatusIntegrityUnhashed(c, dir)
 	dbPath := filepath.Join(tempDir, "status.db")
 
-	stdout, stderr, err := runCompat(
+	stdout, stderr, err := atlastest.RunCompat(
 		"migrate", "status",
 		"--url", "sqlite://"+dbPath,
 		"--dir", "file://"+dir,
@@ -206,7 +208,7 @@ func TestCompatMigrateStatus_RefusalPrecedesConnection(t *testing.T) {
 	dir := filepath.Join(c.TempDir(), "m")
 	writeStatusIntegrityUnhashed(c, dir)
 
-	stdout, stderr, err := runCompat(
+	stdout, stderr, err := atlastest.RunCompat(
 		"migrate", "status",
 		"--url", "postgres://u:p@127.0.0.1:1/db?sslmode=disable",
 		"--dir", "file://"+dir,
@@ -227,9 +229,9 @@ func TestCompatMigrateStatus_UnhashedDirWithNonVersionedSQLRefuses(t *testing.T)
 	c := qt.New(t)
 	tempDir := c.TempDir()
 	dir := filepath.Join(tempDir, "m_foo")
-	writeAtlasApplyProjectMigration(c, dir, "foo.sql", "CREATE TABLE foo (id INTEGER PRIMARY KEY);\n")
+	atlastest.WriteAtlasApplyProjectMigration(c, dir, "foo.sql", "CREATE TABLE foo (id INTEGER PRIMARY KEY);\n")
 
-	stdout, stderr, err := runCompat(
+	stdout, stderr, err := atlastest.RunCompat(
 		"migrate", "status",
 		"--url", "sqlite://"+filepath.Join(tempDir, "foo.db"),
 		"--dir", "file://"+dir,
@@ -251,7 +253,7 @@ func TestCompatMigrateStatus_ConfigResolvedDirRefuses(t *testing.T) {
 	writeStatusIntegrityUnhashed(c, "migrations")
 	writeAtlasApplyProjectConfig(c, filepath.Join(root, "status.db"), "atlas", "LINEAR")
 
-	stdout, stderr, err := runCompat("migrate", "status", "--env", "local")
+	stdout, stderr, err := atlastest.RunCompat("migrate", "status", "--env", "local")
 
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Equals, "checksum file not found")
@@ -268,7 +270,7 @@ func TestCompatMigrateStatus_FormatTemplateRefuses(t *testing.T) {
 	dir := filepath.Join(tempDir, "m")
 	writeStatusIntegrityUnhashed(c, dir)
 
-	stdout, stderr, err := runCompat(
+	stdout, stderr, err := atlastest.RunCompat(
 		"migrate", "status",
 		"--url", "sqlite://"+filepath.Join(tempDir, "format.db"),
 		"--dir", "file://"+dir,
@@ -307,10 +309,10 @@ func TestCompatMigrateStatus_AntiRegressionNothingToVerifyReportsNormally(t *tes
 			dir := filepath.Join(tempDir, "m")
 			c.Assert(os.MkdirAll(dir, 0o750), qt.IsNil)
 			for _, file := range tt.files {
-				writeAtlasApplyProjectMigration(c, dir, file.name, file.sql)
+				atlastest.WriteAtlasApplyProjectMigration(c, dir, file.name, file.sql)
 			}
 
-			stdout, stderr, err := runCompat(
+			stdout, stderr, err := atlastest.RunCompat(
 				"migrate", "status",
 				"--url", "sqlite://"+filepath.Join(tempDir, "clean.db"),
 				"--dir", "file://"+dir,
@@ -339,7 +341,7 @@ func TestCompatMigrateStatus_AntiRegressionHashedCleanDirReportsPending(t *testi
 	dir := filepath.Join(tempDir, "m")
 	writeStatusIntegrityHashed(c, dir)
 
-	stdout, stderr, err := runCompat(
+	stdout, stderr, err := atlastest.RunCompat(
 		"migrate", "status",
 		"--url", "sqlite://"+filepath.Join(tempDir, "clean.db"),
 		"--dir", "file://"+dir,
@@ -373,10 +375,10 @@ func TestCompatMigrateStatus_UnhashedNestedSQLReportsNothingPending(t *testing.T
 	c := qt.New(t)
 	tempDir := c.TempDir()
 	dir := filepath.Join(tempDir, "m_nested")
-	writeAtlasApplyProjectMigration(c, filepath.Join(dir, "sub"), statusIntegrityMigration,
+	atlastest.WriteAtlasApplyProjectMigration(c, filepath.Join(dir, "sub"), statusIntegrityMigration,
 		"CREATE TABLE nested (id INTEGER PRIMARY KEY);\n")
 
-	stdout, stderr, err := runCompat(
+	stdout, stderr, err := atlastest.RunCompat(
 		"migrate", "status",
 		"--url", "sqlite://"+filepath.Join(tempDir, "nested.db"),
 		"--dir", "file://"+dir,
@@ -419,12 +421,12 @@ func TestCompatMigrateStatus_MatchesValidateOutput(t *testing.T) {
 // it identically, down to the stream each byte was written to.
 func assertStatusMatchesValidate(c *qt.C, tempDir, dir string) {
 	c.Helper()
-	statusOut, statusErrOut, statusErr := runCompat(
+	statusOut, statusErrOut, statusErr := atlastest.RunCompat(
 		"migrate", "status",
 		"--url", "sqlite://"+filepath.Join(tempDir, "parity.db"),
 		"--dir", "file://"+dir,
 	)
-	validateOut, validateErrOut, validateErr := runCompat("migrate", "validate", "--dir", "file://"+dir)
+	validateOut, validateErrOut, validateErr := atlastest.RunCompat("migrate", "validate", "--dir", "file://"+dir)
 
 	c.Assert(statusErr, qt.IsNotNil)
 	c.Assert(validateErr, qt.IsNotNil)

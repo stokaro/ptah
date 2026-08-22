@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+
+	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 )
 
 // redeclaringDir is the fixture both verbs are measured on: two files, the
@@ -62,7 +64,7 @@ func TestSchemaApplyRefusesDirectoryRedeclaration(t *testing.T) {
 
 	c.Assert(err, qt.ErrorMatches, `.*read state from "2_b\.sql": table "redeclared_users" already exists`)
 	c.Assert(out, qt.Not(qt.Contains), "Schema apply completed successfully.")
-	c.Assert(sqliteTableCount(c, dbPath, "redeclared_users"), qt.Equals, 0)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "redeclared_users"), qt.Equals, 0)
 }
 
 // TestSchemaApplyAcceptsDirectoryWithDistinctObjects is the control that keeps
@@ -85,6 +87,6 @@ func TestSchemaApplyAcceptsDirectoryWithDistinctObjects(t *testing.T) {
 	)
 
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
-	c.Assert(sqliteTableCount(c, dbPath, "distinct_users"), qt.Equals, 1)
-	c.Assert(sqliteTableCount(c, dbPath, "distinct_posts"), qt.Equals, 1)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "distinct_users"), qt.Equals, 1)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "distinct_posts"), qt.Equals, 1)
 }

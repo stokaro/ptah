@@ -7,6 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 	"go.5x5.cz/ptah/core/ptaherr"
 )
 
@@ -24,7 +25,7 @@ func TestSchemaDiffRefusesTheRetiredRefreshStrategy(t *testing.T) {
 	from := writeCompatMaterializedViewSchema(c, dir, "from.hcl", "manual")
 	to := writeCompatMaterializedViewSchema(c, dir, "to.hcl", "concurrently")
 
-	out, err := runCompatCommand(
+	out, err := atlastest.RunCompatCommand(
 		t,
 		"schema", "diff",
 		"--dev-url", "postgres://localhost/dev",
@@ -53,7 +54,7 @@ func TestSchemaDiffRefusesTheRetiredRefreshStrategyDespiteExclusion(t *testing.T
 	from := writeCompatScopedMaterializedViewSchema(c, dir, "from.hcl")
 	to := writeCompatScopedMaterializedViewSchema(c, dir, "to.hcl")
 
-	out, err := runCompatCommand(
+	out, err := atlastest.RunCompatCommand(
 		t,
 		"schema", "diff",
 		"--dev-url", "postgres://localhost/dev",
@@ -74,7 +75,7 @@ func TestSchemaDiffAcceptsAMaterializedViewWithoutTheAttribute(t *testing.T) {
 	from := writeCompatPlainMaterializedViewSchema(c, dir, "from.hcl")
 	to := writeCompatPlainMaterializedViewSchema(c, dir, "to.hcl")
 
-	out, err := runCompatCommand(
+	out, err := atlastest.RunCompatCommand(
 		t,
 		"schema", "diff",
 		"--dev-url", "postgres://localhost/dev",

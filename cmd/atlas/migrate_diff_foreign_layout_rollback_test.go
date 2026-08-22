@@ -10,6 +10,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 	"go.5x5.cz/ptah/dbschema"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlasurl"
@@ -51,7 +52,7 @@ func compatDroppedTableFixture(c *qt.C) (dir, target string) {
 		[]byte("DROP TABLE gadgets;\nDROP TABLE widgets;\n"),
 		0o600,
 	), qt.IsNil)
-	_, _, err := runCompat("migrate", "hash", "--dir", "file://"+dir+"?format=golang-migrate")
+	_, _, err := atlastest.RunCompat("migrate", "hash", "--dir", "file://"+dir+"?format=golang-migrate")
 	c.Assert(err, qt.IsNil)
 
 	target = filepath.Join(c.TempDir(), "target.sql")
@@ -82,7 +83,7 @@ func TestCompatMigrateDiff_ForeignLayoutRollbackRebuildsTheDroppedTable(t *testi
 	c := qt.New(t)
 	dir, target := compatDroppedTableFixture(c)
 
-	_, _, err := runCompat("migrate", "diff", "drop",
+	_, _, err := atlastest.RunCompat("migrate", "diff", "drop",
 		"--dir", "file://"+dir+"?format=golang-migrate",
 		"--dev-url", "sqlite://"+filepath.Join(c.TempDir(), "dev.db"),
 		"--to", "file://"+target)
@@ -104,11 +105,11 @@ func TestCompatMigrateDiff_ForeignLayoutRollbackRebuildsTheDroppedTable(t *testi
 	dbPath := filepath.Join(c.TempDir(), "target.db")
 	compatExecSQL(c, dbPath, compatDroppedTableSchema, "SEED")
 	compatExecSQL(c, dbPath, forward, "FORWARD")
-	c.Assert(compatTableNames(c, dbPath), qt.Not(qt.Contains), "gadgets",
+	c.Assert(atlastest.CompatTableNames(c, dbPath), qt.Not(qt.Contains), "gadgets",
 		qt.Commentf("the forward half must really drop the table, or the rollback proves nothing"))
 
 	compatExecSQL(c, dbPath, rollback, "ROLLBACK")
-	c.Assert(compatTableNames(c, dbPath), qt.Contains, "gadgets",
+	c.Assert(atlastest.CompatTableNames(c, dbPath), qt.Contains, "gadgets",
 		qt.Commentf("rollback SQL:\n%s", rollback))
 	c.Assert(compatForeignKeyNames(c, dbPath, "gadgets"), qt.Contains, "gadgets_widget_fk",
 		qt.Commentf("the rollback must restore the table's foreign key:\n%s", rollback))

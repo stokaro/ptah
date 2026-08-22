@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+
+	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 )
 
 // These tests pin the migration directory URL query against the pinned
@@ -55,7 +57,7 @@ func writeQueryFixtureDir(c *qt.C) string {
 		[]byte("CREATE TABLE widgets (id INTEGER PRIMARY KEY);\n"),
 		0o600,
 	), qt.IsNil)
-	_, _, err := runCompat("migrate", "hash", "--dir", "file://"+dir)
+	_, _, err := atlastest.RunCompat("migrate", "hash", "--dir", "file://"+dir)
 	c.Assert(err, qt.IsNil)
 	return dir
 }
@@ -150,9 +152,9 @@ func TestCompatMigrateDirQuery_IgnoresUnknownKeysOnEveryVerb(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			queryOut, withQuery := runCompatArgs(
+			queryOut, withQuery := atlastest.RunCompatArgs(
 				tt.args(writeQueryFixtureDir(c), newQueryScratchDir(c, queryDiffTargetSQL), "?nonsense=1"))
-			controlOut, control := runCompatArgs(
+			controlOut, control := atlastest.RunCompatArgs(
 				tt.args(writeQueryFixtureDir(c), newQueryScratchDir(c, queryDiffTargetSQL), ""))
 
 			c.Assert(control, qt.IsNil,
@@ -216,7 +218,7 @@ func TestCompatMigrateDirQuery_RejectsUnknownFormatValue(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			_, err := runCompatArgs(tt.args(writeQueryFixtureDir(c), c.TempDir()))
+			_, err := atlastest.RunCompatArgs(tt.args(writeQueryFixtureDir(c), c.TempDir()))
 
 			c.Assert(err, qt.ErrorMatches, want)
 		})
@@ -231,7 +233,7 @@ func TestCompatMigrateDirQuery_EmptyFormatValueReadsAtlasLayout(t *testing.T) {
 	c := qt.New(t)
 	dir := writeQueryFixtureDir(c)
 
-	_, _, err := runCompat("migrate", "status",
+	_, _, err := atlastest.RunCompat("migrate", "status",
 		"--dir", "file://"+dir+"?format=",
 		"--url", "sqlite://"+filepath.Join(c.TempDir(), "status.db"))
 
@@ -283,7 +285,7 @@ func TestCompatMigrateDirQuery_NewAndDiffRefuseAnUnhashedDirectoryWithAQuery(t *
 			c.Assert(os.WriteFile(filepath.Join(dir, "20240101000000_init.sql"),
 				[]byte("CREATE TABLE users (id INTEGER PRIMARY KEY);\n"), 0o600), qt.IsNil)
 
-			_, err := runCompatArgs(tt.args(dir, newQueryScratchDir(c, queryUnchangedTargetSQL)))
+			_, err := atlastest.RunCompatArgs(tt.args(dir, newQueryScratchDir(c, queryUnchangedTargetSQL)))
 
 			c.Assert(err, qt.ErrorMatches, `checksum file not found`)
 			c.Assert(atlasDirEntryNames(c, dir), qt.DeepEquals, []string{"20240101000000_init.sql"})

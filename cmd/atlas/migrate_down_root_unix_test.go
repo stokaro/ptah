@@ -12,6 +12,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/cmd/atlas"
+	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 )
 
 func TestCompatCommandMigrateDownRejectsProjectDirectorySymlinkEscapeBeforeOpeningDatabase(t *testing.T) {
@@ -104,7 +105,7 @@ func TestMigrateApplyRejectsProjectDirectorySymlinkEscapeBeforeOpeningDatabase(t
 	root := t.TempDir()
 	t.Chdir(root)
 	outside := t.TempDir()
-	writeAtlasApplyProjectMigration(c, outside, "1_create_widgets.sql", "CREATE TABLE widgets (id INTEGER PRIMARY KEY);\n")
+	atlastest.WriteAtlasApplyProjectMigration(c, outside, "1_create_widgets.sql", "CREATE TABLE widgets (id INTEGER PRIMARY KEY);\n")
 	c.Assert(os.Symlink(outside, "migrations"), qt.IsNil)
 	dbPath := filepath.Join(root, "apply.db")
 	writeAtlasApplyProjectConfig(c, dbPath, "atlas", "LINEAR")

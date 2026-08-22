@@ -10,6 +10,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/cmd/atlas"
+	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/migratesum"
 	"go.5x5.cz/ptah/migration/migrator"
@@ -18,7 +19,7 @@ import (
 func TestCompatCommand_MigrateNewEditOpensEditor(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
-	installAppendEditor(t, "-- authored in editor")
+	atlastest.InstallAppendEditor(t, "-- authored in editor")
 
 	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
@@ -83,7 +84,7 @@ CREATE TABLE users (
   email TEXT NOT NULL DEFAULT ''
 );
 `), 0o600), qt.IsNil)
-	installAppendEditor(t, "-- reviewed in editor")
+	atlastest.InstallAppendEditor(t, "-- reviewed in editor")
 
 	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
@@ -146,7 +147,7 @@ CREATE TABLE users (
   id INTEGER PRIMARY KEY
 );
 `), 0o600), qt.IsNil)
-	installAppendEditor(t, "CREATE TABLE audit_log (id INTEGER PRIMARY KEY);")
+	atlastest.InstallAppendEditor(t, "CREATE TABLE audit_log (id INTEGER PRIMARY KEY);")
 
 	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer

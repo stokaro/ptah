@@ -12,6 +12,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/cmd/atlas"
+	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 	"go.5x5.cz/ptah/cmd/migratedown"
 	"go.5x5.cz/ptah/cmd/migratetag"
 	"go.5x5.cz/ptah/dbschema"
@@ -59,7 +60,7 @@ func writeMigrateDownFixtureWithRollback(c *qt.C, migrationsDir, dbPath, secondD
 	// The apply below verifies atlas.sum first (stokaro/ptah#970), and so does
 	// `migrate down` now, so the fixture directory must be hashed like a real
 	// Atlas directory — after every file it covers is in its final state.
-	writeAtlasApplyProjectSum(c, migrationsDir)
+	atlastest.WriteAtlasApplyProjectSum(c, migrationsDir)
 
 	apply := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
@@ -135,8 +136,8 @@ func TestCompatCommand_MigrateDownFormatRendersReportAndReverts(t *testing.T) {
 	c.Assert(report.Current, qt.Equals, "2")
 	c.Assert(report.Target, qt.Equals, "1")
 	c.Assert(report.Total, qt.Equals, 1)
-	c.Assert(sqliteTableCount(c, dbPath, "down_fmt_audit"), qt.Equals, 0)
-	c.Assert(sqliteTableCount(c, dbPath, "down_fmt_users"), qt.Equals, 1)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "down_fmt_audit"), qt.Equals, 0)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "down_fmt_users"), qt.Equals, 1)
 }
 
 func TestCompatCommand_MigrateDownFormatDryRunPlansWithoutReverting(t *testing.T) {
@@ -163,8 +164,8 @@ func TestCompatCommand_MigrateDownFormatDryRunPlansWithoutReverting(t *testing.T
 	// Dry run needs no confirmation, renders the plan, and reverts nothing.
 	c.Assert(err, qt.IsNil, qt.Commentf("stderr=%s", errOut.String()))
 	c.Assert(out.String(), qt.Equals, "2|0|2|")
-	c.Assert(sqliteTableCount(c, dbPath, "down_fmt_audit"), qt.Equals, 1)
-	c.Assert(sqliteTableCount(c, dbPath, "down_fmt_users"), qt.Equals, 1)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "down_fmt_audit"), qt.Equals, 1)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "down_fmt_users"), qt.Equals, 1)
 }
 
 func TestCompatCommand_MigrateDownFormatHonorsUnverifiedOverride(t *testing.T) {
@@ -198,7 +199,7 @@ func TestCompatCommand_MigrateDownFormatHonorsUnverifiedOverride(t *testing.T) {
 	c.Assert(out.String(), qt.Equals, "2")
 	c.Assert(errOut.String(), qt.Contains, migrationintegrity.AllowUnverifiedEnvVar)
 	c.Assert(errOut.String(), qt.Contains, "verification was SKIPPED")
-	c.Assert(sqliteTableCount(c, dbPath, "down_fmt_audit"), qt.Equals, 1)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "down_fmt_audit"), qt.Equals, 1)
 }
 
 func TestCompatCommand_MigrateDownFormatDirtyPreflightHasNoRevertedFiles(t *testing.T) {
@@ -235,8 +236,8 @@ WHERE version = '2'`)
 	c.Assert(report.Planned[0].Version, qt.Equals, "1")
 	c.Assert(report.Reverted, qt.HasLen, 0)
 	c.Assert(report.Error, qt.Contains, "migration 2 is dirty")
-	c.Assert(sqliteTableCount(c, dbPath, "down_fmt_audit"), qt.Equals, 1)
-	c.Assert(sqliteTableCount(c, dbPath, "down_fmt_users"), qt.Equals, 1)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "down_fmt_audit"), qt.Equals, 1)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "down_fmt_users"), qt.Equals, 1)
 }
 
 func TestCompatCommand_MigrateDownFormatReportsFirstRollbackFailure(t *testing.T) {
@@ -335,7 +336,7 @@ func TestCompatCommand_MigrateDownFormatDevURLVerifiesThenApplies(t *testing.T) 
 
 	c.Assert(err, qt.IsNil, qt.Commentf("stdout=%s stderr=%s", out.String(), errOut.String()))
 	c.Assert(out.String(), qt.Equals, "reverted=2")
-	c.Assert(sqliteTableCount(c, dbPath, "down_fmt_users"), qt.Equals, 0)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "down_fmt_users"), qt.Equals, 0)
 }
 
 func TestCompatCommand_MigrateDownFormatDevURLFailureAbortsTarget(t *testing.T) {
@@ -367,8 +368,8 @@ func TestCompatCommand_MigrateDownFormatDevURLFailureAbortsTarget(t *testing.T) 
 	// The dev replay fails before the target is touched.
 	c.Assert(err, qt.ErrorMatches, `(?s)rollback verification failed: .*no_such_table.*`)
 	c.Assert(out.String(), qt.Equals, "")
-	c.Assert(sqliteTableCount(c, dbPath, "down_fmt_audit"), qt.Equals, 1)
-	c.Assert(sqliteAtlasRevisionVersions(c, dbPath), qt.DeepEquals, []string{"1", "2"})
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "down_fmt_audit"), qt.Equals, 1)
+	c.Assert(atlastest.SqliteAtlasRevisionVersions(c, dbPath), qt.DeepEquals, []string{"1", "2"})
 }
 
 func TestCompatCommand_MigrateDownDevURLForwardsToNativeShadowVerification(t *testing.T) {
@@ -399,7 +400,7 @@ func TestCompatCommand_MigrateDownDevURLForwardsToNativeShadowVerification(t *te
 	// rejected.
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out.String()))
 	c.Assert(out.String(), qt.Contains, "Rollback plan verified on shadow database")
-	c.Assert(sqliteTableCount(c, dbPath, "down_fmt_audit"), qt.Equals, 0)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "down_fmt_audit"), qt.Equals, 0)
 }
 
 func TestCompatCommand_MigrateDownDevURLForwardFailureAbortsTarget(t *testing.T) {
@@ -424,7 +425,7 @@ func TestCompatCommand_MigrateDownDevURLForwardFailureAbortsTarget(t *testing.T)
 	err := cmd.Execute()
 
 	c.Assert(err, qt.ErrorMatches, `(?s)rollback verification failed: .*no_such_table.*`)
-	c.Assert(sqliteTableCount(c, dbPath, "down_fmt_audit"), qt.Equals, 1)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "down_fmt_audit"), qt.Equals, 1)
 }
 
 // TestCompatCommand_MigrateDownDefaultOutputMatchesNativeCommand pins the
@@ -511,9 +512,9 @@ func TestCompatCommand_MigrateDownDefaultsToAtlasRevisionFormat(t *testing.T) {
 
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out.String()))
 	c.Assert(out.String(), qt.Not(qt.Contains), "Type 'YES' to confirm")
-	c.Assert(sqliteTableCount(c, dbPath, "down_fmt_audit"), qt.Equals, 0)
-	c.Assert(sqliteTableCount(c, dbPath, "down_fmt_users"), qt.Equals, 1)
-	c.Assert(sqliteAtlasRevisionVersions(c, dbPath), qt.DeepEquals, []string{"1"})
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "down_fmt_audit"), qt.Equals, 0)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "down_fmt_users"), qt.Equals, 1)
+	c.Assert(atlastest.SqliteAtlasRevisionVersions(c, dbPath), qt.DeepEquals, []string{"1"})
 }
 
 // TestCompatCommand_MigrateDownRevisionFormatPtahOverridesDefault pins the
@@ -544,9 +545,9 @@ func TestCompatCommand_MigrateDownRevisionFormatPtahOverridesDefault(t *testing.
 	// Atlas-applied schema and revisions stay in place.
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out.String()))
 	c.Assert(out.String(), qt.Contains, "already at or below target version 0")
-	c.Assert(sqliteTableCount(c, dbPath, "down_fmt_audit"), qt.Equals, 1)
-	c.Assert(sqliteTableCount(c, dbPath, "down_fmt_users"), qt.Equals, 1)
-	c.Assert(sqliteAtlasRevisionVersions(c, dbPath), qt.DeepEquals, []string{"1", "2"})
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "down_fmt_audit"), qt.Equals, 1)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "down_fmt_users"), qt.Equals, 1)
+	c.Assert(atlastest.SqliteAtlasRevisionVersions(c, dbPath), qt.DeepEquals, []string{"1", "2"})
 }
 
 func TestCompatCommand_MigrateDownFormatDoesNotTreatStdinAsConfirmation(t *testing.T) {
@@ -577,7 +578,7 @@ func TestCompatCommand_MigrateDownFormatDoesNotTreatStdinAsConfirmation(t *testi
 	c.Assert(json.Unmarshal(out.Bytes(), &report), qt.IsNil)
 	c.Assert(report.Reverted, qt.HasLen, 2)
 	c.Assert(errOut.String(), qt.Equals, "")
-	c.Assert(sqliteTableCount(c, dbPath, "down_fmt_audit"), qt.Equals, 0)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "down_fmt_audit"), qt.Equals, 0)
 }
 
 func TestCompatCommand_MigrateDownFormatUsesAtlasProjectConfig(t *testing.T) {
@@ -950,7 +951,7 @@ func TestCompatCommand_MigrateDownFormatRefusesPlan(t *testing.T) {
 func checkedDownMigrationsDir(c *qt.C, dir string) string {
 	c.Helper()
 	migrationsDir := filepath.Join(dir, "migrations")
-	writeAtlasApplyProjectMigration(c, migrationsDir, "20260801000001_create_users.sql",
+	atlastest.WriteAtlasApplyProjectMigration(c, migrationsDir, "20260801000001_create_users.sql",
 		`-- atlas:txtar
 
 -- migration.sql --
@@ -959,7 +960,7 @@ CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT);
 -- down.sql --
 DROP TABLE users;
 `)
-	writeAtlasApplyProjectMigration(c, migrationsDir, "20260801000002_create_audit.sql",
+	atlastest.WriteAtlasApplyProjectMigration(c, migrationsDir, "20260801000002_create_audit.sql",
 		`-- atlas:txtar
 
 -- migration.sql --
@@ -969,7 +970,7 @@ CREATE TABLE audit (id INTEGER PRIMARY KEY);
 -- +ptah check name="audit_empty" assert="SELECT count(*) = 0 FROM audit" on_fail=abort
 DROP TABLE audit;
 `)
-	writeAtlasApplyProjectSum(c, migrationsDir)
+	atlastest.WriteAtlasApplyProjectSum(c, migrationsDir)
 	return migrationsDir
 }
 

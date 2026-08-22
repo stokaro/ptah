@@ -8,6 +8,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/cmd/atlas"
+	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 	"go.5x5.cz/ptah/internal/atlascompatpolicy"
 	"go.5x5.cz/ptah/internal/migratesum"
 	"go.5x5.cz/ptah/migration/migrator"
@@ -100,7 +101,7 @@ func TestCompatMigrateLs_ListsTheDirectory(t *testing.T) {
 			c := qt.New(t)
 			dir := compatReadDir(c)
 
-			stdout, stderr, err := runCompat(test.args(dir)...)
+			stdout, stderr, err := atlastest.RunCompat(test.args(dir)...)
 
 			c.Assert(err, qt.IsNil, qt.Commentf("stderr:\n%s", stderr))
 			c.Assert(stdout, qt.Equals, test.want)
@@ -166,7 +167,7 @@ func TestCompatMigrateShow_PrintsMigrationBodies(t *testing.T) {
 			c := qt.New(t)
 			dir := compatReadDir(c)
 
-			stdout, stderr, err := runCompat(test.args(dir)...)
+			stdout, stderr, err := atlastest.RunCompat(test.args(dir)...)
 
 			c.Assert(err, qt.IsNil, qt.Commentf("stderr:\n%s", stderr))
 			c.Assert(stdout, qt.Equals, test.want)
@@ -207,7 +208,7 @@ func TestCompatMigrateRead_RefusesADirectoryCarryingNoChecksum(t *testing.T) {
 			c := qt.New(t)
 			dir := compatReadUnhashedDir(c)
 
-			stdout, stderr, err := runCompat(test.args(dir)...)
+			stdout, stderr, err := atlastest.RunCompat(test.args(dir)...)
 
 			c.Assert(err, qt.ErrorMatches, `migration sum verification failed: atlas\.sum not found.*`)
 			c.Assert(stdout, qt.Equals, "")
@@ -246,7 +247,7 @@ func TestCompatMigrateRead_AcceptsAHashedDirectory(t *testing.T) {
 			c := qt.New(t)
 			dir := compatReadDir(c)
 
-			stdout, stderr, err := runCompat(test.args(dir)...)
+			stdout, stderr, err := atlastest.RunCompat(test.args(dir)...)
 
 			c.Assert(err, qt.IsNil, qt.Commentf("stderr:\n%s", stderr))
 			c.Assert(stdout, qt.Equals, test.want)
@@ -290,7 +291,7 @@ func TestCompatMigrateRead_RefusesADirectoryNamingNoScheme(t *testing.T) {
 				c.Setenv(name, value)
 			}
 
-			stdout, stderr, err := runCompat(test.args(dir)...)
+			stdout, stderr, err := atlastest.RunCompat(test.args(dir)...)
 
 			// The message is the mirrored surface's, byte for byte, down to
 			// the trailing space before the line feed. It goes out on stderr
@@ -336,7 +337,7 @@ func TestCompatMigrateRead_AcceptsADirectoryNamedByAtlasHCL(t *testing.T) {
 				0o600), qt.IsNil)
 			chdir(c, root)
 
-			stdout, stderr, runErr := runCompat("migrate", "ls", "--env", "local")
+			stdout, stderr, runErr := atlastest.RunCompat("migrate", "ls", "--env", "local")
 
 			c.Assert(runErr, qt.IsNil, qt.Commentf("stderr:\n%s", stderr))
 			c.Assert(stdout, qt.Equals,
@@ -416,7 +417,7 @@ func TestCompatMigrateRead_FailurePath(t *testing.T) {
 			c := qt.New(t)
 			dir := compatReadDir(c)
 
-			stdout, _, err := runCompat(test.args(dir)...)
+			stdout, _, err := atlastest.RunCompat(test.args(dir)...)
 
 			c.Assert(err, qt.ErrorMatches, test.wantErr)
 			c.Assert(stdout, qt.Equals, "")
@@ -446,7 +447,7 @@ func TestCompatMigrateRead_AbsentUnderStrictCommunityCompatibility(t *testing.T)
 
 			migrate, _, err := root.Find([]string{"migrate"})
 			c.Assert(err, qt.IsNil)
-			c.Assert(availableChildNames(migrate), qt.Not(qt.Contains), verb.verb)
+			c.Assert(atlastest.AvailableChildNames(migrate), qt.Not(qt.Contains), verb.verb)
 		})
 	}
 }
@@ -470,7 +471,7 @@ func TestCompatMigrateRead_PresentUnderTheDefaultProfile(t *testing.T) {
 
 			migrate, _, err := root.Find([]string{"migrate"})
 			c.Assert(err, qt.IsNil)
-			c.Assert(availableChildNames(migrate), qt.Contains, verb.verb)
+			c.Assert(atlastest.AvailableChildNames(migrate), qt.Contains, verb.verb)
 		})
 	}
 }

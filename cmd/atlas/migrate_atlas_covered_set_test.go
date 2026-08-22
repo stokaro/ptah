@@ -8,6 +8,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasmigrateimport"
 	"go.5x5.cz/ptah/migration/migrator"
@@ -81,7 +82,7 @@ func appendCoveredSetFile(c *qt.C, dir, name, body string) {
 // actually produces.
 func hashCoveredSetDir(c *qt.C, dir string) {
 	c.Helper()
-	out, errOut, err := runCompat("migrate", "hash", "--dir", "file://"+dir)
+	out, errOut, err := atlastest.RunCompat("migrate", "hash", "--dir", "file://"+dir)
 	c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", out, errOut))
 }
 

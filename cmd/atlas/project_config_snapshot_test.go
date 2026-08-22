@@ -12,6 +12,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/cmd/atlas"
+	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 	"go.5x5.cz/ptah/internal/testutils"
 )
 
@@ -55,7 +56,7 @@ func TestCompatCommandMigrateDownUsesPtahSafetySnapshot(t *testing.T) {
 		qt.ErrorMatches,
 		"(?s).*down pre-flight custom command hook failed: exit status 8.*snapshot-hook.*",
 	)
-	c.Assert(sqliteTableCount(c, dbPath, "down_fmt_audit"), qt.Equals, 1)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "down_fmt_audit"), qt.Equals, 1)
 }
 
 func TestCompatCommandMigrateDownPreservesPtahPathBase(t *testing.T) {
@@ -97,7 +98,7 @@ func TestCompatCommandMigrateDownPreservesPtahPathBase(t *testing.T) {
 		qt.ErrorMatches,
 		"(?s).*down pre-flight custom command hook failed: exit status 8.*ptah-path-hook.*",
 	)
-	c.Assert(sqliteTableCount(c, dbPath, "down_fmt_audit"), qt.Equals, 1)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "down_fmt_audit"), qt.Equals, 1)
 }
 
 func TestCompatCommandMigrateDownEnvironmentOverridesSafetySnapshot(t *testing.T) {
@@ -140,7 +141,7 @@ func TestCompatCommandMigrateDownEnvironmentOverridesSafetySnapshot(t *testing.T
 		qt.ErrorMatches,
 		"(?s).*down pre-flight custom command hook failed: exit status 9.*environment-hook.*",
 	)
-	c.Assert(sqliteTableCount(c, dbPath, "down_fmt_audit"), qt.Equals, 1)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "down_fmt_audit"), qt.Equals, 1)
 }
 
 func TestCompatCommandMigrateDownUsesProjectDevURLForShadowVerification(t *testing.T) {
@@ -179,7 +180,7 @@ func TestCompatCommandMigrateDownUsesProjectDevURLForShadowVerification(t *testi
 	err := cmd.Execute()
 
 	c.Assert(err, qt.ErrorMatches, `(?s)rollback verification failed: .*no_such_table.*`)
-	c.Assert(sqliteTableCount(c, dbPath, "down_fmt_audit"), qt.Equals, 1)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "down_fmt_audit"), qt.Equals, 1)
 }
 
 func TestCompatCommandMigrateDownExplicitDirectoryOverridesUnsupportedProjectPaths(t *testing.T) {
@@ -216,7 +217,7 @@ func TestCompatCommandMigrateDownExplicitDirectoryOverridesUnsupportedProjectPat
 	err := cmd.Execute()
 
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out.String()))
-	c.Assert(sqliteTableCount(c, dbPath, "down_fmt_audit"), qt.Equals, 0)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "down_fmt_audit"), qt.Equals, 0)
 }
 
 func TestCompatCommandMigrateDownNativeDirectoryEnvironmentOverridesProjectConfig(t *testing.T) {
@@ -262,7 +263,7 @@ func TestCompatCommandMigrateDownNativeDirectoryEnvironmentOverridesProjectConfi
 		qt.ErrorMatches,
 		"(?s).*down pre-flight custom command hook failed: exit status 8.*native-directory-hook.*",
 	)
-	c.Assert(sqliteTableCount(c, dbPath, "down_fmt_audit"), qt.Equals, 1)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "down_fmt_audit"), qt.Equals, 1)
 }
 
 func TestCompatCommandProjectConfigDefersToDirectoryEnvironment(t *testing.T) {

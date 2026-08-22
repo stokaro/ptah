@@ -10,6 +10,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/cmd/atlas"
+	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 	"go.5x5.cz/ptah/cmd/internal/exitcode"
 	"go.5x5.cz/ptah/internal/envbool/envbooltest"
 )
@@ -34,7 +35,7 @@ func runAtlasPrecondition(c *qt.C, args ...string) (output string, err error) {
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
 	cmd.SetArgs(args)
-	err = executeAtlasTestCommand(cmd)
+	err = atlastest.ExecuteAtlasTestCommand(cmd)
 	return out.String(), err
 }
 
@@ -270,7 +271,7 @@ func TestCompatCommand_MigrateVerbsRefuseReorderedChecksum(t *testing.T) {
 			return []string{
 				"migrate", "diff", "third",
 				"--dir", "file://" + dir,
-				"--to", "sqlite://" + seedSQLiteDB(qt.New(t), "CREATE TABLE desired_users (id INTEGER PRIMARY KEY)"),
+				"--to", "sqlite://" + atlastest.SeedSQLiteDB(qt.New(t), "CREATE TABLE desired_users (id INTEGER PRIMARY KEY)"),
 				"--dev-url", "sqlite://" + filepath.Join(t.TempDir(), "dev.db"),
 			}
 		}},
@@ -604,26 +605,21 @@ func TestCompatCommand_MigrateNewRefusesPathSeparatorName(t *testing.T) {
 // The measurement behind it was taken where `\` is not a path separator, and
 // on Windows it is: the name rule refuses it there as a path, which is the
 // same rule this file's other half exists to enforce. Asserting acceptance
-// there would assert something the oracle never said.
-type acceptedNameCase struct {
-	name  string
-	given string
-}
-
+// there would assert something the reference binary never said.
 func TestCompatCommand_MigrateNewAcceptsNamesTheBinaryAccepts(t *testing.T) {
-	tests := []acceptedNameCase{
-		{name: "space", given: "a b"},
-		{name: "dot dot", given: ".."},
+	tests := []atlastest.AcceptedNameCase{
+		{Name: "space", Given: "a b"},
+		{Name: "dot dot", Given: ".."},
 	}
 	tests = append(tests, acceptedBackslashNames()...)
 
 	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
+		t.Run(test.Name, func(t *testing.T) {
 			c := qt.New(t)
 			dir := seedAtlasPreconditionDir(c, t.TempDir())
 			before := dirEntryNames(c, dir)
 
-			out, err := runAtlasPrecondition(c, "migrate", "new", test.given, "--dir", "file://"+dir)
+			out, err := runAtlasPrecondition(c, "migrate", "new", test.Given, "--dir", "file://"+dir)
 
 			c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", out))
 			c.Assert(dirEntryNames(c, dir), qt.HasLen, len(before)+1)
@@ -640,7 +636,7 @@ func TestCompatCommand_MigrateDiffRefusesPathSeparatorName(t *testing.T) {
 	c := qt.New(t)
 	dir := seedAtlasPreconditionDir(c, t.TempDir())
 	before := dirEntryNames(c, dir)
-	desiredPath := seedSQLiteDB(c, "CREATE TABLE desired_users (id INTEGER PRIMARY KEY)")
+	desiredPath := atlastest.SeedSQLiteDB(c, "CREATE TABLE desired_users (id INTEGER PRIMARY KEY)")
 	devPath := filepath.Join(t.TempDir(), "dev.db")
 
 	out, err := runAtlasPrecondition(c,
@@ -670,7 +666,7 @@ func TestCompatCommand_MigrateDiffIgnoresTheNameWhenNothingChanges(t *testing.T)
 	dir := t.TempDir()
 	writeAtlasLintFile(c, dir, "20260101000000_first.sql", "CREATE TABLE desired_users (id INTEGER PRIMARY KEY);\n")
 	hashMigrationDir(c, dir)
-	desiredPath := seedSQLiteDB(c, "CREATE TABLE desired_users (id INTEGER PRIMARY KEY)")
+	desiredPath := atlastest.SeedSQLiteDB(c, "CREATE TABLE desired_users (id INTEGER PRIMARY KEY)")
 	devPath := filepath.Join(t.TempDir(), "dev.db")
 
 	out, err := runAtlasPrecondition(c,
@@ -696,7 +692,7 @@ func TestCompatCommand_MigrateDiffIgnoresTheNameWhenNothingChanges(t *testing.T)
 func TestCompatCommand_MigrateDiffRefusesASecondPositional(t *testing.T) {
 	c := qt.New(t)
 	dir := seedAtlasPreconditionDir(c, t.TempDir())
-	desiredPath := seedSQLiteDB(c, "CREATE TABLE desired_users (id INTEGER PRIMARY KEY)")
+	desiredPath := atlastest.SeedSQLiteDB(c, "CREATE TABLE desired_users (id INTEGER PRIMARY KEY)")
 	devPath := filepath.Join(t.TempDir(), "dev.db")
 
 	out, err := runAtlasPrecondition(c,
@@ -716,7 +712,7 @@ func TestCompatCommand_MigrateDiffRefusesASecondPositional(t *testing.T) {
 func TestCompatCommand_MigrateDiffAcceptsOnePositional(t *testing.T) {
 	c := qt.New(t)
 	dir := seedAtlasPreconditionDir(c, t.TempDir())
-	desiredPath := seedSQLiteDB(c, "CREATE TABLE desired_users (id INTEGER PRIMARY KEY)")
+	desiredPath := atlastest.SeedSQLiteDB(c, "CREATE TABLE desired_users (id INTEGER PRIMARY KEY)")
 	devPath := filepath.Join(t.TempDir(), "dev.db")
 
 	out, err := runAtlasPrecondition(c,

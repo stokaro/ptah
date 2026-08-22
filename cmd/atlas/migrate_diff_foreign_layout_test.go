@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+
+	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 )
 
 // These tests pin the last cell of stokaro/ptah#1013: `migrate diff` writing a
@@ -56,7 +58,7 @@ func compatGolangMigrateFixture(c *qt.C) (dir, target string) {
 		[]byte("DROP TABLE widgets;\n"),
 		0o600,
 	), qt.IsNil)
-	_, _, err := runCompat("migrate", "hash", "--dir", "file://"+dir+"?format=golang-migrate")
+	_, _, err := atlastest.RunCompat("migrate", "hash", "--dir", "file://"+dir+"?format=golang-migrate")
 	c.Assert(err, qt.IsNil)
 
 	target = filepath.Join(c.TempDir(), "target.sql")
@@ -81,7 +83,7 @@ func TestCompatMigrateDiff_GolangMigrateQueryWritesThatLayout(t *testing.T) {
 	c := qt.New(t)
 	dir, target := compatGolangMigrateFixture(c)
 
-	_, _, err := runCompat("migrate", "diff", "more",
+	_, _, err := atlastest.RunCompat("migrate", "diff", "more",
 		"--dir", "file://"+dir+"?format=golang-migrate",
 		"--dev-url", "sqlite://"+filepath.Join(c.TempDir(), "dev.db"),
 		"--to", "file://"+target)
@@ -119,7 +121,7 @@ func TestCompatMigrateDiff_GolangMigrateDirIsRefusedWithoutTheLayout(t *testing.
 	dir, target := compatGolangMigrateFixture(c)
 	before := atlasDirEntryNames(c, dir)
 
-	_, _, err := runCompat("migrate", "diff", "more",
+	_, _, err := atlastest.RunCompat("migrate", "diff", "more",
 		"--dir", "file://"+dir,
 		"--dev-url", "sqlite://"+filepath.Join(c.TempDir(), "dev.db"),
 		"--to", "file://"+target)
@@ -139,7 +141,7 @@ func TestCompatMigrateDiff_DirFormatFlagWritesTheSelectedLayout(t *testing.T) {
 	c := qt.New(t)
 	dir, target := compatGolangMigrateFixture(c)
 
-	_, _, err := runCompat("migrate", "diff", "more",
+	_, _, err := atlastest.RunCompat("migrate", "diff", "more",
 		"--dir", "file://"+dir,
 		"--dir-format", "golang-migrate",
 		"--dev-url", "sqlite://"+filepath.Join(c.TempDir(), "dev.db"),
@@ -223,7 +225,7 @@ func TestCompatMigrateDiff_ForeignLayoutComposesEachLayoutsFiles(t *testing.T) {
 				0o600,
 			), qt.IsNil)
 
-			_, _, err := runCompat("migrate", "diff", "demo",
+			_, _, err := atlastest.RunCompat("migrate", "diff", "demo",
 				"--dir", "file://"+dir+"?format="+tt.format,
 				"--dev-url", "sqlite://"+filepath.Join(c.TempDir(), "dev.db"),
 				"--to", "file://"+target)

@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+
+	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 )
 
 const compatHashDigest = "sha256:" +
@@ -37,7 +39,7 @@ func TestCompatMigrateHash_RefusesOCIDirAtTheURLGate(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			_, _, err := runCompat("migrate", "hash", "--dir", tt.dir)
+			_, _, err := atlastest.RunCompat("migrate", "hash", "--dir", tt.dir)
 
 			c.Assert(err, qt.ErrorMatches,
 				`atlas migrate hash --dir: only local file:// migration directories are supported`)
@@ -60,7 +62,7 @@ func TestCompatMigrateHash_LocalDirStillHashes(t *testing.T) {
 		0o600,
 	), qt.IsNil)
 
-	_, _, err := runCompat("migrate", "hash", "--dir", "file://"+dir)
+	_, _, err := atlastest.RunCompat("migrate", "hash", "--dir", "file://"+dir)
 
 	c.Assert(err, qt.IsNil)
 	_, statErr := os.Stat(filepath.Join(dir, "atlas.sum"))

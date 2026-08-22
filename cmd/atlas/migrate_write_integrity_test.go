@@ -12,6 +12,8 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+
+	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 )
 
 // These tests close stokaro/ptah#1086: `ptah-compat migrate new` and
@@ -43,7 +45,7 @@ func atlasWriteVerbs() []atlasWriteVerb {
 		{
 			name: "new",
 			run: func(_ *qt.C, dir, query string) (string, string, error) {
-				return runCompat("migrate", "new", "demo", "--dir", "file://"+dir+query)
+				return atlastest.RunCompat("migrate", "new", "demo", "--dir", "file://"+dir+query)
 			},
 		},
 		{
@@ -54,7 +56,7 @@ func atlasWriteVerbs() []atlasWriteVerb {
 					"CREATE TABLE users (id INTEGER PRIMARY KEY);\n"+
 						"CREATE TABLE widgets (id INTEGER PRIMARY KEY);\n",
 				), 0o600), qt.IsNil)
-				return runCompat("migrate", "diff", "demo",
+				return atlastest.RunCompat("migrate", "diff", "demo",
 					"--dir", "file://"+dir+query,
 					"--dev-url", "sqlite://"+filepath.Join(c.TempDir(), "dev.db"),
 					"--to", "file://"+target)
@@ -89,7 +91,7 @@ func writeAtlasWriteFixture(c *qt.C, root string) string {
 // for the directory as it currently stands.
 func hashAtlasWriteFixture(c *qt.C, dir string) {
 	c.Helper()
-	_, _, err := runCompat("migrate", "hash", "--dir", "file://"+dir)
+	_, _, err := atlastest.RunCompat("migrate", "hash", "--dir", "file://"+dir)
 	c.Assert(err, qt.IsNil)
 }
 
@@ -399,7 +401,7 @@ func TestCompatMigrateNew_GatesTheDirectoryTheForwardedCommandWillWrite(t *testi
 			t.Setenv(tt.envName, tt.envValue(dir))
 			before := atlasWriteDirFingerprint(c, dir)
 
-			_, _, err := runCompat("migrate", "new", "demo")
+			_, _, err := atlastest.RunCompat("migrate", "new", "demo")
 
 			outcomes[tt.hashed](c, before, atlasWriteDirFingerprint(c, dir), err)
 		})
@@ -437,7 +439,7 @@ func TestCompatMigrateWrite_GatesTheDirectoryNamedByAtlasProjectConfig(t *testin
 `, filepath.ToSlash(filepath.Join(root, "dev.db"))), 0o600), qt.IsNil)
 			before := atlasWriteDirFingerprint(c, dir)
 
-			stdout, _, err := runCompat(args...)
+			stdout, _, err := atlastest.RunCompat(args...)
 
 			c.Assert(err, qt.ErrorMatches, `checksum file not found`)
 			c.Assert(stdout, qt.Contains, "You have a checksum error in your migration directory.")

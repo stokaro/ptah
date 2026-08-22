@@ -9,6 +9,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 	"go.5x5.cz/ptah/cmd/internal/exitcode"
 	"go.5x5.cz/ptah/internal/migratesum"
 )
@@ -231,7 +232,7 @@ func TestCompatMigrateValidateConvertedDevURL_HappyPath(t *testing.T) {
 	c.Assert(stdout, qt.Equals, "")
 	c.Assert(stderr, qt.Equals, "")
 	// The replay cleans up after itself, so the table exists only during it.
-	assertSQLiteTableCount(c, devDBPath, "compat_converted_dev_url", 0)
+	atlastest.AssertSQLiteTableCount(c, devDBPath, "compat_converted_dev_url", 0)
 }
 
 // TestCompatMigrateValidateConvertedDevURL_FailurePath covers the two orders

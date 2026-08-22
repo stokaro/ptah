@@ -9,13 +9,14 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/cmd/atlas"
+	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 	"go.5x5.cz/ptah/internal/migratesum"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
 func TestMigrateDiffDatabaseURLDesiredState(t *testing.T) {
 	c := qt.New(t)
-	desiredPath := seedSQLiteDB(c, "CREATE TABLE desired_users (id INTEGER PRIMARY KEY)")
+	desiredPath := atlastest.SeedSQLiteDB(c, "CREATE TABLE desired_users (id INTEGER PRIMARY KEY)")
 	devPath := filepath.Join(t.TempDir(), "dev.db")
 	migrationsDir := filepath.Join(t.TempDir(), "migrations")
 	cmd := atlas.NewCompatCommand("atlas")
@@ -35,7 +36,7 @@ func TestMigrateDiffDatabaseURLDesiredState(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Contains, "CREATE TABLE")
 	c.Assert(out.String(), qt.Contains, "desired_users")
-	c.Assert(sqliteHasTable(t, desiredPath, "desired_users"), qt.IsTrue)
+	c.Assert(atlastest.SqliteHasTable(t, desiredPath, "desired_users"), qt.IsTrue)
 	entries, readErr := os.ReadDir(migrationsDir)
 	c.Assert(readErr, qt.IsNil)
 	c.Assert(entries, qt.HasLen, 0)
@@ -152,7 +153,7 @@ env "dev" {
 func TestMigrateDiffEnvURLDesiredState(t *testing.T) {
 	c := qt.New(t)
 	baseDir := t.TempDir()
-	desiredPath := seedSQLiteDB(c, "CREATE TABLE env_database_users (id INTEGER PRIMARY KEY)")
+	desiredPath := atlastest.SeedSQLiteDB(c, "CREATE TABLE env_database_users (id INTEGER PRIMARY KEY)")
 	c.Assert(os.WriteFile(filepath.Join(baseDir, "atlas.hcl"), []byte(`variable "desired_url" {}
 
 env "dev" {
@@ -186,7 +187,7 @@ env "dev" {
 func TestMigrateDiffConfigDefaultDatabaseDesiredState(t *testing.T) {
 	c := qt.New(t)
 	baseDir := t.TempDir()
-	desiredPath := seedSQLiteDB(c, "CREATE TABLE config_database_users (id INTEGER PRIMARY KEY)")
+	desiredPath := atlastest.SeedSQLiteDB(c, "CREATE TABLE config_database_users (id INTEGER PRIMARY KEY)")
 	devPath := filepath.Join(t.TempDir(), "dev.db")
 	migrationsDir := filepath.Join(baseDir, "migrations")
 	c.Assert(os.WriteFile(filepath.Join(baseDir, "atlas.hcl"), []byte(`variable "desired_url" {}
@@ -220,7 +221,7 @@ env "dev" {
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Contains, "CREATE TABLE")
 	c.Assert(out.String(), qt.Contains, "config_database_users")
-	c.Assert(sqliteHasTable(t, desiredPath, "config_database_users"), qt.IsTrue)
+	c.Assert(atlastest.SqliteHasTable(t, desiredPath, "config_database_users"), qt.IsTrue)
 	entries, readErr := os.ReadDir(migrationsDir)
 	c.Assert(readErr, qt.IsNil)
 	c.Assert(entries, qt.HasLen, 0)
@@ -260,7 +261,7 @@ func TestMigrateDiffMigrationDirectoryDesiredState(t *testing.T) {
 func TestMigrateDiffAliasedDesiredDatabaseFailsWithoutMutation(t *testing.T) {
 	c := qt.New(t)
 	baseDir := t.TempDir()
-	databasePath := seedSQLiteDB(c, "CREATE TABLE protected_users (id INTEGER PRIMARY KEY)")
+	databasePath := atlastest.SeedSQLiteDB(c, "CREATE TABLE protected_users (id INTEGER PRIMARY KEY)")
 	c.Assert(os.WriteFile(filepath.Join(baseDir, "atlas.hcl"), []byte(`variable "database_url" {}
 
 env "dev" {
@@ -284,7 +285,7 @@ env "dev" {
 
 	c.Assert(err, qt.ErrorMatches,
 		`--to database must differ from --dev-url because the dev database is reset during planning`)
-	c.Assert(sqliteHasTable(t, databasePath, "protected_users"), qt.IsTrue)
+	c.Assert(atlastest.SqliteHasTable(t, databasePath, "protected_users"), qt.IsTrue)
 }
 
 func TestMigrateDiffSourceFailureDoesNotCreateMigrationDirectory(t *testing.T) {

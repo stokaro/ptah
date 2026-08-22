@@ -28,7 +28,7 @@ import (
 // installScriptEditor installs an $EDITOR whose shell body runs with the file
 // being edited as "$1", so a test can rewrite, empty, or fail on the planned
 // SQL. CI is Linux-only, so a /bin/sh script is safe here (same precedent as
-// installAppendEditor).
+// atlastest.InstallAppendEditor).
 func installScriptEditor(t *testing.T, body string) {
 	testutils.SkipWithoutPOSIXShell(t)
 	t.Helper()

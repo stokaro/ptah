@@ -8,6 +8,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/cmd/atlas"
+	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 )
 
 // runSchemaCleanScope runs `atlas schema clean` against dbPath with extra
@@ -123,8 +124,8 @@ func TestSchemaCleanSelectorsNarrowWhatIsDestroyed(t *testing.T) {
 			out, err := runSchemaCleanScope(c, dbPath, test.args...)
 
 			c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
-			c.Assert(sqliteTableCount(c, dbPath, test.dropped), qt.Equals, 0)
-			c.Assert(sqliteTableCount(c, dbPath, test.surviving), qt.Equals, 1)
+			c.Assert(atlastest.SqliteTableCount(c, dbPath, test.dropped), qt.Equals, 0)
+			c.Assert(atlastest.SqliteTableCount(c, dbPath, test.surviving), qt.Equals, 1)
 		})
 	}
 }
@@ -141,8 +142,8 @@ func TestSchemaCleanUnselectedRunStillDropsEverything(t *testing.T) {
 	out, err := runSchemaCleanScope(c, dbPath, "--auto-approve")
 
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
-	c.Assert(sqliteTableCount(c, dbPath, "users"), qt.Equals, 0)
-	c.Assert(sqliteTableCount(c, dbPath, "audit_log"), qt.Equals, 0)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "users"), qt.Equals, 0)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "audit_log"), qt.Equals, 0)
 }
 
 // TestSchemaCleanRejectsUnsupportedSelectorsBeforeConnecting checks that a
@@ -179,7 +180,7 @@ func TestSchemaCleanRejectsUnsupportedSelectorsBeforeConnecting(t *testing.T) {
 
 			c.Assert(err, qt.IsNotNil)
 			c.Assert(out, qt.Contains, test.want)
-			c.Assert(sqliteTableCount(c, dbPath, "users"), qt.Equals, 1)
+			c.Assert(atlastest.SqliteTableCount(c, dbPath, "users"), qt.Equals, 1)
 		})
 	}
 }

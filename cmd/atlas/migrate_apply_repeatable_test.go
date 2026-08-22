@@ -7,6 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 	"go.5x5.cz/ptah/dbschema"
 )
 
@@ -16,11 +17,11 @@ func TestMigrateApplyExecutesAtlasRepeatableMigration(t *testing.T) {
 	dir := t.TempDir()
 	migrationsDir := filepath.Join(dir, "migrations")
 	dbPath := filepath.Join(dir, "repeatable.db")
-	writeAtlasApplyProjectMigration(c, migrationsDir, "1_users.sql", "CREATE TABLE users (id INTEGER PRIMARY KEY);\n")
-	writeAtlasApplyProjectMigration(c, migrationsDir, "2R_repeatable.sql", "CREATE TABLE active_users (id INTEGER PRIMARY KEY);\n")
-	writeAtlasApplyProjectSum(c, migrationsDir)
+	atlastest.WriteAtlasApplyProjectMigration(c, migrationsDir, "1_users.sql", "CREATE TABLE users (id INTEGER PRIMARY KEY);\n")
+	atlastest.WriteAtlasApplyProjectMigration(c, migrationsDir, "2R_repeatable.sql", "CREATE TABLE active_users (id INTEGER PRIMARY KEY);\n")
+	atlastest.WriteAtlasApplyProjectSum(c, migrationsDir)
 
-	output, err := runCompatCommand(t,
+	output, err := atlastest.RunCompatCommand(t,
 		"migrate", "apply",
 		"--url", "sqlite://"+dbPath,
 		"--dir", "file://"+migrationsDir,
@@ -40,10 +41,10 @@ func TestMigrateApplyExecutesAtlasBareRepeatableMigration(t *testing.T) {
 	dir := t.TempDir()
 	migrationsDir := filepath.Join(dir, "migrations")
 	dbPath := filepath.Join(dir, "bare-repeatable.db")
-	writeAtlasApplyProjectMigration(c, migrationsDir, "R__bootstrap.sql", "CREATE TABLE repeatable_bootstrap (id INTEGER PRIMARY KEY);\n")
-	writeAtlasApplyProjectSum(c, migrationsDir)
+	atlastest.WriteAtlasApplyProjectMigration(c, migrationsDir, "R__bootstrap.sql", "CREATE TABLE repeatable_bootstrap (id INTEGER PRIMARY KEY);\n")
+	atlastest.WriteAtlasApplyProjectSum(c, migrationsDir)
 
-	output, err := runCompatCommand(t,
+	output, err := atlastest.RunCompatCommand(t,
 		"migrate", "apply",
 		"--url", "sqlite://"+dbPath,
 		"--dir", "file://"+migrationsDir,
@@ -62,11 +63,11 @@ func TestMigrateApplyDoesNotReapplyAtlasRepeatableOnChecksumChange(t *testing.T)
 	dir := t.TempDir()
 	migrationsDir := filepath.Join(dir, "migrations")
 	dbPath := filepath.Join(dir, "repeatable-no-reapply.db")
-	writeAtlasApplyProjectMigration(c, migrationsDir, "1_users.sql", "CREATE TABLE users (id INTEGER PRIMARY KEY);\n")
-	writeAtlasApplyProjectMigration(c, migrationsDir, "2R_repeatable.sql", "CREATE TABLE repeatable_once (id INTEGER PRIMARY KEY);\n")
-	writeAtlasApplyProjectSum(c, migrationsDir)
+	atlastest.WriteAtlasApplyProjectMigration(c, migrationsDir, "1_users.sql", "CREATE TABLE users (id INTEGER PRIMARY KEY);\n")
+	atlastest.WriteAtlasApplyProjectMigration(c, migrationsDir, "2R_repeatable.sql", "CREATE TABLE repeatable_once (id INTEGER PRIMARY KEY);\n")
+	atlastest.WriteAtlasApplyProjectSum(c, migrationsDir)
 
-	firstOutput, firstErr := runCompatCommand(t,
+	firstOutput, firstErr := atlastest.RunCompatCommand(t,
 		"migrate", "apply",
 		"--url", "sqlite://"+dbPath,
 		"--dir", "file://"+migrationsDir,
@@ -74,10 +75,10 @@ func TestMigrateApplyDoesNotReapplyAtlasRepeatableOnChecksumChange(t *testing.T)
 	c.Assert(firstErr, qt.IsNil)
 	c.Assert(firstOutput, qt.Contains, "Migration complete. Current version: 2R")
 
-	writeAtlasApplyProjectMigration(c, migrationsDir, "2R_repeatable.sql", "CREATE TABLE repeatable_changed (id INTEGER PRIMARY KEY);\n")
-	writeAtlasApplyProjectSum(c, migrationsDir)
+	atlastest.WriteAtlasApplyProjectMigration(c, migrationsDir, "2R_repeatable.sql", "CREATE TABLE repeatable_changed (id INTEGER PRIMARY KEY);\n")
+	atlastest.WriteAtlasApplyProjectSum(c, migrationsDir)
 
-	secondOutput, secondErr := runCompatCommand(t,
+	secondOutput, secondErr := atlastest.RunCompatCommand(t,
 		"migrate", "apply",
 		"--url", "sqlite://"+dbPath,
 		"--dir", "file://"+migrationsDir,

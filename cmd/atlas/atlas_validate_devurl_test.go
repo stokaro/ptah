@@ -2,7 +2,6 @@ package atlas_test
 
 import (
 	"bytes"
-	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -10,7 +9,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/cmd/atlas"
-	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 	"go.5x5.cz/ptah/internal/migratesum"
 	"go.5x5.cz/ptah/migration/migrator"
 )
@@ -37,7 +36,7 @@ func TestCompatCommand_MigrateValidateDevURLReplaysAtlasMigration(t *testing.T) 
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Equals, "")
-	assertSQLiteTableCount(c, devDBPath, "atlas_validate_dev_url", 0)
+	atlastest.AssertSQLiteTableCount(c, devDBPath, "atlas_validate_dev_url", 0)
 }
 
 func TestNewCompatCommand_MigrateValidateDevURLReplaysAtlasMigration(t *testing.T) {
@@ -62,7 +61,7 @@ func TestNewCompatCommand_MigrateValidateDevURLReplaysAtlasMigration(t *testing.
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Equals, "")
-	assertSQLiteTableCount(c, devDBPath, "compat_validate_dev_url", 0)
+	atlastest.AssertSQLiteTableCount(c, devDBPath, "compat_validate_dev_url", 0)
 }
 
 func writeAtlasMigration(c *qt.C, dir, name, sql string) {
@@ -70,20 +69,4 @@ func writeAtlasMigration(c *qt.C, dir, name, sql string) {
 	c.Assert(os.WriteFile(filepath.Join(dir, name), []byte(sql), 0o600), qt.IsNil)
 	_, err := migratesum.WriteWithFormat(dir, migrator.MigrationDirFormatAtlas)
 	c.Assert(err, qt.IsNil)
-}
-
-func assertSQLiteTableCount(c *qt.C, dbPath, table string, want int) {
-	c.Helper()
-	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)
-	c.Assert(err, qt.IsNil)
-	defer dbschema.CloseAndWarn(conn)
-
-	var count int
-	err = conn.QueryRowContext(
-		context.Background(),
-		"SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?",
-		table,
-	).Scan(&count)
-	c.Assert(err, qt.IsNil)
-	c.Assert(count, qt.Equals, want)
 }

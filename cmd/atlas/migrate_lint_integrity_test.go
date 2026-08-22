@@ -6,6 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 	"go.5x5.cz/ptah/cmd/internal/exitcode"
 )
 
@@ -53,7 +54,7 @@ func TestCompatCommand_MigrateLintIntegrityFindingIsReportContent(t *testing.T) 
 			dir := t.TempDir()
 			devDB := "sqlite://" + filepath.Join(t.TempDir(), "integrity.db")
 			writeAtlasLintFile(c, dir, "20240101000000_init.sql", "CREATE TABLE t1 (id integer);\n")
-			writeAtlasApplyProjectSum(c, dir)
+			atlastest.WriteAtlasApplyProjectSum(c, dir)
 			// Edit the hashed file so the recorded sum no longer matches it.
 			writeAtlasLintFile(c, dir, "20240101000000_init.sql", "CREATE TABLE t1 (id integer, extra text);\n")
 

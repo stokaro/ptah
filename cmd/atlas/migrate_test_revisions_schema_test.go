@@ -7,6 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 	"go.5x5.cz/ptah/internal/migratesum"
 	"go.5x5.cz/ptah/migration/migrator"
 )
@@ -66,7 +67,7 @@ func runMigrateTestRevisionsFixture(c *qt.C, flags ...string) (stdout string, er
 	migrationsDir, casesDir := writeMigrateTestRevisionsFixture(c)
 	args := append([]string{"migrate", "test", "--dir", "file://" + migrationsDir}, flags...)
 	args = append(args, casesDir)
-	stdout, _, err = runCompatStreams(c, args...)
+	stdout, _, err = atlastest.RunCompatStreams(c, args...)
 	return stdout, err
 }
 

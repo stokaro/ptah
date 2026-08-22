@@ -10,6 +10,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/cmd/atlas"
+	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 	"go.5x5.cz/ptah/cmd/internal/exitcode"
 	"go.5x5.cz/ptah/dbschema"
 )
@@ -70,7 +71,7 @@ func TestCompatCommand_MigrateLintRoutesADockerDevURLToTheProvisioner(t *testing
 		"--latest", "1",
 	})
 
-	err := executeAtlasTestCommand(cmd)
+	err := atlastest.ExecuteAtlasTestCommand(cmd)
 
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
 	c.Assert(out.String(), qt.Contains, `unsupported docker image "sqlite"`)

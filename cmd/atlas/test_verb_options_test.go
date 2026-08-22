@@ -8,6 +8,8 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+
+	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 )
 
 // testVerbWorkspace is one materialized workspace for the Atlas-shaped test
@@ -113,12 +115,12 @@ func TestCompatCommand_TestVerbsForwardSeedDirectory(t *testing.T) {
 			workspace := writeTestVerbWorkspace(c, tt.preface)
 			base := tt.argv(workspace)
 
-			withoutOut, withoutErr := runCompatArgs(base)
+			withoutOut, withoutErr := atlastest.RunCompatArgs(base)
 			c.Assert(withoutErr, qt.ErrorMatches,
 				`invalid test cases: .*seed requires a dir or a run-level seed directory`,
 				qt.Commentf("%s", withoutOut))
 
-			withOut, withErr := runCompatArgs(append(slices.Clone(base), "--seed-dir", workspace.seedsDir))
+			withOut, withErr := atlastest.RunCompatArgs(append(slices.Clone(base), "--seed-dir", workspace.seedsDir))
 			c.Assert(withErr, qt.IsNil, qt.Commentf("%s", withOut))
 			c.Assert(withOut, qt.Contains, `PASS  case "seeded"`)
 			c.Assert(withOut, qt.Contains, "seeded 1 file(s)")
@@ -164,7 +166,7 @@ func TestCompatCommand_TestVerbsResolveSeedDirectoryURLForms(t *testing.T) {
 			workspace := writeTestVerbWorkspace(c, tt.preface)
 			argv := append(slices.Clone(tt.argv(workspace)), "--seed-dir", tt.seedDir(workspace))
 
-			out, err := runCompatArgs(argv)
+			out, err := atlastest.RunCompatArgs(argv)
 
 			c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 			c.Assert(out, qt.Contains, "seeded 1 file(s)")
@@ -192,7 +194,7 @@ func TestCompatCommand_TestVerbsRefuseADatabaseSeedDirectory(t *testing.T) {
 			workspace := writeTestVerbWorkspace(c, tt.preface)
 			argv := append(slices.Clone(tt.argv(workspace)), "--seed-dir", "sqlite://"+workspace.seedsDir)
 
-			out, err := runCompatArgs(argv)
+			out, err := atlastest.RunCompatArgs(argv)
 
 			c.Assert(err, qt.ErrorMatches,
 				`atlas (migrate|schema) test --seed-dir: a seed directory is a local path or a file:// URL`,
@@ -233,7 +235,7 @@ func TestCompatCommand_TestVerbsForwardReportFormat(t *testing.T) {
 			workspace := writeTestVerbWorkspace(c, tt.preface)
 			base := append(slices.Clone(tt.argv(workspace)), "--seed-dir", workspace.seedsDir)
 
-			out, err := runCompatArgs(append(slices.Clone(base), "--report", "json"))
+			out, err := atlastest.RunCompatArgs(append(slices.Clone(base), "--report", "json"))
 			c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 			var report testVerbReport
 			c.Assert(json.Unmarshal([]byte(out), &report), qt.IsNil, qt.Commentf("%s", out))
@@ -246,7 +248,7 @@ func TestCompatCommand_TestVerbsForwardReportFormat(t *testing.T) {
 			// single place that decides which formats exist. A mapper that
 			// swallowed unknown values would run the default text report here
 			// and exit 0.
-			badOut, badErr := runCompatArgs(append(slices.Clone(base), "--report", "nosuch"))
+			badOut, badErr := atlastest.RunCompatArgs(append(slices.Clone(base), "--report", "nosuch"))
 			c.Assert(badErr, qt.ErrorMatches, `unsupported report format "nosuch": want text, json, or html`,
 				qt.Commentf("%s", badOut))
 		})
@@ -368,7 +370,7 @@ func TestCompatCommand_TestVerbsAnswerADevURLFlag(t *testing.T) {
 				"--dev-url", tt.devURL,
 				"--seed-dir", workspace.seedsDir)
 
-			out, err := runCompatArgs(argv)
+			out, err := atlastest.RunCompatArgs(argv)
 
 			c.Assert(err, qt.ErrorMatches, tt.wantErr, qt.Commentf("%s", out))
 		})
@@ -395,7 +397,7 @@ func TestCompatCommand_TestVerbsReachTheProvisionerFromTheEnvironment(t *testing
 			workspace := writeTestVerbWorkspace(c, tt.preface)
 			argv := append(tt.argv(workspace), "--seed-dir", workspace.seedsDir)
 
-			out, err := runCompatArgs(argv)
+			out, err := atlastest.RunCompatArgs(argv)
 
 			c.Assert(err, qt.ErrorMatches, dockerProvisionerVerdict, qt.Commentf("%s", out))
 		})
@@ -422,7 +424,7 @@ func TestCompatCommand_TestVerbsReachTheProvisionerFromTheProjectFile(t *testing
 			workspace := writeTestVerbWorkspace(c, tt.preface)
 			writeDockerDevProject(c, t, workspace)
 
-			out, err := runCompatArgs([]string{
+			out, err := atlastest.RunCompatArgs([]string{
 				tt.verb, "test", workspace.casesDir,
 				"--env", "local",
 				"--seed-dir", workspace.seedsDir,
@@ -441,7 +443,7 @@ func TestCompatCommand_TestVerbsAcceptAConnectableDevURL(t *testing.T) {
 	c := qt.New(t)
 	workspace := writeTestVerbWorkspace(c, "")
 
-	out, err := runCompatArgs(append(schemaTestArgs(workspace),
+	out, err := atlastest.RunCompatArgs(append(schemaTestArgs(workspace),
 		"--dev-url", freshDevURL(c),
 		"--seed-dir", workspace.seedsDir))
 

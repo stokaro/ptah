@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+
+	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 )
 
 // The set half of the #974 integrity gate. `migrate set` writes revision rows
@@ -34,7 +36,7 @@ func TestCompatMigrateSet_DriftedDirRefuses(t *testing.T) {
 			writeStatusIntegrityDrifted(c, dir, drift)
 			dbPath := filepath.Join(tempDir, "set.db")
 
-			stdout, stderr, err := runCompat(
+			stdout, stderr, err := atlastest.RunCompat(
 				"migrate", "set", setIntegrityVersion,
 				"--url", "sqlite://"+dbPath,
 				"--dir", "file://"+dir,
@@ -61,7 +63,7 @@ func TestCompatMigrateSet_NeverHashedDirRefuses(t *testing.T) {
 	writeStatusIntegrityUnhashed(c, dir)
 	dbPath := filepath.Join(tempDir, "set.db")
 
-	stdout, stderr, err := runCompat(
+	stdout, stderr, err := atlastest.RunCompat(
 		"migrate", "set", setIntegrityVersion,
 		"--url", "sqlite://"+dbPath,
 		"--dir", "file://"+dir,
@@ -103,7 +105,7 @@ func TestCompatMigrateSet_RefusalPrecedesArityCheck(t *testing.T) {
 				"--url", "sqlite://"+filepath.Join(tempDir, "arity.db"),
 				"--dir", "file://"+dir,
 			)
-			stdout, stderr, err := runCompat(args...)
+			stdout, stderr, err := atlastest.RunCompat(args...)
 
 			c.Assert(err, qt.IsNotNil)
 			c.Assert(stdout, qt.Equals, atlasChecksumGuidance)
@@ -121,7 +123,7 @@ func TestCompatMigrateSet_RefusalPrecedesConnection(t *testing.T) {
 	dir := filepath.Join(c.TempDir(), "m")
 	writeStatusIntegrityUnhashed(c, dir)
 
-	stdout, stderr, err := runCompat(
+	stdout, stderr, err := atlastest.RunCompat(
 		"migrate", "set", setIntegrityVersion,
 		"--url", "postgres://u:p@127.0.0.1:1/db?sslmode=disable",
 		"--dir", "file://"+dir,
@@ -141,7 +143,7 @@ func TestCompatMigrateSet_ConfigResolvedDirRefuses(t *testing.T) {
 	writeStatusIntegrityUnhashed(c, "migrations")
 	writeAtlasApplyProjectConfig(c, filepath.Join(root, "set.db"), "atlas", "LINEAR")
 
-	stdout, stderr, err := runCompat("migrate", "set", setIntegrityVersion, "--env", "local")
+	stdout, stderr, err := atlastest.RunCompat("migrate", "set", setIntegrityVersion, "--env", "local")
 
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Equals, "checksum file not found")
@@ -158,7 +160,7 @@ func TestCompatMigrateSet_AntiRegressionHashedDirSets(t *testing.T) {
 	dir := filepath.Join(tempDir, "m")
 	writeStatusIntegrityHashed(c, dir)
 
-	stdout, stderr, err := runCompat(
+	stdout, stderr, err := atlastest.RunCompat(
 		"migrate", "set", setIntegrityVersion,
 		"--url", "sqlite://"+filepath.Join(tempDir, "ok.db"),
 		"--dir", "file://"+dir,
@@ -178,12 +180,12 @@ func TestCompatMigrateSet_MatchesValidateOutput(t *testing.T) {
 	dir := filepath.Join(tempDir, "m")
 	writeStatusIntegrityEdited(c, dir)
 
-	setOut, setErrOut, setErr := runCompat(
+	setOut, setErrOut, setErr := atlastest.RunCompat(
 		"migrate", "set", setIntegrityVersion,
 		"--url", "sqlite://"+filepath.Join(tempDir, "parity.db"),
 		"--dir", "file://"+dir,
 	)
-	validateOut, validateErrOut, validateErr := runCompat("migrate", "validate", "--dir", "file://"+dir)
+	validateOut, validateErrOut, validateErr := atlastest.RunCompat("migrate", "validate", "--dir", "file://"+dir)
 
 	c.Assert(setErr, qt.IsNotNil)
 	c.Assert(validateErr, qt.IsNotNil)

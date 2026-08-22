@@ -10,7 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"go.5x5.cz/ptah/cmd/atlas"
-	"go.5x5.cz/ptah/cmd/internal/cmdutil"
+	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 	"go.5x5.cz/ptah/cmd/internal/exitcode"
 )
 
@@ -88,7 +88,7 @@ func TestCompatCommand_ForwardedNativeFailureExits1(t *testing.T) {
 	cmd.SetErr(&out)
 	cmd.SetArgs([]string{"migrate", "hash", "--dir", "file://" + missingDir})
 
-	err := executeAtlasTestCommand(cmd)
+	err := atlastest.ExecuteAtlasTestCommand(cmd)
 
 	c.Assert(err, qt.ErrorMatches, "migrations directory .*")
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
@@ -127,7 +127,7 @@ func TestAtlasCompatibilityRoots_UnknownCommandMatchesAtlasCE(t *testing.T) {
 			tt.cmd.SetErr(&stderr)
 			tt.cmd.SetArgs(tt.args)
 
-			err := executeAtlasTestCommand(tt.cmd)
+			err := atlastest.ExecuteAtlasTestCommand(tt.cmd)
 
 			c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
 			c.Assert(err, qt.ErrorMatches, `unknown command "definitely-not-a-command" for "atlas"`)
@@ -147,7 +147,7 @@ func TestAtlasCompatibilityRoot_UnknownCommandQuotesSafely(t *testing.T) {
 	cmd.SetErr(&stderr)
 	cmd.SetArgs([]string{"bad\ncommand"})
 
-	err := executeAtlasTestCommand(cmd)
+	err := atlastest.ExecuteAtlasTestCommand(cmd)
 
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
 	c.Assert(stdout.String(), qt.Equals, "")
@@ -164,7 +164,7 @@ func TestAtlasCompatibilityRoot_UnknownCommandSuggestsAtlasVerb(t *testing.T) {
 	cmd.SetErr(&stderr)
 	cmd.SetArgs([]string{"migrat"})
 
-	err := executeAtlasTestCommand(cmd)
+	err := atlastest.ExecuteAtlasTestCommand(cmd)
 
 	c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
 	c.Assert(stdout.String(), qt.Equals, "")
@@ -202,7 +202,7 @@ func TestAtlasCompatibilityDiagnostics_WriterFailure(t *testing.T) {
 			cmd.SetErr(atlasFailingWriter{})
 			cmd.SetArgs(tt.args)
 
-			err := executeAtlasTestCommand(cmd)
+			err := atlastest.ExecuteAtlasTestCommand(cmd)
 
 			c.Assert(err, qt.ErrorIs, errAtlasWriteFailed)
 			c.Assert(err, qt.ErrorMatches, tt.wantErr)
@@ -244,7 +244,7 @@ func TestAtlasCompatibilityGroups_ExtraTokenMatchesAtlasCEHelp(t *testing.T) {
 			cmd.SetErr(&stderr)
 			cmd.SetArgs(tt.args)
 
-			err := executeAtlasTestCommand(cmd)
+			err := atlastest.ExecuteAtlasTestCommand(cmd)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(stdout.String(), qt.Contains, tt.wantUsage)
@@ -281,7 +281,7 @@ func TestAtlasCompatibilityGroups_HelpWriterFailure(t *testing.T) {
 			cmd.SetErr(&stderr)
 			cmd.SetArgs(tt.args)
 
-			err := executeAtlasTestCommand(cmd)
+			err := atlastest.ExecuteAtlasTestCommand(cmd)
 
 			c.Assert(err, qt.ErrorIs, errAtlasWriteFailed)
 			c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
@@ -316,7 +316,7 @@ func TestAtlasCompatibilityCompletion_ExtraTokenMatchesAtlasCE(t *testing.T) {
 			tt.cmd.SetErr(&stderr)
 			tt.cmd.SetArgs(tt.args)
 
-			err := executeAtlasTestCommand(tt.cmd)
+			err := atlastest.ExecuteAtlasTestCommand(tt.cmd)
 
 			c.Assert(exitcode.Code(err, 0), qt.Equals, 1)
 			c.Assert(err, qt.ErrorMatches, `unknown command "extra" for "atlas completion bash"`)
@@ -332,13 +332,8 @@ func executeAtlasUsageTestCommand(cmd *cobra.Command, args []string) (string, er
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
 	cmd.SetArgs(args)
-	err := executeAtlasTestCommand(cmd)
+	err := atlastest.ExecuteAtlasTestCommand(cmd)
 	return out.String(), err
-}
-
-func executeAtlasTestCommand(cmd *cobra.Command) error {
-	executed, err := cmd.ExecuteC()
-	return cmdutil.NormalizeCommandError(executed, err, 2)
 }
 
 type atlasFailingWriter struct{}

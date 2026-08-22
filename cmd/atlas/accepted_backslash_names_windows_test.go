@@ -2,6 +2,8 @@
 
 package atlas_test
 
+import "go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
+
 // acceptedBackslashNames is empty here. On Windows a backslash IS a path
 // separator, so `a\b` names two elements and the rule that refuses a path
 // separator in a migration name refuses it -- correctly, and for the same
@@ -9,4 +11,4 @@ package atlas_test
 //
 // The acceptance measurement was taken on a platform where the character is
 // ordinary, so asserting it here would assert something the oracle never said.
-func acceptedBackslashNames() []acceptedNameCase { return nil }
+func acceptedBackslashNames() []atlastest.AcceptedNameCase { return nil }
