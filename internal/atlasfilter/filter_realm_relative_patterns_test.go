@@ -45,13 +45,14 @@ func TestScopeDatabaseReport_CountsPatternPartsAgainstWhatTheRunDescribes(t *tes
 			wantUsersColumns: []string{"id"},
 		},
 		{
-			// The doubled prefix is the binary's own arithmetic, not a
-			// diagnostic bug: it prefixes the connection's schema before
-			// counting parts, and Ptah reports the same text.
+			// The prefixing is the binary's own arithmetic, not a diagnostic
+			// bug: it counts the connection's schema before the pattern. Ptah
+			// counts the same way and says so differently -- the pattern the
+			// user typed, and the one that reaches the same column here.
 			name:    "a schema-bound run still has its schema slot filled",
 			pattern: "public.users.name",
 			realm:   false,
-			wantErr: `too many parts in pattern: "public.public.users.name"`,
+			wantErr: `too many parts in pattern "public.users.name": this connection is bound to schema "public", so a pattern names object or object.child; write "users.name"`,
 			// A refusal returns no schema at all, which is the point: nothing
 			// was filtered, so there is nothing to have been filtered wrongly.
 			wantTables:       nil,

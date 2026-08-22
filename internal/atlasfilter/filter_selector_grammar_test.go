@@ -551,7 +551,7 @@ func TestExcludeDatabase_SelectorGrammarRefusals(t *testing.T) {
 // pinned community binary v1.3.0's own arithmetic, measured on a schema-bound
 // URL (`?search_path=public`), where it answers
 //
-//	Error: too many parts in pattern: "public.public.*[type=table].comment"
+//	Error: too many parts in pattern "public.*[type=table].comment": …
 //
 // On a database URL that binary does not prefix and therefore accepts the same
 // pattern, and so does Ptah — see
@@ -566,7 +566,7 @@ func TestExcludeDatabase_QualifiedFieldSelectorStaysADepthError(t *testing.T) {
 	_, err := atlasfilter.ExcludeDatabaseWithDefaultSchema(
 		grammarFixture(), []string{"public.*[type=table].comment"}, "public")
 
-	c.Assert(err, qt.ErrorMatches, `too many parts in pattern: "public\.public\.\*\[type=table\]\.comment"`)
+	c.Assert(err, qt.ErrorMatches, `too many parts in pattern "public\.\*\[type=table\]\.comment": this connection is bound to schema "public", so a pattern names object or object\.child; write "\*\[type=table\]\.comment"`)
 }
 
 // TestExcludeDatabase_LeadingSchemaSegmentIsNotCountedTwice is the other half

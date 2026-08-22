@@ -226,6 +226,49 @@ matched rather than refused, because there Atlas CE is right: it executes the
 file's bytes verbatim, drops nothing, and records the revision honestly. See
 [`stokaro/ptah#981`](https://github.com/stokaro/ptah/issues/981).
 
+### The refusal for an `--exclude` pattern too deep for its scope
+
+Same refusal, different words. An exclude pattern is counted against the scope
+its URL names: a URL naming a schema has that schema prefixed onto the pattern
+before the parts are counted, so a third part has nowhere to go. Both binaries
+refuse `--exclude public.users.name` there, and Ptah's arithmetic is the same.
+
+What differs is what the refusal says. Measured on PostgreSQL 17,
+`postgres://…/ptah_test?search_path=public`:
+
+```text
+Atlas CE  Error: too many parts in pattern: "public.public.users.secret"
+Ptah      Error: too many parts in pattern "public.users.secret": this connection
+                 is bound to schema "public", so a pattern names object or
+                 object.child; write "users.secret"
+```
+
+`public.public.users.secret` is a string nobody typed, and it says nothing about
+what to write instead. `users.secret` is measured to drop exactly the column the
+refused pattern was reaching for.
+
+The suggestion is offered only where it is true. A leading segment that is not
+the bound schema is a *table* name in that scope, so `other.notes.body` gets the
+scope sentence without a spelling:
+
+```text
+Error: too many parts in pattern "other.notes.body": this connection is bound to
+       schema "public", so a pattern names object or object.child
+```
+
+And the pre-connect pass, which runs before any connection has said which scope
+applies, claims no scope at all:
+
+```text
+Error: too many parts in pattern "public.a.b.c": a pattern names at most
+       schema.object.child
+```
+
+This is not covered by rule 1: nothing here accepts input Atlas CE refuses. It
+is the floor-not-ceiling clause — a diagnostic that names the pattern the user
+wrote and the one that works
+([`stokaro/ptah#1703`](https://github.com/stokaro/ptah/issues/1703)).
+
 ### A schema directory whose files declare the same object twice
 
 A `file://` directory of schema files is an **ordered script**. Atlas CE reads
