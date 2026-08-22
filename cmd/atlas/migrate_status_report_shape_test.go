@@ -8,6 +8,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 	"go.5x5.cz/ptah/internal/migratesum"
 	"go.5x5.cz/ptah/migration/migrator"
 )
@@ -153,12 +154,12 @@ func TestCompatMigrateStatus_MirrorsTheAtlasReportShape(t *testing.T) {
 			for _, seed := range tt.seeds {
 				args := append(make([]string, 0), seed...)
 				args = append(args, "--url", "sqlite://"+dbPath, "--dir", "file://"+dir)
-				_, seedStderr, seedErr := runCompat(args...)
+				_, seedStderr, seedErr := atlastest.RunCompat(args...)
 				c.Assert(errorText(seedErr), qt.Matches, tt.wantSeedErr,
 					qt.Commentf("stderr:\n%s", seedStderr))
 			}
 
-			stdout, stderr, err := runCompat(
+			stdout, stderr, err := atlastest.RunCompat(
 				"migrate", "status",
 				"--url", "sqlite://"+dbPath,
 				"--dir", "file://"+dir,
@@ -194,7 +195,7 @@ func TestCompatMigrateStatus_HalfAppliedFailureBlock(t *testing.T) {
 	writeStatusShapeDirtyDir(c, dir)
 	seedStatusShapeFailing(c, dir, dbPath)
 
-	stdout, stderr, err := runCompat(
+	stdout, stderr, err := atlastest.RunCompat(
 		"migrate", "status",
 		"--url", "sqlite://"+dbPath,
 		"--dir", "file://"+dir,
@@ -218,7 +219,7 @@ func TestCompatMigrateStatus_HalfAppliedFailureBlock(t *testing.T) {
 // revision row records applied=1 of 2.
 func seedStatusShapeFailing(c *qt.C, dir, dbPath string) {
 	c.Helper()
-	_, _, err := runCompat(
+	_, _, err := atlastest.RunCompat(
 		"migrate", "apply",
 		"--url", "sqlite://"+dbPath,
 		"--dir", "file://"+dir,

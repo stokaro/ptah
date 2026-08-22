@@ -8,6 +8,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasfilter"
 	"go.5x5.cz/ptah/internal/envbool/envbooltest"
@@ -69,10 +70,10 @@ func TestSchemaApplyUnmatchedExcludeOptInIsResolvedBeforeAnyWork(t *testing.T) {
 			test.env(t)
 			dir := t.TempDir()
 			targetPath := filepath.Join(dir, "target.db")
-			seedSQLiteDBAt(t, targetPath, "CREATE TABLE users (id INTEGER PRIMARY KEY); CREATE TABLE legacy (id INTEGER PRIMARY KEY)")
+			atlastest.SeedSQLiteDBAt(t, targetPath, "CREATE TABLE users (id INTEGER PRIMARY KEY); CREATE TABLE legacy (id INTEGER PRIMARY KEY)")
 			schemaPath := writeUnmatchedExcludeSchemaFile(c, dir)
 
-			out, err := runCompatCommand(t,
+			out, err := atlastest.RunCompatCommand(t,
 				"schema", "apply",
 				"--auto-approve",
 				"--url", "sqlite://"+targetPath,

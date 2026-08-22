@@ -7,6 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 	"go.5x5.cz/ptah/dbschema"
 )
 
@@ -27,10 +28,10 @@ DROP TABLE posts;
 func setupMetadataRowDatabase(c *qt.C, dir string) (migrationsDir, dbPath string) {
 	c.Helper()
 	migrationsDir = filepath.Join(dir, "migrations")
-	writeAtlasApplyProjectMigration(c, migrationsDir, "20260801000001_create_users.sql",
+	atlastest.WriteAtlasApplyProjectMigration(c, migrationsDir, "20260801000001_create_users.sql",
 		"CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT);\n")
-	writeAtlasApplyProjectMigration(c, migrationsDir, "20260801000002_create_posts.sql", compatTxtarPostsWithDown)
-	writeAtlasApplyProjectSum(c, migrationsDir)
+	atlastest.WriteAtlasApplyProjectMigration(c, migrationsDir, "20260801000002_create_posts.sql", compatTxtarPostsWithDown)
+	atlastest.WriteAtlasApplyProjectSum(c, migrationsDir)
 	dbPath = filepath.Join(dir, "state.db")
 
 	out, err := executeAtlasProjectCommand(
@@ -93,7 +94,7 @@ func TestMigrateApplyRefusesFlywayIdentityCollidingWithAtlasMetadata(t *testing.
 	c.Assert(message, qt.Contains, `.atlas_cloud_identifier`)
 	c.Assert(message, qt.Contains,
 		`version ".atlas_cloud_identifier" with more than 3 components and cannot map to an int64 Atlas version`)
-	c.Assert(sqliteTableCount(c, dbPath, "metadata_collision_must_not_run"), qt.Equals, 0)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "metadata_collision_must_not_run"), qt.Equals, 0)
 }
 
 func TestMigrateDownDryRunReadsRealVersionWithMetadataDotRow(t *testing.T) {
@@ -115,5 +116,5 @@ func TestMigrateDownDryRunReadsRealVersionWithMetadataDotRow(t *testing.T) {
 	c.Assert(out, qt.Contains, "Current version: 20260801000002")
 	c.Assert(out, qt.Not(qt.Contains), "already at or below target")
 	// Dry run: the schema and the metadata row are untouched.
-	c.Assert(sqliteTableCount(c, dbPath, "posts"), qt.Equals, 1)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "posts"), qt.Equals, 1)
 }

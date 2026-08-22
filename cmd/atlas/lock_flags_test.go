@@ -19,6 +19,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/cmd/atlas"
+	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 )
 
 const (
@@ -117,7 +118,7 @@ func TestCompatLockFlagContradictionsRefused(t *testing.T) {
 
 			// The contradiction is refused before the migration directory or
 			// desired schema is read, so neither has to exist.
-			c.Assert(err, qt.ErrorMatches, regexpQuote(tt.wantErr))
+			c.Assert(err, qt.ErrorMatches, atlastest.RegexpQuote(tt.wantErr))
 		})
 	}
 }
@@ -159,9 +160,9 @@ func TestMigrateApplyNamedLockReachesMigrator(t *testing.T) {
 			dir := t.TempDir()
 			dbPath := filepath.Join(dir, "lock-apply.db")
 			migrationsDir := filepath.Join(dir, "migrations")
-			writeAtlasApplyProjectMigration(c, migrationsDir, "20260101000001_init.sql",
+			atlastest.WriteAtlasApplyProjectMigration(c, migrationsDir, "20260101000001_init.sql",
 				"CREATE TABLE lock_flag_users (id INTEGER PRIMARY KEY);\n")
-			writeAtlasApplyProjectSum(c, migrationsDir)
+			atlastest.WriteAtlasApplyProjectSum(c, migrationsDir)
 
 			args := append([]string{
 				"migrate", "apply",
@@ -175,7 +176,7 @@ func TestMigrateApplyNamedLockReachesMigrator(t *testing.T) {
 			c.Assert(out, qt.Contains, "Migration complete. Current version: 20260101000001")
 			c.Assert(strings.Contains(out, migrateApplyNamedLockNote), qt.Equals, tt.wantNote,
 				qt.Commentf("output:\n%s", out))
-			c.Assert(sqliteTableCount(c, dbPath, "lock_flag_users"), qt.Equals, 1)
+			c.Assert(atlastest.SqliteTableCount(c, dbPath, "lock_flag_users"), qt.Equals, 1)
 		})
 	}
 }
@@ -220,7 +221,7 @@ func TestSchemaApplyNamedLockReachesLockMachinery(t *testing.T) {
 			// The --lock-timeout wording never appears alongside --skip-lock:
 			// a run that takes no lock has no timeout to ignore.
 			c.Assert(out, qt.Not(qt.Contains), schemaApplyLockUnsupportedNote)
-			c.Assert(sqliteTableCount(c, dbPath, "lock_flag_schema"), qt.Equals, 1)
+			c.Assert(atlastest.SqliteTableCount(c, dbPath, "lock_flag_schema"), qt.Equals, 1)
 		})
 	}
 }
@@ -243,15 +244,4 @@ func runCompatLockCommand(args []string) (string, error) {
 	cmd.SetArgs(args)
 	err := cmd.Execute()
 	return out.String(), err
-}
-
-// regexpQuote escapes a literal error message for qt.ErrorMatches, which
-// anchors and compiles its argument as a regular expression.
-func regexpQuote(literal string) string {
-	replacer := strings.NewReplacer(
-		`\`, `\\`, `.`, `\.`, `+`, `\+`, `*`, `\*`, `?`, `\?`,
-		`(`, `\(`, `)`, `\)`, `[`, `\[`, `]`, `\]`, `{`, `\{`, `}`, `\}`,
-		`^`, `\^`, `$`, `\$`, `|`, `\|`,
-	)
-	return replacer.Replace(literal)
 }

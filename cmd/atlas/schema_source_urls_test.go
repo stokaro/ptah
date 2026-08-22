@@ -2,7 +2,6 @@ package atlas_test
 
 import (
 	"bytes"
-	"context"
 	"os"
 	"path/filepath"
 	"testing"
@@ -10,36 +9,10 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/cmd/atlas"
-	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 	"go.5x5.cz/ptah/internal/migratesum"
 	"go.5x5.cz/ptah/migration/migrator"
 )
-
-// seedSQLiteDB creates a SQLite database with the given DDL and returns its
-// path.
-func seedSQLiteDB(c *qt.C, ddl string) string {
-	c.Helper()
-	dbPath := filepath.Join(c.TempDir(), "seed.db")
-	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)
-	c.Assert(err, qt.IsNil)
-	defer dbschema.CloseAndWarn(conn)
-	_, err = conn.ExecContext(context.Background(), ddl)
-	c.Assert(err, qt.IsNil)
-	return dbPath
-}
-
-func sqliteHasTable(t *testing.T, dbPath, table string) bool {
-	t.Helper()
-	c := qt.New(t)
-	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)
-	c.Assert(err, qt.IsNil)
-	defer dbschema.CloseAndWarn(conn)
-	var count int
-	err = conn.QueryRowContext(context.Background(),
-		"SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?", table).Scan(&count)
-	c.Assert(err, qt.IsNil)
-	return count == 1
-}
 
 func writeAtlasFormatMigrations(t *testing.T, ddl string) string {
 	t.Helper()
@@ -53,7 +26,7 @@ func writeAtlasFormatMigrations(t *testing.T, ddl string) string {
 
 func TestSchemaApplyDatabaseURLSource(t *testing.T) {
 	c := qt.New(t)
-	sourcePath := seedSQLiteDB(c, "CREATE TABLE mirrored_users (id INTEGER PRIMARY KEY)")
+	sourcePath := atlastest.SeedSQLiteDB(c, "CREATE TABLE mirrored_users (id INTEGER PRIMARY KEY)")
 	targetPath := filepath.Join(t.TempDir(), "target.db")
 	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
@@ -70,7 +43,7 @@ func TestSchemaApplyDatabaseURLSource(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Contains, "Schema apply completed successfully.")
-	c.Assert(sqliteHasTable(t, targetPath, "mirrored_users"), qt.IsTrue)
+	c.Assert(atlastest.SqliteHasTable(t, targetPath, "mirrored_users"), qt.IsTrue)
 }
 
 func TestSchemaApplyMigrationDirSource(t *testing.T) {
@@ -93,7 +66,7 @@ func TestSchemaApplyMigrationDirSource(t *testing.T) {
 	err := cmd.Execute()
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(sqliteHasTable(t, targetPath, "replayed_users"), qt.IsTrue)
+	c.Assert(atlastest.SqliteHasTable(t, targetPath, "replayed_users"), qt.IsTrue)
 }
 
 func TestSchemaApplyMigrationDirSourceRequiresDevURLBeforeTarget(t *testing.T) {
@@ -170,7 +143,7 @@ func TestSchemaApplyMixedSourceKindsFailBeforeTarget(t *testing.T) {
 
 func TestSchemaDiffDatabaseURLFromSource(t *testing.T) {
 	c := qt.New(t)
-	sourcePath := seedSQLiteDB(c, "CREATE TABLE users (id INTEGER PRIMARY KEY)")
+	sourcePath := atlastest.SeedSQLiteDB(c, "CREATE TABLE users (id INTEGER PRIMARY KEY)")
 	dir := t.TempDir()
 	to := filepath.Join(dir, "to.sql")
 	c.Assert(os.WriteFile(to, []byte(`
@@ -291,7 +264,7 @@ CREATE TABLE env_users (
 	err := cmd.Execute()
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(sqliteHasTable(t, targetPath, "env_users"), qt.IsTrue)
+	c.Assert(atlastest.SqliteHasTable(t, targetPath, "env_users"), qt.IsTrue)
 }
 
 func TestSchemaDiffEnvSrcWithoutConfigFails(t *testing.T) {

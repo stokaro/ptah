@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+
+	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 )
 
 // The two `migrate lint --format` cells stokaro/ptah#1241 lists as
@@ -51,13 +53,13 @@ type lintFormatCase struct {
 // twice.
 func writeLintFormatFixture(c *qt.C, dir string) {
 	c.Helper()
-	writeHashedAtlasDir(
+	atlastest.WriteHashedAtlasDir(
 		c,
 		dir,
 		"20240101000000_base.sql",
 		"CREATE TABLE kept (id INTEGER);\nCREATE TABLE staging (id INTEGER);\n",
 	)
-	writeHashedAtlasDir(c, dir, "20240101000001_drop.sql", lintFormatDropComment+"DROP TABLE staging;\n")
+	atlastest.WriteHashedAtlasDir(c, dir, "20240101000001_drop.sql", lintFormatDropComment+"DROP TABLE staging;\n")
 }
 
 func TestCompatMigrateLintFormatModel(t *testing.T) {
@@ -129,7 +131,7 @@ func TestCompatMigrateLintFormatModel(t *testing.T) {
 			t.Chdir(root)
 			writeLintFormatFixture(c, filepath.Join(root, "migrations"))
 
-			output, err := runCompatCommand(t,
+			output, err := atlastest.RunCompatCommand(t,
 				"migrate", "lint",
 				"--dir", "file://migrations",
 				"--dev-url", "sqlite://file?mode=memory",
@@ -173,10 +175,10 @@ func TestCompatMigrateLintFormatCleanDirectoryExitsZero(t *testing.T) {
 			root := t.TempDir()
 			t.Chdir(root)
 			dir := filepath.Join(root, "migrations")
-			writeHashedAtlasDir(c, dir, "20240101000000_base.sql", "CREATE TABLE kept (id INTEGER);\n")
-			writeHashedAtlasDir(c, dir, "20240101000001_more.sql", "CREATE TABLE also_kept (id INTEGER);\n")
+			atlastest.WriteHashedAtlasDir(c, dir, "20240101000000_base.sql", "CREATE TABLE kept (id INTEGER);\n")
+			atlastest.WriteHashedAtlasDir(c, dir, "20240101000001_more.sql", "CREATE TABLE also_kept (id INTEGER);\n")
 
-			output, err := runCompatCommand(t,
+			output, err := atlastest.RunCompatCommand(t,
 				"migrate", "lint",
 				"--dir", "file://migrations",
 				"--dev-url", "sqlite://file?mode=memory",
@@ -204,10 +206,10 @@ func TestCompatMigrateLintFormatSchemaWithoutDevDatabase(t *testing.T) {
 	t.Chdir(root)
 	t.Setenv("PTAH_ATLAS_LINT_WITHOUT_DEV_URL", "1")
 	dir := filepath.Join(root, "migrations")
-	writeHashedAtlasDir(c, dir, "20240101000000_base.sql", "CREATE TABLE kept (id INTEGER);\n")
-	writeHashedAtlasDir(c, dir, "20240101000001_more.sql", "CREATE TABLE also_kept (id INTEGER);\n")
+	atlastest.WriteHashedAtlasDir(c, dir, "20240101000000_base.sql", "CREATE TABLE kept (id INTEGER);\n")
+	atlastest.WriteHashedAtlasDir(c, dir, "20240101000001_more.sql", "CREATE TABLE also_kept (id INTEGER);\n")
 
-	output, err := runCompatCommand(t,
+	output, err := atlastest.RunCompatCommand(t,
 		"migrate", "lint",
 		"--dir", "file://migrations",
 		"--latest", "1",
@@ -227,10 +229,10 @@ func TestCompatMigrateLintTextReportUnchangedBySchemaCapture(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
 	dir := filepath.Join(root, "migrations")
-	writeHashedAtlasDir(c, dir, "20240101000000_base.sql", "CREATE TABLE kept (id INTEGER);\n")
-	writeHashedAtlasDir(c, dir, "20240101000001_more.sql", "CREATE TABLE also_kept (id INTEGER);\n")
+	atlastest.WriteHashedAtlasDir(c, dir, "20240101000000_base.sql", "CREATE TABLE kept (id INTEGER);\n")
+	atlastest.WriteHashedAtlasDir(c, dir, "20240101000001_more.sql", "CREATE TABLE also_kept (id INTEGER);\n")
 
-	output, err := runCompatCommand(t,
+	output, err := atlastest.RunCompatCommand(t,
 		"migrate", "lint",
 		"--dir", "file://migrations",
 		"--dev-url", "sqlite://file?mode=memory",

@@ -7,6 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 	"go.5x5.cz/ptah/internal/migratesum"
 	"go.5x5.cz/ptah/migration/migrator"
 )
@@ -71,7 +72,7 @@ func TestCompatCommand_MigrateApplyAllowDirtyRecoversAfterBodyFailure(t *testing
 	c := qt.New(t)
 	migrationsDir, dbPath := writeDirtyRetryFixture(c, dirtyRetryFailingBody)
 
-	_, _, err := runCompatStreams(c,
+	_, _, err := atlastest.RunCompatStreams(c,
 		"migrate", "apply",
 		"--url", "sqlite://"+dbPath,
 		"--dir", "file://"+migrationsDir,
@@ -79,12 +80,12 @@ func TestCompatCommand_MigrateApplyAllowDirtyRecoversAfterBodyFailure(t *testing
 	)
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Contains, "failed to apply migration "+dirtyRetryVersionTwo)
-	c.Assert(compatTableNames(c, dbPath), qt.Contains, "dr_two")
+	c.Assert(atlastest.CompatTableNames(c, dbPath), qt.Contains, "dr_two")
 
 	// Without the flag the dirty guard still refuses, so --allow-dirty is doing
 	// the work rather than the guard having quietly disappeared.
 	writeDirtyRetrySecond(c, migrationsDir, dirtyRetryFixedBody)
-	_, _, guardErr := runCompatStreams(c,
+	_, _, guardErr := atlastest.RunCompatStreams(c,
 		"migrate", "apply",
 		"--url", "sqlite://"+dbPath,
 		"--dir", "file://"+migrationsDir,
@@ -93,7 +94,7 @@ func TestCompatCommand_MigrateApplyAllowDirtyRecoversAfterBodyFailure(t *testing
 	c.Assert(guardErr, qt.IsNotNil)
 	c.Assert(guardErr.Error(), qt.Contains, "is dirty")
 
-	stdout, _, retryErr := runCompatStreams(c,
+	stdout, _, retryErr := atlastest.RunCompatStreams(c,
 		"migrate", "apply",
 		"--url", "sqlite://"+dbPath,
 		"--dir", "file://"+migrationsDir,
@@ -102,16 +103,16 @@ func TestCompatCommand_MigrateApplyAllowDirtyRecoversAfterBodyFailure(t *testing
 	)
 	c.Assert(retryErr, qt.IsNil)
 	c.Assert(stdout, qt.Contains, "Migration complete. Current version: "+dirtyRetryVersionTwo)
-	c.Assert(compatTableNames(c, dbPath), qt.Contains, "dr_two")
-	c.Assert(compatTableNames(c, dbPath), qt.Contains, "dr_three")
+	c.Assert(atlastest.CompatTableNames(c, dbPath), qt.Contains, "dr_two")
+	c.Assert(atlastest.CompatTableNames(c, dbPath), qt.Contains, "dr_three")
 	// One row per version: the retry reused the dirty row instead of adding one.
 	c.Assert(
-		sqliteAtlasRevisionVersions(c, dbPath),
+		atlastest.SqliteAtlasRevisionVersions(c, dbPath),
 		qt.DeepEquals,
 		[]string{dirtyRetryVersionOne, dirtyRetryVersionTwo},
 	)
 
-	statusOut, _, statusErr := runCompatStreams(c,
+	statusOut, _, statusErr := atlastest.RunCompatStreams(c,
 		"migrate", "status",
 		"--url", "sqlite://"+dbPath,
 		"--dir", "file://"+migrationsDir,
@@ -134,7 +135,7 @@ func TestCompatCommand_DirtyGuardRefusalLeavesTheDatabaseWritable(t *testing.T) 
 	c := qt.New(t)
 	migrationsDir, dbPath := writeDirtyRetryFixture(c, dirtyRetryFailingBody)
 
-	_, _, err := runCompatStreams(c,
+	_, _, err := atlastest.RunCompatStreams(c,
 		"migrate", "apply",
 		"--url", "sqlite://"+dbPath,
 		"--dir", "file://"+migrationsDir,
@@ -143,7 +144,7 @@ func TestCompatCommand_DirtyGuardRefusalLeavesTheDatabaseWritable(t *testing.T) 
 	c.Assert(err, qt.IsNotNil)
 
 	// The refusal itself: this is the run that leaked.
-	_, _, guardErr := runCompatStreams(c,
+	_, _, guardErr := atlastest.RunCompatStreams(c,
 		"migrate", "apply",
 		"--url", "sqlite://"+dbPath,
 		"--dir", "file://"+migrationsDir,
@@ -153,13 +154,13 @@ func TestCompatCommand_DirtyGuardRefusalLeavesTheDatabaseWritable(t *testing.T) 
 	c.Assert(guardErr.Error(), qt.Contains, "is dirty")
 
 	// Any write afterwards, in the same process, must still go through.
-	_, _, setErr := runCompatStreams(c,
+	_, _, setErr := atlastest.RunCompatStreams(c,
 		"migrate", "set", dirtyRetryVersionOne,
 		"--url", "sqlite://"+dbPath,
 		"--dir", "file://"+migrationsDir,
 	)
 	c.Assert(setErr, qt.IsNil)
-	c.Assert(sqliteAtlasRevisionVersions(c, dbPath), qt.DeepEquals, []string{dirtyRetryVersionOne})
+	c.Assert(atlastest.SqliteAtlasRevisionVersions(c, dbPath), qt.DeepEquals, []string{dirtyRetryVersionOne})
 }
 
 // TestCompatCommand_MigrateStatusReportsTheDirtyMigration covers the reporting
@@ -176,7 +177,7 @@ func TestCompatCommand_MigrateStatusReportsTheDirtyMigration(t *testing.T) {
 	c := qt.New(t)
 	migrationsDir, dbPath := writeDirtyRetryFixture(c, dirtyRetryFailingBody)
 
-	_, _, err := runCompatStreams(c,
+	_, _, err := atlastest.RunCompatStreams(c,
 		"migrate", "apply",
 		"--url", "sqlite://"+dbPath,
 		"--dir", "file://"+migrationsDir,
@@ -184,7 +185,7 @@ func TestCompatCommand_MigrateStatusReportsTheDirtyMigration(t *testing.T) {
 	)
 	c.Assert(err, qt.IsNotNil)
 
-	statusOut, _, statusErr := runCompatStreams(c,
+	statusOut, _, statusErr := atlastest.RunCompatStreams(c,
 		"migrate", "status",
 		"--url", "sqlite://"+dbPath,
 		"--dir", "file://"+migrationsDir,

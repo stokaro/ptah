@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"go.5x5.cz/ptah/cmd/atlas"
+	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 	"go.5x5.cz/ptah/internal/migratesum"
 	"go.5x5.cz/ptah/migration/migrator"
 )
@@ -332,7 +333,7 @@ func TestCompatURLDiagnostics_MatchThePinnedBinary(t *testing.T) {
 	for _, tt := range compatURLRows() {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			stdout, stderr, err := runCompat(tt.args(fx)...)
+			stdout, stderr, err := atlastest.RunCompat(tt.args(fx)...)
 
 			c.Assert(err, qt.IsNotNil, qt.Commentf("stdout=%q stderr=%q", stdout, stderr))
 			c.Assert(stderr, qt.Equals, tt.wantStderr)

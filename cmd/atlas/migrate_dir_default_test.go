@@ -12,8 +12,8 @@ import (
 
 	"go.5x5.cz/ptah/atlascompat"
 	"go.5x5.cz/ptah/cmd/atlas"
+	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 	"go.5x5.cz/ptah/dbschema"
-	"go.5x5.cz/ptah/migration/migrator"
 )
 
 // The `--dir` default matrix for stokaro/ptah#1241 items 2, 3 and 4.
@@ -50,7 +50,7 @@ func TestCompatMigrateDirDefaults(t *testing.T) {
 			// #1241 item 2. The headline row.
 			name: "apply defaults to file://migrations",
 			setup: func(c *qt.C, root string) {
-				writeHashedAtlasDir(c, filepath.Join(root, "migrations"), "20240101000000_init.sql", migrationSQL)
+				atlastest.WriteHashedAtlasDir(c, filepath.Join(root, "migrations"), "20240101000000_init.sql", migrationSQL)
 			},
 			args: []string{"migrate", "apply", "--url", "sqlite://local.db?_fk=1"},
 			assert: func(c *qt.C, root string, err error, output string) {
@@ -78,7 +78,7 @@ func TestCompatMigrateDirDefaults(t *testing.T) {
 				// texts also differ per platform -- so spelling either one asserts
 				// a coincidence.
 				c.Assert(err, qt.ErrorIs, fs.ErrNotExist)
-				assertPathAbsent(c, filepath.Join(root, "migrations"))
+				atlastest.AssertPathAbsent(c, filepath.Join(root, "migrations"))
 			},
 		},
 		{
@@ -87,8 +87,8 @@ func TestCompatMigrateDirDefaults(t *testing.T) {
 			// create the wrong table rather than failing visibly.
 			name: "apply --dir overrides the default",
 			setup: func(c *qt.C, root string) {
-				writeHashedAtlasDir(c, filepath.Join(root, "migrations"), "20240101000000_decoy.sql", decoySQL)
-				writeHashedAtlasDir(c, filepath.Join(root, "elsewhere"), "20240101000000_init.sql", migrationSQL)
+				atlastest.WriteHashedAtlasDir(c, filepath.Join(root, "migrations"), "20240101000000_decoy.sql", decoySQL)
+				atlastest.WriteHashedAtlasDir(c, filepath.Join(root, "elsewhere"), "20240101000000_init.sql", migrationSQL)
 			},
 			args: []string{"migrate", "apply", "--url", "sqlite://local.db?_fk=1", "--dir", "file://elsewhere"},
 			assert: func(c *qt.C, root string, err error, output string) {
@@ -102,7 +102,7 @@ func TestCompatMigrateDirDefaults(t *testing.T) {
 			// does; a fallback would apply the wrong directory and exit 0.
 			name: "apply --dir typo does not fall back to the default",
 			setup: func(c *qt.C, root string) {
-				writeHashedAtlasDir(c, filepath.Join(root, "migrations"), "20240101000000_decoy.sql", decoySQL)
+				atlastest.WriteHashedAtlasDir(c, filepath.Join(root, "migrations"), "20240101000000_decoy.sql", decoySQL)
 			},
 			args: []string{"migrate", "apply", "--url", "sqlite://local.db?_fk=1", "--dir", "file://migrtions"},
 			assert: func(c *qt.C, root string, err error, output string) {
@@ -118,7 +118,7 @@ func TestCompatMigrateDirDefaults(t *testing.T) {
 			name: "apply default directory is still checksum gated",
 			setup: func(c *qt.C, root string) {
 				dir := filepath.Join(root, "migrations")
-				writeHashedAtlasDir(c, dir, "20240101000000_init.sql", migrationSQL)
+				atlastest.WriteHashedAtlasDir(c, dir, "20240101000000_init.sql", migrationSQL)
 				c.Assert(os.WriteFile(
 					filepath.Join(dir, "20240101000000_init.sql"),
 					[]byte("CREATE TABLE edited (id INTEGER PRIMARY KEY);\n"),
@@ -140,8 +140,8 @@ func TestCompatMigrateDirDefaults(t *testing.T) {
 			args:  []string{"migrate", "new", "addcol"},
 			assert: func(c *qt.C, root string, err error, output string) {
 				c.Assert(err, qt.IsNil, qt.Commentf("%s", output))
-				assertOneMigrationNamed(c, filepath.Join(root, "migrations"), "*_addcol.sql")
-				assertPathPresent(c, filepath.Join(root, "migrations", atlascompat.AtlasSumFileName))
+				atlastest.AssertOneMigrationNamed(c, filepath.Join(root, "migrations"), "*_addcol.sql")
+				atlastest.AssertPathPresent(c, filepath.Join(root, "migrations", atlascompat.AtlasSumFileName))
 			},
 		},
 		{
@@ -152,8 +152,8 @@ func TestCompatMigrateDirDefaults(t *testing.T) {
 			args: []string{"migrate", "new", "addcol", "--dir", "file://elsewhere"},
 			assert: func(c *qt.C, root string, err error, output string) {
 				c.Assert(err, qt.IsNil, qt.Commentf("%s", output))
-				assertOneMigrationNamed(c, filepath.Join(root, "elsewhere"), "*_addcol.sql")
-				assertDirEmpty(c, filepath.Join(root, "migrations"))
+				atlastest.AssertOneMigrationNamed(c, filepath.Join(root, "elsewhere"), "*_addcol.sql")
+				atlastest.AssertDirEmpty(c, filepath.Join(root, "migrations"))
 			},
 		},
 		{
@@ -165,8 +165,8 @@ func TestCompatMigrateDirDefaults(t *testing.T) {
 			args:  []string{"migrate", "new", "addcol", "--dir", "file://a/b/c"},
 			assert: func(c *qt.C, root string, err error, output string) {
 				c.Assert(err, qt.IsNil, qt.Commentf("%s", output))
-				assertOneMigrationNamed(c, filepath.Join(root, "a", "b", "c"), "*_addcol.sql")
-				assertPathPresent(c, filepath.Join(root, "a", "b", "c", atlascompat.AtlasSumFileName))
+				atlastest.AssertOneMigrationNamed(c, filepath.Join(root, "a", "b", "c"), "*_addcol.sql")
+				atlastest.AssertPathPresent(c, filepath.Join(root, "a", "b", "c", atlascompat.AtlasSumFileName))
 			},
 		},
 		{
@@ -214,7 +214,7 @@ func TestCompatMigrateDirDefaults(t *testing.T) {
 			// untouched.
 			name: "new atlas.hcl migration.dir outranks the default",
 			setup: func(c *qt.C, root string) {
-				writeHashedAtlasDir(c, filepath.Join(root, "migrations"), "20240101000000_decoy.sql", decoySQL)
+				atlastest.WriteHashedAtlasDir(c, filepath.Join(root, "migrations"), "20240101000000_decoy.sql", decoySQL)
 				c.Assert(os.MkdirAll(filepath.Join(root, "mydir"), 0o755), qt.IsNil)
 				c.Assert(os.WriteFile(filepath.Join(root, "atlas.hcl"), []byte(`env "local" {
   migration {
@@ -226,7 +226,7 @@ func TestCompatMigrateDirDefaults(t *testing.T) {
 			args: []string{"migrate", "new", "addcol", "--env", "local"},
 			assert: func(c *qt.C, root string, err error, output string) {
 				c.Assert(err, qt.IsNil, qt.Commentf("%s", output))
-				assertOneMigrationNamed(c, filepath.Join(root, "mydir"), "*_addcol.sql")
+				atlastest.AssertOneMigrationNamed(c, filepath.Join(root, "mydir"), "*_addcol.sql")
 				assertNoMigrationNamed(c, filepath.Join(root, "migrations"), "*_addcol.sql")
 			},
 		},
@@ -244,8 +244,8 @@ func TestCompatMigrateDirDefaults(t *testing.T) {
 			args: []string{"migrate", "new", "addcol"},
 			assert: func(c *qt.C, root string, err error, output string) {
 				c.Assert(err, qt.IsNil, qt.Commentf("%s", output))
-				assertOneMigrationNamed(c, filepath.Join(root, "mydir"), "*_addcol.sql")
-				assertDirEmpty(c, filepath.Join(root, "migrations"))
+				atlastest.AssertOneMigrationNamed(c, filepath.Join(root, "mydir"), "*_addcol.sql")
+				atlastest.AssertDirEmpty(c, filepath.Join(root, "migrations"))
 			},
 		},
 	}
@@ -295,46 +295,11 @@ func TestCompatMigrateDirDefaultIsDocumented(t *testing.T) {
 	}
 }
 
-func writeHashedAtlasDir(c *qt.C, dir, name, body string) {
-	c.Helper()
-	c.Assert(os.MkdirAll(dir, 0o755), qt.IsNil)
-	c.Assert(os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600), qt.IsNil)
-	sum, err := atlascompat.ComputeSum(os.DirFS(dir), migrator.MigrationDirFormatAtlas)
-	c.Assert(err, qt.IsNil)
-	c.Assert(os.WriteFile(filepath.Join(dir, atlascompat.AtlasSumFileName), sum.Bytes(), 0o600), qt.IsNil)
-}
-
-func assertOneMigrationNamed(c *qt.C, dir, pattern string) {
-	c.Helper()
-	matches, err := filepath.Glob(filepath.Join(dir, pattern))
-	c.Assert(err, qt.IsNil)
-	c.Assert(matches, qt.HasLen, 1)
-}
-
 func assertNoMigrationNamed(c *qt.C, dir, pattern string) {
 	c.Helper()
 	matches, err := filepath.Glob(filepath.Join(dir, pattern))
 	c.Assert(err, qt.IsNil)
 	c.Assert(matches, qt.HasLen, 0)
-}
-
-func assertDirEmpty(c *qt.C, dir string) {
-	c.Helper()
-	entries, err := os.ReadDir(dir)
-	c.Assert(err, qt.IsNil)
-	c.Assert(entries, qt.HasLen, 0)
-}
-
-func assertPathPresent(c *qt.C, path string) {
-	c.Helper()
-	_, err := os.Stat(path)
-	c.Assert(err, qt.IsNil)
-}
-
-func assertPathAbsent(c *qt.C, path string) {
-	c.Helper()
-	_, err := os.Stat(path)
-	c.Assert(os.IsNotExist(err), qt.IsTrue, qt.Commentf("expected %s to be absent, stat error was %v", path, err))
 }
 
 func assertRegularFileContent(c *qt.C, path, want string) {

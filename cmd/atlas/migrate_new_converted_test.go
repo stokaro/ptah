@@ -10,6 +10,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 	"go.5x5.cz/ptah/internal/migratesum"
 )
 
@@ -338,7 +339,7 @@ func TestCompatMigrateNewConverted_CreatedDirectoryVerifies(t *testing.T) {
 			c := qt.New(t)
 			dir := c.TempDir()
 			for _, file := range tt.seed {
-				writeAtlasApplyProjectMigration(c, dir, file.name, file.sql)
+				atlastest.WriteAtlasApplyProjectMigration(c, dir, file.name, file.sql)
 			}
 			_, stderr, err := runCompatExit("migrate", "hash", "--dir", "file://"+dir, "--dir-format", tt.name)
 			c.Assert(err, qt.IsNil, qt.Commentf("hash stderr: %s", stderr))
@@ -396,7 +397,7 @@ func TestCompatMigrateNewConverted_DriftedDirRefusedBeforeWriting(t *testing.T) 
 	writeGolangMigrateInitPair(c, dir)
 	_, stderr, err := runCompatExit("migrate", "hash", "--dir", "file://"+dir, "--dir-format", "golang-migrate")
 	c.Assert(err, qt.IsNil, qt.Commentf("hash stderr: %s", stderr))
-	writeAtlasApplyProjectMigration(c, dir, "1_init.up.sql", "CREATE TABLE drift (id INTEGER PRIMARY KEY);\n")
+	atlastest.WriteAtlasApplyProjectMigration(c, dir, "1_init.up.sql", "CREATE TABLE drift (id INTEGER PRIMARY KEY);\n")
 	before := newConvertedNames(c, dir)
 
 	_, _, err = runCompatExit("migrate", "new", "addcol",
@@ -409,8 +410,8 @@ func TestCompatMigrateNewConverted_DriftedDirRefusedBeforeWriting(t *testing.T) 
 // writeGolangMigrateInitPair writes the up/down pair both refusals start from.
 func writeGolangMigrateInitPair(c *qt.C, dir string) {
 	c.Helper()
-	writeAtlasApplyProjectMigration(c, dir, "1_init.up.sql", "CREATE TABLE g1 (id INTEGER PRIMARY KEY);\n")
-	writeAtlasApplyProjectMigration(c, dir, "1_init.down.sql", "DROP TABLE g1;\n")
+	atlastest.WriteAtlasApplyProjectMigration(c, dir, "1_init.up.sql", "CREATE TABLE g1 (id INTEGER PRIMARY KEY);\n")
+	atlastest.WriteAtlasApplyProjectMigration(c, dir, "1_init.down.sql", "DROP TABLE g1;\n")
 }
 
 // newConvertedFile is one migration file a fixture writes, in the layout's own

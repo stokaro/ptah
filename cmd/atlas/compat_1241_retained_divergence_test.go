@@ -7,6 +7,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 	"go.5x5.cz/ptah/internal/migratesum"
 	"go.5x5.cz/ptah/migration/migrator"
 )
@@ -84,15 +85,15 @@ func TestCompatCommand_AnEditedAppliedFileIsRefused(t *testing.T) {
 		retainedVersionEarly + "_early.sql": retainedEditedBody,
 	})
 
-	_, _, err := runCompatStreams(c,
+	_, _, err := atlastest.RunCompatStreams(c,
 		"migrate", "apply",
 		"--url", "sqlite://"+dbPath,
 		"--dir", "file://"+applied,
 	)
 	c.Assert(err, qt.IsNil)
-	c.Assert(compatTableNames(c, dbPath), qt.Contains, "rt_early")
+	c.Assert(atlastest.CompatTableNames(c, dbPath), qt.Contains, "rt_early")
 
-	_, _, editedErr := runCompatStreams(c,
+	_, _, editedErr := atlastest.RunCompatStreams(c,
 		"migrate", "apply",
 		"--url", "sqlite://"+dbPath,
 		"--dir", "file://"+edited,
@@ -131,15 +132,15 @@ func TestCompatCommand_APrefixInsertionRequiresNonLinear(t *testing.T) {
 		retainedVersionLate + "_late.sql":   retainedLateBody,
 	})
 
-	_, _, err := runCompatStreams(c,
+	_, _, err := atlastest.RunCompatStreams(c,
 		"migrate", "apply",
 		"--url", "sqlite://"+dbPath,
 		"--dir", "file://"+lateOnly,
 	)
 	c.Assert(err, qt.IsNil)
-	c.Assert(compatTableNames(c, dbPath), qt.Contains, "rt_late")
+	c.Assert(atlastest.CompatTableNames(c, dbPath), qt.Contains, "rt_late")
 
-	_, _, insertErr := runCompatStreams(c,
+	_, _, insertErr := atlastest.RunCompatStreams(c,
 		"migrate", "apply",
 		"--url", "sqlite://"+dbPath,
 		"--dir", "file://"+bothFiles,
@@ -147,20 +148,20 @@ func TestCompatCommand_APrefixInsertionRequiresNonLinear(t *testing.T) {
 	c.Assert(insertErr, qt.IsNotNil)
 	c.Assert(insertErr.Error(), qt.Contains, "out-of-order pending migrations")
 	c.Assert(insertErr.Error(), qt.Contains, retainedVersionEarly)
-	c.Assert(compatTableNames(c, dbPath), qt.Not(qt.Contains), "rt_early")
-	c.Assert(sqliteAtlasRevisionVersions(c, dbPath), qt.DeepEquals, []string{retainedVersionLate})
+	c.Assert(atlastest.CompatTableNames(c, dbPath), qt.Not(qt.Contains), "rt_early")
+	c.Assert(atlastest.SqliteAtlasRevisionVersions(c, dbPath), qt.DeepEquals, []string{retainedVersionLate})
 
-	_, _, nonLinearErr := runCompatStreams(c,
+	_, _, nonLinearErr := atlastest.RunCompatStreams(c,
 		"migrate", "apply",
 		"--url", "sqlite://"+dbPath,
 		"--dir", "file://"+bothFiles,
 		"--exec-order", "non-linear",
 	)
 	c.Assert(nonLinearErr, qt.IsNil)
-	c.Assert(compatTableNames(c, dbPath), qt.Contains, "rt_early")
-	c.Assert(sqliteAtlasRevisionVersions(c, dbPath), qt.DeepEquals, []string{retainedVersionEarly, retainedVersionLate})
+	c.Assert(atlastest.CompatTableNames(c, dbPath), qt.Contains, "rt_early")
+	c.Assert(atlastest.SqliteAtlasRevisionVersions(c, dbPath), qt.DeepEquals, []string{retainedVersionEarly, retainedVersionLate})
 
-	_, _, secondErr := runCompatStreams(c,
+	_, _, secondErr := atlastest.RunCompatStreams(c,
 		"migrate", "apply",
 		"--url", "sqlite://"+dbPath,
 		"--dir", "file://"+bothFiles,
@@ -210,15 +211,15 @@ func TestCompatCommand_LinearSkipReproducesThePinnedPrefixInsertion(t *testing.T
 		retainedVersionLate + "_late.sql":   retainedLateBody,
 	})
 
-	_, _, err := runCompatStreams(c,
+	_, _, err := atlastest.RunCompatStreams(c,
 		"migrate", "apply",
 		"--url", "sqlite://"+dbPath,
 		"--dir", "file://"+lateOnly,
 	)
 	c.Assert(err, qt.IsNil)
-	c.Assert(compatTableNames(c, dbPath), qt.Contains, "rt_late")
+	c.Assert(atlastest.CompatTableNames(c, dbPath), qt.Contains, "rt_late")
 
-	_, _, skipErr := runCompatStreams(c,
+	_, _, skipErr := atlastest.RunCompatStreams(c,
 		"migrate", "apply",
 		"--url", "sqlite://"+dbPath,
 		"--dir", "file://"+bothFiles,
@@ -227,20 +228,20 @@ func TestCompatCommand_LinearSkipReproducesThePinnedPrefixInsertion(t *testing.T
 	c.Assert(skipErr, qt.IsNil)
 	// The inserted migration is passed over rather than applied, which is what
 	// that binary's default order does with it.
-	c.Assert(compatTableNames(c, dbPath), qt.Not(qt.Contains), "rt_early")
-	c.Assert(sqliteAtlasRevisionVersions(c, dbPath), qt.DeepEquals, []string{retainedVersionLate})
+	c.Assert(atlastest.CompatTableNames(c, dbPath), qt.Not(qt.Contains), "rt_early")
+	c.Assert(atlastest.SqliteAtlasRevisionVersions(c, dbPath), qt.DeepEquals, []string{retainedVersionLate})
 
 	// Repeating it is stable: skipping is not a one-shot that later promotes the
 	// migration into the applied set.
-	_, _, secondErr := runCompatStreams(c,
+	_, _, secondErr := atlastest.RunCompatStreams(c,
 		"migrate", "apply",
 		"--url", "sqlite://"+dbPath,
 		"--dir", "file://"+bothFiles,
 		"--exec-order", "linear-skip",
 	)
 	c.Assert(secondErr, qt.IsNil)
-	c.Assert(compatTableNames(c, dbPath), qt.Not(qt.Contains), "rt_early")
-	c.Assert(sqliteAtlasRevisionVersions(c, dbPath), qt.DeepEquals, []string{retainedVersionLate})
+	c.Assert(atlastest.CompatTableNames(c, dbPath), qt.Not(qt.Contains), "rt_early")
+	c.Assert(atlastest.SqliteAtlasRevisionVersions(c, dbPath), qt.DeepEquals, []string{retainedVersionLate})
 }
 
 // TestCompatCommand_LintRefusesATrailingPositional pins the fourth verb of
@@ -269,7 +270,7 @@ func TestCompatCommand_LintRefusesATrailingPositional(t *testing.T) {
 	// The dev database is named under the temporary root rather than relatively:
 	// this test does not chdir, so a relative sqlite URL would leave the file in
 	// the package directory and the next run would find it there.
-	_, _, err := runCompatStreams(c,
+	_, _, err := atlastest.RunCompatStreams(c,
 		"migrate", "lint",
 		"--dir", "file://"+migrationsDir,
 		"--dev-url", "sqlite://"+filepath.Join(root, "dev.db"),
@@ -303,7 +304,7 @@ func TestCompatCommand_HashRefusesATrailingPositional(t *testing.T) {
 		retainedVersionEarly + "_early.sql": retainedEarlyBody,
 	})
 
-	_, _, err := runCompatStreams(c, "migrate", "hash", "--dir", "file://"+migrationsDir, "stray")
+	_, _, err := atlastest.RunCompatStreams(c, "migrate", "hash", "--dir", "file://"+migrationsDir, "stray")
 
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Contains, `unexpected positional arguments ["stray"]`)
@@ -324,7 +325,7 @@ func TestCompatCommand_HashAcceptsAVar(t *testing.T) {
 		retainedVersionEarly + "_early.sql": retainedEarlyBody,
 	})
 
-	stdout, stderr, err := runCompatStreams(c, "migrate", "hash", "--dir", "file://"+migrationsDir, "--var", "x=1")
+	stdout, stderr, err := atlastest.RunCompatStreams(c, "migrate", "hash", "--dir", "file://"+migrationsDir, "--var", "x=1")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(stdout, qt.Equals, "")
@@ -364,7 +365,7 @@ func TestCompatCommand_AZeroProgressFailureLeavesNoDirtyRowUnderTheDefaultTxMode
 	c := qt.New(t)
 	migrationsDir, dbPath := writeZeroProgressFixture(c)
 
-	_, _, err := runCompatStreams(c,
+	_, _, err := atlastest.RunCompatStreams(c,
 		"migrate", "apply",
 		"--url", "sqlite://"+dbPath,
 		"--dir", "file://"+migrationsDir,
@@ -372,13 +373,13 @@ func TestCompatCommand_AZeroProgressFailureLeavesNoDirtyRowUnderTheDefaultTxMode
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Contains, retainedVersionLate)
 	// The early migration committed; only the failing one left nothing.
-	c.Assert(compatTableNames(c, dbPath), qt.Contains, "rt_early")
-	c.Assert(sqliteAtlasRevisionVersions(c, dbPath), qt.DeepEquals, []string{retainedVersionEarly})
+	c.Assert(atlastest.CompatTableNames(c, dbPath), qt.Contains, "rt_early")
+	c.Assert(atlastest.SqliteAtlasRevisionVersions(c, dbPath), qt.DeepEquals, []string{retainedVersionEarly})
 
 	// The next run reaches the migration again rather than being turned away by
 	// the dirty guard. It still fails, because the body is still wrong — the
 	// point is which error it is.
-	_, _, retryErr := runCompatStreams(c,
+	_, _, retryErr := atlastest.RunCompatStreams(c,
 		"migrate", "apply",
 		"--url", "sqlite://"+dbPath,
 		"--dir", "file://"+migrationsDir,
@@ -405,19 +406,19 @@ func TestCompatCommand_AZeroProgressFailureUnderTxModeNoneStillRefuses(t *testin
 	c := qt.New(t)
 	migrationsDir, dbPath := writeZeroProgressFixture(c)
 
-	_, _, err := runCompatStreams(c,
+	_, _, err := atlastest.RunCompatStreams(c,
 		"migrate", "apply",
 		"--url", "sqlite://"+dbPath,
 		"--dir", "file://"+migrationsDir,
 		"--tx-mode", "none",
 	)
 	c.Assert(err, qt.IsNotNil)
-	c.Assert(sqliteAtlasRevisionVersions(c, dbPath), qt.DeepEquals, []string{
+	c.Assert(atlastest.SqliteAtlasRevisionVersions(c, dbPath), qt.DeepEquals, []string{
 		retainedVersionEarly,
 		retainedVersionLate,
 	})
 
-	_, _, retryErr := runCompatStreams(c,
+	_, _, retryErr := atlastest.RunCompatStreams(c,
 		"migrate", "apply",
 		"--url", "sqlite://"+dbPath,
 		"--dir", "file://"+migrationsDir,
@@ -428,7 +429,7 @@ func TestCompatCommand_AZeroProgressFailureUnderTxModeNoneStillRefuses(t *testin
 	c.Assert(retryErr.Error(), qt.Contains, "applied=0/1")
 
 	// --allow-dirty is the documented way through, and it still is.
-	_, _, allowErr := runCompatStreams(c,
+	_, _, allowErr := atlastest.RunCompatStreams(c,
 		"migrate", "apply",
 		"--url", "sqlite://"+dbPath,
 		"--dir", "file://"+migrationsDir,

@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+
+	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 )
 
 // These tests pin stokaro/ptah#1013 section 1 on `ptah-compat migrate lint`: a
@@ -96,7 +98,7 @@ func writeHashedLintDir(c *qt.C, format string) string {
 func writeLintMigrations(c *qt.C, dir string, files map[string]string) {
 	c.Helper()
 	for name, body := range files {
-		writeAtlasApplyProjectMigration(c, filepath.Join(dir, filepath.Dir(name)), filepath.Base(name), body)
+		atlastest.WriteAtlasApplyProjectMigration(c, filepath.Join(dir, filepath.Dir(name)), filepath.Base(name), body)
 	}
 }
 

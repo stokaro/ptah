@@ -8,6 +8,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasurl"
 )
@@ -49,7 +50,7 @@ CREATE TABLE conventional_table (id INTEGER PRIMARY KEY);
 	_, statErr = os.Stat(filepath.Join(target, "atlas.sum"))
 	c.Assert(statErr, qt.IsNil)
 
-	validateOut, validateErrOut, validateErr := runCompat(
+	validateOut, validateErrOut, validateErr := atlastest.RunCompat(
 		"migrate", "validate", "--dir", "file://"+target,
 	)
 	c.Assert(validateErr, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", validateOut, validateErrOut))
@@ -58,9 +59,9 @@ CREATE TABLE conventional_table (id INTEGER PRIMARY KEY);
 
 	applyOut, applyErrOut, applyErr := compatApply(target, dbPath)
 	c.Assert(applyErr, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", applyOut, applyErrOut))
-	c.Assert(sqliteTableCount(c, dbPath, "numbered_table"), qt.Equals, 1)
-	c.Assert(sqliteTableCount(c, dbPath, "conventional_table"), qt.Equals, 1)
-	c.Assert(sqliteAtlasRevisionVersions(c, dbPath), qt.DeepEquals, []string{"1", "2"})
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "numbered_table"), qt.Equals, 1)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "conventional_table"), qt.Equals, 1)
+	c.Assert(atlastest.SqliteAtlasRevisionVersions(c, dbPath), qt.DeepEquals, []string{"1", "2"})
 }
 
 // TestCompatMigrateImport_LiquibasePadsGlobalVersions is the order control for
@@ -119,7 +120,7 @@ SELECT 11 WHERE (SELECT count(*) FROM ordered_steps) = 10;
 	_, statErr = os.Stat(filepath.Join(target, "1_order_step_1.sql"))
 	c.Assert(os.IsNotExist(statErr), qt.IsTrue)
 
-	validateOut, validateErrOut, validateErr := runCompat(
+	validateOut, validateErrOut, validateErr := atlastest.RunCompat(
 		"migrate", "validate", "--dir", "file://"+target,
 	)
 	c.Assert(validateErr, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", validateOut, validateErrOut))

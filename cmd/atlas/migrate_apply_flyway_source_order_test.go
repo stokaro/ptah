@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+
+	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 )
 
 // These rows cover stokaro/ptah#1098: a converted Flyway directory is ORDERED
@@ -373,14 +375,14 @@ func TestCompatMigrateApplyFlywaySourceVersionOrder(t *testing.T) {
 			dbPath := filepath.Join(root, "order.db")
 
 			for _, name := range tt.applied {
-				writeAtlasApplyProjectMigration(c, dir, name, flywaySourceOrderSQL(name))
+				atlastest.WriteAtlasApplyProjectMigration(c, dir, name, flywaySourceOrderSQL(name))
 			}
 			hashConvertedApplyDir(c, dir, "flyway")
-			_, _, err := runCompat("migrate", "apply", "--url", "sqlite://"+dbPath, "--dir", "file://"+dir+"?format=flyway")
+			_, _, err := atlastest.RunCompat("migrate", "apply", "--url", "sqlite://"+dbPath, "--dir", "file://"+dir+"?format=flyway")
 			c.Assert(err, qt.IsNil)
 
 			for _, name := range tt.added {
-				writeAtlasApplyProjectMigration(c, dir, name, flywaySourceOrderSQL(name))
+				atlastest.WriteAtlasApplyProjectMigration(c, dir, name, flywaySourceOrderSQL(name))
 			}
 			hashConvertedApplyDir(c, dir, "flyway")
 			args := append([]string{
@@ -388,7 +390,7 @@ func TestCompatMigrateApplyFlywaySourceVersionOrder(t *testing.T) {
 				"--url", "sqlite://" + dbPath,
 				"--dir", "file://" + dir + "?format=flyway",
 			}, tt.args...)
-			stdout, stderr, err := runCompat(args...)
+			stdout, stderr, err := atlastest.RunCompat(args...)
 
 			tt.assert(c, dbPath, flywaySourceOrderOutput{stdout: stdout, stderr: stderr, err: err})
 		})

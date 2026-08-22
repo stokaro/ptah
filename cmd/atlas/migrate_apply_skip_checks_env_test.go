@@ -11,6 +11,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/cmd/atlas"
+	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 	"go.5x5.cz/ptah/dbschema"
 )
 
@@ -52,10 +53,10 @@ ALTER TABLE users ADD COLUMN email TEXT;
 func writeCheckedMigrationsDir(c *qt.C, dir, secondMigration string) string {
 	c.Helper()
 	migrationsDir := filepath.Join(dir, "migrations")
-	writeAtlasApplyProjectMigration(c, migrationsDir, "20260801000001_create_users.sql",
+	atlastest.WriteAtlasApplyProjectMigration(c, migrationsDir, "20260801000001_create_users.sql",
 		"CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT);\nINSERT INTO users (id, name) VALUES (1, 'alice');\n")
-	writeAtlasApplyProjectMigration(c, migrationsDir, "20260801000002_add_users_email.sql", secondMigration)
-	writeAtlasApplyProjectSum(c, migrationsDir)
+	atlastest.WriteAtlasApplyProjectMigration(c, migrationsDir, "20260801000002_add_users_email.sql", secondMigration)
+	atlastest.WriteAtlasApplyProjectSum(c, migrationsDir)
 	return migrationsDir
 }
 
@@ -211,7 +212,7 @@ func TestMigrateApplySkipChecksEnvMalformedValueAppliesNothing(t *testing.T) {
 	)
 
 	c.Assert(err, qt.IsNotNil)
-	c.Assert(sqliteTableCount(c, dbPath, "users"), qt.Equals, 0)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "users"), qt.Equals, 0)
 }
 
 // tx-mode all refuses a migration declaring pre-migration checks, because a
@@ -256,7 +257,7 @@ func TestMigrateApplySkipChecksEnvDoesNotBypassChecksumVerification(t *testing.T
 	dir := t.TempDir()
 	migrationsDir := writeCheckedMigrationsDir(c, dir, compatTxtarCheckedAddEmail)
 	// Tamper after hashing.
-	writeAtlasApplyProjectMigration(c, migrationsDir, "20260801000001_create_users.sql",
+	atlastest.WriteAtlasApplyProjectMigration(c, migrationsDir, "20260801000001_create_users.sql",
 		"CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT, tampered TEXT);\n")
 	dbPath := filepath.Join(dir, "apply.db")
 	t.Setenv("PTAH_SKIP_CHECKS", "1")
@@ -268,7 +269,7 @@ func TestMigrateApplySkipChecksEnvDoesNotBypassChecksumVerification(t *testing.T
 	)
 
 	c.Assert(err, qt.IsNotNil, qt.Commentf("command output:\n%s", out))
-	c.Assert(sqliteTableCount(c, dbPath, "users"), qt.Equals, 0)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "users"), qt.Equals, 0)
 }
 
 // A directory with no checks is unaffected by the variable: nothing about
@@ -277,9 +278,9 @@ func TestMigrateApplySkipChecksEnvLeavesUncheckedDirectoryUnchanged(t *testing.T
 	c := qt.New(t)
 	dir := t.TempDir()
 	migrationsDir := filepath.Join(dir, "migrations")
-	writeAtlasApplyProjectMigration(c, migrationsDir, "20260801000001_create_users.sql",
+	atlastest.WriteAtlasApplyProjectMigration(c, migrationsDir, "20260801000001_create_users.sql",
 		"CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT);\n")
-	writeAtlasApplyProjectSum(c, migrationsDir)
+	atlastest.WriteAtlasApplyProjectSum(c, migrationsDir)
 	dbPath := filepath.Join(dir, "apply.db")
 	t.Setenv("PTAH_SKIP_CHECKS", "1")
 
@@ -290,7 +291,7 @@ func TestMigrateApplySkipChecksEnvLeavesUncheckedDirectoryUnchanged(t *testing.T
 	)
 
 	c.Assert(err, qt.IsNil, qt.Commentf("command output:\n%s", out))
-	c.Assert(sqliteTableCount(c, dbPath, "users"), qt.Equals, 1)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "users"), qt.Equals, 1)
 }
 
 // The bypass still earns its keep in a dry run, but only where the check is

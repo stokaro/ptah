@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+
+	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 )
 
 // These tests pin stokaro/ptah#1002 on `ptah-compat migrate status` and
@@ -37,9 +39,9 @@ const (
 func writeConvertedFlywayDir(c *qt.C) string {
 	c.Helper()
 	dir := c.TempDir()
-	writeAtlasApplyProjectMigration(c, dir, revisionConvertedFirst,
+	atlastest.WriteAtlasApplyProjectMigration(c, dir, revisionConvertedFirst,
 		"CREATE TABLE t1 (id INTEGER PRIMARY KEY);\n")
-	writeAtlasApplyProjectMigration(c, dir, revisionConvertedSecond,
+	atlastest.WriteAtlasApplyProjectMigration(c, dir, revisionConvertedSecond,
 		"CREATE TABLE t2 (id INTEGER PRIMARY KEY);\n")
 	return dir
 }
@@ -145,7 +147,7 @@ func TestCompatMigrateStatus_ConvertedDirRefusesDrift(t *testing.T) {
 			dir := writeConvertedFlywayDir(c)
 			hashConvertedFlywayDir(c, dir)
 			for name, body := range test.rewritten {
-				writeAtlasApplyProjectMigration(c, dir, name, body)
+				atlastest.WriteAtlasApplyProjectMigration(c, dir, name, body)
 			}
 			for _, name := range test.removed {
 				c.Assert(os.Remove(filepath.Join(dir, name)), qt.IsNil)

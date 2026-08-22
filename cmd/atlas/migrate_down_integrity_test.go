@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+
+	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 )
 
 // `migrate down` reads a NATIVE Atlas migration directory and executes rollback
@@ -85,12 +87,12 @@ func TestCompatMigrateDown_RefusesWhereStatusRefuses(t *testing.T) {
 	dir := filepath.Join(tempDir, "m")
 	writeStatusIntegrityEdited(c, dir)
 
-	statusOut, _, statusErr := runCompat(
+	statusOut, _, statusErr := atlastest.RunCompat(
 		"migrate", "status",
 		"--url", "sqlite://"+filepath.Join(tempDir, "status.db"),
 		"--dir", "file://"+dir,
 	)
-	downOut, downErrOut, downErr := runCompat(
+	downOut, downErrOut, downErr := atlastest.RunCompat(
 		"migrate", "down",
 		"--url", "sqlite://"+filepath.Join(tempDir, "down.db"),
 		"--dir", "file://"+dir,

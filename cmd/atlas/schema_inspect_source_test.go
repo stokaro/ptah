@@ -10,6 +10,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/cmd/atlas"
+	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 )
 
 // inspectSourceFixtureDDL seeds the live database used by the inspect source
@@ -96,7 +97,7 @@ func TestSchemaInspectMigrationDirWithDevURL(t *testing.T) {
 func TestSchemaInspectFileExportRoundTrip(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
-	dbPath := seedSQLiteDB(c, inspectSourceFixtureDDL)
+	dbPath := atlastest.SeedSQLiteDB(c, inspectSourceFixtureDDL)
 
 	liveCmd := atlas.NewCompatCommand("atlas")
 	var live bytes.Buffer
@@ -126,7 +127,7 @@ func TestSchemaInspectFileExportRoundTrip(t *testing.T) {
 func TestSchemaInspectSplitTypeModeWritesGroupedFiles(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
-	dbPath := seedSQLiteDB(c, inspectSourceFixtureDDL)
+	dbPath := atlastest.SeedSQLiteDB(c, inspectSourceFixtureDDL)
 	outDir := filepath.Join(dir, "schema")
 	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer

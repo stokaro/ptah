@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/pflag"
 
 	"go.5x5.cz/ptah/cmd/atlas"
+	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 	"go.5x5.cz/ptah/cmd/internal/exitcode"
 	"go.5x5.cz/ptah/internal/atlascompatpolicy"
 )
@@ -21,12 +22,12 @@ func TestStrictCECommandTreeExposesOnlyCommunityCommandsInHelp(t *testing.T) {
 
 	schema, _, err := root.Find([]string{"schema"})
 	c.Assert(err, qt.IsNil)
-	c.Assert(availableChildNames(schema), qt.DeepEquals,
+	c.Assert(atlastest.AvailableChildNames(schema), qt.DeepEquals,
 		[]string{"apply", "clean", "diff", "fmt", "inspect"})
 
 	migrate, _, err := root.Find([]string{"migrate"})
 	c.Assert(err, qt.IsNil)
-	c.Assert(availableChildNames(migrate), qt.DeepEquals,
+	c.Assert(atlastest.AvailableChildNames(migrate), qt.DeepEquals,
 		[]string{"apply", "diff", "hash", "import", "lint", "new", "set", "status", "validate"})
 }
 
@@ -344,17 +345,6 @@ func TestStrictCERejectsNonCommunityDialectBeforeCommandWork(t *testing.T) {
 	c.Assert(stdout.String(), qt.Equals, "")
 	c.Assert(stderr.String(), qt.Equals,
 		"Error: Atlas Community Edition strict compatibility does not support database dialect \"clickhouse\"\n")
-}
-
-func availableChildNames(parent *cobra.Command) []string {
-	names := make([]string, 0, len(parent.Commands()))
-	for _, child := range parent.Commands() {
-		if !child.Hidden {
-			names = append(names, child.Name())
-		}
-	}
-	slices.Sort(names)
-	return names
 }
 
 func visibleLocalFlagNames(cmd *cobra.Command) []string {

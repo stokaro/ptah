@@ -9,6 +9,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/cmd/atlas"
+	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 )
 
 // unreachableDevURL points at a directory that does not exist, so opening the
@@ -59,7 +60,7 @@ func TestSchemaApplyDryRunRefusesAnUnreachableDevDatabase(t *testing.T) {
 
 	c.Assert(err, qt.IsNotNil, qt.Commentf("%s", out))
 	c.Assert(err, qt.ErrorMatches, `(?s).*--dev-url.*`)
-	c.Assert(sqliteTableCount(c, dbPath, "rehearsal_users"), qt.Equals, 0)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "rehearsal_users"), qt.Equals, 0)
 }
 
 // TestSchemaApplyDryRunPlansOnAReachableDevDatabase is the control for the
@@ -80,7 +81,7 @@ func TestSchemaApplyDryRunPlansOnAReachableDevDatabase(t *testing.T) {
 
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 	c.Assert(out, qt.Contains, "Planned schema changes:")
-	c.Assert(sqliteTableCount(c, dbPath, "rehearsal_users"), qt.Equals, 0)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "rehearsal_users"), qt.Equals, 0)
 }
 
 // TestSchemaApplyDryRunAndApplyAgreeOnADevDatabase states item A's contract
@@ -107,7 +108,7 @@ func TestSchemaApplyDryRunAndApplyAgreeOnADevDatabase(t *testing.T) {
 
 	c.Assert(dryErr, qt.IsNotNil, qt.Commentf("%s", dryOut))
 	c.Assert(applyErr, qt.IsNotNil, qt.Commentf("%s", applyOut))
-	c.Assert(sqliteTableCount(c, filepath.Join(dir, "apply.db"), "agree_users"), qt.Equals, 0)
+	c.Assert(atlastest.SqliteTableCount(c, filepath.Join(dir, "apply.db"), "agree_users"), qt.Equals, 0)
 }
 
 // TestSchemaApplyRequiresDevURLForNonDatabaseSource is the regression test for
@@ -137,7 +138,7 @@ func TestSchemaApplyRequiresDevURLForNonDatabaseSource(t *testing.T) {
 			}, test.args...)...)
 
 			c.Assert(err, qt.ErrorMatches, `--dev-url cannot be empty`, qt.Commentf("%s", out))
-			c.Assert(sqliteTableCount(c, dbPath, "gate_users"), qt.Equals, 0)
+			c.Assert(atlastest.SqliteTableCount(c, dbPath, "gate_users"), qt.Equals, 0)
 		})
 	}
 }
@@ -167,7 +168,7 @@ func TestSchemaApplyDatabaseSourceNeedsNoDevURL(t *testing.T) {
 	)
 
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
-	c.Assert(sqliteTableCount(c, targetPath, "source_users"), qt.Equals, 1)
+	c.Assert(atlastest.SqliteTableCount(c, targetPath, "source_users"), qt.Equals, 1)
 }
 
 // TestSchemaApplyWithoutDevURLEnvVarRestoresPlanning pins the escape hatch item
@@ -188,7 +189,7 @@ func TestSchemaApplyWithoutDevURLEnvVarRestoresPlanning(t *testing.T) {
 	)
 
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
-	c.Assert(sqliteTableCount(c, dbPath, "restored_users"), qt.Equals, 1)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "restored_users"), qt.Equals, 1)
 }
 
 // The two desired-state formats a local file can be, side by side, because

@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"go.5x5.cz/ptah/cmd/atlas"
+	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 	"go.5x5.cz/ptah/cmd/internal/exitcode"
 )
 
@@ -66,8 +67,8 @@ func TestSchemaApplyPlanFileExecutesPlannedSQL(t *testing.T) {
 	c.Assert(out, qt.Contains, "Planned schema changes:")
 	c.Assert(out, qt.Contains, `CREATE TABLE "planned_orders"`)
 	c.Assert(out, qt.Contains, "Schema apply completed successfully.")
-	c.Assert(sqliteTableCount(c, dbPath, "planned_orders"), qt.Equals, 1)
-	c.Assert(sqliteTableCount(c, dbPath, "users"), qt.Equals, 1)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "planned_orders"), qt.Equals, 1)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "users"), qt.Equals, 1)
 }
 
 func TestSchemaApplyPlanFileRefusesStaleTarget(t *testing.T) {
@@ -89,7 +90,7 @@ func TestSchemaApplyPlanFileRefusesStaleTarget(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `pre-planned migration is stale: the target database schema does not match the plan's source fingerprint \(plan sha256:[0-9a-f]{64}, database sha256:[0-9a-f]{64}\); the database changed since the plan was computed.*`)
 	c.Assert(exitcode.Code(err, 0), qt.Not(qt.Equals), 0)
 	c.Assert(out, qt.Contains, "pre-planned migration is stale")
-	c.Assert(sqliteTableCount(c, dbPath, "stale_orders"), qt.Equals, 0)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "stale_orders"), qt.Equals, 0)
 }
 
 func TestSchemaApplyPlanFileDryRunDoesNotApply(t *testing.T) {
@@ -105,7 +106,7 @@ func TestSchemaApplyPlanFileDryRunDoesNotApply(t *testing.T) {
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 	c.Assert(out, qt.Contains, `CREATE TABLE "dry_orders"`)
 	c.Assert(out, qt.Not(qt.Contains), "Apply these schema changes?")
-	c.Assert(sqliteTableCount(c, dbPath, "dry_orders"), qt.Equals, 0)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "dry_orders"), qt.Equals, 0)
 }
 
 func TestSchemaApplyPlanFileDeclinedConfirmationDoesNotApply(t *testing.T) {
@@ -121,7 +122,7 @@ func TestSchemaApplyPlanFileDeclinedConfirmationDoesNotApply(t *testing.T) {
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 	c.Assert(out, qt.Contains, "Apply these schema changes? Type 'YES' to confirm:")
 	c.Assert(out, qt.Contains, "Schema apply canceled.")
-	c.Assert(sqliteTableCount(c, dbPath, "declined_orders"), qt.Equals, 0)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "declined_orders"), qt.Equals, 0)
 }
 
 func TestSchemaApplyPlanFileConfirmedApplies(t *testing.T) {
@@ -136,7 +137,7 @@ func TestSchemaApplyPlanFileConfirmedApplies(t *testing.T) {
 
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 	c.Assert(out, qt.Contains, "Schema apply completed successfully.")
-	c.Assert(sqliteTableCount(c, dbPath, "confirmed_orders"), qt.Equals, 1)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "confirmed_orders"), qt.Equals, 1)
 }
 
 func TestSchemaApplyPlanFileSupportsFormat(t *testing.T) {
@@ -152,7 +153,7 @@ func TestSchemaApplyPlanFileSupportsFormat(t *testing.T) {
 
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 	c.Assert(strings.TrimSpace(out), qt.Equals, "1")
-	c.Assert(sqliteTableCount(c, dbPath, "format_orders"), qt.Equals, 1)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "format_orders"), qt.Equals, 1)
 }
 
 func TestSchemaApplyPlanFileRejectsCombinedPlanningFlags(t *testing.T) {
@@ -232,7 +233,7 @@ func TestSchemaApplyPlanFileRejectsWrongDialect(t *testing.T) {
 	_, err := runSchemaApplyPlan(atlas.NewCompatCommand("atlas"), "", dbPath, planPath, "--auto-approve")
 
 	c.Assert(err, qt.ErrorMatches, `plan file targets dialect "postgres", but the --url database dialect is "sqlite"`)
-	c.Assert(sqliteTableCount(c, dbPath, "dialect_orders"), qt.Equals, 0)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "dialect_orders"), qt.Equals, 0)
 }
 
 func TestSchemaApplyPlanFileRejectsMalformedDocuments(t *testing.T) {
@@ -295,7 +296,7 @@ func TestNewCompatCommand_SchemaApplyPlanFileResolves(t *testing.T) {
 	// The plan-execution path resolves and runs under ptah-compat too.
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 	c.Assert(out, qt.Contains, "Schema apply completed successfully.")
-	c.Assert(sqliteTableCount(c, dbPath, "compat_orders"), qt.Equals, 1)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "compat_orders"), qt.Equals, 1)
 }
 
 // rewritePlanDocument mutates a saved plan JSON document in place so tests can
