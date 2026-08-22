@@ -5,6 +5,7 @@ package migrateapply_test
 import (
 	"database/sql"
 	"errors"
+	"go.5x5.cz/ptah/integration/atlasreference"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -16,8 +17,8 @@ import (
 )
 
 const (
-	oracleEnv     = "PTAH_ATLAS_ORACLE"
-	oracleVersion = "atlas community version v1.3.0"
+	referenceEnv     = atlasreference.EnvVar
+	referenceVersion = atlasreference.Version
 
 	earlyVersion  = "20240101000000"
 	middleVersion = "20240102000000"
@@ -39,25 +40,25 @@ const (
 // refuses it as out of order. Ptah refuses both by default, because accepting
 // the first answer would silently discard an authored migration.
 func TestOracleDistinguishesPrefixAndIntervalInsertions(t *testing.T) {
-	oracle := requireAtlasOracle(t)
+	reference := requireAtlasOracle(t)
 	c := qt.New(t)
 	compat := buildCompatBinary(c)
 
 	t.Run("prefix insertion is the retained divergence", func(t *testing.T) {
 		c := qt.New(t)
-		lateOnly := writeOracleMigrationDir(c, oracle, map[string]string{
+		lateOnly := writeOracleMigrationDir(c, reference, map[string]string{
 			lateVersion + "_late.sql": lateBody,
 		})
-		prefixed := writeOracleMigrationDir(c, oracle, map[string]string{
+		prefixed := writeOracleMigrationDir(c, reference, map[string]string{
 			earlyVersion + "_early.sql": earlyBody,
 			lateVersion + "_late.sql":   lateBody,
 		})
 
-		oracleDB := filepath.Join(c.TempDir(), "oracle.db")
-		firstOracle := runApply(c, oracle, oracleDB, lateOnly)
-		c.Assert(firstOracle.code, qt.Equals, 0, qt.Commentf("oracle output: %s", firstOracle.output))
-		secondOracle := runApply(c, oracle, oracleDB, prefixed)
-		c.Assert(secondOracle.code, qt.Equals, 0, qt.Commentf("oracle output: %s", secondOracle.output))
+		oracleDB := filepath.Join(c.TempDir(), "reference.db")
+		firstOracle := runApply(c, reference, oracleDB, lateOnly)
+		c.Assert(firstOracle.code, qt.Equals, 0, qt.Commentf("reference output: %s", firstOracle.output))
+		secondOracle := runApply(c, reference, oracleDB, prefixed)
+		c.Assert(secondOracle.code, qt.Equals, 0, qt.Commentf("reference output: %s", secondOracle.output))
 		c.Assert(secondOracle.output, qt.Contains, "No migration files to execute")
 		assertMigrationState(c, oracleDB, []string{"oracle_late"}, []string{lateVersion})
 
@@ -72,21 +73,21 @@ func TestOracleDistinguishesPrefixAndIntervalInsertions(t *testing.T) {
 
 	t.Run("interval insertion is parity", func(t *testing.T) {
 		c := qt.New(t)
-		initial := writeOracleMigrationDir(c, oracle, map[string]string{
+		initial := writeOracleMigrationDir(c, reference, map[string]string{
 			earlyVersion + "_early.sql": earlyBody,
 			lateVersion + "_late.sql":   lateBody,
 		})
-		withMiddle := writeOracleMigrationDir(c, oracle, map[string]string{
+		withMiddle := writeOracleMigrationDir(c, reference, map[string]string{
 			earlyVersion + "_early.sql":   earlyBody,
 			middleVersion + "_middle.sql": middleBody,
 			lateVersion + "_late.sql":     lateBody,
 		})
 
-		oracleDB := filepath.Join(c.TempDir(), "oracle.db")
-		firstOracle := runApply(c, oracle, oracleDB, initial)
-		c.Assert(firstOracle.code, qt.Equals, 0, qt.Commentf("oracle output: %s", firstOracle.output))
-		secondOracle := runApply(c, oracle, oracleDB, withMiddle)
-		c.Assert(secondOracle.code, qt.Equals, 1, qt.Commentf("oracle output: %s", secondOracle.output))
+		oracleDB := filepath.Join(c.TempDir(), "reference.db")
+		firstOracle := runApply(c, reference, oracleDB, initial)
+		c.Assert(firstOracle.code, qt.Equals, 0, qt.Commentf("reference output: %s", firstOracle.output))
+		secondOracle := runApply(c, reference, oracleDB, withMiddle)
+		c.Assert(secondOracle.code, qt.Equals, 1, qt.Commentf("reference output: %s", secondOracle.output))
 		c.Assert(secondOracle.output, qt.Contains, "out of order")
 		assertMigrationState(c, oracleDB,
 			[]string{"oracle_early", "oracle_late"},
@@ -109,14 +110,14 @@ type commandResult struct {
 	output string
 }
 
-func writeOracleMigrationDir(c *qt.C, oracle string, files map[string]string) string {
+func writeOracleMigrationDir(c *qt.C, reference string, files map[string]string) string {
 	c.Helper()
 	dir := c.TempDir()
 	for name, body := range files {
 		c.Assert(os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600), qt.IsNil)
 	}
-	result := runCommand(c, oracle, "migrate", "hash", "--dir", "file://"+dir)
-	c.Assert(result.code, qt.Equals, 0, qt.Commentf("oracle hash output: %s", result.output))
+	result := runCommand(c, reference, "migrate", "hash", "--dir", "file://"+dir)
+	c.Assert(result.code, qt.Equals, 0, qt.Commentf("reference hash output: %s", result.output))
 	return dir
 }
 
@@ -202,20 +203,20 @@ func buildCompatBinary(c *qt.C) string {
 
 func requireAtlasOracle(t *testing.T) string {
 	t.Helper()
-	oracle := os.Getenv(oracleEnv)
-	if oracle == "" {
+	reference := os.Getenv(referenceEnv)
+	if reference == "" {
 		t.Skipf("SKIPPED: set %s to the pinned Atlas CE binary (%s) to run the migrate-apply conformance test",
-			oracleEnv, oracleVersion)
+			referenceEnv, referenceVersion)
 	}
 
-	out, err := exec.Command(oracle, "version").Output() // #nosec G204 G702 -- the oracle path is operator-provided via PTAH_ATLAS_ORACLE
+	out, err := exec.Command(reference, "version").Output() // #nosec G204 G702 -- the reference path is operator-provided via PTAH_ATLAS_REFERENCE
 	if err != nil {
-		t.Fatalf("%s=%s is not runnable: %v", oracleEnv, oracle, err)
+		t.Fatalf("%s=%s is not runnable: %v", referenceEnv, reference, err)
 	}
 	got, _, _ := strings.Cut(string(out), "\n")
-	if strings.TrimSpace(got) != oracleVersion {
+	if strings.TrimSpace(got) != referenceVersion {
 		t.Fatalf("%s=%s reports %q, want %q; a different build may have changed the rule under test",
-			oracleEnv, oracle, strings.TrimSpace(got), oracleVersion)
+			referenceEnv, reference, strings.TrimSpace(got), referenceVersion)
 	}
-	return oracle
+	return reference
 }

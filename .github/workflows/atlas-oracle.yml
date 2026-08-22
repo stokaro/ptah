@@ -25,7 +25,7 @@ jobs:
       # without a server could not tell a type it does not model from a type the
       # engine does not have -- and those are the two verdicts that run exists to
       # keep apart.
-      PTAH_ATLAS_ORACLE_POSTGRES_DEV_URL: 'postgres://postgres:pw@localhost:5432/dev?sslmode=disable&search_path=public'
+      PTAH_ATLAS_REFERENCE_POSTGRES_DEV_URL: 'postgres://postgres:pw@localhost:5432/dev?sslmode=disable&search_path=public'
       # A second dev database, REALM-scoped: no search_path, so the binary is
       # willing to materialize a document declaring more than one schema. The
       # one above is deliberately scoped to `public` and refuses such a document
@@ -35,7 +35,7 @@ jobs:
       # requires a clean one: measured on PostgreSQL 17, a leftover schema makes
       # the next read fail with `sql/migrate: connected database is not clean:
       # found schema "other"`, so it must not share with the runs above.
-      PTAH_ATLAS_ORACLE_POSTGRES_REALM_DEV_URL: 'postgres://postgres:pw@localhost:5432/realmdev?sslmode=disable'
+      PTAH_ATLAS_REFERENCE_POSTGRES_REALM_DEV_URL: 'postgres://postgres:pw@localhost:5432/realmdev?sslmode=disable'
 
     services:
       postgres:
@@ -55,7 +55,7 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Configure oracle path
-        run: echo "PTAH_ATLAS_ORACLE=$RUNNER_TEMP/ptah-atlas-ce/atlas" >> "$GITHUB_ENV"
+        run: echo "PTAH_ATLAS_REFERENCE=$RUNNER_TEMP/ptah-atlas-ce/atlas" >> "$GITHUB_ENV"
 
       # The realm-scoped dev database the two-schema document needs. The service
       # creates only `dev`, and that one is scoped to a single schema on purpose.
@@ -75,30 +75,30 @@ jobs:
         run: GOWORK=off go mod download
 
       - name: Build pinned Atlas CE oracle
-        run: scripts/build-atlas-ce-oracle.sh "$PTAH_ATLAS_ORACLE"
+        run: scripts/build-atlas-ce-oracle.sh "$PTAH_ATLAS_REFERENCE"
 
       - name: Verify migration-directory query contract
         run: >-
           go test -tags=integration
-          ./integration/atlasoracle/migratedirquery
+          ./integration/atlasreference/migratedirquery
           -count=1
 
       - name: Verify project data-source contract
         run: >-
           go test -tags=integration
-          ./integration/atlasoracle/projectdata
+          ./integration/atlasreference/projectdata
           -count=1
 
       - name: Verify Flyway revision identity contract
         run: >-
           go test -tags=integration
-          ./integration/atlasoracle/flywayrevision
+          ./integration/atlasreference/flywayrevision
           -count=1
 
       - name: Regenerate Atlas CE corpus
         run: >-
           internal/atlasmigrateimport/testdata/ce-sums/regenerate.sh
-          "$PTAH_ATLAS_ORACLE"
+          "$PTAH_ATLAS_REFERENCE"
 
       - name: Verify corpus is current
         run: |
@@ -109,7 +109,7 @@ jobs:
           test ! -s "$RUNNER_TEMP/atlas-corpus-status"
 
       - name: Run migrate apply interoperability controls
-        run: go test -tags integration ./integration/atlasoracle/migrateapply -count=1
+        run: go test -tags integration ./integration/atlasreference/migrateapply -count=1
 
   complete-integration:
     name: complete integration contour

@@ -21,7 +21,7 @@
 #
 # Usage:
 #   ./regenerate.sh [path-to-atlas]
-#   PTAH_ATLAS_ORACLE=/path/to/atlas ./regenerate.sh
+#   PTAH_ATLAS_REFERENCE=/path/to/atlas ./regenerate.sh
 #
 # After running, `git status` must be clean. A diff means either the oracle
 # changed or this script drifted from the committed corpus.
