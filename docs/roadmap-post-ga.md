@@ -102,10 +102,13 @@ The register that tracks the five entries above against their originating
 reports. It follows its children; it cannot be required while none of them is.
 
 **[#941 — Query builder dialect coverage](https://github.com/stokaro/ptah/issues/941).**
-Measured today, `SELECT`, `INSERT`, `UPDATE` and `DELETE` all refuse for SQL
-Server and ClickHouse, and the Spanner third of this issue is closed. The
-feature-matrix row states exactly that, so the reader meets the boundary where
-they meet the capability. Widening it is reach, not repair.
+`SELECT`, `INSERT`, `UPDATE` and `DELETE` render for every dialect the builder
+supports, SQL Server and Spanner among them, and the rendered statements are
+executed against a live SQL Server and a live ClickHouse rather than compared
+with the renderer's own output. One refusal is left and it is the engine's
+rather than Ptah's: a plain `UPDATE` on ClickHouse runs only against a table
+carrying the materialized `_block_number` column, which a statement cannot
+declare.
 
 ## Exported API contracts
 
