@@ -142,6 +142,8 @@ the declared set cannot say one thing here and another in a workflow file.
 | `clickhouse` | 26.3 | certified | `ClickHouse2411` | yes |
 | `clickhouse` | 25.8 | certified | `ClickHouse2411` | yes |
 | `clickhouse` | 24.10 | legacy-tested | `ClickHouse24` | yes |
+| `oracle` | 23 | certified | `Oracle23` | yes |
+| `oracle` | 21 | certified | `Oracle21` | yes |
 | `cockroachdb` | 26.3 | certified | `CockroachDB263` | yes |
 | `cockroachdb` | 26.2 | certified | `CockroachDB26` | yes |
 | `cockroachdb` | 25.4 | certified | `CockroachDB25` | yes |
@@ -152,31 +154,27 @@ the declared set cannot say one thing here and another in a workflow file.
 | `sqlserver` | 17.0 (SQL Server 2025) | certified | `SQLServer2022` | no |
 | `sqlserver` | 16.0 (SQL Server 2022) | best-effort | `SQLServer2022` | no |
 | `sqlserver` | 15.0 (SQL Server 2019) | best-effort | `SQLServer2022` | no |
-| `oracle` | 23 | certified | `Oracle23` | no |
-| `oracle` | 21 | best-effort | `Oracle21` | no |
 | `sqlite` | 3 | certified | `SQLite3` | no |
 
-Declared release lines: 30. Probed on every pull request: 24.
+Declared release lines: 30. Probed on every pull request: 26.
 
-Support levels across the 30 declared lines: 24 certified, 2 legacy-tested, 4 best-effort.
+Support levels across the 30 declared lines: 25 certified, 2 legacy-tested, 3 best-effort.
 
 Lines that are declared and not probed, and why:
 
 - `sqlserver` 17.0 — the capability probe has no statement table for the sqlserver dialect, so a server on this line would be asked nothing.
 - `sqlserver` 16.0 — the capability probe has no statement table for the sqlserver dialect, so a server on this line would be asked nothing.
 - `sqlserver` 15.0 — the capability probe has no statement table for the sqlserver dialect, so a server on this line would be asked nothing.
-- `oracle` 23 — the oracle dialect has a probe plan and no launch recipe, so nothing here can start the server to run it.
-- `oracle` 21 — the oracle dialect has a probe plan and no launch recipe, so nothing here can start the server to run it.
 - `sqlite` 3 — no container image is declared for this line; the capability probe has no statement table for the sqlite dialect, so a server on this line would be asked nothing.
 
 Lines whose container tag does not name the line, so which patch it resolves to has to be read off the tag:
 
+- `oracle` 23, pinned as `gvenzl/oracle-free:slim`.
+- `oracle` 21, pinned as `gvenzl/oracle-xe:21-slim`.
 - `spanner` 0, pinned as `gcr.io/cloud-spanner-pg-adapter/pgadapter-emulator:v0.55.2`.
 - `sqlserver` 17.0, pinned as `mcr.microsoft.com/mssql/server:2025-latest`.
 - `sqlserver` 16.0, pinned as `mcr.microsoft.com/mssql/server:2022-latest`.
 - `sqlserver` 15.0, pinned as `mcr.microsoft.com/mssql/server:2019-latest`.
-- `oracle` 23, pinned as `gvenzl/oracle-free:slim`.
-- `oracle` 21, pinned as `gvenzl/oracle-xe:21-slim`.
 <!-- END GENERATED VERSION MATRIX -->
 
 Whether an observation can be credited to one line rather than its siblings is a
