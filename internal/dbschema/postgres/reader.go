@@ -410,11 +410,46 @@ func (r *Reader) readTablesForSchema(schemaName string) ([]types.DBTable, error)
 	return tables, nil
 }
 
+// generatedKindExpr renders the projection carrying a generated column's kind,
+// or a constant on a target whose pg_attribute has no attgenerated to read.
+//
+// The key names a spelling rather than a catalog column, and here the two are
+// the same fact: PostgreSQL 12 added `GENERATED ALWAYS AS (<expr>) STORED` and
+// added pg_attribute.attgenerated to record it, so a PostgreSQL-family server
+// that refuses the clause has no column for it either. Measured on
+// `PostgreSQL 11.2-YB-2024.2.10.0-b0`, which is the one target this reader
+// serves where the key is false: attgenerated is absent from pg_attribute
+// while attidentity is present, so PostgreSQL 10's addition is there and
+// PostgreSQL 12's is not.
+//
+// Without the gate the projection is unconditional, and the column read --
+// which every table read runs first -- dies with
+// `column a.attgenerated does not exist` (SQLSTATE 42703) before a single
+// table is returned. A reader that cannot read is worse than one that reads a
+// generated column as ordinary, and on this target it cannot be either: the
+// server has no generated columns to misread (stokaro/ptah#1901).
+//
+// Asking the catalog instead, the way [Reader.supportsRelationSize] does,
+// would also work and costs a round trip. It is not needed: this fact is
+// already transcribed from a live server into the preset, and reading it from
+// there keeps an offline plan and a live read deciding the same way.
+func (r *Reader) generatedKindExpr() string {
+	if !r.caps.Has(capability.GeneratedColumns) {
+		return "'' AS generated_kind"
+	}
+	return `COALESCE(a.attgenerated, '') AS generated_kind`
+}
+
 // generatedExpressionExpr renders the projection carrying a generated column's
 // expression, or a constant where pg_catalog's helpers do not resolve. See
 // [Reader.formattedTypeExpr] for why a CASE is not enough.
+//
+// It takes the second key for the reason [Reader.generatedKindExpr] gives: the
+// CASE reads attgenerated, so a target without that column refuses this
+// projection too, and gating only the kind would move the same error one line
+// down the SELECT.
 func (r *Reader) generatedExpressionExpr() string {
-	if !r.caps.Has(capability.PostgresCatalogFunctions) {
+	if !r.caps.Has(capability.PostgresCatalogFunctions) || !r.caps.Has(capability.GeneratedColumns) {
 		return "'' AS generated_expression"
 	}
 	return `COALESCE(CASE WHEN a.attgenerated <> '' THEN pg_get_expr(ad.adbin, ad.adrelid) ELSE '' END, '') AS generated_expression`
@@ -617,7 +652,7 @@ func (r *Reader) readColumnsForSchema(schemaName string) (map[string][]types.DBC
 			numeric_precision,
 			numeric_scale,
 			ordinal_position,
-			COALESCE(a.attgenerated, '') AS generated_kind,
+			` + r.generatedKindExpr() + `,
 			` + r.generatedExpressionExpr() + `,
 			COALESCE(a.attidentity, '') AS identity_kind,
 			` + r.ownedSequenceExpr() + `
