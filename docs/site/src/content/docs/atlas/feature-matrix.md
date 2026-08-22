@@ -119,6 +119,8 @@ seven of them as open capabilities regardless.
 
 ## Schema sources
 
+<div class="ptah-wide-table">
+
 | Capability | Ptah | CE | Pro | Difference |
 | --- | :-: | :-: | :-: | --- |
 | Annotated Go models from a live database | ✅ | ❌ | ❌ | Writes Ptah annotation source from introspection, with optional db/json tags. No Go-model generator in the CE inventory or Pro list. |
@@ -143,7 +145,11 @@ seven of them as open capabilities regardless.
 | SQL DDL schema files | ✅ | ✅ | ✅ | Accepted by native `--schema-file` and compat `--to`/`--from`. Reads back every object kind Ptah renders; DO blocks, COMMENT ON and raw routine bodies still parse and are dropped. |
 | YAML schema files | ✅ | ❌ | ❌ | Strict parser; unknown keys fail. Repo docs list Atlas OSS data sources as SQL, HCL, external schema, and remote/template dirs. |
 
+</div>
+
 ## Declarative and direct schema changes
+
+<div class="ptah-wide-table">
 
 | Capability | Ptah | CE | Pro | Difference |
 | --- | :-: | :-: | :-: | --- |
@@ -179,7 +185,11 @@ seven of them as open capabilities regardless.
 | Verb `schema stats` | ✅ | ❌ | ✅ | Ptah implements it as `schema stats inspect` on the compat surface and `schema stats` natively, emitting OpenMetrics counts for 18 object kinds. Unlike Atlas it accepts SQLite. |
 | Verb `schema validate` | ✅ | ❌ | ✅ | `ptah schema validate` and the compat verb report every structural problem in a desired state without a database; exit 1 when any is found. |
 
+</div>
+
 ## Versioned migrations
+
+<div class="ptah-wide-table">
 
 | Capability | Ptah | CE | Pro | Difference |
 | --- | :-: | :-: | :-: | --- |
@@ -221,7 +231,11 @@ seven of them as open capabilities regardless.
 | Verb `migrate ls` | ✅ | ❌ | ✅ | `ptah migrations ls` lists a migration directory with no database; `ptah-compat migrate ls` is the drop-in spelling (`--dir`, `-s`, `-l`). Beyond the CE pin, so strict compatibility omits it. |
 | Verb `migrate show` | ✅ | ❌ | ✅ | `ptah migrations show` prints a stored migration's SQL with no database; `ptah-compat migrate show {name \| version}...` is the drop-in spelling. Beyond the CE pin, so strict compatibility omits it. |
 
+</div>
+
 ## Linting and safety
+
+<div class="ptah-wide-table">
 
 | Capability | Ptah | CE | Pro | Difference |
 | --- | :-: | :-: | :-: | --- |
@@ -245,7 +259,11 @@ seven of them as open capabilities regardless.
 | Standalone SQL file linting (`ptah sql lint`) | ✅ | ❌ | ❌ | Lints arbitrary SQL files or stdin against per-dialect capability presets (9 dialects incl. sqlserver), refined by a `--server-version` server string; text/json output, rule disable. |
 | Statement safety classification report | ✅ | ➖ | ➖ | plan `--report` text\|html\|json and generate `--report` html\|json emit highest severity, a destructive flag, and per-statement assessments. |
 
+</div>
+
 ## Testing
+
+<div class="ptah-wide-table">
 
 | Capability | Ptah | CE | Pro | Difference |
 | --- | :-: | :-: | :-: | --- |
@@ -258,7 +276,11 @@ seven of them as open capabilities regardless.
 | Migration test framework (`ptah migrations test`) | ✅ | ❌ | ✅ | Declarative YAML cases: migrate_to, apply_schema, seed, exec, assert. Fresh ephemeral SQLite per case unless `--db-url` is set. |
 | Schema test framework (`ptah schema test`) | ✅ | ❌ | ✅ | Desired schema from Go annotations, SQL or HCL files, or a live database converges before steps. HCL sources take repeatable `--var`; migrate_to is rejected. |
 
+</div>
+
 ## Configuration and dev databases
+
+<div class="ptah-wide-table">
 
 | Capability | Ptah | CE | Pro | Difference |
 | --- | :-: | :-: | :-: | --- |
@@ -282,7 +304,11 @@ seven of them as open capabilities regardless.
 | Template directory project data source (data "template_dir") | ✅ | ✅ | ✅ | Shared Go templates emit root lowercase .sql migrations only. New and diff synchronize new files and checksum to the confined source path; hash-only stays virtual. |
 | Variables, locals, and HCL functions | ✅ | ✅ | ✅ | Variables, locals and data sources are evaluated in both files, against one function set: the project evaluator shares the schema evaluator's, overlaying the three names bound to its own directory. |
 
+</div>
+
 ## Databases and schema objects
+
+<div class="ptah-wide-table">
 
 | Capability | Ptah | CE | Pro | Difference |
 | --- | :-: | :-: | :-: | --- |
@@ -307,7 +333,11 @@ seven of them as open capabilities regardless.
 | Views and materialized views | ✅ | ❌ | ✅ | Plain views work everywhere. Materialized views render on PostgreSQL, CockroachDB, YugabyteDB and ClickHouse, whose scheduled form carries its REFRESH EVERY\|AFTER clause. |
 | YugabyteDB (yugabytedb, ysql) | ✅ | ❌ | ✅ | Roles, grants, RLS, sequences, domains, views, matviews, functions, triggers and CREATE INDEX CONCURRENTLY are enabled. Three keys stay off because the server refuses them, not Ptah. |
 
+</div>
+
 ## Go embedding and developer tooling
+
+<div class="ptah-wide-table">
 
 | Capability | Ptah | CE | Pro | Difference |
 | --- | :-: | :-: | :-: | --- |
@@ -325,6 +355,8 @@ seven of them as open capabilities regardless.
 | Statement observer and validator hooks (Go API) | ✅ | ➖ | ➖ | migrator.WithStatementObserver runs a read-only callback per executed statement; WithStatementValidator gates all statements pre-execution; both compose with StatementInterceptor. |
 | testkit companion module for database tests | ✅ | ➖ | ➖ | Separate module go.5x5.cz/ptah/testkit wraps testcontainers-go for tests needing real databases; versions independently and stays out of the main module graph. |
 
+</div>
+
 ## Data and distribution
 
 Ptah's registry story differs from Atlas's in storage, not in function.
@@ -341,6 +373,8 @@ registry-side controls — replication, retention, immutable-tag policy, access
 control — come from the registry, not from Ptah. The full workflow is on
 [OCI registry artifacts](../../operate/oci-registry/).
 
+<div class="ptah-wide-table">
+
 | Capability | Ptah | CE | Pro | Difference |
 | --- | :-: | :-: | :-: | --- |
 | Artifact integrity check (`--verify-sum`) | ✅ | ➖ | ❌ | On migrations push (local, pre-upload) and on up/down/status (pulled). A sum checks a directory against the sum stored beside it, so an `oci://` tag proves internal consistency only; pin a digest. |
@@ -350,6 +384,8 @@ control — come from the registry, not from Ptah. The full workflow is on
 | oci:// as a `--schema-file` desired-state source | ✅ | ❌ | ✅ | Accepted by schema render, export, inspect, compare, drift, plan, apply and push, plus migrations plan and generate. All ten expose `--plain-http`, and a walk of the command tree gates the pairing. |
 | Referrer attachments: lint, plan, deployment reports | ✅ | ❌ | ❌ | lint `--attach`, migrations plan `--attach` and up attach reports to an exact digest, and `oci fetch` returns the payload behind a descriptor rather than the descriptor alone. |
 | Registry-backed distribution: `oci://` vs `atlas://` | ✅ | ❌ | ✅ | `atlas://` functions — publish, pull, digest-pin, run migrations directly, schemas via `--schema-file` — over any OCI registry, no account. See [OCI registry artifacts](../../operate/oci-registry/). |
+
+</div>
 
 ## Atlas Registry and Cloud
 
@@ -362,6 +398,8 @@ This is where 🔷 and ❌ have to be read apart. 🔷 means the row's job is do
 here already, over an ordinary OCI registry and local plan files, and only the
 hosted protocol is out of reach — nothing to wait for. ❌ means the capability
 is genuinely absent and the difference column names the issue that owns it.
+
+<div class="ptah-wide-table">
 
 | Capability | Ptah | CE | Pro | Difference |
 | --- | :-: | :-: | :-: | --- |
@@ -381,6 +419,8 @@ is genuinely absent and the difference column names the issue that owns it.
 | Hosted Schema Docs (schema documentation) | 🔷 | ❌ | ✅ | `ptah schema export --to markdown` writes reference documentation locally: a section per table with columns, types, defaults, keys, comments, indexes and enums. Not a hosted service. |
 | Reviewer approval and policy workflows | ✅ | ❌ | ✅ | `ptah schema approve` signs a plan with an SSH key; `--require-approval` refuses to apply one that does not verify against a committed allowed_signers file. No identity service. |
 | Schema monitoring, hosted UI, login | 🔷 | ❌ | ✅ | `ptah schema serve` shows drift live and `schema export --to html` writes the same view as one file. No login, and none intended (stokaro/ptah#1857). |
+
+</div>
 
 ## How these rows were established
 
