@@ -479,11 +479,13 @@ var Cells = []Cell{
 	},
 
 	// Oracle resolves through a version ladder of one step. Both lines below
-	// were measured directly, statement by statement, against the images
-	// named here; neither is exercised by a job in this repository yet,
-	// because the capability probe has no Oracle statement table and the
-	// integration suite starts no Oracle container. That is what keeps them
-	// best-effort rather than certified (stokaro/ptah#1875).
+	// were measured directly, statement by statement, against the images named
+	// here, and both are now exercised by a job: the capability probe has an
+	// Oracle statement table and a launch recipe, so each line starts its own
+	// server on every run of the tiered workflows. The 23 line is additionally
+	// exercised by the tagged integration contour, which runs the
+	// declaration-convergence round trip against the same image
+	// (stokaro/ptah#1875).
 	{
 		Dialect: platform.Oracle, Line: "23",
 		Preset: capability.Oracle23, PresetName: "Oracle23",
@@ -511,7 +513,7 @@ var Cells = []Cell{
 	{
 		Dialect: platform.Oracle, Line: "21",
 		Preset: capability.Oracle21, PresetName: "Oracle21",
-		Refinement: RefinedByVersion, Support: capability.BestEffort, Image: "gvenzl/oracle-xe:21-slim",
+		Refinement: RefinedByVersion, Support: capability.Certified, Image: "gvenzl/oracle-xe:21-slim",
 		Understates: map[capability.Capability]string{
 			// The same three as the 23 line, minus domains: CREATE DOMAIN is
 			// ORA-00901 here, so the preset's false is a measurement rather
