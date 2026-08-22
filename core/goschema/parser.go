@@ -593,6 +593,7 @@ type schemaParseState struct {
 	ranges                []Range
 	views                 []View
 	synonyms              []Synonym
+	extendedProperties    []ExtendedProperty
 	materializedViews     []MaterializedView
 	triggers              []Trigger
 	rlsPolicies           []RLSPolicy
@@ -716,6 +717,8 @@ func (s *schemaParseState) parseSharedDirective(
 		return s.parseMaterializedViewComment(comment, target.structName)
 	case "ptah:schema:synonym":
 		return s.parseSynonymComment(comment, target.structName)
+	case "ptah:schema:extendedproperty":
+		return s.parseExtendedPropertyComment(comment, target.structName)
 	case "ptah:schema:trigger":
 		return s.parseTriggerComment(comment, target.structName)
 	case "ptah:schema:rls:policy":
@@ -841,29 +844,30 @@ func parseFileAST(filename string, fset *token.FileSet, f *ast.File) (Database, 
 	})
 
 	result := Database{
-		Schemas:           state.schemas,
-		Tables:            state.tableDirectives,
-		Fields:            state.schemaFields,
-		Indexes:           state.schemaIndexes,
-		Constraints:       state.schemaConstraints,
-		Enums:             enums,
-		EmbeddedFields:    state.embeddedFields,
-		Extensions:        state.extensions,
-		Functions:         state.functions,
-		Sequences:         state.sequences,
-		Domains:           state.domains,
-		CompositeTypes:    state.compositeTypes,
-		Ranges:            state.ranges,
-		Views:             state.views,
-		Synonyms:          state.synonyms,
-		MaterializedViews: state.materializedViews,
-		Triggers:          state.triggers,
-		RLSPolicies:       state.rlsPolicies,
-		RLSEnabledTables:  state.rlsEnabledTables,
-		Roles:             state.roles,
-		Grants:            state.grants,
-		ManagedData:       state.managedData,
-		Dependencies:      make(map[string][]string),
+		Schemas:            state.schemas,
+		Tables:             state.tableDirectives,
+		Fields:             state.schemaFields,
+		Indexes:            state.schemaIndexes,
+		Constraints:        state.schemaConstraints,
+		Enums:              enums,
+		EmbeddedFields:     state.embeddedFields,
+		Extensions:         state.extensions,
+		Functions:          state.functions,
+		Sequences:          state.sequences,
+		Domains:            state.domains,
+		CompositeTypes:     state.compositeTypes,
+		Ranges:             state.ranges,
+		Views:              state.views,
+		Synonyms:           state.synonyms,
+		ExtendedProperties: state.extendedProperties,
+		MaterializedViews:  state.materializedViews,
+		Triggers:           state.triggers,
+		RLSPolicies:        state.rlsPolicies,
+		RLSEnabledTables:   state.rlsEnabledTables,
+		Roles:              state.roles,
+		Grants:             state.grants,
+		ManagedData:        state.managedData,
+		Dependencies:       make(map[string][]string),
 	}
 	normalizeTableScopedNames(&result)
 	buildDependencyGraph(&result)
@@ -1440,6 +1444,57 @@ func (s *schemaParseState) parseSynonymComment(comment *ast.Comment, structName 
 		Name:       kv["name"],
 		Schema:     kv["schema"],
 		Target:     kv["target"],
+		Comment:    kv["comment"],
+	})
+	return nil
+}
+
+// parseExtendedPropertyComment reads a SQL Server extended-property
+// declaration.
+//
+// Two refusals rather than one, and both are about identity.
+//
+// A column without a table is refused because SQL Server has no level 2
+// without a level 1: the statement that writes such a property cannot be
+// composed, and accepting the declaration would defer the failure to a plan
+// that has already been reviewed.
+//
+// MS_Description is refused because Ptah models it as the object's comment.
+// Accepting it here would give the same live row two owners -- the comment
+// comparator and the property comparator -- each planning against it without
+// seeing the other, so an inspect-then-apply round trip would emit both a
+// comment change and a property change for one value.
+//
+// There is no dialect scope here, and the omission is deliberate, exactly as
+// on a synonym: an extended property is a SQL Server object and nothing else.
+func (s *schemaParseState) parseExtendedPropertyComment(comment *ast.Comment, structName string) error {
+	kv := parseutils.ParseKeyValueComment(comment.Text)
+	ctx := s.annotationContext(comment, "//ptah:schema:extendedproperty", structName)
+	if err := validateAttributes(kv, ctx); err != nil {
+		return err
+	}
+	if err := requireAttributes(kv, ctx); err != nil {
+		return err
+	}
+	if strings.TrimSpace(kv["column"]) != "" && strings.TrimSpace(kv["table"]) == "" {
+		return fmt.Errorf(
+			"%s: extended property %q names a column and no table; SQL Server addresses a column "+
+				"through the table that holds it, so there is no property to write",
+			ctx.location, kv["name"])
+	}
+	if strings.EqualFold(strings.TrimSpace(kv["name"]), "MS_Description") {
+		return fmt.Errorf(
+			"%s: extended property MS_Description is the object comment, which Ptah already manages; "+
+				"declare it with the comment attribute of the object it belongs to",
+			ctx.location)
+	}
+	s.extendedProperties = append(s.extendedProperties, ExtendedProperty{
+		StructName: structName,
+		Name:       kv["name"],
+		Schema:     kv["schema"],
+		Table:      kv["table"],
+		Column:     kv["column"],
+		Value:      kv["value"],
 		Comment:    kv["comment"],
 	})
 	return nil

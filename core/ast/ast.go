@@ -60,6 +60,8 @@ type Visitor interface {
 	VisitCreateSynonym(*CreateSynonymNode) error
 	// VisitDropSynonym renders a DROP SYNONYM statement
 	VisitDropSynonym(*DropSynonymNode) error
+	// VisitExtendedProperty renders one SQL Server extended-property statement
+	VisitExtendedProperty(*ExtendedPropertyNode) error
 	// VisitCreateMaterializedView renders a CREATE MATERIALIZED VIEW statement
 	VisitCreateMaterializedView(*CreateMaterializedViewNode) error
 	// VisitDropMaterializedView renders a DROP MATERIALIZED VIEW statement

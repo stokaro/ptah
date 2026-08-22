@@ -1769,6 +1769,77 @@ func (n *DropSynonymNode) Accept(visitor Visitor) error {
 	return visitor.VisitDropSynonym(n)
 }
 
+// ExtendedPropertyNode represents one SQL Server extended-property statement.
+//
+// One node rather than three, and the reason is the statement rather than the
+// convenience. sp_addextendedproperty, sp_updateextendedproperty and
+// sp_dropextendedproperty take the SAME address arguments and differ only in
+// the procedure name and in whether @value is passed. Three node types would
+// be three copies of one address, and a planner deciding which to build would
+// be deciding a procedure name, not a shape -- so the operation is a field and
+// the address is the node.
+//
+// The address is the identity. SQL Server stores a property under a class and
+// up to two ids, and the statements name the levels outright: @level0type =
+// SCHEMA, @level1type = TABLE, @level2type = COLUMN. Two properties of the
+// same name at different addresses are two different properties, which is why
+// Schema, Table and Column are not decoration on Name.
+//
+// Value is meaningless for ExtendedPropertyDrop and is not written there.
+type ExtendedPropertyNode struct {
+	Operation ExtendedPropertyOperation
+	Name      string
+	Schema    string
+	Table     string
+	Column    string
+	Value     string
+	Comment   string
+}
+
+// ExtendedPropertyOperation names which of SQL Server's three procedures a
+// node stands for.
+type ExtendedPropertyOperation string
+
+// The three operations, spelled as the verb rather than as the procedure, so a
+// renderer for a target that spells them differently is not tied to T-SQL.
+const (
+	ExtendedPropertyAdd    ExtendedPropertyOperation = "add"
+	ExtendedPropertyUpdate ExtendedPropertyOperation = "update"
+	ExtendedPropertyDrop   ExtendedPropertyOperation = "drop"
+)
+
+// NewExtendedProperty creates an extended-property node for one operation and
+// property name.
+func NewExtendedProperty(operation ExtendedPropertyOperation, name string) *ExtendedPropertyNode {
+	return &ExtendedPropertyNode{Operation: operation, Name: name}
+}
+
+// SetOwner sets the address the property hangs off: a schema, optionally a
+// table in it, optionally a column of that table.
+func (n *ExtendedPropertyNode) SetOwner(schema, table, column string) *ExtendedPropertyNode {
+	n.Schema = schema
+	n.Table = table
+	n.Column = column
+	return n
+}
+
+// SetValue sets the value an add or an update writes.
+func (n *ExtendedPropertyNode) SetValue(value string) *ExtendedPropertyNode {
+	n.Value = value
+	return n
+}
+
+// SetComment sets a comment for the statement.
+func (n *ExtendedPropertyNode) SetComment(comment string) *ExtendedPropertyNode {
+	n.Comment = comment
+	return n
+}
+
+// Accept implements the Node interface for ExtendedPropertyNode.
+func (n *ExtendedPropertyNode) Accept(visitor Visitor) error {
+	return visitor.VisitExtendedProperty(n)
+}
+
 // CreateMaterializedViewNode represents a CREATE MATERIALIZED VIEW statement.
 // A materialized view node carries no refresh strategy: refreshing is an
 // operation, not schema state (stokaro/ptah#1625). [RefreshMaterializedViewNode]

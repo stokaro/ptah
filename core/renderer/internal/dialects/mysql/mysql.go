@@ -224,6 +224,11 @@ func (r *Renderer) VisitCreateSynonym(node *ast.CreateSynonymNode) error {
 	return r.r.VisitCreateSynonym(node)
 }
 
+// VisitExtendedProperty forwards to the shared renderer.
+func (r *Renderer) VisitExtendedProperty(node *ast.ExtendedPropertyNode) error {
+	return r.r.VisitExtendedProperty(node)
+}
+
 // VisitDropSynonym forwards to the shared renderer.
 func (r *Renderer) VisitDropSynonym(node *ast.DropSynonymNode) error {
 	return r.r.VisitDropSynonym(node)

@@ -80,6 +80,15 @@ func clonedCollectionRows() []clonedCollectionRow {
 			},
 		},
 		{
+			field: "ExtendedProperties", present: "ptah_flag", absent: "nosuch_property",
+			seed: func(s *dbschematypes.DBSchema) {
+				s.ExtendedProperties = append(s.ExtendedProperties,
+					dbschematypes.DBExtendedProperty{
+						Name: "ptah_flag", Table: "users", Value: "enabled", ValueType: "nvarchar",
+					})
+			},
+		},
+		{
 			field: "Extensions", present: "pgcrypto", absent: "nosuch_extension",
 			seed: func(s *dbschematypes.DBSchema) {
 				s.Extensions = append(s.Extensions, dbschematypes.DBExtension{Name: "pgcrypto"})

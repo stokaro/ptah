@@ -1777,6 +1777,34 @@ func appendSynonymStatements(statements *ast.StatementList, synonyms []goschema.
 	}
 }
 
+// FromExtendedProperty converts a goschema.ExtendedProperty into the node that
+// writes it.
+//
+// The operation is always an add. An update is what a COMPARISON produces, from
+// a live value that differs; a declaration rendered on its own is a schema
+// being created, where nothing is there to update.
+//
+// The address parts are passed unqualified and unquoted. They reach the
+// renderer as string literals rather than identifiers, because that is what
+// sp_addextendedproperty takes -- see VisitExtendedProperty for what quoting
+// them would write.
+func FromExtendedProperty(property goschema.ExtendedProperty) *ast.ExtendedPropertyNode {
+	return ast.NewExtendedProperty(ast.ExtendedPropertyAdd, property.Name).
+		SetOwner(property.Schema, property.Table, property.Column).
+		SetValue(property.Value).
+		SetComment(property.Comment)
+}
+
+// appendExtendedPropertyStatements adds one add-property node per declaration.
+func appendExtendedPropertyStatements(
+	statements *ast.StatementList,
+	properties []goschema.ExtendedProperty,
+) {
+	for _, property := range properties {
+		statements.Statements = append(statements.Statements, FromExtendedProperty(property))
+	}
+}
+
 // FromMaterializedView converts a goschema.MaterializedView to an
 // ast.CreateMaterializedViewNode.
 func FromMaterializedView(view goschema.MaterializedView) *ast.CreateMaterializedViewNode {
@@ -2231,6 +2259,13 @@ func FromDatabase(database goschema.Database, targetPlatform string) *ast.Statem
 	// that creates the alias first and the table second reads as though the
 	// order did not matter, and the next person reorders it.
 	appendSynonymStatements(statements, database.Synonyms)
+
+	// 8c. Extended properties come after every object one can hang off.
+	// sp_addextendedproperty resolves @level1name through the catalog and
+	// answers `Cannot find the object ... because it does not exist or you do
+	// not have permission` when the table is not there yet, so a property can
+	// never precede its owner.
+	appendExtendedPropertyStatements(statements, database.ExtendedProperties)
 
 	// 9. Add non-unique indexes last, except on MySQL-family targets where both
 	// sides of a foreign key need their declared indexes before ADD CONSTRAINT.

@@ -45,6 +45,7 @@ type Database struct {
 	Ranges                     []Range                        // PostgreSQL range types (CREATE TYPE ... AS RANGE (...))
 	Views                      []View                         // Database views
 	Synonyms                   []Synonym                      // SQL Server synonyms
+	ExtendedProperties         []ExtendedProperty             // SQL Server extended properties
 	MaterializedViews          []MaterializedView             // Database materialized views
 	Triggers                   []Trigger                      // Database triggers
 	RLSPolicies                []RLSPolicy                    // PostgreSQL Row-Level Security policies
@@ -969,6 +970,52 @@ type Synonym struct {
 	// emitted: one to four dot-separated parts, unquoted.
 	Target  string
 	Comment string // Optional comment for documentation
+}
+
+// ExtendedProperty is a SQL Server extended property: a named value attached
+// to a schema, a table, or a column of one.
+//
+// The address is what makes it an object rather than an attribute. SQL Server
+// stores a property under a class and up to two ids, and the statements that
+// write it name the levels outright -- @level0type = SCHEMA, @level1type =
+// TABLE, @level2type = COLUMN -- so Schema, Table and Column here are not
+// decoration on a value: they ARE the identity, and two properties of the same
+// name at different addresses are two different properties.
+//
+// Which levels are set decides the scope. Schema alone is a schema-scoped
+// property; adding Table addresses the table; adding Column addresses a column
+// of it. Column without Table is refused, because SQL Server has no level 2
+// without a level 1.
+//
+// MS_Description is refused by name. Ptah already models it as the object's
+// comment -- the reader turns it into one and the renderer writes it as one --
+// and accepting a declaration of it here would let two comparators plan the
+// same change from two places, each unaware of the other.
+//
+// Dialects is deliberately absent, for the same reason [Synonym] omits it: an
+// extended property belongs to SQL Server and to nothing else, and a scope
+// attribute would let a schema claim otherwise.
+type ExtendedProperty struct {
+	StructName string // Name of the Go struct this property is associated with
+	Name       string // Property name, e.g. ptah_flag
+	Schema     string // Schema the property is on, or that owns the addressed table
+	Table      string // Table the property is on; empty for a schema-scoped property
+	Column     string // Column the property is on; requires Table
+	Value      string // The value, written back as an N'' literal
+	Comment    string // Optional comment for documentation
+}
+
+// QualifiedOwner names the object the property is attached to, as
+// schema.table.column, omitting the levels that are absent.
+func (p ExtendedProperty) QualifiedOwner() string {
+	parts := []string{p.Schema}
+	if strings.TrimSpace(p.Table) != "" {
+		parts = append(parts, p.Table)
+	}
+	if strings.TrimSpace(p.Column) != "" {
+		parts = append(parts, p.Column)
+	}
+	return strings.Join(parts, ".")
 }
 
 // QualifiedName returns schema.synonym when Schema is set, or Name otherwise.

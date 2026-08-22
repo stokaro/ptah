@@ -296,6 +296,22 @@ type SchemaDiff struct {
 	// name with an unrelated create.
 	SynonymsModified []SynonymDiff `json:"synonyms_modified"`
 
+	// ExtendedPropertiesAdded contains the SQL Server extended properties the
+	// target schema declares and the database does not have.
+	ExtendedPropertiesAdded []ExtendedPropertyRef `json:"extended_properties_added"`
+
+	// ExtendedPropertiesRemoved contains the extended properties the database
+	// has and the target schema does not declare.
+	ExtendedPropertiesRemoved []ExtendedPropertyRef `json:"extended_properties_removed"`
+
+	// ExtendedPropertiesModified contains the properties whose value differs.
+	//
+	// A changed value is its own case rather than a removal plus an addition,
+	// because SQL Server has a statement for exactly this --
+	// sp_updateextendedproperty -- and dropping and re-adding would take the
+	// property away for the length of the script.
+	ExtendedPropertiesModified []ExtendedPropertyDiff `json:"extended_properties_modified"`
+
 	// ViewsModified contains detailed information about views with changed definitions.
 	ViewsModified []ViewDiff `json:"views_modified"`
 
@@ -460,6 +476,7 @@ func (d *SchemaDiff) HasChanges() bool {
 		d.hasUserTypeChanges() ||
 		d.hasViewChanges() ||
 		d.hasSynonymChanges() ||
+		d.hasExtendedPropertyChanges() ||
 		d.hasMaterializedViewChanges() ||
 		d.hasTriggerChanges() ||
 		d.hasRLSChanges() ||
@@ -615,6 +632,12 @@ func (d *SchemaDiff) hasSynonymChanges() bool {
 	return len(d.SynonymsAdded) > 0 ||
 		len(d.SynonymsRemoved) > 0 ||
 		len(d.SynonymsModified) > 0
+}
+
+func (d *SchemaDiff) hasExtendedPropertyChanges() bool {
+	return len(d.ExtendedPropertiesAdded) > 0 ||
+		len(d.ExtendedPropertiesRemoved) > 0 ||
+		len(d.ExtendedPropertiesModified) > 0
 }
 
 func (d *SchemaDiff) hasMaterializedViewChanges() bool {
@@ -960,7 +983,31 @@ type ExtensionDiff struct {
 	Relocatable bool `json:"relocatable"`
 }
 
-// ViewDiff represents changes to a view definition.
+// ExtendedPropertyRef names one SQL Server extended property, by the address
+// that identifies it and the value it should carry.
+//
+// The address is the identity rather than the name alone: SQL Server stores a
+// property under a class and up to two ids, so `ptah_flag` on a schema, on a
+// table of it, and on a column of that table are three different properties
+// that a plan has to keep apart.
+type ExtendedPropertyRef struct {
+	Name   string `json:"name"`
+	Schema string `json:"schema"`
+	Table  string `json:"table,omitempty"`
+	Column string `json:"column,omitempty"`
+	// Value is the DESIRED value for an addition or a modification, and the
+	// live one for a removal, which is the only value a removal has.
+	Value string `json:"value"`
+}
+
+// ExtendedPropertyDiff describes an extended property whose value changed.
+type ExtendedPropertyDiff struct {
+	ExtendedPropertyRef
+	// OldValue is what the database holds now. Value on the embedded ref is
+	// what the declaration asks for.
+	OldValue string `json:"old_value"`
+}
+
 // SynonymDiff describes a synonym whose target changed.
 type SynonymDiff struct {
 	SynonymName string `json:"synonym_name"`
@@ -968,6 +1015,7 @@ type SynonymDiff struct {
 	NewTarget   string `json:"new_target"`
 }
 
+// ViewDiff represents changes to a view definition.
 type ViewDiff struct {
 	ViewName string            `json:"view_name"`
 	Changes  map[string]string `json:"changes"`

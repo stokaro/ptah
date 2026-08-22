@@ -63,6 +63,9 @@ type UserStatsMatView struct{}
 //ptah:schema:synonym name="current_users" schema="app" target="dbo.users" comment="Alias for the users table"
 type CurrentUsersSynonym struct{}
 
+//ptah:schema:extendedproperty name="ptah_retention" schema="app" table="users" column="email" value="90d" comment="Column retention marker"
+type UsersEmailRetentionProperty struct{}
+
 //ptah:schema:trigger name="users_set_updated_at" table="users" timing="BEFORE" event="UPDATE" for="ROW" body="NEW.updated_at = NOW(); RETURN NEW;" comment="Auto update"
 type UserTrigger struct{}
 

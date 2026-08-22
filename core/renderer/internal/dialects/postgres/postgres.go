@@ -2695,6 +2695,17 @@ func (r *Renderer) VisitCreateSynonym(node *ast.CreateSynonymNode) error {
 	return nil
 }
 
+// VisitExtendedProperty refuses: an extended property is a SQL Server object,
+// and the PostgreSQL family has no catalog to attach one to.
+//
+// There is no capability key behind this refusal, for the reason
+// VisitCreateSynonym gives: a key would have exactly one value forever and
+// would invite a preset to turn it on.
+func (r *Renderer) VisitExtendedProperty(node *ast.ExtendedPropertyNode) error {
+	r.writeObjectSkipped("extended property", node.Name)
+	return nil
+}
+
 // VisitDropSynonym names the synonym as skipped, for the same reason.
 func (r *Renderer) VisitDropSynonym(node *ast.DropSynonymNode) error {
 	r.writeObjectSkipped("synonym", node.Name)
