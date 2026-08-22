@@ -22,6 +22,8 @@ func planFor(dialect string) (plan, bool) {
 		return mysqlFamilyPlan(platform.NormalizeDialect(dialect)), true
 	case platform.ClickHouse:
 		return clickHousePlan(), true
+	case platform.Oracle:
+		return oraclePlan(), true
 	default:
 		return plan{}, false
 	}

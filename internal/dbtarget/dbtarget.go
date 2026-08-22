@@ -45,6 +45,9 @@ const (
 	// emulator behind PGAdapter -- the only Spanner endpoint a container can
 	// provide (stokaro/ptah#1719).
 	Spanner
+	// Oracle is a live Oracle server, which gvenzl/oracle-free:slim and
+	// gvenzl/oracle-xe:21-slim both provide (stokaro/ptah#1875).
+	Oracle
 )
 
 // source is where one engine's address comes from.
@@ -123,6 +126,13 @@ var sources = map[Engine]source{
 		canonical: "SPANNER_URL",
 		synonyms:  []string{"SPANNER_TEST_DSN"},
 		scheme:    []string{"spanner", "postgres", "postgresql"},
+	},
+	// Oracle has no synonyms: it is new here, and the whole point of this
+	// package is that a second spelling of one address is how coverage goes
+	// quietly missing.
+	Oracle: {
+		canonical: "ORACLE_TEST_URL",
+		scheme:    []string{"oracle"},
 	},
 }
 
@@ -234,6 +244,8 @@ func engineName(engine Engine) string {
 		return "CockroachDB"
 	case YugabyteDB:
 		return "YugabyteDB"
+	case Oracle:
+		return "Oracle"
 	}
 	return engine.String()
 }
