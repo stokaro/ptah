@@ -42,6 +42,18 @@ func oraclePlan() plan {
 			[]string{"DROP INDEX IF EXISTS dii_absent"},
 			"DROP INDEX dii_absent",
 		),
+		// Whether an index existing on its own blocks the drop of its table.
+		// Oracle removes a table's indexes with the table, so the first
+		// statement decides it and the other two never run.
+		blockedByIndex(capability.IndexBlocksTableDrop,
+			[]string{
+				"CREATE TABLE ibt (id NUMBER(10) NOT NULL, PRIMARY KEY (id))",
+				"CREATE INDEX ibt_ix ON ibt (id)",
+			},
+			"DROP TABLE ibt",
+			"DROP INDEX ibt_ix",
+			"DROP TABLE ibt",
+		),
 		guarded(capability.ObjectExistenceGuards, nil,
 			[]string{"DROP TABLE IF EXISTS oeg_absent"},
 			"DROP TABLE oeg_absent",

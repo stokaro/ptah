@@ -105,6 +105,12 @@ func (t tableSpelling) uniquelyReferenced(table, constraint, column string) []st
 	}
 }
 
+// uniqueless spells a throwaway table carrying nothing but its key column, for
+// an experiment that adds its own index afterwards.
+func (t tableSpelling) uniqueless(table, column string) []string {
+	return []string{t.table(table, column+" int NOT NULL", column)}
+}
+
 // postgresFamilyPlan is the statement table for the PostgreSQL wire family.
 //
 // The experiments are one list for every dialect in it. What varies is how a
@@ -130,6 +136,15 @@ func postgresFamilyPlan(dialect string) plan {
 		guarded(capability.DropIndexIfExists, nil,
 			[]string{"DROP INDEX IF EXISTS dii_absent"},
 			"DROP INDEX dii_absent",
+		),
+		// Whether a table can be dropped while an index on it exists. Every
+		// PostgreSQL-family engine but one drops the index with the table, so
+		// the first statement decides it and the other two never run there.
+		blockedByIndex(capability.IndexBlocksTableDrop,
+			append(t.uniqueless("ibt", "id"), "CREATE INDEX ibt_ix ON ibt (id)"),
+			"DROP TABLE ibt",
+			"DROP INDEX ibt_ix",
+			"DROP TABLE ibt",
 		),
 		// The guard on an object rather than on a constraint or an index. The
 		// unguarded control is what makes the acceptance readable: a server
@@ -456,6 +471,17 @@ func mysqlFamilyPlan(dialect string) plan {
 			[]string{"CREATE TABLE dii (n int)"},
 			[]string{"DROP INDEX IF EXISTS dii_absent ON dii"},
 			"DROP INDEX dii_absent ON dii",
+		),
+		// The MySQL family spells the index drop with the table it belongs to;
+		// the question and the pair that answers it are the same.
+		blockedByIndex(capability.IndexBlocksTableDrop,
+			[]string{
+				"CREATE TABLE ibt (id int NOT NULL, PRIMARY KEY (id))",
+				"CREATE INDEX ibt_ix ON ibt (id)",
+			},
+			"DROP TABLE ibt",
+			"DROP INDEX ibt_ix ON ibt",
+			"DROP TABLE ibt",
 		),
 		// The guard on an object rather than on a constraint or an index. The
 		// unguarded control is what makes the acceptance readable: a server

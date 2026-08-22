@@ -67,6 +67,19 @@ const (
 	// Requires DropConstraintGeneric.
 	DropConstraintIfExists Capability = "drop_constraint_if_exists"
 
+	// IndexBlocksTableDrop marks a target that refuses DROP TABLE while an
+	// index on that table still exists, so an index has to be dropped on its
+	// own first. PostgreSQL and its compatible engines drop a table's indexes
+	// with the table and need nothing of the sort; measured on the Cloud
+	// Spanner emulator through PGAdapter 0.55.2, `DROP TABLE dfp` answers
+	// `Cannot drop table dfp with indices: dfp_uq` (SQLSTATE 0A000).
+	//
+	// It gates a cleanup step rather than any rendered DDL: Ptah does not emit
+	// a bare DROP TABLE for a table it is migrating, so the key says what the
+	// scratch-database cleanup has to do, and nothing about what a plan looks
+	// like (stokaro/ptah#1901).
+	IndexBlocksTableDrop Capability = "index_blocks_table_drop"
+
 	// DropIndexIfExists marks support for the IF EXISTS guard on DROP INDEX
 	// (MariaDB 10.1.4+: DROP INDEX IF EXISTS <name> ON <table>; PostgreSQL:
 	// DROP INDEX IF EXISTS <name>). MySQL has no such form.
@@ -649,6 +662,9 @@ var registry = map[Capability]spec{
 	DropIndexIfExists: {
 		doc: "IF EXISTS guard on DROP INDEX (MariaDB 10.1.4+, PostgreSQL; rejected by MySQL)",
 	},
+	IndexBlocksTableDrop: {
+		doc: "DROP TABLE is refused while an index on the table exists, so cleanup drops indexes first (Cloud Spanner)",
+	},
 	ObjectExistenceGuards: {
 		doc: "IF NOT EXISTS on CREATE and IF EXISTS on DROP of a table, view or sequence (Oracle 23+; not T-SQL)",
 	},
@@ -937,6 +953,7 @@ func MySQL84() Capabilities {
 		DropConstraintGeneric:          true,
 		DropConstraintIfExists:         false,
 		DropIndexIfExists:              false,
+		IndexBlocksTableDrop:           false,
 		ObjectExistenceGuards:          true,
 		CheckConstraintsEnforced:       true,
 		DropCheckClause:                true,
@@ -1058,6 +1075,7 @@ func MariaDB1011() Capabilities {
 		DropConstraintGeneric:          true,
 		DropConstraintIfExists:         true,
 		DropIndexIfExists:              true,
+		IndexBlocksTableDrop:           false,
 		ObjectExistenceGuards:          true,
 		CheckConstraintsEnforced:       true,
 		DropCheckClause:                false,
@@ -1151,6 +1169,7 @@ func Postgres16() Capabilities {
 		DropConstraintGeneric:              true,
 		DropConstraintIfExists:             true,
 		DropIndexIfExists:                  true,
+		IndexBlocksTableDrop:               false,
 		ObjectExistenceGuards:              true,
 		CheckConstraintsEnforced:           true,
 		DropCheckClause:                    false,
@@ -1282,6 +1301,7 @@ func ClickHouse24() Capabilities {
 		DropConstraintGeneric:    true,
 		DropConstraintIfExists:   true,
 		DropIndexIfExists:        true,
+		IndexBlocksTableDrop:     false,
 		ObjectExistenceGuards:    true,
 		CheckConstraintsEnforced: true,
 		DropCheckClause:          false,
@@ -1390,6 +1410,7 @@ func SQLite3() Capabilities {
 		DropConstraintGeneric:              false,
 		DropConstraintIfExists:             false,
 		DropIndexIfExists:                  true,
+		IndexBlocksTableDrop:               false,
 		ObjectExistenceGuards:              true,
 		CheckConstraintsEnforced:           true,
 		DropCheckClause:                    false,
@@ -1481,6 +1502,7 @@ func SQLServer2022() Capabilities {
 		// the rule, and no SQL Server statement had been asked.
 		DropConstraintIfExists:   true,
 		DropIndexIfExists:        true,
+		IndexBlocksTableDrop:     false,
 		ObjectExistenceGuards:    false,
 		CheckConstraintsEnforced: true,
 		DropCheckClause:          false,
@@ -1811,6 +1833,11 @@ func YugabyteDB24() Capabilities {
 func SpannerPostgres() Capabilities {
 	return Postgres16().
 		// Measured on the Cloud Spanner emulator behind PGAdapter:
+		// `Cannot drop table dfp with indices: dfp_uq` (SQLSTATE 0A000), where
+		// the same DROP TABLE is accepted once the index is dropped on its own
+		// (stokaro/ptah#1901).
+		With(IndexBlocksTableDrop, true).
+		// Measured on the Cloud Spanner emulator behind PGAdapter:
 		// `<DEFERRABLE> constraints are not supported` (stokaro/ptah#1624).
 		With(DeferrableConstraints, false).
 		// Measured: `Only <TABLE> is supported for renaming`.
@@ -1925,6 +1952,7 @@ func Oracle23() Capabilities {
 		// carries for the same reason.
 		DropConstraintIfExists: false,
 		DropIndexIfExists:      true,
+		IndexBlocksTableDrop:   false,
 		ObjectExistenceGuards:  true,
 		// A violating INSERT is refused: ORA-02290: check constraint
 		// (PTAH.PTAH_CK3) violated.

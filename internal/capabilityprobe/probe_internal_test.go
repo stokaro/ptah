@@ -171,6 +171,10 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 			capability.CompositeTypes,
 			capability.DDLInsideTransaction,
 			capability.DomainTypes,
+			// A ClickHouse skipping index is declared inside the table, so no
+			// index exists on its own to block the table's drop
+			// (stokaro/ptah#1901).
+			capability.IndexBlocksTableDrop,
 			capability.MigrationTimeouts,
 			capability.Procedures,
 			capability.RangeTypes,

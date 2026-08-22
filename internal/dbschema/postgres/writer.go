@@ -923,6 +923,120 @@ var cleanupDropExpressions = []string{
 				)`,
 }
 
+// standaloneIndexQuery names the indexes that have to be dropped before the
+// tables they belong to.
+//
+// It is a query of its own rather than another UNION branch of the cleanup
+// query, and that is measured rather than stylistic. Cloud Spanner's emulation
+// expands every catalog reference into joins of its own, and the cleanup query
+// already sits against the ceiling: adding this branch to it answers
+// `Number of joins exceeds the maximum allowed limit of 20` on the one target
+// that needs the rows (stokaro/ptah#1901).
+//
+// The filter is the primary-key index and nothing else, because a target that
+// blocks the table drop is by the same token a target with no UNIQUE table
+// constraint whose backing index would refuse a direct DROP INDEX. On Cloud
+// Spanner, the only such target today, a UNIQUE constraint is spelled
+// CREATE UNIQUE INDEX and is droppable on its own. A future target that both
+// blocks the drop and carries constraint-backed indexes would need the
+// pg_depend filter PostgreSQL uses, and pg_depend is exactly what this target
+// does not have.
+const standaloneIndexQuery = `
+	WITH managed_namespaces AS (
+		SELECT oid, nspname FROM pg_namespace WHERE nspname = $1
+	)
+	SELECT n.nspname, c.relname
+	FROM pg_class c
+	JOIN managed_namespaces n ON n.oid = c.relnamespace
+	JOIN pg_index i ON i.indexrelid = c.oid
+	WHERE c.relkind = 'i'
+	  AND NOT i.indisprimary
+	ORDER BY n.nspname, c.relname`
+
+// dropsBeforeAnIndex names the kinds that have to be dropped before an index
+// can be, in the cleanup query's own ordering.
+//
+// Foreign keys are the reason this is not simply "nothing". A foreign key on
+// Cloud Spanner is backed by an index on the referencing column, and dropping
+// that index while the key still names it answers
+// `Cannot drop index IDX_departments_manager_id_... It is in use by foreign
+// keys: fk_dept_manager` (SQLSTATE P0001) -- so an index that comes before the
+// constraints trades one blocked drop for another (stokaro/ptah#1901).
+//
+// Extensions are here because they outrank both in the same ordering, not
+// because a target that needs the index step has any.
+var dropsBeforeAnIndex = []string{"extension", "constraint"}
+
+// withIndexesDroppedFirst splices the blocking indexes into the cleanup order:
+// after the constraints that hold them, before every relation.
+//
+// The position is read from the objects rather than declared, because the
+// cleanup query already sorted them by the priority this has to sit inside.
+// Everything the query put ahead of the first relation is what an index must
+// wait for.
+func (w *PostgreSQLWriter) withIndexesDroppedFirst(
+	ctx context.Context,
+	tx cleanupConn,
+	objects []postgresCleanupObject,
+) ([]postgresCleanupObject, error) {
+	indexes, err := w.collectStandaloneIndexes(ctx, tx)
+	if err != nil {
+		return nil, err
+	}
+	if len(indexes) == 0 {
+		return objects, nil
+	}
+	at := len(objects)
+	for i, object := range objects {
+		if !slices.Contains(dropsBeforeAnIndex, object.Kind) {
+			at = i
+			break
+		}
+	}
+	return slices.Insert(slices.Clone(objects), at, indexes...), nil
+}
+
+// collectStandaloneIndexes lists the indexes to drop first, or nothing on a
+// server that drops a table's indexes with the table.
+//
+// Returning early on the common case matters for more than speed: it keeps the
+// cleanup every PostgreSQL-family server runs byte for byte what it was, so
+// this carries no risk anywhere but the target it was written for.
+func (w *PostgreSQLWriter) collectStandaloneIndexes(
+	ctx context.Context,
+	tx cleanupConn,
+) ([]postgresCleanupObject, error) {
+	if !w.caps.Has(capability.IndexBlocksTableDrop) {
+		return nil, nil
+	}
+	rows, err := tx.QueryContext(ctx, standaloneIndexQuery, w.schema)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query indexes blocking a table drop: %w", err)
+	}
+	defer rows.Close()
+
+	var indexes []postgresCleanupObject
+	for rows.Next() {
+		object := postgresCleanupObject{Kind: "index"}
+		if err := rows.Scan(&object.Schema, &object.Name); err != nil {
+			return nil, fmt.Errorf("failed to scan an index blocking a table drop: %w", err)
+		}
+		// This server has no format() to assemble the statement with -- that is
+		// why it needs a separate query in the first place -- so it is built
+		// here, through the same builder every other kind goes through.
+		statement, err := buildCleanupStatement(object, w.caps)
+		if err != nil {
+			return nil, err
+		}
+		object.Statement = statement
+		indexes = append(indexes, object)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate indexes blocking a table drop: %w", err)
+	}
+	return indexes, nil
+}
+
 // cleanupDropVerbs maps the object_kind the query already reports onto the DROP
 // keyword for it.
 //
@@ -930,6 +1044,7 @@ var cleanupDropExpressions = []string{
 // already resolves relkind into exactly these words, so the mapping is one to
 // one with what the server answers rather than a second opinion about it.
 var cleanupDropVerbs = map[string]string{
+	"index":             "INDEX",
 	"table":             "TABLE",
 	"view":              "VIEW",
 	"materialized view": "MATERIALIZED VIEW",
@@ -1517,6 +1632,10 @@ func (w *PostgreSQLWriter) dropSchemaObjects(ctx context.Context) (resultErr err
 	if err != nil {
 		return err
 	}
+	objects, err = w.withIndexesDroppedFirst(ctx, sqlTx, objects)
+	if err != nil {
+		return err
+	}
 	if capabilities.lockManagedRelations {
 		if err := w.lockManagedRelations(ctx, sqlTx, objects); err != nil {
 			return err
@@ -1560,6 +1679,10 @@ func (w *PostgreSQLWriter) dropSchemaObjectsWithoutTransaction(ctx context.Conte
 		return err
 	}
 	objects, err := w.collectAllObjects(ctx, w.db, postgresSchemaCleanupScope([]string{w.schema}))
+	if err != nil {
+		return err
+	}
+	objects, err = w.withIndexesDroppedFirst(ctx, w.db, objects)
 	if err != nil {
 		return err
 	}

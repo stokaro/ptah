@@ -137,6 +137,44 @@ func guarded(key capability.Capability, setup, guardedStmts []string, unguarded 
 	}
 }
 
+// blockedByIndex decides whether the server refuses to drop a table while an
+// index on it still exists.
+//
+// The refusal alone does not isolate the key. A DROP TABLE can be refused for
+// reasons that have nothing to do with indexes, and scoring that as "indexes
+// block the drop" would record a property the run never separated from a
+// broken fixture. So the same drop is repeated once the index is gone, and it
+// must be ACCEPTED: refusal-then-acceptance is the only pair that means what
+// this key says.
+//
+// Where the first drop succeeds the key is plainly false, and the two later
+// statements are not run: there is no table left to drop and no question left
+// to ask.
+func blockedByIndex(key capability.Capability, setup []string, blocked, dropIndex, retry string) experiment {
+	return experiment{
+		decides: []capability.Capability{key},
+		setup:   setup,
+		decide: func(ctx context.Context, s *session) (verdicts, []Attempt) {
+			first := s.exec(ctx, blocked)
+			if first.Accepted {
+				return verdicts{key: decided(false)}, []Attempt{first}
+			}
+			removed := s.exec(ctx, dropIndex)
+			again := s.exec(ctx, retry)
+			attempts := []Attempt{first, removed, again}
+			if !again.Accepted {
+				return verdicts{key: cannotDecide(
+					"the server refused %q both with the index and without it, "+
+						"so the refusal does not separate an index that blocks the drop "+
+						"from a table this run could not drop at all",
+					collapse(retry),
+				)}, attempts
+			}
+			return verdicts{key: decided(true)}, attempts
+		},
+	}
+}
+
 // enforced decides a key whose statement the server may accept and then
 // ignore.
 //
