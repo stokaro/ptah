@@ -1,0 +1,135 @@
+---
+/**
+ * A term that carries its definition where it is used.
+ *
+ * Usage, in an .mdx page or another component:
+ *
+ *   import GlossaryTerm from '../../components/GlossaryTerm.astro';
+ *
+ *   <GlossaryTerm term="measured" />
+ *   <GlossaryTerm term="carried">carried from 8.4</GlossaryTerm>
+ *
+ * The definition comes from src/glossary.ts, never from the call site, so the
+ * same term cannot mean two things on two pages (stokaro/ptah#1454).
+ *
+ * # Why the native popover attribute
+ *
+ * The issue asks for both routes to be measured rather than chosen. They were,
+ * on Chromium via Playwright, with the panel OPEN inside a five-column table
+ * that scrolls horizontally -- the case most likely to break. check:responsive
+ * alone does not separate them: it measures the closed state, where neither can
+ * overflow anything, and both routes pass it.
+ *
+ * Open, they differ, and not where guessing would put it:
+ *
+ *   popover + anchor    390px  panel left 108 right 390   on screen
+ *                      1280px  panel left 711 right 993   on screen
+ *   absolute + CSS      390px  panel left  64 right 346   on screen
+ *                      1280px  panel left 781 right 1064  CLIPPED at 956
+ *
+ * The failure is at DESKTOP, not on the phone, and it is not page overflow. The
+ * table is its own scroll container, so a panel that reaches past its right
+ * edge is cut off by it. A popover is in the top layer, outside that container
+ * and outside the table's layout entirely, so it is placed against the viewport
+ * and clipped by nothing.
+ *
+ * The attribute also supplies, with no script at all, three things the issue
+ * asks for: Esc dismisses, clicking elsewhere dismisses, and the trigger is a
+ * button, so Tab reaches it and Enter opens it. The CSS-only route reveals on
+ * :hover and :focus-within and would need script for the first two.
+ *
+ * Anchor positioning places it beside the term where the browser has it, and is
+ * not required: without it the panel falls back to fixed placement, which is
+ * off by the scroll offset and readable everywhere.
+ */
+import { glossary } from '../glossary';
+
+interface Props {
+  /** Key into src/glossary.ts. An unknown term is a build error. */
+  term: string;
+}
+
+const { term } = Astro.props;
+const entry = glossary[term];
+if (!entry) {
+  throw new Error(
+    `GlossaryTerm: no definition for ${JSON.stringify(term)} in src/glossary.ts. ` +
+      `Add it there rather than inline, so the term cannot drift between pages.`,
+  );
+}
+
+// Stable per use site, because two uses of the same term on one page would
+// otherwise share an id and the association would name the wrong element.
+const id = `glossary-${term.replace(/[^a-z0-9]+/gi, '-')}-${Math.random().toString(36).slice(2, 8)}`;
+---
+
+<span class="ptah-glossary">
+  <slot>{term}</slot><button
+    type="button"
+    class="ptah-glossary-trigger"
+    popovertarget={id}
+    aria-describedby={id}
+    aria-label={`What ${term} means`}>ⓘ</button
+  >
+  <span popover="auto" id={id} role="tooltip" class="ptah-glossary-panel">
+    <span class="ptah-glossary-term">{term}</span>
+    {entry.definition}
+    {entry.source && <span class="ptah-glossary-source">{entry.source}</span>}
+  </span>
+</span>
+
+<style>
+  .ptah-glossary {
+    /* anchor-name is ignored where anchor positioning is absent, and the panel
+     * then falls back to the fixed placement below. */
+    anchor-name: --ptah-glossary;
+    white-space: nowrap;
+  }
+
+  .ptah-glossary-trigger {
+    background: none;
+    border: 0;
+    color: var(--sl-color-text-accent);
+    cursor: help;
+    font: inherit;
+    line-height: 1;
+    padding: 0 0.15em;
+  }
+
+  .ptah-glossary-trigger:focus-visible {
+    outline: 2px solid var(--sl-color-text-accent);
+    outline-offset: 2px;
+  }
+
+  .ptah-glossary-panel {
+    background: var(--sl-color-bg-nav);
+    border: 1px solid var(--sl-color-hairline);
+    border-radius: 0.25rem;
+    box-shadow: var(--sl-shadow-md);
+    color: var(--sl-color-white);
+    font-size: var(--sl-text-sm);
+    inset: auto;
+    line-height: 1.5;
+    margin: 0;
+    max-width: min(32ch, calc(100vw - 2rem));
+    padding: 0.6rem 0.75rem;
+    position: fixed;
+    position-anchor: --ptah-glossary;
+    position-area: block-end;
+    position-try-fallbacks: flip-block, flip-inline;
+    white-space: normal;
+  }
+
+  .ptah-glossary-term {
+    display: block;
+    font-weight: 600;
+  }
+
+  .ptah-glossary-source {
+    display: block;
+    font-family: var(--__sl-font-mono, monospace);
+    font-size: 0.85em;
+    margin-top: 0.35rem;
+    opacity: 0.8;
+  }
+</style>
