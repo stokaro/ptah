@@ -392,14 +392,17 @@ three the first segment fills depends on what the run describes.
 On a URL that names a schema (`?search_path=public`), the schema slot is
 filled by the connection and the pattern is read relative to it: `users` names
 the table, `users.name` names its column, and `users.users_name_idx` names its
-index. A third part has nowhere left to go, and Ptah refuses it with the
-community binary's own message, which quotes the pattern with the schema
-already prefixed:
+index. A third part has nowhere left to go, and Ptah refuses it, quoting the
+pattern as written and naming the one that reaches the same column:
 
 ```console
 $ ptah-compat schema inspect --url "$PG_URL&search_path=public" --exclude public.users.name
-Error: too many parts in pattern: "public.public.users.name"
+Error: too many parts in pattern "public.users.name": this connection is bound to schema "public", so a pattern names object or object.child; write "users.name"
 ```
+
+The community binary refuses the same pattern and quotes it with the schema
+already prefixed, as `"public.public.users.name"`. Same refusal, different
+words; see `docs/conformance.md`.
 
 On a URL that names no schema, the run describes the whole realm and the
 pattern is realm-relative, so all three slots are addressable and a column in
@@ -429,10 +432,10 @@ included:
 - `*[type=extension].version` and `*[type=table].comment` are accepted in every
   scope.
 - `public.*[type=extension].version` and `public.*[type=table].comment` are
-  accepted on a realm-scoped URL and refused on a schema-bound one, where the
+  accepted on a realm-scoped URL and refused on a schema-bound one. The
   community binary answers
-  `too many parts in pattern: "public.public.*[type=table].comment"` and Ptah
-  answers the same.
+  `too many parts in pattern: "public.public.*[type=table].comment"`; Ptah
+  refuses it too and quotes the pattern as written.
 - `*[type=schema].*[type=table]` is accepted in every scope: a leading
   `[type=schema]` segment fills the schema slot itself, so the connection's
   schema is not counted a second time.

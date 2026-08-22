@@ -87,7 +87,7 @@ func excludeDatabase(
 	patterns []string,
 	patternScope, defaultSchema string,
 ) (*dbschematypes.DBSchema, ExcludeReport, error) {
-	filters, err := parsePatterns(patterns, patternScope)
+	filters, err := parsePatterns(patterns, resolvedDepthScope(patternScope))
 	if err != nil {
 		return nil, ExcludeReport{}, err
 	}
@@ -177,7 +177,7 @@ func excludeGenerated(
 	patterns []string,
 	patternScope, defaultSchema string,
 ) (*goschema.Database, ExcludeReport, error) {
-	filters, err := parsePatterns(patterns, patternScope)
+	filters, err := parsePatterns(patterns, resolvedDepthScope(patternScope))
 	if err != nil {
 		return nil, ExcludeReport{}, err
 	}
@@ -259,11 +259,31 @@ const (
 // scope-independent half of it: a pattern too deep for any scope is rejected
 // before a database is contacted, and the rest is caught by the filter.
 func ValidateExcludeSelectors(values []string) error {
-	_, err := parsePatterns(values, "")
+	_, err := parsePatterns(values, depthScope{})
 	return err
 }
 
-func parsePatterns(values []string, defaultSchema string) ([]resourcePattern, error) {
+// depthScope is what a pattern's depth is counted against.
+//
+// The empty string cannot carry this on its own, because it already means
+// "realm-scoped: no schema is prefixed". The pre-connect pass in
+// [ValidateExcludeSelectors] passes the same empty string for a different
+// reason -- no connection has said which scope applies yet -- and a diagnostic
+// that confused the two told a schema-bound run its pattern was realm-scoped
+// (stokaro/ptah#1703).
+type depthScope struct {
+	// schema is the connection's schema on a schema-bound run, and empty on a
+	// realm-scoped one.
+	schema string
+	// resolved is false only in the pre-connect pass.
+	resolved bool
+}
+
+func resolvedDepthScope(schema string) depthScope {
+	return depthScope{schema: strings.TrimSpace(schema), resolved: true}
+}
+
+func parsePatterns(values []string, scope depthScope) ([]resourcePattern, error) {
 	var patterns []resourcePattern
 	for _, value := range values {
 		for part := range strings.SplitSeq(value, ",") {
@@ -274,12 +294,12 @@ func parsePatterns(values []string, defaultSchema string) ([]resourcePattern, er
 			if pattern.glob == "" {
 				continue
 			}
-			scope := defaultSchema
+			counted := scope
 			if pattern.schemaSegment {
 				// The pattern named its schema slot itself, so it is already
 				// realm-relative and the connection's schema must not be
 				// counted a second time.
-				scope = ""
+				counted.schema = ""
 			}
 			// Counted on the pattern as written, selector text and field suffix
 			// included. That is the pinned community binary's own arithmetic:
@@ -288,7 +308,7 @@ func parsePatterns(values []string, defaultSchema string) ([]resourcePattern, er
 			// instead would accept that spelling, and Ptah applies one depth
 			// rule to every scope, so it would exit 0 on the schema-bound URL
 			// where that binary exits 1.
-			if err := checkPatternDepth(strings.TrimSpace(part), scope); err != nil {
+			if err := checkPatternDepth(strings.TrimSpace(part), counted); err != nil {
 				return nil, err
 			}
 			patterns = append(patterns, pattern)
@@ -308,8 +328,9 @@ const maxPatternParts = 3
 // A pattern is relative to the scope the URL names, and there are two. On a URL
 // that names a schema the binary prefixes it before counting, so a pattern
 // names `object` or `object.child` and a third part has nowhere left to go:
-// `--exclude public.users.name` is refused as "public.public.users.name", and
-// Ptah reports it identically, doubled prefix included. On a URL that names no
+// `--exclude public.users.name` is refused, and the binary reports it as
+// "public.public.users.name" while Ptah quotes what was typed and names the
+// spelling that works. On a URL that names no
 // schema the pattern is realm-relative and the full schema.object.child depth
 // is addressable.
 //
@@ -321,15 +342,51 @@ const maxPatternParts = 3
 // asked: defaultSchema arrived non-empty on every run, so a realm-scoped one
 // was counted against a schema it was not relative to and the qualified column
 // form was refused everywhere. See [Scope.RealmRelativePatterns].
-func checkPatternDepth(raw, defaultSchema string) error {
+//
+// The refusal is Ptah's own text, and that is a retained divergence rather than
+// a gap. The binary quotes the prefixed pattern -- "public.public.users.name"
+// for a pattern written as "public.users.name" -- which names a string nobody
+// typed and says nothing about what to write instead. Same refusal, better
+// diagnostic: rule 1 in docs/conformance.md is about never being looser, and
+// this is not looser. See the retained-divergence entry there
+// (stokaro/ptah#1703).
+func checkPatternDepth(raw string, scope depthScope) error {
 	effective := raw
-	if strings.TrimSpace(defaultSchema) != "" {
-		effective = strings.TrimSpace(defaultSchema) + "." + raw
+	if scope.schema != "" {
+		effective = scope.schema + "." + raw
 	}
 	if strings.Count(effective, ".")+1 <= maxPatternParts {
 		return nil
 	}
-	return fmt.Errorf("too many parts in pattern: %q", effective)
+	return fmt.Errorf("too many parts in pattern %q: %s", raw, patternDepthGuidance(raw, scope))
+}
+
+// patternDepthGuidance says what the scope can address, and names the pattern
+// that reaches the same object where one exists.
+//
+// A refusal that only reports the depth leaves the user to discover the scope
+// rule by experiment. In the case this was reported for the answer is one
+// segment away: on a connection bound to "public", "public.users.name" is
+// refused and "users.name" drops exactly the column it was reaching for.
+//
+// The suggestion is offered only when it is true. A leading segment that is not
+// the bound schema is a table name in this scope, not a schema, so dropping it
+// would suggest a pattern that reaches something else.
+func patternDepthGuidance(raw string, scope depthScope) string {
+	if !scope.resolved {
+		return "a pattern names at most schema.object.child"
+	}
+	if scope.schema == "" {
+		return "this run covers every schema, so a pattern names schema, schema.object or schema.object.child"
+	}
+	guidance := fmt.Sprintf(
+		"this connection is bound to schema %q, so a pattern names object or object.child", scope.schema)
+	prefix := scope.schema + "."
+	if remainder, bound := strings.CutPrefix(raw, prefix); bound &&
+		remainder != "" && strings.Count(remainder, ".")+1 <= maxPatternParts-1 {
+		return guidance + fmt.Sprintf("; write %q", remainder)
+	}
+	return guidance
 }
 
 // envReferenceScheme is the prefix of a reference into the selected project
