@@ -231,6 +231,15 @@ func (m *MockVisitor) VisitDropSynonym(node *ast.DropSynonymNode) error {
 	return nil
 }
 
+func (m *MockVisitor) VisitExtendedProperty(node *ast.ExtendedPropertyNode) error {
+	m.VisitedNodes = append(m.VisitedNodes,
+		"ExtendedProperty:"+string(node.Operation)+":"+node.Name)
+	if m.ReturnError {
+		return errors.New("mock error")
+	}
+	return nil
+}
+
 func (m *MockVisitor) VisitCreateMaterializedView(node *ast.CreateMaterializedViewNode) error {
 	m.VisitedNodes = append(m.VisitedNodes, "CreateMaterializedView:"+node.Name)
 	if m.ReturnError {

@@ -126,6 +126,12 @@ func (r *Reader) ReadSchema() (*types.DBSchema, error) {
 	}
 	schema.Synonyms = synonyms
 
+	extendedProperties, err := r.readExtendedProperties()
+	if err != nil {
+		return nil, fmt.Errorf("sqlserver: read extended properties: %w", err)
+	}
+	schema.ExtendedProperties = extendedProperties
+
 	triggers, err := r.readTriggers()
 	if err != nil {
 		return nil, fmt.Errorf("sqlserver: read triggers: %w", err)

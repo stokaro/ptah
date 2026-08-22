@@ -340,6 +340,55 @@
       ],
       "type": "object"
     },
+    "ptah.schema.extendedproperty": {
+      "additionalProperties": false,
+      "description": "Declares a SQL Server extended property on a schema, a table, or a column.",
+      "properties": {
+        "attributes": {
+          "additionalProperties": false,
+          "properties": {
+            "column": {
+              "description": "Column the property is on. Requires table.",
+              "type": "string"
+            },
+            "comment": {
+              "description": "Extended property comment.",
+              "type": "string"
+            },
+            "name": {
+              "description": "Property name. MS_Description is refused: it is the object comment, which Ptah already manages.",
+              "type": "string"
+            },
+            "schema": {
+              "description": "Schema the property is on, or that owns the addressed table.",
+              "type": "string"
+            },
+            "table": {
+              "description": "Table the property is on. Omit for a schema-scoped property.",
+              "type": "string"
+            },
+            "value": {
+              "description": "The value, written back as an N'' literal.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "name",
+            "schema",
+            "value"
+          ],
+          "type": "object"
+        },
+        "directive": {
+          "const": "ptah:schema:extendedproperty"
+        }
+      },
+      "required": [
+        "directive",
+        "attributes"
+      ],
+      "type": "object"
+    },
     "ptah.schema.extension": {
       "additionalProperties": false,
       "description": "Declares a PostgreSQL extension.",
@@ -1556,6 +1605,9 @@
     },
     {
       "$ref": "#/$defs/ptah.schema.synonym"
+    },
+    {
+      "$ref": "#/$defs/ptah.schema.extendedproperty"
     },
     {
       "$ref": "#/$defs/ptah.schema.trigger"

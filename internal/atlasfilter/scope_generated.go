@@ -80,6 +80,14 @@ func (s *scopeSelection) projectGeneratedTopLevel(db, out *goschema.Database) {
 	out.Synonyms = keep(db.Synonyms, func(synonym goschema.Synonym) bool {
 		return s.selectedQualifiedName(typeList("synonym"), synonym.QualifiedName())
 	})
+	out.ExtendedProperties = keep(db.ExtendedProperties,
+		func(property goschema.ExtendedProperty) bool {
+			if property.Table != "" && !generatedTableNameKept(out.Tables, property.Table) {
+				return false
+			}
+			return s.selected(typeList("extended_property"), property.Schema, property.Name) ||
+				(property.Table != "" && generatedTableNameKept(out.Tables, property.Table))
+		})
 	out.Functions = keep(db.Functions, func(function goschema.Function) bool {
 		return s.selectedQualifiedName(typeList("function"), function.Name)
 	})

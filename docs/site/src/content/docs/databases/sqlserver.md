@@ -41,6 +41,8 @@ ptah db read --db-url "sqlserver://sa:$SA_PASSWORD@localhost:1433?database=app&s
 - Views and triggers rendered from raw SQL definitions.
 - Synonyms: declared, rendered, introspected from `sys.synonyms`, and diffed,
   including targets in another database or behind a linked server (see below).
+- Extended properties at schema, table and column scope: declared, rendered,
+  introspected from `sys.extended_properties`, and diffed (see below).
 - Live introspection from `sys.tables`, `sys.columns`, `sys.indexes`, and
   related catalog views.
 - Transactional migration apply for DDL SQL Server supports in transactions,
@@ -94,6 +96,63 @@ than a difference reported on every run.
 Every other target names a declared synonym as skipped rather than rendering
 nothing: the object exists in the schema model for one engine, and a dialect
 that dropped it silently would lose a declaration without saying so.
+
+## Extended properties
+
+An extended property is a named value attached to a schema, a table, or a
+column of one:
+
+```go
+//ptah:schema:extendedproperty name="retention" schema="app" table="orders" value="90d"
+type OrdersRetentionProperty struct{}
+
+//ptah:schema:extendedproperty name="classification" schema="app" table="orders" column="email" value="pii"
+type OrdersEmailClassification struct{}
+```
+
+```sql
+EXEC sp_addextendedproperty @name = N'retention', @value = N'90d', @level0type = N'SCHEMA', @level0name = N'app', @level1type = N'TABLE', @level1name = N'orders';
+EXEC sp_addextendedproperty @name = N'classification', @value = N'pii', @level0type = N'SCHEMA', @level0name = N'app', @level1type = N'TABLE', @level1name = N'orders', @level2type = N'COLUMN', @level2name = N'email';
+```
+
+**The address is the identity.** SQL Server stores a property under a class and
+up to two ids, so the same name on a schema, on a table of it, and on a column
+of that table is three different properties. Which levels a declaration sets
+decides its scope: `schema` alone is schema scope, adding `table` addresses the
+table, and adding `column` addresses a column of it. A `column` without a
+`table` is refused, because SQL Server has no level 2 without a level 1.
+
+A changed value plans `sp_updateextendedproperty` rather than a drop and an
+add, so the property is never absent partway through a script. Properties are
+emitted after every object one can hang off, and dropped before the objects
+they belong to.
+
+`MS_Description` is refused by name. Ptah already models it as the object's
+comment — the reader turns it into one and the renderer writes it as one — and
+accepting it here as well would give one live value two owners, each planning
+against it without seeing the other.
+
+**A value Ptah cannot write back is reported and left alone.**
+`sp_addextendedproperty` takes a `sql_variant`, so a property may hold an `int`
+or a `date` as well as a string, and Ptah writes values as `N''` literals.
+Re-emitting a non-string value through one would change its stored type, and
+`CONVERT(NVARCHAR, value)` on a date answers a locale-dependent rendering
+rather than the value. Such a property appears in a read with its base type and
+no value, and a comparison plans nothing for it in either direction.
+
+Two kinds of property are outside this scope and are not read at all: a
+database-scoped one (`class = 0`), which has no schema or object to hang off,
+and a property on an object other than a table — a view, a procedure, an index
+— which takes a different `@level1type` than the one Ptah writes.
+
+Every other target names a declared extended property as skipped rather than
+rendering nothing, for the same reason a synonym is: the object exists in the
+schema model for one engine, and a dialect that dropped it silently would lose
+a declaration without saying so.
+
+Extended properties travel through the schema model, the renderer, the reader
+and the comparison. They are not part of the HCL surface `schema inspect`
+writes, which is the same boundary synonyms sit on.
 
 ## Identifier collation
 

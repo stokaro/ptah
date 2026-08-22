@@ -236,6 +236,30 @@ func diffCategoryFixtures() []categoryFixture {
 			&goschema.Database{Synonyms: []goschema.Synonym{{Name: "s", Target: "dbo.new"}}},
 		},
 		{
+			"ExtendedPropertiesAdded",
+			&types.SchemaDiff{ExtendedPropertiesAdded: []types.ExtendedPropertyRef{
+				{Name: "ptah_flag", Schema: "app", Table: "docs", Value: "enabled"},
+			}},
+			&goschema.Database{},
+		},
+		{
+			"ExtendedPropertiesRemoved",
+			&types.SchemaDiff{ExtendedPropertiesRemoved: []types.ExtendedPropertyRef{
+				{Name: "ptah_flag", Schema: "app", Table: "docs", Value: "enabled"},
+			}},
+			&goschema.Database{},
+		},
+		{
+			"ExtendedPropertiesModified",
+			&types.SchemaDiff{ExtendedPropertiesModified: []types.ExtendedPropertyDiff{{
+				ExtendedPropertyRef: types.ExtendedPropertyRef{
+					Name: "ptah_flag", Schema: "app", Table: "docs", Value: "disabled",
+				},
+				OldValue: "enabled",
+			}}},
+			&goschema.Database{},
+		},
+		{
 			"MaterializedViewsAdded",
 			&types.SchemaDiff{MaterializedViewsAdded: []string{"mv"}},
 			&goschema.Database{MaterializedViews: []goschema.MaterializedView{{Name: "mv", Body: "SELECT 1"}}},
