@@ -56,6 +56,14 @@ jobs:
           scripts/check-architecture-boundaries.sh
           scripts/check-architecture-boundaries-selftest.sh
 
+      # testkit.yml checks the same thing for testkit and does `cd testkit`.
+      # The root module had no such check, which is how a require nothing
+      # imports reached a green pull request (stokaro/ptah#1888).
+      - name: Check the root module is tidy
+        run: |
+          scripts/check-root-module-tidy.sh
+          scripts/check-root-module-tidy-selftest.sh
+
       - name: Check documented lint rules
         run: scripts/check-lint-rules.sh
 
