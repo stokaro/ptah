@@ -713,6 +713,8 @@ into four probed ones with no workflow edit.
 | `clickhouse` | 26.3 | certified | `ClickHouse2411` | version-ladder | `clickhouse/clickhouse-server:26.3` | yes | yes |
 | `clickhouse` | 25.8 | certified | `ClickHouse2411` | version-ladder | `clickhouse/clickhouse-server:25.8` | yes | yes |
 | `clickhouse` | 24.10 | legacy-tested | `ClickHouse24` | version-ladder | `clickhouse/clickhouse-server:24.10` | yes | yes |
+| `oracle` | 23 | certified | `Oracle23` | version-ladder | `gvenzl/oracle-free:slim` | no | yes |
+| `oracle` | 21 | certified | `Oracle21` | version-ladder | `gvenzl/oracle-xe:21-slim` | no | yes |
 | `cockroachdb` | 26.3 | certified | `CockroachDB263` | version-ladder | `cockroachdb/cockroach:latest-v26.3` | yes | yes |
 | `cockroachdb` | 26.2 | certified | `CockroachDB26` | version-ladder | `cockroachdb/cockroach:latest-v26.2` | yes | yes |
 | `cockroachdb` | 25.4 | certified | `CockroachDB25` | version-ladder | `cockroachdb/cockroach:latest-v25.4` | yes | yes |
@@ -723,8 +725,6 @@ into four probed ones with no workflow edit.
 | `sqlserver` | 17.0 (SQL Server 2025) | certified | `SQLServer2022` | dialect-default | `mcr.microsoft.com/mssql/server:2025-latest` | no | no: the capability probe has no statement table for the sqlserver dialect, so a server on this line would be asked nothing |
 | `sqlserver` | 16.0 (SQL Server 2022) | best-effort | `SQLServer2022` | dialect-default | `mcr.microsoft.com/mssql/server:2022-latest` | no | no: the capability probe has no statement table for the sqlserver dialect, so a server on this line would be asked nothing |
 | `sqlserver` | 15.0 (SQL Server 2019) | best-effort | `SQLServer2022` | dialect-default | `mcr.microsoft.com/mssql/server:2019-latest` | no | no: the capability probe has no statement table for the sqlserver dialect, so a server on this line would be asked nothing |
-| `oracle` | 23 | certified | `Oracle23` | version-ladder | `gvenzl/oracle-free:slim` | no | no: the oracle dialect has a probe plan and no launch recipe, so nothing here can start the server to run it |
-| `oracle` | 21 | best-effort | `Oracle21` | version-ladder | `gvenzl/oracle-xe:21-slim` | no | no: the oracle dialect has a probe plan and no launch recipe, so nothing here can start the server to run it |
 | `sqlite` | 3 | certified | `SQLite3` | dialect-default | none | n/a | no: no container image is declared for this line; the capability probe has no statement table for the sqlite dialect, so a server on this line would be asked nothing |
 <!-- END GENERATED VERSION MATRIX -->
 

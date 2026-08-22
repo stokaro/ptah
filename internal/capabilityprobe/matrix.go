@@ -247,6 +247,18 @@ type launcher struct {
 	command []string
 	// url addresses the container from the runner's own host namespace.
 	url string
+	// urlByLine overrides url for a line whose address differs from the rest of
+	// its dialect's.
+	//
+	// It is the exception to the rule above this type, and Oracle is the only
+	// dialect that needs it: the pluggable database the image creates is named
+	// after the edition rather than after Ptah, so the free image serves
+	// FREEPDB1 and the express image serves XEPDB1. Measured on both, banner
+	// included -- `Oracle AI Database 26ai Free Release 23.26.2.0.0` answers on
+	// the first and `Oracle Database 21c Express Edition Release 21.0.0.0.0` on
+	// the second, and neither answers on the other's service name
+	// (stokaro/ptah#1875).
+	urlByLine map[string]string
 	// suiteDatabase and the URL fields wire the same server into the integration
 	// runner for tier 3. Empty when the runner has no target for the dialect,
 	// which suiteSkip then has to say.
@@ -359,6 +371,49 @@ var launchers = map[string]launcher{
 		suiteDatabase: "yugabytedb",
 		suiteURLEnv:   "YUGABYTEDB_URL",
 	},
+	platform.Oracle: {
+		// The same three variables the tagged integration contour sets, so a
+		// cell probes the server that contour already runs against.
+		flags: []string{
+			"--publish", "1521:1521",
+			"--env", "ORACLE_PASSWORD=ptah_password",
+			"--env", "APP_USER=ptah",
+			"--env", "APP_USER_PASSWORD=ptah_password",
+		},
+		// The probe connects as SYSTEM, and the contour's test as the ordinary
+		// APP_USER, and the split is the same one MySQL already carries: the
+		// probe's throwaway namespace is an Oracle ACCOUNT, and CREATE USER
+		// answers ORA-01031 to anything less. Measured -- as ptah the run dies
+		// at `create the throwaway probe namespace: ORA-01031`.
+		//
+		// Privileged here is safe for the reason it is not safe there. The
+		// probe creates one account and drops it with CASCADE, so what CASCADE
+		// reaches is what the probe made; the contour's test calls
+		// DropAllTables, which drops everything the CONNECTED account owns, and
+		// under SYSTEM that reaches Oracle's own.
+		//
+		// It also has to be privileged to measure anything: an account with
+		// only a quota answers ORA-01031 to CREATE MATERIALIZED VIEW, and a run
+		// that recorded that would report the engine lacking a feature it has
+		// (stokaro/ptah#1898).
+		//
+		// No plain url: every Oracle line addresses its own pluggable database,
+		// so answering with one would point half the cells at a service name
+		// their server does not serve.
+		urlByLine: map[string]string{
+			"23": "oracle://system:ptah_password@127.0.0.1:1521/FREEPDB1",
+			"21": "oracle://system:ptah_password@127.0.0.1:1521/XEPDB1",
+		},
+		// The integration runner has no Oracle target, and the round trip that
+		// would be its scenario already runs elsewhere: TestOracleDeclarationConvergesE2E
+		// in the tagged contour renders a declaration, applies it, reads it
+		// back and finds nothing left to do, against the same image this cell
+		// names. Naming a suite database here would point the runner at a
+		// dialect it has no scenarios for.
+		suiteSkip: "the integration runner has no Oracle scenarios; the declaration-convergence round trip " +
+			"runs in the tagged integration contour against the same image, and this cell adds the " +
+			"capability-probe half (stokaro/ptah#1875)",
+	},
 }
 
 // CIMatrix derives the pipeline's fan-out from the declared matrix.
@@ -403,12 +458,12 @@ func toCICell(cell Cell) CICell {
 	recipe := launchers[cell.Dialect]
 	converted.Runnable = true
 	converted.DockerRun = recipe.dockerRun(cell.Image)
-	converted.URL = recipe.url
+	converted.URL = recipe.urlFor(cell.Line)
 	converted.SuiteDatabase = recipe.suiteDatabase
 	converted.SuiteURLEnv = recipe.suiteURLEnv
 	converted.SuiteURL = recipe.suiteURL
 	if converted.SuiteURL == "" {
-		converted.SuiteURL = recipe.url
+		converted.SuiteURL = converted.URL
 	}
 	converted.SuiteCleanupURLEnv = recipe.suiteCleanupURLEnv
 	converted.SuiteCleanupURL = recipe.suiteCleanupURL
@@ -444,6 +499,15 @@ func skipReasons(cell Cell) []string {
 			cell.Dialect))
 	}
 	return reasons
+}
+
+// urlFor addresses one line's server, taking the line's own address where the
+// dialect declares one.
+func (l launcher) urlFor(line string) string {
+	if url, ok := l.urlByLine[line]; ok {
+		return url
+	}
+	return l.url
 }
 
 func (l launcher) dockerRun(image string) []string {
