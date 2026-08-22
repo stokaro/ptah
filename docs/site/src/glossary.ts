@@ -46,6 +46,21 @@ export const glossary: Record<string, GlossaryEntry> = {
       'A release line past its upstream end of life that Ptah still tests. End of life lowers the support level, not the behavior.',
     source: 'internal/capabilityprobe/cells.go',
   },
+  contour: {
+    definition:
+      'One measured corpus of the conformance repository, with its own report and its own budget file: the offline fixtures, the live round-trip, the Atlas CE differential, the migrate runtime, and the CLI surface. Each is gated on its own.',
+    source: 'stokaro/ptah-atlas-conformance: gaps.md, gaps-live.md, gaps-diff.md, gaps-migrate-runtime.md, cli-surface.md',
+  },
+  'regression-budget': {
+    definition:
+      'A gate that fails when a report exceeds the committed budget for its contour, or when a waiver no longer matches a finding. Green means nothing regressed, not that the contour is covered.',
+    source: 'stokaro/ptah-atlas-conformance: make budget, gap-budget.txt',
+  },
+  'full-conformance': {
+    definition:
+      'A gate that regenerates its report and fails if any non-OK observation remains, waived findings included. It is the yardstick rather than the merge gate.',
+    source: 'stokaro/ptah-atlas-conformance: make gate, .github/workflows/full-conformance.yml',
+  },
 };
 
 /** Terms in the order a legend should list them. */

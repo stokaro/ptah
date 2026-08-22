@@ -3,6 +3,8 @@ title: Conformance
 description: Where Atlas compatibility evidence lives and how to interpret it.
 ---
 
+import GlossaryTerm from '../../../components/GlossaryTerm.astro';
+
 Atlas compatibility evidence is maintained in [`stokaro/ptah-atlas-conformance`](https://github.com/stokaro/ptah-atlas-conformance).
 
 The conformance repository keeps Atlas Apache-2.0 fixtures outside Ptah's MIT source tree and imports Ptah as the system under test:
@@ -103,8 +105,8 @@ The conformance repository separates regression budgets from full parity:
 
 | Gate type | Meaning |
 | --- | --- |
-| Regression budget | No new gaps beyond the accepted budget for that contour. Should stay green. |
-| Full conformance | Every checked case in that contour passes. May stay red while the measured corpus still has non-OK results. |
+| <GlossaryTerm term="regression-budget">Regression budget</GlossaryTerm> | No new gaps beyond the accepted budget for that <GlossaryTerm term="contour" />. Should stay green. |
+| <GlossaryTerm term="full-conformance">Full conformance</GlossaryTerm> | Every checked case in that <GlossaryTerm term="contour" /> passes. May stay red while the measured corpus still has non-OK results. |
 
 A green regression-budget check does not mean Ptah has full Atlas OSS parity.
 A red full-conformance check is expected while the report still lists measured
