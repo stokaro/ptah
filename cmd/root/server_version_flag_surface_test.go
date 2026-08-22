@@ -77,6 +77,15 @@ func offlineDialectVerbs() []dialectVerb {
 				"and the lineage is derived from view bodies without connecting to a server",
 		},
 		{
+			verb: "viz",
+			why: "--dialect selects the capability preset --security gates its rules on, and the " +
+				"diagram is drawn from Go annotations without connecting to a server. Measured, " +
+				"row_level_security -- the only key a rule reads today -- varies by dialect and " +
+				"not within any ladder, so the flag changes no current answer; it is here because " +
+				"a preset chosen with no server to read from has to let the operator name the " +
+				"server they mean, and a rule gated on a version-varying key then needs no new flag",
+		},
+		{
 			verb: "sql lint",
 			why: "--dialect selects the capability preset the CAP rules are evaluated against, " +
 				"and nothing here connects to a server",

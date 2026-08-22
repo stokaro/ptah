@@ -115,11 +115,17 @@ type SkippedRule struct {
 
 // Options selects what the analysis can check.
 type Options struct {
-	// Dialect names the target the schema is read for. It decides which rules
-	// can run: a rule about row-level security has nothing to say on a target
-	// that does not model it, and firing it there would report every granted
+	// Capabilities is the set the target resolves, and it decides which rules
+	// can run: a rule about row-level security has nothing to say where the
+	// target does not model it, and firing it there would report every granted
 	// table on MySQL.
-	Dialect string
+	//
+	// It is a capability set rather than a dialect name because the answer can
+	// depend on the version -- PostgreSQL gained row-level security in 9.5 --
+	// and because a live caller already holds the set its session resolved,
+	// refinements included. An empty set runs no capability-gated rule and says
+	// so in SkippedRules.
+	Capabilities capability.Capabilities
 }
 
 // Analyze runs every rule over db and returns their findings.
@@ -136,7 +142,7 @@ func Analyze(db *goschema.Database, opts Options) Report {
 	report.Findings = append(report.Findings, findPublicGrants(db)...)
 	report.Findings = append(report.Findings, findDefinerRoutines(db)...)
 
-	if rowLevelSecurity(opts.Dialect) {
+	if opts.Capabilities.Has(capability.RowLevelSecurity) {
 		report.Findings = append(report.Findings, findGrantedTablesWithoutRLS(db)...)
 	} else {
 		report.SkippedRules = append(report.SkippedRules, SkippedRule{
@@ -155,13 +161,6 @@ func Analyze(db *goschema.Database, opts Options) Report {
 	})
 	report.Summary = summarize(report.Findings)
 	return report
-}
-
-// rowLevelSecurity reports whether the target models row-level security, asked
-// of the capability set rather than of a list of dialect names written here: a
-// list is what falls behind when a dialect gains the feature.
-func rowLevelSecurity(dialect string) bool {
-	return capability.ForDialect(dialect).Has(capability.RowLevelSecurity)
 }
 
 // findPublicGrants implements PRV03.

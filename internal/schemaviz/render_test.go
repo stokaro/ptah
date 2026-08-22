@@ -199,3 +199,99 @@ func sampleDatabase() *goschema.Database {
 		}},
 	}
 }
+
+// TestRender_AnnotationsMarkTheNodeTheyBelongTo pins what an annotated diagram
+// carries in each format.
+//
+// DOT can draw a marked node: the border takes the severity's color and a row
+// names the codes. Mermaid's erDiagram has neither per-entity styling nor a
+// display name, so the annotation is written as a comment beside the entity --
+// present in the file rather than dropped, which is the honest answer for a
+// format that cannot draw it (stokaro/ptah#1035).
+func TestRender_AnnotationsMarkTheNodeTheyBelongTo(t *testing.T) {
+	tests := []struct {
+		name   string
+		format string
+		// wantContains is what a marked diagram has to carry.
+		wantContains []string
+		// wantMissing is what an UNMARKED node must not acquire, which is what
+		// separates marking one node from marking the diagram.
+		wantMissing []string
+	}{
+		{
+			name:   "dot draws the mark on the node",
+			format: schemaviz.FormatDOT,
+			wantContains: []string{
+				// The TABLE tag, not the FONT one: the border is what a reader
+				// sees before reading anything, and `COLOR="..."` alone matches
+				// the row's font color too -- so an assertion on it would pass
+				// with the border left at its ordinary gray.
+				`CELLPADDING="6" COLOR="#b45309"`,
+				"warning: PRV03",
+				"routine escalate: info PRV02",
+			},
+			wantMissing: []string{"posts</B></FONT></TD></TR>\n      <TR><TD ALIGN=\"LEFT\""},
+		},
+		{
+			name:   "mermaid writes it beside the entity",
+			format: schemaviz.FormatMermaid,
+			wantContains: []string{
+				"%% users: warning PRV03",
+				"%% routine escalate: info PRV02",
+			},
+			wantMissing: []string{"%% posts:"},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			output, err := schemaviz.Render(sampleDatabase(), schemaviz.Options{
+				Format: test.format,
+				Annotations: map[string]schemaviz.Annotation{
+					"users": {Severity: schemaviz.SeverityWarning, Labels: []string{"PRV03"}},
+				},
+				Unattached: []string{"routine escalate: info PRV02"},
+			})
+
+			c.Assert(err, qt.IsNil)
+			for _, want := range test.wantContains {
+				c.Assert(string(output), qt.Contains, want)
+			}
+			for _, missing := range test.wantMissing {
+				c.Assert(string(output), qt.Not(qt.Contains), missing)
+			}
+		})
+	}
+}
+
+// TestRender_WithoutAnnotationsIsByteIdentical is the control.
+//
+// Annotations are opt-in, so every diagram rendered before they existed has to
+// render the same bytes now. A renderer that marked nothing but still moved a
+// color or a row would break every caller comparing its output.
+func TestRender_WithoutAnnotationsIsByteIdentical(t *testing.T) {
+	tests := []struct{ name, format string }{
+		{name: "dot", format: schemaviz.FormatDOT},
+		{name: "mermaid", format: schemaviz.FormatMermaid},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			plain, plainErr := schemaviz.Render(sampleDatabase(), schemaviz.Options{Format: test.format})
+			empty, emptyErr := schemaviz.Render(sampleDatabase(), schemaviz.Options{
+				Format:      test.format,
+				Annotations: make(map[string]schemaviz.Annotation),
+				Unattached:  make([]string, 0),
+			})
+
+			c.Assert(plainErr, qt.IsNil)
+			c.Assert(emptyErr, qt.IsNil)
+			c.Assert(string(empty), qt.Equals, string(plain))
+			c.Assert(string(plain), qt.Not(qt.Contains), "%%")
+		})
+	}
+}

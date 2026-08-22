@@ -238,7 +238,7 @@ variable.
 | --- | --- |
 | `ptah introspect` | Generate annotated Go models from a live database. |
 | `ptah seed` | Apply environment-scoped SQL seed files. |
-| `ptah viz` | Render desired schema diagrams as Mermaid, DOT, or SVG. |
+| `ptah viz` | Render desired schema diagrams as Mermaid, DOT, or SVG; `--security` marks the tables the schema security rules find. |
 | `ptah version` | Print Ptah build information. |
 | `ptah license` | Print license, copyright, and Atlas-compatibility attribution. |
 | `ptah schema serve` | Serve a read-only local view of the declared schema and how the live database differs from it. |

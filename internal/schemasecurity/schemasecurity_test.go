@@ -6,6 +6,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/internal/schemasecurity"
 	"go.5x5.cz/ptah/migration/risk"
 )
@@ -148,7 +149,7 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			report := schemasecurity.Analyze(test.database, schemasecurity.Options{Dialect: test.dialect})
+			report := schemasecurity.Analyze(test.database, schemasecurity.Options{Capabilities: capability.ForDialect(test.dialect)})
 
 			codes := make([]string, 0, len(report.Findings))
 			for _, finding := range report.Findings {
@@ -186,7 +187,7 @@ func TestAnalyze_FindingsCarryTheValuesTheirSuggestionNames(t *testing.T) {
 		Functions: []goschema.Function{{Name: "set_tenant", Security: "definer", Language: "plpgsql"}},
 	}
 
-	report := schemasecurity.Analyze(database, schemasecurity.Options{Dialect: "postgres"})
+	report := schemasecurity.Analyze(database, schemasecurity.Options{Capabilities: capability.ForDialect("postgres")})
 
 	byCode := make(map[string]schemasecurity.Finding, len(report.Findings))
 	for _, finding := range report.Findings {
@@ -223,7 +224,7 @@ func TestAnalyze_OrdersFindingsSoTwoRunsAgreeIsTheDiffableProperty(t *testing.T)
 		},
 	}
 
-	report := schemasecurity.Analyze(database, schemasecurity.Options{Dialect: "postgres"})
+	report := schemasecurity.Analyze(database, schemasecurity.Options{Capabilities: capability.ForDialect("postgres")})
 
 	subjects := make([]string, 0, len(report.Findings))
 	for _, finding := range report.Findings {
