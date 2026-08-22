@@ -244,7 +244,7 @@ func preflightApplyReadScope(
 		return requested, nil
 	}
 	if platform.IsPostgresFamily(conn.Info().Dialect) {
-		return schemaselection.RealmSchemas(ctx, conn.Info().Dialect, conn)
+		return schemaselection.RealmSchemas(ctx, conn.Info().Dialect, conn.Info().Capabilities, conn)
 	}
 	return schemascope.ReadNames(ctx, conn.Info(), nil, conn)
 }

@@ -2,11 +2,13 @@ package schemaselection_test
 
 import (
 	"database/sql/driver"
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/internal/dbschema/dbtest"
 	"go.5x5.cz/ptah/internal/schemaselection"
@@ -240,7 +242,8 @@ func TestRealmSchemas_PostgresFamilyQueryExcludesSystemSchemas(t *testing.T) {
 		}, nil
 	})
 
-	got, err := schemaselection.RealmSchemas(t.Context(), "cockroachdb", db.SQL)
+	got, err := schemaselection.RealmSchemas(
+		t.Context(), "cockroachdb", capability.ForDialect("cockroachdb"), db.SQL)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(got, qt.DeepEquals, []string{"extra", "public"})
@@ -248,6 +251,54 @@ func TestRealmSchemas_PostgresFamilyQueryExcludesSystemSchemas(t *testing.T) {
 	c.Assert(queries[0], qt.Contains, "n.nspname <> 'information_schema'")
 	c.Assert(queries[0], qt.Contains, "n.nspname <> 'crdb_internal'")
 	c.Assert(queries[0], qt.Contains, "n.nspname NOT LIKE 'pg\\_%' ESCAPE '\\'")
+	c.Assert(queries[0], qt.Contains, "d.deptype = 'e'")
+}
+
+// TestPostgresDescribedSchemasPredicate_DropsTheSchemasAnExtensionOwns pins the
+// arm and the gate on it.
+//
+// The extension arm reads pg_depend, so it may only be asked of a catalog that
+// has one. Measured: the Cloud Spanner emulator through PGAdapter 0.55.2
+// answers `relation "pg_depend" does not exist` to the whole statement, which
+// would turn every realm read there into a failure rather than a narrower
+// description. Omitting it costs that target nothing -- it has no CREATE
+// EXTENSION to own a schema with.
+func TestPostgresDescribedSchemasPredicate_DropsTheSchemasAnExtensionOwns(t *testing.T) {
+	tests := []struct {
+		name       string
+		dialect    string
+		wantDepend bool
+		wantCrdb   bool
+	}{
+		{name: "postgres reads pg_depend", dialect: "postgres", wantDepend: true},
+		{name: "cockroachdb reads pg_depend", dialect: "cockroachdb", wantDepend: true, wantCrdb: true},
+		{name: "yugabytedb reads pg_depend", dialect: "yugabytedb", wantDepend: true},
+		{name: "spanner has no pg_depend", dialect: "spanner", wantDepend: false},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			predicate := schemaselection.PostgresDescribedSchemasPredicate(
+				test.dialect, capability.ForDialect(test.dialect))
+
+			c.Assert(predicate, qt.Contains, "n.nspname <> 'information_schema'")
+			c.Assert(strings.Contains(predicate, "d.deptype = 'e'"), qt.Equals, test.wantDepend)
+			c.Assert(strings.Contains(predicate, "crdb_internal"), qt.Equals, test.wantCrdb)
+		})
+	}
+}
+
+// TestPostgresDescribedSchemasPredicate_ExtendsRatherThanReplaces holds the two
+// predicates together: the described one is the non-system one plus an arm, so
+// a system schema cannot be described because the extension arm was added.
+func TestPostgresDescribedSchemasPredicate_ExtendsRatherThanReplaces(t *testing.T) {
+	c := qt.New(t)
+	base := schemaselection.PostgresNonSystemSchemasPredicate("postgres")
+	described := schemaselection.PostgresDescribedSchemasPredicate(
+		"postgres", capability.ForDialect("postgres"))
+
+	c.Assert(described, qt.Contains, base)
 }
 
 func TestPostgresNonSystemSchemasPredicate_DerivesSystemSchemasFromDialect(t *testing.T) {
