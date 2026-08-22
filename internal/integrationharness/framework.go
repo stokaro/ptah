@@ -338,12 +338,7 @@ func (tr *TestRunner) runSingleTest(
 		err = scenario.TestFunc(ctx, conn, tr.fixtures)
 	}
 
-	if err != nil {
-		result.Success = false
-		result.Error = err.Error()
-	} else {
-		result.Success = true
-	}
+	applyScenarioOutcome(&result, err)
 
 	// Capture recorded steps when the selected scenario function supports them.
 	if scenario.cleanupTestFunc != nil || scenario.EnhancedTestFunc != nil {
@@ -353,6 +348,49 @@ func (tr *TestRunner) runSingleTest(
 	result.Duration = time.Since(start)
 	return result
 }
+
+// applyScenarioOutcome records on result how the scenario ended.
+//
+// Split out from the run so the three outcomes can be checked without a live
+// server: which one a given error lands in is the whole point, and the
+// precondition case has to be read before the general error case or a skip
+// reverts to the failure it used to be.
+func applyScenarioOutcome(result *TestResult, err error) {
+	switch {
+	case errors.Is(err, ErrPreconditionUnavailable):
+		// A scenario that could not set up its own precondition has not found a
+		// defect. Reporting it as a failure is how the nightly capability
+		// matrix stayed red for weeks over a privilege the suite account is not
+		// meant to have (stokaro/ptah#1901).
+		//
+		// Success stays false, as it does for the dialect gates in the run:
+		// every reader switches on Skipped first, and leaving Success false
+		// also keeps the deferred close handler from turning a skip into a
+		// half-failed result.
+		result.Skipped = true
+		result.SkipReason = err.Error()
+	case err != nil:
+		result.Success = false
+		result.Error = err.Error()
+	default:
+		result.Success = true
+	}
+}
+
+// ErrPreconditionUnavailable marks a scenario that cannot ask its question on
+// this target, as opposed to one whose answer was wrong.
+//
+// The dialect gates above decide before the run, from what a scenario declares.
+// This one cannot: whether the connected account may create a user is a fact
+// about the account, and only the server can answer it. The suite connects as
+// an ordinary application account on purpose -- `suiteURL` is ptah_user while
+// the probe's own `url` is root -- so the account not having CREATE USER is the
+// suite working as designed, and the scenario that needs one has nothing to
+// report.
+//
+// Wrap rather than return it bare, so the reason travels into SkipReason and
+// the report says which precondition was missing.
+var ErrPreconditionUnavailable = errors.New("scenario precondition unavailable")
 
 func isPostgresDistributedSQL(dialect string) bool {
 	switch platform.NormalizeDialect(dialect) {
