@@ -267,19 +267,19 @@ func (r *Reader) readConstraints() ([]types.DBConstraint, map[string]bool, error
 	// The referenced keys are read BEFORE the constraint rows are opened, and
 	// the order is load-bearing rather than tidy.
 	//
-	// go-ora v3 refuses a second query on the same *sql.DB while an earlier
-	// result set still has rows to read, answering EOF. Measured, and the
-	// distinction is undrained rather than open:
+	// A second query issued while an earlier result set still has rows to read
+	// is served only if the driver can take another connection from the pool.
+	// go-ora v2.9.0 does; go-ora v3.0.1 answers EOF instead, and the
+	// distinction there is undrained rather than open:
 	//
 	//	first drained, not closed, then second   ok
 	//	first undrained, then second             EOF
 	//
-	// That is why readIndexes needs no such change: its loop drains before it
-	// calls readIndexColumns. This read opened its second query first, with the
-	// constraint rows untouched.
-	//
-	// v2 served the pair from a second pooled connection, so the old order
-	// worked by accident of the driver rather than by design.
+	// Depending on the pool for it is depending on an accident of the driver,
+	// so this read does not: it takes its second query out of the nest rather
+	// than trusting that a nested one is served. readIndexes needs no such
+	// change and has the same property for the same reason -- its loop drains
+	// before it calls readIndexColumns (stokaro/ptah#1888).
 	referenced, err := r.readReferencedKeys()
 	if err != nil {
 		return nil, nil, err
