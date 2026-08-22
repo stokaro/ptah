@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+
+	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 )
 
 // schemaFileVariableHCL declares a variable with no default and reads it from a
@@ -66,7 +68,7 @@ func TestSchemaDiffVarReachesTheSchemaFile(t *testing.T) {
 	c := qt.New(t)
 	from, to := writeSchemaFileVariableFixture(t)
 
-	out, err := runCompatCommand(t,
+	out, err := atlastest.RunCompatCommand(t,
 		"schema", "diff",
 		"--dev-url", "sqlite://file?mode=memory",
 		"--from", from,
@@ -88,7 +90,7 @@ func TestSchemaDiffWithoutVarNamesTheMissingVariable(t *testing.T) {
 	c := qt.New(t)
 	from, to := writeSchemaFileVariableFixture(t)
 
-	_, err := runCompatCommand(t,
+	_, err := atlastest.RunCompatCommand(t,
 		"schema", "diff",
 		"--dev-url", "sqlite://file?mode=memory",
 		"--from", from,

@@ -9,6 +9,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/cmd/atlas"
+	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 )
 
 // gooseDirectiveRow is one source directory shape, measured on the pinned
@@ -43,7 +44,7 @@ func gooseDirectiveRefused() func(c *qt.C, err error, out string) {
 func gooseDirectiveNoTables(tables ...string) func(c *qt.C, dbPath string) {
 	return func(c *qt.C, dbPath string) {
 		for _, table := range tables {
-			c.Assert(sqliteTableCount(c, dbPath, table), qt.Equals, 0, qt.Commentf("table %s", table))
+			c.Assert(atlastest.SqliteTableCount(c, dbPath, table), qt.Equals, 0, qt.Commentf("table %s", table))
 		}
 	}
 }
@@ -68,7 +69,7 @@ func gooseDirectiveRows() []gooseDirectiveRow {
 			file:      widgets,
 			assertErr: gooseDirectiveAccepted(),
 			assertDB: func(c *qt.C, dbPath string) {
-				c.Assert(sqliteTableCount(c, dbPath, "widgets"), qt.Equals, 1)
+				c.Assert(atlastest.SqliteTableCount(c, dbPath, "widgets"), qt.Equals, 1)
 			},
 		},
 		{
@@ -124,8 +125,8 @@ func gooseDirectiveRows() []gooseDirectiveRow {
 			file:      "CREATE TABLE pre (id INTEGER PRIMARY KEY);\n-- +goose Up\n" + widgets,
 			assertErr: gooseDirectiveAccepted(),
 			assertDB: func(c *qt.C, dbPath string) {
-				c.Assert(sqliteTableCount(c, dbPath, "pre"), qt.Equals, 1)
-				c.Assert(sqliteTableCount(c, dbPath, "widgets"), qt.Equals, 1)
+				c.Assert(atlastest.SqliteTableCount(c, dbPath, "pre"), qt.Equals, 1)
+				c.Assert(atlastest.SqliteTableCount(c, dbPath, "widgets"), qt.Equals, 1)
 			},
 		},
 		{
@@ -147,8 +148,8 @@ func gooseDirectiveRows() []gooseDirectiveRow {
 			file:      "-- +goose Up\n" + widgets + "-- +goose Down\nCREATE TABLE down_ran (id INTEGER PRIMARY KEY);\n",
 			assertErr: gooseDirectiveAccepted(),
 			assertDB: func(c *qt.C, dbPath string) {
-				c.Assert(sqliteTableCount(c, dbPath, "widgets"), qt.Equals, 1)
-				c.Assert(sqliteTableCount(c, dbPath, "down_ran"), qt.Equals, 0)
+				c.Assert(atlastest.SqliteTableCount(c, dbPath, "widgets"), qt.Equals, 1)
+				c.Assert(atlastest.SqliteTableCount(c, dbPath, "down_ran"), qt.Equals, 0)
 			},
 		},
 	}
@@ -160,7 +161,7 @@ func TestMigrateApplyGooseDirectiveParsing(t *testing.T) {
 			c := qt.New(t)
 			dir := t.TempDir()
 			migrationsDir := filepath.Join(dir, "migrations")
-			writeAtlasApplyProjectMigration(c, migrationsDir, "1_init.sql", tt.file)
+			atlastest.WriteAtlasApplyProjectMigration(c, migrationsDir, "1_init.sql", tt.file)
 			hashConvertedApplyDir(c, migrationsDir, tt.format)
 			dbPath := filepath.Join(dir, "apply.db")
 
@@ -188,7 +189,7 @@ func TestMigrateValidateGooseDirectiveParsing(t *testing.T) {
 			c := qt.New(t)
 			dir := t.TempDir()
 			migrationsDir := filepath.Join(dir, "migrations")
-			writeAtlasApplyProjectMigration(c, migrationsDir, "1_init.sql", tt.file)
+			atlastest.WriteAtlasApplyProjectMigration(c, migrationsDir, "1_init.sql", tt.file)
 			hashConvertedApplyDir(c, migrationsDir, tt.format)
 
 			cmd := atlas.NewCompatCommand("atlas")
@@ -214,7 +215,7 @@ func TestMigrateImportGooseDirectiveParsing(t *testing.T) {
 			c := qt.New(t)
 			dir := t.TempDir()
 			migrationsDir := filepath.Join(dir, "migrations")
-			writeAtlasApplyProjectMigration(c, migrationsDir, "1_init.sql", tt.file)
+			atlastest.WriteAtlasApplyProjectMigration(c, migrationsDir, "1_init.sql", tt.file)
 			hashConvertedApplyDir(c, migrationsDir, tt.format)
 
 			cmd := atlas.NewCompatCommand("atlas")
@@ -242,7 +243,7 @@ func TestMigrateApplyGooseDirectivesViaEnvFormat(t *testing.T) {
 	dir := t.TempDir()
 	t.Chdir(dir)
 	migrationsDir := filepath.Join(dir, "migrations")
-	writeAtlasApplyProjectMigration(c, migrationsDir, "1_init.sql", "CREATE TABLE widgets (id INTEGER PRIMARY KEY);\n")
+	atlastest.WriteAtlasApplyProjectMigration(c, migrationsDir, "1_init.sql", "CREATE TABLE widgets (id INTEGER PRIMARY KEY);\n")
 	hashConvertedApplyDir(c, migrationsDir, "goose")
 	dbPath := filepath.Join(dir, "apply.db")
 	c.Assert(os.WriteFile("atlas.hcl", []byte(`env "local" {
@@ -266,7 +267,7 @@ func TestMigrateApplyGooseDirectivesViaEnvFormat(t *testing.T) {
 	err := cmd.Execute()
 
 	c.Assert(err, qt.IsNil, qt.Commentf("command output:\n%s", out.String()))
-	c.Assert(sqliteTableCount(c, dbPath, "widgets"), qt.Equals, 1)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "widgets"), qt.Equals, 1)
 }
 
 // TestMigrateApplyGooseNoDirectivesReallyExecutesTheBody is the control that
@@ -277,7 +278,7 @@ func TestMigrateApplyGooseNoDirectivesReallyExecutesTheBody(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	migrationsDir := filepath.Join(dir, "migrations")
-	writeAtlasApplyProjectMigration(c, migrationsDir, "1_init.sql", "THIS IS NOT SQL;\n")
+	atlastest.WriteAtlasApplyProjectMigration(c, migrationsDir, "1_init.sql", "THIS IS NOT SQL;\n")
 	hashConvertedApplyDir(c, migrationsDir, "goose")
 	dbPath := filepath.Join(dir, "apply.db")
 
@@ -305,7 +306,7 @@ func TestMigrateApplyGooseNoTransactionRunsOutsideATransaction(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	migrationsDir := filepath.Join(dir, "migrations")
-	writeAtlasApplyProjectMigration(
+	atlastest.WriteAtlasApplyProjectMigration(
 		c,
 		migrationsDir,
 		"1_init.sql",
@@ -331,5 +332,5 @@ func TestMigrateApplyGooseNoTransactionRunsOutsideATransaction(t *testing.T) {
 
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(out.String(), qt.Contains, "missing_table")
-	c.Assert(sqliteTableCount(c, dbPath, "widgets"), qt.Equals, 1)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "widgets"), qt.Equals, 1)
 }

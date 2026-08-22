@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+
+	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 )
 
 // projectFileHCL is a genuine Atlas project file: variables and an env block,
@@ -165,7 +167,7 @@ func TestCompatRefusesProjectFileAsSchemaSource(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			c := qt.New(t)
 			dir := writeProjectFileFixtures(t)
-			out, err := runCompatCommand(t, tc.args(dir)...)
+			out, err := atlastest.RunCompatCommand(t, tc.args(dir)...)
 			tc.assert(c, dir, out, err)
 		})
 	}

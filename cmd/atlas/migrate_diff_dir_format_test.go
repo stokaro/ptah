@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+
+	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 )
 
 // These tests pin how `atlas migrate diff` reads the two spellings that select
@@ -35,7 +37,7 @@ func compatDiffFixtureDir(c *qt.C) (dir, target string) {
 		[]byte("CREATE TABLE widgets (id INTEGER PRIMARY KEY);\n"),
 		0o600,
 	), qt.IsNil)
-	_, _, err := runCompat("migrate", "hash", "--dir", "file://"+dir)
+	_, _, err := atlastest.RunCompat("migrate", "hash", "--dir", "file://"+dir)
 	c.Assert(err, qt.IsNil)
 
 	target = filepath.Join(c.TempDir(), "target.sql")
@@ -65,7 +67,7 @@ func runCompatDiff(c *qt.C, query string, dirFormat []string) (wrote bool, err e
 		"--to", "file://" + target,
 	}
 	args = append(args, dirFormat...)
-	_, _, err = runCompat(args...)
+	_, _, err = atlastest.RunCompat(args...)
 	return len(atlasDirEntryNames(c, dir)) > before, err
 }
 

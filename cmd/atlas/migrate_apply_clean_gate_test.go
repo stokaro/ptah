@@ -8,6 +8,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/internal/migratesum"
@@ -68,7 +69,7 @@ func runCleanGateApply(c *qt.C, migrationsDir, dbPath string, extra ...string) (
 		"--dir", "file://" + migrationsDir,
 	}
 	args = append(args, extra...)
-	stdout, _, err = runCompatStreams(c, args...)
+	stdout, _, err = atlastest.RunCompatStreams(c, args...)
 	return stdout, err
 }
 
@@ -93,8 +94,8 @@ func TestCompatCommand_MigrateApplyRefusesUncleanDatabase(t *testing.T) {
 			"baseline version or allow-dirty is required",
 	)
 	// The refusal is worth nothing if the migrations ran anyway.
-	c.Assert(compatTableNames(c, dbPath), qt.Not(qt.Contains), "cg_users")
-	c.Assert(compatTableNames(c, dbPath), qt.Not(qt.Contains), "cg_orders")
+	c.Assert(atlastest.CompatTableNames(c, dbPath), qt.Not(qt.Contains), "cg_users")
+	c.Assert(atlastest.CompatTableNames(c, dbPath), qt.Not(qt.Contains), "cg_orders")
 }
 
 // The count grows with the number of unmanaged tables, exactly as measured, so
@@ -187,8 +188,8 @@ func TestCompatCommand_MigrateApplyUncleanOptIns(t *testing.T) {
 			_, err := runCleanGateApply(c, migrationsDir, dbPath, test.extra...)
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(compatTableNames(c, dbPath), qt.Contains, test.wantApplied)
-			c.Assert(compatTableNames(c, dbPath), qt.Contains, "legacy_stuff")
+			c.Assert(atlastest.CompatTableNames(c, dbPath), qt.Contains, test.wantApplied)
+			c.Assert(atlastest.CompatTableNames(c, dbPath), qt.Contains, "legacy_stuff")
 		})
 	}
 }
@@ -209,7 +210,7 @@ func TestCompatCommand_MigrateApplyDryRunBaselineAcceptsUncleanDatabase(t *testi
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(stdout, qt.Contains, "Would have applied 1 migrations.")
-	c.Assert(compatTableNames(c, dbPath), qt.Not(qt.Contains), "cg_orders")
+	c.Assert(atlastest.CompatTableNames(c, dbPath), qt.Not(qt.Contains), "cg_orders")
 }
 
 // The two opt-ins are not composable. Measured, the binary refuses the pair
@@ -226,8 +227,8 @@ func TestCompatCommand_MigrateApplyBaselineAndAllowDirtyAreExclusive(t *testing.
 	c.Assert(err.Error(), qt.Equals, "sql/migrate: baseline and allow-dirty are mutually exclusive")
 	// Refused before the baseline was recorded: no revisions table exists to
 	// carry a row the operator never asked to keep.
-	c.Assert(compatTableNames(c, dbPath), qt.Not(qt.Contains), "atlas_schema_revisions")
-	c.Assert(compatTableNames(c, dbPath), qt.Not(qt.Contains), "cg_orders")
+	c.Assert(atlastest.CompatTableNames(c, dbPath), qt.Not(qt.Contains), "atlas_schema_revisions")
+	c.Assert(atlastest.CompatTableNames(c, dbPath), qt.Not(qt.Contains), "cg_orders")
 }
 
 // The states the binary calls clean. Each row is a database the gate must let
@@ -270,7 +271,7 @@ func TestCompatCommand_MigrateApplyAcceptsCleanDatabases(t *testing.T) {
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(stdout, qt.Contains, "Migration complete. Current version: "+cleanGateVersionTwo)
-			c.Assert(compatTableNames(c, dbPath), qt.Contains, "cg_users")
+			c.Assert(atlastest.CompatTableNames(c, dbPath), qt.Contains, "cg_users")
 		})
 	}
 }
@@ -291,13 +292,13 @@ func TestCompatCommand_MigrateApplyAcceptsLoneEmptyRevisionsTable(t *testing.T) 
 		"DROP TABLE cg_orders",
 		"DELETE FROM atlas_schema_revisions",
 	)
-	c.Assert(compatTableNames(c, dbPath), qt.DeepEquals, []string{"atlas_schema_revisions"})
+	c.Assert(atlastest.CompatTableNames(c, dbPath), qt.DeepEquals, []string{"atlas_schema_revisions"})
 
 	stdout, err := runCleanGateApply(c, migrationsDir, dbPath)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(stdout, qt.Contains, "Migration complete. Current version: "+cleanGateVersionTwo)
-	c.Assert(compatTableNames(c, dbPath), qt.Contains, "cg_users")
+	c.Assert(atlastest.CompatTableNames(c, dbPath), qt.Contains, "cg_users")
 }
 
 // The gate is an adoption gate, not a standing drift check. Once a revision has
@@ -318,5 +319,5 @@ func TestCompatCommand_MigrateApplyIgnoresDriftOnAnAdoptedDatabase(t *testing.T)
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(stdout, qt.Contains, "Migration complete. Current version: "+cleanGateVersionTwo)
-	c.Assert(compatTableNames(c, dbPath), qt.Contains, "cg_orders")
+	c.Assert(atlastest.CompatTableNames(c, dbPath), qt.Contains, "cg_orders")
 }

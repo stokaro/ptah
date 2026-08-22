@@ -9,6 +9,8 @@ import (
 
 	qt "github.com/frankban/quicktest"
 	_ "modernc.org/sqlite"
+
+	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 )
 
 // These tests pin stokaro/ptah#1206 on `ptah-compat migrate set`: a migration
@@ -52,7 +54,7 @@ func writeHashedFlywayDir(c *qt.C, migrations []setFlywayMigration) string {
 	c.Helper()
 	dir := filepath.Join(c.TempDir(), "migrations")
 	for _, migration := range migrations {
-		writeAtlasApplyProjectMigration(c, dir, migration.name, migration.body)
+		atlastest.WriteAtlasApplyProjectMigration(c, dir, migration.name, migration.body)
 	}
 	hashConvertedApplyDir(c, dir, "flyway")
 	return dir
@@ -272,9 +274,9 @@ func TestCompatMigrateSet_PlainPrefixLayoutsAreUnchanged(t *testing.T) {
 	t.Parallel()
 	c := qt.New(t)
 	dir := filepath.Join(c.TempDir(), "migrations")
-	writeAtlasApplyProjectMigration(c, dir, "1_init.up.sql",
+	atlastest.WriteAtlasApplyProjectMigration(c, dir, "1_init.up.sql",
 		"CREATE TABLE widgets (id INTEGER PRIMARY KEY);\n")
-	writeAtlasApplyProjectMigration(c, dir, "1_init.down.sql", "DROP TABLE widgets;\n")
+	atlastest.WriteAtlasApplyProjectMigration(c, dir, "1_init.down.sql", "DROP TABLE widgets;\n")
 	hashConvertedApplyDir(c, dir, "golang-migrate")
 	dbPath := filepath.Join(filepath.Dir(dir), "gm.db")
 
@@ -350,7 +352,7 @@ func TestCompatMigrateSet_RemovesRetiredExactHistoryAboveTarget(t *testing.T) {
 	c.Assert(err, qt.IsNil, qt.Commentf("apply stderr: %s", stderr))
 
 	c.Assert(os.Remove(filepath.Join(dir, "V2__two.sql")), qt.IsNil)
-	writeAtlasApplyProjectMigration(c, dir, "V1__one.sql",
+	atlastest.WriteAtlasApplyProjectMigration(c, dir, "V1__one.sql",
 		"CREATE TABLE current_v1 (id INTEGER PRIMARY KEY);\n")
 	hashConvertedApplyDir(c, dir, "flyway")
 
@@ -382,7 +384,7 @@ func TestCompatMigrateSet_KeepsRetiredExactHistoryBelowMultiDigitTarget(t *testi
 	c.Assert(err, qt.IsNil, qt.Commentf("apply stderr: %s", stderr))
 
 	c.Assert(os.Remove(filepath.Join(dir, "V9__nine.sql")), qt.IsNil)
-	writeAtlasApplyProjectMigration(c, dir, "V10__ten.sql",
+	atlastest.WriteAtlasApplyProjectMigration(c, dir, "V10__ten.sql",
 		"CREATE TABLE current_v10 (id INTEGER PRIMARY KEY);\n")
 	hashConvertedApplyDir(c, dir, "flyway")
 
@@ -445,7 +447,7 @@ func TestCompatMigrateSet_OrdersRetiredHistoryByKnownFlywayRole(t *testing.T) {
 			c.Assert(err, qt.IsNil, qt.Commentf("apply stderr: %s", stderr))
 
 			c.Assert(os.Remove(filepath.Join(dir, test.retiredFile)), qt.IsNil)
-			writeAtlasApplyProjectMigration(c, dir, "V10__ten.sql",
+			atlastest.WriteAtlasApplyProjectMigration(c, dir, "V10__ten.sql",
 				"CREATE TABLE current_v10 (id INTEGER PRIMARY KEY);\n")
 			hashConvertedApplyDir(c, dir, "flyway")
 
@@ -511,7 +513,7 @@ func TestCompatMigrateSet_OrdersRetiredBaselinesByRawToken(t *testing.T) {
 			c.Assert(err, qt.IsNil, qt.Commentf("apply stderr: %s", stderr))
 
 			c.Assert(os.Remove(filepath.Join(dir, test.retiredFile)), qt.IsNil)
-			writeAtlasApplyProjectMigration(c, dir, test.targetFile,
+			atlastest.WriteAtlasApplyProjectMigration(c, dir, test.targetFile,
 				"CREATE TABLE target_baseline (id INTEGER PRIMARY KEY);\n")
 			hashConvertedApplyDir(c, dir, "flyway")
 
@@ -547,7 +549,7 @@ func TestCompatMigrateSet_TargetBaselineKeepsHistoryItsRawTokenCutSquashes(t *te
 	c.Assert(err, qt.IsNil, qt.Commentf("apply stderr: %s", stderr))
 
 	c.Assert(os.Remove(filepath.Join(dir, "V10__ten.sql")), qt.IsNil)
-	writeAtlasApplyProjectMigration(c, dir, "B2__base.sql",
+	atlastest.WriteAtlasApplyProjectMigration(c, dir, "B2__base.sql",
 		"CREATE TABLE target_baseline (id INTEGER PRIMARY KEY);\n")
 	hashConvertedApplyDir(c, dir, "flyway")
 
@@ -584,7 +586,7 @@ func TestCompatMigrateSet_TargetRepeatableKeepsRetiredVersionedHistory(t *testin
 	c.Assert(err, qt.IsNil, qt.Commentf("apply stderr: %s", stderr))
 
 	c.Assert(os.Remove(filepath.Join(dir, "V1__one.sql")), qt.IsNil)
-	writeAtlasApplyProjectMigration(c, dir, "R__only.sql",
+	atlastest.WriteAtlasApplyProjectMigration(c, dir, "R__only.sql",
 		"CREATE TABLE target_repeatable (id INTEGER PRIMARY KEY);\n")
 	hashConvertedApplyDir(c, dir, "flyway")
 
@@ -629,7 +631,7 @@ func TestCompatMigrateSet_RefusesRetiredHistoryWithoutFlywayRole(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(db.Close(), qt.IsNil)
 	c.Assert(os.Remove(filepath.Join(dir, "B20__twenty.sql")), qt.IsNil)
-	writeAtlasApplyProjectMigration(c, dir, "V10__ten.sql",
+	atlastest.WriteAtlasApplyProjectMigration(c, dir, "V10__ten.sql",
 		"CREATE TABLE current_v10 (id INTEGER PRIMARY KEY);\n")
 	hashConvertedApplyDir(c, dir, "flyway")
 
@@ -680,7 +682,7 @@ func assertCompatMigrateSetRetiredSourceOrderAmbiguous(
 	c.Assert(err, qt.IsNil, qt.Commentf("apply stderr: %s", stderr))
 
 	c.Assert(os.Remove(filepath.Join(dir, retiredFile)), qt.IsNil)
-	writeAtlasApplyProjectMigration(c, dir, targetFile,
+	atlastest.WriteAtlasApplyProjectMigration(c, dir, targetFile,
 		"CREATE TABLE current_ambiguous (id INTEGER PRIMARY KEY);\n")
 	hashConvertedApplyDir(c, dir, "flyway")
 

@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+
+	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 )
 
 // typedVariableAtlasHCL mirrors the measured b-variable-var fixture from the
@@ -47,7 +49,7 @@ func TestSchemaInspectTypedVariableAtlasHCL(t *testing.T) {
 	c := qt.New(t)
 	configPath := writeTypedVariableProject(t)
 
-	out, err := runCompatCommand(t,
+	out, err := atlastest.RunCompatCommand(t,
 		"schema", "inspect",
 		"--config", "file://"+configPath,
 		"--env", "dev",
@@ -67,7 +69,7 @@ func TestSchemaInspectTypedVariableMissingVar(t *testing.T) {
 	c := qt.New(t)
 	configPath := writeTypedVariableProject(t)
 
-	_, err := runCompatCommand(t,
+	_, err := atlastest.RunCompatCommand(t,
 		"schema", "inspect",
 		"--config", "file://"+configPath,
 		"--env", "dev",

@@ -12,6 +12,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/cmd/atlas"
+	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 	"go.5x5.cz/ptah/dbschema"
 )
 
@@ -205,7 +206,7 @@ func TestCompatCommand_MigrateCheckpointAtlasRoundTrip(t *testing.T) {
 	c := qt.New(t)
 	dir := filepath.Join(c.TempDir(), "m")
 	writeCheckpointAtlasFixture(c, dir)
-	hashOut, _, err := runCompat("migrate", "hash", "--dir", "file://"+dir)
+	hashOut, _, err := atlastest.RunCompat("migrate", "hash", "--dir", "file://"+dir)
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", hashOut))
 
 	// A database already carrying the pre-checkpoint history, seeded before the
@@ -235,7 +236,7 @@ func TestCompatCommand_MigrateCheckpointAtlasRoundTrip(t *testing.T) {
 	})
 	// The checkpoint body is cumulative, so the column the second migration
 	// added exists even though that migration never ran here.
-	c.Assert(sqliteTableCount(c, freshDB, "ckpt_users"), qt.Equals, 1)
+	c.Assert(atlastest.SqliteTableCount(c, freshDB, "ckpt_users"), qt.Equals, 1)
 
 	// Pre-checkpoint database: the checkpoint is skipped, not replayed. Assert
 	// the revision rows, not just the message — replaying it is exactly the
@@ -269,7 +270,7 @@ func TestCompatCommand_MigrateCheckpointAtlasSupersedesEarlierCheckpoint(t *test
 	// checkpoint.
 	c.Assert(os.WriteFile(filepath.Join(dir, "29990101000000_later.sql"),
 		[]byte("ALTER TABLE ckpt_users ADD COLUMN nickname TEXT;\n"), 0o600), qt.IsNil)
-	hashOut, _, err := runCompat("migrate", "hash", "--dir", "file://"+dir)
+	hashOut, _, err := atlastest.RunCompat("migrate", "hash", "--dir", "file://"+dir)
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", hashOut))
 
 	devURL2 := "sqlite://" + filepath.Join(c.TempDir(), "shadow2.db")
@@ -349,7 +350,7 @@ func TestCompatCommand_MigrateCheckpointNestedMigrationIsNotHistory(t *testing.T
 	// a bound that still reads subdirectories.
 	c.Assert(os.WriteFile(filepath.Join(dir, "sub", "29990101000000_future.sql"),
 		[]byte("CREATE TABLE ckpt_future (id INTEGER);\n"), 0o600), qt.IsNil)
-	hashOut, _, err := runCompat("migrate", "hash", "--dir", "file://"+dir)
+	hashOut, _, err := atlastest.RunCompat("migrate", "hash", "--dir", "file://"+dir)
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", hashOut))
 
 	out, err := runCompatCheckpoint(c,
@@ -373,8 +374,8 @@ func TestCompatCommand_MigrateCheckpointNestedMigrationIsNotHistory(t *testing.T
 	c.Assert(rows[0].Applied, qt.Equals, int64(rows[0].Total))
 	c.Assert(rows[0].Version, qt.Equals, strings.TrimSuffix(name, "_checkpoint.sql"))
 	// Never replayed into the body, never executed from its own file.
-	c.Assert(sqliteTableCount(c, freshDB, "ckpt_future"), qt.Equals, 0)
-	c.Assert(sqliteTableCount(c, freshDB, "ckpt_users"), qt.Equals, 1)
+	c.Assert(atlastest.SqliteTableCount(c, freshDB, "ckpt_future"), qt.Equals, 0)
+	c.Assert(atlastest.SqliteTableCount(c, freshDB, "ckpt_users"), qt.Equals, 1)
 	c.Assert(applyErrOut, qt.Equals,
 		"warning: sub/29990101000000_future.sql is not covered by atlas.sum and will not run; "+
 			"Atlas migrations are top-level files named *.sql\n")
@@ -403,7 +404,7 @@ func TestCompatCommand_MigrateCheckpointNestedTieCannotCollide(t *testing.T) {
 		[]byte("CREATE TABLE ckpt_users (id INTEGER PRIMARY KEY);\n"), 0o600), qt.IsNil)
 	c.Assert(os.WriteFile(filepath.Join(dir, "sub", "29990101000001_tie.sql"),
 		[]byte("ALTER TABLE ckpt_users ADD COLUMN tie TEXT;\n"), 0o600), qt.IsNil)
-	hashOut, _, err := runCompat("migrate", "hash", "--dir", "file://"+dir)
+	hashOut, _, err := atlastest.RunCompat("migrate", "hash", "--dir", "file://"+dir)
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", hashOut))
 
 	out, err := runCompatCheckpoint(c,

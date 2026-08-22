@@ -8,6 +8,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 	"go.5x5.cz/ptah/config/projectconfig"
 )
 
@@ -83,7 +84,7 @@ func TestSelectorFlagsRefuseAnEnvReference(t *testing.T) {
 			c := qt.New(t)
 			configPath, _ := writeEnvSelectorAtlasHCL(t)
 
-			out, err := runCompatCommand(t,
+			out, err := atlastest.RunCompatCommand(t,
 				append(test.args, "--config", "file://"+configPath, "--env", "local")...)
 
 			c.Assert(err, qt.IsNotNil)
@@ -104,7 +105,7 @@ func TestApplyExcludeEnvReferenceRefusedEvenWithTheUnmatchedOptIn(t *testing.T) 
 	t.Setenv("PTAH_ATLAS_ALLOW_UNMATCHED_EXCLUDE", "1")
 	configPath, _ := writeEnvSelectorAtlasHCL(t)
 
-	out, err := runCompatCommand(t,
+	out, err := atlastest.RunCompatCommand(t,
 		"schema", "apply", "--dry-run",
 		"--exclude", "env://exclude",
 		"--config", "file://"+configPath, "--env", "local")
@@ -123,7 +124,7 @@ func TestApplyExcludeLiteralStillFiltersAndTheEnvListIsApplied(t *testing.T) {
 	configPath, _ := writeEnvSelectorAtlasHCL(t)
 
 	// No selector flag at all: the env's exclude list keeps skipme out.
-	out, err := runCompatCommand(t, "schema", "apply", "--dry-run",
+	out, err := atlastest.RunCompatCommand(t, "schema", "apply", "--dry-run",
 		"--config", "file://"+configPath, "--env", "local")
 	c.Assert(err, qt.IsNil)
 	c.Assert(out, qt.Contains, `CREATE TABLE "keepme"`)
@@ -131,7 +132,7 @@ func TestApplyExcludeLiteralStillFiltersAndTheEnvListIsApplied(t *testing.T) {
 
 	// And an ordinary literal selector still filters, so the refusal above is
 	// about the scheme rather than about the flag.
-	out, err = runCompatCommand(t, "schema", "apply", "--dry-run",
+	out, err = atlastest.RunCompatCommand(t, "schema", "apply", "--dry-run",
 		"--exclude", "keepme",
 		"--config", "file://"+configPath, "--env", "local")
 	c.Assert(err, qt.IsNil)
@@ -161,7 +162,7 @@ func TestSchemaTestResolvesAnEnvReferenceSource(t *testing.T) {
 			c := qt.New(t)
 			configPath, _ := writeEnvSelectorAtlasHCL(t)
 
-			out, err := runCompatCommand(t,
+			out, err := atlastest.RunCompatCommand(t,
 				append(test.args, "--config", "file://"+configPath, "--env", "local", t.TempDir())...)
 
 			assertNoEnvSourceRefusal(c, out, err)

@@ -10,6 +10,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/cmd/atlas"
+	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 	"go.5x5.cz/ptah/cmd/internal/exitcode"
 	"go.5x5.cz/ptah/dbschema"
 )
@@ -146,7 +147,7 @@ func TestCompatCommand_SchemaTestUnusableDatabaseSourceFailsLoudly(t *testing.T)
 			c := qt.New(t)
 			fixture := writeCompatLiveSourceFixture(c)
 
-			out, err := runCompatArgs([]string{
+			out, err := atlastest.RunCompatArgs([]string{
 				"schema", "test", fixture.testsDir,
 				"-u", tt.source(fixture),
 				"--dev-url", freshDevURL(c),
@@ -397,16 +398,6 @@ func freshDevURL(c *qt.C) string {
 	return "sqlite://" + filepath.ToSlash(filepath.Join(c.TempDir(), "dev.db"))
 }
 
-func runCompatArgs(args []string) (string, error) {
-	cmd := atlas.NewCompatCommand("atlas")
-	var out bytes.Buffer
-	cmd.SetOut(&out)
-	cmd.SetErr(&out)
-	cmd.SetArgs(args)
-	err := cmd.Execute()
-	return out.String(), err
-}
-
 // The four tests below cover every spelling that reaches the desired-state
 // source, because the refusal they replace had three reachable gate branches
 // with two different messages: -u and --url share the flag mapper, PTAH_URL is
@@ -430,7 +421,7 @@ func TestCompatCommand_SchemaTestFlagSpellingsAcceptADatabaseSource(t *testing.T
 			c := qt.New(t)
 			fixture := writeCompatLiveSourceFixture(c)
 
-			out, err := runCompatArgs([]string{
+			out, err := atlastest.RunCompatArgs([]string{
 				"schema", "test", fixture.testsDir,
 				tt.flag, fixture.liveURL, "--dev-url", freshDevURL(c),
 			})
@@ -445,7 +436,7 @@ func TestCompatCommand_SchemaTestEnvironmentTwinAcceptsADatabaseSource(t *testin
 	fixture := writeCompatLiveSourceFixture(c)
 	t.Setenv("PTAH_URL", fixture.liveURL)
 
-	out, err := runCompatArgs([]string{"schema", "test", fixture.testsDir, "--dev-url", freshDevURL(c)})
+	out, err := atlastest.RunCompatArgs([]string{"schema", "test", fixture.testsDir, "--dev-url", freshDevURL(c)})
 
 	assertDatabaseSourcePassed(c, out, err)
 }
@@ -461,7 +452,7 @@ func TestCompatCommand_SchemaTestProjectFileSrcAcceptsADatabaseSource(t *testing
 }
 `), 0o600), qt.IsNil)
 
-	out, err := runCompatArgs([]string{"schema", "test", fixture.testsDir, "--env", "local"})
+	out, err := atlastest.RunCompatArgs([]string{"schema", "test", fixture.testsDir, "--env", "local"})
 
 	assertDatabaseSourcePassed(c, out, err)
 }
@@ -491,7 +482,7 @@ func TestCompatCommand_SchemaTestFileSourcesStillResolveToThemselves(t *testing.
 			c := qt.New(t)
 			fixture := writeCompatLiveSourceFixture(c)
 
-			out, err := runCompatArgs([]string{
+			out, err := atlastest.RunCompatArgs([]string{
 				"schema", "test", fixture.testsDir,
 				"-u", "file://" + tt.source(fixture), "--dev-url", freshDevURL(c),
 			})
@@ -531,7 +522,7 @@ func TestCompatCommand_SchemaTestRefusesURLsThatAreNotADesiredState(t *testing.T
 			c := qt.New(t)
 			fixture := writeCompatLiveSourceFixture(c)
 
-			out, err := runCompatArgs([]string{"schema", "test", fixture.testsDir, "-u", tt.url})
+			out, err := atlastest.RunCompatArgs([]string{"schema", "test", fixture.testsDir, "-u", tt.url})
 
 			c.Assert(err, qt.IsNotNil, qt.Commentf("%s", out))
 			c.Assert(err.Error(), qt.Contains, tt.want)

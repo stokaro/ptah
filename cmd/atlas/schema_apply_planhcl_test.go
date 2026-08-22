@@ -10,6 +10,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/cmd/atlas"
+	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasschema"
 )
@@ -56,21 +57,6 @@ func sqliteColumnCount(c *qt.C, dbPath, table, column string) int {
 	return count
 }
 
-func sqliteIndexCount(c *qt.C, dbPath, index string) int {
-	c.Helper()
-	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)
-	c.Assert(err, qt.IsNil)
-	defer dbschema.CloseAndWarn(conn)
-	row := conn.QueryRowContext(
-		context.Background(),
-		`SELECT count(*) FROM sqlite_master WHERE type = 'index' AND name = ?`,
-		index,
-	)
-	var count int
-	c.Assert(row.Scan(&count), qt.IsNil)
-	return count
-}
-
 func TestSchemaApplyAtlasOraclePlanFileAppliesAndVerifies(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
@@ -91,9 +77,9 @@ func TestSchemaApplyAtlasOraclePlanFileAppliesAndVerifies(t *testing.T) {
 	c.Assert(out, qt.Contains, "Planned schema changes:")
 	c.Assert(out, qt.Contains, "ALTER TABLE `users` ADD COLUMN `email` text NULL")
 	c.Assert(out, qt.Contains, "Schema apply completed successfully.")
-	c.Assert(sqliteTableCount(c, dbPath, "posts"), qt.Equals, 1)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "posts"), qt.Equals, 1)
 	c.Assert(sqliteColumnCount(c, dbPath, "users", "email"), qt.Equals, 1)
-	c.Assert(sqliteIndexCount(c, dbPath, "idx_posts_user_id"), qt.Equals, 1)
+	c.Assert(atlastest.SqliteIndexCount(c, dbPath, "idx_posts_user_id"), qt.Equals, 1)
 }
 
 func TestSchemaApplyAtlasPlanFileWithExplicitDevURL(t *testing.T) {
@@ -113,7 +99,7 @@ func TestSchemaApplyAtlasPlanFileWithExplicitDevURL(t *testing.T) {
 
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 	c.Assert(out, qt.Contains, "Schema apply completed successfully.")
-	c.Assert(sqliteTableCount(c, dbPath, "posts"), qt.Equals, 1)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "posts"), qt.Equals, 1)
 }
 
 func TestSchemaApplyAtlasPlanFileRequiresTo(t *testing.T) {
@@ -130,7 +116,7 @@ func TestSchemaApplyAtlasPlanFileRequiresTo(t *testing.T) {
 	// Atlas's contract and error, verbatim: an Atlas plan file
 	// carries nothing Ptah can verify without the desired state.
 	c.Assert(err, qt.ErrorMatches, `the flag "to" is required to verify the provided plan`)
-	c.Assert(sqliteTableCount(c, dbPath, "posts"), qt.Equals, 0)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "posts"), qt.Equals, 0)
 }
 
 func TestSchemaApplyAtlasPlanFileRefusesDriftedTarget(t *testing.T) {
@@ -152,8 +138,8 @@ func TestSchemaApplyAtlasPlanFileRefusesDriftedTarget(t *testing.T) {
 	// reach --to, and the apply refuses with the target untouched.
 	c.Assert(err, qt.ErrorMatches, `(?s)pre-planned migration does not converge to the desired state:.*the plan was not applied to the target.*re-run .schema plan. against the current database and review the fresh plan`)
 	c.Assert(atlasschema.IsPlanDesiredStateFailure(err), qt.IsTrue, qt.Commentf("%s", out))
-	c.Assert(sqliteTableCount(c, dbPath, "posts"), qt.Equals, 0)
-	c.Assert(sqliteTableCount(c, dbPath, "drifted"), qt.Equals, 1)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "posts"), qt.Equals, 0)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "drifted"), qt.Equals, 1)
 }
 
 func TestSchemaApplyAtlasPlanFileRefusesTamperedDesiredState(t *testing.T) {
@@ -178,8 +164,8 @@ func TestSchemaApplyAtlasPlanFileRefusesTamperedDesiredState(t *testing.T) {
 	// The rehearsed end state misses the tampered-in table, so the apply
 	// refuses before the target is touched.
 	c.Assert(err, qt.ErrorMatches, `(?s)pre-planned migration does not converge to the desired state:.*tampered_extra.*`)
-	c.Assert(sqliteTableCount(c, dbPath, "posts"), qt.Equals, 0)
-	c.Assert(sqliteTableCount(c, dbPath, "tampered_extra"), qt.Equals, 0)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "posts"), qt.Equals, 0)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "tampered_extra"), qt.Equals, 0)
 }
 
 // writeAtlasPlanFile writes a hand-built Atlas-format plan file carrying the
@@ -225,9 +211,9 @@ func TestSchemaApplyAtlasPlanFileRefusesDevDatabaseEscape(t *testing.T) {
 		`pre-planned migration was refused before it reached the dev database: statement 1 uses ATTACH, which attaches another SQLite database file.*`)
 	c.Assert(err, qt.ErrorMatches, `(?s).*A dev database executes plan SQL for real.*`)
 	c.Assert(out, qt.Contains, "refused before it reached the dev database")
-	c.Assert(sqliteTableCount(c, victimPath, "pwned"), qt.Equals, 0)
-	c.Assert(sqliteTableCount(c, victimPath, "untouched"), qt.Equals, 1)
-	c.Assert(sqliteTableCount(c, dbPath, "posts"), qt.Equals, 0)
+	c.Assert(atlastest.SqliteTableCount(c, victimPath, "pwned"), qt.Equals, 0)
+	c.Assert(atlastest.SqliteTableCount(c, victimPath, "untouched"), qt.Equals, 1)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "posts"), qt.Equals, 0)
 	c.Assert(sqliteColumnCount(c, dbPath, "users", "email"), qt.Equals, 0)
 }
 
@@ -269,8 +255,8 @@ func TestSchemaApplyAtlasPlanFileRefusesEscapeHiddenBehindValidChanges(t *testin
 	)
 
 	c.Assert(err, qt.ErrorMatches, `pre-planned migration was refused before it reached the dev database: statement 4 uses ATTACH.*`)
-	c.Assert(sqliteTableCount(c, victimPath, "pwned"), qt.Equals, 0)
-	c.Assert(sqliteTableCount(c, dbPath, "posts"), qt.Equals, 0)
+	c.Assert(atlastest.SqliteTableCount(c, victimPath, "pwned"), qt.Equals, 0)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "posts"), qt.Equals, 0)
 }
 
 func TestSchemaApplyAtlasPlanFileDryRunPrintsWithoutApplying(t *testing.T) {
@@ -287,7 +273,7 @@ func TestSchemaApplyAtlasPlanFileDryRunPrintsWithoutApplying(t *testing.T) {
 
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 	c.Assert(out, qt.Contains, "CREATE TABLE `posts`")
-	c.Assert(sqliteTableCount(c, dbPath, "posts"), qt.Equals, 0)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "posts"), qt.Equals, 0)
 }
 
 // TestSchemaApplyAtlasPlanFileDryRunRefusesDevDatabaseEscape pins that
@@ -313,8 +299,8 @@ func TestSchemaApplyAtlasPlanFileDryRunRefusesDevDatabaseEscape(t *testing.T) {
 
 	c.Assert(err, qt.ErrorMatches,
 		`pre-planned migration was refused before it reached the dev database: statement 1 uses ATTACH.*`)
-	c.Assert(sqliteTableCount(c, victimPath, "pwned"), qt.Equals, 0)
-	c.Assert(sqliteTableCount(c, victimPath, "untouched"), qt.Equals, 1)
+	c.Assert(atlastest.SqliteTableCount(c, victimPath, "pwned"), qt.Equals, 0)
+	c.Assert(atlastest.SqliteTableCount(c, victimPath, "untouched"), qt.Equals, 1)
 }
 
 // TestSchemaApplyAtlasPlanFileDryRunRefusesNonConvergingPlan is the second
@@ -337,8 +323,8 @@ func TestSchemaApplyAtlasPlanFileDryRunRefusesNonConvergingPlan(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `(?s)pre-planned migration does not converge to the desired state.*`)
 	c.Assert(atlasschema.IsPlanDesiredStateFailure(err), qt.IsTrue, qt.Commentf("%s", out))
 	// A dry run still applies nothing to the target.
-	c.Assert(sqliteTableCount(c, dbPath, "unrelated"), qt.Equals, 0)
-	c.Assert(sqliteTableCount(c, dbPath, "posts"), qt.Equals, 0)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "unrelated"), qt.Equals, 0)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "posts"), qt.Equals, 0)
 }
 
 func TestSchemaApplyJSONPlanWithToVerifiesEndState(t *testing.T) {
@@ -358,7 +344,7 @@ func TestSchemaApplyJSONPlanWithToVerifiesEndState(t *testing.T) {
 
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 	c.Assert(out, qt.Contains, "Schema apply completed successfully.")
-	c.Assert(sqliteTableCount(c, dbPath, "json_orders"), qt.Equals, 1)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "json_orders"), qt.Equals, 1)
 }
 
 func TestSchemaApplyJSONPlanWithMismatchedToFailsPostApply(t *testing.T) {
@@ -383,7 +369,7 @@ func TestSchemaApplyJSONPlanWithMismatchedToFailsPostApply(t *testing.T) {
 	// loudly: the reached state is not the --to desired state.
 	c.Assert(err, qt.ErrorMatches, `(?s)schema apply --plan end-state verification failed: after applying the plan, the database does not match the --to desired state.*`)
 	c.Assert(atlasschema.IsPlanDesiredStateFailure(err), qt.IsTrue, qt.Commentf("%s", out))
-	c.Assert(sqliteTableCount(c, dbPath, "planned_only"), qt.Equals, 1)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "planned_only"), qt.Equals, 1)
 }
 
 func TestSchemaApplyPtahWrittenHCLPlanRoundTrip(t *testing.T) {
@@ -418,7 +404,7 @@ func TestSchemaApplyPtahWrittenHCLPlanRoundTrip(t *testing.T) {
 
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
 	c.Assert(out, qt.Contains, "Schema apply completed successfully.")
-	c.Assert(sqliteTableCount(c, dbPath, "rt_orders"), qt.Equals, 1)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "rt_orders"), qt.Equals, 1)
 }
 
 func TestSchemaApplyPtahWrittenHCLPlanRefusesStaleTarget(t *testing.T) {
@@ -448,5 +434,5 @@ func TestSchemaApplyPtahWrittenHCLPlanRefusesStaleTarget(t *testing.T) {
 	// A Ptah-written .plan.hcl keeps the native fingerprint contract: the
 	// drifted target refuses as stale before any rehearsal or execution.
 	c.Assert(err, qt.ErrorMatches, `pre-planned migration is stale: .*`)
-	c.Assert(sqliteTableCount(c, dbPath, "stale_rt_orders"), qt.Equals, 0)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "stale_rt_orders"), qt.Equals, 0)
 }

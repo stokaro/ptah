@@ -6,6 +6,8 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+
+	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 )
 
 // These tests pin the measured `migrate import` source-integrity gate
@@ -36,7 +38,7 @@ import (
 // compatImport runs `ptah-compat migrate import` with the source layout named
 // through the --from query, the spelling the pinned binary's own examples use.
 func compatImport(from, to, format string) (stdout, stderr string, err error) {
-	return runCompat("migrate", "import", "--from", "file://"+from+"?format="+format, "--to", "file://"+to)
+	return atlastest.RunCompat("migrate", "import", "--from", "file://"+from+"?format="+format, "--to", "file://"+to)
 }
 
 // importDirs returns a fresh (source, destination) pair under one temp root.

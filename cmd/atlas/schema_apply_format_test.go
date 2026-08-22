@@ -10,6 +10,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/cmd/atlas"
+	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasschema"
 	"go.5x5.cz/ptah/migration/migrator"
@@ -41,7 +42,7 @@ func TestSchemaApplySupportsFormat(t *testing.T) {
 	c.Assert(out.String(), qt.Contains, "1|CREATE|  CREATE TABLE")
 	c.Assert(out.String(), qt.Not(qt.Contains), "Auto-approval enabled")
 	c.Assert(out.String(), qt.Not(qt.Contains), "Schema apply completed successfully.")
-	c.Assert(sqliteTableCount(c, dbPath, "users"), qt.Equals, 1)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "users"), qt.Equals, 1)
 }
 
 // TestSchemaApplyFormatRendersJSON is the end-to-end half of the
@@ -75,7 +76,7 @@ func TestSchemaApplyFormatRendersJSON(t *testing.T) {
 	c.Assert(out.String(), qt.Contains, `"Driver":"sqlite"`)
 	c.Assert(out.String(), qt.Contains, `"Changes":{"Applied":[`)
 	c.Assert(out.String(), qt.Contains, "json_users")
-	c.Assert(sqliteTableCount(c, dbPath, "json_users"), qt.Equals, 1)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "json_users"), qt.Equals, 1)
 }
 
 func TestSchemaApplyFormatDryRunDoesNotApply(t *testing.T) {
@@ -102,7 +103,7 @@ func TestSchemaApplyFormatDryRunDoesNotApply(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Contains, "CREATE TABLE")
-	c.Assert(sqliteTableCount(c, dbPath, "dry_run_users"), qt.Equals, 0)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "dry_run_users"), qt.Equals, 0)
 }
 
 func TestSchemaApplyFormatSeparatesInteractivePrompt(t *testing.T) {
@@ -130,7 +131,7 @@ func TestSchemaApplyFormatSeparatesInteractivePrompt(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Contains, "1\nApply these schema changes?")
 	c.Assert(out.String(), qt.Contains, "Schema apply canceled.")
-	c.Assert(sqliteTableCount(c, dbPath, "prompt_users"), qt.Equals, 0)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "prompt_users"), qt.Equals, 0)
 }
 
 func TestSchemaApplyFormatReportsSynced(t *testing.T) {
@@ -190,7 +191,7 @@ func TestSchemaApplyUsesAtlasProjectEnvSource(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Contains, "Schema apply completed successfully.")
-	c.Assert(sqliteTableCount(c, dbPath, "env_users"), qt.Equals, 1)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "env_users"), qt.Equals, 1)
 }
 
 func TestSchemaApplyUsesAtlasProjectEnvSchemaBlockAndFormat(t *testing.T) {
@@ -227,7 +228,7 @@ func TestSchemaApplyUsesAtlasProjectEnvSchemaBlockAndFormat(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Equals, "1")
-	c.Assert(sqliteTableCount(c, dbPath, "env_schema_users"), qt.Equals, 1)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "env_schema_users"), qt.Equals, 1)
 }
 
 func TestSchemaApplyUsesAtlasProjectSchemaMode(t *testing.T) {
@@ -267,7 +268,7 @@ func TestSchemaApplyUsesAtlasProjectSchemaMode(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Equals, "synced")
-	c.Assert(sqliteTableCount(c, dbPath, "env_schema_mode_users"), qt.Equals, 0)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "env_schema_mode_users"), qt.Equals, 0)
 }
 
 func TestSchemaApplyUsesAtlasProjectDefaultsWithExplicitTargetFlags(t *testing.T) {
@@ -306,7 +307,7 @@ func TestSchemaApplyUsesAtlasProjectDefaultsWithExplicitTargetFlags(t *testing.T
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Equals, "synced")
-	c.Assert(sqliteTableCount(c, dbPath, "explicit_target_defaults"), qt.Equals, 0)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "explicit_target_defaults"), qt.Equals, 0)
 }
 
 func TestSchemaApplyUsesEvaluatedAtlasProjectEnvSource(t *testing.T) {
@@ -357,7 +358,7 @@ env "local" {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Contains, "Schema apply completed successfully.")
-	c.Assert(sqliteTableCount(c, dbPath, "env_eval_users"), qt.Equals, 1)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "env_eval_users"), qt.Equals, 1)
 }
 
 func TestSchemaApplyUsesAtlasProjectEnvExclude(t *testing.T) {
@@ -391,8 +392,8 @@ CREATE TABLE env_skip (id INTEGER PRIMARY KEY);
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Contains, "Schema apply completed successfully.")
-	c.Assert(sqliteTableCount(c, dbPath, "env_keep"), qt.Equals, 1)
-	c.Assert(sqliteTableCount(c, dbPath, "env_skip"), qt.Equals, 0)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "env_keep"), qt.Equals, 1)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "env_skip"), qt.Equals, 0)
 }
 
 func TestSchemaApplyUsesAtlasProjectDiffSkipDropTable(t *testing.T) {
@@ -439,7 +440,7 @@ func TestSchemaApplyUsesAtlasProjectDiffSkipDropTable(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Equals, "synced")
-	c.Assert(sqliteTableCount(c, dbPath, "old_users"), qt.Equals, 1)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "old_users"), qt.Equals, 1)
 }
 
 func TestSchemaApplyAllowsAtlasProjectConcurrentIndexPolicyForSQLite(t *testing.T) {
@@ -476,7 +477,7 @@ func TestSchemaApplyAllowsAtlasProjectConcurrentIndexPolicyForSQLite(t *testing.
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Contains, "Schema apply completed successfully.")
-	c.Assert(sqliteTableCount(c, dbPath, "users"), qt.Equals, 1)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "users"), qt.Equals, 1)
 }
 
 func TestSchemaApplyPrefersExplicitFlagsOverProjectEnv(t *testing.T) {
@@ -510,8 +511,8 @@ func TestSchemaApplyPrefersExplicitFlagsOverProjectEnv(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Contains, "Schema apply completed successfully.")
-	c.Assert(sqliteTableCount(c, cliDBPath, "cli_users"), qt.Equals, 1)
-	c.Assert(sqliteTableCount(c, configDBPath, "config_users"), qt.Equals, 0)
+	c.Assert(atlastest.SqliteTableCount(c, cliDBPath, "cli_users"), qt.Equals, 1)
+	c.Assert(atlastest.SqliteTableCount(c, configDBPath, "config_users"), qt.Equals, 0)
 }
 
 func TestSchemaApplyExplicitFlagsIgnoreUnneededAtlasProjectConfig(t *testing.T) {
@@ -544,7 +545,7 @@ env "prod" {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Contains, "Schema apply completed successfully.")
-	c.Assert(sqliteTableCount(c, dbPath, "explicit_users"), qt.Equals, 1)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "explicit_users"), qt.Equals, 1)
 }
 
 func TestSchemaApplyAtlasEnvIgnoresMismatchedPtahEnv(t *testing.T) {
@@ -578,7 +579,7 @@ func TestSchemaApplyAtlasEnvIgnoresMismatchedPtahEnv(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Contains, "Schema apply completed successfully.")
-	c.Assert(sqliteTableCount(c, dbPath, "atlas_env_users"), qt.Equals, 1)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "atlas_env_users"), qt.Equals, 1)
 }
 
 func TestSchemaApplyRejectsInvalidFormatBeforeLoadingFiles(t *testing.T) {
@@ -598,19 +599,4 @@ func TestSchemaApplyRejectsInvalidFormatBeforeLoadingFiles(t *testing.T) {
 
 	c.Assert(err, qt.ErrorMatches, `parse --format template: .*`)
 	c.Assert(out.String(), qt.Not(qt.Contains), "connect to --url")
-}
-
-func sqliteTableCount(c *qt.C, dbPath, table string) int {
-	c.Helper()
-	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)
-	c.Assert(err, qt.IsNil)
-	defer dbschema.CloseAndWarn(conn)
-	row := conn.QueryRowContext(
-		context.Background(),
-		`SELECT count(*) FROM sqlite_master WHERE type = 'table' AND name = ?`,
-		table,
-	)
-	var count int
-	c.Assert(row.Scan(&count), qt.IsNil)
-	return count
 }

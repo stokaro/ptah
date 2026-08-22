@@ -11,6 +11,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/cmd/atlas"
+	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 	"go.5x5.cz/ptah/dbschema"
 	"go.5x5.cz/ptah/internal/atlasschema"
 	"go.5x5.cz/ptah/internal/testutils"
@@ -49,7 +50,7 @@ func TestSchemaCleanFormatDryRunJSONDoesNotApply(t *testing.T) {
 	c.Assert(got.Changes, qt.DeepEquals, []schemaCleanJSONChange{
 		{Type: "table", Name: "users", Cmd: `DROP TABLE IF EXISTS "users"`},
 	})
-	c.Assert(sqliteTableCount(c, dbPath, "users"), qt.Equals, 1)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "users"), qt.Equals, 1)
 }
 
 func TestSchemaCleanFormatCustomTemplate(t *testing.T) {
@@ -72,7 +73,7 @@ func TestSchemaCleanFormatCustomTemplate(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Equals, `sqlite|1|DROP TABLE IF EXISTS "events"`)
-	c.Assert(sqliteTableCount(c, dbPath, "events"), qt.Equals, 1)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "events"), qt.Equals, 1)
 }
 
 func TestSchemaCleanInvalidFormatFailsBeforeConnecting(t *testing.T) {
@@ -139,7 +140,7 @@ func TestSchemaCleanActualInvalidFormatFailsBeforeApplying(t *testing.T) {
 	err := cmd.Execute()
 
 	c.Assert(err, qt.ErrorMatches, `execute --format template: .*`)
-	c.Assert(sqliteTableCount(c, dbPath, "kept_users"), qt.Equals, 1)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "kept_users"), qt.Equals, 1)
 }
 
 func TestSchemaCleanFormatRequiresInteractiveApproval(t *testing.T) {
@@ -163,7 +164,7 @@ func TestSchemaCleanFormatRequiresInteractiveApproval(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Contains, "1\nWARNING: This operation will permanently delete")
 	c.Assert(out.String(), qt.Contains, "Schema clean canceled.")
-	c.Assert(sqliteTableCount(c, dbPath, "prompt_users"), qt.Equals, 1)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "prompt_users"), qt.Equals, 1)
 }
 
 func TestSchemaCleanFormatAutoApproveApplies(t *testing.T) {
@@ -192,7 +193,7 @@ func TestSchemaCleanFormatAutoApproveApplies(t *testing.T) {
 	c.Assert(got.Changes, qt.DeepEquals, []schemaCleanJSONChange{
 		{Type: "table", Name: "applied_users", Cmd: `DROP TABLE IF EXISTS "applied_users"`},
 	})
-	c.Assert(sqliteTableCount(c, dbPath, "applied_users"), qt.Equals, 0)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "applied_users"), qt.Equals, 0)
 }
 
 func TestSchemaCleanDefaultOutputDryRun(t *testing.T) {
@@ -215,7 +216,7 @@ func TestSchemaCleanDefaultOutputDryRun(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Contains, "[DRY RUN] Would clean schema objects")
 	c.Assert(out.String(), qt.Contains, `- DROP TABLE IF EXISTS "default_users"`)
-	c.Assert(sqliteTableCount(c, dbPath, "default_users"), qt.Equals, 1)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "default_users"), qt.Equals, 1)
 }
 
 func TestSchemaCleanUsesAtlasProjectEnvURLAndFormat(t *testing.T) {
@@ -248,7 +249,7 @@ func TestSchemaCleanUsesAtlasProjectEnvURLAndFormat(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Equals, "sqlite:1")
-	c.Assert(sqliteTableCount(c, dbPath, "project_users"), qt.Equals, 1)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "project_users"), qt.Equals, 1)
 }
 
 type schemaCleanJSONReport struct {

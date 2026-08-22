@@ -9,9 +9,9 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/cmd/atlas"
+	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 	"go.5x5.cz/ptah/cmd/migratevalidate"
 	"go.5x5.cz/ptah/internal/migratesum"
-	"go.5x5.cz/ptah/internal/testutils"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -33,21 +33,6 @@ func writeMigrateMaintFixture(c *qt.C, dir string) {
 	c.Assert(err, qt.IsNil)
 }
 
-// installAppendEditor points $EDITOR at a script that appends a marker line to
-// every file it receives, so editor-driven paths stay hermetic and never spawn
-// an interactive editor.
-func installAppendEditor(t *testing.T, marker string) {
-	testutils.SkipWithoutPOSIXShell(t)
-	t.Helper()
-	path := filepath.Join(t.TempDir(), "editor.sh")
-	script := "#!/bin/sh\nfor f in \"$@\"; do\n  printf '%s\\n' \"" + marker + "\" >> \"$f\"\ndone\n"
-	if err := os.WriteFile(path, []byte(script), 0o700); err != nil { // #nosec G306 -- test editor script must be executable
-		t.Fatal(err)
-	}
-	t.Setenv("VISUAL", "")
-	t.Setenv("EDITOR", path)
-}
-
 // assertNativeValidatePasses proves the directory still verifies through the
 // native `ptah migrations validate` command after an Atlas-verb mutation.
 func assertNativeValidatePasses(c *qt.C, dir string) {
@@ -64,7 +49,7 @@ func TestCompatCommand_MigrateEditForwardsToNative(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	writeMigrateMaintFixture(c, dir)
-	installAppendEditor(t, "-- edited through atlas verb")
+	atlastest.InstallAppendEditor(t, "-- edited through atlas verb")
 
 	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
@@ -90,7 +75,7 @@ func TestCompatCommand_MigrateEditAcceptsMigrationFileName(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
 	writeMigrateMaintFixture(c, dir)
-	installAppendEditor(t, "-- edited by name")
+	atlastest.InstallAppendEditor(t, "-- edited by name")
 
 	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
@@ -311,7 +296,7 @@ func TestCompatCommand_MigrateEditUsesAtlasProjectConfig(t *testing.T) {
 	migrationsDir := filepath.Join(dir, "migrations")
 	c.Assert(os.MkdirAll(migrationsDir, 0o755), qt.IsNil)
 	writeMigrateMaintFixture(c, migrationsDir)
-	installAppendEditor(t, "-- edited via project config")
+	atlastest.InstallAppendEditor(t, "-- edited via project config")
 	c.Assert(os.WriteFile("atlas.hcl", []byte(`env "local" {
   migration {
     dir = "file://migrations"

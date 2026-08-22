@@ -8,6 +8,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/cmd/atlas"
+	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 )
 
 // A dry run intercepts writes, never reads, and a pre-migration check is a
@@ -96,9 +97,9 @@ const dryRunChecksDeferredNote = "Deferred pre-migration checks"
 func writeDryRunChecksDir(c *qt.C, dir, first, second string) string {
 	c.Helper()
 	migrationsDir := filepath.Join(dir, "migrations")
-	writeAtlasApplyProjectMigration(c, migrationsDir, "20260101000001_one.sql", first)
-	writeAtlasApplyProjectMigration(c, migrationsDir, "20260101000002_two.sql", second)
-	writeAtlasApplyProjectSum(c, migrationsDir)
+	atlastest.WriteAtlasApplyProjectMigration(c, migrationsDir, "20260101000001_one.sql", first)
+	atlastest.WriteAtlasApplyProjectMigration(c, migrationsDir, "20260101000002_two.sql", second)
+	atlastest.WriteAtlasApplyProjectSum(c, migrationsDir)
 	return migrationsDir
 }
 
@@ -381,8 +382,8 @@ func TestMigrateApplyDryRunChecksNameConvertedFlywayIdentity(t *testing.T) {
 	c := qt.New(t)
 	dir := c.TempDir()
 	migrationsDir := filepath.Join(dir, "migrations")
-	writeAtlasApplyProjectMigration(c, migrationsDir, "V1__one.sql", dryRunChecksCreateUsers)
-	writeAtlasApplyProjectMigration(c, migrationsDir, "V1.5__two.sql", dryRunChecksDirectiveNeedsPrior)
+	atlastest.WriteAtlasApplyProjectMigration(c, migrationsDir, "V1__one.sql", dryRunChecksCreateUsers)
+	atlastest.WriteAtlasApplyProjectMigration(c, migrationsDir, "V1.5__two.sql", dryRunChecksDirectiveNeedsPrior)
 	hashConvertedApplyDir(c, migrationsDir, "flyway")
 	dbPath := filepath.Join(dir, "flyway-checks.db")
 

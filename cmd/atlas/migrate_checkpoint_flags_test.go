@@ -8,6 +8,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 	"go.5x5.cz/ptah/internal/envbool/envbooltest"
 	"go.5x5.cz/ptah/internal/migratesum"
 	"go.5x5.cz/ptah/internal/testutils"
@@ -107,7 +108,7 @@ func TestCompatCommand_MigrateCheckpointEditRefusesWhatItCannotFinish(t *testing
 			c.Setenv("EDITOR", test.editor)
 			migrationsDir, devURL := checkpointFlagFixture(c)
 
-			_, _, err := runCompatStreams(c,
+			_, _, err := atlastest.RunCompatStreams(c,
 				"migrate", "checkpoint",
 				"--dir", "file://"+migrationsDir,
 				"--dev-url", devURL,
@@ -132,7 +133,7 @@ func TestCompatCommand_MigrateCheckpointEditRewritesAndRehashes(t *testing.T) {
 	c.Setenv("PTAH_ALLOW_NONINTERACTIVE_EDIT", "1")
 	migrationsDir, devURL := checkpointFlagFixture(c)
 
-	stdout, _, err := runCompatStreams(c,
+	stdout, _, err := atlastest.RunCompatStreams(c,
 		"migrate", "checkpoint",
 		"--dir", "file://"+migrationsDir,
 		"--dev-url", devURL,
@@ -145,7 +146,7 @@ func TestCompatCommand_MigrateCheckpointEditRewritesAndRehashes(t *testing.T) {
 	// The first line must still be the checkpoint directive: the editor appends.
 	c.Assert(strings.HasPrefix(checkpointBody(c, migrationsDir), "-- atlas:checkpoint\n"), qt.IsTrue)
 
-	_, _, validateErr := runCompatStreams(c,
+	_, _, validateErr := atlastest.RunCompatStreams(c,
 		"migrate", "validate",
 		"--dir", "file://"+migrationsDir,
 	)
@@ -174,7 +175,7 @@ func TestCompatCommand_MigrateCheckpointDeclaresItsAtlasFlags(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			stdout, _, err := runCompatStreams(c, "migrate", "checkpoint", "--help")
+			stdout, _, err := atlastest.RunCompatStreams(c, "migrate", "checkpoint", "--help")
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(stdout, qt.Contains, test.flag+" ")
@@ -204,7 +205,7 @@ func TestCompatCommand_MigrateCheckpointOmitsWhatItDoesNotAdvertise(t *testing.T
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			stdout, _, err := runCompatStreams(c, "migrate", "checkpoint", "--help")
+			stdout, _, err := atlastest.RunCompatStreams(c, "migrate", "checkpoint", "--help")
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(stdout, qt.Not(qt.Contains), test.flag+" ")
@@ -219,7 +220,7 @@ func TestCompatCommand_MigrateCheckpointLockTimeoutRefusesANonDuration(t *testin
 	c := qt.New(t)
 	migrationsDir, devURL := checkpointFlagFixture(c)
 
-	_, _, err := runCompatStreams(c,
+	_, _, err := atlastest.RunCompatStreams(c,
 		"migrate", "checkpoint",
 		"--dir", "file://"+migrationsDir,
 		"--dev-url", devURL,
@@ -238,7 +239,7 @@ func TestCompatCommand_MigrateCheckpointLockTimeoutSaysWhenItCannotBind(t *testi
 	c := qt.New(t)
 	migrationsDir, devURL := checkpointFlagFixture(c)
 
-	stdout, stderr, err := runCompatStreams(c,
+	stdout, stderr, err := atlastest.RunCompatStreams(c,
 		"migrate", "checkpoint",
 		"--dir", "file://"+migrationsDir,
 		"--dev-url", devURL,
@@ -262,7 +263,7 @@ func TestCompatCommand_MigrateCheckpointLockTimeoutStaysQuietWhenUnset(t *testin
 	c := qt.New(t)
 	migrationsDir, devURL := checkpointFlagFixture(c)
 
-	_, stderr, err := runCompatStreams(c,
+	_, stderr, err := atlastest.RunCompatStreams(c,
 		"migrate", "checkpoint",
 		"--dir", "file://"+migrationsDir,
 		"--dev-url", devURL,
@@ -281,7 +282,7 @@ func TestCompatCommand_MigrateCheckpointQualifierReachesThePlan(t *testing.T) {
 	c := qt.New(t)
 	migrationsDir, devURL := checkpointFlagFixture(c)
 
-	_, _, err := runCompatStreams(c,
+	_, _, err := atlastest.RunCompatStreams(c,
 		"migrate", "checkpoint",
 		"--dir", "file://"+migrationsDir,
 		"--dev-url", devURL,
@@ -300,7 +301,7 @@ func TestCompatCommand_MigrateCheckpointQualifierUnsetPlansCleanly(t *testing.T)
 	c := qt.New(t)
 	migrationsDir, devURL := checkpointFlagFixture(c)
 
-	stdout, _, err := runCompatStreams(c,
+	stdout, _, err := atlastest.RunCompatStreams(c,
 		"migrate", "checkpoint",
 		"--dir", "file://"+migrationsDir,
 		"--dev-url", devURL,

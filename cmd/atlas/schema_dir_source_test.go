@@ -9,6 +9,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/cmd/atlas"
+	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 )
 
 func writeSchemaSourceDir(c *qt.C, files map[string]string) string {
@@ -71,6 +72,6 @@ func TestSchemaApplyAcceptsDirectorySource(t *testing.T) {
 	)
 
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
-	c.Assert(sqliteTableCount(c, dbPath, "applied_dir_users"), qt.Equals, 1)
-	c.Assert(sqliteTableCount(c, dbPath, "applied_dir_posts"), qt.Equals, 1)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "applied_dir_users"), qt.Equals, 1)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "applied_dir_posts"), qt.Equals, 1)
 }

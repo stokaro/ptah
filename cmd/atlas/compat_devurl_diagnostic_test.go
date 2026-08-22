@@ -9,6 +9,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/cmd/atlas"
+	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 	"go.5x5.cz/ptah/internal/migratesum"
 	"go.5x5.cz/ptah/migration/migrator"
 )
@@ -384,7 +385,7 @@ func TestCompatDevURLDiagnostics_MatchThePinnedBinary(t *testing.T) {
 	for _, tt := range compatDevURLRows() {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			stdout, stderr, err := runCompat(tt.args(fx)...)
+			stdout, stderr, err := atlastest.RunCompat(tt.args(fx)...)
 
 			c.Check(err != nil, qt.Equals, tt.wantErr,
 				qt.Commentf("stdout=%q stderr=%q err=%v", stdout, stderr, err))
@@ -415,7 +416,7 @@ func TestCompatDevURLDiagnostics_LeaveDockerToTheProvisioner(t *testing.T) {
 	c := qt.New(t)
 	fx := newCompatDevURLFixture(c)
 
-	_, stderr, err := runCompat(
+	_, stderr, err := atlastest.RunCompat(
 		"migrate", "lint", "--dir", "file://"+fx.dir, "--latest", "1",
 		"--dev-url", "docker://sqlite/3/dev",
 	)

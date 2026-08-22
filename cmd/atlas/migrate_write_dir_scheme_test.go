@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+
+	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 )
 
 // These tests close the half of stokaro/ptah#1186 that WRITES.
@@ -48,7 +50,7 @@ func atlasWriteVerbSpellings() []atlasWriteVerbSpelling {
 		{
 			name: "new",
 			run: func(_ *qt.C, dirArg string) (string, string, error) {
-				return runCompat("migrate", "new", "demo", "--dir", dirArg)
+				return atlastest.RunCompat("migrate", "new", "demo", "--dir", dirArg)
 			},
 		},
 		{
@@ -58,7 +60,7 @@ func atlasWriteVerbSpellings() []atlasWriteVerbSpelling {
 				c.Assert(os.WriteFile(target, []byte(
 					"CREATE TABLE users (id INTEGER PRIMARY KEY);\n",
 				), 0o600), qt.IsNil)
-				return runCompat("migrate", "diff", "demo",
+				return atlastest.RunCompat("migrate", "diff", "demo",
 					"--dir", dirArg,
 					"--dev-url", "sqlite://"+filepath.Join(c.TempDir(), "dev.db"),
 					"--to", "file://"+target)
@@ -123,7 +125,7 @@ func TestCompatMigrateWrite_RefusesADirectoryNamingNoScheme(t *testing.T) {
 
 				_, stderr, err := verb.run(c, spelling.dirArg(missing))
 
-				c.Assert(err, qt.ErrorMatches, regexpQuote(spelling.wantError(missing)))
+				c.Assert(err, qt.ErrorMatches, atlastest.RegexpQuote(spelling.wantError(missing)))
 				// The stream split is the community binary's: one
 				// `Error: <reason>` line on stderr and nothing else.
 				c.Assert(stderr, qt.Equals, "Error: "+spelling.wantError(missing)+"\n")
@@ -173,9 +175,9 @@ func TestCompatMigrateNew_RequiresTheSchemeOnEveryAtlasSpelling(t *testing.T) {
 				c.Setenv(name, value)
 			}
 
-			_, stderr, err := runCompat(invocation.args...)
+			_, stderr, err := atlastest.RunCompat(invocation.args...)
 
-			c.Assert(err, qt.ErrorMatches, regexpQuote(atlasMissingSchemeError(missing)))
+			c.Assert(err, qt.ErrorMatches, atlastest.RegexpQuote(atlasMissingSchemeError(missing)))
 			c.Assert(stderr, qt.Equals, "Error: "+atlasMissingSchemeError(missing)+"\n")
 			c.Assert(atlasWriteDirFingerprint(c, missing), qt.Equals, "<absent>")
 		})
@@ -322,7 +324,7 @@ func TestCompatMigrateWrite_SpellingsTheCommunityBinaryAcceptsStillWrite(t *test
 			// working directory.
 			c.Chdir(root)
 
-			_, _, err := runCompat(invocation.args...)
+			_, _, err := atlastest.RunCompat(invocation.args...)
 
 			c.Assert(err, qt.IsNil)
 			c.Assert(atlasWriteDirFingerprint(c, invocation.dir), qt.Contains, "atlas.sum")
@@ -398,7 +400,7 @@ func TestCompatMigrateRead_RequiresTheSchemeToo(t *testing.T) {
 			dir := writeAtlasWriteFixture(c, c.TempDir())
 			hashAtlasWriteFixture(c, dir)
 
-			_, _, err := runCompat(verb.args(dir)...)
+			_, _, err := atlastest.RunCompat(verb.args(dir)...)
 
 			c.Assert(err, qt.ErrorMatches, `missing scheme for dir url\. Did you mean ".*"\? `)
 		})
@@ -410,7 +412,7 @@ func TestCompatMigrateRead_RequiresTheSchemeToo(t *testing.T) {
 			dir := writeAtlasWriteFixture(c, c.TempDir())
 			hashAtlasWriteFixture(c, dir)
 
-			_, _, err := runCompat(verb.args("file://" + dir)...)
+			_, _, err := atlastest.RunCompat(verb.args("file://" + dir)...)
 
 			c.Assert(err, qt.IsNil)
 		})
@@ -436,7 +438,7 @@ func TestCompatMigrateNew_LeavesTheProjectFileSpellingToIssue1186(t *testing.T) 
 	c.Setenv("HOME", root)
 	writeAtlasMigrationDirProject(c, root, "mig")
 
-	_, _, err := runCompat("migrate", "new", "demo",
+	_, _, err := atlastest.RunCompat("migrate", "new", "demo",
 		"--config", "file://"+filepath.Join(root, "atlas.hcl"), "--env", "local")
 
 	c.Assert(err, qt.IsNil)

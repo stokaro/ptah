@@ -9,6 +9,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/cmd/atlas"
+	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 )
 
 const scopeTestSchemaSQL = `
@@ -98,7 +99,7 @@ func TestSchemaDiffIncludeEmptyMatchRefuses(t *testing.T) {
 	c := qt.New(t)
 	fromPath, toPath, devPath := writeScopeSchemaFiles(t)
 
-	stdout, stderr, err := runCompat("schema", "diff",
+	stdout, stderr, err := atlastest.RunCompat("schema", "diff",
 		"--from", "file://"+fromPath,
 		"--to", "file://"+toPath,
 		"--dev-url", "sqlite://"+devPath,
@@ -285,7 +286,7 @@ func TestSchemaApplyIncludeEndToEndOnSQLite(t *testing.T) {
 	c := qt.New(t)
 	// The target already contains an out-of-scope table that the scoped apply
 	// must leave untouched.
-	dbPath := seedSQLiteDB(c, "CREATE TABLE scope_keepme (id INTEGER PRIMARY KEY)")
+	dbPath := atlastest.SeedSQLiteDB(c, "CREATE TABLE scope_keepme (id INTEGER PRIMARY KEY)")
 	schemaPath := filepath.Join(t.TempDir(), "schema.sql")
 	c.Assert(os.WriteFile(schemaPath, []byte(scopeTestSchemaSQL), 0o600), qt.IsNil)
 	cmd := atlas.NewCompatCommand("atlas")
@@ -304,10 +305,10 @@ func TestSchemaApplyIncludeEndToEndOnSQLite(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(out.String(), qt.Contains, "Schema apply completed successfully.")
-	c.Assert(sqliteHasTable(t, dbPath, "scope_users"), qt.IsTrue)
-	c.Assert(sqliteHasTable(t, dbPath, "scope_groups"), qt.IsFalse)
-	c.Assert(sqliteHasTable(t, dbPath, "scope_archive"), qt.IsFalse)
-	c.Assert(sqliteHasTable(t, dbPath, "scope_keepme"), qt.IsTrue)
+	c.Assert(atlastest.SqliteHasTable(t, dbPath, "scope_users"), qt.IsTrue)
+	c.Assert(atlastest.SqliteHasTable(t, dbPath, "scope_groups"), qt.IsFalse)
+	c.Assert(atlastest.SqliteHasTable(t, dbPath, "scope_archive"), qt.IsFalse)
+	c.Assert(atlastest.SqliteHasTable(t, dbPath, "scope_keepme"), qt.IsTrue)
 }
 
 func TestSchemaApplyIncludeValidationRunsBeforeConnecting(t *testing.T) {

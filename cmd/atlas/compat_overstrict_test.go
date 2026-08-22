@@ -9,6 +9,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/cmd/atlas"
+	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 )
 
 // The cells stokaro/ptah#1241 lists as "ptah-compat exits 1 where the pinned
@@ -53,7 +54,7 @@ func TestCompatOverstrictCellsNowAccepted(t *testing.T) {
 			// not select one, so it cannot make one required.
 			name: "validate with --var and no atlas.hcl",
 			setup: func(c *qt.C, root string) {
-				writeHashedAtlasDir(c, filepath.Join(root, "migrations"), "20240101000000_init.sql", "CREATE TABLE t (id INTEGER);\n")
+				atlastest.WriteHashedAtlasDir(c, filepath.Join(root, "migrations"), "20240101000000_init.sql", "CREATE TABLE t (id INTEGER);\n")
 			},
 			args: []string{"migrate", "validate", "--dir", "file://migrations", "--var", "foo=bar"},
 			assert: func(c *qt.C, _ string, err error, output string) {
@@ -66,18 +67,18 @@ func TestCompatOverstrictCellsNowAccepted(t *testing.T) {
 			// issue's own list, naming only validate and hash, did not.
 			name: "new with --var and no atlas.hcl",
 			setup: func(c *qt.C, root string) {
-				writeHashedAtlasDir(c, filepath.Join(root, "migrations"), "20240101000000_init.sql", "CREATE TABLE t (id INTEGER);\n")
+				atlastest.WriteHashedAtlasDir(c, filepath.Join(root, "migrations"), "20240101000000_init.sql", "CREATE TABLE t (id INTEGER);\n")
 			},
 			args: []string{"migrate", "new", "addcol", "--dir", "file://migrations", "--var", "foo=bar"},
 			assert: func(c *qt.C, root string, err error, output string) {
 				c.Assert(err, qt.IsNil, qt.Commentf("%s", output))
-				assertOneMigrationNamed(c, filepath.Join(root, "migrations"), "*_addcol.sql")
+				atlastest.AssertOneMigrationNamed(c, filepath.Join(root, "migrations"), "*_addcol.sql")
 			},
 		},
 		{
 			name: "hash with --var and no atlas.hcl",
 			setup: func(c *qt.C, root string) {
-				writeHashedAtlasDir(c, filepath.Join(root, "migrations"), "20240101000000_init.sql", "CREATE TABLE t (id INTEGER);\n")
+				atlastest.WriteHashedAtlasDir(c, filepath.Join(root, "migrations"), "20240101000000_init.sql", "CREATE TABLE t (id INTEGER);\n")
 			},
 			args: []string{"migrate", "hash", "--dir", "file://migrations", "--var", "foo=bar"},
 			assert: func(c *qt.C, _ string, err error, output string) {
@@ -125,7 +126,7 @@ func TestCompatOverstrictCellsNowAccepted(t *testing.T) {
 			},
 			assert: func(c *qt.C, root string, err error, output string) {
 				c.Assert(err, qt.IsNil, qt.Commentf("%s", output))
-				assertPathPresent(c, filepath.Join(root, "dst", "atlas.sum"))
+				atlastest.AssertPathPresent(c, filepath.Join(root, "dst", "atlas.sum"))
 			},
 		},
 		{
@@ -137,7 +138,7 @@ func TestCompatOverstrictCellsNowAccepted(t *testing.T) {
 			// the empty name later, where a project file is evaluated.
 			name: "--var with an empty name is accepted, as on the pinned binary",
 			setup: func(c *qt.C, root string) {
-				writeHashedAtlasDir(c, filepath.Join(root, "migrations"), "20240101000000_init.sql", "CREATE TABLE t (id INTEGER);\n")
+				atlastest.WriteHashedAtlasDir(c, filepath.Join(root, "migrations"), "20240101000000_init.sql", "CREATE TABLE t (id INTEGER);\n")
 			},
 			args: []string{"migrate", "validate", "--dir", "file://migrations", "--var", "=v"},
 			assert: func(c *qt.C, _ string, err error, output string) {
@@ -150,7 +151,7 @@ func TestCompatOverstrictCellsNowAccepted(t *testing.T) {
 			// silently ignores what the caller asked for.
 			name: "--var still feeds a project file that is present",
 			setup: func(c *qt.C, root string) {
-				writeHashedAtlasDir(c, filepath.Join(root, "realdir"), "20240101000000_init.sql", "CREATE TABLE t (id INTEGER);\n")
+				atlastest.WriteHashedAtlasDir(c, filepath.Join(root, "realdir"), "20240101000000_init.sql", "CREATE TABLE t (id INTEGER);\n")
 				writeAtlasProjectFile(c, root)
 			},
 			args: []string{"migrate", "validate", "--env", "local", "--var", "d=realdir"},
@@ -253,7 +254,7 @@ func TestCompatOverstrictCellsStillRefused(t *testing.T) {
 			// Dropping --var would make this row pass by validating ./migrations.
 			name: "a --var value that names nothing still fails naming it",
 			setup: func(c *qt.C, root string) {
-				writeHashedAtlasDir(c, filepath.Join(root, "migrations"), "20240101000000_init.sql", "CREATE TABLE t (id INTEGER);\n")
+				atlastest.WriteHashedAtlasDir(c, filepath.Join(root, "migrations"), "20240101000000_init.sql", "CREATE TABLE t (id INTEGER);\n")
 				writeAtlasProjectFile(c, root)
 			},
 			args: []string{"migrate", "validate", "--env", "local", "--var", "d=nosuchdir"},
@@ -301,7 +302,7 @@ func TestCompatOverstrictCellsStillRefused(t *testing.T) {
 			// refusal stays, and it names the flag the value belongs on.
 			name: "status still refuses a trailing positional, and says where it belongs",
 			setup: func(c *qt.C, root string) {
-				writeHashedAtlasDir(c, filepath.Join(root, "migrations"), "20240101000000_init.sql", "CREATE TABLE t (id INTEGER);\n")
+				atlastest.WriteHashedAtlasDir(c, filepath.Join(root, "migrations"), "20240101000000_init.sql", "CREATE TABLE t (id INTEGER);\n")
 			},
 			args: []string{"migrate", "status", "--url", "sqlite://local.db?_fk=1", "file://mig2"},
 			assert: func(c *qt.C, _ string, err error, output string) {
@@ -317,7 +318,7 @@ func TestCompatOverstrictCellsStillRefused(t *testing.T) {
 			// say where the value belongs.
 			name: "validate still refuses a trailing positional, and says where it belongs",
 			setup: func(c *qt.C, root string) {
-				writeHashedAtlasDir(c, filepath.Join(root, "migrations"), "20240101000000_init.sql", "CREATE TABLE t (id INTEGER);\n")
+				atlastest.WriteHashedAtlasDir(c, filepath.Join(root, "migrations"), "20240101000000_init.sql", "CREATE TABLE t (id INTEGER);\n")
 			},
 			args: []string{"migrate", "validate", "--dir", "file://migrations", "stray"},
 			assert: func(c *qt.C, _ string, err error, output string) {
@@ -359,7 +360,7 @@ func TestCompatOverstrictCellsStillRefused(t *testing.T) {
 			// exit 1, ptah-compat before the check exit 0.
 			name: "a malformed --var is refused with no atlas.hcl in sight",
 			setup: func(c *qt.C, root string) {
-				writeHashedAtlasDir(c, filepath.Join(root, "migrations"), "20240101000000_init.sql", "CREATE TABLE t (id INTEGER);\n")
+				atlastest.WriteHashedAtlasDir(c, filepath.Join(root, "migrations"), "20240101000000_init.sql", "CREATE TABLE t (id INTEGER);\n")
 			},
 			args: []string{"migrate", "validate", "--dir", "file://migrations", "--var", "foo"},
 			assert: func(c *qt.C, _ string, err error, output string) {
@@ -382,7 +383,7 @@ func TestCompatOverstrictCellsStillRefused(t *testing.T) {
 				c.Assert(err, qt.IsNotNil, qt.Commentf("%s", output))
 				c.Assert(err.Error(), qt.Equals,
 					`invalid argument "foo" for "--var" flag: variables must be format as key=value, got: "foo"`)
-				assertDirEmpty(c, root)
+				atlastest.AssertDirEmpty(c, root)
 			},
 		},
 		{
@@ -406,7 +407,7 @@ func TestCompatOverstrictCellsStillRefused(t *testing.T) {
 			// string reddens nothing.
 			name: "a malformed field in a comma-separated --var is refused, naming that field",
 			setup: func(c *qt.C, root string) {
-				writeHashedAtlasDir(c, filepath.Join(root, "migrations"), "20240101000000_init.sql", "CREATE TABLE t (id INTEGER);\n")
+				atlastest.WriteHashedAtlasDir(c, filepath.Join(root, "migrations"), "20240101000000_init.sql", "CREATE TABLE t (id INTEGER);\n")
 			},
 			args: []string{"migrate", "validate", "--dir", "file://migrations", "--var", "a=1,b"},
 			assert: func(c *qt.C, _ string, err error, output string) {
@@ -421,7 +422,7 @@ func TestCompatOverstrictCellsStillRefused(t *testing.T) {
 			// written here. Measured 2026-08-08, exit 1 on both.
 			name: "an empty --var is refused with the CSV reader's own error",
 			setup: func(c *qt.C, root string) {
-				writeHashedAtlasDir(c, filepath.Join(root, "migrations"), "20240101000000_init.sql", "CREATE TABLE t (id INTEGER);\n")
+				atlastest.WriteHashedAtlasDir(c, filepath.Join(root, "migrations"), "20240101000000_init.sql", "CREATE TABLE t (id INTEGER);\n")
 			},
 			args: []string{"migrate", "validate", "--dir", "file://migrations", "--var", ""},
 			assert: func(c *qt.C, _ string, err error, output string) {
@@ -477,7 +478,7 @@ func TestCompatOverstrictCellsStillRefused(t *testing.T) {
 				c.Assert(err, qt.IsNotNil, qt.Commentf("%s", output))
 				c.Assert(err.Error(), qt.Equals,
 					`invalid argument "foo" for "--var" flag: variables must be format as key=value, got: "foo"`)
-				assertPathAbsent(c, filepath.Join(root, "dst"))
+				atlastest.AssertPathAbsent(c, filepath.Join(root, "dst"))
 			},
 		},
 		{
@@ -531,7 +532,7 @@ func TestCompatOverstrictCellsStillRefused(t *testing.T) {
 			// touched. Pinned binary exit 1 here too.
 			name: "lint with no scope is refused on a populated directory too",
 			setup: func(c *qt.C, root string) {
-				writeHashedAtlasDir(c, filepath.Join(root, "migrations"), "20240101000000_init.sql", "CREATE TABLE t (id INTEGER);\n")
+				atlastest.WriteHashedAtlasDir(c, filepath.Join(root, "migrations"), "20240101000000_init.sql", "CREATE TABLE t (id INTEGER);\n")
 			},
 			args: []string{
 				"migrate", "lint",
@@ -598,7 +599,7 @@ func TestCompatMigrateLintScopeOptIn(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
 	t.Setenv("PTAH_ATLAS_LINT_ALL_VERSIONS", "1")
-	writeHashedAtlasDir(c, filepath.Join(root, "migrations"), "20240101000000_init.sql", "CREATE TABLE t (id INTEGER);\n")
+	atlastest.WriteHashedAtlasDir(c, filepath.Join(root, "migrations"), "20240101000000_init.sql", "CREATE TABLE t (id INTEGER);\n")
 
 	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
@@ -629,7 +630,7 @@ func TestCompatMigrateLintScopeOptInRefusesANonBoolean(t *testing.T) {
 	root := t.TempDir()
 	t.Chdir(root)
 	t.Setenv("PTAH_ATLAS_LINT_ALL_VERSIONS", "yes please")
-	writeHashedAtlasDir(c, filepath.Join(root, "migrations"), "20240101000000_init.sql", "CREATE TABLE t (id INTEGER);\n")
+	atlastest.WriteHashedAtlasDir(c, filepath.Join(root, "migrations"), "20240101000000_init.sql", "CREATE TABLE t (id INTEGER);\n")
 
 	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
@@ -659,7 +660,7 @@ func TestCompatMigrateLintScopeOptInRefusesEvenWhenTheScopeIsNamed(t *testing.T)
 	root := t.TempDir()
 	t.Chdir(root)
 	t.Setenv("PTAH_ATLAS_LINT_ALL_VERSIONS", "yes please")
-	writeHashedAtlasDir(c, filepath.Join(root, "migrations"), "20240101000000_init.sql", "CREATE TABLE t (id INTEGER);\n")
+	atlastest.WriteHashedAtlasDir(c, filepath.Join(root, "migrations"), "20240101000000_init.sql", "CREATE TABLE t (id INTEGER);\n")
 
 	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
@@ -689,7 +690,7 @@ func TestCompatMigrateLintDevURLOptInRefusesEvenWhenADevURLIsGiven(t *testing.T)
 	root := t.TempDir()
 	t.Chdir(root)
 	t.Setenv("PTAH_ATLAS_LINT_WITHOUT_DEV_URL", "tru")
-	writeHashedAtlasDir(c, filepath.Join(root, "migrations"), "20240101000000_init.sql", "CREATE TABLE t (id INTEGER);\n")
+	atlastest.WriteHashedAtlasDir(c, filepath.Join(root, "migrations"), "20240101000000_init.sql", "CREATE TABLE t (id INTEGER);\n")
 
 	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer

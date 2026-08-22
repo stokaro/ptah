@@ -9,6 +9,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/cmd/atlas"
+	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 	"go.5x5.cz/ptah/internal/migratesum"
 	"go.5x5.cz/ptah/migration/migrator"
 )
@@ -185,7 +186,7 @@ func newCompatDockerFixture(c *qt.C) compatDockerFixture {
 			"          scalar: \"0\"\n"), 0o600), qt.IsNil)
 
 	appliedTarget := "sqlite://" + filepath.Join(root, "applied.db")
-	_, _, err = runCompat("migrate", "apply", "--dir", "file://"+dir, "--url", appliedTarget)
+	_, _, err = atlastest.RunCompat("migrate", "apply", "--dir", "file://"+dir, "--url", appliedTarget)
 	c.Assert(err, qt.IsNil)
 
 	return compatDockerFixture{
@@ -381,7 +382,7 @@ func TestCompatDockerDevURL_ReachesTheProvisioner(t *testing.T) {
 			c := qt.New(t)
 			c.Chdir(c.TempDir())
 			args := append(slices.Clone(tt.args(fx)), "--dev-url", "docker://sqlite/dev")
-			stdout, stderr, err := runCompat(args...)
+			stdout, stderr, err := atlastest.RunCompat(args...)
 			assertDevURLOutcome(c, tt.check, stdout, stderr, err)
 		})
 	}
@@ -421,7 +422,7 @@ func TestCompatDockerDevURL_DoesNotProvisionAValueTheBinaryCannotParse(t *testin
 			c := qt.New(t)
 			c.Chdir(c.TempDir())
 			args := append(slices.Clone(tt.args(fx)), "--dev-url", " docker://sqlite/dev")
-			stdout, stderr, err := runCompat(args...)
+			stdout, stderr, err := atlastest.RunCompat(args...)
 			assertDevURLOutcome(c, tt.checkWhitespace, stdout, stderr, err)
 		})
 	}

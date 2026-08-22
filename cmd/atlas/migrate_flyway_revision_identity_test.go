@@ -7,6 +7,8 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+
+	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 )
 
 const compatAtlasCloudIdentifierVersion = ".atlas_cloud_identifier"
@@ -228,7 +230,7 @@ THIS IS A FAILING STATEMENT;
 	c.Assert(err, qt.IsNotNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
 	c.Assert(userTables(c, dbPath), qt.DeepEquals, []string{"owned_empty_partial"})
 
-	writeAtlasApplyProjectMigration(c, dir, "V.sql", `CREATE TABLE owned_empty_partial (id INTEGER PRIMARY KEY);
+	atlastest.WriteAtlasApplyProjectMigration(c, dir, "V.sql", `CREATE TABLE owned_empty_partial (id INTEGER PRIMARY KEY);
 CREATE TABLE owned_empty_retry (id INTEGER PRIMARY KEY);
 `)
 	hashConvertedApplyDir(c, dir, "flyway")
@@ -279,7 +281,7 @@ FROM atlas_schema_revisions WHERE version = ?`, retiredIdentity).Scan(
 	), qt.IsNil)
 
 	c.Assert(os.Remove(filepath.Join(dir, retiredFile)), qt.IsNil)
-	writeAtlasApplyProjectMigration(c, dir, "Vsurviving__later.sql",
+	atlastest.WriteAtlasApplyProjectMigration(c, dir, "Vsurviving__later.sql",
 		"CREATE TABLE later_must_not_run (id INTEGER PRIMARY KEY);\n")
 	hashConvertedApplyDir(c, dir, "flyway")
 
@@ -343,7 +345,7 @@ func assertCompatFlywayRemovedHistoryRemainsReadable(
 	c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
 	c.Assert(stdout, qt.Contains, "No migration files to execute")
 
-	writeAtlasApplyProjectMigration(c, dir, olderFile,
+	atlastest.WriteAtlasApplyProjectMigration(c, dir, olderFile,
 		"CREATE TABLE retired_history_must_guard_order (id INTEGER PRIMARY KEY);\n")
 	hashConvertedApplyDir(c, dir, "flyway")
 	stdout, stderr, err = compatApplyConverted(dir, "flyway", dbPath)
@@ -458,7 +460,7 @@ func TestCompatMigrateApply_FlywayBaselineDoesNotSettleALaterSameTokenBaseline(t
 	c.Assert(revisionType(c, dbPath, "2"), qt.Equals, 1)
 	c.Assert(revisionOperatorVersion(c, dbPath, "2"), qt.Equals, "Ptah/source-identity")
 
-	writeAtlasApplyProjectMigration(
+	atlastest.WriteAtlasApplyProjectMigration(
 		c,
 		dir,
 		"B2__base.sql",
@@ -691,7 +693,7 @@ func TestCompatMigrateApply_FlywayRepeatableBodyChangeRemainsSettled(t *testing.
 
 	stdout, stderr, err := compatApplyConverted(dir, "flyway", dbPath)
 	c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
-	writeAtlasApplyProjectMigration(c, dir, "R__only.sql",
+	atlastest.WriteAtlasApplyProjectMigration(c, dir, "R__only.sql",
 		"CREATE TABLE repeatable_settled (id INTEGER PRIMARY KEY);\n"+
 			"CREATE TABLE repeatable_changed (id INTEGER PRIMARY KEY);\n")
 	hashConvertedApplyDir(c, dir, "flyway")
@@ -733,7 +735,7 @@ func TestCompatMigrateApply_FlywayRolledBackFailureLeavesNoExactDirtyRow(t *test
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(revisionVersions(c, dbPath), qt.HasLen, 0)
 
-	writeAtlasApplyProjectMigration(c, dir, "V1.5__retry.sql",
+	atlastest.WriteAtlasApplyProjectMigration(c, dir, "V1.5__retry.sql",
 		"CREATE TABLE rolled_back_exact (id INTEGER PRIMARY KEY);\n")
 	hashConvertedApplyDir(c, dir, "flyway")
 	stdout, stderr, err := compatApplyConverted(dir, "flyway", dbPath)
@@ -754,7 +756,7 @@ func TestCompatMigrateApply_FlywayTokenEndingRIsNotAtlasRepeatable(t *testing.T)
 	c.Assert(revisionRows(c, dbPath), qt.DeepEquals,
 		[]setFlywayRow{{Version: "1R", Description: "ordinary"}})
 
-	writeAtlasApplyProjectMigration(c, dir, "V1R__ordinary.sql",
+	atlastest.WriteAtlasApplyProjectMigration(c, dir, "V1R__ordinary.sql",
 		"CREATE TABLE token_ending_r_changed (id INTEGER PRIMARY KEY);\n")
 	hashConvertedApplyDir(c, dir, "flyway")
 	stdout, stderr, err = compatApplyConverted(dir, "flyway", dbPath)
@@ -840,7 +842,7 @@ func TestCompatMigrateApply_ExactFlywayIdentityDoesNotNarrowOtherFormats(t *test
 	c := qt.New(t)
 	dir := c.TempDir()
 	dbPath := filepath.Join(c.TempDir(), "goose.db")
-	writeAtlasApplyProjectMigration(c, dir, "1_init.sql",
+	atlastest.WriteAtlasApplyProjectMigration(c, dir, "1_init.sql",
 		"-- +goose Up\nCREATE TABLE goose_identity (id INTEGER PRIMARY KEY);\n")
 	hashConvertedApplyDir(c, dir, "goose")
 

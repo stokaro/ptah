@@ -9,6 +9,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 	"go.5x5.cz/ptah/internal/testutils"
 )
 
@@ -121,7 +122,7 @@ func writeConvertedApplyDir(c *qt.C, dir string, files map[string]string) string
 // sums copied verbatim from the pinned oracle.
 func hashConvertedApplyDir(c *qt.C, dir, format string) {
 	c.Helper()
-	stdout, stderr, err := runCompat("migrate", "hash", "--dir", "file://"+dir+"?format="+format)
+	stdout, stderr, err := atlastest.RunCompat("migrate", "hash", "--dir", "file://"+dir+"?format="+format)
 	c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
 }
 
@@ -141,7 +142,7 @@ func compatApplyConverted(dir, format, dbPath string, extra ...string) (stdout, 
 		"--url", "sqlite://" + dbPath,
 		"--dir", "file://" + dir + "?format=" + format,
 	}, extra...)
-	return runCompat(args...)
+	return atlastest.RunCompat(args...)
 }
 
 const (
@@ -194,7 +195,7 @@ func TestCompatMigrateApply_ConvertedDirHashedCleanApplies(t *testing.T) {
 			stdout, stderr, err := compatApplyConverted(dir, fixture.format, dbPath)
 
 			c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
-			c.Assert(sqliteTableCount(c, dbPath, "widgets"), qt.Equals, 1)
+			c.Assert(atlastest.SqliteTableCount(c, dbPath, "widgets"), qt.Equals, 1)
 		})
 	}
 }
@@ -346,7 +347,7 @@ func TestCompatMigrateApply_ConvertedDirVerifiesOracleWrittenSum(t *testing.T) {
 			stdout, stderr, err := compatApplyConverted(dir, tt.format, dbPath)
 
 			c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
-			c.Assert(sqliteTableCount(c, dbPath, tt.wantTbl), qt.Equals, 1)
+			c.Assert(atlastest.SqliteTableCount(c, dbPath, tt.wantTbl), qt.Equals, 1)
 		})
 	}
 }
@@ -407,7 +408,7 @@ func TestCompatMigrateApply_ConvertedDirUncoveredFileEditedApplies(t *testing.T)
 			stdout, stderr, err := compatApplyConverted(dir, tt.format, dbPath)
 
 			c.Assert(err, qt.IsNil, qt.Commentf("stdout:\n%s\nstderr:\n%s", stdout, stderr))
-			c.Assert(sqliteTableCount(c, dbPath, tt.wantTbl), qt.Equals, 1)
+			c.Assert(atlastest.SqliteTableCount(c, dbPath, tt.wantTbl), qt.Equals, 1)
 		})
 	}
 }
@@ -678,7 +679,7 @@ func TestCompatMigrateApply_ConvertedDirGatePrecedesConnection(t *testing.T) {
 		"1_init.sql": "-- +goose Up\nCREATE TABLE widgets (id INTEGER PRIMARY KEY);\n",
 	})
 
-	stdout, stderr, err := runCompat(
+	stdout, stderr, err := atlastest.RunCompat(
 		"migrate", "apply",
 		"--url", "postgres://u:p@127.0.0.1:1/db?sslmode=disable",
 		"--dir", "file://"+dir+"?format=goose",
@@ -767,7 +768,7 @@ func TestCompatMigrateApply_ConvertedDirMatchesValidateOutput(t *testing.T) {
 
 			applyOut, applyErrOut, applyErr := compatApplyConverted(
 				dir, "golang-migrate", filepath.Join(tempDir, "converted.db"))
-			validateOut, validateErrOut, validateErr := runCompat(
+			validateOut, validateErrOut, validateErr := atlastest.RunCompat(
 				"migrate", "validate", "--dir", "file://"+dir+"?format=golang-migrate")
 
 			c.Assert(applyErr, qt.IsNotNil)
@@ -818,7 +819,7 @@ func TestCompatMigrateApply_ConvertedDirFromProjectConfigIsGated(t *testing.T) {
 			c := qt.New(t)
 			root := t.TempDir()
 			t.Chdir(root)
-			writeAtlasApplyProjectMigration(c, "migrations", "1_create_widgets.sql", gooseBody)
+			atlastest.WriteAtlasApplyProjectMigration(c, "migrations", "1_create_widgets.sql", gooseBody)
 			for _, format := range tt.hashFirst {
 				hashConvertedApplyDir(c, "migrations", format)
 			}
@@ -893,7 +894,7 @@ func TestCompatMigrateApply_ConvertedEmptyCoveredSetReportsNothingToExecute(t *t
 			c.Assert(stdout, qt.Contains, "No migration files to execute")
 			// Nothing executed means nothing executed: a subdirectory migration
 			// the community binary skips must not have created its table.
-			c.Assert(sqliteTableCount(c, dbPath, "widgets"), qt.Equals, 0)
+			c.Assert(atlastest.SqliteTableCount(c, dbPath, "widgets"), qt.Equals, 0)
 		})
 	}
 }
@@ -913,7 +914,7 @@ func TestCompatMigrateApply_ConvertedUnreadableCoveredSetStillRefuses(t *testing
 	dir := filepath.Join(tempDir, "m")
 	c.Assert(os.MkdirAll(dir, 0o755), qt.IsNil)
 	writeConvertedApplyDir(c, dir, map[string]string{"foo.sql": "CREATE TABLE widgets (id INTEGER PRIMARY KEY);\n"})
-	_, _, hashErr := runCompat("migrate", "hash", "--dir", "file://"+dir+"?format=goose")
+	_, _, hashErr := atlastest.RunCompat("migrate", "hash", "--dir", "file://"+dir+"?format=goose")
 	c.Assert(hashErr, qt.IsNil)
 	dbPath := filepath.Join(tempDir, "converted.db")
 

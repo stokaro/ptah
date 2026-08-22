@@ -9,6 +9,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/cmd/atlas"
+	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 )
 
 // writeTxModeAllCheckedDir writes a two-migration directory whose second
@@ -28,7 +29,7 @@ func writeTxModeAllCheckedDir(c *qt.C, dir string) string {
 		[]byte("-- +ptah check name=\"users_empty\" assert=\"SELECT count(*) = 0 FROM users\" on_fail=abort\nDROP TABLE users;\n"),
 		0o600,
 	), qt.IsNil)
-	writeAtlasApplyProjectSum(c, migrationsDir)
+	atlastest.WriteAtlasApplyProjectSum(c, migrationsDir)
 	return migrationsDir
 }
 

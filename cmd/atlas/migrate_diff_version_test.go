@@ -13,6 +13,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/cmd/atlas"
+	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 )
 
 // futureDatedMigration is a version no clock will reach, whose seconds field is
@@ -71,7 +72,7 @@ func dirEntryNames(c *qt.C, dir string) []string {
 func runMigrateDiffInto(c *qt.C, dir string) []string {
 	c.Helper()
 	before := dirEntryNames(c, dir)
-	desiredPath := seedSQLiteDB(c, "CREATE TABLE desired_users (id INTEGER PRIMARY KEY)")
+	desiredPath := atlastest.SeedSQLiteDB(c, "CREATE TABLE desired_users (id INTEGER PRIMARY KEY)")
 	devPath := filepath.Join(c.TempDir(), "dev.db")
 	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
