@@ -369,6 +369,20 @@ jobs:
           SQLSERVER_URL: "sqlserver://sa:P%40ssw0rd-ptah-2026@localhost:1433?database=master&encrypt=disable"
           SPANNER_URL: "spanner://localhost:5434/ptah_test?sslmode=disable"
           ORACLE_TEST_URL: "oracle://ptah:ptah_password@localhost:1521/FREEPDB1"
+          # A DEV account on the same server, and never the target's.
+          #
+          # Oracle stores a rewrite of a generated column's expression rather
+          # than the text it was given, so a declaration has to be put through a
+          # server to be comparable -- and that probe creates a permanent table,
+          # because Oracle commits its own DDL and refuses a virtual column on a
+          # temporary one (ORA-54010, both spellings). Writing it into the
+          # schema under comparison is what a second account avoids.
+          #
+          # SYSTEM is that second schema here rather than a third account,
+          # because the image already creates it and the probe's whole footprint
+          # is one table dropped with PURGE. The target stays `ptah`, which is
+          # what DropAllTables is aimed at (stokaro/ptah#1915).
+          ORACLE_DEV_TEST_URL: "oracle://system:ptah_password@localhost:1521/FREEPDB1"
           PTAH_SQLSERVER_TEST_URL: "sqlserver://sa:P%40ssw0rd-ptah-2026@localhost:1433?database=master&encrypt=disable"
           PTAH_SQLSERVER_REALM_TEST_URL: "sqlserver://sa:P%40ssw0rd-ptah-2026@localhost:1433?database=master&encrypt=disable"
           PTAH_OCI_TEST_REGISTRY: "127.0.0.1:5000"
