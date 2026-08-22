@@ -133,7 +133,9 @@ func TestClassify_Errors(t *testing.T) {
 		{
 			name: "hosted registry URL",
 			url:  "atlas://remote/app",
-			want: `atlas:// registry URLs are not supported; use oci:// with a native Ptah command, or use a local schema file, a migration directory, a database URL, or an env:// reference`,
+			want: `atlas:// registry URLs name a hosted namespace; set PTAH_ATLAS_REGISTRY to the OCI ` +
+				`namespace they stand for, or use oci:// with a native Ptah command, a local schema ` +
+				`file, a migration directory, a database URL, or an env:// reference`,
 		},
 		{
 			name: "ent",
@@ -144,6 +146,10 @@ func TestClassify_Errors(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			c := qt.New(t)
+			// The atlas:// row answers one thing with a namespace configured
+			// and another without, so the table states which run it is
+			// rather than inheriting whatever the developer has exported.
+			t.Setenv("PTAH_ATLAS_REGISTRY", "")
 
 			_, err := atlassource.Classify(tc.url)
 
@@ -189,12 +195,83 @@ func TestClassifySet_EnvMustBeOnlyValue(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, `--to "env://src": an env:// desired-state reference must be the only --to value`)
 }
 
-func TestClassifySet_UnsupportedSchemeIsWrapped(t *testing.T) {
-	c := qt.New(t)
+// TestClassifySet_AtlasSchemeNeedsANamespace pins both answers the vendor
+// spelling can get, because the environment decides which one and the two are
+// the whole compatibility argument.
+//
+// Unset is the refusal the surface has always given: the reference names a
+// hosted namespace, the community binary answers it from an account nobody here
+// has, and rule 1 of docs/conformance.md is that nothing may succeed on Ptah
+// which that binary refuses. The message now names the way in rather than only
+// the way out.
+//
+// Set is an operator saying which registry the namespace stands for. The
+// artifact is an ordinary OCI one that `schema push` writes and
+// `data "remote_schema"` already reads, so refusing the flag spelling was
+// costing a capability the repository had (stokaro/ptah#1210).
+func TestClassifySet_AtlasSchemeNeedsANamespace(t *testing.T) {
+	tests := []struct {
+		name string
+		// namespace is what PTAH_ATLAS_REGISTRY holds for the run.
+		namespace string
+		wantErr   string
+		// wantReference is the OCI reference the source resolves to, empty
+		// when the run is refused.
+		wantReference string
+	}{
+		{
+			name:      "no namespace keeps the refusal",
+			namespace: "",
+			wantErr: `--from "atlas://remote/app": atlas:// registry URLs name a hosted namespace; ` +
+				`set PTAH_ATLAS_REGISTRY to the OCI namespace they stand for.*`,
+		},
+		{
+			name:          "a namespace resolves it against that registry",
+			namespace:     "ghcr.io/acme",
+			wantReference: "oci://ghcr.io/acme/remote/app:latest",
+		},
+	}
 
-	_, err := atlassource.ClassifySet("--from", []string{"atlas://remote/app"}, atlassource.ProjectEnv{})
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			t.Setenv("PTAH_ATLAS_REGISTRY", test.namespace)
 
-	c.Assert(err, qt.ErrorMatches, `--from "atlas://remote/app": atlas:// registry URLs are not supported; use oci://.*`)
+			set, err := atlassource.ClassifySet("--from", []string{"atlas://remote/app"}, atlassource.ProjectEnv{})
+
+			c.Assert(errorText(err), qt.Matches, orEmpty(test.wantErr))
+			c.Assert(referenceOf(set), qt.Equals, test.wantReference)
+		})
+	}
+}
+
+// errorText is the message or the empty string, so a row states its outcome as
+// a value rather than the test branching on which outcome it expects.
+func errorText(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
+}
+
+// orEmpty turns an absent expectation into a pattern that matches the empty
+// string, for the same reason.
+func orEmpty(pattern string) string {
+	if pattern == "" {
+		return "^$"
+	}
+	return pattern
+}
+
+// referenceOf names the OCI reference a classified set carries, empty when the
+// set holds no remote-schema source.
+func referenceOf(set atlassource.Set) string {
+	for _, source := range set.Sources {
+		if source.Kind == atlassource.KindRemoteSchema {
+			return source.OCIReference
+		}
+	}
+	return ""
 }
 
 func TestClassifySet_EnvRequiresLoadedConfig(t *testing.T) {

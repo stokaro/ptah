@@ -152,6 +152,9 @@ func TestDiff_DevURLDialectConflictWithDatabaseSource(t *testing.T) {
 }
 
 func TestDiff_UnsupportedSchemeFails(t *testing.T) {
+	// A run with a namespace configured resolves this reference instead of
+	// refusing it, so the test says which run it is.
+	t.Setenv("PTAH_ATLAS_REGISTRY", "")
 	c := qt.New(t)
 
 	_, err := atlasschema.Diff(t.Context(), atlasschema.DiffOptions{
@@ -159,7 +162,7 @@ func TestDiff_UnsupportedSchemeFails(t *testing.T) {
 		ToURLs:   []string{"sqlite://a.db"},
 	})
 
-	c.Assert(err, qt.ErrorMatches, `--from "atlas://remote/app": atlas:// registry URLs are not supported; use oci://.*`)
+	c.Assert(err, qt.ErrorMatches, `--from "atlas://remote/app": atlas:// registry URLs name a hosted namespace; set PTAH_ATLAS_REGISTRY.*`)
 }
 
 func TestPrepareApply_DatabaseSource(t *testing.T) {
