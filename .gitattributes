@@ -1,0 +1,3 @@
+# The repository stores LF. Said here so a checkout does not depend on each
+# consumer's core.autocrlf (stokaro/ptah#1812).
+* text=auto eol=lf
