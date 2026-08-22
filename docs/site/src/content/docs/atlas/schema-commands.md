@@ -982,8 +982,47 @@ required `--dev-url` dev database, or one `env://<attribute>` reference
 (`src`, `schema.src`, `url`, `dev`, `migration.dir`) resolved through the
 evaluated `atlas.hcl` env.
 
-All `--to` values must be one source kind, and unsupported schemes such as
-`atlas://` fail before the target database is contacted.
+All `--to` values must be one source kind, and an unsupported scheme fails
+before the target database is contacted.
+
+### A registry artifact as the desired state
+
+`atlas://<repository>` names a schema artifact held in a registry. The
+reference carries no registry host, so it resolves against the namespace
+`PTAH_ATLAS_REGISTRY` names:
+
+```bash
+export PTAH_ATLAS_REGISTRY=ghcr.io/acme
+
+# oci://ghcr.io/acme/app:latest
+ptah-compat schema apply --url "$DATABASE_URL" --to "atlas://app" --auto-approve
+
+# oci://ghcr.io/acme/app:prod
+ptah-compat schema diff --from "$DATABASE_URL" --to "atlas://app?tag=prod" \
+  --dev-url "docker://postgres/17/dev"
+```
+
+`tag` selects a moving tag and defaults to `latest`; `version` selects an
+immutable one. Naming both is refused, because a tag moves and a version does
+not, so a reference carrying both names two different artifacts.
+
+Without `PTAH_ATLAS_REGISTRY` the reference is refused and the refusal names
+what to set, before anything is contacted:
+
+```text
+Error: --to "atlas://app": atlas:// registry URLs name a hosted namespace; set PTAH_ATLAS_REGISTRY to the OCI namespace they stand for, or use oci:// with a native Ptah command, a local schema file, a migration directory, a database URL, or an env:// reference
+```
+
+The artifact is an ordinary OCI one: `ptah schema push` writes it, the pull
+uses ordinary registry credentials from `~/.docker/config.json` or a credential
+helper, and no hosted service is in the path. `PTAH_ATLAS_REGISTRY` is a Ptah
+extension, so a run under `PTAH_ATLAS_STRICT_COMPAT` that sets it is refused.
+
+The native spelling for the same artifact is the full OCI reference, accepted
+by `ptah schema` verbs as `--schema-file oci://ghcr.io/acme/app:prod`. The
+`atlas://` spelling exists so a project that already names its artifacts that
+way keeps working unedited. The same reference forms are accepted in
+`atlas.hcl` by [`data "remote_schema"` and `data "remote_dir"`](../project-config/#remote-directory-data-source).
 
 A schema directory is an **ordered script**, not a set of declarations: Atlas
 reads one by executing every file in filename order against the dev database.

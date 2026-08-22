@@ -403,7 +403,7 @@ is genuinely absent and the difference column names the issue that owns it.
 
 | Capability | Ptah | CE | Pro | Difference |
 | --- | :-: | :-: | :-: | --- |
-| `atlas://` vendor protocol | 🔷 | ❌ | ✅ | Ptah addresses any OCI registry with `oci://` and its own push and pull verbs. The vendor spelling names a hosted account and is refused by name (stokaro/ptah#1210). |
+| `atlas://` vendor protocol | 🔷 | ❌ | ✅ | Ptah addresses any OCI registry with `oci://` and its own push and pull verbs. The vendor spelling resolves against the namespace `PTAH_ATLAS_REGISTRY` names, with no hosted account in the path. |
 | `migrate push` and `schema push` | 🔷 | ❌ | ✅ | `ptah schema push` and `ptah migrations push` publish to any OCI registry. The Atlas verbs address the hosted registry an account owns; the compat stubs say so and exit 1. |
 | `schema plan --edit` and `--name-format` | ✅ | ❌ | ✅ | `--edit` preserves comments and re-derives dialect-aware severity; `--name-format` uses Atlas-shaped Base64 .FromHash/.ToHash values. |
 | `schema plan --format` and `--directive` | 🔷 | ❌ | ✅ | Both are implemented under Ptah's own payload and directive vocabulary. Atlas gates the verb behind its hosted registry, so its field names and directive set are not obtainable. |

@@ -2175,8 +2175,8 @@ func TestCompatCommand_SchemaDiffRejectsUnsupportedRemoteTarget(t *testing.T) {
 
 	err := cmd.Execute()
 
-	c.Assert(err, qt.ErrorMatches, `--from "atlas://remote/schema": atlas:// registry URLs are not supported; use oci://.*`)
-	c.Assert(out.String(), qt.Contains, `Error: --from "atlas://remote/schema": atlas:// registry URLs are not supported`)
+	c.Assert(err, qt.ErrorMatches, `--from "atlas://remote/schema": atlas:// registry URLs name a hosted namespace; set PTAH_ATLAS_REGISTRY.*`)
+	c.Assert(out.String(), qt.Contains, `Error: --from "atlas://remote/schema": atlas:// registry URLs name a hosted namespace`)
 }
 
 func TestCompatCommand_SchemaDiffFormatsCustomSQLTemplate(t *testing.T) {

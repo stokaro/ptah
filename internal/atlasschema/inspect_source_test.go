@@ -369,7 +369,7 @@ func TestInspectSource_FailurePath(t *testing.T) {
 			URL: "atlas://remote/app",
 		})
 
-		c.Assert(err, qt.ErrorMatches, `--url "atlas://remote/app": atlas:// registry URLs are not supported.*`)
+		c.Assert(err, qt.ErrorMatches, `--url "atlas://remote/app": atlas:// registry URLs name a hosted namespace.*`)
 	})
 
 	t.Run("invalid exclude selector before any connection", func(t *testing.T) {
