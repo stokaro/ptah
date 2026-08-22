@@ -2,10 +2,13 @@ package integrationharness
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"strings"
 	"time"
+
+	mysqldriver "github.com/go-sql-driver/mysql"
 
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/dbschema"
@@ -147,6 +150,39 @@ func testManualPatchDetection(ctx context.Context, conn *dbschema.DatabaseConnec
 // It now makes its own restricted account, so what it measures is the server's
 // answer to an unprivileged read and nothing about the credentials the suite
 // happens to run as.
+// MySQL server error numbers for a statement the account is not permitted to
+// issue.
+//
+//   - 1227 ER_SPECIFIC_ACCESS_DENIED_ERROR: "Access denied; you need (at least
+//     one of) the CREATE USER privilege(s) for this operation", which is what
+//     an ordinary application account gets for CREATE USER.
+//   - 1044 ER_DBACCESS_DENIED_ERROR and 1142 ER_TABLEACCESS_DENIED_ERROR, the
+//     database- and table-level refusals a GRANT draws without GRANT OPTION.
+const (
+	errSpecificAccessDenied = 1227
+	errGrantDatabaseDenied  = 1044
+	errGrantTableDenied     = 1142
+)
+
+// isMySQLPrivilegeRefusal reports whether the server refused the statement for
+// want of a privilege, rather than failing it for any other reason.
+//
+// Asked of the server by error number: the message names the privilege, and
+// its wording differs between MySQL and MariaDB and across their versions, so
+// matching text would make this brittle in exactly the setups it has to read.
+func isMySQLPrivilegeRefusal(err error) bool {
+	var mysqlErr *mysqldriver.MySQLError
+	if !errors.As(err, &mysqlErr) {
+		return false
+	}
+	switch mysqlErr.Number {
+	case errSpecificAccessDenied, errGrantDatabaseDenied, errGrantTableDenied:
+		return true
+	default:
+		return false
+	}
+}
+
 func probeMySQLPermissionRefusal(
 	ctx context.Context,
 	conn *dbschema.DatabaseConnection,
@@ -160,6 +196,17 @@ func probeMySQLPermissionRefusal(
 
 	if _, err := conn.ExecContext(ctx, fmt.Sprintf(
 		"CREATE USER '%s'@'%%' IDENTIFIED BY '%s'", account, password)); err != nil {
+		// The suite connects as an ordinary application account on purpose --
+		// it is checking that Ptah works without administrative rights -- so a
+		// refusal here is the harness working as designed, and the scenario
+		// has no question left to ask. Granting the account CREATE USER would
+		// answer it at the cost of the premise; skipping keeps both.
+		if isMySQLPrivilegeRefusal(err) {
+			return fmt.Errorf(
+				"%w: creating a restricted %s account needs the CREATE USER privilege, "+
+					"which this connection does not hold: %w",
+				ErrPreconditionUnavailable, dialect, err)
+		}
 		return fmt.Errorf("create restricted %s account: %w", dialect, err)
 	}
 	defer func() {
@@ -172,6 +219,12 @@ func probeMySQLPermissionRefusal(
 	// class, and the wrong question.
 	if _, err := conn.ExecContext(ctx, fmt.Sprintf(
 		"GRANT SELECT ON %s.* TO '%s'@'%%'", quoteMySQLDatabaseName(conn.Info().Schema), account)); err != nil {
+		if isMySQLPrivilegeRefusal(err) {
+			return fmt.Errorf(
+				"%w: granting the restricted %s account its own schema needs GRANT OPTION, "+
+					"which this connection does not hold: %w",
+				ErrPreconditionUnavailable, dialect, err)
+		}
 		return fmt.Errorf("grant the restricted %s account its own schema: %w", dialect, err)
 	}
 
