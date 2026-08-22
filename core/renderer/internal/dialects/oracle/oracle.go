@@ -609,29 +609,124 @@ func (r *Renderer) VisitAlterTableDisableRLS(node *ast.AlterTableDisableRLSNode)
 	return nil
 }
 
+// VisitCreateRole renders Oracle's CREATE ROLE, and refuses a declaration that
+// describes a user rather than a role.
+//
+// Oracle's CREATE ROLE takes none of the attributes ast.CreateRoleNode carries
+// from PostgreSQL. There, one statement makes a thing that can hold privileges
+// AND a thing that can log in; here those are two objects, and the one that
+// logs in is a USER. So a declaration carrying LOGIN, a password, or any of the
+// PostgreSQL capability flags is refused rather than rendered: `CREATE ROLE app`
+// would be accepted by the server and would not be what was declared, which is
+// the failure this repository keeps finding -- a statement the engine accepts is
+// not evidence it did what was asked.
+//
+// No IF NOT EXISTS guard, measured on 23.26.2.0.0: a second CREATE ROLE answers
+// ORA-01921, and the clause is not accepted (stokaro/ptah#1920).
 func (r *Renderer) VisitCreateRole(node *ast.CreateRoleNode) error {
-	r.notSupported("roles", node.Name)
+	if attribute := oracleUserOnlyRoleAttribute(node); attribute != "" {
+		return unsupportedFeaturef(
+			"role %q declares %s, which in Oracle describes a USER rather than a ROLE; "+
+				"CREATE ROLE would be accepted and would not create what was declared",
+			node.Name, attribute)
+	}
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+	r.w.WriteLinef("CREATE ROLE %s;", escapeIdentifier(node.Name))
 	return nil
 }
 
+// oracleUserOnlyRoleAttribute names the first attribute on the declaration that
+// Oracle can only satisfy with a user, or "" when the role is a plain one.
+func oracleUserOnlyRoleAttribute(node *ast.CreateRoleNode) string {
+	switch {
+	case node.Login:
+		return "LOGIN"
+	case node.Password != "":
+		return "a password"
+	case node.Superuser:
+		return "SUPERUSER"
+	case node.CreateDB:
+		return "CREATEDB"
+	case node.CreateRole:
+		return "CREATEROLE"
+	default:
+		return ""
+	}
+}
+
+// VisitDropRole renders DROP ROLE, unguarded.
+//
+// Measured on 23.26.2.0.0: dropping an absent role answers ORA-01919, and
+// Oracle has no IF EXISTS on this statement -- the same shape DROP TRIGGER
+// carries above.
 func (r *Renderer) VisitDropRole(node *ast.DropRoleNode) error {
-	r.notSupported("DROP ROLE", node.Name)
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+	r.w.WriteLinef("DROP ROLE %s;", escapeIdentifier(node.Name))
 	return nil
 }
 
+// VisitAlterRole stays refused, and the reason is not that Oracle lacks the
+// statement.
+//
+// Oracle has ALTER ROLE, and it changes how the role is AUTHENTICATED --
+// IDENTIFIED BY, EXTERNALLY, GLOBALLY. It cannot change the capability flags
+// ast.AlterRoleNode carries, because a role has none of them. Rendering it
+// would answer a different question than the one asked.
 func (r *Renderer) VisitAlterRole(node *ast.AlterRoleNode) error {
 	r.notSupported("ALTER ROLE", node.Name)
 	return nil
 }
 
+// VisitGrantPrivilege renders both grant shapes Oracle has: an object privilege
+// with ON, and a system privilege without it.
+//
+// WITH GRANT OPTION is refused rather than emitted, and the refusal is the
+// engine's: measured on 23.26.2.0.0,
+// `GRANT SELECT, INSERT ON t TO r WITH GRANT OPTION` answers
+// `ORA-01926: A role cannot be granted a privilege with the WITH GRANT OPTION`.
+// Emitting it would render a statement the server refuses, which is worse than
+// refusing it here -- the plan would fail halfway through.
 func (r *Renderer) VisitGrantPrivilege(node *ast.GrantPrivilegeNode) error {
-	r.notSupported("GRANT", node.Role)
+	if node.WithOption {
+		return unsupportedFeaturef(
+			"grant to role %q carries WITH GRANT OPTION, which Oracle refuses for a role "+
+				"(ORA-01926); grant it to a user instead", node.Role)
+	}
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+	r.w.WriteLinef("GRANT %s%s TO %s;",
+		strings.Join(node.Privileges, ", "),
+		oracleGrantTarget(node.ObjectName),
+		escapeIdentifier(node.Role))
 	return nil
 }
 
+// VisitRevokePrivilege mirrors the grant, with the same two shapes.
 func (r *Renderer) VisitRevokePrivilege(node *ast.RevokePrivilegeNode) error {
-	r.notSupported("REVOKE", node.Role)
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+	r.w.WriteLinef("REVOKE %s%s FROM %s;",
+		strings.Join(node.Privileges, ", "),
+		oracleGrantTarget(node.ObjectName),
+		escapeIdentifier(node.Role))
 	return nil
+}
+
+// oracleGrantTarget renders the ON clause, or nothing for a system privilege.
+//
+// A system privilege such as CREATE SESSION names no object, and `GRANT CREATE
+// SESSION ON  TO r` is a syntax error rather than a harmless extra space.
+func oracleGrantTarget(object string) string {
+	if strings.TrimSpace(object) == "" {
+		return ""
+	}
+	return " ON " + escapeQualifiedIdentifier(object)
 }
 
 // VisitCreateSynonym renders Oracle's own object: a synonym is a native Oracle
