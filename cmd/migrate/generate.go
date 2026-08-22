@@ -512,9 +512,14 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 			files, err = plan.WriteFilesContext(cmd.Context())
 		}
 	} else {
-		connectCtx, cancelConnect := dbcli.ConnectContext(context.Background(), connectTimeout)
-		defer cancelConnect()
-		files, err = generator.GenerateMigration(connectCtx, generateOpts)
+		// The command context governs the run; the connect budget is a field
+		// the generator spends on the connect alone. Handing the connect
+		// context to GenerateMigration instead put a 10s default deadline on
+		// planning, rendering and publication, which on a slow runner expired
+		// during publication and reported `error creating migration files:
+		// context deadline exceeded` (stokaro/ptah#1749).
+		generateOpts.ConnectTimeout = connectTimeout
+		files, err = generator.GenerateMigration(cmd.Context(), generateOpts)
 	}
 	if err != nil {
 		return err
