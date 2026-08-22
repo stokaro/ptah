@@ -172,10 +172,48 @@ otherwise leaves open:
   or absent, so an absent capability is distinguishable from one this build does
   not know about.
 
+- **What this server decided rather than its release line.** A version alone
+  does not settle every key. Where the server's own configuration answers
+  differently, the profile says so in its own section (see below).
+
 `--format json` carries everything the text form shows, plus each capability
 key's documentation string, as a stable sorted document. Two runs against an
 unchanged server produce identical bytes, so a diff of them reports a change
 that happened rather than a reordering.
+
+#### When configuration, not the version, decides a capability
+
+MySQL 8.4 reads its foreign-key reference policy from
+`restrict_fk_on_non_standard_key`. Two servers on that release therefore answer
+opposite ways about what a foreign key may point at, and the release line can
+only be right about one of them. `ptah db capabilities` pins a session, reads
+the set that session resolves, and names every key where the two differ:
+
+```text
+Behavior:
+  identifier_limit       64 characters
+  enum_modeling          inline
+  foreign_key_reference  indexed
+
+Set by this server rather than by its release line:
+  foreign_keys_require_indexed_reference  supported    (the release line answers unsupported)
+  foreign_keys_require_unique_reference   unsupported  (the release line answers supported)
+  read from this server's session settings, not from its release line
+```
+
+That is the same MySQL 8.4 release as the profile above, started with
+`--restrict-fk-on-non-standard-key=OFF`. `foreign_key_reference` is read from
+those keys, so it moves with them — `unique` on a default server, `indexed`
+here.
+
+The section is absent when the version decided everything, which is the
+ordinary case: a server whose configuration matches its release line renders
+exactly what it rendered before the refinement existed. In `--format json` the
+same information is the `configuration_refinements` array, omitted when empty.
+
+The refinement reports; it does not change the server. Ptah reads settings and
+plans by them, and never enables a database feature or writes a server
+variable.
 
 ## Registries and SQL files: `ptah oci`, `ptah sql`
 

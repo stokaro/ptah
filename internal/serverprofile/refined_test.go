@@ -106,3 +106,89 @@ func TestProfileRefinedRecordsWhatTheServerDecided(t *testing.T) {
 		})
 	}
 }
+
+// TestProfileRefined_TraitsFollowTheKeysTheyAreReadFrom pins the second half of
+// a refinement: the non-boolean values derived from the keys that moved.
+//
+// foreign_key_reference is not stored, it is read from the three reference
+// policy keys, and Refined rewrote the keys without rereading it. Measured on
+// the MySQL 8.4 pair, the profile for the server with
+// restrict_fk_on_non_standard_key OFF said
+//
+//	Behavior:
+//	  foreign_key_reference  unique
+//	Set by this server rather than by its release line:
+//	  foreign_keys_require_indexed_reference  supported    (the release line answers unsupported)
+//	  foreign_keys_require_unique_reference   unsupported  (the release line answers supported)
+//
+// -- one output contradicting itself, and the wrong half is the one an operator
+// reads first (stokaro/ptah#1230).
+func TestProfileRefined_TraitsFollowTheKeysTheyAreReadFrom(t *testing.T) {
+	tests := []struct {
+		name string
+		// effective is what a pinned session resolved.
+		effective capability.Capabilities
+		// wantReference is the policy the profile must report afterwards.
+		wantReference capability.ReferencePolicy
+		// wantEnum is the enum trait, which no row here refines and which
+		// therefore must survive unchanged.
+		wantEnum capability.EnumMode
+	}{
+		{
+			name: "a server the release line describes keeps its policy",
+			effective: capability.Capabilities{
+				capability.ForeignKeys:                        true,
+				capability.ForeignKeysRequireUniqueReference:  true,
+				capability.ForeignKeysRequireIndexedReference: false,
+				capability.EnumInlineColumn:                   true,
+			},
+			wantReference: capability.ReferenceUnique,
+			wantEnum:      capability.EnumInline,
+		},
+		{
+			name: "a server configured the other way reports the other policy",
+			effective: capability.Capabilities{
+				capability.ForeignKeys:                        true,
+				capability.ForeignKeysRequireUniqueReference:  false,
+				capability.ForeignKeysRequireIndexedReference: true,
+				capability.EnumInlineColumn:                   true,
+			},
+			wantReference: capability.ReferenceIndexed,
+			wantEnum:      capability.EnumInline,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			got := mysql84Profile().Refined(test.effective, "read from this server's session settings")
+
+			c.Assert(got.Traits.ForeignKeyReference, qt.Equals, test.wantReference)
+			c.Assert(got.Traits.EnumModeling, qt.Equals, test.wantEnum)
+			// The identifier limit comes from the resolved dialect and no
+			// session setting moves it, so it is the control on rereading too
+			// much.
+			c.Assert(got.Traits.Identifiers, qt.Equals, mysql84Profile().Traits.Identifiers)
+		})
+	}
+}
+
+// mysql84Profile is the release line's answer for MySQL 8.4 over the keys these
+// traits are read from: unique references required, indexed ones not, enums
+// inline.
+func mysql84Profile() serverprofile.Profile {
+	return serverprofile.Profile{
+		Traits: capability.Traits{
+			Identifiers:         capability.Identifiers("mysql"),
+			EnumModeling:        capability.EnumInline,
+			ForeignKeyReference: capability.ReferenceUnique,
+		},
+		Capabilities: []serverprofile.Capability{
+			{Key: string(capability.EnumInlineColumn), Supported: true},
+			{Key: string(capability.ForeignKeys), Supported: true},
+			{Key: string(capability.ForeignKeysRequireIndexedReference), Supported: false},
+			{Key: string(capability.ForeignKeysRequireUniqueReference), Supported: true},
+		},
+	}
+}

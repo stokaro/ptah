@@ -254,6 +254,25 @@ func (p Profile) Refined(effective capability.Capabilities, reason string) Profi
 
 	p.Capabilities = refined
 	p.Refinements = refinements
+
+	// The traits are read from the capability set rather than stored beside
+	// it, so a refined key that feeds one leaves the trait saying what the
+	// release line said. Measured on the MySQL 8.4 pair: with
+	// restrict_fk_on_non_standard_key OFF the refinement block reports both
+	// reference keys flipped, and foreign_key_reference above it still read
+	// `unique` -- the two halves of one answer, contradicting each other in
+	// the same output.
+	//
+	// Identifiers are left alone: they come from the dialect the version
+	// ladder resolved, which no session setting moves, and recomputing them
+	// from Dialect would answer for mysql on a MariaDB reached over mysql://.
+	merged := make(capability.Capabilities, len(p.Capabilities))
+	for _, row := range p.Capabilities {
+		merged[capability.Capability(row.Key)] = row.Supported
+	}
+	p.Traits.EnumModeling = merged.EnumModeling()
+	p.Traits.ForeignKeyReference = merged.ForeignKeyReference()
+
 	return p
 }
 
