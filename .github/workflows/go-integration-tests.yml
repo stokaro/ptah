@@ -382,7 +382,22 @@ jobs:
           # because the image already creates it and the probe's whole footprint
           # is one table dropped with PURGE. The target stays `ptah`, which is
           # what DropAllTables is aimed at (stokaro/ptah#1915).
+          #
+          # SYSTEM answers to both this variable and ORACLE_ADMIN_TEST_URL
+          # below, and they stay two names because they state two different
+          # requirements: one wants a schema that is not the target, the other
+          # wants privileges the target must not have. An account satisfying
+          # only one of them would break exactly one set of tests, which is
+          # what having two names is for.
           ORACLE_DEV_TEST_URL: "oracle://system:ptah_password@localhost:1521/FREEPDB1"
+          # The same server, reached with the account that may CREATE USER and
+          # CREATE ROLE. Oracle has no ALL_ROLES, so the only view naming the
+          # server's roles needs SELECT_CATALOG_ROLE, and a reader that cannot
+          # read it has to say so rather than report an empty catalog. Both
+          # halves of that need an account the ordinary one must not become:
+          # ORACLE_TEST_URL stays plain, because the contour's Oracle test
+          # calls DropAllTables (stokaro/ptah#1920).
+          ORACLE_ADMIN_TEST_URL: "oracle://system:ptah_password@localhost:1521/FREEPDB1"
           PTAH_SQLSERVER_TEST_URL: "sqlserver://sa:P%40ssw0rd-ptah-2026@localhost:1433?database=master&encrypt=disable"
           PTAH_SQLSERVER_REALM_TEST_URL: "sqlserver://sa:P%40ssw0rd-ptah-2026@localhost:1433?database=master&encrypt=disable"
           PTAH_OCI_TEST_REGISTRY: "127.0.0.1:5000"
