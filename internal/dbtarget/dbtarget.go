@@ -59,6 +59,14 @@ const (
 	// comparison is what this second address exists to avoid
 	// (stokaro/ptah#1915).
 	OracleDev
+	// OracleAdmin is not Oracle under another name, for the same reason
+	// MySQLAdmin is not MySQL: it is the same server reached with an account
+	// that may CREATE USER and CREATE ROLE, which the tests covering the role
+	// catalog need and the rest must not have. The ordinary account is the one
+	// every other Oracle test uses, and it must stay ordinary -- the contour's
+	// Oracle test calls DropAllTables, which drops every object the connected
+	// account owns (stokaro/ptah#1920).
+	OracleAdmin
 )
 
 // source is where one engine's address comes from.
@@ -147,6 +155,10 @@ var sources = map[Engine]source{
 	},
 	OracleDev: {
 		canonical: "ORACLE_DEV_TEST_URL",
+		scheme:    []string{"oracle"},
+	},
+	OracleAdmin: {
+		canonical: "ORACLE_ADMIN_TEST_URL",
 		scheme:    []string{"oracle"},
 	},
 }
@@ -261,6 +273,8 @@ func engineName(engine Engine) string {
 		return "YugabyteDB"
 	case Oracle:
 		return "Oracle"
+	case OracleAdmin:
+		return "Oracle with an administrative account"
 	}
 	return engine.String()
 }
