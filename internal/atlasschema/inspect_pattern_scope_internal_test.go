@@ -54,7 +54,7 @@ func TestScopeInspectSchema_TakesThePatternScopeFromTheURL(t *testing.T) {
 		{
 			name:        "a URL naming a schema fills the pattern's schema slot",
 			url:         patternScopeBase + "&search_path=public",
-			wantErr:     `too many parts in pattern: "public.public.users.name"`,
+			wantErr:     `too many parts in pattern "public.users.name": this connection is bound to schema "public", so a pattern names object or object.child; write "users.name"`,
 			wantColumns: nil,
 		},
 	}

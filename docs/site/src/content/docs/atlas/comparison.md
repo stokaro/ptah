@@ -1077,9 +1077,10 @@ that binary exits `0`, never the reverse.
 
 The second of those commands is decided by the pattern-depth rule rather than
 the field rule, so its exit status follows the URL. On a schema-bound URL both
-binaries refuse it as
-`too many parts in pattern: "public.public.*[type=table].comment"` — the schema
-slot is already filled by the connection. On a URL that names no schema the
+binaries refuse it — the schema slot is already filled by the connection. That
+binary quotes the prefixed pattern,
+`too many parts in pattern: "public.public.*[type=table].comment"`; Ptah quotes
+the one that was typed. On a URL that names no schema the
 pattern is realm-relative, `public` fills the schema slot itself, and both
 binaries accept it. Measured on both URLs against the same PostgreSQL 17
 database.

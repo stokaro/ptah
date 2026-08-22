@@ -58,8 +58,10 @@ type Scope struct {
 	// binary v1.3.0 answers both ways on the same database, and the URL is what
 	// decides: `--exclude public.users.id` drops the column on
 	// `postgres://.../db` and is refused on `postgres://.../db?search_path=public`
-	// as "public.public.users.id" -- the doubled prefix being the binary
-	// prefixing the connection's schema before counting (stokaro/ptah#1703).
+	// -- the binary prefixing the connection's schema before counting, and
+	// reporting the prefixed string as "public.public.users.id". Ptah refuses
+	// the same pattern and quotes the one that was typed
+	// (stokaro/ptah#1703).
 	//
 	// It does not change what DefaultSchema means. That still owns the objects
 	// introspection leaves unqualified, on either kind of run, which is why the
@@ -151,7 +153,7 @@ func ScopeResources(resources []Resource, scope Scope) ([]bool, error) {
 	if err != nil {
 		return nil, err
 	}
-	patterns, err := parsePatterns(scope.Exclude, scope.patternScopeSchema())
+	patterns, err := parsePatterns(scope.Exclude, resolvedDepthScope(scope.patternScopeSchema()))
 	if err != nil {
 		return nil, err
 	}

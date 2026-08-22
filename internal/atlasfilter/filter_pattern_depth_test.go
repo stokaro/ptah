@@ -13,10 +13,14 @@ import (
 // every cell issue #1181 measured against the pinned community binary, plus the
 // three it recorded as pre-existing and two found while reproducing it.
 //
-// The want strings are the binary's own, byte for byte: it prefixes the
-// connection's schema onto the pattern before counting parts, so it names
-// "public.public.users.name" for a pattern the user wrote as
-// "public.users.name". Ptah models the same scope, so it reports the same text.
+// The refusals are Ptah's own text, and that is a retained divergence rather
+// than a gap. The arithmetic is the binary's -- it prefixes the connection's
+// schema before counting parts -- but its diagnostic quotes the prefixed
+// pattern, "public.public.users.name" for a pattern written as
+// "public.users.name", which names a string nobody typed and says nothing
+// about what to write instead. Same refusal, better diagnostic; rule 1 in
+// docs/conformance.md is about never being looser, and naming the spelling
+// that works is not looser (stokaro/ptah#1703).
 //
 // Reverting the depth gate prints, for every row, `got non-nil error / got:
 // nil` from the error assertion — and the six mutation rows would additionally
@@ -34,47 +38,47 @@ func TestExcludeDatabaseWithDefaultSchema_RefusesPatternsDeeperThanTheScope(t *t
 		{
 			name:    "qualified column",
 			pattern: "public.users.name",
-			want:    `too many parts in pattern: "public.public.users.name"`,
+			want:    `too many parts in pattern "public.users.name": this connection is bound to schema "public", so a pattern names object or object.child; write "users.name"`,
 		},
 		{
 			name:    "qualified primary key column",
 			pattern: "public.users.id",
-			want:    `too many parts in pattern: "public.public.users.id"`,
+			want:    `too many parts in pattern "public.users.id": this connection is bound to schema "public", so a pattern names object or object.child; write "users.id"`,
 		},
 		{
 			name:    "qualified every column of a table",
 			pattern: "public.users.*",
-			want:    `too many parts in pattern: "public.public.users.*"`,
+			want:    `too many parts in pattern "public.users.*": this connection is bound to schema "public", so a pattern names object or object.child; write "users.*"`,
 		},
 		{
 			name:    "qualified column across tables",
 			pattern: "public.*.name",
-			want:    `too many parts in pattern: "public.public.*.name"`,
+			want:    `too many parts in pattern "public.*.name": this connection is bound to schema "public", so a pattern names object or object.child; write "*.name"`,
 		},
 		{
 			name:    "wildcard schema column",
 			pattern: "*.users.name",
-			want:    `too many parts in pattern: "public.*.users.name"`,
+			want:    `too many parts in pattern "*.users.name": this connection is bound to schema "public", so a pattern names object or object.child`,
 		},
 		{
 			name:    "wildcard at every depth",
 			pattern: "*.*.*",
-			want:    `too many parts in pattern: "public.*.*.*"`,
+			want:    `too many parts in pattern "*.*.*": this connection is bound to schema "public", so a pattern names object or object.child`,
 		},
 		{
 			name:    "past the column",
 			pattern: "public.users.name.x",
-			want:    `too many parts in pattern: "public.public.users.name.x"`,
+			want:    `too many parts in pattern "public.users.name.x": this connection is bound to schema "public", so a pattern names object or object.child`,
 		},
 		{
 			name:    "wildcard past the column",
 			pattern: "*.*.*.*",
-			want:    `too many parts in pattern: "public.*.*.*.*"`,
+			want:    `too many parts in pattern "*.*.*.*": this connection is bound to schema "public", so a pattern names object or object.child`,
 		},
 		{
 			name:    "schema-relative past the column",
 			pattern: "users.name.x",
-			want:    `too many parts in pattern: "public.users.name.x"`,
+			want:    `too many parts in pattern "users.name.x": this connection is bound to schema "public", so a pattern names object or object.child`,
 		},
 		{
 			// A table whose name contains dots reads as a three-part pattern.
@@ -82,14 +86,14 @@ func TestExcludeDatabaseWithDefaultSchema_RefusesPatternsDeeperThanTheScope(t *t
 			// binary offers.
 			name:    "dotted object name",
 			pattern: "a.b.c",
-			want:    `too many parts in pattern: "public.a.b.c"`,
+			want:    `too many parts in pattern "a.b.c": this connection is bound to schema "public", so a pattern names object or object.child`,
 		},
 		{
 			// The documented extension field selector is counted the way the
 			// binary counts it: on the raw pattern, selector text included.
 			name:    "qualified extension field selector",
 			pattern: "public.*[type=extension].version",
-			want:    `too many parts in pattern: "public.public.*[type=extension].version"`,
+			want:    `too many parts in pattern "public.*[type=extension].version": this connection is bound to schema "public", so a pattern names object or object.child; write "*[type=extension].version"`,
 		},
 	}
 
@@ -132,7 +136,7 @@ func TestExcludeGeneratedWithDefaultSchema_RefusesPatternsDeeperThanTheScope(t *
 	got, err := atlasfilter.ExcludeGeneratedWithDefaultSchema(schema, []string{"public.users.name"}, "public")
 
 	c.Assert(err, qt.IsNotNil)
-	c.Assert(err.Error(), qt.Equals, `too many parts in pattern: "public.public.users.name"`)
+	c.Assert(err.Error(), qt.Equals, `too many parts in pattern "public.users.name": this connection is bound to schema "public", so a pattern names object or object.child; write "users.name"`)
 	c.Assert(got, qt.IsNil)
 }
 
@@ -256,12 +260,12 @@ func TestValidateExcludeSelectors_RefusesDepthNoScopeCanAddress(t *testing.T) {
 		{
 			name:    "four parts",
 			values:  []string{"public.users.name.x"},
-			wantErr: `too many parts in pattern: "public.users.name.x"`,
+			wantErr: `too many parts in pattern "public.users.name.x": a pattern names at most schema.object.child`,
 		},
 		{
 			name:    "four parts inside a comma list",
 			values:  []string{"users,*.*.*.*"},
-			wantErr: `too many parts in pattern: "*.*.*.*"`,
+			wantErr: `too many parts in pattern "*.*.*.*": a pattern names at most schema.object.child`,
 		},
 	}
 
@@ -274,4 +278,82 @@ func TestValidateExcludeSelectors_RefusesDepthNoScopeCanAddress(t *testing.T) {
 			c.Assert(errorText(err), qt.Equals, test.wantErr)
 		})
 	}
+}
+
+// TestPatternDepthRefusalNamesTheSpellingThatWorks pins the three things the
+// refusal is allowed to say, one per scope it can be asked in.
+//
+// The issue this closes asked for two of them: the text must quote what the
+// user typed rather than the prefixed string, and it must name the alternative
+// spelling. The third is what made the second honest -- the pre-connect pass
+// runs before any connection has said which scope applies, so a message that
+// named one there would be guessing (stokaro/ptah#1703).
+//
+// The rows without a suggestion carry the whole risk. Dropping the leading
+// segment is only the answer when that segment IS the bound schema: on a
+// connection bound to "public", the leading "other" in "other.notes.body" is a
+// table name, so suggesting "notes.body" would send the user at a different
+// object. The suggestion is offered where it is true and withheld where it is
+// not, and a rule that always suggested would be caught by those rows.
+func TestPatternDepthRefusalNamesTheSpellingThatWorks(t *testing.T) {
+	tests := []struct {
+		name string
+		// refuse asks the depth rule through the surface that carries the scope
+		// under test, so the row names its scope instead of a flag deciding it.
+		refuse  func(pattern string) error
+		pattern string
+		want    string
+	}{
+		{
+			name:    "the leading segment is the bound schema, so it can go",
+			refuse:  boundRefusal,
+			pattern: "public.users.name",
+			want: `too many parts in pattern "public.users.name": this connection is bound to schema ` +
+				`"public", so a pattern names object or object.child; write "users.name"`,
+		},
+		{
+			name:    "a leading segment that is not the bound schema is a table",
+			refuse:  boundRefusal,
+			pattern: "other.notes.body",
+			want: `too many parts in pattern "other.notes.body": this connection is bound to schema ` +
+				`"public", so a pattern names object or object.child`,
+		},
+		{
+			name:    "dropping the schema would still leave it too deep",
+			refuse:  boundRefusal,
+			pattern: "public.users.name.x",
+			want: `too many parts in pattern "public.users.name.x": this connection is bound to schema ` +
+				`"public", so a pattern names object or object.child`,
+		},
+		{
+			name:    "before a connection, no scope is claimed",
+			refuse:  preConnectRefusal,
+			pattern: "public.users.name.x",
+			want:    `too many parts in pattern "public.users.name.x": a pattern names at most schema.object.child`,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			err := test.refuse(test.pattern)
+
+			c.Assert(err, qt.IsNotNil)
+			c.Assert(err.Error(), qt.Equals, test.want)
+		})
+	}
+}
+
+// boundRefusal asks the schema-bound filter, where the connection has named a
+// schema and the pattern is counted against it.
+func boundRefusal(pattern string) error {
+	_, err := atlasfilter.ExcludeDatabaseWithDefaultSchema(defaultSchemaFixture(), []string{pattern}, "public")
+	return err
+}
+
+// preConnectRefusal asks the pass that runs before any connection, which has no
+// scope to name.
+func preConnectRefusal(pattern string) error {
+	return atlasfilter.ValidateExcludeSelectors([]string{pattern})
 }
