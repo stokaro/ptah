@@ -228,5 +228,46 @@ jobs:
       # job's own timeout-minutes above stays the real bound, so a genuine hang
       # is still caught, by the job rather than by a panic naming whichever test
       # happened to be running (stokaro/ptah#1749).
+      #
+      # The digest is part of this step rather than an `if: failure()` sibling
+      # so it cannot fire for a failure somewhere else, and so the log needs no
+      # path outside the workspace -- RUNNER_TEMP is a Windows path, and this
+      # step is the one place in the file that runs under Git Bash.
+      #
+      # A package that runs out of time prints thousands of goroutine lines,
+      # and the two facts worth reading are one line each: which package ran
+      # out, and that the test the panic names had been running for a second
+      # and is therefore not the cause. Both are already in the log; this puts
+      # them where the job opens (stokaro/ptah#1812, stokaro/ptah#1749).
+      #
+      # Windows only, because that is the job measured against its budget:
+      # cmd/atlas takes 184s of Go's 600s default there, and every step on that
+      # runner is 1.4-1.9x slower than ordinary hardware.
       - name: Unit tests
-        run: go test ./... -count=1 -timeout=20m
+        shell: bash
+        run: |
+          set -uo pipefail
+          go test ./... -count=1 -timeout=20m 2>&1 | tee unit-tests.log
+          status=${PIPESTATUS[0]}
+          if [ "$status" -eq 0 ]; then
+            rm -f unit-tests.log
+            exit 0
+          fi
+          {
+            echo "### Unit tests"
+            echo
+            echo '```text'
+            # Every failing package, longest first. Failures print before the
+            # passing ones rather than sorted among them: a package that failed
+            # after five seconds still has to be named, and a shared list would
+            # push it below whatever ran longest.
+            grep -E '^FAIL[[:space:]]+go\.5x5\.cz/ptah' unit-tests.log | sort -rn -k3
+            # The five slowest that passed, for the budget the failure is
+            # measured against.
+            grep -E '^ok[[:space:]]+go\.5x5\.cz/ptah' unit-tests.log | sort -rn -k3 | head -5
+            # A timeout or a runtime abort, with the block that names what was
+            # running when it fired.
+            grep -A 6 -E '^(panic: test timed out|fatal error:)' unit-tests.log | head -40
+            echo '```'
+          } >>"$GITHUB_STEP_SUMMARY"
+          exit "$status"
