@@ -28,6 +28,7 @@ import (
 
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/internal/atlasurl"
 )
@@ -49,6 +50,52 @@ const searchPathParam = "search_path"
 // namespace set. CockroachDB exposes crdb_internal through the PostgreSQL
 // catalog surface, but its virtual relations are not ordinary user tables and
 // PostgreSQL readers cannot inspect them as comparison input.
+// PostgresDescribedSchemasPredicate is the realm predicate a DESCRIPTION uses:
+// [PostgresNonSystemSchemasPredicate] plus the schemas an extension owns.
+//
+// An extension that installs itself into an existing schema adds no namespace
+// of its own, which is the case the reader's own extension-membership comment
+// measured on PostgreSQL 17.10 and the reason `public` never enters that set.
+// An extension that CREATES its schemas is the other case, and it was not
+// covered. Measured against TimescaleDB 2.29.2 on PostgreSQL 17.11, one
+// `CREATE EXTENSION timescaledb` adds seven namespaces --
+// `_timescaledb_cache`, `_timescaledb_catalog`, `_timescaledb_config`,
+// `_timescaledb_functions`, `_timescaledb_internal`, `timescaledb_experimental`
+// and `timescaledb_information` -- and every one of them carries a pg_depend
+// row of deptype 'e' pointing at the extension.
+//
+// Without this arm those seven schemas and the 51 relations in them are
+// described as objects Ptah owns: `schema inspect` on a database holding one
+// user table answered 4003 lines, against 24 from the pinned Atlas community
+// binary v1.3.0, which describes the table and `public` and nothing else. A
+// document like that is not merely noisy — replayed against another database
+// it asks for the extension's own catalog, table by table.
+//
+// The arm is gated on [capability.CatalogDependencies] because pg_depend is
+// what it reads, and that key already records where the relation is absent:
+// the Cloud Spanner emulator through PGAdapter answers
+// `relation "pg_depend" does not exist`, which was measured again here rather
+// than assumed. Omitting the arm there costs nothing, because that target has
+// no CREATE EXTENSION to own a schema with.
+//
+// The gate that decides whether a realm is empty enough to clean keeps
+// [PostgresNonSystemSchemasPredicate] instead. It answers a different question
+// -- is anything here -- and an extension's schema is something that is here.
+// Moving it is a parity measurement of its own.
+func PostgresDescribedSchemasPredicate(dialect string, caps capability.Capabilities) string {
+	predicate := PostgresNonSystemSchemasPredicate(dialect)
+	if !caps.Has(capability.CatalogDependencies) {
+		return predicate
+	}
+	return predicate + `
+			  AND NOT EXISTS (
+			        SELECT 1
+			        FROM pg_depend d
+			        WHERE d.classid = 'pg_namespace'::regclass
+			          AND d.objid = n.oid
+			          AND d.deptype = 'e')`
+}
+
 func PostgresNonSystemSchemasPredicate(dialect string) string {
 	predicates := []string{`n.nspname <> 'information_schema'`}
 	if platform.NormalizeDialect(dialect) == platform.CockroachDB {
@@ -312,14 +359,19 @@ type RowsQuerier interface {
 // holds one, which is the failure stokaro/ptah#1264 is about. Only PostgreSQL
 // reaches realm scope through [Realm] with a connection that can be opened at
 // all, so only it has a probe.
-func RealmSchemas(ctx context.Context, dialect string, q RowsQuerier) ([]string, error) {
+func RealmSchemas(
+	ctx context.Context,
+	dialect string,
+	caps capability.Capabilities,
+	q RowsQuerier,
+) ([]string, error) {
 	if !platform.IsPostgresFamily(dialect) {
 		return nil, fmt.Errorf("no realm-scope schema probe for dialect %q", dialect)
 	}
 	rows, err := q.QueryContext(ctx, `
 		SELECT n.nspname
 		FROM pg_namespace n
-		WHERE `+PostgresNonSystemSchemasPredicate(dialect))
+		WHERE `+PostgresDescribedSchemasPredicate(dialect, caps))
 	if err != nil {
 		return nil, fmt.Errorf("failed to list realm schemas: %w", err)
 	}

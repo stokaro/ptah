@@ -58,7 +58,7 @@ func ReadNames(
 	if !schemaselection.Realm(info.Dialect, info.URL, info.Schema) {
 		return connectedSchemaNames(info), nil
 	}
-	return schemaselection.RealmSchemas(ctx, info.Dialect, q)
+	return schemaselection.RealmSchemas(ctx, info.Dialect, info.Capabilities, q)
 }
 
 // connectedSchemaNames is the read scope of a connection whose URL pinned a
