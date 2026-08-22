@@ -12,9 +12,13 @@ import (
 	"github.com/spf13/cobra"
 
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
+	"go.5x5.cz/ptah/cmd/internal/serverversion"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/internal/pathguard"
+	"go.5x5.cz/ptah/internal/schemasecurity"
 	"go.5x5.cz/ptah/internal/schemaviz"
+	"go.5x5.cz/ptah/internal/servertarget"
+	"go.5x5.cz/ptah/migration/risk"
 )
 
 const (
@@ -23,6 +27,8 @@ const (
 	includeColumnsFlag = "include-columns"
 	excludeTablesFlag  = "exclude-tables"
 	themeFlag          = "theme"
+	securityFlag       = "security"
+	dialectFlag        = "dialect"
 	formatSVG          = "svg"
 )
 
@@ -32,6 +38,9 @@ type options struct {
 	includeColumns bool
 	excludeTables  string
 	theme          string
+	security       bool
+	dialect        string
+	serverVersion  string
 }
 
 // NewCommand returns the native schema visualization command.
@@ -45,7 +54,13 @@ func NewCommand() *cobra.Command {
 The command scans Go annotations and writes Graphviz DOT, Mermaid erDiagram, or
 SVG output to stdout:
 
-  ptah viz --root-dir ./models --format mermaid --include-columns`,
+  ptah viz --root-dir ./models --format mermaid --include-columns
+
+--security runs the schema security rules over the same schema and marks the
+tables they attach to, so the diagram shows where the findings are rather than
+sending the reader to a separate report:
+
+  ptah viz --root-dir ./models --format dot --security`,
 		Args:          cmdutil.NoPositionalArgs,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
@@ -58,6 +73,11 @@ SVG output to stdout:
 	flags.BoolVar(&opts.includeColumns, includeColumnsFlag, false, "Include table columns in the diagram")
 	flags.StringVar(&opts.excludeTables, excludeTablesFlag, "", "Comma-separated table names to omit from the diagram")
 	flags.StringVar(&opts.theme, themeFlag, schemaviz.ThemeLight, "Diagram theme: light or dark")
+	flags.BoolVar(&opts.security, securityFlag, false,
+		"Mark tables with the security findings that attach to them")
+	flags.StringVar(&opts.dialect, dialectFlag, "postgres",
+		"Dialect the schema is read for, which decides which security rules can run")
+	serverversion.Register(flags, &opts.serverVersion)
 	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
 	return cmd
 }
@@ -79,11 +99,17 @@ func run(cmd *cobra.Command, opts options) error {
 	if renderFormat == formatSVG {
 		renderFormat = schemaviz.FormatDOT
 	}
+	annotations, unattached, err := securityAnnotations(db, opts)
+	if err != nil {
+		return cmdutil.Fail(cmd, err)
+	}
 	rendered, err := schemaviz.Render(db, schemaviz.Options{
 		Format:         renderFormat,
 		IncludeColumns: opts.includeColumns,
 		ExcludeTables:  splitCSV(opts.excludeTables),
 		Theme:          opts.theme,
+		Annotations:    annotations,
+		Unattached:     unattached,
 	})
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
@@ -99,6 +125,73 @@ func run(cmd *cobra.Command, opts options) error {
 		return cmdutil.Fail(cmd, fmt.Errorf("write visualization: %w", err))
 	}
 	return nil
+}
+
+// securityAnnotations runs the security rules over the schema being drawn and
+// sorts their findings into the ones a node can carry and the ones it cannot.
+//
+// A finding about a routine or a schema has no node in an entity diagram. Those
+// are returned separately and emitted as a comment, because a diagram showing
+// three of five findings without saying so is worse than one that shows three
+// and names the other two (stokaro/ptah#1035).
+//
+// A rule that could not run here is reported the same way, for the same reason
+// it is reported by `schema security`: a rule that did not run is
+// indistinguishable from one that found nothing.
+func securityAnnotations(
+	db *goschema.Database,
+	opts options,
+) (map[string]schemaviz.Annotation, []string, error) {
+	if !opts.security {
+		return nil, nil, nil
+	}
+	// The named server is resolved rather than ignored, and a version naming no
+	// server is refused rather than planned under the dialect default.
+	//
+	// Measured on this tree, row_level_security -- the only capability a rule
+	// reads today -- varies by dialect and not within any release ladder, so
+	// --server-version changes no current answer. It is read anyway because the
+	// set the rules see should be the one the operator named, and because a
+	// rule gated on a key that does vary would otherwise be planned against the
+	// dialect default without saying so.
+	target, err := servertarget.Resolve(opts.dialect, opts.serverVersion)
+	if err != nil {
+		return nil, nil, err
+	}
+	report := schemasecurity.Analyze(db, schemasecurity.Options{Capabilities: target.Capabilities})
+	annotations := make(map[string]schemaviz.Annotation, len(report.Findings))
+	unattached := make([]string, 0, len(report.SkippedRules))
+	for _, finding := range report.Findings {
+		if finding.Subject.Kind != "table" {
+			unattached = append(unattached,
+				fmt.Sprintf("%s %s: %s %s", finding.Subject.Kind, finding.Subject.Name,
+					finding.Severity, finding.Code))
+			continue
+		}
+		annotation := annotations[finding.Subject.Name]
+		annotation.Severity = higherSeverity(annotation.Severity, string(finding.Severity))
+		annotation.Labels = append(annotation.Labels, finding.Code)
+		annotations[finding.Subject.Name] = annotation
+	}
+	for _, skipped := range report.SkippedRules {
+		unattached = append(unattached, fmt.Sprintf("%s not checked here: %s", skipped.Code, skipped.Reason))
+	}
+	return annotations, unattached, nil
+}
+
+// higherSeverity keeps the worst of two severities, so a node marked by three
+// rules is drawn in the color of the one that matters most.
+func higherSeverity(current, candidate string) string {
+	// The empty string is "nothing seen yet" rather than a severity, and it has
+	// to lose to every real one: risk.Rank scores it and `info` alike at 0, so
+	// comparing ranks alone would leave the first info finding unnamed.
+	if current == "" {
+		return candidate
+	}
+	if risk.Rank(risk.Severity(candidate)) > risk.Rank(risk.Severity(current)) {
+		return candidate
+	}
+	return current
 }
 
 func renderDOTToSVG(ctx context.Context, dot []byte) ([]byte, error) {

@@ -66,6 +66,56 @@ Graphviz `dot`; `--theme` selects `light` (default) or `dark` colors.
 ptah viz --root-dir ./models --exclude-tables task_comments,task_tags
 ```
 
+## Mark where the security findings are
+
+`--security` runs the [schema security rules](../../reference/native-commands/#schema-security-findings)
+over the same schema and marks the tables they attach to, so the diagram shows
+where the findings are instead of sending the reader to a separate report:
+
+```bash
+ptah viz --root-dir ./models --format dot --security
+```
+
+A marked node is drawn in its severity's color and carries a row naming the
+codes:
+
+```text
+  "audit_log" [label=<
+    <TABLE BORDER="1" CELLBORDER="1" CELLSPACING="0" CELLPADDING="6" COLOR="#b45309">
+      <TR><TD BGCOLOR="#e2e8f0"><FONT COLOR="#0f172a"><B>audit_log</B></FONT></TD></TR>
+      <TR><TD ALIGN="LEFT" BGCOLOR="#f8fafc"><FONT COLOR="#b45309">warning: PRV03</FONT></TD></TR>
+    </TABLE>
+  >];
+```
+
+Where a node is found by two rules, the row lists both codes and the color is
+the worse severity.
+
+`--dialect` (default `postgres`) decides which rules can run, the same way it
+does for `ptah schema security`, and `--server-version` names the server that
+dialect stands for. Measured on this tree, the one capability a rule reads —
+row-level security — varies by dialect and not within any release line, so the
+version changes no answer today; it is read so the rules see the target the
+operator named rather than the dialect default. A rule that cannot be answered on the target is
+named in a comment rather than passed over:
+
+```text
+  // PRV01 not checked here: the target does not model row-level security
+```
+
+Findings about objects an entity diagram has no node for — a routine, a schema —
+are written the same way, so the diagram never shows three of five findings
+without saying so:
+
+```text
+  // routine escalate: info PRV02
+```
+
+**Mermaid carries the annotations as comments.** `erDiagram` has neither
+per-entity styling nor a display name, so a mark cannot be drawn on the node
+there. The `%%` lines beside each entity carry every finding, and `--format dot`
+or `--format svg` is what draws them.
+
 ## The committed example
 
 [`examples/viz`](https://github.com/stokaro/ptah/tree/master/examples/viz)
