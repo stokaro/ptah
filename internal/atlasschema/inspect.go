@@ -442,9 +442,10 @@ func scopeInspectSchema(
 	opts InspectOptions,
 ) (*dbschematypes.DBSchema, atlasfilter.ExcludeReport, error) {
 	return atlasfilter.ScopeDatabaseReport(schema, atlasfilter.Scope{
-		Include:       opts.Include,
-		Exclude:       opts.Exclude,
-		DefaultSchema: info.Schema,
+		Include:               opts.Include,
+		Exclude:               opts.Exclude,
+		DefaultSchema:         info.Schema,
+		RealmRelativePatterns: ConnectionIsRealmScoped(info),
 	})
 }
 
@@ -479,5 +480,17 @@ func describesSchemas(info dbschematypes.DBInfo, opts InspectOptions) bool {
 	if len(SplitSchemaNames(opts.Schemas)) > 0 {
 		return true
 	}
+	return ConnectionIsRealmScoped(info)
+}
+
+// ConnectionIsRealmScoped reports whether a run over this connection describes
+// the whole realm rather than the one schema its URL named.
+//
+// It is the question [go.5x5.cz/ptah/internal/atlasfilter.Scope]'s
+// RealmRelativePatterns answers, asked from the connection every surface
+// already holds. Spelled once so that `schema inspect`, `schema apply` and
+// `schema clean` cannot end up counting the same exclude pattern three
+// different ways.
+func ConnectionIsRealmScoped(info dbschematypes.DBInfo) bool {
 	return schemaselection.Realm(info.Dialect, info.URL, info.Schema)
 }

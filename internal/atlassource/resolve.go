@@ -26,6 +26,7 @@ import (
 	"go.5x5.cz/ptah/internal/schemaartifact"
 	"go.5x5.cz/ptah/internal/schemafile"
 	"go.5x5.cz/ptah/internal/schemascope"
+	"go.5x5.cz/ptah/internal/schemaselection"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
@@ -125,6 +126,13 @@ type State struct {
 	// schema files. Schema-scope filtering uses it to resolve unqualified
 	// object names.
 	DefaultSchema string
+	// RealmScoped reports that a database source described the whole realm
+	// rather than the one schema its URL named. It travels with DefaultSchema
+	// because the two answer one question between them: which schema owns an
+	// unqualified object, and whether an exclude pattern's leading segment is
+	// that schema or an object in it (stokaro/ptah#1703). False for a local
+	// schema file, which names no URL to be scoped by.
+	RealmScoped bool
 }
 
 // Resolve materializes the set's desired state. Local schema files load
@@ -278,6 +286,7 @@ func (s Set) resolveDatabase(ctx context.Context, opts ResolveOptions) (State, e
 		Schema:        dbschematogo.ConvertDBSchemaToGoSchema(schema),
 		DB:            schema,
 		DefaultSchema: conn.Info().Schema,
+		RealmScoped:   schemaselection.Realm(conn.Info().Dialect, conn.Info().URL, conn.Info().Schema),
 	}, nil
 }
 
@@ -372,6 +381,8 @@ func (s Set) resolveMigrationDir(ctx context.Context, opts ResolveOptions) (Stat
 				Schema:        dbschematogo.ConvertDBSchemaToGoSchema(schema),
 				DB:            schema,
 				DefaultSchema: replayConn.Info().Schema,
+				RealmScoped: schemaselection.Realm(
+					replayConn.Info().Dialect, replayConn.Info().URL, replayConn.Info().Schema),
 			}
 			return nil
 		},
