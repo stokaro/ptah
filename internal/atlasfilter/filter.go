@@ -64,7 +64,30 @@ func ExcludeDatabaseReport(
 	patterns []string,
 	defaultSchema string,
 ) (*dbschematypes.DBSchema, ExcludeReport, error) {
-	filters, err := parsePatterns(patterns, defaultSchema)
+	return excludeDatabase(schema, patterns, defaultSchema, defaultSchema)
+}
+
+// ExcludeDatabaseScopeReport is [ExcludeDatabaseReport] for a caller holding
+// the whole scope.
+//
+// The positional form counts a pattern's parts against the same schema that
+// owns unqualified objects, because a string is all it has. That is right for a
+// run limited to one schema and wrong for one describing the realm, where the
+// pattern's leading segment is a schema name -- see
+// [Scope.RealmRelativePatterns].
+func ExcludeDatabaseScopeReport(
+	schema *dbschematypes.DBSchema,
+	scope Scope,
+) (*dbschematypes.DBSchema, ExcludeReport, error) {
+	return excludeDatabase(schema, scope.Exclude, scope.patternScopeSchema(), scope.DefaultSchema)
+}
+
+func excludeDatabase(
+	schema *dbschematypes.DBSchema,
+	patterns []string,
+	patternScope, defaultSchema string,
+) (*dbschematypes.DBSchema, ExcludeReport, error) {
+	filters, err := parsePatterns(patterns, patternScope)
 	if err != nil {
 		return nil, ExcludeReport{}, err
 	}
@@ -137,7 +160,24 @@ func ExcludeGeneratedReport(
 	patterns []string,
 	defaultSchema string,
 ) (*goschema.Database, ExcludeReport, error) {
-	filters, err := parsePatterns(patterns, defaultSchema)
+	return excludeGenerated(schema, patterns, defaultSchema, defaultSchema)
+}
+
+// ExcludeGeneratedScopeReport is [ExcludeDatabaseScopeReport] for the generated
+// side, so both sides of a comparison count a pattern the same way.
+func ExcludeGeneratedScopeReport(
+	schema *goschema.Database,
+	scope Scope,
+) (*goschema.Database, ExcludeReport, error) {
+	return excludeGenerated(schema, scope.Exclude, scope.patternScopeSchema(), scope.DefaultSchema)
+}
+
+func excludeGenerated(
+	schema *goschema.Database,
+	patterns []string,
+	patternScope, defaultSchema string,
+) (*goschema.Database, ExcludeReport, error) {
+	filters, err := parsePatterns(patterns, patternScope)
 	if err != nil {
 		return nil, ExcludeReport{}, err
 	}
@@ -265,21 +305,22 @@ const maxPatternParts = 3
 // checkPatternDepth refuses an exclude pattern that names more parts than its
 // scope can address.
 //
-// A pattern is relative to the scope the URL names. Ptah always filters inside
-// one schema — every reader is schema-scoped, and the connection's schema is
-// the default for the objects introspection leaves unqualified — which is the
-// community binary's schema-bound-URL scope. There a pattern names `object` or
-// `object.child`, because the binary prefixes the schema before counting; a
-// third part has nowhere left to go, and the binary reports the prefixed
-// spelling, so `--exclude public.users.name` on a PostgreSQL connection is
-// refused as "public.public.users.name". Ptah reports it identically.
+// A pattern is relative to the scope the URL names, and there are two. On a URL
+// that names a schema the binary prefixes it before counting, so a pattern
+// names `object` or `object.child` and a third part has nowhere left to go:
+// `--exclude public.users.name` is refused as "public.public.users.name", and
+// Ptah reports it identically, doubled prefix included. On a URL that names no
+// schema the pattern is realm-relative and the full schema.object.child depth
+// is addressable.
 //
-// The column part itself is not the error. `users.name` names the column and is
-// honored, exactly as the binary honors it in this scope. What has no meaning
-// is a pattern whose schema slot is already filled by the connection.
+// The column part itself is never the error. `users.name` names a column in the
+// first scope and `public.users.name` names one in the second; what has no
+// meaning is a pattern whose schema slot is already filled by the connection.
 //
-// With no default schema the pattern is realm-relative instead and the full
-// schema.object.child depth is addressable, which is the binary's other scope.
+// Which scope applies is the caller's answer to give, and it used to not be
+// asked: defaultSchema arrived non-empty on every run, so a realm-scoped one
+// was counted against a schema it was not relative to and the qualified column
+// form was refused everywhere. See [Scope.RealmRelativePatterns].
 func checkPatternDepth(raw, defaultSchema string) error {
 	effective := raw
 	if strings.TrimSpace(defaultSchema) != "" {

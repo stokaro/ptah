@@ -554,10 +554,12 @@ func TestExcludeDatabase_SelectorGrammarRefusals(t *testing.T) {
 //	Error: too many parts in pattern: "public.public.*[type=table].comment"
 //
 // On a database URL that binary does not prefix and therefore accepts the same
-// pattern. Ptah applies one depth rule to every scope, so counting the resource
-// glob instead would exit 0 on the schema-bound URL where that binary exits 1 —
-// the one direction the compatibility rule forbids. The unqualified spelling is
-// the one both scopes honor.
+// pattern, and so does Ptah — see
+// [atlasfilter.Scope] RealmRelativePatterns, which this test does not set.
+// Counting the resource glob instead of the text as written would exit 0 on the
+// schema-bound URL too, where that binary exits 1 — the one direction the
+// compatibility rule forbids. The unqualified spelling is the one both scopes
+// honor.
 func TestExcludeDatabase_QualifiedFieldSelectorStaysADepthError(t *testing.T) {
 	c := qt.New(t)
 
