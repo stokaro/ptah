@@ -877,10 +877,12 @@ func generatedColumnKey(schema, table, column string) string {
 // generatedColumnDiff compares a generated column, using the server's own
 // spelling of the declaration where one was resolved.
 //
-// resolution is nil when nobody asked a server about this column. A non-nil one
-// that reports Resolved false is a declaration the server refused, and there is
-// nothing to compare -- an expression no server accepts has no stored form to
-// be equal to.
+// resolution is nil when nobody asked a server about this column, and non-nil
+// with Resolved false when one was asked and refused the declaration. Those two
+// are one case here rather than two, deliberately: neither yields a stored form
+// to compare against, so on a rewriting target both leave the expression
+// uncompared, and on every other target both leave today's textual comparison
+// alone. An arm that separated them would be an arm nothing could reach.
 func generatedColumnDiff(
 	genCol goschema.Field,
 	dbCol types.DBColumn,
@@ -893,10 +895,8 @@ func generatedColumnDiff(
 		// The server's own spelling of the declaration, so the two sides are
 		// compared as like with like.
 		declared = resolution.Expression
-	case resolution != nil:
-		return ""
 	case generatedExpressionIsRewritten(dialect):
-		// A rewriting target with nobody to ask. Reporting the textual
+		// A rewriting target with no usable answer. Reporting the textual
 		// difference here is what plans a MODIFY that changes nothing on every
 		// run; the kind is still compared, because VIRTUAL against nothing is a
 		// real change whatever the expression says.

@@ -48,6 +48,17 @@ const (
 	// Oracle is a live Oracle server, which gvenzl/oracle-free:slim and
 	// gvenzl/oracle-xe:21-slim both provide (stokaro/ptah#1875).
 	Oracle
+	// OracleDev is a second account on such a server, used as a DEV database
+	// and never as the target.
+	//
+	// It exists because Oracle stores a rewrite of a generated column's
+	// expression rather than the text it was given, so the declaration has to
+	// be put through a server to be comparable -- and that probe creates a
+	// permanent table, since Oracle commits its own DDL and refuses a virtual
+	// column on a temporary table (ORA-54010). Writing it into the schema under
+	// comparison is what this second address exists to avoid
+	// (stokaro/ptah#1915).
+	OracleDev
 )
 
 // source is where one engine's address comes from.
@@ -132,6 +143,10 @@ var sources = map[Engine]source{
 	// quietly missing.
 	Oracle: {
 		canonical: "ORACLE_TEST_URL",
+		scheme:    []string{"oracle"},
+	},
+	OracleDev: {
+		canonical: "ORACLE_DEV_TEST_URL",
 		scheme:    []string{"oracle"},
 	},
 }
