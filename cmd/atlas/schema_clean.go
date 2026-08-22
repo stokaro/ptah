@@ -20,6 +20,7 @@ import (
 	"go.5x5.cz/ptah/internal/atlascompatpolicy"
 	"go.5x5.cz/ptah/internal/atlasfilter"
 	"go.5x5.cz/ptah/internal/atlasreport"
+	"go.5x5.cz/ptah/internal/atlasschema"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
 	"go.5x5.cz/ptah/internal/schemaclean"
 )
@@ -163,9 +164,10 @@ func runAtlasSchemaClean(
 	}
 	if opts.scoped() {
 		plan, err = scopeAtlasSchemaCleanPlan(plan, atlasfilter.Scope{
-			Include:       opts.include,
-			Exclude:       opts.exclude,
-			DefaultSchema: conn.Info().Schema,
+			Include:               opts.include,
+			Exclude:               opts.exclude,
+			DefaultSchema:         conn.Info().Schema,
+			RealmRelativePatterns: atlasschema.ConnectionIsRealmScoped(conn.Info()),
 		}, conn.Info().Dialect)
 		if err != nil {
 			return cmdutil.Fail(cmd, err)

@@ -263,10 +263,11 @@ func computeApplyPlan(
 	}
 
 	scope := atlasfilter.Scope{
-		Schemas:       opts.Schemas,
-		Include:       opts.Include,
-		Exclude:       opts.Exclude,
-		DefaultSchema: conn.Info().Schema,
+		Schemas:               opts.Schemas,
+		Include:               opts.Include,
+		Exclude:               opts.Exclude,
+		DefaultSchema:         conn.Info().Schema,
+		RealmRelativePatterns: ConnectionIsRealmScoped(conn.Info()),
 	}
 	desired, err := loadAndValidateDesiredApplySchema(ctx, conn, opts)
 	if err != nil {

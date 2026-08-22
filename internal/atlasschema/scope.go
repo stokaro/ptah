@@ -36,7 +36,7 @@ func scopeGeneratedSide(
 		}
 		return filtered, reports, nil
 	}
-	filtered, report, err := atlasfilter.ExcludeGeneratedReport(db, scope.Exclude, scope.DefaultSchema)
+	filtered, report, err := atlasfilter.ExcludeGeneratedScopeReport(db, scope)
 	if err != nil {
 		return nil, atlasfilter.ScopeReports{}, fmt.Errorf("apply --exclude to %s: %w", side, err)
 	}
@@ -61,7 +61,7 @@ func scopeDatabaseSide(
 		}
 		return filtered, reports, nil
 	}
-	filtered, report, err := atlasfilter.ExcludeDatabaseReport(db, scope.Exclude, scope.DefaultSchema)
+	filtered, report, err := atlasfilter.ExcludeDatabaseScopeReport(db, scope)
 	if err != nil {
 		return nil, atlasfilter.ScopeReports{}, fmt.Errorf("apply --exclude to %s: %w", side, err)
 	}

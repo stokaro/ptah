@@ -47,6 +47,35 @@ type Scope struct {
 	// DefaultSchema owns unqualified objects ("public" for PostgreSQL, the
 	// database name for MySQL-family targets, "main" for SQLite).
 	DefaultSchema string
+	// RealmRelativePatterns reports that this run describes the whole realm,
+	// which decides what an exclude pattern's leading segment names.
+	//
+	// The two are one question asked twice. A run limited to one schema is
+	// handed patterns relative to it, so `users.id` is a column and the schema
+	// slot is already filled by the connection; a run describing the realm is
+	// handed patterns relative to the realm, so `users` is a SCHEMA and the
+	// full schema.object.child depth is addressable. The pinned community
+	// binary v1.3.0 answers both ways on the same database, and the URL is what
+	// decides: `--exclude public.users.id` drops the column on
+	// `postgres://.../db` and is refused on `postgres://.../db?search_path=public`
+	// as "public.public.users.id" -- the doubled prefix being the binary
+	// prefixing the connection's schema before counting (stokaro/ptah#1703).
+	//
+	// It does not change what DefaultSchema means. That still owns the objects
+	// introspection leaves unqualified, on either kind of run, which is why the
+	// two are separate fields rather than one blanked string: blanking
+	// DefaultSchema for a realm run also stops the qualified spelling of an
+	// object in the connection's own schema from matching anything.
+	RealmRelativePatterns bool
+}
+
+// patternScopeSchema is the schema an exclude pattern's parts are counted
+// against: nothing on a realm-scoped run, the connection's schema otherwise.
+func (s Scope) patternScopeSchema() string {
+	if s.RealmRelativePatterns {
+		return ""
+	}
+	return s.DefaultSchema
 }
 
 // Positive reports whether the scope carries a positive selection. A scope
@@ -122,7 +151,7 @@ func ScopeResources(resources []Resource, scope Scope) ([]bool, error) {
 	if err != nil {
 		return nil, err
 	}
-	patterns, err := parsePatterns(scope.Exclude, scope.DefaultSchema)
+	patterns, err := parsePatterns(scope.Exclude, scope.patternScopeSchema())
 	if err != nil {
 		return nil, err
 	}
@@ -398,7 +427,7 @@ func ScopeGeneratedSelectionReport(
 	db *goschema.Database,
 	scope Scope,
 ) (*goschema.Database, ScopeReports, error) {
-	return scopeReport(db, scope, ExcludeGeneratedReport,
+	return scopeReport(db, scope, ExcludeGeneratedScopeReport,
 		(*scopeSelection).projectGenerated, validateGeneratedScope)
 }
 
@@ -410,12 +439,12 @@ func ScopeGeneratedSelectionReport(
 func scopeReport[T any](
 	db *T,
 	scope Scope,
-	exclude func(*T, []string, string) (*T, ExcludeReport, error),
+	exclude func(*T, Scope) (*T, ExcludeReport, error),
 	project func(*scopeSelection, *T) *T,
 	validate func(*T, *T, *scopeSelection) error,
 ) (*T, ScopeReports, error) {
 	if !scope.Positive() {
-		filtered, report, err := exclude(db, scope.Exclude, scope.DefaultSchema)
+		filtered, report, err := exclude(db, scope)
 		return filtered, ScopeReports{Exclude: report}, err
 	}
 	selectors, err := parseIncludeSelectors(scope.Include)
@@ -425,12 +454,12 @@ func scopeReport[T any](
 	if db == nil {
 		return nil, ScopeReports{}, nil
 	}
-	_, report, err := exclude(db, scope.Exclude, scope.DefaultSchema)
+	_, report, err := exclude(db, scope)
 	if err != nil {
 		return nil, ScopeReports{}, err
 	}
 	selection := newScopeSelection(scope, selectors)
-	final, _, err := exclude(project(selection, db), scope.Exclude, scope.DefaultSchema)
+	final, _, err := exclude(project(selection, db), scope)
 	if err != nil {
 		return nil, ScopeReports{}, err
 	}
@@ -468,7 +497,7 @@ func ScopeDatabaseSelectionReport(
 	db *dbschematypes.DBSchema,
 	scope Scope,
 ) (*dbschematypes.DBSchema, ScopeReports, error) {
-	return scopeReport(db, scope, ExcludeDatabaseReport,
+	return scopeReport(db, scope, ExcludeDatabaseScopeReport,
 		(*scopeSelection).projectDatabase, validateDatabaseScope)
 }
 

@@ -152,12 +152,14 @@ func Diff(ctx context.Context, opts DiffOptions) (atlasreport.SchemaDiff, error)
 		return atlasreport.SchemaDiff{}, err
 	}
 
+	defaultSchema, realmRelative := diffPatternScope(dialect, fromState, toState)
 	scope := atlasfilter.Scope{
 		Schemas:       opts.Schemas,
 		Include:       opts.Include,
 		Exclude:       opts.Exclude,
-		DefaultSchema: diffDefaultSchema(dialect, fromState, toState),
+		DefaultSchema: defaultSchema,
 	}
+	scope.RealmRelativePatterns = realmRelative
 	fromSide, toSide := scopeDiffStates(fromState, toState, scope, dialect)
 	if fromSide.err != nil {
 		return atlasreport.SchemaDiff{}, fromSide.err
@@ -473,17 +475,27 @@ func scopeDiffState(
 	}
 }
 
-// diffDefaultSchema resolves the schema that owns unqualified objects for one
-// diff. Both sides must share one default, so a database-backed side pins it
+// diffPatternScope resolves both halves of an exclude pattern's scope for one
+// diff: the schema that owns unqualified objects, and whether the run describes
+// a whole realm.
+//
+// Both sides must share one default, so a database-backed side pins it
 // (--from first), and local-file-only diffs fall back to the dialect default.
-func diffDefaultSchema(dialect string, fromState, toState atlassource.State) string {
+// The realm answer comes from the SAME side, deliberately: a diff that counted
+// a pattern against one state's schema while taking the other state's idea of
+// what the run describes would refuse a pattern for a scope neither side has.
+func diffPatternScope(dialect string, fromState, toState atlassource.State) (defaultSchema string, realmRelative bool) {
 	if fromState.DefaultSchema != "" {
-		return fromState.DefaultSchema
+		return fromState.DefaultSchema, fromState.RealmScoped
 	}
 	if toState.DefaultSchema != "" {
-		return toState.DefaultSchema
+		return toState.DefaultSchema, toState.RealmScoped
 	}
-	return dialectDefaultSchema(dialect)
+	// Neither side connected to anything, so nothing named a scope. The
+	// dialect's own default owns unqualified objects, and a pattern stays
+	// relative to it -- which is what a run over two local files has always
+	// done.
+	return dialectDefaultSchema(dialect), false
 }
 
 // validateClickHouseRBAC applies the ClickHouse role and grant refusals to a

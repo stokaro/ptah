@@ -386,17 +386,35 @@ The extra matches only ever remove more objects from a plan, so the looser
 rule cannot turn a protected object into a dropped one.
 
 That looseness applies to objects, not to their children. A pattern names at
-most an object and one of its children, and Ptah always filters inside a single
-schema, so the schema slot is filled by the connection and the pattern is read
-relative to it: `users` names the table, `users.name` names its column, and
-`users.users_name_idx` names its index. A third part has nowhere left to go.
-Ptah refuses it with the community binary's own message, which quotes the
-pattern with the schema already prefixed:
+most a schema, an object and one of the object's children, and which of the
+three the first segment fills depends on what the run describes.
+
+On a URL that names a schema (`?search_path=public`), the schema slot is
+filled by the connection and the pattern is read relative to it: `users` names
+the table, `users.name` names its column, and `users.users_name_idx` names its
+index. A third part has nowhere left to go, and Ptah refuses it with the
+community binary's own message, which quotes the pattern with the schema
+already prefixed:
+
+```console
+$ ptah-compat schema inspect --url "$PG_URL&search_path=public" --exclude public.users.name
+Error: too many parts in pattern: "public.public.users.name"
+```
+
+On a URL that names no schema, the run describes the whole realm and the
+pattern is realm-relative, so all three slots are addressable and a column in
+any schema can be named:
 
 ```console
 $ ptah-compat schema inspect --url "$PG_URL" --exclude public.users.name
-Error: too many parts in pattern: "public.public.users.name"
+# table "users" is rendered without its "name" column
 ```
+
+The same pattern is therefore honored on one URL and refused on the other,
+which is what the community binary does with it. Every surface that filters a
+live connection asks the URL the same question, so `schema inspect`,
+`schema diff`, `schema apply` and `schema clean` cannot disagree about which
+scope a pattern is relative to.
 
 The refusal is a usage error rather than a no-op on purpose. A pattern that
 deep is almost always an attempt to name a table, and matching it against
@@ -408,18 +426,19 @@ no schema prefix.
 Parts are counted on the pattern as written, selector text and field suffix
 included:
 
-- `*[type=extension].version` and `*[type=table].comment` are accepted.
+- `*[type=extension].version` and `*[type=table].comment` are accepted in every
+  scope.
 - `public.*[type=extension].version` and `public.*[type=table].comment` are
-  refused — the same arithmetic the community binary applies on a schema-bound
-  URL, where it answers
-  `too many parts in pattern: "public.public.*[type=table].comment"`.
+  accepted on a realm-scoped URL and refused on a schema-bound one, where the
+  community binary answers
+  `too many parts in pattern: "public.public.*[type=table].comment"` and Ptah
+  answers the same.
 - `*[type=schema].*[type=table]` is accepted in every scope: a leading
   `[type=schema]` segment fills the schema slot itself, so the connection's
   schema is not counted a second time.
 
-Counting the resource glob instead would accept the refused spellings, and since
-Ptah applies one depth rule to every scope that would mean exiting 0 where the
-community binary exits 1.
+Counting the resource glob instead would accept the refused spellings and exit 0
+where the community binary exits 1.
 
 ### How an inspected column type is written
 
