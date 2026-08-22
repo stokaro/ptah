@@ -12,6 +12,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "github.com/sijms/go-ora/v3"
 
+	"go.5x5.cz/ptah/config"
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
@@ -21,6 +22,7 @@ import (
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/dbtarget"
+	"go.5x5.cz/ptah/internal/genexprprobe"
 	"go.5x5.cz/ptah/migration/schemadiff"
 	"go.5x5.cz/ptah/migration/schemadiff/types"
 )
@@ -46,9 +48,8 @@ import (
 //     per database.
 //
 // The comparison at the end is what makes it a round trip rather than a read
-// check, and it reports exactly one row: Oracle rewrites a virtual column's
-// stored expression, so the declared and stored spellings differ. That row is
-// asserted rather than avoided -- see the comment beside it.
+// check, and it reports nothing -- the generated column included, which takes a
+// dev account to resolve. See the comment beside it.
 func TestOracleDeclarationConvergesE2E(t *testing.T) {
 	dbURL := dbtarget.URL(t, dbtarget.Oracle)
 	c := qt.New(t)
@@ -132,24 +133,129 @@ func TestOracleDeclarationConvergesE2E(t *testing.T) {
 	// constraint it named. Only the comparison says whether there is anything
 	// left to do.
 	//
-	// One row, and it is a pinned defect rather than a desired answer. Oracle
-	// rewrites a virtual column's expression when it stores it -- quoting and
-	// upper-casing every reference and stripping the spaces around operators --
-	// so the declaration and the catalog disagree textually about an expression
-	// they agree about semantically, and Ptah plans a MODIFY that changes
-	// nothing on every run. Deciding it needs the server's own spelling of the
-	// declared form, which needs a writable database that is not the target
-	// (stokaro/ptah#1915).
+	// Nothing left to do, generated column included.
 	//
-	// It is pinned here rather than left out of the declaration because a
-	// generated column Oracle renders and applies belongs in the round trip.
-	// The day the expression is resolved this row goes red, and whoever
-	// resolved it deletes it.
-	diff, err := schemadiff.CompareWithDatabase(ctx, conn, declared, read, nil)
+	// Getting there takes a second connection. Oracle stores a REWRITE of a
+	// virtual column's expression -- every reference quoted and upper-cased,
+	// the spaces around operators gone -- so the declaration and the catalog
+	// disagree textually about an expression they agree about semantically. The
+	// declaration is put through a server to be comparable, and that probe
+	// creates a permanent table: Oracle commits its own DDL, and a virtual
+	// column on a temporary table is ORA-54010 on both spellings. So the probe
+	// goes to a DEV account and never to the schema under comparison
+	// (stokaro/ptah#1915).
+	compareOpts := oracleGeneratedExpressionOptions(ctx, c, conn, declared)
+	diff, err := schemadiff.CompareWithDatabase(ctx, conn, declared, read, compareOpts)
+	c.Assert(err, qt.IsNil)
+	c.Assert(oracleDiffSummary(diff), qt.DeepEquals, []string(nil))
+}
+
+// TestOracleGeneratedExpressionChangeIsStillReportedE2E is the control that
+// separates a fix from a silencer.
+//
+// Resolving the declared expression through a server makes the two sides
+// converge when they agree. The risk it carries is the opposite error: a rule
+// that made everything converge would hide a real edit, and the round trip
+// above would still pass while `schema apply` quietly stopped planning
+// anything.
+//
+// So the same database is compared against a declaration whose expression
+// really changed, `view_count * 2` to `view_count * 3`. Measured live, the two
+// resolve to `"VIEW_COUNT"*2` and `"VIEW_COUNT"*3`, which are still different
+// (stokaro/ptah#1915).
+func TestOracleGeneratedExpressionChangeIsStillReportedE2E(t *testing.T) {
+	dbURL := dbtarget.URL(t, dbtarget.Oracle)
+	c := qt.New(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+	defer cancel()
+
+	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+
+	c.Assert(conn.SchemaWriter().DropAllTables(ctx), qt.IsNil)
+	defer func() {
+		c.Check(conn.SchemaWriter().DropAllTables(context.WithoutCancel(ctx)), qt.IsNil)
+	}()
+
+	applied := oracleConvergenceDeclaration()
+	statements, err := renderer.RenderSQLWithCapabilities(
+		platform.Oracle,
+		capability.ForServerVersion(platform.Oracle, conn.Info().Version),
+		oracleConvergenceNodes(applied)...,
+	)
+	c.Assert(err, qt.IsNil)
+	for _, statement := range splitOracleStatements(statements) {
+		c.Assert(conn.SchemaWriter().ExecuteSQL(ctx, statement), qt.IsNil,
+			qt.Commentf("statement: %s", statement))
+	}
+
+	read, err := conn.Reader().ReadSchema()
+	c.Assert(err, qt.IsNil)
+
+	// The one edit, on the declaration only.
+	changed := withGeneratedExpression(oracleConvergenceDeclaration(), "doubled", "view_count * 3")
+
+	compareOpts := oracleGeneratedExpressionOptions(ctx, c, conn, changed)
+	diff, err := schemadiff.CompareWithDatabase(ctx, conn, changed, read, compareOpts)
 	c.Assert(err, qt.IsNil)
 	c.Assert(oracleDiffSummary(diff), qt.DeepEquals, []string{
-		`column modified: ora_posts.doubled map[generated:VIRTUAL "VIEW_COUNT"*2 -> VIRTUAL view_count * 2]`,
+		`column modified: ora_posts.doubled map[generated:VIRTUAL "VIEW_COUNT"*2 -> VIRTUAL "VIEW_COUNT"*3]`,
 	})
+}
+
+// withGeneratedExpression rewrites one column's generated expression, leaving
+// the declaration otherwise as it was.
+func withGeneratedExpression(declared *goschema.Database, column, expression string) *goschema.Database {
+	for i := range declared.Fields {
+		if declared.Fields[i].Name == column {
+			declared.Fields[i].GeneratedExpression = expression
+		}
+	}
+	return declared
+}
+
+// oracleGeneratedExpressionOptions resolves each declared generated expression
+// through the dev account and returns the options carrying the answers.
+//
+// The dev address is a separate variable rather than the target's, and the
+// separation is the assertion: a probe that wrote into the schema this test
+// then reads back would make the round trip agree with objects the declaration
+// never had.
+func oracleGeneratedExpressionOptions(
+	ctx context.Context,
+	c *qt.C,
+	conn *dbschema.DatabaseConnection,
+	declared *goschema.Database,
+) *config.CompareOptions {
+	devURL := dbtarget.URL(c.TB.(*testing.T), dbtarget.OracleDev)
+	dev, err := dbschema.ConnectToDatabase(ctx, devURL)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(dev)
+
+	probes, err := genexprprobe.For(conn.Info().Dialect, conn.Info().Capabilities, declared)
+	c.Assert(err, qt.IsNil)
+	c.Assert(probes, qt.Not(qt.HasLen), 0)
+
+	resolved, err := dbschema.ResolveGeneratedExpressions(ctx, dev, probes)
+	c.Assert(err, qt.IsNil)
+	// Asserted rather than assumed: an empty map is what a resolver that
+	// silently did nothing returns, and it would make the comparison below pass
+	// through the uncompared branch instead of the resolved one.
+	c.Assert(resolved, qt.HasLen, 1)
+
+	// And nothing of the probe survives it. A leaked table is read by the next
+	// run as an object nobody declared.
+	var left int
+	c.Assert(dev.QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM all_tables WHERE owner = USER AND table_name LIKE 'PTAH_GENEXPR_PROBE%'").
+		Scan(&left), qt.IsNil)
+	c.Assert(left, qt.Equals, 0)
+
+	opts := config.DefaultCompareOptions()
+	opts.GeneratedExpressions = resolved
+	return opts
 }
 
 // oracleDiffSummary names every change a comparison reported, so a failure says

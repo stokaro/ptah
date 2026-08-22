@@ -3,6 +3,7 @@ package compare
 import (
 	"sort"
 
+	"go.5x5.cz/ptah/config"
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/goschema"
@@ -106,6 +107,23 @@ func TablesAndColumnsWithSemantics(
 	semantics identifier.Semantics,
 	cov Coverage,
 ) {
+	TablesAndColumnsWithGeneratedExpressions(generated, database, diff, dialect, semantics, cov, nil)
+}
+
+// TablesAndColumnsWithGeneratedExpressions is [TablesAndColumnsWithSemantics]
+// told how the target itself spells each declared generated expression.
+//
+// A nil map is every comparison that could not ask a server, which is what the
+// six-argument form passes. See [config.CompareOptions.GeneratedExpressions].
+func TablesAndColumnsWithGeneratedExpressions(
+	generated *goschema.Database,
+	database *types.DBSchema,
+	diff *difftypes.SchemaDiff,
+	dialect string,
+	semantics identifier.Semantics,
+	cov Coverage,
+	generatedExpressions map[string]config.GeneratedExpression,
+) {
 	// Create maps for quick lookup
 	genTables := make(map[tableIdentity]goschema.Table)
 	for _, table := range generated.Tables {
@@ -176,6 +194,7 @@ func TablesAndColumnsWithSemantics(
 				dialect,
 				semantics,
 				objectOwnedUniqueColumns,
+				generatedExpressions,
 			)
 			// The TTL policy is compared here rather than inside
 			// tableColumnsWithSemantics because it is a property of the table

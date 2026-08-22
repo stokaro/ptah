@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -16,9 +17,13 @@ import (
 	"go.5x5.cz/ptah/cmd/internal/dbcli"
 	"go.5x5.cz/ptah/cmd/internal/diffreport"
 	"go.5x5.cz/ptah/cmd/internal/exitcode"
+	"go.5x5.cz/ptah/config"
 	"go.5x5.cz/ptah/config/projectconfig"
+	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/dbschema"
+	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlasurl"
+	"go.5x5.cz/ptah/internal/genexprprobe"
 	"go.5x5.cz/ptah/internal/schemaload"
 	"go.5x5.cz/ptah/internal/sqlitevirtual"
 	"go.5x5.cz/ptah/migration/planner"
@@ -32,6 +37,7 @@ const (
 	schemaCmdFlag    = "schema-cmd"
 	schemaFormatFlag = "schema-format"
 	dbURLFlag        = "db-url"
+	devURLFlag       = "dev-url"
 	exitCodeFlag     = "exit-code"
 	plainHTTPFlag    = "plain-http"
 )
@@ -42,6 +48,7 @@ type options struct {
 	schemaCmd      string
 	schemaFormat   string
 	dbURL          string
+	devURL         string
 	exitOnDiff     bool
 	connectTimeout string
 	schemas        string
@@ -73,6 +80,7 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	flags.StringVar(&opts.schemaCmd, schemaCmdFlag, "", `External program whose stdout is the desired schema; run without a shell, split on whitespace. Example: "go run ./loader"`)
 	flags.StringVar(&opts.schemaFormat, schemaFormatFlag, "sql", "Format of the --schema-cmd output: sql, hcl, or yaml")
 	flags.StringVar(&opts.dbURL, dbURLFlag, "", "Database URL (required). Example: postgres://localhost:5432/dbname")
+	flags.StringVar(&opts.devURL, devURLFlag, "", "Dev database URL, used to ask the target engine how it spells a declared generated-column expression. Only Oracle needs one; every other engine stores the expression it was given")
 	flags.BoolVar(&opts.exitOnDiff, exitCodeFlag, false, "Exit with 1 when the schema diff is non-empty")
 	dbcli.RegisterPlainHTTPFlag(flags, &opts.plainHTTP)
 	flags.String(dbcli.ConfigFlagName, "", "Path to a ptah.yaml config file (default: ./ptah.yaml when present)")
@@ -169,7 +177,11 @@ func compareCommand(cmd *cobra.Command, opts *options) error {
 
 	// 3. Compare schemas (dialect-aware: MySQL/MariaDB RESTRICT == NO ACTION)
 	info := conn.Info()
-	diff, err := schemadiff.CompareWithDatabase(cmd.Context(), conn, result, dbSchema, nil)
+	compareOpts, err := resolveGeneratedExpressions(cmd.Context(), opts, connectTimeout, info, result)
+	if err != nil {
+		return err
+	}
+	diff, err := schemadiff.CompareWithDatabase(cmd.Context(), conn, result, dbSchema, compareOpts)
 	if err != nil {
 		return fmt.Errorf("error comparing schemas: %w", err)
 	}
@@ -237,4 +249,56 @@ func nonEmptyDiffExitCode(diff *difftypes.SchemaDiff) error {
 		return exitcode.New(1, errors.New("schema diff is non-empty"))
 	}
 	return nil
+}
+
+// resolveGeneratedExpressions asks the dev database how the target itself
+// spells each declared generated expression, and returns nil options when
+// nothing needs asking.
+//
+// Only a target that stores a REWRITE of the expression needs this, which is
+// Oracle alone: it quotes and upper-cases every column reference, drops the
+// spaces around operators, and adds parentheses the declaration did not carry.
+// Everywhere else the stored text is the declared text and the comparison is
+// already sound, so no dev database is opened and no probe is rendered
+// (stokaro/ptah#1915).
+//
+// Without a dev URL the expression stays uncompared rather than reported. The
+// diagnostic says so rather than leaving it silent: an exclusion the user did
+// not ask for is worth one line on stderr.
+func resolveGeneratedExpressions(
+	ctx context.Context,
+	opts *options,
+	connectTimeout time.Duration,
+	info dbschematypes.DBInfo,
+	declared *goschema.Database,
+) (*config.CompareOptions, error) {
+	probes, err := genexprprobe.For(info.Dialect, info.Capabilities, declared)
+	if err != nil {
+		return nil, err
+	}
+	if len(probes) == 0 {
+		return nil, nil
+	}
+	if strings.TrimSpace(opts.devURL) == "" {
+		return nil, nil
+	}
+
+	connectCtx, cancelConnect := dbcli.ConnectContext(ctx, connectTimeout)
+	defer cancelConnect()
+	dev, err := dbschema.ConnectToDatabase(connectCtx, opts.devURL)
+	if err != nil {
+		return nil, fmt.Errorf("connect to --%s: %w", devURLFlag, err)
+	}
+	defer dbschema.CloseAndWarn(dev)
+
+	resolved, err := dbschema.ResolveGeneratedExpressions(ctx, dev, probes)
+	if err != nil {
+		return nil, err
+	}
+	if len(resolved) == 0 {
+		return nil, nil
+	}
+	compareOpts := config.DefaultCompareOptions()
+	compareOpts.GeneratedExpressions = resolved
+	return compareOpts, nil
 }
