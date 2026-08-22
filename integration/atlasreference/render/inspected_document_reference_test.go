@@ -109,7 +109,7 @@ func TestOracleReadsTheInspectedDocumentPtahRenders(t *testing.T) {
 // PostgreSQL dev database URL -- one with no `search_path`, so the binary is
 // willing to materialize a document declaring more than one schema.
 //
-// It is separate from PTAH_ATLAS_ORACLE_POSTGRES_DEV_URL because that one is
+// It is separate from PTAH_ATLAS_REFERENCE_POSTGRES_DEV_URL because that one is
 // scoped to a single schema on purpose, and a two-schema document put to it is
 // refused with `cannot use HCL with more than 1 schema when dev-url is limited
 // to schema "public"` -- a verdict about the dev URL rather than about the
@@ -117,7 +117,7 @@ func TestOracleReadsTheInspectedDocumentPtahRenders(t *testing.T) {
 // Measured: the binary cleans the realm dev database after each read, so the
 // same URL answers three two-schema reads and a one-schema read in a row, each
 // at exit 0, and leaves only `public` behind.
-const realmDevURLEnv = "PTAH_ATLAS_ORACLE_POSTGRES_REALM_DEV_URL"
+const realmDevURLEnv = "PTAH_ATLAS_REFERENCE_POSTGRES_REALM_DEV_URL"
 
 // TestOracleReadsTheTwoSchemaRelationDocumentPtahRenders is the same
 // whole-document measurement for the shape a relation LABEL is not unique in.
