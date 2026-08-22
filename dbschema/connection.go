@@ -367,6 +367,55 @@ func libSQLDriverConfig(dbURL string) (driverName, dataSourceName string, remote
 	return "", "", false
 }
 
+// oracleDataSourceName turns off go-ora's fast-login path, and with it the
+// connection cookie that path caches.
+//
+// go-ora v3 caches the server's negotiation in a PACKAGE-LEVEL store, keyed by
+// the server's UUID and service name, and replays it on the next connection to
+// the same server to skip a round trip. Oracle 23.26.2.0.0 closes the socket on
+// the replayed cookie, so the second connection a process opens answers EOF:
+//
+//	first handle ok, second handle -> EOF
+//
+// The store outlives the failure, and the driver's own recovery does not clear
+// it: it deletes a cookie only when the error is driver.ErrBadConn, and this
+// one is io.EOF. So one refused connection leaves every later one in the
+// process refused too, whether or not the first is still open.
+//
+// Two connections is not an exotic thing to want. The capability probe waits
+// for a server on one and measures it on the next; a comparison against a dev
+// database holds the target and the dev server together; a command resolving a
+// desired state from one URL and applying it to another does the same. All of
+// it reported a connection error against a server that was up.
+//
+// Oracle 21.3.0.0.0 does not advertise the fast-auth capability the path needs,
+// so it never cached a cookie and never failed -- which is why a check that ran
+// only there would agree with a build that cannot read a 23 catalog
+// (stokaro/ptah#1875).
+// A caller who spells the option themselves keeps their answer, including
+// switching it back on: the default is Ptah's, not a prohibition.
+func oracleDataSourceName(dbURL string) string {
+	parsed, err := url.Parse(dbURL)
+	if err != nil {
+		// ConnectToDatabase parsed this URL before reaching here, so a failure
+		// is unreachable rather than tolerated. Returning the input unchanged
+		// leaves the driver to report on it, which is a better message than
+		// anything this function could invent about a URL it cannot read.
+		return dbURL
+	}
+	query := parsed.Query()
+	for key := range query {
+		// Matched on the decoded key, so the caller may spell the space as a
+		// space, a plus or %20 and still be heard.
+		if strings.EqualFold(strings.TrimSpace(key), "FAST LOGIN") {
+			return dbURL
+		}
+	}
+	query.Set("FAST LOGIN", "FALSE")
+	parsed.RawQuery = query.Encode()
+	return parsed.String()
+}
+
 func databaseDriverConfig(dialect, dbURL string) (driverName, dataSourceName string) {
 	switch dialect {
 	case platform.Postgres, platform.CockroachDB, platform.YugabyteDB, platform.Spanner:
@@ -385,7 +434,7 @@ func databaseDriverConfig(dialect, dbURL string) (driverName, dataSourceName str
 	case platform.SQLServer:
 		return "sqlserver", convertSQLServerURL(dbURL)
 	case platform.Oracle:
-		return "oracle", dbURL
+		return "oracle", oracleDataSourceName(dbURL)
 	default:
 		return "", ""
 	}
