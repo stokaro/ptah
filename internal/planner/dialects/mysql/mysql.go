@@ -1254,6 +1254,8 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 	if err := p.rejectMaterializedViews(diff); err != nil {
 		return nil, err
 	}
+	result = p.addNewMaterializedViews(result, diff, generated)
+	result = p.modifyExistingMaterializedViews(result, diff, generated)
 	result = p.addNewTriggers(result, diff, generated)
 	result = p.modifyExistingTriggers(result, diff, generated)
 
@@ -1289,6 +1291,7 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 
 	// 6.6. Remove triggers and view-like objects before dependent tables.
 	result = p.removeTriggers(result, diff)
+	result = p.removeMaterializedViews(result, diff)
 	result = p.removeViews(result, diff)
 	result = p.removeSynonyms(result, diff)
 
@@ -1352,6 +1355,18 @@ func (p *Planner) rejectMaterializedViews(diff *types.SchemaDiff) error {
 	if len(diff.MaterializedViewsAdded) == 0 &&
 		len(diff.MaterializedViewsModified) == 0 &&
 		len(diff.MaterializedViewsRemoved) == 0 {
+		return nil
+	}
+	// A target that has the object is planned rather than refused.
+	//
+	// This planner serves four engines and only one of them owns materialized
+	// views: measured, MaterializedViews is false on the MySQL, MariaDB and SQL
+	// Server presets and true on both Oracle presets. Keying the refusal on the
+	// planner rather than on the capability made Ptah answer the same question
+	// three different ways -- the preset published a check mark, the renderer
+	// emitted the DDL, and this refusal told an Oracle user that MYSQL does not
+	// support it (stokaro/ptah#1883).
+	if p.capabilities().Has(capability.MaterializedViews) {
 		return nil
 	}
 	// Same reason as enumDialectLabel: this planner serves more engines than
@@ -1471,6 +1486,62 @@ func (p *Planner) removeTriggers(result []ast.Node, diff *types.SchemaDiff) []as
 		result = append(result, ast.NewDropTrigger(triggerRef.TriggerName, triggerRef.TableName).SetIfExists())
 	}
 	return result
+}
+
+// addNewMaterializedViews emits the declared materialized views a diff adds.
+//
+// It runs beside addNewViews rather than inside it because the two produce
+// different statements, and it is a no-op on every target whose preset does not
+// carry the object: rejectMaterializedViews has already refused those.
+func (p *Planner) addNewMaterializedViews(
+	result []ast.Node,
+	diff *types.SchemaDiff,
+	generated *goschema.Database,
+) []ast.Node {
+	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
+	for _, viewName := range diff.MaterializedViewsAdded {
+		if view := findMaterializedView(generated.MaterializedViews, viewName, semantics); view != nil {
+			result = append(result, fromschema.FromMaterializedView(*view))
+		}
+	}
+	return result
+}
+
+// modifyExistingMaterializedViews replaces a changed materialized view.
+//
+// Oracle has no CREATE OR REPLACE for one -- the statement is CREATE
+// MATERIALIZED VIEW and nothing else -- so a change is a drop and a create, the
+// same shape the PostgreSQL planner uses for the same reason.
+func (p *Planner) modifyExistingMaterializedViews(
+	result []ast.Node,
+	diff *types.SchemaDiff,
+	generated *goschema.Database,
+) []ast.Node {
+	semantics := diff.EffectiveIdentifierSemantics(p.targetDialect())
+	for _, viewDiff := range diff.MaterializedViewsModified {
+		if view := findMaterializedView(generated.MaterializedViews, viewDiff.ViewName, semantics); view != nil {
+			result = append(result, ast.NewDropMaterializedView(view.Name).SetIfExists())
+			result = append(result, fromschema.FromMaterializedView(*view))
+		}
+	}
+	return result
+}
+
+// removeMaterializedViews drops the materialized views a diff removes, before
+// the tables they read.
+func (p *Planner) removeMaterializedViews(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+	for _, viewName := range diff.MaterializedViewsRemoved {
+		result = append(result, ast.NewDropMaterializedView(viewName).SetIfExists())
+	}
+	return result
+}
+
+func findMaterializedView(
+	views []goschema.MaterializedView,
+	name string,
+	semantics identifier.Semantics,
+) *goschema.MaterializedView {
+	return objectlookup.MaterializedView(views, name, semantics)
 }
 
 func findView(views []goschema.View, name string, semantics identifier.Semantics) *goschema.View {
