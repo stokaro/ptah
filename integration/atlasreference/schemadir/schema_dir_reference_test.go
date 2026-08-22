@@ -4,6 +4,7 @@ package schemadir_test
 
 import (
 	"errors"
+	"go.5x5.cz/ptah/integration/atlasreference"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -13,14 +14,14 @@ import (
 	qt "github.com/frankban/quicktest"
 )
 
-// oracleEnv names the environment variable holding the path to the pinned
+// referenceEnv names the environment variable holding the path to the pinned
 // Atlas CE binary this conformance run compares against.
-const oracleEnv = "PTAH_ATLAS_ORACLE"
+const referenceEnv = atlasreference.EnvVar
 
-// oracleVersion is the only build this run trusts. A different build may have
+// referenceVersion is the only build this run trusts. A different build may have
 // changed the very rule under test, so comparing against it would report
 // version drift as a divergence.
-const oracleVersion = "atlas community version v1.3.0"
+const referenceVersion = atlasreference.Version
 
 func writeSchemaSourceDir(c *qt.C, files map[string]string) string {
 	c.Helper()
@@ -60,12 +61,12 @@ func writeEmptySchemaHCL(c *qt.C) string {
 // are the two layouts that binary accepts, and they are what says the refusal
 // separates a conflict from a multi-file schema and from an idempotent script.
 //
-// Every row here claims Ptah's exit code IS the oracle's. The one layout where
+// Every row here claims Ptah's exit code IS the reference's. The one layout where
 // it deliberately is not lives in
 // TestPtahRefusesAnHCLDirectoryThatRedeclaresATable, because a row asserting
 // divergence would read as agreement in this matrix.
 func TestOracleAgreesOnSQLSchemaDirectories(t *testing.T) {
-	oracle := requireAtlasOracle(t)
+	reference := requireAtlasOracle(t)
 	c := qt.New(t)
 	compat := buildCompatBinary(c)
 
@@ -104,13 +105,13 @@ func TestOracleAgreesOnSQLSchemaDirectories(t *testing.T) {
 		},
 	}
 	c.Assert(tests, qt.HasLen, 3,
-		qt.Commentf("all measured SQL directory layouts must remain in the oracle matrix"))
+		qt.Commentf("all measured SQL directory layouts must remain in the reference matrix"))
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			dir := writeSchemaSourceDir(c, test.files)
-			verdict := measureDirVerdict(c, oracle, compat, dir, writeEmptySchemaHCL(c))
+			verdict := measureDirVerdict(c, reference, compat, dir, writeEmptySchemaHCL(c))
 
 			c.Assert(verdict.oracleDiff, qt.Equals, test.wantDiff)
 			c.Assert(verdict.ptahDiff, qt.Equals, verdict.oracleDiff)
@@ -127,7 +128,7 @@ func TestOracleAgreesOnSQLSchemaDirectories(t *testing.T) {
 // printed. Ptah refuses at read time on both verbs, which can never accept a
 // source that binary rejects.
 func TestPtahRefusesAnHCLDirectoryThatRedeclaresATable(t *testing.T) {
-	oracle := requireAtlasOracle(t)
+	reference := requireAtlasOracle(t)
 	c := qt.New(t)
 	compat := buildCompatBinary(c)
 
@@ -137,7 +138,7 @@ func TestPtahRefusesAnHCLDirectoryThatRedeclaresATable(t *testing.T) {
 			"a.hcl": "schema \"main\" {}\ntable \"users\" {\n  schema = schema.main\n  column \"id\" {\n    type = int\n  }\n}\n",
 			"b.hcl": "table \"users\" {\n  schema = schema.main\n  column \"id\" {\n    type = int\n  }\n}\n",
 		})
-		verdict := measureDirVerdict(c, oracle, compat, dir, writeEmptySchemaHCL(c))
+		verdict := measureDirVerdict(c, reference, compat, dir, writeEmptySchemaHCL(c))
 
 		// The divergence, and the reason it is safe: the plan that binary
 		// prints at exit 0 is the plan it then fails to apply.
@@ -163,7 +164,7 @@ type dirVerdict struct {
 // dev database is not merely untidy here: the pinned binary refuses one that is
 // not clean, so a reused dev database would report a refusal that belongs to the
 // previous run rather than to the fixture.
-func measureDirVerdict(c *qt.C, oracle, compat, dir, emptyHCL string) dirVerdict {
+func measureDirVerdict(c *qt.C, reference, compat, dir, emptyHCL string) dirVerdict {
 	c.Helper()
 	work := c.TempDir()
 
@@ -186,9 +187,9 @@ func measureDirVerdict(c *qt.C, oracle, compat, dir, emptyHCL string) dirVerdict
 	}
 
 	return dirVerdict{
-		oracleDiff:  runForExitCode(c, oracle, diffArgs("oracle-diff-dev.db")...),
+		oracleDiff:  runForExitCode(c, reference, diffArgs("reference-diff-dev.db")...),
 		ptahDiff:    runForExitCode(c, compat, diffArgs("ptah-diff-dev.db")...),
-		oracleApply: runForExitCode(c, oracle, applyArgs("oracle-target.db", "oracle-apply-dev.db")...),
+		oracleApply: runForExitCode(c, reference, applyArgs("reference-target.db", "reference-apply-dev.db")...),
 		ptahApply:   runForExitCode(c, compat, applyArgs("ptah-target.db", "ptah-apply-dev.db")...),
 	}
 }
@@ -225,20 +226,20 @@ func buildCompatBinary(c *qt.C) string {
 func requireAtlasOracle(t *testing.T) string {
 	t.Helper()
 
-	oracle := os.Getenv(oracleEnv)
-	if oracle == "" {
+	reference := os.Getenv(referenceEnv)
+	if reference == "" {
 		t.Skipf("SKIPPED: set %s to the pinned Atlas CE binary (%s) to run the schema-directory conformance run",
-			oracleEnv, oracleVersion)
+			referenceEnv, referenceVersion)
 	}
 
-	out, err := exec.Command(oracle, "version").Output() // #nosec G204 G702 -- the oracle path is operator-provided via PTAH_ATLAS_ORACLE
+	out, err := exec.Command(reference, "version").Output() // #nosec G204 G702 -- the reference path is operator-provided via PTAH_ATLAS_REFERENCE
 	if err != nil {
-		t.Fatalf("%s=%s is not runnable: %v", oracleEnv, oracle, err)
+		t.Fatalf("%s=%s is not runnable: %v", referenceEnv, reference, err)
 	}
 	got, _, _ := strings.Cut(string(out), "\n")
-	if strings.TrimSpace(got) != oracleVersion {
+	if strings.TrimSpace(got) != referenceVersion {
 		t.Fatalf("%s=%s reports %q, want %q; a different build may have changed the rule under test",
-			oracleEnv, oracle, strings.TrimSpace(got), oracleVersion)
+			referenceEnv, reference, strings.TrimSpace(got), referenceVersion)
 	}
-	return oracle
+	return reference
 }

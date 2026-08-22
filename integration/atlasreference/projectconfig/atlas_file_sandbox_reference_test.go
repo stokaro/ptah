@@ -15,6 +15,7 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/config/projectconfig"
+	"go.5x5.cz/ptah/integration/atlasreference"
 )
 
 // The community half of the stokaro/ptah#1042 divergence, measured rather than
@@ -28,14 +29,14 @@ import (
 // pins the community behavior itself, and asserts Ptah's refusal of the same
 // fixture beside it.
 //
-// It runs only with PTAH_ATLAS_ORACLE set, and the Atlas CE Oracle workflow
+// It runs only with PTAH_ATLAS_REFERENCE set, and the Atlas CE Oracle workflow
 // fails if it skips.
 
-const fileOracleEnv = "PTAH_ATLAS_ORACLE"
+const fileReferenceEnv = atlasreference.EnvVar
 
-// fileOracleVersion is the only build these verdicts describe. Comparing
+// fileReferenceVersion is the only build these verdicts describe. Comparing
 // against another build would report version drift as divergence.
-const fileOracleVersion = "atlas community version v1.3.0"
+const fileReferenceVersion = "atlas community version v1.3.0"
 
 // fileOracleProbeURL is planted outside the config directory. It is a URL scheme
 // so the value can be traced into the binary's own error text: the leak this
@@ -261,20 +262,20 @@ func warmUpFileOracle(c *qt.C, oracle string) {
 func requireFileOracle(t *testing.T) string {
 	t.Helper()
 
-	oracle := os.Getenv(fileOracleEnv)
+	oracle := os.Getenv(fileReferenceEnv)
 	if oracle == "" {
 		t.Skipf("SKIPPED: set %s to the pinned Atlas CE binary (%s) to run the atlas.hcl file() conformance run",
-			fileOracleEnv, fileOracleVersion)
+			fileReferenceEnv, fileReferenceVersion)
 	}
 
-	out, err := exec.Command(oracle, "version").Output() // #nosec G204 G702 -- the oracle path is operator-provided via PTAH_ATLAS_ORACLE
+	out, err := exec.Command(oracle, "version").Output() // #nosec G204 G702 -- the oracle path is operator-provided via PTAH_ATLAS_REFERENCE
 	if err != nil {
-		t.Fatalf("%s=%s is not runnable: %v", fileOracleEnv, oracle, err)
+		t.Fatalf("%s=%s is not runnable: %v", fileReferenceEnv, oracle, err)
 	}
 	got, _, _ := strings.Cut(string(out), "\n")
-	if strings.TrimSpace(got) != fileOracleVersion {
+	if strings.TrimSpace(got) != fileReferenceVersion {
 		t.Fatalf("%s=%s reports %q, want %q; a different build may have changed the rules under test",
-			fileOracleEnv, oracle, strings.TrimSpace(got), fileOracleVersion)
+			fileReferenceEnv, oracle, strings.TrimSpace(got), fileReferenceVersion)
 	}
 	return oracle
 }

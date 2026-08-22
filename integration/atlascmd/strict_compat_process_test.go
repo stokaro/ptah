@@ -1730,9 +1730,9 @@ func waitForPostgresAdvisoryLockPoller(t *testing.T, conn *dbschema.DatabaseConn
 // without one has nothing to rehearse a plan on.
 func strictCompatPostgresDevURL(t *testing.T) string {
 	t.Helper()
-	dbURL := os.Getenv("PTAH_ATLAS_ORACLE_POSTGRES_DEV_URL")
+	dbURL := os.Getenv("PTAH_ATLAS_REFERENCE_POSTGRES_DEV_URL")
 	if dbURL == "" {
-		t.Skip("PTAH_ATLAS_ORACLE_POSTGRES_DEV_URL not set")
+		t.Skip("PTAH_ATLAS_REFERENCE_POSTGRES_DEV_URL not set")
 	}
 	if !strings.HasPrefix(dbURL, "postgres://") && !strings.HasPrefix(dbURL, "postgresql://") {
 		t.Skip("PostgreSQL dev URL required for strict migrate-diff runtime coverage")

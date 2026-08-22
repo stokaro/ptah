@@ -336,10 +336,10 @@ jobs:
 
       - name: Run tagged integration package contour
         env:
-          PTAH_ATLAS_ORACLE: "${{ runner.temp }}/ptah-atlas-ce/atlas"
+          PTAH_ATLAS_REFERENCE: "${{ runner.temp }}/ptah-atlas-ce/atlas"
           PTAH_ATLAS_FUZZ_N: "200"
-          PTAH_ATLAS_ORACLE_POSTGRES_DEV_URL: "postgres://ptah_user:ptah_password@localhost:5432/ptah_oracle_dev?sslmode=disable&search_path=public"
-          PTAH_ATLAS_ORACLE_POSTGRES_REALM_DEV_URL: "postgres://ptah_user:ptah_password@localhost:5432/ptah_oracle_realmdev?sslmode=disable"
+          PTAH_ATLAS_REFERENCE_POSTGRES_DEV_URL: "postgres://ptah_user:ptah_password@localhost:5432/ptah_oracle_dev?sslmode=disable&search_path=public"
+          PTAH_ATLAS_REFERENCE_POSTGRES_REALM_DEV_URL: "postgres://ptah_user:ptah_password@localhost:5432/ptah_oracle_realmdev?sslmode=disable"
           POSTGRES_TEST_DSN: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
           POSTGRES_TEST_URL: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
           POSTGRES_URL: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"

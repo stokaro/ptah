@@ -22,7 +22,7 @@ import (
 //
 // Variables the registry does not own are not this gate's business: the
 // destructive MYSQL_CLEANUP_TEST_DSN target and the oracle-specific
-// PTAH_ATLAS_ORACLE_POSTGRES_DEV_URL are deliberately separate, which is why
+// PTAH_ATLAS_REFERENCE_POSTGRES_DEV_URL are deliberately separate, which is why
 // this needs no allowlist -- neither name is in the registry to begin with.
 func TestNoIntegrationTestReadsARegistryVariableDirectly(t *testing.T) {
 	c := qt.New(t)

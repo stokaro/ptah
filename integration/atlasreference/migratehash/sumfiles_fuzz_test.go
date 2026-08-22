@@ -14,6 +14,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/integration/atlasreference"
 	"go.5x5.cz/ptah/internal/atlasmigrate"
 	"go.5x5.cz/ptah/internal/atlasmigrateimport"
 	"go.5x5.cz/ptah/internal/migratesum"
@@ -23,9 +24,9 @@ import (
 // SNAPSHOT the apply gate verifies gives the same names, in the same order, as
 // selecting it over the live directory.
 //
-// The differential fuzz proves SumFileNames matches the oracle over os.DirFS.
+// The differential fuzz proves SumFileNames matches the reference over os.DirFS.
 // The apply gate does not read os.DirFS — it reads a capture, and the capture
-// filters. If the two ever disagree the gate recomputes a set the oracle never
+// filters. If the two ever disagree the gate recomputes a set the reference never
 // wrote, so this seam needs the same random population rather than the handful
 // of fixtures a unit test can name. Order is asserted because it feeds the
 // Atlas hash.
@@ -44,7 +45,7 @@ func assertCaptureSelectsTheSame(c *qt.C, dir string, format atlasmigrateimport.
 // EXECUTES are the files its atlas.sum COVERS — same members, same order.
 //
 // This is the third assertion over one population, and the reason there are
-// three. The sum comparison proves SumFileNames matches the oracle; the capture
+// three. The sum comparison proves SumFileNames matches the reference; the capture
 // comparison proves the gate recomputes that same set; neither says anything
 // about what the importer runs, and #982 lived in exactly that gap: the hasher
 // and the importer were separate rules that agreed on ordinary directories and
@@ -94,17 +95,17 @@ const flywayRefusalClasses = `no importable migration files found in .* for form
 	`|Flyway migration .* has version ".*" (with more than 3 components|whose component .* is outside .*|that is too large|with a negative component) .*` +
 	`|Flyway migration .* shares its version ordering key with more than the 4 files Ptah can tell apart .*`
 
-// oracleEnv names the environment variable holding the path to the pinned
+// referenceEnv names the environment variable holding the path to the pinned
 // Atlas CE binary the differential fuzz compares against.
-const oracleEnv = "PTAH_ATLAS_ORACLE"
+const referenceEnv = atlasreference.EnvVar
 
-// oracleVersion is the only build this fuzz trusts. A different build may have
+// referenceVersion is the only build this fuzz trusts. A different build may have
 // changed the very rules under test, so comparing against it would report
 // divergences that are really version drift.
-const oracleVersion = "atlas community version v1.3.0"
+const referenceVersion = atlasreference.Version
 
 // TestSumFileNamesDifferentialFuzz generates random Flyway directories and
-// checks Ptah's integrity file set against the live oracle.
+// checks Ptah's integrity file set against the live reference.
 //
 // It exists because a curated corpus can only cover shapes its author already
 // thought of. The 61-shape corpus stayed green over a version comparator that
@@ -112,25 +113,25 @@ const oracleVersion = "atlas community version v1.3.0"
 // V1.0), because no curated case happened to pair two such versions. Random
 // generation is not shape-blind in that way.
 //
-// Skipped unless PTAH_ATLAS_ORACLE points at the pinned binary. The skip is
-// deliberately loud: a silently absent oracle check is the failure mode of
+// Skipped unless PTAH_ATLAS_REFERENCE points at the pinned binary. The skip is
+// deliberately loud: a silently absent reference check is the failure mode of
 // scripts/check-test-style.sh (#975), and this test is the main defense for
 // rules that no unit test can derive on its own.
 func TestSumFileNamesDifferentialFuzz(t *testing.T) {
-	oracle := requireOracle(t)
+	reference := requireReference(t)
 	c := qt.New(t)
 
 	iterations := fuzzIterations(c, 200)
 	seed := fuzzSeed(c, 20260801)
 	rng := newFuzzRNG(seed)
 
-	t.Logf("differential fuzz: oracle=%s iterations=%d seed=%d", oracle, iterations, seed)
+	t.Logf("differential fuzz: reference=%s iterations=%d seed=%d", reference, iterations, seed)
 
 	for i := range iterations {
 		layout := randomFlywayLayout(rng)
 		t.Run(fmt.Sprintf("shape-%03d", i), func(t *testing.T) {
 			c := qt.New(t)
-			checkFlywayLayout(c, oracle, layout)
+			checkFlywayLayout(c, reference, layout)
 		})
 	}
 }
@@ -140,10 +141,10 @@ func TestSumFileNamesDifferentialFuzz(t *testing.T) {
 // shape prints its layout in that form, which makes a fuzz failure reducible
 // rather than merely reported.
 func TestSumFileNamesDifferentialFuzzExplicitLayout(t *testing.T) {
-	oracle := requireOracle(t)
+	reference := requireReference(t)
 	c := qt.New(t)
 
-	checkFlywayLayout(c, oracle, fuzzLayout(t))
+	checkFlywayLayout(c, reference, fuzzLayout(t))
 }
 
 func fuzzLayout(t *testing.T) []string {
@@ -155,14 +156,14 @@ func fuzzLayout(t *testing.T) []string {
 	return strings.Split(raw, ",")
 }
 
-func checkFlywayLayout(c *qt.C, oracle string, layout []string) {
+func checkFlywayLayout(c *qt.C, reference string, layout []string) {
 	c.Helper()
 
 	dir := c.TempDir()
 	writeLayout(c, dir, layout)
 
-	outcome := oracleHash(c, oracle, dir, "flyway")
-	names, hashable := assertPtahMatchesOracle(c, dir, atlasmigrateimport.FormatFlyway, outcome, layout)
+	outcome := referenceHash(c, reference, dir, "flyway")
+	names, hashable := assertPtahMatchesReference(c, dir, atlasmigrateimport.FormatFlyway, outcome, layout)
 
 	// The capture cross-check applies either way: the gate must recompute the
 	// same covered set from the snapshot it verifies whether or not that set
@@ -177,14 +178,14 @@ func checkFlywayLayout(c *qt.C, oracle string, layout []string) {
 // checkPlainLayout is checkFlywayLayout for the suffix-filter formats. It is a
 // helper rather than an inline test body so the refusal branch does not count
 // against the repository's test-conditional ratchet.
-func checkPlainLayout(c *qt.C, oracle string, format atlasmigrateimport.Format, layout []string) {
+func checkPlainLayout(c *qt.C, reference string, format atlasmigrateimport.Format, layout []string) {
 	c.Helper()
 
 	dir := c.TempDir()
 	writeLayout(c, dir, layout)
 
-	outcome := oracleHash(c, oracle, dir, string(format))
-	names, _ := assertPtahMatchesOracle(c, dir, format, outcome, layout)
+	outcome := referenceHash(c, reference, dir, string(format))
+	names, _ := assertPtahMatchesReference(c, dir, format, outcome, layout)
 	assertCaptureSelectsTheSame(c, dir, format, names, layout)
 }
 
@@ -192,12 +193,12 @@ func checkPlainLayout(c *qt.C, oracle string, format atlasmigrateimport.Format, 
 // a real Flyway project contains: V/B/R/U prefixes, integer and dotted-integer
 // versions, "__" separators, and plain subfolders. On this population the
 // contract is stricter than never-silently-wrong — every shape must match the
-// oracle exactly, and none may be refused.
+// reference exactly, and none may be refused.
 //
 // The split matters because the narrow refusal must never become a way to make
 // the broad fuzz pass. A realistic project cannot reach it.
 func TestSumFileNamesDifferentialFuzzRealisticFlyway(t *testing.T) {
-	oracle := requireOracle(t)
+	reference := requireReference(t)
 	c := qt.New(t)
 
 	iterations := fuzzIterations(c, 200)
@@ -210,7 +211,7 @@ func TestSumFileNamesDifferentialFuzzRealisticFlyway(t *testing.T) {
 			dir := c.TempDir()
 			writeLayout(c, dir, layout)
 
-			want := oracleSum(c, oracle, dir, "flyway")
+			want := oracleSum(c, reference, dir, "flyway")
 
 			fsys := os.DirFS(dir)
 			names, err := atlasmigrateimport.SumFileNames(fsys, atlasmigrateimport.FormatFlyway)
@@ -263,7 +264,7 @@ func randomRealisticFlywayLayout(rng *rand.Rand) []string {
 // TestSumFileNamesDifferentialFuzzOtherFormats does the same for the formats
 // whose rule is a flat suffix filter, so a future change there is caught too.
 func TestSumFileNamesDifferentialFuzzOtherFormats(t *testing.T) {
-	oracle := requireOracle(t)
+	reference := requireReference(t)
 
 	rng := newFuzzRNG(20260802)
 
@@ -279,7 +280,7 @@ func TestSumFileNamesDifferentialFuzzOtherFormats(t *testing.T) {
 			layout := randomPlainLayout(rng)
 			t.Run(fmt.Sprintf("%s-%02d", format, i), func(t *testing.T) {
 				c := qt.New(t)
-				checkPlainLayout(c, oracle, format, layout)
+				checkPlainLayout(c, reference, format, layout)
 			})
 		}
 	}
@@ -314,84 +315,84 @@ func newFuzzRNG(seed uint64) *rand.Rand {
 	return rand.New(rand.NewPCG(seed, 0x9E3779B97F4A7C15)) // #nosec G404 -- deterministic shape generation, not security
 }
 
-func requireOracle(t *testing.T) string {
+func requireReference(t *testing.T) string {
 	t.Helper()
 
-	oracle := os.Getenv(oracleEnv)
-	if oracle == "" {
+	reference := os.Getenv(referenceEnv)
+	if reference == "" {
 		t.Skipf("SKIPPED: set %s to the pinned Atlas CE binary (%s) to run the differential fuzz",
-			oracleEnv, oracleVersion)
+			referenceEnv, referenceVersion)
 	}
 
-	out, err := exec.Command(oracle, "version").Output() // #nosec G204 G702 -- the oracle path is operator-provided via PTAH_ATLAS_ORACLE
+	out, err := exec.Command(reference, "version").Output() // #nosec G204 G702 -- the reference path is operator-provided via PTAH_ATLAS_REFERENCE
 	if err != nil {
-		t.Fatalf("%s=%s is not runnable: %v", oracleEnv, oracle, err)
+		t.Fatalf("%s=%s is not runnable: %v", referenceEnv, reference, err)
 	}
 	got, _, _ := strings.Cut(string(out), "\n")
-	if strings.TrimSpace(got) != oracleVersion {
+	if strings.TrimSpace(got) != referenceVersion {
 		t.Fatalf("%s=%s reports %q, want %q; a different build may have changed the rules under test",
-			oracleEnv, oracle, strings.TrimSpace(got), oracleVersion)
+			referenceEnv, reference, strings.TrimSpace(got), referenceVersion)
 	}
-	return oracle
+	return reference
 }
 
-// oracleOutcome is what the pinned binary did with one generated directory.
+// referenceOutcome is what the pinned binary did with one generated directory.
 // A refusal is an OBSERVATION to compare against, not a harness failure.
 //
-// It used to be one. oracleSum asserted the oracle's exit was nil, so any shape
-// the oracle declined aborted the run instead of being recorded — and the shape
+// It used to be one. oracleSum asserted the reference's exit was nil, so any shape
+// the reference declined aborted the run instead of being recorded — and the shape
 // it declines is exactly the one #991 is about. A differential harness that can
 // only represent agreement certifies agreement.
-type oracleOutcome struct {
+type referenceOutcome struct {
 	sum     string
 	refused bool
 	output  string
 }
 
-func oracleHash(c *qt.C, oracle, dir, format string) oracleOutcome {
+func referenceHash(c *qt.C, reference, dir, format string) referenceOutcome {
 	c.Helper()
 
-	// #nosec G204 -- operator-provided oracle path, and dir is a test temp dir
-	cmd := exec.Command(oracle, "migrate", "hash", "--dir", "file://"+dir+"?format="+format)
+	// #nosec G204 -- operator-provided reference path, and dir is a test temp dir
+	cmd := exec.Command(reference, "migrate", "hash", "--dir", "file://"+dir+"?format="+format)
 	out, err := cmd.CombinedOutput()
 	sumPath := filepath.Join(dir, migratesum.AtlasFileName)
 	if err != nil {
 		_, statErr := os.Stat(sumPath)
 		c.Assert(os.IsNotExist(statErr), qt.IsTrue,
-			qt.Commentf("the oracle refused but still wrote atlas.sum: %s", out))
-		return oracleOutcome{refused: true, output: string(out)}
+			qt.Commentf("the reference refused but still wrote atlas.sum: %s", out))
+		return referenceOutcome{refused: true, output: string(out)}
 	}
 
 	recorded, err := os.ReadFile(sumPath)
 	c.Assert(err, qt.IsNil)
 
-	// The oracle's own sum file must not feed back into Ptah's computation.
+	// The reference's own sum file must not feed back into Ptah's computation.
 	c.Assert(os.Remove(sumPath), qt.IsNil)
-	return oracleOutcome{sum: string(recorded)}
+	return referenceOutcome{sum: string(recorded)}
 }
 
-// oracleSum is oracleHash for populations where a refusal would itself be the
+// oracleSum is referenceHash for populations where a refusal would itself be the
 // bug (see TestSumFileNamesDifferentialFuzzRealisticFlyway).
-func oracleSum(c *qt.C, oracle, dir, format string) string {
+func oracleSum(c *qt.C, reference, dir, format string) string {
 	c.Helper()
-	outcome := oracleHash(c, oracle, dir, format)
+	outcome := referenceHash(c, reference, dir, format)
 	c.Assert(outcome.refused, qt.IsFalse,
-		qt.Commentf("the oracle refused a shape it must accept:\n%s", outcome.output))
+		qt.Commentf("the reference refused a shape it must accept:\n%s", outcome.output))
 	return outcome.sum
 }
 
-// assertPtahMatchesOracle compares Ptah against the oracle in BOTH directions
-// for one directory: the sum when the oracle wrote one, and the refusal when it
+// assertPtahMatchesReference compares Ptah against the reference in BOTH directions
+// for one directory: the sum when the reference wrote one, and the refusal when it
 // wrote none. It returns the covered set and whether the directory was hashable.
 //
 // Selection is asserted to succeed either way. Membership and readability are
 // separate questions, and #991 was Ptah answering the first one by silently
 // dropping an entry it could not answer the second for.
-func assertPtahMatchesOracle(
+func assertPtahMatchesReference(
 	c *qt.C,
 	dir string,
 	format atlasmigrateimport.Format,
-	outcome oracleOutcome,
+	outcome referenceOutcome,
 	layout []string,
 ) (names []string, hashable bool) {
 	c.Helper()
@@ -404,7 +405,7 @@ func assertPtahMatchesOracle(
 	sum, sumErr := migratesum.ComputeAtlasFiles(fsys, names)
 	if outcome.refused {
 		c.Assert(sumErr, qt.ErrorIs, migratesum.ErrCoveredEntryUnreadable,
-			qt.Commentf("the oracle refused this directory and Ptah did not: PTAH_ATLAS_FUZZ_LAYOUT=%s\noracle said:\n%s",
+			qt.Commentf("the reference refused this directory and Ptah did not: PTAH_ATLAS_FUZZ_LAYOUT=%s\noracle said:\n%s",
 				strings.Join(layout, ","), outcome.output))
 		return names, false
 	}

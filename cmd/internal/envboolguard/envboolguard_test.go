@@ -47,6 +47,12 @@ import (
 // not, because the scan skips `_test.go` files: an entry for one would be a
 // claim about the tree that nothing checks.
 var nonBooleanPtahVars = []string{
+	// The pinned Atlas community binary the conformance tests measure against.
+	// Two spellings, because the rename in stokaro/ptah#1887 honors the old one
+	// so a checkout configured before it keeps working -- and both have to be
+	// classified, or this guard reports the compatibility as an oversight.
+	"PTAH_ATLAS_ORACLE",        // superseded spelling, still read when the current one is unset
+	"PTAH_ATLAS_REFERENCE",     // path to the pinned Atlas CE binary
 	"PTAH_ATLAS_REGISTRY",      // OCI namespace an atlas:// reference resolves against
 	"PTAH_CURRENT_VERSION",     // migration version, passed to preflight hooks
 	"PTAH_DB_URL",              // database URL

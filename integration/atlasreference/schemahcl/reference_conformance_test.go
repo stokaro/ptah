@@ -12,26 +12,27 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/integration/atlasreference"
 	"go.5x5.cz/ptah/internal/atlashcl"
 )
 
-// oracleEnv names the environment variable holding the path to the pinned
+// referenceEnv names the environment variable holding the path to the pinned
 // Atlas CE binary this conformance run compares against.
-const oracleEnv = "PTAH_ATLAS_ORACLE"
+const referenceEnv = atlasreference.EnvVar
 
-// oracleVersion is the only build this conformance run trusts. A different
+// referenceVersion is the only build this conformance run trusts. A different
 // build may have changed the very rules under test, so comparing against it
 // would report divergences that are really version drift.
-const oracleVersion = "atlas community version v1.3.0"
+const referenceVersion = atlasreference.Version
 
-// oracleDevURL is the dev database the oracle evaluates a `file://` schema
+// referenceDevURL is the dev database the reference evaluates a `file://` schema
 // source on. In-memory SQLite keeps the gate self-contained: no container, no
 // credentials, nothing to leave running. The verdicts below were cross-checked
 // against a PostgreSQL 18 dev database and a MySQL 9.7 dev database and are
 // identical on all three, so none of them is a dialect artifact -- except the
 // `partition` row, which is dialect-split and is recorded as such rather than
 // pinned to one verdict.
-const oracleDevURL = "sqlite://file?mode=memory"
+const referenceDevURL = "sqlite://file?mode=memory"
 
 // TestOracleAcceptsAndDropsUnknownSchemaHCLNames is the conformance half of
 // stokaro/ptah#1016's definition of done: every position where Ptah drops an
@@ -39,7 +40,7 @@ const oracleDevURL = "sqlite://file?mode=memory"
 // rather than frozen in a comment nothing can invalidate.
 //
 // Each case asserts three things, and the second is the one that carries the
-// weight: the oracle exits 0, the DDL it emits is byte-identical to the DDL of
+// weight: the reference exits 0, the DDL it emits is byte-identical to the DDL of
 // the same schema with the construct deleted (so the name was dropped and not
 // implemented), and Ptah's tolerant parse produces exactly the IR of that same
 // deleted-construct file.
@@ -49,7 +50,7 @@ const oracleDevURL = "sqlite://file?mode=memory"
 // makes this a general "drop names I do not model" policy rather than support
 // for any particular name.
 func TestOracleAcceptsAndDropsUnknownSchemaHCLNames(t *testing.T) {
-	oracle := requireSchemaOracle(t)
+	reference := requireSchemaOracle(t)
 
 	tests := []struct {
 		name       string
@@ -320,10 +321,10 @@ table "t" {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			withDDL, withCode := runSchemaOracle(c, oracle, tt.hcl)
-			withoutDDL, withoutCode := runSchemaOracle(c, oracle, tt.equivalent)
-			c.Assert(withCode, qt.Equals, 0, qt.Commentf("oracle output: %s", withDDL))
-			c.Assert(withoutCode, qt.Equals, 0, qt.Commentf("oracle output: %s", withoutDDL))
+			withDDL, withCode := runSchemaOracle(c, reference, tt.hcl)
+			withoutDDL, withoutCode := runSchemaOracle(c, reference, tt.equivalent)
+			c.Assert(withCode, qt.Equals, 0, qt.Commentf("reference output: %s", withDDL))
+			c.Assert(withoutCode, qt.Equals, 0, qt.Commentf("reference output: %s", withoutDDL))
 			c.Assert(withDDL, qt.Equals, withoutDDL)
 
 			tolerant, err := atlashcl.ParseWithOptions(
@@ -344,7 +345,7 @@ table "t" {
 // community binary REFUSES, and the tolerant parser must refuse it too.
 //
 // Without this, relaxing a name silently converts each row into an
-// exit-0-where-the-oracle-exits-1 divergence -- the dangerous direction, and
+// exit-0-where-the-reference-exits-1 divergence -- the dangerous direction, and
 // invisible to any test that only checks that valid files still parse.
 //
 // The rows are chosen so no single mechanism covers them. The first four fail
@@ -356,7 +357,7 @@ table "t" {
 // wildcards that stood in for unlabeled blocks and for declared variables
 // stayed invisible while accepting all twelve of these.
 func TestOracleRefusesUnevaluableDroppedBodies(t *testing.T) {
-	oracle := requireSchemaOracle(t)
+	reference := requireSchemaOracle(t)
 
 	tests := []struct {
 		name string
@@ -385,7 +386,7 @@ annotation "gql" {
 `,
 		},
 		{
-			name: "call to a function the oracle does not have",
+			name: "call to a function the reference does not have",
 			hcl: `schema "main" {
 }
 annotation "gql" {
@@ -695,15 +696,15 @@ table "t" {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			out, code := runSchemaOracle(c, oracle, tt.hcl)
-			c.Assert(code, qt.Not(qt.Equals), 0, qt.Commentf("oracle output: %s", out))
+			out, code := runSchemaOracle(c, reference, tt.hcl)
+			c.Assert(code, qt.Not(qt.Equals), 0, qt.Commentf("reference output: %s", out))
 
 			_, err := atlashcl.ParseWithOptions(
 				[]byte(tt.hcl),
 				"schema.hcl",
 				atlashcl.Options{IgnoreUnknownNames: true},
 			)
-			c.Assert(err, qt.IsNotNil, qt.Commentf("oracle refused this file: %s", out))
+			c.Assert(err, qt.IsNotNil, qt.Commentf("reference refused this file: %s", out))
 		})
 	}
 }
@@ -711,14 +712,14 @@ table "t" {
 // TestOracleAcceptsReferencesPtahRefuses measures the divergence the closed
 // scope buys, instead of asserting it against a frozen expectation.
 //
-// The oracle exits 0 on each of these and the tolerant parser refuses each of
+// The reference exits 0 on each of these and the tolerant parser refuses each of
 // them, because resolving the reference would need a reference root built from
 // the file's own blocks or variables -- and every attempt to build those roots
 // so far has had to guess at some member it could not enumerate, turning into
-// an accept-where-the-oracle-refuses divergence. Refusing is the direction that
+// an accept-where-the-reference-refuses divergence. Refusing is the direction that
 // costs a user a message rather than a wrong schema.
 //
-// This test fails in BOTH directions, which is the point: if the oracle stops
+// This test fails in BOTH directions, which is the point: if the reference stops
 // accepting one of these the row is no longer a divergence and should move, and
 // if Ptah starts accepting one the trade recorded here has been reversed
 // without being re-argued.
@@ -730,14 +731,14 @@ table "t" {
 // uses, so the reference resolves. Measured on both, the row is no longer a
 // divergence in either direction:
 //
-//	oracle:      exit 0, table "t" with column "id"
+//	reference:      exit 0, table "t" with column "id"
 //	ptah-compat: exit 0, table "t" with column "id"
 //
 // The remaining rows keep the trade, and for the reason above: their roots are
 // `column` and `table`, which need a reference root built from the file's own
 // blocks — the thing every attempt so far has had to guess a member of.
 func TestOracleAcceptsReferencesPtahRefuses(t *testing.T) {
-	oracle := requireSchemaOracle(t)
+	reference := requireSchemaOracle(t)
 
 	tests := []struct {
 		name string
@@ -797,8 +798,8 @@ table "t" {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			out, code := runSchemaOracle(c, oracle, tt.hcl)
-			c.Assert(code, qt.Equals, 0, qt.Commentf("oracle output: %s", out))
+			out, code := runSchemaOracle(c, reference, tt.hcl)
+			c.Assert(code, qt.Equals, 0, qt.Commentf("reference output: %s", out))
 
 			_, err := atlashcl.ParseWithOptions(
 				[]byte(tt.hcl),
@@ -819,7 +820,7 @@ table "t" {
 // dialect-independent fact is pinned instead: `HASH` is not a reference root in
 // a dropped body anywhere, which is the mechanism behind the MySQL refusal.
 func TestOraclePartitionIsDialectSplit(t *testing.T) {
-	oracle := requireSchemaOracle(t)
+	reference := requireSchemaOracle(t)
 	c := qt.New(t)
 
 	const bare = `schema "main" {
@@ -829,8 +830,8 @@ annotation "gql" {
 }
 `
 
-	out, code := runSchemaOracle(c, oracle, bare)
-	c.Assert(code, qt.Not(qt.Equals), 0, qt.Commentf("oracle output: %s", out))
+	out, code := runSchemaOracle(c, reference, bare)
+	c.Assert(code, qt.Not(qt.Equals), 0, qt.Commentf("reference output: %s", out))
 	c.Assert(out, qt.Contains, `There is no variable named "HASH"`)
 
 	_, err := atlashcl.ParseWithOptions(
@@ -842,27 +843,27 @@ annotation "gql" {
 }
 
 // requireSchemaOracle resolves the pinned binary, refusing to compare against
-// any other build. The skip is deliberately loud: a silently absent oracle is
+// any other build. The skip is deliberately loud: a silently absent reference is
 // the failure mode this whole file exists to avoid.
 func requireSchemaOracle(t *testing.T) string {
 	t.Helper()
 
-	oracle := os.Getenv(oracleEnv)
-	if oracle == "" {
+	reference := os.Getenv(referenceEnv)
+	if reference == "" {
 		t.Skipf("SKIPPED: set %s to the pinned Atlas CE binary (%s) to run the schema-HCL conformance run",
-			oracleEnv, oracleVersion)
+			referenceEnv, referenceVersion)
 	}
 
-	out, err := exec.Command(oracle, "version").Output() // #nosec G204 G702 -- the oracle path is operator-provided via PTAH_ATLAS_ORACLE
+	out, err := exec.Command(reference, "version").Output() // #nosec G204 G702 -- the reference path is operator-provided via PTAH_ATLAS_REFERENCE
 	if err != nil {
-		t.Fatalf("%s=%s is not runnable: %v", oracleEnv, oracle, err)
+		t.Fatalf("%s=%s is not runnable: %v", referenceEnv, reference, err)
 	}
 	got, _, _ := strings.Cut(string(out), "\n")
-	if strings.TrimSpace(got) != oracleVersion {
+	if strings.TrimSpace(got) != referenceVersion {
 		t.Fatalf("%s=%s reports %q, want %q; a different build may have changed the rules under test",
-			oracleEnv, oracle, strings.TrimSpace(got), oracleVersion)
+			referenceEnv, reference, strings.TrimSpace(got), referenceVersion)
 	}
-	return oracle
+	return reference
 }
 
 // schemaOracleWarmup absorbs a once-per-environment notice before the first
@@ -870,29 +871,29 @@ func requireSchemaOracle(t *testing.T) string {
 //
 // The binary prints an edition notice on its first `schema inspect` in a fresh
 // environment -- a CI runner -- and on that run only. Every comparison here runs
-// the oracle twice and asserts the two captures are equal, so a notice attached
+// the reference twice and asserts the two captures are equal, so a notice attached
 // to the first of the pair but not the second makes a row unequal whose DDL is
 // in fact identical. That is exactly how this failed on its first CI run: the
 // first subtest failed and every later one passed, because the notice was spent
 // on the first invocation of the job.
 //
 // A throwaway inspect is preferred over matching the notice by its wording. The
-// text is not part of any contract the oracle owes us, so a matcher for it would
+// text is not part of any contract the reference owes us, so a matcher for it would
 // rot silently the next time it is reworded, and this run would go green while
 // comparing whatever the new text happened to be. `requireSchemaOracle` cannot
 // serve as the warm-up either: it runs `version`, whose stdout it parses, and
 // the notice does not appear there.
 var schemaOracleWarmup sync.Once
 
-func warmUpSchemaOracle(c *qt.C, oracle string) {
+func warmUpSchemaOracle(c *qt.C, reference string) {
 	c.Helper()
 
 	schemaOracleWarmup.Do(func() {
 		path := filepath.Join(c.TempDir(), "warmup.hcl")
-		//nolint:errcheck // best effort: a failed write still runs the oracle, which is all the warm-up needs
+		//nolint:errcheck // best effort: a failed write still runs the reference, which is all the warm-up needs
 		_ = os.WriteFile(path, []byte("schema \"main\" {\n}\n"), 0o600)
-		// #nosec G204 -- operator-provided oracle path, and path is a test temp dir
-		cmd := exec.Command(oracle, "schema", "inspect", "-u", "file://"+path, "--dev-url", oracleDevURL)
+		// #nosec G204 -- operator-provided reference path, and path is a test temp dir
+		cmd := exec.Command(reference, "schema", "inspect", "-u", "file://"+path, "--dev-url", referenceDevURL)
 		//nolint:errcheck // output and status are both discarded; this run exists only to spend the notice
 		_, _ = cmd.CombinedOutput()
 	})
@@ -900,19 +901,19 @@ func warmUpSchemaOracle(c *qt.C, oracle string) {
 
 // runSchemaOracle inspects one schema source with the pinned binary and returns
 // its combined output and exit code.
-func runSchemaOracle(c *qt.C, oracle, source string) (string, int) {
+func runSchemaOracle(c *qt.C, reference, source string) (string, int) {
 	c.Helper()
 
-	warmUpSchemaOracle(c, oracle)
+	warmUpSchemaOracle(c, reference)
 
 	path := filepath.Join(c.TempDir(), "schema.hcl")
 	c.Assert(os.WriteFile(path, []byte(source), 0o600), qt.IsNil)
 
-	// #nosec G204 -- operator-provided oracle path, and path is a test temp dir
-	cmd := exec.Command(oracle, "schema", "inspect", "-u", "file://"+path, "--dev-url", oracleDevURL)
+	// #nosec G204 -- operator-provided reference path, and path is a test temp dir
+	cmd := exec.Command(reference, "schema", "inspect", "-u", "file://"+path, "--dev-url", referenceDevURL)
 	// The error is the exit status, which is the measurement; a process that
 	// never started leaves ProcessState nil and fails the assertion instead.
 	out, _ := cmd.CombinedOutput() //nolint:errcheck // exit status is read from ProcessState below
-	c.Assert(cmd.ProcessState, qt.IsNotNil, qt.Commentf("the oracle did not run: %s", out))
+	c.Assert(cmd.ProcessState, qt.IsNotNil, qt.Commentf("the reference did not run: %s", out))
 	return string(out), cmd.ProcessState.ExitCode()
 }

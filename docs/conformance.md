@@ -2032,19 +2032,19 @@ Reproduce that oracle locally:
 ```bash
 scripts/build-atlas-ce-oracle.sh
 GOWORK=off \
-  PTAH_ATLAS_ORACLE="$PWD/bin/atlas-ce-oracle" \
+  PTAH_ATLAS_REFERENCE="$PWD/bin/atlas-ce-oracle" \
   go test -tags=integration -count=1 \
-  ./integration/atlasoracle/migratedirquery
+  ./integration/atlasreference/migratedirquery
 GOWORK=off \
-  PTAH_ATLAS_ORACLE="$PWD/bin/atlas-ce-oracle" \
+  PTAH_ATLAS_REFERENCE="$PWD/bin/atlas-ce-oracle" \
   go test -tags=integration -count=1 \
-  ./integration/atlasoracle/migrateapply
+  ./integration/atlasreference/migrateapply
 GOWORK=off \
-  PTAH_ATLAS_ORACLE="$PWD/bin/atlas-ce-oracle" \
+  PTAH_ATLAS_REFERENCE="$PWD/bin/atlas-ce-oracle" \
   go test -tags=integration -count=1 \
-  ./integration/atlasoracle/flywayrevision
+  ./integration/atlasreference/flywayrevision
 GOWORK=off \
-  PTAH_ATLAS_ORACLE="$PWD/bin/atlas-ce-oracle" \
+  PTAH_ATLAS_REFERENCE="$PWD/bin/atlas-ce-oracle" \
   PTAH_ATLAS_FUZZ_N=200 \
   go test -count=1 \
   -run '^TestSumFileNamesDifferentialFuzz(RealisticFlyway|OtherFormats)?$' \
