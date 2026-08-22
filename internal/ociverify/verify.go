@@ -2,6 +2,7 @@ package ociverify
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -14,19 +15,44 @@ import (
 var ErrPolicyViolation = errors.New("the artifact does not satisfy the verification policy")
 
 // Finding is one requirement an artifact failed.
+//
+// The JSON names are snake_case because every other machine-readable document
+// Ptah writes is -- `drift`, `highest_severity`, `capability_preset`. Without
+// tags this one serialized as Go field names, so a consumer reading two Ptah
+// documents needed two naming conventions (stokaro/ptah#852).
 type Finding struct {
-	Requirement string
-	Detail      string
+	Requirement string `json:"requirement"`
+	Detail      string `json:"detail"`
 }
 
 // Report is the outcome of checking one artifact.
 type Report struct {
-	Reference string
-	Digest    string
+	Reference string `json:"reference"`
+	Digest    string `json:"digest"`
 	// Satisfied names the requirements the artifact met, so a passing run says
 	// what it actually checked rather than only that it passed.
-	Satisfied []string
-	Findings  []Finding
+	Satisfied []string  `json:"satisfied"`
+	Findings  []Finding `json:"findings"`
+}
+
+// MarshalJSON writes the two lists as arrays rather than null.
+//
+// A refusal satisfied nothing and a pass found nothing, so one of the two is
+// empty in every real report. `null` and `[]` are different shapes to a
+// consumer that iterates, and the one it gets should not depend on the outcome.
+func (r Report) MarshalJSON() ([]byte, error) {
+	// The alias drops this method, so marshalling the copy does not recurse.
+	// The copy is what gets the empty lists: the receiver is by value and
+	// assigning to it would be a change nobody can observe.
+	type report Report
+	encoded := report(r)
+	if encoded.Satisfied == nil {
+		encoded.Satisfied = make([]string, 0)
+	}
+	if encoded.Findings == nil {
+		encoded.Findings = make([]Finding, 0)
+	}
+	return json.Marshal(encoded)
 }
 
 // Err returns the refusal, or nil when the artifact satisfied the policy.

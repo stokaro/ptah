@@ -213,11 +213,17 @@ func runDrift(cmd *cobra.Command, opts runOptions) error {
 		Diff:             result.Diff,
 	}
 
-	writer := cmd.OutOrStdout()
-	if hasDrift {
-		writer = cmd.ErrOrStderr()
-	}
-	if err := writeReport(writer, opts.format, report); err != nil {
+	// The report is the answer, not a diagnostic, so it goes to stdout whether
+	// or not there is drift. It went to stderr when there was, which put the
+	// document on the error stream in exactly the case a reader runs this for:
+	// `--format json` piped to a parser produced an EMPTY stdout on a drifted
+	// database, and the parser saw "no output" rather than "drift".
+	//
+	// The sibling verb settles it: `migrations status --json --exit-code`
+	// writes its document to stdout and exits 1. Both are the same contract --
+	// exit 1 is an expected negative result, per docs/exit_codes.md -- so both
+	// put the document in the same place (stokaro/ptah#852).
+	if err := writeReport(cmd.OutOrStdout(), opts.format, report); err != nil {
 		return writeError(cmd.ErrOrStderr(), formatText, err.Error())
 	}
 	if failed {
