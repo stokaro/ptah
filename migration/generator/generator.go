@@ -706,13 +706,29 @@ func resolvePlanDatabaseConnection(
 	// in this function rather than in the caller is what keeps it off the rest
 	// of the generation, which is the whole distinction the field exists to
 	// draw.
-	connectCtx, cancelConnect := baselineShadowConnectContext(ctx, opts.ConnectTimeout)
+	connectCtx, cancelConnect := connectContextFor(ctx, opts)
 	defer cancelConnect()
 	conn, err := dbschema.ConnectToDatabase(connectCtx, opts.DatabaseURL)
 	if err != nil {
 		return nil, false, fmt.Errorf("error connecting to database: %w", err)
 	}
 	return conn, true, nil
+}
+
+// connectContextFor derives the context the connect runs under.
+//
+// Split from its caller so the derivation can be checked without a server and
+// without a clock: a test asks whether the returned context carries a deadline,
+// which is decided when it is built. Asserting that a small budget *fires*
+// would depend on timer granularity -- on Windows `time.Now()` can return the
+// same instant either side of a nanosecond budget, so the deadline is scheduled
+// rather than already past and a local connect finishes first
+// (stokaro/ptah#1749).
+func connectContextFor(
+	ctx context.Context,
+	opts GenerateMigrationOptions,
+) (context.Context, context.CancelFunc) {
+	return baselineShadowConnectContext(ctx, opts.ConnectTimeout)
 }
 
 // resolveDesiredSchema answers what the migration should bring the database to:

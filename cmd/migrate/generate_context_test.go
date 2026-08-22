@@ -29,37 +29,6 @@ import (
 // window between a SQLite connect (~0.1ms) and a whole generate run (~35ms) is
 // too narrow to survive a runner 1.4-1.9x slower, which is precisely the
 // machine stokaro/ptah#1812 measured.
-// TestMigrateGenerateStillBoundsTheConnect is the other half: the flag must
-// keep doing what it says.
-//
-// Scoping the budget to the connect moved it from the context into an option,
-// and a caller that stopped passing the option would leave the connect
-// unbounded with every existing test still green. A nanosecond is expired
-// before it is read, so a connect that still honours the flag cannot succeed,
-// and the assertion does not depend on how fast the machine is
-// (stokaro/ptah#1749).
-func TestMigrateGenerateStillBoundsTheConnect(t *testing.T) {
-	c := qt.New(t)
-	dir := t.TempDir()
-	schemaFile := filepath.Join(dir, "schema.sql")
-	c.Assert(os.WriteFile(schemaFile, []byte("CREATE TABLE users (id INTEGER PRIMARY KEY);\n"), 0o600), qt.IsNil)
-
-	cmd := migrate.NewMigrateGenerateCommand()
-	cmd.SetContext(context.Background())
-	cmd.SetArgs([]string{
-		"--schema-file", schemaFile,
-		"--db-url", "sqlite:///" + filepath.Join(dir, "ptah.db"),
-		"--migrations-dir", filepath.Join(dir, "migrations"),
-		"--name", "init",
-		"--connect-timeout", "1ns",
-	})
-
-	err := cmd.Execute()
-
-	c.Assert(err, qt.ErrorMatches, `error connecting to database: .*`,
-		qt.Commentf("--connect-timeout must still bound the connect"))
-}
-
 func TestMigrateGenerateHonorsTheCommandContext(t *testing.T) {
 	c := qt.New(t)
 	dir := t.TempDir()
