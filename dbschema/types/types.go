@@ -21,19 +21,23 @@ type DBSchema struct {
 	Enums       []DBEnum       `json:"enums"`
 	Indexes     []DBIndex      `json:"indexes"`
 	Constraints []DBConstraint `json:"constraints"`
-	Extensions  []DBExtension  `json:"extensions"`   // PostgreSQL extensions
-	Functions   []DBFunction   `json:"functions"`    // PostgreSQL custom functions
-	Sequences   []DBSequence   `json:"sequences"`    // PostgreSQL standalone sequences
-	Domains     []DBDomain     `json:"domains"`      // PostgreSQL domain types
-	Composites  []DBComposite  `json:"composites"`   // PostgreSQL composite types
-	Ranges      []DBRange      `json:"ranges"`       // PostgreSQL range types
-	Views       []DBView       `json:"views"`        // Database views
-	MatViews    []DBMatView    `json:"matviews"`     // Database materialized views
-	Synonyms    []DBSynonym    `json:"synonyms"`     // SQL Server synonyms
-	Triggers    []DBTrigger    `json:"triggers"`     // Database triggers
-	RLSPolicies []DBRLSPolicy  `json:"rls_policies"` // PostgreSQL RLS policies
-	Roles       []DBRole       `json:"roles"`        // PostgreSQL roles
-	Grants      []DBGrant      `json:"grants"`       // PostgreSQL privilege grants
+	Extensions  []DBExtension  `json:"extensions"` // PostgreSQL extensions
+	Functions   []DBFunction   `json:"functions"`  // PostgreSQL custom functions
+	Sequences   []DBSequence   `json:"sequences"`  // PostgreSQL standalone sequences
+	Domains     []DBDomain     `json:"domains"`    // PostgreSQL domain types
+	Composites  []DBComposite  `json:"composites"` // PostgreSQL composite types
+	Ranges      []DBRange      `json:"ranges"`     // PostgreSQL range types
+	Views       []DBView       `json:"views"`      // Database views
+	MatViews    []DBMatView    `json:"matviews"`   // Database materialized views
+	Synonyms    []DBSynonym    `json:"synonyms"`   // SQL Server synonyms
+	// ExtendedProperties are the SQL Server extended properties this
+	// description covers: schema-, table- and column-scoped ones. See
+	// [DBExtendedProperty] for what is deliberately not in it.
+	ExtendedProperties []DBExtendedProperty `json:"extended_properties,omitempty"`
+	Triggers           []DBTrigger          `json:"triggers"`     // Database triggers
+	RLSPolicies        []DBRLSPolicy        `json:"rls_policies"` // PostgreSQL RLS policies
+	Roles              []DBRole             `json:"roles"`        // PostgreSQL roles
+	Grants             []DBGrant            `json:"grants"`       // PostgreSQL privilege grants
 
 	// RolesOutOfScope lists roles that exist on the server but that this
 	// description deliberately does not define, because nothing in the
@@ -815,6 +819,67 @@ type DBSynonym struct {
 	TargetSchema   string `json:"target_schema,omitempty"`
 	TargetObject   string `json:"target_object"`
 	Comment        string `json:"comment,omitempty"` // Synonym comment/description
+}
+
+// DBExtendedProperty is one SQL Server extended property read from
+// sys.extended_properties.
+//
+// SQL Server hangs a property off a three-level address, and this type carries
+// the two levels Ptah manages. Schema alone is a schema-scoped property
+// (class 3); Schema and Table together are an object-scoped one, and adding
+// Column addresses a column of it (class 1, minor_id 0 or the column's id).
+//
+// Two kinds of row are deliberately absent, and each for its own reason.
+//
+// A DATABASE-scoped property (class 0) has no schema and no object to hang
+// off, and how a database-scoped object lives beside a schema-scoped model is
+// a design question rather than a field (stokaro/ptah#1031). It is left
+// unread, so nothing describes it and nothing plans against it.
+//
+// MS_Description is not read here either, because Ptah already models it: the
+// reader turns it into the object's Comment, and reporting it twice would let
+// the comment comparator and this one plan the same change from two places.
+// The declaration side refuses it by name for the same reason, and says to use
+// the comment instead.
+type DBExtendedProperty struct {
+	Name   string `json:"name"`             // Property name, as sys.extended_properties records it
+	Schema string `json:"schema"`           // Schema owning the addressed object, or the addressed schema
+	Table  string `json:"table,omitempty"`  // Table the property is on; empty for a schema-scoped property
+	Column string `json:"column,omitempty"` // Column the property is on; requires Table
+	Value  string `json:"value"`            // The value, when ValueType names one this description can carry
+
+	// ValueType is the sql_variant base type SQL_VARIANT_PROPERTY reports:
+	// nvarchar, int, date, and so on.
+	ValueType string `json:"value_type"`
+
+	// ValueNotRepresentable marks a property whose value is stored under a base
+	// type Ptah cannot write back.
+	//
+	// sp_addextendedproperty takes a sql_variant, so a property may hold an int
+	// or a date as well as a string -- measured on SQL Server 2022, @value=42
+	// stores base type `int` and a DATE stores `date`. The renderer writes an
+	// N'' literal, so re-emitting either of those would change its type, and
+	// CONVERT(NVARCHAR, value) on the date answers `Jan  2 2026`, which is a
+	// locale-dependent rendering rather than the value.
+	//
+	// The row is reported rather than dropped so that a description says the
+	// property is there, and the comparator declines it in both directions:
+	// nothing is planned to add it, and nothing is planned to take it away.
+	// Ptah leaves it exactly as it found it.
+	ValueNotRepresentable bool `json:"value_not_representable,omitempty"`
+}
+
+// QualifiedOwner names the object the property is attached to, as
+// schema.table.column, omitting the levels that are absent.
+func (p DBExtendedProperty) QualifiedOwner() string {
+	parts := []string{p.Schema}
+	if p.Table != "" {
+		parts = append(parts, p.Table)
+	}
+	if p.Column != "" {
+		parts = append(parts, p.Column)
+	}
+	return strings.Join(parts, ".")
 }
 
 // QualifiedName returns schema.synonym when Schema is set, or Name otherwise.

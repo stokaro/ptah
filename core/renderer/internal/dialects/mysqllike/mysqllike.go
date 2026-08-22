@@ -1500,6 +1500,17 @@ func (r *Renderer) VisitCreateSynonym(node *ast.CreateSynonymNode) error {
 	return nil
 }
 
+// VisitExtendedProperty refuses: an extended property is a SQL Server object,
+// and this engine has no catalog to attach one to.
+//
+// There is no capability key behind this refusal, for the reason
+// VisitCreateSynonym gives: a key would have exactly one value forever and
+// would invite a preset to turn it on.
+func (r *Renderer) VisitExtendedProperty(node *ast.ExtendedPropertyNode) error {
+	r.w.WriteLinef("-- EXTENDED PROPERTY %s not supported in %s", node.Name, r.dialect)
+	return nil
+}
+
 // VisitDropSynonym names the drop as unsupported, for the same reason.
 func (r *Renderer) VisitDropSynonym(node *ast.DropSynonymNode) error {
 	if node.Comment != "" {

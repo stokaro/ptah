@@ -1755,6 +1755,9 @@ func cloneSchemaDiff(diff *types.SchemaDiff) *types.SchemaDiff {
 	clone.SynonymsAdded = slices.Clone(diff.SynonymsAdded)
 	clone.SynonymsRemoved = slices.Clone(diff.SynonymsRemoved)
 	clone.SynonymsModified = slices.Clone(diff.SynonymsModified)
+	clone.ExtendedPropertiesAdded = slices.Clone(diff.ExtendedPropertiesAdded)
+	clone.ExtendedPropertiesRemoved = slices.Clone(diff.ExtendedPropertiesRemoved)
+	clone.ExtendedPropertiesModified = slices.Clone(diff.ExtendedPropertiesModified)
 	clone.MaterializedViewsAdded = slices.Clone(diff.MaterializedViewsAdded)
 	clone.MaterializedViewsRemoved = slices.Clone(diff.MaterializedViewsRemoved)
 	clone.MaterializedViewsModified = slices.Clone(diff.MaterializedViewsModified)
@@ -2229,6 +2232,15 @@ func reverseSchemaDiffWithSchemaForDialect(
 		SynonymsAdded:    diff.SynonymsRemoved,
 		SynonymsRemoved:  diff.SynonymsAdded,
 		SynonymsModified: reverseSynonymDiffs(diff.SynonymsModified),
+
+		// An extended property is a name, an address and a value, and the
+		// reversal needs no schema side because all three are already in the
+		// diff: the down direction drops what the up direction added, adds
+		// back what it dropped with the value the removal carried, and swaps
+		// the two values of a modification.
+		ExtendedPropertiesAdded:    slices.Clone(diff.ExtendedPropertiesRemoved),
+		ExtendedPropertiesRemoved:  slices.Clone(diff.ExtendedPropertiesAdded),
+		ExtendedPropertiesModified: reverseExtendedPropertyDiffs(diff.ExtendedPropertiesModified),
 
 		MaterializedViewsAdded:    diff.MaterializedViewsRemoved, // Materialized views to remove become materialized views to add
 		MaterializedViewsRemoved:  diff.MaterializedViewsAdded,   // Materialized views to add become materialized views to remove
@@ -3139,6 +3151,22 @@ func reverseDomainDiffs(domainDiffs []types.DomainDiff, schema *goschema.Databas
 // which direction is being built.
 // reverseSynonymDiffs swaps each retarget so the down direction restores the
 // target the database had before the up migration ran.
+// reverseExtendedPropertyDiffs swaps the two values of every modified extended
+// property, so the down direction restores what the database held.
+func reverseExtendedPropertyDiffs(diffs []types.ExtendedPropertyDiff) []types.ExtendedPropertyDiff {
+	if len(diffs) == 0 {
+		return nil
+	}
+	reversed := make([]types.ExtendedPropertyDiff, 0, len(diffs))
+	for _, diff := range diffs {
+		restored := diff
+		restored.Value = diff.OldValue
+		restored.OldValue = diff.Value
+		reversed = append(reversed, restored)
+	}
+	return reversed
+}
+
 func reverseSynonymDiffs(diffs []types.SynonymDiff) []types.SynonymDiff {
 	if len(diffs) == 0 {
 		return nil

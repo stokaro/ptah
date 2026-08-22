@@ -1253,6 +1253,7 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 	result = p.modifyExistingViews(result, diff, generated)
 	result = p.retargetSynonyms(result, diff, generated)
 	result = p.addNewSynonyms(result, diff, generated)
+	result = p.addExtendedProperties(result, diff)
 	if err := p.rejectMaterializedViews(diff); err != nil {
 		return nil, err
 	}
@@ -1295,6 +1296,7 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 	result = p.removeTriggers(result, diff)
 	result = p.removeMaterializedViews(result, diff)
 	result = p.removeViews(result, diff)
+	result = p.removeExtendedProperties(result, diff)
 	result = p.removeSynonyms(result, diff)
 
 	// 6.7. Remove indexes after constraints so FK-backed indexes can be dropped.
@@ -1451,6 +1453,51 @@ func (p *Planner) removeSynonyms(result []ast.Node, diff *types.SchemaDiff) []as
 		result = append(result, ast.NewDropSynonym(name).SetIfExists())
 	}
 	return result
+}
+
+// addExtendedProperties emits the extended properties a diff adds and the
+// updates it plans for the ones whose value changed.
+//
+// Both go here, after the tables and views exist: sp_addextendedproperty and
+// sp_updateextendedproperty resolve @level1name through the catalog and answer
+// `Cannot find the object ... because it does not exist or you do not have
+// permission` when the owner is not there yet.
+//
+// An update rather than a drop and an add, because SQL Server has the
+// statement and dropping first would take the property away for the length of
+// the script.
+func (p *Planner) addExtendedProperties(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+	for _, ref := range diff.ExtendedPropertiesAdded {
+		result = append(result, extendedPropertyNode(ast.ExtendedPropertyAdd, ref))
+	}
+	for _, changed := range diff.ExtendedPropertiesModified {
+		result = append(result, extendedPropertyNode(ast.ExtendedPropertyUpdate, changed.ExtendedPropertyRef))
+	}
+	return result
+}
+
+// removeExtendedProperties drops the properties a diff removes, before the
+// objects they hang off are dropped.
+//
+// The order is the one SQL Server forces rather than a preference: dropping
+// the table takes its properties with it, and a sp_dropextendedproperty that
+// runs afterwards answers `Property cannot be dropped. Property does not
+// exist`.
+func (p *Planner) removeExtendedProperties(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+	for _, ref := range diff.ExtendedPropertiesRemoved {
+		result = append(result, extendedPropertyNode(ast.ExtendedPropertyDrop, ref))
+	}
+	return result
+}
+
+// extendedPropertyNode builds the node for one operation on one property.
+func extendedPropertyNode(
+	operation ast.ExtendedPropertyOperation,
+	ref types.ExtendedPropertyRef,
+) *ast.ExtendedPropertyNode {
+	return ast.NewExtendedProperty(operation, ref.Name).
+		SetOwner(ref.Schema, ref.Table, ref.Column).
+		SetValue(ref.Value)
 }
 
 // findSynonym returns the declared synonym with the given qualified name.

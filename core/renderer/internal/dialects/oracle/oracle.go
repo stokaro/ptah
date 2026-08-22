@@ -729,6 +729,25 @@ func oracleGrantTarget(object string) string {
 	return " ON " + escapeQualifiedIdentifier(object)
 }
 
+// VisitExtendedProperty names the property as skipped: an extended property is
+// SQL Server's own object, and Oracle has no catalog to attach one to.
+//
+// The nearest Oracle construct is COMMENT ON, which Ptah already models as an
+// object comment, and rendering a property as a comment would put a named
+// value nobody can read back into the one slot the comment already owns.
+//
+// Skipped rather than refused, which is the difference between this and
+// VisitAlterRole above. A refusal fails the whole render, and
+// goschema.ExtendedProperty carries no dialect scope -- exactly as
+// goschema.Synonym does not -- so refusing here would make one schema
+// renderable on five targets and fatal on the sixth. Every other renderer
+// writes this comment; Oracle answering differently would be the asymmetry,
+// not the consistency.
+func (r *Renderer) VisitExtendedProperty(node *ast.ExtendedPropertyNode) error {
+	r.w.WriteLinef("-- ORACLE: extended property %q is not supported", node.Name)
+	return nil
+}
+
 // VisitCreateSynonym renders Oracle's own object: a synonym is a native Oracle
 // concept rather than a compatibility shim.
 func (r *Renderer) VisitCreateSynonym(node *ast.CreateSynonymNode) error {

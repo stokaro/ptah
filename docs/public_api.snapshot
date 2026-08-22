@@ -944,6 +944,10 @@ type EnumTypeDef struct{ ... }
     func NewEnumTypeDef(values ...string) *EnumTypeDef
 type ExistsExpr struct{ ... }
 type Expression interface{ ... }
+type ExtendedPropertyNode struct{ ... }
+    func NewExtendedProperty(operation ExtendedPropertyOperation, name string) *ExtendedPropertyNode
+type ExtendedPropertyOperation string
+    const ExtendedPropertyAdd ExtendedPropertyOperation = "add" ...
 type ExtensionAlteration string
     const ExtensionUnaltered ExtensionAlteration = "" ...
 type ExtensionNode struct{ ... }
@@ -2745,6 +2749,53 @@ type Expression interface {
     never inlined.
 
 
+### go.5x5.cz/ptah/core/ast.ExtendedPropertyNode
+
+package ast // import "go.5x5.cz/ptah/core/ast"
+
+type ExtendedPropertyNode struct {
+    Operation ExtendedPropertyOperation
+    Name      string
+    Schema    string
+    Table     string
+    Column    string
+    Value     string
+    Comment   string
+}
+    ExtendedPropertyNode represents one SQL Server extended-property statement.
+
+    One node rather than three, and the reason is the statement rather than
+    the convenience. sp_addextendedproperty, sp_updateextendedproperty and
+    sp_dropextendedproperty take the SAME address arguments and differ only in
+    the procedure name and in whether @value is passed. Three node types would
+    be three copies of one address, and a planner deciding which to build would
+    be deciding a procedure name, not a shape -- so the operation is a field and
+    the address is the node.
+
+    The address is the identity. SQL Server stores a property under a class and
+    up to two ids, and the statements name the levels outright: @level0type =
+    SCHEMA, @level1type = TABLE, @level2type = COLUMN. Two properties of the
+    same name at different addresses are two different properties, which is why
+    Schema, Table and Column are not decoration on Name.
+
+    Value is meaningless for ExtendedPropertyDrop and is not written there.
+
+func NewExtendedProperty(operation ExtendedPropertyOperation, name string) *ExtendedPropertyNode
+func (n *ExtendedPropertyNode) Accept(visitor Visitor) error
+func (n *ExtendedPropertyNode) SetComment(comment string) *ExtendedPropertyNode
+func (n *ExtendedPropertyNode) SetOwner(schema, table, column string) *ExtendedPropertyNode
+func (n *ExtendedPropertyNode) SetValue(value string) *ExtendedPropertyNode
+
+### go.5x5.cz/ptah/core/ast.ExtendedPropertyOperation
+
+package ast // import "go.5x5.cz/ptah/core/ast"
+
+type ExtendedPropertyOperation string
+    ExtendedPropertyOperation names which of SQL Server's three procedures a
+    node stands for.
+
+const ExtendedPropertyAdd ExtendedPropertyOperation = "add" ...
+
 ### go.5x5.cz/ptah/core/ast.ExtensionAlteration
 
 package ast // import "go.5x5.cz/ptah/core/ast"
@@ -4301,6 +4352,8 @@ type Visitor interface {
     VisitCreateSynonym(*CreateSynonymNode) error
     // VisitDropSynonym renders a DROP SYNONYM statement
     VisitDropSynonym(*DropSynonymNode) error
+    // VisitExtendedProperty renders one SQL Server extended-property statement
+    VisitExtendedProperty(*ExtendedPropertyNode) error
     // VisitCreateMaterializedView renders a CREATE MATERIALIZED VIEW statement
     VisitCreateMaterializedView(*CreateMaterializedViewNode) error
     // VisitDropMaterializedView renders a DROP MATERIALIZED VIEW statement
@@ -4479,6 +4532,7 @@ type Domain struct{ ... }
 type EmbeddedField struct{ ... }
 type EmbeddedSources struct{ ... }
 type Enum struct{ ... }
+type ExtendedProperty struct{ ... }
 type Extension struct{ ... }
 type Field struct{ ... }
 type Function struct{ ... }
@@ -4643,6 +4697,7 @@ type Database struct {
     Ranges                     []Range                        // PostgreSQL range types (CREATE TYPE ... AS RANGE (...))
     Views                      []View                         // Database views
     Synonyms                   []Synonym                      // SQL Server synonyms
+    ExtendedProperties         []ExtendedProperty             // SQL Server extended properties
     MaterializedViews          []MaterializedView             // Database materialized views
     Triggers                   []Trigger                      // Database triggers
     RLSPolicies                []RLSPolicy                    // PostgreSQL Row-Level Security policies
@@ -4859,6 +4914,45 @@ type Enum struct {
           CREATE TABLE users (status ENUM('active', 'inactive', 'suspended') DEFAULT 'active');
 
 func (e Enum) QualifiedName() string
+
+### go.5x5.cz/ptah/core/goschema.ExtendedProperty
+
+package goschema // import "go.5x5.cz/ptah/core/goschema"
+
+type ExtendedProperty struct {
+    StructName string // Name of the Go struct this property is associated with
+    Name       string // Property name, e.g. ptah_flag
+    Schema     string // Schema the property is on, or that owns the addressed table
+    Table      string // Table the property is on; empty for a schema-scoped property
+    Column     string // Column the property is on; requires Table
+    Value      string // The value, written back as an N'' literal
+    Comment    string // Optional comment for documentation
+}
+    ExtendedProperty is a SQL Server extended property: a named value attached
+    to a schema, a table, or a column of one.
+
+    The address is what makes it an object rather than an attribute. SQL Server
+    stores a property under a class and up to two ids, and the statements that
+    write it name the levels outright -- @level0type = SCHEMA, @level1type =
+    TABLE, @level2type = COLUMN -- so Schema, Table and Column here are not
+    decoration on a value: they ARE the identity, and two properties of the same
+    name at different addresses are two different properties.
+
+    Which levels are set decides the scope. Schema alone is a schema-scoped
+    property; adding Table addresses the table; adding Column addresses a column
+    of it. Column without Table is refused, because SQL Server has no level 2
+    without a level 1.
+
+    MS_Description is refused by name. Ptah already models it as the object's
+    comment -- the reader turns it into one and the renderer writes it as one
+    -- and accepting a declaration of it here would let two comparators plan the
+    same change from two places, each unaware of the other.
+
+    Dialects is deliberately absent, for the same reason Synonym omits it:
+    an extended property belongs to SQL Server and to nothing else, and a scope
+    attribute would let a schema claim otherwise.
+
+func (p ExtendedProperty) QualifiedOwner() string
 
 ### go.5x5.cz/ptah/core/goschema.Extension
 
@@ -6849,6 +6943,7 @@ type DBConstraint struct{ ... }
 type DBDomain struct{ ... }
 type DBDomainCheck struct{ ... }
 type DBEnum struct{ ... }
+type DBExtendedProperty struct{ ... }
 type DBExtension struct{ ... }
 type DBFunction struct{ ... }
 type DBGrant struct{ ... }
@@ -7101,6 +7196,60 @@ type DBEnum struct {
     DBEnum represents a database enum type (PostgreSQL)
 
 func (e DBEnum) QualifiedName() string
+
+### go.5x5.cz/ptah/dbschema/types.DBExtendedProperty
+
+package types // import "go.5x5.cz/ptah/dbschema/types"
+
+type DBExtendedProperty struct {
+    Name   string `json:"name"`             // Property name, as sys.extended_properties records it
+    Schema string `json:"schema"`           // Schema owning the addressed object, or the addressed schema
+    Table  string `json:"table,omitempty"`  // Table the property is on; empty for a schema-scoped property
+    Column string `json:"column,omitempty"` // Column the property is on; requires Table
+    Value  string `json:"value"`            // The value, when ValueType names one this description can carry
+
+    // ValueType is the sql_variant base type SQL_VARIANT_PROPERTY reports:
+    // nvarchar, int, date, and so on.
+    ValueType string `json:"value_type"`
+
+    // ValueNotRepresentable marks a property whose value is stored under a base
+    // type Ptah cannot write back.
+    //
+    // sp_addextendedproperty takes a sql_variant, so a property may hold an int
+    // or a date as well as a string -- measured on SQL Server 2022, @value=42
+    // stores base type `int` and a DATE stores `date`. The renderer writes an
+    // N'' literal, so re-emitting either of those would change its type, and
+    // CONVERT(NVARCHAR, value) on the date answers `Jan  2 2026`, which is a
+    // locale-dependent rendering rather than the value.
+    //
+    // The row is reported rather than dropped so that a description says the
+    // property is there, and the comparator declines it in both directions:
+    // nothing is planned to add it, and nothing is planned to take it away.
+    // Ptah leaves it exactly as it found it.
+    ValueNotRepresentable bool `json:"value_not_representable,omitempty"`
+}
+    DBExtendedProperty is one SQL Server extended property read from
+    sys.extended_properties.
+
+    SQL Server hangs a property off a three-level address, and this type carries
+    the two levels Ptah manages. Schema alone is a schema-scoped property (class
+    3); Schema and Table together are an object-scoped one, and adding Column
+    addresses a column of it (class 1, minor_id 0 or the column's id).
+
+    Two kinds of row are deliberately absent, and each for its own reason.
+
+    A DATABASE-scoped property (class 0) has no schema and no object to hang
+    off, and how a database-scoped object lives beside a schema-scoped model
+    is a design question rather than a field (stokaro/ptah#1031). It is left
+    unread, so nothing describes it and nothing plans against it.
+
+    MS_Description is not read here either, because Ptah already models it: the
+    reader turns it into the object's Comment, and reporting it twice would let
+    the comment comparator and this one plan the same change from two places.
+    The declaration side refuses it by name for the same reason, and says to use
+    the comment instead.
+
+func (p DBExtendedProperty) QualifiedOwner() string
 
 ### go.5x5.cz/ptah/dbschema/types.DBExtension
 
@@ -7511,19 +7660,23 @@ type DBSchema struct {
     Enums       []DBEnum       `json:"enums"`
     Indexes     []DBIndex      `json:"indexes"`
     Constraints []DBConstraint `json:"constraints"`
-    Extensions  []DBExtension  `json:"extensions"`   // PostgreSQL extensions
-    Functions   []DBFunction   `json:"functions"`    // PostgreSQL custom functions
-    Sequences   []DBSequence   `json:"sequences"`    // PostgreSQL standalone sequences
-    Domains     []DBDomain     `json:"domains"`      // PostgreSQL domain types
-    Composites  []DBComposite  `json:"composites"`   // PostgreSQL composite types
-    Ranges      []DBRange      `json:"ranges"`       // PostgreSQL range types
-    Views       []DBView       `json:"views"`        // Database views
-    MatViews    []DBMatView    `json:"matviews"`     // Database materialized views
-    Synonyms    []DBSynonym    `json:"synonyms"`     // SQL Server synonyms
-    Triggers    []DBTrigger    `json:"triggers"`     // Database triggers
-    RLSPolicies []DBRLSPolicy  `json:"rls_policies"` // PostgreSQL RLS policies
-    Roles       []DBRole       `json:"roles"`        // PostgreSQL roles
-    Grants      []DBGrant      `json:"grants"`       // PostgreSQL privilege grants
+    Extensions  []DBExtension  `json:"extensions"` // PostgreSQL extensions
+    Functions   []DBFunction   `json:"functions"`  // PostgreSQL custom functions
+    Sequences   []DBSequence   `json:"sequences"`  // PostgreSQL standalone sequences
+    Domains     []DBDomain     `json:"domains"`    // PostgreSQL domain types
+    Composites  []DBComposite  `json:"composites"` // PostgreSQL composite types
+    Ranges      []DBRange      `json:"ranges"`     // PostgreSQL range types
+    Views       []DBView       `json:"views"`      // Database views
+    MatViews    []DBMatView    `json:"matviews"`   // Database materialized views
+    Synonyms    []DBSynonym    `json:"synonyms"`   // SQL Server synonyms
+    // ExtendedProperties are the SQL Server extended properties this
+    // description covers: schema-, table- and column-scoped ones. See
+    // [DBExtendedProperty] for what is deliberately not in it.
+    ExtendedProperties []DBExtendedProperty `json:"extended_properties,omitempty"`
+    Triggers           []DBTrigger          `json:"triggers"`     // Database triggers
+    RLSPolicies        []DBRLSPolicy        `json:"rls_policies"` // PostgreSQL RLS policies
+    Roles              []DBRole             `json:"roles"`        // PostgreSQL roles
+    Grants             []DBGrant            `json:"grants"`       // PostgreSQL privilege grants
 
     // RolesOutOfScope lists roles that exist on the server but that this
     // description deliberately does not define, because nothing in the
@@ -10667,6 +10820,8 @@ type ConstraintAdditionInfo struct{ ... }
 type ConstraintRemovalInfo struct{ ... }
 type DomainDiff struct{ ... }
 type EnumDiff struct{ ... }
+type ExtendedPropertyDiff struct{ ... }
+type ExtendedPropertyRef struct{ ... }
 type ExtensionDiff struct{ ... }
 type ForeignKeyRemovalInfo struct{ ... }
 type FunctionDiff struct{ ... }
@@ -10942,6 +11097,41 @@ type EnumDiff struct {
             ValuesAdded: []string{"pending", "archived"},
             ValuesRemoved: []string{"deprecated"},
         }
+
+
+### go.5x5.cz/ptah/migration/schemadiff/types.ExtendedPropertyDiff
+
+package types // import "go.5x5.cz/ptah/migration/schemadiff/types"
+
+type ExtendedPropertyDiff struct {
+    ExtendedPropertyRef
+    // OldValue is what the database holds now. Value on the embedded ref is
+    // what the declaration asks for.
+    OldValue string `json:"old_value"`
+}
+    ExtendedPropertyDiff describes an extended property whose value changed.
+
+
+### go.5x5.cz/ptah/migration/schemadiff/types.ExtendedPropertyRef
+
+package types // import "go.5x5.cz/ptah/migration/schemadiff/types"
+
+type ExtendedPropertyRef struct {
+    Name   string `json:"name"`
+    Schema string `json:"schema"`
+    Table  string `json:"table,omitempty"`
+    Column string `json:"column,omitempty"`
+    // Value is the DESIRED value for an addition or a modification, and the
+    // live one for a removal, which is the only value a removal has.
+    Value string `json:"value"`
+}
+    ExtendedPropertyRef names one SQL Server extended property, by the address
+    that identifies it and the value it should carry.
+
+    The address is the identity rather than the name alone: SQL Server stores a
+    property under a class and up to two ids, so `ptah_flag` on a schema, on a
+    table of it, and on a column of that table are three different properties
+    that a plan has to keep apart.
 
 
 ### go.5x5.cz/ptah/migration/schemadiff/types.ExtensionDiff
@@ -11426,6 +11616,22 @@ type SchemaDiff struct {
     // name with an unrelated create.
     SynonymsModified []SynonymDiff `json:"synonyms_modified"`
 
+    // ExtendedPropertiesAdded contains the SQL Server extended properties the
+    // target schema declares and the database does not have.
+    ExtendedPropertiesAdded []ExtendedPropertyRef `json:"extended_properties_added"`
+
+    // ExtendedPropertiesRemoved contains the extended properties the database
+    // has and the target schema does not declare.
+    ExtendedPropertiesRemoved []ExtendedPropertyRef `json:"extended_properties_removed"`
+
+    // ExtendedPropertiesModified contains the properties whose value differs.
+    //
+    // A changed value is its own case rather than a removal plus an addition,
+    // because SQL Server has a statement for exactly this --
+    // sp_updateextendedproperty -- and dropping and re-adding would take the
+    // property away for the length of the script.
+    ExtendedPropertiesModified []ExtendedPropertyDiff `json:"extended_properties_modified"`
+
     // ViewsModified contains detailed information about views with changed definitions.
     ViewsModified []ViewDiff `json:"views_modified"`
 
@@ -11606,8 +11812,7 @@ type SynonymDiff struct {
     OldTarget   string `json:"old_target"`
     NewTarget   string `json:"new_target"`
 }
-    ViewDiff represents changes to a view definition. SynonymDiff describes a
-    synonym whose target changed.
+    SynonymDiff describes a synonym whose target changed.
 
 
 ### go.5x5.cz/ptah/migration/schemadiff/types.TableDiff
@@ -11733,6 +11938,7 @@ type ViewDiff struct {
     // Reverse plan builders set it; a forward comparison leaves it false.
     Rollback bool `json:"rollback,omitempty"`
 }
+    ViewDiff represents changes to a view definition.
 
 
 ## go.5x5.cz/ptah/migration/seeder

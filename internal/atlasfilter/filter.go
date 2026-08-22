@@ -112,6 +112,7 @@ func excludeDatabase(
 	filtered.Functions = state.filterFunctions(filtered.Functions)
 	filtered.Views = state.filterViews(filtered.Views)
 	filtered.Synonyms = state.filterSynonyms(filtered.Synonyms)
+	filtered.ExtendedProperties = state.filterExtendedProperties(filtered.ExtendedProperties)
 	filtered.MatViews = state.filterMatViews(filtered.MatViews)
 	filtered.Triggers = state.filterTriggers(filtered.Triggers)
 	filtered.RLSPolicies = state.filterRLSPolicies(filtered.RLSPolicies)
@@ -1077,6 +1078,36 @@ func (s *exclusionState) filterSynonyms(synonyms []dbschematypes.DBSynonym) []db
 	return result
 }
 
+// filterExtendedProperties drops the extended properties an exclusion selector
+// names, and the ones whose owner is excluded.
+//
+// The second rule is what makes this more than a name match. An extended
+// property is not an independent object: SQL Server drops it with the table it
+// hangs off, so a description that excluded `docs` and kept a property
+// addressed to `docs` would carry a row naming an object the same description
+// says is not there -- and a comparison would then plan
+// sp_dropextendedproperty against a table that is not in the plan.
+//
+// The property is still offered to the patterns under its own name, so
+// `--exclude ptah_flag` is reported as having matched something rather than as
+// a selector that protects nothing.
+func (s *exclusionState) filterExtendedProperties(
+	properties []dbschematypes.DBExtendedProperty,
+) []dbschematypes.DBExtendedProperty {
+	result := make([]dbschematypes.DBExtendedProperty, 0, len(properties))
+	for _, property := range properties {
+		names := s.nameCandidates(property.Schema, property.Name)
+		if s.matches("extended_property", names...) || s.schemaExcluded(property.Schema) {
+			continue
+		}
+		if property.Table != "" && s.tableExcluded(property.Schema, property.Table) {
+			continue
+		}
+		result = append(result, property)
+	}
+	return result
+}
+
 func (s *exclusionState) filterMatViews(views []dbschematypes.DBMatView) []dbschematypes.DBMatView {
 	result := make([]dbschematypes.DBMatView, 0, len(views))
 	for _, view := range views {
@@ -1633,24 +1664,25 @@ func stripGeneratedFieldForeignKey(field goschema.Field) goschema.Field {
 
 func cloneDatabase(schema *dbschematypes.DBSchema) *dbschematypes.DBSchema {
 	return &dbschematypes.DBSchema{
-		Schemas:     slices.Clone(schema.Schemas),
-		Tables:      slices.Clone(schema.Tables),
-		Enums:       slices.Clone(schema.Enums),
-		Indexes:     slices.Clone(schema.Indexes),
-		Constraints: slices.Clone(schema.Constraints),
-		Extensions:  slices.Clone(schema.Extensions),
-		Functions:   slices.Clone(schema.Functions),
-		Sequences:   slices.Clone(schema.Sequences),
-		Domains:     slices.Clone(schema.Domains),
-		Composites:  slices.Clone(schema.Composites),
-		Ranges:      slices.Clone(schema.Ranges),
-		Views:       slices.Clone(schema.Views),
-		Synonyms:    slices.Clone(schema.Synonyms),
-		MatViews:    slices.Clone(schema.MatViews),
-		Triggers:    slices.Clone(schema.Triggers),
-		RLSPolicies: slices.Clone(schema.RLSPolicies),
-		Roles:       slices.Clone(schema.Roles),
-		Grants:      slices.Clone(schema.Grants),
+		Schemas:            slices.Clone(schema.Schemas),
+		Tables:             slices.Clone(schema.Tables),
+		Enums:              slices.Clone(schema.Enums),
+		Indexes:            slices.Clone(schema.Indexes),
+		Constraints:        slices.Clone(schema.Constraints),
+		Extensions:         slices.Clone(schema.Extensions),
+		Functions:          slices.Clone(schema.Functions),
+		Sequences:          slices.Clone(schema.Sequences),
+		Domains:            slices.Clone(schema.Domains),
+		Composites:         slices.Clone(schema.Composites),
+		Ranges:             slices.Clone(schema.Ranges),
+		Views:              slices.Clone(schema.Views),
+		Synonyms:           slices.Clone(schema.Synonyms),
+		ExtendedProperties: slices.Clone(schema.ExtendedProperties),
+		MatViews:           slices.Clone(schema.MatViews),
+		Triggers:           slices.Clone(schema.Triggers),
+		RLSPolicies:        slices.Clone(schema.RLSPolicies),
+		Roles:              slices.Clone(schema.Roles),
+		Grants:             slices.Clone(schema.Grants),
 		// Which roles the server has is a fact about the server, not part of
 		// the description a filter narrows. Dropping it here would tell the
 		// comparator that every cluster role outside the description is
@@ -1690,6 +1722,7 @@ func cloneGenerated(schema *goschema.Database) *goschema.Database {
 	filtered.Ranges = slices.Clone(schema.Ranges)
 	filtered.Views = slices.Clone(schema.Views)
 	filtered.Synonyms = slices.Clone(schema.Synonyms)
+	filtered.ExtendedProperties = slices.Clone(schema.ExtendedProperties)
 	filtered.MaterializedViews = slices.Clone(schema.MaterializedViews)
 	filtered.Triggers = slices.Clone(schema.Triggers)
 	filtered.RLSPolicies = slices.Clone(schema.RLSPolicies)
