@@ -29,3 +29,35 @@
   --color-gray-900: oklch(0.18 0.012 250);
   --color-gray-950: oklch(0.13 0.01 250);
 }
+
+/*
+ * A wide table scrolls inside its own container and keeps its desktop column
+ * widths, which is the assumption scripts/check-responsive.mjs states when it
+ * measures cell height at 1280px only.
+ *
+ * The feature matrix did not satisfy it. Starlight already makes every table
+ * its own scroller (`display: block; overflow-x: auto`), so the matrix did
+ * scroll at 390px -- but auto table layout still shrank it toward the viewport,
+ * to as little as 437px against a desktop 632px, and the difference column then
+ * stacked into cells of up to fifteen rendered lines. Measured: 505 cells over
+ * the eight-line cap at 390px, none at 1280px.
+ *
+ * The width has to sit on the table while the scrolling sits on something else.
+ * A `min-width` on Starlight's table-as-scroller widens the scroller itself, so
+ * the page scrolls sideways instead of the table -- measured at 648px against a
+ * 390px viewport, which is the other defect that check refuses
+ * (stokaro/ptah#946).
+ */
+.sl-markdown-content .ptah-wide-table {
+	max-width: 100%;
+	overflow-x: auto;
+}
+
+.sl-markdown-content .ptah-wide-table > table {
+	display: table;
+	width: 100%;
+	/* The width the same table takes in the desktop content column, so the
+	 * columns divide as they do there rather than by what fits a phone. */
+	min-width: 632px;
+	overflow-x: visible;
+}
