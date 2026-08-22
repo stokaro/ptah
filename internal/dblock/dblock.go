@@ -18,6 +18,7 @@ import (
 
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/envbool"
 )
 
 const (
@@ -156,6 +157,9 @@ func Acquire(
 	case platform.Postgres, platform.YugabyteDB:
 		lock.release = releasePostgresLock(session, dialect, name)
 		acquireErr = acquirePostgresLock(ctx, session, dialect, name, timeout)
+		if acquireErr == nil {
+			acquireErr = verifyPostgresLockExcludes(ctx, conn, dialect, name)
+		}
 	case platform.MySQL, platform.MariaDB:
 		lock.release = releaseMySQLLock(session, name)
 		acquireErr = acquireMySQLLock(ctx, session, dialect, name, timeout)
@@ -167,6 +171,99 @@ func Acquire(
 		return nil, closeAfterFailedAcquisition(session, acquireErr)
 	}
 	return lock, nil
+}
+
+// AllowUnverifiedLock lets an operator run without the exclusion check below.
+//
+// It is an opt-out from a refusal, not from the lock: the lock is still taken,
+// and what is skipped is the proof that it excludes anybody. Set it only where
+// the topology is known and the risk is accepted -- two runs against a
+// transaction pooler will both believe they hold it.
+var AllowUnverifiedLock = envbool.New("PTAH_ALLOW_UNVERIFIED_MIGRATION_LOCK", false, envbool.Gated)
+
+// connOpener is the part of a pool this check needs: a second connection.
+//
+// An interface rather than the connection type, so the check can be exercised
+// against a fake server. Both *sql.DB and the live connection satisfy it.
+type connOpener interface {
+	Conn(ctx context.Context) (*sql.Conn, error)
+}
+
+// verifyPostgresLockExcludes proves the lock just taken actually excludes
+// somebody else, and refuses the run when it does not.
+//
+// A PostgreSQL advisory lock is SESSION-scoped, and a transaction pooler hands
+// a client whichever backend is free between transactions. So a second client
+// can be handed the SAME backend the first one locked on, where the lock is
+// reentrant and answers true again. Measured through PgBouncer 1.25.2 in
+// transaction mode, two independent client connections and the same key:
+//
+//	first handle         acquired=true  backend=113
+//	second handle        acquired=true  backend=113
+//	first handle again   acquired=true  backend=113
+//
+// Every attempt succeeded and every one landed on backend 113. So the lock is
+// not merely weakened there -- it excludes nothing at all, and two concurrent
+// migration runs would both believe they held it. It fails OPEN, which is why
+// this is a refusal rather than a warning (stokaro/ptah#1029).
+//
+// The check asks the property rather than identifying the proxy. Ptah does not
+// need to know what sits in front of the database; it needs to know whether the
+// lock it just took keeps anybody out, and that is one query from a second
+// connection. On a direct server the second attempt answers false and the check
+// costs a round trip.
+func verifyPostgresLockExcludes(
+	ctx context.Context,
+	pool connOpener,
+	dialect, name string,
+) error {
+	allowed, err := AllowUnverifiedLock.Resolve()
+	if err != nil {
+		return err
+	}
+	if allowed {
+		return nil
+	}
+
+	witness, err := pool.Conn(ctx)
+	if err != nil {
+		// A pool that cannot hand out a second connection cannot answer the
+		// question. Refusing on that would fail every single-connection
+		// topology, so the lock stands and the caller is not told a story
+		// about it.
+		return nil
+	}
+	defer func() { _ = witness.Close() }()
+
+	var acquiredAgain bool
+	if err := witness.QueryRowContext(
+		ctx,
+		"SELECT pg_try_advisory_lock($1)",
+		PostgresKey(name),
+	).Scan(&acquiredAgain); err != nil {
+		// The witness could not ask. That is not evidence of a broken lock.
+		return nil
+	}
+	if !acquiredAgain {
+		return nil
+	}
+
+	// The witness got the same lock, so nothing is excluded. Give its own claim
+	// back before refusing, or the backend keeps a lock nobody will release.
+	var released bool
+	_ = witness.QueryRowContext(
+		context.WithoutCancel(ctx),
+		"SELECT pg_advisory_unlock($1)",
+		PostgresKey(name),
+	).Scan(&released)
+
+	return fmt.Errorf(
+		"%s advisory lock %q excludes nothing on this connection: a second connection took the same "+
+			"lock, which is what a transaction-pooling proxy such as PgBouncer produces -- it hands both "+
+			"clients one backend session, where the lock is reentrant. Two runs would both believe they "+
+			"held it. Connect to the database directly for schema-mutating commands, or set %s=1 to accept "+
+			"the risk",
+		dialect, name, AllowUnverifiedLock.Name())
 }
 
 // PostgresKey returns the 64-bit pg_advisory_lock key derived from name.
