@@ -333,14 +333,20 @@ type postgresCleanupObject struct {
 }
 
 type postgresCleanupCapabilities struct {
-	retryFailedDDL           bool
-	lockManagedRelations     bool
-	inspectPartitionEdges    bool
-	inspectDatabaseArtifacts bool
-	cleanupLargeObjects      bool
-	preservePublicSchema     bool
-	protectedDatabases       []string
-	systemExtensions         []string
+	retryFailedDDL bool
+	// retryFailedDDLWithoutTransaction is retryFailedDDL for a server that
+	// refuses DDL inside one. It is set where the transaction is given up
+	// rather than declared per engine, because it answers the same question:
+	// whether a refused drop may be attempted again once a later one has
+	// removed what it was waiting on.
+	retryFailedDDLWithoutTransaction bool
+	lockManagedRelations             bool
+	inspectPartitionEdges            bool
+	inspectDatabaseArtifacts         bool
+	cleanupLargeObjects              bool
+	preservePublicSchema             bool
+	protectedDatabases               []string
+	systemExtensions                 []string
 }
 
 // cleanupConn is the part of a database handle the schema cleanup uses.
@@ -405,6 +411,18 @@ func inspectCleanupCapabilities(
 	}
 }
 
+// withoutTransaction returns the capabilities as they apply on a server that
+// refuses DDL inside one.
+//
+// The two fields move together and in opposite directions, which is the whole
+// content of this function: the savepoint goes because there is no transaction
+// to roll back inside, and the retry stays because nothing about it needed one.
+func (c postgresCleanupCapabilities) withoutTransaction() postgresCleanupCapabilities {
+	c.retryFailedDDL = false
+	c.retryFailedDDLWithoutTransaction = true
+	return c
+}
+
 func (c postgresCleanupCapabilities) dropObjects(
 	ctx context.Context,
 	tx cleanupConn,
@@ -420,6 +438,9 @@ func (c postgresCleanupCapabilities) dropObjects(
 			return fmt.Errorf("cleanup retry needs a transaction, which this server does not accept DDL in")
 		}
 		return dropCleanupObjects(ctx, sqlTx, objects)
+	}
+	if c.retryFailedDDLWithoutTransaction {
+		return dropCleanupObjectsRetrying(ctx, tx, objects)
 	}
 	return dropCleanupObjectsOnce(ctx, tx, objects)
 }
@@ -571,6 +592,7 @@ func (w *PostgreSQLWriter) collectAllObjects(
 				CASE c.relkind
 					WHEN 'v' THEN 10
 					WHEN 'm' THEN 10
+					WHEN 'i' THEN 25
 					WHEN 'S' THEN 30
 					ELSE 20
 				END,
@@ -578,6 +600,7 @@ func (w *PostgreSQLWriter) collectAllObjects(
 				CASE c.relkind
 					WHEN 'v' THEN 'view'
 					WHEN 'm' THEN 'materialized view'
+					WHEN 'i' THEN 'index'
 					WHEN 'f' THEN 'foreign table'
 					WHEN 'S' THEN 'sequence'
 					ELSE 'table'
@@ -589,7 +612,7 @@ func (w *PostgreSQLWriter) collectAllObjects(
 			FROM pg_class c
 			JOIN managed_namespaces n ON n.oid = c.relnamespace
 			LEFT JOIN view_order ON view_order.oid = c.oid
-			WHERE c.relkind IN ('r', 'p', 'v', 'm', 'f', 'S')
+			WHERE c.relkind IN ('r', 'p', 'v', 'm', 'f', 'S', 'i')
 
 			UNION ALL
 
@@ -897,6 +920,7 @@ var cleanupDropExpressions = []string{
 					CASE c.relkind
 						WHEN 'v' THEN 'DROP VIEW IF EXISTS %I.%I RESTRICT'
 						WHEN 'm' THEN 'DROP MATERIALIZED VIEW IF EXISTS %I.%I RESTRICT'
+						WHEN 'i' THEN 'DROP INDEX IF EXISTS %I.%I RESTRICT'
 						WHEN 'f' THEN 'DROP FOREIGN TABLE IF EXISTS %I.%I RESTRICT'
 						WHEN 'S' THEN 'DROP SEQUENCE IF EXISTS %I.%I RESTRICT'
 						ELSE 'DROP TABLE IF EXISTS %I.%I RESTRICT'
@@ -931,6 +955,7 @@ var cleanupDropExpressions = []string{
 // one with what the server answers rather than a second opinion about it.
 var cleanupDropVerbs = map[string]string{
 	"table":             "TABLE",
+	"index":             "INDEX",
 	"view":              "VIEW",
 	"materialized view": "MATERIALIZED VIEW",
 	"foreign table":     "FOREIGN TABLE",
@@ -1258,13 +1283,62 @@ func dropCleanupObjects(
 	// later internal dependent disappear before its dependency is retried,
 	// while an external or unknown dependency eventually stops all progress
 	// and causes the outer transaction to roll back.
+	return retryCleanupObjects(ctx, objects, func(object postgresCleanupObject) (dropErr, controlErr error) {
+		return tryDropCleanupObject(ctx, tx, object)
+	})
+}
+
+// dropCleanupObjectsRetrying is [dropCleanupObjects] for a server that refuses
+// DDL inside a transaction.
+//
+// The savepoint is what did not survive the transaction, not the retry.
+// [PostgreSQLWriter.dropSchemaObjectsWithoutTransaction] dropped both together
+// because the loop was written around one, and outside a transaction there is
+// nothing for a savepoint to protect: a refused statement leaves no poisoned
+// state to roll back to, so the next object is simply attempted.
+//
+// Losing the retry there had a cost, and it is the one this function exists to
+// pay back. A single ordered pass has to get dependency order right the first
+// time, and on the Cloud Spanner emulator through PGAdapter 0.55.2 it cannot:
+// `DROP TABLE` answers `Cannot drop table dfp with indices: dfp_uq`
+// (SQLSTATE 0A000), so a table has to be attempted again after its index is
+// gone (stokaro/ptah#1901).
+func dropCleanupObjectsRetrying(
+	ctx context.Context,
+	conn cleanupConn,
+	objects []postgresCleanupObject,
+) error {
+	return retryCleanupObjects(ctx, objects, func(object postgresCleanupObject) (dropErr, controlErr error) {
+		if _, err := conn.ExecContext(ctx, object.Statement); err != nil {
+			return fmt.Errorf("SQL execution failed: %w\nSQL: %s", err, object.Statement), nil
+		}
+		return nil, nil
+	})
+}
+
+// retryCleanupObjects runs attempt over the objects, round after round, for as
+// long as a round removes at least one of them.
+//
+// The stopping rule is progress rather than a count: a round that drops nothing
+// cannot be improved on by running it again, and returning the round's first
+// failure names an object that genuinely has a dependency this cleanup does not
+// own. A round that drops something may have freed a later one, so the rest are
+// tried again.
+func retryCleanupObjects(
+	ctx context.Context,
+	objects []postgresCleanupObject,
+	attempt func(postgresCleanupObject) (dropErr, controlErr error),
+) error {
 	pending := objects
 	for len(pending) > 0 {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
 		remaining := make([]postgresCleanupObject, 0, len(pending))
 		var firstDropErr error
 
 		for _, object := range pending {
-			dropErr, controlErr := tryDropCleanupObject(ctx, tx, object)
+			dropErr, controlErr := attempt(object)
 			if controlErr != nil {
 				return fmt.Errorf(
 					"failed to drop %s %s: %w",
@@ -1544,18 +1618,22 @@ func (w *PostgreSQLWriter) dropSchemaObjects(ctx context.Context) (resultErr err
 // dropSchemaObjectsWithoutTransaction is dropSchemaObjects for a server that
 // refuses DDL inside one.
 //
-// Two capabilities are deliberately dropped with the transaction rather than
-// carried into it. The retry loop drops each object inside a SAVEPOINT, and the
-// relation lock is released at commit; both are transaction constructs, and
-// pretending otherwise would either error or silently do nothing. What survives
-// is RESTRICT, which is the authority on dependency order either way, so an
-// object that cannot be dropped still fails loudly instead of being skipped.
+// The SAVEPOINT and the relation lock are dropped with the transaction rather
+// than carried into it: both are transaction constructs, and pretending
+// otherwise would either error or silently do nothing. What survives is
+// RESTRICT, which is the authority on dependency order either way, so an object
+// that cannot be dropped still fails loudly instead of being skipped.
+//
+// The retry survives too, and used to not. It was written around a savepoint
+// and so was given up with one, which left this path a single ordered pass that
+// has to get dependency order right the first time -- see
+// [dropCleanupObjectsRetrying] for the server that showed it cannot.
 func (w *PostgreSQLWriter) dropSchemaObjectsWithoutTransaction(ctx context.Context) error {
 	capabilities, err := inspectCleanupCapabilities(ctx, w.db)
 	if err != nil {
 		return err
 	}
-	capabilities.retryFailedDDL = false
+	capabilities = capabilities.withoutTransaction()
 	if err := w.rejectSchemaScopedExtensions(ctx, w.db); err != nil {
 		return err
 	}
