@@ -77,6 +77,12 @@ func (r *Reader) ReadSchema() (*types.DBSchema, error) {
 	}
 	schema.Views = views
 
+	matViews, err := r.readMaterializedViews()
+	if err != nil {
+		return nil, fmt.Errorf("oracle: read materialized views: %w", err)
+	}
+	schema.MatViews = matViews
+
 	markKeyColumns(schema)
 	schema.Constraints = withoutGeneratedKeys(schema.Constraints, generatedKeys)
 	return schema, nil
@@ -116,6 +122,9 @@ FROM all_tables t
 LEFT JOIN all_tab_comments c
        ON c.owner = t.owner AND c.table_name = t.table_name
 WHERE t.owner = :1
+  AND NOT EXISTS (
+        SELECT 1 FROM all_mviews m
+        WHERE m.owner = t.owner AND m.container_name = t.table_name)
   AND t.dropped = 'NO'
 ORDER BY t.table_name`
 
@@ -562,6 +571,38 @@ func (r *Reader) readViews() ([]types.DBView, error) {
 		}
 		view.Schema = r.schema
 		view.Body = strings.TrimSpace(body)
+		views = append(views, view)
+	}
+	return views, rows.Err()
+}
+
+// matViewQuery reads the materialized views the schema owns.
+//
+// QUERY is a LONG, so it is selected bare: NVL over it answers ORA-00932,
+// expression is of data type CHAR, which is incompatible with expected data
+// type LONG. That is the same shape DATA_DEFAULT has in columnQuery above.
+const matViewQuery = `
+SELECT m.mview_name, m.query
+FROM all_mviews m
+WHERE m.owner = :1
+ORDER BY m.mview_name`
+
+func (r *Reader) readMaterializedViews() ([]types.DBMatView, error) {
+	rows, err := r.db.Query(matViewQuery, r.schema)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var views []types.DBMatView
+	for rows.Next() {
+		var view types.DBMatView
+		var body sql.NullString
+		if err := rows.Scan(&view.Name, &body); err != nil {
+			return nil, err
+		}
+		view.Schema = r.schema
+		view.Body = strings.TrimSpace(body.String)
 		views = append(views, view)
 	}
 	return views, rows.Err()
