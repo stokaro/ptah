@@ -27,6 +27,7 @@ Use `ptah <command> --help` for the exact flag set in an installed binary.
 | `ptah schema push` | Publish a lossless canonical desired schema to an OCI registry. |
 | `ptah schema pull` | Pull a canonical desired schema from an OCI registry. |
 | `ptah schema test` | Apply a desired schema from Go annotations, a SQL or HCL file, or a live database to a throwaway database and run declarative seed/SQL/assert cases against it. |
+| `ptah schema security` | Report security findings over a live schema: privileges granted to `PUBLIC`, tables reachable with no row-level security, and routines that run with their owner's privileges. Reads the database and nothing else. |
 
 Pass an explicit `--dialect` when the output must be executable by one target.
 Without it, `schema render` attempts the built-in review targets and emits
@@ -376,6 +377,69 @@ A body it cannot fully resolve is **reported, not omitted**. A join, a subquery
 source, a set operation, or a computed column with no alias each appear under
 `undecided` with the reason. That distinction is the difference between "nothing
 reads this column" and "I could not tell", and only the first makes a drop safe.
+
+## Schema security findings
+
+`ptah schema security` reads a live database and reports findings over what it
+declares — who holds which privilege, which tables are reachable with no
+row-level policy, which routines run as their owner:
+
+```bash
+ptah schema security --db-url "$DATABASE_URL"
+```
+
+```text
+CODE   SEVERITY  OBJECT            FINDING
+PRV01  info      table users       table users is granted to a role and has no row-level security enabled, so a granted role reads every row
+PRV02  info      routine escalate  routine escalate runs as its owner, so every caller that may execute it acts with the owner's privileges
+PRV03  warning   table audit_log   privileges on table audit_log are granted to PUBLIC, which every role holds
+
+Suggested:
+  PRV01 users: enable row-level security and declare a policy, or record that the whole table is meant to be readable by these roles
+  PRV02 escalate: qualify the object names in its body or pin search_path, and grant EXECUTE only to roles that should act as the owner
+  PRV03 audit_log: grant to a named role and let members inherit it, so the grant names who holds it
+
+0 error, 2 warning, 2 info
+```
+
+The rules today:
+
+| Code | Finding | Severity |
+| --- | --- | --- |
+| `PRV01` | a table whose privileges reach a role, with row-level security not enabled | info |
+| `PRV02` | a `SECURITY DEFINER` routine, which runs with its owner's privileges | info |
+| `PRV03` | a privilege granted to `PUBLIC`, which every current and future role holds | warning |
+
+Severities are the ones the rest of Ptah speaks: `info` reports and never
+blocks, `warning` asks for review, `error` blocks. `--fail-on error` (the
+default), `any`, or `none` decides the exit code, spelled the way `ptah lint`
+spells it. No rule here is error-severity, so the default reports without
+failing; `--fail-on any` gates on every finding.
+
+`--format json` emits the same findings as a document, each with its structured
+detail — the privileges, the roles, the routine's language — so a pipeline can
+group or diff them without parsing prose.
+
+**A rule that cannot run says so.** Row-level security has no meaning on a
+target that does not model it, so on MySQL the run reports:
+
+```text
+Not checked here:
+  PRV01: the target does not model row-level security
+```
+
+A rule that quietly did not run is indistinguishable from one that found
+nothing, and the difference is what makes a clean report worth having.
+
+**What a clean report is not.** The analysis reads what Ptah models: it does not
+attempt an access, and it cannot see a privilege granted on an object outside
+the schema. "Nothing here matched a rule" is the claim; "this database is
+secure" is not.
+
+PostgreSQL's own `USAGE` on schema `public` to `PUBLIC` is excluded by name,
+because a finding present in every database is one a reader learns to skip.
+`CREATE` on that schema is not excluded — PostgreSQL 15 revoked it from `PUBLIC`
+by default, so a database that grants it is stating something.
 
 ## OCI transport behavior
 

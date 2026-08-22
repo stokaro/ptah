@@ -86,14 +86,14 @@ row for a migration decision.
 
 ## At a glance
 
-Across the 191 capabilities below:
+Across the 192 capabilities below:
 
 | Reading | Count |
 | --- | --- |
 | Ptah supports it fully | 180 |
 | Ptah supports it with a stated limitation | 1 |
 | Ptah does not implement it | 0 |
-| Ptah covers it in its own form, against a hosted service it cannot interoperate with | 10 |
+| Ptah covers it in its own form, against a hosted service it cannot interoperate with | 11 |
 | Ptah and Atlas CE both support it | 63 |
 | Ptah implements it openly where Atlas gates it behind Pro or Cloud | 53 |
 | Ptah has it and neither Atlas edition does | 27 |
@@ -256,6 +256,7 @@ seven of them as open capabilities regardless.
 | Per-rule severity policy | ✅ | ❌ | 🟡 | Severity vocabulary is info\|warning\|error; only error gates. The community binary carries no severity attribute: it accepts one and ignores it, exactly as it treats an invented attribute. |
 | Pre-migration assertion checks | ✅ | ❌ | ✅ | Scalar SELECTs in either direction; txtar checks.sql and checks/*.sql support all-of/oneof groups. One failure mode, abort, and no checks under `--tx-mode all`. |
 | SARIF 2.1.0 lint report | ✅ | ❌ | ➖ | Native `--format` sarif emits SARIF 2.1.0 with ruleId, level and file:line; Atlas documents Go-template `--format` output for migrate lint. |
+| Schema security findings over roles, grants and policies | 🔷 | ❌ | ✅ | Findings over a live schema's grants, policies and routines: code, severity, structured detail and a suggestion, local and with no account. Three rules today, and skipped rules are named. |
 | Standalone SQL file linting (`ptah sql lint`) | ✅ | ❌ | ❌ | Lints arbitrary SQL files or stdin against per-dialect capability presets (9 dialects incl. sqlserver), refined by a `--server-version` server string; text/json output, rule disable. |
 | Statement safety classification report | ✅ | ➖ | ➖ | plan `--report` text\|html\|json and generate `--report` html\|json emit highest severity, a destructive flag, and per-statement assessments. |
 
