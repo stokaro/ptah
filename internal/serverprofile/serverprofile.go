@@ -26,6 +26,7 @@ package serverprofile
 import (
 	"fmt"
 	"slices"
+	"strings"
 
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
@@ -57,6 +58,44 @@ type Profile struct {
 	// sorted by key so that two runs against one server render byte-identical
 	// output and a diff of that output means something changed.
 	Capabilities []Capability `json:"capabilities"`
+
+	// Refinements are the keys this server's configuration answers differently
+	// from the release line it is on, empty when the version decided
+	// everything.
+	//
+	// A version alone cannot decide every key. MySQL 8.4 reads its
+	// foreign-key reference policy from restrict_fk_on_non_standard_key, so
+	// two servers on the same release answer opposite ways about
+	// foreign_keys_require_unique_reference and
+	// foreign_keys_require_indexed_reference depending on how they are
+	// started. Reporting the version's answer for both is not a rounding
+	// error: it tells the operator of the second server that a reference must
+	// be unique when it need not be, and that it need not be indexed when it
+	// must (stokaro/ptah#1230).
+	//
+	// They are recorded rather than folded silently into Capabilities, whose
+	// values already carry the refinement: a reader who cannot see WHY a key
+	// differs from its preset has to guess whether the preset is wrong or the
+	// server is unusual.
+	Refinements []Refinement `json:"configuration_refinements,omitempty"`
+}
+
+// Refinement is one capability key whose value here is not the one the release
+// line alone would give.
+type Refinement struct {
+	// Key is the registered capability.
+	Key string `json:"key"`
+
+	// Preset is what the release line answered.
+	Preset bool `json:"preset"`
+
+	// Effective is what this server answers, which is the value carried in
+	// Profile.Capabilities.
+	Effective bool `json:"effective"`
+
+	// Reason names the configuration that decided it, in the server's own
+	// vocabulary, so the operator can go and look at the same setting.
+	Reason string `json:"reason"`
 }
 
 // Server is what the server said about itself.
@@ -177,6 +216,47 @@ type Capability struct {
 // [capabilityprobe.ProductVersion] is what reads it. Both may be empty: a
 // profile for a server that answered nothing about itself is still a profile,
 // and it reports exactly that.
+// Refined returns the profile as this particular server answers it, given the
+// capability set a live session resolved.
+//
+// It stays a pure function, like [For]: the caller holds the connection and
+// does the asking, and this decides only what the two answers mean together.
+// Keys the session did not change are left exactly as the release line had
+// them, so a server whose configuration is ordinary renders byte-identical
+// output to before (stokaro/ptah#1230).
+//
+// reason is the configuration that did it, in the server's own vocabulary. It
+// is required: a refinement a reader cannot go and check is a claim, and this
+// verb exists to replace claims with what a server said.
+func (p Profile) Refined(effective capability.Capabilities, reason string) Profile {
+	if len(effective) == 0 || strings.TrimSpace(reason) == "" {
+		return p
+	}
+
+	refined := make([]Capability, 0, len(p.Capabilities))
+	var refinements []Refinement
+	for _, row := range p.Capabilities {
+		key := capability.Capability(row.Key)
+		value, measured := effective[key]
+		if !measured || value == row.Supported {
+			refined = append(refined, row)
+			continue
+		}
+		refinements = append(refinements, Refinement{
+			Key:       row.Key,
+			Preset:    row.Supported,
+			Effective: value,
+			Reason:    reason,
+		})
+		row.Supported = value
+		refined = append(refined, row)
+	}
+
+	p.Capabilities = refined
+	p.Refinements = refinements
+	return p
+}
+
 func For(dialect, banner, productVersion string) Profile {
 	normalized := platform.NormalizeDialect(dialect)
 	resolution := capability.ResolveServerVersion(normalized, banner)
