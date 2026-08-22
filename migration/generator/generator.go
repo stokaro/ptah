@@ -69,6 +69,19 @@ type GenerateMigrationOptions struct {
 	Generated *goschema.Database
 	// DatabaseURL is the connection string for the database
 	DatabaseURL string
+	// ConnectTimeout bounds the attempt to open DatabaseURL, and nothing after
+	// it. Zero leaves the connect bounded only by the caller's context.
+	//
+	// It is a field rather than a deadline on the context the caller passes,
+	// because that context governs the whole generation -- planning, rendering,
+	// and publishing the files. A connect budget spent as a run budget expires
+	// somewhere later, and reports whatever step happened to notice:
+	//
+	//	error creating migration files: context deadline exceeded
+	//
+	// which named file publication for a run whose connect took milliseconds
+	// (stokaro/ptah#1749).
+	ConnectTimeout time.Duration
 	// DBConn is the database connection (optional, if not provided, a new connection will be created)
 	DBConn *dbschema.DatabaseConnection
 	// MigrationName is the name for the migration (optional, defaults to "migration")
@@ -689,11 +702,33 @@ func resolvePlanDatabaseConnection(
 	if opts.DBConn != nil {
 		return opts.DBConn, false, nil
 	}
-	conn, err := dbschema.ConnectToDatabase(ctx, opts.DatabaseURL)
+	// The connect budget is spent here and released here. Deferring the cancel
+	// in this function rather than in the caller is what keeps it off the rest
+	// of the generation, which is the whole distinction the field exists to
+	// draw.
+	connectCtx, cancelConnect := connectContextFor(ctx, opts)
+	defer cancelConnect()
+	conn, err := dbschema.ConnectToDatabase(connectCtx, opts.DatabaseURL)
 	if err != nil {
 		return nil, false, fmt.Errorf("error connecting to database: %w", err)
 	}
 	return conn, true, nil
+}
+
+// connectContextFor derives the context the connect runs under.
+//
+// Split from its caller so the derivation can be checked without a server and
+// without a clock: a test asks whether the returned context carries a deadline,
+// which is decided when it is built. Asserting that a small budget *fires*
+// would depend on timer granularity -- on Windows `time.Now()` can return the
+// same instant either side of a nanosecond budget, so the deadline is scheduled
+// rather than already past and a local connect finishes first
+// (stokaro/ptah#1749).
+func connectContextFor(
+	ctx context.Context,
+	opts GenerateMigrationOptions,
+) (context.Context, context.CancelFunc) {
+	return baselineShadowConnectContext(ctx, opts.ConnectTimeout)
 }
 
 // resolveDesiredSchema answers what the migration should bring the database to:
