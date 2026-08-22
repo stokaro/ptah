@@ -14,7 +14,7 @@ import (
 
 	_ "github.com/jackc/pgx/v5/stdlib"                   // PostgreSQL driver
 	_ "github.com/microsoft/go-mssqldb"                  // SQL Server driver
-	_ "github.com/sijms/go-ora/v2"                       // Oracle driver
+	_ "github.com/sijms/go-ora/v3"                       // Oracle driver
 	_ "github.com/tursodatabase/libsql-client-go/libsql" // libsql (Turso) driver
 
 	"go.5x5.cz/ptah/core/platform"
