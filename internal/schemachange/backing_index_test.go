@@ -253,23 +253,23 @@ func TestAForeignKeysBackingIndexIsTheServersOnMySQL(t *testing.T) {
 		name    string
 		profile schemastate.Profile
 		schema  string
-		dropped bool
+		drops   int
 	}{
 		{
 			name:    "MySQL creates it",
 			profile: mysqlProfile(),
-			dropped: false,
+			drops:   0,
 		},
 		{
 			name:    "MariaDB creates it",
 			profile: mariadbProfile(),
-			dropped: false,
+			drops:   0,
 		},
 		{
 			name:    "PostgreSQL creates none",
 			profile: postgresProfile(),
 			schema:  "public",
-			dropped: true,
+			drops:   1,
 		},
 	}
 
@@ -280,7 +280,7 @@ func TestAForeignKeysBackingIndexIsTheServersOnMySQL(t *testing.T) {
 
 			changes := changesForProfile(c, description, catalog, test.profile)
 
-			c.Assert(changes, qt.HasLen, droppedCount(test.dropped))
+			c.Assert(changes, qt.HasLen, test.drops)
 		})
 	}
 }
@@ -379,7 +379,7 @@ func foreignKeyBackingFixture(schema string) (*goschema.Database, *dbschematypes
 		Constraints: []dbschematypes.DBConstraint{{
 			Name: "fk_widget_parent", TableName: "widget", Schema: schema,
 			Type: "FOREIGN KEY", ColumnName: "parent_id",
-			ForeignTable: pointerTo("parent"), ForeignColumn: pointerTo("id"),
+			ForeignTable: new("parent"), ForeignColumn: new("id"),
 		}},
 		Indexes: []dbschematypes.DBIndex{{
 			Name: "fk_widget_parent", TableName: "widget", Schema: schema,
@@ -387,17 +387,6 @@ func foreignKeyBackingFixture(schema string) (*goschema.Database, *dbschematypes
 		}},
 	}
 	return description, catalog
-}
-
-func droppedCount(dropped bool) int {
-	if dropped {
-		return 1
-	}
-	return 0
-}
-
-func pointerTo(value string) *string {
-	return &value
 }
 
 // TestAPrimaryKeyIndexUnderAnotherNameIsStillTheServersPins the half of the
@@ -468,7 +457,7 @@ func TestAnExcludeConstraintOwnsItsIndexAndACheckOwnsNone(t *testing.T) {
 		name       string
 		constraint goschema.Constraint
 		reported   dbschematypes.DBConstraint
-		dropped    bool
+		drops      int
 	}{
 		{
 			name: "an EXCLUDE is enforced with one",
@@ -478,10 +467,10 @@ func TestAnExcludeConstraintOwnsItsIndexAndACheckOwnsNone(t *testing.T) {
 			},
 			reported: dbschematypes.DBConstraint{
 				Name: "guard_widget_code", TableName: "widget", Schema: "public",
-				Type: "EXCLUDE", UsingMethod: pointerTo("gist"),
-				ExcludeElements: pointerTo("code WITH ="),
+				Type: "EXCLUDE", UsingMethod: new("gist"),
+				ExcludeElements: new("code WITH ="),
 			},
-			dropped: false,
+			drops: 0,
 		},
 		{
 			name: "a CHECK is enforced with none",
@@ -491,9 +480,9 @@ func TestAnExcludeConstraintOwnsItsIndexAndACheckOwnsNone(t *testing.T) {
 			},
 			reported: dbschematypes.DBConstraint{
 				Name: "guard_widget_code", TableName: "widget", Schema: "public",
-				Type: "CHECK", CheckClause: pointerTo("code <> ''"),
+				Type: "CHECK", CheckClause: new("code <> ''"),
 			},
-			dropped: true,
+			drops: 1,
 		},
 	}
 
@@ -511,7 +500,7 @@ func TestAnExcludeConstraintOwnsItsIndexAndACheckOwnsNone(t *testing.T) {
 
 			changes := changesFor(c, description, catalog)
 
-			c.Assert(changes, qt.HasLen, droppedCount(test.dropped))
+			c.Assert(changes, qt.HasLen, test.drops)
 		})
 	}
 }
