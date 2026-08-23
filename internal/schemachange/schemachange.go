@@ -183,6 +183,7 @@ func Compare(current, desired *schemastate.State, profile schemastate.Profile) (
 		return nil, err
 	}
 	changes = append(changes, tableChanges...)
+	changes = append(changes, compareUniqueConstraints(current, desired, profile)...)
 	changes = append(changes, policyChanges...)
 	grantChanges, err := compareGrants(current, desired, profile)
 	if err != nil {

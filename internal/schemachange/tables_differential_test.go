@@ -412,6 +412,53 @@ func TestTableStatementsMatchTheExistingPlanner(t *testing.T) {
 			catalog: &dbschematypes.DBSchema{},
 		},
 		{
+			// A column's character set and collation, on the target family that
+			// puts them on a column.
+			name: "creating a table with a collated column, on MySQL",
+			description: describedTable(
+				goschema.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true},
+				goschema.Field{
+					StructName: "Widget", Name: "code", Type: "varchar(50)", Nullable: true,
+					Charset: "utf8mb4", Collate: "utf8mb4_0900_ai_ci",
+				}),
+			catalog: &dbschematypes.DBSchema{},
+			profile: mysqlProfilePointer(),
+		},
+		{
+			// MySQL's ON UPDATE. A column that loses it silently stops
+			// maintaining itself, and the table is otherwise identical.
+			name: "creating a table with a self-updating column, on MySQL",
+			description: describedTable(
+				goschema.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true},
+				goschema.Field{
+					StructName: "Widget", Name: "seen", Type: "timestamp", Nullable: true,
+					UpdateExpression: "CURRENT_TIMESTAMP",
+				}),
+			catalog: &dbschematypes.DBSchema{},
+			profile: mysqlProfilePointer(),
+		},
+		{
+			// The table options. A CREATE that dropped the engine builds on the
+			// server's default, which on a server configured differently is a
+			// different storage engine with different transactional behavior.
+			name: "creating a table with an engine and a charset, on MySQL",
+			description: describedTableMySQLOptions(goschema.Field{
+				StructName: "Widget", Name: "id", Type: "int", Primary: true,
+			}),
+			catalog: &dbschematypes.DBSchema{},
+			profile: mysqlProfilePointer(),
+		},
+		{
+			name:        "adding a unique constraint",
+			description: scopedWidget([]string{"tenant", "code"}),
+			catalog:     scopedWidgetCatalog(nil),
+		},
+		{
+			name:        "dropping a unique constraint",
+			description: scopedWidget(nil),
+			catalog:     scopedWidgetCatalog([]string{"tenant", "code"}),
+		},
+		{
 			// The control. A planner that emitted nothing would agree with the
 			// existing one on this row and on nothing else; a planner that
 			// emitted something here would disagree with it on this row alone.
@@ -534,5 +581,11 @@ func oracleProfilePointer() *schemastate.Profile {
 // sqliteProfilePointer is [sqliteProfile] as a row can carry it.
 func sqliteProfilePointer() *schemastate.Profile {
 	profile := sqliteProfile()
+	return &profile
+}
+
+// mysqlProfilePointer is [mysqlProfile] as a row can carry it.
+func mysqlProfilePointer() *schemastate.Profile {
+	profile := mysqlProfile()
 	return &profile
 }
