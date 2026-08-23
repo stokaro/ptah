@@ -31,9 +31,9 @@ set -euo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(git -C "$HERE" rev-parse --show-toplevel)"
 
-# shellcheck source=scripts/lib/atlas-ce-oracle.sh
-source "$ROOT/scripts/lib/atlas-ce-oracle.sh"
-atlas_ce_load_lock "$ROOT/scripts/atlas-ce-oracle.lock"
+# shellcheck source=scripts/lib/atlas-ce-reference.sh
+source "$ROOT/scripts/lib/atlas-ce-reference.sh"
+atlas_ce_load_lock "$ROOT/scripts/atlas-ce-reference.lock"
 ATLAS="$(atlas_ce_resolve_binary "${1:-}")"
 
 actual_version="$(atlas_ce_verify_binary "$ATLAS")"

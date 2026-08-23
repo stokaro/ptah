@@ -1,4 +1,4 @@
-name: Atlas CE Oracle
+name: Atlas CE reference
 
 on:
   push:
@@ -54,7 +54,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - name: Configure oracle path
+      - name: Configure the reference binary path
         run: echo "PTAH_ATLAS_REFERENCE=$RUNNER_TEMP/ptah-atlas-ce/atlas" >> "$GITHUB_ENV"
 
       # The realm-scoped dev database the two-schema document needs. The service
@@ -75,7 +75,7 @@ jobs:
         run: GOWORK=off go mod download
 
       - name: Build pinned Atlas CE oracle
-        run: scripts/build-atlas-ce-oracle.sh "$PTAH_ATLAS_REFERENCE"
+        run: scripts/build-atlas-ce-reference.sh "$PTAH_ATLAS_REFERENCE"
 
       - name: Verify migration-directory query contract
         run: >-
