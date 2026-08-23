@@ -118,6 +118,7 @@ func excludeDatabase(
 	filtered.RLSPolicies = state.filterRLSPolicies(filtered.RLSPolicies)
 	filtered.Roles = state.filterRoles(filtered.Roles)
 	filtered.RoleMemberships = state.filterRoleMemberships(filtered.RoleMemberships)
+	filtered.ObjectOwners = state.filterObjectOwners(filtered.ObjectOwners)
 	filtered.Grants = state.filterGrants(filtered.Grants)
 	state.noteRolesOutOfScope(filtered.RolesOutOfScope)
 	state.noteUnregisteredVirtualTables(filtered.UnregisteredVirtualTables)
@@ -1152,6 +1153,23 @@ func (s *exclusionState) filterRoles(roles []dbschematypes.DBRole) []dbschematyp
 	})
 }
 
+// filterObjectOwners drops an ownership row whose owner or whose object is
+// excluded.
+//
+// An ownership row names two things a selector can reach: the role that owns
+// and the object owned. Keeping a row for an excluded object would say who owns
+// something this description no longer contains (stokaro/ptah#1950).
+func (s *exclusionState) filterObjectOwners(
+	owners []dbschematypes.DBObjectOwner,
+) []dbschematypes.DBObjectOwner {
+	return keep(owners, func(owner dbschematypes.DBObjectOwner) bool {
+		if s.matches("role", owner.Owner) {
+			return false
+		}
+		return !s.matches(owner.Kind, qualifiedNameCandidates(owner.Schema, owner.Name)...)
+	})
+}
+
 // filterRoleMemberships drops an edge whose either end is excluded.
 //
 // A membership names no object of its own: it is a fact about two roles, and it
@@ -1700,6 +1718,7 @@ func cloneDatabase(schema *dbschematypes.DBSchema) *dbschematypes.DBSchema {
 		Roles:              slices.Clone(schema.Roles),
 		Grants:             slices.Clone(schema.Grants),
 		RoleMemberships:    slices.Clone(schema.RoleMemberships),
+		ObjectOwners:       slices.Clone(schema.ObjectOwners),
 		// Which roles the server has is a fact about the server, not part of
 		// the description a filter narrows. Dropping it here would tell the
 		// comparator that every cluster role outside the description is

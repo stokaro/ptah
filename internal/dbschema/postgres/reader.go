@@ -177,6 +177,12 @@ func (r *Reader) ReadSchema() (*types.DBSchema, error) {
 			return nil, fmt.Errorf("failed to read role memberships: %w", err)
 		}
 		schema.RoleMemberships = memberships
+
+		owners, err := r.readObjectOwners()
+		if err != nil {
+			return nil, fmt.Errorf("failed to read object owners: %w", err)
+		}
+		schema.ObjectOwners = owners
 	}
 
 	// Enhance tables with constraint information
@@ -3400,6 +3406,86 @@ func (r *Reader) queryRoles(membership string) ([]types.DBRole, error) {
 	}
 
 	return roles, nil
+}
+
+// ownerKinds maps pg_class.relkind onto the vocabulary the rest of Ptah uses.
+// A relkind with no entry is not reported: an index or a TOAST table has an
+// owner in the catalog and is not an object an operator reasons about owning.
+var ownerKinds = map[string]string{
+	"r": "table",
+	"p": "table",
+	"v": "view",
+	"m": "materialized view",
+	"S": "sequence",
+}
+
+// readObjectOwners reads who owns each object in the inspected schemas.
+//
+// It is scoped the way the object reads are, not the way the role read is: an
+// owner is a property OF an object, so the answer is about the objects this
+// description covers. The schemas themselves are included, because a schema is
+// an object somebody owns and the one whose ownership decides who may create
+// in it.
+//
+// Ownership is read for analysis and nothing else. Ptah renders no OWNER TO,
+// and the note above readRoles records what happened the last time ownership
+// leaked into the description: every inspect described the connecting
+// superuser, and a diff then planned CREATE ROLE for it (stokaro/ptah#1950).
+func (r *Reader) readObjectOwners() ([]types.DBObjectOwner, error) {
+	schemas := r.schemasToRead()
+	placeholders := make([]string, 0, len(schemas))
+	args := make([]any, 0, len(schemas))
+	for i, schemaName := range schemas {
+		placeholders = append(placeholders, fmt.Sprintf("$%d", i+1))
+		args = append(args, schemaName)
+	}
+	list := strings.Join(placeholders, ", ")
+
+	query := `
+		SELECT c.relkind::text AS kind, n.nspname AS schema_name, c.relname AS object_name,
+		       owner.rolname AS owner_name, owner.rolcanlogin AS owner_can_login
+		FROM pg_class c
+		JOIN pg_namespace n ON n.oid = c.relnamespace
+		JOIN pg_roles owner ON owner.oid = c.relowner
+		WHERE n.nspname IN (` + list + `)
+		  AND c.relkind IN ('r', 'p', 'v', 'm', 'S')
+		UNION ALL
+		SELECT 'schema' AS kind, '' AS schema_name, n.nspname AS object_name,
+		       owner.rolname AS owner_name, owner.rolcanlogin AS owner_can_login
+		FROM pg_namespace n
+		JOIN pg_roles owner ON owner.oid = n.nspowner
+		WHERE n.nspname IN (` + list + `)
+		ORDER BY kind, schema_name, object_name`
+
+	// The two halves of the UNION reuse $1..$n rather than continuing the
+	// numbering, so the arguments are passed once: a placeholder that appears
+	// twice is still one parameter, and passing them twice answers
+	// `expected 1 arguments, got 2`.
+	rows, err := r.db.Query(query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query object owners: %w", err)
+	}
+	defer rows.Close()
+
+	owners := make([]types.DBObjectOwner, 0)
+	for rows.Next() {
+		var kind, schemaName, name, owner string
+		var canLogin bool
+		if err := rows.Scan(&kind, &schemaName, &name, &owner, &canLogin); err != nil {
+			return nil, fmt.Errorf("failed to scan object owner: %w", err)
+		}
+		resolved := kind
+		if mapped, ok := ownerKinds[kind]; ok {
+			resolved = mapped
+		}
+		owners = append(owners, types.DBObjectOwner{
+			Kind: resolved, Schema: schemaName, Name: name, Owner: owner, OwnerCanLogin: canLogin,
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to read object owners: %w", err)
+	}
+	return owners, nil
 }
 
 // readRoleMemberships reads the role-in-role edges between the roles Ptah

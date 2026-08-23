@@ -49,6 +49,7 @@ func TestSecurityAnnotations(t *testing.T) {
 			},
 			wantAnnotated: map[string]string{"audit_log": "warning"},
 			wantUnattached: []string{
+				"OWN01 not checked here: object ownership was not read for this source",
 				"ROL03 not checked here: role membership was not read for this source",
 				"ROL04 not checked here: role membership was not read for this source",
 			},
@@ -62,6 +63,7 @@ func TestSecurityAnnotations(t *testing.T) {
 			wantAnnotated: make(map[string]string),
 			wantUnattached: []string{
 				"routine escalate: info PRV02",
+				"OWN01 not checked here: object ownership was not read for this source",
 				"ROL03 not checked here: role membership was not read for this source",
 				"ROL04 not checked here: role membership was not read for this source",
 			},
@@ -76,6 +78,7 @@ func TestSecurityAnnotations(t *testing.T) {
 			},
 			wantAnnotated: map[string]string{"audit_log": "warning"},
 			wantUnattached: []string{
+				"OWN01 not checked here: object ownership was not read for this source",
 				"ROL03 not checked here: role membership was not read for this source",
 				"ROL04 not checked here: role membership was not read for this source",
 			},
@@ -89,6 +92,7 @@ func TestSecurityAnnotations(t *testing.T) {
 			wantAnnotated: make(map[string]string),
 			wantUnattached: []string{
 				"PRV01 not checked here: the target does not model row-level security",
+				"OWN01 not checked here: object ownership was not read for this source",
 				"ROL03 not checked here: role membership was not read for this source",
 				"ROL04 not checked here: role membership was not read for this source",
 			},

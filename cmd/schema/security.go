@@ -132,6 +132,7 @@ func runSchemaSecurity(cmd *cobra.Command, opts schemaSecurityOptions) error {
 			// read them, and the rules that need them must run rather than
 			// report themselves skipped (stokaro/ptah#1950).
 			RoleMemberships: roleMemberships(live),
+			ObjectOwners:    objectOwners(live),
 		},
 	)
 
@@ -160,6 +161,21 @@ func roleMemberships(live *dbschematypes.DBSchema) []schemasecurity.RoleMembersh
 		})
 	}
 	return memberships
+}
+
+// objectOwners carries who owns what into the analysis, with the owner's login
+// flag as the catalog reported it.
+func objectOwners(live *dbschematypes.DBSchema) []schemasecurity.ObjectOwner {
+	owners := make([]schemasecurity.ObjectOwner, 0, len(live.ObjectOwners))
+	for _, owner := range live.ObjectOwners {
+		owners = append(owners, schemasecurity.ObjectOwner{
+			Kind:          owner.Kind,
+			Name:          owner.Name,
+			Owner:         owner.Owner,
+			OwnerCanLogin: owner.OwnerCanLogin,
+		})
+	}
+	return owners
 }
 
 // validateSecurityFailOn rejects a threshold nothing understands, rather than
