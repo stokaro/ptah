@@ -163,6 +163,7 @@ func FromCatalog(schema *dbschematypes.DBSchema, dialect string, semantics ident
 				Columns:            index.Columns,
 				Unique:             index.IsUnique,
 				KeyPartsIncomplete: index.KeyPartsIncomplete,
+				RequiresExtensions: index.RequiresExtensions,
 			},
 			coverage.Observed, "information_schema.statistics",
 		); err != nil {
@@ -668,10 +669,11 @@ func declaredUniqueKeys(
 		}
 		if err := addIndex(state, builder, owner.Schema, owner.Name, index.Name,
 			&Index{
-				Table:      builder.TableParts(owner.Schema, owner.Name),
-				Columns:    index.Fields,
-				Unique:     index.Unique,
-				Concurrent: index.Concurrently,
+				Table:              builder.TableParts(owner.Schema, owner.Name),
+				Columns:            index.Fields,
+				Unique:             index.Unique,
+				Concurrent:         index.Concurrently,
+				RequiresExtensions: index.RequiresExtensions,
 			},
 			coverage.Declared, index.StructName); err != nil {
 			return err
@@ -872,14 +874,15 @@ func declaredTableConstraints(
 		}
 		if err := addTableConstraint(state, builder, owner.Schema, owner.Name, constraint.Name,
 			&TableConstraint{
-				Kind:           strings.ToUpper(strings.TrimSpace(constraint.Type)),
-				ConstraintName: constraint.Name,
-				Table:          builder.TableParts(owner.Schema, owner.Name),
-				Expression:     constraint.CheckExpression,
-				Columns:        constraint.Columns,
-				UsingMethod:    constraint.UsingMethod,
-				Elements:       constraint.ExcludeElements,
-				Where:          constraint.WhereCondition,
+				Kind:               strings.ToUpper(strings.TrimSpace(constraint.Type)),
+				ConstraintName:     constraint.Name,
+				Table:              builder.TableParts(owner.Schema, owner.Name),
+				Expression:         constraint.CheckExpression,
+				Columns:            constraint.Columns,
+				UsingMethod:        constraint.UsingMethod,
+				Elements:           constraint.ExcludeElements,
+				Where:              constraint.WhereCondition,
+				RequiresExtensions: constraint.RequiresExtensions,
 			}, coverage.Declared, constraint.StructName); err != nil {
 			return err
 		}
