@@ -5,6 +5,7 @@ import (
 	"slices"
 
 	"go.5x5.cz/ptah/core/ast"
+	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/internal/objectidentity"
 	"go.5x5.cz/ptah/internal/schemastate"
 )
@@ -44,9 +45,104 @@ func compareIndexes(current, desired *schemastate.State, profile schemastate.Pro
 		if _, wanted := declared[object.ID.Key()]; wanted {
 			continue
 		}
+		if backsAConstraint(current, object, profile.Dialect) {
+			continue
+		}
 		changes = append(changes, decideIndexRemoval(object, desired, profile, current))
 	}
 	return changes
+}
+
+// backsAConstraint reports whether a database index is the index a constraint
+// is enforced with, rather than an index of its own.
+//
+// PostgreSQL, MySQL and MariaDB enforce a UNIQUE constraint with an index of
+// the constraint's own name on the constraint's own table, and introspection
+// reports that ONE object twice: once in the index catalog and once in the
+// constraint catalog. On MySQL and MariaDB there is not even a separate notion
+// to report -- `ADD CONSTRAINT uq UNIQUE (email)` and `CREATE UNIQUE INDEX uq`
+// produce the same row. MySQL and MariaDB create one for every FOREIGN KEY as
+// well, named after the constraint, which a schema written the ordinary way
+// never asked for and never mentions.
+//
+// Reading either as an object of its own made a desired state that declares the
+// CONSTRAINT look like one that dropped the INDEX, and the plan came out as
+//
+//	DROP INDEX IF EXISTS "public"."uq_widget_code"
+//
+// which drops the constraint with it. Measured against the shipping comparator,
+// which plans nothing for either pair (stokaro/ptah#1663, stokaro/ptah#1286,
+// stokaro/ptah#1245, stokaro/ptah#1258).
+//
+// The question is asked of the CURRENT state only. An index the desired state
+// declares is handled by the loop above -- it is in `declared`, so it never
+// reaches here -- which is what keeps a schema that really does want a
+// standalone unique index from having its index suppressed by the constraint
+// the server created for it. **Which representation wins is decided by the
+// description, not by the dialect.**
+//
+// An index no statement addresses at all -- a PRIMARY KEY's, and the one SQLite
+// names for itself -- is not a state object in the first place; see
+// [go.5x5.cz/ptah/internal/schemastate.FromCatalog].
+func backsAConstraint(current *schemastate.State, index schemastate.Object, dialect string) bool {
+	for _, object := range current.OfKind(objectidentity.KindConstraint) {
+		if !ownsAnIndex(object, dialect) {
+			continue
+		}
+		if sameOwnedName(object.ID, index.ID, index.Index.Table) {
+			return true
+		}
+	}
+	return false
+}
+
+// ownsAnIndex reports whether a constraint of this kind is enforced with an
+// index of its own name on this target.
+//
+// SQL Server keeps a UNIQUE constraint and a unique index as separate objects,
+// so there is nothing to hand over there. Only MySQL and MariaDB create an
+// index for a FOREIGN KEY; on the other targets an index sharing a foreign
+// key's name is an index somebody wrote.
+//
+// An EXCLUDE is enforced with an index too, and it is the one a read cannot
+// tell apart on its own: measured on PostgreSQL 17.6, the pg_index row for
+// `EXCLUDE USING gist (room WITH =)` reports indisprimary false and indisunique
+// false, exactly like an ordinary index, and only pg_constraint.conindid ties
+// the two together. Dropping it is refused -- `cannot drop index ex_widget_room
+// because constraint ex_widget_room on table widget requires it` -- and a CHECK,
+// the other clause constraint, is enforced with no index at all.
+//
+// Every uniqueness guarantee a READ carries is asked, not just the ones the
+// read reported as standalone UNIQUE constraints. Restricting it to those left
+// a clause no fixture could separate from its absence: the name in a guarantee
+// read from a catalog is the server's own constraint name either way, and a
+// guarantee Ptah derived instead carries a derived name -- `ptah_unique_code`
+// -- which no index in a read is called.
+func ownsAnIndex(constraint schemastate.Object, dialect string) bool {
+	switch {
+	case constraint.UniqueKey != nil:
+		return platform.NormalizeDialect(dialect) != platform.SQLServer
+	case constraint.ForeignKey != nil:
+		normalized := platform.NormalizeDialect(dialect)
+		return normalized == platform.MySQL || normalized == platform.MariaDB
+	case constraint.Constraint != nil:
+		return constraintKind(*constraint.Constraint) == excludeConstraintKind
+	default:
+		return false
+	}
+}
+
+// sameOwnedName reports whether a constraint and an index name one object: the
+// same name on the same table.
+//
+// The index's table comes from its payload rather than its identity, because a
+// target that scopes index names to a schema leaves the table out of the
+// identity entirely -- and this comparison is precisely about the table they
+// share.
+func sameOwnedName(constraint, index, indexTable objectidentity.ID) bool {
+	return constraint.Name.Normalized == index.Name.Normalized &&
+		constraint.Parent.Normalized == indexTable.Name.Normalized &&
+		constraint.Schema.Normalized == indexTable.Schema.Normalized
 }
 
 // changedIndexProperties reports which properties of two indexes differ.

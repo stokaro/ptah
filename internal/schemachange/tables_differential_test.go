@@ -612,6 +612,14 @@ func TestTableStatementsMatchTheExistingPlanner(t *testing.T) {
 			catalog: constrainedCatalog(),
 		},
 		{
+			// A UNIQUE constraint and the index the server enforces it with,
+			// which introspection reports as two rows for one object. The
+			// desired state declares the constraint; nothing changed.
+			name:        "a unique constraint the database already has",
+			description: widgetDeclaringUniqueConstraint(),
+			catalog:     widgetReportingBoth(),
+		},
+		{
 			name:        "adding a unique constraint",
 			description: scopedWidget([]string{"tenant", "code"}),
 			catalog:     scopedWidgetCatalog(nil),

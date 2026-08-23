@@ -241,3 +241,24 @@ func statementsOf(c *qt.C, operations []schemachange.PlannedOperation) []string 
 }
 
 var _ = testing.Verbose
+
+// mariadbProfile is the other target that creates an index for every foreign
+// key, and it is a separate dialect string rather than an alias of MySQL.
+func mariadbProfile() schemastate.Profile {
+	return schemastate.Profile{
+		Dialect:      "mariadb",
+		Semantics:    identifier.ForDialect("mariadb"),
+		Capabilities: capability.MariaDB1011(),
+	}
+}
+
+// sqlserverProfile is the target that keeps a UNIQUE constraint and a unique
+// index as two objects, which is what makes the handover's exclusion
+// measurable.
+func sqlserverProfile() schemastate.Profile {
+	return schemastate.Profile{
+		Dialect:      "sqlserver",
+		Semantics:    identifier.ForDialect("sqlserver"),
+		Capabilities: capability.SQLServer2022(),
+	}
+}
