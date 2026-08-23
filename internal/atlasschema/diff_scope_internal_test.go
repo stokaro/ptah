@@ -298,7 +298,11 @@ func TestNonExtensionScopeDoesNotRemoveUnmentionedCurrentExtension(t *testing.T)
 	c.Assert(from.database.Extensions, qt.DeepEquals, current.Extensions)
 	c.Assert(to.schema.Extensions, qt.DeepEquals, desired.Extensions)
 	applyExtensionSupportCoverage(to.schema, from.selection, to.selection)
-	c.Assert(to.schema.NotDescribed, qt.DeepEquals, coverage.Set{}.WithKind(coverage.Extension))
+	c.Assert(to.schema.NotDescribed, qt.DeepEquals, coverage.Set{}.With(coverage.Object{
+		Kind:       coverage.Extension,
+		Reason:     coverage.OutsideScope,
+		Provenance: coverage.Configured,
+	}))
 	diff := schemadiff.CompareWithDialect(to.schema, from.database, platform.Postgres)
 	c.Assert(diff.ExtensionsAdded, qt.HasLen, 0)
 	c.Assert(diff.ExtensionsRemoved, qt.HasLen, 0)

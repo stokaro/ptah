@@ -12,7 +12,10 @@ import (
 )
 
 // Filtering narrows what a description CONTAINS. It must never widen what the
-// description CLAIMS to cover: a projection that dropped the coverage record
+// description CLAIMS to cover, and it must not flatten the reason the claim
+// carries either -- a projection that dropped `reason=not-inspected` would leave
+// a record that still blocks the removal but can no longer say why
+// (stokaro/ptah#1346): a projection that dropped the coverage record
 // would turn a document's declared silence back into desired absence one
 // function call after it was recorded, which is stokaro/ptah#1276 reappearing
 // inside its own fix.
@@ -39,13 +42,14 @@ func TestScopeDatabaseKeepsCoverage(t *testing.T) {
 					{Name: "kept", Schema: "public"},
 					{Name: "dropped", Schema: "public"},
 				},
-				NotDescribed: coverage.Set{}.WithKind(coverage.Extension),
+				NotDescribed: coverage.Set{}.With(coverage.Refused(coverage.Extension)),
 			}
 
 			got, err := atlasfilter.ScopeDatabase(schema, test.scope)
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(got.NotDescribed, qt.DeepEquals, coverage.Set{}.WithKind(coverage.Extension))
+			c.Assert(got.NotDescribed, qt.DeepEquals,
+				coverage.Set{}.With(coverage.Refused(coverage.Extension)))
 		})
 	}
 }
@@ -67,13 +71,21 @@ func TestScopeGeneratedKeepsCoverage(t *testing.T) {
 					{Name: "kept", StructName: "Kept", Schema: "public"},
 					{Name: "dropped", StructName: "Dropped", Schema: "public"},
 				},
-				NotDescribed: coverage.Set{}.WithKind(coverage.Sequence),
+				NotDescribed: coverage.Set{}.With(coverage.Object{
+					Kind:       coverage.Sequence,
+					Reason:     coverage.SuppressedByPolicy,
+					Provenance: coverage.Defaulted,
+				}),
 			}
 
 			got, err := atlasfilter.ScopeGenerated(schema, test.scope)
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(got.NotDescribed, qt.DeepEquals, coverage.Set{}.WithKind(coverage.Sequence))
+			c.Assert(got.NotDescribed, qt.DeepEquals, coverage.Set{}.With(coverage.Object{
+				Kind:       coverage.Sequence,
+				Reason:     coverage.SuppressedByPolicy,
+				Provenance: coverage.Defaulted,
+			}))
 		})
 	}
 }

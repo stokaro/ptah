@@ -126,7 +126,7 @@ func (r *Reader) ReadSchema() (*types.DBSchema, error) {
 			if !isAccessDenied(err) {
 				return nil, err
 			}
-			schema.NotDescribed = schema.NotDescribed.WithKind(coverage.Role)
+			schema.NotDescribed = schema.NotDescribed.With(coverage.Refused(coverage.Role))
 		}
 	}
 	if r.caps.Has(capability.RowLevelSecurity) {
@@ -143,7 +143,7 @@ func (r *Reader) ReadSchema() (*types.DBSchema, error) {
 		case err == nil:
 			schema.RLSPolicies = policies
 		case isAccessDenied(err):
-			schema.NotDescribed = schema.NotDescribed.WithKind(coverage.Policy)
+			schema.NotDescribed = schema.NotDescribed.With(coverage.Refused(coverage.Policy))
 		default:
 			return nil, fmt.Errorf("clickhouse: read row policies: %w", err)
 		}

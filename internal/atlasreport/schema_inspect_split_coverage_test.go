@@ -74,9 +74,9 @@ func TestSplitCarriesTheCoverageRecordIntoEveryMember(t *testing.T) {
 			c.Assert(memberPaths(members), qt.DeepEquals, test.wantFiles)
 			for path, data := range members {
 				c.Assert(leadingCommentLines(data), qt.DeepEquals, []string{
-					"// ptah:not-described extension",
-					"// ptah:not-described policy",
-					"// ptah:not-described sequence",
+					"// ptah:not-described extension reason=suppressed provenance=defaulted",
+					"// ptah:not-described policy reason=suppressed provenance=defaulted",
+					"// ptah:not-described sequence reason=suppressed provenance=defaulted",
 				}, qt.Commentf("member %s", path))
 			}
 		})
@@ -96,7 +96,7 @@ func TestSplitMembersDecodeBackToTheRecordTheDocumentDeclared(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	wantSet, err := coverage.DecodeHeader(whole.Text)
 	c.Assert(err, qt.IsNil)
-	c.Assert(wantSet, qt.DeepEquals, coverage.Set{}.WithKind(
+	c.Assert(wantSet, qt.DeepEquals, suppressedBlocks(
 		coverage.Extension, coverage.Policy, coverage.Sequence,
 	))
 
@@ -133,7 +133,7 @@ func TestSplitWritePlansTheRecordIntoEveryExportedFile(t *testing.T) {
 			c.Assert(file.Dir, qt.Equals, "out")
 			got, err := coverage.DecodeHeader(file.Data)
 			c.Assert(err, qt.IsNil)
-			c.Assert(got, qt.DeepEquals, coverage.Set{}.WithKind(
+			c.Assert(got, qt.DeepEquals, suppressedBlocks(
 				coverage.Extension, coverage.Policy, coverage.Sequence,
 			))
 		})
@@ -281,4 +281,21 @@ func leadingCommentLines(document string) []string {
 		lines = append(lines, trimmed)
 	}
 	return lines
+}
+
+// suppressedBlocks is the record the compatibility renderer makes for the block
+// types it omits: they are left out by a policy that is on unless something
+// turns it off, and the record says so rather than only that they are absent.
+// Spelling it out here is what proves the reason survived the boundary this
+// test crosses (stokaro/ptah#1346).
+func suppressedBlocks(kinds ...coverage.Kind) coverage.Set {
+	var set coverage.Set
+	for _, kind := range kinds {
+		set = set.With(coverage.Object{
+			Kind:       kind,
+			Reason:     coverage.SuppressedByPolicy,
+			Provenance: coverage.Defaulted,
+		})
+	}
+	return set
 }

@@ -70,7 +70,7 @@ func PoliciesFromDescription(state *State, description *goschema.Database, build
 				Table: owner, Command: policy.PolicyFor, Role: policy.ToRoles,
 				Using: policy.UsingExpression, WithCheck: policy.WithCheckExpression,
 			},
-			Provenance: Provenance{Source: "description", Location: policy.StructName},
+			Provenance: Provenance{Source: coverage.Declared, Location: policy.StructName},
 		}); collided {
 			return fmt.Errorf("description declares two policies with one identity: %s and %s", existing.ID, id)
 		}
@@ -105,7 +105,7 @@ func PoliciesFromCatalog(state *State, schema *dbschematypes.DBSchema, builder o
 				Table: owner, Command: policy.PolicyFor, Role: policy.ToRoles,
 				Using: policy.UsingExpression, WithCheck: policy.WithCheckExpression,
 			},
-			Provenance: Provenance{Source: "catalog", Location: "pg_policies"},
+			Provenance: Provenance{Source: coverage.Observed, Location: "pg_policies"},
 		}); collided {
 			return fmt.Errorf("catalog reports two policies with one identity: %s and %s", existing.ID, id)
 		}
@@ -167,7 +167,7 @@ func GrantsFromDescription(state *State, description *goschema.Database, builder
 					Role: declared.Role, Privilege: privilege,
 					Object: builder.TableParts(schema, object), WithGrant: declared.WithOption,
 				},
-				Provenance: Provenance{Source: "description", Location: declared.StructName},
+				Provenance: Provenance{Source: coverage.Declared, Location: declared.StructName},
 			}); collided {
 				return fmt.Errorf("description declares two grants with one identity: %s and %s", existing.ID, id)
 			}
@@ -211,7 +211,7 @@ func GrantsFromCatalog(state *State, schema *dbschematypes.DBSchema, builder obj
 				Privilege: strings.ToUpper(strings.TrimSpace(reported.Privilege)),
 				Object:    builder.TableParts(target, object), WithGrant: reported.WithOption,
 			},
-			Provenance: Provenance{Source: "catalog", Location: "information_schema"},
+			Provenance: Provenance{Source: coverage.Observed, Location: "information_schema"},
 		}); collided {
 			return fmt.Errorf("catalog reports two grants with one identity: %s and %s", existing.ID, id)
 		}
@@ -237,7 +237,7 @@ func RolesFromDescription(state *State, description *goschema.Database, builder 
 		id := builder.Role(role.Name)
 		if existing, collided := state.Add(Object{
 			ID:         id,
-			Provenance: Provenance{Source: "description", Location: role.StructName},
+			Provenance: Provenance{Source: coverage.Declared, Location: role.StructName},
 		}); collided {
 			return fmt.Errorf("description declares two roles with one identity: %s and %s", existing.ID, id)
 		}
@@ -251,7 +251,7 @@ func RolesFromCatalog(state *State, schema *dbschematypes.DBSchema, builder obje
 		id := builder.Role(role.Name)
 		if existing, collided := state.Add(Object{
 			ID:         id,
-			Provenance: Provenance{Source: "catalog", Location: "pg_roles"},
+			Provenance: Provenance{Source: coverage.Observed, Location: "pg_roles"},
 		}); collided {
 			return fmt.Errorf("catalog reports two roles with one identity: %s and %s", existing.ID, id)
 		}

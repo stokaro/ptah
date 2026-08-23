@@ -52,7 +52,6 @@ import (
 	"slices"
 	"strconv"
 	"strings"
-	"unicode"
 )
 
 // Kind names one class of schema object a description can decline to describe.
@@ -135,47 +134,121 @@ func ParseKind(token string) (Kind, error) {
 	if slices.Contains(kinds, kind) {
 		return kind, nil
 	}
-	return "", fmt.Errorf("unknown coverage kind %q: valid kinds are %s", token, kindList())
+	return "", fmt.Errorf("unknown coverage kind %q: valid kinds are %s", token, tokenList(kinds))
 }
 
-func kindList() string {
-	names := make([]string, 0, len(kinds))
-	for _, kind := range kinds {
-		names = append(names, string(kind))
-	}
-	return strings.Join(names, ", ")
-}
-
-// Object is one object a description does not describe. Name is spelled the way
-// the description would have spelled it; both the qualified and the unqualified
-// spelling of the same object are accepted by [Set.Describes], because the two
-// sides of a comparison do not always agree on which one they carry.
+// Object is one thing a description does not describe.
+//
+// Name is spelled the way the description would have spelled it; both the
+// qualified and the unqualified spelling of the same object are accepted by
+// [Set.Describes], because the two sides of a comparison do not always agree on
+// which one they carry. An EMPTY Name is a record about the whole kind: the
+// answer a reader gives when it cannot enumerate what it left out.
+//
+// Reason and Provenance say why the description declines it and how that limit
+// was learned. Both may be unspecified -- a hand-authored directive naming only
+// a kind is a complete, valid record -- and neither changes what a comparator
+// may do. They change what it can say (stokaro/ptah#1346).
 type Object struct {
-	Kind Kind
-	Name string
+	Kind       Kind
+	Name       string
+	Reason     Reason
+	Provenance Provenance
+}
+
+// Refused is the record a reader makes when the target would not let it look:
+// the object family is [NotInspected], and that limit was [Observed] -- Ptah
+// watched the server refuse the catalog rather than assuming anything about it.
+//
+// Four readers make exactly this record, and a surface that explains it wants
+// them to be one thing rather than four spellings that can drift apart.
+func Refused(kind Kind) Object {
+	return Object{Kind: kind, Reason: NotInspected, Provenance: Observed}
+}
+
+// WholeKind reports whether this record covers a whole kind rather than one
+// named object.
+func (o Object) WholeKind() bool { return strings.TrimSpace(o.Name) == "" }
+
+// Validate reports whether every token in the record is one this build
+// understands. An unknown one is refused rather than tolerated, for the reason
+// [ParseKind] gives.
+func (o Object) Validate() error {
+	if _, err := ParseKind(string(o.Kind)); err != nil {
+		return err
+	}
+	if !o.Reason.Valid() {
+		return fmt.Errorf("unknown coverage reason %q: valid reasons are %s", o.Reason, tokenList(reasons))
+	}
+	if !o.Provenance.Valid() {
+		return fmt.Errorf(
+			"unknown coverage provenance %q: valid provenances are %s", o.Provenance, tokenList(provenances))
+	}
+	return nil
 }
 
 // Set is what a description does NOT claim to describe. Its zero value claims
 // everything.
 //
-// Both members record the same thing at different resolutions, and per-object
-// records are preferred wherever the reader can enumerate what it left out. A
-// whole-kind record is the honest answer only when the reader cannot: a
-// projection whose rule is "omit this block type unless something names it"
-// gives no information about the block types it omits, no matter what the
-// database it ran against happened to contain.
+// Whole-kind and per-object records live in one slice, distinguished by whether
+// [Object.WholeKind] holds. Per-object records are preferred wherever the reader
+// can enumerate what it left out. A whole-kind record is the honest answer only
+// when it cannot: a projection whose rule is "omit this block type unless
+// something names it" gives no information about the block types it omits, no
+// matter what the database it ran against happened to contain.
 type Set struct {
-	// Kinds names object kinds whose absence from the description carries no
-	// information.
-	Kinds []Kind
-	// Objects names individual objects whose absence from the description
-	// carries no information.
+	// Objects names what the description does not claim to describe. A record
+	// with an empty name covers its whole kind.
 	Objects []Object
 }
 
 // IsZero reports whether the description claims to describe everything.
 func (s Set) IsZero() bool {
-	return len(s.Kinds) == 0 && len(s.Objects) == 0
+	return len(s.Objects) == 0
+}
+
+// Limit returns the record that makes an object's absence uninformative, and
+// reports whether there is one.
+//
+// It is the explanatory half of [Set.Describes], and Describes is written in
+// terms of it so the two can never disagree about which records matter. Where
+// Describes answers whether a comparator may act on silence, Limit answers what
+// to tell the user when it may not.
+//
+// A whole-kind record wins over a record naming one object, because it is the
+// broader statement and it is the one that explains the most.
+func (s Set) Limit(kind Kind, names ...string) (Object, bool) {
+	var named Object
+	var haveNamed bool
+	for _, object := range s.Objects {
+		if object.Kind != kind {
+			continue
+		}
+		if object.WholeKind() {
+			return object, true
+		}
+		if haveNamed {
+			continue
+		}
+		for _, name := range names {
+			if strings.EqualFold(strings.TrimSpace(name), object.Name) {
+				named, haveNamed = object, true
+				break
+			}
+		}
+	}
+	return named, haveNamed
+}
+
+// LimitIn is [Set.Limit] for an object owned by a schema. A schema nobody read
+// explains everything in it, so its record wins over the object's own kind.
+func (s Set) LimitIn(kind Kind, schema string, names ...string) (Object, bool) {
+	if strings.TrimSpace(schema) != "" {
+		if limit, ok := s.Limit(Schema, schema); ok {
+			return limit, true
+		}
+	}
+	return s.Limit(kind, names...)
 }
 
 // Describes reports whether the absence of an object from this description is
@@ -186,20 +259,8 @@ func (s Set) IsZero() bool {
 // qualified and the unqualified name -- because a false negative here restores
 // exactly the defect this package exists to prevent.
 func (s Set) Describes(kind Kind, names ...string) bool {
-	if slices.Contains(s.Kinds, kind) {
-		return false
-	}
-	for _, object := range s.Objects {
-		if object.Kind != kind {
-			continue
-		}
-		for _, name := range names {
-			if strings.EqualFold(strings.TrimSpace(name), object.Name) {
-				return false
-			}
-		}
-	}
-	return true
+	_, limited := s.Limit(kind, names...)
+	return !limited
 }
 
 // DescribesSchema reports whether the absence of a schema, or of anything in
@@ -215,74 +276,105 @@ func (s Set) DescribesSchema(schema string) bool {
 // authoritative. An object in a schema nobody read is not described whatever
 // its own kind says.
 func (s Set) DescribesIn(kind Kind, schema string, names ...string) bool {
-	return s.DescribesSchema(schema) && s.Describes(kind, names...)
+	_, limited := s.LimitIn(kind, schema, names...)
+	return !limited
 }
 
-// WithKind returns the set extended with a whole kind.
+// WithKind returns the set extended with a whole kind, giving no reason. It is
+// the coarse constructor, and it means exactly what a hand-authored directive
+// naming only a kind means. A producer that knows why should say so with
+// [Set.With].
 func (s Set) WithKind(kinds ...Kind) Set {
 	out := s.clone()
-	out.Kinds = append(out.Kinds, kinds...)
+	for _, kind := range kinds {
+		out.Objects = append(out.Objects, Object{Kind: kind})
+	}
 	return out.Normalize()
 }
 
-// WithObject returns the set extended with one object.
+// WithObject returns the set extended with one object, giving no reason.
 func (s Set) WithObject(kind Kind, name string) Set {
+	return s.With(Object{Kind: kind, Name: name})
+}
+
+// With returns the set extended with records that carry their own reason and
+// provenance. This is what a production reader, projection or renderer uses:
+// it knows why it is declining the object family, and that sentence is the one
+// a user needs (stokaro/ptah#1346).
+func (s Set) With(objects ...Object) Set {
 	out := s.clone()
-	out.Objects = append(out.Objects, Object{Kind: kind, Name: strings.TrimSpace(name)})
+	out.Objects = append(out.Objects, objects...)
 	return out.Normalize()
 }
 
 // Merge unions two descriptions' limits. Loading several schema files into one
 // desired state produces one description, and it describes only what all of its
 // parts together describe.
+//
+// Records differing only in reason or provenance are both kept. Two sides can
+// decline the same kind for different reasons -- a read was refused it AND a
+// policy omitted it -- and both are true; collapsing them would pick one
+// explanation to print and silently discard the other.
 func (s Set) Merge(other Set) Set {
 	out := s.clone()
-	out.Kinds = append(out.Kinds, other.Kinds...)
 	out.Objects = append(out.Objects, other.Objects...)
 	return out.Normalize()
 }
 
+// Validate reports the first record this build does not understand.
+func (s Set) Validate() error {
+	for _, object := range s.Objects {
+		if err := object.Validate(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (s Set) clone() Set {
-	return Set{Kinds: slices.Clone(s.Kinds), Objects: slices.Clone(s.Objects)}
+	return Set{Objects: slices.Clone(s.Objects)}
 }
 
 // Normalize sorts and deduplicates the set. Coverage rides in a generated
 // document, and a document whose bytes depend on map iteration order is one
 // nobody can diff.
 //
-// It also promotes an object record with no name to a record about that whole
-// kind. A nameless record names nothing, and [Set.Directives] would write it as
-// an empty quoted string that [DecodeHeader] refuses, so the encoder would be
-// producing a document this package cannot read. Dropping it instead would
-// widen what the description claims to cover, and widening is the destructive
-// direction: the whole-kind record is the conservative superset, and it is
-// visible in the document rather than silent.
+// It also trims names, which turns a record whose name is blank or whitespace
+// into a record about that whole kind. A nameless record names nothing, and
+// [Set.Directives] would otherwise write it as an empty quoted string that
+// [DecodeHeader] refuses, so the encoder would be producing a document this
+// package cannot read. Dropping it instead would widen what the description
+// claims to cover, and widening is the destructive direction: the whole-kind
+// record is the conservative superset, and it is visible in the document rather
+// than silent.
 func (s Set) Normalize() Set {
 	out := s.clone()
-	for _, object := range out.Objects {
-		if strings.TrimSpace(object.Name) == "" {
-			out.Kinds = append(out.Kinds, object.Kind)
-		}
+	for i := range out.Objects {
+		out.Objects[i].Name = strings.TrimSpace(out.Objects[i].Name)
 	}
-	out.Objects = slices.DeleteFunc(out.Objects, func(object Object) bool {
-		return strings.TrimSpace(object.Name) == ""
-	})
-	slices.Sort(out.Kinds)
-	out.Kinds = slices.Compact(out.Kinds)
-	slices.SortFunc(out.Objects, func(a, b Object) int {
-		if a.Kind != b.Kind {
-			return strings.Compare(string(a.Kind), string(b.Kind))
-		}
-		return strings.Compare(a.Name, b.Name)
-	})
+	slices.SortFunc(out.Objects, compareObjects)
 	out.Objects = slices.Compact(out.Objects)
-	if len(out.Kinds) == 0 {
-		out.Kinds = nil
-	}
 	if len(out.Objects) == 0 {
 		out.Objects = nil
 	}
 	return out
+}
+
+// compareObjects orders records by kind, then by name, then by the reason and
+// provenance they carry, so a set's serialized bytes depend on nothing but its
+// contents. A whole-kind record sorts before the named records of its kind,
+// because the empty name sorts first.
+func compareObjects(a, b Object) int {
+	if a.Kind != b.Kind {
+		return strings.Compare(string(a.Kind), string(b.Kind))
+	}
+	if a.Name != b.Name {
+		return strings.Compare(a.Name, b.Name)
+	}
+	if a.Reason != b.Reason {
+		return strings.Compare(string(a.Reason), string(b.Reason))
+	}
+	return strings.Compare(string(a.Provenance), string(b.Provenance))
 }
 
 // DirectiveMarker introduces a serialized coverage record. It carries the
@@ -290,9 +382,25 @@ func (s Set) Normalize() Set {
 // in a document knows whose it is.
 const DirectiveMarker = "ptah:not-described"
 
+// The attribute keys a directive can carry between its kind and its name.
+const (
+	reasonAttribute     = "reason"
+	provenanceAttribute = "provenance"
+)
+
 // Directives renders the set as directive bodies, one per record, without a
 // comment prefix. The caller adds the prefix its format spells comments with:
 // `//` or `#` for HCL, `--` for SQL.
+//
+// The grammar is a kind, then any attributes the record carries, then an
+// optional quoted name:
+//
+//	ptah:not-described extension reason=not-inspected provenance=observed
+//	ptah:not-described schema reason=outside-scope provenance=configured "extra"
+//
+// Attributes come BEFORE the name because the name is the one field that may
+// contain a space, so it has to be last. They are omitted when unspecified, so
+// a coarse record still writes the two-token line a hand-authored document uses.
 //
 // A name is written with [strconv.Quote], so every line is one line whatever
 // the identifier contains: a newline, a tab or a control character comes out as
@@ -301,12 +409,19 @@ const DirectiveMarker = "ptah:not-described"
 // shapes a quoted identifier is allowed to have.
 func (s Set) Directives() []string {
 	normalized := s.Normalize()
-	lines := make([]string, 0, len(normalized.Kinds)+len(normalized.Objects))
-	for _, kind := range normalized.Kinds {
-		lines = append(lines, fmt.Sprintf("%s %s", DirectiveMarker, kind))
-	}
+	lines := make([]string, 0, len(normalized.Objects))
 	for _, object := range normalized.Objects {
-		lines = append(lines, fmt.Sprintf("%s %s %s", DirectiveMarker, object.Kind, strconv.Quote(object.Name)))
+		line := fmt.Sprintf("%s %s", DirectiveMarker, object.Kind)
+		if object.Reason != ReasonUnspecified {
+			line += fmt.Sprintf(" %s=%s", reasonAttribute, object.Reason)
+		}
+		if object.Provenance != ProvenanceUnspecified {
+			line += fmt.Sprintf(" %s=%s", provenanceAttribute, object.Provenance)
+		}
+		if !object.WholeKind() {
+			line += " " + strconv.Quote(object.Name)
+		}
+		lines = append(lines, line)
 	}
 	return lines
 }
@@ -342,10 +457,6 @@ func DecodeHeader(document string) (Set, error) {
 		if !ok {
 			continue
 		}
-		if object.Name == "" {
-			set.Kinds = append(set.Kinds, object.Kind)
-			continue
-		}
 		set.Objects = append(set.Objects, object)
 	}
 	return set.Normalize(), nil
@@ -364,33 +475,42 @@ func commentBody(trimmed string) (string, bool) {
 // coverage directive at all, so an ordinary comment is passed over rather than
 // refused.
 //
-// The name is decoded from the WHOLE remainder of the line rather than from a
-// whitespace-delimited field. A quoted identifier may contain a space --
-// `CREATE SCHEMA "extra reports"` is legal, and so is a table or a policy named
-// that way -- and splitting the line on whitespace has no idea that the space
-// is inside the quotes, so it counted three tokens where [Set.Directives] had
-// written two and refused a document this package had just produced itself
-// (stokaro/ptah#1276). [strconv.Unquote] over the remainder reverses
-// [strconv.Quote] exactly, and it rejects trailing text after the closing
-// quote, so the grammar stays one kind plus at most one quoted name.
+// The name is decoded from the WHOLE remainder of the line from its opening
+// quote on, rather than from a whitespace-delimited field. A quoted identifier
+// may contain a space -- `CREATE SCHEMA "extra reports"` is legal, and so is a
+// table or a policy named that way -- and splitting the line on whitespace has
+// no idea that the space is inside the quotes, so it counted three tokens where
+// [Set.Directives] had written two and refused a document this package had just
+// produced itself (stokaro/ptah#1276). [strconv.Unquote] over the remainder
+// reverses [strconv.Quote] exactly, and it rejects trailing text after the
+// closing quote, so the grammar stays one kind, its attributes, and at most one
+// quoted name.
+//
+// Cutting at the first double quote is what separates the two halves, and it is
+// unambiguous because no attribute token can contain one: keys and values are
+// both drawn from closed lists of lowercase words.
 func parseDirective(body string) (Object, bool, error) {
 	rest, ok := strings.CutPrefix(body, DirectiveMarker)
 	if !ok {
 		return Object{}, false, nil
 	}
-	kindToken, nameToken := splitKindAndName(rest)
-	if kindToken == "" {
-		return Object{}, false, fmt.Errorf(
-			"malformed %s directive %q: expected a kind and an optional quoted name",
-			DirectiveMarker, body,
-		)
+	head, nameToken := splitAttributesAndName(rest)
+	fields := strings.Fields(head)
+	if len(fields) == 0 {
+		return Object{}, false, malformedDirective(body)
 	}
-	kind, err := ParseKind(kindToken)
+	kind, err := ParseKind(fields[0])
 	if err != nil {
 		return Object{}, false, err
 	}
+	object := Object{Kind: kind}
+	for _, field := range fields[1:] {
+		if err := applyAttribute(&object, field, body); err != nil {
+			return Object{}, false, err
+		}
+	}
 	if nameToken == "" {
-		return Object{Kind: kind}, true, nil
+		return object, true, nil
 	}
 	name, err := unquoteName(nameToken)
 	if err != nil {
@@ -405,19 +525,67 @@ func parseDirective(body string) (Object, bool, error) {
 			DirectiveMarker, body,
 		)
 	}
-	return Object{Kind: kind, Name: strings.TrimSpace(name)}, true, nil
+	object.Name = strings.TrimSpace(name)
+	return object, true, nil
 }
 
-// splitKindAndName cuts a directive body at the first whitespace after the kind
-// token. Everything past it is the name, spaces and all; the kind token is a
-// member of a closed list of lowercase words and can never contain one.
-func splitKindAndName(rest string) (kind, name string) {
+// applyAttribute reads one `key=value` token into the record. An unknown key,
+// an unknown value, or a key given twice is refused: a directive carrying a
+// safety claim this build cannot read must not be read as a directive making no
+// claim at all.
+func applyAttribute(object *Object, field, body string) error {
+	key, value, ok := strings.Cut(field, "=")
+	if !ok {
+		return fmt.Errorf(
+			"malformed %s directive %q: %q is neither a %s= or %s= attribute nor a quoted name",
+			DirectiveMarker, body, field, reasonAttribute, provenanceAttribute)
+	}
+	switch key {
+	case reasonAttribute:
+		if object.Reason != ReasonUnspecified {
+			return fmt.Errorf(
+				"malformed %s directive %q: %s given twice", DirectiveMarker, body, reasonAttribute)
+		}
+		reason, err := ParseReason(value)
+		if err != nil {
+			return err
+		}
+		object.Reason = reason
+	case provenanceAttribute:
+		if object.Provenance != ProvenanceUnspecified {
+			return fmt.Errorf(
+				"malformed %s directive %q: %s given twice", DirectiveMarker, body, provenanceAttribute)
+		}
+		provenance, err := ParseProvenance(value)
+		if err != nil {
+			return err
+		}
+		object.Provenance = provenance
+	default:
+		return fmt.Errorf(
+			"unknown %s attribute %q: valid attributes are %s, %s",
+			DirectiveMarker, key, reasonAttribute, provenanceAttribute)
+	}
+	return nil
+}
+
+func malformedDirective(body string) error {
+	return fmt.Errorf(
+		"malformed %s directive %q: expected a kind, optional %s= and %s= attributes, and an optional quoted name",
+		DirectiveMarker, body, reasonAttribute, provenanceAttribute,
+	)
+}
+
+// splitAttributesAndName cuts a directive body at its first double quote. What
+// precedes it is the kind and its attributes; what follows, quote included, is
+// the name.
+func splitAttributesAndName(rest string) (head, name string) {
 	rest = strings.TrimSpace(rest)
-	index := strings.IndexFunc(rest, unicode.IsSpace)
+	index := strings.IndexByte(rest, '"')
 	if index < 0 {
 		return rest, ""
 	}
-	return rest[:index], strings.TrimSpace(rest[index:])
+	return strings.TrimSpace(rest[:index]), strings.TrimSpace(rest[index:])
 }
 
 // unquoteName decodes the quoted form [Set.Directives] writes.

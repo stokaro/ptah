@@ -173,7 +173,11 @@ func (r *renderer) notDescribed() coverage.Set {
 		if !known {
 			continue
 		}
-		set = set.WithKind(kind)
+		set = set.With(coverage.Object{
+			Kind:       kind,
+			Reason:     coverage.SuppressedByPolicy,
+			Provenance: coverage.Defaulted,
+		})
 	}
 	return set
 }

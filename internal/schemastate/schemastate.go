@@ -168,11 +168,30 @@ type ForeignKey struct {
 // objects that differ only in which file declared them are one object (ADR 0001
 // invariant 5).
 type Provenance struct {
-	// Source names the adapter, so a diagnostic can say which reader is
-	// responsible for a fact an operator disputes.
-	Source string
-	// Location is a file position or the catalog relation a row came from.
+	// Source is HOW the fact was learned: [coverage.Observed] for a row Ptah
+	// read out of a catalog, [coverage.Declared] for something a description
+	// stated.
+	//
+	// It is the closed list a coverage record carries rather than a free
+	// string, for the reason the closed list exists: a diagnostic that has to
+	// compare "catalog" against "description" is comparing spellings, and a
+	// spelling nothing validates drifts. The two halves of "what Ptah knows and
+	// how" therefore share one vocabulary (stokaro/ptah#1346).
+	Source coverage.Provenance
+	// Location is a file position or the catalog relation a row came from. It
+	// says WHICH one, where Source says what kind, and it stays free text
+	// because a file position and a catalog relation have no closed list
+	// between them.
 	Location string
+}
+
+// Validate reports whether the provenance names a source this build
+// understands.
+func (p Provenance) Validate() error {
+	if !p.Source.Valid() {
+		return fmt.Errorf("unknown object provenance source %q", p.Source)
+	}
+	return nil
 }
 
 // Object is one schema object in the canonical state.

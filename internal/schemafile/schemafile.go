@@ -336,14 +336,11 @@ func withFormatLimits(database *goschema.Database, resolved string) *goschema.Da
 	}
 	extension := strings.ToLower(filepath.Ext(resolved))
 	if extension != dirSQLExtension {
-		database.NotDescribed = database.NotDescribed.WithKind(coverage.VirtualTable)
+		database.NotDescribed = database.NotDescribed.With(unsupportedByFormat(coverage.VirtualTable)...)
 	}
 	if slices.Contains(yamlOnlyExtensions, extension) {
-		database.NotDescribed = database.NotDescribed.
-			WithKind(coverage.Sequence).
-			WithKind(coverage.Domain).
-			WithKind(coverage.Composite).
-			WithKind(coverage.Range)
+		database.NotDescribed = database.NotDescribed.With(unsupportedByFormat(
+			coverage.Sequence, coverage.Domain, coverage.Composite, coverage.Range)...)
 	}
 	return withUnwritableObjectLimits(database)
 }
@@ -370,10 +367,28 @@ func withUnwritableObjectLimits(database *goschema.Database) *goschema.Database 
 	if database == nil {
 		return nil
 	}
-	database.NotDescribed = database.NotDescribed.
-		WithKind(coverage.Synonym).
-		WithKind(coverage.ExtendedProperty)
+	database.NotDescribed = database.NotDescribed.With(unsupportedByFormat(
+		coverage.Synonym, coverage.ExtendedProperty)...)
 	return database
+}
+
+// unsupportedByFormat is what every limit in this file is: the object family
+// cannot be expressed by the format the document is written in.
+//
+// The reason follows from a fact Ptah already holds -- which format this is --
+// rather than from anything read out of a database or from a selection the run
+// was given, and a surface that can say so tells an author to use a format that
+// has the syntax instead of leaving them to guess (stokaro/ptah#1346).
+func unsupportedByFormat(kinds ...coverage.Kind) []coverage.Object {
+	records := make([]coverage.Object, 0, len(kinds))
+	for _, kind := range kinds {
+		records = append(records, coverage.Object{
+			Kind:       kind,
+			Reason:     coverage.Unsupported,
+			Provenance: coverage.DerivedFromFact,
+		})
+	}
+	return records
 }
 
 func parseSchemaFile(resolved string, opts Options) (*goschema.Database, error) {

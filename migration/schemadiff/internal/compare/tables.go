@@ -223,7 +223,7 @@ func TablesAndColumnsWithGeneratedExpressions(
 		coverage.Schema, diff.TablesAdded, tableSchemaOnly, unguardedCreations(),
 	)
 	diff.TablesAdded = keptTables
-	cov.recordUndecidedAdditions(coverage.Schema, withheldTables)
+	cov.recordUndecidedAdditions(withheldTables)
 	diff.TablesRemoved = cov.keepPlannedRemovals(coverage.Schema, diff.TablesRemoved, tableSchemaOnly)
 
 	// Sort for consistent output

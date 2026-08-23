@@ -233,7 +233,7 @@ func (r *Reader) readRolesInto(schema *types.DBSchema) error {
 		if !isRoleReadDenied(err) {
 			return fmt.Errorf("failed to read roles: %w", err)
 		}
-		schema.NotDescribed = schema.NotDescribed.WithKind(coverage.Role)
+		schema.NotDescribed = schema.NotDescribed.With(coverage.Refused(coverage.Role))
 		return nil
 	}
 
@@ -242,7 +242,7 @@ func (r *Reader) readRolesInto(schema *types.DBSchema) error {
 		if !isRoleReadDenied(err) {
 			return fmt.Errorf("failed to read grants: %w", err)
 		}
-		schema.NotDescribed = schema.NotDescribed.WithKind(coverage.Role)
+		schema.NotDescribed = schema.NotDescribed.With(coverage.Refused(coverage.Role))
 		return nil
 	}
 
