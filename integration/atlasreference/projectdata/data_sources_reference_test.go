@@ -21,15 +21,16 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "modernc.org/sqlite"
 
+	"go.5x5.cz/ptah/integration/atlasreference"
 	"go.5x5.cz/ptah/internal/migratesum"
 	"go.5x5.cz/ptah/migration/migrator"
 )
 
 const (
-	oracleEnv        = "PTAH_ATLAS_ORACLE"
-	oracleVersion    = "atlas community version v1.3.0"
-	oracleHelperFlag = "--project-data-oracle-helper"
-	oracleCapture    = ".ptah-project-data-oracle-capture"
+	referenceEnv     = atlasreference.EnvVar
+	referenceVersion = atlasreference.Version
+	oracleHelperFlag = "--project-data-reference-helper"
+	oracleCapture    = ".ptah-project-data-reference-capture"
 )
 
 type commandResult struct {
@@ -82,14 +83,14 @@ func runOracleHelper(arguments []string) int {
 }
 
 func TestProjectDataSourcesMatchPinnedAtlasOutputAndExit(t *testing.T) {
-	oracle := requireAtlasOracle(t)
+	reference := requireAtlasOracle(t)
 	buildCheck := qt.New(t)
 	compat := buildCompatBinary(buildCheck)
 
 	t.Run("sql", func(t *testing.T) {
 		c := qt.New(t)
 		fixture := sqlFixture(c, t.TempDir())
-		atlas := runInspect(c, oracle, fixture.configPath)
+		atlas := runInspect(c, reference, fixture.configPath)
 		atlasCapture := readCapture(c, fixture)
 		removeCapture(c, fixture)
 		ptah := runInspect(c, compat, fixture.configPath)
@@ -106,7 +107,7 @@ func TestProjectDataSourcesMatchPinnedAtlasOutputAndExit(t *testing.T) {
 	t.Run("sql numeric argument", func(t *testing.T) {
 		c := qt.New(t)
 		fixture := sqlNumericArgumentFixture(c, t.TempDir())
-		atlas := runInspect(c, oracle, fixture.configPath)
+		atlas := runInspect(c, reference, fixture.configPath)
 		atlasCapture := readCapture(c, fixture)
 		removeCapture(c, fixture)
 		ptah := runInspect(c, compat, fixture.configPath)
@@ -123,7 +124,7 @@ func TestProjectDataSourcesMatchPinnedAtlasOutputAndExit(t *testing.T) {
 	t.Run("external", func(t *testing.T) {
 		c := qt.New(t)
 		fixture := externalFixture(c, t.TempDir())
-		atlas := runInspect(c, oracle, fixture.configPath)
+		atlas := runInspect(c, reference, fixture.configPath)
 		atlasCapture := readCapture(c, fixture)
 		removeCapture(c, fixture)
 		ptah := runInspect(c, compat, fixture.configPath)
@@ -140,7 +141,7 @@ func TestProjectDataSourcesMatchPinnedAtlasOutputAndExit(t *testing.T) {
 	t.Run("runtime variable", func(t *testing.T) {
 		c := qt.New(t)
 		fixture := runtimeVariableFixture(c, t.TempDir())
-		atlas := runInspect(c, oracle, fixture.configPath)
+		atlas := runInspect(c, reference, fixture.configPath)
 		atlasCapture := readCapture(c, fixture)
 		removeCapture(c, fixture)
 		ptah := runInspect(c, compat, fixture.configPath)
@@ -157,7 +158,7 @@ func TestProjectDataSourcesMatchPinnedAtlasOutputAndExit(t *testing.T) {
 	t.Run("template directory", func(t *testing.T) {
 		c := qt.New(t)
 		fixture := templateDirectoryFixture(c, t.TempDir())
-		atlas := runInspect(c, oracle, fixture.configPath)
+		atlas := runInspect(c, reference, fixture.configPath)
 		atlasCapture := readCapture(c, fixture)
 		removeCapture(c, fixture)
 		ptah := runInspect(c, compat, fixture.configPath)
@@ -174,7 +175,7 @@ func TestProjectDataSourcesMatchPinnedAtlasOutputAndExit(t *testing.T) {
 	t.Run("recognized unreferenced sources", func(t *testing.T) {
 		c := qt.New(t)
 		fixture := unreferencedSourcesFixture(c, t.TempDir())
-		atlas := runInspect(c, oracle, fixture.configPath)
+		atlas := runInspect(c, reference, fixture.configPath)
 		atlasCapture := readCapture(c, fixture)
 		removeCapture(c, fixture)
 		ptah := runInspect(c, compat, fixture.configPath)
@@ -190,7 +191,7 @@ func TestProjectDataSourcesMatchPinnedAtlasOutputAndExit(t *testing.T) {
 }
 
 func TestTemplateDirectoryIntegrityAndWritebackMatchPinnedAtlas(t *testing.T) {
-	oracle := requireAtlasOracle(t)
+	reference := requireAtlasOracle(t)
 	c := qt.New(t)
 	compat := buildCompatBinary(c)
 	tests := []struct {
@@ -220,7 +221,7 @@ func TestTemplateDirectoryIntegrityAndWritebackMatchPinnedAtlas(t *testing.T) {
 			atlasFixture := templateDirectoryCommandFixture(c, t.TempDir())
 			ptahFixture := templateDirectoryCommandFixture(c, t.TempDir())
 			states := compareTemplateDirectoryCommand(
-				c, oracle, compat, atlasFixture, ptahFixture, test.args...,
+				c, reference, compat, atlasFixture, ptahFixture, test.args...,
 			)
 
 			c.Assert(states.ptah.files, qt.DeepEquals, states.atlas.files)
@@ -234,13 +235,13 @@ func TestTemplateDirectoryIntegrityAndWritebackMatchPinnedAtlas(t *testing.T) {
 }
 
 func TestTemplateDirectoryDiffWritebackMatchesPinnedAtlas(t *testing.T) {
-	oracle := requireAtlasOracle(t)
+	reference := requireAtlasOracle(t)
 	c := qt.New(t)
 	compat := buildCompatBinary(c)
 	atlasFixture := templateDirectoryDiffCommandFixture(c, t.TempDir())
 	ptahFixture := templateDirectoryDiffCommandFixture(c, t.TempDir())
 	states := compareTemplateDirectoryCommand(
-		c, oracle, compat, atlasFixture, ptahFixture, "migrate", "diff", "added",
+		c, reference, compat, atlasFixture, ptahFixture, "migrate", "diff", "added",
 	)
 
 	c.Assert(
@@ -259,12 +260,12 @@ func TestTemplateDirectoryDiffWritebackMatchesPinnedAtlas(t *testing.T) {
 // source tree for the caller to compare at the fidelity owned by that command.
 func compareTemplateDirectoryCommand(
 	c *qt.C,
-	oracle, compat string,
+	reference, compat string,
 	atlasFixture, ptahFixture templateDirectoryCommandFixtureState,
 	args ...string,
 ) templateDirectoryStates {
 	c.Helper()
-	atlasResult := runProjectCommand(c, oracle, atlasFixture.configPath, args...)
+	atlasResult := runProjectCommand(c, reference, atlasFixture.configPath, args...)
 	ptahResult := runProjectCommand(c, compat, ptahFixture.configPath, args...)
 	c.Assert(atlasResult.code, qt.Equals, 0, qt.Commentf("stdout:\n%s\nstderr:\n%s", atlasResult.stdout, atlasResult.stderr))
 	c.Assert(ptahResult.code, qt.Equals, atlasResult.code)
@@ -408,7 +409,7 @@ func normalizeGeneratedTemplateContents(files []string) []string {
 }
 
 func TestExternalFailureKeepsPinnedExitAndProgramStderr(t *testing.T) {
-	oracle := requireAtlasOracle(t)
+	reference := requireAtlasOracle(t)
 	c := qt.New(t)
 	compat := buildCompatBinary(c)
 	directory := t.TempDir()
@@ -421,7 +422,7 @@ env "local" {
 }
 `, hclList(helperProgram("fail"))))
 
-	atlas := runInspect(c, oracle, configPath)
+	atlas := runInspect(c, reference, configPath)
 	ptah := runInspect(c, compat, configPath)
 
 	c.Assert(atlas.code, qt.Equals, 1)
@@ -433,7 +434,7 @@ env "local" {
 }
 
 func TestUnreferencedUnsupportedNamesKeepPinnedRefusal(t *testing.T) {
-	oracle := requireAtlasOracle(t)
+	reference := requireAtlasOracle(t)
 	c := qt.New(t)
 	compat := buildCompatBinary(c)
 	tests := []string{"composite_schema", "definitely_unknown"}
@@ -448,7 +449,7 @@ env "local" {
 }
 `, sourceType, strconv.Quote(inspectedDatabaseURL(directory))))
 
-			atlas := runInspect(c, oracle, configPath)
+			atlas := runInspect(c, reference, configPath)
 			ptah := runInspect(c, compat, configPath)
 
 			c.Assert(atlas.code, qt.Equals, 1)
@@ -807,20 +808,20 @@ func buildCompatBinary(c *qt.C) string {
 
 func requireAtlasOracle(t *testing.T) string {
 	t.Helper()
-	oracle := os.Getenv(oracleEnv)
-	if oracle == "" {
+	reference := os.Getenv(referenceEnv)
+	if reference == "" {
 		t.Skipf("SKIPPED: set %s to the pinned Atlas CE binary (%s) to run project-data conformance",
-			oracleEnv, oracleVersion)
+			referenceEnv, referenceVersion)
 	}
-	// #nosec G204 -- the operator supplies the pinned oracle path.
-	output, err := exec.Command(oracle, "version").Output()
+	// #nosec G204 -- the operator supplies the pinned reference path.
+	output, err := exec.Command(reference, "version").Output()
 	if err != nil {
-		t.Fatalf("%s=%s is not runnable: %v", oracleEnv, oracle, err)
+		t.Fatalf("%s=%s is not runnable: %v", referenceEnv, reference, err)
 	}
 	got, _, _ := strings.Cut(string(output), "\n")
-	if strings.TrimSpace(got) != oracleVersion {
+	if strings.TrimSpace(got) != referenceVersion {
 		t.Fatalf("%s=%s reports %q, want %q; a different build may have changed the source contract",
-			oracleEnv, oracle, strings.TrimSpace(got), oracleVersion)
+			referenceEnv, reference, strings.TrimSpace(got), referenceVersion)
 	}
-	return oracle
+	return reference
 }

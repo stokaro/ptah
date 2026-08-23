@@ -7,6 +7,7 @@ package migratedirquery_test
 import (
 	"bytes"
 	"errors"
+	"go.5x5.cz/ptah/integration/atlasreference"
 	"io/fs"
 	"os"
 	"os/exec"
@@ -18,9 +19,9 @@ import (
 )
 
 const (
-	oracleEnv     = "PTAH_ATLAS_ORACLE"
-	oracleVersion = "atlas community version v1.3.0"
-	ignoredKey    = `ignoring migration directory URL query key "nonsense"`
+	referenceEnv     = atlasreference.EnvVar
+	referenceVersion = atlasreference.Version
+	ignoredKey       = `ignoring migration directory URL query key "nonsense"`
 )
 
 type commandResult struct {
@@ -40,70 +41,70 @@ type verbRow struct {
 }
 
 func TestDirQueryContract_IgnoresUnknownKeysOnEveryCEVerb(t *testing.T) {
-	oracle := requireAtlasOracle(t)
+	reference := requireAtlasOracle(t)
 	c := qt.New(t)
 	compat := buildCompatBinary(c)
 
 	for _, row := range verbRows() {
 		t.Run(row.name, func(t *testing.T) {
 			c := qt.New(t)
-			assertUnknownKeyParity(c, row, oracle, oracle)
-			assertUnknownKeyParity(c, row, compat, oracle)
+			assertUnknownKeyParity(c, row, reference, reference)
+			assertUnknownKeyParity(c, row, compat, reference)
 		})
 	}
 }
 
 func TestDirQueryContract_FormatSelectsTheLayoutOnEveryCEVerb(t *testing.T) {
-	oracle := requireAtlasOracle(t)
+	reference := requireAtlasOracle(t)
 	c := qt.New(t)
 	compat := buildCompatBinary(c)
 
 	for _, row := range verbRows() {
 		t.Run(row.name, func(t *testing.T) {
 			c := qt.New(t)
-			assertFormatSelection(c, row, oracle, oracle)
-			assertFormatSelection(c, row, compat, oracle)
+			assertFormatSelection(c, row, reference, reference)
+			assertFormatSelection(c, row, compat, reference)
 		})
 	}
 }
 
 func TestDirQueryContract_UnknownFormatFailsOnEveryCEVerb(t *testing.T) {
-	oracle := requireAtlasOracle(t)
+	reference := requireAtlasOracle(t)
 	c := qt.New(t)
 	compat := buildCompatBinary(c)
 
 	for _, row := range verbRows() {
 		t.Run(row.name, func(t *testing.T) {
 			c := qt.New(t)
-			assertUnknownFormat(c, row, oracle, oracle)
-			assertUnknownFormat(c, row, compat, oracle)
+			assertUnknownFormat(c, row, reference, reference)
+			assertUnknownFormat(c, row, compat, reference)
 		})
 	}
 }
 
 func TestDirQueryContract_QueryOutranksTheFlag(t *testing.T) {
-	oracle := requireAtlasOracle(t)
+	reference := requireAtlasOracle(t)
 	c := qt.New(t)
 	compat := buildCompatBinary(c)
 
 	for _, row := range flagVerbRows() {
 		t.Run(row.name, func(t *testing.T) {
 			c := qt.New(t)
-			assertQueryPrecedence(c, row, oracle, oracle)
-			assertQueryPrecedence(c, row, compat, oracle)
+			assertQueryPrecedence(c, row, reference, reference)
+			assertQueryPrecedence(c, row, compat, reference)
 		})
 	}
 }
 
 func TestDirQueryContract_KeepsExtensionOnlyVerbsFailClosed(t *testing.T) {
-	oracle := requireAtlasOracle(t)
+	reference := requireAtlasOracle(t)
 	c := qt.New(t)
 	compat := buildCompatBinary(c)
 
 	for _, row := range extensionOnlyVerbRows() {
 		t.Run(row.name, func(t *testing.T) {
 			c := qt.New(t)
-			dir := writeNativeDir(c, oracle)
+			dir := writeNativeDir(c, reference)
 			result := runCommand(c, compat, row.args(c, dir, "?format=atlas&nonsense=1")...)
 
 			c.Assert(result.code, qt.Equals, 1, qt.Commentf("stdout: %s\nstderr: %s", result.stdout, result.stderr))
@@ -131,9 +132,9 @@ func TestWithoutPtahEnvironment(t *testing.T) {
 	})
 }
 
-func assertUnknownKeyParity(c *qt.C, row verbRow, binary, oracle string) {
+func assertUnknownKeyParity(c *qt.C, row verbRow, binary, reference string) {
 	c.Helper()
-	queriedDir := writeNativeDir(c, oracle)
+	queriedDir := writeNativeDir(c, reference)
 	before := directoryEntries(c, queriedDir)
 	queried := runCommand(c, binary, row.args(c, queriedDir, "?nonsense=1")...)
 
@@ -142,7 +143,7 @@ func assertUnknownKeyParity(c *qt.C, row verbRow, binary, oracle string) {
 	row.assertNative(c, queriedDir)
 	assertIgnoredKeyReport(c, binary, queried.stderr)
 
-	controlDir := writeNativeDir(c, oracle)
+	controlDir := writeNativeDir(c, reference)
 	control := runCommand(c, binary, row.args(c, controlDir, "")...)
 	c.Assert(control.code, qt.Equals, 0,
 		qt.Commentf("control stdout: %s\ncontrol stderr: %s", control.stdout, control.stderr))
@@ -164,9 +165,9 @@ func assertUnknownKeyParity(c *qt.C, row verbRow, binary, oracle string) {
 	)
 }
 
-func assertFormatSelection(c *qt.C, row verbRow, binary, oracle string) {
+func assertFormatSelection(c *qt.C, row verbRow, binary, reference string) {
 	c.Helper()
-	dir := writeGolangMigrateDir(c, oracle)
+	dir := writeGolangMigrateDir(c, reference)
 	before := directoryEntries(c, dir)
 	selected := runCommand(c, binary, row.args(c, dir, "?format=golang-migrate&nonsense=1")...)
 
@@ -175,16 +176,16 @@ func assertFormatSelection(c *qt.C, row verbRow, binary, oracle string) {
 	row.assertSelected(c, dir)
 	assertIgnoredKeyReport(c, binary, selected.stderr)
 
-	controlDir := writeGolangMigrateDir(c, oracle)
+	controlDir := writeGolangMigrateDir(c, reference)
 	control := runCommand(c, binary, row.args(c, controlDir, "")...)
 	c.Assert(control.code, qt.Equals, row.controlCode,
 		qt.Commentf("control stdout: %s\ncontrol stderr: %s", control.stdout, control.stderr))
 	row.assertControl(c, controlDir)
 }
 
-func assertUnknownFormat(c *qt.C, row verbRow, binary, oracle string) {
+func assertUnknownFormat(c *qt.C, row verbRow, binary, reference string) {
 	c.Helper()
-	dir := writeNativeDir(c, oracle)
+	dir := writeNativeDir(c, reference)
 	before := directoryContents(c, dir)
 	result := runCommand(c, binary, row.args(c, dir, "?format=bogus&nonsense=1")...)
 
@@ -194,24 +195,24 @@ func assertUnknownFormat(c *qt.C, row verbRow, binary, oracle string) {
 	c.Assert(directoryContents(c, dir), qt.DeepEquals, before)
 }
 
-func assertQueryPrecedence(c *qt.C, row verbRow, binary, oracle string) {
+func assertQueryPrecedence(c *qt.C, row verbRow, binary, reference string) {
 	c.Helper()
 
-	golangMigrateDir := writeGolangMigrateDir(c, oracle)
+	golangMigrateDir := writeGolangMigrateDir(c, reference)
 	queryWins := runCommand(c, binary,
 		append(row.args(c, golangMigrateDir, "?format=golang-migrate"), "--dir-format", "atlas")...)
 	c.Assert(queryWins.code, qt.Equals, 0,
 		qt.Commentf("query-wins stdout: %s\nquery-wins stderr: %s", queryWins.stdout, queryWins.stderr))
 	row.assertSelected(c, golangMigrateDir)
 
-	nativeDir := writeNativeDir(c, oracle)
+	nativeDir := writeNativeDir(c, reference)
 	emptyQueryWins := runCommand(c, binary,
 		append(row.args(c, nativeDir, "?format="), "--dir-format", "golang-migrate")...)
 	c.Assert(emptyQueryWins.code, qt.Equals, 0,
 		qt.Commentf("empty-query stdout: %s\nempty-query stderr: %s", emptyQueryWins.stdout, emptyQueryWins.stderr))
 	row.assertNative(c, nativeDir)
 
-	flagDir := writeGolangMigrateDir(c, oracle)
+	flagDir := writeGolangMigrateDir(c, reference)
 	ignoredKeyLeavesFlag := runCommand(c, binary,
 		append(row.args(c, flagDir, "?nonsense=1"), "--dir-format", "golang-migrate")...)
 	c.Assert(ignoredKeyLeavesFlag.code, qt.Equals, 0,
@@ -444,7 +445,7 @@ func assertIgnoredKeyReport(c *qt.C, binary, stderr string) {
 // stderrWithoutIgnoredKeyReport removes exactly the one intentional Ptah
 // diagnostic that differs from the pinned community binary. Everything else
 // remains byte-for-byte comparable with the no-query control, so an ignored
-// key cannot smuggle an additional warning or error through this oracle.
+// key cannot smuggle an additional warning or error through this reference.
 func stderrWithoutIgnoredKeyReport(c *qt.C, binary, verb, stderr string) string {
 	c.Helper()
 	if !strings.HasSuffix(binary, "ptah-compat") {
@@ -526,20 +527,20 @@ func buildCompatBinary(c *qt.C) string {
 
 func requireAtlasOracle(t *testing.T) string {
 	t.Helper()
-	oracle := os.Getenv(oracleEnv)
-	if oracle == "" {
+	reference := os.Getenv(referenceEnv)
+	if reference == "" {
 		t.Skipf("SKIPPED: set %s to the pinned Atlas CE binary (%s) to run the migrate-dir query conformance test",
-			oracleEnv, oracleVersion)
+			referenceEnv, referenceVersion)
 	}
 
-	out, err := exec.Command(oracle, "version").Output() // #nosec G204 G702 -- the oracle path is operator-provided via PTAH_ATLAS_ORACLE
+	out, err := exec.Command(reference, "version").Output() // #nosec G204 G702 -- the reference path is operator-provided via PTAH_ATLAS_REFERENCE
 	if err != nil {
-		t.Fatalf("%s=%s is not runnable: %v", oracleEnv, oracle, err)
+		t.Fatalf("%s=%s is not runnable: %v", referenceEnv, reference, err)
 	}
 	got, _, _ := strings.Cut(string(out), "\n")
-	if strings.TrimSpace(got) != oracleVersion {
+	if strings.TrimSpace(got) != referenceVersion {
 		t.Fatalf("%s=%s reports %q, want %q; a different build may have changed the rule under test",
-			oracleEnv, oracle, strings.TrimSpace(got), oracleVersion)
+			referenceEnv, reference, strings.TrimSpace(got), referenceVersion)
 	}
-	return oracle
+	return reference
 }
