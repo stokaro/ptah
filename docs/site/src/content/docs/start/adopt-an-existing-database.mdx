@@ -3,6 +3,8 @@ title: Adopt an existing database
 description: Put a live database under Ptah management with introspect, baseline, and import, without recreating anything.
 ---
 
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
 You have a live database whose schema was built outside Ptah — hand-run SQL, an ORM, or another migration tool — and you want Ptah to manage it from here without recreating anything. This how-to produces annotated Go models from the live schema, an initial migration, and a revision table that records the migration as applied, while the database schema itself stays untouched.
 
 Prerequisites:
@@ -14,9 +16,15 @@ The examples use a local SQLite file, `sqlite://$PWD/app.db`, containing two tab
 
 If the database was migrated with golang-migrate, Goose, Flyway, or Liquibase and you want to keep that history, jump to [Keep history from another tool](#keep-history-from-another-tool). Otherwise follow the numbered steps.
 
-## 1. Introspect the live schema into Go models
+## 1. Introspect the live schema into a source
 
-`ptah introspect` reads the live database and writes annotated Go structs — Ptah's desired-schema representation:
+`ptah introspect` reads the live database and writes annotated Go structs. If
+you would rather keep the schema as HCL, convert that result once — the rest of
+this page is the same either way, with `--schema-file schema.hcl` in place of
+`--root-dir ./models`.
+
+<Tabs syncKey="schema-source">
+<TabItem label="Go">
 
 ```bash
 ptah introspect \
@@ -25,12 +33,32 @@ ptah introspect \
   --package models
 ```
 
-Expected output includes:
-
 ```text
 Generated 2 Go file(s) in .../models
 Imported 2 table(s), 6 field(s), 0 enum(s)
 ```
+
+</TabItem>
+<TabItem label="HCL">
+
+```bash
+ptah introspect \
+  --db-url "sqlite://$PWD/app.db" \
+  --out ./models \
+  --package models
+
+ptah schema export --to hcl --root-dir ./models --out schema.hcl
+```
+
+```text
+Exported HCL schema to .../schema.hcl
+Found 2 table(s), 6 field(s), 0 enum(s)
+```
+
+The Go files are scaffolding at that point: delete them and keep `schema.hcl`.
+
+</TabItem>
+</Tabs>
 
 Each table becomes one struct. The generated `models/customers.go`:
 
@@ -200,7 +228,7 @@ For symptoms outside this flow, see [Troubleshooting](../../operate/troubleshoot
 
 ## Limitations
 
-- `ptah introspect` writes annotated Go models only. To model the schema in HCL instead, convert the result with `ptah schema export --to hcl --root-dir ./models --out schema.hcl`.
+- `ptah introspect` writes annotated Go models only; the HCL tab in step 1 converts them once with `ptah schema export`. There is no direct database-to-HCL path.
 - `ptah migrations baseline` records revision rows; it never creates, alters, or drops schema objects on the target.
 
 ## Next steps

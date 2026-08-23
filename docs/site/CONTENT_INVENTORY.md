@@ -341,6 +341,27 @@ shows.
 The concept page points at the shared page first and at the format pages after
 it, in that order.
 
+## 6d. Where tabs are, and where they are not (stokaro/ptah#1228)
+
+Tabs are used where one operation has genuinely equivalent expressions, and
+nowhere else:
+
+| Page | Tabs | Why they are equivalent |
+| --- | --- | --- |
+| `start/quick-start` | SQL, YAML, HCL, Go | the same table declared four ways; the one rendering difference is stated |
+| `schema/work-with-a-source` | the source flag | `--schema-file`, `--root-dir`, `--schema-cmd` name the same input |
+| `start/adopt-an-existing-database` | Go, HCL | one adoption path, two things to keep afterwards |
+| `reference/configuration` | `ptah.yaml`, `atlas.hcl` | a native command reads either through `--env`; measured with `migrations status --env dev` beside both |
+
+They all share `syncKey`, so a reader who picks a format keeps it across pages.
+
+Where they are deliberately absent: `direct/apply` and `versioned/generate`
+name both source flags in one line of prose, and a tab whose only content is a
+different flag name would be a tab created to make every format appear
+everywhere -- which the issue asks not to do. `reference/configuration` also
+says where the two files are NOT interchangeable, because `--config` names a
+`ptah.yaml` and refuses an `atlas.hcl` by name.
+
 ## 7. Terminology audit
 
 Verified with repository-wide searches at the audited commit.
