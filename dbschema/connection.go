@@ -1075,6 +1075,24 @@ func getDatabaseInfo(
 			return info, err
 		}
 		info.Schema = schema
+		// The schema a connection resolved to IS the schema its unqualified
+		// names mean, and the two were different values here: the dialect rule
+		// answers the constant "public", so a URL selecting another schema left
+		// every implicit name pointing at the wrong one.
+		//
+		// The catalog reports an object with no schema when it is in the schema
+		// the read was scoped to, and a desired state written as HCL or Go
+		// annotations carries `app` explicitly. Keyed through a "public"
+		// default, `widget` and `app.widget` are two tables. Measured on
+		// PostgreSQL 17 against a database holding `app.widget`, with
+		// `?search_path=app` on the URL and a document declaring the same
+		// table, `schema apply` planned CREATE TABLE "app"."widget" and
+		// DROP TABLE "widget" CASCADE, and failed on 42P07 (stokaro/ptah#1991).
+		//
+		// It costs nothing in the ordinary case: both values are "public"
+		// there. MySQL, MariaDB, Oracle and SQL Server pin the same field from
+		// the same place, for the reason stokaro/ptah#1244 records below.
+		info.IdentifierSemantics.DefaultSchema = info.Schema
 
 	case platform.MySQL, platform.MariaDB:
 		// Get MySQL/MariaDB version
@@ -1127,6 +1145,9 @@ func getDatabaseInfo(
 			}
 			info.Schema = dbName
 		}
+		// A ClickHouse database is a schema, and no static rule names the
+		// connected one -- the same shape as the MySQL family below.
+		info.IdentifierSemantics.DefaultSchema = info.Schema
 	case platform.SQLite:
 		var version string
 		if err := db.QueryRowContext(ctx, "SELECT sqlite_version()").Scan(&version); err != nil {
@@ -1134,6 +1155,10 @@ func getDatabaseInfo(
 		}
 		info.Version = version
 		info.Schema = "main"
+		// Already what the dialect rule answers. Assigned anyway so the rule is
+		// one line in every branch: four of the six pinned it and two did not,
+		// and the two that did not were the defect.
+		info.IdentifierSemantics.DefaultSchema = info.Schema
 	case platform.SQLServer:
 		return getSQLServerDatabaseInfo(ctx, db, parsedURL, info)
 	case platform.Oracle:
