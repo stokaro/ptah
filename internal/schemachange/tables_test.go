@@ -336,6 +336,16 @@ func describedTableCounter(fields ...goschema.Field) *goschema.Database {
 	return description
 }
 
+// describedTableWithDomain is [describedTable] plus the domain declaration a
+// column's declared type names. Without it the type is a type, not a domain.
+func describedTableWithDomain(domain string, fields ...goschema.Field) *goschema.Database {
+	description := describedTable(fields...)
+	description.Domains = append(description.Domains, goschema.Domain{
+		StructName: "Widget", Name: domain, Schema: "public", BaseType: "text",
+	})
+	return description
+}
+
 // describedTableWithKey is [describedTable] with a table-level primary key,
 // which is how the authoring model spells a COMPOSITE one: the field flag
 // declares a single-column key and cannot express a key over two.

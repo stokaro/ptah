@@ -313,6 +313,9 @@ func changedColumnProperties(before, after schemastate.Column, profile schemasta
 // widening is still an ALTER a database built from the declaration would carry.
 // So a same-fold pair is asked again, about the sizes the fold discarded.
 func typeChanged(before, after schemastate.Column, profile schemastate.Profile) bool {
+	if isDomain(before) || isDomain(after) {
+		return domainChanged(before, after, profile)
+	}
 	if !strings.EqualFold(before.TypeNormalized, after.TypeNormalized) {
 		return true
 	}
@@ -320,4 +323,39 @@ func typeChanged(before, after schemastate.Column, profile schemastate.Profile) 
 		return false
 	}
 	return typechange.IsNarrowing(before.Type, after.Type) || typechange.IsWidening(before.Type, after.Type)
+}
+
+// isDomain reports whether a column's declared type is a domain.
+func isDomain(column schemastate.Column) bool {
+	return strings.TrimSpace(column.DomainName) != ""
+}
+
+// domainChanged compares two columns when either declares a domain.
+//
+// A domain is compared by IDENTITY and never through the type fold. Its name is
+// an identifier its author chose, and a domain may be named after a type:
+// measured, a column whose catalog type is the domain `int8` against a
+// declaration of the base type `bigint` folded to one string on both sides and
+// read as unchanged, which is the ALTER that never happens
+// (stokaro/ptah#1138, stokaro/ptah#1662).
+//
+// A domain on one side and a base type on the other is therefore always a
+// change, whatever the two spellings fold to.
+func domainChanged(before, after schemastate.Column, profile schemastate.Profile) bool {
+	if isDomain(before) != isDomain(after) {
+		return true
+	}
+	fold := profile.Semantics.TableIdentityKey
+	if fold(before.DomainName) != fold(after.DomainName) {
+		return true
+	}
+	// An empty schema on either side is "not said, and nothing here can resolve
+	// it" -- two domains of one name in different schemas are ambiguous, and
+	// the adapters record that by leaving the schema off rather than picking
+	// one. Comparing an unresolved schema against a resolved one would report a
+	// change nobody can act on.
+	if before.DomainSchema == "" || after.DomainSchema == "" {
+		return false
+	}
+	return fold(before.DomainSchema) != fold(after.DomainSchema)
 }
