@@ -104,6 +104,14 @@ func backsAConstraint(current *schemastate.State, index schemastate.Object, dial
 // index for a FOREIGN KEY; on the other targets an index sharing a foreign
 // key's name is an index somebody wrote.
 //
+// An EXCLUDE is enforced with an index too, and it is the one a read cannot
+// tell apart on its own: measured on PostgreSQL 17.6, the pg_index row for
+// `EXCLUDE USING gist (room WITH =)` reports indisprimary false and indisunique
+// false, exactly like an ordinary index, and only pg_constraint.conindid ties
+// the two together. Dropping it is refused -- `cannot drop index ex_widget_room
+// because constraint ex_widget_room on table widget requires it` -- and a CHECK,
+// the other clause constraint, is enforced with no index at all.
+//
 // Every uniqueness guarantee a READ carries is asked, not just the ones the
 // read reported as standalone UNIQUE constraints. Restricting it to those left
 // a clause no fixture could separate from its absence: the name in a guarantee
@@ -117,6 +125,8 @@ func ownsAnIndex(constraint schemastate.Object, dialect string) bool {
 	case constraint.ForeignKey != nil:
 		normalized := platform.NormalizeDialect(dialect)
 		return normalized == platform.MySQL || normalized == platform.MariaDB
+	case constraint.Constraint != nil:
+		return constraintKind(*constraint.Constraint) == excludeConstraintKind
 	default:
 		return false
 	}

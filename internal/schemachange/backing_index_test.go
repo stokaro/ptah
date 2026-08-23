@@ -447,3 +447,71 @@ func TestTheAutoindexPrefixIsSQLitesAlone(t *testing.T) {
 	c.Assert(string(changes[0].ID.Kind), qt.Equals, "index")
 	c.Assert(changes[0].Operation, qt.Equals, schemachange.Remove)
 }
+
+// TestAnExcludeConstraintOwnsItsIndexAndACheckOwnsNone pins the pair a read
+// cannot tell apart on its own.
+//
+// Measured on PostgreSQL 17.6, the pg_index row for
+// `EXCLUDE USING gist (room WITH =)` reports indisprimary false and indisunique
+// false -- exactly like an ordinary index -- and only pg_constraint.conindid
+// ties it to the constraint. Dropping it is refused:
+// `cannot drop index ex_widget_room because constraint ex_widget_room on table
+// widget requires it`.
+//
+// A CHECK is the other clause constraint and is enforced with no index at all,
+// so an index that shares a CHECK's name is an index somebody wrote.
+//
+// The shipping comparator plans the DROP INDEX for the EXCLUDE pair; that is
+// filed as stokaro/ptah#2013 rather than reproduced here.
+func TestAnExcludeConstraintOwnsItsIndexAndACheckOwnsNone(t *testing.T) {
+	tests := []struct {
+		name       string
+		constraint goschema.Constraint
+		reported   dbschematypes.DBConstraint
+		dropped    bool
+	}{
+		{
+			name: "an EXCLUDE is enforced with one",
+			constraint: goschema.Constraint{
+				StructName: "Widget", Name: "guard_widget_code", Type: "EXCLUDE",
+				UsingMethod: "gist", ExcludeElements: "code WITH =",
+			},
+			reported: dbschematypes.DBConstraint{
+				Name: "guard_widget_code", TableName: "widget", Schema: "public",
+				Type: "EXCLUDE", UsingMethod: pointerTo("gist"),
+				ExcludeElements: pointerTo("code WITH ="),
+			},
+			dropped: false,
+		},
+		{
+			name: "a CHECK is enforced with none",
+			constraint: goschema.Constraint{
+				StructName: "Widget", Name: "guard_widget_code", Type: "CHECK",
+				CheckExpression: "code <> ''",
+			},
+			reported: dbschematypes.DBConstraint{
+				Name: "guard_widget_code", TableName: "widget", Schema: "public",
+				Type: "CHECK", CheckClause: pointerTo("code <> ''"),
+			},
+			dropped: true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			description := widgetDeclaringNothing()
+			description.Constraints = append(description.Constraints, test.constraint)
+			catalog := widgetWithoutTheIndex()
+			catalog.Constraints = []dbschematypes.DBConstraint{test.reported}
+			catalog.Indexes = []dbschematypes.DBIndex{{
+				Name: "guard_widget_code", TableName: "widget", Schema: "public",
+				Columns: []string{"code"},
+			}}
+
+			changes := changesFor(c, description, catalog)
+
+			c.Assert(changes, qt.HasLen, droppedCount(test.dropped))
+		})
+	}
+}
