@@ -129,6 +129,31 @@ func TestTableChangesMatchTheExistingComparator(t *testing.T) {
 			}),
 		},
 		{
+			// A DOMAIN column, as PostgreSQL reports one, against the
+			// declaration that created it. Nothing changed.
+			name: "a domain column the database already matches",
+			description: describedTableWithDomain("email",
+				goschema.Field{StructName: "Widget", Name: "contact", Type: "email", Nullable: true}),
+			catalog: catalogTable(dbschematypes.DBColumn{
+				Name: "contact", DataType: "USER-DEFINED", IsNullable: "YES",
+				DomainName: "email", DomainSchema: "public", FormattedType: "email",
+			}),
+		},
+		{
+			// A domain whose NAME folds to a base type, against a declaration
+			// of that base type. They are not the same column, and a comparison
+			// that folded the domain's name as if it were a type said they
+			// were -- this is the row that caught it.
+			name: "a domain named after a base type is not that base type",
+			description: describedTable(goschema.Field{
+				StructName: "Widget", Name: "amount", Type: "bigint", Nullable: true,
+			}),
+			catalog: catalogTable(dbschematypes.DBColumn{
+				Name: "amount", DataType: "USER-DEFINED", IsNullable: "YES",
+				DomainName: "int8", DomainSchema: "public", FormattedType: "int8",
+			}),
+		},
+		{
 			name: "a column whose nullability changed",
 			description: describedTable(
 				goschema.Field{StructName: "Widget", Name: "code", Type: "text", Nullable: false}),
