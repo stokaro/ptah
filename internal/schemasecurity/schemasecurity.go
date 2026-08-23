@@ -126,6 +126,10 @@ type RoleMembership struct {
 	Role string
 	// Member is the role that receives them.
 	Member string
+	// AdminOption reports whether the edge grants the right to grant the role
+	// onward rather than evidence that somebody uses it. See
+	// [heldForItsPrivileges] for why the two rules here read it.
+	AdminOption bool
 }
 
 // Options selects what the analysis can check.
@@ -335,6 +339,9 @@ func isShippedDefaultPublicGrant(grant goschema.Grant) bool {
 func findRolesWithNoMembers(db *goschema.Database, memberships []RoleMembership) []Finding {
 	held := make(map[string]bool, len(memberships))
 	for _, membership := range memberships {
+		if !heldForItsPrivileges(membership) {
+			continue
+		}
 		held[strings.TrimSpace(membership.Role)] = true
 	}
 
@@ -357,6 +364,25 @@ func findRolesWithNoMembers(db *goschema.Database, memberships []RoleMembership)
 	return findings
 }
 
+// heldForItsPrivileges reports whether an edge is evidence that somebody uses
+// the role, as opposed to the right to grant it onward.
+//
+// Measured on MariaDB 11.8: `CREATE ROLE reader` inserts
+// `(root, reader, Admin_option='Y')` into mysql.roles_mapping by itself, so
+// every role on every MariaDB server is "held" by whoever created it. Counting
+// that edge makes ROL04 unable to fire at all and makes ROL03 name the creator
+// on every server -- a rule that reports nothing and a rule that reports the
+// same thing everywhere. MySQL 8.4's mysql.role_edges carries no such row: the
+// two engines record the same GRANT differently.
+//
+// The cost is stated rather than hidden: an explicit `WITH ADMIN OPTION` grant
+// to a real user is ignored here too, so ROL04 can name a role that one
+// administrator could also use. That is the safe direction for an advisory
+// rule -- a finding a reader can dismiss beats a finding that never appears.
+func heldForItsPrivileges(membership RoleMembership) bool {
+	return !membership.AdminOption
+}
+
 // findOverlappingRoles implements ROL03.
 //
 // Two roles held by one member that grant nearly the same privileges are two
@@ -375,6 +401,9 @@ func findOverlappingRoles(db *goschema.Database, memberships []RoleMembership) [
 
 	byMember := make(map[string][]string, len(memberships))
 	for _, membership := range memberships {
+		if !heldForItsPrivileges(membership) {
+			continue
+		}
 		member := strings.TrimSpace(membership.Member)
 		byMember[member] = append(byMember[member], strings.TrimSpace(membership.Role))
 	}

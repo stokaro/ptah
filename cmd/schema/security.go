@@ -154,8 +154,9 @@ func roleMemberships(live *dbschematypes.DBSchema) []schemasecurity.RoleMembersh
 	memberships := make([]schemasecurity.RoleMembership, 0, len(live.RoleMemberships))
 	for _, membership := range live.RoleMemberships {
 		memberships = append(memberships, schemasecurity.RoleMembership{
-			Role:   membership.Role,
-			Member: membership.Member,
+			Role:        membership.Role,
+			Member:      membership.Member,
+			AdminOption: membership.AdminOption,
 		})
 	}
 	return memberships
