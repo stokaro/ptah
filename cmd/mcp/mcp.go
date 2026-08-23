@@ -5,27 +5,13 @@ package mcp
 import (
 	"github.com/spf13/cobra"
 
-	"go.5x5.cz/ptah/cmd/internal/cmdflags"
+	"go.5x5.cz/ptah/cmd/internal/agentflags"
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
-	"go.5x5.cz/ptah/cmd/internal/serverversion"
-)
-
-// Flag names, in one place because the help text, the refusals and the
-// documentation all quote them.
-const (
-	workspaceFlag     = "workspace"
-	migrationsDirFlag = "migrations-dir"
-	schemaDirFlag     = "schema-dir"
-	testsDirFlag      = "tests-dir"
-	dialectFlag       = "dialect"
-	allowWriteFlag    = "allow-write"
-	autoApproveFlag   = "auto-approve"
-	auditLogFlag      = "audit-log"
 )
 
 // NewCommand returns the MCP server command.
 func NewCommand() *cobra.Command {
-	opts := &options{}
+	var opts *agentflags.Options
 	cmd := &cobra.Command{
 		Use:   "mcp",
 		Short: "Serve Ptah's operations over the Model Context Protocol",
@@ -83,39 +69,7 @@ sends nothing anywhere: it runs locally and talks to whatever the caller names.`
 			return run(cmd, opts)
 		},
 	}
-	registerFlags(cmd, opts)
+	opts = agentflags.Register(cmd)
 	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
 	return cmd
-}
-
-// registerFlags declares what the operator decides at startup.
-//
-// Everything an agent may reach is here rather than in a tool argument, and
-// that is the design rather than a convenience: ADR 0003 records that the model
-// chooses the arguments, so a server taking its root or its permissions from a
-// tool call would let the untrusted party choose its own confinement.
-func registerFlags(cmd *cobra.Command, opts *options) {
-	flags := cmd.Flags()
-	flags.StringVar(&opts.workspace, workspaceFlag, "",
-		"Project root the artifact tools work within; without it only the reading tools are served")
-	flags.StringVar(&opts.migrationsDir, migrationsDirFlag, "",
-		"Migration directory, inside the workspace")
-	flags.StringVar(&opts.schemaDir, schemaDirFlag, "",
-		"Declared-schema directory, inside the workspace")
-	flags.StringVar(&opts.testsDir, testsDirFlag, "",
-		"Ptah test directory, inside the workspace")
-	flags.StringVar(&opts.dialect, dialectFlag, "",
-		"Target dialect the validation and lint gates run for; required with --workspace")
-	serverversion.Register(flags, &opts.serverVersion)
-	flags.StringSliceVar(&opts.allowWrite, allowWriteFlag, nil,
-		"Artifact classes an agent may propose writes to: migrations, schema, tests")
-	flags.BoolVar(&opts.autoApprove, autoApproveFlag, false,
-		"Apply patches without asking for approval through the client")
-	flags.StringVar(&opts.auditLog, auditLogFlag, "",
-		"Where to append the agent audit record (default <workspace>/.ptah/agent-audit.jsonl)")
-
-	// --auto-approve carries no environment binding, for the reason
-	// `db drop-all --auto-approve` carries none: a variable exported once in a
-	// shell profile is not a decision somebody made about this session.
-	_ = cmdflags.DisableEnvBinding(flags, autoApproveFlag)
 }

@@ -23,6 +23,15 @@ import (
 // is to measure the wiring, and a test that injected the configuration would
 // skip exactly the part that could be wrong.
 func execute(c *qt.C, configHome string, args ...string) (string, error) {
+	out, _, err := executeStreams(c, configHome, args...)
+	return out, err
+}
+
+// executeStreams keeps the two streams apart, because the contract this tree
+// documents is that machine-readable output goes to stdout and diagnostics go
+// to stderr. A helper that merged them would let a command print its JSON into
+// the middle of a progress line and still pass.
+func executeStreams(c *qt.C, configHome string, args ...string) (stdout, stderr string, _ error) {
 	c.Helper()
 	c.Setenv("XDG_CONFIG_HOME", configHome)
 	clearEnv(c,
@@ -31,11 +40,12 @@ func execute(c *qt.C, configHome string, args ...string) (string, error) {
 
 	cmd := assist.NewCommand()
 	out := &bytes.Buffer{}
+	errOut := &bytes.Buffer{}
 	cmd.SetOut(out)
-	cmd.SetErr(out)
+	cmd.SetErr(errOut)
 	cmd.SetArgs(args)
 	err := cmd.Execute()
-	return out.String(), err
+	return out.String(), errOut.String(), err
 }
 
 // clearEnv unsets variables for the length of one test, and puts back what was

@@ -96,6 +96,12 @@ func offlineDialectVerbs() []dialectVerb {
 				"validate and lint against, and the server holds no connection: every tool it " +
 				"serves reads files or a database the caller names per call",
 		},
+		{
+			verb: "assist explain",
+			why: "it serves the same agent surface ptah mcp does, over an in-memory transport, " +
+				"so --dialect selects the same gate preset and there is likewise no connection " +
+				"for a version to be read from",
+		},
 	}
 }
 
