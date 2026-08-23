@@ -80,6 +80,16 @@ func clonedCollectionRows() []clonedCollectionRow {
 			},
 		},
 		{
+			field: "ContinuousAggregates", present: "hourly_totals", absent: "nosuch_aggregate",
+			seed: func(s *dbschematypes.DBSchema) {
+				s.ContinuousAggregates = append(s.ContinuousAggregates,
+					dbschematypes.DBContinuousAggregate{
+						Name: "hourly_totals", HypertableName: "readings",
+						Definition: "SELECT 1",
+					})
+			},
+		},
+		{
 			field: "ExtendedProperties", present: "ptah_flag", absent: "nosuch_property",
 			seed: func(s *dbschematypes.DBSchema) {
 				s.ExtendedProperties = append(s.ExtendedProperties,

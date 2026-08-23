@@ -3720,7 +3720,15 @@ func (r *Reader) readCapabilityGatedObjects(schema *types.DBSchema) error {
 	if err != nil {
 		return fmt.Errorf("failed to read views: %w", err)
 	}
-	schema.Views = views
+	// Read before the views are stored, because it decides which of them are
+	// views at all: a continuous aggregate arrives in the view read and is not
+	// one. See withoutContinuousAggregates (stokaro/ptah#1026).
+	aggregates, err := r.readContinuousAggregates()
+	if err != nil {
+		return fmt.Errorf("failed to read continuous aggregates: %w", err)
+	}
+	schema.ContinuousAggregates = aggregates
+	schema.Views = withoutContinuousAggregates(views, aggregates)
 
 	if r.caps.Has(capability.MaterializedViews) {
 		matViews, err := r.readMaterializedViews()
