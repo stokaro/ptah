@@ -5,12 +5,14 @@ package types
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/platform/identifier"
+	"go.5x5.cz/ptah/internal/normalize"
 	"go.5x5.cz/ptah/internal/tableref"
 )
 
@@ -193,6 +195,83 @@ type DBTable struct {
 	// Module arguments are not SQL -- only the module interprets them -- so
 	// they are carried unparsed and reproduced byte for byte.
 	VirtualArguments string `json:"virtual_arguments,omitempty"`
+}
+
+// RawType is the type spelling a comparator holds a desired schema against.
+//
+// FormattedType comes first because it is the only field that survives an array
+// or a domain, and because the desired side reads the same field -- see
+// goSchemaFieldType in internal/convert/dbschematogo. The reader fills it from
+// the server's own format_type for exactly those two shapes and leaves it empty
+// for every other column.
+//
+// With ColumnType and UDTName first the two sides read different fields for the
+// same column, and the comparator reported a change between a database and
+// ITSELF. Measured on PostgreSQL 17, `ptah-compat schema diff` with --from and
+// --to naming one database, seven phantom rows:
+//
+//	arrays.a_bit          type: _bit    -> bit(8)[]
+//	arrays.a_char         type: _bpchar -> character(5)[]
+//	arrays.a_cube         type: _cube   -> cube[]
+//	arrays.a_enum         type: _status -> status[]
+//	arrays.a_varchar      type: varchar -> character varying(100)[]
+//	arrays.a_varchar_dim  type: varchar -> character varying(100)[]
+//	scalars.c_tags        type: text    -> tags
+//
+// Every one of them proposed an ALTER COLUMN ... TYPE to the type the column
+// already had. None survive this (stokaro/ptah#1138).
+//
+// The width lives in a field of its own, which is the other half of the answer:
+// a PostgreSQL read reports `code varchar(50)` as DataType "character varying"
+// with CharacterMaxLength 50, so a caller reading DataType alone holds a type
+// with no width and reports an ALTER for every varchar column that never
+// changed (stokaro/ptah#1662).
+//
+// It is a method on the column rather than a helper beside one comparator
+// because both comparators have to ask the same question and get the same
+// answer.
+//
+// What this string may then be USED for is not uniform, and the difference is
+// the whole of #1138's comparator half. An array's spelling is a type. A
+// domain's spelling is the identifier its author chose, and a caller comparing
+// types keeps it away from type normalization for that reason.
+func (c DBColumn) RawType() string {
+	rawType := strings.TrimSpace(c.FormattedType)
+	if rawType == "" {
+		rawType = strings.TrimSpace(c.ColumnType)
+	}
+	if rawType == "" && c.UDTName != "" {
+		rawType = strings.TrimSpace(c.UDTName)
+	}
+	if rawType == "" {
+		rawType = strings.TrimSpace(c.DataType)
+	}
+	if strings.Contains(rawType, "(") {
+		return rawType
+	}
+	return withTypeSize(rawType, c)
+}
+
+// withTypeSize appends the width or precision the catalog keeps in a field of
+// its own, for the two families that have one.
+func withTypeSize(rawType string, column DBColumn) string {
+	// The fold is normalize.Type's, not a second list of spellings: `character
+	// varying` and `varchar` are one type and only that package says so.
+	switch normalize.Type(rawType) {
+	case "varchar":
+		if column.CharacterMaxLength != nil {
+			return fmt.Sprintf("%s(%d)", rawType, *column.CharacterMaxLength)
+		}
+	case "decimal":
+		if column.NumericPrecision == nil {
+			return rawType
+		}
+		if column.NumericScale != nil {
+			return fmt.Sprintf("%s(%d,%d)", rawType, *column.NumericPrecision, *column.NumericScale)
+		}
+		return fmt.Sprintf("%s(%d)", rawType, *column.NumericPrecision)
+	}
+	return rawType
 }
 
 // QualifiedName returns schema.table when Schema is set, or Name otherwise.

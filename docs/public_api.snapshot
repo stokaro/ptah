@@ -7131,6 +7131,7 @@ type DBColumn struct {
     answer from DataType, which reports the base type and drops the domain's
     constraints with it. See stokaro/ptah#1242.
 
+func (c DBColumn) RawType() string
 
 ### go.5x5.cz/ptah/dbschema/types.DBComposite
 
