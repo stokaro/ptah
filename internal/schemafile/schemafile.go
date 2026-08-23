@@ -264,7 +264,7 @@ func loadSchemaDirEntry(path string, opts Options) (*goschema.Database, map[guar
 		// applies the format limits itself. A directory entry that skipped
 		// them would be the one route where the round trip is still
 		// destructive.
-		return withUnwritableObjectLimits(db), guardedObjects(statements), nil
+		return withFormatLimits(db, resolved), guardedObjects(statements), nil
 	}
 	db, err := loadSchemaFile(resolved, opts)
 	if err != nil {
@@ -297,20 +297,55 @@ func loadSchemaFile(resolved string, opts Options) (*goschema.Database, error) {
 	if err != nil {
 		return nil, err
 	}
-	// An object type a format cannot represent is outside the surface a
-	// document written in that format manages. Only `.sql` has
-	// CREATE VIRTUAL TABLE, so silence about a live SQLite virtual table is
-	// intent there and is not intent in HCL or YAML, where the document could
-	// not have named it (stokaro/ptah#1028).
-	//
-	// It is recorded HERE rather than in each parser: the parsers answer what a
-	// DOCUMENT declares, and atlashclrender writes that answer back out, so a
-	// limit invented during parsing would appear as a `ptah:not-described`
-	// header nobody wrote.
-	if strings.ToLower(filepath.Ext(resolved)) != dirSQLExtension {
+	return withFormatLimits(database, resolved), nil
+}
+
+// yamlOnlyExtensions are the extensions [withFormatLimits] treats as the YAML
+// surface.
+var yamlOnlyExtensions = []string{".yaml", ".yml"}
+
+// withFormatLimits records the object families the format this document was
+// written in cannot express, so its silence about one is not read as a request
+// to drop it.
+//
+// It is recorded HERE rather than in each parser: the parsers answer what a
+// DOCUMENT declares, and atlashclrender writes that answer back out, so a limit
+// invented during parsing would appear as a `ptah:not-described` header nobody
+// wrote.
+//
+// Three rules, and each one is a measurement of the surface rather than a
+// reading of its documentation:
+//
+//   - Only `.sql` has CREATE VIRTUAL TABLE, so silence about a live SQLite
+//     virtual table is intent there and is not intent in HCL or YAML
+//     (stokaro/ptah#1028).
+//   - NO format expresses a SQL Server synonym or extended property. HCL has no
+//     block, YAML has no key, and the SQL parser's conversion produces neither,
+//     so a `.sql` document naming CREATE SYNONYM still loads a database with
+//     none. Only a Go schema can declare them, which is why this is recorded
+//     here and not in [go.5x5.cz/ptah/internal/schemaload].
+//   - The YAML surface has a top-level key for tables, enums, extensions,
+//     functions, views, matviews, triggers, roles, grants and row-level
+//     security, and NONE for a sequence, a domain, a composite type or a range.
+//     A YAML schema declaring one table was measured planning
+//     `DROP SEQUENCE`, `DROP DOMAIN` and both `DROP TYPE`s against a database
+//     holding one of each.
+func withFormatLimits(database *goschema.Database, resolved string) *goschema.Database {
+	if database == nil {
+		return nil
+	}
+	extension := strings.ToLower(filepath.Ext(resolved))
+	if extension != dirSQLExtension {
 		database.NotDescribed = database.NotDescribed.WithKind(coverage.VirtualTable)
 	}
-	return withUnwritableObjectLimits(database), nil
+	if slices.Contains(yamlOnlyExtensions, extension) {
+		database.NotDescribed = database.NotDescribed.
+			WithKind(coverage.Sequence).
+			WithKind(coverage.Domain).
+			WithKind(coverage.Composite).
+			WithKind(coverage.Range)
+	}
+	return withUnwritableObjectLimits(database)
 }
 
 // withUnwritableObjectLimits records the object families NO document format

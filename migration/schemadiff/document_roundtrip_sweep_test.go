@@ -12,8 +12,10 @@ import (
 	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	dbtypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlashclrender"
 	"go.5x5.cz/ptah/internal/schemafile"
+	"go.5x5.cz/ptah/migration/schemadiff"
 )
 
 // roundTripRow is one object family of [goschema.Database], and what has to be
@@ -171,6 +173,113 @@ func roundTripRows() []roundTripRow {
 			kind:  coverage.ExtendedProperty,
 		},
 	}
+}
+
+// TestHCLDocument_StillRemovesWhatItCouldHaveNamed is the control the YAML
+// record needs, and the direction that costs a capability when it is wrong.
+//
+// HCL has a block for a sequence, a domain, a composite type and a range, so an
+// HCL document that omits one IS asking for it to go. A record applied to every
+// format rather than to the surface that lacks the key would pass the YAML test
+// and the round-trip sweep both, while quietly making those four undroppable
+// from the format Ptah itself writes.
+func TestHCLDocument_StillRemovesWhatItCouldHaveNamed(t *testing.T) {
+	c := qt.New(t)
+	live := &dbtypes.DBSchema{
+		Schemas:   []dbtypes.DBSchemaInfo{{Name: "public"}},
+		Tables:    []dbtypes.DBTable{{Schema: "public", Name: "users"}},
+		Sequences: []dbtypes.DBSequence{{Schema: "public", Name: "s1"}},
+		Domains:   []dbtypes.DBDomain{{Schema: "public", Name: "d1", BaseType: "text"}},
+		Composites: []dbtypes.DBComposite{{
+			Schema: "public", Name: "c1",
+			Fields: []dbtypes.DBCompositeField{{Name: "a", Type: "integer"}},
+		}},
+		Ranges: []dbtypes.DBRange{{Schema: "public", Name: "r1", Subtype: "integer"}},
+	}
+
+	parsed := loadPostgresDocument(c, renderPostgresDocument(c, roundTripFixture()))
+	diff := schemadiff.Compare(parsed, live)
+
+	c.Assert(diff.SequencesRemoved, qt.HasLen, 1)
+	c.Assert(diff.DomainsRemoved, qt.HasLen, 1)
+	c.Assert(diff.CompositeTypesRemoved, qt.HasLen, 1)
+	c.Assert(diff.RangesRemoved, qt.HasLen, 1)
+}
+
+// yamlUnwritableFields are the object families the YAML surface has no
+// top-level key for, and the coverage kind each one is recorded under.
+//
+// The list is written out rather than derived, because the thing it describes
+// lives in another package's unexported struct. That makes it a claim this test
+// checks rather than a copy it trusts: a key added to the YAML surface turns
+// TestYAMLDocument_RecordsExactlyWhatTheSurfaceCannotName red on the family
+// that gained it.
+//
+// It was measured rather than read off the parser. A YAML schema declaring one
+// table, compared against a database holding one of each, planned
+// `DROP SEQUENCE`, `DROP DOMAIN` and both `DROP TYPE`s -- silently, because
+// nothing recorded that the document could not have named them
+// (stokaro/ptah#1031).
+var yamlUnwritableFields = map[string]coverage.Kind{
+	"Sequences":      coverage.Sequence,
+	"Domains":        coverage.Domain,
+	"CompositeTypes": coverage.Composite,
+	"Ranges":         coverage.Range,
+	// These two no format expresses, and the round-trip sweep above covers
+	// them for HCL; they are here so this test's complement is the whole list.
+	"Synonyms":           coverage.Synonym,
+	"ExtendedProperties": coverage.ExtendedProperty,
+}
+
+// TestYAMLDocument_RecordsExactlyWhatTheSurfaceCannotName is the same rule as
+// the round-trip sweep, for the format that has no renderer.
+//
+// A YAML document is written by hand, so there is no round trip to run -- but
+// the question is the same one: a family the surface has no key for is a family
+// the author could not have named, and reading that silence as intent drops it.
+// The complement matters as much as the list: a blanket record would suppress
+// every removal a YAML schema legitimately asks for, so the families the
+// surface DOES carry are asserted unrecorded.
+func TestYAMLDocument_RecordsExactlyWhatTheSurfaceCannotName(t *testing.T) {
+	for _, row := range roundTripRows() {
+		t.Run(row.field, func(t *testing.T) {
+			c := qt.New(t)
+			kind, unwritable := yamlUnwritableFields[row.field]
+
+			parsed := loadYAMLDocument(c)
+
+			c.Assert(yamlRecordsKind(parsed, kind), qt.Equals, unwritable,
+				qt.Commentf("%s: the YAML surface and this document's coverage record disagree",
+					row.field))
+		})
+	}
+}
+
+// yamlRecordsKind answers whether a parsed document declines one kind, and
+// answers false for the zero kind so a family the surface carries has one
+// question rather than two.
+func yamlRecordsKind(parsed *goschema.Database, kind coverage.Kind) bool {
+	if kind == "" {
+		return false
+	}
+	return !parsed.NotDescribed.Describes(kind)
+}
+
+// loadYAMLDocument writes and loads the smallest YAML schema there is.
+func loadYAMLDocument(c *qt.C) *goschema.Database {
+	c.Helper()
+	path := filepath.Join(c.TB.(*testing.T).TempDir(), "schema.yaml")
+	const document = "tables:\n" +
+		"  users:\n" +
+		"    name: users\n" +
+		"    columns:\n" +
+		"      id:\n" +
+		"        type: INTEGER\n" +
+		"        primary: true\n"
+	c.Assert(os.WriteFile(path, []byte(document), 0o600), qt.IsNil)
+	parsed, err := schemafile.Load(path, schemafile.Options{Dialect: platform.Postgres})
+	c.Assert(err, qt.IsNil)
+	return parsed
 }
 
 // nonObjectDatabaseFields are the slice fields of [goschema.Database] that no
