@@ -28,11 +28,6 @@ type roundTripRow struct {
 	seed func(*goschema.Database)
 	// count reads the family back out of the parsed document.
 	count func(*goschema.Database) int
-	// kind is the coverage kind that must be recorded when the family does NOT
-	// survive. The empty kind means the family is expected to survive, and a
-	// row that neither survives nor records one is the defect this sweep is
-	// about.
-	kind coverage.Kind
 }
 
 // roundTripRows is one row per object family the HCL document could carry.
@@ -160,7 +155,6 @@ func roundTripRows() []roundTripRow {
 				d.Synonyms = append(d.Synonyms, goschema.Synonym{Name: "s1", Target: "other.dbo.users"})
 			},
 			count: func(d *goschema.Database) int { return len(d.Synonyms) },
-			kind:  coverage.Synonym,
 		},
 		{
 			field: "ExtendedProperties",
@@ -170,7 +164,6 @@ func roundTripRows() []roundTripRow {
 				})
 			},
 			count: func(d *goschema.Database) int { return len(d.ExtendedProperties) },
-			kind:  coverage.ExtendedProperty,
 		},
 	}
 }
@@ -225,8 +218,8 @@ var yamlUnwritableFields = map[string]coverage.Kind{
 	"Domains":        coverage.Domain,
 	"CompositeTypes": coverage.Composite,
 	"Ranges":         coverage.Range,
-	// These two no format expresses, and the round-trip sweep above covers
-	// them for HCL; they are here so this test's complement is the whole list.
+	// HCL gained a block for these two (stokaro/ptah#1031) and the sweep above
+	// measures that they survive it; YAML still has no key, so here they stay.
 	"Synonyms":           coverage.Synonym,
 	"ExtendedProperties": coverage.ExtendedProperty,
 }
@@ -294,20 +287,25 @@ var nonObjectDatabaseFields = []string{
 	"Constraints", "EmbeddedFields", "Fields", "Indexes", "ManagedData", "Schemas", "Tables",
 }
 
-// TestRoundTrip_EveryObjectFamilySurvivesOrSaysItDidNot is the sweep that turns
+// TestRoundTrip_EveryObjectFamilySurvives is the sweep that turns
 // stokaro/ptah#1031's two defects into a rule.
 //
 // The loop is the one an operator runs -- `schema inspect > out.hcl` then
-// `schema apply --to file://out.hcl` -- and a family that neither survives it
-// nor records a coverage kind is silently dropped, which the comparison then
-// reads as a request to remove it. Synonyms and extended properties were
-// exactly that, and nothing said so until the round trip was measured.
+// `schema apply --to file://out.hcl` -- and a family that does not survive it
+// is silently dropped, which the comparison then reads as a request to remove
+// it. Synonyms and extended properties were exactly that, and nothing said so
+// until the round trip was measured.
 //
-// Fourteen of the sixteen families survive; the two that cannot be written in
-// HCL at all carry their kind instead. A row is a claim about ONE of those two
-// outcomes rather than about the document's contents, so the sweep stays true
-// when a family later gains a block.
-func TestRoundTrip_EveryObjectFamilySurvivesOrSaysItDidNot(t *testing.T) {
+// All sixteen families now survive. The two that did not, until the HCL
+// surface gained a `synonym` and an `extended_property` block, are the reason
+// the sweep is a sweep: the question is asked of every family rather than of
+// the ones somebody suspected.
+//
+// A family the surface genuinely cannot name is not silently dropped either --
+// it records a coverage kind instead, which is what
+// [TestYAMLDocument_RecordsExactlyWhatTheSurfaceCannotName] measures on the
+// format that still has no key for these two.
+func TestRoundTrip_EveryObjectFamilySurvives(t *testing.T) {
 	for _, row := range roundTripRows() {
 		t.Run(row.field, func(t *testing.T) {
 			c := qt.New(t)
@@ -316,20 +314,10 @@ func TestRoundTrip_EveryObjectFamilySurvivesOrSaysItDidNot(t *testing.T) {
 
 			parsed := loadPostgresDocument(c, renderPostgresDocument(c, db))
 
-			c.Assert(roundTripOutcome(row, parsed), qt.Equals, true,
-				qt.Commentf("%s neither survived the document nor recorded a coverage kind",
-					row.field))
+			c.Assert(row.count(parsed) > 0, qt.Equals, true,
+				qt.Commentf("%s did not survive the document Ptah itself wrote", row.field))
 		})
 	}
-}
-
-// roundTripOutcome answers the sweep's one question, so the assertion above
-// stays a single claim rather than a branch in a test body.
-func roundTripOutcome(row roundTripRow, parsed *goschema.Database) bool {
-	if row.kind == "" {
-		return row.count(parsed) > 0
-	}
-	return !parsed.NotDescribed.Describes(row.kind)
 }
 
 // TestRoundTrip_SweepCoversEveryObjectFamily is the guard that makes the test

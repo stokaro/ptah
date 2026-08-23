@@ -172,26 +172,44 @@ schema model for one engine, and a dialect that dropped it silently would lose
 a declaration without saying so.
 
 Extended properties travel through the schema model, the renderer, the reader
-and the comparison. They are not part of the HCL surface `schema inspect`
-writes, which is the same boundary synonyms sit on.
+and the comparison, and the HCL surface `schema inspect` writes carries them —
+as it does synonyms.
 
-**A document that cannot name them does not drop them.** HCL has no block for
-either object and YAML has no key, so a file written in those formats could not
-have declared one — and reading its silence as intent made the round trip
-through Ptah's own output destructive:
+```hcl
+synonym "current_orders" {
+  schema = schema.app
+  target = "sales.orders"
+}
 
-```bash
-ptah schema inspect --db-url "$SQLSERVER_URL" > out.hcl
-ptah schema apply --db-url "$SQLSERVER_URL" --to file://out.hcl
+extended_property "MS_Description" {
+  schema = schema.app
+  table  = "orders"
+  column = "total"
+  value  = "order total including tax"
+}
 ```
 
-planned `sp_dropextendedproperty` for every property on the server and
-`DROP SYNONYM` for every synonym. Each loader now records what its format cannot
-express, and the comparison withholds those removals.
+The owner is written as plain strings rather than as `table.orders` and
+`column.total` references, because that is what the statement carries:
+`@level1name = N'orders'` is a name, and a reference would resolve to nothing
+once `--include` left the table out. A block with no `schema` is a
+database-scoped property, the address that passes no level at all.
 
-A **Go schema can** declare both — `//ptah:schema:synonym` and
-`//ptah:schema:extendedproperty` — so its silence about one is still a request
-to remove it, and nothing about that changed.
+**What a document cannot name it does not drop.** YAML has no key for either
+object, and a `.sql` document is written back with `CREATE SYNONYM` and
+`sp_addextendedproperty` but read as a schema holding neither, so a file in
+those formats could not have declared one — and reading its silence as intent
+makes this loop destructive:
+
+```bash
+ptah schema inspect --db-url "$SQLSERVER_URL" --format sql > out.sql
+ptah schema apply --db-url "$SQLSERVER_URL" --to file://out.sql
+```
+
+Each loader records what its format cannot express, and the comparison withholds
+those removals. HCL and a Go schema — `//ptah:schema:synonym` and
+`//ptah:schema:extendedproperty` — can both declare the two objects, so silence
+in either is a request to remove.
 
 ## Identifier collation
 

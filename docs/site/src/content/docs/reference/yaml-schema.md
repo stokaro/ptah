@@ -77,10 +77,11 @@ compared against a database holding one of each, planned `DROP SEQUENCE`,
 or `.yml` file now marks those families as not described, so the comparison
 withholds the removal.
 
-The other formats keep their own answer. HCL **does** have a block for the first
-four, so an HCL document that omits one is still asking for it to go; a
-`.sql` document and a Go schema likewise. What a document can say is a property
-of its format, and each loader records only its own limits.
+The other formats keep their own answer. HCL **does** have a block for all six,
+so an HCL document that omits one is still asking for it to go; a `.sql`
+document has the syntax for the first four and a Go schema for every one of
+them. What a document can say is a property of its format, and each loader
+records only its own limits.
 
 ## Extensions
 
