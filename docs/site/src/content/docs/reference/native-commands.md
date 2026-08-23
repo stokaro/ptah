@@ -467,17 +467,33 @@ The rules today:
 `ROL03` and `ROL04` read the server's role graph — who holds which role — so they
 run against a live database and report themselves skipped anywhere that graph was
 not read. The PostgreSQL family reads it from `pg_auth_members`, MySQL from
-`mysql.role_edges`, and MariaDB from `mysql.roles_mapping`.
+`mysql.role_edges`, MariaDB from `mysql.roles_mapping`, and SQL Server from
+`sys.database_role_members` — where the fixed roles every database ships with,
+and `public`, are excluded on the role side, because a membership nobody wrote
+is not a finding.
+
+`OWN01` reads ownership from the PostgreSQL family and SQL Server. MySQL has no
+object owner to read — a routine has a `DEFINER` and a table has nothing — so the
+rule reports itself skipped there rather than answering from a concept the engine
+does not have.
 
 `OWN01` reports **one finding per owning role**, not one per object: an owner is
 not a grant, so whoever holds that role's password can drop or alter everything
 it owns and no revoke takes that away. It commonly fires — PostgreSQL makes the
-creating role the owner, and most schemas are created by the account the
-application connects as — which is why it is `info` and why it is aggregated:
-a row per table would bury every other finding. The owner's login flag is read
-from the catalog beside the owner rather than looked up in the described roles,
-so the rule still answers where the owner is a role Ptah does not describe, such
-as the bootstrap superuser.
+creating role the owner — which is why it is `info` and why it is aggregated: a
+row per table would bury every other finding.
+
+Two details decide whether it answers at all:
+
+- **The login flag is read from the catalog** beside the owner rather than looked
+  up in the described roles, so the rule still answers where the owner is a role
+  Ptah does not describe — the bootstrap superuser owns everything on a default
+  PostgreSQL database. On SQL Server the same question is
+  `authentication_type_desc`: `dbo` reports `INSTANCE`, while `guest` and a user
+  created `WITHOUT LOGIN` report `NONE` and are nobody's password.
+- **An object with no owner of its own** is owned by its schema's owner on SQL
+  Server, which is what most objects are, so the read resolves through the schema
+  rather than skipping them.
 
 An edge granted **with admin option** is the right to grant a role onward rather
 than evidence somebody uses it, and neither rule counts it. That is measured

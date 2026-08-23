@@ -120,6 +120,18 @@ func (r *Reader) ReadSchema() (*types.DBSchema, error) {
 	}
 	schema.Grants = grants
 
+	memberships, err := r.readRoleMemberships()
+	if err != nil {
+		return nil, fmt.Errorf("sqlserver: read role memberships: %w", err)
+	}
+	schema.RoleMemberships = memberships
+
+	owners, err := r.readObjectOwners()
+	if err != nil {
+		return nil, fmt.Errorf("sqlserver: read object owners: %w", err)
+	}
+	schema.ObjectOwners = owners
+
 	synonyms, err := r.readSynonyms()
 	if err != nil {
 		return nil, fmt.Errorf("sqlserver: read synonyms: %w", err)
@@ -744,6 +756,113 @@ func (r *Reader) readRoles() ([]types.DBRole, error) {
 		return nil, err
 	}
 	return roles, nil
+}
+
+// readRoleMemberships reads who holds which database role.
+//
+// The same three exclusions readRoles applies are applied to the ROLE side:
+// db_owner and its siblings ship with every database, and `public` holds every
+// principal by definition, so both would report memberships nobody wrote. The
+// MEMBER side is not filtered that way -- a fixed role can be a member of a
+// user-defined one, and that edge is exactly the kind an analysis wants to see.
+//
+// SQL Server records no admin option: `ALTER ROLE ... ADD MEMBER` grants
+// membership and nothing else, so AdminOption is false here rather than
+// unknown (stokaro/ptah#1950).
+func (r *Reader) readRoleMemberships() ([]types.DBRoleMembership, error) {
+	query := `
+		SELECT role_principal.name AS role_name, member_principal.name AS member_name
+		FROM sys.database_role_members AS rm
+		JOIN sys.database_principals AS role_principal
+			ON role_principal.principal_id = rm.role_principal_id
+		JOIN sys.database_principals AS member_principal
+			ON member_principal.principal_id = rm.member_principal_id
+		WHERE role_principal.is_fixed_role = 0 AND role_principal.name <> 'public'
+		ORDER BY role_principal.name, member_principal.name`
+	rows, err := r.db.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	memberships := make([]types.DBRoleMembership, 0)
+	for rows.Next() {
+		var membership types.DBRoleMembership
+		if err := rows.Scan(&membership.Role, &membership.Member); err != nil {
+			return nil, err
+		}
+		memberships = append(memberships, membership)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return memberships, nil
+}
+
+// mssqlOwnerKinds maps sys.objects.type onto the vocabulary the rest of Ptah
+// uses. A type with no entry is not reported: a constraint and a default have
+// an owner in the catalog and are not objects an operator reasons about owning.
+var mssqlOwnerKinds = map[string]string{
+	"U":  "table",
+	"V":  "view",
+	"SO": "sequence",
+}
+
+// readObjectOwners reads who owns each table, view, sequence and schema.
+//
+// An object whose principal_id is NULL is owned by its SCHEMA's owner -- that
+// is what "the schema owns it" means in T-SQL -- so the join resolves through
+// COALESCE rather than dropping those rows, which on an ordinary database is
+// every row.
+//
+// OwnerCanLogin asks authentication_type_desc rather than the principal type. A
+// database role authenticates as nothing; a user created WITHOUT LOGIN reports
+// NONE and cannot be authenticated as either, so neither is somebody whose
+// password could be held. Measured on SQL Server 2025: dbo reports INSTANCE,
+// `guest` and a `CREATE USER ... WITHOUT LOGIN` user both report NONE.
+func (r *Reader) readObjectOwners() ([]types.DBObjectOwner, error) {
+	query := `
+		SELECT o.type AS kind, s.name AS schema_name, o.name AS object_name,
+		       owner.name AS owner_name,
+		       CASE WHEN owner.authentication_type_desc <> 'NONE' THEN 1 ELSE 0 END AS owner_can_login
+		FROM sys.objects AS o
+		JOIN sys.schemas AS s ON s.schema_id = o.schema_id
+		JOIN sys.database_principals AS owner
+			ON owner.principal_id = COALESCE(o.principal_id, s.principal_id)
+		WHERE o.type IN ('U', 'V', 'SO') AND o.is_ms_shipped = 0
+		UNION ALL
+		SELECT 'schema' AS kind, '' AS schema_name, s.name AS object_name,
+		       owner.name AS owner_name,
+		       CASE WHEN owner.authentication_type_desc <> 'NONE' THEN 1 ELSE 0 END AS owner_can_login
+		FROM sys.schemas AS s
+		JOIN sys.database_principals AS owner ON owner.principal_id = s.principal_id
+		WHERE s.name NOT IN ('sys', 'INFORMATION_SCHEMA')
+		ORDER BY kind, schema_name, object_name`
+	rows, err := r.db.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	owners := make([]types.DBObjectOwner, 0)
+	for rows.Next() {
+		var kind, schemaName, name, owner string
+		var canLogin bool
+		if err := rows.Scan(&kind, &schemaName, &name, &owner, &canLogin); err != nil {
+			return nil, err
+		}
+		resolved := kind
+		if mapped, ok := mssqlOwnerKinds[strings.TrimSpace(kind)]; ok {
+			resolved = mapped
+		}
+		owners = append(owners, types.DBObjectOwner{
+			Kind: resolved, Schema: schemaName, Name: name, Owner: owner, OwnerCanLogin: canLogin,
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return owners, nil
 }
 
 // readGrants reads the permissions this database's roles hold.
