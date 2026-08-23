@@ -1905,10 +1905,12 @@ func Oracle23() Capabilities {
 	return Capabilities{
 		// Oracle 23 has a real CREATE DOMAIN -- measured usable as a column
 		// type and enforcing its own NOT NULL against an INSERT of NULL -- and
-		// this still reads false, because the key says what Ptah renders and
-		// reads back, not what the engine owns. Flipping it is a renderer, a
-		// reader and a planner together.
-		DomainTypes: false,
+		// the renderer, the reader and the planner all reach it now
+		// (stokaro/ptah#1920). Oracle21 turns this off again, because
+		// CREATE DOMAIN answers ORA-00901 there: this is the one key of the
+		// five where the two lines genuinely differ rather than sharing a
+		// renderer that had not been written.
+		DomainTypes: true,
 		// CREATE TYPE ... AS (a NUMBER, b VARCHAR2(10)) is ACCEPTED and
 		// creates nothing usable: user_types reports TYPECODE=OBJECT with
 		// ATTRIBUTES=0 and user_type_attrs has no row for it. Oracle's real
@@ -2044,7 +2046,12 @@ func Oracle23() Capabilities {
 func Oracle21() Capabilities {
 	return Oracle23().
 		With(DropIndexIfExists, false).
-		With(ObjectExistenceGuards, false)
+		With(ObjectExistenceGuards, false).
+		// CREATE DOMAIN is ORA-00901 on this line, and ALL_DOMAINS does not
+		// exist either -- so the read is skipped rather than attempted, the
+		// renderer names the declaration as unsupported, and the planner emits
+		// nothing for it (stokaro/ptah#1920).
+		With(DomainTypes, false)
 }
 
 var defaultDialectPresets = map[string]func() Capabilities{
