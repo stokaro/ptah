@@ -328,16 +328,7 @@ trusted local registry.
 
 ## Publish a desired schema
 
-Publish Go annotations:
-
-```bash
-ptah schema push \
-  oci://ghcr.io/acme/app-schema \
-  --root-dir ./models \
-  --tag stable
-```
-
-Or publish one or more YAML, HCL, or SQL sources:
+Publish one or more SQL, YAML, or HCL sources:
 
 ```bash
 ptah schema push \
@@ -346,7 +337,9 @@ ptah schema push \
   --dialect postgres
 ```
 
-Ptah merges the selected sources and renders one canonical `schema.hcl` layer.
+Annotated Go models publish the same way, with `--root-dir ./models` in place
+of `--schema-file`. Ptah merges the selected sources and renders one canonical
+`schema.hcl` layer.
 Schema publication fails closed:
 
 - managed reference data is rejected because it cannot be represented without
