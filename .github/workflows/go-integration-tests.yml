@@ -59,7 +59,9 @@ jobs:
           --health-timeout 5s
           --health-retries 5
         ports:
-          - 5433:5432
+          # Not 5433: YugabyteDB publishes that one, and the two services would
+          # race for it. Not 5434 either -- PGAdapter has it.
+          - 5435:5432
 
       pgbouncer:
         image: edoburu/pgbouncer:v1.25.2-p0
@@ -389,7 +391,7 @@ jobs:
           # The same database through the pooler, which is the only difference
           # the tests using it are about.
           POSTGRES_POOLED_TEST_URL: "postgres://ptah_user:ptah_password@localhost:6432/ptah_test?sslmode=disable"
-          TIMESCALE_TEST_URL: "postgres://ptah_user:ptah_password@localhost:5433/ptah_test?sslmode=disable"
+          TIMESCALE_TEST_URL: "postgres://ptah_user:ptah_password@localhost:5435/ptah_test?sslmode=disable"
           POSTGRES_TEST_URL: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
           POSTGRES_URL: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
           TEST_DATABASE_URL: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
