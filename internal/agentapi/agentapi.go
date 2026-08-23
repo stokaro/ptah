@@ -41,8 +41,15 @@ import (
 )
 
 // Version is the contract version. A caller reads it to know what it is talking
-// to; a change to the shape of any request or response below changes it.
-const Version = "2026-08-21"
+// to; a change to the shape of any request or response below changes it, and so
+// does adding an operation.
+//
+// 2026-08-23 added the artifact operations: describe_workspace, read_artifact,
+// preview_patch and apply_patch. They live on a [Session] rather than beside the
+// four read operations below, because an artifact operation is meaningless
+// without knowing which directory it means and that must not come from the
+// caller.
+const Version = "2026-08-23"
 
 // SchemaSource names where a declared schema is read from.
 //

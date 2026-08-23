@@ -412,6 +412,7 @@ func localOnlyMigrationDirVerbs() []localOnlyMigrationDirVerb {
 		{verb: "migrations test", why: "it runs migration test files from a local working tree, and is not wired to the puller"},
 		{verb: "schema test", why: "it runs schema test files from a local working tree, and is not wired to the puller"},
 		{verb: "schema inspect", why: "the flag supplies a local migration directory to replay, and is not wired to the puller"},
+		{verb: "mcp", why: "the flag names the local directory an agent may propose patches to, and a patch rewrites it in place; an artifact is immutable"},
 	}
 }
 

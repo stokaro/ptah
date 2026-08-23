@@ -31,6 +31,7 @@ import (
 	"path"
 	"strings"
 
+	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/internal/agentpolicy"
 	"go.5x5.cz/ptah/internal/agentworkspace"
@@ -171,6 +172,15 @@ type Options struct {
 	// required: a lint run without one either guesses or checks nothing, and
 	// both answers are worse than refusing.
 	Dialect string
+	// Version is the server release the operator named, empty for the dialect
+	// default. It reaches the linter unchanged, so a rule gated on a capability
+	// that varies within a dialect answers for the server the project actually
+	// runs rather than for the family's floor.
+	Version string
+	// Capabilities is the preset resolved from Dialect and Version. A nil
+	// preset lets each check fall back to the dialect default, which is what an
+	// unpinned run has always done.
+	Capabilities capability.Capabilities
 	// DirFormat selects the migration directory layout. The zero value lets the
 	// integrity check detect it.
 	DirFormat migrator.MigrationDirFormat
@@ -321,7 +331,11 @@ func (r *Runner) migrationSQL(scope *agentworkspace.Scope) (Result, error) {
 		}
 		findings, lintErr := sqllint.LintSource(
 			sqllint.Source{Name: entry.Path, SQL: string(content)},
-			sqllint.Options{Dialect: r.opts.Dialect},
+			sqllint.Options{
+				Dialect:      r.opts.Dialect,
+				Version:      r.opts.Version,
+				Capabilities: r.opts.Capabilities,
+			},
 		)
 		if lintErr != nil {
 			diagnostics = append(diagnostics, Diagnostic{
@@ -380,7 +394,7 @@ func (r *Runner) runSchema(ctx context.Context, scope *agentworkspace.Scope) (Re
 		}), nil
 	}
 
-	problems := schemavalidate.Collect(database, r.opts.Dialect)
+	problems := schemavalidate.CollectWithCapabilities(database, r.opts.Dialect, r.capabilities())
 	validate := make([]Diagnostic, 0, len(problems))
 	for _, problem := range problems {
 		validate = append(validate, Diagnostic{
@@ -396,6 +410,15 @@ func (r *Runner) runSchema(ctx context.Context, scope *agentworkspace.Scope) (Re
 		}})
 	}
 	return finish([]Result{pass(GateSchemaLoad), failure(GateSchemaValidate, validate), render}), nil
+}
+
+// capabilities is the preset the checks run against, resolved to the dialect
+// default when the operator named no server.
+func (r *Runner) capabilities() capability.Capabilities {
+	if r.opts.Capabilities == nil {
+		return capability.ForDialect(r.opts.Dialect)
+	}
+	return r.opts.Capabilities
 }
 
 // schemaProblemMessage names the object a structural problem is about, because

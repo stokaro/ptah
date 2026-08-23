@@ -196,6 +196,12 @@ func (p *Plan) ResultDigest() string { return p.resultDigest }
 // Class names the artifact family the plan touches.
 func (p *Plan) Class() agentpolicy.ArtifactClass { return p.patch.Class }
 
+// Summary is the caller's own description of the patch.
+//
+// It is exposed so an audit record can carry it, labelled as the caller's
+// words. Nothing in this package renders it as Ptah's account of the change.
+func (p *Plan) Summary() string { return p.patch.Summary }
+
 // Files lists the planned changes.
 func (p *Plan) Files() []FileChange { return slices.Clone(p.files) }
 
