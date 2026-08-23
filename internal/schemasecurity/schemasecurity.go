@@ -132,8 +132,33 @@ type RoleMembership struct {
 	AdminOption bool
 }
 
+// ObjectOwner is one object and the role that owns it.
+//
+// Passed in for the same reason memberships are: Ptah models no ownership in a
+// desired state, so a caller holding a catalog read has it and one holding a
+// schema file does not (stokaro/ptah#1950).
+type ObjectOwner struct {
+	// Kind is the object kind: table, view, sequence, schema.
+	Kind string
+	// Name is the object's name.
+	Name string
+	// Owner is the role that owns it.
+	Owner string
+	// OwnerCanLogin reports whether that role can log in, which is the whole
+	// question OWN01 asks. It is a fact the caller read rather than one this
+	// package infers from the described roles: the owner of everything on a
+	// default PostgreSQL database is a role Ptah deliberately does not
+	// describe.
+	OwnerCanLogin bool
+}
+
 // Options selects what the analysis can check.
 type Options struct {
+	// ObjectOwners are the owners of the objects under analysis.
+	//
+	// Nil means the caller did not read them and OWN01 reports itself skipped;
+	// an empty non-nil slice means it read them and there are none.
+	ObjectOwners []ObjectOwner
 	// RoleMemberships are the role-in-role edges of the target.
 	//
 	// A NIL slice means the caller did not read them, and the rules that need
@@ -177,6 +202,13 @@ func Analyze(db *goschema.Database, opts Options) Report {
 			Code:   "PRV01",
 			Reason: "the target does not model row-level security",
 		})
+	}
+
+	if opts.ObjectOwners != nil {
+		report.Findings = append(report.Findings, findObjectsOwnedByALoginRole(opts.ObjectOwners)...)
+	} else {
+		report.SkippedRules = append(report.SkippedRules,
+			SkippedRule{Code: "OWN01", Reason: "object ownership was not read for this source"})
 	}
 
 	if opts.RoleMemberships != nil {
@@ -325,6 +357,57 @@ func isShippedDefaultPublicGrant(grant goschema.Grant) bool {
 	}
 	privileges := normalizedPrivileges(grant.Privileges)
 	return len(privileges) == 1 && privileges[0] == "USAGE"
+}
+
+// findObjectsOwnedByALoginRole implements OWN01.
+//
+// An object owned by a role somebody logs in as can be dropped or altered by
+// whoever holds that password, and the privilege cannot be revoked without
+// changing the owner: an owner is not a grant. Owning through a NOLOGIN group
+// role instead makes the right revocable, because membership is.
+//
+// ONE finding per owning role rather than one per object. The finding is
+// common -- PostgreSQL makes the creating role the owner, and most schemas are
+// created by the account the application connects as -- so a per-object rule
+// would bury every other finding under a list of every table. Aggregating
+// keeps it readable and keeps its severity honest: this is worth knowing, not
+// worth blocking.
+func findObjectsOwnedByALoginRole(owners []ObjectOwner) []Finding {
+	owned := make(map[string]map[string]bool, len(owners))
+	for _, owner := range owners {
+		name := strings.TrimSpace(owner.Owner)
+		if name == "" || !owner.OwnerCanLogin {
+			continue
+		}
+		if owned[name] == nil {
+			owned[name] = make(map[string]bool)
+		}
+		owned[name][strings.TrimSpace(owner.Kind)+" "+strings.TrimSpace(owner.Name)] = true
+	}
+
+	findings := make([]Finding, 0, len(owned))
+	for _, role := range sortedKeys(setOfOwners(owned)) {
+		objects := sortedKeys(owned[role])
+		findings = append(findings, Finding{
+			Code:     "OWN01",
+			Severity: risk.Info,
+			Subject:  Subject{Kind: "role", Name: role},
+			Message: "role " + role + " can log in and owns " + strconv.Itoa(len(objects)) +
+				" object(s), so whoever holds its password can drop or alter them",
+			Detail:     Detail{Roles: []string{role}, Privileges: objects},
+			Suggestion: "own them with a role that cannot log in and grant membership in it instead",
+		})
+	}
+	return findings
+}
+
+// setOfOwners turns the owner map into a set, so sortedKeys can order it.
+func setOfOwners(owned map[string]map[string]bool) map[string]bool {
+	keys := make(map[string]bool, len(owned))
+	for key := range owned {
+		keys[key] = true
+	}
+	return keys
 }
 
 // findRolesWithNoMembers implements ROL04.

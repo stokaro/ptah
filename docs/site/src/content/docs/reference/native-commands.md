@@ -462,11 +462,22 @@ The rules today:
 | `PRV03` | a privilege granted to `PUBLIC`, which every current and future role holds | warning |
 | `ROL03` | two roles held by one member that grant nearly the same privileges | info |
 | `ROL04` | a role that cannot log in and that nobody holds | info |
+| `OWN01` | objects owned by a role that can log in | info |
 
 `ROL03` and `ROL04` read the server's role graph — who holds which role — so they
 run against a live database and report themselves skipped anywhere that graph was
 not read. The PostgreSQL family reads it from `pg_auth_members`, MySQL from
 `mysql.role_edges`, and MariaDB from `mysql.roles_mapping`.
+
+`OWN01` reports **one finding per owning role**, not one per object: an owner is
+not a grant, so whoever holds that role's password can drop or alter everything
+it owns and no revoke takes that away. It commonly fires — PostgreSQL makes the
+creating role the owner, and most schemas are created by the account the
+application connects as — which is why it is `info` and why it is aggregated:
+a row per table would bury every other finding. The owner's login flag is read
+from the catalog beside the owner rather than looked up in the described roles,
+so the rule still answers where the owner is a role Ptah does not describe, such
+as the bootstrap superuser.
 
 An edge granted **with admin option** is the right to grant a role onward rather
 than evidence somebody uses it, and neither rule counts it. That is measured

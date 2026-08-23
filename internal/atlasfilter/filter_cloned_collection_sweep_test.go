@@ -171,6 +171,17 @@ func clonedCollectionRows() []clonedCollectionRow {
 			},
 		},
 		{
+			// An ownership row names two things a selector can reach: the role
+			// that owns and the object owned. This row names the object, and
+			// the owner is a name no other row uses.
+			field: "ObjectOwners", present: "owned_table", absent: "nosuch_owned_object",
+			seed: func(s *dbschematypes.DBSchema) {
+				s.ObjectOwners = append(s.ObjectOwners, dbschematypes.DBObjectOwner{
+					Kind: "table", Name: "owned_table", Owner: "owner_role", OwnerCanLogin: true,
+				})
+			},
+		},
+		{
 			// A membership names no object of its own; both of its ends are
 			// roles, so the `role` selector is what answers it. The seeded
 			// role name is one no other row uses, so this row's selector can

@@ -39,6 +39,16 @@ type DBSchema struct {
 	Roles              []DBRole             `json:"roles"`        // PostgreSQL roles
 	Grants             []DBGrant            `json:"grants"`       // PostgreSQL privilege grants
 
+	// ObjectOwners are the owners of the objects this read covers, one row per
+	// object, on the engines that have an owner to report.
+	//
+	// Like RoleMemberships it is read for ANALYSIS rather than for planning:
+	// Ptah renders no OWNER TO and no CREATE SCHEMA ... AUTHORIZATION, and
+	// treating ownership as part of the description is what made an inspect
+	// describe the connecting superuser and plan a CREATE ROLE for it
+	// (stokaro/ptah#1950).
+	ObjectOwners []DBObjectOwner `json:"object_owners,omitempty"`
+
 	// RoleMemberships are the role-in-role edges the server holds between the
 	// roles Ptah manages: who inherits whose privileges.
 	//
@@ -982,6 +992,29 @@ type DBRole struct {
 	Replication bool   `json:"replication"`  // Whether role can initiate replication
 	HasPassword bool   `json:"has_password"` // Whether role has a password set
 	Comment     string `json:"comment"`      // Role comment/description
+}
+
+// DBObjectOwner is the owner of one schema object.
+//
+// Kind is the object kind in Ptah's own vocabulary -- table, view,
+// materialized view, sequence, schema -- rather than the catalog's letter, so a
+// consumer need not know pg_class.relkind to read it.
+type DBObjectOwner struct {
+	// Kind is the object kind.
+	Kind string `json:"kind"`
+	// Schema is the schema the object lives in, empty for a schema itself.
+	Schema string `json:"schema,omitempty"`
+	// Name is the object's name.
+	Name string `json:"name"`
+	// Owner is the role that owns it.
+	Owner string `json:"owner"`
+	// OwnerCanLogin reports whether that role can log in, read from the
+	// catalog beside the owner rather than inferred from the described roles:
+	// the owner of everything on a default PostgreSQL database is the
+	// bootstrap superuser, which Ptah deliberately does not describe, and an
+	// analysis that had to look it up in the role list would go quiet exactly
+	// where the question matters.
+	OwnerCanLogin bool `json:"owner_can_login"`
 }
 
 // DBRoleMembership is one role-in-role edge: Member holds everything Role
