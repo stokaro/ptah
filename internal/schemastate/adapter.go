@@ -145,6 +145,9 @@ func columnsFromCatalog(
 			// that decision already lives, out of the same package
 			// migration/schemadiff asks.
 			DefaultIsExpression: normalize.IsDefaultExpr(derefOrEmpty(column.ColumnDefault)),
+			GeneratedExpression: derefOrEmpty(column.GeneratedExpression),
+			GeneratedKind:       column.GeneratedKind,
+			IdentityGeneration:  column.IdentityGeneration,
 			AutoIncrement:       column.IsAutoIncrement,
 		})
 	}
@@ -345,7 +348,11 @@ func columnsFromDescription(
 			// A description keeps the two kinds apart in its own model, so this
 			// is a read rather than a decision.
 			DefaultIsExpression: strings.TrimSpace(field.DefaultExpr) != "",
+			GeneratedExpression: field.GeneratedExpression,
+			GeneratedKind:       field.GeneratedKind,
+			IdentityGeneration:  field.IdentityGeneration,
 			Check:               field.Check,
+			CheckName:           field.CheckName,
 			AutoIncrement:       field.AutoInc,
 		})
 	}

@@ -285,6 +285,15 @@ func changedColumnProperties(before, after schemastate.Column, profile schemasta
 	if before.HasDefault != after.HasDefault || before.Default != after.Default {
 		changed = append(changed, "default")
 	}
+	// Both sources report a generated column's expression and kind, so this is
+	// a comparison rather than a carry: a column that starts or stops being
+	// generated is a change either side can ask for. Check and CheckName are
+	// NOT here, for the reason schemastate.Column records -- a catalog reports
+	// a column-level check as a table-level constraint row.
+	if before.GeneratedExpression != after.GeneratedExpression ||
+		before.GeneratedKind != after.GeneratedKind {
+		changed = append(changed, "generated expression")
+	}
 	return changed
 }
 

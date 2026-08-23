@@ -315,6 +315,42 @@ func TestTableStatementsMatchTheExistingPlanner(t *testing.T) {
 			profile: oracleProfilePointer(),
 		},
 		{
+			// A generated column. Both sources report the expression and the
+			// kind, so this one is compared as well as rendered.
+			name: "creating a table with a generated column",
+			description: describedTable(
+				goschema.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true},
+				goschema.Field{
+					StructName: "Widget", Name: "code", Type: "text", Nullable: true,
+					GeneratedExpression: "upper(name)", GeneratedKind: "STORED",
+				}),
+			catalog: &dbschematypes.DBSchema{},
+		},
+		{
+			// An identity column. The generation mode decides whether a client
+			// may supply its own value, so a CREATE that dropped it would build
+			// a column with different write semantics.
+			name: "creating a table with an identity column",
+			description: describedTable(goschema.Field{
+				StructName: "Widget", Name: "id", Type: "int", Primary: true,
+				IdentityGeneration: "ALWAYS",
+			}),
+			catalog: &dbschematypes.DBSchema{},
+		},
+		{
+			// A NAMED column check. The name is what every later diagnostic
+			// about the constraint uses, so a CREATE that dropped it would leave
+			// the server to invent one the author cannot predict.
+			name: "creating a table with a named column check",
+			description: describedTable(
+				goschema.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true},
+				goschema.Field{
+					StructName: "Widget", Name: "code", Type: "text", Nullable: true,
+					Check: "length(code) > 0", CheckName: "ck_widget_code",
+				}),
+			catalog: &dbschematypes.DBSchema{},
+		},
+		{
 			// A composite key, which the column syntax cannot express: PRIMARY
 			// KEY on two columns declares two keys rather than one over both,
 			// so it has to become a table-level constraint.

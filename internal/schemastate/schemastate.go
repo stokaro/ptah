@@ -160,6 +160,21 @@ type Column struct {
 	// model carrying only the string renders `DEFAULT 'now()'` for a column
 	// whose default is a function call.
 	DefaultIsExpression bool
+	// GeneratedExpression and GeneratedKind are what a generated column
+	// computes and whether the result is stored. Both sources report them, so
+	// unlike Check they are compared as well as rendered: a column that stops
+	// being generated, or starts, is a change either side can ask for.
+	GeneratedExpression string
+	GeneratedKind       string
+	// IdentityGeneration is an identity column's generation mode -- ALWAYS or
+	// BY DEFAULT -- empty for a column that is not one.
+	IdentityGeneration string
+	// CheckName is the constraint name a column-level CHECK carries, empty when
+	// the source let the server derive one. It travels with Check for the
+	// reason Check does: a CREATE TABLE that dropped it would name the
+	// constraint something the author cannot predict, and every later
+	// diagnostic about it would use that name.
+	CheckName string
 	// Check is the column-level CHECK expression the source wrote, empty for a
 	// column with none.
 	//
