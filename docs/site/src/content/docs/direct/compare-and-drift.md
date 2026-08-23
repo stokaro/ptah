@@ -12,7 +12,9 @@ would reconcile the difference without executing anything.
 Prerequisites:
 
 - A `ptah` binary on your machine ([Install Ptah](../../start/install/)).
-- A desired schema — the examples use annotated Go models under `./models`.
+- A desired schema, in any source Ptah reads. The examples use annotated Go
+  models under `./models`; `--schema-file schema.sql` reads a file instead, and
+  every command below takes either.
 - The URL of the database to check.
 
 The examples start from a synced state: the models in `./models` describe

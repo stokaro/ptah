@@ -362,6 +362,24 @@ everywhere -- which the issue asks not to do. `reference/configuration` also
 says where the two files are NOT interchangeable, because `--config` names a
 `ptah.yaml` and refuses an `atlas.hcl` by name.
 
+## 6e. The pages the review left alone, and why
+
+The structural review #1228 asks for covered every reader-facing section. Most
+needed nothing: `direct/*`, `versioned/*` past the overview, `testing/*`,
+`operate/*`, `databases/*`, `atlas/*`, `extend/*` and the reference pages
+describe operations rather than a schema source, and already name both flags
+where a source is named.
+
+Four places led with Go where the operation is format-neutral, and were
+levelled rather than restructured: the OCI publish example now shows a file
+source first with the Go flag named beside it, `direct/compare-and-drift` says
+its Go models are the example rather than the requirement, `testing` lists the
+sources `schema test` accepts without putting one first, and the landing page's
+path table leads with the language-neutral rows.
+
+No page was moved for cosmetic reasons, and the sections that already served
+the general-purpose narrative were left as they were.
+
 ## 7. Terminology audit
 
 Verified with repository-wide searches at the audited commit.
