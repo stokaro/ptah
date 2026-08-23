@@ -668,6 +668,20 @@ func loadSQLFileWithStatements(path string, opts Options) (*goschema.Database, *
 	return &db, statements, nil
 }
 
+// appendDatabase merges one parsed file into the description being built from
+// all of them.
+//
+// EVERY object family of [goschema.Database] belongs here. Two did not, and the
+// consequence was not a compile error: `ptah schema apply --to file://x.hcl`
+// silently ignored every declared SQL Server synonym and extended property and
+// reported `Schema is synced, no changes to be made`, while the same file
+// through [Load] planned all of them. Nothing else could see it, because
+// [Load] returns the parsed database directly and every unit test goes that way
+// (stokaro/ptah#1999).
+//
+// [TestAppendDatabase_MergesEveryObjectFamily] is what keeps the next family
+// from being missed the same way: it reflects over the struct rather than
+// trusting this list.
 func appendDatabase(dst, src *goschema.Database) {
 	dst.Schemas = append(dst.Schemas, src.Schemas...)
 	dst.Tables = append(dst.Tables, src.Tables...)
@@ -689,6 +703,8 @@ func appendDatabase(dst, src *goschema.Database) {
 	dst.RLSEnabledTables = append(dst.RLSEnabledTables, src.RLSEnabledTables...)
 	dst.Roles = append(dst.Roles, src.Roles...)
 	dst.Grants = append(dst.Grants, src.Grants...)
+	dst.Synonyms = append(dst.Synonyms, src.Synonyms...)
+	dst.ExtendedProperties = append(dst.ExtendedProperties, src.ExtendedProperties...)
 	dst.ManagedData = append(dst.ManagedData, src.ManagedData...)
 	// Several files loaded together are one description, and it describes only
 	// what all of them together describe. Union, never intersection: a limit
