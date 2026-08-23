@@ -169,11 +169,22 @@ property of `ptah-compat` alone, never reaches this command, and
 `PTAH_ATLAS_INSPECT_ALL_BLOCKS` has no effect here. See
 [Blocks the compatibility surface leaves out by default](../../atlas/schema-commands/#blocks-the-compatibility-surface-leaves-out-by-default).
 
-Because this command leaves nothing out, its output claims to describe
-everything, and it carries no `ptah:not-described` header. Delete a block from
-it and the plan that follows removes the object, which is what you asked for.
-The compatibility surface, which does leave blocks out, says so in the document;
-see [The document says what it does not describe](../../atlas/schema-commands/#the-document-says-what-it-does-not-describe).
+Because this command leaves no block type out, its output claims to describe
+everything the HCL format can express, and it carries no `ptah:not-described`
+header. Delete a block from it and the plan that follows removes the object,
+which is what you asked for. The compatibility surface, which does leave blocks
+out, says so in the document; see
+[The document says what it does not describe](../../atlas/schema-commands/#the-document-says-what-it-does-not-describe).
+
+What HCL has no syntax for at all is a different question, and it is answered
+when the document is read rather than when it is written. A SQLite virtual
+table, a SQL Server synonym and a SQL Server extended property have no block, so
+a document written in this format could not have named one — and reading its
+silence as intent would make `ptah schema inspect > out.hcl` followed by
+`ptah schema apply --to file://out.hcl` drop them, through Ptah's own output.
+Every loader records those limits for the format it read, so the comparison
+withholds the removal. A Go schema **can** declare a synonym and an extended
+property, so its silence about one still removes it.
 
 Both commands write a `permission` block by the same three rules: a schema is
 declared whenever anything references one, a grantee is a `role.<name>`

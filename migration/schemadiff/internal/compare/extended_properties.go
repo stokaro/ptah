@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strings"
 
+	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/dbschema/types"
 	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
@@ -54,6 +55,7 @@ func ExtendedProperties(
 	generated *goschema.Database,
 	database *types.DBSchema,
 	diff *difftypes.SchemaDiff,
+	cov Coverage,
 ) {
 	declared := make(map[extendedPropertyKey]goschema.ExtendedProperty, len(generated.ExtendedProperties))
 	for _, property := range generated.ExtendedProperties {
@@ -91,6 +93,16 @@ func ExtendedProperties(
 			continue
 		}
 		if property.ValueNotRepresentable {
+			continue
+		}
+		// A desired state that could not have named this property has not
+		// withheld it. No document format Ptah reads can express one -- HCL has
+		// no block, YAML has no key, and the SQL parser produces none -- so
+		// `schema inspect > out.hcl` followed by `schema apply --to out.hcl`
+		// planned sp_dropextendedproperty for every property on the server,
+		// through Ptah's own output (stokaro/ptah#1031). A Go schema CAN
+		// declare one, records nothing here, and still removes.
+		if !cov.PlansRemoval(coverage.ExtendedProperty, property.Schema, property.Name) {
 			continue
 		}
 		diff.ExtendedPropertiesRemoved = append(diff.ExtendedPropertiesRemoved,

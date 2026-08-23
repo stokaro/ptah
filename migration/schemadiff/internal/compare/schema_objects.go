@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"go.5x5.cz/ptah/core/ast"
+	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/identifier"
@@ -426,7 +427,12 @@ func findDatabaseFunction(
 // SYNONYM, so both shapes end up as a drop and a create -- but only the
 // modification says the two belong together, which is what lets a plan order
 // them as one operation and a reader tell a retarget from a coincidence.
-func Synonyms(generated *goschema.Database, database *types.DBSchema, diff *difftypes.SchemaDiff) {
+func Synonyms(
+	generated *goschema.Database,
+	database *types.DBSchema,
+	diff *difftypes.SchemaDiff,
+	cov Coverage,
+) {
 	generatedSynonyms := make(map[string]goschema.Synonym, len(generated.Synonyms))
 	for _, synonym := range generated.Synonyms {
 		generatedSynonyms[synonym.QualifiedName()] = synonym
@@ -451,10 +457,22 @@ func Synonyms(generated *goschema.Database, database *types.DBSchema, diff *diff
 		}
 	}
 
-	for name := range databaseSynonyms {
-		if _, ok := generatedSynonyms[name]; !ok {
-			diff.SynonymsRemoved = append(diff.SynonymsRemoved, name)
+	for name, databaseSynonym := range databaseSynonyms {
+		if _, ok := generatedSynonyms[name]; ok {
+			continue
 		}
+		// A desired state that could not have named this synonym has not
+		// withheld it, and no document format Ptah reads can name one: HCL has
+		// no block, YAML has no key, and the SQL parser's conversion produces
+		// none even for a `CREATE SYNONYM` it parses. So `schema inspect` into
+		// a file and `schema apply --to` that file planned DROP SYNONYM for
+		// every synonym on the server, through Ptah's own output
+		// (stokaro/ptah#1031). A Go schema CAN declare one, records nothing
+		// here, and still removes.
+		if !cov.PlansRemoval(coverage.Synonym, databaseSynonym.Schema, databaseSynonym.Name, name) {
+			continue
+		}
+		diff.SynonymsRemoved = append(diff.SynonymsRemoved, name)
 	}
 
 	sort.Strings(diff.SynonymsAdded)
