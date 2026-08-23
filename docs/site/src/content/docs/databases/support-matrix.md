@@ -494,6 +494,22 @@ then the domain its column was typed by answers
 alternative, `DROP DOMAIN ... FORCE`, is worse — with a live dependent it
 succeeds and silently untypes the column.
 
+**A composite type is Oracle's object type**, and the spelling is the whole
+difference. PostgreSQL's `CREATE TYPE t AS (a NUMBER)` is *accepted* here and
+creates nothing usable — `USER_TYPES` reports `ATTRIBUTES 0` with
+`INCOMPLETE YES`, `USER_OBJECTS` reports `INVALID`, and the driver returns no
+error at all. Ptah writes `CREATE OR REPLACE TYPE t AS OBJECT (...)`, which is
+the statement that creates one, and reads it back from `ALL_TYPES` and
+`ALL_TYPE_ATTRS`.
+
+The read describes the subset the model can carry, and declines the rest by name
+rather than flattening it: an object type with a method, a subtype, a collection
+type (`VARRAY`, `TABLE OF`) and an incomplete shell are each left out, because
+describing one by its attribute list alone would say a replay produces the same
+type when it produces a different one. Replacing a type a column uses answers
+`ORA-02303` and changes nothing — the server declining to leave that column
+naming a shape it no longer has, which is kept rather than forced.
+
 **Functions and procedures** are rendered, read back and planned on both lines.
 Their body is PL/SQL, which is what the declaration says:
 

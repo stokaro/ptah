@@ -98,7 +98,7 @@ func domainsWithSemantics(
 		coverage.Domain, diff.DomainsAdded, qualifiedName, unguardedCreations(),
 	)
 	diff.DomainsAdded = keptDomains
-	cov.recordUndecidedAdditions(coverage.Domain, withheldDomains)
+	cov.recordUndecidedAdditions(withheldDomains)
 	diff.DomainsRemoved = cov.keepPlannedRemovals(coverage.Domain, diff.DomainsRemoved, qualifiedName)
 
 	sort.Strings(diff.DomainsAdded)
@@ -302,7 +302,7 @@ func compositeTypesWithSemantics(
 		coverage.Composite, diff.CompositeTypesAdded, qualifiedName, unguardedCreations(),
 	)
 	diff.CompositeTypesAdded = keptComposites
-	cov.recordUndecidedAdditions(coverage.Composite, withheldComposites)
+	cov.recordUndecidedAdditions(withheldComposites)
 	diff.CompositeTypesRemoved = cov.keepPlannedRemovals(coverage.Composite, diff.CompositeTypesRemoved, qualifiedName)
 
 	sort.Strings(diff.CompositeTypesAdded)
@@ -493,7 +493,7 @@ func rangesWithSemantics(
 		coverage.Range, diff.RangesAdded, qualifiedName, unguardedCreations(),
 	)
 	diff.RangesAdded = keptRanges
-	cov.recordUndecidedAdditions(coverage.Range, withheldRanges)
+	cov.recordUndecidedAdditions(withheldRanges)
 	diff.RangesRemoved = cov.keepPlannedRemovals(coverage.Range, diff.RangesRemoved, qualifiedName)
 
 	sort.Strings(diff.RangesAdded)

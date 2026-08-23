@@ -125,6 +125,13 @@ func TestReadRolesInto_RecordsWhatARefusedAccountDidNotLookAt(t *testing.T) {
 	c.Assert(schema.Roles, qt.HasLen, 0)
 	c.Assert(schema.Grants, qt.HasLen, 0)
 	c.Assert(schema.NotDescribed.Describes(coverage.Role, "APP_READER"), qt.IsFalse)
+	// The record says WHY it did not look, and the reason is the strongest one
+	// available: Ptah watched this server refuse the catalog rather than
+	// assuming anything about it. A surface can turn that into "grant the
+	// privilege"; it can turn a reasonless record into nothing
+	// (stokaro/ptah#1346).
+	c.Assert(schema.NotDescribed.Objects, qt.DeepEquals,
+		[]coverage.Object{coverage.Refused(coverage.Role)})
 }
 
 // TestReadRolesInto_SurfacesAFaultRatherThanDescribingAroundIt is the control
