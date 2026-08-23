@@ -176,18 +176,14 @@ func TestConvert_CarriesEveryPropertyScopeExceptTheOneItCannotWrite(t *testing.T
 // reason written down. A new family belongs in one list or the other, and this
 // fails until it is in one.
 func TestConvert_DecidesEveryFamilyTheReadCanCarry(t *testing.T) {
-	databaseType := reflect.TypeFor[dbschematypes.DBSchema]()
-	for field := range databaseType.Fields() {
-		if field.Type.Kind() != reflect.Slice {
-			continue
-		}
-		t.Run(field.Name, func(t *testing.T) {
+	for _, field := range readSliceFields() {
+		t.Run(field, func(t *testing.T) {
 			c := qt.New(t)
-			_, converted := convertedFamilies[field.Name]
-			_, exempt := unconvertedFamilies[field.Name]
+			_, converted := convertedFamilies[field]
+			_, exempt := unconvertedFamilies[field]
 
 			c.Assert(converted, qt.Not(qt.Equals), exempt,
-				qt.Commentf("%s is in neither list, or in both", field.Name))
+				qt.Commentf("%s is in neither list, or in both", field))
 		})
 	}
 }
@@ -204,6 +200,20 @@ func TestConvert_NamesAnIRFieldThatExists(t *testing.T) {
 			c.Assert(found, qt.IsTrue)
 		})
 	}
+}
+
+// readSliceFields is every object family the read's shape carries, derived from
+// the struct rather than listed here.
+func readSliceFields() []string {
+	databaseType := reflect.TypeFor[dbschematypes.DBSchema]()
+	fields := make([]string, 0, databaseType.NumField())
+	for field := range databaseType.Fields() {
+		if field.Type.Kind() != reflect.Slice {
+			continue
+		}
+		fields = append(fields, field.Name)
+	}
+	return fields
 }
 
 // convertedFamilies maps each read family to the IR field it becomes.
