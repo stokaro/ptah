@@ -495,14 +495,17 @@ var Cells = []Cell{
 			// does. Each is a renderer that has not been written rather than a
 			// statement the server refuses, and each was measured ACCEPTED on
 			// this line while the preset reads false (stokaro/ptah#1875).
+			//
+			// role_management left this list in stokaro/ptah#1920: the
+			// renderer emits CREATE ROLE, DROP ROLE, GRANT and REVOKE, and the
+			// reader reads DBA_ROLES and ALL_TAB_PRIVS, so the preset now says
+			// true and there is nothing to understate.
 			capability.DomainTypes: "Oracle 23 has CREATE DOMAIN and the probe confirms it -- the domain is usable " +
 				"as a column type and enforces its own NOT NULL -- while Ptah's Oracle renderer emits no domain",
 			capability.Functions: "PL/SQL function bodies are their own language rather than the language-plus-body " +
 				"shape ast.CreateFunctionNode carries, so the renderer refuses them",
 			capability.Procedures: "the same reason as functions: CREATE PROCEDURE is accepted here and the renderer " +
 				"emits none",
-			capability.RoleManagement: "CREATE ROLE and GRANT are both accepted, and the renderer emits neither a role " +
-				"nor a grant for Oracle",
 		},
 		Note: "exercised by the tagged integration contour, which starts this image and runs the " +
 			"declaration-convergence round trip against it. Measured live on 23.26.2.0.0: every IF [NOT] EXISTS guard accepted -- and shown to be a " +
@@ -515,15 +518,15 @@ var Cells = []Cell{
 		Preset: capability.Oracle21, PresetName: "Oracle21",
 		Refinement: RefinedByVersion, Support: capability.Certified, Image: "gvenzl/oracle-xe:21-slim",
 		Understates: map[capability.Capability]string{
-			// The same three as the 23 line, minus domains: CREATE DOMAIN is
-			// ORA-00901 here, so the preset's false is a measurement rather
-			// than an understatement.
+			// The same two as the 23 line. CREATE DOMAIN is ORA-00901 here,
+			// so that preset's false is a measurement rather than an
+			// understatement, and role management is no longer understated on
+			// either line: the renderer and the reader landed in
+			// stokaro/ptah#1935 and stokaro/ptah#1944.
 			capability.Functions: "PL/SQL function bodies are their own language rather than the language-plus-body " +
 				"shape ast.CreateFunctionNode carries, so the renderer refuses them",
 			capability.Procedures: "the same reason as functions: CREATE PROCEDURE is accepted here and the renderer " +
 				"emits none",
-			capability.RoleManagement: "CREATE ROLE and GRANT are both accepted, and the renderer emits neither a role " +
-				"nor a grant for Oracle",
 		},
 		Note: "measured live on 21.3.0.0.0: every IF [NOT] EXISTS guard refused -- ORA-00922, ORA-00969 " +
 			"and ORA-00933 -- while a bare CREATE TABLE in the same session was accepted, plus no BOOLEAN " +
