@@ -48,6 +48,7 @@ a database — the merge rules live on
 
 ## Where it appears
 
-- Each source format has its own page under [Model your schema](../../schema/go-annotations/).
+- The operations every source shares: [Work with a desired schema](../../schema/work-with-a-source/).
+- Each source format then has its own page for its syntax and limits: [SQL](../../schema/sql/), [YAML](../../schema/yaml/), [HCL](../../schema/hcl/), [Go annotations](../../schema/go-annotations/), [ORM and external loaders](../../schema/orm-and-external/).
 - The versioned/direct decision that consumes the desired schema: [Choose a workflow](../../start/choose-a-workflow/).
 - Turning an existing database into sources: [Adopt an existing database](../../start/adopt-an-existing-database/).

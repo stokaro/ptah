@@ -86,7 +86,13 @@ source outside it, as detailed under [schema file paths](../../reference/native-
 To replace Go annotations with an HCL source, use the review-aware one-time
 export workflow in [Go annotations](../go-annotations/#move-the-schema-to-hcl).
 
-## Plan against a database
+## Use it
+
+Everything a desired schema is for — comparing, gating on drift, generating
+migrations, applying directly, composing sources, validating across dialects —
+is the same for every source and lives on
+[Work with a desired schema](../work-with-a-source/). For HCL the flag is
+`--schema-file`:
 
 ```bash
 ptah migrations plan \

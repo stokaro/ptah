@@ -84,6 +84,7 @@ export default defineConfig({
         {
           label: 'Model your schema',
           items: [
+            { slug: 'schema/work-with-a-source' },
             { slug: 'schema/go-annotations' },
             { slug: 'schema/yaml' },
             { slug: 'schema/hcl' },

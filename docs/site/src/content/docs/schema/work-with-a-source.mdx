@@ -1,0 +1,156 @@
+---
+title: Work with a desired schema
+description: The operations every schema source shares — render, compare, gate on drift, compose, and validate across dialects — with the flag that names each source.
+---
+
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
+Ptah reads the desired schema from SQL, YAML or HCL files, from annotated Go
+structs, and from an external loader. Every one of them parses into the same
+internal representation before anything is planned or rendered, so the
+operations on this page work the same way whichever you keep.
+
+What differs is one flag.
+
+<Tabs syncKey="schema-source">
+<TabItem label="SQL">
+
+```bash
+ptah schema render --schema-file schema.sql --dialect sqlite
+```
+
+</TabItem>
+<TabItem label="YAML">
+
+```bash
+ptah schema render --schema-file schema.yaml --dialect sqlite
+```
+
+</TabItem>
+<TabItem label="HCL">
+
+```bash
+ptah schema render --schema-file schema.hcl --dialect sqlite
+```
+
+</TabItem>
+<TabItem label="Go">
+
+```bash
+ptah schema render --root-dir ./models --dialect sqlite
+```
+
+</TabItem>
+<TabItem label="Loader">
+
+```bash
+ptah schema render --schema-cmd "go run ./loader" --schema-format sql --dialect sqlite
+```
+
+</TabItem>
+</Tabs>
+
+Both flags repeat, and they mix: `--schema-file` twice and `--root-dir` beside
+it is one composite desired schema.
+
+## Render the SQL a source produces
+
+`ptah schema render` shows the statements a source becomes for one dialect,
+without connecting to anything. It is the fastest way to check that Ptah read a
+file the way you meant it:
+
+```sql
+CREATE TABLE "accounts" (
+  "id" INTEGER PRIMARY KEY,
+  "email" TEXT NOT NULL
+);
+```
+
+The same table declared as SQL, as YAML and as Go annotations renders
+byte-identical output. An HCL column is `NOT NULL` unless it says
+`null = true`, and its type is written as declared, so the HCL form of that
+table renders `"id" integer NOT NULL PRIMARY KEY` — the same schema, spelled
+the way that source spells it.
+
+## Compare with a live database
+
+```bash
+ptah schema compare --schema-file schema.sql --db-url "$DATABASE_URL"
+```
+
+The output is the SQL that would reconcile the database with the source, under
+a `Reconciling SQL:` heading. Nothing is executed.
+
+## Gate on drift
+
+`ptah schema drift` answers the same question as a check rather than as a
+report: it exits `1` when the database has diverged and `0` when it has not, so
+it can be a pipeline step.
+
+```bash
+ptah schema drift --schema-file schema.sql --db-url "$DATABASE_URL"
+```
+
+`--severity destructive` narrows the failure to changes that remove something,
+and `--ignore tables=audit_log` excludes objects Ptah does not manage.
+`--format json` writes the findings as a document on stdout, exit code and all.
+
+## Turn the difference into a change
+
+The difference a source describes reaches a database two ways, and both take
+any source:
+
+| | |
+| --- | --- |
+| As reviewed migration files | [`ptah migrations generate`](../../versioned/generate/) |
+| As a direct apply | [`ptah schema apply`](../../direct/apply/) |
+
+Neither is a property of the format. A YAML file can produce PostgreSQL
+migrations, and the same Go annotations can drive a direct apply, without
+remodeling anything.
+
+## Compose several sources
+
+Sources merge into one composite desired schema:
+
+```bash
+ptah schema render \
+  --schema-file schema.sql \
+  --schema-file audit.sql \
+  --dialect sqlite
+```
+
+Objects are matched by their database identity and identical definitions are
+deduplicated. A **conflict** stops the command before it renders anything:
+
+```text
+error: error merging composite schema: conflicting field "email" definitions on table "accounts"
+```
+
+The merge rules, including what counts as identical, are on
+[Composite desired schema](../composite/).
+
+## Validate across dialects
+
+One source, several targets, no database:
+
+```bash
+ptah schema validate \
+  --schema-file schema.sql \
+  --dialect postgres \
+  --dialect mysql
+```
+
+It prints nothing and exits `0` when every named dialect can express the
+schema, and reports the first structural problem it finds otherwise. That is
+the cheapest check to put in front of a review: it needs no server and no
+migration directory.
+
+## Next steps
+
+- The syntax and limits of each source: [SQL](../sql/), [YAML](../yaml/),
+  [HCL](../hcl/), [Go annotations](../go-annotations/), and
+  [ORM and external loaders](../orm-and-external/).
+- What a desired schema is, and why the format is an input concern:
+  [Desired schema and schema sources](../../concepts/desired-schema-and-sources/).
+- Where the change is applied from: [Choose a workflow](../../start/choose-a-workflow/).
