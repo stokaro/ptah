@@ -138,70 +138,81 @@ func TestAPrimaryKeysBackingIndexIsNotDropped(t *testing.T) {
 	c.Assert(changes, qt.HasLen, 0)
 }
 
-// TestSuppressionMatchesTheNameAndTheTable pins what makes two rows one object.
+// TestSuppressionMatchesTheWholeIdentity pins what makes two rows one object.
 //
-// Both halves are load-bearing and neither is visible from the rows above, where
-// the constraint and the index always agree on both: an index that merely shares
-// a table with a constraint, and one that merely shares a NAME with a constraint
-// on another table, are each an index of their own and are each still dropped.
+// All three halves are load-bearing and none is visible from the rows above,
+// where the constraint and the index agree on every one of them. An index that
+// merely shares a table with a constraint, one that merely shares a NAME with a
+// constraint on another table, and one that shares both with a constraint in
+// another SCHEMA are each an index of their own, and are each still dropped.
 //
-// The second case is a shape the engines allow: an index name is unique per
-// schema, a constraint name only per table, so `uq_widget_code` can name gadget's
-// constraint and widget's index at once.
-func TestSuppressionMatchesTheNameAndTheTable(t *testing.T) {
+// The last two are shapes the engines allow: an index name is unique per schema
+// and a constraint name only per table, so one name can belong to gadget's
+// constraint and widget's index at once; and two schemas can each hold a table
+// called widget.
+func TestSuppressionMatchesTheWholeIdentity(t *testing.T) {
 	tests := []struct {
-		name           string
-		constraintName string
-		indexName      string
-		indexTable     string
+		name        string
+		indexName   string
+		indexTable  string
+		indexSchema string
 	}{
 		{
-			name:           "the same table, another name",
-			constraintName: "uq_widget_code",
-			indexName:      "idx_widget_code",
-			indexTable:     "widget",
+			name:        "another name",
+			indexName:   "idx_widget_code",
+			indexTable:  "widget",
+			indexSchema: "public",
 		},
 		{
-			name:           "the same name, another table",
-			constraintName: "uq_widget_code",
-			indexName:      "uq_widget_code",
-			indexTable:     "widget",
+			name:        "another table",
+			indexName:   "uq_widget_code",
+			indexTable:  "gadget",
+			indexSchema: "public",
+		},
+		{
+			name:        "another schema",
+			indexName:   "uq_widget_code",
+			indexTable:  "widget",
+			indexSchema: "other",
 		},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			constraintTable := "widget"
-			if test.indexName == test.constraintName {
-				constraintTable = "gadget"
-			}
+			code := dbschematypes.DBColumn{Name: "code", DataType: "text", IsNullable: "YES"}
+
+			// The first row's index sits on the table that is already there;
+			// the other two need the table they name to exist as well.
+			separateTable := test.indexTable != "widget" || test.indexSchema != "public"
 
 			catalog := widgetWithoutTheIndex()
-			catalog.Tables = append(catalog.Tables, dbschematypes.DBTable{
-				Name: "gadget", Schema: "public", Type: "BASE TABLE",
-				Columns: []dbschematypes.DBColumn{
-					{Name: "code", DataType: "text", IsNullable: "YES"},
-				},
-			})
+			if separateTable {
+				catalog.Tables = append(catalog.Tables, dbschematypes.DBTable{
+					Name: test.indexTable, Schema: test.indexSchema,
+					Columns: []dbschematypes.DBColumn{code},
+				})
+			}
 			catalog.Constraints = []dbschematypes.DBConstraint{{
-				Name: test.constraintName, TableName: constraintTable, Schema: "public",
+				Name: "uq_widget_code", TableName: "widget", Schema: "public",
 				Type: "UNIQUE", ColumnNames: []string{"code"},
 			}}
 			catalog.Indexes = []dbschematypes.DBIndex{{
-				Name: test.indexName, TableName: test.indexTable, Schema: "public",
+				Name: test.indexName, TableName: test.indexTable, Schema: test.indexSchema,
 				Columns: []string{"code"},
 			}}
 
-			description := widgetDeclaringNothing()
-			description.Tables = append(description.Tables,
-				goschema.Table{StructName: "Gadget", Name: "gadget"})
-			description.Fields = append(description.Fields,
-				goschema.Field{StructName: "Gadget", Name: "code", Type: "text", Nullable: true})
-			description.Constraints = append(description.Constraints, goschema.Constraint{
-				StructName: structOf(constraintTable), Name: test.constraintName,
-				Type: "UNIQUE", Columns: []string{"code"},
-			})
+			description := widgetDeclaringUniqueConstraint()
+			if separateTable {
+				description.Schemas = append(description.Schemas,
+					goschema.Schema{Name: test.indexSchema})
+				description.Tables = append(description.Tables, goschema.Table{
+					StructName: "Other", Name: test.indexTable, Schema: test.indexSchema,
+				})
+				description.Fields = append(description.Fields, goschema.Field{
+					StructName: "Other", Name: "code", Type: "text", Nullable: true,
+				})
+			}
 
 			changes := changesFor(c, description, catalog)
 
@@ -211,11 +222,4 @@ func TestSuppressionMatchesTheNameAndTheTable(t *testing.T) {
 			c.Assert(changes[0].ID.Name.Source, qt.Equals, test.indexName)
 		})
 	}
-}
-
-func structOf(table string) string {
-	if table == "gadget" {
-		return "Gadget"
-	}
-	return "Widget"
 }
