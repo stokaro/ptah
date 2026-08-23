@@ -47,8 +47,11 @@ func TestSecurityAnnotations(t *testing.T) {
 				Grants:           []goschema.Grant{{Role: "PUBLIC", Privileges: []string{"SELECT"}, OnTable: "audit_log"}},
 				RLSEnabledTables: []goschema.RLSEnabledTable{{Table: "audit_log"}},
 			},
-			wantAnnotated:  map[string]string{"audit_log": "warning"},
-			wantUnattached: make([]string, 0),
+			wantAnnotated: map[string]string{"audit_log": "warning"},
+			wantUnattached: []string{
+				"ROL03 not checked here: role membership was not read for this source",
+				"ROL04 not checked here: role membership was not read for this source",
+			},
 		},
 		{
 			name: "a routine finding has no node and is named anyway",
@@ -56,8 +59,12 @@ func TestSecurityAnnotations(t *testing.T) {
 			database: &goschema.Database{
 				Functions: []goschema.Function{{Name: "escalate", Security: "DEFINER", Language: "plpgsql"}},
 			},
-			wantAnnotated:  make(map[string]string),
-			wantUnattached: []string{"routine escalate: info PRV02"},
+			wantAnnotated: make(map[string]string),
+			wantUnattached: []string{
+				"routine escalate: info PRV02",
+				"ROL03 not checked here: role membership was not read for this source",
+				"ROL04 not checked here: role membership was not read for this source",
+			},
 		},
 		{
 			// The worst severity decides the color, so a node found by two
@@ -67,8 +74,11 @@ func TestSecurityAnnotations(t *testing.T) {
 			database: &goschema.Database{
 				Grants: []goschema.Grant{{Role: "PUBLIC", Privileges: []string{"SELECT"}, OnTable: "audit_log"}},
 			},
-			wantAnnotated:  map[string]string{"audit_log": "warning"},
-			wantUnattached: make([]string, 0),
+			wantAnnotated: map[string]string{"audit_log": "warning"},
+			wantUnattached: []string{
+				"ROL03 not checked here: role membership was not read for this source",
+				"ROL04 not checked here: role membership was not read for this source",
+			},
 		},
 		{
 			name: "a rule that cannot run here is reported, not skipped silently",
@@ -76,8 +86,12 @@ func TestSecurityAnnotations(t *testing.T) {
 			database: &goschema.Database{
 				Grants: []goschema.Grant{{Role: "app_user", Privileges: []string{"SELECT"}, OnTable: "users"}},
 			},
-			wantAnnotated:  make(map[string]string),
-			wantUnattached: []string{"PRV01 not checked here: the target does not model row-level security"},
+			wantAnnotated: make(map[string]string),
+			wantUnattached: []string{
+				"PRV01 not checked here: the target does not model row-level security",
+				"ROL03 not checked here: role membership was not read for this source",
+				"ROL04 not checked here: role membership was not read for this source",
+			},
 		},
 	}
 

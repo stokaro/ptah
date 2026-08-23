@@ -28,6 +28,7 @@ package schemasecurity
 import (
 	"cmp"
 	"slices"
+	"strconv"
 	"strings"
 
 	"go.5x5.cz/ptah/core/goschema"
@@ -113,8 +114,31 @@ type SkippedRule struct {
 	Reason string `json:"reason"`
 }
 
+// RoleMembership is one role-in-role edge the analysis reads: Member holds
+// everything Role grants.
+//
+// It is passed in rather than read from the schema because Ptah models
+// membership as a property of the live server rather than of a desired state:
+// a caller holding a catalog read has it, and one holding a schema file does
+// not (stokaro/ptah#1950).
+type RoleMembership struct {
+	// Role is the role whose privileges are granted.
+	Role string
+	// Member is the role that receives them.
+	Member string
+}
+
 // Options selects what the analysis can check.
 type Options struct {
+	// RoleMemberships are the role-in-role edges of the target.
+	//
+	// A NIL slice means the caller did not read them, and the rules that need
+	// them are reported as skipped. An EMPTY non-nil slice means the caller
+	// read them and there are none, and those rules run: a server whose roles
+	// have no members is exactly what ROL04 is about. "Not read" and "none"
+	// are different answers, and only the second one makes a clean report mean
+	// something.
+	RoleMemberships []RoleMembership
 	// Capabilities is the set the target resolves, and it decides which rules
 	// can run: a rule about row-level security has nothing to say where the
 	// target does not model it, and firing it there would report every granted
@@ -149,6 +173,16 @@ func Analyze(db *goschema.Database, opts Options) Report {
 			Code:   "PRV01",
 			Reason: "the target does not model row-level security",
 		})
+	}
+
+	if opts.RoleMemberships != nil {
+		report.Findings = append(report.Findings, findRolesWithNoMembers(db, opts.RoleMemberships)...)
+		report.Findings = append(report.Findings, findOverlappingRoles(db, opts.RoleMemberships)...)
+	} else {
+		report.SkippedRules = append(report.SkippedRules,
+			SkippedRule{Code: "ROL03", Reason: "role membership was not read for this source"},
+			SkippedRule{Code: "ROL04", Reason: "role membership was not read for this source"},
+		)
 	}
 
 	slices.SortFunc(report.Findings, func(a, b Finding) int {
@@ -287,6 +321,141 @@ func isShippedDefaultPublicGrant(grant goschema.Grant) bool {
 	}
 	privileges := normalizedPrivileges(grant.Privileges)
 	return len(privileges) == 1 && privileges[0] == "USAGE"
+}
+
+// findRolesWithNoMembers implements ROL04.
+//
+// A role that cannot log in and that nobody holds grants its privileges to
+// nobody. That is not an attack, which is why it is info: it is surface that
+// looks maintained and is not, and the next `GRANT role TO someone` activates
+// whatever it accumulated while nobody was reading it.
+//
+// A login role with no members is NOT reported. It is its own principal, and
+// reporting every application account would bury the rule that matters.
+func findRolesWithNoMembers(db *goschema.Database, memberships []RoleMembership) []Finding {
+	held := make(map[string]bool, len(memberships))
+	for _, membership := range memberships {
+		held[strings.TrimSpace(membership.Role)] = true
+	}
+
+	findings := make([]Finding, 0)
+	for _, role := range db.Roles {
+		name := strings.TrimSpace(role.Name)
+		if name == "" || role.Login || held[name] {
+			continue
+		}
+		findings = append(findings, Finding{
+			Code:     "ROL04",
+			Severity: risk.Info,
+			Subject:  Subject{Kind: "role", Name: name},
+			Message: "role " + name + " cannot log in and has no members, so nothing it is " +
+				"granted reaches anybody",
+			Detail:     Detail{Privileges: privilegesOfRole(db, name)},
+			Suggestion: "grant it to the roles that should hold it, or drop it with its privileges",
+		})
+	}
+	return findings
+}
+
+// findOverlappingRoles implements ROL03.
+//
+// Two roles held by one member that grant nearly the same privileges are two
+// names for one thing: revoking one changes nothing, and a reader checking what
+// a principal can do has to read both to find out that it did not matter.
+//
+// The threshold is written down rather than tuned: at least two shared
+// privileges, and at least half of the smaller role's set. One shared privilege
+// is a coincidence on any real schema, and a fraction below half describes
+// roles that genuinely differ.
+func findOverlappingRoles(db *goschema.Database, memberships []RoleMembership) []Finding {
+	privileges := make(map[string]map[string]bool, len(db.Roles))
+	for _, role := range db.Roles {
+		privileges[strings.TrimSpace(role.Name)] = privilegeSetOfRole(db, strings.TrimSpace(role.Name))
+	}
+
+	byMember := make(map[string][]string, len(memberships))
+	for _, membership := range memberships {
+		member := strings.TrimSpace(membership.Member)
+		byMember[member] = append(byMember[member], strings.TrimSpace(membership.Role))
+	}
+
+	findings := make([]Finding, 0)
+	for _, member := range sortedKeys(setOf(byMember)) {
+		roles := byMember[member]
+		slices.Sort(roles)
+		for i := range roles {
+			for j := i + 1; j < len(roles); j++ {
+				shared, ratio := overlap(privileges[roles[i]], privileges[roles[j]])
+				if len(shared) < 2 || ratio < 0.5 {
+					continue
+				}
+				findings = append(findings, Finding{
+					Code:     "ROL03",
+					Severity: risk.Info,
+					Subject:  Subject{Kind: "role", Name: member},
+					Message: "roles " + roles[i] + " and " + roles[j] + " are both held by " + member +
+						" and grant " + strconv.Itoa(len(shared)) + " of the same privileges (" +
+						strconv.Itoa(int(ratio*100)) + "% of the smaller one)",
+					Detail:     Detail{Privileges: shared, Roles: []string{roles[i], roles[j]}},
+					Suggestion: "consolidate them, or record what the difference between them is for",
+				})
+			}
+		}
+	}
+	return findings
+}
+
+// privilegeSetOfRole is every privilege a role holds, keyed by privilege and
+// object so that SELECT on one table and SELECT on another are different
+// members.
+func privilegeSetOfRole(db *goschema.Database, role string) map[string]bool {
+	held := make(map[string]bool)
+	for _, grant := range db.Grants {
+		if strings.TrimSpace(grant.Role) != role {
+			continue
+		}
+		object, kind := grantTarget(grant)
+		if object == "" {
+			continue
+		}
+		for _, privilege := range normalizedPrivileges(grant.Privileges) {
+			held[privilege+" ON "+kind+" "+object] = true
+		}
+	}
+	return held
+}
+
+// privilegesOfRole is the sorted privilege list for a finding's detail.
+func privilegesOfRole(db *goschema.Database, role string) []string {
+	return sortedKeys(privilegeSetOfRole(db, role))
+}
+
+// overlap returns the shared members and their share of the smaller set. Two
+// empty sets overlap in nothing rather than in everything.
+func overlap(left, right map[string]bool) ([]string, float64) {
+	smaller, larger := left, right
+	if len(right) < len(left) {
+		smaller, larger = right, left
+	}
+	if len(smaller) == 0 {
+		return make([]string, 0), 0
+	}
+	shared := make(map[string]bool, len(smaller))
+	for member := range smaller {
+		if larger[member] {
+			shared[member] = true
+		}
+	}
+	return sortedKeys(shared), float64(len(shared)) / float64(len(smaller))
+}
+
+// setOf turns a keyed map into a set, so sortedKeys can order its keys.
+func setOf(byMember map[string][]string) map[string]bool {
+	keys := make(map[string]bool, len(byMember))
+	for key := range byMember {
+		keys[key] = true
+	}
+	return keys
 }
 
 // grantTarget names what a grant is on, and the kind of that object.

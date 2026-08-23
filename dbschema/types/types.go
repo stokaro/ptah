@@ -39,6 +39,16 @@ type DBSchema struct {
 	Roles              []DBRole             `json:"roles"`        // PostgreSQL roles
 	Grants             []DBGrant            `json:"grants"`       // PostgreSQL privilege grants
 
+	// RoleMemberships are the role-in-role edges the server holds between the
+	// roles Ptah manages: who inherits whose privileges.
+	//
+	// It is read for ANALYSIS rather than for planning. A membership is a
+	// cluster-wide fact on the PostgreSQL family, and Ptah neither renders nor
+	// diffs one today, so this list describes the server rather than the
+	// desired state -- which is why it is omitted when empty and why nothing
+	// in the comparator reads it (stokaro/ptah#1950).
+	RoleMemberships []DBRoleMembership `json:"role_memberships,omitempty"`
+
 	// RolesOutOfScope lists roles that exist on the server but that this
 	// description deliberately does not define, because nothing in the
 	// schemas being read refers to them.
@@ -972,6 +982,21 @@ type DBRole struct {
 	Replication bool   `json:"replication"`  // Whether role can initiate replication
 	HasPassword bool   `json:"has_password"` // Whether role has a password set
 	Comment     string `json:"comment"`      // Role comment/description
+}
+
+// DBRoleMembership is one role-in-role edge: Member holds everything Role
+// grants, subject to Role's inheritance setting.
+//
+// The two names are read from the same catalog the roles come from, and both
+// are roles Ptah manages -- reserved system roles are excluded on both sides,
+// for the same reason they are excluded from Roles.
+type DBRoleMembership struct {
+	// Role is the role whose privileges are granted.
+	Role string `json:"role"`
+	// Member is the role that receives them.
+	Member string `json:"member"`
+	// AdminOption reports whether Member may grant Role onward.
+	AdminOption bool `json:"admin_option"`
 }
 
 // DBGrant represents a privilege grant read from the database.

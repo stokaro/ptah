@@ -460,6 +460,15 @@ The rules today:
 | `PRV01` | a table whose privileges reach a role, with row-level security not enabled | info |
 | `PRV02` | a `SECURITY DEFINER` routine, which runs with its owner's privileges | info |
 | `PRV03` | a privilege granted to `PUBLIC`, which every current and future role holds | warning |
+| `ROL03` | two roles held by one member that grant nearly the same privileges | info |
+| `ROL04` | a role that cannot log in and that nobody holds | info |
+
+`ROL03` and `ROL04` read the server's role graph — who holds which role — so they
+run against a live database and report themselves skipped anywhere that graph was
+not read. `ROL03` reports a pair when they share at least two privileges and at
+least half of the smaller role's set; one shared privilege is a coincidence on
+any real schema. A login role with no members is not `ROL04`: it is its own
+principal, and reporting every application account would bury the rule.
 
 Severities are the ones the rest of Ptah speaks: `info` reports and never
 blocks, `warning` asks for review, `error` blocks. `--fail-on error` (the

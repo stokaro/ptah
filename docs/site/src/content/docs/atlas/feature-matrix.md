@@ -256,7 +256,7 @@ seven of them as open capabilities regardless.
 | Per-rule severity policy | ✅ | ❌ | 🟡 | Severity vocabulary is info\|warning\|error; only error gates. The community binary carries no severity attribute: it accepts one and ignores it, exactly as it treats an invented attribute. |
 | Pre-migration assertion checks | ✅ | ❌ | ✅ | Scalar SELECTs in either direction; txtar checks.sql and checks/*.sql support all-of/oneof groups. One failure mode, abort, and no checks under `--tx-mode all`. |
 | SARIF 2.1.0 lint report | ✅ | ❌ | ➖ | Native `--format` sarif emits SARIF 2.1.0 with ruleId, level and file:line; Atlas documents Go-template `--format` output for migrate lint. |
-| Schema security findings over roles, grants and policies | 🔷 | ❌ | ✅ | Findings over a live schema's grants, policies and routines: code, severity, structured detail and a suggestion, local and with no account. Three rules today, and skipped rules are named. |
+| Schema security findings over roles, grants and policies | 🔷 | ❌ | ✅ | Findings over a live schema's grants, policies, routines and role graph: code, severity, structured detail and a suggestion, local and with no account. Skipped rules are named rather than silent. |
 | Standalone SQL file linting (`ptah sql lint`) | ✅ | ❌ | ❌ | Lints arbitrary SQL files or stdin against per-dialect capability presets (9 dialects incl. sqlserver), refined by a `--server-version` server string; text/json output, rule disable. |
 | Statement safety classification report | ✅ | ➖ | ➖ | plan `--report` text\|html\|json and generate `--report` html\|json emit highest severity, a destructive flag, and per-statement assessments. |
 
