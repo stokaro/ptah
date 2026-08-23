@@ -1457,6 +1457,42 @@ strict and rejects a selector matching no registered rule.
 Migrate-up safety keeps its native directive semantics: the whole-file Atlas
 header never reopens the apply-time destructive gate.
 
+## A migration directory held in a registry
+
+`--dir atlas://<repository>` reads the directory from an OCI registry instead of
+from disk. The reference carries no registry host, so it resolves against the
+namespace `PTAH_ATLAS_REGISTRY` names — the same resolution an `atlas.hcl`
+`migration.dir` uses:
+
+```bash
+export PTAH_ATLAS_REGISTRY=ghcr.io/acme
+
+ptah-compat migrate status --dir "atlas://app?tag=prod" --url "$DATABASE_URL"
+ptah-compat migrate apply  --dir "atlas://app?tag=prod" --url "$DATABASE_URL"
+ptah-compat migrate validate --dir "atlas://app?tag=prod"
+ptah-compat migrate lint --dir "atlas://app?tag=prod" --dev-url "$DEV_URL" --latest 1
+```
+
+`tag` selects a moving tag and defaults to `latest`; `version` selects an
+immutable one. Naming both is refused, because a tag moves and a version does
+not.
+
+**The directory is read-only.** `migrate hash`, `migrate new` and `migrate diff`
+refuse against it and name the reference you typed:
+
+```text
+Error: atlas migrate hash writes to the migration directory, and atlas://app?tag=prod came from a
+registry, which Ptah reads and does not write back to; write to a local directory and publish it
+with `ptah migrations push`
+```
+
+That refusal does not need a reachable registry, and neither does the one for a
+missing namespace — nothing is fetched until a verb reads the directory.
+
+Publish the directory with `ptah migrations push`; the artifact is an ordinary
+OCI one, pulled with ordinary registry credentials, and no hosted service is in
+the path.
+
 ## Metadata commands and directory formats
 
 Atlas-compatible migration metadata commands default to Atlas directory
