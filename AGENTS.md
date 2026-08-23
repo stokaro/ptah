@@ -915,8 +915,9 @@ exactly which rules fail a build and which stay a reading responsibility. Run
 no npm install, and it governs this file, the repository docs, the examples,
 the integration docs, and every package README — not only the site.
 
-It is one of seven commands in that job, and running the sixteen
-`scripts/check-*.sh` gates does not stand in for any of them:
+It is one of several commands in that job, and running the `scripts/check-*.sh`
+gates does not stand in for any of them. The job's own step is the list; these
+are the ones a documentation change usually needs:
 
 ```bash
 node docs/site/scripts/check-style.mjs --selftest
@@ -925,6 +926,10 @@ node docs/site/scripts/check-limitations.mjs --selftest
 node docs/site/scripts/check-limitations.mjs
 node docs/site/scripts/check-matrix-verdict-prose.mjs --selftest
 node docs/site/scripts/check-matrix-verdict-prose.mjs
+node docs/site/scripts/check-matrix-citations.mjs --selftest
+node docs/site/scripts/check-matrix-citations.mjs
+node docs/site/scripts/check-matrix-flag-names.mjs --selftest
+node docs/site/scripts/check-matrix-flag-names.mjs
 node docs/site/scripts/build-feature-matrix.mjs --check
 ```
 
@@ -944,6 +949,23 @@ appended and the old justification stays, and it is not wrong *about the past*,
 so nothing else flags it. Fifteen rows had accumulated one
 (stokaro/ptah#1873, #1874). Re-tense the sentence as history — "this row read
 partial until #1802 landed" — rather than deleting the measurement it carries.
+
+A note may not name a flag this tree does not register.
+`check-matrix-flag-names.mjs` enforces that, and the direction it catches is a
+flag RENAMED in the code while the note keeps the old spelling. It reads the
+`note` field only: several rows establish that a verb does not register a flag
+by showing it answers `unknown flag` byte-identically to a nonsense control —
+`--skip-chxxxx`, `--totally-bogus-flag` — and those live in `evidence`. Its
+limits are stated in the script: it compares against the whole tree's flag set,
+so it cannot tell that a flag belongs to another verb, and a plausible wrong
+name that happens to be a real flag elsewhere passes (stokaro/ptah#1924).
+
+The same issue's other rule has no mechanical check and is a reading
+responsibility: **a note should not restate a fact the code or a generated
+table already owns.** Counts, capability lists and flag inventories drift the
+moment the thing they copy moves — one row's release-line counts changed twice
+while they were being audited — so name the generated table instead of copying
+what it says.
 
 Before finishing any change that affects external behavior, inspect and update
 the relevant documentation. Do this as a required verification step, not as an
