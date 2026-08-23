@@ -83,7 +83,8 @@ func ConnectToDatabase(ctx context.Context, dbURL string) (*DatabaseConnection, 
 	// slow host cannot block ConnectToDatabase indefinitely.
 	if err := db.PingContext(ctx); err != nil {
 		_ = db.Close()
-		return nil, fmt.Errorf("failed to ping database: %w", err)
+		return nil, fmt.Errorf("failed to ping database: %w",
+			explainRefusedStartupParameter(dbURL, dialect, err))
 	}
 
 	// Get database info

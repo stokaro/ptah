@@ -492,15 +492,21 @@ PgBouncer refuses the connection outright rather than ignoring it:
 
 ```console
 $ ptah schema inspect --db-url "postgres://…@pgbouncer:6432/app?search_path=app"
-error: connect to --url: failed to ping database: server error:
+error: connect to --url: failed to ping database: the database URL selects a
+schema with "search_path", which is sent as a startup parameter and which a
+transaction-pooling proxy such as PgBouncer refuses rather than ignores: remove
+it from the URL, or configure the proxy to pass it through
+(PgBouncer: track_extra_parameters = search_path): server error:
 FATAL: unsupported startup parameter: search_path (SQLSTATE 08P01)
 ```
 
-The same URL without `search_path` connects and reads normally. Selecting a
-schema through a pooler needs `--schema` rather than the URL, or a pooler
-configured to pass the parameter through
-(`track_extra_parameters = search_path`). Making Ptah's own schema selection
-independent of that session parameter is
+The proxy's own `FATAL` is kept, so nothing is taken on trust; what Ptah adds
+is which parameter its URL carried and the two ways out. The same URL without
+`search_path` connects and reads normally, and the description it produces is
+identical to a direct read.
+
+Making Ptah's own schema selection independent of that session parameter — so a
+pooled URL can select a schema at all — is
 [stokaro/ptah#1029](https://github.com/stokaro/ptah/issues/1029).
 
 ## Next steps

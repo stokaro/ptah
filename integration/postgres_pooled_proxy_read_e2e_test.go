@@ -5,6 +5,7 @@ package integration_test
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"testing"
 	"time"
 
@@ -72,4 +73,51 @@ func pooledTableNames(schema *dbschematypes.DBSchema) []string {
 		names = append(names, table.Name)
 	}
 	return names
+}
+
+// TestPostgresPooledProxyExplainsTheRefusedSearchPathE2E is stokaro/ptah#1029's
+// eighth criterion for the one failure that reaches an operator before
+// anything else: a diagnostic that distinguishes proxy incompatibility from a
+// database SQL error.
+//
+// A `?search_path=` on a PostgreSQL URL is a STARTUP parameter, and PgBouncer
+// refuses the connection outright rather than ignoring it. What the operator
+// saw was the proxy's own message about its own configuration, arriving where
+// they asked to read a schema:
+//
+//	FATAL: unsupported startup parameter: search_path (SQLSTATE 08P01)
+//
+// The control is the same URL without the parameter, against the same proxy:
+// it connects. Without it, a refusal from a proxy that was simply down would
+// read as this one.
+func TestPostgresPooledProxyExplainsTheRefusedSearchPathE2E(t *testing.T) {
+	pooledURL := dbtarget.URL(t, dbtarget.PostgreSQLPooled)
+	c := qt.New(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Minute)
+	defer cancel()
+
+	working, err := dbschema.ConnectToDatabase(ctx, pooledURL)
+	c.Assert(err, qt.IsNil)
+	dbschema.CloseAndWarn(working)
+
+	_, err = dbschema.ConnectToDatabase(ctx, withSearchPath(c, pooledURL, "public"))
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(err.Error(), qt.Contains, `selects a schema with "search_path"`)
+	c.Assert(err.Error(), qt.Contains, "track_extra_parameters = search_path")
+	// The server's own words survive, so nobody has to take Ptah's account of
+	// the failure on trust.
+	c.Assert(err.Error(), qt.Contains, "unsupported startup parameter")
+}
+
+// withSearchPath adds the parameter the proxy refuses.
+func withSearchPath(c *qt.C, address, schema string) string {
+	c.Helper()
+	parsed, err := url.Parse(address)
+	c.Assert(err, qt.IsNil)
+	query := parsed.Query()
+	query.Set("search_path", schema)
+	parsed.RawQuery = query.Encode()
+	return parsed.String()
 }
