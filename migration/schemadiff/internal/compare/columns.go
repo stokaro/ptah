@@ -335,14 +335,14 @@ func columnsWithDesiredDomains(
 		return colDiff
 	}
 
-	dbRawType := rawDBColumnType(dbCol)
+	dbRawType := dbCol.RawType()
 
 	// The default comparison below asks what CATEGORY each side's type is, so it
 	// keeps using the normalizer even where the type comparison above does not:
 	// a default is normalized as a boolean or a number.
 	//
 	// For a domain column both sides receive the DOMAIN NAME, not the domain's
-	// base type, because rawDBColumnType answers with the domain and the desired
+	// base type, because DBColumn.RawType answers with the domain and the desired
 	// side spells the column as the domain too. So `d_bool` reaches the
 	// normalizer, which folds by substring and lands on "boolean" by luck, while
 	// `positive` folds to nothing and the boolean/decimal/temporal branches of
