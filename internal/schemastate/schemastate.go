@@ -273,6 +273,47 @@ func (p Provenance) Validate() error {
 // OBSERVED one is already what the target holds (stokaro/ptah#1662).
 func (p Provenance) Declared() bool { return p.Source == coverage.Declared }
 
+// UniqueKey is a uniqueness guarantee over one or more columns.
+//
+// A UNIQUE constraint, a primary key and a unique index all answer the one
+// question a foreign key asks -- is this column list a key -- and every source
+// spells at least two of them differently. Keeping them as separate shapes past
+// the adapter means asking that question once per shape, and the prototype
+// asked it of single columns only: a column unique as part of a COMPOSITE
+// constraint read as not unique, which blocked a foreign key the target
+// accepts (stokaro/ptah#1662).
+type UniqueKey struct {
+	// Columns is the column list the guarantee covers, in the order the source
+	// wrote it. Comparison is order-insensitive -- a key on (a, b) is the same
+	// guarantee as one on (b, a) -- and the order is kept because a renderer
+	// writing the constraint back has to write one.
+	Columns []string
+}
+
+// Covers reports whether this key guarantees uniqueness for exactly the given
+// column list.
+//
+// Exactly, not "contains". A unique constraint on (a, b) makes the PAIR unique
+// and says nothing about either column alone, so a foreign key referencing a
+// alone is not made legal by it -- and every engine Ptah targets refuses one.
+func (u UniqueKey) Covers(columns []string, fold func(string) string) bool {
+	if len(u.Columns) != len(columns) {
+		return false
+	}
+	wanted := make(map[string]int, len(columns))
+	for _, column := range columns {
+		wanted[fold(column)]++
+	}
+	for _, column := range u.Columns {
+		key := fold(column)
+		if wanted[key] == 0 {
+			return false
+		}
+		wanted[key]--
+	}
+	return true
+}
+
 // Object is one schema object in the canonical state.
 //
 // Exactly one payload pointer is set, decided by ID.Kind. It is a struct with
@@ -284,6 +325,7 @@ type Object struct {
 	Table      *Table
 	Column     *Column
 	ForeignKey *ForeignKey
+	UniqueKey  *UniqueKey
 	Policy     *Policy
 	Grant      *Grant
 	Provenance Provenance

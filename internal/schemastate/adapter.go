@@ -25,9 +25,28 @@ var sliceScope = []objectidentity.Kind{
 	objectidentity.KindRole,
 }
 
-// foreignKeyConstraintType is how both sources spell the family in their
-// untyped Type field.
-const foreignKeyConstraintType = "FOREIGN KEY"
+// The constraint families both sources spell in their untyped Type field.
+const (
+	foreignKeyConstraintType = "FOREIGN KEY"
+	uniqueConstraintType     = "UNIQUE"
+	primaryKeyConstraintType = "PRIMARY KEY"
+)
+
+// uniquenessConstraintTypes are the constraint families that guarantee a column
+// list is a key. A primary key is one of them: it forbids NULL as well, which
+// is not what a foreign key's reference asks about.
+var uniquenessConstraintTypes = []string{uniqueConstraintType, primaryKeyConstraintType}
+
+// guaranteesUniqueness reports whether a constraint's untyped family name is one
+// that makes its columns a key.
+func guaranteesUniqueness(constraintType string) bool {
+	for _, family := range uniquenessConstraintTypes {
+		if strings.EqualFold(constraintType, family) {
+			return true
+		}
+	}
+	return false
+}
 
 // FromCatalog builds canonical state from a live catalog read.
 //
@@ -61,9 +80,22 @@ func FromCatalog(schema *dbschematypes.DBSchema, dialect string, semantics ident
 		}); collided {
 			return nil, fmt.Errorf("catalog reports two tables with one identity: %s and %s", existing.ID, id)
 		}
+		if err := addColumnKeys(state, builder, table.Schema, table.Name, columns,
+			coverage.Observed, "information_schema.columns"); err != nil {
+			return nil, err
+		}
 	}
 
 	for _, constraint := range schema.Constraints {
+		if guaranteesUniqueness(constraint.Type) {
+			if err := addUniqueKey(state, builder,
+				constraint.Schema, constraint.TableName, constraint.Name,
+				constraint.ColumnNamesOrDefault(), coverage.Observed, "information_schema.table_constraints",
+			); err != nil {
+				return nil, err
+			}
+			continue
+		}
 		if !strings.EqualFold(constraint.Type, foreignKeyConstraintType) {
 			continue
 		}
@@ -191,6 +223,20 @@ func FromDescription(
 		}); collided {
 			return nil, fmt.Errorf("description declares two tables with one identity: %s and %s", existing.ID, id)
 		}
+		if err := addColumnKeys(state, builder, table.Schema, table.Name, columns,
+			coverage.Declared, table.StructName); err != nil {
+			return nil, err
+		}
+		// A composite key is declared on the table and covers a list no single
+		// column's flag can express.
+		if err := addUniqueKey(state, builder, table.Schema, table.Name,
+			compositeKeyName(table.Name), table.PrimaryKey,
+			coverage.Declared, table.StructName); err != nil {
+			return nil, err
+		}
+	}
+	if err := declaredUniqueKeys(state, description, builder, tablesByStruct); err != nil {
+		return nil, err
 	}
 
 	for _, field := range description.Fields {
@@ -422,4 +468,119 @@ func declaredDefault(field goschema.Field) string {
 		return expression
 	}
 	return field.Default
+}
+
+// addUniqueKey records one uniqueness guarantee under the identity its owning
+// table gives it, refusing a second one with the same identity.
+func addUniqueKey(
+	state *State,
+	builder objectidentity.Builder,
+	schema, table, name string,
+	columns []string,
+	source coverage.Provenance,
+	location string,
+) error {
+	if len(columns) == 0 {
+		return nil
+	}
+	id := builder.ConstraintParts(schema, table, name)
+	if existing, collided := state.Add(Object{
+		ID:         id,
+		UniqueKey:  &UniqueKey{Columns: columns},
+		Provenance: Provenance{Source: source, Location: location},
+	}); collided {
+		return fmt.Errorf("two uniqueness guarantees carry one identity: %s and %s", existing.ID, id)
+	}
+	return nil
+}
+
+// singleColumnKeyName is the identity a column's own UNIQUE or PRIMARY KEY flag
+// gets when no constraint name reaches Ptah.
+//
+// A flag on a column is a real uniqueness guarantee and every source spells it
+// without a name, so one has to be derived or the guarantee cannot be an object
+// at all. It is derived from the column, which is what makes it stable: the
+// same column read twice produces the same identity.
+func singleColumnKeyName(column string) string {
+	return "ptah_unique_" + column
+}
+
+// addColumnKeys records the uniqueness a column's own flag declares.
+//
+// Every source carries at least one of these, and most carry only these for a
+// single-column key: a catalog reports IsPrimaryKey and IsUnique on the column
+// row rather than always emitting a constraint row, and an authoring model
+// spells a one-column key on the field. Deriving an object from the flag is
+// what lets one rule answer the uniqueness question for both shapes.
+func addColumnKeys(
+	state *State,
+	builder objectidentity.Builder,
+	schema, table string,
+	columns []Column,
+	source coverage.Provenance,
+	location string,
+) error {
+	for _, column := range columns {
+		if !column.Unique {
+			continue
+		}
+		name := column.ID.Name.Source
+		if err := addUniqueKey(state, builder, schema, table,
+			singleColumnKeyName(name), []string{name}, source, location); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// compositeKeyName is the identity a table-level primary key declaration gets.
+// The authoring model spells it without a name, so one is derived from the
+// table it belongs to.
+func compositeKeyName(table string) string {
+	return "ptah_pk_" + table
+}
+
+// declaredUniqueKeys records the uniqueness a description declares away from
+// its columns: a named UNIQUE or PRIMARY KEY constraint, and a unique index.
+//
+// A unique INDEX is a uniqueness guarantee the same way a unique CONSTRAINT is
+// -- PostgreSQL accepts a foreign key against either -- so both become the same
+// object rather than two shapes a later stage has to ask twice.
+func declaredUniqueKeys(
+	state *State,
+	description *goschema.Database,
+	builder objectidentity.Builder,
+	tablesByStruct map[string]goschema.Table,
+) error {
+	for _, constraint := range description.Constraints {
+		if !guaranteesUniqueness(constraint.Type) {
+			continue
+		}
+		owner, ok := tablesByStruct[constraint.StructName]
+		if !ok {
+			return fmt.Errorf(
+				"constraint %q declares a uniqueness guarantee but no table declares struct %q",
+				constraint.Name, constraint.StructName)
+		}
+		if err := addUniqueKey(state, builder, owner.Schema, owner.Name, constraint.Name,
+			constraint.Columns, coverage.Declared, constraint.StructName); err != nil {
+			return err
+		}
+	}
+	for _, index := range description.Indexes {
+		if !index.Unique {
+			continue
+		}
+		owner, ok := tablesByStruct[index.StructName]
+		if !ok {
+			return fmt.Errorf(
+				"index %q declares a uniqueness guarantee but no table declares struct %q",
+				index.Name, index.StructName)
+		}
+		if err := addUniqueKey(state, builder, owner.Schema, owner.Name, index.Name,
+			index.Fields, coverage.Declared, index.StructName); err != nil {
+			return err
+		}
+	}
+	return nil
 }
