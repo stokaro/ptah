@@ -12,6 +12,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"sync"
 	"testing/fstest"
 	"text/template"
 	"time"
@@ -843,21 +844,13 @@ func (p atlasParser) remoteDirectoryDataSource(block *hclsyntax.Block) (cty.Valu
 	if err != nil {
 		return cty.NilVal, err
 	}
-	plainHTTP, err := atlasregistry.PlainHTTP.Resolve()
-	if err != nil {
-		return cty.NilVal, p.dataSourceError(block, "reading the registry transport setting", err)
-	}
-	client, err := ociartifact.NewClient(ociartifact.ClientOptions{PlainHTTP: plainHTTP})
-	if err != nil {
-		return cty.NilVal, p.dataSourceError(block, "opening the registry client", err, reference.OCI)
-	}
-	artifact, err := migrationartifact.Pull(p.runContext, client, reference.OCI)
+	artifact, err := p.pullMigrationArtifact(reference.OCI)
 	if err != nil {
 		return cty.NilVal, p.dataSourceError(block, "fetching remote directory", err, reference.OCI)
 	}
 	memURL := memDirectoryURL("/remote_dir", block.Labels[1])
 	p.migrationDirectories[memURL] = MigrationDirectorySource{
-		FileSystem: artifact.FileSystem,
+		FileSystem: artifact,
 		// The reference is carried for display, and ReadOnly is what keeps it
 		// out of a writer: it is not a local path, and joining it to the
 		// project root would create a directory named after it.
@@ -867,6 +860,99 @@ func (p atlasParser) remoteDirectoryDataSource(block *hclsyntax.Block) (cty.Valu
 	return cty.ObjectVal(map[string]cty.Value{
 		"url": cty.StringVal(memURL),
 	}), nil
+}
+
+// pullMigrationArtifact fetches one migration directory from the registry and
+// returns its filesystem.
+//
+// It is the one place that opens a client and pulls, so `data "remote_dir"` and
+// an `atlas://` migration.dir cannot come to disagree about the transport
+// setting or about what a pulled directory is (stokaro/ptah#1210).
+func (p atlasParser) pullMigrationArtifact(reference string) (fs.FS, error) {
+	plainHTTP, err := atlasregistry.PlainHTTP.Resolve()
+	if err != nil {
+		return nil, fmt.Errorf("reading the registry transport setting: %w", err)
+	}
+	client, err := ociartifact.NewClient(ociartifact.ClientOptions{PlainHTTP: plainHTTP})
+	if err != nil {
+		return nil, fmt.Errorf("opening the registry client: %w", err)
+	}
+	artifact, err := migrationartifact.Pull(p.runContext, client, reference)
+	if err != nil {
+		return nil, err
+	}
+	return artifact.FileSystem, nil
+}
+
+// lazyMigrationDirFS pulls its artifact the first time something reads it.
+//
+// A project file is read by EVERY verb, so an eager pull would make
+// `schema inspect --env prod` fail whenever the registry is unreachable --
+// for a directory that command never opens. `data "remote_schema"` avoids the
+// same trap by minting a marker and resolving it at consumption; a
+// migration.dir has no marker layer to hide behind, so the laziness lives in
+// the filesystem it registers (stokaro/ptah#1210).
+//
+// The pull happens once and its outcome is kept, error included: a verb that
+// reads the directory twice must not fetch twice, and must not succeed the
+// second time after failing the first.
+type lazyMigrationDirFS struct {
+	once  sync.Once
+	fetch func() (fs.FS, error)
+	fsys  fs.FS
+	err   error
+}
+
+func (l *lazyMigrationDirFS) resolve() (fs.FS, error) {
+	l.once.Do(func() { l.fsys, l.err = l.fetch() })
+	return l.fsys, l.err
+}
+
+func (l *lazyMigrationDirFS) Open(name string) (fs.File, error) {
+	fsys, err := l.resolve()
+	if err != nil {
+		return nil, err
+	}
+	return fsys.Open(name)
+}
+
+// ReadDir keeps the fast path a directory read would otherwise lose: without
+// it, fs.ReadDir falls back to Open and the pulled artifact's own ReadDirFS
+// implementation goes unused.
+func (l *lazyMigrationDirFS) ReadDir(name string) ([]fs.DirEntry, error) {
+	fsys, err := l.resolve()
+	if err != nil {
+		return nil, err
+	}
+	return fs.ReadDir(fsys, name)
+}
+
+// registerRemoteMigrationDir registers a migration directory that lives in a
+// registry, and returns the in-memory URL the rest of the tree addresses it by.
+//
+// ReadOnly is what keeps it out of a writer: there is no local directory behind
+// it, and joining a registry reference to the project root would create a
+// directory named after the reference and report success while the registry
+// stayed unchanged.
+func (p atlasParser) registerRemoteMigrationDir(reference string) string {
+	memURL := memDirectoryURL("/migration_dir", reference)
+	p.migrationDirectories[memURL] = MigrationDirectorySource{
+		FileSystem: &lazyMigrationDirFS{
+			fetch: func() (fs.FS, error) {
+				resolved, err := atlasregistry.Resolve(reference)
+				if err != nil {
+					return nil, err
+				}
+				return p.pullMigrationArtifact(resolved.OCI)
+			},
+		},
+		// The reference the PROJECT wrote, not the one it resolves to: nothing
+		// has resolved yet, and a message naming `oci://` for a project that
+		// says `atlas://` sends the reader to the wrong line.
+		Path:     reference,
+		ReadOnly: true,
+	}
+	return memURL
 }
 
 // RemoteSchemaMarkerScheme prefixes the value `data "remote_schema"` mints.

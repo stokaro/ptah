@@ -4257,8 +4257,20 @@ func TestCompatCommand_MigrateStatusAllowsExplicitDirToOverrideUnsupportedProjec
 	c.Assert(out.String(), qt.Contains, "-- Pending Files:   1")
 }
 
-func TestCompatCommand_MigrateStatusRejectsUnsupportedProjectDirWhenUsed(t *testing.T) {
+// TestCompatCommand_MigrateStatusNeedsANamespaceForARegistryProjectDir pins
+// what an `atlas://` migration.dir answers when nothing says which registry it
+// stands for.
+//
+// The refusal used to be "only local file:// migration directories are
+// supported", which was true and is not any more: the reference resolves
+// against PTAH_ATLAS_REGISTRY and is pulled on read. What is left to refuse is
+// the missing namespace, and the message has to name it rather than the scheme
+// (stokaro/ptah#1210).
+func TestCompatCommand_MigrateStatusNeedsANamespaceForARegistryProjectDir(t *testing.T) {
 	c := qt.New(t)
+	// Stated rather than inherited: with a namespace configured this run would
+	// reach the registry instead of refusing.
+	c.Setenv("PTAH_ATLAS_REGISTRY", "")
 	dir := t.TempDir()
 	projectDir := filepath.Join(dir, "project")
 	outsideDir := filepath.Join(dir, "outside")
@@ -4286,7 +4298,7 @@ func TestCompatCommand_MigrateStatusRejectsUnsupportedProjectDirWhenUsed(t *test
 
 	err := cmd.Execute()
 
-	c.Assert(err, qt.ErrorMatches, `atlas migrate status --dir: only local file:// migration directories are supported`)
+	c.Assert(err, qt.ErrorMatches, `.*atlas:// references require an OCI backing registry in Ptah: set PTAH_ATLAS_REGISTRY.*`)
 }
 
 func TestCompatCommand_MigrateStatusRejectsParentRelativeProjectDir(t *testing.T) {
