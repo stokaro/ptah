@@ -667,9 +667,10 @@ func declaredUniqueKeys(
 		}
 		if err := addIndex(state, builder, owner.Schema, owner.Name, index.Name,
 			&Index{
-				Table:   builder.TableParts(owner.Schema, owner.Name),
-				Columns: index.Fields,
-				Unique:  index.Unique,
+				Table:      builder.TableParts(owner.Schema, owner.Name),
+				Columns:    index.Fields,
+				Unique:     index.Unique,
+				Concurrent: index.Concurrently,
 			},
 			coverage.Declared, index.StructName); err != nil {
 			return err
