@@ -180,39 +180,8 @@ func TestSuppressionMatchesTheWholeIdentity(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			code := dbschematypes.DBColumn{Name: "code", DataType: "text", IsNullable: "YES"}
-
-			// The first row's index sits on the table that is already there;
-			// the other two need the table they name to exist as well.
-			separateTable := test.indexTable != "widget" || test.indexSchema != "public"
-
-			catalog := widgetWithoutTheIndex()
-			if separateTable {
-				catalog.Tables = append(catalog.Tables, dbschematypes.DBTable{
-					Name: test.indexTable, Schema: test.indexSchema,
-					Columns: []dbschematypes.DBColumn{code},
-				})
-			}
-			catalog.Constraints = []dbschematypes.DBConstraint{{
-				Name: "uq_widget_code", TableName: "widget", Schema: "public",
-				Type: "UNIQUE", ColumnNames: []string{"code"},
-			}}
-			catalog.Indexes = []dbschematypes.DBIndex{{
-				Name: test.indexName, TableName: test.indexTable, Schema: test.indexSchema,
-				Columns: []string{"code"},
-			}}
-
-			description := widgetDeclaringUniqueConstraint()
-			if separateTable {
-				description.Schemas = append(description.Schemas,
-					goschema.Schema{Name: test.indexSchema})
-				description.Tables = append(description.Tables, goschema.Table{
-					StructName: "Other", Name: test.indexTable, Schema: test.indexSchema,
-				})
-				description.Fields = append(description.Fields, goschema.Field{
-					StructName: "Other", Name: "code", Type: "text", Nullable: true,
-				})
-			}
+			description, catalog := backingIdentityFixture(
+				test.indexName, test.indexTable, test.indexSchema)
 
 			changes := changesFor(c, description, catalog)
 
@@ -222,4 +191,45 @@ func TestSuppressionMatchesTheWholeIdentity(t *testing.T) {
 			c.Assert(changes[0].ID.Name.Source, qt.Equals, test.indexName)
 		})
 	}
+}
+
+// backingIdentityFixture builds one row of [TestSuppressionMatchesTheWholeIdentity]:
+// a read reporting the UNIQUE constraint on public.widget and ONE index named and
+// placed by the row, against a description that declares the constraint and every
+// table the read reports -- and no index at all.
+//
+// The first row's index sits on the table that is already there; the other two
+// name a table of their own, which both sides then have to carry.
+func backingIdentityFixture(
+	indexName, indexTable, indexSchema string,
+) (*goschema.Database, *dbschematypes.DBSchema) {
+	catalog := widgetWithoutTheIndex()
+	catalog.Constraints = []dbschematypes.DBConstraint{{
+		Name: "uq_widget_code", TableName: "widget", Schema: "public",
+		Type: "UNIQUE", ColumnNames: []string{"code"},
+	}}
+	catalog.Indexes = []dbschematypes.DBIndex{{
+		Name: indexName, TableName: indexTable, Schema: indexSchema,
+		Columns: []string{"code"},
+	}}
+	description := widgetDeclaringUniqueConstraint()
+
+	if indexTable == "widget" && indexSchema == "public" {
+		return description, catalog
+	}
+
+	catalog.Tables = append(catalog.Tables, dbschematypes.DBTable{
+		Name: indexTable, Schema: indexSchema,
+		Columns: []dbschematypes.DBColumn{
+			{Name: "code", DataType: "text", IsNullable: "YES"},
+		},
+	})
+	description.Schemas = append(description.Schemas, goschema.Schema{Name: indexSchema})
+	description.Tables = append(description.Tables, goschema.Table{
+		StructName: "Other", Name: indexTable, Schema: indexSchema,
+	})
+	description.Fields = append(description.Fields, goschema.Field{
+		StructName: "Other", Name: "code", Type: "text", Nullable: true,
+	})
+	return description, catalog
 }
