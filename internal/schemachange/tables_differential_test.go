@@ -495,6 +495,18 @@ func TestTableStatementsMatchTheExistingPlanner(t *testing.T) {
 			profile: mysqlProfilePointer(),
 		},
 		{
+			// A partitioned table. A CREATE that dropped the clause builds an
+			// ordinary table, which accepts every row the partitioned one would
+			// and distributes none of them -- so the loss is invisible until
+			// the table is large enough for it to matter.
+			name: "creating a partitioned table",
+			description: describedTablePartitioned(
+				goschema.Field{StructName: "Widget", Name: "id", Type: "int"},
+				goschema.Field{StructName: "Widget", Name: "created", Type: "date"},
+			),
+			catalog: &dbschematypes.DBSchema{},
+		},
+		{
 			// A composite key, which the column syntax cannot express: PRIMARY
 			// KEY on two columns declares two keys rather than one over both,
 			// so it has to become a table-level constraint.

@@ -276,6 +276,16 @@ type Table struct {
 	Collate string
 	// AutoIncrement is the value a MySQL-family table's counter starts at.
 	AutoIncrement string
+	// Partition is the partitioning a table declares, nil for a table with
+	// none.
+	//
+	// It is carried for rendering and not compared. A catalog reports only
+	// THAT a table is partitioned -- `DBTable.Partitioned` is a boolean and no
+	// read returns the key -- so a comparison would hold a declared key against
+	// nothing and report a change for every partitioned table. Dropping it from
+	// a CREATE builds an ordinary table instead, which accepts every row the
+	// partitioned one would and distributes none of them.
+	Partition *Partition
 	// PrimaryKeyInclude carries PostgreSQL's INCLUDE payload columns for a
 	// table-level primary key.
 	//
@@ -409,6 +419,27 @@ func foldedSet(columns []string, fold func(string) string) []string {
 	}
 	slices.Sort(folded)
 	return folded
+}
+
+// Partition is a table's partitioning method and key.
+//
+// It is a type of this package rather than the authoring model's or the AST's,
+// because the canonical state is what both sides produce and neither of those
+// is available to both. The shapes agree today, and the adapters translate
+// rather than alias so a change to either does not reach through.
+type Partition struct {
+	// Type is the method: RANGE, LIST or HASH.
+	Type string
+	// Parts are the key's columns or expressions, in the order they were
+	// written. Order is part of a partition key, unlike a unique constraint's
+	// column set: RANGE (a, b) and RANGE (b, a) partition differently.
+	Parts []PartitionPart
+}
+
+// PartitionPart is one column or expression of a partition key.
+type PartitionPart struct {
+	Name string
+	Expr string
 }
 
 // Object is one schema object in the canonical state.
