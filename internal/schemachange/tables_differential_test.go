@@ -8,6 +8,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/goschema"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/schemachange"
@@ -346,4 +347,41 @@ func appendExecutable(lines []string, trimmed string) []string {
 		true:  append(lines, normalizeStatement(trimmed)),
 		false: lines,
 	}[executable]
+}
+
+// TestAModificationCarriesWhatItReplaces pins the metadata a rendered
+// modification carries beside the new definition.
+//
+// Most renderers ignore it, which is exactly why a statement comparison against
+// PostgreSQL cannot see it: the two paths agree on every byte with the previous
+// values present or absent. Two consumers cannot ignore it. Safety analysis
+// tells a narrowing change from a widening one by the previous type, and
+// Oracle's MODIFY states the WHOLE new column definition, so a cleared default
+// has to be spelled DEFAULT NULL or the old one stays and the migration reports
+// success (stokaro/ptah#1885).
+func TestAModificationCarriesWhatItReplaces(t *testing.T) {
+	c := qt.New(t)
+	profile := postgresProfile()
+	changes := changesFor(c, describedTable(goschema.Field{
+		StructName: "Widget", Name: "code", Type: "varchar(200)", Nullable: true,
+	}), catalogTable(dbschematypes.DBColumn{
+		Name: "code", DataType: "varchar(50)", IsNullable: "NO",
+		ColumnDefault: new("'unset'"),
+	}))
+
+	operations, err := schemachange.Plan(changes, profile)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(operations, qt.HasLen, 1)
+	alter, ok := operations[0].Node.(*ast.AlterTableNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(alter.Operations, qt.HasLen, 1)
+	modify, ok := alter.Operations[0].(*ast.ModifyColumnOperation)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(modify.PreviousType, qt.Equals, "varchar(50)")
+	c.Assert(modify.HasPreviousNullable, qt.IsTrue)
+	c.Assert(modify.PreviousNullable, qt.IsFalse)
+	c.Assert(modify.HasPreviousDefault, qt.IsTrue)
+	c.Assert(modify.PreviousDefault, qt.Equals, "'unset'")
+	c.Assert(modify.Column.Type, qt.Equals, "varchar(200)")
 }
