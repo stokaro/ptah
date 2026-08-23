@@ -117,6 +117,7 @@ func excludeDatabase(
 	filtered.Triggers = state.filterTriggers(filtered.Triggers)
 	filtered.RLSPolicies = state.filterRLSPolicies(filtered.RLSPolicies)
 	filtered.Roles = state.filterRoles(filtered.Roles)
+	filtered.RoleMemberships = state.filterRoleMemberships(filtered.RoleMemberships)
 	filtered.Grants = state.filterGrants(filtered.Grants)
 	state.noteRolesOutOfScope(filtered.RolesOutOfScope)
 	state.noteUnregisteredVirtualTables(filtered.UnregisteredVirtualTables)
@@ -1151,6 +1152,21 @@ func (s *exclusionState) filterRoles(roles []dbschematypes.DBRole) []dbschematyp
 	})
 }
 
+// filterRoleMemberships drops an edge whose either end is excluded.
+//
+// A membership names no object of its own: it is a fact about two roles, and it
+// is answered by the `role` selector on both sides. Keeping an edge whose role
+// left would leave the description referring to a role it no longer defines,
+// which is the same defect RolesOutOfScope exists to avoid on the other side
+// (stokaro/ptah#1950).
+func (s *exclusionState) filterRoleMemberships(
+	memberships []dbschematypes.DBRoleMembership,
+) []dbschematypes.DBRoleMembership {
+	return keep(memberships, func(membership dbschematypes.DBRoleMembership) bool {
+		return !s.matches("role", membership.Role) && !s.matches("role", membership.Member)
+	})
+}
+
 func (s *exclusionState) filterGrants(grants []dbschematypes.DBGrant) []dbschematypes.DBGrant {
 	return keep(grants, func(grant dbschematypes.DBGrant) bool {
 		named := s.matches("grant", grant.QualifiedTarget(), grant.Role+"."+grant.QualifiedTarget())
@@ -1683,6 +1699,7 @@ func cloneDatabase(schema *dbschematypes.DBSchema) *dbschematypes.DBSchema {
 		RLSPolicies:        slices.Clone(schema.RLSPolicies),
 		Roles:              slices.Clone(schema.Roles),
 		Grants:             slices.Clone(schema.Grants),
+		RoleMemberships:    slices.Clone(schema.RoleMemberships),
 		// Which roles the server has is a fact about the server, not part of
 		// the description a filter narrows. Dropping it here would tell the
 		// comparator that every cluster role outside the description is

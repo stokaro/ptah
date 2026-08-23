@@ -171,6 +171,18 @@ func clonedCollectionRows() []clonedCollectionRow {
 			},
 		},
 		{
+			// A membership names no object of its own; both of its ends are
+			// roles, so the `role` selector is what answers it. The seeded
+			// role name is one no other row uses, so this row's selector can
+			// only be matched by the membership filter.
+			field: "RoleMemberships", present: "reporting_role", absent: "nosuch_role_membership",
+			seed: func(s *dbschematypes.DBSchema) {
+				s.RoleMemberships = append(s.RoleMemberships, dbschematypes.DBRoleMembership{
+					Role: "reporting_role", Member: "app_role",
+				})
+			},
+		},
+		{
 			// The role-qualified target names the grant and nothing else; the
 			// bare object name would be answered by the table instead.
 			field: "Grants", present: "app_role.users", absent: "app_role.nosuch_table",

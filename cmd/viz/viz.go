@@ -158,6 +158,9 @@ func securityAnnotations(
 	if err != nil {
 		return nil, nil, err
 	}
+	// No memberships: this diagram is drawn from Go annotations, which model no
+	// role graph. The rules that need one report themselves skipped, and those
+	// lines are drawn as comments like every other rule that could not run.
 	report := schemasecurity.Analyze(db, schemasecurity.Options{Capabilities: target.Capabilities})
 	annotations := make(map[string]schemaviz.Annotation, len(report.Findings))
 	unattached := make([]string, 0, len(report.SkippedRules))
