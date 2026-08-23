@@ -7,7 +7,6 @@ package postgres
 
 import (
 	"database/sql/driver"
-	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -28,52 +27,56 @@ type sqlStateError struct {
 func (e sqlStateError) Error() string    { return e.message }
 func (e sqlStateError) SQLState() string { return e.state }
 
-// TestIsUndefinedTable_ReadsTheCodeRatherThanTheMessage holds the distinction
-// the degradation rests on.
+// TestHasTimescaleExtension_DecidesWhetherTheCatalogIsAskedAtAll holds the
+// gate that keeps the aggregate query off a server that would refuse it.
 //
-// A server without the extension answers 42P01 to a query naming
-// timescaledb_information.continuous_aggregates, and that means "this server
-// has no continuous aggregates". Any other failure means something else, and
-// reading it as an absence would describe a broken server as a clean one.
-func TestIsUndefinedTable_ReadsTheCodeRatherThanTheMessage(t *testing.T) {
+// The gate is not an optimization. A failed statement ABORTS the enclosing
+// PostgreSQL transaction, so a read that asked anyway and tolerated the
+// failure left every later statement answering `current transaction is
+// aborted, commands ignored until end of transaction block` (SQLSTATE 25P02).
+// That is what an earlier draft did, and no unit test showed it: the failure
+// is in the statements that come after.
+func TestHasTimescaleExtension_DecidesWhetherTheCatalogIsAskedAtAll(t *testing.T) {
 	tests := []struct {
-		name string
-		err  error
-		want bool
+		name       string
+		extensions []types.DBExtension
+		want       bool
 	}{
 		{
-			name: "the relation is not there",
-			err:  sqlStateError{state: "42P01", message: `relation "x" does not exist`},
-			want: true,
+			name:       "installed",
+			extensions: []types.DBExtension{{Name: "plpgsql"}, {Name: "timescaledb"}},
+			want:       true,
 		},
 		{
-			name: "wrapped, because database/sql wraps",
-			err: fmt.Errorf("read: %w",
-				sqlStateError{state: "42P01", message: `relation "x" does not exist`}),
-			want: true,
+			name:       "installed under another spelling",
+			extensions: []types.DBExtension{{Name: "TimescaleDB"}},
+			want:       true,
 		},
 		{
-			name: "insufficient privilege is not an absence",
-			err:  sqlStateError{state: "42501", message: "permission denied"},
-			want: false,
+			name:       "an ordinary PostgreSQL server",
+			extensions: []types.DBExtension{{Name: "plpgsql"}, {Name: "pg_trgm"}},
+			want:       false,
 		},
 		{
-			name: "an undefined COLUMN is not an undefined table",
-			err:  sqlStateError{state: "42703", message: `column "x" does not exist`},
-			want: false,
+			// A read whose preset left the extension list out reports none,
+			// and that is the right answer for the targets it happens to:
+			// neither Spanner nor a catalog without pg_extension has
+			// TimescaleDB.
+			name:       "a read that did not look",
+			extensions: nil,
+			want:       false,
 		},
 		{
-			name: "a message that says the words but carries no code",
-			err:  errors.New(`relation "timescaledb_information.continuous_aggregates" does not exist`),
-			want: false,
+			name:       "a name that merely contains it",
+			extensions: []types.DBExtension{{Name: "timescaledb_toolkit"}},
+			want:       false,
 		},
-		{name: "no error", err: nil, want: false},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			c.Assert(isUndefinedTable(test.err), qt.Equals, test.want)
+			c.Assert(hasTimescaleExtension(test.extensions), qt.Equals, test.want)
 		})
 	}
 }
@@ -85,7 +88,7 @@ func TestReadContinuousAggregates_CarriesTheWrittenDefinition(t *testing.T) {
 	db := dbtest.Open(t, answeringContinuousAggregates)
 	reader := NewPostgreSQLReader(db.SQL, "public")
 
-	aggregates, err := reader.readContinuousAggregates()
+	aggregates, err := reader.readContinuousAggregates(timescaleInstalled())
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(aggregates, qt.DeepEquals, []types.DBContinuousAggregate{{
@@ -97,29 +100,37 @@ func TestReadContinuousAggregates_CarriesTheWrittenDefinition(t *testing.T) {
 	}})
 }
 
-// TestReadContinuousAggregates_AnAbsentCatalogIsAnEmptyAnswer is the ordinary
-// PostgreSQL case, which is every PostgreSQL server that does not have the
-// extension installed.
-func TestReadContinuousAggregates_AnAbsentCatalogIsAnEmptyAnswer(t *testing.T) {
+// TestReadContinuousAggregates_AsksNothingWithoutTheExtension is the ordinary
+// PostgreSQL case, and the assertion is that no statement is sent at all.
+//
+// Counting queries rather than checking the result is the whole point: an
+// empty answer is what BOTH a skipped read and a tolerated failure produce,
+// and only one of them leaves the transaction usable.
+func TestReadContinuousAggregates_AsksNothingWithoutTheExtension(t *testing.T) {
 	c := qt.New(t)
-	db := dbtest.Open(t, refusingContinuousAggregates)
+	var asked []string
+	db := dbtest.Open(t, recordingQueries(&asked))
 	reader := NewPostgreSQLReader(db.SQL, "public")
 
-	aggregates, err := reader.readContinuousAggregates()
+	aggregates, err := reader.readContinuousAggregates([]types.DBExtension{{Name: "plpgsql"}})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(aggregates, qt.HasLen, 0)
+	c.Assert(asked, qt.HasLen, 0)
 }
 
-// TestReadContinuousAggregates_AnyOtherFailureIsSurfaced is the control the
-// two above need: one code apart, and the reader has to fail rather than
-// describe a server it could not read.
-func TestReadContinuousAggregates_AnyOtherFailureIsSurfaced(t *testing.T) {
+// TestReadContinuousAggregates_AFailureWithTheExtensionIsSurfaced is the
+// control the gate needs.
+//
+// Once the extension IS installed the catalog is there, so a failure means
+// something else, and an empty answer would claim the server has no continuous
+// aggregates -- hiding exactly the objects a plan must not treat as views.
+func TestReadContinuousAggregates_AFailureWithTheExtensionIsSurfaced(t *testing.T) {
 	c := qt.New(t)
 	db := dbtest.Open(t, faultingContinuousAggregates)
 	reader := NewPostgreSQLReader(db.SQL, "public")
 
-	_, err := reader.readContinuousAggregates()
+	_, err := reader.readContinuousAggregates(timescaleInstalled())
 
 	c.Assert(err, qt.IsNotNil)
 	c.Assert(err.Error(), qt.Contains, "permission denied")
@@ -216,11 +227,17 @@ func answeringContinuousAggregates(
 	return continuousAggregateAnswer(query, nil)
 }
 
-func refusingContinuousAggregates(
-	query string, _ []driver.NamedValue,
-) (dbtest.QueryResult, error) {
-	return continuousAggregateAnswer(query,
-		sqlStateError{state: "42P01", message: `relation "timescaledb_information.continuous_aggregates" does not exist`})
+// timescaleInstalled is the extension list of a server that has it.
+func timescaleInstalled() []types.DBExtension {
+	return []types.DBExtension{{Name: "plpgsql"}, {Name: "timescaledb"}}
+}
+
+// recordingQueries answers nothing and remembers what it was asked.
+func recordingQueries(asked *[]string) dbtest.QueryHandler {
+	return func(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
+		*asked = append(*asked, query)
+		return dbtest.QueryResult{}, nil
+	}
 }
 
 func faultingContinuousAggregates(

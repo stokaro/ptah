@@ -1,21 +1,26 @@
 package postgres
 
 import (
-	"errors"
 	"strings"
 
 	"go.5x5.cz/ptah/dbschema/types"
 )
 
+// timescaleExtension is the extension whose presence decides whether the
+// catalog below exists at all.
+const timescaleExtension = "timescaledb"
+
 // continuousAggregateCatalog is the view TimescaleDB publishes its continuous
 // aggregates through.
 //
-// It is named as a string rather than joined into the view read because the
-// relation only exists where the extension is installed, and a read that
-// referenced it unconditionally would fail on every ordinary PostgreSQL
-// server. [Reader.readContinuousAggregates] asks for it and treats "undefined
-// table" as "this server has no continuous aggregates", which is what the
-// answer means.
+// The relation only exists where the extension is installed, and the query is
+// therefore not run at all where it is not. Asking anyway and tolerating the
+// failure is what an earlier draft did, and it was wrong in a way no unit test
+// showed: a failed statement ABORTS the enclosing PostgreSQL transaction, so
+// every later read answered `current transaction is aborted, commands ignored
+// until end of transaction block` (SQLSTATE 25P02). Recovering from an error
+// inside a transaction is not a degradation -- there is nothing left to
+// degrade to.
 const continuousAggregateCatalog = "timescaledb_information.continuous_aggregates"
 
 // continuousAggregateQuery reads the continuous aggregates of one schema.
@@ -41,27 +46,40 @@ const continuousAggregateQuery = `
 	WHERE c.view_schema = $1
 	ORDER BY c.view_name`
 
-// undefinedTableSQLState is PostgreSQL's SQLSTATE for a relation that is not
-// there. It is what a server without the TimescaleDB extension answers to a
-// query naming the extension's catalog.
-const undefinedTableSQLState = "42P01"
+// hasTimescaleExtension reports whether the extension is installed, from the
+// extension list this read already took.
+//
+// Reading the answer off a list already in hand rather than asking the server
+// again is what keeps the aggregate query off a database that would refuse it.
+// A server whose preset left the extension read out reports none, which is the
+// right answer for the two targets that happens to: neither Spanner nor a
+// catalog without pg_extension has TimescaleDB.
+func hasTimescaleExtension(extensions []types.DBExtension) bool {
+	for _, extension := range extensions {
+		if strings.EqualFold(extension.Name, timescaleExtension) {
+			return true
+		}
+	}
+	return false
+}
 
 // readContinuousAggregates reads the continuous aggregates of the schemas this
-// read covers, and returns nothing on a server that has no such catalog.
+// read covers, and asks nothing at all where the extension is absent.
 //
-// The absence of the extension is not an error and is not a degradation
-// either: a server without TimescaleDB has no continuous aggregates, so an
-// empty answer is the whole truth. That is different from the role reads,
-// where an empty answer could mean "not permitted to look" -- here the
-// relation is missing because the objects are.
-func (r *Reader) readContinuousAggregates() ([]types.DBContinuousAggregate, error) {
+// A failure once the extension IS installed is surfaced rather than swallowed.
+// An empty answer there would say "this server has no continuous aggregates",
+// which is a claim a failed read cannot make -- and the objects it would hide
+// are exactly the ones a plan must not treat as views.
+func (r *Reader) readContinuousAggregates(
+	extensions []types.DBExtension,
+) ([]types.DBContinuousAggregate, error) {
+	if !hasTimescaleExtension(extensions) {
+		return nil, nil
+	}
 	var aggregates []types.DBContinuousAggregate
 	for _, schemaName := range r.schemasToRead() {
 		schemaAggregates, err := r.readContinuousAggregatesForSchema(schemaName)
 		if err != nil {
-			if isUndefinedTable(err) {
-				return nil, nil
-			}
 			return nil, err
 		}
 		aggregates = append(aggregates, schemaAggregates...)
@@ -132,18 +150,4 @@ func withoutContinuousAggregates(
 
 func continuousAggregateKey(schema, name string) string {
 	return strings.ToLower(schema) + "\x00" + strings.ToLower(name)
-}
-
-// isUndefinedTable reports whether the server answered that the relation does
-// not exist.
-//
-// It asks the driver for the SQLSTATE rather than matching the message, for
-// the reason internal/atlasretry gives about the same interface: the message
-// is localized and the code is not. Any other failure is a fault and is
-// surfaced, because a server that HAS the extension and refuses the read for
-// another reason must not be described as one that has no continuous
-// aggregates.
-func isUndefinedTable(err error) bool {
-	var stateErr interface{ SQLState() string }
-	return errors.As(err, &stateErr) && stateErr.SQLState() == undefinedTableSQLState
 }
