@@ -80,6 +80,23 @@ func clonedCollectionRows() []clonedCollectionRow {
 			},
 		},
 		{
+			// A hypertable answers its TABLE's selector and has none of its
+			// own, so `present` is a table name: it is a fact about a table
+			// rather than an object beside it, and a selector of its own would
+			// let a description carry the fact for a table it does not carry
+			// (stokaro/ptah#1026).
+			field: "Hypertables", present: "readings", absent: "nosuch_hypertable",
+			seed: func(s *dbschematypes.DBSchema) {
+				s.Tables = append(s.Tables, dbschematypes.DBTable{
+					Name:    "readings",
+					Columns: []dbschematypes.DBColumn{{Name: "time"}},
+				})
+				s.Hypertables = append(s.Hypertables, dbschematypes.DBHypertable{
+					Name: "readings", PrimaryDimension: "time", Dimensions: 1,
+				})
+			},
+		},
+		{
 			field: "ContinuousAggregates", present: "hourly_totals", absent: "nosuch_aggregate",
 			seed: func(s *dbschematypes.DBSchema) {
 				s.ContinuousAggregates = append(s.ContinuousAggregates,

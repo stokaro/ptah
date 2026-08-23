@@ -3737,6 +3737,15 @@ func (r *Reader) readCapabilityGatedObjects(schema *types.DBSchema) error {
 	schema.ContinuousAggregates = aggregates
 	schema.Views = withoutContinuousAggregates(views, aggregates)
 
+	// Read from the same extension list and for the same reason: a hypertable
+	// is an ordinary table everywhere but here, so nothing else in this
+	// description can say that one is partitioned (stokaro/ptah#1026).
+	hypertables, err := r.readHypertables(schema.Extensions)
+	if err != nil {
+		return fmt.Errorf("failed to read hypertables: %w", err)
+	}
+	schema.Hypertables = hypertables
+
 	if r.caps.Has(capability.MaterializedViews) {
 		matViews, err := r.readMaterializedViews()
 		if err != nil {

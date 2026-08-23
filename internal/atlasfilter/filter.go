@@ -114,6 +114,7 @@ func excludeDatabase(
 	filtered.Synonyms = state.filterSynonyms(filtered.Synonyms)
 	filtered.ExtendedProperties = state.filterExtendedProperties(filtered.ExtendedProperties)
 	filtered.ContinuousAggregates = state.filterContinuousAggregates(filtered.ContinuousAggregates)
+	filtered.Hypertables = state.filterHypertables(filtered.Hypertables)
 	filtered.MatViews = state.filterMatViews(filtered.MatViews)
 	filtered.Triggers = state.filterTriggers(filtered.Triggers)
 	filtered.RLSPolicies = state.filterRLSPolicies(filtered.RLSPolicies)
@@ -1139,6 +1140,23 @@ func (s *exclusionState) filterContinuousAggregates(
 	return result
 }
 
+// filterHypertables drops the hypertable rows whose TABLE this exclusion
+// removed.
+//
+// A hypertable has no selector of its own, and deliberately so: it is not a
+// second object beside the table but a fact about it, so `--exclude conditions`
+// has already said everything there is to say. Giving it one would let a
+// description carry a hypertable row for a table it does not describe, and the
+// note built on that row would name a statement the reader cannot see
+// (stokaro/ptah#1026).
+func (s *exclusionState) filterHypertables(
+	hypertables []dbschematypes.DBHypertable,
+) []dbschematypes.DBHypertable {
+	return keep(hypertables, func(hypertable dbschematypes.DBHypertable) bool {
+		return !s.tableExcluded(hypertable.Schema, hypertable.Name)
+	})
+}
+
 func (s *exclusionState) filterMatViews(views []dbschematypes.DBMatView) []dbschematypes.DBMatView {
 	result := make([]dbschematypes.DBMatView, 0, len(views))
 	for _, view := range views {
@@ -1742,6 +1760,7 @@ func cloneDatabase(schema *dbschematypes.DBSchema) *dbschematypes.DBSchema {
 		Synonyms:             slices.Clone(schema.Synonyms),
 		ExtendedProperties:   slices.Clone(schema.ExtendedProperties),
 		ContinuousAggregates: slices.Clone(schema.ContinuousAggregates),
+		Hypertables:          slices.Clone(schema.Hypertables),
 		MatViews:             slices.Clone(schema.MatViews),
 		Triggers:             slices.Clone(schema.Triggers),
 		RLSPolicies:          slices.Clone(schema.RLSPolicies),
