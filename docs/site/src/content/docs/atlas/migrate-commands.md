@@ -68,6 +68,37 @@ parents: `ptah-compat migrate new add_users --dir file://db/migrations` creates
 `db` and `db/migrations`. A path component that already exists and is not a
 directory is still refused, and nothing is written.
 
+### `--dir` takes a registry reference
+
+`--dir` accepts the `atlas://` spelling an Atlas workflow already runs, and
+resolves it against the OCI namespace `PTAH_ATLAS_REGISTRY` names — the same
+namespace, and the same read-only directory, an `atlas.hcl` `migration.dir`
+resolves through:
+
+```bash
+export PTAH_ATLAS_REGISTRY=ghcr.io/acme
+ptah-compat migrate apply --url "$DATABASE_URL" --dir "atlas://app?tag=prod"
+```
+
+The three documented forms are supported and no others: a bare repository,
+`?tag=<tag>` for a movable pointer, and `?version=<version>` for a write-once
+one. A query parameter with no documented meaning is refused rather than
+ignored, because ignoring one resolves to a different artifact than the
+reference names.
+
+With `PTAH_ATLAS_REGISTRY` unset the reference is refused and the message names
+the variable. Nothing is sent to a hosted service as a fallback:
+
+```text
+Error: atlas migrate status --dir: atlas:// references require an OCI backing registry in Ptah:
+set PTAH_ATLAS_REGISTRY to the namespace holding them, for example
+PTAH_ATLAS_REGISTRY=ghcr.io/acme, or write the oci:// reference itself
+```
+
+The directory is read and never written back to. `migrate new`, `migrate diff`
+and `migrate hash` refuse against one and name the reference they refused;
+write to a local directory and publish it with `ptah migrations push`.
+
 ## Worked example: an Atlas-format directory
 
 Atlas-style migration files can include `migration.sql`, `down.sql`, the

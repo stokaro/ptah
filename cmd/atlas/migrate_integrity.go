@@ -187,7 +187,10 @@ func resolveAtlasMigrateSource(
 	}
 
 	rawDir, spelledByAtlas := resolveAtlasMigrateSourceDir(verb, mapped)
-	localDir, err := atlasargs.ParseLocalDir(rawDir)
+	// The --dir spelling: the raw value the mapper carries is already the
+	// resolved path for a project-named directory, and what this adds is the
+	// registry form (stokaro/ptah#1210).
+	localDir, err := project.project.resolveMigrationDirArg(cmd.Context(), rawDir)
 	if err != nil {
 		return atlasMigrateSource{}, fmt.Errorf("atlas migrate %s --dir: %w", verb.use, err)
 	}

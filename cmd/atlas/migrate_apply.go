@@ -264,7 +264,7 @@ func runAtlasMigrateApplyTarget(
 		projectCfg.StringValue(projectconfig.StringMigrationDir).Present {
 		localDir, err = project.resolveProjectMigrationDir(opts.dir)
 	} else {
-		localDir, err = atlasargs.ParseLocalDir(opts.dir)
+		localDir, err = project.resolveMigrationDirArg(cmd.Context(), opts.dir)
 	}
 	if err != nil {
 		return formatOutput, fmt.Errorf("atlas migrate apply --dir: %w", err)

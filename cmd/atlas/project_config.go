@@ -23,8 +23,11 @@ import (
 	"go.5x5.cz/ptah/internal/atlasargs"
 	"go.5x5.cz/ptah/internal/atlascompatpolicy"
 	"go.5x5.cz/ptah/internal/atlasprojectpath"
+	"go.5x5.cz/ptah/internal/atlasregistry"
 	"go.5x5.cz/ptah/internal/atlasschema"
 	"go.5x5.cz/ptah/internal/atlassource"
+	"go.5x5.cz/ptah/internal/migrationartifact"
+	"go.5x5.cz/ptah/internal/ociartifact"
 	"go.5x5.cz/ptah/internal/pathguard"
 	"go.5x5.cz/ptah/internal/schemafile"
 )
@@ -148,6 +151,80 @@ func (p *atlasProject) resolveProjectMigrationDir(raw string) (atlasargs.LocalDi
 	p.migrationDir = dir
 	p.migrationDirResolved = true
 	return dir, nil
+}
+
+// resolveMigrationDirArg resolves the value a migration verb's --dir carried
+// into the directory the verb reads.
+//
+// A registry reference is the one spelling [atlasargs.ParseLocalDir] cannot
+// answer, and it is a spelling an adopting project types: `--dir atlas://app`
+// is what an Atlas workflow already runs. Its counterpart in a project file --
+// `migration { dir = "atlas://app" }` -- is resolved by the project parser
+// instead, which registers the SAME in-memory read-only directory, so there is
+// one pull path rather than two (stokaro/ptah#1210).
+func (p *atlasProject) resolveMigrationDirArg(
+	ctx context.Context,
+	raw string,
+) (atlasargs.LocalDir, error) {
+	if atlasregistry.IsReference(raw) {
+		return p.resolveRegistryMigrationDir(ctx, raw)
+	}
+	return atlasargs.ParseLocalDir(raw)
+}
+
+// resolveRegistryMigrationDir fetches the migration directory an `atlas://`
+// reference names and registers it as this run's virtual directory.
+//
+// The fetched filesystem takes the route a project-file reference already
+// takes, so the checksum gate, the directory-format handling and every verb
+// downstream read it exactly as they read a local directory. A second path
+// would be a second place for `atlas.sum` to be verified, or not.
+//
+// Read-only is not a detail: there is no local directory behind the reference,
+// so a writing verb that reached the writer with it would write nowhere and
+// exit 0. [atlasProject.refuseWriteToReadOnlyMigrationDir] is what stops that,
+// and it needs this flag set.
+func (p *atlasProject) resolveRegistryMigrationDir(
+	ctx context.Context,
+	raw string,
+) (atlasargs.LocalDir, error) {
+	reference, err := atlasregistry.Resolve(raw)
+	if err != nil {
+		return atlasargs.LocalDir{}, err
+	}
+	plainHTTP, err := atlasregistry.PlainHTTP.Resolve()
+	if err != nil {
+		return atlasargs.LocalDir{}, fmt.Errorf("reading the registry transport setting: %w", err)
+	}
+	client, err := ociartifact.NewClient(ociartifact.ClientOptions{PlainHTTP: plainHTTP})
+	if err != nil {
+		return atlasargs.LocalDir{}, fmt.Errorf("opening the registry client for %s: %w", reference.OCI, err)
+	}
+	artifact, err := migrationartifact.Pull(ctx, client, reference.OCI)
+	if err != nil {
+		return atlasargs.LocalDir{}, fmt.Errorf("fetching %s: %w", reference.OCI, err)
+	}
+	p.adoptVirtualMigrationDir(raw, reference.OCI, artifact.FileSystem)
+	return p.migrationDir, nil
+}
+
+// adoptVirtualMigrationDir records an in-memory migration directory as the one
+// this run reads, with no local path behind it.
+//
+// The sentinel path is a digest of the raw value rather than the value itself,
+// for the reason the project-file route records: every verb compares directory
+// identity by path, and joining a registry reference to the project root would
+// create a directory named after it.
+func (p *atlasProject) adoptVirtualMigrationDir(display, origin string, filesystem fs.FS) {
+	digest := sha256.Sum256([]byte(display))
+	p.migrationDir = atlasargs.LocalDir{Path: fmt.Sprintf(".ptah-registry-dir-%x", digest)}
+	p.migrationWriteDir = atlasargs.LocalDir{}
+	p.migrationFS = filesystem
+	p.migrationDisplay = display
+	p.migrationOrigin = origin
+	p.migrationVirtual = true
+	p.migrationReadOnly = true
+	p.migrationDirResolved = true
 }
 
 func newAtlasProject(cfg projectconfig.Config, root *pathguard.OpenedDirectory) atlasProject {

@@ -74,6 +74,9 @@ func TestMigrateApplyValidatesToVersionBeforeCapturingNativeDirectory(t *testing
 // claimed here; what this pins is which of the two answers.
 func TestMigrateStatusAnswersTheDirectoryBeforeTheDatabaseURL(t *testing.T) {
 	c := qt.New(t)
+	// The refusal under test is the one an operator who configured no OCI
+	// namespace sees, and the process running the suite may carry one.
+	t.Setenv("PTAH_ATLAS_REGISTRY", "")
 	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
@@ -82,7 +85,7 @@ func TestMigrateStatusAnswersTheDirectoryBeforeTheDatabaseURL(t *testing.T) {
 
 	err := cmd.Execute()
 
-	c.Assert(err, qt.ErrorMatches, `atlas migrate status --dir: only local file:// migration directories are supported`)
+	c.Assert(err, qt.ErrorMatches, `atlas migrate status --dir: atlas:// references require an OCI backing registry.*`)
 }
 
 func TestMigrateLintValidatesDirectoryFormatBeforeDirectoryURL(t *testing.T) {

@@ -146,7 +146,7 @@ func runAtlasMigrateStatus(
 	} else {
 		// The scheme was already required above, where the measured ordering
 		// puts it.
-		localDir, err = atlasargs.ParseLocalDir(opts.dir)
+		localDir, err = project.resolveMigrationDirArg(cmd.Context(), opts.dir)
 	}
 	if err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("atlas migrate status --dir: %w", err))

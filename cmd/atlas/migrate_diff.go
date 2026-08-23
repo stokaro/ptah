@@ -504,7 +504,7 @@ func resolveAtlasMigrateDiffDir(
 		}
 		return dir, nil
 	}
-	return atlasargs.ParseLocalDir(dirURL)
+	return project.resolveMigrationDirArg(cmd.Context(), dirURL)
 }
 
 func resolveMigrateDiffDirectory(dir atlasargs.LocalDir) (string, error) {
