@@ -500,6 +500,24 @@ type Index struct {
 	// would plan a rebuild on every run for a key that never changed
 	// (stokaro/ptah#1663, and the same fact dbschema/types.DBIndex records).
 	KeyPartsIncomplete bool
+	// RequiresExtensions names the extensions this index cannot be built
+	// without.
+	//
+	// It is carried rather than derived because it cannot be read off the
+	// index's own text. Measured on PostgreSQL 17.10,
+	// `CREATE INDEX t_gin ON t USING gin (n int4_ops)` over an integer column
+	// needs btree_gin and is stored, and rendered, as `USING gin (n)`: neither
+	// the extension nor the operator class appears anywhere in the statement,
+	// because PostgreSQL prints a class exactly when it is NOT the default. The
+	// reader resolves it against pg_depend instead, and a state that dropped
+	// the answer would leave every later stage to guess it from `gin` -- which
+	// pins btree_gin to indexes that do not need it, since tsvector, jsonb and
+	// array columns have core GIN classes (stokaro/ptah#1286, stokaro/ptah#1663).
+	//
+	// It is not compared. A description that never named an extension and a
+	// read that resolved one describe the same index, and comparing them would
+	// plan a rebuild on every run for an index nobody changed.
+	RequiresExtensions []string
 }
 
 // TableConstraint is a constraint kind whose whole definition is one clause the
