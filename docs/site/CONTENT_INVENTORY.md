@@ -322,6 +322,25 @@ than a continuation of the generated one. `versioned/generate` covers both
 origins and no longer describes a hand-written migration as what you reach for
 when generation cannot express the change.
 
+## 6c. Formats as peers (stokaro/ptah#1228)
+
+`schema/go-annotations` carried the workflow for every source: comparing,
+planning, generating, applying, composing, and rendering across dialects were
+all explained there in terms of `--root-dir`, and the YAML, HCL and SQL pages
+read as adapters onto it. A reader who kept HCL learned the workflow from a
+page about Go.
+
+`schema/work-with-a-source` now holds those operations once, with the source
+flag in synchronized tabs — `--schema-file`, `--root-dir`, `--schema-cmd` — and
+the format pages keep what is genuinely theirs: syntax, supported constructs,
+and source-specific behavior. The Go page keeps its annotation model and its
+HCL export path, plus the one operation worth repeating there: rendering more
+than one dialect, because portable annotations are where a mapping surprise
+shows.
+
+The concept page points at the shared page first and at the format pages after
+it, in that order.
+
 ## 7. Terminology audit
 
 Verified with repository-wide searches at the audited commit.
