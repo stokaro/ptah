@@ -98,3 +98,31 @@ func TestPlanner_TableLevelConstraintNamesItsOwnTable(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(sql, qt.Contains, `ALTER TABLE "archived_bookings" ADD CONSTRAINT "positive_price" CHECK (price > 0);`)
 }
+
+// TestPlanner_TableLevelConstraintWhoseStructDeclaresNoTable pins the last
+// resort, and the choice it encodes.
+//
+// A description whose constraint names a struct no table declares is malformed
+// -- the canonical adapter refuses it by name -- but this planner has no way to
+// refuse, and its two silent alternatives are worse than a wrong name: an empty
+// one renders `ALTER TABLE ""`, and dropping the node emits nothing at all for a
+// constraint the description declared. The struct's own name fails loudly and
+// says which declaration to look at, which is the fallback the field-level
+// paths beside it already use.
+func TestPlanner_TableLevelConstraintWhoseStructDeclaresNoTable(t *testing.T) {
+	c := qt.New(t)
+	diff := &types.SchemaDiff{ConstraintsAdded: []string{"positive_price"}}
+	generated := &goschema.Database{
+		Constraints: []goschema.Constraint{{
+			StructName: "Booking", Name: "positive_price", Type: "CHECK",
+			CheckExpression: "price > 0",
+		}},
+	}
+
+	nodes, err := postgres.New().GenerateMigrationASTChecked(diff, generated)
+
+	c.Assert(err, qt.IsNil)
+	sql, err := renderer.RenderSQL("postgres", nodes...)
+	c.Assert(err, qt.IsNil)
+	c.Assert(sql, qt.Contains, `ALTER TABLE "Booking" ADD CONSTRAINT "positive_price" CHECK (price > 0);`)
+}
