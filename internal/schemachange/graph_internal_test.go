@@ -91,11 +91,11 @@ func TestBuildGraph_DerivesNoCycleForThisSlice(t *testing.T) {
 	state := schemastate.New("postgres",
 		objectidentity.KindTable, objectidentity.KindColumn, objectidentity.KindConstraint)
 	changes := []Change{
-		{ID: constraintID("public", "a", "fk_a_b"), Operation: Add, After: &schemastate.ForeignKey{
-			ReferencedTable: tableID("public", "b"),
+		{ID: constraintID("public", "a", "fk_a_b"), Operation: Add, After: &schemastate.Object{
+			ForeignKey: &schemastate.ForeignKey{ReferencedTable: tableID("public", "b")},
 		}},
-		{ID: constraintID("public", "b", "fk_b_a"), Operation: Add, After: &schemastate.ForeignKey{
-			ReferencedTable: tableID("public", "a"),
+		{ID: constraintID("public", "b", "fk_b_a"), Operation: Add, After: &schemastate.Object{
+			ForeignKey: &schemastate.ForeignKey{ReferencedTable: tableID("public", "a")},
 		}},
 	}
 
