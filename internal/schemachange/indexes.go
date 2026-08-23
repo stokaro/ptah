@@ -103,9 +103,16 @@ func backsAConstraint(current *schemastate.State, index schemastate.Object, dial
 // so there is nothing to hand over there. Only MySQL and MariaDB create an
 // index for a FOREIGN KEY; on the other targets an index sharing a foreign
 // key's name is an index somebody wrote.
+//
+// Every uniqueness guarantee a READ carries is asked, not just the ones the
+// read reported as standalone UNIQUE constraints. Restricting it to those left
+// a clause no fixture could separate from its absence: the name in a guarantee
+// read from a catalog is the server's own constraint name either way, and a
+// guarantee Ptah derived instead carries a derived name -- `ptah_unique_code`
+// -- which no index in a read is called.
 func ownsAnIndex(constraint schemastate.Object, dialect string) bool {
 	switch {
-	case constraint.UniqueKey != nil && constraint.UniqueKey.Standalone:
+	case constraint.UniqueKey != nil:
 		return platform.NormalizeDialect(dialect) != platform.SQLServer
 	case constraint.ForeignKey != nil:
 		normalized := platform.NormalizeDialect(dialect)
