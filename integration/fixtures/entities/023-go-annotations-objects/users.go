@@ -63,6 +63,9 @@ type UserStatsMatView struct{}
 //ptah:schema:synonym name="current_users" schema="app" target="dbo.users" comment="Alias for the users table"
 type CurrentUsersSynonym struct{}
 
+//ptah:schema:hypertable table="users" column="created_at" chunk_interval="7 days" if_not_exists="true" comment="Partitioned by creation time"
+type UsersHypertable struct{}
+
 //ptah:schema:extendedproperty name="ptah_retention" schema="app" table="users" column="email" value="90d" comment="Column retention marker"
 type UsersEmailRetentionProperty struct{}
 

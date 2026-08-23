@@ -302,8 +302,48 @@ func getDatabaseInfoWithCapabilities(
 		return types.DBInfo{}, capability.VersionResolution{}, err
 	}
 	resolution := resolveDatabaseCapabilities(info)
-	info.Capabilities = resolution.Capabilities
+	info.Capabilities = refineExtensionCapabilities(ctx, db, info.Dialect, resolution.Capabilities)
 	return info, resolution, nil
+}
+
+// refineExtensionCapabilities decides the keys an EXTENSION carries rather than
+// a version line.
+//
+// TimescaleDB is the case: it is PostgreSQL with an extension installed, not a
+// dialect or a version of its own, and it puts no token in `version()` -- so
+// nothing the resolver reads can see it. What decides [capability.Hypertables]
+// is `pg_extension`, on the connection (stokaro/ptah#1026).
+//
+// It is asked only of PostgreSQL itself. CockroachDB, YugabyteDB and the
+// Spanner PostgreSQL interface share the wire and not the extension mechanism,
+// and asking a target that has no `pg_extension` would spend a round trip to
+// learn nothing.
+//
+// A failed query leaves the key alone rather than failing the connection. This
+// runs before any transaction the caller opens, so a refusal here cannot poison
+// one, and a server that will not answer has told us nothing about the
+// extension either way.
+func refineExtensionCapabilities(
+	ctx context.Context,
+	db *sql.DB,
+	dialect string,
+	caps capability.Capabilities,
+) capability.Capabilities {
+	if platform.NormalizeDialect(dialect) != platform.Postgres {
+		return caps
+	}
+	var installed bool
+	if err := db.QueryRowContext(
+		ctx,
+		"SELECT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'timescaledb')",
+	).Scan(&installed); err != nil {
+		slog.Debug("could not read pg_extension for capability refinement", "error", err)
+		return caps
+	}
+	if !installed {
+		return caps
+	}
+	return caps.With(capability.Hypertables, true)
 }
 
 // reportCapabilityResolution records how the live server version was mapped

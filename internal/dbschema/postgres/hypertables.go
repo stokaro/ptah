@@ -58,6 +58,7 @@ const hypertableQuery = `
 		h.hypertable_name,
 		d.column_name,
 		d.column_type::text,
+		d.time_interval::text,
 		h.num_dimensions
 	FROM ` + hypertableCatalog + ` h
 	LEFT JOIN ` + dimensionCatalog + ` d
@@ -100,16 +101,17 @@ func (r *Reader) readHypertablesForSchema(schemaName string) ([]types.DBHypertab
 	var hypertables []types.DBHypertable
 	for rows.Next() {
 		var hypertable types.DBHypertable
-		var dimension, dimensionType sql.NullString
+		var dimension, dimensionType, interval sql.NullString
 		if err := rows.Scan(
 			&hypertable.Schema, &hypertable.Name,
-			&dimension, &dimensionType, &hypertable.Dimensions,
+			&dimension, &dimensionType, &interval, &hypertable.Dimensions,
 		); err != nil {
 			return nil, err
 		}
 		hypertable.Schema = r.outputSchema(hypertable.Schema)
 		hypertable.PrimaryDimension = dimension.String
 		hypertable.PrimaryDimensionType = dimensionType.String
+		hypertable.ChunkInterval = interval.String
 		hypertables = append(hypertables, hypertable)
 	}
 	return hypertables, rows.Err()

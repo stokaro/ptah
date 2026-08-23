@@ -994,6 +994,15 @@ type DBHypertable struct {
 	PrimaryDimension     string `json:"primary_dimension"`
 	PrimaryDimensionType string `json:"primary_dimension_type"`
 
+	// ChunkInterval is the width of one chunk on the primary dimension, in the
+	// server's own spelling -- `7 days`, `1 day`. It is empty for a dimension
+	// the catalog reports no time interval for, which is every hash dimension
+	// and an integer range one.
+	//
+	// The server's spelling is what a declaration has to carry: a value
+	// converted to compare would differ from the catalog on every run.
+	ChunkInterval string `json:"chunk_interval,omitempty"`
+
 	// Dimensions counts the partitioning dimensions, so a note can say that a
 	// table has more than the one it names.
 	Dimensions int `json:"dimensions"`

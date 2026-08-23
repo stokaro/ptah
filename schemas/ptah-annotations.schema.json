@@ -732,6 +732,54 @@
       ],
       "type": "object"
     },
+    "ptah.schema.hypertable": {
+      "additionalProperties": false,
+      "description": "Declares a TimescaleDB hypertable: a table partitioned on a range dimension.",
+      "properties": {
+        "attributes": {
+          "additionalProperties": false,
+          "properties": {
+            "chunk_interval": {
+              "description": "Width of one chunk, spelled the way PostgreSQL spells an interval. Omit to take TimescaleDB's default.",
+              "type": "string"
+            },
+            "column": {
+              "description": "Range dimension: the column chunks are cut on.",
+              "type": "string"
+            },
+            "comment": {
+              "description": "Hypertable comment.",
+              "type": "string"
+            },
+            "if_not_exists": {
+              "description": "Skip a table that is already a hypertable instead of failing.",
+              "enum": [
+                "true",
+                "false"
+              ],
+              "type": "string"
+            },
+            "table": {
+              "description": "Table to partition, optionally schema-qualified.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "column",
+            "table"
+          ],
+          "type": "object"
+        },
+        "directive": {
+          "const": "ptah:schema:hypertable"
+        }
+      },
+      "required": [
+        "directive",
+        "attributes"
+      ],
+      "type": "object"
+    },
     "ptah.schema.index": {
       "additionalProperties": false,
       "description": "Declares an index for a table.",
@@ -1601,6 +1649,9 @@
     },
     {
       "$ref": "#/$defs/ptah.schema.matview"
+    },
+    {
+      "$ref": "#/$defs/ptah.schema.hypertable"
     },
     {
       "$ref": "#/$defs/ptah.schema.synonym"

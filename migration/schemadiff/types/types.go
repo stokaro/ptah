@@ -279,6 +279,27 @@ type SchemaDiff struct {
 	// but not in the target schema.
 	ViewsRemoved []string `json:"views_removed"`
 
+	// HypertablesAdded names the tables a declaration asks to partition and the
+	// database reports as ordinary.
+	HypertablesAdded []string `json:"hypertables_added"`
+
+	// HypertablesRemoved names the tables the database reports as hypertables
+	// and the declaration does not.
+	//
+	// There is no statement that honors one. TimescaleDB has no
+	// `drop_hypertable`: measured on 2.29.2, the call answers
+	// `function drop_hypertable(unknown) does not exist`, and the only way back
+	// to an ordinary table is dropping this one and its data. So the planner
+	// refuses rather than plans (stokaro/ptah#1026).
+	HypertablesRemoved []string `json:"hypertables_removed"`
+
+	// HypertablesModified names the tables whose partitioning declaration
+	// differs from what the catalog reports.
+	//
+	// It carries the same refusal as a removal, for the same reason: changing a
+	// dimension is not a statement either.
+	HypertablesModified []HypertableDiff `json:"hypertables_modified"`
+
 	// SynonymsAdded contains names of synonyms that exist in the target schema
 	// and not in the database.
 	SynonymsAdded []string `json:"synonyms_added"`
@@ -476,6 +497,7 @@ func (d *SchemaDiff) HasChanges() bool {
 		d.hasUserTypeChanges() ||
 		d.hasViewChanges() ||
 		d.hasSynonymChanges() ||
+		d.hasHypertableChanges() ||
 		d.hasExtendedPropertyChanges() ||
 		d.hasMaterializedViewChanges() ||
 		d.hasTriggerChanges() ||
@@ -632,6 +654,12 @@ func (d *SchemaDiff) hasSynonymChanges() bool {
 	return len(d.SynonymsAdded) > 0 ||
 		len(d.SynonymsRemoved) > 0 ||
 		len(d.SynonymsModified) > 0
+}
+
+func (d *SchemaDiff) hasHypertableChanges() bool {
+	return len(d.HypertablesAdded) > 0 ||
+		len(d.HypertablesRemoved) > 0 ||
+		len(d.HypertablesModified) > 0
 }
 
 func (d *SchemaDiff) hasExtendedPropertyChanges() bool {
@@ -981,6 +1009,21 @@ type ExtensionDiff struct {
 	// `extension "plpgsql" does not support SET SCHEMA`, measured on
 	// PostgreSQL 18.
 	Relocatable bool `json:"relocatable"`
+}
+
+// HypertableDiff describes a hypertable whose declared partitioning differs
+// from the one the catalog reports.
+type HypertableDiff struct {
+	// Table is the table both sides name.
+	Table string `json:"table"`
+	// OldColumn and NewColumn are the range dimensions, live and declared.
+	OldColumn string `json:"old_column"`
+	NewColumn string `json:"new_column"`
+	// OldChunkInterval and NewChunkInterval are the chunk widths, live and
+	// declared. An empty declared interval takes the server's default and is
+	// not a difference.
+	OldChunkInterval string `json:"old_chunk_interval"`
+	NewChunkInterval string `json:"new_chunk_interval"`
 }
 
 // ExtendedPropertyRef names one SQL Server extended property, by the address

@@ -946,6 +946,48 @@ func containsFold(values []string, target string) bool {
 	return false
 }
 
+// renderHypertables writes the TimescaleDB hypertable blocks.
+//
+// The block exists because nothing else in a description can say a table is
+// partitioned. Measured on TimescaleDB 2.29.2 / PostgreSQL 17.11, a hypertable
+// answers `relkind = 'r'` and carries no extension ownership in `pg_depend`, so
+// a document that describes the table describes an ORDINARY table -- complete
+// on its face, and wrong. Replaying it creates a table that is not partitioned,
+// and a diff between the two reports no difference (stokaro/ptah#1026).
+//
+// The label is the table, because a hypertable has no name of its own.
+func (r *renderer) renderHypertables() {
+	hypertables := append([]goschema.Hypertable(nil), r.db.Hypertables...)
+	slices.SortFunc(hypertables, func(a, b goschema.Hypertable) int {
+		return cmp.Compare(a.Table, b.Table)
+	})
+	for _, hypertable := range hypertables {
+		schema, table := splitHypertableName(hypertable.Table)
+		r.linef(`hypertable %s {`, quote(table))
+		if resolved := r.schemaFor(schema); resolved != "" {
+			r.rawAttr(1, "schema", r.schemaRef(resolved))
+		}
+		r.stringAttr(1, "column", hypertable.Column)
+		r.stringAttr(1, "chunk_interval", hypertable.ChunkInterval)
+		if hypertable.IfNotExists {
+			r.rawAttr(1, "if_not_exists", "true")
+		}
+		r.stringAttr(1, "comment", hypertable.Comment)
+		r.line("}")
+		r.line("")
+	}
+}
+
+// splitHypertableName separates the schema a declaration folded into the table
+// name, so the block can carry it as a schema reference like every other one.
+func splitHypertableName(table string) (schema, name string) {
+	ref, ok := tableref.Parse(table)
+	if !ok || !ref.Qualified {
+		return "", table
+	}
+	return ref.Schema, ref.Name
+}
+
 // renderSynonyms writes the SQL Server synonym blocks.
 //
 // The block exists because HCL had no way to say one, and a document that

@@ -24,7 +24,9 @@ var supplementalDiffCategories = map[string]string{
 }
 
 var refusedDiffCategories = map[string]string{
-	"ExtensionsModified": "PostgreSQL extension placement drift is detected but refused before emission until ALTER EXTENSION SET SCHEMA planning is supported",
+	"ExtensionsModified":  "PostgreSQL extension placement drift is detected but refused before emission until ALTER EXTENSION SET SCHEMA planning is supported",
+	"HypertablesRemoved":  "TimescaleDB has no statement that turns a hypertable back into an ordinary table -- measured on 2.29.2, drop_hypertable does not exist -- so the planner refuses instead of emitting nothing and calling the two sides equal",
+	"HypertablesModified": "TimescaleDB has no statement that repartitions an existing hypertable either, and the refusal is what keeps a permanent divergence from reading as no change",
 }
 
 // TestEveryDiffCategoryRendersSQL walks the change categories of SchemaDiff and
@@ -228,6 +230,13 @@ func diffCategoryFixtures() []categoryFixture {
 			&goschema.Database{Synonyms: []goschema.Synonym{{Name: "s", Target: "dbo.t"}}},
 		},
 		{"SynonymsRemoved", &types.SchemaDiff{SynonymsRemoved: []string{"s"}}, &goschema.Database{}},
+		{
+			"HypertablesAdded",
+			&types.SchemaDiff{HypertablesAdded: []string{"conditions"}},
+			&goschema.Database{Hypertables: []goschema.Hypertable{
+				{Table: "conditions", Column: "time"},
+			}},
+		},
 		{
 			"SynonymsModified",
 			&types.SchemaDiff{SynonymsModified: []types.SynonymDiff{

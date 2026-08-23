@@ -319,10 +319,11 @@ var yamlOnlyExtensions = []string{".yaml", ".yml"}
 //   - Only `.sql` has CREATE VIRTUAL TABLE, so silence about a live SQLite
 //     virtual table is intent there and is not intent in HCL or YAML
 //     (stokaro/ptah#1028).
-//   - Only HCL and a Go schema express a SQL Server synonym or extended
-//     property. YAML has no key for either, and the SQL parser's conversion
-//     produces neither, so a `.sql` document naming CREATE SYNONYM still loads
-//     a database with none (stokaro/ptah#1031).
+//   - Only HCL and a Go schema express a SQL Server synonym, an extended
+//     property, or a TimescaleDB hypertable. YAML has no key for any of them,
+//     and the SQL parser's conversion produces none, so a `.sql` document
+//     naming CREATE SYNONYM still loads a database with none
+//     (stokaro/ptah#1031, stokaro/ptah#1026).
 //   - The YAML surface has a top-level key for tables, enums, extensions,
 //     functions, views, matviews, triggers, roles, grants and row-level
 //     security, and NONE for a sequence, a domain, a composite type or a range.
@@ -343,7 +344,7 @@ func withFormatLimits(database *goschema.Database, resolved string) *goschema.Da
 	}
 	if extension != dirHCLExtension {
 		database.NotDescribed = database.NotDescribed.With(unsupportedByFormat(
-			coverage.Synonym, coverage.ExtendedProperty)...)
+			coverage.Synonym, coverage.ExtendedProperty, coverage.Hypertable)...)
 	}
 	return database
 }
@@ -703,6 +704,7 @@ func appendDatabase(dst, src *goschema.Database) {
 	dst.RLSEnabledTables = append(dst.RLSEnabledTables, src.RLSEnabledTables...)
 	dst.Roles = append(dst.Roles, src.Roles...)
 	dst.Grants = append(dst.Grants, src.Grants...)
+	dst.Hypertables = append(dst.Hypertables, src.Hypertables...)
 	dst.Synonyms = append(dst.Synonyms, src.Synonyms...)
 	dst.ExtendedProperties = append(dst.ExtendedProperties, src.ExtendedProperties...)
 	dst.ManagedData = append(dst.ManagedData, src.ManagedData...)

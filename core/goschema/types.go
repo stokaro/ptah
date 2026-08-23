@@ -50,6 +50,7 @@ type Database struct {
 	Triggers                   []Trigger                      // Database triggers
 	RLSPolicies                []RLSPolicy                    // PostgreSQL Row-Level Security policies
 	RLSEnabledTables           []RLSEnabledTable              // Tables with RLS enabled
+	Hypertables                []Hypertable                   // TimescaleDB hypertables
 	Roles                      []Role                         // PostgreSQL roles
 	Grants                     []Grant                        // PostgreSQL privilege grants
 	ManagedData                []ManagedData                  // Declarative reference/seed row data for tables
@@ -948,6 +949,50 @@ type Sequence struct {
 	// Dialects scopes this declaration to the named target dialects. See
 	// [ScopeToDialect].
 	Dialects []string `json:",omitempty"`
+}
+
+// Hypertable is a TimescaleDB hypertable: an ordinary table partitioned on a
+// range dimension.
+//
+// It is its own family rather than a field on [Table] for the reason
+// [RLSEnabledTable] is: the declaration is about a table and is not part of the
+// table's own definition, and a target that does not have the extension has a
+// table without it rather than a different table.
+//
+// Nothing outside TimescaleDB's own catalog can see one. Measured on 2.29.2 /
+// PostgreSQL 17.11 after `create_hypertable('conditions', by_range('time'))`,
+// `pg_class.relkind` answers `r`, `pg_depend` reports no extension ownership,
+// and the index the call created carries `deptype 'a'` -- the same as an
+// ordinary user index on an ordinary table. So a description that does not
+// carry this says the table is not partitioned, and replaying it produces a
+// table that is not (stokaro/ptah#1026).
+//
+// One range dimension. A second is a separate call -- `add_dimension` with
+// `by_hash` -- and a separate concept; the read counts them and says how many
+// it did not describe.
+//
+// Dialects is deliberately absent, for the reason [Synonym] gives: a hypertable
+// belongs to TimescaleDB and to nothing else, and a scope field would invite a
+// schema to claim otherwise.
+type Hypertable struct {
+	StructName string // Name of the Go struct this hypertable is associated with
+	// Table is the table to partition, optionally schema-qualified.
+	Table string
+	// Column is the range dimension: the column chunks are cut on.
+	Column string
+	// ChunkInterval is the width of one chunk, written the way PostgreSQL
+	// spells an interval -- `7 days`, `1 hour`. Empty takes TimescaleDB's own
+	// default, which is 7 days for a timestamptz column.
+	//
+	// It is a string rather than a duration because the server's own spelling
+	// is what `timescaledb_information.dimensions` reports back, and a
+	// declaration that had to be converted to compare would differ from the
+	// catalog on every run.
+	ChunkInterval string
+	// IfNotExists renders `if_not_exists => TRUE`, which turns the server's
+	// `table "x" is already a hypertable` error into a skipped notice.
+	IfNotExists bool
+	Comment     string // Optional comment for documentation
 }
 
 // Synonym is a SQL Server synonym: a schema-qualified alias for another object.

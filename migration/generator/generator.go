@@ -1755,6 +1755,9 @@ func cloneSchemaDiff(diff *types.SchemaDiff) *types.SchemaDiff {
 	clone.SynonymsAdded = slices.Clone(diff.SynonymsAdded)
 	clone.SynonymsRemoved = slices.Clone(diff.SynonymsRemoved)
 	clone.SynonymsModified = slices.Clone(diff.SynonymsModified)
+	clone.HypertablesAdded = slices.Clone(diff.HypertablesAdded)
+	clone.HypertablesRemoved = slices.Clone(diff.HypertablesRemoved)
+	clone.HypertablesModified = slices.Clone(diff.HypertablesModified)
 	clone.ExtendedPropertiesAdded = slices.Clone(diff.ExtendedPropertiesAdded)
 	clone.ExtendedPropertiesRemoved = slices.Clone(diff.ExtendedPropertiesRemoved)
 	clone.ExtendedPropertiesModified = slices.Clone(diff.ExtendedPropertiesModified)
@@ -2232,6 +2235,17 @@ func reverseSchemaDiffWithSchemaForDialect(
 		SynonymsAdded:    diff.SynonymsRemoved,
 		SynonymsRemoved:  diff.SynonymsAdded,
 		SynonymsModified: reverseSynonymDiffs(diff.SynonymsModified),
+
+		// A hypertable reverses like a synonym in the diff and unlike one in
+		// the plan. The swap is the same -- what the up direction partitioned,
+		// the down direction stops declaring -- but the DOWN plan is a refusal
+		// rather than a statement: TimescaleDB has no drop_hypertable, so a
+		// rollback of a create_hypertable is a table the operator has to drop
+		// and recreate. The swap belongs here anyway, because refusing is what
+		// the planner does with a removal and refusing loudly is the point.
+		HypertablesAdded:    slices.Clone(diff.HypertablesRemoved),
+		HypertablesRemoved:  slices.Clone(diff.HypertablesAdded),
+		HypertablesModified: reverseHypertableDiffs(diff.HypertablesModified),
 
 		// An extended property is a name, an address and a value, and the
 		// reversal needs no schema side because all three are already in the
@@ -3163,6 +3177,22 @@ func reverseExtendedPropertyDiffs(diffs []types.ExtendedPropertyDiff) []types.Ex
 		restored.Value = diff.OldValue
 		restored.OldValue = diff.Value
 		reversed = append(reversed, restored)
+	}
+	return reversed
+}
+
+// reverseHypertableDiffs swaps the two sides of each partitioning change, so a
+// rollback describes the partitioning the database had.
+func reverseHypertableDiffs(changes []types.HypertableDiff) []types.HypertableDiff {
+	reversed := make([]types.HypertableDiff, 0, len(changes))
+	for _, change := range changes {
+		reversed = append(reversed, types.HypertableDiff{
+			Table:            change.Table,
+			OldColumn:        change.NewColumn,
+			NewColumn:        change.OldColumn,
+			OldChunkInterval: change.NewChunkInterval,
+			NewChunkInterval: change.OldChunkInterval,
+		})
 	}
 	return reversed
 }

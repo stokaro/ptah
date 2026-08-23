@@ -357,6 +357,23 @@ const (
 	// emitted, read or planned one (stokaro/ptah#931 item 8).
 	Sequences Capability = "sequences"
 
+	// Hypertables marks that Ptah declares, emits, reads back and plans
+	// TimescaleDB hypertables for the target.
+	//
+	// It describes Ptah, not the extension. A hypertable is invisible to every
+	// ordinary catalog -- measured on TimescaleDB 2.29.2 / PostgreSQL 17.11,
+	// `pg_class.relkind` answers `r` and `pg_depend` reports no extension
+	// ownership -- so a target that claims this key must have the read that
+	// asks `timescaledb_information` and the renderer that emits
+	// `create_hypertable`, or a description will say a table is ordinary and a
+	// replay will make it so (stokaro/ptah#1026).
+	//
+	// No dialect preset sets it. TimescaleDB is PostgreSQL with an extension
+	// installed, not a dialect of its own, so the fact that decides this key is
+	// on the connection rather than in the URL: `pg_extension` reporting
+	// timescaledb.
+	Hypertables Capability = "hypertables"
+
 	// SequenceStartCounterOnly marks a target whose CREATE SEQUENCE carries a
 	// name and a start counter and refuses the option clauses PostgreSQL takes
 	// beside them.
@@ -709,6 +726,9 @@ var registry = map[Capability]spec{
 	RowLevelSecurity: {
 		doc: "row-level security policies (PostgreSQL)",
 	},
+	Hypertables: {
+		doc: "TimescaleDB hypertables: create_hypertable and the catalog that reads one back",
+	},
 	PostgresCatalogFunctions: {
 		doc: "obj_description reads a comment back out of the catalog",
 	},
@@ -953,6 +973,7 @@ func MySQL84() Capabilities {
 		CreateOrReplaceTrigger:         false,
 		AlterGeneratedColumnExpression: false,
 		RowLevelSecurity:               false,
+		Hypertables:                    false,
 		PostgresCatalogFunctions:       false,
 		CatalogRowStatistics:           false,
 		CatalogDependencies:            false,
@@ -1074,6 +1095,7 @@ func MariaDB1011() Capabilities {
 		CreateOrReplaceTrigger:         true,
 		AlterGeneratedColumnExpression: false,
 		RowLevelSecurity:               false,
+		Hypertables:                    false,
 		PostgresCatalogFunctions:       false,
 		CatalogRowStatistics:           false,
 		CatalogDependencies:            false,
@@ -1170,6 +1192,7 @@ func Postgres16() Capabilities {
 		CreateOrReplaceTrigger:             true,
 		AlterGeneratedColumnExpression:     false,
 		RowLevelSecurity:                   true,
+		Hypertables:                        false,
 		PostgresCatalogFunctions:           true,
 		CatalogRowStatistics:               true,
 		CatalogDependencies:                true,
@@ -1314,6 +1337,7 @@ func ClickHouse24() Capabilities {
 		// is then ignored, so a declaration carrying either is named and skipped
 		// rather than rendered into something weaker than it says.
 		RowLevelSecurity:         true,
+		Hypertables:              false,
 		PostgresCatalogFunctions: false,
 		CatalogRowStatistics:     false,
 		CatalogDependencies:      false,
@@ -1406,6 +1430,7 @@ func SQLite3() Capabilities {
 		CreateOrReplaceTrigger:             false,
 		AlterGeneratedColumnExpression:     false,
 		RowLevelSecurity:                   false,
+		Hypertables:                        false,
 		PostgresCatalogFunctions:           false,
 		CatalogRowStatistics:               false,
 		CatalogDependencies:                false,
@@ -1536,6 +1561,7 @@ func SQLServer2022() Capabilities {
 		// unchanged. It cannot: T-SQL rejects an inline predicate expression
 		// outright, so a declaration carrying one is named and skipped.
 		RowLevelSecurity:         true,
+		Hypertables:              false,
 		PostgresCatalogFunctions: false,
 		CatalogRowStatistics:     false,
 		CatalogDependencies:      false,
@@ -1984,6 +2010,7 @@ func Oracle23() Capabilities {
 		// MOVEMENT keyword. Oracle's row-level access control is a different
 		// mechanism, not this statement.
 		RowLevelSecurity:         false,
+		Hypertables:              false,
 		PostgresCatalogFunctions: false,
 		CatalogRowStatistics:     false,
 		CatalogDependencies:      false,

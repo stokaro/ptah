@@ -598,6 +598,7 @@ type schemaParseState struct {
 	triggers              []Trigger
 	rlsPolicies           []RLSPolicy
 	rlsEnabledTables      []RLSEnabledTable
+	hypertables           []Hypertable
 	roles                 []Role
 	grants                []Grant
 	managedData           []ManagedData
@@ -687,53 +688,86 @@ func (s *schemaParseState) parsePlacementDirective(
 	}
 }
 
+// sharedDirectiveParsers is the directive dispatch every schema comment target
+// shares: a struct's doc comment and a field's carry the same set.
+//
+// It is a table rather than a switch because the switch reached twenty-one arms
+// and every one of them is the same two lines. A table says which directive
+// belongs to which parser and nothing else, and a new object family adds one
+// entry instead of pushing the function past what the complexity gate allows.
+var sharedDirectiveParsers = map[string]func(*schemaParseState, *ast.Comment, schemaCommentTarget) error{
+	"ptah:schema:constraint": func(s *schemaParseState, comment *ast.Comment, target schemaCommentTarget) error {
+		return s.parseConstraintComment(comment, target.structName)
+	},
+	"ptah:schema:enum": func(s *schemaParseState, comment *ast.Comment, _ schemaCommentTarget) error {
+		return s.parseEnumComment(comment)
+	},
+	"ptah:schema:extension": func(s *schemaParseState, comment *ast.Comment, _ schemaCommentTarget) error {
+		return s.parseExtensionComment(comment)
+	},
+	"ptah:schema:function": func(s *schemaParseState, comment *ast.Comment, target schemaCommentTarget) error {
+		return s.parseFunctionComment(comment, target.structName)
+	},
+	"ptah:schema:procedure": func(s *schemaParseState, comment *ast.Comment, target schemaCommentTarget) error {
+		return s.parseProcedureComment(comment, target.structName)
+	},
+	"ptah:schema:sequence": func(s *schemaParseState, comment *ast.Comment, target schemaCommentTarget) error {
+		return s.parseSequenceComment(comment, target.structName)
+	},
+	"ptah:schema:domain": func(s *schemaParseState, comment *ast.Comment, target schemaCommentTarget) error {
+		return s.parseDomainComment(comment, target.structName)
+	},
+	"ptah:schema:composite": func(s *schemaParseState, comment *ast.Comment, target schemaCommentTarget) error {
+		return s.parseCompositeComment(comment, target.structName)
+	},
+	"ptah:schema:range": func(s *schemaParseState, comment *ast.Comment, target schemaCommentTarget) error {
+		return s.parseRangeComment(comment, target.structName)
+	},
+	"ptah:schema:view": func(s *schemaParseState, comment *ast.Comment, target schemaCommentTarget) error {
+		return s.parseViewComment(comment, target.structName)
+	},
+	"ptah:schema:matview": func(s *schemaParseState, comment *ast.Comment, target schemaCommentTarget) error {
+		return s.parseMaterializedViewComment(comment, target.structName)
+	},
+	"ptah:schema:hypertable": func(s *schemaParseState, comment *ast.Comment, target schemaCommentTarget) error {
+		return s.parseHypertableComment(comment, target.structName)
+	},
+	"ptah:schema:synonym": func(s *schemaParseState, comment *ast.Comment, target schemaCommentTarget) error {
+		return s.parseSynonymComment(comment, target.structName)
+	},
+	"ptah:schema:extendedproperty": func(s *schemaParseState, comment *ast.Comment, target schemaCommentTarget) error {
+		return s.parseExtendedPropertyComment(comment, target.structName)
+	},
+	"ptah:schema:trigger": func(s *schemaParseState, comment *ast.Comment, target schemaCommentTarget) error {
+		return s.parseTriggerComment(comment, target.structName)
+	},
+	"ptah:schema:rls:policy": func(s *schemaParseState, comment *ast.Comment, target schemaCommentTarget) error {
+		return s.parseRLSPolicyComment(comment, target.structName)
+	},
+	"ptah:schema:rls:enable": func(s *schemaParseState, comment *ast.Comment, target schemaCommentTarget) error {
+		return s.parseRLSEnableComment(comment, target.structName)
+	},
+	"ptah:schema:role": func(s *schemaParseState, comment *ast.Comment, target schemaCommentTarget) error {
+		return s.parseRoleComment(comment, target.structName)
+	},
+	"ptah:schema:grant": func(s *schemaParseState, comment *ast.Comment, target schemaCommentTarget) error {
+		return s.parseGrantComment(comment, target.structName)
+	},
+	"ptah:schema:data": func(s *schemaParseState, comment *ast.Comment, target schemaCommentTarget) error {
+		return s.parseManagedDataComment(comment, target.structName)
+	},
+}
+
 func (s *schemaParseState) parseSharedDirective(
 	comment *ast.Comment,
 	directive string,
 	target schemaCommentTarget,
 ) error {
-	switch directive {
-	case "ptah:schema:constraint":
-		return s.parseConstraintComment(comment, target.structName)
-	case "ptah:schema:enum":
-		return s.parseEnumComment(comment)
-	case "ptah:schema:extension":
-		return s.parseExtensionComment(comment)
-	case "ptah:schema:function":
-		return s.parseFunctionComment(comment, target.structName)
-	case "ptah:schema:procedure":
-		return s.parseProcedureComment(comment, target.structName)
-	case "ptah:schema:sequence":
-		return s.parseSequenceComment(comment, target.structName)
-	case "ptah:schema:domain":
-		return s.parseDomainComment(comment, target.structName)
-	case "ptah:schema:composite":
-		return s.parseCompositeComment(comment, target.structName)
-	case "ptah:schema:range":
-		return s.parseRangeComment(comment, target.structName)
-	case "ptah:schema:view":
-		return s.parseViewComment(comment, target.structName)
-	case "ptah:schema:matview":
-		return s.parseMaterializedViewComment(comment, target.structName)
-	case "ptah:schema:synonym":
-		return s.parseSynonymComment(comment, target.structName)
-	case "ptah:schema:extendedproperty":
-		return s.parseExtendedPropertyComment(comment, target.structName)
-	case "ptah:schema:trigger":
-		return s.parseTriggerComment(comment, target.structName)
-	case "ptah:schema:rls:policy":
-		return s.parseRLSPolicyComment(comment, target.structName)
-	case "ptah:schema:rls:enable":
-		return s.parseRLSEnableComment(comment, target.structName)
-	case "ptah:schema:role":
-		return s.parseRoleComment(comment, target.structName)
-	case "ptah:schema:grant":
-		return s.parseGrantComment(comment, target.structName)
-	case "ptah:schema:data":
-		return s.parseManagedDataComment(comment, target.structName)
-	default:
+	parse, known := sharedDirectiveParsers[directive]
+	if !known {
 		return nil
 	}
+	return parse(s, comment, target)
 }
 
 func (s *schemaParseState) parseEnumComment(comment *ast.Comment) error {
@@ -864,6 +898,7 @@ func parseFileAST(filename string, fset *token.FileSet, f *ast.File) (Database, 
 		Triggers:           state.triggers,
 		RLSPolicies:        state.rlsPolicies,
 		RLSEnabledTables:   state.rlsEnabledTables,
+		Hypertables:        state.hypertables,
 		Roles:              state.roles,
 		Grants:             state.grants,
 		ManagedData:        state.managedData,
@@ -1421,6 +1456,34 @@ func (s *schemaParseState) parseViewComment(comment *ast.Comment, structName str
 		WithCheck:  kv["with_check"] == "true",
 		Comment:    kv["comment"],
 		Dialects:   scope,
+	})
+	return nil
+}
+
+// parseHypertableComment reads a TimescaleDB hypertable declaration.
+//
+// There is no dialect scope here, for the reason [schemaParseState.parseSynonymComment]
+// gives: a hypertable belongs to TimescaleDB and to nothing else.
+//
+// `chunk_interval` is kept as the string it was written as. The catalog reports
+// the server's own spelling -- `7 days`, `1 day` -- and a declaration converted
+// to something else to compare would differ from it on every run.
+func (s *schemaParseState) parseHypertableComment(comment *ast.Comment, structName string) error {
+	kv := parseutils.ParseKeyValueComment(comment.Text)
+	ctx := s.annotationContext(comment, "//ptah:schema:hypertable", structName)
+	if err := validateAttributes(kv, ctx); err != nil {
+		return err
+	}
+	if err := requireAttributes(kv, ctx); err != nil {
+		return err
+	}
+	s.hypertables = append(s.hypertables, Hypertable{
+		StructName:    structName,
+		Table:         kv["table"],
+		Column:        kv["column"],
+		ChunkInterval: kv["chunk_interval"],
+		IfNotExists:   kv["if_not_exists"] == "true",
+		Comment:       kv["comment"],
 	})
 	return nil
 }

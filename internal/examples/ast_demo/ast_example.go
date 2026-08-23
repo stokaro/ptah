@@ -276,6 +276,7 @@ func (a *SchemaAnalyzer) VisitDropFunction(node *ast.DropFunctionNode) error {
 func (a *SchemaAnalyzer) VisitCreateView(node *ast.CreateViewNode) error             { return nil }
 func (a *SchemaAnalyzer) VisitDropView(node *ast.DropViewNode) error                 { return nil }
 func (a *SchemaAnalyzer) VisitCreateSynonym(node *ast.CreateSynonymNode) error       { return nil }
+func (a *SchemaAnalyzer) VisitCreateHypertable(node *ast.CreateHypertableNode) error { return nil }
 func (a *SchemaAnalyzer) VisitDropSynonym(node *ast.DropSynonymNode) error           { return nil }
 func (a *SchemaAnalyzer) VisitExtendedProperty(node *ast.ExtendedPropertyNode) error { return nil }
 func (a *SchemaAnalyzer) VisitCreateMaterializedView(node *ast.CreateMaterializedViewNode) error {

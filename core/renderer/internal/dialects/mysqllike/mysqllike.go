@@ -1488,6 +1488,17 @@ func (r *Renderer) VisitRawSQL(node *ast.RawSQLNode) error {
 	return nil
 }
 
+// VisitCreateHypertable refuses: a hypertable is a TimescaleDB object, and
+// TimescaleDB is an extension of PostgreSQL.
+//
+// There is no capability key behind this refusal, for the reason
+// VisitCreateSynonym gives: a key would have exactly one value forever and
+// would invite a preset to turn it on.
+func (r *Renderer) VisitCreateHypertable(node *ast.CreateHypertableNode) error {
+	r.w.WriteLinef("-- Hypertable %s not supported in %s", node.Table, r.dialect)
+	return nil
+}
+
 // VisitCreateSynonym names the synonym as unsupported. Neither MySQL nor
 // MariaDB has a synonym object; the nearest construct is a view, which is a
 // different thing with different resolution rules.

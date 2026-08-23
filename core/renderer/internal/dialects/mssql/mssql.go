@@ -510,6 +510,17 @@ func (r *Renderer) VisitCreateView(node *ast.CreateViewNode) error {
 	return nil
 }
 
+// VisitCreateHypertable refuses: a hypertable is a TimescaleDB object, and
+// TimescaleDB is an extension of PostgreSQL.
+//
+// There is no capability key behind this refusal, for the reason
+// VisitCreateSynonym gives: a key would have exactly one value forever and
+// would invite a preset to turn it on.
+func (r *Renderer) VisitCreateHypertable(node *ast.CreateHypertableNode) error {
+	r.w.WriteLinef("-- SQLSERVER: hypertable %s is not supported by this target; skipped.", node.Table)
+	return nil
+}
+
 // VisitCreateSynonym renders a CREATE SYNONYM statement.
 //
 // The target goes through the same identifier escaping as the alias. It is a

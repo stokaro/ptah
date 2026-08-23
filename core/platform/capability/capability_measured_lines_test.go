@@ -182,6 +182,9 @@ func measuredLines() map[string]measuredLine {
 				capability.XMLType:                            {true, "ACCEPTED CREATE TABLE xmlt (c XML)"},
 			},
 			carried: map[capability.Capability]string{
+				capability.Hypertables: "this run predates the key and sent no create_hypertable. " +
+					"The key names a TimescaleDB object, and TimescaleDB is an extension rather than a version line -- " +
+					"what decides it is `pg_extension` on the connection, not the server banner these lines resolve from (stokaro/ptah#1026)",
 				capability.ObjectExistenceGuards: "this run predates the key and sent no guarded CREATE or DROP of a table, view or sequence. " +
 					"The key exists because Oracle is the first engine here whose ladder crosses that step -- 21.3 refuses every guard while 23.26 accepts every one -- " +
 					"and an engine that has had them throughout its ladder cannot tell this line apart from the preset below (stokaro/ptah#1875)",
@@ -246,6 +249,9 @@ func measuredLines() map[string]measuredLine {
 				capability.XMLType:                            {false, "REFUSED CREATE TABLE xmlt (c XML) -> Error 1064 (42000)"},
 			},
 			carried: map[capability.Capability]string{
+				capability.Hypertables: "this run predates the key and sent no create_hypertable. " +
+					"The key names a TimescaleDB object, and TimescaleDB is an extension rather than a version line -- " +
+					"what decides it is `pg_extension` on the connection, not the server banner these lines resolve from (stokaro/ptah#1026)",
 				capability.ObjectExistenceGuards: "this run predates the key and sent no guarded CREATE or DROP of a table, view or sequence. " +
 					"The key exists because Oracle is the first engine here whose ladder crosses that step -- 21.3 refuses every guard while 23.26 accepts every one -- " +
 					"and an engine that has had them throughout its ladder cannot tell this line apart from the preset below (stokaro/ptah#1875)",
@@ -309,6 +315,9 @@ func measuredLines() map[string]measuredLine {
 				capability.XMLType:                            {false, "REFUSED CREATE TABLE xmlt (c XML) -> Error 4161 (HY000): Unknown data type: 'XML'"},
 			},
 			carried: map[capability.Capability]string{
+				capability.Hypertables: "this run predates the key and sent no create_hypertable. " +
+					"The key names a TimescaleDB object, and TimescaleDB is an extension rather than a version line -- " +
+					"what decides it is `pg_extension` on the connection, not the server banner these lines resolve from (stokaro/ptah#1026)",
 				capability.ObjectExistenceGuards: "this run predates the key and sent no guarded CREATE or DROP of a table, view or sequence. " +
 					"The key exists because Oracle is the first engine here whose ladder crosses that step -- 21.3 refuses every guard while 23.26 accepts every one -- " +
 					"and an engine that has had them throughout its ladder cannot tell this line apart from the preset below (stokaro/ptah#1875)",
