@@ -67,6 +67,21 @@ Top-level objects are maps. Their keys are used as default object names when a
 Unknown keys fail. Ptah does not silently ignore fields that look meaningful but
 are outside the supported schema.
 
+### What this format has no key for
+
+A sequence, a domain, a composite type and a range have no top-level key here,
+and neither has a SQL Server synonym or extended property. **Silence about one
+of them is not a request to remove it**: a YAML schema declaring one table,
+compared against a database holding one of each, planned `DROP SEQUENCE`,
+`DROP DOMAIN` and both `DROP TYPE`s until this was recorded. Loading a `.yaml`
+or `.yml` file now marks those families as not described, so the comparison
+withholds the removal.
+
+The other formats keep their own answer. HCL **does** have a block for the first
+four, so an HCL document that omits one is still asking for it to go; a
+`.sql` document and a Go schema likewise. What a document can say is a property
+of its format, and each loader records only its own limits.
+
 ## Extensions
 
 Each entry under `extensions` declares one PostgreSQL extension. The map key is
