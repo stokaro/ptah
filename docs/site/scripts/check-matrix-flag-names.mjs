@@ -77,21 +77,34 @@ export function knownFlags(sources) {
   return known;
 }
 
-// unknownFlagMentions collects the flags one row's NOTE names that the tree does
-// not register.
+// measuredNonsenseControls are the flags that exist nowhere ON PURPOSE.
 //
-// The note and not the evidence, and that is a measurement rather than a
-// preference. The note is the field rendered onto the page, and it is the field
-// the audit found wrong. The evidence field deliberately carries flags that
-// exist nowhere: several rows establish that a verb does not register a flag by
-// showing it answers `unknown flag` byte-identically to a nonsense control --
-// `--skip-chxxxx`, `--name-formxxxx`, `--totally-bogus-flag` -- and a check
-// reading that field would report the controls as defects and be turned off.
+// Several rows establish that a verb does NOT register a flag by showing it
+// answers `unknown flag` byte-identically to a control that cannot exist. Those
+// three strings are evidence, not defects, and a check that reported them would
+// be turned off rather than obeyed. They are listed rather than pattern-matched
+// so a fourth one has to be added deliberately: a rule that skipped anything
+// looking like a typo would skip the typos this gate is for.
+const measuredNonsenseControls = new Set([
+  '--skip-chxxxx',
+  '--name-formxxxx',
+  '--totally-bogus-flag',
+]);
+
+// unknownFlagMentions collects the flags one row names that the tree does not
+// register.
+//
+// BOTH fields are read. The note is what the page renders and what the audit
+// found wrong; the evidence is where most flags are actually spelled, and a
+// check that skipped it would leave the larger surface unguarded. The three
+// deliberate controls above are the whole reason the evidence needed a decision
+// at all -- measured, they are the only flags in either field that the tree does
+// not have.
 export function unknownFlagMentions(row, known) {
-  const text = `${row.note ?? ''}`;
+  const text = `${row.note ?? ''} ${row.evidence ?? ''}`;
   const unknown = [];
   for (const [, flag] of text.matchAll(flagMention)) {
-    if (!known.has(flag)) {
+    if (!known.has(flag) && !measuredNonsenseControls.has(flag)) {
       unknown.push(flag);
     }
   }
@@ -189,15 +202,21 @@ function selftest() {
       want: [],
     },
     {
-      name: 'the evidence is NOT read, because it carries nonsense controls',
+      name: 'a measured nonsense control is evidence, not a defect',
       sources: [],
       row: { evidence: 'byte-identical to the control `--skip-chxxxx`' },
       want: [],
     },
     {
-      name: 'the same unknown flag twice is one finding',
+      name: 'the evidence is read like the note',
       sources: [],
-      row: { note: '`--gone` and `--gone`' },
+      row: { evidence: 'measured with `--nosuchflag`' },
+      want: ['--nosuchflag'],
+    },
+    {
+      name: 'the same unknown flag in both fields is one finding',
+      sources: [],
+      row: { note: '`--gone` and `--gone`', evidence: '`--gone`' },
       want: ['--gone'],
     },
     {
@@ -232,7 +251,7 @@ if (process.argv.includes('--selftest')) {
   const known = treeFlags();
   const findings = report(rows, known);
   if (findings.length > 0) {
-    console.error('check-matrix-flag-names.mjs: a note names a flag this tree does not register');
+    console.error('check-matrix-flag-names.mjs: a row names a flag this tree does not register');
     for (const { index, feature, flag } of findings) {
       console.error(`  row ${index} (${feature}): ${flag}`);
     }
