@@ -175,6 +175,19 @@ type Column struct {
 	// constraint something the author cannot predict, and every later
 	// diagnostic about it would use that name.
 	CheckName string
+	// Charset and Collate are the column's character set and collation on the
+	// MySQL-family targets that put them on a column.
+	//
+	// Carried for rendering and not compared. A catalog reports a column's
+	// EFFECTIVE charset even where the declaration inherited it from the
+	// table, so comparing the two spellings would report a modification for
+	// every column nobody changed.
+	Charset string
+	Collate string
+	// UpdateExpression is MySQL's `ON UPDATE <expr>` clause. It is carried for
+	// rendering only, because no catalog read reports it: dropping it from a
+	// CREATE builds a column that silently stops maintaining itself.
+	UpdateExpression string
 	// Check is the column-level CHECK expression the source wrote, empty for a
 	// column with none.
 	//
@@ -230,6 +243,15 @@ type Table struct {
 	// (stokaro/ptah#1662).
 	Strict       bool
 	WithoutRowID bool
+	// Engine, Charset and Collate are the MySQL-family table options.
+	//
+	// Carried for rendering and not compared, because no catalog read reports
+	// them: a CREATE that dropped the engine builds a table on the server's
+	// default, which on a server configured differently is a different storage
+	// engine with different transactional behavior.
+	Engine  string
+	Charset string
+	Collate string
 }
 
 // Populated reports whether the table is known to hold rows, and whether that
@@ -325,6 +347,15 @@ type UniqueKey struct {
 	// guarantee as one on (b, a) -- and the order is kept because a renderer
 	// writing the constraint back has to write one.
 	Columns []string
+	// Standalone marks a guarantee the target holds as an object of its own: a
+	// named UNIQUE constraint, added and dropped by its own statement.
+	//
+	// A column's own flag is not standalone -- it renders beside its column, so
+	// planning it as a constraint change would declare the same guarantee twice
+	// -- and neither is a primary key, whose statements carry different risk
+	// and whose name a target derives. Both still answer the foreign-key
+	// question, which is why they are objects at all (stokaro/ptah#1663).
+	Standalone bool
 }
 
 // Covers reports whether this key guarantees uniqueness for exactly the given

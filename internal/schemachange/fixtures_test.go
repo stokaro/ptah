@@ -57,6 +57,17 @@ func sqliteProfile() schemastate.Profile {
 	}
 }
 
+// mysqlProfile is the target that renders a column's character set and a
+// table's engine. PostgreSQL writes neither, so a PostgreSQL fixture cannot see
+// a planner that drops them.
+func mysqlProfile() schemastate.Profile {
+	return schemastate.Profile{
+		Dialect:      "mysql",
+		Semantics:    identifier.ForDialect("mysql"),
+		Capabilities: capability.MySQL84(),
+	}
+}
+
 // parentChildDescription is the desired schema every row starts from: a parent
 // with a key, and a child whose column references it.
 func parentChildDescription(onDelete string) *goschema.Database {

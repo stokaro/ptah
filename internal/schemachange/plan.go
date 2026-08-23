@@ -80,7 +80,7 @@ func Plan(changes []Change, profile schemastate.Profile) ([]PlannedOperation, er
 func nodesFor(change Change, profile schemastate.Profile) ([]ast.Node, error) {
 	switch change.ID.Kind {
 	case objectidentity.KindConstraint:
-		return constraintNodes(change, profile)
+		return constraintKindNodes(change, profile)
 	case objectidentity.KindTable:
 		return tableNodes(change)
 	case objectidentity.KindColumn:
@@ -88,6 +88,26 @@ func nodesFor(change Change, profile schemastate.Profile) ([]ast.Node, error) {
 	default:
 		return nil, fmt.Errorf("%s: %w", change, ErrNotRendered)
 	}
+}
+
+// constraintKindNodes picks the renderer for a constraint by what the change
+// carries, because the identity kind is one for every constraint family and the
+// statements are not.
+func constraintKindNodes(change Change, profile schemastate.Profile) ([]ast.Node, error) {
+	if carriesUniqueKey(change) {
+		return uniqueConstraintNodes(change, profile)
+	}
+	return constraintNodes(change, profile)
+}
+
+// carriesUniqueKey reports whether a change is about a uniqueness guarantee.
+func carriesUniqueKey(change Change) bool {
+	for _, side := range []*schemastate.Object{change.After, change.Before} {
+		if side != nil && side.UniqueKey != nil {
+			return true
+		}
+	}
+	return false
 }
 
 func constraintNodes(change Change, profile schemastate.Profile) ([]ast.Node, error) {
@@ -189,7 +209,27 @@ func tableOptions(table schemastate.Table) map[string]string {
 	} {
 		options = withOption(options, key, set)
 	}
+	for key, value := range map[string]string{
+		"ENGINE":  table.Engine,
+		"CHARSET": table.Charset,
+		"COLLATE": table.Collate,
+	} {
+		options = withValueOption(options, key, value)
+	}
 	return options
+}
+
+// withValueOption records an option the table names, and nothing for one it
+// leaves empty: a CREATE carrying `ENGINE=` would be a syntax error, and one
+// carrying the server's default would pin a choice the author did not make.
+func withValueOption(options map[string]string, key, value string) map[string]string {
+	return map[bool]func() map[string]string{
+		true: func() map[string]string { return options },
+		false: func() map[string]string {
+			options[key] = value
+			return options
+		},
+	}[strings.TrimSpace(value) == ""]()
 }
 
 // withOption records an option only when the table declares it, so a table with
@@ -272,6 +312,9 @@ func columnNode(column schemastate.Column, compositeKey bool) *ast.ColumnNode {
 		Unique:              column.Unique && !column.PrimaryKey,
 		Check:               column.Check,
 		CheckName:           column.CheckName,
+		Charset:             column.Charset,
+		Collate:             column.Collate,
+		UpdateExpression:    column.UpdateExpression,
 		GeneratedExpression: column.GeneratedExpression,
 		GeneratedKind:       column.GeneratedKind,
 		IdentityGeneration:  column.IdentityGeneration,
