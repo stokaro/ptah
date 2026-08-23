@@ -514,7 +514,7 @@ The semicolon that closes a PL/SQL block belongs to the block rather than to the
 client, which is why Oracle's own tooling ends one with a `/` on the next line.
 A `CREATE` handed to the server without it returns **no error at all** and
 leaves the object `INVALID`: `USER_TRIGGERS` still reports such a trigger
-`ENABLED`, and `USER_PROCEDURES` simply omits the routine. Ptah keeps that
+`ENABLED`, and `USER_PROCEDURES` omits the routine. Ptah keeps that
 semicolon on every statement it sends.
 
 What remains for Oracle is tracked by
