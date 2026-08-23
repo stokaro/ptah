@@ -255,16 +255,16 @@ stdout therefore gets a document in every case except `2`.
 | `ptah version` | Print Ptah build information. |
 | `ptah license` | Print license, copyright, and Atlas-compatibility attribution. |
 | `ptah schema serve` | Serve a read-only local view of the declared schema and how the live database differs from it. |
-| `ptah mcp` | Serve Ptah's read-only operations to an AI client over the Model Context Protocol, on stdin and stdout. |
+| `ptah mcp` | Serve Ptah's operations to an AI client over the Model Context Protocol, on stdin and stdout. |
 | `ptah completion <shell>` | Generate shell completion output for the native `ptah` command tree. |
 
 ## An AI client, over MCP
 
 `ptah mcp` speaks the Model Context Protocol on stdin and stdout, so an AI
-client or coding agent can drive Ptah's read-only operations directly. It is not
-a command to run by hand: a client starts it and speaks the protocol to it.
+client or coding agent can drive Ptah's operations directly. It is not a command
+to run by hand: a client starts it and speaks the protocol to it.
 
-Four tools, each forwarding to the operation that already owns the work:
+Four reading tools, each forwarding to the operation that already owns the work:
 
 | tool | answers |
 | --- | --- |
@@ -273,15 +273,20 @@ Four tools, each forwarding to the operation that already owns the work:
 | `ptah_schema_lineage` | which base columns feed each view column |
 | `ptah_read_database` | the schema a live database currently holds |
 
-**Every tool reads.** Nothing here applies a migration, writes a file, or changes
-a database.
-
 Three of Ptah's own reading verbs are deliberately absent: `schema inspect`,
 `schema diff` and `migrations lint`. Each needs a scratch database that Ptah
 resets destructively, and a destructive capability must not sit behind a
 read-only name on a surface an agent drives without reading flag documentation.
 They return when a later phase can supply that database out of band rather than
 from the caller.
+
+`--workspace` adds four artifact tools -- `ptah_describe_workspace`,
+`ptah_read_artifact`, `ptah_preview_patch` and `ptah_apply_patch` -- confined to
+the directories `--migrations-dir`, `--schema-dir` and `--tests-dir` name.
+Writing stays refused until `--allow-write` names an artifact class, and a named
+class asks for approval per patch unless `--auto-approve` says otherwise.
+Applying anything to a database is unavailable on this surface at any setting.
+[AI agents over MCP](/operate/ai-agents/) is the guide.
 
 Credentials are the client's to supply. The server holds none, stores none, and
 sends nothing anywhere: it runs locally and talks to whatever the caller names.
