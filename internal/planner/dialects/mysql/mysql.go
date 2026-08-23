@@ -1215,6 +1215,7 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 	// 0a3. Plan the domains this target does host, before tables: a column may
 	// be declared with the domain as its type.
 	result = p.planDomains(result, diff, generated)
+	result = p.planCompositeTypes(result, diff, generated)
 
 	// 0b. Plan the stored functions this target does host. Functions are
 	// planned before tables because a generated column or a CHECK constraint
@@ -1319,6 +1320,7 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 	// 7a2. Remove domains after the tables whose columns were typed by them:
 	// Oracle answers ORA-11502 to a domain that still has dependents.
 	result = p.removeDomains(result, diff)
+	result = p.removeCompositeTypes(result, diff)
 
 	// 7b. Revoke, then drop the roles, after the tables their grants named.
 	result = p.removeGrantsAndRoles(result, diff)
