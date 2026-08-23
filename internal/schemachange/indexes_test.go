@@ -7,8 +7,10 @@ import (
 
 	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/platform/capability"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/schemachange"
+	"go.5x5.cz/ptah/internal/schemastate"
 )
 
 // Indexes were the family the canonical model had no object for at all, and
@@ -164,4 +166,92 @@ func withCatalogIndex(
 			return catalog
 		},
 	}[len(columns) == 0]()
+}
+
+// TestAConcurrentIndexNamesTheFactItNeeds is the item #1663 states as "CREATE
+// INDEX CONCURRENTLY is a required target fact on the change, not a branch
+// inside a dialect planner".
+//
+// The change names the capability. A target that has it renders the request; a
+// target that does not REFUSES and says which measurement it is missing, rather
+// than quietly rendering a locking build the author did not ask for.
+func TestAConcurrentIndexNamesTheFactItNeeds(t *testing.T) {
+	tests := []struct {
+		name           string
+		profile        schemastate.Profile
+		wantStatus     schemachange.Status
+		wantMissing    []capability.Capability
+		wantStatements []string
+	}{
+		{
+			name:       "a target that can build without locking",
+			profile:    postgresProfile(),
+			wantStatus: schemachange.Planned,
+			wantStatements: []string{
+				"CREATE INDEX CONCURRENTLY IF NOT EXISTS \"idx_widget_ab\" ON \"widget\" (\"a\", \"b\");\n",
+			},
+		},
+		{
+			name:        "a target that cannot",
+			profile:     concurrencylessPostgres(),
+			wantStatus:  schemachange.Blocked,
+			wantMissing: []capability.Capability{capability.CreateIndexConcurrently},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			description := indexedWidget(false, "a", "b")
+			description.Indexes[0].Concurrently = true
+
+			changes := changesForProfile(c, description, indexedWidgetCatalog(false), test.profile)
+
+			c.Assert(changes, qt.HasLen, 1)
+			c.Assert(changes[0].Status, qt.Equals, test.wantStatus)
+			c.Assert(changes[0].MissingFacts, qt.DeepEquals, test.wantMissing)
+			c.Assert(changes[0].RequiredFacts, qt.DeepEquals,
+				[]capability.Capability{capability.CreateIndexConcurrently})
+			c.Assert(statementsOrNothing(c, changes, test.profile), qt.DeepEquals, test.wantStatements)
+		})
+	}
+}
+
+// TestAnOrdinaryIndexNeedsNoFact is the control. A change that named the
+// capability whatever the source asked for would block every index build on
+// every target without it, which is most of them.
+func TestAnOrdinaryIndexNeedsNoFact(t *testing.T) {
+	c := qt.New(t)
+
+	changes := changesForProfile(
+		c, indexedWidget(false, "a", "b"), indexedWidgetCatalog(false), concurrencylessPostgres())
+
+	c.Assert(changes, qt.HasLen, 1)
+	c.Assert(changes[0].Status, qt.Equals, schemachange.Planned)
+	c.Assert(changes[0].RequiredFacts, qt.HasLen, 0)
+}
+
+// concurrencylessPostgres is PostgreSQL 17 with the one capability removed, so
+// the rows differ in that fact and in nothing else. Using another dialect would
+// vary the renderer and the identifier semantics at the same time.
+func concurrencylessPostgres() schemastate.Profile {
+	profile := postgresProfile()
+	profile.Capabilities = profile.Capabilities.With(capability.CreateIndexConcurrently, false)
+	return profile
+}
+
+// statementsOrNothing renders a plan, or reports none for a change the planner
+// refuses. Plan returns an error for a blocked change, which is the behaviour
+// under test rather than a failure of the test.
+func statementsOrNothing(
+	c *qt.C,
+	changes []schemachange.Change,
+	profile schemastate.Profile,
+) []string {
+	c.Helper()
+	operations, err := schemachange.Plan(changes, profile)
+	return map[bool]func() []string{
+		true:  func() []string { return nil },
+		false: func() []string { return schemachange.Statements(operations) },
+	}[err != nil]()
 }

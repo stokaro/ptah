@@ -82,6 +82,7 @@ func indexAddition(object schemastate.Object) Change {
 		// fails on the first duplicate. Neither is visible to the plan.
 		Risk:          RiskDataDependent,
 		Reversibility: Reversible,
+		RequiredFacts: schemastate.IndexRequiredFacts(*object.Index),
 		Provenance:    object.Provenance,
 	}
 }
@@ -157,6 +158,11 @@ func addIndexNode(change Change) ast.Node {
 		Table:   indexTableName(change.After.Index.Table),
 		Columns: slices.Clone(change.After.Index.Columns),
 		Unique:  change.After.Index.Unique,
+		// The request travels to the renderer, which is where the target's
+		// grammar lives. The planner does not decide whether the target can do
+		// it -- the change already named that as a required fact, and a target
+		// without it never reaches here.
+		Concurrently: change.After.Index.Concurrent,
 		// Guarded, which is what the shipping planner emits: a CREATE INDEX
 		// replayed against a database that already has it is not a failure
 		// anybody wants, and the index is the same either way.

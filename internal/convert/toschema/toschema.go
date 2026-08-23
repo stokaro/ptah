@@ -413,6 +413,7 @@ func ToIndex(index *ast.IndexNode) goschema.Index {
 		Granularity:    index.Granularity,
 		Parser:         index.Parser,
 		Condition:      index.Condition,
+		Concurrently:   index.Concurrently,
 		Operator:       index.Operator,
 		IncludeColumns: normalizeSQLIdentifiers(index.IncludeColumns),
 		NullsDistinct:  cloneBoolPtr(index.NullsDistinct),
