@@ -11,8 +11,8 @@ Two commands share one test-case format:
 
 - `ptah migrations test` applies a migration directory (to a version, or all the
   way up) and asserts against the migrated database.
-- `ptah schema test` applies a desired schema from Go annotations, a SQL or HCL
-  file, or a live database once, then asserts against it.
+- `ptah schema test` applies a desired schema once — from a SQL or HCL file, Go
+  annotations, or a live database — then asserts against it.
 
 Atlas keeps `migrate test` and `schema test` in its proprietary Pro build (an
 Atlas account and the closed-source binary). Ptah provides both as MIT, local,
