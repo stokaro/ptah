@@ -70,6 +70,12 @@ func compareIndexes(current, desired *schemastate.State, profile schemastate.Pro
 // which drops the constraint with it. Measured against the shipping comparator,
 // which plans nothing for that pair (stokaro/ptah#1663, stokaro/ptah#1286).
 //
+// A PRIMARY KEY is enforced the same way and reported the same twice, so the
+// question is not "is this a standalone UNIQUE" but "does any constraint this
+// read reported carry this name on this table". Asking the narrower question
+// left `widget_pkey` unsuppressed and planned a DROP INDEX for it -- measured,
+// against a shipping comparator that plans nothing.
+//
 // The question is asked of the CURRENT state only. An index the desired state
 // declares is handled by the loop above -- it is in `declared`, so it never
 // reaches here -- which is what keeps a schema that really does want a standalone
@@ -77,7 +83,7 @@ func compareIndexes(current, desired *schemastate.State, profile schemastate.Pro
 // created for it.
 func backsAConstraint(current *schemastate.State, index schemastate.Object) bool {
 	for _, object := range current.OfKind(objectidentity.KindConstraint) {
-		if object.UniqueKey == nil || !object.UniqueKey.Standalone {
+		if object.UniqueKey == nil {
 			continue
 		}
 		if sameOwnedName(object.ID, index.ID, index.Index.Table) {
