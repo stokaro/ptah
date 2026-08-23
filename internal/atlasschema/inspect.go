@@ -23,6 +23,7 @@ import (
 	"go.5x5.cz/ptah/internal/schemaselection"
 	"go.5x5.cz/ptah/internal/sqlident"
 	"go.5x5.cz/ptah/internal/sqlitevirtual"
+	"go.5x5.cz/ptah/internal/timescale"
 )
 
 // InspectOptions configures Atlas-compatible schema inspection.
@@ -127,6 +128,13 @@ func Inspect(ctx context.Context, conn *dbschema.DatabaseConnection, opts Inspec
 	if !opts.SuppressRoleCoverageNote {
 		rolescope.ReportUndescribed(opts.Diagnostics, conn.Info().Dialect, schema)
 	}
+	// The same reason, for the objects a TimescaleDB server holds that this
+	// document describes incompletely or not at all. It is not behind the role
+	// suppression: that flag exists for the paths inspecting a dev database
+	// they materialized themselves, and those have no hypertables in them
+	// either, so the note is silent there rather than suppressed
+	// (stokaro/ptah#1026).
+	timescale.ReportUndescribed(opts.Diagnostics, schema)
 	validatedOpts := opts
 	validatedOpts.PrepareSchema = nil
 	validatedOpts.ValidateSchema = nil

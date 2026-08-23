@@ -15,6 +15,7 @@ import (
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
 	"go.5x5.cz/ptah/internal/rolescope"
 	"go.5x5.cz/ptah/internal/sqlitevirtual"
+	"go.5x5.cz/ptah/internal/timescale"
 )
 
 const (
@@ -103,6 +104,11 @@ func readDBCommand(cmd *cobra.Command, opts *options) error {
 	// module's own storage described as ordinary tables, and the statements
 	// printed below are what an operator would replay. See stokaro/ptah#1028.
 	sqlitevirtual.ReportUnclassified(stderr, schema)
+
+	// A TimescaleDB hypertable is described as an ordinary table and a
+	// continuous aggregate is not described at all, so the statements printed
+	// below are correct and incomplete. See stokaro/ptah#1026.
+	timescale.ReportUndescribed(stderr, schema)
 
 	// Format and display the schema
 	dbsch := dbschematogo.ConvertDBSchemaToGoSchema(schema)

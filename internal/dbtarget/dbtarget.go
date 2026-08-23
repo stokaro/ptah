@@ -46,6 +46,17 @@ const (
 	// direct connection and reporting the proxy as covered
 	// (stokaro/ptah#1029).
 	PostgreSQLPooled
+	// TimescaleDB is a PostgreSQL server with the TimescaleDB extension
+	// installed.
+	//
+	// It is its own engine for the reason PostgreSQLPooled is: what it is for
+	// is the difference. TimescaleDB puts no token in `version()` -- measured
+	// on 2.29.2, `SELECT version()` answers
+	// `PostgreSQL 17.11 on x86_64-pc-linux-musl` -- so the only evidence is
+	// pg_extension, and a test pointed at POSTGRES_TEST_DSN would find no
+	// extension, describe nothing, and report the hypertable path as covered
+	// (stokaro/ptah#1026).
+	TimescaleDB
 	MariaDB
 	MariaDBAdmin
 	ClickHouse
@@ -125,6 +136,10 @@ var sources = map[Engine]source{
 	},
 	PostgreSQLPooled: {
 		canonical: "POSTGRES_POOLED_TEST_URL",
+		scheme:    []string{"postgres", "postgresql"},
+	},
+	TimescaleDB: {
+		canonical: "TIMESCALE_TEST_URL",
 		scheme:    []string{"postgres", "postgresql"},
 	},
 	MariaDB: {
@@ -276,6 +291,8 @@ func engineName(engine Engine) string {
 		return "MySQL with an administrative account"
 	case PostgreSQLPooled:
 		return "PostgreSQL behind a transaction-pooling proxy"
+	case TimescaleDB:
+		return "PostgreSQL with the TimescaleDB extension"
 	case MariaDB:
 		return "MariaDB"
 	case MariaDBAdmin:

@@ -42,6 +42,25 @@ jobs:
       # connects lazily, so a check would only make the job wait for something
       # that is already true. The tests that use it fail on the connection if
       # it is genuinely not there.
+      # PostgreSQL with the TimescaleDB extension. It is a separate service
+      # rather than an extension installed into the one above because the image
+      # is what carries it, and because the ordinary PostgreSQL service must go
+      # on answering as a server WITHOUT it -- that is the control every
+      # extension-gated read is measured against (stokaro/ptah#1026).
+      timescaledb:
+        image: timescale/timescaledb:2.29.2-pg17
+        env:
+          POSTGRES_DB: ptah_test
+          POSTGRES_USER: ptah_user
+          POSTGRES_PASSWORD: ptah_password
+        options: >-
+          --health-cmd "pg_isready -U ptah_user -d ptah_test"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        ports:
+          - 5433:5432
+
       pgbouncer:
         image: edoburu/pgbouncer:v1.25.2-p0
         env:
@@ -370,6 +389,7 @@ jobs:
           # The same database through the pooler, which is the only difference
           # the tests using it are about.
           POSTGRES_POOLED_TEST_URL: "postgres://ptah_user:ptah_password@localhost:6432/ptah_test?sslmode=disable"
+          TIMESCALE_TEST_URL: "postgres://ptah_user:ptah_password@localhost:5433/ptah_test?sslmode=disable"
           POSTGRES_TEST_URL: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
           POSTGRES_URL: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
           TEST_DATABASE_URL: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"

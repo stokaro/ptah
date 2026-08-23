@@ -38,10 +38,22 @@ type DBSchema struct {
 	// ContinuousAggregates are the TimescaleDB continuous aggregates this read
 	// found. See [DBContinuousAggregate] for why they are not views.
 	ContinuousAggregates []DBContinuousAggregate `json:"continuous_aggregates,omitempty"`
-	Triggers             []DBTrigger             `json:"triggers"`     // Database triggers
-	RLSPolicies          []DBRLSPolicy           `json:"rls_policies"` // PostgreSQL RLS policies
-	Roles                []DBRole                `json:"roles"`        // PostgreSQL roles
-	Grants               []DBGrant               `json:"grants"`       // PostgreSQL privilege grants
+
+	// Hypertables are the TimescaleDB hypertables among the tables above.
+	//
+	// They are recorded BESIDE the tables rather than instead of them, because
+	// a hypertable is an ordinary PostgreSQL table as far as this description
+	// goes: pg_class reports relkind 'r', the columns are the columns, and
+	// every statement Ptah renders for it is correct. What is missing is that
+	// it is partitioned, and no declaration syntax can say so yet -- so this
+	// list exists to be REPORTED rather than compared, and its consumer is the
+	// note that tells an operator the description they are reading is not the
+	// whole truth about these tables (stokaro/ptah#1026).
+	Hypertables []DBHypertable `json:"hypertables,omitempty"`
+	Triggers    []DBTrigger    `json:"triggers"`     // Database triggers
+	RLSPolicies []DBRLSPolicy  `json:"rls_policies"` // PostgreSQL RLS policies
+	Roles       []DBRole       `json:"roles"`        // PostgreSQL roles
+	Grants      []DBGrant      `json:"grants"`       // PostgreSQL privilege grants
 
 	// ObjectOwners are the owners of the objects this read covers, one row per
 	// object, on the engines that have an owner to report.
@@ -883,6 +895,34 @@ type DBContinuousAggregate struct {
 // QualifiedName returns schema.name when Schema is set, or Name otherwise.
 func (a DBContinuousAggregate) QualifiedName() string {
 	return QualifyTableName(a.Schema, a.Name)
+}
+
+// DBHypertable is a TimescaleDB hypertable, as the extension's own catalog
+// describes it.
+//
+// It carries the primary dimension and nothing else about the partitioning,
+// which is a scope decision rather than an oversight: this description is read
+// to be NAMED, not to be replayed, and the column a hypertable is partitioned
+// on is what makes the note concrete enough to act on. Representing the full
+// dimension set is what a declaration syntax would need, and that is the slice
+// after this one.
+type DBHypertable struct {
+	Schema string `json:"schema"` // Schema holding the hypertable
+	Name   string `json:"name"`   // Table name, which is an ordinary table name
+
+	// PrimaryDimension is the column the hypertable partitions on first, and
+	// PrimaryDimensionType is that column's type as the catalog spells it.
+	PrimaryDimension     string `json:"primary_dimension"`
+	PrimaryDimensionType string `json:"primary_dimension_type"`
+
+	// Dimensions counts the partitioning dimensions, so a note can say that a
+	// table has more than the one it names.
+	Dimensions int `json:"dimensions"`
+}
+
+// QualifiedName returns schema.name when Schema is set, or Name otherwise.
+func (h DBHypertable) QualifiedName() string {
+	return QualifyTableName(h.Schema, h.Name)
 }
 
 // DBExtendedProperty is one SQL Server extended property read from
