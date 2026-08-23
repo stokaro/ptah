@@ -346,6 +346,13 @@ func describedTableWithDomain(domain string, fields ...goschema.Field) *goschema
 	return description
 }
 
+// describedTableWithDomainIn is [describedTableWithDomain] in a named schema.
+func describedTableWithDomainIn(schema, domain string, fields ...goschema.Field) *goschema.Database {
+	description := describedTableWithDomain(domain, fields...)
+	description.Domains[0].Schema = schema
+	return description
+}
+
 // describedTableWithKey is [describedTable] with a table-level primary key,
 // which is how the authoring model spells a COMPOSITE one: the field flag
 // declares a single-column key and cannot express a key over two.
@@ -695,4 +702,79 @@ func TestADefaultChangeIsAChange(t *testing.T) {
 			c.Assert(changes[0].Changed, qt.DeepEquals, []string{"default"})
 		})
 	}
+}
+
+// TestADomainColumnIsComparedByIdentity pins what a domain comparison decides,
+// which a comparison of WHICH objects moved cannot see: a column that differs
+// only in its type still produces one modify change either way, so only the
+// property list separates a correct answer from a wrong one.
+func TestADomainColumnIsComparedByIdentity(t *testing.T) {
+	tests := []struct {
+		name        string
+		description *goschema.Database
+		column      dbschematypes.DBColumn
+		wantChanged []string
+	}{
+		{
+			// The declaration names the BASE type and the catalog reports a
+			// DOMAIN named after it. Folding the domain's name as if it were a
+			// type made these one column.
+			name: "a domain named after a base type",
+			description: describedTable(goschema.Field{
+				StructName: "Widget", Name: "amount", Type: "bigint", Nullable: true,
+			}),
+			column: dbschematypes.DBColumn{
+				Name: "amount", DataType: "USER-DEFINED", IsNullable: "YES",
+				DomainName: "int8", DomainSchema: "public", FormattedType: "int8",
+			},
+			wantChanged: []string{"type"},
+		},
+		{
+			// Two domains of one name in two schemas are two domains.
+			name: "one domain name in two schemas",
+			description: describedTableWithDomainIn("app", "email",
+				goschema.Field{StructName: "Widget", Name: "contact", Type: "email", Nullable: true}),
+			column: dbschematypes.DBColumn{
+				Name: "contact", DataType: "USER-DEFINED", IsNullable: "YES",
+				DomainName: "email", DomainSchema: "public", FormattedType: "email",
+			},
+			wantChanged: []string{"type"},
+		},
+		{
+			// The control: the same domain on both sides is not a change, and a
+			// comparison that answered "changed" for every domain column would
+			// pass both rows above.
+			name: "the same domain on both sides",
+			description: describedTableWithDomain("email",
+				goschema.Field{StructName: "Widget", Name: "contact", Type: "email", Nullable: true}),
+			column: dbschematypes.DBColumn{
+				Name: "contact", DataType: "USER-DEFINED", IsNullable: "YES",
+				DomainName: "email", DomainSchema: "public", FormattedType: "email",
+			},
+			wantChanged: nil,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			changes := changesFor(c, test.description, catalogTable(test.column))
+
+			c.Assert(changes, qt.HasLen, len(test.wantChanged))
+			c.Assert(changedProperties(changes), qt.DeepEquals, test.wantChanged)
+		})
+	}
+}
+
+// changedProperties is the property list of the single change a row produces,
+// or nil for a row that produces none.
+//
+// The branches are thunks rather than values: a map literal evaluates both, and
+// reading the first change of an empty list panics.
+func changedProperties(changes []schemachange.Change) []string {
+	return map[bool]func() []string{
+		true:  func() []string { return nil },
+		false: func() []string { return changes[0].Changed },
+	}[len(changes) == 0]()
 }
