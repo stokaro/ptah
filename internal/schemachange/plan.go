@@ -94,7 +94,7 @@ func nodesFor(change Change, profile schemastate.Profile) ([]ast.Node, error) {
 }
 
 func addNode(change Change, profile schemastate.Profile) ast.Node {
-	key := change.After
+	key := change.After.ForeignKey
 	return &ast.AlterTableNode{
 		Name: change.ID.Parent.Source,
 		Operations: []ast.AlterOperation{

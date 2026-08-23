@@ -36,15 +36,26 @@ const foreignKeyConstraintType = "FOREIGN KEY"
 // deletes the direction question by having both readers produce this state
 // directly.
 func FromCatalog(schema *dbschematypes.DBSchema, dialect string, semantics identifier.Semantics) (*State, error) {
-	state := New(dialect, sliceScope...)
+	// The read's own record of what it did not look at travels with it, for
+	// the reason [FromDescription] carries the description's: a state that
+	// dropped it would be silent about a family the reader never opened, and a
+	// comparison reads that silence as absence. The current side gates
+	// ADDITIONS -- an object a description names and a read did not report is
+	// a creation only when the read looked -- so losing it here plans a CREATE
+	// for something that is already there (stokaro/ptah#1276).
+	state := New(dialect, sliceScope...).WithCoverage(schema.NotDescribed)
 	builder := objectidentity.NewBuilder(semantics)
 
 	for _, table := range schema.Tables {
 		id := builder.TableParts(table.Schema, table.Name)
 		columns := columnsFromCatalog(table, builder)
 		if existing, collided := state.Add(Object{
-			ID:         id,
-			Table:      &Table{Columns: columns},
+			ID: id,
+			Table: &Table{
+				Columns:         columns,
+				EstimatedRows:   table.EstimatedRows,
+				RowStatsUnknown: table.RowStatsUnknown,
+			},
 			Provenance: Provenance{Source: coverage.Observed, Location: "information_schema.tables"},
 		}); collided {
 			return nil, fmt.Errorf("catalog reports two tables with one identity: %s and %s", existing.ID, id)
@@ -89,10 +100,13 @@ func columnsFromCatalog(
 	columns := make([]Column, 0, len(table.Columns))
 	for _, column := range table.Columns {
 		columns = append(columns, Column{
-			ID:       builder.ColumnParts(table.Schema, table.Name, column.Name),
-			Type:     column.DataType,
-			Nullable: strings.EqualFold(column.IsNullable, "YES"),
-			Unique:   column.IsPrimaryKey || column.IsUnique,
+			ID:            builder.ColumnParts(table.Schema, table.Name, column.Name),
+			Type:          column.DataType,
+			Nullable:      strings.EqualFold(column.IsNullable, "YES"),
+			Unique:        column.IsPrimaryKey || column.IsUnique,
+			Default:       derefOrEmpty(column.ColumnDefault),
+			HasDefault:    column.ColumnDefault != nil,
+			AutoIncrement: column.IsAutoIncrement,
 		})
 	}
 	return columns
@@ -157,8 +171,15 @@ func FromDescription(
 		id := builder.TableParts(table.Schema, table.Name)
 		columns := columnsFromDescription(description, table, builder)
 		if existing, collided := state.Add(Object{
-			ID:         id,
-			Table:      &Table{Columns: columns},
+			ID: id,
+			Table: &Table{
+				Columns: columns,
+				// A description says what a table should look like and nothing
+				// about what is in it. Leaving the pair zero would claim the
+				// table is empty, which is the answer that lets an ADD COLUMN
+				// NOT NULL through.
+				RowStatsUnknown: true,
+			},
 			Provenance: Provenance{Source: coverage.Declared, Location: table.StructName},
 		}); collided {
 			return nil, fmt.Errorf("description declares two tables with one identity: %s and %s", existing.ID, id)
@@ -248,10 +269,13 @@ func columnsFromDescription(
 			continue
 		}
 		columns = append(columns, Column{
-			ID:       builder.ColumnParts(table.Schema, table.Name, field.Name),
-			Type:     field.Type,
-			Nullable: field.Nullable,
-			Unique:   field.Primary || field.Unique,
+			ID:            builder.ColumnParts(table.Schema, table.Name, field.Name),
+			Type:          field.Type,
+			Nullable:      field.Nullable,
+			Unique:        field.Primary || field.Unique,
+			Default:       declaredDefault(field),
+			HasDefault:    field.DefaultSet || strings.TrimSpace(field.DefaultExpr) != "",
+			AutoIncrement: field.AutoInc,
 		})
 	}
 	return columns
@@ -363,4 +387,15 @@ func derefOrEmpty(value *string) string {
 		return ""
 	}
 	return *value
+}
+
+// declaredDefault is the default a field declares, in whichever of the two
+// spellings the authoring model uses. An expression and a literal are one fact
+// here: both answer "does a row without a value get one", and a comparison that
+// kept them apart would report a modification for a column nobody changed.
+func declaredDefault(field goschema.Field) string {
+	if expression := strings.TrimSpace(field.DefaultExpr); expression != "" {
+		return expression
+	}
+	return field.Default
 }
