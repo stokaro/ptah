@@ -56,22 +56,36 @@ const overflowTolerance = 2;
 // IS the scroller, so widening it scrolls the page instead, measured at 648px
 // against a 390px viewport.
 //
-// Narrow tables stay desktop-only. Applying the cap to every table at 390px
-// reports each ordinary three-column reference table in the site, which is a
-// separate decision and is not made here.
+// Narrow tables stay desktop-only, and this is the decision rather than a
+// deferral of it.
+//
+// Measured by setting wideTableColumns to 1 against the built site: 77 cells
+// across sixteen routes exceed the cap, and every one of them is a two-, three-
+// or four-column reference table whose columns still ADD UP to the viewport --
+// /atlas/conformance's three columns report 92px, 84px and 108px at 390px. Such
+// a table is not shrunk; it is wrapping, which is what a phone should do with a
+// sentence in a cell.
+//
+// The cap exists to catch a table whose LAYOUT broke: the feature matrix
+// rendered 437px wide against a desktop 632px, so its columns were squeezed
+// while its content stayed long. Applying the same fix to a table that already
+// fills the width would replace wrapping with horizontal scrolling on every
+// reference table in the site, which is worse for the reader and buys nothing.
+//
+// So the rule is the column count, and the reason is the mechanism behind it
+// (stokaro/ptah#946).
 const maxCellLines = 8;
 const wideTableColumns = 5;
 
 // Routes whose wide tables are known to fail the mobile cap and are not fixed
 // by this rule. Each entry states the measurement and what would fix it.
-const mobileCapExemptions = new Map([
-  [
-    '/reference/lint-rules/',
-    'the Atlas-check comparison table renders 35 cells over the cap at 390px, worst 18 lines. ' +
-      'Same mechanism as the feature matrix and the same fix, but the table is emitted by ' +
-      'internal/lintcatalog/markdown.go rather than by a docs script (stokaro/ptah#946).',
-  ],
-]);
+//
+// EMPTY as of the lint-rules fix: its Atlas-check table is emitted by
+// internal/lintcatalog/markdown.go, which now wraps it the way
+// build-feature-matrix.mjs wraps the matrix. The map stays because the next
+// generated wide table will arrive the same way -- outside the docs scripts,
+// failing here first.
+const mobileCapExemptions = new Map([]);
 
 // Pages whose tables are lookup references, where an exhaustive cell is the
 // content rather than a mistake. Each entry states why.

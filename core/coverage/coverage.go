@@ -72,6 +72,16 @@ const (
 	Domain Kind = "domain"
 	// Extension is a PostgreSQL extension (CREATE EXTENSION).
 	Extension Kind = "extension"
+	// ExtendedProperty is a SQL Server extended property
+	// (sp_addextendedproperty).
+	//
+	// Like VirtualTable it is usually declined by construction rather than by
+	// choice: the HCL surface has no block for one, so a document rendered from
+	// a database that has them carries none of them and its silence is not a
+	// request to drop them. Without this kind the round trip was destructive --
+	// `schema inspect` followed by `schema apply` of its own output planned
+	// sp_dropextendedproperty for every property on the server.
+	ExtendedProperty Kind = "extended_property"
 	// Policy is a PostgreSQL row-level security policy (CREATE POLICY).
 	Policy Kind = "policy"
 	// Range is a PostgreSQL range type (CREATE TYPE ... AS RANGE).
@@ -94,6 +104,11 @@ const (
 	Schema Kind = "schema"
 	// Sequence is a standalone sequence (CREATE SEQUENCE).
 	Sequence Kind = "sequence"
+	// Synonym is a SQL Server synonym (CREATE SYNONYM).
+	//
+	// It is declined for the same reason [ExtendedProperty] is, and the same
+	// round trip planned DROP SYNONYM for every synonym the server had.
+	Synonym Kind = "synonym"
 	// VirtualTable is a SQLite virtual table (CREATE VIRTUAL TABLE ... USING).
 	//
 	// Unlike the kinds above it, a description usually declines this one by
@@ -107,7 +122,10 @@ const (
 )
 
 // kinds is every valid [Kind], in the order directives are written.
-var kinds = []Kind{Composite, Domain, Extension, Policy, Range, Role, Schema, Sequence, VirtualTable}
+var kinds = []Kind{
+	Composite, Domain, Extension, ExtendedProperty, Policy, Range, Role, Schema,
+	Sequence, Synonym, VirtualTable,
+}
 
 // ParseKind resolves a serialized kind token. It refuses anything not in the
 // closed list rather than returning a zero value, so a directive a build does
