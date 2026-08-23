@@ -219,7 +219,7 @@ func (r *Reader) readRolesInto(schema *types.DBSchema, dbName string) error {
 		if !isRoleReadDenied(err) {
 			return fmt.Errorf("failed to read roles: %w", err)
 		}
-		schema.NotDescribed = schema.NotDescribed.WithKind(coverage.Role)
+		schema.NotDescribed = schema.NotDescribed.With(coverage.Refused(coverage.Role))
 		return nil
 	}
 	schema.Roles = roles
@@ -233,7 +233,7 @@ func (r *Reader) readRolesInto(schema *types.DBSchema, dbName string) error {
 		// would read as "these roles have no privileges", which is a claim this
 		// account could not check.
 		schema.Roles = nil
-		schema.NotDescribed = schema.NotDescribed.WithKind(coverage.Role)
+		schema.NotDescribed = schema.NotDescribed.With(coverage.Refused(coverage.Role))
 		return nil
 	}
 	schema.Grants = grants
@@ -248,7 +248,7 @@ func (r *Reader) readRolesInto(schema *types.DBSchema, dbName string) error {
 		// these", which is a claim this account could not check.
 		schema.Roles = nil
 		schema.Grants = nil
-		schema.NotDescribed = schema.NotDescribed.WithKind(coverage.Role)
+		schema.NotDescribed = schema.NotDescribed.With(coverage.Refused(coverage.Role))
 		return nil
 	}
 	schema.RoleMemberships = memberships

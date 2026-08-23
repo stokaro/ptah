@@ -689,6 +689,11 @@ func TestReadSchemaDegradesWhenTheAccountMayNotReadTheAccessCatalog(t *testing.T
 			c.Assert(schema.Grants, qt.HasLen, 0)
 			c.Assert(schema.NotDescribed.Describes(coverage.Role, "reader"), qt.IsFalse,
 				qt.Commentf("a read that could not look must not claim the role is absent"))
+			// And it says why: Ptah watched this server refuse the catalog, so
+			// a surface can tell the user to grant the privilege rather than
+			// only that something was held back (stokaro/ptah#1346).
+			c.Assert(schema.NotDescribed.Objects, qt.DeepEquals,
+				[]coverage.Object{coverage.Refused(coverage.Role)})
 		})
 	}
 }

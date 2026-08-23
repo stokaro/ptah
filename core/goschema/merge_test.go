@@ -238,10 +238,14 @@ func TestMerge_DoesNotMutateInputs(t *testing.T) {
 func TestMergePreservesWhatEachSourceDeclinedToDescribe(t *testing.T) {
 	c := qt.New(t)
 	first := &goschema.Database{
-		NotDescribed: coverage.Set{}.WithKind(coverage.Extension),
+		NotDescribed: coverage.Set{}.With(coverage.Refused(coverage.Extension)),
 	}
 	second := &goschema.Database{
-		NotDescribed: coverage.Set{}.WithKind(coverage.VirtualTable),
+		NotDescribed: coverage.Set{}.With(coverage.Object{
+			Kind:       coverage.VirtualTable,
+			Reason:     coverage.Unsupported,
+			Provenance: coverage.DerivedFromFact,
+		}),
 	}
 
 	merged, err := goschema.Merge(first, second)
@@ -249,6 +253,13 @@ func TestMergePreservesWhatEachSourceDeclinedToDescribe(t *testing.T) {
 	c.Assert(err, qt.IsNil)
 	c.Assert(merged.NotDescribed.Describes(coverage.Extension, "pgcrypto"), qt.IsFalse)
 	c.Assert(merged.NotDescribed.Describes(coverage.VirtualTable, "docs"), qt.IsFalse)
+	// The merge carries the reason each source gave, not only the fact that it
+	// declined: two sources decline for different reasons and a composite that
+	// kept one word for both could explain neither.
+	c.Assert(merged.NotDescribed.Objects, qt.DeepEquals, []coverage.Object{
+		{Kind: coverage.Extension, Reason: coverage.NotInspected, Provenance: coverage.Observed},
+		{Kind: coverage.VirtualTable, Reason: coverage.Unsupported, Provenance: coverage.DerivedFromFact},
+	})
 	// A kind neither source declined is still described, so the merge widened
 	// nothing it was not given.
 	c.Assert(merged.NotDescribed.Describes(coverage.Sequence, "order_seq"), qt.IsTrue)
