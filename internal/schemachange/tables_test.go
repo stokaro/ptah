@@ -1,6 +1,7 @@
 package schemachange_test
 
 import (
+	"slices"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -373,11 +374,50 @@ func TestCoverageDoesNotWithholdWhatBothSidesDescribe(t *testing.T) {
 //
 // The graph has recorded an ordering between a foreign key and the tables it
 // touches since the constraint slice landed, and it ordered nothing: an edge
-// whose other end is not in the change set is skipped, and no table was ever
-// in the change set. Both ends are now.
+// whose other end is not in the change set is skipped, and no table was ever in
+// the change set. Both ends are now.
+//
+// The two rows isolate the two edges. A fixture that creates BOTH tables leaves
+// either edge able to produce the answer alone, so dropping one would not be
+// visible -- which is what a first version of this test measured.
 func TestATableCreationOrdersBeforeTheConstraintThatNeedsIt(t *testing.T) {
-	c := qt.New(t)
-	description := &goschema.Database{
+	tests := []struct {
+		name    string
+		catalog *dbschematypes.DBSchema
+		wantNew string
+	}{
+		{
+			// Only the OWNING edge: the referenced table is already there.
+			name:    "the table that carries it",
+			catalog: parentOnlyCatalog(),
+			wantNew: "child",
+		},
+		{
+			// Only the REFERENCED edge: the table carrying the key is already
+			// there, and the table it points at is not.
+			name:    "the table it references",
+			catalog: childOnlyCatalog(),
+			wantNew: "parent",
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			forward := forwardOrderFor(c, parentChildSchema(), test.catalog, "constraint", "table")
+
+			c.Assert(kindsOf(forward), qt.DeepEquals, []string{"table", "constraint"})
+			c.Assert(forward[0].ID.Name.Source, qt.Equals, test.wantNew)
+			c.Assert(forward[1].ID.Name.Source, qt.Equals, "fk_child_parent")
+		})
+	}
+}
+
+// parentChildSchema is a parent with a key and a child whose column references
+// it.
+func parentChildSchema() *goschema.Database {
+	return &goschema.Database{
 		Tables: []goschema.Table{
 			{StructName: "Parent", Name: "parent"},
 			{StructName: "Child", Name: "child"},
@@ -391,13 +431,31 @@ func TestATableCreationOrdersBeforeTheConstraintThatNeedsIt(t *testing.T) {
 			},
 		},
 	}
+}
 
-	forward := forwardOrderFor(c, description, &dbschematypes.DBSchema{})
+// parentOnlyCatalog holds the referenced table and not the one that carries the
+// key.
+func parentOnlyCatalog() *dbschematypes.DBSchema {
+	return &dbschematypes.DBSchema{
+		Tables: []dbschematypes.DBTable{
+			{Name: "parent", Schema: "public", Columns: []dbschematypes.DBColumn{
+				{Name: "id", DataType: "integer", IsNullable: "NO", IsPrimaryKey: true},
+			}},
+		},
+	}
+}
 
-	// Three creations and the constraint, and the constraint is last: it waits
-	// for the table that carries it and for the table it references.
-	c.Assert(kindsOf(forward), qt.DeepEquals, []string{"table", "table", "constraint"})
-	c.Assert(forward[2].ID.Name.Source, qt.Equals, "fk_child_parent")
+// childOnlyCatalog holds the table that carries the key and not the one it
+// references.
+func childOnlyCatalog() *dbschematypes.DBSchema {
+	return &dbschematypes.DBSchema{
+		Tables: []dbschematypes.DBTable{
+			{Name: "child", Schema: "public", Columns: []dbschematypes.DBColumn{
+				{Name: "id", DataType: "integer", IsNullable: "NO", IsPrimaryKey: true},
+				{Name: "parent_id", DataType: "integer", IsNullable: "YES"},
+			}},
+		},
+	}
 }
 
 // TestATableDropOrdersAfterTheConstraintOnIt is the other direction of the same
@@ -424,7 +482,7 @@ func TestATableDropOrdersAfterTheConstraintOnIt(t *testing.T) {
 		}},
 	}
 
-	forward := forwardOrderFor(c, &goschema.Database{}, catalog)
+	forward := forwardOrderFor(c, &goschema.Database{}, catalog, "table", "constraint")
 
 	c.Assert(kindsOf(forward), qt.DeepEquals, []string{"constraint", "table", "table"})
 	c.Assert(forward[0].ID.Name.Source, qt.Equals, "fk_child_parent")
@@ -432,10 +490,18 @@ func TestATableDropOrdersAfterTheConstraintOnIt(t *testing.T) {
 
 // forwardOrderFor runs the adapters, normalization, comparison and graph for one
 // input pair and returns the order the changes must be applied in.
+//
+// inputKinds is the order the changes are handed to the graph in, and every
+// caller passes the REVERSE of what it expects back. Compare walks the state's
+// objects in insertion order, which already groups tables and constraints, so
+// an assertion about the output order of an input that arrived in that order
+// would pass with no edges recorded at all -- it would be measuring Compare's
+// loop rather than the graph.
 func forwardOrderFor(
 	c *qt.C,
 	description *goschema.Database,
 	catalog *dbschematypes.DBSchema,
+	inputKinds ...string,
 ) []schemachange.Change {
 	c.Helper()
 	profile := postgresProfile()
@@ -449,6 +515,9 @@ func forwardOrderFor(
 	c.Assert(err, qt.IsNil)
 	changes, err := schemachange.Compare(normalizedCurrent, normalizedDesired, profile)
 	c.Assert(err, qt.IsNil)
+	slices.SortStableFunc(changes, func(a, b schemachange.Change) int {
+		return slices.Index(inputKinds, string(a.ID.Kind)) - slices.Index(inputKinds, string(b.ID.Kind))
+	})
 	graph, err := schemachange.BuildGraph(changes, normalizedCurrent, normalizedDesired)
 	c.Assert(err, qt.IsNil)
 	forward, err := graph.Forward()
