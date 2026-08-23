@@ -67,6 +67,14 @@ Relative `--schema-file` inputs are confined to the process working directory
 after symbolic-link resolution; use an absolute pathname for an intentional
 source outside it, as detailed under [schema file paths](../../reference/native-commands/#schema-file-paths).
 
+## Use it
+
+Everything a desired schema is for — comparing, gating on drift, generating
+migrations, applying directly, composing sources, validating across dialects —
+is the same for every source and lives on
+[Work with a desired schema](../work-with-a-source/). For SQL the flag is
+`--schema-file`. What follows is specific to this source.
+
 ## Diff two SQL files locally
 
 `ptah schema diff` compares local SQL files directly. With `old.sql`

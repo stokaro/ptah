@@ -120,69 +120,33 @@ Ptah creates `extensions` first and renders `CREATE EXTENSION ... WITH SCHEMA
 extensions`. The same installation schema survives parsing from HCL or YAML,
 Go-to-HCL export, live inspection, comparison, and a later apply.
 
-## Compare before changing data
+## Use the schema
 
-For an existing database, inspect and compare first:
+Everything from here is the same for every source, and lives once on
+[Work with a desired schema](../work-with-a-source/): rendering the SQL a
+source produces, comparing it with a live database, gating a pipeline on
+drift, composing several sources, and validating across dialects. The Go form
+of the flag is `--root-dir`, which is repeatable and mixes freely with
+`--schema-file`:
 
 ```bash
-ptah db read --db-url "$DATABASE_URL"
 ptah schema compare --root-dir ./models --db-url "$DATABASE_URL"
-ptah migrations plan --root-dir ./models --db-url "$DATABASE_URL"
+ptah migrations generate --root-dir ./models --db-url "$DATABASE_URL" --migrations-dir ./migrations
+ptah schema apply --root-dir ./models --db-url "$DATABASE_URL"
 ```
 
-Review the plan output before generating files. Destructive changes should be
-explicit and gated in CI.
-
-## Generate and apply
-
-```bash
-ptah migrations generate \
-  --root-dir ./models \
-  --db-url "$DATABASE_URL" \
-  --migrations-dir ./migrations
-
-ptah migrations hash --dir ./migrations
-ptah migrations validate --dir ./migrations
-ptah migrations up --db-url "$DATABASE_URL" --migrations-dir ./migrations --verify-sum
-```
-
-For shared environments, add these guards:
-
-```bash
-ptah migrations validate --dir ./migrations
-ptah migrations lint --dir ./migrations --dialect postgres
-ptah migrations up \
-  --db-url "$DATABASE_URL" \
-  --migrations-dir ./migrations \
-  --verify-sum \
-  --dry-run
-```
-
-Run without `--dry-run` only after reviewing the generated SQL and committed
-`ptah.sum`.
-
-## Compose multiple sources
-
-`--root-dir` is repeatable, so a desired schema can be assembled from several
-Go packages, and the same commands mix Go roots with YAML, HCL, and SQL files
-through repeatable `--schema-file`. The merge semantics — identity-based
-deduplication, conflict detection, and per-root type ownership — are described
-once on [Composite desired schema](../composite/).
-
-## Verify across dialects
-
-When a model change is surprising, or annotations are meant to be portable,
-render more than one dialect:
+One thing is worth rendering more than once when the schema is Go annotations,
+because the annotations are meant to be portable and a mapping surprise is
+easier to see than to reason about:
 
 ```bash
 ptah schema render --root-dir ./models --dialect postgres >/tmp/schema.pg.sql
 ptah schema render --root-dir ./models --dialect mysql >/tmp/schema.mysql.sql
 ```
 
-This catches annotations that are valid but map differently across dialects,
-such as enum storage, serial columns, constraints, or generated columns.
-Dialect differences are expected; the important check is that each target
-renders valid SQL for the capabilities it supports.
+Dialect differences are expected — enum storage, serial columns, generated
+columns. What the two renders check is that each target produces valid SQL for
+the capabilities it has.
 
 ## Move the schema to HCL
 
