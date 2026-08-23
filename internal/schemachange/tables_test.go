@@ -276,8 +276,15 @@ func changesForProfile(
 
 // describedTable is one authored table carrying the given fields.
 func describedTable(fields ...goschema.Field) *goschema.Database {
+	return describedTableWithKey(nil, fields...)
+}
+
+// describedTableWithKey is [describedTable] with a table-level primary key,
+// which is how the authoring model spells a COMPOSITE one: the field flag
+// declares a single-column key and cannot express a key over two.
+func describedTableWithKey(key []string, fields ...goschema.Field) *goschema.Database {
 	return &goschema.Database{
-		Tables: []goschema.Table{{StructName: "Widget", Name: "widget"}},
+		Tables: []goschema.Table{{StructName: "Widget", Name: "widget", PrimaryKey: key}},
 		Fields: fields,
 	}
 }

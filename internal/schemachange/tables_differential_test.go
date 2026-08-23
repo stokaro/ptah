@@ -11,6 +11,7 @@ import (
 	"go.5x5.cz/ptah/core/goschema"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/schemachange"
+	"go.5x5.cz/ptah/internal/schemastate"
 	"go.5x5.cz/ptah/migration/schemadiff"
 	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
 )
@@ -182,4 +183,167 @@ func appendTableDecision(decisions []string, change schemachange.Change) []strin
 		},
 		false: func() []string { return decisions },
 	}[keep]()
+}
+
+// TestTableStatementsMatchTheExistingPlanner is the differential test at the
+// level the constraint slice already uses: the SQL both paths render.
+//
+// A change comparison says the two paths agree about WHICH objects move. This
+// says they agree about what is executed, which is the half a plan is judged on
+// -- and it found four defects in the NEW path, all of which the change-level
+// comparison passed straight over:
+//
+//   - a defaulted schema written back into DDL an author wrote bare;
+//   - a composite primary key missed entirely, because the adapter read the
+//     field flag and not the table-level declaration that spells one;
+//   - a DROP TABLE without the guard and the CASCADE the shipping path emits;
+//   - a DROP COLUMN addressing the catalog's spelling of a table both sides
+//     describe.
+//
+// The existing planner was right about all four.
+func TestTableStatementsMatchTheExistingPlanner(t *testing.T) {
+	tests := []struct {
+		name        string
+		description *goschema.Database
+		catalog     *dbschematypes.DBSchema
+	}{
+		{
+			name: "creating a table",
+			description: describedTable(
+				goschema.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true},
+				goschema.Field{StructName: "Widget", Name: "code", Type: "text", Nullable: true}),
+			catalog: &dbschematypes.DBSchema{},
+		},
+		{
+			name: "creating a table with a default",
+			description: describedTable(
+				goschema.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true},
+				goschema.Field{
+					StructName: "Widget", Name: "code", Type: "text", Nullable: true,
+					Default: "unset", DefaultSet: true,
+				}),
+			catalog: &dbschematypes.DBSchema{},
+		},
+		{
+			name: "creating a table with a default expression",
+			description: describedTable(
+				goschema.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true},
+				goschema.Field{
+					StructName: "Widget", Name: "seen", Type: "timestamp", Nullable: true,
+					DefaultExpr: "now()",
+				}),
+			catalog: &dbschematypes.DBSchema{},
+		},
+		{
+			name:        "dropping a table",
+			description: &goschema.Database{},
+			catalog: catalogTable(dbschematypes.DBColumn{
+				Name: "id", DataType: "integer", IsNullable: "NO", IsPrimaryKey: true,
+			}),
+		},
+		{
+			name: "adding a column",
+			description: describedTable(
+				goschema.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true},
+				goschema.Field{StructName: "Widget", Name: "code", Type: "text", Nullable: true}),
+			catalog: catalogTable(dbschematypes.DBColumn{
+				Name: "id", DataType: "integer", IsNullable: "NO", IsPrimaryKey: true,
+			}),
+		},
+		{
+			name: "dropping a column",
+			description: describedTable(
+				goschema.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true}),
+			catalog: catalogTable(
+				dbschematypes.DBColumn{
+					Name: "id", DataType: "integer", IsNullable: "NO", IsPrimaryKey: true,
+				},
+				dbschematypes.DBColumn{Name: "code", DataType: "text", IsNullable: "YES"}),
+		},
+		{
+			name: "widening a column",
+			description: describedTable(
+				goschema.Field{StructName: "Widget", Name: "code", Type: "varchar(200)", Nullable: true}),
+			catalog: catalogTable(dbschematypes.DBColumn{
+				Name: "code", DataType: "varchar(50)", IsNullable: "YES",
+			}),
+		},
+		{
+			// A composite key, which the column syntax cannot express: PRIMARY
+			// KEY on two columns declares two keys rather than one over both,
+			// so it has to become a table-level constraint.
+			name: "creating a table with a composite key",
+			description: describedTableWithKey(
+				[]string{"tenant", "id"},
+				goschema.Field{StructName: "Widget", Name: "tenant", Type: "int"},
+				goschema.Field{StructName: "Widget", Name: "id", Type: "int"}),
+			catalog: &dbschematypes.DBSchema{},
+		},
+		{
+			// The control. A planner that emitted nothing would agree with the
+			// existing one on this row and on nothing else; a planner that
+			// emitted something here would disagree with it on this row alone.
+			name: "an unchanged schema",
+			description: describedTable(
+				goschema.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true},
+				goschema.Field{StructName: "Widget", Name: "code", Type: "text", Nullable: true}),
+			catalog: catalogTable(
+				dbschematypes.DBColumn{
+					Name: "id", DataType: "integer", IsNullable: "NO", IsPrimaryKey: true,
+				},
+				dbschematypes.DBColumn{Name: "code", DataType: "text", IsNullable: "YES"}),
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			profile := postgresProfile()
+
+			existing := executableLines(existingPathStatements(c, test.description, test.catalog, profile))
+			prototype := executableLines(plannedStatements(c, test.description, test.catalog, profile))
+
+			c.Assert(prototype, qt.DeepEquals, existing)
+		})
+	}
+}
+
+// plannedStatements renders the canonical path's plan for one input pair.
+func plannedStatements(
+	c *qt.C,
+	description *goschema.Database,
+	catalog *dbschematypes.DBSchema,
+	profile schemastate.Profile,
+) []string {
+	c.Helper()
+	operations, err := schemachange.Plan(changesFor(c, description, catalog), profile)
+	c.Assert(err, qt.IsNil)
+	return schemachange.Statements(operations)
+}
+
+// executableLines keeps the lines a database would run.
+//
+// Both paths wrap their statements in comments -- the existing planner writes a
+// header per table and a warning per destructive change, the renderer writes a
+// banner -- and comparing those would be comparing two narrators rather than
+// two plans. Everything that is not a comment survives, so a statement one path
+// emits and the other does not is still a difference.
+func executableLines(statements []string) []string {
+	lines := make([]string, 0)
+	for _, statement := range statements {
+		for line := range strings.SplitSeq(statement, "\n") {
+			lines = appendExecutable(lines, strings.TrimSpace(line))
+		}
+	}
+	return lines
+}
+
+// appendExecutable keeps [executableLines] free of the conditionals the
+// repository's test style refuses inside a test.
+func appendExecutable(lines []string, trimmed string) []string {
+	executable := trimmed != "" && !strings.HasPrefix(trimmed, "--")
+	return map[bool][]string{
+		true:  append(lines, normalizeStatement(trimmed)),
+		false: lines,
+	}[executable]
 }

@@ -149,7 +149,7 @@ func compareColumns(
 		if _, wanted := declared[column.ID.Key()]; wanted {
 			continue
 		}
-		changes = append(changes, decide(columnRemoval(existing, column), profile, desired))
+		changes = append(changes, decide(columnRemoval(object, existing, column), profile, desired))
 	}
 	return changes
 }
@@ -247,11 +247,24 @@ func columnModification(
 // columnRemoval describes a column the database has and the desired schema does
 // not declare. Dropping it destroys what was in it, so it is irreversible for
 // the reason a table drop is.
-func columnRemoval(existing schemastate.Object, column schemastate.Column) Change {
+//
+// The identity is rebuilt on the DESIRED table's spelling. The column itself
+// exists only on the catalog side, so its identity carries the catalog's
+// qualification -- and the statement this renders to alters a table BOTH sides
+// describe, which the author spelled their own way. Writing the catalog's
+// spelling back would qualify a table an author wrote bare, which is the same
+// mistake as emitting a defaulted schema (ADR 0001 invariant 2).
+func columnRemoval(object, existing schemastate.Object, column schemastate.Column) Change {
+	id := objectidentity.ID{
+		Kind:   objectidentity.KindColumn,
+		Schema: object.ID.Schema,
+		Parent: object.ID.Name,
+		Name:   column.ID.Name,
+	}
 	return Change{
-		ID:            column.ID,
+		ID:            id,
 		Operation:     Remove,
-		Before:        &schemastate.Object{ID: column.ID, Column: &column, Provenance: existing.Provenance},
+		Before:        &schemastate.Object{ID: id, Column: &column, Provenance: existing.Provenance},
 		Evidence:      "present in the database and absent from the desired schema",
 		Risk:          RiskDataLoss,
 		Reversibility: Irreversible,

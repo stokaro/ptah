@@ -8,6 +8,7 @@ import (
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/normalize"
 	"go.5x5.cz/ptah/internal/objectidentity"
 	"go.5x5.cz/ptah/internal/tableref"
 )
@@ -100,13 +101,19 @@ func columnsFromCatalog(
 	columns := make([]Column, 0, len(table.Columns))
 	for _, column := range table.Columns {
 		columns = append(columns, Column{
-			ID:            builder.ColumnParts(table.Schema, table.Name, column.Name),
-			Type:          column.DataType,
-			Nullable:      strings.EqualFold(column.IsNullable, "YES"),
-			Unique:        column.IsPrimaryKey || column.IsUnique,
-			Default:       derefOrEmpty(column.ColumnDefault),
-			HasDefault:    column.ColumnDefault != nil,
-			AutoIncrement: column.IsAutoIncrement,
+			ID:         builder.ColumnParts(table.Schema, table.Name, column.Name),
+			Type:       column.DataType,
+			Nullable:   strings.EqualFold(column.IsNullable, "YES"),
+			Unique:     column.IsPrimaryKey || column.IsUnique,
+			PrimaryKey: column.IsPrimaryKey,
+			Default:    derefOrEmpty(column.ColumnDefault),
+			HasDefault: column.ColumnDefault != nil,
+			// A catalog reports one string for both kinds of default, so which
+			// kind it is has to be decided rather than read. normalize is where
+			// that decision already lives, out of the same package
+			// migration/schemadiff asks.
+			DefaultIsExpression: normalize.IsDefaultExpr(derefOrEmpty(column.ColumnDefault)),
+			AutoIncrement:       column.IsAutoIncrement,
 		})
 	}
 	return columns
@@ -264,18 +271,35 @@ func columnsFromDescription(
 	builder objectidentity.Builder,
 ) []Column {
 	columns := make([]Column, 0)
+	// A composite key is declared on the TABLE and a single-column one on the
+	// field, and both name columns of this table. A reader that took only the
+	// field flag described a table with no key at all whenever the author used
+	// the composite spelling, and the CREATE it renders would carry none.
+	compositeKey := make(map[string]bool, len(table.PrimaryKey))
+	for _, name := range table.PrimaryKey {
+		compositeKey[strings.TrimSpace(name)] = true
+	}
 	for _, field := range description.Fields {
 		if field.StructName != table.StructName {
 			continue
 		}
 		columns = append(columns, Column{
-			ID:            builder.ColumnParts(table.Schema, table.Name, field.Name),
-			Type:          field.Type,
-			Nullable:      field.Nullable,
-			Unique:        field.Primary || field.Unique,
-			Default:       declaredDefault(field),
-			HasDefault:    field.DefaultSet || strings.TrimSpace(field.DefaultExpr) != "",
-			AutoIncrement: field.AutoInc,
+			ID:       builder.ColumnParts(table.Schema, table.Name, field.Name),
+			Type:     field.Type,
+			Nullable: field.Nullable,
+			// A column in a COMPOSITE key is not unique on its own, so it does
+			// not become Unique here. That is conservative in the safe
+			// direction -- it blocks a foreign key the target might accept
+			// rather than planning one it refuses -- and it is the limitation
+			// stokaro/ptah#1662 records against unique constraints as objects.
+			Unique:     field.Primary || field.Unique,
+			PrimaryKey: field.Primary || compositeKey[field.Name],
+			Default:    declaredDefault(field),
+			HasDefault: field.DefaultSet || strings.TrimSpace(field.DefaultExpr) != "",
+			// A description keeps the two kinds apart in its own model, so this
+			// is a read rather than a decision.
+			DefaultIsExpression: strings.TrimSpace(field.DefaultExpr) != "",
+			AutoIncrement:       field.AutoInc,
 		})
 	}
 	return columns

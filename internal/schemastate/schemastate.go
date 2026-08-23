@@ -141,12 +141,25 @@ type Column struct {
 	// conservative in the safe direction -- it blocks a foreign key the target
 	// might have accepted, rather than planning one the target refuses.
 	Unique bool
+	// PrimaryKey marks a column the table's primary key covers.
+	//
+	// It is separate from Unique, which answers a different question: Unique is
+	// "is this column a key on its own", the fact a foreign key's reference
+	// depends on, and a primary key is one way to be that but not the only one.
+	// Collapsing them loses the half a CREATE TABLE has to write
+	// (stokaro/ptah#1662).
+	PrimaryKey bool
 	// Default is the default the source wrote, and HasDefault says whether it
 	// wrote one. The pair is what a `DEFAULT ''` needs: an empty string is a
 	// default, and a model with only the string cannot tell it from a column
 	// that has none (stokaro/ptah#1662).
 	Default    string
 	HasDefault bool
+	// DefaultIsExpression says which of the two kinds of default it is. A
+	// literal is quoted when it is written back and an expression is not, so a
+	// model carrying only the string renders `DEFAULT 'now()'` for a column
+	// whose default is a function call.
+	DefaultIsExpression bool
 	// AutoIncrement marks a column the engine fills by itself. It answers the
 	// same question a default does -- does a row without a value for this
 	// column get one -- and it answers it for the columns no DEFAULT clause

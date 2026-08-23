@@ -78,9 +78,19 @@ func Plan(changes []Change, profile schemastate.Profile) ([]PlannedOperation, er
 // two statements rather than becoming two changes, so the drop and the add
 // cannot be separated by a later stage that sees only one of them.
 func nodesFor(change Change, profile schemastate.Profile) ([]ast.Node, error) {
-	if change.ID.Kind != objectidentity.KindConstraint {
+	switch change.ID.Kind {
+	case objectidentity.KindConstraint:
+		return constraintNodes(change, profile)
+	case objectidentity.KindTable:
+		return tableNodes(change)
+	case objectidentity.KindColumn:
+		return columnNodes(change, profile)
+	default:
 		return nil, fmt.Errorf("%s: %w", change, ErrNotRendered)
 	}
+}
+
+func constraintNodes(change Change, profile schemastate.Profile) ([]ast.Node, error) {
 	switch change.Operation {
 	case Add:
 		return []ast.Node{addNode(change, profile)}, nil
@@ -91,6 +101,179 @@ func nodesFor(change Change, profile schemastate.Profile) ([]ast.Node, error) {
 	default:
 		return nil, fmt.Errorf("%s: unknown operation %q", change, change.Operation)
 	}
+}
+
+// tableNodes renders a whole table, columns included.
+//
+// The columns ride inside the CREATE rather than arriving as separate ALTERs,
+// which is the same decision [compareTables] makes: a column of a table that
+// does not exist yet is not a separate statement, and splitting it would let a
+// later stage order the two apart.
+func tableNodes(change Change) ([]ast.Node, error) {
+	switch change.Operation {
+	case Add:
+		return []ast.Node{createTableNode(change)}, nil
+	case Remove:
+		// IF EXISTS and CASCADE, which is what the shipping planner emits for
+		// the same change: a table with a dependent view or foreign key cannot
+		// be dropped without CASCADE at all, and the guard keeps a plan
+		// replayed against a database that already lost the table from
+		// failing. The difference the canonical model makes to this change is
+		// on the CHANGE -- irreversible, data loss -- not on the statement.
+		return []ast.Node{&ast.DropTableNode{
+			Name: tableName(change.ID), IfExists: true, Cascade: true,
+		}}, nil
+	default:
+		return nil, fmt.Errorf("%s: unknown operation %q", change, change.Operation)
+	}
+}
+
+// createTableNode builds the CREATE for a table the desired schema declares.
+//
+// A single-column key rides on its column and a composite one becomes a
+// table-level constraint, which is what the shipping planner writes and what
+// the column syntax can express: `PRIMARY KEY` on two columns declares two
+// keys, not one over both.
+func createTableNode(change Change) ast.Node {
+	table := change.After.Table
+	columns := make([]*ast.ColumnNode, 0, len(table.Columns))
+	keyColumns := make([]string, 0, len(table.Columns))
+	for _, column := range table.Columns {
+		keyColumns = appendPrimaryKeyColumn(keyColumns, column)
+	}
+	composite := len(keyColumns) > 1
+	for _, column := range table.Columns {
+		columns = append(columns, columnNode(column, composite))
+	}
+	node := &ast.CreateTableNode{Name: tableName(change.ID), Columns: columns}
+	return withCompositeKey(node, keyColumns, composite)
+}
+
+// appendPrimaryKeyColumn keeps the loop above free of a branch the repository's
+// lint rules would rather see named.
+func appendPrimaryKeyColumn(columns []string, column schemastate.Column) []string {
+	return map[bool][]string{
+		true:  append(columns, column.ID.Name.Source),
+		false: columns,
+	}[column.PrimaryKey]
+}
+
+// withCompositeKey attaches the table-level key constraint a multi-column key
+// needs. A single-column key is already on its column.
+func withCompositeKey(node *ast.CreateTableNode, keyColumns []string, composite bool) ast.Node {
+	return map[bool]func() ast.Node{
+		true: func() ast.Node {
+			node.Constraints = append(node.Constraints, ast.NewPrimaryKeyConstraint(keyColumns...))
+			return node
+		},
+		false: func() ast.Node { return node },
+	}[composite]()
+}
+
+// columnNodes renders one column's change against a table that already exists.
+func columnNodes(change Change, profile schemastate.Profile) ([]ast.Node, error) {
+	switch change.Operation {
+	case Add:
+		return []ast.Node{alterColumn(change, &ast.AddColumnOperation{
+			Column: columnNode(*change.After.Column, false),
+		})}, nil
+	case Remove:
+		// CASCADE, which is what the shipping planner emits: a column with a
+		// dependent view or index cannot be dropped without it. The canonical
+		// model's contribution to this change is that it says it destroys data
+		// and cannot be undone, not that it renders a different statement.
+		return []ast.Node{alterColumn(change, &ast.DropColumnOperation{
+			ColumnName: change.ID.Name.Source,
+			Cascade:    true,
+		})}, nil
+	case Modify:
+		return []ast.Node{alterColumn(change, modifyColumnOperation(change, profile))}, nil
+	default:
+		return nil, fmt.Errorf("%s: unknown operation %q", change, change.Operation)
+	}
+}
+
+// modifyColumnOperation states the new definition and what it replaces.
+//
+// The previous values are metadata most renderers ignore, and the two that
+// cannot are why they are carried: safety analysis tells a narrowing change
+// from a widening one by them, and Oracle's MODIFY states the WHOLE new column
+// definition, so a cleared default has to be spelled out or the old one stays
+// and the migration reports success (stokaro/ptah#1885).
+func modifyColumnOperation(change Change, _ schemastate.Profile) ast.AlterOperation {
+	before := *change.Before.Column
+	return &ast.ModifyColumnOperation{
+		Column:              columnNode(*change.After.Column, false),
+		PreviousType:        before.Type,
+		PreviousNullable:    before.Nullable,
+		HasPreviousNullable: true,
+		PreviousDefault:     before.Default,
+		HasPreviousDefault:  before.HasDefault,
+	}
+}
+
+// alterColumn wraps one column operation in the ALTER TABLE that carries it.
+func alterColumn(change Change, operation ast.AlterOperation) ast.Node {
+	return &ast.AlterTableNode{
+		Name:       qualify(change.ID.Schema, change.ID.Parent),
+		Operations: []ast.AlterOperation{operation},
+	}
+}
+
+// columnNode renders one column definition.
+//
+// Type is the SOURCE spelling and never the folded one. The fold is what
+// comparison decided on -- a declared `int` and a catalog `integer` are one
+// type -- and writing it into DDL would put Ptah's vocabulary in the operator's
+// database (ADR 0001 invariant 2).
+func columnNode(column schemastate.Column, compositeKey bool) *ast.ColumnNode {
+	node := &ast.ColumnNode{
+		Name:     column.ID.Name.Source,
+		Type:     column.Type,
+		Nullable: column.Nullable,
+		Primary:  column.PrimaryKey && !compositeKey,
+		AutoInc:  column.AutoIncrement,
+	}
+	return withDefault(node, column)
+}
+
+// withDefault attaches the default a column declares, in the kind it declares
+// it: a literal is quoted when it is written back and an expression is not.
+func withDefault(node *ast.ColumnNode, column schemastate.Column) *ast.ColumnNode {
+	return map[bool]func() *ast.ColumnNode{
+		false: func() *ast.ColumnNode { return node },
+		true: func() *ast.ColumnNode {
+			node.Default = defaultValue(column)
+			return node
+		},
+	}[column.HasDefault]()
+}
+
+func defaultValue(column schemastate.Column) *ast.DefaultValue {
+	return map[bool]*ast.DefaultValue{
+		true:  {Expression: column.Default},
+		false: {Value: column.Default, ValueSet: true},
+	}[column.DefaultIsExpression]
+}
+
+// tableName renders a table identity for DDL, qualified the way the identity
+// carries it.
+func tableName(id objectidentity.ID) string {
+	return qualify(id.Schema, id.Name)
+}
+
+// qualify joins a schema and an object name, omitting a schema the source did
+// not write.
+//
+// A DEFAULTED schema is omitted for the reason [referencedTableName] omits it
+// and the reason a folded type is never emitted: the target filled it in, the
+// author did not write it, and putting it back writes `"public"."users"` into
+// DDL somebody wrote as `users` (ADR 0001 invariant 2).
+func qualify(schema, name objectidentity.Part) string {
+	return map[bool]string{
+		true:  name.Source,
+		false: schema.Source + "." + name.Source,
+	}[schema.Empty() || schema.Defaulted]
 }
 
 func addNode(change Change, profile schemastate.Profile) ast.Node {
