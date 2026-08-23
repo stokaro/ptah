@@ -166,7 +166,8 @@ func TestPipeline_ModificationRendersDropThenAdd(t *testing.T) {
 func TestPipeline_BlockedOnATargetThatCannotHostTheFamily(t *testing.T) {
 	c := qt.New(t)
 
-	changes, err := orderedChanges(c, parentChildDescription(""), emptyCatalog(), clickhouseProfile())
+	changes, err := orderedChanges(
+		c, parentChildDescription(""), emptyCatalogInSchema(""), clickhouseProfile())
 	c.Assert(err, qt.IsNil)
 	c.Assert(changes, qt.HasLen, 1)
 	c.Assert(changes[0].Status, qt.Equals, schemachange.Blocked)
@@ -488,9 +489,11 @@ func manyForeignKeys(count int) *goschema.Database {
 		description.Fields = append(description.Fields,
 			goschema.Field{StructName: child, Name: "id", Type: "int", Primary: true},
 			goschema.Field{
-				StructName:     child,
-				Name:           "parent_id",
-				Type:           "int",
+				StructName: child,
+				Name:       "parent_id",
+				Type:       "int",
+				// Nullable matches the catalog fixture below.
+				Nullable:       true,
 				Foreign:        "parent(id)",
 				ForeignKeyName: fmt.Sprintf("fk_%s_parent", child),
 			})
@@ -694,9 +697,12 @@ func sharedForeignKeyName() *goschema.Database {
 	}
 	for _, host := range []string{"One", "Two"} {
 		description.Fields = append(description.Fields, goschema.Field{
-			StructName:     host,
-			Name:           "parent_id",
-			Type:           "int",
+			StructName: host,
+			Name:       "parent_id",
+			Type:       "int",
+			// Nullable matches the catalog fixture, which reports this column
+			// as NULL. See parentChildDescription.
+			Nullable:       true,
 			Foreign:        "parent(id)",
 			ForeignKeyName: "fk_shared_parent",
 		})

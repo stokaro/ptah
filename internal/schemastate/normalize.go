@@ -8,7 +8,9 @@ import (
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/platform/identifier"
+	"go.5x5.cz/ptah/internal/normalize"
 	"go.5x5.cz/ptah/internal/objectidentity"
+	"go.5x5.cz/ptah/internal/oracletype"
 )
 
 // Profile is the target a state is normalized and planned against: what the
@@ -65,6 +67,11 @@ func Normalize(state *State, profile Profile) (*State, error) {
 			key.OnDelete = defaultAction(key.OnDelete)
 			key.OnUpdate = defaultAction(key.OnUpdate)
 			normalized.ForeignKey = &key
+		}
+		if object.Table != nil {
+			table := *object.Table
+			table.Columns = normalizedColumns(table.Columns, object.Provenance, profile)
+			normalized.Table = &table
 		}
 		out.Add(normalized)
 	}
@@ -248,4 +255,43 @@ func (p Profile) MissingFacts(facts []capability.Capability) []capability.Capabi
 // every other package compares against.
 func (p Profile) NormalizedDialect() string {
 	return string(platform.NormalizeDialect(p.Dialect))
+}
+
+// normalizedColumns fills each column's folded type.
+//
+// The fold is asymmetric, and the provenance is what decides which half a
+// column gets. A DECLARED type is asked in the renderer's spelling first --
+// what would writing this declaration produce -- because Oracle has no
+// counterpart for most declared type names and SQLite stores the declared text
+// verbatim, so comparing a declared TEXT against a catalog CLOB as words
+// reports an ALTER for a column Ptah itself created. An OBSERVED type is
+// already what the target holds and needs no such mapping; putting one on it
+// would map a catalog spelling as if it were a declaration.
+//
+// This is the same rule migration/schemadiff applies, out of the same two
+// packages, rather than a second answer to the same question
+// (stokaro/ptah#1662).
+func normalizedColumns(columns []Column, provenance Provenance, profile Profile) []Column {
+	folded := make([]Column, 0, len(columns))
+	for _, column := range columns {
+		column.TypeNormalized = normalize.Type(renderedTypeSpelling(column.Type, provenance, profile.Dialect))
+		folded = append(folded, column)
+	}
+	return folded
+}
+
+// renderedTypeSpelling maps a declared type to what this target's renderer
+// would write for it, and leaves a type read out of a catalog alone.
+func renderedTypeSpelling(raw string, provenance Provenance, dialect string) string {
+	if !provenance.Declared() {
+		return raw
+	}
+	switch platform.NormalizeDialect(dialect) {
+	case platform.Oracle:
+		return oracletype.Map(raw)
+	case platform.SQLite:
+		return normalize.SQLiteColumnType(raw)
+	default:
+		return raw
+	}
 }

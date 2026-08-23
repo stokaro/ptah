@@ -193,7 +193,7 @@ seven of them as open capabilities regardless.
 
 | Capability | Ptah | CE | Pro | Difference |
 | --- | :-: | :-: | :-: | --- |
-| `--dir` defaults to `file://migrations` | ✅ | ✅ | ✅ | All eight migrate verbs registering `--dir` default it to `file://migrations`. Never a fallback: the flag, `PTAH_DIR`, `PTAH_MIGRATIONS_DIR` and `atlas.hcl` outrank it, and `atlas.sum` is still gated. |
+| `--dir` defaults to `file://migrations` | ✅ | ✅ | ✅ | Every migrate verb documenting a `--dir` default uses `file://migrations`. Never a fallback: the flag, `PTAH_DIR`, `PTAH_MIGRATIONS_DIR` and `atlas.hcl` outrank it, and `atlas.sum` is still gated. |
 | An empty migration directory is not a checksum error | ✅ | ✅ | ✅ | `ptah-compat migrate validate` and `migrate lint --latest` exit 0 on a directory holding no migration files. Native `ptah migrations validate` and `ptah migrations lint` keep their refusals. |
 | Apply pending migrations (apply/up) | ✅ | ✅ | ✅ | Dry runs read stored revisions and select only pending files. Per-migration timeouts reach every target whose server takes one; a dry run defers later checks. |
 | Atlas R-suffixed (`1R_`, `R__`) migration execution | ✅ | ✅ | ✅ | Both execute a native Atlas `R` or `<number>R` file once and record its version token, and neither reapplies it when the body changes: reapply-on-checksum is a Flyway feature. |
@@ -324,7 +324,7 @@ seven of them as open capabilities regardless.
 | MySQL and MariaDB | ✅ | ✅ | ✅ | Roles, grants, stored functions and MariaDB sequences render, read back and plan. An inline enum change plans a real MODIFY COLUMN and converges; matviews fail closed. |
 | Oracle, Snowflake, Redshift, Databricks | 🟡 | ❌ | ✅ | Oracle renders, plans, reads and converges; Snowflake, Redshift and Databricks have no endpoint anyone can measure and are out of scope with the reason (stokaro/ptah#1875). |
 | PostgreSQL 12+ (postgres, postgresql) | ✅ | ✅ | ✅ | Reference engine of the PostgreSQL family: views, matviews, functions, triggers, sequences, roles, RLS and domains all render. Presets 12-13, 14-16, 17+ from the server banner. |
-| Roles, grants, and row-level security | ✅ | ❌ | ✅ | Roles and grants on every engine that has them. Row-level security on the PostgreSQL family, SQL Server and ClickHouse; the rest have no such object. |
+| Roles, grants, and row-level security | ✅ | ❌ | ✅ | Roles and grants wherever the `role_management` key is true, which the preset matrix names. Row-level security on the PostgreSQL family, SQL Server and ClickHouse; the rest have no such object. |
 | Spanner PostgreSQL interface (spanner) | ✅ | ❌ | ✅ | Enums, matviews, functions and triggers render as named skips; sequences render with the start counter only, foreign keys render, SERIAL errors. Probed live, with a compose service and a suite. |
 | SQL Server and Azure SQL (sqlserver, mssql, tsql) | ✅ | ❌ | ✅ | Every spelling renders the same DDL. Tables, views, triggers, synonyms, sequences, roles/grants, row-level security, functions and extended properties all render, read back and plan. |
 | SQLite (sqlite, sqlite3) | ✅ | ✅ | ✅ | Column drops, type, nullability, default, generated, table-constraint and add-column changes all rebuild, inbound foreign keys included. The engine has no other object kind Ptah models. |
@@ -382,7 +382,7 @@ control — come from the registry, not from Ptah. The full workflow is on
 | Declarative reference data | ✅ | ❌ | ✅ | //ptah:schema:data rows diffed by key into a reversible data migration. Atlas lists declarative data management as a Pro feature. |
 | Digest pinning and write-once version tags | ✅ | ➖ | ❌ | Pushing to an @sha256 reference is refused; `--version` is write-once and a conflict exits 2. The reference tag, `--tag` values and latest all move. |
 | Environment-scoped SQL seed runner | ✅ | ❌ | ❌ | NNN_desc.env.sql files recorded in schema_seeds with protected-env gates. No seed verb in the CE inventory or the cited Pro list. |
-| oci:// as a `--schema-file` desired-state source | ✅ | ❌ | ✅ | Accepted by schema render, export, inspect, compare, drift, plan, apply and push, plus migrations plan and generate. All ten expose `--plain-http`, and a walk of the command tree gates the pairing. |
+| oci:// as a `--schema-file` desired-state source | ✅ | ❌ | ✅ | Accepted wherever a desired state or a migration directory is read from a registry. Every verb that resolves one exposes `--plain-http`, and a walk of the command tree gates the pairing. |
 | Referrer attachments: lint, plan, deployment reports | ✅ | ❌ | ❌ | lint `--attach`, migrations plan `--attach` and up attach reports to an exact digest, and `oci fetch` returns the payload behind a descriptor rather than the descriptor alone. |
 | Registry-backed distribution: `oci://` vs `atlas://` | ✅ | ❌ | ✅ | `atlas://` functions — publish, pull, digest-pin, run migrations directly, schemas via `--schema-file` — over any OCI registry, no account. See [OCI registry artifacts](../../operate/oci-registry/). |
 

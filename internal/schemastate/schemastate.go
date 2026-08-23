@@ -119,9 +119,18 @@ func ParseReferentialAction(value string) (ReferentialAction, error) {
 // participates in one, and the referencing and referenced types have to match
 // for the constraint to be creatable at all.
 type Column struct {
-	ID       objectidentity.ID
-	Type     string
-	Nullable bool
+	ID objectidentity.ID
+	// Type is the type the source wrote. TypeNormalized is the same type after
+	// the target's folding rules, filled by [Normalize].
+	//
+	// The pair mirrors [Action], and for the same reason (ADR 0001 invariant
+	// 2): a comparison reads the folded value, because a declared `int` and a
+	// catalog `integer` are one type, and a renderer writes the source one,
+	// because emitting the folded value would put `integer` into DDL an author
+	// spelled `int`.
+	Type           string
+	TypeNormalized string
+	Nullable       bool
 	// Unique records that this column alone is a key. PostgreSQL, MySQL and
 	// MariaDB all refuse a foreign key whose referenced columns are not, so it
 	// is a fact the plan needs rather than an attribute of the column nobody
@@ -132,11 +141,59 @@ type Column struct {
 	// conservative in the safe direction -- it blocks a foreign key the target
 	// might have accepted, rather than planning one the target refuses.
 	Unique bool
+	// Default is the default the source wrote, and HasDefault says whether it
+	// wrote one. The pair is what a `DEFAULT ''` needs: an empty string is a
+	// default, and a model with only the string cannot tell it from a column
+	// that has none (stokaro/ptah#1662).
+	Default    string
+	HasDefault bool
+	// AutoIncrement marks a column the engine fills by itself. It answers the
+	// same question a default does -- does a row without a value for this
+	// column get one -- and it answers it for the columns no DEFAULT clause
+	// covers, so a rule that only read HasDefault would block an identity
+	// column that never needed blocking.
+	AutoIncrement bool
+}
+
+// Supplied reports whether a row inserted without a value for this column still
+// gets one, from a default the source wrote or from the engine itself.
+//
+// It is the fact an ADD COLUMN NOT NULL depends on: the statement fails on an
+// existing row exactly when nothing supplies the value.
+func (c Column) Supplied() bool {
+	return c.HasDefault || c.AutoIncrement
 }
 
 // Table is a table and the columns a foreign key can reference.
 type Table struct {
 	Columns []Column
+	// EstimatedRows and RowStatsUnknown are the best evidence a plan has about
+	// whether the table holds anything, and they are a PAIR for the reason
+	// dbschema/types.DBTable carries them as one: a zero estimate from a server
+	// that keeps statistics means "empty at the last analyze", and a zero from
+	// a server that keeps none means nothing at all. Reading the number alone
+	// turns the second into the first.
+	//
+	// Only a catalog read fills them. A description says what a table should
+	// look like and nothing about what is in it, so [FromDescription] marks
+	// them unknown rather than leaving a zero that reads as an empty table
+	// (stokaro/ptah#1662).
+	EstimatedRows   int64
+	RowStatsUnknown bool
+}
+
+// Populated reports whether the table is known to hold rows, and whether that
+// answer is knowable at all.
+//
+// Three answers, not two, because the middle one is what an ADD COLUMN NOT NULL
+// turns on: a table the plan knows is empty accepts it, a table the plan knows
+// has rows refuses it, and a table with no statistics is a measurement nobody
+// has taken rather than an empty table.
+func (t Table) Populated() (populated, known bool) {
+	if t.RowStatsUnknown {
+		return false, false
+	}
+	return t.EstimatedRows > 0, true
 }
 
 // Column returns the named column, folding through the identity model so the
@@ -194,6 +251,15 @@ func (p Provenance) Validate() error {
 	return nil
 }
 
+// Declared reports whether the fact was stated by a description rather than
+// read out of a catalog.
+//
+// It is the question the column type fold turns on: a DECLARED type is asked
+// in the renderer's spelling first, because Oracle has no counterpart for most
+// declared type names and SQLite stores the declared text verbatim, and an
+// OBSERVED one is already what the target holds (stokaro/ptah#1662).
+func (p Provenance) Declared() bool { return p.Source == coverage.Declared }
+
 // Object is one schema object in the canonical state.
 //
 // Exactly one payload pointer is set, decided by ID.Kind. It is a struct with
@@ -203,6 +269,7 @@ func (p Provenance) Validate() error {
 type Object struct {
 	ID         objectidentity.ID
 	Table      *Table
+	Column     *Column
 	ForeignKey *ForeignKey
 	Policy     *Policy
 	Grant      *Grant
@@ -316,4 +383,17 @@ func (s *State) OfKind(kind objectidentity.Kind) []Object {
 // Len returns the number of objects.
 func (s *State) Len() int {
 	return len(s.objects)
+}
+
+// DescribesTable reports whether the absence of a table from a description is
+// authoritative.
+//
+// A table is covered through the SCHEMA that owns it rather than by its own
+// name. The schema record is what a reader that skipped a whole namespace can
+// produce, and the table names inside it are exactly what such a reader does
+// not know -- migration/schemadiff's comparator makes the same choice, and the
+// two must not disagree about which silence is a removal
+// (stokaro/ptah#1276, stokaro/ptah#1662).
+func DescribesTable(state *State, id objectidentity.ID) bool {
+	return state.Coverage().DescribesSchema(id.Schema.Source)
 }
