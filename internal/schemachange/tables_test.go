@@ -6,6 +6,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/goschema"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
@@ -361,6 +362,21 @@ func describedTablePartitioned(fields ...goschema.Field) *goschema.Database {
 		Type:  "RANGE",
 		Parts: []goschema.PartitionPart{{Name: "created"}},
 	}
+	return description
+}
+
+// describedVirtualTable is [describedTable] declared as a SQLite virtual table.
+func describedVirtualTable(fields ...goschema.Field) *goschema.Database {
+	description := describedTable(fields...)
+	description.Tables[0].VirtualModule = "fts5"
+	description.Tables[0].VirtualArguments = "content, tokenize='porter'"
+	return description
+}
+
+// describedTableRowTTL is [describedTable] with a CockroachDB row-level TTL.
+func describedTableRowTTL(fields ...goschema.Field) *goschema.Database {
+	description := describedTable(fields...)
+	description.Tables[0].RowTTL = &ast.RowTTLSpec{ExpireAfter: "30 days"}
 	return description
 }
 

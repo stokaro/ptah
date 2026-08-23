@@ -68,6 +68,15 @@ func mysqlProfile() schemastate.Profile {
 	}
 }
 
+// cockroachProfile is the target with row-level TTL.
+func cockroachProfile() schemastate.Profile {
+	return schemastate.Profile{
+		Dialect:      "cockroachdb",
+		Semantics:    identifier.ForDialect("cockroachdb"),
+		Capabilities: capability.CockroachDB25(),
+	}
+}
+
 // parentChildDescription is the desired schema every row starts from: a parent
 // with a key, and a child whose column references it.
 func parentChildDescription(onDelete string) *goschema.Database {

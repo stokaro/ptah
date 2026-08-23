@@ -72,11 +72,14 @@ func FromCatalog(schema *dbschematypes.DBSchema, dialect string, semantics ident
 		if existing, collided := state.Add(Object{
 			ID: id,
 			Table: &Table{
-				Columns:         columns,
-				EstimatedRows:   table.EstimatedRows,
-				RowStatsUnknown: table.RowStatsUnknown,
-				Strict:          table.Strict,
-				WithoutRowID:    table.WithoutRowID,
+				Columns:          columns,
+				EstimatedRows:    table.EstimatedRows,
+				RowStatsUnknown:  table.RowStatsUnknown,
+				Strict:           table.Strict,
+				WithoutRowID:     table.WithoutRowID,
+				RowTTL:           table.RowTTL,
+				VirtualModule:    table.VirtualModule,
+				VirtualArguments: table.VirtualArguments,
 			},
 			Provenance: Provenance{Source: coverage.Observed, Location: "information_schema.tables"},
 		}); collided {
@@ -238,6 +241,9 @@ func FromDescription(
 				AutoIncrement:     table.AutoIncrement,
 				PrimaryKeyInclude: table.PrimaryKeyInclude,
 				Partition:         partitionFromDescription(table.Partition),
+				RowTTL:            table.RowTTL,
+				VirtualModule:     table.VirtualModule,
+				VirtualArguments:  table.VirtualArguments,
 				// A description says what a table should look like and nothing
 				// about what is in it. Leaving the pair zero would claim the
 				// table is empty, which is the answer that lets an ADD COLUMN

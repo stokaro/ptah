@@ -172,6 +172,7 @@ func createTableNode(change Change) ast.Node {
 		Columns:   columns,
 		Options:   tableOptions(*table),
 		Partition: partitionNode(table.Partition),
+		RowTTL:    table.RowTTL,
 	}
 	return withCompositeKey(node, keyColumns, table.PrimaryKeyInclude, composite)
 }
@@ -223,6 +224,11 @@ func tableOptions(table schemastate.Table) map[string]string {
 		"CHARSET":        table.Charset,
 		"COLLATE":        table.Collate,
 		"AUTO_INCREMENT": table.AutoIncrement,
+		// The SQLite renderer branches on these to write CREATE VIRTUAL TABLE
+		// instead of CREATE TABLE, which is why they travel as options rather
+		// than as a separate node: the decision is the renderer's.
+		ast.SQLiteVirtualModuleOption:    table.VirtualModule,
+		ast.SQLiteVirtualArgumentsOption: table.VirtualArguments,
 	} {
 		options = withValueOption(options, key, value)
 	}

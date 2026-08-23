@@ -507,6 +507,28 @@ func TestTableStatementsMatchTheExistingPlanner(t *testing.T) {
 			catalog: &dbschematypes.DBSchema{},
 		},
 		{
+			// A SQLite virtual table, which is not a CREATE TABLE at all. A
+			// planner that ignored the module built an ordinary table of the
+			// same name where an FTS5 index was declared -- a different object
+			// that accepts different SQL, created without failing.
+			name: "creating a virtual table, on SQLite",
+			description: describedVirtualTable(goschema.Field{
+				StructName: "Widget", Name: "id", Type: "integer", Primary: true,
+			}),
+			catalog: &dbschematypes.DBSchema{},
+			profile: sqliteProfilePointer(),
+		},
+		{
+			// A row-level TTL, which is what makes rows disappear on schedule.
+			// A table created without it keeps them forever.
+			name: "creating a table with a row TTL, on CockroachDB",
+			description: describedTableRowTTL(goschema.Field{
+				StructName: "Widget", Name: "id", Type: "int", Primary: true,
+			}),
+			catalog: &dbschematypes.DBSchema{},
+			profile: cockroachProfilePointer(),
+		},
+		{
 			// A composite key, which the column syntax cannot express: PRIMARY
 			// KEY on two columns declares two keys rather than one over both,
 			// so it has to become a table-level constraint.
@@ -693,5 +715,11 @@ func sqliteProfilePointer() *schemastate.Profile {
 // mysqlProfilePointer is [mysqlProfile] as a row can carry it.
 func mysqlProfilePointer() *schemastate.Profile {
 	profile := mysqlProfile()
+	return &profile
+}
+
+// cockroachProfilePointer is [cockroachProfile] as a row can carry it.
+func cockroachProfilePointer() *schemastate.Profile {
+	profile := cockroachProfile()
 	return &profile
 }
