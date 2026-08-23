@@ -27,21 +27,36 @@ func TestAFormatThatCannotExpressAKindSaysSoAndSaysWhy(t *testing.T) {
 		want     []coverage.Object
 	}{
 		{
+			// HCL has the synonym and extended_property blocks
+			// (stokaro/ptah#1031), so it records neither -- and it still cannot
+			// name a virtual table.
 			name:     "HCL cannot name a virtual table",
 			file:     "schema.hcl",
 			contents: "schema \"main\" {\n}\n",
-			want: unsupportedRecords(
-				coverage.ExtendedProperty, coverage.Synonym, coverage.VirtualTable),
+			want:     unsupportedRecords(coverage.VirtualTable),
 		},
 		{
 			// The control on the virtual table. A `.sql` document CAN name one,
 			// so it carries no record for that kind -- without this row a
 			// loader that recorded the limit for every format would pass the
-			// row above. The two kinds NO format expresses stay recorded.
+			// row above. It is also the control on the two SQL Server kinds
+			// going the other way: `.sql` still expresses neither, so a loader
+			// that dropped the record along with HCL's would fail here.
 			name:     "SQL can",
 			file:     "schema.sql",
 			contents: "CREATE TABLE users (id INTEGER PRIMARY KEY);\n",
 			want:     unsupportedRecords(coverage.ExtendedProperty, coverage.Synonym),
+		},
+		{
+			// YAML expresses the fewest families of the three, and the row is
+			// what keeps the HCL narrowing from being read as "the loader no
+			// longer records these kinds anywhere".
+			name:     "YAML cannot name six families",
+			file:     "schema.yaml",
+			contents: "tables:\n  users:\n    fields:\n      id:\n        type: INTEGER\n",
+			want: unsupportedRecords(
+				coverage.Composite, coverage.Domain, coverage.ExtendedProperty,
+				coverage.Range, coverage.Sequence, coverage.Synonym, coverage.VirtualTable),
 		},
 	}
 
