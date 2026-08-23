@@ -353,6 +353,17 @@ func describedTableWithDomainIn(schema, domain string, fields ...goschema.Field)
 	return description
 }
 
+// describedTablePartitioned is [describedTable] partitioned by range over its
+// second column.
+func describedTablePartitioned(fields ...goschema.Field) *goschema.Database {
+	description := describedTable(fields...)
+	description.Tables[0].Partition = &goschema.PartitionSpec{
+		Type:  "RANGE",
+		Parts: []goschema.PartitionPart{{Name: "created"}},
+	}
+	return description
+}
+
 // describedTableWithKey is [describedTable] with a table-level primary key,
 // which is how the authoring model spells a COMPOSITE one: the field flag
 // declares a single-column key and cannot express a key over two.

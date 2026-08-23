@@ -168,9 +168,10 @@ func createTableNode(change Change) ast.Node {
 		columns = append(columns, columnNode(column, composite))
 	}
 	node := &ast.CreateTableNode{
-		Name:    tableName(change.ID),
-		Columns: columns,
-		Options: tableOptions(*table),
+		Name:      tableName(change.ID),
+		Columns:   columns,
+		Options:   tableOptions(*table),
+		Partition: partitionNode(table.Partition),
 	}
 	return withCompositeKey(node, keyColumns, table.PrimaryKeyInclude, composite)
 }
@@ -251,6 +252,22 @@ func withOption(options map[string]string, key string, set bool) map[string]stri
 			return options
 		},
 	}[set]()
+}
+
+// partitionNode renders a table's partitioning.
+//
+// A CREATE that dropped it builds an ordinary table instead, which accepts
+// every row the partitioned one would and distributes none of them -- so the
+// loss is invisible until the table is large enough for it to matter.
+func partitionNode(partition *schemastate.Partition) *ast.PartitionSpec {
+	if partition == nil {
+		return nil
+	}
+	parts := make([]ast.PartitionPart, 0, len(partition.Parts))
+	for _, part := range partition.Parts {
+		parts = append(parts, ast.PartitionPart{Name: part.Name, Expr: part.Expr})
+	}
+	return &ast.PartitionSpec{Type: partition.Type, Parts: parts}
 }
 
 // columnNodes renders one column's change against a table that already exists.
