@@ -141,12 +141,51 @@ type Column struct {
 	// conservative in the safe direction -- it blocks a foreign key the target
 	// might have accepted, rather than planning one the target refuses.
 	Unique bool
+	// PrimaryKey marks a column the table's primary key covers.
+	//
+	// It is separate from Unique, which answers a different question: Unique is
+	// "is this column a key on its own", the fact a foreign key's reference
+	// depends on, and a primary key is one way to be that but not the only one.
+	// Collapsing them loses the half a CREATE TABLE has to write
+	// (stokaro/ptah#1662).
+	PrimaryKey bool
 	// Default is the default the source wrote, and HasDefault says whether it
 	// wrote one. The pair is what a `DEFAULT ''` needs: an empty string is a
 	// default, and a model with only the string cannot tell it from a column
 	// that has none (stokaro/ptah#1662).
 	Default    string
 	HasDefault bool
+	// DefaultIsExpression says which of the two kinds of default it is. A
+	// literal is quoted when it is written back and an expression is not, so a
+	// model carrying only the string renders `DEFAULT 'now()'` for a column
+	// whose default is a function call.
+	DefaultIsExpression bool
+	// GeneratedExpression and GeneratedKind are what a generated column
+	// computes and whether the result is stored. Both sources report them, so
+	// unlike Check they are compared as well as rendered: a column that stops
+	// being generated, or starts, is a change either side can ask for.
+	GeneratedExpression string
+	GeneratedKind       string
+	// IdentityGeneration is an identity column's generation mode -- ALWAYS or
+	// BY DEFAULT -- empty for a column that is not one.
+	IdentityGeneration string
+	// CheckName is the constraint name a column-level CHECK carries, empty when
+	// the source let the server derive one. It travels with Check for the
+	// reason Check does: a CREATE TABLE that dropped it would name the
+	// constraint something the author cannot predict, and every later
+	// diagnostic about it would use that name.
+	CheckName string
+	// Check is the column-level CHECK expression the source wrote, empty for a
+	// column with none.
+	//
+	// It is carried for RENDERING and is not compared. A catalog reports a
+	// column-level check as a table-level constraint row, so comparing this
+	// against a catalog read would report a modification for every column whose
+	// check the server merely spells differently; deciding what a check
+	// constraint IS belongs to the constraint family (stokaro/ptah#1663). A
+	// CREATE TABLE that dropped it would silently create a table without the
+	// guarantee its author declared, which is why it is carried at all.
+	Check string
 	// AutoIncrement marks a column the engine fills by itself. It answers the
 	// same question a default does -- does a row without a value for this
 	// column get one -- and it answers it for the columns no DEFAULT clause
@@ -180,6 +219,17 @@ type Table struct {
 	// (stokaro/ptah#1662).
 	EstimatedRows   int64
 	RowStatsUnknown bool
+	// Strict and WithoutRowID are the SQLite table options. They are typed
+	// facts here rather than the untyped option map the AST carries: a map is
+	// the RENDERER's contract, and a model that held one would make every
+	// consumer parse a string to ask a yes-or-no question.
+	//
+	// They are carried for rendering and not compared. Changing either on an
+	// existing table needs a rebuild -- SQLite has no ALTER for them -- and
+	// that is a whole-table operation this family does not plan
+	// (stokaro/ptah#1662).
+	Strict       bool
+	WithoutRowID bool
 }
 
 // Populated reports whether the table is known to hold rows, and whether that
@@ -260,6 +310,45 @@ func (p Provenance) Validate() error {
 // OBSERVED one is already what the target holds (stokaro/ptah#1662).
 func (p Provenance) Declared() bool { return p.Source == coverage.Declared }
 
+// UniqueKey is a uniqueness guarantee over one or more columns.
+//
+// A UNIQUE constraint, a primary key and a unique index all answer the one
+// question a foreign key asks -- is this column list a key -- and every source
+// spells at least two of them differently. Keeping them as separate shapes past
+// the adapter means asking that question once per shape, and the prototype
+// asked it of single columns only: a column unique as part of a COMPOSITE
+// constraint read as not unique, which blocked a foreign key the target
+// accepts (stokaro/ptah#1662).
+type UniqueKey struct {
+	// Columns is the column list the guarantee covers, in the order the source
+	// wrote it. Comparison is order-insensitive -- a key on (a, b) is the same
+	// guarantee as one on (b, a) -- and the order is kept because a renderer
+	// writing the constraint back has to write one.
+	Columns []string
+}
+
+// Covers reports whether this key guarantees uniqueness for exactly the given
+// column list.
+//
+// Exactly, not "contains". A unique constraint on (a, b) makes the PAIR unique
+// and says nothing about either column alone, so a foreign key referencing a
+// alone is not made legal by it -- and every engine Ptah targets refuses one.
+func (u UniqueKey) Covers(columns []string, fold func(string) string) bool {
+	return slices.Equal(foldedSet(u.Columns, fold), foldedSet(columns, fold))
+}
+
+// foldedSet is a column list in its comparison form: folded by the target's
+// rules and sorted, because a key on (a, b) is the same guarantee as one on
+// (b, a) and no engine distinguishes them.
+func foldedSet(columns []string, fold func(string) string) []string {
+	folded := make([]string, 0, len(columns))
+	for _, column := range columns {
+		folded = append(folded, fold(column))
+	}
+	slices.Sort(folded)
+	return folded
+}
+
 // Object is one schema object in the canonical state.
 //
 // Exactly one payload pointer is set, decided by ID.Kind. It is a struct with
@@ -271,6 +360,7 @@ type Object struct {
 	Table      *Table
 	Column     *Column
 	ForeignKey *ForeignKey
+	UniqueKey  *UniqueKey
 	Policy     *Policy
 	Grant      *Grant
 	Provenance Provenance

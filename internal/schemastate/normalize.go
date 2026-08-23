@@ -214,24 +214,42 @@ func (p Profile) UniqueReferenceRequired() bool {
 	return p.Supports(capability.ForeignKeysRequireUniqueReference)
 }
 
-// ReferencedColumnsAreUnique reports whether every column a foreign key
-// references is known to be a key on its own.
+// ReferencedColumnsAreUnique reports whether a foreign key's referenced column
+// list is a key of the table it points at.
 //
-// An unknown answer is a false: the plan cannot see a composite constraint that
-// might make the reference legal, and blocking a foreign key the target might
-// have accepted is the safe direction. Planning one the target refuses fails at
-// apply time, on the operator's database.
-func ReferencedColumnsAreUnique(referenced Object, key ForeignKey) bool {
-	if referenced.Table == nil {
+// The question is about the LIST and not about each column, which is the whole
+// difference from what the prototype asked. Every engine Ptah targets accepts a
+// foreign key against (a, b) when a unique constraint covers exactly (a, b),
+// and refuses one against a alone when the only guarantee is that pair -- so a
+// rule reading each column's own flag answered no to the first and yes to the
+// second, wrong in both directions (stokaro/ptah#1662).
+//
+// The guarantees are objects in the state rather than flags on the columns,
+// because a composite one has no column to sit on. [UniqueKey] is what a UNIQUE
+// constraint, a primary key, a unique index and a column's own flag all become,
+// so this asks one question of one shape.
+//
+// An unknown answer is still a false: a state that carries no guarantee for the
+// reference blocks a foreign key the target might have accepted, and that is
+// the safe direction. Planning one the target refuses fails at apply time, on
+// the operator's database.
+func ReferencedColumnsAreUnique(state *State, referenced Object, key ForeignKey) bool {
+	if referenced.Table == nil || len(key.ReferencedColumns) == 0 {
 		return false
 	}
-	for _, name := range key.ReferencedColumns {
-		column, ok := referenced.Table.Column(columnOf(referenced, name))
-		if !ok || !column.Unique {
-			return false
+	fold := func(column string) string { return normalizedColumn(referenced, column) }
+	for _, object := range state.OfKind(objectidentity.KindConstraint) {
+		if object.UniqueKey == nil {
+			continue
+		}
+		if !sameTable(object.ID, referenced.ID) {
+			continue
+		}
+		if object.UniqueKey.Covers(key.ReferencedColumns, fold) {
+			return true
 		}
 	}
-	return true
+	return false
 }
 
 // Supports reports whether the profile's target has a fact.
@@ -294,4 +312,12 @@ func renderedTypeSpelling(raw string, provenance Provenance, dialect string) str
 	default:
 		return raw
 	}
+}
+
+// sameTable reports whether a constraint identity belongs to a table identity.
+// Both components are compared in their normalized form, which is what makes a
+// catalog's spelling and an author's resolve to one table.
+func sameTable(constraint, table objectidentity.ID) bool {
+	return constraint.Parent.Normalized == table.Name.Normalized &&
+		constraint.Schema.Normalized == table.Schema.Normalized
 }
