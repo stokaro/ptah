@@ -305,40 +305,39 @@ func (p *parser) parseBody(body *hclsyntax.Body) error {
 	return nil
 }
 
+// objectBlockParsers is the one-to-one half of the top-level dispatch: a block
+// type Ptah models, and the method that reads it.
+//
+// It is a table rather than a run of switch arms so that the arms which are NOT
+// one-to-one keep their explanations legible. `env`, `variable` and `locals`
+// each carry a measurement of the pinned Atlas community binary, and eighteen
+// two-line arms above them buried it.
+var objectBlockParsers = map[string]func(*parser, *hclsyntax.Block) error{
+	"schema":            (*parser).parseSchema,
+	"enum":              (*parser).parseEnum,
+	"sequence":          (*parser).parseSequence,
+	"domain":            (*parser).parseDomain,
+	"composite":         (*parser).parseComposite,
+	"range":             (*parser).parseRange,
+	"synonym":           (*parser).parseSynonym,
+	"extended_property": (*parser).parseExtendedProperty,
+	"table":             (*parser).parseTable,
+	"extension":         (*parser).parseExtension,
+	"function":          (*parser).parseFunction,
+	"view":              (*parser).parseView,
+	"materialized":      (*parser).parseMaterializedView,
+	"trigger":           (*parser).parseTrigger,
+	"policy":            (*parser).parsePolicy,
+	"role":              (*parser).parseRole,
+	"permission":        (*parser).parsePermission,
+	"data":              (*parser).parseManagedData,
+}
+
 func (p *parser) parseTopLevelBlock(block *hclsyntax.Block) error {
+	if parse, modeled := objectBlockParsers[block.Type]; modeled {
+		return parse(p, block)
+	}
 	switch block.Type {
-	case "schema":
-		return p.parseSchema(block)
-	case "enum":
-		return p.parseEnum(block)
-	case "sequence":
-		return p.parseSequence(block)
-	case "domain":
-		return p.parseDomain(block)
-	case "composite":
-		return p.parseComposite(block)
-	case "range":
-		return p.parseRange(block)
-	case "table":
-		return p.parseTable(block)
-	case "extension":
-		return p.parseExtension(block)
-	case "function":
-		return p.parseFunction(block)
-	case "view":
-		return p.parseView(block)
-	case "materialized":
-		return p.parseMaterializedView(block)
-	case "trigger":
-		return p.parseTrigger(block)
-	case "policy":
-		return p.parsePolicy(block)
-	case "role":
-		return p.parseRole(block)
-	case "permission":
-		return p.parsePermission(block)
-	case "data":
-		return p.parseManagedData(block)
 	case "env":
 		// Parse classifies a file carrying a top-level env block before the body
 		// walk begins, so this arm is a guard rather than the usual path. It

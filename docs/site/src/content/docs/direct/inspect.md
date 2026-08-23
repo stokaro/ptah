@@ -177,14 +177,14 @@ out, says so in the document; see
 [The document says what it does not describe](../../atlas/schema-commands/#the-document-says-what-it-does-not-describe).
 
 What HCL has no syntax for at all is a different question, and it is answered
-when the document is read rather than when it is written. A SQLite virtual
-table, a SQL Server synonym and a SQL Server extended property have no block, so
-a document written in this format could not have named one — and reading its
-silence as intent would make `ptah schema inspect > out.hcl` followed by
-`ptah schema apply --to file://out.hcl` drop them, through Ptah's own output.
-Every loader records those limits for the format it read, so the comparison
-withholds the removal. A Go schema **can** declare a synonym and an extended
-property, so its silence about one still removes it.
+when the document is read rather than when it is written. A SQLite virtual table
+has no block, so a document written in this format could not have named one —
+and reading its silence as intent would make `ptah schema inspect > out.hcl`
+followed by `ptah schema apply --to file://out.hcl` drop it, through Ptah's own
+output. Every loader records those limits for the format it read, so the
+comparison withholds the removal. HCL **does** have a `synonym` and an
+`extended_property` block, as a Go schema does, so silence about one of those in
+this format still removes it. YAML has a key for neither.
 
 Both commands write a `permission` block by the same three rules: a schema is
 declared whenever anything references one, a grantee is a `role.<name>`
