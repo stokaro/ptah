@@ -63,8 +63,16 @@ func oraclePlan() plan {
 			"CREATE TYPE ect AS ENUM ('a','b')",
 			"CREATE TABLE ect_t (c ect)",
 		),
+		// AS OBJECT rather than PostgreSQL's AS, because the plan measures the
+		// statement Ptah RENDERS and that is the one it renders. The
+		// distinction is not cosmetic and this pair is what shows it: the
+		// PostgreSQL spelling is ACCEPTED here and leaves an INCOMPLETE type
+		// with no attributes, so the first statement passed and the second
+		// answered that the column's type does not exist -- which is the plan
+		// correctly reporting that Ptah could not have used it
+		// (stokaro/ptah#1920).
 		all(capability.CompositeTypes, nil,
-			"CREATE TYPE cpt AS (a NUMBER(10), b VARCHAR2(10))",
+			"CREATE TYPE cpt AS OBJECT (a NUMBER(10), b VARCHAR2(10))",
 			"CREATE TABLE cpt_t (c cpt)",
 		),
 		all(capability.RangeTypes, nil,
