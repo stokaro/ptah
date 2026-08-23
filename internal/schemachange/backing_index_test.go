@@ -8,6 +8,7 @@ import (
 	"go.5x5.cz/ptah/core/goschema"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/schemachange"
+	"go.5x5.cz/ptah/internal/schemastate"
 )
 
 // PostgreSQL, MySQL and MariaDB enforce a UNIQUE constraint with an index of the
@@ -113,10 +114,15 @@ func widgetWithoutTheIndex() *dbschematypes.DBSchema {
 	)
 }
 
-// TestAPrimaryKeysBackingIndexIsNotDropped is the same fact for the other
-// constraint kind that owns an index, and it is the one the first version of
-// this suppression got wrong: it asked whether the constraint was a standalone
-// UNIQUE, so `widget_pkey` stayed unsuppressed and the plan dropped it.
+// TestAPrimaryKeysBackingIndexIsNotDropped is the same fact for the index no
+// statement addresses at all.
+//
+// A PRIMARY KEY's index is the constraint: PostgreSQL reports `widget_pkey` in
+// pg_index beside the constraint of that name, and there is no DROP INDEX the
+// server will run for it. It is answered a step earlier than the handover below,
+// on the catalog ROW rather than between the two states, because unlike a UNIQUE
+// constraint's index there is no spelling of the description that could claim
+// it.
 func TestAPrimaryKeysBackingIndexIsNotDropped(t *testing.T) {
 	c := qt.New(t)
 	description := describedTableWithKey([]string{"id"},
@@ -232,4 +238,164 @@ func backingIdentityFixture(
 		StructName: "Other", Name: "code", Type: "text", Nullable: true,
 	})
 	return description, catalog
+}
+
+// TestAForeignKeysBackingIndexIsTheServersOnMySQL is the same fact for the
+// index nobody asked for.
+//
+// MySQL and MariaDB create an index for every FOREIGN KEY, named after the
+// constraint, so a schema written the ordinary way -- `CONSTRAINT ... FOREIGN
+// KEY` and no `KEY` clause -- reads back with an index it never declared. The
+// other targets create none, so an index that shares a foreign key's name there
+// is an index somebody wrote, and dropping it is the whole point.
+func TestAForeignKeysBackingIndexIsTheServersOnMySQL(t *testing.T) {
+	tests := []struct {
+		name    string
+		profile schemastate.Profile
+		schema  string
+		dropped bool
+	}{
+		{
+			name:    "MySQL creates it",
+			profile: mysqlProfile(),
+			dropped: false,
+		},
+		{
+			name:    "MariaDB creates it",
+			profile: mariadbProfile(),
+			dropped: false,
+		},
+		{
+			name:    "PostgreSQL creates none",
+			profile: postgresProfile(),
+			schema:  "public",
+			dropped: true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			description, catalog := foreignKeyBackingFixture(test.schema)
+
+			changes := changesForProfile(c, description, catalog, test.profile)
+
+			c.Assert(changes, qt.HasLen, droppedCount(test.dropped))
+		})
+	}
+}
+
+// TestSQLiteNamesTheBackingIndexItself pins the row no statement addresses.
+//
+// `CREATE TABLE t (a TEXT, CONSTRAINT uq UNIQUE(a))` leaves
+// `sqlite_autoindex_t_1` in sqlite_master, under a name the schema never chose
+// and DROP INDEX will not take. The ordinary index beside it in the same read is
+// the control: it is dropped, so the row is not passing because the whole read
+// was ignored.
+func TestSQLiteNamesTheBackingIndexItself(t *testing.T) {
+	c := qt.New(t)
+	catalog := catalogTableInSchema("main",
+		dbschematypes.DBColumn{Name: "id", DataType: "integer", IsNullable: "NO", IsPrimaryKey: true},
+		dbschematypes.DBColumn{Name: "code", DataType: "text", IsNullable: "YES"},
+	)
+	catalog.Indexes = []dbschematypes.DBIndex{
+		{
+			Name: "sqlite_autoindex_widget_1", TableName: "widget", Schema: "main",
+			Columns: []string{"code"}, IsUnique: true,
+		},
+		{
+			Name: "idx_widget_code", TableName: "widget", Schema: "main",
+			Columns: []string{"code"},
+		},
+	}
+
+	changes := changesForProfile(c, widgetDeclaringNothing(), catalog, sqliteProfile())
+
+	c.Assert(changes, qt.HasLen, 1)
+	c.Assert(changes[0].Operation, qt.Equals, schemachange.Remove)
+	c.Assert(changes[0].ID.Name.Source, qt.Equals, "idx_widget_code")
+}
+
+// TestSQLServerKeepsTheConstraintAndTheIndexApart is the exclusion's control.
+//
+// A UNIQUE constraint and a unique index are two objects there rather than one
+// reported twice, so there is nothing to hand over: an index the description
+// stopped declaring is dropped, and the constraint beside it is not what keeps
+// it alive.
+func TestSQLServerKeepsTheConstraintAndTheIndexApart(t *testing.T) {
+	c := qt.New(t)
+
+	// The read has to agree with the PROFILE about the default schema, which is
+	// "dbo" here rather than PostgreSQL's "public" (stokaro/ptah#1662).
+	catalog := catalogTableInSchema("dbo",
+		dbschematypes.DBColumn{Name: "id", DataType: "integer", IsNullable: "NO", IsPrimaryKey: true},
+		dbschematypes.DBColumn{Name: "code", DataType: "text", IsNullable: "YES"},
+	)
+	catalog.Constraints = []dbschematypes.DBConstraint{{
+		Name: "uq_widget_code", TableName: "widget", Schema: "dbo",
+		Type: "UNIQUE", ColumnNames: []string{"code"},
+	}}
+	catalog.Indexes = []dbschematypes.DBIndex{{
+		Name: "uq_widget_code", TableName: "widget", Schema: "dbo",
+		Columns: []string{"code"}, IsUnique: true,
+	}}
+
+	changes := changesForProfile(c,
+		widgetDeclaringUniqueConstraint(), catalog, sqlserverProfile())
+
+	c.Assert(changes, qt.HasLen, 1)
+	c.Assert(string(changes[0].ID.Kind), qt.Equals, "index")
+	c.Assert(changes[0].Operation, qt.Equals, schemachange.Remove)
+}
+
+// foreignKeyBackingFixture is a child whose column references a parent through a
+// named FOREIGN KEY, read back with an index of the constraint's name that the
+// description never mentions.
+func foreignKeyBackingFixture(schema string) (*goschema.Database, *dbschematypes.DBSchema) {
+	description := &goschema.Database{
+		Tables: []goschema.Table{
+			{StructName: "Parent", Name: "parent", Schema: schema},
+			{StructName: "Widget", Name: "widget", Schema: schema},
+		},
+		Fields: []goschema.Field{
+			{StructName: "Parent", Name: "id", Type: "int", Primary: true},
+			{StructName: "Widget", Name: "id", Type: "int", Primary: true},
+			{
+				StructName: "Widget", Name: "parent_id", Type: "int", Nullable: true,
+				Foreign: "parent(id)", ForeignKeyName: "fk_widget_parent",
+			},
+		},
+	}
+	catalog := &dbschematypes.DBSchema{
+		Tables: []dbschematypes.DBTable{
+			{Name: "parent", Schema: schema, Columns: []dbschematypes.DBColumn{
+				{Name: "id", DataType: "int", IsNullable: "NO", IsPrimaryKey: true},
+			}},
+			{Name: "widget", Schema: schema, Columns: []dbschematypes.DBColumn{
+				{Name: "id", DataType: "int", IsNullable: "NO", IsPrimaryKey: true},
+				{Name: "parent_id", DataType: "int", IsNullable: "YES"},
+			}},
+		},
+		Constraints: []dbschematypes.DBConstraint{{
+			Name: "fk_widget_parent", TableName: "widget", Schema: schema,
+			Type: "FOREIGN KEY", ColumnName: "parent_id",
+			ForeignTable: pointerTo("parent"), ForeignColumn: pointerTo("id"),
+		}},
+		Indexes: []dbschematypes.DBIndex{{
+			Name: "fk_widget_parent", TableName: "widget", Schema: schema,
+			Columns: []string{"parent_id"},
+		}},
+	}
+	return description, catalog
+}
+
+func droppedCount(dropped bool) int {
+	if dropped {
+		return 1
+	}
+	return 0
+}
+
+func pointerTo(value string) *string {
+	return &value
 }

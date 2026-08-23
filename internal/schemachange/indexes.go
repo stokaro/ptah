@@ -5,6 +5,7 @@ import (
 	"slices"
 
 	"go.5x5.cz/ptah/core/ast"
+	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/internal/objectidentity"
 	"go.5x5.cz/ptah/internal/schemastate"
 )
@@ -44,7 +45,7 @@ func compareIndexes(current, desired *schemastate.State, profile schemastate.Pro
 		if _, wanted := declared[object.ID.Key()]; wanted {
 			continue
 		}
-		if backsAConstraint(current, object) {
+		if backsAConstraint(current, object, profile.Dialect) {
 			continue
 		}
 		changes = append(changes, decideIndexRemoval(object, desired, profile, current))
@@ -60,30 +61,32 @@ func compareIndexes(current, desired *schemastate.State, profile schemastate.Pro
 // reports that ONE object twice: once in the index catalog and once in the
 // constraint catalog. On MySQL and MariaDB there is not even a separate notion
 // to report -- `ADD CONSTRAINT uq UNIQUE (email)` and `CREATE UNIQUE INDEX uq`
-// produce the same row.
+// produce the same row. MySQL and MariaDB create one for every FOREIGN KEY as
+// well, named after the constraint, which a schema written the ordinary way
+// never asked for and never mentions.
 //
-// Reading both as objects made a desired state that declares the CONSTRAINT
-// look like one that dropped the INDEX, and the plan came out as
+// Reading either as an object of its own made a desired state that declares the
+// CONSTRAINT look like one that dropped the INDEX, and the plan came out as
 //
 //	DROP INDEX IF EXISTS "public"."uq_widget_code"
 //
 // which drops the constraint with it. Measured against the shipping comparator,
-// which plans nothing for that pair (stokaro/ptah#1663, stokaro/ptah#1286).
-//
-// A PRIMARY KEY is enforced the same way and reported the same twice, so the
-// question is not "is this a standalone UNIQUE" but "does any constraint this
-// read reported carry this name on this table". Asking the narrower question
-// left `widget_pkey` unsuppressed and planned a DROP INDEX for it -- measured,
-// against a shipping comparator that plans nothing.
+// which plans nothing for either pair (stokaro/ptah#1663, stokaro/ptah#1286,
+// stokaro/ptah#1245, stokaro/ptah#1258).
 //
 // The question is asked of the CURRENT state only. An index the desired state
 // declares is handled by the loop above -- it is in `declared`, so it never
-// reaches here -- which is what keeps a schema that really does want a standalone
-// unique index from having its index suppressed by the constraint the server
-// created for it.
-func backsAConstraint(current *schemastate.State, index schemastate.Object) bool {
+// reaches here -- which is what keeps a schema that really does want a
+// standalone unique index from having its index suppressed by the constraint
+// the server created for it. **Which representation wins is decided by the
+// description, not by the dialect.**
+//
+// An index no statement addresses at all -- a PRIMARY KEY's, and the one SQLite
+// names for itself -- is not a state object in the first place; see
+// [go.5x5.cz/ptah/internal/schemastate.FromCatalog].
+func backsAConstraint(current *schemastate.State, index schemastate.Object, dialect string) bool {
 	for _, object := range current.OfKind(objectidentity.KindConstraint) {
-		if object.UniqueKey == nil {
+		if !ownsAnIndex(object, dialect) {
 			continue
 		}
 		if sameOwnedName(object.ID, index.ID, index.Index.Table) {
@@ -91,6 +94,25 @@ func backsAConstraint(current *schemastate.State, index schemastate.Object) bool
 		}
 	}
 	return false
+}
+
+// ownsAnIndex reports whether a constraint of this kind is enforced with an
+// index of its own name on this target.
+//
+// SQL Server keeps a UNIQUE constraint and a unique index as separate objects,
+// so there is nothing to hand over there. Only MySQL and MariaDB create an
+// index for a FOREIGN KEY; on the other targets an index sharing a foreign
+// key's name is an index somebody wrote.
+func ownsAnIndex(constraint schemastate.Object, dialect string) bool {
+	switch {
+	case constraint.UniqueKey != nil && constraint.UniqueKey.Standalone:
+		return platform.NormalizeDialect(dialect) != platform.SQLServer
+	case constraint.ForeignKey != nil:
+		normalized := platform.NormalizeDialect(dialect)
+		return normalized == platform.MySQL || normalized == platform.MariaDB
+	default:
+		return false
+	}
 }
 
 // sameOwnedName reports whether a constraint and an index name one object: the

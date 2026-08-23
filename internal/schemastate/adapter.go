@@ -6,6 +6,7 @@ import (
 
 	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/normalize"
@@ -152,6 +153,9 @@ func FromCatalog(schema *dbschematypes.DBSchema, dialect string, semantics ident
 		}
 	}
 	for _, index := range schema.Indexes {
+		if notAddressableAsAnIndex(index, dialect) {
+			continue
+		}
 		if err := addIndex(state, builder,
 			index.Schema, index.TableName, index.Name,
 			&Index{
@@ -747,6 +751,32 @@ func addIndex(
 		return fmt.Errorf("two indexes carry one identity: %s and %s", existing.ID, id)
 	}
 	return nil
+}
+
+// notAddressableAsAnIndex reports whether a catalog index row names an object
+// no plan may create or drop AS an index, whatever either side says about it.
+//
+// A PRIMARY KEY's index is the constraint. PostgreSQL reports `widget_pkey` in
+// pg_index beside the constraint of that name, and Oracle reports one for every
+// PRIMARY KEY and UNIQUE constraint it enforces. SQLite names a UNIQUE
+// constraint's index itself -- `CREATE TABLE t (a TEXT, CONSTRAINT uq UNIQUE(a))`
+// leaves `sqlite_autoindex_t_1` in sqlite_master -- and there is no statement
+// that addresses it either.
+//
+// Reading such a row as an object of its own made a description that declares no
+// index look like one that dropped it, and the plan came out as a DROP INDEX for
+// a name the server will not let go of (stokaro/ptah#1663, stokaro/ptah#1245).
+//
+// The question is asked of the ROW rather than of the two states, which is what
+// separates it from [go.5x5.cz/ptah/internal/schemachange] suppressing a
+// constraint's backing index: that one yields to a description that declares the
+// object as an index, because which representation wins is the description's to
+// decide. Here there is nothing to yield to -- the object is not addressable as
+// an index for either side.
+func notAddressableAsAnIndex(index dbschematypes.DBIndex, dialect string) bool {
+	return index.IsPrimary ||
+		(platform.NormalizeDialect(dialect) == platform.SQLite &&
+			strings.HasPrefix(index.Name, "sqlite_autoindex_"))
 }
 
 // addTableConstraint records one clause constraint under the identity its owning
