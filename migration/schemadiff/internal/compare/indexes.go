@@ -211,18 +211,13 @@ func IndexesWithSemantics(
 	semantics identifier.Semantics,
 ) {
 	genIndexes, ambiguousGenerated := collectGeneratedIndexes(generated, semantics)
-	fkBackedIndexes, uniqueConstraintIndexes := constraintBackedIndexIdentities(
-		database,
-		dialect,
-		semantics,
-	)
+	owned := constraintBackedIndexIdentities(database, dialect, semantics)
 	dbIndexes := collectDatabaseIndexes(
 		database,
 		dialect,
 		semantics,
 		genIndexes,
-		fkBackedIndexes,
-		uniqueConstraintIndexes,
+		owned,
 	)
 	appendIndexDifferences(
 		diff,
@@ -274,19 +269,30 @@ func collectGeneratedIndexes(
 	return indexes, ambiguous
 }
 
+// constraintOwnedIndexes is the database index identity of every constraint
+// that owns one, kept apart by the kind that owns it because the three are not
+// interchangeable: only the UNIQUE set also decides how a removal is SPELLED,
+// through [uniqueConstraintEnforcesTheIndex] and the `unique_protections_removed`
+// finding it feeds.
+type constraintOwnedIndexes struct {
+	foreignKeys map[difftypes.IndexRef]struct{}
+	unique      map[difftypes.IndexRef]struct{}
+	exclusions  map[difftypes.IndexRef]struct{}
+}
+
 func constraintBackedIndexIdentities(
 	database *types.DBSchema,
 	dialect string,
 	semantics identifier.Semantics,
-) (
-	foreignKeys,
-	uniqueConstraints map[difftypes.IndexRef]struct{},
-) {
+) constraintOwnedIndexes {
 	// MySQL/MariaDB transparently create a backing index for every FOREIGN KEY
 	// named after the constraint. Structured identities ensure the filter only
 	// suppresses the backing index on its owning table.
-	foreignKeys = make(map[difftypes.IndexRef]struct{}, len(database.Constraints))
-	uniqueConstraints = make(map[difftypes.IndexRef]struct{}, len(database.Constraints))
+	owned := constraintOwnedIndexes{
+		foreignKeys: make(map[difftypes.IndexRef]struct{}, len(database.Constraints)),
+		unique:      make(map[difftypes.IndexRef]struct{}, len(database.Constraints)),
+		exclusions:  make(map[difftypes.IndexRef]struct{}, len(database.Constraints)),
+	}
 	normalizedDialect := platform.NormalizeDialect(dialect)
 	for _, constraint := range database.Constraints {
 		ref := indexscope.IdentityKeyWithSemantics(semantics, difftypes.IndexRef{
@@ -297,15 +303,17 @@ func constraintBackedIndexIdentities(
 		case "FOREIGN KEY":
 			if normalizedDialect == platform.MySQL ||
 				normalizedDialect == platform.MariaDB {
-				foreignKeys[ref] = struct{}{}
+				owned.foreignKeys[ref] = struct{}{}
 			}
 		case "UNIQUE":
 			if normalizedDialect != platform.SQLServer {
-				uniqueConstraints[ref] = struct{}{}
+				owned.unique[ref] = struct{}{}
 			}
+		case "EXCLUDE":
+			owned.exclusions[ref] = struct{}{}
 		}
 	}
-	return foreignKeys, uniqueConstraints
+	return owned
 }
 
 // collectDatabaseIndexes keys the database's indexes by identity, leaving out
@@ -361,8 +369,7 @@ func collectDatabaseIndexes(
 	dialect string,
 	semantics identifier.Semantics,
 	declared map[difftypes.IndexRef]generatedIndexEntry,
-	foreignKeys,
-	uniqueConstraints map[difftypes.IndexRef]struct{},
+	owned constraintOwnedIndexes,
 ) map[difftypes.IndexRef]databaseIndexEntry {
 	indexes := make(map[difftypes.IndexRef]databaseIndexEntry)
 	for _, index := range database.Indexes {
@@ -375,19 +382,13 @@ func collectDatabaseIndexes(
 		}
 		identity := indexscope.IdentityKeyWithSemantics(semantics, ref)
 		if _, isDeclared := declared[identity]; !isDeclared &&
-			constraintOwnedDatabaseIndex(
-				index,
-				dialect,
-				identity,
-				foreignKeys,
-				uniqueConstraints,
-			) {
+			constraintOwnedDatabaseIndex(index, dialect, identity, owned) {
 			continue
 		}
 		indexes[identity] = databaseIndexEntry{
 			ref:               ref,
 			index:             index,
-			constraintBacked:  uniqueConstraintEnforcesTheIndex(identity, uniqueConstraints),
+			constraintBacked:  uniqueConstraintEnforcesTheIndex(identity, owned.unique),
 			partitionAttached: index.PartitionAttached,
 		}
 	}
@@ -460,23 +461,43 @@ func unaddressableDatabaseIndex(index types.DBIndex, dialect string) bool {
 // state that says nothing about either must not plan a DROP INDEX that would
 // take the constraint with it, which is what these two arms prevent.
 //
+// An EXCLUDE is enforced with an index too, and it is the one no filter written
+// in terms of the index ROW can see. Measured on PostgreSQL 17.6, the pg_index
+// row for `EXCLUDE USING gist (room WITH =)` reports indisprimary false and
+// indisunique false -- indistinguishable from an ordinary index -- and only
+// pg_constraint.conindid ties the two together, which is why the identity comes
+// from the constraint catalog here. Dropping it is refused:
+//
+//	ERROR:  cannot drop index ex_widget_room because constraint ex_widget_room
+//	        on table widget requires it
+//
+// so the plan could not be applied at all (stokaro/ptah#2013). A CHECK is the
+// other clause constraint and is enforced with no index, so it gets no arm.
+//
 // The name-pattern arm is a guess about a naming convention where the identity
 // arms are facts read from the catalog, but they are alike in what they mean
-// for the comparison, and all three are subject to the declaration narrowing in
+// for the comparison, and all four are subject to the declaration narrowing in
 // [collectDatabaseIndexes] -- the FOREIGN KEY arm since
-// [#1258](https://github.com/stokaro/ptah/issues/1258), the other two since
+// [#1258](https://github.com/stokaro/ptah/issues/1258), the EXCLUDE arm since
+// [#2013](https://github.com/stokaro/ptah/issues/2013), and the other two since
 // [#1245](https://github.com/stokaro/ptah/issues/1245).
+//
+// Only the UNIQUE set decides how a removal is spelled; an EXCLUDE's index
+// reaching a removal at all means the desired state declared an index under the
+// constraint's name, which is a separate question from this one.
 func constraintOwnedDatabaseIndex(
 	index types.DBIndex,
 	dialect string,
 	identity difftypes.IndexRef,
-	foreignKeys,
-	uniqueConstraints map[difftypes.IndexRef]struct{},
+	owned constraintOwnedIndexes,
 ) bool {
-	if _, uniqueBacked := uniqueConstraints[identity]; uniqueBacked {
+	if _, uniqueBacked := owned.unique[identity]; uniqueBacked {
 		return true
 	}
-	if _, foreignKeyBacked := foreignKeys[identity]; foreignKeyBacked {
+	if _, foreignKeyBacked := owned.foreignKeys[identity]; foreignKeyBacked {
+		return true
+	}
+	if _, exclusionBacked := owned.exclusions[identity]; exclusionBacked {
 		return true
 	}
 	return platform.NormalizeDialect(dialect) != platform.SQLServer &&
