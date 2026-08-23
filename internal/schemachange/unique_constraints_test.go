@@ -78,6 +78,10 @@ func TestAGuaranteeInTheColumnSyntaxIsNotAConstraintChange(t *testing.T) {
 	tests := []struct {
 		name        string
 		description *goschema.Database
+		// wantKinds is every family the row plans, in order. A unique INDEX
+		// plans two changes -- the table and the index -- and the point of the
+		// row is that neither of them is a CONSTRAINT change.
+		wantKinds []string
 	}{
 		{
 			name: "a column's own flag",
@@ -86,12 +90,14 @@ func TestAGuaranteeInTheColumnSyntaxIsNotAConstraintChange(t *testing.T) {
 				goschema.Field{
 					StructName: "Widget", Name: "code", Type: "text", Nullable: true, Unique: true,
 				}),
+			wantKinds: []string{"table"},
 		},
 		{
 			name: "a table-level primary key",
 			description: describedTableWithKey([]string{"id", "code"},
 				goschema.Field{StructName: "Widget", Name: "id", Type: "int"},
 				goschema.Field{StructName: "Widget", Name: "code", Type: "text"}),
+			wantKinds: []string{"table"},
 		},
 		{
 			name: "a unique index",
@@ -99,6 +105,10 @@ func TestAGuaranteeInTheColumnSyntaxIsNotAConstraintChange(t *testing.T) {
 				goschema.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true},
 				goschema.Field{StructName: "Widget", Name: "code", Type: "text", Nullable: true},
 			), "idx_widget_code", "code"),
+			// The index is its own object and its own change. What the row
+			// asserts is that it is not ALSO a constraint change: the
+			// guarantee would then be declared twice.
+			wantKinds: []string{"table", "index"},
 		},
 	}
 
@@ -106,13 +116,13 @@ func TestAGuaranteeInTheColumnSyntaxIsNotAConstraintChange(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			// The whole table is created, which is one change. A second change
-			// would be this family planning a guarantee the CREATE already
-			// carries.
+			// The whole table is created, and a declared index is created
+			// beside it. What must NOT appear is a constraint change: this
+			// family planning a guarantee the CREATE already carries would
+			// declare it twice.
 			changes := changesFor(c, test.description, &dbschematypes.DBSchema{})
 
-			c.Assert(changes, qt.HasLen, 1)
-			c.Assert(string(changes[0].ID.Kind), qt.Equals, "table")
+			c.Assert(kindsOf(changes), qt.DeepEquals, test.wantKinds)
 		})
 	}
 }

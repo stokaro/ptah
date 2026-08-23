@@ -577,6 +577,23 @@ func TestTableStatementsMatchTheExistingPlanner(t *testing.T) {
 			profile: mysqlProfilePointer(),
 		},
 		{
+			name:        "adding an index",
+			description: indexedWidget(false, "a", "b"),
+			catalog:     indexedWidgetCatalog(false),
+		},
+		{
+			name:        "dropping an index",
+			description: indexedWidget(false),
+			catalog:     indexedWidgetCatalog(false, "a", "b"),
+		},
+		{
+			// The key changes, which no engine alters in place: a drop and an
+			// add, in that order, as one change.
+			name:        "changing an index key",
+			description: indexedWidget(false, "a"),
+			catalog:     indexedWidgetCatalog(false, "a", "b"),
+		},
+		{
 			name:        "adding a unique constraint",
 			description: scopedWidget([]string{"tenant", "code"}),
 			catalog:     scopedWidgetCatalog(nil),

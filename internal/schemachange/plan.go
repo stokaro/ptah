@@ -85,6 +85,8 @@ func nodesFor(change Change, profile schemastate.Profile) ([]ast.Node, error) {
 		return tableNodes(change)
 	case objectidentity.KindColumn:
 		return columnNodes(change, profile)
+	case objectidentity.KindIndex:
+		return indexNodes(change)
 	default:
 		return nil, fmt.Errorf("%s: %w", change, ErrNotRendered)
 	}
