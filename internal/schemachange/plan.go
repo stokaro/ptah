@@ -193,7 +193,7 @@ func Explain(operations []PlannedOperation) string {
 
 func provenanceOf(change Change) string {
 	if change.Provenance.Location == "" {
-		return change.Provenance.Source
+		return string(change.Provenance.Source)
 	}
-	return change.Provenance.Source + " " + change.Provenance.Location
+	return string(change.Provenance.Source) + " " + change.Provenance.Location
 }

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 
+	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
@@ -44,7 +45,7 @@ func FromCatalog(schema *dbschematypes.DBSchema, dialect string, semantics ident
 		if existing, collided := state.Add(Object{
 			ID:         id,
 			Table:      &Table{Columns: columns},
-			Provenance: Provenance{Source: "catalog", Location: "information_schema.tables"},
+			Provenance: Provenance{Source: coverage.Observed, Location: "information_schema.tables"},
 		}); collided {
 			return nil, fmt.Errorf("catalog reports two tables with one identity: %s and %s", existing.ID, id)
 		}
@@ -62,7 +63,7 @@ func FromCatalog(schema *dbschematypes.DBSchema, dialect string, semantics ident
 		if existing, collided := state.Add(Object{
 			ID:         id,
 			ForeignKey: key,
-			Provenance: Provenance{Source: "catalog", Location: "information_schema.table_constraints"},
+			Provenance: Provenance{Source: coverage.Observed, Location: "information_schema.table_constraints"},
 		}); collided {
 			return nil, fmt.Errorf("catalog reports two foreign keys with one identity: %s and %s", existing.ID, id)
 		}
@@ -158,7 +159,7 @@ func FromDescription(
 		if existing, collided := state.Add(Object{
 			ID:         id,
 			Table:      &Table{Columns: columns},
-			Provenance: Provenance{Source: "description", Location: table.StructName},
+			Provenance: Provenance{Source: coverage.Declared, Location: table.StructName},
 		}); collided {
 			return nil, fmt.Errorf("description declares two tables with one identity: %s and %s", existing.ID, id)
 		}
@@ -227,7 +228,7 @@ func addForeignKey(
 	if existing, collided := state.Add(Object{
 		ID:         id,
 		ForeignKey: key,
-		Provenance: Provenance{Source: "description", Location: location},
+		Provenance: Provenance{Source: coverage.Declared, Location: location},
 	}); collided {
 		return fmt.Errorf("description declares two foreign keys with one identity: %s and %s", existing.ID, id)
 	}
