@@ -167,15 +167,25 @@ func addConstraintNode(change Change) ast.Node {
 	}
 }
 
+// excludeConstraintKind is the one clause kind that is enforced with an index.
+const excludeConstraintKind = "EXCLUDE"
+
+// constraintKind folds a kind to the spelling the arms below are written in.
+// The field carries whatever the SOURCE spelled, and the two sources do not
+// have to agree with each other about case or padding.
+func constraintKind(constraint schemastate.TableConstraint) string {
+	return strings.ToUpper(strings.TrimSpace(constraint.Kind))
+}
+
 // constraintNode builds the clause for one kind.
 func constraintNode(constraint schemastate.TableConstraint) *ast.ConstraintNode {
-	switch strings.ToUpper(strings.TrimSpace(constraint.Kind)) {
+	switch constraintKind(constraint) {
 	case "PRIMARY KEY":
 		// Named with whatever the source called it, which for a declaration is
 		// nothing: `ADD PRIMARY KEY (...)` lets the server derive the name, and
 		// that is what the shipping planner emits.
 		return ast.NewPrimaryKeyConstraint(constraint.Columns...)
-	case "EXCLUDE":
+	case excludeConstraintKind:
 		return excludeConstraintNode(constraint)
 	default:
 		return &ast.ConstraintNode{
