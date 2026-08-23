@@ -488,11 +488,19 @@ func TestLimitExplainsWhatDescribesRefuses(t *testing.T) {
 // records both cover. The whole-kind record is the broader statement, and it is
 // the one a user needs: "the read was refused the role catalog" says more than
 // "this one role was not described".
+//
+// The set is a literal rather than a builder chain, deliberately. A set the
+// builders produced is normalized, and normalization sorts the whole-kind
+// record first, so taking the first match would be right by accident and the
+// preference would be untested. A Set does not always arrive normalized: a
+// DBSchema decoded from JSON carries whatever order the document had, and that
+// is the case this asserts.
 func TestWholeKindLimitWinsOverANamedOne(t *testing.T) {
 	c := qt.New(t)
-	set := coverage.Set{}.
-		With(coverage.Object{Kind: coverage.Role, Name: "admin_user", Reason: coverage.OutsideScope}).
-		With(coverage.Refused(coverage.Role))
+	set := coverage.Set{Objects: []coverage.Object{
+		{Kind: coverage.Role, Name: "admin_user", Reason: coverage.OutsideScope},
+		coverage.Refused(coverage.Role),
+	}}
 
 	limit, ok := set.Limit(coverage.Role, "admin_user")
 
