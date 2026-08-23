@@ -282,7 +282,7 @@ Boolean `PTAH_*` variables — flag twins and direct feature toggles alike —
 follow one rule: absence selects the documented default, a present value must
 parse as a boolean, and anything else fails the command before it does work.
 The accepted spellings and the error shape are documented once, in the
-[Configuration reference](site/src/content/docs/reference/configuration.md).
+[Configuration reference](site/src/content/docs/reference/configuration.mdxx).
 
 Project-file merging preserves source presence. For a supported field, an
 explicitly present value replaces the lower-precedence value instead of being

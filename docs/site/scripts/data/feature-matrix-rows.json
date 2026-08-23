@@ -1518,7 +1518,7 @@
     "atlas_oss": "no",
     "atlas_pro": "no",
     "note": "`--pg-dump-to` writes a pg_dump custom-format backup and `--mysqldump-to` a SQL backup before applying or rolling back; ptah.yaml key migration.pg_dump_to.",
-    "evidence": "/tmp/c-ptah migrations up --help and down --help show --pg-dump-to/--mysqldump-to. Atlas-side: cli-surface.md line 27 migrate apply flag list has no backup flag. docs/site/src/content/docs/reference/configuration.md:87. no equivalent flag on Atlas's own help surface (measured; observation study, scenario, ptah-extension-equivalents)"
+    "evidence": "/tmp/c-ptah migrations up --help and down --help show --pg-dump-to/--mysqldump-to. Atlas-side: cli-surface.md line 27 migrate apply flag list has no backup flag. docs/site/src/content/docs/reference/configuration.mdx:87. no equivalent flag on Atlas's own help surface (measured; observation study, scenario, ptah-extension-equivalents)"
   },
   {
     "area": "Versioned migrations",
@@ -1545,7 +1545,7 @@
     "atlas_oss": "no",
     "atlas_pro": "no",
     "note": "ptah.yaml online_ddl.tool (ghost|pt-osc), threshold_rows, args, and fallback (error|plain) route large-table ALTERs through an online-DDL tool during migrations up/down. CE has no such routing.",
-    "evidence": "config/projectconfig/config.go:22-35,407-447 defines the config; cmd/migrateup/migrateup.go:374 consumes it; config/projectconfig/online_ddl_test.go. docs/site/src/content/docs/reference/configuration.md:89 documents the four keys. Measured 2026-08-03, pinned community binary (reports \"atlas community version v1.3.0\") vs ptah-compat built from this branch, against PostgreSQL 16 in Docker. `atlas migrate apply --help` inventories the full flag set: --url, --dir, --format, --revisions-schema, --dry-run, --lock-timeout, --baseline, --tx-mode, --exec-order, --allow-dirty. No gh-ost or pt-osc routing, and no flag that would select an external DDL tool."
+    "evidence": "config/projectconfig/config.go:22-35,407-447 defines the config; cmd/migrateup/migrateup.go:374 consumes it; config/projectconfig/online_ddl_test.go. docs/site/src/content/docs/reference/configuration.mdx:89 documents the four keys. Measured 2026-08-03, pinned community binary (reports \"atlas community version v1.3.0\") vs ptah-compat built from this branch, against PostgreSQL 16 in Docker. `atlas migrate apply --help` inventories the full flag set: --url, --dir, --format, --revisions-schema, --dry-run, --lock-timeout, --baseline, --tx-mode, --exec-order, --allow-dirty. No gh-ost or pt-osc routing, and no flag that would select an external DDL tool."
   },
   {
     "area": "Versioned migrations",

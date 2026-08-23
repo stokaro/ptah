@@ -177,7 +177,7 @@ anything else — an exported empty value included — fails the command before 
 reads or compares anything, naming the variable and the value. A malformed value
 is refused even on a run that declares no reserved role at all. The accepted
 spellings are documented once, in
-[Configuration](site/src/content/docs/reference/configuration.md).
+[Configuration](site/src/content/docs/reference/configuration.mdxx).
 
 ### Role Modifications
 
