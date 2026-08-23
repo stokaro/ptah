@@ -534,7 +534,13 @@ The proxy's own `FATAL` is kept, so nothing is taken on trust. Configuring the
 proxy to pass a parameter through (PgBouncer: `track_extra_parameters`) is the
 other way out, and it is the only way out for a parameter Ptah does not own.
 
-## TimescaleDB continuous aggregates
+## TimescaleDB
+
+TimescaleDB is PostgreSQL with an extension installed. Ptah manages its
+hypertables and describes its continuous aggregates without managing them, and
+the two sections below say exactly which is which.
+
+### Continuous aggregates
 
 A TimescaleDB continuous aggregate is a view to PostgreSQL: `pg_class` reports
 `relkind = 'v'`, and a reader that asks only PostgreSQL describes it as one.
@@ -561,45 +567,113 @@ is refused before anything is compared, naming the aggregate and the hypertable
 it materializes. The server's own answer at apply time would be
 `relation "…" already exists`, halfway through a script.
 
-### What the description leaves out, and says so
+### Hypertables
 
-Hypertables are ordinary tables to Ptah for now. A hypertable's `CREATE TABLE`
-and `DROP TABLE` both work, so nothing is mis-planned — but the dimensions
-`create_hypertable` was called with are neither read into a declaration nor
-rendered back out, so **replaying the description produces a table that is not
-partitioned, and a diff between the two reports no difference.**
-
-Nothing in an ordinary catalog can tell you that. Measured on 2.29.2 /
-PostgreSQL 17.11, after `create_hypertable('conditions', by_range('time'))`:
+A hypertable is an ordinary table partitioned on a range dimension, and nothing
+in an ordinary catalog can tell you that it is one. Measured on TimescaleDB
+2.29.2 / PostgreSQL 17.11, after `create_hypertable('conditions', by_range('time'))`:
 `pg_class` reports `relkind = 'r'`, `pg_depend` reports no extension ownership
 for the table, and the index the call created carries the same `deptype` an
 ordinary user index does. The extension's own catalog is the only evidence
 there is.
 
-So `ptah db read` and `schema inspect` read
-`timescaledb_information.hypertables` and say what they left out:
+Declare one beside the table it partitions:
 
-```text
-note: 1 hypertable is described as ordinary tables, because no declaration syntax
-can say that a table is partitioned yet; replaying this description creates tables
-that are not hypertables, and a diff between the two reports no difference:
-conditions (on time).
-note: 1 continuous aggregate is not in this description at all, because Ptah
-renders none and describing one as a view is wrong in both directions; a
-declaration naming one is refused rather than applied: conditions_hourly.
+```go
+//ptah:schema:hypertable table="readings" column="time" chunk_interval="1 day" if_not_exists="true"
+type ReadingsHypertable struct{}
 ```
 
-Two omissions, two sentences: the hypertable **is** in the document and is
-incomplete, the continuous aggregate is not in the document at all. A reader
-shown neither could not tell a plain PostgreSQL database from this one.
+```hcl
+hypertable "readings" {
+  schema         = schema.public
+  column         = "time"
+  chunk_interval = "1 day"
+  if_not_exists  = true
+}
+```
 
-The notes are silent on a PostgreSQL server without the extension, and the
-hypertable catalog is not asked there at all — a failed statement aborts the
-enclosing transaction, so a read that asked anyway would break every later read
-rather than degrade.
+which renders
 
-Representing the dimensions so a hypertable can be declared and replayed is
-[stokaro/ptah#1026](https://github.com/stokaro/ptah/issues/1026).
+```sql
+SELECT create_hypertable('public.readings', by_range('time', INTERVAL '1 day'),
+  if_not_exists => TRUE, create_default_indexes => FALSE);
+```
+
+`chunk_interval` is optional and is kept in the server's own spelling, because
+that is what `timescaledb_information.dimensions` reports back: an omitted one
+takes TimescaleDB's default, which is 7 days for a `timestamptz` column.
+
+**`create_default_indexes => FALSE` is not a preference.** The call creates an
+index on the dimension unless told not to, and nothing declared it — measured on
+2.29.2, the next comparison planned `DROP INDEX IF EXISTS "readings_time_idx"`,
+Ptah dropping an index the server had made a moment earlier, on every apply.
+Suppressing it keeps the description the whole truth about which indexes exist;
+declare an index on the dimension if you want one.
+
+The call runs after the table exists and before anything writes rows. Measured
+on the same server, `create_hypertable` against a missing relation answers
+`relation "conditions" does not exist`, and against a table holding one row it
+answers `table "loaded" is not empty`, hinting at `migrate_data => true`.
+**Ptah never sends `migrate_data`**: it rewrites the whole table, which is a
+decision an operator makes rather than one a migration takes on their behalf.
+
+#### What cannot be undone
+
+TimescaleDB has no `drop_hypertable` — measured, the call answers
+`function drop_hypertable(unknown) does not exist` — and no call repartitions an
+existing hypertable. So two changes are refused before anything is applied:
+
+```console
+$ ptah schema apply --db-url "$TIMESCALE_URL" --to file://schema.hcl
+error: unsupported feature: readings is a hypertable and the desired schema does
+not declare one; TimescaleDB has no statement that turns a hypertable back into
+an ordinary table, so this needs an explicit migration that drops and recreates it
+```
+
+Planning nothing would be worse. The table stays partitioned, the description
+says otherwise, and an operator reading "no changes" believes the two agree.
+
+#### One range dimension
+
+A second dimension is a separate call — `add_dimension` with `by_hash` — and no
+declaration carries one. A table partitioned on two is described with the first,
+and the read says so:
+
+```text
+note: 1 hypertable is described with the first partitioning dimension only,
+because a declaration carries one range dimension and a second is a separate
+call; replaying this description partitions on less than the server does, and a
+diff between the two reports no difference: conditions (on time and 1 more
+dimension).
+```
+
+A hypertable on one dimension is named nowhere, because the description is
+complete for it.
+
+#### The capability follows the connection
+
+TimescaleDB is PostgreSQL with an extension installed, not a dialect or a
+version of its own, and it puts no token in `version()`. So no preset sets the
+`hypertables` capability: what decides it is `pg_extension`, read once when the
+connection opens. A PostgreSQL target without the extension skips the statement
+and says so in the plan rather than failing at apply time on
+`function create_hypertable(unknown, unknown) does not exist`.
+
+**Offline, the declaration is the evidence.** `ptah schema render` has no
+connection to ask, so a document that declares the `timescaledb` extension
+alongside a hypertable renders both — an extension the same script installs is
+installed by the time the call runs. A document that declares the hypertable and
+not the extension gets the skip comment instead, because nothing in it says the
+target has the function.
+
+The same rule reaches an apply that adds the extension in the same plan: the
+connection was opened before the extension existed, so its answer is about the
+past.
+
+Only HCL and a Go schema can declare a hypertable. A YAML or `.sql` document
+records that it could not say so, and the comparison then withholds the removal
+its silence would otherwise mean.
 
 ## Next steps
 

@@ -52,18 +52,35 @@ func ReportUndescribed(w io.Writer, schema *types.DBSchema) {
 	reportContinuousAggregates(w, schema)
 }
 
-// reportHypertables names the hypertables the document still contains.
+// reportHypertables names the hypertables this description carries INCOMPLETELY.
 //
-// Only the ones it contains, because selection runs before this: `--exclude
-// conditions` removes the table from the document, and naming it here would
-// send the reader looking for a statement that is not in front of them. The
-// note is about statements the operator can see and would replay.
+// A declaration carries one range dimension, which is what `create_hypertable`
+// takes. A second dimension is a separate call -- `add_dimension` with
+// `by_hash` -- and nothing declares one, so a table partitioned on two is
+// described as partitioned on its first: replaying that description produces a
+// hypertable with one dimension where the server has two, and a diff between
+// the two reports no difference (stokaro/ptah#1026).
+//
+// A single-dimension hypertable is named nowhere, because the description is
+// now complete for it: the `hypertable` block and `//ptah:schema:hypertable`
+// both carry the dimension and the chunk interval, and the round trip converges.
+//
+// One whose dimension the catalog did not report is named even though it counts
+// as one, because a declaration needs the column and there is none to carry.
+//
+// Only the tables the document contains, because selection runs before this:
+// `--exclude conditions` removes the table from the document, and naming it
+// here would send the reader looking for a statement that is not in front of
+// them.
 func reportHypertables(w io.Writer, schema *types.DBSchema) {
 	described := describedTables(schema)
 	var named []string
 	for _, hypertable := range schema.Hypertables {
 		key := tableKey(hypertable.Schema, hypertable.Name)
 		if _, ok := described[key]; !ok {
+			continue
+		}
+		if hypertable.PrimaryDimension != "" && hypertable.Dimensions <= 1 {
 			continue
 		}
 		named = append(named, describeHypertable(hypertable))
@@ -73,9 +90,10 @@ func reportHypertables(w io.Writer, schema *types.DBSchema) {
 	}
 	sort.Strings(named)
 	fmt.Fprintf(w,
-		"note: %s described as ordinary tables, because no declaration syntax can say that a"+
-			" table is partitioned yet; replaying this description creates tables that are not"+
-			" hypertables, and a diff between the two reports no difference: %s.\n",
+		"note: %s described with the first partitioning dimension only, because a declaration"+
+			" carries one range dimension and a second is a separate call; replaying this"+
+			" description partitions on less than the server does, and a diff between the two"+
+			" reports no difference: %s.\n",
 		countedNoun(len(named), "1 hypertable is", "hypertables are"), joinNames(named))
 }
 

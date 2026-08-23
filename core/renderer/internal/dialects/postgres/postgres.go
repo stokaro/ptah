@@ -2681,6 +2681,60 @@ func (r *Renderer) writeClickHouseOnlyOperation(operation ast.AlterOperation) {
 	}
 }
 
+// VisitCreateHypertable renders the TimescaleDB call that turns an ordinary
+// table into a hypertable.
+//
+// It is a function call rather than DDL, because TimescaleDB has no CREATE
+// HYPERTABLE grammar. Measured on 2.29.2 / PostgreSQL 17:
+//
+//	SELECT create_hypertable('conditions', by_range('time'));                  -> (1,t)
+//	SELECT create_hypertable('conditions', by_range('time'));                  -> ERROR: already a hypertable
+//	SELECT create_hypertable('conditions', by_range('time'), if_not_exists => TRUE); -> (1,f), NOTICE
+//
+// The table is passed as a REGCLASS literal -- a quoted, possibly qualified
+// name -- and the column as a text literal inside `by_range`, which is the
+// signature the extension publishes. Both are escaped as string literals rather
+// than as identifiers for that reason: the argument is a string the server
+// resolves, not an identifier position.
+//
+// The key gates the emission rather than the declaration. A PostgreSQL target
+// without the extension has no such function, and a plan that called it would
+// fail on `function create_hypertable(unknown, unknown) does not exist` at
+// apply time instead of saying so in the plan (stokaro/ptah#1026).
+func (r *Renderer) VisitCreateHypertable(node *ast.CreateHypertableNode) error {
+	if r.refuses(capability.Hypertables, "hypertable", node.Table) {
+		return nil
+	}
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+
+	dimension := fmt.Sprintf("by_range(%s", r.escapeValue(node.Column))
+	if strings.TrimSpace(node.ChunkInterval) != "" {
+		dimension += fmt.Sprintf(", INTERVAL %s", r.escapeValue(node.ChunkInterval))
+	}
+	dimension += ")"
+
+	arguments := []string{r.escapeValue(node.Table), dimension}
+	if node.IfNotExists {
+		arguments = append(arguments, "if_not_exists => TRUE")
+	}
+	// The call creates an index on the dimension unless told not to, and that
+	// index is one nothing declared. Measured on 2.29.2: after
+	// `create_hypertable('readings', by_range('time'))` the table carries
+	// `readings_time_idx`, and the next comparison plans
+	// `DROP INDEX IF EXISTS "readings_time_idx"` -- Ptah dropping an index the
+	// server made a moment earlier, on every apply.
+	//
+	// `create_default_indexes => FALSE` is the answer rather than an exception
+	// in the comparator: measured on the same server the call then creates none
+	// at all, so the description stays the whole truth about which indexes
+	// exist, and an operator who wants one on the dimension declares it.
+	arguments = append(arguments, "create_default_indexes => FALSE")
+	r.w.WriteLinef("SELECT create_hypertable(%s);", strings.Join(arguments, ", "))
+	return nil
+}
+
 // VisitCreateSynonym names the synonym as skipped.
 //
 // There is no capability key behind this refusal, and that is the difference

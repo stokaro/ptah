@@ -70,15 +70,20 @@ are outside the supported schema.
 ### What this format has no key for
 
 A sequence, a domain, a composite type and a range have no top-level key here,
-and neither has a SQL Server synonym or extended property. **Silence about one
-of them is not a request to remove it**: a YAML schema declaring one table,
-compared against a database holding one of each, planned `DROP SEQUENCE`,
-`DROP DOMAIN` and both `DROP TYPE`s until this was recorded. Loading a `.yaml`
-or `.yml` file now marks those families as not described, so the comparison
-withholds the removal.
+and neither has a SQL Server synonym or extended property, nor a TimescaleDB
+hypertable. **Silence about one of them is not a request to remove it**: a YAML
+schema declaring one table, compared against a database holding one of each,
+planned `DROP SEQUENCE`, `DROP DOMAIN` and both `DROP TYPE`s until this was
+recorded. Loading a `.yaml` or `.yml` file now marks those families as not
+described, so the comparison withholds the removal.
 
-The other formats keep their own answer. HCL **does** have a block for all six,
-so an HCL document that omits one is still asking for it to go; a `.sql`
+The hypertable is the one whose silence looks like a complete answer. The table
+IS in the document and only its partitioning is missing, so a YAML description
+of a hypertable describes an ordinary table — replaying it produces a table that
+is not partitioned, and a diff between the two reports no difference.
+
+The other formats keep their own answer. HCL **does** have a block for all
+seven, so an HCL document that omits one is still asking for it to go; a `.sql`
 document has the syntax for the first four and a Go schema for every one of
 them. What a document can say is a property of its format, and each loader
 records only its own limits.

@@ -103,6 +103,7 @@ for the message and the flag it names.
 | `domain` | PostgreSQL `type`, `null`, `default`, and `check`. |
 | `composite` | PostgreSQL composite type with ordered `field` sub-blocks. |
 | `range` | PostgreSQL `subtype`, `subtype_opclass`, `collation`, `canonical`, and `subtype_diff`. |
+| `hypertable` | TimescaleDB partitioning of the table the label names: `column`, and optionally `chunk_interval`, `if_not_exists` and the `schema` holding the table. |
 | `synonym` | SQL Server alias: `target`, plus the `schema` the alias lives in and a comment. |
 | `extended_property` | SQL Server named value: `value`, and the object it is attached to as `schema`, `table` and `column`. |
 | `data` | Ptah managed-data declaration with a table reference, key columns, and a file path relative to the HCL file. |

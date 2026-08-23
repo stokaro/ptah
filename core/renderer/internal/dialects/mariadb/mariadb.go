@@ -215,6 +215,16 @@ func (r *Renderer) VisitDropView(node *ast.DropViewNode) error {
 	return r.r.VisitDropView(node)
 }
 
+// VisitCreateHypertable refuses: a hypertable is a TimescaleDB object, and
+// TimescaleDB is an extension of PostgreSQL.
+//
+// There is no capability key behind this refusal, for the reason
+// VisitCreateSynonym gives: a key would have exactly one value forever and
+// would invite a preset to turn it on.
+func (r *Renderer) VisitCreateHypertable(node *ast.CreateHypertableNode) error {
+	return r.r.VisitCreateHypertable(node)
+}
+
 // VisitCreateSynonym forwards to the shared renderer, which names the synonym
 // as unsupported.
 func (r *Renderer) VisitCreateSynonym(node *ast.CreateSynonymNode) error {

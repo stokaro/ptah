@@ -764,6 +764,17 @@ func (r *Renderer) VisitExtendedProperty(node *ast.ExtendedPropertyNode) error {
 	return nil
 }
 
+// VisitCreateHypertable refuses: a hypertable is a TimescaleDB object, and
+// TimescaleDB is an extension of PostgreSQL.
+//
+// There is no capability key behind this refusal, for the reason
+// VisitCreateSynonym gives: a key would have exactly one value forever and
+// would invite a preset to turn it on.
+func (r *Renderer) VisitCreateHypertable(node *ast.CreateHypertableNode) error {
+	r.w.WriteLinef("-- ORACLE: hypertable %s is not supported by this target; skipped.", node.Table)
+	return nil
+}
+
 // VisitCreateSynonym renders Oracle's own object: a synonym is a native Oracle
 // concept rather than a compatibility shim.
 func (r *Renderer) VisitCreateSynonym(node *ast.CreateSynonymNode) error {

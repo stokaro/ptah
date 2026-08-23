@@ -37,6 +37,7 @@ func TestReadHypertables_CarriesThePrimaryDimension(t *testing.T) {
 		Name:                 "conditions",
 		PrimaryDimension:     "time",
 		PrimaryDimensionType: "timestamp with time zone",
+		ChunkInterval:        "7 days",
 		Dimensions:           1,
 	}})
 }
@@ -116,6 +117,7 @@ func TestHypertableQuery_ReadsTheExtensionsOwnCatalog(t *testing.T) {
 		{name: "the catalog", fragment: "timescaledb_information.hypertables"},
 		{name: "the dimension catalog", fragment: "timescaledb_information.dimensions"},
 		{name: "the primary dimension", fragment: "d.column_name"},
+		{name: "the chunk interval", fragment: "d.time_interval::text"},
 		{name: "its type", fragment: "d.column_type::text"},
 		{name: "the first dimension only", fragment: "d.dimension_number = 1"},
 		{name: "the dimension count", fragment: "h.num_dimensions"},
@@ -174,11 +176,11 @@ func faultingHypertables(query string, _ []driver.NamedValue) (dbtest.QueryResul
 }
 
 func dimensionlessHypertable(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
-	return hypertableAnswer(query, nil, [][]driver.Value{{"public", "conditions", nil, nil, int64(1)}})
+	return hypertableAnswer(query, nil, [][]driver.Value{{"public", "conditions", nil, nil, nil, int64(1)}})
 }
 
 func hypertableRows() [][]driver.Value {
-	return [][]driver.Value{{"public", "conditions", "time", "timestamp with time zone", int64(1)}}
+	return [][]driver.Value{{"public", "conditions", "time", "timestamp with time zone", "7 days", int64(1)}}
 }
 
 // hypertableAnswer answers the catalog with the five columns the read scans, so
@@ -204,7 +206,7 @@ func hypertableAnswer(query string, refusal error, rows [][]driver.Value) (dbtes
 	return dbtest.QueryResult{
 		Columns: []string{
 			"hypertable_schema", "hypertable_name",
-			"column_name", "column_type", "num_dimensions",
+			"column_name", "column_type", "time_interval", "num_dimensions",
 		},
 		Rows: rows,
 	}, nil

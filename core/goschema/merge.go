@@ -70,6 +70,7 @@ func appendDatabase(dst, src *Database) {
 	dst.Triggers = append(dst.Triggers, src.Triggers...)
 	dst.RLSPolicies = append(dst.RLSPolicies, src.RLSPolicies...)
 	dst.RLSEnabledTables = append(dst.RLSEnabledTables, src.RLSEnabledTables...)
+	dst.Hypertables = append(dst.Hypertables, src.Hypertables...)
 	dst.Roles = append(dst.Roles, src.Roles...)
 	dst.Grants = append(dst.Grants, src.Grants...)
 	dst.ManagedData = append(dst.ManagedData, src.ManagedData...)

@@ -609,6 +609,21 @@ var directives = []Directive{
 		},
 	},
 	{
+		Name: "ptah:schema:hypertable",
+		Description: "Declares a TimescaleDB hypertable: a table partitioned on a range " +
+			"dimension.",
+		Scopes: []Scope{ScopeStruct},
+		Attributes: []Attribute{
+			attr("table", "Table to partition, optionally schema-qualified.", valueString, true, false),
+			attr("column", "Range dimension: the column chunks are cut on.", valueString, true, false),
+			attr("chunk_interval", "Width of one chunk, spelled the way PostgreSQL spells an "+
+				"interval. Omit to take TimescaleDB's default.", valueString, false, false),
+			attr("if_not_exists", "Skip a table that is already a hypertable instead of failing.",
+				valueBoolean, false, false),
+			attr("comment", "Hypertable comment.", valueString, false, false),
+		},
+	},
+	{
 		Name:        "ptah:schema:synonym",
 		Description: "Declares a SQL Server synonym, an alias for another object.",
 		Scopes:      []Scope{ScopeStruct},

@@ -426,6 +426,15 @@ func postgresFamilyPlan(dialect string) plan {
 		capability.TransactionalDDL: "the key names whether a failed migration rolls back as a unit, which is the engine's DDL semantics rather than one statement's answer",
 		capability.ShowRoutinePrivilege: "the probe cannot ask whether a privilege exists without granting it, " +
 			"and an acceptance test cannot separate an unknown privilege from an absent grantee",
+		// The key is decided by an EXTENSION on the connection rather than by a
+		// version line. Every PostgreSQL image on this ladder answers
+		// `function create_hypertable(unknown, unknown) does not exist`, and
+		// that is the absence of TimescaleDB rather than anything about the
+		// server's version or about Ptah's support -- so an acceptance test
+		// here would record a refusal that means something else.
+		capability.Hypertables: "the key names TimescaleDB hypertables, and TimescaleDB is an extension " +
+			"rather than a version line; a PostgreSQL image without it refuses create_hypertable for the " +
+			"extension's absence, which is a different question from the one the key asks",
 	}}
 }
 
@@ -672,6 +681,9 @@ func mysqlFamilyPlan(dialect string) plan {
 		capability.RowLevelTTL: "the key names a table storage parameter Ptah renders, reads and plans " +
 			"only on the PostgreSQL wire; this server's CREATE TABLE takes its own table options and " +
 			"none of them is the one the key names, so refusing it would answer a different question",
+		capability.Hypertables: "the key names a TimescaleDB object, which is a PostgreSQL extension; " +
+			"this server has no such function and no MySQL-family code path emits one, so its refusal " +
+			"would answer a different question",
 	}
 	// Both dialects are asked now. MariaDB used to be declared undecided here,
 	// on the ground that the engine has SEQUENCE while Ptah's generator did

@@ -41,6 +41,7 @@ var routedKinds = []routedKind{
 	{name: "rls enable", want: 1, count: countNodes[*ast.AlterTableEnableRLSNode]},
 	{name: "policy", want: 1, count: countNodes[*ast.CreatePolicyNode]},
 	{name: "synonym", want: 1, count: countNodes[*ast.CreateSynonymNode]},
+	{name: "hypertable", want: 1, count: countNodes[*ast.CreateHypertableNode]},
 	{name: "extended property", want: 1, count: countNodes[*ast.ExtendedPropertyNode]},
 	{name: "grant", want: 1, count: countNodes[*ast.GrantPrivilegeNode]},
 }
@@ -81,6 +82,9 @@ func routingFixture() goschema.Database {
 		Views:             []goschema.View{{StructName: "V", Name: "view_probe", Body: "SELECT id FROM table_probe"}},
 		MaterializedViews: []goschema.MaterializedView{{StructName: "MV", Name: "matview_probe", Body: "SELECT id FROM table_probe"}},
 		Synonyms:          []goschema.Synonym{{StructName: "SY", Name: "synonym_probe", Target: "dbo.table_probe"}},
+		Hypertables: []goschema.Hypertable{{
+			StructName: "HY", Table: "table_probe", Column: "n",
+		}},
 		ExtendedProperties: []goschema.ExtendedProperty{{
 			StructName: "XP", Name: "property_probe", Schema: "dbo",
 			Table: "table_probe", Value: "probe",
