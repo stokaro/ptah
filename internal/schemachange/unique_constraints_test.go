@@ -5,6 +5,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/goschema"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/schemachange"
@@ -214,4 +215,21 @@ func TestAChangedUniqueConstraintDropsBeforeItAdds(t *testing.T) {
 	// them or reorder them.
 	c.Assert(operations[0].Change.ID.Key(), qt.Equals, operations[1].Change.ID.Key())
 	c.Assert(operations[0].Change.Operation, qt.Equals, schemachange.Modify)
+}
+
+// TestAUniqueConstraintInAnUndescribedSchemaIsNotDropped is the coverage gate on
+// this family, and it is the same rule the table family carries: a description
+// that declined a whole schema is silent about it rather than empty, and reading
+// that silence as absence turns a partial read into a drop (stokaro/ptah#1276).
+func TestAUniqueConstraintInAnUndescribedSchemaIsNotDropped(t *testing.T) {
+	c := qt.New(t)
+	description := scopedWidget(nil)
+	description.NotDescribed = coverage.Set{}.WithObject(coverage.Schema, "public")
+
+	changes := changesFor(c, description, scopedWidgetCatalog([]string{"tenant", "code"}))
+
+	c.Assert(changes, qt.HasLen, 1)
+	c.Assert(changes[0].Operation, qt.Equals, schemachange.Remove)
+	c.Assert(changes[0].Status, qt.Equals, schemachange.Undecidable)
+	c.Assert(changes[0].Diagnostic, qt.Contains, "is not a request to drop it")
 }
