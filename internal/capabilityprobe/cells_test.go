@@ -348,6 +348,21 @@ var notADatabase = map[string]bool{
 	"edoburu/pgbouncer": true,
 }
 
+// describedByAnotherImage maps a DATABASE these files start onto the dialect
+// whose cells describe it.
+//
+// It is a third answer because the two above it would both be false. TimescaleDB
+// is a database, so notADatabase is a lie about it; and it has no preset of its
+// own, so a cell would claim a resolver arm that does not exist. What it is, is
+// PostgreSQL with an extension installed: it speaks the PostgreSQL dialect, the
+// preset that describes it is the PostgreSQL one, and the service exists to
+// exercise the extension's own catalog rather than any capability. The day it
+// grows a preset, it moves to databaseImages and this entry goes
+// (stokaro/ptah#1026).
+var describedByAnotherImage = map[string]string{
+	"timescale/timescaledb": platform.Postgres,
+}
+
 // TestCells_DeclareEveryDatabaseContainerThisRepositoryStarts derives the
 // coverage question from the files that answer it.
 func TestCells_DeclareEveryDatabaseContainerThisRepositoryStarts(t *testing.T) {
@@ -498,10 +513,18 @@ func assertPinnedImageIsClassified(c *qt.C, ref string) {
 			qt.Commentf("%s is listed as not a database, yet a matrix cell claims it", ref))
 		return
 	}
+	if dialect, described := describedByAnotherImage[repository]; described {
+		c.Assert(cellsDeclaring(repository, tag), qt.HasLen, 0,
+			qt.Commentf("%s is listed as having no preset of its own, yet a matrix cell claims it", ref))
+		c.Assert(cellsForDialect(dialect), qt.Not(qt.HasLen), 0,
+			qt.Commentf("%s is said to be described by %s cells, and there are none", ref, dialect))
+		return
+	}
 	dialect, known := databaseImages[repository]
 	if !known {
-		c.Fatalf("image %q is started by %v and appears in neither databaseImages nor notADatabase; "+
-			"classify it rather than letting it through unexamined", ref, pinnedImageFiles)
+		c.Fatalf("image %q is started by %v and appears in none of databaseImages, notADatabase or "+
+			"describedByAnotherImage; classify it rather than letting it through unexamined",
+			ref, pinnedImageFiles)
 		return
 	}
 	declaring := cellsDeclaring(repository, tag)
@@ -521,6 +544,18 @@ func assertPinnedImageIsClassified(c *qt.C, ref string) {
 // to whichever 26.x the registry serves that day, so it is covered when the
 // matrix declares a line beneath it. The prefix must end at a dot, or "2" would
 // cover "26.7".
+// cellsForDialect is the cells of one dialect, so an image described by
+// another one can be asserted to have something describing it.
+func cellsForDialect(dialect string) []capabilityprobe.Cell {
+	var out []capabilityprobe.Cell
+	for _, cell := range capabilityprobe.Cells {
+		if cell.Dialect == dialect {
+			out = append(out, cell)
+		}
+	}
+	return out
+}
+
 func cellsDeclaring(repository, tag string) []capabilityprobe.Cell {
 	var out []capabilityprobe.Cell
 	for _, cell := range capabilityprobe.Cells {

@@ -23,6 +23,7 @@ import (
 	"go.5x5.cz/ptah/internal/schemaselection"
 	"go.5x5.cz/ptah/internal/sqlident"
 	"go.5x5.cz/ptah/internal/sqlitevirtual"
+	"go.5x5.cz/ptah/internal/timescale"
 )
 
 // InspectOptions configures Atlas-compatible schema inspection.
@@ -186,6 +187,17 @@ func renderInspectSchema(
 	// said the description reports the module's tables as ordinary ones. See
 	// stokaro/ptah#1028.
 	sqlitevirtual.ReportUnclassified(opts.Diagnostics, schema)
+	// From the SCOPED schema for the same reason, and it is the same failure:
+	// `--exclude conditions` removes the hypertable from the document, and a
+	// note emitted before the projection would still name it as a table the
+	// description carries incompletely -- sending the reader to look for a
+	// statement that is not there (stokaro/ptah#1026).
+	//
+	// It is not behind the role-coverage suppression either: that flag exists
+	// for the paths inspecting a dev database they materialized themselves, and
+	// those have no hypertables in them, so the note is silent there rather
+	// than suppressed.
+	timescale.ReportUndescribed(opts.Diagnostics, schema)
 	dbsch := dbschematogo.ConvertDBSchemaToGoSchema(schema)
 	output, err := atlasreport.RenderSchemaInspect(format, atlasreport.NewSchemaInspectReport(
 		dbsch,

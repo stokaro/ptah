@@ -561,9 +561,44 @@ is refused before anything is compared, naming the aggregate and the hypertable
 it materializes. The server's own answer at apply time would be
 `relation "…" already exists`, halfway through a script.
 
-Hypertables are ordinary tables to Ptah for now: a hypertable's `DROP TABLE`
-and `CREATE TABLE` both work, so nothing is mis-planned, but the dimensions
-`create_hypertable` was called with are not read and not declared. See
+### What the description leaves out, and says so
+
+Hypertables are ordinary tables to Ptah for now. A hypertable's `CREATE TABLE`
+and `DROP TABLE` both work, so nothing is mis-planned — but the dimensions
+`create_hypertable` was called with are neither read into a declaration nor
+rendered back out, so **replaying the description produces a table that is not
+partitioned, and a diff between the two reports no difference.**
+
+Nothing in an ordinary catalog can tell you that. Measured on 2.29.2 /
+PostgreSQL 17.11, after `create_hypertable('conditions', by_range('time'))`:
+`pg_class` reports `relkind = 'r'`, `pg_depend` reports no extension ownership
+for the table, and the index the call created carries the same `deptype` an
+ordinary user index does. The extension's own catalog is the only evidence
+there is.
+
+So `ptah db read` and `schema inspect` read
+`timescaledb_information.hypertables` and say what they left out:
+
+```text
+note: 1 hypertable is described as ordinary tables, because no declaration syntax
+can say that a table is partitioned yet; replaying this description creates tables
+that are not hypertables, and a diff between the two reports no difference:
+conditions (on time).
+note: 1 continuous aggregate is not in this description at all, because Ptah
+renders none and describing one as a view is wrong in both directions; a
+declaration naming one is refused rather than applied: conditions_hourly.
+```
+
+Two omissions, two sentences: the hypertable **is** in the document and is
+incomplete, the continuous aggregate is not in the document at all. A reader
+shown neither could not tell a plain PostgreSQL database from this one.
+
+The notes are silent on a PostgreSQL server without the extension, and the
+hypertable catalog is not asked there at all — a failed statement aborts the
+enclosing transaction, so a read that asked anyway would break every later read
+rather than degrade.
+
+Representing the dimensions so a hypertable can be declared and replayed is
 [stokaro/ptah#1026](https://github.com/stokaro/ptah/issues/1026).
 
 ## Next steps
