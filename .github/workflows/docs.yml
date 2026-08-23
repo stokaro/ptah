@@ -104,6 +104,8 @@ jobs:
           node docs/site/scripts/check-matrix-verdict-prose.mjs
           node docs/site/scripts/check-matrix-citations.mjs --selftest
           node docs/site/scripts/check-matrix-citations.mjs
+          node docs/site/scripts/check-matrix-flag-names.mjs --selftest
+          node docs/site/scripts/check-matrix-flag-names.mjs
           node docs/site/scripts/build-feature-matrix.mjs --check
 
   build:
