@@ -225,7 +225,7 @@ func runAtlasMigrateLint(
 		if err := atlasargs.RequireDirScheme(opts.dir); err != nil {
 			return cmdutil.Fail(cmd, err)
 		}
-		localDir, err = atlasargs.ParseLocalDir(opts.dir)
+		localDir, err = project.resolveMigrationDirFlag(cmd.Context(), opts.dir)
 	}
 	if err != nil {
 		return cmdutil.Fail(cmd, fmt.Errorf("atlas migrate lint --dir: %w", err))

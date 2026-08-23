@@ -74,6 +74,10 @@ func TestMigrateApplyValidatesToVersionBeforeCapturingNativeDirectory(t *testing
 // claimed here; what this pins is which of the two answers.
 func TestMigrateStatusAnswersTheDirectoryBeforeTheDatabaseURL(t *testing.T) {
 	c := qt.New(t)
+	// With a namespace configured this reference would be resolved and pulled,
+	// and the run would fail on the registry instead. The row states which run
+	// it is rather than inheriting one.
+	c.Setenv("PTAH_ATLAS_REGISTRY", "")
 	cmd := atlas.NewCompatCommand("atlas")
 	var out bytes.Buffer
 	cmd.SetOut(&out)
@@ -82,7 +86,10 @@ func TestMigrateStatusAnswersTheDirectoryBeforeTheDatabaseURL(t *testing.T) {
 
 	err := cmd.Execute()
 
-	c.Assert(err, qt.ErrorMatches, `atlas migrate status --dir: only local file:// migration directories are supported`)
+	// Still the DIRECTORY, which is what this pins. Its wording changed when
+	// the reference became resolvable: what is left to refuse is the missing
+	// namespace (stokaro/ptah#1210).
+	c.Assert(err, qt.ErrorMatches, `atlas migrate status --dir: .*PTAH_ATLAS_REGISTRY.*`)
 }
 
 func TestMigrateLintValidatesDirectoryFormatBeforeDirectoryURL(t *testing.T) {

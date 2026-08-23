@@ -12,7 +12,6 @@ import (
 	"slices"
 	"sort"
 	"strings"
-	"sync"
 	"testing/fstest"
 	"text/template"
 	"time"
@@ -29,6 +28,7 @@ import (
 	"go.5x5.cz/ptah/internal/migrationsnapshot"
 	"go.5x5.cz/ptah/internal/ociartifact"
 	"go.5x5.cz/ptah/internal/processcapture"
+	"go.5x5.cz/ptah/internal/remotemigrationdir"
 	"go.5x5.cz/ptah/internal/secretdisplay"
 )
 
@@ -884,51 +884,13 @@ func (p atlasParser) pullMigrationArtifact(reference string) (fs.FS, error) {
 	return artifact.FileSystem, nil
 }
 
-// lazyMigrationDirFS pulls its artifact the first time something reads it.
-//
-// A project file is read by EVERY verb, so an eager pull would make
-// `schema inspect --env prod` fail whenever the registry is unreachable --
-// for a directory that command never opens. `data "remote_schema"` avoids the
-// same trap by minting a marker and resolving it at consumption; a
-// migration.dir has no marker layer to hide behind, so the laziness lives in
-// the filesystem it registers (stokaro/ptah#1210).
-//
-// The pull happens once and its outcome is kept, error included: a verb that
-// reads the directory twice must not fetch twice, and must not succeed the
-// second time after failing the first.
-type lazyMigrationDirFS struct {
-	once  sync.Once
-	fetch func() (fs.FS, error)
-	fsys  fs.FS
-	err   error
-}
-
-func (l *lazyMigrationDirFS) resolve() (fs.FS, error) {
-	l.once.Do(func() { l.fsys, l.err = l.fetch() })
-	return l.fsys, l.err
-}
-
-func (l *lazyMigrationDirFS) Open(name string) (fs.File, error) {
-	fsys, err := l.resolve()
-	if err != nil {
-		return nil, err
-	}
-	return fsys.Open(name)
-}
-
-// ReadDir keeps the fast path a directory read would otherwise lose: without
-// it, fs.ReadDir falls back to Open and the pulled artifact's own ReadDirFS
-// implementation goes unused.
-func (l *lazyMigrationDirFS) ReadDir(name string) ([]fs.DirEntry, error) {
-	fsys, err := l.resolve()
-	if err != nil {
-		return nil, err
-	}
-	return fs.ReadDir(fsys, name)
-}
-
 // registerRemoteMigrationDir registers a migration directory that lives in a
 // registry, and returns the in-memory URL the rest of the tree addresses it by.
+//
+// The filesystem is opened through internal/remotemigrationdir, which the
+// `--dir` flag uses too: one pull path, one answer to when the fetch happens.
+// Nothing is fetched here -- see that package for why a project file read by
+// every verb must not contact a registry while it is parsed.
 //
 // ReadOnly is what keeps it out of a writer: there is no local directory behind
 // it, and joining a registry reference to the project root would create a
@@ -937,15 +899,7 @@ func (l *lazyMigrationDirFS) ReadDir(name string) ([]fs.DirEntry, error) {
 func (p atlasParser) registerRemoteMigrationDir(reference string) string {
 	memURL := memDirectoryURL("/migration_dir", reference)
 	p.migrationDirectories[memURL] = MigrationDirectorySource{
-		FileSystem: &lazyMigrationDirFS{
-			fetch: func() (fs.FS, error) {
-				resolved, err := atlasregistry.Resolve(reference)
-				if err != nil {
-					return nil, err
-				}
-				return p.pullMigrationArtifact(resolved.OCI)
-			},
-		},
+		FileSystem: remotemigrationdir.Open(p.runContext, reference),
 		// The reference the PROJECT wrote, not the one it resolves to: nothing
 		// has resolved yet, and a message naming `oci://` for a project that
 		// says `atlas://` sends the reader to the wrong line.
