@@ -610,7 +610,7 @@ func GenerateSchemaDiffSQLStatements(diff *types.SchemaDiff, generated *goschema
 	if err != nil {
 		return nil, err
 	}
-	statements := sqlutil.SplitSQLStatements(output)
+	statements := sqlutil.SplitSQLStatementsForDialect(output, dialect)
 	return statements, nil
 }
 
@@ -637,7 +637,12 @@ func GenerateSchemaDiffSQLStatementsWithOptions(
 	if err != nil {
 		return nil, err
 	}
-	statements := sqlutil.SplitSQLStatements(output)
+	// The dialect decides where one statement ends. The blind splitter treats
+	// every semicolon outside a BEGIN block as a boundary, which is right for
+	// most targets and wrong for the one whose routine body is opened by IS:
+	// an Oracle function with a declaration section came out of here as four
+	// fragments, each of which the server refuses on its own.
+	statements := sqlutil.SplitSQLStatementsForDialect(output, dialect)
 	return statements, nil
 }
 

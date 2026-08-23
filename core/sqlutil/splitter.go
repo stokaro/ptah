@@ -115,8 +115,7 @@ func splitSQLStatements(sql, dialect string) []string {
 		}
 
 		if token.Type == lexer.TokenSemicolon {
-			if state.keepSemicolonInsideStatement() {
-				currentStatement.WriteString(token.Value)
+			if state.consumeSemicolon(token, &currentStatement) {
 				continue
 			}
 
@@ -184,15 +183,24 @@ func appendSQLServerBatch(statements []string, batchStart int, currentStatement 
 }
 
 type statementSplitState struct {
-	dialect               string
-	createPrefix          createStatementPrefix
-	createObject          string
-	inCompoundCreate      bool
-	sqlServerRoutine      bool
-	compoundDepth         int
-	caseDepth             int
-	pendingEndKeyword     bool
-	pendingCaseEndKeyword bool
+	dialect          string
+	createPrefix     createStatementPrefix
+	createObject     string
+	inCompoundCreate bool
+	// routineBodyOpener records that the body was opened by a keyword rather
+	// than by BEGIN -- T-SQL's AS, PL/SQL's IS or AS -- so a semicolon inside
+	// it is kept until the closing END even before any BEGIN is seen.
+	routineBodyOpener bool
+	// plsqlBody narrows that to the PL/SQL case, where the semicolon after the
+	// closing END belongs to the block rather than to the client.
+	plsqlBody bool
+	// terminatorBelongsToStatement is set for the one semicolon that closed a
+	// PL/SQL routine, so the flush can write it back before the reset.
+	terminatorBelongsToStatement bool
+	compoundDepth                int
+	caseDepth                    int
+	pendingEndKeyword            bool
+	pendingCaseEndKeyword        bool
 }
 
 func (s *statementSplitState) reset() {
@@ -276,7 +284,19 @@ func (s *statementSplitState) observeCreatePrefix(value string) {
 	case createPrefixCreateObjectBeforeBody:
 		if s.isSQLServerRoutineObject() && value == "AS" {
 			s.inCompoundCreate = true
-			s.sqlServerRoutine = true
+			s.routineBodyOpener = true
+			s.pendingEndKeyword = false
+			return
+		}
+		// PL/SQL opens a routine body with IS or AS, and what follows may be a
+		// declaration section rather than BEGIN. Waiting for BEGIN split
+		// `FUNCTION f RETURN NUMBER IS x NUMBER := 0; BEGIN ... END;` at the
+		// semicolon after the declaration, and the four fragments that came out
+		// are four statements the server refuses.
+		if s.isOracleRoutineObject() && (value == "IS" || value == "AS") {
+			s.inCompoundCreate = true
+			s.routineBodyOpener = true
+			s.plsqlBody = true
 			s.pendingEndKeyword = false
 			return
 		}
@@ -284,6 +304,12 @@ func (s *statementSplitState) observeCreatePrefix(value string) {
 			s.inCompoundCreate = true
 			s.compoundDepth = 1
 			s.pendingEndKeyword = false
+			// A trigger reaches the body this way rather than through the arm
+			// above: its header carries no IS. The block still ends with the
+			// semicolon that belongs to it, and a trigger handed over without
+			// one is created INVALID -- measured, and invisible from
+			// USER_TRIGGERS, which reports it ENABLED all the same.
+			s.plsqlBody = s.isOracle()
 		}
 		return
 	}
@@ -305,8 +331,27 @@ func (s statementSplitState) isSQLServerRoutineObject() bool {
 		(s.createObject == "FUNCTION" || s.createObject == "PROC" || s.createObject == "PROCEDURE" || s.createObject == "TRIGGER")
 }
 
+// isOracleRoutineObject reports whether the CREATE being scanned is one whose
+// body PL/SQL opens with IS or AS.
+//
+// A TRIGGER is not in the set, and it is the one exclusion worth stating. Its
+// body is opened by BEGIN, which is why Oracle triggers split correctly before
+// this arm existed -- and its HEADER carries a standalone AS of its own, in
+// `REFERENCING OLD AS o NEW AS n`, which opens nothing. A trigger whose body is
+// a CALL has neither BEGIN nor END, so treating that AS as the opener would
+// keep every semicolon after it and swallow the rest of the file into one
+// statement.
+func (s statementSplitState) isOracleRoutineObject() bool {
+	return s.isOracle() &&
+		(s.createObject == "FUNCTION" || s.createObject == "PROCEDURE")
+}
+
 func (s statementSplitState) isSQLServer() bool {
 	return s.dialect == platform.SQLServer
+}
+
+func (s statementSplitState) isOracle() bool {
+	return s.dialect == platform.Oracle
 }
 
 func isEndContinuationKeyword(value string) bool {
@@ -318,11 +363,37 @@ func isEndContinuationKeyword(value string) bool {
 	}
 }
 
+// consumeSemicolon writes a semicolon where it belongs and reports whether the
+// statement continues past it.
+//
+// There are three answers rather than two. Inside a compound body the semicolon
+// is body text and the statement goes on. At the end of an ordinary statement
+// it is the client's terminator and is dropped. And at the end of a PL/SQL
+// routine it is BOTH: the block's own syntax requires it, which is why Oracle's
+// client terminates such a block with a `/` on the next line instead, so it is
+// written into the statement AND the statement ends.
+//
+// Handing an Oracle server `... END` without it is not an error the driver
+// reports: measured on 23.26.2.0.0 through go-ora, CREATE OR REPLACE FUNCTION
+// returned no error, USER_OBJECTS reported the function INVALID with PLS-00103
+// in USER_ERRORS, and USER_PROCEDURES did not list it at all -- so an apply
+// reported success and left a routine nothing could call.
+func (s *statementSplitState) consumeSemicolon(token lexer.Token, current *strings.Builder) bool {
+	if s.keepSemicolonInsideStatement() {
+		current.WriteString(token.Value)
+		return true
+	}
+	if s.terminatorBelongsToStatement {
+		current.WriteString(token.Value)
+	}
+	return false
+}
+
 func (s *statementSplitState) keepSemicolonInsideStatement() bool {
 	if !s.inCompoundCreate {
 		return false
 	}
-	if s.sqlServerRoutine && !s.pendingEndKeyword {
+	if s.routineBodyOpener && !s.pendingEndKeyword {
 		return true
 	}
 	if !s.pendingEndKeyword {
@@ -334,6 +405,7 @@ func (s *statementSplitState) keepSemicolonInsideStatement() bool {
 	s.pendingEndKeyword = false
 	if s.compoundDepth == 0 {
 		s.inCompoundCreate = false
+		s.terminatorBelongsToStatement = s.plsqlBody
 		return false
 	}
 	return true

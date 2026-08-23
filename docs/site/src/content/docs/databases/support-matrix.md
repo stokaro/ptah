@@ -494,6 +494,29 @@ then the domain its column was typed by answers
 alternative, `DROP DOMAIN ... FORCE`, is worse — with a live dependent it
 succeeds and silently untypes the column.
 
+**Functions and procedures** are rendered, read back and planned on both lines.
+Their body is PL/SQL, which is what the declaration says:
+
+```go
+//ptah:schema:function name="fn_double" params="p IN NUMBER" returns="NUMBER" language="plsql" body="BEGIN RETURN p * 2; END;"
+```
+
+A declaration that omits `language=` is defaulted to `plpgsql`, and the renderer
+names it and creates nothing rather than writing a body this server cannot run.
+Two other shapes are named the same way: a parameter default, because
+`ALL_ARGUMENTS` reports that one exists and never what it is, so a routine
+created with one would be replanned on every run. And `volatility="STABLE"` is
+refused, because Oracle reports determinism as `YES` or `NO` only — `IMMUTABLE`
+is the `DETERMINISTIC` clause and `VOLATILE` is its absence, and there is no
+third cell that does not either lie to a function-based index or diff forever.
+
+The semicolon that closes a PL/SQL block belongs to the block rather than to the
+client, which is why Oracle's own tooling ends one with a `/` on the next line.
+A `CREATE` handed to the server without it returns **no error at all** and
+leaves the object `INVALID`: `USER_TRIGGERS` still reports such a trigger
+`ENABLED`, and `USER_PROCEDURES` omits the routine. Ptah keeps that
+semicolon on every statement it sends.
+
 What remains for Oracle is tracked by
 [#1875](https://github.com/stokaro/ptah/issues/1875) and
 [#1920](https://github.com/stokaro/ptah/issues/1920).
