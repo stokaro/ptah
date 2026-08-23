@@ -66,7 +66,7 @@ func TestCompatEnvSchemasOptOutIsRefusedWithoutAProjectFile(t *testing.T) {
 
 			out, err := atlastest.RunCompatCommand(t, "schema", "inspect", "--url", "sqlite://probe.db")
 
-			c.Assert(errMessageOrEmpty(err), qt.Equals, test.wantErr, qt.Commentf("%s", out))
+			c.Assert(atlastest.ErrMessageOrEmpty(err), qt.Equals, test.wantErr, qt.Commentf("%s", out))
 			c.Assert(out, qt.Not(qt.Contains), `table "users"`)
 		})
 	}
@@ -86,7 +86,7 @@ func TestCompatEnvSchemasOptOutIsRefusedWithAProjectFileThatOmitsSchemas(t *test
 
 	out, err := atlastest.RunCompatCommand(t, "schema", "inspect", "--url", "sqlite://probe.db")
 
-	c.Assert(errMessageOrEmpty(err), qt.Equals,
+	c.Assert(atlastest.ErrMessageOrEmpty(err), qt.Equals,
 		`invalid boolean value "" for PTAH_ATLAS_IGNORE_ENV_SCHEMAS`, qt.Commentf("%s", out))
 	c.Assert(out, qt.Not(qt.Contains), `table "users"`)
 }
