@@ -303,6 +303,14 @@ func describedTable(fields ...goschema.Field) *goschema.Database {
 	return describedTableWithKey(nil, fields...)
 }
 
+// describedTableOptions is [describedTable] carrying SQLite's table options.
+func describedTableOptions(strict, withoutRowID bool, fields ...goschema.Field) *goschema.Database {
+	description := describedTable(fields...)
+	description.Tables[0].Strict = strict
+	description.Tables[0].WithoutRowID = withoutRowID
+	return description
+}
+
 // describedTableWithKey is [describedTable] with a table-level primary key,
 // which is how the authoring model spells a COMPOSITE one: the field flag
 // declares a single-column key and cannot express a key over two.

@@ -145,7 +145,11 @@ func createTableNode(change Change) ast.Node {
 	for _, column := range table.Columns {
 		columns = append(columns, columnNode(column, composite))
 	}
-	node := &ast.CreateTableNode{Name: tableName(change.ID), Columns: columns}
+	node := &ast.CreateTableNode{
+		Name:    tableName(change.ID),
+		Columns: columns,
+		Options: tableOptions(*table),
+	}
 	return withCompositeKey(node, keyColumns, composite)
 }
 
@@ -168,6 +172,36 @@ func withCompositeKey(node *ast.CreateTableNode, keyColumns []string, composite 
 		},
 		false: func() ast.Node { return node },
 	}[composite]()
+}
+
+// tableOptions translates the table's typed options into the keys the AST's
+// option map spells them with.
+//
+// The map is the renderer's contract and the translation belongs here rather
+// than in the model: a canonical state carrying "STRICT" as a string key would
+// make every consumer parse one to ask a yes-or-no question, and a renderer for
+// a target with different options would still have to be taught the keys.
+func tableOptions(table schemastate.Table) map[string]string {
+	options := make(map[string]string)
+	for key, set := range map[string]bool{
+		"STRICT":        table.Strict,
+		"WITHOUT_ROWID": table.WithoutRowID,
+	} {
+		options = withOption(options, key, set)
+	}
+	return options
+}
+
+// withOption records an option only when the table declares it, so a table with
+// none carries an empty map rather than a map of falses a renderer has to read.
+func withOption(options map[string]string, key string, set bool) map[string]string {
+	return map[bool]func() map[string]string{
+		false: func() map[string]string { return options },
+		true: func() map[string]string {
+			options[key] = "true"
+			return options
+		},
+	}[set]()
 }
 
 // columnNodes renders one column's change against a table that already exists.

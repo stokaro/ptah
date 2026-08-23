@@ -219,6 +219,17 @@ type Table struct {
 	// (stokaro/ptah#1662).
 	EstimatedRows   int64
 	RowStatsUnknown bool
+	// Strict and WithoutRowID are the SQLite table options. They are typed
+	// facts here rather than the untyped option map the AST carries: a map is
+	// the RENDERER's contract, and a model that held one would make every
+	// consumer parse a string to ask a yes-or-no question.
+	//
+	// They are carried for rendering and not compared. Changing either on an
+	// existing table needs a rebuild -- SQLite has no ALTER for them -- and
+	// that is a whole-table operation this family does not plan
+	// (stokaro/ptah#1662).
+	Strict       bool
+	WithoutRowID bool
 }
 
 // Populated reports whether the table is known to hold rows, and whether that

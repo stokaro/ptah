@@ -356,6 +356,27 @@ func TestTableStatementsMatchTheExistingPlanner(t *testing.T) {
 			profile: sqliteProfilePointer(),
 		},
 		{
+			// SQLite's table options. Neither has an ALTER, so a CREATE that
+			// dropped one builds a table nothing can fix afterwards without a
+			// rebuild -- and it builds without failing.
+			name: "creating a strict table without a rowid, on SQLite",
+			description: describedTableOptions(true, true, goschema.Field{
+				StructName: "Widget", Name: "id", Type: "integer", Primary: true,
+			}),
+			catalog: &dbschematypes.DBSchema{},
+			profile: sqliteProfilePointer(),
+		},
+		{
+			// The control on the row above: a table declaring neither must
+			// carry neither, or every SQLite table Ptah creates becomes strict.
+			name: "creating an ordinary table, on SQLite",
+			description: describedTableOptions(false, false, goschema.Field{
+				StructName: "Widget", Name: "id", Type: "integer", Primary: true,
+			}),
+			catalog: &dbschematypes.DBSchema{},
+			profile: sqliteProfilePointer(),
+		},
+		{
 			// An identity column. The generation mode decides whether a client
 			// may supply its own value, so a CREATE that dropped it would build
 			// a column with different write semantics.
