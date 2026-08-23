@@ -44,9 +44,60 @@ func compareIndexes(current, desired *schemastate.State, profile schemastate.Pro
 		if _, wanted := declared[object.ID.Key()]; wanted {
 			continue
 		}
+		if backsAConstraint(current, object) {
+			continue
+		}
 		changes = append(changes, decideIndexRemoval(object, desired, profile, current))
 	}
 	return changes
+}
+
+// backsAConstraint reports whether a database index is the index a constraint
+// is enforced with, rather than an index of its own.
+//
+// PostgreSQL, MySQL and MariaDB enforce a UNIQUE constraint with an index of
+// the constraint's own name on the constraint's own table, and introspection
+// reports that ONE object twice: once in the index catalog and once in the
+// constraint catalog. On MySQL and MariaDB there is not even a separate notion
+// to report -- `ADD CONSTRAINT uq UNIQUE (email)` and `CREATE UNIQUE INDEX uq`
+// produce the same row.
+//
+// Reading both as objects made a desired state that declares the CONSTRAINT
+// look like one that dropped the INDEX, and the plan came out as
+//
+//	DROP INDEX IF EXISTS "public"."uq_widget_code"
+//
+// which drops the constraint with it. Measured against the shipping comparator,
+// which plans nothing for that pair (stokaro/ptah#1663, stokaro/ptah#1286).
+//
+// The question is asked of the CURRENT state only. An index the desired state
+// declares is handled by the loop above -- it is in `declared`, so it never
+// reaches here -- which is what keeps a schema that really does want a standalone
+// unique index from having its index suppressed by the constraint the server
+// created for it.
+func backsAConstraint(current *schemastate.State, index schemastate.Object) bool {
+	for _, object := range current.OfKind(objectidentity.KindConstraint) {
+		if object.UniqueKey == nil || !object.UniqueKey.Standalone {
+			continue
+		}
+		if sameOwnedName(object.ID, index.ID, index.Index.Table) {
+			return true
+		}
+	}
+	return false
+}
+
+// sameOwnedName reports whether a constraint and an index name one object: the
+// same name on the same table.
+//
+// The index's table comes from its payload rather than its identity, because a
+// target that scopes index names to a schema leaves the table out of the
+// identity entirely -- and this comparison is precisely about the table they
+// share.
+func sameOwnedName(constraint, index, indexTable objectidentity.ID) bool {
+	return constraint.Name.Normalized == index.Name.Normalized &&
+		constraint.Parent.Normalized == indexTable.Name.Normalized &&
+		constraint.Schema.Normalized == indexTable.Schema.Normalized
 }
 
 // changedIndexProperties reports which properties of two indexes differ.
