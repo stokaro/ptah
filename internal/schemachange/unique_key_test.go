@@ -1,6 +1,7 @@
 package schemachange_test
 
 import (
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -25,14 +26,39 @@ import (
 //	                                                 keys for referenced table
 
 func TestAReferenceAgainstACompositeKeyIsPlanned(t *testing.T) {
-	c := qt.New(t)
+	tests := []struct {
+		name       string
+		references []string
+	}{
+		{name: "in the order the key declares", references: []string{"tenant", "id"}},
+		{
+			// A key on (a, b) and one on (b, a) are the same guarantee, and no
+			// engine distinguishes them, so the comparison is over the SET.
+			name:       "in the other order",
+			references: []string{"id", "tenant"},
+		},
+		{
+			// PostgreSQL folds an unquoted identifier on the way in, so the
+			// spelling an author typed and the one the catalog reports differ
+			// in case and name one column. The fold is the target's, which is
+			// why it is passed in rather than assumed.
+			name:       "in another case",
+			references: []string{"TENANT", "ID"},
+		},
+	}
 
-	changes := changesFor(c, tenantScopedSchema([]string{"tenant", "id"}), tenantScopedCatalog())
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
 
-	c.Assert(changes, qt.HasLen, 1)
-	c.Assert(changes[0].Operation, qt.Equals, schemachange.Add)
-	c.Assert(changes[0].Status, qt.Equals, schemachange.Planned)
-	c.Assert(changes[0].Diagnostic, qt.Equals, "")
+			changes := changesFor(c, tenantScopedSchema(test.references), tenantScopedCatalog())
+
+			c.Assert(changes, qt.HasLen, 1)
+			c.Assert(changes[0].Operation, qt.Equals, schemachange.Add)
+			c.Assert(changes[0].Status, qt.Equals, schemachange.Planned)
+			c.Assert(changes[0].Diagnostic, qt.Equals, "")
+		})
+	}
 }
 
 // TestAReferenceAgainstHalfACompositeKeyIsBlocked is the control, and it is the
@@ -49,12 +75,56 @@ func TestAReferenceAgainstHalfACompositeKeyIsBlocked(t *testing.T) {
 	c.Assert(changes[0].Diagnostic, qt.Contains, "which no unique constraint covers")
 }
 
+// TestAReferenceAgainstANonKeyColumnIsBlocked is what makes the column NAMES
+// load-bearing. The parent has a single-column key, so a rule that matched a
+// guarantee by the SHAPE of its column list -- one column against one column --
+// would call this reference legal, and PostgreSQL refuses it.
+func TestAReferenceAgainstANonKeyColumnIsBlocked(t *testing.T) {
+	c := qt.New(t)
+	description := &goschema.Database{
+		Tables: []goschema.Table{
+			{StructName: "Parent", Name: "parent"},
+			{StructName: "Child", Name: "child"},
+		},
+		Fields: []goschema.Field{
+			{StructName: "Parent", Name: "id", Type: "int", Primary: true},
+			{StructName: "Parent", Name: "label", Type: "text"},
+			{StructName: "Child", Name: "parent_label", Type: "text", Nullable: true},
+		},
+		Constraints: []goschema.Constraint{{
+			StructName:     "Child",
+			Name:           "fk_child_parent",
+			Type:           "FOREIGN KEY",
+			Columns:        []string{"parent_label"},
+			ForeignTable:   "parent",
+			ForeignColumns: []string{"label"},
+		}},
+	}
+	catalog := &dbschematypes.DBSchema{
+		Tables: []dbschematypes.DBTable{
+			{Name: "parent", Schema: "public", Columns: []dbschematypes.DBColumn{
+				{Name: "id", DataType: "integer", IsNullable: "NO", IsPrimaryKey: true},
+				{Name: "label", DataType: "text", IsNullable: "NO"},
+			}},
+			{Name: "child", Schema: "public", Columns: []dbschematypes.DBColumn{
+				{Name: "parent_label", DataType: "text", IsNullable: "YES"},
+			}},
+		},
+	}
+
+	changes := changesFor(c, description, catalog)
+
+	c.Assert(changes, qt.HasLen, 1)
+	c.Assert(changes[0].Status, qt.Equals, schemachange.Blocked)
+	c.Assert(changes[0].Diagnostic, qt.Contains, "which no unique constraint covers")
+}
+
 // tenantScopedSchema is a parent keyed on (tenant, id) and a child whose
 // foreign key references the given columns of it.
 func tenantScopedSchema(references []string) *goschema.Database {
 	local := make([]string, 0, len(references))
 	for _, column := range references {
-		local = append(local, "parent_"+column)
+		local = append(local, "parent_"+strings.ToLower(column))
 	}
 	// The child carries both columns whichever the key references, so the two
 	// rows differ in the REFERENCE and in nothing else. A fixture that also

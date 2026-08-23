@@ -297,21 +297,19 @@ type UniqueKey struct {
 // and says nothing about either column alone, so a foreign key referencing a
 // alone is not made legal by it -- and every engine Ptah targets refuses one.
 func (u UniqueKey) Covers(columns []string, fold func(string) string) bool {
-	if len(u.Columns) != len(columns) {
-		return false
-	}
-	wanted := make(map[string]int, len(columns))
+	return slices.Equal(foldedSet(u.Columns, fold), foldedSet(columns, fold))
+}
+
+// foldedSet is a column list in its comparison form: folded by the target's
+// rules and sorted, because a key on (a, b) is the same guarantee as one on
+// (b, a) and no engine distinguishes them.
+func foldedSet(columns []string, fold func(string) string) []string {
+	folded := make([]string, 0, len(columns))
 	for _, column := range columns {
-		wanted[fold(column)]++
+		folded = append(folded, fold(column))
 	}
-	for _, column := range u.Columns {
-		key := fold(column)
-		if wanted[key] == 0 {
-			return false
-		}
-		wanted[key]--
-	}
-	return true
+	slices.Sort(folded)
+	return folded
 }
 
 // Object is one schema object in the canonical state.
