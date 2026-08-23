@@ -268,7 +268,8 @@ because each journey below resolves without consulting a meta-map.
 
 | Journey | Today | Target |
 | --- | --- | --- |
-| New Go user | `getting-started` → `workflows/go-schema` → `workflows/migrations`; works, but the versioned-versus-direct decision is never presented | Home → `start/quick-start` → `schema/go-annotations` → `versioned/overview` |
+| Migration-first user, any language | `start/quick-start` runs the whole migration workflow — create, write, hash, validate, apply, status, change, roll back — before any schema source appears | Home → `start/quick-start` → `versioned/overview` |
+| New Go user | reaches the quick start like everybody else and finds Go as one of four schema sources rather than as the entry point | Home → `start/quick-start` → `schema/go-annotations` → `versioned/overview` |
 | Schema-file user | `workflows/schema-files` covers four formats on one page; reference pages are two clicks away | Home → `start/choose-a-workflow` → `schema/yaml` / `schema/hcl` / `schema/sql` |
 | ORM/external-provider user | `workflows/orm-loaders`, duplicated by a section of `schema-files` | `schema/orm-and-external` |
 | Brownfield database adopter | no path: `ptah introspect` appears only in reference tables, `migrations baseline` has no how-to (only a contrast note in `checkpoints` and an exit-code row) | `start/adopt-an-existing-database` → `direct/inspect` → `versioned/import` or baseline |
@@ -278,6 +279,29 @@ because each journey below resolves without consulting a meta-map.
 | Atlas migration user | `workflows/atlas-cli` (4,137 words, four page types mixed) → `reference/comparison` (4,795 words, four questions mixed) | `atlas/overview` → `atlas/migrate-commands` / `atlas/schema-commands` → `atlas/comparison` / `atlas/conformance` |
 | Go API embedder | `reference/reusable-components` + `reference/public-api` + `reference/query-builder`, all filed under generic `Reference` | `extend/public-api` → `extend/components` → `extend/query-builder` |
 | Contributor | `AGENTS.md` → skill; no style guide exists yet | `AGENTS.md` → `docs/STYLE_GUIDE.md` → skill → this inventory |
+
+## 6a. The onboarding narrative (stokaro/ptah#1228)
+
+The quick start taught Ptah through annotated Go structs: the first thing a
+reader wrote was Go, and every later step was driven from it. That made a schema
+source look like the product's identity, and it made the page unusable as an
+introduction for a reader who does not write Go.
+
+It now teaches the migration workflow first, in this order: build, create a
+migration, write its SQL, hash, validate, apply, inspect status, read the
+database back, add a second migration, apply the delta, roll back. Nothing in
+that sequence needs an application language, and it ends with a working
+migration history.
+
+Declarative schema management arrives after it, as an addition rather than as
+the premise, and the schema itself is shown in four synchronized tabs — SQL,
+YAML, HCL, Go — with the one place they render differently named rather than
+smoothed over: an HCL column is `NOT NULL` unless it says `null = true`.
+
+The landing page follows the same rule. Its "Choose your path" table leads with
+migrations you write yourself, an existing migration directory, and a live
+database, and "Model your schema" points at the format-neutral concept page
+rather than at the Go one.
 
 ## 7. Terminology audit
 

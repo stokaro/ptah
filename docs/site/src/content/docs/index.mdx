@@ -1,10 +1,10 @@
 ---
 title: Ptah
-description: Documentation for Ptah, a license-clean schema and migration toolkit for Go projects and Atlas-compatible workflows.
+description: Documentation for Ptah, a schema management and database migration tool with several schema sources and an Atlas-compatible surface.
 template: splash
 hero:
   title: Ptah
-  tagline: Schema modeling, migration planning, Atlas-compatible command paths, and database documentation without depending on Atlas code.
+  tagline: Write migrations or describe the schema you want — Ptah plans, applies and records the change, on eight engines, with an Atlas-compatible surface beside it.
   image:
     alt: Ptah logo
     file: ../../assets/logo.svg
@@ -39,8 +39,8 @@ than necessary.
 ## What do you need?
 
 <CardGrid>
-  <LinkCard title="Start" href="./start/quick-start/" description="Install Ptah, run a complete SQLite quick start, then choose between versioned migrations and direct changes — or adopt an existing database." />
-  <LinkCard title="Model your schema" href="./schema/go-annotations/" description="Declare the desired schema with Go annotations, YAML, HCL, SQL, or an ORM loader; merge sources, visualize, and export." />
+  <LinkCard title="Start" href="./start/quick-start/" description="Install Ptah, run a migration end to end — create, validate, apply, inspect, roll back — then add declarative schema management on top." />
+  <LinkCard title="Model your schema" href="./concepts/desired-schema-and-sources/" description="Describe the schema you want in SQL, YAML, HCL, Go annotations, or an ORM loader; merge sources, visualize, and export." />
   <LinkCard title="Direct schema changes" href="./direct/inspect/" description="Inspect a live database, compare it with the desired schema, gate on drift, and apply changes directly." />
   <LinkCard title="Versioned migrations" href="./versioned/overview/" description="Generate, apply, roll back, verify, import, and maintain a migration directory — with checkpoints and reference data." />
   <LinkCard title="Test and CI" href="./testing/migrations-and-schema/" description="Run declarative migration and schema tests locally and gate pull requests in CI." />
@@ -56,11 +56,12 @@ than necessary.
 
 | If you have | Start with |
 | --- | --- |
-| A Go application with schema annotations | [Go annotations](./schema/go-annotations/) |
-| YAML, HCL, or SQL schema files | [YAML schema](./schema/yaml/), [HCL schema](./schema/hcl/), or [SQL schema](./schema/sql/) |
-| An ORM that owns the schema | [ORM and external loaders](./schema/orm-and-external/) |
+| Migrations you write yourself | [Quick start](./start/quick-start/) |
 | An existing migration directory | [Versioned migrations](./versioned/overview/) |
 | A live database built outside Ptah | [Adopt an existing database](./start/adopt-an-existing-database/) |
+| SQL, YAML, or HCL schema files | [SQL schema](./schema/sql/), [YAML schema](./schema/yaml/), or [HCL schema](./schema/hcl/) |
+| A Go application with schema annotations | [Go annotations](./schema/go-annotations/) |
+| An ORM that owns the schema | [ORM and external loaders](./schema/orm-and-external/) |
 | No decision yet on versioned versus direct changes | [Choose a workflow](./start/choose-a-workflow/) |
 | An OCI registry for migration or schema distribution | [OCI registry artifacts](./operate/oci-registry/) |
 | Scripts written for Atlas OSS commands | [Atlas compatibility overview](./atlas/overview/) |
