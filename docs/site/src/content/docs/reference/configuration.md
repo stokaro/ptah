@@ -22,6 +22,21 @@ environment twin, including when that environment value is malformed. An empty
 value remains unset for every flag type except boolean, where it is rejected;
 see [Boolean environment variables](#boolean-environment-variables).
 
+## The one flag with no environment variable
+
+`--auto-approve` — on `ptah schema apply` and `ptah db drop-all` — is the only
+flag in the native CLI that does **not** bind to a `PTAH_*` variable. It has to
+be typed, or written into a command line somebody wrote.
+
+That is deliberate, and it is the reason every other flag can safely have one: a
+container, a CI job, or a Kubernetes Job can be configured entirely through the
+environment, and none of that configuration can turn a review step into an
+unattended apply. A variable exported once in a shell profile would otherwise
+approve every later run in that shell.
+
+A Kubernetes Job passes it in `args:` rather than `env:`, which is the same
+distinction: what the workload *is* versus what it is *configured with*.
+
 ## Boolean environment variables
 
 Every boolean `PTAH_*` variable follows one rule, whether it is a flag's

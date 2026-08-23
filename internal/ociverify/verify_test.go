@@ -2,6 +2,7 @@ package ociverify_test
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -79,4 +80,65 @@ func TestReport_ErrIsNilWhenNothingWasRefused(t *testing.T) {
 	}
 
 	c.Assert(report.Err(), qt.IsNil)
+}
+
+// TestReport_JSONNamesMatchEveryOtherPtahDocument pins the wire shape.
+//
+// Without tags this report serialized as Go field names -- `Reference`,
+// `Digest`, `Satisfied`, `Findings` -- while every other machine-readable Ptah
+// document is snake_case, so a consumer reading two of them needed two naming
+// conventions. `Satisfied` also serialized as `null` on a refusal, which is a
+// different shape from `[]` to anything that iterates (stokaro/ptah#852).
+func TestReport_JSONNamesMatchEveryOtherPtahDocument(t *testing.T) {
+	tests := []struct {
+		name   string
+		report ociverify.Report
+		// wantContains are the exact JSON fragments the document must carry.
+		wantContains []string
+	}{
+		{
+			name: "a refusal",
+			report: ociverify.Report{
+				Reference: "oci://example.test/app:v1",
+				Digest:    "sha256:abc",
+				Findings:  []ociverify.Finding{{Requirement: "require_digest_pin", Detail: "the reference names a tag"}},
+			},
+			wantContains: []string{
+				`"reference":"oci://example.test/app:v1"`,
+				`"digest":"sha256:abc"`,
+				`"satisfied":[]`,
+				`"requirement":"require_digest_pin"`,
+				`"detail":"the reference names a tag"`,
+			},
+		},
+		{
+			name: "a pass",
+			report: ociverify.Report{
+				Reference: "oci://example.test/app@sha256:abc",
+				Digest:    "sha256:abc",
+				Satisfied: []string{"require_digest_pin"},
+			},
+			wantContains: []string{
+				`"satisfied":["require_digest_pin"]`,
+				`"findings":[]`,
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			encoded, err := json.Marshal(test.report)
+
+			c.Assert(err, qt.IsNil)
+			for _, want := range test.wantContains {
+				c.Assert(string(encoded), qt.Contains, want)
+			}
+			// The Go names must be gone, or a consumer written against the old
+			// document keeps working and the two conventions both survive.
+			c.Assert(string(encoded), qt.Not(qt.Contains), `"Reference"`)
+			c.Assert(string(encoded), qt.Not(qt.Contains), `"Satisfied"`)
+		})
+	}
 }
