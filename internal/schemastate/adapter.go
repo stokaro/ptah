@@ -226,12 +226,14 @@ func FromDescription(
 		if existing, collided := state.Add(Object{
 			ID: id,
 			Table: &Table{
-				Columns:      columns,
-				Strict:       table.Strict,
-				WithoutRowID: table.WithoutRowID,
-				Engine:       table.Engine,
-				Charset:      table.Charset,
-				Collate:      table.Collate,
+				Columns:           columns,
+				Strict:            table.Strict,
+				WithoutRowID:      table.WithoutRowID,
+				Engine:            table.Engine,
+				Charset:           table.Charset,
+				Collate:           table.Collate,
+				AutoIncrement:     table.AutoIncrement,
+				PrimaryKeyInclude: table.PrimaryKeyInclude,
 				// A description says what a table should look like and nothing
 				// about what is in it. Leaving the pair zero would claim the
 				// table is empty, which is the answer that lets an ADD COLUMN
@@ -367,6 +369,9 @@ func columnsFromDescription(
 			GeneratedExpression: field.GeneratedExpression,
 			GeneratedKind:       field.GeneratedKind,
 			IdentityGeneration:  field.IdentityGeneration,
+			IdentityStart:       field.IdentityStart,
+			IdentityIncrement:   field.IdentityIncrement,
+			IdentityOptions:     field.IdentityOptions,
 			Charset:             field.Charset,
 			Collate:             field.Collate,
 			UpdateExpression:    field.UpdateExpression,

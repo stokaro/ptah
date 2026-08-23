@@ -439,6 +439,37 @@ func TestTableStatementsMatchTheExistingPlanner(t *testing.T) {
 			catalog: &dbschematypes.DBSchema{},
 		},
 		{
+			// The sequence behind an identity column. Dropping it builds a
+			// column whose numbering starts at 1 and steps by 1 whatever the
+			// author asked for, and the table is otherwise identical -- so the
+			// loss is invisible until a row is inserted.
+			name: "creating a table with a started identity column",
+			description: describedTable(goschema.Field{
+				StructName: "Widget", Name: "id", Type: "int", Primary: true,
+				IdentityGeneration: "ALWAYS", IdentityStart: "100", IdentityIncrement: "5",
+			}),
+			catalog: &dbschematypes.DBSchema{},
+		},
+		{
+			// A key with INCLUDE payload columns, which cannot be declared on a
+			// column at all -- so the key moves to a table-level constraint
+			// however few columns it covers.
+			name: "creating a table with a covering primary key",
+			description: describedTableCoveringKey(
+				goschema.Field{StructName: "Widget", Name: "id", Type: "int"},
+				goschema.Field{StructName: "Widget", Name: "code", Type: "text", Nullable: true},
+			),
+			catalog: &dbschematypes.DBSchema{},
+		},
+		{
+			name: "creating a table with a counter, on MySQL",
+			description: describedTableCounter(goschema.Field{
+				StructName: "Widget", Name: "id", Type: "int", Primary: true,
+			}),
+			catalog: &dbschematypes.DBSchema{},
+			profile: mysqlProfilePointer(),
+		},
+		{
 			// A composite key, which the column syntax cannot express: PRIMARY
 			// KEY on two columns declares two keys rather than one over both,
 			// so it has to become a table-level constraint.

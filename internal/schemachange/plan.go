@@ -161,7 +161,9 @@ func createTableNode(change Change) ast.Node {
 	for _, column := range table.Columns {
 		keyColumns = appendPrimaryKeyColumn(keyColumns, column)
 	}
-	composite := len(keyColumns) > 1
+	// A key with INCLUDE payload columns cannot be declared on a column, so it
+	// becomes a table-level constraint however few columns it covers.
+	composite := len(keyColumns) > 1 || len(table.PrimaryKeyInclude) > 0
 	for _, column := range table.Columns {
 		columns = append(columns, columnNode(column, composite))
 	}
@@ -170,7 +172,7 @@ func createTableNode(change Change) ast.Node {
 		Columns: columns,
 		Options: tableOptions(*table),
 	}
-	return withCompositeKey(node, keyColumns, composite)
+	return withCompositeKey(node, keyColumns, table.PrimaryKeyInclude, composite)
 }
 
 // appendPrimaryKeyColumn keeps the loop above free of a branch the repository's
@@ -184,10 +186,16 @@ func appendPrimaryKeyColumn(columns []string, column schemastate.Column) []strin
 
 // withCompositeKey attaches the table-level key constraint a multi-column key
 // needs. A single-column key is already on its column.
-func withCompositeKey(node *ast.CreateTableNode, keyColumns []string, composite bool) ast.Node {
+func withCompositeKey(
+	node *ast.CreateTableNode,
+	keyColumns, includeColumns []string,
+	composite bool,
+) ast.Node {
 	return map[bool]func() ast.Node{
 		true: func() ast.Node {
-			node.Constraints = append(node.Constraints, ast.NewPrimaryKeyConstraint(keyColumns...))
+			constraint := ast.NewPrimaryKeyConstraint(keyColumns...)
+			constraint.IncludeColumns = includeColumns
+			node.Constraints = append(node.Constraints, constraint)
 			return node
 		},
 		false: func() ast.Node { return node },
@@ -210,9 +218,10 @@ func tableOptions(table schemastate.Table) map[string]string {
 		options = withOption(options, key, set)
 	}
 	for key, value := range map[string]string{
-		"ENGINE":  table.Engine,
-		"CHARSET": table.Charset,
-		"COLLATE": table.Collate,
+		"ENGINE":         table.Engine,
+		"CHARSET":        table.Charset,
+		"COLLATE":        table.Collate,
+		"AUTO_INCREMENT": table.AutoIncrement,
 	} {
 		options = withValueOption(options, key, value)
 	}
@@ -318,6 +327,9 @@ func columnNode(column schemastate.Column, compositeKey bool) *ast.ColumnNode {
 		GeneratedExpression: column.GeneratedExpression,
 		GeneratedKind:       column.GeneratedKind,
 		IdentityGeneration:  column.IdentityGeneration,
+		IdentityStart:       column.IdentityStart,
+		IdentityIncrement:   column.IdentityIncrement,
+		IdentityOptions:     column.IdentityOptions,
 		AutoInc:             column.AutoIncrement,
 	}
 	return withDefault(node, column)
