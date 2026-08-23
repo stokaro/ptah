@@ -24,10 +24,14 @@ There is no Ptah account, no Ptah-hosted model, and no Ptah AI token. The model
 can be a hosted API, a gateway your organization runs, or one running on this
 machine -- in the last case nothing about your schema leaves it.
 
-This release carries the provider surface:
+  ptah assist explain <question>   ask about this project, with Ptah's tools answering
+  ptah assist provider list        the profiles this machine can reach
+  ptah assist provider test        whether one of them works, measured
 
-  ptah assist provider list   the profiles this machine can reach
-  ptah assist provider test   whether one of them works, measured
+Every tool the model reaches is the one an external AI client reaches over the
+Model Context Protocol -- the same capability broker, the same verification
+gates, the same audit record. Ptah Assist gets nothing an external client does
+not.
 
 A profile names an endpoint, a model, and a credential REFERENCE such as
 env:OPENAI_API_KEY. Ptah never stores a key: the reference is resolved when a
@@ -44,6 +48,7 @@ point Ptah at an endpoint of its author's choosing with your key attached.`,
 			return cmd.Help()
 		},
 	}
+	cmd.AddCommand(newExplainCommand())
 	cmd.AddCommand(newProviderCommand())
 	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
 	return cmd

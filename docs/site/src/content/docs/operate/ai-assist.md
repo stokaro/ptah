@@ -8,14 +8,64 @@ Ptah account, no Ptah-hosted model, and no Ptah AI token. The model can be a
 hosted API, a gateway your organization runs, or one running on this machine —
 in the last case nothing about your schema leaves it.
 
-This release carries the provider surface: naming a provider, resolving its
-credential, and finding out whether the model can do what the workflow needs.
-The conversational surface is separate work.
+```bash
+ptah assist explain "what do the pending migrations do?"   # ask, with Ptah's tools answering
+ptah assist provider list                                  # the profiles this machine can reach
+ptah assist provider test                                  # whether one of them works, measured
+```
+
+An interactive session and saved conversations are separate work; this release
+answers one question at a time.
+
+## Ask a question
 
 ```bash
-ptah assist provider list   # the profiles this machine can reach
-ptah assist provider test   # whether one of them works, measured
+ptah assist explain "what migrations does this project have?"
+
+ptah assist explain --trace \
+  --workspace . --migrations-dir ./migrations --dialect postgres \
+  "what would adding a status column to users look like?"
 ```
+
+The model answers using Ptah's own tools, and every one of those calls goes
+through the same surface an external AI client reaches over the Model Context
+Protocol: the same tools, the same capability broker, the same verification
+gates, the same audit record. Ptah Assist gets nothing an external client does
+not — it is a client of that surface, over an in-memory transport rather than
+stdio.
+
+Which tools the model reaches, and what it may do with them, is decided by the
+same flags [AI agents over MCP](../ai-agents/) documents. Without `--workspace`
+the model reaches the reading tools. With one it also reaches the artifact
+tools, and writing stays refused until `--allow-write` names an artifact class.
+
+When a patch needs approval, Ptah asks in the terminal and shows the artifact,
+the paths and the exact digest the approval covers:
+
+```text
+Allow? [n]o / [o]nce / [s]ession:
+```
+
+`--non-interactive` removes the prompt rather than answering it: an operation
+that needs approval is refused, which is what that flag has to mean.
+
+### The answer and the evidence are different things
+
+The answer is the model's words. What Ptah actually did is the tool trace, which
+`--trace` prints and `--format json` always carries. A run where no tool
+answered says so:
+
+```text
+-- No Ptah tool answered, so nothing above was checked against this project.
+```
+
+That line is the difference between an answer Ptah stands behind and a model
+talking about databases in general, and the two look identical without it.
+
+Every run is bounded — turns, total tool calls, repeats of one identical call,
+and the size of a single tool result. A model that loops terminates with a
+diagnostic naming which limit it hit, and the record is printed either way.
+`--max-tool-calls` moves one of those bounds.
 
 ## Start from what you already exported
 
@@ -173,4 +223,6 @@ answered is never repeated.
 ## Related
 
 - [AI agents over MCP](../ai-agents/) — connect an AI client you already
-  use to Ptah, which needs no provider configuration at all.
+  use to Ptah, which needs no provider configuration at all. Everything there
+  about permissions, artifact scopes and verification applies here unchanged:
+  it is the same surface.
