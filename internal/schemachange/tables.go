@@ -342,9 +342,10 @@ func isDomain(column schemastate.Column) bool {
 // A domain on one side and a base type on the other is therefore always a
 // change, whatever the two spellings fold to.
 func domainChanged(before, after schemastate.Column, profile schemastate.Profile) bool {
-	if isDomain(before) != isDomain(after) {
-		return true
-	}
+	// A domain on one side and a base type on the other is caught by the name
+	// comparison below: a column that is not a domain has no domain name, and
+	// no domain has an empty one. Guarding it separately would be a branch no
+	// test could tell from that one.
 	fold := profile.Semantics.TableIdentityKey
 	if fold(before.DomainName) != fold(after.DomainName) {
 		return true
