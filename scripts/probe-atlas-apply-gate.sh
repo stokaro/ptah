@@ -27,7 +27,7 @@
 #
 # Usage:
 #   scripts/probe-atlas-apply-gate.sh [path-to-atlas]
-#   PTAH_ATLAS_ORACLE=/path/to/atlas scripts/probe-atlas-apply-gate.sh
+#   PTAH_ATLAS_REFERENCE=/path/to/atlas scripts/probe-atlas-apply-gate.sh
 #
 # Exits non-zero if any comparison diverges. Scratch directories are created
 # under the system temp directory and removed on exit.

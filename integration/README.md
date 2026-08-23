@@ -154,12 +154,12 @@ that two empty repeatable identities fail before mutation. The query package
 covers every CE verb that accepts a `--dir` URL query:
 
 ```bash
-PTAH_ATLAS_ORACLE=/path/to/pinned/atlas \
-  go test -tags=integration ./integration/atlasoracle/migratedirquery -count=1
-PTAH_ATLAS_ORACLE=/path/to/pinned/atlas \
-  go test -tags=integration ./integration/atlasoracle/migrateapply -count=1
-PTAH_ATLAS_ORACLE=/path/to/pinned/atlas \
-  go test -tags=integration ./integration/atlasoracle/flywayrevision -count=1
+PTAH_ATLAS_REFERENCE=/path/to/pinned/atlas \
+  go test -tags=integration ./integration/atlasreference/migratedirquery -count=1
+PTAH_ATLAS_REFERENCE=/path/to/pinned/atlas \
+  go test -tags=integration ./integration/atlasreference/migrateapply -count=1
+PTAH_ATLAS_REFERENCE=/path/to/pinned/atlas \
+  go test -tags=integration ./integration/atlasreference/flywayrevision -count=1
 ```
 
 ### Basic Usage

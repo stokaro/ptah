@@ -11,12 +11,12 @@ atlas_ce_resolve_binary() {
 		printf '%s\n' "$argument_path"
 		return 0
 	fi
-	if [[ -n "${PTAH_ATLAS_ORACLE:-}" ]]; then
-		printf '%s\n' "$PTAH_ATLAS_ORACLE"
+	if [[ -n "${PTAH_ATLAS_REFERENCE:-}" ]]; then
+		printf '%s\n' "$PTAH_ATLAS_REFERENCE"
 		return 0
 	fi
 
-	printf 'atlas-ce: oracle path required; pass it as an argument or set PTAH_ATLAS_ORACLE\n' >&2
+	printf 'atlas-ce: oracle path required; pass it as an argument or set PTAH_ATLAS_REFERENCE\n' >&2
 	return 1
 }
 

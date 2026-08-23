@@ -14,18 +14,19 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/integration/atlasreference"
 	"go.5x5.cz/ptah/internal/atlashclrender"
 )
 
-// oracleEnv names the environment variable holding the path to the pinned
+// referenceEnv names the environment variable holding the path to the pinned
 // Atlas CE binary this conformance run compares against.
-const oracleEnv = "PTAH_ATLAS_ORACLE"
+const referenceEnv = atlasreference.EnvVar
 
-// oracleVersion is the only build this conformance run trusts. A different
+// referenceVersion is the only build this conformance run trusts. A different
 // build may model a different set of types, which is the very thing under
 // measurement here, so comparing against it would report drift that is really
 // version drift.
-const oracleVersion = "atlas community version v1.3.0"
+const referenceVersion = atlasreference.Version
 
 // devURLEnvByDialect names the environment variable carrying each dialect's dev
 // database URL.
@@ -36,7 +37,7 @@ const oracleVersion = "atlas community version v1.3.0"
 // sql("timestamp with time zone") is accepted, and a run without a real server
 // would measure neither.
 var devURLEnvByDialect = map[string]string{
-	platform.Postgres: "PTAH_ATLAS_ORACLE_POSTGRES_DEV_URL",
+	platform.Postgres: "PTAH_ATLAS_REFERENCE_POSTGRES_DEV_URL",
 }
 
 // defaultDevURLByDialect is the dev URL for a dialect that needs no server.
@@ -96,10 +97,10 @@ var unmodeledControls = map[string][]string{
 // `type = uuid`", a parity finding about a type the binary accepts perfectly
 // well when asked on its own.
 func TestOracleModeledColumnTypesMatchTheBinary(t *testing.T) {
-	oracle := requireTypeOracle(t)
+	reference := requireTypeOracle(t)
 	c := qt.New(t)
 	c.Assert(sortedDialects(), qt.DeepEquals, []string{platform.Postgres, platform.SQLite},
-		qt.Commentf("every measured dialect must remain in the oracle matrix"))
+		qt.Commentf("every measured dialect must remain in the reference matrix"))
 
 	for _, dialect := range sortedDialects() {
 		t.Run(dialect, func(t *testing.T) {
@@ -114,7 +115,7 @@ func TestOracleModeledColumnTypesMatchTheBinary(t *testing.T) {
 				t.Run("modeled/"+name, func(t *testing.T) {
 					c := qt.New(t)
 
-					out, code := runTypeOracle(c, oracle, devURL, dialect, name)
+					out, code := runTypeOracle(c, reference, devURL, dialect, name)
 					c.Assert(code, qt.Equals, 0,
 						qt.Commentf("the binary refuses `type = %s` on %s, so rendering it bare emits unreadable HCL: %s",
 							name, dialect, out))
@@ -128,7 +129,7 @@ func TestOracleModeledColumnTypesMatchTheBinary(t *testing.T) {
 					c.Assert(atlashclrender.IsModeledColumnType(dialect, name), qt.IsFalse,
 						qt.Commentf("%q is a control: it must stay absent from the modeled set", name))
 
-					out, code := runTypeOracle(c, oracle, devURL, dialect, name)
+					out, code := runTypeOracle(c, reference, devURL, dialect, name)
 					c.Assert(code, qt.Not(qt.Equals), 0,
 						qt.Commentf("the binary now accepts `type = %s` on %s; the control has stopped controlling anything: %s",
 							name, dialect, out))
@@ -146,7 +147,7 @@ func TestOracleModeledColumnTypesMatchTheBinary(t *testing.T) {
 // direction: wrapping rescues a type the HCL schema does not MODEL, but does
 // nothing for a type the dev database does not HAVE.
 func TestOracleAcceptsWrappedTypeExpressions(t *testing.T) {
-	oracle := requireTypeOracle(t)
+	reference := requireTypeOracle(t)
 	c := qt.New(t)
 
 	tests := []struct {
@@ -204,14 +205,14 @@ func TestOracleAcceptsWrappedTypeExpressions(t *testing.T) {
 		},
 	}
 	c.Assert(tests, qt.HasLen, 9,
-		qt.Commentf("all accepted fallback controls must remain in the oracle matrix"))
+		qt.Commentf("all accepted fallback controls must remain in the reference matrix"))
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			devURL := requireDevURL(t, test.dialect)
 
-			out, code := runTypeOracle(c, oracle, devURL, test.dialect, test.expr)
+			out, code := runTypeOracle(c, reference, devURL, test.dialect, test.expr)
 			c.Assert(code, qt.Equals, 0,
 				qt.Commentf("`type = %s` on %s exited %d: %s", test.expr, test.dialect, code, out))
 		})
@@ -221,7 +222,7 @@ func TestOracleAcceptsWrappedTypeExpressions(t *testing.T) {
 // TestOracleRefusesUnsupportedTypeExpressions measures the unsafe alternatives
 // to the sql() fallback and its limit for a type absent from the dev database.
 func TestOracleRefusesUnsupportedTypeExpressions(t *testing.T) {
-	oracle := requireTypeOracle(t)
+	reference := requireTypeOracle(t)
 	c := qt.New(t)
 
 	tests := []struct {
@@ -264,14 +265,14 @@ func TestOracleRefusesUnsupportedTypeExpressions(t *testing.T) {
 		},
 	}
 	c.Assert(tests, qt.HasLen, 6,
-		qt.Commentf("all refusal controls must remain in the oracle matrix"))
+		qt.Commentf("all refusal controls must remain in the reference matrix"))
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			devURL := requireDevURL(t, test.dialect)
 
-			out, code := runTypeOracle(c, oracle, devURL, test.dialect, test.expr)
+			out, code := runTypeOracle(c, reference, devURL, test.dialect, test.expr)
 			c.Assert(code, qt.Not(qt.Equals), 0,
 				qt.Commentf("`type = %s` on %s exited %d: %s", test.expr, test.dialect, code, out))
 		})
@@ -287,22 +288,22 @@ func sortedDialects() []string {
 func requireTypeOracle(t *testing.T) string {
 	t.Helper()
 
-	oracle := os.Getenv(oracleEnv)
-	if oracle == "" {
+	reference := os.Getenv(referenceEnv)
+	if reference == "" {
 		t.Skipf("SKIPPED: set %s to the pinned Atlas CE binary (%s) to run the column-type conformance run",
-			oracleEnv, oracleVersion)
+			referenceEnv, referenceVersion)
 	}
 
-	out, err := exec.Command(oracle, "version").Output() // #nosec G204 G702 -- the oracle path is operator-provided via PTAH_ATLAS_ORACLE
+	out, err := exec.Command(reference, "version").Output() // #nosec G204 G702 -- the reference path is operator-provided via PTAH_ATLAS_REFERENCE
 	if err != nil {
-		t.Fatalf("%s=%s is not runnable: %v", oracleEnv, oracle, err)
+		t.Fatalf("%s=%s is not runnable: %v", referenceEnv, reference, err)
 	}
 	got, _, _ := strings.Cut(string(out), "\n")
-	if strings.TrimSpace(got) != oracleVersion {
+	if strings.TrimSpace(got) != referenceVersion {
 		t.Fatalf("%s=%s reports %q, want %q; a different build may model a different set of types",
-			oracleEnv, oracle, strings.TrimSpace(got), oracleVersion)
+			referenceEnv, reference, strings.TrimSpace(got), referenceVersion)
 	}
-	return oracle
+	return reference
 }
 
 // requireDevURL returns the dev database URL for a dialect, skipping when a
@@ -337,7 +338,7 @@ func requireDevURL(t *testing.T, dialect string) string {
 // the first subtest is not the one paying for it in an otherwise parallel run.
 var typeOracleWarmup sync.Once
 
-func runTypeOracle(c *qt.C, oracle, devURL, dialect, typeExpression string) (string, int) {
+func runTypeOracle(c *qt.C, reference, devURL, dialect, typeExpression string) (string, int) {
 	c.Helper()
 
 	schema := schemaNameByDialect[dialect]
@@ -358,8 +359,8 @@ table "probe" {
 		path := filepath.Join(c.TempDir(), "warmup.hcl")
 		//nolint:errcheck // this run exists only to spend the notice
 		_ = os.WriteFile(path, []byte(source), 0o600)
-		// #nosec G204 -- operator-provided oracle path, and path is a test temp dir
-		cmd := exec.Command(oracle, "schema", "inspect", "-u", "file://"+path, "--dev-url", devURL)
+		// #nosec G204 -- operator-provided reference path, and path is a test temp dir
+		cmd := exec.Command(reference, "schema", "inspect", "-u", "file://"+path, "--dev-url", devURL)
 		//nolint:errcheck // output and status are both discarded
 		_, _ = cmd.CombinedOutput()
 	})
@@ -367,11 +368,11 @@ table "probe" {
 	path := filepath.Join(c.TempDir(), "probe.hcl")
 	c.Assert(os.WriteFile(path, []byte(source), 0o600), qt.IsNil)
 
-	// #nosec G204 -- operator-provided oracle path, and path is a test temp dir
-	cmd := exec.Command(oracle, "schema", "inspect", "-u", "file://"+path, "--dev-url", devURL)
+	// #nosec G204 -- operator-provided reference path, and path is a test temp dir
+	cmd := exec.Command(reference, "schema", "inspect", "-u", "file://"+path, "--dev-url", devURL)
 	// The error is the exit status, which is the measurement; a process that
 	// never started leaves ProcessState nil and fails the assertion instead.
 	out, _ := cmd.CombinedOutput() //nolint:errcheck // exit status is read from ProcessState below
-	c.Assert(cmd.ProcessState, qt.IsNotNil, qt.Commentf("the oracle did not run: %s", out))
+	c.Assert(cmd.ProcessState, qt.IsNotNil, qt.Commentf("the reference did not run: %s", out))
 	return string(out), cmd.ProcessState.ExitCode()
 }
