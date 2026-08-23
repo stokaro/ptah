@@ -185,7 +185,7 @@ func TestMigrateApplyNamedLockReachesMigrator(t *testing.T) {
 // declarative verb: the note names the lock read back from the ACQUIRED lock
 // object, and --skip-lock acquires nothing so there is no lock to name.
 func TestSchemaApplyNamedLockReachesLockMachinery(t *testing.T) {
-	allowSchemaApplyWithoutDevURL(t)
+	atlastest.AllowSchemaApplyWithoutDevURL(t)
 	tests := []struct {
 		name     string
 		args     []string
@@ -220,7 +220,7 @@ func TestSchemaApplyNamedLockReachesLockMachinery(t *testing.T) {
 				qt.Commentf("output:\n%s", out))
 			// The --lock-timeout wording never appears alongside --skip-lock:
 			// a run that takes no lock has no timeout to ignore.
-			c.Assert(out, qt.Not(qt.Contains), schemaApplyLockUnsupportedNote)
+			c.Assert(out, qt.Not(qt.Contains), atlastest.SchemaApplyLockUnsupportedNote)
 			c.Assert(atlastest.SqliteTableCount(c, dbPath, "lock_flag_schema"), qt.Equals, 1)
 		})
 	}

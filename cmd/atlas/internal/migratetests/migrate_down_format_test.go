@@ -1,0 +1,1054 @@
+package migratetests_test
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	qt "github.com/frankban/quicktest"
+
+	"go.5x5.cz/ptah/cmd/atlas"
+	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
+	"go.5x5.cz/ptah/cmd/migratedown"
+	"go.5x5.cz/ptah/cmd/migratetag"
+	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/migrationintegrity"
+)
+
+// failingRollbackSQL is a down migration that cannot succeed, used by the tests
+// that assert how a failing rollback is reported.
+const failingRollbackSQL = "DROP TABLE no_such_table;"
+
+// writeMigrateDownFixture fills migrationsDir with two Atlas-format
+// migrations plus ptah-style supplementary down files, and applies them to
+// dbPath through `atlas migrate apply` so the revision table is Atlas-shaped.
+func writeMigrateDownFixture(c *qt.C, migrationsDir, dbPath string) {
+	c.Helper()
+	writeMigrateDownFixtureWithRollback(c, migrationsDir, dbPath, "DROP TABLE down_fmt_audit;")
+}
+
+// writeMigrateDownFixtureWithRollback is [writeMigrateDownFixture] with the
+// second migration's down SQL chosen by the caller, written BEFORE the
+// directory is hashed.
+//
+// The ordering is the point. These tests used to build the healthy fixture,
+// hash it, and only then overwrite `2_add_audit.down.sql` with SQL that fails —
+// leaving a directory whose atlas.sum no longer covered the bytes about to run,
+// and depending on `migrate down` executing them anyway. That dependency WAS the
+// defect: `migrate down` was the one verb reading a native Atlas directory and
+// executing SQL from it outside the integrity gate, so the fixture only worked
+// because the gate was missing.
+//
+// Writing the failing rollback before the hash keeps every assertion these
+// tests make — the rollback still fails at execution time, on the same
+// statement, with the same report — while making the fixture a directory that
+// verifies, which is what a real one would be.
+func writeMigrateDownFixtureWithRollback(c *qt.C, migrationsDir, dbPath, secondDownSQL string) {
+	c.Helper()
+	write := func(name, sql string) {
+		c.Assert(os.MkdirAll(migrationsDir, 0o755), qt.IsNil)
+		c.Assert(os.WriteFile(filepath.Join(migrationsDir, name), []byte(sql+"\n"), 0o600), qt.IsNil)
+	}
+	write("1_init.sql", "CREATE TABLE down_fmt_users (id INTEGER PRIMARY KEY);")
+	write("1_init.down.sql", "DROP TABLE down_fmt_users;")
+	write("2_add_audit.sql", "CREATE TABLE down_fmt_audit (id INTEGER PRIMARY KEY);")
+	write("2_add_audit.down.sql", secondDownSQL)
+	// The apply below verifies atlas.sum first (stokaro/ptah#970), and so does
+	// `migrate down` now, so the fixture directory must be hashed like a real
+	// Atlas directory — after every file it covers is in its final state.
+	atlastest.WriteAtlasApplyProjectSum(c, migrationsDir)
+
+	apply := atlas.NewCompatCommand("atlas")
+	var out bytes.Buffer
+	apply.SetOut(&out)
+	apply.SetErr(&out)
+	apply.SetArgs([]string{
+		"migrate", "apply",
+		"--url", "sqlite://" + dbPath,
+		"--dir", "file://" + migrationsDir,
+	})
+	c.Assert(apply.Execute(), qt.IsNil, qt.Commentf("%s", out.String()))
+}
+
+type migrateDownJSONReport struct {
+	Driver  string `json:"Driver"`
+	Dir     string `json:"Dir"`
+	Planned []struct {
+		Name        string `json:"Name"`
+		Version     string `json:"Version"`
+		Description string `json:"Description"`
+	} `json:"Planned"`
+	Reverted []struct {
+		Name    string   `json:"Name"`
+		Version string   `json:"Version"`
+		Applied []string `json:"Applied"`
+		Error   *struct {
+			Stmt string `json:"Stmt"`
+			Text string `json:"Text"`
+		} `json:"Error"`
+	} `json:"Reverted"`
+	Current string `json:"Current"`
+	Target  string `json:"Target"`
+	Total   int    `json:"Total"`
+	Error   string `json:"Error"`
+}
+
+func TestCompatCommand_MigrateDownFormatRendersReportAndReverts(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	migrationsDir := filepath.Join(dir, "migrations")
+	dbPath := filepath.Join(dir, "down-format.db")
+	writeMigrateDownFixture(c, migrationsDir, dbPath)
+	t.Setenv("PTAH_CONFIRM", "not-a-boolean")
+
+	cmd := atlas.NewCompatCommand("atlas")
+	var out, errOut bytes.Buffer
+	cmd.SetIn(bytes.NewReader(nil))
+	cmd.SetOut(&out)
+	cmd.SetErr(&errOut)
+	cmd.SetArgs([]string{
+		"migrate", "down",
+		"--url", "sqlite://" + dbPath,
+		"--dir", "file://" + migrationsDir,
+		"--to-version", "1",
+		"--format", "{{ json . }}",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil, qt.Commentf("stdout=%s stderr=%s", out.String(), errOut.String()))
+	// Atlas migrate down does not read stdin or emit a confirmation prompt.
+	c.Assert(errOut.String(), qt.Equals, "")
+	var report migrateDownJSONReport
+	c.Assert(json.Unmarshal(out.Bytes(), &report), qt.IsNil, qt.Commentf("stdout=%s", out.String()))
+	c.Assert(report.Driver, qt.Equals, "sqlite")
+	c.Assert(report.Dir, qt.Equals, "file://"+migrationsDir)
+	c.Assert(report.Planned, qt.HasLen, 1)
+	c.Assert(report.Planned[0].Name, qt.Equals, "2_add_audit.sql")
+	c.Assert(report.Planned[0].Version, qt.Equals, "2")
+	c.Assert(report.Planned[0].Description, qt.Equals, "add_audit")
+	c.Assert(report.Reverted, qt.HasLen, 1)
+	c.Assert(report.Reverted[0].Applied, qt.DeepEquals, []string{"DROP TABLE down_fmt_audit"})
+	c.Assert(report.Current, qt.Equals, "2")
+	c.Assert(report.Target, qt.Equals, "1")
+	c.Assert(report.Total, qt.Equals, 1)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "down_fmt_audit"), qt.Equals, 0)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "down_fmt_users"), qt.Equals, 1)
+}
+
+func TestCompatCommand_MigrateDownFormatDryRunPlansWithoutReverting(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	migrationsDir := filepath.Join(dir, "migrations")
+	dbPath := filepath.Join(dir, "down-dry.db")
+	writeMigrateDownFixture(c, migrationsDir, dbPath)
+
+	cmd := atlas.NewCompatCommand("atlas")
+	var out, errOut bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&errOut)
+	cmd.SetArgs([]string{
+		"migrate", "down",
+		"--url", "sqlite://" + dbPath,
+		"--dir", "file://" + migrationsDir,
+		"--dry-run",
+		"--format", `{{ len .Planned }}|{{ len .Reverted }}|{{ .Current }}|{{ .Target }}`,
+	})
+
+	err := cmd.Execute()
+
+	// Dry run needs no confirmation, renders the plan, and reverts nothing.
+	c.Assert(err, qt.IsNil, qt.Commentf("stderr=%s", errOut.String()))
+	c.Assert(out.String(), qt.Equals, "2|0|2|")
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "down_fmt_audit"), qt.Equals, 1)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "down_fmt_users"), qt.Equals, 1)
+}
+
+func TestCompatCommand_MigrateDownFormatHonorsUnverifiedOverride(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	migrationsDir := filepath.Join(dir, "migrations")
+	dbPath := filepath.Join(dir, "down-override.db")
+	writeMigrateDownFixture(c, migrationsDir, dbPath)
+	c.Assert(os.WriteFile(
+		filepath.Join(migrationsDir, "2_add_audit.down.sql"),
+		[]byte("DROP TABLE down_fmt_audit;\n-- reviewed emergency edit\n"),
+		0o600,
+	), qt.IsNil)
+	t.Setenv(migrationintegrity.AllowUnverifiedEnvVar, "true")
+
+	cmd := atlas.NewCompatCommand("atlas")
+	var out, errOut bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&errOut)
+	cmd.SetArgs([]string{
+		"migrate", "down",
+		"--url", "sqlite://" + dbPath,
+		"--dir", "file://" + migrationsDir,
+		"--dry-run",
+		"--format", `{{ len .Planned }}`,
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil, qt.Commentf("stdout=%s stderr=%s", out.String(), errOut.String()))
+	c.Assert(out.String(), qt.Equals, "2")
+	c.Assert(errOut.String(), qt.Contains, migrationintegrity.AllowUnverifiedEnvVar)
+	c.Assert(errOut.String(), qt.Contains, "verification was SKIPPED")
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "down_fmt_audit"), qt.Equals, 1)
+}
+
+func TestCompatCommand_MigrateDownFormatDirtyPreflightHasNoRevertedFiles(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	migrationsDir := filepath.Join(dir, "migrations")
+	dbPath := filepath.Join(dir, "down-dirty.db")
+	writeMigrateDownFixture(c, migrationsDir, dbPath)
+	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)
+	c.Assert(err, qt.IsNil)
+	_, err = conn.ExecContext(context.Background(), `UPDATE atlas_schema_revisions
+SET applied = 0, total = 1, error = 'broken'
+WHERE version = '2'`)
+	c.Assert(err, qt.IsNil)
+	c.Assert(conn.Close(), qt.IsNil)
+
+	cmd := atlas.NewCompatCommand("atlas")
+	var out, errOut bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&errOut)
+	cmd.SetArgs([]string{
+		"migrate", "down",
+		"--url", "sqlite://" + dbPath,
+		"--dir", "file://" + migrationsDir,
+		"--dry-run",
+		"--format", "{{ json . }}",
+	})
+
+	err = cmd.Execute()
+	c.Assert(err, qt.ErrorMatches, `error rolling back migrations: migration 2 is dirty:.*`)
+	var report migrateDownJSONReport
+	c.Assert(json.Unmarshal(out.Bytes(), &report), qt.IsNil, qt.Commentf("stdout=%s stderr=%s", out.String(), errOut.String()))
+	c.Assert(report.Planned, qt.HasLen, 1)
+	c.Assert(report.Planned[0].Version, qt.Equals, "1")
+	c.Assert(report.Reverted, qt.HasLen, 0)
+	c.Assert(report.Error, qt.Contains, "migration 2 is dirty")
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "down_fmt_audit"), qt.Equals, 1)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "down_fmt_users"), qt.Equals, 1)
+}
+
+func TestCompatCommand_MigrateDownFormatReportsFirstRollbackFailure(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	migrationsDir := filepath.Join(dir, "migrations")
+	dbPath := filepath.Join(dir, "down-first-failure.db")
+	writeMigrateDownFixtureWithRollback(c, migrationsDir, dbPath, failingRollbackSQL)
+
+	cmd := atlas.NewCompatCommand("atlas")
+	var out, errOut bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&errOut)
+	cmd.SetArgs([]string{
+		"migrate", "down",
+		"--url", "sqlite://" + dbPath,
+		"--dir", "file://" + migrationsDir,
+		"--to-version", "1",
+		"--format", "{{ json . }}",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.ErrorMatches, `(?s).*no_such_table.*`)
+	var report migrateDownJSONReport
+	c.Assert(json.Unmarshal(out.Bytes(), &report), qt.IsNil, qt.Commentf("stdout=%s stderr=%s", out.String(), errOut.String()))
+	c.Assert(report.Reverted, qt.HasLen, 1)
+	c.Assert(report.Reverted[0].Version, qt.Equals, "2")
+	c.Assert(report.Reverted[0].Applied, qt.HasLen, 0)
+	c.Assert(report.Reverted[0].Error, qt.IsNotNil)
+	c.Assert(report.Reverted[0].Error.Stmt, qt.Equals, "DROP TABLE no_such_table")
+	c.Assert(report.Reverted[0].Error.Text, qt.Contains, "no such table")
+
+	conn, err := dbschema.ConnectToDatabase(t.Context(), "sqlite://"+dbPath)
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { c.Check(conn.Close(), qt.IsNil) })
+	var operatorVersion string
+	var applied, total int
+	c.Assert(conn.QueryRowContext(
+		t.Context(),
+		"SELECT operator_version, applied, total FROM atlas_schema_revisions WHERE version = '2'",
+	).Scan(&operatorVersion, &applied, &total), qt.IsNil)
+	c.Assert(operatorVersion, qt.Equals, "Ptah/down")
+	c.Assert(applied, qt.Equals, 0)
+	c.Assert(total, qt.Equals, 1)
+}
+
+func TestCompatCommand_MigrateDownFormatFromEnvValue(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	migrationsDir := filepath.Join(dir, "migrations")
+	dbPath := filepath.Join(dir, "down-env.db")
+	writeMigrateDownFixture(c, migrationsDir, dbPath)
+	t.Setenv("PTAH_FORMAT", "planned={{ len .Planned }}")
+
+	cmd := atlas.NewCompatCommand("atlas")
+	var out, errOut bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&errOut)
+	cmd.SetArgs([]string{
+		"migrate", "down",
+		"--url", "sqlite://" + dbPath,
+		"--dir", "file://" + migrationsDir,
+		"--dry-run",
+	})
+
+	err := cmd.Execute()
+
+	// PTAH_FORMAT selects the format path just like the arg mapper's env
+	// convention would have injected --format.
+	c.Assert(err, qt.IsNil, qt.Commentf("stderr=%s", errOut.String()))
+	c.Assert(out.String(), qt.Equals, "planned=2")
+}
+
+func TestCompatCommand_MigrateDownFormatDevURLVerifiesThenApplies(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	migrationsDir := filepath.Join(dir, "migrations")
+	dbPath := filepath.Join(dir, "down-dev.db")
+	writeMigrateDownFixture(c, migrationsDir, dbPath)
+
+	cmd := atlas.NewCompatCommand("atlas")
+	var out, errOut bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&errOut)
+	cmd.SetArgs([]string{
+		"migrate", "down",
+		"--url", "sqlite://" + dbPath,
+		"--dir", "file://" + migrationsDir,
+		"--to-version", "0",
+		"--dev-url", "sqlite://" + filepath.Join(t.TempDir(), "dev.db"),
+		"--format", `reverted={{ len .Reverted }}`,
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil, qt.Commentf("stdout=%s stderr=%s", out.String(), errOut.String()))
+	c.Assert(out.String(), qt.Equals, "reverted=2")
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "down_fmt_users"), qt.Equals, 0)
+}
+
+func TestCompatCommand_MigrateDownFormatDevURLFailureAbortsTarget(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	migrationsDir := filepath.Join(dir, "migrations")
+	dbPath := filepath.Join(dir, "down-dev-abort.db")
+	// The newest down file cannot succeed, so only the dev replay can catch it.
+	// It is written before the directory is hashed: the integrity gate is a
+	// separate refusal that would otherwise fire first and hide the replay this
+	// test is about.
+	writeMigrateDownFixtureWithRollback(c, migrationsDir, dbPath, failingRollbackSQL)
+
+	cmd := atlas.NewCompatCommand("atlas")
+	var out, errOut bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&errOut)
+	cmd.SetArgs([]string{
+		"migrate", "down",
+		"--url", "sqlite://" + dbPath,
+		"--dir", "file://" + migrationsDir,
+		"--to-version", "1",
+		"--dev-url", "sqlite://" + filepath.Join(t.TempDir(), "dev.db"),
+		"--format", "{{ json . }}",
+	})
+
+	err := cmd.Execute()
+
+	// The dev replay fails before the target is touched.
+	c.Assert(err, qt.ErrorMatches, `(?s)rollback verification failed: .*no_such_table.*`)
+	c.Assert(out.String(), qt.Equals, "")
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "down_fmt_audit"), qt.Equals, 1)
+	c.Assert(atlastest.SqliteAtlasRevisionVersions(c, dbPath), qt.DeepEquals, []string{"1", "2"})
+}
+
+func TestCompatCommand_MigrateDownDevURLForwardsToNativeShadowVerification(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	migrationsDir := filepath.Join(dir, "migrations")
+	dbPath := filepath.Join(dir, "down-native-dev.db")
+	writeMigrateDownFixture(c, migrationsDir, dbPath)
+
+	cmd := atlas.NewCompatCommand("atlas")
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"migrate", "down",
+		"--url", "sqlite://" + dbPath,
+		"--dir", "file://" + migrationsDir,
+		"--to-version", "1",
+		"--dev-url", "sqlite://" + filepath.Join(t.TempDir(), "dev.db"),
+		// No --revision-format: the forward defaults to Atlas revision
+		// bookkeeping, matching the revision table `atlas migrate apply` wrote.
+	})
+
+	err := cmd.Execute()
+
+	// Without --format the verb still forwards to the native command; --dev-url
+	// now maps to the native --shadow-db verification instead of being
+	// rejected.
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out.String()))
+	c.Assert(out.String(), qt.Contains, "Rollback plan verified on shadow database")
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "down_fmt_audit"), qt.Equals, 0)
+}
+
+func TestCompatCommand_MigrateDownDevURLForwardFailureAbortsTarget(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	migrationsDir := filepath.Join(dir, "migrations")
+	dbPath := filepath.Join(dir, "down-native-abort.db")
+	writeMigrateDownFixtureWithRollback(c, migrationsDir, dbPath, failingRollbackSQL)
+
+	cmd := atlas.NewCompatCommand("atlas")
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"migrate", "down",
+		"--url", "sqlite://" + dbPath,
+		"--dir", "file://" + migrationsDir,
+		"--to-version", "1",
+		"--dev-url", "sqlite://" + filepath.Join(t.TempDir(), "dev.db"),
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.ErrorMatches, `(?s)rollback verification failed: .*no_such_table.*`)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "down_fmt_audit"), qt.Equals, 1)
+}
+
+// TestCompatCommand_MigrateDownDefaultOutputMatchesNativeCommand pins the
+// byte-identity contract: without --format, the wrapped verb's execution
+// output is exactly the output from a pre-approved native
+// `ptah migrations down` run. The native invocation selects
+// --revision-format atlas explicitly because the forward injects that default
+// itself, so both runs perform the same real rollback against the Atlas
+// revision table.
+func TestCompatCommand_MigrateDownDefaultOutputMatchesNativeCommand(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+
+	runDown := func(dbName string, run func(migrationsDir, dbPath string) (string, error)) string {
+		migrationsDir := filepath.Join(dir, "migrations-"+dbName)
+		dbPath := filepath.Join(dir, dbName+".db")
+		writeMigrateDownFixture(c, migrationsDir, dbPath)
+		out, err := run(migrationsDir, dbPath)
+		c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+		// The migration directory path differs per run; normalize it so the
+		// remaining bytes must match exactly.
+		return strings.ReplaceAll(out, migrationsDir, "<dir>")
+	}
+
+	atlasOut := runDown("atlas-default", func(migrationsDir, dbPath string) (string, error) {
+		cmd := atlas.NewCompatCommand("atlas")
+		var out, errOut bytes.Buffer
+		cmd.SetIn(bytes.NewReader(nil))
+		cmd.SetOut(&out)
+		cmd.SetErr(&errOut)
+		cmd.SetArgs([]string{
+			"migrate", "down",
+			"--url", "sqlite://" + dbPath,
+			"--dir", "file://" + migrationsDir,
+			"--to-version", "1",
+		})
+		err := cmd.Execute()
+		return strings.ReplaceAll(out.String(), dbPath, "<db>"), err
+	})
+
+	nativeOut := runDown("native-default", func(migrationsDir, dbPath string) (string, error) {
+		cmd := migratedown.NewMigrateDownCommand()
+		var out, errOut bytes.Buffer
+		cmd.SetOut(&out)
+		cmd.SetErr(&errOut)
+		cmd.SetArgs([]string{
+			"--db-url", "sqlite://" + dbPath,
+			"--migrations-dir", migrationsDir,
+			"--target", "1",
+			"--revision-format", "atlas",
+			"--confirm",
+		})
+		err := cmd.Execute()
+		return strings.ReplaceAll(out.String(), dbPath, "<db>"), err
+	})
+
+	c.Assert(atlasOut, qt.Equals, nativeOut)
+}
+
+// TestCompatCommand_MigrateDownDefaultsToAtlasRevisionFormat pins the
+// revision-format default of the forward: a bare `atlas migrate down` must
+// revert revisions created by `atlas migrate apply` (Atlas revision
+// bookkeeping), not silently no-op against an empty ptah revision table.
+func TestCompatCommand_MigrateDownDefaultsToAtlasRevisionFormat(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	migrationsDir := filepath.Join(dir, "migrations")
+	dbPath := filepath.Join(dir, "down-default-revisions.db")
+	writeMigrateDownFixture(c, migrationsDir, dbPath)
+
+	cmd := atlas.NewCompatCommand("atlas")
+	var out bytes.Buffer
+	cmd.SetIn(bytes.NewReader(nil))
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"migrate", "down",
+		"--url", "sqlite://" + dbPath,
+		"--dir", "file://" + migrationsDir,
+		"--to-version", "1",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out.String()))
+	c.Assert(out.String(), qt.Not(qt.Contains), "Type 'YES' to confirm")
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "down_fmt_audit"), qt.Equals, 0)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "down_fmt_users"), qt.Equals, 1)
+	c.Assert(atlastest.SqliteAtlasRevisionVersions(c, dbPath), qt.DeepEquals, []string{"1"})
+}
+
+// TestCompatCommand_MigrateDownRevisionFormatPtahOverridesDefault pins the
+// escape hatch: an explicit native `--revision-format ptah` pass-through is
+// appended after the forward's Atlas default and wins, so the run reads ptah
+// revision bookkeeping and leaves the Atlas-applied state untouched.
+func TestCompatCommand_MigrateDownRevisionFormatPtahOverridesDefault(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	migrationsDir := filepath.Join(dir, "migrations")
+	dbPath := filepath.Join(dir, "down-ptah-revisions.db")
+	writeMigrateDownFixture(c, migrationsDir, dbPath)
+
+	cmd := atlas.NewCompatCommand("atlas")
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs([]string{
+		"migrate", "down",
+		"--url", "sqlite://" + dbPath,
+		"--dir", "file://" + migrationsDir,
+		"--revision-format", "ptah",
+	})
+
+	err := cmd.Execute()
+
+	// The ptah revision table is empty, so the rollback is a no-op and the
+	// Atlas-applied schema and revisions stay in place.
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out.String()))
+	c.Assert(out.String(), qt.Contains, "already at or below target version 0")
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "down_fmt_audit"), qt.Equals, 1)
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "down_fmt_users"), qt.Equals, 1)
+	c.Assert(atlastest.SqliteAtlasRevisionVersions(c, dbPath), qt.DeepEquals, []string{"1", "2"})
+}
+
+func TestCompatCommand_MigrateDownFormatDoesNotTreatStdinAsConfirmation(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	migrationsDir := filepath.Join(dir, "migrations")
+	dbPath := filepath.Join(dir, "down-declined.db")
+	writeMigrateDownFixture(c, migrationsDir, dbPath)
+
+	cmd := atlas.NewCompatCommand("atlas")
+	var out, errOut bytes.Buffer
+	cmd.SetIn(strings.NewReader("NO\n"))
+	cmd.SetOut(&out)
+	cmd.SetErr(&errOut)
+	cmd.SetArgs([]string{
+		"migrate", "down",
+		"--url", "sqlite://" + dbPath,
+		"--dir", "file://" + migrationsDir,
+		"--format", "{{ json . }}",
+	})
+
+	err := cmd.Execute()
+
+	// Atlas does not consume stdin as a confirmation answer. Even a value that
+	// the native command treats as a decline cannot cancel the compat rollback.
+	c.Assert(err, qt.IsNil, qt.Commentf("stdout=%s stderr=%s", out.String(), errOut.String()))
+	var report migrateDownJSONReport
+	c.Assert(json.Unmarshal(out.Bytes(), &report), qt.IsNil)
+	c.Assert(report.Reverted, qt.HasLen, 2)
+	c.Assert(errOut.String(), qt.Equals, "")
+	c.Assert(atlastest.SqliteTableCount(c, dbPath, "down_fmt_audit"), qt.Equals, 0)
+}
+
+func TestCompatCommand_MigrateDownFormatUsesAtlasProjectConfig(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	projectDir := filepath.Join(dir, "project")
+	outsideDir := filepath.Join(dir, "outside")
+	migrationsDir := filepath.Join(projectDir, "migrations")
+	dbPath := filepath.Join(dir, "down-project.db")
+	writeMigrateDownFixture(c, migrationsDir, dbPath)
+	c.Assert(os.MkdirAll(outsideDir, 0o755), qt.IsNil)
+	t.Chdir(outsideDir)
+	c.Assert(os.WriteFile(filepath.Join(projectDir, "atlas.hcl"), []byte(`env "local" {
+  url     = "sqlite://`+filepath.ToSlash(dbPath)+`"
+  project = "ignored"
+  migration {
+    dir = "file://migrations"
+  }
+}
+`), 0o600), qt.IsNil)
+
+	cmd := atlas.NewCompatCommand("atlas")
+	var out, errOut bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&errOut)
+	cmd.SetArgs([]string{
+		"migrate", "down",
+		"--config", "file://" + filepath.ToSlash(filepath.Join(projectDir, "atlas.hcl")),
+		"--env", "local",
+		"--dry-run",
+		"--format", `{{ .Dir }}|{{ len .Planned }}`,
+	})
+
+	err := cmd.Execute()
+
+	// env url and the project-relative migration dir resolve on the format
+	// path with the same precedence the forward path applies. The report's Dir
+	// is the value as the project loader stores it (file:// stripped), matching
+	// the apply report's behavior with a config-supplied dir.
+	c.Assert(err, qt.IsNil, qt.Commentf("stderr=%s", errOut.String()))
+	c.Assert(out.String(), qt.Equals, "migrations|2")
+	// Both sides are slashed before they are compared. The warning echoes the
+	// spelling the config was loaded under, and this test is about which
+	// construct was reported, not about which separator the platform writes.
+	c.Assert(
+		filepath.ToSlash(errOut.String()),
+		qt.Equals,
+		"warning: atlas.hcl attribute \"project\" at "+filepath.ToSlash(filepath.Join(projectDir, "atlas.hcl"))+":3 is ignored for Atlas compatibility and has no effect\n",
+	)
+}
+
+func TestCompatCommand_MigrateDownFormatValidation(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want string
+	}{
+		{
+			name: "empty_format",
+			args: []string{"--format", ""},
+			want: `--format must not be empty`,
+		},
+		{
+			name: "invalid_template",
+			args: []string{"--format", "{{ .Broken"},
+			want: `parse --format template: .*`,
+		},
+		{
+			name: "missing_url",
+			args: []string{"--format", "{{ json . }}", "--dir", "file://migrations"},
+			want: `database URL is required`,
+		},
+		{
+			name: "missing_dir",
+			args: []string{"--format", "{{ json . }}", "--url", "sqlite://x.db"},
+			want: `migrations directory is required`,
+		},
+		{
+			name: "invalid_to_version",
+			args: []string{"--format", "{{ json . }}", "--url", "sqlite://x.db", "--dir", "file://m", "--to-version", "banana"},
+			want: `invalid --to-version "banana": .*`,
+		},
+		{
+			name: "positional_rejected",
+			args: []string{"--format", "{{ json . }}", "stray"},
+			want: `atlas migrate down accepts no arguments, got \["stray"\]`,
+		},
+		{
+			name: "native_only_flag_rejected",
+			args: []string{"--format", "{{ json . }}", "--pre-down-hook", "echo"},
+			want: `atlas migrate down: unknown flag: --pre-down-hook`,
+		},
+		{
+			name: "native_confirmation_flag_rejected",
+			args: []string{"--format", "{{ json . }}", "--confirm"},
+			want: `atlas migrate down does not accept native Ptah flag --confirm`,
+		},
+		{
+			name: "remote_dir_rejected",
+			args: []string{"--format", "{{ json . }}", "--url", "sqlite://x.db", "--dir", "atlas://repo"},
+			want: `atlas migrate down --dir: only local file:// migration directories are supported`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			cmd := atlas.NewCompatCommand("atlas")
+			var out bytes.Buffer
+			cmd.SetOut(&out)
+			cmd.SetErr(&out)
+			cmd.SetArgs(append([]string{"migrate", "down"}, tt.args...))
+
+			err := cmd.Execute()
+
+			c.Assert(err, qt.ErrorMatches, tt.want)
+		})
+	}
+}
+
+func TestCompatCommand_MigrateDownRejectsNativeConfirmationFlag(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{name: "forward", args: []string{"--confirm"}},
+		{name: "forward_false", args: []string{"--confirm=false"}},
+		{name: "format_false", args: []string{"--format", "{{ json . }}", "--confirm=false"}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			cmd := atlas.NewCompatCommand("atlas")
+			var out bytes.Buffer
+			cmd.SetOut(&out)
+			cmd.SetErr(&out)
+			cmd.SetArgs(append([]string{"migrate", "down"}, test.args...))
+
+			err := cmd.Execute()
+
+			c.Assert(err, qt.ErrorMatches, `atlas migrate down does not accept native Ptah flag --confirm`)
+		})
+	}
+}
+
+func TestNewCompatCommand_MigrateDownFormatResolvesAtRoot(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	migrationsDir := filepath.Join(dir, "migrations")
+	dbPath := filepath.Join(dir, "down-compat.db")
+	writeMigrateDownFixture(c, migrationsDir, dbPath)
+
+	cmd := atlas.NewCompatCommand("atlas")
+	var out, errOut bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&errOut)
+	cmd.SetArgs([]string{
+		"migrate", "down",
+		"--url", "sqlite://" + dbPath,
+		"--dir", "file://" + migrationsDir,
+		"--dry-run",
+		"--format", "planned={{ len .Planned }}",
+	})
+
+	err := cmd.Execute()
+
+	c.Assert(err, qt.IsNil, qt.Commentf("stderr=%s", errOut.String()))
+	c.Assert(out.String(), qt.Equals, "planned=2")
+}
+
+// TestCompatCommand_MigrateDownImplementedFlags replaces the waiver-rationale
+// table that used to sit here.
+//
+// That table pinned the wording of three refusals. stokaro/ptah#1621
+// implemented all three flags, so there is no refusal left to word, and what
+// has to be held instead is that each one is accepted -- not merely unwaived.
+// A waiver removed without an implementation behind it would show up here as an
+// unknown-flag error rather than a refusal, which is the same failure wearing a
+// different message.
+//
+// The refusal machinery itself is unchanged and still covered where a flag
+// still needs it; atlasMigrateDownUnsupportedFlags is simply empty now.
+func TestCompatCommand_MigrateDownImplementedFlags(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		args []string
+	}{
+		{name: "to_tag", args: []string{"--to-tag", "release-v1"}},
+		{name: "skip_checks", args: []string{"--skip-checks"}},
+		{name: "plan", args: []string{"--plan"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			cmd := atlas.NewCompatCommand("atlas")
+			var out bytes.Buffer
+			cmd.SetOut(&out)
+			cmd.SetErr(&out)
+			cmd.SetArgs(append([]string{"migrate", "down"}, tt.args...))
+
+			err := cmd.Execute()
+
+			// The command still fails -- no --url was given -- but on the
+			// missing database, never on the flag.
+			c.Assert(err, qt.IsNotNil)
+			c.Assert(err.Error(), qt.Not(qt.Contains), "does not implement its behavior")
+			c.Assert(err.Error(), qt.Not(qt.Contains), "unknown flag")
+			c.Assert(out.String(), qt.Not(qt.Contains), "does not implement its behavior")
+			c.Assert(out.String(), qt.Not(qt.Contains), "unknown flag")
+		})
+	}
+}
+
+// TestCompatCommand_MigrateDownToTagResolvesTheTag is what proves the compat
+// flag reaches the tag namespace rather than merely being accepted.
+//
+// Accepting a flag and mapping it correctly are different claims: mapping
+// --to-tag onto the native --target would still be "not refused", and would
+// then fail parsing the tag as a version -- or, worse, succeed against a
+// version the operator never named. Rolling back to the version the tag selects
+// is the observation that separates the two.
+func TestCompatCommand_MigrateDownToTagResolvesTheTag(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	migrationsDir := writeDownableMigrationsDir(c, dir)
+	dbPath := filepath.Join(dir, "down.db")
+
+	_, err := atlastest.RunCompatOutput(
+		"migrate", "apply",
+		"--url", "sqlite://"+dbPath,
+		"--dir", "file://"+migrationsDir,
+	)
+	c.Assert(err, qt.IsNil)
+
+	// Tag the first migration, then ask for it by name.
+	tagCmd := migratetag.NewMigrateTagCommand()
+	var tagOut bytes.Buffer
+	tagCmd.SetOut(&tagOut)
+	tagCmd.SetErr(&tagOut)
+	tagCmd.SetArgs([]string{
+		"release-v1", "--db-url", "sqlite://" + dbPath,
+		"--version", "20260801000001", "--revision-format", "atlas",
+	})
+	c.Assert(tagCmd.Execute(), qt.IsNil, qt.Commentf("%s", tagOut.String()))
+
+	out, err := atlastest.RunCompatOutput(
+		"migrate", "down",
+		"--url", "sqlite://"+dbPath,
+		"--dir", "file://"+migrationsDir,
+		"--to-tag", "release-v1",
+	)
+
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+	// The tag named the first migration, so the second one's down body ran and
+	// the first one's did not: the column is gone, the table and its row remain.
+	c.Assert(downColumnNames(c, dbPath, "users"), qt.Not(qt.Contains), "email")
+	c.Assert(downColumnNames(c, dbPath, "users"), qt.Contains, "name")
+}
+
+// downColumnNames reads the real catalog, so the assertion is about what the
+// database holds and not about what the report said.
+func downColumnNames(c *qt.C, dbPath, table string) []string {
+	c.Helper()
+	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+
+	rows, err := conn.QueryContext(context.Background(),
+		"SELECT name FROM pragma_table_info(?) ORDER BY name", table)
+	c.Assert(err, qt.IsNil)
+	defer func() { c.Assert(rows.Close(), qt.IsNil) }()
+
+	var names []string
+	for rows.Next() {
+		var name string
+		c.Assert(rows.Scan(&name), qt.IsNil)
+		names = append(names, name)
+	}
+	c.Assert(rows.Err(), qt.IsNil)
+	return names
+}
+
+// `migrate down` parses flags in two independent places: the atlasargs mapper
+// and parseAtlasMigrateDownFormatArgs. A flag wired into one is not wired into
+// the other, and the tests below are the format half for the three flags
+// stokaro/ptah#1621 implemented.
+//
+// They exist because that half was missed. --to-tag was parsed here into a
+// local nobody read, so the target stayed at its default of 0 and a bounded
+// rollback reverted the entire history -- measured, both migrations came back
+// in Reverted when only the newest should have.
+
+// TestCompatCommand_MigrateDownFormatToTagStopsAtTheTag is the regression test
+// for that data loss.
+func TestCompatCommand_MigrateDownFormatToTagStopsAtTheTag(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	migrationsDir := writeDownableMigrationsDir(c, dir)
+	dbPath := filepath.Join(dir, "down.db")
+
+	_, err := atlastest.RunCompatOutput("migrate", "apply",
+		"--url", "sqlite://"+dbPath, "--dir", "file://"+migrationsDir)
+	c.Assert(err, qt.IsNil)
+
+	tagCmd := migratetag.NewMigrateTagCommand()
+	var tagOut bytes.Buffer
+	tagCmd.SetOut(&tagOut)
+	tagCmd.SetErr(&tagOut)
+	tagCmd.SetArgs([]string{"release-v1", "--db-url", "sqlite://" + dbPath,
+		"--version", "20260801000001", "--revision-format", "atlas"})
+	c.Assert(tagCmd.Execute(), qt.IsNil, qt.Commentf("%s", tagOut.String()))
+
+	out, err := atlastest.RunCompatOutput("migrate", "down",
+		"--url", "sqlite://"+dbPath, "--dir", "file://"+migrationsDir,
+		"--to-tag", "release-v1", "--format", "{{ json . }}")
+
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+	// The catalog, not the report: the tag named the first migration, so the
+	// second one's down body ran and the first one's did not.
+	c.Assert(downColumnNames(c, dbPath, "users"), qt.Not(qt.Contains), "email")
+	c.Assert(downColumnNames(c, dbPath, "users"), qt.Contains, "name")
+}
+
+// TestCompatCommand_MigrateDownFormatRefusesTwoTargets keeps --to-version and
+// --to-tag from being resolved by a silent precedence rule on this path too.
+func TestCompatCommand_MigrateDownFormatRefusesTwoTargets(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	migrationsDir := writeDownableMigrationsDir(c, dir)
+	dbPath := filepath.Join(dir, "down.db")
+	_, err := atlastest.RunCompatOutput("migrate", "apply",
+		"--url", "sqlite://"+dbPath, "--dir", "file://"+migrationsDir)
+	c.Assert(err, qt.IsNil)
+
+	out, err := atlastest.RunCompatOutput("migrate", "down",
+		"--url", "sqlite://"+dbPath, "--dir", "file://"+migrationsDir,
+		"--to-tag", "release-v1", "--to-version", "20260801000001",
+		"--format", "{{ json . }}")
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(out+err.Error(), qt.Contains, "both name where to stop")
+}
+
+// TestCompatCommand_MigrateDownFormatRefusesPlan states the one combination
+// that is refused rather than implemented.
+//
+// The report's Planned and Reverted arrays name migration files. A derived
+// rollback has none, so accepting the pair would emit a report whose file lists
+// silently disagree with what ran.
+func TestCompatCommand_MigrateDownFormatRefusesPlan(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	migrationsDir := writeDownableMigrationsDir(c, dir)
+	dbPath := filepath.Join(dir, "down.db")
+	_, err := atlastest.RunCompatOutput("migrate", "apply",
+		"--url", "sqlite://"+dbPath, "--dir", "file://"+migrationsDir)
+	c.Assert(err, qt.IsNil)
+
+	out, err := atlastest.RunCompatOutput("migrate", "down",
+		"--url", "sqlite://"+dbPath, "--dir", "file://"+migrationsDir,
+		"--to-version", "20260801000001", "--plan", "--format", "{{ json . }}")
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(out+err.Error(), qt.Contains, "--plan and --format cannot be combined")
+}
+
+// checkedDownMigrationsDir is writeDownableMigrationsDir with a pre-migration
+// check on the second migration's down body, so the rollback aborts while the
+// table has rows. It is what gives --skip-checks something to bypass.
+func checkedDownMigrationsDir(c *qt.C, dir string) string {
+	c.Helper()
+	migrationsDir := filepath.Join(dir, "migrations")
+	atlastest.WriteAtlasApplyProjectMigration(c, migrationsDir, "20260801000001_create_users.sql",
+		`-- atlas:txtar
+
+-- migration.sql --
+CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT);
+
+-- down.sql --
+DROP TABLE users;
+`)
+	atlastest.WriteAtlasApplyProjectMigration(c, migrationsDir, "20260801000002_create_audit.sql",
+		`-- atlas:txtar
+
+-- migration.sql --
+CREATE TABLE audit (id INTEGER PRIMARY KEY);
+
+-- down.sql --
+-- +ptah check name="audit_empty" assert="SELECT count(*) = 0 FROM audit" on_fail=abort
+DROP TABLE audit;
+`)
+	atlastest.WriteAtlasApplyProjectSum(c, migrationsDir)
+	return migrationsDir
+}
+
+// TestCompatCommand_MigrateDownFormatRunsChecksByDefault is the control for the
+// test below: without it, --skip-checks would pass against a rollback nothing
+// was blocking.
+func TestCompatCommand_MigrateDownFormatRunsChecksByDefault(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	migrationsDir := checkedDownMigrationsDir(c, dir)
+	dbPath := filepath.Join(dir, "down.db")
+	_, err := atlastest.RunCompatOutput("migrate", "apply",
+		"--url", "sqlite://"+dbPath, "--dir", "file://"+migrationsDir)
+	c.Assert(err, qt.IsNil)
+	seedAuditRow(c, dbPath)
+
+	out, err := atlastest.RunCompatOutput("migrate", "down",
+		"--url", "sqlite://"+dbPath, "--dir", "file://"+migrationsDir,
+		"--to-version", "20260801000001", "--format", "{{ json . }}")
+
+	c.Assert(err, qt.IsNotNil)
+	c.Assert(out+err.Error(), qt.Contains, "audit_empty")
+}
+
+// TestCompatCommand_MigrateDownFormatSkipChecksBypassesTheCheck is the flag,
+// measured against the control above: same directory, same row, one flag apart.
+//
+// The formatted path builds its own migrator rather than forwarding, so an
+// option the native path applies has to be threaded through DownOptions or it
+// is silently dropped -- which is what this test caught.
+func TestCompatCommand_MigrateDownFormatSkipChecksBypassesTheCheck(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	migrationsDir := checkedDownMigrationsDir(c, dir)
+	dbPath := filepath.Join(dir, "down.db")
+	_, err := atlastest.RunCompatOutput("migrate", "apply",
+		"--url", "sqlite://"+dbPath, "--dir", "file://"+migrationsDir)
+	c.Assert(err, qt.IsNil)
+	seedAuditRow(c, dbPath)
+
+	out, err := atlastest.RunCompatOutput("migrate", "down",
+		"--url", "sqlite://"+dbPath, "--dir", "file://"+migrationsDir,
+		"--to-version", "20260801000001", "--skip-checks", "--format", "{{ json . }}")
+
+	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))
+	c.Assert(downTableNames(c, dbPath), qt.Not(qt.Contains), "audit")
+	c.Assert(downTableNames(c, dbPath), qt.Contains, "users")
+}
+
+// seedAuditRow makes the audit table non-empty so its down check fails.
+func seedAuditRow(c *qt.C, dbPath string) {
+	c.Helper()
+	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+	_, err = conn.ExecContext(context.Background(), "INSERT INTO audit (id) VALUES (1)")
+	c.Assert(err, qt.IsNil)
+}
+
+// downTableNames reads the real catalog, so the assertion is about what the
+// database holds rather than what the report said.
+func downTableNames(c *qt.C, dbPath string) []string {
+	c.Helper()
+	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+
+	rows, err := conn.QueryContext(context.Background(),
+		`SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name`)
+	c.Assert(err, qt.IsNil)
+	defer func() { c.Assert(rows.Close(), qt.IsNil) }()
+
+	var names []string
+	for rows.Next() {
+		var name string
+		c.Assert(rows.Scan(&name), qt.IsNil)
+		names = append(names, name)
+	}
+	c.Assert(rows.Err(), qt.IsNil)
+	return names
+}

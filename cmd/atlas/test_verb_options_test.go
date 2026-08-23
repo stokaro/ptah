@@ -444,7 +444,7 @@ func TestCompatCommand_TestVerbsAcceptAConnectableDevURL(t *testing.T) {
 	workspace := writeTestVerbWorkspace(c, "")
 
 	out, err := atlastest.RunCompatArgs(append(schemaTestArgs(workspace),
-		"--dev-url", freshDevURL(c),
+		"--dev-url", atlastest.FreshDevURL(c),
 		"--seed-dir", workspace.seedsDir))
 
 	c.Assert(err, qt.IsNil, qt.Commentf("%s", out))

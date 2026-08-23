@@ -129,7 +129,7 @@ func TestSchemaDiffExternalSchemaGate_FailurePath(t *testing.T) {
 }
 
 func TestSchemaApplyExternalSchemaSourceDryRun(t *testing.T) {
-	allowSchemaApplyWithoutDevURL(t)
+	atlastest.AllowSchemaApplyWithoutDevURL(t)
 	c := qt.New(t)
 	t.Setenv("PTAH_ALLOW_EXTERNAL_SCHEMA", "1")
 	configPath := writeExternalSchemaAtlasHCL(t, "sql")
@@ -173,7 +173,7 @@ func TestSchemaApplyRejectsMalformedSQLiteVirtualDropToggleBeforeExternalSource(
 }
 
 func TestSchemaApplyExternalSchemaSourceApplies(t *testing.T) {
-	allowSchemaApplyWithoutDevURL(t)
+	atlastest.AllowSchemaApplyWithoutDevURL(t)
 	c := qt.New(t)
 	t.Setenv("PTAH_ALLOW_EXTERNAL_SCHEMA", "1")
 	configPath := writeExternalSchemaAtlasHCL(t, "sql")
