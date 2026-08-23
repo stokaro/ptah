@@ -341,15 +341,16 @@ func TestTableStatementsMatchTheExistingPlanner(t *testing.T) {
 		},
 		{
 			// The same generated column against a target whose renderer writes
-			// the KIND. PostgreSQL has only STORED and writes the word
-			// unconditionally, so a PostgreSQL fixture cannot see a planner
-			// that drops the field.
-			name: "creating a table with a virtual generated column, on SQLite",
+			// the KIND and has more than one. PostgreSQL has only STORED and
+			// writes the word unconditionally; SQLite has VIRTUAL and STORED
+			// and DEFAULTS an empty kind to VIRTUAL, so only a STORED fixture
+			// there can see a planner that drops the field.
+			name: "creating a table with a stored generated column, on SQLite",
 			description: describedTable(
 				goschema.Field{StructName: "Widget", Name: "id", Type: "integer", Primary: true},
 				goschema.Field{
 					StructName: "Widget", Name: "code", Type: "text", Nullable: true,
-					GeneratedExpression: "upper(name)", GeneratedKind: "VIRTUAL",
+					GeneratedExpression: "upper(name)", GeneratedKind: "STORED",
 				}),
 			catalog: &dbschematypes.DBSchema{},
 			profile: sqliteProfilePointer(),

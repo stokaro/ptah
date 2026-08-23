@@ -42,6 +42,30 @@ func TestColumnModificationCarriesBothSides(t *testing.T) {
 	c.Assert(change.Status, qt.Equals, schemachange.Planned)
 }
 
+// TestAGeneratedColumnChangeCarriesBothExpressions pins the CATALOG side of a
+// generated column, which a comparison of which-objects-moved cannot see: a
+// reader that returned no expression at all still produces a change, because
+// "" and "upper(name)" differ too. What it produces is a change whose Before
+// says the column was not generated, and every consumer that renders a
+// migration or explains one reads that.
+func TestAGeneratedColumnChangeCarriesBothExpressions(t *testing.T) {
+	c := qt.New(t)
+
+	changes := changesFor(c, describedTable(goschema.Field{
+		StructName: "Widget", Name: "code", Type: "text", Nullable: true,
+		GeneratedExpression: "upper(name)", GeneratedKind: "STORED",
+	}), catalogTable(dbschematypes.DBColumn{
+		Name: "code", DataType: "text", IsNullable: "YES",
+		GeneratedExpression: new("lower(name)"), GeneratedKind: "STORED",
+	}))
+
+	c.Assert(changes, qt.HasLen, 1)
+	c.Assert(changes[0].Changed, qt.DeepEquals, []string{"generated expression"})
+	c.Assert(changes[0].Before.Column.GeneratedExpression, qt.Equals, "lower(name)")
+	c.Assert(changes[0].Before.Column.GeneratedKind, qt.Equals, "STORED")
+	c.Assert(changes[0].After.Column.GeneratedExpression, qt.Equals, "upper(name)")
+}
+
 // TestTypeSpellingsThatMeanOneTypeAreNotAChange is the control on the row above.
 // A comparison that reported every spelling difference would satisfy it
 // completely, and would report an ALTER for every column of a database Ptah
