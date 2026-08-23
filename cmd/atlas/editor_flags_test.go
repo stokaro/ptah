@@ -137,7 +137,7 @@ func TestCompatCommand_MigrateDiffEditRejectsDryRun(t *testing.T) {
 }
 
 func TestCompatCommand_SchemaApplyEditAppliesEditedSQL(t *testing.T) {
-	allowSchemaApplyWithoutDevURL(t)
+	atlastest.AllowSchemaApplyWithoutDevURL(t)
 	c := qt.New(t)
 	dir := t.TempDir()
 	dbPath := filepath.Join(dir, "apply.db")
@@ -175,7 +175,7 @@ CREATE TABLE users (
 }
 
 func TestCompatCommand_SchemaApplyEditWithoutEditorFails(t *testing.T) {
-	allowSchemaApplyWithoutDevURL(t)
+	atlastest.AllowSchemaApplyWithoutDevURL(t)
 	c := qt.New(t)
 	dir := t.TempDir()
 	schemaPath := filepath.Join(dir, "schema.sql")

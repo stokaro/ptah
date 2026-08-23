@@ -232,10 +232,18 @@ jobs:
       # adds tests to cmd/atlas.
       #
       # 20m is ~2x the observed cliff. It moves the cliff rather than removing
-      # it -- splitting cmd/atlas is the real fix (stokaro/ptah#1812) -- but the
-      # job's own timeout-minutes above stays the real bound, so a genuine hang
-      # is still caught, by the job rather than by a panic naming whichever test
-      # happened to be running (stokaro/ptah#1749).
+      # it, and the job's own timeout-minutes above stays the real bound, so a
+      # genuine hang is still caught by the job rather than by a panic naming
+      # whichever test happened to be running (stokaro/ptah#1749).
+      #
+      # The split named in that last paragraph has since landed: cmd/atlas's
+      # 138 external test files moved into cmd/atlas/internal/migratetests and
+      # cmd/atlas/internal/schematests, which took the largest package from
+      # 21.2s to 15.7s locally -- the same ratio against the 184s above puts
+      # the worst package at ~136s of the 600s default rather than 184s. The
+      # timeout below is kept anyway: it is what makes the bound the job's
+      # rather than Go's, and the number it protects against is the whole
+      # step's, not one package's (stokaro/ptah#1812).
       #
       # The digest is part of this step rather than an `if: failure()` sibling
       # so it cannot fire for a failure somewhere else, and so the log needs no
@@ -249,8 +257,8 @@ jobs:
       # them where the job opens (stokaro/ptah#1812, stokaro/ptah#1749).
       #
       # Windows only, because that is the job measured against its budget:
-      # cmd/atlas takes 184s of Go's 600s default there, and every step on that
-      # runner is 1.4-1.9x slower than ordinary hardware.
+      # cmd/atlas took 184s of Go's 600s default there before the split, and
+      # every step on that runner is 1.4-1.9x slower than ordinary hardware.
       - name: Unit tests
         shell: bash
         run: |

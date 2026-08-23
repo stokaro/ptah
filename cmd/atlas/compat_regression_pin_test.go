@@ -1,14 +1,12 @@
 package atlas_test
 
 import (
-	"bytes"
 	"os"
 	"path/filepath"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
-	"go.5x5.cz/ptah/cmd/atlas"
 	"go.5x5.cz/ptah/cmd/atlas/internal/atlastest"
 )
 
@@ -18,20 +16,10 @@ import (
 // text moved to a shared helper. These pins hold the Atlas-compatible surface
 // byte-identical across that refactor.
 
-func runAtlasArgs(args ...string) (string, error) {
-	cmd := atlas.NewCompatCommand("atlas")
-	var out bytes.Buffer
-	cmd.SetOut(&out)
-	cmd.SetErr(&out)
-	cmd.SetArgs(args)
-	err := cmd.Execute()
-	return out.String(), err
-}
-
 func TestCompatPinAtlasLicenseOutput(t *testing.T) {
 	c := qt.New(t)
 
-	out, err := runAtlasArgs("license")
+	out, err := atlastest.RunCompatOutput("license")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(out, qt.Equals, `Ptah
@@ -58,7 +46,7 @@ func TestCompatPinAtlasMigrateSetOutput(t *testing.T) {
 	atlastest.WriteAtlasApplyProjectSum(c, migrationsDir)
 	dbPath := filepath.Join(t.TempDir(), "pin.db")
 
-	out, err := runAtlasArgs("migrate", "set", "2",
+	out, err := atlastest.RunCompatOutput("migrate", "set", "2",
 		"--url", "sqlite://"+dbPath,
 		"--dir", "file://"+migrationsDir,
 	)
@@ -67,7 +55,7 @@ func TestCompatPinAtlasMigrateSetOutput(t *testing.T) {
 	c.Assert(out, qt.Equals, "Current version is 2 (2 set):\n\n  + 1 (users)\n  + 2 (orders)\n\n")
 
 	// Moving the boundary downward keeps the historical removal output.
-	out, err = runAtlasArgs("migrate", "set", "1",
+	out, err = atlastest.RunCompatOutput("migrate", "set", "1",
 		"--url", "sqlite://"+dbPath,
 		"--dir", "file://"+migrationsDir,
 	)
