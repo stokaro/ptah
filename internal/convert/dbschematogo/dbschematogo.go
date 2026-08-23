@@ -43,6 +43,8 @@ func ConvertDBSchemaToGoSchema(dbSchema *dbschematypes.DBSchema) *goschema.Datab
 	convertMaterializedViews(database, dbSchema.MatViews)
 	convertTriggers(database, dbSchema.Triggers)
 	convertHypertables(database, dbSchema.Hypertables)
+	convertSynonyms(database, dbSchema.Synonyms)
+	convertExtendedProperties(database, dbSchema.ExtendedProperties)
 	convertRoles(database, dbSchema.Roles)
 	database.Grants = convertGrants(dbSchema.Grants)
 	convertRLSEnabledTables(database, dbSchema.Tables, tableStructNames)
@@ -390,14 +392,94 @@ func convertSequences(database *goschema.Database, dbSequences []dbschematypes.D
 // IR, so a description says which tables are partitioned.
 //
 // Only the primary dimension is carried, because only it is declarable. A
-// table with more than one is described with the first and the read says how
-// many it did not describe -- see the note the reader emits.
+// table with more than one is described with the first, and the note the reader
+// emits says how many it did not describe.
 func convertHypertables(database *goschema.Database, hypertables []dbschematypes.DBHypertable) {
 	for _, hypertable := range hypertables {
 		database.Hypertables = append(database.Hypertables, goschema.Hypertable{
 			Table:         hypertable.QualifiedName(),
 			Column:        hypertable.PrimaryDimension,
 			ChunkInterval: hypertable.ChunkInterval,
+		})
+	}
+}
+
+// convertSynonyms carries the SQL Server synonyms a read found into the IR.
+//
+// Without it `ptah schema inspect` described none of them, in any format, even
+// though the reader finds every one and the HCL surface has had a `synonym`
+// block since stokaro/ptah#1031. The loss was between the read and the
+// document, so nothing that renders from a hand-built schema could see it
+// (stokaro/ptah#2001).
+//
+// The target is rebuilt from the PARSED parts rather than copied. `Target` is
+// base_object_name exactly as the catalog records it, brackets included, and
+// [go.5x5.cz/ptah/core/goschema.Synonym.Target] is the spelling that will be
+// emitted: one to four dot-separated parts, unquoted. Copying the catalog's
+// form would put `[other].[dbo].[gauge]` in a document and render it again as
+// a name with brackets inside it.
+func convertSynonyms(database *goschema.Database, synonyms []dbschematypes.DBSynonym) {
+	for _, synonym := range synonyms {
+		database.Synonyms = append(database.Synonyms, goschema.Synonym{
+			Name:    synonym.Name,
+			Schema:  synonym.Schema,
+			Target:  synonymTarget(synonym),
+			Comment: synonym.Comment,
+		})
+	}
+}
+
+// synonymTarget joins the parsed target parts back into the spelling a
+// declaration uses. Absent leading parts are empty, so joining what is present
+// gives the one-to-four part name without inventing a level.
+func synonymTarget(synonym dbschematypes.DBSynonym) string {
+	parts := make([]string, 0, 4)
+	for _, part := range []string{
+		synonym.TargetServer,
+		synonym.TargetDatabase,
+		synonym.TargetSchema,
+		synonym.TargetObject,
+	} {
+		if strings.TrimSpace(part) == "" {
+			continue
+		}
+		parts = append(parts, part)
+	}
+	if len(parts) == 0 {
+		// A catalog row Ptah could not parse still names something, and the
+		// raw form is better than nothing: it is what the server holds.
+		return synonym.Target
+	}
+	return strings.Join(parts, ".")
+}
+
+// convertExtendedProperties carries the SQL Server extended properties a read
+// found into the IR, except the ones no declaration could restore.
+//
+// A property whose value the server stores under a base type Ptah cannot write
+// back must NOT become a declaration. The renderer emits an N” literal, so
+// putting an int or a date into the document would change its type on the next
+// apply, and CONVERT(NVARCHAR, …) on a date answers `Jan  2 2026` -- a
+// locale-dependent rendering rather than the value. The comparator already
+// declines those in both directions; describing one would undo that by turning
+// the description into a declaration that asks for the string.
+//
+// The read still reports it, so it is not invisible: [dbschematypes.DBExtendedProperty]
+// carries the row and the flag, and nothing is planned to remove it.
+func convertExtendedProperties(
+	database *goschema.Database,
+	properties []dbschematypes.DBExtendedProperty,
+) {
+	for _, property := range properties {
+		if property.ValueNotRepresentable {
+			continue
+		}
+		database.ExtendedProperties = append(database.ExtendedProperties, goschema.ExtendedProperty{
+			Name:   property.Name,
+			Schema: property.Schema,
+			Table:  property.Table,
+			Column: property.Column,
+			Value:  property.Value,
 		})
 	}
 }
