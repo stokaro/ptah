@@ -187,7 +187,7 @@ func resolveAtlasMigrateSource(
 	}
 
 	rawDir, spelledByAtlas := resolveAtlasMigrateSourceDir(verb, mapped)
-	localDir, err := atlasargs.ParseLocalDir(rawDir)
+	localDir, err := project.project.resolveMigrationDirFlag(cmd.Context(), rawDir)
 	if err != nil {
 		return atlasMigrateSource{}, fmt.Errorf("atlas migrate %s --dir: %w", verb.use, err)
 	}

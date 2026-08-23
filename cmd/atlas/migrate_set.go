@@ -235,7 +235,7 @@ func prepareAtlasMigrateSet(
 		projectCfg.StringValue(projectconfig.StringMigrationDir).Present {
 		localDir, err = prepared.project.resolveProjectMigrationDir(opts.dir)
 	} else {
-		localDir, err = atlasargs.ParseLocalDir(opts.dir)
+		localDir, err = prepared.project.resolveMigrationDirFlag(cmd.Context(), opts.dir)
 	}
 	if err != nil {
 		return prepared, fmt.Errorf("atlas migrate set --dir: %w", err)

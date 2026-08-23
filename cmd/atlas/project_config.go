@@ -26,6 +26,7 @@ import (
 	"go.5x5.cz/ptah/internal/atlasschema"
 	"go.5x5.cz/ptah/internal/atlassource"
 	"go.5x5.cz/ptah/internal/pathguard"
+	"go.5x5.cz/ptah/internal/remotemigrationdir"
 	"go.5x5.cz/ptah/internal/schemafile"
 )
 
@@ -133,6 +134,37 @@ func (p atlasProject) localDirWithQuery(raw string) (atlasargs.LocalDir, error) 
 		return atlasargs.LocalDir{}, fmt.Errorf("atlas project root is unavailable")
 	}
 	return atlasProjectConfigLocalDirWithQueryFromBaseDir(raw, p.root.Path())
+}
+
+// resolveMigrationDirFlag resolves an explicit `--dir` value, and adopts a
+// registry reference as this command's virtual migration directory.
+//
+// An `atlas://` reference has no local path for the verbs to open, so it is
+// registered the way a project-file one is: a lazy filesystem, a display value
+// that is what the OPERATOR typed, and read-only, which is what makes the
+// writing verbs refuse and name the reference rather than create a directory
+// called after it.
+//
+// A local value is untouched and does not become virtual: the identity below
+// is what stops an explicit --dir from picking up a project's rendered
+// directory merely by spelling its path the same way (stokaro/ptah#1210).
+func (p *atlasProject) resolveMigrationDirFlag(
+	ctx context.Context,
+	raw string,
+) (atlasargs.LocalDir, error) {
+	if !remotemigrationdir.Names(raw) {
+		return atlasargs.ParseLocalDir(raw)
+	}
+	reference := strings.TrimSpace(raw)
+	digest := sha256.Sum256([]byte(reference))
+	p.migrationDir = atlasargs.LocalDir{Path: fmt.Sprintf(".ptah-registry-dir-%x", digest)}
+	p.migrationFS = remotemigrationdir.Open(ctx, reference)
+	p.migrationDisplay = reference
+	p.migrationOrigin = reference
+	p.migrationVirtual = true
+	p.migrationReadOnly = true
+	p.migrationDirResolved = true
+	return p.migrationDir, nil
 }
 
 // resolveProjectMigrationDir resolves a migration.dir selected from atlas.hcl
