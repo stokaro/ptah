@@ -465,10 +465,49 @@ any topology that shares backends, named or not, and costs one query against a
 direct server.
 
 **Point schema-mutating commands at the database directly.** Reads through a
-pooler are unaffected; it is the lock that cannot survive one. Where the risk is
-understood and accepted — a single deploy job that no other run can race —
-`PTAH_ALLOW_UNVERIFIED_MIGRATION_LOCK=1` skips the refusal. It does not skip the
-lock, only the proof that the lock excludes anybody.
+pooler are unaffected — one server read both ways gives the same description,
+and a live test asserts it — it is the lock that cannot survive one. Where the
+risk is understood and accepted — a single deploy job that no other run can
+race — `PTAH_ALLOW_UNVERIFIED_MIGRATION_LOCK=1` skips the refusal. It does not
+skip the lock, only the proof that the lock excludes anybody.
+
+A **transaction**-scoped advisory lock does survive a pooler, because it is held
+to the end of a transaction and a pooler keeps one backend for the whole of one.
+Measured through PgBouncer 1.25.2 in transaction mode, two concurrent
+transactions and one key:
+
+```text
+first transaction    pg_try_advisory_xact_lock = true   backend 79
+second transaction   pg_try_advisory_xact_lock = false  backend 82
+```
+
+It is not what Ptah's migration lock uses, because that lock is held across
+planning and applying rather than inside one transaction. The property is
+pinned by a live test so it is a measured fact rather than a plan.
+
+### `search_path` in the URL
+
+A `?search_path=` on a PostgreSQL URL is sent as a **startup parameter**, and
+PgBouncer refuses the connection outright rather than ignoring it:
+
+```console
+$ ptah schema inspect --db-url "postgres://…@pgbouncer:6432/app?search_path=app"
+error: connect to --url: failed to ping database: the database URL selects a
+schema with "search_path", which is sent as a startup parameter and which a
+transaction-pooling proxy such as PgBouncer refuses rather than ignores: remove
+it from the URL, or configure the proxy to pass it through
+(PgBouncer: track_extra_parameters = search_path): server error:
+FATAL: unsupported startup parameter: search_path (SQLSTATE 08P01)
+```
+
+The proxy's own `FATAL` is kept, so nothing is taken on trust; what Ptah adds
+is which parameter its URL carried and the two ways out. The same URL without
+`search_path` connects and reads normally, and the description it produces is
+identical to a direct read.
+
+Making Ptah's own schema selection independent of that session parameter — so a
+pooled URL can select a schema at all — is
+[stokaro/ptah#1029](https://github.com/stokaro/ptah/issues/1029).
 
 ## Next steps
 

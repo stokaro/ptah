@@ -341,6 +341,11 @@ var databaseImages = map[string]string{
 // would let the next database arrive with no cell and nothing to say so.
 var notADatabase = map[string]bool{
 	"registry": true,
+	// A connection pooler, not a server. It speaks the PostgreSQL wire
+	// protocol and has no capabilities of its own: what it changes is which
+	// backend a statement lands on, which is what the tests behind it measure
+	// (stokaro/ptah#1029).
+	"edoburu/pgbouncer": true,
 }
 
 // TestCells_DeclareEveryDatabaseContainerThisRepositoryStarts derives the
