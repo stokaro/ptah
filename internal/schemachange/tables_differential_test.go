@@ -8,9 +8,11 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/goschema"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/schemachange"
+	"go.5x5.cz/ptah/internal/schemastate"
 	"go.5x5.cz/ptah/migration/schemadiff"
 	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
 )
@@ -73,6 +75,19 @@ func TestTableChangesMatchTheExistingComparator(t *testing.T) {
 				goschema.Field{StructName: "Widget", Name: "code", Type: "varchar(200)", Nullable: true}),
 			catalog: catalogTable(dbschematypes.DBColumn{
 				Name: "code", DataType: "varchar(50)", IsNullable: "YES",
+			}),
+		},
+		{
+			// Both sources report a generated column's expression, so a change
+			// to it is a change both comparators have to see.
+			name: "a column whose generated expression changed",
+			description: describedTable(goschema.Field{
+				StructName: "Widget", Name: "code", Type: "text", Nullable: true,
+				GeneratedExpression: "upper(name)", GeneratedKind: "STORED",
+			}),
+			catalog: catalogTable(dbschematypes.DBColumn{
+				Name: "code", DataType: "text", IsNullable: "YES",
+				GeneratedExpression: new("lower(name)"), GeneratedKind: "STORED",
 			}),
 		},
 		{
@@ -182,4 +197,342 @@ func appendTableDecision(decisions []string, change schemachange.Change) []strin
 		},
 		false: func() []string { return decisions },
 	}[keep]()
+}
+
+// TestTableStatementsMatchTheExistingPlanner is the differential test at the
+// level the constraint slice already uses: the SQL both paths render.
+//
+// A change comparison says the two paths agree about WHICH objects move. This
+// says they agree about what is executed, which is the half a plan is judged on
+// -- and it found four defects in the NEW path, all of which the change-level
+// comparison passed straight over:
+//
+//   - a defaulted schema written back into DDL an author wrote bare;
+//   - a composite primary key missed entirely, because the adapter read the
+//     field flag and not the table-level declaration that spells one;
+//   - a DROP TABLE without the guard and the CASCADE the shipping path emits;
+//   - a DROP COLUMN addressing the catalog's spelling of a table both sides
+//     describe.
+//
+// The existing planner was right about all four.
+func TestTableStatementsMatchTheExistingPlanner(t *testing.T) {
+	tests := []struct {
+		name        string
+		description *goschema.Database
+		catalog     *dbschematypes.DBSchema
+		// profile defaults to PostgreSQL. A row names another target when the
+		// rule under test is one the targets disagree about: PostgreSQL's
+		// renderer suppresses UNIQUE on a primary key column and Oracle's does
+		// not, so a PostgreSQL-only fixture cannot see a planner that asks for
+		// both.
+		profile *schemastate.Profile
+	}{
+		{
+			name: "creating a table",
+			description: describedTable(
+				goschema.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true},
+				goschema.Field{StructName: "Widget", Name: "code", Type: "text", Nullable: true}),
+			catalog: &dbschematypes.DBSchema{},
+		},
+		{
+			name: "creating a table with a default",
+			description: describedTable(
+				goschema.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true},
+				goschema.Field{
+					StructName: "Widget", Name: "code", Type: "text", Nullable: true,
+					Default: "unset", DefaultSet: true,
+				}),
+			catalog: &dbschematypes.DBSchema{},
+		},
+		{
+			name: "creating a table with a default expression",
+			description: describedTable(
+				goschema.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true},
+				goschema.Field{
+					StructName: "Widget", Name: "seen", Type: "timestamp", Nullable: true,
+					DefaultExpr: "now()",
+				}),
+			catalog: &dbschematypes.DBSchema{},
+		},
+		{
+			name:        "dropping a table",
+			description: &goschema.Database{},
+			catalog: catalogTable(dbschematypes.DBColumn{
+				Name: "id", DataType: "integer", IsNullable: "NO", IsPrimaryKey: true,
+			}),
+		},
+		{
+			name: "adding a column",
+			description: describedTable(
+				goschema.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true},
+				goschema.Field{StructName: "Widget", Name: "code", Type: "text", Nullable: true}),
+			catalog: catalogTable(dbschematypes.DBColumn{
+				Name: "id", DataType: "integer", IsNullable: "NO", IsPrimaryKey: true,
+			}),
+		},
+		{
+			name: "dropping a column",
+			description: describedTable(
+				goschema.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true}),
+			catalog: catalogTable(
+				dbschematypes.DBColumn{
+					Name: "id", DataType: "integer", IsNullable: "NO", IsPrimaryKey: true,
+				},
+				dbschematypes.DBColumn{Name: "code", DataType: "text", IsNullable: "YES"}),
+		},
+		{
+			name: "widening a column",
+			description: describedTable(
+				goschema.Field{StructName: "Widget", Name: "code", Type: "varchar(200)", Nullable: true}),
+			catalog: catalogTable(dbschematypes.DBColumn{
+				Name: "code", DataType: "varchar(50)", IsNullable: "YES",
+			}),
+		},
+		{
+			// A column-level UNIQUE. The fact was already in the canonical
+			// model and the renderer did not ask for it, so the CREATE built a
+			// table without a guarantee its author declared -- measured, by
+			// running the two paths over a fixture that carries it.
+			name: "creating a table with a unique column",
+			description: describedTable(
+				goschema.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true},
+				goschema.Field{
+					StructName: "Widget", Name: "code", Type: "text", Nullable: true, Unique: true,
+				}),
+			catalog: &dbschematypes.DBSchema{},
+		},
+		{
+			// A column-level CHECK, which the canonical Column did not carry at
+			// all until the same measurement found it.
+			name: "creating a table with a column check",
+			description: describedTable(
+				goschema.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true},
+				goschema.Field{
+					StructName: "Widget", Name: "code", Type: "text", Nullable: true,
+					Check: "length(code) > 0",
+				}),
+			catalog: &dbschematypes.DBSchema{},
+		},
+		{
+			// The same table against a target whose renderer does NOT suppress
+			// UNIQUE beside PRIMARY KEY. Every source sets both flags for a
+			// key column, so a planner passing the merged fact through would
+			// declare a second constraint here that nobody asked for.
+			name: "creating a table with a unique column, on Oracle",
+			description: describedTable(
+				goschema.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true},
+				goschema.Field{
+					StructName: "Widget", Name: "code", Type: "text", Nullable: true, Unique: true,
+				}),
+			catalog: &dbschematypes.DBSchema{},
+			profile: oracleProfilePointer(),
+		},
+		{
+			// A generated column. Both sources report the expression and the
+			// kind, so this one is compared as well as rendered.
+			name: "creating a table with a generated column",
+			description: describedTable(
+				goschema.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true},
+				goschema.Field{
+					StructName: "Widget", Name: "code", Type: "text", Nullable: true,
+					GeneratedExpression: "upper(name)", GeneratedKind: "STORED",
+				}),
+			catalog: &dbschematypes.DBSchema{},
+		},
+		{
+			// The same generated column against a target whose renderer writes
+			// the KIND and has more than one. PostgreSQL has only STORED and
+			// writes the word unconditionally; SQLite has VIRTUAL and STORED
+			// and DEFAULTS an empty kind to VIRTUAL, so only a STORED fixture
+			// there can see a planner that drops the field.
+			name: "creating a table with a stored generated column, on SQLite",
+			description: describedTable(
+				goschema.Field{StructName: "Widget", Name: "id", Type: "integer", Primary: true},
+				goschema.Field{
+					StructName: "Widget", Name: "code", Type: "text", Nullable: true,
+					GeneratedExpression: "upper(name)", GeneratedKind: "STORED",
+				}),
+			catalog: &dbschematypes.DBSchema{},
+			profile: sqliteProfilePointer(),
+		},
+		{
+			// SQLite's table options. Neither has an ALTER, so a CREATE that
+			// dropped one builds a table nothing can fix afterwards without a
+			// rebuild -- and it builds without failing.
+			name: "creating a strict table without a rowid, on SQLite",
+			description: describedTableOptions(true, true, goschema.Field{
+				StructName: "Widget", Name: "id", Type: "integer", Primary: true,
+			}),
+			catalog: &dbschematypes.DBSchema{},
+			profile: sqliteProfilePointer(),
+		},
+		{
+			// The control on the row above: a table declaring neither must
+			// carry neither, or every SQLite table Ptah creates becomes strict.
+			name: "creating an ordinary table, on SQLite",
+			description: describedTableOptions(false, false, goschema.Field{
+				StructName: "Widget", Name: "id", Type: "integer", Primary: true,
+			}),
+			catalog: &dbschematypes.DBSchema{},
+			profile: sqliteProfilePointer(),
+		},
+		{
+			// An identity column. The generation mode decides whether a client
+			// may supply its own value, so a CREATE that dropped it would build
+			// a column with different write semantics.
+			name: "creating a table with an identity column",
+			description: describedTable(goschema.Field{
+				StructName: "Widget", Name: "id", Type: "int", Primary: true,
+				IdentityGeneration: "ALWAYS",
+			}),
+			catalog: &dbschematypes.DBSchema{},
+		},
+		{
+			// A NAMED column check. The name is what every later diagnostic
+			// about the constraint uses, so a CREATE that dropped it would leave
+			// the server to invent one the author cannot predict.
+			name: "creating a table with a named column check",
+			description: describedTable(
+				goschema.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true},
+				goschema.Field{
+					StructName: "Widget", Name: "code", Type: "text", Nullable: true,
+					Check: "length(code) > 0", CheckName: "ck_widget_code",
+				}),
+			catalog: &dbschematypes.DBSchema{},
+		},
+		{
+			// A composite key, which the column syntax cannot express: PRIMARY
+			// KEY on two columns declares two keys rather than one over both,
+			// so it has to become a table-level constraint.
+			name: "creating a table with a composite key",
+			description: describedTableWithKey(
+				[]string{"tenant", "id"},
+				goschema.Field{StructName: "Widget", Name: "tenant", Type: "int"},
+				goschema.Field{StructName: "Widget", Name: "id", Type: "int"}),
+			catalog: &dbschematypes.DBSchema{},
+		},
+		{
+			// The control. A planner that emitted nothing would agree with the
+			// existing one on this row and on nothing else; a planner that
+			// emitted something here would disagree with it on this row alone.
+			name: "an unchanged schema",
+			description: describedTable(
+				goschema.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true},
+				goschema.Field{StructName: "Widget", Name: "code", Type: "text", Nullable: true}),
+			catalog: catalogTable(
+				dbschematypes.DBColumn{
+					Name: "id", DataType: "integer", IsNullable: "NO", IsPrimaryKey: true,
+				},
+				dbschematypes.DBColumn{Name: "code", DataType: "text", IsNullable: "YES"}),
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			profile := profileOrPostgres(test.profile)
+
+			existing := executableLines(existingPathStatements(c, test.description, test.catalog, profile))
+			prototype := executableLines(plannedStatements(c, test.description, test.catalog, profile))
+
+			c.Assert(prototype, qt.DeepEquals, existing)
+		})
+	}
+}
+
+// plannedStatements renders the canonical path's plan for one input pair.
+func plannedStatements(
+	c *qt.C,
+	description *goschema.Database,
+	catalog *dbschematypes.DBSchema,
+	profile schemastate.Profile,
+) []string {
+	c.Helper()
+	operations, err := schemachange.Plan(changesFor(c, description, catalog), profile)
+	c.Assert(err, qt.IsNil)
+	return schemachange.Statements(operations)
+}
+
+// executableLines keeps the lines a database would run.
+//
+// Both paths wrap their statements in comments -- the existing planner writes a
+// header per table and a warning per destructive change, the renderer writes a
+// banner -- and comparing those would be comparing two narrators rather than
+// two plans. Everything that is not a comment survives, so a statement one path
+// emits and the other does not is still a difference.
+func executableLines(statements []string) []string {
+	lines := make([]string, 0)
+	for _, statement := range statements {
+		for line := range strings.SplitSeq(statement, "\n") {
+			lines = appendExecutable(lines, strings.TrimSpace(line))
+		}
+	}
+	return lines
+}
+
+// appendExecutable keeps [executableLines] free of the conditionals the
+// repository's test style refuses inside a test.
+func appendExecutable(lines []string, trimmed string) []string {
+	executable := trimmed != "" && !strings.HasPrefix(trimmed, "--")
+	return map[bool][]string{
+		true:  append(lines, normalizeStatement(trimmed)),
+		false: lines,
+	}[executable]
+}
+
+// TestAModificationCarriesWhatItReplaces pins the metadata a rendered
+// modification carries beside the new definition.
+//
+// Most renderers ignore it, which is exactly why a statement comparison against
+// PostgreSQL cannot see it: the two paths agree on every byte with the previous
+// values present or absent. Two consumers cannot ignore it. Safety analysis
+// tells a narrowing change from a widening one by the previous type, and
+// Oracle's MODIFY states the WHOLE new column definition, so a cleared default
+// has to be spelled DEFAULT NULL or the old one stays and the migration reports
+// success (stokaro/ptah#1885).
+func TestAModificationCarriesWhatItReplaces(t *testing.T) {
+	c := qt.New(t)
+	profile := postgresProfile()
+	changes := changesFor(c, describedTable(goschema.Field{
+		StructName: "Widget", Name: "code", Type: "varchar(200)", Nullable: true,
+	}), catalogTable(dbschematypes.DBColumn{
+		Name: "code", DataType: "varchar(50)", IsNullable: "NO",
+		ColumnDefault: new("'unset'"),
+	}))
+
+	operations, err := schemachange.Plan(changes, profile)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(operations, qt.HasLen, 1)
+	alter, ok := operations[0].Node.(*ast.AlterTableNode)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(alter.Operations, qt.HasLen, 1)
+	modify, ok := alter.Operations[0].(*ast.ModifyColumnOperation)
+	c.Assert(ok, qt.IsTrue)
+	c.Assert(modify.PreviousType, qt.Equals, "varchar(50)")
+	c.Assert(modify.HasPreviousNullable, qt.IsTrue)
+	c.Assert(modify.PreviousNullable, qt.IsFalse)
+	c.Assert(modify.HasPreviousDefault, qt.IsTrue)
+	c.Assert(modify.PreviousDefault, qt.Equals, "'unset'")
+	c.Assert(modify.Column.Type, qt.Equals, "varchar(200)")
+}
+
+// profileOrPostgres resolves a row's target, defaulting to PostgreSQL.
+func profileOrPostgres(profile *schemastate.Profile) schemastate.Profile {
+	return map[bool]func() schemastate.Profile{
+		true:  postgresProfile,
+		false: func() schemastate.Profile { return *profile },
+	}[profile == nil]()
+}
+
+// oracleProfilePointer is [oracleProfile] as a row can carry it.
+func oracleProfilePointer() *schemastate.Profile {
+	profile := oracleProfile()
+	return &profile
+}
+
+// sqliteProfilePointer is [sqliteProfile] as a row can carry it.
+func sqliteProfilePointer() *schemastate.Profile {
+	profile := sqliteProfile()
+	return &profile
 }
