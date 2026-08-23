@@ -3,6 +3,8 @@ title: Configuration
 description: Project config files, Atlas config subset, environment variables, and precedence.
 ---
 
+import { Tabs, TabItem } from '@astrojs/starlight/components';
+
 Configuration precedence is:
 
 | Rank | Source |
@@ -218,7 +220,15 @@ Parent traversal that resolves outside, an absolute outside path, and a
 symbolic-link escape fail as `outside allowed root`. An explicit CLI `--dir` is
 operator-owned and retains the CLI path behavior above.
 
-## Minimal `ptah.yaml`
+## A minimal project config
+
+A native command selects an environment with `--env`, and reads it from either
+project file: `./ptah.yaml`, or the supported subset of `./atlas.hcl`. The two
+below are equivalent, and `ptah migrations status --env dev` answers the same
+way beside each.
+
+<Tabs syncKey="project-config">
+<TabItem label="ptah.yaml">
 
 ```yaml
 env:
@@ -228,12 +238,33 @@ env:
       dir: ./migrations
 ```
 
+</TabItem>
+<TabItem label="atlas.hcl">
+
+```hcl
+env "dev" {
+  url = "sqlite:////tmp/ptah-dev.db"
+
+  migration {
+    dir = "file://migrations"
+  }
+}
+```
+
+</TabItem>
+</Tabs>
+
 Run with the named environment:
 
 ```bash
 ptah migrations status --env dev
 ptah migrations up --env dev --verify-sum
 ```
+
+The two files are not interchangeable everywhere: `--config` names a
+`ptah.yaml` and refuses an `atlas.hcl` by name, because the Atlas project
+config is discovered as `./atlas.hcl` and selected with `--env`. Where both
+exist, `atlas.hcl` wins — see the precedence table above.
 
 If a command needs project values from a config file with multiple
 environments, pass `--env`. Commands whose required inputs are all explicit do

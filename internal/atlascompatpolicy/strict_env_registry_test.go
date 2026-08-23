@@ -196,8 +196,10 @@ func TestDocumentedRetainedControlsMatchTheRegistry(t *testing.T) {
 func documentedRetainedControls(t *testing.T) []string {
 	c := qt.New(t)
 	t.Helper()
+	// .mdx since the page grew tabbed examples: Starlight components need MDX,
+	// and this reader is a plain text scan either way (stokaro/ptah#1228).
 	path := filepath.Join("..", "..", "docs", "site", "src", "content", "docs",
-		"reference", "configuration.md")
+		"reference", "configuration.mdx")
 	contents, err := os.ReadFile(path)
 	c.Assert(err, qt.IsNil)
 
