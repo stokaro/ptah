@@ -13,6 +13,7 @@ a new record that names it, and its own status line is updated to point there.
 | [0001](0001-canonical-schema-state-and-pipeline-boundaries.md) | Canonical schema state and pipeline boundaries | Proposed |
 | [0002](0002-read-only-agent-mvp-scope-and-transport.md) | Read-only agent MVP scope, operation ownership, and transport | Proposed |
 | [0003](0003-agent-surface-trust-boundaries.md) | Agent-surface trust boundaries and threat model | Proposed |
+| [0004](0004-constrained-artifact-mutation.md) | Capability broker, artifact digests, and constrained mutation | Proposed |
 
 ## Writing one
 

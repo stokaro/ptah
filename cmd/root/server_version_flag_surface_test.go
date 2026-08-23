@@ -90,6 +90,12 @@ func offlineDialectVerbs() []dialectVerb {
 			why: "--dialect selects the capability preset the CAP rules are evaluated against, " +
 				"and nothing here connects to a server",
 		},
+		{
+			verb: "mcp",
+			why: "--dialect selects the capability preset the agent surface's verification gates " +
+				"validate and lint against, and the server holds no connection: every tool it " +
+				"serves reads files or a database the caller names per call",
+		},
 	}
 }
 
