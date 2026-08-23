@@ -46,6 +46,17 @@ func oracleProfile() schemastate.Profile {
 	}
 }
 
+// sqliteProfile is the target whose renderer writes a generated column's KIND.
+// PostgreSQL has only STORED and writes the word unconditionally, so a
+// PostgreSQL fixture cannot see a planner that drops the field.
+func sqliteProfile() schemastate.Profile {
+	return schemastate.Profile{
+		Dialect:      "sqlite",
+		Semantics:    identifier.ForDialect("sqlite"),
+		Capabilities: capability.SQLite3(),
+	}
+}
+
 // parentChildDescription is the desired schema every row starts from: a parent
 // with a key, and a child whose column references it.
 func parentChildDescription(onDelete string) *goschema.Database {

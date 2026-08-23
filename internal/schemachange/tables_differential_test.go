@@ -78,6 +78,19 @@ func TestTableChangesMatchTheExistingComparator(t *testing.T) {
 			}),
 		},
 		{
+			// Both sources report a generated column's expression, so a change
+			// to it is a change both comparators have to see.
+			name: "a column whose generated expression changed",
+			description: describedTable(goschema.Field{
+				StructName: "Widget", Name: "code", Type: "text", Nullable: true,
+				GeneratedExpression: "upper(name)", GeneratedKind: "STORED",
+			}),
+			catalog: catalogTable(dbschematypes.DBColumn{
+				Name: "code", DataType: "text", IsNullable: "YES",
+				GeneratedExpression: new("lower(name)"), GeneratedKind: "STORED",
+			}),
+		},
+		{
 			name: "a column whose nullability changed",
 			description: describedTable(
 				goschema.Field{StructName: "Widget", Name: "code", Type: "text", Nullable: false}),
@@ -327,6 +340,21 @@ func TestTableStatementsMatchTheExistingPlanner(t *testing.T) {
 			catalog: &dbschematypes.DBSchema{},
 		},
 		{
+			// The same generated column against a target whose renderer writes
+			// the KIND. PostgreSQL has only STORED and writes the word
+			// unconditionally, so a PostgreSQL fixture cannot see a planner
+			// that drops the field.
+			name: "creating a table with a virtual generated column, on SQLite",
+			description: describedTable(
+				goschema.Field{StructName: "Widget", Name: "id", Type: "integer", Primary: true},
+				goschema.Field{
+					StructName: "Widget", Name: "code", Type: "text", Nullable: true,
+					GeneratedExpression: "upper(name)", GeneratedKind: "VIRTUAL",
+				}),
+			catalog: &dbschematypes.DBSchema{},
+			profile: sqliteProfilePointer(),
+		},
+		{
 			// An identity column. The generation mode decides whether a client
 			// may supply its own value, so a CREATE that dropped it would build
 			// a column with different write semantics.
@@ -478,5 +506,11 @@ func profileOrPostgres(profile *schemastate.Profile) schemastate.Profile {
 // oracleProfilePointer is [oracleProfile] as a row can carry it.
 func oracleProfilePointer() *schemastate.Profile {
 	profile := oracleProfile()
+	return &profile
+}
+
+// sqliteProfilePointer is [sqliteProfile] as a row can carry it.
+func sqliteProfilePointer() *schemastate.Profile {
+	profile := sqliteProfile()
 	return &profile
 }
