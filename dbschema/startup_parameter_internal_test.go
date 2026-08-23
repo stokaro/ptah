@@ -171,3 +171,128 @@ func errorText(err error) string {
 	}
 	return strings.TrimSpace(err.Error())
 }
+
+// TestURLWithoutSearchPath_RetriesOnlyWhatItCanCarry holds which failures earn
+// a second connection and which are reported as they are.
+//
+// The retry drops a parameter the operator wrote, so it may only fire where
+// Ptah knows what the parameter was for. The schema selection is that one: it
+// is Ptah's own spelling of "work in this schema", and the value survives the
+// drop because the URL still carries it. Every other startup parameter belongs
+// to the operator, and running their command without one would be running it
+// under settings they did not ask for.
+//
+// The expected URL is written out rather than checked for the absence of
+// `search_path`, because dropping the database name or `sslmode` would pass
+// that check and connect somewhere else, or over a channel nobody chose.
+func TestURLWithoutSearchPath_RetriesOnlyWhatItCanCarry(t *testing.T) {
+	const pooled = "postgres://proxy:6432/app?sslmode=disable"
+
+	tests := []struct {
+		name      string
+		dbURL     string
+		dialect   string
+		err       error
+		wantRetry bool
+		wantURL   string
+	}{
+		{
+			name:      "the URL's own search_path",
+			dbURL:     pooled + "&search_path=app",
+			dialect:   platform.Postgres,
+			err:       startupError{state: "08P01", message: refusedSearchPath},
+			wantRetry: true,
+			wantURL:   pooled,
+		},
+		{
+			// The parameter is the operator's, so the failure stands.
+			name:    "another refused parameter",
+			dbURL:   pooled + "&statement_timeout=5000",
+			dialect: platform.Postgres,
+			err: startupError{
+				state:   "08P01",
+				message: "server error: FATAL: unsupported startup parameter: statement_timeout (SQLSTATE 08P01)",
+			},
+			wantRetry: false,
+		},
+		{
+			// The URL carries a selection AND the parameter that was refused.
+			// Dropping the selection would retry a connection that fails the
+			// same way, and then report the SECOND failure -- so the operator
+			// is told about a parameter Ptah removed rather than about the one
+			// the server named.
+			name:    "a refused parameter beside a selection",
+			dbURL:   pooled + "&search_path=app&statement_timeout=5000",
+			dialect: platform.Postgres,
+			err: startupError{
+				state:   "08P01",
+				message: "server error: FATAL: unsupported startup parameter: statement_timeout (SQLSTATE 08P01)",
+			},
+			wantRetry: false,
+		},
+		{
+			// Nothing to drop: the refusal names search_path, and this URL does
+			// not carry one. Retrying would open the same connection twice.
+			name:      "no selection on the URL",
+			dbURL:     pooled,
+			dialect:   platform.Postgres,
+			err:       startupError{state: "08P01", message: refusedSearchPath},
+			wantRetry: false,
+		},
+		{
+			name:      "another dialect",
+			dbURL:     "mysql://host:3306/app?search_path=app",
+			dialect:   platform.MySQL,
+			err:       startupError{state: "08P01", message: refusedSearchPath},
+			wantRetry: false,
+		},
+		{
+			name:      "an unrelated failure",
+			dbURL:     pooled + "&search_path=app",
+			dialect:   platform.Postgres,
+			err:       errors.New("dial tcp: connection refused"),
+			wantRetry: false,
+		},
+		{
+			name:      "no failure at all",
+			dbURL:     pooled + "&search_path=app",
+			dialect:   platform.Postgres,
+			err:       nil,
+			wantRetry: false,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			retryURL, retryable := urlWithoutSearchPath(test.dbURL, test.dialect, test.err)
+
+			c.Assert(retryable, qt.Equals, test.wantRetry)
+			c.Assert(retryURL, qt.Equals, test.wantURL)
+		})
+	}
+}
+
+// TestURLWithoutSearchPath_KeepsEverythingElse pins that the retry drops one
+// parameter rather than rewriting the URL.
+//
+// A retry that lost `sslmode` would connect over a channel the operator did not
+// choose, and one that lost the database name would connect somewhere else
+// entirely. Both would still pass a test that only asked whether `search_path`
+// was gone.
+func TestURLWithoutSearchPath_KeepsEverythingElse(t *testing.T) {
+	c := qt.New(t)
+
+	retryURL, retryable := urlWithoutSearchPath(
+		"postgres://proxy:6432/app?sslmode=verify-full&search_path=reporting&application_name=ptah",
+		platform.Postgres,
+		startupError{state: "08P01", message: refusedSearchPath},
+	)
+
+	c.Assert(retryable, qt.IsTrue)
+	c.Assert(retryURL, qt.Contains, "sslmode=verify-full")
+	c.Assert(retryURL, qt.Contains, "application_name=ptah")
+	c.Assert(retryURL, qt.Contains, "//proxy:6432/app")
+	c.Assert(retryURL, qt.Not(qt.Contains), "search_path")
+}
