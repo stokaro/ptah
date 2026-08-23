@@ -311,6 +311,16 @@ func describedTableOptions(strict, withoutRowID bool, fields ...goschema.Field) 
 	return description
 }
 
+// describedTableMySQLOptions is [describedTable] carrying the MySQL-family
+// table options.
+func describedTableMySQLOptions(fields ...goschema.Field) *goschema.Database {
+	description := describedTable(fields...)
+	description.Tables[0].Engine = "InnoDB"
+	description.Tables[0].Charset = "utf8mb4"
+	description.Tables[0].Collate = "utf8mb4_0900_ai_ci"
+	return description
+}
+
 // describedTableWithKey is [describedTable] with a table-level primary key,
 // which is how the authoring model spells a COMPOSITE one: the field flag
 // declares a single-column key and cannot express a key over two.

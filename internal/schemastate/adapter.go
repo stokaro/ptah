@@ -93,6 +93,7 @@ func FromCatalog(schema *dbschematypes.DBSchema, dialect string, semantics ident
 			if err := addUniqueKey(state, builder,
 				constraint.Schema, constraint.TableName, constraint.Name,
 				constraint.ColumnNamesOrDefault(), coverage.Observed, "information_schema.table_constraints",
+				strings.EqualFold(constraint.Type, uniqueConstraintType),
 			); err != nil {
 				return nil, err
 			}
@@ -150,6 +151,8 @@ func columnsFromCatalog(
 			GeneratedExpression: derefOrEmpty(column.GeneratedExpression),
 			GeneratedKind:       column.GeneratedKind,
 			IdentityGeneration:  column.IdentityGeneration,
+			Charset:             column.Charset,
+			Collate:             column.Collate,
 			AutoIncrement:       column.IsAutoIncrement,
 		})
 	}
@@ -220,6 +223,9 @@ func FromDescription(
 				Columns:      columns,
 				Strict:       table.Strict,
 				WithoutRowID: table.WithoutRowID,
+				Engine:       table.Engine,
+				Charset:      table.Charset,
+				Collate:      table.Collate,
 				// A description says what a table should look like and nothing
 				// about what is in it. Leaving the pair zero would claim the
 				// table is empty, which is the answer that lets an ADD COLUMN
@@ -238,7 +244,7 @@ func FromDescription(
 		// column's flag can express.
 		if err := addUniqueKey(state, builder, table.Schema, table.Name,
 			compositeKeyName(table.Name), table.PrimaryKey,
-			coverage.Declared, table.StructName); err != nil {
+			coverage.Declared, table.StructName, false); err != nil {
 			return nil, err
 		}
 	}
@@ -355,6 +361,9 @@ func columnsFromDescription(
 			GeneratedExpression: field.GeneratedExpression,
 			GeneratedKind:       field.GeneratedKind,
 			IdentityGeneration:  field.IdentityGeneration,
+			Charset:             field.Charset,
+			Collate:             field.Collate,
+			UpdateExpression:    field.UpdateExpression,
 			Check:               field.Check,
 			CheckName:           field.CheckName,
 			AutoIncrement:       field.AutoInc,
@@ -491,6 +500,7 @@ func addUniqueKey(
 	columns []string,
 	source coverage.Provenance,
 	location string,
+	standalone bool,
 ) error {
 	if len(columns) == 0 {
 		return nil
@@ -498,7 +508,7 @@ func addUniqueKey(
 	id := builder.ConstraintParts(schema, table, name)
 	if existing, collided := state.Add(Object{
 		ID:         id,
-		UniqueKey:  &UniqueKey{Columns: columns},
+		UniqueKey:  &UniqueKey{Columns: columns, Standalone: standalone},
 		Provenance: Provenance{Source: source, Location: location},
 	}); collided {
 		return fmt.Errorf("two uniqueness guarantees carry one identity: %s and %s", existing.ID, id)
@@ -538,7 +548,7 @@ func addColumnKeys(
 		}
 		name := column.ID.Name.Source
 		if err := addUniqueKey(state, builder, schema, table,
-			singleColumnKeyName(name), []string{name}, source, location); err != nil {
+			singleColumnKeyName(name), []string{name}, source, location, false); err != nil {
 			return err
 		}
 	}
@@ -575,7 +585,8 @@ func declaredUniqueKeys(
 				constraint.Name, constraint.StructName)
 		}
 		if err := addUniqueKey(state, builder, owner.Schema, owner.Name, constraint.Name,
-			constraint.Columns, coverage.Declared, constraint.StructName); err != nil {
+			constraint.Columns, coverage.Declared, constraint.StructName,
+			strings.EqualFold(constraint.Type, uniqueConstraintType)); err != nil {
 			return err
 		}
 	}
@@ -589,8 +600,11 @@ func declaredUniqueKeys(
 				"index %q declares a uniqueness guarantee but no table declares struct %q",
 				index.Name, index.StructName)
 		}
+		// A unique index is not standalone HERE: it is an index, and indexes
+		// are their own family in this issue. It is an object so that a foreign
+		// key against its columns is recognized.
 		if err := addUniqueKey(state, builder, owner.Schema, owner.Name, index.Name,
-			index.Fields, coverage.Declared, index.StructName); err != nil {
+			index.Fields, coverage.Declared, index.StructName, false); err != nil {
 			return err
 		}
 	}
