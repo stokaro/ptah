@@ -237,6 +237,7 @@ func FromDescription(
 				Collate:           table.Collate,
 				AutoIncrement:     table.AutoIncrement,
 				PrimaryKeyInclude: table.PrimaryKeyInclude,
+				Partition:         partitionFromDescription(table.Partition),
 				// A description says what a table should look like and nothing
 				// about what is in it. Leaving the pair zero would claim the
 				// table is empty, which is the answer that lets an ADD COLUMN
@@ -666,4 +667,20 @@ func declaredDomainName(declared string, domains map[string]string) string {
 		return ""
 	}
 	return name
+}
+
+// partitionFromDescription translates the authoring model's partition spec.
+//
+// It copies rather than aliases: the two shapes agree today, and a canonical
+// state holding the authoring model's own struct would make every later change
+// to that struct reach through into a state both sides are supposed to produce.
+func partitionFromDescription(spec *goschema.PartitionSpec) *Partition {
+	if spec == nil {
+		return nil
+	}
+	parts := make([]PartitionPart, 0, len(spec.Parts))
+	for _, part := range spec.Parts {
+		parts = append(parts, PartitionPart{Name: part.Name, Expr: part.Expr})
+	}
+	return &Partition{Type: spec.Type, Parts: parts}
 }
