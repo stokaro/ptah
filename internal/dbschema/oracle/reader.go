@@ -118,6 +118,14 @@ func (r *Reader) ReadSchema() (*types.DBSchema, error) {
 		schema.Domains = domains
 	}
 
+	if r.caps.Has(capability.CompositeTypes) {
+		composites, err := r.readComposites()
+		if err != nil {
+			return nil, fmt.Errorf("oracle: read composite types: %w", err)
+		}
+		schema.Composites = composites
+	}
+
 	// One read serves both keys, because one catalog row serves both objects:
 	// ALL_PROCEDURES tells a function from a procedure by OBJECT_TYPE, and
 	// asking for one kind and not the other would mean a second query for the
