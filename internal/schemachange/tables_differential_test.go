@@ -594,6 +594,24 @@ func TestTableStatementsMatchTheExistingPlanner(t *testing.T) {
 			catalog:     indexedWidgetCatalog(false, "a", "b"),
 		},
 		{
+			name:        "adding a check constraint",
+			description: constrainedWidget(checkConstraint("price > 0")),
+			catalog:     constrainedCatalog(),
+		},
+		{
+			name:        "dropping a check constraint",
+			description: constrainedWidget(),
+			catalog:     constrainedCatalog(catalogCheck("price > 0")),
+		},
+		{
+			name: "adding a primary key",
+			description: constrainedWidget(goschema.Constraint{
+				StructName: "Widget", Name: "pk_widget", Type: "PRIMARY KEY",
+				Columns: []string{"id"},
+			}),
+			catalog: constrainedCatalog(),
+		},
+		{
 			name:        "adding a unique constraint",
 			description: scopedWidget([]string{"tenant", "code"}),
 			catalog:     scopedWidgetCatalog(nil),

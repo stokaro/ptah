@@ -158,18 +158,16 @@ func uniqueKeyColumns(state *schemastate.State) [][]string {
 
 // appendUniqueKey keeps the loop above free of the conditional the repository's
 // test style refuses inside a test.
+//
+// The branches are thunks, not values. A map literal evaluates BOTH, so a guard
+// written as a value dereferences the nil it is guarding against -- which is
+// what happened the moment an object of another family started appearing in the
+// same list.
 func appendUniqueKey(columns [][]string, object schemastate.Object) [][]string {
-	return map[bool][][]string{
-		false: columns,
-		true:  append(columns, uniqueColumnsOf(object)),
-	}[object.UniqueKey != nil]
-}
-
-func uniqueColumnsOf(object schemastate.Object) []string {
-	return map[bool][]string{
-		true:  nil,
-		false: object.UniqueKey.Columns,
-	}[object.UniqueKey == nil]
+	return map[bool]func() [][]string{
+		false: func() [][]string { return columns },
+		true:  func() [][]string { return append(columns, object.UniqueKey.Columns) },
+	}[object.UniqueKey != nil]()
 }
 
 func describedWidget(fields []goschema.Field) *goschema.Database {

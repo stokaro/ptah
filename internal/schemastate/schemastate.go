@@ -502,6 +502,50 @@ type Index struct {
 	KeyPartsIncomplete bool
 }
 
+// TableConstraint is a constraint kind whose whole definition is one clause the
+// target holds as an object: CHECK, PRIMARY KEY and EXCLUDE.
+//
+// They share a type because they share a shape -- a name, a table, and a body
+// no engine alters in place -- and differ only in the body. Modelling each as
+// its own payload would give the comparison three copies of one rule and the
+// planner three places to forget the guard.
+//
+// UNIQUE is deliberately NOT here: it is a [UniqueKey], because it answers the
+// question a foreign key asks and the others do not (stokaro/ptah#1663).
+type TableConstraint struct {
+	// Kind is the family, spelled the way both sources spell it: CHECK,
+	// PRIMARY KEY or EXCLUDE.
+	Kind string
+	// ConstraintName is the name to write in DDL, which is not always the name
+	// in the identity.
+	//
+	// A PRIMARY KEY is identified by its TABLE, because a table has at most one
+	// and a description declares it without a name -- `PrimaryKey []string` has
+	// nowhere to put one. Comparing by name would hold an unnamed declaration
+	// against a server-derived `parent_pkey` and plan a drop for every primary
+	// key on every run. The name is still needed to DROP one, which is why it
+	// travels here: empty on the side that declared none, and the server's on
+	// the side that read it (stokaro/ptah#1663).
+	ConstraintName string
+	// Table is the table the constraint is on. It is on the payload for the
+	// reason [Index.Table] is: a renderer needs it, and the identity is not
+	// obliged to carry it.
+	Table objectidentity.ID
+	// Expression is a CHECK's condition, empty for the other kinds.
+	Expression string
+	// Columns is a PRIMARY KEY's column list, empty for the other kinds.
+	Columns []string
+	// UsingMethod, Elements and Where are an EXCLUDE's index method, its
+	// element list and its optional predicate.
+	UsingMethod string
+	Elements    string
+	Where       string
+	// RequiresExtensions names the extensions the constraint's backing index
+	// needs. It cannot be read off the constraint's text, which is why the
+	// catalog reports it as a field of its own (stokaro/ptah#1286).
+	RequiresExtensions []string
+}
+
 // Object is one schema object in the canonical state.
 //
 // Exactly one payload pointer is set, decided by ID.Kind. It is a struct with
@@ -515,6 +559,7 @@ type Object struct {
 	ForeignKey *ForeignKey
 	UniqueKey  *UniqueKey
 	Index      *Index
+	Constraint *TableConstraint
 	Policy     *Policy
 	Grant      *Grant
 	Provenance Provenance
