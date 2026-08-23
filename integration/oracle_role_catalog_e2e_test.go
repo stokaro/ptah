@@ -6,6 +6,7 @@ import (
 	"context"
 	"net/url"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -14,9 +15,11 @@ import (
 
 	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/dbschema"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/dbtarget"
+	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
 	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
 )
@@ -290,4 +293,132 @@ func execOracle(ctx context.Context, c *qt.C, conn *dbschema.DatabaseConnection,
 	c.Helper()
 	c.Assert(conn.SchemaWriter().ExecuteSQL(ctx, statement), qt.IsNil,
 		qt.Commentf("statement: %s", statement))
+}
+
+// TestOracleRoleManagementPlansAndConvergesE2E is the assertion the
+// role_management capability key could not be flipped without.
+//
+// The key promises four things at once -- Ptah plans a role and a grant,
+// renders them, reads them back, and finds nothing left to do -- and the
+// failure when one is missing is not a compile error. It is a plan that
+// reports the same pending change forever, because the reader never sees what
+// the renderer made, or a plan that emits nothing at all because a capability
+// gate silently dropped it (stokaro/ptah#1920).
+//
+// The whole loop runs through the PLANNER rather than the renderer, which is
+// the half a round trip over rendered statements cannot reach: planRoles and
+// planGrants are gated on the key, so a preset that still read false would
+// produce an empty plan here and the convergence assertion at the end would
+// pass for the wrong reason. The count is asserted before anything is applied.
+func TestOracleRoleManagementPlansAndConvergesE2E(t *testing.T) {
+	adminURL := dbtarget.URL(t, dbtarget.OracleAdmin)
+	c := qt.New(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+
+	admin, err := dbschema.ConnectToDatabase(ctx, adminURL)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(admin)
+
+	const account = "PTAH_RM_PLAN"
+	const role = "PTAH_RM_READER"
+	dropOracleUser(ctx, c, admin, account)
+	dropOracleRole(ctx, c, admin, role)
+	createOracleUser(ctx, c, admin, account)
+	defer dropOracleUser(context.WithoutCancel(ctx), c, admin, account)
+	// The two privileges this loop needs, and they are two different
+	// questions. SELECT_CATALOG_ROLE lets the account READ DBA_ROLES;
+	// CREATE ROLE lets it make one. An account with the first and not the
+	// second describes the server correctly and cannot apply the plan --
+	// which is a privilege rather than a capability, and is why the key says
+	// nothing about the account.
+	execOracle(ctx, c, admin, "GRANT SELECT_CATALOG_ROLE TO "+account)
+	execOracle(ctx, c, admin, "GRANT CREATE ROLE TO "+account)
+	defer dropOracleRole(context.WithoutCancel(ctx), c, admin, role)
+
+	conn, err := dbschema.ConnectToDatabase(ctx, oracleURLAs(c, adminURL, account))
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+
+	declared := oracleRoleManagementDeclaration(account, role)
+
+	before, err := conn.Reader().ReadSchema()
+	c.Assert(err, qt.IsNil)
+	diff := schemadiff.CompareWithDialect(declared, before, platform.Oracle)
+	statements, err := planner.GenerateSchemaDiffSQLStatementsWithCapabilities(
+		diff, declared, platform.Oracle, conn.Info().Capabilities)
+	c.Assert(err, qt.IsNil)
+
+	// Non-vacuity: the plan really carries the role and the grants. Without
+	// this, a capability gate that dropped them would leave an empty plan and
+	// the convergence assertion below would pass having applied nothing.
+	c.Assert(oracleStatementsNaming(statements, "CREATE ROLE"), qt.HasLen, 1)
+	c.Assert(oracleStatementsNaming(statements, "GRANT"), qt.HasLen, 2)
+
+	// And the ordering the plan has to get right: GRANT resolves its target
+	// through the catalog, so a script that granted before creating the table
+	// would answer ORA-00942 halfway through.
+	c.Assert(oracleStatementIndex(c, statements, "CREATE TABLE") <
+		oracleStatementIndex(c, statements, "GRANT"), qt.IsTrue)
+
+	for _, statement := range statements {
+		execOracle(ctx, c, conn, strings.TrimSuffix(strings.TrimSpace(statement), ";"))
+	}
+
+	after, err := conn.Reader().ReadSchema()
+	c.Assert(err, qt.IsNil)
+	c.Assert(oracleRoleNames(after.Roles), qt.Contains, role)
+
+	settled := schemadiff.CompareWithDialect(declared, after, platform.Oracle)
+	c.Assert(oracleRoleDiffSummary(settled), qt.DeepEquals, []string(nil))
+
+	// And the plan the settled comparison produces is empty, which is the
+	// statement-level form of the same claim.
+	settledStatements, err := planner.GenerateSchemaDiffSQLStatementsWithCapabilities(
+		settled, declared, platform.Oracle, conn.Info().Capabilities)
+	c.Assert(err, qt.IsNil)
+	c.Assert(oracleStatementsNaming(settledStatements, "ROLE"), qt.HasLen, 0)
+	c.Assert(oracleStatementsNaming(settledStatements, "GRANT"), qt.HasLen, 0)
+}
+
+// oracleRoleManagementDeclaration declares one table, one role and the two
+// privileges the role holds on it.
+func oracleRoleManagementDeclaration(schema, role string) *goschema.Database {
+	return &goschema.Database{
+		Tables: []goschema.Table{{StructName: "RM", Name: "rm_docs"}},
+		Fields: []goschema.Field{
+			{StructName: "RM", Name: "id", Type: "INT", Primary: true},
+		},
+		Roles: []goschema.Role{{StructName: "RM", Name: role, Inherit: true}},
+		Grants: []goschema.Grant{{
+			StructName: "RM", Role: role,
+			Privileges: []string{"SELECT", "INSERT"},
+			OnTable:    schema + ".rm_docs",
+		}},
+	}
+}
+
+// oracleStatementIndex is the position of the first planned statement
+// carrying a keyword.
+func oracleStatementIndex(c *qt.C, statements []string, keyword string) int {
+	c.Helper()
+	for i, statement := range statements {
+		if strings.Contains(strings.ToUpper(statement), keyword) {
+			return i
+		}
+	}
+	c.Fatalf("no planned statement carries %q", keyword)
+	return -1
+}
+
+// oracleStatementsNaming returns the planned statements carrying a keyword.
+func oracleStatementsNaming(statements []string, keyword string) []string {
+	var found []string
+	for _, statement := range statements {
+		if strings.Contains(strings.ToUpper(statement), keyword) {
+			found = append(found, statement)
+		}
+	}
+	return found
 }

@@ -1966,9 +1966,21 @@ func Oracle23() Capabilities {
 		CatalogRowStatistics:     false,
 		CatalogDependencies:      false,
 		CatalogDefaultPrivileges: false,
-		// CREATE ROLE is ACCEPTED. This reads false because Ptah's Oracle path
-		// renders no role or grant statement yet.
-		RoleManagement: false,
+		// CREATE ROLE, DROP ROLE, GRANT and REVOKE are all rendered
+		// (stokaro/ptah#1935) and read back from DBA_ROLES and ALL_TAB_PRIVS
+		// (stokaro/ptah#1944), so the key says what it says everywhere else:
+		// Ptah can plan, render, introspect and compare a role and a grant on
+		// this target.
+		//
+		// It says nothing about the ACCOUNT. Role management on Oracle needs a
+		// privileged one -- as the ordinary schema owner CREATE ROLE answers
+		// ORA-01031 and DBA_ROLES answers ORA-00942 -- which is exactly the
+		// position PostgreSQL is in, where an unprivileged account is told
+		// `permission denied to create role` while this key is true. The
+		// reader records an unreadable catalog as not described, so an
+		// unprivileged run reports a declared role as undecided rather than
+		// planning a statement it cannot execute.
+		RoleManagement: true,
 		ForeignKeys:    true,
 		// A foreign key onto a column with no unique or primary key ->
 		// ORA-02270: no matching unique or primary key for this column-list.
