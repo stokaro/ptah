@@ -29,9 +29,12 @@ var extendedPropertyProcedures = map[ast.ExtendedPropertyOperation]string{
 // brackets and stores them, and the property then belongs to nothing.
 //
 // The address is written level by level and stops where the declaration stops.
-// A schema-scoped property passes level 0 alone; a table adds level 1; a
-// column adds level 2. Passing a level with an empty name is not the same as
-// omitting it, so the levels are appended rather than always written.
+// A DATABASE-scoped property passes no level at all; a schema-scoped one
+// passes level 0; a table adds level 1; a column adds level 2. Passing a level
+// with an empty name is not the same as omitting it, so the levels are
+// appended rather than always written -- and a database property with an empty
+// @level0name would be a property on a schema called "", which the procedure
+// accepts and which belongs to nothing.
 //
 // A drop passes no @value. sp_dropextendedproperty does not take one, and
 // passing it answers `Procedure or function sp_dropextendedproperty has too
@@ -41,10 +44,10 @@ func (r *Renderer) VisitExtendedProperty(node *ast.ExtendedPropertyNode) error {
 	if !known {
 		return fmt.Errorf("extended property %q: unknown operation %q", node.Name, node.Operation)
 	}
-	if strings.TrimSpace(node.Schema) == "" {
+	if strings.TrimSpace(node.Table) != "" && strings.TrimSpace(node.Schema) == "" {
 		return fmt.Errorf(
-			"extended property %q names no schema; SQL Server addresses every property Ptah "+
-				"manages through one", node.Name)
+			"extended property %q names table %q and no schema; SQL Server addresses a table "+
+				"through the schema that holds it", node.Name, node.Table)
 	}
 	if strings.TrimSpace(node.Column) != "" && strings.TrimSpace(node.Table) == "" {
 		return fmt.Errorf(
@@ -60,8 +63,10 @@ func (r *Renderer) VisitExtendedProperty(node *ast.ExtendedPropertyNode) error {
 	if node.Operation != ast.ExtendedPropertyDrop {
 		arguments = append(arguments, "@value = N"+escapeStringLiteral(node.Value))
 	}
-	arguments = append(arguments,
-		"@level0type = N'SCHEMA'", "@level0name = N"+escapeStringLiteral(node.Schema))
+	if strings.TrimSpace(node.Schema) != "" {
+		arguments = append(arguments,
+			"@level0type = N'SCHEMA'", "@level0name = N"+escapeStringLiteral(node.Schema))
+	}
 	if strings.TrimSpace(node.Table) != "" {
 		arguments = append(arguments,
 			"@level1type = N'TABLE'", "@level1name = N"+escapeStringLiteral(node.Table))

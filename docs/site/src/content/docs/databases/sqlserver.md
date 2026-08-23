@@ -41,8 +41,9 @@ ptah db read --db-url "sqlserver://sa:$SA_PASSWORD@localhost:1433?database=app&s
 - Views and triggers rendered from raw SQL definitions.
 - Synonyms: declared, rendered, introspected from `sys.synonyms`, and diffed,
   including targets in another database or behind a linked server (see below).
-- Extended properties at schema, table and column scope: declared, rendered,
-  introspected from `sys.extended_properties`, and diffed (see below).
+- Extended properties at database, schema, table and column scope: declared,
+  rendered, introspected from `sys.extended_properties`, and diffed (see
+  below).
 - Live introspection from `sys.tables`, `sys.columns`, `sys.indexes`, and
   related catalog views.
 - Transactional migration apply for DDL SQL Server supports in transactions,
@@ -116,11 +117,27 @@ EXEC sp_addextendedproperty @name = N'classification', @value = N'pii', @level0t
 ```
 
 **The address is the identity.** SQL Server stores a property under a class and
-up to two ids, so the same name on a schema, on a table of it, and on a column
-of that table is three different properties. Which levels a declaration sets
-decides its scope: `schema` alone is schema scope, adding `table` addresses the
-table, and adding `column` addresses a column of it. A `column` without a
-`table` is refused, because SQL Server has no level 2 without a level 1.
+up to two ids, so the same name on the database, on a schema, on a table of it,
+and on a column of that table is four different properties. Which levels a
+declaration sets decides its scope: **no level at all** is the database's own
+property, `schema` alone is schema scope, adding `table` addresses the table,
+and adding `column` addresses a column of it. A level without the one above it
+is refused, because SQL Server has no level N without a level N-1.
+
+```go
+//ptah:schema:extendedproperty name="deployment_tier" value="production"
+type DeploymentTierProperty struct{}
+```
+
+```sql
+EXEC sp_addextendedproperty @name = N'deployment_tier', @value = N'production';
+```
+
+A database-scoped property passes no level, and that is not an omission: an
+empty `@level0name` would be a property on a schema called `""`, which the
+procedure also accepts and which belongs to nothing. It is in no schema either,
+so `--schema` neither selects nor removes it — the same rule an extension
+follows, where placement is not ownership.
 
 A changed value plans `sp_updateextendedproperty` rather than a drop and an
 add, so the property is never absent partway through a script. Properties are
@@ -140,10 +157,14 @@ Re-emitting a non-string value through one would change its stored type, and
 rather than the value. Such a property appears in a read with its base type and
 no value, and a comparison plans nothing for it in either direction.
 
-Two kinds of property are outside this scope and are not read at all: a
-database-scoped one (`class = 0`), which has no schema or object to hang off,
-and a property on an object other than a table — a view, a procedure, an index
-— which takes a different `@level1type` than the one Ptah writes.
+One kind of property is outside this scope and is not read at all: one on an
+object other than a table — a view, a procedure, an index — which takes a
+different `@level1type` than the one Ptah writes.
+
+Realm cleanup still refuses a database whose database- or schema-scoped
+properties it would leave behind. That guard predates this support and is
+unchanged: adding cleanup for them is a destructive change with its own
+measurement.
 
 Every other target names a declared extended property as skipped rather than
 rendering nothing, for the same reason a synonym is: the object exists in the

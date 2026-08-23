@@ -61,6 +61,7 @@ func TestReadExtendedProperties_CarriesTheAddressAndDeclinesTheValueItCannotWrit
 	c.Assert(err, qt.IsNil)
 
 	c.Assert(properties, qt.DeepEquals, []types.DBExtendedProperty{
+		{Name: "ptah_db_prop", Value: "database scope", ValueType: "nvarchar"},
 		{Name: "ptah_schema_prop", Schema: "app", Value: "schema scope", ValueType: "nvarchar"},
 		{Name: "ptah_flag", Schema: "app", Table: "docs", Value: "enabled", ValueType: "nvarchar"},
 		{
@@ -74,6 +75,24 @@ func TestReadExtendedProperties_CarriesTheAddressAndDeclinesTheValueItCannotWrit
 	})
 }
 
+// TestExtendedPropertyQuery_ScopesEveryArmButTheDatabaseOne pins the one arm
+// the schema predicate must not reach.
+//
+// A database-scoped property is in no schema, so narrowing the read to one
+// cannot exclude it -- and a description that dropped it while the declaration
+// still carried one would plan sp_dropextendedproperty for a property the
+// operator declared. The predicate placeholder appears twice, once for each of
+// the other two arms.
+func TestExtendedPropertyQuery_ScopesEveryArmButTheDatabaseOne(t *testing.T) {
+	c := qt.New(t)
+
+	c.Assert(strings.Count(extendedPropertyQuery, schemaPredicatePlaceholder), qt.Equals, 2)
+	databaseArm, _, found := strings.Cut(extendedPropertyQuery, "UNION ALL")
+	c.Assert(found, qt.IsTrue)
+	c.Assert(databaseArm, qt.Contains, "ep.class = 0")
+	c.Assert(databaseArm, qt.Not(qt.Contains), schemaPredicatePlaceholder)
+}
+
 // TestExtendedPropertyQuery_AsksForTheThingsThatDecideTheAnswer holds the
 // three exclusions and the two conversions in the statement itself.
 //
@@ -85,6 +104,7 @@ func TestExtendedPropertyQuery_AsksForTheThingsThatDecideTheAnswer(t *testing.T)
 		name     string
 		fragment string
 	}{
+		{name: "the database arm", fragment: "ep.class = 0"},
 		{name: "the schema arm", fragment: "ep.class = 3"},
 		{name: "the object arm", fragment: "ep.class = 1"},
 		{name: "the comment Ptah already models", fragment: "ep.name <> N'MS_Description'"},
@@ -115,6 +135,7 @@ func answeringExtendedProperties(query string, _ []driver.NamedValue) (dbtest.Qu
 	return dbtest.QueryResult{
 		Columns: []string{"schema_name", "table_name", "column_name", "name", "value", "base_type"},
 		Rows: [][]driver.Value{
+			{"", "", "", "ptah_db_prop", "database scope", "nvarchar"},
 			{"app", "", "", "ptah_schema_prop", "schema scope", "nvarchar"},
 			{"app", "docs", "", "ptah_flag", "enabled", "nvarchar"},
 			{"app", "docs", "", "ptah_int", "42", "int"},

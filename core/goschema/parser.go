@@ -1452,12 +1452,14 @@ func (s *schemaParseState) parseSynonymComment(comment *ast.Comment, structName 
 // parseExtendedPropertyComment reads a SQL Server extended-property
 // declaration.
 //
-// Two refusals rather than one, and both are about identity.
+// Three refusals, and they are all about identity.
 //
-// A column without a table is refused because SQL Server has no level 2
-// without a level 1: the statement that writes such a property cannot be
-// composed, and accepting the declaration would defer the failure to a plan
-// that has already been reviewed.
+// A table without a schema and a column without a table are refused because
+// SQL Server has no level N without a level N-1: the statement that writes
+// such a property cannot be composed, and accepting the declaration would
+// defer the failure to a plan that has already been reviewed. Omitting ALL of
+// them is not an omission -- it is the database's own property, which is the
+// one address that names no object.
 //
 // MS_Description is refused because Ptah models it as the object's comment.
 // Accepting it here would give the same live row two owners -- the comment
@@ -1475,6 +1477,12 @@ func (s *schemaParseState) parseExtendedPropertyComment(comment *ast.Comment, st
 	}
 	if err := requireAttributes(kv, ctx); err != nil {
 		return err
+	}
+	if strings.TrimSpace(kv["table"]) != "" && strings.TrimSpace(kv["schema"]) == "" {
+		return fmt.Errorf(
+			"%s: extended property %q names a table and no schema; SQL Server addresses a table "+
+				"through the schema that holds it, so there is no property to write",
+			ctx.location, kv["name"])
 	}
 	if strings.TrimSpace(kv["column"]) != "" && strings.TrimSpace(kv["table"]) == "" {
 		return fmt.Errorf(
