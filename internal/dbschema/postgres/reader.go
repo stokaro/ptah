@@ -3696,7 +3696,11 @@ func (r *Reader) readCapabilityGatedObjects(schema *types.DBSchema) error {
 		}
 		schema.Extensions = extensions
 	} else {
-		schema.NotDescribed = schema.NotDescribed.WithKind(coverage.Extension)
+		schema.NotDescribed = schema.NotDescribed.With(coverage.Object{
+			Kind:       coverage.Extension,
+			Reason:     coverage.Unsupported,
+			Provenance: coverage.DerivedFromTarget,
+		})
 	}
 
 	// Three object kinds a preset can rule out entirely, read only where it

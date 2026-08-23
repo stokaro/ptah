@@ -1911,11 +1911,23 @@ func Oracle23() Capabilities {
 		// five where the two lines genuinely differ rather than sharing a
 		// renderer that had not been written.
 		DomainTypes: true,
-		// CREATE TYPE ... AS (a NUMBER, b VARCHAR2(10)) is ACCEPTED and
-		// creates nothing usable: user_types reports TYPECODE=OBJECT with
-		// ATTRIBUTES=0 and user_type_attrs has no row for it. Oracle's real
-		// composite is CREATE TYPE ... AS OBJECT, which Ptah does not render.
-		CompositeTypes: false,
+		// A composite is Oracle's object type, and the spelling is the whole
+		// difference. PostgreSQL's `CREATE TYPE t AS (a NUMBER)` is ACCEPTED
+		// here and creates nothing usable -- USER_TYPES reports ATTRIBUTES 0
+		// with INCOMPLETE YES and USER_OBJECTS reports INVALID, while the
+		// driver returns no error at all. `CREATE TYPE t AS OBJECT (a NUMBER)`
+		// is the statement, and the renderer, the reader and the planner all
+		// reach it now (stokaro/ptah#1920).
+		//
+		// The reader describes the subset the model can carry: an object type
+		// with methods, a subtype, a collection type and an incomplete shell
+		// are each left out by a predicate rather than flattened, because
+		// describing one by its attributes alone would say a replay produces
+		// the same type when it produces a different one.
+		//
+		// True on both presets. Measured on 21.3.0.0.0 and 23.26.2.0.0, the
+		// statement, ALL_TYPES and ALL_TYPE_ATTRS answered identically.
+		CompositeTypes: true,
 		// CREATE TYPE ... AS RANGE (SUBTYPE = NUMBER) is ACCEPTED and produces
 		// the same empty OBJECT shell. Accepted is not created: without the
 		// catalog read this key would have been written true.

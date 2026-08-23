@@ -81,7 +81,11 @@ func applyExtensionSupportCoverage(
 	}
 	for _, report := range reports {
 		if report.NonExtensionMatched {
-			desired.NotDescribed = desired.NotDescribed.WithKind(coverage.Extension)
+			desired.NotDescribed = desired.NotDescribed.With(coverage.Object{
+				Kind:       coverage.Extension,
+				Reason:     coverage.OutsideScope,
+				Provenance: coverage.Configured,
+			})
 			return
 		}
 	}
@@ -180,11 +184,32 @@ func ReportUndecidedAdditions(
 	for _, object := range undecided {
 		fmt.Fprintf(diagnostics,
 			"Warning: %s %q is declared by %s but no change was planned for it:"+
-				" %s records `%s %s`, so this comparison cannot tell it apart from one that already exists,"+
+				" %s, so this comparison cannot tell it apart from one that already exists,"+
 				" and the creation Ptah renders for it cannot safely converge from an unknown current state.\n",
-			object.Kind, object.Name, desiredDescription, currentDescription,
-			coverage.DirectiveMarker, object.Kind)
+			object.Kind, object.Name, desiredDescription,
+			undecidedCause(object, currentDescription))
 	}
+}
+
+// undecidedCause says why the current side could not decide the object, in the
+// most specific words the coverage record supports.
+//
+// A record that carries a reason gets the sentence that reason is for: a
+// refused catalog, a selection, a target that has no such objects and a
+// compatibility policy are four different problems with four different answers,
+// and a user who is told only that something was held back cannot tell which of
+// them they are looking at (stokaro/ptah#1346).
+//
+// A record that carries no reason -- what a hand-authored `ptah:not-described`
+// line is -- gets the directive quoted back instead, because that line is all
+// the description said and it is what the user will search the document for.
+func undecidedCause(object coverage.Object, currentDescription string) string {
+	if clause := object.Explain(); clause != "" {
+		return fmt.Sprintf("%s does not describe %s objects because %s",
+			currentDescription, object.Kind, clause)
+	}
+	return fmt.Sprintf("%s records `%s %s`",
+		currentDescription, coverage.DirectiveMarker, object.Kind)
 }
 
 // dialectDefaultSchema is the schema that owns unqualified objects when no

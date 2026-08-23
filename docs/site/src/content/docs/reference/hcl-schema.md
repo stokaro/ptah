@@ -103,7 +103,31 @@ for the message and the flag it names.
 | `domain` | PostgreSQL `type`, `null`, `default`, and `check`. |
 | `composite` | PostgreSQL composite type with ordered `field` sub-blocks. |
 | `range` | PostgreSQL `subtype`, `subtype_opclass`, `collation`, `canonical`, and `subtype_diff`. |
+| `synonym` | SQL Server alias: `target`, plus the `schema` the alias lives in and a comment. |
+| `extended_property` | SQL Server named value: `value`, and the object it is attached to as `schema`, `table` and `column`. |
 | `data` | Ptah managed-data declaration with a table reference, key columns, and a file path relative to the HCL file. |
+
+An `extended_property` block names its owner with plain strings rather than
+block references, and the level it stops at is the scope it applies to. A block
+with no `schema` is a database-scoped property; with a `schema` and no `table` it
+applies to the schema; `table` adds the table and `column` the column. SQL Server
+addresses each level by name — `@level1name = N'users'` — so a `table` without a
+`schema`, or a `column` without a `table`, names nothing and is refused when the
+document is read.
+
+```hcl
+synonym "current_orders" {
+  schema = schema.app
+  target = "sales.orders"
+}
+
+extended_property "MS_Description" {
+  schema = schema.app
+  table  = "orders"
+  column = "total"
+  value  = "order total including tax"
+}
+```
 
 A `materialized` block accepts no `refresh_strategy`. Ptah does not refresh
 materialized views: one is populated when it is created, a changed `as` body is

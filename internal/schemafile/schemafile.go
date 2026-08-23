@@ -319,11 +319,10 @@ var yamlOnlyExtensions = []string{".yaml", ".yml"}
 //   - Only `.sql` has CREATE VIRTUAL TABLE, so silence about a live SQLite
 //     virtual table is intent there and is not intent in HCL or YAML
 //     (stokaro/ptah#1028).
-//   - NO format expresses a SQL Server synonym or extended property. HCL has no
-//     block, YAML has no key, and the SQL parser's conversion produces neither,
-//     so a `.sql` document naming CREATE SYNONYM still loads a database with
-//     none. Only a Go schema can declare them, which is why this is recorded
-//     here and not in [go.5x5.cz/ptah/internal/schemaload].
+//   - Only HCL and a Go schema express a SQL Server synonym or extended
+//     property. YAML has no key for either, and the SQL parser's conversion
+//     produces neither, so a `.sql` document naming CREATE SYNONYM still loads
+//     a database with none (stokaro/ptah#1031).
 //   - The YAML surface has a top-level key for tables, enums, extensions,
 //     functions, views, matviews, triggers, roles, grants and row-level
 //     security, and NONE for a sequence, a domain, a composite type or a range.
@@ -336,44 +335,36 @@ func withFormatLimits(database *goschema.Database, resolved string) *goschema.Da
 	}
 	extension := strings.ToLower(filepath.Ext(resolved))
 	if extension != dirSQLExtension {
-		database.NotDescribed = database.NotDescribed.WithKind(coverage.VirtualTable)
+		database.NotDescribed = database.NotDescribed.With(unsupportedByFormat(coverage.VirtualTable)...)
 	}
 	if slices.Contains(yamlOnlyExtensions, extension) {
-		database.NotDescribed = database.NotDescribed.
-			WithKind(coverage.Sequence).
-			WithKind(coverage.Domain).
-			WithKind(coverage.Composite).
-			WithKind(coverage.Range)
+		database.NotDescribed = database.NotDescribed.With(unsupportedByFormat(
+			coverage.Sequence, coverage.Domain, coverage.Composite, coverage.Range)...)
 	}
-	return withUnwritableObjectLimits(database)
+	if extension != dirHCLExtension {
+		database.NotDescribed = database.NotDescribed.With(unsupportedByFormat(
+			coverage.Synonym, coverage.ExtendedProperty)...)
+	}
+	return database
 }
 
-// withUnwritableObjectLimits records the object families NO document format
-// Ptah reads can express, so a file's silence about one is not read as a
-// request to drop it.
+// unsupportedByFormat is what every limit in this file is: the object family
+// cannot be expressed by the format the document is written in.
 //
-// SQL Server synonyms and extended properties are both of them. HCL has no
-// block for either; YAML has no key; and the SQL parser's conversion produces
-// neither, so a `.sql` document naming `CREATE SYNONYM` or calling
-// `sp_addextendedproperty` still loads a database with none. Only a Go schema
-// can declare them -- `//ptah:schema:synonym` and
-// `//ptah:schema:extendedproperty` -- which is why the record is made HERE and
-// not in [go.5x5.cz/ptah/internal/schemaload].
-//
-// Without it the round trip through Ptah's own output was destructive.
-// Rendering an inspected SQL Server database to HCL, parsing that document
-// back, and comparing it against the same database planned
-// `sp_dropextendedproperty` for every property and `DROP SYNONYM` for every
-// synonym -- which is stokaro/ptah#1276's defect, on the two kinds it did not
-// reach (stokaro/ptah#1031).
-func withUnwritableObjectLimits(database *goschema.Database) *goschema.Database {
-	if database == nil {
-		return nil
+// The reason follows from a fact Ptah already holds -- which format this is --
+// rather than from anything read out of a database or from a selection the run
+// was given, and a surface that can say so tells an author to use a format that
+// has the syntax instead of leaving them to guess (stokaro/ptah#1346).
+func unsupportedByFormat(kinds ...coverage.Kind) []coverage.Object {
+	records := make([]coverage.Object, 0, len(kinds))
+	for _, kind := range kinds {
+		records = append(records, coverage.Object{
+			Kind:       kind,
+			Reason:     coverage.Unsupported,
+			Provenance: coverage.DerivedFromFact,
+		})
 	}
-	database.NotDescribed = database.NotDescribed.
-		WithKind(coverage.Synonym).
-		WithKind(coverage.ExtendedProperty)
-	return database
+	return records
 }
 
 func parseSchemaFile(resolved string, opts Options) (*goschema.Database, error) {

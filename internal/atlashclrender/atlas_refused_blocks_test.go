@@ -1008,3 +1008,35 @@ func inspectedRichDatabase() *goschema.Database {
 		ManagedData: []goschema.ManagedData{{Table: "accounts", Keys: []string{"id"}, File: "accounts.csv"}},
 	}
 }
+
+// TestRenderInspectedForAtlasCLIKeepsTheSQLServerBlocks pins that the two
+// blocks stokaro/ptah#1031 added ride the compatibility surface as well.
+//
+// The omission list is a list of REFUSALS, and there is none to add here. The
+// pinned Atlas community binary v1.3.0 answers `sql/sqlclient: unknown driver
+// "sqlserver"` for a SQL Server URL, so it reads no document of this dialect at
+// all and has no verdict to mirror. On a dialect it does speak, the same
+// measurement that produced this file's `wibble "x" {}` control was run again
+// off an accepted sqlite base: appending `synonym "s_users" {…}` and
+// `extended_property "MS_Description" {…}` each exits 0 with `-- Planned
+// Changes:`, so an unmodelled top-level block is dropped and ignored.
+//
+// Omitting them would therefore cost the reader a description and buy nothing,
+// which is the same test [TestRenderInspectedForAtlasCLIKeepsEverythingElse]
+// applies to the twelve blocks it keeps.
+func TestRenderInspectedForAtlasCLIKeepsTheSQLServerBlocks(t *testing.T) {
+	for _, block := range []string{"synonym \"s_users\"", "extended_property \"MS_Description\""} {
+		t.Run(block, func(t *testing.T) {
+			t.Parallel()
+			c := qt.New(t)
+
+			result, err := atlashclrender.RenderInspectedForAtlasCLI(
+				sqlServerObjects(), platform.SQLServer, "dbo",
+			)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(string(result.Data), qt.Contains, block)
+			c.Assert(result.Diagnostics, qt.HasLen, 0)
+		})
+	}
+}

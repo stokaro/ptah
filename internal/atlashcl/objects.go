@@ -1167,3 +1167,108 @@ func (p *parser) optionalInt64(block *hclsyntax.Block, name, label string) (*int
 	}
 	return &result, nil
 }
+
+// parseSynonym parses a top-level synonym block into a goschema.Synonym.
+//
+// `target` is required: a synonym that stands for nothing is not one, and the
+// server has no default. The name and optional schema come from the block
+// labels or the schema attribute, like every other object here.
+func (p *parser) parseSynonym(block *hclsyntax.Block) error {
+	schema, name, err := p.objectSchemaAndName(block, "synonym")
+	if err != nil {
+		return err
+	}
+	if err := p.rejectNestedBlocks(block, "synonym"); err != nil {
+		return err
+	}
+	if err := p.rejectUnsupportedSynonymAttrs(block); err != nil {
+		return err
+	}
+	target, err := p.stringAttr(block, "target", "synonym")
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(target) == "" {
+		return p.blockError(block, "synonym %q requires a target", name)
+	}
+	p.db.Synonyms = append(p.db.Synonyms, goschema.Synonym{
+		Name:    name,
+		Schema:  schema,
+		Target:  target,
+		Comment: p.optionalString(block.Body.Attributes["comment"]),
+	})
+	return nil
+}
+
+func (p *parser) rejectUnsupportedSynonymAttrs(block *hclsyntax.Block) error {
+	return p.rejectUnsupportedAttrs(block, map[string]bool{
+		"schema":  true,
+		"target":  true,
+		"comment": true,
+	}, "synonym")
+}
+
+// parseExtendedProperty parses a top-level extended_property block into a
+// goschema.ExtendedProperty.
+//
+// The address is refused exactly where the SQL Server renderer refuses it: a
+// `table` needs the `schema` that holds it and a `column` needs its `table`,
+// because each level is passed by name (`@level1name = N'users'`) and a level
+// whose parent is missing addresses nothing. Refusing here rather than at
+// render time means the document says where the mistake is.
+//
+// An absent `schema` with no `table` is not a mistake: that is the
+// DATABASE-scoped property, the one address that passes no level at all.
+func (p *parser) parseExtendedProperty(block *hclsyntax.Block) error {
+	schema, name, err := p.objectSchemaAndName(block, "extended_property")
+	if err != nil {
+		return err
+	}
+	if err := p.rejectNestedBlocks(block, "extended_property"); err != nil {
+		return err
+	}
+	if err := p.rejectUnsupportedExtendedPropertyAttrs(block); err != nil {
+		return err
+	}
+	table, err := p.stringAttr(block, "table", "extended_property")
+	if err != nil {
+		return err
+	}
+	column, err := p.stringAttr(block, "column", "extended_property")
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(table) != "" && strings.TrimSpace(schema) == "" {
+		return p.blockError(block,
+			"extended_property %q names table %q and no schema; SQL Server addresses a table "+
+				"through the schema that holds it", name, table)
+	}
+	if strings.TrimSpace(column) != "" && strings.TrimSpace(table) == "" {
+		return p.blockError(block,
+			"extended_property %q names column %q and no table; SQL Server addresses a column "+
+				"through the table that holds it", name, column)
+	}
+	value, err := p.stringAttr(block, "value", "extended_property")
+	if err != nil {
+		return err
+	}
+	p.db.ExtendedProperties = append(p.db.ExtendedProperties, goschema.ExtendedProperty{
+		Name:    name,
+		Schema:  schema,
+		Table:   table,
+		Column:  column,
+		Value:   value,
+		Comment: p.optionalString(block.Body.Attributes["comment"]),
+	})
+	return nil
+}
+
+func (p *parser) rejectUnsupportedExtendedPropertyAttrs(block *hclsyntax.Block) error {
+	return p.rejectUnsupportedAttrs(block, map[string]bool{
+		"schema":  true,
+		"table":   true,
+		"column":  true,
+		"value":   true,
+		"comment": true,
+	}, "extended_property")
+}

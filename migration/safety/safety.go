@@ -13,7 +13,7 @@ import (
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/core/sqlutil"
-	"go.5x5.cz/ptah/migration/internal/typechange"
+	"go.5x5.cz/ptah/internal/typechange"
 	"go.5x5.cz/ptah/migration/risk"
 	"go.5x5.cz/ptah/migration/schemadiff/types"
 )

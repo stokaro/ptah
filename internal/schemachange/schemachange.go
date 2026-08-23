@@ -68,6 +68,12 @@ const (
 	RiskLow           Risk = "low"
 	RiskGuaranteeLoss Risk = "guarantee_loss"
 	RiskDataDependent Risk = "data_dependent"
+	// RiskDataLoss is the level none of the other three names: dropping a table
+	// or a column destroys what was in it, and no rollback the plan can write
+	// puts it back. It is separate from RiskDataDependent because that one
+	// says the COST depends on data; this one says the data is the cost
+	// (stokaro/ptah#1662).
+	RiskDataLoss Risk = "data_loss"
 )
 
 // Status says whether a change can be planned at all.
@@ -91,8 +97,16 @@ type Change struct {
 	Operation Operation
 	// Before and After are the object's state on each side. Exactly one is nil
 	// for an Add or a Remove; both are set for a Modify.
-	Before *schemastate.ForeignKey
-	After  *schemastate.ForeignKey
+	//
+	// They are whole objects rather than one family's payload, because the
+	// change model covers more than one family now and a per-family field would
+	// have to grow a new pair for each. [schemastate.Object] already carries
+	// exactly one typed payload decided by its ID.Kind, which is the shape
+	// ADR 0001 decision 1 chose over an interface for the same reason: a stage
+	// that walks every object must not be able to miss a family by forgetting a
+	// case (stokaro/ptah#1662).
+	Before *schemastate.Object
+	After  *schemastate.Object
 	// Changed names the properties a Modify changes, so a diagnostic can say
 	// what moved without the reader diffing two structs.
 	Changed []string
@@ -164,6 +178,12 @@ func Compare(current, desired *schemastate.State, profile schemastate.Profile) (
 	if err != nil {
 		return nil, err
 	}
+	tableChanges, err := compareTables(current, desired, profile)
+	if err != nil {
+		return nil, err
+	}
+	changes = append(changes, tableChanges...)
+	changes = append(changes, compareUniqueConstraints(current, desired, profile)...)
 	changes = append(changes, policyChanges...)
 	grantChanges, err := compareGrants(current, desired, profile)
 	if err != nil {
@@ -431,7 +451,7 @@ func additionChange(object schemastate.Object) Change {
 	return Change{
 		ID:            object.ID,
 		Operation:     Add,
-		After:         object.ForeignKey,
+		After:         &object,
 		Evidence:      "declared by the desired schema and absent from the database",
 		RequiredFacts: schemastate.RequiredFacts(),
 		// Adding a foreign key fails on rows that already violate it, and the
@@ -449,7 +469,7 @@ func removalChange(object schemastate.Object) Change {
 	return Change{
 		ID:            object.ID,
 		Operation:     Remove,
-		Before:        object.ForeignKey,
+		Before:        &object,
 		Evidence:      "present in the database and absent from the desired schema",
 		RequiredFacts: schemastate.RequiredFacts(),
 		// Dropping one destroys a guarantee rather than data, and re-adding it
@@ -466,8 +486,8 @@ func modificationChange(object, existing schemastate.Object, changed []string) C
 	return Change{
 		ID:            object.ID,
 		Operation:     Modify,
-		Before:        existing.ForeignKey,
-		After:         object.ForeignKey,
+		Before:        &existing,
+		After:         &object,
 		Changed:       changed,
 		Evidence:      "both sides declare it and they disagree about " + strings.Join(changed, ", "),
 		RequiredFacts: schemastate.RequiredFacts(),
@@ -513,15 +533,15 @@ func unmetPrecondition(
 	profile schemastate.Profile,
 	side *schemastate.State,
 ) (reason string, ok bool) {
-	key := change.After
-	if key == nil || !profile.UniqueReferenceRequired() {
+	if change.After == nil || change.After.ForeignKey == nil || !profile.UniqueReferenceRequired() {
 		return "", true
 	}
+	key := change.After.ForeignKey
 	referenced, found := side.Get(key.ReferencedTable)
 	if !found {
 		return fmt.Sprintf("%s references %s, which this schema does not describe", change, key.ReferencedTable), false
 	}
-	if schemastate.ReferencedColumnsAreUnique(referenced, *key) {
+	if schemastate.ReferencedColumnsAreUnique(side, referenced, *key) {
 		return "", true
 	}
 	return fmt.Sprintf(

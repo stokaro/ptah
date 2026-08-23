@@ -279,18 +279,38 @@ func existingTablesWithConstraintChanges(
 	diff *types.SchemaDiff,
 	semantics identifier.Semantics,
 ) ([]string, error) {
-	tables := make(map[string]bool)
+	// Keyed by IDENTITY, and holding the spelling to plan with.
+	//
+	// A modified constraint arrives as an addition spelled the way the
+	// DESCRIPTION wrote its table and a removal spelled the way the CATALOG
+	// reports it, so `widget` and `main.widget` are one table and two strings.
+	// Keyed by the string, the pair asked for the table to be rebuilt TWICE:
+	// two CREATE/INSERT/DROP/RENAME blocks, the second copying every row of a
+	// table the first had just rewritten (stokaro/ptah#1987).
+	//
+	// The FIRST spelling recorded is the one carried, which makes the choice
+	// deterministic rather than a function of which loop ran last. Both resolve
+	// to the same table downstream -- the value is a lookup key from here on,
+	// and the plan is byte-identical either way -- so this is a tie broken, not
+	// a correctness rule.
+	tables := make(map[string]string)
+	record := func(table string) {
+		key := semantics.QualifiedTableIdentityKey(table)
+		if _, seen := tables[key]; !seen {
+			tables[key] = table
+		}
+	}
 	named := make(map[string]bool, len(diff.ConstraintsAddedWithTables)+len(diff.ConstraintsRemovedWithTables))
 	for _, constraint := range diff.ConstraintsAddedWithTables {
 		named[constraint.Name] = true
 		if !objectlookup.Contains(diff.TablesAdded, constraint.TableName, semantics) {
-			tables[constraint.TableName] = true
+			record(constraint.TableName)
 		}
 	}
 	for _, constraint := range diff.ConstraintsRemovedWithTables {
 		named[constraint.Name] = true
 		if !objectlookup.Contains(diff.TablesRemoved, constraint.TableName, semantics) {
-			tables[constraint.TableName] = true
+			record(constraint.TableName)
 		}
 	}
 	unattributed := slices.ContainsFunc(diff.ConstraintsAdded, func(name string) bool { return !named[name] }) ||
@@ -298,7 +318,7 @@ func existingTablesWithConstraintChanges(
 	if unattributed {
 		return nil, unsupportedFeaturef("changing constraints on existing tables requires a table rebuild plan")
 	}
-	names := slices.Collect(maps.Keys(tables))
+	names := slices.Collect(maps.Values(tables))
 	slices.Sort(names)
 	return names, nil
 }

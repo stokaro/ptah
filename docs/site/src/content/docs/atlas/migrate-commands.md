@@ -39,14 +39,19 @@ explicitly — is on [Atlas-compatible commands](../../reference/atlas-commands/
 
 ### The `--dir` default
 
-Every `migrate` verb that registers `--dir` defaults it to
+Almost every `migrate` verb registering `--dir` defaults it to
 `file://migrations`, so `ptah-compat migrate apply --url "$DATABASE_URL"` run
-from a project root reads `./migrations` with no flag at all. That is
-`apply`, `new`, `diff`, `status`, `set`, `lint`, `hash` and `validate` — the
-same eight verbs Atlas documents the default on, and the same value
-([#1241](https://github.com/stokaro/ptah/issues/1241)). `migrate apply` and
-`migrate new` used to refuse a run with no `--dir`, and `migrate hash` and
-`migrate validate` used the directory without printing the default in `--help`.
+from a project root reads `./migrations` with no flag at all. That is `apply`,
+`diff`, `edit`, `hash`, `lint`, `ls`, `new`, `rebase`, `rm`, `set`, `show`,
+`status`, `test` and `validate`, and it includes the eight verbs Atlas
+documents the default on, with the same value
+([#1241](https://github.com/stokaro/ptah/issues/1241)).
+
+Two verbs are outside it, and the difference is worth knowing before a run:
+`migrate checkpoint` reaches `./migrations` without the flag carrying a default,
+and `migrate down` refuses a run with no directory at all —
+`migrations directory is required` — because rolling back against a directory
+nobody named is a destructive guess.
 
 The default is a default, not a fallback. Every layer that names a directory
 outranks it — `--dir`, `PTAH_DIR`, `PTAH_MIGRATIONS_DIR`, and `atlas.hcl`

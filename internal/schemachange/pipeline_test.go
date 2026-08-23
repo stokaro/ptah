@@ -9,6 +9,7 @@ import (
 
 	qt "github.com/frankban/quicktest"
 
+	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/capability"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
@@ -34,6 +35,7 @@ func TestPipeline_ProducesTheChangeTheInputsDescribe(t *testing.T) {
 		wantChanged       []string
 		wantRisk          schemachange.Risk
 		wantReversibility schemachange.Reversibility
+		wantProvenance    coverage.Provenance
 	}{
 		{
 			name:              "a foreign key the database does not have",
@@ -42,6 +44,8 @@ func TestPipeline_ProducesTheChangeTheInputsDescribe(t *testing.T) {
 			wantOperation:     schemachange.Add,
 			wantRisk:          schemachange.RiskDataDependent,
 			wantReversibility: schemachange.Reversible,
+			// An addition exists because the DESCRIPTION declared it.
+			wantProvenance: coverage.Declared,
 		},
 		{
 			name:              "a foreign key the desired schema does not declare",
@@ -50,6 +54,8 @@ func TestPipeline_ProducesTheChangeTheInputsDescribe(t *testing.T) {
 			wantOperation:     schemachange.Remove,
 			wantRisk:          schemachange.RiskGuaranteeLoss,
 			wantReversibility: schemachange.ReversibleWithData,
+			// A removal exists because the CATALOG reported the object.
+			wantProvenance: coverage.Observed,
 		},
 		{
 			// The #189 shape: a changed referential action. The existing
@@ -63,6 +69,8 @@ func TestPipeline_ProducesTheChangeTheInputsDescribe(t *testing.T) {
 			wantChanged:       []string{"on delete"},
 			wantRisk:          schemachange.RiskDataDependent,
 			wantReversibility: schemachange.ReversibleWithData,
+			// A modification carries the side that asked for it.
+			wantProvenance: coverage.Declared,
 		},
 	}
 
@@ -80,7 +88,11 @@ func TestPipeline_ProducesTheChangeTheInputsDescribe(t *testing.T) {
 			c.Assert(changes[0].Reversibility, qt.Equals, test.wantReversibility)
 			c.Assert(changes[0].Status, qt.Equals, schemachange.Planned)
 			c.Assert(changes[0].Evidence, qt.Not(qt.Equals), "")
-			c.Assert(changes[0].Provenance.Source, qt.Not(qt.Equals), "")
+			// The source is the closed list a coverage record carries, not a
+			// free string, and a change built from a catalog read says it was
+			// observed rather than declared (stokaro/ptah#1346).
+			c.Assert(changes[0].Provenance.Validate(), qt.IsNil)
+			c.Assert(changes[0].Provenance.Source, qt.Equals, test.wantProvenance)
 			c.Assert(changes[0].ID.Name.Source, qt.Equals, "fk_child_parent")
 		})
 	}
@@ -154,7 +166,8 @@ func TestPipeline_ModificationRendersDropThenAdd(t *testing.T) {
 func TestPipeline_BlockedOnATargetThatCannotHostTheFamily(t *testing.T) {
 	c := qt.New(t)
 
-	changes, err := orderedChanges(c, parentChildDescription(""), emptyCatalog(), clickhouseProfile())
+	changes, err := orderedChanges(
+		c, parentChildDescription(""), emptyCatalogInSchema(""), clickhouseProfile())
 	c.Assert(err, qt.IsNil)
 	c.Assert(changes, qt.HasLen, 1)
 	c.Assert(changes[0].Status, qt.Equals, schemachange.Blocked)
@@ -318,7 +331,9 @@ func TestPipeline_ExplainNamesTheChangeAndItsSource(t *testing.T) {
 
 	c.Assert(explanation, qt.Contains, "fk_child_parent")
 	c.Assert(explanation, qt.Contains, "risk data_dependent")
-	c.Assert(explanation, qt.Contains, "description")
+	// "declared Child" is the provenance: the closed-list source says HOW the
+	// fact was learned and the location says which declaration it was.
+	c.Assert(explanation, qt.Contains, "from "+string(coverage.Declared)+" Child")
 	c.Assert(explanation, qt.Contains, "absent from the database")
 }
 
@@ -474,9 +489,11 @@ func manyForeignKeys(count int) *goschema.Database {
 		description.Fields = append(description.Fields,
 			goschema.Field{StructName: child, Name: "id", Type: "int", Primary: true},
 			goschema.Field{
-				StructName:     child,
-				Name:           "parent_id",
-				Type:           "int",
+				StructName: child,
+				Name:       "parent_id",
+				Type:       "int",
+				// Nullable matches the catalog fixture below.
+				Nullable:       true,
 				Foreign:        "parent(id)",
 				ForeignKeyName: fmt.Sprintf("fk_%s_parent", child),
 			})
@@ -680,9 +697,12 @@ func sharedForeignKeyName() *goschema.Database {
 	}
 	for _, host := range []string{"One", "Two"} {
 		description.Fields = append(description.Fields, goschema.Field{
-			StructName:     host,
-			Name:           "parent_id",
-			Type:           "int",
+			StructName: host,
+			Name:       "parent_id",
+			Type:       "int",
+			// Nullable matches the catalog fixture, which reports this column
+			// as NULL. See parentChildDescription.
+			Nullable:       true,
 			Foreign:        "parent(id)",
 			ForeignKeyName: "fk_shared_parent",
 		})

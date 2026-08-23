@@ -42,6 +42,64 @@ func (p *Planner) planDomains(result []ast.Node, diff *types.SchemaDiff, generat
 	return result
 }
 
+// planCompositeTypes emits the composite types a diff adds or changes, where
+// the target has them at all.
+//
+// One statement covers both halves, and that is the engine's own doing:
+// `CREATE OR REPLACE TYPE t AS OBJECT (...)` creates a type that is not there
+// and rewrites one that is. Measured on 23.26.2.0.0, replacing a type from one
+// attribute to two succeeds while nothing uses it, and answers ORA-02303 the
+// moment a table column does -- changing nothing. That refusal is the server
+// declining to leave a column naming a shape it no longer has, and it is left
+// as the answer rather than worked around.
+//
+// Composites go before tables for the reason domains do: a column may be
+// declared with the type, and Oracle resolves that name through the catalog
+// when the table is created.
+func (p *Planner) planCompositeTypes(
+	result []ast.Node,
+	diff *types.SchemaDiff,
+	generated *goschema.Database,
+) []ast.Node {
+	if !p.capabilities().Has(capability.CompositeTypes) {
+		return result
+	}
+	declared := make(map[string]goschema.CompositeType, len(generated.CompositeTypes))
+	for _, composite := range generated.CompositeTypes {
+		declared[composite.Name] = composite
+	}
+	names := make([]string, 0, len(diff.CompositeTypesAdded)+len(diff.CompositeTypesModified))
+	names = append(names, diff.CompositeTypesAdded...)
+	for _, changed := range diff.CompositeTypesModified {
+		names = append(names, changed.TypeName)
+	}
+	for _, name := range names {
+		composite, found := declared[name]
+		if !found {
+			continue
+		}
+		result = append(result, fromschema.FromCompositeType(composite))
+	}
+	return result
+}
+
+// removeCompositeTypes drops the composite types a diff removes, after the
+// tables whose columns were typed by them.
+//
+// The position is the same one removeDomains takes and for the same measured
+// reason: on 23.26.2.0.0, dropping a type a column still uses answers
+// ORA-02303, so a drop emitted with the unsupported-object reports at step 0
+// would fail the plan halfway through.
+func (p *Planner) removeCompositeTypes(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+	if !p.capabilities().Has(capability.CompositeTypes) {
+		return result
+	}
+	for _, name := range diff.CompositeTypesRemoved {
+		result = append(result, ast.NewDropType(name))
+	}
+	return result
+}
+
 // removeDomains drops the domains a diff removes, after the tables that used
 // them.
 //
@@ -89,8 +147,12 @@ func (p *Planner) reportRemovedUserTypes(result []ast.Node, diff *types.SchemaDi
 			result = append(result, ast.NewDropType(name).SetDomain())
 		}
 	}
-	for _, name := range diff.CompositeTypesRemoved {
-		result = append(result, ast.NewDropType(name))
+	// A target that HOSTS composite types drops them late instead, after the
+	// tables whose columns are typed by them -- see removeCompositeTypes.
+	if !p.capabilities().Has(capability.CompositeTypes) {
+		for _, name := range diff.CompositeTypesRemoved {
+			result = append(result, ast.NewDropType(name))
+		}
 	}
 	for _, name := range diff.RangesRemoved {
 		result = append(result, ast.NewDropType(name))

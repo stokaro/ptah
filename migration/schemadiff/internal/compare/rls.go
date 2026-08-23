@@ -8,7 +8,7 @@ import (
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/dbschema/types"
-	"go.5x5.cz/ptah/migration/schemadiff/internal/normalize"
+	"go.5x5.cz/ptah/internal/normalize"
 	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
 )
 
@@ -162,7 +162,7 @@ func RLSPoliciesWithSemantics(
 	// of as silence.
 	kept, withheld := keepPlannedPolicyAdditions(cov, diff.RLSPoliciesAdded, alwaysGuardedCreations())
 	diff.RLSPoliciesAdded = kept
-	cov.recordUndecidedAdditions(coverage.Policy, withheld)
+	cov.recordUndecidedAdditions(withheld)
 	diff.RLSPoliciesRemoved = keepPlannedPolicyRemovals(cov, diff.RLSPoliciesRemoved)
 
 	// Ensure consistent ordering of results. The policy name alone is not a
@@ -200,7 +200,7 @@ func keepPlannedPolicyAdditions(
 	cov Coverage,
 	planned []difftypes.RLSPolicyRef,
 	guarded creationGuard,
-) (kept []difftypes.RLSPolicyRef, withheld []string) {
+) (kept []difftypes.RLSPolicyRef, withheld []coverage.Object) {
 	if planned == nil {
 		return nil, nil
 	}
@@ -211,7 +211,8 @@ func keepPlannedPolicyAdditions(
 			kept = append(kept, ref)
 			continue
 		}
-		withheld = append(withheld, ref.PolicyName)
+		withheld = append(withheld, cov.withheldAddition(
+			coverage.Policy, ref.PolicyName, schema, []string{ref.PolicyName}))
 	}
 	return kept, withheld
 }

@@ -11,11 +11,11 @@ import (
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/normalize"
 	"go.5x5.cz/ptah/internal/oracletype"
 	"go.5x5.cz/ptah/internal/sqlitekey"
+	"go.5x5.cz/ptah/internal/typechange"
 	"go.5x5.cz/ptah/migration/internal/generatedschema"
-	"go.5x5.cz/ptah/migration/internal/typechange"
-	"go.5x5.cz/ptah/migration/schemadiff/internal/normalize"
 	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
 )
 
@@ -738,7 +738,7 @@ func renderedDefaultForDialect(declaredDefault, declaredType, dialect string) st
 func normalizeColumnTypesForDialect(genType, dbType, dialect string) (generatedType, databaseType string) {
 	switch platform.NormalizeDialect(dialect) {
 	case platform.SQLite:
-		return normalize.Type(sqliteRenderedColumnType(genType)), normalize.Type(dbType)
+		return normalize.Type(normalize.SQLiteColumnType(genType)), normalize.Type(dbType)
 	case platform.Oracle:
 		// Oracle has no counterpart for most declared type names, so the
 		// declaration and the catalog never agree on the spelling: a declared
@@ -765,7 +765,7 @@ func normalizeColumnTypesForDialect(genType, dbType, dialect string) (generatedT
 // for SQLite's type affinity, where such distinctions do not exist.
 func shouldReportSizedTypeChange(dbType, genType, dialect string) bool {
 	if platform.NormalizeDialect(dialect) == platform.SQLite &&
-		normalize.Type(dbType) == normalize.Type(sqliteRenderedColumnType(genType)) {
+		normalize.Type(dbType) == normalize.Type(normalize.SQLiteColumnType(genType)) {
 		return false
 	}
 	// The suppression Oracle needs, and it compares the FULL rendered type
@@ -792,30 +792,6 @@ func shouldReportSizedTypeChange(dbType, genType, dialect string) bool {
 		return typechange.IsNarrowing(dbType, rendered) || typechange.IsWidening(dbType, rendered)
 	}
 	return typechange.IsNarrowing(dbType, genType) || typechange.IsWidening(dbType, genType)
-}
-
-func sqliteRenderedColumnType(rawType string) string {
-	upper := strings.ToUpper(strings.TrimSpace(rawType))
-	base := upper
-	if idx := strings.Index(base, "("); idx >= 0 {
-		base = strings.TrimSpace(base[:idx])
-	}
-	switch base {
-	case "":
-		return "blob"
-	case "BOOLEAN", "BOOL":
-		return "integer"
-	case "SERIAL", "BIGSERIAL", "SMALLSERIAL", "AUTO_INCREMENT":
-		return "integer"
-	case "VARCHAR", "CHARACTER VARYING", "CHAR", "CHARACTER", "TEXT", "CITEXT", "ENUM":
-		return "text"
-	case "BYTEA", "BLOB":
-		return "blob"
-	case "DOUBLE PRECISION":
-		return "real"
-	default:
-		return rawType
-	}
 }
 
 func normalizeTablePrimaryKeyColumn(genCol goschema.Field, dbCol types.DBColumn, dialect string) goschema.Field {

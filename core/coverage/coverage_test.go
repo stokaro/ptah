@@ -202,20 +202,35 @@ func TestNormalizeIsDeterministic(t *testing.T) {
 	c := qt.New(t)
 
 	set := coverage.Set{
-		Kinds: []coverage.Kind{coverage.Sequence, coverage.Extension, coverage.Sequence},
 		Objects: []coverage.Object{
+			{Kind: coverage.Sequence},
+			{Kind: coverage.Extension},
+			{Kind: coverage.Sequence},
 			{Kind: coverage.Schema, Name: "extra"},
 			{Kind: coverage.Role, Name: "b"},
 			{Kind: coverage.Role, Name: "a"},
 			{Kind: coverage.Role, Name: "b"},
+			{Kind: coverage.Role, Name: "a", Reason: coverage.NotInspected},
+			{Kind: coverage.Role, Name: "a", Reason: coverage.NotInspected, Provenance: coverage.Observed},
+			{Kind: coverage.Role, Name: "a", Reason: coverage.OutsideScope},
+			{Kind: coverage.Role},
 		},
 	}.Normalize()
 
-	c.Assert(set.Kinds, qt.DeepEquals, []coverage.Kind{coverage.Extension, coverage.Sequence})
+	// A whole-kind record sorts before the named records of its kind, and two
+	// records differing only in reason or provenance are two records: both are
+	// true, and collapsing them would pick one explanation to print and discard
+	// the other.
 	c.Assert(set.Objects, qt.DeepEquals, []coverage.Object{
+		{Kind: coverage.Extension},
+		{Kind: coverage.Role},
 		{Kind: coverage.Role, Name: "a"},
+		{Kind: coverage.Role, Name: "a", Reason: coverage.NotInspected},
+		{Kind: coverage.Role, Name: "a", Reason: coverage.NotInspected, Provenance: coverage.Observed},
+		{Kind: coverage.Role, Name: "a", Reason: coverage.OutsideScope},
 		{Kind: coverage.Role, Name: "b"},
 		{Kind: coverage.Schema, Name: "extra"},
+		{Kind: coverage.Sequence},
 	})
 }
 
@@ -236,14 +251,14 @@ func TestDirectivesRoundTrip_HappyPath(t *testing.T) {
 			want: []string{`ptah:not-described schema "extra"`},
 		},
 		{
-			name: "kinds before objects, each sorted",
+			name: "records sorted by kind, whole kinds before named objects",
 			set: coverage.Set{}.
 				WithKind(coverage.Sequence, coverage.Extension).
 				WithObject(coverage.Schema, "extra"),
 			want: []string{
 				"ptah:not-described extension",
-				"ptah:not-described sequence",
 				`ptah:not-described schema "extra"`,
+				"ptah:not-described sequence",
 			},
 		},
 	}
@@ -365,8 +380,8 @@ func TestDirectivesNeverWriteALineDecodeRefuses(t *testing.T) {
 			decoded, err := coverage.DecodeHeader(document.String())
 			c.Assert(err, qt.IsNil)
 			c.Assert(decoded, qt.DeepEquals, test.set)
-			c.Assert(decoded.Objects, qt.HasLen, 0)
-			c.Assert(decoded.Kinds, qt.HasLen, 1)
+			c.Assert(decoded.Objects, qt.HasLen, 1)
+			c.Assert(decoded.Objects[0].WholeKind(), qt.IsTrue)
 		})
 	}
 }
@@ -446,7 +461,7 @@ func TestDecodeHeader_FailurePath(t *testing.T) {
 		{
 			name:     "no kind",
 			document: "// ptah:not-described\n",
-			wantErr:  `malformed ptah:not-described directive "ptah:not-described": expected a kind and an optional quoted name`,
+			wantErr:  `malformed ptah:not-described directive "ptah:not-described": expected a kind, optional reason= and provenance= attributes, and an optional quoted name`,
 		},
 		{
 			// The name is decoded from the whole remainder of the line, so a
@@ -466,12 +481,12 @@ func TestDecodeHeader_FailurePath(t *testing.T) {
 		{
 			name:     "a back-quoted name is not a spelling this package writes",
 			document: "// ptah:not-described schema `extra`\n",
-			wantErr:  `malformed ptah:not-described directive .*: name must be a quoted string`,
+			wantErr:  "malformed ptah:not-described directive .*: \"`extra`\" is neither a reason= or provenance= attribute nor a quoted name",
 		},
 		{
 			name:     "unquoted name",
 			document: "// ptah:not-described schema extra\n",
-			wantErr:  `malformed ptah:not-described directive "ptah:not-described schema extra": name must be a quoted string`,
+			wantErr:  `malformed ptah:not-described directive "ptah:not-described schema extra": "extra" is neither a reason= or provenance= attribute nor a quoted name`,
 		},
 		{
 			name:     "empty name",

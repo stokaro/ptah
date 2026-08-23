@@ -119,9 +119,18 @@ func ParseReferentialAction(value string) (ReferentialAction, error) {
 // participates in one, and the referencing and referenced types have to match
 // for the constraint to be creatable at all.
 type Column struct {
-	ID       objectidentity.ID
-	Type     string
-	Nullable bool
+	ID objectidentity.ID
+	// Type is the type the source wrote. TypeNormalized is the same type after
+	// the target's folding rules, filled by [Normalize].
+	//
+	// The pair mirrors [Action], and for the same reason (ADR 0001 invariant
+	// 2): a comparison reads the folded value, because a declared `int` and a
+	// catalog `integer` are one type, and a renderer writes the source one,
+	// because emitting the folded value would put `integer` into DDL an author
+	// spelled `int`.
+	Type           string
+	TypeNormalized string
+	Nullable       bool
 	// Unique records that this column alone is a key. PostgreSQL, MySQL and
 	// MariaDB all refuse a foreign key whose referenced columns are not, so it
 	// is a fact the plan needs rather than an attribute of the column nobody
@@ -132,11 +141,131 @@ type Column struct {
 	// conservative in the safe direction -- it blocks a foreign key the target
 	// might have accepted, rather than planning one the target refuses.
 	Unique bool
+	// PrimaryKey marks a column the table's primary key covers.
+	//
+	// It is separate from Unique, which answers a different question: Unique is
+	// "is this column a key on its own", the fact a foreign key's reference
+	// depends on, and a primary key is one way to be that but not the only one.
+	// Collapsing them loses the half a CREATE TABLE has to write
+	// (stokaro/ptah#1662).
+	PrimaryKey bool
+	// Default is the default the source wrote, and HasDefault says whether it
+	// wrote one. The pair is what a `DEFAULT ''` needs: an empty string is a
+	// default, and a model with only the string cannot tell it from a column
+	// that has none (stokaro/ptah#1662).
+	Default    string
+	HasDefault bool
+	// DefaultIsExpression says which of the two kinds of default it is. A
+	// literal is quoted when it is written back and an expression is not, so a
+	// model carrying only the string renders `DEFAULT 'now()'` for a column
+	// whose default is a function call.
+	DefaultIsExpression bool
+	// GeneratedExpression and GeneratedKind are what a generated column
+	// computes and whether the result is stored. Both sources report them, so
+	// unlike Check they are compared as well as rendered: a column that stops
+	// being generated, or starts, is a change either side can ask for.
+	GeneratedExpression string
+	GeneratedKind       string
+	// IdentityGeneration is an identity column's generation mode -- ALWAYS or
+	// BY DEFAULT -- empty for a column that is not one.
+	IdentityGeneration string
+	// CheckName is the constraint name a column-level CHECK carries, empty when
+	// the source let the server derive one. It travels with Check for the
+	// reason Check does: a CREATE TABLE that dropped it would name the
+	// constraint something the author cannot predict, and every later
+	// diagnostic about it would use that name.
+	CheckName string
+	// Charset and Collate are the column's character set and collation on the
+	// MySQL-family targets that put them on a column.
+	//
+	// Carried for rendering and not compared. A catalog reports a column's
+	// EFFECTIVE charset even where the declaration inherited it from the
+	// table, so comparing the two spellings would report a modification for
+	// every column nobody changed.
+	Charset string
+	Collate string
+	// UpdateExpression is MySQL's `ON UPDATE <expr>` clause. It is carried for
+	// rendering only, because no catalog read reports it: dropping it from a
+	// CREATE builds a column that silently stops maintaining itself.
+	UpdateExpression string
+	// Check is the column-level CHECK expression the source wrote, empty for a
+	// column with none.
+	//
+	// It is carried for RENDERING and is not compared. A catalog reports a
+	// column-level check as a table-level constraint row, so comparing this
+	// against a catalog read would report a modification for every column whose
+	// check the server merely spells differently; deciding what a check
+	// constraint IS belongs to the constraint family (stokaro/ptah#1663). A
+	// CREATE TABLE that dropped it would silently create a table without the
+	// guarantee its author declared, which is why it is carried at all.
+	Check string
+	// AutoIncrement marks a column the engine fills by itself. It answers the
+	// same question a default does -- does a row without a value for this
+	// column get one -- and it answers it for the columns no DEFAULT clause
+	// covers, so a rule that only read HasDefault would block an identity
+	// column that never needed blocking.
+	AutoIncrement bool
+}
+
+// Supplied reports whether a row inserted without a value for this column still
+// gets one, from a default the source wrote or from the engine itself.
+//
+// It is the fact an ADD COLUMN NOT NULL depends on: the statement fails on an
+// existing row exactly when nothing supplies the value.
+func (c Column) Supplied() bool {
+	return c.HasDefault || c.AutoIncrement
 }
 
 // Table is a table and the columns a foreign key can reference.
 type Table struct {
 	Columns []Column
+	// EstimatedRows and RowStatsUnknown are the best evidence a plan has about
+	// whether the table holds anything, and they are a PAIR for the reason
+	// dbschema/types.DBTable carries them as one: a zero estimate from a server
+	// that keeps statistics means "empty at the last analyze", and a zero from
+	// a server that keeps none means nothing at all. Reading the number alone
+	// turns the second into the first.
+	//
+	// Only a catalog read fills them. A description says what a table should
+	// look like and nothing about what is in it, so [FromDescription] marks
+	// them unknown rather than leaving a zero that reads as an empty table
+	// (stokaro/ptah#1662).
+	EstimatedRows   int64
+	RowStatsUnknown bool
+	// Strict and WithoutRowID are the SQLite table options. They are typed
+	// facts here rather than the untyped option map the AST carries: a map is
+	// the RENDERER's contract, and a model that held one would make every
+	// consumer parse a string to ask a yes-or-no question.
+	//
+	// They are carried for rendering and not compared. Changing either on an
+	// existing table needs a rebuild -- SQLite has no ALTER for them -- and
+	// that is a whole-table operation this family does not plan
+	// (stokaro/ptah#1662).
+	Strict       bool
+	WithoutRowID bool
+	// Engine, Charset and Collate are the MySQL-family table options.
+	//
+	// Carried for rendering and not compared, because no catalog read reports
+	// them: a CREATE that dropped the engine builds a table on the server's
+	// default, which on a server configured differently is a different storage
+	// engine with different transactional behavior.
+	Engine  string
+	Charset string
+	Collate string
+}
+
+// Populated reports whether the table is known to hold rows, and whether that
+// answer is knowable at all.
+//
+// Three answers, not two, because the middle one is what an ADD COLUMN NOT NULL
+// turns on: a table the plan knows is empty accepts it, a table the plan knows
+// has rows refuses it, and a table with no statistics is a measurement nobody
+// has taken rather than an empty table.
+func (t Table) Populated() (populated, known bool) {
+	if t.RowStatsUnknown {
+		return false, false
+	}
+	return t.EstimatedRows > 0, true
 }
 
 // Column returns the named column, folding through the identity model so the
@@ -168,11 +297,87 @@ type ForeignKey struct {
 // objects that differ only in which file declared them are one object (ADR 0001
 // invariant 5).
 type Provenance struct {
-	// Source names the adapter, so a diagnostic can say which reader is
-	// responsible for a fact an operator disputes.
-	Source string
-	// Location is a file position or the catalog relation a row came from.
+	// Source is HOW the fact was learned: [coverage.Observed] for a row Ptah
+	// read out of a catalog, [coverage.Declared] for something a description
+	// stated.
+	//
+	// It is the closed list a coverage record carries rather than a free
+	// string, for the reason the closed list exists: a diagnostic that has to
+	// compare "catalog" against "description" is comparing spellings, and a
+	// spelling nothing validates drifts. The two halves of "what Ptah knows and
+	// how" therefore share one vocabulary (stokaro/ptah#1346).
+	Source coverage.Provenance
+	// Location is a file position or the catalog relation a row came from. It
+	// says WHICH one, where Source says what kind, and it stays free text
+	// because a file position and a catalog relation have no closed list
+	// between them.
 	Location string
+}
+
+// Validate reports whether the provenance names a source this build
+// understands.
+func (p Provenance) Validate() error {
+	if !p.Source.Valid() {
+		return fmt.Errorf("unknown object provenance source %q", p.Source)
+	}
+	return nil
+}
+
+// Declared reports whether the fact was stated by a description rather than
+// read out of a catalog.
+//
+// It is the question the column type fold turns on: a DECLARED type is asked
+// in the renderer's spelling first, because Oracle has no counterpart for most
+// declared type names and SQLite stores the declared text verbatim, and an
+// OBSERVED one is already what the target holds (stokaro/ptah#1662).
+func (p Provenance) Declared() bool { return p.Source == coverage.Declared }
+
+// UniqueKey is a uniqueness guarantee over one or more columns.
+//
+// A UNIQUE constraint, a primary key and a unique index all answer the one
+// question a foreign key asks -- is this column list a key -- and every source
+// spells at least two of them differently. Keeping them as separate shapes past
+// the adapter means asking that question once per shape, and the prototype
+// asked it of single columns only: a column unique as part of a COMPOSITE
+// constraint read as not unique, which blocked a foreign key the target
+// accepts (stokaro/ptah#1662).
+type UniqueKey struct {
+	// Columns is the column list the guarantee covers, in the order the source
+	// wrote it. Comparison is order-insensitive -- a key on (a, b) is the same
+	// guarantee as one on (b, a) -- and the order is kept because a renderer
+	// writing the constraint back has to write one.
+	Columns []string
+	// Standalone marks a guarantee the target holds as an object of its own: a
+	// named UNIQUE constraint, added and dropped by its own statement.
+	//
+	// A column's own flag is not standalone -- it renders beside its column, so
+	// planning it as a constraint change would declare the same guarantee twice
+	// -- and neither is a primary key, whose statements carry different risk
+	// and whose name a target derives. Both still answer the foreign-key
+	// question, which is why they are objects at all (stokaro/ptah#1663).
+	Standalone bool
+}
+
+// Covers reports whether this key guarantees uniqueness for exactly the given
+// column list.
+//
+// Exactly, not "contains". A unique constraint on (a, b) makes the PAIR unique
+// and says nothing about either column alone, so a foreign key referencing a
+// alone is not made legal by it -- and every engine Ptah targets refuses one.
+func (u UniqueKey) Covers(columns []string, fold func(string) string) bool {
+	return slices.Equal(foldedSet(u.Columns, fold), foldedSet(columns, fold))
+}
+
+// foldedSet is a column list in its comparison form: folded by the target's
+// rules and sorted, because a key on (a, b) is the same guarantee as one on
+// (b, a) and no engine distinguishes them.
+func foldedSet(columns []string, fold func(string) string) []string {
+	folded := make([]string, 0, len(columns))
+	for _, column := range columns {
+		folded = append(folded, fold(column))
+	}
+	slices.Sort(folded)
+	return folded
 }
 
 // Object is one schema object in the canonical state.
@@ -184,7 +389,9 @@ type Provenance struct {
 type Object struct {
 	ID         objectidentity.ID
 	Table      *Table
+	Column     *Column
 	ForeignKey *ForeignKey
+	UniqueKey  *UniqueKey
 	Policy     *Policy
 	Grant      *Grant
 	Provenance Provenance
@@ -297,4 +504,17 @@ func (s *State) OfKind(kind objectidentity.Kind) []Object {
 // Len returns the number of objects.
 func (s *State) Len() int {
 	return len(s.objects)
+}
+
+// DescribesTable reports whether the absence of a table from a description is
+// authoritative.
+//
+// A table is covered through the SCHEMA that owns it rather than by its own
+// name. The schema record is what a reader that skipped a whole namespace can
+// produce, and the table names inside it are exactly what such a reader does
+// not know -- migration/schemadiff's comparator makes the same choice, and the
+// two must not disagree about which silence is a removal
+// (stokaro/ptah#1276, stokaro/ptah#1662).
+func DescribesTable(state *State, id objectidentity.ID) bool {
+	return state.Coverage().DescribesSchema(id.Schema.Source)
 }

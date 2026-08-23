@@ -416,9 +416,13 @@ func (r *Renderer) VisitCreateType(node *ast.CreateTypeNode) error {
 	if domain, isDomain := node.TypeDef.(*ast.DomainTypeDef); isDomain && r.domainsRendered() {
 		return r.visitCreateDomain(node, domain)
 	}
-	// Oracle 23 also has a real CREATE TYPE ... AS OBJECT, and this renderer
-	// emits none yet, which is what CompositeTypes reads false for on both
-	// presets. It refuses rather than writing a comment: a comment makes
+	// A composite is Oracle's object type, and the spelling is the difference:
+	// PostgreSQL's `AS (...)` is accepted here and creates an INVALID,
+	// incomplete type (stokaro/ptah#1920).
+	if composite, isComposite := node.TypeDef.(*ast.CompositeTypeDef); isComposite && r.compositesRendered() {
+		return r.visitCreateComposite(node, composite)
+	}
+	// Anything else refuses rather than writing a comment: a comment makes
 	// `schema render` exit 0 on a model the planner refuses at apply time,
 	// which is the reason the SQLite renderer stopped commenting its
 	// materialized views.
@@ -432,6 +436,9 @@ func (r *Renderer) VisitAlterType(node *ast.AlterTypeNode) error {
 func (r *Renderer) VisitDropType(node *ast.DropTypeNode) error {
 	if node.Domain && r.domainsRendered() {
 		return r.visitDropDomain(node)
+	}
+	if !node.Domain && r.compositesRendered() {
+		return r.visitDropComposite(node)
 	}
 	return unsupportedFeaturef("DROP TYPE %s: user types are not rendered for Oracle", node.Name)
 }

@@ -950,15 +950,17 @@ so nothing else flags it. Fifteen rows had accumulated one
 (stokaro/ptah#1873, #1874). Re-tense the sentence as history — "this row read
 partial until #1802 landed" — rather than deleting the measurement it carries.
 
-A note may not name a flag this tree does not register.
-`check-matrix-flag-names.mjs` enforces that, and the direction it catches is a
-flag RENAMED in the code while the note keeps the old spelling. It reads the
-`note` field only: several rows establish that a verb does not register a flag
-by showing it answers `unknown flag` byte-identically to a nonsense control —
-`--skip-chxxxx`, `--totally-bogus-flag` — and those live in `evidence`. Its
-limits are stated in the script: it compares against the whole tree's flag set,
-so it cannot tell that a flag belongs to another verb, and a plausible wrong
-name that happens to be a real flag elsewhere passes (stokaro/ptah#1924).
+A row may not name a flag this tree does not register.
+`check-matrix-flag-names.mjs` enforces that over the `note` and the `evidence`
+both, and the direction it catches is a flag RENAMED in the code while the row
+keeps the old spelling. Three flags are exempt and listed in the script: several
+rows establish that a verb does not register a flag by showing it answers
+`unknown flag` byte-identically to a control that cannot exist —
+`--skip-chxxxx`, `--name-formxxxx`, `--totally-bogus-flag`. Measured, those are
+the only flags in either field the tree does not have. The gate's limits are
+stated in the script too: it compares against the whole tree's flag set, so it
+cannot tell that a flag belongs to another verb, and a plausible wrong name that
+happens to be a real flag elsewhere passes (stokaro/ptah#1924).
 
 The same issue's other rule has no mechanical check and is a reading
 responsibility: **a note should not restate a fact the code or a generated
