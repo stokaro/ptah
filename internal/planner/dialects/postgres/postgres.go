@@ -2821,15 +2821,13 @@ func (p *Planner) addNewConstraints(result []ast.Node, diff *types.SchemaDiff, g
 		structToTable[t.StructName] = t.QualifiedName()
 	}
 
-	state := newConstraintPlanState(diff)
+	state := newConstraintPlanState(diff, diff.EffectiveIdentifierSemantics(p.targetDialect()))
 
-	result = p.addPrimaryKeyConstraintsWithTables(result, diff.ConstraintsAddedWithTables, state.removalByTableName, state.handled, state.droppedForModify)
+	result = p.addPrimaryKeyConstraintsWithTables(result, diff.ConstraintsAddedWithTables, state)
 	result = p.addCheckAndUniqueConstraintsWithTables(
 		result,
 		diff.ConstraintsAddedWithTables,
-		state.removalByTableName,
-		state.handled,
-		state.droppedForModify,
+		state,
 		diff.IndexRemovalsRebuiltAsUniqueConstraints(),
 	)
 	result = p.addNamedConstraintsByKind(result, diff, generated, structToTable, state, nonForeignKeyConstraints)
@@ -2846,6 +2844,9 @@ const (
 )
 
 type constraintPlanState struct {
+	// semantics is the rule the COMPARATOR resolved this diff's names under,
+	// carried so every key built here answers the same question it did.
+	semantics          identifier.Semantics
 	removedNames       map[string]struct{}
 	removalByTableName map[constraintHostKey]types.ConstraintRemovalInfo
 	removalsByName     map[string][]types.ConstraintRemovalInfo
@@ -2863,23 +2864,46 @@ type constraintPlanState struct {
 // (stokaro/ptah#1345).
 type constraintHostKey = objectidentity.Key
 
-// constraintIdentities folds nothing, which is what the planner requires.
-//
-// Both spellings a host key is built from arrive from the same [types.SchemaDiff],
-// already normalized by the comparator that produced it. Folding again here
-// would apply the rule twice on one side of the pipeline and once on the other,
-// and a drop would then pair with a constraint the comparator never removed.
-// The tightening criterion is the diff carrying its identities rather than its
-// spellings; until then this is the semantics that keeps the two ends agreeing.
-var constraintIdentities = objectidentity.NewBuilder(identifier.Semantics{})
-
 // constraintHost builds a host key from an owning table spelling and a
-// constraint name.
-func constraintHost(table, name string) constraintHostKey {
-	return constraintIdentities.ConstraintPartsVerbatim(table, name).Key()
+// constraint name, under the rule the comparator resolved the diff's names by.
+//
+// The two spellings a host key is built from do NOT agree, which is what the
+// verbatim key this replaced assumed. A modified constraint's ADDITION is
+// spelled the way the DESCRIPTION wrote its table and its REMOVAL the way the
+// CATALOG reports it, so one table arrives as two strings:
+//
+//	ConstraintsAddedWithTables   = [{Name:uq_widget_scope TableName:widget}]
+//	ConstraintsRemovedWithTables = [{Name:uq_widget_scope TableName:public.widget}]
+//
+// The comparator paired them through [identifier.Semantics] and then emitted
+// both spellings unchanged. Keying that pair verbatim missed, so
+// [Planner.emitModifyDrop] never fired and the plan came out ADD before DROP.
+// PostgreSQL answers `relation "uq_widget_scope" already exists`; inside a
+// transaction the change rolls back, and OUTSIDE one the DROP still runs and
+// leaves the table with no unique constraint at all (stokaro/ptah#1987). The
+// trigger is a desired schema that leaves the schema off and a database that
+// qualifies it -- the default for a Go-annotated schema on PostgreSQL.
+//
+// Folding here is not folding twice. It is the SAME rule applied to the same
+// strings: the comparator's own semantics travel on the diff, and the MySQL
+// planner has keyed its hosts this way through canonicalConstraintHostKey since
+// stokaro/ptah#1345. A rule of this package's own invention is what would pair
+// a drop with a constraint the comparator never removed.
+func constraintHost(semantics identifier.Semantics, table, name string) constraintHostKey {
+	return objectidentity.NewBuilder(semantics).Constraint(table, name).Key()
 }
 
-func newConstraintPlanState(diff *types.SchemaDiff) constraintPlanState {
+// constraintHostTable is the same normalization for a bare table spelling, so
+// the host SETS keyed by table string agree with the keys above.
+//
+// addedHostsByName is that set: it decides which removal hosts a modified
+// constraint's pre-drop may touch, and keyed verbatim it answered "none" for
+// the very pair this file exists to order.
+func constraintHostTable(semantics identifier.Semantics, table string) string {
+	return semantics.QualifiedTableIdentityKey(table)
+}
+
+func newConstraintPlanState(diff *types.SchemaDiff, semantics identifier.Semantics) constraintPlanState {
 	// A constraint name present in BOTH ConstraintsAdded and ConstraintsRemoved
 	// is a modification (the comparator expresses a changed constraint as
 	// remove + add of the same name — e.g. an on_delete change on a field-level
@@ -2913,7 +2937,7 @@ func newConstraintPlanState(diff *types.SchemaDiff) constraintPlanState {
 	// removalByTableName — gives the pure-add host no drop.
 	removalByTableName := make(map[constraintHostKey]types.ConstraintRemovalInfo, len(diff.ConstraintsRemovedWithTables))
 	for _, info := range diff.ConstraintsRemovedWithTables {
-		removalByTableName[constraintHost(info.TableName, info.Name)] = info
+		removalByTableName[constraintHost(semantics, info.TableName, info.Name)] = info
 	}
 
 	// Index removals by bare name as well, so the legacy ConstraintsAdded loop
@@ -2952,10 +2976,11 @@ func newConstraintPlanState(diff *types.SchemaDiff) constraintPlanState {
 			hosts = make(map[string]struct{})
 			addedHostsByName[add.Name] = hosts
 		}
-		hosts[add.TableName] = struct{}{}
+		hosts[constraintHostTable(semantics, add.TableName)] = struct{}{}
 	}
 
 	return constraintPlanState{
+		semantics:          semantics,
 		removedNames:       removedNames,
 		removalByTableName: removalByTableName,
 		removalsByName:     removalsByName,
@@ -2993,7 +3018,7 @@ func (p *Planner) addNamedConstraintsByKind(
 				constraintName,
 				state.removalsByName,
 				state.addedHostsByName[constraintName],
-				state.droppedForModify,
+				state,
 			)
 		}
 
@@ -3027,9 +3052,9 @@ func (p *Planner) addForeignKeyConstraintsWithTables(
 		// Only emit the DROP-before-ADD when this exact host's FK is being
 		// modified (its (table, name) is in the removal set). A pure-add host
 		// gets no phantom drop.
-		key := constraintHost(add.TableName, add.Name)
+		key := constraintHost(state.semantics, add.TableName, add.Name)
 		if _, modified := state.removalByTableName[key]; modified {
-			result = p.emitModifyDrop(result, add, state.droppedForModify)
+			result = p.emitModifyDrop(result, add, state)
 		}
 		result = append(result, p.foreignKeyAdditionNode(add))
 		state.handled[add.Name] = struct{}{}
@@ -3061,9 +3086,7 @@ func (p *Planner) constraintNameIsForeignKey(constraintName string, generated *g
 func (p *Planner) addCheckAndUniqueConstraintsWithTables(
 	result []ast.Node,
 	additions []types.ConstraintAdditionInfo,
-	removalByTableName map[constraintHostKey]types.ConstraintRemovalInfo,
-	handled map[string]struct{},
-	droppedForModify map[constraintHostKey]struct{},
+	state constraintPlanState,
 	rebuiltIndexes map[types.IndexRef]struct{},
 ) []ast.Node {
 	for _, add := range additions {
@@ -3071,16 +3094,16 @@ func (p *Planner) addCheckAndUniqueConstraintsWithTables(
 		if constraint == nil {
 			continue
 		}
-		key := constraintHost(add.TableName, add.Name)
-		if _, modified := removalByTableName[key]; modified {
-			result = p.emitModifyDrop(result, add, droppedForModify)
+		key := constraintHost(state.semantics, add.TableName, add.Name)
+		if _, modified := state.removalByTableName[key]; modified {
+			result = p.emitModifyDrop(result, add, state)
 		}
 		result = p.dropIndexRebuiltAsConstraint(result, add, rebuiltIndexes)
 		result = append(result, &ast.AlterTableNode{
 			Name:       add.TableName,
 			Operations: []ast.AlterOperation{&ast.AddConstraintOperation{Constraint: constraint}},
 		})
-		handled[add.Name] = struct{}{}
+		state.handled[add.Name] = struct{}{}
 	}
 	return result
 }
@@ -3141,23 +3164,21 @@ func constraintAdditionNode(add types.ConstraintAdditionInfo) *ast.ConstraintNod
 func (p *Planner) addPrimaryKeyConstraintsWithTables(
 	result []ast.Node,
 	additions []types.ConstraintAdditionInfo,
-	removalByTableName map[constraintHostKey]types.ConstraintRemovalInfo,
-	handled map[string]struct{},
-	droppedForModify map[constraintHostKey]struct{},
+	state constraintPlanState,
 ) []ast.Node {
 	for _, add := range additions {
 		if add.Type != "PRIMARY KEY" || add.TableName == "" || len(add.Columns) == 0 {
 			continue
 		}
-		key := constraintHost(add.TableName, add.Name)
-		if _, modified := removalByTableName[key]; modified {
-			result = p.emitModifyDrop(result, add, droppedForModify)
+		key := constraintHost(state.semantics, add.TableName, add.Name)
+		if _, modified := state.removalByTableName[key]; modified {
+			result = p.emitModifyDrop(result, add, state)
 		}
 		result = append(result, &ast.AlterTableNode{
 			Name:       add.TableName,
 			Operations: []ast.AlterOperation{&ast.AddConstraintOperation{Constraint: ast.NewPrimaryKeyConstraint(add.Columns...)}},
 		})
-		handled[add.Name] = struct{}{}
+		state.handled[add.Name] = struct{}{}
 	}
 	return result
 }
@@ -3191,9 +3212,9 @@ func (p *Planner) addPrimaryKeyConstraintsWithTables(
 func (p *Planner) emitModifyDrop(
 	result []ast.Node,
 	add types.ConstraintAdditionInfo,
-	droppedForModify map[constraintHostKey]struct{},
+	state constraintPlanState,
 ) []ast.Node {
-	return p.appendScopedDrop(result, add.TableName, add.Name, droppedForModify)
+	return p.appendScopedDrop(result, add.TableName, add.Name, state)
 }
 
 // emitModifyDropForName appends the DROP(s) that must precede the re-ADD of a
@@ -3228,7 +3249,7 @@ func (p *Planner) emitModifyDropForName(
 	name string,
 	removalsByName map[string][]types.ConstraintRemovalInfo,
 	addedHosts map[string]struct{},
-	droppedForModify map[constraintHostKey]struct{},
+	state constraintPlanState,
 ) []ast.Node {
 	if len(addedHosts) > 0 {
 		// Re-added hosts are known: drop ONLY those. A removal host that is not
@@ -3238,10 +3259,10 @@ func (p *Planner) emitModifyDropForName(
 			if info.TableName == "" {
 				continue
 			}
-			if _, reAdded := addedHosts[info.TableName]; !reAdded {
+			if _, reAdded := addedHosts[constraintHostTable(state.semantics, info.TableName)]; !reAdded {
 				continue
 			}
-			result = p.appendScopedDrop(result, info.TableName, info.Name, droppedForModify)
+			result = p.appendScopedDrop(result, info.TableName, info.Name, state)
 		}
 		return result
 	}
@@ -3253,18 +3274,18 @@ func (p *Planner) emitModifyDropForName(
 		if info.TableName == "" {
 			continue
 		}
-		result = p.appendScopedDrop(result, info.TableName, info.Name, droppedForModify)
+		result = p.appendScopedDrop(result, info.TableName, info.Name, state)
 		scoped = true
 	}
 	if scoped {
 		return result
 	}
 	// No host recorded for this name — fall back to the runtime DO block.
-	fallbackKey := constraintHost("", name)
-	if _, done := droppedForModify[fallbackKey]; done {
+	fallbackKey := constraintHost(state.semantics, "", name)
+	if _, done := state.droppedForModify[fallbackKey]; done {
 		return result
 	}
-	droppedForModify[fallbackKey] = struct{}{}
+	state.droppedForModify[fallbackKey] = struct{}{}
 	return append(result, p.dropConstraintNode(name))
 }
 
@@ -3275,13 +3296,13 @@ func (p *Planner) emitModifyDropForName(
 func (p *Planner) appendScopedDrop(
 	result []ast.Node,
 	table, name string,
-	droppedForModify map[constraintHostKey]struct{},
+	state constraintPlanState,
 ) []ast.Node {
-	dedupKey := constraintHost(table, name)
-	if _, done := droppedForModify[dedupKey]; done {
+	dedupKey := constraintHost(state.semantics, table, name)
+	if _, done := state.droppedForModify[dedupKey]; done {
 		return result
 	}
-	droppedForModify[dedupKey] = struct{}{}
+	state.droppedForModify[dedupKey] = struct{}{}
 	return append(result, &ast.AlterTableNode{
 		Name: table,
 		Operations: []ast.AlterOperation{&ast.DropConstraintOperation{
@@ -3428,6 +3449,15 @@ func unqualifiedTableName(tableName string) string {
 //	ALTER TABLE bookings DROP CONSTRAINT IF EXISTS no_overlapping_bookings;
 //	ALTER TABLE products DROP CONSTRAINT IF EXISTS positive_price;
 func (p *Planner) removeConstraints(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+	// The pure-removal path keys its hosts by the same rule addNewConstraints
+	// does, for the same reason: the two sides of a modify spell one table two
+	// ways, and a verbatim key answers that they are two (stokaro/ptah#1987).
+	// Its dedup set is its own -- these drops are not the modify pre-drops.
+	state := constraintPlanState{
+		semantics:        diff.EffectiveIdentifierSemantics(p.targetDialect()),
+		droppedForModify: make(map[constraintHostKey]struct{}),
+	}
+
 	// A removed constraint is dropped from its exact owning table with a direct,
 	// table-qualified ALTER TABLE <host> DROP CONSTRAINT IF EXISTS <name>. The
 	// comparator records that host in ConstraintsRemovedWithTables in lockstep
@@ -3468,7 +3498,7 @@ func (p *Planner) removeConstraints(result []ast.Node, diff *types.SchemaDiff) [
 			// hostless-re-add rule below still engages (issue #229).
 			continue
 		}
-		modifySet[constraintHost(add.TableName, add.Name)] = struct{}{}
+		modifySet[constraintHost(state.semantics, add.TableName, add.Name)] = struct{}{}
 		addedHostCounts[add.Name]++
 	}
 
@@ -3497,7 +3527,6 @@ func (p *Planner) removeConstraints(result []ast.Node, diff *types.SchemaDiff) [
 	// rest. Names that carried at least one host are recorded so the bare
 	// fallback below — which exists only for synthetic diffs — does not re-emit
 	// the name-only DO block for them.
-	dropped := make(map[constraintHostKey]struct{})
 	namesWithHost := make(map[string]struct{})
 	for _, info := range diff.ConstraintsRemovedWithTables {
 		if info.TableName == "" {
@@ -3505,7 +3534,7 @@ func (p *Planner) removeConstraints(result []ast.Node, diff *types.SchemaDiff) [
 			continue
 		}
 		namesWithHost[info.Name] = struct{}{}
-		key := constraintHost(info.TableName, info.Name)
+		key := constraintHost(state.semantics, info.TableName, info.Name)
 		if _, modified := modifySet[key]; modified {
 			// addNewConstraints owns this host's DROP-then-ADD; do not re-drop.
 			continue
@@ -3518,7 +3547,7 @@ func (p *Planner) removeConstraints(result []ast.Node, diff *types.SchemaDiff) [
 			// (issue #229).
 			continue
 		}
-		result = p.appendScopedDrop(result, info.TableName, info.Name, dropped)
+		result = p.appendScopedDrop(result, info.TableName, info.Name, state)
 	}
 
 	// Bare fallback for synthetic diffs only: a hand-built diff may list a
