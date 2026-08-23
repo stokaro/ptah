@@ -219,6 +219,8 @@ Every migration lint finding reports under an analyzer name and a code on the co
 
 Every check code the [Atlas analyzer documentation](https://atlasgo.io/lint/analyzers) carries, and what Ptah does about it: 33 covered, 7 partial, 16 not implemented, 2 waived, of 58. A code Atlas marks as an Atlas Pro feature is marked here too, and the ones Ptah implements are reported through both surfaces except `BC101` and `BC102`, whose Ptah rule the compatibility surface does not report.
 
+<div class="ptah-wide-table">
+
 | Atlas check | Meaning | Pro | Ptah rule | Status |
 | --- | --- | --- | --- | --- |
 | `DS101` | schema was dropped | no | `DS107` | covered |
@@ -279,6 +281,8 @@ Every check code the [Atlas analyzer documentation](https://atlasgo.io/lint/anal
 | `SA101` | a possible SQL injection vulnerability was detected | no | — | not implemented |
 | `OW101` | a user is not authorized to modify a resource | yes | — | waived — binds to a schema-ownership annotation set and an account model Ptah does not have |
 | `OW102` | a user is explicitly denied access to a resource | yes | — | waived — same reason as OW101 |
+
+</div>
 
 ## Identifiers that predate the convention
 

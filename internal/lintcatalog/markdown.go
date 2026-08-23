@@ -213,6 +213,16 @@ func writeCompatIdentities(w io.Writer, entries []Entry) error {
 	return err
 }
 
+// wideTableOpen and wideTableClose wrap a table wide enough that a phone
+// viewport shrinks it. The class is styled in docs/site/src/styles/global.css,
+// where the scrolling lives on the wrapper and the desktop width on the table:
+// putting the width on the table alone scrolls the PAGE, because Starlight
+// makes every table its own scroller.
+const (
+	wideTableOpen  = "<div class=\"ptah-wide-table\">\n\n"
+	wideTableClose = "\n</div>\n\n"
+)
+
 func writeAtlasChecks(w io.Writer, entries []Entry) error {
 	checks := AtlasChecks()
 	counts := AtlasCounts()
@@ -225,6 +235,16 @@ func writeAtlasChecks(w io.Writer, entries []Entry) error {
 			"A code Atlas marks as an Atlas Pro feature is marked here too%s.\n\n",
 		counts[StatusCovered], counts[StatusPartial], counts[StatusAbsent], counts[StatusWaived], len(checks),
 		atlasSurfaceNote(entries, checks))
+	// Five columns, and the widest carries a sentence, so at a phone width auto
+	// layout shrinks the table and the status column stacks into cells fifteen
+	// lines tall. The wrapper scrolls and the table keeps its desktop width
+	// inside it -- the same fix the feature matrix uses, and the reason
+	// check-responsive.mjs exempted this route until now: the table is emitted
+	// here rather than by a docs script (stokaro/ptah#946).
+	//
+	// The blank lines around the table are load-bearing: without them the
+	// markdown inside the div is not parsed as a table.
+	out.WriteString(wideTableOpen)
 	out.WriteString("| Atlas check | Meaning | Pro | Ptah rule | Status |\n| --- | --- | --- | --- | --- |\n")
 	for _, check := range checks {
 		status := string(check.Status)
@@ -234,7 +254,7 @@ func writeAtlasChecks(w io.Writer, entries []Entry) error {
 		fmt.Fprintf(&out, "| `%s` | %s | %s | %s | %s |\n",
 			check.Code, check.Meaning, proLabel(check), ruleList(check.PtahRules), status)
 	}
-	out.WriteString("\n")
+	out.WriteString(wideTableClose)
 	_, err := io.WriteString(w, out.String())
 	return err
 }
