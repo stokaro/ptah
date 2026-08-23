@@ -97,6 +97,44 @@ func TestReportUndescribed_NamesWhatTheDescriptionLeavesOut(t *testing.T) {
 			want:      []string{"1 hypertable is", "1 continuous aggregate is not"},
 		},
 		{
+			// A hypertable partitioned on two columns loses BOTH on replay, and
+			// a note naming one would say less than the truth about what the
+			// description drops -- the same failure this note exists to
+			// prevent, one level down.
+			name: "a hypertable with a second dimension",
+			schema: &types.DBSchema{
+				Tables: []types.DBTable{{Name: "conditions"}},
+				Hypertables: []types.DBHypertable{
+					{Name: "conditions", PrimaryDimension: "time", Dimensions: 2},
+				},
+			},
+			wantLines: 1,
+			want:      []string{"conditions (on time and 1 more dimension)"},
+		},
+		{
+			name: "a hypertable with three dimensions",
+			schema: &types.DBSchema{
+				Tables: []types.DBTable{{Name: "conditions"}},
+				Hypertables: []types.DBHypertable{
+					{Name: "conditions", PrimaryDimension: "time", Dimensions: 3},
+				},
+			},
+			wantLines: 1,
+			want:      []string{"conditions (on time and 2 more dimensions)"},
+		},
+		{
+			name: "the ordinary single dimension says nothing more",
+			schema: &types.DBSchema{
+				Tables: []types.DBTable{{Name: "conditions"}},
+				Hypertables: []types.DBHypertable{
+					{Name: "conditions", PrimaryDimension: "time", Dimensions: 1},
+				},
+			},
+			wantLines: 1,
+			want:      []string{"conditions (on time)."},
+			notWant:   []string{"more dimension"},
+		},
+		{
 			name: "a hypertable whose dimension the catalog did not report",
 			schema: &types.DBSchema{
 				Tables:      []types.DBTable{{Name: "conditions"}},

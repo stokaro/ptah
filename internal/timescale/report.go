@@ -104,13 +104,34 @@ func reportContinuousAggregates(w io.Writer, schema *types.DBSchema) {
 }
 
 // describeHypertable renders one hypertable the way the note names it: the
-// table, and the column it is partitioned on, because a note that named only
-// the table would leave the reader to go and look up what was lost.
+// table, the column it is partitioned on, and how many further dimensions there
+// are. A note that named only the table would leave the reader to go and look
+// up what was lost.
+//
+// The count is why [types.DBHypertable.Dimensions] is read at all. A hypertable
+// partitioned by range on `time` AND by hash on `device` reports two, and a note
+// naming only `time` would say less than the truth about what a replay drops --
+// the failure this note exists to prevent, one level down.
 func describeHypertable(hypertable types.DBHypertable) string {
 	if hypertable.PrimaryDimension == "" {
 		return hypertable.QualifiedName()
 	}
-	return fmt.Sprintf("%s (on %s)", hypertable.QualifiedName(), hypertable.PrimaryDimension)
+	return fmt.Sprintf("%s (on %s%s)",
+		hypertable.QualifiedName(), hypertable.PrimaryDimension,
+		furtherDimensions(hypertable.Dimensions))
+}
+
+// furtherDimensions names the partitioning the note does not spell out, and
+// says nothing for the ordinary single-dimension hypertable.
+func furtherDimensions(dimensions int) string {
+	switch {
+	case dimensions > 2:
+		return fmt.Sprintf(" and %d more dimensions", dimensions-1)
+	case dimensions == 2:
+		return " and 1 more dimension"
+	default:
+		return ""
+	}
 }
 
 // describedTables keys the tables this description carries, folded the way

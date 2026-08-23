@@ -128,13 +128,6 @@ func Inspect(ctx context.Context, conn *dbschema.DatabaseConnection, opts Inspec
 	if !opts.SuppressRoleCoverageNote {
 		rolescope.ReportUndescribed(opts.Diagnostics, conn.Info().Dialect, schema)
 	}
-	// The same reason, for the objects a TimescaleDB server holds that this
-	// document describes incompletely or not at all. It is not behind the role
-	// suppression: that flag exists for the paths inspecting a dev database
-	// they materialized themselves, and those have no hypertables in them
-	// either, so the note is silent there rather than suppressed
-	// (stokaro/ptah#1026).
-	timescale.ReportUndescribed(opts.Diagnostics, schema)
 	validatedOpts := opts
 	validatedOpts.PrepareSchema = nil
 	validatedOpts.ValidateSchema = nil
@@ -194,6 +187,17 @@ func renderInspectSchema(
 	// said the description reports the module's tables as ordinary ones. See
 	// stokaro/ptah#1028.
 	sqlitevirtual.ReportUnclassified(opts.Diagnostics, schema)
+	// From the SCOPED schema for the same reason, and it is the same failure:
+	// `--exclude conditions` removes the hypertable from the document, and a
+	// note emitted before the projection would still name it as a table the
+	// description carries incompletely -- sending the reader to look for a
+	// statement that is not there (stokaro/ptah#1026).
+	//
+	// It is not behind the role-coverage suppression either: that flag exists
+	// for the paths inspecting a dev database they materialized themselves, and
+	// those have no hypertables in them, so the note is silent there rather
+	// than suppressed.
+	timescale.ReportUndescribed(opts.Diagnostics, schema)
 	dbsch := dbschematogo.ConvertDBSchemaToGoSchema(schema)
 	output, err := atlasreport.RenderSchemaInspect(format, atlasreport.NewSchemaInspectReport(
 		dbsch,

@@ -13,6 +13,7 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "github.com/jackc/pgx/v5/stdlib"
 
+	atlascmd "go.5x5.cz/ptah/cmd/atlas"
 	"go.5x5.cz/ptah/dbschema"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/dbtarget"
@@ -87,6 +88,50 @@ func TestTimescaleUndescribedObjectsE2E(t *testing.T) {
 	c.Assert(out.String(), qt.Contains, aggregate)
 }
 
+// TestTimescaleReportFollowsInspectSelectionE2E pins WHERE the note is emitted,
+// which is a different question from what it says.
+//
+// `schema inspect` applies its selection after the read, so a note emitted from
+// the unscoped schema names objects the document does not contain: `--exclude`
+// on the hypertable removes its table from the rendering while the note still
+// says the description carries it incompletely, sending the reader to look for
+// a statement that is not there. The SQLite virtual-table note was moved after
+// the projection for exactly this reason (stokaro/ptah#1028), and this one is
+// emitted beside it.
+//
+// It runs through the command rather than the reader, because the call ORDER is
+// what is under test and only the command has one.
+func TestTimescaleReportFollowsInspectSelectionE2E(t *testing.T) {
+	dbURL := dbtarget.URL(t, dbtarget.TimescaleDB)
+	c := qt.New(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
+	defer cancel()
+
+	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+
+	suffix := fmt.Sprintf("%d", time.Now().UnixNano())
+	table := "ts_selected_" + suffix
+	dropTimescaleFixture(context.WithoutCancel(ctx), conn, table, "")
+	defer dropTimescaleFixture(context.WithoutCancel(ctx), conn, table, "")
+
+	execTimescale(ctx, c, conn, fmt.Sprintf(
+		`CREATE TABLE %s ("time" TIMESTAMPTZ NOT NULL, v DOUBLE PRECISION)`, table))
+	execTimescale(ctx, c, conn, fmt.Sprintf(`SELECT create_hypertable('%s', by_range('time'))`, table))
+
+	named, err := runAtlasCompat("schema", "inspect", "--url", dbURL)
+	c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", named))
+	c.Assert(named, qt.Contains, table)
+
+	excluded, err := runAtlasCompat("schema", "inspect", "--url", dbURL, "--exclude", table)
+	c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", excluded))
+	// The table is gone from the document AND from the note. Asserting only the
+	// document would pass with the note still naming it, which is the defect.
+	c.Assert(excluded, qt.Not(qt.Contains), table)
+}
+
 // TestTimescaleReportIsSilentOnOrdinaryPostgresE2E is the control the note
 // needs, and it runs against the OTHER service on purpose.
 //
@@ -126,7 +171,9 @@ func execTimescale(ctx context.Context, c *qt.C, conn *dbschema.DatabaseConnecti
 // without CASCADE, and CASCADE on a shared server is not something a test
 // should reach for.
 func dropTimescaleFixture(ctx context.Context, conn *dbschema.DatabaseConnection, table, aggregate string) {
-	_ = conn.SchemaWriter().ExecuteSQL(ctx, "DROP MATERIALIZED VIEW IF EXISTS "+aggregate)
+	if aggregate != "" {
+		_ = conn.SchemaWriter().ExecuteSQL(ctx, "DROP MATERIALIZED VIEW IF EXISTS "+aggregate)
+	}
 	_ = conn.SchemaWriter().ExecuteSQL(ctx, "DROP TABLE IF EXISTS "+table)
 }
 
@@ -168,4 +215,16 @@ func describedAggregateNames(schema *dbschematypes.DBSchema) []string {
 		names = append(names, strings.ToLower(aggregate.Name))
 	}
 	return names
+}
+
+// runAtlasCompat runs one ptah-compat invocation in process and returns
+// everything it wrote, diagnostics included -- which is where the note is.
+func runAtlasCompat(args ...string) (string, error) {
+	cmd := atlascmd.NewCompatCommand("atlas")
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetErr(&out)
+	cmd.SetArgs(args)
+	err := cmd.Execute()
+	return out.String(), err
 }
