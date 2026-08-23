@@ -465,7 +465,17 @@ The rules today:
 
 `ROL03` and `ROL04` read the server's role graph — who holds which role — so they
 run against a live database and report themselves skipped anywhere that graph was
-not read. `ROL03` reports a pair when they share at least two privileges and at
+not read. The PostgreSQL family reads it from `pg_auth_members`, MySQL from
+`mysql.role_edges`, and MariaDB from `mysql.roles_mapping`.
+
+An edge granted **with admin option** is the right to grant a role onward rather
+than evidence somebody uses it, and neither rule counts it. That is measured
+rather than stylistic: `CREATE ROLE` on MariaDB inserts an admin edge from the
+creator by itself, so counting those would make `ROL04` unable to fire on any
+MariaDB server and would make `ROL03` name the creator on every one. The cost is
+stated: an explicit `WITH ADMIN OPTION` grant to a real user is ignored too, so
+`ROL04` can name a role one administrator could also use — a finding a reader
+can dismiss beats one that never appears. `ROL03` reports a pair when they share at least two privileges and at
 least half of the smaller role's set; one shared privilege is a coincidence on
 any real schema. A login role with no members is not `ROL04`: it is its own
 principal, and reporting every application account would bury the rule.

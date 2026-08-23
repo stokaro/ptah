@@ -224,6 +224,50 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 			wantSkipped: make([]string, 0),
 		},
 		{
+			// Measured on MariaDB 11.8: CREATE ROLE inserts an admin edge from
+			// the creator, so counting it would make this rule unable to fire
+			// on any MariaDB server.
+			name:    "a role held only with admin option is still reported",
+			dialect: "postgres",
+			database: &goschema.Database{
+				Roles: []goschema.Role{{Name: "reporting", Login: false}, {Name: "root", Login: true}},
+			},
+			memberships: []schemasecurity.RoleMembership{
+				{Role: "reporting", Member: "root", AdminOption: true},
+			},
+			wantCodes:   []string{"ROL04"},
+			wantSkipped: make([]string, 0),
+		},
+		{
+			name:    "two roles held only with admin option are not an overlap",
+			dialect: "postgres",
+			database: &goschema.Database{
+				Roles: []goschema.Role{
+					{Name: "reader", Login: false},
+					{Name: "analyst", Login: false},
+					{Name: "root", Login: true},
+					{Name: "alice", Login: true},
+				},
+				Grants: []goschema.Grant{
+					{Role: "reader", Privileges: []string{"SELECT"}, OnTable: "users"},
+					{Role: "reader", Privileges: []string{"SELECT"}, OnTable: "orders"},
+					{Role: "analyst", Privileges: []string{"SELECT"}, OnTable: "users"},
+					{Role: "analyst", Privileges: []string{"SELECT"}, OnTable: "orders"},
+				},
+				RLSEnabledTables: []goschema.RLSEnabledTable{{Table: "users"}, {Table: "orders"}},
+			},
+			memberships: []schemasecurity.RoleMembership{
+				{Role: "reader", Member: "root", AdminOption: true},
+				{Role: "analyst", Member: "root", AdminOption: true},
+				{Role: "reader", Member: "alice"},
+				{Role: "analyst", Member: "alice"},
+			},
+			// alice only: root holds both roles with admin option, which is the
+			// right to grant them rather than evidence anybody uses them.
+			wantCodes:   []string{"ROL03"},
+			wantSkipped: make([]string, 0),
+		},
+		{
 			name:        "an empty schema reports nothing",
 			dialect:     "postgres",
 			database:    &goschema.Database{},
