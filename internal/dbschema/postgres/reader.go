@@ -3720,7 +3720,18 @@ func (r *Reader) readCapabilityGatedObjects(schema *types.DBSchema) error {
 	if err != nil {
 		return fmt.Errorf("failed to read views: %w", err)
 	}
-	schema.Views = views
+	// Read before the views are stored, because it decides which of them are
+	// views at all: a continuous aggregate arrives in the view read and is not
+	// one. It takes the extension list because that is what says whether the
+	// catalog exists: asking a server that has no TimescaleDB would fail the
+	// statement, and a failed statement aborts the enclosing transaction --
+	// every later read then answers SQLSTATE 25P02 (stokaro/ptah#1026).
+	aggregates, err := r.readContinuousAggregates(schema.Extensions)
+	if err != nil {
+		return fmt.Errorf("failed to read continuous aggregates: %w", err)
+	}
+	schema.ContinuousAggregates = aggregates
+	schema.Views = withoutContinuousAggregates(views, aggregates)
 
 	if r.caps.Has(capability.MaterializedViews) {
 		matViews, err := r.readMaterializedViews()

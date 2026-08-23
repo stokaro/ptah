@@ -509,6 +509,38 @@ Making Ptah's own schema selection independent of that session parameter — so 
 pooled URL can select a schema at all — is
 [stokaro/ptah#1029](https://github.com/stokaro/ptah/issues/1029).
 
+## TimescaleDB continuous aggregates
+
+A TimescaleDB continuous aggregate is a view to PostgreSQL: `pg_class` reports
+`relkind = 'v'`, and a reader that asks only PostgreSQL describes it as one.
+Ptah reads it as itself instead, and does not manage it.
+
+Describing one as a view is wrong in both directions, and both were measured on
+TimescaleDB 2.29.2 / PostgreSQL 17.11:
+
+- a plan that dropped it emitted `DROP VIEW`, and the server answered
+  `cannot drop continuous aggregate using DROP VIEW`, hinting at
+  `DROP MATERIALIZED VIEW`. The plan could not apply, and the next run reported
+  the same pending change.
+- a plan that created it emitted `CREATE VIEW` with the body `pg_get_viewdef`
+  answers, which is not the body anybody wrote: TimescaleDB rewrites the
+  definition to select from the materialization hypertable, so the emitted view
+  named a relation in a schema the extension owns.
+
+So a continuous aggregate is read from `timescaledb_information.continuous_aggregates`
+— which keeps the `SELECT` as it was written — and is left out of the view
+list. Nothing plans a change to one in either direction.
+
+A declaration that names a relation the server holds as a continuous aggregate
+is refused before anything is compared, naming the aggregate and the hypertable
+it materializes. The server's own answer at apply time would be
+`relation "…" already exists`, halfway through a script.
+
+Hypertables are ordinary tables to Ptah for now: a hypertable's `DROP TABLE`
+and `CREATE TABLE` both work, so nothing is mis-planned, but the dimensions
+`create_hypertable` was called with are not read and not declared. See
+[stokaro/ptah#1026](https://github.com/stokaro/ptah/issues/1026).
+
 ## Next steps
 
 - Declaring these objects in Go sources: [Go annotation reference](../../reference/go-annotations/).

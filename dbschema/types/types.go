@@ -34,10 +34,14 @@ type DBSchema struct {
 	// description covers: schema-, table- and column-scoped ones. See
 	// [DBExtendedProperty] for what is deliberately not in it.
 	ExtendedProperties []DBExtendedProperty `json:"extended_properties,omitempty"`
-	Triggers           []DBTrigger          `json:"triggers"`     // Database triggers
-	RLSPolicies        []DBRLSPolicy        `json:"rls_policies"` // PostgreSQL RLS policies
-	Roles              []DBRole             `json:"roles"`        // PostgreSQL roles
-	Grants             []DBGrant            `json:"grants"`       // PostgreSQL privilege grants
+
+	// ContinuousAggregates are the TimescaleDB continuous aggregates this read
+	// found. See [DBContinuousAggregate] for why they are not views.
+	ContinuousAggregates []DBContinuousAggregate `json:"continuous_aggregates,omitempty"`
+	Triggers             []DBTrigger             `json:"triggers"`     // Database triggers
+	RLSPolicies          []DBRLSPolicy           `json:"rls_policies"` // PostgreSQL RLS policies
+	Roles                []DBRole                `json:"roles"`        // PostgreSQL roles
+	Grants               []DBGrant               `json:"grants"`       // PostgreSQL privilege grants
 
 	// ObjectOwners are the owners of the objects this read covers, one row per
 	// object, on the engines that have an owner to report.
@@ -839,6 +843,46 @@ type DBSynonym struct {
 	TargetSchema   string `json:"target_schema,omitempty"`
 	TargetObject   string `json:"target_object"`
 	Comment        string `json:"comment,omitempty"` // Synonym comment/description
+}
+
+// DBContinuousAggregate is one TimescaleDB continuous aggregate.
+//
+// To PostgreSQL it is a view: pg_class reports relkind 'v', and a reader that
+// asks only PostgreSQL describes it as one. That is wrong in both directions,
+// and both were measured on TimescaleDB 2.29.2 / PostgreSQL 17.11.
+//
+// A plan that drops it emits DROP VIEW, and the server answers
+// `cannot drop continuous aggregate using DROP VIEW`, hinting at DROP
+// MATERIALIZED VIEW. So the plan cannot apply, and the next run reports the
+// same pending change.
+//
+// A plan that creates it emits CREATE VIEW with the body pg_get_viewdef
+// answers, which is not the body anybody wrote: TimescaleDB rewrites the
+// definition to select from the materialization hypertable, so the emitted
+// view names a relation in a schema the extension owns.
+//
+// Definition is therefore the catalog's own view_definition -- the SELECT as
+// it was written -- and not pg_get_viewdef's.
+type DBContinuousAggregate struct {
+	Schema string `json:"schema"` // Schema holding the aggregate
+	Name   string `json:"name"`   // Aggregate name, which is also the view name
+
+	// HypertableSchema and HypertableName name the hypertable the aggregate
+	// materializes from, which is the object it depends on.
+	HypertableSchema string `json:"hypertable_schema"`
+	HypertableName   string `json:"hypertable_name"`
+
+	// MaterializedOnly reports whether the aggregate reads only materialized
+	// data, rather than combining it with the raw rows since the last refresh.
+	MaterializedOnly bool `json:"materialized_only"`
+
+	// Definition is the SELECT the aggregate was declared with.
+	Definition string `json:"definition"`
+}
+
+// QualifiedName returns schema.name when Schema is set, or Name otherwise.
+func (a DBContinuousAggregate) QualifiedName() string {
+	return QualifyTableName(a.Schema, a.Name)
 }
 
 // DBExtendedProperty is one SQL Server extended property read from

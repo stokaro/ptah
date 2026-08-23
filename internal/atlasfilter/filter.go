@@ -113,6 +113,7 @@ func excludeDatabase(
 	filtered.Views = state.filterViews(filtered.Views)
 	filtered.Synonyms = state.filterSynonyms(filtered.Synonyms)
 	filtered.ExtendedProperties = state.filterExtendedProperties(filtered.ExtendedProperties)
+	filtered.ContinuousAggregates = state.filterContinuousAggregates(filtered.ContinuousAggregates)
 	filtered.MatViews = state.filterMatViews(filtered.MatViews)
 	filtered.Triggers = state.filterTriggers(filtered.Triggers)
 	filtered.RLSPolicies = state.filterRLSPolicies(filtered.RLSPolicies)
@@ -1110,6 +1111,27 @@ func (s *exclusionState) filterExtendedProperties(
 	return result
 }
 
+// filterContinuousAggregates drops the continuous aggregates an exclusion
+// selector names, and the ones whose schema is excluded.
+//
+// Excluding one is meaningful even though Ptah does not manage it: the
+// description carries the aggregate so a comparison can decline a declaration
+// that wants its name, and an operator who excludes it is saying they want
+// that refusal to go away. The object stays on the server either way.
+func (s *exclusionState) filterContinuousAggregates(
+	aggregates []dbschematypes.DBContinuousAggregate,
+) []dbschematypes.DBContinuousAggregate {
+	result := make([]dbschematypes.DBContinuousAggregate, 0, len(aggregates))
+	for _, aggregate := range aggregates {
+		names := s.nameCandidates(aggregate.Schema, aggregate.Name)
+		if s.matches("continuous_aggregate", names...) || s.schemaExcluded(aggregate.Schema) {
+			continue
+		}
+		result = append(result, aggregate)
+	}
+	return result
+}
+
 func (s *exclusionState) filterMatViews(views []dbschematypes.DBMatView) []dbschematypes.DBMatView {
 	result := make([]dbschematypes.DBMatView, 0, len(views))
 	for _, view := range views {
@@ -1698,27 +1720,28 @@ func stripGeneratedFieldForeignKey(field goschema.Field) goschema.Field {
 
 func cloneDatabase(schema *dbschematypes.DBSchema) *dbschematypes.DBSchema {
 	return &dbschematypes.DBSchema{
-		Schemas:            slices.Clone(schema.Schemas),
-		Tables:             slices.Clone(schema.Tables),
-		Enums:              slices.Clone(schema.Enums),
-		Indexes:            slices.Clone(schema.Indexes),
-		Constraints:        slices.Clone(schema.Constraints),
-		Extensions:         slices.Clone(schema.Extensions),
-		Functions:          slices.Clone(schema.Functions),
-		Sequences:          slices.Clone(schema.Sequences),
-		Domains:            slices.Clone(schema.Domains),
-		Composites:         slices.Clone(schema.Composites),
-		Ranges:             slices.Clone(schema.Ranges),
-		Views:              slices.Clone(schema.Views),
-		Synonyms:           slices.Clone(schema.Synonyms),
-		ExtendedProperties: slices.Clone(schema.ExtendedProperties),
-		MatViews:           slices.Clone(schema.MatViews),
-		Triggers:           slices.Clone(schema.Triggers),
-		RLSPolicies:        slices.Clone(schema.RLSPolicies),
-		Roles:              slices.Clone(schema.Roles),
-		Grants:             slices.Clone(schema.Grants),
-		RoleMemberships:    slices.Clone(schema.RoleMemberships),
-		ObjectOwners:       slices.Clone(schema.ObjectOwners),
+		Schemas:              slices.Clone(schema.Schemas),
+		Tables:               slices.Clone(schema.Tables),
+		Enums:                slices.Clone(schema.Enums),
+		Indexes:              slices.Clone(schema.Indexes),
+		Constraints:          slices.Clone(schema.Constraints),
+		Extensions:           slices.Clone(schema.Extensions),
+		Functions:            slices.Clone(schema.Functions),
+		Sequences:            slices.Clone(schema.Sequences),
+		Domains:              slices.Clone(schema.Domains),
+		Composites:           slices.Clone(schema.Composites),
+		Ranges:               slices.Clone(schema.Ranges),
+		Views:                slices.Clone(schema.Views),
+		Synonyms:             slices.Clone(schema.Synonyms),
+		ExtendedProperties:   slices.Clone(schema.ExtendedProperties),
+		ContinuousAggregates: slices.Clone(schema.ContinuousAggregates),
+		MatViews:             slices.Clone(schema.MatViews),
+		Triggers:             slices.Clone(schema.Triggers),
+		RLSPolicies:          slices.Clone(schema.RLSPolicies),
+		Roles:                slices.Clone(schema.Roles),
+		Grants:               slices.Clone(schema.Grants),
+		RoleMemberships:      slices.Clone(schema.RoleMemberships),
+		ObjectOwners:         slices.Clone(schema.ObjectOwners),
 		// Which roles the server has is a fact about the server, not part of
 		// the description a filter narrows. Dropping it here would tell the
 		// comparator that every cluster role outside the description is
