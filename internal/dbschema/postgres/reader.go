@@ -171,6 +171,12 @@ func (r *Reader) ReadSchema() (*types.DBSchema, error) {
 			return nil, fmt.Errorf("failed to read grants: %w", err)
 		}
 		schema.Grants = grants
+
+		memberships, err := r.readRoleMemberships()
+		if err != nil {
+			return nil, fmt.Errorf("failed to read role memberships: %w", err)
+		}
+		schema.RoleMemberships = memberships
 	}
 
 	// Enhance tables with constraint information
@@ -3394,6 +3400,52 @@ func (r *Reader) queryRoles(membership string) ([]types.DBRole, error) {
 	}
 
 	return roles, nil
+}
+
+// readRoleMemberships reads the role-in-role edges between the roles Ptah
+// manages.
+//
+// It is NOT scoped the way readRoles is. A membership is a property of the
+// cluster's role graph rather than of a schema, and the question it answers --
+// which roles reach which privileges through which other roles -- is wrong if
+// the answer stops at the schemas this read happened to name. A membership
+// whose other end is out of the described scope is exactly the edge an analysis
+// needs to see.
+//
+// Both ends exclude the reserved system roles, through the same
+// [reservedrole.ExcludeSQL] the role read uses, so the two lists cannot come to
+// disagree about what "reserved" means (stokaro/ptah#1950).
+func (r *Reader) readRoleMemberships() ([]types.DBRoleMembership, error) {
+	query := `
+		SELECT
+			role.rolname AS role_name,
+			member.rolname AS member_name,
+			m.admin_option
+		FROM pg_auth_members m
+		JOIN pg_roles role ON role.oid = m.roleid
+		JOIN pg_roles member ON member.oid = m.member
+		WHERE ` + reservedrole.ExcludeSQL("role.rolname") + `
+		AND ` + reservedrole.ExcludeSQL("member.rolname") + `
+		ORDER BY role.rolname, member.rolname`
+
+	rows, err := r.db.Query(query)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query role memberships: %w", err)
+	}
+	defer rows.Close()
+
+	memberships := make([]types.DBRoleMembership, 0)
+	for rows.Next() {
+		var membership types.DBRoleMembership
+		if err := rows.Scan(&membership.Role, &membership.Member, &membership.AdminOption); err != nil {
+			return nil, fmt.Errorf("failed to scan role membership: %w", err)
+		}
+		memberships = append(memberships, membership)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to read role memberships: %w", err)
+	}
+	return memberships, nil
 }
 
 func (r *Reader) readGrants(standaloneSequences map[string]bool) ([]types.DBGrant, error) {

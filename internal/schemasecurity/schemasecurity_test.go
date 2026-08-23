@@ -22,6 +22,9 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 		name     string
 		dialect  string
 		database *goschema.Database
+		// memberships is what the caller read; nil means it read none, which
+		// is a different answer from an empty slice.
+		memberships []schemasecurity.RoleMembership
 		// wantCodes are the finding codes, in the order Analyze sorts them.
 		wantCodes []string
 		// wantSkipped are the rules that did not run at all.
@@ -37,7 +40,7 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 				RLSEnabledTables: []goschema.RLSEnabledTable{{Table: "users"}},
 			},
 			wantCodes:   []string{"PRV03"},
-			wantSkipped: make([]string, 0),
+			wantSkipped: []string{"ROL03", "ROL04"},
 		},
 		{
 			name:    "the same grant to a named role is not",
@@ -49,7 +52,7 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 				RLSEnabledTables: []goschema.RLSEnabledTable{{Table: "users"}},
 			},
 			wantCodes:   make([]string, 0),
-			wantSkipped: make([]string, 0),
+			wantSkipped: []string{"ROL03", "ROL04"},
 		},
 		{
 			name:    "a SECURITY DEFINER routine is reported",
@@ -60,7 +63,7 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 				},
 			},
 			wantCodes:   []string{"PRV02"},
-			wantSkipped: make([]string, 0),
+			wantSkipped: []string{"ROL03", "ROL04"},
 		},
 		{
 			name:    "a SECURITY INVOKER routine is not",
@@ -71,7 +74,7 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 				},
 			},
 			wantCodes:   make([]string, 0),
-			wantSkipped: make([]string, 0),
+			wantSkipped: []string{"ROL03", "ROL04"},
 		},
 		{
 			name:    "a granted table with no row-level security is reported",
@@ -82,7 +85,7 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 				},
 			},
 			wantCodes:   []string{"PRV01"},
-			wantSkipped: make([]string, 0),
+			wantSkipped: []string{"ROL03", "ROL04"},
 		},
 		{
 			name:    "the same table with row-level security enabled is not",
@@ -94,7 +97,7 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 				RLSEnabledTables: []goschema.RLSEnabledTable{{Table: "users"}},
 			},
 			wantCodes:   make([]string, 0),
-			wantSkipped: make([]string, 0),
+			wantSkipped: []string{"ROL03", "ROL04"},
 		},
 		{
 			// The rule cannot be answered where the target has no such
@@ -108,7 +111,7 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 				},
 			},
 			wantCodes:   make([]string, 0),
-			wantSkipped: []string{"PRV01"},
+			wantSkipped: []string{"PRV01", "ROL03", "ROL04"},
 		},
 		{
 			// PostgreSQL creates this grant in every database; a rule that
@@ -121,7 +124,7 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 				},
 			},
 			wantCodes:   make([]string, 0),
-			wantSkipped: make([]string, 0),
+			wantSkipped: []string{"ROL03", "ROL04"},
 		},
 		{
 			// CREATE was revoked from PUBLIC by default in PostgreSQL 15, so a
@@ -134,6 +137,90 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 				},
 			},
 			wantCodes:   []string{"PRV03"},
+			wantSkipped: []string{"ROL03", "ROL04"},
+		},
+		{
+			name:    "a role nobody holds and that cannot log in is reported",
+			dialect: "postgres",
+			database: &goschema.Database{
+				Roles: []goschema.Role{{Name: "reporting", Login: false}},
+			},
+			memberships: make([]schemasecurity.RoleMembership, 0),
+			wantCodes:   []string{"ROL04"},
+			wantSkipped: make([]string, 0),
+		},
+		{
+			name:    "the same role with a member is not",
+			dialect: "postgres",
+			database: &goschema.Database{
+				Roles: []goschema.Role{{Name: "reporting", Login: false}, {Name: "alice", Login: true}},
+			},
+			memberships: []schemasecurity.RoleMembership{{Role: "reporting", Member: "alice"}},
+			wantCodes:   make([]string, 0),
+			wantSkipped: make([]string, 0),
+		},
+		{
+			// A login role is its own principal. Reporting every application
+			// account would bury the rule that matters.
+			name:    "a login role with no members is not reported",
+			dialect: "postgres",
+			database: &goschema.Database{
+				Roles: []goschema.Role{{Name: "app_user", Login: true}},
+			},
+			memberships: make([]schemasecurity.RoleMembership, 0),
+			wantCodes:   make([]string, 0),
+			wantSkipped: make([]string, 0),
+		},
+		{
+			name:    "two roles held by one member that grant the same privileges are reported",
+			dialect: "postgres",
+			database: &goschema.Database{
+				Roles: []goschema.Role{
+					{Name: "reader", Login: false},
+					{Name: "analyst", Login: false},
+					{Name: "alice", Login: true},
+				},
+				Grants: []goschema.Grant{
+					{Role: "reader", Privileges: []string{"SELECT"}, OnTable: "users"},
+					{Role: "reader", Privileges: []string{"SELECT"}, OnTable: "orders"},
+					{Role: "analyst", Privileges: []string{"SELECT"}, OnTable: "users"},
+					{Role: "analyst", Privileges: []string{"SELECT"}, OnTable: "orders"},
+				},
+				RLSEnabledTables: []goschema.RLSEnabledTable{{Table: "users"}, {Table: "orders"}},
+			},
+			memberships: []schemasecurity.RoleMembership{
+				{Role: "reader", Member: "alice"},
+				{Role: "analyst", Member: "alice"},
+			},
+			wantCodes:   []string{"ROL03"},
+			wantSkipped: make([]string, 0),
+		},
+		{
+			// One shared privilege out of two is a coincidence, not a
+			// duplicate role: below the threshold, and nothing is reported.
+			name:    "two roles that mostly differ are not",
+			dialect: "postgres",
+			database: &goschema.Database{
+				Roles: []goschema.Role{
+					{Name: "reader", Login: false},
+					{Name: "writer", Login: false},
+					{Name: "alice", Login: true},
+				},
+				Grants: []goschema.Grant{
+					{Role: "reader", Privileges: []string{"SELECT"}, OnTable: "users"},
+					{Role: "reader", Privileges: []string{"SELECT"}, OnTable: "orders"},
+					{Role: "writer", Privileges: []string{"SELECT"}, OnTable: "users"},
+					{Role: "writer", Privileges: []string{"INSERT", "UPDATE", "DELETE"}, OnTable: "audit"},
+				},
+				RLSEnabledTables: []goschema.RLSEnabledTable{
+					{Table: "users"}, {Table: "orders"}, {Table: "audit"},
+				},
+			},
+			memberships: []schemasecurity.RoleMembership{
+				{Role: "reader", Member: "alice"},
+				{Role: "writer", Member: "alice"},
+			},
+			wantCodes:   make([]string, 0),
 			wantSkipped: make([]string, 0),
 		},
 		{
@@ -141,7 +228,7 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 			dialect:     "postgres",
 			database:    &goschema.Database{},
 			wantCodes:   make([]string, 0),
-			wantSkipped: make([]string, 0),
+			wantSkipped: []string{"ROL03", "ROL04"},
 		},
 	}
 
@@ -149,7 +236,10 @@ func TestAnalyze_EachRuleHasACaseWhereItDoesNotFire(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			report := schemasecurity.Analyze(test.database, schemasecurity.Options{Capabilities: capability.ForDialect(test.dialect)})
+			report := schemasecurity.Analyze(test.database, schemasecurity.Options{
+				Capabilities:    capability.ForDialect(test.dialect),
+				RoleMemberships: test.memberships,
+			})
 
 			codes := make([]string, 0, len(report.Findings))
 			for _, finding := range report.Findings {

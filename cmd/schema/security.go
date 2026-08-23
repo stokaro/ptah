@@ -11,6 +11,7 @@ import (
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
 	"go.5x5.cz/ptah/cmd/internal/exitcode"
 	"go.5x5.cz/ptah/dbschema"
+	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlasschema"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
 	"go.5x5.cz/ptah/internal/schemasecurity"
@@ -125,7 +126,13 @@ func runSchemaSecurity(cmd *cobra.Command, opts schemaSecurityOptions) error {
 	// gated on what this server answered (stokaro/ptah#1230).
 	report := schemasecurity.Analyze(
 		dbschematogo.ConvertDBSchemaToGoSchema(live),
-		schemasecurity.Options{Capabilities: conn.Info().Capabilities},
+		schemasecurity.Options{
+			Capabilities: conn.Info().Capabilities,
+			// Non-nil even when the server has no memberships: this caller DID
+			// read them, and the rules that need them must run rather than
+			// report themselves skipped (stokaro/ptah#1950).
+			RoleMemberships: roleMemberships(live),
+		},
 	)
 
 	if err := writeSecurityReport(cmd.OutOrStdout(), opts.format, report); err != nil {
@@ -136,6 +143,22 @@ func runSchemaSecurity(cmd *cobra.Command, opts schemaSecurityOptions) error {
 			securityFailOnFlag, opts.failOn))
 	}
 	return nil
+}
+
+// roleMemberships carries the live role graph into the analysis.
+//
+// The conversion to a desired-state schema drops it, because Ptah does not
+// model membership as a desired state -- it is a property of the cluster's role
+// graph, and the analyzer takes it as its own input for exactly that reason.
+func roleMemberships(live *dbschematypes.DBSchema) []schemasecurity.RoleMembership {
+	memberships := make([]schemasecurity.RoleMembership, 0, len(live.RoleMemberships))
+	for _, membership := range live.RoleMemberships {
+		memberships = append(memberships, schemasecurity.RoleMembership{
+			Role:   membership.Role,
+			Member: membership.Member,
+		})
+	}
+	return memberships
 }
 
 // validateSecurityFailOn rejects a threshold nothing understands, rather than
