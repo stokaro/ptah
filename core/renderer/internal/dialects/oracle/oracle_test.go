@@ -79,8 +79,8 @@ func TestObjectGuards_FollowTheMeasuredVersionStep(t *testing.T) {
 	c.Assert(render(c, capability.Oracle21(), index), qt.Equals,
 		"CREATE UNIQUE INDEX idx_ora_posts_title ON ora_posts (title);\n")
 
-	c.Assert(render(c, capability.Oracle23(), drop), qt.Equals, "DROP TABLE IF EXISTS ora_posts;\n")
-	c.Assert(render(c, capability.Oracle21(), drop), qt.Equals, "DROP TABLE ora_posts;\n")
+	c.Assert(render(c, capability.Oracle23(), drop), qt.Equals, "DROP TABLE IF EXISTS ora_posts PURGE;\n")
+	c.Assert(render(c, capability.Oracle21(), drop), qt.Equals, "DROP TABLE ora_posts PURGE;\n")
 }
 
 // TestIdentifiers_AreBareUntilOracleRefusesThemBare holds the decision that

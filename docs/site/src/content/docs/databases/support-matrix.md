@@ -473,8 +473,30 @@ and an enum becomes `VARCHAR2(255)` with a `CHECK` listing its values.
 
 The `IF [NOT] EXISTS` guards are a 23-line feature. On 21 they are refused, and
 the capability preset for that line reflects it, so a plan for a 21 server omits
-them. What remains for Oracle is tracked by
-[#1875](https://github.com/stokaro/ptah/issues/1875).
+them.
+
+**Domains are a 23-line feature too**, and the only object where the two lines
+differ rather than the spelling of a guard. Oracle 23 has a real `CREATE
+DOMAIN`; Oracle 21 answers `ORA-00901` to it and has no `ALL_DOMAINS` view at
+all. So a declared domain is planned, rendered, read back and compared on 23,
+and on 21 it is refused before any SQL — a column declared with a type the
+target cannot create would be left naming something the server has no
+definition of.
+
+Two things about Oracle's own catalog are worth knowing, because they decide
+whether a domain converges. A domain declared `NOT NULL` grows a `CHECK` of its
+own, named by the server and numbered per database, and Ptah reads the
+nullability off the column instead so the plan does not carry that constraint
+back and forth. And `DROP TABLE` is rendered with `PURGE`: a dropped table
+keeps its dependencies in the recycle bin, and a plan that drops a table and
+then the domain its column was typed by answers
+`ORA-11538 ... has dependent objects in the recycle bin` halfway through. The
+alternative, `DROP DOMAIN ... FORCE`, is worse — with a live dependent it
+succeeds and silently untypes the column.
+
+What remains for Oracle is tracked by
+[#1875](https://github.com/stokaro/ptah/issues/1875) and
+[#1920](https://github.com/stokaro/ptah/issues/1920).
 
 ## PostgreSQL-compatible distributed targets
 

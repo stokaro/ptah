@@ -1212,6 +1212,10 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 	// grant names a role that has to exist.
 	result = p.planRoles(result, diff, generated)
 
+	// 0a3. Plan the domains this target does host, before tables: a column may
+	// be declared with the domain as its type.
+	result = p.planDomains(result, diff, generated)
+
 	// 0b. Plan the stored functions this target does host. Functions are
 	// planned before tables because a generated column or a CHECK constraint
 	// may call one, and the function must exist first.
@@ -1311,6 +1315,10 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 
 	// 7a. Remove sequences after the tables whose defaults drew from them.
 	result = p.removeSequences(result, diff)
+
+	// 7a2. Remove domains after the tables whose columns were typed by them:
+	// Oracle answers ORA-11502 to a domain that still has dependents.
+	result = p.removeDomains(result, diff)
 
 	// 7b. Revoke, then drop the roles, after the tables their grants named.
 	result = p.removeGrantsAndRoles(result, diff)

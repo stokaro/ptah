@@ -496,12 +496,12 @@ var Cells = []Cell{
 			// statement the server refuses, and each was measured ACCEPTED on
 			// this line while the preset reads false (stokaro/ptah#1875).
 			//
-			// role_management left this list in stokaro/ptah#1920: the
-			// renderer emits CREATE ROLE, DROP ROLE, GRANT and REVOKE, and the
-			// reader reads DBA_ROLES and ALL_TAB_PRIVS, so the preset now says
-			// true and there is nothing to understate.
-			capability.DomainTypes: "Oracle 23 has CREATE DOMAIN and the probe confirms it -- the domain is usable " +
-				"as a column type and enforces its own NOT NULL -- while Ptah's Oracle renderer emits no domain",
+			// role_management left this list in stokaro/ptah#1920, and
+			// domain_types left it in the same issue: the renderer emits
+			// CREATE ROLE, DROP ROLE, GRANT, REVOKE and CREATE DOMAIN, and the
+			// reader reads DBA_ROLES, ALL_TAB_PRIVS and ALL_DOMAINS, so both
+			// presets now say true and there is nothing left to understate for
+			// either.
 			capability.Functions: "PL/SQL function bodies are their own language rather than the language-plus-body " +
 				"shape ast.CreateFunctionNode carries, so the renderer refuses them",
 			capability.Procedures: "the same reason as functions: CREATE PROCEDURE is accepted here and the renderer " +

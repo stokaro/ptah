@@ -178,7 +178,7 @@ func ConnectToDatabase(ctx context.Context, dbURL string) (*DatabaseConnection, 
 		}
 	case "oracle":
 		newReader = func(runner sqlrunner.Runner) types.SchemaReader {
-			return oracle.NewOracleReader(runner, info.Schema)
+			return oracle.NewOracleReaderWithCapabilities(runner, info.Schema, info.Capabilities)
 		}
 		newWriter = func(runner sqlrunner.Runner, _ *sql.Conn) types.SchemaWriter {
 			return oracle.NewOracleWriterForRunner(runner, info.Schema)

@@ -83,10 +83,15 @@ func TestOracleResolution(t *testing.T) {
 	}
 }
 
-// TestOraclePresets_DifferOnlyInTheGuards states the whole distance between the
-// two measured lines, so a later edit that changes another key has to say so
-// here.
-func TestOraclePresets_DifferOnlyInTheGuards(t *testing.T) {
+// TestOraclePresets_DifferOnlyInTheGuardsAndDomains states the whole distance
+// between the two measured lines, so a later edit that changes another key has
+// to say so here.
+//
+// domain_types joined the list in stokaro/ptah#1920, and it is the first key
+// here that is not a guard: 23 has a real CREATE DOMAIN and 21 answers
+// ORA-00901, so the difference is the object rather than the spelling of an
+// IF EXISTS.
+func TestOraclePresets_DifferOnlyInTheGuardsAndDomains(t *testing.T) {
 	c := qt.New(t)
 
 	newer := capability.Oracle23()
@@ -103,6 +108,7 @@ func TestOraclePresets_DifferOnlyInTheGuards(t *testing.T) {
 		names = append(names, string(key))
 	}
 	c.Assert(names, qt.ContentEquals, []string{
+		string(capability.DomainTypes),
 		string(capability.DropIndexIfExists),
 		string(capability.ObjectExistenceGuards),
 	})

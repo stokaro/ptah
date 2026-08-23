@@ -20,6 +20,7 @@ import (
 	"strconv"
 	"strings"
 
+	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/sqlrunner"
 )
@@ -28,6 +29,7 @@ import (
 type Reader struct {
 	db     sqlrunner.Runner
 	schema string
+	caps   capability.Capabilities
 }
 
 // NewOracleReader constructs a reader scoped to one schema.
@@ -38,7 +40,28 @@ type Reader struct {
 // name to fall back to. The connection layer fills it from
 // SYS_CONTEXT('USERENV', 'CURRENT_SCHEMA').
 func NewOracleReader(db sqlrunner.Runner, schema string) *Reader {
-	return &Reader{db: db, schema: strings.ToUpper(strings.TrimSpace(schema))}
+	return NewOracleReaderWithCapabilities(db, schema, capability.Oracle23())
+}
+
+// NewOracleReaderWithCapabilities is NewOracleReader told which release line it
+// is reading.
+//
+// One read is gated on it, and the gate is not an optimization: ALL_DOMAINS
+// does not exist on Oracle 21, and a query naming a relation the server does
+// not have fails the STATEMENT -- which, inside a transaction, leaves every
+// later read answering that the transaction is aborted rather than answering
+// the question asked. Deciding from the preset means the statement is never
+// sent (stokaro/ptah#1920).
+func NewOracleReaderWithCapabilities(
+	db sqlrunner.Runner,
+	schema string,
+	caps capability.Capabilities,
+) *Reader {
+	return &Reader{
+		db:     db,
+		schema: strings.ToUpper(strings.TrimSpace(schema)),
+		caps:   caps.Clone(),
+	}
 }
 
 // ReadSchema reads the objects Ptah renders for Oracle.
@@ -85,6 +108,14 @@ func (r *Reader) ReadSchema() (*types.DBSchema, error) {
 
 	if err := r.readRolesInto(schema); err != nil {
 		return nil, fmt.Errorf("oracle: %w", err)
+	}
+
+	if r.caps.Has(capability.DomainTypes) {
+		domains, err := r.readDomains()
+		if err != nil {
+			return nil, fmt.Errorf("oracle: read domains: %w", err)
+		}
+		schema.Domains = domains
 	}
 
 	markKeyColumns(schema)
