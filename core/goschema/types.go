@@ -982,10 +982,10 @@ type Synonym struct {
 // decoration on a value: they ARE the identity, and two properties of the same
 // name at different addresses are two different properties.
 //
-// Which levels are set decides the scope. Schema alone is a schema-scoped
-// property; adding Table addresses the table; adding Column addresses a column
-// of it. Column without Table is refused, because SQL Server has no level 2
-// without a level 1.
+// Which levels are set decides the scope. No level at all is the DATABASE's own
+// property; Schema alone is a schema-scoped one; adding Table addresses the
+// table; adding Column addresses a column of it. A level without the one above
+// it is refused, because SQL Server has no level N without a level N-1.
 //
 // MS_Description is refused by name. Ptah already models it as the object's
 // comment -- the reader turns it into one and the renderer writes it as one --
@@ -1008,6 +1008,9 @@ type ExtendedProperty struct {
 // QualifiedOwner names the object the property is attached to, as
 // schema.table.column, omitting the levels that are absent.
 func (p ExtendedProperty) QualifiedOwner() string {
+	if strings.TrimSpace(p.Schema) == "" {
+		return "(database)"
+	}
 	parts := []string{p.Schema}
 	if strings.TrimSpace(p.Table) != "" {
 		parts = append(parts, p.Table)

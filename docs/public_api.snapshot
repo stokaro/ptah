@@ -4938,10 +4938,10 @@ type ExtendedProperty struct {
     decoration on a value: they ARE the identity, and two properties of the same
     name at different addresses are two different properties.
 
-    Which levels are set decides the scope. Schema alone is a schema-scoped
-    property; adding Table addresses the table; adding Column addresses a column
-    of it. Column without Table is refused, because SQL Server has no level 2
-    without a level 1.
+    Which levels are set decides the scope. No level at all is the DATABASE's
+    own property; Schema alone is a schema-scoped one; adding Table addresses
+    the table; adding Column addresses a column of it. A level without the one
+    above it is refused, because SQL Server has no level N without a level N-1.
 
     MS_Description is refused by name. Ptah already models it as the object's
     comment -- the reader turns it into one and the renderer writes it as one
@@ -7234,20 +7234,19 @@ type DBExtendedProperty struct {
     sys.extended_properties.
 
     SQL Server hangs a property off a three-level address, and this type carries
-    the two levels Ptah manages. Schema alone is a schema-scoped property (class
-    3); Schema and Table together are an object-scoped one, and adding Column
-    addresses a column of it (class 1, minor_id 0 or the column's id).
+    it. No level at all is a DATABASE-scoped property (class 0); Schema alone is
+    a schema-scoped one (class 3); Schema and Table together are object-scoped,
+    and adding Column addresses a column of it (class 1, minor_id 0 or the
+    column's id).
 
-    Two kinds of row are deliberately absent, and each for its own reason.
+    A database-scoped property is in no schema, so a read narrowed to one
+    still carries it -- the rule an extension already follows, where placement
+    is not ownership. Dropping it from a narrowed description would plan
+    sp_dropextendedproperty for a property the declaration still names.
 
-    A DATABASE-scoped property (class 0) has no schema and no object to hang
-    off, and how a database-scoped object lives beside a schema-scoped model
-    is a design question rather than a field (stokaro/ptah#1031). It is left
-    unread, so nothing describes it and nothing plans against it.
-
-    MS_Description is not read here either, because Ptah already models it: the
-    reader turns it into the object's Comment, and reporting it twice would let
-    the comment comparator and this one plan the same change from two places.
+    MS_Description is not read here, because Ptah already models it: the reader
+    turns it into the object's Comment, and reporting it twice would let the
+    comment comparator and this one plan the same change from two places.
     The declaration side refuses it by name for the same reason, and says to use
     the comment instead.
 

@@ -360,11 +360,11 @@
               "type": "string"
             },
             "schema": {
-              "description": "Schema the property is on, or that owns the addressed table.",
+              "description": "Schema the property is on, or that owns the addressed table. Omit for a database-scoped property.",
               "type": "string"
             },
             "table": {
-              "description": "Table the property is on. Omit for a schema-scoped property.",
+              "description": "Table the property is on. Requires schema; omit for a schema-scoped property.",
               "type": "string"
             },
             "value": {
@@ -374,7 +374,6 @@
           },
           "required": [
             "name",
-            "schema",
             "value"
           ],
           "type": "object"

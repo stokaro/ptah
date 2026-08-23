@@ -231,3 +231,112 @@ func findExtendedProperty(
 	c.Fatalf("extended property %q on %q is absent from the read schema", name, table)
 	return dbschematypes.DBExtendedProperty{}
 }
+
+// TestSQLServerLiveDatabaseScopedExtendedPropertyRoundTrip is the scope with
+// no object in it.
+//
+// A class 0 property belongs to the database rather than to a schema, and the
+// statement that writes it passes no level at all. That is not an omission: an
+// empty @level0name would be a property on a schema called "", which the
+// procedure also accepts and which belongs to nothing — so the address the
+// renderer writes is asserted rather than inferred from the round trip
+// (stokaro/ptah#1031).
+//
+// The schema-scoped property beside it is the control. Both are read by one
+// query, and a database arm that had been scoped by the schema predicate would
+// return the schema one and lose this.
+func TestSQLServerLiveDatabaseScopedExtendedPropertyRoundTrip(t *testing.T) {
+	dbURL := dbtarget.URL(t, dbtarget.SQLServer)
+	c := qt.New(t)
+	ctx := t.Context()
+
+	conn, err := dbschema.ConnectToDatabase(ctx, dbURL)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+
+	suffix := time.Now().UnixNano()
+	databaseProperty := fmt.Sprintf("ptah_db_%d", suffix)
+	schemaProperty := fmt.Sprintf("ptah_schema_%d", suffix)
+	defer func() {
+		_, _ = conn.ExecContext(ctx, fmt.Sprintf(
+			"EXEC sp_dropextendedproperty @name = N'%s'", databaseProperty))
+		_, _ = conn.ExecContext(ctx, fmt.Sprintf(
+			"EXEC sp_dropextendedproperty @name = N'%s', @level0type = N'SCHEMA', @level0name = N'dbo'",
+			schemaProperty))
+	}()
+
+	description := &goschema.Database{
+		ExtendedProperties: []goschema.ExtendedProperty{
+			{StructName: "DB", Name: databaseProperty, Value: "database scope"},
+			{StructName: "DB", Name: schemaProperty, Schema: "dbo", Value: "schema scope"},
+		},
+	}
+
+	statements, err := renderer.GetOrderedCreateStatements(description, platform.SQLServer)
+	c.Assert(err, qt.IsNil)
+	rendered := strings.Join(statements, "\n")
+	// The database property passes no level; the schema one passes level 0.
+	c.Assert(rendered, qt.Contains,
+		"EXEC sp_addextendedproperty @name = N'"+databaseProperty+"', @value = N'database scope';")
+	c.Assert(rendered, qt.Contains,
+		"@name = N'"+schemaProperty+"', @value = N'schema scope', @level0type = N'SCHEMA', @level0name = N'dbo';")
+	for _, statement := range statements {
+		_, execErr := conn.ExecContext(ctx, statement)
+		c.Assert(execErr, qt.IsNil, qt.Commentf("statement:\n%s", statement))
+	}
+
+	live, err := dbschema.ReadSchemaWithSchemas(conn, []string{"dbo"})
+	c.Assert(err, qt.IsNil)
+
+	found := findExtendedPropertyByName(c, live.ExtendedProperties, databaseProperty)
+	c.Assert(found.Schema, qt.Equals, "")
+	c.Assert(found.Table, qt.Equals, "")
+	c.Assert(found.Value, qt.Equals, "database scope")
+	c.Assert(found.QualifiedOwner(), qt.Equals, "(database)")
+
+	settled := schemadiff.CompareWithDialect(description, live, platform.SQLServer)
+	c.Assert(extendedPropertiesNamed(settled.ExtendedPropertiesAdded, databaseProperty), qt.HasLen, 0)
+	c.Assert(extendedPropertiesNamed(settled.ExtendedPropertiesRemoved, databaseProperty), qt.HasLen, 0)
+	c.Assert(modifiedExtendedPropertiesNamed(settled.ExtendedPropertiesModified, databaseProperty), qt.HasLen, 0)
+}
+
+func findExtendedPropertyByName(
+	c *qt.C,
+	properties []dbschematypes.DBExtendedProperty,
+	name string,
+) dbschematypes.DBExtendedProperty {
+	c.Helper()
+	for _, property := range properties {
+		if property.Name == name {
+			return property
+		}
+	}
+	c.Fatalf("extended property %q is absent from the read schema", name)
+	return dbschematypes.DBExtendedProperty{}
+}
+
+func extendedPropertiesNamed(
+	refs []difftypes.ExtendedPropertyRef,
+	name string,
+) []difftypes.ExtendedPropertyRef {
+	var found []difftypes.ExtendedPropertyRef
+	for _, ref := range refs {
+		if ref.Name == name {
+			found = append(found, ref)
+		}
+	}
+	return found
+}
+
+func modifiedExtendedPropertiesNamed(
+	diffs []difftypes.ExtendedPropertyDiff,
+	name string,
+) []difftypes.ExtendedPropertyDiff {
+	var found []difftypes.ExtendedPropertyDiff
+	for _, diff := range diffs {
+		if diff.Name == name {
+			found = append(found, diff)
+		}
+	}
+	return found
+}

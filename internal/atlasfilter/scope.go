@@ -628,6 +628,26 @@ func (s *scopeSelection) selectedExtension(schema, name string) bool {
 	return true
 }
 
+// selectedDatabaseProperty applies the include selectors to a SQL Server
+// extended property that is in no schema.
+//
+// It is selectedExtension's rule, for selectedExtension's reason: a
+// database-scoped property belongs to the database rather than to a schema, so
+// --schema neither selects nor removes it. An include selection that names no
+// extended property leaves it as non-removing support.
+func (s *scopeSelection) selectedDatabaseProperty(name string) bool {
+	if len(s.selectors) == 0 {
+		return true
+	}
+	for _, selector := range s.selectors {
+		if selector.matches("extended_property", name) {
+			s.matched = true
+			return true
+		}
+	}
+	return false
+}
+
 func (s *scopeSelection) extensionMatches(schema, name string) bool {
 	names := extensionNameCandidates(s.effectiveExtensionSchema(schema), name)
 	for _, selector := range s.selectors {
