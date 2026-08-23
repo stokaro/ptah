@@ -13,7 +13,6 @@ import (
 	qt "github.com/frankban/quicktest"
 	_ "github.com/jackc/pgx/v5/stdlib"
 
-	atlascmd "go.5x5.cz/ptah/cmd/atlas"
 	"go.5x5.cz/ptah/dbschema"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/dbtarget"
@@ -215,16 +214,4 @@ func describedAggregateNames(schema *dbschematypes.DBSchema) []string {
 		names = append(names, strings.ToLower(aggregate.Name))
 	}
 	return names
-}
-
-// runAtlasCompat runs one ptah-compat invocation in process and returns
-// everything it wrote, diagnostics included -- which is where the note is.
-func runAtlasCompat(args ...string) (string, error) {
-	cmd := atlascmd.NewCompatCommand("atlas")
-	var out bytes.Buffer
-	cmd.SetOut(&out)
-	cmd.SetErr(&out)
-	cmd.SetArgs(args)
-	err := cmd.Execute()
-	return out.String(), err
 }
