@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/internal/atlasurl"
 	"go.5x5.cz/ptah/internal/schemaselection"
 )
 
@@ -52,7 +53,7 @@ func explainRefusedStartupParameter(dbURL, dialect string, err error) error {
 	if parameter == "" {
 		return err
 	}
-	if strings.TrimSpace(schemaselection.FromURL(dbURL).Raw) == "" || parameter != "search_path" {
+	if strings.TrimSpace(schemaselection.FromURL(dbURL).Raw) == "" || parameter != searchPathParameter {
 		return fmt.Errorf(
 			"the database URL carries the startup parameter %q, which the server or the proxy in "+
 				"front of it refuses: %w", parameter, err)
@@ -85,3 +86,33 @@ func refusedStartupParameter(err error) string {
 	name, _, _ := strings.Cut(after, " ")
 	return strings.TrimSpace(strings.Trim(name, `"`))
 }
+
+// urlWithoutSearchPath removes the schema selection from a PostgreSQL URL, so a
+// connection refused over the startup parameter can be retried without it.
+//
+// It answers false whenever there is nothing to retry: another dialect, another
+// refused parameter, a URL carrying no selection, or a URL that will not parse.
+// The caller then reports the failure it already has rather than opening a
+// second connection that fails the same way.
+func urlWithoutSearchPath(dbURL, dialect string, err error) (string, bool) {
+	if err == nil || !platform.IsPostgresFamily(dialect) {
+		return "", false
+	}
+	if refusedStartupParameter(err) != searchPathParameter {
+		return "", false
+	}
+	if strings.TrimSpace(schemaselection.FromURL(dbURL).Raw) == "" {
+		return "", false
+	}
+	parsed, parseErr := atlasurl.Parse(dbURL)
+	if parseErr != nil {
+		return "", false
+	}
+	query := parsed.Query()
+	query.Del(searchPathParameter)
+	parsed.RawQuery = query.Encode()
+	return parsed.String(), true
+}
+
+// searchPathParameter is the startup parameter a schema selection travels in.
+const searchPathParameter = "search_path"

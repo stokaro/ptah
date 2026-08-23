@@ -81,10 +81,14 @@ func ConnectToDatabase(ctx context.Context, dbURL string) (*DatabaseConnection, 
 
 	// Test the connection — honor the caller-supplied context so a stuck or
 	// slow host cannot block ConnectToDatabase indefinitely.
+	resolveSchema := resolveSchemaFromSession
 	if err := db.PingContext(ctx); err != nil {
 		_ = db.Close()
-		return nil, fmt.Errorf("failed to ping database: %w",
-			explainRefusedStartupParameter(dbURL, dialect, err))
+		retried, retryErr := reconnectCarryingSearchPath(ctx, dbURL, dialectProtocol, dialect, err)
+		if retryErr != nil {
+			return nil, retryErr
+		}
+		db, resolveSchema = retried, resolveSchemaFromCarriedSelection
 	}
 
 	// Get database info
@@ -94,6 +98,7 @@ func ConnectToDatabase(ctx context.Context, dbURL string) (*DatabaseConnection, 
 		dialect,
 		parsedURL,
 		dbURL,
+		resolveSchema,
 	)
 	if err != nil {
 		_ = db.Close()
@@ -290,8 +295,9 @@ func getDatabaseInfoWithCapabilities(
 	dialect string,
 	parsedURL *url.URL,
 	dbURL string,
+	resolveSchema schemaResolver,
 ) (types.DBInfo, capability.VersionResolution, error) {
-	info, err := getDatabaseInfo(ctx, db, dialect, parsedURL, dbURL)
+	info, err := getDatabaseInfo(ctx, db, dialect, parsedURL, dbURL, resolveSchema)
 	if err != nil {
 		return types.DBInfo{}, capability.VersionResolution{}, err
 	}
@@ -1027,7 +1033,14 @@ func isSecretQueryParam(key string) bool {
 }
 
 // getDatabaseInfo retrieves database metadata
-func getDatabaseInfo(ctx context.Context, db *sql.DB, dialect string, parsedURL *url.URL, originalURL string) (types.DBInfo, error) {
+func getDatabaseInfo(
+	ctx context.Context,
+	db *sql.DB,
+	dialect string,
+	parsedURL *url.URL,
+	originalURL string,
+	resolveSchema schemaResolver,
+) (types.DBInfo, error) {
 	info := types.DBInfo{
 		Dialect:             dialect,
 		URL:                 originalURL,
@@ -1057,7 +1070,7 @@ func getDatabaseInfo(ctx context.Context, db *sql.DB, dialect string, parsedURL 
 		// Why a selection that resolves to nothing is refused rather than folded
 		// back to "public" is documented on [schemaselection.Selection.Resolve],
 		// next to the code that decides it.
-		schema, err := schemaselection.FromParsedURL(parsedURL).Resolve(ctx, db)
+		schema, err := resolveSchema(ctx, db, parsedURL)
 		if err != nil {
 			return info, err
 		}
@@ -1435,4 +1448,85 @@ func removePostgresPoolParams(dbURL string) string {
 	q.Del("pool_min_conns")
 	parsedURL.RawQuery = q.Encode()
 	return parsedURL.String()
+}
+
+// reconnectCarryingSearchPath opens the connection a second time without the
+// schema selection, for the one failure that is about SENDING it rather than
+// about the database.
+//
+// A `?search_path=` on a PostgreSQL URL is a STARTUP parameter, and a
+// transaction-pooling proxy refuses the whole connection for a parameter
+// outside its allow-list rather than ignoring it:
+//
+//	FATAL: unsupported startup parameter: search_path (SQLSTATE 08P01)
+//
+// Nothing about the schema itself is wrong there. Measured on PgBouncer 1.25.2
+// in transaction mode against PostgreSQL 17, one server reached two ways: the
+// same URL without the parameter connects, and `schema inspect --schemas app`
+// through the proxy produces a document byte-identical to
+// `?search_path=app` direct. An apply through the proxy emits
+// `ALTER TABLE "app"."widget"` and the column lands in `app`. So neither the
+// read nor the write depends on a session `search_path`; only the URL spelling
+// did (stokaro/ptah#1029).
+//
+// The retry is triggered by the refusal and by nothing else. A direct server
+// never answers it, so a direct connection is opened once and behaves exactly
+// as it did -- which is what keeps this from being a change to every
+// PostgreSQL run.
+//
+// When there is nothing to retry the original failure is returned, explained,
+// because the operator's next step is then about the URL rather than about the
+// proxy.
+func reconnectCarryingSearchPath(
+	ctx context.Context,
+	dbURL, dialectProtocol, dialect string,
+	pingErr error,
+) (*sql.DB, error) {
+	retryURL, retryable := urlWithoutSearchPath(dbURL, dialect, pingErr)
+	if !retryable {
+		return nil, fmt.Errorf("failed to ping database: %w",
+			explainRefusedStartupParameter(dbURL, dialect, pingErr))
+	}
+
+	slog.Debug(
+		"reconnecting without the schema selection: the server refused it as a startup parameter",
+		"parameter", "search_path",
+		"selection", schemaselection.FromURL(dbURL).Raw,
+	)
+
+	_, connectionString := databaseDriverConfig(dialect, retryURL)
+	db, err := sql.Open(dialectProtocol, connectionString)
+	if err != nil {
+		return nil, fmt.Errorf("failed to open database connection: %w", err)
+	}
+	if err := db.PingContext(ctx); err != nil {
+		_ = db.Close()
+		// The second failure is the one to report: the first was about a
+		// parameter this connection no longer sends.
+		return nil, fmt.Errorf("failed to ping database: %w",
+			explainRefusedStartupParameter(retryURL, dialect, err))
+	}
+	return db, nil
+}
+
+// schemaResolver answers which schema a PostgreSQL-family connection works in.
+//
+// It is a function rather than a flag because the two answers come from two
+// different places, not from two branches of one: the session knows for a
+// connection that could send the selection, and the URL knows for one that
+// could not.
+type schemaResolver func(ctx context.Context, db *sql.DB, parsedURL *url.URL) (string, error)
+
+// resolveSchemaFromSession asks the server what this session resolved to, which
+// accounts for a `search_path` naming several schemas, a schema the URL did not
+// name, and the connection default.
+func resolveSchemaFromSession(ctx context.Context, db *sql.DB, parsedURL *url.URL) (string, error) {
+	return schemaselection.FromParsedURL(parsedURL).Resolve(ctx, db)
+}
+
+// resolveSchemaFromCarriedSelection is the answer for a connection that could
+// not SEND the selection, where the session reports the connection default for
+// a URL that named something else.
+func resolveSchemaFromCarriedSelection(ctx context.Context, db *sql.DB, parsedURL *url.URL) (string, error) {
+	return schemaselection.FromParsedURL(parsedURL).ResolveCarried(ctx, db)
 }
