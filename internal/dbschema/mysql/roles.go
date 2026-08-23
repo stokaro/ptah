@@ -237,5 +237,100 @@ func (r *Reader) readRolesInto(schema *types.DBSchema, dbName string) error {
 		return nil
 	}
 	schema.Grants = grants
+
+	memberships, err := r.readRoleMemberships()
+	if err != nil {
+		if !isRoleReadDenied(err) {
+			return fmt.Errorf("failed to read role memberships: %w", err)
+		}
+		// The graph travels with the roles for the same reason the grants do: a
+		// description holding roles and no memberships reads as "nobody holds
+		// these", which is a claim this account could not check.
+		schema.Roles = nil
+		schema.Grants = nil
+		schema.NotDescribed = schema.NotDescribed.WithKind(coverage.Role)
+		return nil
+	}
+	schema.RoleMemberships = memberships
 	return nil
+}
+
+// membershipTable picks the table this server records the role graph in.
+//
+// The two engines record the same edge in different tables, and the catalog is
+// asked which one exists rather than the dialect name -- the same rule
+// rolePredicate follows. MySQL 8.4 has mysql.role_edges with FROM_USER and
+// TO_USER; MariaDB 11.8 has mysql.roles_mapping with Role and User, and no
+// role_edges at all, so a query written for one does not degrade on the other,
+// it fails (stokaro/ptah#1950).
+func (r *Reader) membershipTable() (query string, found bool, err error) {
+	var hasRoleEdges int
+	if err := r.db.QueryRow(`
+		SELECT COUNT(*)
+		FROM information_schema.tables
+		WHERE table_schema = 'mysql' AND table_name = 'role_edges'`).Scan(&hasRoleEdges); err != nil {
+		return "", false, err
+	}
+	if hasRoleEdges > 0 {
+		return `
+			SELECT FROM_USER AS role_name, TO_USER AS member_name,
+			       WITH_ADMIN_OPTION = 'Y' AS admin_option
+			FROM mysql.role_edges
+			ORDER BY FROM_USER, TO_USER`, true, nil
+	}
+
+	var hasRolesMapping int
+	if err := r.db.QueryRow(`
+		SELECT COUNT(*)
+		FROM information_schema.tables
+		WHERE table_schema = 'mysql' AND table_name = 'roles_mapping'`).Scan(&hasRolesMapping); err != nil {
+		return "", false, err
+	}
+	if hasRolesMapping > 0 {
+		return `
+			SELECT Role AS role_name, User AS member_name,
+			       Admin_option = 'Y' AS admin_option
+			FROM mysql.roles_mapping
+			WHERE User <> ''
+			ORDER BY Role, User`, true, nil
+	}
+	return "", false, nil
+}
+
+// readRoleMemberships reports the role-in-role edges this server holds.
+//
+// A server old enough to have neither table has no role graph to read, and
+// answers an empty list rather than an error: roles arrived in MySQL 8.0 and
+// MariaDB 10.0.5, and a 5.7 server is describing a world where the question
+// does not exist.
+func (r *Reader) readRoleMemberships() ([]types.DBRoleMembership, error) {
+	query, found, err := r.membershipTable()
+	if err != nil {
+		return nil, err
+	}
+	memberships := make([]types.DBRoleMembership, 0)
+	if !found {
+		return memberships, nil
+	}
+
+	rows, err := r.db.Query(query)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var membership types.DBRoleMembership
+		if err := rows.Scan(&membership.Role, &membership.Member, &membership.AdminOption); err != nil {
+			return nil, err
+		}
+		if membership.Role == "" || membership.Member == "" {
+			continue
+		}
+		memberships = append(memberships, membership)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return memberships, nil
 }
