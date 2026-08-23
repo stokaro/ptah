@@ -30,20 +30,18 @@ func TestAFormatThatCannotExpressAKindSaysSoAndSaysWhy(t *testing.T) {
 			name:     "HCL cannot name a virtual table",
 			file:     "schema.hcl",
 			contents: "schema \"main\" {\n}\n",
-			want: []coverage.Object{{
-				Kind:       coverage.VirtualTable,
-				Reason:     coverage.Unsupported,
-				Provenance: coverage.DerivedFromFact,
-			}},
+			want: unsupportedRecords(
+				coverage.ExtendedProperty, coverage.Synonym, coverage.VirtualTable),
 		},
 		{
-			// The control. A `.sql` document CAN name one, so it claims full
-			// authority and carries no record -- without this row a loader that
-			// recorded the limit for every format would pass the row above.
+			// The control on the virtual table. A `.sql` document CAN name one,
+			// so it carries no record for that kind -- without this row a
+			// loader that recorded the limit for every format would pass the
+			// row above. The two kinds NO format expresses stay recorded.
 			name:     "SQL can",
 			file:     "schema.sql",
 			contents: "CREATE TABLE users (id INTEGER PRIMARY KEY);\n",
-			want:     nil,
+			want:     unsupportedRecords(coverage.ExtendedProperty, coverage.Synonym),
 		},
 	}
 
@@ -59,4 +57,20 @@ func TestAFormatThatCannotExpressAKindSaysSoAndSaysWhy(t *testing.T) {
 			c.Assert(database.NotDescribed.Objects, qt.DeepEquals, test.want)
 		})
 	}
+}
+
+// unsupportedRecords is the shape every limit this loader records has: the
+// format cannot express the family, which follows from which format it is.
+// Listing the kinds rather than asserting a length is what makes a limit added
+// to the wrong branch visible.
+func unsupportedRecords(kinds ...coverage.Kind) []coverage.Object {
+	records := make([]coverage.Object, 0, len(kinds))
+	for _, kind := range kinds {
+		records = append(records, coverage.Object{
+			Kind:       kind,
+			Reason:     coverage.Unsupported,
+			Provenance: coverage.DerivedFromFact,
+		})
+	}
+	return records
 }
