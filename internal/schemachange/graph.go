@@ -126,9 +126,12 @@ func orderedAgainstTable(change Change, table objectidentity.ID, kind EdgeKind, 
 // desired state.
 func changePayload(change Change) *schemastate.ForeignKey {
 	if change.After != nil {
-		return change.After
+		return change.After.ForeignKey
 	}
-	return change.Before
+	if change.Before != nil {
+		return change.Before.ForeignKey
+	}
+	return nil
 }
 
 // owningTable resolves the table that carries a constraint, from the identity

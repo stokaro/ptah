@@ -187,9 +187,15 @@ func liveDescription(onDelete string) *goschema.Database {
 			{StructName: "Parent", Name: "id", Type: "integer", Primary: true},
 			{StructName: "Child", Name: "id", Type: "integer", Primary: true},
 			{
-				StructName:     "Child",
-				Name:           "parent_id",
-				Type:           "integer",
+				StructName: "Child",
+				Name:       "parent_id",
+				Type:       "integer",
+				// Nullable matches the catalog fixture below and the live
+				// `CREATE TABLE child (... parent_id integer)`, which is
+				// nullable. The two disagreed about it and nothing noticed
+				// while the comparison read constraints only; a column
+				// comparison reads it (stokaro/ptah#1662).
+				Nullable:       true,
 				Foreign:        "parent(id)",
 				ForeignKeyName: "fk_child_parent",
 				OnDelete:       onDelete,

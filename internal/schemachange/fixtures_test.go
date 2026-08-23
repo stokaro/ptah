@@ -35,6 +35,17 @@ func clickhouseProfile() schemastate.Profile {
 	}
 }
 
+// oracleProfile is the target whose declared and catalog type spellings never
+// agree: a declared TEXT is a CLOB there, an INT is a NUMBER(10). It is what
+// makes the asymmetric half of the type fold measurable.
+func oracleProfile() schemastate.Profile {
+	return schemastate.Profile{
+		Dialect:      "oracle",
+		Semantics:    identifier.ForDialect("oracle"),
+		Capabilities: capability.Oracle23(),
+	}
+}
+
 // parentChildDescription is the desired schema every row starts from: a parent
 // with a key, and a child whose column references it.
 func parentChildDescription(onDelete string) *goschema.Database {
@@ -47,9 +58,17 @@ func parentChildDescription(onDelete string) *goschema.Database {
 			{StructName: "Parent", Name: "id", Type: "int", Primary: true},
 			{StructName: "Child", Name: "id", Type: "int", Primary: true},
 			{
-				StructName:     "Child",
-				Name:           "parent_id",
-				Type:           "int",
+				StructName: "Child",
+				Name:       "parent_id",
+				Type:       "int",
+				// Nullable matches the catalog fixture below, which reports
+				// this column as NULL. The two sides described the same tables
+				// and disagreed about one column's nullability, which nothing
+				// noticed while the comparison read constraints only; a table
+				// comparison reads it, and a fixture that disagrees with itself
+				// would make every row here carry a column change nobody meant
+				// to test (stokaro/ptah#1662).
+				Nullable:       true,
 				Foreign:        "parent(id)",
 				ForeignKeyName: "fk_child_parent",
 				OnDelete:       onDelete,
@@ -93,12 +112,24 @@ func parentChildCatalog(onDelete string) *dbschematypes.DBSchema {
 // emptyCatalog is a database with the two tables and no foreign key, which is
 // the state an addition starts from.
 func emptyCatalog() *dbschematypes.DBSchema {
+	return emptyCatalogInSchema("public")
+}
+
+// emptyCatalogInSchema is [emptyCatalog] in a named schema.
+//
+// The parameter exists because the SCHEMA a fixture's tables live in has to
+// agree with the PROFILE the row runs against: an unqualified declaration
+// resolves to the profile dialect's default schema, which is "public" on
+// PostgreSQL and empty on ClickHouse. A row that ran a "public" catalog past a
+// ClickHouse profile therefore described two different tables, and nothing
+// noticed while the comparison read constraints only (stokaro/ptah#1662).
+func emptyCatalogInSchema(schema string) *dbschematypes.DBSchema {
 	return &dbschematypes.DBSchema{
 		Tables: []dbschematypes.DBTable{
-			{Name: "parent", Schema: "public", Columns: []dbschematypes.DBColumn{
+			{Name: "parent", Schema: schema, Columns: []dbschematypes.DBColumn{
 				{Name: "id", DataType: "integer", IsNullable: "NO", IsPrimaryKey: true},
 			}},
-			{Name: "child", Schema: "public", Columns: []dbschematypes.DBColumn{
+			{Name: "child", Schema: schema, Columns: []dbschematypes.DBColumn{
 				{Name: "id", DataType: "integer", IsNullable: "NO", IsPrimaryKey: true},
 				{Name: "parent_id", DataType: "integer", IsNullable: "YES"},
 			}},

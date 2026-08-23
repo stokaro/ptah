@@ -357,3 +357,35 @@ func skipQuotedSQL(value string, start int, quote byte) (int, bool) {
 func isArrayType(typeName string) bool {
 	return strings.HasSuffix(strings.TrimSpace(typeName), "[]")
 }
+
+// SQLiteColumnType is the type a DECLARED column produces once SQLite's
+// renderer has written it.
+//
+// It is asked of a declaration and never of a catalog row. SQLite stores the
+// declared type text verbatim and applies affinity to it, so the question a
+// comparison has to answer is not "are these the same word" but "would
+// rendering this declaration produce the type the catalog holds"
+// (stokaro/ptah#1662 moved it here so the canonical path asks it too).
+func SQLiteColumnType(rawType string) string {
+	upper := strings.ToUpper(strings.TrimSpace(rawType))
+	base := upper
+	if idx := strings.Index(base, "("); idx >= 0 {
+		base = strings.TrimSpace(base[:idx])
+	}
+	switch base {
+	case "":
+		return "blob"
+	case "BOOLEAN", "BOOL":
+		return "integer"
+	case "SERIAL", "BIGSERIAL", "SMALLSERIAL", "AUTO_INCREMENT":
+		return "integer"
+	case "VARCHAR", "CHARACTER VARYING", "CHAR", "CHARACTER", "TEXT", "CITEXT", "ENUM":
+		return "text"
+	case "BYTEA", "BLOB":
+		return "blob"
+	case "DOUBLE PRECISION":
+		return "real"
+	default:
+		return rawType
+	}
+}
