@@ -19,6 +19,7 @@ import (
 	"go.5x5.cz/ptah/internal/schemaselection"
 	"go.5x5.cz/ptah/internal/sqlident"
 	"go.5x5.cz/ptah/internal/sqlitevirtual"
+	"go.5x5.cz/ptah/internal/timescale"
 	"go.5x5.cz/ptah/migration/internal/identifiervalidation"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
 	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
@@ -539,6 +540,12 @@ func validateDeclaredBeforeComparison(
 	// nothing to plan and report convergence. Refuse instead, here, where
 	// an error can still travel.
 	if err := clickhouserbac.ValidateLive(info.Dialect, generated, database); err != nil {
+		return err
+	}
+	// A declared relation whose name a continuous aggregate already occupies.
+	// The server would answer `relation ... already exists` halfway through
+	// the script; this says which object it is (stokaro/ptah#1026).
+	if err := timescale.ValidateLive(info.Dialect, generated, database); err != nil {
 		return err
 	}
 	// The row-level TTL refusals, at the same seam and for the same reason:
