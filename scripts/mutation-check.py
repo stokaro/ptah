@@ -23,7 +23,7 @@ A spec is JSON:
     }
 
 Environment values already set in the caller's environment win over the spec's,
-so machine-specific ones (an oracle binary path, for instance) stay out of the
+so machine-specific ones (a reference binary path, for instance) stay out of the
 committed file.
 
 Two rules this harness exists to enforce, both learned the hard way:

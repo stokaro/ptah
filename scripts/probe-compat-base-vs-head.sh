@@ -32,7 +32,7 @@
 #   PTAH_COMPAT_BASE=/path/to/base PTAH_COMPAT_HEAD=/path/to/head \
 #     scripts/probe-compat-base-vs-head.sh
 #
-# No Atlas oracle is involved: this compares Ptah against Ptah. Parity with
+# No Atlas reference is involved: this compares Ptah against Ptah. Parity with
 # Atlas CE is scripts/probe-atlas-apply-gate.sh's job.
 #
 # Exits non-zero if any row differs. Scratch directories are created under the

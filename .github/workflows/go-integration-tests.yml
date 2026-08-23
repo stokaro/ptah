@@ -332,7 +332,7 @@ jobs:
             -v ON_ERROR_STOP=1 -c 'CREATE DATABASE ptah_oracle_realmdev'
 
       - name: Build pinned Atlas CE oracle
-        run: scripts/build-atlas-ce-oracle.sh "${{ runner.temp }}/ptah-atlas-ce/atlas"
+        run: scripts/build-atlas-ce-reference.sh "${{ runner.temp }}/ptah-atlas-ce/atlas"
 
       - name: Run tagged integration package contour
         env:

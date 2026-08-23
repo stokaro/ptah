@@ -16,14 +16,14 @@
 # executed that nothing protected on a directory both tools called clean. That
 # was stokaro/ptah#982, and it is closed.
 #
-# The oracle is pinned. A different Atlas build may have changed the very rules
+# The reference is pinned. A different Atlas build may have changed the very rules
 # under test, so the version is checked before anything is compared.
 #
-#   oracle:  ptah-atlas-conformance/bin/atlas
+#   reference:  ptah-atlas-conformance/bin/atlas
 #   version: atlas community version v1.3.0
 #
 # A system-wide `atlas` on PATH is frequently a different build, so the
-# oracle is invoked by absolute path.
+# reference is invoked by absolute path.
 #
 # Usage:
 #   scripts/probe-atlas-apply-gate.sh [path-to-atlas]
@@ -38,9 +38,9 @@ set -u
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 COMPAT="$ROOT/bin/ptah-compat"
 
-# shellcheck source=scripts/lib/atlas-ce-oracle.sh
-source "$ROOT/scripts/lib/atlas-ce-oracle.sh"
-atlas_ce_load_lock "$ROOT/scripts/atlas-ce-oracle.lock"
+# shellcheck source=scripts/lib/atlas-ce-reference.sh
+source "$ROOT/scripts/lib/atlas-ce-reference.sh"
+atlas_ce_load_lock "$ROOT/scripts/atlas-ce-reference.lock"
 ATLAS="$(atlas_ce_resolve_binary "${1:-}")" || exit 1
 atlas_ce_verify_binary "$ATLAS" >/dev/null || exit 1
 
@@ -128,7 +128,7 @@ compare() {
 	fi
 }
 
-# hash_both <ce-dir> <ptah-dir> <format> — hash with the ORACLE in both trees,
+# hash_both <ce-dir> <ptah-dir> <format> — hash with the REFERENCE in both trees,
 # so what ptah-compat verifies against is a sum Atlas CE actually wrote.
 hash_both() {
 	"$ATLAS" migrate hash --dir "file://$1?format=$3" >/dev/null 2>&1
@@ -432,7 +432,7 @@ flyway_parity() { # flyway_parity <label> <builder> <slug> [file-to-tamper]
 	"$ATLAS" migrate hash --dir "file://$pt?format=flyway" >/dev/null 2>&1
 	local covered
 	covered=$(($(wc -l <"$ce/atlas.sum") - 1))
-	# When a tamper target is named it lands on a file the oracle's own sum does
+	# When a tamper target is named it lands on a file the reference's own sum does
 	# NOT cover, which is what made both shapes silent: validate stays clean on
 	# both tools, so only the executed set can tell the two behaviors apart.
 	if [ -n "$tamper" ]; then
@@ -538,7 +538,7 @@ for evilinner in "" "note.txt"; do
 	fi
 	if [ "$cerc" != 1 ]; then
 		fail=1
-		echo "       UNEXPECTED: the oracle no longer refuses this shape, so the row proves nothing"
+		echo "       UNEXPECTED: the reference no longer refuses this shape, so the row proves nothing"
 	fi
 done
 
