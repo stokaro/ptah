@@ -20,6 +20,7 @@ var sliceScope = []objectidentity.Kind{
 	objectidentity.KindTable,
 	objectidentity.KindColumn,
 	objectidentity.KindConstraint,
+	objectidentity.KindIndex,
 	objectidentity.KindPolicy,
 	objectidentity.KindGrant,
 	objectidentity.KindRole,
@@ -116,6 +117,20 @@ func FromCatalog(schema *dbschematypes.DBSchema, dialect string, semantics ident
 			Provenance: Provenance{Source: coverage.Observed, Location: "information_schema.table_constraints"},
 		}); collided {
 			return nil, fmt.Errorf("catalog reports two foreign keys with one identity: %s and %s", existing.ID, id)
+		}
+	}
+	for _, index := range schema.Indexes {
+		if err := addIndex(state, builder,
+			index.Schema, index.TableName, index.Name,
+			&Index{
+				Table:              builder.TableParts(index.Schema, index.TableName),
+				Columns:            index.Columns,
+				Unique:             index.IsUnique,
+				KeyPartsIncomplete: index.KeyPartsIncomplete,
+			},
+			coverage.Observed, "information_schema.statistics",
+		); err != nil {
+			return nil, err
 		}
 	}
 	if err := PoliciesFromCatalog(state, schema, builder); err != nil {
@@ -645,6 +660,22 @@ func declaredUniqueKeys(
 		}
 	}
 	for _, index := range description.Indexes {
+		owner, ok := tablesByStruct[index.StructName]
+		if !ok {
+			return fmt.Errorf(
+				"index %q names no table: no table declares struct %q", index.Name, index.StructName)
+		}
+		if err := addIndex(state, builder, owner.Schema, owner.Name, index.Name,
+			&Index{
+				Table:   builder.TableParts(owner.Schema, owner.Name),
+				Columns: index.Fields,
+				Unique:  index.Unique,
+			},
+			coverage.Declared, index.StructName); err != nil {
+			return err
+		}
+	}
+	for _, index := range description.Indexes {
 		if !index.Unique {
 			continue
 		}
@@ -689,4 +720,33 @@ func partitionFromDescription(spec *goschema.PartitionSpec) *Partition {
 		parts = append(parts, PartitionPart{Name: part.Name, Expr: part.Expr})
 	}
 	return &Partition{Type: spec.Type, Parts: parts}
+}
+
+// addIndex records one index under the identity its target's namespace gives
+// it, refusing a second one with the same identity.
+//
+// The identity comes from [objectidentity.Builder.Index], which reads
+// `identifier.IndexNamespace`: on a target that scopes index names to a schema
+// the owning table is not part of the identity at all, and two indexes of one
+// name on two tables are one object -- which is what the target itself says.
+func addIndex(
+	state *State,
+	builder objectidentity.Builder,
+	schema, table, name string,
+	index *Index,
+	source coverage.Provenance,
+	location string,
+) error {
+	if strings.TrimSpace(name) == "" {
+		return nil
+	}
+	id := builder.Index(tableref.Canonical(schema, table), name)
+	if existing, collided := state.Add(Object{
+		ID:         id,
+		Index:      index,
+		Provenance: Provenance{Source: source, Location: location},
+	}); collided {
+		return fmt.Errorf("two indexes carry one identity: %s and %s", existing.ID, id)
+	}
+	return nil
 }

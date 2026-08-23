@@ -462,6 +462,38 @@ type PartitionPart struct {
 	Expr string
 }
 
+// Index is a table index.
+//
+// It is its own family rather than a constraint that happens to have columns,
+// because its IDENTITY is scoped differently: `identifier.IndexNamespace`
+// decides whether an index name must be unique within its table or within its
+// schema, and a model that assumed the table scope would merge two indexes on
+// SQLite and split one on MySQL (stokaro/ptah#1663).
+type Index struct {
+	// Table is the table the index is on.
+	//
+	// It is on the payload rather than read off the identity because the
+	// identity does not always carry it: on a target that scopes index names to
+	// a SCHEMA the owning table is not part of the identity at all, and a
+	// renderer still has to write `ON <table>`.
+	Table objectidentity.ID
+	// Columns is the key, in order. Order is part of an index: a btree on
+	// (a, b) answers a query on `a` alone and one on (b, a) does not.
+	Columns []string
+	// Unique reports an index that also guarantees uniqueness. Such an index is
+	// a [UniqueKey] as well, which is what lets a foreign key reference its
+	// columns.
+	Unique bool
+	// KeyPartsIncomplete reports that the reader could not name every part of
+	// the key -- a MySQL functional key part such as `KEY idx ((b + 1))` has a
+	// NULL COLUMN_NAME in information_schema.STATISTICS.
+	//
+	// A comparison must not read Columns as the whole key when this is set: it
+	// would plan a rebuild on every run for a key that never changed
+	// (stokaro/ptah#1663, and the same fact dbschema/types.DBIndex records).
+	KeyPartsIncomplete bool
+}
+
 // Object is one schema object in the canonical state.
 //
 // Exactly one payload pointer is set, decided by ID.Kind. It is a struct with
@@ -474,6 +506,7 @@ type Object struct {
 	Column     *Column
 	ForeignKey *ForeignKey
 	UniqueKey  *UniqueKey
+	Index      *Index
 	Policy     *Policy
 	Grant      *Grant
 	Provenance Provenance
