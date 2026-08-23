@@ -207,6 +207,12 @@ func TestTableStatementsMatchTheExistingPlanner(t *testing.T) {
 		name        string
 		description *goschema.Database
 		catalog     *dbschematypes.DBSchema
+		// profile defaults to PostgreSQL. A row names another target when the
+		// rule under test is one the targets disagree about: PostgreSQL's
+		// renderer suppresses UNIQUE on a primary key column and Oracle's does
+		// not, so a PostgreSQL-only fixture cannot see a planner that asks for
+		// both.
+		profile *schemastate.Profile
 	}{
 		{
 			name: "creating a table",
@@ -295,6 +301,20 @@ func TestTableStatementsMatchTheExistingPlanner(t *testing.T) {
 			catalog: &dbschematypes.DBSchema{},
 		},
 		{
+			// The same table against a target whose renderer does NOT suppress
+			// UNIQUE beside PRIMARY KEY. Every source sets both flags for a
+			// key column, so a planner passing the merged fact through would
+			// declare a second constraint here that nobody asked for.
+			name: "creating a table with a unique column, on Oracle",
+			description: describedTable(
+				goschema.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true},
+				goschema.Field{
+					StructName: "Widget", Name: "code", Type: "text", Nullable: true, Unique: true,
+				}),
+			catalog: &dbschematypes.DBSchema{},
+			profile: oracleProfilePointer(),
+		},
+		{
 			// A composite key, which the column syntax cannot express: PRIMARY
 			// KEY on two columns declares two keys rather than one over both,
 			// so it has to become a table-level constraint.
@@ -324,7 +344,7 @@ func TestTableStatementsMatchTheExistingPlanner(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			profile := postgresProfile()
+			profile := profileOrPostgres(test.profile)
 
 			existing := executableLines(existingPathStatements(c, test.description, test.catalog, profile))
 			prototype := executableLines(plannedStatements(c, test.description, test.catalog, profile))
@@ -409,4 +429,18 @@ func TestAModificationCarriesWhatItReplaces(t *testing.T) {
 	c.Assert(modify.HasPreviousDefault, qt.IsTrue)
 	c.Assert(modify.PreviousDefault, qt.Equals, "'unset'")
 	c.Assert(modify.Column.Type, qt.Equals, "varchar(200)")
+}
+
+// profileOrPostgres resolves a row's target, defaulting to PostgreSQL.
+func profileOrPostgres(profile *schemastate.Profile) schemastate.Profile {
+	return map[bool]func() schemastate.Profile{
+		true:  postgresProfile,
+		false: func() schemastate.Profile { return *profile },
+	}[profile == nil]()
+}
+
+// oracleProfilePointer is [oracleProfile] as a row can carry it.
+func oracleProfilePointer() *schemastate.Profile {
+	profile := oracleProfile()
+	return &profile
 }
