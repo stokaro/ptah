@@ -325,6 +325,15 @@ type UniqueKey struct {
 	// guarantee as one on (b, a) -- and the order is kept because a renderer
 	// writing the constraint back has to write one.
 	Columns []string
+	// Standalone marks a guarantee the target holds as an object of its own: a
+	// named UNIQUE constraint, added and dropped by its own statement.
+	//
+	// A column's own flag is not standalone -- it renders beside its column, so
+	// planning it as a constraint change would declare the same guarantee twice
+	// -- and neither is a primary key, whose statements carry different risk
+	// and whose name a target derives. Both still answer the foreign-key
+	// question, which is why they are objects at all (stokaro/ptah#1663).
+	Standalone bool
 }
 
 // Covers reports whether this key guarantees uniqueness for exactly the given

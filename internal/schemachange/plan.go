@@ -80,7 +80,7 @@ func Plan(changes []Change, profile schemastate.Profile) ([]PlannedOperation, er
 func nodesFor(change Change, profile schemastate.Profile) ([]ast.Node, error) {
 	switch change.ID.Kind {
 	case objectidentity.KindConstraint:
-		return constraintNodes(change, profile)
+		return constraintKindNodes(change, profile)
 	case objectidentity.KindTable:
 		return tableNodes(change)
 	case objectidentity.KindColumn:
@@ -88,6 +88,26 @@ func nodesFor(change Change, profile schemastate.Profile) ([]ast.Node, error) {
 	default:
 		return nil, fmt.Errorf("%s: %w", change, ErrNotRendered)
 	}
+}
+
+// constraintKindNodes picks the renderer for a constraint by what the change
+// carries, because the identity kind is one for every constraint family and the
+// statements are not.
+func constraintKindNodes(change Change, profile schemastate.Profile) ([]ast.Node, error) {
+	if carriesUniqueKey(change) {
+		return uniqueConstraintNodes(change, profile)
+	}
+	return constraintNodes(change, profile)
+}
+
+// carriesUniqueKey reports whether a change is about a uniqueness guarantee.
+func carriesUniqueKey(change Change) bool {
+	for _, side := range []*schemastate.Object{change.After, change.Before} {
+		if side != nil && side.UniqueKey != nil {
+			return true
+		}
+	}
+	return false
 }
 
 func constraintNodes(change Change, profile schemastate.Profile) ([]ast.Node, error) {

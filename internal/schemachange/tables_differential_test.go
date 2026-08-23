@@ -412,6 +412,16 @@ func TestTableStatementsMatchTheExistingPlanner(t *testing.T) {
 			catalog: &dbschematypes.DBSchema{},
 		},
 		{
+			name:        "adding a unique constraint",
+			description: scopedWidget([]string{"tenant", "code"}),
+			catalog:     scopedWidgetCatalog(nil),
+		},
+		{
+			name:        "dropping a unique constraint",
+			description: scopedWidget(nil),
+			catalog:     scopedWidgetCatalog([]string{"tenant", "code"}),
+		},
+		{
 			// The control. A planner that emitted nothing would agree with the
 			// existing one on this row and on nothing else; a planner that
 			// emitted something here would disagree with it on this row alone.
