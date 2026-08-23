@@ -387,18 +387,41 @@ func (r *Renderer) VisitDropTable(node *ast.DropTableNode) error {
 	for _, name := range node.TableNames() {
 		// One statement per table: Oracle's DROP TABLE takes a single name,
 		// unlike the comma-separated list PostgreSQL and MySQL accept.
-		r.w.WriteLinef("DROP TABLE%s %s;", guard, escapeQualifiedIdentifier(name))
+		//
+		// PURGE, so the table does not land in the recycle bin. It is not a
+		// tidiness preference: a dropped table keeps its dependencies there,
+		// and a plan that drops a table and then the domain its column was
+		// typed by answers
+		//
+		//	ORA-11538: The domain DOM_EMAIL to be dropped has dependent
+		//	objects in the recycle bin.
+		//
+		// halfway through -- measured on 23.26.2.0.0, and the first plan
+		// stokaro/ptah#1920 produced hit exactly that. The alternative,
+		// DROP DOMAIN ... FORCE, was measured too and is worse: with a LIVE
+		// dependent it succeeds and silently untypes the column, so a NOT NULL
+		// the domain enforced is gone and nobody asked. Purging here keeps
+		// that refusal (ORA-11502) for the case that deserves it.
+		//
+		// It is also what internal/dbschema/oracle's own cleanup does, for the
+		// storage half of the same reason.
+		r.w.WriteLinef("DROP TABLE%s %s PURGE;", guard, escapeQualifiedIdentifier(name))
 	}
 	return nil
 }
 
 func (r *Renderer) VisitCreateType(node *ast.CreateTypeNode) error {
-	// Oracle 23 has a real CREATE DOMAIN and a real CREATE TYPE ... AS OBJECT,
-	// and this renderer emits neither yet, which is what DomainTypes and
-	// CompositeTypes read false for on both presets. It refuses rather than
-	// writing a comment: a comment makes `schema render` exit 0 on a model the
-	// planner refuses at apply time, which is the reason the SQLite renderer
-	// stopped commenting its materialized views.
+	// A domain is rendered where the preset says so -- 23 has CREATE DOMAIN
+	// and 21 answers ORA-00901 (stokaro/ptah#1920).
+	if domain, isDomain := node.TypeDef.(*ast.DomainTypeDef); isDomain && r.domainsRendered() {
+		return r.visitCreateDomain(node, domain)
+	}
+	// Oracle 23 also has a real CREATE TYPE ... AS OBJECT, and this renderer
+	// emits none yet, which is what CompositeTypes reads false for on both
+	// presets. It refuses rather than writing a comment: a comment makes
+	// `schema render` exit 0 on a model the planner refuses at apply time,
+	// which is the reason the SQLite renderer stopped commenting its
+	// materialized views.
 	return unsupportedFeaturef("CREATE TYPE %s: user types are not rendered for Oracle", node.Name)
 }
 
@@ -407,6 +430,9 @@ func (r *Renderer) VisitAlterType(node *ast.AlterTypeNode) error {
 }
 
 func (r *Renderer) VisitDropType(node *ast.DropTypeNode) error {
+	if node.Domain && r.domainsRendered() {
+		return r.visitDropDomain(node)
+	}
 	return unsupportedFeaturef("DROP TYPE %s: user types are not rendered for Oracle", node.Name)
 }
 
