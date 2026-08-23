@@ -4,16 +4,16 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-# shellcheck source=scripts/lib/atlas-ce-oracle.sh
-source "$SCRIPT_DIR/lib/atlas-ce-oracle.sh"
-atlas_ce_load_lock "$SCRIPT_DIR/atlas-ce-oracle.lock"
+# shellcheck source=scripts/lib/atlas-ce-reference.sh
+source "$SCRIPT_DIR/lib/atlas-ce-reference.sh"
+atlas_ce_load_lock "$SCRIPT_DIR/atlas-ce-reference.lock"
 
 if [[ $# -gt 1 ]]; then
 	printf 'usage: %s [output-path]\n' "$0" >&2
 	exit 2
 fi
 
-output="${1:-$REPO_ROOT/bin/atlas-ce-oracle}"
+output="${1:-$REPO_ROOT/bin/atlas-ce-reference}"
 mkdir -p "$(dirname "$output")"
 output_dir="$(cd "$(dirname "$output")" && pwd)"
 output="$output_dir/$(basename "$output")"
@@ -82,5 +82,5 @@ atlas_ce_verify_binary "$candidate" >/dev/null
 chmod 0755 "$candidate"
 mv -f "$candidate" "$output"
 
-printf 'atlas-ce: installed verified oracle at %s\n' "$output"
+printf 'atlas-ce: installed verified reference at %s\n' "$output"
 atlas_ce_verify_binary "$output"

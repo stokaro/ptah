@@ -46,7 +46,7 @@ stay out of and the migration fails partway through. Ptah honors it. A change
 that once removed that capability in the name of parity was reverted -- see
 `AGENTS.md`, "Compatibility Policy".
 
-## CE Oracle Policy
+## CE Reference Policy
 
 The default `ptah-compat` process is the complete migration surface. It retains
 implemented Atlas Pro-like and best-effort capabilities.
@@ -387,7 +387,7 @@ excludes pending insertions from its initial proof, then reconciles clean
 applied rows to the new chain only after the insertion succeeds. Dry runs and
 failed transactional or non-transactional migrations do not reconcile rows.
 
-A prefix insertion below the oldest applied revision is a different oracle
+A prefix insertion below the oldest applied revision is a different reference
 cell. Measured on SQLite on 2026-08-12, Atlas CE exits 0, prints
 `No migration files to execute`, and silently leaves the prefix migration
 unapplied. Ptah refuses that default outcome, while `linear-skip` reproduces it
@@ -1885,7 +1885,7 @@ contract, not an improvement to be propagated (AGENTS.md compatibility rule
 `schema test` accept one here; the pinned binary answers
 `unknown flag: --url` on both, and reports `migrate down` itself as unavailable
 in the community version. There is no wording to copy, so their own diagnostics
-are unchanged — inventing an oracle would be worse than having none, and
+are unchanged — inventing a reference would be worse than having none, and
 dropping the flags would remove a capability (rule (c)). A guard walks the built
 command tree and requires every verb registering `--url` to be either pinned by
 a row or named here, so a seventh cannot appear carrying the old wording.
@@ -2021,36 +2021,36 @@ From this repository:
 make conformance
 ```
 
-The repository's Atlas-oracle workflow independently rebuilds Atlas CE from an
+The repository's Atlas-reference workflow independently rebuilds Atlas CE from an
 immutable source archive, verifies that the release tag resolves to the locked
 commit, checks the committed SHA-256 digest and exact
 `atlas community version v1.3.0` output, then runs the migration-directory
 query, migrate-apply interoperability, and Flyway revision-identity controls,
 runs the differential migration-sum tests, and regenerates the committed corpus.
-Reproduce that oracle locally:
+Reproduce that reference locally:
 
 ```bash
-scripts/build-atlas-ce-oracle.sh
+scripts/build-atlas-ce-reference.sh
 GOWORK=off \
-  PTAH_ATLAS_REFERENCE="$PWD/bin/atlas-ce-oracle" \
+  PTAH_ATLAS_REFERENCE="$PWD/bin/atlas-ce-reference" \
   go test -tags=integration -count=1 \
   ./integration/atlasreference/migratedirquery
 GOWORK=off \
-  PTAH_ATLAS_REFERENCE="$PWD/bin/atlas-ce-oracle" \
+  PTAH_ATLAS_REFERENCE="$PWD/bin/atlas-ce-reference" \
   go test -tags=integration -count=1 \
   ./integration/atlasreference/migrateapply
 GOWORK=off \
-  PTAH_ATLAS_REFERENCE="$PWD/bin/atlas-ce-oracle" \
+  PTAH_ATLAS_REFERENCE="$PWD/bin/atlas-ce-reference" \
   go test -tags=integration -count=1 \
   ./integration/atlasreference/flywayrevision
 GOWORK=off \
-  PTAH_ATLAS_REFERENCE="$PWD/bin/atlas-ce-oracle" \
+  PTAH_ATLAS_REFERENCE="$PWD/bin/atlas-ce-reference" \
   PTAH_ATLAS_FUZZ_N=200 \
   go test -count=1 \
   -run '^TestSumFileNamesDifferentialFuzz(RealisticFlyway|OtherFormats)?$' \
   ./internal/atlasmigrateimport
 internal/atlasmigrateimport/testdata/ce-sums/regenerate.sh \
-  "$PWD/bin/atlas-ce-oracle"
+  "$PWD/bin/atlas-ce-reference"
 git diff --exit-code -- internal/atlasmigrateimport/testdata/ce-sums
 ```
 
@@ -2058,7 +2058,7 @@ Atlas's GitHub release publishes no CE binary asset. The lock therefore pins
 the release tag's commit and the digest of its immutable source archive. The
 archive is built only into a disposable external test executable; no Atlas
 source or compiled code is imported, vendored, or linked into Ptah. Atlas Cloud
-and commercial binaries are outside this oracle workflow.
+and commercial binaries are outside this reference workflow.
 
 From `ptah-atlas-conformance`:
 

@@ -234,21 +234,21 @@ vendored, or linked into Ptah.
 Atlas Cloud and commercial binaries are outside this oracle workflow.
 
 ```bash
-scripts/build-atlas-ce-oracle.sh
+scripts/build-atlas-ce-reference.sh
 GOWORK=off \
-  PTAH_ATLAS_REFERENCE="$PWD/bin/atlas-ce-oracle" \
+  PTAH_ATLAS_REFERENCE="$PWD/bin/atlas-ce-reference" \
   go test -tags=integration -count=1 \
   ./integration/atlasreference/migratedirquery
 GOWORK=off \
-  PTAH_ATLAS_REFERENCE="$PWD/bin/atlas-ce-oracle" \
+  PTAH_ATLAS_REFERENCE="$PWD/bin/atlas-ce-reference" \
   go test -tags=integration -count=1 \
   ./integration/atlasreference/migrateapply
 GOWORK=off \
-  PTAH_ATLAS_REFERENCE="$PWD/bin/atlas-ce-oracle" \
+  PTAH_ATLAS_REFERENCE="$PWD/bin/atlas-ce-reference" \
   go test -tags=integration -count=1 \
   ./integration/atlasreference/flywayrevision
 GOWORK=off \
-  PTAH_ATLAS_REFERENCE="$PWD/bin/atlas-ce-oracle" \
+  PTAH_ATLAS_REFERENCE="$PWD/bin/atlas-ce-reference" \
   PTAH_ATLAS_FUZZ_N=200 \
   go test -count=1 \
   -run '^TestSumFileNamesDifferentialFuzz(RealisticFlyway|OtherFormats)?$' \

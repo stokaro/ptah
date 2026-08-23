@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # Shared path resolution, lock-file loading, and binary validation for scripts
-# that measure Atlas CE as an external black-box oracle. Call
+# that measure Atlas CE as an external black-box reference. Call
 # atlas_ce_load_lock before the version functions.
 
 atlas_ce_resolve_binary() {
@@ -16,7 +16,7 @@ atlas_ce_resolve_binary() {
 		return 0
 	fi
 
-	printf 'atlas-ce: oracle path required; pass it as an argument or set PTAH_ATLAS_REFERENCE\n' >&2
+	printf 'atlas-ce: reference path required; pass it as an argument or set PTAH_ATLAS_REFERENCE\n' >&2
 	return 1
 }
 
@@ -110,12 +110,12 @@ atlas_ce_verify_binary() {
 	local actual_version expected_version
 
 	if [[ ! -x "$binary" ]]; then
-		printf 'atlas-ce: oracle not found or not executable: %s\n' "$binary" >&2
+		printf 'atlas-ce: reference not found or not executable: %s\n' "$binary" >&2
 		return 1
 	fi
 
 	if ! actual_version="$("$binary" version)"; then
-		printf 'atlas-ce: oracle version command failed: %s\n' "$binary" >&2
+		printf 'atlas-ce: reference version command failed: %s\n' "$binary" >&2
 		return 1
 	fi
 	actual_version="${actual_version%%$'\n'*}"
@@ -123,7 +123,7 @@ atlas_ce_verify_binary() {
 	expected_version="$(atlas_ce_expected_version)"
 
 	if [[ "$actual_version" != "$expected_version" ]]; then
-		printf 'atlas-ce: oracle version mismatch\n' >&2
+		printf 'atlas-ce: reference version mismatch\n' >&2
 		printf '  want: %s\n' "$expected_version" >&2
 		printf '  got:  %s\n' "$actual_version" >&2
 		return 1

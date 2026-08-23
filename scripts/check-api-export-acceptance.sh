@@ -153,7 +153,7 @@ grep -qF 'unknown GraphQL operation "mutations"' "$workspace/refused.err"
 
 echo "graphql operation profiles: OK"
 
-# Field exposure reaches the generated artifact, and the oracle still accepts
+# Field exposure reaches the generated artifact, and the reference still accepts
 # the result. A document that lost a column has to remain a VALID document:
 # dropping a property while leaving it in `required` produces OpenAPI nobody can
 # load, which is the failure this level exists to catch (stokaro/ptah#904).

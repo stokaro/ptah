@@ -9,14 +9,14 @@
 # rather than fixes, so a future change that quietly closes or widens one shows
 # up here.
 #
-# The oracle is pinned. A different Atlas build may have changed the very rules
+# The reference is pinned. A different Atlas build may have changed the very rules
 # under test, so the version is checked before anything is compared.
 #
-#   oracle:  ptah-atlas-conformance/bin/atlas
+#   reference:  ptah-atlas-conformance/bin/atlas
 #   version: atlas community version v1.3.0
 #
 # A system-wide `atlas` on PATH is frequently a different build, so the
-# oracle is invoked by absolute path.
+# reference is invoked by absolute path.
 #
 # Usage:
 #   scripts/probe-atlas-integrity-verbs.sh [path-to-atlas]
@@ -100,9 +100,9 @@ if [ "${1:-}" = --selftest ]; then
   exit $?
 fi
 
-# shellcheck source=scripts/lib/atlas-ce-oracle.sh
-source "$ROOT/scripts/lib/atlas-ce-oracle.sh"
-atlas_ce_load_lock "$ROOT/scripts/atlas-ce-oracle.lock"
+# shellcheck source=scripts/lib/atlas-ce-reference.sh
+source "$ROOT/scripts/lib/atlas-ce-reference.sh"
+atlas_ce_load_lock "$ROOT/scripts/atlas-ce-reference.lock"
 ATLAS="$(atlas_ce_resolve_binary "${1:-}")" || exit 1
 atlas_ce_verify_binary "$ATLAS" >/dev/null || exit 1
 

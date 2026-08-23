@@ -23,23 +23,18 @@ import "os"
 // places to miss one.
 const EnvVar = "PTAH_ATLAS_REFERENCE"
 
-// LegacyEnvVar is the spelling this variable had before the dialect arrived.
-//
-// Honored so a checkout configured before the rename keeps working, and named
-// so nobody adds a third. It is read only when EnvVar is unset, so a shell that
-// carries both gets the current one.
-const LegacyEnvVar = "PTAH_ATLAS_ORACLE"
-
 // Version is the only build the conformance runs trust. A different build may
 // have changed the very rules under test, so comparing against it would report
 // divergences that are really version drift.
 const Version = "atlas community version v1.3.0"
 
 // Binary returns the configured path and whether one was configured at all.
+//
+// One spelling, not two. The variable was renamed in stokaro/ptah#1938 and the
+// older name was read alongside it for a moment; Ptah is pre-general-
+// availability and owes no compatibility to what it itself wrote earlier, so
+// carrying a second name would only be somewhere for the two to disagree.
 func Binary() (string, bool) {
-	if path, ok := os.LookupEnv(EnvVar); ok && path != "" {
-		return path, true
-	}
-	path, ok := os.LookupEnv(LegacyEnvVar)
+	path, ok := os.LookupEnv(EnvVar)
 	return path, ok && path != ""
 }

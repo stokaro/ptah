@@ -41,7 +41,7 @@ each:
 - **Ptah** — the native `ptah` binary plus the separate `ptah-compat` drop-in.
 - **CE** — the pinned Atlas community binary, version 1.3.0, which the
   conformance harness runs against. The pin itself lives in
-  `scripts/atlas-ce-oracle.lock`, which is what a bump changes.
+  `scripts/atlas-ce-reference.lock`, which is what a bump changes.
 - **Pro** — capabilities Atlas keeps outside its community build, per the
   [Atlas feature availability](https://atlasgo.io/features) page and
   [pricing page](https://atlasgo.io/pricing).
