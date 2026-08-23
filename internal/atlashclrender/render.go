@@ -464,6 +464,10 @@ func (r *renderer) renderBody() {
 	r.renderEnums()
 	r.renderRoles()
 	r.renderTables()
+	// After the tables: a synonym stands for one and a property is attached to
+	// one, so a reader meets the structure before the things that point at it.
+	r.renderSynonyms()
+	r.renderExtendedProperties()
 	r.renderFunctions()
 	r.renderViews()
 	r.renderMaterializedViews()

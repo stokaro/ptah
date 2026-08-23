@@ -945,3 +945,70 @@ func containsFold(values []string, target string) bool {
 	}
 	return false
 }
+
+// renderSynonyms writes the SQL Server synonym blocks.
+//
+// The block exists because HCL had no way to say one, and a document that
+// cannot name an object cannot ask for it to be kept: `schema inspect` into a
+// file and `schema apply --to` that file planned DROP SYNONYM for every synonym
+// on the server, through Ptah's own output (stokaro/ptah#1031).
+//
+// It is emitted on the compatibility surface too. The pinned Atlas community
+// binary v1.3.0 answers `unknown driver "sqlserver"`, so there is no document
+// of its it could have read and no refusal to mirror; and on a dialect it does
+// speak, a top-level block it does not model is dropped at exit 0 exactly like
+// the `wibble "x" {}` control in [atlasRefusedBlockTypes]'s own measurement.
+func (r *renderer) renderSynonyms() {
+	synonyms := append([]goschema.Synonym(nil), r.db.Synonyms...)
+	slices.SortFunc(synonyms, func(a, b goschema.Synonym) int {
+		return cmp.Compare(a.QualifiedName(), b.QualifiedName())
+	})
+	for _, synonym := range synonyms {
+		r.linef(`synonym %s {`, quote(synonym.Name))
+		if schema := r.schemaFor(synonym.Schema); schema != "" {
+			r.rawAttr(1, "schema", r.schemaRef(schema))
+		}
+		r.stringAttr(1, "target", synonym.Target)
+		r.stringAttr(1, "comment", synonym.Comment)
+		r.line("}")
+		r.line("")
+	}
+}
+
+// renderExtendedProperties writes the SQL Server extended property blocks.
+//
+// The owner is written as PLAIN STRINGS rather than as `table.users` and
+// `column.title` references, and that is a decision rather than an omission.
+// SQL Server addresses a property by name -- `@level1name = N'users'` -- so the
+// string is what the statement carries; and a reference would resolve to
+// nothing the moment selection removed the table, leaving a document that names
+// a block it does not contain. That is the same class of failure this block
+// exists to close.
+//
+// The schema is written VERBATIM rather than through [renderer.schemaFor]: an
+// empty Schema is the DATABASE scope, a fourth address alongside schema, table
+// and column, and substituting the connection default for it would move a
+// database property onto a schema. [go.5x5.cz/ptah/core/goschema.ExtendedProperty.QualifiedOwner]
+// spells that address `(database)`, and the SQL Server renderer emits it by
+// passing no `@level0type` at all.
+func (r *renderer) renderExtendedProperties() {
+	properties := append([]goschema.ExtendedProperty(nil), r.db.ExtendedProperties...)
+	slices.SortFunc(properties, func(a, b goschema.ExtendedProperty) int {
+		if owner := cmp.Compare(a.QualifiedOwner(), b.QualifiedOwner()); owner != 0 {
+			return owner
+		}
+		return cmp.Compare(a.Name, b.Name)
+	})
+	for _, property := range properties {
+		r.linef(`extended_property %s {`, quote(property.Name))
+		if strings.TrimSpace(property.Schema) != "" {
+			r.rawAttr(1, "schema", r.schemaRef(property.Schema))
+		}
+		r.stringAttr(1, "table", property.Table)
+		r.stringAttr(1, "column", property.Column)
+		r.stringAttr(1, "value", property.Value)
+		r.stringAttr(1, "comment", property.Comment)
+		r.line("}")
+		r.line("")
+	}
+}

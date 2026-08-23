@@ -110,6 +110,20 @@ func TestRenderInspectedAttributesEverySchemaScopedBlock(t *testing.T) {
 			want: "enum \"mood\" {\n  schema = schema.public\n",
 		},
 		{
+			// The synonym block arrived after this table was written
+			// (stokaro/ptah#1031), and takes the same fallback. Its neighbour
+			// the extended property deliberately does NOT -- an empty schema
+			// there is the DATABASE scope rather than an unreported one, which
+			// is what
+			// [TestRenderInspectedKeepsADatabaseScopedPropertyAtDatabaseScope]
+			// measures.
+			name: "a synonym",
+			declare: func(db *goschema.Database) {
+				db.Synonyms = []goschema.Synonym{{Name: "s_users", Target: "other.dbo.users"}}
+			},
+			want: "synonym \"s_users\" {\n  schema = schema.public\n",
+		},
+		{
 			name:    "a table",
 			declare: func(_ *goschema.Database) {},
 			want:    "table \"t\" {\n  schema = schema.public\n",
@@ -214,6 +228,26 @@ func TestRenderInspectedKeepsASchemaTheReaderReported(t *testing.T) {
 				}}
 			},
 			want: "enum \"mood\" {\n  schema = schema.reporting\n",
+		},
+		{
+			name: "a synonym",
+			declare: func(db *goschema.Database) {
+				db.Synonyms = []goschema.Synonym{{
+					Name: "s_users", Schema: "reporting", Target: "other.dbo.users",
+				}}
+			},
+			want: "synonym \"s_users\" {\n  schema = schema.reporting\n",
+		},
+		{
+			// The property does not take the fallback, so this is the whole of
+			// what it promises: a schema the read DID report is written.
+			name: "an extended property",
+			declare: func(db *goschema.Database) {
+				db.ExtendedProperties = []goschema.ExtendedProperty{{
+					Name: "MS_Description", Schema: "reporting", Table: "t", Value: "the table",
+				}}
+			},
+			want: "extended_property \"MS_Description\" {\n  schema = schema.reporting\n",
 		},
 	}
 
