@@ -260,7 +260,11 @@ func loadSchemaDirEntry(path string, opts Options) (*goschema.Database, map[guar
 		if err != nil {
 			return nil, nil, err
 		}
-		return db, guardedObjects(statements), nil
+		// This arm bypasses loadSchemaFile to keep the statements, so it
+		// applies the format limits itself. A directory entry that skipped
+		// them would be the one route where the round trip is still
+		// destructive.
+		return withUnwritableObjectLimits(db), guardedObjects(statements), nil
 	}
 	db, err := loadSchemaFile(resolved, opts)
 	if err != nil {
@@ -306,7 +310,35 @@ func loadSchemaFile(resolved string, opts Options) (*goschema.Database, error) {
 	if strings.ToLower(filepath.Ext(resolved)) != dirSQLExtension {
 		database.NotDescribed = database.NotDescribed.WithKind(coverage.VirtualTable)
 	}
-	return database, nil
+	return withUnwritableObjectLimits(database), nil
+}
+
+// withUnwritableObjectLimits records the object families NO document format
+// Ptah reads can express, so a file's silence about one is not read as a
+// request to drop it.
+//
+// SQL Server synonyms and extended properties are both of them. HCL has no
+// block for either; YAML has no key; and the SQL parser's conversion produces
+// neither, so a `.sql` document naming `CREATE SYNONYM` or calling
+// `sp_addextendedproperty` still loads a database with none. Only a Go schema
+// can declare them -- `//ptah:schema:synonym` and
+// `//ptah:schema:extendedproperty` -- which is why the record is made HERE and
+// not in [go.5x5.cz/ptah/internal/schemaload].
+//
+// Without it the round trip through Ptah's own output was destructive.
+// Rendering an inspected SQL Server database to HCL, parsing that document
+// back, and comparing it against the same database planned
+// `sp_dropextendedproperty` for every property and `DROP SYNONYM` for every
+// synonym -- which is stokaro/ptah#1276's defect, on the two kinds it did not
+// reach (stokaro/ptah#1031).
+func withUnwritableObjectLimits(database *goschema.Database) *goschema.Database {
+	if database == nil {
+		return nil
+	}
+	database.NotDescribed = database.NotDescribed.
+		WithKind(coverage.Synonym).
+		WithKind(coverage.ExtendedProperty)
+	return database
 }
 
 func parseSchemaFile(resolved string, opts Options) (*goschema.Database, error) {

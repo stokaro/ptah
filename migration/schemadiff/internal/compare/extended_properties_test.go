@@ -36,7 +36,7 @@ func TestExtendedProperties_KeysOnTheAddressAndNotOnTheName(t *testing.T) {
 	}}
 
 	diff := &difftypes.SchemaDiff{}
-	compare.ExtendedProperties(declared, live, diff)
+	compare.ExtendedProperties(declared, live, diff, compare.Coverage{})
 
 	c.Assert(diff.ExtendedPropertiesAdded, qt.HasLen, 0)
 	c.Assert(diff.ExtendedPropertiesRemoved, qt.HasLen, 0)
@@ -106,7 +106,7 @@ func TestExtendedProperties_ReportsEachDirection(t *testing.T) {
 			compare.ExtendedProperties(
 				&goschema.Database{ExtendedProperties: test.declared},
 				&types.DBSchema{ExtendedProperties: test.live},
-				diff)
+				diff, compare.Coverage{})
 
 			c.Assert(summarizeRefs(diff.ExtendedPropertiesAdded), qt.DeepEquals, test.wantAdded)
 			c.Assert(summarizeRefs(diff.ExtendedPropertiesRemoved), qt.DeepEquals, test.wantRemoved)

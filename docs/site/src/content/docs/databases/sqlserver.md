@@ -175,6 +175,24 @@ Extended properties travel through the schema model, the renderer, the reader
 and the comparison. They are not part of the HCL surface `schema inspect`
 writes, which is the same boundary synonyms sit on.
 
+**A document that cannot name them does not drop them.** HCL has no block for
+either object and YAML has no key, so a file written in those formats could not
+have declared one — and reading its silence as intent made the round trip
+through Ptah's own output destructive:
+
+```bash
+ptah schema inspect --db-url "$SQLSERVER_URL" > out.hcl
+ptah schema apply --db-url "$SQLSERVER_URL" --to file://out.hcl
+```
+
+planned `sp_dropextendedproperty` for every property on the server and
+`DROP SYNONYM` for every synonym. Each loader now records what its format cannot
+express, and the comparison withholds those removals.
+
+A **Go schema can** declare both — `//ptah:schema:synonym` and
+`//ptah:schema:extendedproperty` — so its silence about one is still a request
+to remove it, and nothing about that changed.
+
 ## Identifier collation
 
 SQL Server compares object identifiers using catalog collation rules — case,
