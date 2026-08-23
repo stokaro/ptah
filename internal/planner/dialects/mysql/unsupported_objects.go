@@ -8,9 +8,11 @@ import (
 
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/mysqlroutine"
+	"go.5x5.cz/ptah/internal/oracleroutine"
 	"go.5x5.cz/ptah/migration/schemadiff/types"
 )
 
@@ -242,7 +244,7 @@ func (p *Planner) planFunctions(result []ast.Node, diff *types.SchemaDiff, gener
 		// The CREATE node is still emitted, and that is deliberate: it renders
 		// the skip comment, so the plan says which function was left alone
 		// instead of silently omitting it. Nothing executable is produced.
-		if !mysqlroutine.RunsLanguage(fn.Language) {
+		if !p.runsRoutineLanguage(fn.Language) {
 			node.SetComment(fmt.Sprintf(
 				"Function %s differs (%s) but its language is not one this target runs; "+
 					"left unchanged, and NOT dropped", fn.Name, changes))
@@ -296,4 +298,21 @@ func routineWord(fn goschema.Function) string {
 		return "procedure"
 	}
 	return "function"
+}
+
+// runsRoutineLanguage reports whether a routine declared in this language
+// becomes real DDL on the dialect this planner renders for.
+//
+// This planner serves four dialects and they do not run the same routine
+// language: the MySQL family and SQL Server run SQL, Oracle runs PL/SQL. The
+// predicate has to be the one the RENDERER for that dialect uses, because the
+// two decide halves of the same replacement -- the planner decides whether the
+// DROP is emitted and the renderer decides whether the CREATE is. When they
+// disagreed on the MySQL family, an apply executed the drop, created nothing,
+// and reported success.
+func (p *Planner) runsRoutineLanguage(language string) bool {
+	if p.dialect == platform.Oracle {
+		return oracleroutine.RunsLanguage(language)
+	}
+	return mysqlroutine.RunsLanguage(language)
 }

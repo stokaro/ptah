@@ -118,6 +118,18 @@ func (r *Reader) ReadSchema() (*types.DBSchema, error) {
 		schema.Domains = domains
 	}
 
+	// One read serves both keys, because one catalog row serves both objects:
+	// ALL_PROCEDURES tells a function from a procedure by OBJECT_TYPE, and
+	// asking for one kind and not the other would mean a second query for the
+	// same view. A target declaring neither key is not asked at all.
+	if r.caps.Has(capability.Functions) || r.caps.Has(capability.Procedures) {
+		functions, err := r.readFunctions()
+		if err != nil {
+			return nil, fmt.Errorf("oracle: read functions: %w", err)
+		}
+		schema.Functions = functions
+	}
+
 	markKeyColumns(schema)
 	schema.Constraints = withoutGeneratedKeys(schema.Constraints, generatedKeys)
 	return schema, nil

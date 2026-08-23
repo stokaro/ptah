@@ -8,11 +8,13 @@ import (
 
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/chrefresh"
 	"go.5x5.cz/ptah/internal/mysqlroutine"
 	"go.5x5.cz/ptah/internal/objectidentity"
+	"go.5x5.cz/ptah/internal/oracleroutine"
 	"go.5x5.cz/ptah/internal/tableref"
 	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
 )
@@ -106,8 +108,16 @@ func Functions(generated *goschema.Database, database *types.DBSchema, diff *dif
 // to the very routine it had just created, and a successful apply left the
 // database with no function at all. Measured on both engines: zero rows in
 // information_schema.ROUTINES afterwards.
+//
+// Oracle folds them too, and there the consequence of not folding is worse than
+// a wrong plan. Ptah writes Oracle names WITHOUT quotes, so the server folds
+// every one of them to upper case: measured on 23.26.2.0.0, declaring
+// `zz_case` and `ZZ_CASE` created ONE function, the second silently replacing
+// the first, with USER_OBJECTS holding a single ZZ_CASE row. A comparator that
+// kept the two spellings apart would then report the live routine as both added
+// and removed, on every run.
 func routineIdentityKey(name, dialect string) string {
-	if isMySQLFamily(dialect) {
+	if isMySQLFamily(dialect) || isOracle(dialect) {
 		// The rule itself is mysqlroutine.IdentityKey, not a ToLower written
 		// here, because the declaration validator in core/renderer has to reach
 		// the same answer: a pair this folds together is a pair that target
@@ -116,6 +126,12 @@ func routineIdentityKey(name, dialect string) string {
 		return mysqlroutine.IdentityKey(name)
 	}
 	return name
+}
+
+// isOracle reports whether the dialect is the one whose routine rules
+// [oracleroutine] describes.
+func isOracle(dialect string) bool {
+	return platform.NormalizeDialect(dialect) == platform.Oracle
 }
 
 // qualifiedRoutineIdentityKey folds ONLY the routine component of a name that
@@ -880,6 +896,16 @@ func FunctionDefinitionsWithDialect(
 	// INOUT and VARIADIC are not defaults and are left exactly as written.
 	genFunction.Parameters = foldDefaultArgumentMode(genFunction.Parameters)
 	dbFunction.Parameters = foldDefaultArgumentMode(dbFunction.Parameters)
+
+	// PL/SQL writes the mode AFTER the name -- `p IN NUMBER` -- so the fold
+	// above, which cuts a leading `in `, never reaches it. The default is the
+	// same default, and both spellings are ordinary in a declaration, so the
+	// same reasoning applies in the other word order and the same rule is
+	// applied to both sides.
+	if isOracle(dialect) {
+		genFunction.Parameters = oracleroutine.FoldDefaultArgumentMode(genFunction.Parameters)
+		dbFunction.Parameters = oracleroutine.FoldDefaultArgumentMode(dbFunction.Parameters)
+	}
 
 	// Compare parameters
 	if genFunction.Parameters != dbFunction.Parameters {

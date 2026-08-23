@@ -1337,7 +1337,7 @@ func renderGeneratedDownMigrationSQL(
 	if err != nil {
 		return "", err
 	}
-	statements := sqlutil.SplitSQLStatements(output)
+	statements := sqlutil.SplitSQLStatementsForDialect(output, plan.Dialect)
 	if len(statements) == 0 {
 		return fmt.Sprintf(
 			"-- Migration rollback\n-- Generated on: %s\n-- Direction: DOWN\n\n-- No rollback operations needed\n",
@@ -1367,7 +1367,7 @@ func renderGeneratedMigrationSQL(
 	if err != nil {
 		return "", err
 	}
-	statements := sqlutil.SplitSQLStatements(rawSQL)
+	statements := sqlutil.SplitSQLStatementsForDialect(rawSQL, dialect)
 	if len(statements) == 0 || !hasActualSQLStatements(statements) {
 		return "", nil
 	}
@@ -2019,7 +2019,7 @@ func planDownMigrationStatements(
 	if err != nil {
 		return nil, fmt.Errorf("error generating down migration SQL: %w", err)
 	}
-	return sqlutil.SplitSQLStatements(output), nil
+	return sqlutil.SplitSQLStatementsForDialect(output, dialect), nil
 }
 
 func withGeneratedTimeoutDirectivesForOptions(sql, dialect string, opts generatedDirectiveOptions) string {

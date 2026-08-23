@@ -1949,11 +1949,19 @@ func Oracle23() Capabilities {
 		IndexIncludeSPGiST:      false,
 		Views:                   true,
 		MaterializedViews:       true,
-		// PL/SQL routines are their own language rather than the
-		// language-plus-body shape ast.CreateFunctionNode carries, so Ptah's
-		// Oracle path refuses them today. The engine accepts both.
-		Functions:              false,
-		Procedures:             false,
+		// A standalone function and a standalone procedure are rendered, read
+		// back from ALL_PROCEDURES, ALL_ARGUMENTS and ALL_SOURCE, and planned
+		// (stokaro/ptah#1920). The body IS PL/SQL rather than the SQL the other
+		// dialects in this family run, which is what the language field says:
+		// a declaration reaching this target writes language="plsql", and the
+		// renderer names and skips one that does not.
+		//
+		// Both keys are true on both presets. PL/SQL is not a 23 feature and
+		// the two lines answered identically for the header, the catalog and
+		// the source text; they differ only in the existence guards, which
+		// ObjectExistenceGuards already carries.
+		Functions:              true,
+		Procedures:             true,
 		Triggers:               true,
 		CreateOrReplaceTrigger: true,
 		// Oracle changes a virtual column's expression through MODIFY rather

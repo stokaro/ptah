@@ -446,23 +446,6 @@ func (r *Renderer) VisitDropExtension(node *ast.DropExtensionNode) error {
 	return nil
 }
 
-// VisitCreateFunction refuses, and the reason is the shape of the node rather
-// than the engine.
-//
-// Oracle accepts both CREATE FUNCTION and CREATE PROCEDURE -- measured on
-// 23.26 -- but their bodies are PL/SQL, which is its own language with its own
-// statement terminator, while ast.CreateFunctionNode carries a language name
-// and a body the way PostgreSQL declares one. Rendering the body through
-// unchanged would emit a block whose inner semicolons end the statement early.
-// Functions and Procedures read false on both presets for this reason.
-func (r *Renderer) VisitCreateFunction(node *ast.CreateFunctionNode) error {
-	return unsupportedFeaturef("CREATE FUNCTION %s: PL/SQL routine bodies are not rendered for Oracle", node.Name)
-}
-
-func (r *Renderer) VisitDropFunction(node *ast.DropFunctionNode) error {
-	return unsupportedFeaturef("DROP FUNCTION %s: PL/SQL routine bodies are not rendered for Oracle", node.Name)
-}
-
 func (r *Renderer) VisitCreateSequence(node *ast.CreateSequenceNode) error {
 	if node.Comment != "" {
 		r.w.WriteLinef("-- %s", node.Comment)
@@ -804,6 +787,21 @@ func (r *Renderer) VisitRawSQL(node *ast.RawSQLNode) error {
 
 func (r *Renderer) notSupported(feature, name string) {
 	r.w.WriteLinef("-- ORACLE: %s %q is not supported", feature, name)
+}
+
+// refuses reports whether the target declines the capability a statement needs,
+// writing the named skip comment when it does.
+//
+// A comment rather than an error, because one schema is applied across several
+// dialects: a declaration the target cannot host is named in the plan and the
+// rest of the plan still runs. An error is kept for a declaration this target
+// COULD host but only by writing something other than what was asked.
+func (r *Renderer) refuses(key capability.Capability, kind, name string) bool {
+	if r.capabilities().Has(key) {
+		return false
+	}
+	r.notSupported(strings.ToUpper(kind), name)
+	return true
 }
 
 func unsupportedFeaturef(format string, args ...any) error {

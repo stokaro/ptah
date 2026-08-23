@@ -490,23 +490,13 @@ var Cells = []Cell{
 		Dialect: platform.Oracle, Line: "23",
 		Preset: capability.Oracle23, PresetName: "Oracle23",
 		Refinement: RefinedByVersion, Support: capability.Certified, Image: "gvenzl/oracle-free:slim",
-		Understates: map[capability.Capability]string{
-			// Four keys where the engine does more than Ptah's Oracle path
-			// does. Each is a renderer that has not been written rather than a
-			// statement the server refuses, and each was measured ACCEPTED on
-			// this line while the preset reads false (stokaro/ptah#1875).
-			//
-			// role_management left this list in stokaro/ptah#1920, and
-			// domain_types left it in the same issue: the renderer emits
-			// CREATE ROLE, DROP ROLE, GRANT, REVOKE and CREATE DOMAIN, and the
-			// reader reads DBA_ROLES, ALL_TAB_PRIVS and ALL_DOMAINS, so both
-			// presets now say true and there is nothing left to understate for
-			// either.
-			capability.Functions: "PL/SQL function bodies are their own language rather than the language-plus-body " +
-				"shape ast.CreateFunctionNode carries, so the renderer refuses them",
-			capability.Procedures: "the same reason as functions: CREATE PROCEDURE is accepted here and the renderer " +
-				"emits none",
-		},
+		// Nothing is understated on this line any more. Four keys were, each a
+		// renderer that had not been written rather than a statement the server
+		// refuses (stokaro/ptah#1875). role_management and domain_types left the
+		// list in stokaro/ptah#1920, and functions and procedures left it in the
+		// same issue: the renderer emits CREATE OR REPLACE FUNCTION and
+		// PROCEDURE, and the reader reads ALL_PROCEDURES, ALL_ARGUMENTS and
+		// ALL_SOURCE, so both presets now say true for all four.
 		Note: "exercised by the tagged integration contour, which starts this image and runs the " +
 			"declaration-convergence round trip against it. Measured live on 23.26.2.0.0: every IF [NOT] EXISTS guard accepted -- and shown to be a " +
 			"guard rather than a discarded clause, because the unguarded control answered ORA-00955 -- " +
@@ -517,17 +507,11 @@ var Cells = []Cell{
 		Dialect: platform.Oracle, Line: "21",
 		Preset: capability.Oracle21, PresetName: "Oracle21",
 		Refinement: RefinedByVersion, Support: capability.Certified, Image: "gvenzl/oracle-xe:21-slim",
-		Understates: map[capability.Capability]string{
-			// The same two as the 23 line. CREATE DOMAIN is ORA-00901 here,
-			// so that preset's false is a measurement rather than an
-			// understatement, and role management is no longer understated on
-			// either line: the renderer and the reader landed in
-			// stokaro/ptah#1935 and stokaro/ptah#1944.
-			capability.Functions: "PL/SQL function bodies are their own language rather than the language-plus-body " +
-				"shape ast.CreateFunctionNode carries, so the renderer refuses them",
-			capability.Procedures: "the same reason as functions: CREATE PROCEDURE is accepted here and the renderer " +
-				"emits none",
-		},
+		// Nothing is understated here either. CREATE DOMAIN is ORA-00901 on
+		// this line, so that preset's false is a measurement rather than an
+		// understatement, and the routine keys are true on both lines: the
+		// header, ALL_PROCEDURES, ALL_ARGUMENTS and ALL_SOURCE answered
+		// identically on 21.3.0.0.0 and on 23.26.2.0.0.
 		Note: "measured live on 21.3.0.0.0: every IF [NOT] EXISTS guard refused -- ORA-00922, ORA-00969 " +
 			"and ORA-00933 -- while a bare CREATE TABLE in the same session was accepted, plus no BOOLEAN " +
 			"and no VECTOR type, both ORA-00902",
