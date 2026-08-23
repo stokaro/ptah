@@ -14,8 +14,8 @@ import (
 	"go.5x5.cz/ptah/internal/oracletype"
 	"go.5x5.cz/ptah/internal/sqlitekey"
 	"go.5x5.cz/ptah/migration/internal/generatedschema"
-	"go.5x5.cz/ptah/migration/internal/typechange"
-	"go.5x5.cz/ptah/migration/schemadiff/internal/normalize"
+	"go.5x5.cz/ptah/internal/typechange"
+	"go.5x5.cz/ptah/internal/normalize"
 	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
 )
 

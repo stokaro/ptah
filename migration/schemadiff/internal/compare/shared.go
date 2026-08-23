@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	"go.5x5.cz/ptah/dbschema/types"
-	"go.5x5.cz/ptah/migration/schemadiff/internal/normalize"
+	"go.5x5.cz/ptah/internal/normalize"
 )
 
 // Regular expressions for constraint-based index detection
