@@ -6951,6 +6951,7 @@ type DBIndex struct{ ... }
 type DBIndexPart struct{ ... }
 type DBInfo struct{ ... }
 type DBMatView struct{ ... }
+type DBObjectOwner struct{ ... }
 type DBRLSPolicy struct{ ... }
 type DBRange struct{ ... }
 type DBRole struct{ ... }
@@ -7585,6 +7586,34 @@ type DBMatView struct {
 
 func (v DBMatView) QualifiedName() string
 
+### go.5x5.cz/ptah/dbschema/types.DBObjectOwner
+
+package types // import "go.5x5.cz/ptah/dbschema/types"
+
+type DBObjectOwner struct {
+    // Kind is the object kind.
+    Kind string `json:"kind"`
+    // Schema is the schema the object lives in, empty for a schema itself.
+    Schema string `json:"schema,omitempty"`
+    // Name is the object's name.
+    Name string `json:"name"`
+    // Owner is the role that owns it.
+    Owner string `json:"owner"`
+    // OwnerCanLogin reports whether that role can log in, read from the
+    // catalog beside the owner rather than inferred from the described roles:
+    // the owner of everything on a default PostgreSQL database is the
+    // bootstrap superuser, which Ptah deliberately does not describe, and an
+    // analysis that had to look it up in the role list would go quiet exactly
+    // where the question matters.
+    OwnerCanLogin bool `json:"owner_can_login"`
+}
+    DBObjectOwner is the owner of one schema object.
+
+    Kind is the object kind in Ptah's own vocabulary -- table, view,
+    materialized view, sequence, schema -- rather than the catalog's letter,
+    so a consumer need not know pg_class.relkind to read it.
+
+
 ### go.5x5.cz/ptah/dbschema/types.DBRLSPolicy
 
 package types // import "go.5x5.cz/ptah/dbschema/types"
@@ -7698,6 +7727,16 @@ type DBSchema struct {
     RLSPolicies        []DBRLSPolicy        `json:"rls_policies"` // PostgreSQL RLS policies
     Roles              []DBRole             `json:"roles"`        // PostgreSQL roles
     Grants             []DBGrant            `json:"grants"`       // PostgreSQL privilege grants
+
+    // ObjectOwners are the owners of the objects this read covers, one row per
+    // object, on the engines that have an owner to report.
+    //
+    // Like RoleMemberships it is read for ANALYSIS rather than for planning:
+    // Ptah renders no OWNER TO and no CREATE SCHEMA ... AUTHORIZATION, and
+    // treating ownership as part of the description is what made an inspect
+    // describe the connecting superuser and plan a CREATE ROLE for it
+    // (stokaro/ptah#1950).
+    ObjectOwners []DBObjectOwner `json:"object_owners,omitempty"`
 
     // RoleMemberships are the role-in-role edges the server holds between the
     // roles Ptah manages: who inherits whose privileges.
