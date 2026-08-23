@@ -136,8 +136,14 @@ func columnsFromCatalog(
 	columns := make([]Column, 0, len(table.Columns))
 	for _, column := range table.Columns {
 		columns = append(columns, Column{
-			ID:         builder.ColumnParts(table.Schema, table.Name, column.Name),
-			Type:       column.DataType,
+			ID: builder.ColumnParts(table.Schema, table.Name, column.Name),
+			// RawType and not DataType: a PostgreSQL read reports
+			// `code varchar(50)` as DataType "character varying" with the
+			// width in a field of its own, so a reader taking DataType alone
+			// holds a type with no width -- and every varchar column in the
+			// database then reads as modified against the declaration that
+			// created it (stokaro/ptah#1662).
+			Type:       column.RawType(),
 			Nullable:   strings.EqualFold(column.IsNullable, "YES"),
 			Unique:     column.IsPrimaryKey || column.IsUnique,
 			PrimaryKey: column.IsPrimaryKey,

@@ -91,6 +91,44 @@ func TestTableChangesMatchTheExistingComparator(t *testing.T) {
 			}),
 		},
 		{
+			// The catalog shape a REAL PostgreSQL read produces: the type name
+			// without its width, and the width in a field of its own. A reader
+			// taking DataType alone holds `character varying`, which differs
+			// from every declaration that created such a column -- so this row
+			// asserts NO change, and it is the one that caught the defect.
+			name: "a varchar column the database already matches",
+			description: describedTable(goschema.Field{
+				StructName: "Widget", Name: "code", Type: "varchar(50)", Nullable: true,
+			}),
+			catalog: catalogTable(dbschematypes.DBColumn{
+				Name: "code", DataType: "character varying", IsNullable: "YES",
+				CharacterMaxLength: new(50),
+			}),
+		},
+		{
+			// The control on the row above: the same shape, a different width.
+			name: "a varchar column the database reports narrower",
+			description: describedTable(goschema.Field{
+				StructName: "Widget", Name: "code", Type: "varchar(200)", Nullable: true,
+			}),
+			catalog: catalogTable(dbschematypes.DBColumn{
+				Name: "code", DataType: "character varying", IsNullable: "YES",
+				CharacterMaxLength: new(50),
+			}),
+		},
+		{
+			// The same pair for a numeric, whose precision and scale live in
+			// two more fields of their own.
+			name: "a numeric column the database already matches",
+			description: describedTable(goschema.Field{
+				StructName: "Widget", Name: "amount", Type: "numeric(10,2)", Nullable: true,
+			}),
+			catalog: catalogTable(dbschematypes.DBColumn{
+				Name: "amount", DataType: "numeric", IsNullable: "YES",
+				NumericPrecision: new(10), NumericScale: new(2),
+			}),
+		},
+		{
 			name: "a column whose nullability changed",
 			description: describedTable(
 				goschema.Field{StructName: "Widget", Name: "code", Type: "text", Nullable: false}),
