@@ -3,15 +3,42 @@ title: Choose a workflow
 description: Decide between versioned migrations and direct schema changes before wiring Ptah into a project.
 ---
 
-Ptah changes databases in two operating models, and this page helps you pick one before you wire Ptah into a project. In the **versioned workflow**, every change is a SQL migration file that is reviewed, committed, applied in order, and recorded in a revision table. In the **direct workflow**, Ptah compares a live database with the desired schema and applies the computed difference, with approval at apply time instead of a file in your repository.
+Wiring Ptah into a project answers two questions, and they are independent.
 
-Both workflows read the same desired schema from the same schema sources: annotated Go structs, YAML, HCL, or SQL files, or an external loader. The choice decides how changes reach databases, not how you model the schema — you can switch or combine workflows without remodeling.
+**Where does the change come from?** Either you write the migration yourself —
+`ptah migrations create`, then the SQL — or you describe the schema you want and
+Ptah works out the difference. The first needs no schema source at all; the
+second reads one from annotated Go structs, YAML, HCL, or SQL files, or an
+external loader.
+
+**How does it reach the database?** Either as versioned migration files that are
+reviewed, committed, applied in order and recorded in a revision table, or as a
+direct apply that computes the difference and executes it after approval.
+
+|  | Versioned files | Direct apply |
+| --- | --- | --- |
+| **You write the migration** | `migrations create`, write the SQL, `hash`, `up` — the [Quick start](../quick-start/) | — |
+| **Ptah derives it from a desired schema** | `migrations generate`, then the same `hash` and `up` | `schema apply` |
+
+The empty cell is not an omission: a direct apply computes a difference, and
+with no description of the schema you want there is nothing to compute one
+against. Everything else combines, and neither row is a reduced form of the
+other — a project can run for years on migrations it writes by hand and use
+every verb below except `generate` and `plan`.
 
 ## How Ptah models the two workflows
 
 ### Versioned migrations
 
-The native `ptah migrations` namespace owns this workflow. `generate` diffs the desired schema against a database and writes paired `*.up.sql` and `*.down.sql` files into the migration directory; `hash` seals the directory in the `ptah.sum` integrity file; `up` applies pending files in order and records each one in the revision table; `down` replays the committed rollback files.
+The native `ptah migrations` namespace owns this workflow, and only two of its
+verbs read a desired schema. `create` scaffolds an empty `*.up.sql`/`*.down.sql`
+pair for you to fill in; `generate` writes the same pair from the difference
+between a desired schema and a database. From there the lifecycle is identical:
+`hash` seals the directory in the `ptah.sum` integrity file, `up` applies
+pending files in order and records each one in the revision table, `down`
+replays the committed rollback files, and `status`, `validate`, `lint`,
+`import`, `checkpoint` and the history verbs never ask what the schema should
+look like.
 
 ```bash
 ptah migrations generate \
@@ -28,7 +55,10 @@ ptah migrations up \
   --verify-sum
 ```
 
-The migration directory lives in your repository, so every change is code-reviewed as SQL, and every environment replays the same files in the same order. The [Quick start](../quick-start/) runs this exact loop end to end.
+The migration directory lives in your repository, so every change is
+code-reviewed as SQL, and every environment replays the same files in the same
+order. The [Quick start](../quick-start/) runs the hand-written half of this
+loop end to end and then adds the generated half.
 
 ### Direct schema changes
 
@@ -49,6 +79,7 @@ With `--dry-run`, `ptah schema apply` prints the planned SQL under a `Planned sc
 
 | Question | Versioned migrations | Direct schema changes |
 | --- | --- | --- |
+| Whether a desired schema is required | No, except for `generate` and `plan` | Yes |
 | What gets reviewed | Migration SQL committed to the repository | Planned SQL at apply time, or a saved plan file |
 | What records history | Migration directory, `ptah.sum`, revision table | Nothing; the live database is the only state |
 | How rollback works | `ptah migrations down` replays committed down files | A new diff toward the schema you want back |

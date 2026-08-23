@@ -3,10 +3,16 @@ title: Generate migrations
 description: Plan and generate migration files from the difference between your desired schema and a live database.
 ---
 
-You have a desired schema — Go annotations, YAML, HCL, or SQL files — and a
-database that should follow it. This page shows how to preview the migration
-SQL, generate reviewed up/down files, and seal them, plus how to author a
-migration by hand when generation is not the right tool.
+A migration file has two origins, and this page covers both. Either you write
+it — `ptah migrations create`, then the SQL, which is the whole workflow for a
+project that keeps no desired schema — or you have a desired schema (Go
+annotations, YAML, HCL, or SQL files) and a database that should follow it, and
+Ptah writes the difference for you.
+
+Most of this page is the second origin, because it is the one with steps to
+explain. [Write a migration by hand](#write-a-migration-by-hand) is the first,
+and nothing after either origin differs: both produce the same pair of files,
+sealed and applied the same way.
 
 Prerequisites: a built `ptah` binary and a schema source. The examples use a
 Go model and a local SQLite file so they run without a daemon; substitute your
@@ -236,8 +242,11 @@ files that make the pre-replay integrity check fail forever.
 
 ## Write a migration by hand
 
-Create an empty pair when you want to author the SQL yourself — a data
-backfill, an index rebuild, or anything the schema diff cannot express:
+`create` scaffolds an empty pair for you to fill in. This is a first-class
+origin rather than a fallback: a project that describes no desired schema uses
+it for every change, and a project that does still reaches for it whenever the
+change is one a schema difference cannot express — a data backfill, an index
+rebuild, a grant.
 
 ```bash
 ptah migrations create add_invoices --migrations-dir ./migrations

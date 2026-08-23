@@ -3,17 +3,34 @@ title: Versioned migrations
 description: The migration lifecycle in Ptah - what a migration directory is, the core loop, and where each task lives.
 ---
 
-Versioned migrations are the operational boundary between your desired schema
-and live database state: every change becomes a reviewed, ordered pair of SQL
-files that is hashed, linted, applied, and reversible. This page gives you the
-mental model and the core loop; each lifecycle step has its own page with
-runnable examples and failure guidance.
+Versioned migrations are the operational boundary between a change and live
+database state: every change becomes a reviewed, ordered pair of SQL files that
+is hashed, linted, applied, and reversible. Whether you write those files or
+Ptah derives them from a desired schema is a separate decision, and this page
+covers both; each lifecycle step then has its own page with runnable examples
+and failure guidance.
 
 Treat migration files as code. They live in your repository, they are covered
 by an integrity file, and they go through review before they reach a shared
 database.
 
-## The core loop
+## Where the files come from
+
+Two ways, and the lifecycle after them is the same. Only the first step differs,
+so a project that never describes a desired schema uses every verb below except
+`plan` and `generate`.
+
+### You write them
+
+```bash
+ptah migrations create add_orders --migrations-dir ./migrations
+# write the SQL in the generated *.up.sql and *.down.sql
+```
+
+`create` scaffolds the pair and leaves their contents to you. Nothing here reads
+a schema source, and nothing later asks for one.
+
+### Ptah derives them from a desired schema
 
 ```bash
 ptah migrations plan \
@@ -24,7 +41,14 @@ ptah migrations generate \
   --root-dir ./models \
   --db-url "$DATABASE_URL" \
   --migrations-dir ./migrations
+```
 
+`plan` previews the SQL for the difference between the desired schema and the
+database; `generate` writes that difference as the same pair of files.
+
+## The lifecycle both share
+
+```bash
 ptah migrations hash --dir ./migrations
 ptah migrations validate --dir ./migrations
 
@@ -34,12 +58,12 @@ ptah migrations up \
   --verify-sum
 ```
 
-Preview the SQL, write the files, seal them, and apply them. Each step is
-covered in depth on its own page:
+Seal the directory, check it against its own integrity file, and apply what is
+pending. Each step is covered in depth on its own page:
 
 | Task | Page |
 | --- | --- |
-| Plan and write migration files from schema differences | [Generate migrations](../generate/) |
+| Write a migration by hand, or plan and write one from schema differences | [Generate migrations](../generate/) |
 | Apply pending migrations and inspect state | [Apply migrations](../apply/) |
 | Roll back to an earlier version | [Roll back migrations](../rollback/) |
 | Hash, validate, lint, and gate destructive changes | [Integrity and safety](../integrity-and-safety/) |
