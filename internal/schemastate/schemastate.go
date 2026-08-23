@@ -41,6 +41,7 @@ import (
 
 	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/coverage"
+	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/internal/objectidentity"
 )
 
@@ -484,6 +485,13 @@ type Index struct {
 	// a [UniqueKey] as well, which is what lets a foreign key reference its
 	// columns.
 	Unique bool
+	// Concurrent records that the source asked for a non-locking index build.
+	//
+	// Only a description can ask: a catalog reports the index, not how it was
+	// built. It is not compared for the same reason -- a request about HOW to
+	// apply a change is not a property of the object, so an index built
+	// concurrently and one built with a lock are the same index.
+	Concurrent bool
 	// KeyPartsIncomplete reports that the reader could not name every part of
 	// the key -- a MySQL functional key part such as `KEY idx ((b + 1))` has a
 	// NULL COLUMN_NAME in information_schema.STATISTICS.
@@ -632,4 +640,18 @@ func (s *State) Len() int {
 // (stokaro/ptah#1276, stokaro/ptah#1662).
 func DescribesTable(state *State, id objectidentity.ID) bool {
 	return state.Coverage().DescribesSchema(id.Schema.Source)
+}
+
+// IndexRequiredFacts are the capability keys an index change cannot be planned
+// without.
+//
+// A concurrent build is the only one, and it is a fact about the TARGET rather
+// than a branch inside a dialect planner: a target that cannot do it must
+// refuse the change and name the key, not quietly render a locking build the
+// author did not ask for (stokaro/ptah#1663, ADR 0001 decision 5).
+func IndexRequiredFacts(index Index) []capability.Capability {
+	if !index.Concurrent {
+		return nil
+	}
+	return []capability.Capability{capability.CreateIndexConcurrently}
 }

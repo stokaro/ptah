@@ -376,6 +376,16 @@ type Index struct {
 	Parser string
 	// Condition is the WHERE clause for partial or filtered indexes.
 	Condition string
+	// Concurrently records that the source asked for PostgreSQL's non-locking
+	// index build -- `CREATE INDEX CONCURRENTLY`.
+	//
+	// The parser has always accepted the keyword and the conversion dropped it,
+	// so a `.sql` desired state asking for a concurrent build was planned as a
+	// locking one, silently. On a table large enough for the request to be
+	// worth making, that is the difference between a migration and an outage
+	// (stokaro/ptah#1663). It is the same loss the Granularity comment in
+	// internal/convert/toschema records for ClickHouse.
+	Concurrently bool
 	// Operator is the operator class (PostgreSQL only, e.g. "gin_trgm_ops").
 	Operator string
 	// IncludeColumns carries INCLUDE payload columns for PostgreSQL,
