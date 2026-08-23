@@ -1272,3 +1272,68 @@ func (p *parser) rejectUnsupportedExtendedPropertyAttrs(block *hclsyntax.Block) 
 		"comment": true,
 	}, "extended_property")
 }
+
+// parseHypertable parses a top-level hypertable block into a
+// goschema.Hypertable.
+//
+// The block's label is the TABLE it partitions, not a name of its own: a
+// hypertable has no name, and `timescaledb_information.hypertables` is keyed by
+// the relation. `column` is required for the same reason `target` is required
+// on a synonym — a hypertable with no dimension is not one, and the server has
+// no default to fall back on.
+//
+// `chunk_interval` is optional and is kept as the string it was written as. An
+// omitted interval takes TimescaleDB's own default, which the catalog then
+// reports; converting the declaration to compare would differ from the server's
+// spelling on every run.
+func (p *parser) parseHypertable(block *hclsyntax.Block) error {
+	schema, table, err := p.objectSchemaAndName(block, "hypertable")
+	if err != nil {
+		return err
+	}
+	if err := p.rejectNestedBlocks(block, "hypertable"); err != nil {
+		return err
+	}
+	if err := p.rejectUnsupportedHypertableAttrs(block); err != nil {
+		return err
+	}
+	column, err := p.stringAttr(block, "column", "hypertable")
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(column) == "" {
+		return p.blockError(block, "hypertable %q requires a column to partition on", table)
+	}
+	chunkInterval, err := p.stringAttr(block, "chunk_interval", "hypertable")
+	if err != nil {
+		return err
+	}
+	p.db.Hypertables = append(p.db.Hypertables, goschema.Hypertable{
+		Table:         qualifyHypertableName(schema, table),
+		Column:        column,
+		ChunkInterval: chunkInterval,
+		IfNotExists:   p.optionalBool(block.Body.Attributes["if_not_exists"], false),
+		Comment:       p.optionalString(block.Body.Attributes["comment"]),
+	})
+	return nil
+}
+
+// qualifyHypertableName folds the schema back into the table name, which is how
+// [go.5x5.cz/ptah/core/goschema.Hypertable] carries it: the declaration names a
+// TABLE, and a table is named the way every other reference to one is.
+func qualifyHypertableName(schema, table string) string {
+	if strings.TrimSpace(schema) == "" {
+		return table
+	}
+	return schema + "." + table
+}
+
+func (p *parser) rejectUnsupportedHypertableAttrs(block *hclsyntax.Block) error {
+	return p.rejectUnsupportedAttrs(block, map[string]bool{
+		"schema":         true,
+		"column":         true,
+		"chunk_interval": true,
+		"if_not_exists":  true,
+		"comment":        true,
+	}, "hypertable")
+}

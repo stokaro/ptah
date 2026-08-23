@@ -231,6 +231,7 @@ var convertedFamilies = map[string]string{
 	"Ranges":             "Ranges",
 	"Views":              "Views",
 	"MatViews":           "MaterializedViews",
+	"Hypertables":        "Hypertables",
 	"Synonyms":           "Synonyms",
 	"ExtendedProperties": "ExtendedProperties",
 	"Triggers":           "Triggers",
@@ -242,8 +243,7 @@ var convertedFamilies = map[string]string{
 // unconvertedFamilies are the read families that deliberately do not become
 // declarations, with the reason each one does not.
 var unconvertedFamilies = map[string]string{
-	"ContinuousAggregates":      "TimescaleDB objects Ptah describes and does not manage; no declaration syntax names one",
-	"Hypertables":               "the same, and the note the read emits is what says so",
+	"ContinuousAggregates":      "a TimescaleDB object Ptah describes and does not manage; no declaration syntax names one, and describing it as a view is wrong in both directions (stokaro/ptah#1026)",
 	"ObjectOwners":              "ownership is read for diagnostics; no declaration carries it",
 	"RoleMemberships":           "read for the role graph rather than as a declarable object",
 	"RolesOutOfScope":           "a report about what the read did not cover, not an object",

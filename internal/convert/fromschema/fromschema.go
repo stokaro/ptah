@@ -1777,6 +1777,21 @@ func appendSynonymStatements(statements *ast.StatementList, synonyms []goschema.
 	}
 }
 
+// FromHypertable converts a goschema.Hypertable into the call that makes one.
+func FromHypertable(hypertable goschema.Hypertable) *ast.CreateHypertableNode {
+	return ast.NewCreateHypertable(hypertable.Table, hypertable.Column).
+		SetChunkInterval(hypertable.ChunkInterval).
+		SetIfNotExists(hypertable.IfNotExists).
+		SetComment(hypertable.Comment)
+}
+
+// appendHypertableStatements adds one create_hypertable call per declaration.
+func appendHypertableStatements(statements *ast.StatementList, hypertables []goschema.Hypertable) {
+	for _, hypertable := range hypertables {
+		statements.Statements = append(statements.Statements, FromHypertable(hypertable))
+	}
+}
+
 // FromExtendedProperty converts a goschema.ExtendedProperty into the node that
 // writes it.
 //
@@ -2259,6 +2274,14 @@ func FromDatabase(database goschema.Database, targetPlatform string) *ast.Statem
 	// that creates the alias first and the table second reads as though the
 	// order did not matter, and the next person reorders it.
 	appendSynonymStatements(statements, database.Synonyms)
+
+	// 8b2. A hypertable is a call against a table that must already exist:
+	// measured on TimescaleDB 2.29.2, create_hypertable against a missing
+	// relation answers `relation "conditions" does not exist`. It also has to
+	// come before the data statements below, because the call refuses a table
+	// that already holds rows -- `table "loaded" is not empty` -- and would
+	// then leave the table ordinary.
+	appendHypertableStatements(statements, database.Hypertables)
 
 	// 8c. Extended properties come after every object one can hang off.
 	// sp_addextendedproperty resolves @level1name through the catalog and

@@ -182,9 +182,11 @@ has no block, so a document written in this format could not have named one —
 and reading its silence as intent would make `ptah schema inspect > out.hcl`
 followed by `ptah schema apply --to file://out.hcl` drop it, through Ptah's own
 output. Every loader records those limits for the format it read, so the
-comparison withholds the removal. HCL **does** have a `synonym` and an
-`extended_property` block, as a Go schema does, so silence about one of those in
-this format still removes it. YAML has a key for neither.
+comparison withholds the removal. HCL **does** have a `synonym`, an
+`extended_property` and a `hypertable` block, as a Go schema does, so silence
+about one of those in this format still removes it — except a hypertable, whose
+removal TimescaleDB has no statement for and which is refused instead. YAML has
+a key for none of the three.
 
 Both commands write a `permission` block by the same three rules: a schema is
 declared whenever anything references one, a grantee is a `role.<name>`

@@ -58,6 +58,8 @@ type Visitor interface {
 	VisitDropView(*DropViewNode) error
 	// VisitCreateSynonym renders a CREATE SYNONYM statement
 	VisitCreateSynonym(*CreateSynonymNode) error
+	// VisitCreateHypertable renders the TimescaleDB create_hypertable call
+	VisitCreateHypertable(*CreateHypertableNode) error
 	// VisitDropSynonym renders a DROP SYNONYM statement
 	VisitDropSynonym(*DropSynonymNode) error
 	// VisitExtendedProperty renders one SQL Server extended-property statement

@@ -598,6 +598,7 @@ type schemaParseState struct {
 	triggers              []Trigger
 	rlsPolicies           []RLSPolicy
 	rlsEnabledTables      []RLSEnabledTable
+	hypertables           []Hypertable
 	roles                 []Role
 	grants                []Grant
 	managedData           []ManagedData
@@ -687,53 +688,60 @@ func (s *schemaParseState) parsePlacementDirective(
 	}
 }
 
+// sharedDirectiveParser reads one schema directive. Every parser takes the
+// struct the comment was attached to, and the two that have no use for it are
+// adapted by [ignoringStruct] rather than given a signature of their own.
+type sharedDirectiveParser func(*schemaParseState, *ast.Comment, string) error
+
+// sharedDirectiveParsers is the directive dispatch every schema comment target
+// shares: a struct's doc comment and a field's carry the same set.
+//
+// It is a table rather than a run of switch arms because the switch reached
+// twenty-one of them, all identical in shape. A table says which directive
+// belongs to which parser and nothing else, and a new object family adds one
+// line instead of pushing the function past the complexity gate.
+var sharedDirectiveParsers = map[string]sharedDirectiveParser{
+	"ptah:schema:constraint":       (*schemaParseState).parseConstraintComment,
+	"ptah:schema:enum":             ignoringStruct((*schemaParseState).parseEnumComment),
+	"ptah:schema:extension":        ignoringStruct((*schemaParseState).parseExtensionComment),
+	"ptah:schema:function":         (*schemaParseState).parseFunctionComment,
+	"ptah:schema:procedure":        (*schemaParseState).parseProcedureComment,
+	"ptah:schema:sequence":         (*schemaParseState).parseSequenceComment,
+	"ptah:schema:domain":           (*schemaParseState).parseDomainComment,
+	"ptah:schema:composite":        (*schemaParseState).parseCompositeComment,
+	"ptah:schema:range":            (*schemaParseState).parseRangeComment,
+	"ptah:schema:view":             (*schemaParseState).parseViewComment,
+	"ptah:schema:matview":          (*schemaParseState).parseMaterializedViewComment,
+	"ptah:schema:hypertable":       (*schemaParseState).parseHypertableComment,
+	"ptah:schema:synonym":          (*schemaParseState).parseSynonymComment,
+	"ptah:schema:extendedproperty": (*schemaParseState).parseExtendedPropertyComment,
+	"ptah:schema:trigger":          (*schemaParseState).parseTriggerComment,
+	"ptah:schema:rls:policy":       (*schemaParseState).parseRLSPolicyComment,
+	"ptah:schema:rls:enable":       (*schemaParseState).parseRLSEnableComment,
+	"ptah:schema:role":             (*schemaParseState).parseRoleComment,
+	"ptah:schema:grant":            (*schemaParseState).parseGrantComment,
+	"ptah:schema:data":             (*schemaParseState).parseManagedDataComment,
+}
+
+// ignoringStruct adapts a parser that does not need the owning struct's name.
+func ignoringStruct(
+	parse func(*schemaParseState, *ast.Comment) error,
+) sharedDirectiveParser {
+	return func(s *schemaParseState, comment *ast.Comment, _ string) error {
+		return parse(s, comment)
+	}
+}
+
 func (s *schemaParseState) parseSharedDirective(
 	comment *ast.Comment,
 	directive string,
 	target schemaCommentTarget,
 ) error {
-	switch directive {
-	case "ptah:schema:constraint":
-		return s.parseConstraintComment(comment, target.structName)
-	case "ptah:schema:enum":
-		return s.parseEnumComment(comment)
-	case "ptah:schema:extension":
-		return s.parseExtensionComment(comment)
-	case "ptah:schema:function":
-		return s.parseFunctionComment(comment, target.structName)
-	case "ptah:schema:procedure":
-		return s.parseProcedureComment(comment, target.structName)
-	case "ptah:schema:sequence":
-		return s.parseSequenceComment(comment, target.structName)
-	case "ptah:schema:domain":
-		return s.parseDomainComment(comment, target.structName)
-	case "ptah:schema:composite":
-		return s.parseCompositeComment(comment, target.structName)
-	case "ptah:schema:range":
-		return s.parseRangeComment(comment, target.structName)
-	case "ptah:schema:view":
-		return s.parseViewComment(comment, target.structName)
-	case "ptah:schema:matview":
-		return s.parseMaterializedViewComment(comment, target.structName)
-	case "ptah:schema:synonym":
-		return s.parseSynonymComment(comment, target.structName)
-	case "ptah:schema:extendedproperty":
-		return s.parseExtendedPropertyComment(comment, target.structName)
-	case "ptah:schema:trigger":
-		return s.parseTriggerComment(comment, target.structName)
-	case "ptah:schema:rls:policy":
-		return s.parseRLSPolicyComment(comment, target.structName)
-	case "ptah:schema:rls:enable":
-		return s.parseRLSEnableComment(comment, target.structName)
-	case "ptah:schema:role":
-		return s.parseRoleComment(comment, target.structName)
-	case "ptah:schema:grant":
-		return s.parseGrantComment(comment, target.structName)
-	case "ptah:schema:data":
-		return s.parseManagedDataComment(comment, target.structName)
-	default:
+	parse, known := sharedDirectiveParsers[directive]
+	if !known {
 		return nil
 	}
+	return parse(s, comment, target.structName)
 }
 
 func (s *schemaParseState) parseEnumComment(comment *ast.Comment) error {
@@ -864,6 +872,7 @@ func parseFileAST(filename string, fset *token.FileSet, f *ast.File) (Database, 
 		Triggers:           state.triggers,
 		RLSPolicies:        state.rlsPolicies,
 		RLSEnabledTables:   state.rlsEnabledTables,
+		Hypertables:        state.hypertables,
 		Roles:              state.roles,
 		Grants:             state.grants,
 		ManagedData:        state.managedData,
@@ -1421,6 +1430,34 @@ func (s *schemaParseState) parseViewComment(comment *ast.Comment, structName str
 		WithCheck:  kv["with_check"] == "true",
 		Comment:    kv["comment"],
 		Dialects:   scope,
+	})
+	return nil
+}
+
+// parseHypertableComment reads a TimescaleDB hypertable declaration.
+//
+// There is no dialect scope here, for the reason [schemaParseState.parseSynonymComment]
+// gives: a hypertable belongs to TimescaleDB and to nothing else.
+//
+// `chunk_interval` is kept as the string it was written as. The catalog reports
+// the server's own spelling -- `7 days`, `1 day` -- and a declaration converted
+// to something else to compare would differ from it on every run.
+func (s *schemaParseState) parseHypertableComment(comment *ast.Comment, structName string) error {
+	kv := parseutils.ParseKeyValueComment(comment.Text)
+	ctx := s.annotationContext(comment, "//ptah:schema:hypertable", structName)
+	if err := validateAttributes(kv, ctx); err != nil {
+		return err
+	}
+	if err := requireAttributes(kv, ctx); err != nil {
+		return err
+	}
+	s.hypertables = append(s.hypertables, Hypertable{
+		StructName:    structName,
+		Table:         kv["table"],
+		Column:        kv["column"],
+		ChunkInterval: kv["chunk_interval"],
+		IfNotExists:   kv["if_not_exists"] == "true",
+		Comment:       kv["comment"],
 	})
 	return nil
 }

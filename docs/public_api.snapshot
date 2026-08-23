@@ -880,6 +880,8 @@ type CreateDatabaseNode struct{ ... }
     func NewCreateDatabase(name string) *CreateDatabaseNode
 type CreateFunctionNode struct{ ... }
     func NewCreateFunction(name string) *CreateFunctionNode
+type CreateHypertableNode struct{ ... }
+    func NewCreateHypertable(table, column string) *CreateHypertableNode
 type CreateMaterializedViewNode struct{ ... }
     func NewCreateMaterializedView(name string) *CreateMaterializedViewNode
 type CreatePolicyNode struct{ ... }
@@ -1805,6 +1807,46 @@ func (n *CreateFunctionNode) SetReturnBody(body string) *CreateFunctionNode
 func (n *CreateFunctionNode) SetReturns(returns string) *CreateFunctionNode
 func (n *CreateFunctionNode) SetSecurity(security string) *CreateFunctionNode
 func (n *CreateFunctionNode) SetVolatility(volatility string) *CreateFunctionNode
+
+### go.5x5.cz/ptah/core/ast.CreateHypertableNode
+
+package ast // import "go.5x5.cz/ptah/core/ast"
+
+type CreateHypertableNode struct {
+    Table         string
+    Column        string
+    ChunkInterval string
+    IfNotExists   bool
+    Comment       string
+}
+    CreateHypertableNode represents the TimescaleDB call that turns an ordinary
+    table into a hypertable.
+
+    It is a function call rather than DDL, and the node says so by carrying the
+    call's arguments rather than a statement: `SELECT create_hypertable(...)`.
+    There is no CREATE HYPERTABLE grammar, so a node modelled on CREATE TABLE
+    would promise a shape no engine has.
+
+    Table and Column are identifiers; ChunkInterval is an interval literal,
+    empty when the declaration takes TimescaleDB's own default (7 days for a
+    timestamptz column, measured on 2.29.2).
+
+    IfNotExists renders `if_not_exists => TRUE`. Measured on 2.29.2, a second
+    call without it answers `table "conditions" is already a hypertable` as an
+    ERROR, and with it a NOTICE and `(1,f)`.
+
+    There is no MigrateData field, and the omission is the decision. Measured
+    on the same server, the call against a table holding one row answers `table
+    "loaded" is not empty` with the hint that `migrate_data => true` would
+    rewrite it. Rewriting a populated table is a choice an operator makes,
+    not one a migration takes on their behalf, so the server's refusal is what a
+    plan carries.
+
+func NewCreateHypertable(table, column string) *CreateHypertableNode
+func (n *CreateHypertableNode) Accept(visitor Visitor) error
+func (n *CreateHypertableNode) SetChunkInterval(interval string) *CreateHypertableNode
+func (n *CreateHypertableNode) SetComment(comment string) *CreateHypertableNode
+func (n *CreateHypertableNode) SetIfNotExists(ifNotExists bool) *CreateHypertableNode
 
 ### go.5x5.cz/ptah/core/ast.CreateMaterializedViewNode
 
@@ -4350,6 +4392,8 @@ type Visitor interface {
     VisitDropView(*DropViewNode) error
     // VisitCreateSynonym renders a CREATE SYNONYM statement
     VisitCreateSynonym(*CreateSynonymNode) error
+    // VisitCreateHypertable renders the TimescaleDB create_hypertable call
+    VisitCreateHypertable(*CreateHypertableNode) error
     // VisitDropSynonym renders a DROP SYNONYM statement
     VisitDropSynonym(*DropSynonymNode) error
     // VisitExtendedProperty renders one SQL Server extended-property statement
@@ -4613,6 +4657,7 @@ type Extension struct{ ... }
 type Field struct{ ... }
 type Function struct{ ... }
 type Grant struct{ ... }
+type Hypertable struct{ ... }
 type Index struct{ ... }
 type IndexPart struct{ ... }
 type ManagedData struct{ ... }
@@ -4778,6 +4823,7 @@ type Database struct {
     Triggers                   []Trigger                      // Database triggers
     RLSPolicies                []RLSPolicy                    // PostgreSQL Row-Level Security policies
     RLSEnabledTables           []RLSEnabledTable              // Tables with RLS enabled
+    Hypertables                []Hypertable                   // TimescaleDB hypertables
     Roles                      []Role                         // PostgreSQL roles
     Grants                     []Grant                        // PostgreSQL privilege grants
     ManagedData                []ManagedData                  // Declarative reference/seed row data for tables
@@ -5286,6 +5332,55 @@ type Grant struct {
         type AccessControl struct{}
 
 func (g *Grant) Canonicalize()
+
+### go.5x5.cz/ptah/core/goschema.Hypertable
+
+package goschema // import "go.5x5.cz/ptah/core/goschema"
+
+type Hypertable struct {
+    StructName string // Name of the Go struct this hypertable is associated with
+    // Table is the table to partition, optionally schema-qualified.
+    Table string
+    // Column is the range dimension: the column chunks are cut on.
+    Column string
+    // ChunkInterval is the width of one chunk, written the way PostgreSQL
+    // spells an interval -- `7 days`, `1 hour`. Empty takes TimescaleDB's own
+    // default, which is 7 days for a timestamptz column.
+    //
+    // It is a string rather than a duration because the server's own spelling
+    // is what `timescaledb_information.dimensions` reports back, and a
+    // declaration that had to be converted to compare would differ from the
+    // catalog on every run.
+    ChunkInterval string
+    // IfNotExists renders `if_not_exists => TRUE`, which turns the server's
+    // `table "x" is already a hypertable` error into a skipped notice.
+    IfNotExists bool
+    Comment     string // Optional comment for documentation
+}
+    Hypertable is a TimescaleDB hypertable: an ordinary table partitioned on a
+    range dimension.
+
+    It is its own family rather than a field on Table for the reason
+    RLSEnabledTable is: the declaration is about a table and is not part of the
+    table's own definition, and a target that does not have the extension has a
+    table without it rather than a different table.
+
+    Nothing outside TimescaleDB's own catalog can see one. Measured on 2.29.2 /
+    PostgreSQL 17.11 after `create_hypertable('conditions', by_range('time'))`,
+    `pg_class.relkind` answers `r`, `pg_depend` reports no extension ownership,
+    and the index the call created carries `deptype 'a'` -- the same as an
+    ordinary user index on an ordinary table. So a description that does not
+    carry this says the table is not partitioned, and replaying it produces a
+    table that is not (stokaro/ptah#1026).
+
+    One range dimension. A second is a separate call -- `add_dimension` with
+    `by_hash` -- and a separate concept; the read counts them and says how many
+    it did not describe.
+
+    Dialects is deliberately absent, for the reason Synonym gives: a hypertable
+    belongs to TimescaleDB and to nothing else, and a scope field would invite a
+    schema to claim otherwise.
+
 
 ### go.5x5.cz/ptah/core/goschema.Index
 
@@ -6125,6 +6220,7 @@ type Capabilities map[Capability]bool
     func SQLite3() Capabilities
     func SQLite324() Capabilities
     func SpannerPostgres() Capabilities
+    func WithDeclaredExtensions(caps Capabilities, extensions []string) Capabilities
     func YugabyteDB24() Capabilities
     func YugabyteDB25() Capabilities
 type Capability string
@@ -6184,6 +6280,7 @@ func SQLServer2022() Capabilities
 func SQLite3() Capabilities
 func SQLite324() Capabilities
 func SpannerPostgres() Capabilities
+func WithDeclaredExtensions(caps Capabilities, extensions []string) Capabilities
 func YugabyteDB24() Capabilities
 func YugabyteDB25() Capabilities
 func (c Capabilities) Clone() Capabilities
@@ -7504,6 +7601,15 @@ type DBHypertable struct {
     // PrimaryDimensionType is that column's type as the catalog spells it.
     PrimaryDimension     string `json:"primary_dimension"`
     PrimaryDimensionType string `json:"primary_dimension_type"`
+
+    // ChunkInterval is the width of one chunk on the primary dimension, in the
+    // server's own spelling -- `7 days`, `1 day`. It is empty for a dimension
+    // the catalog reports no time interval for, which is every hash dimension
+    // and an integer range one.
+    //
+    // The server's spelling is what a declaration has to carry: a value
+    // converted to compare would differ from the catalog on every run.
+    ChunkInterval string `json:"chunk_interval,omitempty"`
 
     // Dimensions counts the partitioning dimensions, so a note can say that a
     // table has more than the one it names.
@@ -11059,6 +11165,7 @@ type ExtensionDiff struct{ ... }
 type ForeignKeyRemovalInfo struct{ ... }
 type FunctionDiff struct{ ... }
 type GrantRef struct{ ... }
+type HypertableDiff struct{ ... }
 type IndexRef struct{ ... }
 type MatViewRefreshChange struct{ ... }
 type MaterializedViewDiff struct{ ... }
@@ -11485,6 +11592,26 @@ type GrantRef struct {
     GrantRef identifies one PostgreSQL privilege grant.
 
 
+### go.5x5.cz/ptah/migration/schemadiff/types.HypertableDiff
+
+package types // import "go.5x5.cz/ptah/migration/schemadiff/types"
+
+type HypertableDiff struct {
+    // Table is the table both sides name.
+    Table string `json:"table"`
+    // OldColumn and NewColumn are the range dimensions, live and declared.
+    OldColumn string `json:"old_column"`
+    NewColumn string `json:"new_column"`
+    // OldChunkInterval and NewChunkInterval are the chunk widths, live and
+    // declared. An empty declared interval takes the server's default and is
+    // not a difference.
+    OldChunkInterval string `json:"old_chunk_interval"`
+    NewChunkInterval string `json:"new_chunk_interval"`
+}
+    HypertableDiff describes a hypertable whose declared partitioning differs
+    from the one the catalog reports.
+
+
 ### go.5x5.cz/ptah/migration/schemadiff/types.IndexRef
 
 package types // import "go.5x5.cz/ptah/migration/schemadiff/types"
@@ -11831,6 +11958,27 @@ type SchemaDiff struct {
     // ViewsRemoved contains names of views that exist in the current database
     // but not in the target schema.
     ViewsRemoved []string `json:"views_removed"`
+
+    // HypertablesAdded names the tables a declaration asks to partition and the
+    // database reports as ordinary.
+    HypertablesAdded []string `json:"hypertables_added"`
+
+    // HypertablesRemoved names the tables the database reports as hypertables
+    // and the declaration does not.
+    //
+    // There is no statement that honors one. TimescaleDB has no
+    // `drop_hypertable`: measured on 2.29.2, the call answers
+    // `function drop_hypertable(unknown) does not exist`, and the only way back
+    // to an ordinary table is dropping this one and its data. So the planner
+    // refuses rather than plans (stokaro/ptah#1026).
+    HypertablesRemoved []string `json:"hypertables_removed"`
+
+    // HypertablesModified names the tables whose partitioning declaration
+    // differs from what the catalog reports.
+    //
+    // It carries the same refusal as a removal, for the same reason: changing a
+    // dimension is not a statement either.
+    HypertablesModified []HypertableDiff `json:"hypertables_modified"`
 
     // SynonymsAdded contains names of synonyms that exist in the target schema
     // and not in the database.

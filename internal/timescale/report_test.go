@@ -35,15 +35,25 @@ func TestReportUndescribed_NamesWhatTheDescriptionLeavesOut(t *testing.T) {
 			wantLines: 0,
 		},
 		{
-			name: "one hypertable",
+			// A declaration carries this one, so the description is complete
+			// and there is nothing to report.
+			name: "one hypertable on one dimension",
 			schema: &types.DBSchema{
 				Tables:      []types.DBTable{{Name: "conditions"}},
 				Hypertables: []types.DBHypertable{{Name: "conditions", PrimaryDimension: "time", Dimensions: 1}},
 			},
+			wantLines: 0,
+		},
+		{
+			name: "one hypertable on two dimensions",
+			schema: &types.DBSchema{
+				Tables:      []types.DBTable{{Name: "conditions"}},
+				Hypertables: []types.DBHypertable{{Name: "conditions", PrimaryDimension: "time", Dimensions: 2}},
+			},
 			wantLines: 1,
 			want: []string{
-				"1 hypertable is described as ordinary tables",
-				"conditions (on time)",
+				"1 hypertable is described with the first partitioning dimension only",
+				"conditions (on time and 1 more dimension)",
 			},
 		},
 		{
@@ -51,29 +61,36 @@ func TestReportUndescribed_NamesWhatTheDescriptionLeavesOut(t *testing.T) {
 			schema: &types.DBSchema{
 				Tables: []types.DBTable{{Name: "metrics"}, {Name: "conditions"}},
 				Hypertables: []types.DBHypertable{
-					{Name: "metrics", PrimaryDimension: "ts"},
-					{Name: "conditions", PrimaryDimension: "time"},
+					{Name: "metrics", PrimaryDimension: "ts", Dimensions: 2},
+					{Name: "conditions", PrimaryDimension: "time", Dimensions: 2},
 				},
 			},
 			wantLines: 1,
-			want:      []string{"2 hypertables are", "conditions (on time), metrics (on ts)"},
+			want: []string{
+				"2 hypertables are",
+				"conditions (on time and 1 more dimension), metrics (on ts and 1 more dimension)",
+			},
 		},
 		{
 			name: "a hypertable the selection removed is not named",
 			schema: &types.DBSchema{
-				Tables:      []types.DBTable{{Name: "users"}},
-				Hypertables: []types.DBHypertable{{Name: "conditions", PrimaryDimension: "time"}},
+				Tables: []types.DBTable{{Name: "users"}},
+				Hypertables: []types.DBHypertable{
+					{Name: "conditions", PrimaryDimension: "time", Dimensions: 2},
+				},
 			},
 			wantLines: 0,
 		},
 		{
 			name: "a hypertable in a named schema",
 			schema: &types.DBSchema{
-				Tables:      []types.DBTable{{Schema: "app", Name: "conditions"}},
-				Hypertables: []types.DBHypertable{{Schema: "app", Name: "conditions", PrimaryDimension: "time"}},
+				Tables: []types.DBTable{{Schema: "app", Name: "conditions"}},
+				Hypertables: []types.DBHypertable{
+					{Schema: "app", Name: "conditions", PrimaryDimension: "time", Dimensions: 2},
+				},
 			},
 			wantLines: 1,
-			want:      []string{"app.conditions (on time)"},
+			want:      []string{"app.conditions (on time and 1 more dimension)"},
 		},
 		{
 			name: "one continuous aggregate",
@@ -89,8 +106,10 @@ func TestReportUndescribed_NamesWhatTheDescriptionLeavesOut(t *testing.T) {
 		{
 			name: "both, as two notes",
 			schema: &types.DBSchema{
-				Tables:               []types.DBTable{{Name: "conditions"}},
-				Hypertables:          []types.DBHypertable{{Name: "conditions", PrimaryDimension: "time"}},
+				Tables: []types.DBTable{{Name: "conditions"}},
+				Hypertables: []types.DBHypertable{
+					{Name: "conditions", PrimaryDimension: "time", Dimensions: 2},
+				},
 				ContinuousAggregates: []types.DBContinuousAggregate{{Name: "conditions_hourly"}},
 			},
 			wantLines: 2,
@@ -123,16 +142,18 @@ func TestReportUndescribed_NamesWhatTheDescriptionLeavesOut(t *testing.T) {
 			want:      []string{"conditions (on time and 2 more dimensions)"},
 		},
 		{
-			name: "the ordinary single dimension says nothing more",
+			// The control on the threshold: one dimension is a complete
+			// description, so the note that names an incomplete one must not
+			// fire for it.
+			name: "the ordinary single dimension is not named",
 			schema: &types.DBSchema{
 				Tables: []types.DBTable{{Name: "conditions"}},
 				Hypertables: []types.DBHypertable{
 					{Name: "conditions", PrimaryDimension: "time", Dimensions: 1},
 				},
 			},
-			wantLines: 1,
-			want:      []string{"conditions (on time)."},
-			notWant:   []string{"more dimension"},
+			wantLines: 0,
+			notWant:   []string{"conditions"},
 		},
 		{
 			name: "a hypertable whose dimension the catalog did not report",

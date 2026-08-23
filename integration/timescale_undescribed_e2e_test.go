@@ -55,6 +55,12 @@ func TestTimescaleUndescribedObjectsE2E(t *testing.T) {
 		table))
 	execTimescale(ctx, c, conn, fmt.Sprintf(
 		`SELECT create_hypertable('%s', by_range('time'))`, table))
+	// A SECOND dimension, because that is what the note is about now. One range
+	// dimension is what a declaration carries, so a description of it is
+	// complete and there is nothing to report; `add_dimension` adds what no
+	// declaration can say (stokaro/ptah#1026).
+	execTimescale(ctx, c, conn, fmt.Sprintf(
+		`SELECT add_dimension('%s', by_hash('device', 4))`, table))
 	execTimescale(ctx, c, conn, fmt.Sprintf(
 		`CREATE MATERIALIZED VIEW %s WITH (timescaledb.continuous) AS `+
 			`SELECT time_bucket('1 hour', "time") AS bucket, device, avg(temperature) AS avg_temp `+
@@ -64,9 +70,10 @@ func TestTimescaleUndescribedObjectsE2E(t *testing.T) {
 	schema, err := conn.Reader().ReadSchema()
 	c.Assert(err, qt.IsNil)
 
-	// The hypertable is in the description AS AN ORDINARY TABLE. That is the
-	// half the note is about, and asserting it here is what keeps this test
-	// honest: the note would be pointless if the table were absent.
+	// The hypertable is in the description, and so is its primary dimension.
+	// The note is about the SECOND one, and asserting the first here is what
+	// keeps this test honest: a note about an incomplete description would be
+	// pointless if the description were empty.
 	c.Assert(describedTableNames(schema), qt.Contains, table)
 	c.Assert(describedHypertableNames(schema), qt.Contains, table)
 
@@ -81,8 +88,8 @@ func TestTimescaleUndescribedObjectsE2E(t *testing.T) {
 	var out bytes.Buffer
 	timescale.ReportUndescribed(&out, schema)
 
-	c.Assert(out.String(), qt.Contains, "described as ordinary tables")
-	c.Assert(out.String(), qt.Contains, table+" (on time)")
+	c.Assert(out.String(), qt.Contains, "described with the first partitioning dimension only")
+	c.Assert(out.String(), qt.Contains, table+" (on time and 1 more dimension)")
 	c.Assert(out.String(), qt.Contains, "not in this description at all")
 	c.Assert(out.String(), qt.Contains, aggregate)
 }
@@ -117,8 +124,9 @@ func TestTimescaleReportFollowsInspectSelectionE2E(t *testing.T) {
 	defer dropTimescaleFixture(context.WithoutCancel(ctx), conn, table, "")
 
 	execTimescale(ctx, c, conn, fmt.Sprintf(
-		`CREATE TABLE %s ("time" TIMESTAMPTZ NOT NULL, v DOUBLE PRECISION)`, table))
+		`CREATE TABLE %s ("time" TIMESTAMPTZ NOT NULL, v INTEGER NOT NULL)`, table))
 	execTimescale(ctx, c, conn, fmt.Sprintf(`SELECT create_hypertable('%s', by_range('time'))`, table))
+	execTimescale(ctx, c, conn, fmt.Sprintf(`SELECT add_dimension('%s', by_hash('v', 4))`, table))
 
 	named, err := runAtlasCompat("schema", "inspect", "--url", dbURL)
 	c.Assert(err, qt.IsNil, qt.Commentf("output:\n%s", named))

@@ -42,6 +42,7 @@ func ConvertDBSchemaToGoSchema(dbSchema *dbschematypes.DBSchema) *goschema.Datab
 	convertViews(database, dbSchema.Views)
 	convertMaterializedViews(database, dbSchema.MatViews)
 	convertTriggers(database, dbSchema.Triggers)
+	convertHypertables(database, dbSchema.Hypertables)
 	convertSynonyms(database, dbSchema.Synonyms)
 	convertExtendedProperties(database, dbSchema.ExtendedProperties)
 	convertRoles(database, dbSchema.Roles)
@@ -383,6 +384,22 @@ func convertSequences(database *goschema.Database, dbSequences []dbschematypes.D
 			Cycle:     dbSequence.Cycle,
 			OwnedBy:   dbSequence.OwnedBy,
 			Comment:   dbSequence.Comment,
+		})
+	}
+}
+
+// convertHypertables carries the TimescaleDB hypertables a read found into the
+// IR, so a description says which tables are partitioned.
+//
+// Only the primary dimension is carried, because only it is declarable. A
+// table with more than one is described with the first, and the note the reader
+// emits says how many it did not describe.
+func convertHypertables(database *goschema.Database, hypertables []dbschematypes.DBHypertable) {
+	for _, hypertable := range hypertables {
+		database.Hypertables = append(database.Hypertables, goschema.Hypertable{
+			Table:         hypertable.QualifiedName(),
+			Column:        hypertable.PrimaryDimension,
+			ChunkInterval: hypertable.ChunkInterval,
 		})
 	}
 }

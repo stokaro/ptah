@@ -223,6 +223,14 @@ func (m *MockVisitor) VisitCreateSynonym(node *ast.CreateSynonymNode) error {
 	return nil
 }
 
+func (m *MockVisitor) VisitCreateHypertable(node *ast.CreateHypertableNode) error {
+	m.VisitedNodes = append(m.VisitedNodes, "CreateHypertable:"+node.Table)
+	if m.ReturnError {
+		return errors.New("mock error")
+	}
+	return nil
+}
+
 func (m *MockVisitor) VisitDropSynonym(node *ast.DropSynonymNode) error {
 	m.VisitedNodes = append(m.VisitedNodes, "DropSynonym:"+node.Name)
 	if m.ReturnError {

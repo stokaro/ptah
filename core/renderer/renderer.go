@@ -822,6 +822,18 @@ func GetOrderedCreateStatements(r *goschema.Database, dialect string) ([]string,
 	return GetOrderedCreateStatementsWithCapabilities(r, dialect, capability.ForDialect(dialect))
 }
 
+// declaredExtensionNames is what a document says the target will have.
+func declaredExtensionNames(r *goschema.Database) []string {
+	if r == nil {
+		return nil
+	}
+	names := make([]string, 0, len(r.Extensions))
+	for _, extension := range r.Extensions {
+		names = append(names, extension.Name)
+	}
+	return names
+}
+
 // ValidateSchema validates a complete schema against the default capability
 // preset for dialect without rendering SQL.
 func ValidateSchema(r *goschema.Database, dialect string) error {
@@ -869,6 +881,11 @@ func GetOrderedCreateStatementsWithCapabilities(
 			Message: "cannot render a nil database schema",
 		}
 	}
+	// A render has no connection to ask which extensions the target has, and
+	// the schema in front of it declares them. Without this a document that
+	// declares the timescaledb extension and a hypertable rendered the CREATE
+	// EXTENSION and then skipped the call that needs it.
+	caps = capability.WithDeclaredExtensions(caps, declaredExtensionNames(r))
 	database, err := prepareDatabaseForRendering(r, dialect, caps)
 	if err != nil {
 		return nil, err

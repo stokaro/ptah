@@ -150,6 +150,15 @@ func roundTripRows() []roundTripRow {
 			count: func(d *goschema.Database) int { return len(d.Grants) },
 		},
 		{
+			field: "Hypertables",
+			seed: func(d *goschema.Database) {
+				d.Hypertables = append(d.Hypertables, goschema.Hypertable{
+					Table: "users", Column: "created_at",
+				})
+			},
+			count: func(d *goschema.Database) int { return len(d.Hypertables) },
+		},
+		{
 			field: "Synonyms",
 			seed: func(d *goschema.Database) {
 				d.Synonyms = append(d.Synonyms, goschema.Synonym{Name: "s1", Target: "other.dbo.users"})
@@ -220,6 +229,7 @@ var yamlUnwritableFields = map[string]coverage.Kind{
 	"Ranges":         coverage.Range,
 	// HCL gained a block for these two (stokaro/ptah#1031) and the sweep above
 	// measures that they survive it; YAML still has no key, so here they stay.
+	"Hypertables":        coverage.Hypertable,
 	"Synonyms":           coverage.Synonym,
 	"ExtendedProperties": coverage.ExtendedProperty,
 }

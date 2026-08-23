@@ -277,6 +277,8 @@ func clickHousePlan() plan {
 		// there is no CREATE PROCEDURE at all, so neither accepting nor
 		// refusing one would decide the key (stokaro/ptah#1722).
 		capability.Procedures: "CREATE PROCEDURE is a statement ClickHouse has no spelling of",
+		capability.Hypertables: "create_hypertable is a TimescaleDB function, and TimescaleDB is a PostgreSQL " +
+			"extension ClickHouse has no spelling of",
 		// See the same declaration in the PostgreSQL-family plan: the probe
 		// connects as one account and cannot ask whether a privilege exists
 		// without granting it. ClickHouse has no SHOW_ROUTINE at all, which is

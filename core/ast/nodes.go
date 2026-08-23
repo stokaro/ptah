@@ -1737,6 +1737,65 @@ func (n *CreateSynonymNode) Accept(visitor Visitor) error {
 	return visitor.VisitCreateSynonym(n)
 }
 
+// CreateHypertableNode represents the TimescaleDB call that turns an ordinary
+// table into a hypertable.
+//
+// It is a function call rather than DDL, and the node says so by carrying the
+// call's arguments rather than a statement: `SELECT create_hypertable(...)`.
+// There is no CREATE HYPERTABLE grammar, so a node modelled on CREATE TABLE
+// would promise a shape no engine has.
+//
+// Table and Column are identifiers; ChunkInterval is an interval literal, empty
+// when the declaration takes TimescaleDB's own default (7 days for a
+// timestamptz column, measured on 2.29.2).
+//
+// IfNotExists renders `if_not_exists => TRUE`. Measured on 2.29.2, a second
+// call without it answers `table "conditions" is already a hypertable` as an
+// ERROR, and with it a NOTICE and `(1,f)`.
+//
+// There is no MigrateData field, and the omission is the decision. Measured on
+// the same server, the call against a table holding one row answers
+// `table "loaded" is not empty` with the hint that `migrate_data => true` would
+// rewrite it. Rewriting a populated table is a choice an operator makes, not
+// one a migration takes on their behalf, so the server's refusal is what a
+// plan carries.
+type CreateHypertableNode struct {
+	Table         string
+	Column        string
+	ChunkInterval string
+	IfNotExists   bool
+	Comment       string
+}
+
+// NewCreateHypertable creates a hypertable node for a table and its range
+// dimension.
+func NewCreateHypertable(table, column string) *CreateHypertableNode {
+	return &CreateHypertableNode{Table: table, Column: column}
+}
+
+// SetChunkInterval sets the width of one chunk.
+func (n *CreateHypertableNode) SetChunkInterval(interval string) *CreateHypertableNode {
+	n.ChunkInterval = interval
+	return n
+}
+
+// SetIfNotExists asks the server to skip a table that is already a hypertable.
+func (n *CreateHypertableNode) SetIfNotExists(ifNotExists bool) *CreateHypertableNode {
+	n.IfNotExists = ifNotExists
+	return n
+}
+
+// SetComment sets a comment for the hypertable call.
+func (n *CreateHypertableNode) SetComment(comment string) *CreateHypertableNode {
+	n.Comment = comment
+	return n
+}
+
+// Accept implements the Node interface for CreateHypertableNode.
+func (n *CreateHypertableNode) Accept(visitor Visitor) error {
+	return visitor.VisitCreateHypertable(n)
+}
+
 // DropSynonymNode represents a DROP SYNONYM statement.
 //
 // There is no Cascade field: DROP SYNONYM has no such clause, and a synonym has

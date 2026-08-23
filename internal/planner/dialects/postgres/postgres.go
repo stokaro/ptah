@@ -1560,6 +1560,9 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 	if err := p.validateExtensionInstallationSchemas(diff, generated); err != nil {
 		return nil, err
 	}
+	if err := p.refuseHypertableChanges(diff); err != nil {
+		return nil, err
+	}
 	result, err := p.planExtensionChanges(result, diff)
 	if err != nil {
 		return nil, err
@@ -1664,6 +1667,7 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 	result = p.modifyExistingViews(result, diff, generated)
 	result = p.retargetSynonyms(result, diff, generated)
 	result = p.addNewSynonyms(result, diff, generated)
+	result = p.addNewHypertables(result, diff, generated)
 	result = p.addExtendedProperties(result, diff)
 	result = p.modifyExistingMaterializedViews(result, diff, generated)
 	result = p.addNewTriggers(result, diff, generated)
@@ -2448,6 +2452,68 @@ func (p *Planner) removeMaterializedViews(result []ast.Node, diff *types.SchemaD
 // follows: the plan and the render have to agree about which objects exist, and
 // a planner that dropped the node instead would make a declared object vanish
 // from the plan while the render still reported it.
+// addNewHypertables emits the create_hypertable call for each table a
+// declaration asks to partition and the database reports as ordinary.
+//
+// It runs after the tables exist and before anything writes rows. Measured on
+// TimescaleDB 2.29.2, the call against a missing relation answers
+// `relation "conditions" does not exist`, and against a table holding one row
+// it answers `table "loaded" is not empty` -- so a plan that ran it too early
+// or too late would leave the table ordinary either way.
+func (p *Planner) addNewHypertables(
+	result []ast.Node,
+	diff *types.SchemaDiff,
+	generated *goschema.Database,
+) []ast.Node {
+	for _, table := range diff.HypertablesAdded {
+		if hypertable := findHypertable(generated.Hypertables, table); hypertable != nil {
+			result = append(result, fromschema.FromHypertable(*hypertable))
+		}
+	}
+	return result
+}
+
+// refuseHypertableChanges refuses what TimescaleDB has no statement for.
+//
+// A table that IS a hypertable cannot become an ordinary one: measured on
+// 2.29.2, `drop_hypertable` answers `function drop_hypertable(unknown) does not
+// exist`, and the only way back is dropping the table and its data. Changing
+// the dimension is not a statement either.
+//
+// Planning nothing would be worse than refusing. The table stays partitioned,
+// the description says it is not, and the next diff reports the same change
+// forever -- while an operator reading "no changes" believes the two agree.
+func (p *Planner) refuseHypertableChanges(diff *types.SchemaDiff) error {
+	if diff == nil {
+		return nil
+	}
+	if len(diff.HypertablesRemoved) > 0 {
+		return fmt.Errorf(
+			"%w: %s is a hypertable and the desired schema does not declare one; TimescaleDB has no "+
+				"statement that turns a hypertable back into an ordinary table, so this needs an explicit "+
+				"migration that drops and recreates it",
+			ptaherr.ErrUnsupportedFeature, diff.HypertablesRemoved[0])
+	}
+	if len(diff.HypertablesModified) > 0 {
+		change := diff.HypertablesModified[0]
+		return fmt.Errorf(
+			"%w: hypertable %s is partitioned on %q and the desired schema declares %q; TimescaleDB has no "+
+				"statement that repartitions an existing hypertable, so this needs an explicit migration",
+			ptaherr.ErrUnsupportedFeature, change.Table, change.OldColumn, change.NewColumn)
+	}
+	return nil
+}
+
+// findHypertable resolves a declared hypertable by the table it partitions.
+func findHypertable(hypertables []goschema.Hypertable, table string) *goschema.Hypertable {
+	for i := range hypertables {
+		if hypertables[i].Table == table {
+			return &hypertables[i]
+		}
+	}
+	return nil
+}
+
 func (p *Planner) addNewSynonyms(result []ast.Node, diff *types.SchemaDiff, generated *goschema.Database) []ast.Node {
 	for _, name := range diff.SynonymsAdded {
 		if synonym := findSynonym(generated.Synonyms, name); synonym != nil {

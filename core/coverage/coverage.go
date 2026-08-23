@@ -103,6 +103,19 @@ const (
 	Schema Kind = "schema"
 	// Sequence is a standalone sequence (CREATE SEQUENCE).
 	Sequence Kind = "sequence"
+	// Hypertable is a TimescaleDB hypertable: an ordinary table partitioned on
+	// a range dimension.
+	//
+	// It is declined for the reason [Synonym] is, with one difference that
+	// makes it worse: the table IS in the description and only its
+	// partitioning is missing, so a format that cannot say a table is
+	// partitioned describes a table that looks complete. Reading that silence
+	// as intent would plan nothing at all -- there is no statement that undoes
+	// create_hypertable -- while a replay of the same description creates an
+	// ordinary table and a diff between the two reports no difference
+	// (stokaro/ptah#1026).
+	Hypertable Kind = "hypertable"
+
 	// Synonym is a SQL Server synonym (CREATE SYNONYM).
 	//
 	// It is declined for the same reason [ExtendedProperty] is, and the same

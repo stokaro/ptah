@@ -1189,6 +1189,17 @@ func (r *Renderer) VisitDropTrigger(node *ast.DropTriggerNode) error {
 // grants, so they render SQL rather than a diagnostic; the syntax they render,
 // and what it refuses, is documented there.
 
+// VisitCreateHypertable refuses: a hypertable is a TimescaleDB object, and
+// TimescaleDB is an extension of PostgreSQL.
+//
+// There is no capability key behind this refusal, for the reason
+// VisitCreateSynonym gives: a key would have exactly one value forever and
+// would invite a preset to turn it on.
+func (r *Renderer) VisitCreateHypertable(node *ast.CreateHypertableNode) error {
+	r.notSupported("CREATE HYPERTABLE", node.Table)
+	return nil
+}
+
 // VisitCreateSynonym refuses: ClickHouse has no synonym object.
 func (r *Renderer) VisitCreateSynonym(node *ast.CreateSynonymNode) error {
 	r.notSupported("CREATE SYNONYM", node.Name)

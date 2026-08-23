@@ -297,6 +297,9 @@ func CompareReportingUndecidedAdditions(
 	compare.ViewsWithSemantics(generated, database, diff, opts.Dialect, identifierSemantics)
 	compare.Synonyms(generated, database, diff, cov)
 
+	// Compare TimescaleDB hypertables (PostgreSQL with the extension)
+	compare.Hypertables(generated, database, diff, cov)
+
 	// Compare SQL Server extended properties (schema, table and column scope)
 	compare.ExtendedProperties(generated, database, diff, cov)
 	compare.MaterializedViewsWithSemantics(generated, database, diff, opts.Dialect, identifierSemantics)

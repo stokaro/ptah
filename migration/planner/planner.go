@@ -725,7 +725,13 @@ func GenerateSchemaDiffSQLWithOptions(
 	dialect string,
 	opts Options,
 ) (string, error) {
-	caps := opts.CapabilitiesFor(dialect)
+	// An extension the DESIRED schema declares is one the plan installs, and it
+	// is installed before the statements that need it. A connection opened
+	// before the extension existed answers about the past, so its capability
+	// set alone would emit `CREATE EXTENSION "timescaledb"` and then skip the
+	// create_hypertable that needs it (stokaro/ptah#1026).
+	caps := capability.WithDeclaredExtensions(
+		opts.CapabilitiesFor(dialect), declaredExtensionNames(generated))
 	astNodes, err := GenerateSchemaDiffASTWithOptions(diff, generated, dialect, opts)
 	if err != nil {
 		return "", err
@@ -735,6 +741,19 @@ func GenerateSchemaDiffSQLWithOptions(
 		return "", wrapRenderError(dialect, err)
 	}
 	return output, nil
+}
+
+// declaredExtensionNames is what the desired schema says the target will have
+// by the time these statements run.
+func declaredExtensionNames(generated *goschema.Database) []string {
+	if generated == nil {
+		return nil
+	}
+	names := make([]string, 0, len(generated.Extensions))
+	for _, extension := range generated.Extensions {
+		names = append(names, extension.Name)
+	}
+	return names
 }
 
 func wrapPlanError(dialect string, err error) error {

@@ -799,6 +799,17 @@ func unsupportedFeaturef(format string, args ...any) error {
 	return fmt.Errorf("%w: sqlite: %s", ptaherr.ErrUnsupportedFeature, fmt.Sprintf(format, args...))
 }
 
+// VisitCreateHypertable refuses: a hypertable is a TimescaleDB object, and
+// TimescaleDB is an extension of PostgreSQL.
+//
+// There is no capability key behind this refusal, for the reason
+// VisitCreateSynonym gives: a key would have exactly one value forever and
+// would invite a preset to turn it on.
+func (r *Renderer) VisitCreateHypertable(node *ast.CreateHypertableNode) error {
+	r.notSupported("CREATE HYPERTABLE", node.Table)
+	return nil
+}
+
 // VisitCreateSynonym refuses: SQLite has no synonym object of any kind.
 func (r *Renderer) VisitCreateSynonym(node *ast.CreateSynonymNode) error {
 	r.notSupported("CREATE SYNONYM", node.Name)
