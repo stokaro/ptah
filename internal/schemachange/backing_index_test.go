@@ -399,3 +399,51 @@ func droppedCount(dropped bool) int {
 func pointerTo(value string) *string {
 	return &value
 }
+
+// TestAPrimaryKeyIndexUnderAnotherNameIsStillTheServersPins the half of the
+// primary key answer the name comparison cannot reach.
+//
+// Oracle takes `CONSTRAINT pk_widget PRIMARY KEY (id) USING INDEX (CREATE INDEX
+// widget_key ON widget (id))`, so the row reported for the enforcing index does
+// NOT carry the constraint's name -- and it is still the index the constraint
+// is enforced with, still not droppable on its own. What marks it is the flag
+// the read sets, not the name it shares.
+func TestAPrimaryKeyIndexUnderAnotherNameIsStillTheServers(t *testing.T) {
+	c := qt.New(t)
+	description := describedTableWithKey([]string{"id"},
+		goschema.Field{StructName: "Widget", Name: "id", Type: "int"},
+		goschema.Field{StructName: "Widget", Name: "code", Type: "text", Nullable: true},
+	)
+	catalog := widgetWithoutTheIndex()
+	catalog.Constraints = []dbschematypes.DBConstraint{{
+		Name: "pk_widget", TableName: "widget", Schema: "public",
+		Type: "PRIMARY KEY", ColumnNames: []string{"id"},
+	}}
+	catalog.Indexes = []dbschematypes.DBIndex{{
+		Name: "widget_key", TableName: "widget", Schema: "public",
+		Columns: []string{"id"}, IsUnique: true, IsPrimary: true,
+	}}
+
+	changes := changesFor(c, description, catalog)
+
+	c.Assert(changes, qt.HasLen, 0)
+}
+
+// TestTheAutoindexPrefixIsSQLitesAlone is the prefix rule's control: it is what
+// SQLite calls the index it made, not a name reserved everywhere. PostgreSQL
+// takes the identifier like any other, and an index the description stopped
+// declaring is dropped whatever it is called.
+func TestTheAutoindexPrefixIsSQLitesAlone(t *testing.T) {
+	c := qt.New(t)
+	catalog := widgetWithoutTheIndex()
+	catalog.Indexes = []dbschematypes.DBIndex{{
+		Name: "sqlite_autoindex_widget_1", TableName: "widget", Schema: "public",
+		Columns: []string{"code"}, IsUnique: true,
+	}}
+
+	changes := changesFor(c, widgetDeclaringNothing(), catalog)
+
+	c.Assert(changes, qt.HasLen, 1)
+	c.Assert(string(changes[0].ID.Kind), qt.Equals, "index")
+	c.Assert(changes[0].Operation, qt.Equals, schemachange.Remove)
+}
