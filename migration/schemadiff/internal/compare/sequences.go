@@ -106,7 +106,7 @@ func sequencesWithSemantics(
 		coverage.Sequence, diff.SequencesAdded, qualifiedName, guardedCreations(sequenceGuards),
 	)
 	diff.SequencesAdded = kept
-	cov.recordUndecidedAdditions(coverage.Sequence, withheld)
+	cov.recordUndecidedAdditions(withheld)
 	diff.SequencesRemoved = cov.keepPlannedRemovals(coverage.Sequence, diff.SequencesRemoved, qualifiedName)
 
 	sort.Strings(diff.SequencesAdded)

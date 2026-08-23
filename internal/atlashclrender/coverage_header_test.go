@@ -50,13 +50,13 @@ func TestCompatibilityRenderDeclaresWhatItDoesNotDescribe(t *testing.T) {
 			)
 
 			c.Assert(err, qt.IsNil)
-			c.Assert(result.NotDescribed, qt.DeepEquals, coverage.Set{}.WithKind(
+			c.Assert(result.NotDescribed, qt.DeepEquals, suppressedBlocks(
 				coverage.Extension, coverage.Policy, coverage.Sequence,
 			))
 			c.Assert(coverageHeaderLines(string(result.Data)), qt.DeepEquals, []string{
-				"// ptah:not-described extension",
-				"// ptah:not-described policy",
-				"// ptah:not-described sequence",
+				"// ptah:not-described extension reason=suppressed provenance=defaulted",
+				"// ptah:not-described policy reason=suppressed provenance=defaulted",
+				"// ptah:not-described sequence reason=suppressed provenance=defaulted",
 			})
 		})
 	}
@@ -170,4 +170,21 @@ func coverageHeaderLines(document string) []string {
 		}
 	}
 	return lines
+}
+
+// suppressedBlocks is the record the compatibility renderer makes for the block
+// types it omits: they are left out by a policy that is on unless something
+// turns it off, and the record says so rather than only that they are absent.
+// Spelling it out here is what proves the reason survived the boundary this
+// test crosses (stokaro/ptah#1346).
+func suppressedBlocks(kinds ...coverage.Kind) coverage.Set {
+	var set coverage.Set
+	for _, kind := range kinds {
+		set = set.With(coverage.Object{
+			Kind:       kind,
+			Reason:     coverage.SuppressedByPolicy,
+			Provenance: coverage.Defaulted,
+		})
+	}
+	return set
 }

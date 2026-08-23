@@ -191,7 +191,7 @@ func ExtensionsWithSemantics(
 		coverage.Extension, diff.ExtensionsAdded, globalName, unguardedCreations(),
 	)
 	diff.ExtensionsAdded = kept
-	cov.recordUndecidedAdditions(coverage.Extension, withheld)
+	cov.recordUndecidedAdditions(withheld)
 	diff.ExtensionsRemoved = cov.keepPlannedRemovals(coverage.Extension, diff.ExtensionsRemoved, globalName)
 
 	// Sort for consistent output

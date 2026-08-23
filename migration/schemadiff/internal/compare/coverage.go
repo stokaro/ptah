@@ -168,7 +168,7 @@ func (c Coverage) keepPlannedAdditions(
 	planned []string,
 	names func(string) (schema string, spellings []string),
 	guarded creationGuard,
-) (kept, withheld []string) {
+) (kept []string, withheld []coverage.Object) {
 	kept = c.keep(planned, func(entry string) bool {
 		schema, spellings := names(entry)
 		if c.PlansAddition(kind, schema, spellings...) {
@@ -177,21 +177,46 @@ func (c Coverage) keepPlannedAdditions(
 		if guarded(entry) {
 			return true
 		}
-		withheld = append(withheld, entry)
+		withheld = append(withheld, c.withheldAddition(kind, entry, schema, spellings))
 		return false
 	})
 	return kept, withheld
 }
 
-// recordUndecidedAdditions collects what the coverage gate withheld, tagged
-// with the kind so a surface can say what it is holding back.
-func (c Coverage) recordUndecidedAdditions(kind coverage.Kind, withheld []string) {
+// withheldAddition builds the record for one addition this comparison could not
+// decide, carrying the reason and the provenance the CURRENT side gave for its
+// silence.
+//
+// That sentence is the point of withholding rather than planning. "Something
+// was held back" tells a user nothing they can act on; "the read was refused
+// the role catalog", "your selection put extensions outside this run" and "this
+// server has no extension mechanism to describe" are three different answers,
+// and until the record carried a reason a surface could only print the first
+// (stokaro/ptah#1346).
+//
+// A withheld addition whose coverage record gave no reason keeps the zero
+// values, which is what a hand-authored `ptah:not-described` line means: the
+// document declined the kind and said no more.
+func (c Coverage) withheldAddition(
+	kind coverage.Kind,
+	name, schema string,
+	spellings []string,
+) coverage.Object {
+	object := coverage.Object{Kind: kind, Name: name}
+	if limit, ok := c.Current.LimitIn(kind, schema, spellings...); ok {
+		object.Reason = limit.Reason
+		object.Provenance = limit.Provenance
+	}
+	return object
+}
+
+// recordUndecidedAdditions collects what the coverage gate withheld, so a
+// surface can say what it is holding back and why.
+func (c Coverage) recordUndecidedAdditions(withheld []coverage.Object) {
 	if c.undecided == nil {
 		return
 	}
-	for _, name := range withheld {
-		*c.undecided = append(*c.undecided, coverage.Object{Kind: kind, Name: name})
-	}
+	*c.undecided = append(*c.undecided, withheld...)
 }
 
 // keepPlannedRemovals drops from a list of planned removals every object the

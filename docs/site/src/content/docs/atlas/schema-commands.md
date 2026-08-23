@@ -549,13 +549,26 @@ process, and it reads the file rather than the terminal. So the document now
 carries the fact itself, in its header:
 
 ```hcl
-// ptah:not-described extension
-// ptah:not-described policy
-// ptah:not-described sequence
+// ptah:not-described extension reason=suppressed provenance=defaulted
+// ptah:not-described policy reason=suppressed provenance=defaulted
+// ptah:not-described sequence reason=suppressed provenance=defaulted
 ```
 
 A comparator reading that document has three states for an object instead of
 two: present, absent, and **not described**. Only the middle one is a removal.
+
+The attributes after the kind say why the document declines that kind and how
+the limit was learned:
+
+- `reason` is one of `not-inspected`, `outside-scope`, `unsupported`,
+  `suppressed` or `unresolved`.
+- `provenance` is one of `declared`, `observed`, `derived-from-target`,
+  `derived-from-fact`, `configured`, `defaulted`, `inferred` or `unavailable`.
+
+Neither changes what a comparator may do — a record blocks the same removal with
+or without them — and both change what it can tell you when it declines to act.
+A directive naming only a kind is a complete record: it says the absence carries
+no information and says no more, which is what a line you write yourself means.
 The four commands that consume a desired-schema document — `schema diff`,
 `schema apply`, `schema plan`, and `migrate diff` — each resolve that document
 separately, and all four now report the database above as synced.
@@ -573,9 +586,9 @@ matters:
 $ ptah-compat schema inspect --url "$PG_URL" \
     --format '{{ hcl . | split "schema" | write "out" }}'
 $ head -3 out/public.hcl
-// ptah:not-described extension
-// ptah:not-described policy
-// ptah:not-described sequence
+// ptah:not-described extension reason=suppressed provenance=defaulted
+// ptah:not-described policy reason=suppressed provenance=defaulted
+// ptah:not-described sequence reason=suppressed provenance=defaulted
 $ ptah-compat schema apply --url "$PG_URL" --to file://out/public.hcl --dev-url "$DEV_URL" --dry-run
 Schema is synced, no changes to be made
 ```
@@ -613,9 +626,10 @@ is read out of the leading comments of a `.sql` desired state, spelled
 `-- ptah:not-described ...`; no Ptah surface writes one there, because only
 the HCL rendering omits blocks.
 
-A directive naming an object kind the build does not know is an error rather
-than a line to skip past: a record nothing understands reads as no record at
-all, and the absence it was protecting would become a removal.
+A directive naming an object kind, a reason or a provenance the build does not
+know is an error rather than a line to skip past: a record nothing understands
+reads as no record at all, and the absence it was protecting would become a
+removal.
 
 ##### When such a document is the *current* state
 
@@ -636,9 +650,10 @@ does not describe extensions:
 ```console
 $ ptah-compat schema diff --from file://schema.hcl --to file://desired.hcl --dev-url "$DEV_URL"
 Warning: extension "citext" is declared by --to but no change was planned for
-it: --from records `ptah:not-described extension`, so this comparison cannot
-tell it apart from one that already exists, and the creation Ptah renders for
-it cannot safely converge from an unknown current state.
+it: --from does not describe extension objects because a compatibility policy
+left them out of the description, so this comparison cannot tell it apart from
+one that already exists, and the creation Ptah renders for it cannot safely
+converge from an unknown current state.
 ```
 
 A statement with no guard — `CREATE SEQUENCE` for a sequence declared without
@@ -648,9 +663,10 @@ standard error rather than dropped in silence:
 
 ```console
 Warning: sequence "public.order_seq" is declared by --to but no change was
-planned for it: --from records `ptah:not-described sequence`, so this comparison
-cannot tell it apart from one that already exists, and the creation Ptah renders
-for it cannot safely converge from an unknown current state.
+planned for it: --from does not describe sequence objects because a
+compatibility policy left them out of the description, so this comparison cannot
+tell it apart from one that already exists, and the creation Ptah renders for it
+cannot safely converge from an unknown current state.
 ```
 
 For a sequence, adding `if_not_exists = true` is how you ask for it anyway.

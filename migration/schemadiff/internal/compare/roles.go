@@ -171,7 +171,7 @@ func Roles(
 		coverage.Role, diff.RolesAdded, globalName, unguardedCreations(),
 	)
 	diff.RolesAdded = kept
-	cov.recordUndecidedAdditions(coverage.Role, withheld)
+	cov.recordUndecidedAdditions(withheld)
 
 	// Ensure consistent ordering of results
 	sort.Strings(diff.RolesAdded)

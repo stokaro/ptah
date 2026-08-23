@@ -505,6 +505,10 @@ func withGoAnnotationLimits(database *goschema.Database) *goschema.Database {
 	if database == nil {
 		return nil
 	}
-	database.NotDescribed = database.NotDescribed.WithKind(coverage.VirtualTable)
+	database.NotDescribed = database.NotDescribed.With(coverage.Object{
+		Kind:       coverage.VirtualTable,
+		Reason:     coverage.Unsupported,
+		Provenance: coverage.DerivedFromFact,
+	})
 	return database
 }
