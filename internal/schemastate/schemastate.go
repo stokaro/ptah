@@ -168,7 +168,16 @@ type Column struct {
 	GeneratedKind       string
 	// IdentityGeneration is an identity column's generation mode -- ALWAYS or
 	// BY DEFAULT -- empty for a column that is not one.
+	//
+	// IdentityStart, IdentityIncrement and IdentityOptions are the sequence
+	// behind it. They are carried because dropping them builds a column whose
+	// numbering starts at 1 and steps by 1 whatever the author asked for, and
+	// the table is otherwise identical -- so the loss is invisible until a row
+	// is inserted.
 	IdentityGeneration string
+	IdentityStart      string
+	IdentityIncrement  string
+	IdentityOptions    string
 	// CheckName is the constraint name a column-level CHECK carries, empty when
 	// the source let the server derive one. It travels with Check for the
 	// reason Check does: a CREATE TABLE that dropped it would name the
@@ -252,6 +261,15 @@ type Table struct {
 	Engine  string
 	Charset string
 	Collate string
+	// AutoIncrement is the value a MySQL-family table's counter starts at.
+	AutoIncrement string
+	// PrimaryKeyInclude carries PostgreSQL's INCLUDE payload columns for a
+	// table-level primary key.
+	//
+	// It also decides HOW the key is written: a key with payload columns cannot
+	// be declared on a column, so a table carrying one renders its key as a
+	// table-level constraint however few columns it covers.
+	PrimaryKeyInclude []string
 }
 
 // Populated reports whether the table is known to hold rows, and whether that
