@@ -303,6 +303,25 @@ migrations you write yourself, an existing migration directory, and a live
 database, and "Model your schema" points at the format-neutral concept page
 rather than at the Go one.
 
+## 6b. The two workflow axes (stokaro/ptah#1228)
+
+`start/choose-a-workflow` framed the decision as one axis — versioned files
+versus direct applies — and stated that both read a desired schema. That is
+true of the direct workflow and false of the versioned one: only `plan` and
+`generate` read a schema source, and a project can run entirely on migrations
+it writes by hand.
+
+The page now states two independent questions — where the change comes from,
+and how it reaches the database — with the four combinations in a table. One
+cell is empty and says why: a direct apply computes a difference, so with no
+description of the schema you want there is nothing to compute against.
+
+`versioned/overview` follows the same shape: the two origins of a migration
+file are named side by side, and the lifecycle they share is one section rather
+than a continuation of the generated one. `versioned/generate` covers both
+origins and no longer describes a hand-written migration as what you reach for
+when generation cannot express the change.
+
 ## 7. Terminology audit
 
 Verified with repository-wide searches at the audited commit.
