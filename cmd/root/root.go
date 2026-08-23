@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	assistcmd "go.5x5.cz/ptah/cmd/assist"
 	"go.5x5.cz/ptah/cmd/db"
 	"go.5x5.cz/ptah/cmd/internal/cmdflags"
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
@@ -55,6 +56,7 @@ func NewRootCommand() *cobra.Command {
 	cmd.AddCommand(sqlcmd.NewSQLCommand())
 	cmd.AddCommand(viz.NewCommand())
 	cmd.AddCommand(mcpcmd.NewCommand())
+	cmd.AddCommand(assistcmd.NewCommand())
 	cmd.AddCommand(version.NewVersionCommand())
 	cmd.AddCommand(license.NewLicenseCommand())
 

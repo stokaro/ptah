@@ -175,6 +175,7 @@ page the restructuring created.
 | Page (words) | Audience | Reader question | Type | Source of truth | Overlaps | Disposition |
 | --- | --- | --- | --- | --- | --- | --- |
 | `operate/ai-agents.md` (1568) | operator/app developer | How do I connect an AI client to Ptah, and what may it read, propose, and write? | howto | this page; `cmd/mcp`, `internal/mcpserver` and `internal/agentapi`; every tool name and flag run against the built binary over the protocol | `reference/native-commands` (`ptah mcp` row and section, summary there), `atlas/feature-matrix` (the Copilot row's Ptah answer) | created (stokaro/ptah#1487); keep |
+| `operate/ai-assist.md` (1031) | operator/app developer | How do I point Ptah Assist at my own model, and check that it works? | howto | this page; `cmd/assist`, `internal/aiprovider` and `internal/assistconfig`; every command run against the built binary, and the provider checks measured against a live endpoint | `operate/ai-agents` (the other surface, no provider needed), `reference/native-commands` (the two command rows) | created (stokaro/ptah#1488); keep |
 | `operate/seed-data.md` (506) | app developer/operator | How do I load one-off, environment-scoped setup rows? | howto | this page; `cmd/seed` and `migration/seeder`; every command and output run against the built binary | `versioned/reference-data` (declarative contrast, canonical there), `reference/exit-codes` (`ptah seed` row) | created (section 9, item 6); keep |
 
 ### `Operate` group
