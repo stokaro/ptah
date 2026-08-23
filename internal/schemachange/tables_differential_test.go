@@ -270,6 +270,31 @@ func TestTableStatementsMatchTheExistingPlanner(t *testing.T) {
 			}),
 		},
 		{
+			// A column-level UNIQUE. The fact was already in the canonical
+			// model and the renderer did not ask for it, so the CREATE built a
+			// table without a guarantee its author declared -- measured, by
+			// running the two paths over a fixture that carries it.
+			name: "creating a table with a unique column",
+			description: describedTable(
+				goschema.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true},
+				goschema.Field{
+					StructName: "Widget", Name: "code", Type: "text", Nullable: true, Unique: true,
+				}),
+			catalog: &dbschematypes.DBSchema{},
+		},
+		{
+			// A column-level CHECK, which the canonical Column did not carry at
+			// all until the same measurement found it.
+			name: "creating a table with a column check",
+			description: describedTable(
+				goschema.Field{StructName: "Widget", Name: "id", Type: "int", Primary: true},
+				goschema.Field{
+					StructName: "Widget", Name: "code", Type: "text", Nullable: true,
+					Check: "length(code) > 0",
+				}),
+			catalog: &dbschematypes.DBSchema{},
+		},
+		{
 			// A composite key, which the column syntax cannot express: PRIMARY
 			// KEY on two columns declares two keys rather than one over both,
 			// so it has to become a table-level constraint.

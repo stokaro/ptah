@@ -345,6 +345,7 @@ func columnsFromDescription(
 			// A description keeps the two kinds apart in its own model, so this
 			// is a read rather than a decision.
 			DefaultIsExpression: strings.TrimSpace(field.DefaultExpr) != "",
+			Check:               field.Check,
 			AutoIncrement:       field.AutoInc,
 		})
 	}

@@ -232,7 +232,12 @@ func columnNode(column schemastate.Column, compositeKey bool) *ast.ColumnNode {
 		Type:     column.Type,
 		Nullable: column.Nullable,
 		Primary:  column.PrimaryKey && !compositeKey,
-		AutoInc:  column.AutoIncrement,
+		// A primary key already declares its column unique, and every source
+		// sets both flags for one, so emitting UNIQUE beside PRIMARY KEY would
+		// write a second constraint the author never asked for.
+		Unique:  column.Unique && !column.PrimaryKey,
+		Check:   column.Check,
+		AutoInc: column.AutoIncrement,
 	}
 	return withDefault(node, column)
 }

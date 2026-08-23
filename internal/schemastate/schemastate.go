@@ -160,6 +160,17 @@ type Column struct {
 	// model carrying only the string renders `DEFAULT 'now()'` for a column
 	// whose default is a function call.
 	DefaultIsExpression bool
+	// Check is the column-level CHECK expression the source wrote, empty for a
+	// column with none.
+	//
+	// It is carried for RENDERING and is not compared. A catalog reports a
+	// column-level check as a table-level constraint row, so comparing this
+	// against a catalog read would report a modification for every column whose
+	// check the server merely spells differently; deciding what a check
+	// constraint IS belongs to the constraint family (stokaro/ptah#1663). A
+	// CREATE TABLE that dropped it would silently create a table without the
+	// guarantee its author declared, which is why it is carried at all.
+	Check string
 	// AutoIncrement marks a column the engine fills by itself. It answers the
 	// same question a default does -- does a row without a value for this
 	// column get one -- and it answers it for the columns no DEFAULT clause
