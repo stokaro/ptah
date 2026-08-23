@@ -688,74 +688,48 @@ func (s *schemaParseState) parsePlacementDirective(
 	}
 }
 
+// sharedDirectiveParser reads one schema directive. Every parser takes the
+// struct the comment was attached to, and the two that have no use for it are
+// adapted by [ignoringStruct] rather than given a signature of their own.
+type sharedDirectiveParser func(*schemaParseState, *ast.Comment, string) error
+
 // sharedDirectiveParsers is the directive dispatch every schema comment target
 // shares: a struct's doc comment and a field's carry the same set.
 //
-// It is a table rather than a switch because the switch reached twenty-one arms
-// and every one of them is the same two lines. A table says which directive
+// It is a table rather than a run of switch arms because the switch reached
+// twenty-one of them, all identical in shape. A table says which directive
 // belongs to which parser and nothing else, and a new object family adds one
-// entry instead of pushing the function past what the complexity gate allows.
-var sharedDirectiveParsers = map[string]func(*schemaParseState, *ast.Comment, schemaCommentTarget) error{
-	"ptah:schema:constraint": func(s *schemaParseState, comment *ast.Comment, target schemaCommentTarget) error {
-		return s.parseConstraintComment(comment, target.structName)
-	},
-	"ptah:schema:enum": func(s *schemaParseState, comment *ast.Comment, _ schemaCommentTarget) error {
-		return s.parseEnumComment(comment)
-	},
-	"ptah:schema:extension": func(s *schemaParseState, comment *ast.Comment, _ schemaCommentTarget) error {
-		return s.parseExtensionComment(comment)
-	},
-	"ptah:schema:function": func(s *schemaParseState, comment *ast.Comment, target schemaCommentTarget) error {
-		return s.parseFunctionComment(comment, target.structName)
-	},
-	"ptah:schema:procedure": func(s *schemaParseState, comment *ast.Comment, target schemaCommentTarget) error {
-		return s.parseProcedureComment(comment, target.structName)
-	},
-	"ptah:schema:sequence": func(s *schemaParseState, comment *ast.Comment, target schemaCommentTarget) error {
-		return s.parseSequenceComment(comment, target.structName)
-	},
-	"ptah:schema:domain": func(s *schemaParseState, comment *ast.Comment, target schemaCommentTarget) error {
-		return s.parseDomainComment(comment, target.structName)
-	},
-	"ptah:schema:composite": func(s *schemaParseState, comment *ast.Comment, target schemaCommentTarget) error {
-		return s.parseCompositeComment(comment, target.structName)
-	},
-	"ptah:schema:range": func(s *schemaParseState, comment *ast.Comment, target schemaCommentTarget) error {
-		return s.parseRangeComment(comment, target.structName)
-	},
-	"ptah:schema:view": func(s *schemaParseState, comment *ast.Comment, target schemaCommentTarget) error {
-		return s.parseViewComment(comment, target.structName)
-	},
-	"ptah:schema:matview": func(s *schemaParseState, comment *ast.Comment, target schemaCommentTarget) error {
-		return s.parseMaterializedViewComment(comment, target.structName)
-	},
-	"ptah:schema:hypertable": func(s *schemaParseState, comment *ast.Comment, target schemaCommentTarget) error {
-		return s.parseHypertableComment(comment, target.structName)
-	},
-	"ptah:schema:synonym": func(s *schemaParseState, comment *ast.Comment, target schemaCommentTarget) error {
-		return s.parseSynonymComment(comment, target.structName)
-	},
-	"ptah:schema:extendedproperty": func(s *schemaParseState, comment *ast.Comment, target schemaCommentTarget) error {
-		return s.parseExtendedPropertyComment(comment, target.structName)
-	},
-	"ptah:schema:trigger": func(s *schemaParseState, comment *ast.Comment, target schemaCommentTarget) error {
-		return s.parseTriggerComment(comment, target.structName)
-	},
-	"ptah:schema:rls:policy": func(s *schemaParseState, comment *ast.Comment, target schemaCommentTarget) error {
-		return s.parseRLSPolicyComment(comment, target.structName)
-	},
-	"ptah:schema:rls:enable": func(s *schemaParseState, comment *ast.Comment, target schemaCommentTarget) error {
-		return s.parseRLSEnableComment(comment, target.structName)
-	},
-	"ptah:schema:role": func(s *schemaParseState, comment *ast.Comment, target schemaCommentTarget) error {
-		return s.parseRoleComment(comment, target.structName)
-	},
-	"ptah:schema:grant": func(s *schemaParseState, comment *ast.Comment, target schemaCommentTarget) error {
-		return s.parseGrantComment(comment, target.structName)
-	},
-	"ptah:schema:data": func(s *schemaParseState, comment *ast.Comment, target schemaCommentTarget) error {
-		return s.parseManagedDataComment(comment, target.structName)
-	},
+// line instead of pushing the function past the complexity gate.
+var sharedDirectiveParsers = map[string]sharedDirectiveParser{
+	"ptah:schema:constraint":       (*schemaParseState).parseConstraintComment,
+	"ptah:schema:enum":             ignoringStruct((*schemaParseState).parseEnumComment),
+	"ptah:schema:extension":        ignoringStruct((*schemaParseState).parseExtensionComment),
+	"ptah:schema:function":         (*schemaParseState).parseFunctionComment,
+	"ptah:schema:procedure":        (*schemaParseState).parseProcedureComment,
+	"ptah:schema:sequence":         (*schemaParseState).parseSequenceComment,
+	"ptah:schema:domain":           (*schemaParseState).parseDomainComment,
+	"ptah:schema:composite":        (*schemaParseState).parseCompositeComment,
+	"ptah:schema:range":            (*schemaParseState).parseRangeComment,
+	"ptah:schema:view":             (*schemaParseState).parseViewComment,
+	"ptah:schema:matview":          (*schemaParseState).parseMaterializedViewComment,
+	"ptah:schema:hypertable":       (*schemaParseState).parseHypertableComment,
+	"ptah:schema:synonym":          (*schemaParseState).parseSynonymComment,
+	"ptah:schema:extendedproperty": (*schemaParseState).parseExtendedPropertyComment,
+	"ptah:schema:trigger":          (*schemaParseState).parseTriggerComment,
+	"ptah:schema:rls:policy":       (*schemaParseState).parseRLSPolicyComment,
+	"ptah:schema:rls:enable":       (*schemaParseState).parseRLSEnableComment,
+	"ptah:schema:role":             (*schemaParseState).parseRoleComment,
+	"ptah:schema:grant":            (*schemaParseState).parseGrantComment,
+	"ptah:schema:data":             (*schemaParseState).parseManagedDataComment,
+}
+
+// ignoringStruct adapts a parser that does not need the owning struct's name.
+func ignoringStruct(
+	parse func(*schemaParseState, *ast.Comment) error,
+) sharedDirectiveParser {
+	return func(s *schemaParseState, comment *ast.Comment, _ string) error {
+		return parse(s, comment)
+	}
 }
 
 func (s *schemaParseState) parseSharedDirective(
@@ -767,7 +741,7 @@ func (s *schemaParseState) parseSharedDirective(
 	if !known {
 		return nil
 	}
-	return parse(s, comment, target)
+	return parse(s, comment, target.structName)
 }
 
 func (s *schemaParseState) parseEnumComment(comment *ast.Comment) error {
