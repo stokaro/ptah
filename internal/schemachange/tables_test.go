@@ -321,6 +321,21 @@ func describedTableMySQLOptions(fields ...goschema.Field) *goschema.Database {
 	return description
 }
 
+// describedTableCoveringKey is [describedTable] with a primary key that carries
+// INCLUDE payload columns.
+func describedTableCoveringKey(fields ...goschema.Field) *goschema.Database {
+	description := describedTableWithKey([]string{"id"}, fields...)
+	description.Tables[0].PrimaryKeyInclude = []string{"code"}
+	return description
+}
+
+// describedTableCounter is [describedTable] with a MySQL-family table counter.
+func describedTableCounter(fields ...goschema.Field) *goschema.Database {
+	description := describedTable(fields...)
+	description.Tables[0].AutoIncrement = "42"
+	return description
+}
+
 // describedTableWithKey is [describedTable] with a table-level primary key,
 // which is how the authoring model spells a COMPOSITE one: the field flag
 // declares a single-column key and cannot express a key over two.
