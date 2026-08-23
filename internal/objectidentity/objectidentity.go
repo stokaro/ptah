@@ -105,6 +105,17 @@ type Part struct {
 	// Normalized already, which is what keeps `"Users"` and `Users` apart on a
 	// folding target, and a renderer asks this instead of parsing the string.
 	Quoted bool
+	// Defaulted records that the source did not write this component and the
+	// target's default filled it in. It is a fact about the spelling too, and
+	// it is not part of the key: `users` and `public.users` are one table on
+	// PostgreSQL, which is the whole reason the default is applied.
+	//
+	// A renderer needs it because the two spell differently. Writing the
+	// defaulted schema back puts `"public"."users"` into DDL an author wrote as
+	// `users`, which is the same class of mistake as emitting a folded type or
+	// an ON DELETE clause nobody wrote (ADR 0001 invariant 2), and without this
+	// flag Source alone cannot tell the two apart (stokaro/ptah#1662).
+	Defaulted bool
 }
 
 // Empty reports whether the component was absent, which is different from
@@ -283,13 +294,14 @@ func (b Builder) TablePartsVerbatim(schema, name string) ID {
 
 // schemaPartVerbatim defaults an absent schema without trimming a present one.
 func (b Builder) schemaPartVerbatim(schema string) Part {
-	if schema == "" {
+	defaulted := schema == ""
+	if defaulted {
 		schema = b.semantics.DefaultSchema
 	}
 	if schema == "" {
 		return Part{}
 	}
-	return Part{Source: schema, Normalized: b.semantics.TableIdentityKey(schema)}
+	return Part{Source: schema, Normalized: b.semantics.TableIdentityKey(schema), Defaulted: defaulted}
 }
 
 // Column builds the identity of a column owned by a table.
@@ -504,7 +516,9 @@ func (b Builder) schemaPart(schema string) Part {
 		if b.semantics.DefaultSchema == "" {
 			return Part{}
 		}
-		return b.namePart(b.semantics.DefaultSchema, b.semantics.TableIdentityKey)
+		part := b.namePart(b.semantics.DefaultSchema, b.semantics.TableIdentityKey)
+		part.Defaulted = true
+		return part
 	}
 	return b.namePart(schema, b.semantics.TableIdentityKey)
 }

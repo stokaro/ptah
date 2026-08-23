@@ -540,7 +540,7 @@ func unmetPrecondition(
 	if !found {
 		return fmt.Sprintf("%s references %s, which this schema does not describe", change, key.ReferencedTable), false
 	}
-	if schemastate.ReferencedColumnsAreUnique(referenced, *key) {
+	if schemastate.ReferencedColumnsAreUnique(side, referenced, *key) {
 		return "", true
 	}
 	return fmt.Sprintf(
