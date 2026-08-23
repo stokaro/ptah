@@ -417,3 +417,70 @@ func (s Selection) Resolve(ctx context.Context, q RowQuerier) (string, error) {
 	}
 	return current.String, nil
 }
+
+// ResolveCarried answers the same question for a connection that could not SEND
+// the selection, so the session cannot be asked what it already resolved.
+//
+// A `?search_path=` is a startup parameter, and a transaction-pooling proxy
+// refuses the connection outright for a parameter outside its allow-list rather
+// than ignoring it. Ptah then reconnects without it, which leaves
+// `current_schema()` answering the connection default -- `public` -- for a URL
+// that named `app`. Believing that answer is the failure stokaro/ptah#1198 was,
+// pointed at a different schema: the writer would treat the selected schema as
+// a stranger's and drop it.
+//
+// The SERVER still resolves it, and that is the whole design. `set_config` with
+// `is_local` applies the identical parsing the startup parameter would have,
+// inside a transaction that is rolled back -- so PostgreSQL's own rule decides,
+// including a list, a `$user` entry, and a schema the connected role may not
+// use. Reimplementing that rule here would be a second answer to a question the
+// server already answers, and the two would drift.
+//
+// Measured on PostgreSQL 17, which is where the values come from:
+//
+//	app,public     -> app
+//	nosuch,public  -> public
+//	nosuch         -> NULL
+//
+// A transaction is what makes it safe on a pooled connection: a pooler keeps one
+// backend for the whole of one, and the ROLLBACK undoes the setting there. That
+// is measured rather than assumed -- on PostgreSQL 17, `set_config` inside a
+// transaction that rolls back leaves `current_schema()` at `public` whether
+// `is_local` was true or false, because SET is transactional. `is_local` is the
+// guard on the other exit: the same setting made without it and COMMITTED
+// leaves the session in `app`, which on a pooler is the next client's session.
+//
+// The NULL is refused with the same wording the session answer uses, because
+// the operator's mistake is the same one.
+func (s Selection) ResolveCarried(ctx context.Context, db TxBeginner) (string, error) {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to resolve PostgreSQL current schema: %w", err)
+	}
+	// Always rolled back: the transaction exists to scope a setting, never to
+	// change anything.
+	defer func() { _ = tx.Rollback() }()
+
+	if _, err := tx.ExecContext(
+		ctx,
+		"SELECT set_config($1, $2, true)",
+		searchPathParam, s.Raw,
+	); err != nil {
+		return "", fmt.Errorf("failed to resolve PostgreSQL current schema: %w", err)
+	}
+	var current sql.NullString
+	if err := tx.QueryRowContext(ctx, "SELECT current_schema()").Scan(&current); err != nil {
+		return "", fmt.Errorf("failed to resolve PostgreSQL current schema: %w", err)
+	}
+	if !current.Valid || current.String == "" {
+		return "", fmt.Errorf("database URL selects schema %q, which does not exist in this database", s.Raw)
+	}
+	return current.String, nil
+}
+
+// TxBeginner is the part of *sql.DB [Selection.ResolveCarried] needs: a
+// transaction, so the setting it makes cannot outlive it on a pooled
+// connection.
+type TxBeginner interface {
+	BeginTx(ctx context.Context, opts *sql.TxOptions) (*sql.Tx, error)
+}

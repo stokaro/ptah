@@ -490,24 +490,49 @@ pinned by a live test so it is a measured fact rather than a plan.
 A `?search_path=` on a PostgreSQL URL is sent as a **startup parameter**, and
 PgBouncer refuses the connection outright rather than ignoring it:
 
-```console
-$ ptah schema inspect --db-url "postgres://…@pgbouncer:6432/app?search_path=app"
-error: connect to --url: failed to ping database: the database URL selects a
-schema with "search_path", which is sent as a startup parameter and which a
-transaction-pooling proxy such as PgBouncer refuses rather than ignores: remove
-it from the URL, or configure the proxy to pass it through
-(PgBouncer: track_extra_parameters = search_path): server error:
+```text
 FATAL: unsupported startup parameter: search_path (SQLSTATE 08P01)
 ```
 
-The proxy's own `FATAL` is kept, so nothing is taken on trust; what Ptah adds
-is which parameter its URL carried and the two ways out. The same URL without
-`search_path` connects and reads normally, and the description it produces is
-identical to a direct read.
+Nothing about the schema is wrong there, so Ptah reconnects without the
+parameter and carries the selection itself. The server still resolves it —
+`set_config('search_path', …, is_local => true)` inside a transaction that is
+rolled back — so PostgreSQL's own rule decides, including a list, a `$user`
+entry, and a schema the connected role may not use. A transaction is what makes
+that safe through a pooler: the setting dies with the transaction, and a pooler
+keeps one backend for the whole of one.
 
-Making Ptah's own schema selection independent of that session parameter — so a
-pooled URL can select a schema at all — is
-[stokaro/ptah#1029](https://github.com/stokaro/ptah/issues/1029).
+Measured on PostgreSQL 17 behind PgBouncer 1.25.2 in transaction mode, one
+server reached two ways, the pooled answer beside the direct one for the same
+URL:
+
+| `search_path=` | schema selected |
+| --- | --- |
+| `app` | `app` |
+| `app,public` | `app` |
+| `nosuch,public` | `public` |
+| `nosuch` | refused: `database URL selects schema "nosuch", which does not exist in this database` |
+
+The refusal is carried too. A URL naming a schema the database does not have is
+rejected rather than folded back to `public`, because a caller who named a
+schema and silently got a different one is the failure Ptah's realm cleanup
+turns into a dropped schema.
+
+**Only the schema selection is carried.** Every other startup parameter is the
+operator's, and running a command without one would be running it under
+settings nobody asked for, so it stays a failure that names the parameter:
+
+```console
+$ ptah schema inspect --db-url "postgres://…@pgbouncer:6432/app?statement_timeout=5000"
+error: connect to --url: failed to ping database: the database URL carries the
+startup parameter "statement_timeout", which the server or the proxy in front of
+it refuses: server error: FATAL: unsupported startup parameter:
+statement_timeout (SQLSTATE 08P01)
+```
+
+The proxy's own `FATAL` is kept, so nothing is taken on trust. Configuring the
+proxy to pass a parameter through (PgBouncer: `track_extra_parameters`) is the
+other way out, and it is the only way out for a parameter Ptah does not own.
 
 ## TimescaleDB continuous aggregates
 
