@@ -56,7 +56,7 @@ func TestPostgreSQLCoverageStillPlansAGenuineRemovalIntegration(t *testing.T) {
 		c := qt.New(t)
 		declared, decodeErr := coverage.DecodeHeader(inspected)
 		c.Assert(decodeErr, qt.IsNil)
-		c.Assert(declared, qt.DeepEquals, coverage.Set{}.WithKind(
+		c.Assert(declared, qt.DeepEquals, suppressedBlocks(
 			coverage.Extension, coverage.Policy, coverage.Sequence,
 		))
 	})
@@ -103,4 +103,21 @@ func coverageDirectiveLines(document string) []string {
 		}
 	}
 	return lines
+}
+
+// suppressedBlocks is the record the compatibility surface makes for the block
+// types it omits: they are left out by a policy that is on unless something
+// turns it off, and the record says so rather than only that they are absent.
+// Spelling it out here is what proves the reason survives the process boundary
+// this test crosses (stokaro/ptah#1346).
+func suppressedBlocks(kinds ...coverage.Kind) coverage.Set {
+	var set coverage.Set
+	for _, kind := range kinds {
+		set = set.With(coverage.Object{
+			Kind:       kind,
+			Reason:     coverage.SuppressedByPolicy,
+			Provenance: coverage.Defaulted,
+		})
+	}
+	return set
 }
