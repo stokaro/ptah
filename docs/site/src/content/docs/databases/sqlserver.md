@@ -44,6 +44,7 @@ ptah db read --db-url "sqlserver://sa:$SA_PASSWORD@localhost:1433?database=app&s
 - Extended properties at database, schema, table and column scope: declared,
   rendered, introspected from `sys.extended_properties`, and diffed (see
   below).
+- Schemas the declared objects live in, created before them (see below).
 - Live introspection from `sys.tables`, `sys.columns`, `sys.indexes`, and
   related catalog views.
 - Transactional migration apply for DDL SQL Server supports in transactions,
@@ -210,6 +211,34 @@ Each loader records what its format cannot express, and the comparison withholds
 those removals. HCL and a Go schema — `//ptah:schema:synonym` and
 `//ptah:schema:extendedproperty` — can both declare the two objects, so silence
 in either is a request to remove.
+
+## Schemas
+
+A schema on SQL Server is an ordinary object inside the connected database, so a
+declaration that puts a table in one is asking for the schema too. Ptah creates
+it before the objects that need it:
+
+```sql
+IF SCHEMA_ID('app') IS NULL
+    EXEC('CREATE SCHEMA [app]');
+CREATE TABLE [app].[widget] (
+  [id] INT PRIMARY KEY
+);
+```
+
+The guarded form is not a style choice. SQL Server has no
+`CREATE SCHEMA IF NOT EXISTS`, repeating the statement answers `Msg 2714: There
+is already an object named 'app' in the database`, and `CREATE SCHEMA` must be
+the first statement of its batch — which is what the `EXEC` is for.
+
+The schemas come from the objects being added, so a migration that adds nothing
+emits no schema statement and a single-schema declaration emits none either. A
+schema a document declares and puts nothing in is not created.
+
+**MySQL, MariaDB, ClickHouse and Oracle do not do this**, and that is a
+difference in what a schema IS rather than a gap. A schema there is a database —
+or, on Oracle, a user — so creating one is `CREATE DATABASE` or `CREATE USER`,
+an administrative act outside what a schema migration owns.
 
 ## Identifier collation
 

@@ -1199,8 +1199,13 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 	// Note: MySQL doesn't use separate enum types like PostgreSQL
 	// Enums are handled inline in column definitions, so we skip enum creation steps
 
-	// 0. Name the declared objects this target cannot host, before anything
-	// else, mirroring the order `schema render` emits them in.
+	// 0. Create the schemas the added objects live in, before any of them.
+	// SQL Server only; the reason a schema is not created on the other
+	// dialects of this planner is on [Planner.planSchemaPreconditions].
+	result = p.planSchemaPreconditions(result, diff)
+
+	// 0a. Name the declared objects this target cannot host, before anything
+	// else that emits SQL, mirroring the order `schema render` emits them in.
 	result = p.reportUnsupportedObjects(result, diff)
 
 	// 0a. Plan the sequences this target does host, before tables: a column
