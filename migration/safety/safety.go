@@ -171,7 +171,7 @@ func AssessRenderedWithCapabilities(
 		if err != nil {
 			return nil, err
 		}
-		statements := sqlutil.SplitSQLStatements(rendered)
+		statements := sqlutil.SplitSQLStatementsForDialect(rendered, dialect)
 		if len(statements) == 0 && strings.TrimSpace(rendered) != "" {
 			statements = []string{strings.TrimSpace(rendered)}
 		}

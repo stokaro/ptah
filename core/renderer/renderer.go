@@ -1096,9 +1096,9 @@ func validateRoutineIdentityCollisions(dialect string, functions []goschema.Func
 				Err:     ptaherr.ErrUnsupportedFeature,
 				Message: fmt.Sprintf(
 					"functions %q and %q differ only by case, and stored-routine names are "+
-						"case-insensitive on %s, so the target cannot hold both: creating the "+
-						"second is Error 1304 on the first. Rename one of them",
-					previous, function.Name, dialect),
+						"case-insensitive on %s, so the target cannot hold both: %s. "+
+						"Rename one of them",
+					previous, function.Name, dialect, routineCollisionConsequence(dialect)),
 			}
 		}
 		seen[key] = function.Name
@@ -1112,12 +1112,29 @@ func validateRoutineIdentityCollisions(dialect string, functions []goschema.Func
 // docs/object_identity.md refuses.
 var routineIdentities = objectidentity.NewBuilder(identifier.Semantics{})
 
+// routineCollisionConsequence names what the target actually does with the
+// second of two declarations it cannot tell apart.
+//
+// The two answers are different in kind and the message should not flatten
+// them. MySQL and MariaDB REFUSE the second create, so the operator sees an
+// error at apply time even without this check. Oracle does not refuse it:
+// measured on 23.26.2.0.0, `CREATE OR REPLACE FUNCTION zz_case` followed by
+// `CREATE OR REPLACE FUNCTION ZZ_CASE` reports "Function created" twice and
+// leaves ONE routine carrying the SECOND body. There the check is the only
+// thing standing between two declarations and one silently discarded.
+func routineCollisionConsequence(dialect string) string {
+	if platform.NormalizeDialect(dialect) == platform.Oracle {
+		return "the second silently replaces the first and its body is what survives"
+	}
+	return "creating the second is Error 1304 on the first"
+}
+
 // routineNamesAreCaseInsensitive reports whether dialect folds stored-routine
 // names. PostgreSQL and its family do not, which is why this is not applied
 // everywhere.
 func routineNamesAreCaseInsensitive(dialect string) bool {
 	switch platform.NormalizeDialect(dialect) {
-	case platform.MySQL, platform.MariaDB:
+	case platform.MySQL, platform.MariaDB, platform.Oracle:
 		return true
 	default:
 		return false
