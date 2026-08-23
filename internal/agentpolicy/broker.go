@@ -35,12 +35,12 @@ type Subject struct {
 	Summary string
 	// Digest identifies the exact artifact or patch, as "sha256:...".
 	Digest string
-	// Details are the labelled facts the prompt shows: paths, environment,
+	// Details are the labeled facts the prompt shows: paths, environment,
 	// resulting digest.
 	Details []Detail
 }
 
-// Detail is one labelled fact in an approval prompt.
+// Detail is one labeled fact in an approval prompt.
 type Detail struct {
 	Label string
 	Value string

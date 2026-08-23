@@ -71,7 +71,7 @@ func New(cfg Config) *mcp.Server {
 }
 
 // Run serves the protocol over stdio until the session ends or the context is
-// cancelled.
+// canceled.
 //
 // A session the client finishes and then closes returns nil. A client that
 // vanishes mid-session returns the SDK's error, and that difference is worth

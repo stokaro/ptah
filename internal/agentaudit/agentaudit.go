@@ -76,7 +76,7 @@ const (
 // Event is one auditable decision.
 //
 // Every field is either Ptah's own text or an identifier. Nothing here is
-// copied from the model's output except [Event.CallerSummary], which is labelled
+// copied from the model's output except [Event.CallerSummary], which is labeled
 // as the caller's words in both the field name and the documentation so a reader
 // of the log cannot mistake it for Ptah's account of what happened.
 type Event struct {
@@ -119,7 +119,7 @@ type Event struct {
 	RolledBack   bool     `json:"rolled_back,omitempty"`
 
 	// CallerSummary is the untrusted party's own description, kept because it is
-	// useful context and labelled because it is not evidence.
+	// useful context and labeled because it is not evidence.
 	CallerSummary string `json:"caller_summary,omitempty"`
 }
 

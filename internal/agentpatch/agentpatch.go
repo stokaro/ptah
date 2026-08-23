@@ -198,7 +198,7 @@ func (p *Plan) Class() agentpolicy.ArtifactClass { return p.patch.Class }
 
 // Summary is the caller's own description of the patch.
 //
-// It is exposed so an audit record can carry it, labelled as the caller's
+// It is exposed so an audit record can carry it, labeled as the caller's
 // words. Nothing in this package renders it as Ptah's account of the change.
 func (p *Plan) Summary() string { return p.patch.Summary }
 
