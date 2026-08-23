@@ -889,18 +889,17 @@ func (a DBContinuousAggregate) QualifiedName() string {
 // sys.extended_properties.
 //
 // SQL Server hangs a property off a three-level address, and this type carries
-// the two levels Ptah manages. Schema alone is a schema-scoped property
-// (class 3); Schema and Table together are an object-scoped one, and adding
-// Column addresses a column of it (class 1, minor_id 0 or the column's id).
+// it. No level at all is a DATABASE-scoped property (class 0); Schema alone is
+// a schema-scoped one (class 3); Schema and Table together are object-scoped,
+// and adding Column addresses a column of it (class 1, minor_id 0 or the
+// column's id).
 //
-// Two kinds of row are deliberately absent, and each for its own reason.
+// A database-scoped property is in no schema, so a read narrowed to one still
+// carries it -- the rule an extension already follows, where placement is not
+// ownership. Dropping it from a narrowed description would plan
+// sp_dropextendedproperty for a property the declaration still names.
 //
-// A DATABASE-scoped property (class 0) has no schema and no object to hang
-// off, and how a database-scoped object lives beside a schema-scoped model is
-// a design question rather than a field (stokaro/ptah#1031). It is left
-// unread, so nothing describes it and nothing plans against it.
-//
-// MS_Description is not read here either, because Ptah already models it: the
+// MS_Description is not read here, because Ptah already models it: the
 // reader turns it into the object's Comment, and reporting it twice would let
 // the comment comparator and this one plan the same change from two places.
 // The declaration side refuses it by name for the same reason, and says to use
@@ -935,7 +934,14 @@ type DBExtendedProperty struct {
 
 // QualifiedOwner names the object the property is attached to, as
 // schema.table.column, omitting the levels that are absent.
+//
+// A property with no levels is the database's own, and says so rather than
+// rendering as an empty string: it appears in diagnostics beside properties
+// that do name an object, and "" beside "app.docs" reads as a bug.
 func (p DBExtendedProperty) QualifiedOwner() string {
+	if p.Schema == "" {
+		return "(database)"
+	}
 	parts := []string{p.Schema}
 	if p.Table != "" {
 		parts = append(parts, p.Table)

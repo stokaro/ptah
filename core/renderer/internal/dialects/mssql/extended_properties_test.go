@@ -24,6 +24,16 @@ func TestExtendedProperty_WritesTheAddressLevelByLevel(t *testing.T) {
 		want string
 	}{
 		{
+			// No level at all is the database's own property, and the
+			// procedure takes it that way: an empty @level0name would be a
+			// property on a schema called "", which it also accepts and which
+			// belongs to nothing.
+			name: "database scope passes no level",
+			node: ast.NewExtendedProperty(ast.ExtendedPropertyAdd, "ptah_db").
+				SetOwner("", "", "").SetValue("on"),
+			want: "EXEC sp_addextendedproperty @name = N'ptah_db', @value = N'on';",
+		},
+		{
 			name: "schema scope passes level 0 alone",
 			node: ast.NewExtendedProperty(ast.ExtendedPropertyAdd, "ptah_flag").
 				SetOwner("app", "", "").SetValue("on"),
@@ -103,10 +113,10 @@ func TestExtendedProperty_RefusesAnAddressItCannotCompose(t *testing.T) {
 		wantErr string
 	}{
 		{
-			name: "no schema",
+			name: "a table without a schema",
 			node: ast.NewExtendedProperty(ast.ExtendedPropertyAdd, "ptah_flag").
 				SetOwner("", "docs", "").SetValue("on"),
-			wantErr: "names no schema",
+			wantErr: "names table",
 		},
 		{
 			name: "a column without a table",

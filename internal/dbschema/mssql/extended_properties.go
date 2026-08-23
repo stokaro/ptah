@@ -11,12 +11,22 @@ import (
 // describes.
 //
 // sys.extended_properties addresses a property by a class and up to two ids,
-// and the two arms below are the two classes this description covers.
-// class 3 is a schema, whose major_id is a schema_id. class 1 is
-// OBJECT_OR_COLUMN, whose major_id is an object_id and whose minor_id is 0 for
-// the object itself or the column's id for one of its columns -- which is why
-// the join to sys.columns is a LEFT one and why minor_id = 0 produces no
-// column name.
+// and the three arms below are the three classes this description covers.
+// class 0 is the DATABASE, whose ids are both 0 and which therefore has no
+// schema to report. class 3 is a schema, whose major_id is a schema_id.
+// class 1 is OBJECT_OR_COLUMN, whose major_id is an object_id and whose
+// minor_id is 0 for the object itself or the column's id for one of its
+// columns -- which is why the join to sys.columns is a LEFT one and why
+// minor_id = 0 produces no column name.
+//
+// The database arm is NOT scoped by the schema predicate, for the reason
+// [Reader.SetSchemas] cannot answer: a database-scoped property is in no
+// schema, so narrowing the read to one does not exclude it any more than it
+// excludes the database itself. That is the rule an extension already follows
+// -- placement is not ownership -- and the alternative is worse in a way that
+// only shows up on apply: a description that dropped it while the declaration
+// still carried one would plan sp_dropextendedproperty for a property the
+// operator declared.
 //
 // Three exclusions, and each is a row that would otherwise be described as
 // something Ptah manages when it is not.
@@ -25,9 +35,6 @@ import (
 //     object's Comment, and reporting it here as well would let the comment
 //     comparator and the property comparator plan the same change from two
 //     places, each unaware of the other.
-//   - class 0, the database-scoped property. It has no schema and no object to
-//     hang off, and how one lives beside a schema-scoped model is a design
-//     question rather than a field (stokaro/ptah#1031).
 //   - a class 1 property whose major_id is not a table. sys.extended_properties
 //     addresses views, procedures, functions, indexes and types through the
 //     same class, and each takes a different @level1type in the statement that
@@ -42,6 +49,19 @@ import (
 // answer `Jan  2 2026` for that date and lose both the type and, with the
 // locale, the value.
 const extendedPropertyQuery = `
+	SELECT
+		N'' AS schema_name,
+		N'' AS table_name,
+		N'' AS column_name,
+		ep.name,
+		CONVERT(NVARCHAR(MAX), ep.value),
+		CONVERT(NVARCHAR(128), SQL_VARIANT_PROPERTY(ep.value, 'BaseType'))
+	FROM sys.extended_properties AS ep
+	WHERE ep.class = 0
+	  AND ep.name <> N'MS_Description'
+
+	UNION ALL
+
 	SELECT
 		s.name,
 		N'' AS table_name,

@@ -82,6 +82,9 @@ func (s *scopeSelection) projectGeneratedTopLevel(db, out *goschema.Database) {
 	})
 	out.ExtendedProperties = keep(db.ExtendedProperties,
 		func(property goschema.ExtendedProperty) bool {
+			if property.Schema == "" {
+				return s.selectedDatabaseProperty(property.Name)
+			}
 			if property.Table != "" && !generatedTableNameKept(out.Tables, property.Table) {
 				return false
 			}

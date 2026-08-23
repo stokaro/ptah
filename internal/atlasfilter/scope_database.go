@@ -71,8 +71,16 @@ func (s *scopeSelection) projectDatabaseTopLevel(
 	// selectable on its own name. SQL Server drops the property with the
 	// table, so a selection that kept the property and dropped its owner would
 	// describe a property on an object the same description says is absent.
+	//
+	// A DATABASE-scoped property is in no schema, so the schema universe does
+	// not reach it -- the rule selectedExtension already applies, where
+	// placement is not ownership. Narrowing it away would plan
+	// sp_dropextendedproperty for a property the declaration still names.
 	out.ExtendedProperties = keep(db.ExtendedProperties,
 		func(property dbschematypes.DBExtendedProperty) bool {
+			if property.Schema == "" {
+				return s.selectedDatabaseProperty(property.Name)
+			}
 			if property.Table != "" && !s.tableKept(keptTables, property.Schema, property.Table) {
 				return false
 			}

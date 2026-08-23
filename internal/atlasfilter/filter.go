@@ -1100,7 +1100,14 @@ func (s *exclusionState) filterExtendedProperties(
 	result := make([]dbschematypes.DBExtendedProperty, 0, len(properties))
 	for _, property := range properties {
 		names := s.nameCandidates(property.Schema, property.Name)
-		if s.matches("extended_property", names...) || s.schemaExcluded(property.Schema) {
+		if s.matches("extended_property", names...) {
+			continue
+		}
+		// A database-scoped property is in no schema, so excluding a schema
+		// does not exclude it. Asking schemaExcluded("") would resolve the
+		// empty name to the connection's own schema and drop the property
+		// whenever THAT one is excluded, which is a different object entirely.
+		if property.Schema != "" && s.schemaExcluded(property.Schema) {
 			continue
 		}
 		if property.Table != "" && s.tableExcluded(property.Schema, property.Table) {
