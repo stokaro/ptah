@@ -216,6 +216,19 @@ The refinement reports; it does not change the server. Ptah reads settings and
 plans by them, and never enables a database feature or writes a server
 variable.
 
+### What a machine reads, and from where
+
+Every verb that has a machine-readable format writes that document to **stdout**,
+whatever the outcome, and keeps stderr for diagnostics. That includes the
+expected-negative cases: `ptah schema drift --format json` writes its report to
+stdout and exits 1 when there is drift, exactly as
+`ptah migrations status --json --exit-code` writes its report to stdout and
+exits 1 when migrations are pending.
+
+The distinction a caller needs is the exit code, not the stream: `0` success,
+`1` an expected negative result, `2` a command or usage error. A parser reading
+stdout therefore gets a document in every case except `2`.
+
 ## Registries and SQL files: `ptah oci`, `ptah sql`
 
 | Command | Purpose |

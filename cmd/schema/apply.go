@@ -127,6 +127,13 @@ apply rather than reporting a synced schema for work that did not happen.`,
 	dbcli.RegisterConnectTimeoutFlag(flags, &opts.connectTimeout)
 	dbcli.RegisterConfigFlag(flags, &opts.configPath)
 	dbcli.RegisterEnvFlag(flags, &opts.envName)
+	// Approval is the one thing an environment must not be able to grant. Every
+	// other flag on every native verb binds to a PTAH_* variable, which is what
+	// lets a container be configured entirely through env -- and is exactly why
+	// this one does not: a variable set once in a shell profile, a CI job or a
+	// ConfigMap would turn every later `schema apply` in that environment into
+	// an unattended one. It has to be typed, or passed in a command line
+	// somebody wrote (stokaro/ptah#852).
 	if err := cmdflags.DisableEnvBinding(flags, applyAutoApproveFlag); err != nil {
 		panic(err)
 	}

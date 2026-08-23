@@ -54,6 +54,10 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	flags.StringVar(&opts.dbURL, dbURLFlag, "", "Database URL (required). Example: postgres://localhost:5432/dbname")
 	flags.BoolVar(&opts.dryRun, dryRunFlag, false, "Show what would be executed without making actual changes")
 	flags.BoolVar(&opts.autoApprove, autoApproveFlag, false, "Skip interactive approval for destructive cleanup")
+	// Not bound to a PTAH_* variable, unlike every other flag here: a variable
+	// that skips the confirmation on a verb that drops every object in a
+	// database is one an environment could set by accident. See the same
+	// decision on `schema apply` (stokaro/ptah#852).
 	if err := cmdflags.DisableEnvBinding(flags, autoApproveFlag); err != nil {
 		panic(err)
 	}
