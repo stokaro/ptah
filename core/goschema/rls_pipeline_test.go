@@ -2,6 +2,7 @@ package goschema_test
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -11,13 +12,26 @@ import (
 	"go.5x5.cz/ptah/core/renderer"
 )
 
-// Helper functions for test file management
-func writeTestFile(filename, content string) error {
-	return os.WriteFile(filename, []byte(content), 0600)
-}
-
-func cleanupTestFile(filename string) {
-	os.Remove(filename)
+// writeTestFile writes a parseable Go source file into a directory this test
+// owns, and returns its path.
+//
+// It writes into t.TempDir() rather than into the package directory, which is
+// what these tests did. A .go file that exists in core/goschema for the length
+// of one test is a file every CONCURRENT build of a package that imports
+// core/goschema can see -- and `go test ./...` builds packages in parallel, so
+// another package's test binary can be compiling this one while the file is
+// created and removed. That race produced, on the Windows runner:
+//
+//	..\..\core\goschema\parser.go:17:2: cannot find package
+//	open ...\core\goschema\test_rls_integration.go: The system cannot find the file specified.
+//
+// in cmd/ptah-compat, whose test shells out to `go build`. The file it names is
+// this one, written by this package's tests (stokaro/ptah#1749).
+func writeTestFile(c *qt.C, name, content string) string {
+	c.Helper()
+	path := filepath.Join(c.TB.TempDir(), name)
+	c.Assert(os.WriteFile(path, []byte(content), 0600), qt.IsNil)
+	return path
 }
 
 func TestRLSAndFunctionIntegration_EndToEnd(t *testing.T) {
@@ -67,10 +81,7 @@ type Product struct {
 `
 
 	// Write the test file
-	testFile := "test_rls_integration.go"
-	err := writeTestFile(testFile, testGoContent)
-	c.Assert(err, qt.IsNil)
-	defer cleanupTestFile(testFile)
+	testFile := writeTestFile(c, "test_rls_integration.go", testGoContent)
 
 	// Parse the file
 	database := mustParseFile(c, testFile)
@@ -198,10 +209,7 @@ type TestTable struct {
 }
 `
 
-	testFile := "test_mysql_skip.go"
-	err := writeTestFile(testFile, testGoContent)
-	c.Assert(err, qt.IsNil)
-	defer cleanupTestFile(testFile)
+	testFile := writeTestFile(c, "test_mysql_skip.go", testGoContent)
 
 	database := mustParseFile(c, testFile)
 
