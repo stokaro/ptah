@@ -529,6 +529,38 @@ to a registry, so `migrate new`, `migrate diff` and `migrate hash` refuse
 against it and name the reference they refused. Write to a local directory and
 publish it with `ptah migrations push`.
 
+### `migration.dir` takes the same reference
+
+An env can name the registry directly, without declaring a data source:
+
+```hcl
+env "prod" {
+  url = getenv("DATABASE_URL")
+
+  migration {
+    dir = "atlas://app?tag=prod"
+  }
+}
+```
+
+It resolves against `PTAH_ATLAS_REGISTRY` exactly as the data source does, and
+produces the same read-only directory, so `migrate status`, `migrate apply`,
+`migrate validate` and `migrate lint` work against it while the writing verbs
+refuse and name the reference.
+
+**Nothing is fetched while the project file is read.** A project file is read
+by every command, so an env whose `migration.dir` names a registry does not
+make `schema inspect --env prod` contact one — the pull happens when a command
+opens the directory, and so does the refusal when `PTAH_ATLAS_REGISTRY` is
+unset:
+
+```text
+Error: atlas migrate status --dir: capture migrations directory: capture filesystem snapshot:
+atlas:// references require an OCI backing registry in Ptah: set PTAH_ATLAS_REGISTRY to the
+namespace holding them, for example PTAH_ATLAS_REGISTRY=ghcr.io/acme, or write the oci://
+reference itself
+```
+
 ## SQL data source
 
 `data "sql"` executes one query against `url`. The query must return one

@@ -23,6 +23,7 @@ import (
 
 	"go.5x5.cz/ptah/internal/atlashcl"
 	"go.5x5.cz/ptah/internal/atlasprojectpath"
+	"go.5x5.cz/ptah/internal/atlasregistry"
 )
 
 // AtlasLoadOptions selects Atlas project config evaluation settings.
@@ -1166,7 +1167,11 @@ func (p atlasParser) parseMigrationAttr(
 		if err != nil {
 			return err
 		}
-		migration.Dir = normalizeAtlasMigrationDir(value)
+		resolved, err := p.migrationDirValue(value)
+		if err != nil {
+			return err
+		}
+		migration.Dir = resolved
 		cfg.presence.mark(fieldMigrationDir)
 	case "format":
 		value, err := p.scopedEnumOrStringAttr(
@@ -2987,6 +2992,29 @@ func stringListValue(name string, attr *hclsyntax.Attribute, value cty.Value) ([
 		values = append(values, item.AsString())
 	}
 	return values, nil
+}
+
+// migrationDirValue resolves what `migration.dir` names into what the rest of
+// the tree can open.
+//
+// A local path stays a local path. An `atlas://` reference names a directory
+// held in a registry, and is registered as an in-memory read-only directory --
+// the same shape `data "remote_dir"` produces, so every consumer that already
+// accepts one accepts this. Resolving it here rather than at the consumer is
+// what makes the capability reach every verb without a second pull path
+// (stokaro/ptah#1210).
+//
+// Resolution and fetch are BOTH deferred: see [lazyMigrationDirFS]. A project
+// file is read by every verb, so a command that never opens the directory must
+// not fail because a namespace is unset or a registry is unreachable -- and the
+// refusal, when it comes, has to name the reference the project wrote rather
+// than one nothing resolved.
+func (p atlasParser) migrationDirValue(value string) (string, error) {
+	trimmed := strings.TrimSpace(value)
+	if !strings.HasPrefix(trimmed, atlasregistry.Scheme) {
+		return normalizeAtlasMigrationDir(value), nil
+	}
+	return p.registerRemoteMigrationDir(trimmed), nil
 }
 
 func normalizeAtlasMigrationDir(value string) string {
