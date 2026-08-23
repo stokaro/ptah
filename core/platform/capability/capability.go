@@ -2168,7 +2168,37 @@ func NamedPresets() []NamedPreset {
 	}
 }
 
-// ForDialect returns the default preset for a dialect name (normalized via
+// WithDeclaredExtensions turns on the keys a DESIRED SCHEMA's own extensions
+// imply, for the paths that have no connection to ask.
+//
+// TimescaleDB is the case. [Hypertables] is decided by `pg_extension` when a
+// connection is open, and offline there is nothing to ask -- so a schema that
+// declares the extension AND a hypertable rendered `CREATE EXTENSION
+// "timescaledb"` and then `-- hypertable readings is not supported by this
+// target; skipped`, which is a script that installs the extension and refuses
+// to use it (stokaro/ptah#1026).
+//
+// The declaration is the evidence. A script that creates the extension has
+// created it by the time the call below runs, and an apply that adds the
+// extension in the same plan is in exactly that position: the connection was
+// opened before the extension existed, so its answer is about the past.
+//
+// It only ever turns a key ON. A connection that already reports the extension
+// keeps its answer, and a schema that declares no extension changes nothing.
+func WithDeclaredExtensions(caps Capabilities, extensions []string) Capabilities {
+	for _, extension := range extensions {
+		if strings.EqualFold(strings.TrimSpace(extension), timescaleExtension) {
+			return caps.With(Hypertables, true)
+		}
+	}
+	return caps
+}
+
+// timescaleExtension is the extension name that decides [Hypertables], in the
+// one place both the connection probe and the declaration rule can read it.
+const timescaleExtension = "timescaledb"
+
+// ForDialect returns// ForDialect returns the default preset for a dialect name (normalized via
 // platform.NormalizeDialect): the current supported version line of that
 // dialect. Unknown dialects get nil — the conservative empty set.
 func ForDialect(dialect string) Capabilities {

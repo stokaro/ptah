@@ -660,6 +660,17 @@ connection opens. A PostgreSQL target without the extension skips the statement
 and says so in the plan rather than failing at apply time on
 `function create_hypertable(unknown, unknown) does not exist`.
 
+**Offline, the declaration is the evidence.** `ptah schema render` has no
+connection to ask, so a document that declares the `timescaledb` extension
+alongside a hypertable renders both — an extension the same script installs is
+installed by the time the call runs. A document that declares the hypertable and
+not the extension gets the skip comment instead, because nothing in it says the
+target has the function.
+
+The same rule reaches an apply that adds the extension in the same plan: the
+connection was opened before the extension existed, so its answer is about the
+past.
+
 Only HCL and a Go schema can declare a hypertable. A YAML or `.sql` document
 records that it could not say so, and the comparison then withholds the removal
 its silence would otherwise mean.
