@@ -175,6 +175,19 @@ type Column struct {
 	// constraint something the author cannot predict, and every later
 	// diagnostic about it would use that name.
 	CheckName string
+	// Charset and Collate are the column's character set and collation on the
+	// MySQL-family targets that put them on a column.
+	//
+	// Carried for rendering and not compared. A catalog reports a column's
+	// EFFECTIVE charset even where the declaration inherited it from the
+	// table, so comparing the two spellings would report a modification for
+	// every column nobody changed.
+	Charset string
+	Collate string
+	// UpdateExpression is MySQL's `ON UPDATE <expr>` clause. It is carried for
+	// rendering only, because no catalog read reports it: dropping it from a
+	// CREATE builds a column that silently stops maintaining itself.
+	UpdateExpression string
 	// Check is the column-level CHECK expression the source wrote, empty for a
 	// column with none.
 	//
@@ -230,6 +243,15 @@ type Table struct {
 	// (stokaro/ptah#1662).
 	Strict       bool
 	WithoutRowID bool
+	// Engine, Charset and Collate are the MySQL-family table options.
+	//
+	// Carried for rendering and not compared, because no catalog read reports
+	// them: a CREATE that dropped the engine builds a table on the server's
+	// default, which on a server configured differently is a different storage
+	// engine with different transactional behavior.
+	Engine  string
+	Charset string
+	Collate string
 }
 
 // Populated reports whether the table is known to hold rows, and whether that

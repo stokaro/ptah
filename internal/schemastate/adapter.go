@@ -151,6 +151,8 @@ func columnsFromCatalog(
 			GeneratedExpression: derefOrEmpty(column.GeneratedExpression),
 			GeneratedKind:       column.GeneratedKind,
 			IdentityGeneration:  column.IdentityGeneration,
+			Charset:             column.Charset,
+			Collate:             column.Collate,
 			AutoIncrement:       column.IsAutoIncrement,
 		})
 	}
@@ -221,6 +223,9 @@ func FromDescription(
 				Columns:      columns,
 				Strict:       table.Strict,
 				WithoutRowID: table.WithoutRowID,
+				Engine:       table.Engine,
+				Charset:      table.Charset,
+				Collate:      table.Collate,
 				// A description says what a table should look like and nothing
 				// about what is in it. Leaving the pair zero would claim the
 				// table is empty, which is the answer that lets an ADD COLUMN
@@ -356,6 +361,9 @@ func columnsFromDescription(
 			GeneratedExpression: field.GeneratedExpression,
 			GeneratedKind:       field.GeneratedKind,
 			IdentityGeneration:  field.IdentityGeneration,
+			Charset:             field.Charset,
+			Collate:             field.Collate,
+			UpdateExpression:    field.UpdateExpression,
 			Check:               field.Check,
 			CheckName:           field.CheckName,
 			AutoIncrement:       field.AutoInc,
