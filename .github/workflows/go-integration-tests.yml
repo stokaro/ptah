@@ -32,6 +32,32 @@ jobs:
         ports:
           - 5432:5432
 
+      # PgBouncer in TRANSACTION mode, in front of the PostgreSQL service
+      # above. It is here because a transaction pooler is the one topology
+      # where a session-scoped fact belongs to a backend the next statement may
+      # not get, and nothing else in this list reproduces that
+      # (stokaro/ptah#1029).
+      #
+      # No health check: the image accepts clients before the backend is up and
+      # connects lazily, so a check would only make the job wait for something
+      # that is already true. The tests that use it fail on the connection if
+      # it is genuinely not there.
+      pgbouncer:
+        image: edoburu/pgbouncer:v1.25.2-p0
+        env:
+          DB_HOST: postgres
+          DB_PORT: 5432
+          DB_USER: ptah_user
+          DB_PASSWORD: ptah_password
+          DB_NAME: ptah_test
+          POOL_MODE: transaction
+          AUTH_TYPE: scram-sha-256
+          LISTEN_PORT: 6432
+          MAX_CLIENT_CONN: '100'
+          DEFAULT_POOL_SIZE: '5'
+        ports:
+          - 6432:6432
+
       mysql:
         image: mysql:26.7
         env:
@@ -341,6 +367,9 @@ jobs:
           PTAH_ATLAS_REFERENCE_POSTGRES_DEV_URL: "postgres://ptah_user:ptah_password@localhost:5432/ptah_oracle_dev?sslmode=disable&search_path=public"
           PTAH_ATLAS_REFERENCE_POSTGRES_REALM_DEV_URL: "postgres://ptah_user:ptah_password@localhost:5432/ptah_oracle_realmdev?sslmode=disable"
           POSTGRES_TEST_DSN: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
+          # The same database through the pooler, which is the only difference
+          # the tests using it are about.
+          POSTGRES_POOLED_TEST_URL: "postgres://ptah_user:ptah_password@localhost:6432/ptah_test?sslmode=disable"
           POSTGRES_TEST_URL: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
           POSTGRES_URL: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"
           TEST_DATABASE_URL: "postgres://ptah_user:ptah_password@localhost:5432/ptah_test?sslmode=disable"

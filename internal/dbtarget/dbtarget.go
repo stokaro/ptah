@@ -35,6 +35,17 @@ const (
 	PostgreSQL Engine = iota
 	MySQL
 	MySQLAdmin
+	// PostgreSQLPooled is the same PostgreSQL server reached through a
+	// transaction-pooling proxy rather than directly.
+	//
+	// It is its own engine because what it is for is the difference. A
+	// transaction pooler hands a client whichever backend is free between
+	// transactions, so anything Ptah keeps in a session -- a search_path, a
+	// session advisory lock -- belongs to a backend the next statement may not
+	// get. Pointing that test at POSTGRES_TEST_DSN would leave it measuring a
+	// direct connection and reporting the proxy as covered
+	// (stokaro/ptah#1029).
+	PostgreSQLPooled
 	MariaDB
 	MariaDBAdmin
 	ClickHouse
@@ -111,6 +122,10 @@ var sources = map[Engine]source{
 		canonical: "MYSQL_ADMIN_TEST_URL",
 		synonyms:  []string{"MYSQL_ADMIN_TEST_DSN"},
 		scheme:    []string{"mysql"},
+	},
+	PostgreSQLPooled: {
+		canonical: "POSTGRES_POOLED_TEST_URL",
+		scheme:    []string{"postgres", "postgresql"},
 	},
 	MariaDB: {
 		canonical: "MARIADB_TEST_URL",
@@ -259,6 +274,8 @@ func engineName(engine Engine) string {
 		return "MySQL"
 	case MySQLAdmin:
 		return "MySQL with an administrative account"
+	case PostgreSQLPooled:
+		return "PostgreSQL behind a transaction-pooling proxy"
 	case MariaDB:
 		return "MariaDB"
 	case MariaDBAdmin:
