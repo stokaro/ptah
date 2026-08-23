@@ -114,7 +114,10 @@ func TestHypertableQuery_ReadsTheExtensionsOwnCatalog(t *testing.T) {
 		fragment string
 	}{
 		{name: "the catalog", fragment: "timescaledb_information.hypertables"},
-		{name: "the primary dimension", fragment: "h.primary_dimension"},
+		{name: "the dimension catalog", fragment: "timescaledb_information.dimensions"},
+		{name: "the primary dimension", fragment: "d.column_name"},
+		{name: "its type", fragment: "d.column_type::text"},
+		{name: "the first dimension only", fragment: "d.dimension_number = 1"},
 		{name: "the dimension count", fragment: "h.num_dimensions"},
 		{name: "scoped to one schema", fragment: "h.hypertable_schema = $1"},
 	}
@@ -124,6 +127,38 @@ func TestHypertableQuery_ReadsTheExtensionsOwnCatalog(t *testing.T) {
 			c := qt.New(t)
 			c.Assert(hypertableQuery, qt.Contains, test.fragment)
 			c.Assert(hypertableQuery, qt.Not(qt.Contains), "pg_depend")
+		})
+	}
+}
+
+// TestHypertableQuery_NamesNoColumnTheOlderExtensionLacks is the version gate
+// this read has instead of a version check.
+//
+// `primary_dimension` and `primary_dimension_type` were added to the hypertable
+// view after 2.14.2. Measured through `information_schema.columns` in the same
+// database on each release, the view answers seven columns on 2.14.2 and nine
+// on 2.29.2, so naming either of the two fails on the older one with
+// `column h.primary_dimension does not exist`.
+//
+// That is worse than a missing detail. A failed statement aborts the enclosing
+// PostgreSQL transaction, so every read AFTER this one answers SQLSTATE 25P02
+// and the description fails somewhere else entirely.
+//
+// CI runs one TimescaleDB version, so nothing else in this suite can see the
+// older shape. This is a claim about the query's text for exactly that reason.
+func TestHypertableQuery_NamesNoColumnTheOlderExtensionLacks(t *testing.T) {
+	tests := []struct {
+		name   string
+		column string
+	}{
+		{name: "the primary dimension", column: "primary_dimension"},
+		{name: "its type", column: "primary_dimension_type"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(hypertableQuery, qt.Not(qt.Contains), test.column)
 		})
 	}
 }
@@ -149,9 +184,19 @@ func hypertableRows() [][]driver.Value {
 // hypertableAnswer answers the catalog with the five columns the read scans, so
 // a query that stopped selecting one fails here rather than being handed the
 // same rows.
+//
+// Both views are required in the text. The primary dimension comes from
+// `timescaledb_information.dimensions` because the hypertable view does not
+// carry it on every supported release, and a query that went back to the newer
+// projection would otherwise be answered these rows anyway.
 func hypertableAnswer(query string, refusal error, rows [][]driver.Value) (dbtest.QueryResult, error) {
-	if !strings.Contains(query, "timescaledb_information.hypertables") {
-		return dbtest.QueryResult{}, fmt.Errorf("unexpected query: %s", query)
+	for _, catalog := range []string{
+		"timescaledb_information.hypertables",
+		"timescaledb_information.dimensions",
+	} {
+		if !strings.Contains(query, catalog) {
+			return dbtest.QueryResult{}, fmt.Errorf("unexpected query: %s", query)
+		}
 	}
 	if refusal != nil {
 		return dbtest.QueryResult{}, refusal
@@ -159,7 +204,7 @@ func hypertableAnswer(query string, refusal error, rows [][]driver.Value) (dbtes
 	return dbtest.QueryResult{
 		Columns: []string{
 			"hypertable_schema", "hypertable_name",
-			"primary_dimension", "primary_dimension_type", "num_dimensions",
+			"column_name", "column_type", "num_dimensions",
 		},
 		Rows: rows,
 	}, nil
