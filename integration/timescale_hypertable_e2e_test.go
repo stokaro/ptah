@@ -14,6 +14,7 @@ import (
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/dbschema"
+	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/dbtarget"
 	"go.5x5.cz/ptah/migration/planner"
 	"go.5x5.cz/ptah/migration/schemadiff"
@@ -72,14 +73,11 @@ func TestTimescaleHypertableRoundTripE2E(t *testing.T) {
 	live, err := dbschema.ReadSchemaWithSchemas(conn, []string{schemaName})
 	c.Assert(err, qt.IsNil)
 	c.Assert(describedHypertableNames(live), qt.Contains, table)
-	for _, hypertable := range live.Hypertables {
-		if hypertable.Name != table {
-			continue
-		}
-		c.Assert(hypertable.PrimaryDimension, qt.Equals, "time")
-		c.Assert(hypertable.ChunkInterval, qt.Equals, "1 day")
-		c.Assert(hypertable.Dimensions, qt.Equals, 1)
-	}
+	c.Assert(readHypertable(c, live, table), qt.DeepEquals, dbschematypes.DBHypertable{
+		Schema: schemaName, Name: table,
+		PrimaryDimension: "time", PrimaryDimensionType: "timestamp with time zone",
+		ChunkInterval: "1 day", Dimensions: 1,
+	})
 
 	// 3. The same declaration now plans nothing, which is the property an apply
 	//    loop depends on.
@@ -166,6 +164,23 @@ func hypertableSchema(schemaName, table, column, interval string) *goschema.Data
 			ChunkInterval: interval, IfNotExists: true,
 		}},
 	}
+}
+
+// readHypertable picks the one row this test is about, so the assertion is a
+// comparison rather than a loop with a filter in it.
+func readHypertable(
+	c *qt.C,
+	schema *dbschematypes.DBSchema,
+	table string,
+) dbschematypes.DBHypertable {
+	c.Helper()
+	for _, hypertable := range schema.Hypertables {
+		if hypertable.Name == table {
+			return hypertable
+		}
+	}
+	c.Fatalf("the read carries no hypertable named %s", table)
+	return dbschematypes.DBHypertable{}
 }
 
 // dropTimescaleSchema removes the schema a test worked in, and everything it
