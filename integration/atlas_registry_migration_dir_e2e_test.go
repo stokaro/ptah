@@ -35,10 +35,13 @@ import (
 // and the one an existing atlas.hcl already carries in `migration.dir`. A test
 // covering one of them would leave the other free to keep refusing.
 //
-// The tag form is included because it is the difference between a repository
-// and a pointer: `?tag=` is what makes the reference name a specific artifact
-// rather than the default one, and a resolver that dropped the query would pass
-// every assertion about `atlas://app` while reading the wrong bytes.
+// The tag form is included because the VERB has to carry the query through, not
+// only the resolver: a verb that handed the reference on without `?tag=` would
+// pass every assertion about `atlas://app` while reading the wrong bytes.
+// Whether the resolver maps tag and version onto the right OCI references, and
+// whether a version stays put when a tag moves, is asserted by digest in
+// integration/oci_registry_atlas_reference_e2e_test.go rather than a second
+// time here.
 func TestAtlasRegistryMigrationDirE2E(t *testing.T) {
 	c := qt.New(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Minute)
@@ -50,8 +53,6 @@ func TestAtlasRegistryMigrationDirE2E(t *testing.T) {
 		"1_registry_latest.sql", "CREATE TABLE registry_latest (id INTEGER PRIMARY KEY);")
 	pushAtlasMigrationArtifact(c, ctx, registry, repository, "prod",
 		"1_registry_prod.sql", "CREATE TABLE registry_prod (id INTEGER PRIMARY KEY);")
-	pushAtlasMigrationArtifact(c, ctx, registry, repository, "20260806123000",
-		"1_registry_version.sql", "CREATE TABLE registry_version (id INTEGER PRIMARY KEY);")
 
 	t.Setenv("PTAH_ATLAS_REGISTRY", registry)
 	t.Setenv("PTAH_ATLAS_REGISTRY_PLAIN_HTTP", "1")
@@ -74,20 +75,6 @@ func TestAtlasRegistryMigrationDirE2E(t *testing.T) {
 				return []string{"migrate", "apply", "--dir", "atlas://" + repository + "?tag=prod", "--url", dbURL}
 			},
 			wantTable: "registry_prod",
-		},
-		{
-			// A version is the immutable half of the contract: a tag moves and
-			// a version does not, and the two resolve through the same mapping
-			// so a project addressing both cannot have them disagree.
-			name: "--dir names a version",
-			args: func(_, dbURL string) []string {
-				return []string{
-					"migrate", "apply",
-					"--dir", "atlas://" + repository + "?version=20260806123000",
-					"--url", dbURL,
-				}
-			},
-			wantTable: "registry_version",
 		},
 		{
 			name: "atlas.hcl migration.dir names the repository",
