@@ -184,6 +184,19 @@ type Column struct {
 	// constraint something the author cannot predict, and every later
 	// diagnostic about it would use that name.
 	CheckName string
+	// DomainName and DomainSchema identify the DOMAIN a column is declared
+	// with, empty for every column whose declared type is not one.
+	//
+	// They are separate from Type because the two are compared differently, and
+	// getting that wrong is silent. An array's spelling is a TYPE and folds:
+	// `character varying(100)[]` and `varchar(100)[]` are one type. A domain's
+	// spelling is an IDENTIFIER its author chose and must never fold, because a
+	// domain may be NAMED after a type -- measured, a column whose catalog type
+	// is the domain `int8` against a declaration of the base type `bigint` read
+	// as unchanged, since both folded to `bigint` (stokaro/ptah#1138,
+	// stokaro/ptah#1662).
+	DomainName   string
+	DomainSchema string
 	// Charset and Collate are the column's character set and collation on the
 	// MySQL-family targets that put them on a column.
 	//

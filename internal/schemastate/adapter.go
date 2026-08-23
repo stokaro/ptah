@@ -157,6 +157,8 @@ func columnsFromCatalog(
 			GeneratedExpression: derefOrEmpty(column.GeneratedExpression),
 			GeneratedKind:       column.GeneratedKind,
 			IdentityGeneration:  column.IdentityGeneration,
+			DomainName:          column.DomainName,
+			DomainSchema:        column.DomainSchema,
 			Charset:             column.Charset,
 			Collate:             column.Collate,
 			AutoIncrement:       column.IsAutoIncrement,
@@ -217,12 +219,13 @@ func FromDescription(
 	// silence as absence (stokaro/ptah#1028).
 	state := New(dialect, sliceScope...).WithCoverage(description.NotDescribed)
 	builder := objectidentity.NewBuilder(semantics)
+	domains := declaredDomains(description, semantics)
 	tablesByStruct := make(map[string]goschema.Table)
 
 	for _, table := range description.Tables {
 		tablesByStruct[table.StructName] = table
 		id := builder.TableParts(table.Schema, table.Name)
-		columns := columnsFromDescription(description, table, builder)
+		columns := columnsFromDescription(description, table, builder, domains)
 		if existing, collided := state.Add(Object{
 			ID: id,
 			Table: &Table{
@@ -332,10 +335,41 @@ func addForeignKey(
 
 // columnsFromDescription collects the columns a description declares for a
 // table, matched by the struct that owns them.
+// declaredDomains indexes the domains a description declares, folded, so a
+// column's declared type can be recognized as one.
+//
+// A name declared twice in different schemas is recorded with no schema: two
+// domains of one name are ambiguous, and resolving the ambiguity by picking one
+// would compare a column against a domain the author may not have meant. The
+// existing comparator makes the same choice.
+func declaredDomains(description *goschema.Database, semantics identifier.Semantics) map[string]string {
+	schemas := make(map[string]string, len(description.Domains))
+	ambiguous := make(map[string]struct{})
+	for _, domain := range description.Domains {
+		name := strings.ToLower(strings.TrimSpace(domain.Name))
+		if name == "" {
+			continue
+		}
+		schema := strings.ToLower(strings.TrimSpace(domain.Schema))
+		if schema == "" {
+			schema = strings.ToLower(semantics.DefaultSchema)
+		}
+		if declared, seen := schemas[name]; seen && declared != schema {
+			ambiguous[name] = struct{}{}
+		}
+		schemas[name] = schema
+	}
+	for name := range ambiguous {
+		schemas[name] = ""
+	}
+	return schemas
+}
+
 func columnsFromDescription(
 	description *goschema.Database,
 	table goschema.Table,
 	builder objectidentity.Builder,
+	domains map[string]string,
 ) []Column {
 	columns := make([]Column, 0)
 	// A composite key is declared on the TABLE and a single-column one on the
@@ -372,6 +406,8 @@ func columnsFromDescription(
 			IdentityStart:       field.IdentityStart,
 			IdentityIncrement:   field.IdentityIncrement,
 			IdentityOptions:     field.IdentityOptions,
+			DomainName:          declaredDomainName(field.Type, domains),
+			DomainSchema:        domains[strings.ToLower(strings.TrimSpace(field.Type))],
 			Charset:             field.Charset,
 			Collate:             field.Collate,
 			UpdateExpression:    field.UpdateExpression,
@@ -620,4 +656,14 @@ func declaredUniqueKeys(
 		}
 	}
 	return nil
+}
+
+// declaredDomainName reports the domain a declared type names, or the empty
+// string for a type that is not one.
+func declaredDomainName(declared string, domains map[string]string) string {
+	name := strings.ToLower(strings.TrimSpace(declared))
+	if _, ok := domains[name]; !ok {
+		return ""
+	}
+	return name
 }
