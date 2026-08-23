@@ -286,7 +286,7 @@ the directories `--migrations-dir`, `--schema-dir` and `--tests-dir` name.
 Writing stays refused until `--allow-write` names an artifact class, and a named
 class asks for approval per patch unless `--auto-approve` says otherwise.
 Applying anything to a database is unavailable on this surface at any setting.
-[AI agents over MCP](/operate/ai-agents/) is the guide.
+[AI agents over MCP](../../operate/ai-agents/) is the guide.
 
 Credentials are the client's to supply. The server holds none, stores none, and
 sends nothing anywhere: it runs locally and talks to whatever the caller names.

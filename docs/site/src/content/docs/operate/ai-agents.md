@@ -86,8 +86,7 @@ Three of Ptah's own reading verbs are deliberately absent: `schema inspect`,
 `schema diff`, and `migrations lint`. Each needs a scratch database that Ptah
 resets destructively, and a destructive capability must not sit behind a
 read-only name on a surface an agent drives. They return when a later phase can
-supply that database out of band rather than from the caller
-([ADR 0002](https://github.com/stokaro/ptah/blob/master/docs/adr/0002-read-only-agent-mvp-scope-and-transport.md)).
+supply that database out of band rather than from the caller.
 
 ## The artifact tools
 
@@ -224,8 +223,7 @@ The record carries no file content, no database URL, and no credential.
 The model is not trusted, and neither is the repository it reads. A schema
 comment, a column name, or a README is a place somebody can write a sentence
 addressed to the model, and that text arrives as tool output in the same context
-the model chooses its next arguments from
-([ADR 0003](https://github.com/stokaro/ptah/blob/master/docs/adr/0003-agent-surface-trust-boundaries.md)).
+the model chooses its next arguments from.
 
 What that means in practice:
 
@@ -248,6 +246,6 @@ What that means in practice:
 
 ## Related
 
-- [Native commands](/reference/native-commands/) — the whole `ptah` command tree.
-- [Migration integrity and safety](/versioned/integrity-and-safety/) — what
+- [Native commands](../../reference/native-commands/) — the whole `ptah` command tree.
+- [Migration integrity and safety](../../versioned/integrity-and-safety/) — what
   `ptah.sum` protects and how.

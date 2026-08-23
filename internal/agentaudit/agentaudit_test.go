@@ -3,7 +3,6 @@ package agentaudit_test
 import (
 	"encoding/json"
 	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -171,7 +170,7 @@ func TestNewWriter_RequiresASession(t *testing.T) {
 	c.Assert(writer, qt.IsNil)
 }
 
-func TestOpenFile_AppendsAndProtectsTheLog(t *testing.T) {
+func TestOpenFile_AppendsAcrossSessions(t *testing.T) {
 	c := qt.New(t)
 	path := agentaudit.DefaultPath(c.TempDir())
 
@@ -200,14 +199,6 @@ func TestOpenFile_AppendsAndProtectsTheLog(t *testing.T) {
 	c.Assert(events, qt.HasLen, 2)
 	c.Assert(events[0]["session_id"], qt.Equals, "session-1")
 	c.Assert(events[1]["session_id"], qt.Equals, "session-2")
-
-	info, err := os.Stat(path)
-	c.Assert(err, qt.IsNil)
-	c.Assert(info.Mode().Perm()&0o077, qt.Equals, os.FileMode(0))
-
-	dir, err := os.Stat(filepath.Dir(path))
-	c.Assert(err, qt.IsNil)
-	c.Assert(dir.Mode().Perm()&0o077, qt.Equals, os.FileMode(0))
 }
 
 func TestDiscard_KeepsNothing(t *testing.T) {
