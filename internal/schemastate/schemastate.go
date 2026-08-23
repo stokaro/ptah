@@ -39,6 +39,7 @@ import (
 	"slices"
 	"strings"
 
+	"go.5x5.cz/ptah/core/ast"
 	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/internal/objectidentity"
 )
@@ -276,6 +277,25 @@ type Table struct {
 	Collate string
 	// AutoIncrement is the value a MySQL-family table's counter starts at.
 	AutoIncrement string
+	// RowTTL is the CockroachDB row-level TTL policy a table declares.
+	//
+	// It is `*ast.RowTTLSpec` rather than a type of this package, unlike
+	// [Partition]. Both sides already carry that exact type -- the authoring
+	// model and `dbschema/types.DBTable` both hold it -- so a mirror here would
+	// be a third shape to keep in step for no gain, and the comparison rules
+	// its fields carry live with it.
+	RowTTL *ast.RowTTLSpec
+	// VirtualModule is the SQLite module that owns a virtual table, from the
+	// USING clause, and VirtualArguments is the text between its parentheses,
+	// verbatim -- module arguments are not SQL, only the module interprets
+	// them.
+	//
+	// A non-empty module makes the table a different STATEMENT: a CREATE that
+	// ignored it built an ordinary table of the same name where an FTS5 index
+	// was declared, which is a different object that accepts different SQL
+	// (stokaro/ptah#1028).
+	VirtualModule    string
+	VirtualArguments string
 	// Partition is the partitioning a table declares, nil for a table with
 	// none.
 	//
