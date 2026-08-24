@@ -18,6 +18,7 @@ import (
 	"go.5x5.cz/ptah/cmd/schemapush"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/internal/annotationschema"
+	"go.5x5.cz/ptah/internal/dbmlrender"
 	"go.5x5.cz/ptah/internal/docsrender"
 	"go.5x5.cz/ptah/internal/goannotationexport"
 	"go.5x5.cz/ptah/internal/graphqlrender"
@@ -50,6 +51,7 @@ const (
 	exportFormatOpenAPI      = "openapi-v3"
 	exportFormatGraphQL      = "graphql"
 	exportFormatProtobuf     = "protobuf"
+	exportFormatDBML         = "dbml"
 	exportFormatMarkdown     = "markdown"
 	exportFormatHTML         = "html"
 
@@ -465,6 +467,24 @@ func runExport(cmd *cobra.Command, opts exportOptions) error {
 		if err := runProtobufExport(cmd, opts, db); err != nil {
 			return cmdutil.Fail(cmd, err)
 		}
+	case exportFormatDBML:
+		rendered, err := dbmlrender.Render(db, dbmlrender.Options{
+			IncludeTables: opts.includeTables,
+			ExcludeTables: opts.excludeTables,
+		})
+		if err != nil {
+			return cmdutil.Fail(cmd, err)
+		}
+		// What DBML cannot carry is said before the document is written, not
+		// after: a caller reading stdout has the file by then, and a caller
+		// redirecting it never sees a line that came out afterwards.
+		for _, omitted := range rendered.Omitted {
+			fmt.Fprintf(cmd.ErrOrStderr(),
+				"warning: DBML cannot express %s; the export leaves them out\n", omitted)
+		}
+		if err := emitAPISchema(cmd, opts, db, []byte(rendered.DBML), nil, "DBML schema"); err != nil {
+			return cmdutil.Fail(cmd, err)
+		}
 	default:
 		// validateExportOptions rejects unknown formats; this guards against a
 		// selector reaching routing un-handled and silently running cleanup.
@@ -565,11 +585,11 @@ func validateExportOptions(opts exportOptions) error {
 	}
 	switch opts.to {
 	case exportFormatHCL, exportFormatOpenAPI, exportFormatGraphQL, exportFormatProtobuf,
-		exportFormatMarkdown, exportFormatHTML:
+		exportFormatMarkdown, exportFormatHTML, exportFormatDBML:
 	default:
-		return fmt.Errorf("unsupported --to %q: expected %s, %s, %s, %s, %s, or %s",
+		return fmt.Errorf("unsupported --to %q: expected %s, %s, %s, %s, %s, %s, or %s",
 			opts.to, exportFormatHCL, exportFormatOpenAPI, exportFormatGraphQL, exportFormatProtobuf,
-			exportFormatMarkdown, exportFormatHTML)
+			exportFormatMarkdown, exportFormatHTML, exportFormatDBML)
 	}
 	if opts.to == exportFormatHCL && strings.TrimSpace(opts.outPath) == "" {
 		return fmt.Errorf("--out is required for --%s %s", exportToFlag, exportFormatHCL)
