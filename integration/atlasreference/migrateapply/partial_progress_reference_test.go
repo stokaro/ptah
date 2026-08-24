@@ -29,7 +29,7 @@ type partialProgressState struct {
 	operatorVersion  string
 }
 
-// TestOraclePartialProgressInteroperatesBidirectionally closes the pinned
+// TestReferencePartialProgressInteroperatesBidirectionally closes the pinned
 // black-box acceptance contour for stokaro/ptah#887. The two execution gates
 // matter independently: a global none mode and an Atlas file directive reach
 // different selection paths before the shared non-transactional executor.
@@ -37,7 +37,7 @@ type partialProgressState struct {
 // Each writer fails after statement one, and the other implementation resumes
 // the same revision. A reader that starts from statement one cannot pass: the
 // first_success table is already committed and CREATE TABLE would fail.
-func TestOraclePartialProgressInteroperatesBidirectionally(t *testing.T) {
+func TestReferencePartialProgressInteroperatesBidirectionally(t *testing.T) {
 	c := qt.New(t)
 	// The Ptah and Atlas children must see the same neutral environment. A
 	// caller's feature toggle can otherwise change only the Ptah half and make
@@ -52,7 +52,7 @@ func TestOraclePartialProgressInteroperatesBidirectionally(t *testing.T) {
 		"ORACLE_NOTE=PTAH_ATLAS_STRICT_COMPAT=1",
 	})
 
-	oracle := requireAtlasOracle(t)
+	reference := requireAtlasReference(t)
 	compat := buildCompatBinary(c)
 
 	tests := []struct {
@@ -66,13 +66,13 @@ func TestOraclePartialProgressInteroperatesBidirectionally(t *testing.T) {
 		{
 			name:              "global none Ptah to Atlas",
 			writer:            compat,
-			reader:            oracle,
+			reader:            reference,
 			applyArgs:         []string{"--tx-mode", "none"},
 			wantFinalOperator: "Atlas CLI v1.3.0",
 		},
 		{
 			name:              "global none Atlas to Ptah",
-			writer:            oracle,
+			writer:            reference,
 			reader:            compat,
 			applyArgs:         []string{"--tx-mode", "none"},
 			wantFinalOperator: "Ptah",
@@ -80,13 +80,13 @@ func TestOraclePartialProgressInteroperatesBidirectionally(t *testing.T) {
 		{
 			name:              "file directive Ptah to Atlas",
 			writer:            compat,
-			reader:            oracle,
+			reader:            reference,
 			directive:         "-- atlas:txmode none\n\n",
 			wantFinalOperator: "Atlas CLI v1.3.0",
 		},
 		{
 			name:              "file directive Atlas to Ptah",
-			writer:            oracle,
+			writer:            reference,
 			reader:            compat,
 			directive:         "-- atlas:txmode none\n\n",
 			wantFinalOperator: "Ptah",
@@ -96,7 +96,7 @@ func TestOraclePartialProgressInteroperatesBidirectionally(t *testing.T) {
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
-			dir := writeOracleMigrationDir(c, oracle, map[string]string{
+			dir := writeReferenceMigrationDir(c, reference, map[string]string{
 				partialProgressVersion + "_two.sql": test.directive + partialProgressBody,
 			})
 			dbPath := filepath.Join(c.TempDir(), "partial-progress.db")

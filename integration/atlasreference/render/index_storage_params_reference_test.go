@@ -13,7 +13,7 @@ import (
 	"go.5x5.cz/ptah/internal/atlashclrender"
 )
 
-// TestOracleKeepsTheIndexStorageParameterPtahRenders measures the one thing an
+// TestReferenceKeepsTheIndexStorageParameterPtahRenders measures the one thing an
 // exit status cannot see here.
 //
 // The pinned community binary v1.3.0 ACCEPTS both spellings of this attribute at
@@ -31,8 +31,8 @@ import (
 // It matters because #1242 made `schema inspect` of a live database emit this
 // attribute for the first time: before it, no inspected document carried one and
 // the spelling could not be wrong in a way anyone reached.
-func TestOracleKeepsTheIndexStorageParameterPtahRenders(t *testing.T) {
-	oracle := requireTypeOracle(t)
+func TestReferenceKeepsTheIndexStorageParameterPtahRenders(t *testing.T) {
+	reference := requireTypeReference(t)
 	devURL := requireDevURL(t, platform.Postgres)
 	schema := schemaNameByDialect[platform.Postgres]
 
@@ -46,7 +46,7 @@ func TestOracleKeepsTheIndexStorageParameterPtahRenders(t *testing.T) {
 	t.Run("rendered", func(t *testing.T) {
 		c := qt.New(t)
 
-		out, code := runReferenceOracle(c, oracle, devURL, rendered)
+		out, code := runReference(c, reference, devURL, rendered)
 
 		c.Assert(code, qt.Equals, 0,
 			qt.Commentf("the binary refuses the document ptah-compat renders: %s\n%s", out, rendered))
@@ -62,7 +62,7 @@ func TestOracleKeepsTheIndexStorageParameterPtahRenders(t *testing.T) {
 		c.Assert(mutated, qt.Not(qt.Equals), rendered,
 			qt.Commentf("substituting the attribute changed nothing, so this row measures nothing"))
 
-		out, code := runReferenceOracle(c, oracle, devURL, mutated)
+		out, code := runReference(c, reference, devURL, mutated)
 
 		c.Assert(code, qt.Equals, 0,
 			qt.Commentf("the plural spelling is now refused rather than ignored,"+

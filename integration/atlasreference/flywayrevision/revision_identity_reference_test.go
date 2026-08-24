@@ -45,18 +45,18 @@ type revisionRow struct {
 }
 
 type identityCase struct {
-	name          string
-	files         []migrationFile
-	wantRows      []revisionRow
-	oracleCurrent string
-	compatCurrent string
-	lintLatest    string
-	oracleLint    string
-	compatLint    string
+	name             string
+	files            []migrationFile
+	wantRows         []revisionRow
+	referenceCurrent string
+	compatCurrent    string
+	lintLatest       string
+	referenceLint    string
+	compatLint       string
 }
 
 func TestFlywayRevisionIdentityMatchesAtlasCE(t *testing.T) {
-	reference := requireAtlasOracle(t)
+	reference := requireAtlasReference(t)
 	c := qt.New(t)
 	compat := buildCompatBinary(c)
 
@@ -64,21 +64,21 @@ func TestFlywayRevisionIdentityMatchesAtlasCE(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			dir := writeHashedFlywayDir(c, reference, test.files)
-			oracleDB := filepath.Join(c.TempDir(), "reference.db")
+			referenceDB := filepath.Join(c.TempDir(), "reference.db")
 			compatDB := filepath.Join(c.TempDir(), "compat.db")
 
-			assertSQLiteApplyIdentity(c, reference, dir, oracleDB, test.wantRows)
+			assertSQLiteApplyIdentity(c, reference, dir, referenceDB, test.wantRows)
 			assertSQLiteApplyIdentity(c, compat, dir, compatDB, test.wantRows)
-			assertStatusCurrent(c, reference, dir, oracleDB, test.oracleCurrent)
+			assertStatusCurrent(c, reference, dir, referenceDB, test.referenceCurrent)
 			assertStatusCurrent(c, compat, dir, compatDB, test.compatCurrent)
-			assertLintHeader(c, reference, dir, test.lintLatest, test.oracleLint)
+			assertLintHeader(c, reference, dir, test.lintLatest, test.referenceLint)
 			assertLintHeader(c, compat, dir, test.lintLatest, test.compatLint)
 		})
 	}
 }
 
 func TestFlywayApplyBaselineUsesExactSourceToken(t *testing.T) {
-	reference := requireAtlasOracle(t)
+	reference := requireAtlasReference(t)
 	c := qt.New(t)
 	compat := buildCompatBinary(c)
 	dir := writeHashedFlywayDir(c, reference, []migrationFile{
@@ -111,7 +111,7 @@ func TestFlywayApplyBaselineUsesExactSourceToken(t *testing.T) {
 }
 
 func TestFlywayApplyToVersionExtensionUsesExactSourceToken(t *testing.T) {
-	reference := requireAtlasOracle(t)
+	reference := requireAtlasReference(t)
 	c := qt.New(t)
 	compat := buildCompatBinary(c)
 	dir := writeHashedFlywayDir(c, reference, []migrationFile{
@@ -139,7 +139,7 @@ func TestFlywayApplyToVersionExtensionUsesExactSourceToken(t *testing.T) {
 }
 
 func TestFlywaySameTokenBaselineInteropFailsClosedWhenAtlasTypeIsAmbiguous(t *testing.T) {
-	reference := requireAtlasOracle(t)
+	reference := requireAtlasReference(t)
 	c := qt.New(t)
 	compat := buildCompatBinary(c)
 	dir := writeHashedFlywayDir(c, reference, []migrationFile{
@@ -168,7 +168,7 @@ func TestFlywaySameTokenBaselineInteropFailsClosedWhenAtlasTypeIsAmbiguous(t *te
 }
 
 func TestFlywaySameTokenBaselineSetMarkerKeepsCEReadableHistory(t *testing.T) {
-	reference := requireAtlasOracle(t)
+	reference := requireAtlasReference(t)
 	c := qt.New(t)
 	compat := buildCompatBinary(c)
 	dir := writeHashedFlywayDir(c, reference, []migrationFile{
@@ -205,7 +205,7 @@ func TestFlywaySameTokenBaselineSetMarkerKeepsCEReadableHistory(t *testing.T) {
 }
 
 func TestFlywayDotPrefixedTokenAtlasCEContract(t *testing.T) {
-	reference := requireAtlasOracle(t)
+	reference := requireAtlasReference(t)
 	c := qt.New(t)
 	dir := writeHashedFlywayDir(c, reference, []migrationFile{
 		{name: "V.foo__dot.sql", body: "CREATE TABLE dot_prefixed_identity (id INTEGER PRIMARY KEY);\n"},
@@ -236,7 +236,7 @@ func TestFlywayDotPrefixedTokenAtlasCEContract(t *testing.T) {
 }
 
 func TestFlywayExecutionFailureNeverLeaksConvertedOrderKey(t *testing.T) {
-	reference := requireAtlasOracle(t)
+	reference := requireAtlasReference(t)
 	c := qt.New(t)
 	compat := buildCompatBinary(c)
 	dir := writeHashedFlywayDir(c, reference, []migrationFile{
@@ -256,23 +256,23 @@ func TestFlywayExecutionFailureNeverLeaksConvertedOrderKey(t *testing.T) {
 }
 
 func TestFlywayDirtyOpaqueStatusCurrentMatchesFailedExactToken(t *testing.T) {
-	reference := requireAtlasOracle(t)
+	reference := requireAtlasReference(t)
 	c := qt.New(t)
 	compat := buildCompatBinary(c)
 	dir := writeHashedFlywayDir(c, reference, []migrationFile{
 		{name: "Vx__broken.sql", body: "CREATE TABLE dirty_opaque (id INTEGER PRIMARY KEY);\nINVALID SQL;\n"},
 	})
 
-	oracleDB := filepath.Join(c.TempDir(), "reference-dirty-opaque.db")
-	oracleApply := runCommand(c, reference,
-		"migrate", "apply", "--dir", "file://"+dir+"?format=flyway", "--url", "sqlite://"+oracleDB,
+	referenceDB := filepath.Join(c.TempDir(), "reference-dirty-opaque.db")
+	referenceApply := runCommand(c, reference,
+		"migrate", "apply", "--dir", "file://"+dir+"?format=flyway", "--url", "sqlite://"+referenceDB,
 		"--tx-mode", "none")
-	c.Assert(oracleApply.code, qt.Equals, 1)
-	oracleStatus := runCommand(c, reference,
-		"migrate", "status", "--dir", "file://"+dir+"?format=flyway", "--url", "sqlite://"+oracleDB)
-	c.Assert(oracleStatus.code, qt.Equals, 0,
-		qt.Commentf("stdout: %s\nstderr: %s", oracleStatus.stdout, oracleStatus.stderr))
-	c.Assert(oracleStatus.stdout, qt.Contains,
+	c.Assert(referenceApply.code, qt.Equals, 1)
+	referenceStatus := runCommand(c, reference,
+		"migrate", "status", "--dir", "file://"+dir+"?format=flyway", "--url", "sqlite://"+referenceDB)
+	c.Assert(referenceStatus.code, qt.Equals, 0,
+		qt.Commentf("stdout: %s\nstderr: %s", referenceStatus.stdout, referenceStatus.stderr))
+	c.Assert(referenceStatus.stdout, qt.Contains,
 		"-- Current Version: No migration applied yet (1 statements applied)")
 
 	compatDB := filepath.Join(c.TempDir(), "compat-dirty-opaque.db")
@@ -301,7 +301,7 @@ func TestFlywayDirtyOpaqueStatusCurrentMatchesFailedExactToken(t *testing.T) {
 // dropped on the way. The refusal was the safe answer to a question that should
 // never have been asked.
 func TestFlywayCrossToolReuseContinuesEitherHistory(t *testing.T) {
-	reference := requireAtlasOracle(t)
+	reference := requireAtlasReference(t)
 	c := qt.New(t)
 	compat := buildCompatBinary(c)
 
@@ -333,7 +333,7 @@ func TestFlywayCrossToolReuseContinuesEitherHistory(t *testing.T) {
 }
 
 func TestFlywayOnlyRepeatableCrossToolReuseMatchesExactEmptyIdentity(t *testing.T) {
-	reference := requireAtlasOracle(t)
+	reference := requireAtlasReference(t)
 	c := qt.New(t)
 	compat := buildCompatBinary(c)
 	dir := writeHashedFlywayDir(c, reference, []migrationFile{
@@ -364,7 +364,7 @@ func TestFlywayOnlyRepeatableCrossToolReuseMatchesExactEmptyIdentity(t *testing.
 }
 
 func TestFlywayRepeatableBodyChangeRemainsSettled(t *testing.T) {
-	reference := requireAtlasOracle(t)
+	reference := requireAtlasReference(t)
 	c := qt.New(t)
 	compat := buildCompatBinary(c)
 	for _, binary := range []string{reference, compat} {
@@ -406,7 +406,7 @@ func assertCrossToolReuseResult(c *qt.C, direction string, result commandResult)
 }
 
 func TestFlywayMigrateSetMatchesAtlasCE(t *testing.T) {
-	reference := requireAtlasOracle(t)
+	reference := requireAtlasReference(t)
 	c := qt.New(t)
 	compat := buildCompatBinary(c)
 	tests := []struct {
@@ -468,23 +468,23 @@ func TestFlywayMigrateSetMatchesAtlasCE(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 			dir := writeHashedFlywayDir(c, reference, test.files)
-			oracleDB := filepath.Join(c.TempDir(), "reference-set.db")
+			referenceDB := filepath.Join(c.TempDir(), "reference-set.db")
 			compatDB := filepath.Join(c.TempDir(), "compat-set.db")
-			oracleResult := runCommand(c, reference,
-				"migrate", "set", test.target, "--dir", "file://"+dir+"?format=flyway", "--url", "sqlite://"+oracleDB)
+			referenceResult := runCommand(c, reference,
+				"migrate", "set", test.target, "--dir", "file://"+dir+"?format=flyway", "--url", "sqlite://"+referenceDB)
 			compatResult := runCommand(c, compat,
 				"migrate", "set", test.target, "--dir", "file://"+dir+"?format=flyway", "--url", "sqlite://"+compatDB)
-			c.Assert(compatResult.code, qt.Equals, oracleResult.code)
-			c.Assert(compatResult.stdout, qt.Equals, oracleResult.stdout)
-			c.Assert(compatResult.stderr, qt.Equals, oracleResult.stderr)
-			c.Assert(readSQLiteRevisionRows(c, oracleDB), qt.ContentEquals, test.wantRows)
+			c.Assert(compatResult.code, qt.Equals, referenceResult.code)
+			c.Assert(compatResult.stdout, qt.Equals, referenceResult.stdout)
+			c.Assert(compatResult.stderr, qt.Equals, referenceResult.stderr)
+			c.Assert(readSQLiteRevisionRows(c, referenceDB), qt.ContentEquals, test.wantRows)
 			c.Assert(readSQLiteRevisionRows(c, compatDB), qt.ContentEquals, test.wantRows)
 		})
 	}
 }
 
 func TestFlywayMigrateSetOrdersRetiredBaselinesLikeAtlasCE(t *testing.T) {
-	reference := requireAtlasOracle(t)
+	reference := requireAtlasReference(t)
 	c := qt.New(t)
 	compat := buildCompatBinary(c)
 	tests := []struct {
@@ -563,32 +563,32 @@ func TestFlywayMigrateSetOrdersRetiredBaselinesLikeAtlasCE(t *testing.T) {
 }
 
 func TestFlywayMigrateSetEmptyIdentityNamesTokenExplicitly(t *testing.T) {
-	reference := requireAtlasOracle(t)
+	reference := requireAtlasReference(t)
 	c := qt.New(t)
 	compat := buildCompatBinary(c)
 	dir := writeHashedFlywayDir(c, reference, []migrationFile{{
 		name: "R__only.sql",
 		body: "CREATE TABLE set_repeatable (id INTEGER PRIMARY KEY);\n",
 	}})
-	oracleDB := filepath.Join(c.TempDir(), "reference-set-empty.db")
+	referenceDB := filepath.Join(c.TempDir(), "reference-set-empty.db")
 	compatDB := filepath.Join(c.TempDir(), "compat-set-empty.db")
-	oracleResult := runCommand(c, reference,
-		"migrate", "set", "", "--dir", "file://"+dir+"?format=flyway", "--url", "sqlite://"+oracleDB)
+	referenceResult := runCommand(c, reference,
+		"migrate", "set", "", "--dir", "file://"+dir+"?format=flyway", "--url", "sqlite://"+referenceDB)
 	compatResult := runCommand(c, compat,
 		"migrate", "set", "", "--dir", "file://"+dir+"?format=flyway", "--url", "sqlite://"+compatDB)
 
-	c.Assert(oracleResult.code, qt.Equals, 0)
-	c.Assert(compatResult.code, qt.Equals, oracleResult.code)
-	c.Assert(oracleResult.stdout, qt.Equals, "Current version is  (1 set):\n\n  +  (only)\n\n")
+	c.Assert(referenceResult.code, qt.Equals, 0)
+	c.Assert(compatResult.code, qt.Equals, referenceResult.code)
+	c.Assert(referenceResult.stdout, qt.Equals, "Current version is  (1 set):\n\n  +  (only)\n\n")
 	c.Assert(compatResult.stdout, qt.Equals, "Current version is \"\" (1 set):\n\n  + \"\" (only)\n\n")
-	c.Assert(compatResult.stderr, qt.Equals, oracleResult.stderr)
+	c.Assert(compatResult.stderr, qt.Equals, referenceResult.stderr)
 	wantRows := []revisionRow{{Version: "", Description: "only"}}
-	c.Assert(readSQLiteRevisionRows(c, oracleDB), qt.ContentEquals, wantRows)
+	c.Assert(readSQLiteRevisionRows(c, referenceDB), qt.ContentEquals, wantRows)
 	c.Assert(readSQLiteRevisionRows(c, compatDB), qt.ContentEquals, wantRows)
 }
 
 func TestFlywaySetRemovesRetiredExactHistoryAboveTarget(t *testing.T) {
-	reference := requireAtlasOracle(t)
+	reference := requireAtlasReference(t)
 	c := qt.New(t)
 	compat := buildCompatBinary(c)
 
@@ -624,7 +624,7 @@ func TestFlywaySetRemovesRetiredExactHistoryAboveTarget(t *testing.T) {
 }
 
 func TestGolangMigrateIdentityRemainsNumeric(t *testing.T) {
-	reference := requireAtlasOracle(t)
+	reference := requireAtlasReference(t)
 	c := qt.New(t)
 	compat := buildCompatBinary(c)
 	dir := c.TempDir()
@@ -643,7 +643,7 @@ func TestGolangMigrateIdentityRemainsNumeric(t *testing.T) {
 }
 
 func TestFlywayRevisionIdentityMatchesAtlasCEOnPostgres(t *testing.T) {
-	reference := requireAtlasOracle(t)
+	reference := requireAtlasReference(t)
 	postgresURL := requirePostgresURL(t)
 	c := qt.New(t)
 	compat := buildCompatBinary(c)
@@ -658,11 +658,11 @@ func TestFlywayRevisionIdentityMatchesAtlasCEOnPostgres(t *testing.T) {
 		{Version: "x", Description: "named"},
 	}
 
-	oracleURL, cleanupOracle := postgresSchemaURL(c, postgresURL, "reference")
-	defer cleanupOracle()
+	referenceURL, cleanupReference := postgresSchemaURL(c, postgresURL, "reference")
+	defer cleanupReference()
 	compatURL, cleanupCompat := postgresSchemaURL(c, postgresURL, "compat")
 	defer cleanupCompat()
-	assertPostgresApplyIdentity(c, reference, dir, oracleURL, want)
+	assertPostgresApplyIdentity(c, reference, dir, referenceURL, want)
 	assertPostgresApplyIdentity(c, compat, dir, compatURL, want)
 }
 
@@ -676,7 +676,7 @@ func requirePostgresURL(t *testing.T) string {
 }
 
 func TestFlywayRevisionIdentityRefusesDuplicateEmptyTokensBeforeMutation(t *testing.T) {
-	reference := requireAtlasOracle(t)
+	reference := requireAtlasReference(t)
 	c := qt.New(t)
 	compat := buildCompatBinary(c)
 	dir := writeHashedFlywayDir(c, reference, []migrationFile{
@@ -722,11 +722,11 @@ func identityCases() []identityCase {
 				{Version: "1", Description: "plain"},
 				{Version: "2", Description: "second"},
 			},
-			oracleCurrent: "2",
-			compatCurrent: "2",
-			lintLatest:    "1",
-			oracleLint:    "Analyzing changes from version 1 to 2",
-			compatLint:    "Analyzing changes from version 1 to 2",
+			referenceCurrent: "2",
+			compatCurrent:    "2",
+			lintLatest:       "1",
+			referenceLint:    "Analyzing changes from version 1 to 2",
+			compatLint:       "Analyzing changes from version 1 to 2",
 		},
 		{
 			name: "dotted",
@@ -740,11 +740,11 @@ func identityCases() []identityCase {
 				{Version: "1.5", Description: "half"},
 				{Version: "2", Description: "two"},
 			},
-			oracleCurrent: "2",
-			compatCurrent: "2",
-			lintLatest:    "1",
-			oracleLint:    "Analyzing changes from version 1.5 to 2",
-			compatLint:    "Analyzing changes from version 1.5 to 2",
+			referenceCurrent: "2",
+			compatCurrent:    "2",
+			lintLatest:       "1",
+			referenceLint:    "Analyzing changes from version 1.5 to 2",
+			compatLint:       "Analyzing changes from version 1.5 to 2",
 		},
 		{
 			name: "zero padded",
@@ -756,11 +756,11 @@ func identityCases() []identityCase {
 				{Version: "01", Description: "padded"},
 				{Version: "2", Description: "two"},
 			},
-			oracleCurrent: "2",
-			compatCurrent: "2",
-			lintLatest:    "1",
-			oracleLint:    "Analyzing changes from version 01 to 2",
-			compatLint:    "Analyzing changes from version 01 to 2",
+			referenceCurrent: "2",
+			compatCurrent:    "2",
+			lintLatest:       "1",
+			referenceLint:    "Analyzing changes from version 01 to 2",
+			compatLint:       "Analyzing changes from version 01 to 2",
 		},
 		{
 			name: "non numeric",
@@ -772,11 +772,11 @@ func identityCases() []identityCase {
 				{Version: "x", Description: "named"},
 				{Version: "1", Description: "one"},
 			},
-			oracleCurrent: "x",
-			compatCurrent: "x",
-			lintLatest:    "1",
-			oracleLint:    "Analyzing changes from version x to 1",
-			compatLint:    "Analyzing changes from version x to 1",
+			referenceCurrent: "x",
+			compatCurrent:    "x",
+			lintLatest:       "1",
+			referenceLint:    "Analyzing changes from version x to 1",
+			compatLint:       "Analyzing changes from version x to 1",
 		},
 		{
 			name: "baseline",
@@ -788,11 +788,11 @@ func identityCases() []identityCase {
 				{Version: "1.5", Description: "base"},
 				{Version: "2", Description: "later"},
 			},
-			oracleCurrent: "2",
-			compatCurrent: "2",
-			lintLatest:    "1",
-			oracleLint:    "Analyzing changes from version 1.5 to 2",
-			compatLint:    "Analyzing changes from version 1.5 to 2",
+			referenceCurrent: "2",
+			compatCurrent:    "2",
+			lintLatest:       "1",
+			referenceLint:    "Analyzing changes from version 1.5 to 2",
+			compatLint:       "Analyzing changes from version 1.5 to 2",
 		},
 		{
 			name: "dot prefixed",
@@ -802,11 +802,11 @@ func identityCases() []identityCase {
 			wantRows: []revisionRow{
 				{Version: ".foo", Description: "dot"},
 			},
-			oracleCurrent: ".foo",
-			compatCurrent: ".foo",
-			lintLatest:    "1",
-			oracleLint:    "-- analyzing version .foo",
-			compatLint:    "-- analyzing version .foo",
+			referenceCurrent: ".foo",
+			compatCurrent:    ".foo",
+			lintLatest:       "1",
+			referenceLint:    "-- analyzing version .foo",
+			compatLint:       "-- analyzing version .foo",
 		},
 		{
 			name: "ordinary token ending R",
@@ -816,11 +816,11 @@ func identityCases() []identityCase {
 			wantRows: []revisionRow{
 				{Version: "1R", Description: "ordinary"},
 			},
-			oracleCurrent: "1R",
-			compatCurrent: "1R",
-			lintLatest:    "1",
-			oracleLint:    "Analyzing changes until version 1R (1 migration in total):",
-			compatLint:    "Analyzing changes until version 1R (1 migration in total):",
+			referenceCurrent: "1R",
+			compatCurrent:    "1R",
+			lintLatest:       "1",
+			referenceLint:    "Analyzing changes until version 1R (1 migration in total):",
+			compatLint:       "Analyzing changes until version 1R (1 migration in total):",
 		},
 		{
 			name: "repeatable empty token",
@@ -832,11 +832,11 @@ func identityCases() []identityCase {
 				{Version: "1", Description: "table"},
 				{Version: "", Description: "view"},
 			},
-			oracleCurrent: "1",
-			compatCurrent: "1",
-			lintLatest:    "1",
-			oracleLint:    "Analyzing changes (1 migration in total):",
-			compatLint:    "Analyzing changes (1 migration in total):",
+			referenceCurrent: "1",
+			compatCurrent:    "1",
+			lintLatest:       "1",
+			referenceLint:    "Analyzing changes (1 migration in total):",
+			compatLint:       "Analyzing changes (1 migration in total):",
 		},
 	}
 }
@@ -989,7 +989,7 @@ func buildCompatBinary(c *qt.C) string {
 	return path
 }
 
-func requireAtlasOracle(t *testing.T) string {
+func requireAtlasReference(t *testing.T) string {
 	t.Helper()
 	reference := os.Getenv(referenceEnv)
 	if reference == "" {
@@ -1021,7 +1021,7 @@ func requireAtlasOracle(t *testing.T) string {
 // required. It is asserted rather than merely recorded: a history Ptah appended
 // to stays readable by the binary that started it.
 func TestFlywayContinuesAtlasCEHistoryWithoutHandover(t *testing.T) {
-	reference := requireAtlasOracle(t)
+	reference := requireAtlasReference(t)
 	c := qt.New(t)
 	compat := buildCompatBinary(c)
 
@@ -1109,7 +1109,7 @@ func linearlyExtendableIdentityCases() []identityCase {
 // stated reasons, which is worth pinning: the community binary names the
 // out-of-order file, and Ptah reports the checksum the chain moved.
 func TestFlywayOutOfOrderInsertionStaysRefusedOnBothSides(t *testing.T) {
-	reference := requireAtlasOracle(t)
+	reference := requireAtlasReference(t)
 	c := qt.New(t)
 	compat := buildCompatBinary(c)
 
@@ -1164,7 +1164,7 @@ func TestFlywayOutOfOrderInsertionStaysRefusedOnBothSides(t *testing.T) {
 // community binary records the checksum without comparing it, so the same edit
 // is a no-op there.
 func TestFlywayEditedAppliedFileStaysRefusedAfterCEWroteIt(t *testing.T) {
-	reference := requireAtlasOracle(t)
+	reference := requireAtlasReference(t)
 	c := qt.New(t)
 	compat := buildCompatBinary(c)
 

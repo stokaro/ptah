@@ -27,10 +27,10 @@ import (
 )
 
 const (
-	referenceEnv     = atlasreference.EnvVar
-	referenceVersion = atlasreference.Version
-	oracleHelperFlag = "--project-data-reference-helper"
-	oracleCapture    = ".ptah-project-data-reference-capture"
+	referenceEnv        = atlasreference.EnvVar
+	referenceVersion    = atlasreference.Version
+	referenceHelperFlag = "--project-data-reference-helper"
+	referenceCapture    = ".ptah-project-data-reference-capture"
 )
 
 type commandResult struct {
@@ -47,14 +47,14 @@ type sourceFixture struct {
 
 func TestMain(m *testing.M) {
 	for i, argument := range os.Args {
-		if argument == oracleHelperFlag {
-			os.Exit(runOracleHelper(os.Args[i+1:]))
+		if argument == referenceHelperFlag {
+			os.Exit(runReferenceHelper(os.Args[i+1:]))
 		}
 	}
 	os.Exit(m.Run())
 }
 
-func runOracleHelper(arguments []string) int {
+func runReferenceHelper(arguments []string) int {
 	if len(arguments) == 0 {
 		return 2
 	}
@@ -63,8 +63,8 @@ func runOracleHelper(arguments []string) int {
 		if len(arguments) != 2 {
 			return 2
 		}
-		// #nosec G304 -- oracleCapture is fixed under the caller-controlled temporary working directory.
-		if err := os.WriteFile(oracleCapture, []byte(arguments[1]), 0o600); err != nil {
+		// #nosec G304 -- referenceCapture is fixed under the caller-controlled temporary working directory.
+		if err := os.WriteFile(referenceCapture, []byte(arguments[1]), 0o600); err != nil {
 			return 2
 		}
 		_, _ = os.Stdout.WriteString("local\n")
@@ -83,7 +83,7 @@ func runOracleHelper(arguments []string) int {
 }
 
 func TestProjectDataSourcesMatchPinnedAtlasOutputAndExit(t *testing.T) {
-	reference := requireAtlasOracle(t)
+	reference := requireAtlasReference(t)
 	buildCheck := qt.New(t)
 	compat := buildCompatBinary(buildCheck)
 
@@ -191,7 +191,7 @@ func TestProjectDataSourcesMatchPinnedAtlasOutputAndExit(t *testing.T) {
 }
 
 func TestTemplateDirectoryIntegrityAndWritebackMatchPinnedAtlas(t *testing.T) {
-	reference := requireAtlasOracle(t)
+	reference := requireAtlasReference(t)
 	c := qt.New(t)
 	compat := buildCompatBinary(c)
 	tests := []struct {
@@ -235,7 +235,7 @@ func TestTemplateDirectoryIntegrityAndWritebackMatchPinnedAtlas(t *testing.T) {
 }
 
 func TestTemplateDirectoryDiffWritebackMatchesPinnedAtlas(t *testing.T) {
-	reference := requireAtlasOracle(t)
+	reference := requireAtlasReference(t)
 	c := qt.New(t)
 	compat := buildCompatBinary(c)
 	atlasFixture := templateDirectoryDiffCommandFixture(c, t.TempDir())
@@ -409,7 +409,7 @@ func normalizeGeneratedTemplateContents(files []string) []string {
 }
 
 func TestExternalFailureKeepsPinnedExitAndProgramStderr(t *testing.T) {
-	reference := requireAtlasOracle(t)
+	reference := requireAtlasReference(t)
 	c := qt.New(t)
 	compat := buildCompatBinary(c)
 	directory := t.TempDir()
@@ -434,7 +434,7 @@ env "local" {
 }
 
 func TestUnreferencedUnsupportedNamesKeepPinnedRefusal(t *testing.T) {
-	reference := requireAtlasOracle(t)
+	reference := requireAtlasReference(t)
 	c := qt.New(t)
 	compat := buildCompatBinary(c)
 	tests := []string{"composite_schema", "definitely_unknown"}
@@ -470,7 +470,7 @@ func sqlFixture(c *qt.C, directory string) sourceFixture {
 	_, err = database.Exec(`CREATE TABLE tenants (name TEXT); INSERT INTO tenants VALUES ('alpha'), ('beta')`)
 	c.Assert(err, qt.IsNil)
 	c.Assert(database.Close(), qt.IsNil)
-	capture := filepath.Join(directory, oracleCapture)
+	capture := filepath.Join(directory, referenceCapture)
 	configPath := writeConfig(c, directory, fmt.Sprintf(`
 data "sql" "selected" {
   url   = %s
@@ -500,7 +500,7 @@ env "local" {
 
 func sqlNumericArgumentFixture(c *qt.C, directory string) sourceFixture {
 	c.Helper()
-	capture := filepath.Join(directory, oracleCapture)
+	capture := filepath.Join(directory, referenceCapture)
 	configPath := writeConfig(c, directory, fmt.Sprintf(`
 data "sql" "selected" {
   url   = %s
@@ -531,7 +531,7 @@ env "local" {
 
 func externalFixture(c *qt.C, directory string) sourceFixture {
 	c.Helper()
-	capture := filepath.Join(directory, oracleCapture)
+	capture := filepath.Join(directory, referenceCapture)
 	value := "external output with trailing newline\n"
 	configPath := writeConfig(c, directory, fmt.Sprintf(`
 data "external" "selected" {
@@ -558,7 +558,7 @@ env "local" {
 func runtimeVariableFixture(c *qt.C, directory string) sourceFixture {
 	c.Helper()
 	value := "runtime value with trailing newline\n"
-	capture := filepath.Join(directory, oracleCapture)
+	capture := filepath.Join(directory, referenceCapture)
 	query := url.Values{"val": []string{value}}
 	configPath := writeConfig(c, directory, fmt.Sprintf(`
 data "runtimevar" "selected" {
@@ -597,7 +597,7 @@ func templateDirectoryFixture(c *qt.C, directory string) sourceFixture {
 		[]byte("{{ define \"shared/users\" }}CREATE TABLE users_{{ . }} (id INTEGER);\n{{ end }}"),
 		0o600,
 	), qt.IsNil)
-	capture := filepath.Join(directory, oracleCapture)
+	capture := filepath.Join(directory, referenceCapture)
 	configPath := writeConfig(c, directory, fmt.Sprintf(`
 data "template_dir" "selected" {
   path = "templates"
@@ -681,7 +681,7 @@ func helperProgram(arguments ...string) []string {
 	if err != nil {
 		panic(err)
 	}
-	return append([]string{executable, oracleHelperFlag}, arguments...)
+	return append([]string{executable, referenceHelperFlag}, arguments...)
 }
 
 func hclList(arguments []string) string {
@@ -716,7 +716,7 @@ func removeCapture(c *qt.C, fixture sourceFixture) {
 
 func runInspect(c *qt.C, binary, configPath string) commandResult {
 	c.Helper()
-	warmUpOracle(c, binary)
+	warmUpReference(c, binary)
 	// #nosec G204 -- binary is an explicit pinned test input.
 	command := exec.Command(binary,
 		"schema", "inspect",
@@ -739,7 +739,7 @@ func runInspect(c *qt.C, binary, configPath string) commandResult {
 
 func runProjectCommand(c *qt.C, binary, configPath string, arguments ...string) commandResult {
 	c.Helper()
-	warmUpOracle(c, binary)
+	warmUpReference(c, binary)
 	arguments = append(arguments,
 		"--config", "file://"+filepath.ToSlash(configPath),
 		"--env", "local",
@@ -772,11 +772,11 @@ func environmentWithoutPtahVariables(environment []string) []string {
 	return filtered
 }
 
-var warmedOracles sync.Map
+var warmedReferences sync.Map
 
-func warmUpOracle(c *qt.C, binary string) {
+func warmUpReference(c *qt.C, binary string) {
 	c.Helper()
-	if _, loaded := warmedOracles.LoadOrStore(binary, struct{}{}); loaded {
+	if _, loaded := warmedReferences.LoadOrStore(binary, struct{}{}); loaded {
 		return
 	}
 	directory := c.TempDir()
@@ -806,7 +806,7 @@ func buildCompatBinary(c *qt.C) string {
 	return path
 }
 
-func requireAtlasOracle(t *testing.T) string {
+func requireAtlasReference(t *testing.T) string {
 	t.Helper()
 	reference := os.Getenv(referenceEnv)
 	if reference == "" {

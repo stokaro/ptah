@@ -378,7 +378,7 @@ jobs:
           PGPASSWORD=ptah_password psql -h localhost -p 5432 -U ptah_user -d postgres \
             -v ON_ERROR_STOP=1 -c 'CREATE DATABASE ptah_oracle_realmdev'
 
-      - name: Build pinned Atlas CE oracle
+      - name: Build pinned Atlas CE reference
         run: scripts/build-atlas-ce-reference.sh "${{ runner.temp }}/ptah-atlas-ce/atlas"
 
       - name: Run tagged integration package contour

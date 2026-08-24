@@ -41,7 +41,7 @@ type verbRow struct {
 }
 
 func TestDirQueryContract_IgnoresUnknownKeysOnEveryCEVerb(t *testing.T) {
-	reference := requireAtlasOracle(t)
+	reference := requireAtlasReference(t)
 	c := qt.New(t)
 	compat := buildCompatBinary(c)
 
@@ -55,7 +55,7 @@ func TestDirQueryContract_IgnoresUnknownKeysOnEveryCEVerb(t *testing.T) {
 }
 
 func TestDirQueryContract_FormatSelectsTheLayoutOnEveryCEVerb(t *testing.T) {
-	reference := requireAtlasOracle(t)
+	reference := requireAtlasReference(t)
 	c := qt.New(t)
 	compat := buildCompatBinary(c)
 
@@ -69,7 +69,7 @@ func TestDirQueryContract_FormatSelectsTheLayoutOnEveryCEVerb(t *testing.T) {
 }
 
 func TestDirQueryContract_UnknownFormatFailsOnEveryCEVerb(t *testing.T) {
-	reference := requireAtlasOracle(t)
+	reference := requireAtlasReference(t)
 	c := qt.New(t)
 	compat := buildCompatBinary(c)
 
@@ -83,7 +83,7 @@ func TestDirQueryContract_UnknownFormatFailsOnEveryCEVerb(t *testing.T) {
 }
 
 func TestDirQueryContract_QueryOutranksTheFlag(t *testing.T) {
-	reference := requireAtlasOracle(t)
+	reference := requireAtlasReference(t)
 	c := qt.New(t)
 	compat := buildCompatBinary(c)
 
@@ -97,7 +97,7 @@ func TestDirQueryContract_QueryOutranksTheFlag(t *testing.T) {
 }
 
 func TestDirQueryContract_KeepsExtensionOnlyVerbsFailClosed(t *testing.T) {
-	reference := requireAtlasOracle(t)
+	reference := requireAtlasReference(t)
 	c := qt.New(t)
 	compat := buildCompatBinary(c)
 
@@ -525,7 +525,7 @@ func buildCompatBinary(c *qt.C) string {
 	return path
 }
 
-func requireAtlasOracle(t *testing.T) string {
+func requireAtlasReference(t *testing.T) string {
 	t.Helper()
 	reference := os.Getenv(referenceEnv)
 	if reference == "" {

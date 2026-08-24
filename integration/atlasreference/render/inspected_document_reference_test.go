@@ -17,10 +17,10 @@ import (
 	"go.5x5.cz/ptah/internal/atlashclrender"
 )
 
-// TestOracleReadsTheInspectedDocumentPtahRenders puts a WHOLE inspected
+// TestReferenceReadsTheInspectedDocumentPtahRenders puts a WHOLE inspected
 // document to the pinned community binary, which is what stokaro/ptah#1234
 // asks for: the column-type half of that issue is measured one column at a
-// time by TestOracleModeledColumnTypesMatchTheBinary, and the two halves left
+// time by TestReferenceModeledColumnTypesMatchTheBinary, and the two halves left
 // -- a `permission` body that does not evaluate, and a `schema.<name>`
 // reference nothing declares -- are properties of the file as a whole and
 // cannot be seen in one attribute.
@@ -42,16 +42,16 @@ import (
 // database carries `GRANT USAGE ON SCHEMA public TO PUBLIC`, so an EMPTY
 // database renders exactly it -- a `permission` block referencing a schema, with
 // no table anywhere to declare that schema from.
-func TestOracleReadsTheInspectedDocumentPtahRenders(t *testing.T) {
-	oracle := requireTypeOracle(t)
+func TestReferenceReadsTheInspectedDocumentPtahRenders(t *testing.T) {
+	reference := requireTypeReference(t)
 	c := qt.New(t)
-	c.Assert(inspectedOracleDocuments, qt.HasLen, 4,
-		qt.Commentf("all whole-document controls must remain in the oracle matrix"))
+	c.Assert(inspectedReferenceDocuments, qt.HasLen, 4,
+		qt.Commentf("all whole-document controls must remain in the reference matrix"))
 	c.Assert(
 		slices.Sorted(maps.Keys(schemaNameByDialect)),
 		qt.DeepEquals,
 		[]string{platform.Postgres, platform.SQLite},
-		qt.Commentf("both measured document dialects must remain in the oracle matrix"),
+		qt.Commentf("both measured document dialects must remain in the reference matrix"),
 	)
 
 	for _, dialect := range slices.Sorted(maps.Keys(schemaNameByDialect)) {
@@ -59,7 +59,7 @@ func TestOracleReadsTheInspectedDocumentPtahRenders(t *testing.T) {
 			devURL := requireDevURL(t, dialect)
 			schema := schemaNameByDialect[dialect]
 
-			for _, document := range inspectedOracleDocuments {
+			for _, document := range inspectedReferenceDocuments {
 				t.Run(document.name, func(t *testing.T) {
 					c := qt.New(t)
 
@@ -74,7 +74,7 @@ func TestOracleReadsTheInspectedDocumentPtahRenders(t *testing.T) {
 					t.Run("rendered", func(t *testing.T) {
 						c := qt.New(t)
 
-						out, code := runReferenceOracle(c, oracle, devURL, rendered)
+						out, code := runReference(c, reference, devURL, rendered)
 
 						c.Assert(code, qt.Equals, 0,
 							qt.Commentf("the binary refuses the document ptah-compat renders on %s: %s\n%s",
@@ -89,7 +89,7 @@ func TestOracleReadsTheInspectedDocumentPtahRenders(t *testing.T) {
 							c.Assert(mutated, qt.Not(qt.Equals), rendered,
 								qt.Commentf("substituting %q changed nothing, so this row measures nothing", mutation.from))
 
-							out, code := runReferenceOracle(c, oracle, devURL, mutated)
+							out, code := runReference(c, reference, devURL, mutated)
 
 							c.Assert(code, qt.Not(qt.Equals), 0,
 								qt.Commentf("the binary now reads %s on %s; the rule this row guards can go: %s",
@@ -119,7 +119,7 @@ func TestOracleReadsTheInspectedDocumentPtahRenders(t *testing.T) {
 // at exit 0, and leaves only `public` behind.
 const realmDevURLEnv = "PTAH_ATLAS_REFERENCE_POSTGRES_REALM_DEV_URL"
 
-// TestOracleReadsTheTwoSchemaRelationDocumentPtahRenders is the same
+// TestReferenceReadsTheTwoSchemaRelationDocumentPtahRenders is the same
 // whole-document measurement for the shape a relation LABEL is not unique in.
 //
 // Two schemas each holding a relation of one name is an ordinary PostgreSQL
@@ -142,21 +142,21 @@ const realmDevURLEnv = "PTAH_ATLAS_REFERENCE_POSTGRES_REALM_DEV_URL"
 // document on SQLite outright -- `cannot use HCL with more than 1 schema when
 // dev-url is limited to schema "main"` -- so there is no SQLite instance of this
 // shape to measure.
-func TestOracleReadsTheTwoSchemaRelationDocumentPtahRenders(t *testing.T) {
-	oracle := requireTypeOracle(t)
+func TestReferenceReadsTheTwoSchemaRelationDocumentPtahRenders(t *testing.T) {
+	reference := requireTypeReference(t)
 	devURL := requireRealmDevURL(t)
 	schema := schemaNameByDialect[platform.Postgres]
 
 	result, err := atlashclrender.RenderInspectedForAtlasCLI(
-		inspectedOracleTwoSchemaDocument(schema), platform.Postgres, schema)
+		inspectedReferenceTwoSchemaDocument(schema), platform.Postgres, schema)
 	c := qt.New(t)
 	c.Assert(err, qt.IsNil)
 	rendered := string(result.Data)
 	for _, want := range []string{
 		"view \"v\" {\n",
-		"  for = \"" + twoSchemaOracleOther + ".v\"\n",
+		"  for = \"" + twoSchemaReferenceOther + ".v\"\n",
 		"  for = \"v\"\n",
-		"  on = \"" + twoSchemaOracleOther + ".v\"\n",
+		"  on = \"" + twoSchemaReferenceOther + ".v\"\n",
 	} {
 		c.Assert(rendered, qt.Contains, want,
 			qt.Commentf("the document no longer carries the spelling this row measures:\n%s", rendered))
@@ -165,15 +165,15 @@ func TestOracleReadsTheTwoSchemaRelationDocumentPtahRenders(t *testing.T) {
 	t.Run("rendered", func(t *testing.T) {
 		c := qt.New(t)
 
-		out, code := runReferenceOracle(c, oracle, devURL, rendered)
+		out, code := runReference(c, reference, devURL, rendered)
 
 		c.Assert(code, qt.Equals, 0,
 			qt.Commentf("the binary refuses the two-schema document ptah-compat renders: %s\n%s", out, rendered))
 	})
 
-	mutations := twoSchemaOracleMutations()
+	mutations := twoSchemaReferenceMutations()
 	c.Assert(mutations, qt.HasLen, 3,
-		qt.Commentf("all two-schema refusal controls must remain in the oracle matrix"))
+		qt.Commentf("all two-schema refusal controls must remain in the reference matrix"))
 	for _, mutation := range mutations {
 		t.Run("unreadable/"+mutation.name, func(t *testing.T) {
 			c := qt.New(t)
@@ -182,7 +182,7 @@ func TestOracleReadsTheTwoSchemaRelationDocumentPtahRenders(t *testing.T) {
 			c.Assert(mutated, qt.Not(qt.Equals), rendered,
 				qt.Commentf("substituting %q changed nothing, so this row measures nothing", mutation.from))
 
-			out, code := runReferenceOracle(c, oracle, devURL, mutated)
+			out, code := runReference(c, reference, devURL, mutated)
 
 			c.Assert(code, qt.Not(qt.Equals), 0,
 				qt.Commentf("the binary now reads %s; the rule this row guards can go: %s", mutation.name, out))
@@ -194,7 +194,7 @@ func TestOracleReadsTheTwoSchemaRelationDocumentPtahRenders(t *testing.T) {
 }
 
 // requireRealmDevURL returns the realm-scoped dev URL, skipping loudly without
-// one. The Atlas CE Oracle job fails on any SKIPPED line, so an unset variable
+// one. The Atlas CE Reference job fails on any SKIPPED line, so an unset variable
 // there is a red job rather than a silently unmeasured shape.
 func requireRealmDevURL(t *testing.T) string {
 	t.Helper()
@@ -207,41 +207,41 @@ func requireRealmDevURL(t *testing.T) string {
 	return url
 }
 
-// twoSchemaOracleOther is the second schema of the two-schema document. It is
+// twoSchemaReferenceOther is the second schema of the two-schema document. It is
 // not the default one, because the whole point is a label two schemas share.
-const twoSchemaOracleOther = "other"
+const twoSchemaReferenceOther = "other"
 
-// twoSchemaOracleMutations are the operands varied against the accepted
+// twoSchemaReferenceMutations are the operands varied against the accepted
 // two-schema document, one substitution each.
-func twoSchemaOracleMutations() []inspectedOracleMutation {
-	return []inspectedOracleMutation{
+func twoSchemaReferenceMutations() []inspectedReferenceMutation {
+	return []inspectedReferenceMutation{
 		{
 			// The refuted spelling: the field the name arrived on picking the
 			// word, against a document that declares `view "v"` twice.
 			name:        "a grant target named as a qualified table",
-			from:        "for = \"" + twoSchemaOracleOther + ".v\"",
-			to:          "for = table." + twoSchemaOracleOther + ".v",
-			wantMessage: `does not have an attribute named "` + twoSchemaOracleOther + `"`,
+			from:        "for = \"" + twoSchemaReferenceOther + ".v\"",
+			to:          "for = table." + twoSchemaReferenceOther + ".v",
+			wantMessage: `does not have an attribute named "` + twoSchemaReferenceOther + `"`,
 		},
 		{
 			// And the block kind corrected while the traversal is kept, which is
 			// the other thing that looks like a fix and is not: a reference names
 			// a block by its LABELS, so the schema is not addressable either way.
 			name:        "a grant target named as a qualified view",
-			from:        "for = \"" + twoSchemaOracleOther + ".v\"",
-			to:          "for = view." + twoSchemaOracleOther + ".v",
-			wantMessage: `does not have an attribute named "` + twoSchemaOracleOther + `"`,
+			from:        "for = \"" + twoSchemaReferenceOther + ".v\"",
+			to:          "for = view." + twoSchemaReferenceOther + ".v",
+			wantMessage: `does not have an attribute named "` + twoSchemaReferenceOther + `"`,
 		},
 		{
 			name:        "a trigger target named as a qualified table",
-			from:        "on = \"" + twoSchemaOracleOther + ".v\"",
-			to:          "on = table." + twoSchemaOracleOther + ".v",
-			wantMessage: `does not have an attribute named "` + twoSchemaOracleOther + `"`,
+			from:        "on = \"" + twoSchemaReferenceOther + ".v\"",
+			to:          "on = table." + twoSchemaReferenceOther + ".v",
+			wantMessage: `does not have an attribute named "` + twoSchemaReferenceOther + `"`,
 		},
 	}
 }
 
-// inspectedOracleTwoSchemaDocument is the IR a realm-scoped read produces for
+// inspectedReferenceTwoSchemaDocument is the IR a realm-scoped read produces for
 // two schemas each carrying a table `t` and a view `v`, with a grant on each
 // view and a trigger on the one outside the default schema.
 //
@@ -250,12 +250,12 @@ func twoSchemaOracleMutations() []inspectedOracleMutation {
 // which is what a reader does with everything in the schema it is reading. That
 // asymmetry is deliberate: it is the pair that says the rule holds whether or
 // not the name carries a schema.
-func inspectedOracleTwoSchemaDocument(schema string) *goschema.Database {
+func inspectedReferenceTwoSchemaDocument(schema string) *goschema.Database {
 	return &goschema.Database{
-		Schemas: []goschema.Schema{{Name: schema}, {Name: twoSchemaOracleOther}},
+		Schemas: []goschema.Schema{{Name: schema}, {Name: twoSchemaReferenceOther}},
 		Tables: []goschema.Table{
 			{StructName: "T", Name: "t", Schema: schema},
-			{StructName: "OtherT", Name: "t", Schema: twoSchemaOracleOther},
+			{StructName: "OtherT", Name: "t", Schema: twoSchemaReferenceOther},
 		},
 		Fields: []goschema.Field{
 			{StructName: "T", Name: "id", Type: "integer", Primary: true},
@@ -263,16 +263,16 @@ func inspectedOracleTwoSchemaDocument(schema string) *goschema.Database {
 		},
 		Views: []goschema.View{
 			{Name: "v", Body: "SELECT id FROM t"},
-			{Name: twoSchemaOracleOther + ".v", Body: "SELECT id FROM " + twoSchemaOracleOther + ".t"},
+			{Name: twoSchemaReferenceOther + ".v", Body: "SELECT id FROM " + twoSchemaReferenceOther + ".t"},
 		},
 		Roles: []goschema.Role{{Name: "app"}},
 		Grants: []goschema.Grant{
 			{Role: "app", OnTable: "v", Privileges: []string{"SELECT"}},
-			{Role: "app", OnTable: twoSchemaOracleOther + ".v", Privileges: []string{"SELECT"}},
+			{Role: "app", OnTable: twoSchemaReferenceOther + ".v", Privileges: []string{"SELECT"}},
 		},
 		Triggers: []goschema.Trigger{{
 			Name:    "v_ins",
-			Table:   twoSchemaOracleOther + ".v",
+			Table:   twoSchemaReferenceOther + ".v",
 			Timing:  "INSTEAD OF",
 			Event:   "INSERT",
 			ForEach: "ROW",
@@ -281,27 +281,27 @@ func inspectedOracleTwoSchemaDocument(schema string) *goschema.Database {
 	}
 }
 
-// inspectedOracleMutation is one operand varied against the accepted document.
-type inspectedOracleMutation struct {
+// inspectedReferenceMutation is one operand varied against the accepted document.
+type inspectedReferenceMutation struct {
 	name        string
 	from        string
 	to          string
 	wantMessage string
 }
 
-// inspectedOracleDocuments are the inspected shapes put to the binary whole.
-var inspectedOracleDocuments = []struct {
+// inspectedReferenceDocuments are the inspected shapes put to the binary whole.
+var inspectedReferenceDocuments = []struct {
 	name string
 	db   func(schema string) *goschema.Database
 	// wantContains are the spellings this document exists to measure. They are
 	// asserted before the binary runs, so a render that stopped emitting one
-	// fails here rather than passing an oracle row that no longer covers it.
+	// fails here rather than passing an reference row that no longer covers it.
 	wantContains func(schema string) []string
-	unreadable   func(schema string) []inspectedOracleMutation
+	unreadable   func(schema string) []inspectedReferenceMutation
 }{
 	{
 		name: "a table with grants",
-		db:   inspectedOracleTableDocument,
+		db:   inspectedReferenceTableDocument,
 		wantContains: func(schema string) []string {
 			return []string{
 				fmt.Sprintf("schema %q {\n}\n", schema),
@@ -312,8 +312,8 @@ var inspectedOracleDocuments = []struct {
 				"  to = \"reporting\"\n",
 			}
 		},
-		unreadable: func(schema string) []inspectedOracleMutation {
-			return []inspectedOracleMutation{
+		unreadable: func(schema string) []inspectedReferenceMutation {
+			return []inspectedReferenceMutation{
 				{
 					name:        "a schema reference with no block",
 					from:        fmt.Sprintf("schema %q {\n}\n\n", schema),
@@ -355,15 +355,15 @@ var inspectedOracleDocuments = []struct {
 		// `There is no variable named "role"`.
 		name: "a table whose roles were excluded",
 		db: func(schema string) *goschema.Database {
-			db := inspectedOracleTableDocument(schema)
+			db := inspectedReferenceTableDocument(schema)
 			db.Roles = nil
 			return db
 		},
 		wantContains: func(_ string) []string {
 			return []string{"  to = \"app\"\n", "  to = \"reporting\"\n"}
 		},
-		unreadable: func(_ string) []inspectedOracleMutation {
-			return []inspectedOracleMutation{
+		unreadable: func(_ string) []inspectedReferenceMutation {
+			return []inspectedReferenceMutation{
 				{
 					name:        "a grantee reference with no role block anywhere",
 					from:        "to = \"app\"",
@@ -384,12 +384,12 @@ var inspectedOracleDocuments = []struct {
 		// documents a filter left behind; this one is the DEFAULT invocation on
 		// an ordinary database.
 		name: "a table and a view with grants on both",
-		db:   inspectedOracleViewDocument,
+		db:   inspectedReferenceViewDocument,
 		wantContains: func(_ string) []string {
 			return []string{"view \"v\" {\n", "  for = table.t\n", "  for = view.v\n"}
 		},
-		unreadable: func(_ string) []inspectedOracleMutation {
-			return []inspectedOracleMutation{
+		unreadable: func(_ string) []inspectedReferenceMutation {
+			return []inspectedReferenceMutation{
 				{
 					// The whole refutation of the first version of this fix, as
 					// one substitution: the block type is part of the spelling,
@@ -408,15 +408,15 @@ var inspectedOracleDocuments = []struct {
 	},
 	{
 		name: "nothing but the grant every database has",
-		db:   inspectedOracleGrantOnlyDocument,
+		db:   inspectedReferenceGrantOnlyDocument,
 		wantContains: func(schema string) []string {
 			return []string{
 				fmt.Sprintf("schema %q {\n}\n", schema),
 				"  for = schema." + schema + "\n",
 			}
 		},
-		unreadable: func(schema string) []inspectedOracleMutation {
-			return []inspectedOracleMutation{
+		unreadable: func(schema string) []inspectedReferenceMutation {
+			return []inspectedReferenceMutation{
 				{
 					name:        "a schema reference with no block",
 					from:        fmt.Sprintf("schema %q {\n}\n\n", schema),
@@ -428,7 +428,7 @@ var inspectedOracleDocuments = []struct {
 	},
 }
 
-// inspectedOracleTableDocument is the IR a database read produces for a table
+// inspectedReferenceTableDocument is the IR a database read produces for a table
 // carrying the three grantee shapes that reach a `permission` body.
 //
 // Nothing declares a schema, which is what a catalog reports: the engine treats
@@ -436,7 +436,7 @@ var inspectedOracleDocuments = []struct {
 // grantee with no role block, which is what `--exclude '*[type=role]'` leaves
 // behind -- grants are children of the object granted on, so excluding roles
 // removes the blocks and keeps every reference to them.
-func inspectedOracleTableDocument(schema string) *goschema.Database {
+func inspectedReferenceTableDocument(schema string) *goschema.Database {
 	return &goschema.Database{
 		Tables: []goschema.Table{{StructName: "T", Name: "t"}},
 		Fields: []goschema.Field{
@@ -452,15 +452,15 @@ func inspectedOracleTableDocument(schema string) *goschema.Database {
 	}
 }
 
-// inspectedOracleViewDocument adds a view, and a grant on it, to the same IR.
+// inspectedReferenceViewDocument adds a view, and a grant on it, to the same IR.
 //
 // The grant is in OnTable and unqualified, which is what a read produces: the
 // catalog reports privileges on a view through the same table-grant path, and
 // the reader drops the schema of everything in the read's own schema. So the
 // renderer cannot learn the block type from the IR field or from the name -- it
 // has to read it off the block the document declares.
-func inspectedOracleViewDocument(schema string) *goschema.Database {
-	db := inspectedOracleTableDocument(schema)
+func inspectedReferenceViewDocument(schema string) *goschema.Database {
+	db := inspectedReferenceTableDocument(schema)
 	db.Views = []goschema.View{{Name: "v", Body: "SELECT id FROM t"}}
 	db.Grants = append(db.Grants, goschema.Grant{
 		Role: "app", OnTable: "v", Privileges: []string{"SELECT"},
@@ -468,9 +468,9 @@ func inspectedOracleViewDocument(schema string) *goschema.Database {
 	return db
 }
 
-// inspectedOracleGrantOnlyDocument is what an empty PostgreSQL database
+// inspectedReferenceGrantOnlyDocument is what an empty PostgreSQL database
 // inspects to: one grant on the schema, and nothing else at all.
-func inspectedOracleGrantOnlyDocument(schema string) *goschema.Database {
+func inspectedReferenceGrantOnlyDocument(schema string) *goschema.Database {
 	return &goschema.Database{
 		Grants: []goschema.Grant{
 			{Role: "PUBLIC", OnSchema: schema, Privileges: []string{"USAGE"}},

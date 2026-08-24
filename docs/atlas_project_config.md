@@ -950,7 +950,7 @@ any value is accepted in those places. This rule has the same selection boundary
 and the same reading order as the block rule above, so `drop_column = var.flag`
 resolves normally.
 
-`PTAH_ATLAS_STRICT_COMPAT=1` changes this reporting boundary for CE oracle
+`PTAH_ATLAS_STRICT_COMPAT=1` changes this reporting boundary for CE reference
 runs. The strict policy refuses an ignored construct before command work, and
 it rejects Ptah's list/map `env.for_each` extension while retaining CE tuple,
 object, and set collections. It also refuses YAML schema sources and an
