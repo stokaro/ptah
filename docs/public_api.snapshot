@@ -7586,12 +7586,16 @@ type DBColumn struct {
     CharacterMaxLength *int    `json:"character_max_length"`     // For VARCHAR, etc.
     Charset            string  `json:"charset,omitempty"`        // MySQL/MariaDB column character set
     Collate            string  `json:"collate,omitempty"`        // MySQL/MariaDB column collation
-    NumericPrecision   *int    `json:"numeric_precision"`        // For DECIMAL, etc.
-    NumericScale       *int    `json:"numeric_scale"`            // For DECIMAL, etc.
-    OrdinalPosition    int     `json:"ordinal_position"`
-    IsAutoIncrement    bool    `json:"is_auto_increment"` // Derived field
-    IsPrimaryKey       bool    `json:"is_primary_key"`    // Derived field
-    IsUnique           bool    `json:"is_unique"`         // Derived field
+    // Comment is the column's own comment, where the target has one and the
+    // reader reads it. It is empty for a column nobody commented, which is why
+    // it is omitted from the encoding rather than written as "".
+    Comment          string `json:"comment,omitempty"`
+    NumericPrecision *int   `json:"numeric_precision"` // For DECIMAL, etc.
+    NumericScale     *int   `json:"numeric_scale"`     // For DECIMAL, etc.
+    OrdinalPosition  int    `json:"ordinal_position"`
+    IsAutoIncrement  bool   `json:"is_auto_increment"` // Derived field
+    IsPrimaryKey     bool   `json:"is_primary_key"`    // Derived field
+    IsUnique         bool   `json:"is_unique"`         // Derived field
 
     // TypeIsDeclaredText records that DataType is the text an author wrote,
     // stored verbatim, rather than a type the engine resolved the declaration

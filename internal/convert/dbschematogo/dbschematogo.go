@@ -153,6 +153,7 @@ func convertTablesAndFields(
 				FieldName:          generateFieldName(dbColumn.Name),
 				Name:               dbColumn.Name,
 				Type:               goSchemaFieldType(dbColumn),
+				Comment:            dbColumn.Comment,
 				TypeIsDeclaredText: dbColumn.TypeIsDeclaredText,
 				Nullable:           dbColumn.IsNullable == "YES",
 				Primary:            dbColumn.IsPrimaryKey && !compositePKColumns[dbTable.QualifiedName()][dbColumn.Name],

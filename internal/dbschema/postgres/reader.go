@@ -667,6 +667,11 @@ func (r *Reader) readColumnsForSchema(schemaName string) (map[string][]types.DBC
 			` + r.generatedKindExpr() + `,
 			` + r.generatedExpressionExpr() + `,
 			COALESCE(a.attidentity, '') AS identity_kind,
+			-- The column's own comment. information_schema has no column for
+			-- it, and the join to pg_attribute this query already carries is
+			-- what makes it reachable without a second query or another join
+			-- (stokaro/ptah#2101).
+			COALESCE(col_description(cls.oid, a.attnum), '') AS column_comment,
 			` + r.ownedSequenceExpr() + `
 		FROM information_schema.columns col
 		JOIN information_schema.tables tbl ON tbl.table_schema = col.table_schema
@@ -714,6 +719,7 @@ func (r *Reader) readColumnsForSchema(schemaName string) (map[string][]types.DBC
 			&generatedKind,
 			&generatedExpression,
 			&identityKind,
+			&col.Comment,
 			&ownedSequenceName,
 		)
 		if err != nil {
