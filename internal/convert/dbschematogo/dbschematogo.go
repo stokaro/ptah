@@ -810,6 +810,14 @@ func postgresSerialType(dbColumn dbschematypes.DBColumn) string {
 	}
 }
 
+// sizedColumnType renders the width a read carried in a field of its own.
+//
+// Every family PostgreSQL keeps a width for belongs here, and the two bit ones
+// were missing. `ptah schema inspect` wrote a `bit(4)` column as `bit`, and
+// replaying that document into a fresh database produced `bit(1)` -- measured
+// on PostgreSQL 17.11, three bits of every value gone. A `bit varying(8)` came
+// back unlimited, and applying the document to the SOURCE database removed the
+// declared width from the live column (stokaro/ptah#2034).
 func sizedColumnType(dbColumn dbschematypes.DBColumn) string {
 	dataType := strings.ToLower(strings.TrimSpace(dbColumn.DataType))
 	switch dataType {
@@ -820,6 +828,20 @@ func sizedColumnType(dbColumn dbschematypes.DBColumn) string {
 	case "character", "char":
 		if dbColumn.CharacterMaxLength != nil {
 			return fmt.Sprintf("CHAR(%d)", *dbColumn.CharacterMaxLength)
+		}
+	case "bit":
+		if dbColumn.CharacterMaxLength != nil {
+			return fmt.Sprintf("BIT(%d)", *dbColumn.CharacterMaxLength)
+		}
+	case "bit varying", "varbit":
+		// Lower case, unlike the arms around it. Those are modeled HCL type
+		// names that the renderer lower-cases on the way out; this one is not
+		// writable bare -- two identifiers separated by a space is not one HCL
+		// expression -- so it reaches the document through sql() carrying
+		// whatever case it has here, and that binary's type names are case
+		// sensitive.
+		if dbColumn.CharacterMaxLength != nil {
+			return fmt.Sprintf("bit varying(%d)", *dbColumn.CharacterMaxLength)
 		}
 	case "numeric", "decimal":
 		if dbColumn.NumericPrecision != nil && dbColumn.NumericScale != nil {

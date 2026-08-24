@@ -70,6 +70,22 @@ func Type(typeName string) string {
 		return "varchar"
 	case strings.Contains(typeName, "varchar") && !isArrayType(typeName):
 		return "varchar"
+	// PostgreSQL's own names for types the renderer writes differently, folded
+	// onto one spelling so a round trip through Ptah's own output converges.
+	//
+	// The catalog answers `bpchar`, `time`, `timetz` and `varbit`; a document
+	// carries `char(8)`, `time without time zone`, `time with time zone` and
+	// `bit varying(8)`. Without this, `schema inspect > out.hcl` followed by
+	// `apply --to file://out.hcl` planned `ALTER COLUMN ... TYPE` for four
+	// columns nobody had touched, on every run (stokaro/ptah#2035).
+	//
+	// The SIZE is kept rather than stripped, unlike the varchar arm below. A
+	// `bit varying` width change is invisible to typechange -- it has no bit
+	// kind -- so folding the width away here would be the only place that
+	// question is asked, and it would answer "no change" to a real narrowing.
+	case isAliasedType(typeName):
+		return foldAliasedType(typeName)
+
 	// PostgreSQL's own names for the two floating-point types, folded to the
 	// spelling the renderer writes and a declaration uses.
 	//
@@ -377,6 +393,68 @@ func skipQuotedSQL(value string, start int, quote byte) (int, bool) {
 //
 // The suffix is the whole test because that is how every catalog this compares
 // spells one: `varchar(100)[]`, `int[]`, `text[]`.
+// typeAliases folds a base type name -- the name with any size stripped -- onto
+// the spelling both sides of a comparison will carry.
+//
+// Every pair is one type under two names. `char` and `bpchar` are what
+// PostgreSQL calls `character`; `varbit` is what it calls `bit varying`. The
+// two `time` rows are deliberately separate: a time WITH a zone and one without
+// are different types, and one token for both would report a change between
+// them as no change at all.
+//
+// No engine Ptah targets spells a different type with any of these names, which
+// is what keeps the fold narrow.
+var typeAliases = map[string]string{
+	"bpchar":                 "char",
+	"character":              "char",
+	"char":                   "char",
+	"time":                   "time",
+	"time without time zone": "time",
+	"timetz":                 "timetz",
+	"time with time zone":    "timetz",
+	"varbit":                 "bit varying",
+	"bit varying":            "bit varying",
+	"bit":                    "bit",
+}
+
+// isAliasedType reports whether a name is one of the aliased spellings.
+func isAliasedType(typeName string) bool {
+	if isArrayType(typeName) {
+		return false
+	}
+	_, aliased := typeAliases[baseTypeName(typeName)]
+	return aliased
+}
+
+// foldAliasedType returns the folded spelling with the original size, so a
+// width change is still a difference.
+func foldAliasedType(typeName string) string {
+	base, size := splitTypeSize(typeName)
+	return typeAliases[base] + size
+}
+
+// baseTypeName is a type name with its size stripped and its schema
+// qualification removed.
+func baseTypeName(typeName string) string {
+	base, _ := splitTypeSize(typeName)
+	return base
+}
+
+// splitTypeSize separates `char(8)` into `char` and `(8)`.
+//
+// The size is returned rather than parsed, because it is put back verbatim: a
+// caller comparing two normalized names needs them to differ when the widths
+// do, and reformatting one side would be a second place for the two to come
+// apart.
+func splitTypeSize(typeName string) (base, size string) {
+	trimmed := strings.TrimPrefix(strings.TrimSpace(typeName), "pg_catalog.")
+	open := strings.Index(trimmed, "(")
+	if open < 0 {
+		return strings.TrimSpace(trimmed), ""
+	}
+	return strings.TrimSpace(trimmed[:open]), strings.TrimSpace(trimmed[open:])
+}
+
 // isFloatAlias reports whether a type name IS one of PostgreSQL's internal
 // float names, with the catalog's optional schema qualification stripped.
 //

@@ -84,6 +84,31 @@ func TestType(t *testing.T) {
 		// is right on both.
 		{"bare float", "FLOAT", "float"},
 
+		// PostgreSQL's internal names for four more types, folded onto the
+		// spelling a document carries. The size is KEPT, unlike the varchar
+		// arm: a `bit varying` width change is invisible to typechange, so
+		// folding it away here would answer "no change" to a real narrowing.
+		{"bpchar as the catalog spells it", "bpchar", "char"},
+		{"bpchar with a width", "bpchar(8)", "char(8)"},
+		{"char as a document spells it", "CHAR(8)", "char(8)"},
+		{"character as information_schema spells it", "character(8)", "char(8)"},
+		{"time as the catalog spells it", "time", "time"},
+		{"time as a document spells it", "TIME WITHOUT TIME ZONE", "time"},
+		{"timetz as the catalog spells it", "timetz", "timetz"},
+		{"timetz as a document spells it", "time with time zone", "timetz"},
+		{"varbit as the catalog spells it", "varbit(8)", "bit varying(8)"},
+		{"bit varying as a document spells it", "BIT VARYING(8)", "bit varying(8)"},
+		{"bit keeps its own width", "bit(4)", "bit(4)"},
+		// A zoned time and an unzoned one are different types, and one token
+		// for both would report a change between them as no change.
+		{"the two time types do not fold together", "time", "time"},
+		// An array is not its element type.
+		{"a char array", "bpchar(8)[]", "bpchar(8)[]"},
+		{"a bit array", "varbit(8)[]", "varbit(8)[]"},
+		// A timestamp is not a time: the timestamp arm still wins.
+		{"timestamp without time zone", "timestamp without time zone", "timestamp"},
+		{"timestamp with time zone", "TIMESTAMP WITH TIME ZONE", "timestamp"},
+
 		// Unrecognized types (should return as-is, lowercased)
 		{"enum type", "ENUM('a','b','c')", "enum('a','b','c')"},
 		{"json type", "JSON", "json"},
