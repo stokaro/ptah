@@ -308,6 +308,13 @@ func constraintBackedIndexIdentities(
 				normalizedDialect == platform.MariaDB {
 				owned.foreignKeys[ref] = struct{}{}
 			}
+			if normalizedDialect == platform.Spanner {
+				for _, backing := range spannerForeignKeyBackingIndexes(
+					database, constraint, semantics,
+				) {
+					owned.foreignKeys[backing] = struct{}{}
+				}
+			}
 		case "UNIQUE":
 			if normalizedDialect != platform.SQLServer {
 				owned.unique[ref] = struct{}{}
@@ -317,6 +324,108 @@ func constraintBackedIndexIdentities(
 		}
 	}
 	return owned
+}
+
+// spannerForeignKeyBackingIndexes names the index Spanner built to enforce one
+// foreign key.
+//
+// Spanner creates it and names it itself -- `IDX_children_parent_id_FBF4366D...`
+// -- so unlike MySQL's, which carries the constraint's name, it cannot be found
+// by identity. What identifies it is its key: the constraint's columns, in the
+// constraint's order, which is what the enforcement needs.
+//
+// Without this the index is an object in the database that no desired state
+// declares, so the ordinary removal arm plans a DROP for it, and the server
+// refuses: measured on the PGAdapter emulator v0.55.2, the second apply of a
+// document containing one foreign key answered
+//
+//	Cannot drop index `IDX_children_parent_id_FBF4366D73F2084A`.
+//	It is in use by foreign keys: `children_parent_fk`.
+//
+// so such a document applied exactly once and failed on every run afterwards,
+// with a plan that never changed (stokaro/ptah#2076).
+//
+// A user's own index over the same columns is not swallowed by this: an
+// identity the desired state declares as an index never reaches the ownership
+// filter at all, which is the rule collectDatabaseIndexes states below.
+func spannerForeignKeyBackingIndexes(
+	database *types.DBSchema,
+	constraint types.DBConstraint,
+	semantics identifier.Semantics,
+) []difftypes.IndexRef {
+	columns := uniqueStringsPreserveOrder(constraint.ColumnNamesOrDefault())
+	if len(columns) == 0 {
+		return nil
+	}
+	table := constraint.QualifiedTableName()
+	refs := make([]difftypes.IndexRef, 0, 1)
+	for _, index := range database.Indexes {
+		if !spannerIndexEnforces(index, table, columns, semantics) {
+			continue
+		}
+		refs = append(refs, indexscope.IdentityKeyWithSemantics(semantics, difftypes.IndexRef{
+			Name:      index.Name,
+			TableName: index.QualifiedTableName(),
+		}))
+	}
+	return refs
+}
+
+// spannerIndexEnforces reports whether one index is the key Spanner built for a
+// foreign key on table.
+//
+// Two signals, and both are needed. The columns say the index COULD enforce the
+// constraint; the name says Spanner made it. A user's own index over the same
+// columns is a different object -- measured on the emulator, declaring one
+// leaves Spanner's beside it rather than reusing it -- and it stays droppable,
+// which it would not if the columns alone decided.
+//
+// A primary key's index is excluded because it is already owned, and because a
+// foreign key whose columns are the primary key is enforced by that key rather
+// than by an index of its own.
+func spannerIndexEnforces(
+	index types.DBIndex,
+	table string,
+	columns []string,
+	semantics identifier.Semantics,
+) bool {
+	if index.IsPrimary || !spannerGeneratedIndexName(index.Name) {
+		return false
+	}
+	if !strings.EqualFold(strings.TrimSpace(index.QualifiedTableName()), strings.TrimSpace(table)) {
+		return false
+	}
+	return sameColumnNames(semantics, columns, index.Columns)
+}
+
+// spannerGeneratedIndexName reports whether a name is one Spanner wrote for
+// itself: `IDX_<table>_<columns>_<16 hex digits>`, as in
+// `IDX_children_parent_id_FBF4366D73F2084A`.
+//
+// Only the two ends are checked. The middle is the table and the columns, which
+// the caller compares properly rather than by string surgery, and a name
+// carrying an underscore in an identifier would defeat any attempt to split it.
+func spannerGeneratedIndexName(name string) bool {
+	trimmed := strings.TrimSpace(name)
+	const suffixDigits = 16
+	if !strings.HasPrefix(trimmed, "IDX_") || len(trimmed) < len("IDX_")+1+suffixDigits {
+		return false
+	}
+	suffix := trimmed[len(trimmed)-suffixDigits:]
+	if trimmed[len(trimmed)-suffixDigits-1] != '_' {
+		return false
+	}
+	for i := range len(suffix) {
+		if !isHexDigit(suffix[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+// isHexDigit reports whether b is one of 0-9, a-f or A-F.
+func isHexDigit(b byte) bool {
+	return b >= '0' && b <= '9' || b >= 'a' && b <= 'f' || b >= 'A' && b <= 'F'
 }
 
 // collectDatabaseIndexes keys the database's indexes by identity, leaving out
