@@ -322,11 +322,36 @@ func RLSEnabledTablesWithSemantics(
 		}
 	}
 
-	// Find tables that need RLS disabled
+	// Find tables that need RLS disabled.
+	//
+	// A table the description declares POLICIES for is not one of them, even
+	// when the description carries no enablement of its own. The planner
+	// already reads a declared policy on a new table as a request to enable
+	// row-level security -- a policy on a table without it does nothing at all
+	// -- so a comparator that read the same silence as a request to DISABLE
+	// contradicted the plan one run earlier.
+	//
+	// Measured on PostgreSQL 17.11 with a document declaring three policies and
+	// no `row_security` block: the first apply emitted
+	// `ALTER TABLE docs ENABLE ROW LEVEL SECURITY` and the second emitted
+	// `DISABLE`, leaving the policies in place and unenforced. Applying the same
+	// file twice turned a security control off (stokaro/ptah#2048).
+	//
+	// The other end was available -- the planner could stop enabling -- and this
+	// is the end that keeps the control on. A description that wants row-level
+	// security off says so by not declaring policies for the table.
+	declaredPolicyTables := make(map[tableIdentity]struct{}, len(generated.RLSPolicies))
+	for _, policy := range generated.RLSPolicies {
+		declaredPolicyTables[newQualifiedTableIdentity(policy.Table, semantics)] = struct{}{}
+	}
 	for identity, tableName := range dbRLSTables {
-		if _, declared := genRLSTables[identity]; !declared {
-			diff.RLSEnabledTablesRemoved = append(diff.RLSEnabledTablesRemoved, tableName)
+		if _, declared := genRLSTables[identity]; declared {
+			continue
 		}
+		if _, hasPolicies := declaredPolicyTables[identity]; hasPolicies {
+			continue
+		}
+		diff.RLSEnabledTablesRemoved = append(diff.RLSEnabledTablesRemoved, tableName)
 	}
 
 	// Sort for consistent output
