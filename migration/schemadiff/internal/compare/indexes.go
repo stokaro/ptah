@@ -3,6 +3,7 @@ package compare
 import (
 	"strings"
 
+	"go.5x5.cz/ptah/config"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/identifier"
@@ -199,7 +200,7 @@ type databaseIndexEntry struct {
 }
 
 func IndexesWithDialect(generated *goschema.Database, database *types.DBSchema, diff *difftypes.SchemaDiff, dialect string) {
-	IndexesWithSemantics(generated, database, diff, dialect, identifier.ForDialect(dialect))
+	IndexesWithSemantics(generated, database, diff, dialect, identifier.ForDialect(dialect), nil)
 }
 
 // IndexesWithSemantics compares indexes using explicit identifier semantics.
@@ -209,6 +210,7 @@ func IndexesWithSemantics(
 	diff *difftypes.SchemaDiff,
 	dialect string,
 	semantics identifier.Semantics,
+	indexes map[string]config.IndexExpression,
 ) {
 	genIndexes, ambiguousGenerated := collectGeneratedIndexes(generated, semantics)
 	owned := constraintBackedIndexIdentities(database, dialect, semantics)
@@ -226,6 +228,7 @@ func IndexesWithSemantics(
 		dbIndexes,
 		dialect,
 		semantics,
+		indexes,
 	)
 	diff.SetIndexAdditions(diff.IndexAdditions())
 	diff.SetIndexRemovals(diff.IndexRemovals())
@@ -512,6 +515,7 @@ func appendIndexDifferences(
 	database map[difftypes.IndexRef]databaseIndexEntry,
 	dialect string,
 	semantics identifier.Semantics,
+	indexes map[string]config.IndexExpression,
 ) {
 	for identity, refs := range ambiguousGenerated {
 		for _, ref := range refs {
@@ -531,6 +535,7 @@ func appendIndexDifferences(
 			databaseEntry,
 			dialect,
 			semantics,
+			indexes[strings.ToLower(strings.TrimSpace(generatedEntry.ref.Name))],
 		):
 			appendIndexAddition(diff, generatedEntry.ref)
 			appendIndexRemoval(diff, databaseEntry)
@@ -604,12 +609,13 @@ func indexReplacementRequired(
 	database databaseIndexEntry,
 	dialect string,
 	semantics identifier.Semantics,
+	resolved config.IndexExpression,
 ) bool {
 	if platform.NormalizeDialect(dialect) == platform.SQLServer &&
 		generated.ref.Name != database.ref.Name {
 		return true
 	}
-	return indexDefinitionsChanged(generated.index, database.index, dialect, semantics)
+	return indexDefinitionsChanged(generated.index, database.index, dialect, semantics, resolved)
 }
 
 func indexDefinitionsChanged(
@@ -617,9 +623,20 @@ func indexDefinitionsChanged(
 	database types.DBIndex,
 	dialect string,
 	semantics identifier.Semantics,
+	resolved config.IndexExpression,
 ) bool {
+	// The predicate is compared in the server's spelling where the server
+	// answered. PostgreSQL stores a parse tree rather than the text it was
+	// given, and the cast it inserts depends on the column's type: measured on
+	// 17.11, `unit >= 0` over a numeric column is stored as
+	// `(unit >= (0)::numeric)`, so a partial index nobody had touched was
+	// dropped and rebuilt on every run (stokaro/ptah#2047).
+	declaredPredicate := generated.Condition
+	if resolved.Resolved {
+		declaredPredicate = resolved.Predicate
+	}
 	if !boolPtrEqual(generated.NullsDistinct, database.NullsDistinct) ||
-		indexPredicateChanged(generated.Condition, database.Condition, dialect) {
+		indexPredicateChanged(declaredPredicate, database.Condition, dialect) {
 		return true
 	}
 	// Every other property is compared per dialect, because "these two indexes
@@ -632,7 +649,7 @@ func indexDefinitionsChanged(
 		return generated.Unique != database.IsUnique ||
 			indexKeyPartsChanged(generated, database, semantics)
 	case platform.Postgres:
-		return postgresIndexDefinitionChanged(generated, database, semantics)
+		return postgresIndexDefinitionChanged(generated, database, semantics, resolved)
 	case platform.MySQL, platform.MariaDB:
 		return mysqlIndexDefinitionChanged(generated, database, semantics)
 	default:
@@ -794,10 +811,11 @@ func postgresIndexDefinitionChanged(
 	generated goschema.Index,
 	database types.DBIndex,
 	semantics identifier.Semantics,
+	resolved config.IndexExpression,
 ) bool {
 	return generated.Unique != database.IsUnique ||
 		postgresAccessMethod(generated.Type) != postgresAccessMethod(database.Method) ||
-		postgresIndexKeysChanged(generated, database, semantics) ||
+		postgresIndexKeysChanged(generated, database, semantics, resolved) ||
 		postgresIncludeColumnsChanged(generated.IncludeColumns, database.IncludeColumns, semantics) ||
 		postgresIndexStorageParamsChanged(generated.StorageParams, database.StorageParams)
 }
@@ -854,7 +872,17 @@ func postgresIndexKeysChanged(
 	generated goschema.Index,
 	database types.DBIndex,
 	semantics identifier.Semantics,
+	resolved config.IndexExpression,
 ) bool {
+	// An index over an EXPRESSION is compared in the server's spelling where
+	// the server answered. PostgreSQL stores a parse tree and prints it back
+	// with the casts the parser inserted, and the cast depends on the column's
+	// type: measured on 17.11, `lower(code)` over a varchar column is stored as
+	// `lower((code)::text)` and over a text column unchanged. So an expression
+	// index nobody had touched was dropped and rebuilt on every run, and no
+	// rule over the declaration's text could tell the two cases apart
+	// (stokaro/ptah#2047).
+	generated = generatedIndexWithResolvedExpression(generated, resolved)
 	generatedParts := effectiveGeneratedIndexParts(generated)
 	databaseParts := effectiveDatabaseIndexParts(database)
 	if len(generatedParts) != len(databaseParts) {
@@ -867,6 +895,35 @@ func postgresIndexKeysChanged(
 		}
 	}
 	return false
+}
+
+// generatedIndexWithResolvedExpression replaces the declared expression with
+// the one the server printed back, and leaves everything else alone.
+//
+// An index over plain columns has no expression to replace, and a declaration
+// the server refused leaves the textual comparison in charge -- which is every
+// offline path.
+func generatedIndexWithResolvedExpression(
+	generated goschema.Index,
+	resolved config.IndexExpression,
+) goschema.Index {
+	if !resolved.Resolved || strings.TrimSpace(resolved.Expression) == "" {
+		return generated
+	}
+	parts := make([]goschema.IndexPart, 0, len(generated.Parts))
+	replaced := false
+	for _, part := range generated.Parts {
+		if !replaced && strings.TrimSpace(part.Expr) != "" {
+			part.Expr = resolved.Expression
+			replaced = true
+		}
+		parts = append(parts, part)
+	}
+	if !replaced {
+		return generated
+	}
+	generated.Parts = parts
+	return generated
 }
 
 // postgresIndexKey is one index key reduced to the form the two sides can be

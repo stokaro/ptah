@@ -78,6 +78,7 @@ func TestRLSPoliciesWithSemantics_TableQualifiedAdditions(t *testing.T) {
 				diff,
 				identifier.ForDialect("postgres"),
 				compare.Coverage{},
+				nil,
 			)
 
 			c.Assert(diff.RLSPoliciesAdded, qt.DeepEquals, test.want)
@@ -143,7 +144,7 @@ func TestRLSPoliciesWithSemantics_TableQualifiedRemovals(t *testing.T) {
 			c := qt.New(t)
 			diff := &difftypes.SchemaDiff{}
 
-			compare.RLSPoliciesWithSemantics(generated, test.database, diff, identifier.ForDialect("postgres"), compare.Coverage{})
+			compare.RLSPoliciesWithSemantics(generated, test.database, diff, identifier.ForDialect("postgres"), compare.Coverage{}, nil)
 
 			c.Assert(diff.RLSPoliciesRemoved, qt.DeepEquals, test.want)
 			c.Assert(diff.RLSPoliciesAdded, qt.HasLen, 0)
@@ -177,7 +178,7 @@ func TestRLSPoliciesWithSemantics_ModificationMatchesTheSameTable(t *testing.T) 
 	}
 	diff := &difftypes.SchemaDiff{}
 
-	compare.RLSPoliciesWithSemantics(generated, database, diff, identifier.ForDialect("postgres"), compare.Coverage{})
+	compare.RLSPoliciesWithSemantics(generated, database, diff, identifier.ForDialect("postgres"), compare.Coverage{}, nil)
 
 	c.Assert(diff.RLSPoliciesModified, qt.HasLen, 1)
 	c.Assert(diff.RLSPoliciesModified[0].PolicyName, qt.Equals, "tenant_isolation")
@@ -210,7 +211,7 @@ func TestRLSPoliciesWithSemantics_ImplicitSchemaStillMatches(t *testing.T) {
 	}
 	diff := &difftypes.SchemaDiff{}
 
-	compare.RLSPoliciesWithSemantics(generated, database, diff, identifier.ForDialect("postgres"), compare.Coverage{})
+	compare.RLSPoliciesWithSemantics(generated, database, diff, identifier.ForDialect("postgres"), compare.Coverage{}, nil)
 
 	c.Assert(diff.RLSPoliciesAdded, qt.HasLen, 0)
 	c.Assert(diff.RLSPoliciesRemoved, qt.HasLen, 0)
@@ -271,7 +272,7 @@ func TestRLSPoliciesWithSemantics_OrdersRefsByTableFirst(t *testing.T) {
 	}
 	diff := &difftypes.SchemaDiff{}
 
-	compare.RLSPoliciesWithSemantics(generated, database, diff, identifier.ForDialect("postgres"), compare.Coverage{})
+	compare.RLSPoliciesWithSemantics(generated, database, diff, identifier.ForDialect("postgres"), compare.Coverage{}, nil)
 
 	c.Assert(diff.RLSPoliciesAdded, qt.DeepEquals, []difftypes.RLSPolicyRef{
 		{PolicyName: "alpha_policy", TableName: "alpha_orders"},
