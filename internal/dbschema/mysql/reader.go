@@ -285,7 +285,7 @@ func applyMySQLColumnMetadata(
 	extra,
 	generatedExpression sql.NullString,
 ) {
-	if defaultValue.Valid {
+	if defaultValue.Valid && !isAbsentColumnDefault(defaultValue.String) {
 		defaultSQL := normalizeMySQLColumnDefault(col, defaultValue.String)
 		col.ColumnDefault = &defaultSQL
 	}
@@ -321,6 +321,35 @@ func applyMySQLColumnMetadata(
 		expression := generatedExpression.String
 		col.GeneratedExpression = &expression
 	}
+}
+
+// isAbsentColumnDefault reports whether the catalog's answer means "no default"
+// rather than a default of something.
+//
+// The two engines answer differently for a column that has none, and the
+// difference is not visible until a description is replayed. Measured on
+// MariaDB 12.3 and MySQL 26.7, the same table:
+//
+//	-- MariaDB                            -- MySQL
+//	 COLUMN_NAME | COLUMN_DEFAULT          COLUMN_NAME | COLUMN_DEFAULT
+//	 bio         | [NULL]  <- the TEXT     bio         | <SQL NULL>
+//	 full_name   | [NULL]  <- the TEXT     full_name   | <SQL NULL>
+//
+// A default recorded from MariaDB's answer is rendered as `DEFAULT NULL`, which
+// an ordinary column tolerates and a GENERATED column does not: the server
+// refuses the pair with `Error 1064 ... near 'DEFAULT NULL'`, so no MariaDB
+// database holding a generated column could be replayed at all. --dry-run
+// against the source said `Schema is synced` throughout, because both sides of
+// that comparison read through here (stokaro/ptah#2128).
+//
+// The bare form is what is folded, and the quotes are what make that safe: a
+// default of the STRING "NULL" is stored as `'NULL'` and stays a default. For a
+// nullable column `DEFAULT NULL` and no default are the same thing, and MariaDB
+// does not store a NULL default for a NOT NULL column, so nothing else can
+// reach this. It is also the compatible answer -- the pinned binary writes no
+// default for either column above.
+func isAbsentColumnDefault(value string) bool {
+	return strings.EqualFold(strings.TrimSpace(value), "NULL")
 }
 
 func normalizeMySQLColumnDefault(col *types.DBColumn, defaultValue string) string {
