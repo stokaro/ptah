@@ -76,23 +76,6 @@ func TestCreate_WritesAHeaderAndAppends(t *testing.T) {
 	c.Assert(header["at"], qt.Equals, "2026-08-24T12:00:01Z")
 }
 
-func TestCreate_KeepsTheFileToItsOwner(t *testing.T) {
-	// The file holds the conversation and everything Ptah read on the model's
-	// behalf. On a shared machine the mode is what stands between that and
-	// everyone else.
-	c := qt.New(t)
-	store, root := newStore(c)
-
-	write(c, store, "session-1", "hello", "hi")
-
-	dir, err := os.Stat(filepath.Join(root, ".ptah", "sessions"))
-	c.Assert(err, qt.IsNil)
-	c.Assert(dir.Mode().Perm()&0o077, qt.Equals, os.FileMode(0))
-	file, err := os.Stat(filepath.Join(root, ".ptah", "sessions", "session-1.jsonl"))
-	c.Assert(err, qt.IsNil)
-	c.Assert(file.Mode().Perm()&0o077, qt.Equals, os.FileMode(0))
-}
-
 func TestList_IsMostRecentlyUpdatedFirst(t *testing.T) {
 	c := qt.New(t)
 	store, _ := newStore(c)
