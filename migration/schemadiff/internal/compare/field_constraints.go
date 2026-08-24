@@ -43,7 +43,7 @@ func buildTablePrimaryKeyColumnSets(
 func isFieldLevelConstraint(
 	dbConstraint types.DBConstraint,
 	generated *goschema.Database,
-	synthesizedFKKeys map[tableMemberKey]struct{},
+	synthesizedFKKeys map[tableConstraintKey]struct{},
 	semantics identifier.Semantics,
 ) bool {
 	// Create a map of table.column -> field for quick lookup
@@ -104,15 +104,15 @@ func isFieldLevelConstraint(
 		// the constraint name rather than the column, because the synthesized
 		// name is keyed on table.constraint_name and getConstraintColumn does
 		// not always resolve the FK column.
-		key := newTableMemberKey(dbConstraint.QualifiedTableName(), dbConstraint.Name, semantics)
-		if _, synthesized := synthesizedFKKeys[key]; synthesized {
+		constraintKey := newTableConstraintKey(dbConstraint.QualifiedTableName(), dbConstraint.Name, semantics)
+		if _, synthesized := synthesizedFKKeys[constraintKey]; synthesized {
 			return false
 		}
 		// Check if there's a field with foreign key reference for this column.
 		// No synthesized counterpart (e.g. the column is not yet in the
 		// database): keep the historical behavior and treat it as field-level
 		// so it is owned by the column/table lifecycle.
-		key = newTableMemberKey(dbConstraint.QualifiedTableName(), getConstraintColumn(dbConstraint), semantics)
+		key := newTableMemberKey(dbConstraint.QualifiedTableName(), getConstraintColumn(dbConstraint), semantics)
 		if field, exists := fieldMap[key]; exists && field.Foreign != "" {
 			return true
 		}

@@ -203,7 +203,7 @@ func synthesizeFieldLevelForeignKeyConstraints(
 	//
 	// dedupe guards against a host that both declares a field directly and
 	// inherits one of the same (table, constraint name) from a mixin.
-	dedupe := make(map[tableMemberKey]struct{})
+	dedupe := make(map[tableConstraintKey]struct{})
 	var synthesized []goschema.Constraint
 	for _, f := range resolveTableFields(generated) {
 		if f.Foreign == "" {
@@ -233,7 +233,7 @@ func synthesizeFieldLevelForeignKeyConstraints(
 		if fkRef == nil {
 			continue
 		}
-		dedupeKey := newTableMemberKey(tableName, name, semantics)
+		dedupeKey := newTableConstraintKey(tableName, name, semantics)
 		if _, seen := dedupe[dedupeKey]; seen {
 			continue
 		}

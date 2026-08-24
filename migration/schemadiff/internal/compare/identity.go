@@ -48,6 +48,43 @@ func newTableMemberKey(table, member string, semantics identifier.Semantics) tab
 	}
 }
 
+// tableConstraintKey is what makes two constraint declarations the same
+// constraint. It is a separate type from [tableMemberKey] rather than a second
+// constructor for it, so the compiler -- not a reader -- finds every map and
+// every lookup that has to agree about which fold applies.
+type tableConstraintKey struct {
+	table  tableIdentity
+	member string
+}
+
+// newTableConstraintKey folds a constraint name the way the engine resolves
+// one, which is NOT the way it resolves a column.
+//
+// The two rules disagree on exactly the two dialects where it matters.
+// Measured on MySQL 8.4 and MariaDB 11.4: a constraint created as `FK_A` is
+// reported by the catalog as `FK_A`, is dropped by `DROP FOREIGN KEY fk_a`, and
+// a second constraint named `uq_a` beside an existing `UQ_A` is refused with
+// `Duplicate key name 'uq_a'`. One object, one namespace entry, resolved
+// case-insensitively.
+//
+// Keyed by [identifier.Semantics.ColumnIdentityKey] -- the rule for a COLUMN --
+// those two spellings were two objects, so the comparison planned a drop and an
+// add for a constraint nobody had touched, on every run (stokaro/ptah#2028).
+// IndexIdentityKey is the rule the planners and
+// [objectidentity.Builder.ConstraintParts] already use, so this is the
+// comparator joining them rather than a third answer.
+//
+// PostgreSQL is the control and keeps both names: measured on 17.11, `"UQ_A"`
+// and `uq_a` coexist on one table, because an upper-case name in that catalog
+// was created quoted. Its ColumnIdentityKey and IndexIdentityKey agree, so
+// nothing about that dialect changes here.
+func newTableConstraintKey(table, constraint string, semantics identifier.Semantics) tableConstraintKey {
+	return tableConstraintKey{
+		table:  newQualifiedTableIdentity(table, semantics),
+		member: semantics.IndexIdentityKey(constraint),
+	}
+}
+
 // newQualifiedTableIdentity normalizes a table name written as one string,
 // which is how both the desired schema and the database report it.
 //

@@ -95,10 +95,10 @@ func ConstraintsWithSemantics(
 	}
 
 	// Create maps for detailed constraint comparison
-	genConstraints := make(map[tableMemberKey]goschema.Constraint)
+	genConstraints := make(map[tableConstraintKey]goschema.Constraint)
 	for _, constraint := range generated.Constraints {
 		constraint.Table = generatedConstraintTableName(constraint, generated.Tables)
-		key := newTableMemberKey(constraint.Table, constraint.Name, semantics)
+		key := newTableConstraintKey(constraint.Table, constraint.Name, semantics)
 		genConstraints[key] = constraint
 	}
 
@@ -110,7 +110,7 @@ func ConstraintsWithSemantics(
 	// double-emitting an ALTER TABLE ADD CONSTRAINT would fail because the
 	// constraint is created in the same migration step.
 	for _, synthesized := range synthesizeFieldLevelCheckConstraints(generated, database, semantics) {
-		key := newTableMemberKey(synthesized.Table, synthesized.Name, semantics)
+		key := newTableConstraintKey(synthesized.Table, synthesized.Name, semantics)
 		// Don't clobber an explicit table-level constraint that happens to
 		// share the same name.
 		if _, exists := genConstraints[key]; !exists {
@@ -119,7 +119,7 @@ func ConstraintsWithSemantics(
 	}
 
 	for _, synthesized := range synthesizeTablePrimaryKeyConstraints(generated, database, dialect, semantics) {
-		key := newTableMemberKey(synthesized.Table, synthesized.Name, semantics)
+		key := newTableConstraintKey(synthesized.Table, synthesized.Name, semantics)
 		// Don't clobber an explicit table-level constraint that happens to
 		// share the same name.
 		if _, exists := genConstraints[key]; !exists {
@@ -139,9 +139,9 @@ func ConstraintsWithSemantics(
 	// field-level FK so isFieldLevelConstraint can let the matching DB-side FK
 	// through to the comparison instead of filtering it out — otherwise
 	// foreignKeyConstraintChanged would never run for field-level FKs.
-	synthesizedFKKeys := make(map[tableMemberKey]struct{})
+	synthesizedFKKeys := make(map[tableConstraintKey]struct{})
 	for _, synthesized := range synthesizeFieldLevelForeignKeyConstraints(generated, database, semantics) {
-		key := newTableMemberKey(synthesized.Table, synthesized.Name, semantics)
+		key := newTableConstraintKey(synthesized.Table, synthesized.Name, semantics)
 		synthesizedFKKeys[key] = struct{}{}
 		// Don't clobber an explicit table-level constraint that happens to
 		// share the same name.
@@ -234,18 +234,18 @@ func ConstraintsWithSemantics(
 func collectDatabaseConstraints(
 	generated *goschema.Database,
 	database *types.DBSchema,
-	genConstraints map[tableMemberKey]goschema.Constraint,
-	synthesizedFKKeys map[tableMemberKey]struct{},
+	genConstraints map[tableConstraintKey]goschema.Constraint,
+	synthesizedFKKeys map[tableConstraintKey]struct{},
 	dialect string,
 	semantics identifier.Semantics,
-) map[tableMemberKey]types.DBConstraint {
+) map[tableConstraintKey]types.DBConstraint {
 	declaredIndexes := generatedIndexIdentities(generated, semantics)
-	dbConstraints := make(map[tableMemberKey]types.DBConstraint, len(database.Constraints))
+	dbConstraints := make(map[tableConstraintKey]types.DBConstraint, len(database.Constraints))
 	for _, constraint := range database.Constraints {
 		if isFieldLevelConstraint(constraint, generated, synthesizedFKKeys, semantics) {
 			continue
 		}
-		key := newTableMemberKey(constraint.QualifiedTableName(), constraint.Name, semantics)
+		key := newTableConstraintKey(constraint.QualifiedTableName(), constraint.Name, semantics)
 		if _, declaredAsConstraint := genConstraints[key]; !declaredAsConstraint &&
 			uniqueConstraintOwnedByDeclaredIndex(
 				constraint,
