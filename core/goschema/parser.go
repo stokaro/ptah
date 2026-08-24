@@ -599,6 +599,7 @@ type schemaParseState struct {
 	rlsPolicies           []RLSPolicy
 	rlsEnabledTables      []RLSEnabledTable
 	hypertables           []Hypertable
+	continuousAggregates  []ContinuousAggregate
 	roles                 []Role
 	grants                []Grant
 	managedData           []ManagedData
@@ -701,26 +702,27 @@ type sharedDirectiveParser func(*schemaParseState, *ast.Comment, string) error
 // belongs to which parser and nothing else, and a new object family adds one
 // line instead of pushing the function past the complexity gate.
 var sharedDirectiveParsers = map[string]sharedDirectiveParser{
-	"ptah:schema:constraint":       (*schemaParseState).parseConstraintComment,
-	"ptah:schema:enum":             ignoringStruct((*schemaParseState).parseEnumComment),
-	"ptah:schema:extension":        ignoringStruct((*schemaParseState).parseExtensionComment),
-	"ptah:schema:function":         (*schemaParseState).parseFunctionComment,
-	"ptah:schema:procedure":        (*schemaParseState).parseProcedureComment,
-	"ptah:schema:sequence":         (*schemaParseState).parseSequenceComment,
-	"ptah:schema:domain":           (*schemaParseState).parseDomainComment,
-	"ptah:schema:composite":        (*schemaParseState).parseCompositeComment,
-	"ptah:schema:range":            (*schemaParseState).parseRangeComment,
-	"ptah:schema:view":             (*schemaParseState).parseViewComment,
-	"ptah:schema:matview":          (*schemaParseState).parseMaterializedViewComment,
-	"ptah:schema:hypertable":       (*schemaParseState).parseHypertableComment,
-	"ptah:schema:synonym":          (*schemaParseState).parseSynonymComment,
-	"ptah:schema:extendedproperty": (*schemaParseState).parseExtendedPropertyComment,
-	"ptah:schema:trigger":          (*schemaParseState).parseTriggerComment,
-	"ptah:schema:rls:policy":       (*schemaParseState).parseRLSPolicyComment,
-	"ptah:schema:rls:enable":       (*schemaParseState).parseRLSEnableComment,
-	"ptah:schema:role":             (*schemaParseState).parseRoleComment,
-	"ptah:schema:grant":            (*schemaParseState).parseGrantComment,
-	"ptah:schema:data":             (*schemaParseState).parseManagedDataComment,
+	"ptah:schema:constraint":          (*schemaParseState).parseConstraintComment,
+	"ptah:schema:enum":                ignoringStruct((*schemaParseState).parseEnumComment),
+	"ptah:schema:extension":           ignoringStruct((*schemaParseState).parseExtensionComment),
+	"ptah:schema:function":            (*schemaParseState).parseFunctionComment,
+	"ptah:schema:procedure":           (*schemaParseState).parseProcedureComment,
+	"ptah:schema:sequence":            (*schemaParseState).parseSequenceComment,
+	"ptah:schema:domain":              (*schemaParseState).parseDomainComment,
+	"ptah:schema:composite":           (*schemaParseState).parseCompositeComment,
+	"ptah:schema:range":               (*schemaParseState).parseRangeComment,
+	"ptah:schema:view":                (*schemaParseState).parseViewComment,
+	"ptah:schema:matview":             (*schemaParseState).parseMaterializedViewComment,
+	"ptah:schema:hypertable":          (*schemaParseState).parseHypertableComment,
+	"ptah:schema:continuousaggregate": (*schemaParseState).parseContinuousAggregateComment,
+	"ptah:schema:synonym":             (*schemaParseState).parseSynonymComment,
+	"ptah:schema:extendedproperty":    (*schemaParseState).parseExtendedPropertyComment,
+	"ptah:schema:trigger":             (*schemaParseState).parseTriggerComment,
+	"ptah:schema:rls:policy":          (*schemaParseState).parseRLSPolicyComment,
+	"ptah:schema:rls:enable":          (*schemaParseState).parseRLSEnableComment,
+	"ptah:schema:role":                (*schemaParseState).parseRoleComment,
+	"ptah:schema:grant":               (*schemaParseState).parseGrantComment,
+	"ptah:schema:data":                (*schemaParseState).parseManagedDataComment,
 }
 
 // ignoringStruct adapts a parser that does not need the owning struct's name.
@@ -852,31 +854,32 @@ func parseFileAST(filename string, fset *token.FileSet, f *ast.File) (Database, 
 	})
 
 	result := Database{
-		Schemas:            state.schemas,
-		Tables:             state.tableDirectives,
-		Fields:             state.schemaFields,
-		Indexes:            state.schemaIndexes,
-		Constraints:        state.schemaConstraints,
-		Enums:              enums,
-		EmbeddedFields:     state.embeddedFields,
-		Extensions:         state.extensions,
-		Functions:          state.functions,
-		Sequences:          state.sequences,
-		Domains:            state.domains,
-		CompositeTypes:     state.compositeTypes,
-		Ranges:             state.ranges,
-		Views:              state.views,
-		Synonyms:           state.synonyms,
-		ExtendedProperties: state.extendedProperties,
-		MaterializedViews:  state.materializedViews,
-		Triggers:           state.triggers,
-		RLSPolicies:        state.rlsPolicies,
-		RLSEnabledTables:   state.rlsEnabledTables,
-		Hypertables:        state.hypertables,
-		Roles:              state.roles,
-		Grants:             state.grants,
-		ManagedData:        state.managedData,
-		Dependencies:       make(map[string][]string),
+		Schemas:              state.schemas,
+		Tables:               state.tableDirectives,
+		Fields:               state.schemaFields,
+		Indexes:              state.schemaIndexes,
+		Constraints:          state.schemaConstraints,
+		Enums:                enums,
+		EmbeddedFields:       state.embeddedFields,
+		Extensions:           state.extensions,
+		Functions:            state.functions,
+		Sequences:            state.sequences,
+		Domains:              state.domains,
+		CompositeTypes:       state.compositeTypes,
+		Ranges:               state.ranges,
+		Views:                state.views,
+		Synonyms:             state.synonyms,
+		ExtendedProperties:   state.extendedProperties,
+		MaterializedViews:    state.materializedViews,
+		Triggers:             state.triggers,
+		RLSPolicies:          state.rlsPolicies,
+		RLSEnabledTables:     state.rlsEnabledTables,
+		Hypertables:          state.hypertables,
+		ContinuousAggregates: state.continuousAggregates,
+		Roles:                state.roles,
+		Grants:               state.grants,
+		ManagedData:          state.managedData,
+		Dependencies:         make(map[string][]string),
 	}
 	normalizeTableScopedNames(&result)
 	buildDependencyGraph(&result)
@@ -1460,6 +1463,50 @@ func (s *schemaParseState) parseHypertableComment(comment *ast.Comment, structNa
 		Comment:       kv["comment"],
 	})
 	return nil
+}
+
+// parseContinuousAggregateComment reads a TimescaleDB continuous aggregate
+// declaration.
+//
+// The body is kept as it was written. The catalog stores a rewritten SELECT,
+// and the comparison puts the declaration through the same rewrite rather than
+// folding either text -- so a declaration normalized here would be normalized
+// twice and match nothing.
+//
+// There is no dialect scope here, for the reason
+// [schemaParseState.parseSynonymComment] gives.
+func (s *schemaParseState) parseContinuousAggregateComment(
+	comment *ast.Comment,
+	structName string,
+) error {
+	kv := parseutils.ParseKeyValueComment(comment.Text)
+	ctx := s.annotationContext(comment, "//ptah:schema:continuousaggregate", structName)
+	if err := validateAttributes(kv, ctx); err != nil {
+		return err
+	}
+	if err := requireAttributes(kv, ctx); err != nil {
+		return err
+	}
+	s.continuousAggregates = append(s.continuousAggregates, ContinuousAggregate{
+		StructName:       structName,
+		Name:             kv["name"],
+		Schema:           kv["schema"],
+		Body:             kv["body"],
+		MaterializedOnly: optionalBoolAttribute(kv, "materialized_only"),
+		Comment:          kv["comment"],
+	})
+	return nil
+}
+
+// optionalBoolAttribute answers nil for an attribute the annotation did not
+// write, so a caller can tell "unset" from "set to false".
+func optionalBoolAttribute(kv map[string]string, name string) *bool {
+	written, present := kv[name]
+	if !present {
+		return nil
+	}
+	value := written == "true"
+	return &value
 }
 
 // parseSynonymComment reads a SQL Server synonym declaration.

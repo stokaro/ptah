@@ -182,6 +182,10 @@ func measuredLines() map[string]measuredLine {
 				capability.XMLType:                            {true, "ACCEPTED CREATE TABLE xmlt (c XML)"},
 			},
 			carried: map[capability.Capability]string{
+				capability.ContinuousAggregates: "this run predates the key and sent no CREATE MATERIALIZED VIEW " +
+					"WITH (timescaledb.continuous). The key names a TimescaleDB object for the reason " +
+					"Hypertables does: what decides it is `pg_extension` on the connection, not the server " +
+					"banner these lines resolve from (stokaro/ptah#1026)",
 				capability.Hypertables: "this run predates the key and sent no create_hypertable. " +
 					"The key names a TimescaleDB object, and TimescaleDB is an extension rather than a version line -- " +
 					"what decides it is `pg_extension` on the connection, not the server banner these lines resolve from (stokaro/ptah#1026)",
@@ -249,6 +253,10 @@ func measuredLines() map[string]measuredLine {
 				capability.XMLType:                            {false, "REFUSED CREATE TABLE xmlt (c XML) -> Error 1064 (42000)"},
 			},
 			carried: map[capability.Capability]string{
+				capability.ContinuousAggregates: "this run predates the key and sent no CREATE MATERIALIZED VIEW " +
+					"WITH (timescaledb.continuous). The key names a TimescaleDB object for the reason " +
+					"Hypertables does: what decides it is `pg_extension` on the connection, not the server " +
+					"banner these lines resolve from (stokaro/ptah#1026)",
 				capability.Hypertables: "this run predates the key and sent no create_hypertable. " +
 					"The key names a TimescaleDB object, and TimescaleDB is an extension rather than a version line -- " +
 					"what decides it is `pg_extension` on the connection, not the server banner these lines resolve from (stokaro/ptah#1026)",
@@ -315,6 +323,10 @@ func measuredLines() map[string]measuredLine {
 				capability.XMLType:                            {false, "REFUSED CREATE TABLE xmlt (c XML) -> Error 4161 (HY000): Unknown data type: 'XML'"},
 			},
 			carried: map[capability.Capability]string{
+				capability.ContinuousAggregates: "this run predates the key and sent no CREATE MATERIALIZED VIEW " +
+					"WITH (timescaledb.continuous). The key names a TimescaleDB object for the reason " +
+					"Hypertables does: what decides it is `pg_extension` on the connection, not the server " +
+					"banner these lines resolve from (stokaro/ptah#1026)",
 				capability.Hypertables: "this run predates the key and sent no create_hypertable. " +
 					"The key names a TimescaleDB object, and TimescaleDB is an extension rather than a version line -- " +
 					"what decides it is `pg_extension` on the connection, not the server banner these lines resolve from (stokaro/ptah#1026)",

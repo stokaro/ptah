@@ -313,25 +313,26 @@ func (p *parser) parseBody(body *hclsyntax.Body) error {
 // each carry a measurement of the pinned Atlas community binary, and eighteen
 // two-line arms above them buried it.
 var objectBlockParsers = map[string]func(*parser, *hclsyntax.Block) error{
-	"schema":            (*parser).parseSchema,
-	"enum":              (*parser).parseEnum,
-	"sequence":          (*parser).parseSequence,
-	"domain":            (*parser).parseDomain,
-	"composite":         (*parser).parseComposite,
-	"range":             (*parser).parseRange,
-	"hypertable":        (*parser).parseHypertable,
-	"synonym":           (*parser).parseSynonym,
-	"extended_property": (*parser).parseExtendedProperty,
-	"table":             (*parser).parseTable,
-	"extension":         (*parser).parseExtension,
-	"function":          (*parser).parseFunction,
-	"view":              (*parser).parseView,
-	"materialized":      (*parser).parseMaterializedView,
-	"trigger":           (*parser).parseTrigger,
-	"policy":            (*parser).parsePolicy,
-	"role":              (*parser).parseRole,
-	"permission":        (*parser).parsePermission,
-	"data":              (*parser).parseManagedData,
+	"schema":               (*parser).parseSchema,
+	"enum":                 (*parser).parseEnum,
+	"sequence":             (*parser).parseSequence,
+	"domain":               (*parser).parseDomain,
+	"composite":            (*parser).parseComposite,
+	"range":                (*parser).parseRange,
+	"hypertable":           (*parser).parseHypertable,
+	"continuous_aggregate": (*parser).parseContinuousAggregate,
+	"synonym":              (*parser).parseSynonym,
+	"extended_property":    (*parser).parseExtendedProperty,
+	"table":                (*parser).parseTable,
+	"extension":            (*parser).parseExtension,
+	"function":             (*parser).parseFunction,
+	"view":                 (*parser).parseView,
+	"materialized":         (*parser).parseMaterializedView,
+	"trigger":              (*parser).parseTrigger,
+	"policy":               (*parser).parsePolicy,
+	"role":                 (*parser).parseRole,
+	"permission":           (*parser).parsePermission,
+	"data":                 (*parser).parseManagedData,
 }
 
 func (p *parser) parseTopLevelBlock(block *hclsyntax.Block) error {
@@ -1958,6 +1959,20 @@ func (p *parser) optionalBool(attr *hclsyntax.Attribute, fallback bool) bool {
 		return fallback
 	}
 	return value.True()
+}
+
+// optionalBoolPtr answers nil for an attribute the document did not write, so
+// a caller can tell "unset" from "set to false".
+func (p *parser) optionalBoolPtr(attr *hclsyntax.Attribute) *bool {
+	if attr == nil {
+		return nil
+	}
+	value, diags := attr.Expr.Value(p.ctx)
+	if diags.HasErrors() || value.Type() != cty.Bool {
+		return nil
+	}
+	written := value.True()
+	return &written
 }
 
 func (p *parser) optionalTableBool(block *hclsyntax.Block, name string, fallback bool) (bool, error) {

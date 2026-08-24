@@ -231,6 +231,22 @@ func (m *MockVisitor) VisitCreateHypertable(node *ast.CreateHypertableNode) erro
 	return nil
 }
 
+func (m *MockVisitor) VisitCreateContinuousAggregate(node *ast.CreateContinuousAggregateNode) error {
+	m.VisitedNodes = append(m.VisitedNodes, "CreateContinuousAggregate:"+node.Name)
+	if m.ReturnError {
+		return errors.New("mock error")
+	}
+	return nil
+}
+
+func (m *MockVisitor) VisitDropContinuousAggregate(node *ast.DropContinuousAggregateNode) error {
+	m.VisitedNodes = append(m.VisitedNodes, "DropContinuousAggregate:"+node.Name)
+	if m.ReturnError {
+		return errors.New("mock error")
+	}
+	return nil
+}
+
 func (m *MockVisitor) VisitDropSynonym(node *ast.DropSynonymNode) error {
 	m.VisitedNodes = append(m.VisitedNodes, "DropSynonym:"+node.Name)
 	if m.ReturnError {

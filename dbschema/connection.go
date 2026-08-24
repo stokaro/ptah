@@ -312,7 +312,8 @@ func getDatabaseInfoWithCapabilities(
 // TimescaleDB is the case: it is PostgreSQL with an extension installed, not a
 // dialect or a version of its own, and it puts no token in `version()` -- so
 // nothing the resolver reads can see it. What decides [capability.Hypertables]
-// is `pg_extension`, on the connection (stokaro/ptah#1026).
+// and [capability.ContinuousAggregates] is `pg_extension`, on the connection
+// (stokaro/ptah#1026).
 //
 // It is asked only of PostgreSQL itself. CockroachDB, YugabyteDB and the
 // Spanner PostgreSQL interface share the wire and not the extension mechanism,
@@ -343,7 +344,7 @@ func refineExtensionCapabilities(
 	if !installed {
 		return caps
 	}
-	return caps.With(capability.Hypertables, true)
+	return caps.With(capability.Hypertables, true).With(capability.ContinuousAggregates, true)
 }
 
 // reportCapabilityResolution records how the live server version was mapped

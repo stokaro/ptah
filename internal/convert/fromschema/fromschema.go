@@ -1792,6 +1792,32 @@ func appendHypertableStatements(statements *ast.StatementList, hypertables []gos
 	}
 }
 
+// FromContinuousAggregate converts a goschema.ContinuousAggregate into the
+// statement that creates one.
+//
+// WITH NO DATA is the default the node carries, and it is deliberate: creating
+// the aggregate with data materializes the whole history of the hypertable
+// underneath it, which is an unbounded amount of work a schema change should
+// not start on its own. A refresh is an operation someone runs, not a side
+// effect of CREATE.
+func FromContinuousAggregate(aggregate goschema.ContinuousAggregate) *ast.CreateContinuousAggregateNode {
+	return ast.NewCreateContinuousAggregate(aggregate.Name, aggregate.Body).
+		SetSchema(aggregate.Schema).
+		SetMaterializedOnly(aggregate.MaterializedOnly).
+		SetComment(aggregate.Comment)
+}
+
+// appendContinuousAggregateStatements adds one CREATE MATERIALIZED VIEW per
+// declared aggregate.
+func appendContinuousAggregateStatements(
+	statements *ast.StatementList,
+	aggregates []goschema.ContinuousAggregate,
+) {
+	for _, aggregate := range aggregates {
+		statements.Statements = append(statements.Statements, FromContinuousAggregate(aggregate))
+	}
+}
+
 // FromExtendedProperty converts a goschema.ExtendedProperty into the node that
 // writes it.
 //
@@ -2282,6 +2308,12 @@ func FromDatabase(database goschema.Database, targetPlatform string) *ast.Statem
 	// that already holds rows -- `table "loaded" is not empty` -- and would
 	// then leave the table ordinary.
 	appendHypertableStatements(statements, database.Hypertables)
+
+	// 8b3. A continuous aggregate selects from a hypertable, and TimescaleDB
+	// checks that: measured on 2.29.2, WITH (timescaledb.continuous) over an
+	// ordinary table answers `invalid continuous aggregate view`. It therefore
+	// comes after the create_hypertable calls above rather than with the views.
+	appendContinuousAggregateStatements(statements, database.ContinuousAggregates)
 
 	// 8c. Extended properties come after every object one can hang off.
 	// sp_addextendedproperty resolves @level1name through the catalog and

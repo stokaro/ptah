@@ -46,19 +46,20 @@ func TestAFormatThatCannotExpressAKindSaysSoAndSaysWhy(t *testing.T) {
 			file:     "schema.sql",
 			contents: "CREATE TABLE users (id INTEGER PRIMARY KEY);\n",
 			want: unsupportedRecords(
-				coverage.ExtendedProperty, coverage.Hypertable, coverage.Synonym),
+				coverage.ContinuousAggregate, coverage.ExtendedProperty,
+				coverage.Hypertable, coverage.Synonym),
 		},
 		{
 			// YAML expresses the fewest families of the three, and the row is
 			// what keeps the HCL narrowing from being read as "the loader no
 			// longer records these kinds anywhere".
-			name:     "YAML cannot name six families",
+			name:     "YAML cannot name nine families",
 			file:     "schema.yaml",
 			contents: "tables:\n  users:\n    fields:\n      id:\n        type: INTEGER\n",
 			want: unsupportedRecords(
-				coverage.Composite, coverage.Domain, coverage.ExtendedProperty,
-				coverage.Hypertable, coverage.Range, coverage.Sequence, coverage.Synonym,
-				coverage.VirtualTable),
+				coverage.Composite, coverage.ContinuousAggregate, coverage.Domain,
+				coverage.ExtendedProperty, coverage.Hypertable, coverage.Range,
+				coverage.Sequence, coverage.Synonym, coverage.VirtualTable),
 		},
 	}
 

@@ -1,0 +1,174 @@
+package compare
+
+import (
+	"sort"
+	"strings"
+
+	"go.5x5.cz/ptah/config"
+	"go.5x5.cz/ptah/core/coverage"
+	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/platform/identifier"
+	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/objectidentity"
+	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
+)
+
+// ContinuousAggregates compares declared TimescaleDB continuous aggregates
+// against the ones the database reports.
+//
+// The identity is the qualified name, which is also the view name: an aggregate
+// occupies the same namespace as a view, and two objects of the two kinds
+// cannot share a name.
+//
+// All three directions are planned, which is what separates this family from
+// [Hypertables]. A removal is DROP MATERIALIZED VIEW -- measured on 2.29.2,
+// DROP VIEW answers `cannot drop continuous aggregate using DROP VIEW` -- and a
+// modification is a drop followed by a create, because there is no CREATE OR
+// REPLACE for one: `syntax error at or near "MATERIALIZED"`.
+//
+// The body is compared only when a resolver put the declaration through the
+// server, and bodies carries the answer. TimescaleDB stores a rewritten
+// definition, so the declared text and the catalog's text differ for every
+// aggregate that has not changed at all; comparing them directly would plan a
+// drop and a create on every run, and each one discards the materialized
+// history the aggregate exists to keep. Without a resolver the body stays
+// uncompared and only the option is (stokaro/ptah#1026).
+func ContinuousAggregates(
+	generated *goschema.Database,
+	database *types.DBSchema,
+	diff *difftypes.SchemaDiff,
+	cov Coverage,
+	bodies map[string]config.ContinuousAggregateBody,
+	semantics identifier.Semantics,
+) {
+	declared := make(map[objectIdentity]goschema.ContinuousAggregate, len(generated.ContinuousAggregates))
+	for _, aggregate := range generated.ContinuousAggregates {
+		declared[continuousAggregateIdentity(aggregate.Schema, aggregate.Name, semantics)] = aggregate
+	}
+	live := make(map[objectIdentity]types.DBContinuousAggregate, len(database.ContinuousAggregates))
+	for _, aggregate := range database.ContinuousAggregates {
+		live[continuousAggregateIdentity(aggregate.Schema, aggregate.Name, semantics)] = aggregate
+	}
+
+	for key, aggregate := range declared {
+		reported, exists := live[key]
+		if !exists {
+			diff.ContinuousAggregatesAdded = append(
+				diff.ContinuousAggregatesAdded, aggregate.QualifiedName())
+			continue
+		}
+		if changed := continuousAggregateChange(aggregate, reported, bodies); changed != nil {
+			diff.ContinuousAggregatesModified = append(diff.ContinuousAggregatesModified, *changed)
+		}
+	}
+
+	for key, reported := range live {
+		if _, ok := declared[key]; ok {
+			continue
+		}
+		// A description that could not express a continuous aggregate has not
+		// asked for one to be dropped. The hypertable underneath it is in the
+		// document, so the silence reads as a complete description with one
+		// object missing -- and the drop it would plan discards a
+		// materialization no rollback rebuilds.
+		name := reported.QualifiedName()
+		if !cov.PlansRemoval(coverage.ContinuousAggregate, reported.Schema, reported.Name, name) {
+			continue
+		}
+		diff.ContinuousAggregatesRemoved = append(diff.ContinuousAggregatesRemoved, name)
+	}
+
+	sort.Strings(diff.ContinuousAggregatesAdded)
+	sort.Strings(diff.ContinuousAggregatesRemoved)
+	sort.Slice(diff.ContinuousAggregatesModified, func(i, j int) bool {
+		return diff.ContinuousAggregatesModified[i].Name < diff.ContinuousAggregatesModified[j].Name
+	})
+}
+
+// continuousAggregateChange reports how a declaration differs from the catalog,
+// or nil when it does not.
+func continuousAggregateChange(
+	declared goschema.ContinuousAggregate,
+	reported types.DBContinuousAggregate,
+	bodies map[string]config.ContinuousAggregateBody,
+) *difftypes.ContinuousAggregateDiff {
+	sameOption := declaredOptionMatches(declared.MaterializedOnly, reported.MaterializedOnly)
+	sameBody, comparable := continuousAggregateBodiesAgree(declared, reported, bodies)
+	if sameOption && (!comparable || sameBody) {
+		return nil
+	}
+	return &difftypes.ContinuousAggregateDiff{
+		Name:                declared.QualifiedName(),
+		OldBody:             reported.Definition,
+		NewBody:             declared.Body,
+		OldMaterializedOnly: reported.MaterializedOnly,
+		NewMaterializedOnly: declaredMaterializedOnly(declared.MaterializedOnly, reported.MaterializedOnly),
+	}
+}
+
+// declaredOptionMatches reports whether the declaration asks for what the
+// catalog holds.
+//
+// A declaration that did not write the option always matches. It takes the
+// server's own default, and the default is not a constant -- measured on
+// 2.29.2, an aggregate created without `timescaledb.materialized_only` is
+// reported with it TRUE -- so reading an unwritten option as false would report
+// a change on every run for a declaration that asked for whatever the server
+// chose. It is the rule an omitted chunk interval takes in [Hypertables].
+func declaredOptionMatches(declared *bool, reported bool) bool {
+	return declared == nil || *declared == reported
+}
+
+// declaredMaterializedOnly is what the declaration asks for, which for one that
+// did not choose is what the server already has.
+func declaredMaterializedOnly(declared *bool, reported bool) bool {
+	if declared == nil {
+		return reported
+	}
+	return *declared
+}
+
+// continuousAggregateBodiesAgree reports whether the two bodies say the same
+// thing, and whether that question could be answered at all.
+//
+// It is answerable only for a declaration a server normalized. The second
+// return is what keeps an unanswerable question from being answered "changed":
+// a caller with no connection compares the option and leaves the body alone.
+func continuousAggregateBodiesAgree(
+	declared goschema.ContinuousAggregate,
+	reported types.DBContinuousAggregate,
+	bodies map[string]config.ContinuousAggregateBody,
+) (agree, comparable bool) {
+	resolved, ok := bodies[declared.QualifiedName()]
+	if !ok || !resolved.Resolved {
+		return false, false
+	}
+	return foldContinuousAggregateBody(resolved.Body) ==
+		foldContinuousAggregateBody(reported.Definition), true
+}
+
+// foldContinuousAggregateBody trims what the catalog adds around a definition
+// it returns.
+//
+// Both sides of the comparison come from the same catalog column, so this folds
+// nothing that distinguishes two declarations: the trailing semicolon and the
+// surrounding whitespace are the catalog's punctuation, not the author's.
+func foldContinuousAggregateBody(body string) string {
+	trimmed := strings.TrimSpace(body)
+	return strings.TrimSpace(strings.TrimSuffix(trimmed, ";"))
+}
+
+// continuousAggregateIdentity is what makes two aggregates the same one.
+//
+// It resolves an empty schema to the connection's default, which is not a
+// nicety: a read scoped to one schema reports the aggregate unqualified, and a
+// document that names `schema.public` reports it qualified. Comparing the two
+// strings reported an addition AND a removal for one unchanged aggregate, and
+// the plan created it before dropping it -- leaving the database without the
+// object it started with.
+func continuousAggregateIdentity(
+	schema, name string,
+	semantics identifier.Semantics,
+) objectIdentity {
+	return newObjectIdentity(objectidentity.KindContinuousAggregate, schema, name, semantics)
+}

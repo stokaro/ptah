@@ -300,6 +300,26 @@ type SchemaDiff struct {
 	// dimension is not a statement either.
 	HypertablesModified []HypertableDiff `json:"hypertables_modified"`
 
+	// ContinuousAggregatesAdded names the continuous aggregates a declaration
+	// asks for and the database does not report.
+	ContinuousAggregatesAdded []string `json:"continuous_aggregates_added"`
+
+	// ContinuousAggregatesRemoved names the continuous aggregates the database
+	// reports and the declaration does not.
+	//
+	// Unlike a hypertable this one CAN be honored, and the statement is DROP
+	// MATERIALIZED VIEW rather than DROP VIEW -- measured on 2.29.2, DROP VIEW
+	// answers `cannot drop continuous aggregate using DROP VIEW`.
+	ContinuousAggregatesRemoved []string `json:"continuous_aggregates_removed"`
+
+	// ContinuousAggregatesModified names the aggregates whose declared body or
+	// options differ from the ones the catalog reports.
+	//
+	// It is planned as a drop and a create rather than a replacement, because
+	// there is no replacement: measured on 2.29.2, `CREATE OR REPLACE
+	// MATERIALIZED VIEW` is `syntax error at or near "MATERIALIZED"`.
+	ContinuousAggregatesModified []ContinuousAggregateDiff `json:"continuous_aggregates_modified"`
+
 	// SynonymsAdded contains names of synonyms that exist in the target schema
 	// and not in the database.
 	SynonymsAdded []string `json:"synonyms_added"`
@@ -498,6 +518,7 @@ func (d *SchemaDiff) HasChanges() bool {
 		d.hasViewChanges() ||
 		d.hasSynonymChanges() ||
 		d.hasHypertableChanges() ||
+		d.hasContinuousAggregateChanges() ||
 		d.hasExtendedPropertyChanges() ||
 		d.hasMaterializedViewChanges() ||
 		d.hasTriggerChanges() ||
@@ -660,6 +681,12 @@ func (d *SchemaDiff) hasHypertableChanges() bool {
 	return len(d.HypertablesAdded) > 0 ||
 		len(d.HypertablesRemoved) > 0 ||
 		len(d.HypertablesModified) > 0
+}
+
+func (d *SchemaDiff) hasContinuousAggregateChanges() bool {
+	return len(d.ContinuousAggregatesAdded) > 0 ||
+		len(d.ContinuousAggregatesRemoved) > 0 ||
+		len(d.ContinuousAggregatesModified) > 0
 }
 
 func (d *SchemaDiff) hasExtendedPropertyChanges() bool {
@@ -1024,6 +1051,23 @@ type HypertableDiff struct {
 	// not a difference.
 	OldChunkInterval string `json:"old_chunk_interval"`
 	NewChunkInterval string `json:"new_chunk_interval"`
+}
+
+// ContinuousAggregateDiff describes a continuous aggregate whose declaration
+// differs from the one the catalog reports.
+//
+// Both bodies are carried so a reviewer reading the plan can see what changed;
+// the plan itself is a drop followed by a create, and the create uses the
+// DECLARED body.
+type ContinuousAggregateDiff struct {
+	// Name is the aggregate both sides name, schema-qualified when it has one.
+	Name string `json:"name"`
+	// OldBody and NewBody are the SELECTs, live and declared.
+	OldBody string `json:"old_body"`
+	NewBody string `json:"new_body"`
+	// OldMaterializedOnly and NewMaterializedOnly are the option's two values.
+	OldMaterializedOnly bool `json:"old_materialized_only"`
+	NewMaterializedOnly bool `json:"new_materialized_only"`
 }
 
 // ExtendedPropertyRef names one SQL Server extended property, by the address

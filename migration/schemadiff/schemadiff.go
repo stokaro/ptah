@@ -299,6 +299,8 @@ func CompareReportingUndecidedAdditions(
 
 	// Compare TimescaleDB hypertables (PostgreSQL with the extension)
 	compare.Hypertables(generated, database, diff, cov)
+	compare.ContinuousAggregates(
+		generated, database, diff, cov, opts.ContinuousAggregateBodies, identifierSemantics)
 
 	// Compare SQL Server extended properties (schema, table and column scope)
 	compare.ExtendedProperties(generated, database, diff, cov)

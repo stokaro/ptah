@@ -66,6 +66,9 @@ type CurrentUsersSynonym struct{}
 //ptah:schema:hypertable table="users" column="created_at" chunk_interval="7 days" if_not_exists="true" comment="Partitioned by creation time"
 type UsersHypertable struct{}
 
+//ptah:schema:continuousaggregate name="users_daily" schema="app" body="SELECT time_bucket('1 day', created_at) AS bucket, count(*) AS n FROM users GROUP BY bucket" materialized_only="true" comment="Daily user counts"
+type UsersDailyAggregate struct{}
+
 //ptah:schema:extendedproperty name="ptah_retention" schema="app" table="users" column="email" value="90d" comment="Column retention marker"
 type UsersEmailRetentionProperty struct{}
 

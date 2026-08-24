@@ -344,7 +344,8 @@ func withFormatLimits(database *goschema.Database, resolved string) *goschema.Da
 	}
 	if extension != dirHCLExtension {
 		database.NotDescribed = database.NotDescribed.With(unsupportedByFormat(
-			coverage.Synonym, coverage.ExtendedProperty, coverage.Hypertable)...)
+			coverage.Synonym, coverage.ExtendedProperty, coverage.Hypertable,
+			coverage.ContinuousAggregate)...)
 	}
 	return database
 }
@@ -705,6 +706,7 @@ func appendDatabase(dst, src *goschema.Database) {
 	dst.Roles = append(dst.Roles, src.Roles...)
 	dst.Grants = append(dst.Grants, src.Grants...)
 	dst.Hypertables = append(dst.Hypertables, src.Hypertables...)
+	dst.ContinuousAggregates = append(dst.ContinuousAggregates, src.ContinuousAggregates...)
 	dst.Synonyms = append(dst.Synonyms, src.Synonyms...)
 	dst.ExtendedProperties = append(dst.ExtendedProperties, src.ExtendedProperties...)
 	dst.ManagedData = append(dst.ManagedData, src.ManagedData...)

@@ -43,6 +43,7 @@ func ConvertDBSchemaToGoSchema(dbSchema *dbschematypes.DBSchema) *goschema.Datab
 	convertMaterializedViews(database, dbSchema.MatViews)
 	convertTriggers(database, dbSchema.Triggers)
 	convertHypertables(database, dbSchema.Hypertables)
+	convertContinuousAggregates(database, dbSchema.ContinuousAggregates)
 	convertSynonyms(database, dbSchema.Synonyms)
 	convertExtendedProperties(database, dbSchema.ExtendedProperties)
 	convertRoles(database, dbSchema.Roles)
@@ -400,6 +401,33 @@ func convertHypertables(database *goschema.Database, hypertables []dbschematypes
 			Table:         hypertable.QualifiedName(),
 			Column:        hypertable.PrimaryDimension,
 			ChunkInterval: hypertable.ChunkInterval,
+		})
+	}
+}
+
+// convertContinuousAggregates carries the TimescaleDB continuous aggregates a
+// read found into the IR.
+//
+// The body is the catalog's `view_definition` rather than pg_get_viewdef's,
+// which is what makes this conversion usable at all: pg_get_viewdef answers the
+// rewritten definition, which selects from the materialization hypertable in a
+// schema the extension owns, and a down migration built from it would create an
+// aggregate over an internal relation.
+func convertContinuousAggregates(
+	database *goschema.Database,
+	aggregates []dbschematypes.DBContinuousAggregate,
+) {
+	for _, aggregate := range aggregates {
+		// The catalog always reports a value, so the converted declaration
+		// carries a definite one: this description is what a DOWN migration
+		// recreates the aggregate from, and leaving the option unset there
+		// would take the server default rather than the value that was there.
+		materializedOnly := aggregate.MaterializedOnly
+		database.ContinuousAggregates = append(database.ContinuousAggregates, goschema.ContinuousAggregate{
+			Name:             aggregate.Name,
+			Schema:           aggregate.Schema,
+			Body:             aggregate.Definition,
+			MaterializedOnly: &materializedOnly,
 		})
 	}
 }

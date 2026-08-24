@@ -112,6 +112,7 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 		// separate an unknown privilege from an absent grantee
 		// (stokaro/ptah#916).
 		want: []capability.Capability{
+			capability.ContinuousAggregates,
 			capability.DDLInsideTransaction,
 			// Hypertables is the second, and its reason is about the EXTENSION
 			// rather than the probe: every PostgreSQL image on this ladder
@@ -136,6 +137,7 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 			capability.CatalogRecursiveCTE,
 			capability.CatalogRowStatistics,
 			capability.CompositeTypes,
+			capability.ContinuousAggregates,
 			capability.DDLInsideTransaction,
 			capability.DomainTypes,
 			capability.Hypertables,
@@ -157,6 +159,7 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 			capability.CatalogRecursiveCTE,
 			capability.CatalogRowStatistics,
 			capability.CompositeTypes,
+			capability.ContinuousAggregates,
 			capability.DDLInsideTransaction,
 			capability.DomainTypes,
 			capability.Hypertables,
@@ -177,6 +180,7 @@ func TestPlans_DeclareUndecidableOnlyWhereThisFileRecordsWhy(t *testing.T) {
 			capability.CatalogPartitions,
 			capability.CatalogRecursiveCTE,
 			capability.CompositeTypes,
+			capability.ContinuousAggregates,
 			capability.DDLInsideTransaction,
 			capability.DomainTypes,
 			capability.Hypertables,
@@ -300,28 +304,28 @@ func TestDecidable_IsDerivedFromThePlanAndTheLine(t *testing.T) {
 		caps capability.Capabilities
 		want int
 	}{{
-		name: "postgres owes five fewer: the probe cannot ask whether a privilege exists, neither runtime policy nor the transaction wrapper is a statement it can send, and TimescaleDB is an extension none of these images has",
+		name: "postgres owes six fewer: the probe cannot ask whether a privilege exists, neither runtime policy nor the transaction wrapper is a statement it can send, and TimescaleDB — hypertables and continuous aggregates both — is an extension none of these images has",
 		cell: measuredCell,
 		caps: capability.Postgres17(),
-		want: registered - 5,
+		want: registered - 6,
 	}, {
-		name: "mysql owes seventeen fewer: role_management, row_level_ttl, hypertables, the five catalog keys, the three user-type kinds, the three runtime properties and the sequence grammar restriction name surfaces no MySQL path reads or no statement decides",
+		name: "mysql owes eighteen fewer: role_management, row_level_ttl, the two TimescaleDB keys, the five catalog keys, the three user-type kinds, the three runtime properties and the sequence grammar restriction name surfaces no MySQL path reads or no statement decides",
 		cell: Cell{
 			Dialect: platform.MySQL, Line: "9.7",
 			Preset: capability.MySQL84, PresetName: "MySQL84",
 			Refinement: RefinedByVersion,
 		},
 		caps: capability.MySQL84(),
-		want: registered - 17,
+		want: registered - 18,
 	}, {
-		name: "mariadb owes seventeen fewer: the three user-type kinds have no MariaDB spelling, the three runtime properties are not statements, neither pg_class nor pg_default_acl is a catalog it has, the sequence grammar restriction has no control statement here, and sequences is asked now that Ptah renders, reads and plans one",
+		name: "mariadb owes eighteen fewer: the three user-type kinds have no MariaDB spelling, the three runtime properties are not statements, neither pg_class nor pg_default_acl is a catalog it has, the sequence grammar restriction has no control statement here, and sequences is asked now that Ptah renders, reads and plans one",
 		cell: Cell{
 			Dialect: platform.MariaDB, Line: "10.11",
 			Preset: capability.MariaDB1011, PresetName: "MariaDB1011",
 			Refinement: RefinedByVersion,
 		},
 		caps: capability.MariaDB1011(),
-		want: registered - 17,
+		want: registered - 18,
 	}, {
 		name: "cockroachdb 26.2 owes every row its preset enables a prerequisite for, less the two the probe cannot ask",
 		cell: Cell{
@@ -330,7 +334,7 @@ func TestDecidable_IsDerivedFromThePlanAndTheLine(t *testing.T) {
 			Refinement: RefinedByVersion,
 		},
 		caps: capability.CockroachDB26(),
-		want: registered - 5,
+		want: registered - 6,
 	}, {
 		name: "cockroachdb 25.4 excludes the guarded drop row whose generic prerequisite is absent",
 		cell: Cell{
@@ -339,7 +343,7 @@ func TestDecidable_IsDerivedFromThePlanAndTheLine(t *testing.T) {
 			Refinement: RefinedByVersion,
 		},
 		caps: capability.CockroachDB25(),
-		want: registered - 6,
+		want: registered - 7,
 	}, {
 		name: "a banner-refined line owes nothing because no observation can be credited to it",
 		cell: Cell{
