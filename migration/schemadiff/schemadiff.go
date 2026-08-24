@@ -277,7 +277,8 @@ func CompareReportingUndecidedAdditions(
 	compare.EnumsWithSemantics(generated, database, diff, identifierSemantics)
 
 	// Compare database index definitions
-	compare.IndexesWithSemantics(generated, database, diff, opts.Dialect, identifierSemantics)
+	compare.IndexesWithSemantics(
+		generated, database, diff, opts.Dialect, identifierSemantics, opts.IndexExpressions)
 
 	// Compare PostgreSQL extensions with configuration options
 	compare.ExtensionsWithSemantics(generated, database, diff, opts, cov, identifierSemantics)
@@ -308,7 +309,8 @@ func CompareReportingUndecidedAdditions(
 	compare.TriggersWithSemantics(generated, database, diff, identifierSemantics)
 
 	// Compare RLS policies (PostgreSQL-specific feature)
-	compare.RLSPoliciesWithSemantics(generated, database, diff, identifierSemantics, cov)
+	compare.RLSPoliciesWithSemantics(
+		generated, database, diff, identifierSemantics, cov, opts.PolicyExpressions)
 
 	// Compare RLS enabled tables (PostgreSQL-specific feature)
 	compare.RLSEnabledTablesWithSemantics(generated, database, diff, identifierSemantics)

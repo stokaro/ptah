@@ -186,6 +186,63 @@ type CompareOptions struct {
 	// to the textual normalizer it used before, which is right for the shapes
 	// that survive it and declines the ones it cannot fold.
 	CheckExpressions map[string]CheckExpression
+
+	// PolicyExpressions carries each declared RLS policy's USING and WITH CHECK
+	// as the target server itself spells them, keyed by the policy's table and
+	// name.
+	//
+	// It is [CompareOptions.CheckExpressions] for a third object and the same
+	// rewrite. Measured on PostgreSQL 17.11:
+	//
+	//	declared        column          stored
+	//	level > 0       integer      -> (level > 0)
+	//	price >= 0      numeric      -> (price >= (0)::numeric)
+	//	owner = 'x'     varchar      -> ((owner)::text = 'x'::text)
+	//
+	// The cast depends on the column's type, so no rule over the declaration's
+	// text can decide it: the three rows differ only in the type of the column
+	// they name (stokaro/ptah#2049).
+	//
+	// A nil map means nobody could ask a server, and the comparison falls back
+	// to the textual normalizer it used before.
+	PolicyExpressions map[string]PolicyExpression
+
+	// IndexExpressions carries each declared index's expression and predicate
+	// as the target server itself spells them, keyed by the index's name.
+	//
+	// The same rewrite again, and the same reason it cannot be folded:
+	// `lower(code)` is stored as `lower((code)::text)` over a varchar column
+	// and as `lower(code)` over text (stokaro/ptah#2047).
+	IndexExpressions map[string]IndexExpression
+}
+
+// PolicyExpression is one RLS policy's expressions in the target server's own
+// spelling. See [CompareOptions.PolicyExpressions].
+//
+// The zero value is not an empty policy: it is what a resolver returns for a
+// declaration it could not put through the server, and a comparison must fall
+// back rather than read it as changed. Resolved reports which it is.
+type PolicyExpression struct {
+	// Using and WithCheck are the normalized clauses, empty where the policy
+	// declares none.
+	Using     string
+	WithCheck string
+	// Resolved reports that a server answered for this policy.
+	Resolved bool
+}
+
+// IndexExpression is one index's expression and predicate in the target
+// server's own spelling. See [CompareOptions.IndexExpressions].
+//
+// The zero value carries the same meaning [PolicyExpression]'s does.
+type IndexExpression struct {
+	// Expression is the normalized index expression, empty for an index over
+	// plain columns.
+	Expression string
+	// Predicate is the normalized WHERE clause, empty for a full index.
+	Predicate string
+	// Resolved reports that a server answered for this index.
+	Resolved bool
 }
 
 // CheckExpression is one CHECK constraint's expression in the target server's

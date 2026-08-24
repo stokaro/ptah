@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 
+	"go.5x5.cz/ptah/config"
 	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
@@ -77,7 +78,7 @@ func RLSPolicies(
 	diff *difftypes.SchemaDiff,
 	cov Coverage,
 ) {
-	RLSPoliciesWithSemantics(generated, database, diff, identifier.ForDialect(""), cov)
+	RLSPoliciesWithSemantics(generated, database, diff, identifier.ForDialect(""), cov, nil)
 }
 
 // RLSPoliciesWithSemantics is [RLSPolicies] told which identifier rules the
@@ -106,6 +107,7 @@ func RLSPoliciesWithSemantics(
 	diff *difftypes.SchemaDiff,
 	semantics identifier.Semantics,
 	cov Coverage,
+	policies map[string]config.PolicyExpression,
 ) {
 	// Build lookup maps for RLS policy comparison, keyed by the owning table
 	// and the policy name together.
@@ -143,7 +145,9 @@ func RLSPoliciesWithSemantics(
 	// Detect policy definition modifications
 	for key, generatedPolicy := range generatedPolicyMap {
 		if databasePolicy, policyExists := databasePolicyMap[key]; policyExists {
-			policyComparison := RLSPolicyDefinitions(generatedPolicy, databasePolicy)
+			policyComparison := RLSPolicyDefinitionsWithExpressions(
+				generatedPolicy, databasePolicy,
+				policies[checkExpressionLookupKey(generatedPolicy.Table, generatedPolicy.Name)])
 			if len(policyComparison.Changes) > 0 {
 				diff.RLSPoliciesModified = append(diff.RLSPoliciesModified, policyComparison)
 			}
@@ -233,6 +237,21 @@ func keepPlannedPolicyRemovals(cov Coverage, planned []difftypes.RLSPolicyRef) [
 		}
 	}
 	return out
+}
+
+// declaredPolicyClauses is what the declaration says, in the server's spelling
+// where the server answered.
+//
+// A refusal says nothing about whether the two agree, so it falls back rather
+// than being read as a difference.
+func declaredPolicyClauses(
+	policy goschema.RLSPolicy,
+	resolved config.PolicyExpression,
+) (using, withCheck string) {
+	if !resolved.Resolved {
+		return policy.UsingExpression, policy.WithCheckExpression
+	}
+	return resolved.Using, resolved.WithCheck
 }
 
 // RLSEnabledTables performs RLS enablement comparison between generated and database schemas.
@@ -383,6 +402,17 @@ func RLSEnabledTablesWithSemantics(
 //  1. DROP POLICY policy_name ON table_name
 //  2. CREATE POLICY policy_name ON table_name with new definition
 func RLSPolicyDefinitions(genPolicy goschema.RLSPolicy, dbPolicy types.DBRLSPolicy) difftypes.RLSPolicyDiff {
+	return RLSPolicyDefinitionsWithExpressions(genPolicy, dbPolicy, config.PolicyExpression{})
+}
+
+// RLSPolicyDefinitionsWithExpressions is [RLSPolicyDefinitions] told what the
+// server makes of the declared clauses. An unresolved value leaves the textual
+// comparison in charge, which is every offline path.
+func RLSPolicyDefinitionsWithExpressions(
+	genPolicy goschema.RLSPolicy,
+	dbPolicy types.DBRLSPolicy,
+	resolved config.PolicyExpression,
+) difftypes.RLSPolicyDiff {
 	policyDiff := difftypes.RLSPolicyDiff{
 		PolicyName: genPolicy.Name,
 		TableName:  genPolicy.Table,
@@ -399,13 +429,20 @@ func RLSPolicyDefinitions(genPolicy goschema.RLSPolicy, dbPolicy types.DBRLSPoli
 		policyDiff.Changes["to_roles"] = fmt.Sprintf("%s -> %s", dbPolicy.ToRoles, genPolicy.ToRoles)
 	}
 
-	// Compare USING expression
-	if normalize.Expression(genPolicy.UsingExpression) != normalize.Expression(dbPolicy.UsingExpression) {
+	// Compare the two clauses. A resolved entry answers outright, because the
+	// declaration was put through the same server that printed the catalog's
+	// form; without one the textual normalizer decides, as it did before.
+	//
+	// PostgreSQL stores a parse tree rather than the text it was given, and the
+	// cast it inserts depends on the column's type. Measured on 17.11,
+	// `owner = 'x'` is stored as `((owner)::text = 'x'::text)` over a varchar
+	// column and unchanged over text, so a policy nobody had touched was
+	// dropped and recreated on every run (stokaro/ptah#2049).
+	declaredUsing, declaredWithCheck := declaredPolicyClauses(genPolicy, resolved)
+	if normalize.Expression(declaredUsing) != normalize.Expression(dbPolicy.UsingExpression) {
 		policyDiff.Changes["using_expression"] = fmt.Sprintf("%s -> %s", dbPolicy.UsingExpression, genPolicy.UsingExpression)
 	}
-
-	// Compare WITH CHECK expression
-	if normalize.Expression(genPolicy.WithCheckExpression) != normalize.Expression(dbPolicy.WithCheckExpression) {
+	if normalize.Expression(declaredWithCheck) != normalize.Expression(dbPolicy.WithCheckExpression) {
 		policyDiff.Changes["with_check_expression"] = fmt.Sprintf("%s -> %s", dbPolicy.WithCheckExpression, genPolicy.WithCheckExpression)
 	}
 
