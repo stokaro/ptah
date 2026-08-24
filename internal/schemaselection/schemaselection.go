@@ -124,6 +124,28 @@ func IsPostgresFamilySystemSchema(dialect, name string) bool {
 		platform.NormalizeDialect(dialect) == platform.CockroachDB && name == "crdb_internal"
 }
 
+// IsUncreatableSchema reports whether the target owns name and will not create
+// it, so a migration has to put objects into it without asking for it first.
+//
+// It is deliberately wider than [IsPostgresFamilySystemSchema] and used for a
+// narrower thing. Spanner's `public` is not a catalog namespace -- it holds the
+// user's own tables -- but it is implicit there and cannot be created:
+// `CREATE SCHEMA IF NOT EXISTS "public"` is refused with `Schema name not
+// valid: public`, measured on the PGAdapter emulator v0.55.2, and the IF NOT
+// EXISTS does not help because the refusal is about the name rather than the
+// existence. A document that DECLARES `schema "public"` is still accepted:
+// `ptah schema inspect` writes exactly that block against Spanner, and refusing
+// to read back what Ptah wrote would be the worse fault.
+func IsUncreatableSchema(dialect, name string) bool {
+	if IsPostgresFamilySystemSchema(dialect, name) {
+		return true
+	}
+	if platform.NormalizeDialect(dialect) != platform.Spanner {
+		return false
+	}
+	return name == "public" || name == "spanner_sys"
+}
+
 // ValidateDeclaredPostgresSystemSchemas refuses schema declarations that ask a
 // PostgreSQL-family migration to create a server-owned namespace. Extensions
 // may still name these schemas as installation placement without declaring a

@@ -415,3 +415,37 @@ func errString(err error) string {
 	}
 	return err.Error()
 }
+
+// Spanner's `public` is not a catalog namespace -- it holds the user's own
+// tables -- and it still cannot be created. Measured on the PGAdapter emulator
+// v0.55.2, `CREATE SCHEMA IF NOT EXISTS "public"` is refused with
+// `Schema name not valid: public`, and the IF NOT EXISTS does not help because
+// the refusal is about the name (stokaro/ptah#2072).
+func TestIsUncreatableSchemaCoversTheNamesATargetOwns(t *testing.T) {
+	tests := []struct {
+		name    string
+		dialect string
+		schema  string
+		want    bool
+	}{
+		{name: "Spanner owns public", dialect: "spanner", schema: "public", want: true},
+		{name: "Spanner owns its catalog", dialect: "spanner", schema: "spanner_sys", want: true},
+		{name: "Spanner does not own a user schema", dialect: "spanner", schema: "app", want: false},
+		{name: "PostgreSQL creates public", dialect: "postgres", schema: "public", want: false},
+		{name: "CockroachDB creates public", dialect: "cockroachdb", schema: "public", want: false},
+		{name: "the common catalog is owned everywhere", dialect: "spanner", schema: "pg_catalog", want: true},
+		{name: "Cockroach internal is still owned", dialect: "cockroachdb", schema: "crdb_internal", want: true},
+		{name: "a quoted lookalike is a user schema", dialect: "spanner", schema: "PUBLIC", want: false},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			c.Assert(
+				schemaselection.IsUncreatableSchema(test.dialect, test.schema),
+				qt.Equals,
+				test.want,
+			)
+		})
+	}
+}

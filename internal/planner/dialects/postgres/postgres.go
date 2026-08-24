@@ -517,6 +517,13 @@ func (p *Planner) addSchemaPreconditions(
 		if schema == "" {
 			continue
 		}
+		// A schema the target owns is reached without a precondition. On
+		// PostgreSQL that spares a statement nobody needs; on Spanner it is
+		// what makes the migration run at all, because `public` there is
+		// implicit and CREATE SCHEMA for it is refused by name.
+		if schemaselection.IsUncreatableSchema(p.dialect, schema) {
+			continue
+		}
 		if _, ok := seen[schema]; ok {
 			continue
 		}
@@ -526,7 +533,7 @@ func (p *Planner) addSchemaPreconditions(
 	for _, name := range diff.ExtensionsAdded {
 		for _, extension := range generated.Extensions {
 			if extension.Name != name || extension.Schema == "" ||
-				schemaselection.IsPostgresSystemSchema(extension.Schema) {
+				schemaselection.IsUncreatableSchema(p.dialect, extension.Schema) {
 				continue
 			}
 			if _, ok := seen[extension.Schema]; !ok {
