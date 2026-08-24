@@ -14,9 +14,10 @@ import (
 // a tool call on one run and a paragraph on the next, and a suite that flakes
 // for that reason teaches people to rerun rather than to read.
 //
-// It also serves the operator: `ptah assist --provider-profile fake` is how
-// somebody checks that Ptah's own half of the loop works before deciding
-// whether their endpoint is the problem.
+// It is not reachable from the command line: `type: fake` is not a profile type
+// and `--provider-profile fake` names nothing. An operator checking whether
+// Ptah's half of the loop works uses `ptah assist provider test`, which
+// measures their endpoint rather than replacing it.
 type Fake struct {
 	mu      sync.Mutex
 	turns   []Response

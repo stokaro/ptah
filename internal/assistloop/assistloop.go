@@ -135,9 +135,22 @@ func (r *Result) ToolBytes() int {
 	return total
 }
 
-// UsedTools reports whether any tool ran, which is the difference between an
-// answer Ptah stands behind and one the model composed unaided.
-func (r Result) UsedTools() bool { return len(r.Tools) > 0 }
+// UsedTools reports whether any tool actually answered, which is the difference
+// between an answer Ptah stands behind and one the model composed unaided.
+//
+// A failed call does not count. A refused capability, a stale digest or a tool
+// that could not be called produces a record, and counting records would report
+// "checked against this project" for a run where Ptah answered nothing and the
+// model wrote around the refusal. That is the one reading this field exists to
+// prevent.
+func (r Result) UsedTools() bool {
+	for _, tool := range r.Tools {
+		if !tool.Failed {
+			return true
+		}
+	}
+	return false
+}
 
 // Event is progress, for a surface that shows what is happening.
 type Event struct {
