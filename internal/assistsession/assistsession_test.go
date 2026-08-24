@@ -290,3 +290,42 @@ func TestOpen_RequiresAProject(t *testing.T) {
 	c.Assert(err, qt.ErrorMatches, "session store requires a project root")
 	c.Assert(store, qt.IsNil)
 }
+
+func TestRead_RefusesAnIdentifierThatWouldLeaveTheDirectory(t *testing.T) {
+	// Read and Delete take this straight from a person's command line and turn
+	// it into a path. The file outside the store is the assertion with teeth: a
+	// refusal that had still removed it would be a refusal in name only.
+	c := qt.New(t)
+	store, root := newStore(c)
+	write(c, store, "session-1", "hello", "hi")
+
+	outside := filepath.Join(root, ".ptah", "keep-me.jsonl")
+	c.Assert(os.WriteFile(outside, []byte("not a session\n"), 0o600), qt.IsNil)
+
+	tests := []struct {
+		name string
+		id   string
+	}{
+		{name: "the parent directory", id: "../keep-me"},
+		{name: "further up", id: "../../../keep-me"},
+		{name: "a separator", id: "sub/session-1"},
+		{name: "an absolute path", id: "/etc/hosts"},
+		{name: "a backslash", id: `..\keep-me`},
+		{name: "nothing at all", id: ""},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			_, readErr := store.Read(test.id)
+			c.Assert(readErr, qt.ErrorIs, assistsession.ErrNotFound)
+
+			_, deleteErr := store.Delete(test.id)
+			c.Assert(deleteErr, qt.ErrorIs, assistsession.ErrNotFound)
+		})
+	}
+
+	_, err := os.Stat(outside)
+	c.Assert(err, qt.IsNil, qt.Commentf("a file outside the store must survive every attempt"))
+}

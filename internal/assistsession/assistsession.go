@@ -175,6 +175,9 @@ type Writer struct {
 
 // Create starts a session and writes its header.
 func (s *Store) Create(id string, header Record) (*Writer, error) {
+	if err := validateID(id); err != nil {
+		return nil, err
+	}
 	if err := os.MkdirAll(s.dir, 0o700); err != nil {
 		return nil, fmt.Errorf("create the session directory: %w", err)
 	}
@@ -363,9 +366,35 @@ func (s *Store) Prune(olderThan time.Duration) ([]string, error) {
 // A prefix is accepted because an identifier is long enough to be worth not
 // retyping, and an ambiguous prefix is refused by naming the candidates rather
 // than picking one.
-func (s *Store) resolve(id string) (string, error) {
+// validateID refuses an identifier that is not a plain name.
+//
+// Read and Delete take this straight from a person's command line, and the
+// identifier becomes a path. Without this, "sessions delete ../../../x" removes
+// a file outside the session directory, and "--resume ../../../x" reads one and
+// sends it to a model provider -- which is the boundary this whole surface
+// exists to keep. The generated form is a timestamp and hex, so the alphabet
+// below accepts every identifier Ptah mints and every prefix of one.
+func validateID(id string) error {
 	if id == "" {
-		return "", fmt.Errorf("%w: no session named", ErrNotFound)
+		return fmt.Errorf("%w: no session named", ErrNotFound)
+	}
+	if strings.Contains(id, "..") {
+		return fmt.Errorf("%w: %q is not a session identifier", ErrNotFound, id)
+	}
+	for _, r := range id {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+		case r == '-', r == '_', r == '.':
+		default:
+			return fmt.Errorf("%w: %q is not a session identifier", ErrNotFound, id)
+		}
+	}
+	return nil
+}
+
+func (s *Store) resolve(id string) (string, error) {
+	if err := validateID(id); err != nil {
+		return "", err
 	}
 	exact := filepath.Join(s.dir, id+".jsonl")
 	if _, err := os.Stat(exact); err == nil {
