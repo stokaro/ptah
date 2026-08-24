@@ -638,8 +638,44 @@ func (r *Renderer) VisitCreateTable(node *ast.CreateTableNode) error {
 
 	r.w.WriteLine(";")
 	r.w.WriteLine("")
+	r.renderTableComments(node)
 
 	return nil
+}
+
+// renderTableComments writes the comments a table and its columns carry.
+//
+// PostgreSQL has no inline COMMENT clause -- MySQL does, which is why the
+// MySQL renderer needs none of this -- so a comment is its own statement and
+// has to follow the table that owns it.
+//
+// Without them a comment reached the renderer and left as a `-- POSTGRES
+// TABLE: … (…)` header, which is a decoration for whoever reads the plan and
+// nothing the server stores. So `schema inspect` described a commented
+// database, the document carried the comment, and applying it produced a
+// database with no comments on it -- silently, because the comparison reads
+// both sides the same way and answered `Schema is synced` (stokaro/ptah#2101).
+func (r *Renderer) renderTableComments(node *ast.CreateTableNode) {
+	table := r.escapeQualifiedIdentifier(node.Name)
+	if node.Comment != "" {
+		r.w.WriteLinef("COMMENT ON TABLE %s IS %s;", table, r.escapeValue(node.Comment))
+	}
+	for _, column := range node.Columns {
+		if column.Comment == "" {
+			continue
+		}
+		r.w.WriteLinef("COMMENT ON COLUMN %s.%s IS %s;",
+			table, r.escapeIdentifier(column.Name), r.escapeValue(column.Comment))
+	}
+	if node.Comment != "" || slices.ContainsFunc(node.Columns, columnHasComment) {
+		r.w.WriteLine("")
+	}
+}
+
+// columnHasComment reports whether a column carries one, for the blank line the
+// block above ends with.
+func columnHasComment(column *ast.ColumnNode) bool {
+	return column.Comment != ""
 }
 
 func (r *Renderer) visitCreateTableAsSelect(node *ast.CreateTableNode, guard string) error {
