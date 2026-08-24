@@ -193,6 +193,10 @@ func functionBody(definition string) string {
 	returns := -1
 	depth := 0
 	for i := 0; i < len(definition); i++ {
+		if end := commentEnd(definition, i); end >= 0 {
+			i = end
+			continue
+		}
 		switch definition[i] {
 		case '(', '[':
 			depth++
@@ -218,6 +222,106 @@ func functionBody(definition string) string {
 		}
 		return strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(definition[i+2:]), ";"))
 	}
+	return strings.TrimSpace(definition)
+}
+
+// commentEnd reports the index of the last byte of the comment beginning at i,
+// or -1 when the text at i does not begin one.
+//
+// A scanner looking for a keyword has to know about comments, because a comment
+// may hold anything -- keywords included. Measured on SQL Server 2025, a view
+// whose header carries one:
+//
+//	CREATE VIEW dbo.v /* the header AS lives here */ AS SELECT id AS ident FROM dbo.orders
+//
+// The word AS inside it is a standalone word by every test [standaloneWord]
+// applies, so a blind scan cut the definition there and read the body as
+// `lives here */ AS SELECT id AS ident FROM dbo.orders`. Replayed, the server
+// answered `Incorrect syntax near 'lives'`.
+//
+// It is consulted before the bracket depth as well as before the keyword, which
+// is the other half: a lone `[` or `(` inside a comment would otherwise leave
+// the scanner at a depth it never returns from, and every keyword after it is
+// skipped.
+//
+// Both kinds are here because T-SQL has both, and the block form NESTS: the
+// first `*/` does not necessarily close it (stokaro/ptah#2115).
+func commentEnd(definition string, i int) int {
+	if i+1 >= len(definition) {
+		return -1
+	}
+	switch {
+	case definition[i] == '-' && definition[i+1] == '-':
+		if next := strings.IndexByte(definition[i+2:], '\n'); next >= 0 {
+			return i + 2 + next
+		}
+		return len(definition) - 1
+	case definition[i] == '/' && definition[i+1] == '*':
+		depth := 1
+		for j := i + 2; j+1 < len(definition); j++ {
+			switch {
+			case definition[j] == '/' && definition[j+1] == '*':
+				depth++
+				j++
+			case definition[j] == '*' && definition[j+1] == '/':
+				depth--
+				j++
+				if depth == 0 {
+					return j
+				}
+			}
+		}
+		// An unterminated comment runs to the end, which is what the server
+		// would do with it too.
+		return len(definition) - 1
+	}
+	return -1
+}
+
+// viewBody extracts a view's SELECT from the statement text sys.sql_modules
+// keeps.
+//
+// SQL Server stores the object's whole creation text, unlike PostgreSQL, whose
+// pg_get_viewdef returns the body alone. Storing the statement where the body
+// belongs made the renderer write it inside another `CREATE VIEW ... AS`, and
+// the server refused the pair with `'CREATE VIEW' must be the first statement
+// in a query batch` -- so a document describing any SQL Server view could not
+// be applied (stokaro/ptah#2115).
+//
+// The body begins after the FIRST `AS` outside brackets and quotes, which is
+// the opposite of the rule [functionBody] needs: a view's own body is full of
+// column aliases spelled `AS`, and the last one would cut the statement in
+// half. Everything before it -- the name, an optional column list, and a
+// `WITH SCHEMABINDING` or `WITH VIEW_METADATA` clause -- is the header.
+func viewBody(definition string) string {
+	upper := strings.ToUpper(definition)
+	depth := 0
+	for i := 0; i < len(definition); i++ {
+		if end := commentEnd(definition, i); end >= 0 {
+			i = end
+			continue
+		}
+		switch definition[i] {
+		case '(', '[':
+			depth++
+		case ')', ']':
+			depth--
+		case '\'':
+			if next := strings.IndexByte(definition[i+1:], '\''); next >= 0 {
+				i += next + 1
+			}
+			continue
+		}
+		if depth != 0 {
+			continue
+		}
+		if i+2 > len(upper) || upper[i:i+2] != "AS" || !standaloneWord(definition, i, i+2) {
+			continue
+		}
+		return strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(definition[i+2:]), ";"))
+	}
+	// A definition with no header-level AS is not one this reader can split, so
+	// it is carried whole rather than cut at a guess.
 	return strings.TrimSpace(definition)
 }
 
@@ -331,6 +435,10 @@ func procedureBody(definition string) string {
 	upper := strings.ToUpper(definition)
 	depth := 0
 	for i := 0; i < len(definition); i++ {
+		if end := commentEnd(definition, i); end >= 0 {
+			i = end
+			continue
+		}
 		switch definition[i] {
 		case '(', '[':
 			depth++

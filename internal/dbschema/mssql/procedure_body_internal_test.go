@@ -57,6 +57,33 @@ func TestProcedureBody_IgnoresAsInsideAStringLiteral(t *testing.T) {
 	c.Assert(body, qt.Equals, "SELECT ' AS ' + @s")
 }
 
+// TestProcedureBody_IgnoresAsInsideAComment is the skip the test above claims
+// and never made: its own doc names a comment, and the case it holds is a
+// string literal. The two are different scans, and only one of them was there.
+//
+// Measured on SQL Server 2025 through a view rather than a procedure, because a
+// view header is where a comment is routinely written -- the body came back as
+// `lives here */ AS SELECT ...` and the replay was refused with `Incorrect
+// syntax near 'lives'`. All three walks in this file shared the blindness
+// (stokaro/ptah#2115).
+func TestProcedureBody_IgnoresAsInsideAComment(t *testing.T) {
+	c := qt.New(t)
+
+	body := procedureBody("CREATE PROCEDURE dbo.p -- runs AS the nightly job\nAS\nSELECT 1;")
+
+	c.Assert(body, qt.Equals, "SELECT 1")
+}
+
+// TestFunctionBody_IgnoresAsInsideAComment is the same question of the walk
+// that cuts a function, whose RETURNS is scanned for the same way.
+func TestFunctionBody_IgnoresAsInsideAComment(t *testing.T) {
+	c := qt.New(t)
+
+	body := functionBody("CREATE FUNCTION dbo.f () RETURNS int /* known AS the tally */ AS\nBEGIN RETURN 1 END")
+
+	c.Assert(body, qt.Equals, "BEGIN RETURN 1 END")
+}
+
 // TestProcedureBody_DiffersFromTheFunctionWalk is the point of having a second
 // walk: handed a procedure, the function one returns the whole statement,
 // because it never finds the RETURNS it scans for.
