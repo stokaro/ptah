@@ -13,6 +13,7 @@ import (
 	"go.5x5.cz/ptah/internal/agentgate"
 	"go.5x5.cz/ptah/internal/agentpatch"
 	"go.5x5.cz/ptah/internal/agentpolicy"
+	"go.5x5.cz/ptah/internal/agenttarget"
 	"go.5x5.cz/ptah/internal/agentworkspace"
 )
 
@@ -63,6 +64,14 @@ type SessionConfig struct {
 	// same reason: an unverified write is not the operation this contract
 	// offers.
 	Gates *agentgate.Runner
+	// SourceRoots are the directories declared schemas may be read from. An
+	// empty list permits nothing: a process told no directory has not been
+	// told what an agent may read.
+	SourceRoots []string
+	// Targets are the live databases this process was configured with. An
+	// empty set is a process with no database: read_database refuses, rather
+	// than reaching whatever the caller names.
+	Targets *agenttarget.Set
 	// Audit receives every decision. Defaults to keeping nothing.
 	Audit agentaudit.Recorder
 	// Clock is the time source, injectable so a test can pin token expiry.
@@ -78,6 +87,8 @@ type SessionConfig struct {
 // directory it means, and that must not come from the caller.
 type Session struct {
 	workspace *agentworkspace.Workspace
+	targets   *agenttarget.Set
+	sources   sourceScope
 	broker    *agentpolicy.Broker
 	gates     *agentgate.Runner
 	audit     agentaudit.Recorder
@@ -119,8 +130,14 @@ func NewSession(cfg SessionConfig) (*Session, error) {
 	if cfg.Workspace != nil && cfg.Gates == nil {
 		return nil, errors.New("session requires verification gates when it has a workspace")
 	}
+	sources, err := newSourceScope(cfg.SourceRoots)
+	if err != nil {
+		return nil, err
+	}
 	session := &Session{
 		workspace: cfg.Workspace,
+		targets:   cfg.Targets,
+		sources:   sources,
 		broker:    cfg.Broker,
 		gates:     cfg.Gates,
 		audit:     cfg.Audit,
@@ -163,22 +180,33 @@ type PolicyEntry struct {
 	DecidedBy  string `json:"decided_by"`
 }
 
-// DescribeWorkspaceRequest takes no arguments.
+// DescribeSessionRequest takes no arguments.
 //
 // Deliberately: this is the operation a caller uses to learn what it may touch,
 // so letting it name a target would let the untrusted party ask about somewhere
 // else and be answered.
-type DescribeWorkspaceRequest struct{}
+type DescribeSessionRequest struct{}
 
-// DescribeWorkspaceResponse is what this session can reach and what it may do.
-type DescribeWorkspaceResponse struct {
+// DescribeSessionResponse is what this session can reach and what it may do.
+type DescribeSessionResponse struct {
 	ContractVersion string `json:"contract_version"`
-	// Root is the project root every artifact directory resolves inside.
-	Root    string `json:"root"`
-	Dialect string `json:"dialect,omitempty"`
-	// Artifacts lists the configured classes. A class absent here cannot be
-	// named by any operation, whatever the policy says.
-	Artifacts []ArtifactSummary `json:"artifacts"`
+	// Workspace is the artifact half, absent when none was configured.
+	//
+	// Absent rather than empty: a root of "" and no artifacts reads like a
+	// workspace that happens to be empty, and this surface must not answer a
+	// question about reachability with something that looks like an answer
+	// about content.
+	Workspace *WorkspaceSummary `json:"workspace,omitempty"`
+	// Databases are the live databases the operator configured, by the identity
+	// a caller may name. It carries no URL and no credential.
+	//
+	// This is reachability, not authority: a policy row may permit inspecting a
+	// dev database while no dev database is configured. Both are reported, and
+	// they are not the same statement.
+	Databases []DatabaseSummary `json:"databases"`
+	// SchemaSourceRoots are the directories a declared schema may be read from.
+	// An empty list means no schema source is readable at all.
+	SchemaSourceRoots []string `json:"schema_source_roots"`
 	// Capabilities is the whole resolved table, refusals included: a report
 	// listing only the grants answers "nothing was granted" the same way as a
 	// broken report.
@@ -189,39 +217,195 @@ type DescribeWorkspaceResponse struct {
 	IgnoredPolicyRules []string `json:"ignored_policy_rules"`
 }
 
-// DescribeWorkspace reports the session's reach and permissions.
+// WorkspaceSummary is the artifact half of a session.
+type WorkspaceSummary struct {
+	// Root is the project root every artifact directory resolves inside.
+	Root    string `json:"root"`
+	Dialect string `json:"dialect,omitempty"`
+	// Artifacts lists the configured classes. A class absent here cannot be
+	// named by any operation, whatever the policy says.
+	Artifacts []ArtifactSummary `json:"artifacts"`
+}
+
+// DatabaseSummary is one configured live database, said in public.
 //
-// Owner: internal/agentworkspace and internal/agentpolicy.
-func (s *Session) DescribeWorkspace(
+// There is no URL field and no credential field, and that is the type's whole
+// job: what a caller learns is which databases exist and how each is
+// classified, which is what it needs to name one and what an approval prompt
+// shows.
+type DatabaseSummary struct {
+	// Name is what a read_database call may name.
+	Name string `json:"name"`
+	// Class is the operator's classification, which decides the verdict.
+	Class agentpolicy.DatabaseClass `json:"class"`
+	// Display is a sanitized description: driver, host and database name.
+	Display string `json:"display"`
+}
+
+// HasWorkspace reports whether artifact operations are available.
+//
+// A session always exists and always carries a policy; a workspace is what adds
+// the artifact half. The protocol adapter asks this to decide which tools to
+// register, rather than deciding for itself what a nil workspace means.
+func (s *Session) HasWorkspace() bool { return s.workspace != nil }
+
+// authorizeRead asks the broker for one of the reading operations and records
+// the answer.
+//
+// The reading operations reach the broker through here rather than running
+// unauthorized, so that a verdict describe_session publishes is a verdict the
+// operation obeys. A capability that resolved to deny and stayed executable
+// through another path is a false security claim, not a lenient default.
+func (s *Session) authorizeRead(
 	ctx context.Context,
-	_ DescribeWorkspaceRequest,
-) (*DescribeWorkspaceResponse, error) {
-	if s.workspace == nil {
-		return nil, ErrNoWorkspace
+	operation string,
+	request agentpolicy.Request,
+	summary string,
+) error {
+	outcome, err := s.broker.Authorize(ctx, request, agentpolicy.Subject{Summary: summary})
+	s.record(agentaudit.Event{Operation: operation}, outcome)
+	return err
+}
+
+// ValidateSchema authorizes schema.validate and runs the operation.
+//
+// The operation itself is the package-level [ValidateSchema]: this is the same
+// contract with the policy in front of it, not a second implementation.
+func (s *Session) ValidateSchema(
+	ctx context.Context,
+	req ValidateSchemaRequest,
+) (*ValidateSchemaResponse, error) {
+	if err := s.authorizeRead(ctx, "validate_schema", agentpolicy.Request{
+		Capability: agentpolicy.SchemaValidate,
+		Reason:     "validate a declared schema, without touching a database",
+	}, "check a declared schema for structural problems"); err != nil {
+		return nil, err
 	}
+	if err := s.sources.permitAll(req.Source); err != nil {
+		return nil, err
+	}
+	return validateSchema(ctx, req)
+}
+
+// RenderSchema authorizes schema.render and runs the operation.
+func (s *Session) RenderSchema(
+	ctx context.Context,
+	req RenderSchemaRequest,
+) (*RenderSchemaResponse, error) {
+	if err := s.authorizeRead(ctx, "render_schema", agentpolicy.Request{
+		Capability: agentpolicy.SchemaRender,
+		Reason:     "render the DDL a declared schema becomes, without applying it",
+	}, "render a declared schema to DDL"); err != nil {
+		return nil, err
+	}
+	if err := s.sources.permitAll(req.Source); err != nil {
+		return nil, err
+	}
+	return renderSchema(ctx, req)
+}
+
+// SchemaLineage authorizes schema.lineage and runs the operation.
+func (s *Session) SchemaLineage(
+	ctx context.Context,
+	req SchemaLineageRequest,
+) (*SchemaLineageResponse, error) {
+	if err := s.authorizeRead(ctx, "schema_lineage", agentpolicy.Request{
+		Capability: agentpolicy.SchemaLineage,
+		Reason:     "trace which base columns feed each view column in a declared schema",
+	}, "trace column lineage through a declared schema"); err != nil {
+		return nil, err
+	}
+	if err := s.sources.permitAll(req.Source); err != nil {
+		return nil, err
+	}
+	return schemaLineage(ctx, req)
+}
+
+// ReadDatabase authorizes database.inspect and runs the operation.
+//
+// The database is [agentpolicy.ClassUnclassified] whatever the URL looks like.
+// A class read out of the text would let the caller choose its own verdict by
+// spelling the host a particular way, and the caller here is a model whose
+// arguments an untrusted repository can influence. Classifying a database is
+// something an operator does to a configuration, not something a URL says about
+// itself.
+func (s *Session) ReadDatabase(
+	ctx context.Context,
+	req ReadDatabaseRequest,
+) (*ReadDatabaseResponse, error) {
+	// Resolving the target first is what makes the rest of this decidable. An
+	// unknown or absent target is refused here, before any name is looked up
+	// and any socket is opened.
+	target, err := s.targets.Select(req.Target)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.authorizeRead(ctx, "read_database", agentpolicy.Request{
+		Capability: agentpolicy.DatabaseInspect,
+		Database:   target.Class(),
+		TargetID:   target.ID(),
+		Reason:     "connect to a configured database and read its catalogs",
+	}, fmt.Sprintf("read the schema of %s (%s), classified %s",
+		target.Name(), target.Display(), target.Class())); err != nil {
+		return nil, err
+	}
+	return readDatabase(ctx, target, req)
+}
+
+// DescribeSession reports what this session may do and what it can reach.
+//
+// It works with or without a workspace, because a session always has a policy
+// and a workspace is only one of the things a session may have. A discovery
+// operation that needed the artifact half would leave a caller with no way to
+// learn anything about a process configured without one.
+//
+// Authority and reachability are separate sections on purpose. "database.inspect:dev
+// ask" is a statement about what policy would permit; whether a dev database
+// exists is a different statement, and reporting them as one is how a table
+// comes to look like a security boundary it is not.
+//
+// Owner: internal/agentworkspace, internal/agentpolicy and internal/agenttarget.
+func (s *Session) DescribeSession(
+	ctx context.Context,
+	_ DescribeSessionRequest,
+) (*DescribeSessionResponse, error) {
 	outcome, err := s.broker.Authorize(ctx, agentpolicy.Request{
 		Capability: agentpolicy.ProjectRead,
-		Reason:     "describe the workspace and the permissions of this session",
-	}, agentpolicy.Subject{Summary: "read the project's own description"})
-	s.record(agentaudit.Event{Operation: "describe_workspace"}, outcome)
+		Reason:     "describe this session's permissions and what it can reach",
+	}, agentpolicy.Subject{Summary: "read the session's own description"})
+	s.record(agentaudit.Event{Operation: "describe_session"}, outcome)
 	if err != nil {
 		return nil, err
 	}
 
-	response := &DescribeWorkspaceResponse{
+	response := &DescribeSessionResponse{
 		ContractVersion:    Version,
-		Root:               s.workspace.Root(),
-		Dialect:            s.workspace.Dialect(),
-		Artifacts:          make([]ArtifactSummary, 0, len(s.workspace.Classes())),
+		Databases:          make([]DatabaseSummary, 0, s.targets.Len()),
+		SchemaSourceRoots:  s.sources.list(),
 		Capabilities:       make([]PolicyEntry, 0),
 		IgnoredPolicyRules: make([]string, 0),
 	}
-	for _, class := range s.workspace.Classes() {
-		summary, summaryErr := s.summarize(class)
-		if summaryErr != nil {
-			return nil, summaryErr
+	if s.workspace != nil {
+		workspace := &WorkspaceSummary{
+			Root:      s.workspace.Root(),
+			Dialect:   s.workspace.Dialect(),
+			Artifacts: make([]ArtifactSummary, 0, len(s.workspace.Classes())),
 		}
-		response.Artifacts = append(response.Artifacts, summary)
+		for _, class := range s.workspace.Classes() {
+			summary, summaryErr := s.summarize(class)
+			if summaryErr != nil {
+				return nil, summaryErr
+			}
+			workspace.Artifacts = append(workspace.Artifacts, summary)
+		}
+		response.Workspace = workspace
+	}
+	for _, target := range s.targets.All() {
+		response.Databases = append(response.Databases, DatabaseSummary{
+			Name:    target.Name(),
+			Class:   target.Class(),
+			Display: target.Display(),
+		})
 	}
 	for _, entry := range s.broker.Policy().Entries() {
 		response.Capabilities = append(response.Capabilities, PolicyEntry{

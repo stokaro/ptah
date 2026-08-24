@@ -4,6 +4,11 @@
 - Deciders: Ptah maintainers
 - Issue: [#1487](https://github.com/stokaro/ptah/issues/1487), under [#1483](https://github.com/stokaro/ptah/issues/1483)
 - Supersedes: nothing
+- Superseded in part: section 2.1 by
+  [ADR 0006](0006-one-authorized-agent-runtime.md), which extends the capability
+  broker from the artifact operations to every operation the agent surface
+  exposes. The digest binding, the preview-and-apply shape and the gate design
+  stand.
 
 ## 1. Context
 

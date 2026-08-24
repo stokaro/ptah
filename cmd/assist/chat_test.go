@@ -157,7 +157,7 @@ func TestChat_DirectivesAreSlashPrefixed(t *testing.T) {
 		want  string
 	}{
 		{name: "help", input: "/help\n/exit\n", want: "/session   where this conversation"},
-		{name: "tools", input: "/tools\n/exit\n", want: "describe_workspace"},
+		{name: "tools", input: "/tools\n/exit\n", want: "describe_session"},
 		{name: "session", input: "/session\n/exit\n", want: "Continue it later with: ptah assist --resume"},
 		{name: "trace on", input: "/trace\n/exit\n", want: "tool trace on"},
 		{name: "unknown", input: "/nope\n/exit\n", want: `"/nope" is not a command`},

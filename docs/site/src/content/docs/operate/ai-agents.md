@@ -14,6 +14,15 @@ write until you name the classes they may write to.
 
 Nothing on this surface applies a migration to a database, at any setting.
 
+Every tool asks Ptah's capability policy before it does anything. A session
+always has a policy; a workspace only adds the artifact half. What that means in
+practice is that a server started with no flags can reach nothing: you name the
+directories a schema may be read from, and you name the database that may be
+inspected. Both refuse until you do.
+
+The server offers tools and nothing else — no MCP resources and no prompts. A
+client looking for them will find none.
+
 ## Connect a client
 
 Claude Code and Cursor read `mcpServers`:
@@ -73,14 +82,35 @@ the server a workspace and a target dialect:
 
 | tool | answers |
 | --- | --- |
+| `describe_session` | what this session may do, and what it can reach |
 | `validate_schema` | structural problems in a declared schema, for one dialect, with no database |
 | `render_schema` | the DDL a declared schema becomes, in dependency order |
 | `schema_lineage` | which base columns feed each view column |
-| `read_database` | the schema a live database currently holds |
+| `read_database` | the schema a configured database currently holds |
 
-Each takes its schema source or database URL as a tool argument, and reads it
-with this process's own permissions. The server holds no credentials, stores
-none, and opens no connection except the one a tool argument names.
+An agent starts with `describe_session`. It reports two different things, and
+keeping them apart is the point: **what the policy permits**, as the whole
+capability table with refusals included, and **what this process can reach** —
+the schema source directories, the configured databases by name and class, and
+the workspace when there is one. A row saying `database.inspect:dev ask` beside
+an empty database list is not a contradiction. One is authority; the other is
+whether anything is there.
+
+### Where a schema may be read from
+
+A schema source is a path the model chooses, so the operator chooses the
+directories:
+
+```bash
+ptah mcp --schema-source-root ./schema --schema-source-root ./models
+```
+
+`--workspace` is a root when you pass one. Without any root, the schema tools
+refuse: a server told no directory has not been told what an agent may read.
+
+A source that would be fetched rather than opened — `oci://`, `http://`,
+anything with a scheme — is refused. Fetching is a network operation, and no
+capability on this surface grants one.
 
 Three of Ptah's own reading verbs are deliberately absent: `schema inspect`,
 `schema diff`, and `migrations lint`. Each needs a scratch database that Ptah
@@ -92,13 +122,18 @@ supply that database out of band rather than from the caller.
 
 | tool | answers |
 | --- | --- |
-| `describe_workspace` | which artifact directories exist, their digests, and what this session may do |
 | `read_artifact` | one artifact directory, or one file inside it, with digests |
 | `preview_patch` | what a proposed change would do: a diff per file and the resulting digest |
 | `apply_patch` | apply a previewed patch, verify the result, undo it if the write broke something |
 
-An agent starts with `describe_workspace`. Artifact paths are relative to
-the directories it reports, and a patch has to carry the digest it reports.
+Artifact paths are relative to the directories `describe_session` reports.
+
+A patch has to carry the artifact digest by the time it is applied.
+`preview_patch` accepts a patch without one and reports the digest to carry, but
+`apply_patch` refuses a patch that has none — and it spends the preview token
+first, so the next attempt starts from a new preview. Passing
+`expected_digest` to `preview_patch` is the way to find that out at preview
+time rather than at apply time.
 
 A change lands in three steps:
 
@@ -119,8 +154,11 @@ is an apply of a token that was already spent.
 Three flags, in increasing order of what they permit:
 
 ```bash
-# Reading tools only. No workspace, no artifact tools.
+# Reading tools only, and nothing configured for them to read.
 ptah mcp
+
+# Reading a declared schema.
+ptah mcp --schema-source-root ./schema
 
 # Artifact tools, read-only: an agent can describe, read, and preview.
 ptah mcp --workspace . --migrations-dir ./migrations --dialect postgres
@@ -139,6 +177,41 @@ its own directory flag: `--migrations-dir`, `--schema-dir`, `--tests-dir`. A
 class you do not name is a class no tool can write to, whatever the model asks
 for.
 
+### Let an agent read a live database
+
+The database is yours to configure, not the agent's to name:
+
+```bash
+ptah mcp \
+  --database-url "postgres://reader@db.internal:5432/app?sslmode=require" \
+  --database-class dev \
+  --allow-database-inspect ask
+```
+
+The model never sees that URL. `describe_session` reports the target's name and
+class, `read_database` names the target, and Ptah opens the connection.
+
+Configuring a database and permitting an agent to read it are separate
+decisions. Without `--allow-database-inspect` the builtin table decides:
+
+| class | what happens |
+| --- | --- |
+| `ephemeral` | allowed; a throwaway database Ptah itself created |
+| `dev` | asked about, per read |
+| `target` | asked about, per read |
+| `production` | denied, and no flag on this surface widens it |
+| `unclassified` | denied; this is what a database with no `--database-class` is |
+
+The class comes from you and from nowhere else. A database named `production`
+on a host named `prod` is `unclassified` until you classify it, because a label
+somebody chose is not a fact about trust.
+
+`--auto-approve` is about patches. It grants nothing here.
+
+An approval is bound to the exact database, not to its class: approving one dev
+database for the rest of a session does not carry to another, and repointing the
+configuration at a different URL invalidates the approval.
+
 `--dialect` names the target the verification gates validate and lint against,
 and `--server-version` pins the release within that dialect so a rule gated on a
 capability the family gained later answers for the server you run.
@@ -151,20 +224,27 @@ three verdicts before the model is reached:
 | verdict | what happens |
 | --- | --- |
 | `allow` | the operation proceeds |
-| `ask` | the operation waits for you to approve this exact patch |
+| `ask` | the call returns an input request, and the client re-issues it carrying your answer |
 | `deny` | the operation is refused, and the refusal names what would grant it |
 
+`ask` does not block a call while somebody thinks. The protocol revision this
+server speaks does not let a server interrupt a tool call to ask a question, so
+the call ends with a request for input and the client calls again with the
+answer.
+
 `ask` with nobody to ask is a refusal, never a promotion. A client that cannot
-present a prompt gets a message naming `--allow-write` and `--auto-approve`
-rather than a write nobody approved.
+present a prompt is told to grant the capability outright, because naming a
+class without `--auto-approve` produces exactly the state that could not be
+resolved.
 
 An approval prompt shows the capability, the artifact, the paths, the digest
 before and after, and the patch's own content address. Approving covers that
 patch and nothing else. You can also approve a capability for the rest of the
 session; that grant lives in the process and dies with it.
 
-`describe_workspace` reports the whole table, refusals included, so an
-agent can tell you what it may do without trying.
+`describe_session` reports the whole table, refusals included, so an agent can
+tell you what it may do without trying — and every row it reports is a row the
+matching operation obeys.
 
 ### Narrow the policy from the repository
 
@@ -177,7 +257,7 @@ artifact.write:tests deny
 
 That file can only take permissions away. A rule in it that would grant more
 than the flags did is ignored and reported in
-`describe_workspace`'s `ignored_policy_rules`, because the file lives in
+`describe_workspace`'s `ignored_policy_rules` in `describe_session`, because the file lives in
 the repository the model is reading — treating it as a grant would let project
 content decide what the next tool call may do.
 
@@ -216,7 +296,13 @@ a human approved, the paths, the digests before and after, and which gates ran.
 Refusals are recorded alongside permissions. A log written only when something
 succeeded would show a clean session for exactly the run worth reading.
 
-The record carries no file content, no database URL, and no credential.
+Ptah's own fields carry no file content, no database URL and no credential: a
+database is recorded by the identity and class of the configured target.
+
+One field is the model's words. `caller_summary` is the summary the model wrote
+for its own patch, kept verbatim so the record says what was claimed. A model
+can put anything there, including file content, and it is excluded from the
+patch identity for exactly that reason.
 
 ## Safety boundary
 

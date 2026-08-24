@@ -6,6 +6,8 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/internal/agentapi"
+	"go.5x5.cz/ptah/internal/agentpolicy"
+	"go.5x5.cz/ptah/internal/agenttarget"
 )
 
 // agentProbePassword is the secret the URLs below carry. It is a word that
@@ -46,7 +48,16 @@ func TestReadDatabase_ErrorDoesNotCarryThePassword(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			_, err := agentapi.ReadDatabase(c.Context(), agentapi.ReadDatabaseRequest{DatabaseURL: test.url})
+			// The URL is the operator's, so the target is where it goes. The
+			// class is ephemeral so the read is allowed and actually attempts
+			// the connection: a refusal would make the assertion below vacuous.
+			session := sessionOptions{
+				targets: []agenttarget.Config{
+					{Name: "probe", URL: test.url, Class: agentpolicy.ClassEphemeral},
+				},
+			}.build(c)
+
+			_, err := session.ReadDatabase(c.Context(), agentapi.ReadDatabaseRequest{})
 
 			// The call must fail, or the assertion below is about nothing.
 			c.Assert(err, qt.IsNotNil)

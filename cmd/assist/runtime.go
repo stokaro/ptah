@@ -70,10 +70,13 @@ func connectTools(
 	approve approvalHandler,
 ) (*mcp.ClientSession, error) {
 	serverTransport, clientTransport := mcp.NewInMemoryTransports()
-	server := mcpserver.New(mcpserver.Config{
+	server, err := mcpserver.New(mcpserver.Config{
 		Version: buildinfo.Resolve().Version,
 		Session: session,
 	})
+	if err != nil {
+		return nil, err
+	}
 	if _, err := server.Connect(cmd.Context(), serverTransport, nil); err != nil {
 		return nil, fmt.Errorf("start the Ptah tool surface: %w", err)
 	}

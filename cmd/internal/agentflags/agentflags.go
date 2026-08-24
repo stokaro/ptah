@@ -15,6 +15,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -29,6 +30,7 @@ import (
 	"go.5x5.cz/ptah/internal/agentaudit"
 	"go.5x5.cz/ptah/internal/agentgate"
 	"go.5x5.cz/ptah/internal/agentpolicy"
+	"go.5x5.cz/ptah/internal/agenttarget"
 	"go.5x5.cz/ptah/internal/agentworkspace"
 	"go.5x5.cz/ptah/internal/buildinfo"
 	"go.5x5.cz/ptah/internal/mcpserver"
@@ -38,14 +40,19 @@ import (
 // Flag names, in one place because two commands, their help text, and the
 // documentation all quote them.
 const (
-	WorkspaceFlag     = "workspace"
-	MigrationsDirFlag = "migrations-dir"
-	SchemaDirFlag     = "schema-dir"
-	TestsDirFlag      = "tests-dir"
-	DialectFlag       = "dialect"
-	AllowWriteFlag    = "allow-write"
-	AutoApproveFlag   = "auto-approve"
-	AuditLogFlag      = "audit-log"
+	WorkspaceFlag            = "workspace"
+	MigrationsDirFlag        = "migrations-dir"
+	SchemaDirFlag            = "schema-dir"
+	TestsDirFlag             = "tests-dir"
+	DialectFlag              = "dialect"
+	AllowWriteFlag           = "allow-write"
+	DatabaseURLFlag          = "database-url"
+	DatabaseNameFlag         = "database-name"
+	DatabaseClassFlag        = "database-class"
+	AllowDatabaseInspectFlag = "allow-database-inspect"
+	SchemaSourceRootFlag     = "schema-source-root"
+	AutoApproveFlag          = "auto-approve"
+	AuditLogFlag             = "audit-log"
 )
 
 // projectPolicyFile is the repository-carried policy this server reads.
@@ -67,6 +74,25 @@ type Options struct {
 	AllowWrite    []string
 	AutoApprove   bool
 	AuditLog      string
+	// DatabaseURL is the live database an agent may be permitted to inspect.
+	// It never reaches the model.
+	DatabaseURL string
+	// DatabaseName is the identity a caller names the target by. It is a label
+	// and carries no authority.
+	DatabaseName string
+	// DatabaseClass is the operator's trust classification. Nothing infers it
+	// from the URL, the host or the name.
+	DatabaseClass string
+	// AllowDatabaseInspect sets the effective verdict for inspecting the
+	// configured target's class: "ask" or "allow".
+	//
+	// It is its own flag rather than a use of --auto-approve. --auto-approve
+	// is named for patch approval, and letting it double as a database grant
+	// would make an operator who wanted unattended patching also grant
+	// unattended database access without ever reading a word about it.
+	AllowDatabaseInspect string
+	// SchemaSourceRoots are the directories a declared schema may be read from.
+	SchemaSourceRoots []string
 }
 
 // Build turns flags into an agent session, refusing anything ambiguous before a
@@ -107,7 +133,11 @@ func build(cmd *cobra.Command, opts *Options, openRecorder auditOpener) (*agenta
 		if err := refuseWorkspaceFlagsWithoutAWorkspace(opts); err != nil {
 			return nil, noop, err
 		}
-		return nil, noop, nil
+		// Still a session, and still a policy. Only the artifact half needs a
+		// workspace; the reading operations need a broker, and a surface that
+		// skipped building one would be a surface where a capability resolves
+		// to a verdict nothing consults.
+		return buildWithoutWorkspace(opts)
 	}
 
 	classes, err := resolveClasses(opts)
@@ -160,11 +190,19 @@ func build(cmd *cobra.Command, opts *Options, openRecorder auditOpener) (*agenta
 		return nil, noop, err
 	}
 
+	targets, err := resolveTargets(opts)
+	if err != nil {
+		closeAudit()
+		closeWorkspace()
+		return nil, noop, err
+	}
 	session, err := agentapi.NewSession(agentapi.SessionConfig{
-		Workspace: workspace,
-		Broker:    agentpolicy.NewBroker(policy, brokerOptions(opts, audit)...),
-		Gates:     gates,
-		Audit:     audit,
+		Workspace:   workspace,
+		Targets:     targets,
+		SourceRoots: resolveSourceRoots(opts, workspace.Root()),
+		Broker:      agentpolicy.NewBroker(policy, brokerOptions(opts, audit)...),
+		Gates:       gates,
+		Audit:       audit,
 	})
 	if err != nil {
 		closeAudit()
@@ -237,7 +275,6 @@ func refuseWorkspaceFlagsWithoutAWorkspace(opts *Options) error {
 		{TestsDirFlag, opts.TestsDir != ""},
 		{serverversion.FlagName, opts.ServerVersion != ""},
 		{AllowWriteFlag, len(opts.AllowWrite) > 0},
-		{AutoApproveFlag, opts.AutoApprove},
 		{AuditLogFlag, opts.AuditLog != ""},
 	}
 	for _, flag := range dependent {
@@ -317,6 +354,38 @@ func resolveDialect(requested string) (string, error) {
 	return resolved, nil
 }
 
+// buildWithoutWorkspace makes the session `ptah mcp` with no workspace flags
+// gets: a policy and an audit recorder, and no artifact directories.
+//
+// The project policy layer is not read, because there is no project to read it
+// from. That only ever narrows, so its absence cannot widen anything.
+func buildWithoutWorkspace(opts *Options) (*agentapi.Session, func(), error) {
+	noop := func() {}
+	policy, err := resolvePolicy(opts, "")
+	if err != nil {
+		return nil, noop, err
+	}
+	// Nothing is written. The audit record belongs beside the project it
+	// describes, --audit-log is refused without a workspace, and a default path
+	// resolved against an empty root would drop a file into whatever directory
+	// the client started the server in.
+	audit := agentaudit.Recorder(agentaudit.Discard{})
+	targets, err := resolveTargets(opts)
+	if err != nil {
+		return nil, noop, err
+	}
+	session, err := agentapi.NewSession(agentapi.SessionConfig{
+		Broker:      agentpolicy.NewBroker(policy, brokerOptions(opts, audit)...),
+		Targets:     targets,
+		SourceRoots: resolveSourceRoots(opts, ""),
+		Audit:       audit,
+	})
+	if err != nil {
+		return nil, noop, err
+	}
+	return session, noop, nil
+}
+
 // resolvePolicy assembles the invocation layer from the flags and the project
 // layer from the repository, in that order of authority.
 func resolvePolicy(opts *Options, root string) (*agentpolicy.Policy, error) {
@@ -342,19 +411,148 @@ func resolvePolicy(opts *Options, root string) (*agentpolicy.Policy, error) {
 		})
 	}
 
-	layers := []agentpolicy.LayerRules{{
-		Layer:  agentpolicy.LayerInvocation,
-		Source: "ptah mcp flags",
-		Rules:  rules,
-	}}
-	project, err := readProjectPolicy(root)
+	// The inspection rule is scoped to the configured target's class and to
+	// nothing else. There is no rule at all when the operator did not ask for
+	// one, so the builtin table decides -- and its answer for an unclassified
+	// or production database is deny.
+	inspect, err := inspectionRule(opts)
 	if err != nil {
 		return nil, err
 	}
-	if project != nil {
-		layers = append(layers, *project)
+	if inspect != nil {
+		rules = append(rules, *inspect)
+	}
+
+	layers := []agentpolicy.LayerRules{{
+		Layer:  agentpolicy.LayerInvocation,
+		Source: "ptah agent flags",
+		Rules:  rules,
+	}}
+	// No workspace means no project, and no project policy to read. Joining an
+	// empty root would resolve the name against the working directory, which is
+	// whatever directory a client happened to start the server in.
+	if root != "" {
+		project, err := readProjectPolicy(root)
+		if err != nil {
+			return nil, err
+		}
+		if project != nil {
+			layers = append(layers, *project)
+		}
 	}
 	return agentpolicy.Assemble(layers...)
+}
+
+// resolveTargets builds the live databases this process was configured with.
+//
+// One target, because approval semantics for several of them are a decision
+// this phase has not made and a wrong guess would be an approval bound to the
+// wrong database.
+func resolveTargets(opts *Options) (*agenttarget.Set, error) {
+	if opts.DatabaseURL == "" {
+		return agenttarget.NewSet()
+	}
+	class, err := databaseClass(opts.DatabaseClass)
+	if err != nil {
+		return nil, err
+	}
+	target, err := agenttarget.New(agenttarget.Config{
+		Name:  defaultTargetName(opts),
+		URL:   opts.DatabaseURL,
+		Class: class,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return agenttarget.NewSet(target)
+}
+
+// defaultTargetName is what a caller names the database by.
+//
+// Derived from the URL's database segment only as a label. Nothing reads trust
+// out of it: the class comes from --database-class and from nowhere else, so a
+// database called "production" on a host called "prod" is still unclassified
+// until an operator says otherwise.
+func defaultTargetName(opts *Options) string {
+	if opts.DatabaseName != "" {
+		return opts.DatabaseName
+	}
+	parsed, err := url.Parse(opts.DatabaseURL)
+	if err != nil {
+		return "database"
+	}
+	if name := strings.Trim(parsed.Path, "/"); name != "" {
+		return name
+	}
+	return "database"
+}
+
+// resolveSourceRoots is where declared schemas may be read from.
+//
+// The workspace is a root when there is one, because an operator who named a
+// project has said which tree an agent is working in. Without a workspace the
+// operator names the directories, and naming none permits none.
+func resolveSourceRoots(opts *Options, workspaceRoot string) []string {
+	roots := make([]string, 0, len(opts.SchemaSourceRoots)+1)
+	if workspaceRoot != "" {
+		roots = append(roots, workspaceRoot)
+	}
+	return append(roots, opts.SchemaSourceRoots...)
+}
+
+// inspectionRule is the operator's decision about reading the configured
+// database, or nil when they made none.
+//
+// It can be scoped no wider than the class of the target this process was
+// given: an operator granting inspection of their dev database is not thereby
+// granting inspection of a production one, and there is no spelling here that
+// would let them do it by accident.
+func inspectionRule(opts *Options) (*agentpolicy.Rule, error) {
+	if opts.AllowDatabaseInspect == "" {
+		return nil, nil //nolint:nilnil // "the operator said nothing" is not a rule and not a failure
+	}
+	if opts.DatabaseURL == "" {
+		return nil, fmt.Errorf("--%s needs --%s: there is no database for it to be about",
+			AllowDatabaseInspectFlag, DatabaseURLFlag)
+	}
+	verdict, known := inspectionVerdicts[opts.AllowDatabaseInspect]
+	if !known {
+		return nil, fmt.Errorf("--%s: unknown verdict %q; want ask or allow",
+			AllowDatabaseInspectFlag, opts.AllowDatabaseInspect)
+	}
+	class, err := databaseClass(opts.DatabaseClass)
+	if err != nil {
+		return nil, err
+	}
+	return &agentpolicy.Rule{
+		Capability: agentpolicy.DatabaseInspect,
+		Database:   class,
+		Verdict:    verdict,
+	}, nil
+}
+
+// inspectionVerdicts is what --allow-database-inspect accepts.
+//
+// Deny is absent: a rule is how an operator widens the builtin table, and the
+// builtin answer for every class this flag can name is already at least as
+// narrow. Narrowing is the project layer's job.
+var inspectionVerdicts = map[string]agentpolicy.Verdict{
+	"ask":   agentpolicy.VerdictAsk,
+	"allow": agentpolicy.VerdictAllow,
+}
+
+// databaseClass resolves the operator's classification, defaulting to the one
+// that grants nothing.
+func databaseClass(requested string) (agentpolicy.DatabaseClass, error) {
+	if requested == "" {
+		return agentpolicy.ClassUnclassified, nil
+	}
+	for _, known := range agentpolicy.DatabaseClasses() {
+		if string(known) == requested {
+			return known, nil
+		}
+	}
+	return "", fmt.Errorf("--%s: unknown class %q", DatabaseClassFlag, requested)
 }
 
 // readProjectPolicy reads the repository's own policy file, if it has one.
@@ -453,6 +651,16 @@ func Register(cmd *cobra.Command) *Options {
 		"Artifact classes an agent may propose writes to: migrations, schema, tests")
 	flags.BoolVar(&opts.AutoApprove, AutoApproveFlag, false,
 		"Apply patches without asking for approval through the client")
+	flags.StringVar(&opts.DatabaseURL, DatabaseURLFlag, "",
+		"Live database an agent may be permitted to inspect; never sent to the model")
+	flags.StringVar(&opts.DatabaseName, DatabaseNameFlag, "",
+		"Name a caller selects the database by; defaults to the database in the URL")
+	flags.StringVar(&opts.DatabaseClass, DatabaseClassFlag, "",
+		"Trust classification of the database: ephemeral, dev, target, production or unclassified")
+	flags.StringVar(&opts.AllowDatabaseInspect, AllowDatabaseInspectFlag, "",
+		"Effective verdict for inspecting the configured database: ask or allow")
+	flags.StringSliceVar(&opts.SchemaSourceRoots, SchemaSourceRootFlag, nil,
+		"Directories a declared schema may be read from; the workspace when one is configured")
 	flags.StringVar(&opts.AuditLog, AuditLogFlag, "",
 		"Where to append the agent audit record (default <workspace>/.ptah/agent-audit.jsonl)")
 
@@ -460,5 +668,6 @@ func Register(cmd *cobra.Command) *Options {
 	// `db drop-all --auto-approve` carries none: a variable exported once in a
 	// shell profile is not a decision somebody made about this session.
 	_ = cmdflags.DisableEnvBinding(flags, AutoApproveFlag)
+	_ = cmdflags.DisableEnvBinding(flags, AllowDatabaseInspectFlag)
 	return opts
 }

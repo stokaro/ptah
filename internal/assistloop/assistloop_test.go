@@ -61,7 +61,8 @@ func toolSession(c *qt.C) *mcp.ClientSession {
 	c.Assert(err, qt.IsNil)
 
 	serverTransport, clientTransport := mcp.NewInMemoryTransports()
-	server := mcpserver.New(mcpserver.Config{Version: "test", Session: session})
+	server, err := mcpserver.New(mcpserver.Config{Version: "test", Session: session})
+	c.Assert(err, qt.IsNil)
 	serverSession, err := server.Connect(ctx, serverTransport, nil)
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { _ = serverSession.Close() })
@@ -122,7 +123,7 @@ func TestRun_OffersTheModelTheSameToolsAnExternalClientGets(t *testing.T) {
 		c.Assert(string(tool.Schema), qt.Contains, `"type"`)
 	}
 	c.Assert(offered["validate_schema"], qt.IsTrue)
-	c.Assert(offered["describe_workspace"], qt.IsTrue)
+	c.Assert(offered["describe_session"], qt.IsTrue)
 	c.Assert(offered["apply_patch"], qt.IsTrue)
 	c.Assert(offered, qt.HasLen, 8)
 }
@@ -188,7 +189,7 @@ func TestRun_StopsAtTheTurnLimit(t *testing.T) {
 	c := qt.New(t)
 	turns := make([]aiprovider.Response, 0, 6)
 	for range 6 {
-		turns = append(turns, aiprovider.ToolTurn("t", "describe_workspace", make(map[string]any)))
+		turns = append(turns, aiprovider.ToolTurn("t", "describe_session", make(map[string]any)))
 	}
 	loop := loopWith(c, aiprovider.NewFake(turns...), assistloop.Options{MaxTurns: 2, MaxRepeats: 99})
 
@@ -205,7 +206,7 @@ func TestRun_StopsWhenTheModelRepeatsItself(t *testing.T) {
 	c := qt.New(t)
 	turns := make([]aiprovider.Response, 0, 8)
 	for range 8 {
-		turns = append(turns, aiprovider.ToolTurn("t", "describe_workspace", make(map[string]any)))
+		turns = append(turns, aiprovider.ToolTurn("t", "describe_session", make(map[string]any)))
 	}
 	loop := loopWith(c, aiprovider.NewFake(turns...), assistloop.Options{MaxRepeats: 2})
 
@@ -223,7 +224,7 @@ func TestRun_StopsAtTheToolCallLimit(t *testing.T) {
 		Message: aiprovider.Message{
 			Role: aiprovider.RoleAssistant,
 			ToolCalls: []aiprovider.ToolCall{
-				{ID: "a", Name: "describe_workspace", Arguments: []byte(`{}`)},
+				{ID: "a", Name: "describe_session", Arguments: []byte(`{}`)},
 				{ID: "b", Name: "read_artifact", Arguments: []byte(`{"artifact":"migrations"}`)},
 			},
 		},
