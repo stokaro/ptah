@@ -1284,3 +1284,82 @@ func TestLibraryUsageExamples(t *testing.T) {
 		c.Assert(diff.ExtensionsRemoved, qt.DeepEquals, make([]string, 0)) // plpgsql still ignored
 	})
 }
+
+// TestCompareWithDialect_SpannerStringSpellingsAreOneType pins that Spanner's
+// two spellings of its single string type are not a schema change.
+//
+// Spanner's PostgreSQL interface has one string type. A `text` column and an
+// unbounded `character varying` are the same STRING(MAX), and the catalog
+// reports the second whichever was declared -- measured on the PGAdapter
+// emulator v0.55.2, a column applied as `text` reads back as
+// `character varying`. Comparing the spellings planned
+// `ALTER COLUMN ... TYPE text` on every run of a document the database already
+// matched, and the emulator answers that ALTER with a GOOGLESQL_RET_CHECK
+// failure, so the drift could never be cleared (stokaro/ptah#2074).
+func TestCompareWithDialect_SpannerStringSpellingsAreOneType(t *testing.T) {
+	tests := []struct {
+		name          string
+		generatedType string
+		databaseType  string
+	}{
+		{name: "declared text against the catalog's spelling", generatedType: "text", databaseType: "character varying"},
+		{name: "declared varchar against the catalog's spelling", generatedType: "varchar", databaseType: "character varying"},
+		{name: "declared text against varchar", generatedType: "text", databaseType: "varchar"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			diff := schemadiff.CompareWithDialect(
+				sqliteColumnGeneratedSchema(tt.generatedType),
+				sqliteColumnDatabaseSchema(tt.databaseType),
+				"spanner",
+			)
+			c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("diff: %+v", diff))
+		})
+	}
+}
+
+// TestCompareWithDialect_SpannerWidthIsStillATypeChange is the control the fold
+// above needs.
+//
+// A width is a real distinction on Spanner -- STRING(200) is not STRING(MAX) --
+// so folding the unbounded spellings together must not fold a bounded one in
+// with them, in either direction.
+func TestCompareWithDialect_SpannerWidthIsStillATypeChange(t *testing.T) {
+	tests := []struct {
+		name          string
+		generatedType string
+		databaseType  string
+	}{
+		{name: "a bounded declaration against an unbounded column", generatedType: "varchar(200)", databaseType: "character varying"},
+		{name: "an unbounded declaration against a bounded column", generatedType: "text", databaseType: "character varying(200)"},
+		{name: "two different widths", generatedType: "varchar(200)", databaseType: "character varying(400)"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			diff := schemadiff.CompareWithDialect(
+				sqliteColumnGeneratedSchema(tt.generatedType),
+				sqliteColumnDatabaseSchema(tt.databaseType),
+				"spanner",
+			)
+			c.Assert(diff.HasChanges(), qt.IsTrue, qt.Commentf("diff: %+v", diff))
+		})
+	}
+}
+
+// TestCompareWithDialect_SpannerFoldDoesNotReachOtherTargets keeps the fold
+// where it belongs: PostgreSQL has both types and they are not the same one.
+func TestCompareWithDialect_SpannerFoldDoesNotReachOtherTargets(t *testing.T) {
+	c := qt.New(t)
+
+	diff := schemadiff.CompareWithDialect(
+		sqliteColumnGeneratedSchema("text"),
+		sqliteColumnDatabaseSchema("character varying"),
+		"postgres",
+	)
+
+	c.Assert(diff.HasChanges(), qt.IsTrue, qt.Commentf("diff: %+v", diff))
+}
