@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 
 	mysqldriver "github.com/go-sql-driver/mysql"
@@ -779,7 +780,13 @@ const indexKeyPartsQuery = `
 			s.TABLE_NAME,
 			s.COLUMN_NAME,
 			s.NON_UNIQUE,
-			s.INDEX_TYPE
+			s.INDEX_TYPE,
+			-- The number of leading characters this key indexes, NULL for a
+			-- whole-column key. MySQL requires one for a BLOB or TEXT column,
+			-- so a key that loses it produces a description the server refuses:
+			-- used in key specification without a key length
+			-- (stokaro/ptah#2112).
+			s.SUB_PART
 		FROM information_schema.STATISTICS s
 		WHERE s.TABLE_SCHEMA = ?
 		AND s.TABLE_NAME NOT IN ('schema_migrations')
@@ -805,8 +812,9 @@ func (r *Reader) readIndexes(dbName string) ([]types.DBIndex, error) {
 			columnName sql.NullString
 			nonUnique  int
 			indexType  string
+			subPart    sql.NullInt64
 		)
-		err := rows.Scan(&name, &tableName, &columnName, &nonUnique, &indexType)
+		err := rows.Scan(&name, &tableName, &columnName, &nonUnique, &indexType, &subPart)
 		if err != nil {
 			return nil, err
 		}
@@ -823,10 +831,13 @@ func (r *Reader) readIndexes(dbName string) ([]types.DBIndex, error) {
 			})
 			indexTypes = append(indexTypes, indexType)
 		}
-		addIndexKeyPart(&indexes[position], columnName)
+		addIndexKeyPart(&indexes[position], columnName, subPart)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
+	}
+	for i := range indexes {
+		dropUninformativeParts(&indexes[i])
 	}
 	for position := range indexes {
 		index := &indexes[position]
@@ -850,12 +861,48 @@ func (r *Reader) readIndexes(dbName string) ([]types.DBIndex, error) {
 // is missing from Columns rather than dropped silently: a comparison that read
 // Columns as the whole key would plan a rebuild of a key that never changed.
 // See [types.DBIndex.KeyPartsIncomplete].
-func addIndexKeyPart(index *types.DBIndex, columnName sql.NullString) {
+func addIndexKeyPart(index *types.DBIndex, columnName sql.NullString, subPart sql.NullInt64) {
 	if !columnName.Valid {
 		index.KeyPartsIncomplete = true
 		return
 	}
 	index.Columns = append(index.Columns, columnName.String)
+	index.Parts = append(index.Parts, types.DBIndexPart{
+		Name:   columnName.String,
+		Prefix: indexKeyPrefix(subPart),
+	})
+}
+
+// dropUninformativeParts clears Parts for a key whose parts say nothing Columns
+// does not.
+//
+// Parts is assembled for every key because a prefix cannot be known until the
+// last row of that key has been read, and a list missing its later parts would
+// be worse than none: the renderer reads Parts when it has any, so a key whose
+// second part was dropped would render as a key over the first column alone.
+// Once the key is complete, a Parts list carrying nothing but the column names
+// is dropped, which leaves every ordinary index reported exactly as it was.
+func dropUninformativeParts(index *types.DBIndex) {
+	for _, part := range index.Parts {
+		if part.Prefix != "" {
+			return
+		}
+	}
+	index.Parts = nil
+}
+
+// indexKeyPrefix spells SUB_PART the way the schema does, and answers empty for
+// a key that covers the whole column.
+//
+// Parts is filled for every key rather than only the prefixed ones, because a
+// partial list would be worse than none: the renderer reads Parts when it has
+// any, and a key whose second part was dropped would render as a key over the
+// first column alone.
+func indexKeyPrefix(subPart sql.NullInt64) string {
+	if !subPart.Valid || subPart.Int64 <= 0 {
+		return ""
+	}
+	return strconv.FormatInt(subPart.Int64, 10)
 }
 
 // readConstraints reads all constraints
