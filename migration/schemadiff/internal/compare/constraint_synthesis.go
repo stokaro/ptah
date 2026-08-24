@@ -100,7 +100,23 @@ func synthesizeTablePrimaryKeyConstraints(
 		if len(columns) == 0 {
 			continue
 		}
-		if _, exists := dbTables[newQualifiedTableIdentity(table.QualifiedName(), semantics)]; !exists {
+		identity := newQualifiedTableIdentity(table.QualifiedName(), semantics)
+		if _, exists := dbTables[identity]; !exists {
+			continue
+		}
+		if livePrimaryKeyIsOnTheColumns(database, identity, columns, semantics) {
+			// The key is already there and the read carries it on the columns
+			// rather than as a constraint row, so there is nothing to compare a
+			// synthesized constraint against and an addition would be planned
+			// for a key that exists.
+			//
+			// Oracle is the engine that does this. Its reader drops a
+			// system-named PRIMARY KEY after copying the fact onto the columns
+			// (stokaro/ptah#1890), which is right for a key declared on a field
+			// and left a table-level `primary_key` block with no counterpart:
+			// measured on Oracle Free 23, applying one HCL document twice
+			// answered `ORA-02260: table can have only one primary key`
+			// (stokaro/ptah#2057).
 			continue
 		}
 
@@ -114,6 +130,77 @@ func synthesizeTablePrimaryKeyConstraints(
 		})
 	}
 	return synthesized
+}
+
+// livePrimaryKeyIsOnTheColumns reports that the live table already has exactly
+// this primary key, recorded on its columns rather than as a constraint row.
+//
+// Both halves are required. A table whose read carries a PRIMARY KEY row is
+// compared through that row, as every engine but Oracle does. A key on the
+// columns that does not MATCH the declared one is a real change and has to be
+// planned, so the column set is compared and not merely counted.
+func livePrimaryKeyIsOnTheColumns(
+	database *types.DBSchema,
+	identity tableIdentity,
+	declared []string,
+	semantics identifier.Semantics,
+) bool {
+	for _, constraint := range database.Constraints {
+		if constraint.Type != "PRIMARY KEY" {
+			continue
+		}
+		if newQualifiedTableIdentity(constraint.QualifiedTableName(), semantics) == identity {
+			return false
+		}
+	}
+	live := livePrimaryKeyColumns(database, identity, semantics)
+	if len(live) == 0 {
+		return false
+	}
+	return columnSetsMatch(declared, live, semantics)
+}
+
+// livePrimaryKeyColumns names the columns the read marked as this table's
+// primary key.
+func livePrimaryKeyColumns(
+	database *types.DBSchema,
+	identity tableIdentity,
+	semantics identifier.Semantics,
+) []string {
+	for _, table := range database.Tables {
+		if newQualifiedTableIdentity(table.QualifiedName(), semantics) != identity {
+			continue
+		}
+		columns := make([]string, 0, len(table.Columns))
+		for _, column := range table.Columns {
+			if column.IsPrimaryKey {
+				columns = append(columns, column.Name)
+			}
+		}
+		return columns
+	}
+	return nil
+}
+
+// columnSetsMatch compares two column lists under the target's identifier
+// rules, which is what makes an upper-cased catalog and a lower-cased
+// declaration one key.
+func columnSetsMatch(declared, live []string, semantics identifier.Semantics) bool {
+	if len(declared) != len(live) {
+		return false
+	}
+	folded := make(map[string]int, len(live))
+	for _, column := range live {
+		folded[semantics.ColumnIdentityKey(column)]++
+	}
+	for _, column := range declared {
+		key := semantics.ColumnIdentityKey(column)
+		if folded[key] == 0 {
+			return false
+		}
+		folded[key]--
+	}
+	return true
 }
 
 // tablePrimaryKeyConstraintName adopts the name the database already uses for

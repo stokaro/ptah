@@ -107,8 +107,8 @@ var fixedTypes = map[string]string{
 // argument list.
 func parameterizedType(base, arguments, declared string) string {
 	switch base {
-	case "DECIMAL", "NUMERIC":
-		return "NUMBER" + arguments
+	case "DECIMAL", "NUMERIC", "NUMBER":
+		return "NUMBER" + withoutZeroScale(arguments)
 	case "VARCHAR", "CHARACTER VARYING":
 		if arguments == "" {
 			return "VARCHAR2(4000)"
@@ -121,6 +121,28 @@ func parameterizedType(base, arguments, declared string) string {
 	}
 }
 
+// withoutZeroScale drops an explicit scale of zero, which Oracle does not keep.
+//
+// `NUMBER(10,0)` and `NUMBER(10)` are one type -- the default scale IS zero --
+// and `user_tab_columns` reports the second. A declaration writing the first
+// therefore never matched its own column: measured on Oracle Free 23, applying
+// one document twice planned
+// `ALTER TABLE items MODIFY (id number(10,0))` on the second run and on every
+// run after it (stokaro/ptah#2057).
+//
+// Only a literal `,0` is dropped. A scale that is not zero is part of the type
+// and the catalog reports it, so `NUMBER(10,2)` passes through untouched.
+func withoutZeroScale(arguments string) string {
+	trimmed := strings.TrimSpace(arguments)
+	if !strings.HasPrefix(trimmed, "(") || !strings.HasSuffix(trimmed, ")") {
+		return arguments
+	}
+	precision, scale, split := strings.Cut(trimmed[1:len(trimmed)-1], ",")
+	if !split || strings.TrimSpace(scale) != "0" {
+		return arguments
+	}
+	return "(" + strings.TrimSpace(precision) + ")"
+}
 func splitTypeArguments(upper string) (base, arguments string) {
 	index := strings.Index(upper, "(")
 	if index < 0 {
