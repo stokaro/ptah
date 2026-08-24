@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	qt "github.com/frankban/quicktest"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"go.5x5.cz/ptah/internal/agentpolicy"
 	"go.5x5.cz/ptah/internal/mcpserver"
@@ -180,4 +181,77 @@ func documentedTools(c *qt.C, page, heading string) []string {
 	}
 	slices.Sort(names)
 	return names
+}
+
+// TestToolDocs_TheCIGuidanceQuotesTheRefusalItDescribes holds the quoted
+// refusal in the CI section to the one the server produces.
+//
+// The quote is the whole point of that section: a job that named a write class
+// without --auto-approve fails, and the message is what tells the operator
+// which flag resolves it. A message reworded in the code and left alone in the
+// page would send a reader to a flag that is no longer the answer.
+func TestToolDocs_TheCIGuidanceQuotesTheRefusalItDescribes(t *testing.T) {
+	c := qt.New(t)
+	fixture := newWorkspace(c, agentpolicy.VerdictAsk, nil)
+	session := connect(c, fixture.config, nil)
+
+	read := callTool(c, session, "read_artifact", map[string]any{"artifact": "migrations"})
+	preview := callTool(c, session, "preview_patch", map[string]any{
+		"artifact":        "migrations",
+		"expected_digest": read["digest"],
+		"summary":         "a patch nobody can be asked about",
+		"changes": []map[string]any{
+			{"path": "1700000900_x.up.sql", "operation": "create", "content": "SELECT 1;\n"},
+			{"path": "1700000900_x.down.sql", "operation": "create", "content": "SELECT 1;\n"},
+		},
+	})
+	refusal := callToolError(c, session, "apply_patch", map[string]any{
+		"preview_token": preview["preview_token"],
+		"patch_id":      preview["patch_id"],
+	})
+
+	body, err := os.ReadFile(agentGuidePage)
+	c.Assert(err, qt.IsNil)
+	c.Assert(collapse(string(body)), qt.Contains, collapse(refusal),
+		qt.Commentf("the refusal the server produces is not the one %s quotes:\n%s", agentGuidePage, refusal))
+}
+
+// collapse folds every run of whitespace to one space, so a message the page
+// hard-wraps and a message the server emits on one line compare equal.
+func collapse(text string) string {
+	return strings.Join(strings.Fields(text), " ")
+}
+
+// callTool calls a tool and returns its structured result.
+func callTool(c *qt.C, session *mcp.ClientSession, name string, args map[string]any) map[string]any {
+	c.Helper()
+	result, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: name, Arguments: args})
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.IsError, qt.IsFalse, qt.Commentf("%s: %s", name, toolText(result)))
+	structured, ok := result.StructuredContent.(map[string]any)
+	c.Assert(ok, qt.IsTrue, qt.Commentf("%s returned no structured content", name))
+	return structured
+}
+
+// callToolError calls a tool that is expected to be refused and returns the
+// text the caller sees.
+func callToolError(c *qt.C, session *mcp.ClientSession, name string, args map[string]any) string {
+	c.Helper()
+	result, err := session.CallTool(context.Background(), &mcp.CallToolParams{Name: name, Arguments: args})
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.IsError, qt.IsTrue, qt.Commentf("%s was expected to be refused", name))
+	return toolText(result)
+}
+
+// toolText is the text content of a tool result.
+func toolText(result *mcp.CallToolResult) string {
+	parts := make([]string, 0, len(result.Content))
+	for _, content := range result.Content {
+		text, ok := content.(*mcp.TextContent)
+		if !ok {
+			continue
+		}
+		parts = append(parts, text.Text)
+	}
+	return strings.Join(parts, "\n")
 }
