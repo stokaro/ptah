@@ -40,10 +40,13 @@ func TestPushToPullFrom_RoundTrip(t *testing.T) {
 	c.Assert(pulled.Database.Sequences, qt.HasLen, 1)
 	c.Assert(pulled.Database.Sequences[0].Name, qt.Equals, "users_id_seq")
 	c.Assert(pulled.Database.Fields, qt.HasLen, 2)
+	// The declared order, which the fixture writes as id then email. It used to
+	// be the alphabetical one, because the HCL renderer sorted columns by name
+	// on the way into the artifact (stokaro/ptah#2085).
 	c.Assert(
 		[]string{pulled.Database.Fields[0].Name, pulled.Database.Fields[1].Name},
 		qt.DeepEquals,
-		[]string{"email", "id"},
+		[]string{"id", "email"},
 	)
 	data, err := fs.ReadFile(pulled.FileSystem, schemaartifact.FileName)
 	c.Assert(err, qt.IsNil)
