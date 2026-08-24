@@ -901,7 +901,7 @@ func renderColumn(column *ast.ColumnNode) (string, error) {
 	if column.GeneratedExpression != "" {
 		return "  " + escapeIdentifier(column.Name) + " " + renderGeneratedColumn(column), nil
 	}
-	parts := []string{"  " + escapeIdentifier(column.Name), mapColumnType(column.Type)}
+	parts := []string{"  " + escapeIdentifier(column.Name), columnTypeFor(column)}
 	if column.AutoInc {
 		parts = append(parts, renderIdentity(column))
 	}
@@ -962,7 +962,7 @@ func renderColumnForAlter(column *ast.ColumnNode) (string, error) {
 	if column == nil {
 		return "", fmt.Errorf("nil column")
 	}
-	parts := []string{escapeIdentifier(column.Name), mapColumnType(column.Type)}
+	parts := []string{escapeIdentifier(column.Name), columnTypeFor(column)}
 	if !column.Nullable || column.Primary {
 		parts = append(parts, "NOT NULL")
 	} else {
@@ -999,6 +999,43 @@ func renderGeneratedColumn(column *ast.ColumnNode) string {
 		sql += " PERSISTED"
 	}
 	return sql
+}
+
+// columnTypeFor writes a type the caller named for this target as it stands,
+// and maps everything else.
+//
+// mapColumnType exists for a PORTABLE declaration: VARCHAR there is the
+// spelling a schema written for several engines uses, and PostgreSQL's and
+// MySQL's varchar hold Unicode, so NVARCHAR is what preserves the meaning. The
+// same conversion applied to a type somebody named for SQL Server ITSELF is a
+// different column: varchar is one byte per character, nvarchar is two.
+//
+// Measured on SQL Server 2025, sql() came back converted:
+//
+//	column "a" { type = sql("VARCHAR(50)") }   ->   NVARCHAR(50)
+//
+// which is the one form whose whole purpose is to be written as it stands
+// (stokaro/ptah#2147).
+//
+// The platform.sqlserver.type override has the same symptom and is NOT fixed
+// here. It needs a fact of its own rather than this one: typeRawSQLSurvives in
+// internal/convert/fromschema deliberately drops the marker across an override,
+// because a writer emitting Atlas HCL would otherwise put sql() around text
+// that never went through it. #2147 records what that needs.
+//
+// The SQLite renderer already answers this question the same way and for the
+// same reason: canonicalizing is right for a declaration a person wrote and
+// wrong for a description of a database that already has one
+// (stokaro/ptah#2040).
+//
+// A bare VARCHAR is untouched by this and still becomes NVARCHAR. That is the
+// portable case, and deciding it differently is a separate question about which
+// #2147 has the measurements.
+func columnTypeFor(column *ast.ColumnNode) string {
+	if column.TypeRawSQL && strings.TrimSpace(column.Type) != "" {
+		return strings.TrimSpace(column.Type)
+	}
+	return mapColumnType(column.Type)
 }
 
 func mapColumnType(columnType string) string {
