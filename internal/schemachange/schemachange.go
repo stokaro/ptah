@@ -507,6 +507,19 @@ func modificationChange(object, existing schemastate.Object, changed []string) C
 func decide(change Change, profile schemastate.Profile, side *schemastate.State) Change {
 	missing := profile.MissingFacts(change.RequiredFacts)
 	if len(missing) > 0 {
+		// Two different things to say, and saying the first when the second is
+		// true describes a server nobody measured. A target Ptah has a preset
+		// for answered no; a target it does not recognize answered nothing, and
+		// every fact reads as absent through a set that is simply empty
+		// (stokaro/ptah#1348).
+		if unestablished := profile.UnestablishedFacts(missing); len(unestablished) > 0 {
+			change.Status = Undecidable
+			change.MissingFacts = missing
+			change.Diagnostic = fmt.Sprintf(
+				"%s cannot be planned for %s: nothing established whether the target has %s",
+				change, profile.Dialect, capabilityList(unestablished))
+			return change
+		}
 		change.Status = Blocked
 		change.MissingFacts = missing
 		change.Diagnostic = fmt.Sprintf(

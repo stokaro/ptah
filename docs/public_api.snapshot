@@ -6574,6 +6574,7 @@ func YugabyteDB24() Capabilities
 func YugabyteDB25() Capabilities
 func (c Capabilities) Clone() Capabilities
 func (c Capabilities) EnumModeling() EnumMode
+func (c Capabilities) Established(key Capability) bool
 func (c Capabilities) ForeignKeyReference() ReferencePolicy
 func (c Capabilities) Has(key Capability) bool
 func (c Capabilities) Validate() error
