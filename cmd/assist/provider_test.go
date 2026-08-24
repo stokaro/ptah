@@ -40,6 +40,10 @@ func executeStreams(c *qt.C, configPath string, args ...string) (stdout, stderr 
 	// that moved HOME would be testing the operator's shell rather than the
 	// command, and one that wrote into the real home would be worse.
 	c.Setenv("PTAH_ASSIST_CONFIG", configPath)
+	// The provider commands write nothing, and `sessions` and `explain` reach
+	// this helper too: moving out of the package directory keeps any of them
+	// from leaving a file in the repository.
+	c.Chdir(c.TempDir())
 
 	cmd := assist.NewCommand()
 	out := &bytes.Buffer{}

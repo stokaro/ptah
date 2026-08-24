@@ -9,15 +9,30 @@ hosted API, a gateway your organization runs, or one running on this machine —
 in the last case nothing about your schema leaves it.
 
 ```bash
-ptah assist explain "what do the pending migrations do?"   # ask, with Ptah's tools answering
-ptah assist provider list                                  # the profiles this machine can reach
-ptah assist provider test                                  # whether one of them works, measured
+ptah assist                                        # hold a conversation
+ptah assist explain "what do the migrations do?"   # ask once
+ptah assist sessions list                          # the conversations saved for this project
+ptah assist provider list                          # the profiles this machine can reach
+ptah assist provider test                          # whether one of them works, measured
 ```
 
-An interactive session and saved conversations are separate work; this release
-answers one question at a time.
+## Hold a conversation
 
-## Ask a question
+`ptah assist` with no arguments opens one. Type a question; the model answers
+using Ptah's tools. Lines beginning with `/` are commands rather than questions:
+
+```text
+  /tools     the Ptah tools this session can reach
+  /session   where this conversation is being saved
+  /trace     show or hide the tool trace
+  /help      this list
+  /exit      leave (Ctrl-D does the same)
+```
+
+They are slash-prefixed so a question that starts with one of those words is
+still a question.
+
+## Ask one question
 
 ```bash
 ptah assist explain "what migrations does this project have?"
@@ -48,6 +63,51 @@ Allow? [n]o / [o]nce / [s]ession:
 
 `--non-interactive` removes the prompt rather than answering it: an operation
 that needs approval is refused, which is what that flag has to mean.
+
+## Conversations are saved
+
+Each conversation is written to `.ptah/sessions/` in the project it was about,
+one JSON object per line, as it happens. Append-only, because the failure mode
+of a conversation is the process ending in the middle of one: a truncated JSON
+document is unreadable and a truncated JSONL file is every record up to the last
+complete one.
+
+```bash
+ptah assist sessions list              # what is saved, most recent first
+ptah assist sessions show <id>         # one conversation, with what Ptah did
+ptah assist sessions delete <id>       # remove one
+ptah assist sessions prune             # remove ones untouched for 30 days
+ptah assist --resume <id>              # continue one
+```
+
+An id or a unique prefix of one. There is no automatic retention: a conversation
+goes away when somebody asks for it to, because a tool that quietly deleted the
+record of what it changed would be the wrong kind of tidy.
+
+### What is in a session file, and what is not
+
+The conversation **and** what Ptah read on the model's behalf: migration text,
+schema files, database object names. It is written so only you can read it, and
+it belongs in `.gitignore`:
+
+```text
+.ptah/sessions/
+```
+
+`--ephemeral` keeps no record at all, which is the answer for a project whose
+contents should not sit in a file afterwards.
+
+No credential is ever stored. The provider profile's *name* is, because a
+session that could not say which model answered cannot be read later.
+
+Resuming replays the conversation and **not** the tool results. Those described
+the project as it was; a resumed session that fed them back as current would
+have the model reasoning about a directory that may have changed since. It
+re-reads instead, which costs a tool call and is the answer that is still true.
+
+The session file is not the audit record. `.ptah/agent-audit.jsonl` is what Ptah
+decided — every capability request, granted or refused — and deleting a session
+does not touch it.
 
 ### The answer and the evidence are different things
 

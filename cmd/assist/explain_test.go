@@ -2,6 +2,7 @@ package assist_test
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -19,10 +20,18 @@ import (
 type scripted struct {
 	bodies []string
 	calls  int
+	// requests are what the model was actually sent, which is the only place a
+	// claim about what reaches the provider can be checked.
+	requests []string
 }
 
 func (s *scripted) handler() http.HandlerFunc {
-	return func(writer http.ResponseWriter, _ *http.Request) {
+	return func(writer http.ResponseWriter, request *http.Request) {
+		payload := make([]byte, request.ContentLength)
+		if request.ContentLength > 0 {
+			_, _ = io.ReadFull(request.Body, payload)
+		}
+		s.requests = append(s.requests, string(payload))
 		index := min(s.calls, len(s.bodies)-1)
 		s.calls++
 		_, _ = writer.Write([]byte(s.bodies[index]))
