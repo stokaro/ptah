@@ -79,6 +79,28 @@ type Options struct {
 // A nil session with a nil error is the read-only case: no workspace was named,
 // so there are no artifact operations and nothing to configure for them.
 func Build(cmd *cobra.Command, opts *Options, surface agentaudit.Surface) (*agentapi.Session, func(), error) {
+	return build(cmd, opts, func(root, version string) (agentaudit.Recorder, func(), error) {
+		return openAudit(cmd, opts, root, version, surface)
+	})
+}
+
+// BuildInert builds a session for a command that runs no tool and makes no
+// decision, so nothing is recorded and no audit file is left behind.
+//
+// `assist context` reports what a question would send and sends nothing. A
+// command making that claim while dropping an empty file into the project it
+// is describing would be contradicting itself in the directory a person was
+// just told to go and look at.
+func BuildInert(cmd *cobra.Command, opts *Options) (*agentapi.Session, func(), error) {
+	return build(cmd, opts, func(string, string) (agentaudit.Recorder, func(), error) {
+		return agentaudit.Discard{}, func() {}, nil
+	})
+}
+
+// auditOpener supplies the recorder a session writes its decisions to.
+type auditOpener func(root, version string) (agentaudit.Recorder, func(), error)
+
+func build(cmd *cobra.Command, opts *Options, openRecorder auditOpener) (*agentapi.Session, func(), error) {
 	version := buildinfo.Resolve().Version
 	noop := func() {}
 	if opts.Workspace == "" {
@@ -132,7 +154,7 @@ func Build(cmd *cobra.Command, opts *Options, surface agentaudit.Surface) (*agen
 		closeWorkspace()
 		return nil, noop, err
 	}
-	audit, closeAudit, err := openAudit(cmd, opts, workspace.Root(), version, surface)
+	audit, closeAudit, err := openRecorder(workspace.Root(), version)
 	if err != nil {
 		closeWorkspace()
 		return nil, noop, err

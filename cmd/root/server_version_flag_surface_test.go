@@ -102,6 +102,12 @@ func offlineDialectVerbs() []dialectVerb {
 				"so --dialect selects the same gate preset and there is likewise no connection " +
 				"for a version to be read from",
 		},
+		{
+			verb: "assist context",
+			why: "it reports what a question would send and sends nothing, so --dialect only " +
+				"decides which tools the report lists; no connection is opened and no version " +
+				"could be read from one",
+		},
 	}
 }
 

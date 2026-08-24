@@ -332,3 +332,70 @@ func TestSystemPrompt_NamesTheRulesItIsAimedAt(t *testing.T) {
 			qt.Commentf("the instruction block no longer says %q", phrase))
 	}
 }
+
+func TestPreview_IsExactlyWhatTheProviderReceives(t *testing.T) {
+	// The whole worth of a preview: if it is assembled separately from the
+	// request, it becomes a plausible document that drifts from what actually
+	// leaves the machine, and a person checking the boundary would be reading a
+	// reassurance rather than a fact.
+	//
+	// Compared against what the provider was really handed, so the two cannot
+	// disagree without this failing.
+	c := qt.New(t)
+	ctx := context.Background()
+	provider := aiprovider.NewFake(aiprovider.TextTurn("nothing to do"))
+	loop, err := assistloop.New(assistloop.Options{
+		Provider: provider,
+		Tools:    toolSession(c),
+		History: []aiprovider.Message{
+			{Role: aiprovider.RoleUser, Content: "an earlier question"},
+			{Role: aiprovider.RoleAssistant, Content: "an earlier answer"},
+		},
+	})
+	c.Assert(err, qt.IsNil)
+
+	preview, err := loop.Preview(ctx, "what is here?")
+	c.Assert(err, qt.IsNil)
+	_, err = loop.Run(ctx, "what is here?")
+	c.Assert(err, qt.IsNil)
+
+	sent := provider.Prompts()
+	c.Assert(sent, qt.HasLen, 1)
+	c.Assert(preview, qt.DeepEquals, sent[0])
+}
+
+func TestPreview_SendsNothing(t *testing.T) {
+	// A preview that asked the model would defeat the point: the question is
+	// what would reach the provider, and answering it must not reach it.
+	c := qt.New(t)
+	provider := aiprovider.NewFake(aiprovider.TextTurn("unused"))
+	loop, err := assistloop.New(assistloop.Options{Provider: provider, Tools: toolSession(c)})
+	c.Assert(err, qt.IsNil)
+
+	preview, err := loop.Preview(context.Background(), "what is here?")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(provider.Prompts(), qt.HasLen, 0)
+	c.Assert(len(preview.Tools) > 0, qt.IsTrue)
+	c.Assert(preview.Messages[len(preview.Messages)-1].Content, qt.Equals, "what is here?")
+}
+
+func TestToolBytes_CountsWhatWasHandedBack(t *testing.T) {
+	// The number a person can act on: everything Ptah read on the model's
+	// behalf reaches the provider as a tool result, so this is the size of what
+	// left the machine about the project.
+	c := qt.New(t)
+	provider := aiprovider.NewFake(
+		aiprovider.ToolTurn("t1", "read_artifact", map[string]any{"artifact": "migrations"}),
+		aiprovider.TextTurn("one pair"),
+	)
+	loop, err := assistloop.New(assistloop.Options{Provider: provider, Tools: toolSession(c)})
+	c.Assert(err, qt.IsNil)
+
+	result, err := loop.Run(context.Background(), "what is here?")
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.Tools, qt.HasLen, 1)
+	c.Assert(result.ToolBytes(), qt.Equals, len(result.Tools[0].Result))
+	c.Assert(result.ToolBytes() > 0, qt.IsTrue)
+}

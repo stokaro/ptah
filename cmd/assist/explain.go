@@ -173,6 +173,12 @@ func runExplain(cmd *cobra.Command, opts *explainOptions, question string) error
 	if runErr != nil {
 		// A run that hit a limit still produced a record worth printing, so the
 		// document goes out first and the outcome is the exit code.
+		//
+		// The reason goes to stderr as well. Without it a lost endpoint prints
+		// an empty answer and an empty stop reason and exits 1 with nothing to
+		// read, which is indistinguishable from a model that said nothing --
+		// measured against a real endpoint that timed out mid-run.
+		fmt.Fprintf(cmd.ErrOrStderr(), "ptah: %v\n", runErr)
 		return exitcode.New(1, runErr)
 	}
 	return nil

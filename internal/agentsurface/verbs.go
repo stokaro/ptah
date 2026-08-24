@@ -24,6 +24,9 @@ var verbs = map[string]Verb{
 		"renders diagrams from a desired schema; no database is opened"},
 
 	// assist.
+	"assist context": {TargetNone, ScratchNone,
+		"prints what a question would send to a model provider and sends nothing; it opens " +
+			"neither a database nor an endpoint, and writes no file"},
 	"assist explain": {TargetNone, ScratchNone,
 		"opens no connection of its own; it asks a model a question and lets the model call " +
 			"Ptah's own tools, each of which carries its own classification"},

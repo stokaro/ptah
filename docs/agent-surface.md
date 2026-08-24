@@ -61,6 +61,7 @@ verdict on any of it.
 <!-- BEGIN GENERATED AGENT SURFACE -->
 | verb | target | second database | flags | what it does |
 | --- | --- | --- | --- | --- |
+| `assist context` | none | none | — | prints what a question would send to a model provider and sends nothing; it opens neither a database nor an endpoint, and writes no file |
 | `assist explain` | none | none | — | opens no connection of its own; it asks a model a question and lets the model call Ptah's own tools, each of which carries its own classification |
 | `assist provider list` | none | none | — | lists the provider profiles configured locally, and opens neither a database nor an endpoint |
 | `assist provider test` | none | none | — | measures a provider profile by calling the model endpoint it names; no database is involved |
@@ -143,6 +144,7 @@ permission.
 <!-- BEGIN GENERATED DATABASE-SAFE VERBS -->
 | verb | why no database is at risk |
 | --- | --- |
+| `assist context` | prints what a question would send to a model provider and sends nothing; it opens neither a database nor an endpoint, and writes no file |
 | `assist explain` | opens no connection of its own; it asks a model a question and lets the model call Ptah's own tools, each of which carries its own classification |
 | `assist provider list` | lists the provider profiles configured locally, and opens neither a database nor an endpoint |
 | `assist provider test` | measures a provider profile by calling the model endpoint it names; no database is involved |
