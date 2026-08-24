@@ -56,6 +56,9 @@ jobs:
           scripts/check-architecture-boundaries.sh
           scripts/check-architecture-boundaries-selftest.sh
 
+      - name: Check the ADR index
+        run: scripts/check-adr-index.sh
+
       - name: Check documented lint rules
         run: scripts/check-lint-rules.sh
 

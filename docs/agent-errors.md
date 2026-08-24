@@ -147,5 +147,5 @@ named in an exemption list with its reason. An error that never reaches a client
 — a configuration fault raised before the first tool call — is what the
 exemption list is for.
 
-[ADR 0006](adr/0006-agent-error-taxonomy.md) records why the taxonomy is shaped
+[ADR 0007](adr/0007-agent-error-taxonomy.md) records why the taxonomy is shaped
 this way.
