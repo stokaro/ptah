@@ -166,7 +166,8 @@ func writes(destructive, idempotent bool) *mcp.ToolAnnotations {
 	}
 }
 
-// registerReadTools adds the four operations ADR 0002 froze.
+// registerReadTools adds the reading half: the four operations ADR 0002 froze
+// and describe_session, which reports what the other four may do.
 //
 // They are bound to the session rather than called directly, so that each one
 // asks the capability broker first. Registering them beside the session left

@@ -256,10 +256,11 @@ artifact.write:tests deny
 ```
 
 That file can only take permissions away. A rule in it that would grant more
-than the flags did is ignored and reported in
-`describe_workspace`'s `ignored_policy_rules` in `describe_session`, because the file lives in
-the repository the model is reading — treating it as a grant would let project
-content decide what the next tool call may do.
+than the flags did is ignored, and `describe_session` reports it under
+`ignored_policy_rules`, because the file lives in the repository the model is
+reading — treating it as a grant would let project content decide what the next
+tool call may do. Reporting it is what makes the attempt visible rather than
+merely ineffective.
 
 ## What Ptah checks, and what it does not
 
