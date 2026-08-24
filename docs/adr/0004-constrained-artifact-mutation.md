@@ -147,7 +147,27 @@ The prompt is composed by Ptah from the capability, the paths and the digests.
 The patch's own summary -- written by the party asking for permission -- is
 recorded and never rendered as Ptah's account of what the patch does.
 
-### 2.7 Nothing here reaches a database
+### 2.7 The tools drop the server's own prefix
+
+The four tools ADR 0002 shipped were named `ptah_validate_schema` and so on.
+They are renamed to `validate_schema`, `render_schema`, `schema_lineage` and
+`read_database`, and the new ones follow: `describe_workspace`,
+`read_artifact`, `preview_patch`, `apply_patch`.
+
+Measured across the database-adjacent MCP servers in use today -- Supabase,
+Neon, ClickHouse, MongoDB, dbt, the Postgres servers -- the convention is bare
+`verb_noun` with no server prefix, because the client already namespaces: Claude
+Code addresses a tool as `mcp__ptah__<name>` and displays it under the server's
+own heading, so the prefix renders as `ptah - ptah_apply_patch`.
+
+The cost is real and accepted: these names shipped in
+[#1486](https://github.com/stokaro/ptah/issues/1486), and an allowlist written
+against them stops matching. Ptah is pre-v1 and owes no compatibility with its
+own previous spellings; the alternative is carrying the stutter to v1, where it
+would become permanent. The contract version moves in the same change, which is
+what makes the rename visible to a client that checks.
+
+### 2.8 Nothing here reaches a database
 
 `migration.apply` is denied at every layer and no operation implements it. That
 is §1.1's two filed defects answered structurally: a flag the model cannot set
@@ -208,7 +228,7 @@ one at a time.
   out of band, which is the same rule ADR 0002 applied to the reading verbs.
 
 - **A capability the policy denies is invisible until it is tried.**
-  `ptah_describe_workspace` reports the whole table so the trying is not
+  `describe_workspace` reports the whole table so the trying is not
   necessary, but an agent that does not call it first will meet the refusal
   instead. That is the cost of §2.3, accepted for the protocol constraint that
   produced it.
