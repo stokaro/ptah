@@ -92,7 +92,11 @@ function extractLinks(file) {
   const source = stripFencedCode(readFileSync(file, 'utf8'));
   const links = [];
   const patterns = [
-    /(?<!!)\[[^\]\n]+\]\(([^)\s]+)(?:\s+["'][^"']*["'])?\)/g,
+    // Link text may wrap. Excluding \n here made every hard-wrapped link
+    // invisible to this checker -- anchor and route alike -- which is most of
+    // them on a page written to 80 columns. A blank line still ends the run,
+    // so an unmatched `[` cannot swallow the rest of the file.
+    /(?<!!)\[(?:[^\]\n]|\n(?!\s*\n))+\]\(([^)\s]+)(?:\s+["'][^"']*["'])?\)/g,
     /\bhref=["']([^"']+)["']/g,
     /^\s+link:\s+([^\s]+)\s*$/gm,
   ];
@@ -189,16 +193,18 @@ function checkLinks(root, cwd) {
     files.map((file) => [routeFor(root, file), headingAnchors(readFileSync(file, 'utf8'))]),
   );
   const errors = [];
+  let links = 0;
 
   for (const file of files) {
     for (const href of extractLinks(file)) {
+      links += 1;
       const error = validateLink(root, routes, anchorsByRoute, file, href, cwd);
       if (error) errors.push(error);
     }
   }
 
   const anchors = [...anchorsByRoute.values()].reduce((sum, set) => sum + set.size, 0);
-  return { errors, files, routes, anchors };
+  return { errors, files, routes, anchors, links };
 }
 
 function writeDoc(root, name, content) {
@@ -299,13 +305,23 @@ function selftest() {
         '[cross page ok](../anchors/#real-section)',
         '[cross page code ok](../anchors/#nested---flag-heading)',
         '[cross page broken](../anchors/#renamed-section)',
+        '[link text that',
+        'wraps](#wrapped-and-broken)',
       ].join('\n'),
     );
     const anchored = checkLinks(root, tmp);
     const anchorErrors = anchored.errors.filter((error) => error.includes('points at'));
-    assert(anchorErrors.length === 2, `expected 2 anchor errors, got ${anchored.errors.join('; ')}`);
+    assert(anchorErrors.length === 3, `expected 3 anchor errors, got ${anchored.errors.join('; ')}`);
     assert(anchorErrors.some((error) => error.includes('#no-such-heading')), 'catches a same-page anchor');
     assert(anchorErrors.some((error) => error.includes('#renamed-section')), 'catches a cross-page anchor');
+    // Every fixture above sits on one line, which is why link text wrapping
+    // across a newline went unchecked for as long as it did: the pattern
+    // excluded \n, so a hard-wrapped link was not a link at all here.
+    assert(anchorErrors.some((error) => error.includes('#wrapped-and-broken')), 'catches a link whose text wraps');
+    // Six links on links.md, three on comparison.md, one on index.mdx. The
+    // count is asserted because a pattern that silently stopped matching would
+    // leave every other assertion here comparing two empty sets.
+    assert(anchored.links === 10, `expected 10 links, got ${anchored.links}`);
 
     console.log('check-links.mjs --selftest: OK');
   } finally {
@@ -325,7 +341,7 @@ function main() {
     return;
   }
 
-  const { errors, files, routes, anchors } = checkLinks(docsRoot, process.cwd());
+  const { errors, files, routes, anchors, links } = checkLinks(docsRoot, process.cwd());
 
   if (errors.length > 0) {
     console.error('Broken internal documentation links:');
@@ -336,7 +352,9 @@ function main() {
     return;
   }
 
-  console.log(`check-links.mjs: OK (${files.length} pages, ${routes.size} routes, ${anchors} heading anchors)`);
+  console.log(
+    `check-links.mjs: OK (${files.length} pages, ${routes.size} routes, ${anchors} heading anchors, ${links} links)`,
+  );
 }
 
 main();
