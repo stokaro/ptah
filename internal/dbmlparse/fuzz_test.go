@@ -38,15 +38,23 @@ func FuzzParse(f *testing.F) {
 	}
 
 	f.Fuzz(func(t *testing.T, document string) {
-		db, err := dbmlparse.Parse(document, dbmlparse.Options{File: "fuzz.dbml"})
-		if err != nil {
-			if db != nil {
-				t.Fatalf("a failed parse returned a schema as well as %v", err)
-			}
-			return
-		}
-		if db == nil {
-			t.Fatal("a successful parse returned no schema")
-		}
+		assertParseAnswersExactlyOnce(t, document)
 	})
+}
+
+// assertParseAnswersExactlyOnce is the fuzz body, out of line so the target
+// itself holds no branch.
+//
+// The promise is narrow and total: for any input the parser returns, and it
+// returns a schema or an error, never both and never neither. Anything sharper
+// would be a claim about a grammar the fuzzer is free to violate.
+func assertParseAnswersExactlyOnce(t *testing.T, document string) {
+	t.Helper()
+	db, err := dbmlparse.Parse(document, dbmlparse.Options{File: "fuzz.dbml"})
+	switch {
+	case err != nil && db != nil:
+		t.Fatalf("a failed parse returned a schema as well as %v", err)
+	case err == nil && db == nil:
+		t.Fatal("a successful parse returned no schema")
+	}
 }
