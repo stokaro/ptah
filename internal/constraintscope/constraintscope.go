@@ -49,3 +49,33 @@ func Identity(
 		Name:   id.Name.Normalized,
 	}
 }
+
+// Normalize fills the identity of every constraint record that does not carry
+// one, and leaves every record that does untouched.
+//
+// A diff built by the comparator arrives with identities already resolved. One
+// built by hand does not: [difftypes.SchemaDiff] is the surface an embedder
+// constructs directly, and a planner that keyed on an unfilled identity would
+// read the zero value as a single key and pair every such constraint with every
+// other. Normalizing once at the door is what lets everything inside compare
+// identities and nothing re-derive them.
+//
+// It never rewrites a spelling and never replaces an identity a producer
+// resolved, so running it twice changes nothing.
+func Normalize(diff *difftypes.SchemaDiff, semantics identifier.Semantics) {
+	if diff == nil {
+		return
+	}
+	for i := range diff.ConstraintsAddedWithTables {
+		add := &diff.ConstraintsAddedWithTables[i]
+		if add.Identity == (difftypes.ConstraintIdentity{}) {
+			add.Identity = Identity(semantics, add.TableName, add.Name)
+		}
+	}
+	for i := range diff.ConstraintsRemovedWithTables {
+		removal := &diff.ConstraintsRemovedWithTables[i]
+		if removal.Identity == (difftypes.ConstraintIdentity{}) {
+			removal.Identity = Identity(semantics, removal.TableName, removal.Name)
+		}
+	}
+}
