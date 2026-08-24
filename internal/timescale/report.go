@@ -16,21 +16,23 @@ import (
 //
 // It belongs on the read surfaces, which refuse nothing: `ptah db read` and
 // `schema inspect` produce a description, and for a TimescaleDB database that
-// description is wrong in a way the reader can name and the operator cannot
-// see. Two omissions, and they are different facts:
+// description can be wrong in a way the reader can name and the operator cannot
+// see.
 //
-//   - A HYPERTABLE is described as an ordinary table, and correctly so as far
-//     as the statement goes. Measured on 2.29.2 / PostgreSQL 17.11: after
-//     `create_hypertable('conditions', by_range('time'))`, pg_class reports
-//     relkind 'r' and the rendered `CREATE TABLE "conditions"` is exactly what
-//     the columns say. Replayed, it produces a table that is not partitioned,
-//     and a diff between the two reports no difference -- which is the false
-//     convergence stokaro/ptah#1026 is open about.
-//   - A CONTINUOUS AGGREGATE is described NOWHERE. It arrives in the view read,
-//     is removed from it because describing it as a view is wrong in both
-//     directions, and nothing takes its place. A reader who sees no block for
-//     it cannot tell a database without one from a description that declined
-//     to mention it.
+// One object is named, and only when the description of it is incomplete: a
+// HYPERTABLE is described as an ordinary table, and correctly so as far as the
+// statement goes. Measured on 2.29.2 / PostgreSQL 17.11: after
+// `create_hypertable('conditions', by_range('time'))`, pg_class reports relkind
+// 'r' and the rendered `CREATE TABLE "conditions"` is exactly what the columns
+// say. A declaration carries one range dimension, so a table partitioned on two
+// is described as partitioned on its first, and a diff between the description
+// and the server reports no difference (stokaro/ptah#1026).
+//
+// A CONTINUOUS AGGREGATE is not named here. It has a declaration of its own --
+// the `continuous_aggregate` block and `//ptah:schema:continuousaggregate` --
+// so the description carries it and the round trip converges. A format that
+// cannot express one records that as a coverage limit instead, which is a
+// statement about the document rather than a note beside it.
 //
 // It names the objects rather than counting them, which is the choice
 // [go.5x5.cz/ptah/internal/sqlitevirtual.ReportUnclassified] makes and the
@@ -49,7 +51,6 @@ func ReportUndescribed(w io.Writer, schema *types.DBSchema) {
 		return
 	}
 	reportHypertables(w, schema)
-	reportContinuousAggregates(w, schema)
 }
 
 // reportHypertables names the hypertables this description carries INCOMPLETELY.
@@ -95,30 +96,6 @@ func reportHypertables(w io.Writer, schema *types.DBSchema) {
 			" description partitions on less than the server does, and a diff between the two"+
 			" reports no difference: %s.\n",
 		countedNoun(len(named), "1 hypertable is", "hypertables are"), joinNames(named))
-}
-
-// reportContinuousAggregates names the aggregates the description leaves out
-// entirely.
-//
-// It is not filtered by what the document contains, because the document
-// contains nothing for them by construction: the aggregate is removed from the
-// view read and nothing renders one. There is no statement to point at, which
-// is exactly what the note has to say.
-func reportContinuousAggregates(w io.Writer, schema *types.DBSchema) {
-	if len(schema.ContinuousAggregates) == 0 {
-		return
-	}
-	named := make([]string, 0, len(schema.ContinuousAggregates))
-	for _, aggregate := range schema.ContinuousAggregates {
-		named = append(named, aggregate.QualifiedName())
-	}
-	sort.Strings(named)
-	fmt.Fprintf(w,
-		"note: %s in this description at all, because Ptah renders none and describing one as a"+
-			" view is wrong in both directions; a declaration naming one is refused rather than"+
-			" applied: %s.\n",
-		countedNoun(len(named), "1 continuous aggregate is not", "continuous aggregates are not"),
-		joinNames(named))
 }
 
 // describeHypertable renders one hypertable the way the note names it: the

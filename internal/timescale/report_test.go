@@ -14,10 +14,11 @@ import (
 // TestReportUndescribed_NamesWhatTheDescriptionLeavesOut pins both notes and
 // the cases that must produce none.
 //
-// The two omissions are different facts and get different sentences: a
-// hypertable IS in the document and is incomplete, a continuous aggregate is
-// not in the document at all. A note that merged them would be wrong about one
-// of them whichever way it was written (stokaro/ptah#1026).
+// One object earns a note: a hypertable IS in the document and is incomplete
+// when it has a dimension no declaration can carry. A continuous aggregate has
+// a declaration of its own and earns none, and the row asserting its silence is
+// what would catch the note coming back after the block was added
+// (stokaro/ptah#1026).
 func TestReportUndescribed_NamesWhatTheDescriptionLeavesOut(t *testing.T) {
 	tests := []struct {
 		name   string
@@ -93,18 +94,17 @@ func TestReportUndescribed_NamesWhatTheDescriptionLeavesOut(t *testing.T) {
 			want:      []string{"app.conditions (on time and 1 more dimension)"},
 		},
 		{
+			// The aggregate is described now, by a block of its own, so there
+			// is nothing to warn about. A note here would send an operator
+			// looking for what is missing from a document that has it.
 			name: "one continuous aggregate",
 			schema: &types.DBSchema{
 				ContinuousAggregates: []types.DBContinuousAggregate{{Name: "conditions_hourly"}},
 			},
-			wantLines: 1,
-			want: []string{
-				"1 continuous aggregate is not in this description at all",
-				"conditions_hourly",
-			},
+			wantLines: 0,
 		},
 		{
-			name: "both, as two notes",
+			name: "an aggregate over an incompletely described hypertable",
 			schema: &types.DBSchema{
 				Tables: []types.DBTable{{Name: "conditions"}},
 				Hypertables: []types.DBHypertable{
@@ -112,8 +112,9 @@ func TestReportUndescribed_NamesWhatTheDescriptionLeavesOut(t *testing.T) {
 				},
 				ContinuousAggregates: []types.DBContinuousAggregate{{Name: "conditions_hourly"}},
 			},
-			wantLines: 2,
-			want:      []string{"1 hypertable is", "1 continuous aggregate is not"},
+			wantLines: 1,
+			want:      []string{"1 hypertable is"},
+			notWant:   []string{"conditions_hourly"},
 		},
 		{
 			// A hypertable partitioned on two columns loses BOTH on replay, and

@@ -1,5 +1,5 @@
-// Package timescale holds the refusals a live TimescaleDB server needs, for
-// the objects Ptah reads and does not yet manage.
+// Package timescale holds the refusals and notes a live TimescaleDB server
+// needs, for the parts of its model a declaration cannot carry.
 package timescale
 
 import (
@@ -25,9 +25,10 @@ import (
 // a script. Refusing before anything is compared says which object it is and
 // why, where the server's message says only that the name is taken.
 //
-// Ptah does not manage continuous aggregates: the reader reports them so a
-// comparison can decline them, and nothing renders one. A declaration that
-// wants the name has to choose a different one, or the aggregate has to go.
+// The declaration this refusal is most often meant for is an aggregate written
+// as a materialized view, which is the natural mistake: PostgreSQL calls it one.
+// The `continuous_aggregate` block and `//ptah:schema:continuousaggregate`
+// declare the object itself, and neither reaches this refusal.
 func ValidateLive(dialect string, generated *goschema.Database, database *types.DBSchema) error {
 	if !platform.IsPostgresFamily(dialect) {
 		return nil
@@ -71,9 +72,9 @@ func appendAggregateClash(
 	}
 	return append(problems, fmt.Errorf(
 		"declared %s %q is a TimescaleDB continuous aggregate on this server, materializing "+
-			"%s.%s: Ptah reads continuous aggregates and does not manage them, so applying this "+
-			"declaration would create a relation the name already belongs to; rename the %s, or "+
-			"drop the aggregate with DROP MATERIALIZED VIEW",
+			"%s.%s: applying this declaration would create a relation the name already belongs "+
+			"to; declare it as a continuous aggregate instead, rename the %s, or drop the "+
+			"aggregate with DROP MATERIALIZED VIEW",
 		kind, declared, aggregate.HypertableSchema, aggregate.HypertableName, kind))
 }
 

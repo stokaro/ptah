@@ -42,6 +42,7 @@ var routedKinds = []routedKind{
 	{name: "policy", want: 1, count: countNodes[*ast.CreatePolicyNode]},
 	{name: "synonym", want: 1, count: countNodes[*ast.CreateSynonymNode]},
 	{name: "hypertable", want: 1, count: countNodes[*ast.CreateHypertableNode]},
+	{name: "continuous aggregate", want: 1, count: countNodes[*ast.CreateContinuousAggregateNode]},
 	{name: "extended property", want: 1, count: countNodes[*ast.ExtendedPropertyNode]},
 	{name: "grant", want: 1, count: countNodes[*ast.GrantPrivilegeNode]},
 }
@@ -84,6 +85,10 @@ func routingFixture() goschema.Database {
 		Synonyms:          []goschema.Synonym{{StructName: "SY", Name: "synonym_probe", Target: "dbo.table_probe"}},
 		Hypertables: []goschema.Hypertable{{
 			StructName: "HY", Table: "table_probe", Column: "n",
+		}},
+		ContinuousAggregates: []goschema.ContinuousAggregate{{
+			StructName: "CA", Name: "aggregate_probe",
+			Body: "SELECT id FROM table_probe",
 		}},
 		ExtendedProperties: []goschema.ExtendedProperty{{
 			StructName: "XP", Name: "property_probe", Schema: "dbo",

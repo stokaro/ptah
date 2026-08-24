@@ -218,34 +218,60 @@ func readSliceFields() []string {
 
 // convertedFamilies maps each read family to the IR field it becomes.
 var convertedFamilies = map[string]string{
-	"Schemas":            "Schemas",
-	"Tables":             "Tables",
-	"Enums":              "Enums",
-	"Indexes":            "Indexes",
-	"Constraints":        "Constraints",
-	"Extensions":         "Extensions",
-	"Functions":          "Functions",
-	"Sequences":          "Sequences",
-	"Domains":            "Domains",
-	"Composites":         "CompositeTypes",
-	"Ranges":             "Ranges",
-	"Views":              "Views",
-	"MatViews":           "MaterializedViews",
-	"Hypertables":        "Hypertables",
-	"Synonyms":           "Synonyms",
-	"ExtendedProperties": "ExtendedProperties",
-	"Triggers":           "Triggers",
-	"RLSPolicies":        "RLSPolicies",
-	"Roles":              "Roles",
-	"Grants":             "Grants",
+	"Schemas":              "Schemas",
+	"Tables":               "Tables",
+	"Enums":                "Enums",
+	"Indexes":              "Indexes",
+	"Constraints":          "Constraints",
+	"Extensions":           "Extensions",
+	"Functions":            "Functions",
+	"Sequences":            "Sequences",
+	"Domains":              "Domains",
+	"Composites":           "CompositeTypes",
+	"Ranges":               "Ranges",
+	"Views":                "Views",
+	"MatViews":             "MaterializedViews",
+	"Hypertables":          "Hypertables",
+	"ContinuousAggregates": "ContinuousAggregates",
+	"Synonyms":             "Synonyms",
+	"ExtendedProperties":   "ExtendedProperties",
+	"Triggers":             "Triggers",
+	"RLSPolicies":          "RLSPolicies",
+	"Roles":                "Roles",
+	"Grants":               "Grants",
 }
 
 // unconvertedFamilies are the read families that deliberately do not become
 // declarations, with the reason each one does not.
 var unconvertedFamilies = map[string]string{
-	"ContinuousAggregates":      "a TimescaleDB object Ptah describes and does not manage; no declaration syntax names one, and describing it as a view is wrong in both directions (stokaro/ptah#1026)",
 	"ObjectOwners":              "ownership is read for diagnostics; no declaration carries it",
 	"RoleMemberships":           "read for the role graph rather than as a declarable object",
 	"RolesOutOfScope":           "a report about what the read did not cover, not an object",
 	"UnregisteredVirtualTables": "a report about SQLite virtual tables no module registered",
+}
+
+// TestConvert_CarriesTheContinuousAggregateBodyTheCatalogKept pins WHICH
+// definition the conversion carries.
+//
+// A down migration is built from this description, and the two definitions a
+// TimescaleDB server can answer with are not interchangeable: pg_get_viewdef
+// answers the rewritten one, which selects from the materialization hypertable
+// in a schema the extension owns, and rebuilding an aggregate from it would
+// name a relation no declaration may touch (stokaro/ptah#1026).
+func TestConvert_CarriesTheContinuousAggregateBodyTheCatalogKept(t *testing.T) {
+	c := qt.New(t)
+
+	converted := dbschematogo.ConvertDBSchemaToGoSchema(&dbschematypes.DBSchema{
+		ContinuousAggregates: []dbschematypes.DBContinuousAggregate{{
+			Schema: "public", Name: "hourly",
+			HypertableSchema: "public", HypertableName: "readings",
+			MaterializedOnly: true,
+			Definition:       "SELECT time_bucket('01:00:00'::interval, \"time\") FROM readings",
+		}},
+	})
+
+	c.Assert(converted.ContinuousAggregates, qt.DeepEquals, []goschema.ContinuousAggregate{{
+		Name: "hourly", Schema: "public", MaterializedOnly: new(true),
+		Body: "SELECT time_bucket('01:00:00'::interval, \"time\") FROM readings",
+	}})
 }

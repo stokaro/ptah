@@ -60,6 +60,10 @@ type Visitor interface {
 	VisitCreateSynonym(*CreateSynonymNode) error
 	// VisitCreateHypertable renders the TimescaleDB create_hypertable call
 	VisitCreateHypertable(*CreateHypertableNode) error
+	// VisitCreateContinuousAggregate renders a TimescaleDB continuous aggregate
+	VisitCreateContinuousAggregate(*CreateContinuousAggregateNode) error
+	// VisitDropContinuousAggregate removes a TimescaleDB continuous aggregate
+	VisitDropContinuousAggregate(*DropContinuousAggregateNode) error
 	// VisitDropSynonym renders a DROP SYNONYM statement
 	VisitDropSynonym(*DropSynonymNode) error
 	// VisitExtendedProperty renders one SQL Server extended-property statement

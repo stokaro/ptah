@@ -609,6 +609,20 @@ var directives = []Directive{
 		},
 	},
 	{
+		Name: "ptah:schema:continuousaggregate",
+		Description: "Declares a TimescaleDB continuous aggregate: a materialized view over a " +
+			"hypertable the extension keeps up to date.",
+		Scopes: []Scope{ScopeStruct},
+		Attributes: []Attribute{
+			attr("name", "Aggregate name, which is also the view name.", valueString, true, false),
+			attr("schema", "Schema holding the aggregate.", valueString, false, false),
+			attr("body", "The SELECT the aggregate materializes.", valueString, true, false),
+			attr("materialized_only", "Read only materialized data, rather than combining it with "+
+				"the rows since the last refresh.", valueBoolean, false, false),
+			attr("comment", "Continuous aggregate comment.", valueString, false, false),
+		},
+	},
+	{
 		Name: "ptah:schema:hypertable",
 		Description: "Declares a TimescaleDB hypertable: a table partitioned on a range " +
 			"dimension.",

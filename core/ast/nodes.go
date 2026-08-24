@@ -1796,6 +1796,96 @@ func (n *CreateHypertableNode) Accept(visitor Visitor) error {
 	return visitor.VisitCreateHypertable(n)
 }
 
+// CreateContinuousAggregateNode represents the statement that creates a
+// TimescaleDB continuous aggregate.
+//
+// It is a CREATE MATERIALIZED VIEW carrying `WITH (timescaledb.continuous)`,
+// and it is its own node rather than a flag on [CreateMaterializedViewNode]
+// because the two are different objects to the server in both directions.
+// Measured on 2.29.2: `DROP VIEW` on one answers `cannot drop continuous
+// aggregate using DROP VIEW`, and there is no `CREATE OR REPLACE MATERIALIZED
+// VIEW` at all -- `syntax error at or near "MATERIALIZED"` -- so a changed body
+// is a drop and a create rather than a replacement.
+//
+// Body is the SELECT as written. WithNoData renders `WITH NO DATA`, which
+// creates the aggregate without materializing history: a migration that
+// backfilled years of data as a side effect of a schema change is not something
+// a plan should do on its own.
+type CreateContinuousAggregateNode struct {
+	Name   string
+	Schema string
+	Body   string
+	// MaterializedOnly is nil when the declaration made no choice, which leaves
+	// the option out of the statement and takes the server's own default. The
+	// default is not a constant across TimescaleDB versions, so writing one in
+	// would pin a value nobody asked for.
+	MaterializedOnly *bool
+	WithNoData       bool
+	Comment          string
+}
+
+// NewCreateContinuousAggregate creates a continuous aggregate node.
+func NewCreateContinuousAggregate(name, body string) *CreateContinuousAggregateNode {
+	return &CreateContinuousAggregateNode{Name: name, Body: body, WithNoData: true}
+}
+
+// SetSchema sets the schema holding the aggregate.
+func (n *CreateContinuousAggregateNode) SetSchema(schema string) *CreateContinuousAggregateNode {
+	n.Schema = schema
+	return n
+}
+
+// SetMaterializedOnly sets the timescaledb.materialized_only option. A nil
+// value leaves it unset, which is not the same as setting it to false.
+func (n *CreateContinuousAggregateNode) SetMaterializedOnly(only *bool) *CreateContinuousAggregateNode {
+	n.MaterializedOnly = only
+	return n
+}
+
+// SetComment sets a comment for the statement.
+func (n *CreateContinuousAggregateNode) SetComment(comment string) *CreateContinuousAggregateNode {
+	n.Comment = comment
+	return n
+}
+
+// Accept implements the Node interface for CreateContinuousAggregateNode.
+func (n *CreateContinuousAggregateNode) Accept(visitor Visitor) error {
+	return visitor.VisitCreateContinuousAggregate(n)
+}
+
+// DropContinuousAggregateNode represents the statement that removes one.
+//
+// It is DROP MATERIALIZED VIEW rather than DROP VIEW, which is the server's own
+// instruction: `cannot drop continuous aggregate using DROP VIEW. HINT: Use
+// DROP MATERIALIZED VIEW to drop a continuous aggregate.`
+type DropContinuousAggregateNode struct {
+	Name     string
+	Schema   string
+	IfExists bool
+}
+
+// NewDropContinuousAggregate creates the node that removes an aggregate.
+func NewDropContinuousAggregate(name string) *DropContinuousAggregateNode {
+	return &DropContinuousAggregateNode{Name: name}
+}
+
+// SetSchema sets the schema holding the aggregate.
+func (n *DropContinuousAggregateNode) SetSchema(schema string) *DropContinuousAggregateNode {
+	n.Schema = schema
+	return n
+}
+
+// SetIfExists adds IF EXISTS to the statement.
+func (n *DropContinuousAggregateNode) SetIfExists() *DropContinuousAggregateNode {
+	n.IfExists = true
+	return n
+}
+
+// Accept implements the Node interface for DropContinuousAggregateNode.
+func (n *DropContinuousAggregateNode) Accept(visitor Visitor) error {
+	return visitor.VisitDropContinuousAggregate(n)
+}
+
 // DropSynonymNode represents a DROP SYNONYM statement.
 //
 // There is no Cascade field: DROP SYNONYM has no such clause, and a synonym has

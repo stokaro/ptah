@@ -51,6 +51,7 @@ type Database struct {
 	RLSPolicies                []RLSPolicy                    // PostgreSQL Row-Level Security policies
 	RLSEnabledTables           []RLSEnabledTable              // Tables with RLS enabled
 	Hypertables                []Hypertable                   // TimescaleDB hypertables
+	ContinuousAggregates       []ContinuousAggregate          // TimescaleDB continuous aggregates
 	Roles                      []Role                         // PostgreSQL roles
 	Grants                     []Grant                        // PostgreSQL privilege grants
 	ManagedData                []ManagedData                  // Declarative reference/seed row data for tables
@@ -1003,6 +1004,54 @@ type Hypertable struct {
 	// `table "x" is already a hypertable` error into a skipped notice.
 	IfNotExists bool
 	Comment     string // Optional comment for documentation
+}
+
+// ContinuousAggregate is a TimescaleDB continuous aggregate: a materialized
+// view over a hypertable that the extension keeps up to date.
+//
+// It is its own family rather than a [MaterializedView] with a flag, because
+// describing one as a materialized view is wrong in both directions and both
+// were measured on 2.29.2 / PostgreSQL 17.11: a plan that dropped it emitted
+// `DROP VIEW` and the server answered `cannot drop continuous aggregate using
+// DROP VIEW`, and a plan that created it emitted the body `pg_get_viewdef`
+// answers, which selects from the materialization hypertable in a schema the
+// extension owns (stokaro/ptah#1026).
+//
+// Body is the SELECT as it was WRITTEN. The catalog stores a rewritten one --
+// `time_bucket('1 hour', time)` comes back as
+// `time_bucket('01:00:00'::interval, "time")` -- so the two are compared by
+// putting the declaration through the same rewrite rather than by folding the
+// text. See [go.5x5.cz/ptah/dbschema.DatabaseConnection.ResolveContinuousAggregateBodies].
+//
+// Dialects is deliberately absent, for the reason [Synonym] gives: a continuous
+// aggregate belongs to TimescaleDB and to nothing else.
+type ContinuousAggregate struct {
+	StructName string // Name of the Go struct this aggregate is associated with
+	Name       string // Aggregate name, which is also the view name
+	Schema     string // Schema holding the aggregate
+	// Body is the SELECT the aggregate materializes, without the trailing
+	// semicolon and without the CREATE prefix.
+	Body string
+	// MaterializedOnly renders `timescaledb.materialized_only`, which decides
+	// whether a query reads only materialized data or combines it with the raw
+	// rows since the last refresh.
+	//
+	// Nil is not false: it is a declaration that did not choose, and it takes
+	// whatever the server defaults to. The default is not a constant --
+	// measured on 2.29.2, an aggregate created without the option is reported
+	// `materialized_only = t` -- so comparing an unset declaration against the
+	// catalog as if it said false would report a change on every run, and the
+	// plan for that change drops the aggregate and its materialization.
+	MaterializedOnly *bool
+	Comment          string // Optional comment for documentation
+}
+
+// QualifiedName returns schema.name when Schema is set, or Name otherwise.
+func (a ContinuousAggregate) QualifiedName() string {
+	if strings.TrimSpace(a.Schema) == "" {
+		return a.Name
+	}
+	return a.Schema + "." + a.Name
 }
 
 // Synonym is a SQL Server synonym: a schema-qualified alias for another object.

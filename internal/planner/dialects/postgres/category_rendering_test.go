@@ -238,6 +238,27 @@ func diffCategoryFixtures() []categoryFixture {
 			}},
 		},
 		{
+			"ContinuousAggregatesAdded",
+			&types.SchemaDiff{ContinuousAggregatesAdded: []string{"hourly"}},
+			&goschema.Database{ContinuousAggregates: []goschema.ContinuousAggregate{
+				{Name: "hourly", Body: "SELECT 1"},
+			}},
+		},
+		{
+			"ContinuousAggregatesRemoved",
+			&types.SchemaDiff{ContinuousAggregatesRemoved: []string{"hourly"}},
+			&goschema.Database{},
+		},
+		{
+			"ContinuousAggregatesModified",
+			&types.SchemaDiff{ContinuousAggregatesModified: []types.ContinuousAggregateDiff{
+				{Name: "hourly", OldBody: "SELECT 1", NewBody: "SELECT 2"},
+			}},
+			&goschema.Database{ContinuousAggregates: []goschema.ContinuousAggregate{
+				{Name: "hourly", Body: "SELECT 2"},
+			}},
+		},
+		{
 			"SynonymsModified",
 			&types.SchemaDiff{SynonymsModified: []types.SynonymDiff{
 				{SynonymName: "s", OldTarget: "dbo.old", NewTarget: "dbo.new"},

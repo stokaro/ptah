@@ -1668,6 +1668,8 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 	result = p.retargetSynonyms(result, diff, generated)
 	result = p.addNewSynonyms(result, diff, generated)
 	result = p.addNewHypertables(result, diff, generated)
+	result = p.addNewContinuousAggregates(result, diff, generated)
+	result = p.modifyExistingContinuousAggregates(result, diff, generated)
 	result = p.addExtendedProperties(result, diff)
 	result = p.modifyExistingMaterializedViews(result, diff, generated)
 	result = p.addNewTriggers(result, diff, generated)
@@ -1735,6 +1737,7 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 	// 12.6. Remove triggers and view-like objects before dropping tables/functions they depend on.
 	result = p.removeTriggers(result, diff)
 	result = p.removeMaterializedViews(result, diff)
+	result = p.removeContinuousAggregates(result, diff)
 	result = p.removeViews(result, diff)
 	result = p.removeExtendedProperties(result, diff)
 	result = p.removeSynonyms(result, diff)
@@ -2471,6 +2474,88 @@ func (p *Planner) addNewHypertables(
 		}
 	}
 	return result
+}
+
+// addNewContinuousAggregates emits the CREATE MATERIALIZED VIEW for each
+// aggregate a declaration asks for and the database does not report.
+//
+// It runs after the create_hypertable calls above, which is a requirement
+// rather than a preference: measured on TimescaleDB 2.29.2, WITH
+// (timescaledb.continuous) over an ordinary table answers `invalid continuous
+// aggregate view`, so an aggregate planned before the table it reads was
+// partitioned would fail the migration it belongs to.
+func (p *Planner) addNewContinuousAggregates(
+	result []ast.Node,
+	diff *types.SchemaDiff,
+	generated *goschema.Database,
+) []ast.Node {
+	for _, name := range diff.ContinuousAggregatesAdded {
+		if aggregate := findContinuousAggregate(generated.ContinuousAggregates, name); aggregate != nil {
+			result = append(result, fromschema.FromContinuousAggregate(*aggregate))
+		}
+	}
+	return result
+}
+
+// modifyExistingContinuousAggregates replaces an aggregate whose declaration
+// changed, by dropping it and creating it again.
+//
+// There is no replacement statement to prefer instead: measured on 2.29.2,
+// `CREATE OR REPLACE MATERIALIZED VIEW` is `syntax error at or near
+// "MATERIALIZED"`. The pair is emitted from inside this step for the reason
+// [Planner.modifyExistingViews] gives -- the plan runs additions before
+// removals, so a modification expressed as one of each would come out
+// create-then-drop and end with no aggregate at all.
+func (p *Planner) modifyExistingContinuousAggregates(
+	result []ast.Node,
+	diff *types.SchemaDiff,
+	generated *goschema.Database,
+) []ast.Node {
+	for _, change := range diff.ContinuousAggregatesModified {
+		aggregate := findContinuousAggregate(generated.ContinuousAggregates, change.Name)
+		if aggregate == nil {
+			continue
+		}
+		result = append(result,
+			dropContinuousAggregate(*aggregate),
+			fromschema.FromContinuousAggregate(*aggregate))
+	}
+	return result
+}
+
+// removeContinuousAggregates drops the aggregates the database reports and the
+// declaration does not.
+//
+// The statement is DROP MATERIALIZED VIEW on the server's own instruction:
+// DROP VIEW answers `cannot drop continuous aggregate using DROP VIEW`, and a
+// plan that emitted it would never apply.
+func (p *Planner) removeContinuousAggregates(result []ast.Node, diff *types.SchemaDiff) []ast.Node {
+	for _, name := range diff.ContinuousAggregatesRemoved {
+		result = append(result, ast.NewDropContinuousAggregate(name).SetIfExists())
+	}
+	return result
+}
+
+// dropContinuousAggregate is the removal half of a replacement, addressed the
+// way the declaration addresses the object.
+func dropContinuousAggregate(aggregate goschema.ContinuousAggregate) *ast.DropContinuousAggregateNode {
+	return ast.NewDropContinuousAggregate(aggregate.Name).
+		SetSchema(aggregate.Schema).
+		SetIfExists()
+}
+
+// findContinuousAggregate resolves a declared aggregate by the name a diff
+// carries, which is qualified when the declaration names a schema.
+func findContinuousAggregate(
+	aggregates []goschema.ContinuousAggregate,
+	name string,
+) *goschema.ContinuousAggregate {
+	for i := range aggregates {
+		if aggregates[i].QualifiedName() == name || aggregates[i].Name == name {
+			return &aggregates[i]
+		}
+	}
+	return nil
 }
 
 // refuseHypertableChanges refuses what TimescaleDB has no statement for.

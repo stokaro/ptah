@@ -203,6 +203,54 @@
       ],
       "type": "object"
     },
+    "ptah.schema.continuousaggregate": {
+      "additionalProperties": false,
+      "description": "Declares a TimescaleDB continuous aggregate: a materialized view over a hypertable the extension keeps up to date.",
+      "properties": {
+        "attributes": {
+          "additionalProperties": false,
+          "properties": {
+            "body": {
+              "description": "The SELECT the aggregate materializes.",
+              "type": "string"
+            },
+            "comment": {
+              "description": "Continuous aggregate comment.",
+              "type": "string"
+            },
+            "materialized_only": {
+              "description": "Read only materialized data, rather than combining it with the rows since the last refresh.",
+              "enum": [
+                "true",
+                "false"
+              ],
+              "type": "string"
+            },
+            "name": {
+              "description": "Aggregate name, which is also the view name.",
+              "type": "string"
+            },
+            "schema": {
+              "description": "Schema holding the aggregate.",
+              "type": "string"
+            }
+          },
+          "required": [
+            "body",
+            "name"
+          ],
+          "type": "object"
+        },
+        "directive": {
+          "const": "ptah:schema:continuousaggregate"
+        }
+      },
+      "required": [
+        "directive",
+        "attributes"
+      ],
+      "type": "object"
+    },
     "ptah.schema.data": {
       "additionalProperties": false,
       "description": "Declares external reference/seed row data for a table.",
@@ -1649,6 +1697,9 @@
     },
     {
       "$ref": "#/$defs/ptah.schema.matview"
+    },
+    {
+      "$ref": "#/$defs/ptah.schema.continuousaggregate"
     },
     {
       "$ref": "#/$defs/ptah.schema.hypertable"
