@@ -1839,7 +1839,7 @@ func (p *Planner) addNamedConstraintsByKind(
 	wantForeignKey := kind == foreignKeyConstraints
 	// Fallback for added constraints with no table-qualified FK entry above
 	// (table-level CHECK/UNIQUE, or field-level synthesis resolved by name).
-	for _, constraintName := range diff.ConstraintsAdded {
+	for _, constraintName := range constraintscope.AdditionNames(diff) {
 		constraintIdentity := state.semantics.IndexIdentityKey(constraintName)
 		if _, done := state.handled[constraintIdentity]; done {
 			continue
@@ -2277,8 +2277,8 @@ func (p *Planner) removeConstraints(
 		modifyHosts[add.Identity] = struct{}{}
 		addedHostCounts[semantics.IndexIdentityKey(add.Name)]++
 	}
-	addedBareNames := make(map[string]struct{}, len(diff.ConstraintsAdded))
-	for _, name := range diff.ConstraintsAdded {
+	addedBareNames := make(map[string]struct{}, len(diff.ConstraintsAddedWithTables))
+	for _, name := range constraintscope.AdditionNames(diff) {
 		addedBareNames[semantics.IndexIdentityKey(name)] = struct{}{}
 	}
 

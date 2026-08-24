@@ -3127,7 +3127,7 @@ func (p *Planner) addNamedConstraintsByKind(
 	kind constraintKindFilter,
 ) []ast.Node {
 	wantForeignKey := kind == foreignKeyConstraints
-	for _, constraintName := range diff.ConstraintsAdded {
+	for _, constraintName := range constraintscope.AdditionNames(diff) {
 		// Already emitted via the table-qualified FK path above.
 		if _, done := state.handled[constraintName]; done {
 			continue
@@ -3665,8 +3665,8 @@ func (p *Planner) removeConstraints(result []ast.Node, diff *types.SchemaDiff) [
 	// the freshly restored constraint — IF EXISTS is no protection against
 	// dropping a constraint that now exists again. This silently destroyed
 	// the constraint on every non-FK down migration (issue #229).
-	addedBareNamesHosted := make(map[string]struct{}, len(diff.ConstraintsAdded))
-	for _, name := range diff.ConstraintsAdded {
+	addedBareNamesHosted := make(map[string]struct{}, len(diff.ConstraintsAddedWithTables))
+	for _, name := range constraintscope.AdditionNames(diff) {
 		addedBareNamesHosted[name] = struct{}{}
 	}
 
@@ -3710,8 +3710,8 @@ func (p *Planner) removeConstraints(result []ast.Node, diff *types.SchemaDiff) [
 	// output always carries the host, so it is fully handled above and skipped
 	// here. A bare modify (name in ConstraintsAdded with no recorded host) is
 	// owned by addNewConstraints and skipped.
-	addedBareNames := make(map[string]struct{}, len(diff.ConstraintsAdded))
-	for _, name := range diff.ConstraintsAdded {
+	addedBareNames := make(map[string]struct{}, len(diff.ConstraintsAddedWithTables))
+	for _, name := range constraintscope.AdditionNames(diff) {
 		addedBareNames[name] = struct{}{}
 	}
 	for _, constraintName := range diff.ConstraintsRemoved {
