@@ -163,7 +163,7 @@ func ConstraintsWithSemantics(
 	for constraintKey, genConstraint := range genConstraints {
 		if _, exists := dbConstraints[constraintKey]; !exists {
 			diff.ConstraintsAdded = append(diff.ConstraintsAdded, genConstraint.Name)
-			diff.ConstraintsAddedWithTables = appendConstraintAddition(diff.ConstraintsAddedWithTables, genConstraint)
+			diff.ConstraintsAddedWithTables = appendConstraintAddition(diff.ConstraintsAddedWithTables, genConstraint, semantics)
 		}
 	}
 
@@ -171,7 +171,7 @@ func ConstraintsWithSemantics(
 	for constraintKey, dbConstraint := range dbConstraints {
 		if _, exists := genConstraints[constraintKey]; !exists {
 			diff.ConstraintsRemoved = append(diff.ConstraintsRemoved, dbConstraint.Name)
-			diff.ConstraintsRemovedWithTables = appendConstraintRemoval(diff.ConstraintsRemovedWithTables, dbConstraint)
+			diff.ConstraintsRemovedWithTables = appendConstraintRemoval(diff.ConstraintsRemovedWithTables, dbConstraint, semantics)
 			diff.ForeignKeysRemovedWithTables = appendForeignKeyRemoval(diff.ForeignKeysRemovedWithTables, dbConstraint)
 		}
 	}
@@ -183,10 +183,10 @@ func ConstraintsWithSemantics(
 				// For now, treat modified constraints as removed + added
 				// In the future, we could add a ConstraintsModified field to SchemaDiff
 				diff.ConstraintsRemoved = append(diff.ConstraintsRemoved, dbConstraint.Name)
-				diff.ConstraintsRemovedWithTables = appendConstraintRemoval(diff.ConstraintsRemovedWithTables, dbConstraint)
+				diff.ConstraintsRemovedWithTables = appendConstraintRemoval(diff.ConstraintsRemovedWithTables, dbConstraint, semantics)
 				diff.ForeignKeysRemovedWithTables = appendForeignKeyRemoval(diff.ForeignKeysRemovedWithTables, dbConstraint)
 				diff.ConstraintsAdded = append(diff.ConstraintsAdded, genConstraint.Name)
-				diff.ConstraintsAddedWithTables = appendConstraintAddition(diff.ConstraintsAddedWithTables, genConstraint)
+				diff.ConstraintsAddedWithTables = appendConstraintAddition(diff.ConstraintsAddedWithTables, genConstraint, semantics)
 			}
 		}
 	}
@@ -265,11 +265,16 @@ func collectDatabaseConstraints(
 // remove + add). Dialects that need the owning table and a type-specific drop
 // syntax — MySQL/MariaDB FOREIGN KEY uses DROP FOREIGN KEY rather than DROP
 // CONSTRAINT — read this parallel slice instead of the bare name list.
-func appendConstraintRemoval(infos []difftypes.ConstraintRemovalInfo, dbConstraint types.DBConstraint) []difftypes.ConstraintRemovalInfo {
+func appendConstraintRemoval(
+	infos []difftypes.ConstraintRemovalInfo,
+	dbConstraint types.DBConstraint,
+	semantics identifier.Semantics,
+) []difftypes.ConstraintRemovalInfo {
 	return append(infos, difftypes.ConstraintRemovalInfo{
 		Name:      dbConstraint.Name,
 		TableName: dbConstraint.QualifiedTableName(),
 		Type:      dbConstraint.Type,
+		Identity:  constraintIdentity(dbConstraint.QualifiedTableName(), dbConstraint.Name, semantics),
 	})
 }
 
@@ -299,7 +304,11 @@ func appendForeignKeyRemoval(
 // of re-deriving the table from a field's Go struct name (which, for a mixin,
 // is not a table at all). For a unique-named constraint this carries exactly
 // one entry and matches the previous field-scan behavior.
-func appendConstraintAddition(infos []difftypes.ConstraintAdditionInfo, genConstraint goschema.Constraint) []difftypes.ConstraintAdditionInfo {
+func appendConstraintAddition(
+	infos []difftypes.ConstraintAdditionInfo,
+	genConstraint goschema.Constraint,
+	semantics identifier.Semantics,
+) []difftypes.ConstraintAdditionInfo {
 	return append(infos, difftypes.ConstraintAdditionInfo{
 		Name:            genConstraint.Name,
 		TableName:       genConstraint.Table,
@@ -313,6 +322,7 @@ func appendConstraintAddition(infos []difftypes.ConstraintAdditionInfo, genConst
 		ForeignColumns:  append([]string(nil), genConstraint.ForeignColumnsOrDefault()...),
 		OnDelete:        genConstraint.OnDelete,
 		OnUpdate:        genConstraint.OnUpdate,
+		Identity:        constraintIdentity(genConstraint.Table, genConstraint.Name, semantics),
 	})
 }
 
