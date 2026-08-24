@@ -524,6 +524,13 @@ type DBIndexPart struct {
 	// to NULLS LAST for ASC and NULLS FIRST for DESC, so only the deviating
 	// spelling has to be carried.
 	NullsOrder string `json:"nulls_order,omitempty"`
+	// Prefix is the number of leading characters this key indexes, which MySQL
+	// spells `INDEX (notes(20))`. Empty means the key covers the whole column.
+	//
+	// It is REQUIRED for a BLOB or TEXT column there -- MySQL refuses an index
+	// on one without a length -- so a key that loses it produces a description
+	// that cannot be applied (stokaro/ptah#2112).
+	Prefix string `json:"prefix,omitempty"`
 }
 
 // Index NULLS ordering spellings for DBIndexPart.NullsOrder.

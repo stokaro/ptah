@@ -28,6 +28,7 @@ var statisticsColumns = []string{
 	"COLUMN_NAME",
 	"NON_UNIQUE",
 	"INDEX_TYPE",
+	"SUB_PART",
 }
 
 // wideKeyColumnNames is a 16-part key of 64-character column names: 1039 bytes
@@ -49,7 +50,7 @@ func wideKeyColumnNames() []string {
 func wideKeyRows() [][]driver.Value {
 	rows := make([][]driver.Value, 0, 16)
 	for _, name := range wideKeyColumnNames() {
-		rows = append(rows, []driver.Value{"idx_wide", "wide", name, int64(1), "BTREE"})
+		rows = append(rows, []driver.Value{"idx_wide", "wide", name, int64(1), "BTREE", nil})
 	}
 	return rows
 }
@@ -94,8 +95,8 @@ func TestReadIndexes_AssemblesKeysFromTheirParts(t *testing.T) {
 		{
 			name: "key order follows the rows",
 			rows: [][]driver.Value{
-				{"idx_pair", "t", "b", int64(1), "BTREE"},
-				{"idx_pair", "t", "a", int64(1), "BTREE"},
+				{"idx_pair", "t", "b", int64(1), "BTREE", nil},
+				{"idx_pair", "t", "a", int64(1), "BTREE", nil},
 			},
 			want: []types.DBIndex{{
 				Name:       "idx_pair",
@@ -105,10 +106,61 @@ func TestReadIndexes_AssemblesKeysFromTheirParts(t *testing.T) {
 			}},
 		},
 		{
+			// MySQL requires a length for an index on a BLOB or TEXT column,
+			// so a key that loses it produces a description the server refuses
+			// with `used in key specification without a key length`
+			// (stokaro/ptah#2112). SUB_PART is where the catalog keeps it.
+			name: "a prefix key carries its length",
+			rows: [][]driver.Value{
+				{"idx_notes", "orders", "notes", int64(1), "BTREE", int64(20)},
+			},
+			want: []types.DBIndex{{
+				Name:       "idx_notes",
+				TableName:  "orders",
+				Columns:    []string{"notes"},
+				Parts:      []types.DBIndexPart{{Name: "notes", Prefix: "20"}},
+				Definition: "BTREE INDEX idx_notes ON orders (notes)",
+			}},
+		},
+		{
+			// The control. A whole-column key says nothing an `on` block would
+			// carry, so Parts stays empty and the compact `columns = [...]`
+			// spelling is what the document gets.
+			name: "a whole-column key carries no parts",
+			rows: [][]driver.Value{
+				{"idx_plain", "orders", "customer_id", int64(1), "BTREE", nil},
+			},
+			want: []types.DBIndex{{
+				Name:       "idx_plain",
+				TableName:  "orders",
+				Columns:    []string{"customer_id"},
+				Definition: "BTREE INDEX idx_plain ON orders (customer_id)",
+			}},
+		},
+		{
+			// A mixed key keeps every part, because dropping the unprefixed
+			// ones would render the key over one column.
+			name: "a mixed key keeps both kinds in order",
+			rows: [][]driver.Value{
+				{"idx_mixed", "orders", "customer_id", int64(1), "BTREE", nil},
+				{"idx_mixed", "orders", "notes", int64(1), "BTREE", int64(20)},
+			},
+			want: []types.DBIndex{{
+				Name:      "idx_mixed",
+				TableName: "orders",
+				Columns:   []string{"customer_id", "notes"},
+				Parts: []types.DBIndexPart{
+					{Name: "customer_id"},
+					{Name: "notes", Prefix: "20"},
+				},
+				Definition: "BTREE INDEX idx_mixed ON orders (customer_id,notes)",
+			}},
+		},
+		{
 			name: "one index name per owning table",
 			rows: [][]driver.Value{
-				{"idx_name", "orders", "reference", int64(1), "BTREE"},
-				{"idx_name", "users", "email", int64(0), "BTREE"},
+				{"idx_name", "orders", "reference", int64(1), "BTREE", nil},
+				{"idx_name", "users", "email", int64(0), "BTREE", nil},
 			},
 			want: []types.DBIndex{
 				{
@@ -129,7 +181,7 @@ func TestReadIndexes_AssemblesKeysFromTheirParts(t *testing.T) {
 		{
 			name: "unique key and its definition",
 			rows: [][]driver.Value{
-				{"uq_users_email", "users", "email", int64(0), "BTREE"},
+				{"uq_users_email", "users", "email", int64(0), "BTREE", nil},
 			},
 			want: []types.DBIndex{{
 				Name:       "uq_users_email",
@@ -142,7 +194,7 @@ func TestReadIndexes_AssemblesKeysFromTheirParts(t *testing.T) {
 		{
 			name: "primary key",
 			rows: [][]driver.Value{
-				{"PRIMARY", "users", "id", int64(0), "BTREE"},
+				{"PRIMARY", "users", "id", int64(0), "BTREE", nil},
 			},
 			want: []types.DBIndex{{
 				Name:       "PRIMARY",
@@ -184,7 +236,7 @@ func TestReadIndexes_ReportsAKeyPartItCannotName(t *testing.T) {
 		{
 			name: "whole key is an expression",
 			rows: [][]driver.Value{
-				{"idx_expr", "t3", nil, int64(1), "BTREE"},
+				{"idx_expr", "t3", nil, int64(1), "BTREE", nil},
 			},
 			want: []types.DBIndex{{
 				Name:               "idx_expr",
@@ -196,8 +248,8 @@ func TestReadIndexes_ReportsAKeyPartItCannotName(t *testing.T) {
 		{
 			name: "column beside an expression",
 			rows: [][]driver.Value{
-				{"idx_mixed", "t4", "b", int64(1), "BTREE"},
-				{"idx_mixed", "t4", nil, int64(1), "BTREE"},
+				{"idx_mixed", "t4", "b", int64(1), "BTREE", nil},
+				{"idx_mixed", "t4", nil, int64(1), "BTREE", nil},
 			},
 			want: []types.DBIndex{{
 				Name:               "idx_mixed",
