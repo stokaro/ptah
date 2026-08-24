@@ -117,3 +117,50 @@ func countSQLLine(sql, line string) int {
 	}
 	return count
 }
+
+// A schema the target owns is reached without a precondition.
+//
+// On Spanner that is what makes the migration run at all: `public` there is the
+// implicit schema and cannot be created, so the statement Ptah emitted first
+// was the statement the server refused, and no schema-qualified document could
+// be applied to an empty database (stokaro/ptah#2072). Measured on the PGAdapter
+// emulator v0.55.2:
+//
+//	ERROR: Schema name not valid: public. (SQLSTATE P0001)
+//	SQL: CREATE SCHEMA IF NOT EXISTS "public"
+func TestPlanner_SchemaPreconditionsSkipTheNamesATargetOwns(t *testing.T) {
+	tests := []struct {
+		name     string
+		dialect  string
+		schema   string
+		wantsPre bool
+	}{
+		{name: "Spanner does not create public", dialect: "spanner", schema: "public", wantsPre: false},
+		{name: "Spanner creates a user schema", dialect: "spanner", schema: "app", wantsPre: true},
+		{name: "PostgreSQL creates public", dialect: "postgres", schema: "public", wantsPre: true},
+		{name: "PostgreSQL creates a user schema", dialect: "postgres", schema: "app", wantsPre: true},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+			generated := &goschema.Database{
+				Tables: []goschema.Table{{StructName: "User", Name: "users", Schema: test.schema}},
+				Fields: []goschema.Field{
+					{StructName: "User", Name: "id", Type: "BIGINT", Primary: true},
+				},
+				SelfReferencingForeignKeys: make(map[string][]goschema.SelfReferencingFK),
+			}
+			diff := &types.SchemaDiff{TablesAdded: []string{test.schema + ".users"}}
+
+			nodes, err := postgres.NewForDialect(test.dialect, nil).
+				GenerateMigrationASTChecked(diff, generated)
+			c.Assert(err, qt.IsNil)
+			sql, err := renderer.RenderSQL(test.dialect, nodes...)
+			c.Assert(err, qt.IsNil)
+
+			c.Assert(strings.Contains(sql, "CREATE SCHEMA"), qt.Equals, test.wantsPre,
+				qt.Commentf("%s", sql))
+		})
+	}
+}
