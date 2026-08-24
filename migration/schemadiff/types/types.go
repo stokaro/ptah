@@ -24,6 +24,35 @@ type IndexRef struct {
 	TableName string `json:"table_name"`
 }
 
+// ConstraintIdentity is what makes two constraint records one object.
+//
+// The three parts are already FOLDED by the target's rules, and they are kept
+// apart rather than joined so that no consumer has to parse them back out. A
+// zero value means the producer did not resolve one, which is not the same as a
+// constraint in no schema: a consumer that keys on identity has to say which it
+// is rather than treat an empty struct as a match.
+//
+// It exists because the two halves of one modified constraint arrive under two
+// spellings -- `widget` from a description and `public.widget` from a catalog --
+// and every consumer that paired them by spelling had to fold the names again
+// to do it. Folding downstream applies the target's rule twice on one side of
+// the pipeline and once on the other, which is how a drop came to be paired
+// with a constraint the comparator never removed (stokaro/ptah#1663,
+// stokaro/ptah#1987).
+type ConstraintIdentity struct {
+	// Schema is the folded schema the constraint's table lives in, resolved to
+	// the target's default when the source left it unwritten.
+	Schema string `json:"schema,omitempty"`
+
+	// Table is the folded name of the table the constraint is on.
+	Table string `json:"table,omitempty"`
+
+	// Name is the folded constraint name, under the rule the engine resolves
+	// one by -- which is the index rule, not the column rule
+	// (stokaro/ptah#2028).
+	Name string `json:"name,omitempty"`
+}
+
 // ConstraintRemovalInfo contains information about a constraint that needs to be
 // removed, including the constraint name, the table it belongs to, and its type.
 //
@@ -42,6 +71,11 @@ type ConstraintRemovalInfo struct {
 
 	// Type is the constraint type (FOREIGN KEY, CHECK, UNIQUE, PRIMARY KEY, ...)
 	Type string `json:"type"`
+
+	// Identity is what pairs this removal with an addition of the same object.
+	// Name and TableName stay because they are the spellings a statement and a
+	// diagnostic are written with; this is the comparison form.
+	Identity ConstraintIdentity `json:"identity,omitzero"`
 }
 
 // ForeignKeyRemovalInfo supplies the local and referenced columns needed to
@@ -110,6 +144,11 @@ type ConstraintAdditionInfo struct {
 	// OnDelete / OnUpdate are the referential actions (FOREIGN KEY only).
 	OnDelete string `json:"on_delete,omitempty"`
 	OnUpdate string `json:"on_update,omitempty"`
+
+	// Identity is what pairs this addition with a removal of the same object.
+	// Name and TableName stay because they are the spellings a statement and a
+	// diagnostic are written with; this is the comparison form.
+	Identity ConstraintIdentity `json:"identity,omitzero"`
 }
 
 // SchemaDiff represents comprehensive differences between two database schemas.

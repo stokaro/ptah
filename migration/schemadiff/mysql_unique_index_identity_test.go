@@ -181,10 +181,14 @@ func TestCompareWithDialect_UndeclaredUniqueKeyIsStillRemoved(t *testing.T) {
 	tests := []struct {
 		name    string
 		dialect string
+		// wantSchema is the schema an unqualified table resolves to in the
+		// identity, which is the TARGET's default and so is not the same
+		// everywhere: PostgreSQL has one, MySQL and MariaDB do not.
+		wantSchema string
 	}{
 		{name: "mysql", dialect: "mysql"},
 		{name: "mariadb", dialect: "mariadb"},
-		{name: "postgres", dialect: "postgres"},
+		{name: "postgres", dialect: "postgres", wantSchema: "public"},
 	}
 
 	for _, test := range tests {
@@ -203,6 +207,9 @@ func TestCompareWithDialect_UndeclaredUniqueKeyIsStillRemoved(t *testing.T) {
 				Name:      "uq_users_email",
 				TableName: "users",
 				Type:      "UNIQUE",
+				Identity: difftypes.ConstraintIdentity{
+					Schema: test.wantSchema, Table: "users", Name: "uq_users_email",
+				},
 			}})
 			c.Assert(diff.IndexAdditions(), qt.HasLen, 0)
 		})
@@ -217,10 +224,14 @@ func TestCompareWithDialect_UniqueKeyOnAnotherTableIsNotTheSameObject(t *testing
 	tests := []struct {
 		name    string
 		dialect string
+		// wantSchema is the schema an unqualified table resolves to in the
+		// identity, which is the TARGET's default and so is not the same
+		// everywhere: PostgreSQL has one, MySQL and MariaDB do not.
+		wantSchema string
 	}{
 		{name: "mysql", dialect: "mysql"},
 		{name: "mariadb", dialect: "mariadb"},
-		{name: "postgres", dialect: "postgres"},
+		{name: "postgres", dialect: "postgres", wantSchema: "public"},
 	}
 
 	for _, test := range tests {
@@ -262,6 +273,9 @@ func TestCompareWithDialect_UniqueKeyOnAnotherTableIsNotTheSameObject(t *testing
 				Name:      "uq_users_email",
 				TableName: "users",
 				Type:      "UNIQUE",
+				Identity: difftypes.ConstraintIdentity{
+					Schema: test.wantSchema, Table: "users", Name: "uq_users_email",
+				},
 			}})
 		})
 	}

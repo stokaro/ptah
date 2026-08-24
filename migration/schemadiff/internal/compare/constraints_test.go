@@ -400,6 +400,7 @@ func TestConstraints_SameNameTypeDriftCarriesAdditionBody(t *testing.T) {
 			expected: []difftypes.ConstraintAdditionInfo{{
 				Name:      "accounts_identity",
 				TableName: "accounts",
+				Identity:  difftypes.ConstraintIdentity{Table: "accounts", Name: "accounts_identity"},
 				Type:      "UNIQUE",
 				Columns:   []string{"email", "region"},
 			}},
@@ -426,6 +427,7 @@ func TestConstraints_SameNameTypeDriftCarriesAdditionBody(t *testing.T) {
 			expected: []difftypes.ConstraintAdditionInfo{{
 				Name:            "products_quantity_guard",
 				TableName:       "products",
+				Identity:        difftypes.ConstraintIdentity{Table: "products", Name: "products_quantity_guard"},
 				Type:            "CHECK",
 				CheckExpression: "quantity > 10",
 			}},
@@ -521,11 +523,13 @@ func TestConstraints_UniqueIncludeDrift(t *testing.T) {
 			c.Assert(diff.ConstraintsRemovedWithTables, qt.DeepEquals, []difftypes.ConstraintRemovalInfo{{
 				Name:      tt.generated.Name,
 				TableName: tt.generated.Table,
+				Identity:  difftypes.ConstraintIdentity{Table: tt.generated.Table, Name: tt.generated.Name},
 				Type:      "UNIQUE",
 			}})
 			c.Assert(diff.ConstraintsAddedWithTables, qt.DeepEquals, []difftypes.ConstraintAdditionInfo{{
 				Name:           tt.generated.Name,
 				TableName:      tt.generated.Table,
+				Identity:       difftypes.ConstraintIdentity{Table: tt.generated.Table, Name: tt.generated.Name},
 				Type:           "UNIQUE",
 				Columns:        append([]string(nil), tt.generated.Columns...),
 				IncludeColumns: append([]string(nil), tt.generated.IncludeColumns...),
@@ -614,6 +618,7 @@ func TestConstraints_CompositeForeignKeyAdditionCarriesReferencedColumns(t *test
 		{
 			Name:           "fk_orders_accounts",
 			TableName:      "orders",
+			Identity:       difftypes.ConstraintIdentity{Table: "orders", Name: "fk_orders_accounts"},
 			Type:           "FOREIGN KEY",
 			Columns:        []string{"tenant_id", "owner_id"},
 			ForeignTable:   "accounts",
@@ -662,7 +667,7 @@ func TestConstraints_CompositeForeignKeyReferencedColumnDrift(t *testing.T) {
 	compare.Constraints(generated, database, diff, nil)
 
 	c.Assert(diff.ConstraintsRemovedWithTables, qt.DeepEquals, []difftypes.ConstraintRemovalInfo{
-		{Name: "fk_orders_accounts", TableName: "orders", Type: "FOREIGN KEY"},
+		{Name: "fk_orders_accounts", TableName: "orders", Type: "FOREIGN KEY", Identity: difftypes.ConstraintIdentity{Table: "orders", Name: "fk_orders_accounts"}},
 	})
 	c.Assert(diff.ForeignKeysRemovedWithTables, qt.DeepEquals, []difftypes.ForeignKeyRemovalInfo{
 		{
@@ -675,6 +680,7 @@ func TestConstraints_CompositeForeignKeyReferencedColumnDrift(t *testing.T) {
 		{
 			Name:           "fk_orders_accounts",
 			TableName:      "orders",
+			Identity:       difftypes.ConstraintIdentity{Table: "orders", Name: "fk_orders_accounts"},
 			Type:           "FOREIGN KEY",
 			Columns:        []string{"tenant_id", "owner_id"},
 			ForeignTable:   "accounts",
@@ -722,7 +728,7 @@ func TestConstraints_CompositeForeignKeyLocalColumnDrift(t *testing.T) {
 	compare.Constraints(generated, database, diff, nil)
 
 	c.Assert(diff.ConstraintsRemovedWithTables, qt.DeepEquals, []difftypes.ConstraintRemovalInfo{
-		{Name: "fk_orders_accounts", TableName: "orders", Type: "FOREIGN KEY"},
+		{Name: "fk_orders_accounts", TableName: "orders", Type: "FOREIGN KEY", Identity: difftypes.ConstraintIdentity{Table: "orders", Name: "fk_orders_accounts"}},
 	})
 	c.Assert(diff.ForeignKeysRemovedWithTables, qt.DeepEquals, []difftypes.ForeignKeyRemovalInfo{
 		{
@@ -735,6 +741,7 @@ func TestConstraints_CompositeForeignKeyLocalColumnDrift(t *testing.T) {
 		{
 			Name:           "fk_orders_accounts",
 			TableName:      "orders",
+			Identity:       difftypes.ConstraintIdentity{Table: "orders", Name: "fk_orders_accounts"},
 			Type:           "FOREIGN KEY",
 			Columns:        []string{"tenant_id", "owner_id"},
 			ForeignTable:   "accounts",

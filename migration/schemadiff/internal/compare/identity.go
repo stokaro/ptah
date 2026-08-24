@@ -2,7 +2,9 @@ package compare
 
 import (
 	"go.5x5.cz/ptah/core/platform/identifier"
+	"go.5x5.cz/ptah/internal/objectidentity"
 	"go.5x5.cz/ptah/internal/tableref"
+	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
 )
 
 // tableMemberKey identifies something owned by a table -- a constraint, a
@@ -68,6 +70,30 @@ func newConstraintKey(table, constraint string, semantics identifier.Semantics) 
 	return tableMemberKey{
 		table:  newQualifiedTableIdentity(table, semantics),
 		member: semantics.IndexIdentityKey(constraint),
+	}
+}
+
+// constraintIdentity is the same answer in the form a CONSUMER can read.
+//
+// The key above is an [objectidentity.Key], whose parts are deliberately
+// unreachable: it exists to be compared, not to be taken apart. A planner needs
+// to compare too, and until now it rebuilt the key from the spellings the diff
+// carried -- folding the target's rule a second time, on one side of the
+// pipeline only. This carries the folded parts out instead, from ONE
+// construction, so the two views cannot drift (stokaro/ptah#1663).
+func constraintIdentity(
+	table, constraint string,
+	semantics identifier.Semantics,
+) difftypes.ConstraintIdentity {
+	ref, ok := tableref.Parse(table)
+	if !ok {
+		ref.Name = table
+	}
+	id := objectidentity.NewBuilder(semantics).ConstraintParts(ref.Schema, ref.Name, constraint)
+	return difftypes.ConstraintIdentity{
+		Schema: id.Schema.Normalized,
+		Table:  id.Parent.Normalized,
+		Name:   id.Name.Normalized,
 	}
 }
 
