@@ -1,6 +1,7 @@
 package schemafile_test
 
 import (
+	"bytes"
 	"os"
 	"path/filepath"
 	"testing"
@@ -64,4 +65,41 @@ func columnNames(db *goschema.Database) []string {
 		names = append(names, field.Name)
 	}
 	return names
+}
+
+// TestLoadPath_ADBMLLossReachesTheReportIgnoredChannel pins that a construct
+// the document declares and the schema model cannot carry is reported through
+// the channel that already exists for one, rather than through a second one or
+// through silence.
+func TestLoadPath_ADBMLLossReachesTheReportIgnoredChannel(t *testing.T) {
+	c := qt.New(t)
+	path := filepath.Join(t.TempDir(), "schema.dbml")
+	document := "Project shop {\n  database_type: 'PostgreSQL'\n}\n\nTable t {\n  a int\n}\n"
+	c.Assert(os.WriteFile(path, []byte(document), 0o600), qt.IsNil)
+	var reported bytes.Buffer
+
+	db, err := schemafile.LoadPath(path, schemafile.Options{ReportIgnored: &reported})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(db.Tables, qt.HasLen, 1)
+	c.Assert(reported.String(), qt.Contains, "warning: schema file")
+	c.Assert(reported.String(), qt.Contains, "describes the diagram")
+	c.Assert(reported.String(), qt.Contains, "schema.dbml:")
+}
+
+// TestLoadPath_ADBMLDocumentWithNothingToLoseReportsNothing is the control.
+//
+// Without it a loader that wrote a warning for every DBML file would satisfy
+// the test above, and every ordinary document would carry a line nobody can act
+// on.
+func TestLoadPath_ADBMLDocumentWithNothingToLoseReportsNothing(t *testing.T) {
+	c := qt.New(t)
+	path := filepath.Join(t.TempDir(), "schema.dbml")
+	c.Assert(os.WriteFile(path, []byte("Table t {\n  a int [pk]\n}\n"), 0o600), qt.IsNil)
+	var reported bytes.Buffer
+
+	_, err := schemafile.LoadPath(path, schemafile.Options{ReportIgnored: &reported})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(reported.String(), qt.Equals, "")
 }

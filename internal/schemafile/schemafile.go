@@ -388,12 +388,34 @@ func dbmlCannotExpress() []coverage.Kind {
 }
 
 // loadDBMLFile reads a DBML document.
-func loadDBMLFile(resolved string) (*goschema.Database, error) {
+//
+// What the document declares and the schema model cannot carry -- a Project
+// block, a TableGroup, a Records block -- goes to [Options.ReportIgnored],
+// which is the channel that already exists for a top-level construct accepted
+// and dropped. Deliberately not a second one: the same product should not
+// describe an ignored HCL block and an ignored DBML block in two different
+// sentences.
+func loadDBMLFile(resolved string, opts Options) (*goschema.Database, error) {
 	contents, err := os.ReadFile(resolved)
 	if err != nil {
 		return nil, fmt.Errorf("read schema file %s: %w", resolved, err)
 	}
-	return dbmlparse.Parse(string(contents), dbmlparse.Options{File: resolved})
+	return dbmlparse.Parse(string(contents), dbmlparse.Options{
+		File:         resolved,
+		OnDiagnostic: dbmlLossReporter(opts.ReportIgnored),
+	})
+}
+
+// dbmlLossReporter adapts the parser's diagnostics onto the loader's writer,
+// and returns nil when nobody is listening so the parse does no work for a
+// report that goes nowhere.
+func dbmlLossReporter(out io.Writer) func(string) {
+	if out == nil {
+		return nil
+	}
+	return func(message string) {
+		fmt.Fprintf(out, "warning: schema file %s\n", message)
+	}
 }
 
 // unsupportedByFormat is what every limit in this file is: the object family
@@ -430,7 +452,7 @@ func parseSchemaFile(resolved string, opts Options) (*goschema.Database, error) 
 	case ".sql":
 		return loadSQLFile(resolved, opts)
 	case ".dbml":
-		return loadDBMLFile(resolved)
+		return loadDBMLFile(resolved, opts)
 	default:
 		return nil, fmt.Errorf("unsupported schema file extension %q: only .yaml, .yml, .hcl, .sql, and .dbml are supported", filepath.Ext(resolved))
 	}
