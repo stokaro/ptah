@@ -263,6 +263,7 @@ func convertIndexParts(parts []dbschematypes.DBIndexPart) []goschema.IndexPart {
 			Name:       part.Name,
 			Expr:       part.Expr,
 			Operator:   part.Operator,
+			Prefix:     part.Prefix,
 			Desc:       part.Desc,
 			NullsOrder: part.NullsOrder,
 		}

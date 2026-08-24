@@ -814,7 +814,10 @@ func (r *renderer) renderPrimaryKey(table goschema.Table, fields []goschema.Fiel
 			if part.Name != "" {
 				r.rawAttr(3, "column", columnRef(part.Name))
 			}
-			r.stringAttr(3, "prefix", part.Prefix)
+			// A number, not a string: the pinned Atlas community binary writes
+			// `prefix = 20` and its schema takes an int there, so a quoted
+			// value would be a document it refuses (stokaro/ptah#2112).
+			r.rawAttr(3, "prefix", part.Prefix)
 			if part.Desc {
 				r.rawAttr(3, "desc", "true")
 			}
@@ -1062,7 +1065,10 @@ func (r *renderer) renderIndex(index goschema.Index) {
 			}
 			r.stringAttr(3, "expr", part.Expr)
 			r.stringAttr(3, "ops", part.Operator)
-			r.stringAttr(3, "prefix", part.Prefix)
+			// A number, not a string: the pinned Atlas community binary writes
+			// `prefix = 20` and its schema takes an int there, so a quoted
+			// value would be a document it refuses (stokaro/ptah#2112).
+			r.rawAttr(3, "prefix", part.Prefix)
 			if part.Desc {
 				r.rawAttr(3, "desc", "true")
 			}
