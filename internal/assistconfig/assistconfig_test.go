@@ -1,6 +1,7 @@
 package assistconfig_test
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
@@ -406,47 +407,44 @@ func TestProvider_ReadsACredentialFromAFile(t *testing.T) {
 	c.Assert(provider, qt.IsNotNil)
 }
 
-func TestDefaultPath_PrefersTheExplicitThenXDG(t *testing.T) {
-	tests := []struct {
-		name        string
-		environment map[string]string
-		want        string
-	}{
-		{
-			name:        "an explicit path",
-			environment: map[string]string{"PTAH_ASSIST_CONFIG": "/somewhere/else.yaml"},
-			want:        "/somewhere/else.yaml",
-		},
-		{
-			name:        "the XDG directory",
-			environment: map[string]string{"XDG_CONFIG_HOME": "/xdg-config"},
-			want:        filepath.Join("/xdg-config", "ptah", "assist.yaml"),
-		},
-	}
-
-	for _, test := range tests {
-		t.Run(test.name, func(t *testing.T) {
-			c := qt.New(t)
-
-			path, err := assistconfig.DefaultPath(assistconfig.Options{
-				Environ:   environ(test.environment),
-				ConfigDir: func() (string, error) { return "/platform/config", nil },
-			})
-
-			c.Assert(err, qt.IsNil)
-			c.Assert(path, qt.Equals, test.want)
-		})
-	}
-}
-
-func TestDefaultPath_FallsBackToThePlatformDirectory(t *testing.T) {
+func TestDefaultPath_IsTheSameDotPtahThisTreeUsesBesideAProject(t *testing.T) {
+	// One directory name in both positions: `./.ptah` beside a project already
+	// holds the approval keys and the agent audit record, and a home-directory
+	// location spelled `.config/ptah` would make "where does Ptah keep things"
+	// two answers.
 	c := qt.New(t)
 
 	path, err := assistconfig.DefaultPath(assistconfig.Options{
-		Environ:   environ(nil),
-		ConfigDir: func() (string, error) { return "/platform/config", nil },
+		Environ: environ(nil),
+		HomeDir: func() (string, error) { return "/somewhere/home", nil },
 	})
 
 	c.Assert(err, qt.IsNil)
-	c.Assert(path, qt.Equals, filepath.Join("/platform/config", "ptah", "assist.yaml"))
+	c.Assert(path, qt.Equals, filepath.Join("/somewhere/home", ".ptah", "assist.yaml"))
+}
+
+func TestDefaultPath_AnExplicitPathWins(t *testing.T) {
+	c := qt.New(t)
+
+	path, err := assistconfig.DefaultPath(assistconfig.Options{
+		Environ: environ(map[string]string{"PTAH_ASSIST_CONFIG": "/somewhere/else.yaml"}),
+		HomeDir: func() (string, error) { return "/somewhere/home", nil },
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(path, qt.Equals, "/somewhere/else.yaml")
+}
+
+func TestDefaultPath_ReportsAHomeDirectoryItCannotResolve(t *testing.T) {
+	// A container with no HOME is a real environment, and answering with a
+	// relative path there would write profiles into the working directory.
+	c := qt.New(t)
+
+	path, err := assistconfig.DefaultPath(assistconfig.Options{
+		Environ: environ(nil),
+		HomeDir: func() (string, error) { return "", errors.New("$HOME is not defined") },
+	})
+
+	c.Assert(err, qt.ErrorMatches, `resolve the home directory: \$HOME is not defined`)
+	c.Assert(path, qt.Equals, "")
 }

@@ -62,7 +62,7 @@ func workspace(c *qt.C) string {
 func TestExplain_HappyPath(t *testing.T) {
 	c := qt.New(t)
 	stub := &scripted{bodies: []string{
-		toolAnswer("ptah_read_artifact", `{"artifact":"migrations"}`),
+		toolAnswer("read_artifact", `{"artifact":"migrations"}`),
 		textAnswer("There is one migration pair, 1700000000_init."),
 	}}
 	home := configHome(c, profileFor(endpoint(c, stub.handler())))
@@ -74,7 +74,7 @@ func TestExplain_HappyPath(t *testing.T) {
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(out, qt.Contains, "There is one migration pair")
-	c.Assert(out, qt.Contains, "ok       ptah_read_artifact")
+	c.Assert(out, qt.Contains, "ok       read_artifact")
 	c.Assert(out, qt.Contains, `"artifact":"migrations"`,
 		qt.Commentf("the trace shows the first line of what Ptah answered"))
 	c.Assert(out, qt.Contains, "-- a-model via local, 2 turn(s), 1 tool call(s), answer")
@@ -97,7 +97,7 @@ func TestExplain_SaysWhenNothingWasChecked(t *testing.T) {
 func TestExplain_JSONCarriesTheEvidenceAlongsideTheAnswer(t *testing.T) {
 	c := qt.New(t)
 	stub := &scripted{bodies: []string{
-		toolAnswer("ptah_describe_workspace", `{}`),
+		toolAnswer("describe_workspace", `{}`),
 		textAnswer("One artifact class is configured."),
 	}}
 	home := configHome(c, profileFor(endpoint(c, stub.handler())))
@@ -118,7 +118,7 @@ func TestExplain_JSONCarriesTheEvidenceAlongsideTheAnswer(t *testing.T) {
 	tools, _ := report["tools"].([]any)
 	c.Assert(tools, qt.HasLen, 1)
 	first, _ := tools[0].(map[string]any)
-	c.Assert(first["name"], qt.Equals, "ptah_describe_workspace")
+	c.Assert(first["name"], qt.Equals, "describe_workspace")
 	c.Assert(first["failed"], qt.IsFalse)
 }
 
@@ -127,7 +127,7 @@ func TestExplain_AWriteIsRefusedWhenTheOperatorEnabledNone(t *testing.T) {
 	// tool result, and the run continues rather than ending.
 	c := qt.New(t)
 	stub := &scripted{bodies: []string{
-		toolAnswer("ptah_preview_patch", `{"artifact":"migrations","changes":[`+
+		toolAnswer("preview_patch", `{"artifact":"migrations","changes":[`+
 			`{"path":"1700000100_x.up.sql","operation":"create","content":"SELECT 1;\n"}]}`),
 		textAnswer("I previewed it; applying is not permitted in this session."),
 	}}
@@ -144,7 +144,7 @@ func TestExplain_AWriteIsRefusedWhenTheOperatorEnabledNone(t *testing.T) {
 	tools, _ := report["tools"].([]any)
 	c.Assert(tools, qt.HasLen, 1)
 	first, _ := tools[0].(map[string]any)
-	c.Assert(first["name"], qt.Equals, "ptah_preview_patch")
+	c.Assert(first["name"], qt.Equals, "preview_patch")
 	c.Assert(first["failed"], qt.IsFalse,
 		qt.Commentf("previewing is allowed; it is applying that is not"))
 	c.Assert(filepath.Join(root, "migrations", "1700000100_x.up.sql"), qt.Not(qt.Equals), "")
@@ -157,7 +157,7 @@ func TestExplain_StopsAtTheToolCallLimitAndStillReports(t *testing.T) {
 	// A run that hit a limit produced a record worth printing, so the document
 	// goes out and the outcome is the exit code.
 	c := qt.New(t)
-	stub := &scripted{bodies: []string{toolAnswer("ptah_describe_workspace", `{}`)}}
+	stub := &scripted{bodies: []string{toolAnswer("describe_workspace", `{}`)}}
 	home := configHome(c, profileFor(endpoint(c, stub.handler())))
 	root := workspace(c)
 
@@ -221,7 +221,7 @@ func TestExplain_KeepsTheDocumentOnStdoutAndTheNarrationOnStderr(t *testing.T) {
 	// for exactly the callers the format exists for.
 	c := qt.New(t)
 	stub := &scripted{bodies: []string{
-		toolAnswer("ptah_describe_workspace", `{}`),
+		toolAnswer("describe_workspace", `{}`),
 		textAnswer("done"),
 	}}
 	home := configHome(c, profileFor(endpoint(c, stub.handler())))
@@ -235,6 +235,6 @@ func TestExplain_KeepsTheDocumentOnStdoutAndTheNarrationOnStderr(t *testing.T) {
 	report := make(map[string]any)
 	c.Assert(json.Unmarshal([]byte(out), &report), qt.IsNil)
 	c.Assert(errOut, qt.Contains, "recording agent decisions to")
-	c.Assert(errOut, qt.Contains, "tool: ptah_describe_workspace")
+	c.Assert(errOut, qt.Contains, "tool: describe_workspace")
 	c.Assert(out, qt.Not(qt.Contains), "recording agent decisions")
 }

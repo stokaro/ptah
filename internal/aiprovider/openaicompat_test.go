@@ -88,7 +88,7 @@ const measuredToolCallAnswer = `{
     "message": {
       "role": "assistant",
       "tool_calls": [{
-        "function": {"name": "ptah_describe_workspace", "arguments": "{}"},
+        "function": {"name": "describe_workspace", "arguments": "{}"},
         "type": "function",
         "id": "5a5cf78e"
       }]
@@ -110,7 +110,7 @@ func TestOpenAICompatible_ReadsAToolCall(t *testing.T) {
 		System:   "you are a schema tool",
 		Messages: []aiprovider.Message{{Role: aiprovider.RoleUser, Content: "describe the workspace"}},
 		Tools: []aiprovider.ToolDefinition{{
-			Name:        "ptah_describe_workspace",
+			Name:        "describe_workspace",
 			Description: "report the workspace",
 			Schema:      json.RawMessage(`{"type":"object"}`),
 		}},
@@ -120,7 +120,7 @@ func TestOpenAICompatible_ReadsAToolCall(t *testing.T) {
 	c.Assert(answer.StopReason, qt.Equals, aiprovider.StopToolCalls)
 	c.Assert(answer.Message.ToolCalls, qt.HasLen, 1)
 	c.Assert(answer.Message.ToolCalls[0].ID, qt.Equals, "5a5cf78e")
-	c.Assert(answer.Message.ToolCalls[0].Name, qt.Equals, "ptah_describe_workspace")
+	c.Assert(answer.Message.ToolCalls[0].Name, qt.Equals, "describe_workspace")
 	c.Assert(string(answer.Message.ToolCalls[0].Arguments), qt.Equals, "{}")
 	c.Assert(answer.Model, qt.Equals, "mlx-community/Qwen3.6-27B-8bit")
 	c.Assert(answer.Usage.InputTokens, qt.Equals, 271)
@@ -160,10 +160,10 @@ func TestOpenAICompatible_SendsAToolResultAsItsOwnMessage(t *testing.T) {
 		Messages: []aiprovider.Message{
 			{Role: aiprovider.RoleUser, Content: "describe"},
 			{Role: aiprovider.RoleAssistant, ToolCalls: []aiprovider.ToolCall{{
-				ID: "call-1", Name: "ptah_describe_workspace", Arguments: json.RawMessage(`{}`),
+				ID: "call-1", Name: "describe_workspace", Arguments: json.RawMessage(`{}`),
 			}}},
 			{Role: aiprovider.RoleTool, ToolCallID: "call-1",
-				ToolName: "ptah_describe_workspace", Content: `{"artifacts":[]}`},
+				ToolName: "describe_workspace", Content: `{"artifacts":[]}`},
 		},
 	})
 

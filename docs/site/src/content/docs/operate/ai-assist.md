@@ -88,10 +88,11 @@ variable named, which is what a typo in a CI environment file needs to hear.
 
 ## Write profiles for anything else
 
-Profiles live in `assist.yaml` in your Ptah configuration directory:
-`$XDG_CONFIG_HOME/ptah/assist.yaml` when that variable is set, and your
-platform's configuration directory otherwise. `PTAH_ASSIST_CONFIG` overrides
-both.
+Profiles live in `~/.ptah/assist.yaml`. That is the same directory name Ptah
+already uses beside a project — `./.ptah/` holds the approval keys and the agent
+audit record — so there is one answer to "where does Ptah keep things" rather
+than two. `PTAH_ASSIST_CONFIG` names a different file, which is what a container
+or a CI job uses.
 
 ```yaml
 default: local

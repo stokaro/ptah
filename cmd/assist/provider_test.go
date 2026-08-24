@@ -22,8 +22,8 @@ import (
 // the command reads: the point of driving the command rather than the package
 // is to measure the wiring, and a test that injected the configuration would
 // skip exactly the part that could be wrong.
-func execute(c *qt.C, configHome string, args ...string) (string, error) {
-	out, _, err := executeStreams(c, configHome, args...)
+func execute(c *qt.C, configPath string, args ...string) (string, error) {
+	out, _, err := executeStreams(c, configPath, args...)
 	return out, err
 }
 
@@ -31,12 +31,15 @@ func execute(c *qt.C, configHome string, args ...string) (string, error) {
 // documents is that machine-readable output goes to stdout and diagnostics go
 // to stderr. A helper that merged them would let a command print its JSON into
 // the middle of a progress line and still pass.
-func executeStreams(c *qt.C, configHome string, args ...string) (stdout, stderr string, _ error) {
+func executeStreams(c *qt.C, configPath string, args ...string) (stdout, stderr string, _ error) {
 	c.Helper()
-	c.Setenv("XDG_CONFIG_HOME", configHome)
 	clearEnv(c,
-		"PTAH_ASSIST_CONFIG", "PTAH_ASSIST_PROFILE", "PTAH_ASSIST_MODEL",
+		"PTAH_ASSIST_PROFILE", "PTAH_ASSIST_MODEL",
 		"OPENAI_API_KEY", "OPENAI_BASE_URL", "ANTHROPIC_API_KEY", "OLLAMA_HOST")
+	// The file is named directly rather than through the home directory: a test
+	// that moved HOME would be testing the operator's shell rather than the
+	// command, and one that wrote into the real home would be worse.
+	c.Setenv("PTAH_ASSIST_CONFIG", configPath)
 
 	cmd := assist.NewCommand()
 	out := &bytes.Buffer{}
@@ -70,15 +73,14 @@ func clearEnv(c *qt.C, names ...string) {
 	}
 }
 
-// configHome writes a configuration file and returns the directory to point
-// XDG_CONFIG_HOME at.
+// configHome writes a configuration file and returns its path.
 func configHome(c *qt.C, content string) string {
 	c.Helper()
-	home := c.TempDir()
-	dir := filepath.Join(home, "ptah")
+	dir := filepath.Join(c.TempDir(), ".ptah")
 	c.Assert(os.MkdirAll(dir, 0o700), qt.IsNil)
-	c.Assert(os.WriteFile(filepath.Join(dir, "assist.yaml"), []byte(content), 0o600), qt.IsNil)
-	return home
+	path := filepath.Join(dir, "assist.yaml")
+	c.Assert(os.WriteFile(path, []byte(content), 0o600), qt.IsNil)
+	return path
 }
 
 // endpoint starts a stub model server and returns its base URL.
@@ -131,7 +133,7 @@ func TestProviderList_SaysWhatToDoWhenNothingIsConfigured(t *testing.T) {
 	// exported is the answer most of them need.
 	c := qt.New(t)
 
-	out, err := execute(c, c.TempDir(), "provider", "list")
+	out, err := execute(c, filepath.Join(c.TempDir(), "absent.yaml"), "provider", "list")
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(out, qt.Contains, "No provider profiles are configured")
@@ -237,9 +239,9 @@ func TestProviderList_AnExportedEmptyKeyIsAConfigurationErrorRatherThanSilence(t
 	// internal/envbool does for boolean variables: the profile is derived, and
 	// using it reports the variable by name.
 	c := qt.New(t)
-	c.Setenv("XDG_CONFIG_HOME", c.TempDir())
-	clearEnv(c, "PTAH_ASSIST_CONFIG", "PTAH_ASSIST_PROFILE", "PTAH_ASSIST_MODEL",
+	clearEnv(c, "PTAH_ASSIST_PROFILE", "PTAH_ASSIST_MODEL",
 		"OPENAI_BASE_URL", "ANTHROPIC_API_KEY", "OLLAMA_HOST")
+	c.Setenv("PTAH_ASSIST_CONFIG", filepath.Join(c.TempDir(), "absent.yaml"))
 	c.Setenv("OPENAI_API_KEY", "")
 
 	cmd := assist.NewCommand()

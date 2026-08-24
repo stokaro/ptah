@@ -35,7 +35,7 @@ func TestAnthropic_ReadsTextAndToolUseFromOneContentList(t *testing.T) {
       "stop_reason": "tool_use",
       "content": [
         {"type": "text", "text": "Reading the workspace."},
-        {"type": "tool_use", "id": "toolu_1", "name": "ptah_describe_workspace", "input": {"detail": true}}
+        {"type": "tool_use", "id": "toolu_1", "name": "describe_workspace", "input": {"detail": true}}
       ],
       "usage": {"input_tokens": 42, "output_tokens": 7, "cache_read_input_tokens": 5}
     }`}
@@ -91,8 +91,8 @@ func TestAnthropic_MergesConsecutiveToolResultsIntoOneUserMessage(t *testing.T) 
 		Messages: []aiprovider.Message{
 			{Role: aiprovider.RoleUser, Content: "describe and read"},
 			{Role: aiprovider.RoleAssistant, ToolCalls: []aiprovider.ToolCall{
-				{ID: "t1", Name: "ptah_describe_workspace", Arguments: json.RawMessage(`{}`)},
-				{ID: "t2", Name: "ptah_read_artifact", Arguments: json.RawMessage(`{"artifact":"migrations"}`)},
+				{ID: "t1", Name: "describe_workspace", Arguments: json.RawMessage(`{}`)},
+				{ID: "t2", Name: "read_artifact", Arguments: json.RawMessage(`{"artifact":"migrations"}`)},
 			}},
 			{Role: aiprovider.RoleTool, ToolCallID: "t1", Content: `{"artifacts":[]}`},
 			{Role: aiprovider.RoleTool, ToolCallID: "t2", Content: `{"entries":[]}`},

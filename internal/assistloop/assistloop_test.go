@@ -86,7 +86,7 @@ func loopWith(c *qt.C, provider aiprovider.Provider, opts assistloop.Options) *a
 func TestRun_HappyPath(t *testing.T) {
 	c := qt.New(t)
 	provider := aiprovider.NewFake(
-		aiprovider.ToolTurn("t1", "ptah_read_artifact", map[string]any{"artifact": "migrations"}),
+		aiprovider.ToolTurn("t1", "read_artifact", map[string]any{"artifact": "migrations"}),
 		aiprovider.TextTurn("The project has one migration pair."),
 	)
 	loop := loopWith(c, provider, assistloop.Options{})
@@ -98,7 +98,7 @@ func TestRun_HappyPath(t *testing.T) {
 	c.Assert(result.StopReason, qt.Equals, assistloop.StoppedWithAnswer)
 	c.Assert(result.Turns, qt.Equals, 2)
 	c.Assert(result.Tools, qt.HasLen, 1)
-	c.Assert(result.Tools[0].Name, qt.Equals, "ptah_read_artifact")
+	c.Assert(result.Tools[0].Name, qt.Equals, "read_artifact")
 	c.Assert(result.Tools[0].Failed, qt.IsFalse)
 	c.Assert(result.Tools[0].Result, qt.Contains, "1700000000_init.up.sql")
 	c.Assert(result.UsedTools(), qt.IsTrue)
@@ -121,9 +121,9 @@ func TestRun_OffersTheModelTheSameToolsAnExternalClientGets(t *testing.T) {
 		c.Assert(tool.Description, qt.Not(qt.Equals), "")
 		c.Assert(string(tool.Schema), qt.Contains, `"type"`)
 	}
-	c.Assert(offered["ptah_validate_schema"], qt.IsTrue)
-	c.Assert(offered["ptah_describe_workspace"], qt.IsTrue)
-	c.Assert(offered["ptah_apply_patch"], qt.IsTrue)
+	c.Assert(offered["validate_schema"], qt.IsTrue)
+	c.Assert(offered["describe_workspace"], qt.IsTrue)
+	c.Assert(offered["apply_patch"], qt.IsTrue)
 	c.Assert(offered, qt.HasLen, 8)
 }
 
@@ -162,7 +162,7 @@ func TestRun_HandsAToolRefusalBackToTheModel(t *testing.T) {
 	// probe a denial of service.
 	c := qt.New(t)
 	provider := aiprovider.NewFake(
-		aiprovider.ToolTurn("t1", "ptah_read_artifact", map[string]any{
+		aiprovider.ToolTurn("t1", "read_artifact", map[string]any{
 			"artifact": "migrations", "path": "../../etc/passwd",
 		}),
 		aiprovider.TextTurn("That path is outside the artifact, so I did not read it."),
@@ -188,7 +188,7 @@ func TestRun_StopsAtTheTurnLimit(t *testing.T) {
 	c := qt.New(t)
 	turns := make([]aiprovider.Response, 0, 6)
 	for range 6 {
-		turns = append(turns, aiprovider.ToolTurn("t", "ptah_describe_workspace", make(map[string]any)))
+		turns = append(turns, aiprovider.ToolTurn("t", "describe_workspace", make(map[string]any)))
 	}
 	loop := loopWith(c, aiprovider.NewFake(turns...), assistloop.Options{MaxTurns: 2, MaxRepeats: 99})
 
@@ -205,7 +205,7 @@ func TestRun_StopsWhenTheModelRepeatsItself(t *testing.T) {
 	c := qt.New(t)
 	turns := make([]aiprovider.Response, 0, 8)
 	for range 8 {
-		turns = append(turns, aiprovider.ToolTurn("t", "ptah_describe_workspace", make(map[string]any)))
+		turns = append(turns, aiprovider.ToolTurn("t", "describe_workspace", make(map[string]any)))
 	}
 	loop := loopWith(c, aiprovider.NewFake(turns...), assistloop.Options{MaxRepeats: 2})
 
@@ -223,8 +223,8 @@ func TestRun_StopsAtTheToolCallLimit(t *testing.T) {
 		Message: aiprovider.Message{
 			Role: aiprovider.RoleAssistant,
 			ToolCalls: []aiprovider.ToolCall{
-				{ID: "a", Name: "ptah_describe_workspace", Arguments: []byte(`{}`)},
-				{ID: "b", Name: "ptah_read_artifact", Arguments: []byte(`{"artifact":"migrations"}`)},
+				{ID: "a", Name: "describe_workspace", Arguments: []byte(`{}`)},
+				{ID: "b", Name: "read_artifact", Arguments: []byte(`{"artifact":"migrations"}`)},
 			},
 		},
 		StopReason: aiprovider.StopToolCalls,
@@ -243,7 +243,7 @@ func TestRun_TruncatesALargeToolResultAndSaysSo(t *testing.T) {
 	// half as the whole.
 	c := qt.New(t)
 	provider := aiprovider.NewFake(
-		aiprovider.ToolTurn("t1", "ptah_read_artifact", map[string]any{"artifact": "migrations"}),
+		aiprovider.ToolTurn("t1", "read_artifact", map[string]any{"artifact": "migrations"}),
 		aiprovider.TextTurn("done"),
 	)
 	loop := loopWith(c, provider, assistloop.Options{MaxToolOutputBytes: 64})

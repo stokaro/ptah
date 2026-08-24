@@ -53,9 +53,17 @@ const ProfileEnvVar = "PTAH_ASSIST_PROFILE"
 // how the zero-configuration providers below get a model identifier.
 const ModelEnvVar = "PTAH_ASSIST_MODEL"
 
-// FileName is the configuration file's name inside Ptah's configuration
-// directory.
+// FileName is the configuration file's name inside Ptah's own directory.
 const FileName = "assist.yaml"
+
+// DirName is the directory Ptah keeps state in, in both positions it uses one:
+// `.ptah` beside a project, and `.ptah` in the operator's home.
+//
+// One name rather than two. The project position already existed --
+// `./.ptah/allowed_signers` holds the approval keys and `./.ptah/agent-audit.jsonl`
+// the agent record -- and a home-directory location spelled differently would
+// make "where does Ptah keep things" two answers instead of one.
+const DirName = ".ptah"
 
 var (
 	// ErrNoProfile reports that no profile was selected and none could be
@@ -139,9 +147,9 @@ type Options struct {
 	Path string
 	// Environ reads an environment variable. A nil value reads the process's.
 	Environ func(string) (string, bool)
-	// ConfigDir returns the directory Ptah's configuration lives in. A nil
-	// value resolves the platform's.
-	ConfigDir func() (string, error)
+	// HomeDir returns the operator's home directory. A nil value resolves the
+	// process's own.
+	HomeDir func() (string, error)
 }
 
 // lookup resolves an environment variable through the options.
@@ -152,28 +160,29 @@ func (o Options) lookup(name string) (string, bool) {
 	return o.Environ(name)
 }
 
-// DefaultPath is where the profiles live when nothing overrides it.
+// DefaultPath is where the profiles live when nothing overrides it:
+// `~/.ptah/assist.yaml`.
 //
-// `$XDG_CONFIG_HOME/ptah/assist.yaml` when that variable is set, and the
-// platform's own configuration directory otherwise. XDG is honored first
-// because a developer who set it means it, including on macOS where Go's own
-// answer is Library/Application Support.
+// The home directory rather than a platform configuration directory, and
+// `.ptah` rather than `.config/ptah`, so the name is the same one this tree
+// already uses beside a project. A tool whose state lives under two different
+// spellings is one whose documentation has to explain both.
+//
+// PTAH_ASSIST_CONFIG overrides it, which is what a container, a CI job, or a
+// second profile set uses.
 func DefaultPath(opts Options) (string, error) {
 	if explicit, set := opts.lookup(ConfigEnvVar); set && explicit != "" {
 		return explicit, nil
 	}
-	if xdg, set := opts.lookup("XDG_CONFIG_HOME"); set && xdg != "" {
-		return filepath.Join(xdg, "ptah", FileName), nil
+	homeDir := opts.HomeDir
+	if homeDir == nil {
+		homeDir = os.UserHomeDir
 	}
-	configDir := opts.ConfigDir
-	if configDir == nil {
-		configDir = os.UserConfigDir
-	}
-	dir, err := configDir()
+	home, err := homeDir()
 	if err != nil {
-		return "", fmt.Errorf("resolve the configuration directory: %w", err)
+		return "", fmt.Errorf("resolve the home directory: %w", err)
 	}
-	return filepath.Join(dir, "ptah", FileName), nil
+	return filepath.Join(home, DirName, FileName), nil
 }
 
 // Load reads the operator's profiles, and derives what the environment already
