@@ -27,7 +27,7 @@ func TestRenderCreateTable(t *testing.T) {
 	c.Assert(sql, qt.Equals, `CREATE TABLE IF NOT EXISTS "users" (
   "id" INTEGER PRIMARY KEY AUTOINCREMENT,
   "email" TEXT NOT NULL UNIQUE,
-  "active" INTEGER DEFAULT '1',
+  "active" INTEGER DEFAULT 1,
   "status" TEXT CHECK (status IN ('active', 'inactive')),
   CONSTRAINT "ck_email" CHECK (length(email) > 3)
 ) STRICT;
@@ -169,4 +169,64 @@ func TestRenderAutoIncrementRequiresPrimaryKey(t *testing.T) {
 	_, err := renderer.RenderSQL("sqlite", table)
 	c.Assert(err, qt.ErrorIs, ptaherr.ErrUnsupportedFeature)
 	c.Assert(err.Error(), qt.Contains, `render column id: unsupported feature: sqlite: AUTOINCREMENT requires an INTEGER PRIMARY KEY column`)
+}
+
+// SQLite has no boolean and stores what the affinity converts. Quoting every
+// literal hid that for numbers -- `DEFAULT '7'` on an INTEGER-affinity column
+// converts on the way in -- and did not hide it for booleans: `DEFAULT 'true'`
+// stored the TEXT "true" on a column meant to hold 1.
+//
+// Measured by inserting a row into two databases built from one HCL document,
+// one by the pinned Atlas community binary and one through ptah-compat:
+//
+//	pinned binary   active = 1        typeof = integer
+//	ptah-compat     active = 'true'   typeof = text
+//
+// so `WHERE active = 1` matched a row in the first and none in the second
+// (stokaro/ptah#2092).
+func TestSQLiteRenderer_DefaultIsRenderedInTheFormItsAffinityTakes(t *testing.T) {
+	tests := []struct {
+		name       string
+		columnType string
+		value      string
+		want       string
+	}{
+		{name: "a boolean on an integer column", columnType: "INTEGER", value: "true", want: "DEFAULT 1"},
+		{name: "a false boolean", columnType: "INTEGER", value: "FALSE", want: "DEFAULT 0"},
+		{name: "an integer", columnType: "INTEGER", value: "7", want: "DEFAULT 7"},
+		{name: "a fraction on a real column", columnType: "REAL", value: "1.5", want: "DEFAULT 1.5"},
+		{name: "a boolean on a numeric column", columnType: "NUMERIC", value: "true", want: "DEFAULT 1"},
+		{
+			// TEXT affinity is where the characters ARE the value.
+			name: "a boolean word in a text column", columnType: "TEXT", value: "true", want: "DEFAULT 'true'",
+		},
+		{name: "a number in a text column", columnType: "TEXT", value: "7", want: "DEFAULT '7'"},
+		{name: "a string", columnType: "TEXT", value: "hello", want: "DEFAULT 'hello'"},
+		{
+			// A blob column keeps its quotes for the same reason, and the
+			// affinity of an empty declaration is BLOB.
+			name: "a value on a blob column", columnType: "BLOB", value: "1", want: "DEFAULT '1'",
+		},
+		{
+			name: "a value that only starts as a number", columnType: "INTEGER", value: "7 or 8",
+			want: "DEFAULT '7 or 8'",
+		},
+		{
+			name: "an already quoted literal is untouched", columnType: "INTEGER", value: "'1'",
+			want: "DEFAULT '1'",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			table := ast.NewCreateTable("probe").
+				AddColumn(ast.NewColumn("value", tt.columnType).SetDefault(tt.value))
+
+			sql, err := renderer.RenderSQL("sqlite", table)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(sql, qt.Contains, tt.want)
+		})
+	}
 }

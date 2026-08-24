@@ -9,6 +9,8 @@ import (
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/ptaherr"
 	"go.5x5.cz/ptah/core/renderer/internal/dialects/internal/bufwriter"
+	"go.5x5.cz/ptah/core/renderer/internal/dialects/internal/defaultlit"
+	"go.5x5.cz/ptah/internal/normalize"
 	"go.5x5.cz/ptah/internal/sqlident"
 )
 
@@ -570,7 +572,7 @@ func renderColumn(column *ast.ColumnNode, caps capability.Capabilities) (string,
 	switch {
 	case column.Default == nil:
 	case column.Default.HasLiteral():
-		parts = append(parts, "DEFAULT", renderDefaultLiteral(column.Default.Value))
+		parts = append(parts, "DEFAULT", renderDefaultLiteral(column))
 	case column.Default.Expression != "":
 		parts = append(parts, "DEFAULT", column.Default.Expression)
 	}
@@ -627,12 +629,56 @@ func mapColumnType(column *ast.ColumnNode) string {
 	}
 }
 
-func renderDefaultLiteral(value string) string {
-	value = strings.TrimSpace(value)
+// renderDefaultLiteral writes a default in the form the column's own affinity
+// takes.
+//
+// Quoting everything is what it used to do, and SQLite hides most of that: a
+// numeric-looking string on an INTEGER-affinity column is converted on the way
+// in, so `DEFAULT '7'` stores 7. `true` is not numeric-looking, so
+// `DEFAULT 'true'` stores the TEXT "true" on a column meant to hold 1.
+// Measured by inserting a row into two databases built from one HCL document,
+// one by the pinned Atlas community binary and one through ptah-compat:
+//
+//	pinned binary   active = 1        typeof = integer
+//	ptah-compat     active = 'true'   typeof = text
+//
+// so `WHERE active = 1` matched a row in the first and none in the second
+// (stokaro/ptah#2092). This is stokaro/ptah#2073 for the SQLite renderer.
+func renderDefaultLiteral(column *ast.ColumnNode) string {
+	value := strings.TrimSpace(column.Default.Value)
 	if strings.HasPrefix(value, "'") && strings.HasSuffix(value, "'") {
 		return value
 	}
-	return escapeStringLiteral(value)
+	if literal, bare := bareSQLiteDefault(column, value); bare {
+		return literal
+	}
+	return escapeStringLiteral(column.Default.Value)
+}
+
+// bareSQLiteDefault answers with the unquoted spelling of a default whose
+// column takes one, and reports whether the column does.
+//
+// The decision is the column's AFFINITY rather than its declared name, because
+// affinity is what SQLite converts by: `BOOLEAN`, `INT` and `NUMERIC` all store
+// a number and all reach here under different spellings. A TEXT or BLOB
+// affinity keeps the quotes, which is where the characters ARE the value.
+//
+// A boolean literal becomes 1 or 0 rather than the keyword. SQLite has
+// understood `true` since 3.23, and the numbers are what the column holds
+// either way -- writing them keeps the DDL readable by an older SQLite than
+// Ptah otherwise requires.
+func bareSQLiteDefault(column *ast.ColumnNode, value string) (string, bool) {
+	switch normalize.SQLiteAffinity(mapColumnType(column)) {
+	case "TEXT", "BLOB":
+		return "", false
+	}
+	switch strings.ToLower(value) {
+	case "true":
+		return "1", true
+	case "false":
+		return "0", true
+	}
+	return value, defaultlit.IsPlainNumber(value)
 }
 
 func renderConstraint(constraint *ast.ConstraintNode) (string, error) {
