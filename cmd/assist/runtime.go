@@ -177,5 +177,11 @@ func writeProvenance(out io.Writer, result *assistloop.Result) {
 	if !result.UsedTools() {
 		fmt.Fprintln(out,
 			"-- No Ptah tool answered, so nothing above was checked against this project.")
+		return
 	}
+	// What a tool returned is what left the machine about this project, so the
+	// size of it is the one number a person can act on. "ptah assist context"
+	// reports the other half: what a request carries before any tool answers.
+	fmt.Fprintf(out, "-- %d bytes of project content reached %s, from %d tool answer(s).\n",
+		result.ToolBytes(), result.Provider, len(result.Tools))
 }

@@ -122,6 +122,50 @@ answered says so:
 That line is the difference between an answer Ptah stands behind and a model
 talking about databases in general, and the two look identical without it.
 
+### What actually leaves this machine
+
+```bash
+ptah assist context "what changed in the last migration?" \
+  --workspace . --migrations-dir ./migrations --dialect postgres
+```
+
+```text
+Nothing below has been sent.
+
+Asking this question would send the following to a-model via local.
+
+  Ptah's instructions       1725 bytes  the same for every project
+  Tool schemas              5206 bytes  8 tools: names and argument shapes
+  Conversation                35 bytes  1 message(s)
+  Total                     6966 bytes
+```
+
+The report is built by the **same code that builds the real request**, so it
+cannot describe one thing while another leaves the machine. A test compares it
+against what a provider was actually handed, and the command's own test uses an
+endpoint that fails if anything reaches it.
+
+On a first request nothing there describes your project. Ptah's instructions and
+the tool schemas are the same whatever the project is, and the only other thing
+is your question. Project content reaches the provider **when a tool answers** —
+migration text, schema files, database object names — because that is what the
+model asked to see.
+
+So every run reports the size of it:
+
+```text
+-- 4182 bytes of project content reached local, from 2 tool answer(s).
+```
+
+`--resume` is the one case where a first request already carries something about
+the project: the earlier conversation is part of what would be sent, and
+`ptah assist context --resume <id>` prints that too rather than saying otherwise.
+
+`ptah assist context` runs no tool and makes no decision, so it opens no audit
+log and leaves nothing in the project — a command reporting what a question
+would send, while dropping a file into the directory it is describing, would
+contradict itself.
+
 ### Reading a run with a program
 
 `ptah assist explain --format jsonl` prints the conversation to stdout as JSON
