@@ -271,10 +271,10 @@ Four reading tools, each forwarding to the operation that already owns the work:
 
 | tool | answers |
 | --- | --- |
-| `ptah_validate_schema` | structural problems in a declared schema, for one dialect, with no database |
-| `ptah_render_schema` | the DDL a declared schema becomes, in dependency order |
-| `ptah_schema_lineage` | which base columns feed each view column |
-| `ptah_read_database` | the schema a live database currently holds |
+| `validate_schema` | structural problems in a declared schema, for one dialect, with no database |
+| `render_schema` | the DDL a declared schema becomes, in dependency order |
+| `schema_lineage` | which base columns feed each view column |
+| `read_database` | the schema a live database currently holds |
 
 Three of Ptah's own reading verbs are deliberately absent: `schema inspect`,
 `schema diff` and `migrations lint`. Each needs a scratch database that Ptah
@@ -283,8 +283,8 @@ read-only name on a surface an agent drives without reading flag documentation.
 They return when a later phase can supply that database out of band rather than
 from the caller.
 
-`--workspace` adds four artifact tools -- `ptah_describe_workspace`,
-`ptah_read_artifact`, `ptah_preview_patch` and `ptah_apply_patch` -- confined to
+`--workspace` adds four artifact tools -- `describe_workspace`,
+`read_artifact`, `preview_patch` and `apply_patch` -- confined to
 the directories `--migrations-dir`, `--schema-dir` and `--tests-dir` name.
 Writing stays refused until `--allow-write` names an artifact class, and a named
 class asks for approval per patch unless `--auto-approve` says otherwise.
