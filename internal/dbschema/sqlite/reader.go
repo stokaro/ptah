@@ -393,8 +393,14 @@ func (r *Reader) readColumnsByTable(skipped []string) (map[string][]types.DBColu
 			GeneratedKind:       sqliteGeneratedKind(hidden),
 			GeneratedExpression: nil,
 		}
-		if expression := ddlMetadata.generatedExpressions[name]; expression != "" {
-			column.GeneratedExpression = &expression
+		// PRAGMA table_xinfo is the authority on WHETHER a column is generated;
+		// the DDL only supplies the text. Asking the DDL both questions is what
+		// a default holding the characters `as (` would answer wrongly, and the
+		// pragma cannot be fooled that way.
+		if column.GeneratedKind != "" {
+			if expression := ddlMetadata.generatedExpressions[name]; expression != "" {
+				column.GeneratedExpression = &expression
+			}
 		}
 		if defaultVal.Valid {
 			value := defaultVal.String
@@ -1129,9 +1135,18 @@ func extractGeneratedExpressions(ddl string) map[string]string {
 		if !ok {
 			continue
 		}
-		if indexKeyword(part, "GENERATED") < 0 {
-			continue
-		}
+		// The GENERATED ALWAYS prefix is OPTIONAL in SQLite's grammar:
+		// `scaled REAL AS (raw * 100) VIRTUAL` declares the same column as the
+		// spelling that carries it, and it is what the pinned Atlas community
+		// binary writes. Gating on the keyword left the short form marked
+		// generated -- PRAGMA table_xinfo's hidden value says so, and the reader
+		// reads it -- with no expression, and a column that is generated with no
+		// expression is rendered as a plain one. Replaying such a schema built a
+		// column that holds NULL where the original computed a value
+		// (stokaro/ptah#2090).
+		//
+		// No gate replaces it: generatedExpression requires AS followed by a
+		// parenthesized expression, which a plain column does not have.
 		expression := generatedExpression(part)
 		if expression != "" {
 			out[column] = expression
