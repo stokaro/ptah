@@ -55,6 +55,7 @@ point Ptah at an endpoint of its author's choosing with your key attached.`,
 			return runChat(cmd, opts)
 		},
 	}
+	cmd.AddCommand(newContextCommand())
 	cmd.AddCommand(newExplainCommand())
 	cmd.AddCommand(newProviderCommand())
 	cmd.AddCommand(newSessionsCommand())

@@ -121,6 +121,20 @@ type Result struct {
 	Messages   []aiprovider.Message `json:"-"`
 }
 
+// ToolBytes is how much tool output was handed back to the provider.
+//
+// Everything Ptah read on the model's behalf reaches the provider as a tool
+// result, so this is the size of what left the machine about the project. The
+// question and the system prompt are not counted: one is the person's own words
+// and the other is Ptah's, and neither describes the project.
+func (r *Result) ToolBytes() int {
+	total := 0
+	for _, tool := range r.Tools {
+		total += len(tool.Result)
+	}
+	return total
+}
+
 // UsedTools reports whether any tool ran, which is the difference between an
 // answer Ptah stands behind and one the model composed unaided.
 func (r Result) UsedTools() bool { return len(r.Tools) > 0 }
@@ -221,9 +235,7 @@ func (l *Loop) Run(ctx context.Context, request string) (*Result, error) {
 		return nil, err
 	}
 
-	messages := make([]aiprovider.Message, 0, len(l.opts.History)+1)
-	messages = append(messages, l.opts.History...)
-	messages = append(messages, aiprovider.Message{Role: aiprovider.RoleUser, Content: request})
+	messages := l.openingMessages(request)
 
 	result := &Result{
 		Provider: l.opts.Provider.Profile(),
@@ -312,6 +324,34 @@ func (l *Loop) runToolCalls(
 		})
 	}
 	return "", nil
+}
+
+// openingMessages is the conversation a request starts from: the resumed
+// history, then the question.
+func (l *Loop) openingMessages(request string) []aiprovider.Message {
+	messages := make([]aiprovider.Message, 0, len(l.opts.History)+1)
+	messages = append(messages, l.opts.History...)
+	messages = append(messages, aiprovider.Message{Role: aiprovider.RoleUser, Content: request})
+	return messages
+}
+
+// Preview builds the request a Run would send first, and sends nothing.
+//
+// It is the same construction [Run] uses rather than a description of it: a
+// preview assembled separately would be a plausible document that drifts from
+// what actually leaves the machine, which is the one thing it must not be. The
+// tool list is read from the connected server, so it is what the model would
+// really be offered.
+func (l *Loop) Preview(ctx context.Context, request string) (aiprovider.Request, error) {
+	tools, err := l.toolDefinitions(ctx)
+	if err != nil {
+		return aiprovider.Request{}, err
+	}
+	return aiprovider.Request{
+		System:   l.opts.System,
+		Messages: l.openingMessages(request),
+		Tools:    tools,
+	}, nil
 }
 
 // callTool runs one tool through the protocol and records what came back.

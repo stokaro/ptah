@@ -258,6 +258,7 @@ stdout therefore gets a document in every case except `2`.
 | `ptah mcp` | Serve Ptah's operations to an AI client over the Model Context Protocol, on stdin and stdout. |
 | `ptah assist` | Hold a conversation with a model you supply, with Ptah's own tools answering. |
 | `ptah assist explain <question>` | Ask one question, with Ptah's own tools answering. |
+| `ptah assist context <question>` | Print what a question would send to the model provider, and send nothing. |
 | `ptah assist sessions list` | List the conversations saved for this project. |
 | `ptah assist sessions show <id>` | Print one conversation, including which tools ran and what they answered. |
 | `ptah assist sessions delete <id>` | Remove one saved conversation. |
@@ -319,6 +320,10 @@ line; `--ephemeral` keeps no record and `--resume` continues an earlier one.
 `ptah assist explain --format jsonl` prints those same records to stdout as they
 happen, so a program reading a pipe and a program reading a saved session are
 reading one format.
+
+`ptah assist context` prints exactly what a question would send to the provider
+and sends nothing, built by the same code that builds the real request. Every
+run then reports how many bytes of project content actually went.
 
 `ptah assist provider list` reports
 the profiles this machine can reach, including ones inferred from a key already
