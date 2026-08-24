@@ -129,6 +129,7 @@ export default defineConfig({
           label: 'Distribute and operate',
           items: [
             { slug: 'operate/ai-agents' },
+            { slug: 'operate/ai-assist' },
             { slug: 'operate/oci-registry' },
             { slug: 'operate/seed-data' },
             { slug: 'operate/troubleshooting' },
