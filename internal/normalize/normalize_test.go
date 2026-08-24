@@ -62,6 +62,28 @@ func TestType(t *testing.T) {
 		{"numeric", "NUMERIC", "decimal"},
 		{"numeric with precision", "NUMERIC(5,2)", "decimal"},
 
+		// PostgreSQL's own float names, folded to the spelling the renderer
+		// writes. The two fold SEPARATELY: an 8-byte column narrowed to 4
+		// loses precision, and one token for both would call that no change.
+		{"float8 catalog name", "float8", "double precision"},
+		{"float8 schema-qualified", "pg_catalog.float8", "double precision"},
+		{"double precision as written", "DOUBLE PRECISION", "double precision"},
+		{"float4 catalog name", "float4", "real"},
+		{"real as written", "REAL", "real"},
+		// An array is not its element type. Folding these would make a live
+		// scalar equal to a desired array -- a change reported as none.
+		{"float8 array", "float8[]", "float8[]"},
+		{"float4 array", "float4[]", "float4[]"},
+		// A range over float8 is not a float8, and PostgreSQL has both. A
+		// substring rule would fold this one and compare a range column equal
+		// to a double column.
+		{"float8 range", "float8range", "float8range"},
+		{"float8 multirange", "float8multirange", "float8multirange"},
+		// A bare `float` is NOT folded: it means double precision on
+		// PostgreSQL and four bytes on MySQL, so no cross-dialect rule for it
+		// is right on both.
+		{"bare float", "FLOAT", "float"},
+
 		// Unrecognized types (should return as-is, lowercased)
 		{"enum type", "ENUM('a','b','c')", "enum('a','b','c')"},
 		{"json type", "JSON", "json"},

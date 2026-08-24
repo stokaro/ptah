@@ -70,6 +70,29 @@ func Type(typeName string) string {
 		return "varchar"
 	case strings.Contains(typeName, "varchar") && !isArrayType(typeName):
 		return "varchar"
+	// PostgreSQL's own names for the two floating-point types, folded to the
+	// spelling the renderer writes and a declaration uses.
+	//
+	// The catalog answers `float8` and `float4`; the renderer writes `double
+	// precision` and `real` into the document it produces. Without this,
+	// `schema inspect > out.hcl` followed by `apply --to file://out.hcl`
+	// planned `ALTER COLUMN "x" TYPE double precision` for an unchanged column
+	// -- on PostgreSQL a full table rewrite under an ACCESS EXCLUSIVE lock --
+	// and planned it again on the next run, forever (stokaro/ptah#2027).
+	//
+	// The two are folded SEPARATELY, because they are different types: an
+	// 8-byte column narrowed to 4 bytes loses precision, and a rule that folded
+	// both to one token would report that as no change at all.
+	//
+	// Only these two spellings are folded, and never a bare `float`. `FLOAT`
+	// means double precision on PostgreSQL and 4 bytes on MySQL, and `REAL`
+	// means DOUBLE on MySQL unless REAL_AS_FLOAT is set -- so a cross-dialect
+	// rule for either would be wrong on one engine. No engine Ptah targets
+	// spells a type `float8`, which is what makes this fold narrow.
+	case isFloatAlias(typeName, "float8"):
+		return "double precision"
+	case isFloatAlias(typeName, "float4"):
+		return "real"
 	case strings.Contains(typeName, "text"):
 		return "text"
 	case strings.Contains(typeName, "serial"):
@@ -354,6 +377,18 @@ func skipQuotedSQL(value string, start int, quote byte) (int, bool) {
 //
 // The suffix is the whole test because that is how every catalog this compares
 // spells one: `varchar(100)[]`, `int[]`, `text[]`.
+// isFloatAlias reports whether a type name IS one of PostgreSQL's internal
+// float names, with the catalog's optional schema qualification stripped.
+//
+// The whole name has to match, which is what the arms above it do not do. A
+// substring rule would fold `float8range` -- a real PostgreSQL type, and a
+// range is not the number it ranges over -- and `float8[]` with it, making a
+// live scalar compare equal to a desired array. Equality excludes both without
+// a guard for either.
+func isFloatAlias(typeName, alias string) bool {
+	return strings.TrimPrefix(strings.TrimSpace(typeName), "pg_catalog.") == alias
+}
+
 func isArrayType(typeName string) bool {
 	return strings.HasSuffix(strings.TrimSpace(typeName), "[]")
 }
