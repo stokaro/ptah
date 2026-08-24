@@ -27,6 +27,7 @@ import (
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/atlasmigrate"
 	"go.5x5.cz/ptah/internal/atlasurl"
+	"go.5x5.cz/ptah/internal/constraintscope"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/deporder"
@@ -2272,6 +2273,10 @@ func reverseSchemaDiffWithSchemaForDialect(
 	dbSchema *dbschematypes.DBSchema,
 	dialect string,
 ) *types.SchemaDiff {
+	// The identity the two producers agree on. The reversed diff carries the
+	// same rules the forward one was compared under, so a down migration pairs
+	// its drops exactly as the up migration it undoes did.
+	semantics := diff.EffectiveIdentifierSemantics(dialect)
 	reversed := &types.SchemaDiff{
 		IdentifierSemantics: cloneIdentifierSemantics(diff.IdentifierSemantics),
 
@@ -2419,9 +2424,9 @@ func reverseSchemaDiffWithSchemaForDialect(
 		// and the rollback aborts half-applied.
 		ConstraintsAdded:             diff.ConstraintsRemoved,
 		ConstraintsRemoved:           diff.ConstraintsAdded,
-		ConstraintsRemovedWithTables: reverseConstraintRemovals(diff, schema),
+		ConstraintsRemovedWithTables: reverseConstraintRemovals(diff, schema, semantics),
 		ForeignKeysRemovedWithTables: reverseForeignKeyRemovals(diff, schema, dialect),
-		ConstraintsAddedWithTables:   reverseConstraintAdditions(diff, dbSchema),
+		ConstraintsAddedWithTables:   reverseConstraintAdditions(diff, dbSchema, semantics),
 	}
 	// A re-created table brings its own primary key and field-level foreign keys
 	// back with it, so listing those a second time as constraint additions is
@@ -2590,7 +2595,11 @@ func generatedTableReference(tables []goschema.Table, structName, tableName stri
 // one host), so the others collide on re-add (issue #197 DOWN path). When
 // dbSchema is nil, the names still flow through ConstraintsAdded and the
 // planners fall back to the name-only field scan.
-func reverseConstraintAdditions(diff *types.SchemaDiff, dbSchema *dbschematypes.DBSchema) []types.ConstraintAdditionInfo {
+func reverseConstraintAdditions(
+	diff *types.SchemaDiff,
+	dbSchema *dbschematypes.DBSchema,
+	semantics identifier.Semantics,
+) []types.ConstraintAdditionInfo {
 	if dbSchema == nil || len(diff.ConstraintsRemovedWithTables) == 0 {
 		return nil
 	}
@@ -2622,12 +2631,13 @@ func reverseConstraintAdditions(diff *types.SchemaDiff, dbSchema *dbschematypes.
 		}
 		switch removed.Type {
 		case "FOREIGN KEY":
-			infos = append(infos, foreignKeyAdditionFromDBConstraint(removed.Name, removed.TableName, dbConstraint))
+			infos = append(infos, foreignKeyAdditionFromDBConstraint(removed.Name, removed.TableName, dbConstraint, semantics))
 		case "PRIMARY KEY":
 			if columns := dbConstraint.ColumnNamesOrDefault(); len(columns) > 0 {
 				infos = append(infos, types.ConstraintAdditionInfo{
 					Name:      removed.Name,
 					TableName: removed.TableName,
+					Identity:  constraintscope.Identity(semantics, removed.TableName, removed.Name),
 					Type:      "PRIMARY KEY",
 					Columns:   append([]string(nil), columns...),
 				})
@@ -2637,6 +2647,7 @@ func reverseConstraintAdditions(diff *types.SchemaDiff, dbSchema *dbschematypes.
 				infos = append(infos, types.ConstraintAdditionInfo{
 					Name:            removed.Name,
 					TableName:       removed.TableName,
+					Identity:        constraintscope.Identity(semantics, removed.TableName, removed.Name),
 					Type:            "CHECK",
 					CheckExpression: *dbConstraint.CheckClause,
 				})
@@ -2646,6 +2657,7 @@ func reverseConstraintAdditions(diff *types.SchemaDiff, dbSchema *dbschematypes.
 				infos = append(infos, types.ConstraintAdditionInfo{
 					Name:           removed.Name,
 					TableName:      removed.TableName,
+					Identity:       constraintscope.Identity(semantics, removed.TableName, removed.Name),
 					Type:           "UNIQUE",
 					Columns:        append([]string(nil), columns...),
 					IncludeColumns: append([]string(nil), dbConstraint.IncludeColumns...),
@@ -2668,10 +2680,15 @@ func cloneBoolPtr(value *bool) *bool {
 // full FK body from an introspected database FOREIGN KEY constraint. The
 // referential actions come straight from the pre-change DB, so the down
 // migration restores exactly the prior ON DELETE / ON UPDATE behavior.
-func foreignKeyAdditionFromDBConstraint(name, table string, dbFK dbschematypes.DBConstraint) types.ConstraintAdditionInfo {
+func foreignKeyAdditionFromDBConstraint(
+	name, table string,
+	dbFK dbschematypes.DBConstraint,
+	semantics identifier.Semantics,
+) types.ConstraintAdditionInfo {
 	info := types.ConstraintAdditionInfo{
 		Name:      name,
 		TableName: table,
+		Identity:  constraintscope.Identity(semantics, table, name),
 		Type:      "FOREIGN KEY",
 		OnDelete:  derefString(dbFK.DeleteRule),
 		OnUpdate:  derefString(dbFK.UpdateRule),
@@ -2719,7 +2736,11 @@ func derefString(s *string) string {
 // type-specific drop syntax (MySQL/MariaDB DROP FOREIGN KEY) emit a real drop in
 // the down migration. When the schema is unavailable, the names still flow
 // through ConstraintsRemoved; only the richer per-table info is omitted.
-func reverseConstraintRemovals(diff *types.SchemaDiff, schema *goschema.Database) []types.ConstraintRemovalInfo {
+func reverseConstraintRemovals(
+	diff *types.SchemaDiff,
+	schema *goschema.Database,
+	semantics identifier.Semantics,
+) []types.ConstraintRemovalInfo {
 	if schema == nil {
 		return nil
 	}
@@ -2748,6 +2769,10 @@ func reverseConstraintRemovals(diff *types.SchemaDiff, schema *goschema.Database
 		}
 		infos = appendConstraintRemovalInfo(infos, seen, types.ConstraintRemovalInfo{
 			Name: add.Name, TableName: add.TableName, Type: add.Type,
+			// Carried, not re-derived: this record IS the forward addition,
+			// turned around. Deriving it again would be a second answer to a
+			// question the comparator already answered.
+			Identity: add.Identity,
 		})
 		handled[add.Name] = struct{}{}
 	}
@@ -2792,13 +2817,13 @@ func reverseConstraintRemovals(diff *types.SchemaDiff, schema *goschema.Database
 		switch {
 		case tableConstraints[name].Name != "":
 			c := tableConstraints[name]
-			infos = appendConstraintRemovalInfo(infos, seen, types.ConstraintRemovalInfo{Name: name, TableName: c.Table, Type: c.Type})
+			infos = appendConstraintRemovalInfo(infos, seen, types.ConstraintRemovalInfo{Name: name, TableName: c.Table, Type: c.Type, Identity: constraintscope.Identity(semantics, c.Table, name)})
 		case fkTables[name] != "":
 			infos = appendConstraintRemovalInfo(infos, seen, types.ConstraintRemovalInfo{
 				Name: name, TableName: fkTables[name], Type: "FOREIGN KEY",
 			})
 		case checkTables[name] != "":
-			infos = appendConstraintRemovalInfo(infos, seen, types.ConstraintRemovalInfo{Name: name, TableName: checkTables[name], Type: "CHECK"})
+			infos = appendConstraintRemovalInfo(infos, seen, types.ConstraintRemovalInfo{Name: name, TableName: checkTables[name], Type: "CHECK", Identity: constraintscope.Identity(semantics, checkTables[name], name)})
 		}
 	}
 	return infos
