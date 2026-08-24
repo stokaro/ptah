@@ -149,3 +149,105 @@ func TestPostgreSQLRenderer_AlterColumnDefaultIsQuotedExactlyOnce(t *testing.T) 
 		})
 	}
 }
+
+// A quoted literal is not merely untidy: it says the value is a string when the
+// column's type is not one.
+//
+// PostgreSQL casts it on the way in and reads it back unquoted, so the round
+// trip converged and nothing reported the mismatch. Spanner does not cast.
+// Measured on the PGAdapter emulator v0.55.2, before the fix:
+//
+//	ERROR: Error parsing the default value of column `probe`.`d_int`:
+//	Expected type INT64; found STRING
+//
+// and the same refusal for BOOL on `DEFAULT 'true'`, which made every table
+// carrying a non-string default impossible to create (stokaro/ptah#2073).
+func TestPostgreSQLRenderer_DefaultIsRenderedInTheFormItsTypeTakes(t *testing.T) {
+	tests := []struct {
+		name       string
+		columnType string
+		value      string
+		want       string
+	}{
+		{name: "an integer default is bare", columnType: "BIGINT", value: "7", want: "DEFAULT 7"},
+		{name: "a negative integer default is bare", columnType: "INTEGER", value: "-1", want: "DEFAULT -1"},
+		{name: "a fractional default is bare", columnType: "NUMERIC(18,2)", value: "1.50", want: "DEFAULT 1.50"},
+		{name: "an exponent default is bare", columnType: "DOUBLE PRECISION", value: "1e5", want: "DEFAULT 1e5"},
+		{name: "a boolean default is bare", columnType: "BOOLEAN", value: "true", want: "DEFAULT true"},
+		{name: "a boolean default is lowercased", columnType: "BOOL", value: "FALSE", want: "DEFAULT false"},
+		{
+			// The type decides, not the value. A text column whose default
+			// happens to read as a number still stores the characters.
+			name:       "a number in a text column keeps its quotes",
+			columnType: "TEXT", value: "7", want: "DEFAULT '7'",
+		},
+		{
+			// PostgreSQL takes NaN only as 'NaN'::numeric, so a renderer that
+			// trusted strconv here would emit DDL the server refuses.
+			name:       "a non-finite number keeps its quotes",
+			columnType: "NUMERIC", value: "NaN", want: "DEFAULT 'NaN'",
+		},
+		{
+			name:       "a value that only starts as a number keeps its quotes",
+			columnType: "INTEGER", value: "7 or 8", want: "DEFAULT '7 or 8'",
+		},
+		{
+			// An array default is not an element default: the bare spellings
+			// are `{1,2}` and `ARRAY[1,2]`, and neither is a number.
+			name:       "an array default keeps its quotes",
+			columnType: "INTEGER[]", value: "{1,2}", want: "DEFAULT '{1,2}'",
+		},
+		{
+			name:       "a quoted numeric literal is still passed through untouched",
+			columnType: "BIGINT", value: "'7'", want: "DEFAULT '7'",
+		},
+		{
+			name:       "an unclassified type keeps its quotes",
+			columnType: "money", value: "1.00", want: "DEFAULT '1.00'",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			table := ast.NewCreateTable("probe").
+				AddColumn(ast.NewColumn("value", tt.columnType).SetDefault(tt.value))
+
+			result, err := postgres.New().Render(table)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(legacyPostgresSQL(result), qt.Contains, tt.want)
+		})
+	}
+}
+
+// The ALTER path makes the same decision, and it is the one a live database
+// reaches: a default added to a column that already exists.
+func TestPostgreSQLRenderer_AlterColumnDefaultIsRenderedInTheFormItsTypeTakes(t *testing.T) {
+	tests := []struct {
+		name       string
+		columnType string
+		value      string
+		want       string
+	}{
+		{name: "an integer default is bare", columnType: "BIGINT", value: "7", want: "SET DEFAULT 7;"},
+		{name: "a boolean default is bare", columnType: "BOOLEAN", value: "true", want: "SET DEFAULT true;"},
+		{name: "a string default keeps its quotes", columnType: "TEXT", value: "x", want: "SET DEFAULT 'x';"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			alter := &ast.AlterTableNode{
+				Name: "items",
+				Operations: []ast.AlterOperation{
+					&ast.ModifyColumnOperation{
+						Column: ast.NewColumn("value", tt.columnType).SetDefault(tt.value),
+					},
+				},
+			}
+
+			c.Assert(legacyPostgresSQL(renderPG(t, alter)), qt.Contains, tt.want)
+		})
+	}
+}
