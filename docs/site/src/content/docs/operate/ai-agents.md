@@ -452,7 +452,10 @@ Refusals are recorded alongside permissions. A log written only when something
 succeeded would show a clean session for exactly the run worth reading.
 
 Ptah's own fields carry no file content, no database URL and no credential: a
-database is recorded by the identity and class of the configured target.
+database is recorded by the identity and class of the configured target, as
+`target` and `database_class`. Two databases of one class are told apart by the
+first; an operation about the session rather than about a database names
+neither.
 
 One field is the model's words. `caller_summary` is the summary the model wrote
 for its own patch, kept verbatim so the record says what was claimed. A model
