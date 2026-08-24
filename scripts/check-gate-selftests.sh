@@ -113,6 +113,10 @@ run_case check-capability-tables.sh \
 	"a key removed from the generated capability table" \
 	"perl -0pi -e 's/^\| \`advisory_locks\`[^\n]*\n//m' docs/capabilities.md"
 
+run_case check-agent-surface.sh \
+	"a verb row removed from the generated agent-surface table" \
+	"perl -0pi -e 's/^.*introspects the database and prints what it found.*\\n//m' docs/agent-surface.md"
+
 run_case check-public-api.sh \
 	"an exported package with no doc comment" \
 	"mkdir -p gateselftest && printf 'package gateselftest\n\nfunc Exported() {}\n' >gateselftest/gateselftest.go"

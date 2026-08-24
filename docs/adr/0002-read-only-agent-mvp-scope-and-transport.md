@@ -4,6 +4,10 @@
 - Deciders: Ptah maintainers
 - Issue: [#1484](https://github.com/stokaro/ptah/issues/1484), under [#1483](https://github.com/stokaro/ptah/issues/1483)
 - Supersedes: nothing
+- Superseded in part: sections 1.1 and 1.2 by
+  [ADR 0005](0005-agent-surface-inventory.md), which moves the inventory to a
+  generated document and corrects the classification axis. The decisions in
+  section 2 stand.
 
 ## 1. Context
 
