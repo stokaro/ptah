@@ -717,7 +717,27 @@ func (r *Renderer) renderColumn(column *ast.ColumnNode) (string, error) {
 	parts = r.appendColumnCharsetCollate(parts, column)
 
 	parts = r.appendColumnMainClauses(parts, column)
+	parts = r.appendColumnComment(parts, column)
 	return r.renderColumnTail(parts, column), nil
+}
+
+// appendColumnComment writes the column's own COMMENT clause.
+//
+// It was written on the ALTER path and not on the CREATE one, so one
+// declaration produced two different databases depending on whether the column
+// arrived with its table or after it. Measured on MariaDB 12.3 from one HCL
+// document (stokaro/ptah#2164):
+//
+//	applied to an empty database   -> COLUMN_COMMENT ''
+//	applied as ADD COLUMN          -> COLUMN_COMMENT 'login address'
+//
+// The table's own comment survived both, which is what made the loss hard to
+// see: the schema looked commented.
+func (r *Renderer) appendColumnComment(parts []string, column *ast.ColumnNode) []string {
+	if column.Comment == "" {
+		return parts
+	}
+	return append(parts, fmt.Sprintf("COMMENT %s", r.escapeValue(column.Comment)))
 }
 
 func (r *Renderer) appendColumnMainClauses(parts []string, column *ast.ColumnNode) []string {
@@ -989,10 +1009,7 @@ func (r *Renderer) renderColumnWithEnums(column *ast.ColumnNode, enumValues []st
 	parts = r.appendColumnMainClauses(parts, column)
 	parts = r.appendColumnTail(parts, column)
 
-	// Comments
-	if column.Comment != "" {
-		parts = append(parts, fmt.Sprintf("COMMENT %s", r.escapeValue(column.Comment)))
-	}
+	parts = r.appendColumnComment(parts, column)
 
 	return strings.Join(parts, " "), nil
 }
