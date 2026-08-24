@@ -289,7 +289,7 @@ part of the compatibility state, so all of them must be committed together.`,
 	}
 
 	flags := cmd.Flags()
-	flags.StringVar(&from, exportFromFlag, exportFormatGo, "Source schema format: go, yaml, hcl, or sql")
+	flags.StringVar(&from, exportFromFlag, exportFormatGo, "Source schema format: go, yaml, hcl, sql, or dbml")
 	flags.StringVar(&to, exportToFlag, exportFormatHCL, "Target schema format: hcl, openapi-v3, graphql, or protobuf")
 	flags.StringVar(&rootDir, exportRootDirFlag, ".", "Root directory to scan for Go annotations")
 	flags.StringArrayVar(&schemaFiles, exportSchemaFileFlag, nil,
