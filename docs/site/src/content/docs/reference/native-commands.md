@@ -281,6 +281,7 @@ Five reading tools, each forwarding to the operation that already owns the work:
 | `validate_schema` | structural problems in a declared schema, for one dialect, with no database |
 | `render_schema` | the DDL a declared schema becomes, in dependency order |
 | `schema_lineage` | which base columns feed each view column |
+| `search_docs` | what Ptah's own documentation says about a question, with the document and heading it came from |
 | `read_database` | the schema a live database currently holds |
 
 Three of Ptah's own reading verbs are deliberately absent: `schema inspect`,

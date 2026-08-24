@@ -16,6 +16,7 @@ import (
 	"go.5x5.cz/ptah/internal/agentpolicy"
 	"go.5x5.cz/ptah/internal/agenttarget"
 	"go.5x5.cz/ptah/internal/agentworkspace"
+	"go.5x5.cz/ptah/internal/docsembed"
 )
 
 // UntrustedContentNotice accompanies every artifact this session hands back.
@@ -209,6 +210,11 @@ type DescribeSessionResponse struct {
 	// SchemaSourceRoots are the directories a declared schema may be read from.
 	// An empty list means no schema source is readable at all.
 	SchemaSourceRoots []string `json:"schema_source_roots"`
+	// Documentation is what search_docs can reach. It is reachability, like
+	// the databases above: `docs.read allow` says what policy permits, and a
+	// count of zero would say the tool is offered with nothing behind it --
+	// which is the shape section 2.7 of ADR 0006 exists to make visible.
+	Documentation DocumentationSummary `json:"documentation"`
 	// Capabilities is the whole resolved table, refusals included: a report
 	// listing only the grants answers "nothing was granted" the same way as a
 	// broken report.
@@ -323,6 +329,25 @@ func (s *Session) SchemaLineage(
 	return schemaLineage(ctx, req)
 }
 
+// SearchDocs authorizes docs.read and runs the operation.
+//
+// It reaches no workspace, no database and no schema source: the only thing it
+// reads is the documentation compiled into this binary, which is the same for
+// every operator running this build. That is why the capability is its own
+// rather than part of project.read -- ADR 0006 section 2.8.
+func (s *Session) SearchDocs(
+	ctx context.Context,
+	req SearchDocsRequest,
+) (*SearchDocsResponse, error) {
+	if err := s.authorizeRead(ctx, "search_docs", agentpolicy.Request{
+		Capability: agentpolicy.DocsRead,
+		Reason:     "answer a question about Ptah from Ptah's own documentation",
+	}, "search Ptah's own documentation"); err != nil {
+		return nil, err
+	}
+	return searchDocs(ctx, req)
+}
+
 // ReadDatabase authorizes database.inspect and runs the operation.
 //
 // The database is [agentpolicy.ClassUnclassified] whatever the URL looks like.
@@ -382,6 +407,7 @@ func (s *Session) DescribeSession(
 
 	response := &DescribeSessionResponse{
 		ContractVersion:    Version,
+		Documentation:      describeDocumentation(),
 		Databases:          make([]DatabaseSummary, 0, s.targets.Len()),
 		SchemaSourceRoots:  s.sources.list(),
 		Capabilities:       make([]PolicyEntry, 0),
@@ -919,4 +945,22 @@ func (s *Session) recordApply(
 		}
 	}
 	_ = s.audit.Record(event)
+}
+
+// DocumentationSummary reports what Ptah's own documentation offers this
+// session: how much of it is loaded, not what it says.
+type DocumentationSummary struct {
+	// Documents is how many documents are compiled into this binary.
+	Documents int `json:"documents"`
+	// Passages is how many heading-scoped passages they were cut into, which
+	// is the unit search_docs answers with.
+	Passages int `json:"passages"`
+}
+
+func describeDocumentation() DocumentationSummary {
+	index := docsembed.Index()
+	return DocumentationSummary{
+		Documents: index.DocumentCount(),
+		Passages:  index.PassageCount(),
+	}
 }

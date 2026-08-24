@@ -94,6 +94,7 @@ func TestServer_OffersExactlyTheReadOnlyOperations(t *testing.T) {
 		{name: "validate_schema", owner: "internal/schemavalidate"},
 		{name: "render_schema", owner: "core/renderer"},
 		{name: "schema_lineage", owner: "internal/schemalineage"},
+		{name: "search_docs", owner: "internal/docsembed"},
 		{name: "read_database", owner: "dbschema"},
 	}
 	for _, row := range rows {
