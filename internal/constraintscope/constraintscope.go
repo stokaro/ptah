@@ -1,0 +1,51 @@
+// Package constraintscope derives the identity that makes two constraint
+// records one object.
+//
+// It exists because more than one producer writes constraint changes into a
+// [difftypes.SchemaDiff]: the comparator does, and the generator does again when
+// it reverses a diff into a down migration. A derivation each would be two rules
+// for one question, and the answer has to be the same one or a down migration
+// pairs its drops differently from the up migration it undoes.
+//
+// It is the constraint counterpart of [go.5x5.cz/ptah/internal/indexscope], and
+// lives outside [difftypes] for the same reason that one does: the fold needs
+// the target's rules and the identity model, and the diff types are the surface
+// an embedder builds by hand.
+package constraintscope
+
+import (
+	"go.5x5.cz/ptah/core/platform/identifier"
+	"go.5x5.cz/ptah/internal/objectidentity"
+	"go.5x5.cz/ptah/internal/tableref"
+	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
+)
+
+// Identity folds a constraint's owning table and its own name into the form two
+// records are compared by.
+//
+// The table arrives as one string because that is how both a description and a
+// catalog report it, and it may or may not carry a schema. Parsing is delegated
+// to [tableref] so a table whose own name contains a dot -- quoted as
+// `"tenant.data"` -- is not mistaken for a schema-qualified one.
+//
+// An empty name yields the zero identity rather than an identity of empty parts.
+// The two are the same value, and a consumer that keys on identity has to treat
+// it as "nobody answered" rather than as a constraint in no schema on no table.
+func Identity(
+	semantics identifier.Semantics,
+	table, constraint string,
+) difftypes.ConstraintIdentity {
+	if constraint == "" {
+		return difftypes.ConstraintIdentity{}
+	}
+	ref, ok := tableref.Parse(table)
+	if !ok {
+		ref.Name = table
+	}
+	id := objectidentity.NewBuilder(semantics).ConstraintParts(ref.Schema, ref.Name, constraint)
+	return difftypes.ConstraintIdentity{
+		Schema: id.Schema.Normalized,
+		Table:  id.Parent.Normalized,
+		Name:   id.Name.Normalized,
+	}
+}

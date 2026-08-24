@@ -7,8 +7,10 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/ptaherr"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/constraintscope"
 	"go.5x5.cz/ptah/migration/schemadiff"
 	"go.5x5.cz/ptah/migration/schemadiff/types"
 )
@@ -177,7 +179,7 @@ func TestReverseConstraintAdditions_RestoresPerHostBody(t *testing.T) {
 			types.ConstraintRemovalInfo{Name: "fk_entity_tenant", TableName: h, Type: "FOREIGN KEY"})
 	}
 
-	additions := reverseConstraintAdditions(upDiff, dbSchema)
+	additions := reverseConstraintAdditions(upDiff, dbSchema, identifier.ForDialect("postgres"))
 	c.Assert(additions, qt.HasLen, len(hosts))
 
 	byTable := make(map[string]types.ConstraintAdditionInfo)
@@ -216,10 +218,11 @@ func TestReverseConstraintAdditions_RestoresPrimaryKeyColumns(t *testing.T) {
 		}},
 	}
 
-	additions := reverseConstraintAdditions(upDiff, dbSchema)
+	additions := reverseConstraintAdditions(upDiff, dbSchema, identifier.ForDialect("postgres"))
 	c.Assert(additions, qt.DeepEquals, []types.ConstraintAdditionInfo{{
 		Name:      "PRIMARY",
 		TableName: "memberships",
+		Identity:  constraintscope.Identity(identifier.ForDialect("postgres"), "memberships", "PRIMARY"),
 		Type:      "PRIMARY KEY",
 		Columns:   []string{"org_id", "user_id"},
 	}})
@@ -249,12 +252,13 @@ func TestReverseConstraintAdditions_RestoresCompositeForeignKeyBody(t *testing.T
 		},
 	}
 
-	additions := reverseConstraintAdditions(upDiff, dbSchema)
+	additions := reverseConstraintAdditions(upDiff, dbSchema, identifier.ForDialect("postgres"))
 
 	c.Assert(additions, qt.DeepEquals, []types.ConstraintAdditionInfo{
 		{
 			Name:           "fk_orders_accounts",
 			TableName:      "orders",
+			Identity:       constraintscope.Identity(identifier.ForDialect("postgres"), "orders", "fk_orders_accounts"),
 			Type:           "FOREIGN KEY",
 			Columns:        []string{"tenant_id", "owner_id"},
 			ForeignTable:   "accounts",
@@ -283,11 +287,12 @@ func TestReverseConstraintAdditions_RestoresCheckConstraintBody(t *testing.T) {
 		},
 	}
 
-	additions := reverseConstraintAdditions(upDiff, dbSchema)
+	additions := reverseConstraintAdditions(upDiff, dbSchema, identifier.ForDialect("postgres"))
 
 	c.Assert(additions, qt.DeepEquals, []types.ConstraintAdditionInfo{{
 		Name:            "products_quantity_check",
 		TableName:       "products",
+		Identity:        constraintscope.Identity(identifier.ForDialect("postgres"), "products", "products_quantity_check"),
 		Type:            "CHECK",
 		CheckExpression: "quantity > 0",
 	}})
@@ -312,7 +317,7 @@ func TestReverseConstraintAdditions_RestoresUniqueConstraintBody(t *testing.T) {
 		},
 	}
 
-	additions := reverseConstraintAdditions(upDiff, dbSchema)
+	additions := reverseConstraintAdditions(upDiff, dbSchema, identifier.ForDialect("postgres"))
 
 	c.Assert(additions, qt.HasLen, 1)
 	c.Assert(additions[0].Name, qt.Equals, "accounts_identity_unique")
@@ -334,7 +339,7 @@ func TestReverseConstraintAdditions_NilDBSchema(t *testing.T) {
 			{Name: "fk_x", TableName: "t", Type: "FOREIGN KEY"},
 		},
 	}
-	c.Assert(reverseConstraintAdditions(upDiff, nil), qt.IsNil)
+	c.Assert(reverseConstraintAdditions(upDiff, nil, identifier.ForDialect("postgres")), qt.IsNil)
 }
 
 func countConstraint(names []string, want string) int {
