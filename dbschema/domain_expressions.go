@@ -3,7 +3,6 @@ package dbschema
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
 	"strings"
 
@@ -67,41 +66,9 @@ func (dc *DatabaseConnection) ResolveDomainExpressions(
 	if !isPostgresFamily(dc.Info().Dialect) {
 		return nil, nil
 	}
-	if dc.pinned {
-		// A pinned connection is already inside somebody else's session, and
-		// the rollback below would discard their work rather than the probe's.
-		return nil, nil
-	}
-
-	session, err := dc.db.Conn(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("resolve domain expressions: pin session: %w", err)
-	}
-	defer func() {
-		resultErr = errors.Join(resultErr, discardSQLConnection(session, "domain expression session"))
-	}()
-
-	tx, err := session.BeginTx(ctx, &sql.TxOptions{})
-	if err != nil {
-		return nil, fmt.Errorf("resolve domain expressions: begin transaction: %w", err)
-	}
-	defer func() {
-		// The rollback is the point of the transaction, not its error path:
-		// every probe domain exists only until this line runs.
-		if rollbackErr := tx.Rollback(); rollbackErr != nil && !errors.Is(rollbackErr, sql.ErrTxDone) {
-			resultErr = errors.Join(resultErr, fmt.Errorf("resolve domain expressions: roll back: %w", rollbackErr))
-		}
-	}()
-
-	resolved := make(map[string]config.DomainExpression, len(probes))
-	for i, probe := range probes {
-		expression, err := resolveOneDomainExpression(ctx, tx, i, probe)
-		if err != nil {
-			return nil, err
-		}
-		resolved[probe.Key] = expression
-	}
-	return resolved, nil
+	return resolveProbes(ctx, dc, "resolve domain expressions", probes,
+		func(probe DomainExpressionProbe) string { return probe.Key },
+		resolveOneDomainExpression)
 }
 
 // resolveOneDomainExpression creates one probe domain and reads its stored

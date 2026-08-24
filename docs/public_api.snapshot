@@ -93,6 +93,7 @@ func (r *SumResult) OK() bool
 
 ## go.5x5.cz/ptah/config
 
+type CheckExpression struct{ ... }
 type CompareOptions struct{ ... }
     func DefaultCompareOptions() *CompareOptions
     func WithAdditionalIgnoredExtensions(extensions ...string) *CompareOptions
@@ -100,6 +101,25 @@ type CompareOptions struct{ ... }
 type ContinuousAggregateBody struct{ ... }
 type DomainExpression struct{ ... }
 type GeneratedExpression struct{ ... }
+
+### go.5x5.cz/ptah/config.CheckExpression
+
+package config // import "go.5x5.cz/ptah/config"
+
+type CheckExpression struct {
+    // Expression is the normalized CHECK, as pg_get_expr prints it.
+    Expression string
+    // Resolved reports that a server answered for this constraint. A false
+    // value on a present key is a declaration the server refused.
+    Resolved bool
+}
+    CheckExpression is one CHECK constraint's expression in the target server's
+    own spelling. See CompareOptions.CheckExpressions.
+
+    The zero value is not an empty check: it is what a resolver returns for a
+    declaration it could not put through the server, and a comparison must fall
+    back rather than read it as removed. Resolved reports which it is.
+
 
 ### go.5x5.cz/ptah/config.CompareOptions
 
@@ -250,6 +270,33 @@ type CompareOptions struct {
     // missing a change -- and dropping a continuous aggregate discards its
     // materialized history.
     ContinuousAggregateBodies map[string]ContinuousAggregateBody
+
+    // CheckExpressions carries each declared table CHECK as the target server
+    // itself spells it, keyed by the constraint's qualified name.
+    //
+    // It is [CompareOptions.DomainExpressions] for the same attribute on a
+    // different object, and the rewrite is the same one. PostgreSQL does not
+    // store the text of a CHECK: it parses the expression and prints it back
+    // from the parse tree, so a declaration and its own read-back differ.
+    // Measured on 17.11:
+    //
+    //  declared                     stored
+    //  price >= 0                -> (price >= (0)::numeric)
+    //  score BETWEEN 1 AND 10    -> ((score >= 1) AND (score <= 10))
+    //  score > 0 OR grade = 'x'  -> ((score > 0) OR (grade = 'x'::text))
+    //
+    // The second row is why no textual fold finishes the job: BETWEEN is
+    // expanded by the parser and nothing reconstructs it, which is the same
+    // wall the IN rewrite hit before the comparison learned to decline that
+    // one shape.
+    //
+    // A resolved entry is the declaration after the same rewrite, so the two
+    // sides compare as like with like (stokaro/ptah#2044).
+    //
+    // A nil map means nobody could ask a server. The comparison then falls back
+    // to the textual normalizer it used before, which is right for the shapes
+    // that survive it and declines the ones it cannot fold.
+    CheckExpressions map[string]CheckExpression
 }
     CompareOptions contains configuration options for schema comparison
     operations. These options control how schema differences are calculated and
@@ -7175,12 +7222,50 @@ func GeneratedExpressionProbeTable(index int) string
 func ReadSchemaWithSchemas(conn *DatabaseConnection, schemas []string) (*types.DBSchema, error)
 func ReadTableRows(ctx context.Context, conn *DatabaseConnection, schema, table string, ...) ([]map[string]any, error)
 func ResolveGeneratedExpressions(ctx context.Context, dev *DatabaseConnection, ...) (map[string]config.GeneratedExpression, error)
+type CheckExpressionProbe struct{ ... }
+type CheckProbeColumn struct{ ... }
 type ContinuousAggregateProbe struct{ ... }
 type DatabaseConnection struct{ ... }
     func ConnectToDatabase(ctx context.Context, dbURL string) (*DatabaseConnection, error)
 type DomainExpressionProbe struct{ ... }
 type GeneratedExpressionProbe struct{ ... }
 type IsolatedQueryer interface{ ... }
+
+### go.5x5.cz/ptah/dbschema.CheckExpressionProbe
+
+package dbschema // import "go.5x5.cz/ptah/dbschema"
+
+type CheckExpressionProbe struct {
+    // Key identifies the constraint to the caller. It is returned unchanged as
+    // the map key and is never sent to the server.
+    Key string
+    // Columns are the columns of the table the constraint belongs to, taken
+    // from the LIVE read rather than from the declaration: the expression has
+    // to parse against the table it will be added to.
+    Columns []CheckProbeColumn
+    // Expression is the declared CHECK, without the CHECK keyword and without
+    // its enclosing parentheses.
+    Expression string
+}
+    CheckExpressionProbe is one declared CHECK whose expression needs the target
+    server's own spelling before it can be compared with what the catalog holds.
+
+
+### go.5x5.cz/ptah/dbschema.CheckProbeColumn
+
+package dbschema // import "go.5x5.cz/ptah/dbschema"
+
+type CheckProbeColumn struct {
+    // Name is the column's name, quoted by the resolver.
+    Name string
+    // Type is the column's type as the catalog spells it, which is what makes
+    // the rewrite faithful: `price >= 0` normalizes to `(0)::numeric` over
+    // numeric and to `(0)` over integer.
+    Type string
+}
+    CheckProbeColumn is one column the probe table needs so a declared CHECK can
+    be parsed against it.
+
 
 ### go.5x5.cz/ptah/dbschema.ContinuousAggregateProbe
 
@@ -7229,6 +7314,7 @@ func (dc *DatabaseConnection) QueryContext(ctx context.Context, query string, ar
 func (dc *DatabaseConnection) QueryRow(query string, args ...any) *sql.Row
 func (dc *DatabaseConnection) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 func (dc *DatabaseConnection) Reader() types.SchemaReader
+func (dc *DatabaseConnection) ResolveCheckExpressions(ctx context.Context, probes []CheckExpressionProbe) (result map[string]config.CheckExpression, resultErr error)
 func (dc *DatabaseConnection) ResolveContinuousAggregateBodies(ctx context.Context, probes []ContinuousAggregateProbe) (result map[string]config.ContinuousAggregateBody, resultErr error)
 func (dc *DatabaseConnection) ResolveDomainExpressions(ctx context.Context, probes []DomainExpressionProbe) (result map[string]config.DomainExpression, resultErr error)
 func (dc *DatabaseConnection) ResolveIdentifierSemantics(ctx context.Context, names []string) (identifier.Semantics, error)

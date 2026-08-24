@@ -159,6 +159,47 @@ type CompareOptions struct {
 	// missing a change -- and dropping a continuous aggregate discards its
 	// materialized history.
 	ContinuousAggregateBodies map[string]ContinuousAggregateBody
+
+	// CheckExpressions carries each declared table CHECK as the target server
+	// itself spells it, keyed by the constraint's qualified name.
+	//
+	// It is [CompareOptions.DomainExpressions] for the same attribute on a
+	// different object, and the rewrite is the same one. PostgreSQL does not
+	// store the text of a CHECK: it parses the expression and prints it back
+	// from the parse tree, so a declaration and its own read-back differ.
+	// Measured on 17.11:
+	//
+	//	declared                     stored
+	//	price >= 0                -> (price >= (0)::numeric)
+	//	score BETWEEN 1 AND 10    -> ((score >= 1) AND (score <= 10))
+	//	score > 0 OR grade = 'x'  -> ((score > 0) OR (grade = 'x'::text))
+	//
+	// The second row is why no textual fold finishes the job: BETWEEN is
+	// expanded by the parser and nothing reconstructs it, which is the same
+	// wall the IN rewrite hit before the comparison learned to decline that
+	// one shape.
+	//
+	// A resolved entry is the declaration after the same rewrite, so the two
+	// sides compare as like with like (stokaro/ptah#2044).
+	//
+	// A nil map means nobody could ask a server. The comparison then falls back
+	// to the textual normalizer it used before, which is right for the shapes
+	// that survive it and declines the ones it cannot fold.
+	CheckExpressions map[string]CheckExpression
+}
+
+// CheckExpression is one CHECK constraint's expression in the target server's
+// own spelling. See [CompareOptions.CheckExpressions].
+//
+// The zero value is not an empty check: it is what a resolver returns for a
+// declaration it could not put through the server, and a comparison must fall
+// back rather than read it as removed. Resolved reports which it is.
+type CheckExpression struct {
+	// Expression is the normalized CHECK, as pg_get_expr prints it.
+	Expression string
+	// Resolved reports that a server answered for this constraint. A false
+	// value on a present key is a declaration the server refused.
+	Resolved bool
 }
 
 // ContinuousAggregateBody is one continuous aggregate's SELECT in the target
