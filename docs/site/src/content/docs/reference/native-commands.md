@@ -273,10 +273,11 @@ stdout therefore gets a document in every case except `2`.
 client or coding agent can drive Ptah's operations directly. It is not a command
 to run by hand: a client starts it and speaks the protocol to it.
 
-Four reading tools, each forwarding to the operation that already owns the work:
+Five reading tools, each forwarding to the operation that already owns the work:
 
 | tool | answers |
 | --- | --- |
+| `describe_session` | what this session may do, and what it can reach |
 | `validate_schema` | structural problems in a declared schema, for one dialect, with no database |
 | `render_schema` | the DDL a declared schema becomes, in dependency order |
 | `schema_lineage` | which base columns feed each view column |
@@ -289,9 +290,9 @@ read-only name on a surface an agent drives without reading flag documentation.
 They return when a later phase can supply that database out of band rather than
 from the caller.
 
-`--workspace` adds four artifact tools -- `describe_workspace`,
-`read_artifact`, `preview_patch` and `apply_patch` -- confined to
-the directories `--migrations-dir`, `--schema-dir` and `--tests-dir` name.
+`--workspace` adds three artifact tools -- `read_artifact`, `preview_patch`
+and `apply_patch` -- confined to the directories `--migrations-dir`,
+`--schema-dir` and `--tests-dir` name.
 Writing stays refused until `--allow-write` names an artifact class, and a named
 class asks for approval per patch unless `--auto-approve` says otherwise.
 Applying anything to a database is unavailable on this surface at any setting.

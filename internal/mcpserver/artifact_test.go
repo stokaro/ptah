@@ -157,7 +157,7 @@ func TestServer_WithAWorkspaceOffersTheArtifactTools(t *testing.T) {
 	}
 
 	c.Assert(offered, qt.HasLen, 8,
-		qt.Commentf("four reading tools and four artifact tools"))
+		qt.Commentf("five reading tools and three artifact tools"))
 	for _, name := range []string{
 		"describe_session",
 		"read_artifact",
