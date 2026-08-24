@@ -173,7 +173,7 @@ func ConstraintsWithSemantics(
 		if _, exists := genConstraints[constraintKey]; !exists {
 			diff.ConstraintsRemoved = append(diff.ConstraintsRemoved, dbConstraint.Name)
 			diff.ConstraintsRemovedWithTables = appendConstraintRemoval(diff.ConstraintsRemovedWithTables, dbConstraint, semantics)
-			diff.ForeignKeysRemovedWithTables = appendForeignKeyRemoval(diff.ForeignKeysRemovedWithTables, dbConstraint)
+			diff.ForeignKeysRemovedWithTables = appendForeignKeyRemoval(diff.ForeignKeysRemovedWithTables, dbConstraint, semantics)
 		}
 	}
 
@@ -185,7 +185,7 @@ func ConstraintsWithSemantics(
 				// In the future, we could add a ConstraintsModified field to SchemaDiff
 				diff.ConstraintsRemoved = append(diff.ConstraintsRemoved, dbConstraint.Name)
 				diff.ConstraintsRemovedWithTables = appendConstraintRemoval(diff.ConstraintsRemovedWithTables, dbConstraint, semantics)
-				diff.ForeignKeysRemovedWithTables = appendForeignKeyRemoval(diff.ForeignKeysRemovedWithTables, dbConstraint)
+				diff.ForeignKeysRemovedWithTables = appendForeignKeyRemoval(diff.ForeignKeysRemovedWithTables, dbConstraint, semantics)
 				diff.ConstraintsAdded = append(diff.ConstraintsAdded, genConstraint.Name)
 				diff.ConstraintsAddedWithTables = appendConstraintAddition(diff.ConstraintsAddedWithTables, genConstraint, semantics)
 			}
@@ -282,6 +282,7 @@ func appendConstraintRemoval(
 func appendForeignKeyRemoval(
 	infos []difftypes.ForeignKeyRemovalInfo,
 	dbConstraint types.DBConstraint,
+	semantics identifier.Semantics,
 ) []difftypes.ForeignKeyRemovalInfo {
 	if !strings.EqualFold(dbConstraint.Type, "FOREIGN KEY") {
 		return infos
@@ -289,6 +290,7 @@ func appendForeignKeyRemoval(
 	return append(infos, difftypes.ForeignKeyRemovalInfo{
 		Name:           dbConstraint.Name,
 		TableName:      dbConstraint.QualifiedTableName(),
+		Identity:       constraintIdentity(dbConstraint.QualifiedTableName(), dbConstraint.Name, semantics),
 		Columns:        append([]string(nil), dbConstraint.ColumnNamesOrDefault()...),
 		ForeignTable:   dbConstraint.QualifiedForeignTableName(),
 		ForeignColumns: append([]string(nil), dbConstraint.ForeignColumnsOrDefault()...),
