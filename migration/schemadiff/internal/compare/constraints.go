@@ -9,6 +9,7 @@ import (
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/tableref"
 	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
 )
 
@@ -179,7 +180,7 @@ func ConstraintsWithSemantics(
 	// Find modified constraints (constraints that exist in both but have different definitions)
 	for constraintKey, genConstraint := range genConstraints {
 		if dbConstraint, exists := dbConstraints[constraintKey]; exists {
-			if constraintDefinitionsChanged(genConstraint, dbConstraint, dialect) {
+			if constraintDefinitionsChanged(genConstraint, dbConstraint, dialect, checkExpressionsOf(opts)) {
 				// For now, treat modified constraints as removed + added
 				// In the future, we could add a ConstraintsModified field to SchemaDiff
 				diff.ConstraintsRemoved = append(diff.ConstraintsRemoved, dbConstraint.Name)
@@ -328,7 +329,12 @@ func appendConstraintAddition(
 
 // constraintDefinitionsChanged compares constraint definitions between generated and database schemas
 // to detect if a constraint needs to be recreated due to definition changes.
-func constraintDefinitionsChanged(genConstraint goschema.Constraint, dbConstraint types.DBConstraint, dialect string) bool {
+func constraintDefinitionsChanged(
+	genConstraint goschema.Constraint,
+	dbConstraint types.DBConstraint,
+	dialect string,
+	checks map[string]config.CheckExpression,
+) bool {
 	// Basic constraint type comparison
 	if genConstraint.Type != dbConstraint.Type {
 		return true
@@ -339,7 +345,7 @@ func constraintDefinitionsChanged(genConstraint goschema.Constraint, dbConstrain
 	case "EXCLUDE":
 		return excludeConstraintChanged(genConstraint, dbConstraint)
 	case "CHECK":
-		return checkConstraintChanged(genConstraint, dbConstraint)
+		return checkConstraintChanged(genConstraint, dbConstraint, checks)
 	case "UNIQUE":
 		return uniqueConstraintChanged(genConstraint, dbConstraint)
 	case "PRIMARY KEY":
@@ -378,15 +384,70 @@ func excludeConstraintChanged(genConstraint goschema.Constraint, dbConstraint ty
 }
 
 // checkConstraintChanged compares CHECK constraint definitions.
-func checkConstraintChanged(genConstraint goschema.Constraint, dbConstraint types.DBConstraint) bool {
+//
+// A resolved entry answers it outright: the declaration was put through the
+// same server that printed the catalog's form, so the two are compared as like
+// with like. PostgreSQL stores a parse tree rather than the text it was given,
+// and the textual normalizer below folds some of that rewrite and cannot fold
+// the rest -- `price >= 0` comes back as `(price >= (0)::numeric)` and
+// `score BETWEEN 1 AND 10` as two comparisons, so a check nobody had changed
+// was dropped and re-added on every run (stokaro/ptah#2044).
+//
+// Without a resolver the old rule stands, which is right for the shapes it
+// folds and declines the one it cannot.
+func checkConstraintChanged(
+	genConstraint goschema.Constraint,
+	dbConstraint types.DBConstraint,
+	checks map[string]config.CheckExpression,
+) bool {
 	dbClause := getStringValue(dbConstraint.CheckClause)
 	if strings.TrimSpace(genConstraint.CheckExpression) == "" || strings.TrimSpace(dbClause) == "" {
 		return false
+	}
+	if resolved, ok := resolvedCheckExpression(checks, genConstraint); ok {
+		return normalizeCheckExpression(resolved) != normalizeCheckExpression(dbClause)
 	}
 	if checkExpressionHasUnsupportedRewrite(genConstraint.CheckExpression, dbClause) {
 		return false
 	}
 	return normalizeCheckExpression(genConstraint.CheckExpression) != normalizeCheckExpression(dbClause)
+}
+
+// resolvedCheckExpression looks up the server's spelling of one declared
+// check, and reports whether there is one to use.
+//
+// A present key that is not Resolved is a declaration the server refused, and
+// it falls back rather than being read as a difference: the refusal says
+// nothing about whether the two expressions agree.
+func resolvedCheckExpression(
+	checks map[string]config.CheckExpression,
+	constraint goschema.Constraint,
+) (string, bool) {
+	resolved, ok := checks[checkExpressionLookupKey(constraint.Table, constraint.Name)]
+	if !ok || !resolved.Resolved {
+		return "", false
+	}
+	return resolved.Expression, true
+}
+
+// checkExpressionLookupKey mirrors the key the resolver builds. The two are
+// separate functions in separate packages, which is why each one says what the
+// key is: the table's bare name, folded, and the constraint's name, folded.
+func checkExpressionLookupKey(table, name string) string {
+	bare := strings.TrimSpace(table)
+	if ref, ok := tableref.Parse(bare); ok {
+		bare = ref.Name
+	}
+	return strings.ToLower(bare) + "." + strings.ToLower(strings.TrimSpace(name))
+}
+
+// checkExpressionsOf reads the resolved map out of the options, which may be
+// nil on every offline path.
+func checkExpressionsOf(opts *config.CompareOptions) map[string]config.CheckExpression {
+	if opts == nil {
+		return nil
+	}
+	return opts.CheckExpressions
 }
 
 // uniqueConstraintChanged compares UNIQUE constraint definitions

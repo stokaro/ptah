@@ -76,7 +76,11 @@ func CompareWithDatabaseReportingUndecidedAdditions(
 	if err != nil {
 		return nil, nil, err
 	}
-	if len(expressions) > 0 || len(bodies) > 0 {
+	checks, err := resolveCheckExpressions(ctx, conn, generated, database)
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(expressions) > 0 || len(bodies) > 0 || len(checks) > 0 {
 		merged := config.DefaultCompareOptions()
 		if opts != nil {
 			*merged = *opts
@@ -86,6 +90,9 @@ func CompareWithDatabaseReportingUndecidedAdditions(
 		}
 		if len(bodies) > 0 {
 			merged.ContinuousAggregateBodies = bodies
+		}
+		if len(checks) > 0 {
+			merged.CheckExpressions = checks
 		}
 		opts = merged
 	}
@@ -141,6 +148,101 @@ func resolveDomainExpressions(
 		return nil, fmt.Errorf("compare schemas: %w", err)
 	}
 	return expressions, nil
+}
+
+// resolveCheckExpressions normalizes the declared expression of every table
+// CHECK the database also holds.
+//
+// Only those, for the reason [resolveDomainExpressions] gives: a constraint
+// being created carries its declaration into the ADD statement unchanged, and
+// one being dropped has no declaration left to normalize. The ones in the
+// middle are the ones a string comparison cannot decide.
+//
+// The probe table is built from the LIVE table's columns rather than the
+// declared ones, because the rewrite depends on the types the expression is
+// parsed against: `price >= 0` normalizes to `(0)::numeric` over numeric and
+// to `(0)` over integer, and it is the live table the constraint is compared
+// against.
+func resolveCheckExpressions(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	generated *goschema.Database,
+	database *dbschematypes.DBSchema,
+) (map[string]config.CheckExpression, error) {
+	if generated == nil || database == nil {
+		return nil, nil
+	}
+	held := make(map[string]struct{}, len(database.Constraints))
+	for _, constraint := range database.Constraints {
+		if strings.EqualFold(constraint.Type, "CHECK") {
+			held[checkExpressionKey(constraint.TableName, constraint.Name)] = struct{}{}
+		}
+	}
+	columns := liveTableColumns(database)
+
+	probes := make([]dbschema.CheckExpressionProbe, 0, len(generated.Constraints))
+	for _, constraint := range generated.Constraints {
+		if !strings.EqualFold(constraint.Type, "CHECK") {
+			continue
+		}
+		key := checkExpressionKey(constraint.Table, constraint.Name)
+		if _, exists := held[key]; !exists {
+			continue
+		}
+		probeColumns, known := columns[foldCheckTableName(constraint.Table)]
+		if !known {
+			continue
+		}
+		probes = append(probes, dbschema.CheckExpressionProbe{
+			Key:        key,
+			Columns:    probeColumns,
+			Expression: constraint.CheckExpression,
+		})
+	}
+	if len(probes) == 0 {
+		return nil, nil
+	}
+
+	checks, err := conn.ResolveCheckExpressions(ctx, probes)
+	if err != nil {
+		return nil, fmt.Errorf("compare schemas: %w", err)
+	}
+	return checks, nil
+}
+
+// liveTableColumns projects every live table's columns into the shape a probe
+// needs, keyed by the table's bare name.
+func liveTableColumns(database *dbschematypes.DBSchema) map[string][]dbschema.CheckProbeColumn {
+	columns := make(map[string][]dbschema.CheckProbeColumn, len(database.Tables))
+	for _, table := range database.Tables {
+		probeColumns := make([]dbschema.CheckProbeColumn, 0, len(table.Columns))
+		for _, column := range table.Columns {
+			probeColumns = append(probeColumns, dbschema.CheckProbeColumn{
+				Name: column.Name,
+				Type: column.RawType(),
+			})
+		}
+		columns[foldCheckTableName(table.Name)] = probeColumns
+	}
+	return columns
+}
+
+// checkExpressionKey is the map key both halves use: the table and the
+// constraint, folded, because a constraint name is unique within its table and
+// not across the schema.
+func checkExpressionKey(table, name string) string {
+	return foldCheckTableName(table) + "." + strings.ToLower(strings.TrimSpace(name))
+}
+
+// foldCheckTableName reduces a table reference to its bare name, folded. The
+// declaration may qualify it and the read may not, and the probe only needs to
+// find the columns.
+func foldCheckTableName(table string) string {
+	name := strings.TrimSpace(table)
+	if ref, ok := tableref.Parse(name); ok {
+		name = ref.Name
+	}
+	return strings.ToLower(name)
 }
 
 // resolveContinuousAggregateBodies normalizes the declared SELECT of every
