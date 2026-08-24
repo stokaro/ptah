@@ -58,7 +58,11 @@ func TestParse_ReadsEveryConstructItSupports(t *testing.T) {
 	fields := fieldsByName(db, "public.posts")
 	c.Assert(fields["id"].Primary, qt.IsTrue)
 	c.Assert(fields["id"].AutoInc, qt.IsTrue)
-	c.Assert(fields["id"].Nullable, qt.IsFalse)
+	// `pk` says the column is the key and nothing about NULL, so nullability
+	// stays what the document stated -- which for a column that does not say
+	// `not null` is nullable. Inferring otherwise made DBML and SQL describe
+	// different schemas for one intent.
+	c.Assert(fields["id"].Nullable, qt.IsTrue)
 	c.Assert(fields["author_id"].Nullable, qt.IsFalse)
 	c.Assert(fields["author_id"].Foreign, qt.Equals, "public.users(id)")
 	c.Assert(fields["author_id"].ForeignKeyName, qt.Equals, "posts_author_fk")
