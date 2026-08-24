@@ -119,13 +119,29 @@ func TestPlanBidirectionalSchemaDiff_DeclaredConcurrentIndex(t *testing.T) {
 }
 
 // TestPlanBidirectionalSchemaDiff_DeclaredConcurrentIndexIsPostgresOnly is the
-// dialect gate. MySQL has no concurrent index build to ask for.
+// dialect gate, and it is a separate question from the capability beside it.
+//
+// Every default preset that claims CreateIndexConcurrently is a PostgreSQL-family
+// one, so on default capabilities the two conditions answer together. A caller
+// can hand any dialect any capability set, though -- `.With(...)` is how the
+// rows above build theirs -- and MySQL has no concurrent index build whatever a
+// set claims, so a statement carrying CONCURRENTLY is one MySQL rejects.
 func TestPlanBidirectionalSchemaDiff_DeclaredConcurrentIndexIsPostgresOnly(t *testing.T) {
 	c := qt.New(t)
 	diff := &types.SchemaDiff{}
 	diff.SetIndexAdditions([]types.IndexRef{{Name: "idx_users_reference", TableName: "users"}})
 
-	plan, err := planMySQLBidirectional(diff, usersSchemaDeclaring(true), emptyUsersTable(false))
+	plan, err := generator.PlanBidirectionalSchemaDiff(generator.BidirectionalSchemaPlanOptions{
+		Diff:          diff,
+		DesiredSchema: usersSchemaDeclaring(true),
+		CurrentSchema: emptyUsersTable(false),
+		Dialect:       platform.MySQL,
+		Capabilities:  capability.MySQL84().With(capability.CreateIndexConcurrently, true),
+		Policy: generator.BidirectionalPlanPolicy{
+			Create: generator.ConcurrentIndexAutomatic,
+			Drop:   generator.ConcurrentIndexDisabled,
+		},
+	})
 
 	c.Assert(err, qt.IsNil)
 	c.Assert(plan.Forward.ConcurrentIndexRefs, qt.HasLen, 0)
