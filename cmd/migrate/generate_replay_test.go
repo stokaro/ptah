@@ -190,16 +190,25 @@ func TestMigrateGenerateReplayConnectTimeoutStartsAfterDirectoryLock(t *testing.
 	// the clock before waiting for the lock would have spent it before the lock
 	// was free. Everything else about them is headroom for the connect itself.
 	//
-	// They were 250ms and 100ms, which made this a race against the runner
-	// rather than against the ordering. Opening and pinging the dev database is
-	// well under 100ms on Linux and not reliably so on a loaded Windows runner:
-	// it failed twice on master with `connect to --dev-url: failed to ping
-	// database: context deadline exceeded`, in runs whose changes touched
-	// neither this path nor anything near it. Scaled up, the connect has ten
-	// times the budget it needs and the ordering property is unchanged.
+	// The budget is the only lever there is. An observable wait -- release the
+	// lock once the command is seen to be waiting for it -- would not test this:
+	// the assertion is that an early clock EXPIRES, so the hold has to outlast
+	// the timeout, and a hold that ends as soon as the wait is observed is
+	// exactly the hold that lets an early clock survive. Whatever the mechanism,
+	// this test holds a lock for longer than a timeout it then expects to be
+	// honored.
+	//
+	// So the failures are read as what they say. 250ms/100ms failed twice on
+	// master, 1s/2s failed again on stokaro/ptah#2010 -- every time with
+	// `connect to --dev-url: failed to ping database: context deadline
+	// exceeded`, which is the CONNECT running out of budget, never the ordering
+	// being wrong. Opening and pinging a SQLite file is microseconds of work; a
+	// loaded Windows runner is what turns that into a second. Ten seconds is not
+	// a guess about scheduling, it is a refusal to keep guessing
+	// (stokaro/ptah#1749).
 	const (
-		lockHeldFor    = 2 * time.Second
-		connectTimeout = time.Second
+		lockHeldFor    = 15 * time.Second
+		connectTimeout = 10 * time.Second
 	)
 	time.AfterFunc(lockHeldFor, func() { close(releaseLock) })
 
