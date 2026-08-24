@@ -123,6 +123,7 @@ func PlanBidirectionalSchemaDiff(
 
 	createRefs, err := concurrentIndexCreateRefs(
 		opts.Diff,
+		opts.DesiredSchema,
 		opts.CurrentSchema,
 		dbschematypes.DBInfo{Dialect: dialect, Capabilities: caps},
 		opts.Policy.Create,
@@ -258,13 +259,17 @@ func planBidirectionalSchemaDiffWithRefs(
 
 func concurrentIndexCreateRefs(
 	diff *types.SchemaDiff,
+	desired *goschema.Database,
 	current *dbschematypes.DBSchema,
 	info dbschematypes.DBInfo,
 	mode ConcurrentIndexMode,
 ) ([]types.IndexRef, error) {
 	switch mode {
 	case ConcurrentIndexAutomatic:
-		return concurrentIndexRefsForPopulatedTables(diff, current, info), nil
+		return mergeIndexRefs(
+			concurrentIndexRefsForPopulatedTables(diff, current, info),
+			declaredConcurrentIndexRefs(diff, desired, current, info),
+		), nil
 	case ConcurrentIndexDisabled:
 		return nil, nil
 	case ConcurrentIndexAll:

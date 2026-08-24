@@ -413,3 +413,47 @@ func TestToIndex_ExpressionIsPreserved(t *testing.T) {
 		Expr: `json_extract(payload, '$.user.id')`,
 	}})
 }
+
+// TestSQLIndexCarriesTheConcurrentRequest pins the one thing about an index
+// that its own rendered text does not say twice.
+//
+// `CREATE INDEX CONCURRENTLY` is the request not to lock the table for the
+// length of the build, and the conversion is the only place it can be lost
+// between the parser, which reads the keyword, and the planner, which decides
+// whether to emit it. Lost here it was planned as a locking build, silently --
+// on a table large enough for the request to be worth making, that is the
+// difference between a migration and an outage (stokaro/ptah#1663,
+// stokaro/ptah#2019).
+//
+// The second row is the control: the keyword absent must not produce the
+// request, or the field would be true for every index and say nothing.
+func TestSQLIndexCarriesTheConcurrentRequest(t *testing.T) {
+	tests := []struct {
+		name             string
+		statement        string
+		wantConcurrently bool
+	}{
+		{
+			name:             "the source asked for it",
+			statement:        "CREATE INDEX CONCURRENTLY idx_users_reference ON users (reference);",
+			wantConcurrently: true,
+		},
+		{
+			name:             "the source did not",
+			statement:        "CREATE INDEX idx_users_reference ON users (reference);",
+			wantConcurrently: false,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			db := parseToDatabase(c, "CREATE TABLE users (reference TEXT);\n"+test.statement)
+
+			c.Assert(db.Indexes, qt.HasLen, 1)
+			c.Assert(db.Indexes[0].Name, qt.Equals, "idx_users_reference")
+			c.Assert(db.Indexes[0].Concurrently, qt.Equals, test.wantConcurrently)
+		})
+	}
+}
