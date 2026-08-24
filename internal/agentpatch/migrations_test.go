@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -150,4 +151,116 @@ func TestApply_MigrationsRollBackToAValidatingDirectory(t *testing.T) {
 
 	_, statErr := scope.Stat("1700000100_add_status.up.sql")
 	c.Assert(os.IsNotExist(statErr), qt.IsTrue)
+}
+
+// emptyMigrationScope is a migration directory a project has not written to
+// yet: no migrations, and no checksum file either.
+func emptyMigrationScope(c *qt.C) *agentworkspace.Scope {
+	c.Helper()
+	root := c.TempDir()
+	c.Assert(os.MkdirAll(filepath.Join(root, "migrations"), 0o755), qt.IsNil)
+
+	workspace, err := agentworkspace.Open(agentworkspace.Config{
+		Root: root,
+		Classes: map[agentpolicy.ArtifactClass]agentworkspace.ClassConfig{
+			agentpolicy.ClassMigrations: {Dir: "migrations", Writable: true},
+		},
+		Dialect: "postgres",
+	})
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { _ = workspace.Close() })
+
+	scope, err := workspace.Scope(agentpolicy.ClassMigrations)
+	c.Assert(err, qt.IsNil)
+	return scope
+}
+
+// TestApply_MigrationsRollBackRestoresTheAbsenceOfAChecksumFile pins the half of
+// the rollback invariant a rehash cannot restore.
+//
+// Result documents that a rolled-back apply leaves the artifact holding what it
+// held before, with ResultDigest equal to BaseDigest. The undo used to rehash
+// the directory instead of restoring the checksum file, and Rehash WRITES one
+// for a directory that has none -- so a project's first patch, undone, left an
+// atlas.sum behind and the two digests disagreed in the same response
+// (stokaro/ptah#2066).
+func TestApply_MigrationsRollBackRestoresTheAbsenceOfAChecksumFile(t *testing.T) {
+	c := qt.New(t)
+	scope := emptyMigrationScope(c)
+	gates := realGates(c)
+
+	base, err := scope.Digest()
+	c.Assert(err, qt.IsNil)
+	plan, err := agentpatch.PlanPatch(scope, agentpatch.Patch{
+		Class:          agentpolicy.ClassMigrations,
+		ExpectedDigest: base,
+		Changes: []agentpatch.Change{{
+			Path:      "1700000100_broken.up.sql",
+			Operation: agentpatch.Create,
+			Content:   "ALTER TABL users ADD COLUMN status TEXT;\n",
+		}},
+	})
+	c.Assert(err, qt.IsNil)
+
+	result, err := agentpatch.Apply(context.Background(), plan, gates)
+
+	c.Assert(err, qt.ErrorIs, agentpatch.ErrGateFailed)
+	c.Assert(result.RolledBack, qt.IsTrue)
+	c.Assert(result.RollbackFailure, qt.Equals, "")
+	c.Assert(result.ResultDigest, qt.Equals, base)
+
+	entries, err := scope.List()
+	c.Assert(err, qt.IsNil)
+	c.Assert(entries, qt.HasLen, 0,
+		qt.Commentf("the undo left something behind: %+v", entries))
+}
+
+// TestApply_MigrationsRollBackRestoresTheChecksumBytes is the other half: a
+// directory that HAD a checksum file gets its own bytes back, rather than a
+// freshly derived file that merely describes the same directory.
+func TestApply_MigrationsRollBackRestoresTheChecksumBytes(t *testing.T) {
+	c := qt.New(t)
+	scope := migrationScope(c)
+	gates := realGates(c)
+
+	checksum := checksumFileName(c, scope)
+	before, err := scope.ReadFile(checksum)
+	c.Assert(err, qt.IsNil)
+	base, err := scope.Digest()
+	c.Assert(err, qt.IsNil)
+	plan, err := agentpatch.PlanPatch(scope, agentpatch.Patch{
+		Class:          agentpolicy.ClassMigrations,
+		ExpectedDigest: base,
+		Changes: []agentpatch.Change{{
+			Path:      "1700000100_broken.up.sql",
+			Operation: agentpatch.Create,
+			Content:   "ALTER TABL users ADD COLUMN status TEXT;\n",
+		}},
+	})
+	c.Assert(err, qt.IsNil)
+
+	result, err := agentpatch.Apply(context.Background(), plan, gates)
+
+	c.Assert(err, qt.ErrorIs, agentpatch.ErrGateFailed)
+	c.Assert(result.RollbackFailure, qt.Equals, "")
+	after, err := scope.ReadFile(checksum)
+	c.Assert(err, qt.IsNil)
+	c.Assert(string(after), qt.Equals, string(before))
+	c.Assert(result.ResultDigest, qt.Equals, base)
+}
+
+// checksumFileName is whichever integrity file the fixture's directory layout
+// produced, so the test asserts on the file that is there rather than on the
+// name one layout happens to use.
+func checksumFileName(c *qt.C, scope *agentworkspace.Scope) string {
+	c.Helper()
+	entries, err := scope.List()
+	c.Assert(err, qt.IsNil)
+	for _, entry := range entries {
+		if strings.HasSuffix(entry.Path, ".sum") {
+			return entry.Path
+		}
+	}
+	c.Fatalf("no checksum file in %+v", entries)
+	return ""
 }
