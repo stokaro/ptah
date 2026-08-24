@@ -878,6 +878,44 @@ func TestCompareWithDialect_SQLiteRenderedColumnTypesMatchCatalogReadback(t *tes
 	}
 }
 
+// TestCompareWithDialect_SQLiteEquivalentDeclarationsDoNotRebuild pins that a
+// spelling difference SQLite does not have is not a schema change.
+//
+// SQLite stores the declaration and never resolves it, deriving an affinity
+// from the text at use time. Two declarations with one affinity are one type,
+// and the plan for a difference between them is a table REBUILD -- drop,
+// recreate, copy every row -- to change nothing an application can observe
+// (stokaro/ptah#2040).
+//
+// The rows are the ones a hand-made database produces: nobody writing SQL by
+// hand writes the canonical spelling Ptah's renderer would.
+func TestCompareWithDialect_SQLiteEquivalentDeclarationsDoNotRebuild(t *testing.T) {
+	tests := []struct {
+		name          string
+		generatedType string
+		databaseType  string
+	}{
+		{name: "text against a hand-made varchar", generatedType: "TEXT", databaseType: "VARCHAR(255)"},
+		{name: "text against a hand-made char", generatedType: "TEXT", databaseType: "CHARACTER(4)"},
+		{name: "text against a hand-made clob", generatedType: "TEXT", databaseType: "CLOB"},
+		{name: "blob against a column with no declared type", generatedType: "BLOB", databaseType: ""},
+		{name: "integer against a hand-made bigint", generatedType: "INTEGER", databaseType: "BIGINT"},
+		{name: "real against a hand-made double", generatedType: "REAL", databaseType: "DOUBLE PRECISION"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			diff := schemadiff.CompareWithDialect(
+				sqliteColumnGeneratedSchema(tt.generatedType),
+				sqliteColumnDatabaseSchema(tt.databaseType),
+				"sqlite",
+			)
+			c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("diff: %+v", diff))
+		})
+	}
+}
+
 func TestCompareWithDialect_SQLiteDistinctColumnTypesStillDiff(t *testing.T) {
 	c := qt.New(t)
 
@@ -889,9 +927,27 @@ func TestCompareWithDialect_SQLiteDistinctColumnTypesStillDiff(t *testing.T) {
 
 	c.Assert(diff.TablesModified, qt.HasLen, 1)
 	c.Assert(diff.TablesModified[0].ColumnsModified, qt.HasLen, 1)
-	c.Assert(diff.TablesModified[0].ColumnsModified[0].Changes["type"], qt.Equals, "text -> integer")
+	// The raw spellings, not the affinities the comparison decided on: an
+	// operator told `TEXT -> INTEGER` can find the column, and one told
+	// `NUMERIC -> INTEGER` has to work out which of their columns that was
+	// (stokaro/ptah#2040).
+	c.Assert(diff.TablesModified[0].ColumnsModified[0].Changes["type"], qt.Equals, "TEXT -> INTEGER")
 }
 
+// TestCompareWithDialect_SQLiteDeclaredTypeDriftStillDiffs keeps the half of
+// the SQLite comparison that must still report a change.
+//
+// Two rows moved out of it and into
+// TestCompareWithDialect_SQLiteEquivalentDeclarationsDoNotRebuild, because
+// they compared spellings SQLite gives the same meaning: `VARCHAR(255)` and
+// `TEXT` are both TEXT affinity, and a column with no declared type and one
+// declared `BLOB` are both BLOB. Reporting those planned a table rebuild that
+// copied every row to change nothing an application can observe
+// (stokaro/ptah#2040).
+//
+// This row stays because the affinities really do differ: `BOOLEAN` is
+// NUMERIC and `INTEGER` is INTEGER, which is the pair that looks
+// interchangeable and is not.
 func TestCompareWithDialect_SQLiteDeclaredTypeDriftStillDiffs(t *testing.T) {
 	tests := []struct {
 		name          string
@@ -899,9 +955,14 @@ func TestCompareWithDialect_SQLiteDeclaredTypeDriftStillDiffs(t *testing.T) {
 		databaseType  string
 		wantChange    string
 	}{
-		{name: "database boolean is not rendered integer", generatedType: "INTEGER", databaseType: "BOOLEAN", wantChange: "boolean -> integer"},
-		{name: "database varchar is not rendered text", generatedType: "TEXT", databaseType: "VARCHAR(255)", wantChange: "varchar -> text"},
-		{name: "database empty type is not rendered blob", generatedType: "BLOB", databaseType: "", wantChange: " -> blob"},
+		{
+			name: "database boolean is not rendered integer", generatedType: "INTEGER",
+			databaseType: "BOOLEAN", wantChange: "BOOLEAN -> INTEGER",
+		},
+		{
+			name: "a text column is not a blob one", generatedType: "BLOB",
+			databaseType: "TEXT", wantChange: "TEXT -> BLOB",
+		},
 	}
 
 	for _, tt := range tests {

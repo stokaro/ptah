@@ -228,9 +228,27 @@ type Field struct {
 	// pinned Atlas community binary v1.3.0 refuses the bare identifier
 	// (`There is no type named "USER_DEFINED"`) and accepts only the call.
 	TypeRawSQL bool
-	Nullable   bool // Whether the column allows NULL values
-	Primary    bool // Whether this is a primary key column
-	AutoInc    bool // Whether this column auto-increments
+	// TypeIsDeclaredText records that Type is the text an author wrote, read
+	// back from a catalog that stored it verbatim rather than resolving it.
+	//
+	// SQLite is the only engine where a read can say that. A renderer honors
+	// it by writing the type as it stands instead of canonicalizing the
+	// spelling: a description that rewrote `VARCHAR(80)` to `TEXT` would
+	// replay as a different table, and the comparison then planned a rebuild
+	// that changed nothing (stokaro/ptah#2040).
+	//
+	// A declaration a person wrote never carries it, so a Go or HCL schema
+	// still renders through the dialect's canonical spelling.
+	//
+	// `omitzero` is load-bearing rather than cosmetic, for the reason
+	// [Database.NotDescribed] gives: this struct's JSON encoding IS the
+	// desired-state fingerprint, so a field that serialized unconditionally
+	// would change the fingerprint of every schema anyone has already planned
+	// against.
+	TypeIsDeclaredText bool `json:",omitzero"`
+	Nullable           bool // Whether the column allows NULL values
+	Primary            bool // Whether this is a primary key column
+	AutoInc            bool // Whether this column auto-increments
 	// IdentityGeneration stores PostgreSQL identity generation mode: ALWAYS or BY_DEFAULT.
 	IdentityGeneration string
 	// IdentityStart stores the optional PostgreSQL identity START WITH value.

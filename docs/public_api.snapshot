@@ -1600,6 +1600,14 @@ type ColumnNode struct {
     // the call back instead of a bare identifier the Atlas community binary
     // refuses.
     TypeRawSQL bool
+    // TypeIsDeclaredText records that Type came from a catalog that stores the
+    // declaration verbatim, which is SQLite and nothing else.
+    //
+    // The SQLite renderer honors it by writing the type as it stands. Without
+    // it that renderer canonicalizes -- `VARCHAR(80)` becomes `TEXT` -- which
+    // is right for a declaration a person wrote and wrong for a description of
+    // a database that already has one (stokaro/ptah#2040).
+    TypeIsDeclaredText bool
     // EnumType records that the column's declared type names an enum the schema
     // declares, rather than a built-in type.
     //
@@ -5466,9 +5474,27 @@ type Field struct {
     // pinned Atlas community binary v1.3.0 refuses the bare identifier
     // (`There is no type named "USER_DEFINED"`) and accepts only the call.
     TypeRawSQL bool
-    Nullable   bool // Whether the column allows NULL values
-    Primary    bool // Whether this is a primary key column
-    AutoInc    bool // Whether this column auto-increments
+    // TypeIsDeclaredText records that Type is the text an author wrote, read
+    // back from a catalog that stored it verbatim rather than resolving it.
+    //
+    // SQLite is the only engine where a read can say that. A renderer honors
+    // it by writing the type as it stands instead of canonicalizing the
+    // spelling: a description that rewrote `VARCHAR(80)` to `TEXT` would
+    // replay as a different table, and the comparison then planned a rebuild
+    // that changed nothing (stokaro/ptah#2040).
+    //
+    // A declaration a person wrote never carries it, so a Go or HCL schema
+    // still renders through the dialect's canonical spelling.
+    //
+    // `omitzero` is load-bearing rather than cosmetic, for the reason
+    // [Database.NotDescribed] gives: this struct's JSON encoding IS the
+    // desired-state fingerprint, so a field that serialized unconditionally
+    // would change the fingerprint of every schema anyone has already planned
+    // against.
+    TypeIsDeclaredText bool `json:",omitzero"`
+    Nullable           bool // Whether the column allows NULL values
+    Primary            bool // Whether this is a primary key column
+    AutoInc            bool // Whether this column auto-increments
     // IdentityGeneration stores PostgreSQL identity generation mode: ALWAYS or BY_DEFAULT.
     IdentityGeneration string
     // IdentityStart stores the optional PostgreSQL identity START WITH value.
@@ -7565,6 +7591,24 @@ type DBColumn struct {
     IsAutoIncrement    bool    `json:"is_auto_increment"` // Derived field
     IsPrimaryKey       bool    `json:"is_primary_key"`    // Derived field
     IsUnique           bool    `json:"is_unique"`         // Derived field
+
+    // TypeIsDeclaredText records that DataType is the text an author wrote,
+    // stored verbatim, rather than a type the engine resolved the declaration
+    // to.
+    //
+    // SQLite is the only engine Ptah reads where that is true: it keeps the
+    // declaration and derives an affinity from it at use time, so
+    // `VARCHAR(80)` comes back as `VARCHAR(80)` and means TEXT. Every other
+    // engine answers with a type of its own -- PostgreSQL turns `varchar(80)`
+    // into `character varying` plus a width, Oracle turns `INTEGER` into
+    // `NUMBER(10)` -- so the distinction has nowhere to apply there.
+    //
+    // A renderer reads it to decide whether it may canonicalize the spelling.
+    // It must not: a description of a SQLite database that rewrote
+    // `VARCHAR(80)` to `TEXT` would replay as a different table, and the
+    // comparison then planned a rebuild that changed nothing
+    // (stokaro/ptah#2040).
+    TypeIsDeclaredText bool `json:"type_is_declared_text,omitempty"`
 
     // DomainName names the domain a column is declared with, empty for every
     // column whose declared type is not a domain (PostgreSQL only today).
