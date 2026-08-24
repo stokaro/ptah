@@ -90,3 +90,40 @@ func resolveProbes[Probe any, Answer any](
 	}
 	return resolved, nil
 }
+
+// runProbe creates one probe's objects inside a savepoint, reads the answer
+// back, and releases the savepoint.
+//
+// The savepoint is what keeps one refused declaration from taking the rest with
+// it: a statement the server rejects aborts the transaction, and without it the
+// first unparseable expression would report a whole schema as uncomparable.
+//
+// It answers false, with no error, for a declaration the server refused. That
+// is the honest result: refusing here would fail a comparison over an object
+// the server will refuse later anyway, with a worse message.
+func runProbe(
+	ctx context.Context,
+	tx *sql.Tx,
+	label, key, savepoint string,
+	statements []string,
+	read func(ctx context.Context, tx *sql.Tx) error,
+) (bool, error) {
+	if _, err := tx.ExecContext(ctx, "SAVEPOINT "+savepoint); err != nil {
+		return false, fmt.Errorf("%s: savepoint: %w", label, err)
+	}
+	for _, statement := range statements {
+		if _, err := tx.ExecContext(ctx, statement); err != nil {
+			if _, rollbackErr := tx.ExecContext(ctx, "ROLLBACK TO SAVEPOINT "+savepoint); rollbackErr != nil {
+				return false, fmt.Errorf("%s: roll back to savepoint after %q: %w", label, key, rollbackErr)
+			}
+			return false, nil
+		}
+	}
+	if err := read(ctx, tx); err != nil {
+		return false, fmt.Errorf("%s: read back %q: %w", label, key, err)
+	}
+	if _, err := tx.ExecContext(ctx, "ROLLBACK TO SAVEPOINT "+savepoint); err != nil {
+		return false, fmt.Errorf("%s: release probe: %w", label, err)
+	}
+	return true, nil
+}

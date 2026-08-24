@@ -101,6 +101,8 @@ type CompareOptions struct{ ... }
 type ContinuousAggregateBody struct{ ... }
 type DomainExpression struct{ ... }
 type GeneratedExpression struct{ ... }
+type IndexExpression struct{ ... }
+type PolicyExpression struct{ ... }
 
 ### go.5x5.cz/ptah/config.CheckExpression
 
@@ -297,6 +299,34 @@ type CompareOptions struct {
     // to the textual normalizer it used before, which is right for the shapes
     // that survive it and declines the ones it cannot fold.
     CheckExpressions map[string]CheckExpression
+
+    // PolicyExpressions carries each declared RLS policy's USING and WITH CHECK
+    // as the target server itself spells them, keyed by the policy's table and
+    // name.
+    //
+    // It is [CompareOptions.CheckExpressions] for a third object and the same
+    // rewrite. Measured on PostgreSQL 17.11:
+    //
+    //  declared        column          stored
+    //  level > 0       integer      -> (level > 0)
+    //  price >= 0      numeric      -> (price >= (0)::numeric)
+    //  owner = 'x'     varchar      -> ((owner)::text = 'x'::text)
+    //
+    // The cast depends on the column's type, so no rule over the declaration's
+    // text can decide it: the three rows differ only in the type of the column
+    // they name (stokaro/ptah#2049).
+    //
+    // A nil map means nobody could ask a server, and the comparison falls back
+    // to the textual normalizer it used before.
+    PolicyExpressions map[string]PolicyExpression
+
+    // IndexExpressions carries each declared index's expression and predicate
+    // as the target server itself spells them, keyed by the index's name.
+    //
+    // The same rewrite again, and the same reason it cannot be folded:
+    // `lower(code)` is stored as `lower((code)::text)` over a varchar column
+    // and as `lower(code)` over text (stokaro/ptah#2047).
+    IndexExpressions map[string]IndexExpression
 }
     CompareOptions contains configuration options for schema comparison
     operations. These options control how schema differences are calculated and
@@ -369,6 +399,45 @@ type GeneratedExpression struct {
     The zero value is not "no expression": it is what a resolver returns for a
     declaration it could not put through the server, and a comparison must skip
     the attribute rather than read it as removed. Resolved reports which it is.
+
+
+### go.5x5.cz/ptah/config.IndexExpression
+
+package config // import "go.5x5.cz/ptah/config"
+
+type IndexExpression struct {
+    // Expression is the normalized index expression, empty for an index over
+    // plain columns.
+    Expression string
+    // Predicate is the normalized WHERE clause, empty for a full index.
+    Predicate string
+    // Resolved reports that a server answered for this index.
+    Resolved bool
+}
+    IndexExpression is one index's expression and predicate in the target
+    server's own spelling. See CompareOptions.IndexExpressions.
+
+    The zero value carries the same meaning PolicyExpression's does.
+
+
+### go.5x5.cz/ptah/config.PolicyExpression
+
+package config // import "go.5x5.cz/ptah/config"
+
+type PolicyExpression struct {
+    // Using and WithCheck are the normalized clauses, empty where the policy
+    // declares none.
+    Using     string
+    WithCheck string
+    // Resolved reports that a server answered for this policy.
+    Resolved bool
+}
+    PolicyExpression is one RLS policy's expressions in the target server's own
+    spelling. See CompareOptions.PolicyExpressions.
+
+    The zero value is not an empty policy: it is what a resolver returns for a
+    declaration it could not put through the server, and a comparison must fall
+    back rather than read it as changed. Resolved reports which it is.
 
 
 ## go.5x5.cz/ptah/config/projectconfig
@@ -7229,7 +7298,9 @@ type DatabaseConnection struct{ ... }
     func ConnectToDatabase(ctx context.Context, dbURL string) (*DatabaseConnection, error)
 type DomainExpressionProbe struct{ ... }
 type GeneratedExpressionProbe struct{ ... }
+type IndexExpressionProbe struct{ ... }
 type IsolatedQueryer interface{ ... }
+type PolicyExpressionProbe struct{ ... }
 
 ### go.5x5.cz/ptah/dbschema.CheckExpressionProbe
 
@@ -7318,6 +7389,8 @@ func (dc *DatabaseConnection) ResolveCheckExpressions(ctx context.Context, probe
 func (dc *DatabaseConnection) ResolveContinuousAggregateBodies(ctx context.Context, probes []ContinuousAggregateProbe) (result map[string]config.ContinuousAggregateBody, resultErr error)
 func (dc *DatabaseConnection) ResolveDomainExpressions(ctx context.Context, probes []DomainExpressionProbe) (result map[string]config.DomainExpression, resultErr error)
 func (dc *DatabaseConnection) ResolveIdentifierSemantics(ctx context.Context, names []string) (identifier.Semantics, error)
+func (dc *DatabaseConnection) ResolveIndexExpressions(ctx context.Context, probes []IndexExpressionProbe) (map[string]config.IndexExpression, error)
+func (dc *DatabaseConnection) ResolvePolicyExpressions(ctx context.Context, probes []PolicyExpressionProbe) (map[string]config.PolicyExpression, error)
 func (dc *DatabaseConnection) SchemaWriter() types.SchemaWriter
 func (dc *DatabaseConnection) WithExecutor(executor types.SchemaExecutor) *DatabaseConnection
 func (dc *DatabaseConnection) WithIsolatedQuerySession(ctx context.Context, opts *sql.TxOptions, use func(IsolatedQueryer) error) (resultErr error)
@@ -7380,6 +7453,26 @@ type GeneratedExpressionProbe struct {
     built from anything else would answer for a table nobody declared.
 
 
+### go.5x5.cz/ptah/dbschema.IndexExpressionProbe
+
+package dbschema // import "go.5x5.cz/ptah/dbschema"
+
+type IndexExpressionProbe struct {
+    // Key identifies the index to the caller and is never sent to the server.
+    Key string
+    // Columns are the columns of the table the index is on, from the LIVE read.
+    Columns []CheckProbeColumn
+    // Expression is what the index is over, empty for an index over plain
+    // columns. Parts is what those plain columns are.
+    Expression string
+    Parts      []string
+    // Predicate is the declared WHERE clause, empty for a full index.
+    Predicate string
+}
+    IndexExpressionProbe is one declared index whose expression or predicate
+    needs the target server's own spelling.
+
+
 ### go.5x5.cz/ptah/dbschema.IsolatedQueryer
 
 package dbschema // import "go.5x5.cz/ptah/dbschema"
@@ -7391,6 +7484,25 @@ type IsolatedQueryer interface {
     physical database session. It deliberately omits transaction control
     and schema writers so the callback cannot commit or acquire an auxiliary
     connection through Ptah.
+
+
+### go.5x5.cz/ptah/dbschema.PolicyExpressionProbe
+
+package dbschema // import "go.5x5.cz/ptah/dbschema"
+
+type PolicyExpressionProbe struct {
+    // Key identifies the policy to the caller and is never sent to the server.
+    Key string
+    // Columns are the columns of the table the policy is on, from the LIVE
+    // read: the clauses have to parse against the table they will guard.
+    Columns []CheckProbeColumn
+    // Using and WithCheck are the declared clauses, either of which may be
+    // empty.
+    Using     string
+    WithCheck string
+}
+    PolicyExpressionProbe is one declared RLS policy whose clauses need the
+    target server's own spelling before they can be compared.
 
 
 ## go.5x5.cz/ptah/dbschema/types

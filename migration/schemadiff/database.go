@@ -80,26 +80,80 @@ func CompareWithDatabaseReportingUndecidedAdditions(
 	if err != nil {
 		return nil, nil, err
 	}
-	if len(expressions) > 0 || len(bodies) > 0 || len(checks) > 0 {
-		merged := config.DefaultCompareOptions()
-		if opts != nil {
-			*merged = *opts
-		}
-		if len(expressions) > 0 {
-			merged.DomainExpressions = expressions
-		}
-		if len(bodies) > 0 {
-			merged.ContinuousAggregateBodies = bodies
-		}
-		if len(checks) > 0 {
-			merged.CheckExpressions = checks
-		}
-		opts = merged
+	policies, err := resolvePolicyExpressions(ctx, conn, generated, database)
+	if err != nil {
+		return nil, nil, err
 	}
+	indexes, err := resolveIndexExpressions(ctx, conn, generated, database)
+	if err != nil {
+		return nil, nil, err
+	}
+	// Every resolver's answer reaches the comparison the same way: a copy of
+	// the options carrying the maps that have something in them. The copy is
+	// what keeps the caller's options untouched, which matters because a
+	// caller may compare twice with one value.
+	opts = withResolvedExpressions(opts, resolvedExpressions{
+		domains:    expressions,
+		aggregates: bodies,
+		checks:     checks,
+		policies:   policies,
+		indexes:    indexes,
+	})
 
 	return compareWithDatabaseInfoReportingUndecidedAdditions(
 		generated, database, info, opts,
 	)
+}
+
+// resolvedExpressions collects what the resolvers above answered, so the
+// options are copied once rather than once per family.
+type resolvedExpressions struct {
+	domains    map[string]config.DomainExpression
+	aggregates map[string]config.ContinuousAggregateBody
+	checks     map[string]config.CheckExpression
+	policies   map[string]config.PolicyExpression
+	indexes    map[string]config.IndexExpression
+}
+
+// empty reports that no server answered for anything, which is every offline
+// comparison and every target whose engine rewrites nothing.
+func (r resolvedExpressions) empty() bool {
+	return len(r.domains) == 0 && len(r.aggregates) == 0 && len(r.checks) == 0 &&
+		len(r.policies) == 0 && len(r.indexes) == 0
+}
+
+// withResolvedExpressions returns the options the comparison should run under.
+//
+// The caller's own value is returned unchanged when nothing was resolved, so a
+// comparison that asked no server is byte-for-byte the one that ran before any
+// of these resolvers existed.
+func withResolvedExpressions(
+	opts *config.CompareOptions,
+	resolved resolvedExpressions,
+) *config.CompareOptions {
+	if resolved.empty() {
+		return opts
+	}
+	merged := config.DefaultCompareOptions()
+	if opts != nil {
+		*merged = *opts
+	}
+	if len(resolved.domains) > 0 {
+		merged.DomainExpressions = resolved.domains
+	}
+	if len(resolved.aggregates) > 0 {
+		merged.ContinuousAggregateBodies = resolved.aggregates
+	}
+	if len(resolved.checks) > 0 {
+		merged.CheckExpressions = resolved.checks
+	}
+	if len(resolved.policies) > 0 {
+		merged.PolicyExpressions = resolved.policies
+	}
+	if len(resolved.indexes) > 0 {
+		merged.IndexExpressions = resolved.indexes
+	}
+	return merged
 }
 
 // resolveDomainExpressions normalizes the declared CHECK and DEFAULT of every
@@ -208,6 +262,136 @@ func resolveCheckExpressions(
 		return nil, fmt.Errorf("compare schemas: %w", err)
 	}
 	return checks, nil
+}
+
+// resolvePolicyExpressions normalizes the declared clauses of every RLS policy
+// the database also holds.
+//
+// Only those, for the reason [resolveDomainExpressions] gives: a policy being
+// created carries its declaration into the CREATE statement unchanged, and one
+// being dropped has no declaration left to normalize.
+func resolvePolicyExpressions(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	generated *goschema.Database,
+	database *dbschematypes.DBSchema,
+) (map[string]config.PolicyExpression, error) {
+	if generated == nil || database == nil {
+		return nil, nil
+	}
+	held := make(map[string]struct{}, len(database.RLSPolicies))
+	for _, policy := range database.RLSPolicies {
+		held[checkExpressionKey(policy.Table, policy.Name)] = struct{}{}
+	}
+	columns := liveTableColumns(database)
+
+	probes := make([]dbschema.PolicyExpressionProbe, 0, len(generated.RLSPolicies))
+	for _, policy := range generated.RLSPolicies {
+		key := checkExpressionKey(policy.Table, policy.Name)
+		if _, exists := held[key]; !exists {
+			continue
+		}
+		probeColumns, known := columns[foldCheckTableName(policy.Table)]
+		if !known {
+			continue
+		}
+		probes = append(probes, dbschema.PolicyExpressionProbe{
+			Key:       key,
+			Columns:   probeColumns,
+			Using:     policy.UsingExpression,
+			WithCheck: policy.WithCheckExpression,
+		})
+	}
+	if len(probes) == 0 {
+		return nil, nil
+	}
+
+	policies, err := conn.ResolvePolicyExpressions(ctx, probes)
+	if err != nil {
+		return nil, fmt.Errorf("compare schemas: %w", err)
+	}
+	return policies, nil
+}
+
+// resolveIndexExpressions normalizes the declared expression and predicate of
+// every index the database also holds.
+//
+// An index over plain columns with no predicate is skipped: there is nothing
+// for the server to rewrite, and probing one would cost a statement to learn
+// what the declaration already says.
+func resolveIndexExpressions(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	generated *goschema.Database,
+	database *dbschematypes.DBSchema,
+) (map[string]config.IndexExpression, error) {
+	if generated == nil || database == nil {
+		return nil, nil
+	}
+	held := make(map[string]struct{}, len(database.Indexes))
+	for _, index := range database.Indexes {
+		held[strings.ToLower(strings.TrimSpace(index.Name))] = struct{}{}
+	}
+	columns := liveTableColumns(database)
+
+	// The owner is resolved the way the comparator resolves it, because an
+	// index declaration does not always carry its table: `TableName` is the
+	// cross-table override and is empty for the ordinary case, where the owner
+	// comes from the struct or block the index was declared inside.
+	owners := goschema.ResolveIndexOwners(generated.Indexes, generated.Tables, generated.MaterializedViews)
+
+	probes := make([]dbschema.IndexExpressionProbe, 0, len(generated.Indexes))
+	for position, index := range generated.Indexes {
+		expression, parts := declaredIndexExpression(index)
+		if expression == "" && strings.TrimSpace(index.Condition) == "" {
+			continue
+		}
+		key := strings.ToLower(strings.TrimSpace(index.Name))
+		if _, exists := held[key]; !exists {
+			continue
+		}
+		probeColumns, known := columns[foldCheckTableName(owners[position])]
+		if !known {
+			continue
+		}
+		probes = append(probes, dbschema.IndexExpressionProbe{
+			Key:        key,
+			Columns:    probeColumns,
+			Expression: expression,
+			Parts:      parts,
+			Predicate:  index.Condition,
+		})
+	}
+	if len(probes) == 0 {
+		return nil, nil
+	}
+
+	indexes, err := conn.ResolveIndexExpressions(ctx, probes)
+	if err != nil {
+		return nil, fmt.Errorf("compare schemas: %w", err)
+	}
+	return indexes, nil
+}
+
+// declaredIndexExpression separates an index over an EXPRESSION from one over
+// plain columns, which is what decides how the probe writes its CREATE INDEX.
+//
+// Parts is preferred over Fields where it is filled, for the reason
+// [go.5x5.cz/ptah/core/goschema.Index] gives: the two spellings duplicate each
+// other and only Parts distinguishes an expression from a column.
+func declaredIndexExpression(index goschema.Index) (expression string, parts []string) {
+	for _, part := range index.Parts {
+		if strings.TrimSpace(part.Expr) != "" {
+			return part.Expr, nil
+		}
+		if strings.TrimSpace(part.Name) != "" {
+			parts = append(parts, part.Name)
+		}
+	}
+	if len(parts) == 0 {
+		parts = index.Fields
+	}
+	return "", parts
 }
 
 // liveTableColumns projects every live table's columns into the shape a probe
