@@ -314,10 +314,19 @@ func addNodeObject(node ast.Node) (object string, ok bool) {
 		return n.Name, true
 	case *ast.GrantPrivilegeNode:
 		return n.ObjectName, true
-	case *ast.OpaqueRoutineNode, *ast.MySQLRoutineNode,
-		*ast.PostgresRoutineNode, *ast.SQLServerRoutineNode:
-		// Dialect routine bodies (CREATE FUNCTION/PROCEDURE the parser preserves
-		// verbatim) are opaque but are still object creations.
+	case *ast.MySQLRoutineNode:
+		return n.Name, true
+	case *ast.PostgresRoutineNode:
+		return n.Name, true
+	case *ast.SQLServerRoutineNode:
+		return n.Name, true
+	case *ast.OpaqueRoutineNode:
+		// The one routine node with no name to give: it is the fallback the
+		// parser preserves verbatim when no dialect path claimed the statement,
+		// so there is nothing parsed to take a name from. The three above do
+		// carry one, and returning "" for them handed the change model a
+		// routine creation with no object name at all -- so a finding about a
+		// routine could not say which routine (stokaro/ptah#1270).
 		return "", true
 	default:
 		return "", false
