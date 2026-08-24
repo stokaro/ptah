@@ -269,6 +269,23 @@ func (p Profile) MissingFacts(facts []capability.Capability) []capability.Capabi
 	return missing
 }
 
+// UnestablishedFacts is the subset of MissingFacts this profile never had an
+// answer for, as opposed to the ones it answered no.
+//
+// The two are different things to tell an operator. A target Ptah knows says no
+// because a preset decided it; a target Ptah does not know says nothing at all,
+// and reporting that as "the target does not have it" describes a server nobody
+// measured (stokaro/ptah#1348).
+func (p Profile) UnestablishedFacts(facts []capability.Capability) []capability.Capability {
+	unestablished := make([]capability.Capability, 0)
+	for _, fact := range facts {
+		if !p.Capabilities.Established(fact) {
+			unestablished = append(unestablished, fact)
+		}
+	}
+	return unestablished
+}
+
 // NormalizedDialect returns the profile's dialect in the canonical spelling
 // every other package compares against.
 func (p Profile) NormalizedDialect() string {
