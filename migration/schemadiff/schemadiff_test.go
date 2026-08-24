@@ -1461,3 +1461,45 @@ func TestCompareWithDialect_SpannerBackingIndexRuleStaysOnSpanner(t *testing.T) 
 		{Name: "IDX_children_parent_id_FBF4366D73F2084A", TableName: "children"},
 	})
 }
+
+// TestCompareWithDialect_SQLiteBooleanDefaultMatchesWhatTheRendererWrites is
+// the comparator half of the renderer's affinity rule.
+//
+// SQLite has no boolean, so a declared `true` is written as `1` and read back
+// as `1`. Comparing the declared word against the catalog's number reported a
+// default change on a column that matched -- and on SQLite that plan is a table
+// REBUILD, which copies every row to change nothing (stokaro/ptah#2092).
+func TestCompareWithDialect_SQLiteBooleanDefaultMatchesWhatTheRendererWrites(t *testing.T) {
+	tests := []struct {
+		name          string
+		columnType    string
+		declared      string
+		live          string
+		wantNoChanges bool
+	}{
+		{name: "true against the number it renders as", columnType: "INTEGER", declared: "true", live: "1", wantNoChanges: true},
+		{name: "false against the number it renders as", columnType: "INTEGER", declared: "false", live: "0", wantNoChanges: true},
+		{
+			// The control: TEXT affinity keeps the word, so the word is what
+			// the column holds and a number there is a real difference.
+			name: "a text column keeps the word", columnType: "TEXT", declared: "true", live: "1", wantNoChanges: false,
+		},
+		{
+			name: "a real difference is still reported", columnType: "INTEGER", declared: "true", live: "0", wantNoChanges: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := qt.New(t)
+			generated := sqliteColumnGeneratedSchema(tt.columnType)
+			generated.Fields[1].Default = tt.declared
+			database := sqliteColumnDatabaseSchema(tt.columnType)
+			database.Tables[0].Columns[1].ColumnDefault = &tt.live
+
+			diff := schemadiff.CompareWithDialect(generated, database, "sqlite")
+
+			c.Assert(!diff.HasChanges(), qt.Equals, tt.wantNoChanges, qt.Commentf("diff: %+v", diff))
+		})
+	}
+}
