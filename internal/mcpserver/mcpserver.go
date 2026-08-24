@@ -52,14 +52,24 @@ const serverName = "ptah"
 type Config struct {
 	// Version is the Ptah build, so a client can tell which Ptah it is driving.
 	Version string
-	// Session carries the workspace, the policy and the audit trail. A nil
-	// session serves the reading tools alone, which is what `ptah mcp` with no
-	// workspace flags is.
+	// Session carries the policy, the audit trail and -- when the server was
+	// given one -- the workspace. It is required: every operation this server
+	// serves asks the session's broker first, so a server without one would be
+	// a server that authorizes nothing.
+	//
+	// A session with no workspace is `ptah mcp` with no workspace flags. It
+	// still has a policy, and the reading tools still obey it.
 	Session *agentapi.Session
 }
 
 // New builds the server with every tool the configuration reaches.
-func New(cfg Config) *mcp.Server {
+func New(cfg Config) (*mcp.Server, error) {
+	if cfg.Session == nil {
+		// Not a defensive nil check: a server with no session is a server whose
+		// tools reach no broker, which is the exact shape of the defect this
+		// signature exists to make impossible.
+		return nil, errors.New("mcp server requires an agent session: it is what authorizes every tool")
+	}
 	server := mcp.NewServer(&mcp.Implementation{
 		Name:    serverName,
 		Version: cfg.Version,
@@ -67,7 +77,7 @@ func New(cfg Config) *mcp.Server {
 		Instructions: instructions(cfg),
 	})
 	register(server, cfg)
-	return server
+	return server, nil
 }
 
 // Run serves the protocol over stdio until the session ends or the context is
@@ -86,7 +96,11 @@ func New(cfg Config) *mcp.Server {
 // string would break on a wording change -- so the case is left alone rather
 // than handled by something that looks like handling.
 func Run(ctx context.Context, cfg Config) error {
-	return New(cfg).Run(ctx, &mcp.StdioTransport{})
+	server, err := New(cfg)
+	if err != nil {
+		return err
+	}
+	return server.Run(ctx, &mcp.StdioTransport{})
 }
 
 // instructions is the server-level text a client may show its model.
@@ -96,17 +110,19 @@ func Run(ctx context.Context, cfg Config) error {
 // model into safety: the enforcement is the broker's, and a paragraph that asked
 // politely would be the thing #1483 says not to build.
 func instructions(cfg Config) string {
-	if cfg.Session == nil {
+	if !cfg.Session.HasWorkspace() {
 		return fmt.Sprintf(
 			"Ptah agent contract %s. Every tool here reads: none of them writes a file, "+
 				"changes a database, or applies a migration. Schema sources and database "+
-				"URLs are supplied by you and read with this process's own permissions.",
+				"URLs are supplied by you and read with this process's own permissions, "+
+				"and each operation is subject to this session's capability policy -- "+
+				"reading a database the operator has not permitted is refused.",
 			agentapi.Version)
 	}
 	return fmt.Sprintf(
 		"Ptah agent contract %s. This server reads and, within one configured workspace, "+
 			"proposes and applies constrained patches to migration, schema and test files. "+
-			"Start with describe_workspace: it reports which artifact directories exist, "+
+			"Start with describe_session: it reports which artifact directories exist, "+
 			"their content digests, and which capabilities this session has. A patch is "+
 			"previewed first and applied with the token the preview returns; Ptah runs its own "+
 			"verification after every write and undoes the patch if the write introduced an "+
@@ -117,8 +133,8 @@ func instructions(cfg Config) string {
 // register adds every tool. It is separate from New so a test can build the
 // server and read its tool list without running a transport.
 func register(server *mcp.Server, cfg Config) {
-	registerReadTools(server)
-	if cfg.Session != nil {
+	registerReadTools(server, cfg.Session)
+	if cfg.Session.HasWorkspace() {
 		registerArtifactTools(server, cfg.Session)
 	}
 }
@@ -150,20 +166,35 @@ func writes(destructive, idempotent bool) *mcp.ToolAnnotations {
 }
 
 // registerReadTools adds the four operations ADR 0002 froze.
-func registerReadTools(server *mcp.Server) {
+//
+// They are bound to the session rather than called directly, so that each one
+// asks the capability broker first. Registering them beside the session left
+// database.inspect resolving to a verdict describe_session published and
+// nothing consulted: a refusal an operation could walk past.
+func registerReadTools(server *mcp.Server, session *agentapi.Session) {
+	mcp.AddTool(server, &mcp.Tool{
+		Name: "describe_session",
+		Description: "Report what this session may do and what it can reach: every capability with " +
+			"its verdict, the configured schema source directories, the live databases by name and " +
+			"classification, and -- when one is configured -- the workspace, its artifact " +
+			"directories and their content digests. Call this first. What policy permits and what " +
+			"this process has are reported separately, and neither implies the other.",
+		Annotations: readOnly(false),
+	}, wrap(session.DescribeSession))
+
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "validate_schema",
 		Description: "Report structural problems in a declared Ptah schema for one target dialect, " +
 			"without touching a database. Answers whether a schema is sound before anything is applied.",
 		Annotations: readOnly(false),
-	}, wrap(agentapi.ValidateSchema))
+	}, wrap(session.ValidateSchema))
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "render_schema",
 		Description: "Render the DDL a declared Ptah schema becomes for one target dialect, " +
 			"in the order the statements must run. Reads nothing and applies nothing.",
 		Annotations: readOnly(false),
-	}, wrap(agentapi.RenderSchema))
+	}, wrap(session.RenderSchema))
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "schema_lineage",
@@ -171,28 +202,21 @@ func registerReadTools(server *mcp.Server) {
 			"Answers what breaks if a column is dropped, before the drop. Views whose bodies " +
 			"cannot be resolved are reported rather than omitted.",
 		Annotations: readOnly(false),
-	}, wrap(agentapi.SchemaLineage))
+	}, wrap(session.SchemaLineage))
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "read_database",
-		Description: "Read the schema a live database currently holds: its dialect, version and objects. " +
-			"Opens a connection, reads catalogs, and runs no DDL.",
+		Description: "Read the schema one of the operator's configured databases currently holds: its " +
+			"dialect, version and objects. Name a target from describe_session, or omit it when the " +
+			"process has exactly one. Connection details are the operator's and are not accepted " +
+			"here. Opens a connection, reads catalogs, and runs no DDL.",
 		// Open world: it dials whatever address the caller names.
 		Annotations: readOnly(true),
-	}, wrap(agentapi.ReadDatabase))
+	}, wrap(session.ReadDatabase))
 }
 
 // registerArtifactTools adds the workspace half.
 func registerArtifactTools(server *mcp.Server, session *agentapi.Session) {
-	mcp.AddTool(server, &mcp.Tool{
-		Name: "describe_workspace",
-		Description: "Report this session's workspace: which artifact directories exist (migrations, " +
-			"schema, tests), their content digests, and every capability the session has or lacks. " +
-			"Call this first -- artifact paths are relative to these directories, and a patch must " +
-			"carry the digest reported here.",
-		Annotations: readOnly(false),
-	}, wrap(session.DescribeWorkspace))
-
 	mcp.AddTool(server, &mcp.Tool{
 		Name: "read_artifact",
 		Description: "List one artifact class, or read one file inside it, with content digests. " +
@@ -290,9 +314,15 @@ func explainErr(err error) error {
 func hintFor(err error) string {
 	switch {
 	case errors.Is(err, agentpolicy.ErrApprovalUnavailable):
-		return "This client cannot present an approval prompt. The operator can grant the " +
-			"capability when starting the server, for example: " +
-			"ptah mcp --workspace . --allow-write=migrations."
+		// --allow-write on its own resolves to ask, which is the state that
+		// produced this error: an operator who followed that advice would meet
+		// the same refusal again. --auto-approve is what clears it for a client
+		// that cannot be asked.
+		return "This client cannot present an approval prompt. The operator grants the " +
+			"capability outright when starting the server, for example: " +
+			"ptah mcp --workspace . --allow-write=migrations --auto-approve. " +
+			"Naming a class without --auto-approve asks for each patch, which is " +
+			"what could not be done here."
 	case errors.Is(err, agentworkspace.ErrClassNotConfigured):
 		return "The operator starts the server with a directory for this class, for example: " +
 			"ptah mcp --workspace . --migrations-dir ./migrations."
@@ -301,7 +331,7 @@ func hintFor(err error) string {
 	}
 	if _, denied := errors.AsType[*agentpolicy.DeniedError](err); denied {
 		return "The operator decides this when starting the server; " +
-			"describe_workspace reports what this session may do."
+			"describe_session reports what this session may do."
 	}
 	return ""
 }

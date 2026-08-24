@@ -494,7 +494,15 @@ type Request struct {
 	Capability Capability
 	Artifact   ArtifactClass
 	Database   DatabaseClass
-	Paths      []string
+	// TargetID is the immutable identity of the live database this operation
+	// would reach, empty when it reaches none.
+	//
+	// It does not take part in resolving a verdict -- policy is written about
+	// classes, not about individual databases -- but it does take part in a
+	// session grant. Two databases can share a class, and "allow for this
+	// session" on one of them must not authorize the other.
+	TargetID string
+	Paths    []string
 	// Reason is the operation's own words for what it is doing, shown to the
 	// person being asked. It is Ptah's text, never the model's.
 	Reason string

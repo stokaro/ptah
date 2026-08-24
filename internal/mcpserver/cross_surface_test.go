@@ -9,13 +9,14 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"go.5x5.cz/ptah/internal/agentapi"
+	"go.5x5.cz/ptah/internal/mcpserver"
 )
 
 // TestServer_AnswersWhatTheDirectCallAnswers is the cross-surface equivalence
 // #1490 asks for, on the half that needs no database.
 //
-// The surfaces are not two implementations: an MCP tool wraps the agentapi
-// function of the same name. That is exactly why nothing measured it. The
+// The surfaces are not two implementations: an MCP tool wraps the session
+// method of the same name. That is exactly why nothing measured it. The
 // existing assertions cover the tool LIST -- names, descriptions, schemas
 // (internal/assistloop: TestRun_OffersTheModelTheSameToolsAnExternalClientGets)
 // -- and, on this side, only that a successful call carries some structured
@@ -30,13 +31,13 @@ func TestServer_AnswersWhatTheDirectCallAnswers(t *testing.T) {
 	tests := []struct {
 		name   string
 		tool   string
-		direct func(context.Context, agentapi.SchemaSource) (any, error)
+		direct func(*agentapi.Session, context.Context, agentapi.SchemaSource) (any, error)
 	}{
 		{
 			name: "validate_schema",
 			tool: "validate_schema",
-			direct: func(ctx context.Context, source agentapi.SchemaSource) (any, error) {
-				return agentapi.ValidateSchema(ctx, agentapi.ValidateSchemaRequest{
+			direct: func(s *agentapi.Session, ctx context.Context, source agentapi.SchemaSource) (any, error) {
+				return s.ValidateSchema(ctx, agentapi.ValidateSchemaRequest{
 					Source: source, Dialect: "postgres",
 				})
 			},
@@ -44,8 +45,8 @@ func TestServer_AnswersWhatTheDirectCallAnswers(t *testing.T) {
 		{
 			name: "render_schema",
 			tool: "render_schema",
-			direct: func(ctx context.Context, source agentapi.SchemaSource) (any, error) {
-				return agentapi.RenderSchema(ctx, agentapi.RenderSchemaRequest{
+			direct: func(s *agentapi.Session, ctx context.Context, source agentapi.SchemaSource) (any, error) {
+				return s.RenderSchema(ctx, agentapi.RenderSchemaRequest{
 					Source: source, Dialect: "postgres",
 				})
 			},
@@ -53,8 +54,8 @@ func TestServer_AnswersWhatTheDirectCallAnswers(t *testing.T) {
 		{
 			name: "schema_lineage",
 			tool: "schema_lineage",
-			direct: func(ctx context.Context, source agentapi.SchemaSource) (any, error) {
-				return agentapi.SchemaLineage(ctx, agentapi.SchemaLineageRequest{
+			direct: func(s *agentapi.Session, ctx context.Context, source agentapi.SchemaSource) (any, error) {
+				return s.SchemaLineage(ctx, agentapi.SchemaLineageRequest{
 					Source: source, Dialect: "postgres",
 				})
 			},
@@ -68,10 +69,17 @@ func TestServer_AnswersWhatTheDirectCallAnswers(t *testing.T) {
 			dir := c.TempDir()
 			c.Assert(writeFile(dir, "models.go", bookshop), qt.IsNil)
 
-			answer, err := test.direct(ctx, agentapi.SchemaSource{RootDirs: []string{dir}})
+			// One session reached two ways, so a divergence would have to be
+			// introduced deliberately rather than merely allowed. The source
+			// directory is the configured scope: a schema is read from where
+			// the operator said and nowhere else.
+			cfg := readOnlyConfig(c, dir)
+
+			answer, err := test.direct(sessionOf(c, cfg), ctx,
+				agentapi.SchemaSource{RootDirs: []string{dir}})
 			c.Assert(err, qt.IsNil)
 
-			result, callErr := connect(c, readOnlyConfig(), nil).CallTool(ctx, &mcp.CallToolParams{
+			result, callErr := connect(c, cfg, nil).CallTool(ctx, &mcp.CallToolParams{
 				Name: test.tool,
 				Arguments: map[string]any{
 					"dialect": "postgres",
@@ -95,4 +103,12 @@ func asJSON(c *qt.C, value any) any {
 	var decoded any
 	c.Assert(json.Unmarshal(encoded, &decoded), qt.IsNil)
 	return decoded
+}
+
+// sessionOf is the session a configuration carries, for the direct half of a
+// cross-surface comparison.
+func sessionOf(c *qt.C, cfg mcpserver.Config) *agentapi.Session {
+	c.Helper()
+	c.Assert(cfg.Session, qt.IsNotNil)
+	return cfg.Session
 }

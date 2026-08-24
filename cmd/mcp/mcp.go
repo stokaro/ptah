@@ -21,23 +21,43 @@ stdin and stdout.
 This is not a command to run by hand: an MCP client starts it and speaks the
 protocol to it. Point one at the Ptah binary with "mcp" as the argument.
 
-Without --workspace it serves four reading tools and nothing else. None of them
+Without --workspace it serves five reading tools and nothing else. None of them
 applies a migration, writes a file, or changes a database:
 
+  describe_session  what this session may do and what it can reach
   validate_schema   structural problems in a declared schema, no database
   render_schema     the DDL a declared schema becomes, in dependency order
   schema_lineage    which base columns feed each view column
-  read_database     the schema a live database currently holds
+  read_database     the schema a configured database currently holds
+
+Every one of them asks the capability policy first. A session always has a
+policy; a workspace only adds the artifact half.
+
+A declared schema is read from the directories you name and from nowhere else.
+--schema-source-root names them, and --workspace is one when you give it. A
+source that would be fetched rather than opened, such as oci://, is refused: no
+capability on this surface grants a network fetch.
+
+A live database is yours to configure, not the agent's to name. --database-url
+gives the connection, --database-class says how far to trust it, and the model
+sees only the name and the class. Inspection is denied until you allow it:
+--allow-database-inspect takes "ask" or "allow", and it is scoped to the class
+of the database you configured. --auto-approve is about patches and grants
+nothing here.
+
+  ephemeral     allowed outright
+  dev, target   asked about, per read
+  production    denied, and no flag on this surface widens it
+  unclassified  denied; classify the database to change that
 
 Three of Ptah's own reading verbs are deliberately absent -- schema inspect,
 schema diff and migrations lint -- because each needs a scratch database it
 resets destructively, and a destructive capability must not sit behind a
 read-only name on a surface an agent drives.
 
-With --workspace it also serves four artifact tools, confined to the directories
+With --workspace it also serves three artifact tools, confined to the directories
 you name:
 
-  describe_workspace  what this session may read and write, with digests
   read_artifact       one artifact directory, or one file inside it
   preview_patch       what a proposed change would do; writes nothing
   apply_patch         apply a previewed patch, verify it, undo a break

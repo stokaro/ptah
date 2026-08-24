@@ -219,8 +219,7 @@ func (s *Store) Create(id string, header Record, mirrors ...Recorder) (Recorder,
 // the audit log's is: a caller that could set it could write a record that
 // appears to belong to a different moment.
 func (w *Writer) Append(record Record) error {
-	record.At = w.clock().UTC()
-	return w.appendStamped(record)
+	return w.appendStamped(prepare(record, w.clock))
 }
 
 // appendStamped writes a record whose timestamp is already set.

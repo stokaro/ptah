@@ -9,7 +9,23 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/internal/agentapi"
+	"go.5x5.cz/ptah/internal/agenttarget"
 )
+
+// schemaSession builds a session permitted to read the source given.
+//
+// The operations are reached through a session rather than called directly:
+// that is the contract now, and a test that called the deterministic layer
+// would be testing something no adapter can reach.
+func schemaSession(c *qt.C, source agentapi.SchemaSource) *agentapi.Session {
+	c.Helper()
+	roots := make([]string, 0, len(source.RootDirs)+len(source.SchemaFiles))
+	roots = append(roots, source.RootDirs...)
+	for _, file := range source.SchemaFiles {
+		roots = append(roots, filepath.Dir(file))
+	}
+	return openSession(c, roots...)
+}
 
 // writeSchema puts one annotated Go file in a temporary directory and returns
 // the source that names it.
@@ -61,7 +77,7 @@ func TestOperations_RefuseAnUnnamedOrUnknownDialect(t *testing.T) {
 			c := qt.New(t)
 			source := writeSchema(c, bookshop)
 
-			_, err := agentapi.RenderSchema(context.Background(),
+			_, err := schemaSession(c, source).RenderSchema(context.Background(),
 				agentapi.RenderSchemaRequest{Source: source, Dialect: row.dialect})
 
 			c.Assert(err != nil, qt.Equals, row.wantErr, qt.Commentf("dialect %q", row.dialect))
@@ -78,7 +94,7 @@ func TestValidateSchema_ReportsSoundnessRatherThanSilence(t *testing.T) {
 	c := qt.New(t)
 	source := writeSchema(c, bookshop)
 
-	response, err := agentapi.ValidateSchema(context.Background(),
+	response, err := schemaSession(c, source).ValidateSchema(context.Background(),
 		agentapi.ValidateSchemaRequest{Source: source, Dialect: "postgres"})
 
 	c.Assert(err, qt.IsNil)
@@ -95,10 +111,11 @@ func TestValidateSchema_ReportsSoundnessRatherThanSilence(t *testing.T) {
 // server look broken instead.
 func TestValidateSchema_TurnsAnUnreadableSourceIntoAnAnswer(t *testing.T) {
 	c := qt.New(t)
+	root := c.TempDir()
 
-	response, err := agentapi.ValidateSchema(context.Background(),
+	response, err := openSession(c, root).ValidateSchema(context.Background(),
 		agentapi.ValidateSchemaRequest{
-			Source:  agentapi.SchemaSource{RootDirs: []string{filepath.Join(c.TempDir(), "absent")}},
+			Source:  agentapi.SchemaSource{RootDirs: []string{filepath.Join(root, "absent")}},
 			Dialect: "postgres",
 		})
 
@@ -114,7 +131,7 @@ func TestValidateSchema_TurnsAnUnreadableSourceIntoAnAnswer(t *testing.T) {
 func TestOperations_RefuseAnEmptySource(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := agentapi.RenderSchema(context.Background(),
+	_, err := openSession(c).RenderSchema(context.Background(),
 		agentapi.RenderSchemaRequest{Dialect: "postgres"})
 
 	c.Assert(err, qt.IsNotNil)
@@ -128,7 +145,7 @@ func TestRenderSchema_ReturnsTheStatementsInOrder(t *testing.T) {
 	c := qt.New(t)
 	source := writeSchema(c, bookshop)
 
-	response, err := agentapi.RenderSchema(context.Background(),
+	response, err := schemaSession(c, source).RenderSchema(context.Background(),
 		agentapi.RenderSchemaRequest{Source: source, Dialect: "postgres"})
 
 	c.Assert(err, qt.IsNil)
@@ -145,7 +162,7 @@ func TestSchemaLineage_CarriesBothHalves(t *testing.T) {
 	c := qt.New(t)
 	source := writeSchema(c, bookshop)
 
-	response, err := agentapi.SchemaLineage(context.Background(),
+	response, err := schemaSession(c, source).SchemaLineage(context.Background(),
 		agentapi.SchemaLineageRequest{Source: source, Dialect: "postgres"})
 
 	c.Assert(err, qt.IsNil)
@@ -155,14 +172,17 @@ func TestSchemaLineage_CarriesBothHalves(t *testing.T) {
 	c.Assert(response.Undecided, qt.IsNotNil)
 }
 
-// TestReadDatabase_RefusesWithoutAURL pins the one argument it cannot default.
-func TestReadDatabase_RefusesWithoutAURL(t *testing.T) {
+// TestReadDatabase_RefusesWithoutAConfiguredTarget pins what a process with no
+// database answers.
+//
+// It cannot be defaulted and it cannot be supplied by the caller: the whole
+// point of the target is that the operator chose it.
+func TestReadDatabase_RefusesWithoutAConfiguredTarget(t *testing.T) {
 	c := qt.New(t)
 
-	_, err := agentapi.ReadDatabase(context.Background(), agentapi.ReadDatabaseRequest{})
+	_, err := openSession(c).ReadDatabase(context.Background(), agentapi.ReadDatabaseRequest{})
 
-	c.Assert(err, qt.IsNotNil)
-	c.Assert(err.Error(), qt.Contains, "database_url is required")
+	c.Assert(err, qt.ErrorIs, agenttarget.ErrNoneConfigured)
 }
 
 func indexOfContaining(statements []string, needle string) int {

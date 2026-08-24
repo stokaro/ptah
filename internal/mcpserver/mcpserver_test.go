@@ -2,6 +2,7 @@ package mcpserver_test
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -10,6 +11,9 @@ import (
 	qt "github.com/frankban/quicktest"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"go.5x5.cz/ptah/internal/agentapi"
+	"go.5x5.cz/ptah/internal/agentpolicy"
+	"go.5x5.cz/ptah/internal/agenttarget"
 	"go.5x5.cz/ptah/internal/mcpserver"
 )
 
@@ -34,7 +38,9 @@ func connect(c *qt.C, cfg mcpserver.Config, opts *mcp.ClientOptions) *mcp.Client
 	ctx := context.Background()
 	serverTransport, clientTransport := mcp.NewInMemoryTransports()
 
-	serverSession, err := mcpserver.New(cfg).Connect(ctx, serverTransport, nil)
+	server, err := mcpserver.New(cfg)
+	c.Assert(err, qt.IsNil)
+	serverSession, err := server.Connect(ctx, serverTransport, nil)
 	c.Assert(err, qt.IsNil)
 	c.Cleanup(func() { _ = serverSession.Close() })
 
@@ -46,8 +52,21 @@ func connect(c *qt.C, cfg mcpserver.Config, opts *mcp.ClientOptions) *mcp.Client
 }
 
 // readOnlyConfig is a server started without a workspace.
-func readOnlyConfig() mcpserver.Config {
-	return mcpserver.Config{Version: "test"}
+//
+// It still carries a session, because a session is what authorizes: the
+// workspace is only what adds the artifact half. A configuration with no
+// session is refused, which is how the surface stopped being able to serve a
+// tool that reaches no broker.
+func readOnlyConfig(c *qt.C, sourceRoots ...string) mcpserver.Config {
+	c.Helper()
+	policy, err := agentpolicy.Assemble()
+	c.Assert(err, qt.IsNil)
+	session, err := agentapi.NewSession(agentapi.SessionConfig{
+		Broker:      agentpolicy.NewBroker(policy),
+		SourceRoots: sourceRoots,
+	})
+	c.Assert(err, qt.IsNil)
+	return mcpserver.Config{Version: "test", Session: session}
 }
 
 // toolRow is one tool a surface must offer.
@@ -66,11 +85,12 @@ type toolRow struct {
 func TestServer_OffersExactlyTheReadOnlyOperations(t *testing.T) {
 	c := qt.New(t)
 	offered := make(map[string]bool)
-	for _, tool := range tools(c, readOnlyConfig()) {
+	for _, tool := range tools(c, readOnlyConfig(c)) {
 		offered[tool.Name] = true
 	}
 
 	rows := []toolRow{
+		{name: "describe_session", owner: "internal/agentpolicy and internal/agenttarget"},
 		{name: "validate_schema", owner: "internal/schemavalidate"},
 		{name: "render_schema", owner: "core/renderer"},
 		{name: "schema_lineage", owner: "internal/schemalineage"},
@@ -103,12 +123,11 @@ func TestServer_OffersExactlyTheReadOnlyOperations(t *testing.T) {
 func TestServer_WithoutAWorkspaceOffersNoArtifactTool(t *testing.T) {
 	c := qt.New(t)
 	offered := make(map[string]bool)
-	for _, tool := range tools(c, readOnlyConfig()) {
+	for _, tool := range tools(c, readOnlyConfig(c)) {
 		offered[tool.Name] = true
 	}
 
 	for _, artifact := range []string{
-		"describe_workspace",
 		"read_artifact",
 		"preview_patch",
 		"apply_patch",
@@ -128,7 +147,7 @@ func TestServer_WithoutAWorkspaceOffersNoArtifactTool(t *testing.T) {
 func TestServer_DescribesEveryToolItOffers(t *testing.T) {
 	c := qt.New(t)
 
-	for _, tool := range tools(c, readOnlyConfig()) {
+	for _, tool := range tools(c, readOnlyConfig(c)) {
 		c.Assert(strings.TrimSpace(tool.Description), qt.Not(qt.Equals), "",
 			qt.Commentf("tool %q has no description", tool.Name))
 		c.Assert(tool.InputSchema, qt.IsNotNil,
@@ -146,7 +165,7 @@ func TestServer_DescribesEveryToolItOffers(t *testing.T) {
 func TestServer_AnnotatesEveryReadingToolAsReadOnly(t *testing.T) {
 	c := qt.New(t)
 
-	for _, tool := range tools(c, readOnlyConfig()) {
+	for _, tool := range tools(c, readOnlyConfig(c)) {
 		c.Assert(tool.Annotations, qt.IsNotNil,
 			qt.Commentf("tool %q carries no annotations", tool.Name))
 		c.Assert(tool.Annotations.ReadOnlyHint, qt.IsTrue,
@@ -160,7 +179,7 @@ func TestServer_AnnotatesEveryReadingToolAsReadOnly(t *testing.T) {
 func TestServer_MarksTheDatabaseReadAsOpenWorld(t *testing.T) {
 	c := qt.New(t)
 	open := make(map[string]bool)
-	for _, tool := range tools(c, readOnlyConfig()) {
+	for _, tool := range tools(c, readOnlyConfig(c)) {
 		c.Assert(tool.Annotations.OpenWorldHint, qt.IsNotNil)
 		open[tool.Name] = *tool.Annotations.OpenWorldHint
 	}
@@ -178,7 +197,7 @@ func TestServer_MarksTheDatabaseReadAsOpenWorld(t *testing.T) {
 // anywhere: a client had no way to read it at all.
 func TestServer_StatesTheContractInItsInstructions(t *testing.T) {
 	c := qt.New(t)
-	session := connect(c, readOnlyConfig(), nil)
+	session := connect(c, readOnlyConfig(c), nil)
 
 	result := session.InitializeResult()
 
@@ -199,7 +218,10 @@ func TestServer_StatesTheContractInItsInstructions(t *testing.T) {
 // passed without measuring the behavior it names.
 func TestServer_ReportsAnOperationFailureAsAResultRatherThanAProtocolError(t *testing.T) {
 	c := qt.New(t)
-	session := connect(c, readOnlyConfig(), nil)
+	// The source is inside a configured root, so the call reaches the operation
+	// and fails on the dialect -- which is what this test is about. A source
+	// outside the scope would be refused earlier and measure nothing.
+	session := connect(c, readOnlyConfig(c, "."), nil)
 
 	result, err := session.CallTool(context.Background(), &mcp.CallToolParams{
 		Name: "render_schema",
@@ -237,8 +259,8 @@ func textOf(c *qt.C, result *mcp.CallToolResult) string {
 // still pass.
 func TestServer_ReturnsStructuredContentForASuccessfulCall(t *testing.T) {
 	c := qt.New(t)
-	session := connect(c, readOnlyConfig(), nil)
 	dir := c.TempDir()
+	session := connect(c, readOnlyConfig(c, dir), nil)
 	c.Assert(writeFile(dir, "models.go", bookshop), qt.IsNil)
 
 	result, err := session.CallTool(context.Background(), &mcp.CallToolParams{
@@ -277,4 +299,53 @@ type Author struct {
 // writeFile puts one file in a directory.
 func writeFile(dir, name, content string) error {
 	return os.WriteFile(filepath.Join(dir, name), []byte(content), 0o600)
+}
+
+func TestServer_ADeniedReadingToolIsRefusedThroughTheProtocol(t *testing.T) {
+	// The surfaces cannot differ. Ptah Assist speaks to this same server over an
+	// in-memory transport, so a refusal that held in the package and not on the
+	// wire would be a refusal only one of the two audiences got.
+	c := qt.New(t)
+	policy, err := agentpolicy.Assemble()
+	c.Assert(err, qt.IsNil)
+	target, err := agenttarget.New(agenttarget.Config{
+		Name: "app", URL: "postgres://u@127.0.0.1:1/app", Class: agentpolicy.ClassProduction,
+	})
+	c.Assert(err, qt.IsNil)
+	set, err := agenttarget.NewSet(target)
+	c.Assert(err, qt.IsNil)
+	agentSession, err := agentapi.NewSession(agentapi.SessionConfig{
+		Broker:  agentpolicy.NewBroker(policy),
+		Targets: set,
+	})
+	c.Assert(err, qt.IsNil)
+	client := connect(c, mcpserver.Config{Version: "test", Session: agentSession}, nil)
+
+	result, err := client.CallTool(context.Background(), &mcp.CallToolParams{
+		Name:      "read_database",
+		Arguments: make(map[string]any),
+	})
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(result.IsError, qt.IsTrue)
+	c.Assert(textOf(c, result), qt.Contains, "database.inspect")
+}
+
+func TestServer_TheDatabaseToolSchemaCarriesNoConnectionURL(t *testing.T) {
+	// The contract itself, not just the behavior: a schema with a URL field is
+	// an invitation for a model to supply one, and every argument a model
+	// supplies is one an untrusted repository can influence.
+	c := qt.New(t)
+
+	for _, tool := range tools(c, readOnlyConfig(c)) {
+		t.Run(tool.Name, func(t *testing.T) {
+			c := qt.New(t)
+			encoded, err := json.Marshal(tool.InputSchema)
+
+			c.Assert(err, qt.IsNil)
+			c.Assert(string(encoded), qt.Not(qt.Contains), "database_url")
+			c.Assert(string(encoded), qt.Not(qt.Contains), "password")
+			c.Assert(string(encoded), qt.Not(qt.Contains), "credential")
+		})
+	}
 }

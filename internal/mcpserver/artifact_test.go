@@ -71,9 +71,10 @@ func newWorkspace(c *qt.C, write agentpolicy.Verdict, approver agentpolicy.Appro
 	gates, err := agentgate.New(agentgate.Options{Dialect: "postgres"})
 	c.Assert(err, qt.IsNil)
 	session, err := agentapi.NewSession(agentapi.SessionConfig{
-		Workspace: workspace,
-		Broker:    agentpolicy.NewBroker(policy, options...),
-		Gates:     gates,
+		Workspace:   workspace,
+		SourceRoots: []string{root},
+		Broker:      agentpolicy.NewBroker(policy, options...),
+		Gates:       gates,
 	})
 	c.Assert(err, qt.IsNil)
 
@@ -136,8 +137,9 @@ func previewPatch(c *qt.C, session *mcp.ClientSession, digest string) map[string
 // migrationsDigest reads the artifact digest a patch must carry.
 func migrationsDigest(c *qt.C, session *mcp.ClientSession) string {
 	c.Helper()
-	described := structured(c, call(c, session, "describe_workspace", make(map[string]any)))
-	artifacts, _ := described["artifacts"].([]any)
+	described := structured(c, call(c, session, "describe_session", make(map[string]any)))
+	workspace, _ := described["workspace"].(map[string]any)
+	artifacts, _ := workspace["artifacts"].([]any)
 	c.Assert(artifacts, qt.HasLen, 1)
 	first, _ := artifacts[0].(map[string]any)
 	digest, _ := first["digest"].(string)
@@ -157,7 +159,7 @@ func TestServer_WithAWorkspaceOffersTheArtifactTools(t *testing.T) {
 	c.Assert(offered, qt.HasLen, 8,
 		qt.Commentf("four reading tools and four artifact tools"))
 	for _, name := range []string{
-		"describe_workspace",
+		"describe_session",
 		"read_artifact",
 		"preview_patch",
 		"apply_patch",
@@ -185,19 +187,20 @@ func TestServer_AnnotatesTheApplyToolAsTheOnlyWriter(t *testing.T) {
 	c.Assert(writers["apply_patch"], qt.IsTrue)
 	c.Assert(writers["preview_patch"], qt.IsFalse)
 	c.Assert(writers["read_artifact"], qt.IsFalse)
-	c.Assert(writers["describe_workspace"], qt.IsFalse)
+	c.Assert(writers["describe_session"], qt.IsFalse)
 }
 
-func TestDescribeWorkspace_ReportsTheDigestsAndTheRefusals(t *testing.T) {
+func TestDescribeSession_ReportsTheDigestsAndTheRefusals(t *testing.T) {
 	c := qt.New(t)
 	fixture := newWorkspace(c, agentpolicy.VerdictDeny, nil)
 	session := connect(c, fixture.config, nil)
 
-	described := structured(c, call(c, session, "describe_workspace", make(map[string]any)))
+	described := structured(c, call(c, session, "describe_session", make(map[string]any)))
 
-	c.Assert(described["root"], qt.Equals, fixture.root)
-	c.Assert(described["dialect"], qt.Equals, "postgres")
-	artifacts, _ := described["artifacts"].([]any)
+	workspace, _ := described["workspace"].(map[string]any)
+	c.Assert(workspace["root"], qt.Equals, fixture.root)
+	c.Assert(workspace["dialect"], qt.Equals, "postgres")
+	artifacts, _ := workspace["artifacts"].([]any)
 	c.Assert(artifacts, qt.HasLen, 1)
 	first, _ := artifacts[0].(map[string]any)
 	c.Assert(first["artifact"], qt.Equals, "migrations")
@@ -289,7 +292,7 @@ func TestApply_RefusesAWriteTheOperatorNeverEnabled(t *testing.T) {
 
 	c.Assert(result.IsError, qt.IsTrue)
 	c.Assert(textOf(c, result), qt.Contains, `"artifact.write:migrations" denied by invocation policy`)
-	c.Assert(textOf(c, result), qt.Contains, "describe_workspace reports what this session may do")
+	c.Assert(textOf(c, result), qt.Contains, "describe_session reports what this session may do")
 	_, statErr := os.Stat(filepath.Join(fixture.dir, "1700000100_add_status.up.sql"))
 	c.Assert(os.IsNotExist(statErr), qt.IsTrue)
 }
