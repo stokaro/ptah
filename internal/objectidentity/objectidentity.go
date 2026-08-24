@@ -446,17 +446,6 @@ func (b Builder) Index(qualifiedTable, index string) ID {
 	return id
 }
 
-// Constraint builds the identity of a constraint owned by a table.
-func (b Builder) Constraint(qualifiedTable, constraint string) ID {
-	table := b.Table(qualifiedTable)
-	return ID{
-		Kind:   KindConstraint,
-		Schema: table.Schema,
-		Parent: table.Name,
-		Name:   b.namePart(constraint, b.semantics.TableIdentityKey),
-	}
-}
-
 // ConstraintPartsVerbatim builds a constraint identity from an owning table
 // spelling and a constraint name, folding and trimming neither.
 //
