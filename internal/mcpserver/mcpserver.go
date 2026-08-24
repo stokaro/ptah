@@ -41,8 +41,8 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"go.5x5.cz/ptah/internal/agentapi"
+	"go.5x5.cz/ptah/internal/agentdiag"
 	"go.5x5.cz/ptah/internal/agentpolicy"
-	"go.5x5.cz/ptah/internal/agentworkspace"
 )
 
 // serverName is what a client sees in its tool list.
@@ -76,6 +76,7 @@ func New(cfg Config) (*mcp.Server, error) {
 	}, &mcp.ServerOptions{
 		Instructions: instructions(cfg),
 	})
+	server.AddReceivingMiddleware(diagnose)
 	register(server, cfg)
 	return server, nil
 }
@@ -279,41 +280,104 @@ func wrap[Req any, Res any](
 					InputRequests: mcp.InputRequestMap{approvalRequestID: pending.params},
 				}, nil, nil
 			}
-			// The error is returned rather than turned into a result here, and
-			// the difference is not cosmetic. The SDK packs a returned error
-			// into a tool result with IsError set -- which is what an agent
-			// should see, since a schema that will not load or a refused
-			// capability is something the caller asked about -- and it packs
-			// NO structured content alongside it. Building the result here
-			// instead leaves the SDK to attach the zero value of the response
-			// type, so a client reading structuredContent before isError finds
-			// a well-formed answer saying nothing.
-			return nil, nil, explainErr(err)
+			if result != nil {
+				// The operation failed and still has a structured answer. An
+				// apply whose verification refused the patch is the case: the
+				// response carries what the gates said, which digest the
+				// artifact holds now, and whether the undo completed -- and
+				// that last field is the one a caller must not miss. Prose
+				// alone would drop it, so the result is built here, with the
+				// payload attached, rather than left to the SDK.
+				return errorResult(err), result, nil
+			}
+			// With no structured answer the error is returned instead, and the
+			// difference is not cosmetic. The SDK packs a returned error into a
+			// tool result with IsError set -- which is what an agent should
+			// see, since a schema that will not load or a refused capability is
+			// something the caller asked about -- and it packs NO structured
+			// content alongside it. Building the result here instead would
+			// leave the SDK to attach the zero value of the response type, so a
+			// client reading structuredContent before isError would find a
+			// well-formed answer saying nothing. The code and the hint reach
+			// that result through diagnose, which annotates it after the SDK
+			// has packed it.
+			//
+			// The fallback is applied here rather than there because it is what
+			// makes the two kinds of failure distinguishable: after this line
+			// every error an operation produced carries a code, so an uncoded
+			// one reaching the middleware is the SDK's own, raised before the
+			// operation ran.
+			return nil, nil, agentdiag.WithFallback(agentdiag.CodeInternal, err)
 		}
 		return nil, result, nil
 	}
 }
 
-// explainErr appends the operator action that would clear a refusal.
+// diagnosticKey is where the structured diagnostic rides on a failed call.
+//
+// The protocol's _meta is the designated place for a server to say something
+// the schema does not cover, and a failure is exactly that: the tool's output
+// schema describes the answer, not the refusal. The key is namespaced because
+// _meta is shared with every other participant in the connection.
+const diagnosticKey = "ptah.5x5.cz/diagnostic"
+
+// errorResult renders one failure the way this surface reports failures.
+//
+// It is the single place the taxonomy reaches the wire, used both by the
+// handler -- when the failing operation also has a structured answer -- and by
+// the middleware that annotates everything else.
+func errorResult(err error) *mcp.CallToolResult {
+	diagnostic := agentdiag.Of(err)
+	diagnostic.Hint = hintFor(diagnostic.Code)
+	return &mcp.CallToolResult{
+		Meta:    mcp.Meta{diagnosticKey: diagnostic},
+		Content: []mcp.Content{&mcp.TextContent{Text: diagnostic.String()}},
+		IsError: true,
+	}
+}
+
+// diagnose annotates every failed tool call with its taxonomy code.
+//
+// It is middleware rather than something the handler does, because the handler
+// does not build the result in the ordinary failure path: the SDK packs a
+// returned error into a tool result itself, and this is the hook that reaches
+// that result afterwards. What the SDK packed is available through GetError,
+// including the failures the SDK raised on its own -- an argument that does not
+// match the input schema now carries a code like any other refusal.
+func diagnose(next mcp.MethodHandler) mcp.MethodHandler {
+	return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
+		result, err := next(ctx, method, req)
+		call, isCall := result.(*mcp.CallToolResult)
+		if !isCall || call == nil || call.GetError() == nil {
+			return result, err
+		}
+		// An uncoded error here never reached an operation: every operation
+		// error is coded on the way out of wrap. What is left is the SDK
+		// refusing the arguments against the tool's input schema, which is the
+		// caller's request being wrong -- measured, because the SDK reports it
+		// as plain text with no type to match on.
+		annotated := errorResult(agentdiag.WithFallback(
+			agentdiag.CodeInvalidRequest, call.GetError()))
+		call.Meta = annotated.Meta
+		call.Content = annotated.Content
+		return call, err
+	}
+}
+
+// hintFor names the operator action that would clear a refusal.
 //
 // A refusal that only says "denied" leaves an agent to guess, and an agent that
 // guesses retries. Naming what would grant the capability turns a dead end into
 // a message the person watching can act on, which is the specification's own
-// guidance for a refused call that could be recovered. The original error is
-// wrapped rather than replaced, so a caller inside this process still matches
-// the sentinel.
-func explainErr(err error) error {
-	hint := hintFor(err)
-	if hint == "" {
-		return err
-	}
-	return fmt.Errorf("%w. %s", err, hint)
-}
-
-// hintFor names the operator action for the refusals that have one.
-func hintFor(err error) string {
-	switch {
-	case errors.Is(err, agentpolicy.ErrApprovalUnavailable):
+// guidance for a refused call that could be recovered.
+//
+// It is keyed by code rather than by sentinel so the remedies and the published
+// taxonomy cannot drift apart, and because the remedy is this surface's to
+// write: the flags below are how an MCP operator starts Ptah, and another
+// surface consuming the same contract would name something else.
+func hintFor(code agentdiag.Code) string {
+	switch code {
+	case agentdiag.CodeApprovalUnavailable:
 		// --allow-write on its own resolves to ask, which is the state that
 		// produced this error: an operator who followed that advice would meet
 		// the same refusal again. --auto-approve is what clears it for a client
@@ -323,15 +387,23 @@ func hintFor(err error) string {
 			"ptah mcp --workspace . --allow-write=migrations --auto-approve. " +
 			"Naming a class without --auto-approve asks for each patch, which is " +
 			"what could not be done here."
-	case errors.Is(err, agentworkspace.ErrClassNotConfigured):
+	case agentdiag.CodeArtifactClassNotConfigured:
 		return "The operator starts the server with a directory for this class, for example: " +
 			"ptah mcp --workspace . --migrations-dir ./migrations."
-	case errors.Is(err, agentapi.ErrNoWorkspace):
+	case agentdiag.CodeNoWorkspace:
 		return "Start it with --workspace to reach the artifact operations."
-	}
-	if _, denied := errors.AsType[*agentpolicy.DeniedError](err); denied {
+	case agentdiag.CodeNoSourceScope:
+		return "The operator names the directories a declared schema may be read from, " +
+			"for example: ptah mcp --schema-source-root ./models."
+	case agentdiag.CodeCapabilityDenied:
 		return "The operator decides this when starting the server; " +
 			"describe_session reports what this session may do."
+	case agentdiag.CodeDigestMismatch:
+		return "Call read_artifact for the digest the artifact holds now and compose a new " +
+			"patch against it."
+	case agentdiag.CodeGateFailed:
+		return "The patch was undone. The response reports every diagnostic the patch " +
+			"introduced and the digest the artifact holds now."
 	}
 	return ""
 }

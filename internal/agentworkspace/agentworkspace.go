@@ -43,6 +43,7 @@ import (
 	"sort"
 	"strings"
 
+	"go.5x5.cz/ptah/internal/agentdiag"
 	"go.5x5.cz/ptah/internal/agentpolicy"
 	"go.5x5.cz/ptah/internal/pathguard"
 )
@@ -68,15 +69,16 @@ var (
 	// ErrClassNotConfigured reports a class the operator did not point at a
 	// directory. It is distinct from a permission denial: the capability may
 	// well be granted, and there is still nowhere to put the file.
-	ErrClassNotConfigured = errors.New("artifact class is not configured for this workspace")
+	ErrClassNotConfigured = agentdiag.Sentinel(agentdiag.CodeArtifactClassNotConfigured,
+		"artifact class is not configured for this workspace")
 	// ErrUnsafePath reports a path that does not mean what it looks like.
-	ErrUnsafePath = errors.New("unsafe artifact path")
+	ErrUnsafePath = agentdiag.Sentinel(agentdiag.CodeUnsafePath, "unsafe artifact path")
 	// ErrTooLarge reports an artifact past [MaxFileBytes], or a scope past
 	// [MaxScopeFiles].
-	ErrTooLarge = errors.New("artifact too large")
+	ErrTooLarge = agentdiag.Sentinel(agentdiag.CodeArtifactTooLarge, "artifact too large")
 	// ErrNotRegularFile reports a name that exists as something other than a
 	// regular file: a directory, a symbolic link, a device.
-	ErrNotRegularFile = errors.New("not a regular file")
+	ErrNotRegularFile = agentdiag.Sentinel(agentdiag.CodeNotRegularFile, "not a regular file")
 )
 
 // ClassConfig points one artifact class at one directory.

@@ -2,9 +2,10 @@ package agentpolicy
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"sync"
+
+	"go.5x5.cz/ptah/internal/agentdiag"
 )
 
 // ErrApprovalUnavailable reports a [VerdictAsk] reached in a session that has
@@ -15,10 +16,11 @@ import (
 // run somewhere a human can answer, or grant the capability up front. What it
 // must never become is an allow -- a non-interactive run is exactly where the
 // silent promotion would go unnoticed.
-var ErrApprovalUnavailable = errors.New("operation requires approval and this session cannot ask")
+var ErrApprovalUnavailable = agentdiag.Sentinel(agentdiag.CodeApprovalUnavailable,
+	"operation requires approval and this session cannot ask")
 
 // ErrApprovalRefused reports that the person asked said no.
-var ErrApprovalRefused = errors.New("approval refused")
+var ErrApprovalRefused = agentdiag.Sentinel(agentdiag.CodeApprovalRefused, "approval refused")
 
 // Subject is the exact thing an approval is being asked about.
 //
@@ -257,4 +259,13 @@ type DeniedError struct {
 // denied" without either sends the reader to the wrong file.
 func (e *DeniedError) Error() string {
 	return fmt.Sprintf("%q denied by %s policy", e.Request, e.Decision.Layer)
+}
+
+// DiagnosticCode places a refusal in the agent error taxonomy.
+//
+// A denial and a hard denial answer with the same code on purpose: the caller's
+// next move is identical, and the layer that refused is already in the message
+// for the person who wants to know which file to edit.
+func (e *DeniedError) DiagnosticCode() agentdiag.Code {
+	return agentdiag.CodeCapabilityDenied
 }

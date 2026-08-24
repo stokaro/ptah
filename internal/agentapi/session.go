@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"go.5x5.cz/ptah/internal/agentaudit"
+	"go.5x5.cz/ptah/internal/agentdiag"
 	"go.5x5.cz/ptah/internal/agentgate"
 	"go.5x5.cz/ptah/internal/agentpatch"
 	"go.5x5.cz/ptah/internal/agentpolicy"
@@ -44,10 +45,11 @@ const maxLivePreviews = 32
 var (
 	// ErrNoWorkspace reports an operation that needs a workspace on a session
 	// that has none, which is what a read-only server is.
-	ErrNoWorkspace = errors.New("this session has no workspace: it was started without one")
+	ErrNoWorkspace = agentdiag.Sentinel(agentdiag.CodeNoWorkspace,
+		"this session has no workspace: it was started without one")
 	// ErrUnknownPreview reports a preview token that was never minted, was
 	// already used, or has expired.
-	ErrUnknownPreview = errors.New("unknown or expired preview")
+	ErrUnknownPreview = agentdiag.Sentinel(agentdiag.CodeUnknownPreview, "unknown or expired preview")
 )
 
 // SessionConfig is everything a mutating session needs, all of it resolved by
@@ -676,6 +678,11 @@ type ApplyPatchResponse struct {
 // ApplyPatch applies a previewed patch, verifies the result, and undoes it if
 // the verification found something the patch introduced.
 //
+// It returns a response and an error together when the patch was written and
+// undone: the caller needs both halves, and a nil response would hide the
+// diagnostics that explain the refusal. Every other failure returns a nil
+// response.
+//
 // Owner: internal/agentpatch, gated by internal/agentpolicy and verified by
 // internal/agentgate.
 func (s *Session) ApplyPatch(
@@ -708,14 +715,23 @@ func (s *Session) ApplyPatch(
 
 	result, applyErr := agentpatch.Apply(ctx, plan, s.gates)
 	s.recordApply(plan, result, approved, applyErr)
-	if applyErr != nil {
-		return nil, applyErr
-	}
-	return &ApplyPatchResponse{
+	response := &ApplyPatchResponse{
 		Result:   result,
 		Approved: approved,
 		Notice:   UntrustedContentNotice,
-	}, nil
+	}
+	if applyErr != nil {
+		if result == nil {
+			return nil, applyErr
+		}
+		// A verification that refused the patch produces both: the error says
+		// the apply did not stand, and the result says what the gates found,
+		// what the artifact holds now, and whether the undo completed. That
+		// last field is the one state a caller must not ignore, and returning
+		// the error alone would be the surface deciding it does not matter.
+		return response, applyErr
+	}
+	return response, nil
 }
 
 // authorizePlan asks the broker for every capability the plan needs, and asks a

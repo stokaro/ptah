@@ -26,14 +26,16 @@ import (
 	"sort"
 	"strings"
 
+	"go.5x5.cz/ptah/internal/agentdiag"
 	"go.5x5.cz/ptah/internal/agentpolicy"
 )
 
 // ErrUnknown reports a target identity nothing configured matches.
-var ErrUnknown = errors.New("no such database target")
+var ErrUnknown = agentdiag.Sentinel(agentdiag.CodeInvalidRequest, "no such database target")
 
 // ErrNoneConfigured reports that the process has no live database at all.
-var ErrNoneConfigured = errors.New("no database target is configured")
+var ErrNoneConfigured = agentdiag.Sentinel(agentdiag.CodeNoDatabaseTarget,
+	"no database target is configured")
 
 // Target is one operator-configured live database.
 //

@@ -48,7 +48,6 @@ package agentpatch
 import (
 	"crypto/sha256"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"io/fs"
 	"slices"
@@ -56,6 +55,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"go.5x5.cz/ptah/internal/agentdiag"
 	"go.5x5.cz/ptah/internal/agentpolicy"
 	"go.5x5.cz/ptah/internal/agentworkspace"
 )
@@ -75,15 +75,16 @@ var (
 	// ErrDigestMismatch reports that the artifact changed since the patch was
 	// composed. It is the conflict-detection result, and it is recoverable: the
 	// caller re-reads and composes a new patch.
-	ErrDigestMismatch = errors.New("artifact digest does not match")
+	ErrDigestMismatch = agentdiag.Sentinel(agentdiag.CodeDigestMismatch, "artifact digest does not match")
 	// ErrInvalidPatch reports a patch that is malformed rather than merely
 	// unappliable.
-	ErrInvalidPatch = errors.New("invalid patch")
+	ErrInvalidPatch = agentdiag.Sentinel(agentdiag.CodeInvalidPatch, "invalid patch")
 	// ErrGateFailed reports that verification found an error the patch
 	// introduced, and that the patch was rolled back.
-	ErrGateFailed = errors.New("verification gate failed")
+	ErrGateFailed = agentdiag.Sentinel(agentdiag.CodeGateFailed, "verification gate failed")
 	// ErrNameCollision reports two paths one filesystem cannot tell apart.
-	ErrNameCollision = errors.New("path collides with another path in the same scope")
+	ErrNameCollision = agentdiag.Sentinel(agentdiag.CodeInvalidPatch,
+		"path collides with another path in the same scope")
 )
 
 // Operation is what a change does to one path.
