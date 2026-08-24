@@ -59,6 +59,9 @@ jobs:
       - name: Check documented lint rules
         run: scripts/check-lint-rules.sh
 
+      - name: Check the generated agent-surface tables
+        run: scripts/check-agent-surface.sh
+
       - name: Check public Go API ledger
         run: scripts/check-public-api.sh
 
