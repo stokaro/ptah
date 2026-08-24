@@ -1,23 +1,27 @@
 package agentapi
 
 import (
-	"errors"
 	"fmt"
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"go.5x5.cz/ptah/internal/agentdiag"
 )
 
 // ErrNoSourceScope reports that no directory was configured for schema sources
 // to be read from.
-var ErrNoSourceScope = errors.New("no schema source directory is configured")
+var ErrNoSourceScope = agentdiag.Sentinel(agentdiag.CodeNoSourceScope,
+	"no schema source directory is configured")
 
 // ErrSourceOutsideScope reports a schema source outside every configured root.
-var ErrSourceOutsideScope = errors.New("schema source is outside the configured directories")
+var ErrSourceOutsideScope = agentdiag.Sentinel(agentdiag.CodeUnsafePath,
+	"schema source is outside the configured directories")
 
 // ErrSourceNotLocal reports a schema source that would be fetched rather than
 // read.
-var ErrSourceNotLocal = errors.New("schema source is not a local path")
+var ErrSourceNotLocal = agentdiag.Sentinel(agentdiag.CodeUnsafePath,
+	"schema source is not a local path")
 
 // sourceScope is where a session may read declared schemas from.
 //

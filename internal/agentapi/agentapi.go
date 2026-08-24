@@ -29,12 +29,12 @@ package agentapi
 
 import (
 	"context"
-	"fmt"
 
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/agentdiag"
 	"go.5x5.cz/ptah/internal/agenttarget"
 	"go.5x5.cz/ptah/internal/schemalineage"
 	"go.5x5.cz/ptah/internal/schemaload"
@@ -66,6 +66,11 @@ import (
 // the operator configured, and a source that would be fetched rather than
 // opened is refused -- schema loading was otherwise a route around
 // network.arbitrary, which no layer may grant.
+// 2026-08-24 also gave every failure a code from
+// [go.5x5.cz/ptah/internal/agentdiag], and made apply_patch answer with both an
+// error and a response when verification undid the patch. A client that read
+// only the message text still works; one that branches on the code no longer
+// has to parse prose.
 const Version = "2026-08-24"
 
 // SchemaSource names where a declared schema is read from.
@@ -88,13 +93,18 @@ func (s SchemaSource) empty() bool {
 
 func (s SchemaSource) load(ctx context.Context, dialect string) (*goschema.Database, error) {
 	if s.empty() {
-		return nil, fmt.Errorf("no schema source: name at least one root_dirs entry or schema_files entry")
+		return nil, agentdiag.Errorf(agentdiag.CodeInvalidRequest,
+			"no schema source: name at least one root_dirs entry or schema_files entry")
 	}
-	return schemaload.LoadContext(ctx, schemaload.Options{
+	database, err := schemaload.LoadContext(ctx, schemaload.Options{
 		RootDirs:    s.RootDirs,
 		SchemaFiles: s.SchemaFiles,
 		Dialect:     dialect,
 	})
+	// The loader's failures are coded here rather than at each call site,
+	// because every operation reads a source the same way and a code assigned
+	// per caller is a code that eventually differs per caller.
+	return database, agentdiag.Wrap(agentdiag.CodeSchemaSourceUnreadable, err)
 }
 
 // normalizedDialect resolves a requested dialect, refusing an unknown one by
@@ -105,11 +115,12 @@ func (s SchemaSource) load(ctx context.Context, dialect string) (*goschema.Datab
 // PostgreSQL produces an answer about a database the caller did not ask about.
 func normalizedDialect(requested string) (string, error) {
 	if requested == "" {
-		return "", fmt.Errorf("dialect is required: a declaration valid for one target can be invalid for another")
+		return "", agentdiag.Errorf(agentdiag.CodeInvalidRequest,
+			"dialect is required: a declaration valid for one target can be invalid for another")
 	}
 	dialect := platform.NormalizeDialect(requested)
 	if dialect == "" {
-		return "", fmt.Errorf("unknown dialect %q", requested)
+		return "", agentdiag.Errorf(agentdiag.CodeInvalidRequest, "unknown dialect %q", requested)
 	}
 	return dialect, nil
 }
@@ -201,7 +212,7 @@ func renderSchema(ctx context.Context, req RenderSchemaRequest) (*RenderSchemaRe
 	}
 	statements, err := renderer.GetOrderedCreateStatements(database, dialect)
 	if err != nil {
-		return nil, fmt.Errorf("render %s: %w", dialect, err)
+		return nil, agentdiag.Errorf(agentdiag.CodeRenderFailed, "render %s: %w", dialect, err)
 	}
 	return &RenderSchemaResponse{Dialect: dialect, Statements: statements}, nil
 }
@@ -313,13 +324,13 @@ func readDatabase(
 ) (*ReadDatabaseResponse, error) {
 	conn, err := dbschema.ConnectToDatabase(ctx, target.URL())
 	if err != nil {
-		return nil, fmt.Errorf("connect: %w", err)
+		return nil, agentdiag.Errorf(agentdiag.CodeDatabaseUnreachable, "connect: %w", err)
 	}
 	defer dbschema.CloseAndWarn(conn)
 
 	live, err := dbschema.ReadSchemaWithSchemas(conn, req.Schemas)
 	if err != nil {
-		return nil, fmt.Errorf("read schema: %w", err)
+		return nil, agentdiag.Errorf(agentdiag.CodeDatabaseReadFailed, "read schema: %w", err)
 	}
 	info := conn.Info()
 	response := &ReadDatabaseResponse{
