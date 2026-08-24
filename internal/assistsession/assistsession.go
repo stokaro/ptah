@@ -114,6 +114,13 @@ type Record struct {
 	// A session that did not record this could not tell a checked answer from
 	// an unchecked one when it is read back.
 	Verified bool `json:"verified,omitempty"`
+	// Error is why the run ended badly, empty when it did not.
+	//
+	// A run that hit a limit, lost the endpoint or was refused still produces
+	// an answer record, and without this the record is an empty answer that
+	// reads exactly like a model with nothing to say. A consumer of the record
+	// stream has no other channel to learn it from.
+	Error string `json:"error,omitempty"`
 }
 
 // Summary is one session as a listing shows it.
@@ -174,7 +181,11 @@ type Writer struct {
 }
 
 // Create starts a session and writes its header.
-func (s *Store) Create(id string, header Record) (*Writer, error) {
+//
+// Extra recorders are mirrors: every record, the header included, is written to
+// them as well as to the file. That is how `--format jsonl` prints a
+// conversation without keeping a second copy of the code that formats one.
+func (s *Store) Create(id string, header Record, mirrors ...Recorder) (Recorder, error) {
 	if err := validateID(id); err != nil {
 		return nil, err
 	}
@@ -188,13 +199,18 @@ func (s *Store) Create(id string, header Record) (*Writer, error) {
 	}
 
 	writer := &Writer{id: id, path: path, file: file, clock: s.clock}
+	recorder := Recorder(writer)
+	if len(mirrors) > 0 {
+		recorder = NewTee(s.clock, append([]Recorder{writer}, mirrors...)...)
+	}
+
 	header.Kind = KindHeader
 	header.SchemaVersion = SchemaVersion
 	header.SessionID = id
-	if err := writer.Append(header); err != nil {
+	if err := recorder.Append(header); err != nil {
 		return nil, errors.Join(err, file.Close())
 	}
-	return writer, nil
+	return recorder, nil
 }
 
 // Append writes one record, stamping it with the store's clock.
@@ -204,6 +220,16 @@ func (s *Store) Create(id string, header Record) (*Writer, error) {
 // appears to belong to a different moment.
 func (w *Writer) Append(record Record) error {
 	record.At = w.clock().UTC()
+	return w.appendStamped(record)
+}
+
+// appendStamped writes a record whose timestamp is already set.
+//
+// [Tee] stamps once and hands the same record to every sink, so that the copy a
+// person reads on stdout and the copy on disk are the same bytes rather than
+// two encodings of the same moment. It is unexported because that is the only
+// caller allowed to decide a record's time.
+func (w *Writer) appendStamped(record Record) error {
 	line, err := json.Marshal(record)
 	if err != nil {
 		return fmt.Errorf("encode the session record: %w", err)

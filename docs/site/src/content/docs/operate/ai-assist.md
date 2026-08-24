@@ -122,6 +122,43 @@ answered says so:
 That line is the difference between an answer Ptah stands behind and a model
 talking about databases in general, and the two look identical without it.
 
+### Reading a run with a program
+
+`ptah assist explain --format jsonl` prints the conversation to stdout as JSON
+lines, written as each thing happens rather than gathered at the end:
+
+```bash
+ptah assist explain "what changed in the last migration?" \
+  --workspace . --migrations-dir ./migrations --dialect postgres \
+  --format jsonl
+```
+
+```json
+{"type":"session","at":"...","schema_version":1,"model":"...","provider":"local"}
+{"type":"request","at":"...","text":"what changed in the last migration?"}
+{"type":"tool","at":"...","tool":"read_artifact","result":"..."}
+{"type":"answer","at":"...","text":"...","turns":2,"stop_reason":"answer","verified":true}
+```
+
+These are the session file's own records, in the same schema, carrying the same
+`schema_version` — so what a program reads on stdout is what it will read back
+out of `.ptah/sessions/`, byte for byte. There is one format to learn and one
+thing to version, rather than a document for pipes and a file for later.
+
+The `tool` line is printed when the tool answers, before the model is asked
+again, so a long run reports what it is doing instead of going quiet. The same
+records reach the session file at that moment: a run killed halfway leaves the
+question and every tool that had already answered, rather than nothing at all.
+
+A run that ends badly still ends with an `answer` record, carrying `stop_reason`
+and an `error`. Without them an interrupted run is an empty answer, which reads
+exactly like a model that had nothing to say — and stdout is the only channel
+this format has. The summary line goes to **stderr**, so stdout stays one record
+per line and nothing else.
+
+Pair it with `--ephemeral` for a run that reports everything and leaves nothing
+in the checkout.
+
 Every run is bounded — turns, total tool calls, repeats of one identical call,
 and the size of a single tool result. A model that loops terminates with a
 diagnostic naming which limit it hit, and the record is printed either way.
