@@ -728,27 +728,44 @@ func unquoteIdentifier(name string) string {
 // renderedDefaultForDialect answers the default the renderer would write, where
 // that differs from the declared one.
 //
-// Only Oracle needs it today, and only for booleans: BOOLEAN becomes NUMBER(1)
-// there, so a column declared `default="true"` is written as `DEFAULT 1` and
-// read back as `1`. Comparing the declared `true` against the catalog's `1`
-// reported a default change on a column that matched, on every run.
+// Two dialects need it, and both for booleans.
+//
+// Oracle has no boolean: BOOLEAN becomes NUMBER(1) there, so a column declared
+// `default="true"` is written as `DEFAULT 1` and read back as `1`. Comparing
+// the declared `true` against the catalog's `1` reported a default change on a
+// column that matched, on every run.
+//
+// SQLite has no boolean either, and stores what the affinity converts: writing
+// `DEFAULT 'true'` on a numeric column stored the TEXT "true" rather than 1,
+// so the renderer writes the number (stokaro/ptah#2092) and the comparison has
+// to read the declaration the same way.
 //
 // It is the same question the type comparison asks one function above -- not
 // "are these the same word" but "would rendering this declaration produce what
 // the catalog holds" -- and it is answered by the renderer's own mapping rather
 // than a second copy of it.
 func renderedDefaultForDialect(declaredDefault, declaredType, dialect string) string {
-	if platform.NormalizeDialect(dialect) != platform.Oracle {
+	switch platform.NormalizeDialect(dialect) {
+	case platform.Oracle:
+		if base := oracletype.Base(declaredType); base != "BOOLEAN" && base != "BOOL" {
+			return declaredDefault
+		}
+	case platform.SQLite:
+		// The affinity decides, because the affinity is what SQLite converts
+		// by. A TEXT or BLOB column keeps the characters, so `true` there is
+		// the word rather than the number.
+		switch normalize.SQLiteAffinity(declaredType) {
+		case "TEXT", "BLOB":
+			return declaredDefault
+		}
+	default:
 		return declaredDefault
 	}
-	switch oracletype.Base(declaredType) {
-	case "BOOLEAN", "BOOL":
-		switch strings.ToLower(strings.Trim(declaredDefault, "'")) {
-		case "true":
-			return "1"
-		case "false":
-			return "0"
-		}
+	switch strings.ToLower(strings.Trim(declaredDefault, "'")) {
+	case "true":
+		return "1"
+	case "false":
+		return "0"
 	}
 	return declaredDefault
 }

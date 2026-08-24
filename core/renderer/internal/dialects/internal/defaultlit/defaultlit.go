@@ -71,3 +71,53 @@ func Render(value string, quote func(string) string) string {
 	}
 	return quote(value)
 }
+
+// IsPlainNumber reports whether value is a decimal number written the way SQL
+// writes one.
+//
+// It is a hand-rolled check rather than strconv.ParseFloat because ParseFloat
+// accepts `NaN`, `Inf` and `0x1p-2`, and PostgreSQL takes none of those as a
+// bare default -- `NaN` has to be `'NaN'::numeric`. A value this refuses simply
+// keeps its quotes.
+func IsPlainNumber(value string) bool {
+	digits := strings.TrimLeft(value, "+-")
+	if digits == "" || digits != value && len(value)-len(digits) > 1 {
+		return false
+	}
+	mantissa, exponent, hasExponent := cutExponent(digits)
+	if hasExponent && !isDigits(strings.TrimLeft(exponent, "+-")) {
+		return false
+	}
+	whole, fraction, hasPoint := strings.Cut(mantissa, ".")
+	if !hasPoint {
+		return isDigits(whole)
+	}
+	if whole == "" {
+		return isDigits(fraction)
+	}
+	return isDigits(whole) && (fraction == "" || isDigits(fraction))
+}
+
+// cutExponent splits a mantissa from an `e`-notation exponent.
+func cutExponent(value string) (mantissa, exponent string, found bool) {
+	for i := range len(value) {
+		if value[i] == 'e' || value[i] == 'E' {
+			return value[:i], value[i+1:], true
+		}
+	}
+	return value, "", false
+}
+
+// isDigits reports whether every byte is a decimal digit, and that there is at
+// least one.
+func isDigits(value string) bool {
+	if value == "" {
+		return false
+	}
+	for i := range len(value) {
+		if value[i] < '0' || value[i] > '9' {
+			return false
+		}
+	}
+	return true
+}
