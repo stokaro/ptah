@@ -4,6 +4,12 @@
 - Deciders: Ptah maintainers
 - Issue: [#1484](https://github.com/stokaro/ptah/issues/1484), under [#1483](https://github.com/stokaro/ptah/issues/1483)
 - Supersedes: nothing
+- Superseded in part: section 3.4 by
+  [ADR 0006](0006-one-authorized-agent-runtime.md). The read operations no
+  longer read what the caller names with the process's own permissions: schema
+  sources resolve inside operator-configured directories, and a live database is
+  operator-configured rather than named by the caller. The threat model and the
+  rest of the boundary analysis stand.
 
 ## 1. Context
 

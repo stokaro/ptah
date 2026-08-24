@@ -116,7 +116,7 @@ type Broker struct {
 	recorder func(Outcome)
 
 	mu      sync.Mutex
-	granted map[cell]struct{}
+	granted map[grantKey]struct{}
 }
 
 // BrokerOption configures a broker.
@@ -140,7 +140,7 @@ func WithRecorder(recorder func(Outcome)) BrokerOption {
 
 // NewBroker binds a resolved policy to a session.
 func NewBroker(policy *Policy, options ...BrokerOption) *Broker {
-	broker := &Broker{policy: policy, granted: make(map[cell]struct{})}
+	broker := &Broker{policy: policy, granted: make(map[grantKey]struct{})}
 	for _, option := range options {
 		option(broker)
 	}
@@ -189,7 +189,10 @@ func (b *Broker) resolve(ctx context.Context, req Request, subject Subject, deci
 
 // ask consults the session grants and then the approver.
 func (b *Broker) ask(ctx context.Context, req Request, subject Subject, base Outcome) Outcome {
-	target := cell{Capability: req.Capability, Artifact: req.Artifact, Database: req.Database}
+	target := grantKey{
+		cell:     cell{Capability: req.Capability, Artifact: req.Artifact, Database: req.Database},
+		TargetID: req.TargetID,
+	}
 	if b.hasSessionGrant(target) {
 		base.Permitted = true
 		base.Approved = true
@@ -219,14 +222,26 @@ func (b *Broker) ask(ctx context.Context, req Request, subject Subject, base Out
 	return base
 }
 
-func (b *Broker) hasSessionGrant(target cell) bool {
+// grantKey identifies what a session grant covers.
+//
+// It is the policy cell plus the exact target. A verdict is decided about a
+// class, but a grant is given about a database: approving "this dev database
+// for the rest of the session" must not silently cover the next dev database,
+// and repointing a target at a different URL changes its identity, so the old
+// grant does not carry to the new database either.
+type grantKey struct {
+	cell
+	TargetID string
+}
+
+func (b *Broker) hasSessionGrant(target grantKey) bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	_, granted := b.granted[target]
 	return granted
 }
 
-func (b *Broker) rememberSessionGrant(target cell) {
+func (b *Broker) rememberSessionGrant(target grantKey) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.granted[target] = struct{}{}

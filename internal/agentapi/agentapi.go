@@ -35,6 +35,7 @@ import (
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/agenttarget"
 	"go.5x5.cz/ptah/internal/schemalineage"
 	"go.5x5.cz/ptah/internal/schemaload"
 	"go.5x5.cz/ptah/internal/schemavalidate"
@@ -44,12 +45,28 @@ import (
 // to; a change to the shape of any request or response below changes it, and so
 // does adding an operation.
 //
-// 2026-08-23 added the artifact operations: describe_workspace, read_artifact,
+// 2026-08-23 added the artifact operations: describe_session, read_artifact,
 // preview_patch and apply_patch. They live on a [Session] rather than beside the
 // four read operations below, because an artifact operation is meaningless
 // without knowing which directory it means and that must not come from the
 // caller.
-const Version = "2026-08-23"
+//
+// 2026-08-24 made the policy the boundary it was reported to be. Every operation
+// now runs on a [Session] and asks the capability broker first; the four read
+// operations had been callable beside it, which made every verdict published
+// about them decorative -- database.inspect resolved to deny and read_database
+// connected anyway.
+//
+// Three externally visible consequences. read_database no longer takes a
+// connection URL: it names one of the databases the operator configured, so a
+// caller cannot choose the resource its own authorization is decided about, and
+// cannot hand Ptah a credential. describe_workspace became describe_session: it
+// works without a workspace and reports what policy permits separately from
+// what this process can reach. A declared schema is read only from directories
+// the operator configured, and a source that would be fetched rather than
+// opened is refused -- schema loading was otherwise a route around
+// network.arbitrary, which no layer may grant.
+const Version = "2026-08-24"
 
 // SchemaSource names where a declared schema is read from.
 //
@@ -125,7 +142,7 @@ type ValidateSchemaResponse struct {
 // ValidateSchema reports structural problems without a database.
 //
 // Owner: internal/schemavalidate.
-func ValidateSchema(ctx context.Context, req ValidateSchemaRequest) (*ValidateSchemaResponse, error) {
+func validateSchema(ctx context.Context, req ValidateSchemaRequest) (*ValidateSchemaResponse, error) {
 	dialect, err := normalizedDialect(req.Dialect)
 	if err != nil {
 		return nil, err
@@ -173,7 +190,7 @@ type RenderSchemaResponse struct {
 // order.
 //
 // Owner: core/renderer.
-func RenderSchema(ctx context.Context, req RenderSchemaRequest) (*RenderSchemaResponse, error) {
+func renderSchema(ctx context.Context, req RenderSchemaRequest) (*RenderSchemaResponse, error) {
 	dialect, err := normalizedDialect(req.Dialect)
 	if err != nil {
 		return nil, err
@@ -225,7 +242,7 @@ type SchemaLineageResponse struct {
 // SchemaLineage traces which base columns feed each view column.
 //
 // Owner: internal/schemalineage.
-func SchemaLineage(ctx context.Context, req SchemaLineageRequest) (*SchemaLineageResponse, error) {
+func schemaLineage(ctx context.Context, req SchemaLineageRequest) (*SchemaLineageResponse, error) {
 	dialect, err := normalizedDialect(req.Dialect)
 	if err != nil {
 		return nil, err
@@ -258,8 +275,17 @@ func SchemaLineage(ctx context.Context, req SchemaLineageRequest) (*SchemaLineag
 
 // ReadDatabaseRequest asks what a live database holds.
 type ReadDatabaseRequest struct {
-	DatabaseURL string   `json:"database_url" jsonschema:"connection URL of the database to read"`
-	Schemas     []string `json:"schemas,omitempty" jsonschema:"schemas to read; empty reads the connection default"`
+	// Target names one of the databases the operator configured. Empty selects
+	// the only one when a process has exactly one.
+	//
+	// A name, not a URL. A caller that could supply the connection string would
+	// be choosing the resource its own authorization is decided about, and
+	// would be handing Ptah a credential besides. What may be named here is
+	// what the operator already named.
+	Target string `json:"target,omitempty" jsonschema:"name of a configured database target; omit when the process has exactly one"`
+	// Schemas narrows the read. It carries no authority: it selects among
+	// what the authorized connection can already see.
+	Schemas []string `json:"schemas,omitempty" jsonschema:"schemas to read; empty reads the connection default"`
 }
 
 // DatabaseObject is one object the read returned.
@@ -280,11 +306,12 @@ type ReadDatabaseResponse struct {
 // ReadDatabase reads a live database's schema.
 //
 // Owner: dbschema. It opens a connection and closes it; it runs no DDL.
-func ReadDatabase(ctx context.Context, req ReadDatabaseRequest) (*ReadDatabaseResponse, error) {
-	if req.DatabaseURL == "" {
-		return nil, fmt.Errorf("database_url is required")
-	}
-	conn, err := dbschema.ConnectToDatabase(ctx, req.DatabaseURL)
+func readDatabase(
+	ctx context.Context,
+	target *agenttarget.Target,
+	req ReadDatabaseRequest,
+) (*ReadDatabaseResponse, error) {
+	conn, err := dbschema.ConnectToDatabase(ctx, target.URL())
 	if err != nil {
 		return nil, fmt.Errorf("connect: %w", err)
 	}

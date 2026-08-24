@@ -6,8 +6,10 @@
 - Supersedes: nothing
 - Superseded in part: sections 1.1 and 1.2 by
   [ADR 0005](0005-agent-surface-inventory.md), which moves the inventory to a
-  generated document and corrects the classification axis. The decisions in
-  section 2 stand.
+  generated document and corrects the classification axis; section 2.3 by
+  [ADR 0006](0006-one-authorized-agent-runtime.md), which puts the four read
+  operations behind the capability broker instead of beside it. The frozen
+  operation set, the naming rule and the transport decision stand.
 
 ## 1. Context
 

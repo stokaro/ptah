@@ -106,7 +106,7 @@ func TestExplain_SaysWhenNothingWasChecked(t *testing.T) {
 func TestExplain_JSONCarriesTheEvidenceAlongsideTheAnswer(t *testing.T) {
 	c := qt.New(t)
 	stub := &scripted{bodies: []string{
-		toolAnswer("describe_workspace", `{}`),
+		toolAnswer("describe_session", `{}`),
 		textAnswer("One artifact class is configured."),
 	}}
 	home := configHome(c, profileFor(endpoint(c, stub.handler())))
@@ -127,7 +127,7 @@ func TestExplain_JSONCarriesTheEvidenceAlongsideTheAnswer(t *testing.T) {
 	tools, _ := report["tools"].([]any)
 	c.Assert(tools, qt.HasLen, 1)
 	first, _ := tools[0].(map[string]any)
-	c.Assert(first["name"], qt.Equals, "describe_workspace")
+	c.Assert(first["name"], qt.Equals, "describe_session")
 	c.Assert(first["failed"], qt.IsFalse)
 }
 
@@ -166,7 +166,7 @@ func TestExplain_StopsAtTheToolCallLimitAndStillReports(t *testing.T) {
 	// A run that hit a limit produced a record worth printing, so the document
 	// goes out and the outcome is the exit code.
 	c := qt.New(t)
-	stub := &scripted{bodies: []string{toolAnswer("describe_workspace", `{}`)}}
+	stub := &scripted{bodies: []string{toolAnswer("describe_session", `{}`)}}
 	home := configHome(c, profileFor(endpoint(c, stub.handler())))
 	root := workspace(c)
 
@@ -230,7 +230,7 @@ func TestExplain_KeepsTheDocumentOnStdoutAndTheNarrationOnStderr(t *testing.T) {
 	// for exactly the callers the format exists for.
 	c := qt.New(t)
 	stub := &scripted{bodies: []string{
-		toolAnswer("describe_workspace", `{}`),
+		toolAnswer("describe_session", `{}`),
 		textAnswer("done"),
 	}}
 	home := configHome(c, profileFor(endpoint(c, stub.handler())))
@@ -244,6 +244,6 @@ func TestExplain_KeepsTheDocumentOnStdoutAndTheNarrationOnStderr(t *testing.T) {
 	report := make(map[string]any)
 	c.Assert(json.Unmarshal([]byte(out), &report), qt.IsNil)
 	c.Assert(errOut, qt.Contains, "recording agent decisions to")
-	c.Assert(errOut, qt.Contains, "tool: describe_workspace")
+	c.Assert(errOut, qt.Contains, "tool: describe_session")
 	c.Assert(out, qt.Not(qt.Contains), "recording agent decisions")
 }
