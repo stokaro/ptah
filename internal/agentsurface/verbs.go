@@ -31,6 +31,18 @@ var verbs = map[string]Verb{
 		"lists the provider profiles configured locally, and opens neither a database nor an endpoint"},
 	"assist provider test": {TargetNone, ScratchNone,
 		"measures a provider profile by calling the model endpoint it names; no database is involved"},
+	"assist sessions delete": {TargetNone, ScratchNone,
+		"removes one saved conversation file from the project; no database is opened, and the " +
+			"audit log is a separate file it does not touch"},
+	"assist sessions list": {TargetNone, ScratchNone,
+		"lists the conversations saved under the project's .ptah directory; neither a database " +
+			"nor a model endpoint is opened"},
+	"assist sessions prune": {TargetNone, ScratchNone,
+		"removes saved conversation files untouched for longer than a given age; no database is " +
+			"opened, and the audit log is left alone"},
+	"assist sessions show": {TargetNone, ScratchNone,
+		"prints one saved conversation from disk, including what Ptah's tools answered during " +
+			"it; nothing is opened to do so"},
 
 	// db.
 	"db capabilities": {TargetReads, ScratchNone,

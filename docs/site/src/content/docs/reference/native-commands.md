@@ -256,7 +256,12 @@ stdout therefore gets a document in every case except `2`.
 | `ptah license` | Print license, copyright, and Atlas-compatibility attribution. |
 | `ptah schema serve` | Serve a read-only local view of the declared schema and how the live database differs from it. |
 | `ptah mcp` | Serve Ptah's operations to an AI client over the Model Context Protocol, on stdin and stdout. |
-| `ptah assist explain <question>` | Ask a model about this project, with Ptah's own tools answering. |
+| `ptah assist` | Hold a conversation with a model you supply, with Ptah's own tools answering. |
+| `ptah assist explain <question>` | Ask one question, with Ptah's own tools answering. |
+| `ptah assist sessions list` | List the conversations saved for this project. |
+| `ptah assist sessions show <id>` | Print one conversation, including which tools ran and what they answered. |
+| `ptah assist sessions delete <id>` | Remove one saved conversation. |
+| `ptah assist sessions prune` | Remove conversations untouched for longer than a given age. |
 | `ptah assist provider list` | List the model provider profiles this machine can reach. |
 | `ptah assist provider test` | Check that a provider profile works: reachable, credential accepted, model served, tool calling available. |
 | `ptah completion <shell>` | Generate shell completion output for the native `ptah` command tree. |
@@ -303,10 +308,14 @@ surface this release does not open.
 a gateway your organization runs, or one running on this machine. There is no
 Ptah account and no Ptah-hosted model.
 
-`ptah assist explain` asks one question and answers it: the model calls Ptah's
-tools, and every call goes through the same surface `ptah mcp` serves, over an
-in-memory transport. The answer is the model's words and the tool trace is what
-Ptah did; `--trace` prints both, and a run where no tool answered says so.
+`ptah assist` holds a conversation and `ptah assist explain` asks one question:
+either way the model calls Ptah's tools, and every call goes through the same
+surface `ptah mcp` serves, over an in-memory transport. The answer is the
+model's words and the tool trace is what Ptah did; `--trace` prints both, and a
+run where no tool answered says so.
+
+Conversations are saved to `.ptah/sessions/` in the project, one JSON object per
+line; `--ephemeral` keeps no record and `--resume` continues an earlier one.
 
 `ptah assist provider list` reports
 the profiles this machine can reach, including ones inferred from a key already

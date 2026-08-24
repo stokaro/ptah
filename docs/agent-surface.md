@@ -64,6 +64,10 @@ verdict on any of it.
 | `assist explain` | none | none | — | opens no connection of its own; it asks a model a question and lets the model call Ptah's own tools, each of which carries its own classification |
 | `assist provider list` | none | none | — | lists the provider profiles configured locally, and opens neither a database nor an endpoint |
 | `assist provider test` | none | none | — | measures a provider profile by calling the model endpoint it names; no database is involved |
+| `assist sessions delete` | none | none | — | removes one saved conversation file from the project; no database is opened, and the audit log is a separate file it does not touch |
+| `assist sessions list` | none | none | — | lists the conversations saved under the project's .ptah directory; neither a database nor a model endpoint is opened |
+| `assist sessions prune` | none | none | — | removes saved conversation files untouched for longer than a given age; no database is opened, and the audit log is left alone |
+| `assist sessions show` | none | none | — | prints one saved conversation from disk, including what Ptah's tools answered during it; nothing is opened to do so |
 | `db capabilities` | reads | none | `--db-url` | reads the server's version and catalogs to report the capability profile Ptah resolves |
 | `db drop-all` | **writes** | none | `--db-url` | drops every schema object in the database it is given |
 | `db read` | reads | none | `--db-url` | introspects the database and prints what it found |
@@ -142,6 +146,10 @@ permission.
 | `assist explain` | opens no connection of its own; it asks a model a question and lets the model call Ptah's own tools, each of which carries its own classification |
 | `assist provider list` | lists the provider profiles configured locally, and opens neither a database nor an endpoint |
 | `assist provider test` | measures a provider profile by calling the model endpoint it names; no database is involved |
+| `assist sessions delete` | removes one saved conversation file from the project; no database is opened, and the audit log is a separate file it does not touch |
+| `assist sessions list` | lists the conversations saved under the project's .ptah directory; neither a database nor a model endpoint is opened |
+| `assist sessions prune` | removes saved conversation files untouched for longer than a given age; no database is opened, and the audit log is left alone |
+| `assist sessions show` | prints one saved conversation from disk, including what Ptah's tools answered during it; nothing is opened to do so |
 | `db capabilities` | reads the server's version and catalogs to report the capability profile Ptah resolves |
 | `db read` | introspects the database and prints what it found |
 | `introspect` | reads a live database and writes annotated Go models to disk; the database is only read |

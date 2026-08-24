@@ -135,11 +135,18 @@ type Event struct {
 type Options struct {
 	// Provider is the model.
 	Provider aiprovider.Provider
-	// Tools is the connected client session Ptah's own tools are called
-	// through. The caller owns its lifetime.
-	Tools *mcp.ClientSession
+	// Tools is what Ptah's own tools are called through: a connected protocol
+	// client session. It is an interface rather than the concrete session so a
+	// caller can narrow what the loop can reach, and so the loop's own tests do
+	// not depend on a transport.
+	Tools ToolSession
 	// System overrides Ptah's instruction block. Empty uses [SystemPrompt].
 	System string
+	// History is the conversation a resumed session continues from, oldest
+	// first. It carries requests and answers rather than tool results: those
+	// described the project as it was, and replaying them would have the model
+	// reasoning about a directory that may have changed. It re-reads instead.
+	History []aiprovider.Message
 
 	MaxTurns           int
 	MaxToolCalls       int
@@ -150,6 +157,13 @@ type Options struct {
 	Emit func(Event)
 	// Now is the clock, injectable for a test that asserts on elapsed time.
 	Now func() time.Time
+}
+
+// ToolSession is the half of a protocol client the loop uses: list what is
+// available, and call one.
+type ToolSession interface {
+	ListTools(ctx context.Context, params *mcp.ListToolsParams) (*mcp.ListToolsResult, error)
+	CallTool(ctx context.Context, params *mcp.CallToolParams) (*mcp.CallToolResult, error)
 }
 
 // Loop is a configured run.
@@ -196,11 +210,15 @@ func (l *Loop) Run(ctx context.Context, request string) (*Result, error) {
 		return nil, err
 	}
 
+	messages := make([]aiprovider.Message, 0, len(l.opts.History)+1)
+	messages = append(messages, l.opts.History...)
+	messages = append(messages, aiprovider.Message{Role: aiprovider.RoleUser, Content: request})
+
 	result := &Result{
 		Provider: l.opts.Provider.Profile(),
 		Model:    l.opts.Provider.Model(),
 		Tools:    make([]ToolRecord, 0, 4),
-		Messages: []aiprovider.Message{{Role: aiprovider.RoleUser, Content: request}},
+		Messages: messages,
 	}
 	repeats := make(map[string]int)
 
