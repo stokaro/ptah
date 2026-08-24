@@ -95,7 +95,7 @@ func resolveOnePolicyExpression(
 		WHERE p.polrelid = $1::regclass`
 
 	var answer config.PolicyExpression
-	ok, err := runProbe(ctx, tx, "resolve policy expressions", probe.Key, "ptah_policy_probe",
+	ok, err := runProbe(ctx, tx, "resolve policy expressions", probe.Key, "ptah_policy_probe", postgresSavepoints,
 		statements, func(ctx context.Context, tx *sql.Tx) error {
 			return tx.QueryRowContext(ctx, query, "pg_temp."+table).
 				Scan(&answer.Using, &answer.WithCheck)
@@ -189,7 +189,7 @@ func resolveOneIndexExpression(
 		WHERE i.indrelid = $1::regclass`
 
 	var answer config.IndexExpression
-	ok, err := runProbe(ctx, tx, "resolve index expressions", probe.Key, "ptah_index_probe",
+	ok, err := runProbe(ctx, tx, "resolve index expressions", probe.Key, "ptah_index_probe", postgresSavepoints,
 		statements, func(ctx context.Context, tx *sql.Tx) error {
 			return tx.QueryRowContext(ctx, query, "pg_temp."+table).
 				Scan(&answer.Expression, &answer.Predicate)
