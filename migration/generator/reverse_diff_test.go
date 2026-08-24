@@ -825,15 +825,18 @@ func TestReverseSchemaDiff_AddedTableForeignKeyRemovalsWithTables(t *testing.T) 
 	c.Assert(result.ForeignKeysRemovedWithTables, qt.DeepEquals, []types.ForeignKeyRemovalInfo{
 		{
 			Name: "fk_project_owner_id", TableName: "app.projects",
-			Columns: []string{"owner_id"}, ForeignTable: "app.accounts", ForeignColumns: []string{"id"},
+			Identity: constraintscope.Identity(identifier.ForDialect("postgres"), "app.projects", "fk_project_owner_id"),
+			Columns:  []string{"owner_id"}, ForeignTable: "app.accounts", ForeignColumns: []string{"id"},
 		},
 		{
 			Name: "fk_projects_account_id", TableName: "app.projects",
-			Columns: []string{"account_id"}, ForeignTable: "app.accounts", ForeignColumns: []string{"id"},
+			Identity: constraintscope.Identity(identifier.ForDialect("postgres"), "app.projects", "fk_projects_account_id"),
+			Columns:  []string{"account_id"}, ForeignTable: "app.accounts", ForeignColumns: []string{"id"},
 		},
 		{
 			Name: "fk_projects_tenant_id_reviewer_id", TableName: "app.projects",
-			Columns: []string{"tenant_id", "reviewer_id"}, ForeignTable: "app.accounts",
+			Identity: constraintscope.Identity(identifier.ForDialect("postgres"), "app.projects", "fk_projects_tenant_id_reviewer_id"),
+			Columns:  []string{"tenant_id", "reviewer_id"}, ForeignTable: "app.accounts",
 			ForeignColumns: []string{"tenant_id", "id"},
 		},
 	})
@@ -883,6 +886,7 @@ func TestReverseSchemaDiff_MySQLSparseForeignKeyAdditionUsesCaseInsensitiveSchem
 	}})
 	c.Assert(reversed.ForeignKeysRemovedWithTables, qt.DeepEquals, []types.ForeignKeyRemovalInfo{{
 		Name: "FK_PARENT_CODE", TableName: "children", Columns: []string{"parent_code"},
+		Identity:     constraintscope.Identity(identifier.ForDialect("mysql"), "children", "FK_PARENT_CODE"),
 		ForeignTable: "parents", ForeignColumns: []string{"code"},
 	}})
 }

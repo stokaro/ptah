@@ -2888,6 +2888,7 @@ func (c *reverseForeignKeyRemovalCollector) addQualifiedAdditions(
 			Name: constraint.Name, TableName: constraint.TableName,
 			Columns: slices.Clone(constraint.Columns), ForeignTable: constraint.ForeignTable,
 			ForeignColumns: foreignColumns,
+			Identity:       constraintscope.Identity(c.semantics, constraint.TableName, constraint.Name),
 		})
 	}
 }
@@ -2915,6 +2916,7 @@ func (c *reverseForeignKeyRemovalCollector) addFieldForeignKeys(schema *goschema
 		c.add(types.ForeignKeyRemovalInfo{
 			Name: name, TableName: table.QualifiedName(), Columns: []string{field.Name},
 			ForeignTable: ref.Table, ForeignColumns: slices.Clone(ref.ReferencedColumns()),
+			Identity: constraintscope.Identity(c.semantics, table.QualifiedName(), name),
 		})
 	}
 }
@@ -2943,6 +2945,7 @@ func (c *reverseForeignKeyRemovalCollector) addTableForeignKeys(schema *goschema
 			Name: name, TableName: tableName, Columns: slices.Clone(constraint.Columns),
 			ForeignTable:   constraint.ForeignTable,
 			ForeignColumns: slices.Clone(constraint.ForeignColumnsOrDefault()),
+			Identity:       constraintscope.Identity(c.semantics, tableName, name),
 		})
 	}
 }

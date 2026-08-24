@@ -11987,6 +11987,12 @@ type ForeignKeyRemovalInfo struct {
     ForeignTable string `json:"foreign_table"`
     // ForeignColumns are the referenced columns in constraint order.
     ForeignColumns []string `json:"foreign_columns,omitempty"`
+    // Identity is the constraint's, and it is the same value the matching
+    // ConstraintRemovalInfo carries: this record is supplemental to that one and
+    // is correlated with it. Correlating by the two spellings instead is what
+    // makes a foreign key on `widget` fail to find its detail recorded under
+    // `public.widget`.
+    Identity ConstraintIdentity `json:"identity,omitzero"`
 }
     ForeignKeyRemovalInfo supplies the local and referenced columns needed to
     order a foreign-key removal around column changes. It is supplemental to a

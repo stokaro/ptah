@@ -6,7 +6,9 @@ import (
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/constraintscope"
 	"go.5x5.cz/ptah/migration/schemadiff/internal/compare"
 	difftypes "go.5x5.cz/ptah/migration/schemadiff/types"
 )
@@ -672,7 +674,8 @@ func TestConstraints_CompositeForeignKeyReferencedColumnDrift(t *testing.T) {
 	c.Assert(diff.ForeignKeysRemovedWithTables, qt.DeepEquals, []difftypes.ForeignKeyRemovalInfo{
 		{
 			Name: "fk_orders_accounts", TableName: "orders",
-			Columns: []string{"tenant_id", "owner_id"}, ForeignTable: "accounts",
+			Identity: constraintscope.Identity(identifier.Semantics{}, "orders", "fk_orders_accounts"),
+			Columns:  []string{"tenant_id", "owner_id"}, ForeignTable: "accounts",
 			ForeignColumns: []string{"tenant_id", "account_id"},
 		},
 	})
@@ -733,7 +736,8 @@ func TestConstraints_CompositeForeignKeyLocalColumnDrift(t *testing.T) {
 	c.Assert(diff.ForeignKeysRemovedWithTables, qt.DeepEquals, []difftypes.ForeignKeyRemovalInfo{
 		{
 			Name: "fk_orders_accounts", TableName: "orders",
-			Columns: []string{"tenant_id", "account_owner_id"}, ForeignTable: "accounts",
+			Identity: constraintscope.Identity(identifier.Semantics{}, "orders", "fk_orders_accounts"),
+			Columns:  []string{"tenant_id", "account_owner_id"}, ForeignTable: "accounts",
 			ForeignColumns: []string{"tenant_id", "id"},
 		},
 	})
