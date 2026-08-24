@@ -174,7 +174,8 @@ func (r *Renderer) VisitCreateType(node *ast.CreateTypeNode) error {
 		// Add DEFAULT if specified
 		if typeDef.Default != nil {
 			if typeDef.Default.HasLiteral() {
-				sql += fmt.Sprintf(" DEFAULT %s", r.renderDefaultLiteral(typeDef.Default.Value))
+				sql += fmt.Sprintf(" DEFAULT %s",
+					r.renderTypedDefaultLiteral(typeDef.BaseType, typeDef.Default.Value))
 			} else if typeDef.Default.Expression != "" {
 				sql += fmt.Sprintf(" DEFAULT %s", typeDef.Default.Expression)
 			}
@@ -380,6 +381,126 @@ func (r *Renderer) escapeValue(value string) string {
 func (r *Renderer) renderDefaultLiteral(value string) string {
 	return defaultlit.Render(value, r.escapeValue)
 }
+
+// renderTypedDefaultLiteral renders a default in the form the column's own type
+// takes, which for a number or a boolean is no quotes at all.
+//
+// PostgreSQL forgives the quoted form -- `DEFAULT '7'` on a bigint is cast on
+// the way in and reads back as 7 -- and that forgiveness is why every literal
+// was quoted here for as long as it was. Spanner does not forgive it: measured
+// on the PGAdapter emulator v0.55.2, `DEFAULT '7'` on a bigint column is
+// `Error parsing the default value ...: Expected type INT64; found STRING`, and
+// `DEFAULT 'true'` on a boolean is the same refusal for BOOL. A quoted literal
+// is also simply wrong about what it says, on every engine here.
+//
+// This renderer serves PostgreSQL, CockroachDB, YugabyteDB and Spanner, so the
+// decision is made once, from the column's declared type rather than from the
+// dialect.
+func (r *Renderer) renderTypedDefaultLiteral(columnType, value string) string {
+	trimmed := strings.TrimSpace(value)
+	if defaultlit.IsSQLLiteral(trimmed) {
+		return trimmed
+	}
+	if bare, unquoted := bareDefaultLiteral(columnType, trimmed); unquoted {
+		return bare
+	}
+	return r.escapeValue(value)
+}
+
+// bareDefaultLiteral answers with the unquoted spelling of a default whose
+// column type takes one, and reports whether the type does.
+//
+// Anything it does not recognize keeps the quoted form, which is what every
+// default got before: a type this does not classify is not a type whose bare
+// literal syntax is known, and guessing there would produce DDL the server
+// refuses rather than DDL it merely tolerates.
+func bareDefaultLiteral(columnType, value string) (string, bool) {
+	switch base := baseTypeName(columnType); {
+	case booleanTypeNames[base]:
+		lowered := strings.ToLower(value)
+		return lowered, lowered == "true" || lowered == "false"
+	case numericTypeNames[base]:
+		return value, isPlainNumber(value)
+	default:
+		return "", false
+	}
+}
+
+// baseTypeName strips a size, a precision and any array suffix, so that
+// `numeric(18,2)` classifies the same way `numeric` does.
+//
+// An array type is deliberately NOT reduced to its element: `integer[]` takes a
+// default like `{1,2}` or `ARRAY[1,2]`, neither of which is a bare number.
+func baseTypeName(columnType string) string {
+	base := strings.TrimSpace(strings.ToLower(columnType))
+	if open := strings.IndexByte(base, '('); open >= 0 {
+		base = strings.TrimSpace(base[:open])
+	}
+	return base
+}
+
+// isPlainNumber reports whether value is a decimal number written the way SQL
+// writes one.
+//
+// It is a hand-rolled check rather than strconv.ParseFloat because ParseFloat
+// accepts `NaN`, `Inf` and `0x1p-2`, and PostgreSQL takes none of those as a
+// bare default -- `NaN` has to be `'NaN'::numeric`. A value this refuses simply
+// keeps its quotes.
+func isPlainNumber(value string) bool {
+	digits := strings.TrimLeft(value, "+-")
+	if digits == "" || digits != value && len(value)-len(digits) > 1 {
+		return false
+	}
+	mantissa, exponent, hasExponent := cutExponent(digits)
+	if hasExponent && !isDigits(strings.TrimLeft(exponent, "+-")) {
+		return false
+	}
+	whole, fraction, hasPoint := strings.Cut(mantissa, ".")
+	if !hasPoint {
+		return isDigits(whole)
+	}
+	if whole == "" {
+		return isDigits(fraction)
+	}
+	return isDigits(whole) && (fraction == "" || isDigits(fraction))
+}
+
+// cutExponent splits a mantissa from an `e`-notation exponent.
+func cutExponent(value string) (mantissa, exponent string, found bool) {
+	for i := range len(value) {
+		if value[i] == 'e' || value[i] == 'E' {
+			return value[:i], value[i+1:], true
+		}
+	}
+	return value, "", false
+}
+
+// isDigits reports whether every byte is a decimal digit, and that there is at
+// least one.
+func isDigits(value string) bool {
+	if value == "" {
+		return false
+	}
+	for i := range len(value) {
+		if value[i] < '0' || value[i] > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// booleanTypeNames and numericTypeNames are the types whose literals need no
+// quotes, in every spelling this renderer's engines accept.
+var (
+	booleanTypeNames = map[string]bool{"bool": true, "boolean": true}
+	numericTypeNames = map[string]bool{
+		"smallint": true, "integer": true, "int": true, "bigint": true,
+		"int2": true, "int4": true, "int8": true,
+		"decimal": true, "numeric": true,
+		"real": true, "double precision": true, "float": true,
+		"float4": true, "float8": true,
+	}
+)
 
 // escapeIdentifier safely escapes SQL identifiers (table/column names) for PostgreSQL
 func (r *Renderer) escapeIdentifier(identifier string) string {
@@ -1134,7 +1255,8 @@ func (r *Renderer) renderColumn(column *ast.ColumnNode) (string, error) {
 	case column.Default == nil:
 		// No default value
 	case column.Default.HasLiteral():
-		parts = append(parts, fmt.Sprintf("DEFAULT %s", r.renderDefaultLiteral(column.Default.Value)))
+		parts = append(parts, fmt.Sprintf("DEFAULT %s",
+			r.renderTypedDefaultLiteral(column.Type, column.Default.Value)))
 	case column.Default.Expression != "":
 		parts = append(parts, fmt.Sprintf("DEFAULT %s", column.Default.Expression))
 	}
@@ -1495,7 +1617,9 @@ func (r *Renderer) renderPostgreSQLModifyColumn(tableName string, column *ast.Co
 	case column.Default == nil:
 		r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s DROP DEFAULT;", r.escapeQualifiedIdentifier(tableName), r.escapeIdentifier(column.Name))
 	case column.Default.HasLiteral():
-		r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s SET DEFAULT %s;", r.escapeQualifiedIdentifier(tableName), r.escapeIdentifier(column.Name), r.renderDefaultLiteral(column.Default.Value))
+		r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s SET DEFAULT %s;",
+			r.escapeQualifiedIdentifier(tableName), r.escapeIdentifier(column.Name),
+			r.renderTypedDefaultLiteral(column.Type, column.Default.Value))
 	case column.Default.Expression != "":
 		r.w.WriteLinef("ALTER TABLE %s ALTER COLUMN %s SET DEFAULT %s;", r.escapeQualifiedIdentifier(tableName), r.escapeIdentifier(column.Name), column.Default.Expression)
 	}

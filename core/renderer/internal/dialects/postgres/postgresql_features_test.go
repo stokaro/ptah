@@ -887,7 +887,7 @@ func TestPostgreSQLRenderer_ExcludeConstraint_InCreateTable(t *testing.T) {
 	expected := `-- POSTGRES TABLE: user_sessions --
 CREATE TABLE user_sessions (
   user_id BIGINT NOT NULL,
-  is_active BOOLEAN NOT NULL DEFAULT 'false',
+  is_active BOOLEAN NOT NULL DEFAULT false,
   CONSTRAINT one_active_session_per_user EXCLUDE USING gist (user_id WITH =) WHERE (is_active = true)
 );
 
