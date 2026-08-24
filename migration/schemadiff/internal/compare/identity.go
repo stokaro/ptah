@@ -48,6 +48,29 @@ func newTableMemberKey(table, member string, semantics identifier.Semantics) tab
 	}
 }
 
+// newConstraintKey builds a key for a table-level constraint, folding the
+// constraint's NAME by the rule the engine resolves one under.
+//
+// It is a separate constructor rather than a parameter on [newTableMemberKey]
+// because that helper's other callers key a COLUMN, and the two rules disagree
+// on exactly the targets where a constraint name is not a column name. Measured
+// on `mysql:8.4` and `mariadb:11.4`: a constraint created as `FK_A` is dropped
+// by `ALTER TABLE child DROP FOREIGN KEY fk_a`, and one created as `UQ_A` by
+// `ALTER TABLE u DROP INDEX uq_a`. The column rule keeps that case and the index
+// rule folds it, so keying a constraint as a column made the two spellings two
+// objects: a drop and an add planned for one constraint, on every run, and drift
+// reported for a database that matches (stokaro/ptah#2028).
+//
+// PostgreSQL is untouched by the change and correctly so: the two rules agree
+// there, and an upper-case name in a PostgreSQL catalog was created quoted, so
+// it really is a different object from the unquoted spelling.
+func newConstraintKey(table, constraint string, semantics identifier.Semantics) tableMemberKey {
+	return tableMemberKey{
+		table:  newQualifiedTableIdentity(table, semantics),
+		member: semantics.IndexIdentityKey(constraint),
+	}
+}
+
 // newQualifiedTableIdentity normalizes a table name written as one string,
 // which is how both the desired schema and the database report it.
 //
