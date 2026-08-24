@@ -342,14 +342,15 @@ func convertFunctions(database *goschema.Database, dbFunctions []dbschematypes.D
 
 func convertUserTypes(database *goschema.Database, dbSchema *dbschematypes.DBSchema) {
 	for _, domain := range dbSchema.Domains {
-		database.Domains = append(database.Domains, goschema.Domain{
+		converted := goschema.Domain{
 			Name:     domain.Name,
 			Schema:   domain.Schema,
 			BaseType: domain.BaseType,
 			NotNull:  domain.NotNull,
-			Default:  domain.Default,
 			Check:    domain.Check,
-		})
+		}
+		setDomainDefaultFromDB(&converted, domain.Default)
+		database.Domains = append(database.Domains, converted)
 	}
 	for _, composite := range dbSchema.Composites {
 		fields := make([]goschema.CompositeTypeField, 0, len(composite.Fields))
@@ -862,6 +863,32 @@ func setFieldDefaultFromDB(field *goschema.Field, defaultSQL string) {
 	field.Default = defaultSQL
 }
 
+// setDomainDefaultFromDB routes a domain's catalog default the way a column's
+// is routed, which is the whole of the fix for stokaro/ptah#2037.
+//
+// [goschema.Domain] keeps a literal and an expression apart because the
+// renderer does: an expression becomes `sql(...)` and a literal becomes a
+// quoted string. Assigning the catalog's answer to the literal field wrote a
+// quoted default, which reads back as a 26-character string, so `apply` planned
+// a SET DEFAULT of that quoted text and the domain's default became the TEXT of
+// the old expression. Measured on PostgreSQL 17.11, a column of that type then
+// defaulted to that text, and each further inspect-and-apply cycle wrapped it
+// again: 26, 49, 76, 111 characters.
+//
+// PostgreSQL reports every domain default as an expression -- a declared
+// DEFAULT 'x' comes back with a cast -- so in practice this routes all of them
+// to the expression side. The literal branch is kept because the field exists
+// and a caller building a description by hand may use it.
+func setDomainDefaultFromDB(domain *goschema.Domain, defaultSQL string) {
+	if strings.TrimSpace(defaultSQL) == "" {
+		return
+	}
+	if dbDefaultLooksLikeExpression(defaultSQL) {
+		domain.DefaultExpr = defaultSQL
+		return
+	}
+	domain.Default = defaultSQL
+}
 func dbDefaultLooksLikeExpression(defaultSQL string) bool {
 	value := strings.TrimSpace(defaultSQL)
 	if value == "" {
