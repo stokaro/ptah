@@ -13,8 +13,9 @@ import (
 	"go.5x5.cz/ptah/cmd/internal/cmdutil"
 )
 
-// NewCommand returns the assist namespace.
+// NewCommand returns the assist namespace, whose bare form is the conversation.
 func NewCommand() *cobra.Command {
+	opts := &chatOptions{}
 	cmd := &cobra.Command{
 		Use:   "assist",
 		Short: "Work with Ptah through a model you supply",
@@ -24,9 +25,15 @@ There is no Ptah account, no Ptah-hosted model, and no Ptah AI token. The model
 can be a hosted API, a gateway your organization runs, or one running on this
 machine -- in the last case nothing about your schema leaves it.
 
-  ptah assist explain <question>   ask about this project, with Ptah's tools answering
+  ptah assist                      hold a conversation
+  ptah assist explain <question>   ask once, with Ptah's tools answering
+  ptah assist sessions list        the conversations saved for this project
   ptah assist provider list        the profiles this machine can reach
   ptah assist provider test        whether one of them works, measured
+
+Run with no arguments for a conversation. Each one is saved under
+.ptah/sessions in the project it was about, and --resume continues an earlier
+one; --ephemeral keeps no record at all.
 
 Every tool the model reaches is the one an external AI client reaches over the
 Model Context Protocol -- the same capability broker, the same verification
@@ -45,11 +52,13 @@ point Ptah at an endpoint of its author's choosing with your key attached.`,
 		SilenceErrors: true,
 		SilenceUsage:  true,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return cmd.Help()
+			return runChat(cmd, opts)
 		},
 	}
 	cmd.AddCommand(newExplainCommand())
 	cmd.AddCommand(newProviderCommand())
+	cmd.AddCommand(newSessionsCommand())
+	registerChatFlags(cmd, opts)
 	cmdutil.ConfigureCommandArgs(cmd, cmdutil.NoPositionalArgs)
 	return cmd
 }
