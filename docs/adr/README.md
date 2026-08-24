@@ -15,7 +15,8 @@ a new record that names it, and its own status line is updated to point there.
 | [0003](0003-agent-surface-trust-boundaries.md) | Agent-surface trust boundaries and threat model | Proposed |
 | [0004](0004-constrained-artifact-mutation.md) | Capability broker, artifact digests, and constrained mutation | Proposed |
 | [0005](0005-agent-surface-inventory.md) | The agent-exposure inventory is generated, and classified by what a verb does to a database | Proposed |
-| [0006](0006-agent-error-taxonomy.md) | A closed agent error taxonomy, assigned at the sentinel and carried in `_meta` | Proposed |
+| [0006](0006-one-authorized-agent-runtime.md) | One policy-bearing agent runtime, and an operator-bound database target | Proposed |
+| [0007](0007-agent-error-taxonomy.md) | A closed agent error taxonomy, assigned at the sentinel and carried in `_meta` | Proposed |
 
 ## Writing one
 

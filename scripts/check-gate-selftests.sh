@@ -85,6 +85,10 @@ run_case check-repository-local-paths.sh \
 	"an absolute developer path in README" \
 	"printf '\n    %s/somebody/Work/ptah/schema.sql\n' \"${home_root}\" >>README.md"
 
+run_case check-adr-index.sh \
+	"a second record taking a number another one already has" \
+	"printf '# ADR 0001: A second record\n' >docs/adr/0001-a-second-record.md"
+
 run_case check-go-toolchain-single-source.sh \
 	"a Go version literal pinned in a workflow" \
 	"perl -0pi -e 's/go-version-file: go.mod/go-version: \"1.26.0\"/' .github/workflows/go-unit-tests.yml"
