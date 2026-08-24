@@ -857,6 +857,20 @@ func (c Capabilities) Has(key Capability) bool {
 	return c != nil && c[key]
 }
 
+// Established reports whether this set has an ANSWER for a key, which is not
+// the same question [Capabilities.Has] asks.
+//
+// A preset for a dialect Ptah knows fills every key: a false there was decided,
+// and a change that needs the fact is blocked by the target. A dialect Ptah does
+// not know gets the empty set instead, where every key is unanswered -- and
+// reading that silence through Has turns "nobody established this" into "the
+// target does not have it", which tells an operator the wrong thing about their
+// server fifty times over (stokaro/ptah#1348).
+func (c Capabilities) Established(key Capability) bool {
+	_, answered := c[key]
+	return answered
+}
+
 // Clone returns an independent copy of the set (nil stays nil).
 func (c Capabilities) Clone() Capabilities {
 	if c == nil {
