@@ -155,6 +155,14 @@ type Options struct {
 
 	// Emit receives progress. A nil value discards it.
 	Emit func(Event)
+	// OnTool receives each tool record as the call completes, before the model
+	// is shown the result. A nil value discards it.
+	//
+	// Separate from Emit because a progress line is for a person watching and
+	// this is the record itself. A consumer that waited for Run to return would
+	// learn about a refused capability only after the model had already acted
+	// on it, and a run killed halfway would leave nothing behind at all.
+	OnTool func(ToolRecord)
 	// Now is the clock, injectable for a test that asserts on elapsed time.
 	Now func() time.Time
 }
@@ -199,6 +207,9 @@ func New(opts Options) (*Loop, error) {
 	}
 	if opts.Emit == nil {
 		opts.Emit = func(Event) {}
+	}
+	if opts.OnTool == nil {
+		opts.OnTool = func(ToolRecord) {}
 	}
 	return &Loop{opts: opts}, nil
 }
@@ -292,6 +303,7 @@ func (l *Loop) runToolCalls(
 
 		record := l.callTool(ctx, call)
 		result.Tools = append(result.Tools, record)
+		l.opts.OnTool(record)
 		result.Messages = append(result.Messages, aiprovider.Message{
 			Role:       aiprovider.RoleTool,
 			ToolCallID: call.ID,

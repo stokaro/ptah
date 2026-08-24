@@ -190,7 +190,7 @@ func TestExplain_FailurePath(t *testing.T) {
 		{
 			name:    "an unknown output format",
 			args:    []string{"explain", "--format", "yaml", "hello"},
-			wantErr: `--format: unknown format "yaml"; want text or json`,
+			wantErr: `--format: unknown format "yaml"; want text, json or jsonl`,
 		},
 		{
 			name:    "a profile that does not exist",

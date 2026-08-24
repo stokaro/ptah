@@ -43,6 +43,11 @@ type conversation struct {
 	history  []aiprovider.Message
 	// notice is what to tell the person, empty when there is nothing to say.
 	notice string
+	// writeErr is the first failure to record something, kept until the run
+	// ends. Records are written as the run happens, and a tool hook has nowhere
+	// to return an error to; losing the answer over a failed write would be the
+	// wrong trade, so it is reported beside the answer instead.
+	writeErr error
 }
 
 // openConversation resolves --ephemeral and --resume into a recorder and a
@@ -55,13 +60,26 @@ func openConversation(
 	agent *agentflags.Options,
 	opts *sessionOptions,
 	provider aiprovider.Provider,
+	mirror assistsession.Recorder,
 ) (*conversation, error) {
+	header := assistsession.Record{
+		PtahVersion: buildinfo.Resolve().Version,
+		Provider:    provider.Profile(),
+		Model:       provider.Model(),
+	}
+
 	if opts.ephemeral {
 		if opts.resume != "" {
 			return nil, fmt.Errorf("--%s and --%s ask for opposite things: one keeps no record, "+
 				"the other continues one", ephemeralFlag, resumeFlag)
 		}
-		return &conversation{recorder: assistsession.Discard{}}, nil
+		if mirror == nil {
+			return &conversation{recorder: assistsession.Discard{}}, nil
+		}
+		if err := assistsession.Begin(mirror, header); err != nil {
+			return nil, err
+		}
+		return &conversation{recorder: mirror}, nil
 	}
 
 	root := agent.Workspace
@@ -90,12 +108,12 @@ func openConversation(
 	if err != nil {
 		return nil, err
 	}
-	writer, err := store.Create(id, assistsession.Record{
-		PtahVersion: buildinfo.Resolve().Version,
-		ProjectRoot: root,
-		Provider:    provider.Profile(),
-		Model:       provider.Model(),
-	})
+	header.ProjectRoot = root
+	mirrors := make([]assistsession.Recorder, 0, 1)
+	if mirror != nil {
+		mirrors = append(mirrors, mirror)
+	}
+	writer, err := store.Create(id, header, mirrors...)
 	if err != nil {
 		return nil, err
 	}
@@ -106,39 +124,64 @@ func openConversation(
 	}, nil
 }
 
-// record writes one exchange: what was asked, what Ptah did, and what the model
-// answered.
+// begin records the request, before the model is asked.
 //
-// Written after the turn rather than during it, because the tool records are
-// what the loop returns and writing them twice -- once as they happen and once
-// from the result -- is how the two come to disagree.
-func (c *conversation) record(request string, result *assistloop.Result) error {
-	if err := c.recorder.Append(assistsession.Record{
+// Records are written as the run happens rather than gathered and written at
+// the end. A process killed mid-run used to leave nothing at all behind for the
+// turn it was in; now it leaves the question and every tool that had answered,
+// which is what an append-only file is for.
+func (c *conversation) begin(request string) {
+	c.fail(c.recorder.Append(assistsession.Record{
 		Kind: assistsession.KindRequest,
 		Text: request,
-	}); err != nil {
-		return err
-	}
-	for _, tool := range result.Tools {
-		if err := c.recorder.Append(assistsession.Record{
-			Kind:      assistsession.KindTool,
-			Tool:      tool.Name,
-			Arguments: tool.Args,
-			Failed:    tool.Failed,
-			Result:    tool.Result,
-			Truncated: tool.Truncated,
-		}); err != nil {
-			return err
-		}
-	}
-	return c.recorder.Append(assistsession.Record{
+	}))
+}
+
+// tool records one call as it completes, before the model is shown the result.
+func (c *conversation) tool(record assistloop.ToolRecord) {
+	c.fail(c.recorder.Append(assistsession.Record{
+		Kind:      assistsession.KindTool,
+		Tool:      record.Name,
+		Arguments: record.Args,
+		Failed:    record.Failed,
+		Result:    record.Result,
+		Truncated: record.Truncated,
+	}))
+}
+
+// finish records the answer and carries the exchange into the history.
+//
+// runErr is recorded rather than only returned: a run that hit a limit or lost
+// the endpoint still produces an answer record, and one without the reason
+// reads exactly like a model that had nothing to say.
+func (c *conversation) finish(request string, result *assistloop.Result, runErr error) {
+	record := assistsession.Record{
 		Kind:       assistsession.KindAnswer,
 		Text:       result.Answer,
 		Turns:      result.Turns,
 		StopReason: string(result.StopReason),
 		Usage:      result.Usage,
 		Verified:   result.UsedTools(),
-	})
+	}
+	if runErr != nil {
+		record.Error = runErr.Error()
+	}
+	c.fail(c.recorder.Append(record))
+	c.continueWith(request, result.Answer)
+}
+
+// fail keeps the first write failure of a run.
+func (c *conversation) fail(err error) {
+	if err != nil && c.writeErr == nil {
+		c.writeErr = err
+	}
+}
+
+// saved reports the first write failure and clears it for the next request.
+func (c *conversation) saved() error {
+	err := c.writeErr
+	c.writeErr = nil
+	return err
 }
 
 // continueWith folds one exchange into the history a later turn continues from.

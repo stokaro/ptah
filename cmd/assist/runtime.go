@@ -128,16 +128,17 @@ func accepted(decision string) *mcp.ElicitResult {
 func newLoop(
 	provider aiprovider.Provider,
 	tools toolSession,
-	history []aiprovider.Message,
+	talk *conversation,
 	maxToolCalls int,
 	emit func(assistloop.Event),
 ) (*assistloop.Loop, error) {
 	return assistloop.New(assistloop.Options{
 		Provider:     provider,
 		Tools:        tools,
-		History:      history,
+		History:      talk.history,
 		MaxToolCalls: maxToolCalls,
 		Emit:         emit,
+		OnTool:       talk.tool,
 	})
 }
 

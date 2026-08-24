@@ -14,6 +14,7 @@ import (
 	"go.5x5.cz/ptah/internal/agentaudit"
 	"go.5x5.cz/ptah/internal/aiprovider"
 	"go.5x5.cz/ptah/internal/assistloop"
+	"go.5x5.cz/ptah/internal/assistsession"
 )
 
 // Flags this command adds to the shared agent ones.
@@ -82,7 +83,7 @@ provider test.`,
 	flags.StringVar(&opts.model, modelFlag, "",
 		"Model identifier, overriding the profile's")
 	flags.StringVar(&opts.format, formatFlag, formatText,
-		"Output format: text or json")
+		"Output format: text, json, or jsonl for the record stream as it happens")
 	flags.BoolVar(&opts.trace, traceFlag, false,
 		"Print every tool call and what Ptah answered")
 	flags.IntVar(&opts.maxToolCalls, maxToolCallsFlag, assistloop.DefaultMaxToolCalls,
@@ -114,7 +115,7 @@ type explainReport struct {
 
 // runExplain answers one question.
 func runExplain(cmd *cobra.Command, opts *explainOptions, question string) error {
-	if err := validateFormat(cmd, opts.format); err != nil {
+	if err := validateConversationFormat(cmd, opts.format); err != nil {
 		return err
 	}
 	provider, err := resolveProvider(cmd, opts.profile, opts.model)
@@ -138,22 +139,30 @@ func runExplain(cmd *cobra.Command, opts *explainOptions, question string) error
 	}
 	defer tools.Close() //nolint:errcheck // the in-memory transport has nothing to fail at
 
-	talk, err := openConversation(opts.agent, &opts.session, provider)
+	// The record stream is a mirror of what the session file gets, so the two
+	// cannot drift: one set of records, written once, to both.
+	var mirror assistsession.Recorder
+	if opts.format == formatJSONL {
+		mirror = assistsession.NewStream(cmd.OutOrStdout(), nil)
+	}
+	talk, err := openConversation(opts.agent, &opts.session, provider, mirror)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 	defer talk.recorder.Close() //nolint:errcheck // each record is written as it happens
 
-	loop, err := newLoop(provider, tools, talk.history, opts.maxToolCalls, emitter(cmd, traced(opts.trace)))
+	loop, err := newLoop(provider, tools, talk, opts.maxToolCalls, emitter(cmd, traced(opts.trace)))
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
 
+	talk.begin(question)
 	result, runErr := loop.Run(cmd.Context(), question)
 	if result == nil {
 		return cmdutil.Fail(cmd, runErr)
 	}
-	if recordErr := talk.record(question, result); recordErr != nil {
+	talk.finish(question, result, runErr)
+	if recordErr := talk.saved(); recordErr != nil {
 		// A session that could not be written is worth saying out loud and is
 		// not worth losing the answer over.
 		fmt.Fprintf(cmd.ErrOrStderr(), "ptah: the session was not saved: %v\n", recordErr)
@@ -200,6 +209,13 @@ func writeExplain(
 	}
 	if opts.format == formatJSON {
 		return writeJSON(cmd.OutOrStdout(), report)
+	}
+	if opts.format == formatJSONL {
+		// Every line is already on stdout, written as it happened. The summary
+		// goes to stderr so that stdout stays one record per line and nothing
+		// else, which is the only reason to choose this format.
+		writeSessionLine(cmd.ErrOrStderr(), talk)
+		return nil
 	}
 
 	out := cmd.OutOrStdout()
