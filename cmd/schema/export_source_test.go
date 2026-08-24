@@ -405,7 +405,7 @@ func TestSchemaExportRefusesSourcesItCannotRead(t *testing.T) {
 			name: "an inferred format on a file with no schema extension",
 			args: []string{"--to", "graphql", "--schema-file", notesPath},
 			wantErr: `unsupported schema file extension ".txt": ` +
-				`only .yaml, .yml, .hcl, and .sql are supported`,
+				`only .yaml, .yml, .hcl, .sql, and .dbml are supported`,
 		},
 		{
 			name: "Go annotations and a schema file at once",

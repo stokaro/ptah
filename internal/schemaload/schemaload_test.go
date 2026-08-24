@@ -111,7 +111,7 @@ func TestLoad_RejectsUnsupportedExtension(t *testing.T) {
 	c.Assert(os.WriteFile(path, []byte(`{}`), 0o600), qt.IsNil)
 
 	_, err := schemaload.Load(schemaload.Options{SchemaFiles: []string{path}})
-	c.Assert(err, qt.ErrorMatches, `unsupported schema file extension ".json": only .yaml, .yml, .hcl, and .sql are supported`)
+	c.Assert(err, qt.ErrorMatches, `unsupported schema file extension ".json": only .yaml, .yml, .hcl, .sql, and .dbml are supported`)
 }
 
 func TestLoad_MergesMultipleRoots(t *testing.T) {
