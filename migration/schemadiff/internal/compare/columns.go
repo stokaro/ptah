@@ -356,7 +356,9 @@ func columnsWithDesiredDomains(
 	// category, right or wrong, is what keeps a self-diff quiet, and no live
 	// churn from the folding has been measured. Fixing it properly means giving
 	// the desired side a base type to answer with.
-	genType, dbType := normalizeColumnTypesForDialect(genCol.Type, dbRawType, dialect)
+	// dbType is deliberately discarded: both defaults below are normalized
+	// under the DESIRED type, for the reason stated there.
+	genType, _ := normalizeColumnTypesForDialect(genCol.Type, dbRawType, dialect)
 
 	if change := columnTypeChange(genCol, dbCol, dbRawType, dialect, desiredDomains); change != "" {
 		colDiff.Changes["type"] = change
@@ -419,7 +421,23 @@ func columnsWithDesiredDomains(
 	skipImplicitSequenceDefault := genDefault == "" &&
 		(dbCol.IsAutoIncrement || strings.Contains(strings.ToUpper(genCol.Type), "SERIAL"))
 	if !skipImplicitSequenceDefault {
-		normalizedDbDefault := normalize.DefaultValue(dbDefault, dbType)
+		// Both sides are normalized under the DESIRED type, not each under its
+		// own. A default's meaning depends on the column's type -- `0` is
+		// `false` on a boolean and `0` on an integer -- and after this plan
+		// runs the column has the desired type, so "does the live default
+		// already say what we would write" is a question asked in the target's
+		// terms.
+		//
+		// Normalized under two types it could answer no for two spellings of
+		// one value. Measured on SQLite: a hand-made `b BOOLEAN DEFAULT 0`
+		// compared against Ptah's own description of it, whose rendered type is
+		// `integer`, reported `default_expr: 0 -> 0` -- a change between a
+		// value and itself, beside the type change that was real
+		// (stokaro/ptah#2041).
+		//
+		// It changes nothing where the two types agree, which is every
+		// comparison that does not already report a type change.
+		normalizedDbDefault := normalize.DefaultValue(dbDefault, genType)
 
 		idxName := "default"
 		if normalize.IsDefaultExpr(dbDefault) {
