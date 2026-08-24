@@ -131,19 +131,27 @@ func applyLocked(ctx context.Context, plan *Plan, verifier Verifier) (*Result, e
 
 	undo, writeErr := writeFiles(plan)
 	if writeErr != nil {
-		return nil, errors.Join(writeErr, rollback(plan, undo))
+		return nil, errors.Join(writeErr, rollback(plan, undo, nil))
+	}
+
+	// What the checksum files hold is recorded before they are rewritten,
+	// because an undo has to put them back rather than derive them again. See
+	// [snapshotIntegrity].
+	integrity, err := snapshotIntegrity(plan)
+	if err != nil {
+		return nil, errors.Join(err, rollback(plan, undo, nil))
 	}
 
 	refreshed, err := refreshIntegrity(plan)
 	if err != nil {
-		return nil, errors.Join(err, rollback(plan, undo))
+		return nil, errors.Join(err, rollback(plan, undo, integrity))
 	}
 
 	verification, err := verifier.Run(ctx, plan.scope)
 	if err != nil {
 		return nil, errors.Join(
 			agentdiag.Errorf(agentdiag.CodeVerificationUnavailable, "verification: %w", err),
-			rollback(plan, undo))
+			rollback(plan, undo, integrity))
 	}
 
 	result := &Result{
@@ -158,12 +166,12 @@ func applyLocked(ctx context.Context, plan *Plan, verifier Verifier) (*Result, e
 		Resolved:           verification.Resolved(baseline),
 	}
 	if introduced := errorsAmong(result.Introduced); len(introduced) > 0 {
-		return undoAndReport(plan, undo, result, introduced)
+		return undoAndReport(plan, undo, integrity, result, introduced)
 	}
 
 	measured, err := plan.scope.Digest()
 	if err != nil {
-		return nil, errors.Join(err, rollback(plan, undo))
+		return nil, errors.Join(err, rollback(plan, undo, integrity))
 	}
 	result.ResultDigest = measured
 	if measured != plan.resultDigest {
@@ -326,14 +334,15 @@ func refreshIntegrity(plan *Plan) (bool, error) {
 func undoAndReport(
 	plan *Plan,
 	undo []undoStep,
+	integrity []integrityFile,
 	result *Result,
 	introduced []agentgate.Diagnostic,
 ) (*Result, error) {
 	result.RolledBack = true
-	if err := rollback(plan, undo); err != nil {
-		result.RollbackFailure = err.Error()
-	}
-	if _, err := refreshIntegrity(plan); err != nil && result.RollbackFailure == "" {
+	// The checksum files are restored by the rollback, from what they held
+	// before the apply. Rehashing them here instead is what left a file behind
+	// on a directory that had none (stokaro/ptah#2066).
+	if err := rollback(plan, undo, integrity); err != nil {
 		result.RollbackFailure = err.Error()
 	}
 	if measured, err := plan.scope.Digest(); err == nil {
@@ -373,13 +382,82 @@ func errorsAmong(diagnostics []agentgate.Diagnostic) []agentgate.Diagnostic {
 // Every step is attempted even after one fails, because stopping at the first
 // failure would leave the rest of the batch applied for no reason. The joined
 // error is what the caller reports as a rollback failure.
-func rollback(plan *Plan, undo []undoStep) error {
-	errs := make([]error, 0, len(undo))
+func rollback(plan *Plan, undo []undoStep, integrity []integrityFile) error {
+	errs := make([]error, 0, len(undo)+2)
 	for _, step := range slices.Backward(undo) {
 		errs = append(errs, restore(plan, step.file))
 	}
+	errs = append(errs, restoreIntegrity(plan, integrity))
 	errs = append(errs, plan.scope.Directory().Sync())
 	return errors.Join(errs...)
+}
+
+// integrityFile is one checksum file's state before the apply, including the
+// state of not being there.
+type integrityFile struct {
+	name    string
+	content []byte
+	existed bool
+}
+
+// snapshotIntegrity records what the artifact's checksum files hold, so an undo
+// can put them back instead of deriving them again.
+//
+// Deriving them again is not the same thing, and the difference is a file left
+// behind. Rehash writes a checksum file for the directory it finds, so on a
+// migration directory that had none -- a project's first patch -- the undo
+// CREATED one. The apply then reported `rolled_back: true` beside a
+// ResultDigest that no longer equalled BaseDigest, which is the invariant
+// Result documents, and the caller was left holding a digest that had gone
+// stale through an operation that said it changed nothing (stokaro/ptah#2066).
+func snapshotIntegrity(plan *Plan) ([]integrityFile, error) {
+	names := managedFiles[plan.patch.Class]
+	files := make([]integrityFile, 0, len(names))
+	for _, name := range names {
+		content, err := plan.scope.ReadFile(name)
+		switch {
+		case err == nil:
+			files = append(files, integrityFile{name: name, content: content, existed: true})
+		case errors.Is(err, fs.ErrNotExist):
+			// Recorded rather than skipped: absence is a state to restore.
+			files = append(files, integrityFile{name: name})
+		default:
+			return nil, fmt.Errorf("read %s: %w", name, err)
+		}
+	}
+	return files, nil
+}
+
+// restoreIntegrity puts every checksum file back to the state the snapshot
+// recorded, and reports every failure rather than the first.
+func restoreIntegrity(plan *Plan, files []integrityFile) error {
+	errs := make([]error, 0, len(files))
+	for _, file := range files {
+		errs = append(errs, restoreIntegrityFile(plan, file))
+	}
+	return errors.Join(errs...)
+}
+
+// restoreIntegrityFile puts one checksum file back, or takes it away again.
+//
+// A file that was not there is removed, and a removal of something already
+// absent is not a failure: the apply may have failed before Rehash wrote
+// anything, and reporting that as a rollback failure would name the one state a
+// caller must not ignore for a rollback that went perfectly.
+func restoreIntegrityFile(plan *Plan, file integrityFile) error {
+	parent, base, err := plan.scope.Parent(file.name)
+	if err != nil {
+		return err
+	}
+	defer closeParent(plan, parent)
+
+	if !file.existed {
+		if err := parent.Remove(base); err != nil && !errors.Is(err, fs.ErrNotExist) {
+			return err
+		}
+		return nil
+	}
+	return restoreContent(parent, base, FileChange{before: file.content})
 }
 
 // restore puts one file back to the state the plan recorded.
