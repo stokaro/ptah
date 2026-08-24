@@ -61,6 +61,23 @@ func TestAFormatThatCannotExpressAKindSaysSoAndSaysWhy(t *testing.T) {
 				coverage.ExtendedProperty, coverage.Hypertable, coverage.Range,
 				coverage.Sequence, coverage.Synonym, coverage.VirtualTable),
 		},
+		{
+			// DBML declares the widest boundary of any format here, and that is
+			// the point rather than an accident: it describes tables, columns,
+			// enums, indexes and references and has no syntax for anything
+			// else. Extension, Policy and Role appear in no other row, which is
+			// what makes this one the exhaustive boundary #2065 asks for --
+			// and coverage.Schema is absent from it because DBML qualifies a
+			// name with a schema.
+			name:     "DBML cannot name twelve families",
+			file:     "schema.dbml",
+			contents: "Table users {\n  id integer [pk]\n}\n",
+			want: unsupportedRecords(
+				coverage.Composite, coverage.ContinuousAggregate, coverage.Domain,
+				coverage.ExtendedProperty, coverage.Extension, coverage.Hypertable,
+				coverage.Policy, coverage.Range, coverage.Role, coverage.Sequence,
+				coverage.Synonym, coverage.VirtualTable),
+		},
 	}
 
 	for _, test := range tests {

@@ -369,9 +369,11 @@ func (o Options) loadSchemaFile(ctx context.Context, schemaFile string) (*gosche
 	// of schema files means, so a directory skips this switch and reaches it.
 	if !isSchemaDir(absPath) {
 		switch strings.ToLower(filepath.Ext(absPath)) {
-		case ".yaml", ".yml", ".hcl", ".sql":
+		case ".yaml", ".yml", ".hcl", ".sql", ".dbml":
 		default:
-			return nil, fmt.Errorf("unsupported schema file extension %q: only .yaml, .yml, .hcl, and .sql are supported", filepath.Ext(absPath))
+			return nil, fmt.Errorf(
+				"unsupported schema file extension %q: only .yaml, .yml, .hcl, .sql, and .dbml are supported",
+				filepath.Ext(absPath))
 		}
 	}
 
