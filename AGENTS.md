@@ -916,8 +916,8 @@ no npm install, and it governs this file, the repository docs, the examples,
 the integration docs, and every package README — not only the site.
 
 It is one of several commands in that job, and running the `scripts/check-*.sh`
-gates does not stand in for any of them. The job's own step is the list; these
-are the ones a documentation change usually needs:
+gates does not stand in for any of them. These need no npm install and are the
+ones a documentation change usually needs:
 
 ```bash
 node docs/site/scripts/check-style.mjs --selftest
@@ -932,6 +932,31 @@ node docs/site/scripts/check-matrix-flag-names.mjs --selftest
 node docs/site/scripts/check-matrix-flag-names.mjs
 node docs/site/scripts/build-feature-matrix.mjs --check
 ```
+
+**Those are not the whole job.** A second set runs from `docs/site` and needs
+`npm ci` first, and a change that passes everything above can still fail the
+site build:
+
+```bash
+cd docs/site
+npm ci
+npm run check:links:selftest && npm run check:links
+npm run check:redirects:selftest && npm run check:redirects
+npm run check:core-doc-links
+npm run check:page-health
+npm run check:exit-codes:selftest && npm run check:exit-codes
+DOCS_VERSION=edge ASTRO_TELEMETRY_DISABLED=1 npm run build
+```
+
+`npm run build` is the one most often skipped and it is a gate: a page that
+every checker accepts can still fail to render. `check:responsive` is the
+remaining step and it needs a Playwright browser and the built site, so CI is a
+reasonable place to leave that one.
+
+The reason for the whole list rather than a habit: `check:links` refuses a
+root-relative link, `check:core-doc-links` refuses a GitHub link from a site
+page, and `check:page-health` reads the sidebar — three failures a run of the
+node scripts above would not have produced.
 
 **`docs/site/src/content/docs/atlas/feature-matrix.md` is generated.** Its
 source is `docs/site/scripts/data/feature-matrix-rows.json`; edit that and run
