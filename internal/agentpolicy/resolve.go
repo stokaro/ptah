@@ -1,15 +1,16 @@
 package agentpolicy
 
 import (
-	"errors"
 	"fmt"
 	"slices"
 	"sort"
+
+	"go.5x5.cz/ptah/internal/agentdiag"
 )
 
 // ErrHardDenied reports a configuration that tried to grant a capability no
 // layer may grant.
-var ErrHardDenied = errors.New("capability cannot be granted")
+var ErrHardDenied = agentdiag.Sentinel(agentdiag.CodeCapabilityDenied, "capability cannot be granted")
 
 // Defaults is the builtin policy, and it is the answer to "what does Ptah do
 // when nobody configured anything".

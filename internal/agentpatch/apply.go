@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"go.5x5.cz/ptah/internal/agentdiag"
 	"go.5x5.cz/ptah/internal/agentgate"
 	"go.5x5.cz/ptah/internal/agentpolicy"
 	"go.5x5.cz/ptah/internal/agentworkspace"
@@ -124,7 +125,8 @@ func applyLocked(ctx context.Context, plan *Plan, verifier Verifier) (*Result, e
 
 	baseline, err := verifier.Run(ctx, plan.scope)
 	if err != nil {
-		return nil, fmt.Errorf("baseline verification: %w", err)
+		return nil, agentdiag.Errorf(agentdiag.CodeVerificationUnavailable,
+			"baseline verification: %w", err)
 	}
 
 	undo, writeErr := writeFiles(plan)
@@ -139,7 +141,9 @@ func applyLocked(ctx context.Context, plan *Plan, verifier Verifier) (*Result, e
 
 	verification, err := verifier.Run(ctx, plan.scope)
 	if err != nil {
-		return nil, errors.Join(fmt.Errorf("verification: %w", err), rollback(plan, undo))
+		return nil, errors.Join(
+			agentdiag.Errorf(agentdiag.CodeVerificationUnavailable, "verification: %w", err),
+			rollback(plan, undo))
 	}
 
 	result := &Result{
@@ -203,12 +207,13 @@ func writeFiles(plan *Plan) ([]undoStep, error) {
 	done := make([]undoStep, 0, len(plan.files))
 	for _, file := range plan.files {
 		if err := writeOne(plan, file); err != nil {
-			return done, fmt.Errorf("%s %s: %w", file.Operation, file.Path, err)
+			return done, agentdiag.Errorf(agentdiag.CodeWriteFailed,
+				"%s %s: %w", file.Operation, file.Path, err)
 		}
 		done = append(done, undoStep{file: file})
 	}
 	if err := plan.scope.Directory().Sync(); err != nil {
-		return done, err
+		return done, agentdiag.Wrap(agentdiag.CodeWriteFailed, err)
 	}
 	return done, nil
 }
@@ -311,7 +316,8 @@ func refreshIntegrity(plan *Plan) (bool, error) {
 		return false, nil
 	}
 	if _, err := migrateops.Rehash(plan.scope.Path(), migrator.MigrationDirFormatAuto); err != nil {
-		return false, fmt.Errorf("refresh migration integrity: %w", err)
+		return false, agentdiag.Errorf(agentdiag.CodeWriteFailed,
+			"refresh migration integrity: %w", err)
 	}
 	return true, nil
 }
