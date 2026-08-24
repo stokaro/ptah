@@ -29,7 +29,7 @@ import (
 // pins the community behavior itself, and asserts Ptah's refusal of the same
 // fixture beside it.
 //
-// It runs only with PTAH_ATLAS_REFERENCE set, and the Atlas CE Oracle workflow
+// It runs only with PTAH_ATLAS_REFERENCE set, and the Atlas CE Reference workflow
 // fails if it skips.
 
 const fileReferenceEnv = atlasreference.EnvVar
@@ -38,14 +38,14 @@ const fileReferenceEnv = atlasreference.EnvVar
 // against another build would report version drift as divergence.
 const fileReferenceVersion = "atlas community version v1.3.0"
 
-// fileOracleProbeURL is planted outside the config directory. It is a URL scheme
+// fileReferenceProbeURL is planted outside the config directory. It is a URL scheme
 // so the value can be traced into the binary's own error text: the leak this
 // sandbox exists to prevent is the content landing somewhere observable, not
 // merely being opened.
-const fileOracleProbeURL = "ptahsecret1042://x"
+const fileReferenceProbeURL = "ptahsecret1042://x"
 
-func TestOracleReadsFilesOutsideTheAtlasHCLDirectory(t *testing.T) {
-	oracle := requireFileOracle(t)
+func TestReferenceReadsFilesOutsideTheAtlasHCLDirectory(t *testing.T) {
+	reference := requireFileReference(t)
 
 	tests := []struct {
 		name string
@@ -87,16 +87,16 @@ func TestOracleReadsFilesOutsideTheAtlasHCLDirectory(t *testing.T) {
 			base := t.TempDir()
 			dir := filepath.Join(base, "project")
 			c.Assert(os.Mkdir(dir, 0o700), qt.IsNil)
-			outside := plantOracleSecret(c, base)
+			outside := plantReferenceSecret(c, base)
 			argument, plantErr := tt.argument(dir, outside)
 			c.Assert(plantErr, qt.IsNil)
-			path := writeOracleFileConfig(c, dir, argument)
+			path := writeReferenceFileConfig(c, dir, argument)
 
-			out, code := runFileOracle(c, oracle, dir)
+			out, code := runFileReference(c, reference, dir)
 
 			// The community binary reads it. Exit 0 on a config whose only
 			// unusual content is the file() call is the whole claim.
-			c.Assert(code, qt.Equals, 0, qt.Commentf("oracle output: %s", out))
+			c.Assert(code, qt.Equals, 0, qt.Commentf("reference output: %s", out))
 
 			_, err := projectconfig.LoadAtlasFile(path, "local")
 
@@ -108,18 +108,18 @@ func TestOracleReadsFilesOutsideTheAtlasHCLDirectory(t *testing.T) {
 // The control the exit codes above depend on. A missing file makes the same
 // position fail, so `exit 0` up there means the community binary read the file
 // -- not that it never evaluated the expression.
-func TestOracleEvaluatesTheFileCallItIsGiven(t *testing.T) {
-	oracle := requireFileOracle(t)
+func TestReferenceEvaluatesTheFileCallItIsGiven(t *testing.T) {
+	reference := requireFileReference(t)
 	c := qt.New(t)
 
 	base := t.TempDir()
 	dir := filepath.Join(base, "project")
 	c.Assert(os.Mkdir(dir, 0o700), qt.IsNil)
-	path := writeOracleFileConfig(c, dir, "no-such-file.txt")
+	path := writeReferenceFileConfig(c, dir, "no-such-file.txt")
 
-	out, code := runFileOracle(c, oracle, dir)
+	out, code := runFileReference(c, reference, dir)
 
-	c.Assert(code, qt.Equals, 1, qt.Commentf("oracle output: %s", out))
+	c.Assert(code, qt.Equals, 1, qt.Commentf("reference output: %s", out))
 	c.Assert(out, qt.Contains, "no-such-file.txt")
 
 	_, err := projectconfig.LoadAtlasFile(path, "local")
@@ -133,19 +133,19 @@ func TestOracleEvaluatesTheFileCallItIsGiven(t *testing.T) {
 // config directory reach a place the caller can see. This is what the sandbox
 // costs a user and what removing it would buy an attacker who can commit an
 // atlas.hcl.
-func TestOraclePlacesOutsideFileContentsWhereTheCallerCanSeeThem(t *testing.T) {
-	oracle := requireFileOracle(t)
+func TestReferencePlacesOutsideFileContentsWhereTheCallerCanSeeThem(t *testing.T) {
+	reference := requireFileReference(t)
 	c := qt.New(t)
 
 	base := t.TempDir()
 	dir := filepath.Join(base, "project")
 	c.Assert(os.Mkdir(dir, 0o700), qt.IsNil)
-	outside := plantOracleSecret(c, base)
-	path := writeOracleURLConfig(c, dir, outside)
+	outside := plantReferenceSecret(c, base)
+	path := writeReferenceURLConfig(c, dir, outside)
 
-	out, code := runFileOracle(c, oracle, dir)
+	out, code := runFileReference(c, reference, dir)
 
-	c.Assert(code, qt.Equals, 1, qt.Commentf("oracle output: %s", out))
+	c.Assert(code, qt.Equals, 1, qt.Commentf("reference output: %s", out))
 	// The binary lowercases the scheme before reporting it, so the comparison
 	// is on the lowercased output rather than on a rewritten expectation.
 	c.Assert(strings.ToLower(out), qt.Contains, "ptahsecret1042")
@@ -156,11 +156,11 @@ func TestOraclePlacesOutsideFileContentsWhereTheCallerCanSeeThem(t *testing.T) {
 	c.Assert(err.Error(), qt.Not(qt.Contains), "ptahsecret1042")
 }
 
-func plantOracleSecret(c *qt.C, base string) string {
+func plantReferenceSecret(c *qt.C, base string) string {
 	c.Helper()
 
 	path := filepath.Join(base, "secret.txt")
-	c.Assert(os.WriteFile(path, []byte(fileOracleProbeURL), 0o600), qt.IsNil)
+	c.Assert(os.WriteFile(path, []byte(fileReferenceProbeURL), 0o600), qt.IsNil)
 	return path
 }
 
@@ -188,11 +188,11 @@ func escapeSymlinkedDirectory(dir, outside string) (string, error) {
 	return "outdir/" + filepath.Base(outside), os.Symlink(filepath.Dir(outside), filepath.Join(dir, "outdir"))
 }
 
-// writeOracleFileConfig puts the file() call in a position whose value is
+// writeReferenceFileConfig puts the file() call in a position whose value is
 // discarded: an unknown top-level attribute, which both the community binary
 // and Ptah evaluate and then ignore. That isolates the read from everything a
 // URL would then do with the value.
-func writeOracleFileConfig(c *qt.C, dir, argument string) string {
+func writeReferenceFileConfig(c *qt.C, dir, argument string) string {
 	c.Helper()
 
 	path := filepath.Join(dir, "atlas.hcl")
@@ -203,9 +203,9 @@ func writeOracleFileConfig(c *qt.C, dir, argument string) string {
 	return path
 }
 
-// writeOracleURLConfig puts the same read in the env URL, where the value is
+// writeReferenceURLConfig puts the same read in the env URL, where the value is
 // used and therefore visible.
-func writeOracleURLConfig(c *qt.C, dir, argument string) string {
+func writeReferenceURLConfig(c *qt.C, dir, argument string) string {
 	c.Helper()
 
 	path := filepath.Join(dir, "atlas.hcl")
@@ -216,19 +216,19 @@ func writeOracleURLConfig(c *qt.C, dir, argument string) string {
 	return path
 }
 
-// runFileOracle runs `migrate status --env local` in dir and returns its
+// runFileReference runs `migrate status --env local` in dir and returns its
 // combined output and exit code. The verb needs no database of its own beyond
 // the in-memory SQLite the config names, so the whole measurement is local.
-func runFileOracle(c *qt.C, oracle, dir string) (string, int) {
+func runFileReference(c *qt.C, reference, dir string) (string, int) {
 	c.Helper()
 
-	warmUpFileOracle(c, oracle)
+	warmUpFileReference(c, reference)
 
-	cmd := exec.Command(oracle, "migrate", "status", "--env", "local")
+	cmd := exec.Command(reference, "migrate", "status", "--env", "local")
 	cmd.Dir = dir
 	out, err := cmd.CombinedOutput()
 	var exitErr *exec.ExitError
-	c.Assert(err == nil || asExitError(err, &exitErr), qt.IsTrue, qt.Commentf("running the oracle failed: %v", err))
+	c.Assert(err == nil || asExitError(err, &exitErr), qt.IsTrue, qt.Commentf("running the reference failed: %v", err))
 	return string(out), cmd.ProcessState.ExitCode()
 }
 
@@ -240,42 +240,42 @@ func asExitError(err error, target **exec.ExitError) bool {
 	return ok
 }
 
-// fileOracleWarmup absorbs the once-per-environment edition notice, which
+// fileReferenceWarmup absorbs the once-per-environment edition notice, which
 // otherwise attaches itself to whichever measurement happens to run first.
-var fileOracleWarmup sync.Once
+var fileReferenceWarmup sync.Once
 
-func warmUpFileOracle(c *qt.C, oracle string) {
+func warmUpFileReference(c *qt.C, reference string) {
 	c.Helper()
 
-	fileOracleWarmup.Do(func() {
+	fileReferenceWarmup.Do(func() {
 		dir := c.TempDir()
-		//nolint:errcheck // best effort: a failed write still runs the oracle, which is all the warm-up needs
+		//nolint:errcheck // best effort: a failed write still runs the reference, which is all the warm-up needs
 		_ = os.WriteFile(filepath.Join(dir, "atlas.hcl"),
 			[]byte("env \"local\" {\n  url = \"sqlite://file?mode=memory\"\n}\n"), 0o600)
-		cmd := exec.Command(oracle, "migrate", "status", "--env", "local")
+		cmd := exec.Command(reference, "migrate", "status", "--env", "local")
 		cmd.Dir = dir
 		//nolint:errcheck // output and status are both discarded; this run exists only to spend the notice
 		_, _ = cmd.CombinedOutput()
 	})
 }
 
-func requireFileOracle(t *testing.T) string {
+func requireFileReference(t *testing.T) string {
 	t.Helper()
 
-	oracle := os.Getenv(fileReferenceEnv)
-	if oracle == "" {
+	reference := os.Getenv(fileReferenceEnv)
+	if reference == "" {
 		t.Skipf("SKIPPED: set %s to the pinned Atlas CE binary (%s) to run the atlas.hcl file() conformance run",
 			fileReferenceEnv, fileReferenceVersion)
 	}
 
-	out, err := exec.Command(oracle, "version").Output() // #nosec G204 G702 -- the oracle path is operator-provided via PTAH_ATLAS_REFERENCE
+	out, err := exec.Command(reference, "version").Output() // #nosec G204 G702 -- the reference path is operator-provided via PTAH_ATLAS_REFERENCE
 	if err != nil {
-		t.Fatalf("%s=%s is not runnable: %v", fileReferenceEnv, oracle, err)
+		t.Fatalf("%s=%s is not runnable: %v", fileReferenceEnv, reference, err)
 	}
 	got, _, _ := strings.Cut(string(out), "\n")
 	if strings.TrimSpace(got) != fileReferenceVersion {
 		t.Fatalf("%s=%s reports %q, want %q; a different build may have changed the rules under test",
-			fileReferenceEnv, oracle, strings.TrimSpace(got), fileReferenceVersion)
+			fileReferenceEnv, reference, strings.TrimSpace(got), fileReferenceVersion)
 	}
-	return oracle
+	return reference
 }

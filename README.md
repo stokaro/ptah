@@ -158,7 +158,7 @@ The main `ptah` binary has no Atlas command paths.
 
 By default, `ptah-compat` retains the Atlas Pro-like and best-effort
 capabilities Ptah implements. Set `PTAH_ATLAS_STRICT_COMPAT=1` only for Atlas
-Community Edition oracle or conformance runs. Strict mode presents the pinned
+Community Edition reference or conformance runs. Strict mode presents the pinned
 CE command and flag surface and refuses richer authored content rather than
 discarding it. It also refuses a live Pro-only object before an inspect,
 apply, diff, or clean run could omit, miscompare, or destroy it.

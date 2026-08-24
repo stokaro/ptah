@@ -18,7 +18,7 @@ import (
 	"go.5x5.cz/ptah/internal/atlashclrender"
 )
 
-// TestOracleReadsTheReferenceSpellingPtahRenders measures the rendered document
+// TestReferenceReadsTheReferenceSpellingPtahRenders measures the rendered document
 // itself, not a hand-written fixture, so the thing under measurement is the
 // output a user gets.
 //
@@ -37,14 +37,14 @@ import (
 //
 // SQLite needs no server and produces the identical pair of verdicts, so this
 // run measures something even where no dev database is configured.
-func TestOracleReadsTheReferenceSpellingPtahRenders(t *testing.T) {
-	oracle := requireTypeOracle(t)
+func TestReferenceReadsTheReferenceSpellingPtahRenders(t *testing.T) {
+	reference := requireTypeReference(t)
 	c := qt.New(t)
 	c.Assert(
 		slices.Sorted(maps.Keys(schemaNameByDialect)),
 		qt.DeepEquals,
 		[]string{platform.Postgres, platform.SQLite},
-		qt.Commentf("both measured reference dialects must remain in the oracle matrix"),
+		qt.Commentf("both measured reference dialects must remain in the reference matrix"),
 	)
 
 	for _, dialect := range slices.Sorted(maps.Keys(schemaNameByDialect)) {
@@ -53,7 +53,7 @@ func TestOracleReadsTheReferenceSpellingPtahRenders(t *testing.T) {
 			devURL := requireDevURL(t, dialect)
 			schema := schemaNameByDialect[dialect]
 
-			rendered, err := atlashclrender.RenderForDialect(referenceOracleSchema(schema), dialect)
+			rendered, err := atlashclrender.RenderForDialect(referenceSchema(schema), dialect)
 			c.Assert(err, qt.IsNil)
 			short := string(rendered.Data)
 			c.Assert(short, qt.Contains, "ref_columns = [table.users.column.id]")
@@ -63,7 +63,7 @@ func TestOracleReadsTheReferenceSpellingPtahRenders(t *testing.T) {
 			t.Run("rendered", func(t *testing.T) {
 				c := qt.New(t)
 
-				out, code := runReferenceOracle(c, oracle, devURL, short)
+				out, code := runReference(c, reference, devURL, short)
 
 				c.Assert(code, qt.Equals, 0,
 					qt.Commentf("the binary refuses the document Ptah renders on %s: %s\n%s", dialect, out, short))
@@ -78,7 +78,7 @@ func TestOracleReadsTheReferenceSpellingPtahRenders(t *testing.T) {
 				c.Assert(long, qt.Not(qt.Equals), short,
 					qt.Commentf("the qualified variant is identical to the accepted one, so this row measures nothing"))
 
-				out, code := runReferenceOracle(c, oracle, devURL, long)
+				out, code := runReference(c, reference, devURL, long)
 
 				c.Assert(code, qt.Not(qt.Equals), 0,
 					qt.Commentf("the binary now reads `table.%s.users` on %s; the short form is no longer required and this rule can go: %s",
@@ -90,13 +90,13 @@ func TestOracleReadsTheReferenceSpellingPtahRenders(t *testing.T) {
 	}
 }
 
-// referenceOracleSchema is the smallest IR carrying every reference position
+// referenceSchema is the smallest IR carrying every reference position
 // this run measures.
 //
 // It declares nothing the binary refuses as a feature -- no extension, sequence
 // or policy -- so a non-zero status is attributable to a reference and not to a
 // construct that build does not model.
-func referenceOracleSchema(schema string) *goschema.Database {
+func referenceSchema(schema string) *goschema.Database {
 	return &goschema.Database{
 		Schemas: []goschema.Schema{{Name: schema}},
 		Tables: []goschema.Table{
@@ -130,21 +130,21 @@ func referenceOracleSchema(schema string) *goschema.Database {
 	}
 }
 
-// runReferenceOracle asks the pinned binary to read one document and returns its
+// runReference asks the pinned binary to read one document and returns its
 // combined output and exit status.
-func runReferenceOracle(c *qt.C, oracle, devURL, source string) (string, int) {
+func runReference(c *qt.C, reference, devURL, source string) (string, int) {
 	c.Helper()
 
-	typeOracleWarmup.Do(func() {})
+	typeReferenceWarmup.Do(func() {})
 
 	path := filepath.Join(c.TempDir(), "schema.hcl")
 	c.Assert(os.WriteFile(path, []byte(source), 0o600), qt.IsNil)
 
-	// #nosec G204 -- operator-provided oracle path, and path is a test temp dir
-	cmd := exec.Command(oracle, "schema", "inspect", "-u", "file://"+path, "--dev-url", devURL)
+	// #nosec G204 -- operator-provided reference path, and path is a test temp dir
+	cmd := exec.Command(reference, "schema", "inspect", "-u", "file://"+path, "--dev-url", devURL)
 	// The error is the exit status, which is the measurement; a process that
 	// never started leaves ProcessState nil and fails the assertion instead.
 	out, _ := cmd.CombinedOutput() //nolint:errcheck // exit status is read from ProcessState below
-	c.Assert(cmd.ProcessState, qt.IsNotNil, qt.Commentf("the oracle did not run: %s", out))
+	c.Assert(cmd.ProcessState, qt.IsNotNil, qt.Commentf("the reference did not run: %s", out))
 	return string(out), cmd.ProcessState.ExitCode()
 }

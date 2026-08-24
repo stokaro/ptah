@@ -34,7 +34,7 @@ const referenceVersion = atlasreference.Version
 // pinned to one verdict.
 const referenceDevURL = "sqlite://file?mode=memory"
 
-// TestOracleAcceptsAndDropsUnknownSchemaHCLNames is the conformance half of
+// TestReferenceAcceptsAndDropsUnknownSchemaHCLNames is the conformance half of
 // stokaro/ptah#1016's definition of done: every position where Ptah drops an
 // unmodeled name is re-measured against the pinned community binary here,
 // rather than frozen in a comment nothing can invalidate.
@@ -49,8 +49,8 @@ const referenceDevURL = "sqlite://file?mode=memory"
 // identically to `annotation` and `invisible` in every position, which is what
 // makes this a general "drop names I do not model" policy rather than support
 // for any particular name.
-func TestOracleAcceptsAndDropsUnknownSchemaHCLNames(t *testing.T) {
-	reference := requireSchemaOracle(t)
+func TestReferenceAcceptsAndDropsUnknownSchemaHCLNames(t *testing.T) {
+	reference := requireSchemaReference(t)
 
 	tests := []struct {
 		name       string
@@ -321,8 +321,8 @@ table "t" {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			withDDL, withCode := runSchemaOracle(c, reference, tt.hcl)
-			withoutDDL, withoutCode := runSchemaOracle(c, reference, tt.equivalent)
+			withDDL, withCode := runSchemaReference(c, reference, tt.hcl)
+			withoutDDL, withoutCode := runSchemaReference(c, reference, tt.equivalent)
 			c.Assert(withCode, qt.Equals, 0, qt.Commentf("reference output: %s", withDDL))
 			c.Assert(withoutCode, qt.Equals, 0, qt.Commentf("reference output: %s", withoutDDL))
 			c.Assert(withDDL, qt.Equals, withoutDDL)
@@ -340,7 +340,7 @@ table "t" {
 	}
 }
 
-// TestOracleRefusesUnevaluableDroppedBodies is the other half, and the half a
+// TestReferenceRefusesUnevaluableDroppedBodies is the other half, and the half a
 // tolerance change is most likely to break: every case here is a file the
 // community binary REFUSES, and the tolerant parser must refuse it too.
 //
@@ -356,8 +356,8 @@ table "t" {
 // not see at all: every fixture it had used a LABELED reference root, so the
 // wildcards that stood in for unlabeled blocks and for declared variables
 // stayed invisible while accepting all twelve of these.
-func TestOracleRefusesUnevaluableDroppedBodies(t *testing.T) {
-	reference := requireSchemaOracle(t)
+func TestReferenceRefusesUnevaluableDroppedBodies(t *testing.T) {
+	reference := requireSchemaReference(t)
 
 	tests := []struct {
 		name string
@@ -696,7 +696,7 @@ table "t" {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			out, code := runSchemaOracle(c, reference, tt.hcl)
+			out, code := runSchemaReference(c, reference, tt.hcl)
 			c.Assert(code, qt.Not(qt.Equals), 0, qt.Commentf("reference output: %s", out))
 
 			_, err := atlashcl.ParseWithOptions(
@@ -709,7 +709,7 @@ table "t" {
 	}
 }
 
-// TestOracleAcceptsReferencesPtahRefuses measures the divergence the closed
+// TestReferenceAcceptsReferencesPtahRefuses measures the divergence the closed
 // scope buys, instead of asserting it against a frozen expectation.
 //
 // The reference exits 0 on each of these and the tolerant parser refuses each of
@@ -737,8 +737,8 @@ table "t" {
 // The remaining rows keep the trade, and for the reason above: their roots are
 // `column` and `table`, which need a reference root built from the file's own
 // blocks — the thing every attempt so far has had to guess a member of.
-func TestOracleAcceptsReferencesPtahRefuses(t *testing.T) {
-	reference := requireSchemaOracle(t)
+func TestReferenceAcceptsReferencesPtahRefuses(t *testing.T) {
+	reference := requireSchemaReference(t)
 
 	tests := []struct {
 		name string
@@ -798,7 +798,7 @@ table "t" {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
-			out, code := runSchemaOracle(c, reference, tt.hcl)
+			out, code := runSchemaReference(c, reference, tt.hcl)
 			c.Assert(code, qt.Equals, 0, qt.Commentf("reference output: %s", out))
 
 			_, err := atlashcl.ParseWithOptions(
@@ -811,7 +811,7 @@ table "t" {
 	}
 }
 
-// TestOraclePartitionIsDialectSplit records the one row stokaro/ptah#1016 asked
+// TestReferencePartitionIsDialectSplit records the one row stokaro/ptah#1016 asked
 // to pin as "not a parity gap" and that turns out not to have a single verdict.
 //
 // On the SQLite and PostgreSQL dev databases the community binary accepts the
@@ -819,8 +819,8 @@ table "t" {
 // named "HASH"`. A parser that never sees the dialect cannot match both, so the
 // dialect-independent fact is pinned instead: `HASH` is not a reference root in
 // a dropped body anywhere, which is the mechanism behind the MySQL refusal.
-func TestOraclePartitionIsDialectSplit(t *testing.T) {
-	reference := requireSchemaOracle(t)
+func TestReferencePartitionIsDialectSplit(t *testing.T) {
+	reference := requireSchemaReference(t)
 	c := qt.New(t)
 
 	const bare = `schema "main" {
@@ -830,7 +830,7 @@ annotation "gql" {
 }
 `
 
-	out, code := runSchemaOracle(c, reference, bare)
+	out, code := runSchemaReference(c, reference, bare)
 	c.Assert(code, qt.Not(qt.Equals), 0, qt.Commentf("reference output: %s", out))
 	c.Assert(out, qt.Contains, `There is no variable named "HASH"`)
 
@@ -842,10 +842,10 @@ annotation "gql" {
 	c.Assert(err, qt.ErrorMatches, `.*unknown variable "HASH"`)
 }
 
-// requireSchemaOracle resolves the pinned binary, refusing to compare against
+// requireSchemaReference resolves the pinned binary, refusing to compare against
 // any other build. The skip is deliberately loud: a silently absent reference is
 // the failure mode this whole file exists to avoid.
-func requireSchemaOracle(t *testing.T) string {
+func requireSchemaReference(t *testing.T) string {
 	t.Helper()
 
 	reference := os.Getenv(referenceEnv)
@@ -866,7 +866,7 @@ func requireSchemaOracle(t *testing.T) string {
 	return reference
 }
 
-// schemaOracleWarmup absorbs a once-per-environment notice before the first
+// schemaReferenceWarmup absorbs a once-per-environment notice before the first
 // measurement.
 //
 // The binary prints an edition notice on its first `schema inspect` in a fresh
@@ -880,15 +880,15 @@ func requireSchemaOracle(t *testing.T) string {
 // A throwaway inspect is preferred over matching the notice by its wording. The
 // text is not part of any contract the reference owes us, so a matcher for it would
 // rot silently the next time it is reworded, and this run would go green while
-// comparing whatever the new text happened to be. `requireSchemaOracle` cannot
+// comparing whatever the new text happened to be. `requireSchemaReference` cannot
 // serve as the warm-up either: it runs `version`, whose stdout it parses, and
 // the notice does not appear there.
-var schemaOracleWarmup sync.Once
+var schemaReferenceWarmup sync.Once
 
-func warmUpSchemaOracle(c *qt.C, reference string) {
+func warmUpSchemaReference(c *qt.C, reference string) {
 	c.Helper()
 
-	schemaOracleWarmup.Do(func() {
+	schemaReferenceWarmup.Do(func() {
 		path := filepath.Join(c.TempDir(), "warmup.hcl")
 		//nolint:errcheck // best effort: a failed write still runs the reference, which is all the warm-up needs
 		_ = os.WriteFile(path, []byte("schema \"main\" {\n}\n"), 0o600)
@@ -899,12 +899,12 @@ func warmUpSchemaOracle(c *qt.C, reference string) {
 	})
 }
 
-// runSchemaOracle inspects one schema source with the pinned binary and returns
+// runSchemaReference inspects one schema source with the pinned binary and returns
 // its combined output and exit code.
-func runSchemaOracle(c *qt.C, reference, source string) (string, int) {
+func runSchemaReference(c *qt.C, reference, source string) (string, int) {
 	c.Helper()
 
-	warmUpSchemaOracle(c, reference)
+	warmUpSchemaReference(c, reference)
 
 	path := filepath.Join(c.TempDir(), "schema.hcl")
 	c.Assert(os.WriteFile(path, []byte(source), 0o600), qt.IsNil)
