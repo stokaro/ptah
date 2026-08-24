@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"go.5x5.cz/ptah/config"
+	"go.5x5.cz/ptah/core/platform"
 )
 
 // CheckProbeColumn is one column the probe table needs so a declared CHECK can
@@ -77,22 +78,44 @@ func (dc *DatabaseConnection) ResolveCheckExpressions(
 	if len(probes) == 0 {
 		return nil, nil
 	}
-	if !isPostgresFamily(dc.Info().Dialect) {
+	one, supported := checkProbeFor(dc.Info().Dialect)
+	if !supported {
 		return nil, nil
 	}
 	return resolveProbes(ctx, dc, "resolve check expressions", probes,
 		func(probe CheckExpressionProbe) string { return probe.Key },
-		resolveOneCheckExpression)
+		one)
 }
 
-// resolveOneCheckExpression creates one probe table and reads its stored
-// expression back.
+// checkProbeFor picks the probe an engine needs, or reports that this engine
+// stores the text it was given and needs none.
+//
+// Two engines rewrite a CHECK before storing it, and each prints its rewrite
+// its own way. Measured for `price >= 0` on a numeric column:
+//
+//	PostgreSQL 17.11      (price >= (0)::numeric)
+//	SQL Server 2025       ([price]>=(0))
+//
+// MySQL 8.4.11 and MariaDB 11.4.12 converged on every CHECK shape in the sweep
+// that found this, so they are deliberately absent rather than unmeasured.
+func checkProbeFor(dialect string) (probeFunc[CheckExpressionProbe, config.CheckExpression], bool) {
+	if isPostgresFamily(dialect) {
+		return resolveOnePostgresCheckExpression, true
+	}
+	if platform.NormalizeDialect(dialect) == platform.SQLServer {
+		return resolveOneSQLServerCheckExpression, true
+	}
+	return nil, false
+}
+
+// resolveOnePostgresCheckExpression creates one probe table and reads its
+// stored expression back.
 //
 // Each probe runs inside its own savepoint, for the reason
 // [resolveOneDomainExpression] gives: a declaration the server refuses aborts
 // the transaction, and without the savepoint the first unparseable expression
 // would take every later probe with it.
-func resolveOneCheckExpression(
+func resolveOnePostgresCheckExpression(
 	ctx context.Context,
 	tx *sql.Tx,
 	index int,
@@ -159,4 +182,67 @@ func checkProbeColumnList(columns []CheckProbeColumn) string {
 // any quote inside it.
 func quoteCheckProbeIdentifier(name string) string {
 	return `"` + strings.ReplaceAll(name, `"`, `""`) + `"`
+}
+
+// resolveOneSQLServerCheckExpression is [resolveOnePostgresCheckExpression] for
+// the other engine that rewrites a CHECK.
+//
+// SQL Server prints its own rewrite: measured on 2025 (RTM-CU8), a declared
+// `price >= 0` on a decimal column is stored as `([price]>=(0))` -- brackets
+// around the identifier, parentheses around the literal, and the spaces gone.
+// A comparison of the two texts planned a DROP and an ADD on every run, at
+// severity destructive (stokaro/ptah#2054).
+//
+// The probe differs from the PostgreSQL one in two mechanical ways and in
+// nothing else: a temporary table is `#name` rather than `pg_temp.name`, and
+// its constraints live in `tempdb.sys.check_constraints`, keyed by the object
+// id of `tempdb..#name`.
+func resolveOneSQLServerCheckExpression(
+	ctx context.Context,
+	tx *sql.Tx,
+	index int,
+	probe CheckExpressionProbe,
+) (config.CheckExpression, error) {
+	expression := strings.TrimSpace(probe.Expression)
+	if expression == "" || len(probe.Columns) == 0 {
+		return config.CheckExpression{}, nil
+	}
+
+	name := fmt.Sprintf("#ptah_check_probe_%d", index)
+	statements := []string{
+		fmt.Sprintf("CREATE TABLE %s (%s, CONSTRAINT ck_ptah_check_probe_%d CHECK (%s))",
+			name, sqlServerProbeColumnList(probe.Columns), index, expression),
+	}
+
+	const query = `
+		SELECT COALESCE(MAX(c.definition), '')
+		FROM tempdb.sys.check_constraints c
+		WHERE c.parent_object_id = OBJECT_ID(@p1)`
+
+	var stored string
+	ok, err := runProbe(ctx, tx, "resolve check expressions", probe.Key, "ptah_check_probe", sqlServerSavepoints,
+		statements, func(ctx context.Context, tx *sql.Tx) error {
+			return tx.QueryRowContext(ctx, query, "tempdb.."+name).Scan(&stored)
+		})
+	if err != nil || !ok {
+		return config.CheckExpression{}, err
+	}
+	return config.CheckExpression{Expression: strings.TrimSpace(stored), Resolved: true}, nil
+}
+
+// sqlServerProbeColumnList renders the probe table's columns with SQL Server's
+// own quoting.
+func sqlServerProbeColumnList(columns []CheckProbeColumn) string {
+	rendered := make([]string, 0, len(columns))
+	for _, column := range columns {
+		rendered = append(rendered, fmt.Sprintf("%s %s",
+			quoteSQLServerProbeIdentifier(column.Name), column.Type))
+	}
+	return strings.Join(rendered, ", ")
+}
+
+// quoteSQLServerProbeIdentifier brackets a column name, doubling any bracket
+// inside it.
+func quoteSQLServerProbeIdentifier(name string) string {
+	return "[" + strings.ReplaceAll(name, "]", "]]") + "]"
 }
