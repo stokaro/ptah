@@ -774,6 +774,26 @@ func normalizeColumnTypesForDialect(
 		// verbatim is written as it stands and keeps its own affinity.
 		return normalize.SQLiteAffinity(renderedSQLiteType(genCol)),
 			normalize.SQLiteAffinity(dbType)
+	case platform.Spanner:
+		// Spanner's PostgreSQL interface has ONE string type. A `text` column
+		// and an unbounded `character varying` are the same STRING(MAX), and
+		// the catalog reports the second whichever of the two was declared --
+		// measured on the PGAdapter emulator v0.55.2, a column applied as
+		// `text` reads back as `character varying`.
+		//
+		// So comparing the spellings planned `ALTER COLUMN ... TYPE text` on
+		// every run of a document the database already matched, and the plan
+		// could never be applied: the emulator answers that ALTER with a
+		// GOOGLESQL_RET_CHECK failure (stokaro/ptah#2074).
+		//
+		// A width is still a distinction: STRING(200) is not STRING(MAX). So
+		// the fold is between the UNBOUNDED spellings only, and a sized string
+		// keeps a category of its own -- which is what makes a declared
+		// varchar(200) against an unbounded column a change in both
+		// directions. Two sized strings land in one category and their widths
+		// are asked about by shouldReportSizedTypeChange, as everywhere else.
+		return spannerStringType(genType, normalize.Type(genType)),
+			spannerStringType(dbType, normalize.Type(dbType))
 	case platform.Oracle:
 		// Oracle has no counterpart for most declared type names, so the
 		// declaration and the catalog never agree on the spelling: a declared
@@ -803,6 +823,23 @@ func typeChangeText(dbRawType, genRawType, dbNormalized, genNormalized, dialect 
 		return fmt.Sprintf("%s -> %s", strings.TrimSpace(dbRawType), strings.TrimSpace(genRawType))
 	}
 	return fmt.Sprintf("%s -> %s", dbNormalized, genNormalized)
+}
+
+// spannerStringType names a string column by whether it is bounded, which is
+// the only distinction Spanner's single string type has.
+//
+// normalize.Type has already dropped the width by the time it is called, so the
+// raw spelling is what answers the question. `text`, `varchar` and
+// `character varying` with no width are one type; anything carrying a width is
+// another, and two of those are compared on their widths further down.
+func spannerStringType(raw, normalized string) string {
+	if normalized != "varchar" && normalized != "text" {
+		return normalized
+	}
+	if strings.Contains(raw, "(") {
+		return "varchar"
+	}
+	return "text"
 }
 
 // renderedSQLiteType is the type SQLite's renderer would write for a
