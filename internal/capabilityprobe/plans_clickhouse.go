@@ -279,6 +279,8 @@ func clickHousePlan() plan {
 		capability.Procedures: "CREATE PROCEDURE is a statement ClickHouse has no spelling of",
 		capability.Hypertables: "create_hypertable is a TimescaleDB function, and TimescaleDB is a PostgreSQL " +
 			"extension ClickHouse has no spelling of",
+		capability.ContinuousAggregates: "a TimescaleDB continuous aggregate is a PostgreSQL materialized " +
+			"view with an extension option, which ClickHouse has no spelling of",
 		// See the same declaration in the PostgreSQL-family plan: the probe
 		// connects as one account and cannot ask whether a privilege exists
 		// without granting it. ClickHouse has no SHOW_ROUTINE at all, which is

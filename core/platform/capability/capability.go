@@ -374,6 +374,15 @@ const (
 	// timescaledb.
 	Hypertables Capability = "hypertables"
 
+	// ContinuousAggregates marks that Ptah declares, emits, reads back and
+	// plans TimescaleDB continuous aggregates for the target.
+	//
+	// It is a second key rather than a reuse of [Hypertables] because the two
+	// are different code paths against different catalogs, and a key names what
+	// Ptah does rather than which extension is installed. The extension decides
+	// both, and one of them could ship before the other.
+	ContinuousAggregates Capability = "continuous_aggregates"
+
 	// SequenceStartCounterOnly marks a target whose CREATE SEQUENCE carries a
 	// name and a start counter and refuses the option clauses PostgreSQL takes
 	// beside them.
@@ -729,6 +738,9 @@ var registry = map[Capability]spec{
 	Hypertables: {
 		doc: "TimescaleDB hypertables: create_hypertable and the catalog that reads one back",
 	},
+	ContinuousAggregates: {
+		doc: "TimescaleDB continuous aggregates: CREATE MATERIALIZED VIEW WITH (timescaledb.continuous) and the catalog that reads one back",
+	},
 	PostgresCatalogFunctions: {
 		doc: "obj_description reads a comment back out of the catalog",
 	},
@@ -974,6 +986,7 @@ func MySQL84() Capabilities {
 		AlterGeneratedColumnExpression: false,
 		RowLevelSecurity:               false,
 		Hypertables:                    false,
+		ContinuousAggregates:           false,
 		PostgresCatalogFunctions:       false,
 		CatalogRowStatistics:           false,
 		CatalogDependencies:            false,
@@ -1096,6 +1109,7 @@ func MariaDB1011() Capabilities {
 		AlterGeneratedColumnExpression: false,
 		RowLevelSecurity:               false,
 		Hypertables:                    false,
+		ContinuousAggregates:           false,
 		PostgresCatalogFunctions:       false,
 		CatalogRowStatistics:           false,
 		CatalogDependencies:            false,
@@ -1193,6 +1207,7 @@ func Postgres16() Capabilities {
 		AlterGeneratedColumnExpression:     false,
 		RowLevelSecurity:                   true,
 		Hypertables:                        false,
+		ContinuousAggregates:               false,
 		PostgresCatalogFunctions:           true,
 		CatalogRowStatistics:               true,
 		CatalogDependencies:                true,
@@ -1338,6 +1353,7 @@ func ClickHouse24() Capabilities {
 		// rather than rendered into something weaker than it says.
 		RowLevelSecurity:         true,
 		Hypertables:              false,
+		ContinuousAggregates:     false,
 		PostgresCatalogFunctions: false,
 		CatalogRowStatistics:     false,
 		CatalogDependencies:      false,
@@ -1431,6 +1447,7 @@ func SQLite3() Capabilities {
 		AlterGeneratedColumnExpression:     false,
 		RowLevelSecurity:                   false,
 		Hypertables:                        false,
+		ContinuousAggregates:               false,
 		PostgresCatalogFunctions:           false,
 		CatalogRowStatistics:               false,
 		CatalogDependencies:                false,
@@ -1562,6 +1579,7 @@ func SQLServer2022() Capabilities {
 		// outright, so a declaration carrying one is named and skipped.
 		RowLevelSecurity:         true,
 		Hypertables:              false,
+		ContinuousAggregates:     false,
 		PostgresCatalogFunctions: false,
 		CatalogRowStatistics:     false,
 		CatalogDependencies:      false,
@@ -2011,6 +2029,7 @@ func Oracle23() Capabilities {
 		// mechanism, not this statement.
 		RowLevelSecurity:         false,
 		Hypertables:              false,
+		ContinuousAggregates:     false,
 		PostgresCatalogFunctions: false,
 		CatalogRowStatistics:     false,
 		CatalogDependencies:      false,
@@ -2178,6 +2197,11 @@ func NamedPresets() []NamedPreset {
 // target; skipped`, which is a script that installs the extension and refuses
 // to use it (stokaro/ptah#1026).
 //
+// [ContinuousAggregates] is the same key for the same extension, and it is
+// turned on by the same declaration: a document that installs TimescaleDB and
+// declares an aggregate over one of its hypertables is one script, and half of
+// it being skipped is the same failure.
+//
 // The declaration is the evidence. A script that creates the extension has
 // created it by the time the call below runs, and an apply that adds the
 // extension in the same plan is in exactly that position: the connection was
@@ -2188,17 +2212,18 @@ func NamedPresets() []NamedPreset {
 func WithDeclaredExtensions(caps Capabilities, extensions []string) Capabilities {
 	for _, extension := range extensions {
 		if strings.EqualFold(strings.TrimSpace(extension), timescaleExtension) {
-			return caps.With(Hypertables, true)
+			return caps.With(Hypertables, true).With(ContinuousAggregates, true)
 		}
 	}
 	return caps
 }
 
-// timescaleExtension is the extension name that decides [Hypertables], in the
-// one place both the connection probe and the declaration rule can read it.
+// timescaleExtension is the extension name that decides [Hypertables] and
+// [ContinuousAggregates], in the one place both the connection probe and the
+// declaration rule can read it.
 const timescaleExtension = "timescaledb"
 
-// ForDialect returns// ForDialect returns the default preset for a dialect name (normalized via
+// ForDialect returns the default preset for a dialect name (normalized via
 // platform.NormalizeDialect): the current supported version line of that
 // dialect. Unknown dialects get nil — the conservative empty set.
 func ForDialect(dialect string) Capabilities {

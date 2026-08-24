@@ -159,6 +159,15 @@ func roundTripRows() []roundTripRow {
 			count: func(d *goschema.Database) int { return len(d.Hypertables) },
 		},
 		{
+			field: "ContinuousAggregates",
+			seed: func(d *goschema.Database) {
+				d.ContinuousAggregates = append(d.ContinuousAggregates, goschema.ContinuousAggregate{
+					Name: "hourly", Body: "SELECT time_bucket('1 hour', created_at) AS bucket FROM users GROUP BY bucket",
+				})
+			},
+			count: func(d *goschema.Database) int { return len(d.ContinuousAggregates) },
+		},
+		{
 			field: "Synonyms",
 			seed: func(d *goschema.Database) {
 				d.Synonyms = append(d.Synonyms, goschema.Synonym{Name: "s1", Target: "other.dbo.users"})
@@ -229,9 +238,10 @@ var yamlUnwritableFields = map[string]coverage.Kind{
 	"Ranges":         coverage.Range,
 	// HCL gained a block for these two (stokaro/ptah#1031) and the sweep above
 	// measures that they survive it; YAML still has no key, so here they stay.
-	"Hypertables":        coverage.Hypertable,
-	"Synonyms":           coverage.Synonym,
-	"ExtendedProperties": coverage.ExtendedProperty,
+	"Hypertables":          coverage.Hypertable,
+	"ContinuousAggregates": coverage.ContinuousAggregate,
+	"Synonyms":             coverage.Synonym,
+	"ExtendedProperties":   coverage.ExtendedProperty,
 }
 
 // TestYAMLDocument_RecordsExactlyWhatTheSurfaceCannotName is the same rule as

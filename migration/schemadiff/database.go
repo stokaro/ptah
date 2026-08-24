@@ -72,12 +72,21 @@ func CompareWithDatabaseReportingUndecidedAdditions(
 	if err != nil {
 		return nil, nil, err
 	}
-	if len(expressions) > 0 {
+	bodies, err := resolveContinuousAggregateBodies(ctx, conn, generated, database)
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(expressions) > 0 || len(bodies) > 0 {
 		merged := config.DefaultCompareOptions()
 		if opts != nil {
 			*merged = *opts
 		}
-		merged.DomainExpressions = expressions
+		if len(expressions) > 0 {
+			merged.DomainExpressions = expressions
+		}
+		if len(bodies) > 0 {
+			merged.ContinuousAggregateBodies = bodies
+		}
 		opts = merged
 	}
 
@@ -132,6 +141,51 @@ func resolveDomainExpressions(
 		return nil, fmt.Errorf("compare schemas: %w", err)
 	}
 	return expressions, nil
+}
+
+// resolveContinuousAggregateBodies normalizes the declared SELECT of every
+// continuous aggregate the database also holds.
+//
+// Only those, for the reason [resolveDomainExpressions] gives: an aggregate
+// being created carries its declaration into the CREATE statement unchanged,
+// and one being dropped has no declaration left to normalize. The ones in the
+// middle are the ones a string comparison cannot decide.
+func resolveContinuousAggregateBodies(
+	ctx context.Context,
+	conn *dbschema.DatabaseConnection,
+	generated *goschema.Database,
+	database *dbschematypes.DBSchema,
+) (map[string]config.ContinuousAggregateBody, error) {
+	if generated == nil || database == nil {
+		return nil, nil
+	}
+	held := make(map[string]struct{}, len(database.ContinuousAggregates))
+	for _, aggregate := range database.ContinuousAggregates {
+		held[strings.ToLower(aggregate.QualifiedName())] = struct{}{}
+		held[strings.ToLower(aggregate.Name)] = struct{}{}
+	}
+
+	probes := make([]dbschema.ContinuousAggregateProbe, 0, len(generated.ContinuousAggregates))
+	for _, aggregate := range generated.ContinuousAggregates {
+		if _, exists := held[strings.ToLower(aggregate.QualifiedName())]; !exists {
+			continue
+		}
+		probes = append(probes, dbschema.ContinuousAggregateProbe{
+			Key:              aggregate.QualifiedName(),
+			Schema:           aggregate.Schema,
+			Body:             aggregate.Body,
+			MaterializedOnly: aggregate.MaterializedOnly,
+		})
+	}
+	if len(probes) == 0 {
+		return nil, nil
+	}
+
+	bodies, err := conn.ResolveContinuousAggregateBodies(ctx, probes)
+	if err != nil {
+		return nil, fmt.Errorf("compare schemas: %w", err)
+	}
+	return bodies, nil
 }
 
 // quoteDomainDefaultLiteral renders a declared literal default as SQL.

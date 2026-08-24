@@ -215,6 +215,20 @@ func (r *Renderer) VisitDropView(node *ast.DropViewNode) error {
 	return r.r.VisitDropView(node)
 }
 
+// VisitCreateContinuousAggregate refuses: a continuous aggregate is a
+// TimescaleDB object, and TimescaleDB is an extension of PostgreSQL.
+//
+// There is no capability key behind this refusal, for the reason
+// VisitCreateSynonym gives: a key would have exactly one value forever and
+// would invite a preset to turn it on.
+func (r *Renderer) VisitCreateContinuousAggregate(node *ast.CreateContinuousAggregateNode) error {
+	return r.r.VisitCreateContinuousAggregate(node)
+}
+
+func (r *Renderer) VisitDropContinuousAggregate(node *ast.DropContinuousAggregateNode) error {
+	return r.r.VisitDropContinuousAggregate(node)
+}
+
 // VisitCreateHypertable refuses: a hypertable is a TimescaleDB object, and
 // TimescaleDB is an extension of PostgreSQL.
 //

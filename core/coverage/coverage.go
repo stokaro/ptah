@@ -116,6 +116,18 @@ const (
 	// (stokaro/ptah#1026).
 	Hypertable Kind = "hypertable"
 
+	// ContinuousAggregate is a TimescaleDB continuous aggregate: a
+	// materialized view over a hypertable the extension keeps up to date.
+	//
+	// It is declined for the reason [Hypertable] is, and the failure it
+	// prevents is louder. A description that cannot express one still describes
+	// the hypertable underneath it, so the aggregate reads as an object the
+	// document deliberately omits -- and the plan that follows is not a no-op
+	// but a DROP. Measured on 2.29.2, that drop cannot even apply: the server
+	// refuses DROP VIEW on a continuous aggregate and the run reports the same
+	// pending change forever (stokaro/ptah#1026).
+	ContinuousAggregate Kind = "continuous_aggregate"
+
 	// Synonym is a SQL Server synonym (CREATE SYNONYM).
 	//
 	// It is declined for the same reason [ExtendedProperty] is, and the same

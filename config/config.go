@@ -132,6 +132,48 @@ type CompareOptions struct {
 	// that changes nothing, on every run. Every other dialect stores the text it
 	// was given and is compared as before.
 	GeneratedExpressions map[string]GeneratedExpression
+
+	// ContinuousAggregateBodies carries each declared TimescaleDB continuous
+	// aggregate's SELECT as the target server itself spells it, keyed by the
+	// aggregate's qualified name.
+	//
+	// It is [CompareOptions.DomainExpressions] for a third attribute and the
+	// same reason. TimescaleDB rewrites the definition it is given before
+	// storing it, and the rewrite is not a formatting difference: measured on
+	// 2.29.2 / PostgreSQL 17.11,
+	//
+	//	declared                          stored
+	//	time_bucket('1 hour', time)    -> time_bucket('01:00:00'::interval, "time")
+	//	GROUP BY bucket, sensor        -> GROUP BY (time_bucket('01:00:00'::interval, "time")), sensor
+	//
+	// The second row is why no textual fold is sound: the GROUP BY key a
+	// declaration writes by its output name comes back as the whole expression
+	// it stood for, and nothing that folds whitespace and case does that.
+	//
+	// A resolved entry is the declaration after the same rewrite, so the two
+	// sides compare as like with like (stokaro/ptah#1026).
+	//
+	// A nil map means nobody could ask a server. The body then stays
+	// UNCOMPARED: reporting a difference between two spellings of one SELECT
+	// would drop and recreate the aggregate on every run, which is worse than
+	// missing a change -- and dropping a continuous aggregate discards its
+	// materialized history.
+	ContinuousAggregateBodies map[string]ContinuousAggregateBody
+}
+
+// ContinuousAggregateBody is one continuous aggregate's SELECT in the target
+// server's own spelling. See [CompareOptions.ContinuousAggregateBodies].
+//
+// The zero value is not an empty body: it is what a resolver returns for a
+// declaration it could not put through the server, and a comparison must skip
+// the body rather than read it as changed. Resolved reports which it is.
+type ContinuousAggregateBody struct {
+	// Body is the normalized SELECT, as the catalog spells it.
+	Body string
+	// Resolved reports that a server answered for this aggregate. A false value
+	// on a present key is a declaration the server refused, and the body may
+	// not be compared.
+	Resolved bool
 }
 
 // GeneratedExpression is one generated column's expression in the target

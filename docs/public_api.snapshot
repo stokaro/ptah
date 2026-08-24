@@ -97,6 +97,7 @@ type CompareOptions struct{ ... }
     func DefaultCompareOptions() *CompareOptions
     func WithAdditionalIgnoredExtensions(extensions ...string) *CompareOptions
     func WithIgnoredExtensions(extensions ...string) *CompareOptions
+type ContinuousAggregateBody struct{ ... }
 type DomainExpression struct{ ... }
 type GeneratedExpression struct{ ... }
 
@@ -222,6 +223,33 @@ type CompareOptions struct {
     // that changes nothing, on every run. Every other dialect stores the text it
     // was given and is compared as before.
     GeneratedExpressions map[string]GeneratedExpression
+
+    // ContinuousAggregateBodies carries each declared TimescaleDB continuous
+    // aggregate's SELECT as the target server itself spells it, keyed by the
+    // aggregate's qualified name.
+    //
+    // It is [CompareOptions.DomainExpressions] for a third attribute and the
+    // same reason. TimescaleDB rewrites the definition it is given before
+    // storing it, and the rewrite is not a formatting difference: measured on
+    // 2.29.2 / PostgreSQL 17.11,
+    //
+    //  declared                          stored
+    //  time_bucket('1 hour', time)    -> time_bucket('01:00:00'::interval, "time")
+    //  GROUP BY bucket, sensor        -> GROUP BY (time_bucket('01:00:00'::interval, "time")), sensor
+    //
+    // The second row is why no textual fold is sound: the GROUP BY key a
+    // declaration writes by its output name comes back as the whole expression
+    // it stood for, and nothing that folds whitespace and case does that.
+    //
+    // A resolved entry is the declaration after the same rewrite, so the two
+    // sides compare as like with like (stokaro/ptah#1026).
+    //
+    // A nil map means nobody could ask a server. The body then stays
+    // UNCOMPARED: reporting a difference between two spellings of one SELECT
+    // would drop and recreate the aggregate on every run, which is worse than
+    // missing a change -- and dropping a continuous aggregate discards its
+    // materialized history.
+    ContinuousAggregateBodies map[string]ContinuousAggregateBody
 }
     CompareOptions contains configuration options for schema comparison
     operations. These options control how schema differences are calculated and
@@ -232,6 +260,26 @@ func WithAdditionalIgnoredExtensions(extensions ...string) *CompareOptions
 func WithIgnoredExtensions(extensions ...string) *CompareOptions
 func (c *CompareOptions) FilterIgnoredExtensions(extensions []string) []string
 func (c *CompareOptions) IsExtensionIgnored(extensionName string) bool
+
+### go.5x5.cz/ptah/config.ContinuousAggregateBody
+
+package config // import "go.5x5.cz/ptah/config"
+
+type ContinuousAggregateBody struct {
+    // Body is the normalized SELECT, as the catalog spells it.
+    Body string
+    // Resolved reports that a server answered for this aggregate. A false value
+    // on a present key is a declaration the server refused, and the body may
+    // not be compared.
+    Resolved bool
+}
+    ContinuousAggregateBody is one continuous aggregate's SELECT in the target
+    server's own spelling. See CompareOptions.ContinuousAggregateBodies.
+
+    The zero value is not an empty body: it is what a resolver returns for a
+    declaration it could not put through the server, and a comparison must skip
+    the body rather than read it as changed. Resolved reports which it is.
+
 
 ### go.5x5.cz/ptah/config.DomainExpression
 
@@ -876,6 +924,8 @@ type ConstraintNode struct{ ... }
     func NewUniqueConstraint(name string, columns ...string) *ConstraintNode
 type ConstraintType int
     const PrimaryKeyConstraint ConstraintType = iota ...
+type CreateContinuousAggregateNode struct{ ... }
+    func NewCreateContinuousAggregate(name, body string) *CreateContinuousAggregateNode
 type CreateDatabaseNode struct{ ... }
     func NewCreateDatabase(name string) *CreateDatabaseNode
 type CreateFunctionNode struct{ ... }
@@ -916,6 +966,8 @@ type DomainTypeDef struct{ ... }
     func NewDomainTypeDef(baseType string) *DomainTypeDef
 type DropColumnOperation struct{ ... }
 type DropConstraintOperation struct{ ... }
+type DropContinuousAggregateNode struct{ ... }
+    func NewDropContinuousAggregate(name string) *DropContinuousAggregateNode
 type DropExtensionNode struct{ ... }
     func NewDropExtension(name string) *DropExtensionNode
 type DropFunctionNode struct{ ... }
@@ -1737,6 +1789,44 @@ type ConstraintType int
 const PrimaryKeyConstraint ConstraintType = iota ...
 func (ct ConstraintType) String() string
 
+### go.5x5.cz/ptah/core/ast.CreateContinuousAggregateNode
+
+package ast // import "go.5x5.cz/ptah/core/ast"
+
+type CreateContinuousAggregateNode struct {
+    Name   string
+    Schema string
+    Body   string
+    // MaterializedOnly is nil when the declaration made no choice, which leaves
+    // the option out of the statement and takes the server's own default. The
+    // default is not a constant across TimescaleDB versions, so writing one in
+    // would pin a value nobody asked for.
+    MaterializedOnly *bool
+    WithNoData       bool
+    Comment          string
+}
+    CreateContinuousAggregateNode represents the statement that creates a
+    TimescaleDB continuous aggregate.
+
+    It is a CREATE MATERIALIZED VIEW carrying `WITH (timescaledb.continuous)`,
+    and it is its own node rather than a flag on CreateMaterializedViewNode
+    because the two are different objects to the server in both directions.
+    Measured on 2.29.2: `DROP VIEW` on one answers `cannot drop continuous
+    aggregate using DROP VIEW`, and there is no `CREATE OR REPLACE MATERIALIZED
+    VIEW` at all -- `syntax error at or near "MATERIALIZED"` -- so a changed
+    body is a drop and a create rather than a replacement.
+
+    Body is the SELECT as written. WithNoData renders `WITH NO DATA`,
+    which creates the aggregate without materializing history: a migration
+    that backfilled years of data as a side effect of a schema change is not
+    something a plan should do on its own.
+
+func NewCreateContinuousAggregate(name, body string) *CreateContinuousAggregateNode
+func (n *CreateContinuousAggregateNode) Accept(visitor Visitor) error
+func (n *CreateContinuousAggregateNode) SetComment(comment string) *CreateContinuousAggregateNode
+func (n *CreateContinuousAggregateNode) SetMaterializedOnly(only *bool) *CreateContinuousAggregateNode
+func (n *CreateContinuousAggregateNode) SetSchema(schema string) *CreateContinuousAggregateNode
+
 ### go.5x5.cz/ptah/core/ast.CreateDatabaseNode
 
 package ast // import "go.5x5.cz/ptah/core/ast"
@@ -2380,6 +2470,26 @@ type DropConstraintOperation struct {
     can be a primary key, unique, foreign key, check, or exclude constraint.
 
 func (op *DropConstraintOperation) Accept(_visitor Visitor) error
+
+### go.5x5.cz/ptah/core/ast.DropContinuousAggregateNode
+
+package ast // import "go.5x5.cz/ptah/core/ast"
+
+type DropContinuousAggregateNode struct {
+    Name     string
+    Schema   string
+    IfExists bool
+}
+    DropContinuousAggregateNode represents the statement that removes one.
+
+    It is DROP MATERIALIZED VIEW rather than DROP VIEW, which is the server's
+    own instruction: `cannot drop continuous aggregate using DROP VIEW. HINT:
+    Use DROP MATERIALIZED VIEW to drop a continuous aggregate.`
+
+func NewDropContinuousAggregate(name string) *DropContinuousAggregateNode
+func (n *DropContinuousAggregateNode) Accept(visitor Visitor) error
+func (n *DropContinuousAggregateNode) SetIfExists() *DropContinuousAggregateNode
+func (n *DropContinuousAggregateNode) SetSchema(schema string) *DropContinuousAggregateNode
 
 ### go.5x5.cz/ptah/core/ast.DropExtensionNode
 
@@ -4394,6 +4504,10 @@ type Visitor interface {
     VisitCreateSynonym(*CreateSynonymNode) error
     // VisitCreateHypertable renders the TimescaleDB create_hypertable call
     VisitCreateHypertable(*CreateHypertableNode) error
+    // VisitCreateContinuousAggregate renders a TimescaleDB continuous aggregate
+    VisitCreateContinuousAggregate(*CreateContinuousAggregateNode) error
+    // VisitDropContinuousAggregate removes a TimescaleDB continuous aggregate
+    VisitDropContinuousAggregate(*DropContinuousAggregateNode) error
     // VisitDropSynonym renders a DROP SYNONYM statement
     VisitDropSynonym(*DropSynonymNode) error
     // VisitExtendedProperty renders one SQL Server extended-property statement
@@ -4638,6 +4752,7 @@ func UniqueStructNames(embeddedFields []EmbeddedField) []string
 type CompositeType struct{ ... }
 type CompositeTypeField struct{ ... }
 type Constraint struct{ ... }
+type ContinuousAggregate struct{ ... }
 type Database struct{ ... }
     func Merge(dbs ...*Database) (*Database, error)
     func ParseDir(rootDir string) (*Database, error)
@@ -4798,6 +4913,53 @@ type Constraint struct {
 
 func (c Constraint) ForeignColumnsOrDefault() []string
 
+### go.5x5.cz/ptah/core/goschema.ContinuousAggregate
+
+package goschema // import "go.5x5.cz/ptah/core/goschema"
+
+type ContinuousAggregate struct {
+    StructName string // Name of the Go struct this aggregate is associated with
+    Name       string // Aggregate name, which is also the view name
+    Schema     string // Schema holding the aggregate
+    // Body is the SELECT the aggregate materializes, without the trailing
+    // semicolon and without the CREATE prefix.
+    Body string
+    // MaterializedOnly renders `timescaledb.materialized_only`, which decides
+    // whether a query reads only materialized data or combines it with the raw
+    // rows since the last refresh.
+    //
+    // Nil is not false: it is a declaration that did not choose, and it takes
+    // whatever the server defaults to. The default is not a constant --
+    // measured on 2.29.2, an aggregate created without the option is reported
+    // `materialized_only = t` -- so comparing an unset declaration against the
+    // catalog as if it said false would report a change on every run, and the
+    // plan for that change drops the aggregate and its materialization.
+    MaterializedOnly *bool
+    Comment          string // Optional comment for documentation
+}
+    ContinuousAggregate is a TimescaleDB continuous aggregate: a materialized
+    view over a hypertable that the extension keeps up to date.
+
+    It is its own family rather than a MaterializedView with a flag, because
+    describing one as a materialized view is wrong in both directions and both
+    were measured on 2.29.2 / PostgreSQL 17.11: a plan that dropped it emitted
+    `DROP VIEW` and the server answered `cannot drop continuous aggregate using
+    DROP VIEW`, and a plan that created it emitted the body `pg_get_viewdef`
+    answers, which selects from the materialization hypertable in a schema the
+    extension owns (stokaro/ptah#1026).
+
+    Body is the SELECT as it was WRITTEN. The catalog stores
+    a rewritten one -- `time_bucket('1 hour', time)` comes
+    back as `time_bucket('01:00:00'::interval, "time")` -- so
+    the two are compared by putting the declaration through
+    the same rewrite rather than by folding the text. See
+    go.5x5.cz/ptah/dbschema.DatabaseConnection.ResolveContinuousAggregateBodies.
+
+    Dialects is deliberately absent, for the reason Synonym gives: a continuous
+    aggregate belongs to TimescaleDB and to nothing else.
+
+func (a ContinuousAggregate) QualifiedName() string
+
 ### go.5x5.cz/ptah/core/goschema.Database
 
 package goschema // import "go.5x5.cz/ptah/core/goschema"
@@ -4824,6 +4986,7 @@ type Database struct {
     RLSPolicies                []RLSPolicy                    // PostgreSQL Row-Level Security policies
     RLSEnabledTables           []RLSEnabledTable              // Tables with RLS enabled
     Hypertables                []Hypertable                   // TimescaleDB hypertables
+    ContinuousAggregates       []ContinuousAggregate          // TimescaleDB continuous aggregates
     Roles                      []Role                         // PostgreSQL roles
     Grants                     []Grant                        // PostgreSQL privilege grants
     ManagedData                []ManagedData                  // Declarative reference/seed row data for tables
@@ -7012,11 +7175,39 @@ func GeneratedExpressionProbeTable(index int) string
 func ReadSchemaWithSchemas(conn *DatabaseConnection, schemas []string) (*types.DBSchema, error)
 func ReadTableRows(ctx context.Context, conn *DatabaseConnection, schema, table string, ...) ([]map[string]any, error)
 func ResolveGeneratedExpressions(ctx context.Context, dev *DatabaseConnection, ...) (map[string]config.GeneratedExpression, error)
+type ContinuousAggregateProbe struct{ ... }
 type DatabaseConnection struct{ ... }
     func ConnectToDatabase(ctx context.Context, dbURL string) (*DatabaseConnection, error)
 type DomainExpressionProbe struct{ ... }
 type GeneratedExpressionProbe struct{ ... }
 type IsolatedQueryer interface{ ... }
+
+### go.5x5.cz/ptah/dbschema.ContinuousAggregateProbe
+
+package dbschema // import "go.5x5.cz/ptah/dbschema"
+
+type ContinuousAggregateProbe struct {
+    // Key identifies the aggregate to the caller. It is returned unchanged as
+    // the map key and is never sent to the server.
+    Key string
+    // Schema is where the probe is created. It is the schema the declaration
+    // names, so the probe resolves the same objects the real aggregate does --
+    // a body that reads an unqualified table finds it through the same
+    // search_path.
+    Schema string
+    // Body is the declared SELECT, without the CREATE prefix and without a
+    // trailing semicolon.
+    Body string
+    // MaterializedOnly is the declared option, nil when the declaration made no
+    // choice. It is sent because the catalog reports it beside the definition,
+    // and a probe that named a value the declaration did not would answer for a
+    // different declaration.
+    MaterializedOnly *bool
+}
+    ContinuousAggregateProbe is one declared TimescaleDB continuous aggregate
+    whose SELECT needs the target server's own spelling before it can be
+    compared with what the catalog holds.
+
 
 ### go.5x5.cz/ptah/dbschema.DatabaseConnection
 
@@ -7038,6 +7229,7 @@ func (dc *DatabaseConnection) QueryContext(ctx context.Context, query string, ar
 func (dc *DatabaseConnection) QueryRow(query string, args ...any) *sql.Row
 func (dc *DatabaseConnection) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
 func (dc *DatabaseConnection) Reader() types.SchemaReader
+func (dc *DatabaseConnection) ResolveContinuousAggregateBodies(ctx context.Context, probes []ContinuousAggregateProbe) (result map[string]config.ContinuousAggregateBody, resultErr error)
 func (dc *DatabaseConnection) ResolveDomainExpressions(ctx context.Context, probes []DomainExpressionProbe) (result map[string]config.DomainExpression, resultErr error)
 func (dc *DatabaseConnection) ResolveIdentifierSemantics(ctx context.Context, names []string) (identifier.Semantics, error)
 func (dc *DatabaseConnection) SchemaWriter() types.SchemaWriter
@@ -11167,6 +11359,7 @@ type CompositeAttribute struct{ ... }
 type CompositeTypeDiff struct{ ... }
 type ConstraintAdditionInfo struct{ ... }
 type ConstraintRemovalInfo struct{ ... }
+type ContinuousAggregateDiff struct{ ... }
 type DomainDiff struct{ ... }
 type EnumDiff struct{ ... }
 type ExtendedPropertyDiff struct{ ... }
@@ -11364,6 +11557,28 @@ type ConstraintRemovalInfo struct {
     CONSTRAINT`. The plain ConstraintsRemoved name list discards the table name,
     which the comparator does know at diff time, so it is preserved here in
     parallel.
+
+
+### go.5x5.cz/ptah/migration/schemadiff/types.ContinuousAggregateDiff
+
+package types // import "go.5x5.cz/ptah/migration/schemadiff/types"
+
+type ContinuousAggregateDiff struct {
+    // Name is the aggregate both sides name, schema-qualified when it has one.
+    Name string `json:"name"`
+    // OldBody and NewBody are the SELECTs, live and declared.
+    OldBody string `json:"old_body"`
+    NewBody string `json:"new_body"`
+    // OldMaterializedOnly and NewMaterializedOnly are the option's two values.
+    OldMaterializedOnly bool `json:"old_materialized_only"`
+    NewMaterializedOnly bool `json:"new_materialized_only"`
+}
+    ContinuousAggregateDiff describes a continuous aggregate whose declaration
+    differs from the one the catalog reports.
+
+    Both bodies are carried so a reviewer reading the plan can see what changed;
+    the plan itself is a drop followed by a create, and the create uses the
+    DECLARED body.
 
 
 ### go.5x5.cz/ptah/migration/schemadiff/types.DomainDiff
@@ -11989,6 +12204,26 @@ type SchemaDiff struct {
     // It carries the same refusal as a removal, for the same reason: changing a
     // dimension is not a statement either.
     HypertablesModified []HypertableDiff `json:"hypertables_modified"`
+
+    // ContinuousAggregatesAdded names the continuous aggregates a declaration
+    // asks for and the database does not report.
+    ContinuousAggregatesAdded []string `json:"continuous_aggregates_added"`
+
+    // ContinuousAggregatesRemoved names the continuous aggregates the database
+    // reports and the declaration does not.
+    //
+    // Unlike a hypertable this one CAN be honored, and the statement is DROP
+    // MATERIALIZED VIEW rather than DROP VIEW -- measured on 2.29.2, DROP VIEW
+    // answers `cannot drop continuous aggregate using DROP VIEW`.
+    ContinuousAggregatesRemoved []string `json:"continuous_aggregates_removed"`
+
+    // ContinuousAggregatesModified names the aggregates whose declared body or
+    // options differ from the ones the catalog reports.
+    //
+    // It is planned as a drop and a create rather than a replacement, because
+    // there is no replacement: measured on 2.29.2, `CREATE OR REPLACE
+    // MATERIALIZED VIEW` is `syntax error at or near "MATERIALIZED"`.
+    ContinuousAggregatesModified []ContinuousAggregateDiff `json:"continuous_aggregates_modified"`
 
     // SynonymsAdded contains names of synonyms that exist in the target schema
     // and not in the database.

@@ -2681,6 +2681,86 @@ func (r *Renderer) writeClickHouseOnlyOperation(operation ast.AlterOperation) {
 	}
 }
 
+// VisitCreateContinuousAggregate renders the statement that creates a
+// TimescaleDB continuous aggregate.
+//
+// It is a CREATE MATERIALIZED VIEW carrying `WITH (timescaledb.continuous)`,
+// which is what makes the extension own it. A plain materialized view of the
+// same body is a different object: measured on 2.29.2, dropping a continuous
+// aggregate with `DROP VIEW` answers `cannot drop continuous aggregate using
+// DROP VIEW`, and there is no CREATE OR REPLACE form at all.
+//
+// `WITH NO DATA` is not optional here. Creating one WITH DATA materializes the
+// whole history the hypertable holds, which on a real table is a table scan and
+// a rewrite -- work an operator schedules rather than something a schema
+// migration does as a side effect. The first refresh is theirs to run.
+func (r *Renderer) VisitCreateContinuousAggregate(node *ast.CreateContinuousAggregateNode) error {
+	if r.refuses(capability.ContinuousAggregates, "continuous aggregate", node.Name) {
+		return nil
+	}
+	if node.Comment != "" {
+		r.w.WriteLinef("-- %s", node.Comment)
+	}
+
+	options := []string{"timescaledb.continuous"}
+	if node.MaterializedOnly != nil {
+		options = append(options,
+			fmt.Sprintf("timescaledb.materialized_only = %t", *node.MaterializedOnly))
+	}
+	r.w.WriteLinef("CREATE MATERIALIZED VIEW %s WITH (%s) AS",
+		r.escapeQualifiedIdentifier(r.continuousAggregateName(node.Schema, node.Name)),
+		strings.Join(options, ", "))
+	r.w.WriteLine(continuousAggregateBody(node.Body))
+	if node.WithNoData {
+		r.w.WriteLine("WITH NO DATA")
+	}
+	r.w.WriteLine(";")
+	return nil
+}
+
+// continuousAggregateBody trims the terminator the catalog puts on a definition
+// it hands back.
+//
+// A description read from a server carries `view_definition` verbatim, and that
+// column ends in a semicolon. Writing it into the statement would put the
+// terminator BEFORE `WITH NO DATA`, and the server answers `syntax error at or
+// near "WITH"` -- so a document Ptah inspected could not be applied by Ptah.
+func continuousAggregateBody(body string) string {
+	return strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(body), ";"))
+}
+
+// VisitDropContinuousAggregate renders the statement that removes one.
+//
+// DROP MATERIALIZED VIEW rather than DROP VIEW, which is the server's own
+// instruction rather than a preference: `cannot drop continuous aggregate using
+// DROP VIEW. HINT: Use DROP MATERIALIZED VIEW to drop a continuous aggregate.`
+func (r *Renderer) VisitDropContinuousAggregate(node *ast.DropContinuousAggregateNode) error {
+	if r.refuses(capability.ContinuousAggregates, "continuous aggregate", node.Name) {
+		return nil
+	}
+	parts := []string{"DROP MATERIALIZED VIEW"}
+	if node.IfExists {
+		parts = append(parts, "IF EXISTS")
+	}
+	parts = append(parts, r.escapeQualifiedIdentifier(
+		r.continuousAggregateName(node.Schema, node.Name)))
+	r.w.WriteLinef("%s;", strings.Join(parts, " "))
+	return nil
+}
+
+// continuousAggregateName folds a separately-carried schema into the name, so
+// the identifier escaper sees the one qualified string every other object gives
+// it.
+func (r *Renderer) continuousAggregateName(schema, name string) string {
+	if strings.TrimSpace(schema) == "" {
+		return name
+	}
+	if strings.Contains(name, ".") {
+		return name
+	}
+	return schema + "." + name
+}
+
 // VisitCreateHypertable renders the TimescaleDB call that turns an ordinary
 // table into a hypertable.
 //

@@ -1862,6 +1862,9 @@ func cloneSchemaDiff(diff *types.SchemaDiff) *types.SchemaDiff {
 	clone.HypertablesAdded = slices.Clone(diff.HypertablesAdded)
 	clone.HypertablesRemoved = slices.Clone(diff.HypertablesRemoved)
 	clone.HypertablesModified = slices.Clone(diff.HypertablesModified)
+	clone.ContinuousAggregatesAdded = slices.Clone(diff.ContinuousAggregatesAdded)
+	clone.ContinuousAggregatesRemoved = slices.Clone(diff.ContinuousAggregatesRemoved)
+	clone.ContinuousAggregatesModified = slices.Clone(diff.ContinuousAggregatesModified)
 	clone.ExtendedPropertiesAdded = slices.Clone(diff.ExtendedPropertiesAdded)
 	clone.ExtendedPropertiesRemoved = slices.Clone(diff.ExtendedPropertiesRemoved)
 	clone.ExtendedPropertiesModified = slices.Clone(diff.ExtendedPropertiesModified)
@@ -2350,6 +2353,16 @@ func reverseSchemaDiffWithSchemaForDialect(
 		HypertablesAdded:    slices.Clone(diff.HypertablesRemoved),
 		HypertablesRemoved:  slices.Clone(diff.HypertablesAdded),
 		HypertablesModified: reverseHypertableDiffs(diff.HypertablesModified),
+
+		// A continuous aggregate reverses like a view and unlike the
+		// hypertable above it: both directions are statements the server
+		// accepts. What the up direction created, the down direction drops
+		// with DROP MATERIALIZED VIEW; what it dropped, the down direction
+		// creates from the body the pre-change read carried, which is why the
+		// down plan's desired schema is the introspected one.
+		ContinuousAggregatesAdded:    slices.Clone(diff.ContinuousAggregatesRemoved),
+		ContinuousAggregatesRemoved:  slices.Clone(diff.ContinuousAggregatesAdded),
+		ContinuousAggregatesModified: reverseContinuousAggregateDiffs(diff.ContinuousAggregatesModified),
 
 		// An extended property is a name, an address and a value, and the
 		// reversal needs no schema side because all three are already in the
@@ -3296,6 +3309,22 @@ func reverseHypertableDiffs(changes []types.HypertableDiff) []types.HypertableDi
 			NewColumn:        change.OldColumn,
 			OldChunkInterval: change.NewChunkInterval,
 			NewChunkInterval: change.OldChunkInterval,
+		})
+	}
+	return reversed
+}
+
+// reverseContinuousAggregateDiffs swaps the two sides of each aggregate change,
+// so a rollback restores the body and the option the database had.
+func reverseContinuousAggregateDiffs(changes []types.ContinuousAggregateDiff) []types.ContinuousAggregateDiff {
+	reversed := make([]types.ContinuousAggregateDiff, 0, len(changes))
+	for _, change := range changes {
+		reversed = append(reversed, types.ContinuousAggregateDiff{
+			Name:                change.Name,
+			OldBody:             change.NewBody,
+			NewBody:             change.OldBody,
+			OldMaterializedOnly: change.NewMaterializedOnly,
+			NewMaterializedOnly: change.OldMaterializedOnly,
 		})
 	}
 	return reversed

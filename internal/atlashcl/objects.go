@@ -1337,3 +1337,50 @@ func (p *parser) rejectUnsupportedHypertableAttrs(block *hclsyntax.Block) error 
 		"comment":        true,
 	}, "hypertable")
 }
+
+// parseContinuousAggregate parses a top-level continuous_aggregate block into a
+// goschema.ContinuousAggregate.
+//
+// Unlike a hypertable this object has a name of its own, so the block's label
+// is that name and `schema` says where it lives -- the same shape a view block
+// has, which is what a reader familiar with one will expect of the other.
+//
+// `as` is required. A continuous aggregate is its SELECT; there is no default
+// body and nothing to create without one.
+func (p *parser) parseContinuousAggregate(block *hclsyntax.Block) error {
+	schema, name, err := p.objectSchemaAndName(block, "continuous_aggregate")
+	if err != nil {
+		return err
+	}
+	if err := p.rejectNestedBlocks(block, "continuous_aggregate"); err != nil {
+		return err
+	}
+	if err := p.rejectUnsupportedContinuousAggregateAttrs(block); err != nil {
+		return err
+	}
+	body, err := p.stringAttr(block, "as", "continuous_aggregate")
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(body) == "" {
+		return p.blockError(block,
+			"continuous_aggregate %q requires an `as` body; a continuous aggregate is its SELECT", name)
+	}
+	p.db.ContinuousAggregates = append(p.db.ContinuousAggregates, goschema.ContinuousAggregate{
+		Name:             name,
+		Schema:           schema,
+		Body:             body,
+		MaterializedOnly: p.optionalBoolPtr(block.Body.Attributes["materialized_only"]),
+		Comment:          p.optionalString(block.Body.Attributes["comment"]),
+	})
+	return nil
+}
+
+func (p *parser) rejectUnsupportedContinuousAggregateAttrs(block *hclsyntax.Block) error {
+	return p.rejectUnsupportedAttrs(block, map[string]bool{
+		"schema":            true,
+		"as":                true,
+		"materialized_only": true,
+		"comment":           true,
+	}, "continuous_aggregate")
+}

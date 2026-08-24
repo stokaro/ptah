@@ -536,15 +536,15 @@ other way out, and it is the only way out for a parameter Ptah does not own.
 
 ## TimescaleDB
 
-TimescaleDB is PostgreSQL with an extension installed. Ptah manages its
-hypertables and describes its continuous aggregates without managing them, and
-the two sections below say exactly which is which.
+TimescaleDB is PostgreSQL with an extension installed. Ptah manages both of the
+objects it adds — hypertables and continuous aggregates — and the two sections
+below say what each declaration carries.
 
 ### Continuous aggregates
 
 A TimescaleDB continuous aggregate is a view to PostgreSQL: `pg_class` reports
 `relkind = 'v'`, and a reader that asks only PostgreSQL describes it as one.
-Ptah reads it as itself instead, and does not manage it.
+Ptah reads it, declares it and plans it as itself.
 
 Describing one as a view is wrong in both directions, and both were measured on
 TimescaleDB 2.29.2 / PostgreSQL 17.11:
@@ -559,13 +559,82 @@ TimescaleDB 2.29.2 / PostgreSQL 17.11:
   named a relation in a schema the extension owns.
 
 So a continuous aggregate is read from `timescaledb_information.continuous_aggregates`
-— which keeps the `SELECT` as it was written — and is left out of the view
-list. Nothing plans a change to one in either direction.
+— which keeps the `SELECT` as it was written — and is left out of the view list.
 
-A declaration that names a relation the server holds as a continuous aggregate
-is refused before anything is compared, naming the aggregate and the hypertable
-it materializes. The server's own answer at apply time would be
-`relation "…" already exists`, halfway through a script.
+Declare one over the hypertable it materializes:
+
+```go
+//ptah:schema:continuousaggregate name="readings_hourly" body="SELECT time_bucket('1 hour', time) AS bucket, device, avg(temperature) AS avg_temp FROM readings GROUP BY bucket, device"
+type ReadingsHourly struct{}
+```
+
+```hcl
+continuous_aggregate "readings_hourly" {
+  schema = schema.public
+  as     = "SELECT time_bucket('1 hour', time) AS bucket, device, avg(temperature) AS avg_temp FROM readings GROUP BY bucket, device"
+}
+```
+
+which renders
+
+```sql
+CREATE MATERIALIZED VIEW "public"."readings_hourly" WITH (timescaledb.continuous) AS
+SELECT time_bucket('1 hour', time) AS bucket, device, avg(temperature) AS avg_temp FROM readings GROUP BY bucket, device
+WITH NO DATA;
+```
+
+**`WITH NO DATA` is not a preference.** Creating an aggregate with data
+materializes the whole history the hypertable holds, which is an unbounded
+amount of work a schema change must not start on its own; the first refresh is
+an operation an operator runs. It is also what makes the statement usable inside
+a transaction at all — without it the server answers
+`CREATE MATERIALIZED VIEW ... WITH DATA cannot run inside a transaction block`.
+
+`materialized_only` is optional, and an omitted one takes the server's own
+default rather than `false`. The default is not a constant across TimescaleDB
+versions — measured on 2.29.2, an aggregate created without the option is
+reported with it `true` — so a declaration that did not choose is not compared
+against it.
+
+The create runs after `create_hypertable`, because the extension checks: over an
+ordinary table, `WITH (timescaledb.continuous)` answers
+`invalid continuous aggregate view`.
+
+#### A changed body is a drop and a create
+
+There is no `CREATE OR REPLACE MATERIALIZED VIEW` — measured, it is
+`syntax error at or near "MATERIALIZED"` — so a changed declaration is planned
+as a `DROP MATERIALIZED VIEW` followed by the create, in that order. **The drop
+discards the materialization**, and the aggregate starts empty again.
+
+#### The body is compared through the server
+
+TimescaleDB rewrites the definition before storing it, and the rewrite is not a
+formatting difference. Measured on 2.29.2:
+
+```text
+declared                          stored
+time_bucket('1 hour', time)    -> time_bucket('01:00:00'::interval, "time")
+GROUP BY bucket, sensor        -> GROUP BY (time_bucket('01:00:00'::interval, "time")), sensor
+```
+
+The `GROUP BY` key written by its output name comes back as the whole expression
+that name stood for, so no textual fold can decide whether two spellings are the
+same aggregate. A comparison that holds a connection asks the server instead:
+the declaration is created under a probe name inside a transaction, its stored
+definition is read back, and the transaction is rolled back — the aggregate, its
+materialization hypertable and everything else it made go with it.
+
+Where there is no connection — `ptah schema render`, a comparison between two
+files — the body stays **uncompared**, and only the options are. Reporting a
+difference between two spellings of one `SELECT` would drop and recreate the
+aggregate on every run, and each drop discards the materialization it exists to
+keep.
+
+A declared **view, materialized view or table** whose name a continuous
+aggregate already occupies is refused before anything is compared, naming the
+aggregate and the hypertable it materializes. The server's own answer at apply
+time would be `relation "…" already exists`, halfway through a script.
 
 ### Hypertables
 
@@ -655,8 +724,8 @@ complete for it.
 
 TimescaleDB is PostgreSQL with an extension installed, not a dialect or a
 version of its own, and it puts no token in `version()`. So no preset sets the
-`hypertables` capability: what decides it is `pg_extension`, read once when the
-connection opens. A PostgreSQL target without the extension skips the statement
+`hypertables` or `continuous_aggregates` capability: what decides both is
+`pg_extension`, read once when the connection opens. A PostgreSQL target without the extension skips the statement
 and says so in the plan rather than failing at apply time on
 `function create_hypertable(unknown, unknown) does not exist`.
 
@@ -671,9 +740,9 @@ The same rule reaches an apply that adds the extension in the same plan: the
 connection was opened before the extension existed, so its answer is about the
 past.
 
-Only HCL and a Go schema can declare a hypertable. A YAML or `.sql` document
-records that it could not say so, and the comparison then withholds the removal
-its silence would otherwise mean.
+Only HCL and a Go schema can declare a hypertable or a continuous aggregate. A
+YAML or `.sql` document records that it could not say so, and the comparison
+then withholds the removal its silence would otherwise mean.
 
 ## Next steps
 

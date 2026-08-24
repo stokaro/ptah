@@ -435,6 +435,9 @@ func postgresFamilyPlan(dialect string) plan {
 		capability.Hypertables: "the key names TimescaleDB hypertables, and TimescaleDB is an extension " +
 			"rather than a version line; a PostgreSQL image without it refuses create_hypertable for the " +
 			"extension's absence, which is a different question from the one the key asks",
+		capability.ContinuousAggregates: "the key names TimescaleDB continuous aggregates, for the same " +
+			"reason: a PostgreSQL image without the extension refuses CREATE MATERIALIZED VIEW WITH " +
+			"(timescaledb.continuous) for the extension's absence",
 	}}
 }
 
@@ -684,6 +687,8 @@ func mysqlFamilyPlan(dialect string) plan {
 		capability.Hypertables: "the key names a TimescaleDB object, which is a PostgreSQL extension; " +
 			"this server has no such function and no MySQL-family code path emits one, so its refusal " +
 			"would answer a different question",
+		capability.ContinuousAggregates: "the key names a TimescaleDB object for the same reason; this " +
+			"server has no such statement and no MySQL-family code path emits one",
 	}
 	// Both dialects are asked now. MariaDB used to be declared undecided here,
 	// on the ground that the engine has SEQUENCE while Ptah's generator did

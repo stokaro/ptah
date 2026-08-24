@@ -510,6 +510,22 @@ func (r *Renderer) VisitCreateView(node *ast.CreateViewNode) error {
 	return nil
 }
 
+// VisitCreateContinuousAggregate refuses: a continuous aggregate is a
+// TimescaleDB object, and TimescaleDB is an extension of PostgreSQL.
+//
+// There is no capability key behind this refusal, for the reason
+// VisitCreateSynonym gives: a key would have exactly one value forever and
+// would invite a preset to turn it on.
+func (r *Renderer) VisitCreateContinuousAggregate(node *ast.CreateContinuousAggregateNode) error {
+	r.w.WriteLinef("-- SQLSERVER: continuous aggregate %s is not supported by this target; skipped.", node.Name)
+	return nil
+}
+
+func (r *Renderer) VisitDropContinuousAggregate(node *ast.DropContinuousAggregateNode) error {
+	r.w.WriteLinef("-- SQLSERVER: continuous aggregate %s is not supported by this target; skipped.", node.Name)
+	return nil
+}
+
 // VisitCreateHypertable refuses: a hypertable is a TimescaleDB object, and
 // TimescaleDB is an extension of PostgreSQL.
 //

@@ -467,6 +467,7 @@ func (r *renderer) renderBody() {
 	// After the tables: a synonym stands for one and a property is attached to
 	// one, so a reader meets the structure before the things that point at it.
 	r.renderHypertables()
+	r.renderContinuousAggregates()
 	r.renderSynonyms()
 	r.renderExtendedProperties()
 	r.renderFunctions()

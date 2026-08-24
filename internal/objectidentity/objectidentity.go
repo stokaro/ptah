@@ -86,6 +86,12 @@ const (
 	KindComposite Kind = "composite type"
 	KindRange     Kind = "range type"
 	KindMatView   Kind = "materialized view"
+	// KindContinuousAggregate separates a TimescaleDB continuous aggregate from
+	// the materialized view PostgreSQL reports it as. The two share a
+	// namespace and a relkind, and the statements that make and remove them
+	// differ, so a comparison that folded them together would plan a plain
+	// materialized view for an aggregate (stokaro/ptah#1026).
+	KindContinuousAggregate Kind = "continuous aggregate"
 )
 
 // Part is one component of a qualified name: what the author wrote, and what

@@ -988,6 +988,48 @@ func splitHypertableName(table string) (schema, name string) {
 	return ref.Schema, ref.Name
 }
 
+// renderContinuousAggregates writes the TimescaleDB continuous aggregate
+// blocks.
+//
+// The block exists because the alternative is worse than silence. To PostgreSQL
+// a continuous aggregate is a view -- pg_class reports relkind 'v' -- so a
+// document that had no block for one would either omit it, and plan a DROP for
+// an object the server refuses to drop that way, or describe it as a view and
+// replay it with the rewritten body TimescaleDB stores, which selects from a
+// relation in a schema the extension owns (stokaro/ptah#1026).
+//
+// It is a name of its own, unlike a hypertable, so the label is that name and
+// the schema is a reference like every other block's.
+func (r *renderer) renderContinuousAggregates() {
+	aggregates := append([]goschema.ContinuousAggregate(nil), r.db.ContinuousAggregates...)
+	slices.SortFunc(aggregates, func(a, b goschema.ContinuousAggregate) int {
+		return cmp.Compare(a.Name, b.Name)
+	})
+	for _, aggregate := range aggregates {
+		if aggregate.Body == "" {
+			r.warn("continuous_aggregates."+aggregate.Name,
+				"continuous aggregate body is required for HCL schema export")
+			continue
+		}
+		name := objectNameFromQualified(aggregate.Name)
+		r.linef(`continuous_aggregate %s {`, quote(name))
+		schema := aggregate.Schema
+		if schema == "" {
+			schema = schemaNameFromQualified(aggregate.Name)
+		}
+		if resolved := r.schemaFor(schema); resolved != "" {
+			r.rawAttr(1, "schema", r.schemaRef(resolved))
+		}
+		r.stringAttr(1, "as", aggregate.Body)
+		if aggregate.MaterializedOnly != nil {
+			r.rawAttr(1, "materialized_only", strconv.FormatBool(*aggregate.MaterializedOnly))
+		}
+		r.stringAttr(1, "comment", aggregate.Comment)
+		r.line("}")
+		r.line("")
+	}
+}
+
 // renderSynonyms writes the SQL Server synonym blocks.
 //
 // The block exists because HCL had no way to say one, and a document that

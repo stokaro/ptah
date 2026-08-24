@@ -232,6 +232,8 @@ func oraclePlan() plan {
 	return plan{experiments: experiments, undecided: map[capability.Capability]string{
 		capability.Hypertables: "create_hypertable is a TimescaleDB function, and TimescaleDB is a PostgreSQL " +
 			"extension Oracle has no spelling of; its refusal would answer a different question",
+		capability.ContinuousAggregates: "a TimescaleDB continuous aggregate is a PostgreSQL materialized " +
+			"view with an extension option, which Oracle has no spelling of",
 		// A schema statement Oracle commits by itself: measured, a CREATE TABLE
 		// inside an explicit transaction survives ROLLBACK on both lines. That
 		// is a property of the engine's DDL semantics rather than of any single

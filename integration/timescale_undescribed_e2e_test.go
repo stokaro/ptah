@@ -30,9 +30,11 @@ import (
 // partitioned, and a diff between the two reports no difference -- so the
 // description is wrong in a way only the extension's own catalog can name.
 //
-// Both objects are created here rather than one, because they are omitted for
-// different reasons and the notes say different things: the hypertable IS in
-// the document and is incomplete, the continuous aggregate is not in it at all.
+// Both objects are created here rather than one, because only ONE of them is
+// still incomplete: the hypertable has a second dimension no declaration
+// carries, and the continuous aggregate beside it is described in full. The
+// aggregate is what keeps the note honest -- a note that named everything
+// TimescaleDB owns would name it too.
 func TestTimescaleUndescribedObjectsE2E(t *testing.T) {
 	dbURL := dbtarget.URL(t, dbtarget.TimescaleDB)
 	c := qt.New(t)
@@ -90,8 +92,11 @@ func TestTimescaleUndescribedObjectsE2E(t *testing.T) {
 
 	c.Assert(out.String(), qt.Contains, "described with the first partitioning dimension only")
 	c.Assert(out.String(), qt.Contains, table+" (on time and 1 more dimension)")
-	c.Assert(out.String(), qt.Contains, "not in this description at all")
-	c.Assert(out.String(), qt.Contains, aggregate)
+	// The aggregate earns no note. It has a declaration of its own now, so the
+	// description carries it and there is nothing to warn about -- a note here
+	// would send an operator looking for what is missing from a document that
+	// has it (stokaro/ptah#1026).
+	c.Assert(out.String(), qt.Not(qt.Contains), aggregate)
 }
 
 // TestTimescaleReportFollowsInspectSelectionE2E pins WHERE the note is emitted,
@@ -222,4 +227,19 @@ func describedAggregateNames(schema *dbschematypes.DBSchema) []string {
 		names = append(names, strings.ToLower(aggregate.Name))
 	}
 	return names
+}
+
+// describedAggregateDefinition returns the stored SELECT of one aggregate, and
+// fails the test when the read did not describe it.
+//
+// It returns the definition rather than a found flag so a caller asserts on the
+// value: a helper that answered "absent" quietly would let a comparison test
+// pass over an aggregate nobody read.
+func describedAggregateDefinition(schema *dbschematypes.DBSchema, name string) string {
+	for _, aggregate := range schema.ContinuousAggregates {
+		if strings.EqualFold(aggregate.Name, name) {
+			return aggregate.Definition
+		}
+	}
+	return ""
 }
