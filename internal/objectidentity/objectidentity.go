@@ -446,33 +446,14 @@ func (b Builder) Index(qualifiedTable, index string) ID {
 	return id
 }
 
-// ConstraintPartsVerbatim builds a constraint identity from an owning table
-// spelling and a constraint name, folding and trimming neither.
-//
-// It is what a caller holding two raw catalog strings needs when it must not
-// change what they mean. The planner is that caller: it pairs a constraint
-// removal with an addition, both spellings arrive from the same diff, and a
-// fold applied on only one side of the pipeline would pair a drop with a
-// different constraint than the comparator intended.
-//
-// Everything else wants [Builder.Constraint], which parses the qualification
-// and folds under the target's rule.
-func (b Builder) ConstraintPartsVerbatim(table, constraint string) ID {
-	return ID{
-		Kind:   KindConstraint,
-		Parent: Part{Source: table, Normalized: table},
-		Name:   Part{Source: constraint, Normalized: constraint},
-	}
-}
-
 // ConstraintParts builds a constraint identity from components the caller
 // already has, folding each under the target's rule.
 //
 // It exists beside [Builder.Constraint] for the reason [Builder.TableParts]
-// does, and beside [Builder.ConstraintPartsVerbatim] for a different one: this
-// is what a source ADAPTER wants, where the spellings arrive unfolded and the
-// target's rule has not been applied yet. The verbatim form is for a consumer
-// downstream of a comparator that already folded them.
+// does: this is what a source ADAPTER wants, where the spellings arrive
+// unfolded and the target's rule has not been applied yet. A consumer
+// downstream of the comparator reads the identity the diff carries instead of
+// building one (stokaro/ptah#1663).
 func (b Builder) ConstraintParts(schema, table, constraint string) ID {
 	owner := b.TableParts(schema, table)
 	return ID{

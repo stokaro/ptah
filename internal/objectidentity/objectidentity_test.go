@@ -279,24 +279,3 @@ func TestIdentity_SchemaScopedPartsSeparatesFamilies(t *testing.T) {
 	c.Assert(sequence.Key().Kind(), qt.Equals, objectidentity.KindSequence)
 	c.Assert(table.Key().Kind(), qt.Equals, objectidentity.KindTable)
 }
-
-// TestIdentity_ConstraintPartsVerbatimFoldsNothing pins the constructor the
-// planner uses.
-//
-// Both spellings it pairs arrive from one diff, already normalized by the
-// comparator that produced it. Folding again there would apply the rule twice
-// on one side of the pipeline and once on the other, so this constructor must
-// leave both components exactly as handed over -- including whitespace, which
-// a fold-and-trim constructor would absorb.
-func TestIdentity_ConstraintPartsVerbatimFoldsNothing(t *testing.T) {
-	c := qt.New(t)
-	builder := objectidentity.NewBuilder(postgresSemantics())
-
-	upper := builder.ConstraintPartsVerbatim("Orders", "FK_Customer")
-	lower := builder.ConstraintPartsVerbatim("orders", "fk_customer")
-	padded := builder.ConstraintPartsVerbatim(" orders ", "fk_customer")
-
-	c.Assert(upper.Equal(lower), qt.IsFalse)
-	c.Assert(padded.Equal(lower), qt.IsFalse)
-	c.Assert(upper.Name.Source, qt.Equals, "FK_Customer")
-}
