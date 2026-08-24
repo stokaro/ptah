@@ -27,6 +27,7 @@ These packages are intended for application and tool embedders:
 - `go.5x5.cz/ptah/core/sqlutil`
 - `go.5x5.cz/ptah/dbschema`
 - `go.5x5.cz/ptah/dbschema/types`
+- `go.5x5.cz/ptah/docs`
 - `go.5x5.cz/ptah/migration/datadiff`
 - `go.5x5.cz/ptah/migration/dbtest`
 - `go.5x5.cz/ptah/migration/diffpolicy`
@@ -581,6 +582,19 @@ support `errors.As(err, *ptaherr.ParseError)`, and unsupported dialect failures
 should support `errors.Is(err, ptaherr.ErrUnsupportedDialect)`. Invalid schema
 diffs rejected during planning support
 `errors.Is(err, ptaherr.ErrInvalidSchemaDiff)`.
+
+### `go.5x5.cz/ptah/docs`
+
+This package holds Ptah's own documentation as an `embed.FS` and nothing else.
+It is public because `go:embed` patterns cannot leave their package's
+directory, so the only package that can carry `docs/` is one that lives in it —
+the alternative is committing a generated copy of the documentation under
+`internal/`, which every documentation edit would have to regenerate and which
+merges as an opaque blob.
+
+Its surface is one variable and it is listed here so the snapshot gate covers
+it. Embedders may read from it; the paths inside it are the repository's own
+layout and move when the documentation is reorganized.
 
 ## Provisional Surface
 
