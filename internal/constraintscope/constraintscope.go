@@ -72,6 +72,12 @@ func Normalize(diff *difftypes.SchemaDiff, semantics identifier.Semantics) {
 			add.Identity = Identity(semantics, add.TableName, add.Name)
 		}
 	}
+	for i := range diff.ForeignKeysRemovedWithTables {
+		removal := &diff.ForeignKeysRemovedWithTables[i]
+		if removal.Identity == (difftypes.ConstraintIdentity{}) {
+			removal.Identity = Identity(semantics, removal.TableName, removal.Name)
+		}
+	}
 	for i := range diff.ConstraintsRemovedWithTables {
 		removal := &diff.ConstraintsRemovedWithTables[i]
 		if removal.Identity == (difftypes.ConstraintIdentity{}) {
