@@ -10,6 +10,10 @@ import "strings"
 // rest of the file), while MySQL treats backslash as an escape and adds the
 // # line-comment and /*!...*/ executable-comment forms.
 type scanMode struct {
+	// dialect is the normalized target, carried so the statement splitter can
+	// read a compound routine body the way the dialect writes one. Empty is a
+	// target nobody named, which recognizes only the dialect-blind form.
+	dialect string
 	// hashComments makes # start a line comment (MySQL/MariaDB).
 	hashComments bool
 	// backslashEscapes makes a backslash escape the next character inside
@@ -48,11 +52,11 @@ type scanMode struct {
 func modeForDialect(dialect string) scanMode {
 	switch dialect {
 	case "mysql", "mariadb":
-		return scanMode{hashComments: true, backslashEscapes: true, execComments: true}
+		return scanMode{dialect: dialect, hashComments: true, backslashEscapes: true, execComments: true}
 	case "postgres":
-		return scanMode{dollarQuotes: true, nestedComments: true}
+		return scanMode{dialect: dialect, dollarQuotes: true, nestedComments: true}
 	default:
-		return scanMode{execComments: true, dollarQuotes: true}
+		return scanMode{dialect: dialect, execComments: true, dollarQuotes: true}
 	}
 }
 

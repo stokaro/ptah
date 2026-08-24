@@ -6,6 +6,7 @@ import (
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/internal/dialectlexer"
 	"go.5x5.cz/ptah/internal/lexer"
+	"go.5x5.cz/ptah/internal/sqlcompound"
 )
 
 // SourceStatement is one statement as it was written, rather than as an
@@ -40,7 +41,7 @@ func SplitSourceStatements(sql, dialect string) []SourceStatement {
 
 	normalized := NormalizeClientDelimiters(sql)
 	lexr := lexer.NewLexerWithOptions(normalized, dialectlexer.Options(platform.NormalizeDialect(dialect)))
-	state := statementSplitState{dialect: platform.NormalizeDialect(dialect)}
+	state := sqlcompound.New(dialect)
 
 	var statements []SourceStatement
 	var current strings.Builder
@@ -49,13 +50,13 @@ func SplitSourceStatements(sql, dialect string) []SourceStatement {
 		if token.Type == lexer.TokenEOF {
 			break
 		}
-		if token.Type == lexer.TokenSemicolon && !state.keepSemicolonInsideStatement() {
+		if token.Type == lexer.TokenSemicolon && !state.KeepSemicolonInsideStatement() {
 			statements = appendSourceStatement(statements, current.String()+token.Value, true)
 			current.Reset()
-			state.reset()
+			state.Reset()
 			continue
 		}
-		state.observe(token)
+		observeToken(&state, token)
 		current.WriteString(token.Value)
 	}
 	return appendSourceStatement(statements, current.String(), false)
