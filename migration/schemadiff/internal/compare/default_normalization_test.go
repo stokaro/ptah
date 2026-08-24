@@ -35,7 +35,7 @@ func TestColumns_ADefaultIsNormalizedUnderOneType(t *testing.T) {
 			dialect: platform.SQLite,
 			genCol:  goschema.Field{Name: "b", Type: "boolean", Nullable: true, DefaultExpr: "0"},
 			dbCol:   types.DBColumn{Name: "b", DataType: "BOOLEAN", IsNullable: "YES", ColumnDefault: new("0")},
-			want:    map[string]string{"type": "boolean -> integer"},
+			want:    map[string]string{"type": "BOOLEAN -> boolean"},
 		},
 		{
 			// The control that keeps the fix from being a blanket silence: a
@@ -44,7 +44,7 @@ func TestColumns_ADefaultIsNormalizedUnderOneType(t *testing.T) {
 			dialect: platform.SQLite,
 			genCol:  goschema.Field{Name: "b", Type: "boolean", Nullable: true, DefaultExpr: "1"},
 			dbCol:   types.DBColumn{Name: "b", DataType: "BOOLEAN", IsNullable: "YES", ColumnDefault: new("0")},
-			want:    map[string]string{"type": "boolean -> integer", "default_expr": "0 -> 1"},
+			want:    map[string]string{"type": "BOOLEAN -> boolean", "default_expr": "0 -> 1"},
 		},
 		{
 			// The other control: with the types agreeing, boolean

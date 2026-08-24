@@ -471,6 +471,47 @@ func isArrayType(typeName string) bool {
 	return strings.HasSuffix(strings.TrimSpace(typeName), "[]")
 }
 
+// SQLiteAffinity is the type affinity SQLite derives from a declared type,
+// which is the whole of what a declared type MEANS to that engine.
+//
+// SQLite stores the declaration text verbatim and never resolves it to a type
+// of its own, so two spellings are the same type exactly when they yield the
+// same affinity. Measured on SQLite 3, storing one value into columns declared
+// four ways:
+//
+//	CREATE TABLE t (a VARCHAR(80), b TEXT, c BOOLEAN, d INTEGER);
+//	INSERT INTO t VALUES ('1','1','1','1');
+//	SELECT typeof(a), typeof(b), typeof(c), typeof(d);  ->  text|text|integer|integer
+//
+// The five rules are the ones SQLite documents, in the order it applies them.
+// The order is the rule: `INT` is tested before `CHAR`, so a column declared
+// `INTCHAR` is INTEGER and not TEXT, and a rule set that tested them the other
+// way would disagree with the engine on exactly the names nobody expects.
+//
+// A name SQLite has never heard of falls through to NUMERIC, which is what
+// SQLite does with it. That is the one place this answer is weaker than string
+// equality: two unrelated custom type names compare equal, as they do to the
+// engine (stokaro/ptah#2040).
+func SQLiteAffinity(declaredType string) string {
+	upper := strings.ToUpper(strings.TrimSpace(declaredType))
+	switch {
+	case strings.Contains(upper, "INT"):
+		return "INTEGER"
+	case strings.Contains(upper, "CHAR"),
+		strings.Contains(upper, "CLOB"),
+		strings.Contains(upper, "TEXT"):
+		return "TEXT"
+	case upper == "", strings.Contains(upper, "BLOB"):
+		return "BLOB"
+	case strings.Contains(upper, "REAL"),
+		strings.Contains(upper, "FLOA"),
+		strings.Contains(upper, "DOUB"):
+		return "REAL"
+	default:
+		return "NUMERIC"
+	}
+}
+
 // SQLiteColumnType is the type a DECLARED column produces once SQLite's
 // renderer has written it.
 //

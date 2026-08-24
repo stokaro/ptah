@@ -309,6 +309,14 @@ type ColumnNode struct {
 	// the call back instead of a bare identifier the Atlas community binary
 	// refuses.
 	TypeRawSQL bool
+	// TypeIsDeclaredText records that Type came from a catalog that stores the
+	// declaration verbatim, which is SQLite and nothing else.
+	//
+	// The SQLite renderer honors it by writing the type as it stands. Without
+	// it that renderer canonicalizes -- `VARCHAR(80)` becomes `TEXT` -- which
+	// is right for a declaration a person wrote and wrong for a description of
+	// a database that already has one (stokaro/ptah#2040).
+	TypeIsDeclaredText bool
 	// EnumType records that the column's declared type names an enum the schema
 	// declares, rather than a built-in type.
 	//

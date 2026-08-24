@@ -587,7 +587,20 @@ func renderColumn(column *ast.ColumnNode, caps capability.Capabilities) (string,
 	return strings.Join(parts, " "), nil
 }
 
+// mapColumnType is the type SQLite's renderer writes for a declared column.
+//
+// A type a catalog stored VERBATIM is written as it stands. SQLite keeps the
+// declaration and derives an affinity from it at use time, so a description of
+// a `VARCHAR(80)` column that rendered `TEXT` would replay as a different
+// table -- and the comparison then planned a rebuild that copied every row to
+// change nothing an application can observe (stokaro/ptah#2040).
+//
+// A declaration a person wrote still goes through the canonical spelling
+// below, which is what gives a Go or HCL schema one type per affinity.
 func mapColumnType(column *ast.ColumnNode) string {
+	if column.TypeIsDeclaredText && strings.TrimSpace(column.Type) != "" {
+		return column.Type
+	}
 	upper := strings.ToUpper(strings.TrimSpace(column.Type))
 	base := upper
 	if idx := strings.Index(base, "("); idx >= 0 {

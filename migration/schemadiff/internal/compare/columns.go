@@ -358,7 +358,7 @@ func columnsWithDesiredDomains(
 	// the desired side a base type to answer with.
 	// dbType is deliberately discarded: both defaults below are normalized
 	// under the DESIRED type, for the reason stated there.
-	genType, _ := normalizeColumnTypesForDialect(genCol.Type, dbRawType, dialect)
+	genType, _ := normalizeColumnTypesForDialect(genCol, dbRawType, dialect)
 
 	if change := columnTypeChange(genCol, dbCol, dbRawType, dialect, desiredDomains); change != "" {
 		colDiff.Changes["type"] = change
@@ -553,10 +553,10 @@ func columnTypeChange(
 		return fmt.Sprintf("%s -> %s", dbRawType, strings.TrimSpace(genCol.Type))
 	}
 
-	genType, dbType := normalizeColumnTypesForDialect(genCol.Type, dbRawType, dialect)
+	genType, dbType := normalizeColumnTypesForDialect(genCol, dbRawType, dialect)
 	switch {
 	case genType != dbType:
-		return fmt.Sprintf("%s -> %s", dbType, genType)
+		return typeChangeText(dbRawType, genCol.Type, dbType, genType, dialect)
 	case shouldReportSizedTypeChange(dbRawType, genCol.Type, dialect):
 		return fmt.Sprintf("%s -> %s", dbRawType, genCol.Type)
 	}
@@ -753,10 +753,27 @@ func renderedDefaultForDialect(declaredDefault, declaredType, dialect string) st
 	return declaredDefault
 }
 
-func normalizeColumnTypesForDialect(genType, dbType, dialect string) (generatedType, databaseType string) {
+func normalizeColumnTypesForDialect(
+	genCol goschema.Field,
+	dbType, dialect string,
+) (generatedType, databaseType string) {
+	genType := genCol.Type
 	switch platform.NormalizeDialect(dialect) {
 	case platform.SQLite:
-		return normalize.Type(normalize.SQLiteColumnType(genType)), normalize.Type(dbType)
+		// SQLite stores the declaration and never resolves it, so two spellings
+		// are the same type exactly when they yield the same AFFINITY. Comparing
+		// the canonical spellings instead reported a change between
+		// `VARCHAR(80)` and `TEXT`, and the plan that followed rebuilt the whole
+		// table to change nothing an application can observe
+		// (stokaro/ptah#2040).
+		//
+		// The declared side is asked in the spelling the RENDERER would write,
+		// which is what the question has always been here: a Go schema saying
+		// BOOLEAN produces an INTEGER column, so its affinity is INTEGER and
+		// not the NUMERIC that `BOOLEAN` would give. A type a catalog stored
+		// verbatim is written as it stands and keeps its own affinity.
+		return normalize.SQLiteAffinity(renderedSQLiteType(genCol)),
+			normalize.SQLiteAffinity(dbType)
 	case platform.Oracle:
 		// Oracle has no counterpart for most declared type names, so the
 		// declaration and the catalog never agree on the spelling: a declared
@@ -772,6 +789,33 @@ func normalizeColumnTypesForDialect(genType, dbType, dialect string) (generatedT
 	default:
 		return normalize.Type(genType), normalize.Type(dbType)
 	}
+}
+
+// typeChangeText spells a reported type change for a person reading the plan.
+//
+// The normalized forms are what the comparison DECIDED on and they are usually
+// the more useful of the two -- `varchar -> text` says the category changed
+// without a width in the way. On SQLite they are affinities, and an operator
+// told `NUMERIC -> INTEGER` has to work out which of their columns that was,
+// so there the raw spellings are reported instead (stokaro/ptah#2040).
+func typeChangeText(dbRawType, genRawType, dbNormalized, genNormalized, dialect string) string {
+	if platform.NormalizeDialect(dialect) == platform.SQLite {
+		return fmt.Sprintf("%s -> %s", strings.TrimSpace(dbRawType), strings.TrimSpace(genRawType))
+	}
+	return fmt.Sprintf("%s -> %s", dbNormalized, genNormalized)
+}
+
+// renderedSQLiteType is the type SQLite's renderer would write for a
+// declaration, which is the side of the comparison the affinity is taken from.
+//
+// A type the catalog stored verbatim is written as it stands; anything else
+// goes through the canonical spelling, which is the rule that existed before
+// affinities were compared at all.
+func renderedSQLiteType(genCol goschema.Field) string {
+	if genCol.TypeIsDeclaredText {
+		return genCol.Type
+	}
+	return normalize.SQLiteColumnType(genCol.Type)
 }
 
 // shouldReportSizedTypeChange reports a within-category change that the type

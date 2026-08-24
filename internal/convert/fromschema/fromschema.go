@@ -537,6 +537,18 @@ func emitsStandaloneEnumDefinitions(targetPlatform string) bool {
 // Returns a fully configured *ast.ColumnNode ready for SQL generation by dialect-specific visitors.
 // The returned node contains all the attributes specified in the input field, with platform-specific
 // overrides applied when a matching platform is specified.
+// typeIsDeclaredTextSurvives reports whether the column still carries the type
+// a catalog stored verbatim.
+//
+// A platform override or an enum substitution replaces the type with one
+// somebody chose for this target, and the fact is about the ORIGINAL: once the
+// spelling has been replaced there is nothing verbatim left to protect, and a
+// renderer that skipped canonicalization would write the substituted type
+// unchanged. It is the rule [typeRawSQLSurvives] applies for the same reason.
+func typeIsDeclaredTextSurvives(field goschema.Field, declaredType string) bool {
+	return field.TypeIsDeclaredText && field.Type == declaredType
+}
+
 func FromField(field goschema.Field, enums []goschema.Enum, targetPlatform string) *ast.ColumnNode {
 	declaredType := field.Type
 	field = applyPlatformOverrides(field, targetPlatform)
@@ -544,6 +556,7 @@ func FromField(field goschema.Field, enums []goschema.Enum, targetPlatform strin
 
 	column := ast.NewColumn(field.Name, field.Type)
 	column.TypeRawSQL = typeRawSQLSurvives(field, declaredType)
+	column.TypeIsDeclaredText = typeIsDeclaredTextSurvives(field, declaredType)
 	column.EnumType = declaredEnum(declaredType, enums) != nil
 
 	// Set nullable - only override default if explicitly set to false
@@ -634,6 +647,7 @@ func FromFieldWithoutForeignKeys(field goschema.Field, enums []goschema.Enum, ta
 	// Create column with basic properties
 	column := ast.NewColumn(field.Name, field.Type)
 	column.TypeRawSQL = typeRawSQLSurvives(field, declaredType)
+	column.TypeIsDeclaredText = typeIsDeclaredTextSurvives(field, declaredType)
 	column.EnumType = declaredEnum(declaredType, enums) != nil
 
 	// Set nullable (default is true, so only set if false)
