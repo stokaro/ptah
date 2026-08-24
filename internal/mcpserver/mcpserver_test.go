@@ -71,10 +71,10 @@ func TestServer_OffersExactlyTheReadOnlyOperations(t *testing.T) {
 	}
 
 	rows := []toolRow{
-		{name: "ptah_validate_schema", owner: "internal/schemavalidate"},
-		{name: "ptah_render_schema", owner: "core/renderer"},
-		{name: "ptah_schema_lineage", owner: "internal/schemalineage"},
-		{name: "ptah_read_database", owner: "dbschema"},
+		{name: "validate_schema", owner: "internal/schemavalidate"},
+		{name: "render_schema", owner: "core/renderer"},
+		{name: "schema_lineage", owner: "internal/schemalineage"},
+		{name: "read_database", owner: "dbschema"},
 	}
 	for _, row := range rows {
 		t.Run(row.name, func(t *testing.T) {
@@ -85,7 +85,7 @@ func TestServer_OffersExactlyTheReadOnlyOperations(t *testing.T) {
 	c.Assert(offered, qt.HasLen, len(rows),
 		qt.Commentf("a tool added without a row here is a surface nobody reviewed"))
 
-	for _, forbidden := range []string{"ptah_inspect_schema", "ptah_diff_schema", "ptah_lint_migrations"} {
+	for _, forbidden := range []string{"inspect_schema", "diff_schema", "lint_migrations"} {
 		t.Run("absent "+forbidden, func(t *testing.T) {
 			c := qt.New(t)
 			c.Assert(offered[forbidden], qt.IsFalse,
@@ -108,10 +108,10 @@ func TestServer_WithoutAWorkspaceOffersNoArtifactTool(t *testing.T) {
 	}
 
 	for _, artifact := range []string{
-		"ptah_describe_workspace",
-		"ptah_read_artifact",
-		"ptah_preview_patch",
-		"ptah_apply_patch",
+		"describe_workspace",
+		"read_artifact",
+		"preview_patch",
+		"apply_patch",
 	} {
 		t.Run("absent "+artifact, func(t *testing.T) {
 			c := qt.New(t)
@@ -165,10 +165,10 @@ func TestServer_MarksTheDatabaseReadAsOpenWorld(t *testing.T) {
 		open[tool.Name] = *tool.Annotations.OpenWorldHint
 	}
 
-	c.Assert(open["ptah_read_database"], qt.IsTrue)
-	c.Assert(open["ptah_validate_schema"], qt.IsFalse)
-	c.Assert(open["ptah_render_schema"], qt.IsFalse)
-	c.Assert(open["ptah_schema_lineage"], qt.IsFalse)
+	c.Assert(open["read_database"], qt.IsTrue)
+	c.Assert(open["validate_schema"], qt.IsFalse)
+	c.Assert(open["render_schema"], qt.IsFalse)
+	c.Assert(open["schema_lineage"], qt.IsFalse)
 }
 
 // TestServer_StatesTheContractInItsInstructions pins that a client can read
@@ -202,7 +202,7 @@ func TestServer_ReportsAnOperationFailureAsAResultRatherThanAProtocolError(t *te
 	session := connect(c, readOnlyConfig(), nil)
 
 	result, err := session.CallTool(context.Background(), &mcp.CallToolParams{
-		Name: "ptah_render_schema",
+		Name: "render_schema",
 		Arguments: map[string]any{
 			"dialect": "orackle",
 			"source":  map[string]any{"root_dirs": []string{"."}},
@@ -242,7 +242,7 @@ func TestServer_ReturnsStructuredContentForASuccessfulCall(t *testing.T) {
 	c.Assert(writeFile(dir, "models.go", bookshop), qt.IsNil)
 
 	result, err := session.CallTool(context.Background(), &mcp.CallToolParams{
-		Name: "ptah_validate_schema",
+		Name: "validate_schema",
 		Arguments: map[string]any{
 			"dialect": "postgres",
 			"source":  map[string]any{"root_dirs": []string{dir}},

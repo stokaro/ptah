@@ -73,10 +73,10 @@ the server a workspace and a target dialect:
 
 | tool | answers |
 | --- | --- |
-| `ptah_validate_schema` | structural problems in a declared schema, for one dialect, with no database |
-| `ptah_render_schema` | the DDL a declared schema becomes, in dependency order |
-| `ptah_schema_lineage` | which base columns feed each view column |
-| `ptah_read_database` | the schema a live database currently holds |
+| `validate_schema` | structural problems in a declared schema, for one dialect, with no database |
+| `render_schema` | the DDL a declared schema becomes, in dependency order |
+| `schema_lineage` | which base columns feed each view column |
+| `read_database` | the schema a live database currently holds |
 
 Each takes its schema source or database URL as a tool argument, and reads it
 with this process's own permissions. The server holds no credentials, stores
@@ -92,22 +92,22 @@ supply that database out of band rather than from the caller.
 
 | tool | answers |
 | --- | --- |
-| `ptah_describe_workspace` | which artifact directories exist, their digests, and what this session may do |
-| `ptah_read_artifact` | one artifact directory, or one file inside it, with digests |
-| `ptah_preview_patch` | what a proposed change would do: a diff per file and the resulting digest |
-| `ptah_apply_patch` | apply a previewed patch, verify the result, undo it if the write broke something |
+| `describe_workspace` | which artifact directories exist, their digests, and what this session may do |
+| `read_artifact` | one artifact directory, or one file inside it, with digests |
+| `preview_patch` | what a proposed change would do: a diff per file and the resulting digest |
+| `apply_patch` | apply a previewed patch, verify the result, undo it if the write broke something |
 
-An agent starts with `ptah_describe_workspace`. Artifact paths are relative to
+An agent starts with `describe_workspace`. Artifact paths are relative to
 the directories it reports, and a patch has to carry the digest it reports.
 
 A change lands in three steps:
 
 ```text
-ptah_preview_patch    validate, diff, and mint a preview token; write nothing
+preview_patch    validate, diff, and mint a preview token; write nothing
        ↓
 you approve           where policy says to ask
        ↓
-ptah_apply_patch      apply, recompute integrity, run the gates, keep or undo
+apply_patch      apply, recompute integrity, run the gates, keep or undo
 ```
 
 The preview token is single-use, expires after fifteen minutes, and belongs to
@@ -163,7 +163,7 @@ before and after, and the patch's own content address. Approving covers that
 patch and nothing else. You can also approve a capability for the rest of the
 session; that grant lives in the process and dies with it.
 
-`ptah_describe_workspace` reports the whole table, refusals included, so an
+`describe_workspace` reports the whole table, refusals included, so an
 agent can tell you what it may do without trying.
 
 ### Narrow the policy from the repository
@@ -177,7 +177,7 @@ artifact.write:tests deny
 
 That file can only take permissions away. A rule in it that would grant more
 than the flags did is ignored and reported in
-`ptah_describe_workspace`'s `ignored_policy_rules`, because the file lives in
+`describe_workspace`'s `ignored_policy_rules`, because the file lives in
 the repository the model is reading — treating it as a grant would let project
 content decide what the next tool call may do.
 

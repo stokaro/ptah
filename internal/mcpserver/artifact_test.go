@@ -125,7 +125,7 @@ func structured(c *qt.C, result *mcp.CallToolResult) map[string]any {
 // previewPatch previews the standard patch and returns the decoded response.
 func previewPatch(c *qt.C, session *mcp.ClientSession, digest string) map[string]any {
 	c.Helper()
-	return structured(c, call(c, session, "ptah_preview_patch", map[string]any{
+	return structured(c, call(c, session, "preview_patch", map[string]any{
 		"artifact":        "migrations",
 		"expected_digest": digest,
 		"changes":         addStatusChanges(),
@@ -136,7 +136,7 @@ func previewPatch(c *qt.C, session *mcp.ClientSession, digest string) map[string
 // migrationsDigest reads the artifact digest a patch must carry.
 func migrationsDigest(c *qt.C, session *mcp.ClientSession) string {
 	c.Helper()
-	described := structured(c, call(c, session, "ptah_describe_workspace", make(map[string]any)))
+	described := structured(c, call(c, session, "describe_workspace", make(map[string]any)))
 	artifacts, _ := described["artifacts"].([]any)
 	c.Assert(artifacts, qt.HasLen, 1)
 	first, _ := artifacts[0].(map[string]any)
@@ -157,10 +157,10 @@ func TestServer_WithAWorkspaceOffersTheArtifactTools(t *testing.T) {
 	c.Assert(offered, qt.HasLen, 8,
 		qt.Commentf("four reading tools and four artifact tools"))
 	for _, name := range []string{
-		"ptah_describe_workspace",
-		"ptah_read_artifact",
-		"ptah_preview_patch",
-		"ptah_apply_patch",
+		"describe_workspace",
+		"read_artifact",
+		"preview_patch",
+		"apply_patch",
 	} {
 		t.Run(name, func(t *testing.T) {
 			c := qt.New(t)
@@ -182,10 +182,10 @@ func TestServer_AnnotatesTheApplyToolAsTheOnlyWriter(t *testing.T) {
 		writers[tool.Name] = !tool.Annotations.ReadOnlyHint
 	}
 
-	c.Assert(writers["ptah_apply_patch"], qt.IsTrue)
-	c.Assert(writers["ptah_preview_patch"], qt.IsFalse)
-	c.Assert(writers["ptah_read_artifact"], qt.IsFalse)
-	c.Assert(writers["ptah_describe_workspace"], qt.IsFalse)
+	c.Assert(writers["apply_patch"], qt.IsTrue)
+	c.Assert(writers["preview_patch"], qt.IsFalse)
+	c.Assert(writers["read_artifact"], qt.IsFalse)
+	c.Assert(writers["describe_workspace"], qt.IsFalse)
 }
 
 func TestDescribeWorkspace_ReportsTheDigestsAndTheRefusals(t *testing.T) {
@@ -193,7 +193,7 @@ func TestDescribeWorkspace_ReportsTheDigestsAndTheRefusals(t *testing.T) {
 	fixture := newWorkspace(c, agentpolicy.VerdictDeny, nil)
 	session := connect(c, fixture.config, nil)
 
-	described := structured(c, call(c, session, "ptah_describe_workspace", make(map[string]any)))
+	described := structured(c, call(c, session, "describe_workspace", make(map[string]any)))
 
 	c.Assert(described["root"], qt.Equals, fixture.root)
 	c.Assert(described["dialect"], qt.Equals, "postgres")
@@ -215,7 +215,7 @@ func TestReadArtifact_ReturnsContentLabelledAsData(t *testing.T) {
 	fixture := newWorkspace(c, agentpolicy.VerdictDeny, nil)
 	session := connect(c, fixture.config, nil)
 
-	read := structured(c, call(c, session, "ptah_read_artifact", map[string]any{
+	read := structured(c, call(c, session, "read_artifact", map[string]any{
 		"artifact": "migrations",
 		"path":     "1700000000_init.up.sql",
 	}))
@@ -233,7 +233,7 @@ func TestReadArtifact_RefusesAPathOutsideTheArtifact(t *testing.T) {
 	c.Assert(writeFile(fixture.root, "secrets.env", "TOKEN=hunter2\n"), qt.IsNil)
 	session := connect(c, fixture.config, nil)
 
-	result := call(c, session, "ptah_read_artifact", map[string]any{
+	result := call(c, session, "read_artifact", map[string]any{
 		"artifact": "migrations",
 		"path":     "../secrets.env",
 	})
@@ -260,7 +260,7 @@ func TestPreviewAndApply_HappyPath(t *testing.T) {
 	_, statErr := os.Stat(filepath.Join(fixture.dir, "1700000100_add_status.up.sql"))
 	c.Assert(os.IsNotExist(statErr), qt.IsTrue)
 
-	applied := structured(c, call(c, session, "ptah_apply_patch", map[string]any{
+	applied := structured(c, call(c, session, "apply_patch", map[string]any{
 		"preview_token": preview["preview_token"],
 		"patch_id":      preview["patch_id"],
 	}))
@@ -282,14 +282,14 @@ func TestApply_RefusesAWriteTheOperatorNeverEnabled(t *testing.T) {
 	c.Assert(preview["requires_approval"], qt.IsFalse,
 		qt.Commentf("a denial is not an approval that has not happened yet"))
 
-	result := call(c, session, "ptah_apply_patch", map[string]any{
+	result := call(c, session, "apply_patch", map[string]any{
 		"preview_token": preview["preview_token"],
 		"patch_id":      preview["patch_id"],
 	})
 
 	c.Assert(result.IsError, qt.IsTrue)
 	c.Assert(textOf(c, result), qt.Contains, `"artifact.write:migrations" denied by invocation policy`)
-	c.Assert(textOf(c, result), qt.Contains, "ptah_describe_workspace reports what this session may do")
+	c.Assert(textOf(c, result), qt.Contains, "describe_workspace reports what this session may do")
 	_, statErr := os.Stat(filepath.Join(fixture.dir, "1700000100_add_status.up.sql"))
 	c.Assert(os.IsNotExist(statErr), qt.IsTrue)
 }
@@ -304,7 +304,7 @@ func TestApply_RefusesWhenThePolicyAsksAndTheClientCannot(t *testing.T) {
 	preview := previewPatch(c, session, migrationsDigest(c, session))
 	c.Assert(preview["requires_approval"], qt.IsTrue)
 
-	result := call(c, session, "ptah_apply_patch", map[string]any{
+	result := call(c, session, "apply_patch", map[string]any{
 		"preview_token": preview["preview_token"],
 		"patch_id":      preview["patch_id"],
 	})
@@ -334,7 +334,7 @@ func TestApply_AsksThroughTheClientAndProceedsOnAccept(t *testing.T) {
 	})
 
 	preview := previewPatch(c, session, migrationsDigest(c, session))
-	applied := structured(c, call(c, session, "ptah_apply_patch", map[string]any{
+	applied := structured(c, call(c, session, "apply_patch", map[string]any{
 		"preview_token": preview["preview_token"],
 		"patch_id":      preview["patch_id"],
 	}))
@@ -359,7 +359,7 @@ func TestApply_StopsWhenTheAnswerIsNo(t *testing.T) {
 	})
 
 	preview := previewPatch(c, session, migrationsDigest(c, session))
-	result := call(c, session, "ptah_apply_patch", map[string]any{
+	result := call(c, session, "apply_patch", map[string]any{
 		"preview_token": preview["preview_token"],
 		"patch_id":      preview["patch_id"],
 	})
@@ -377,11 +377,11 @@ func TestApply_SpendsThePreviewTokenOnce(t *testing.T) {
 	session := connect(c, fixture.config, nil)
 
 	preview := previewPatch(c, session, migrationsDigest(c, session))
-	first := call(c, session, "ptah_apply_patch", map[string]any{
+	first := call(c, session, "apply_patch", map[string]any{
 		"preview_token": preview["preview_token"],
 		"patch_id":      preview["patch_id"],
 	})
-	second := call(c, session, "ptah_apply_patch", map[string]any{
+	second := call(c, session, "apply_patch", map[string]any{
 		"preview_token": preview["preview_token"],
 		"patch_id":      preview["patch_id"],
 	})
@@ -397,7 +397,7 @@ func TestApply_RefusesAPatchIdThatDoesNotBelongToTheToken(t *testing.T) {
 	session := connect(c, fixture.config, nil)
 
 	preview := previewPatch(c, session, migrationsDigest(c, session))
-	result := call(c, session, "ptah_apply_patch", map[string]any{
+	result := call(c, session, "apply_patch", map[string]any{
 		"preview_token": preview["preview_token"],
 		"patch_id":      "sha256:0000000000000000000000000000000000000000000000000000000000000000",
 	})
@@ -415,7 +415,7 @@ func TestApply_RefusesWhenTheArtifactChangedAfterThePreview(t *testing.T) {
 	preview := previewPatch(c, session, migrationsDigest(c, session))
 	c.Assert(writeFile(fixture.dir, "1700000050_other.up.sql", "SELECT 1;\n"), qt.IsNil)
 
-	result := call(c, session, "ptah_apply_patch", map[string]any{
+	result := call(c, session, "apply_patch", map[string]any{
 		"preview_token": preview["preview_token"],
 		"patch_id":      preview["patch_id"],
 	})
@@ -464,7 +464,7 @@ func TestPreview_RefusesEveryPathThatLeavesTheArtifact(t *testing.T) {
 			fixture := newWorkspace(c, agentpolicy.VerdictAllow, nil)
 			session := connect(c, fixture.config, nil)
 
-			result := call(c, session, "ptah_preview_patch", map[string]any{
+			result := call(c, session, "preview_patch", map[string]any{
 				"artifact": "migrations",
 				"changes": []any{map[string]any{
 					"path":      test.path,
@@ -487,7 +487,7 @@ func TestApply_UndoesAPatchThatBreaksTheDirectory(t *testing.T) {
 	fixture := newWorkspace(c, agentpolicy.VerdictAllow, nil)
 	session := connect(c, fixture.config, nil)
 
-	preview := structured(c, call(c, session, "ptah_preview_patch", map[string]any{
+	preview := structured(c, call(c, session, "preview_patch", map[string]any{
 		"artifact":        "migrations",
 		"expected_digest": migrationsDigest(c, session),
 		"changes": []any{map[string]any{
@@ -496,7 +496,7 @@ func TestApply_UndoesAPatchThatBreaksTheDirectory(t *testing.T) {
 			"content":   "ALTER TABL users ADD COLUMN status TEXT;\n",
 		}},
 	}))
-	result := call(c, session, "ptah_apply_patch", map[string]any{
+	result := call(c, session, "apply_patch", map[string]any{
 		"preview_token": preview["preview_token"],
 		"patch_id":      preview["patch_id"],
 	})
