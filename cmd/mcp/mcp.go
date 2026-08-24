@@ -38,10 +38,10 @@ protocol to it. Point one at the Ptah binary with "mcp" as the argument.
 Without --workspace it serves four reading tools and nothing else. None of them
 applies a migration, writes a file, or changes a database:
 
-  ptah_validate_schema   structural problems in a declared schema, no database
-  ptah_render_schema     the DDL a declared schema becomes, in dependency order
-  ptah_schema_lineage    which base columns feed each view column
-  ptah_read_database     the schema a live database currently holds
+  validate_schema   structural problems in a declared schema, no database
+  render_schema     the DDL a declared schema becomes, in dependency order
+  schema_lineage    which base columns feed each view column
+  read_database     the schema a live database currently holds
 
 Three of Ptah's own reading verbs are deliberately absent -- schema inspect,
 schema diff and migrations lint -- because each needs a scratch database it
@@ -51,10 +51,10 @@ read-only name on a surface an agent drives.
 With --workspace it also serves four artifact tools, confined to the directories
 you name:
 
-  ptah_describe_workspace  what this session may read and write, with digests
-  ptah_read_artifact       one artifact directory, or one file inside it
-  ptah_preview_patch       what a proposed change would do; writes nothing
-  ptah_apply_patch         apply a previewed patch, verify it, undo a break
+  describe_workspace  what this session may read and write, with digests
+  read_artifact       one artifact directory, or one file inside it
+  preview_patch       what a proposed change would do; writes nothing
+  apply_patch         apply a previewed patch, verify it, undo a break
 
 Writing is off until you turn it on. --allow-write names the artifact classes an
 agent may propose changes to, and without it every apply is refused. A named

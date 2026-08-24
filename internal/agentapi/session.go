@@ -384,7 +384,7 @@ type PreviewPatchRequest struct {
 // PreviewPatchResponse is the reviewable patch plus the handle that applies it.
 type PreviewPatchResponse struct {
 	agentpatch.Preview
-	// PreviewToken is the handle ptah_apply_patch takes. It is minted by Ptah,
+	// PreviewToken is the handle apply_patch takes. It is minted by Ptah,
 	// usable once, and it expires -- so an apply is always an apply of
 	// something that was previewed, and of the exact thing that was previewed.
 	PreviewToken string    `json:"preview_token"`
@@ -471,8 +471,8 @@ func (s *Session) requiresApproval(plan *agentpatch.Plan) bool {
 
 // ApplyPatchRequest applies a previewed patch.
 type ApplyPatchRequest struct {
-	// PreviewToken is the handle ptah_preview_patch returned.
-	PreviewToken string `json:"preview_token" jsonschema:"the preview_token returned by ptah_preview_patch"`
+	// PreviewToken is the handle preview_patch returned.
+	PreviewToken string `json:"preview_token" jsonschema:"the preview_token returned by preview_patch"`
 	// PatchID is the patch the caller believes it is applying. It is checked
 	// against the token's own patch, so a caller that mixed two previews up is
 	// refused rather than surprised.
