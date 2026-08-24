@@ -265,12 +265,21 @@ func (c DBColumn) RawType() string {
 }
 
 // withTypeSize appends the width or precision the catalog keeps in a field of
-// its own, for the two families that have one.
+// its own, for the families that have one.
+//
+// The bit families are here for a reason worth stating: without them
+// `ptah schema inspect` wrote a `bit(4)` column as `bit`, and replaying that
+// document into a fresh database produced `bit(1)` -- three bits of every value
+// gone, measured on PostgreSQL 17.11. A `bit varying(8)` column came back
+// unlimited, and applying the document to the SOURCE database removed the
+// declared width from the live column. PostgreSQL keeps both widths in the same
+// `character_maximum_length` the varchar family uses, and the reader already
+// carries it (stokaro/ptah#2034).
 func withTypeSize(rawType string, column DBColumn) string {
 	// The fold is normalize.Type's, not a second list of spellings: `character
 	// varying` and `varchar` are one type and only that package says so.
 	switch normalize.Type(rawType) {
-	case "varchar":
+	case "varchar", "char", "bit", "bit varying":
 		if column.CharacterMaxLength != nil {
 			return fmt.Sprintf("%s(%d)", rawType, *column.CharacterMaxLength)
 		}
