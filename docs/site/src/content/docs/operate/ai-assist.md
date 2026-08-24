@@ -61,8 +61,11 @@ the paths and the exact digest the approval covers:
 Allow? [n]o / [o]nce / [s]ession:
 ```
 
-`--non-interactive` removes the prompt rather than answering it: an operation
-that needs approval is refused, which is what that flag has to mean.
+`ptah assist explain --non-interactive` removes the prompt rather than answering
+it: an operation that needs approval is refused, which is what that flag has to
+mean. It is on the one-shot command only. The conversation always has somebody
+at a terminal, which is what makes it a conversation, so there is no fail-closed
+mode of it to ask for.
 
 ## Conversations are saved
 
@@ -87,7 +90,9 @@ record of what it changed would be the wrong kind of tidy.
 ### What is in a session file, and what is not
 
 The conversation **and** what Ptah read on the model's behalf: migration text,
-schema files, database object names. It is written so only you can read it, and
+schema files, database object names. On Unix it is written so only you can read it (the directory `0700`, the file
+`0600`; on Windows those bits say nothing and access is an ACL question Ptah
+does not read), and it, and
 it belongs in `.gitignore`:
 
 ```text
@@ -97,7 +102,8 @@ it belongs in `.gitignore`:
 `--ephemeral` keeps no record at all, which is the answer for a project whose
 contents should not sit in a file afterwards.
 
-No credential is ever stored. The provider profile's *name* is, because a
+No provider credential is ever stored, and a connection URL that reaches a tool
+is recorded with its password removed. The provider profile's *name* is, because a
 session that could not say which model answered cannot be read later.
 
 Resuming replays the conversation and **not** the tool results. Those described
@@ -151,11 +157,14 @@ is your question. Project content reaches the provider **when a tool answers** �
 migration text, schema files, database object names — because that is what the
 model asked to see.
 
-So every run reports the size of it:
+So every text-mode run reports the size of it:
 
 ```text
 -- 4182 bytes of project content reached local, from 2 tool answer(s).
 ```
+
+`--format json` and `--format jsonl` do not carry that line. The tool records
+they do carry hold the same content, so a consumer can size it itself.
 
 `--resume` is the one case where a first request already carries something about
 the project: the earlier conversation is part of what would be sent, and
@@ -200,8 +209,10 @@ exactly like a model that had nothing to say — and stdout is the only channel
 this format has. The summary line goes to **stderr**, so stdout stays one record
 per line and nothing else.
 
-Pair it with `--ephemeral` for a run that reports everything and leaves nothing
-in the checkout.
+Pair it with `--ephemeral` for a run that keeps no conversation. With
+`--workspace` it still writes `.ptah/agent-audit.jsonl` — that is the record of
+what Ptah *decided*, and `--ephemeral` is about the conversation, not about the
+audit trail.
 
 Every run is bounded — turns, total tool calls, repeats of one identical call,
 and the size of a single tool result. A model that loops terminates with a
@@ -210,22 +221,40 @@ diagnostic naming which limit it hit, and the record is printed either way.
 
 ## Start from what you already exported
 
-A key in your environment is enough. No configuration file is needed to get a
-working profile:
+A key in your environment produces a profile without a configuration file:
 
 | variable | profile it produces |
 | --- | --- |
 | `OPENAI_API_KEY` | `openai`, against `https://api.openai.com/v1` |
 | `OPENAI_API_KEY` and `OPENAI_BASE_URL` | `openai`, against the base URL you named |
 | `ANTHROPIC_API_KEY` | `anthropic` |
+| `ANTHROPIC_API_KEY` and `ANTHROPIC_BASE_URL` | `anthropic`, against the base URL you named |
 | `OLLAMA_HOST` | `ollama`, against that host |
+
+**A profile is not yet a working one: none of these carries a model.** Name one
+with `PTAH_ASSIST_MODEL`, or `--model` on the command:
+
+```bash
+export OPENAI_API_KEY=…
+export PTAH_ASSIST_MODEL=gpt-4o-mini
+ptah assist provider test
+```
+
+Without it every command stops with `profile "openai" states no model`, and
+exits 2. `ptah assist provider list` shows the profile before that point, so a
+listed profile is not by itself a usable one.
+
+`PTAH_ASSIST_PROFILE` names which profile to use when several exist;
+`--provider-profile` overrides it.
 
 `ptah assist provider list` says where each profile came from, so an inferred
 one is never mistaken for a file you wrote.
 
-An exported but empty variable is a configuration error rather than an absent
-one. `OPENAI_API_KEY=` produces a profile whose credential fails with the
-variable named, which is what a typo in a CI environment file needs to hear.
+An exported but empty **key** variable is a configuration error rather than an
+absent one: `OPENAI_API_KEY=` produces a profile whose credential fails with the
+variable named, which is what a typo in a CI environment file needs to hear. The
+other three treat empty as absent — `OLLAMA_HOST=` produces no profile, and an
+empty base URL falls back to the default.
 
 ## Write profiles for anything else
 
@@ -276,7 +305,37 @@ Two provider types cover the field. `openai-compatible` speaks Chat Completions
 and reaches OpenAI, Azure OpenAI, OpenRouter, LiteLLM and other gateways, vLLM,
 LM Studio, Ollama, and MLX. `anthropic` speaks the Messages API.
 
-Every profile also accepts `timeout_seconds` and `max_retries`.
+### What `base_url` has to be
+
+Ptah appends to it. For `openai-compatible` it requests `<base_url>/chat/completions`
+and, for the probe, `<base_url>/models`. So the value ends where those paths
+begin — usually at `/v1`:
+
+```text
+http://127.0.0.1:11434/v1     ✓  Ollama
+http://127.0.0.1:1234/v1      ✓  LM Studio
+http://127.0.0.1:8000/v1      ✓  vLLM
+localhost:11434/v1            ✗  no scheme; classified provider_error
+http://127.0.0.1:11434        ✗  no /v1; the request 404s
+```
+
+A scheme and a host are required. `OLLAMA_HOST` is the one place a bare
+`host:port` is accepted, because that project's own convention is to write it
+that way, and Ptah turns it into a URL.
+
+`base_url` is required for `openai-compatible`. For `anthropic` it is optional
+and defaults to the public API; `ANTHROPIC_BASE_URL` sets it for a derived
+profile.
+
+Every profile also accepts `timeout_seconds` and `max_retries`. `headers` and
+`query` are sent verbatim, which is how an Azure deployment or a gateway that
+wants an extra header is reached.
+
+**No provider is tested support.** Ptah implements the two protocols above; the
+list of gateways is where they are known to be spoken, not a matrix anybody
+maintains. What a model must be able to do is call tools, and
+`ptah assist provider test` measures that against your endpoint rather than
+reading it off documentation.
 
 ### Profiles are yours, not your projects'
 
@@ -295,11 +354,24 @@ env:OPENAI_API_KEY        an environment variable
 file:/run/secrets/openai  a file, which must not be readable by other users
 ```
 
-A key written directly into the file is refused. Ptah stores no credential
-anywhere: the reference is resolved at the moment a request is made, the value
-is held in memory for that request, and no Ptah command writes it to disk. A
-credential file that group or others can read is refused the way `ssh` refuses a
-private key, and a trailing newline is trimmed so the file an editor saved works.
+A key written into `credential:` is refused — that field takes a reference and
+nothing else. Ptah stores no credential anywhere: the reference is resolved when
+the provider is built, the value is held in memory for the life of that process,
+and no Ptah command writes it to disk.
+
+**`headers:` is not checked, and that is worth knowing.** A gateway that wants
+`Authorization: Bearer …` takes it there, so Ptah cannot tell an inline key in
+that map from a header a gateway needs. Nothing validates it and
+`ptah assist provider list` does not print it. If your gateway needs a key in a
+header, keep the file owner-only and treat it as a secret.
+
+On Unix, the configuration file and any `file:` credential must not be readable
+by group or others — `chmod 600` — and Ptah refuses to start otherwise, the way
+`ssh` refuses a private key. **On Windows that check does not run**: `os.Stat`
+there synthesizes permission bits from the read-only attribute, so they say
+nothing about who can read the file, and access is an ACL question Ptah does not
+read. A trailing newline in a credential file is trimmed so the file an editor
+saved works.
 
 A credential *command* is deliberately not supported. It is a real convention
 elsewhere, and it is arbitrary code execution driven by a configuration file.
@@ -316,14 +388,24 @@ ptah assist provider test --provider-profile work
 ptah assist provider test --format json
 ```
 
-Four things are measured:
+Up to four things are measured:
 
 | check | what it means |
 | --- | --- |
-| reachable | the endpoint answered |
-| credential | the endpoint accepted it |
+| reachable | nothing refused the connection or timed out |
+| credential | no 401 or 403 came back |
 | model listed | the endpoint's own model list contains this model |
 | tool calling | the model returned a tool call when asked for one |
+
+Two of those are narrower than they look. `credential: accepted` means no
+authentication error came back, so a profile with no credential at all against
+an endpoint that wants none also reports accepted — there was nothing to accept.
+And a `base_url` that will not parse is reported as reachable, because nothing
+was contacted for anything to refuse; the cause is in the notes, and the
+classification is `provider_error`.
+
+For an `anthropic` profile only three are measured. That API serves no model
+list, so `model listed` is always `no` and the report says why in a note.
 
 Tool calling is the capability Ptah Assist requires, and it is measured rather
 than read off documentation: a deployment that documents it and one that
@@ -338,8 +420,15 @@ The check sends nothing about your project. It is a fixed two-line prompt asking
 the model to call one tool, so you can test a provider before deciding whether
 to send it anything.
 
-The command exits 0 when the profile is usable and 1 when it is not, so a script
-can branch on it. In JSON mode the document is printed either way.
+Exit codes, which a script should branch on with all three in mind:
+
+| code | meaning |
+| --- | --- |
+| 0 | the profile is usable |
+| 1 | the profile resolved and failed a check; the document is printed |
+| 2 | the profile could not be resolved at all — no model, an unreadable configuration file, an unresolvable credential reference, or no default among several — and no document is printed |
+
+A script written for 0-or-1 reads a configuration mistake as a crash.
 
 ## When something fails
 
@@ -353,6 +442,7 @@ because the remedies differ:
 | `rate_limited` | nothing; Ptah waits the time the provider asked for and retries |
 | `too_large` | the size of what is being sent |
 | `unreachable` | the base URL, or whether the endpoint is running |
+| `provider_error` | the request never left — most often a `base_url` with no scheme, such as `localhost:11434/v1` |
 | `malformed_response` | the endpoint, which is not serving the API it claims |
 
 The provider's own message is preserved alongside the classification, because

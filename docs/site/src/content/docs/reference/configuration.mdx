@@ -26,9 +26,15 @@ see [Boolean environment variables](#boolean-environment-variables).
 
 ## The one flag with no environment variable
 
-`--auto-approve` — on `ptah schema apply` and `ptah db drop-all` — is the only
-flag in the native CLI that does **not** bind to a `PTAH_*` variable. It has to
-be typed, or written into a command line somebody wrote.
+Approval flags do **not** bind to a `PTAH_*` variable. They have to be typed, or
+written into a command line somebody wrote:
+
+| flag | on |
+| --- | --- |
+| `--auto-approve` | `ptah schema apply`, `ptah db drop-all`, `ptah mcp`, `ptah assist`, `ptah assist explain`, `ptah assist context` |
+| `--allow-database-inspect` | `ptah mcp`, `ptah assist`, `ptah assist explain`, `ptah assist context` |
+
+Every other flag in the native CLI binds to one.
 
 That is deliberate, and it is the reason every other flag can safely have one: a
 container, a CI job, or a Kubernetes Job can be configured entirely through the
