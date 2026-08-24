@@ -57,9 +57,14 @@ func TestMariaDBGeneratedColumnReplaysE2E(t *testing.T) {
 	createMySQLDatabase(c, ctx, adminDB, replayName)
 	defer dropMySQLDatabase(c, context.Background(), adminDB, replayName)
 
+	// replaceMySQLDatabaseName, not replaceDatabaseName: the latter goes through
+	// url.Parse, and a MySQL-family address is not a URL. CI hands this test
+	// `mariadb://root:***@tcp(127.0.0.1:3307)/mysql`, whose driver-style host
+	// makes url.Parse answer `invalid port ":3307)" after host` -- so the test
+	// failed at its own setup, on a form no PostgreSQL address ever takes.
 	adminURL := dbtarget.URL(t, dbtarget.MariaDBAdmin)
-	sourceURL := replaceDatabaseName(c, adminURL, sourceName)
-	replayURL := replaceDatabaseName(c, adminURL, replayName)
+	sourceURL := replaceMySQLDatabaseName(c, adminURL, sourceName)
+	replayURL := replaceMySQLDatabaseName(c, adminURL, replayName)
 
 	// Written by hand rather than by Ptah. A table Ptah created would round-trip
 	// through whatever the renderer writes, and a reader defect stays invisible
