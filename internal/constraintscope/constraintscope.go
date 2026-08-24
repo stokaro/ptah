@@ -66,6 +66,7 @@ func Normalize(diff *difftypes.SchemaDiff, semantics identifier.Semantics) {
 	if diff == nil {
 		return
 	}
+	coverBareAdditions(diff)
 	for i := range diff.ConstraintsAddedWithTables {
 		add := &diff.ConstraintsAddedWithTables[i]
 		if add.Identity == (difftypes.ConstraintIdentity{}) {
@@ -83,5 +84,63 @@ func Normalize(diff *difftypes.SchemaDiff, semantics identifier.Semantics) {
 		if removal.Identity == (difftypes.ConstraintIdentity{}) {
 			removal.Identity = Identity(semantics, removal.TableName, removal.Name)
 		}
+	}
+}
+
+// AdditionNames lists the constraints a diff adds, by name, from the records.
+//
+// It replaces reading the bare ConstraintsAdded list. The two carry the same
+// names with the same multiplicity once [Normalize] has run, which is what
+// covers a diff that arrived with names and no records -- and the records are
+// the ones that also say which table, so a consumer reading them can stop
+// asking two questions to answer one (stokaro/ptah#1663).
+//
+// Every addition is listed, not only the ones with no table. For a non-FK
+// modify the name-only path is what emits the DROP that has to precede the
+// re-add, and it does that for a host it knows as well as for one it does not;
+// listing only the hostless ones loses that drop, measured.
+func AdditionNames(diff *difftypes.SchemaDiff) []string {
+	if diff == nil {
+		return nil
+	}
+	names := make([]string, 0, len(diff.ConstraintsAddedWithTables))
+	for _, info := range diff.ConstraintsAddedWithTables {
+		names = append(names, info.Name)
+	}
+	return names
+}
+
+// coverBareAdditions gives every name in the bare addition list a record, so a
+// consumer reading records sees everything the name list holds.
+//
+// A diff the comparator built carries both. One built by hand -- which is what
+// [difftypes.SchemaDiff] is, a surface an embedder constructs directly -- may
+// carry only the names, and so may a reverse diff, whose add-path restores a
+// body only from an introspected constraint it can find. Before this, those
+// names were reachable only through the bare list, which is why the bare list
+// could not be retired (stokaro/ptah#1663).
+//
+// The record carries no table, which is not a placeholder: it is the same "no
+// host recorded" state the planners already read, and the state a name-only add
+// path is for.
+//
+// Counted by name rather than checked for presence, because one name can be two
+// constraints on two tables: a list holding it twice and a record list holding
+// it once is one record short, not covered.
+func coverBareAdditions(diff *difftypes.SchemaDiff) {
+	if len(diff.ConstraintsAdded) == 0 {
+		return
+	}
+	recorded := make(map[string]int, len(diff.ConstraintsAddedWithTables))
+	for _, info := range diff.ConstraintsAddedWithTables {
+		recorded[info.Name]++
+	}
+	for _, name := range diff.ConstraintsAdded {
+		if recorded[name] > 0 {
+			recorded[name]--
+			continue
+		}
+		diff.ConstraintsAddedWithTables = append(diff.ConstraintsAddedWithTables,
+			difftypes.ConstraintAdditionInfo{Name: name})
 	}
 }
