@@ -556,6 +556,7 @@ func (r *Reader) buildIndexesForTable(
 			TableName:  tableName,
 			Schema:     r.outputSchema(),
 			Columns:    columns,
+			Parts:      sqliteIndexParts(indexColumns.keys, columns),
 			IsUnique:   entry.unique != 0,
 			IsPrimary:  entry.origin == "pk",
 			Definition: definition,
@@ -592,6 +593,23 @@ func uniqueDefinitionsByColumns(definitions []uniqueDefinition) map[string]uniqu
 type sqliteIndexColumns struct {
 	names           []string
 	needsDDLParsing bool
+	// keys is every key of the index in key order, including the ones that are
+	// expressions rather than columns. names holds the columns alone, which is
+	// what the legacy columns-only representation wants; keys is what says
+	// which position was which.
+	keys []sqliteIndexKey
+}
+
+// sqliteIndexKey is one key of an index, and whether the catalog named a column
+// for it.
+//
+// PRAGMA index_xinfo answers with a NULL name and a negative cid for a key that
+// is an expression, which is the only place the distinction is recorded: the
+// index's DDL carries the text of every key and says nothing about which kind
+// each one is.
+type sqliteIndexKey struct {
+	name       string
+	expression bool
 }
 
 func (r *Reader) readIndexColumnsByIndex(skipped []string) (map[string]sqliteIndexColumns, error) {
@@ -613,8 +631,9 @@ func (r *Reader) readIndexColumnsByIndex(skipped []string) (map[string]sqliteInd
 	defer rows.Close()
 
 	type indexColumn struct {
-		seqno int
-		name  string
+		seqno      int
+		name       string
+		expression bool
 	}
 	columns := make(map[string][]indexColumn)
 	needsDDLParsing := make(map[string]bool)
@@ -634,6 +653,8 @@ func (r *Reader) readIndexColumnsByIndex(skipped []string) (map[string]sqliteInd
 		}
 		if cid < 0 || !name.Valid || name.String == "" {
 			needsDDLParsing[indexName] = true
+			columns[indexName] = append(columns[indexName],
+				indexColumn{seqno: seqno, expression: true})
 			continue
 		}
 		columns[indexName] = append(columns[indexName], indexColumn{seqno: seqno, name: name.String})
@@ -645,13 +666,18 @@ func (r *Reader) readIndexColumnsByIndex(skipped []string) (map[string]sqliteInd
 	out := make(map[string]sqliteIndexColumns, len(columns)+len(needsDDLParsing))
 	for indexName, indexColumns := range columns {
 		sort.Slice(indexColumns, func(i, j int) bool { return indexColumns[i].seqno < indexColumns[j].seqno })
-		names := make([]string, len(indexColumns))
+		names := make([]string, 0, len(indexColumns))
+		keys := make([]sqliteIndexKey, len(indexColumns))
 		for i, column := range indexColumns {
-			names[i] = column.name
+			keys[i] = sqliteIndexKey{name: column.name, expression: column.expression}
+			if !column.expression {
+				names = append(names, column.name)
+			}
 		}
 		out[indexName] = sqliteIndexColumns{
 			names:           names,
 			needsDDLParsing: needsDDLParsing[indexName],
+			keys:            keys,
 		}
 	}
 	for indexName := range needsDDLParsing {
@@ -660,6 +686,36 @@ func (r *Reader) readIndexColumnsByIndex(skipped []string) (map[string]sqliteInd
 		}
 	}
 	return out, nil
+}
+
+// sqliteIndexParts pairs the key texts the DDL carries with the kinds the
+// catalog reported, so an expression key is recorded as an expression rather
+// than as a column nothing will find.
+//
+// It answers nil unless every key lines up, which leaves DBIndex.Parts empty
+// and keeps the columns-only representation rather than guessing -- the same
+// rule the PostgreSQL reader follows when its attnum list does not match.
+//
+// Without it an expression key reached the HCL renderer as a column name, and
+// the document said `columns = [column["(lower(email))"]]`: a reference to a
+// column that does not exist. The pinned Atlas community binary refuses that
+// document outright, and Ptah replaying its own copy of it built an index over
+// the STRING `"(lower(email))"` -- silently, because SQLite reads a
+// double-quoted name that matches no column as a string literal. An index over
+// a constant is the same value for every row (stokaro/ptah#2088).
+func sqliteIndexParts(keys []sqliteIndexKey, keyTexts []string) []types.DBIndexPart {
+	if len(keys) == 0 || len(keys) != len(keyTexts) {
+		return nil
+	}
+	parts := make([]types.DBIndexPart, len(keys))
+	for position, key := range keys {
+		if key.expression {
+			parts[position] = types.DBIndexPart{Expr: keyTexts[position]}
+			continue
+		}
+		parts[position] = types.DBIndexPart{Name: keyTexts[position]}
+	}
+	return parts
 }
 
 func extractIndexCondition(definition string) string {
