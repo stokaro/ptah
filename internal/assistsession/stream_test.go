@@ -50,11 +50,15 @@ func TestCreate_TheMirrorCarriesTheHeader(t *testing.T) {
 	store, _ := newStore(c)
 	mirror := &bytes.Buffer{}
 
-	_, err := store.Create("session-1",
+	recorder, err := store.Create("session-1",
 		assistsession.Record{Model: "a-model", Provider: "local"},
 		assistsession.NewStream(mirror, nil))
-
 	c.Assert(err, qt.IsNil)
+	// The file handle has to go before the temporary directory does: Windows
+	// refuses to remove a file something still holds open, where POSIX unlinks
+	// it and the leak stays invisible.
+	c.Cleanup(func() { c.Assert(recorder.Close(), qt.IsNil) })
+
 	header := make(map[string]any)
 	first, _, _ := strings.Cut(mirror.String(), "\n")
 	c.Assert(json.Unmarshal([]byte(first), &header), qt.IsNil)
@@ -73,8 +77,9 @@ func TestCreate_IdentityComesFromTheSavedSessionNotTheStream(t *testing.T) {
 
 	recorder, err := store.Create("session-1", assistsession.Record{Model: "a-model"},
 		assistsession.NewStream(&bytes.Buffer{}, nil))
-
 	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { c.Assert(recorder.Close(), qt.IsNil) })
+
 	c.Assert(recorder.ID(), qt.Equals, "session-1")
 	c.Assert(recorder.Path(), qt.Equals,
 		filepath.Join(root, ".ptah", "sessions", "session-1.jsonl"))
