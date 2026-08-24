@@ -621,9 +621,17 @@ func TestConvertDBSchemaToGoSchema_SchemaQualifiedObjectOwnersUseTableStructName
 	c.Assert(result.Indexes, qt.HasLen, 1)
 	c.Assert(result.Indexes[0].StructName, qt.Equals, "Orders")
 	c.Assert(result.Indexes[0].Name, qt.Equals, "idx_orders_id")
-	c.Assert(result.Constraints, qt.HasLen, 1)
+	// Two, and the second is the point of the fixture's UNIQUE row: the name
+	// `orders_id_unique` is not one PostgreSQL would have generated -- that
+	// would be `orders_id_key` -- so it is a name somebody chose and the
+	// description keeps it. It used to be dropped, and the column's
+	// `unique = true` carried the constraint without its name
+	// (stokaro/ptah#2102).
+	c.Assert(result.Constraints, qt.HasLen, 2)
 	c.Assert(result.Constraints[0].StructName, qt.Equals, "Orders")
 	c.Assert(result.Constraints[0].Name, qt.Equals, "orders_tenant_check")
+	c.Assert(result.Constraints[1].Name, qt.Equals, "orders_id_unique")
+	c.Assert(result.Constraints[1].StructName, qt.Equals, "Orders")
 	c.Assert(result.RLSPolicies, qt.HasLen, 1)
 	c.Assert(result.RLSPolicies[0].StructName, qt.Equals, "Orders")
 }
