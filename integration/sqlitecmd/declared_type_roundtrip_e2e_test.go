@@ -4,15 +4,22 @@ package sqlitecmd_test
 
 import (
 	"context"
+	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
 
 	"go.5x5.cz/ptah/config"
 	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/renderer"
 	"go.5x5.cz/ptah/dbschema"
+	"go.5x5.cz/ptah/internal/atlasschema"
 	"go.5x5.cz/ptah/internal/convert/dbschematogo"
+	"go.5x5.cz/ptah/internal/schemafile"
+	"go.5x5.cz/ptah/migration/migrator"
 	"go.5x5.cz/ptah/migration/schemadiff"
 )
 
@@ -172,4 +179,72 @@ func sqliteColumnDeclaration(declaredType string) *goschema.Database {
 			{StructName: "P", Name: "v", Type: declaredType, Nullable: true},
 		},
 	}
+}
+
+// TestSQLiteDeclaredTypesSurviveTheDocumentE2E is the whole round trip, through
+// the file a person actually keeps.
+//
+// The fact that a type came from a catalog lives in the IR, and an HCL document
+// has nowhere to put it -- so the document carries it the way an author's own
+// escape hatch does, as `sql("BOOLEAN")`. Without that, a document written from
+// a read was read back as a plain declaration, canonicalized on the way out,
+// and the round trip rebuilt every table whose canonical spelling changes its
+// affinity: BOOLEAN and SERIAL become INTEGER, ENUM becomes TEXT
+// (stokaro/ptah#2040).
+func TestSQLiteDeclaredTypesSurviveTheDocumentE2E(t *testing.T) {
+	c := qt.New(t)
+	dbPath := filepath.Join(t.TempDir(), "document.db")
+	seedSQLite(c, dbPath, declaredTypeDDL)
+
+	document, err := runNativeInspect(dbPath)
+	c.Assert(err, qt.IsNil)
+
+	// The document says what the database says, and says it in the spelling
+	// that survives being read back.
+	for _, want := range []string{
+		`sql("VARCHAR(80)")`,
+		`sql("CHARACTER(4)")`,
+		`sql("CLOB")`,
+		`sql("MY_OWN_TYPE")`,
+		`sql("DOUBLE PRECISION")`,
+		`sql("BOOLEAN")`,
+	} {
+		c.Assert(document, qt.Contains, want)
+	}
+
+	path := filepath.Join(t.TempDir(), "schema.hcl")
+	c.Assert(os.WriteFile(path, []byte(document), 0o600), qt.IsNil)
+
+	loaded, err := schemafile.LoadPath(path, schemafile.Options{})
+	c.Assert(err, qt.IsNil)
+
+	conn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+dbPath)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(conn)
+	read, err := conn.Reader().ReadSchema()
+	c.Assert(err, qt.IsNil)
+
+	diff, err := schemadiff.CompareWithDatabase(
+		context.Background(), conn, loaded, read, config.DefaultCompareOptions())
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(diff.HasChanges(), qt.IsFalse, qt.Commentf("diff: %+v", diff))
+
+	// And replaying the document builds the same table. This is the half the
+	// comparison cannot see: a renderer that canonicalized would create
+	// `INTEGER` for `c_bool` and the two databases would differ while the
+	// comparison called them equal.
+	replayPath := filepath.Join(t.TempDir(), "replay.db")
+	replayConn, err := dbschema.ConnectToDatabase(context.Background(), "sqlite://"+replayPath)
+	c.Assert(err, qt.IsNil)
+	defer dbschema.CloseAndWarn(replayConn)
+	statements, err := renderer.GetOrderedCreateStatements(loaded, platform.SQLite)
+	c.Assert(err, qt.IsNil)
+	c.Assert(atlasschema.ApplySQL(context.Background(), replayConn,
+		migrator.MigrationTxModeAll, strings.Join(statements, "\n")), qt.IsNil)
+
+	replayed, err := replayConn.Reader().ReadSchema()
+	c.Assert(err, qt.IsNil)
+	c.Assert(describedColumnTypes(dbschematogo.ConvertDBSchemaToGoSchema(replayed)),
+		qt.DeepEquals, describedColumnTypes(dbschematogo.ConvertDBSchemaToGoSchema(read)))
 }

@@ -812,7 +812,11 @@ func typeChangeText(dbRawType, genRawType, dbNormalized, genNormalized, dialect 
 // goes through the canonical spelling, which is the rule that existed before
 // affinities were compared at all.
 func renderedSQLiteType(genCol goschema.Field) string {
-	if genCol.TypeIsDeclaredText {
+	// TypeRawSQL counts as the same fact, for the reason the SQLite renderer
+	// gives: a document carries a catalog's type as `sql("BOOLEAN")`, and both
+	// sides have to read that as the declaration or the comparison would ask
+	// about a type the renderer is not going to write.
+	if genCol.TypeIsDeclaredText || genCol.TypeRawSQL {
 		return genCol.Type
 	}
 	return normalize.SQLiteColumnType(genCol.Type)

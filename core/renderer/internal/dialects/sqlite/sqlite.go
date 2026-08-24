@@ -598,7 +598,12 @@ func renderColumn(column *ast.ColumnNode, caps capability.Capabilities) (string,
 // A declaration a person wrote still goes through the canonical spelling
 // below, which is what gives a Go or HCL schema one type per affinity.
 func mapColumnType(column *ast.ColumnNode) string {
-	if column.TypeIsDeclaredText && strings.TrimSpace(column.Type) != "" {
+	// TypeRawSQL counts as the same fact here. A document writes a type the
+	// catalog stored as `sql("BOOLEAN")`, and the parser records that as a raw
+	// call rather than as a catalog fact -- there is nowhere else for it to
+	// land. For SQLite the two mean one thing: this text is the declaration,
+	// so write it (stokaro/ptah#2040).
+	if (column.TypeIsDeclaredText || column.TypeRawSQL) && strings.TrimSpace(column.Type) != "" {
 		return column.Type
 	}
 	upper := strings.ToUpper(strings.TrimSpace(column.Type))

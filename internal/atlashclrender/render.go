@@ -1338,6 +1338,20 @@ func (r *renderer) columnTypeExpr(field goschema.Field) string {
 	if field.TypeRawSQL {
 		return sqlCall(field.Type)
 	}
+	// A type the catalog stored VERBATIM is written the same way, for the same
+	// reason one level down: the document has to carry the fact that this text
+	// is the author's and not a name a renderer may re-decide.
+	//
+	// SQLite is where that matters. It keeps the declaration and derives an
+	// affinity from the text, so a document that wrote `boolean` bare would be
+	// read back as a declaration, canonicalized to INTEGER on the way out, and
+	// the round trip would rebuild the table -- NUMERIC affinity becoming
+	// INTEGER. `sql("BOOLEAN")` is the spelling that survives, and the pinned
+	// Atlas community binary accepts it for every type name
+	// (stokaro/ptah#2040).
+	if field.TypeIsDeclaredText {
+		return sqlCall(field.Type)
+	}
 	if ref, ok := r.enumTypeRef(field.Type); ok {
 		return ref
 	}
