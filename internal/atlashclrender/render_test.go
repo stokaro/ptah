@@ -883,3 +883,49 @@ func roleByName(roles []goschema.Role, name string) goschema.Role {
 	}
 	return goschema.Role{}
 }
+
+// TestRenderKeepsTheDeclaredColumnOrder pins that a document describes the
+// table it was read from.
+//
+// The renderer sorted columns by name, so `schema inspect` wrote them
+// alphabetically whatever order the table had, and replaying the document
+// produced a different table: `SELECT *` returns columns in table order and a
+// positional INSERT binds to it. Measured on SQLite against master at
+// 96215166, a table read as `id, name, active` was written as
+// `active, id, name` and replayed that way by the pinned community binary
+// (stokaro/ptah#2085).
+//
+// The names are chosen so that source order and alphabetical order disagree in
+// both directions: sorted they are active, id, name.
+func TestRenderKeepsTheDeclaredColumnOrder(t *testing.T) {
+	c := qt.New(t)
+	db := &goschema.Database{
+		Tables: []goschema.Table{{StructName: "Author", Name: "authors"}},
+		Fields: []goschema.Field{
+			{StructName: "Author", Name: "id", Type: "bigint", Primary: true},
+			{StructName: "Author", Name: "name", Type: "text"},
+			{StructName: "Author", Name: "active", Type: "boolean"},
+		},
+	}
+
+	rendered, err := atlashclrender.Render(db)
+
+	c.Assert(err, qt.IsNil)
+	c.Assert(columnOrder(string(rendered.Data)), qt.DeepEquals, []string{"id", "name", "active"})
+}
+
+// columnOrder returns the column names in the order the document writes them.
+func columnOrder(rendered string) []string {
+	names := make([]string, 0, 4)
+	for line := range strings.SplitSeq(rendered, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if !strings.HasPrefix(trimmed, `column "`) {
+			continue
+		}
+		rest := trimmed[len(`column "`):]
+		if name, _, found := strings.Cut(rest, `"`); found {
+			names = append(names, name)
+		}
+	}
+	return names
+}

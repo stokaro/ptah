@@ -653,9 +653,14 @@ func (r *renderer) renderTable(
 	r.renderPlatformOverrides(1, table.Overrides)
 	r.renderRowSecurity(rlsEnabled)
 
-	sort.SliceStable(fields, func(i, j int) bool {
-		return fields[i].Name < fields[j].Name
-	})
+	// The columns are written in the order the schema carries them, which is the
+	// order the table has: a live read returns catalog order, a schema file
+	// returns file order, and Go annotations return source order. Sorting them
+	// by name looked like a determinism measure and was not one -- every source
+	// above is already ordered -- and it made `schema inspect` describe a table
+	// that is not the table it read. Replaying such a document reorders every
+	// column, which changes what `SELECT *` returns and what a positional
+	// INSERT binds (stokaro/ptah#2085).
 	for _, field := range fields {
 		// A key column is written NOT NULL only where the engine makes it so.
 		// SQLite does not on a rowid table, and writing `null = false` there
