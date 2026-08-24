@@ -338,6 +338,24 @@ type DBColumn struct {
 	IsPrimaryKey       bool    `json:"is_primary_key"`    // Derived field
 	IsUnique           bool    `json:"is_unique"`         // Derived field
 
+	// TypeIsDeclaredText records that DataType is the text an author wrote,
+	// stored verbatim, rather than a type the engine resolved the declaration
+	// to.
+	//
+	// SQLite is the only engine Ptah reads where that is true: it keeps the
+	// declaration and derives an affinity from it at use time, so
+	// `VARCHAR(80)` comes back as `VARCHAR(80)` and means TEXT. Every other
+	// engine answers with a type of its own -- PostgreSQL turns `varchar(80)`
+	// into `character varying` plus a width, Oracle turns `INTEGER` into
+	// `NUMBER(10)` -- so the distinction has nowhere to apply there.
+	//
+	// A renderer reads it to decide whether it may canonicalize the spelling.
+	// It must not: a description of a SQLite database that rewrote
+	// `VARCHAR(80)` to `TEXT` would replay as a different table, and the
+	// comparison then planned a rebuild that changed nothing
+	// (stokaro/ptah#2040).
+	TypeIsDeclaredText bool `json:"type_is_declared_text,omitempty"`
+
 	// DomainName names the domain a column is declared with, empty for every
 	// column whose declared type is not a domain (PostgreSQL only today).
 	//

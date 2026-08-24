@@ -384,6 +384,7 @@ func (r *Reader) readColumnsByTable(skipped []string) (map[string][]types.DBColu
 		column := types.DBColumn{
 			Name:                name,
 			DataType:            normalizeSQLiteType(dataType),
+			TypeIsDeclaredText:  true,
 			ColumnType:          dataType,
 			IsNullable:          sqliteNullable(notNull),
 			OrdinalPosition:     cid + 1,
