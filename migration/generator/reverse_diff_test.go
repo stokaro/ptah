@@ -8,8 +8,10 @@ import (
 
 	"go.5x5.cz/ptah/core/goschema"
 	"go.5x5.cz/ptah/core/platform"
+	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/renderer"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
+	"go.5x5.cz/ptah/internal/constraintscope"
 	"go.5x5.cz/ptah/internal/planner/dialects/postgres"
 	"go.5x5.cz/ptah/migration/schemadiff"
 	"go.5x5.cz/ptah/migration/schemadiff/types"
@@ -765,8 +767,8 @@ func TestReverseSchemaDiff_FieldLevelCheckRemovalsWithTables(t *testing.T) {
 
 	c.Assert(result.ConstraintsRemoved, qt.DeepEquals, []string{"files_category_check", "files_status_valid"})
 	c.Assert(result.ConstraintsRemovedWithTables, qt.DeepEquals, []types.ConstraintRemovalInfo{
-		{Name: "files_category_check", TableName: "files", Type: "CHECK"},
-		{Name: "files_status_valid", TableName: "files", Type: "CHECK"},
+		{Name: "files_category_check", TableName: "files", Type: "CHECK", Identity: constraintscope.Identity(identifier.Semantics{}, "files", "files_category_check")},
+		{Name: "files_status_valid", TableName: "files", Type: "CHECK", Identity: constraintscope.Identity(identifier.Semantics{}, "files", "files_status_valid")},
 	})
 }
 
@@ -849,7 +851,7 @@ func TestForeignKeyAdditionFromDBConstraint_DeduplicatesRepeatedIntrospectionCol
 		ForeignColumns: []string{"id", "id", "id"},
 	}
 
-	info := foreignKeyAdditionFromDBConstraint("fk_entity_tenant", "ptah_area", dbConstraint)
+	info := foreignKeyAdditionFromDBConstraint("fk_entity_tenant", "ptah_area", dbConstraint, identifier.ForDialect("postgres"))
 
 	c.Assert(info.Columns, qt.DeepEquals, []string{"tenant_id"})
 	c.Assert(info.ForeignColumns, qt.DeepEquals, []string{"id"})
@@ -1127,6 +1129,7 @@ func TestGenerateDownMigrationSQL_MySQLFamilyDropsGeneratedForeignKeyBackingInde
 			{
 				Name:         "fk_users_account_id",
 				TableName:    "users",
+				Identity:     constraintscope.Identity(identifier.ForDialect("postgres"), "users", "fk_users_account_id"),
 				Type:         "FOREIGN KEY",
 				Columns:      []string{"account_id"},
 				ForeignTable: "accounts",
