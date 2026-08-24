@@ -12,10 +12,10 @@ import (
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	"go.5x5.cz/ptah/core/ptaherr"
+	"go.5x5.cz/ptah/internal/constraintscope"
 	"go.5x5.cz/ptah/internal/convert/fromschema"
 	"go.5x5.cz/ptah/internal/deporder"
 	"go.5x5.cz/ptah/internal/indexscope"
-	"go.5x5.cz/ptah/internal/objectidentity"
 	"go.5x5.cz/ptah/internal/planner/objectlookup"
 	"go.5x5.cz/ptah/internal/planner/tablelookup"
 	"go.5x5.cz/ptah/internal/tableref"
@@ -589,30 +589,14 @@ type affectedForeignKey struct {
 	ref *ast.ForeignKeyRef
 }
 
-// constraintHostKey is the shared identity model's comparison value for a
-// constraint, under this file's own name.
+// constraintHostKey is the comparison value the DIFF carries for a constraint.
 //
-// It was a private struct here and a byte-identical one in the PostgreSQL
-// planner. Two copies of "which constraint is this" is how one planner comes to
-// pair a drop with a different constraint than the other does
-// (stokaro/ptah#1345).
-type constraintHostKey = objectidentity.Key
-
-// constraintIdentities folds nothing, which is what the planner requires.
-//
-// Both spellings a host key is built from arrive from the same [types.SchemaDiff],
-// already normalized by the comparator that produced it. Folding again here
-// would apply the rule twice on one side of the pipeline and once on the other,
-// and a drop would then pair with a constraint the comparator never removed.
-// The tightening criterion is the diff carrying its identities rather than its
-// spellings; until then this is the semantics that keeps the two ends agreeing.
-var constraintIdentities = objectidentity.NewBuilder(identifier.Semantics{})
-
-// constraintHost builds a host key from an owning table spelling and a
-// constraint name.
-func constraintHost(table, name string) constraintHostKey {
-	return constraintIdentities.ConstraintPartsVerbatim(table, name).Key()
-}
+// It was this planner's own derivation, folding nothing on the argument that
+// both spellings arrived already normalized. The criterion that comment named
+// -- the diff carrying its identities rather than its spellings -- is met, so
+// the derivation is gone and the carried value is the key
+// (stokaro/ptah#1345, stokaro/ptah#1663).
+type constraintHostKey = types.ConstraintIdentity
 
 // columnTypeForeignKeyPlan holds the foreign-key statements the planner emits
 // around column changes on MySQL/MariaDB (issue #694).
@@ -683,7 +667,7 @@ func (p *Planner) planColumnTypeForeignKeyChanges(diff *types.SchemaDiff, genera
 			TableName: fk.table,
 			Type:      "FOREIGN KEY",
 		}))
-		plan.dropped[canonicalConstraintHostKey(fk.table, fk.name, semantics)] = struct{}{}
+		plan.dropped[constraintscope.Identity(semantics, fk.table, fk.name)] = struct{}{}
 	}
 	for _, fk := range readds {
 		plan.readds = append(plan.readds, p.createForeignKeyAlterStatement(fk.table, fk.name, fk.columns, fk.ref))
@@ -713,7 +697,7 @@ func collectColumnTypeForeignKeyActions(
 		if !foreignKeyValid(fk) || !foreignKeyTouchesTypeChange(fk, typeChanged, semantics) {
 			continue
 		}
-		hostKey := canonicalConstraintHostKey(fk.table, fk.name, semantics)
+		hostKey := constraintscope.Identity(semantics, fk.table, fk.name)
 		if _, done := seen[hostKey]; done {
 			continue
 		}
@@ -738,18 +722,14 @@ func collectColumnTypeForeignKeyActions(
 		if !strings.EqualFold(info.Type, "FOREIGN KEY") {
 			continue
 		}
-		hostKey := canonicalConstraintHostKey(info.TableName, info.Name, semantics)
+		hostKey := info.Identity
 		if _, added := addedHosts[hostKey]; added {
 			continue // MODIFY: handled from the schema above
 		}
 		if _, done := seen[hostKey]; done {
 			continue
 		}
-		details, detailed := foreignKeyRemovalDetails[canonicalConstraintHostKey(
-			info.TableName,
-			info.Name,
-			semantics,
-		)]
+		details, detailed := foreignKeyRemovalDetails[info.Identity]
 		if detailed && !foreignKeyRemovalTouchesBlockingChange(details, typeChanged, semantics) {
 			continue
 		}
@@ -792,12 +772,12 @@ func foreignKeyConstraintDiffHosts(
 	removed = make(map[constraintHostKey]struct{})
 	for _, info := range diff.ConstraintsAddedWithTables {
 		if strings.EqualFold(info.Type, "FOREIGN KEY") {
-			added[canonicalConstraintHostKey(info.TableName, info.Name, semantics)] = struct{}{}
+			added[info.Identity] = struct{}{}
 		}
 	}
 	for _, info := range diff.ConstraintsRemovedWithTables {
 		if strings.EqualFold(info.Type, "FOREIGN KEY") {
-			removed[canonicalConstraintHostKey(info.TableName, info.Name, semantics)] = struct{}{}
+			removed[info.Identity] = struct{}{}
 		}
 	}
 	return added, removed
@@ -1019,17 +999,9 @@ func foreignKeyRemovalDetailsByHost(
 		if len(info.Columns) == 0 || info.ForeignTable == "" || len(info.ForeignColumns) == 0 {
 			continue
 		}
-		details[canonicalConstraintHostKey(info.TableName, info.Name, semantics)] = info
+		details[info.Identity] = info
 	}
 	return details
-}
-
-func canonicalConstraintHostKey(
-	table,
-	name string,
-	semantics identifier.Semantics,
-) constraintHostKey {
-	return constraintHost(semantics.QualifiedTableIdentityKey(table), semantics.IndexIdentityKey(name))
 }
 
 func (p *Planner) addNewIndexes(
@@ -1204,6 +1176,12 @@ func (p *Planner) GenerateMigrationASTChecked(diff *types.SchemaDiff, generated 
 	if generated == nil {
 		generated = &goschema.Database{}
 	}
+	// One fold, at the door, beside the index resolver that has always been
+	// here. A diff the comparator produced arrives with its identities
+	// resolved; one an embedder built by hand does not, and the zero identity
+	// is a single key -- every such constraint would pair with every other
+	// (stokaro/ptah#1663).
+	constraintscope.Normalize(diff, diff.EffectiveIdentifierSemantics(p.targetDialect()))
 	indexes, err := indexscope.NewResolverWithSemantics(
 		p.targetDialect(),
 		diff.EffectiveIdentifierSemantics(p.targetDialect()),
@@ -1771,7 +1749,7 @@ func newConstraintPlanState(
 	// to exactly one entry, so #189 stays byte-identical (one DROP + one ADD).
 	removalByTableName := make(map[constraintHostKey]types.ConstraintRemovalInfo, len(diff.ConstraintsRemovedWithTables))
 	for _, info := range diff.ConstraintsRemovedWithTables {
-		removalByTableName[canonicalConstraintHostKey(info.TableName, info.Name, semantics)] = info
+		removalByTableName[info.Identity] = info
 	}
 
 	// Removal info grouped by bare name, so the name-only ConstraintsAdded loop
@@ -1838,11 +1816,7 @@ func (p *Planner) addPrimaryKeyConstraintsWithTables(
 		if add.Type != "PRIMARY KEY" || add.TableName == "" || len(add.Columns) == 0 {
 			continue
 		}
-		if _, modified := state.removalByTableName[canonicalConstraintHostKey(
-			add.TableName,
-			add.Name,
-			state.semantics,
-		)]; modified {
+		if _, modified := state.removalByTableName[add.Identity]; modified {
 			continue
 		}
 		result = append(result, &ast.AlterTableNode{
@@ -1906,7 +1880,7 @@ func (p *Planner) addForeignKeyConstraintsWithTables(
 		// For a modification, emit the DROP FOREIGN KEY from this exact host
 		// table before its re-add — only when this host's (table, name) is in
 		// the removal set; a pure-add host gets no phantom drop.
-		key := canonicalConstraintHostKey(add.TableName, add.Name, state.semantics)
+		key := add.Identity
 		if info, modified := state.removalByTableName[key]; modified {
 			result = p.appendScopedDrop(result, info, state.droppedForModify, state.semantics)
 		}
@@ -1951,7 +1925,7 @@ func (p *Planner) addCheckAndUniqueConstraintsWithTables(
 		if constraint == nil {
 			continue
 		}
-		key := canonicalConstraintHostKey(add.TableName, add.Name, semantics)
+		key := add.Identity
 		if info, modified := removalByTableName[key]; modified {
 			result = p.appendScopedDrop(result, info, droppedForModify, semantics)
 		}
@@ -2079,7 +2053,7 @@ func (p *Planner) appendScopedDrop(
 	dropped map[constraintHostKey]struct{},
 	semantics identifier.Semantics,
 ) []ast.Node {
-	dedupKey := canonicalConstraintHostKey(info.TableName, info.Name, semantics)
+	dedupKey := info.Identity
 	if _, done := dropped[dedupKey]; done {
 		return result
 	}
@@ -2300,7 +2274,7 @@ func (p *Planner) removeConstraints(
 			// skipping the hosts the add side already dropped.
 			continue
 		}
-		modifyHosts[canonicalConstraintHostKey(add.TableName, add.Name, semantics)] = struct{}{}
+		modifyHosts[add.Identity] = struct{}{}
 		addedHostCounts[semantics.IndexIdentityKey(add.Name)]++
 	}
 	addedBareNames := make(map[string]struct{}, len(diff.ConstraintsAdded))
@@ -2321,7 +2295,7 @@ func (p *Planner) removeConstraints(
 			// always carries the host.
 			continue
 		}
-		key := canonicalConstraintHostKey(info.TableName, info.Name, semantics)
+		key := info.Identity
 		if _, modified := modifyHosts[key]; modified {
 			// addNewConstraints owns this host's DROP-then-ADD; do not re-drop.
 			continue
