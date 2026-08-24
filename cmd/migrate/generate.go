@@ -525,10 +525,24 @@ func migrateGenerateCommand(cmd *cobra.Command, _ []string) error {
 		return err
 	}
 	if files == nil {
+		reportNothingToGenerate(cmd.OutOrStdout(), targetURL)
 		return nil
 	}
 	reportGeneratedMigrationFiles(cmd.OutOrStdout(), targetURL, files)
 	return nil
+}
+
+// reportNothingToGenerate names the outcome this command has most often.
+//
+// A nil file set is the no-change case -- the generator returns it where the
+// comparison found nothing, calling it a successful no-op -- and saying nothing
+// about it made a success indistinguishable from a command that never ran. Every
+// neighbouring verb says something for the same state: `schema apply --dry-run`
+// answers `Schema is synced, no changes to be made.` and `migrations plan`
+// answers that it has no executable statements (stokaro/ptah#2083).
+func reportNothingToGenerate(out io.Writer, targetURL string) {
+	fmt.Fprintf(out, "Schema is synced with %s, no migration files generated.\n",
+		dbschema.FormatDatabaseURL(targetURL))
 }
 
 func reportGeneratedMigrationFiles(out io.Writer, targetURL string, files *generator.MigrationFiles) {

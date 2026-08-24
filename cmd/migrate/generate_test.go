@@ -2,9 +2,11 @@ package migrate_test
 
 import (
 	"bytes"
+	"database/sql"
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"sort"
 	"testing"
 
 	qt "github.com/frankban/quicktest"
@@ -222,4 +224,70 @@ func errorText(err error) string {
 		return ""
 	}
 	return err.Error()
+}
+
+// A nil file set is the no-change case, and the command used to say nothing at
+// all about it: exit 0, zero bytes, no files. A success was indistinguishable
+// from a command that never ran, which matters most for the outcome this verb
+// has most often -- run after every schema edit, most runs have nothing to do
+// (stokaro/ptah#2083).
+func TestMigrateGenerateSaysThereWasNothingToGenerate(t *testing.T) {
+	c := qt.New(t)
+	dir := t.TempDir()
+	schemaFile := filepath.Join(dir, "schema.sql")
+	migrationsDir := filepath.Join(dir, "migrations")
+	database := "sqlite:///" + filepath.Join(dir, "ptah.db")
+	c.Assert(os.WriteFile(schemaFile, []byte("CREATE TABLE users (id INTEGER PRIMARY KEY);\n"), 0o600), qt.IsNil)
+
+	first := generateOnce(c, schemaFile, database, migrationsDir)
+	c.Assert(first, qt.Contains, "Generated migration files for",
+		qt.Commentf("the control: the first run has something to write"))
+
+	// The database is untouched by generate, so the second run against the same
+	// empty database plans the same migration. Applying it is what makes the
+	// two sides equal, and the SQL is what the first run wrote.
+	applyGeneratedMigrations(c, migrationsDir, filepath.Join(dir, "ptah.db"))
+
+	second := generateOnce(c, schemaFile, database, migrationsDir)
+
+	c.Assert(second, qt.Contains, "no migration files generated")
+	c.Assert(second, qt.Not(qt.Contains), "Generated migration files for")
+}
+
+// generateOnce runs the command and returns what it wrote to stdout.
+func generateOnce(c *qt.C, schemaFile, database, migrationsDir string) string {
+	c.Helper()
+	var stdout, stderr bytes.Buffer
+	cmd := migrate.NewMigrateGenerateCommand()
+	cmd.SetOut(&stdout)
+	cmd.SetErr(&stderr)
+	cmd.SetArgs([]string{
+		"--schema-file", schemaFile,
+		"--db-url", database,
+		"--migrations-dir", migrationsDir,
+		"--name", "init",
+	})
+
+	c.Assert(cmd.Execute(), qt.IsNil, qt.Commentf("stderr:\n%s", stderr.String()))
+	return stdout.String()
+}
+
+// applyGeneratedMigrations runs every generated up-migration against the file,
+// so the next comparison finds nothing to do.
+func applyGeneratedMigrations(c *qt.C, migrationsDir, databaseFile string) {
+	c.Helper()
+	database, err := sql.Open("sqlite", databaseFile)
+	c.Assert(err, qt.IsNil)
+	c.Cleanup(func() { _ = database.Close() })
+
+	files, err := filepath.Glob(filepath.Join(migrationsDir, "*.up.sql"))
+	c.Assert(err, qt.IsNil)
+	c.Assert(len(files) > 0, qt.IsTrue)
+	sort.Strings(files)
+	for _, file := range files {
+		statements, readErr := os.ReadFile(file)
+		c.Assert(readErr, qt.IsNil)
+		_, execErr := database.Exec(string(statements))
+		c.Assert(execErr, qt.IsNil, qt.Commentf("file: %s", file))
+	}
 }
