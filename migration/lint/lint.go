@@ -40,6 +40,7 @@ import (
 	"strings"
 
 	"go.5x5.cz/ptah/internal/atlaslint"
+	"go.5x5.cz/ptah/internal/sqlcompound"
 	"go.5x5.cz/ptah/migration/migrator"
 	"go.5x5.cz/ptah/migration/risk"
 )
@@ -486,6 +487,13 @@ type rawStatement struct {
 // scanner (so semicolons inside strings, comments, executable comments and
 // dollar-quoted bodies do not terminate statements) while tracking each
 // statement's starting line.
+//
+// A semicolon inside a compound routine body does not terminate one either.
+// That question is [sqlcompound]'s, the same one core/sqlutil asks, because a
+// linter that answered it differently cut `CREATE PROCEDURE p() BEGIN … ; …
+// END` into fragments no parser could model: the routine reached the change
+// model as nothing at all, and every body statement after the first reached the
+// rules as a statement the migration performs (stokaro/ptah#2069).
 func splitStatementsWithLines(
 	raw string,
 	mode scanMode,
@@ -498,9 +506,26 @@ func splitStatementsWithLines(
 	lastStatementEndLine := 0
 	var pendingSuppressions []atlaslint.Target
 	var activeSuppressions []atlaslint.Target
+	compound := sqlcompound.New(mode.dialect)
 	for _, tok := range scanSQL(raw, mode) {
+		if tok.kind == tokWord {
+			compound.Word(tok.text)
+		}
 		switch tok.kind {
 		case tokSemicolon:
+			if compound.KeepSemicolonInsideStatement() {
+				// Body text. It extends the statement exactly as a word would,
+				// so a routine keeps the semicolons it was written with.
+				end = tok.end
+				continue
+			}
+			if compound.TerminatorBelongsToStatement() {
+				// PL/SQL: the block's own syntax requires this semicolon, so it
+				// is the last byte of the statement rather than the client's
+				// terminator.
+				end = tok.end
+			}
+			compound.Reset()
 			if start >= 0 {
 				statements = append(statements, rawStatement{
 					text:            raw[start:end],

@@ -8,6 +8,7 @@ import (
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/internal/dialectlexer"
 	"go.5x5.cz/ptah/internal/lexer"
+	"go.5x5.cz/ptah/internal/sqlcompound"
 )
 
 // StripComments removes all SQL comments from the input string using lexer-based parsing.
@@ -78,7 +79,7 @@ func splitSQLStatements(sql, dialect string) []string {
 	lexr := lexer.NewLexerWithOptions(sql, options)
 	var statements []string
 	var currentStatement strings.Builder
-	state := statementSplitState{dialect: dialect}
+	state := sqlcompound.New(dialect)
 	skippingGoBatchLine := false
 	sqlServerBatchStart := 0
 
@@ -95,7 +96,7 @@ func splitSQLStatements(sql, dialect string) []string {
 			}
 			continue
 		}
-		if state.isSQLServer() && token.MatchIdentifierValue("GO") {
+		if platform.NormalizeDialect(dialect) == platform.SQLServer && token.MatchIdentifierValue("GO") {
 			var handled bool
 			statements, sqlServerBatchStart, handled = handleSQLServerGoBatchSeparator(
 				sql,
@@ -106,7 +107,7 @@ func splitSQLStatements(sql, dialect string) []string {
 				sqlServerBatchStart,
 			)
 			if !handled {
-				state.observe(token)
+				observeToken(&state, token)
 				currentStatement.WriteString(token.Value)
 				continue
 			}
@@ -115,7 +116,7 @@ func splitSQLStatements(sql, dialect string) []string {
 		}
 
 		if token.Type == lexer.TokenSemicolon {
-			if state.consumeSemicolon(token, &currentStatement) {
+			if consumeSemicolon(&state, token, &currentStatement) {
 				continue
 			}
 
@@ -125,9 +126,9 @@ func splitSQLStatements(sql, dialect string) []string {
 				statements = append(statements, stmt)
 			}
 			currentStatement.Reset()
-			state.reset()
+			state.Reset()
 		} else {
-			state.observe(token)
+			observeToken(&state, token)
 			// Add token to current statement
 			currentStatement.WriteString(token.Value)
 		}
@@ -152,7 +153,7 @@ func handleSQLServerGoBatchSeparator(
 	token lexer.Token,
 	statements []string,
 	currentStatement *strings.Builder,
-	state *statementSplitState,
+	state *sqlcompound.State,
 	batchStart int,
 ) ([]string, int, bool) {
 	repeatCount, ok := sqlServerGoBatchSeparatorRepeatCountAt(sql, token.Start, token.End)
@@ -161,7 +162,7 @@ func handleSQLServerGoBatchSeparator(
 	}
 	statements, batchStart = appendSQLServerBatch(statements, batchStart, currentStatement.String(), repeatCount)
 	currentStatement.Reset()
-	state.reset()
+	state.Reset()
 	return statements, batchStart, true
 }
 
@@ -182,233 +183,32 @@ func appendSQLServerBatch(statements []string, batchStart int, currentStatement 
 	return statements, len(statements)
 }
 
-type statementSplitState struct {
-	dialect          string
-	createPrefix     createStatementPrefix
-	createObject     string
-	inCompoundCreate bool
-	// routineBodyOpener records that the body was opened by a keyword rather
-	// than by BEGIN -- T-SQL's AS, PL/SQL's IS or AS -- so a semicolon inside
-	// it is kept until the closing END even before any BEGIN is seen.
-	routineBodyOpener bool
-	// plsqlBody narrows that to the PL/SQL case, where the semicolon after the
-	// closing END belongs to the block rather than to the client.
-	plsqlBody bool
-	// terminatorBelongsToStatement is set for the one semicolon that closed a
-	// PL/SQL routine, so the flush can write it back before the reset.
-	terminatorBelongsToStatement bool
-	compoundDepth                int
-	caseDepth                    int
-	pendingEndKeyword            bool
-	pendingCaseEndKeyword        bool
-}
-
-func (s *statementSplitState) reset() {
-	dialect := s.dialect
-	*s = statementSplitState{dialect: dialect}
-}
-
-func (s *statementSplitState) observe(token lexer.Token) {
-	if token.Type != lexer.TokenIdentifier {
-		return
-	}
-
-	value := strings.ToUpper(token.Value)
-	if !s.inCompoundCreate {
-		s.observeCreatePrefix(value)
-		return
-	}
-
-	switch value {
-	case "CASE":
-		if s.pendingEndKeyword || s.pendingCaseEndKeyword {
-			s.pendingEndKeyword = false
-			s.pendingCaseEndKeyword = false
-			return
-		}
-		s.caseDepth++
-	case "BEGIN":
-		s.compoundDepth++
-		s.pendingEndKeyword = false
-		s.pendingCaseEndKeyword = false
-	case "END":
-		if s.caseDepth > 0 {
-			s.caseDepth--
-			s.pendingEndKeyword = false
-			s.pendingCaseEndKeyword = true
-			return
-		}
-		s.pendingEndKeyword = true
-		s.pendingCaseEndKeyword = false
-	default:
-		if s.pendingEndKeyword && isEndContinuationKeyword(value) {
-			s.pendingEndKeyword = false
-		}
-		s.pendingCaseEndKeyword = false
-	}
-}
-
-type createStatementPrefix int
-
-const (
-	createPrefixNone createStatementPrefix = iota
-	createPrefixCreate
-	createPrefixCreateObject
-	createPrefixCreateObjectBeforeBody
-)
-
-func (s *statementSplitState) observeCreatePrefix(value string) {
-	switch s.createPrefix {
-	case createPrefixNone:
-		if value == "CREATE" {
-			s.createPrefix = createPrefixCreate
-		}
-		return
-
-	case createPrefixCreate:
-		if s.isCompoundCreateObject(value) {
-			s.createPrefix = createPrefixCreateObject
-			s.createObject = value
-			return
-		}
-		if value == "OR" || value == "ALTER" || value == "REPLACE" || value == "DEFINER" {
-			return
-		}
-		s.createPrefix = createPrefixNone
-		return
-
-	case createPrefixCreateObject:
-		s.createPrefix = createPrefixCreateObjectBeforeBody
-		return
-
-	case createPrefixCreateObjectBeforeBody:
-		if s.isSQLServerRoutineObject() && value == "AS" {
-			s.inCompoundCreate = true
-			s.routineBodyOpener = true
-			s.pendingEndKeyword = false
-			return
-		}
-		// PL/SQL opens a routine body with IS or AS, and what follows may be a
-		// declaration section rather than BEGIN. Waiting for BEGIN split
-		// `FUNCTION f RETURN NUMBER IS x NUMBER := 0; BEGIN ... END;` at the
-		// semicolon after the declaration, and the four fragments that came out
-		// are four statements the server refuses.
-		if s.isOracleRoutineObject() && (value == "IS" || value == "AS") {
-			s.inCompoundCreate = true
-			s.routineBodyOpener = true
-			s.plsqlBody = true
-			s.pendingEndKeyword = false
-			return
-		}
-		if value == "BEGIN" {
-			s.inCompoundCreate = true
-			s.compoundDepth = 1
-			s.pendingEndKeyword = false
-			// A trigger reaches the body this way rather than through the arm
-			// above: its header carries no IS. The block still ends with the
-			// semicolon that belongs to it, and a trigger handed over without
-			// one is created INVALID -- measured, and invisible from
-			// USER_TRIGGERS, which reports it ENABLED all the same.
-			s.plsqlBody = s.isOracle()
-		}
-		return
-	}
-}
-
-func (s statementSplitState) isCompoundCreateObject(value string) bool {
-	switch value {
-	case "FUNCTION", "PROCEDURE", "TRIGGER":
-		return true
-	case "PROC":
-		return s.isSQLServer()
-	default:
-		return false
-	}
-}
-
-func (s statementSplitState) isSQLServerRoutineObject() bool {
-	return s.isSQLServer() &&
-		(s.createObject == "FUNCTION" || s.createObject == "PROC" || s.createObject == "PROCEDURE" || s.createObject == "TRIGGER")
-}
-
-// isOracleRoutineObject reports whether the CREATE being scanned is one whose
-// body PL/SQL opens with IS or AS.
-//
-// A TRIGGER is not in the set, and it is the one exclusion worth stating. Its
-// body is opened by BEGIN, which is why Oracle triggers split correctly before
-// this arm existed -- and its HEADER carries a standalone AS of its own, in
-// `REFERENCING OLD AS o NEW AS n`, which opens nothing. A trigger whose body is
-// a CALL has neither BEGIN nor END, so treating that AS as the opener would
-// keep every semicolon after it and swallow the rest of the file into one
-// statement.
-func (s statementSplitState) isOracleRoutineObject() bool {
-	return s.isOracle() &&
-		(s.createObject == "FUNCTION" || s.createObject == "PROCEDURE")
-}
-
-func (s statementSplitState) isSQLServer() bool {
-	return s.dialect == platform.SQLServer
-}
-
-func (s statementSplitState) isOracle() bool {
-	return s.dialect == platform.Oracle
-}
-
-func isEndContinuationKeyword(value string) bool {
-	switch value {
-	case "IF", "LOOP", "REPEAT", "WHILE", "CASE":
-		return true
-	default:
-		return false
-	}
-}
-
 // consumeSemicolon writes a semicolon where it belongs and reports whether the
 // statement continues past it.
 //
 // There are three answers rather than two. Inside a compound body the semicolon
 // is body text and the statement goes on. At the end of an ordinary statement
 // it is the client's terminator and is dropped. And at the end of a PL/SQL
-// routine it is BOTH: the block's own syntax requires it, which is why Oracle's
-// client terminates such a block with a `/` on the next line instead, so it is
-// written into the statement AND the statement ends.
-//
-// Handing an Oracle server `... END` without it is not an error the driver
-// reports: measured on 23.26.2.0.0 through go-ora, CREATE OR REPLACE FUNCTION
-// returned no error, USER_OBJECTS reported the function INVALID with PLS-00103
-// in USER_ERRORS, and USER_PROCEDURES did not list it at all -- so an apply
-// reported success and left a routine nothing could call.
-func (s *statementSplitState) consumeSemicolon(token lexer.Token, current *strings.Builder) bool {
-	if s.keepSemicolonInsideStatement() {
+// routine it is BOTH -- see [sqlcompound.State.TerminatorBelongsToStatement].
+func consumeSemicolon(state *sqlcompound.State, token lexer.Token, current *strings.Builder) bool {
+	if state.KeepSemicolonInsideStatement() {
 		current.WriteString(token.Value)
 		return true
 	}
-	if s.terminatorBelongsToStatement {
+	if state.TerminatorBelongsToStatement() {
 		current.WriteString(token.Value)
 	}
 	return false
 }
 
-func (s *statementSplitState) keepSemicolonInsideStatement() bool {
-	if !s.inCompoundCreate {
-		return false
+// observeToken feeds an identifier to the compound-body state. Only identifiers
+// carry the keywords the state reads; a quoted `"BEGIN"` arrives with its
+// quotes and is therefore not the keyword.
+func observeToken(state *sqlcompound.State, token lexer.Token) {
+	if token.Type != lexer.TokenIdentifier {
+		return
 	}
-	if s.routineBodyOpener && !s.pendingEndKeyword {
-		return true
-	}
-	if !s.pendingEndKeyword {
-		return true
-	}
-	if s.compoundDepth > 0 {
-		s.compoundDepth--
-	}
-	s.pendingEndKeyword = false
-	if s.compoundDepth == 0 {
-		s.inCompoundCreate = false
-		s.terminatorBelongsToStatement = s.plsqlBody
-		return false
-	}
-	return true
+	state.Word(token.Value)
 }
 
 // IsSQLServerGoBatchSeparatorAt reports whether a GO token is a SQL Server
