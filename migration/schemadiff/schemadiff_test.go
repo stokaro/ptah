@@ -1363,3 +1363,101 @@ func TestCompareWithDialect_SpannerFoldDoesNotReachOtherTargets(t *testing.T) {
 
 	c.Assert(diff.HasChanges(), qt.IsTrue, qt.Commentf("diff: %+v", diff))
 }
+
+// spannerForeignKeySchemas is the pair a Spanner foreign key produces: the
+// constraint, and the index Spanner built to enforce it under the name Spanner
+// chose.
+func spannerForeignKeySchemas(indexName string) (*goschema.Database, *types.DBSchema) {
+	generated := &goschema.Database{
+		Tables: []goschema.Table{
+			{Name: "parents", StructName: "Parent"},
+			{Name: "children", StructName: "Child"},
+		},
+		Fields: []goschema.Field{
+			{StructName: "Parent", Name: "id", Type: "BIGINT", Primary: true},
+			{StructName: "Child", Name: "id", Type: "BIGINT", Primary: true},
+			{StructName: "Child", Name: "parent_id", Type: "BIGINT", Foreign: "parents(id)",
+				ForeignKeyName: "children_parent_fk"},
+		},
+	}
+	database := &types.DBSchema{
+		Tables: []types.DBTable{
+			{Name: "parents", Type: "TABLE", Columns: []types.DBColumn{
+				{Name: "id", DataType: "bigint", ColumnType: "bigint", IsNullable: "NO", IsPrimaryKey: true},
+			}},
+			{Name: "children", Type: "TABLE", Columns: []types.DBColumn{
+				{Name: "id", DataType: "bigint", ColumnType: "bigint", IsNullable: "NO", IsPrimaryKey: true},
+				{Name: "parent_id", DataType: "bigint", ColumnType: "bigint", IsNullable: "NO"},
+			}},
+		},
+		Constraints: []types.DBConstraint{{
+			Name:           "children_parent_fk",
+			TableName:      "children",
+			Type:           "FOREIGN KEY",
+			ColumnName:     "parent_id",
+			ColumnNames:    []string{"parent_id"},
+			ForeignTable:   new("parents"),
+			ForeignColumn:  new("id"),
+			ForeignColumns: []string{"id"},
+		}},
+		Indexes: []types.DBIndex{{
+			Name:      indexName,
+			TableName: "children",
+			Columns:   []string{"parent_id"},
+		}},
+	}
+	return generated, database
+}
+
+// TestCompareWithDialect_SpannerForeignKeyBackingIndexIsNotDrift pins that the
+// index Spanner builds for a foreign key is not reported as an index to drop.
+//
+// Spanner creates it and names it itself, so no desired state mentions it, and
+// the ordinary "in the database, not in the desired state" arm planned a DROP.
+// The server refuses that drop -- measured on the PGAdapter emulator v0.55.2:
+//
+//	Cannot drop index `IDX_children_parent_id_FBF4366D73F2084A`.
+//	It is in use by foreign keys: `children_parent_fk`.
+//
+// so a document with a relationship applied once and failed on every run
+// afterwards, with a plan that never changed (stokaro/ptah#2076).
+func TestCompareWithDialect_SpannerForeignKeyBackingIndexIsNotDrift(t *testing.T) {
+	c := qt.New(t)
+	generated, database := spannerForeignKeySchemas("IDX_children_parent_id_FBF4366D73F2084A")
+
+	diff := schemadiff.CompareWithDialect(generated, database, "spanner")
+
+	c.Assert(diff.IndexesRemoved, qt.HasLen, 0, qt.Commentf("diff: %+v", diff))
+}
+
+// TestCompareWithDialect_SpannerStillDropsAnIndexAPersonWrote is the control.
+//
+// A user's own index over the foreign key's columns is a different object --
+// measured on the emulator, declaring one leaves Spanner's beside it rather
+// than reusing it -- so removing it from the document still drops it. Without
+// the name test the columns alone would have claimed it, and an index a person
+// wrote would have become impossible to remove through Ptah.
+func TestCompareWithDialect_SpannerStillDropsAnIndexAPersonWrote(t *testing.T) {
+	c := qt.New(t)
+	generated, database := spannerForeignKeySchemas("children_parent_idx")
+
+	diff := schemadiff.CompareWithDialect(generated, database, "spanner")
+
+	c.Assert(diff.IndexesRemoved, qt.DeepEquals, []difftypes.IndexRef{
+		{Name: "children_parent_idx", TableName: "children"},
+	})
+}
+
+// TestCompareWithDialect_SpannerBackingIndexRuleStaysOnSpanner keeps the rule
+// where it was measured. PostgreSQL builds no index for a foreign key, so a
+// PostgreSQL index carrying that name is a person's and is dropped.
+func TestCompareWithDialect_SpannerBackingIndexRuleStaysOnSpanner(t *testing.T) {
+	c := qt.New(t)
+	generated, database := spannerForeignKeySchemas("IDX_children_parent_id_FBF4366D73F2084A")
+
+	diff := schemadiff.CompareWithDialect(generated, database, "postgres")
+
+	c.Assert(diff.IndexesRemoved, qt.DeepEquals, []difftypes.IndexRef{
+		{Name: "IDX_children_parent_id_FBF4366D73F2084A", TableName: "children"},
+	})
+}
