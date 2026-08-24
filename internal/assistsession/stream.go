@@ -18,6 +18,17 @@ type stamped interface {
 	appendStamped(record Record) error
 }
 
+// prepare stamps a record and strips credentials out of it.
+//
+// Both happen in one place so neither can be forgotten: a sink added later gets
+// the timestamp and the redaction by construction rather than by remembering to
+// ask for them.
+func prepare(record Record, clock func() time.Time) Record {
+	record.At = clock().UTC()
+	record.Arguments = redactCredentials(record.Arguments)
+	return record
+}
+
 // Stream writes records to an io.Writer as JSON lines.
 //
 // This is what `--format jsonl` prints: the same records the session file
@@ -42,8 +53,7 @@ func NewStream(out io.Writer, clock func() time.Time) *Stream {
 
 // Append writes one record, stamping it with the stream's clock.
 func (s *Stream) Append(record Record) error {
-	record.At = s.clock().UTC()
-	return s.appendStamped(record)
+	return s.appendStamped(prepare(record, s.clock))
 }
 
 func (s *Stream) appendStamped(record Record) error {
@@ -95,7 +105,7 @@ func NewTee(clock func() time.Time, recorders ...Recorder) *Tee {
 // stdout that has gone away is not a reason to stop saving the conversation,
 // and a full disk is not a reason to stop printing it.
 func (t *Tee) Append(record Record) error {
-	record.At = t.clock().UTC()
+	record = prepare(record, t.clock)
 	errs := make([]error, 0, len(t.recorders))
 	for _, recorder := range t.recorders {
 		if sink, ok := recorder.(stamped); ok {
