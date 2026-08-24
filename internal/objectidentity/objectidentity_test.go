@@ -75,8 +75,8 @@ func TestIdentity_DefectFixtures(t *testing.T) {
 			// string, so two distinct grants collapsed. Two privileges on one
 			// object for one role are two grants.
 			name:  "one role and object with two privileges",
-			left:  builder.Constraint("public.users", "SELECT"),
-			right: builder.Constraint("public.users", "INSERT"),
+			left:  builder.ConstraintParts("public", "users", "SELECT"),
+			right: builder.ConstraintParts("public", "users", "INSERT"),
 		},
 		{
 			// The quoting axis: on a folding target these are two objects, and
