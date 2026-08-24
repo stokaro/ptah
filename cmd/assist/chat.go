@@ -74,7 +74,7 @@ func runChat(cmd *cobra.Command, opts *chatOptions) error {
 	}
 	defer tools.Close() //nolint:errcheck // the in-memory transport has nothing to fail at
 
-	talk, err := openConversation(opts.agent, &opts.session, provider)
+	talk, err := openConversation(opts.agent, &opts.session, provider, nil)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
@@ -132,7 +132,7 @@ func converse(
 			continue
 		}
 
-		l, loopErr := newLoop(provider, tools, talk.history, opts.maxToolCalls, nil)
+		l, loopErr := newLoop(provider, tools, talk, opts.maxToolCalls, nil)
 		if loopErr != nil {
 			return cmdutil.Fail(cmd, loopErr)
 		}
@@ -157,15 +157,16 @@ func answerOne(
 	show traceSetting,
 ) {
 	out := cmd.OutOrStdout()
+	talk.begin(request)
 	result, runErr := loop.Run(cmd.Context(), request)
 	if result == nil {
 		fmt.Fprintf(out, "  %s\n\n", runErr)
 		return
 	}
-	if recordErr := talk.record(request, result); recordErr != nil {
+	talk.finish(request, result, runErr)
+	if recordErr := talk.saved(); recordErr != nil {
 		fmt.Fprintf(cmd.ErrOrStderr(), "ptah: the session was not saved: %v\n", recordErr)
 	}
-	talk.continueWith(request, result.Answer)
 
 	writeTrace(out, show.records(result.Tools))
 	if answer := strings.TrimSpace(result.Answer); answer != "" {

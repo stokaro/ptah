@@ -20,8 +20,9 @@ const (
 	modelFlag   = "model"
 	formatFlag  = "format"
 
-	formatText = "text"
-	formatJSON = "json"
+	formatText  = "text"
+	formatJSON  = "json"
+	formatJSONL = "jsonl"
 )
 
 // providerOptions is what the provider commands take.
@@ -126,6 +127,22 @@ func validateFormat(cmd *cobra.Command, format string) error {
 	}
 	return cmdutil.Fail(cmd, fmt.Errorf("--%s: unknown format %q; want %s or %s",
 		formatFlag, format, formatText, formatJSON))
+}
+
+// validateConversationFormat refuses an output format for a surface that holds
+// a conversation.
+//
+// Separate from [validateFormat] because `jsonl` is the record stream of a
+// conversation as it happens, and a listing has no conversation to stream. A
+// shared validator would accept it on `provider list` and then print a JSON
+// document anyway.
+func validateConversationFormat(cmd *cobra.Command, format string) error {
+	switch format {
+	case formatText, formatJSON, formatJSONL:
+		return nil
+	}
+	return cmdutil.Fail(cmd, fmt.Errorf("--%s: unknown format %q; want %s, %s or %s",
+		formatFlag, format, formatText, formatJSON, formatJSONL))
 }
 
 // profileReport is one row of "provider list".

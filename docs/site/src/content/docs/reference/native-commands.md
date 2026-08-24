@@ -316,6 +316,9 @@ run where no tool answered says so.
 
 Conversations are saved to `.ptah/sessions/` in the project, one JSON object per
 line; `--ephemeral` keeps no record and `--resume` continues an earlier one.
+`ptah assist explain --format jsonl` prints those same records to stdout as they
+happen, so a program reading a pipe and a program reading a saved session are
+reading one format.
 
 `ptah assist provider list` reports
 the profiles this machine can reach, including ones inferred from a key already
