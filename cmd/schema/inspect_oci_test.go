@@ -133,7 +133,7 @@ func TestSchemaInspect_AnswersLocalArgumentErrorsBeforeReachingTheRegistry(t *te
 		{
 			name:  "unsupported --format",
 			extra: []string{"--dev-url", "sqlite://:memory:", "--format", "garbage"},
-			want:  `unsupported --format "garbage": expected hcl, sql, or json`,
+			want:  `unsupported --format "garbage": expected hcl, sql, json, or dbml`,
 		},
 		{
 			name:  "absent --dev-url",

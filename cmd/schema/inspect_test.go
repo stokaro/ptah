@@ -61,7 +61,7 @@ func TestSchemaInspectRejectsTemplateFormats(t *testing.T) {
 		"--format", "{{ sql . }}",
 	)
 
-	c.Assert(err, qt.ErrorMatches, `unsupported --format .*: expected hcl, sql, or json`, qt.Commentf("%s", out))
+	c.Assert(err, qt.ErrorMatches, `unsupported --format .*: expected hcl, sql, json, or dbml`, qt.Commentf("%s", out))
 }
 
 func TestSchemaInspectRejectsSplitWithoutOutDir(t *testing.T) {
