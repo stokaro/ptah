@@ -34,6 +34,7 @@ func ConvertDBSchemaToGoSchema(dbSchema *dbschematypes.DBSchema) *goschema.Datab
 
 	database.Indexes = convertIndexes(dbSchema, tableStructNames)
 	database.Constraints = convertConstraints(dbSchema, tableStructNames)
+	clearColumnUniqueForNamedConstraints(database)
 	convertExtensions(database, dbSchema.Extensions)
 	convertRLSPolicies(database, dbSchema.RLSPolicies, tableStructNames)
 	convertFunctions(database, dbSchema.Functions)
@@ -615,6 +616,46 @@ func compositePrimaryKeysByTable(dbSchema *dbschematypes.DBSchema) map[string][]
 	return result
 }
 
+// generatedUniqueConstraintName reports whether a single-column UNIQUE carries
+// the name its server would have made up, in which case the compact column
+// spelling reproduces it exactly and nothing is lost by using it.
+//
+// Two forms, and neither needs the dialect to recognize: PostgreSQL names such
+// a constraint `<table>_<column>_key`, and MySQL and MariaDB name it after the
+// column. Anything else is a name somebody chose, and choosing one is the only
+// reason to write a table-level constraint for a single column.
+func generatedUniqueConstraintName(constraint dbschematypes.DBConstraint, columns []string) bool {
+	if len(columns) != 1 {
+		return false
+	}
+	name := strings.TrimSpace(constraint.Name)
+	if name == "" {
+		return true
+	}
+	return name == columns[0] || name == constraint.TableName+"_"+columns[0]+"_key"
+}
+
+// clearColumnUniqueForNamedConstraints stops a column carrying `unique = true`
+// for a constraint the description now names on its own.
+//
+// Both spellings mean one constraint, so writing both would put two of them in
+// the document and plan a duplicate on apply.
+func clearColumnUniqueForNamedConstraints(database *goschema.Database) {
+	named := make(map[tableMemberKey]struct{}, len(database.Constraints))
+	for _, constraint := range database.Constraints {
+		if !strings.EqualFold(constraint.Type, "UNIQUE") || len(constraint.Columns) != 1 {
+			continue
+		}
+		named[tableMemberKey{table: constraint.StructName, member: constraint.Columns[0]}] = struct{}{}
+	}
+	for i := range database.Fields {
+		field := &database.Fields[i]
+		if _, isNamed := named[tableMemberKey{table: field.StructName, member: field.Name}]; isNamed {
+			field.Unique = false
+		}
+	}
+}
+
 func convertConstraints(dbSchema *dbschematypes.DBSchema, tableStructNames map[string]string) []goschema.Constraint {
 	constraints := make([]goschema.Constraint, 0, len(dbSchema.Constraints))
 	for _, dbConstraint := range dbSchema.Constraints {
@@ -637,7 +678,15 @@ func convertConstraint(dbConstraint dbschematypes.DBConstraint, tableStructNames
 			return goschema.Constraint{}, false
 		}
 	case "UNIQUE":
-		if len(columns) <= 1 {
+		// A single-column UNIQUE is normally carried by the column's own
+		// `unique = true`, which is the compact spelling and the one a person
+		// writing a schema uses. That spelling has no room for a NAME, so a
+		// constraint somebody named was described without it and came back
+		// under the server's generated one -- `customers_email_key` where the
+		// author had written `customers_email_uq`. A constraint name is an
+		// interface: it appears in every violation error the application sees
+		// (stokaro/ptah#2102).
+		if len(columns) <= 1 && generatedUniqueConstraintName(dbConstraint, columns) {
 			return goschema.Constraint{}, false
 		}
 	case "CHECK":
