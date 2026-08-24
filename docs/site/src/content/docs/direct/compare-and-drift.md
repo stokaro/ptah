@@ -143,6 +143,33 @@ the v0.2.0 tag itself still declares `RLSPoliciesAdded []string`, so the object
 form has not appeared in a release yet. A consumer reading that field reads
 `.policy_name` now; nothing was removed.
 
+A constraint carries an `identity` beside the name and table it is written with.
+The two are not the same answer: a description leaves a table unqualified where
+a catalog reports it with its schema, so one modified constraint arrives as
+`widget` on one side and `public.widget` on the other. The written spelling is
+what a statement and a diagnostic use; the identity is what says the two records
+are one object.
+
+```json
+{
+  "diff": {
+    "constraints_removed_with_tables": [
+      {
+        "name": "uq_widget_scope",
+        "table_name": "public.widget",
+        "type": "UNIQUE",
+        "identity": { "schema": "public", "table": "widget", "name": "uq_widget_scope" }
+      }
+    ]
+  }
+}
+```
+
+The parts are kept separate rather than joined so a consumer never has to parse
+one back out, and they are already folded by the target's rules — which is why
+`identity.name` can differ in case from `name` on MySQL and MariaDB, where the
+server resolves a constraint name case-insensitively.
+
 The same pair identifies a policy everywhere else it is named: the plan resolves
 `rls_policies_added`, `rls_policies_removed` and `rls_policies_modified` by the
 owning table together with the policy name, and the table is matched under the

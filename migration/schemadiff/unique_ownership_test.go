@@ -295,11 +295,23 @@ func TestCompareWithDialect_ConstraintMembersPreserveStructuralIdentity(t *testi
 		TableName:       `"tenant.data".payload`,
 		Type:            "CHECK",
 		CheckExpression: checkClause,
+		// The quoted half is the SCHEMA here, dot and all, and the table is
+		// payload -- which is the whole point of the row: the two sides name
+		// different objects, and the identity says so in parts rather than in
+		// one string a reader would have to take apart again.
+		Identity: difftypes.ConstraintIdentity{
+			Schema: "tenant.data", Table: "payload", Name: "guard",
+		},
 	}})
 	c.Assert(diff.ConstraintsRemovedWithTables, qt.DeepEquals, []difftypes.ConstraintRemovalInfo{{
 		Name:      "payload.guard",
 		TableName: `"tenant.data"`,
 		Type:      "CHECK",
+		// And here the quoted name is the TABLE, so the schema is the
+		// target's default and the dot belongs to the constraint's own name.
+		Identity: difftypes.ConstraintIdentity{
+			Schema: "public", Table: "tenant.data", Name: "payload.guard",
+		},
 	}})
 }
 
