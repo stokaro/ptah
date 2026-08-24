@@ -67,6 +67,7 @@ func Normalize(diff *difftypes.SchemaDiff, semantics identifier.Semantics) {
 		return
 	}
 	coverBareAdditions(diff)
+	coverBareRemovals(diff)
 	for i := range diff.ConstraintsAddedWithTables {
 		add := &diff.ConstraintsAddedWithTables[i]
 		if add.Identity == (difftypes.ConstraintIdentity{}) {
@@ -142,5 +143,51 @@ func coverBareAdditions(diff *difftypes.SchemaDiff) {
 		}
 		diff.ConstraintsAddedWithTables = append(diff.ConstraintsAddedWithTables,
 			difftypes.ConstraintAdditionInfo{Name: name})
+	}
+}
+
+// RemovalNames lists the constraints a diff removes, by name, from the records.
+//
+// It is [AdditionNames] for the other direction, and it exists for the same
+// reason: the bare ConstraintsRemoved list and the records answer one question,
+// and only the records also say which table. Once [Normalize] has run the two
+// carry the same names with the same multiplicity, so a consumer can stop
+// asking twice (stokaro/ptah#1663).
+func RemovalNames(diff *difftypes.SchemaDiff) []string {
+	if diff == nil {
+		return nil
+	}
+	names := make([]string, 0, len(diff.ConstraintsRemovedWithTables))
+	for _, info := range diff.ConstraintsRemovedWithTables {
+		names = append(names, info.Name)
+	}
+	return names
+}
+
+// coverBareRemovals gives every name in the bare removal list a record.
+//
+// The mirror of [coverBareAdditions], and needed for the same two producers: a
+// hand-built diff, and a reverse diff whose removal list is the forward diff's
+// addition list swapped in whole while the records are rebuilt from what the
+// schema could describe.
+//
+// The record carries no table, which is the state the PostgreSQL drop path
+// already reads: it defers such an entry to the name-only fallback rather than
+// scoping a DROP to a table nobody named.
+func coverBareRemovals(diff *difftypes.SchemaDiff) {
+	if len(diff.ConstraintsRemoved) == 0 {
+		return
+	}
+	recorded := make(map[string]int, len(diff.ConstraintsRemovedWithTables))
+	for _, info := range diff.ConstraintsRemovedWithTables {
+		recorded[info.Name]++
+	}
+	for _, name := range diff.ConstraintsRemoved {
+		if recorded[name] > 0 {
+			recorded[name]--
+			continue
+		}
+		diff.ConstraintsRemovedWithTables = append(diff.ConstraintsRemovedWithTables,
+			difftypes.ConstraintRemovalInfo{Name: name})
 	}
 }

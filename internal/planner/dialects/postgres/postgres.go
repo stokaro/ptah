@@ -3037,8 +3037,8 @@ func newConstraintPlanState(diff *types.SchemaDiff, semantics identifier.Semanti
 	// constraint of the same name. removeConstraints runs later in the pipeline
 	// and deliberately skips these names, so the drop+add is owned here and
 	// ordered correctly.
-	removedNames := make(map[string]struct{}, len(diff.ConstraintsRemoved))
-	for _, name := range diff.ConstraintsRemoved {
+	removedNames := make(map[string]struct{}, len(diff.ConstraintsRemovedWithTables))
+	for _, name := range constraintscope.RemovalNames(diff) {
 		removedNames[name] = struct{}{}
 	}
 
@@ -3714,7 +3714,7 @@ func (p *Planner) removeConstraints(result []ast.Node, diff *types.SchemaDiff) [
 	for _, name := range constraintscope.AdditionNames(diff) {
 		addedBareNames[name] = struct{}{}
 	}
-	for _, constraintName := range diff.ConstraintsRemoved {
+	for _, constraintName := range constraintscope.RemovalNames(diff) {
 		if _, hadHost := namesWithHost[constraintName]; hadHost {
 			continue
 		}
