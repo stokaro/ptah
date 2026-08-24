@@ -1,16 +1,14 @@
 // Package atlasreference names the pinned Atlas community binary the
 // conformance tests measure against, and the one place its address is spelled.
 //
-// The word this package replaces was "oracle", in the testing sense of a
-// trusted answer to compare against. That was the right word while it was the
-// only one: Ptah now ships an Oracle DATABASE dialect, and the two senses sat
-// in adjacent trees under one spelling -- `oracle_version_test.go` about Oracle
-// release lines beside `revision_identity_oracle_test.go` about a pinned Atlas
-// build. A grep for either returned the other, which is the specific cost: the
-// term stopped narrowing anything (stokaro/ptah#1887).
+// "Reference implementation" is what the binary is to these tests, and the name
+// has to say so rather than reach for the testing sense of "oracle" -- a trusted
+// answer to compare against. Ptah ships an Oracle DATABASE dialect, so one
+// spelling would serve two unrelated senses in adjacent trees, and a grep for
+// either would return the other: the term would stop narrowing anything
+// (stokaro/ptah#1887).
 //
-// The dialect keeps the name, because it is the engine's. This side is renamed
-// because "reference implementation" is what the thing actually is.
+// The dialect keeps the name, because it is the engine's.
 package atlasreference
 
 import "os"
@@ -18,9 +16,8 @@ import "os"
 // EnvVar names the environment variable holding the path to the pinned
 // binary.
 //
-// One constant rather than a const in each test package, which is how the old
-// spelling came to be written out fourteen times: a rename then has fourteen
-// places to miss one.
+// One constant rather than a const in each test package. Fourteen copies of a
+// spelling are fourteen places for a rename to miss one.
 const EnvVar = "PTAH_ATLAS_REFERENCE"
 
 // Version is the only build the conformance runs trust. A different build may

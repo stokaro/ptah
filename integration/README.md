@@ -146,7 +146,7 @@ oracle and Graphviz.
 
 Pull requests also run the focused migration-directory query contract,
 migrate-apply interoperability, and Flyway revision-identity controls as part
-of the Atlas CE oracle workflow. They exercise both binaries as external
+of the Atlas CE reference workflow. They exercise both binaries as external
 processes, while the full tagged contour remains the required integration gate.
 The Flyway package compares exact revision rows and report tokens across plain,
 dotted, zero-padded, nonnumeric, baseline, and repeatable inputs. It also proves

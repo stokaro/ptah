@@ -77,7 +77,7 @@ var unmodeledControls = map[string][]string{
 	},
 }
 
-// TestOracleModeledColumnTypesMatchTheBinary re-measures every entry of
+// TestReferenceModeledColumnTypesMatchTheBinary re-measures every entry of
 // modeledColumnTypes against the pinned community binary.
 //
 // The asymmetry this guards is recorded on the map itself: a list that is too
@@ -96,8 +96,8 @@ var unmodeledControls = map[string][]string{
 // -- and every one of them would have been reported as "the binary refuses
 // `type = uuid`", a parity finding about a type the binary accepts perfectly
 // well when asked on its own.
-func TestOracleModeledColumnTypesMatchTheBinary(t *testing.T) {
-	reference := requireTypeOracle(t)
+func TestReferenceModeledColumnTypesMatchTheBinary(t *testing.T) {
+	reference := requireTypeReference(t)
 	c := qt.New(t)
 	c.Assert(sortedDialects(), qt.DeepEquals, []string{platform.Postgres, platform.SQLite},
 		qt.Commentf("every measured dialect must remain in the reference matrix"))
@@ -115,7 +115,7 @@ func TestOracleModeledColumnTypesMatchTheBinary(t *testing.T) {
 				t.Run("modeled/"+name, func(t *testing.T) {
 					c := qt.New(t)
 
-					out, code := runTypeOracle(c, reference, devURL, dialect, name)
+					out, code := runTypeReference(c, reference, devURL, dialect, name)
 					c.Assert(code, qt.Equals, 0,
 						qt.Commentf("the binary refuses `type = %s` on %s, so rendering it bare emits unreadable HCL: %s",
 							name, dialect, out))
@@ -129,7 +129,7 @@ func TestOracleModeledColumnTypesMatchTheBinary(t *testing.T) {
 					c.Assert(atlashclrender.IsModeledColumnType(dialect, name), qt.IsFalse,
 						qt.Commentf("%q is a control: it must stay absent from the modeled set", name))
 
-					out, code := runTypeOracle(c, reference, devURL, dialect, name)
+					out, code := runTypeReference(c, reference, devURL, dialect, name)
 					c.Assert(code, qt.Not(qt.Equals), 0,
 						qt.Commentf("the binary now accepts `type = %s` on %s; the control has stopped controlling anything: %s",
 							name, dialect, out))
@@ -139,15 +139,15 @@ func TestOracleModeledColumnTypesMatchTheBinary(t *testing.T) {
 	}
 }
 
-// TestOracleAcceptsWrappedTypeExpressions measures the fallback the renderer
+// TestReferenceAcceptsWrappedTypeExpressions measures the fallback the renderer
 // reaches for whenever a type is not modeled, which is what makes a short list
 // safe.
 //
-// TestOracleRefusesUnsupportedTypeExpressions keeps this honest in the other
+// TestReferenceRefusesUnsupportedTypeExpressions keeps this honest in the other
 // direction: wrapping rescues a type the HCL schema does not MODEL, but does
 // nothing for a type the dev database does not HAVE.
-func TestOracleAcceptsWrappedTypeExpressions(t *testing.T) {
-	reference := requireTypeOracle(t)
+func TestReferenceAcceptsWrappedTypeExpressions(t *testing.T) {
+	reference := requireTypeReference(t)
 	c := qt.New(t)
 
 	tests := []struct {
@@ -212,17 +212,17 @@ func TestOracleAcceptsWrappedTypeExpressions(t *testing.T) {
 			c := qt.New(t)
 			devURL := requireDevURL(t, test.dialect)
 
-			out, code := runTypeOracle(c, reference, devURL, test.dialect, test.expr)
+			out, code := runTypeReference(c, reference, devURL, test.dialect, test.expr)
 			c.Assert(code, qt.Equals, 0,
 				qt.Commentf("`type = %s` on %s exited %d: %s", test.expr, test.dialect, code, out))
 		})
 	}
 }
 
-// TestOracleRefusesUnsupportedTypeExpressions measures the unsafe alternatives
+// TestReferenceRefusesUnsupportedTypeExpressions measures the unsafe alternatives
 // to the sql() fallback and its limit for a type absent from the dev database.
-func TestOracleRefusesUnsupportedTypeExpressions(t *testing.T) {
-	reference := requireTypeOracle(t)
+func TestReferenceRefusesUnsupportedTypeExpressions(t *testing.T) {
+	reference := requireTypeReference(t)
 	c := qt.New(t)
 
 	tests := []struct {
@@ -272,7 +272,7 @@ func TestOracleRefusesUnsupportedTypeExpressions(t *testing.T) {
 			c := qt.New(t)
 			devURL := requireDevURL(t, test.dialect)
 
-			out, code := runTypeOracle(c, reference, devURL, test.dialect, test.expr)
+			out, code := runTypeReference(c, reference, devURL, test.dialect, test.expr)
 			c.Assert(code, qt.Not(qt.Equals), 0,
 				qt.Commentf("`type = %s` on %s exited %d: %s", test.expr, test.dialect, code, out))
 		})
@@ -285,7 +285,7 @@ func sortedDialects() []string {
 	return atlashclrender.ModeledColumnTypeDialects()
 }
 
-func requireTypeOracle(t *testing.T) string {
+func requireTypeReference(t *testing.T) string {
 	t.Helper()
 
 	reference := os.Getenv(referenceEnv)
@@ -309,7 +309,7 @@ func requireTypeOracle(t *testing.T) string {
 // requireDevURL returns the dev database URL for a dialect, skipping when a
 // dialect that needs a server was not given one.
 //
-// The skip is deliberately loud, and the Atlas CE Oracle job fails on any
+// The skip is deliberately loud, and the Atlas CE Reference job fails on any
 // SKIPPED line: a dialect measured against nothing is the failure mode this run
 // exists to prevent, not an acceptable partial result.
 func requireDevURL(t *testing.T, dialect string) string {
@@ -329,16 +329,16 @@ func requireDevURL(t *testing.T, dialect string) string {
 	return url
 }
 
-// typeOracleWarmup absorbs a once-per-environment notice before the first
+// typeReferenceWarmup absorbs a once-per-environment notice before the first
 // measurement.
 //
 // The binary prints an edition notice on its first `schema inspect` in a fresh
 // environment and on that run only. Nothing here compares output text, so the
 // notice cannot corrupt a verdict -- but it is spent on a throwaway anyway, so
 // the first subtest is not the one paying for it in an otherwise parallel run.
-var typeOracleWarmup sync.Once
+var typeReferenceWarmup sync.Once
 
-func runTypeOracle(c *qt.C, reference, devURL, dialect, typeExpression string) (string, int) {
+func runTypeReference(c *qt.C, reference, devURL, dialect, typeExpression string) (string, int) {
 	c.Helper()
 
 	schema := schemaNameByDialect[dialect]
@@ -355,7 +355,7 @@ table "probe" {
 }
 `, schema, schema, typeExpression)
 
-	typeOracleWarmup.Do(func() {
+	typeReferenceWarmup.Do(func() {
 		path := filepath.Join(c.TempDir(), "warmup.hcl")
 		//nolint:errcheck // this run exists only to spend the notice
 		_ = os.WriteFile(path, []byte(source), 0o600)

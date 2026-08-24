@@ -74,7 +74,7 @@ jobs:
       - name: Install Ptah dependencies
         run: GOWORK=off go mod download
 
-      - name: Build pinned Atlas CE oracle
+      - name: Build pinned Atlas CE reference
         run: scripts/build-atlas-ce-reference.sh "$PTAH_ATLAS_REFERENCE"
 
       - name: Verify migration-directory query contract
