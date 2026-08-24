@@ -3395,12 +3395,34 @@ func (p *Planner) foreignKeyAdditionNode(add types.ConstraintAdditionInfo) *ast.
 	return p.createForeignKeyAlterStatement(add.TableName, add.Name, add.Columns, fkRef)
 }
 
+// declaredConstraintTable is the table a table-level constraint is on.
+//
+// A declaration names one only when it differs from the struct's own table --
+// that is what [goschema.Constraint.Table] documents -- so the ordinary
+// declaration leaves it empty and the table has to come from the struct. Read
+// straight, the empty value reached the renderer and every kind came out as
+//
+//	ALTER TABLE "" ADD CONSTRAINT "ex1" EXCLUDE USING gist (room WITH =)
+//
+// which no server takes (stokaro/ptah#2008). The struct's own name is the last
+// resort, which is the fallback the field-level paths beside this one already
+// use for the same question.
+func declaredConstraintTable(constraint goschema.Constraint, structToTable map[string]string) string {
+	if constraint.Table != "" {
+		return constraint.Table
+	}
+	if table := structToTable[constraint.StructName]; table != "" {
+		return table
+	}
+	return constraint.StructName
+}
+
 // addConstraintNodeFor resolves the ADD CONSTRAINT node for a constraint known
 // only by name, trying the explicit table-level constraints first and then the
 // synthesized field-level check= / foreign= fallbacks (see addNewConstraints).
 // The returned bool reports whether a matching definition was found; the node
-// may still be nil when a match exists but produces no valid AST (e.g. an
-// EXCLUDE constraint, which convertConstraintToAST cannot represent).
+// may still be nil when a match exists but produces no valid AST -- a kind whose
+// own required fields are missing, such as an EXCLUDE with no element list.
 func (p *Planner) addConstraintNodeFor(constraintName string, generated *goschema.Database, structToTable map[string]string) (ast.Node, bool) {
 	for _, constraint := range generated.Constraints {
 		if constraint.Name != constraintName {
@@ -3408,7 +3430,7 @@ func (p *Planner) addConstraintNodeFor(constraintName string, generated *goschem
 		}
 		if astConstraint := p.convertConstraintToAST(constraint); astConstraint != nil {
 			return &ast.AlterTableNode{
-				Name:       constraint.Table,
+				Name:       declaredConstraintTable(constraint, structToTable),
 				Operations: []ast.AlterOperation{&ast.AddConstraintOperation{Constraint: astConstraint}},
 			}, true
 		}

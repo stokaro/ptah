@@ -61,7 +61,7 @@ var atlasToleratedBlockTypes = map[string][]string{
 	},
 }
 
-// TestOracleAtlasRefusedBlockTypesMatchTheBinary re-measures every entry of
+// TestReferenceAtlasRefusedBlockTypesMatchTheBinary re-measures every entry of
 // atlasRefusedBlockTypes against the pinned community binary.
 //
 // A list nothing re-measures rots silently, and this one rots in a direction
@@ -81,18 +81,18 @@ var atlasToleratedBlockTypes = map[string][]string{
 // one dev database and the binary materializes the file there, so concurrent
 // probes collide inside the server with errors that read like verdicts about
 // the block under test.
-func TestOracleAtlasRefusedBlockTypesMatchTheBinary(t *testing.T) {
-	oracle := requireTypeOracle(t)
+func TestReferenceAtlasRefusedBlockTypesMatchTheBinary(t *testing.T) {
+	reference := requireTypeReference(t)
 
 	c := qt.New(t)
 	dialects := atlashclrender.AtlasRefusedBlockDialects()
 	c.Assert(dialects, qt.DeepEquals, []string{platform.Postgres},
-		qt.Commentf("every measured refusal dialect must remain in the oracle matrix"))
+		qt.Commentf("every measured refusal dialect must remain in the reference matrix"))
 	c.Assert(
 		atlashclrender.AtlasRefusedBlockTypes(platform.Postgres),
 		qt.DeepEquals,
 		[]string{"extension", "policy", "sequence"},
-		qt.Commentf("every measured PostgreSQL refusal must remain in the oracle matrix"),
+		qt.Commentf("every measured PostgreSQL refusal must remain in the reference matrix"),
 	)
 
 	for _, dialect := range dialects {
@@ -107,7 +107,7 @@ func TestOracleAtlasRefusedBlockTypesMatchTheBinary(t *testing.T) {
 			t.Run("base", func(t *testing.T) {
 				c := qt.New(t)
 
-				out, code := runBlockOracle(c, oracle, devURL, dialect, "")
+				out, code := runBlockReference(c, reference, devURL, dialect, "")
 				c.Assert(code, qt.Equals, 0,
 					qt.Commentf("the base this run adds one block to is not accepted, so no row below means anything: %s", out))
 			})
@@ -116,7 +116,7 @@ func TestOracleAtlasRefusedBlockTypesMatchTheBinary(t *testing.T) {
 				t.Run("refused/"+block, func(t *testing.T) {
 					c := qt.New(t)
 
-					out, code := runBlockOracle(c, oracle, devURL, dialect, block)
+					out, code := runBlockReference(c, reference, devURL, dialect, block)
 					c.Assert(code, qt.Not(qt.Equals), 0,
 						qt.Commentf("the binary now reads a %s block on %s; suppressing it withholds a construct the reader could use: %s",
 							block, dialect, out))
@@ -129,7 +129,7 @@ func TestOracleAtlasRefusedBlockTypesMatchTheBinary(t *testing.T) {
 	}
 }
 
-// TestOracleToleratesTheBlockTypesPtahStillRenders measures the other
+// TestReferenceToleratesTheBlockTypesPtahStillRenders measures the other
 // direction: everything the compatibility surface still emits stays readable.
 //
 // This is what keeps the omission surgical. The binary drops a top-level block
@@ -137,8 +137,8 @@ func TestOracleAtlasRefusedBlockTypesMatchTheBinary(t *testing.T) {
 // nothing, and omitting them would cost a description for no compatibility
 // gain. If one of them starts being refused, this run goes red rather than
 // ptah-compat quietly emitting a file its counterpart cannot read.
-func TestOracleToleratesTheBlockTypesPtahStillRenders(t *testing.T) {
-	oracle := requireTypeOracle(t)
+func TestReferenceToleratesTheBlockTypesPtahStillRenders(t *testing.T) {
+	reference := requireTypeReference(t)
 
 	c := qt.New(t)
 	c.Assert(atlasToleratedBlockTypes, qt.DeepEquals, map[string][]string{
@@ -146,7 +146,7 @@ func TestOracleToleratesTheBlockTypesPtahStillRenders(t *testing.T) {
 			"role", "function", "view", "materialized", "trigger", "permission", "wibble",
 		},
 		platform.SQLite: {"extension", "sequence", "policy", "wibble"},
-	}, qt.Commentf("every tolerance control must remain in the oracle matrix"))
+	}, qt.Commentf("every tolerance control must remain in the reference matrix"))
 
 	for _, dialect := range slices.Sorted(maps.Keys(atlasToleratedBlockTypes)) {
 		t.Run(dialect, func(t *testing.T) {
@@ -164,7 +164,7 @@ func TestOracleToleratesTheBlockTypesPtahStillRenders(t *testing.T) {
 					c.Assert(atlashclrender.AtlasRefusesBlock(dialect, block), qt.IsFalse,
 						qt.Commentf("%q is a control: it must stay out of the suppression list for that list to have a boundary", block))
 
-					out, code := runBlockOracle(c, oracle, devURL, dialect, block)
+					out, code := runBlockReference(c, reference, devURL, dialect, block)
 					c.Assert(code, qt.Equals, 0,
 						qt.Commentf("the binary now refuses a %s block on %s, so ptah-compat is emitting a file it cannot read: %s",
 							block, dialect, out))
@@ -174,7 +174,7 @@ func TestOracleToleratesTheBlockTypesPtahStillRenders(t *testing.T) {
 	}
 }
 
-// runBlockOracle asks the pinned binary to read a file holding one extra
+// runBlockReference asks the pinned binary to read a file holding one extra
 // top-level block, and returns its combined output and exit status.
 //
 // The block is written bare -- a label and an empty body -- on purpose. A block
@@ -183,9 +183,9 @@ func TestOracleToleratesTheBlockTypesPtahStillRenders(t *testing.T) {
 // label is what leaves a refusal of the block TYPE and nothing else.
 //
 // The column type is a sql() wrap because that is the one spelling
-// TestOracleAcceptsTheWrapItFallsBackTo already measures as readable on every
+// TestReferenceAcceptsTheWrapItFallsBackTo already measures as readable on every
 // dialect here, so the base cannot fail for a reason this run is not about.
-func runBlockOracle(c *qt.C, oracle, devURL, dialect, block string) (string, int) {
+func runBlockReference(c *qt.C, reference, devURL, dialect, block string) (string, int) {
 	c.Helper()
 
 	schema := schemaNameByDialect[dialect]
@@ -209,12 +209,12 @@ table "probe" {
 	path := filepath.Join(c.TempDir(), "blocks.hcl")
 	c.Assert(os.WriteFile(path, []byte(source), 0o600), qt.IsNil)
 
-	// #nosec G204 -- operator-provided oracle path, and path is a test temp dir
-	cmd := exec.Command(oracle, "schema", "inspect", "-u", "file://"+path, "--dev-url", devURL)
+	// #nosec G204 -- operator-provided reference path, and path is a test temp dir
+	cmd := exec.Command(reference, "schema", "inspect", "-u", "file://"+path, "--dev-url", devURL)
 	// The error is the exit status, which is the measurement; a process that
 	// never started leaves ProcessState nil and fails the assertion instead.
 	out, _ := cmd.CombinedOutput() //nolint:errcheck // exit status is read from ProcessState below
-	c.Assert(cmd.ProcessState, qt.IsNotNil, qt.Commentf("the oracle did not run: %s", out))
+	c.Assert(cmd.ProcessState, qt.IsNotNil, qt.Commentf("the reference did not run: %s", out))
 	return string(out), cmd.ProcessState.ExitCode()
 }
 

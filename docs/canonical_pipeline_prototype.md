@@ -187,6 +187,12 @@ PostgreSQL refuses the same statement with `there is no unique constraint
 matching given keys`. The block is the engine's rule, not one this repository
 invented.
 
+A key covers a reference exactly rather than by containment: a `UNIQUE`
+constraint on `(tenant, code)` makes that pair referenceable and says nothing
+about either column alone, so a foreign key to `code` by itself is still
+blocked. That is what every target answers, and it is why the guarantee is
+carried as a column list rather than as a flag on a column.
+
 The live test is not vacuous either: emitting the modification's add before its
 drop makes PostgreSQL answer `constraint "fk_child_parent" for relation "child"
 already exists`.
@@ -264,7 +270,7 @@ criteria:
 | Issue | Families | Retires |
 | --- | --- | --- |
 | [#1662](https://github.com/stokaro/ptah/issues/1662) | Tables and columns | Both `internal/convert` direction packages, and the planner's second parameter |
-| [#1663](https://github.com/stokaro/ptah/issues/1663) | Indexes and the remaining constraint kinds | `objectidentity.ConstraintPartsVerbatim`, the planners' constraint host keys, and the single-column uniqueness limitation below |
+| [#1663](https://github.com/stokaro/ptah/issues/1663) | Indexes and the remaining constraint kinds | `objectidentity.ConstraintPartsVerbatim` and the planners' constraint host keys |
 | [#1664](https://github.com/stokaro/ptah/issues/1664) | The schema-scoped families | `core/goschema` parse-time keys, the third and fourth `tableMemberKey` copies, and routine overload identity |
 
 ## What this does not do
@@ -279,7 +285,3 @@ criteria:
   ADR 0001 decision 9 puts that boundary deliberately outside the prototype.
 - No public API. The model stays internal until the ADR is accepted, because a
   public model is one the prototype cannot revise.
-- Composite uniqueness is not modeled: a column that is unique only as part of a
-  multi-column constraint reads as not unique, which blocks a foreign key the
-  target might have accepted. That is conservative in the safe direction, and it
-  is the first thing the constraint family's own migration fixes.

@@ -26,12 +26,12 @@ const (
 )
 
 const (
-	earlyBody  = "CREATE TABLE oracle_early (id INTEGER PRIMARY KEY);\n"
-	middleBody = "CREATE TABLE oracle_middle (id INTEGER PRIMARY KEY);\n"
-	lateBody   = "CREATE TABLE oracle_late (id INTEGER PRIMARY KEY);\n"
+	earlyBody  = "CREATE TABLE reference_early (id INTEGER PRIMARY KEY);\n"
+	middleBody = "CREATE TABLE reference_middle (id INTEGER PRIMARY KEY);\n"
+	lateBody   = "CREATE TABLE reference_late (id INTEGER PRIMARY KEY);\n"
 )
 
-// TestOracleDistinguishesPrefixAndIntervalInsertions reconciles the two
+// TestReferenceDistinguishesPrefixAndIntervalInsertions reconciles the two
 // different default-order answers recorded for stokaro/ptah#1241 item 5.
 //
 // With only the late revision applied, adding an earlier prefix migration is
@@ -39,28 +39,28 @@ const (
 // revisions on both sides of a newly inserted migration, the same binary
 // refuses it as out of order. Ptah refuses both by default, because accepting
 // the first answer would silently discard an authored migration.
-func TestOracleDistinguishesPrefixAndIntervalInsertions(t *testing.T) {
-	reference := requireAtlasOracle(t)
+func TestReferenceDistinguishesPrefixAndIntervalInsertions(t *testing.T) {
+	reference := requireAtlasReference(t)
 	c := qt.New(t)
 	compat := buildCompatBinary(c)
 
 	t.Run("prefix insertion is the retained divergence", func(t *testing.T) {
 		c := qt.New(t)
-		lateOnly := writeOracleMigrationDir(c, reference, map[string]string{
+		lateOnly := writeReferenceMigrationDir(c, reference, map[string]string{
 			lateVersion + "_late.sql": lateBody,
 		})
-		prefixed := writeOracleMigrationDir(c, reference, map[string]string{
+		prefixed := writeReferenceMigrationDir(c, reference, map[string]string{
 			earlyVersion + "_early.sql": earlyBody,
 			lateVersion + "_late.sql":   lateBody,
 		})
 
-		oracleDB := filepath.Join(c.TempDir(), "reference.db")
-		firstOracle := runApply(c, reference, oracleDB, lateOnly)
-		c.Assert(firstOracle.code, qt.Equals, 0, qt.Commentf("reference output: %s", firstOracle.output))
-		secondOracle := runApply(c, reference, oracleDB, prefixed)
-		c.Assert(secondOracle.code, qt.Equals, 0, qt.Commentf("reference output: %s", secondOracle.output))
-		c.Assert(secondOracle.output, qt.Contains, "No migration files to execute")
-		assertMigrationState(c, oracleDB, []string{"oracle_late"}, []string{lateVersion})
+		referenceDB := filepath.Join(c.TempDir(), "reference.db")
+		firstReference := runApply(c, reference, referenceDB, lateOnly)
+		c.Assert(firstReference.code, qt.Equals, 0, qt.Commentf("reference output: %s", firstReference.output))
+		secondReference := runApply(c, reference, referenceDB, prefixed)
+		c.Assert(secondReference.code, qt.Equals, 0, qt.Commentf("reference output: %s", secondReference.output))
+		c.Assert(secondReference.output, qt.Contains, "No migration files to execute")
+		assertMigrationState(c, referenceDB, []string{"reference_late"}, []string{lateVersion})
 
 		compatDB := filepath.Join(c.TempDir(), "compat.db")
 		firstCompat := runApply(c, compat, compatDB, lateOnly)
@@ -68,29 +68,29 @@ func TestOracleDistinguishesPrefixAndIntervalInsertions(t *testing.T) {
 		secondCompat := runApply(c, compat, compatDB, prefixed)
 		c.Assert(secondCompat.code, qt.Equals, 1, qt.Commentf("ptah-compat output: %s", secondCompat.output))
 		c.Assert(secondCompat.output, qt.Contains, "out-of-order pending migrations")
-		assertMigrationState(c, compatDB, []string{"oracle_late"}, []string{lateVersion})
+		assertMigrationState(c, compatDB, []string{"reference_late"}, []string{lateVersion})
 	})
 
 	t.Run("interval insertion is parity", func(t *testing.T) {
 		c := qt.New(t)
-		initial := writeOracleMigrationDir(c, reference, map[string]string{
+		initial := writeReferenceMigrationDir(c, reference, map[string]string{
 			earlyVersion + "_early.sql": earlyBody,
 			lateVersion + "_late.sql":   lateBody,
 		})
-		withMiddle := writeOracleMigrationDir(c, reference, map[string]string{
+		withMiddle := writeReferenceMigrationDir(c, reference, map[string]string{
 			earlyVersion + "_early.sql":   earlyBody,
 			middleVersion + "_middle.sql": middleBody,
 			lateVersion + "_late.sql":     lateBody,
 		})
 
-		oracleDB := filepath.Join(c.TempDir(), "reference.db")
-		firstOracle := runApply(c, reference, oracleDB, initial)
-		c.Assert(firstOracle.code, qt.Equals, 0, qt.Commentf("reference output: %s", firstOracle.output))
-		secondOracle := runApply(c, reference, oracleDB, withMiddle)
-		c.Assert(secondOracle.code, qt.Equals, 1, qt.Commentf("reference output: %s", secondOracle.output))
-		c.Assert(secondOracle.output, qt.Contains, "out of order")
-		assertMigrationState(c, oracleDB,
-			[]string{"oracle_early", "oracle_late"},
+		referenceDB := filepath.Join(c.TempDir(), "reference.db")
+		firstReference := runApply(c, reference, referenceDB, initial)
+		c.Assert(firstReference.code, qt.Equals, 0, qt.Commentf("reference output: %s", firstReference.output))
+		secondReference := runApply(c, reference, referenceDB, withMiddle)
+		c.Assert(secondReference.code, qt.Equals, 1, qt.Commentf("reference output: %s", secondReference.output))
+		c.Assert(secondReference.output, qt.Contains, "out of order")
+		assertMigrationState(c, referenceDB,
+			[]string{"reference_early", "reference_late"},
 			[]string{earlyVersion, lateVersion})
 
 		compatDB := filepath.Join(c.TempDir(), "compat.db")
@@ -100,7 +100,7 @@ func TestOracleDistinguishesPrefixAndIntervalInsertions(t *testing.T) {
 		c.Assert(secondCompat.code, qt.Equals, 1, qt.Commentf("ptah-compat output: %s", secondCompat.output))
 		c.Assert(secondCompat.output, qt.Contains, "out-of-order pending migrations")
 		assertMigrationState(c, compatDB,
-			[]string{"oracle_early", "oracle_late"},
+			[]string{"reference_early", "reference_late"},
 			[]string{earlyVersion, lateVersion})
 	})
 }
@@ -110,7 +110,7 @@ type commandResult struct {
 	output string
 }
 
-func writeOracleMigrationDir(c *qt.C, reference string, files map[string]string) string {
+func writeReferenceMigrationDir(c *qt.C, reference string, files map[string]string) string {
 	c.Helper()
 	dir := c.TempDir()
 	for name, body := range files {
@@ -201,7 +201,7 @@ func buildCompatBinary(c *qt.C) string {
 	return path
 }
 
-func requireAtlasOracle(t *testing.T) string {
+func requireAtlasReference(t *testing.T) string {
 	t.Helper()
 	reference := os.Getenv(referenceEnv)
 	if reference == "" {

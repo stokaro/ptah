@@ -41,7 +41,7 @@ func writeEmptySchemaHCL(c *qt.C) string {
 	return path
 }
 
-// TestOracleAgreesOnSQLSchemaDirectories holds the shape a merge cannot
+// TestReferenceAgreesOnSQLSchemaDirectories holds the shape a merge cannot
 // represent: a schema DIRECTORY whose files declare the same object twice.
 //
 // The pinned binary reads such a directory by executing every file in filename
@@ -65,8 +65,8 @@ func writeEmptySchemaHCL(c *qt.C) string {
 // it deliberately is not lives in
 // TestPtahRefusesAnHCLDirectoryThatRedeclaresATable, because a row asserting
 // divergence would read as agreement in this matrix.
-func TestOracleAgreesOnSQLSchemaDirectories(t *testing.T) {
-	reference := requireAtlasOracle(t)
+func TestReferenceAgreesOnSQLSchemaDirectories(t *testing.T) {
+	reference := requireAtlasReference(t)
 	c := qt.New(t)
 	compat := buildCompatBinary(c)
 
@@ -113,10 +113,10 @@ func TestOracleAgreesOnSQLSchemaDirectories(t *testing.T) {
 			dir := writeSchemaSourceDir(c, test.files)
 			verdict := measureDirVerdict(c, reference, compat, dir, writeEmptySchemaHCL(c))
 
-			c.Assert(verdict.oracleDiff, qt.Equals, test.wantDiff)
-			c.Assert(verdict.ptahDiff, qt.Equals, verdict.oracleDiff)
-			c.Assert(verdict.oracleApply, qt.Equals, test.wantApply)
-			c.Assert(verdict.ptahApply, qt.Equals, verdict.oracleApply)
+			c.Assert(verdict.referenceDiff, qt.Equals, test.wantDiff)
+			c.Assert(verdict.ptahDiff, qt.Equals, verdict.referenceDiff)
+			c.Assert(verdict.referenceApply, qt.Equals, test.wantApply)
+			c.Assert(verdict.ptahApply, qt.Equals, verdict.referenceApply)
 		})
 	}
 }
@@ -128,7 +128,7 @@ func TestOracleAgreesOnSQLSchemaDirectories(t *testing.T) {
 // printed. Ptah refuses at read time on both verbs, which can never accept a
 // source that binary rejects.
 func TestPtahRefusesAnHCLDirectoryThatRedeclaresATable(t *testing.T) {
-	reference := requireAtlasOracle(t)
+	reference := requireAtlasReference(t)
 	c := qt.New(t)
 	compat := buildCompatBinary(c)
 
@@ -142,8 +142,8 @@ func TestPtahRefusesAnHCLDirectoryThatRedeclaresATable(t *testing.T) {
 
 		// The divergence, and the reason it is safe: the plan that binary
 		// prints at exit 0 is the plan it then fails to apply.
-		c.Assert(verdict.oracleDiff, qt.Equals, 0)
-		c.Assert(verdict.oracleApply, qt.Equals, 1)
+		c.Assert(verdict.referenceDiff, qt.Equals, 0)
+		c.Assert(verdict.referenceApply, qt.Equals, 1)
 		c.Assert(verdict.ptahDiff, qt.Equals, 1)
 		c.Assert(verdict.ptahApply, qt.Equals, 1)
 	})
@@ -151,10 +151,10 @@ func TestPtahRefusesAnHCLDirectoryThatRedeclaresATable(t *testing.T) {
 
 // dirVerdict is one fixture's four exit codes: two binaries times two verbs.
 type dirVerdict struct {
-	oracleDiff  int
-	ptahDiff    int
-	oracleApply int
-	ptahApply   int
+	referenceDiff  int
+	ptahDiff       int
+	referenceApply int
+	ptahApply      int
 }
 
 // measureDirVerdict runs `schema diff` and `schema apply` on one directory with
@@ -187,10 +187,10 @@ func measureDirVerdict(c *qt.C, reference, compat, dir, emptyHCL string) dirVerd
 	}
 
 	return dirVerdict{
-		oracleDiff:  runForExitCode(c, reference, diffArgs("reference-diff-dev.db")...),
-		ptahDiff:    runForExitCode(c, compat, diffArgs("ptah-diff-dev.db")...),
-		oracleApply: runForExitCode(c, reference, applyArgs("reference-target.db", "reference-apply-dev.db")...),
-		ptahApply:   runForExitCode(c, compat, applyArgs("ptah-target.db", "ptah-apply-dev.db")...),
+		referenceDiff:  runForExitCode(c, reference, diffArgs("reference-diff-dev.db")...),
+		ptahDiff:       runForExitCode(c, compat, diffArgs("ptah-diff-dev.db")...),
+		referenceApply: runForExitCode(c, reference, applyArgs("reference-target.db", "reference-apply-dev.db")...),
+		ptahApply:      runForExitCode(c, compat, applyArgs("ptah-target.db", "ptah-apply-dev.db")...),
 	}
 }
 
@@ -222,8 +222,8 @@ func buildCompatBinary(c *qt.C) string {
 	return path
 }
 
-// requireAtlasOracle resolves the pinned binary and refuses a different build.
-func requireAtlasOracle(t *testing.T) string {
+// requireAtlasReference resolves the pinned binary and refuses a different build.
+func requireAtlasReference(t *testing.T) string {
 	t.Helper()
 
 	reference := os.Getenv(referenceEnv)

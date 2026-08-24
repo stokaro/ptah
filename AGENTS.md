@@ -364,7 +364,7 @@ The shape that satisfies both:
   best-effort capability reachable. This is the default, because
   `ptah-compat` is also the migration path for those pipelines;
 - `PTAH_ATLAS_STRICT_COMPAT=1` selects a separate Atlas CE-only policy for
-  oracle and conformance runs. It constructs the CE command and flag tree
+  reference and conformance runs. It constructs the CE command and flag tree
   before Cobra dispatch, refuses extension environment values, and rejects
   authored or inspected content whose semantics CE cannot represent instead of
   silently dropping it. A strict inspect, apply, or clean run refuses a live

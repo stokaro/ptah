@@ -211,7 +211,7 @@ func TestSumFileNamesDifferentialFuzzRealisticFlyway(t *testing.T) {
 			dir := c.TempDir()
 			writeLayout(c, dir, layout)
 
-			want := oracleSum(c, reference, dir, "flyway")
+			want := referenceSum(c, reference, dir, "flyway")
 
 			fsys := os.DirFS(dir)
 			names, err := atlasmigrateimport.SumFileNames(fsys, atlasmigrateimport.FormatFlyway)
@@ -339,7 +339,7 @@ func requireReference(t *testing.T) string {
 // referenceOutcome is what the pinned binary did with one generated directory.
 // A refusal is an OBSERVATION to compare against, not a harness failure.
 //
-// It used to be one. oracleSum asserted the reference's exit was nil, so any shape
+// It used to be one. referenceSum asserted the reference's exit was nil, so any shape
 // the reference declined aborted the run instead of being recorded — and the shape
 // it declines is exactly the one #991 is about. A differential harness that can
 // only represent agreement certifies agreement.
@@ -371,9 +371,9 @@ func referenceHash(c *qt.C, reference, dir, format string) referenceOutcome {
 	return referenceOutcome{sum: string(recorded)}
 }
 
-// oracleSum is referenceHash for populations where a refusal would itself be the
+// referenceSum is referenceHash for populations where a refusal would itself be the
 // bug (see TestSumFileNamesDifferentialFuzzRealisticFlyway).
-func oracleSum(c *qt.C, reference, dir, format string) string {
+func referenceSum(c *qt.C, reference, dir, format string) string {
 	c.Helper()
 	outcome := referenceHash(c, reference, dir, format)
 	c.Assert(outcome.refused, qt.IsFalse,
@@ -405,7 +405,7 @@ func assertPtahMatchesReference(
 	sum, sumErr := migratesum.ComputeAtlasFiles(fsys, names)
 	if outcome.refused {
 		c.Assert(sumErr, qt.ErrorIs, migratesum.ErrCoveredEntryUnreadable,
-			qt.Commentf("the reference refused this directory and Ptah did not: PTAH_ATLAS_FUZZ_LAYOUT=%s\noracle said:\n%s",
+			qt.Commentf("the reference refused this directory and Ptah did not: PTAH_ATLAS_FUZZ_LAYOUT=%s\nreference said:\n%s",
 				strings.Join(layout, ","), outcome.output))
 		return names, false
 	}

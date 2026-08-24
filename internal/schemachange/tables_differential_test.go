@@ -594,6 +594,71 @@ func TestTableStatementsMatchTheExistingPlanner(t *testing.T) {
 			catalog:     indexedWidgetCatalog(false, "a", "b"),
 		},
 		{
+			name:        "adding a check constraint",
+			description: constrainedWidget(checkConstraint("price > 0")),
+			catalog:     constrainedCatalog(),
+		},
+		{
+			name:        "dropping a check constraint",
+			description: constrainedWidget(),
+			catalog:     constrainedCatalog(catalogCheck("price > 0")),
+		},
+		{
+			name: "adding a primary key",
+			description: constrainedWidget(goschema.Constraint{
+				StructName: "Widget", Name: "pk_widget", Type: "PRIMARY KEY",
+				Columns: []string{"id"},
+			}),
+			catalog: constrainedCatalog(),
+		},
+		// A concurrent index has no row here: the canonical path plans
+		// `CREATE INDEX CONCURRENTLY` for a declaration that asks for it and
+		// the existing planner plans a locking build, because CONCURRENTLY is
+		// an option its CALLER sets rather than something the declaration can
+		// say. That is stokaro/ptah#2019, and a row asserting they agree would
+		// be asserting the defect.
+		{
+			name:        "adding a unique index",
+			description: indexedWidget(true, "a"),
+			catalog:     indexedWidgetCatalog(true),
+		},
+		{
+			name:        "dropping a unique index",
+			description: indexedWidget(true),
+			catalog:     indexedWidgetCatalog(true, "a"),
+		},
+		{
+			name:        "making an index unique",
+			description: indexedWidget(true, "a"),
+			catalog:     indexedWidgetCatalog(false, "a"),
+		},
+		{
+			name:        "adding an exclusion constraint",
+			description: constrainedWidget(exclusionConstraint("room WITH =")),
+			catalog:     constrainedCatalog(),
+		},
+		{
+			name:        "dropping an exclusion constraint",
+			description: constrainedWidget(),
+			catalog:     constrainedCatalog(catalogExclusion("room WITH =")),
+		},
+		{
+			name:        "dropping a primary key",
+			description: constrainedWidget(),
+			catalog: constrainedCatalog(dbschematypes.DBConstraint{
+				Name: "pk_widget", TableName: "widget", Schema: "public",
+				Type: "PRIMARY KEY", ColumnNames: []string{"id"},
+			}),
+		},
+		{
+			// A UNIQUE constraint and the index the server enforces it with,
+			// which introspection reports as two rows for one object. The
+			// desired state declares the constraint; nothing changed.
+			name:        "a unique constraint the database already has",
+			description: widgetDeclaringUniqueConstraint(),
+			catalog:     widgetReportingBoth(),
+		},
+		{
 			name:        "adding a unique constraint",
 			description: scopedWidget([]string{"tenant", "code"}),
 			catalog:     scopedWidgetCatalog(nil),

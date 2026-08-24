@@ -500,6 +500,68 @@ type Index struct {
 	// would plan a rebuild on every run for a key that never changed
 	// (stokaro/ptah#1663, and the same fact dbschema/types.DBIndex records).
 	KeyPartsIncomplete bool
+	// RequiresExtensions names the extensions this index cannot be built
+	// without.
+	//
+	// It is carried rather than derived because it cannot be read off the
+	// index's own text. Measured on PostgreSQL 17.10,
+	// `CREATE INDEX t_gin ON t USING gin (n int4_ops)` over an integer column
+	// needs btree_gin and is stored, and rendered, as `USING gin (n)`: neither
+	// the extension nor the operator class appears anywhere in the statement,
+	// because PostgreSQL prints a class exactly when it is NOT the default. The
+	// reader resolves it against pg_depend instead, and a state that dropped
+	// the answer would leave every later stage to guess it from `gin` -- which
+	// pins btree_gin to indexes that do not need it, since tsvector, jsonb and
+	// array columns have core GIN classes (stokaro/ptah#1286, stokaro/ptah#1663).
+	//
+	// It is not compared. A description that never named an extension and a
+	// read that resolved one describe the same index, and comparing them would
+	// plan a rebuild on every run for an index nobody changed.
+	RequiresExtensions []string
+}
+
+// TableConstraint is a constraint kind whose whole definition is one clause the
+// target holds as an object: CHECK, PRIMARY KEY and EXCLUDE.
+//
+// They share a type because they share a shape -- a name, a table, and a body
+// no engine alters in place -- and differ only in the body. Modelling each as
+// its own payload would give the comparison three copies of one rule and the
+// planner three places to forget the guard.
+//
+// UNIQUE is deliberately NOT here: it is a [UniqueKey], because it answers the
+// question a foreign key asks and the others do not (stokaro/ptah#1663).
+type TableConstraint struct {
+	// Kind is the family, spelled the way both sources spell it: CHECK,
+	// PRIMARY KEY or EXCLUDE.
+	Kind string
+	// ConstraintName is the name to write in DDL, which is not always the name
+	// in the identity.
+	//
+	// A PRIMARY KEY is identified by its TABLE, because a table has at most one
+	// and a description declares it without a name -- `PrimaryKey []string` has
+	// nowhere to put one. Comparing by name would hold an unnamed declaration
+	// against a server-derived `parent_pkey` and plan a drop for every primary
+	// key on every run. The name is still needed to DROP one, which is why it
+	// travels here: empty on the side that declared none, and the server's on
+	// the side that read it (stokaro/ptah#1663).
+	ConstraintName string
+	// Table is the table the constraint is on. It is on the payload for the
+	// reason [Index.Table] is: a renderer needs it, and the identity is not
+	// obliged to carry it.
+	Table objectidentity.ID
+	// Expression is a CHECK's condition, empty for the other kinds.
+	Expression string
+	// Columns is a PRIMARY KEY's column list, empty for the other kinds.
+	Columns []string
+	// UsingMethod, Elements and Where are an EXCLUDE's index method, its
+	// element list and its optional predicate.
+	UsingMethod string
+	Elements    string
+	Where       string
+	// RequiresExtensions names the extensions the constraint's backing index
+	// needs. It cannot be read off the constraint's text, which is why the
+	// catalog reports it as a field of its own (stokaro/ptah#1286).
+	RequiresExtensions []string
 }
 
 // Object is one schema object in the canonical state.
@@ -515,6 +577,7 @@ type Object struct {
 	ForeignKey *ForeignKey
 	UniqueKey  *UniqueKey
 	Index      *Index
+	Constraint *TableConstraint
 	Policy     *Policy
 	Grant      *Grant
 	Provenance Provenance

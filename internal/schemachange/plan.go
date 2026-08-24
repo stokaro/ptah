@@ -99,7 +99,20 @@ func constraintKindNodes(change Change, profile schemastate.Profile) ([]ast.Node
 	if carriesUniqueKey(change) {
 		return uniqueConstraintNodes(change, profile)
 	}
+	if carriesTableConstraint(change) {
+		return tableConstraintNodes(change, profile)
+	}
 	return constraintNodes(change, profile)
+}
+
+// carriesTableConstraint reports whether a change is about a clause constraint.
+func carriesTableConstraint(change Change) bool {
+	for _, side := range []*schemastate.Object{change.After, change.Before} {
+		if side != nil && side.Constraint != nil {
+			return true
+		}
+	}
+	return false
 }
 
 // carriesUniqueKey reports whether a change is about a uniqueness guarantee.

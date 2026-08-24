@@ -6,6 +6,7 @@ import (
 
 	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/goschema"
+	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/identifier"
 	dbschematypes "go.5x5.cz/ptah/dbschema/types"
 	"go.5x5.cz/ptah/internal/normalize"
@@ -32,6 +33,22 @@ const (
 	uniqueConstraintType     = "UNIQUE"
 	primaryKeyConstraintType = "PRIMARY KEY"
 )
+
+// tableConstraintTypes are the constraint families whose whole definition is one
+// clause: they become a [TableConstraint] rather than a uniqueness guarantee or
+// a foreign key.
+var tableConstraintTypes = []string{"CHECK", primaryKeyConstraintType, "EXCLUDE"}
+
+// isTableConstraint reports whether a constraint's untyped family name is one
+// this comparison plans as a clause.
+func isTableConstraint(constraintType string) bool {
+	for _, family := range tableConstraintTypes {
+		if strings.EqualFold(constraintType, family) {
+			return true
+		}
+	}
+	return false
+}
 
 // uniquenessConstraintTypes are the constraint families that guarantee a column
 // list is a key. A primary key is one of them: it forbids NULL as well, which
@@ -93,6 +110,22 @@ func FromCatalog(schema *dbschematypes.DBSchema, dialect string, semantics ident
 	}
 
 	for _, constraint := range schema.Constraints {
+		if isTableConstraint(constraint.Type) {
+			if err := addTableConstraint(state, builder, constraint.Schema, constraint.TableName,
+				constraint.Name, &TableConstraint{
+					Kind:               strings.ToUpper(strings.TrimSpace(constraint.Type)),
+					ConstraintName:     constraint.Name,
+					Table:              builder.TableParts(constraint.Schema, constraint.TableName),
+					Expression:         derefOrEmpty(constraint.CheckClause),
+					Columns:            constraint.ColumnNamesOrDefault(),
+					UsingMethod:        derefOrEmpty(constraint.UsingMethod),
+					Elements:           derefOrEmpty(constraint.ExcludeElements),
+					Where:              derefOrEmpty(constraint.WhereCondition),
+					RequiresExtensions: constraint.RequiresExtensions,
+				}, coverage.Observed, "information_schema.table_constraints"); err != nil {
+				return nil, err
+			}
+		}
 		if guaranteesUniqueness(constraint.Type) {
 			if err := addUniqueKey(state, builder,
 				constraint.Schema, constraint.TableName, constraint.Name,
@@ -120,6 +153,9 @@ func FromCatalog(schema *dbschematypes.DBSchema, dialect string, semantics ident
 		}
 	}
 	for _, index := range schema.Indexes {
+		if notAddressableAsAnIndex(index, dialect) {
+			continue
+		}
 		if err := addIndex(state, builder,
 			index.Schema, index.TableName, index.Name,
 			&Index{
@@ -127,6 +163,7 @@ func FromCatalog(schema *dbschematypes.DBSchema, dialect string, semantics ident
 				Columns:            index.Columns,
 				Unique:             index.IsUnique,
 				KeyPartsIncomplete: index.KeyPartsIncomplete,
+				RequiresExtensions: index.RequiresExtensions,
 			},
 			coverage.Observed, "information_schema.statistics",
 		); err != nil {
@@ -240,46 +277,8 @@ func FromDescription(
 	domains := declaredDomains(description, semantics)
 	tablesByStruct := make(map[string]goschema.Table)
 
-	for _, table := range description.Tables {
-		tablesByStruct[table.StructName] = table
-		id := builder.TableParts(table.Schema, table.Name)
-		columns := columnsFromDescription(description, table, builder, domains)
-		if existing, collided := state.Add(Object{
-			ID: id,
-			Table: &Table{
-				Columns:           columns,
-				Strict:            table.Strict,
-				WithoutRowID:      table.WithoutRowID,
-				Engine:            table.Engine,
-				Charset:           table.Charset,
-				Collate:           table.Collate,
-				AutoIncrement:     table.AutoIncrement,
-				PrimaryKeyInclude: table.PrimaryKeyInclude,
-				Partition:         partitionFromDescription(table.Partition),
-				RowTTL:            table.RowTTL,
-				VirtualModule:     table.VirtualModule,
-				VirtualArguments:  table.VirtualArguments,
-				// A description says what a table should look like and nothing
-				// about what is in it. Leaving the pair zero would claim the
-				// table is empty, which is the answer that lets an ADD COLUMN
-				// NOT NULL through.
-				RowStatsUnknown: true,
-			},
-			Provenance: Provenance{Source: coverage.Declared, Location: table.StructName},
-		}); collided {
-			return nil, fmt.Errorf("description declares two tables with one identity: %s and %s", existing.ID, id)
-		}
-		if err := addColumnKeys(state, builder, table.Schema, table.Name, columns,
-			coverage.Declared, table.StructName); err != nil {
-			return nil, err
-		}
-		// A composite key is declared on the table and covers a list no single
-		// column's flag can express.
-		if err := addUniqueKey(state, builder, table.Schema, table.Name,
-			compositeKeyName(table.Name), table.PrimaryKey,
-			coverage.Declared, table.StructName, false); err != nil {
-			return nil, err
-		}
+	if err := declaredTables(state, description, builder, domains, tablesByStruct); err != nil {
+		return nil, err
 	}
 	if err := declaredUniqueKeys(state, description, builder, tablesByStruct); err != nil {
 		return nil, err
@@ -643,6 +642,9 @@ func declaredUniqueKeys(
 	builder objectidentity.Builder,
 	tablesByStruct map[string]goschema.Table,
 ) error {
+	if err := declaredTableConstraints(state, description, builder, tablesByStruct); err != nil {
+		return err
+	}
 	for _, constraint := range description.Constraints {
 		if !guaranteesUniqueness(constraint.Type) {
 			continue
@@ -667,10 +669,11 @@ func declaredUniqueKeys(
 		}
 		if err := addIndex(state, builder, owner.Schema, owner.Name, index.Name,
 			&Index{
-				Table:      builder.TableParts(owner.Schema, owner.Name),
-				Columns:    index.Fields,
-				Unique:     index.Unique,
-				Concurrent: index.Concurrently,
+				Table:              builder.TableParts(owner.Schema, owner.Name),
+				Columns:            index.Fields,
+				Unique:             index.Unique,
+				Concurrent:         index.Concurrently,
+				RequiresExtensions: index.RequiresExtensions,
 			},
 			coverage.Declared, index.StructName); err != nil {
 			return err
@@ -748,6 +751,197 @@ func addIndex(
 		Provenance: Provenance{Source: source, Location: location},
 	}); collided {
 		return fmt.Errorf("two indexes carry one identity: %s and %s", existing.ID, id)
+	}
+	return nil
+}
+
+// notAddressableAsAnIndex reports whether a catalog index row names an object
+// no plan may create or drop AS an index, whatever either side says about it.
+//
+// A PRIMARY KEY's index is the constraint. PostgreSQL reports `widget_pkey` in
+// pg_index beside the constraint of that name, and Oracle reports one for every
+// PRIMARY KEY and UNIQUE constraint it enforces. SQLite names a UNIQUE
+// constraint's index itself -- `CREATE TABLE t (a TEXT, CONSTRAINT uq UNIQUE(a))`
+// leaves `sqlite_autoindex_t_1` in sqlite_master -- and there is no statement
+// that addresses it either.
+//
+// Reading such a row as an object of its own made a description that declares no
+// index look like one that dropped it, and the plan came out as a DROP INDEX for
+// a name the server will not let go of (stokaro/ptah#1663, stokaro/ptah#1245).
+//
+// The question is asked of the ROW rather than of the two states, which is what
+// separates it from [go.5x5.cz/ptah/internal/schemachange] suppressing a
+// constraint's backing index: that one yields to a description that declares the
+// object as an index, because which representation wins is the description's to
+// decide. Here there is nothing to yield to -- the object is not addressable as
+// an index for either side.
+func notAddressableAsAnIndex(index dbschematypes.DBIndex, dialect string) bool {
+	return index.IsPrimary ||
+		(platform.NormalizeDialect(dialect) == platform.SQLite &&
+			strings.HasPrefix(index.Name, "sqlite_autoindex_"))
+}
+
+// addTableConstraint records one clause constraint under the identity its owning
+// table gives it.
+//
+// A PRIMARY KEY becomes BOTH this and a [UniqueKey]: it is a statement to plan
+// and a guarantee a foreign key can reference, and one object cannot be asked
+// both questions without the answers interfering. They carry different
+// identities for that reason -- the guarantee's is derived, this one's is the
+// constraint's own name.
+func addTableConstraint(
+	state *State,
+	builder objectidentity.Builder,
+	schema, table, name string,
+	constraint *TableConstraint,
+	source coverage.Provenance,
+	location string,
+) error {
+	identityName := constraintIdentityName(constraint.Kind, table, name)
+	if strings.TrimSpace(identityName) == "" {
+		return nil
+	}
+	id := builder.ConstraintParts(schema, table, identityName)
+	if existing, collided := state.Add(Object{
+		ID:         id,
+		Constraint: constraint,
+		Provenance: Provenance{Source: source, Location: location},
+	}); collided {
+		return fmt.Errorf("two constraints carry one identity: %s and %s", existing.ID, id)
+	}
+	return nil
+}
+
+// primaryKeyConstraintName is the identity a PRIMARY KEY gets: one per table,
+// derived from the table, because a table has at most one and a description
+// declares it without a name.
+func primaryKeyConstraintName(table string) string {
+	return "ptah_primary_key_" + table
+}
+
+// constraintIdentityName is the name a constraint is identified by, which is
+// its own for every kind except a primary key.
+func constraintIdentityName(kind, table, name string) string {
+	if strings.EqualFold(kind, primaryKeyConstraintType) {
+		return primaryKeyConstraintName(table)
+	}
+	return name
+}
+
+// addDeclaredPrimaryKey records the primary key a table declares on itself.
+//
+// `goschema.Table.PrimaryKey` is a column list with nowhere to put a name, and
+// it is the ONLY way to declare a composite one. Without this the desired side
+// carried no primary key object at all and the catalog's read as a removal.
+func addDeclaredPrimaryKey(
+	state *State,
+	builder objectidentity.Builder,
+	table goschema.Table,
+) error {
+	if len(table.PrimaryKey) == 0 {
+		return nil
+	}
+	return addTableConstraint(state, builder, table.Schema, table.Name, "",
+		&TableConstraint{
+			Kind:    primaryKeyConstraintType,
+			Table:   builder.TableParts(table.Schema, table.Name),
+			Columns: table.PrimaryKey,
+		}, coverage.Declared, table.StructName)
+}
+
+// declaredTableConstraints records the CHECK, PRIMARY KEY and EXCLUDE
+// constraints a description declares at the table level.
+//
+// The table comes from the STRUCT when the declaration does not name one, which
+// is what goschema.Constraint.Table documents ("if different from struct name")
+// -- and what the shipping planner forgets for EXCLUDE, rendering
+// `ALTER TABLE ""` (stokaro/ptah#2008).
+func declaredTableConstraints(
+	state *State,
+	description *goschema.Database,
+	builder objectidentity.Builder,
+	tablesByStruct map[string]goschema.Table,
+) error {
+	for _, constraint := range description.Constraints {
+		if !isTableConstraint(constraint.Type) {
+			continue
+		}
+		owner, ok := tablesByStruct[constraint.StructName]
+		if !ok {
+			return fmt.Errorf(
+				"constraint %q declares a table constraint but no table declares struct %q",
+				constraint.Name, constraint.StructName)
+		}
+		if err := addTableConstraint(state, builder, owner.Schema, owner.Name, constraint.Name,
+			&TableConstraint{
+				Kind:               strings.ToUpper(strings.TrimSpace(constraint.Type)),
+				ConstraintName:     constraint.Name,
+				Table:              builder.TableParts(owner.Schema, owner.Name),
+				Expression:         constraint.CheckExpression,
+				Columns:            constraint.Columns,
+				UsingMethod:        constraint.UsingMethod,
+				Elements:           constraint.ExcludeElements,
+				Where:              constraint.WhereCondition,
+				RequiresExtensions: constraint.RequiresExtensions,
+			}, coverage.Declared, constraint.StructName); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// declaredTables records the tables a description declares, with the columns
+// and the keys each one carries.
+func declaredTables(
+	state *State,
+	description *goschema.Database,
+	builder objectidentity.Builder,
+	domains map[string]string,
+	tablesByStruct map[string]goschema.Table,
+) error {
+	for _, table := range description.Tables {
+		tablesByStruct[table.StructName] = table
+		id := builder.TableParts(table.Schema, table.Name)
+		columns := columnsFromDescription(description, table, builder, domains)
+		if existing, collided := state.Add(Object{
+			ID: id,
+			Table: &Table{
+				Columns:           columns,
+				Strict:            table.Strict,
+				WithoutRowID:      table.WithoutRowID,
+				Engine:            table.Engine,
+				Charset:           table.Charset,
+				Collate:           table.Collate,
+				AutoIncrement:     table.AutoIncrement,
+				PrimaryKeyInclude: table.PrimaryKeyInclude,
+				Partition:         partitionFromDescription(table.Partition),
+				RowTTL:            table.RowTTL,
+				VirtualModule:     table.VirtualModule,
+				VirtualArguments:  table.VirtualArguments,
+				// A description says what a table should look like and nothing
+				// about what is in it. Leaving the pair zero would claim the
+				// table is empty, which is the answer that lets an ADD COLUMN
+				// NOT NULL through.
+				RowStatsUnknown: true,
+			},
+			Provenance: Provenance{Source: coverage.Declared, Location: table.StructName},
+		}); collided {
+			return fmt.Errorf("description declares two tables with one identity: %s and %s", existing.ID, id)
+		}
+		if err := addColumnKeys(state, builder, table.Schema, table.Name, columns,
+			coverage.Declared, table.StructName); err != nil {
+			return err
+		}
+		// A composite key is declared on the table and covers a list no single
+		// column's flag can express.
+		if err := addUniqueKey(state, builder, table.Schema, table.Name,
+			compositeKeyName(table.Name), table.PrimaryKey,
+			coverage.Declared, table.StructName, false); err != nil {
+			return err
+		}
+		if err := addDeclaredPrimaryKey(state, builder, table); err != nil {
+			return err
+		}
 	}
 	return nil
 }
