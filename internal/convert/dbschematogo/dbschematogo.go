@@ -584,8 +584,20 @@ func convertRLSEnabledTables(
 		if dbTable.RLSEnabled {
 			rlsEnabledTable := goschema.RLSEnabledTable{
 				StructName: structNameForTable(tableStructNames, dbTable.QualifiedName(), dbTable.Name),
-				Table:      dbTable.Name,
-				Comment:    "", // Comment not available in DBTable for RLS enablement
+				// Qualified, like every other table reference this file
+				// produces -- convertRLSPolicies carries the reader's already
+				// qualified name, convertViews and convertMaterializedViews use
+				// QualifiedName, convertTriggers uses QualifiedTable.
+				//
+				// The bare name that used to be here resolves against the search
+				// path, so a description of a table outside the connection's
+				// default schema enabled row security on whatever `users` the
+				// path found first -- leaving that table with no policy, which
+				// returns no rows to anyone but its owner, and leaving the real
+				// table with a policy that was never enforced
+				// (stokaro/ptah#2201).
+				Table:   dbTable.QualifiedName(),
+				Comment: "", // Comment not available in DBTable for RLS enablement
 			}
 			database.RLSEnabledTables = append(database.RLSEnabledTables, rlsEnabledTable)
 		}
