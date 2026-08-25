@@ -627,7 +627,7 @@ func TestAtlasRevisionsTableDDL_GuardsEveryDialectBranch(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			c := qt.New(t)
 
-			ddl := atlasRevisionsTableDDL(tt.dialect, atlasRevisionsGuardTable, atlasRevisionsGuardSQLServerObject)
+			ddl := atlasRevisionsTableDDL(tt.dialect, atlasRevisionsGuardTable, atlasRevisionsGuardSQLServerObject, "")
 
 			c.Assert(ddl, qt.Contains, tt.wantPartialHashes,
 				qt.Commentf("dialect %q must declare partial_hashes as %q", tt.dialect, tt.wantPartialHashes))
@@ -657,8 +657,14 @@ func TestAtlasRevisionsTableDDL_ClickHousePinsTheWholeStatement(t *testing.T) {
 		platform.ClickHouse,
 		atlasRevisionsGuardTable,
 		atlasRevisionsGuardSQLServerObject,
+		"",
 	)
 
+	// The trailing ENGINE is part of what is pinned. Without it the statement
+	// means whatever the server's default_table_engine says, and that setting's
+	// own default is None -- which answers `Table engine is not specified in
+	// CREATE query` and stops `migrations up` before the first migration
+	// (stokaro/ptah#2234).
 	c.Assert(ddl, qt.Equals, "CREATE TABLE IF NOT EXISTS "+atlasRevisionsGuardTable+` (
     version VARCHAR(255) PRIMARY KEY,
     description TEXT NOT NULL,
@@ -672,7 +678,104 @@ func TestAtlasRevisionsTableDDL_ClickHousePinsTheWholeStatement(t *testing.T) {
     hash VARCHAR(255) NOT NULL,
     partial_hashes TEXT NULL,
     operator_version VARCHAR(255) NOT NULL
-)`)
+) ENGINE = MergeTree`)
+}
+
+// TestAtlasRevisionsTableDDL_ClickHouseTakesTheEngineItIsGiven pins the flag.
+//
+// A replicated deployment needs ReplicatedMergeTree with its keeper path and
+// replica name: with a local MergeTree the migration history exists on whichever
+// node ran the migration, and every replica then reports itself consistent
+// (stokaro/ptah#2234).
+func TestAtlasRevisionsTableDDL_ClickHouseTakesTheEngineItIsGiven(t *testing.T) {
+	c := qt.New(t)
+
+	const replicated = "ReplicatedMergeTree('/clickhouse/tables/{shard}/schema_migrations', '{replica}')"
+
+	ddl := atlasRevisionsTableDDL(
+		platform.ClickHouse,
+		atlasRevisionsGuardTable,
+		atlasRevisionsGuardSQLServerObject,
+		replicated,
+	)
+
+	c.Assert(ddl, qt.Contains, ") ENGINE = "+replicated)
+}
+
+// TestAtlasRevisionsTableDDL_MySQLTakesTheEngineItIsGiven pins the branch the
+// ClickHouse one is not.
+//
+// The MySQL-family branch of this statement carried a hard-wired InnoDB, so a
+// deployment that named an engine got InnoDB anyway and nothing said so. Both
+// revision formats and every dialect that has an engine clause now read the
+// same flag; InnoDB remains what an unset flag means.
+//
+// MyISAM is the value here because it is the one that shows the branch reading
+// the flag at all. It never reaches this function in a running Ptah:
+// revisionEngineRefusal turns it down before Initialize issues any statement,
+// which is what TestRevisionEngineRefusal_TurnsDownAnEngineTheTableCannotBe
+// pins. This is the DDL builder's own contract -- what the statement says when
+// it is given an engine -- and that refusal is a separate one.
+func TestAtlasRevisionsTableDDL_MySQLTakesTheEngineItIsGiven(t *testing.T) {
+	c := qt.New(t)
+
+	ddl := atlasRevisionsTableDDL(
+		platform.MySQL,
+		atlasRevisionsGuardTable,
+		atlasRevisionsGuardSQLServerObject,
+		"MyISAM",
+	)
+
+	c.Assert(ddl, qt.Contains, ") ENGINE = MyISAM")
+	c.Assert(ddl, qt.Not(qt.Contains), "InnoDB")
+	// The collation the MySQL branch exists for is not the engine's to lose.
+	c.Assert(ddl, qt.Contains, "COLLATE utf8mb4_bin")
+}
+
+// TestAtlasRevisionsTableDDL_MySQLKeepsInnoDBWithoutAFlag is that test's
+// control: an unset flag still means InnoDB, which is what every MySQL
+// deployment has had, and the revision table needs it -- MyISAM has no
+// transactions to roll a failed migration back with.
+func TestAtlasRevisionsTableDDL_MySQLKeepsInnoDBWithoutAFlag(t *testing.T) {
+	c := qt.New(t)
+
+	ddl := atlasRevisionsTableDDL(
+		platform.MySQL,
+		atlasRevisionsGuardTable,
+		atlasRevisionsGuardSQLServerObject,
+		"",
+	)
+
+	c.Assert(ddl, qt.Contains, ") ENGINE=InnoDB")
+}
+
+// TestRevisionEngineClauseFor_NamesOneOnlyWhereItMeansSomething is the control.
+//
+// Every other engine has a table engine whether or not the statement says so,
+// and PostgreSQL has no such clause at all -- appending one would make the
+// statement invalid rather than explicit.
+func TestRevisionEngineClauseFor_NamesOneOnlyWhereItMeansSomething(t *testing.T) {
+	tests := []struct {
+		name    string
+		dialect string
+		engine  string
+		want    string
+	}{
+		{name: "clickhouse defaults to MergeTree", dialect: platform.ClickHouse, want: " ENGINE = MergeTree"},
+		{name: "clickhouse takes what it is given", dialect: platform.ClickHouse, engine: "ReplacingMergeTree", want: " ENGINE = ReplacingMergeTree"},
+		{name: "mysql keeps InnoDB", dialect: platform.MySQL, want: " ENGINE=InnoDB"},
+		{name: "postgres names none", dialect: platform.Postgres, want: ""},
+		{name: "sqlite names none", dialect: platform.SQLite, want: ""},
+		{name: "an engine given for a dialect with no clause still wins", dialect: platform.Postgres, engine: "MergeTree", want: " ENGINE = MergeTree"},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			c := qt.New(t)
+
+			c.Assert(revisionEngineClauseFor(test.dialect, test.engine), qt.Equals, test.want)
+		})
+	}
 }
 
 // TestCreateAtlasRevisionsTableSQL_ZeroValueMigratorDoesNotPanic pins the

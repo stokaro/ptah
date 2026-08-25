@@ -237,6 +237,7 @@ func runAtlasMigrateDownFormat(
 	}
 
 	plan, err := atlasmigrate.PrepareDown(cmd.Context(), conn, atlasmigrate.DownOptions{
+		MigrationsEngine:     migrationsEngineFromEnv(),
 		Dir:                  dir,
 		FS:                   source.FileSystem,
 		TargetVersion:        targetVersion,
@@ -580,6 +581,7 @@ func resolveAtlasDownFormatTag(
 	}
 	resolver = resolver.
 		WithMigrationsTable(applyAtlasRevisionsSchemaDefault(opts.revisionsSchema, opts.url), "").
+		WithMigrationsEngine(migrationsEngineFromEnv()).
 		WithRevisionTableFormat(migrator.RevisionTableFormatAtlas)
 	return resolver.ResolveMigrationTag(ctx, opts.toTag)
 }

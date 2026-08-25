@@ -86,6 +86,7 @@ type options struct {
 	envName              string
 	migrationsSchema     string
 	migrationsTable      string
+	migrationsEngine     string
 	revisionTableFormat  string
 	logFormat            string
 	logLevel             string
@@ -229,6 +230,7 @@ func registerFlags(cmd *cobra.Command, opts *options) {
 	dbcli.RegisterEnvFlag(flags, &opts.envName)
 	dbcli.RegisterMigrationsSchemaFlag(flags, &opts.migrationsSchema)
 	dbcli.RegisterMigrationsTableFlag(flags, &opts.migrationsTable)
+	dbcli.RegisterMigrationsEngineFlag(flags, &opts.migrationsEngine)
 	dbcli.RegisterRevisionTableFormatFlag(flags, &opts.revisionTableFormat)
 }
 
@@ -322,6 +324,18 @@ func resolveProjectOptions(cmd *cobra.Command, opts options, projectCfg projectc
 	return opts
 }
 
+// commandLogWriter is the stream structured logs go to.
+//
+// Human output and JSON output do not share a stream: a JSON run's logs belong
+// on stdout with the records a consumer parses, while a human run keeps them on
+// stderr so the report on stdout stays pipeable.
+func commandLogWriter(cmd *cobra.Command, logFormat string) io.Writer {
+	if logFormat == "json" {
+		return cmd.OutOrStdout()
+	}
+	return cmd.ErrOrStderr()
+}
+
 func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 	integrityPolicy, err := migrationintegrity.Resolve()
 	if err != nil {
@@ -350,10 +364,7 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 	revisionFormatValue := resolvedOpts.revisionTableFormat
 	connectTimeoutValue := resolvedOpts.connectTimeout
 
-	logWriter := cmd.ErrOrStderr()
-	if opts.logFormat == "json" {
-		logWriter = cmd.OutOrStdout()
-	}
+	logWriter := commandLogWriter(cmd, opts.logFormat)
 	runtime, err := cliobs.Start(context.Background(), cliobs.Options{
 		Command:     "migrations.up",
 		LogFormat:   opts.logFormat,
@@ -442,6 +453,7 @@ func migrateUpCommand(cmd *cobra.Command, opts *options) error {
 		return fmt.Errorf("error registering migrations: %w", err)
 	}
 	mig = mig.WithMigrationsTable(migrationsSchema, migrationsTable).
+		WithMigrationsEngine(opts.migrationsEngine).
 		WithRevisionTableFormat(settings.revisionFormat).
 		WithDefaultTimeouts(timeouts).
 		WithExecOrder(settings.execOrder).

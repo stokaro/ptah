@@ -410,6 +410,12 @@ scripts. `ptah migrations up` supports:
   before migrations are applied.
 - Revision-table placement (`--migrations-table`, `--migrations-schema`) and
   Prometheus metrics (`--metrics-addr`).
+- `--migrations-engine` — the storage engine the revision table is created with.
+  It exists for ClickHouse, where a replicated deployment needs
+  `ReplicatedMergeTree(...)` or the migration history lives on one node while
+  every replica reports itself consistent; see
+  [the ClickHouse section](../../databases/support-matrix/#the-revision-tables-storage-engine).
+  An engine the revision table cannot be is refused before any statement runs.
 
 All of these can live in `ptah.yaml` instead of the command line; see
 [Configuration](../../reference/configuration/).

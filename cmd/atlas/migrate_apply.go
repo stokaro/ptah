@@ -368,6 +368,7 @@ func runAtlasMigrateApplyTarget(
 	}
 
 	cleanScope, plan, err := inspectThenPrepareApply(cmd.Context(), conn, atlasmigrate.ApplyOptions{
+		MigrationsEngine:         migrationsEngineFromEnv(),
 		Dir:                      dir,
 		FS:                       migrationFS,
 		DryRun:                   opts.dryRun,
