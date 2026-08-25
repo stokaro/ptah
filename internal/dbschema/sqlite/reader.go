@@ -933,7 +933,7 @@ func (r *Reader) readForeignKeysByTable(
 
 	out := make(map[string][]types.DBConstraint, len(groupsByTable))
 	for tableName, groups := range groupsByTable {
-		named := extractForeignKeyNames(tableDDLByName[tableName])
+		details := extractForeignKeyDetails(tableDDLByName[tableName])
 		ids := make([]int, 0, len(groups))
 		for id := range groups {
 			ids = append(ids, id)
@@ -942,16 +942,7 @@ func (r *Reader) readForeignKeysByTable(
 		constraints := make([]types.DBConstraint, 0, len(ids))
 		for _, id := range ids {
 			constraint := groups[id]
-			if constraint.ForeignTable != nil {
-				signature := foreignKeySignature{
-					columns:        strings.Join(constraint.ColumnNames, ","),
-					foreignTable:   *constraint.ForeignTable,
-					foreignColumns: strings.Join(constraint.ForeignColumns, ","),
-				}
-				if explicitName := named[signature]; explicitName != "" {
-					constraint.Name = explicitName
-				}
-			}
+			applyForeignKeyDetail(constraint, details)
 			if constraint.Name == "" {
 				constraint.Name = fromschema.GenerateForeignKeyName(tableName, first(constraint.ColumnNames))
 			}
@@ -960,6 +951,31 @@ func (r *Reader) readForeignKeysByTable(
 		out[tableName] = constraints
 	}
 	return out, nil
+}
+
+// applyForeignKeyDetail copies onto one read foreign key what only its own DDL
+// says: the name the author gave it, and the deferral SQLite's catalog does not
+// report at all (stokaro/ptah#2202).
+func applyForeignKeyDetail(
+	constraint *types.DBConstraint,
+	details map[foreignKeySignature]foreignKeyDetail,
+) {
+	if constraint.ForeignTable == nil {
+		return
+	}
+	detail, found := details[foreignKeySignature{
+		columns:        strings.Join(constraint.ColumnNames, ","),
+		foreignTable:   *constraint.ForeignTable,
+		foreignColumns: strings.Join(constraint.ForeignColumns, ","),
+	}]
+	if !found {
+		return
+	}
+	if detail.name != "" {
+		constraint.Name = detail.name
+	}
+	constraint.Deferrable = detail.deferrable
+	constraint.Initially = detail.initially
 }
 
 func normalizeSQLiteAction(action string) string {
@@ -1330,15 +1346,31 @@ type foreignKeySignature struct {
 	foreignColumns string
 }
 
-func extractForeignKeyNames(ddl string) map[foreignKeySignature]string {
-	out := make(map[foreignKeySignature]string)
+// foreignKeyDetail is what one foreign key's own DDL says that the catalog does
+// not. The name has always been here; the deferral is here for the same reason
+// (stokaro/ptah#2202).
+type foreignKeyDetail struct {
+	name       string
+	deferrable bool
+	initially  string
+}
+
+// extractForeignKeyDetails reads each foreign key's name and deferral out of the
+// table's DDL, keyed by the signature PRAGMA foreign_key_list reports.
+//
+// An UNNAMED key gets an entry too. It carries no name, and it can still carry a
+// deferral -- recording only the named ones is how `REFERENCES parent(id)
+// DEFERRABLE INITIALLY DEFERRED` came back immediate.
+func extractForeignKeyDetails(ddl string) map[foreignKeySignature]foreignKeyDetail {
+	out := make(map[foreignKeySignature]foreignKeyDetail)
 	for _, part := range splitTopLevelComma(tableBody(ddl)) {
-		if name, signature := inlineForeignKeyName(part); name != "" {
-			out[signature] = name
+		deferrable, initially := foreignKeyDeferral(part)
+		if name, signature, ok := inlineForeignKey(part); ok {
+			out[signature] = foreignKeyDetail{name: name, deferrable: deferrable, initially: initially}
 			continue
 		}
 		name, rest := optionalConstraintName(part)
-		if name == "" || indexKeyword(rest, "FOREIGN") < 0 {
+		if indexKeyword(rest, "FOREIGN") < 0 {
 			continue
 		}
 		columns := foreignKeyColumns(rest)
@@ -1351,35 +1383,90 @@ func extractForeignKeyNames(ddl string) map[foreignKeySignature]string {
 			columns:        strings.Join(columns, ","),
 			foreignTable:   table,
 			foreignColumns: strings.Join(foreignColumns, ","),
-		}] = name
+		}] = foreignKeyDetail{name: name, deferrable: deferrable, initially: initially}
 	}
 	return out
 }
 
-func inlineForeignKeyName(value string) (string, foreignKeySignature) {
+// foreignKeyDeferral reads the deferral off one constraint's text.
+//
+// SQLite has no catalog for it. PRAGMA foreign_key_list reports the columns, the
+// referenced table, the actions and the match clause, and says nothing about
+// DEFERRABLE, so the CREATE TABLE text is the only place the property exists --
+// which is why the reader had nothing to read and reported every key as
+// immediate.
+//
+// `NOT DEFERRABLE INITIALLY DEFERRED` is accepted by SQLite and behaves
+// immediately. It is reported as not deferrable with no timing rather than as a
+// deferral that would never happen: replaying the reported form behaves the way
+// the source does, which is what a description is for.
+func foreignKeyDeferral(value string) (deferrable bool, initially string) {
+	idx := indexKeyword(value, "DEFERRABLE")
+	if idx < 0 || precededByNot(value, idx) {
+		return false, ""
+	}
+	timing := indexKeyword(value, "INITIALLY")
+	if timing < 0 {
+		return true, ""
+	}
+	after := strings.Fields(value[timing+len("INITIALLY"):])
+	if len(after) == 0 {
+		return true, ""
+	}
+	switch strings.ToUpper(after[0]) {
+	case "DEFERRED":
+		return true, "DEFERRED"
+	case "IMMEDIATE":
+		return true, "IMMEDIATE"
+	}
+	return true, ""
+}
+
+// precededByNot reports whether the word immediately before idx is NOT.
+//
+// `NOT DEFERRABLE` cannot be found by searching for the pair: the two words are
+// separated by whatever whitespace the author wrote, and a description that
+// matched only a single space would read `NOT  DEFERRABLE` as deferrable.
+func precededByNot(value string, idx int) bool {
+	before := strings.TrimRight(value[:idx], " \t\n\r")
+	fields := strings.Fields(before)
+	return len(fields) > 0 && strings.EqualFold(fields[len(fields)-1], "NOT")
+}
+
+// inlineForeignKey reports a column-level REFERENCES clause: its signature, and
+// its constraint name when it has one.
+//
+// The name is optional and the signature is not. An unnamed inline key is still
+// a key whose DDL may say something the catalog does not, so this answers ok for
+// it and leaves the name empty (stokaro/ptah#2202).
+func inlineForeignKey(value string) (name string, signature foreignKeySignature, ok bool) {
 	column, ok := leadingIdentifier(value)
 	if !ok || indexKeyword(value, "FOREIGN") >= 0 {
-		return "", foreignKeySignature{}
+		return "", foreignKeySignature{}, false
 	}
-	constraintIdx := indexKeyword(value, " CONSTRAINT ")
-	referencesIdx := indexKeyword(value, "REFERENCES")
-	if constraintIdx < 0 || referencesIdx < 0 || constraintIdx > referencesIdx {
-		return "", foreignKeySignature{}
-	}
-	afterConstraint := strings.TrimSpace(value[constraintIdx+len(" CONSTRAINT "):])
-	name, ok := leadingIdentifier(afterConstraint)
-	if !ok {
-		return "", foreignKeySignature{}
+	if indexKeyword(value, "REFERENCES") < 0 {
+		return "", foreignKeySignature{}, false
 	}
 	foreignTable := foreignKeyTable(value)
 	if foreignTable == "" {
-		return "", foreignKeySignature{}
+		return "", foreignKeySignature{}, false
 	}
-	return name, foreignKeySignature{
+	signature = foreignKeySignature{
 		columns:        column,
 		foreignTable:   foreignTable,
 		foreignColumns: strings.Join(foreignKeyReferencedColumns(value), ","),
 	}
+
+	constraintIdx := indexKeyword(value, " CONSTRAINT ")
+	referencesIdx := indexKeyword(value, "REFERENCES")
+	if constraintIdx < 0 || constraintIdx > referencesIdx {
+		return "", signature, true
+	}
+	afterConstraint := strings.TrimSpace(value[constraintIdx+len(" CONSTRAINT "):])
+	if named, found := leadingIdentifier(afterConstraint); found {
+		name = named
+	}
+	return name, signature, true
 }
 
 func foreignKeyColumns(value string) []string {
