@@ -36,8 +36,11 @@ func TestReadRolesInto_RecordsWhyTheRoleCatalogWasNotRead(t *testing.T) {
 			want:    []coverage.Object{coverage.Refused(coverage.Role)},
 		},
 		{
+			// The grant read no longer names mysql.tables_priv: it reads the
+			// privilege views instead, and SCHEMA_PRIVILEGES is the table this
+			// query is refused on (stokaro/ptah#2204).
 			name:    "the grant list is refused",
-			refused: "mysql.tables_priv",
+			refused: "SCHEMA_PRIVILEGES",
 			want:    []coverage.Object{coverage.Refused(coverage.Role)},
 		},
 		{
@@ -68,12 +71,19 @@ func TestReadRolesInto_RecordsWhyTheRoleCatalogWasNotRead(t *testing.T) {
 // refusingMySQLCatalog answers every catalog query with no rows, except the one
 // naming the refused table, which fails the way a MySQL server fails a read the
 // account has no privilege for.
+//
+// The queries wanting a value back are the catalog probes -- which
+// discriminator column mysql.user has, and which membership table this server
+// keeps -- and they are recognized by being counts. Matching on
+// "information_schema" instead answered the grant projection with a one-column
+// count, and it then failed on the scan rather than on the refusal this test is
+// about (stokaro/ptah#2204).
 func refusingMySQLCatalog(refused string) dbtest.QueryHandler {
 	return func(query string, _ []driver.NamedValue) (dbtest.QueryResult, error) {
 		return map[bool]dbtest.QueryResult{
 			true:  {Columns: []string{"count"}, Rows: [][]driver.Value{{int64(0)}}},
 			false: {},
-		}[strings.Contains(query, "information_schema")], accessDeniedFor(query, refused)
+		}[strings.Contains(query, "SELECT COUNT(*)")], accessDeniedFor(query, refused)
 	}
 }
 
