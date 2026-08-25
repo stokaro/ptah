@@ -19,7 +19,9 @@ import (
 // against the binary, and string literals drift where one constant cannot.
 const (
 	blockExtension    = "extension"
+	blockFunction     = "function"
 	blockPolicy       = "policy"
+	blockProcedure    = "procedure"
 	blockSequence     = "sequence"
 	blockTable        = "table"
 	blockView         = "view"

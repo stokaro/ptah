@@ -77,6 +77,11 @@ current schema IR:
   `security`, `volatility`, `as`, and `comment`; the Ptah `params` parity
   extension preserves parameter declarations that cannot be decomposed into
   Atlas-style `arg` blocks without changing their text
+- `procedure` blocks, taking every attribute `function` takes except `return`,
+  which a procedure does not have and which is refused inside one. This is a
+  Ptah block: the Atlas community CLI has no procedure block, and a routine
+  described as a `function` when it is a procedure is a different object from
+  the one in the database
 - PostgreSQL `view` blocks with `schema`, `as`, `check_option`, and `comment`
 - `materialized` blocks with `schema`, `as`, and `comment`
 - PostgreSQL `trigger` blocks with `on`, one of `before`/`after`/`instead_of`,
@@ -585,6 +590,14 @@ function "get_current_tenant" {
   security   = INVOKER
   volatility = STABLE
   as         = "SELECT current_setting('app.tenant_id', true)"
+}
+
+procedure "reap_sessions" {
+  schema     = schema.public
+  lang       = "plpgsql"
+  security   = INVOKER
+  volatility = VOLATILE
+  as         = "BEGIN DELETE FROM sessions WHERE expires_at < now(); END;"
 }
 
 view "active_users" {

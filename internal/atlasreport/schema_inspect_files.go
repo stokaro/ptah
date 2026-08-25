@@ -560,7 +560,7 @@ func hclBlockSchemaName(block *hclsyntax.Block, source []byte) string {
 
 func hclBlockTypeUsesSchemaInPath(kind string) bool {
 	switch kind {
-	case "table", "view", "materialized", "function", "trigger", "policy", "grant":
+	case "table", "view", "materialized", "function", "procedure", "trigger", "policy", "grant":
 		return true
 	default:
 		return false
@@ -579,6 +579,8 @@ func hclBlockDir(kind string) string {
 		return "extensions"
 	case "function":
 		return "functions"
+	case "procedure":
+		return "procedures"
 	case "view":
 		return "views"
 	case "materialized":

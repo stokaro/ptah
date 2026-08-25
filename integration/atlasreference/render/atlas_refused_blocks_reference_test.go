@@ -43,6 +43,12 @@ var atlasToleratedBlockTypes = map[string][]string{
 	platform.Postgres: {
 		"role",
 		"function",
+		// A procedure is its own block since stokaro/ptah#2209. It is measured
+		// here rather than suppressed for the same reason `function` is: that
+		// binary drops a top-level block it does not model and carries on, so
+		// leaving procedures out of the compatibility surface would withhold
+		// description at no benefit to it.
+		"procedure",
 		"view",
 		"materialized",
 		"trigger",
@@ -143,7 +149,7 @@ func TestReferenceToleratesTheBlockTypesPtahStillRenders(t *testing.T) {
 	c := qt.New(t)
 	c.Assert(atlasToleratedBlockTypes, qt.DeepEquals, map[string][]string{
 		platform.Postgres: {
-			"role", "function", "view", "materialized", "trigger", "permission", "wibble",
+			"role", "function", "procedure", "view", "materialized", "trigger", "permission", "wibble",
 		},
 		platform.SQLite: {"extension", "sequence", "policy", "wibble"},
 	}, qt.Commentf("every tolerance control must remain in the reference matrix"))
@@ -233,6 +239,7 @@ var blockProbeSources = map[string]string{
 	"materialized": "materialized \"probe_block\" {\n}\n",
 	"permission":   "permission {\n}\n",
 	"policy":       "policy \"probe_block\" {\n}\n",
+	"procedure":    "procedure \"probe_block\" {\n}\n",
 	"role":         "role \"probe_block\" {\n}\n",
 	"sequence":     "sequence \"probe_block\" {\n}\n",
 	"trigger":      "trigger \"probe_block\" {\n}\n",

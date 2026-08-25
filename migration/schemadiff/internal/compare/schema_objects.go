@@ -320,24 +320,46 @@ func FunctionsWithSemantics(
 	})
 }
 
-// foldDefaultArgumentMode removes an explicit leading IN from each argument.
+// foldArgumentMode reduces each argument's mode to a single spelling.
 //
-// Only IN: it is the default the grammar supplies when no mode is written, so
-// dropping it compares two spellings of one argument. OUT, INOUT and VARIADIC
-// change what the argument is and are left alone (stokaro/ptah#1722).
-func foldDefaultArgumentMode(parameters string) string {
+// IN is removed outright: it is the default the grammar supplies when no mode
+// is written, so dropping it compares two spellings of one argument. OUT, INOUT
+// and VARIADIC change what the argument is and are kept (stokaro/ptah#1722) --
+// but kept in ONE case, because the two sides of this comparison do not agree
+// on it and never did.
+//
+// The generated side has been through [goschema.Function.Canonicalize], which
+// lower-cases the whole parameter list. The database side is whatever the
+// catalog printed, and the catalogs print upper case. Measured on PostgreSQL 17
+// and MySQL 9.7.2:
+//
+//	pg_get_function_arguments  a integer, OUT b integer
+//	                           IN a integer, INOUT c integer
+//	information_schema         OUT b int, INOUT c int
+//
+// Comparing those verbatim reported "parameters" as a difference between a
+// database and its OWN description, so `ptah schema apply` planned to replace a
+// routine with an identical one on every run -- for a procedure, and equally
+// for the plain function with an OUT argument that has nothing to do with
+// procedures (stokaro/ptah#2209).
+//
+// The fold stays in the comparison. Rendering the folded form instead would
+// write Ptah's normalization into the operator's own DDL.
+func foldArgumentMode(parameters string) string {
 	if parameters == "" {
 		return parameters
 	}
 	arguments := splitTopLevelArguments(parameters)
 	for i, argument := range arguments {
 		trimmed := strings.TrimSpace(argument)
-		rest, found := strings.CutPrefix(trimmed, "in ")
-		if !found {
-			rest, found = strings.CutPrefix(trimmed, "IN ")
-		}
-		if found {
+		// Cut on the first space: a mode is one leading word, and an argument
+		// with no mode at all leaves its first word unmatched below.
+		first, rest, _ := strings.Cut(trimmed, " ")
+		switch strings.ToLower(first) {
+		case "in":
 			trimmed = strings.TrimSpace(rest)
+		case "out", "inout", "variadic":
+			trimmed = strings.ToLower(first) + " " + strings.TrimSpace(rest)
 		}
 		arguments[i] = trimmed
 	}
@@ -910,11 +932,10 @@ func FunctionDefinitionsWithDialect(
 	//	pg_get_function_arguments(function)  -> n integer
 	//
 	// so a declaration written the ordinary way never converged against a
-	// procedure. The fold stays in the comparison: rendering the folded form
-	// would write Ptah's normalization into the operator's DDL, and OUT,
-	// INOUT and VARIADIC are not defaults and are left exactly as written.
-	genFunction.Parameters = foldDefaultArgumentMode(genFunction.Parameters)
-	dbFunction.Parameters = foldDefaultArgumentMode(dbFunction.Parameters)
+	// procedure. The fold also settles the CASE of the modes it keeps, which
+	// the two sides spell differently; see [foldArgumentMode].
+	genFunction.Parameters = foldArgumentMode(genFunction.Parameters)
+	dbFunction.Parameters = foldArgumentMode(dbFunction.Parameters)
 
 	// PL/SQL writes the mode AFTER the name -- `p IN NUMBER` -- so the fold
 	// above, which cuts a leading `in `, never reaches it. The default is the

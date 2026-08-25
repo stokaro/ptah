@@ -94,22 +94,53 @@ func exactSchemaTraversalName(raw string) (string, bool) {
 }
 
 func (p *parser) parseFunction(block *hclsyntax.Block) error {
-	schema, name, err := p.objectSchemaAndName(block, "function")
+	return p.parseRoutine(block, routineBlockFunction, "")
+}
+
+// parseProcedure reads a `procedure` block into the same [goschema.Function]
+// the `function` block produces, differing in the kind it stamps.
+//
+// The block exists because the kind had nowhere else to live. A routine's kind
+// survives every other Ptah surface -- the catalog readers set it from
+// pg_proc.prokind and ROUTINE_TYPE, the comparator keys routines by it, and the
+// SQL renderers choose CREATE PROCEDURE and DROP PROCEDURE from it -- and HCL
+// was the one description that dropped it. A procedure written as a `function`
+// block reads back as a function, so applying a database's own description
+// dropped every procedure it had and created a `CREATE FUNCTION` with an empty
+// RETURNS clause in its place (stokaro/ptah#2209).
+//
+// A `return` attribute is refused here rather than ignored: a procedure returns
+// nothing, and a description that states otherwise is describing an object the
+// engine cannot create.
+func (p *parser) parseProcedure(block *hclsyntax.Block) error {
+	return p.parseRoutine(block, routineBlockProcedure, goschema.FunctionKindProcedure)
+}
+
+// The two spellings of a routine block. Named because the parser labels errors
+// with them, the attribute set differs by them, and a literal in either place
+// would drift from the other.
+const (
+	routineBlockFunction  = "function"
+	routineBlockProcedure = "procedure"
+)
+
+func (p *parser) parseRoutine(block *hclsyntax.Block, blockType, kind string) error {
+	schema, name, err := p.objectSchemaAndName(block, blockType)
 	if err != nil {
 		return err
 	}
-	if err := p.rejectUnsupportedFunctionAttrs(block); err != nil {
+	if err := p.rejectUnsupportedRoutineAttrs(block, blockType); err != nil {
 		return err
 	}
-	parameters, err := p.stringAttr(block, "params", "function")
+	parameters, err := p.stringAttr(block, "params", blockType)
 	if err != nil {
 		return err
 	}
 	if block.Body.Attributes["params"] != nil && len(block.Body.Blocks) > 0 {
-		return p.blockError(block.Body.Blocks[0], "function cannot mix params attribute with arg blocks")
+		return p.blockError(block.Body.Blocks[0], "%s cannot mix params attribute with arg blocks", blockType)
 	}
 	if block.Body.Attributes["params"] == nil {
-		args, err := p.parseFunctionArgs(block)
+		args, err := p.parseRoutineArgs(block, blockType)
 		if err != nil {
 			return err
 		}
@@ -117,12 +148,17 @@ func (p *parser) parseFunction(block *hclsyntax.Block) error {
 	}
 	body := p.optionalString(block.Body.Attributes["as"])
 	if body == "" {
-		return p.blockError(block, "function %q requires as", name)
+		return p.blockError(block, "%s %q requires as", blockType, name)
 	}
 	function := goschema.Function{
 		Name:       tableref.Canonical(schema, name),
+		Kind:       kind,
 		Parameters: parameters,
-		Returns:    p.typeAttrString(block.Body.Attributes["return"]),
+		// Read only for a function. rejectUnsupportedRoutineAttrs refuses the
+		// attribute on a procedure, but the tolerant parser reports an unknown
+		// attribute instead of removing it, so the body still carries it and a
+		// blind read would put a return type on a procedure on that surface.
+		Returns:    p.routineReturns(block, kind),
 		Language:   p.optionalString(block.Body.Attributes["lang"]),
 		Security:   p.optionalString(block.Body.Attributes["security"]),
 		Volatility: p.optionalString(block.Body.Attributes["volatility"]),
@@ -134,24 +170,32 @@ func (p *parser) parseFunction(block *hclsyntax.Block) error {
 	return nil
 }
 
-func (p *parser) parseFunctionArgs(block *hclsyntax.Block) ([]string, error) {
+// routineReturns reads the declared return type, which only a function has.
+func (p *parser) routineReturns(block *hclsyntax.Block, kind string) string {
+	if kind == goschema.FunctionKindProcedure {
+		return ""
+	}
+	return p.typeAttrString(block.Body.Attributes["return"])
+}
+
+func (p *parser) parseRoutineArgs(block *hclsyntax.Block, blockType string) ([]string, error) {
 	args := make([]string, 0, len(block.Body.Blocks))
 	for _, nested := range block.Body.Blocks {
 		if nested.Type != "arg" {
-			if err := p.rejectUnsupportedBlock(nested, "function"); err != nil {
+			if err := p.rejectUnsupportedBlock(nested, blockType); err != nil {
 				return nil, err
 			}
 			continue
 		}
-		if err := p.rejectUnsupportedFunctionArgAttrs(nested); err != nil {
+		if err := p.rejectUnsupportedRoutineArgAttrs(nested, blockType); err != nil {
 			return nil, err
 		}
 		typeAttr := nested.Body.Attributes["type"]
 		if typeAttr == nil {
-			return nil, p.blockError(nested, "function arg requires type")
+			return nil, p.blockError(nested, "%s arg requires type", blockType)
 		}
 		if len(nested.Labels) != 1 {
-			return nil, p.blockError(nested, "function arg requires exactly one name label")
+			return nil, p.blockError(nested, "%s arg requires exactly one name label", blockType)
 		}
 		// optionalRawExpr, not rawExpr: an argument type is written as a bare
 		// keyword (`type = bigint`) so it has no string value to evaluate, but
@@ -576,26 +620,31 @@ func (p *parser) rejectUnsupportedExtensionAttrs(block *hclsyntax.Block) error {
 	}, "extension")
 }
 
-func (p *parser) rejectUnsupportedFunctionAttrs(block *hclsyntax.Block) error {
-	return p.rejectUnsupportedAttrs(block, map[string]bool{
+// rejectUnsupportedRoutineAttrs refuses what a routine block cannot carry.
+//
+// `return` is the only difference between the two sets, and it is the whole
+// reason the blocks are separate: a procedure returns nothing.
+func (p *parser) rejectUnsupportedRoutineAttrs(block *hclsyntax.Block, blockType string) error {
+	supported := map[string]bool{
 		"schema":     true,
 		"params":     true,
 		"lang":       true,
-		"return":     true,
+		"return":     blockType == routineBlockFunction,
 		"security":   true,
 		"volatility": true,
 		"as":         true,
 		"comment":    true,
-	}, "function")
+	}
+	return p.rejectUnsupportedAttrs(block, supported, blockType)
 }
 
-func (p *parser) rejectUnsupportedFunctionArgAttrs(block *hclsyntax.Block) error {
-	if err := p.rejectNestedBlocks(block, "function arg"); err != nil {
+func (p *parser) rejectUnsupportedRoutineArgAttrs(block *hclsyntax.Block, blockType string) error {
+	if err := p.rejectNestedBlocks(block, blockType+" arg"); err != nil {
 		return err
 	}
 	return p.rejectUnsupportedAttrs(block, map[string]bool{
 		"type": true,
-	}, "function arg")
+	}, blockType+" arg")
 }
 
 func (p *parser) rejectUnsupportedViewAttrs(block *hclsyntax.Block) error {
