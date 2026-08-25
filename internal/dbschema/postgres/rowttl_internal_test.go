@@ -177,9 +177,10 @@ func ttlTableServer(reloptions string) func(string, []driver.NamedValue) (dbtest
 					"table_schema", "table_name", "table_type", "table_comment",
 					"estimated_rows", "row_stats_unknown", "partitioned", "rls_enabled",
 					"row_ttl_options",
+					"row_deletion_policy",
 				},
 				Rows: [][]driver.Value{
-					{"public", "sessions", "BASE TABLE", "", int64(0), false, false, false, reloptions},
+					{"public", "sessions", "BASE TABLE", "", int64(0), false, false, false, reloptions, ""},
 				},
 			}, nil
 		case strings.Contains(query, "FROM information_schema.columns"),

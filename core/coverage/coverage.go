@@ -128,6 +128,21 @@ const (
 	// pending change forever (stokaro/ptah#1026).
 	ContinuousAggregate Kind = "continuous_aggregate"
 
+	// ChangeStream is a Spanner change stream (CREATE CHANGE STREAM): a
+	// database object with its own lifecycle that publishes row changes to a
+	// reader outside the schema.
+	//
+	// Ptah does not model one. The kind exists so that saying so is possible:
+	// a Spanner database's description carries none of its change streams, and
+	// that silence is not a statement that it has none. Without the record the
+	// silence read as authoritative, which is how an unmodeled construct
+	// becomes a DROP (stokaro/ptah#2236).
+	//
+	// It is recorded whenever the target could have them rather than when this
+	// read found some, for the reason [ExtendedProperty] gives: recording only
+	// what was found would assert that the absence of every other one is
+	// authoritative.
+	ChangeStream Kind = "change_stream"
 	// Synonym is a SQL Server synonym (CREATE SYNONYM).
 	//
 	// It is declined for the same reason [ExtendedProperty] is, and the same
@@ -147,7 +162,7 @@ const (
 
 // kinds is every valid [Kind], in the order directives are written.
 var kinds = []Kind{
-	Composite, Domain, Extension, ExtendedProperty, Policy, Range, Role, Schema,
+	ChangeStream, Composite, Domain, Extension, ExtendedProperty, Policy, Range, Role, Schema,
 	Sequence, Synonym, VirtualTable,
 }
 

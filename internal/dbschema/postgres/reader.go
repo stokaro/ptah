@@ -377,7 +377,8 @@ func (r *Reader) readTablesForSchema(schemaName string) ([]types.DBTable, error)
 		       ` + rowStatsUnknown + ` AS row_stats_unknown,
 		       COALESCE(c.relkind = 'p', false) AS partitioned,
 		       COALESCE(c.relrowsecurity, false) AS rls_enabled,
-		       ` + r.rowTTLOptionsExpr() + `
+		       ` + r.rowTTLOptionsExpr() + `,
+		       ` + r.rowDeletionPolicyExpr() + `
 			FROM information_schema.tables t
 			LEFT JOIN pg_namespace n ON n.nspname = t.table_schema
 			LEFT JOIN pg_class c ON c.relname = t.table_name AND c.relnamespace = n.oid
@@ -397,6 +398,7 @@ func (r *Reader) readTablesForSchema(schemaName string) ([]types.DBTable, error)
 	for rows.Next() {
 		var table types.DBTable
 		var rowTTLOptions string
+		var rowDeletionPolicy string
 		err := rows.Scan(
 			&table.Schema,
 			&table.Name,
@@ -407,6 +409,7 @@ func (r *Reader) readTablesForSchema(schemaName string) ([]types.DBTable, error)
 			&table.Partitioned,
 			&table.RLSEnabled,
 			&rowTTLOptions,
+			&rowDeletionPolicy,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("failed to scan table: %w", err)
@@ -415,6 +418,9 @@ func (r *Reader) readTablesForSchema(schemaName string) ([]types.DBTable, error)
 		table.Columns = columnsByTable[table.Name]
 		if table.RowTTL, err = readRowTTL(rowTTLOptions); err != nil {
 			return nil, fmt.Errorf("failed to read row-level TTL for table %s: %w", table.Name, err)
+		}
+		if table.RowDeletionPolicy, err = readRowDeletionPolicy(rowDeletionPolicy); err != nil {
+			return nil, fmt.Errorf("failed to read row deletion policy for table %s: %w", table.Name, err)
 		}
 
 		tables = append(tables, table)

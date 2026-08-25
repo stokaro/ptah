@@ -236,6 +236,9 @@ type DBTable struct {
 	// matters because a description is compared, fingerprinted and replayed
 	// (stokaro/ptah#1027).
 	RowTTL *ast.RowTTLSpec `json:"row_ttl,omitzero"`
+	// RowDeletionPolicy is the row deletion policy this table carries, nil for
+	// a table with none (stokaro/ptah#2236).
+	RowDeletionPolicy *ast.RowDeletionPolicySpec `json:"row_deletion_policy,omitzero"`
 	// VirtualModule is the SQLite module that owns this table, from the USING
 	// clause of the CREATE VIRTUAL TABLE statement that created it -- `fts5`,
 	// `rtree`, `geopoly`, or any other module a build registers. It is empty

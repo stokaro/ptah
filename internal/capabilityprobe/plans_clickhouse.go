@@ -259,6 +259,9 @@ func clickHousePlan() plan {
 		),
 	}
 	return plan{experiments: experiments, undecided: map[capability.Capability]string{
+		capability.RowDeletionPolicy: "the key names a table clause Ptah renders, reads and plans only " +
+			"for Spanner, whose PostgreSQL interface stores it; this server has no such clause, so its " +
+			"refusal would answer a different question",
 		capability.SequenceStartCounterOnly: "the key is a restriction on the CREATE SEQUENCE grammar, decided by a " +
 			"server that takes the bare statement and refuses an option clause beside it. This dialect has no " +
 			"CREATE SEQUENCE for the control to run, so its answer would be to a different question",

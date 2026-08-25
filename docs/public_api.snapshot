@@ -1095,6 +1095,7 @@ type DropPolicyNode struct{ ... }
     func NewDropPolicy(name, table string) *DropPolicyNode
 type DropRoleNode struct{ ... }
     func NewDropRole(name string) *DropRoleNode
+type DropRowDeletionPolicyOperation struct{}
 type DropSequenceNode struct{ ... }
     func NewDropSequence(name string) *DropSequenceNode
 type DropSynonymNode struct{ ... }
@@ -1188,6 +1189,7 @@ type RevokePrivilegeNode struct{ ... }
 type RoleOperation interface{ ... }
 type RoutineKind string
     const RoutineKindFunction RoutineKind = "function" ...
+type RowDeletionPolicySpec struct{ ... }
 type RowTTLSpec struct{ ... }
 type SQLServerRoutineBody struct{ ... }
 type SQLServerRoutineForm string
@@ -1211,6 +1213,7 @@ type SetPasswordOperation struct{ ... }
     func NewSetPasswordOperation(password string) *SetPasswordOperation
 type SetReplicationOperation struct{ ... }
     func NewSetReplicationOperation(replication bool) *SetReplicationOperation
+type SetRowDeletionPolicyOperation struct{ ... }
 type SetRowTTLOperation struct{ ... }
 type SetSuperuserOperation struct{ ... }
     func NewSetSuperuserOperation(superuser bool) *SetSuperuserOperation
@@ -2308,6 +2311,15 @@ type CreateTableNode struct {
     // is a state Options cannot spell apart from "this renderer set no option"
     // (stokaro/ptah#1027).
     RowTTL *RowTTLSpec
+    // RowDeletionPolicy stores the table's row deletion policy, nil for a table
+    // declaring none.
+    //
+    // It is a second field beside RowTTL rather than a wider reading of it
+    // because the two are different clauses of different shapes on different
+    // engines, and one table never carries both: a row deletion policy is a
+    // clause on the table holding exactly one interval and one column, where a
+    // row-level TTL is a bag of storage parameters (stokaro/ptah#2236).
+    RowDeletionPolicy *RowDeletionPolicySpec
 }
     CreateTableNode represents a CREATE TABLE statement with all its components.
 
@@ -2818,6 +2830,16 @@ func NewDropRole(name string) *DropRoleNode
 func (n *DropRoleNode) Accept(visitor Visitor) error
 func (n *DropRoleNode) SetComment(comment string) *DropRoleNode
 func (n *DropRoleNode) SetIfExists() *DropRoleNode
+
+### go.5x5.cz/ptah/core/ast.DropRowDeletionPolicyOperation
+
+package ast // import "go.5x5.cz/ptah/core/ast"
+
+type DropRowDeletionPolicyOperation struct{}
+    DropRowDeletionPolicyOperation represents ALTER TABLE ... DROP TTL, which
+    removes the policy and leaves the column it named alone.
+
+func (op *DropRowDeletionPolicyOperation) Accept(_visitor Visitor) error
 
 ### go.5x5.cz/ptah/core/ast.DropSequenceNode
 
@@ -4163,6 +4185,34 @@ type RoutineKind string
 
 const RoutineKindFunction RoutineKind = "function" ...
 
+### go.5x5.cz/ptah/core/ast.RowDeletionPolicySpec
+
+package ast // import "go.5x5.cz/ptah/core/ast"
+
+type RowDeletionPolicySpec struct {
+    // Column is the timestamp column the interval is measured from.
+    Column string
+    // Interval is the interval literal, without the INTERVAL keyword and
+    // without quotes: `30 days`.
+    Interval string
+}
+    RowDeletionPolicySpec is a table's row deletion policy: the engine deletes a
+    row once Interval has passed since the timestamp in Column.
+
+    Spanner is the engine that has it, spelled `TTL INTERVAL '30 days' ON
+    created_at`.
+
+    Interval is stored as the author wrote it and is NOT compared as text.
+    The server rewrites it: measured against the Cloud Spanner emulator behind
+    PGAdapter 0.55.2, `INTERVAL '30 days'` reads back as `INTERVAL '4 WEEKS 2
+    DAYS'`, so a declaration compared as text could never converge. Comparison
+    goes through go.5x5.cz/ptah/internal/crdbinterval, which reads both sides
+    into the value they denote -- the same answer stokaro/ptah#1612 reached for
+    the CockroachDB policy, for the same reason.
+
+func (s *RowDeletionPolicySpec) Clone() *RowDeletionPolicySpec
+func (s *RowDeletionPolicySpec) IsZero() bool
+
 ### go.5x5.cz/ptah/core/ast.RowTTLSpec
 
 package ast // import "go.5x5.cz/ptah/core/ast"
@@ -4449,6 +4499,33 @@ type SetReplicationOperation struct {
 
 func NewSetReplicationOperation(replication bool) *SetReplicationOperation
 func (op *SetReplicationOperation) GetOperationType() string
+
+### go.5x5.cz/ptah/core/ast.SetRowDeletionPolicyOperation
+
+package ast // import "go.5x5.cz/ptah/core/ast"
+
+type SetRowDeletionPolicyOperation struct {
+    // Column is the timestamp column the interval is measured from.
+    Column string
+    // Interval is the interval literal as the author wrote it.
+    Interval string
+    // Replace picks ALTER over ADD, for a table that already has a policy.
+    Replace bool
+}
+    SetRowDeletionPolicyOperation represents the statement that puts a row
+    deletion policy on a table.
+
+    Adding one and changing one are different verbs on the same clause, which is
+    why Replace is carried rather than derived here. Measured against the Cloud
+    Spanner emulator behind PGAdapter 0.55.2 (stokaro/ptah#2236):
+
+        ALTER TABLE t ADD TTL INTERVAL '10 days' ON ts     -> INTERVAL '1 WEEKS 3 DAYS' ON ts
+        ALTER TABLE t ALTER TTL INTERVAL '20 days' ON ts   -> INTERVAL '2 WEEKS 6 DAYS' ON ts
+
+    Only the planner knows which side the table was on, because only the diff
+    carries both.
+
+func (op *SetRowDeletionPolicyOperation) Accept(_visitor Visitor) error
 
 ### go.5x5.cz/ptah/core/ast.SetRowTTLOperation
 
@@ -6398,6 +6475,10 @@ type Table struct {
     // a row-expiry policy means a table quietly keeping rows it was declared to
     // delete (stokaro/ptah#1027).
     RowTTL *ast.RowTTLSpec
+    // RowDeletionPolicy is the row deletion policy this table declares, nil for
+    // a table declaring none. It carries the ast type for the same reason
+    // RowTTL does (stokaro/ptah#2236).
+    RowDeletionPolicy *ast.RowDeletionPolicySpec
 }
     Table represents a database table configuration parsed from Go struct
     annotations. This defines the overall table properties and metadata that
@@ -8762,6 +8843,9 @@ type DBTable struct {
     // matters because a description is compared, fingerprinted and replayed
     // (stokaro/ptah#1027).
     RowTTL *ast.RowTTLSpec `json:"row_ttl,omitzero"`
+    // RowDeletionPolicy is the row deletion policy this table carries, nil for
+    // a table with none (stokaro/ptah#2236).
+    RowDeletionPolicy *ast.RowDeletionPolicySpec `json:"row_deletion_policy,omitzero"`
     // VirtualModule is the SQLite module that owns this table, from the USING
     // clause of the CREATE VIRTUAL TABLE statement that created it -- `fts5`,
     // `rtree`, `geopoly`, or any other module a build registers. It is empty
@@ -11818,6 +11902,7 @@ type RLSPolicyDiff struct{ ... }
 type RLSPolicyRef struct{ ... }
 type RangeDiff struct{ ... }
 type RoleDiff struct{ ... }
+type RowDeletionPolicyChange struct{ ... }
 type RowTTLChange struct{ ... }
 type SchemaDiff struct{ ... }
 type SequenceDiff struct{ ... }
@@ -12557,6 +12642,23 @@ type RoleDiff struct {
         }
 
 
+### go.5x5.cz/ptah/migration/schemadiff/types.RowDeletionPolicyChange
+
+package types // import "go.5x5.cz/ptah/migration/schemadiff/types"
+
+type RowDeletionPolicyChange struct {
+    // Desired is the policy the declaration states, nil for none.
+    Desired *ast.RowDeletionPolicySpec `json:"desired,omitzero"`
+    // Current is the policy the database carries, nil for none.
+    Current *ast.RowDeletionPolicySpec `json:"current,omitzero"`
+}
+    RowDeletionPolicyChange is one table's row deletion policy transition.
+
+    Both sides travel, for the same reason RowTTLChange carries both: adding a
+    policy and changing one are different statements, and only the pair says
+    which of the two this is.
+
+
 ### go.5x5.cz/ptah/migration/schemadiff/types.RowTTLChange
 
 package types // import "go.5x5.cz/ptah/migration/schemadiff/types"
@@ -13015,6 +13117,12 @@ type TableDiff struct {
     // and absent from the declaration is a RESET, and only the current state
     // says which those are. See stokaro/ptah#1027.
     RowTTLChange *RowTTLChange `json:"row_ttl_change,omitzero"`
+
+    // RowDeletionPolicyChange carries a row deletion policy transition, and is
+    // nil when the declaration and the database agree. It is a second field
+    // beside RowTTLChange because the two are different clauses on different
+    // engines and no table carries both (stokaro/ptah#2236).
+    RowDeletionPolicyChange *RowDeletionPolicyChange `json:"row_deletion_policy_change,omitzero"`
 }
     TableDiff represents structural differences within a specific database
     table.

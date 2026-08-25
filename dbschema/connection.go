@@ -17,6 +17,7 @@ import (
 	_ "github.com/sijms/go-ora/v3"                       // Oracle driver
 	_ "github.com/tursodatabase/libsql-client-go/libsql" // libsql (Turso) driver
 
+	"go.5x5.cz/ptah/core/coverage"
 	"go.5x5.cz/ptah/core/platform"
 	"go.5x5.cz/ptah/core/platform/capability"
 	"go.5x5.cz/ptah/core/platform/identifier"
@@ -553,7 +554,43 @@ func ReadSchemaWithSchemas(conn *DatabaseConnection, schemas []string) (*types.D
 		scoped.SetSchemas(schemas)
 		defer scoped.SetSchemas(nil)
 	}
-	return reader.ReadSchema()
+	schema, err := reader.ReadSchema()
+	if err != nil {
+		return nil, err
+	}
+	return recordUnmodeledObjectKinds(schema, conn.Info().Dialect), nil
+}
+
+// recordUnmodeledObjectKinds marks the object kinds this target has and Ptah
+// does not model, so a description's silence about them is not read as their
+// absence.
+//
+// Spanner change streams are the case that made it necessary. A change stream
+// is a database object with its own lifecycle -- measured against the emulator
+// behind PGAdapter 0.55.2, `CREATE CHANGE STREAM ttl_a_stream FOR ttl_a` is
+// accepted and listed in information_schema.change_streams -- and nothing in
+// Ptah models one. Before this the reader met them and said nothing, which is
+// the failure stokaro/ptah#2236 is about: an unmodeled object dropped without a
+// diagnostic is one nobody learns about until it stops existing.
+//
+// It is recorded for the TARGET rather than for what the read found. Recording
+// only the streams a particular database happens to have would assert that the
+// absence of every other one is authoritative, which is the under-claim that
+// turns a presentation decision into a removal.
+//
+// It sits here rather than in the reader because this is where the dialect is
+// known: the PostgreSQL-family reader is shared by five engines and is
+// configured with capabilities rather than with a dialect name.
+func recordUnmodeledObjectKinds(schema *types.DBSchema, dialect string) *types.DBSchema {
+	if schema == nil || platform.NormalizeDialect(dialect) != platform.Spanner {
+		return schema
+	}
+	schema.NotDescribed = schema.NotDescribed.With(coverage.Object{
+		Kind:       coverage.ChangeStream,
+		Reason:     coverage.Unsupported,
+		Provenance: coverage.DerivedFromTarget,
+	})
+	return schema
 }
 
 // Info returns the database connection information

@@ -292,6 +292,22 @@ first, and the emulator accepts one without it. So the line is exercised and
 stays `best-effort`, which is the one place those two answers come apart
 ([issue 942](https://github.com/stokaro/ptah/issues/942)).
 
+### What Spanner models, and what it does not
+
+A table's **row deletion policy** — `TTL INTERVAL '30 days' ON created_at` — is
+read, rendered, planned and compared. The interval is compared as a value rather
+than as text, because the server rewrites it: `30 days` is stored as
+`4 WEEKS 2 DAYS` and `60 days` as `2 MONTHS`, all of it reducing to a whole
+number of days at thirty days to a month. It travels on the SQL surface, which
+is what `ptah db read` writes and what `--schema-file` reads; the HCL and Go
+annotation surfaces do not carry it yet.
+
+A **change stream** is not modeled. It is a database object with its own
+lifecycle rather than a table property, and a Spanner description says so rather
+than staying silent about it: the read records the kind as not described, so the
+absence of change streams from a document is never read as their absence from
+the database ([issue 2236](https://github.com/stokaro/ptah/issues/2236)).
+
 Presence in the table is not certification; the `Support` column is the place to
 read.
 
