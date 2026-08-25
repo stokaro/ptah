@@ -2442,23 +2442,44 @@ func (p *Parser) handleColumnConstraint(table *ast.CreateTableNode, column *ast.
 		return nil
 	case p.current.MatchIdentifierValue("UNIQUE"):
 		return p.namedSingleColumnConstraint(table, column, name, ast.UniqueConstraint)
+	case p.current.MatchIdentifierValue("PRIMARY"):
+		// Read only since stokaro/ptah#2180. Before it, the renderer collapsed
+		// a single-column primary key back into the column and the name was
+		// dropped on the way out -- `CONSTRAINT c_pk PRIMARY KEY (b)` applied
+		// as `t_pkey` on PostgreSQL 17 while --dry-run answered
+		// `Schema is synced`. Reading the column-level spelling then would have
+		// handed a name to that path and lost it just as quietly. With the name
+		// surviving, reading it is what keeps it.
+		return p.namedSingleColumnPrimaryKey(table, column, name)
 	default:
-		// PRIMARY KEY is deliberately not here, and the reason is measured
-		// rather than assumed: the renderer collapses a single-column primary
-		// key back into the column, so a name given to one is dropped on the
-		// way out. Measured on PostgreSQL 17 from the TABLE-level spelling,
-		// which this parser already reads: `CONSTRAINT c_pk PRIMARY KEY (b)`
-		// applies as `t_pkey`, and --dry-run answers `Schema is synced`
-		// afterwards. Reading the column-level spelling would hand a name to
-		// the same path and lose it just as quietly, which is what this refusal
-		// exists to prevent (stokaro/ptah#2161, stokaro/ptah#2180).
+		// NOT NULL and DEFAULT stay refused: ColumnNode keeps Nullable and the
+		// default with nowhere to put a constraint name, and neither has a
+		// table-level form to read the name into the way UNIQUE and PRIMARY KEY
+		// do (stokaro/ptah#2161).
 		return fmt.Errorf(
 			"named column constraint %q at position %d: Ptah reads a name on CHECK, "+
-				"REFERENCES and UNIQUE; on %s the name has nowhere to live and would be "+
-				"lost, so write the constraint at table level to keep it",
+				"REFERENCES, UNIQUE and PRIMARY KEY; on %s the name has nowhere to live "+
+				"and would be lost, so write the constraint at table level to keep it",
 			name, p.current.Start, strings.ToUpper(p.current.Value),
 		)
 	}
+}
+
+// namedSingleColumnPrimaryKey reads `CONSTRAINT <name> PRIMARY KEY` on a column,
+// consuming the KEY that PRIMARY requires.
+func (p *Parser) namedSingleColumnPrimaryKey(
+	table *ast.CreateTableNode,
+	column *ast.ColumnNode,
+	name string,
+) error {
+	if err := p.namedSingleColumnConstraint(table, column, name, ast.PrimaryKeyConstraint); err != nil {
+		return err
+	}
+	p.skipWhitespace()
+	if err := p.expect(lexer.TokenIdentifier, "KEY"); err != nil {
+		return fmt.Errorf("expected KEY after PRIMARY: %w", err)
+	}
+	return nil
 }
 
 // namedSingleColumnConstraint reads a named UNIQUE or PRIMARY KEY written on a
