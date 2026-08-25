@@ -134,6 +134,7 @@ func newLoop(
 	talk *conversation,
 	maxToolCalls int,
 	emit func(assistloop.Event),
+	onText func(string),
 ) (*assistloop.Loop, error) {
 	return assistloop.New(assistloop.Options{
 		Provider:     provider,
@@ -141,9 +142,32 @@ func newLoop(
 		History:      talk.history,
 		MaxToolCalls: maxToolCalls,
 		Emit:         emit,
+		OnText:       onText,
 		OnTool:       talk.tool,
 	})
 }
+
+// streamTo writes the model's answer to out as it arrives.
+func streamTo(out io.Writer) func(string) {
+	return func(fragment string) {
+		fmt.Fprint(out, fragment)
+	}
+}
+
+// answerWriter is where a format wants the answer delivered as it arrives, and
+// nil where the format renders a document instead.
+//
+// A JSON report has nowhere to put a fragment, and printing one beside it would
+// break the only reason to ask for that format.
+func answerWriter(out io.Writer, format string) func(string) {
+	if !streamed[format] {
+		return nil
+	}
+	return streamTo(out)
+}
+
+// streamed reports whether a format wants the answer as it arrives.
+var streamed = map[string]bool{formatText: true, formatJSON: false, formatJSONL: false}
 
 // writeTrace prints what Ptah did, one line per tool call.
 func writeTrace(out io.Writer, records []assistloop.ToolRecord) {

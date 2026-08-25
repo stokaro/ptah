@@ -118,7 +118,7 @@ func runContext(cmd *cobra.Command, opts *contextOptions, question string) error
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
-	loop, err := newLoop(provider, tools, &conversation{history: history}, 0, nil)
+	loop, err := newLoop(provider, tools, &conversation{history: history}, 0, nil, nil)
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}

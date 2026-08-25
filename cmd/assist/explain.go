@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"fmt"
 	"io"
-	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -151,7 +150,10 @@ func runExplain(cmd *cobra.Command, opts *explainOptions, question string) error
 	}
 	defer talk.recorder.Close() //nolint:errcheck // each record is written as it happens
 
-	loop, err := newLoop(provider, tools, talk, opts.maxToolCalls, emitter(cmd, traced(opts.trace)))
+	// The text surface streams; json and jsonl render a document and have
+	// nowhere to put a fragment.
+	loop, err := newLoop(provider, tools, talk, opts.maxToolCalls,
+		emitter(cmd, traced(opts.trace)), answerWriter(cmd.OutOrStdout(), opts.format))
 	if err != nil {
 		return cmdutil.Fail(cmd, err)
 	}
@@ -226,7 +228,8 @@ func writeExplain(
 
 	out := cmd.OutOrStdout()
 	writeTrace(out, traced(opts.trace).records(result.Tools))
-	fmt.Fprintln(out, strings.TrimSpace(result.Answer))
+	// The answer reached stdout as it arrived, so only the blank line that
+	// separates it from the provenance is still owed.
 	fmt.Fprintln(out, "")
 	writeProvenance(out, result)
 	writeSessionLine(out, talk)
